@@ -36,6 +36,8 @@
 
 #include <stdarg.h>
 
+#include <uapi/errno.h>
+
 /* The longest line the probe logs. */
 #define I915_DP_EXT_KERN_LOG_LINE	256u
 
@@ -61,6 +63,8 @@ static void i915_dp_ext_log(void *ctx, const char *format, ...) __attribute__((f
 static long i915_dp_ext_emit_dpcd_read(void *ctx, unsigned offset, uint8_t *buffer, size_t size);
 static long i915_dp_ext_emit_dpcd_write(void *ctx, unsigned offset, const uint8_t *buffer, size_t size);
 static int i915_dp_ext_emit_read_caps(void *ctx, uint8_t dpcd[15]);
+static int i915_dp_ext_emit_configure_converter(void *ctx);
+static struct i915_dp_ext_port *i915_dp_ext_declared(struct i915_display *display, int port);
 
 /*
  * Binds the display's Type-C ports as external DP ports.
@@ -259,6 +263,153 @@ drv_i915_dp_ext_pulse(
 }
 
 /*
+ * Copies what the last probe of an external DP port found, for the
+ * output a claim prepares (ws051-p004b).
+ *
+ * The copy is taken under the port's lock, so it is one probe's whole
+ * result.  Returns 0, or ENXIO when the ports are not bound or the port is
+ * not a declared Type-C port.
+ */
+int
+drv_i915_dp_ext_sink_copy(
+	struct i915_display *display,
+	int port,
+	struct i915_dp_ext_sink *sink)
+{
+	struct i915_dp_ext_port *p;
+
+	/* Only a declared Type-C port has a sink. */
+	p = i915_dp_ext_declared(display, port);
+	if (p == NULL)
+		return ENXIO;
+
+	/* Copies the last probe's result whole. */
+	mutex_lock(&p->lock);
+
+	*sink = p->sink;
+
+	mutex_unlock(&p->lock);
+
+	/* Succeeded: the copy is the caller's. */
+	return 0;
+}
+
+/*
+ * Reports the link limits a failed link training left on an external DP
+ * port: 0 means the sink's own.  Returns 0, or ENXIO when the ports are
+ * not bound or the port is not a declared Type-C port.
+ */
+int
+drv_i915_dp_ext_link_limits(
+	struct i915_display *display,
+	int port,
+	int *max_rate,
+	int *max_lanes)
+{
+	struct i915_dp_ext_port *p;
+
+	/* Only a declared Type-C port has limits. */
+	p = i915_dp_ext_declared(display, port);
+	if (p == NULL)
+		return ENXIO;
+
+	/* Reads them under the port's lock. */
+	mutex_lock(&p->lock);
+
+	*max_rate = p->max_link_rate;
+	*max_lanes = p->max_link_lanes;
+
+	mutex_unlock(&p->lock);
+
+	/* Succeeded: the limits are the caller's. */
+	return 0;
+}
+
+/*
+ * Lowers an external DP port's link limits after a link training failed
+ * at a rate and lane count (drv_i915_dp_ext_fallback_values(), the Linux
+ * intel_dp_get_link_train_fallback_values()).  Returns 0,
+ * ENOSPC when no lower link is left, or ENXIO when the port is not a
+ * declared Type-C port.
+ */
+int
+drv_i915_dp_ext_link_fallback(
+	struct i915_display *display,
+	int port,
+	int rate,
+	int lanes)
+{
+	struct i915_dp_ext_port *p;
+	const char *outcome;
+	int max_rate;
+	int max_lanes;
+	int lowered;
+	int error;
+
+	/* Only a declared Type-C port has limits. */
+	p = i915_dp_ext_declared(display, port);
+	if (p == NULL)
+		return ENXIO;
+
+	/* Lowers the limits under the port's lock, from the sink's shared rates. */
+	mutex_lock(&p->lock);
+
+	error = ENOSPC;
+	lowered = drv_i915_dp_ext_fallback_values(&p->sink, rate, lanes, &max_rate, &max_lanes);
+	if (lowered) {
+		p->max_link_rate = max_rate;
+		p->max_link_lanes = max_lanes;
+		error = 0;
+	}
+
+	mutex_unlock(&p->lock);
+
+	/* Logs the step. */
+	outcome = "no lower link";
+	if (error == 0)
+		outcome = "lowered";
+	kern_logf("i915: DP-ext %s: link training failed at %d kHz x%d: %s (max rate %d, max lanes %d)\n",
+		  p->name,
+		  rate,
+		  lanes,
+		  outcome,
+		  p->max_link_rate,
+		  p->max_link_lanes);
+
+	/* Reports that no lower link is left. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the limits are lowered. */
+	return 0;
+}
+
+/*
+ * Gives an external DP port its sink's own link limits back (the Linux
+ * intel_dp_reset_max_link_params() after a long hot plug pulse).
+ */
+void
+drv_i915_dp_ext_link_reset(
+	struct i915_display *display,
+	int port)
+{
+	struct i915_dp_ext_port *p;
+
+	/* Only a declared Type-C port has limits. */
+	p = i915_dp_ext_declared(display, port);
+	if (p == NULL)
+		return;
+
+	/* Clears them under the port's lock. */
+	mutex_lock(&p->lock);
+
+	p->max_link_rate = 0;
+	p->max_link_lanes = 0;
+
+	mutex_unlock(&p->lock);
+}
+
+/*
  * Gives the DPCD access of an external DP port's sink for a modeset
  * object of that sink.
  *
@@ -273,25 +424,11 @@ drv_i915_dp_ext_aux_emit(
 	struct i915_display *display,
 	int port)
 {
-	struct i915_dp_world *world;
-	struct i915_dp_ext_world *ext;
 	struct i915_dp_ext_port *p;
-	int tc_port;
-
-	/* Without bound external ports there is no channel. */
-	world = display->dp_world;
-	if (world == NULL)
-		return NULL;
-	ext = &world->ext;
-	if (!ext->live)
-		return NULL;
 
 	/* Only a declared Type-C port has a channel of its own. */
-	tc_port = drv_i915_tc_kern_port_of(port);
-	if (tc_port < 0)
-		return NULL;
-	p = &ext->port[tc_port];
-	if (!p->declared)
+	p = i915_dp_ext_declared(display, port);
+	if (p == NULL)
 		return NULL;
 
 	/* Succeeded: the port's access, bound with the port. */
@@ -437,6 +574,7 @@ i915_dp_ext_bind_port(
 	p->aux_emit.dpcd_read = i915_dp_ext_emit_dpcd_read;
 	p->aux_emit.dpcd_write = i915_dp_ext_emit_dpcd_write;
 	p->aux_emit.read_dpcd_caps = i915_dp_ext_emit_read_caps;
+	p->aux_emit.configure_converter = i915_dp_ext_emit_configure_converter;
 
 	/* The lock, and a sink not yet probed. */
 	(void)mutex_init(&p->lock, LOCK_RANK_DEVICE, "i915 dp-ext port");
@@ -719,4 +857,67 @@ i915_dp_ext_emit_read_caps(
 
 	/* Succeeded: the capabilities are in dpcd. */
 	return 0;
+}
+
+/*
+ * Sets up the protocol converter of the port's sink for the RGB stream
+ * (dp-ext.c, from what the last probe found), with the port's lock held;
+ * refused once the ports stopped.
+ */
+static int
+i915_dp_ext_emit_configure_converter(
+	void *ctx)
+{
+	struct i915_dp_ext_port *p;
+	int error;
+
+	/* The channel's backend is gone once the ports stopped. */
+	p = ctx;
+	if (!p->ext->live)
+		return -I915_DP_EIO;
+
+	/* Sets the converter up from the probe's result. */
+	mutex_lock(&p->lock);
+
+	error = drv_i915_dp_ext_configure_converter(&p->env, &p->sink);
+
+	mutex_unlock(&p->lock);
+
+	/* Reports a write that failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the converter is set up, or there is none. */
+	return 0;
+}
+
+/* Finds a declared external DP port of a DDI port: NULL when the ports are not bound or the port is not one. */
+static struct i915_dp_ext_port *
+i915_dp_ext_declared(
+	struct i915_display *display,
+	int port)
+{
+	struct i915_dp_world *world;
+	struct i915_dp_ext_world *ext;
+	struct i915_dp_ext_port *p;
+	int tc_port;
+
+	/* Without bound external ports there is none. */
+	world = display->dp_world;
+	if (world == NULL)
+		return NULL;
+	ext = &world->ext;
+	if (!ext->live)
+		return NULL;
+
+	/* Only a declared Type-C port is one. */
+	tc_port = drv_i915_tc_kern_port_of(port);
+	if (tc_port < 0)
+		return NULL;
+	p = &ext->port[tc_port];
+	if (!p->declared)
+		return NULL;
+
+	/* Succeeded: the port. */
+	return p;
 }

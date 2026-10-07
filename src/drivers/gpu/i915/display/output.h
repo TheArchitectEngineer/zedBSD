@@ -27,6 +27,13 @@
 #define I915_OUTPUT_HDMI_PIPE		1
 
 /*
+ * An external DisplayPort display's pipe and transcoder (ws051-p004b):
+ * pipe B, as the HDMI output's (one output at a time, the DBUF and
+ * watermark combination already proved on pipe B).
+ */
+#define I915_OUTPUT_DP_EXT_PIPE		1
+
+/*
  * Reads the firmware's output from what it left on the display (the N0
  * report): the first lit pipe whose transcoder drives a port, and every
  * lit pipe.  Pure: reads only the report.

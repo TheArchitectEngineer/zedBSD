@@ -368,6 +368,52 @@ drv_i915_dp_ext_configure_converter(
 }
 
 /*
+ * Computes the link limits after a link training failed at a rate and a
+ * lane count (the Linux intel_dp_get_link_train_fallback_values() for a
+ * port that is not eDP, ws051-p004b).
+ *
+ * A rate above the lowest the source and sink share falls to the next
+ * lower shared rate with the same lanes; otherwise the lanes are halved
+ * at the highest shared rate.  Returns 1 with *max_rate and *max_lanes
+ * the new limits, or 0 when one lane is left (nothing lower to try).
+ */
+int
+drv_i915_dp_ext_fallback_values(
+	const struct i915_dp_ext_sink *sink,
+	int rate,
+	int lanes,
+	int *max_rate,
+	int *max_lanes)
+{
+	int index;
+	int found;
+
+	/* Finds the failed rate among the shared ones (-1: not shared). */
+	found = -1;
+	for (index = 0; index < sink->num_common_rates; index++) {
+		if (sink->common_rates[index] == rate)
+			found = index;
+	}
+
+	/* A higher rate falls to the next lower one, with the same lanes. */
+	if (found > 0) {
+		*max_rate = sink->common_rates[found - 1];
+		*max_lanes = lanes;
+		return 1;
+	}
+
+	/* The lowest rate (or one not shared): half the lanes at the highest rate. */
+	if (lanes > 1 && sink->num_common_rates > 0) {
+		*max_rate = sink->common_rates[sink->num_common_rates - 1];
+		*max_lanes = lanes >> 1;
+		return 1;
+	}
+
+	/* One lane at the lowest rate: the link training was unsuccessful. */
+	return 0;
+}
+
+/*
  * Checks a mode's pixel clock against a branch's downstream limits (the
  * Linux intel_dp_mode_valid_downstream() for RGB at 8 bits per colour,
  * where the TMDS clock is the pixel clock).

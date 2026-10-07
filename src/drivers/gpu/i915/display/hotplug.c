@@ -3298,9 +3298,15 @@ i915_hpd_dp_pulse_step(
 		return IRQ_HANDLED;
 	}
 
-	/* A long pulse is a plug or an unplug: the hotplug work detects the port. */
+	/*
+	 * A long pulse is a plug or an unplug: the hotplug work detects the
+	 * port, and a Type-C port's sink gets its own link limits back (the
+	 * Linux reset_link_params of intel_dp_hpd_pulse(), ws051-p004b).
+	 */
 	if (long_hpd) {
 		kern_logf("i915: hpd: long hpd on %s: detecting\n", dig_port->base.base.name);
+		if (world->dp_display != NULL)
+			drv_i915_dp_ext_link_reset(world->dp_display, (int)dig_port->base.port);
 		return IRQ_NONE;
 	}
 

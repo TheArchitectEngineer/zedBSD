@@ -32,9 +32,11 @@
  */
 
 #include "output.h"
+#include "dp-ext-kern.h"
 #include "hdmi.h"
 #include "hotplug.h"
 #include "state.h"
+#include "tc-kern.h"
 
 #include <kern/boot.h>
 #include <kern/clock.h>
@@ -185,6 +187,7 @@ static const struct i915_lcd_mode i915_output_cea_modes[] = {
 static int i915_output_hdmi(struct i915_display *display, const char **reason);
 static int i915_output_hdmi_mode(struct i915_display *display, unsigned connector, struct i915_display_output *output, const char **reason);
 static void i915_output_panel_connector(struct i915_display *display, struct i915_display_output *output);
+static int i915_output_dp_ext(struct i915_display *display, unsigned connector, int port, struct i915_display_output *output, const char **reason);
 static void i915_output_hdmi_wait(struct i915_display *display, const char *name);
 static void i915_output_choose(struct i915_display *display);
 static void i915_output_inventory(struct i915_display *display);
@@ -460,8 +463,8 @@ drv_i915_display_output_name(
  * writing the hardware.  Each kind of connector has its own preparation;
  * this is the one place that chooses among them.  Returns 0, ENXIO for a
  * connector that is gone or not connected, EOPNOTSUPP for a kind this
- * driver does not light yet (an external DisplayPort display until
- * ws051-p004b fills its part), or the preparation's error; reason says
+ * driver does not light (a DisplayPort display off the Type-C ports, an
+ * HDMI port other than DDI B), or the preparation's error; reason says
  * why.
  */
 int
@@ -509,9 +512,11 @@ drv_i915_display_output_prepare(
 			return error;
 		break;
 	case I915_HPD_OUTPUT_DP:
-		/* An external DisplayPort display (a Type-C port's): ws051-p004b prepares it here. */
-		*reason = "an external DisplayPort display is not lit yet (ws051-p004b)";
-		return EOPNOTSUPP;
+		/* An external DisplayPort display: only a Type-C port's is lit (ws051-p004b). */
+		error = i915_output_dp_ext(display, connector, found.port, output, reason);
+		if (error != 0)
+			return error;
+		break;
 	default:
 		*reason = "a connector of a kind this driver does not light";
 		return EOPNOTSUPP;
@@ -541,8 +546,8 @@ drv_i915_display_output_panel(
 
 /*
  * Gives the pipe the resident run drives the output on: the panel's pipe
- * A, the HDMI display's pipe B (the one place that says so for each kind;
- * an external DisplayPort display's is ws051-p004b's).
+ * A, the HDMI display's and the external DisplayPort display's pipe B (the
+ * one place that says so for each kind).
  */
 unsigned
 drv_i915_display_output_pipe(
@@ -553,8 +558,7 @@ drv_i915_display_output_pipe(
 	case I915_OUTPUT_KIND_HDMI:
 		return I915_OUTPUT_HDMI_PIPE;
 	case I915_OUTPUT_KIND_DP_EXT:
-		/* ws051-p004b chooses it. */
-		return I915_OUTPUT_HDMI_PIPE;
+		return I915_OUTPUT_DP_EXT_PIPE;
 	default:
 		break;
 	}
@@ -1213,6 +1217,123 @@ i915_output_cvt_vsync(
 
 	/* Any other aspect ratio. */
 	return 10U;
+}
+
+/*
+ * Prepares an external DisplayPort display for the resident run
+ * (ws051-p004b): a Type-C port's sink, probed again so the claim acts on
+ * what is plugged in now, its mode (display.mode=, else the EDID's
+ * preferred timing, else CEA format 4), and the link and TC PLL that
+ * carry it under the port's link limits.  Nothing is written to the
+ * hardware.  Returns 0 with output made that display, EOPNOTSUPP for a
+ * port that is not a bound Type-C port, ENXIO when the sink is gone,
+ * ENOSPC when no link carries the mode, or the error of a step; reason
+ * says why.
+ */
+static int
+i915_output_dp_ext(
+	struct i915_display *display,
+	unsigned connector,
+	int port,
+	struct i915_display_output *output,
+	const char **reason)
+{
+	struct i915_lcd_mode mode;
+	const struct i915_lcd_aux_emit *aux;
+	enum i915_dp_ext_status status;
+	uint8_t edid[I915_DP_EXT_EDID_BLOCKS * I915_DP_EXT_EDID_BLOCK_SIZE];
+	unsigned edid_bytes;
+	uint32_t want_width;
+	uint32_t want_height;
+	uint32_t want_refresh;
+	int tc_port;
+	int max_rate;
+	int max_lanes;
+	int ref_khz;
+	int error;
+
+	/* Only a Type-C port's DisplayPort is lit (a combo PHY's is not). */
+	tc_port = drv_i915_tc_kern_port_of(port);
+	if (tc_port < 0) {
+		*reason = "a DisplayPort port that is not a Type-C port";
+		return EOPNOTSUPP;
+	}
+
+	/* The port must be bound as an external DP port, with its own AUX channel. */
+	aux = drv_i915_dp_ext_aux_emit(display, port);
+	if (aux == NULL) {
+		*reason = "the Type-C port is not bound as an external DP port";
+		return EOPNOTSUPP;
+	}
+
+	/* Probes the sink again: the claim acts on what is plugged in now. */
+	status = drv_i915_dp_ext_probe(display, port, edid, sizeof(edid), &edid_bytes);
+	if (status != I915_DP_EXT_CONNECTED) {
+		*reason = "the DisplayPort sink does not answer as connected";
+		return ENXIO;
+	}
+
+	/* What the probe found, whole. */
+	error = drv_i915_dp_ext_sink_copy(display, port, &output->sink);
+	if (error != 0) {
+		*reason = "the DisplayPort sink's probe could not be read";
+		return ENXIO;
+	}
+
+	/* The mode display.mode= asks for, if any. */
+	error = i915_output_wanted_mode(&want_width, &want_height, &want_refresh);
+	if (error != 0) {
+		*reason = "display.mode is unreadable";
+		return error;
+	}
+
+	/* The mode to drive, from the sink's EDID. */
+	error = drv_i915_output_pick_mode(want_width, want_height, want_refresh, edid, edid_bytes, &mode, &output->mode_source);
+	if (error != 0) {
+		*reason = "no timing serves display.mode";
+		return error;
+	}
+
+	/* The port's link limits (lowered by a failed link training until the next long hot plug pulse). */
+	error = drv_i915_dp_ext_link_limits(display, port, &max_rate, &max_lanes);
+	if (error != 0) {
+		*reason = "the Type-C port's link limits could not be read";
+		return ENXIO;
+	}
+
+	/* The display's reference clock, or the platform's when the CDCLK state has none. */
+	ref_khz = (int)display->cdclk.hw.ref;
+	if (ref_khz <= 0)
+		ref_khz = I915_OUTPUT_REF_KHZ;
+
+	/* Computes the link, M/N and TC PLL of the mode; the state is written whole. */
+	error = drv_i915_lcd_compute_dp_ext(&mode, &output->sink, max_rate, max_lanes, ref_khz, &output->state);
+	if (error != 0) {
+		*reason = "no DisplayPort link carries the mode";
+		return error;
+	}
+
+	/* Logs the choice. */
+	kern_logf("i915: resident display: DP on TC%d (DDI %c): %ux%u %d kHz (%s), link %d kHz x%d at %d bpp (limits %d kHz x%d)\n",
+		  tc_port + 1,
+		  (char)('A' + port),
+		  mode.hdisplay,
+		  mode.vdisplay,
+		  mode.clock_khz,
+		  output->mode_source,
+		  output->state.link.rate_khz,
+		  output->state.link.lanes,
+		  output->state.link.bpp,
+		  max_rate,
+		  max_lanes);
+
+	/* Succeeded: the output is that DisplayPort display. */
+	output->kind = I915_OUTPUT_KIND_DP_EXT;
+	output->has_connector = 1;
+	output->connector = connector;
+	output->tc_port = (unsigned)tc_port;
+	output->port = port;
+	return 0;
 }
 
 /* Names the panel's connector in output when the hotplug path has one (the first eDP connector). */

@@ -4,7 +4,7 @@
 
 Phase ID: `ws051-p004b`
 Parent: [WS051](../ws.md)
-Status: in-progress（2026-10-07 P1: ws113-p011a の merge（9036a7ad4）の後に code。D4+D5 を実装と host 試験。続きは D1〜D3・D6・D7）
+Status: in-progress（2026-10-07 P1: ws113-p011a の merge（9036a7ad4）の後に code。D1〜D8 を実装と host 試験（D8 は p011a の口のまま）。実機は T1 への依頼文を Q1 へ。cleared は T1 の結果の Q1 の判定まで待つ）
 Phase disposition: normal
 Queue: q847（P1）の続き。承認: ユーザー 2026-10-07「UCSIとDP alt modeってもう動いてるんですか？シェーダコンパイラより優先してほしいです」（Q1 経由）。設計の先行と code の順は Q1 2026-10-07。
 
@@ -180,3 +180,48 @@ p004a（cleared の後）、ws113-p011a の merge（R1〜R4）。p011（同時 2
 - 試験の直し: `host-dkl-stubs.c` に `drv_i915_worker_wake` と boot の parameter の 3 つ（ws113-p011a の後に present.c・output.c が link に入った）。
   同じ理由で `plan/ws084/tests/run-native-decide-host-test.sh` と `plan/ws118/tests/run-tgl-display-host-test.sh` も link で落ちる（P1 の範囲外、Q1 へ）。
 - 未実施: 実機（clone の takeover、T1 は WS の最後）。
+
+### 2026-10-07 D1〜D3・D6・D7（base f888e24ed + c9d99063e）
+
+- D1（`internal.h`）: `struct i915_display_output` に `tc_port`・`port`・`sink`（claim の時の probe の写し、`dp-ext.h` の `struct i915_dp_ext_sink`）。
+  `struct i915_lcd_pll` に `dkl`（`struct i915_lcd_dkl_words`: DKL の 10 語）。種類は P2 の `I915_OUTPUT_KIND_DP_EXT`。
+- D2（`output.c`）: `drv_i915_display_output_prepare` の `I915_HPD_OUTPUT_DP` を `i915_output_dp_ext` に: Type-C の port でなければ EOPNOTSUPP、外部 DP の
+  port が bind されていなければ EOPNOTSUPP、probe し直し（`drv_i915_dp_ext_probe`、connected でなければ ENXIO）、写し（新 `drv_i915_dp_ext_sink_copy`）、
+  mode（HDMI と同じ `drv_i915_output_pick_mode`: display.mode=、EDID の preferred、CEA 4）、link の上限（D6）、D3。pipe は `I915_OUTPUT_DP_EXT_PIPE`（B）。
+- D3（`state.c`）: `drv_i915_lcd_compute_dp_ext(mode, sink, max_rate, max_lanes, ref, out)`: downstream の clock の検査（ENOSPC）、bpc は EDID（無ければ 8）を 8
+  と branch の max_bpc で抑え 6 まで 2 ずつ、rate は共通の低い方から（上限で切る）、lane 1・2・4（sink と上限）、最初に入る組、M/N、DKL PLL（`drv_i915_dkl_pll_calc`）。
+- D6: 純粋な `drv_i915_dp_ext_fallback_values`（dp-ext.c、Linux 6.8 の順: 下の rate で同じ lane、最低（か共有でない）rate は lane 半分で最高の rate、lane 1 で終わり）、
+  port の `max_link_rate`・`max_link_lanes`（`drv_i915_dp_ext_link_limits`・`_link_fallback`・`_link_reset`、port の lock の下）、long pulse で reset（hotplug.c）。
+  resident の run は DP_EXT の enable が `I915_LCD_MS_LINK_NOT_TRAINED` で、stop・release が clean なら、上限を下げ D3 を計算し直し（IRQ lock の下で output.state を
+  替え）`EAGAIN` を返す。present.c は `EAGAIN` の間 run を繰り返す（毎回 link が下がるので有限）。
+- D7（`modeset.c`・`clock.c`・`ddi.c`・`modeset-internal.h`）: `i915_resident_output_way` の DP_EXT（params・cfg・own_pool）、`i915_resident_dp_ext_cfg`
+  （port TC1+n、pipe・transcoder B、dpll_id 3+n、aux_ch は tck、`aux_emit` は dp-ext の port、DPCD は sink の写し、lane reversal・panel・backlight 無し）、
+  `i915_kernel_preflight_dp_ext`（pipe B と port の DDI_BUF_CTL が off）。prepare: cfg の `output_dp_ext`（port 3〜6、dpll_id = MGPLL1 + n、aux_emit 必須）、
+  output_types DP、encoder type DDI、DDI_IO_TCn、connector "DP"、TC の PLL は `drv_i915_icl_compute_tc_phy_dplls`（ref を device に）と新
+  `drv_i915_lcd_ms_alloc_tc_plls`（TBT PLL と TC PLL n を予約、TC PLL を active。Linux の `icl_get_tc_phy_dplls`）、`drv_i915_lcd_ms_release_pll` は port の PLL を
+  両方返す。backlight の setup は panel だけ。protocol converter は aux emit の新 hook `configure_converter`（dp-ext の `drv_i915_dp_ext_configure_converter`、port の lock の下）。
+- design との差（D7 と D6）:
+  1. PPS: `i915_lcd_intel_pps_on/off/vdd_on/vdd_off_sync/backlight_on/off` が eDP でない port でも panel の PPS を動かしていた（Linux の `intel_pps_*` は先頭で
+     `intel_dp_is_edp` を見て返る）。同じ guard を足した（`i915_lcd_dp_has_pps`: encoder type が EDP の時だけ）。takeover の TC の disable にも効く。
+  2. D6 の「emit の新しい hook `link_train_failed`」は作らず、enable の結果（link status の CR/EQ）で判断（`i915_dp_schedule_fallback_link_training` は今の step のまま）。
+  3. D7 の DPCD は bind_ops でなく object ごとの `aux_emit`（D5 の記録）。
+- 範囲外の発見（Q1 へ）: present.c は run が失敗すると `display_failed` を立て、以後の presentation を全部失敗にする。p011a の「失敗は元の resident に戻して」
+  とは、DP の失敗の後に panel（GOP）へ戻っても present が使えない点で食い違う（ws113 の判断）。
+
+| コマンド（D1〜D3・D6・D7） | 結果 |
+| --- | --- |
+| `make -j16 BUILD=build/p1-k ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p1-k/vmunix` | 成功 warning 0 |
+| `I915_TESTS=y I915_TEST_SET=display`・`execution` | 成功 warning 0 |
+| `sh plan/ws051/tests/host-dpext-link.sh`（新） | 16 checks 0 failures（5330 の DP-2 1920x1280 164.36 MHz → RBR x4 24 bpp、TC PLL の語が Linux の値（div0 0x84269 ほか）と一致、lane 2 → HBR x2、RBR x2 は ENOSPC、branch の 6 bpc → 18 bpp、10 bpc の EDID は 24 bpp、dot clock の上限で ENOSPC、共通 rate 無しは EINVAL） |
+| `sh plan/ws051/tests/host-dpext.sh` | 85 checks 0 failures（新 `test_fallback`: HBR2 x4 から RBR x1 まで Linux の順で 8 段、共有でない rate は lane 半分） |
+| `host-dkl.sh`・`host-n1-tc.sh`・`host-tc.sh`・`host-vbt-pll.sh` | PASS（51・22・90+34・3） |
+| ws075 `hdmi/host-output-test.sh`、ws113 `host-gop.sh`・`host-output-switch.sh`・`host-display-control.sh`・`host-display-events.sh`、ws084・ws118 の display host 試験 | 全て PASS |
+| `python3 plan/tools/style-check.py`（変えた file の前後） | 同じ数か減（新しい候補は直した）、新しい試験 0 |
+| `git diff --check` | 問題無し |
+
+- 未実施: 実機（5330 の TC2 の DP monitor、T1 への依頼文を Q1 へ）。QEMU では TC の DP は無い。
+
+### 再開の情報
+
+- 残り: 実機（T1）。p005b（scanout 中の抜け、IRQ_HPD の retrain）、p004c（GOP が USB-C の時）は別の Phase。
+- T1 の結果の判定までは cleared にしない。

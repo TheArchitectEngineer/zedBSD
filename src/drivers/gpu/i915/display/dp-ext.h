@@ -233,6 +233,7 @@ void drv_i915_dp_ext_detect(const struct i915_dp_ext_env *env, const struct i915
 int drv_i915_dp_ext_short_pulse(const struct i915_dp_ext_env *env, const struct i915_dp_ext_sink *sink);
 int drv_i915_dp_ext_configure_converter(const struct i915_dp_ext_env *env, const struct i915_dp_ext_sink *sink);
 enum i915_dp_ext_mode_status drv_i915_dp_ext_mode_valid(const struct i915_dp_ext_sink *sink, int clock_khz);
+int drv_i915_dp_ext_fallback_values(const struct i915_dp_ext_sink *sink, int rate, int lanes, int *max_rate, int *max_lanes);
 const char *drv_i915_dp_ext_status_name(enum i915_dp_ext_status status);
 const char *drv_i915_dp_ext_step_name(enum i915_dp_ext_step step);
 void drv_i915_dp_ext_log(const struct i915_dp_ext_env *env, const struct i915_dp_ext_sink *sink, const char *name);

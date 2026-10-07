@@ -652,8 +652,15 @@ drv_i915_present_window(
 
 	display = device->display;
 
-	/* Lights the panel; the window serves until a hold is over or a stop. */
+	/*
+	 * Lights the panel; the window serves until a hold is over or a stop.
+	 * An external DP link that did not train is lowered and lit again
+	 * (EAGAIN, ws051-p004b); every retry lowers the port's link, so the
+	 * retries end.
+	 */
 	error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
+	while (error == EAGAIN)
+		error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
 
 	/*
 	 * The first entry after a sleep whose HDMI display did not come up:

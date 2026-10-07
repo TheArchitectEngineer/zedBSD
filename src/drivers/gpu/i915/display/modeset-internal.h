@@ -749,9 +749,12 @@ typedef uint64_t __u64;
  * in the supported configuration; the Linux condition is kept in meaning.
  */
 
-/* intel_dp_configure_protocol_converter(): returns for DPCD < 1.3 or a sink that is not a branch device. */
-#define intel_dp_configure_protocol_converter(intel_dp, cs) \
-	I915_LCD_GUARD((intel_dp)->dpcd[DP_DPCD_REV] < 0x13 || !dp_is_branch((intel_dp)->dpcd), "intel_dp_configure_protocol_converter (DPCD >= 1.3 branch device)")
+/*
+ * intel_dp_configure_protocol_converter(): the sink's own AUX channel sets
+ * up a branch's converter (an external DP port's, ws051-p004b); otherwise
+ * it returns for DPCD < 1.3 or a sink that is not a branch device.
+ */
+#define intel_dp_configure_protocol_converter(intel_dp, cs) i915_lcd_dp_configure_protocol_converter(intel_dp)
 
 /* Reached only with DSC: an error if it ever is. */
 #define intel_dsc_power_domain(crtc, cpu_transcoder) (drv_i915_lcd_error("intel_dsc_power_domain reached: DSC is not part of this path" "\n"), POWER_DOMAIN_DISPLAY_CORE)
@@ -2078,6 +2081,7 @@ struct i915_lcd_wm_ctx {
  */
 struct i915_lcd_modeset {
 	int output_hdmi;		/* the output this state drives: an HDMI sink instead of the eDP panel */
+	int output_dp_ext;		/* the output this state drives: an external DP sink on a Type-C port (ws051-p004b) */
 	int hdmi_level_shift;		/* intel_bios_hdmi_level_shift() of this port (< 0 = not in the VBT) */
 	int dpll_id;			/* the shared DPLL the reference's rule gave this crtc */
 	unsigned also_active_pipes;	/* the other pipes of this configuration (cfg) */
@@ -2395,6 +2399,7 @@ int drv_i915_icl_compute_tc_phy_dplls(struct intel_crtc_state *crtc_state, const
 void drv_i915_icl_set_active_port_dpll(struct intel_crtc_state *crtc_state, enum icl_port_dpll_id port_dpll_id);
 void drv_i915_icl_update_active_dpll(struct intel_atomic_state *state, struct intel_crtc *crtc, struct intel_encoder *encoder);
 int drv_i915_lcd_ms_alloc_pll(struct i915_lcd_world *world, struct i915_lcd_modeset *ms, const struct intel_dpll_hw_state *hw_state);
+int drv_i915_lcd_ms_alloc_tc_plls(struct i915_lcd_world *world, struct i915_lcd_modeset *ms, enum tc_port tc_port);
 void drv_i915_lcd_ms_release_pll(struct i915_lcd_world *world, struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_bind_encoder(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_bind_port_hooks(struct i915_lcd_modeset *ms);
@@ -3317,13 +3322,38 @@ i915_lcd_panel(
 	return 0;
 }
 
+/*
+ * Tells whether a DP port drives the eDP panel, whose power sequencer the
+ * backend's panel hook runs (the Linux intel_dp_is_edp() at the head of
+ * every intel_pps_*() function): an external DP port has none.
+ */
+static __inline bool
+i915_lcd_dp_has_pps(
+	struct intel_dp *intel_dp)
+{
+	const struct intel_digital_port *dig_port;
+
+	/* The encoder type decides. */
+	dig_port = i915_lcd_dp_to_dig_port(intel_dp);
+	if (dig_port->base.type != INTEL_OUTPUT_EDP)
+		return false;
+
+	/* Succeeded: the port drives the panel. */
+	return true;
+}
+
 /* Turns the panel's power on (the Linux intel_pps_on()); the result is not looked at. */
 static __inline void
 i915_lcd_intel_pps_on(
 	const struct drm_i915_private *i915,
 	struct intel_dp *intel_dp)
 {
-	UNUSED_PARAMETER(intel_dp);
+	bool has_pps;
+
+	/* A port without the panel has no power sequencer. */
+	has_pps = i915_lcd_dp_has_pps(intel_dp);
+	if (!has_pps)
+		return;
 
 	/* Asks the panel power sequencer for the power-on sequence. */
 	(void)i915_lcd_panel(i915, I915_LCD_PANEL_ON);
@@ -3335,7 +3365,12 @@ i915_lcd_intel_pps_off(
 	const struct drm_i915_private *i915,
 	struct intel_dp *intel_dp)
 {
-	UNUSED_PARAMETER(intel_dp);
+	bool has_pps;
+
+	/* A port without the panel has no power sequencer. */
+	has_pps = i915_lcd_dp_has_pps(intel_dp);
+	if (!has_pps)
+		return;
 
 	/* Asks the panel power sequencer for the power-off sequence. */
 	(void)i915_lcd_panel(i915, I915_LCD_PANEL_OFF);
@@ -3347,7 +3382,12 @@ i915_lcd_intel_pps_vdd_on(
 	const struct drm_i915_private *i915,
 	struct intel_dp *intel_dp)
 {
-	UNUSED_PARAMETER(intel_dp);
+	bool has_pps;
+
+	/* A port without the panel has no power sequencer. */
+	has_pps = i915_lcd_dp_has_pps(intel_dp);
+	if (!has_pps)
+		return;
 
 	/* Asks the panel power sequencer to force VDD. */
 	(void)i915_lcd_panel(i915, I915_LCD_PANEL_VDD_ON);
@@ -3359,7 +3399,12 @@ i915_lcd_intel_pps_vdd_off_sync(
 	const struct drm_i915_private *i915,
 	struct intel_dp *intel_dp)
 {
-	UNUSED_PARAMETER(intel_dp);
+	bool has_pps;
+
+	/* A port without the panel has no power sequencer. */
+	has_pps = i915_lcd_dp_has_pps(intel_dp);
+	if (!has_pps)
+		return;
 
 	/* Asks the panel power sequencer to drop VDD synchronously. */
 	(void)i915_lcd_panel(i915, I915_LCD_PANEL_VDD_OFF_SYNC);
@@ -3371,7 +3416,12 @@ i915_lcd_intel_pps_backlight_on(
 	const struct drm_i915_private *i915,
 	struct intel_dp *intel_dp)
 {
-	UNUSED_PARAMETER(intel_dp);
+	bool has_pps;
+
+	/* A port without the panel has no power sequencer. */
+	has_pps = i915_lcd_dp_has_pps(intel_dp);
+	if (!has_pps)
+		return;
 
 	/* Asks the panel power sequencer to enable the backlight. */
 	(void)i915_lcd_panel(i915, I915_LCD_PANEL_BACKLIGHT_ON);
@@ -3383,7 +3433,12 @@ i915_lcd_intel_pps_backlight_off(
 	const struct drm_i915_private *i915,
 	struct intel_dp *intel_dp)
 {
-	UNUSED_PARAMETER(intel_dp);
+	bool has_pps;
+
+	/* A port without the panel has no power sequencer. */
+	has_pps = i915_lcd_dp_has_pps(intel_dp);
+	if (!has_pps)
+		return;
 
 	/* Asks the panel power sequencer to disable the backlight. */
 	(void)i915_lcd_panel(i915, I915_LCD_PANEL_BACKLIGHT_OFF);
@@ -3436,6 +3491,31 @@ i915_lcd_aux_emit_of(
 
 	/* Succeeded: the object's own hooks, or NULL. */
 	return ms->aux_emit;
+}
+
+/*
+ * Sets up the protocol converter of a DP port's sink for the RGB stream
+ * (the Linux intel_dp_configure_protocol_converter()): through the sink's
+ * own AUX channel when its object names one with a converter hook (a
+ * failure is only logged there, as Linux logs it); otherwise the Linux
+ * early return must hold (DPCD < 1.3 or not a branch device), and reaching
+ * the body is an error of this path.
+ */
+static __inline void
+i915_lcd_dp_configure_protocol_converter(
+	struct intel_dp *intel_dp)
+{
+	const struct i915_lcd_aux_emit *own;
+
+	/* A channel of its own sets its sink's converter up. */
+	own = i915_lcd_aux_emit_of(&intel_dp->aux);
+	if (own != NULL && own->configure_converter != NULL) {
+		(void)own->configure_converter(own->ctx);
+		return;
+	}
+
+	/* The panel's sink has no converter. */
+	I915_LCD_GUARD(intel_dp->dpcd[DP_DPCD_REV] < 0x13 || !dp_is_branch(intel_dp->dpcd), "intel_dp_configure_protocol_converter (DPCD >= 1.3 branch device)");
 }
 
 /*

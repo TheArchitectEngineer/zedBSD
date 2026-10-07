@@ -3617,7 +3617,8 @@ i915_n1_add_tc_ports(
 		NULL,
 		i915_n1_no_dpcd_read,
 		i915_n1_no_dpcd_write,
-		i915_n1_no_read_dpcd_caps
+		i915_n1_no_read_dpcd_caps,
+		NULL
 	};
 	struct i915_n1_registry *n1;
 	struct i915_display *display;

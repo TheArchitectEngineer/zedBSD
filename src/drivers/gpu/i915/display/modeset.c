@@ -45,6 +45,7 @@
 #include "diagnostics.h"
 #include "dp.h"
 #include "dp-sink.h"
+#include "dp-ext-kern.h"
 #include "edid.h"
 #include "output.h"
 #include "hdmi-mode.h"
@@ -119,6 +120,10 @@
 #define I915_LCD_DPLL0_ENABLE		0x46010U
 #define I915_LCD_DPLL1_ENABLE		0x46014U
 
+/* DDI_BUF_CTL of a port: port A's, and the distance between two ports (an external DP run's preflight). */
+#define I915_LCD_DDI_BUF_CTL_A		0x64000U
+#define I915_LCD_DDI_BUF_CTL_STRIDE	0x100U
+
 /* The enable bit of a transcoder, a plane, a PLL and a DDI buffer, and the transcoder's state bit. */
 #define I915_LCD_ENABLE_BIT		0x80000000U
 #define I915_LCD_TRANSCONF_ON_MASK	0xc0000000U
@@ -192,6 +197,10 @@ static void i915_resident_hdmi_cfg(struct i915_display *display, const struct i9
 static int i915_resident_release(struct i915_display *display, const struct i915_lcd_show_report *rep);
 static int i915_resident_passed(const struct i915_lcd_show_report *rep);
 static int i915_resident_output_way(enum i915_output_kind kind, struct i915_resident_output_way *way);
+static void i915_resident_dp_ext_params(struct i915_display *display, struct i915_lcd_run_params *params);
+static void i915_resident_dp_ext_cfg(struct i915_display *display, const struct i915_lcd_kernel_deps *d, struct i915_lcd_modeset_cfg *cfg);
+static int i915_kernel_preflight_dp_ext(struct i915_lcd_kernel *k);
+static int i915_resident_dp_ext_fallback(struct i915_display *display, const struct i915_lcd_show_report *rep);
 
 /*
  * Allocates the modeset world of a display.
@@ -400,17 +409,28 @@ drv_i915_lcd_modeset_prepare(
 	    ops->step == NULL)
 		return EINVAL;
 
-	/* Combo PHY ports A and B, pipes and transcoders A to D, the two combo PLLs. */
-	if (cfg->port < 0 || cfg->port > 1)
-		return EINVAL;
+	/* Pipes and transcoders A to D. */
 	if (cfg->pipe < 0 || cfg->pipe > 3)
 		return EINVAL;
 	if (cfg->cpu_transcoder < 0 || cfg->cpu_transcoder > 3)
 		return EINVAL;
-	if (cfg->dpll_id < 0 || cfg->dpll_id > 1)
-		return EINVAL;
 	if (s->link.rate_khz <= 0 || s->link.bpp <= 0)
 		return EINVAL;
+
+	/* An external DP sink: Type-C ports TC1 to TC4 and their TC PLLs; otherwise combo PHY ports A and B and the two combo PLLs. */
+	if (cfg->output_dp_ext) {
+		if (cfg->port < (int)PORT_TC1 || cfg->port > (int)PORT_TC4)
+			return EINVAL;
+		if (cfg->dpll_id != cfg->port - (int)PORT_TC1 + (int)DPLL_ID_ICL_MGPLL1)
+			return EINVAL;
+		if (cfg->output_hdmi)
+			return EINVAL;
+	} else {
+		if (cfg->port < 0 || cfg->port > 1)
+			return EINVAL;
+		if (cfg->dpll_id < 0 || cfg->dpll_id > 1)
+			return EINVAL;
+	}
 
 	/* HDMI carries the TMDS clock in link.rate_khz (up to 600 MHz). */
 	if (cfg->output_hdmi) {
@@ -418,7 +438,9 @@ drv_i915_lcd_modeset_prepare(
 			return EINVAL;
 	} else {
 		/* DP carries the link rate (8b/10b rates) and 1, 2 or 4 lanes on the port's own AUX channel. */
-		if (cfg->aux_ch != cfg->port)
+		if (!cfg->output_dp_ext && cfg->aux_ch != cfg->port)
+			return EINVAL;
+		if (cfg->output_dp_ext && cfg->aux_emit == NULL)
 			return EINVAL;
 		if (s->link.rate_khz > 810000)
 			return EINVAL;
@@ -596,7 +618,7 @@ drv_i915_lcd_modeset_enable(
 	world->i915_lcd_cur_i915 = &ms->i915;
 
 	/* The connector-init work that reads the hardware: the backlight setup (the panel only). */
-	if (!ms->output_hdmi) {
+	if (!ms->output_hdmi && !ms->output_dp_ext) {
 		ms->backlight_setup_rc = drv_i915_lcd_ms_backlight_setup(ms);
 		if (ms->backlight_setup_rc != 0)
 			i915_modeset_on_error(world, "intel_backlight_setup failed (no PWM frequency from the hardware or the VBT)\n");
@@ -1684,7 +1706,9 @@ drv_i915_lcd_show_discard_model(
  * lit in the panel's place: port B, pipe B, DVI mode, the chosen mode,
  * and the panel is not touched.  Returns 0 when the output came up and was
  * stopped and released cleanly; EINVAL (a dependency is missing), EBUSY
- * (resources of an earlier run are retained) or EIO otherwise.
+ * (resources of an earlier run are retained), EAGAIN (an external DP link
+ * did not train and the port's link was lowered: the caller runs again) or
+ * EIO otherwise.
  */
 int
 drv_i915_lcd_kernel_resident_run(
@@ -1712,6 +1736,7 @@ drv_i915_lcd_kernel_resident_run(
 	int fill_error;
 	int takeover_error;
 	int way_error;
+	int fallback_error;
 	int debug;
 	unsigned domain;
 
@@ -1893,6 +1918,17 @@ drv_i915_lcd_kernel_resident_run(
 	display->resident_serve = NULL;
 	k->p = NULL;
 
+	/*
+	 * An external DP link that did not train, stopped and given back
+	 * cleanly: the port's link limits are lowered and the run is to be
+	 * tried again at the lower link (ws051-p004b).
+	 */
+	if (!passed && released && held == 0 && display->output.kind == I915_OUTPUT_KIND_DP_EXT) {
+		fallback_error = i915_resident_dp_ext_fallback(display, rep);
+		if (fallback_error == 0)
+			return EAGAIN;
+	}
+
 	/* A run that did not pass, did not give everything back or still holds power failed. */
 	if (!passed || !released || held != 0)
 		return EIO;
@@ -2007,6 +2043,7 @@ drv_i915_lcd_kernel_preflight(
 	int masked;
 	int ok;
 	int hdmi_error;
+	int dp_ext_error;
 
 	display = i915_kernel_display(k);
 	d = k->d;
@@ -2018,6 +2055,16 @@ drv_i915_lcd_kernel_preflight(
 		if (hdmi_error != 0)
 			return hdmi_error;
 
+		return 0;
+	}
+
+	/* So does an external DP run. */
+	if (k->p != NULL && k->p->output_dp_ext) {
+		dp_ext_error = i915_kernel_preflight_dp_ext(k);
+		if (dp_ext_error != 0)
+			return dp_ext_error;
+
+		/* Succeeded: the external DP output may be written. */
 		return 0;
 	}
 
@@ -2578,6 +2625,7 @@ i915_modeset_prepare_state(
 	struct intel_dpll_hw_state want;
 	int dbuf_known;
 	int plane_error;
+	int tc_error;
 
 	world = display->lcd_world;
 	ms = i915_modeset_selected_screen(world);
@@ -2586,6 +2634,7 @@ i915_modeset_prepare_state(
 	kern_memset(ms, 0, sizeof(*ms));
 	ms->world = world;
 	ms->output_hdmi = cfg->output_hdmi;
+	ms->output_dp_ext = cfg->output_dp_ext;
 	ms->hdmi_level_shift = cfg->vbt_hdmi_level_shift;
 	ms->also_active_pipes = cfg->also_active_pipes;
 	ms->aux_emit = cfg->aux_emit;
@@ -2671,9 +2720,11 @@ i915_modeset_prepare_state(
 	ms->crtc_state.pipe_src.x2 = (int)cfg->fb_width;
 	ms->crtc_state.pipe_src.y2 = (int)cfg->fb_height;
 
-	/* The output: the eDP panel or an HDMI sink, RGB. */
+	/* The output: the eDP panel, an HDMI sink or an external DP sink, RGB. */
 	if (cfg->output_hdmi) {
 		ms->crtc_state.output_types = BIT(INTEL_OUTPUT_HDMI);
+	} else if (cfg->output_dp_ext) {
+		ms->crtc_state.output_types = BIT(INTEL_OUTPUT_DP);
 	} else {
 		ms->crtc_state.output_types = BIT(INTEL_OUTPUT_EDP);
 	}
@@ -2729,6 +2780,9 @@ i915_modeset_prepare_state(
 	ms->dig_port.base.port = (enum port)cfg->port;
 	if (cfg->output_hdmi) {
 		ms->dig_port.base.type = INTEL_OUTPUT_DDI;
+	} else if (cfg->output_dp_ext) {
+		/* intel_ddi_init() leaves a DDI with DP that is not eDP as DDI. */
+		ms->dig_port.base.type = INTEL_OUTPUT_DDI;
 	} else {
 		ms->dig_port.base.type = INTEL_OUTPUT_EDP;
 	}
@@ -2740,11 +2794,15 @@ i915_modeset_prepare_state(
 		ms->dig_port.set_infoframes = drv_i915_lcd_hdmi_set_infoframes();
 	}
 
-	/* The port bits, the AUX channel, four lanes and the port's I/O domain (d13_port_domains[]: ports A to C). */
+	/* The port bits, the AUX channel, four lanes and the port's I/O domain (d13_port_domains[]: ports A to C, TC1 to TC4). */
 	ms->dig_port.saved_port_bits = cfg->saved_port_bits;
 	ms->dig_port.aux_ch = cfg->aux_ch;
 	ms->dig_port.max_lanes = 4;
-	ms->dig_port.ddi_io_power_domain = POWER_DOMAIN_PORT_DDI_IO_A + cfg->port;
+	if (cfg->output_dp_ext) {
+		ms->dig_port.ddi_io_power_domain = POWER_DOMAIN_PORT_DDI_IO_TC1 + (cfg->port - (int)PORT_TC1);
+	} else {
+		ms->dig_port.ddi_io_power_domain = POWER_DOMAIN_PORT_DDI_IO_A + cfg->port;
+	}
 
 	/* The DP object: its connector, the sink's capabilities and the AUX name. */
 	ms->dig_port.dp.attached_connector = &ms->connector;
@@ -2755,6 +2813,8 @@ i915_modeset_prepare_state(
 	/* The connector and the panel's VBT data. */
 	if (cfg->output_hdmi) {
 		ms->connector.base.name = "HDMI";
+	} else if (cfg->output_dp_ext) {
+		ms->connector.base.name = "DP";
 	} else {
 		ms->connector.base.name = "eDP";
 	}
@@ -2780,14 +2840,36 @@ i915_modeset_prepare_state(
 	 * carries it: the reference's rule over the device's pool, not a fixed
 	 * id (cfg->dpll_id is only the caller's expectation).
 	 */
-	kern_memset(&want, 0, sizeof(want));
-	want.cfgcr0 = s->pll.cfgcr0;
-	want.cfgcr1 = s->pll.cfgcr1;
-	want.div0 = s->pll.div0;
-	ms->dpll_id = drv_i915_lcd_ms_alloc_pll(world, ms, &want);
-	if (ms->dpll_id < 0) {
-		i915_modeset_on_error(world, "no shared DPLL is free for this pipe (both are used by other pipes with other states)\n");
-		return EBUSY;
+	if (cfg->output_dp_ext) {
+		/*
+		 * A Type-C port: the Thunderbolt PLL's and the port's TC PLL's
+		 * states for the link rate (icl_compute_tc_phy_dplls() from the
+		 * reference clock), then both PLLs reserved, the TC PLL active.
+		 */
+		ms->i915.display.dpll.ref_clks.nssc = s->pll.ref_khz;
+		tc_error = drv_i915_icl_compute_tc_phy_dplls(&ms->crtc_state, NULL);
+		if (tc_error != 0) {
+			i915_modeset_on_error(world, "the Type-C port's PLLs refused the link rate\n");
+			return EINVAL;
+		}
+
+		/* Reserves the two PLLs. */
+		ms->dpll_id = drv_i915_lcd_ms_alloc_tc_plls(world, ms, (enum tc_port)((int)TC_PORT_1 + cfg->port - (int)PORT_TC1));
+		if (ms->dpll_id < 0) {
+			i915_modeset_on_error(world, "the Type-C port's PLLs are used by another pipe with another state\n");
+			return EBUSY;
+		}
+	} else {
+		/* A combo PHY port: the DPLL that carries the computed words. */
+		kern_memset(&want, 0, sizeof(want));
+		want.cfgcr0 = s->pll.cfgcr0;
+		want.cfgcr1 = s->pll.cfgcr1;
+		want.div0 = s->pll.div0;
+		ms->dpll_id = drv_i915_lcd_ms_alloc_pll(world, ms, &want);
+		if (ms->dpll_id < 0) {
+			i915_modeset_on_error(world, "no shared DPLL is free for this pipe (both are used by other pipes with other states)\n");
+			return EBUSY;
+		}
 	}
 
 	/* Binds the encoder's hooks and checks the colour state. */
@@ -3844,11 +3926,198 @@ i915_resident_hdmi_cfg(
 }
 
 /*
+ * Fills the parameters of a resident run on an external DP display
+ * (ws051-p004b): the Type-C port's DDI, pipe and transcoder B (as the HDMI
+ * output's), the port's TC PLL from an empty pool, the prepared mode.
+ */
+static void
+i915_resident_dp_ext_params(
+	struct i915_display *display,
+	struct i915_lcd_run_params *params)
+{
+	/* The external DP output of the Type-C port, alone. */
+	kern_memset(params, 0, sizeof(*params));
+	params->output_dp_ext = 1;
+	params->port = display->output.port;
+	params->pipe = I915_OUTPUT_DP_EXT_PIPE;
+	params->cpu_transcoder = I915_OUTPUT_DP_EXT_PIPE;
+	params->dpll_id = (int)DPLL_ID_ICL_MGPLL1 + (int)display->output.tc_port;
+	params->reset_dplls = 1;
+	params->state = &display->output.state;
+	params->tag = "resident DP";
+}
+
+/*
+ * Turns a filled panel configuration into the external DP encoder's
+ * (ws051-p004b): what intel_ddi_init() and intel_dp_init_connector() leave
+ * for a Type-C DDI with DP -- the port, pipe B, the TC PLL, the port's AUX
+ * channel and its own DPCD access, the sink's receiver capabilities from
+ * the claim's probe, no lane reversal (only a legacy Type-C port may be
+ * reversed), no panel and no backlight.
+ */
+static void
+i915_resident_dp_ext_cfg(
+	struct i915_display *display,
+	const struct i915_lcd_kernel_deps *d,
+	struct i915_lcd_modeset_cfg *cfg)
+{
+	const struct i915_lcd_mode *mode;
+	const struct i915_lcd_link *link;
+
+	UNUSED_PARAMETER(d);
+
+	/* The Type-C port's DDI, pipe and transcoder B, the port's TC PLL. */
+	cfg->output_hdmi = 0;
+	cfg->output_dp_ext = 1;
+	cfg->port = display->output.port;
+	cfg->pipe = I915_OUTPUT_DP_EXT_PIPE;
+	cfg->cpu_transcoder = I915_OUTPUT_DP_EXT_PIPE;
+	cfg->dpll_id = (int)DPLL_ID_ICL_MGPLL1 + (int)display->output.tc_port;
+	cfg->saved_port_bits = 0U;
+
+	/* The port's AUX channel, and the sink reached over it. */
+	cfg->aux_ch = display->tck.aux_ch[display->output.tc_port];
+	cfg->aux_emit = drv_i915_dp_ext_aux_emit(display, display->output.port);
+	kern_memcpy(cfg->dpcd, display->output.sink.dpcd, sizeof(cfg->dpcd));
+	kern_memset(cfg->edp_dpcd, 0, sizeof(cfg->edp_dpcd));
+
+	/* An external display has no panel power sequencer and no backlight of ours. */
+	cfg->vbt_low_vswing = 0;
+	cfg->vbt_hobl = 0;
+	cfg->vbt_backlight_present = 0;
+	cfg->vbt_hdmi_level_shift = -1;
+
+	/* Logs what the run drives. */
+	mode = &display->output.state.mode;
+	link = &display->output.state.link;
+	kern_logf("i915: resident display: DP on TC%u (port %d), pipe %d: %ux%u %d kHz | link %d kHz x%d %d bpp | TC PLL %d (div0 0x%08x) | DPCD rev 0x%02x branch %d\n",
+	    display->output.tc_port + 1U,
+	    cfg->port,
+	    cfg->pipe,
+	    mode->hdisplay,
+	    mode->vdisplay,
+	    mode->clock_khz,
+	    link->rate_khz,
+	    link->lanes,
+	    link->bpp,
+	    cfg->dpll_id,
+	    display->output.state.pll.dkl.div0,
+	    cfg->dpcd[0],
+	    display->output.sink.branch);
+}
+
+/*
+ * Checks that an external DP run's pipe B and the Type-C port's DDI are off
+ * and that the GT memory is there for the scanout buffer: 0, or EBUSY.
+ */
+static int
+i915_kernel_preflight_dp_ext(
+	struct i915_lcd_kernel *k)
+{
+	const struct i915_lcd_kernel_deps *d;
+	struct i915_display *display;
+	uint32_t transconf;
+	uint32_t buf_ctl;
+	uint32_t buf_ctl_reg;
+
+	/* The run's dependencies and its display. */
+	d = k->d;
+	display = i915_kernel_display(k);
+
+	/* Reads TRANSCONF(B) and the port's DDI_BUF_CTL. */
+	buf_ctl_reg = I915_LCD_DDI_BUF_CTL_A + I915_LCD_DDI_BUF_CTL_STRIDE * (uint32_t)display->output.port;
+	transconf = drv_i915_read32(d->mmio, I915_LCD_TRANSCONF_B);
+	buf_ctl = drv_i915_read32(d->mmio, buf_ctl_reg);
+
+	/* The scanout buffer needs the GT memory's GGTT. */
+	if (!d->gm->inited) {
+		kern_logf("i915: DP-ext preflight: no GT memory (GGTT) for the scanout buffer\n");
+		return EBUSY;
+	}
+
+	/* Logs the pipe and the port. */
+	kern_logf("i915: DP-ext preflight: TRANSCONF(B)=0x%08x DDI_BUF_CTL(0x%05x)=0x%08x\n",
+	    transconf,
+	    buf_ctl_reg,
+	    buf_ctl);
+
+	/* Pipe B and the port's DDI must be off. */
+	if ((transconf & I915_LCD_ENABLE_BIT) != 0U || (buf_ctl & I915_LCD_ENABLE_BIT) != 0U) {
+		kern_logf("i915: DP-ext preflight: pipe B / the Type-C port's DDI are not idle\n");
+		return EBUSY;
+	}
+
+	/* Succeeded: the external DP output may be written. */
+	return 0;
+}
+
+/*
+ * Lowers an external DP output's link after its link did not train, and
+ * computes the output's link again for the next run (the Linux
+ * intel_dp_get_link_train_fallback_values() and the modeset the retry work
+ * asks for, ws051-p004b).  Only an enable that reported the link as not
+ * trained is retried.  Returns 0 when the next run may try the lower link,
+ * ENOSPC when no lower link carries the mode, or EINVAL for a run that did
+ * not fail at the link.
+ */
+static int
+i915_resident_dp_ext_fallback(
+	struct i915_display *display,
+	const struct i915_lcd_show_report *rep)
+{
+	struct i915_lcd_state next;
+	struct i915_lcd_link *link;
+	unsigned long irq;
+	int max_rate;
+	int max_lanes;
+	int error;
+
+	/* Only a link that did not train is retried. */
+	if (rep->enable_rc != I915_LCD_MS_LINK_NOT_TRAINED)
+		return EINVAL;
+
+	/* Lowers the port's limits below the link that failed. */
+	link = &display->output.state.link;
+	error = drv_i915_dp_ext_link_fallback(display, display->output.port, link->rate_khz, link->lanes);
+	if (error != 0)
+		return ENOSPC;
+
+	/* The limits now in force. */
+	error = drv_i915_dp_ext_link_limits(display, display->output.port, &max_rate, &max_lanes);
+	if (error != 0)
+		return ENOSPC;
+
+	/* The mode's link under them, computed apart so a refusal leaves the output as it was. */
+	error = drv_i915_lcd_compute_dp_ext(&display->output.state.mode, &display->output.sink, max_rate, max_lanes, display->output.state.pll.ref_khz, &next);
+	if (error != 0) {
+		kern_logf("i915: resident display: DP on TC%u: no lower link carries the mode (%d)\n", display->output.tc_port + 1U, error);
+		return ENOSPC;
+	}
+
+	/* Logs the retry. */
+	kern_logf("i915: resident display: DP on TC%u: retrying at %d kHz x%d (was %d kHz x%d)\n",
+	    display->output.tc_port + 1U,
+	    next.link.rate_khz,
+	    next.link.lanes,
+	    link->rate_khz,
+	    link->lanes);
+
+	/* The next run drives the lower link, under the lock a change of output takes. */
+	irq = spin_lock_irqsave(&display->device->irq_lock);
+
+	display->output.state = next;
+
+	spin_unlock_irqrestore(&display->device->irq_lock, irq);
+
+	/* Succeeded: the run may be tried again. */
+	return 0;
+}
+
+/*
  * Says how the resident run lights an output of a kind: the one place that
  * chooses among the kinds' parameters and configurations (ws113-p011a).
  * Returns 0 with the way (all empty for the panel), or EOPNOTSUPP for a
- * kind whose way is not written yet (an external DisplayPort display:
- * ws051-p004b fills it here).
+ * kind this driver does not light.
  */
 static int
 i915_resident_output_way(
@@ -3869,8 +4138,11 @@ i915_resident_output_way(
 		way->own_pool = 1;
 		break;
 	case I915_OUTPUT_KIND_DP_EXT:
-		/* ws051-p004b. */
-		return EOPNOTSUPP;
+		/* A Type-C port's DDI, pipe B, its TC PLL, the PLL pool its own (ws051-p004b). */
+		way->params = i915_resident_dp_ext_params;
+		way->cfg = i915_resident_dp_ext_cfg;
+		way->own_pool = 1;
+		break;
 	default:
 		return EOPNOTSUPP;
 	}

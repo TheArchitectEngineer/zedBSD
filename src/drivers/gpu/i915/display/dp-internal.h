@@ -757,6 +757,15 @@ struct i915_dp_ext_port {
 	 */
 	struct i915_lcd_aux_emit aux_emit;
 	struct i915_dp_ext_world *ext;
+
+	/*
+	 * The link limits a failed link training left (ws051-p004b, the Linux
+	 * intel_dp->max_link_rate and max_link_lane_count): 0 means the
+	 * sink's own.  Lowered by drv_i915_dp_ext_link_fallback(), given back
+	 * by a long hot plug pulse; under the port's lock.
+	 */
+	int max_link_rate;
+	int max_link_lanes;
 };
 
 /*

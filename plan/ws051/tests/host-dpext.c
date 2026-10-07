@@ -87,6 +87,7 @@ static void test_branch_without_hpd(void);
 static void test_rates(void);
 static void test_converter(void);
 static void test_short_pulse(void);
+static void test_fallback(void);
 
 /*
  * Runs every case; the monitor's EDID comes from the capture named on the
@@ -123,6 +124,7 @@ main(
 	test_rates();
 	test_converter();
 	test_short_pulse();
+	test_fallback();
 
 	/* The verdict. */
 	printf("host-dpext: %d checks, %d failures\n", checks, failures);
@@ -845,4 +847,58 @@ test_short_pulse(void)
 	drv_i915_dp_ext_forget(&sink);
 	handled = drv_i915_dp_ext_short_pulse(&env, &sink);
 	check(handled == 0, "short pulse: a sink not found by the last probe is detected afresh");
+}
+
+/*
+ * The link-training fallback (ws051-p004b) walks the 5330 monitor's links
+ * as Linux v6.8.12 does: HBR2 x4 to HBR x4 to RBR x4, then HBR2 x2 ... RBR
+ * x2, HBR2 x1 ... RBR x1, and nothing after one lane at RBR; a rate the
+ * sink does not share halves the lanes.
+ */
+static void
+test_fallback(void)
+{
+	static const int want_rate[] = { 270000, 162000, 540000, 270000, 162000, 540000, 270000, 162000 };
+	static const int want_lanes[] = { 4, 4, 2, 2, 2, 1, 1, 1 };
+	struct i915_dp_ext_sink sink;
+	int rate;
+	int lanes;
+	int max_rate;
+	int max_lanes;
+	int steps;
+	int lowered;
+	int walk_ok;
+
+	/* The monitor's shared rates: RBR, HBR, HBR2. */
+	memset(&sink, 0, sizeof(sink));
+	sink.common_rates[0] = 162000;
+	sink.common_rates[1] = 270000;
+	sink.common_rates[2] = 540000;
+	sink.num_common_rates = 3;
+
+	/* Walks every fallback from HBR2 x4 until nothing is left. */
+	rate = 540000;
+	lanes = 4;
+	steps = 0;
+	walk_ok = 1;
+	for (;;) {
+		lowered = drv_i915_dp_ext_fallback_values(&sink, rate, lanes, &max_rate, &max_lanes);
+		if (!lowered)
+			break;
+
+		/* Each step is the next one of the Linux walk. */
+		if (steps >= 8 || max_rate != want_rate[steps] || max_lanes != want_lanes[steps])
+			walk_ok = 0;
+		steps++;
+		rate = max_rate;
+		lanes = max_lanes;
+		if (steps > 16)
+			break;
+	}
+	check(walk_ok && steps == 8, "fallback: HBR2 x4 down to RBR x1 in the Linux order, 8 steps");
+	check(rate == 162000 && lanes == 1, "fallback: one lane at RBR is the last link");
+
+	/* A rate the sink does not share halves the lanes at the highest rate. */
+	lowered = drv_i915_dp_ext_fallback_values(&sink, 810000, 4, &max_rate, &max_lanes);
+	check(lowered && max_rate == 540000 && max_lanes == 2, "fallback: an unshared rate halves the lanes at HBR2");
 }

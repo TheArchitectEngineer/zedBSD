@@ -126,6 +126,7 @@ struct i915_lcd_run_params {
 	unsigned window_ms;
 	int (*in_window)(void *ctx, struct i915_lcd_observer *o);
 	int output_hdmi;
+	int output_dp_ext;
 	int port;
 	int pipe;
 	int cpu_transcoder;
