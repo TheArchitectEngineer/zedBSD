@@ -235,6 +235,14 @@ p004a（cleared の後）、ws113-p011a の merge（R1〜R4）。p011（同時 2
   `git diff --check` 問題無し。window の失敗の道を通す host 試験は無い（worker と modeset に依る）→ 実機で: DP の run の失敗の後に
   `the moved output failed; the firmware's output (eDP panel) is the output again`、その lease の present が EIO、release → eDP の claim・present で eDP に絵。
 
+### 2026-10-07 display-control の `--index=N`（Q1 の許可、decisions-log (b)）
+
+- `userland/tests/display-control/main.c`: `--index=N`（GPU_DISPLAY_QUERY の N 番目を claim、既定 0 = resident）。新しい行
+  `DISPLAY-CONTROL chosen index=N count=C name=NAME`。他の connector の claim は出力を移し、その display が index 0 になるので、power off の後の
+  query は display ID で探す（`control_find`、失敗なら前の info のまま）。既定の動き（index 0）は前と同じ（ws113 の display-control-p012.sh の行の形も同じ）。
+- 確認: `make BUILD=build/p1-k ZEDBSD_CONFIG=config/ci/config-amd64.mk ZEDBSD_USER_PROGRAMS=display-control build/p1-k/bin/display-control`
+  （warning 0、check-dynamic-elf PASS）、style-check 0、`git diff --check`。host では動かせない（/dev/gpu0 が要る）。
+
 ### 再開の情報
 
 - 残り: 実機（T1）。p005b（scanout 中の抜け、IRQ_HPD の retrain）、p004c（GOP が USB-C の時）は別の Phase。

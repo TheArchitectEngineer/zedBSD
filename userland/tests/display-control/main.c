@@ -7,7 +7,8 @@
 
 /*
  * The GPU display control probe (ws113-p012): drives GPU_DISPLAY_REFRESH
- * and GPU_DISPLAY_POWER on the first display of a GPU node, with no
+ * and GPU_DISPLAY_POWER on a display of a GPU node (the first of the
+ * inventory unless --index names another, ws051-p004b), with no
  * compositor running.  It counts the refresh boundaries for a second,
  * claims the display, presents one solid frame when the node takes
  * storage, waits, powers the display off (and checks no boundary comes
@@ -15,6 +16,7 @@
  * read:
  *
  *   DISPLAY-CONTROL display id=ID generation=G flags=0xF power=0|1 counter=0|1
+ *   DISPLAY-CONTROL chosen index=N count=C name=NAME
  *   DISPLAY-CONTROL refresh now|shown|on boundaries=N ms=M virtual=0|1 error=E
  *       (now: before the claim, when an output that scans nothing out makes no boundary; shown: with the
  *       lease's frame; on: after power on)
@@ -22,7 +24,10 @@
  *   DISPLAY-CONTROL refresh-off error=E                         (ETIMEDOUT while off is right)
  *   DISPLAY-CONTROL done error=E
  *
- *   display-control [--node=/dev/gpu0] [--hold=SECONDS]   (each wait: shown, off, on; default 3)
+ *   display-control [--node=/dev/gpu0] [--hold=SECONDS] [--index=N]
+ *       (each wait: shown, off, on; default 3.  N: the display at index N
+ *       of GPU_DISPLAY_QUERY, default 0, the resident output; claiming
+ *       another connector moves the output to it)
  */
 
 #include <uapi/gpu.h>
@@ -41,10 +46,14 @@
 #define CONTROL_NODE		"/dev/gpu0"
 #define CONTROL_HOLD		3U
 
+/* How many inventory entries the search for a display ID walks at most. */
+#define CONTROL_MAX_DISPLAYS	64U
+
 /* The solid colour of the frame presented (BGRA: a green). */
 #define CONTROL_COLOUR		0xff30c060U
 
-static int control_query(int fd, struct gpu_display_info *info);
+static int control_query(int fd, uint32_t index, struct gpu_display_info *info);
+static int control_find(int fd, uint32_t display_id, struct gpu_display_info *info);
 static int control_refresh(int fd, const struct gpu_display_info *info, uint64_t cursor, uint64_t timeout_ns, struct gpu_display_refresh *result);
 static void control_count(int fd, const struct gpu_display_info *info, const char *label);
 static int control_power(int fd, const struct gpu_display_info *info, uint32_t state);
@@ -57,10 +66,12 @@ main(
 	char **argv)
 {
 	struct gpu_display_info info;
+	struct gpu_display_info found;
 	struct gpu_display_claim claim;
 	struct gpu_display_release release;
 	struct gpu_display_refresh refresh;
 	const char *node;
+	uint32_t chosen;
 	unsigned hold;
 	int index;
 	int same;
@@ -71,6 +82,7 @@ main(
 	/* The command line. */
 	node = CONTROL_NODE;
 	hold = CONTROL_HOLD;
+	chosen = 0U;
 	for (index = 1; index < argc; index++) {
 		same = strncmp(argv[index], "--node=", 7U);
 		if (same == 0) {
@@ -85,20 +97,27 @@ main(
 			continue;
 		}
 
+		/* Which display of the inventory is claimed. */
+		same = strncmp(argv[index], "--index=", 8U);
+		if (same == 0) {
+			chosen = (uint32_t)strtoul(argv[index] + 8, NULL, 10);
+			continue;
+		}
+
 		/* Anything else. */
-		fprintf(stderr, "usage: display-control [--node=/dev/gpu0] [--hold=SECONDS]\n");
+		fprintf(stderr, "usage: display-control [--node=/dev/gpu0] [--hold=SECONDS] [--index=N]\n");
 		return 2;
 	}
 
-	/* The node, and its first display. */
+	/* The node, and the chosen display. */
 	fd = open(node, O_RDWR | O_CLOEXEC);
 	if (fd < 0) {
 		printf("DISPLAY-CONTROL done error=%d step=open\n", errno);
 		return 1;
 	}
 
-	/* Its first display. */
-	error = control_query(fd, &info);
+	/* The chosen display (index 0 is the resident output). */
+	error = control_query(fd, chosen, &info);
 	if (error != 0) {
 		printf("DISPLAY-CONTROL done error=%d step=query\n", error);
 		return 1;
@@ -111,6 +130,10 @@ main(
 	    info.flags,
 	    (info.flags & GPU_DISPLAY_POWER_CONTROL) != 0U,
 	    (info.flags & GPU_DISPLAY_REFRESH_COUNTER) != 0U);
+
+	/* Which one it is of how many. */
+	info.name[sizeof(info.name) - 1U] = '\0';
+	printf("DISPLAY-CONTROL chosen index=%u count=%u name=%s\n", chosen, info.count, info.name);
 
 	/* The boundaries of a second, as the display is now. */
 	control_count(fd, &info, "now");
@@ -141,7 +164,9 @@ main(
 	/* Off: no boundary while it is off, and the query says so. */
 	error = control_power(fd, &info, GPU_DISPLAY_POWER_OFF);
 	printf("DISPLAY-CONTROL power state=off error=%d\n", error);
-	(void)control_query(fd, &info);
+	error = control_find(fd, claim.display_id, &found);
+	if (error == 0)
+		info = found;
 	printf("DISPLAY-CONTROL query powered_off=%d\n", (info.flags & GPU_DISPLAY_POWERED_OFF) != 0U);
 	error = control_refresh(fd, &info, 0U, 0U, &refresh);
 	if (error == 0)
@@ -173,24 +198,57 @@ main(
 	return 0;
 }
 
-/* Reads the node's first display. */
+/* Reads the display at an index of the node's inventory. */
 static int
 control_query(
 	int fd,
+	uint32_t index,
 	struct gpu_display_info *info)
 {
 	int status;
 
-	/* Display 0 of the inventory. */
+	/* The display at the index. */
 	memset(info, 0, sizeof(*info));
 	info->version = GPU_ABI_VERSION;
 	info->size = sizeof(*info);
-	info->index = 0U;
+	info->index = index;
 	status = ioctl(fd, GPU_DISPLAY_QUERY, info);
 	if (status != 0)
 		return errno;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Reads a display by its ID: a claim that moved the output makes the
+ * claimed display the resident one, index 0, so its index changes.
+ */
+static int
+control_find(
+	int fd,
+	uint32_t display_id,
+	struct gpu_display_info *info)
+{
+	uint32_t index;
+	int error;
+
+	/* Walks the inventory until the display or its end (the query's EINVAL). */
+	for (index = 0U; index < CONTROL_MAX_DISPLAYS; index++) {
+		error = control_query(fd, index, info);
+		if (error != 0)
+			return error;
+
+		/* The display with the ID. */
+		if (info->display_id == display_id)
+			break;
+	}
+
+	/* Not in the inventory. */
+	if (index == CONTROL_MAX_DISPLAYS)
+		return ENOENT;
+
+	/* Succeeded: info is the display. */
 	return 0;
 }
 
