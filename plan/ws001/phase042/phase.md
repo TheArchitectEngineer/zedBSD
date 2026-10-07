@@ -26,11 +26,16 @@ Queue: q834（2026-10-07、P2）
 
 ## 確かめ（2026-10-07）
 
-- host: `python3 plan/tools/utils/util-diff.py --bin build/ws001-p042/bin --only find` → 38/38（host の find は bfs 4 の POSIXLY_CORRECT、新しい case `plan/tools/utils/cases/find.sh`）。
+- host: `python3 plan/tools/utils/util-diff.py --bin build/ws001-p042/bin --only find` → 38/38（GNU findutils 4.10.0 の POSIXLY_CORRECT、新しい case `plan/tools/utils/cases/find.sh`）。
 - GNU の拡張の case（`--cases plan/tools/gnu-utils/cases --gnu --only misc`）164/164、後退なし。
 - `plan/tools/utils/build-host-utils.sh` の find に `chmod/mode.c` を足して build と 38/38 を確かめた。
 - zedBSD: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws001-p041z build/ws001-p041z/bin/find`（-Werror）warning 0。変えた所の style-check 0（file の残りは前からの 150 件ほど）。
 - guest: 未実施（p043 の後に T1 へ。zedBSD の {ARG_MAX} は 16 KiB なので、長い名前 600 個で `-exec … {} +` が 2 回以上に分かれることを guest で見る）。
+
+## GNU と違う所
+
+- `-perm` の symbolic mode で who の無い `+`（`-perm -+w`）: zedBSD は umask を効かせる（XCU の「`=` は umask に関わらず」の対比の読み、BSD の setmode と同じ）。
+  GNU findutils は umask を見ない（umask 022 で `+w` が 0222）。case には入れていない。Q1 に判断点として送った（既定は XCU の読み）。
 
 ## 積み残し（backlog へ）
 
