@@ -497,7 +497,9 @@ parse_primary(
 	int handled;
 	int error;
 	int batched;
-	int ended;
+	int compared;
+	int plus;
+	int braces;
 	struct node *node;
 	char *token;
 
@@ -778,12 +780,20 @@ parse_primary(
 		/* Up to ";", or for -exec a "+" right after a "{}" of its own. */
 		batched = 0;
 		while (parser->index < parser->argc) {
-			ended = strcmp(parser->argv[parser->index], ";") == 0;
-			if (ended)
+			/* ";" ends either. */
+			compared = strcmp(parser->argv[parser->index], ";");
+			if (compared == 0)
 				break;
-			batched = !prompt && parser->index > begin + 1 && strcmp(parser->argv[parser->index], "+") == 0 && strcmp(parser->argv[parser->index - 1], "{}") == 0;
-			if (batched)
+
+			/* "+" ends -exec when "{}" is just before it (and the utility before that). */
+			plus = strcmp(parser->argv[parser->index], "+");
+			braces = strcmp(parser->argv[parser->index - 1], "{}");
+			if (!prompt && parser->index > begin + 1 && plus == 0 && braces == 0) {
+				batched = 1;
 				break;
+			}
+
+			/* An argument. */
 			parser->index++;
 		}
 
@@ -1013,7 +1023,6 @@ walk_path(
 	int result;
 	int follow;
 	int error;
-	int looped;
 
 	/* -quit ends the walk. */
 	if (state->quit)
@@ -1039,8 +1048,7 @@ walk_path(
 
 	/* A directory that is one of its own ancestors (a loop through a link) is diagnosed, not tested. */
 	for (ancestor = 0; directory && ancestor < state->depth; ancestor++) {
-		looped = state->ancestors_dev[ancestor] == status.st_dev && state->ancestors_ino[ancestor] == status.st_ino;
-		if (looped) {
+		if (state->ancestors_dev[ancestor] == status.st_dev && state->ancestors_ino[ancestor] == status.st_ino) {
 			fprintf(stderr, "find: %s: directory cycle\n", path);
 			state->errors = 1;
 			return 0;
@@ -2120,7 +2128,6 @@ run_vector(
 	pid_t child;
 	pid_t ended;
 	int status;
-	int passed;
 
 	/* Its process. */
 	(void)fflush(stdout);
@@ -2146,9 +2153,12 @@ run_vector(
 	if (ended < 0)
 		return 0;
 
-	/* Exited with 0. */
-	passed = WIFEXITED(status) && WEXITSTATUS(status) == 0;
-	return passed;
+	/* Ended by a signal, or exited with another status. */
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		return 0;
+
+	/* Succeeded: exited with 0. */
+	return 1;
 }
 
 /*

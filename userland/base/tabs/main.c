@@ -108,8 +108,7 @@ main(
 	size_t item;
 	int index;
 	int error;
-	int digit;
-	int ended;
+	int compared;
 	int valid;
 
 	/* The options: a form or a distance (the last wins), and -T. */
@@ -119,29 +118,28 @@ main(
 	index = 1;
 	while (index < argc && argv[index][0] == '-' && argv[index][1] != '\0') {
 		/* "--" ends them. */
-		ended = strcmp(argv[index], "--") == 0;
-		if (ended) {
+		compared = strcmp(argv[index], "--");
+		if (compared == 0) {
 			index++;
 			break;
 		}
 
-		/* -T type. */
-		ended = strcmp(argv[index], "-T") == 0;
-		if (ended && index + 1 >= argc) {
+		/* -T type, which needs its operand. */
+		compared = strcmp(argv[index], "-T");
+		if (compared == 0 && index + 1 >= argc) {
 			usage();
 			return 2;
 		}
 
-		/* Its operand. */
-		if (ended) {
+		/* The type taken. */
+		if (compared == 0) {
 			type = argv[index + 1];
 			index += 2;
 			continue;
 		}
 
 		/* A distance -0 to -9. */
-		digit = argv[index][1] >= '0' && argv[index][1] <= '9' && argv[index][2] == '\0';
-		if (digit) {
+		if (argv[index][1] >= '0' && argv[index][1] <= '9' && argv[index][2] == '\0') {
 			uniform = (unsigned)(argv[index][1] - '0');
 			form = NULL;
 			index++;
@@ -221,12 +219,12 @@ find_form(
 	const char *option)
 {
 	size_t index;
-	int same;
+	int compared;
 
 	/* Each form. */
 	for (index = 0; tabs_forms[index].option != NULL; index++) {
-		same = strcmp(tabs_forms[index].option, option) == 0;
-		if (same)
+		compared = strcmp(tabs_forms[index].option, option);
+		if (compared == 0)
 			return &tabs_forms[index];
 	}
 
@@ -249,17 +247,15 @@ terminal_width(
 	unsigned long value;
 	char *end;
 	int error;
-	int number;
 
 	/* COLUMNS. */
 	text = getenv("COLUMNS");
 	if (text != NULL && text[0] >= '1' && text[0] <= '9') {
 		errno = 0;
 		value = strtoul(text, &end, 10);
-		number = errno == 0 && *end == '\0';
-		if (number && value > TABS_WIDTH_MAX)
+		if (errno == 0 && *end == '\0' && value > TABS_WIDTH_MAX)
 			return TABS_WIDTH_MAX;
-		if (number)
+		if (errno == 0 && *end == '\0')
 			return (unsigned)value;
 	}
 
@@ -273,11 +269,13 @@ terminal_width(
 
 	/* The entry's. */
 	columns = terminfo_find(terminal, "cols");
-	number = columns != NULL && columns->kind == TERMINFO_NUMBER;
-	if (number && columns->number > (long)TABS_WIDTH_MAX)
-		return TABS_WIDTH_MAX;
-	if (number && columns->number > 0)
-		return (unsigned)columns->number;
+	if (columns != NULL && columns->kind == TERMINFO_NUMBER) {
+		/* A number, at most the widest. */
+		if (columns->number > (long)TABS_WIDTH_MAX)
+			return TABS_WIDTH_MAX;
+		if (columns->number > 0)
+			return (unsigned)columns->number;
+	}
 
 	/* The usual width. */
 	return TABS_WIDTH_DEFAULT;
@@ -300,7 +298,6 @@ explicit_stops(
 	unsigned long value;
 	char *end;
 	int relative;
-	int separator;
 	int added;
 
 	/* Each column. */
@@ -313,7 +310,9 @@ explicit_stops(
 			break;
 
 		/* +n, after the first. */
-		relative = *cursor == '+';
+		relative = 0;
+		if (*cursor == '+')
+			relative = 1;
 		if (relative && *previous == 0)
 			return 0;
 		if (relative)
@@ -326,8 +325,7 @@ explicit_stops(
 		value = strtoul(cursor, &end, 10);
 		if (errno != 0 || value > UINT_MAX)
 			return 0;
-		separator = *end == '\0' || *end == ',' || *end == ' ' || *end == '\t';
-		if (!separator)
+		if (*end != '\0' && *end != ',' && *end != ' ' && *end != '\t')
 			return 0;
 
 		/* The column, past the one before. */
