@@ -24,5 +24,5 @@ Queue: q755（Q1、2026-10-05、P2 g15）
 - build: zedBSD の `bin/wayland`・`bin/files`・`bin/volumed`・`bin/settings`（`ZEDBSD_CONFIG=plan/ws132/tests/config-amd64-p004.mk BUILD=build/p2-p016`）warning 0。Linux の Keiland warning 0。`exports.py` で exports.map を再生成。
 - host: `run-host-files-devices.sh` PASS（試験を問いの流れに直した: double click で問い、Cancel で何もしない、Mount で mount の依頼、card の Enter）、`run-host-volumed.sh` PASS、`run-host-volumes.sh` PASS、`plan/ws131/tests/host-system.sh` PASS（ws089-p026 の backend の関数の stand-in が欠けて link できなかったのを直し、fake の volume 1 つで `kl_system_devices_info` の fs・bytes と、一覧に無い id を確かめる）。
 - style-check: 変えた file の違反 0。
-- guest の試験: `plan/ws132/tests/p005-guest.sh` の 3. を問いの流れに直した（confirm の log と confirm.png、Esc で何も頼まない、二度目の double click と Enter で mount）。
+- guest の試験: `plan/ws132/tests/p005-guest.sh`（2026-10-08 削除: bar の媒体の icon を WS156 の通知に置き換えたため、媒体の確かめは ws156-p005） の 3. を問いの流れに直した（confirm の log と confirm.png、Esc で何も頼まない、二度目の double click と Enter で mount）。
 - 未実施: QEMU（T1）、起動 disk の除外の実機（5330 の USB 起動）での確認（UAT）、Linux・FreeBSD の backend の媒体の一覧での起動 disk（zedBSD の volumed だけを直した）。
