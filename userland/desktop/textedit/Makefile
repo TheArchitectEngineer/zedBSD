@@ -2,10 +2,11 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 
 # Text Editor (WS092, plan/ws092/design.md): plain UTF-8 text in a Wayland window, drawn on the CPU and
 # shown with Vulkan through libkeiland's window (WS090); undo and redo, the clipboard and the primary selection,
-# finding in the titlebar's field, and the touch screen (one finger selects, two scroll with inertia).
+# the menu bar in the titlebar, finding and replacing in panels (BUG-248), and the touch screen (one finger
+# selects, two scroll with inertia).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 TEXTEDIT_SOURCES := userland/desktop/textedit/main.c userland/desktop/textedit/queue.c \
-	userland/desktop/textedit/menu.c userland/desktop/textedit/titlebar.c \
+	userland/desktop/textedit/menu.c \
 	userland/desktop/textedit/glass.c userland/desktop/textedit/app.c \
 	userland/desktop/textedit/edit.c userland/desktop/textedit/draw.c \
 	userland/desktop/textedit/buffer.c userland/desktop/textedit/undo.c \

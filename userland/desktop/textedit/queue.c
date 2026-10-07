@@ -8,8 +8,8 @@
 /*
  * The editor's queue of inputs (ws090-p004): the window's pointer, keys
  * and focus, which the main loop turns from libkeiland's window events into
- * te_event values, and the actions of the menus, the titlebar and the
- * file chooser, carried out in the order they came.
+ * te_event values, and the actions of the menus and the file chooser,
+ * carried out in the order they came.
  */
 
 #include "window.h"

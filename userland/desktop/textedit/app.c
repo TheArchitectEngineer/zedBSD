@@ -8,10 +8,10 @@
 /*
  * The editor of Text Editor: the document's file (opening, saving, new),
  * the frame's layout, the pointer and the keys (with the dialogs and the
- * file chooser's answer), the actions of the menus and the
- * titlebar, and time (the cursor's blinking, the wheel's glide, a message
- * fading, a selection dragged past the edge).  plan/ws092/design.md
- * sections 3, 4, 6, 9 and 11.
+ * file chooser's answer), the actions of the menus and the keys (with the
+ * Find and Replace panels' requests), and time (the cursor's blinking,
+ * the wheel's glide, a message fading, a selection dragged past the edge).
+ * plan/ws092/design.md sections 3, 4, 6, 9 and 11.
  */
 
 #include "textedit.h"
@@ -65,7 +65,6 @@ static void app_view_caret(void *data, size_t position, struct kl_rect *rect);
 static void app_text(struct te_app *app, const struct te_event *event);
 static void app_view_word(void *data, size_t position, size_t *start, size_t *end);
 static void app_key(struct te_app *app, const struct te_event *event);
-static void app_find_text(struct te_app *app, const struct te_event *event);
 static void app_request(struct te_app *app, enum te_after after);
 static void app_after(struct te_app *app);
 static void app_save(struct te_app *app);
@@ -301,14 +300,6 @@ te_app_event(
 		app->blink_start = app->now;
 		app->dirty = 1;
 		break;
-	case TE_EVENT_FIND_TEXT:
-		app_find_text(app, event);
-		break;
-	case TE_EVENT_FIND_DONE:
-		/* Enter in the field finds the next place; leaving it or Esc keeps the place found. */
-		if (event->how == TE_FIND_SUBMITTED)
-			te_edit_find(app, 1, 0);
-		break;
 	case TE_EVENT_CHOSEN:
 		app_chosen(app, event);
 		break;
@@ -329,16 +320,31 @@ te_app_event(
 }
 
 /*
- * Carries out an action of the menus, the titlebar, the context menu or
- * the keys.
+ * Carries out an action of the menus, the context menu or the keys.
  */
 void
 te_app_action(
 	struct te_app *app,
 	enum te_action action)
 {
-	/* A dialog or the chooser waits for its answer; only Quit goes past them. */
-	if ((app->dialog != TE_DIALOG_NONE || app->choosing) && action != TE_ACTION_QUIT)
+	int passes;
+
+	/*
+	 * A dialog or the chooser waits for its answer; only Quit goes past
+	 * them, and Find Next and Find Previous past the Find panel, which they
+	 * go on from (BUG-248).
+	 */
+	passes = 0;
+	if (action == TE_ACTION_QUIT) {
+		passes = 1;
+	} else if (app->dialog == TE_DIALOG_FIND && !app->choosing) {
+		/* Only finding again goes past the Find panel. */
+		if (action == TE_ACTION_FIND_NEXT || action == TE_ACTION_FIND_PREVIOUS)
+			passes = 1;
+	}
+
+	/* Anything else waits for the dialog or the chooser. */
+	if ((app->dialog != TE_DIALOG_NONE || app->choosing) && !passes)
 		return;
 	te_log("ACTION %d", (int)action);
 
@@ -389,9 +395,9 @@ te_app_action(
 		te_edit_select_all(app);
 		break;
 	case TE_ACTION_FIND:
-		/* The titlebar's field takes the keyboard. */
-		if (app->host.find_focus != NULL)
-			app->host.find_focus(app->host.data);
+		/* The Find panel (BUG-248: the menu bar has no find field; main.c fills its field the first frame). */
+		app->panel_fresh = 1;
+		app_dialog(app, TE_DIALOG_FIND);
 		break;
 	case TE_ACTION_FIND_NEXT:
 		te_edit_find(app, 1, 0);
@@ -401,7 +407,7 @@ te_app_action(
 		break;
 	case TE_ACTION_REPLACE:
 		/* The Replace panel (main.c fills its fields the first frame). */
-		app->replace_fresh = 1;
+		app->panel_fresh = 1;
 		app_dialog(app, TE_DIALOG_REPLACE);
 		break;
 	case TE_ACTION_LINE_NUMBERS:
@@ -1192,33 +1198,6 @@ app_key(
 	app->dirty = 1;
 }
 
-/* The find field's text changed: it is found from where the selection starts. */
-static void
-app_find_text(
-	struct te_app *app,
-	const struct te_event *event)
-{
-	size_t length;
-
-	/* The text, kept for Find Next (cut at a character's start when it is too long). */
-	length = strlen(event->text);
-	if (length >= sizeof(app->find)) {
-		length = sizeof(app->find) - 1U;
-		while (length > 0U && ((unsigned char)event->text[length] & 0xc0U) == 0x80U)
-			length--;
-	}
-
-	/* The text copied. */
-	memcpy(app->find, event->text, length);
-	app->find[length] = '\0';
-	app->find_length = length;
-
-	/* Found as it is typed; an empty field only clears the marks. */
-	if (app->find_length != 0U)
-		te_edit_find(app, 1, 1);
-	app->dirty = 1;
-}
-
 /*
  * Asks for something that replaces the document or closes the window: with
  * unsaved changes a dialog asks first; otherwise it happens now.
@@ -1450,6 +1429,7 @@ te_app_dialog_choose(
 		break;
 	case TE_DIALOG_ABOUT:
 	case TE_DIALOG_REPLACE:
+	case TE_DIALOG_FIND:
 	case TE_DIALOG_NONE:
 		break;
 	}
@@ -1474,9 +1454,9 @@ app_dialog_buttons(
 
 /*
  * Carries out the Replace panel's Replace (all 0) or Replace All (1)
- * (ws128-p003): the find text becomes the editor's (as the titlebar's
- * field would set it), the replacement is kept for the next time, and a
- * message says what was done.
+ * (ws128-p003): the find text becomes the editor's (as the Find panel's
+ * sets it), the replacement is kept for the next time, and a message says
+ * what was done.
  */
 void
 te_app_replace(
@@ -1535,6 +1515,50 @@ te_app_replace_close(
 	app->dialog = TE_DIALOG_NONE;
 	app->dirty = 1;
 	te_log("REPLACE closed");
+}
+
+/*
+ * Takes the Find panel's text as it is typed (BUG-248): kept for Find Next
+ * (cut at a character's start when it is too long), and found from where
+ * the selection starts; an empty text only clears the marks.
+ */
+void
+te_app_find_text(
+	struct te_app *app,
+	const char *text)
+{
+	size_t length;
+
+	/* As much of the text as the editor keeps, ending at a character's start. */
+	length = strlen(text);
+	if (length >= sizeof(app->find)) {
+		length = sizeof(app->find) - 1U;
+		while (length > 0U && ((unsigned char)text[length] & 0xc0U) == 0x80U)
+			length--;
+	}
+
+	/* The text copied. */
+	memcpy(app->find, text, length);
+	app->find[length] = '\0';
+	app->find_length = length;
+
+	/* Found as it is typed. */
+	if (app->find_length != 0U)
+		te_edit_find(app, 1, 1);
+	app->dirty = 1;
+}
+
+/*
+ * Closes the Find panel; the place found stays selected.
+ */
+void
+te_app_find_close(
+	struct te_app *app)
+{
+	/* The panel goes, and the text has the keyboard again. */
+	app->dialog = TE_DIALOG_NONE;
+	app->dirty = 1;
+	te_log("FIND closed");
 }
 
 /*

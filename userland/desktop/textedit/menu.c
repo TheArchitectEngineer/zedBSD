@@ -11,9 +11,11 @@
  * (Undo, Redo, Cut, Copy, Paste, Select All), given to libkeiland as tables
  * (WS131 p016: kl_window_set_menu, kl_window_popup_menu); the editor's
  * state is the actions' state (kl_window_set_action_state), which every
- * item and control of an action shows.  zdesktop draws them and chooses an
- * item for its shortcut; the choice comes back as a KL_WINDOW_ACTION
- * input among the window's.  A compositor without the System Menu leaves
+ * item of an action shows.  zdesktop draws them as the menu bar in the
+ * window's titlebar, its items underlined as every application's (BUG-248:
+ * the window gives no titlebar controls, which would take the menu bar's
+ * place), and chooses an item for its shortcut; the choice comes back as a
+ * KL_WINDOW_ACTION input among the window's.  A compositor without the System Menu leaves
  * the editor without menus, and the keys work as they do with them.
  */
 
@@ -176,8 +178,8 @@ te_menu_open(
 }
 
 /*
- * Tells the menus (and the titlebar's controls of the same actions) the
- * editor's state when it differs from what they show.
+ * Tells the menus (and the context menu of the same actions) the editor's
+ * state when it differs from what they show.
  */
 void
 te_menu_refresh(

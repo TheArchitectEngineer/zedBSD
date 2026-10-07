@@ -89,8 +89,8 @@ struct truetype_face;
 
 /*
  * The kinds of input the window queues for the editor: the pointer, the
- * wheel, a key, a menu's or the titlebar's action, the keyboard's focus
- * coming or going, and the titlebar's find field.
+ * wheel, a key, a menu's action, the keyboard's focus coming or going, the
+ * file chooser's answer, and an input method's text.
  */
 enum te_event_type {
 	TE_EVENT_MOTION = 0,
@@ -100,8 +100,6 @@ enum te_event_type {
 	TE_EVENT_KEY,
 	TE_EVENT_ACTION,
 	TE_EVENT_FOCUS,
-	TE_EVENT_FIND_TEXT,
-	TE_EVENT_FIND_DONE,
 	TE_EVENT_CHOSEN,
 	TE_EVENT_TEXT,
 	TE_EVENT_TEXT_DELETE,
@@ -114,9 +112,8 @@ enum te_event_type {
  * for a touch pad's fingers also unrounded, with the source and the
  * compositor's time on the monotonic clock, ws090-p019),
  * the key, the modifiers, the time in milliseconds, the action, whether
- * the focus came (pressed), how the find field's editing ended, and the
- * find field's text or the path the file chooser chose (empty when it was
- * cancelled).
+ * the focus came (pressed), and an input method's text or the path the
+ * file chooser chose (empty when it was cancelled).
  */
 struct te_event {
 	enum te_event_type type;
@@ -134,17 +131,11 @@ struct te_event {
 	uint32_t modifiers;
 	uint64_t time;
 	uint32_t action;
-	unsigned how;
 	char text[TE_PATH_MAX];
 };
 
-/* How the find field's editing ended (as the titlebar says). */
-#define TE_FIND_SUBMITTED	0U
-#define TE_FIND_CANCELLED	1U
-#define TE_FIND_LEFT		2U
-
 /*
- * What the menus, the titlebar and the context menu ask for.
+ * What the menus, the keys and the context menu ask for.
  */
 enum te_action {
 	TE_ACTION_NONE = 0,
@@ -362,7 +353,8 @@ enum te_dialog {
 	TE_DIALOG_UNSAVED,
 	TE_DIALOG_CHANGED,
 	TE_DIALOG_ABOUT,
-	TE_DIALOG_REPLACE
+	TE_DIALOG_REPLACE,
+	TE_DIALOG_FIND
 };
 
 /* What waits for the unsaved changes to be saved or dropped. */
@@ -377,8 +369,7 @@ enum te_after {
 /*
  * What the editor asks of the window: copy text to the clipboard, paste
  * the clipboard's text, make text the primary selection, paste the primary
- * selection, open the context menu at a place, give the find field the
- * keyboard, and open the file chooser (to open a file, or to save as a
+ * selection, open the context menu at a place, and open the file chooser (to open a file, or to save as a
  * name in a folder; the path chosen comes back as a TE_EVENT_CHOSEN).  Any
  * member may be NULL (the host tests leave them so).
  */
@@ -389,7 +380,6 @@ struct te_host {
 	void (*select)(void *data, const char *text, size_t length);
 	size_t (*paste_primary)(void *data, char *text, size_t size);
 	void (*context_menu)(void *data, int x, int y);
-	void (*find_focus)(void *data);
 	int (*choose)(void *data, int saving, const char *folder, const char *name);
 };
 
@@ -474,12 +464,13 @@ struct te_app {
 	size_t find_length;
 
 	/*
-	 * Edit > Replace (ws128-p003, the dialog TE_DIALOG_REPLACE drawn by
-	 * main.c): the replacement last used, and whether the panel was just
-	 * opened (main.c then fills its fields and gives one the keyboard).
+	 * Edit > Find and Edit > Replace (BUG-248 and ws128-p003, the dialogs
+	 * TE_DIALOG_FIND and TE_DIALOG_REPLACE drawn by main.c): the
+	 * replacement last used, and whether the panel was just opened (main.c
+	 * then fills its fields and gives one the keyboard).
 	 */
 	char replace_with[TE_FIND_MAX];
-	int replace_fresh;
+	int panel_fresh;
 
 	/*
 	 * File > Open Recent (ws128-p003): the files the editor used, newest
@@ -656,6 +647,8 @@ void te_app_dialog_choose(struct te_app *app, int button);
 void te_app_dialog_words(const struct te_app *app, char *title, size_t size, const char **words, const char *const **labels, int *count);
 void te_app_replace(struct te_app *app, const char *find, const char *with, int all);
 void te_app_replace_close(struct te_app *app);
+void te_app_find_text(struct te_app *app, const char *text);
+void te_app_find_close(struct te_app *app);
 
 /* The frame (draw.c). */
 void te_draw(struct te_app *app, struct te_canvas *canvas);
