@@ -28,7 +28,13 @@ Queue: q844（P2、Q1 の ACK 2026-10-07「(1)〜(3) で ACK、1 枚目は時計
 - build: zedBSD の compositor（`make ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD=build/ws181 build/ws181/bin/wayland`）と Linux の Keiland warning 0。
 - host: `run-host-arrange.sh` 1213/0、`run-host-edge.sh` 29/0、`run-host-layout-state.sh` 43/0。`plan/ws128/tests/icon-dump.c` で全部の icon が PASS（3 つの動物は枠に触れない）。
 - host の PNG: `sh plan/ws181/tests/p005-host.sh` → `build/review/ws181-p006.png`（Home の 1 枚目、メニュー、pill の 3 つの状態）、`build/review/ws181-p006-animals-raw.png`（96 px と 20 px の動物）。renderer の近似で compositor の撮影ではない。
-- QEMU: 未（T1 へ）。
+- QEMU（T1-346、2026-10-07、Q1 の判定）: `ws181-guest.sh` と ws142 の `p004-guest.sh` は PASS（見た目も期待どおり）。ws142 の `p003-guest.sh` は
+  `scroll-no-gesture (KWL GESTURE : 79, expected 78)` の 1 行が FAIL（2 回とも）。原因は試験の期待の古さ: 増えた 1 行は scroll の指を離した時の
+  `KWL GESTURE kind=swipe2 phase=end`（ws142-p009、2026-10-06 の BUG-224 で入った「一度の swipe を一歩に」の印、T1 の log.txt の 127 行目）で、
+  edge の gesture の begin は増えていない。3 つの desktop の変更とは無関係。試験を「begin の行が増えない」と「swipe2 の end が 1 つ増える」の 2 つの
+  確かめに直した（2026-10-07 P2）。再試験は T1 へ。
+- App Home の 2 枚目（4 行の下寄せ）は T1-346 の pen の image に app が 9 つしか無く 1 枚目に収まって撮れていない。再試験は app の多い AAT の image
+  （`tests/` の AAT の build）で、App Home を右へ 1 page 送った画面を撮る。
 
 ## 残り
 
