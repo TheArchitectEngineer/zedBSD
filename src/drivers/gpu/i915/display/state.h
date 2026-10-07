@@ -62,6 +62,7 @@ unsigned drv_i915_lcd_errors(const struct i915_lcd_world *world);
 
 int drv_i915_lcd_compute(struct i915_lcd_world *world, const uint8_t *edid128, const uint8_t *dpcd, const uint8_t *edp_dpcd, int vbt_bpp, int ref_nssc_khz, struct i915_lcd_state *out);
 int drv_i915_lcd_compute_hdmi(const struct i915_lcd_mode *mode, int ref_nssc_khz, struct i915_lcd_state *out);
+int drv_i915_lcd_compute_dp_ext(const struct i915_lcd_mode *mode, const struct i915_dp_ext_sink *sink, int max_rate_khz, int max_lanes, int ref_nssc_khz, struct i915_lcd_state *out);
 int drv_i915_lcd_emit_plane(struct i915_lcd_world *world, int pipe, int plane_id, uint32_t fourcc, uint64_t modifier, uint32_t width, uint32_t height, uint32_t pitch, uint32_t surf_ggtt_offset, struct i915_lcd_words *out);
 int drv_i915_lcd_emit_cpu_transcoder(struct i915_lcd_world *world, const struct i915_lcd_state *s, int pipe, int cpu_transcoder, struct i915_lcd_words *out);
 int drv_i915_lcd_emit_ddi(struct i915_lcd_world *world, const struct i915_lcd_state *s, int port, int pipe, int cpu_transcoder, uint32_t saved_port_bits, struct i915_lcd_words *out, uint32_t *ddi_buf_ctl_value);

@@ -1290,8 +1290,69 @@ drv_i915_lcd_ms_alloc_pll(
 }
 
 /*
+ * Reserves the two PLLs a Type-C port's crtc may run on
+ * (icl_get_tc_phy_dplls()): the Thunderbolt PLL as the default port PLL
+ * and the port's TC PLL as the MG PHY one, each with its state the caller
+ * computed into the crtc state's port PLLs (drv_i915_icl_compute_tc_phy_dplls()),
+ * and makes the TC PLL the active one (DP-alt and legacy mode; the
+ * pre-PLL-enable hook selects again once the port's link is held).
+ *
+ * Returns the TC PLL's id, or -I915_LCD_EINVAL (a refusal, not an id) when
+ * another pipe holds either PLL with another state.
+ */
+int
+drv_i915_lcd_ms_alloc_tc_plls(
+	struct i915_lcd_world *world,
+	struct i915_lcd_modeset *ms,
+	enum tc_port tc_port)
+{
+	struct icl_port_dpll *tbt;
+	struct icl_port_dpll *tc;
+	struct intel_shared_dpll *pll;
+	enum intel_dpll_id tc_id;
+
+	/* Binds the pool and gives back what this pipe held. */
+	i915_lcd_dpll_pool_init(world, ms);
+	drv_i915_lcd_ms_release_pipe(world, ms->crtc.pipe);
+
+	/* The Thunderbolt PLL, the default port PLL. */
+	tbt = &ms->crtc_state.icl_port_dplls[ICL_PORT_DPLL_DEFAULT];
+	pll = i915_find_shared_dpll(world, &ms->state, &ms->crtc, &tbt->hw_state, BIT(DPLL_ID_ICL_TBTPLL));
+	if (pll == NULL)
+		return -I915_LCD_EINVAL;
+
+	/* References it for the crtc; the object carries the new state. */
+	i915_reference_shared_dpll(world, &ms->state, &ms->crtc, pll, &tbt->hw_state);
+	tbt->pll = pll;
+	pll->state = world->i915_lcd_dpll_pool_state[pll->index];
+
+	/* The port's TC PLL, the MG PHY port PLL. */
+	tc = &ms->crtc_state.icl_port_dplls[ICL_PORT_DPLL_MG_PHY];
+	tc_id = (enum intel_dpll_id)((int)DPLL_ID_ICL_MGPLL1 + (int)tc_port - (int)TC_PORT_1);
+	pll = i915_find_shared_dpll(world, &ms->state, &ms->crtc, &tc->hw_state, BIT(tc_id));
+	if (pll == NULL) {
+		i915_unreference_shared_dpll(world, &ms->state, &ms->crtc, tbt->pll);
+		tbt->pll->state.pipe_mask = world->i915_lcd_dpll_pool_state[tbt->pll->index].pipe_mask;
+		tbt->pll = NULL;
+		return -I915_LCD_EINVAL;
+	}
+
+	/* References it for the crtc; the object carries the new state. */
+	i915_reference_shared_dpll(world, &ms->state, &ms->crtc, pll, &tc->hw_state);
+	tc->pll = pll;
+	pll->state = world->i915_lcd_dpll_pool_state[pll->index];
+
+	/* The TC PLL is the active one. */
+	drv_i915_icl_set_active_port_dpll(&ms->crtc_state, ICL_PORT_DPLL_MG_PHY);
+
+	/* Succeeded: reports the TC PLL's id. */
+	return (int)pll->info->id;
+}
+
+/*
  * Gives a modeset's reference on its PLL back (intel_release_shared_dplls());
- * the object stays for the other pipe.
+ * the object stays for the other pipe.  A Type-C port's crtc gives both
+ * port PLLs back.
  */
 void
 drv_i915_lcd_ms_release_pll(
@@ -1299,6 +1360,26 @@ drv_i915_lcd_ms_release_pll(
 	struct i915_lcd_modeset *ms)
 {
 	struct intel_shared_dpll *pll;
+	enum icl_port_dpll_id id;
+	int port_plls;
+
+	/* A Type-C port's crtc gives each port PLL it reserved back. */
+	port_plls = 0;
+	for (id = ICL_PORT_DPLL_DEFAULT; id < ICL_PORT_DPLL_COUNT; id++) {
+		pll = ms->crtc_state.icl_port_dplls[id].pll;
+		if (pll == NULL)
+			continue;
+
+		/* Drops the crtc's reference and copies the pipe mask back to the object. */
+		i915_unreference_shared_dpll(world, &ms->state, &ms->crtc, pll);
+		pll->state.pipe_mask = world->i915_lcd_dpll_pool_state[pll->index].pipe_mask;
+		ms->crtc_state.icl_port_dplls[id].pll = NULL;
+		port_plls++;
+	}
+
+	/* The port PLLs were the crtc's whole reservation. */
+	if (port_plls != 0)
+		return;
 
 	/* A crtc without a PLL has nothing to give back. */
 	pll = ms->crtc_state.shared_dpll;

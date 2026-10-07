@@ -81,6 +81,7 @@
 #include "../trace.h"
 #include "../workqueue.h"
 #include "dkl-phy.h"
+#include "dp-ext.h"
 #include "tc.h"
 
 /*
@@ -2199,6 +2200,8 @@ struct i915_lcd_aux_emit {
 	long (*dpcd_read)(void *ctx, unsigned offset, uint8_t *buf, size_t size);
 	long (*dpcd_write)(void *ctx, unsigned offset, const uint8_t *buf, size_t size);
 	int (*read_dpcd_caps)(void *ctx, uint8_t dpcd[15]);
+	/* Sets up a branch's protocol converter for the RGB stream (0, or a negative errno; NULL: none to set up). */
+	int (*configure_converter)(void *ctx);
 };
 
 /*
@@ -2334,11 +2337,30 @@ struct i915_lcd_link {
 };
 
 /*
+ * The DKL PLL words of a Type-C port's link clock (ws051-p004b): what
+ * icl_calc_mg_pll_state() computes for display version 12 and later, one
+ * word per DKL register.
+ */
+struct i915_lcd_dkl_words {
+	uint32_t refclkin_ctl;
+	uint32_t clktop2_coreclkctl1;
+	uint32_t clktop2_hsclkctl;
+	uint32_t div0;
+	uint32_t div1;
+	uint32_t lf;
+	uint32_t frac_lock;
+	uint32_t ssc;
+	uint32_t bias;
+	uint32_t tdc_coldst_bias;
+};
+
+/*
  * The PLL state of one modeset.
  */
 struct i915_lcd_pll {
 	int ref_khz;                              /* display.dpll.ref_clks.nssc */
-	uint32_t cfgcr0, cfgcr1, div0;
+	uint32_t cfgcr0, cfgcr1, div0;            /* a combo PHY's DPLL */
+	struct i915_lcd_dkl_words dkl;            /* a Type-C port's TC PLL (zero on a combo PHY) */
 };
 
 /*
@@ -2588,12 +2610,13 @@ struct i915_scanout {
 
 struct i915_lcd_modeset_cfg {
 	int output_hdmi;                /* 0 = the eDP panel (DP SST), 1 = an HDMI sink on a combo-PHY DDI */
+	int output_dp_ext;              /* 1 = an external DP sink (SST) on a Type-C port's DDI (ws051-p004b) */
 	int vbt_hdmi_level_shift;       /* the VBT child's HDMI level shift for this port; < 0 = the VBT has none */
 	unsigned also_active_pipes;     /* the other pipes this configuration lights (BIT(pipe)): the DDB is
 	                                 * computed for the whole set, as the reference's atomic check would */
-	int port;                       /* enum port: 0 = A, 1 = B (combo PHY only) */
+	int port;                       /* enum port: 0 = A, 1 = B (combo PHY); 3 .. 6 = TC1 .. TC4 (an external DP sink) */
 	int pipe, cpu_transcoder;       /* 0 = A */
-	int dpll_id;                    /* 0 = DPLL 0, 1 = DPLL 1 */
+	int dpll_id;                    /* 0 = DPLL 0, 1 = DPLL 1; 3 .. 6 = TC PLL 1 .. 4 (an external DP sink) */
 	int aux_ch;                     /* enum aux_ch: 0 = A */
 	uint32_t saved_port_bits;       /* DDI_BUF_CTL readout & DDI_BUF_PORT_REVERSAL, | the VBT lane-reversal flag */
 	const struct i915_lcd_aux_emit *aux_emit;   /* the sink's own AUX channel (an external DP port's); NULL = the backend's */
@@ -3522,8 +3545,17 @@ struct i915_display_output {
 	int has_connector;
 	unsigned connector;
 
-	/* The HDMI mode (its physical size included, 0 when unknown), link and WRPLL. */
+	/* The HDMI or DP mode (its physical size included, 0 when unknown), link and PLL. */
 	struct i915_lcd_state state;
+
+	/*
+	 * An external DP display's Type-C port (0 = TC1) and DDI port, and
+	 * what its sink's probe found when the output was prepared
+	 * (ws051-p004b); unused for the other kinds.
+	 */
+	unsigned tc_port;
+	int port;
+	struct i915_dp_ext_sink sink;
 
 	/* Where the mode came from, for the log: "EDID", "display.mode", "CEA 4". */
 	const char *mode_source;

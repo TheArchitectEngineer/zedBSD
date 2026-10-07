@@ -365,7 +365,8 @@ test_dpcd_routing(void)
 		NULL,
 		own_dpcd_read,
 		own_dpcd_write,
-		own_read_caps
+		own_read_caps,
+		NULL
 	};
 	struct drm_i915_private i915;
 	struct i915_lcd_emit emit;

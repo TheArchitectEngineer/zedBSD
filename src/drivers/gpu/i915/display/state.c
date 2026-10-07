@@ -62,6 +62,12 @@
 /* The eDP revision from which the sink carries rate tables (DP_EDP_14). */
 #define I915_STATE_DP_EDP_14 0x03
 
+/* The bits per colour an external DP display is driven at, at most (RGB 8 bpc; ws051-p004b). */
+#define I915_STATE_DP_EXT_MAX_BPC 8
+
+/* The fewest bits per colour a DP link may drop to (intel_dp_min_bpp() for RGB). */
+#define I915_STATE_DP_EXT_MIN_BPC 6
+
 /*
  * One entry of the Linux intel_quirks[] table.
  *
@@ -199,6 +205,9 @@ static u32 i915_state_record_rmw(void *ctx, u32 reg, u32 clear, u32 set);
 static void i915_state_record_step(void *ctx, const char *name);
 static void i915_state_bind_recorder(struct i915_lcd_emit *emit, struct i915_lcd_words *out);
 static void i915_state_to_mode(const struct i915_lcd_state *s, struct drm_display_mode *mode, struct intel_link_m_n *m_n);
+static int i915_state_dp_ext_max_bpc(const struct i915_lcd_mode *mode, const struct i915_dp_ext_sink *sink);
+static int i915_state_dp_ext_link(const struct i915_lcd_mode *mode, const struct i915_dp_ext_sink *sink, int max_bpc, int max_rate_khz, int max_lanes, struct i915_lcd_link *link);
+static void i915_state_dkl_words(const struct intel_dpll_hw_state *hw, struct i915_lcd_dkl_words *words);
 
 /*
  * Initializes the mode configuration of the display (intel_mode_config_init()).
@@ -909,6 +918,90 @@ drv_i915_lcd_compute_hdmi(
 }
 
 /*
+ * Computes the link, M/N and Type-C PLL of an external DP display's mode
+ * (ws051-p004b; Linux v6.8.12 intel_dp_compute_link_config_wide() for SST
+ * without DSC).
+ *
+ * The bits per colour start from the EDID's depth (8 when undefined),
+ * capped at 8 and at a branch's downstream limit, and drop by 2 down to 6;
+ * for each depth the link rates the source and sink share are tried from
+ * the lowest, and for each rate 1, 2 and then 4 lanes: the first that
+ * carries the mode is the link.  max_rate_khz and max_lanes are the
+ * fallback's limits (0: none).  The mode must be within the branch's
+ * downstream clock limits.  Nothing is written to the hardware.  Returns 0,
+ * EINVAL for missing input or a sink without a common rate or lane, ENOSPC
+ * when no link carries the mode, or the error of the DKL PLL calculation.
+ */
+int
+drv_i915_lcd_compute_dp_ext(
+	const struct i915_lcd_mode *mode,
+	const struct i915_dp_ext_sink *sink,
+	int max_rate_khz,
+	int max_lanes,
+	int ref_nssc_khz,
+	struct i915_lcd_state *out)
+{
+	struct intel_dpll_hw_state hw;
+	struct intel_link_m_n m_n;
+	enum i915_dp_ext_mode_status mode_status;
+	int max_bpc;
+	int error;
+
+	/* Refuses a call without a mode with a clock, a sink or a result. */
+	if (mode == NULL)
+		return EINVAL;
+	if (sink == NULL)
+		return EINVAL;
+	if (out == NULL)
+		return EINVAL;
+	if (mode->clock_khz <= 0)
+		return EINVAL;
+
+	/* Refuses a sink that shares no rate or lane with the source. */
+	if (sink->num_common_rates <= 0)
+		return EINVAL;
+	if (sink->max_lanes <= 0)
+		return EINVAL;
+
+	/* Starts a clean result with the mode and the sink's capability. */
+	kern_memset(out, 0, sizeof(*out));
+	out->mode = *mode;
+	out->link.sink_max_rate_khz = sink->max_rate;
+	out->link.sink_max_lanes = sink->max_sink_lanes;
+
+	/* A mode outside a branch's downstream clock limits is not carried. */
+	mode_status = drv_i915_dp_ext_mode_valid(sink, mode->clock_khz);
+	if (mode_status != I915_DP_EXT_MODE_OK)
+		return ENOSPC;
+
+	/* The first depth, rate and lane count that carry the mode. */
+	max_bpc = i915_state_dp_ext_max_bpc(mode, sink);
+	error = i915_state_dp_ext_link(mode, sink, max_bpc, max_rate_khz, max_lanes, &out->link);
+	if (error != 0)
+		return error;
+
+	/* The M/N values of the link. */
+	drv_i915_link_compute_m_n((u16)(out->link.bpp * 16), out->link.lanes, mode->clock_khz, out->link.rate_khz, I915_STATE_SST_BW_OVERHEAD, &m_n);
+	out->link.tu = m_n.tu;
+	out->link.data_m = m_n.data_m;
+	out->link.data_n = m_n.data_n;
+	out->link.link_m = m_n.link_m;
+	out->link.link_n = m_n.link_n;
+
+	/* The Type-C port's DKL PLL of the link rate. */
+	out->pll.ref_khz = ref_nssc_khz;
+	error = drv_i915_dkl_pll_calc(out->link.rate_khz, 0, ref_nssc_khz, &hw);
+	if (error != 0)
+		return error;
+
+	/* Keeps the PLL's words. */
+	i915_state_dkl_words(&hw, &out->pll.dkl);
+
+	/* Succeeded: the link, M/N and PLL are computed. */
+	return 0;
+}
+
+/*
  * Records the register words of the plane update for one framebuffer.
  *
  * Returns 0, EINVAL without a word list or when the list overflowed, or the
@@ -1555,4 +1648,120 @@ i915_state_to_mode(
 	m_n->data_n = s->link.data_n;
 	m_n->link_m = s->link.link_m;
 	m_n->link_n = s->link.link_n;
+}
+
+/*
+ * The most bits per colour an external DP display is driven at: the
+ * EDID's depth (8 when undefined), capped at 8 and at a branch's downstream
+ * limit.
+ */
+static int
+i915_state_dp_ext_max_bpc(
+	const struct i915_lcd_mode *mode,
+	const struct i915_dp_ext_sink *sink)
+{
+	int bpc;
+
+	/* The display's depth, 8 when the EDID does not say. */
+	bpc = mode->edid_bpc;
+	if (bpc <= 0)
+		bpc = I915_STATE_DP_EXT_MAX_BPC;
+
+	/* Deep colour is not driven. */
+	if (bpc > I915_STATE_DP_EXT_MAX_BPC)
+		bpc = I915_STATE_DP_EXT_MAX_BPC;
+
+	/* A branch's downstream port caps it (drm_dp_downstream_max_bpc()). */
+	if (sink->max_bpc > 0 && sink->max_bpc < bpc)
+		bpc = sink->max_bpc;
+
+	/* Succeeded: reports the depth. */
+	return bpc;
+}
+
+/*
+ * Finds the link of an external DP display's mode: for each depth from
+ * max_bpc down to 6 in steps of 2, each shared rate from the lowest (up to
+ * max_rate_khz when given), each lane count 1, 2, 4 (up to the sink's and
+ * max_lanes when given); the first whose data rate carries the mode.
+ * Returns 0 with link's rate, lanes, bpp and rates filled, or ENOSPC.
+ */
+static int
+i915_state_dp_ext_link(
+	const struct i915_lcd_mode *mode,
+	const struct i915_dp_ext_sink *sink,
+	int max_bpc,
+	int max_rate_khz,
+	int max_lanes,
+	struct i915_lcd_link *link)
+{
+	int lane_limit;
+	int bpc;
+	int bpp;
+	int index;
+	int rate;
+	int lanes;
+	int required;
+	int available;
+
+	/* The lanes the sink takes, under the fallback's limit. */
+	lane_limit = sink->max_lanes;
+	if (max_lanes > 0 && max_lanes < lane_limit)
+		lane_limit = max_lanes;
+
+	/* Tries each depth from the deepest. */
+	for (bpc = max_bpc; bpc >= I915_STATE_DP_EXT_MIN_BPC; bpc -= 2) {
+		bpp = 3 * bpc;
+		required = drv_i915_dp_link_required(mode->clock_khz, bpp);
+
+		/* Tries each shared rate from the lowest. */
+		for (index = 0; index < sink->num_common_rates; index++) {
+			rate = sink->common_rates[index];
+
+			/* A rate above the fallback's limit is not tried. */
+			if (max_rate_khz > 0 && rate > max_rate_khz)
+				continue;
+
+			/* Tries 1, 2 and 4 lanes. */
+			for (lanes = 1; lanes <= lane_limit; lanes <<= 1) {
+				available = drv_i915_dp_max_data_rate(rate, lanes);
+				if (required > available)
+					continue;
+
+				/* The first link that carries the mode. */
+				link->rate_khz = rate;
+				link->lanes = lanes;
+				link->bpp = bpp;
+				link->required_kbps = required;
+				link->available_kbps = available;
+
+				/* Succeeded: the link is found. */
+				return 0;
+			}
+		}
+	}
+
+	/* No link carries the mode. */
+	return ENOSPC;
+}
+
+/* Copies a DKL PLL's words out of a PLL state, one word per register. */
+static void
+i915_state_dkl_words(
+	const struct intel_dpll_hw_state *hw,
+	struct i915_lcd_dkl_words *words)
+{
+	/* The reference clock input, the clock tops and the dividers. */
+	words->refclkin_ctl = hw->mg_refclkin_ctl;
+	words->clktop2_coreclkctl1 = hw->mg_clktop2_coreclkctl1;
+	words->clktop2_hsclkctl = hw->mg_clktop2_hsclkctl;
+	words->div0 = hw->mg_pll_div0;
+	words->div1 = hw->mg_pll_div1;
+
+	/* The loop filter, the lock, the spread spectrum and the bias. */
+	words->lf = hw->mg_pll_lf;
+	words->frac_lock = hw->mg_pll_frac_lock;
+	words->ssc = hw->mg_pll_ssc;
+	words->bias = hw->mg_pll_bias;
+	words->tdc_coldst_bias = hw->mg_pll_tdc_coldst_bias;
 }
