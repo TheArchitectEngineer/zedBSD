@@ -548,3 +548,8 @@ Event ws074-browser-next-goals-20261002: ユーザーが専任P10の次の目標
 ## 2026-10-06 UAT のフィードバック
 
 - BUG-227 amazon.co.jp が白い画面（libbrowser か shell かの切り分けから）。BUG-206・207 は直し済み・T1-219 待ち
+
+## 他の WS からの覚え（2026-10-07 Q1 が受けた）
+
+- ws090-p025（P1）で `browser.h` に `browser_view_text_target`・`browser_view_compose`・`browser_view_commit_text` を足し（追加だけ、export は browser_view_* の wildcard）、`dom_control` に `preedit` と `preedit_cursor` を足した。web の form の欄の IME の口。
+- host-browser-ime で、textarea の value が script から undefined になることが分かった（binding の未実装、plan/ws177/backlog-p1.md にも）。
