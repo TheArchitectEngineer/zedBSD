@@ -516,6 +516,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 Q1: ws051-p004a（6f9f7e7d8、TC の AUX・外部 DP の object・H7・M2）を merge。素の 5330 の確認（USB-C の DP の monitor を TC2 に、dmesg に `DP-ext TC2: connected`・rate 540000 lanes 4・EDID 1920x1280・PHY の返却・`hpd DP detect DP-2: connected`、抜いた起動で timeout 無し）はユーザーの操作が要る → ws084 の 10 回の起動と一緒に。P1 は p004b の設計 → p005a（HPD の detect と事象）、p004b の code は P2 の ws113-p011a の後。
 - 2026-10-07 Q1: ws052-p012 は電源ボタンの短押しで眠らせない（ユーザーの「電源ボタンのハンドリングは、あとで…メニュー…WS182」が N5 の既定の案を置き換え）。sleep button・蓋・無操作は p012 で眠る。Q1 が誤って古い P2 の世代に message を送り resume させた → すぐ TaskStop、worktree は新しい P2 の未 commit だけ（被害なし）。
 - 2026-10-07 ユーザー: UAT（ws181-p008）の担当は「後で」、WS184・WS185 は「他のベータ2 WS と同じ」優先度。T1-353: c5-hw は 5330 で login 画面（`Wrong password`）で止まり FAIL（自動 login されない image、harness の問題、未解析）、kernel 側は picture up・stop done・error 0 → ws118-p006 cleared。c5-hw の login の直しは c5-hw を次に使う時に。
 - 2026-10-07 ユーザー:「5320のカーネルは変えていいです」→ Q1 が main 173fa2115 の kernel を /esp/vmunix に（前は vmunix.prev、最初は vmunix.orig）、再起動はユーザー。UAT（App Home の遷移を iOS の奥へ・奥から、touchpad の端の 2 本指 swipe は 1 本が端なら、上端の swipe down を App Home へ）→ [ws181-p008](ws181/phase008/phase.md)。機能追加（ベータ2）: 左手デバイスの OSK → [WS184](ws184/ws.md)、ゲームパッドの OSK・ゲームコンソールモード → [WS185](ws185/ws.md)。
