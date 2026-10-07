@@ -70,7 +70,7 @@ app の絵と Kei の mark は compositor の rasterizer（icons.c・mark.c）�
   ユーザーの「点が 1 px 左」を直す）・音量・電池）と時計の pill、dock の時の題の pill と button の pill（間 34）。検索の button は無し。
 - **待ち**: app の icon の形。ユーザーは ws128-p012 の montage-4（3B の帯の地に 3W の中抜きの記号）を選んだ。b095413c の mark は円（montage-2 の時の案）
   のままなので、ws128-p012 の統合の後に bar の pill もその形にする。それまで merge しない。
-- 残り: 形の統合、bar の試験の座標の確かめ（`zdesktop-p065.sh`・`p072.sh` は log から読むので期待どおりのはず）、T1 の QEMU で light・dark・
+- 残り: 形の統合、bar の試験の座標の確かめ（`zdesktop-p065.sh`・`p072.sh` は 2026-10-07 に削除: 4 つの desktop とメニューの desktop の切り替えが前提で、WS181 の 3 つの desktop で意味が無くなった。bar の座標は plan/ws181/tests/ws181-guest.sh が見る）、T1 の QEMU で light・dark・
   dock・Wiseview・App Home の PNG、全文の規約。
 
 ## 2026-10-06 保留の実装の置き場所
