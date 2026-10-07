@@ -708,8 +708,8 @@ i915_gfx_decode_viewport(
  * attachment 0: the enable, the factors and operations of the colour and
  * of the alpha, the write mask and the blend constants.
  *
- * XXX: one colour attachment is drawn, so only attachment 0 is kept; a
- * logic operation is named and not applied.
+ * The logic operation is kept (ws031-p032).  XXX: the factors and the
+ * operations are attachment 0's for every attachment.
  */
 static void
 i915_gfx_decode_blend(
@@ -735,9 +735,11 @@ i915_gfx_decode_blend(
 	i915_gfx_float_bits(&pipeline->blend_constants[2], &blend.blendConstants[2]);
 	i915_gfx_float_bits(&pipeline->blend_constants[3], &blend.blendConstants[3]);
 
-	/* Names a logic operation the draw does not apply. */
+	/* Keeps the logic operation, which blends no attachment. */
+	pipeline->logic_op_enable = 0U;
 	if (blend.logicOpEnable != VK_FALSE)
-		kern_logf("i915: vk: XXX pipeline asks for logic operation %u; the draw does not apply it\n", blend.logicOp);
+		pipeline->logic_op_enable = 1U;
+	pipeline->logic_op = blend.logicOp;
 
 	/* A record without attachments asks for no blending and writes nothing it could mask. */
 	if (blend.attachmentCount == 0U || blend.pAttachments == NULL)

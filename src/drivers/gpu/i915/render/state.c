@@ -323,7 +323,10 @@ static uint32_t i915_sampler_mip_filter(uint32_t mipmap_mode);
 static int i915_state_write_surfaces(uint32_t *surface, uint32_t *dynamic, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, uint32_t mocs);
 static int i915_state_viewport_source(const struct i915_gfx_draw_state *state, const uint32_t **viewport, const VkRect2D **scissor);
 static void i915_state_write_viewport(uint32_t *dynamic, const uint32_t *viewport, const VkRect2D *scissor);
-static void i915_state_write_blend(uint32_t *dynamic, const struct i915_gfx_draw_state *state);
+static void i915_state_write_blend(uint32_t *dynamic, const struct i915_gfx_draw_state *state, const struct i915_gfx_image *target);
+static uint32_t i915_state_target_format(const struct i915_gfx_draw_state *state, uint32_t slot, const struct i915_gfx_image *target);
+static int i915_state_format_takes_logic_op(uint32_t format);
+static uint32_t i915_blend_logic_op(uint32_t op);
 static int i915_state_write_push(uint8_t *data, const struct i915_gfx_draw_state *state, const struct i915_gfx_push_layout *layout);
 static void i915_blend_equation(const struct i915_gfx_pipeline *pipeline, struct i915_gfx_blend *equation);
 static uint32_t i915_blend_factor(uint32_t factor);
@@ -401,7 +404,7 @@ drv_i915_gfx_write_state(
 
 	/* Writes the viewports and the scissor, then the blend state and its constants. */
 	i915_state_write_viewport(dynamic, viewport, scissor);
-	i915_state_write_blend(dynamic, state);
+	i915_state_write_blend(dynamic, state, target);
 
 	/* Fills the vertex stage's push data. */
 	error = i915_state_write_push(page + I915_GFX_PUSH_BUFFER, state, &kernels->vs_push);
@@ -2590,7 +2593,8 @@ i915_state_write_viewport(
 static void
 i915_state_write_blend(
 	uint32_t *dynamic,
-	const struct i915_gfx_draw_state *state)
+	const struct i915_gfx_draw_state *state,
+	const struct i915_gfx_image *target)
 {
 	const struct i915_gfx_pipeline *pipeline;
 	struct i915_gfx_blend equation;
@@ -2647,6 +2651,16 @@ i915_state_write_blend(
 		if (blends != 0)
 			words[1U + 2U * slot] |= entry;
 		words[2U + 2U * slot] = 1U | (1U << 1) | (GEN12_COLORCLAMP_RTFORMAT << 2);
+
+		/*
+		 * The logic operation, on every target that takes one whether it
+		 * blends or not, an integer one too; a float or an sRGB target
+		 * passes the colour through (Vulkan, VkLogicOp; anv).
+		 */
+		if (pipeline->logic_op_enable != 0U &&
+		    i915_state_format_takes_logic_op(i915_state_target_format(state, slot, target)) != 0)
+			words[2U + 2U * slot] |= GEN12_BLEND_LOGIC_OP_ENABLE |
+			    (i915_blend_logic_op(pipeline->logic_op) << GEN12_BLEND_LOGIC_OP_FUNCTION_SHIFT);
 	}
 
 	/* Takes the pipeline's blend constants, or the dynamic ones vkCmdSetBlendConstants set. */
@@ -2679,9 +2693,9 @@ i915_blend_equation(
 {
 	int second;
 
-	/* Starts with blending off, which is all a pipeline without blending asks for. */
+	/* Starts with blending off, which is all a pipeline without blending, or with a logic operation, asks for. */
 	kern_memset(equation, 0, sizeof(*equation));
-	if (pipeline->blend_enable == 0U)
+	if (pipeline->blend_enable == 0U || pipeline->logic_op_enable != 0U)
 		return;
 
 	/* Translates the colour's factors and function. */
@@ -2774,6 +2788,89 @@ i915_blend_uses_second_source(
 
 	/* Succeeded: any other factor reads the first source only. */
 	return 0;
+}
+
+/*
+ * Translates a VkLogicOp to its 3D_Logic_Op_Function (Mesa 25.0.7 anv
+ * vk_to_intel_logic_op, values of genxml gen40.xml); a value past the
+ * table copies.
+ */
+static uint32_t
+i915_blend_logic_op(
+	uint32_t op)
+{
+	static const uint8_t functions[16] = {
+		0U,	/* CLEAR */
+		8U,	/* AND */
+		4U,	/* AND_REVERSE */
+		12U,	/* COPY */
+		2U,	/* AND_INVERTED */
+		10U,	/* NO_OP */
+		6U,	/* XOR */
+		14U,	/* OR */
+		1U,	/* NOR */
+		9U,	/* EQUIVALENT */
+		5U,	/* INVERT */
+		13U,	/* OR_REVERSE */
+		3U,	/* COPY_INVERTED */
+		11U,	/* OR_INVERTED */
+		7U,	/* NAND */
+		15U	/* SET */
+	};
+
+	/* An operation the table does not know copies. */
+	if (op >= sizeof(functions))
+		return 12U;
+
+	/* Succeeded: the hardware function. */
+	return functions[op];
+}
+
+/*
+ * Gives the VkFormat colour slot `slot` of the draw writes: its view's (as
+ * the view reads the texels), or for a test's state without a framebuffer
+ * the given target's as slot 0; 0 for a slot without a target.
+ */
+static uint32_t
+i915_state_target_format(
+	const struct i915_gfx_draw_state *state,
+	uint32_t slot,
+	const struct i915_gfx_image *target)
+{
+	const struct i915_gfx_view *view;
+
+	/* The slot's view. */
+	view = i915_state_target_view(state, slot);
+	if (view != NULL)
+		return drv_i915_gfx_view_format(view);
+
+	/* A test's state draws slot 0 into the target it gives. */
+	if (slot == 0U && state->framebuffer == NULL && target != NULL)
+		return target->format;
+
+	/* No target. */
+	return 0U;
+}
+
+/* Tells whether a logic operation applies to a target of a VkFormat: not to a float or an sRGB one, nor to none. */
+static int
+i915_state_format_takes_logic_op(
+	uint32_t format)
+{
+	/* The float and sRGB formats the executor draws into, and no format. */
+	switch (format) {
+	case 0U:
+	case VK_FORMAT_R32G32B32A32_SFLOAT:
+	case VK_FORMAT_R16G16B16A16_SFLOAT:
+	case VK_FORMAT_R32_SFLOAT:
+	case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_B8G8R8A8_SRGB:
+		return 0;
+	default:
+		/* Succeeded: a normalized or an integer format. */
+		return 1;
+	}
 }
 
 /*

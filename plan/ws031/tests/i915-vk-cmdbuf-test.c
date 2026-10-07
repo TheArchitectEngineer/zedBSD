@@ -151,6 +151,7 @@ static void test_mip_transfers(void);
 static void test_recording_limits(void);
 static void fixture_state_image(struct i915_gfx_image *image, struct i915_gfx_memory *memory, uint32_t side, uint64_t offset);
 static void test_view_format_swizzle(void);
+static void test_logic_op(void);
 static void test_blend_state(void);
 static void fixture_dsl(uint64_t identity, const uint32_t *numbers, const uint32_t *types, uint32_t count);
 static void fixture_buffer_write(uint64_t set, uint32_t binding, uint32_t type, uint64_t offset, uint64_t range);
@@ -172,6 +173,7 @@ main(void)
 	test_recording_limits();
 	test_blend_state();
 	test_view_format_swizzle();
+	test_logic_op();
 	test_uniform_bindings();
 
 	/* Succeeded: every check held. */
@@ -1609,6 +1611,113 @@ fixture_state_image(
 	image->levels = 1U;
 	image->memory = memory;
 	image->offset = offset;
+}
+
+/* Writes the draw state of a pipeline into one target (a test's, no framebuffer) and returns the dynamic heap. */
+static const uint32_t *
+fixture_blend_state(
+	uint8_t *page,
+	struct i915_gfx_pipeline *pipeline,
+	struct i915_gfx_image *target)
+{
+	static struct i915_gfx_draw_state state;
+	static struct i915_gfx_kernels kernels;
+	int error;
+
+	/* The pipeline's 16x16 viewport, no texture. */
+	pipeline->viewport[2] = 0x41800000U;
+	pipeline->viewport[3] = 0x41800000U;
+	pipeline->viewport[5] = 0x3f800000U;
+	pipeline->scissor.extent.width = 16U;
+	pipeline->scissor.extent.height = 16U;
+	memset(&state, 0, sizeof(state));
+	state.pipeline = pipeline;
+	memset(&kernels, 0, sizeof(kernels));
+
+	/* Succeeded: the dynamic heap. */
+	memset(page, 0, I915_GFX_SLOT_BYTES);
+	error = drv_i915_gfx_write_state(page, &state, &kernels, target, 0x6U);
+	assert(error == 0);
+	return (const uint32_t *)(const void *)(page + I915_GFX_DYNAMIC_HEAP);
+}
+
+/*
+ * The logic operation (ws031-p032): BLEND_STATE's entry dword 1 carries
+ * Logic Op Enable and the 3D_Logic_Op_Function of the VkLogicOp (AND is
+ * 8, COPY 12, every one as anv's table has it), and no entry blends, nor
+ * 3DSTATE_PS_BLEND, even with blendEnable; an integer target takes it, a
+ * float and an sRGB one pass the colour through.
+ */
+static void
+test_logic_op(void)
+{
+	static uint8_t page[I915_GFX_SLOT_BYTES];
+	static const uint32_t anv[16] = { 0U, 8U, 4U, 12U, 2U, 10U, 6U, 14U, 1U, 9U, 5U, 13U, 3U, 11U, 7U, 15U };
+	struct i915_gem_object object;
+	struct i915_gfx_memory memory;
+	struct i915_gfx_image target;
+	struct i915_gfx_pipeline pipeline;
+	struct i915_gfx_batch batch;
+	const uint32_t *dynamic;
+	uint32_t commands[8];
+	uint32_t op;
+
+	/* The 16x16 RGBA8 UNORM target at 0x7000_0000. */
+	memset(&object, 0, sizeof(object));
+	object.bytes = sizeof(fixture_storage);
+	object.va = 0x70000000ULL;
+	object.run.paddr = (hal_physaddr_t)(uintptr_t)fixture_storage;
+	memset(&memory, 0, sizeof(memory));
+	memory.object = &object;
+	memory.size = sizeof(fixture_storage);
+	fixture_state_image(&target, &memory, 16U, 0U);
+
+	/* AND on a pipeline that also asks to blend: the logic operation, no blending. */
+	memset(&pipeline, 0, sizeof(pipeline));
+	pipeline.blend_enable = 1U;
+	pipeline.blend_src_color = VK_BLEND_FACTOR_SRC_ALPHA;
+	pipeline.blend_dst_color = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	pipeline.logic_op_enable = 1U;
+	pipeline.logic_op = VK_LOGIC_OP_AND;
+	dynamic = fixture_blend_state(page, &pipeline, &target);
+	assert((dynamic[I915_GFX_DYN_BLEND / 4U + 1U] & GEN12_BLEND_ENABLE) == 0U);
+	assert(dynamic[I915_GFX_DYN_BLEND / 4U + 2U] ==
+	       (1U | (1U << 1) | (GEN12_COLORCLAMP_RTFORMAT << 2) | GEN12_BLEND_LOGIC_OP_ENABLE |
+		(8U << GEN12_BLEND_LOGIC_OP_FUNCTION_SHIFT)));
+	memset(commands, 0, sizeof(commands));
+	batch.cmds = commands;
+	batch.count = 0U;
+	batch.capacity = 8U;
+	batch.overflow = 0;
+	drv_i915_gfx_emit_ps_blend(&batch, &pipeline);
+	assert(batch.count == 2U && (commands[1] & GEN12_PS_BLEND_ENABLE) == 0U);
+
+	/* Every VkLogicOp is anv's function; one past the table copies. */
+	for (op = 0U; op < 17U; op++) {
+		pipeline.logic_op = op;
+		dynamic = fixture_blend_state(page, &pipeline, &target);
+		assert(((dynamic[I915_GFX_DYN_BLEND / 4U + 2U] >> GEN12_BLEND_LOGIC_OP_FUNCTION_SHIFT) & 0xfU) ==
+		       (op < 16U ? anv[op] : 12U));
+	}
+
+	/* An integer target takes it; a float and an sRGB target do not. */
+	pipeline.logic_op = VK_LOGIC_OP_COPY;
+	target.format = VK_FORMAT_R8G8B8A8_UINT;
+	dynamic = fixture_blend_state(page, &pipeline, &target);
+	assert((dynamic[I915_GFX_DYN_BLEND / 4U + 2U] & GEN12_BLEND_LOGIC_OP_ENABLE) != 0U);
+	assert(((dynamic[I915_GFX_DYN_BLEND / 4U + 2U] >> GEN12_BLEND_LOGIC_OP_FUNCTION_SHIFT) & 0xfU) == 12U);
+	target.format = VK_FORMAT_R8G8B8A8_SRGB;
+	dynamic = fixture_blend_state(page, &pipeline, &target);
+	assert((dynamic[I915_GFX_DYN_BLEND / 4U + 2U] & GEN12_BLEND_LOGIC_OP_ENABLE) == 0U);
+	assert((dynamic[I915_GFX_DYN_BLEND / 4U + 1U] & GEN12_BLEND_ENABLE) == 0U);
+
+	/* Without the logic operation the same pipeline blends, and dword 1 has no logic operation. */
+	target.format = VK_FORMAT_R8G8B8A8_UNORM;
+	pipeline.logic_op_enable = 0U;
+	dynamic = fixture_blend_state(page, &pipeline, &target);
+	assert((dynamic[I915_GFX_DYN_BLEND / 4U + 1U] & GEN12_BLEND_ENABLE) != 0U);
+	assert((dynamic[I915_GFX_DYN_BLEND / 4U + 2U] & GEN12_BLEND_LOGIC_OP_ENABLE) == 0U);
+	printf("  logic op: AND 8 and COPY 12 in entry dword 1 with no blending (BLEND_STATE, PS_BLEND), all 16 as anv, integer target yes, sRGB no\n");
 }
 
 /* Writes the draw state for one texture and returns its RENDER_SURFACE_STATE (ws031-p033). */
