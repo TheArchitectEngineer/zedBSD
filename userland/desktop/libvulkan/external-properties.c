@@ -20,6 +20,8 @@ static uint32_t external_native_type(const struct vulkan_context *context);
 static VkResult external_buffer_properties(struct VkPhysicalDevice_T *physical, const VkPhysicalDeviceExternalBufferInfo *info, VkExternalMemoryProperties *properties);
 static VkResult external_image_properties(struct VkPhysicalDevice_T *physical, const VkPhysicalDeviceImageFormatInfo2 *info, VkImageFormatProperties *properties, VkExternalMemoryProperties *external);
 static void external_id_array(struct vulkan_reader *reader, void *bytes, uint32_t count);
+static VkResult external_video_image_properties(struct VkPhysicalDevice_T *physical, const VkPhysicalDeviceImageFormatInfo2 *info, const VkVideoProfileListInfoKHR *profiles, const VkPhysicalDeviceExternalImageFormatInfo *external, VkImageFormatProperties *properties);
+static void external_queue_family_chain(struct VkPhysicalDevice_T *physical, uint32_t family, VkBaseOutStructure *chain);
 
 /* Returns the same supported core feature snapshot through its standard extensible form. */
 VKAPI_ATTR void VKAPI_CALL
@@ -27,8 +29,26 @@ vkGetPhysicalDeviceFeatures2KHR(
 	VkPhysicalDevice physicalDevice,
 	VkPhysicalDeviceFeatures2 *pFeatures)
 {
+	struct VkPhysicalDevice_T *physical;
+	VkBaseOutStructure *next;
+	VkPhysicalDeviceSynchronization2Features *synchronization;
+
 	/* Unknown output extensions are left untouched, as in the standard chain contract. */
+	physical = vulkan_physical_device(physicalDevice);
 	vkGetPhysicalDeviceFeatures(physicalDevice, &pFeatures->features);
+
+	/* Answers the synchronization2 feature wherever the caller chained it. */
+	for (next = pFeatures->pNext; next != NULL; next = next->pNext) {
+		/* Only the synchronization2 feature record has a local answer. */
+		if (next->sType != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES)
+			continue;
+
+		/* The translated commands are available exactly when the extension is named. */
+		synchronization = (VkPhysicalDeviceSynchronization2Features *)next;
+		synchronization->synchronization2 = VK_FALSE;
+		if (physical->supported_extensions & VULKAN_DEVICE_SYNCHRONIZATION2)
+			synchronization->synchronization2 = VK_TRUE;
+	}
 
 	/* Succeeded: the wrapper preserves caller-owned chain links. */
 	return;
@@ -100,22 +120,32 @@ vkGetPhysicalDeviceImageFormatProperties2KHR(
 	const VkBaseInStructure *input;
 	VkBaseOutStructure *output;
 	const VkPhysicalDeviceExternalImageFormatInfo *external;
+	const VkVideoProfileListInfoKHR *profiles;
 	VkExternalImageFormatProperties *properties;
 	VkExternalMemoryProperties memory;
 	VkResult status;
 
-	/* Finds the requested external type without depending on pNext order. */
+	/* Finds the requested external type and video profiles without depending on pNext order. */
 	physical = vulkan_physical_device(physicalDevice);
 	external = NULL;
+	profiles = NULL;
 	for (input = pImageFormatInfo->pNext; input != NULL; input = input->pNext) {
+		/* Names the external memory type the image would be shared with. */
 		if (input->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO)
 			external = (const VkPhysicalDeviceExternalImageFormatInfo *)input;
+
+		/* Names the video profiles a decode picture would be used with. */
+		if (input->sType == VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR)
+			profiles = (const VkVideoProfileListInfoKHR *)input;
 	}
 
 	/* A missing or zero external type has exactly the ordinary core query semantics. */
 	memset(&memory, 0, sizeof(memory));
 	memset(&pImageFormatProperties->imageFormatProperties, 0, sizeof(pImageFormatProperties->imageFormatProperties));
-	if (external == NULL || external->handleType == 0) {
+	if (profiles != NULL) {
+		/* A video picture is checked here, then its limits come from the renderer. */
+		status = external_video_image_properties(physical, pImageFormatInfo, profiles, external, &pImageFormatProperties->imageFormatProperties);
+	} else if (external == NULL || external->handleType == 0) {
 		status = vkGetPhysicalDeviceImageFormatProperties(
 			physicalDevice,
 			pImageFormatInfo->format,
@@ -175,8 +205,11 @@ vkGetPhysicalDeviceQueueFamilyProperties2KHR(
 		count = physical->queue_family_count;
 
 	/* Initializes only the number of output entries the caller can hold. */
-	for (index = 0; index < count; index++)
+	for (index = 0; index < count; index++) {
+		/* Copies the core record, then answers the video records the caller chained. */
 		pQueueFamilyProperties[index].queueFamilyProperties = physical->queue_families[index];
+		external_queue_family_chain(physical, index, pQueueFamilyProperties[index].pNext);
+	}
 
 	/* The returned count identifies every initialized output entry. */
 	*pQueueFamilyPropertyCount = count;
@@ -598,4 +631,87 @@ external_native_type(
 
 	/* Succeeded: stock renderers retain their supported DMA-backed subset. */
 	return VULKAN_EXTERNAL_MEMORY_DMABUF;
+}
+
+/* Checks a video decode picture locally and asks the renderer for its limits. */
+static VkResult
+external_video_image_properties(
+	struct VkPhysicalDevice_T *physical,
+	const VkPhysicalDeviceImageFormatInfo2 *info,
+	const VkVideoProfileListInfoKHR *profiles,
+	const VkPhysicalDeviceExternalImageFormatInfo *external,
+	VkImageFormatProperties *properties)
+{
+	VkImageUsageFlags video_usage;
+	VkResult status;
+
+	/* Every listed profile must be the H.264 decode profile this library implements. */
+	status = vulkan_video_profile_list_check(physical, profiles);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/*
+	 * A decode picture is only ever a decode output or a reference picture
+	 * here; sampling or copying it is not offered.
+	 */
+	video_usage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
+	if ((info->usage & ~video_usage) != 0)
+		return VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR;
+
+	/* The decode picture is a single-layer two-plane 4:2:0 image in the decoder's tiling. */
+	if (info->format != VK_FORMAT_G8_B8R8_2PLANE_420_UNORM)
+		return VK_ERROR_FORMAT_NOT_SUPPORTED;
+	if (info->type != VK_IMAGE_TYPE_2D)
+		return VK_ERROR_FORMAT_NOT_SUPPORTED;
+	if (info->tiling != VK_IMAGE_TILING_OPTIMAL)
+		return VK_ERROR_FORMAT_NOT_SUPPORTED;
+
+	/* A decode picture is never shared with another process. */
+	if (external != NULL && external->handleType != 0)
+		return VK_ERROR_FORMAT_NOT_SUPPORTED;
+
+	/* Asks the renderer, which knows the decoder's largest picture, for the limits. */
+	status = vkGetPhysicalDeviceImageFormatProperties(
+		physical,
+		info->format,
+		info->type,
+		info->tiling,
+		info->usage,
+		info->flags,
+		properties);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the picture can be created with the returned limits. */
+	return VK_SUCCESS;
+}
+
+/* Fills the video records of one queue family's extensible output chain. */
+static void
+external_queue_family_chain(
+	struct VkPhysicalDevice_T *physical,
+	uint32_t family,
+	VkBaseOutStructure *chain)
+{
+	VkBaseOutStructure *next;
+	VkQueueFamilyVideoPropertiesKHR *video;
+	VkQueueFamilyQueryResultStatusPropertiesKHR *status;
+
+	/* Visits every record the caller chained, in any order. */
+	for (next = chain; next != NULL; next = next->pNext) {
+		/* The codec operations of the family, asked of the renderer once. */
+		if (next->sType == VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR) {
+			video = (VkQueueFamilyVideoPropertiesKHR *)next;
+			video->videoCodecOperations = physical->queue_video_operations[family];
+		}
+
+		/* No family reports the result status of a video operation. */
+		if (next->sType == VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_KHR) {
+			status = (VkQueueFamilyQueryResultStatusPropertiesKHR *)next;
+			status->queryResultStatusSupport = VK_FALSE;
+		}
+	}
+
+	/* Succeeded: the caller's chain holds the family's video answers. */
+	return;
 }

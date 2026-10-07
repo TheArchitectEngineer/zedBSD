@@ -350,6 +350,28 @@ device_validate(
 			continue;
 		}
 
+		/* Selects the translated synchronization2 commands and the video decode chain. */
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_DEVICE_SYNCHRONIZATION2;
+			continue;
+		}
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_VIDEO_QUEUE_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_DEVICE_VIDEO_QUEUE;
+			continue;
+		}
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_DEVICE_VIDEO_DECODE_QUEUE;
+			continue;
+		}
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_DEVICE_VIDEO_DECODE_H264;
+			continue;
+		}
+
 		/* Does not forward renderer-private extensions as guest capabilities. */
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 	}
@@ -380,6 +402,21 @@ device_validate(
 
 	/* A dedicated allocation reports its preference through the extensible requirement queries. */
 	if ((bits & VULKAN_DEVICE_DEDICATED_ALLOCATION) && !(bits & VULKAN_DEVICE_MEMORY_REQUIREMENTS2))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+
+	/*
+	 * Synchronization2 on a Vulkan 1.0 device depends on the instance's
+	 * extensible physical-device queries, and each video extension on the
+	 * one below it: decode H.264, decode queue, video queue, then
+	 * synchronization2.
+	 */
+	if ((bits & VULKAN_DEVICE_SYNCHRONIZATION2) && !(physical->instance->enabled_extensions & VULKAN_INSTANCE_PROPERTIES2))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	if ((bits & VULKAN_DEVICE_VIDEO_QUEUE) && !(bits & VULKAN_DEVICE_SYNCHRONIZATION2))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	if ((bits & VULKAN_DEVICE_VIDEO_DECODE_QUEUE) && !(bits & VULKAN_DEVICE_VIDEO_QUEUE))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+	if ((bits & VULKAN_DEVICE_VIDEO_DECODE_H264) && !(bits & VULKAN_DEVICE_VIDEO_DECODE_QUEUE))
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 
 	/* Counts actual requested queues without imposing a library object-array ceiling. */

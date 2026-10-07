@@ -26,6 +26,7 @@ static VkResult instance_create_remote(struct vulkan_instance_context *link, con
 static VkResult instance_enumerate_remote(struct vulkan_instance_context *link);
 static VkResult physical_load(struct VkPhysicalDevice_T *physical);
 static VkResult physical_load_queues(struct VkPhysicalDevice_T *physical);
+static VkResult physical_load_video(struct VkPhysicalDevice_T *physical);
 static VkResult physical_query_begin(struct VkPhysicalDevice_T *physical, uint32_t opcode, struct vulkan_reader *reader);
 static void physical_finish(struct VkPhysicalDevice_T *physical);
 static void instance_finish(struct VkInstance_T *instance);
@@ -343,6 +344,18 @@ vkGetPhysicalDeviceFormatProperties(
 	if (status != VK_SUCCESS)
 		memset(&properties, 0, sizeof(properties));
 
+	/*
+	 * A renderer that does not promise video decode may still report the
+	 * video format features of its own driver.  Without the video
+	 * extensions those bits name nothing the caller can use, so they are
+	 * withheld (the video features of encode included).
+	 */
+	if (!physical->object.context->video_h264) {
+		properties.linearTilingFeatures &= ~VULKAN_VIDEO_FORMAT_FEATURES;
+		properties.optimalTilingFeatures &= ~VULKAN_VIDEO_FORMAT_FEATURES;
+		properties.bufferFeatures &= ~VULKAN_VIDEO_FORMAT_FEATURES;
+	}
+
 	/* Publishes all fields, including the valid unsupported-format zero capability set. */
 	*pFormatProperties = properties;
 
@@ -457,7 +470,7 @@ vkEnumerateDeviceExtensionProperties(
 	VkExtensionProperties *pProperties)
 {
 	struct VkPhysicalDevice_T *physical;
-	VkExtensionProperties available[8];
+	VkExtensionProperties available[12];
 	uint32_t count;
 	VkResult status;
 
@@ -515,6 +528,30 @@ vkEnumerateDeviceExtensionProperties(
 	if (physical->supported_extensions & VULKAN_DEVICE_DEDICATED_ALLOCATION) {
 		strcpy(available[count].extensionName, VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
 		available[count].specVersion = VK_KHR_DEDICATED_ALLOCATION_SPEC_VERSION;
+		count++;
+	}
+
+	/* The barrier and submission forms the video extensions are written against. */
+	if (physical->supported_extensions & VULKAN_DEVICE_SYNCHRONIZATION2) {
+		strcpy(available[count].extensionName, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+		available[count].specVersion = VK_KHR_SYNCHRONIZATION_2_SPEC_VERSION;
+		count++;
+	}
+
+	/* Video decode is named only when the native renderer promised an H.264 decode family. */
+	if (physical->supported_extensions & VULKAN_DEVICE_VIDEO_QUEUE) {
+		strcpy(available[count].extensionName, VK_KHR_VIDEO_QUEUE_EXTENSION_NAME);
+		available[count].specVersion = VK_KHR_VIDEO_QUEUE_SPEC_VERSION;
+		count++;
+	}
+	if (physical->supported_extensions & VULKAN_DEVICE_VIDEO_DECODE_QUEUE) {
+		strcpy(available[count].extensionName, VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
+		available[count].specVersion = VK_KHR_VIDEO_DECODE_QUEUE_SPEC_VERSION;
+		count++;
+	}
+	if (physical->supported_extensions & VULKAN_DEVICE_VIDEO_DECODE_H264) {
+		strcpy(available[count].extensionName, VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME);
+		available[count].specVersion = VK_KHR_VIDEO_DECODE_H264_SPEC_VERSION;
 		count++;
 	}
 
@@ -1092,6 +1129,11 @@ physical_load(
 	if (physical->object.context->capabilities & GPU_CAP_FENCE)
 		physical->supported_extensions |= VULKAN_DEVICE_EXTERNAL_FENCE | VULKAN_DEVICE_EXTERNAL_FENCE_FD;
 
+	/* Asks the codec operations of each family when the renderer promised video decode. */
+	status = physical_load_video(physical);
+	if (status != VK_SUCCESS)
+		return status;
+
 	/* Succeeded: the snapshot combines real renderer capability and real guest transport support. */
 	return VK_SUCCESS;
 }
@@ -1224,6 +1266,19 @@ physical_load_queues(
 		return status;
 	}
 
+	/*
+	 * A renderer that does not promise video decode may still report the
+	 * video queue flags of its own driver (a host renderer over a driver
+	 * with video).  Without the video extensions a family with those flags
+	 * would break the queue family contract, so the flags are withheld.
+	 */
+	if (!physical->object.context->video_h264) {
+		for (index = 0; index < count; index++) {
+			/* Keeps the graphics, compute and transfer flags of the same family. */
+			families[index].queueFlags &= ~(VkQueueFlags)VULKAN_VIDEO_QUEUE_FLAGS;
+		}
+	}
+
 	/* Every reported family needs at least one distinct renderer queue timeline. */
 	if (count >= VULKAN_QUEUE_TIMELINE_COUNT) {
 		vulkan_free(&physical->object.allocator, families);
@@ -1254,6 +1309,97 @@ physical_load_queues(
 	physical->queue_family_count = count;
 
 	/* Succeeded: logical-device validation can use preserved native families and implementable queue counts. */
+	return VK_SUCCESS;
+}
+
+/* Asks the renderer which video codec operations each queue family performs. */
+static VkResult
+physical_load_video(
+	struct VkPhysicalDevice_T *physical)
+{
+	struct vulkan_writer writer;
+	struct vulkan_reader reader;
+	VkResult status;
+	VkBool32 present;
+	VkBool32 decoder;
+	uint32_t count;
+	uint32_t index;
+	uint32_t operations;
+
+	/* Only the native word's promise makes the question meaningful. */
+	if (!physical->object.context->video_h264)
+		return VK_SUCCESS;
+
+	/* Asks one codec operation word for every family the snapshot holds. */
+	vulkan_writer_init_for_object(&writer, &physical->object);
+	vulkan_command_begin(&writer, GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_VIDEO_PROPERTIES);
+	vulkan_write_u64(&writer, physical->object.wire_id);
+	vulkan_write_u32(&writer, physical->queue_family_count);
+	status = vulkan_command_execute(physical->object.context, &writer, 16 + (size_t)physical->queue_family_count * 4, &reader, VK_FALSE);
+	vulkan_writer_finish(&writer);
+	if (status != VK_SUCCESS) {
+		status = vulkan_reply_finish(physical->object.context, &reader, status);
+		return status;
+	}
+
+	/* The renderer answers for exactly the families it already reported. */
+	present = vulkan_reply_pointer(&reader);
+	count = vulkan_read_u32(&reader);
+	if (present && count != physical->queue_family_count)
+		reader.error = VK_ERROR_DEVICE_LOST;
+
+	/*
+	 * Keeps only H.264 decode, the one codec operation this library
+	 * implements, and only on a family that has the video decode flag.
+	 */
+	decoder = VK_FALSE;
+	for (index = 0;
+	     index < count && reader.error == VK_SUCCESS;
+	     index++) {
+		/* Reads the family's word and keeps only H.264 decode. */
+		operations = vulkan_read_u32(&reader);
+		operations &= VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
+
+		/* A family without the video decode flag cannot run a decode. */
+		if ((physical->queue_families[index].queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) == 0)
+			operations = 0;
+
+		/* A family that decodes H.264 is what the video extensions stand for. */
+		physical->queue_video_operations[index] = operations;
+		if (operations != 0)
+			decoder = VK_TRUE;
+	}
+
+	/* A malformed answer fails the physical device rather than hiding its video family. */
+	status = vulkan_reply_finish(physical->object.context, &reader, VK_SUCCESS);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/*
+	 * The renderer promised video decode but no family decodes H.264.  The
+	 * extensions stay unnamed and the video flags of every family are
+	 * withheld, as on a renderer without the promise.
+	 */
+	if (!decoder) {
+		for (index = 0; index < physical->queue_family_count; index++) {
+			/* Keeps the graphics, compute and transfer flags of the same family. */
+			physical->queue_families[index].queueFlags &= ~(VkQueueFlags)VULKAN_VIDEO_QUEUE_FLAGS;
+		}
+
+		/* Succeeded: the physical device has no video decode. */
+		return VK_SUCCESS;
+	}
+
+	/*
+	 * Names the video decode extensions and synchronization2, the barrier
+	 * form they are written against (translated in this library).
+	 */
+	physical->supported_extensions |= VULKAN_DEVICE_SYNCHRONIZATION2;
+	physical->supported_extensions |= VULKAN_DEVICE_VIDEO_QUEUE;
+	physical->supported_extensions |= VULKAN_DEVICE_VIDEO_DECODE_QUEUE;
+	physical->supported_extensions |= VULKAN_DEVICE_VIDEO_DECODE_H264;
+
+	/* Succeeded: the families that decode H.264 are known. */
 	return VK_SUCCESS;
 }
 

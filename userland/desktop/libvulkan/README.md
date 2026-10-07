@@ -60,6 +60,33 @@ ELF checkerは155 exports、SONAME、依存ライブラリとinterpreterを照�
 返します。native返信の有限watchdogもあり、非常に長いcompile等では
 contextをdevice-lostとして終了する場合があります。
 
+## Vulkan Video（H.264 decode）と synchronization2（ws083）
+
+`VK_KHR_video_queue`・`VK_KHR_video_decode_queue`・`VK_KHR_video_decode_h264` と
+`VK_KHR_synchronization2` は、capset の native の語（176 byte の record の
+byte 168 の tag と byte 172 の bit 0）で H.264 decode を約束した backend
+（native の i915）の時だけ列挙します。Venus（fork・stock）では出さず、
+backend の queue family の video の flag と format の video の feature も隠します。
+`video.c` は profile と parameter set の key を手元で検べ、session・parameters・
+記録を zedBSD 独自の opcode（`uapi/gpu-op.h` の `0x10000`〜`0x1000d`）で送ります。
+`sync2.c` は synchronization2 の 6 command を 1.0 の command に翻訳します
+（1.0 に無い stage は ALL_COMMANDS、access は MEMORY_READ|MEMORY_WRITE に広げる）。
+
+規格に合わない点（ユーザーの判断 H2・HD6、2026-10-07）:
+
+- N1: device の `apiVersion` は 1.0 のままで、Vulkan 1.1（と synchronization2）を
+  前提とする video の拡張を名乗ります。
+- N2: `VK_KHR_sampler_ycbcr_conversion` を名乗らずに NV12
+  （`VK_FORMAT_G8_B8R8_2PLANE_420_UNORM`）と `PLANE_0/1` の aspect を使います。
+- N3: OPTIMAL（decoder の Tile Y）の decode の絵に `vkGetImageSubresourceLayout`
+  が plane の offset・pitch を答えます。zedBSD の私的な約束で、試験の app が
+  de-tile に使います（decode の絵の SAMPLED・TRANSFER_SRC が入れば不要）。
+- N4: slice が 256 を超える picture は decode せずに飛ばします（出力は未定義）。
+
+parameter set の key の重複と H.264 の範囲の外の id は `VK_ERROR_INITIALIZATION_FAILED`
+で拒みます（固定した 1.3.269 の header では `VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR`
+が beta の encode の値のため）。result status query・inline query は持ちません。
+
 ## 宣言とprotocolの来歴
 
 [API-PROVENANCE.md](../../../include/libc/vulkan/API-PROVENANCE.md) に
