@@ -16,17 +16,19 @@
  * The list names each queue family with its flags and video codec
  * operations and the device's video extensions; on a device without video
  * decode it shows no video family and no video extension.  The decode
- * reads the stream's parameter sets and pictures (h264.c), decodes each
- * picture into one NV12 image (its DPB slot 0, the session reset before
- * each picture), reads the image's planes through the image's subresource
- * layout (zedBSD's promise for an optimal NV12 image) and hashes the
- * display window as ffmpeg hashes a raw NV12 frame (frame.c).  The probe
- * decodes intra pictures only (each an IDR picture); P and B pictures
- * stop it (ws083-p006).  With --expect, each frame is compared with the
- * file's line, and the exit status says whether all matched.
+ * reads the stream's parameter sets and pictures (h264.c), keeps the DPB
+ * (dpb.c: one NV12 image a slot, the H.264 reference marking), decodes
+ * each picture into a free slot's image with every reference picture of
+ * the DPB, reads the image's planes through the image's subresource layout
+ * (zedBSD's promise for an optimal NV12 image) and hashes the display
+ * window as ffmpeg hashes a raw NV12 frame (frame.c).  The frames are
+ * printed in display order: by their order counts, between IDR pictures.
+ * With --expect, each frame is compared with the file's line, and the exit
+ * status says whether all matched.
  */
 
 #include "h264.h"
+#include "dpb.h"
 #include "frame.h"
 
 #include <vulkan/vulkan.h>
@@ -43,9 +45,27 @@
 /* The most session memory bindings the probe binds. */
 #define PROBE_BINDINGS		32U
 
+/* The most frames waiting for their place in the display order. */
+#define PROBE_PENDING		256U
+
 /* The most families and extensions the list shows. */
 #define PROBE_FAMILIES		16U
 #define PROBE_EXTENSIONS	512U
+
+/* One decoded frame waiting for its place in the display order: its order count and hash. */
+struct probe_frame {
+	int32_t poc;
+	char hash[65];
+};
+
+/* The frames decoded and not yet printed, and what was printed and matched. */
+struct probe_output {
+	struct probe_frame pending[PROBE_PENDING];
+	uint32_t pending_count;
+	uint32_t printed;
+	uint32_t matched;
+	FILE *expect;
+};
 
 /* What one run asked for. */
 struct probe_options {
@@ -81,11 +101,13 @@ struct probe {
 	uint32_t session_memory_count;
 	VkVideoSessionParametersKHR parameters;
 
-	/* The picture: its image, memory (mapped) and view. */
-	VkImage image;
-	VkDeviceMemory image_memory;
-	uint8_t *image_map;
-	VkImageView view;
+	/* The pictures, one a DPB slot: each image, its memory (mapped) and its view; the references the session reads. */
+	uint32_t slots;
+	uint32_t max_references;
+	VkImage image[DPB_SLOTS];
+	VkDeviceMemory image_memory[DPB_SLOTS];
+	uint8_t *image_map[DPB_SLOTS];
+	VkImageView view[DPB_SLOTS];
 
 	/* The bitstream buffer and its memory (mapped). */
 	VkBuffer buffer;
@@ -107,13 +129,17 @@ static int probe_device(struct probe *probe);
 static int probe_capabilities(struct probe *probe);
 static int probe_memory_type(const struct probe *probe, uint32_t bits, uint32_t *index);
 static int probe_allocate(struct probe *probe, const VkMemoryRequirements *requirements, VkDeviceMemory *memory);
-static int probe_picture(struct probe *probe);
+static int probe_pictures(struct probe *probe);
+static int probe_picture(struct probe *probe, uint32_t slot);
 static int probe_bitstream(struct probe *probe, size_t bytes);
 static int probe_session(struct probe *probe);
 static int probe_parameters(struct probe *probe, const struct h264_stream *stream);
 static int probe_commands(struct probe *probe);
-static int probe_decode(struct probe *probe, const struct h264_stream *stream, const struct h264_picture *picture, int first);
-static void probe_hash(struct probe *probe, const StdVideoH264SequenceParameterSet *sps, char text[65]);
+static int probe_decode(struct probe *probe, const struct h264_stream *stream, const struct h264_picture *picture, const struct dpb_plan *plan);
+static void probe_hash(struct probe *probe, uint32_t slot, const StdVideoH264SequenceParameterSet *sps, char text[65]);
+static void probe_output_add(struct probe_output *output, int32_t poc, const char *hash);
+static void probe_output_flush(struct probe_output *output);
+static int probe_frame_compare(const void *left, const void *right);
 static int probe_run(struct probe *probe, const struct probe_options *options);
 static void probe_close(struct probe *probe);
 static int probe_failed(VkResult result, const char *what);
@@ -525,10 +551,30 @@ probe_allocate(
 	return 0;
 }
 
-/* Makes the NV12 picture the decodes write: the image, its memory (mapped) and its view. */
+/* Makes the NV12 picture of every DPB slot. */
+static int
+probe_pictures(
+	struct probe *probe)
+{
+	uint32_t slot;
+	int error;
+
+	/* One picture a slot. */
+	for (slot = 0U; slot < probe->slots; slot++) {
+		error = probe_picture(probe, slot);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: every slot has its picture. */
+	return 0;
+}
+
+/* Makes the NV12 picture of one slot: the image, its memory (mapped) and its view. */
 static int
 probe_picture(
-	struct probe *probe)
+	struct probe *probe,
+	uint32_t slot)
 {
 	VkImageCreateInfo image;
 	VkImageViewCreateInfo view;
@@ -553,37 +599,37 @@ probe_picture(
 	image.usage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
 	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	result = vkCreateImage(probe->device, &image, NULL, &probe->image);
+	result = vkCreateImage(probe->device, &image, NULL, &probe->image[slot]);
 	if (result != VK_SUCCESS)
 		return probe_failed(result, "vkCreateImage");
 
 	/* Its memory, bound and mapped. */
-	vkGetImageMemoryRequirements(probe->device, probe->image, &requirements);
-	error = probe_allocate(probe, &requirements, &probe->image_memory);
+	vkGetImageMemoryRequirements(probe->device, probe->image[slot], &requirements);
+	error = probe_allocate(probe, &requirements, &probe->image_memory[slot]);
 	if (error != 0)
 		return error;
-	result = vkBindImageMemory(probe->device, probe->image, probe->image_memory, 0U);
+	result = vkBindImageMemory(probe->device, probe->image[slot], probe->image_memory[slot], 0U);
 	if (result != VK_SUCCESS)
 		return probe_failed(result, "vkBindImageMemory");
-	result = vkMapMemory(probe->device, probe->image_memory, 0U, VK_WHOLE_SIZE, 0U, &map);
+	result = vkMapMemory(probe->device, probe->image_memory[slot], 0U, VK_WHOLE_SIZE, 0U, &map);
 	if (result != VK_SUCCESS)
 		return probe_failed(result, "vkMapMemory");
-	probe->image_map = map;
+	probe->image_map[slot] = map;
 
 	/* Its view. */
 	memset(&view, 0, sizeof(view));
 	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	view.image = probe->image;
+	view.image = probe->image[slot];
 	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	view.format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
 	view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	view.subresourceRange.levelCount = 1U;
 	view.subresourceRange.layerCount = 1U;
-	result = vkCreateImageView(probe->device, &view, NULL, &probe->view);
+	result = vkCreateImageView(probe->device, &view, NULL, &probe->view[slot]);
 	if (result != VK_SUCCESS)
 		return probe_failed(result, "vkCreateImageView");
 
-	/* Succeeded: the picture. */
+	/* Succeeded: the slot's picture. */
 	return 0;
 }
 
@@ -628,7 +674,7 @@ probe_bitstream(
 	return 0;
 }
 
-/* Makes the video session (one DPB slot, no reference read) and binds every memory it asks for. */
+/* Makes the video session (the DPB's slots and references) and binds every memory it asks for. */
 static int
 probe_session(
 	struct probe *probe)
@@ -653,8 +699,8 @@ probe_session(
 	info.pictureFormat = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
 	info.maxCodedExtent = probe->extent;
 	info.referencePictureFormat = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
-	info.maxDpbSlots = 1U;
-	info.maxActiveReferencePictures = 0U;
+	info.maxDpbSlots = probe->slots;
+	info.maxActiveReferencePictures = probe->max_references;
 	info.pStdHeaderVersion = &header;
 	result = vkCreateVideoSessionKHR(probe->device, &info, NULL, &probe->session);
 	if (result != VK_SUCCESS)
@@ -685,7 +731,12 @@ probe_session(
 	result = vkBindVideoSessionMemoryKHR(probe->device, probe->session, count, binds);
 	if (result != VK_SUCCESS)
 		return probe_failed(result, "vkBindVideoSessionMemoryKHR");
-	printf("vkvideo-probe: session %ux%u, %u memory bindings\n", probe->extent.width, probe->extent.height, count);
+	printf("vkvideo-probe: session %ux%u, %u slots, %u references, %u memory bindings\n",
+	       probe->extent.width,
+	       probe->extent.height,
+	       probe->slots,
+	       probe->max_references,
+	       count);
 
 	/* Succeeded: the session is bound. */
 	return 0;
@@ -789,37 +840,43 @@ probe_commands(
 }
 
 /*
- * Decodes one intra picture into the image and waits for it: the slices
- * copied into the buffer each behind a three-byte start code, a coding
- * scope binding the image without a slot, the session reset, the decode
- * setting the image up as slot 0, and the scope's end.  The first picture
- * moves the image into the DPB layout.
+ * Decodes one picture as the DPB planned it, and waits for it: the slices
+ * copied into the buffer each behind a three-byte start code; a coding
+ * scope binding every reference with its slot, deactivating the slots that
+ * hold no reference any more and binding the written slot's picture without
+ * a slot; the session's reset on the first decode; the decode with the
+ * references and the written slot set up; the scope's end.  The first
+ * decode moves every slot's image into the DPB layout.
  */
 static int
 probe_decode(
 	struct probe *probe,
 	const struct h264_stream *stream,
 	const struct h264_picture *picture,
-	int first)
+	const struct dpb_plan *plan)
 {
 	static uint32_t offsets[H264_MAX_SLICES];
-	StdVideoDecodeH264ReferenceInfo reference;
-	VkVideoDecodeH264DpbSlotInfoKHR slot_info;
+	VkVideoPictureResourceInfoKHR resources[DPB_SLOTS];
+	VkVideoReferenceSlotInfoKHR bound[DPB_SLOTS * 2U];
+	VkVideoReferenceSlotInfoKHR references[DPB_REFERENCES];
+	VkVideoDecodeH264DpbSlotInfoKHR reference_info[DPB_REFERENCES];
+	VkVideoDecodeH264DpbSlotInfoKHR setup_info;
 	VkVideoDecodeH264PictureInfoKHR h264;
-	VkVideoPictureResourceInfoKHR resource;
-	VkVideoReferenceSlotInfoKHR bound;
 	VkVideoReferenceSlotInfoKHR setup;
 	VkVideoBeginCodingInfoKHR begin;
 	VkVideoCodingControlInfoKHR control;
 	VkVideoDecodeInfoKHR decode;
 	VkVideoEndCodingInfoKHR end;
 	VkCommandBufferBeginInfo record;
-	VkImageMemoryBarrier barrier;
+	VkImageMemoryBarrier barriers[DPB_SLOTS];
 	VkSubmitInfo submit;
 	const StdVideoH264SequenceParameterSet *sps;
 	VkResult result;
 	size_t at;
 	uint32_t slice;
+	uint32_t slot;
+	uint32_t index;
+	uint32_t count;
 
 	/* The slices, each behind a start code, into the buffer. */
 	at = 0U;
@@ -836,13 +893,15 @@ probe_decode(
 		at += 3U + picture->slice_sizes[slice];
 	}
 
-	/* The picture resource: the image's coded picture of the sequence. */
+	/* Every slot's picture resource: its image's coded picture of the sequence. */
 	sps = &stream->sps[picture->info.seq_parameter_set_id];
-	memset(&resource, 0, sizeof(resource));
-	resource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
-	resource.codedExtent.width = (sps->pic_width_in_mbs_minus1 + 1U) * 16U;
-	resource.codedExtent.height = (sps->pic_height_in_map_units_minus1 + 1U) * 16U;
-	resource.imageViewBinding = probe->view;
+	memset(resources, 0, sizeof(resources));
+	for (slot = 0U; slot < probe->slots; slot++) {
+		resources[slot].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
+		resources[slot].codedExtent.width = (sps->pic_width_in_mbs_minus1 + 1U) * 16U;
+		resources[slot].codedExtent.height = (sps->pic_height_in_map_units_minus1 + 1U) * 16U;
+		resources[slot].imageViewBinding = probe->view[slot];
+	}
 
 	/* The command buffer from its start. */
 	memset(&record, 0, sizeof(record));
@@ -852,18 +911,20 @@ probe_decode(
 	if (result != VK_SUCCESS)
 		return probe_failed(result, "vkBeginCommandBuffer");
 
-	/* The first picture moves the image into the DPB layout. */
-	if (first) {
-		memset(&barrier, 0, sizeof(barrier));
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		barrier.newLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = probe->image;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.levelCount = 1U;
-		barrier.subresourceRange.layerCount = 1U;
+	/* The first decode moves every slot's image into the DPB layout. */
+	if (plan->reset) {
+		memset(barriers, 0, sizeof(barriers));
+		for (slot = 0U; slot < probe->slots; slot++) {
+			barriers[slot].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			barriers[slot].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			barriers[slot].newLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
+			barriers[slot].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barriers[slot].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barriers[slot].image = probe->image[slot];
+			barriers[slot].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			barriers[slot].subresourceRange.levelCount = 1U;
+			barriers[slot].subresourceRange.layerCount = 1U;
+		}
 		vkCmdPipelineBarrier(probe->command,
 				     VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
 				     VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
@@ -872,40 +933,68 @@ probe_decode(
 				     NULL,
 				     0U,
 				     NULL,
-				     1U,
-				     &barrier);
+				     probe->slots,
+				     barriers);
 	}
 
-	/* The scope binds the image without a slot, and the session is reset. */
-	memset(&bound, 0, sizeof(bound));
-	bound.sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-	bound.slotIndex = -1;
-	bound.pPictureResource = &resource;
+	/* The scope's slots: the references, the deactivated slots, the written picture without a slot. */
+	memset(bound, 0, sizeof(bound));
+	count = 0U;
+	for (index = 0U; index < plan->reference_count; index++) {
+		bound[count].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+		bound[count].slotIndex = plan->references[index];
+		bound[count].pPictureResource = &resources[plan->references[index]];
+		count++;
+	}
+	for (index = 0U; index < plan->deactivate_count; index++) {
+		bound[count].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+		bound[count].slotIndex = plan->deactivate[index];
+		bound[count].pPictureResource = NULL;
+		count++;
+	}
+	bound[count].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+	bound[count].slotIndex = -1;
+	bound[count].pPictureResource = &resources[plan->setup];
+	count++;
+
+	/* The scope, and the reset of the first decode. */
 	memset(&begin, 0, sizeof(begin));
 	begin.sType = VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR;
 	begin.videoSession = probe->session;
 	begin.videoSessionParameters = probe->parameters;
-	begin.referenceSlotCount = 1U;
-	begin.pReferenceSlots = &bound;
+	begin.referenceSlotCount = count;
+	begin.pReferenceSlots = bound;
 	vkCmdBeginVideoCodingKHR(probe->command, &begin);
-	memset(&control, 0, sizeof(control));
-	control.sType = VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR;
-	control.flags = VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
-	vkCmdControlVideoCodingKHR(probe->command, &control);
+	if (plan->reset) {
+		memset(&control, 0, sizeof(control));
+		control.sType = VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR;
+		control.flags = VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
+		vkCmdControlVideoCodingKHR(probe->command, &control);
+	}
 
-	/* The decode: the slices, the image as its output and as slot 0's picture. */
-	memset(&reference, 0, sizeof(reference));
-	reference.FrameNum = picture->info.frame_num;
-	reference.PicOrderCnt[0] = picture->info.PicOrderCnt[0];
-	reference.PicOrderCnt[1] = picture->info.PicOrderCnt[1];
-	memset(&slot_info, 0, sizeof(slot_info));
-	slot_info.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR;
-	slot_info.pStdReferenceInfo = &reference;
+	/* The references with their information. */
+	memset(references, 0, sizeof(references));
+	memset(reference_info, 0, sizeof(reference_info));
+	for (index = 0U; index < plan->reference_count; index++) {
+		reference_info[index].sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR;
+		reference_info[index].pStdReferenceInfo = &plan->info[index];
+		references[index].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+		references[index].pNext = &reference_info[index];
+		references[index].slotIndex = plan->references[index];
+		references[index].pPictureResource = &resources[plan->references[index]];
+	}
+
+	/* The written slot, with the picture's own information. */
+	memset(&setup_info, 0, sizeof(setup_info));
+	setup_info.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR;
+	setup_info.pStdReferenceInfo = &plan->setup_info;
 	memset(&setup, 0, sizeof(setup));
 	setup.sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-	setup.pNext = &slot_info;
-	setup.slotIndex = 0;
-	setup.pPictureResource = &resource;
+	setup.pNext = &setup_info;
+	setup.slotIndex = plan->setup;
+	setup.pPictureResource = &resources[plan->setup];
+
+	/* The decode: the slices into the written slot's picture. */
 	memset(&h264, 0, sizeof(h264));
 	h264.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_KHR;
 	h264.pStdPictureInfo = &picture->info;
@@ -917,8 +1006,10 @@ probe_decode(
 	decode.srcBuffer = probe->buffer;
 	decode.srcBufferOffset = 0U;
 	decode.srcBufferRange = at;
-	decode.dstPictureResource = resource;
+	decode.dstPictureResource = resources[plan->setup];
 	decode.pSetupReferenceSlot = &setup;
+	decode.referenceSlotCount = plan->reference_count;
+	decode.pReferenceSlots = references;
 	vkCmdDecodeVideoKHR(probe->command, &decode);
 
 	/* The scope's end. */
@@ -949,14 +1040,15 @@ probe_decode(
 	if (result != VK_SUCCESS)
 		return probe_failed(result, "vkResetCommandBuffer");
 
-	/* Succeeded: the picture is in the image. */
+	/* Succeeded: the picture is in its slot's image. */
 	return 0;
 }
 
-/* Hashes the image's display window of a sequence: its planes from the image's layout, the cropping of the sequence. */
+/* Hashes a slot's image's display window of a sequence: its planes from the image's layout, the cropping of the sequence. */
 static void
 probe_hash(
 	struct probe *probe,
+	uint32_t slot,
 	const StdVideoH264SequenceParameterSet *sps,
 	char text[65])
 {
@@ -969,12 +1061,12 @@ probe_hash(
 	/* The two planes. */
 	memset(&subresource, 0, sizeof(subresource));
 	subresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-	vkGetImageSubresourceLayout(probe->device, probe->image, &subresource, &luma);
+	vkGetImageSubresourceLayout(probe->device, probe->image[slot], &subresource, &luma);
 	subresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
-	vkGetImageSubresourceLayout(probe->device, probe->image, &subresource, &chroma);
-	planes.luma = probe->image_map + luma.offset;
+	vkGetImageSubresourceLayout(probe->device, probe->image[slot], &subresource, &chroma);
+	planes.luma = probe->image_map[slot] + luma.offset;
 	planes.luma_pitch = (size_t)luma.rowPitch;
-	planes.chroma = probe->image_map + chroma.offset;
+	planes.chroma = probe->image_map[slot] + chroma.offset;
 	planes.chroma_pitch = (size_t)chroma.rowPitch;
 
 	/* The window: the coded picture less the cropping, two pixels a crop unit (4:2:0 frames). */
@@ -985,10 +1077,87 @@ probe_hash(
 	frame_hash(&planes, &window, text);
 }
 
+/* Keeps a decoded frame for its place in the display order; a full list is printed first. */
+static void
+probe_output_add(
+	struct probe_output *output,
+	int32_t poc,
+	const char *hash)
+{
+	/* A list that is full is printed as it is. */
+	if (output->pending_count >= PROBE_PENDING)
+		probe_output_flush(output);
+
+	/* The frame waits. */
+	output->pending[output->pending_count].poc = poc;
+	memcpy(output->pending[output->pending_count].hash, hash, sizeof(output->pending[0].hash));
+	output->pending_count++;
+}
+
+/*
+ * Prints the waiting frames in order of their order counts, each compared
+ * with the next expected line when there is a file of them.
+ */
+static void
+probe_output_flush(
+	struct probe_output *output)
+{
+	char expected[80];
+	char *line;
+	uint32_t index;
+	int differs;
+
+	/* The display order. */
+	qsort(output->pending, output->pending_count, sizeof(output->pending[0]), probe_frame_compare);
+
+	/* Each frame, compared with the expected line when there is one. */
+	for (index = 0U; index < output->pending_count; index++) {
+		line = NULL;
+		if (output->expect != NULL)
+			line = fgets(expected, sizeof(expected), output->expect);
+		if (line != NULL) {
+			expected[strcspn(expected, "\n")] = '\0';
+			differs = strcmp(expected, output->pending[index].hash);
+			if (differs == 0) {
+				output->matched++;
+				printf("vkvideo-probe: frame %u %s match\n", output->printed, output->pending[index].hash);
+			} else {
+				printf("vkvideo-probe: frame %u %s MISMATCH (expected %s)\n", output->printed, output->pending[index].hash, expected);
+			}
+		} else {
+			printf("vkvideo-probe: frame %u %s\n", output->printed, output->pending[index].hash);
+		}
+		output->printed++;
+	}
+	output->pending_count = 0U;
+}
+
+/* Orders two waiting frames by their order counts. */
+static int
+probe_frame_compare(
+	const void *left,
+	const void *right)
+{
+	const struct probe_frame *first;
+	const struct probe_frame *second;
+
+	/* The smaller order count first. */
+	first = left;
+	second = right;
+	if (first->poc < second->poc)
+		return -1;
+	if (first->poc > second->poc)
+		return 1;
+
+	/* Succeeded: the same count. */
+	return 0;
+}
+
 /*
  * Decodes the stream: the device, the decoder's objects, then picture
- * after picture, printing each frame's hash (and whether it matches the
- * expected one).
+ * after picture as the DPB plans it, printing the frames' hashes in
+ * display order (and whether each matches the expected one).  With
+ * --frames=N only the first N pictures in decode order are decoded.
  */
 static int
 probe_run(
@@ -997,17 +1166,16 @@ probe_run(
 {
 	static struct h264_stream stream;
 	static struct h264_picture picture;
+	static struct dpb dpb;
+	static struct probe_output output;
+	const StdVideoH264SequenceParameterSet *sps;
+	struct dpb_plan plan;
 	const char *reason;
 	uint8_t *data;
 	size_t size;
 	uint32_t index;
 	uint32_t frames;
-	uint32_t matched;
-	char expected[80];
 	char text[65];
-	char *line;
-	FILE *expect;
-	int differs;
 	int found;
 	int first_sps;
 	int error;
@@ -1034,6 +1202,8 @@ probe_run(
 			probe->extent.width = (stream.sps[index].pic_width_in_mbs_minus1 + 1U) * 16U;
 		if ((stream.sps[index].pic_height_in_map_units_minus1 + 1U) * 16U > probe->extent.height)
 			probe->extent.height = (stream.sps[index].pic_height_in_map_units_minus1 + 1U) * 16U;
+		if (stream.sps[index].max_num_ref_frames > probe->max_references)
+			probe->max_references = stream.sps[index].max_num_ref_frames;
 	}
 	if (first_sps < 0) {
 		fprintf(stderr, "vkvideo-probe: %s: no sequence parameter set\n", options->stream);
@@ -1057,12 +1227,17 @@ probe_run(
 	probe->profile_list.pProfiles = &probe->profile;
 	printf("vkvideo-probe: stream %s profile %u, %ux%u\n", options->stream, (unsigned)probe->h264_profile.stdProfileIdc, probe->extent.width, probe->extent.height);
 
+	/* The DPB: the references the sequences allow and one slot for the picture decoded. */
+	dpb_init(&dpb, probe->max_references);
+	probe->max_references = dpb.max_references;
+	probe->slots = dpb.slots;
+
 	/* The device and the decoder's objects. */
 	error = probe_device(probe);
 	if (error == 0)
 		error = probe_capabilities(probe);
 	if (error == 0)
-		error = probe_picture(probe);
+		error = probe_pictures(probe);
 	if (error == 0)
 		error = probe_bitstream(probe, size + 3U * H264_MAX_SLICES);
 	if (error == 0)
@@ -1077,10 +1252,10 @@ probe_run(
 	}
 
 	/* The expected hashes, when given. */
-	expect = NULL;
+	memset(&output, 0, sizeof(output));
 	if (options->expect != NULL) {
-		expect = fopen(options->expect, "r");
-		if (expect == NULL) {
+		output.expect = fopen(options->expect, "r");
+		if (output.expect == NULL) {
 			fprintf(stderr, "vkvideo-probe: %s: %s\n", options->expect, strerror(errno));
 			free(data);
 			return 1;
@@ -1089,7 +1264,6 @@ probe_run(
 
 	/* Picture after picture. */
 	frames = 0U;
-	matched = 0U;
 	for (;;) {
 		/* The next picture, or the end; a picture the probe cannot decode stops it. */
 		if (options->frames != 0U && frames >= options->frames)
@@ -1102,48 +1276,49 @@ probe_run(
 			error = 3;
 			break;
 		}
-		if (!picture.intra || !picture.info.flags.IdrPicFlag) {
-			fprintf(stderr, "vkvideo-probe: picture %u is not an IDR intra picture (P and B pictures are ws083-p006's)\n", frames);
+
+		/* An IDR picture comes after every frame before it in display order. */
+		if (picture.info.flags.IdrPicFlag)
+			probe_output_flush(&output);
+
+		/* The DPB's plan for it. */
+		sps = &stream.sps[picture.info.seq_parameter_set_id];
+		reason = dpb_plan(&dpb, sps, &picture, &plan);
+		if (reason != NULL) {
+			fprintf(stderr, "vkvideo-probe: picture %u: %s\n", frames, reason);
 			error = 3;
 			break;
 		}
 
-		/* Decodes it and hashes the frame. */
-		error = probe_decode(probe, &stream, &picture, frames == 0U);
+		/* Decodes it and hashes the frame while its slot still holds it. */
+		error = probe_decode(probe, &stream, &picture, &plan);
 		if (error != 0)
 			break;
-		probe_hash(probe, &stream.sps[picture.info.seq_parameter_set_id], text);
+		probe_hash(probe, (uint32_t)plan.setup, sps, text);
 
-		/* Compares it with the expected line, when there is one. */
-		line = NULL;
-		if (expect != NULL)
-			line = fgets(expected, sizeof(expected), expect);
-		if (line != NULL) {
-			expected[strcspn(expected, "\n")] = '\0';
-			differs = strcmp(expected, text);
-			if (differs == 0) {
-				matched++;
-				printf("vkvideo-probe: frame %u %s match\n", frames, text);
-			} else {
-				printf("vkvideo-probe: frame %u %s MISMATCH (expected %s)\n", frames, text, expected);
-			}
-		} else {
-			printf("vkvideo-probe: frame %u %s\n", frames, text);
+		/* The DPB after it, and the frame's place in the display order. */
+		reason = dpb_mark(&dpb, sps, &picture, &plan);
+		if (reason != NULL) {
+			fprintf(stderr, "vkvideo-probe: picture %u: %s\n", frames, reason);
+			error = 3;
+			break;
 		}
+		probe_output_add(&output, picture.info.PicOrderCnt[0], text);
 		frames++;
 	}
-	if (expect != NULL)
-		fclose(expect);
+	probe_output_flush(&output);
+	if (output.expect != NULL)
+		fclose(output.expect);
 	free(data);
 
 	/* The summary: every frame decoded, and matched when expected. */
 	printf("vkvideo-probe: %u frames decoded", frames);
 	if (options->expect != NULL)
-		printf(", %u match the reference", matched);
+		printf(", %u match the reference", output.matched);
 	printf("\n");
 	if (error != 0)
 		return error;
-	if (options->expect != NULL && (matched != frames || frames == 0U))
+	if (options->expect != NULL && (output.matched != frames || frames == 0U))
 		return 4;
 
 	/* Succeeded: the stream is decoded. */
@@ -1174,12 +1349,14 @@ probe_close(
 			vkDestroyBuffer(probe->device, probe->buffer, NULL);
 		if (probe->buffer_memory != VK_NULL_HANDLE)
 			vkFreeMemory(probe->device, probe->buffer_memory, NULL);
-		if (probe->view != VK_NULL_HANDLE)
-			vkDestroyImageView(probe->device, probe->view, NULL);
-		if (probe->image != VK_NULL_HANDLE)
-			vkDestroyImage(probe->device, probe->image, NULL);
-		if (probe->image_memory != VK_NULL_HANDLE)
-			vkFreeMemory(probe->device, probe->image_memory, NULL);
+		for (index = 0U; index < DPB_SLOTS; index++) {
+			if (probe->view[index] != VK_NULL_HANDLE)
+				vkDestroyImageView(probe->device, probe->view[index], NULL);
+			if (probe->image[index] != VK_NULL_HANDLE)
+				vkDestroyImage(probe->device, probe->image[index], NULL);
+			if (probe->image_memory[index] != VK_NULL_HANDLE)
+				vkFreeMemory(probe->device, probe->image_memory[index], NULL);
+		}
 		vkDestroyDevice(probe->device, NULL);
 	}
 

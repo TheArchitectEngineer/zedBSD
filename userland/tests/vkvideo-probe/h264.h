@@ -42,6 +42,18 @@
 #define H264_SLICE_SP		3U
 #define H264_SLICE_SI		4U
 
+/* The most memory management operations one slice header carries that the reader keeps. */
+#define H264_MAX_MMCO		32U
+
+/* The memory management control operations (7.4.3.3). */
+#define H264_MMCO_END			0U
+#define H264_MMCO_SHORT_UNUSED		1U
+#define H264_MMCO_LONG_UNUSED		2U
+#define H264_MMCO_SHORT_TO_LONG		3U
+#define H264_MMCO_MAX_LONG_INDEX	4U
+#define H264_MMCO_ALL_UNUSED		5U
+#define H264_MMCO_CURRENT_TO_LONG	6U
+
 /* One NAL unit of the stream: its type, its nal_ref_idc and its bytes after the start code. */
 struct h264_nal {
 	uint32_t type;
@@ -50,16 +62,35 @@ struct h264_nal {
 	size_t size;
 };
 
+/* One memory management control operation: the operation and its two numbers (7.3.3.3). */
+struct h264_mmco {
+	uint32_t operation;
+	uint32_t difference_of_pic_nums_minus1;
+	uint32_t long_term_pic_num;
+	uint32_t long_term_frame_idx;
+	uint32_t max_long_term_frame_idx_plus1;
+};
+
 /*
  * One picture: its StdVideoDecodeH264PictureInfo, whether all its slices
- * are intra, and its slices, the NAL units after their start codes.
+ * are intra, its first slice's type, its slices (the NAL units after their
+ * start codes), where its access unit starts in the stream, and its first
+ * slice's reference picture marking.
  */
 struct h264_picture {
 	StdVideoDecodeH264PictureInfo info;
 	int intra;
+	uint32_t slice_type;
 	uint32_t slice_count;
 	size_t slice_offsets[H264_MAX_SLICES];
 	size_t slice_sizes[H264_MAX_SLICES];
+	size_t access_unit;
+
+	/* The marking: an IDR picture's long-term flag, or the adaptive operations. */
+	int long_term_reference;
+	int adaptive_marking;
+	uint32_t mmco_count;
+	struct h264_mmco mmco[H264_MAX_MMCO];
 };
 
 /*

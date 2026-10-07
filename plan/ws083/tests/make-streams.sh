@@ -83,5 +83,24 @@ encode i-high-352-cqm -f lavfi -i "mandelbrot=size=352x288:rate=25" -frames:v 3 
 	-c:v libx264 -profile:v high -pix_fmt yuv420p -g 1 -crf 30 -x264-params "keyint=1:8x8dct=1:cqmfile=$cqm"
 reference i-high-352-cqm
 
+# p006a adds streams of P and B pictures (one IDR, then P and B; display order differs from decode order):
+#   p-baseline-64      64x64,   Baseline, CAVLC, P only (order count type 2), 3 references, 10 frames
+#   pb-main-352        352x288, Main, CABAC, two B between P (order count type 0), 3 references,
+#                      two slices, 15 frames
+#   pb-high-352-pyramid 352x288, High, 8x8 transform, B pyramid (reference B pictures, which
+#                      x264 marks with memory management operations), weighted P prediction,
+#                      4 references, 15 frames
+encode p-baseline-64 -f lavfi -i "testsrc=size=64x64:rate=25:duration=0.4" \
+	-c:v libx264 -profile:v baseline -pix_fmt yuv420p -crf 26 -x264-params "keyint=60:ref=3:bframes=0"
+reference p-baseline-64
+
+encode pb-main-352 -f lavfi -i "testsrc=size=352x288:rate=25:duration=0.6" \
+	-c:v libx264 -profile:v main -pix_fmt yuv420p -crf 30 -x264-params "keyint=60:ref=3:bframes=2:b-pyramid=none:slices=2"
+reference pb-main-352
+
+encode pb-high-352-pyramid -f lavfi -i "mandelbrot=size=352x288:rate=25" -frames:v 15 \
+	-c:v libx264 -profile:v high -pix_fmt yuv420p -crf 30 -x264-params "keyint=60:ref=4:bframes=3:b-pyramid=normal:weightp=2:8x8dct=1"
+reference pb-high-352-pyramid
+
 echo "ws083 streams written to $out"
 ls -l "$out"
