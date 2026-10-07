@@ -1,7 +1,7 @@
 # ws172-p004: セキュリティチップの調べ（survey）と /dev/securityN の案
 
-版: 第 2 版（2026-10-08、P1）。第 1 版を design-reviewer が敵対的にレビューし（blocker 3・major 11・minor 12）、その指摘を全て入れた（§7 に対応表）。
-出典の水準: 多くは公開の仕様・文書の要点を記憶から整理した物。第 2 版で一次資料を引き直したのは次の 2 つだけ: Linux の `drivers/char/tpm/tpm_crb.c`（start method と Pluton、AMD fTPM の quirk）と、Dell の Latitude 5330 の資料（TPM の種類）。他は「（要確認）」を付けたまま。p004b の設計の前に、§6 の確認の一覧を一次資料で確かめる。
+版: 第 2 版（2026-10-08、P1。同日、§6 の 2〜5 を一次資料で確かめて直した）。第 1 版を design-reviewer が敵対的にレビューし（blocker 3・major 11・minor 12）、その指摘を全て入れた（§7 に対応表）。
+出典の水準: 多くは公開の仕様・文書の要点を記憶から整理した物。第 2 版で一次資料を引き直した物: Linux の `drivers/char/tpm/tpm_crb.c`（start method と Pluton、AMD fTPM の quirk）と `Kconfig`（`TCG_TPM2_HMAC`）、TCG の参照の実装 ms-tpm-20-ref の `DA.c`（DA の意味）、Dell の Latitude 5330 の資料（TPM の種類）、Microsoft Learn の TPM fundamentals（Windows の DA の値）、FreeBSD の tpm2-abrmd の port。他は「（要確認）」を付けたまま。p004b の設計の前に、§6 の確認の一覧を一次資料で確かめる。
 ユーザーの判断（§5）の前に必ず確かめる物（第 1 版の B3）: 5330 の TPM の種類と start method（§1.1 の末尾、§6 の 1）。
 
 ## 0. 由来と問い
@@ -25,10 +25,10 @@
   - hierarchy: platform・storage（owner）・endorsement・null。各 seed から primary key を決定的に作る（template が同じなら同じ鍵。template は公開なので、raw の TPM を使える者は誰でも同じ primary を作れる）。
   - object: 鍵は親（storage key）で包まれた blob として外に出る（`Create` の private と public）。使う時に `Load`。中に残すのは persistent handle（PTP の最低 `TPM_PT_HR_PERSISTENT_MIN` = 7、要確認）と NV index（数 KB、書き込みの寿命と rate の制限 `TPM_RC_NV_RATE` がある）。transient の slot の最低は 3。
   - 鍵の属性: `fixedTPM`・`fixedParent`（chip の外へ複製できない）、`sensitiveDataOrigin`（chip が作った）、`userWithAuth`（authValue で使える）、`sign`・`decrypt`、`noDA`（DA を数えない。PIN の守りでは**付けない**）。
-  - session: HMAC・policy・trial。password session（`TPM_RS_PW`）は authValue を**平文で** bus に流す。HMAC session でも salt と bind が無いと、1 回の transcript から短い秘密を offline で総当たりできる。守るには **salted session**（salt を SRK か EK の公開鍵で暗号化し、その名前を前もって確かめて interposer を防ぐ）と **parameter の暗号化**（AES-CFB）が要る。前例: systemd-cryptenroll の `--tpm2-with-pin`、Linux 6.10 の `TCG_TPM2_HMAC`（kernel の中の bus の保護、性能の問題で既定の扱いに揺れがある、要確認）。
+  - session: HMAC・policy・trial。password session（`TPM_RS_PW`）は authValue を**平文で** bus に流す。HMAC session でも salt と bind が無いと、1 回の transcript から短い秘密を offline で総当たりできる。守るには **salted session**（salt を SRK か EK の公開鍵で暗号化し、その名前を前もって確かめて interposer を防ぐ）と **parameter の暗号化**（AES-CFB）が要る。前例: systemd-cryptenroll の `--tpm2-with-pin`、Linux の `TCG_TPM2_HMAC`（kernel と TPM の間の HMAC と暗号化、「bus snooping and interposer attacks」への備え。Kconfig の既定は **n**（一次資料で確認）、ECDH・AES-CFB・SHA-256 を kernel に引き込む）。
   - 認可: authValue と policy（`PolicyPCR`・`PolicyAuthValue`・`PolicyNV`・`PolicySecret`・`PolicyOR` など）。
-  - **総当たりの防御（DA）**: chip 全体で**一つの数**（`failedTries`）。`maxTries` を越えると lockout、`recoveryTime` ごとに 1 戻る（電源が入っている間だけ進む）。`recoveryTime=0` の意味（DA を実質無効か、戻らないか）は要確認。`lockoutAuth` で解く（`DictionaryAttackLockReset`）。lockoutAuth 自身の失敗は 1 回で `lockoutRecovery` の間止まる（0 なら次の TPM Reset まで）。値は `DictionaryAttackParameters`（lockoutAuth が要る）。**TPM2_Clear の後の既定では lockoutAuth は空**で、raw の TPM に触れる者は誰でも DA を戻せる → 所有と provisioning（§3.0 の S8）が無いと短い PIN は守れない。
-  - **電源**: `TPM2_Shutdown(STATE)`（S3 の前）・`(CLEAR)`（停止・reboot の前）を送らずに電源が切れると次の起動が disorderly になり、`failedTries` が 1 増える（参照の実装、要確認）。context（session・object）は TPM の Reset で無効、resume の後は resource manager が扱う（`TPM_PT_CONTEXT_GAP_MAX`）。
+  - **総当たりの防御（DA）**: chip 全体で**一つの数**（`failedTries`）。`maxTries` を越えると lockout、`recoveryTime` 秒ごとに 1 戻る（TPM の Reset が挟まらない間）。**`recoveryTime=0` は DA の無効**（参照の実装 `DA.c`: 「if recovery time is 0, DA logic has been disabled. Clear failed tries immediately」、一次資料で確認）。`lockoutAuth` で解く（`DictionaryAttackLockReset`）。lockoutAuth 自身の失敗は 1 回で `lockoutRecovery` の間止まる（`DA.c`: 0 なら「a reboot is required」）。Windows は TPM 2.0 を「32 回の失敗で lock、10 分ごとに 1 つ忘れる」に設定する（Microsoft Learn の TPM fundamentals）。値は `DictionaryAttackParameters`（lockoutAuth が要る）。**TPM2_Clear の後の既定では lockoutAuth は空**で、raw の TPM に触れる者は誰でも DA を戻せる → 所有と provisioning（§3.0 の S8）が無いと短い PIN は守れない。
+  - **電源**: `TPM2_Shutdown(STATE)`（S3 の前）・`(CLEAR)`（停止・reboot の前）を送らずに電源が切れると次の起動が disorderly になり、DA が無効でなければ `failedTries` が 1 増える（参照の実装 `DA.c` の `DAStartup`、一次資料で確認）。context（session・object）は TPM の Reset で無効、resume の後は resource manager が扱う（`TPM_PT_CONTEXT_GAP_MAX`）。
   - 測定（PCR、`PCR_Extend`・`PCR_Read`、measured boot）、attestation（`Quote`・`Certify`、EK の証明書: PTT・AMD fTPM では NV に無く製造者の server から取ることがある、要確認）。
   - 暗号: RSA 2048、ECC P-256（多くは P-384）、SHA-1・SHA-256、HMAC、AES。ECDSA・`ECDH_ZGen`・`GetRandom`。
 - 性能: 遅い（dTPM で P-256 の署名が数十〜数百 ms のことがある、chip による、要確認）。一度に 1 command。AMD fTPM は乱数の読み出しで system が stutter する問題があり、Linux は AMD fTPM（Pluton を除く）の hwrng を止めている（`tpm_crb.c` の AMD の quirk、一次資料で確認）。
@@ -81,9 +81,9 @@
 | Linux `/dev/tpm0`・`/dev/tpmrm0` | command の byte 列（tpmrm は kernel の resource manager で open ごとに仮想化） | raw | node の権限（`tss` group）だけ、選別なし | 薄い kernel、全機能 | 開けた者が DA の lockout・NV の枯渇を起こせる、意味は全て userland、TPM 専用 |
 | Linux の trusted・encrypted keys（keyctl） | kernel の key の型、backend は TPM・TEE・CAAM | 操作（封印した対称鍵） | key ring の権限 | **複数の backend を一つの操作の口に**（案 C の先例）、blob は userland が持つ | 範囲は対称鍵の封印だけ、TPM の marshaling と session が kernel に入った |
 | Linux `/dev/tee0` | TA の呼び出し | TA ごと | login の方式 | 汎用 | 意味は TA ごと |
-| FreeBSD `tpm(4)` | `/dev/tpm0`、resource manager は userland（tpm2-abrmd）（要確認） | raw | node の権限 | 薄い | Linux の tpm0 と同じ |
+| FreeBSD `tpm(4)` | `/dev/tpm0`、resource manager は userland（port の security/tpm2-abrmd が /dev/tpm0 を仲介） | raw | node の権限 | 薄い | Linux の tpm0 と同じ |
 | OpenBSD `tpm(4)` | userland の口を出さず、suspend の状態の保存だけ（要確認） | — | — | 電源の扱いの前例 | 機能を出さない |
-| Windows TBS・Platform Crypto Provider・Windows Hello の PIN | TBS（service の resource manager、権限の無い呼び手に command の block list）、NCrypt の provider（操作の水準）、Hello は **PIN を TPM の鍵の authValue にして DA で守る** | 両方 | TBS の block list、provider が利用者ごと | 普通の app は操作の水準、Hello の PIN は passkey の chip の方式の直接の前例 | TPM の lockout の既知の問題（DA の共有） |
+| Windows TBS・Platform Crypto Provider・Windows Hello の PIN | TBS（service の resource manager、権限の無い呼び手に command の block list）、NCrypt の provider（操作の水準）、Hello は **鍵を TPM が持ち、PIN の試行を TPM の DA で守る**（32 回で lock、10 分ごとに 1 つ忘れる） | 両方 | TBS の block list、provider が利用者ごと | 普通の app は操作の水準、Hello の PIN は passkey の chip の方式の直接の前例 | TPM の lockout の既知の問題（DA の共有） |
 | systemd-cryptenroll `--tpm2-with-pin` | userland の program が TPM に直に（salted session、PCR の policy） | userland で意味 | — | session の保護の前例 | — |
 | macOS・iOS（SEP） | Security framework・CryptoKit | 操作 | SEP が鍵ごとの access control | 単純 | 機能が狭い |
 | Android keystore2・KeyMint | daemon と HAL | 操作（tag） | keystore2 が uid ごと、TEE が tag | 汎用（TEE・SE を同じ口） | 段が多い |
@@ -215,12 +215,12 @@ P1 の推し（第 2 版）: **D**。理由: session の保護（§1.1）が必�
 
 ## 6. 確認の一覧（ユーザーの判断の前に、Q1 経由で）
 
-1. 5330 の TPM: 実機で ACPI の `TPM2` table（start method）と `_HID`、TPM の vendor（`GetCapability` の `TPM_PT_MANUFACTURER`）を読む。読み方は ACPI の dump（`/dev/acpi`）か Linux の live USB（`/sys/class/tpm/tpm0`）。今の推定は ST33 の dTPM（SPI、FIFO）。
-2. TCG の Part 1・3 と PTP で: DA の値の意味（`recoveryTime=0`）、disorderly の加算、persistent・transient の最低の数、`TPM_PT_*` の名前。
-3. Linux の `drivers/char/tpm/`: `tpm2-sessions.c`（`TCG_TPM2_HMAC`）の今の既定、`tpm_tis` の locality、`tpmrm` の作り。
-4. FreeBSD・OpenBSD の `tpm(4)` の今の作り。
-5. Windows Hello の PIN と TPM の DA の扱い（公開の文書）。
-6. SEP の PQC、Titan M・PinWeaver の公開の資料。
+1. **未確認**: 5330 の TPM の ACPI `TPM2` table の start method と `_HID`、vendor（`TPM_PT_MANUFACTURER`）。5330 が Linux（chaos）で起動している時に Q1 が `/sys/firmware/acpi/tables/TPM2` を読んで知らせる（2026-10-08 Q1）。今の推定は Dell の資料の ST33 の dTPM（SPI、FIFO）。S3 はこの答えの後。
+2. 確認済み（2026-10-08、参照の実装 `DA.c`）: `recoveryTime=0` は DA の無効、disorderly の起動で `failedTries` が 1 増える、`lockoutRecovery=0` は reboot まで。未確認のまま: persistent・transient の最低の数（PTP）。
+3. 確認済み: `TCG_TPM2_HMAC` の既定は n（Kconfig）。未確認のまま: `tpm_tis` の locality の扱い、`tpmrm` の細部。
+4. FreeBSD: `/dev/tpm0` と userland の tpm2-abrmd（port）。OpenBSD の `tpm(4)` の作り（suspend の保存だけ）は未確認。
+5. 確認済み: Windows の DA の値（32 回、10 分ごと、Microsoft Learn）。
+6. 未確認: SEP の PQC、Titan M・PinWeaver の公開の資料（判断の点には効かない）。
 
 ## 7. 第 1 版のレビュー（design-reviewer）の指摘と対応
 
