@@ -1047,6 +1047,14 @@ struct kwl_server {
 	struct kwl_object *pull;
 	int32_t pull_start_y;
 	int32_t pull_distance;
+	/*
+	 * Where a pull started across (WS181: a pull comes off by its distance
+	 * from the press in any direction), and whether the move it became has
+	 * left the system bar once (only then does a release in the bar dock
+	 * the window again; a move from a title bar starts out of the bar).
+	 */
+	int32_t pull_start_x;
+	unsigned drag_left_bar;
 	struct kwl_object *anim;
 	uint64_t anim_start_ms;
 	unsigned anim_docking;
@@ -1083,6 +1091,22 @@ struct kwl_server {
 	float wiseview;
 	unsigned wiseview_gesture;
 	int32_t wiseview_start_y;
+	/*
+	 * Whether the gesture is the swipe down from the top edge's band
+	 * (WS181): it opens as the pointer goes down from wiseview_start_y, not
+	 * up.  Cleared at the gesture's end.
+	 */
+	unsigned wiseview_top;
+	/*
+	 * A touch's press in the top edge's band (WS181, edge.h), held until it
+	 * is known to be the swipe down to Wiseview or a press of what is under
+	 * it (then given again at its point, band_replay set while it is), and
+	 * where it was.
+	 */
+	unsigned band_press;
+	unsigned band_replay;
+	int32_t band_start_x;
+	int32_t band_start_y;
 	/* Whether the gesture is the touch pad's (ws142-p003), and how far it has opened Wiseview by the fingers' travel. */
 	unsigned wiseview_pad;
 	float wiseview_pad_progress;

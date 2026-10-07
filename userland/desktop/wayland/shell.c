@@ -89,6 +89,7 @@
 #include "ime.h"
 #include "media.h"
 #include "layout.h"
+#include "edge.h"
 
 #include <keiland/keiland.h>
 
@@ -188,9 +189,10 @@ static uint32_t fullscreen_leave_eaten;
 
 /*
  * The dock animation, a launched window's growing, a double click, and how
- * far a docked title is pulled down to come off (ws035-p064: the window
- * follows the pull on the way, shrinking from the docked space to its own
- * size under the pointer).  A double click shows the docked window within
+ * far a docked title is pulled to come off, in any direction (ws035-p064:
+ * the window follows the pull on the way, shrinking from the docked space
+ * to its own size under the pointer; WS181: a short pull, the touch and
+ * drag of the 2026-10-07 UAT).  A double click shows the docked window within
  * DOCK_MS of its second press (BUG-179, the 2026-10-04 user's 0.1 s, at
  * most 0.2 s).
  */
@@ -200,7 +202,7 @@ static uint32_t fullscreen_leave_eaten;
 /* The kind of the animation that is not a dock or an undock: a launched window growing from its icon (ws035-p071). */
 #define ANIM_LAUNCH		2U
 #define DOUBLE_CLICK_MS		400U
-#define PULL_DISTANCE		140
+#define PULL_DISTANCE		48
 
 /* How far from a double click's second press its third may be and still take the dock back (ws079-p013). */
 #define TRIPLE_CLICK_SLOP	8
@@ -474,6 +476,9 @@ static void draw_tile(struct kwl_server *server, VkCommandBuffer command, struct
 static int wiseview_button(struct kwl_server *server, uint32_t button, uint32_t state);
 static void wiseview_log(struct kwl_server *server);
 static int home_edge_press(struct kwl_server *server, uint32_t button, uint32_t state);
+static int band_button(struct kwl_server *server, uint32_t button, uint32_t state, int replays);
+static int band_motion(struct kwl_server *server, int replays);
+static void band_replay(struct kwl_server *server, int release);
 
 /* Whether where the desktops' pictures are has been logged (once, for the tests that click them). */
 static unsigned shell_desktops_logged;
@@ -793,6 +798,18 @@ kwl_glass_button(
 	 * corner as over a fullscreen window.
 	 */
 	cover = bar_cover(server);
+
+	/*
+	 * A touch's press in the top edge's band waits to be the swipe down to
+	 * Wiseview or a press of what is under it (WS181), before App Home and
+	 * the bar's widgets take it; only where the bar is drawn.
+	 */
+	if (cover == NULL || server->band_press) {
+		pressed = band_button(server, button, state, 1);
+		if (pressed)
+			return 1;
+	}
+
 	pressed = 0;
 	if (cover == NULL) {
 		/* App Home takes the launcher, the top-left corner, and every button while it shows. */
@@ -1001,7 +1018,8 @@ kwl_glass_button(
 		return 1;
 	}
 
-	/* Otherwise a move starts. */
+	/* Otherwise a move starts, from a title bar out of the system bar. */
+	server->drag_left_bar = 1U;
 	server->drag = surface;
 	server->drag_dx = server->pointer_x - surface->x;
 	server->drag_dy = server->pointer_y - surface->y;
@@ -1081,6 +1099,11 @@ kwl_glass_edge_button(
 	if (pressed)
 		return 1;
 
+	/* A touch's press in the top edge's band may be the swipe down to Wiseview (WS181); otherwise it is lost, not given to the window. */
+	pressed = band_button(server, button, state, 0);
+	if (pressed)
+		return 1;
+
 	/* App Home, when it shows or follows a press of its own, has the button as in window mode. */
 	home = kwl_home_progress(server);
 	if (home > 0.0f ||
@@ -1129,6 +1152,11 @@ kwl_glass_edge_motion(
 
 	/* The bottom edge's swipe follows its contact. */
 	taken = unfullscreen_motion(server);
+	if (taken)
+		return 1;
+
+	/* A press held in the top edge's band (WS181). */
+	taken = band_motion(server, 0);
 	if (taken)
 		return 1;
 
@@ -1476,6 +1504,7 @@ kwl_glass_press_move(
 		if (!surface->maximized)
 			return;
 		server->pull = surface;
+		server->pull_start_x = x;
 		server->pull_start_y = y;
 		server->pull_distance = 0;
 		printf("KWL GLASS press pull surface=%u\n", surface->id);
@@ -1485,6 +1514,7 @@ kwl_glass_press_move(
 	/* A floating window keeps the pressed point under the pointer. */
 	if (surface->maximized)
 		return;
+	server->drag_left_bar = 1U;
 	server->drag = surface;
 	server->drag_dx = x - surface->x;
 	server->drag_dy = y - surface->y;
@@ -1830,6 +1860,8 @@ kwl_glass_toplevel_request(
 	int request)
 {
 	struct kwl_object *front;
+	int32_t x;
+	int32_t y;
 
 	/* Only a shown window of the desktop shown. */
 	if (surface->dead || !surface->mapped || surface->desktop != server->desktop)
@@ -1838,10 +1870,23 @@ kwl_glass_toplevel_request(
 	/* What was asked. */
 	switch (request) {
 	case KWL_TOPLEVEL_MOVE:
-		/* A move as a press on the title bar starts one, until the button is let go (a docked window stays). */
-		if (surface->maximized || server->drag != NULL)
+		/* A move as a press on the title bar starts one, until the button is let go; none while another goes on. */
+		if (server->drag != NULL || server->pull != NULL)
 			break;
+
+		/*
+		 * A docked window drawing its own title (no title of it in the
+		 * system bar to pull) comes off as a pull does (WS181): floating,
+		 * every other window too, its title's top under the pointer.
+		 */
+		if (surface->maximized) {
+			x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * server->pointer_x / (int32_t)server->width);
+			y = server->pointer_y - KWL_GLASS_GAP;
+			layout_leave(server, surface, x, y, "request-move");
+		}
+
 		window_raise(server, surface);
+		server->drag_left_bar = 1U;
 		server->drag = surface;
 		server->drag_dx = server->pointer_x - surface->x;
 		server->drag_dy = server->pointer_y - surface->y;
@@ -1891,7 +1936,7 @@ kwl_glass_toplevel_move_end(
 
 	/* Retires the moving identity before docking or emitting diagnostics. */
 	server->drag = NULL;
-	if (server->pointer_y < KWL_GLASS_BAR) {
+	if (server->pointer_y < KWL_GLASS_BAR && server->drag_left_bar) {
 		window_dock(server, surface, server->drag_start_x, server->drag_start_y, "drag");
 
 		/* The system bar keeps the previous position as the restore point. */
@@ -5879,6 +5924,7 @@ bar_press(
 
 	/* A single press may become a pull. */
 	server->pull = surface;
+	server->pull_start_x = server->pointer_x;
 	server->pull_start_y = server->pointer_y;
 	server->pull_distance = 0;
 	return 1;
@@ -6011,9 +6057,11 @@ wiseview_progress(
 	if (server->wiseview_gesture && server->wiseview_pad)
 		return server->wiseview_pad_progress;
 
-	/* The gesture: the distance moved up from where it started. */
+	/* The gesture: the distance moved up from where it started, or down for the top edge's (WS181). */
 	if (server->wiseview_gesture) {
 		value = (float)(server->wiseview_start_y - server->pointer_y) / WISEVIEW_DISTANCE;
+		if (server->wiseview_top)
+			value = -value;
 		if (value < 0.0f)
 			value = 0.0f;
 		if (value > 1.0f)
@@ -6032,6 +6080,135 @@ wiseview_progress(
 		t = (float)elapsed / (float)WISEVIEW_MS;
 	t = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
 	return server->wiseview_from + (server->wiseview_to - server->wiseview_from) * t;
+}
+
+/*
+ * Handles a button for the top edge's band (WS181, edge.c): a touch's left
+ * press in the band is held until its motion tells (band_motion); the
+ * release of a held press that never moved gives the press and the release
+ * again where it was pressed (replays: the bar is drawn), or is lost (over
+ * a fullscreen window, whose client never had the press).  Returns 1 when
+ * the button is the band's.
+ */
+static int
+band_button(
+	struct kwl_server *server,
+	uint32_t button,
+	uint32_t state,
+	int replays)
+{
+	unsigned edge;
+	int touch;
+
+	/* A press being given again goes past the band. */
+	if (server->band_replay)
+		return 0;
+
+	/* The release of a held press: a tap of what is under it, or nothing over a fullscreen window. */
+	if (state == 0 && server->band_press) {
+		server->band_press = 0;
+		if (replays)
+			band_replay(server, 1);
+		return 1;
+	}
+
+	/* Only a left press. */
+	if (state == 0 || button != KWL_BUTTON_LEFT)
+		return 0;
+
+	/* Only a touch's press in the band (edge.c; the 2026-10-07 user decision: a touch only). */
+	touch = 0;
+	if (server->shell_source == KWL_CONTACT_TOUCH)
+		touch = 1;
+	edge = kwl_edge_classify(server->pointer_x, server->pointer_y, (int32_t)server->width, (int32_t)server->height, touch);
+	if (edge != KWL_EDGE_TOP_BAND)
+		return 0;
+
+	/* Held, where it was. */
+	server->band_press = 1;
+	server->band_start_x = server->pointer_x;
+	server->band_start_y = server->pointer_y;
+	printf("KWL EDGE band press x=%d y=%d\n", server->pointer_x, server->pointer_y);
+
+	/* Succeeded: the press is the band's for now. */
+	return 1;
+}
+
+/*
+ * Follows a press held in the top edge's band (WS181): down far enough it
+ * becomes the swipe that opens Wiseview from the top (App Home, open,
+ * closes at once), across or up it is given again to what is under it
+ * (replays) or lost over a fullscreen window.  Returns 1 when the motion is
+ * the band's, 0 when it goes on to what the press was given to.
+ */
+static int
+band_motion(
+	struct kwl_server *server,
+	int replays)
+{
+	unsigned kind;
+
+	/* Only a held press. */
+	if (!server->band_press)
+		return 0;
+
+	/* What the press is after this motion (edge.c). */
+	kind = kwl_edge_band_motion(server->pointer_x - server->band_start_x, server->pointer_y - server->band_start_y);
+	if (kind == KWL_EDGE_BAND_WAIT)
+		return 1;
+	server->band_press = 0;
+
+	/* The swipe down: Wiseview opens from the top, following the pointer. */
+	if (kind == KWL_EDGE_BAND_WISEVIEW) {
+		kwl_home_close_now(server, "top-edge");
+		server->wiseview_gesture = 1;
+		server->wiseview_top = 1;
+		server->wiseview_start_y = server->band_start_y;
+		server->wiseview_current = sheet_owner(kwl_top_window(server));
+		server->dirty = 1;
+		printf("KWL WISEVIEW gesture via=top-edge\n");
+		return 1;
+	}
+
+	/* Over a fullscreen window the press is lost. */
+	if (!replays)
+		return 1;
+
+	/* Not the swipe: the press is given to what is under it, and this motion goes on to it. */
+	band_replay(server, 0);
+	return 0;
+}
+
+/*
+ * Gives a press held in the top edge's band again, at the point it was
+ * pressed, to what is under it (the bar's widgets, App Home), and its
+ * release too for a tap; the pointer is back where it is after.
+ */
+static void
+band_replay(
+	struct kwl_server *server,
+	int release)
+{
+	int32_t x;
+	int32_t y;
+
+	/* The pointer at the press's point while the press is given. */
+	x = server->pointer_x;
+	y = server->pointer_y;
+	server->pointer_x = server->band_start_x;
+	server->pointer_y = server->band_start_y;
+	server->band_replay = 1;
+	printf("KWL EDGE band replay release=%d\n", release);
+
+	/* The press, and for a tap its release, as the shell takes them. */
+	(void)kwl_glass_button(server, KWL_BUTTON_LEFT, 1U);
+	if (release)
+		(void)kwl_glass_button(server, KWL_BUTTON_LEFT, 0U);
+
+	/* The pointer back where it is. */
+	server->band_replay = 0;
+	server->pointer_x = x;
+	server->pointer_y = y;
 }
 
 /* Starts the swipe up from the bottom edge that opens App Home (WS181), for a left press in that edge.  Returns 1 when it started. */
@@ -6678,6 +6855,7 @@ wiseview_button(
 			return 1;
 		progress = wiseview_progress(server);
 		server->wiseview_gesture = 0;
+		server->wiseview_top = 0;
 		if (progress > WISEVIEW_THRESHOLD) {
 			printf("KWL WISEVIEW opening from=%.2f\n", (double)progress);
 			wiseview_settle(server, progress, 1.0f);
@@ -7974,6 +8152,11 @@ glass_motion_take(
 		return 1;
 	}
 
+	/* A press held in the top edge's band: the swipe down to Wiseview, or given again to what is under it (WS181). */
+	taken = band_motion(server, 1);
+	if (taken)
+		return 1;
+
 	/* The top-right corner's swipe follows the pointer (corner.c). */
 	taken = kwl_corner_motion(server);
 	if (taken)
@@ -8042,10 +8225,8 @@ glass_motion_take(
 			return 1;
 		}
 
-		/* Not far enough yet: the window follows the pull. */
-		server->pull_distance = server->pointer_y - server->pull_start_y;
-		if (server->pull_distance < 0)
-			server->pull_distance = 0;
+		/* Not far enough yet, in any direction (WS181): the window follows the pull. */
+		server->pull_distance = kwl_edge_distance(server->pointer_x - server->pull_start_x, server->pointer_y - server->pull_start_y);
 		if (server->pull_distance < PULL_DISTANCE)
 			return 1;
 
@@ -8061,6 +8242,7 @@ glass_motion_take(
 		server->pull_distance = 0;
 		server->pull = NULL;
 		server->drag = surface;
+		server->drag_left_bar = 0U;
 		server->drag_dx = server->pointer_x - x;
 		server->drag_dy = server->pointer_y - y;
 		server->drag_start_x = surface->restore_x;
@@ -8078,6 +8260,10 @@ glass_motion_take(
 		server->drag = NULL;
 		return 1;
 	}
+
+	/* A move that has been out of the system bar may dock the window by a release back in it. */
+	if (server->pointer_y >= KWL_GLASS_BAR)
+		server->drag_left_bar = 1U;
 
 	/* The body follows the pointer; the title bar stays below the system bar. */
 	surface->x = server->pointer_x - server->drag_dx;
