@@ -39,7 +39,8 @@
  * keys ENROLLED listed (session_key_count of them, ws172-p003).
  *
  * events_descriptor is where the system's events are read (ws132-p003),
- * or -1 when the system has none.
+ * or -1 when the system has none.  power_outcome is what the last sleep
+ * came to as the manager answered it (ws052-p011).
  */
 struct kl_backend {
 	struct kl_backend_host host;
@@ -58,6 +59,7 @@ struct kl_backend {
 	size_t session_key_count;
 	char session_reason[KL_BACKEND_SESSION_REASON];
 	int events_descriptor;
+	struct kl_backend_power_outcome power_outcome;
 	/* Remote Login's state as sessiond last answered it (ws089-p025). */
 	struct kl_backend_sharing sharing;
 };

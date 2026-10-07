@@ -57,6 +57,8 @@
 
 #include <errno.h>
 #include <poll.h>
+#include "power-outcome.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -110,6 +112,7 @@ static int session_take_key(const char *word, struct kl_backend_key *key);
 static int session_hex_value(char digit);
 static int session_send(struct kl_backend *backend, unsigned request, const char *line);
 static void session_answered(struct kl_backend *backend, const char *line);
+static void session_slept(struct kl_backend *backend, const char *line);
 static void session_end(struct kl_backend *backend, unsigned reason);
 static uint64_t session_milliseconds(void);
 
@@ -677,11 +680,13 @@ kl_backend_session_tick(
 		return;
 	}
 
-	/* A session carries on without sessiond, whose descriptor is closed. */
+	/* A session carries on without sessiond, whose descriptor is closed; a sleep asked is over (ws052-p011). */
 	if (count == 0) {
 		backend->session_gone = 1U;
 		(void)close(descriptor);
 		backend->options.session_descriptor = -1;
+		if (backend->power_asked == KL_BACKEND_POWER_SUSPEND)
+			session_slept(backend, "ERROR");
 		return;
 	}
 
@@ -790,6 +795,12 @@ session_answered(
 		return;
 	}
 
+	/* A sleep's answer is its outcome, never a login's or an action's answer (ws052-p011). */
+	if (backend->session_request == KL_BACKEND_SESSION_POWER && backend->power_asked == KL_BACKEND_POWER_SUSPEND) {
+		session_slept(backend, line);
+		return;
+	}
+
 	/* What the answer says: a SERVICE request's is the state, or why not (ws089-p025). */
 	backend->session_reason[0] = '\0';
 	kind = SESSION_ANSWER_SERVICE;
@@ -839,6 +850,28 @@ session_answered(
 		backend->power_asked = 0U;
 	if (backend->host.session_answer != NULL)
 		backend->host.session_answer(backend->host.data, request, error);
+}
+
+/*
+ * Takes sessiond's answer to "POWER suspend" (ws052-p011): its outcome is
+ * kept for kl_backend_power_outcome, the sleep may be asked again, and the
+ * host hears session_answer(KL_BACKEND_SESSION_POWER) with its error.
+ */
+static void
+session_slept(
+	struct kl_backend *backend,
+	const char *line)
+{
+	int error;
+
+	/* The outcome, and no sleep asked any more. */
+	error = kl_backend_power_parse_outcome(line, &backend->power_outcome);
+	backend->power_asked = 0U;
+	backend->session_request = KL_BACKEND_SESSION_NONE;
+
+	/* The host hears it. */
+	if (backend->host.session_answer != NULL)
+		backend->host.session_answer(backend->host.data, KL_BACKEND_SESSION_POWER, error);
 }
 
 /* Says what a line answers, by its first words. */
