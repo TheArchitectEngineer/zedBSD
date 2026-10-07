@@ -150,6 +150,7 @@ static void test_copy_buffer(void);
 static void test_mip_transfers(void);
 static void test_recording_limits(void);
 static void fixture_state_image(struct i915_gfx_image *image, struct i915_gfx_memory *memory, uint32_t side, uint64_t offset);
+static void test_view_format_swizzle(void);
 static void test_blend_state(void);
 static void fixture_dsl(uint64_t identity, const uint32_t *numbers, const uint32_t *types, uint32_t count);
 static void fixture_buffer_write(uint64_t set, uint32_t binding, uint32_t type, uint64_t offset, uint64_t range);
@@ -170,6 +171,7 @@ main(void)
 	test_mip_transfers();
 	test_recording_limits();
 	test_blend_state();
+	test_view_format_swizzle();
 	test_uniform_bindings();
 
 	/* Succeeded: every check held. */
@@ -1607,6 +1609,133 @@ fixture_state_image(
 	image->levels = 1U;
 	image->memory = memory;
 	image->offset = offset;
+}
+
+/* Writes the draw state for one texture and returns its RENDER_SURFACE_STATE (ws031-p033). */
+static const uint32_t *
+fixture_texture_state(
+	uint8_t *page,
+	struct i915_gfx_image *target,
+	struct i915_gfx_view *view)
+{
+	static const uint32_t sampler_sets[1] = { 0U };
+	static const uint32_t sampler_bindings[1] = { 0U };
+	static struct i915_gfx_pipeline pipeline;
+	static struct i915_gfx_draw_state state;
+	static struct i915_gfx_kernels kernels;
+	static struct i915_gfx_sampler sampler;
+	static struct i915_gfx_dset set;
+	const uint32_t *surface;
+	int error;
+
+	/* A pipeline that does not blend, a 16x16 viewport. */
+	memset(&pipeline, 0, sizeof(pipeline));
+	pipeline.viewport[2] = 0x41800000U;
+	pipeline.viewport[3] = 0x41800000U;
+	pipeline.viewport[5] = 0x3f800000U;
+	pipeline.scissor.extent.width = 16U;
+	pipeline.scissor.extent.height = 16U;
+
+	/* Set 0 binding 0 holds the view and a sampler; the pixel kernel samples it. */
+	memset(&sampler, 0, sizeof(sampler));
+	memset(&set, 0, sizeof(set));
+	set.slots[0].view = view;
+	set.slots[0].sampler = &sampler;
+	memset(&state, 0, sizeof(state));
+	state.pipeline = &pipeline;
+	state.dset[0] = &set;
+	memset(&kernels, 0, sizeof(kernels));
+	kernels.ps_samplers = 1U;
+	kernels.ps_sampler_sets = sampler_sets;
+	kernels.ps_sampler_bindings = sampler_bindings;
+
+	/* Succeeded: texture 0's surface state. */
+	memset(page, 0, I915_GFX_SLOT_BYTES);
+	error = drv_i915_gfx_write_state(page, &state, &kernels, target, 0x6U);
+	assert(error == 0);
+	surface = (const uint32_t *)(const void *)(page + I915_GFX_SURFACE_HEAP);
+	return &surface[I915_GFX_RSS_TEXTURE / 4U];
+}
+
+/*
+ * The format a view reads its image's texels as, and its swizzle
+ * (ws031-p033): an SRGB view of an UNORM image is sampled as SRGB, an
+ * R32_UINT view of it as R32_UINT, a view of another texel size and a
+ * depth view keep the image's format; a view vkCreateImageView made gives
+ * its channel select, four ZERO components among them, and a zeroed view
+ * reads as the identity.
+ */
+static void
+test_view_format_swizzle(void)
+{
+	static uint8_t page[I915_GFX_SLOT_BYTES];
+	struct i915_gem_object object;
+	struct i915_gfx_memory memory;
+	struct i915_gfx_image target;
+	struct i915_gfx_image image;
+	struct i915_gfx_image depth;
+	struct i915_gfx_view view;
+	const uint32_t *rss;
+	const uint32_t identity = (4U << 25) | (5U << 22) | (6U << 19) | (7U << 16);
+	const uint32_t swapped = (6U << 25) | (5U << 22) | (4U << 19) | (7U << 16);
+
+	/* The fixture's storage: the 16x16 target at 0, a 4x4 RGBA8 texture at 0x1000. */
+	memset(&object, 0, sizeof(object));
+	object.bytes = sizeof(fixture_storage);
+	object.va = 0x70000000ULL;
+	object.run.paddr = (hal_physaddr_t)(uintptr_t)fixture_storage;
+	memset(&memory, 0, sizeof(memory));
+	memory.object = &object;
+	memory.size = sizeof(fixture_storage);
+	fixture_state_image(&target, &memory, 16U, 0U);
+	fixture_state_image(&image, &memory, 4U, 0x1000U);
+
+	/* A zeroed view (a test's own) reads as the identity, in the image's format. */
+	memset(&view, 0, sizeof(view));
+	view.image = &image;
+	view.format = VK_FORMAT_R8G8B8A8_UNORM;
+	view.level_count = 1U;
+	rss = fixture_texture_state(page, &target, &view);
+	assert(rss[7] == identity);
+	assert(((rss[0] >> 18) & 0x1ffU) == 0x0c7U);
+
+	/* A made view of four ZERO components reads zeros; one with R and B swapped swaps them. */
+	view.swizzle_set = 1U;
+	view.channel_select = 0U;
+	rss = fixture_texture_state(page, &target, &view);
+	assert(rss[7] == 0U);
+	view.channel_select = swapped;
+	rss = fixture_texture_state(page, &target, &view);
+	assert(rss[7] == swapped);
+
+	/* An SRGB view of the UNORM image is sampled as SRGB; an R32_UINT view as R32_UINT. */
+	view.channel_select = identity;
+	view.format = VK_FORMAT_R8G8B8A8_SRGB;
+	assert(drv_i915_gfx_view_format(&view) == VK_FORMAT_R8G8B8A8_SRGB);
+	rss = fixture_texture_state(page, &target, &view);
+	assert(((rss[0] >> 18) & 0x1ffU) == 0x0c8U);
+	view.format = VK_FORMAT_R32_UINT;
+	rss = fixture_texture_state(page, &target, &view);
+	assert(((rss[0] >> 18) & 0x1ffU) == 0x0d7U);
+
+	/* A view of another texel size (R8G8, two bytes) keeps the image's format. */
+	view.format = VK_FORMAT_R8G8_UNORM;
+	assert(drv_i915_gfx_view_format(&view) == VK_FORMAT_R8G8B8A8_UNORM);
+	rss = fixture_texture_state(page, &target, &view);
+	assert(((rss[0] >> 18) & 0x1ffU) == 0x0c7U);
+
+	/* A colour view of a depth image, and a format of no known size, keep the image's. */
+	memset(&depth, 0, sizeof(depth));
+	depth.format = VK_FORMAT_D32_SFLOAT;
+	view.image = &depth;
+	view.format = VK_FORMAT_R32_SFLOAT;
+	assert(drv_i915_gfx_view_format(&view) == VK_FORMAT_D32_SFLOAT);
+	view.image = &image;
+	view.format = VK_FORMAT_R16_UNORM;
+	assert(drv_i915_gfx_view_format(&view) == VK_FORMAT_R8G8B8A8_UNORM);
+	view.format = VK_FORMAT_UNDEFINED;
+	assert(drv_i915_gfx_view_format(&view) == VK_FORMAT_R8G8B8A8_UNORM);
+	printf("  view format and swizzle: SRGB and R32_UINT views reinterpret, other sizes and depth keep the image's; four ZERO swizzle reads zeros, a zeroed view the identity\n");
 }
 
 /*

@@ -240,9 +240,12 @@ struct i915_gfx_view {
 
 	/*
 	 * The component swizzle as the surface state's shader channel select
-	 * word (RENDER_SURFACE_STATE dword 7); 0 reads as the identity.
+	 * word (RENDER_SURFACE_STATE dword 7), taken when swizzle_set says
+	 * vkCreateImageView made it (ws031-p033); a view made otherwise (a
+	 * test's, zeroed) reads as the identity.
 	 */
 	uint32_t channel_select;
+	uint32_t swizzle_set;
 };
 
 /*
@@ -847,6 +850,7 @@ int drv_i915_gfx_image_layout(struct i915_gfx_image *image);
 int drv_i915_gfx_image_level(const struct i915_gfx_image *image, uint32_t level, struct i915_gfx_surface *surface);
 int drv_i915_gfx_image_slice(const struct i915_gfx_image *image, uint32_t level, uint32_t slice, struct i915_gfx_surface *surface);
 uint32_t drv_i915_gfx_format_bytes(uint32_t format);
+uint32_t drv_i915_gfx_view_format(const struct i915_gfx_view *view);
 
 /* The attachment a render pass's colour slot draws into, VK_ATTACHMENT_UNUSED for none (render-pass.c). */
 uint32_t drv_i915_gfx_pass_color(const struct i915_gfx_pass *pass, uint32_t slot);
