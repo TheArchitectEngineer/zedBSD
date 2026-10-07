@@ -426,6 +426,7 @@
 #define IMAGE_OPERAND_LOD 0x2U
 #define IMAGE_OPERAND_GRAD 0x4U
 #define IMAGE_OPERAND_CONST_OFFSET 0x8U
+#define IMAGE_OPERAND_SAMPLE 0x40U
 
 /* The Dim of OpTypeImage. */
 #define DIM_1D 0U
@@ -528,9 +529,10 @@ struct i915_spirv_id {
 	/* A variable decorated NoPerspective: a fragment input interpolated linearly in screen space. */
 	uint8_t noperspective;
 
-	/* An image type: its Dim and whether it is Arrayed. */
+	/* An image type: its Dim, whether it is Arrayed and whether it is multisampled (MS). */
 	uint8_t image_dim;
 	uint8_t image_arrayed;
+	uint8_t image_ms;
 
 	/* A structure type decorated BufferBlock: a storage buffer's block. */
 	uint8_t buffer_block;
@@ -1534,6 +1536,7 @@ i915_spirv_declare_type(
 		record->type = word[2];
 		record->image_dim = (uint8_t)word[3];
 		record->image_arrayed = (uint8_t)word[5];
+		record->image_ms = (uint8_t)word[6];
 		break;
 
 	case OP_TYPE_FUNCTION:
@@ -6674,7 +6677,11 @@ i915_spirv_lower_texture(
  * lower_sampler_logical_send()); a constant offset is added to the
  * coordinate, as Mesa lowers it for ld (nir_lower_tex's lower_txf_offset).
  * A 1D image gets v = 0, its layer r; a texel buffer (a buffer surface)
- * is read the same way at level 0, as Mesa's ld of a buffer is.
+ * is read the same way at level 0, as Mesa's ld of a buffer is.  A sample
+ * of a multisampled 2D image is read as layer r of a 2D array, as the
+ * executor describes such an image to a shader that samples it (its
+ * samples are slices QPitch apart, MSFMT_MSS without a control surface);
+ * the ld2dms_w message is not used.
  */
 static int
 i915_spirv_lower_fetch(
@@ -6701,6 +6708,7 @@ i915_spirv_lower_fetch(
 	uint32_t shift;
 	uint32_t first;
 	uint32_t index;
+	uint32_t sample;
 	int32_t moved;
 	int buffer;
 	int error;
@@ -6725,6 +6733,10 @@ i915_spirv_lower_fetch(
 		return i915_spirv_refuse(parser, opcode, offset, "fetch from something that is not a 1D, 2D or 3D image or a texel buffer");
 	}
 
+	/* A multisampled image is a 2D one, not an array (its samples are the executor's layers). */
+	if (type->image_ms != 0U && (type->image_dim != DIM_2D || type->image_arrayed != 0U))
+		return i915_spirv_refuse(parser, opcode, offset, "fetch from a multisampled image that is not 2D, or an array");
+
 	/* The integer coordinate: the image's dimensions and the layer of an array (one for a texel buffer). */
 	coordinate_count = i915_spirv_operand(parser, word[4], coordinate);
 	position_count = type->image_dim + 1U + type->image_arrayed;
@@ -6742,8 +6754,14 @@ i915_spirv_lower_fetch(
 	}
 
 	/* Refuses an operand that is not lowered. */
-	if ((operands & ~(IMAGE_OPERAND_LOD | IMAGE_OPERAND_CONST_OFFSET)) != 0U)
-		return i915_spirv_refuse(parser, opcode, offset, "fetch with image operands other than Lod and ConstOffset");
+	if ((operands & ~(IMAGE_OPERAND_LOD | IMAGE_OPERAND_CONST_OFFSET | IMAGE_OPERAND_SAMPLE)) != 0U)
+		return i915_spirv_refuse(parser, opcode, offset, "fetch with image operands other than Lod, ConstOffset and Sample");
+
+	/* A multisampled image is fetched from one sample, which only it has. */
+	if (type->image_ms != 0U && (operands & IMAGE_OPERAND_SAMPLE) == 0U)
+		return i915_spirv_refuse(parser, opcode, offset, "fetch from a multisampled image without a sample");
+	if (type->image_ms == 0U && (operands & IMAGE_OPERAND_SAMPLE) != 0U)
+		return EINVAL;
 
 	/* The level. */
 	level = NO_VALUE;
@@ -6765,6 +6783,18 @@ i915_spirv_lower_fetch(
 		error = i915_spirv_texel_offset(parser, word[next], &texel_offset, opcode, offset);
 		if (error != 0)
 			return error;
+		next++;
+	}
+
+	/* The sample (the operands come in bit order: Lod, ConstOffset, then Sample). */
+	sample = NO_VALUE;
+	if ((operands & IMAGE_OPERAND_SAMPLE) != 0U) {
+		scalar_count = 0U;
+		if (next < count)
+			scalar_count = i915_spirv_operand(parser, word[next], scalars);
+		if (scalar_count != 1U)
+			return EINVAL;
+		sample = scalars[0];
 		next++;
 	}
 
@@ -6806,6 +6836,10 @@ i915_spirv_lower_fetch(
 		if (position_count > 2U)
 			i915_spirv_texture_param(params, &param_count, coordinate[2]);
 	}
+
+	/* A sample of a multisampled image is its layer r: the executor reads its samples as an array (state.c). */
+	if (sample != NO_VALUE)
+		i915_spirv_texture_param(params, &param_count, sample);
 
 	/* Emits the message. */
 	error = i915_spirv_emit_texture(parser, image, params, param_count, I915_IR_TEXTURE_LD, 0U, &first);

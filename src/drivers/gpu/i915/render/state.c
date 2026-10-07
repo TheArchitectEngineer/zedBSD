@@ -2109,13 +2109,23 @@ i915_image_surface_write(
 	/*
 	 * A multisampled image is Y-tiled with its samples as slices, QPitch
 	 * apart (MSFMT_MSS), which the surface reaches as an array (isl sets
-	 * Surface Array for every 2D surface).
+	 * Surface Array for every 2D surface); a render target writes it as
+	 * multisampled.
 	 */
 	samples = 0U;
-	if (image->samples > 1U) {
+	if (image->samples > 1U && range->render_target != 0) {
 		tile = GEN12_TILEMODE_YMAJOR;
 		array = GEN12_RSS_SURFACE_ARRAY;
 		samples = drv_i915_gfx_samples_log2(image->samples) << GEN12_RSS_MULTISAMPLES_SHIFT;
+	} else if (image->samples > 1U) {
+		/*
+		 * A shader that samples it (texelFetch of a sampler2DMS) reads the
+		 * same slices as a single-sampled 2D array, one layer a sample:
+		 * the compiler puts the sample in the ld message's r (spirv.c).
+		 */
+		tile = GEN12_TILEMODE_YMAJOR;
+		array = GEN12_RSS_SURFACE_ARRAY;
+		depth = image->samples - 1U;
 	}
 
 	/* A render target writes level MIP Count; a sampled surface reads from Surface Min LOD. */

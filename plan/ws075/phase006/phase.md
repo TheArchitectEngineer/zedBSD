@@ -240,3 +240,16 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
 | `plan/ws031/tests/run-vk-host-tests.sh` の写し（trap の rm を外し、work を build/tmp に） | 10 個 × plain・ASan/UBSan すべて PASS（`WS031 vk host fixtures PASS`） |
 
 未実施: texel buffer を実際に読む host の fixture（surface state の dword の検算）、vmunix の build、実機（GL の samplerBuffer の場面、5330）。VS の texel buffer は VS の sampled image と同じく実行器が PS だけなので未対応（backlog）。`textureSize(samplerBuffer)`（OpImageQuerySize の buffer）は未対応（backlog）。
+
+## 増分 8: sampler2DMS（texelFetch の sample、2026-10-07 夕、P1）
+
+- compiler（`compiler/spirv.c`）: `OpTypeImage` の MS を記録し、`OpImageFetch` が MS の 2D image を受ける（Sample の image operand が必須、arrayed は拒む）。sample は ld の r（layer）に入れる。ld2dms_w は使わない。
+- 実行器（`render/state.c` `i915_image_surface_write`）: MS の colour image を **shader が読む時**は単一の sample の 2D array（sample 1 つが layer 1 つ、QPitch は今の `slice_rows`、Y tile）として surface state を書く。render target として書く時は今のまま MS。実行器の MS の colour image は MSFMT_MSS（sample が QPitch ずつ離れた slice、制御 surface なし、`image.c` 481〜486）なので同じ memory を読む（blit の resolve が sample ごとの surface を読むのと同じ考え）。
+- `instance.c`: `sampledImageColorSampleCounts`・`sampledImageIntegerSampleCounts` を 1・2・4 に。image format properties は colour の target なら SAMPLED でも 2・4（depth・stencil は interleave なので SAMPLED では 1 のまま、STORAGE も 1）。
+
+| コマンド | 結果 |
+| --- | --- |
+| `sh plan/ws031/tests/run-vk-host-tests.sh`（rm を外した版） | 10 個 × plain・ASan すべて PASS |
+| `make -j16 BUILD=build/p1-k ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p1-k/vmunix` | 成功、warning 0 |
+
+未実施: MS の fetch を実際に組む host の fixture（compile の命令列・surface の dword）、実機（GL の sampler2DMS・texel buffer の場面）。`textureSize(sampler2DMS)`・`textureSamples` は未確認・未対応（backlog）。MS の depth の sample の読みは未対応（interleave）。
