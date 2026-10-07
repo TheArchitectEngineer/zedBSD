@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザーの UAT（挙動の調整、4 点: docked から floating の時の他の窓、docking の隠れと最小化の区別、App Home を独立のモードに・gesture の遷移、整列のメニューと整列モード）→ [WS181](ws181/ws.md)。M-3（5330 の iGPU を host の i915 に付け替えて正解値を採る）の質問はユーザーが閉じた（未決、指示を待つ）。
 - 2026-10-07 ユーザー（クリック、WS179 design.md §10）: 1 既定の blue は「今のまま、例外として記録」（0x2f7cf6 と白い文字、contrast 3.94）、b compositor の 0x4085fa は accent に「揃える」、c「desktop の icon だけ従う」（greeter は既定の青）、a・d・e は「3 つともこのまま」（red・green はそのまま、yellow は light 0xa48207・dark 0xf5c518、dark の purple・pink・red・graphite の主の button の文字は黒）。
 - 2026-10-07 ユーザー: Emacs の拡張（Emacs をベースにしたグラフィカルなエディタ、エージェント開発の次世代のエディタ、`Keiland.*` の NAPI・`emacs -g`・tab のチャット）の WS だけを作るよう依頼 → [WS180](ws180/ws.md)（planning、段・見積もり・Phase は未定、Queue なし）。
 - 2026-10-07 ユーザー:「了解です。USB-C, DP Alt mode, i915 videoを含め、スケジューリング優先度を下げていたベータ2のハードウェア関連の実装項目について、優先度を通常にして、作業開始を許可します。」→ 第 3 段の hardware の WS（WS050・WS051・WS083・WS075・WS084・WS052・WS031 の残り）を通常の優先度に。WS083 は p001・p002 に限らず、host で作れる所まで進めてよい（実機の確認は 5330 が戻ってから）。
