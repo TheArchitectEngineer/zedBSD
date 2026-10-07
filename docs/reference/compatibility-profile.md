@@ -47,6 +47,13 @@ boundary. [evdev](evdev.md) describes a bounded compatibility profile, while
 [console/graphics/system](control-devices.md) are zedBSD-specific controls.
 These documents do not extend their tested ABI claims to every non-x86 port.
 
+## OpenGL and GLX
+
+`libGL.so` holds OpenGL only; GLX is a separate library, `libGLX.so`, that
+comes with the X11 server for the compositor. An X program that uses GLX
+links both (`-lGL -lGLX`). A program ported from a system whose `libGL`
+also provides the `glX*` functions needs `-lGLX` added to its link.
+
 ## Checking an application
 
 Build against the [project sysroot](../howto/build-from-source.md), check the

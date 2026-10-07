@@ -16,7 +16,7 @@
 #ifndef LIBGL_FIXED_H
 #define LIBGL_FIXED_H
 
-#include "../../desktop/libglesv2/gles.h"
+#include "../libglesv2/gles.h"
 
 #include <GL/gl.h>
 
@@ -201,9 +201,9 @@ struct fixed_state *fixed_current(struct zegl_context **context);
 void fixed_install(void);
 GLfloat *fixed_matrix(struct fixed_state *fixed);
 
-/* glx.c: the desktop GL version of the calling thread's context (major * 10 + minor) and its GL_CONTEXT_FLAGS, and its GL_CONTEXT_PROFILE_MASK. */
-unsigned glx_version(GLint *flags);
-GLint glx_profile(void);
+/* context.c: the desktop GL version of the calling thread's context (major * 10 + minor) and its GL_CONTEXT_FLAGS, and its GL_CONTEXT_PROFILE_MASK, as the window-system binding (libGLX) answers them. */
+unsigned gl_context_version(GLint *flags);
+GLint gl_context_profile(void);
 
 /* immediate.c: recording into the list being compiled, and freeing the lists. */
 int fixed_record(struct fixed_state *fixed, enum fixed_op op, GLenum e0, GLenum e1, const GLfloat *f, unsigned count);

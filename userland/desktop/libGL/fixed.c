@@ -1355,19 +1355,19 @@ fixed_get(
 	/* The state asked for. */
 	switch (pname) {
 	case GL_MAJOR_VERSION:
-		version = glx_version(&flags);
+		version = gl_context_version(&flags);
 		values[0] = (GLfloat)(version / 10U);
 		return 1U;
 	case GL_MINOR_VERSION:
-		version = glx_version(&flags);
+		version = gl_context_version(&flags);
 		values[0] = (GLfloat)(version % 10U);
 		return 1U;
 	case GL_CONTEXT_FLAGS:
-		(void)glx_version(&flags);
+		(void)gl_context_version(&flags);
 		values[0] = (GLfloat)flags;
 		return 1U;
 	case GL_CONTEXT_PROFILE_MASK:
-		values[0] = (GLfloat)glx_profile();
+		values[0] = (GLfloat)gl_context_profile();
 		return 1U;
 	case GL_MODELVIEW_MATRIX:
 		memcpy(values, fixed->modelview[fixed->modelview_top], 16U * sizeof(GLfloat));
@@ -1453,7 +1453,7 @@ fixed_string(
 	GLint flags;
 
 	/* An OpenGL 3.1 context's, with GLSL 1.40, and a 3.0 one's, with GLSL 1.30. */
-	version = glx_version(&flags);
+	version = gl_context_version(&flags);
 	if (version == 31U && name == GL_VERSION)
 		return (const GLubyte *)"3.1 Kei (OpenGL ES 3.0 on Vulkan)";
 	if (version == 31U && name == GL_SHADING_LANGUAGE_VERSION)
@@ -1491,7 +1491,7 @@ fixed_glsl_version(void)
 	GLint flags;
 
 	/* The context's GL version. */
-	version = glx_version(&flags);
+	version = gl_context_version(&flags);
 	if (version == 30U)
 		return 130U;
 	if (version == 31U)
@@ -1510,7 +1510,7 @@ fixed_core_profile(void)
 	GLint profile;
 
 	/* The context's profile. */
-	profile = glx_profile();
+	profile = gl_context_profile();
 	if (profile == FIXED_CORE_PROFILE)
 		return 1;
 
@@ -1530,12 +1530,12 @@ fixed_extension_count(void)
 	int named;
 
 	/* An OpenGL 1.4 context names OpenGL ES's. */
-	version = glx_version(&flags);
+	version = gl_context_version(&flags);
 	if (version < 30U)
 		return -1;
 
 	/* Those of its version and profile. */
-	profile = glx_profile();
+	profile = gl_context_profile();
 	count = 0;
 	for (index = 0U; index < sizeof(fixed_extensions) / sizeof(fixed_extensions[0]); index++) {
 		named = fixed_extension_named(&fixed_extensions[index], version, profile);
@@ -1559,8 +1559,8 @@ fixed_extension(
 	int named;
 
 	/* The index-th of those the context names. */
-	version = glx_version(&flags);
-	profile = glx_profile();
+	version = gl_context_version(&flags);
+	profile = gl_context_profile();
 	for (entry = 0U; entry < sizeof(fixed_extensions) / sizeof(fixed_extensions[0]); entry++) {
 		named = fixed_extension_named(&fixed_extensions[entry], version, profile);
 		if (!named)
@@ -1588,8 +1588,8 @@ fixed_extension_string(void)
 	int named;
 
 	/* The kind's list. */
-	version = glx_version(&flags);
-	profile = glx_profile();
+	version = gl_context_version(&flags);
+	profile = gl_context_profile();
 	joined = fixed_extensions_joined[fixed_extension_kind(version, profile)];
 
 	/* Made at the first call. */
