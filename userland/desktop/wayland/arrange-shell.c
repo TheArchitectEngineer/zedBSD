@@ -156,6 +156,7 @@ struct arrange_desktop {
  */
 struct arrange_menu {
 	unsigned open;
+	unsigned output;
 	int32_t x;
 	int32_t y;
 	int32_t height;
@@ -185,12 +186,13 @@ struct arrange_view {
 
 /*
  * The swap being dragged: the arranged window following the pointer, its
- * slot, its desktop, and where the pointer holds it.
+ * slot, its desktop and output, and where the pointer holds it.
  */
 struct arrange_swap {
 	struct kwl_object *window;
 	unsigned slot;
 	unsigned desktop;
+	unsigned output;
 	int32_t dx;
 	int32_t dy;
 };
@@ -205,15 +207,17 @@ struct arrange_swap {
 struct arrange_join {
 	unsigned on;
 	unsigned desktop;
+	unsigned output;
 	unsigned layout;
 	uint64_t asked_ms;
 };
 
 /*
- * Each desktop's arrangement, for the session.  A desktop out of the
- * arrangement mode has on 0; its slots are forgotten then.
+ * Each desktop's arrangement on each output (plane.h's slot, ws113-p015:
+ * a display arranges its own windows), for the session.  A desktop out of
+ * the arrangement mode has on 0; its slots are forgotten then.
  */
-static struct arrange_desktop arrange_desktops[KWL_APPS_DESKTOPS];
+static struct arrange_desktop arrange_desktops[KWL_APPS_DESKTOPS][KWL_PLANE_SLOTS];
 
 /* The menu, closed at the start; only one is open at a time. */
 static struct arrange_menu arrange_menu;
@@ -233,12 +237,13 @@ static void arrange_menu_close(struct kwl_server *server, const char *via);
 static int arrange_menu_item_at(struct kwl_server *server, int32_t x, int32_t y);
 static void arrange_menu_item_rect(int item, int32_t *x, int32_t *y, int32_t *width, int32_t *height);
 static void arrange_menu_act(struct kwl_server *server, int item);
-static void arrange_apply(struct kwl_server *server, unsigned layout);
-static unsigned arrange_targets(struct kwl_server *server, struct kwl_object **windows, unsigned limit);
+static void arrange_apply(struct kwl_server *server, unsigned output, unsigned layout);
+static unsigned arrange_targets(struct kwl_server *server, unsigned output, struct kwl_object **windows, unsigned limit);
+static unsigned arrange_output(const struct kwl_object *surface);
 static void arrange_body(const struct kwl_object *surface, const struct kwl_arrange_rect *slot, int32_t body[4]);
 static void arrange_glide_to(struct kwl_server *server, struct arrange_slot *slot, unsigned index);
-static void arrange_end(struct kwl_server *server, unsigned desktop, const char *reason);
-static int arrange_slot_of(unsigned desktop, const struct kwl_object *surface);
+static void arrange_end(struct kwl_server *server, unsigned desktop, unsigned output, const char *reason);
+static int arrange_slot_of(unsigned desktop, unsigned output, const struct kwl_object *surface);
 static int arrange_menu_view(struct kwl_server *server, struct arrange_view *view);
 static float arrange_menu_grown(struct kwl_server *server);
 static void arrange_menu_grow(struct kwl_server *server, float grown, struct arrange_view *view);
@@ -455,6 +460,7 @@ kwl_arrange_move_start(
 	int32_t x,
 	int32_t y)
 {
+	unsigned output;
 	int slot;
 
 	UNUSED_PARAMETER(server);
@@ -462,9 +468,10 @@ kwl_arrange_move_start(
 	/* Only an arranged window of the desktop shown, and no swap already. */
 	if (arrange_swap.window != NULL)
 		return 0;
-	if (surface->desktop >= KWL_APPS_DESKTOPS || !arrange_desktops[surface->desktop].on)
+	output = arrange_output(surface);
+	if (surface->desktop >= KWL_APPS_DESKTOPS || !arrange_desktops[surface->desktop][output].on)
 		return 0;
-	slot = arrange_slot_of(surface->desktop, surface);
+	slot = arrange_slot_of(surface->desktop, output, surface);
 	if (slot < 0)
 		return 0;
 
@@ -472,9 +479,10 @@ kwl_arrange_move_start(
 	arrange_swap.window = surface;
 	arrange_swap.slot = (unsigned)slot;
 	arrange_swap.desktop = surface->desktop;
+	arrange_swap.output = output;
 	arrange_swap.dx = x - surface->x;
 	arrange_swap.dy = y - surface->y;
-	arrange_desktops[surface->desktop].slots[slot].glide_ms = 0U;
+	arrange_desktops[surface->desktop][output].slots[slot].glide_ms = 0U;
 	printf("KWL ARRANGE swap-start surface=%u slot=%d\n", surface->id, slot);
 
 	/* Succeeded: the move is a swap. */
@@ -491,11 +499,13 @@ int
 kwl_arrange_move_end(
 	struct kwl_server *server)
 {
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
 	struct arrange_desktop *arranged;
 	struct kwl_object *surface;
 	struct kwl_object *other;
 	unsigned index;
 	unsigned target;
+	unsigned count;
 	int found;
 
 	/* Only a swap being dragged. */
@@ -503,10 +513,13 @@ kwl_arrange_move_end(
 	if (surface == NULL)
 		return 0;
 	arrange_swap.window = NULL;
-	arranged = &arrange_desktops[arrange_swap.desktop];
+	arranged = &arrange_desktops[arrange_swap.desktop][arrange_swap.output];
 
-	/* Let go in the system bar: docked, which ends the mode (kwl_arrange_end_all). */
-	if (server->pointer_y < KWL_GLASS_BAR) {
+	/* Let go in the bar of its output (a head's own, ws113-p015): docked, which ends the mode (kwl_arrange_end_all). */
+	count = kwl_outputs(server, outputs);
+	if (arrange_swap.output < count &&
+	    server->pointer_output == arrange_swap.output &&
+	    server->pointer_y < outputs[arrange_swap.output].y + KWL_GLASS_BAR) {
 		kwl_glass_dock_window(server, surface, "arrange-drag");
 		return 1;
 	}
@@ -559,17 +572,19 @@ kwl_arrange_glide(
 {
 	struct arrange_slot *slot;
 	uint64_t elapsed;
+	unsigned output;
 	unsigned part;
 	float t;
 	int index;
 
 	/* Only an arranged window. */
-	if (surface->desktop >= KWL_APPS_DESKTOPS || !arrange_desktops[surface->desktop].on)
+	output = arrange_output(surface);
+	if (surface->desktop >= KWL_APPS_DESKTOPS || !arrange_desktops[surface->desktop][output].on)
 		return 0;
-	index = arrange_slot_of(surface->desktop, surface);
+	index = arrange_slot_of(surface->desktop, output, surface);
 	if (index < 0)
 		return 0;
-	slot = &arrange_desktops[surface->desktop].slots[index];
+	slot = &arrange_desktops[surface->desktop][output].slots[index];
 
 	/* Only while it glides. */
 	if (slot->glide_ms == 0U)
@@ -608,6 +623,7 @@ kwl_arrange_tick(
 	struct kwl_object *surface;
 	int32_t body[4];
 	unsigned desktop;
+	unsigned output;
 	unsigned index;
 	const char *reason;
 	int moving;
@@ -622,46 +638,48 @@ kwl_arrange_tick(
 	if (moving)
 		server->dirty = 1;
 
-	/* Each desktop in the arrangement mode. */
+	/* Each desktop in the arrangement mode, on each output. */
 	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
-		arranged = &arrange_desktops[desktop];
-		if (!arranged->on)
-			continue;
-
-		/* A window that went ends it. */
-		reason = NULL;
-		if (arranged->gone)
-			reason = "closed";
-
-		/* Each arranged window, as it is now. */
-		for (index = 0U; index < arranged->count; index++) {
-			/* The first reason found is enough. */
-			surface = arranged->slots[index].window;
-			if (reason != NULL)
-				break;
-			if (surface == NULL)
+		for (output = 0U; output < KWL_PLANE_SLOTS; output++) {
+			arranged = &arrange_desktops[desktop][output];
+			if (!arranged->on)
 				continue;
-			if (surface->dead || !surface->mapped) {
-				reason = "closed";
-			} else if (surface->minimized) {
-				reason = "minimized";
-			} else if (surface->fullscreen) {
-				reason = "fullscreen";
-			} else if (surface->maximized) {
-				reason = "dock";
-			} else if (surface->desktop != desktop) {
-				reason = "moved";
-			} else if (arrange_swap.window != surface && arranged->slots[index].glide_ms == 0U) {
-				/* Not swapped nor gliding: its size is its slot's unless its frame resized it. */
-				arrange_body(surface, &arranged->slots[index].slot, body);
-				if ((int32_t)surface->window_width != body[2] || (int32_t)surface->window_height != body[3])
-					reason = "resized";
-			}
-		}
 
-		/* The mode ends for the first reason found. */
-		if (reason != NULL)
-			arrange_end(server, desktop, reason);
+			/* A window that went ends it. */
+			reason = NULL;
+			if (arranged->gone)
+				reason = "closed";
+
+			/* Each arranged window, as it is now. */
+			for (index = 0U; index < arranged->count; index++) {
+				/* The first reason found is enough. */
+				surface = arranged->slots[index].window;
+				if (reason != NULL)
+					break;
+				if (surface == NULL)
+					continue;
+				if (surface->dead || !surface->mapped) {
+					reason = "closed";
+				} else if (surface->minimized) {
+					reason = "minimized";
+				} else if (surface->fullscreen) {
+					reason = "fullscreen";
+				} else if (surface->maximized) {
+					reason = "dock";
+				} else if (surface->desktop != desktop || surface->output != output) {
+					reason = "moved";
+				} else if (arrange_swap.window != surface && arranged->slots[index].glide_ms == 0U) {
+					/* Not swapped nor gliding: its size is its slot's unless its frame resized it. */
+					arrange_body(surface, &arranged->slots[index].slot, body);
+					if ((int32_t)surface->window_width != body[2] || (int32_t)surface->window_height != body[3])
+						reason = "resized";
+				}
+			}
+
+			/* The mode ends for the first reason found. */
+			if (reason != NULL)
+				arrange_end(server, desktop, output, reason);
+		}
 	}
 }
 
@@ -676,6 +694,7 @@ kwl_arrange_forget(
 	struct kwl_object *surface)
 {
 	unsigned desktop;
+	unsigned output;
 	int index;
 
 	UNUSED_PARAMETER(server);
@@ -684,36 +703,41 @@ kwl_arrange_forget(
 	if (arrange_swap.window == surface)
 		arrange_swap.window = NULL;
 
-	/* Its slot, on whichever desktop. */
+	/* Its slot, on whichever desktop and output. */
 	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
-		index = arrange_slot_of(desktop, surface);
-		if (index < 0)
-			continue;
-		arrange_desktops[desktop].slots[index].window = NULL;
-		arrange_desktops[desktop].gone = 1U;
+		for (output = 0U; output < KWL_PLANE_SLOTS; output++) {
+			index = arrange_slot_of(desktop, output, surface);
+			if (index < 0)
+				continue;
+			arrange_desktops[desktop][output].slots[index].window = NULL;
+			arrange_desktops[desktop][output].gone = 1U;
+		}
 	}
 }
 
 /*
- * Ends the arrangement mode of every desktop (the docked mode starting:
- * shell.c's layout_set, WS181 I3), the menu and a swap with it.
+ * Ends the arrangement mode of every desktop of an output (its docked mode
+ * starting: shell.c's layout_set, WS181 I3; each output its own,
+ * ws113-p015), the menu and a swap there with it.
  */
 void
 kwl_arrange_end_all(
 	struct kwl_server *server,
+	unsigned output,
 	const char *reason)
 {
 	unsigned desktop;
 
-	/* The menu and a swap. */
-	arrange_swap.window = NULL;
-	if (arrange_menu.open)
+	/* The menu and a swap of the output. */
+	if (arrange_swap.output == output)
+		arrange_swap.window = NULL;
+	if (arrange_menu.open && arrange_menu.output == output)
 		arrange_menu_close(server, reason);
 
-	/* Every arranged desktop. */
-	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
-		if (arrange_desktops[desktop].on)
-			arrange_end(server, desktop, reason);
+	/* Every arranged desktop of the output. */
+	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS && output < KWL_PLANE_SLOTS; desktop++) {
+		if (arrange_desktops[desktop][output].on)
+			arrange_end(server, desktop, output, reason);
 	}
 }
 
@@ -727,13 +751,14 @@ kwl_arrange_mapped(
 	struct kwl_object *surface)
 {
 	struct arrange_desktop *arranged;
-
+	unsigned output;
 	uint64_t waited;
 
-	/* Only a window without a parent on an arranged desktop, newer than its arrangement. */
+	/* Only a window without a parent on an arranged desktop of its output, newer than its arrangement. */
 	if (surface->parent_window != NULL || surface->desktop >= KWL_APPS_DESKTOPS)
 		return;
-	arranged = &arrange_desktops[surface->desktop];
+	output = arrange_output(surface);
+	arranged = &arrange_desktops[surface->desktop][output];
 	if (!arranged->on || surface->map_order <= arranged->map_order)
 		return;
 
@@ -744,16 +769,17 @@ kwl_arrange_mapped(
 	waited = kwl_milliseconds() - arrange_join.asked_ms;
 	if (arrange_join.on &&
 	    arrange_join.desktop == surface->desktop &&
+	    arrange_join.output == output &&
 	    surface->desktop == server->desktop &&
 	    waited < ARRANGE_JOIN_MS) {
 		arrange_join.on = 0U;
 		printf("KWL ARRANGE join surface=%u via=mapped\n", surface->id);
-		arrange_apply(server, arranged->layout);
+		arrange_apply(server, output, arranged->layout);
 		return;
 	}
 
 	/* The mode ends; the new window is placed as a new window is. */
-	arrange_end(server, surface->desktop, "new");
+	arrange_end(server, surface->desktop, output, "new");
 }
 
 /*
@@ -769,17 +795,18 @@ kwl_arrange_join_prepare(
 {
 	struct arrange_desktop *arranged;
 
-	/* Nothing is waited for unless the desktop shown is arranged. */
+	/* Nothing is waited for unless the desktop shown is arranged on the anchor (where new windows open). */
 	arrange_join.on = 0U;
 	if (server->desktop >= KWL_APPS_DESKTOPS)
 		return;
-	arranged = &arrange_desktops[server->desktop];
+	arranged = &arrange_desktops[server->desktop][KWL_PLANE_ANCHOR];
 	if (!arranged->on)
 		return;
 
 	/* The desktop, its layout, and now. */
 	arrange_join.on = 1U;
 	arrange_join.desktop = server->desktop;
+	arrange_join.output = KWL_PLANE_ANCHOR;
 	arrange_join.layout = arranged->layout;
 	arrange_join.asked_ms = kwl_milliseconds();
 }
@@ -815,7 +842,7 @@ kwl_arrange_join_opened(
 	if (server->desktop != arrange_join.desktop)
 		return;
 	printf("KWL ARRANGE join via=running\n");
-	arrange_apply(server, arrange_join.layout);
+	arrange_apply(server, arrange_join.output, arrange_join.layout);
 }
 
 /*
@@ -828,18 +855,20 @@ kwl_arrange_moved(
 	struct kwl_object *surface,
 	unsigned from)
 {
+	unsigned output;
 	int index;
 
-	/* The desktop it left, when it was arranged there. */
-	if (from < KWL_APPS_DESKTOPS && arrange_desktops[from].on) {
-		index = arrange_slot_of(from, surface);
+	/* The desktop it left, when it was arranged there (on its output). */
+	output = arrange_output(surface);
+	if (from < KWL_APPS_DESKTOPS && arrange_desktops[from][output].on) {
+		index = arrange_slot_of(from, output, surface);
 		if (index >= 0)
-			arrange_end(server, from, "moved");
+			arrange_end(server, from, output, "moved");
 	}
 
 	/* The desktop it came to. */
-	if (surface->desktop < KWL_APPS_DESKTOPS && arrange_desktops[surface->desktop].on)
-		arrange_end(server, surface->desktop, "new");
+	if (surface->desktop < KWL_APPS_DESKTOPS && arrange_desktops[surface->desktop][output].on)
+		arrange_end(server, surface->desktop, output, "new");
 }
 
 /*
@@ -935,7 +964,7 @@ kwl_arrange_draw(
 		over = arrange_menu.selected;
 
 	/* How many windows the layouts would take (none: their drawings are faint). */
-	count = arrange_targets(server, windows, KWL_ARRANGE_MAX);
+	count = arrange_targets(server, arrange_menu.output, windows, KWL_ARRANGE_MAX);
 
 	/* The accent and its ink, for the lit item. */
 	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, accent);
@@ -994,6 +1023,7 @@ arrange_menu_open(
 	arrange_menu.y = KWL_GLASS_BAR + ARRANGE_MENU_GAP;
 	arrange_menu.height = ARRANGE_MENU_HEIGHT;
 	arrange_menu.open = 1;
+	arrange_menu.output = KWL_PLANE_ANCHOR;
 	arrange_menu.pressed = ARRANGE_ITEM_NONE;
 	arrange_menu.selected = 0;
 	server->dirty = 1;
@@ -1216,8 +1246,8 @@ arrange_menu_act(
 	/* The menu closes first. */
 	arrange_menu_close(server, "choice");
 
-	/* Succeeded: the layout arranges the windows. */
-	arrange_apply(server, (unsigned)item);
+	/* Succeeded: the layout arranges the windows of the menu's output. */
+	arrange_apply(server, arrange_menu.output, (unsigned)item);
 }
 
 /*
@@ -1230,6 +1260,7 @@ arrange_menu_act(
 static void
 arrange_apply(
 	struct kwl_server *server,
+	unsigned output,
 	unsigned layout)
 {
 	struct kwl_object *windows[KWL_ARRANGE_MAX];
@@ -1246,7 +1277,7 @@ arrange_apply(
 	unsigned slot;
 
 	/* The windows to arrange, top first, up to the layout's limit. */
-	count = arrange_targets(server, windows, kwl_arrange_limit(layout));
+	count = arrange_targets(server, output, windows, kwl_arrange_limit(layout));
 	if (count == 0U) {
 		printf("KWL ARRANGE apply layout=%s desktop=%u windows=0\n", kwl_arrange_name(layout), server->desktop + 1U);
 		return;
@@ -1257,7 +1288,7 @@ arrange_apply(
 		kwl_glass_body(server, windows[index], from[index]);
 
 	/* Every window floating, quietly (the docked mode ends without an animation). */
-	kwl_glass_leave_quiet(server, "arrange");
+	kwl_glass_leave_quiet(server, output, "arrange");
 
 	/* Each window's centre where it floats now (its body as drawn, the size its client drew). */
 	for (index = 0U; index < count; index++) {
@@ -1267,12 +1298,12 @@ arrange_apply(
 	}
 
 	/* The slots in the work area, and which window goes to which. */
-	kwl_glass_work_area(server, &area);
+	kwl_glass_work_area(server, output, &area);
 	made = kwl_arrange_slots(layout, count, &area, slots);
 	kwl_arrange_assign(centres, made, slots, order);
 
 	/* The desktop's arrangement. */
-	arranged = &arrange_desktops[server->desktop];
+	arranged = &arrange_desktops[server->desktop][output];
 	memset(arranged, 0, sizeof(*arranged));
 	arranged->on = 1U;
 	arranged->layout = layout;
@@ -1282,7 +1313,12 @@ arrange_apply(
 		arranged->slots[slot].slot = slots[slot];
 
 	/* Each window into its slot, gliding from where it was drawn, the arranged ones on top in the slots' order. */
-	printf("KWL ARRANGE apply layout=%s desktop=%u windows=%u slots=", kwl_arrange_name(layout), server->desktop + 1U, made);
+	printf("KWL ARRANGE apply layout=%s desktop=%u windows=%u ", kwl_arrange_name(layout), server->desktop + 1U, made);
+	if (output != KWL_PLANE_ANCHOR)
+		printf("output=%u ", output);
+	printf("slots=");
+
+	/* The windows into their slots, the arranged ones raised in the slots' order. */
 	for (index = made; index > 0U; index--) {
 		slot = order[index - 1U];
 		arranged->slots[slot].window = windows[index - 1U];
@@ -1309,6 +1345,7 @@ arrange_apply(
 static unsigned
 arrange_targets(
 	struct kwl_server *server,
+	unsigned output,
 	struct kwl_object **windows,
 	unsigned limit)
 {
@@ -1333,6 +1370,7 @@ arrange_targets(
 			    surface->cursor_role ||
 			    surface->parent_window != NULL ||
 			    surface->desktop != server->desktop ||
+			    surface->output != output ||
 			    surface->minimized ||
 			    surface->fullscreen)
 				continue;
@@ -1405,39 +1443,56 @@ arrange_glide_to(
 	server->dirty = 1;
 }
 
-/* Ends a desktop's arrangement mode: its windows are plain floating windows where they are. */
+/* Ends a desktop's arrangement mode on an output: its windows are plain floating windows where they are (a head's line names it). */
 static void
 arrange_end(
 	struct kwl_server *server,
 	unsigned desktop,
+	unsigned output,
 	const char *reason)
 {
 	/* A swap on it is over. */
-	if (arrange_swap.window != NULL && arrange_swap.desktop == desktop)
+	if (arrange_swap.window != NULL && arrange_swap.desktop == desktop && arrange_swap.output == output)
 		arrange_swap_end(server);
 
 	/* Nothing of the arrangement is kept. */
-	memset(&arrange_desktops[desktop], 0, sizeof(arrange_desktops[desktop]));
+	memset(&arrange_desktops[desktop][output], 0, sizeof(arrange_desktops[desktop][output]));
 	server->dirty = 1;
-	printf("KWL ARRANGE end desktop=%u reason=%s\n", desktop + 1U, reason);
+	if (output == KWL_PLANE_ANCHOR) {
+		printf("KWL ARRANGE end desktop=%u reason=%s\n", desktop + 1U, reason);
+	} else {
+		printf("KWL ARRANGE end desktop=%u reason=%s output=%u\n", desktop + 1U, reason, output);
+	}
 }
 
-/* Gives a window's slot in a desktop's arrangement, or -1. */
+/* Gives a window's slot in a desktop's arrangement on an output, or -1. */
 static int
 arrange_slot_of(
 	unsigned desktop,
+	unsigned output,
 	const struct kwl_object *surface)
 {
 	unsigned index;
 
 	/* Each slot of the desktop. */
-	for (index = 0U; index < arrange_desktops[desktop].count; index++) {
-		if (arrange_desktops[desktop].slots[index].window == surface)
+	for (index = 0U; index < arrange_desktops[desktop][output].count; index++) {
+		if (arrange_desktops[desktop][output].slots[index].window == surface)
 			return (int)index;
 	}
 
 	/* Succeeded: it is not arranged there. */
 	return -1;
+}
+
+/* Gives the output a window is on (plane.h's slot), the anchor for one out of range. */
+static unsigned
+arrange_output(
+	const struct kwl_object *surface)
+{
+	/* A slot of the plane, else the anchor. */
+	if (surface->output >= KWL_PLANE_SLOTS)
+		return KWL_PLANE_ANCHOR;
+	return surface->output;
 }
 
 /* Draws a layout's small drawing: its slots for its usual number of windows, scaled down (and by scale, the menu growing), filled in the ink. */
@@ -1487,8 +1542,10 @@ arrange_draw_icon(
 static int
 arrange_moving(void)
 {
+	const struct arrange_desktop *arranged;
 	const struct arrange_slot *slot;
 	unsigned desktop;
+	unsigned output;
 	unsigned index;
 	uint64_t now;
 
@@ -1507,14 +1564,17 @@ arrange_moving(void)
 	    now - arrange_menu.closed_ms < ARRANGE_MENU_CLOSE_MS + ARRANGE_MOVING_GRACE_MS)
 		return 1;
 
-	/* A window of any desktop in the arrangement mode on its way to its slot, likewise. */
+	/* A window of any desktop and output in the arrangement mode on its way to its slot, likewise. */
 	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
-		if (!arrange_desktops[desktop].on)
-			continue;
-		for (index = 0U; index < arrange_desktops[desktop].count; index++) {
-			slot = &arrange_desktops[desktop].slots[index];
-			if (slot->glide_ms != 0U && now - slot->glide_ms < ARRANGE_MS + ARRANGE_MOVING_GRACE_MS)
-				return 1;
+		for (output = 0U; output < KWL_PLANE_SLOTS; output++) {
+			arranged = &arrange_desktops[desktop][output];
+			if (!arranged->on)
+				continue;
+			for (index = 0U; index < arranged->count; index++) {
+				slot = &arranged->slots[index];
+				if (slot->glide_ms != 0U && now - slot->glide_ms < ARRANGE_MS + ARRANGE_MOVING_GRACE_MS)
+					return 1;
+			}
 		}
 	}
 

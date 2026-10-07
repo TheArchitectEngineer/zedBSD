@@ -277,6 +277,49 @@ kwl_top_window(
 }
 
 /*
+ * Returns the topmost mapped window of a live client that an output shows
+ * (plane.h's slot, ws113-p015: a window, or a surface of a window, on it),
+ * or NULL.
+ */
+struct kwl_object *
+kwl_output_top_window(
+	struct kwl_server *server,
+	unsigned slot)
+{
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *top;
+	unsigned output;
+	int desktop_surface;
+
+	/* The highest map order on the desktop shown, of that output, wins. */
+	top = NULL;
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			if (surface->kind != KWL_SURFACE || surface->dead || !surface->mapped)
+				continue;
+			if (surface->desktop != server->desktop || surface->minimized)
+				continue;
+			output = kwl_window_output(surface);
+			if (output != slot)
+				continue;
+
+			/* The desktop's icons are never a window (desktop.c). */
+			desktop_surface = kwl_desktop_is(surface);
+			if (desktop_surface)
+				continue;
+			if (top == NULL || surface->map_order > top->map_order)
+				top = surface;
+		}
+	}
+
+	/* Succeeded: the window on top of the output, if any. */
+	return top;
+}
+
+/*
  * Centres a window at its current size: in the glass look in the space
  * under the system bar and a title bar (kept inside it), otherwise on the
  * output (ws035-p138).
