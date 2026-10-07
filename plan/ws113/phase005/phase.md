@@ -68,3 +68,20 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 ### D-LIMIT の反映（2026-10-05）
 
 `output` の event の flags に `limited`（同時に表示できる数の制限で今は使えない）を足す。configure・apply で limited の出力を含めても失敗にせず、applied の snapshot で limited のまま返す。
+
+## 実装（2026-10-07 q855、P1）
+
+範囲（Q1 への送付のとおり、2026-10-07 Q1 の ACK: version 18・KL_VERSION 58）。
+
+| 部分 | file |
+| --- | --- |
+| protocol | `userland/desktop/libkeiland/system/kl-system-protocol.h`: `kl_system_manager_v1` version 18、request 13 `get_displays`、`KL_SYSTEM_CAPABILITY_DISPLAYS`、`kl_system_displays_v1`（request apply(request, serial, mode, places)・set_brightness(request, key, percent)、event output(key, label, x, y, width, height, refresh_mhz, flags, brightness)・done(serial, mode)・result）、flags（INTERNAL・ANCHOR・SHOWN・BACKLIGHT・LIMITED）、`KL_SYSTEM_RESULT_STALE`。places は "KEY X Y" の行（key は空白を含めてよい） |
+| compositor | 新しい `wayland/displays-shell.c`: object の作成と snapshot（列挙の全 display: anchor・head・limited・kept_off、label は A2 の kind と port、明るさは内蔵だけ）、apply（active な session でなければ DENIED、serial が違えば STALE、mode と places の検査は heads.c の `kwl_displays_apply`、拒否は INVALID、applied と saved を別に）、set_brightness（内蔵でなければ・light が無ければ UNSUPPORTED、0〜100、蓋で消している間は戻す値を更新、displays.conf の `brightness=`）、変化ごとに全 object へ snapshot（`kwl_displays_tell`、heads.c の変化から）、Fn の KEY_BRIGHTNESSDOWN/UP で 5 % ずつ（`kwl_displays_key`、seat.c の key の道で lock・greeter の後）、session の最初の frame の後に displays.conf の明るさを適用（`kwl_displays_tick`、display.c）。`system.c` の get_displays と capability、`protocol.c`・`kwl.h` の kind、`output-switch.c` の `kwl_output_display_internal`、`displays.c` の `brightness=`、Makefile 3 つ |
+| libkeiland | `system/system-protocol.c`・`.h`（interface、manager の 14 request）、`system/system.c`（listener、object の作成（version 18）、`kl_system_displays_get`・`_mode`・`_apply`・`_set_brightness`、capability）、`system/system-view.c`・`system-private.h`（snapshot の pending と done、STALE → ESTALE）、`include/keiland/keiland.h`（KL_VERSION 58、`struct kl_display`・`kl_display_place`、`KL_SYSTEM_HAS_DISPLAYS`・`KL_SYSTEM_CHANGED_DISPLAYS`、`KL_DISPLAY_*`）、`exports.map`（exports.py で生成） |
+| 試験 | `userland/tests/keiland-system` に displays・display-mode・display-place・brightness、`plan/ws131/tests/host-system.c` に displays の偽物（2 display、serial 7、stale、明るさ）と case、ついでに既に link で落ちていた `kwl_sleep_answers`・`kwl_sleep_request` の偽物（ws052 の sleep の後、host に sessiond は無い）。`plan/ws113/tests/host-displays.c` に brightness の行。T1 用の `displays-p005.sh`・`config-amd64-p005.mk` |
+
+確認（2026-10-07）:
+- `sh plan/ws131/tests/host-system.sh build/p1-host-system/host-system` PASS（ASan・UBSan: displays の capability、snapshot 2 行の key・label・位置・flags・明るさ、mirror の apply と places の文字列 "…hdmi:B 1920 0\n"、snapshot の mode、古い serial で ESTALE、明るさの set と snapshot、mode・key・範囲の EINVAL）、`sh plan/ws113/tests/host-displays.sh` PASS、`host-output-switch.sh` PASS。
+- build（warning 0）: zedBSD の wayland（shot.c）・libkeiland.so・settings・keiland-system、keiland-linux。`exports.py --check` OK。style-check: 新しい file 0、変えた file は増えない。`keiland-os-boundary/check.sh` は B3 の 2 件（sessiond と printd の Makefile、この変更の前から）以外 PASS。
+- 未実施: QEMU（T1 `displays-p005.sh`）、実機の明るさと Fn の key（p008、5330）、compositor 側の displays-shell.c の host 試験（compose と Vulkan に依るので QEMU で見る）。
+- 制限: result の saved は libkeiland の `kl_system_take_result` には届かない（既存の形、applied だけが errno になる）。Linux・FreeBSD の backlight は backend が ENOTSUP。

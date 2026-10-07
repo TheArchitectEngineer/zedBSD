@@ -223,6 +223,8 @@ enum kwl_kind {
 	KWL_SYSTEM_PHONE,
 	/* The system extension's printers (printers-shell.c, ws145-p003). */
 	KWL_SYSTEM_PRINTERS,
+	/* The system extension's displays (displays-shell.c, ws113-p005). */
+	KWL_SYSTEM_DISPLAYS,
 };
 
 /*
@@ -1508,6 +1510,7 @@ void kwl_output_tick(struct kwl_server *server);
 int kwl_output_external_available(struct kwl_server *server);
 int kwl_output_use_external(struct kwl_server *server);
 int kwl_output_use_internal(struct kwl_server *server);
+int kwl_output_display_internal(struct kwl_server *server, VkDisplayKHR display);
 
 /* A wl_output binding of a head that closed (ws113-p004b). */
 #define KWL_OUTPUT_GONE	0xffffffffU
@@ -1708,6 +1711,13 @@ int kwl_printers_available(void);
 int kwl_printers_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
 int kwl_printers_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 void kwl_printers_tick(struct kwl_server *server);
+
+/* The system extension's displays and the panel's light (displays-shell.c, ws113-p005). */
+int kwl_displays_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
+int kwl_displays_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+void kwl_displays_tell(struct kwl_server *server);
+int kwl_displays_key(struct kwl_server *server, uint32_t key, uint32_t state);
+void kwl_displays_tick(struct kwl_server *server);
 uint32_t kwl_notify_post_system(struct kwl_server *server, const char *title, const char *body, unsigned flags);
 struct kwl_notify_model *kwl_notify_model(void);
 float kwl_home_progress(struct kwl_server *server);

@@ -144,6 +144,17 @@ struct system_view {
 	unsigned printers_open;
 	struct system_view_queued queued[SYSTEM_VIEW_PRINT_QUEUED];
 	unsigned queued_next;
+	/*
+	 * The displays (ws113-p005): the snapshot in effect and the one being
+	 * sent (open since its first output), its serial and the mode.
+	 */
+	struct kl_display displays[KL_DISPLAYS_MAX];
+	size_t display_count;
+	struct kl_display displays_pending[KL_DISPLAYS_MAX];
+	size_t displays_pending_count;
+	unsigned displays_open;
+	uint32_t displays_serial;
+	unsigned displays_mode;
 };
 
 /*
@@ -254,6 +265,8 @@ void system_view_printer(struct system_view *view, const struct kl_printer *prin
 void system_view_print_job(struct system_view *view, const struct kl_print_job *job);
 void system_view_printers_done(struct system_view *view);
 void system_view_print_queued(struct system_view *view, uint32_t request, uint32_t job);
+void system_view_display(struct system_view *view, const struct kl_display *display);
+void system_view_displays_done(struct system_view *view, uint32_t serial, uint32_t mode);
 int system_view_print_job_of(const struct system_view *view, uint32_t request, uint32_t *job);
 unsigned system_view_take_changed(struct system_view *view);
 int system_view_error_of(uint32_t applied);
