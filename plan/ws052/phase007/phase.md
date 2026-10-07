@@ -225,7 +225,8 @@ p006 には「眠れるか」を問う口が無く、ioctl が支えの無い pl
 - **N5**: sleep button も電源ボタンの短押しと同じ。
 - **N6**: 今の無操作の lock（`--lock-idle`、10 分）は残す（電池の既定だと画面を消す 7.5 分の方が早いが、画面を消すのは lock しない）。
 - **N7**: 無操作の抑止は全画面の窓だけ（idle-inhibit の protocol と音の再生中は backlog）。ssh・Sharing の遠隔の利用中も局所の入力しか数えないので眠る（範囲外と明記）。
-- **N8**（review の B9）: 今の compositor は最初の 1 つの display だけを使い（`compose.c:803-818`）、外部の monitor に出していると知る口も「内蔵だけ消す」口も無い。**案: p007 では蓋を閉じると常に眠る**（7.1 の 1 の clamshell は複数の出力を扱う WS の後に）。別案: Vulkan の display の数が 2 以上なら蓋で眠らず今の「lock して全体を黒」に留める（数は起動時の値、hot-plug は追わない）。
+- **N8 の決定（2026-10-07 ユーザー、クリック）**: 推奨と違い「**外部画面のみに切り替えて通常の利用を継続する**」: 蓋を閉じた時に外部の monitor があれば眠らず、外部の画面だけで普段どおり使い続ける。要件と見積もりは §11。
+- **N8（決定の前の材料、review の B9）**: 今の compositor は最初の 1 つの display だけを使い（`compose.c:803-818`）、外部の monitor に出していると知る口も「内蔵だけ消す」口も無い。**案: p007 では蓋を閉じると常に眠る**（7.1 の 1 の clamshell は複数の出力を扱う WS の後に）。別案: Vulkan の display の数が 2 以上なら蓋で眠らず今の「lock して全体を黒」に留める（数は起動時の値、hot-plug は追わない）。
 - **N9**: greeter で蓋を閉じた時・greeter の無操作でも眠る（無操作の時間は既定の AC 30・電池 15 分。利用者の設定は無い）。
 - **N10**: QEMU で userland の流れ（PREPARE → ioctl → END → 答え → 起きた後の lock の画面）を通す試験の口を置くか。QEMU では N1 の A1 で `CAN_SLEEP` が 0 なので compositor は送らない。通すには 2 つが要る: sessiond の `--sleep-mode=devices`（ioctl を `KERN_SYSTEM_SLEEP_DEVICES` にし、答えは `SLEPT woke=none`）と、compositor の `--sleep-test`（使えるとみなす）。どちらも試験の config だけで渡す command line の option（規約の「試験だけの環境変数の switch」ではないが、「試験は本番の既定の道を通す」（`coding-style.md:788-799`）からは外れる）。置かなければ QEMU は電源ボタンが log だけ・無操作で画面が消えるまでで、残りは host 試験と 5330 の UAT。案: 置かない（host 試験を厚くする）。
 
@@ -262,10 +263,34 @@ p006 には「眠れるか」を問う口が無く、ioctl が支えの無い pl
 | --- | --- | --- |
 | p010 | networkd の SLEEP_PREPARE・END（§2）と host 試験 | p007 の ACK |
 | p011 | sessiond の sleep.c と backend（§1.1・§1.2）、N1 が A なら kernel の bit | p010、N1 の決定（A なら UAPI の承認）、p006 の UAPI が main に在ること（在る） |
-| p012 | compositor の sleep.c（§0・§3〜§5・§1.3）と翻訳 | p011 |
+| p012 | compositor の sleep.c（§0・§3〜§5・§1.3）、N8 の蓋の方針（§11 の R4）と翻訳 | p011、N8 の切り替えは WS113 p003・p004（§11.3） |
 | p013 | Settings の Power の頁（§8） | p012 |
 
 - 実機の確認（ws052-p008）は p006 の 5330 の UAT の後。
+
+### 11. N8: 蓋を閉じたら外部の画面だけに切り替えて使い続ける（2026-10-07 ユーザーの決定）
+
+#### 11.1 今の事実
+
+- i915 の resident node の display は **1 つで、起動時に firmware（GOP）が出していた出力に決めたまま**、後の hotplug を追わない（`src/drivers/gpu/i915/display/output.c:8-32`）。他の出力を自分の判断で点けない（Guardrail の GPU の scanout の規則、2026-10-04）。
+- compositor は Vulkan の display を起動時に 1 度列挙し、恒等の変換が出来る最初の 1 つだけを使う（`compose.c:780-830`）。出力の取り直し（release → 別の display の acquire → swapchain の作り直し）、出力の大きさの変更（窓の配置・最大化の窓・wl_output の mode）を起動の後にする道は無い。
+- 外部の出力の接続の列挙・HPD の通知・2 つ目の出力・compositor の出力の動的な変更は **WS113**（複数 display）の p002（i915 の inventory と HPD、in-progress、P2 の実装・host 済み、QEMU・実機待ち）・p003（Vulkan の display の列挙と hotplug の通知、planned 3h）・p004（compositor の出力・表示 mode、planned 4〜5h）・p011（i915 の 2 つ目の出力、planned 4〜6h・実機）の範囲。USB-C の DP-alt の外部は WS051（in-progress）。
+
+#### 11.2 要る物
+
+| # | 要件 | 層 | どこで |
+| --- | --- | --- | --- |
+| R1 | 接続している出力（eDP・HDMI・DP-alt）の一覧と、接続・切断の通知 | i915 → Vulkan の display（`vkGetPhysicalDeviceDisplayPropertiesKHR` の数え直し、hotplug の通知） | WS113 p002・p003（WS051 の DP-alt） |
+| R2 | Keiland の明示の指示でだけ、GOP の出力以外を点ける（外部の display の acquire で modeset）、eDP を release で消す（pipe・panel の電源・backlight） | i915 | WS113 p002 の規則の続き＋p011（2 つ目の出力の claim・present）。eDP の panel の電源を release で落とす所は p011 か p012（`GPU_DISPLAY_POWER`） |
+| R3 | compositor が動いている間に出力を替える: 今の display の swapchain を壊して release → 外部の display を acquire → swapchain を外部の解像度で作り直す → `server->width/height` の変更（desktop の icon・bar・最大化の窓・docked の窓・floating の窓の位置の詰め直し、整列の枠（WS181）、wl_output の mode・scale を client へ） | compositor | WS113 p004 の「出力の動的な変更」の 1 出力の版 |
+| R4 | 蓋の方針: 蓋を閉じた時、外部の出力が接続していれば R3 で外部へ移し、眠らない（lock もしない）。外部が無ければ §3 のとおり lock して眠る。蓋を閉じたまま外部が抜けたら、§3 のとおり lock して眠る。蓋を開けたら内蔵へ戻す（R3 の逆、案。WS113 の拡張表示ができた後は拡張に戻す） | compositor の `sleep.c`・`lid.c` | WS052 p012 |
+| R5 | 起動時に蓋が閉じていて外部が接続している（GOP が外部に出している）時は、そのまま外部で使う（今の i915 の規則と同じ） | i915・compositor | 今のまま（R4 の level の判断が「眠らない」と決める） |
+
+#### 11.3 見積もりと順
+
+- R1〜R3 は WS113 の p002 → p003 → p004（＋p011 の claim の部分）の成果そのもので、合わせて 10〜15 h（p002 の実機の確認を含めず）。R4 は p012 に 2〜3 h の追加（外部の有無の判断、切り替えの順と失敗の時の戻し、host 試験）。実機の確認は 5330 の HDMI（と WS051 の後に USB-C）で、ユーザーの UAT。
+- 順の案: WS052 p012 は R4 を「外部の出力が使えるか」の口（compositor の出力の層が答える、WS113 p004 の前は常に「無い」）の上に作る。WS113 p004 が出来るまでは、蓋を閉じると外部があっても眠る（今の 1 出力の compositor の限界、p012 の制限として記録）。または、ベータ2 で N8 を必須にするなら、WS113 p003・p004 を WS052 p012 の前に置く（Q1 の順の判断）。
+- 1 出力の切り替え（R3）は WS113 の拡張・mirror（D2）より小さい部分集合なので、WS113 p004 を「1 出力の切り替え」と「複数の同時の出力」の 2 段に分けると、N8 を先に出せる（案）。
 
 ## 依存
 
