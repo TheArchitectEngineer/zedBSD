@@ -9,6 +9,7 @@
   block: updated・agents・merge・next・open-decisions・focus・blocked（先頭）、priority・outlook（本体）、decisions-log・history-log（末尾の付録、新しい物を block の先頭に足す）。
   置き換え: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
 <!-- master:agents:start -->
+- 2026-10-07 20 時: P1（前の世代）が ws051-p003（DKL PLL ほか、q848 の正解値と一致、host 試験 PASS、test-wait T1-354）と WS050 の 5320 の UCSI の timeout の直し（Dell の PPM: change だけの ACK で止まる → GET_CAPABILITY の completion と 1 回の ACK）を返した（12d420022 merge）。新しい世代の P1 は T1-354 の待ちの間 ws075-p007a a4、PASS の後 ws051-p004a。T1 は T1-353 → T1-354。P2 は ws052-p011 の backend。
 - 2026-10-07 18 時半: **P1** は ws075-p007a a3 で止め（8e17f0e2c merge、a4 から再開）、新しい世代で q847（WS051 p003 → p004a・p004b、WS050 の 5320 の UCSI の PPM 不起動の解析）。T1 は返却済み（次は T1-351、M-3 の採取の後）。
 - 2026-10-07 18 時: **P3**（phase-runner high、worktree p3）を追加 → q846 [ws118-p006](ws118/phase006/phase.md)（5320 の TGL の DPLL・takeover・fallback、実機 10.0.30.5）。
 - 2026-10-07 夜（利用の上限の前のラップアップ、ユーザーの指示）。体制は N=2（P1・P2、phase-runner high）＋T1（test-runner、Sonnet 5.5 medium）。全担当は削除の command を実行しない（Q1 が消す、plan/agents/protocol.md 末尾）。
