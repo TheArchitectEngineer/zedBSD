@@ -29,7 +29,19 @@
  * controller's interrupt was given up.  A pad that cannot interrupt is
  * watched instead: the thread looks at it every LINE_POLL_MS and reads the
  * input register only while the line is asserted, so a still pad costs no
- * I2C transfer.  Without such a pad the
+ * I2C transfer.
+ *
+ * A device whose _CRS gives an Interrupt (an APIC line, ws183-p001: the
+ * Latitude 5320's touchpad, IRQ 51, level, active low) instead of a
+ * GpioInt is read on that line: its handler masks the line and wakes the
+ * thread, which reads the input register until the device has nothing
+ * more to say (an empty report), then unmasks the line, so a level that
+ * stays asserted meanwhile does not fire again and again.  The thread also
+ * reads every I2C_HID_IRQ_CHECK_MS, in case a firing was lost; a line that
+ * fires without end with nothing to read is given up, and the device
+ * sampled.
+ *
+ * Without either the
  * thread reads the input register every few milliseconds while fingers
  * move and less often when the pad has been still for a second; a device
  * with nothing to say answers with an empty report (a length of zero), as
@@ -44,6 +56,7 @@
 #include <drivers/i2c/i2c-hid.h>
 #include <kern/clock.h>
 #include <kern/input-device.h>
+#include <kern/irq.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
@@ -113,6 +126,10 @@
 /* With the pad's interrupt, how long the thread sleeps at most before it looks at the line itself. */
 #define I2C_HID_IRQ_CHECK_MS		1000U
 
+/* With an APIC line: the most reports read at one firing, and the firings in a row with nothing to read that give the line up. */
+#define I2C_HID_IRQ_READS_MAX		16U
+#define I2C_HID_IRQ_EMPTY_MAX		200U
+
 /* After this many failed reads in a row the thread says so and waits a second. */
 #define I2C_HID_ERRORS_BEFORE_PAUSE	50U
 #define I2C_HID_ERROR_PAUSE_MS		1000U
@@ -142,7 +159,11 @@ struct i2c_hid_device {
 	uint32_t line_pin;
 	uint8_t line_active_low;
 	struct drv_intel_gpio_pad *line;
-	/* The pad's interrupt: the lock (with interrupts off) over fired, whether it fired, and where the thread waits. */
+	/* The Interrupt of its _CRS (ws183-p001): its number (-1 for none), level or edge, active low or high. */
+	int irq;
+	uint8_t irq_level;
+	uint8_t irq_active_low;
+	/* The pad's or the line's interrupt: the lock (with interrupts off) over fired, whether it fired, and where the thread waits. */
 	struct spinlock irq_lock;
 	uint32_t irq_fired;
 	struct wait_queue irq_queue;
@@ -193,6 +214,9 @@ static void worker(void *argument);
 static void watch_line(struct i2c_hid_device *device);
 static void wait_interrupt(struct i2c_hid_device *device);
 static void line_interrupt(void *argument);
+static int irq_take(struct i2c_hid_device *device);
+static void wait_irq(struct i2c_hid_device *device);
+static void irq_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument);
 static void read_while_asserted(struct i2c_hid_device *device);
 static void sample(struct i2c_hid_device *device);
 static bool line_asserted(const struct i2c_hid_device *device);
@@ -239,8 +263,9 @@ drv_i2c_hid_probe(void)
 			break;
 		}
 
-		/* The device's node. */
+		/* The device's node; no Interrupt until its _CRS gives one. */
 		device->node = found.nodes[index];
+		device->irq = -1;
 
 		/* Reads where the device is from its ACPI objects, and finds its bus. */
 		error = device_from_acpi(device);
@@ -456,7 +481,7 @@ device_from_acpi(
 	return 0;
 }
 
-/* Takes the first I2C connection and the first GPIO interrupt of a device's resources. */
+/* Takes the first I2C connection, the first GPIO interrupt and the first Interrupt of a device's resources. */
 static int
 resource_visitor(
 	const struct drv_acpi_resource *resource,
@@ -464,8 +489,16 @@ resource_visitor(
 {
 	struct i2c_hid_device *device;
 
-	/* The first GPIO interrupt is the device's line. */
+	/* The first Interrupt it consumes (an APIC line, ws183-p001). */
 	device = argument;
+	if (resource->kind == DRV_ACPI_RESOURCE_IRQ && !resource->producer && device->irq < 0) {
+		device->irq = (int)resource->base;
+		device->irq_level = resource->level;
+		device->irq_active_low = resource->active_low;
+		return 0;
+	}
+
+	/* The first GPIO interrupt is the device's line. */
 	if (resource->kind == DRV_ACPI_RESOURCE_GPIO_INT && device->line_path[0] == '\0') {
 		(void)kern_snprintf(device->line_path, sizeof(device->line_path), "%s", resource->source);
 		device->line_pin = (uint32_t)resource->base;
@@ -553,6 +586,7 @@ worker(
 {
 	struct i2c_hid_device *device;
 	int error;
+	int line;
 
 	/* The device the probe started this thread for. */
 	device = argument;
@@ -564,21 +598,36 @@ worker(
 		return;
 	}
 
+	/* Where the thread waits for an interrupt, the pad's or the line's. */
+	spin_init(&device->irq_lock, LOCK_RANK_DEVICE, "i2c-hid irq");
+	waitq_init(&device->irq_queue, "i2c-hid irq");
+
 	/* The line, when it is a pad this kernel can read. */
 	error = ENOENT;
 	if (device->line_path[0] != '\0')
 		error = drv_intel_gpio_pad_find(device->line_path, device->line_pin, &device->line);
 
-	/* Without a pad, sampling. */
+	/* Without a pad, the Interrupt of its _CRS when it has one (until it is given up), then sampling. */
 	if (error != 0) {
-		kern_logf("i2c-hid: %s samples its input (line: %d)\n", device->path, error);
+		if (device->irq >= 0) {
+			line = irq_take(device);
+			if (line == 0) {
+				kern_logf("i2c-hid: %s reads on its interrupt (irq %d level=%u active_low=%u)\n", device->path, device->irq, (unsigned)device->irq_level, (unsigned)device->irq_active_low);
+				wait_irq(device);
+			}
+
+			/* The line could not be had, or was given up. */
+			kern_logf("i2c-hid: %s samples its input (irq %d: %d)\n", device->path, device->irq, line);
+		} else {
+			kern_logf("i2c-hid: %s samples its input (line: %d)\n", device->path, error);
+		}
+
+		/* Sampling, for as long as the kernel runs. */
 		sample(device);
 		return;
 	}
 
 	/* The pad's interrupt, when it can interrupt; until the interrupt is given up, if ever. */
-	spin_init(&device->irq_lock, LOCK_RANK_DEVICE, "i2c-hid irq");
-	waitq_init(&device->irq_queue, "i2c-hid irq");
 	error = drv_intel_gpio_pad_irq_enable(device->line, line_interrupt, device);
 	if (error == 0) {
 		kern_logf("i2c-hid: %s reads on its interrupt (%s pin %u)\n", device->path, device->line_path, device->line_pin);
@@ -661,6 +710,143 @@ line_interrupt(
 	waitq_wake_all(&device->irq_queue);
 
 	spin_unlock(&device->irq_lock);
+}
+
+/*
+ * Takes the device's Interrupt (an APIC line): its handler, its trigger
+ * mode and polarity as its _CRS says, and unmasked.  Returns 0, or why it
+ * cannot be had (the handler is given back then).
+ */
+static int
+irq_take(
+	struct i2c_hid_device *device)
+{
+	unsigned trigger;
+	unsigned polarity;
+	int error;
+
+	/* The handler, while the line is still masked. */
+	error = kern_irq_register(device->irq, irq_interrupt, device);
+	if (error != 0)
+		return error;
+
+	/* The line's trigger mode and polarity. */
+	trigger = KERN_IRQ_TRIGGER_EDGE;
+	if (device->irq_level != 0U)
+		trigger = KERN_IRQ_TRIGGER_LEVEL;
+	polarity = KERN_IRQ_POLARITY_HIGH;
+	if (device->irq_active_low != 0U)
+		polarity = KERN_IRQ_POLARITY_LOW;
+	error = kern_irq_set_mode(device->irq, trigger, polarity);
+	if (error != 0) {
+		(void)kern_irq_unregister(device->irq, irq_interrupt, device);
+		return error;
+	}
+
+	/* Succeeded: the line is live. */
+	kern_irq_unmask(device->irq);
+	return 0;
+}
+
+/*
+ * Reads the device each time its line fires (and every IRQ_CHECK_MS in
+ * case a firing was lost): its reports until an empty one, then the line
+ * unmasked.  Returns when the line fired too often with nothing to read,
+ * the line given back.
+ */
+static void
+wait_irq(
+	struct i2c_hid_device *device)
+{
+	unsigned long state;
+	uint64_t observed;
+	uint64_t deadline;
+	uint64_t now;
+	unsigned empty;
+	unsigned reads;
+	uint32_t fired;
+	bool reported;
+	bool any;
+	int error;
+
+	/* For as long as the line is worth it. */
+	empty = 0;
+	for (;;) {
+		/* Sleeps until the line fires, or the time to look comes. */
+		deadline = sched_ticks() + kern_ms_to_ticks(I2C_HID_IRQ_CHECK_MS) + 1U;
+		state = spin_lock_irqsave(&device->irq_lock);
+
+		while (device->irq_fired == 0U) {
+			/* The time to look came. */
+			now = sched_ticks();
+			if (now >= deadline)
+				break;
+
+			/* Sleeps until the handler wakes it, or the deadline. */
+			observed = waitq_sequence(&device->irq_queue);
+			error = waitq_sleep(&device->irq_queue, &device->irq_lock, observed, deadline, 0U);
+			(void)error;
+		}
+
+		/* The firing is taken. */
+		fired = device->irq_fired;
+		device->irq_fired = 0U;
+
+		spin_unlock_irqrestore(&device->irq_lock, state);
+
+		/* The reports until the device has nothing more (a failed read ends the turn). */
+		any = false;
+		for (reads = 0; reads < I2C_HID_IRQ_READS_MAX; reads++) {
+			reported = false;
+			error = poll_input(device, &reported);
+			if (error != 0 || !reported)
+				break;
+			any = true;
+		}
+
+		/* A look without a firing leaves the line as it is. */
+		if (fired == 0U)
+			continue;
+
+		/* Firings with nothing to read, without end: the line is given back, and the device sampled. */
+		empty++;
+		if (any)
+			empty = 0;
+		if (empty >= I2C_HID_IRQ_EMPTY_MAX) {
+			kern_logf("i2c-hid: %s: irq %d fired %u times with nothing to read; gives it up\n", device->path, device->irq, empty);
+			(void)kern_irq_unregister(device->irq, irq_interrupt, device);
+			kern_irq_unmask(device->irq);
+			return;
+		}
+
+		/* The line again, which fires at once while it stays asserted. */
+		kern_irq_unmask(device->irq);
+	}
+}
+
+/* The line fired (in interrupt context): masked until the thread has read the device, and the thread wakes. */
+static void
+irq_interrupt(
+	int irq,
+	kern_irq_ack_t acknowledge,
+	void *argument)
+{
+	struct i2c_hid_device *device;
+
+	/* Masked first, so a level that stays asserted does not come back before the reads. */
+	device = argument;
+	kern_irq_mask(irq);
+
+	/* Marked under the lock the thread sleeps with, and woken. */
+	spin_lock(&device->irq_lock);
+
+	device->irq_fired = 1U;
+	waitq_wake_all(&device->irq_queue);
+
+	spin_unlock(&device->irq_lock);
+
+	/* The interrupt is over. */
+	kern_irq_send_eoi(acknowledge);
 }
 
 /* Reads reports while the device's line is asserted, a few at a time between looks at the line. */
