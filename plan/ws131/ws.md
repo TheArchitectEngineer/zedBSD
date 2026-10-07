@@ -71,10 +71,10 @@ app は OS の抽象化を直接持たない。例: Settings → libkeiland → 
 | [p017](phase017/phase.md) | PDF Viewer・Image Viewer | cleared（2026-10-07） | p016 | 3〜4h |
 | [p018](phase018/phase.md) | Terminal・Notes | cleared（2026-10-07） | p016 | 4〜5h |
 | [p019](phase019/phase.md) | Settings の窓 | cleared（2026-10-07） | p011・p016 | 4h |
-| [p020](phase020/phase.md) | Files | planning | p018 | 4〜5h |
-| [p021](phase021/phase.md) | compositor の内部の名前を `kwl_`・`KWL_` に | planning | p009・p011 | 3〜4h |
+| [p020](phase020/phase.md) | Files | cleared（2026-10-07） | p018 | 4〜5h |
+| [p021](phase021/phase.md) | compositor の内部の名前を `kwl_`・`KWL_` に | cleared（2026-10-07） | p009・p011 | 3〜4h |
 | [p022](phase022/phase.md) | compositor の log の接頭辞を `KWL ` に（試験 201 本と同時） | cleared（2026-10-07） | p021 | 3〜4h |
-| [p025](phase025/phase.md) | browser の shell の窓（D7、p020 の後・p023 の前、WS074 との衝突は開始の前に Q1 がユーザーに確認） | planning | p020 | 4〜5h |
+| [p025](phase025/phase.md) | browser の shell の窓（D7、p020 の後・p023 の前、WS074 との衝突は開始の前に Q1 がユーザーに確認） | uncleared（2026-10-07） | p020 | 4〜5h |
 | [p023](phase023/phase.md) | 互換の除去・`keiland.h` 一本化・PnP の接続（WS134 の system monitor も移行の対象に含める） | cleared（2026-10-07） | p016〜p020・p025・p022（PnP は WS132）・ws134-p010 | 3〜4h |
 | [p026](phase026/phase.md) | 公開の header を `userland/desktop/include/` に（`<keiland/keiland.h>` だけを app が include、`ui.h`・`compat.h` は内部、`<truetype/truetype.h>`・`<browser/browser.h>`、自前の Wayland の header は今のまま優先）（2026-10-04 user） | cleared（2026-10-07） | p013・p014 の統合（TQ-1） | 3〜4h |
 | [p024](phase024/phase.md) | 全文規約と 3 OS の回帰、WS の完了 | planning | 全て | 4〜6h |

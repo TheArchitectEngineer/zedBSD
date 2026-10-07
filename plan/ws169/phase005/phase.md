@@ -2,7 +2,7 @@
 
 # ws169-p005: browser の認証 code の自動入力
 
-Status: uncleared（2026-10-07 T1-299: click で `ZBROWSER MAIL fill length=4 error=0` は出るが page の欄に入らない（CONSOLE の code-length 無し、欄は空、PNG /home/awe/zedBSD-worktrees/t1/build/t1-299/after-click.png）。P2 が直す）（旧: test-wait（2026-10-07 T1-298: titlebar の「Code 7351」と listen は確かめた（Q1 が PNG を目視）。control の click で欄に入る段は QEMU で未実施 → T1-299）（旧: test-wait（T1-291）））
+Status: cleared（2026-10-07 Q1 の判定: T1-302 で `ZBROWSER MAIL fill length=4 error=0` と `ZBROWSER CONSOLE code-length=4`（欄に 4 文字が入った）。欄の PNG は撮れていない）（旧: uncleared（2026-10-07 T1-299: click で `ZBROWSER MAIL fill length=4 error=0` は出るが page の欄に入らない（CONSOLE の code-length 無し、欄は空、PNG /home/awe/zedBSD-worktrees/t1/build/t1-299/after-click.png）。P2 が直す）（旧: test-wait（2026-10-07 T1-298: titlebar の「Code 7351」と listen は確かめた（Q1 が PNG を目視）。control の click で欄に入る段は QEMU で未実施 → T1-299）（旧: test-wait（T1-291））））
 Disposition: normal
 Parent: [WS169](../ws.md)
 Queue: q831（2026-10-07、P2）

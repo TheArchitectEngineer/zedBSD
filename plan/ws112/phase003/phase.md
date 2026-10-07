@@ -3,7 +3,7 @@
 # ws112-p003: Raspberry Pi OS arm64 deb
 
 Parent: [WS112](../ws.md)
-Status: cleared 候補（2026-10-07 P1: RPi OS の rootfs で arm64 の deb を生成し、形式・依存の解決を確認。Q1 の判定待ち）
+Status: cleared（2026-10-07 Q1 の判定: RPi OS の arm64 の deb を RPi OS の rootfs（+rpt の package 19）で build、--simulate が exit 0）（旧: cleared 候補（2026-10-07 P1: RPi OS の rootfs で arm64 の deb を生成し、形式・依存の解決を確認。Q1 の判定待ち））
 Disposition: normal
 Primary Milestone: MG007（WSから継承）
 Queue / attempts: none / 実装未承認

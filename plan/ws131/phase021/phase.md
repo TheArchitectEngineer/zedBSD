@@ -2,7 +2,7 @@
 
 # ws131-p021: compositor の内部の名前を kwl_・KWL_ に（log の文字列は変えない）
 
-Status: in-progress（q814、P1。実装と host の確認まで済み、T1 の結果待ち）
+Status: cleared（2026-10-07 Q1 の判定: T1-258 PASS（boot-test・edit-guest・inset-guest・desktop-guest・menu-p002・ime-p007・zdesktop-p054））（旧: in-progress（q814、P1。実装と host の確認まで済み、T1 の結果待ち））
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: q814（2026-10-06 ユーザー「全部進める」）

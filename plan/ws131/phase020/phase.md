@@ -2,7 +2,7 @@
 
 # ws131-p020: Files を新しい API へ（toplevel と desktop surface、DnD）
 
-Status: in-progress（q807、P1。実装と host の確認まで済み、T1 の結果待ち）
+Status: cleared（2026-10-07 Q1 の判定: T1-257 の FAIL は T1-262 の files-regress と T1-272 の files-desktop-guest PASS で解決）（旧: in-progress（q807、P1。実装と host の確認まで済み、T1 の結果待ち））
 Disposition: normal
 Parent: [WS131](../ws.md)、計画の正本 [design.md](../design.md)
 Queue: none

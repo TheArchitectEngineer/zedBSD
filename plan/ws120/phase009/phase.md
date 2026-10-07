@@ -2,7 +2,7 @@
 
 # ws120-p009: Music の app
 
-Status: test-wait（T1-301）
+Status: uncleared（2026-10-07 Q1 の判定: T1-301 で play が `MUSIC AUDIO error=13`（QEMU の guest に sound device が無い）で止まる。open-from-home は pass。P2 が直す）（旧: test-wait（T1-301））
 Disposition: normal
 Parent: [WS120](../ws.md)
 Queue: q831（2026-10-07、P2）

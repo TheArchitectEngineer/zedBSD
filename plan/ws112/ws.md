@@ -56,8 +56,8 @@ Debian/Ubuntu QEMU buildは継承し、新OS環境/入力/依存/format/pinsをp
 | ID / link | Purpose | Goal | Status | Dependencies |
 | --- | --- | --- | --- | --- |
 | [ws112-p001](phase001/phase.md) | 共通契約・対象OS入力・形式を確定 | 5 targetの契約（superseded） | uncleared・canceled（2026-10-07 superseded） | なし |
-| [ws112-p002](phase002/phase.md) | amd64・arm64 の共通の deb | Debian 13・Ubuntu 26.04 の両方に入る amd64・arm64 の deb を mmdebstrap の rootfs で生成、形式・依存の解決 | cleared 候補（2026-10-07 P1: amd64・arm64 を生成、Debian 13・Ubuntu 26.04 で依存の解決） | D-a・D-b |
-| [ws112-p003](phase003/phase.md) | Raspberry Pi OS arm64 deb | RPi OS trixie の rootfs で arm64 の deb を生成、形式・依存の解決 | cleared 候補（2026-10-07 P1） | p002 の道具 |
+| [ws112-p002](phase002/phase.md) | amd64・arm64 の共通の deb | cleared（2026-10-07） | cleared 候補（2026-10-07 P1: amd64・arm64 を生成、Debian 13・Ubuntu 26.04 で依存の解決） | D-a・D-b |
+| [ws112-p003](phase003/phase.md) | Raspberry Pi OS arm64 deb | cleared（2026-10-07） | cleared 候補（2026-10-07 P1） | p002 の道具 |
 | [ws112-p004](phase004/phase.md) | Fedora 44 rpm | make keiland-linux-fedora44とFedora 44 rpm成果物 | canceled（2026-10-07） | ws112-p002 cleared / 共通stage・成果物契約（p001のFedora確定入力を使用） |
 | [ws112-p005](phase005/phase.md) | Arch Linux binary package | make keiland-linux-archとArch成果物 | canceled（2026-10-07） | ws112-p002 cleared / 共通stage・成果物契約（p001のArch確定入力を使用） |
 | [ws112-p006](phase006/phase.md) | CI 5 target・release添付 | 全5 packageを既存CIからrelease filesへ渡す定義と失敗関門 | canceled（2026-10-07） | ws112-p002/p003/p004/p005 cleared / 5種類の実package・記録 |

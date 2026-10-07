@@ -3,7 +3,7 @@
 # ws112-p002: Debian/Ubuntu package生成を動作試験から分離
 
 Parent: [WS112](../ws.md)
-Status: cleared 候補（2026-10-07 P1: 3 つのうち amd64・arm64 を生成し、形式・依存の解決を確認。Q1 の判定待ち）
+Status: cleared（2026-10-07 Q1 の判定: D-b のとおり host で生成と確認: amd64・arm64 の deb を Debian 13 と Ubuntu 26.04 の rootfs で apt-get install --simulate が exit 0、ELF の machine・manifest・test program 無し。導入・起動はしない）（旧: cleared 候補（2026-10-07 P1: 3 つのうち amd64・arm64 を生成し、形式・依存の解決を確認。Q1 の判定待ち））
 Disposition: normal
 Primary Milestone: MG007（WSから継承）
 Queue / attempts: none / 実装未承認
