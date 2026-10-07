@@ -4,7 +4,7 @@
 
 Phase ID: `ws143-p001`
 Parent: [WS143](../ws.md)
-Status: in-progress（cleared の提案、Q1 の判定待ち。2026-10-08 P2 q860-i01。前: 2026-10-05 P1 generation18、q752）
+Status: cleared（2026-10-08 Q1 の判定: design.md の §9 の D1〜D18 はユーザーが全部推奨どおりに決定（2026-10-05）、HID が先、A2DP・PAN は F-082 へ）
 Phase disposition: normal
 Queue: q752（P1、2026-10-05。Q1「Go ahead with p001 (survey and design) under q752」）、q860-i01（P2、2026-10-08、記録の締め）
 
