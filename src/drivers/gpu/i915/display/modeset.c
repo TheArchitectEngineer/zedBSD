@@ -52,6 +52,7 @@
 #include "pipe.h"
 #include "plane.h"
 #include "power.h"
+#include "tc-kern.h"
 #include "present.h"
 #include "scanout.h"
 #include "state.h"
@@ -1937,6 +1938,9 @@ drv_i915_lcd_kernel_bind_ops(
 	k->ops.step = drv_i915_lcd_kernel_step;
 	k->ops.error = drv_i915_lcd_kernel_error;
 	k->ops.debug = drv_i915_lcd_kernel_debug;
+
+	/* The Type-C ports' links, which an output's disable gives back. */
+	k->ops.tc_put_link = drv_i915_lcd_tc_put_link;
 
 	/* The synchronous update: vblank references, the vblank sleep, the section's interrupts and the event. */
 	k->ops.vblank_get = drv_i915_lcd_kernel_vblank_get;

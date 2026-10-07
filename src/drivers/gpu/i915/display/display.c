@@ -41,6 +41,7 @@
 #include "scanout.h"
 #include "state.h"
 #include "takeover.h"
+#include "tc-kern.h"
 #include "vbt-parse.h"
 #include "watermark.h"
 #include <kern/kcrt.h>
@@ -618,6 +619,9 @@ drv_i915_display_register(
 	 * the hotplug registers are programmed.
 	 */
 	if (error == 0) {
+		/* The Type-C ports first: the hotplug path asks them whether something is plugged in (ws051-p002b). */
+		drv_i915_tc_kern_start(display, &device->gt.mmio, (unsigned)device->gt.display_ver);
+
 		started = drv_i915_hpd_start(display, &dprobe->hp, &device->gt.mmio, &display->nogem, &display->power_domains, &display->pwc, display->pch.type, device->gt.irq.irqs_enabled, NULL);
 		if (started == 0)
 			display->hpd_started = 1;
@@ -717,6 +721,7 @@ drv_i915_display_resident_deps(
 	rlcd->gmadr_base = gt->gmadr_base;
 	rlcd->gmadr_size = gt->gmadr_size;
 	rlcd->dprobe = &display->dprobe;
+	rlcd->tc = drv_i915_tc_kern_ports(display);
 
 	/* What the serving thread needs, with the panel. */
 	rctx->device = device;

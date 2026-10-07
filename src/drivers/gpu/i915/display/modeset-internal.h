@@ -882,12 +882,13 @@ typedef uint64_t __u64;
  *   ilk_pfit_disable: PF_CTL = PF_WIN_POS = PF_WIN_SZ = 0.
  *   mtl_disable_ddi_buf: the display 14 DDI buffer disable.
  *   adlp_tbt_to_dp_alt_switch_wa: an ADL-P Type-C workaround (DKL_PCS_DW5).
- *   intel_tc_port_put_link: the Type-C link reference given back.
+ *   (intel_tc_port_put_link is ported: i915_lcd_tc_port_put_link() gives
+ *   the Type-C link back through the device's tc_put_link hook, ws051-p002b.)
  */
 #define I915_LCD_ILK_PFIT_DISABLE(i915, cs) I915_LCD_STEP(i915, "ilk_pfit_disable")
 #define I915_LCD_MTL_DISABLE_DDI_BUF(i915, encoder, cs) I915_LCD_STEP(i915, "mtl_disable_ddi_buf")
 #define I915_LCD_ADLP_TBT_TO_DP_ALT_SWITCH_WA(i915, encoder) I915_LCD_STEP(i915, "adlp_tbt_to_dp_alt_switch_wa")
-#define I915_LCD_INTEL_TC_PORT_PUT_LINK(i915, dig_port) I915_LCD_STEP(i915, "intel_tc_port_put_link")
+#define I915_LCD_INTEL_TC_PORT_PUT_LINK(i915, dig_port) i915_lcd_tc_port_put_link((i915), (dig_port))
 
 /*
  * XXX: UNPORTED -- the HDMI sink-side halves that need DDC, recorded on the
@@ -2622,6 +2623,27 @@ i915_lcd_dp_to_i915(
 
 	/* Succeeded: reports the device. */
 	return i915;
+}
+
+/*
+ * Gives an output's link to a Type-C port back (the Linux
+ * intel_tc_port_put_link()) through the device's tc_put_link hook; the
+ * last link gives the PHY back at once.  A model without the hook records
+ * the step.
+ */
+static __inline void
+i915_lcd_tc_port_put_link(
+	struct drm_i915_private *i915,
+	struct intel_digital_port *dig_port)
+{
+	/* A model records the step. */
+	if (i915->emit->tc_put_link == NULL) {
+		I915_LCD_STEP(i915, "intel_tc_port_put_link");
+		return;
+	}
+
+	/* Gives the link of the Type-C port (TC1 is port D) back. */
+	i915->emit->tc_put_link(i915->emit->ctx, (int)dig_port->base.port - (int)PORT_TC1);
 }
 
 /*
