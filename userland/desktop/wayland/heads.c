@@ -57,11 +57,11 @@
 /* displays.conf beside desktop.conf, and the longest path and text of it. */
 #define HEADS_FOLDER		".config/keiland"
 #define HEADS_FILE		"displays.conf"
+#define HEADS_PATH_MAX		512U
+#define HEADS_TEXT_MAX		4096U
 
 /* How far past a head's edges the pointer's cursor may still reach into it (pixels, ws113-p007). */
 #define HEADS_CURSOR_REACH	64
-#define HEADS_PATH_MAX		512U
-#define HEADS_TEXT_MAX		4096U
 
 /* The first wl_output global name of a head, past every name of the fixed globals (protocol.c). */
 #define HEADS_GLOBAL_FIRST	1000U
