@@ -48,15 +48,41 @@ size=
 if [ -n "${VENUS_SIZE:-}" ]; then
 	size=",xres=${VENUS_SIZE%x*},yres=${VENUS_SIZE#*x}"
 fi
+# ws113-p004a: VENUS_DISPLAY=dbus (only when chosen; the default egl-headless and VNC are unchanged) shows the Venus
+# heads through QEMU's D-Bus display on a private session bus of the runtime (dbus.address, dbus.pid), so that
+# plan/tools/guest/venus-head.sh can plug and unplug a head (SetUIInfo: QEMU enables a virtio-gpu head only when its
+# UI gives it a size, so with egl-headless head 1 is never connected).  VNC is still bound; whether it gets pictures
+# of GL scanouts without egl-headless is to be seen, so tests in this mode judge by the guest's lines.
+display="-display egl-headless,rendernode=/dev/dri/renderD128"
 case "$command" in
 start)
 	image=${2:-build/ws035-sq/hdd-image.img}
 	python3 plan/tools/guest/guest.py stop >/dev/null
 	mkdir -p build
 	printf '%s\n' "$GUEST_RUNTIME" > "$last_runtime"
+	if [ "${VENUS_DISPLAY:-}" = dbus ]; then
+		mkdir -p "$GUEST_RUNTIME"
+		if [ -s "$GUEST_RUNTIME/dbus.pid" ]; then
+			kill "$(cat "$GUEST_RUNTIME/dbus.pid")" 2>/dev/null || true
+		fi
+		bus=$(dbus-daemon --session --fork --print-address=1 --print-pid=1 --nopidfile)
+		printf '%s\n' "$bus" | sed -n 1p > "$GUEST_RUNTIME/dbus.address"
+		printf '%s\n' "$bus" | sed -n 2p > "$GUEST_RUNTIME/dbus.pid"
+		DBUS_SESSION_BUS_ADDRESS=$(cat "$GUEST_RUNTIME/dbus.address")
+		export DBUS_SESSION_BUS_ADDRESS
+		display="-display dbus,gl=on,rendernode=/dev/dri/renderD128"
+	fi
 	exec python3 plan/tools/guest/guest.py start "$image" \
 	    --symbols build/ws035-sq/vmunix \
-	    --qemu-extra "-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem -device virtio-gpu-gl-pci,id=venus,venus=on,blob=on,hostmem=$VENUS_HOSTMEM,max_outputs=${VENUS_OUTPUTS:-1}$size -display egl-headless,rendernode=/dev/dri/renderD128 -vnc unix:$GUEST_RUNTIME/vnc.sock,display=venus -device usb-tablet,bus=xhci.0,port=4"
+	    --qemu-extra "-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem -device virtio-gpu-gl-pci,id=venus,venus=on,blob=on,hostmem=$VENUS_HOSTMEM,max_outputs=${VENUS_OUTPUTS:-1}$size $display -vnc unix:$GUEST_RUNTIME/vnc.sock,display=venus -device usb-tablet,bus=xhci.0,port=4"
+	;;
+stop)
+	# The D-Bus display's bus goes with the guest.
+	if [ -s "$GUEST_RUNTIME/dbus.pid" ]; then
+		kill "$(cat "$GUEST_RUNTIME/dbus.pid")" 2>/dev/null || true
+		: > "$GUEST_RUNTIME/dbus.pid"
+	fi
+	exec python3 plan/tools/guest/guest.py "$@"
 	;;
 *)
 	exec python3 plan/tools/guest/guest.py "$@"
