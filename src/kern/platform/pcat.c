@@ -77,6 +77,9 @@
 #if CONFIG_DRIVER_ACPI
 #include <drivers/acpi/acpi.h>
 #endif
+#if CONFIG_DRIVER_ACPI && CONFIG_DRIVER_TYPEC
+#include <drivers/typec/ucsi-acpi.h>
+#endif
 #include <drivers/usb/usb.h>
 #if CONFIG_DRIVER_NE2000
 #include "drivers/isa/pcat-ne2000.h"
@@ -131,6 +134,9 @@ kern_platform_init(
 #endif
 #if CONFIG_DRIVER_ACPI
 	int acpi_error;
+#endif
+#if CONFIG_DRIVER_ACPI && CONFIG_DRIVER_TYPEC
+	int typec_error;
 #endif
 
 	count = 0;
@@ -275,6 +281,19 @@ kern_platform_init(
 	} else {
 		(void)drv_pci_probe_deferred();
 	}
+#if CONFIG_DRIVER_TYPEC
+
+	/*
+	 * Starts the USB-C connectors' UCSI driver (ws050-p003) on the
+	 * namespace, once the Embedded Controller its _STA and _DSM read is
+	 * attached.  A platform without a UCSI device (ENODEV) has none.
+	 */
+	if (acpi_error == 0) {
+		typec_error = drv_ucsi_acpi_attach();
+		if (typec_error != 0 && typec_error != ENODEV)
+			kern_logf("ucsi: attachment failed (error %d)\n", typec_error);
+	}
+#endif
 #endif
 
 	/* Lists every BIOS IDE unit as a boot device. */

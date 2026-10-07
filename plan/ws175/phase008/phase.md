@@ -134,3 +134,12 @@ pdf-edit-text・pdf-insert-text-font）。FreeBSD の Makefile は box.c を足�
 ## 積み残し
 
 準正常系・異常系の未実装は [WS177 の P2 の一覧](../../ws177/backlog-p2.md)（2026-10-06 ユーザー「専用の1つのベータ2積み残しというWSに入れてください」）。
+
+## 2026-10-07 T1-324 の直し（P2）
+
+`apps.notes.pdf-edit-text` が単独でも fail（2 行目に " ZEBRA" を打った後、最後の字と Esc が届かず `NOTES EDIT text … fallback=1` の行が出ない）。
+原因: libkeiland の `kl_ui_end` は、widget が 1 frame に 1 つしか取らない key の残りを次の frame に回し「もう 1 frame 要る」を返すが、
+`notes_box_draw` はその返り値を捨て、main の loop は新しい box の入力が来た時にだけ box の frame を描いていた（速く打たれた key の残りが次の事象まで待つ）。
+直し: `struct notes_box` に `again`（`kl_ui_end` の返り値）を足し、main の loop は `box_count != 0` か `box.open && box.again` で frame を描く（open・close で 0）。
+aat-input の shift の疑いは不要（full の中で " ZEBRA" の最後の字と Esc 2 回が落ちたのも同じ原因）。確認: zedBSD の build（`build/p2-ci/bin/notes`）warning 0。
+再試験は T1（Q1 に文面）。

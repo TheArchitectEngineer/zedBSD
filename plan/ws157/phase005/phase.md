@@ -29,3 +29,10 @@ Queue: q835（2026-10-07、P2）
 ## 積み残し
 
 [WS177 backlog-p2](../../ws177/backlog-p2.md) の WS157 の行（2026-10-07 の作り直しで更新）。
+
+## 2026-10-07 T1-324 の直し（P2）
+
+`apps.photos.browse` の fail（2026-08.tsv の sea.jpg の行に favourite と turn が無い）: `view_turn`・`view_favorite` が `view->save` を立てるが写真の
+`changed` を立てず、`ph_db_save` は changed の写真の月しか書かないので、SAVE error=0 で何も書かれていなかった（helper の待ちの問題ではない）。
+直し: 両方で `photos[photo].changed = 1`。host の試験（`run-host-photos.sh`）に、取り込みの後に保存して changed を消し、R・F の後に changed を確かめる
+check を足した（直しを外すと `FAIL save`、直しで 33 PASS）。zedBSD の build（`build/p2-ci/bin/photos`）warning 0。再試験は T1。
