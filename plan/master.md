@@ -516,6 +516,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザーの UAT（5320）→ [ws181-p009](ws181/phase009/phase.md)（P2 の q852 に足す）。5320 で HDA の音が鳴った（ユーザーの報告）。
 - 2026-10-07 Q1: ws113-p011a（9036a7ad4、i915 の resident の出力の付け替え・connector ごとの ID と generation・R1〜R4、compositor の蓋で外部へ移る R4）を merge。q850 は finished（試験待ち: T1-357 の QEMU、5330 の HDMI の UAT（phase011a/phase.md の「確認」(1)〜(4)））。P1 は ws075-p007b を区切って ws051-p004b の code へ。
 - 2026-10-07 Q1: ws051-p004b の設計（f03f85f55）・p005a（25a49906c、HPD の long pulse → detect → GPU_DISPLAY_EVENT_CHANGE、2 秒の猶予、IRQ_HPD の確かめ）を merge。素の 5330 の確認に「起動の後に TC2 へ monitor を挿す・抜く・挿す」（HPD-EVENT DP-2 の connected/disconnected、sequence が進む、PHY が返る、HPD storm が無い）を足す。p004b の code は P2 の ws113-p011a の後。P1 はその間 ws075-p007b（b1 から）。
 - 2026-10-07 Q1: ws051-p004a（6f9f7e7d8、TC の AUX・外部 DP の object・H7・M2）を merge。素の 5330 の確認（USB-C の DP の monitor を TC2 に、dmesg に `DP-ext TC2: connected`・rate 540000 lanes 4・EDID 1920x1280・PHY の返却・`hpd DP detect DP-2: connected`、抜いた起動で timeout 無し）はユーザーの操作が要る → ws084 の 10 回の起動と一緒に。P1 は p004b の設計 → p005a（HPD の detect と事象）、p004b の code は P2 の ws113-p011a の後。
