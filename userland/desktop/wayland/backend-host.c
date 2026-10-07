@@ -234,12 +234,12 @@ kwl_backend_lid_changed(
 {
 	struct kwl_server *server;
 
-	/* The change, logged. */
+	/* The change, logged with its time (BUG-255: an opening the firmware reports soon after a closing). */
 	server = data;
 	if (open != 0U) {
-		printf("KWL EVENT lid open\n");
+		printf("KWL EVENT lid open ms=%llu\n", (unsigned long long)kwl_milliseconds());
 	} else {
-		printf("KWL EVENT lid closed\n");
+		printf("KWL EVENT lid closed ms=%llu\n", (unsigned long long)kwl_milliseconds());
 	}
 
 	/* What it does. */
