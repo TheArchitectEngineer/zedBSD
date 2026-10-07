@@ -2,7 +2,7 @@
 
 # ws083-p003b: 実行器の video の module、capset の native の語と family 1、video の submit の骨組み
 
-Status: in-progress（q833、P1。2026-10-07 夜 着手）
+Status: cleared（2026-10-07 Q1 の判定: §9 の受け入れ（§8.1 の 2・3 行目: libvulkan の video.c の実際の byte 列の往復の試験 PASS（ASan/UBSan）、build warning 0）。MFX の命令と NV12 は p004）（旧: in-progress（q833、P1。2026-10-07 夜 着手））
 Disposition: normal
 Parent: [WS083](../ws.md)
 

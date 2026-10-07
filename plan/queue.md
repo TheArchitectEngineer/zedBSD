@@ -89,7 +89,7 @@ Last reconciled Queue: [q779](history/queue-q779.md)（2026-10-06、BUG-202の�
 | q841 / q841-i01 | P2（UAT、優先） | [BUG-243](bugs/BUG-243.md) full の OSK で窓が縮むと表示が縦に圧縮される | compositor が app に新しい大きさを送り app が描き直すように。host か QEMU の撮影で確かめる | — | cleared（2026-10-07 T1-332） |
 | q842 / q842-i01 | P2（UAT、優先、ws051-p002b より先） | [WS181](ws181/ws.md) 窓の状態・App Home の独立のモード・gesture・整列（2026-10-07 ユーザーの UAT） | p001 設計 → p002 状態 → p003 App Home と gesture → p004 整列 | — | cleared（2026-10-07 T1-342） |
 | q843 / q843-i01 | P2（UAT、優先、p002b より先） | ws181-p005 App Home の bar と整列のメニュー・pill の見た目（2026-10-07 ユーザーの UAT） | App Home では dock の bar を出さず右上の通知・時計を地の塗り無しの白い文字・icon で（click の動作は同じ）。整列のメニューは icon だけ・1〜4 無し・今の desktop に対して・glass。pill の整列の印は無し。pill の選択のカプセルは半分の幅、desktop の icon は正円。pill の tap は常にメニュー、desktop の切り替えは swipe・key だけ | — | cleared（2026-10-07 T1-345） |
-| q844 / q844-i01 | P2（UAT、優先、WS050 p005 より先） | ws181-p006 整列のメニューの大きさと 7 つの形の並び、App Home の icon を下に・左右の page 送り・1 枚目に時計、pill の円（2026-10-07 ユーザーの UAT） | メニューは幅 2 倍・高さ 5 倍、4 行（水平分割・垂直分割／左 1 列＋右の縦分割・右 1 列＋左の縦分割／上 1 行＋下の横分割・下 1 行＋上の横分割／タイル）。App Home は icon を画面の下に寄せ、左右の swipe で page、1 枚目に時計。pill の円は右と下が切れず正円、選んだ desktop も正円で色で区別 | — | pending |
+| q844 / q844-i01 | P2（UAT、優先、WS050 p005 より先） | ws181-p006 整列のメニューの大きさと 7 つの形の並び、App Home の icon を下に・左右の page 送り・1 枚目に時計、pill の円（2026-10-07 ユーザーの UAT） | メニューは幅 2 倍・高さ 5 倍、4 行（水平分割・垂直分割／左 1 列＋右の縦分割・右 1 列＋左の縦分割／上 1 行＋下の横分割・下 1 行＋上の横分割／タイル）。App Home は icon を画面の下に寄せ、左右の swipe で page、1 枚目に時計。pill の円は右と下が切れず正円、選んだ desktop も正円で色で区別 | — | cleared（2026-10-07 T1-346・347） |
 
 
 ## 2026-10-06: BUG-202 の起動停止（q779、finished）

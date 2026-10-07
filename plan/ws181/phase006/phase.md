@@ -4,7 +4,7 @@
 
 Phase ID: `ws181-p006`
 Parent: [WS181](../ws.md)
-Status: in-progress（2026-10-07 q844 P2: 実装・build・host の試験と host の PNG まで。QEMU は T1 へ）
+Status: cleared（2026-10-07 Q1 の判定: T1-346 で ws181-guest.sh・p004-guest.sh PASS と Q1 が PNG を目視、T1-347 で p003-guest.sh PASS と App Home の 2 枚目（時計無し、icon が点の上に下寄せ、17 app なので 1 行））（旧: in-progress（2026-10-07 q844 P2: 実装・build・host の試験と host の PNG まで。QEMU は T1 へ））
 Phase disposition: normal
 Queue: q844（P2、Q1 の ACK 2026-10-07「(1)〜(3) で ACK、1 枚目は時計＋icon 2 行、2 枚目から 4 行、どの page も下寄せ」。(3) はユーザーの指示で 3 つの desktop と猫・鳥・ウサギに置き換え）
 
