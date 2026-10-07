@@ -254,6 +254,15 @@
 #define COMPILE_DESC_SAMPLE(bti, smp)	(0x02420000U | ((uint32_t)(smp) << 8) | (uint32_t)(bti))
 #define COMPILE_DESC_RT_WRITE		0x08031400U
 #define COMPILE_DESC_RT_LAST		0x00001000U
+
+/*
+ * The SIMD8 dual-source render-target write (ws031-p032): message control 2,
+ * "SIMD8 dual source subspan01" (Mesa 25.0.7 brw_eu_defines.h
+ * BRW_DATAPORT_RENDER_TARGET_WRITE_SIMD8_DUAL_SOURCE_SUBSPAN01) in place of
+ * the single source's 4; src0 the first colour (mlen 4), src1 the second
+ * (the extended descriptor's mlen 4), as Mesa's split send of it.
+ */
+#define COMPILE_DESC_RT_WRITE_DUAL	0x08031200U
 #define COMPILE_EX_MLEN(n)		((uint32_t)(n) << 6)
 #define COMPILE_EX_RT_INDEX(n)		((uint32_t)(n) << 12)
 
@@ -369,6 +378,9 @@ struct i915_compile_state {
 
 	/* The colour locations a fragment shader stores (bit n for location n). */
 	uint32_t fs_outputs;
+
+	/* Fragment: nonzero when it stores a second colour (Location 0 Index 1), written dual source. */
+	int uses_second_color;
 
 	/*
 	 * Fragment: nonzero when the kernel reads an input without perspective,
@@ -540,6 +552,7 @@ static void i915_compile_blocks(struct i915_compile_state *state);
 static void i915_compile_prologue(struct i915_compile_state *state);
 static void i915_compile_terminate(struct i915_compile_state *state);
 static uint32_t i915_compile_fs_outputs(const struct i915_compile_state *state);
+static void i915_compile_terminate_dual(struct i915_compile_state *state);
 static void i915_compile_terminate_vertex(struct i915_compile_state *state);
 static void i915_compile_terminate_gathered(struct i915_compile_state *state);
 static void i915_compile_gather(struct i915_compile_state *state, uint32_t first, uint32_t count);
@@ -2411,6 +2424,9 @@ i915_compile_store_output(
 			return;
 		}
 		grf = state->vue_grf + 8U + 4U * rank;
+	} else if (inst->location == I915_IR_LOCATION_SECOND_COLOR) {
+		/* The second colour of a dual-source write takes location 1's r120..r123 (location 1 is not written then). */
+		grf = COMPILE_MAX_GRF - 3U - 4U;
 	} else if (inst->location < I915_SHADER_MAX_COLOR_OUTPUTS) {
 		/* Colour location n goes to r(124 - 4 n)..r(127 - 4 n). */
 		grf = COMPILE_MAX_GRF - 3U - 4U * inst->location;
@@ -4297,6 +4313,9 @@ i915_compile_interface(
 		    state->ir->stage == I915_STAGE_VERTEX &&
 		    inst->location != I915_IR_LOCATION_POSITION) {
 			i915_compile_note(state, state->varyings, &state->varying_count, COMPILE_MAX_VARYINGS, inst->location);
+		} else if (inst->op == I915_IR_STORE_OUTPUT && inst->location == I915_IR_LOCATION_SECOND_COLOR) {
+			/* The second colour of a dual-source write, which goes with location 0's. */
+			state->uses_second_color = 1;
 		} else if (inst->op == I915_IR_STORE_OUTPUT && inst->location < I915_SHADER_MAX_COLOR_OUTPUTS) {
 			/* A fragment shader's colour location gets a render-target write. */
 			state->fs_outputs |= 1U << inst->location;
@@ -4307,6 +4326,10 @@ i915_compile_interface(
 
 	/* A discard belongs to a fragment shader. */
 	if (state->uses_kill != 0 && state->ir->stage != I915_STAGE_FRAGMENT)
+		state->unsupported = 1;
+
+	/* A second colour goes with location 0's alone (Vulkan: dual source writes attachment 0; Mesa needs both). */
+	if (state->uses_second_color != 0 && (state->ir->stage != I915_STAGE_FRAGMENT || state->fs_outputs != 1U))
 		state->unsupported = 1;
 
 	/* A fragment payload carries, after the perspective barycentrics, what the kernel asked for, in the order of the conventions. */
@@ -4483,6 +4506,8 @@ i915_compile_prologue(
 	/* A fragment shader's colours start as zeros. */
 	if (state->ir->stage != I915_STAGE_VERTEX) {
 		outputs = i915_compile_fs_outputs(state);
+		if (state->uses_second_color != 0)
+			outputs |= 1U << 1;
 		for (grf = COMPILE_MAX_GRF - 4U * I915_SHADER_MAX_COLOR_OUTPUTS + 1U; grf <= COMPILE_MAX_GRF; grf++) {
 			/* Only the registers of a location the shader writes. */
 			if ((outputs & (1U << ((COMPILE_MAX_GRF - grf) / 4U))) == 0U)
@@ -4543,6 +4568,12 @@ i915_compile_terminate(
 		return;
 	}
 
+	/* Both colours of a dual-source blend in one write to render target 0, which ends the thread. */
+	if (state->uses_second_color != 0) {
+		i915_compile_terminate_dual(state);
+		return;
+	}
+
 	/* Each colour location to its render target, in ascending order; the last write ends the thread. */
 	outputs = i915_compile_fs_outputs(state);
 	for (location = 0U; location < I915_SHADER_MAX_COLOR_OUTPUTS; location++) {
@@ -4584,6 +4615,54 @@ i915_compile_terminate(
 				 1,
 				 last);
 	}
+}
+
+/*
+ * Writes a dual-source fragment shader's two colours with one SIMD8
+ * dual-source render-target write to render target 0, which ends the
+ * thread: the first colour (location 0, r124..r127) as src0, the second
+ * (r120..r123) as src1 of a split send, as Mesa's lower_fb_write_logical_send()
+ * and its split of the payload do on Gen12 (no header).  A shader that
+ * discards writes only the pixels f1.0 still holds.
+ */
+static void
+i915_compile_terminate_dual(
+	struct i915_compile_state *state)
+{
+	struct i915_eu_buf *code;
+	uint32_t descriptor;
+	uint32_t extended;
+
+	/* The write's descriptors: target 0's entry and index, both colours' lengths, the last target. */
+	code = &state->code;
+	descriptor = (COMPILE_DESC_RT_WRITE_DUAL & ~COMPILE_DESC_RT_LAST) | I915_SHADER_RT_BTI(0U) | COMPILE_DESC_RT_LAST;
+	extended = COMPILE_EX_MLEN(4U) | COMPILE_EX_RT_INDEX(0U);
+
+	/* Only the live pixels of a shader that discards. */
+	if (state->uses_kill != 0) {
+		drv_i915_eu_send_masked(code,
+					I915_EU_FLAG_F1_0,
+					drv_i915_eu_null(),
+					drv_i915_eu_grf(COMPILE_MAX_GRF - 3U),
+					drv_i915_eu_grf(COMPILE_MAX_GRF - 3U - 4U),
+					COMPILE_SFID_RENDER_CACHE,
+					descriptor,
+					extended,
+					1,
+					1);
+		return;
+	}
+
+	/* Succeeded: both colours to the render target, SENDC as a render-target write must be. */
+	drv_i915_eu_send(code,
+			 drv_i915_eu_null(),
+			 drv_i915_eu_grf(COMPILE_MAX_GRF - 3U),
+			 drv_i915_eu_grf(COMPILE_MAX_GRF - 3U - 4U),
+			 COMPILE_SFID_RENDER_CACHE,
+			 descriptor,
+			 extended,
+			 1,
+			 1);
 }
 
 /*
@@ -4843,6 +4922,10 @@ i915_compile_describe(
 	/* A fragment kernel that discards has the draw say so. */
 	if (state->uses_kill != 0)
 		binary->uses_kill = 1U;
+
+	/* A fragment kernel that writes dual source has the blend take its second colour. */
+	if (state->uses_second_color != 0)
+		binary->dual_source = 1U;
 
 	/* A vertex kernel that writes the point size has the setup read it from the VUE. */
 	if (state->writes_point_size != 0)

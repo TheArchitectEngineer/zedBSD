@@ -1275,6 +1275,107 @@ test_eu_glsl_math(void)
 	printf("  EU model: unary / exponent / minmax / divide shaders compute their GLSL for %u x 8 channels\n", runs);
 }
 
+/*
+ * dual.frag (ws031-p032): Location 0 Index 0 and Index 1 make one SIMD8
+ * dual-source render-target write that ends the thread.  Its message
+ * descriptor is what Mesa 25.0.7's brw_message_desc() | brw_fb_write_desc()
+ * give (mlen 4, render-target write 12 in bits 18:14, message control 2
+ * "SIMD8 dual source subspan01" in 13:8, last render target, entry 0), its
+ * extended descriptor src1's length 4 and render target 0, src0 r124 the
+ * first colour, src1 r120 the second; the EU model's registers hold both.
+ */
+static void
+test_dual_source(void)
+{
+	static const float xs[8] = { 0.0f, 0.25f, 0.5f, 1.0f, 2.0f, -1.0f, 0.75f, 3.0f };
+	static const float ys[8] = { 1.0f, 0.5f, 0.0f, -2.0f, 4.0f, 0.125f, 8.0f, 0.5f };
+	const uint32_t expect_desc = (4U << 25) | (12U << 14) | (2U << 8) | (1U << 12) | 0U;
+	struct i915_shader_binary *binary;
+	struct eu_model *m;
+	const uint32_t *inst;
+	const uint32_t *write;
+	float values[8][4];
+	uint32_t desc;
+	uint32_t ex_desc;
+	uint32_t index;
+	unsigned sends;
+	unsigned c;
+	unsigned k;
+
+	binary = compile_file(COMPILER_SHADERS, "dual.frag.spv", I915_STAGE_FRAGMENT);
+	assert(binary->dual_source == 1U);
+
+	/* The one SENDC, which ends the thread. */
+	sends = 0U;
+	write = NULL;
+	for (index = 0U; index + 4U <= binary->code_bytes / 4U; index += 4U) {
+		inst = &binary->code[index];
+		if ((inst[0] & 0x7FU) != EU_OP_SENDC)
+			continue;
+		sends++;
+		write = inst;
+	}
+	assert(sends == 1U && write != NULL && inst_bit(write, EU_SEND_EOT_BIT) == 1U);
+
+	/* The descriptors, gathered from where eu-encoding-gen12.h scatters them. */
+	desc = (inst_field(write, 123U, 122U) << 30) | (inst_field(write, 71U, 67U) << 25) |
+	    (inst_field(write, 55U, 51U) << 20) | (inst_field(write, 121U, 113U) << 11) | inst_field(write, 91U, 81U);
+	ex_desc = (inst_field(write, 103U, 99U) << 6) | (inst_field(write, 47U, 35U) << 11);
+	assert(desc == expect_desc);
+	assert(((ex_desc >> 6) & 0x1FU) == 4U);
+	assert(((ex_desc >> 12) & 0x7U) == 0U);
+	assert(inst_field(write, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO) == COMPILE_MAX_GRF - 3U);
+	assert(inst_field(write, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO) == COMPILE_MAX_GRF - 7U);
+
+	/* The colours in the payload: v, then (v.w, v.z, v.y, 1 - v.x). */
+	m = malloc(sizeof(*m));
+	fs_run(m, binary, 0xFFU, xs, ys, 0.5f, -2.0f, values);
+	assert(m->written == 0xFFU);
+	for (c = 0U; c < 8U; c++) {
+		float second[4];
+
+		second[0] = values[c][3];
+		second[1] = values[c][2];
+		second[2] = values[c][1];
+		second[3] = 1.0f - values[c][0];
+		for (k = 0U; k < 4U; k++) {
+			assert(m->grf[COMPILE_MAX_GRF - 3U + k][c] == float_bits(values[c][k]));
+			assert(m->grf[COMPILE_MAX_GRF - 7U + k][c] == float_bits(second[k]));
+		}
+	}
+	free(m);
+	drv_i915_shader_binary_free(binary);
+
+	/* A second colour without the first is refused. */
+	{
+		struct i915_shader_ir *ir;
+		struct i915_shader_binary *refused;
+		struct i915_compile_diagnostic diag;
+		char path[512];
+		FILE *file;
+		long size;
+		uint32_t *spv;
+		int error;
+
+		snprintf(path, sizeof(path), "%s/%s/dual-alone.frag.spv", VK_REPO, COMPILER_SHADERS);
+		file = fopen(path, "rb");
+		assert(file != NULL);
+		fseek(file, 0, SEEK_END);
+		size = ftell(file);
+		fseek(file, 0, SEEK_SET);
+		spv = malloc((size_t)size);
+		assert(fread(spv, 1, (size_t)size, file) == (size_t)size);
+		fclose(file);
+		error = drv_i915_shader_parse(spv, (size_t)size / 4U, I915_STAGE_FRAGMENT, &ir, &diag);
+		assert(error == 0);
+		error = drv_i915_shader_compile(ir, &refused);
+		assert(error != 0);
+		drv_i915_shader_ir_free(ir);
+		free(spv);
+	}
+	printf("  dual source: one SENDC, desc 0x%08x (Mesa brw_fb_write_desc: mlen 4, RT write, SIMD8 dual source, last), ex_mlen 4, src0 r124, src1 r120, both colours\n", desc);
+}
+
 /* compare.frag through the EU model: eight different pairs at a time, one of them NaN. */
 static void
 test_eu_comparisons(void)
@@ -2122,6 +2223,7 @@ main(void)
 	test_all_shaders_compile();
 	test_eu_glsl_math();
 	test_eu_comparisons();
+	test_dual_source();
 	test_eu_branches_and_discard();
 	test_eu_vertex_shaders();
 	test_eu_mview();

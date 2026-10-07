@@ -482,6 +482,21 @@ struct i915_gfx_pipeline {
 	uint32_t blend_constants[4];
 
 	/*
+	 * The logic operation (ws031-p032): nonzero logic_op_enable applies the
+	 * VkLogicOp logic_op to every target that takes one (not a float or an
+	 * sRGB one), and blends none.
+	 */
+	uint32_t logic_op_enable;
+	uint32_t logic_op;
+
+	/*
+	 * Nonzero when the fragment kernel writes a second colour (dual source,
+	 * ws031-p032), so that an equation of SRC1 factors blends; the
+	 * compiled kernel's, copied when the kernels are prepared.
+	 */
+	uint32_t dual_source;
+
+	/*
 	 * The colour components attachment 0 does NOT write, as the complement
 	 * of its VkColorComponentFlags; zero writes every component.
 	 */

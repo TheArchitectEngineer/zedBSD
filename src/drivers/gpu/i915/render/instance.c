@@ -417,9 +417,10 @@ i915_instance_limits(
 
 /*
  * vkGetPhysicalDeviceFeatures: [physical][present] -> [present][VkPhysicalDeviceFeatures].
- * The one optional feature claimed is vertexPipelineStoresAndAtomics: a
- * vertex shader stores to and loads from storage buffers (ws075-p006).
- * XXX: its atomics are not compiled.
+ * The optional features claimed are vertexPipelineStoresAndAtomics (a
+ * vertex shader stores to and loads from storage buffers, ws075-p006) and
+ * logicOp (the blend's logic operation, ws031-p032).  XXX: the vertex
+ * stage's atomics are not compiled.
  */
 static int
 i915_instance_features(
@@ -435,11 +436,12 @@ i915_instance_features(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Takes a zeroed record from the arena: every feature is off but the vertex stage's stores. */
+	/* Takes a zeroed record from the arena: every feature is off but the vertex stage's stores and the logic operation. */
 	features = i915_vkc_array(reader, &session->arena, 1U, sizeof(*features));
 	if (features == NULL)
 		return ENOMEM;
 	features->vertexPipelineStoresAndAtomics = VK_TRUE;
+	features->logicOp = VK_TRUE;
 
 	/* Replies the present word and the record. */
 	drv_i915_wire_reply_u64(reply, 1U);
