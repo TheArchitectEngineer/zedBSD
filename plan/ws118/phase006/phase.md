@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws118-p006 -->
 # ws118-p006: Tiger Lake の DPLL と firmware の表示の引き継ぎ（5320 で Keiland を表示する）、世代に依らない fallback
 
-Status: in-progress（q846-i01、P3、2026-10-07）
+Status: in-progress, test-wait（T1-352、5330 の回帰。5320 の実機は 2026-10-07 に表示を確認）（q846-i01、P3、2026-10-07）
 Disposition: normal
 Parent: [WS118](../ws.md)
 Queue: q846
@@ -49,3 +49,62 @@ Queue: q846
 - **ユーザーの目視（実機）: 「5320でKeilandデスクトップが表示されました！」（2026-10-07）**。
 - 残り: 5330 の回帰（T1）、世代に依らない fallback（範囲 4）、keyboard・touchpad の確認（ユーザー）。
 - 5330 の回帰: A = T1-352（passthrough）。B = 素の 5330 の UEFI の起動で ws084 の takeover の経路（`takeover: rc=0, crtcs stopped 1, still active 0x0`、reference error 無し、picture up、ユーザーの目視）。B は ws084 の reboot-loop.sh の 10 回の最初の 1 回にまとめる（ユーザーが 5330 を zedBSD で起動する時）。
+## q846-i01 の結果（P3、2026-10-07、base main `cee1699d2`）
+
+### 原因（source と実機の log から）
+
+- `display/modeset-internal.h` の `I915_LCD_IS_DISPLAY_VER()` が固定の 13 を答えていた。TGL（12）で `drv_i915_phy_is_combo()`（`ALDERLAKE_P || IS_DISPLAY_VER(11, 12)`）が偽になり、
+  takeover の readout が `icl_ddi_combo_get_config` を結ばず、crtc の state に PLL が無い（log の `DPLL-1 ... 0 kHz`）。N1 の sanitize が「誰も使わない」DPLL0 を
+  firmware の pipe の下で止め（`DPLL0_ENABLE 0xcc000000→0`）、clock の無い pipe は止まれない（`pipe_off wait timed out`・`DDI BUF idle` の timeout、TRANSCONF の状態 bit が残る）。
+  ws084 で ADL-P に起きたのと同じ仕組み。同じ述語で TGL の combo PHY の lane の power-up（`i915_ddi_power_up_lanes`）も飛ばされていた。
+- 5320 の firmware の mode は起動で違う: `k5320-20261007-greeter-fail.log` は PIPESRC 1366x768（scaler 無し）、2026-10-07 稼働中の起動は PIPESRC `0x027f01df`（640x480、pipe scaler で 1366x768）。
+  scaler の readout（`skl_scaler_get_config`）と停止（`skl_scaler_disable`）は未移植だった。
+- P5 の nogem の DPLL の管理は ADL-P の表だけ（`dplls=0(mgr=0)`）。CDCLK の hook は TGL にも crawl を付けていた（TGL の gen12 は crawl しない）。
+
+### 修正（commit `13573574f`）
+
+- `I915_LCD_IS_DISPLAY_VER()` を device の版で答える（ADL-P の答えは同じ: (12,13)・(5,7)・(8,10)・(10,12) の 4 か所とも 13 で不変）。
+- `drv_i915_skl_scaler_get_config()`・`drv_i915_skl_scaler_disable()`（`pipe.c`、Linux v6.8.12 の skl_scaler.c の通り: 有効で plane に結ばれない scaler を pfit として読み、停止は pipe の 2 つの scaler の CTRL・WIN_POS・WIN_SZ を 0）。crtc の state に `scaler_state.scalers[].in_use`・`scaler_users`。
+- `drv_i915_shared_dpll_init()` に tgl_plls（DPLL0/1、TBT、TC1..6 は MG_PLL_ENABLE `0x46030+4n`）、`I915_NOGEM_MAX_DPLLS` 8→10。ktest（`ktest-display-probe.c`）に TGL の表の確認を足した（kernel の試験の build は未実行）。
+- `drv_i915_init_cdclk_hooks()`: TGL は tgl の関数、crawl は ADL-P だけ。
+
+### 確認
+
+- `make -j16 ZEDBSD_CONFIG=plan/ws118/tests/config-remote-log.mk BUILD=build/p3-ws118 vmunix`: rc=0、warning 0、kernel include check・amd64 vmunix check PASS（vmunix sha256 `1b7ae5df…`）。
+- host 試験 `sh plan/ws118/tests/run-tgl-display-host-test.sh`: 13 checks 0 failures（12 と 13 の両方で combo PHY・DPLL の表・CDCLK の hook・pipe A/B の scaler の readout と停止）。
+  `plan/ws084/tests/run-native-decide-host-test.sh`: 14 checks 0 failures。
+- 5320 実機（2026-10-07 18:3x JST、ユーザー承認の手順: ESP の `/esp/vmunix` を `vmunix.orig` に cp で残して上書き、再起動はユーザー）: 新しい kernel で起動。
+  kernel log: `P5c DPLL 0 hw state readout: pipe_mask 0x1, on 1`、`takeover: readout: ... DPLL0 port 0`、`takeover: rc=0, crtcs stopped 1, still active 0x0`、
+  preflight `TRANSCONF 0x00000024`（idle）、`resident display: picture up`、`flip 1..3`、`first frame 1366x768 ... shown on the 1366x768 panel`、`reference error` 無し。
+  ユーザーの目視「5320でKeilandデスクトップが表示されました！」（Q1 経由）。log の写し: P3 の worktree の `build/p3-ws118-hw1/`（dmesg・kernel.log・sessiond.log）。
+  この起動の firmware の mode は 1366x768（scaler 無し）。**640x480＋scaler の起動での takeover は実機で未確認**（scaler の readout・停止は host 試験だけ）。
+- 5330 の回帰: T1-352（passthrough の c5-hw と停止）と、素の 5330 の takeover（ws084 の reboot-loop の 1 回目にまとめる、ユーザーの時期）を Q1 が手配。結果待ち。QEMU は未実施。
+
+### 残り・既知の未対応
+
+- `IS_TIGERLAKE_UY` は常に 0（9a49 は Linux では UY）。HBR2 以上の DP/eDP の buf trans の表だけが変わる。5320 の panel は HBR x1 なので影響なし。
+- `takeover: readout:` の行の `0 kHz`（`adjusted_mode.clock`）は 5330 の log（plan/uat/2026-10-04 など）でも同じで、ws084-p004 の parity の乖離の扱い。takeover の成否には効かない。
+- VBT と DP の環境（`vbt.h` の `i915_vbt_display_ver()` が 13 固定）: TGL の Type-C/HDMI の port の対応（xelpd の表）と DPLS の WA（TGL でも掛かる、無害）。eDP の AUX の power domain は 12 と 13 で同じ。範囲外（TC/TBT）として残す。
+
+### 範囲 4（世代に依らない fallback）の設計と見積もり（未実装）
+
+firmware の pipe を止めずに使う「adopt」の経路。takeover（N1）の readout の後、`crtc_disable_noatomic` と full modeset の代わりに:
+
+1. 条件: N1 の readout が 1 本の pipe を active と読み、encoder（eDP）・PLL・transcoder が結ばれ、**PIPESRC が panel の mode と同じで pfit が無い**こと。
+   pfit がある（5320 の 640x480 の起動）なら PIPESRC と scaler を変える fastset（Linux の `intel_update_pipe_config` 相当: PIPESRC、`skl_pfit_enable`/`skl_detach_scalers`、plane の DDB・WM の再計算）が要り、規模が倍になる。
+2. modeset の object（`struct i915_lcd_modeset`）を readout の crtc の state で埋める: `crtc.active=1`、`prepared=1`、crtc の power domain（readout の `hw_readout_power_domains`）と PLL の参照（pool の pipe_mask）を引き継ぐ、encoder の `ddi_io_wakeref`/`aux_wakeref` を取る、backlight は今の duty から。
+3. `drv_i915_lcd_modeset_commit_enable` の crtc の enable を飛ばし、DBUF の pre-plane（旧の DBUF の state = readout の値）→ plane の update（自分の buffer の PLANE_SURF/STRIDE/SIZE/CTL と WM・BUF_CFG）→ post-plane。以降の flip（`i915_modeset_flip_arm`）と停止（`commit_disable`）は今の経路のまま。
+4. 起動の option（例 `i915.display=adopt`）で強制し、既定は takeover が失敗した時（`i915_resident_takeover` の EIO、または preflight の not idle）だけ adopt に落ちる。5330 の既定の経路（takeover が成功）は通らない。
+5. 確認: option で 5330 と 5320 の両方で 1 回ずつ（T1・実機）。
+
+見積もり: pfit 無しの adopt で 1〜1.5 日（実機の往復 3〜4 回）、pfit の fastset まで含めて 2.5〜3 日。危険: readout の state と自分の計算の差（link rate・bpp・WM）で underrun、firmware の DDB を引き継ぐ時の DBUF の状態の不整合。
+より軽い案（plane だけを差し替える）: takeover をせず、firmware の pipe・transcoder・PLL・DDB・WM をそのまま使い、PLANE_SURF だけを自分の buffer に向ける。
+5320 の 1366x768 の起動では firmware の plane は XRGB8888・linear・stride 0x56（5504 byte）で、resident の buffer の pitch（5504）と同じなので、SURF の書き込みだけで WM・DDB を変えずに済む。
+640x480＋scaler の起動では buffer を firmware の PIPESRC（640x480）で作り、compositor に 640x480 の output として渡す（pfit が panel に広げる）。flip は PLANE_SURF の書き込みと PLANE_SURFLIVE の一致の待ち（vblank の割込み不要）。
+要る変更: modeset.c の resident run に「adopt」の分岐（takeover・preflight・commit を飛ばす）、flip_arm/poll/wait の adopt の分岐、buffer と GPU node が報告する output の大きさを firmware の PIPESRC から、停止は plane を firmware の SURF に戻すか plane を off にして pipe は firmware のまま（backlight も触らない）、起動の option での強制。
+見積もり 400〜700 行（modeset.c・present.c・scanout.c・output の報告）、1.5〜2 日。
+
+判断（2026-10-07 P3）: 今回は実装しない。理由: (1) 本来の原因（PLL の readout）を直して 5320 で takeover と full modeset が通った（fallback が要る場面が今は無い）、
+(2) driver が attach するのは TGL と ADL-P の device ID だけで、「別の世代」は fallback があっても bind しない、
+(3) adopt の経路は firmware の点けた pipe が要るので T1 の 5330 passthrough（OVMF は iGPU を点けない）で試せず、確認は素の実機の起動（ユーザー）だけになる。
+再開の条件: 別の variant（例 Type-C が最初の output の機種、RPL-U など）で full modeset が失敗した時、またはユーザーが fallback を求めた時。Future Work の候補として Q1 に送る。
