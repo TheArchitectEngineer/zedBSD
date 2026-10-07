@@ -4,11 +4,11 @@
 #   VENUS_DISPLAY=dbus VENUS_OUTPUTS=2 plan/tools/files/files-guest.sh start IMAGE
 # Head 0 is 1280x800 (the anchor, where the pointer and Settings are), head 1 1024x768 right of it.
 #  1. Settings opens on the Display page with the two displays: the Extend and Mirror controls (1, 2) and the two
-#     cards (10, 11) are logged (ZSETTINGS CONTROL), display.png.
+#     cards (10, 11) are logged (ZSETTINGS CONTROL), display-head0.png and display-head1.png (QMP screendump of each head).
 #  2. Five times: Mirror then Apply, answered 0 and the probe's snapshot says mirror; Extend then Apply, answered 0
-#     and the snapshot says extended (mirror-N.png, extend-N.png).
+#     and the snapshot says extended (mirror-N-headH.png, extend-N-headH.png).
 #  3. The card of display 1 dragged left past display 0's card and released: the page logs its place x=-1024 y=0;
-#     Apply is answered 0 and the probe's snapshot has display 1 at x=-1024 y=0 (swapped.png).
+#     Apply is answered 0 and the probe's snapshot has display 1 at x=-1024 y=0 (swapped-headH.png).
 #  4. No KWL FAILED, the compositor and Settings alive.
 # PASS: every "ok" line and the last line displays-p006: PASS.
 #   plan/ws113/tests/displays-p006.sh [OUTDIR]     (default build/ws113-p006-guest)
@@ -22,8 +22,10 @@ mkdir -p "$out"
 guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null | tr -d '\r'; }
 head_set() { sh plan/tools/guest/venus-head.sh "$1" "$2"; }
 probe() { guest "XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0 HOME=/tmp/p006-home /bin/keiland-system --timeout-ms=5000 $1"; }
-pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" --width 1280 --height 800 "$@"; }
-check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
+# The pointer on head 0 (1280x800, qmp-pointer.py's default size; its options would be read as steps after the socket).
+pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
+# A head's picture through QMP's screendump (the D-Bus display has no VNC socket for zdesktop-check.py).
+head_shot() { python3 plan/ws113/tests/qmp-head-shot.py "$GUEST_RUNTIME/qmp.sock" "$1" "$2"; }
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[d]isplay-events|[s]ettings" | awk "{print \$1}"); do kill $p; done; sleep 1'
 start_compositor='export XDG_RUNTIME_DIR=/tmp HOME=/tmp/p006-home; rm -f /tmp/wayland-0
 picture=; [ -f /usr/share/keiland/wallpaper.png ] && picture=--wallpaper=/usr/share/keiland/wallpaper.png
@@ -84,11 +86,12 @@ control() {
 	pointer move $((cx - 2)) "$cy" sleep 150 move "$cx" "$cy" sleep 300 down sleep 60 up sleep 1200
 }
 
-# A picture of the anchor's screen with the pointer out of the way.
+# Pictures of both heads (NAME-head0.png, NAME-head1.png) with the pointer out of the way.
 shot() {
 	pointer move 1270 790 sleep 600
-	check "$out/$1" >/dev/null
-	echo "shot: $out/$1"
+	head_shot 0 "$out/$1-head0.png" >/dev/null || echo "note: no picture of head 0"
+	head_shot 1 "$out/$1-head1.png" >/dev/null || echo "note: no picture of head 1"
+	echo "shot: $out/$1-head0.png $out/$1-head1.png"
 }
 
 # The guest's ssh answers first; the heads and the compositor.
@@ -108,7 +111,7 @@ find_window
 echo "settings: window at $wx,$wy"
 expect_count 'ZSETTINGS PAGE display' 1 "the Display page is shown"
 expect_count 'ZSETTINGS CONTROL index=11 ' 1 "the second display's card is a control"
-shot display.png
+shot display
 applied=0
 
 # 2. Mirror and Extend, five times each.
@@ -121,7 +124,7 @@ while [ $round -le 5 ]; do
 	text=$(probe displays)
 	printf '%s\n' "$text" > "$out/probe-mirror-$round.txt"
 	expect_text "$text" 'KEILAND-SYSTEM displays mode=mirror' "round $round: the snapshot says mirror"
-	shot "mirror-$round.png"
+	shot "mirror-$round"
 	control 1
 	control 3
 	applied=$((applied + 1))
@@ -129,7 +132,7 @@ while [ $round -le 5 ]; do
 	text=$(probe displays)
 	printf '%s\n' "$text" > "$out/probe-extend-$round.txt"
 	expect_text "$text" 'KEILAND-SYSTEM displays mode=extended count=2' "round $round: the snapshot says extended"
-	shot "extend-$round.png"
+	shot "extend-$round"
 	round=$((round + 1))
 done
 
@@ -152,7 +155,7 @@ else
 	text=$(probe displays)
 	printf '%s\n' "$text" > "$out/probe-swapped.txt"
 	expect_text "$text" 'KEILAND-SYSTEM display key=Venus virtual display 1 .* x=-1024 y=0 ' "the snapshot has display 1 left of display 0"
-	shot swapped.png
+	shot swapped
 fi
 
 # 4. Nothing failed.
