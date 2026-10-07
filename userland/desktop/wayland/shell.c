@@ -5255,15 +5255,19 @@ layout_front_follow(
 	if (server->drag != NULL || server->pull != NULL)
 		return;
 
-	/* The window in front (a sheet's parent for a sheet, a dialog's shown parent), shown with an image. */
+	/* The window in front (a sheet's parent for a sheet), shown with an image. */
 	top = sheet_owner(kwl_top_window(server));
-	if (top != NULL &&
-	    top->parent_window != NULL &&
-	    !top->parent_window->dead &&
-	    top->parent_window->mapped)
-		top = top->parent_window;
 	if (top == NULL || top->dead || !top->mapped || top->current == NULL)
 		return;
+
+	/* A dialog in front stands for its shown parent when that is docked; a floating parent is left as it is. */
+	if (top->parent_window != NULL &&
+	    !top->parent_window->dead &&
+	    top->parent_window->mapped) {
+		top = top->parent_window;
+		if (!top->maximized)
+			return;
+	}
 
 	/* A docked window in front owns the desktop. */
 	if (top->maximized) {
