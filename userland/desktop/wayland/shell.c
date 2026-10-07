@@ -430,8 +430,12 @@ static void layout_set(struct kwl_server *server, unsigned mode, const char *via
 static void layout_match(struct kwl_server *server, struct kwl_object *surface, const char *via);
 static int layout_hides(struct kwl_server *server, const struct kwl_object *surface);
 static int layout_takes_press(struct kwl_server *server);
-static int layout_press_switches(struct kwl_server *server, struct kwl_object *surface);
-static void layout_keep_front(struct kwl_server *server);
+static void layout_leave(struct kwl_server *server, struct kwl_object *front, int32_t x, int32_t y, const char *via);
+static void window_float_quiet(struct kwl_server *server, struct kwl_object *surface);
+static void layout_follow(struct kwl_server *server);
+static void layout_owner_describe(const struct kwl_object *owner, struct kwl_layout_owner *seen);
+static void layout_front_follow(struct kwl_server *server);
+static void layout_log_windows(struct kwl_server *server);
 static void docked_body(struct kwl_server *server, const struct kwl_object *surface, struct shell_rect *body);
 static void dock_restore_default(struct kwl_server *server, struct kwl_object *surface);
 static int window_centred_over(struct kwl_server *server, const struct kwl_object *surface);
@@ -936,17 +940,6 @@ kwl_glass_button(
 	/* A press on the desktop is zdesktop's. */
 	if (surface == NULL)
 		return 1;
-
-	/*
-	 * In the windowed mode a press on another application's window left
-	 * docked behind is a switch to it, which brings it back to floating
-	 * (ws142-p008); the press is not the client's, whose window moves.
-	 */
-	open = layout_press_switches(server, surface);
-	if (open) {
-		kwl_glass_switch_to(server, surface, "press");
-		return 1;
-	}
 
 	/* The window comes to the top and takes the focus. */
 	window_raise(server, surface);
@@ -1860,7 +1853,7 @@ kwl_glass_toplevel_request(
 		break;
 	case KWL_TOPLEVEL_UNMAXIMIZE:
 		/* Back to its place before it docked. */
-		window_undock(server, surface, surface->restore_x, surface->restore_y, "request");
+		layout_leave(server, surface, surface->restore_x, surface->restore_y, "request");
 		break;
 	case KWL_TOPLEVEL_MINIMIZE:
 		/* Hidden until Wiseview brings it back. */
@@ -2245,6 +2238,30 @@ kwl_glass_mapped(
 }
 
 /*
+ * Forgets a destroyed window as a desktop's docked owner (WS181): the
+ * desktop is marked, so that the next frame ends the docked mode when it
+ * is the desktop shown, and only forgets the owner otherwise
+ * (layout_follow).
+ */
+void
+kwl_glass_forget(
+	struct kwl_server *server,
+	struct kwl_object *surface)
+{
+	unsigned desktop;
+
+	/* Each desktop it owned. */
+	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
+		if (server->dock_owner[desktop] != surface)
+			continue;
+
+		/* The pointer goes before the storage; the mark stays until the next frame looks at it. */
+		server->dock_owner[desktop] = NULL;
+		server->dock_owner_gone[desktop] = 1U;
+	}
+}
+
+/*
  * Ends the wait of a window docked or brought back once its client has
  * drawn the size it was sent: from then on its own image is drawn at its own
  * size (BUG-180).  The log says how long the client took (BUG-179).
@@ -2442,8 +2459,12 @@ kwl_glass_tick(
 	/* The bar's layout follows a docked window coming or going (ws099-p034b). */
 	bar_dock_follow(server);
 
-	/* In the docked mode the window that came to the front (the one before closed or was minimized) docks. */
-	layout_keep_front(server);
+	/*
+	 * In the docked mode a desktop's docked window that closed, was
+	 * minimized or was sent away ends the mode; a window that came to the
+	 * front otherwise docks (WS181).
+	 */
+	layout_follow(server);
 
 	/* The previews of the bar's applications show and hide in time (apps-bar.c), and the switcher goes when it may not show. */
 	kwl_apps_bar_tick(server);
@@ -4700,7 +4721,8 @@ window_dock(
 	if (surface->fullscreen)
 		return;
 
-	/* The place and size to come back to, and where the body is now. */
+	/* The place and size to come back to (its own, not a made-up one), and where the body is now. */
+	surface->restore_default = 0U;
 	surface->restore_x = restore_x;
 	surface->restore_y = restore_y;
 	kwl_decoration_geometry(surface, &geometry_width, &geometry_height);
@@ -4735,13 +4757,15 @@ window_dock(
 	/* Until the client draws the docked size, the log waits for its image (BUG-179). */
 	window_resized(surface);
 
-	/* A window docked makes the session's mode docked (ws142-p008, BUG-217). */
+	/* A window docked makes the session's mode docked (ws142-p008, BUG-217); the log says what every window is now (WS181). */
 	layout_set(server, KWL_LAYOUT_DOCKED, via);
+	layout_log_windows(server);
 }
 
 /*
  * Brings a docked window back: its body at (x, y) at the size it had, and
- * it is told that size.  The change is animated.
+ * it is told that size.  The change is animated.  The session's mode is
+ * not changed here: layout_leave ends the docked mode around it (WS181).
  */
 static void
 window_undock(
@@ -4790,11 +4814,8 @@ window_undock(
 	printf("KWL GLASS undock surface=%u via=%s x=%d y=%d client=%llu\n", surface->id, via, x, y, (unsigned long long)surface->client->number);
 	window_configure(surface);
 
-	/* Until the client draws that size, its docked image is drawn at it, never at the docked size (BUG-180). */
+	/* Until the client draws that size, its docked image is drawn at it, never at the docked size (BUG-180); the caller sets the mode (layout_leave). */
 	window_resized(surface);
-
-	/* A window brought back makes the session's mode windowed (ws142-p008, BUG-217). */
-	layout_set(server, KWL_LAYOUT_WINDOWED, via);
 }
 
 /* Tells a window its new size. */
@@ -4999,49 +5020,219 @@ layout_takes_press(
 }
 
 /*
- * Tells whether a press on a window is a switch to it (ws142-p008, the
- * user's rule that a switch from a windowed application to a maximized
- * one brings it back to a window): in the windowed mode, a docked window
- * of another application than the one in front.  Returns 1 when it is.
+ * Ends the docked mode (WS181, the 2026-10-07 UAT): the window the person
+ * brings back (front; NULL when the docked window closed, was minimized or
+ * was sent away) floats again at (x, y) with its animation, every other
+ * docked window of every desktop -- minimized ones and ones not mapped yet
+ * too -- floats again at once, the desktops' owners are forgotten, and the
+ * session's mode becomes windowed.  So no window is left docked behind a
+ * floating one, and a window hidden by docking shows again while one the
+ * person minimized stays minimized.
  */
-static int
-layout_press_switches(
+static void
+layout_leave(
 	struct kwl_server *server,
-	struct kwl_object *surface)
+	struct kwl_object *front,
+	int32_t x,
+	int32_t y,
+	const char *via)
 {
-	struct kwl_object *owner;
-	struct kwl_object *top;
+	struct kwl_layout_window window;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	unsigned front_id;
+	unsigned action;
+	unsigned quiet;
+	unsigned desktop;
 
-	/* Only the windowed mode brings a docked window back by a press. */
-	if (server->layout_mode != KWL_LAYOUT_WINDOWED)
-		return 0;
+	/* The window brought back is seen coming back. */
+	front_id = 0U;
+	if (front != NULL) {
+		front_id = front->id;
+		window_undock(server, front, x, y, via);
+	}
 
-	/* A docked window (a sheet's parent for a sheet), not a fullscreen one. */
-	owner = sheet_owner(surface);
-	if (!owner->maximized || owner->fullscreen)
-		return 0;
+	/* Every other docked window floats again at once (it was not shown). */
+	quiet = 0U;
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only live windows. */
+			if (surface->kind != KWL_SURFACE ||
+			    surface->dead ||
+			    surface->role == NULL ||
+			    surface->cursor_role)
+				continue;
 
-	/* Of another application than the window in front. */
-	top = sheet_owner(kwl_top_window(server));
-	if (top == NULL || top == owner)
-		return 0;
-	if (top->client == owner->client)
-		return 0;
+			/* What the end of the mode does to it. */
+			layout_window(surface, &window);
+			action = kwl_layout_leave_action(&window, 0);
+			if (action != KWL_LAYOUT_QUIET)
+				continue;
 
-	/* Succeeded: the press switches to it. */
-	return 1;
+			/* Floating at its place before, told so. */
+			window_float_quiet(server, surface);
+			quiet++;
+		}
+	}
+
+	/* No desktop keeps a docked owner in the windowed mode. */
+	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
+		server->dock_owner[desktop] = NULL;
+		server->dock_owner_gone[desktop] = 0U;
+	}
+
+	/* The session's mode is windowed; the log says why, and what every window is now (the tests read it). */
+	layout_set(server, KWL_LAYOUT_WINDOWED, via);
+	printf("KWL LAYOUT leave via=%s front=%u quiet=%u\n", via, front_id, quiet);
+	layout_log_windows(server);
 }
 
 /*
- * Keeps the window in front docked in the docked mode (ws142-p008, the
- * 2026-10-06 user decision: the docked mode is the desktop's tablet mode,
- * not a window's state): a window that comes to the front because the one
- * before closed (its application's own close too) or was minimized docks
- * as a window switched to does.  Not while an overview shows, nor while a
- * window is moved or pulled.
+ * Brings a docked window that is not shown back to floating at once, as
+ * the docked mode ends (WS181): at its place and size before it docked, or
+ * placed as a new window is when it never floated (several windows opened
+ * docked are not left on one spot), and told its size.  Nothing of the
+ * shell's (an animation, a pull, a move, a double click's dock) goes on
+ * with it.
  */
 static void
-layout_keep_front(
+window_float_quiet(
+	struct kwl_server *server,
+	struct kwl_object *surface)
+{
+	/* Not docked; what the shell was doing with it ends. */
+	surface->maximized = 0;
+	if (server->anim == surface)
+		server->anim = NULL;
+	if (server->pull == surface) {
+		server->pull = NULL;
+		server->pull_distance = 0;
+	}
+	if (server->click_docked == surface)
+		server->click_docked = NULL;
+	if (server->drag == surface)
+		server->drag = NULL;
+
+	/* Its size before it docked. */
+	surface->window_width = surface->restore_width;
+	surface->window_height = surface->restore_height;
+
+	/* Its place before, or a new window's place when the place was made up; inside the space either way. */
+	if (surface->restore_default) {
+		kwl_glass_place(server, surface, (int32_t)surface->restore_width, (int32_t)surface->restore_height, 0);
+		surface->restore_default = 0U;
+	} else {
+		surface->x = surface->restore_x;
+		surface->y = surface->restore_y;
+		kwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &surface->x, &surface->y);
+	}
+
+	/* The client draws that size; until it does, its docked image is drawn at it (BUG-180). */
+	server->dirty = 1;
+	printf("KWL LAYOUT float-quiet surface=%u x=%d y=%d w=%u h=%u client=%llu\n", surface->id, surface->x, surface->y,
+	       surface->window_width, surface->window_height, (unsigned long long)surface->client->number);
+	window_configure(surface);
+	window_resized(surface);
+}
+
+/*
+ * Follows the docked mode every frame (WS181, replacing ws142-p008's rule
+ * that the next window docks): first each desktop's docked owner is
+ * checked -- one closed, minimized, floating or sent away from the desktop
+ * shown ends the docked mode, one gone on a desktop not shown is only
+ * forgotten, one carried along goes on owning the desktop shown -- and only
+ * then the window in front of the desktop shown is looked at
+ * (layout_front_follow).  The order matters: a closed owner ends the mode
+ * before the window that came forward could be docked.
+ */
+static void
+layout_follow(
+	struct kwl_server *server)
+{
+	struct kwl_layout_owner seen;
+	struct kwl_object *owner;
+	const char *reason;
+	unsigned desktop;
+	unsigned found;
+
+	/* Only the docked mode has owners. */
+	if (server->layout_mode != KWL_LAYOUT_DOCKED)
+		return;
+
+	/* Each desktop's owner, checked. */
+	for (desktop = 0U; desktop < KWL_APPS_DESKTOPS; desktop++) {
+		/* A desktop with no owner, and none gone since, has nothing to check. */
+		owner = server->dock_owner[desktop];
+		if (owner == NULL && !server->dock_owner_gone[desktop])
+			continue;
+
+		/* The owner as the rule sees it: destroyed, or as it is now. */
+		memset(&seen, 0, sizeof(seen));
+		seen.gone = server->dock_owner_gone[desktop];
+		if (owner != NULL)
+			layout_owner_describe(owner, &seen);
+		server->dock_owner_gone[desktop] = 0U;
+
+		/* What the rule finds (layout.c). */
+		found = kwl_layout_owner_check(&seen, desktop, server->desktop, &reason);
+
+		/* The docked mode ends, is forgotten on this desktop, or follows the owner to the desktop shown. */
+		switch (found) {
+		case KWL_LAYOUT_OWNER_LEAVE:
+			layout_leave(server, NULL, 0, 0, reason);
+			return;
+		case KWL_LAYOUT_OWNER_FORGET:
+			/* An owner gone between desktops not shown has no reason of its own. */
+			if (reason == NULL)
+				reason = "away";
+			server->dock_owner[desktop] = NULL;
+			printf("KWL LAYOUT owner desktop=%u surface=0 forgotten=%s\n", desktop + 1U, reason);
+			break;
+		case KWL_LAYOUT_OWNER_MOVED:
+			server->dock_owner[desktop] = NULL;
+			server->dock_owner[owner->desktop] = owner;
+			printf("KWL LAYOUT owner desktop=%u surface=%u carried\n", owner->desktop + 1U, owner->id);
+			break;
+		default:
+			break;
+		}
+	}
+
+	/* The window in front of the desktop shown. */
+	layout_front_follow(server);
+}
+
+/* Describes a desktop's docked owner to the owner's rule (layout.c): mapped, minimized, docked, fullscreen, its desktop. */
+static void
+layout_owner_describe(
+	const struct kwl_object *owner,
+	struct kwl_layout_owner *seen)
+{
+	/* A window destroyed is marked dead before it goes (kwl_glass_forget clears the owner then). */
+	if (owner->dead)
+		seen->gone = 1U;
+
+	/* As the shell keeps it now. */
+	seen->mapped = owner->mapped;
+	seen->minimized = owner->minimized;
+	seen->docked = owner->maximized;
+	seen->fullscreen = owner->fullscreen;
+	seen->desktop = owner->desktop;
+}
+
+/*
+ * Looks at the window in front of the desktop shown in the docked mode
+ * (WS181): a docked one becomes the desktop's owner (one opened docked is
+ * seen here once it is mapped), a fullscreen one leaves the owner as it
+ * is, and a floating one that came forward without a switch (Super+Alt+P,
+ * the Notes corner, the docked window sent to the back, a desktop turned
+ * to) docks as a window switched to does.  Not while an overview shows,
+ * nor while a window is moved or pulled.
+ */
+static void
+layout_front_follow(
 	struct kwl_server *server)
 {
 	struct kwl_layout_window window;
@@ -5049,10 +5240,6 @@ layout_keep_front(
 	unsigned action;
 	float home;
 	int showing;
-
-	/* Only the docked mode has a front to keep. */
-	if (server->layout_mode != KWL_LAYOUT_DOCKED)
-		return;
 
 	/* App Home, Wiseview and the switcher show every window as it is. */
 	home = kwl_home_progress(server);
@@ -5068,9 +5255,27 @@ layout_keep_front(
 	if (server->drag != NULL || server->pull != NULL)
 		return;
 
-	/* The window in front (a sheet's parent for a sheet), shown with an image. */
+	/* The window in front (a sheet's parent for a sheet, a dialog's shown parent), shown with an image. */
 	top = sheet_owner(kwl_top_window(server));
+	if (top != NULL &&
+	    top->parent_window != NULL &&
+	    !top->parent_window->dead &&
+	    top->parent_window->mapped)
+		top = top->parent_window;
 	if (top == NULL || top->dead || !top->mapped || top->current == NULL)
+		return;
+
+	/* A docked window in front owns the desktop. */
+	if (top->maximized) {
+		if (server->dock_owner[server->desktop] == top)
+			return;
+		server->dock_owner[server->desktop] = top;
+		printf("KWL LAYOUT owner desktop=%u surface=%u client=%llu\n", server->desktop + 1U, top->id, (unsigned long long)top->client->number);
+		return;
+	}
+
+	/* A fullscreen window in front leaves the owner under it. */
+	if (top->fullscreen)
 		return;
 
 	/* What a switch to it would do; only a floating window that docks changes. */
@@ -5079,9 +5284,68 @@ layout_keep_front(
 	if (action != KWL_LAYOUT_DOCK)
 		return;
 
-	/* Docked where it floats, and the log says why. */
+	/* Docked where it floats, owning the desktop, and the log says why. */
 	window_dock(server, top, top->x, top->y, "front");
+	server->dock_owner[server->desktop] = top;
 	printf("KWL LAYOUT front surface=%u action=dock client=%llu\n", top->id, (unsigned long long)top->client->number);
+}
+
+/*
+ * Logs what each window of the desktop shown is (WS181, for the tests): how
+ * many float, are docked, hidden by docking, minimized or fullscreen.
+ */
+static void
+layout_log_windows(
+	struct kwl_server *server)
+{
+	unsigned counts[KWL_LAYOUT_STATE_FULLSCREEN + 1U];
+	struct kwl_layout_window window;
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *top;
+	unsigned state;
+	int desktop_surface;
+	int front;
+
+	/* The application in front: the top window's (its minimized windows are not in front). */
+	memset(counts, 0, sizeof(counts));
+	top = kwl_top_window(server);
+
+	/* Each mapped window without a parent on the desktop shown, counted by its state. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only live mapped windows of the desktop shown, not a dialog or a sheet. */
+			if (surface->kind != KWL_SURFACE ||
+			    surface->dead ||
+			    !surface->mapped ||
+			    surface->role == NULL ||
+			    surface->cursor_role ||
+			    surface->parent_window != NULL ||
+			    surface->desktop != server->desktop)
+				continue;
+
+			/* Not the desktop's icons. */
+			desktop_surface = kwl_desktop_is(surface);
+			if (desktop_surface)
+				continue;
+
+			/* Its state. */
+			front = 0;
+			if (top == NULL || top->client == surface->client)
+				front = 1;
+			layout_window(surface, &window);
+			state = kwl_layout_state(server->layout_mode, &window, (int)surface->minimized, front);
+			counts[state]++;
+		}
+	}
+
+	/* The summary. */
+	printf("KWL LAYOUT windows desktop=%u mode=%s floating=%u docked=%u dock_hidden=%u minimized=%u fullscreen=%u\n",
+	       server->desktop + 1U, kwl_layout_name(server->layout_mode),
+	       counts[KWL_LAYOUT_STATE_FLOATING], counts[KWL_LAYOUT_STATE_DOCKED], counts[KWL_LAYOUT_STATE_DOCK_HIDDEN],
+	       counts[KWL_LAYOUT_STATE_MINIMIZED], counts[KWL_LAYOUT_STATE_FULLSCREEN]);
 }
 
 /*
@@ -5262,6 +5526,9 @@ dock_restore_default(
 	kwl_glass_fit(server, (int32_t)surface->restore_width, (int32_t)surface->restore_height, &restore_x, &restore_y);
 	surface->restore_x = restore_x;
 	surface->restore_y = restore_y;
+
+	/* A place made up: the end of the docked mode places the window as a new one instead (window_float_quiet). */
+	surface->restore_default = 1U;
 }
 
 /*
@@ -5371,7 +5638,7 @@ click_docked_third(
 		return 0;
 
 	/* The window floats where it was and goes to the back, the next one coming forward. */
-	window_undock(server, surface, surface->restore_x, surface->restore_y, "triple-click");
+	layout_leave(server, surface, surface->restore_x, surface->restore_y, "triple-click");
 	window_lower(server, surface, "triple-click");
 
 	/* Succeeded: the press was the triple click's. */
@@ -5552,7 +5819,7 @@ bar_press(
 
 	/* Restore brings it back where it was. */
 	if (pressed == BUTTON_MAXIMIZE) {
-		window_undock(server, surface, surface->restore_x, surface->restore_y, "button");
+		layout_leave(server, surface, surface->restore_x, surface->restore_y, "button");
 		return 1;
 	}
 
@@ -5569,7 +5836,7 @@ bar_press(
 	/* A double click brings it back where it was. */
 	second = double_click(server, surface);
 	if (second) {
-		window_undock(server, surface, surface->restore_x, surface->restore_y, "double-click");
+		layout_leave(server, surface, surface->restore_x, surface->restore_y, "double-click");
 		return 1;
 	}
 
@@ -7324,7 +7591,7 @@ gesture_undock(
 		return 0;
 
 	/* Floating where it was before it docked. */
-	window_undock(server, top, top->restore_x, top->restore_y, "top2");
+	layout_leave(server, top, top->restore_x, top->restore_y, "top2");
 
 	/* Succeeded: the window floats. */
 	return 1;
@@ -7570,6 +7837,9 @@ window_minimize(
 	kwl_seat_focus(server);
 	server->dirty = 1;
 	printf("KWL GLASS minimize surface=%u client=%llu\n", surface->id, (unsigned long long)surface->client->number);
+
+	/* A docked window minimized ends the docked mode now, not at the next frame (WS181). */
+	layout_follow(server);
 }
 
 /* Moves a window to another desktop (shown when that desktop is), and gives the focus to the top window of the desktop shown. */
@@ -7741,7 +8011,7 @@ glass_motion_take(
 		 */
 		x = server->pointer_x - (int32_t)((int64_t)surface->restore_width * server->pointer_x / (int32_t)server->width);
 		y = server->pointer_y + KWL_GLASS_GAP + KWL_GLASS_TITLE / 2;
-		window_undock(server, surface, x, y, "pull");
+		layout_leave(server, surface, x, y, "pull");
 		server->pull_distance = 0;
 		server->pull = NULL;
 		server->drag = surface;

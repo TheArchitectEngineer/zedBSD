@@ -421,6 +421,9 @@ kwl_object_destroy(
 		if (server->wiseview_press == object)
 			server->wiseview_press = NULL;
 
+		/* A desktop's docked owner that goes is noted, so the docked mode ends there (shell.c, WS181). */
+		kwl_glass_forget(server, object);
+
 		/* Its fences are not waited for any more. */
 		for (index = 0; index < object->acquire_count; index++)
 			close(object->acquire[index].fd);
