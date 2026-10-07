@@ -505,6 +505,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-07 ユーザー（クリック、WS031 p020・p039）: 「Int16 今、Int64 は後の Phase」（shaderInt16 を今、Int64 の 32 bit の組の模擬は後の Phase、Float64・Float16 は Future Work）。
 - 2026-10-07 ユーザー: 「make menuconfigの X11 -> OpenGL and GLX ですが、Desktop -> OpenGL に移動して、GLXは Desktop -> X11 server for the compositorのライブラリの1つに統合しましょう。ベータ2の範囲にして、優先度は低くていいです。」→ WS178 を作成（ベータ2、低い優先度、第 3 段の最後に）。
 - 2026-10-07 ユーザー（クリック、WS031 p032）: dual source blend は「実装、実機で確かめるまで 0」（compiler・state は実装、dualSrcBlend・maxFragmentDualSrcAttachments は 5330 で確かめるまで 0）。logic op は有効に。
 - 2026-10-07 ユーザー（クリック、WS157）: データベースは「月ごとの TSV＋album ごと」（~/Pictures/Library/db/photos/YYYY-MM.tsv と db/albums/<id>.album）。取り込みは「複写、同じ中身は取込まない」（SHA-256 で重複を判定、同じ名前で中身が違えば 名前-1、縮小画像は ~/.cache で sync しない）。
