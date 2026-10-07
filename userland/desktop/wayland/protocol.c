@@ -34,6 +34,11 @@
 #define OUTPUT_NAME		4U
 #define OUTPUT_DESCRIPTION	5U
 
+/* The first wl_output global name of a head (heads.c), the version a head's wl_output offers, and the most heads a registry is told of. */
+#define OUTPUT_HEAD_GLOBAL_FIRST	1000U
+#define OUTPUT_HEAD_VERSION		4U
+#define OUTPUT_HEADS_TOLD		16U
+
 /* xdg_wm_base's error for a binding destroyed under its own live xdg_surfaces. */
 #define WM_ERROR_DEFUNCT_SURFACES	1U
 
@@ -82,8 +87,10 @@ static uint32_t word_at(const unsigned char *bytes, size_t offset);
 static int string_at(const unsigned char *bytes, size_t size, size_t offset, const char **text, size_t *next);
 static int registry_events(struct kwl_object *registry);
 static int output_events(struct kwl_object *output);
-static int output_names(struct kwl_object *output);
+static int output_names(struct kwl_object *output, const struct kwl_output_view *view);
 static int bind_global(struct kwl_object *registry, const unsigned char *bytes, size_t size);
+static int bind_head_output(struct kwl_object *registry, uint32_t name, const char *interface, uint32_t version, uint32_t id);
+static int registry_global(struct kwl_object *registry, uint32_t name, const char *interface, uint32_t version);
 static int surface_request(struct kwl_object *surface, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int surface_commit(struct kwl_object *surface);
 static int shell_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
@@ -406,6 +413,79 @@ kwl_outputs_changed(
 	}
 }
 
+/*
+ * Tells every registry of a new head's wl_output global (ws113-p004b).  A
+ * client the event cannot be queued for is left to its own failure.
+ */
+void
+kwl_output_global_add(
+	struct kwl_server *server,
+	uint32_t name)
+{
+	struct kwl_client *client;
+	struct kwl_object *object;
+	int error;
+
+	/* Each live registry of every live client. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (object = client->objects; object != NULL; object = object->next) {
+			/* Only a registry. */
+			if (object->kind != KWL_REGISTRY || object->dead)
+				continue;
+
+			/* The global event; a failure is the client's. */
+			error = registry_global(object, name, "wl_output", OUTPUT_HEAD_VERSION);
+			if (error != 0)
+				printf("KWL OUTPUT global client=%llu errno=%d\n", (unsigned long long)client->number, error);
+		}
+	}
+}
+
+/*
+ * Tells every registry that a head's wl_output global is gone, and leaves
+ * the bindings of that head inert (ws113-p004b): they are told nothing
+ * more and keep only their destructor.
+ */
+void
+kwl_output_global_remove(
+	struct kwl_server *server,
+	uint32_t name)
+{
+	struct kwl_client *client;
+	struct kwl_object *object;
+	uint32_t head;
+	int error;
+
+	/* The head the global names, while it is still open. */
+	head = kwl_output_head_of_global(server, name);
+
+	/* Each object of every live client. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (object = client->objects; object != NULL; object = object->next) {
+			/* A binding of the head becomes inert. */
+			if (object->kind == KWL_OUTPUT &&
+			    head != 0U &&
+			    object->output_head == head) {
+				object->output_head = KWL_OUTPUT_GONE;
+				continue;
+			}
+
+			/* Only a live registry is told. */
+			if (object->kind != KWL_REGISTRY || object->dead)
+				continue;
+
+			/* The global_remove event; a failure is the client's. */
+			error = kwl_emit(client, object->id, 1, &name, sizeof(name));
+			if (error != 0)
+				printf("KWL OUTPUT global remove client=%llu errno=%d\n", (unsigned long long)client->number, error);
+		}
+	}
+}
+
 /* Reads one possibly unaligned native-endian protocol word. */
 static uint32_t
 word_at(
@@ -492,8 +572,10 @@ registry_events(
 {
 	const char *interface;
 	uint32_t version;
+	uint32_t heads[OUTPUT_HEADS_TOLD];
 	unsigned char payload[128];
 	uint32_t word;
+	unsigned count;
 	size_t index;
 	size_t length;
 	size_t offset;
@@ -533,6 +615,14 @@ registry_events(
 			return error;
 	}
 
+	/* Each head's wl_output (ws113-p004b). */
+	count = kwl_output_head_globals(registry->client->server, heads, OUTPUT_HEADS_TOLD);
+	for (index = 0; index < count; index++) {
+		error = registry_global(registry, heads[index], "wl_output", OUTPUT_HEAD_VERSION);
+		if (error != 0)
+			return error;
+	}
+
 	/* Succeeded: discovery events precede any following display sync callback. */
 	return 0;
 }
@@ -542,17 +632,31 @@ static int
 output_events(
 	struct kwl_object *output)
 {
+	struct kwl_output_view view;
 	unsigned char geometry[60];
 	uint32_t words[4];
 	uint32_t word;
+	int32_t place;
 	int error;
 
+	/* The display the binding names (ws113-p004b); a head that closed is told nothing. */
+	if (output->output_head == KWL_OUTPUT_GONE)
+		return 0;
+	error = kwl_output_view(output->client->server, output->output_head, &view);
+	if (error != 0)
+		return 0;
+
 	/*
-	 * Geometry includes unknown physical dimensions, and the make and the
-	 * model say that the display is not known (ws035-p121): the compositor
-	 * draws to the GPU's scanout and never learns the monitor's EDID.
+	 * Geometry places the display in the logical plane, includes unknown
+	 * physical dimensions, and the make and the model say that the display
+	 * is not known (ws035-p121): the compositor draws to the GPU's scanout
+	 * and never learns the monitor's EDID.
 	 */
 	memset(geometry, 0, sizeof(geometry));
+	place = view.x;
+	memcpy(geometry, &place, 4);
+	place = view.y;
+	memcpy(geometry + 4, &place, 4);
 	word = 8;
 	memcpy(geometry + 20, &word, 4);
 	memcpy(geometry + 24, "Unknown", 8);
@@ -565,9 +669,9 @@ output_events(
 
 	/* This single mode is current and preferred in the selected fullscreen policy. */
 	words[0] = 3;
-	words[1] = output->client->server->width;
-	words[2] = output->client->server->height;
-	words[3] = output->client->server->refresh;
+	words[1] = view.width;
+	words[2] = view.height;
+	words[3] = view.refresh;
 	error = kwl_emit(output->client, output->id, 1, words, sizeof(words));
 	if (error != 0)
 		return error;
@@ -582,7 +686,7 @@ output_events(
 
 		/* Version 4 names the output and describes it (ws035-p078). */
 		if (output->version >= 4U) {
-			error = output_names(output);
+			error = output_names(output, &view);
 			if (error != 0)
 				return error;
 		}
@@ -599,30 +703,34 @@ output_events(
 
 /*
  * Sends a version 4 output its name and description: the name stays the
- * same for the whole run (one output), the description gives its size.
- * Both name the display, not the system (ws035-p121): the compositor does
- * not know the connector, so the name is a neutral DISPLAY-1.
+ * same while the display is shown (DISPLAY-1 the output's, DISPLAY-2 and
+ * on the heads', ws113-p004b), the description gives its size.  Both name
+ * the display, not the system (ws035-p121): the compositor does not tell
+ * the connector, so the name is a neutral DISPLAY-n.
  */
 static int
 output_names(
-	struct kwl_object *output)
+	struct kwl_object *output,
+	const struct kwl_output_view *view)
 {
 	char text[64];
+	char name[24];
 	unsigned char payload[80];
 	uint32_t length;
 	int error;
 
 	/* The name, a string in the wire's padded form. */
+	(void)snprintf(name, sizeof(name), "DISPLAY-%u", (unsigned)view->index + 1U);
 	memset(payload, 0, sizeof(payload));
-	length = (uint32_t)sizeof("DISPLAY-1");
+	length = (uint32_t)strlen(name) + 1U;
 	memcpy(payload, &length, sizeof(length));
-	memcpy(payload + 4, "DISPLAY-1", length);
+	memcpy(payload + 4, name, length);
 	error = kwl_emit(output->client, output->id, OUTPUT_NAME, payload, 4U + ((length + 3U) & ~3U));
 	if (error != 0)
 		return error;
 
 	/* The description. */
-	(void)snprintf(text, sizeof(text), "Display %ux%u", output->client->server->width, output->client->server->height);
+	(void)snprintf(text, sizeof(text), "Display %ux%u", view->width, view->height);
 	memset(payload, 0, sizeof(payload));
 	length = (uint32_t)strlen(text) + 1U;
 	memcpy(payload, &length, sizeof(length));
@@ -755,6 +863,14 @@ bind_global(
 
 		/* The selected binding needs no further global search. */
 		break;
+	}
+
+	/* A name past the fixed ones is a head's wl_output, or one that closed (ws113-p004b). */
+	if (index == sizeof(globals) / sizeof(globals[0]) && name >= OUTPUT_HEAD_GLOBAL_FIRST) {
+		error = bind_head_output(registry, name, interface, version, id);
+		if (error != 0)
+			return error;
+		return 0;
 	}
 
 	/* An exhausted search found no advertised global with the requested name. */
@@ -1790,4 +1906,79 @@ append_callbacks(
 
 	/* Succeeded: the surface state owns the ordered callback chain. */
 	return;
+}
+
+/*
+ * Binds a head's wl_output (ws113-p004b), or an inert one for a head that
+ * closed while the client bound it (the global was removed after the
+ * client last read the registry).  Returns 0, or EPROTO for another
+ * interface or version.
+ */
+static int
+bind_head_output(
+	struct kwl_object *registry,
+	uint32_t name,
+	const char *interface,
+	uint32_t version,
+	uint32_t id)
+{
+	struct kwl_object *object;
+	uint32_t head;
+	int same;
+	int error;
+
+	/* Only wl_output, at a version a head offers. */
+	same = strcmp(interface, "wl_output");
+	if (same != 0 ||
+	    version == 0U ||
+	    version > OUTPUT_HEAD_VERSION)
+		return EPROTO;
+
+	/* One binding, of the head or inert. */
+	object = kwl_create(registry->client, id, KWL_OUTPUT, version);
+	if (object == NULL)
+		return EPROTO;
+	head = kwl_output_head_of_global(registry->client->server, name);
+	object->output_head = KWL_OUTPUT_GONE;
+	if (head != 0U)
+		object->output_head = head;
+
+	/* The binding of an open head learns its display. */
+	error = output_events(object);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the binding exists. */
+	return 0;
+}
+
+/* Sends a registry one global event: the name, the interface and the version. */
+static int
+registry_global(
+	struct kwl_object *registry,
+	uint32_t name,
+	const char *interface,
+	uint32_t version)
+{
+	unsigned char payload[128];
+	size_t length;
+	size_t offset;
+	uint32_t word;
+	int error;
+
+	/* The name, the interface string in the wire's padded form, the version. */
+	memset(payload, 0, sizeof(payload));
+	memcpy(payload, &name, 4);
+	length = strlen(interface) + 1U;
+	word = (uint32_t)length;
+	memcpy(payload + 4, &word, 4);
+	memcpy(payload + 8, interface, length);
+	offset = 8U + ((length + 3U) & ~(size_t)3U);
+	memcpy(payload + offset, &version, 4);
+	error = kwl_emit(registry->client, registry->id, 0, payload, offset + 4U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the registry knows of the global. */
+	return 0;
 }

@@ -12,6 +12,10 @@
  * ZEDBSD_TEST_SCREEN_CAPTURE=y (userland/desktop/wayland/shot.c).
  *
  *   keiland-shot [--socket PATH] [--timeout MS] OUT.png
+ *   keiland-shot [--socket PATH] [--timeout MS] --request LINE
+ *
+ * --request sends another request of the capture channel (DISPLAYS, MODE,
+ * PLACE of ws113-p004b) and prints its answer.
  *
  * Without --socket it asks every compositor's socket it finds
  * (/run/user/<uid>/keiland-shot.sock, /tmp/keiland-shot.<uid>.sock) and
@@ -67,7 +71,10 @@ main(
 	char paths[SHOT_CANDIDATES][SHOT_PATH_MAX];
 	char answer[64];
 	char line[96];
+	char request[160];
+	char reply[2048];
 	const char *socket_path;
+	const char *asked;
 	const char *out;
 	uint8_t *pixels;
 	unsigned width;
@@ -83,18 +90,21 @@ main(
 
 	/* The options and the file. */
 	socket_path = NULL;
+	asked = NULL;
 	out = NULL;
 	timeout = SHOT_TIMEOUT_MS;
 	for (argument = 1; argument < argc; argument++) {
 		if (strcmp(argv[argument], "--socket") == 0 && argument + 1 < argc)
 			socket_path = argv[++argument];
+		else if (strcmp(argv[argument], "--request") == 0 && argument + 1 < argc)
+			asked = argv[++argument];
 		else if (strcmp(argv[argument], "--timeout") == 0 && argument + 1 < argc)
 			timeout = atoi(argv[++argument]);
 		else
 			out = argv[argument];
 	}
-	if (out == NULL) {
-		fprintf(stderr, "usage: keiland-shot [--socket PATH] [--timeout MS] OUT.png\n");
+	if (out == NULL && asked == NULL) {
+		fprintf(stderr, "usage: keiland-shot [--socket PATH] [--timeout MS] OUT.png | --request LINE\n");
 		return 2;
 	}
 
@@ -112,6 +122,18 @@ main(
 			printf("KEILAND-SHOT error no-active-compositor (looked at %u socket(s))\n", count);
 			return 1;
 		}
+	}
+
+	/* Another request (the displays' of ws113-p004b): the answer printed as it comes. */
+	if (asked != NULL) {
+		(void)snprintf(request, sizeof(request), "%s\n", asked);
+		error = shot_ask(socket_path, request, reply, sizeof(reply), timeout);
+		if (error != 0) {
+			printf("KEILAND-SHOT error request errno=%d\n", error);
+			return 1;
+		}
+		printf("%s", reply);
+		return 0;
 	}
 
 	/* SHOT, and the header. */

@@ -29,6 +29,7 @@ VkResult vkdemo_display_open(VkInstance instance, VkPhysicalDevice physical, uin
 VkResult vkdemo_display_open_on(VkInstance instance, VkPhysicalDevice physical, VkDisplayKHR target, uint32_t width, uint32_t height, struct vkdemo_display *display);
 VkResult vkdemo_display_choose_format(VkPhysicalDevice physical, struct vkdemo_display *display);
 VkResult vkdemo_display_create_swapchain(VkPhysicalDevice physical, VkDevice device, uint32_t family, struct vkdemo_display *display, int readback);
+VkResult vkdemo_display_create_swapchain_usage(VkPhysicalDevice physical, VkDevice device, uint32_t family, struct vkdemo_display *display, VkImageUsageFlags extra);
 void vkdemo_display_close(VkInstance instance, VkDevice device, struct vkdemo_display *display);
 
 #endif

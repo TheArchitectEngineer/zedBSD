@@ -176,6 +176,35 @@ vkdemo_display_create_swapchain(
 	struct vkdemo_display *display,
 	int readback)
 {
+	VkImageUsageFlags extra;
+	VkResult status;
+
+	/* The images are also a copy's source when they are read back. */
+	extra = 0;
+	if (readback != 0)
+		extra = VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+
+	/* The swapchain of those uses. */
+	status = vkdemo_display_create_swapchain_usage(physical, device, family, display, extra);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the swapchain's images are rendered to, and read back when asked. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Create color attachments with further uses (`extra`, such as a copy's
+ * source or destination) from the surface's supported FIFO contract.
+ */
+VkResult
+vkdemo_display_create_swapchain_usage(
+	VkPhysicalDevice physical,
+	VkDevice device,
+	uint32_t family,
+	struct vkdemo_display *display,
+	VkImageUsageFlags extra)
+{
 	VkSurfaceCapabilitiesKHR capabilities;
 	VkSwapchainCreateInfoKHR create;
 	VkBool32 supported;
@@ -198,10 +227,8 @@ vkdemo_display_create_swapchain(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* The image is rendered directly and copied only for independent readback. */
-	usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-	if (readback != 0)
-		usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	/* The image is rendered directly, and used further only as the caller asks. */
+	usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | extra;
 	if ((capabilities.supportedUsageFlags & usage) != usage)
 		return VK_ERROR_FORMAT_NOT_SUPPORTED;
 
@@ -304,7 +331,7 @@ vkdemo_display_create_swapchain(
 	/* Publish the count only after enumeration populated the array successfully. */
 	display->image_count = count;
 
-	/* Succeeded: each borrowed image supports rendering and GPU readback. */
+	/* Succeeded: each borrowed image supports rendering and the further uses asked for. */
 	return VK_SUCCESS;
 }
 

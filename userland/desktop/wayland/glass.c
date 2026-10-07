@@ -2294,6 +2294,28 @@ glass_draw_mark(
 	}
 }
 
+/*
+ * Gives the wallpaper at the desktop's size, for a display beside the
+ * output (heads.c, ws113-p004b); NULL without the glass look or before the
+ * wallpaper is made.
+ */
+const struct kwl_import *
+kwl_glass_wallpaper(
+	struct kwl_server *server)
+{
+	struct kwl_glass *glass;
+
+	/* The look's own wallpaper. */
+	if (server->compose == NULL || server->compose->glass == NULL)
+		return NULL;
+	glass = server->compose->glass;
+	if (glass->wallpaper.image == VK_NULL_HANDLE)
+		return NULL;
+
+	/* Succeeded: the image. */
+	return &glass->wallpaper;
+}
+
 /* The descriptor set of the wallpaper, for pictures of it (the desktops). */
 VkDescriptorSet
 glass_wallpaper_set(

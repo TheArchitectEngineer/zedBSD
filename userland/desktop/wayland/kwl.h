@@ -355,6 +355,12 @@ struct kwl_object {
 	uint32_t version;
 	unsigned dead;
 	unsigned holds;
+	/*
+	 * A wl_output binding's display (ws113-p004b): 0 the output, n the
+	 * n-th head (heads.c), KWL_OUTPUT_GONE for a head that closed, whose
+	 * binding is told nothing more.
+	 */
+	uint32_t output_head;
 	unsigned busy;
 	struct kwl_object *surface;
 	struct kwl_object *role;
@@ -1502,6 +1508,25 @@ void kwl_output_tick(struct kwl_server *server);
 int kwl_output_external_available(struct kwl_server *server);
 int kwl_output_use_external(struct kwl_server *server);
 int kwl_output_use_internal(struct kwl_server *server);
+
+/* A wl_output binding of a head that closed (ws113-p004b). */
+#define KWL_OUTPUT_GONE	0xffffffffU
+
+/* What a display shows, as a client's wl_output tells it (heads.c, ws113-p004b): its place in the logical plane and its mode. */
+struct kwl_output_view {
+	uint32_t index;
+	int32_t x;
+	int32_t y;
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh;
+};
+
+int kwl_output_view(struct kwl_server *server, uint32_t head, struct kwl_output_view *view);
+uint32_t kwl_output_head_of_global(struct kwl_server *server, uint32_t name);
+unsigned kwl_output_head_globals(struct kwl_server *server, uint32_t *names, unsigned room);
+void kwl_output_global_add(struct kwl_server *server, uint32_t name);
+void kwl_output_global_remove(struct kwl_server *server, uint32_t name);
 void kwl_sleep_tick(struct kwl_server *server);
 void kwl_sleep_button(struct kwl_server *server);
 int kwl_sleep_request(struct kwl_server *server, enum kwl_sleep_via via);
