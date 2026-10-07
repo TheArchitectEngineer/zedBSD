@@ -93,6 +93,8 @@ kwl_sleep_tick(
 		sleep_pending(server, now);
 		return;
 	}
+
+	/* One waiting for its answer has nothing to do until it comes. */
 	if (sleep->state == KWL_SLEEP_WAITING)
 		return;
 
@@ -547,6 +549,8 @@ sleep_pending(
 		sleep_fail(server, "send", now_ms);
 		return;
 	}
+
+	/* Nothing can be asked: the machine cannot sleep, or sessiond is gone. */
 	if (sent == -2) {
 		printf("KWL SLEEP skip via=%s reason=cannot error=%d\n", kwl_sleep_via_name(sleep->via), error);
 		return;
@@ -647,6 +651,8 @@ sleep_say(
 		} else {
 			(void)kl_tr_format(text, sizeof(text), kl_tr("Sleep was cancelled (error {1})."), number, (const char *)NULL);
 		}
+
+		/* The part is named, or only the error. */
 		break;
 	case KWL_SLEEP_REASON_RESUME:
 		(void)snprintf(number, sizeof(number), "%d", outcome->resume_error);
