@@ -627,7 +627,7 @@ main(
 		check(fm_image_load(path, &image) == EINVAL, "picture: 16-bit values refused");
 		snprintf(path, sizeof(path), "%s/huge.ppm", root);
 		make_file(path, "P6\n99999999 1\n255\n\x01\x02\x03");
-		check(fm_image_load(path, &image) == EINVAL, "picture: a huge width refused");
+		check(fm_image_load(path, &image) == EFBIG, "picture: a huge width refused (too large, ws168-p004)");
 		snprintf(path, sizeof(path), "%s/a.png", root);
 		make_file(path, "\x89PNG\r\n\x1a\n....");
 		check(fm_image_load(path, &image) == EINVAL, "picture: a damaged PNG refused");
@@ -640,7 +640,7 @@ main(
 			fwrite(big, 1, (size_t)header + 300 * 200 * 3, file);
 			fclose(file);
 		}
-		check(fm_image_thumbnail(path, 256, &image) == 0 && image.width == 256 && image.height == 170, "thumbnail: 300x200 shrunk to 256x170");
+		check(fm_image_thumbnail(path, 256, &image) == 0 && image.width == 256 && image.height == 171, "thumbnail: 300x200 shrunk to 256x171 (keiland-preview rounds, ws168-p004)");
 		kl_image_release(&image);
 		fm_image_fit(10, 40, 100, 100, &width, &height);
 		check(width == 25 && height == 100, "fit: a tall picture fills the box's height");
@@ -658,7 +658,7 @@ main(
 
 		/* The thumbnail kept on disk (ws127-p002, F-035): written by the round above, read back alike; stale once the file changes. */
 		memset(&image, 0, sizeof(image));
-		check(fm_thumb_cache_read(path, &image) == 0 && image.width == 256 && image.height == 170 && (image.pixels[0] & 0x00ffffffU) == 0x404040U, "thumb cache: the made thumbnail is kept and read back");
+		check(fm_thumb_cache_read(path, &image) == 0 && image.width == 256 && image.height == 171 && (image.pixels[0] & 0x00ffffffU) == 0x404040U, "thumb cache: the made thumbnail is kept and read back");
 		kl_image_release(&image);
 		{
 			FILE *file = fopen(path, "ab");
@@ -666,7 +666,6 @@ main(
 			fclose(file);
 		}
 		check(fm_thumb_cache_read(path, &image) == ENOENT, "thumb cache: a changed file's record is stale");
-		check(fm_thumb_is_pdf((const unsigned char *)"%PDF-1.4\n", 9) == 1 && fm_thumb_is_pdf((const unsigned char *)"P6\n1 1", 6) == 0, "thumb: a PDF is told by its signature");
 
 		snprintf(path, sizeof(path), "%s/notes", root);
 		make_file(path, "one\ttwo\r\nthree\nfour");

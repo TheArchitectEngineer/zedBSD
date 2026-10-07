@@ -623,6 +623,11 @@ fm_ui_wait(
 	/* A thumbnail asked for, an operation, a search walking or a checksum: no sleep. */
 	if (app->thumb_wanted[0] != '\0')
 		return 0;
+
+	/* A thumbnail's child running (ws168-p004): looked at again soon. */
+	busy = fm_thumb_busy();
+	if (busy != 0)
+		return 20;
 	if (app->task_count > 0)
 		return 0;
 	if (app->search.active != 0)
