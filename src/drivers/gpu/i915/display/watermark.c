@@ -1058,24 +1058,43 @@ drv_i915_lcd_ms_wm_compute(
 /*
  * Computes the DBUF state of the commit that turns the modeset's crtc off
  * (the same part of skl_compute_ddb(), with the pipe no longer active).
+ *
+ * The old state is the device's current one, which another screen's
+ * commit may have changed since this screen's enable (ws113-p011).  The
+ * pipes that stay in the configuration are those the other running
+ * screens light or leave room for (keep_pipes): this pipe stays when the
+ * screen that still runs left room for it, so that its stop changes
+ * neither the slices nor the MBUS joining under that screen's running
+ * pipe, and a pipe only room was left for goes once nothing that runs
+ * leaves room for it.
  */
 void
 drv_i915_lcd_ms_wm_compute_off(
 	struct i915_wm_world *wm_world,
-	struct i915_lcd_modeset *ms)
+	struct i915_lcd_modeset *ms,
+	unsigned keep_pipes)
 {
 	struct intel_dbuf_state *new_dbuf;
 	enum pipe pipe;
 	int display_ver;
+	int current_error;
 
 	/* The watermark text works on this modeset's context from now on. */
 	wm_world->i915_lcd_wm = &ms->wm;
 
-	/* The new DBUF state is the old one without this pipe. */
+	/*
+	 * The device's current DBUF state is the old one; before any commit
+	 * published one (ENOENT, nothing is copied), the screen's own stands.
+	 */
+	current_error = drv_i915_lcd_dbuf_current(wm_world, &ms->wm.old_dbuf);
+	if (current_error != 0)
+		I915_LCD_DECIDED(&ms->i915, "DBUF off: no published device state; the screen's own old state is the old one");
+
+	/* The new DBUF state is the old one with only the pipes that stay. */
 	new_dbuf = &ms->wm.new_dbuf;
 	pipe = ms->crtc.pipe;
 	*new_dbuf = ms->wm.old_dbuf;
-	new_dbuf->active_pipes = ms->wm.old_dbuf.active_pipes & (u8)~BIT(pipe);
+	new_dbuf->active_pipes = ms->wm.old_dbuf.active_pipes & (u8)keep_pipes;
 
 	/* HAS_MBUS_JOINING(): Alder Lake-P and display 14+. */
 	display_ver = drv_i915_lcd_display_ver();

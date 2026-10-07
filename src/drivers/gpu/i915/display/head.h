@@ -65,7 +65,10 @@ int drv_i915_head_needs_relight(struct i915_device *device);
 /* Shows one frame of the head (lit first when it is not): 0, ENXIO when it cannot be lit, or EIO. */
 int drv_i915_head_frame(struct i915_device *device, const struct i915_worker_present *frame);
 
-/* Stops the head when it is lit: the release, or the window's end. */
-void drv_i915_head_stop(struct i915_display *display);
+/* Stops the head when it is lit: the release (its buffers back), or the window's end (keep: its picture kept). */
+void drv_i915_head_stop(struct i915_display *display, int keep);
+
+/* Lights a head kept over the last window's end again, with its last picture, at a window's start. */
+void drv_i915_head_resume(struct i915_display *display);
 
 #endif

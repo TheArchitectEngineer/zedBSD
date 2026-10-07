@@ -39,7 +39,6 @@
 #include "internal.h"
 #include "head.h"
 #include "head-rules.h"
-#include "hotplug.h"
 #include "modeset.h"
 #include "output.h"
 #include "present.h"
@@ -49,6 +48,7 @@
 #include "../ggtt.h"
 #include "../i915.h"
 #include "../memory.h"
+#include "../mmio.h"
 #include "../ppgtt.h"
 #include "../worker.h"
 
@@ -66,6 +66,11 @@
 /* How many times a head's DP link is lowered and tried again before the head is given up. */
 #define I915_HEAD_LINK_TRIES		4U
 
+/* TRANSCONF of pipe A, the pipes 0x1000 apart, and its enable and state bits (both clear once the transcoder stopped). */
+#define I915_HEAD_TRANSCONF_A		0x70008U
+#define I915_HEAD_PIPE_STRIDE		0x1000U
+#define I915_HEAD_TRANSCONF_ON		0xc0000000U
+
 static int i915_head_light(struct i915_display *display);
 static int i915_head_light_once(struct i915_display *display, int *enable_rc);
 static int i915_head_buffers(struct i915_display *display);
@@ -80,6 +85,8 @@ static enum i915_head_kind i915_head_kind_of(unsigned hpd_kind);
 static const char *i915_head_kind_name(enum i915_output_kind kind);
 static int i915_head_resident_leased(struct i915_display *display);
 static unsigned i915_head_held_refs(const struct i915_lcd_kernel *k);
+static int i915_head_may_light_locked(struct i915_display *display);
+static void i915_head_log_dbuf(struct i915_display *display, const char *when);
 
 /*
  * Prepares the head's lease once: its mutex.
@@ -128,7 +135,6 @@ drv_i915_head_claim(
 	enum i915_head_claim_way way;
 	const char *reason;
 	unsigned long irq;
-	uint64_t sequence;
 	unsigned resident_pipe;
 	unsigned head_pipe;
 	int conflict;
@@ -151,15 +157,14 @@ drv_i915_head_claim(
 	if (display->output.kind == I915_OUTPUT_KIND_PANEL && !display->output.none)
 		facts.resident_kind = I915_HEAD_KIND_PANEL;
 
-	/* The head's state and the latch, as the worker sees them. */
-	sequence = drv_i915_hpd_topology_sequence(display);
+	/* The head's state and the latch of this connector's generation, as the worker sees them. */
 	irq = spin_lock_irqsave(&device->irq_lock);
 
 	facts.head_claimed = head->claimed;
 	facts.head_broken = head->broken;
 	if (head->limited &&
 	    head->limited_connector == connector &&
-	    head->limited_sequence == sequence)
+	    head->limited_generation == found.generation)
 		facts.limited = 1;
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
@@ -269,8 +274,11 @@ drv_i915_head_owns(
 /*
  * Ends the head's lease (the display release operation on the head's
  * lease): the worker stops the head when it is lit, and the output goes
- * dark (D-RELEASE).  Returns 0, EINVAL for a session that does not hold
- * the lease, or the worker's error.
+ * dark (D-RELEASE).  The lease ends whatever the stop did (review F3: a
+ * failed release would leave the core's claim count and the compositor's
+ * device behind); a stop that was not confirmed breaks the head and is
+ * logged.  Returns 0, or EINVAL for a session that does not hold the
+ * lease.
  */
 int
 drv_i915_head_release(
@@ -321,11 +329,11 @@ drv_i915_head_release(
 	    (unsigned long long)frames,
 	    head->connector);
 
-	/* Reports a worker that did not serve the release. */
+	/* A worker that did not serve the release (it is not serving: nothing is lit). */
 	if (error != 0)
-		return error;
+		kern_logf("i915: display head: the release was not served by the worker (%d); the lease ends anyway\n", error);
 
-	/* Succeeded: the head is free and dark. */
+	/* Succeeded: the head is free. */
 	return 0;
 }
 
@@ -388,7 +396,7 @@ drv_i915_head_connector_state(
 	enum i915_head_claim_way way;
 	const char *reason;
 	unsigned long irq;
-	uint64_t sequence;
+	int known;
 	int error;
 
 	head = &display->head;
@@ -403,12 +411,14 @@ drv_i915_head_connector_state(
 	if (display->output.kind == I915_OUTPUT_KIND_PANEL && !display->output.none)
 		facts.resident_kind = I915_HEAD_KIND_PANEL;
 	facts.kind = I915_HEAD_KIND_OTHER;
+	known = 0;
 	error = drv_i915_display_output_connector(display, connector, &found);
-	if (error == 0)
+	if (error == 0) {
 		facts.kind = i915_head_kind_of(found.kind);
+		known = 1;
+	}
 
-	/* The head's state and the latch. */
-	sequence = drv_i915_hpd_topology_sequence(display);
+	/* The head's state and the latch of this connector's generation. */
 	irq = spin_lock_irqsave(&display->device->irq_lock);
 
 	if (head->claimed && head->connector == connector) {
@@ -418,9 +428,10 @@ drv_i915_head_connector_state(
 
 	facts.head_claimed = head->claimed;
 	facts.head_broken = head->broken;
-	if (head->limited &&
+	if (known &&
+	    head->limited &&
 	    head->limited_connector == connector &&
-	    head->limited_sequence == sequence)
+	    head->limited_generation == found.generation)
 		facts.limited = 1;
 
 	spin_unlock_irqrestore(&display->device->irq_lock, irq);
@@ -437,9 +448,9 @@ drv_i915_head_connector_state(
 
 /*
  * Gives the pipes besides the resident output's that the resident run is
- * to leave DBUF room for: BIT(the claimed head's pipe) while a head is
- * claimed and not latched limited, else 0.  Runs on the worker as the run
- * begins.
+ * to leave DBUF room for: BIT(the claimed head's pipe) while the head may
+ * be lit (i915_head_may_light_locked), else 0.  Runs on the worker as the
+ * run begins.
  */
 unsigned
 drv_i915_head_run_pipes(
@@ -447,22 +458,18 @@ drv_i915_head_run_pipes(
 {
 	struct i915_display_head *head;
 	unsigned long irq;
-	uint64_t sequence;
 	unsigned pipes;
+	int may;
 
 	head = &display->head;
 
-	/* The claim and its pipe, as the claim left them; a latched connector is not lit. */
-	sequence = drv_i915_hpd_topology_sequence(display);
+	/* The claim and its pipe, as the claim left them. */
 	irq = spin_lock_irqsave(&display->device->irq_lock);
 
 	pipes = 0U;
-	if (head->claimed && !head->broken)
+	may = i915_head_may_light_locked(display);
+	if (may)
 		pipes = 1U << head->pipe;
-	if (head->limited &&
-	    head->limited_connector == head->connector &&
-	    head->limited_sequence == sequence)
-		pipes = 0U;
 
 	spin_unlock_irqrestore(&display->device->irq_lock, irq);
 
@@ -471,8 +478,9 @@ drv_i915_head_run_pipes(
 }
 
 /*
- * Latches the claimed head's connector limited until the topology moves
- * (D-LIMIT): its claims are the limit meanwhile.
+ * Latches the claimed head's connector limited for its generation
+ * (D-LIMIT, review F14): its claims are the limit until the connector is
+ * plugged again, and no resident run leaves room for it meanwhile.
  */
 void
 drv_i915_head_limit(
@@ -481,29 +489,30 @@ drv_i915_head_limit(
 {
 	struct i915_display_head *head;
 	unsigned long irq;
-	uint64_t sequence;
 
 	head = &display->head;
 
-	/* The connector and the topology it was latched at. */
-	sequence = drv_i915_hpd_topology_sequence(display);
+	/* The connector and the generation it was claimed with. */
 	irq = spin_lock_irqsave(&display->device->irq_lock);
 
 	head->limited = 1;
 	head->limited_connector = head->connector;
-	head->limited_sequence = sequence;
+	head->limited_generation = head->generation;
 
 	spin_unlock_irqrestore(&display->device->irq_lock, irq);
 
 	/* Says why, once. */
-	kern_logf("i915: display head: connector %u is the limit until the next hotplug: %s\n", head->connector, why);
+	kern_logf("i915: display head: connector %u is the limit until it is plugged again: %s\n", head->connector, why);
 }
 
 /*
  * Tells whether a frame of the head needs the resident output lit again,
- * for two pipes, first: the head is not lit, it is claimed and not
- * latched, and the resident run left no DBUF room for its pipe.  Runs on
- * the worker inside the window; the caller holds the device IRQ lock.
+ * for two pipes, first: the head is not lit, it may be lit, and the
+ * resident run left no DBUF room for its pipe.  A head that may not be lit
+ * never asks for it (review F1: otherwise the frame, which stays at the
+ * head of the queue, would light the resident output again and again).
+ * Runs on the worker inside the window; the caller holds the device IRQ
+ * lock.
  */
 int
 drv_i915_head_needs_relight(
@@ -512,16 +521,16 @@ drv_i915_head_needs_relight(
 	struct i915_display *display;
 	struct i915_display_head *head;
 	unsigned pipe;
+	int may;
 
 	display = device->display;
 	head = &display->head;
 
-	/* A lit head, no head, or a head that will not be lit needs nothing. */
+	/* A lit head needs nothing, nor does one that may not be lit. */
 	if (head->up)
 		return 0;
-	if (!head->claimed || head->broken)
-		return 0;
-	if (head->limited && head->limited_connector == head->connector)
+	may = i915_head_may_light_locked(display);
+	if (!may)
 		return 0;
 
 	/* The run left room for the head's pipe already. */
@@ -610,14 +619,21 @@ drv_i915_head_frame(
 }
 
 /*
- * Stops the head when it is lit (its release, or the window's end): the
- * plane and the crtc off on the head's screen, the buffers given back or,
- * when the stop was not confirmed, abandoned and the head broken.  The
- * resident output keeps running.  Runs on the worker inside the window.
+ * Stops the head when it is lit, the plane and the crtc off on the head's
+ * screen, and the output goes dark; the resident output keeps running.
+ *
+ * keep (the window's end: a sleep, a hold that ran out, the shutdown)
+ * keeps the head's buffers and its last picture, so that the next window
+ * lights it again at its start (review F6: the compositor of the extended
+ * mode presents a head only when it opens it or the wallpaper changes).
+ * Without keep (the release) the buffers are given back, dormant ones too.
+ * A stop that was not confirmed abandons the buffers and breaks the head.
+ * Runs on the worker: inside the window for a lit head.
  */
 void
 drv_i915_head_stop(
-	struct i915_display *display)
+	struct i915_display *display,
+	int keep)
 {
 	struct i915_display_head *head;
 	unsigned held;
@@ -625,27 +641,95 @@ drv_i915_head_stop(
 
 	head = &display->head;
 
-	/* Nothing lit: nothing to stop. */
-	if (!head->up)
+	/* Nothing lit: only dormant buffers of a release to give back. */
+	if (!head->up) {
+		if (!keep && head->dormant) {
+			i915_head_buffers_release(display, 1);
+			head->dormant = 0;
+		}
 		return;
+	}
 
-	/* The plane and the crtc off; the GPU's mappings go before the buffers. */
+	/* The plane and the crtc off; the GPU's mappings go before the buffers; the DBUF keeps the head's pipe reserved. */
 	error = i915_head_commit_stop(display);
 	i915_head_unmap(display);
-	i915_head_buffers_release(display, error == 0);
-
-	/* Everything the head's run took must be given back. */
-	held = i915_head_held_refs(&head->k);
-	if (error != 0 || held != 0U) {
-		head->broken = 1;
-		kern_logf("i915: display head: XXX the stop was not confirmed (rc=%d, power refs held %u): its buffers are kept for ever and no second output is lit again\n", error, held);
-	} else {
-		kern_logf("i915: display head: stopped (connector %u); the output is dark\n", head->connector);
-	}
+	i915_head_log_dbuf(display, "stopped");
 
 	/* The head is dark; its run's parameters are gone. */
 	head->up = 0;
 	head->k.p = NULL;
+
+	/* Everything the head's run took must be given back, or the display may still read its buffers. */
+	held = i915_head_held_refs(&head->k);
+	if (error != 0 || held != 0U) {
+		i915_head_buffers_release(display, 0);
+		head->broken = 1;
+		head->dormant = 0;
+		kern_logf("i915: display head: XXX the stop was not confirmed (rc=%d, power refs held %u): its buffers are kept for ever and no second output is lit again\n", error, held);
+		return;
+	}
+
+	/* Kept for the next window: buffer A, which the next lighting shows first, takes the picture B shows. */
+	if (keep) {
+		if (head->front != 0U) {
+			drv_i915_gt_clflush(head->buf[1].cpu, head->buf[1].size);
+			kern_memcpy(head->buf[0].cpu, head->buf[1].cpu, head->buf[0].size);
+			drv_i915_scanout_publish(&head->buf[0]);
+		}
+
+		head->front = 0U;
+		head->dormant = 1;
+		kern_logf("i915: display head: stopped with the window (connector %u); its picture is kept for the next window\n", head->connector);
+		return;
+	}
+
+	/* Succeeded: the buffers are given back and the output is dark. */
+	i915_head_buffers_release(display, 1);
+	kern_logf("i915: display head: stopped (connector %u); the output is dark\n", head->connector);
+}
+
+/*
+ * Lights a head kept over the last window's end again at the start of a
+ * new window, with its last picture (review F6), when it may still be lit
+ * and its connector is still connected with the generation it was claimed
+ * with.  Runs on the worker inside the window, the resident output lit.
+ */
+void
+drv_i915_head_resume(
+	struct i915_display *display)
+{
+	struct i915_display_head *head;
+	struct i915_hpd_output found;
+	unsigned long irq;
+	int may;
+	int error;
+
+	head = &display->head;
+
+	/* Only a dormant head. */
+	if (!head->dormant || head->up)
+		return;
+
+	/* It may still be lit beside the resident output. */
+	irq = spin_lock_irqsave(&display->device->irq_lock);
+
+	may = i915_head_may_light_locked(display);
+
+	spin_unlock_irqrestore(&display->device->irq_lock, irq);
+
+	/* A head that may not be lit waits for its release, which gives its buffers back. */
+	if (!may)
+		return;
+
+	/* Its connector, still connected, of the claim's generation (else the compositor opens it again). */
+	error = drv_i915_display_output_connector(display, head->connector, &found);
+	if (error != 0)
+		return;
+	if (!found.connected || found.generation != head->generation)
+		return;
+
+	/* Lit again with the kept buffers; a failure latches it limited (logged). */
+	(void)i915_head_light(display);
 }
 
 /*
@@ -658,15 +742,23 @@ i915_head_light(
 	struct i915_display *display)
 {
 	struct i915_display_head *head;
+	unsigned long irq;
 	unsigned tries;
 	int enable_rc;
 	int fallback_error;
+	int may;
 	int error;
 
 	head = &display->head;
 
-	/* A head whose earlier stop was not confirmed is not lit again. */
-	if (head->broken)
+	/* A head that may not be lit beside the resident output now (broken, latched, the resident output moved). */
+	irq = spin_lock_irqsave(&display->device->irq_lock);
+
+	may = i915_head_may_light_locked(display);
+
+	spin_unlock_irqrestore(&display->device->irq_lock, irq);
+
+	if (!may)
 		return ENXIO;
 
 	/* Lights it; a DP link that did not train is lowered and lit again. */
@@ -691,7 +783,8 @@ i915_head_light(
 		return ENXIO;
 	}
 
-	/* Succeeded: the head is lit. */
+	/* Succeeded: the head is lit; the DBUF state it left shows that both pipes have their share. */
+	i915_head_log_dbuf(display, "lit");
 	kern_logf("i915: display head: lit (connector %u, %s, %ux%u, pipe %c)\n",
 	    head->connector,
 	    i915_head_kind_name(head->output.kind),
@@ -761,11 +854,15 @@ i915_head_light_once(
 	resident_pipe = drv_i915_display_output_pipe(&display->output);
 	head->cfg.also_active_pipes = 1U << resident_pipe;
 
-	/* The two buffers; the plane reads A first. */
-	buffers_error = i915_head_buffers(display);
-	if (buffers_error != 0) {
-		head->k.p = NULL;
-		return ENXIO;
+	/* The two buffers, or the ones kept with the last picture over a window's end; the plane reads A first. */
+	if (head->dormant) {
+		head->dormant = 0;
+	} else {
+		buffers_error = i915_head_buffers(display);
+		if (buffers_error != 0) {
+			head->k.p = NULL;
+			return ENXIO;
+		}
 	}
 
 	head->front = 0U;
@@ -933,6 +1030,7 @@ i915_head_commit_stop(
 	struct i915_display *display)
 {
 	struct i915_display_head *head;
+	uint32_t transconf;
 	int plane_rc;
 	int disable_rc;
 
@@ -948,8 +1046,16 @@ i915_head_commit_stop(
 	plane_rc = drv_i915_lcd_modeset_plane_disable(display);
 	disable_rc = drv_i915_lcd_modeset_commit_disable(display);
 
+	/*
+	 * The hardware's word, besides the commits' (review F7): the head's
+	 * transcoder is neither enabled nor running any more.
+	 */
+	transconf = drv_i915_read32(display->rctx.lcd->mmio, I915_HEAD_TRANSCONF_A + I915_HEAD_PIPE_STRIDE * head->pipe);
+
 	/* A confirmed stop: the plane reads neither buffer any more. */
-	if (plane_rc == I915_LCD_MS_OK && disable_rc == I915_LCD_MS_OK) {
+	if (plane_rc == I915_LCD_MS_OK &&
+	    disable_rc == I915_LCD_MS_OK &&
+	    (transconf & I915_HEAD_TRANSCONF_ON) == 0U) {
 		drv_i915_lcd_modeset_plane_released(display);
 		(void)drv_i915_lcd_modeset_select(display, I915_HEAD_RESIDENT_SCREEN);
 		drv_i915_scanout_end(&head->buf[0]);
@@ -958,7 +1064,7 @@ i915_head_commit_stop(
 
 	/* Not confirmed: everything stays as it is. */
 	(void)drv_i915_lcd_modeset_select(display, I915_HEAD_RESIDENT_SCREEN);
-	kern_logf("i915: display head: the stop was not confirmed (plane rc=%d, disable rc=%d)\n", plane_rc, disable_rc);
+	kern_logf("i915: display head: the stop was not confirmed (plane rc=%d, disable rc=%d, TRANSCONF 0x%08x)\n", plane_rc, disable_rc, transconf);
 	return EIO;
 }
 
@@ -1244,4 +1350,67 @@ i915_head_held_refs(
 
 	/* Succeeded: the references held. */
 	return held;
+}
+
+/*
+ * Tells whether the claimed head may be lit beside the resident output:
+ * claimed, not broken, not latched limited for its generation, beside the
+ * built-in panel on another pipe (review F4: the resident output may have
+ * moved since the claim).  The caller holds the device IRQ lock.
+ */
+static int
+i915_head_may_light_locked(
+	struct i915_display *display)
+{
+	struct i915_display_head *head;
+	unsigned resident_pipe;
+
+	head = &display->head;
+
+	/* A head that is not claimed, or whose earlier stop was not confirmed. */
+	if (!head->claimed || head->broken)
+		return 0;
+
+	/* A head latched limited for the generation it was claimed with. */
+	if (head->limited &&
+	    head->limited_connector == head->connector &&
+	    head->limited_generation == head->generation)
+		return 0;
+
+	/* Only beside the built-in panel. */
+	if (display->output.kind != I915_OUTPUT_KIND_PANEL || display->output.none)
+		return 0;
+
+	/* On another pipe than the resident output's. */
+	resident_pipe = drv_i915_display_output_pipe(&display->output);
+	if (resident_pipe == head->pipe)
+		return 0;
+
+	/* Succeeded: the head may be lit. */
+	return 1;
+}
+
+/*
+ * Logs the device's DBUF state as the head's screen last committed it:
+ * the active pipes (the reserved one included), the slices and the MBUS
+ * joining, so that a run shows the head's stop changed neither under the
+ * resident output (review F2).
+ */
+static void
+i915_head_log_dbuf(
+	struct i915_display *display,
+	const char *when)
+{
+	struct i915_lcd_modeset_status status;
+
+	/* The head's screen's view of the DBUF. */
+	(void)drv_i915_lcd_modeset_select(display, I915_HEAD_SCREEN);
+	drv_i915_lcd_modeset_status(display, &status);
+	(void)drv_i915_lcd_modeset_select(display, I915_HEAD_RESIDENT_SCREEN);
+
+	kern_logf("i915: display head: DBUF %s: pipes 0x%x slices 0x%x MBUS joined %d\n",
+	    when,
+	    status.dbuf_active_pipes_now,
+	    (unsigned)status.dbuf_slices_now,
+	    status.mbus_joined_now);
 }

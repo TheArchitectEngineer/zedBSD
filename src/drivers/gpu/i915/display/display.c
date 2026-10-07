@@ -3094,6 +3094,15 @@ drv_i915_display_output_back(
 	if (owner != NULL)
 		return;
 
+	/*
+	 * A second output still claimed keeps the resident output where it is
+	 * (ws113-p011, review F4): the firmware's output may be the second
+	 * output's connector or pipe.  Its release ends that, and the next
+	 * claim of the firmware's connector moves the output back.
+	 */
+	if (display->head.claimed)
+		return;
+
 	/* The firmware's output, under the lock the worker's readers share. */
 	irq = spin_lock_irqsave(&device->irq_lock);
 

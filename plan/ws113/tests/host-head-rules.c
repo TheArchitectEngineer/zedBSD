@@ -8,7 +8,8 @@
 /*
  * ws113-p011: the host test of the second output's claim rules
  * (src/drivers/gpu/i915/display/head-rules.c, compiled unchanged): a claim
- * with no lease held moves the resident output; with the resident panel's
+ * with no lease held moves the resident output, unless a head is still
+ * claimed; with the resident panel's
  * lease held an HDMI or an external DP connector becomes the head; a
  * second head, a broken earlier head, a connector latched limited, a
  * resident output that is not the panel and a head of another kind are
@@ -38,14 +39,21 @@ main(void)
 	enum i915_head_claim_way way;
 	int said;
 
-	/* 1. No lease held: the resident output moves (ws113-p011a), whatever else holds. */
+	/* 1. No lease held: the resident output moves (ws113-p011a), whatever its kind. */
 	facts_lit(&facts);
 	facts.resident_leased = 0;
-	facts.head_claimed = 1;
 	facts.resident_kind = I915_HEAD_KIND_HDMI;
 	way = decide(&facts, &said);
 	check(way == I915_HEAD_CLAIM_MOVE, "no lease: a move");
 	check(!said, "no lease: no reason");
+
+	/* 1b. No resident lease but a head still claimed: no move (review F4), the limit. */
+	facts_lit(&facts);
+	facts.resident_leased = 0;
+	facts.head_claimed = 1;
+	way = decide(&facts, &said);
+	check(way == I915_HEAD_CLAIM_LIMIT, "no resident lease, head claimed: the limit");
+	check(said, "no resident lease, head claimed: a reason");
 
 	/* 2. The panel's lease held, an HDMI connector: the head. */
 	facts_lit(&facts);

@@ -124,7 +124,7 @@ static int i915_present_blit_build(void *ctx, uint64_t dst_va, uint32_t width, u
 static int i915_present_shared(struct i915_device *device, void *session, void *object, struct gpu_display_present *request, int head);
 static int i915_present_head(struct i915_device *device, void *session, void *object, struct gpu_display_present *request);
 static int i915_present_head_wait(struct i915_device *device, void *session, struct gpu_display_wait *request);
-static int i915_present_window_retry(struct i915_display *display, int error);
+static int i915_present_window_retry(struct i915_display *display, int error, int *spared);
 static int i915_present_window_serve(void *ctx);
 static void i915_present_check_frame(struct i915_display *display, const struct i915_worker_present *frame, struct i915_scanout *back, unsigned index);
 static struct i915_scanout *i915_present_target(struct i915_display *display, int *flip);
@@ -701,6 +701,7 @@ drv_i915_present_window(
 	int after_resume;
 	int moved;
 	int retry;
+	int spared;
 	int error;
 
 	display = device->display;
@@ -717,11 +718,12 @@ drv_i915_present_window(
 	 * (ws113-p011a).
 	 */
 	moved = drv_i915_display_output_moved(display);
+	spared = 0;
 	error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
-	retry = i915_present_window_retry(display, error);
+	retry = i915_present_window_retry(display, error, &spared);
 	while (retry) {
 		error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
-		retry = i915_present_window_retry(display, error);
+		retry = i915_present_window_retry(display, error, &spared);
 	}
 
 	/*
@@ -761,9 +763,12 @@ drv_i915_present_window(
 
 	/*
 	 * A failed run of the firmware's output makes every later presentation
-	 * fail; the window is not entered for it again.
+	 * fail; the window is not entered for it again.  A run for two pipes
+	 * that failed but gave everything back is spared (ws113-p011, review
+	 * F9): the second output is latched limited and the next lighting is
+	 * for one pipe.
 	 */
-	if (error != 0 && !moved && !display->window.display_failed) {
+	if (error != 0 && !moved && !spared && !display->window.display_failed) {
 		display->window.display_failed = 1;
 		kern_logf("i915: resident display: the firmware's output did not come up (or did not stop cleanly); presentation fails from now on\n");
 	}
@@ -1297,10 +1302,14 @@ i915_present_window_serve(
 
 	/* The worker is inside the window while it serves; the pipe's refresh boundaries can be read from now on. */
 	drv_i915_display_refresh_up(display, 1);
+
+	/* A second output kept over the last window's end comes back with its picture (ws113-p011). */
+	drv_i915_head_resume(display);
+
 	drv_i915_worker_serve_window(display->device);
 
-	/* A lit second output stops before the resident output does (ws113-p011); its lease stays. */
-	drv_i915_head_stop(display);
+	/* A lit second output stops before the resident output does, its picture kept for the next window (ws113-p011); its lease stays. */
+	drv_i915_head_stop(display, 1);
 
 	/* The mappings go first; the window is left. */
 	drv_i915_scanout_unmap_panel(display);
@@ -1626,11 +1635,27 @@ i915_present_head(
 	struct i915_worker_present item;
 	struct i915_hpd_output found;
 	const uint8_t *pixels;
+	void *resident_owner;
 	int error;
 
 	display = device->display;
 	head = &display->head;
 	storage = object;
+
+	/*
+	 * Without the resident output's lease the second output is not shown
+	 * (review F10: its frame would light the resident output black, with
+	 * no lease to end its window).
+	 */
+	drv_i915_present_lease_init(display);
+	mutex_lock(&display->rd.mutex);
+
+	resident_owner = display->rd.owner;
+
+	mutex_unlock(&display->rd.mutex);
+
+	if (resident_owner == NULL)
+		return ENXIO;
 
 	/* The lease, under the head's mutex. */
 	mutex_lock(&head->mutex);
@@ -1688,8 +1713,8 @@ i915_present_head(
 		error = drv_i915_worker_sync_display(device, I915_WORKER_SYNC_PRESENT, &item);
 	}
 
-	/* A head that could not be lit, copied or flipped is the output's loss, not the device's. */
-	if (error == EIO)
+	/* A head that could not be lit, copied or flipped is the output's loss, not the device's (review F3). */
+	if (error == EIO || error == ETIMEDOUT)
 		error = ENXIO;
 
 	/* A completed presentation: the sequence advances; the first frame is named. */
@@ -1772,15 +1797,20 @@ i915_present_head_wait(
 
 /*
  * Tells whether the resident run is to be tried again at once: an external
- * DP link that did not train (EAGAIN, ws051-p004b), a window left so that
- * the resident output is lit again for two pipes (ws113-p011), or a run
- * for two pipes that failed before it held anything, which is tried for
- * one pipe with the second output latched limited.  Runs on the worker.
+ * DP link that did not train (EAGAIN, ws051-p004b), a window left after a
+ * clean run so that the resident output is lit again for two pipes
+ * (ws113-p011), or a run for two pipes that failed before the display was
+ * handed anything, which is tried for one pipe with the second output
+ * latched limited.  A run for two pipes that failed after it was lit but
+ * gave everything back is not tried again (no lease may be waiting, review
+ * F9); spared says that the display is not to be failed for it.  Runs on
+ * the worker.
  */
 static int
 i915_present_window_retry(
 	struct i915_display *display,
-	int error)
+	int error,
+	int *spared)
 {
 	unsigned i;
 	int retained;
@@ -1790,7 +1820,7 @@ i915_present_window_retry(
 	if (error == EAGAIN)
 		return 1;
 
-	/* The window was left to light the resident output again for two pipes. */
+	/* The window was left after a clean run to light the resident output again for two pipes. */
 	if (display->window.relight) {
 		display->window.relight = 0;
 		if (error == 0) {
@@ -1803,7 +1833,7 @@ i915_present_window_retry(
 	if (error == 0 || display->window.run_pipes == 0U)
 		return 0;
 
-	/* A run that holds something the display may read is not tried again. */
+	/* A run that holds something the display may read is not tried again, nor spared. */
 	retained = drv_i915_lcd_show_retained(display);
 	if (!retained)
 		retained = drv_i915_lcd_modeset_retained(display);
@@ -1813,17 +1843,23 @@ i915_present_window_retry(
 	/* Its buffers must be given back, or kept pinned for the next lighting. */
 	buffers_free = 1;
 	for (i = 0U; i < 2U; i++) {
-		if (display->resident_buf[i].state != I915_SCANOUT_NONE && display->resident_buf[i].state != I915_SCANOUT_PINNED)
+		if (display->resident_buf[i].state != I915_SCANOUT_NONE &&
+		    display->resident_buf[i].state != I915_SCANOUT_PINNED)
 			buffers_free = 0;
 	}
 
 	if (!buffers_free)
 		return 0;
 
-	/* The second output is the limit until the topology moves; the resident output is lit for one pipe. */
+	/* The second output is the limit from here; the display is not failed for it. */
 	drv_i915_head_limit(display, "the resident output could not be lit beside it");
 	display->window.run_pipes = 0U;
+	*spared = 1;
 
-	/* Succeeded: the run is tried again for one pipe. */
+	/* A run that was lit ended its window for its own reasons: the next presentation lights it again. */
+	if (display->resident_run_rep.display_acquired)
+		return 0;
+
+	/* Succeeded: the run never reached the display, and is tried again at once for one pipe. */
 	return 1;
 }

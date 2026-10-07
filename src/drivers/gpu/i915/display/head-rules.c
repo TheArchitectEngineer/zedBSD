@@ -36,9 +36,20 @@ drv_i915_head_claim_way(
 	/* Nothing to say yet. */
 	*reason = "";
 
-	/* No lease held: the resident output moves to the connector (ws113-p011a). */
-	if (!facts->resident_leased)
+	/*
+	 * No resident lease held: the resident output moves to the connector
+	 * (ws113-p011a), unless a head is still claimed, whose pipe or
+	 * connector the move could take.
+	 */
+	if (!facts->resident_leased) {
+		if (facts->head_claimed) {
+			*reason = "the resident output does not move while a second output is shown";
+			return I915_HEAD_CLAIM_LIMIT;
+		}
+
+		/* Succeeded: a move. */
 		return I915_HEAD_CLAIM_MOVE;
+	}
 
 	/* One head at a time. */
 	if (facts->head_claimed) {

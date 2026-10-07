@@ -561,6 +561,7 @@ drv_i915_lcd_modeset_status(
 	/* The current global DBUF state and what the stop left. */
 	out->dbuf_slices_now = ms->wm.old_dbuf.enabled_slices;
 	out->mbus_joined_now = ms->wm.old_dbuf.joined_mbus;
+	out->dbuf_active_pipes_now = ms->wm.old_dbuf.active_pipes;
 	out->stop_unconfirmed = ms->stop_unconfirmed;
 	out->retained = drv_i915_lcd_modeset_retained(display);
 	out->dither = ms->crtc_state.dither;
@@ -935,9 +936,12 @@ drv_i915_lcd_modeset_commit_disable(
 {
 	struct i915_lcd_world *world;
 	struct i915_lcd_modeset *ms;
+	struct i915_lcd_modeset *other;
 	struct intel_crtc_state *off_state;
 	struct intel_power_domain_mask put_domains;
 	unsigned before;
+	unsigned keep_pipes;
+	unsigned screen;
 	int crtc_result;
 	int plane_result;
 	int retained;
@@ -959,8 +963,26 @@ drv_i915_lcd_modeset_commit_disable(
 	ms->state.base.dev = &ms->i915.drm;
 	ms->commits++;
 
-	/* The check phase: the global DBUF state without this pipe. */
-	drv_i915_lcd_ms_wm_compute_off(display->wm_world, ms);
+	/*
+	 * The check phase: the global DBUF state without this pipe, but with
+	 * every pipe another running screen lights or leaves room for
+	 * (ws113-p011).
+	 */
+	keep_pipes = 0U;
+	for (screen = 0U; screen < I915_LCD_MS_SCREENS; screen++) {
+		/* This screen, and a screen that does not run, keep nothing. */
+		other = &world->ms_pool[screen];
+		if (screen == world->ms_sel)
+			continue;
+		if (!other->prepared || !other->crtc.active)
+			continue;
+
+		/* The running screen's pipe and the pipes it left room for. */
+		keep_pipes |= 1U << (unsigned)other->crtc.pipe;
+		keep_pipes |= other->also_active_pipes;
+	}
+
+	drv_i915_lcd_ms_wm_compute_off(display->wm_world, ms, keep_pipes);
 
 	/* The new state of this commit: the crtc inactive. */
 	*off_state = ms->crtc_state;
@@ -1311,7 +1333,10 @@ drv_i915_lcd_modeset_flip_poll(
 /*
  * Waits until the armed flip of the selected screen has latched, from a
  * thread that is not the worker: the presenting thread, so the worker is
- * free to run the next frame's rendering meanwhile.
+ * free to run the next frame's rendering meanwhile.  Only for a display
+ * whose worker never selects another screen (the tests): the resident
+ * path names its screen (drv_i915_lcd_modeset_flip_wait_screen, ws113-p011,
+ * review F19).
  *
  * Nothing of the screen's state is changed: the worker retires the latched
  * flip when it takes the next presentation (drv_i915_lcd_modeset_flip_poll()).
@@ -3777,9 +3802,12 @@ i915_resident_window(
 	/*
 	 * Lit again for two pipes next (ws113-p011): buffer A, which the next
 	 * lighting shows first, takes the picture B shows, so the output comes
-	 * back with its last picture and not an older one.
+	 * back with its last picture and not an older one.  The GPU wrote B
+	 * through an uncached mapping: the CPU's stale lines go first (review
+	 * F11).
 	 */
 	if (display->window.relight && display->resident_front != 0U) {
+		drv_i915_gt_clflush(display->resident_buf[1].cpu, display->resident_buf[1].size);
 		kern_memcpy(display->resident_buf[0].cpu, display->resident_buf[1].cpu, display->resident_buf[0].size);
 		drv_i915_scanout_publish(&display->resident_buf[0]);
 	}

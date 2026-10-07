@@ -1464,8 +1464,8 @@ i915_worker_run_sync_item(
 	case I915_WORKER_SYNC_RELEASE:
 		/* The second output stops at once, without a hold (D-RELEASE); a resident release has nothing left to do. */
 		error = 0;
-		if (item->present->head && in_display)
-			drv_i915_head_stop(device->display);
+		if (item->present->head)
+			drv_i915_head_stop(device->display, 0);
 		break;
 	case I915_WORKER_SYNC_BACKLIGHT:
 		/* The panel's light, which only the window's lit panel has. */

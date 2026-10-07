@@ -2677,6 +2677,7 @@ struct i915_lcd_modeset_status {
 	int dc_off_held;                /* POWER_DOMAIN_DC_OFF is held (inside a commit, or kept after an unconfirmed stop) */
 	unsigned crtc_domains_held;     /* how many domains of get_crtc_power_domains() the crtc holds */
 	uint8_t dbuf_slices_now; int mbus_joined_now;   /* the current global DBUF state */
+	unsigned dbuf_active_pipes_now;                 /* its active pipes, the reserved ones included (ws113-p011) */
 	int stop_unconfirmed, retained;
 	int dither;
 	uint32_t cur_surf, pend_surf;       /* displayed / pending (valid while flip_pending) */
@@ -3677,12 +3678,20 @@ struct i915_display_head {
 
 	/*
 	 * A connector that could not be lit beside the resident output, and the
-	 * topology sequence it was latched at (D-LIMIT): its claims are the
-	 * limit until the topology moves.  The device IRQ lock guards both.
+	 * connector's generation it was latched at (D-LIMIT): its claims are the
+	 * limit until it is plugged again.  The device IRQ lock guards all three.
 	 */
 	int limited;
 	unsigned limited_connector;
-	uint64_t limited_sequence;
+	uint64_t limited_generation;
+
+	/*
+	 * Nonzero while the lit head's buffers, and its last picture, are kept
+	 * over a display window's end (a sleep, a hold that ran out): the next
+	 * window lights the head again with them at its start (review F6).
+	 * Only the worker reads and writes it.
+	 */
+	int dormant;
 
 	/* Nonzero once a head's stop was not confirmed: its buffers are abandoned and no head is lit again. */
 	int broken;

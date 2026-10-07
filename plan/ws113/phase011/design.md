@@ -1,7 +1,7 @@
 # ws113-p011 設計: i915 の 2 つ目の出力（head）
 
 Revision: 2026-10-07 / q856-i01 / P2 / source baseline agent/p2 `bd1e567c6`（main `4be6ac8d4` を merge 済み）。
-Status: 設計（design-reviewer の review の前）。
+Status: 設計（design-reviewer の敵対的 review を反映、§9。§3〜§7 の本文で review と食い違う所は §9 が優先する）。実装は agent/p2 の head.c ほか（phase.md の「実装」）。
 
 入力: [phase.md](phase.md)、[契約の確定](../phase001/contracts-beta2.md) の D-GOP・D-RELEASE・D-LIMIT、[p011a](../phase011a/phase.md)（resident の付け替え、connector ごとの ID と generation）、2026-10-07 ユーザーの DBUF の決定「2 つ目の画面を足す時に、1 つ目の画面を点け直す」（1 出力の時の DBUF・既存の eDP の run は変えず、足す時に resident を点け直す・一瞬消える）、P1（compositor の ws113-p004b、`userland/desktop/wayland/heads.c`）の口の要件 1〜6（下の §2）、2026-09-20 の DUAL の診断（eDP pipe A/DPLL0 + HDMI pipe B/DPLL1、`src/drivers/gpu/i915/tests/display/hdmi-output.c` の DUAL）。
 
@@ -155,3 +155,28 @@ UAPI（`gpu-display.h`）・HAL・libvulkan・compositor は変えない。
 ## 8. 範囲の外（後）
 
 - resident が HDMI・DP で head が panel（boot の時の GOP が HDMI で、後に蓋を開ける等）。head が 2 つ以上（pipe C・D）。head の power・refresh の境界。head の mode の選択。
+
+## 9. review の反映（2026-10-07、design-reviewer、F1〜F19）
+
+| # | 指摘 | 反映 |
+| --- | --- | --- |
+| F1 | 点け直しの条件に limited・broken の除外が無い（無限の点け直し） | 点け直し・run の DBUF の予約・head の点灯は同じ述語 `i915_head_may_light_locked`（claim 済み・broken でない・latch でない・resident が panel・pipe が別）で決める。点けられない head の frame は点け直さず ENXIO |
+| F2 | DBUF の device の状態が 2 screen で壊れる（幻の pipe、head の停止・点灯で pipe A の下で MBUS の join が変わる） | `drv_i915_lcd_ms_wm_compute_off` に keep_pipes を足した: 止める screen の old は device の今の状態（`drv_i915_lcd_dbuf_current`）、新しい active_pipes は「他の走っている screen の pipe とそれが予約した pipe」との積。head の停止は pipe B を予約のまま（slice・join は変わらない）、resident（最後の pipe）の停止で予約も消える（1 出力に戻る）。head の点灯・停止の後に `DBUF lit/stopped: pipes slices joined` を log（実機で確かめる）。DUAL の試験の HDMI の停止も pipe B を残すようになる（panel が B を予約している、より正しい） |
+| F3 | head の失敗が EIO（libvulkan で DEVICE_LOST） | head の present の EIO・ETIMEDOUT は ENXIO に。latch の失敗も ENXIO。window の外の head の item は ENXIO。head の release は常に 0（停止の失敗は broken と log） |
+| F4 | resident の付け替え・戻しが head を見ていない | head が claim されている間は resident の move を ENOSPC（head-rules）、`drv_i915_display_output_back` は head が claim されていれば戻さない。head の点灯の直前に F1 の述語で resident が panel・pipe が別かを確かめ直す |
+| F5 | mutex の ABBA | 入れ子にしない: claim は rd→（離して）→head、lease の close は head を先に（rd を持たずに）、head の present は rd の owner を読んで離してから head。入れ子が要る時は head→rd の順だけ |
+| F6 | window を出ると head が消えたまま（拡張の compositor は present しない） | window の終わり（sleep・hold の終わり）では head の buffer と最後の絵を保ち（dormant）、次の window の初め（`i915_present_window_serve`）に `drv_i915_head_resume` が点け直す（connector が繋がり、claim の generation のままの時）。release は dormant の buffer も返す |
+| F7 | broken を teardown が知らない、停止の証拠が commit の戻り値だけ | `drv_i915_lcd_kernel_abandoned` が `head.broken` を見る。head の停止は commit の戻り値に加えて TRANSCONF（head の pipe）の enable と state の bit が 0 であることを求める |
+| F8 | 点け直しの失敗の道と buffer の持ち主 | 点け直しは前の run が 0 で終わった時だけ。保持の buffer は「保持の印が在り両方が PINNED、大きさが同じ」時だけ次の run が使う（違えば返して作り直す）。2 回目の run が show の前で失敗したら buffer は保持のまま次の run へ。保持の release は成功に数える |
+| F9 | 2 pipe の失敗の検出の時期（CDCLK・帯域は resident の prepare が見ない） | 2 pipe の run が失敗して何も保持していなければ、head を latch し、display を失敗にしない（spared）。もう 1 度回すのは display に何も渡す前の失敗だけ（`display_acquired` 0）。lit の後の失敗は window の終わりで、次の present が 1 pipe で点ける。高い mode の拒否は head の prepare（§4.3.1 の latch）で起こる |
+| F10 | resident の lease が無い時の head の present | ENXIO |
+| F11 | B→A の CPU copy の前に cache を捨てる | `drv_i915_gt_clflush` してから copy・publish（resident と head の両方） |
+| F12 | head の k の dpcd・panel の hook が resident の eDP に繋がる | 未対応（推測の指摘）。HDMI の commit は dpcd・panel を呼ばない、DP_EXT は cfg の aux_emit を使う（resident の DP_EXT の run と同じ）。残りの危険として実機で log を見る |
+| F13 | QGV・SAGV の帯域を 2 pipe の和で見ない | 未対応。5330 は SAGV off・最大の point。実機の試験で underrun が無いことを確かめる |
+| F14 | latch が topology の sequence で解ける・1 枠 | latch は connector と claim の generation で（抜き差しで解ける）。1 枠のまま（head は 1 つ） |
+| F15 | 点け直しで消える時間は 1 秒前後になりうる | ユーザーに伝える（Q1 経由） |
+| F16 | back buffer へ書く前の flip_poll | `i915_head_target` が screen 1 で poll・retire してから選ぶ |
+| F17 | resident の lease の確認と head の claim の間の競合 | 受け入れる（F10 で anchor の無い head の present は ENXIO） |
+| F18 | 点灯ごとの PPGTT の VA の漏れ | 受け入れる（小さい、resident と同じ bump allocator）。残りに記録 |
+| F19 | 選んだ screen を待つ flip_wait | presenting thread から呼ばない旨を注記（試験だけが使う） |
+| 試験 | DBUF の遷移・点け直しの状態機械の host 試験 | display の host 試験の runner（`run-lcd-modeset-host-test.sh`）は今の tree に無い。復活させず、head の規則の host 試験（`plan/ws113/tests/host-head-rules.sh`）と、実機の log（DBUF の pipes・slices・joined、`resident display: ended PASS`、underrun 無し）で確かめる。実機の試験に login の hand-over・sleep と resume・2 出力の後の 1 出力・head の停止の後の PASS を足す |
