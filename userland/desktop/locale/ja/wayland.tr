@@ -289,3 +289,7 @@ msg	Battery critically low	バッテリーの残量がほとんどありませ�
 msg	Battery low	バッテリーの残量が少なくなっています
 # ../wayland/notify-system.c (ws156-p003)
 msg	{1}% of the battery is left	バッテリーの残りは {1}%です
+# ../wayland/notify-log.c (ws156-p004)
+msg	No notifications	通知はありません
+# ../wayland/notify-log.c (ws156-p004)
+msg	Clear all notifications	通知をすべて消去

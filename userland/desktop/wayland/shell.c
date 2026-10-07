@@ -2905,6 +2905,11 @@ kwl_glass_key(
 	if (taken)
 		return 1;
 
+	/* Super+N, and the keys of the notifications' log while it is open (notify-log.c). */
+	taken = kwl_notify_log_key(server, key, state);
+	if (taken)
+		return 1;
+
 	/* Esc hides the previews of an application's icon (apps-bar.c). */
 	taken = kwl_apps_bar_key(server, key, state);
 	if (taken)

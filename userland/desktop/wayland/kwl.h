@@ -1751,6 +1751,8 @@ uint32_t kwl_notify_post_system(struct kwl_server *server, const char *title, co
 struct kwl_notify_model *kwl_notify_model(void);
 /* The notifications' popup (notify-popup.c) and what it does to them (notify-shell.c), ws156-p003. */
 void kwl_notify_hide_shown(struct kwl_server *server);
+size_t kwl_notify_clear_log(struct kwl_server *server);
+int kwl_notify_log_key(struct kwl_server *server, uint32_t key, uint32_t state);
 int kwl_notify_dismiss_id(struct kwl_server *server, uint32_t id);
 int kwl_notify_activate(struct kwl_server *server, uint32_t id);
 uint32_t kwl_notify_system_post(struct kwl_server *server, const char *title, const char *body, unsigned flags, const char *command);
