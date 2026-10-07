@@ -82,13 +82,15 @@ drv_typec_listener_register(
 	if (listener == NULL)
 		return EINVAL;
 
-	/* Adds it to the table. */
+	/* Adds it to the table, which has a fixed room. */
 	drv_typec_os_lock();
 
 	if (typec_listener_count == DRV_TYPEC_LISTENER_MAX) {
 		drv_typec_os_unlock();
 		return ENOSPC;
 	}
+
+	/* The next free entry. */
 	typec_listeners[typec_listener_count].listener = listener;
 	typec_listeners[typec_listener_count].argument = argument;
 	typec_listener_count++;
@@ -135,6 +137,8 @@ drv_typec_connector_get(
 		drv_typec_os_unlock();
 		return ENOENT;
 	}
+
+	/* The copy. */
 	kern_memcpy(connector, &typec_connectors[index], sizeof(*connector));
 
 	drv_typec_os_unlock();
@@ -192,6 +196,8 @@ drv_typec_connector_publish(
 		drv_typec_os_unlock();
 		return ENOENT;
 	}
+
+	/* The record under its generation, and the listeners as they are now. */
 	typec_generation++;
 	generation = typec_generation;
 	kern_memcpy(&typec_connectors[index], connector, sizeof(typec_connectors[index]));

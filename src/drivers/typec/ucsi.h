@@ -43,7 +43,8 @@
 /*
  * One arrangement of the mailbox: where each data structure is and how
  * large the messages are.  The transport picks it from the size of the
- * platform's mailbox region, not from VERSION (design §2.1).
+ * platform's mailbox region, not from VERSION, which the platform writes
+ * when it likes.
  */
 struct drv_ucsi_layout {
 	/* The arrangement's name in the log. */

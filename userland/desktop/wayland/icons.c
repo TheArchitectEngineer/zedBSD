@@ -582,7 +582,8 @@ static const char *const icon_app_names[GLASS_ICON_APPS] = {
 
 /*
  * The colours of each application's tile (the user's montage 4, ws128-p012:
- * Files the off-yellow of a folder, Calendar blue), in the order of
+ * Files the off-yellow of a folder, Calendar blue; Music yamabuki,
+ * #F8B500 between its two bands, the UAT of 2026-10-07), in the order of
  * icon_app_names.
  */
 static const struct icon_bands icon_app_bands[GLASS_ICON_APPS] = {
@@ -604,7 +605,7 @@ static const struct icon_bands icon_app_bands[GLASS_ICON_APPS] = {
 	{ 0x7fb3ffU, 0x4a8bf5U },
 	{ 0xc49bffU, 0x9c6cf0U },
 	{ 0xff9ec4U, 0xf06a9bU },
-	{ 0xff8a9cU, 0xf0465eU },
+	{ 0xffc933U, 0xf2a900U },
 	{ 0xffd27aU, 0xf59e2bU }
 };
 

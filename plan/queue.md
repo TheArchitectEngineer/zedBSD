@@ -83,9 +83,9 @@ Last reconciled Queue: [q779](history/queue-q779.md)（2026-10-06、BUG-202の�
 | q835 / q835-i01 | P2（WS168 p003 の後、第 3 段の続きより先） | WS157 写真の作り直し（ユーザーの要件 2026-10-07） | ~/Pictures/Library で管理、取り込みの機能、データベース（小さく分割されて cloud sync しやすい形式）、縮小画像の管理、folder は img/year/month/day で file の名前は保つ、album はデータベースの metadata の link。直接 file を置くのでなく取り込みで管理。p001 の要件を書き直し、新しい Phase で正常系を実装。積み残しは backlog-p2.md | q834 の WS168 p003 | pending |
 | q836 / q836-i01 | 未割当（低い優先度、第 3 段の後、積み残しの WS の前） | WS178 OpenGL を Desktop へ、GLX を xserver へ（2026-10-07 ユーザー） | ws178-p001 | — | pending |
 | q837 / q837-i01 | P2（UAT、優先） | WS169 Mail の初回の「Add an Account」の form に背景が無い（2026-10-07 ユーザー、QEMU virglrenderer Win32） | form が list と読む面の 2 つの pane の上にまたがって描かれ、card の背景が無い。form の下に card（または 1 つの面）を敷いて pane の境が透けないように。host の PNG で確かめ、T1 の撮影を | — | cleared（2026-10-07 T1-323、Q1 が PNG を目視: form は 1 枚の frosted の card、境は見えない。別件: panel の間の隙間に後ろの窓の文字が鮮明に見える → q838） |
-| q838 / q838-i01 | P2 | glass の panel の間の隙間に後ろの窓（例 Settings）の文字・縁が鮮明に透ける（T1-323 の PNG、x≈265〜280） | 隙間を blur の掛かった背景にするか、隙間を作らない。全 app に共通なら compositor の側で | q837 | pending |
+| q838 / q838-i01 | P2 | glass の panel の間の隙間に後ろの窓（例 Settings）の文字・縁が鮮明に透ける（T1-323 の PNG、x≈265〜280） | 隙間を blur の掛かった背景にするか、隙間を作らない。全 app に共通なら compositor の側で | q837 | cleared（2026-10-07 T1-324 (b): 隙間は壁紙の blur だけで後ろの Settings の文字は見えない、Q1 が PNG を目視） |
 | q839 / q839-i01 | 未割当（第 3 段の後、WS178 より先） | WS179 アクセントカラー（8 色の固定、2026-10-07 ユーザー） | ws179-p001 | — | pending |
-| q840 / q840-i01 | P2（UAT、小さい・先に） | Music の icon の背景を山吹色に（2026-10-07 ユーザー「MusicのアイコンがAppleに似すぎているので、背景色を山吹色にしましょう。」） | App Home の GLASS_ICON_APP_MUSIC と bar の icon、app の中の All Songs の札（今は赤・ピンクの gradient）も山吹色（#F8B500 前後）に。host の PNG と T1 の撮影 | — | pending |
+| q840 / q840-i01 | P2（UAT、小さい・先に） | Music の icon の背景を山吹色に（2026-10-07 ユーザー「MusicのアイコンがAppleに似すぎているので、背景色を山吹色にしましょう。」） | App Home の GLASS_ICON_APP_MUSIC と bar の icon、app の中の All Songs の札（今は赤・ピンクの gradient）も山吹色（#F8B500 前後）に。host の PNG と T1 の撮影 | — | cleared（2026-10-07 T1-327、Q1 が PNG を目視: App Home・bar・titlebar・All Songs が山吹色） |
 
 
 ## 2026-10-06: BUG-202 の起動停止（q779、finished）

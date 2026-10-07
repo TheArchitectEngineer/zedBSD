@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws172-p003 -->
 # ws172-p003: 鍵（FIDO2）の login と登録: passkey-fido2 と機器の helper、UI
 
-Status: uncleared（2026-10-07 Q1 の判定: T1-278 で fido2-p003-guest FAIL: 初回の login で Settings の Welcome が開き Users の頁に届かない（試験の前提）。passkey-fido2・greeter の styles=5・PIN の行は ok。P2 が直す）（旧: in-progress（2026-10-06 P2: 段 A（passkey-fido2・helper・`_passkey`）と段 B（鍵の一覧・登録・削除の口と UI）を実装し、host 試験 PASS。段 C はユーザーの決定で実機の UAT（WS161 p006）。QEMU の鍵の無い所の確認は T1 待ち））
+Status: cleared（2026-10-07 Q1 の判定: T1-324 (c) で fido2-p003-guest PASS（段 A・B）。段 C はユーザーの決定で実機の鍵の UAT）（旧: uncleared（2026-10-07 Q1 の判定: T1-278 で fido2-p003-guest FAIL: 初回の login で Settings の Welcome が開き Users の頁に届かない（試験の前提）。passkey-fido2・greeter の styles=5・PIN の行は ok。P2 が直す）（旧: in-progress（2026-10-06 P2: 段 A（passkey-fido2・helper・`_passkey`）と段 B（鍵の一覧・登録・削除の口と UI）を実装し、host 試験 PASS。段 C はユーザーの決定で実機の UAT（WS161 p006）。QEMU の鍵の無い所の確認は T1 待ち）））
 WS: [ws172](../ws.md)
 設計: [phase001](../phase001/phase.md) の §7・§12（B1・B2・M3・M6・M7）と判断 P3・P4・P5・P8・P9、`docs/architecture/security.md` の「The parts」「The request」「The security key」
 Queue: Q1 の P2 の列（2026-10-06、q824 → q826 → WS161 → **WS172**）
