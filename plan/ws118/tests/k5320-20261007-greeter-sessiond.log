@@ -1,0 +1,268 @@
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1366 height=768 refresh_mhz=60059
+KWL STARTUP step=vulkan-device ms=1
+KWL STARTUP step=vulkan-objects-arrow ms=1
+KWL STARTUP step=wallpaper-picture ms=5
+KWL STARTUP step=wallpaper ms=202
+KWL STARTUP step=glyphs-text ms=18
+KWL STARTUP step=glyphs-icons ms=6
+KWL STARTUP step=glyphs-mark ms=17
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=43
+KWL STARTUP step=tiles ms=57
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=306 at_ms=20439
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL STARTUP step=input ms=2 at_ms=20441
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=20441
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1366 height=768 timeout_ms=18446744073709551615 pid=34 role=greeter
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=2
+KWL HANDOFF go=1 waited_ms=0 at_ms=20453
+KWL STARTUP step=output-swapchain ms=6
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1366 height=768 images=3 format=37
+KWL MODE window switch_ms=8 at_ms=20459
+KWL GLASS glyph codepoint=U+2192 size=4 face=0 cell=0
+KWL MEDIA volumes=0 icon=0
+KWL VULKAN_ERROR operation=acquire result=-4
+KWL FAILED site=compose_draw errno=5
+KWL OUTPUT closed
+KWL EXIT frames=1 error=5 cleanup_failed=1 pid=34 input_events=0 seat_events=0 at_ms=20481
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1366 height=768 refresh_mhz=60059
+KWL STARTUP step=vulkan-device ms=2
+KWL STARTUP step=vulkan-objects-arrow ms=1
+KWL STARTUP step=wallpaper-picture ms=5
+KWL STARTUP step=wallpaper ms=203
+KWL STARTUP step=glyphs-text ms=16
+KWL STARTUP step=glyphs-icons ms=6
+KWL STARTUP step=glyphs-mark ms=16
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=40
+KWL STARTUP step=tiles ms=60
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=308 at_ms=21806
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL STARTUP step=input ms=1 at_ms=21807
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=21807
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1366 height=768 timeout_ms=18446744073709551615 pid=36 role=greeter
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=2
+KWL HANDOFF go=1 waited_ms=0 at_ms=21820
+KWL STARTUP step=output-swapchain ms=7
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1366 height=768 images=3 format=37
+KWL MODE window switch_ms=10 at_ms=21827
+KWL GLASS glyph codepoint=U+2192 size=4 face=0 cell=0
+KWL MEDIA volumes=0 icon=0
+KWL VULKAN_ERROR operation=acquire result=-4
+KWL FAILED site=compose_draw errno=5
+KWL OUTPUT closed
+KWL EXIT frames=1 error=5 cleanup_failed=1 pid=36 input_events=0 seat_events=0 at_ms=21848
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1366 height=768 refresh_mhz=60059
+KWL STARTUP step=vulkan-device ms=1
+KWL STARTUP step=vulkan-objects-arrow ms=1
+KWL STARTUP step=wallpaper-picture ms=6
+KWL STARTUP step=wallpaper ms=204
+KWL STARTUP step=glyphs-text ms=15
+KWL STARTUP step=glyphs-icons ms=5
+KWL STARTUP step=glyphs-mark ms=16
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=37
+KWL STARTUP step=tiles ms=58
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=302 at_ms=24493
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL STARTUP step=input ms=2 at_ms=24495
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=24495
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1366 height=768 timeout_ms=18446744073709551615 pid=38 role=greeter
+KWL STARTUP step=output-display ms=1
+KWL STARTUP step=output-pipelines ms=2
+KWL HANDOFF go=1 waited_ms=0 at_ms=24508
+KWL STARTUP step=output-swapchain ms=6
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1366 height=768 images=3 format=37
+KWL MODE window switch_ms=9 at_ms=24514
+KWL GLASS glyph codepoint=U+2192 size=4 face=0 cell=0
+KWL MEDIA volumes=0 icon=0
+KWL VULKAN_ERROR operation=acquire result=-4
+KWL FAILED site=compose_draw errno=5
+KWL OUTPUT closed
+KWL EXIT frames=1 error=5 cleanup_failed=1 pid=38 input_events=0 seat_events=0 at_ms=24535
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1366 height=768 refresh_mhz=60059
+KWL STARTUP step=vulkan-device ms=2
+KWL STARTUP step=vulkan-objects-arrow ms=0
+KWL STARTUP step=wallpaper-picture ms=5
+KWL STARTUP step=wallpaper ms=204
+KWL STARTUP step=glyphs-text ms=18
+KWL STARTUP step=glyphs-icons ms=6
+KWL STARTUP step=glyphs-mark ms=16
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=41
+KWL STARTUP step=tiles ms=58
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=306 at_ms=28843
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL STARTUP step=input ms=2 at_ms=28845
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=28845
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1366 height=768 timeout_ms=18446744073709551615 pid=40 role=greeter
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=2
+KWL HANDOFF go=1 waited_ms=0 at_ms=28857
+KWL STARTUP step=output-swapchain ms=6
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1366 height=768 images=3 format=37
+KWL MODE window switch_ms=9 at_ms=28864
+KWL GLASS glyph codepoint=U+2192 size=4 face=0 cell=0
+KWL MEDIA volumes=0 icon=0
+KWL VULKAN_ERROR operation=acquire result=-4
+KWL FAILED site=compose_draw errno=5
+KWL OUTPUT closed
+KWL EXIT frames=1 error=5 cleanup_failed=1 pid=40 input_events=0 seat_events=0 at_ms=28886
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1366 height=768 refresh_mhz=60059
+KWL STARTUP step=vulkan-device ms=2
+KWL STARTUP step=vulkan-objects-arrow ms=0
+KWL STARTUP step=wallpaper-picture ms=5
+KWL STARTUP step=wallpaper ms=204
+KWL STARTUP step=glyphs-text ms=15
+KWL STARTUP step=glyphs-icons ms=7
+KWL STARTUP step=glyphs-mark ms=17
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=40
+KWL STARTUP step=tiles ms=61
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=309 at_ms=37197
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL STARTUP step=input ms=1 at_ms=37198
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=37198
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1366 height=768 timeout_ms=18446744073709551615 pid=42 role=greeter
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=2
+KWL HANDOFF go=1 waited_ms=0 at_ms=37210
+KWL STARTUP step=output-swapchain ms=7
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1366 height=768 images=3 format=37
+KWL MODE window switch_ms=9 at_ms=37217
+KWL GLASS glyph codepoint=U+2192 size=4 face=0 cell=0
+KWL MEDIA volumes=0 icon=0
+KWL VULKAN_ERROR operation=submit result=-4
+KWL FAILED site=compose_draw errno=5
+KWL OUTPUT closed
+KWL EXIT frames=1 error=5 cleanup_failed=1 pid=42 input_events=0 seat_events=0 at_ms=37242
+KWL LANGUAGE language=en from=system error=0
+KL EVENTS subscribed classes=0x2f
+KWL POWER source=ac percent=100 charging=0
+KWL DISPLAY device=zedBSD i915 (Gen12 Xe) width=1366 height=768 refresh_mhz=60059
+KWL STARTUP step=vulkan-device ms=2
+KWL STARTUP step=vulkan-objects-arrow ms=0
+KWL STARTUP step=wallpaper-picture ms=5
+KWL STARTUP step=wallpaper ms=204
+KWL STARTUP step=glyphs-text ms=16
+KWL STARTUP step=glyphs-icons ms=6
+KWL STARTUP step=glyphs-mark ms=15
+KWL GLASS atlas cache-top=344 cells=294 faces=1
+KWL STARTUP step=glyphs ms=41
+KWL STARTUP step=tiles ms=58
+KWL GLASS ready text=1
+KWL STARTUP step=compose ms=306 at_ms=53549
+KWL INPUT device=/dev/input/event0 kind=pointer abs=0
+KWL INPUT device=/dev/input/event1 kind=keyboard abs=0
+KWL STARTUP step=input ms=2 at_ms=53551
+KWL KEYMAP format=xkb_v1 errno=0
+KWL STARTUP step=keymap ms=0 at_ms=53551
+KWL GREETER open users=1 selected=kei
+KWL READY socket=/tmp/wayland-0 width=1366 height=768 timeout_ms=18446744073709551615 pid=44 role=greeter
+KWL STARTUP step=output-display ms=0
+KWL STARTUP step=output-pipelines ms=2
+KWL HANDOFF go=1 waited_ms=0 at_ms=53563
+KWL STARTUP step=output-swapchain ms=7
+KWL STARTUP step=output-targets ms=0
+KWL OUTPUT open width=1366 height=768 images=3 format=37
+KWL MODE window switch_ms=9 at_ms=53570
+KWL GLASS glyph codepoint=U+2192 size=4 face=0 cell=0
+KWL MEDIA volumes=0 icon=0
+KWL VULKAN_ERROR operation=submit result=-4
+KWL FAILED site=compose_draw errno=5
+KWL OUTPUT closed
+KWL EXIT frames=1 error=5 cleanup_failed=1 pid=44 input_events=0 seat_events=0 at_ms=53596
+1791363243 SESSIOND CONSOLE reason=boot-parameters
+1791363293 SESSIOND START greeter=/bin/wayland session=/etc/keiland/session pid=16
+1791363293 SESSIOND AUTOLOGIN user=kei
+1791363293 SESSIOND SEAT path=/dev/gpu0 uid=1000 mode=0600
+1791363293 SESSIOND SEAT path=/dev/input/event0 uid=1000 mode=0600
+1791363293 SESSIOND SEAT path=/dev/input/event1 uid=1000 mode=0600
+1791363293 SESSIOND SEAT path=/dev/backlight/backlight0 uid=1000 mode=0600
+1791363293 SESSIOND SESSION start user=kei uid=1000 pid=18 runtime=/run/user/1000
+1791363293 SESSIOND NETWORK session open uid=1000
+1791363301 SESSIOND HANDOFF session ready=1 waited_ms=7463
+1791363301 SESSIOND HANDOFF go written=3 at_ms=14350
+1791363305 SESSIOND SESSION end user=kei pid=18 status=256
+1791363307 SESSIOND NETWORK session close uid=1000
+1791363307 SESSIOND SEAT path=/dev/gpu0 uid=78 mode=0600
+1791363307 SESSIOND SEAT path=/dev/input/event0 uid=78 mode=0600
+1791363307 SESSIOND SEAT path=/dev/input/event1 uid=78 mode=0600
+1791363307 SESSIOND SEAT path=/dev/backlight/backlight0 uid=78 mode=0600
+1791363307 SESSIOND GREETER start pid=34 uid=78
+1791363307 SESSIOND HANDOFF greeter ready: go
+1791363307 SESSIOND GREETER end pid=34 status=256
+1791363307 SESSIOND GREETER failed reason="KWL EXIT frames=1 error=5 cleanup_failed=1 pid=34 input_events=0 seat_events=0 at_ms=20481"
+1791363307 SESSIOND GREETER retry failures=1 delay=1
+1791363308 SESSIOND GREETER start pid=36 uid=78
+1791363308 SESSIOND HANDOFF greeter ready: go
+1791363309 SESSIOND GREETER end pid=36 status=256
+1791363309 SESSIOND GREETER failed reason="KWL EXIT frames=1 error=5 cleanup_failed=1 pid=36 input_events=0 seat_events=0 at_ms=21848"
+1791363309 SESSIOND GREETER retry failures=2 delay=2
+1791363311 SESSIOND GREETER start pid=38 uid=78
+1791363311 SESSIOND HANDOFF greeter ready: go
+1791363311 SESSIOND GREETER end pid=38 status=256
+1791363311 SESSIOND GREETER failed reason="KWL EXIT frames=1 error=5 cleanup_failed=1 pid=38 input_events=0 seat_events=0 at_ms=24535"
+1791363311 SESSIOND GREETER retry failures=3 delay=4
+1791363315 SESSIOND GREETER start pid=40 uid=78
+1791363315 SESSIOND HANDOFF greeter ready: go
+1791363315 SESSIOND GREETER end pid=40 status=256
+1791363315 SESSIOND GREETER failed reason="KWL EXIT frames=1 error=5 cleanup_failed=1 pid=40 input_events=0 seat_events=0 at_ms=28886"
+1791363315 SESSIOND GREETER retry failures=4 delay=8
+1791363323 SESSIOND GREETER start pid=42 uid=78
+1791363324 SESSIOND HANDOFF greeter ready: go
+1791363324 SESSIOND GREETER end pid=42 status=256
+1791363324 SESSIOND GREETER failed reason="KWL EXIT frames=1 error=5 cleanup_failed=1 pid=42 input_events=0 seat_events=0 at_ms=37242"
+1791363324 SESSIOND GREETER retry failures=5 delay=16
+1791363340 SESSIOND GREETER start pid=44 uid=78
+1791363340 SESSIOND HANDOFF greeter ready: go
+1791363340 SESSIOND GREETER end pid=44 status=256
+1791363340 SESSIOND GREETER failed reason="KWL EXIT frames=1 error=5 cleanup_failed=1 pid=44 input_events=0 seat_events=0 at_ms=53596"
+1791363340 SESSIOND CONSOLE reason=greeter-failed failures=6
+1791363340 SESSIOND SEAT path=/dev/gpu0 uid=0 mode=0666
+1791363340 SESSIOND SEAT path=/dev/input/event0 uid=0 mode=0640
+1791363340 SESSIOND SEAT path=/dev/input/event1 uid=0 mode=0640
+1791363340 SESSIOND SEAT path=/dev/backlight/backlight0 uid=0 mode=0644
+1791363419 SESSIOND CONSOLE reason=boot-parameters

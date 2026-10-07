@@ -4,7 +4,7 @@
 
 Phase ID: `ws051-p002`
 Parent: [WS051](../ws.md)
-Status: in-progress（2026-10-07 P2: 実装、新しい host の試験 PASS、kernel の build と `I915_TESTS=y I915_TEST_SET=execution` の build の warning 0。ktest
+Status: cleared（2026-10-07 Q1 の判定: T1-334 の 5330 の VFIO の execution の ktest（290 checks）に P5A・P5B が含まれ、FAIL の行も「display_probe not linked」も無い（ktest は PASS を数だけで出す）。1 件の FAIL P6C0-WINDOW と display_ktest の SCANOUT-SETUP は ws051 と無関係の古い fixture（ktest-gt.c・scanout-ktest.c の GGTT の stand-in が小さい、10-03 から不変）、P2 が直す）（旧: in-progress（2026-10-07 P2: 実装、新しい host の試験 PASS、kernel の build と `I915_TESTS=y I915_TEST_SET=execution` の build の warning 0。ktest）
 （P5A・P5B）を流すのは 5330 が戻った後の T1。依存の ws113-p002 の clearance も待つ）
 Phase disposition: normal
 Queue: q834 の続き（P2、Q1 の指示 2026-10-07「WS051 は p001 → p002 で可」）

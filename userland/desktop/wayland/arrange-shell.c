@@ -67,6 +67,23 @@
 #define ARRANGE_MENU_WIDTH		(2 * ARRANGE_MENU_PAD + ARRANGE_MENU_COLUMNS * ARRANGE_MENU_CELL_WIDTH + (ARRANGE_MENU_COLUMNS - 1) * ARRANGE_MENU_CELL_GAP)
 #define ARRANGE_MENU_HEIGHT		(2 * ARRANGE_MENU_PAD + ARRANGE_MENU_ROWS * ARRANGE_MENU_CELL_HEIGHT + (ARRANGE_MENU_ROWS - 1) * ARRANGE_MENU_CELL_GAP)
 
+/*
+ * How the menu opens and closes (ws181-p007, the 2026-10-07 UAT): it grows
+ * from the pill's size at the pill to its own over this many milliseconds,
+ * eased out, its glass going from dense white to the windows' panels'
+ * frosted glass (panels.c) as it grows, and fades out over this many; the
+ * least scale it grows from, its opacity at the start, the white at the
+ * start and at the end, the glass's rim, and the scale it fades out to.
+ */
+#define ARRANGE_MENU_OPEN_MS		180U
+#define ARRANGE_MENU_CLOSE_MS		120U
+#define ARRANGE_MENU_LEAST_SCALE	0.15f
+#define ARRANGE_MENU_FIRST_OPACITY	0.5f
+#define ARRANGE_MENU_DENSE		0.92f
+#define ARRANGE_MENU_WHITE		0.34f
+#define ARRANGE_MENU_RIM		0.70f
+#define ARRANGE_MENU_FADED_SCALE	0.96f
+
 /* The drawing of a layout in its cell (its slots scaled down from a five times larger area). */
 #define ARRANGE_ICON_WIDTH	60
 #define ARRANGE_ICON_HEIGHT	40
@@ -116,7 +133,10 @@ struct arrange_desktop {
 /*
  * The menu: whether it is open, where, the item a press is on (its release
  * acts on it), the item the keyboard selected, and whether a press on the
- * pill waits for its release to open the menu.
+ * pill waits for its release to open the menu.  Its drawing (ws181-p007):
+ * the pill's middle and width it grows from, when it opened (kwl_milliseconds'
+ * clock), whether its growing is over, when it closed (0 once its fade is
+ * over or before it ever closed), and how far it had grown then.
  */
 struct arrange_menu {
 	unsigned open;
@@ -127,6 +147,24 @@ struct arrange_menu {
 	int selected;
 	unsigned pill_pressed;
 	unsigned swallow;
+	int32_t pill_middle;
+	int32_t pill_width;
+	uint64_t opened_ms;
+	unsigned settled;
+	uint64_t closed_ms;
+	float closed_grown;
+};
+
+/*
+ * How the menu is drawn this frame (ws181-p007): where its top left corner
+ * is, its scale about it, the white of its glass, and its opacity.
+ */
+struct arrange_view {
+	float x;
+	float y;
+	float scale;
+	float white;
+	float opacity;
 };
 
 /*
@@ -164,7 +202,10 @@ static void arrange_body(const struct kwl_object *surface, const struct kwl_arra
 static void arrange_glide_to(struct kwl_server *server, struct arrange_slot *slot, unsigned index);
 static void arrange_end(struct kwl_server *server, unsigned desktop, const char *reason);
 static int arrange_slot_of(unsigned desktop, const struct kwl_object *surface);
-static void arrange_draw_icon(struct kwl_server *server, VkCommandBuffer command, unsigned layout, int32_t x, int32_t y, const float *ink, float alpha);
+static int arrange_menu_view(struct kwl_server *server, struct arrange_view *view);
+static float arrange_menu_grown(struct kwl_server *server);
+static void arrange_menu_grow(struct kwl_server *server, float grown, struct arrange_view *view);
+static void arrange_draw_icon(struct kwl_server *server, VkCommandBuffer command, unsigned layout, float x, float y, float scale, const float *ink, float alpha);
 static void arrange_swap_end(struct kwl_server *server);
 
 /*
@@ -661,9 +702,31 @@ kwl_arrange_moved(
 }
 
 /*
- * Draws the arrangement menu, when it is open, under the desktops' pill:
- * frosted glass with the seven layouts' drawings in their cells, the one
- * under the pointer or selected by the keyboard lit in the accent.
+ * Whether the arrangement menu shows: open, or fading out after it closed
+ * (ws181-p007).  shell.c draws the scene under it blurred for its glass
+ * while it does.
+ */
+int
+kwl_arrange_showing(void)
+{
+	/* An open menu shows. */
+	if (arrange_menu.open)
+		return 1;
+
+	/* A closed one shows while it fades. */
+	if (arrange_menu.closed_ms != 0U)
+		return 1;
+
+	/* Succeeded: no menu shows. */
+	return 0;
+}
+
+/*
+ * Draws the arrangement menu, when it shows, under the desktops' pill: the
+ * windows' panels' frosted glass (ws181-p007) with the seven layouts'
+ * drawings in their cells, the one under the pointer or selected by the
+ * keyboard lit in the accent.  Opening, it grows from the pill, dense white
+ * becoming glass; closed, it fades.
  */
 void
 kwl_arrange_draw(
@@ -674,45 +737,55 @@ kwl_arrange_draw(
 	static const float soft[4] = { 0.40f, 0.46f, 0.56f, 1.0f };
 	struct glass_shape shape;
 	struct kwl_object *windows[KWL_ARRANGE_MAX];
+	struct arrange_view view;
 	float accent[4];
 	float accent_ink[4];
+	float colour[4];
 	const float *ink;
 	unsigned kept;
 	unsigned item;
 	unsigned count;
+	int shows;
 	int over;
 	int32_t x;
 	int32_t y;
 	int32_t width;
 	int32_t height;
+	float left;
+	float top;
 
-	/* Only an open menu. */
-	if (!arrange_menu.open)
+	/* Only a menu that shows, where and how this frame draws it. */
+	shows = arrange_menu_view(server, &view);
+	if (!shows)
 		return;
 
-	/* The shadow and the frosted glass (the 2026-10-07 UAT), as the power dialog's card. */
-	glass_shape_init(&shape, (float)arrange_menu.x, (float)arrange_menu.y + 6.0f, (float)ARRANGE_MENU_WIDTH, (float)arrange_menu.height);
+	/* The shadow, as the power dialog's card's, scaled and faded with the menu. */
+	glass_shape_init(&shape, view.x, view.y + 6.0f * view.scale, (float)ARRANGE_MENU_WIDTH * view.scale, (float)arrange_menu.height * view.scale);
 	shape.quad[0] -= 40.0f;
 	shape.quad[1] -= 40.0f;
 	shape.quad[2] += 80.0f;
 	shape.quad[3] += 80.0f;
 	shape.mode = MODE_SHADOW;
-	shape.radius = ARRANGE_MENU_RADIUS;
-	shape.soft = 18.0f;
+	shape.radius = ARRANGE_MENU_RADIUS * view.scale;
+	shape.soft = 18.0f * view.scale;
 	shape.color[0] = 0.10f;
 	shape.color[1] = 0.18f;
 	shape.color[2] = 0.35f;
 	shape.color[3] = 0.20f;
+	shape.opacity = view.opacity;
 	glass_shape_draw(server, command, &shape);
-	glass_shape_init(&shape, (float)arrange_menu.x, (float)arrange_menu.y, (float)ARRANGE_MENU_WIDTH, (float)arrange_menu.height);
+
+	/* The frosted glass: the scene under it blurred (shell.c), whitened as the windows' panels. */
+	glass_shape_init(&shape, view.x, view.y, (float)ARRANGE_MENU_WIDTH * view.scale, (float)arrange_menu.height * view.scale);
 	shape.mode = MODE_GLASS;
-	shape.radius = ARRANGE_MENU_RADIUS;
+	shape.radius = ARRANGE_MENU_RADIUS * view.scale;
 	shape.soft = 1.0f;
 	shape.color[0] = 1.0f;
 	shape.color[1] = 1.0f;
 	shape.color[2] = 1.0f;
-	shape.color[3] = 0.62f;
-	shape.edge = 0.70f;
+	shape.color[3] = view.white;
+	shape.edge = ARRANGE_MENU_RIM;
+	shape.opacity = view.opacity;
 	glass_shape_draw(server, command, &shape);
 
 	/* The item under the pointer, or the keyboard's. */
@@ -727,23 +800,32 @@ kwl_arrange_draw(
 	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, accent);
 	kwl_accent_colour(server, server->dark, KWL_ACCENT_INK, 1.0f, accent_ink);
 
-	/* Each layout's cell: its drawing in the middle. */
+	/* Each layout's cell, scaled about the menu's corner: its drawing in the middle. */
 	for (item = 0U; item < ARRANGE_ITEMS; item++) {
 		arrange_menu_item_rect((int)item, &x, &y, &width, &height);
+		left = view.x + (float)(x - arrange_menu.x) * view.scale;
+		top = view.y + (float)(y - arrange_menu.y) * view.scale;
 
 		/* The lit cell is a rounded square of the accent with its ink, as they are. */
 		ink = dark;
 		kept = server->keep_colours;
 		if ((int)item == over) {
 			kept = kwl_accent_as_is(server);
-			glass_draw_solid(server, command, (float)x, (float)y, (float)width, (float)height, 12.0f, accent);
+			memcpy(colour, accent, sizeof(colour));
+			colour[3] *= view.opacity;
+			glass_draw_solid(server, command, left, top, (float)width * view.scale, (float)height * view.scale, 12.0f * view.scale, colour);
 			ink = accent_ink;
 		}
 
 		/* The drawing, faint with no window to arrange. */
 		if (count == 0U && (int)item != over)
 			ink = soft;
-		arrange_draw_icon(server, command, item, x + (width - ARRANGE_ICON_WIDTH) / 2, y + (height - ARRANGE_ICON_HEIGHT) / 2, ink, 1.0f);
+		arrange_draw_icon(server, command, item,
+				  left + (float)((width - ARRANGE_ICON_WIDTH) / 2) * view.scale,
+				  top + (float)((height - ARRANGE_ICON_HEIGHT) / 2) * view.scale,
+				  view.scale,
+				  ink,
+				  view.opacity);
 		kwl_accent_done(server, kept);
 	}
 }
@@ -775,6 +857,13 @@ arrange_menu_open(
 	arrange_menu.selected = 0;
 	server->dirty = 1;
 
+	/* It grows from the pill from now (ws181-p007); a fade of its last closing is over. */
+	arrange_menu.pill_middle = pill_x + pill_width / 2;
+	arrange_menu.pill_width = pill_width;
+	arrange_menu.opened_ms = kwl_milliseconds();
+	arrange_menu.settled = 0U;
+	arrange_menu.closed_ms = 0U;
+
 	/* The log: the menu, then each layout's middle. */
 	printf("KWL ARRANGE menu open x=%d y=%d width=%d height=%d\n", arrange_menu.x, arrange_menu.y, ARRANGE_MENU_WIDTH, arrange_menu.height);
 	for (item = 0U; item < ARRANGE_ITEMS; item++) {
@@ -789,11 +878,137 @@ arrange_menu_close(
 	struct kwl_server *server,
 	const char *via)
 {
+	/* It fades from as far as it had grown (ws181-p007). */
+	if (arrange_menu.open) {
+		arrange_menu.closed_grown = arrange_menu_grown(server);
+		arrange_menu.closed_ms = kwl_milliseconds();
+	}
+
 	/* Closed, nothing pressed. */
 	arrange_menu.open = 0;
 	arrange_menu.pressed = ARRANGE_ITEM_NONE;
 	server->dirty = 1;
 	printf("KWL ARRANGE menu close via=%s\n", via);
+}
+
+/*
+ * Gives how the menu is drawn this frame (ws181-p007): growing for
+ * ARRANGE_MENU_OPEN_MS after it opened, then still; fading for
+ * ARRANGE_MENU_CLOSE_MS after it closed, from as far as it had grown,
+ * shrinking a little towards its top's middle.  A frame of either asks for
+ * the next.  Returns 1 when the menu shows, 0 when it does not.
+ */
+static int
+arrange_menu_view(
+	struct kwl_server *server,
+	struct arrange_view *view)
+{
+	uint64_t elapsed;
+	float grown;
+	float faded;
+	float scale;
+	float width;
+
+	/* An open menu, growing or grown. */
+	if (arrange_menu.open) {
+		grown = arrange_menu_grown(server);
+		arrange_menu_grow(server, grown, view);
+		return 1;
+	}
+
+	/* A closed one that has faded, or never opened, does not show. */
+	if (arrange_menu.closed_ms == 0U)
+		return 0;
+
+	/* A fade that has run its time is over. */
+	elapsed = kwl_milliseconds() - arrange_menu.closed_ms;
+	if (elapsed >= ARRANGE_MENU_CLOSE_MS) {
+		arrange_menu.closed_ms = 0U;
+		return 0;
+	}
+
+	/* Fading from as far as it had grown, a little smaller about its top's middle. */
+	arrange_menu_grow(server, arrange_menu.closed_grown, view);
+	faded = (float)elapsed / (float)ARRANGE_MENU_CLOSE_MS;
+	scale = 1.0f - (1.0f - ARRANGE_MENU_FADED_SCALE) * faded;
+	width = (float)ARRANGE_MENU_WIDTH * view->scale;
+	view->x += width * (1.0f - scale) * 0.5f;
+	view->scale *= scale;
+	view->opacity *= 1.0f - faded;
+	server->dirty = 1;
+
+	/* Succeeded: the menu fades. */
+	return 1;
+}
+
+/*
+ * Gives how far the open menu has grown, eased out (1 - (1 - t)^3), from 0
+ * when it opened to 1; a frame while it grows asks for the next, and the
+ * first frame grown logs it (the tests take their picture after it).
+ */
+static float
+arrange_menu_grown(
+	struct kwl_server *server)
+{
+	uint64_t elapsed;
+	float t;
+
+	/* Grown: still. */
+	if (arrange_menu.settled)
+		return 1.0f;
+
+	/* Grown now, once. */
+	elapsed = kwl_milliseconds() - arrange_menu.opened_ms;
+	if (elapsed >= ARRANGE_MENU_OPEN_MS) {
+		arrange_menu.settled = 1U;
+		printf("KWL ARRANGE menu settled ms=%llu\n", (unsigned long long)elapsed);
+		return 1.0f;
+	}
+
+	/* Still growing: the next frame too. */
+	server->dirty = 1;
+	t = (float)elapsed / (float)ARRANGE_MENU_OPEN_MS;
+	t = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+
+	/* Succeeded: how far it has grown. */
+	return t;
+}
+
+/*
+ * Gives the menu's view as far as it has grown (0 to 1): from the pill's
+ * width at the pill's middle on the bar, dense white and half faded, to
+ * its own place and size on the windows' panels' frosted glass (white
+ * through, with the panels made solid, BUG-214).
+ */
+static void
+arrange_menu_grow(
+	struct kwl_server *server,
+	float grown,
+	struct arrange_view *view)
+{
+	float first_scale;
+	float first_x;
+	float first_y;
+
+	/* Where it grows from: the pill's width, its middle, the bar's middle. */
+	first_scale = (float)arrange_menu.pill_width / (float)ARRANGE_MENU_WIDTH;
+	if (first_scale < ARRANGE_MENU_LEAST_SCALE)
+		first_scale = ARRANGE_MENU_LEAST_SCALE;
+	if (first_scale > 1.0f)
+		first_scale = 1.0f;
+	first_x = (float)arrange_menu.pill_middle - (float)ARRANGE_MENU_WIDTH * first_scale * 0.5f;
+	first_y = (float)KWL_GLASS_BAR * 0.5f - (float)arrange_menu.height * first_scale * 0.5f;
+
+	/* As far as it has grown towards its own place, size, glass and opacity. */
+	view->scale = first_scale + (1.0f - first_scale) * grown;
+	view->x = first_x + ((float)arrange_menu.x - first_x) * grown;
+	view->y = first_y + ((float)arrange_menu.y - first_y) * grown;
+	view->white = ARRANGE_MENU_DENSE + (ARRANGE_MENU_WHITE - ARRANGE_MENU_DENSE) * grown;
+	view->opacity = ARRANGE_MENU_FIRST_OPACITY + (1.0f - ARRANGE_MENU_FIRST_OPACITY) * grown;
+
+	/* The panels made solid make the menu solid white too. */
+	if (server->panels_opaque != 0U)
+		view->white = 1.0f;
 }
 
 /* Gives the menu's item at a point, or ARRANGE_ITEM_NONE. */
@@ -1084,14 +1299,15 @@ arrange_slot_of(
 	return -1;
 }
 
-/* Draws a layout's small drawing: its slots for its usual number of windows, scaled down, outlined in the ink. */
+/* Draws a layout's small drawing: its slots for its usual number of windows, scaled down (and by scale, the menu growing), filled in the ink. */
 static void
 arrange_draw_icon(
 	struct kwl_server *server,
 	VkCommandBuffer command,
 	unsigned layout,
-	int32_t x,
-	int32_t y,
+	float x,
+	float y,
+	float scale,
 	const float *ink,
 	float alpha)
 {
@@ -1117,11 +1333,11 @@ arrange_draw_icon(
 	colour[3] = 0.55f * alpha;
 	for (index = 0U; index < made; index++) {
 		glass_draw_solid(server, command,
-				 (float)x + (float)slots[index].x / (float)ARRANGE_ICON_SCALE,
-				 (float)y + (float)slots[index].y / (float)ARRANGE_ICON_SCALE,
-				 (float)slots[index].width / (float)ARRANGE_ICON_SCALE - 2.0f,
-				 (float)slots[index].height / (float)ARRANGE_ICON_SCALE - 2.0f,
-				 3.0f,
+				 x + (float)slots[index].x / (float)ARRANGE_ICON_SCALE * scale,
+				 y + (float)slots[index].y / (float)ARRANGE_ICON_SCALE * scale,
+				 ((float)slots[index].width / (float)ARRANGE_ICON_SCALE - 2.0f) * scale,
+				 ((float)slots[index].height / (float)ARRANGE_ICON_SCALE - 2.0f) * scale,
+				 3.0f * scale,
 				 colour);
 	}
 }

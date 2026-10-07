@@ -2,7 +2,7 @@
 
 # ws139-p002: E2（5330 の host の i915 の Venus）で測る手順と基準値
 
-Status: in-progress（2026-10-06 q832、P1。script を書き commit、手順 1 の読むだけの確かめは 5330 に届かず。手順 3〜8（5330 での計測）は T1 に依頼）
+Status: cleared（2026-10-07 Q1 の判定: T1-284 PASS（5330 の host i915 の Venus で E2=yes、Intel Iris Xe、終わりに iGPU は vfio-pci に戻った）。注: e2-run.sh は自分で lock を取るので外側で flock を重ねない（重ねると hang する）。結果 /home/awe/zedBSD-worktrees/t1/build/t1-284out.kmv8hj/、5330 の ~/ws139-e2.* は Q1 が消した）（旧: in-progress（2026-10-06 q832、P1。script を書き commit、手順 1 の読むだけの確かめは 5330 に届かず。手順 3〜8（5330 での計測）は T1 に依頼））
 Disposition: normal
 Parent: [WS139](../ws.md)
 Queue: q832（P1）

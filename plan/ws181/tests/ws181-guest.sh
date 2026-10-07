@@ -23,7 +23,9 @@
 #   9. b docked, its title in the bar pulled sideways 200 px and let go in the bar: it comes off and moves
 #      ("leave via=pull"), and is not docked again ("KWL GLASS moved", no new "dock ... via=drag").
 #  C. The arrangement (p004, design.md §5.4):
-#  10. A click on the desktops' pill opens the menu ("KWL ARRANGE menu open", arrange-menu.png); "One on the Right"
+#  10. A click on the desktops' pill opens the menu ("KWL ARRANGE menu open"; it grows from the pill and is grown,
+#      "KWL ARRANGE menu settled", ws181-p007; c10-menu-opening.png just after the click, as soon as the picture can
+#      be read, c10-arrange-menu.png 0.3 s later: the frosted glass shows the windows under it blurred); "One on the Right"
 #      arranges the three windows ("KWL ARRANGE apply layout=right-main desktop=2 windows=3", arranged.png), and each
 #      client draws its slot's size ("KWL GLASS resized ... width=W height=H" after the apply, W x H its last configure's).
 #  11. The left top slot's window dragged by its title onto the right slot: "KWL ARRANGE swap".
@@ -216,8 +218,11 @@ d=$(client_of)
 open_app apps.e c0f0f4 300x220
 e=$(client_of)
 set -- $(last 'KWL GLASS desktops x=' | sed -n 's/.* x=\([0-9]*\) step=\([0-9]*\) .*/\1 \2/p')
-pointer move $((${1:-560} + 40)) 22 sleep 300 down sleep 60 up sleep 800
+pointer move $((${1:-560} + 40)) 22 sleep 300 down sleep 60 up
+shot c10-menu-opening
 expect_some menu-open 'KWL ARRANGE menu open'
+sleep 0.3
+expect_some menu-settled 'KWL ARRANGE menu settled'
 shot c10-arrange-menu
 set -- $(last 'KWL ARRANGE menu item=right-main ' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
 glides=$(count 'KWL ARRANGE glide-end')
@@ -265,5 +270,5 @@ guest 'grep -h "WLTEST RESIZE" /tmp/apps.*.log' > "$out/wltest-resize.log"
 grep -q ERROR "$out/log.txt" && fail no-error || pass no-error
 guest "$stop_all" >/dev/null
 
-echo "ws181-guest: status $status (outputs in $out; a1-windowed, a6-after-kill, b7-home-edge, b8-wiseview-top, c10-arrange-menu, c10-arranged, c11-swapped .png for the eye)"
+echo "ws181-guest: status $status (outputs in $out; a1-windowed, a6-after-kill, b7-home-edge, b8-wiseview-top, c10-menu-opening, c10-arrange-menu, c10-arranged, c11-swapped .png for the eye)"
 exit $status

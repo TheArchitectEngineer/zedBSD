@@ -595,6 +595,10 @@ drv_i915_shader_compile(
 	/* The caller receives nothing unless the whole shader lowers. */
 	*out = NULL;
 
+	/* A geometry shader's code generation is not written yet (ws075-p007a, increment a2): refused, never approximated. */
+	if (ir->stage == I915_STAGE_GEOMETRY)
+		return ENOTSUP;
+
 	/* Allocates the binary and records what is known before lowering. */
 	binary = kern_calloc(1U, sizeof(*binary));
 	if (binary == NULL)
