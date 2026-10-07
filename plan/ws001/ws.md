@@ -8,8 +8,8 @@ Primary Milestone: MG002
 Related Milestones: MG005
 Objectives: O1, O2, O3
 Parent: [Master](../master.md)
-Queue: なし
-Resume point: p024〜p040 cleared（2026-09-27。p040 の mesg は BUG-067 の修正の後に guest の console の case も PASS）。次は §12 の残りの P1/P2（tabs・find・ls ほか）。WS001 はユーザーの指示があるときだけ進める
+Queue: q834（2026-10-07、P2）
+Resume point: 2026-10-07 q834 P2: p041 ls（host 24/24）→ p042 find → p043 tabs、guest の回帰は 3 つの後に T1 にまとめる。それ以前: p024〜p040 cleared（2026-09-27）
 <!-- awesome-plan-current:end -->
 
 Shared tests: [WS001 test index](tests/README.md)
@@ -60,6 +60,7 @@ Shared tests: [WS001 test index](tests/README.md)
 | `ws001-p038` | [mktemp・install・base64](phase038/phase.md) | cleared（2026-09-27） | ユーザーの決定（WS045 から）。3 つの base utility を新設し package の一覧へ、host 11/11・11/11・13/13（GNU と）・amd64 guest 35/35、style 0 |
 | `ws001-p039` | [xargs の GNU の option](phase039/phase.md) | cleared（2026-09-27） | ユーザーの決定（WS045 から）。`-d`・`-P`・`-a`・`-o`・旧い形・long option、host の build 一覧に xargs、host 54/54・11/11（POSIX と GNU の mode）・全 case 1080/1080・WS045 515/515・configure の比較 same・amd64 guest 65/65、style 0 |
 | `ws001-p040` | [mesg](phase040/phase.md) | cleared（2026-09-27） | 書き直し（最初の端末の descriptor、`y`/`n`/`--`、他の bit を保つ、状態 0/1/2）、host 9/9、style 0、amd64 guest の pinned 31/31（console の case は BUG-067 の修正の後に PASS） |
+| `ws001-p041` | [ls の XCU の option](phase041/phase.md) | in-progress（2026-10-07 P2） | -A・-c・-u・-f・-g・-o・-H・-k・-p・-s・-S、512 byte の block。host の差分 24/24、zedBSD の build。guest は T1 待ち |
 
 ### q042 pre-merge identifier migration
 
