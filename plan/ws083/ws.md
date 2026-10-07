@@ -3,13 +3,13 @@
 # WS083: Vulkan Video の拡張と i915 の対応（最初の目標 H.264 の decode）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning（p001 の設計中）
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001（設計）から。OSC のデモ（fg010）には必須ではない
+Resume point: 2026-10-07 P1（q833）: p001 の設計の第 1 版（[design.md](design.md)）と design-reviewer の review（design.md §13、blocking 4・should-fix 17、未反映）。次は §13 を織り込み第 2 版にして人の判断（H1〜H5・HD1〜HD6）を Q1 経由で出す。2026-10-07 ユーザーの回答で、p001・p002 と host で作れる所まで P1 が進める（10-02 の「別セッション」の指示を置き換え、p003 以降の実機は 5330 が戻ってから）。以前: p001（設計）から。OSC のデモ（fg010）には必須ではない
 2026-10-02 user: fg019（ベータ1、10/17）に入れる。「Vulkanのビデオ再生拡張をIntel Xe-LPで実装する。H.264を最初のターゲットとする。」動画プレーヤ（WS122）・ブラウザ（WS121）の土台（VA-API の WS123 は canceled、アプリが Vulkan Video を直接使う）。**別セッションでユーザーと進める。このセッションは割り当てない。ベータ1 では drop 可の努力目標。**
 <!-- awesome-plan-current:end -->
 

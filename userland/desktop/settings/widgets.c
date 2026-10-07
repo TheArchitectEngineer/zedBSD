@@ -664,9 +664,6 @@ se_fields_input(
 	text.begin = -1;
 	text.end = -1;
 	(void)kl_ui_text(widgets_ui, &text);
-
-	/* Each one in the log by its kind and length, not its text (a diagnostic of the input method's fields, ws090-p025). */
-	se_log("TEXT event=%u bytes=%zu before=%u", text.kind, strlen(text.text), (unsigned)text.before);
 }
 
 /*
@@ -695,6 +692,7 @@ se_field_key(
 	struct kl_rect rect;
 	uint32_t character;
 	uint32_t id;
+	int scroll;
 	int editing;
 
 	/* Nothing without the input; Alt and Super are commands, Control's only key is A. */
@@ -727,8 +725,13 @@ se_field_key(
 	/*
 	 * The field has the keyboard, and the key is carried out at once in a
 	 * frame of the field alone on one pixel, so that the page reads the
-	 * new text before its next key (Enter right after the typing).
+	 * new text before its next key (Enter right after the typing).  The
+	 * one pixel would scroll the text out of the field (kl_field keeps the
+	 * caret inside its width), so the scroll is kept as it was; the page's
+	 * next frame scrolls it at the field's own width (ws090-p025, the User
+	 * name that showed only its last letter).
 	 */
+	scroll = field->scroll;
 	id = widgets_field_id(field);
 	kl_ui_set_focus(widgets_ui, id, 0U);
 	(void)kl_ui_key(widgets_ui, event->key, 1, event->modifiers);
@@ -743,6 +746,7 @@ se_field_key(
 	kl_ui_begin(widgets_ui, event->time * 1000U);
 	(void)kl_field(widgets_ui, &style, id, &rect, field, NULL);
 	(void)kl_ui_end(widgets_ui, event->time * 1000U);
+	field->scroll = scroll;
 
 	/* Succeeded: the field's key. */
 	return 1;
