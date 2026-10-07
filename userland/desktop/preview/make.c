@@ -178,7 +178,7 @@ make_read(
 			return EIO;
 		}
 
-		/* = 0)=The end. */
+		/* The end. */
 		if (got == 0)
 			break;
 		length += (size_t)got;

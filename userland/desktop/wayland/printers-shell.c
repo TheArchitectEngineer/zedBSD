@@ -279,7 +279,7 @@ printers_number_request(
 		return 0;
 	}
 
-	/* = KL_SYSTEM_PRINTERS_REMOVE)=Asked of the backend. */
+	/* Asked of the backend. */
 	if (opcode == KL_SYSTEM_PRINTERS_REMOVE)
 		error = kl_backend_print_remove(backend, number, &backend_request);
 	else if (opcode == KL_SYSTEM_PRINTERS_SET_DEFAULT)
@@ -499,7 +499,7 @@ printers_answers(
 				waiting = &printers_state.waiting[index];
 		}
 
-		/* = NULL)=None waits for it (answered already). */
+		/* None waits for it (answered already). */
 		if (waiting == NULL)
 			continue;
 		waiting->used = 0;
@@ -510,7 +510,7 @@ printers_answers(
 				break;
 		}
 
-		/* = NULL)=The client went. */
+		/* The client went. */
 		if (client == NULL)
 			continue;
 
