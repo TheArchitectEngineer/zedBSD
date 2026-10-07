@@ -608,7 +608,8 @@ drv_i915_present_lease_close(
 
 /*
  * Reports whether a presentation should enter the display window: the node
- * has a panel and bringing it up has not failed.
+ * has a panel, the firmware's output has not failed, and no moved output
+ * failed in the current lease.
  */
 int
 drv_i915_present_window_ready(
@@ -624,8 +625,12 @@ drv_i915_present_window_ready(
 	if (display->rctx.lcd == NULL)
 		return 0;
 
-	/* A panel that failed once is not tried again. */
+	/* The firmware's output that failed once is not tried again. */
 	if (display->window.display_failed)
+		return 0;
+
+	/* A moved output that failed fails the rest of its lease; the next lease tries again (ws113-p011a). */
+	if (display->window.lease_failed)
 		return 0;
 
 	/* The window can be entered. */
@@ -637,9 +642,12 @@ drv_i915_present_window_ready(
  *
  * Lights the panel (the resident run); the window serves every request,
  * across the holds between leases, until a hold is over or a stop is asked
- * for, and the reference's stop path follows.  XXX: a panel
- * that did not come up, or did not stop cleanly, is not tried again:
- * presentation fails from here on and the node keeps serving.
+ * for, and the reference's stop path follows.  A moved output that did not
+ * come up, or did not stop cleanly, gives the firmware's output back and
+ * fails the rest of its lease (ws113-p011a); the next lease lights an
+ * output again.  XXX: the firmware's output that did not come up, or did
+ * not stop cleanly, is not tried again: presentation fails from here on
+ * and the node keeps serving.
  */
 void
 drv_i915_present_window(
@@ -648,6 +656,7 @@ drv_i915_present_window(
 	struct i915_display *display;
 	unsigned long irq;
 	int after_resume;
+	int moved;
 	int error;
 
 	display = device->display;
@@ -656,8 +665,10 @@ drv_i915_present_window(
 	 * Lights the panel; the window serves until a hold is over or a stop.
 	 * An external DP link that did not train is lowered and lit again
 	 * (EAGAIN, ws051-p004b); every retry lowers the port's link, so the
-	 * retries end.
+	 * retries end.  moved tells whether the run lights an output a claim
+	 * moved to, not the firmware's (ws113-p011a).
 	 */
+	moved = drv_i915_display_output_moved(display);
 	error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
 	while (error == EAGAIN)
 		error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
@@ -673,8 +684,13 @@ drv_i915_present_window(
 	if (error != 0 && after_resume && display->output.kind != I915_OUTPUT_KIND_PANEL) {
 		kern_logf("i915: resident display: the %s display did not come back after the sleep (%d); trying the built-in panel\n", drv_i915_display_output_name(display), error);
 		drv_i915_display_output_panel(display, &display->output);
+		moved = drv_i915_display_output_moved(display);
 		error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
 	}
+
+	/* A moved output that failed gives the firmware's output back (ws113-p011a), and the rest of its lease fails. */
+	if (error != 0 && moved)
+		drv_i915_display_output_fail_back(device);
 
 	/* A moved output whose last hold ended without a lease gives the firmware's back (ws113-p011a), before the hold is over. */
 	drv_i915_display_output_back(device);
@@ -692,10 +708,13 @@ drv_i915_present_window(
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 
-	/* A failed run makes every later presentation fail. */
-	if (error != 0 && !display->window.display_failed) {
+	/*
+	 * A failed run of the firmware's output makes every later presentation
+	 * fail; the window is not entered for it again.
+	 */
+	if (error != 0 && !moved && !display->window.display_failed) {
 		display->window.display_failed = 1;
-		kern_logf("i915: resident display: the panel did not come up (or did not stop cleanly); presentation fails from now on\n");
+		kern_logf("i915: resident display: the firmware's output did not come up (or did not stop cleanly); presentation fails from now on\n");
 	}
 }
 

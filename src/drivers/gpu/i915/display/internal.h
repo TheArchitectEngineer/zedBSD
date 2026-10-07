@@ -3337,15 +3337,29 @@ struct i915_display_refresh {
  * The request worker runs inside the display window while the panel is up
  * (the display enable calls back into the serving loop).  These are the
  * display fields of the old serving state; only the serving thread writes
- * them, and it reads display_failed under the device IRQ lock when it
- * decides whether a presentation enters the window.
+ * them (but for what a field says of itself), and it reads display_failed
+ * and lease_failed under the device IRQ lock when it decides whether a
+ * presentation enters the window.
  */
 struct i915_present_window {
 	/* Nonzero while the serving thread is inside the display window. */
 	int display_up;
 
-	/* Nonzero once bringing the panel up failed: presentations fail from then on. */
+	/*
+	 * Nonzero once the firmware's output failed to come up or to stop
+	 * cleanly: presentations fail from then on.  A moved output that fails
+	 * sets lease_failed instead (ws113-p011a).
+	 */
 	int display_failed;
+
+	/*
+	 * Nonzero once a moved output's run failed and the firmware's output
+	 * became the resident output again (ws113-p011a): the rest of the
+	 * lease's presentations fail, and the next claimed lease clears it, so
+	 * its first frame lights an output again.  The worker sets it and the
+	 * claim clears it, both under the device IRQ lock.
+	 */
+	int lease_failed;
 
 	/*
 	 * Nonzero from a resume until the window is next entered (ws052-p009):
