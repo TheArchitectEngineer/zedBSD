@@ -8,10 +8,10 @@
 /*
  * The removable media (media.c, ws132-p004): the volumes libkeiland-backend
  * follows (volumed on zedBSD), for the system extension's devices objects
- * (system.c), and the bar's media icon that stands in for a notification
- * until WS156: shown while a volume inserted is not mounted yet, blinking
- * three times when one comes, and starting Files on its devices when
- * clicked (the 2026-10-05 decision, option A).
+ * (system.c), and the notification of a volume that comes not mounted
+ * (WS156 H7, which replaced the bar's media icon of ws132-p004): its click
+ * starts Files on its devices.  The bar's icon functions remain and draw
+ * nothing.
  */
 
 #ifndef KWL_MEDIA_H

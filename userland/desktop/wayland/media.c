@@ -10,15 +10,17 @@
  *
  * The compositor follows the volumes through libkeiland-backend on its event
  * loop's thread (the system extension's tick): the list goes to the devices
- * objects (system.c), and the bar shows a small USB stick while a volume
- * that was never mounted since it was inserted is there.  It blinks three
- * times when such a volume comes, and a click starts Files on its devices
- * (files --devices), where the volume blinks too.  This stands in for the
- * notification of WS156 until that exists.
+ * objects (system.c), and a volume that comes not mounted is told by a
+ * notification of the compositor's own (WS156, H7 of
+ * plan/ws156/phase001/phase.md: it replaces the bar's USB icon of
+ * ws132-p004), "USB drive connected" with the volume's label, whose click
+ * starts Files on its devices (files --devices).  The bar shows no media
+ * icon any more.
  */
 
 #include "media.h"
 #include "glass.h"
+#include <keiland/keiland.h>
 
 #include "userland/desktop/paths.h"
 
@@ -26,55 +28,38 @@
 #include <stdio.h>
 #include <string.h>
 
-/* The bar's room for the icon, the blinks and their period. */
-#define MEDIA_ICON_ROOM		34
-
-/* The icon's size in pixels, as the volume's. */
-#define MEDIA_ICON_PIXELS	20U
-#define MEDIA_BLINKS		3U
-#define MEDIA_BLINK_MS		600U
-
-/* What Files is started with by a click. */
+/* What Files is started with by a click on the notification. */
 #define MEDIA_FILES		KEILAND_BINDIR "/files --devices"
 
 /*
  * The one view of the media: the backend's following (opened on the first
- * tick), the volumes of its last report, whether the icon shows, when its
- * blinks began (0: not blinking), and where a click lands.  Only the event
- * loop's thread touches it.
+ * tick) and the volumes of its last report.  Only the event loop's thread
+ * touches it.
  */
 struct media_view {
 	unsigned opened;
 	struct kl_backend_volumes *volumes;
 	struct kl_backend_volume list[KL_BACKEND_VOLUMES_MAX];
 	size_t count;
-	unsigned shown;
-	uint64_t blink_ms;
-	int32_t icon_x;
-	int32_t icon_y;
-	int32_t icon_width;
-	int32_t icon_height;
-	unsigned icon_logged;
 };
 
 static int media_fresh(const char *id);
-static int media_in_icon(int32_t x, int32_t y);
 
 /* The view. */
 static struct media_view media_view;
 
 /*
- * Reads what the backend reported; a new volume not mounted yet shows the
- * icon and starts its blinks.  Returns the changed bits.
+ * Reads what the backend reported; a new volume not mounted yet is told by
+ * a notification.  Returns the changed bits.
  */
 unsigned
 kwl_media_tick(
 	struct kwl_server *server)
 {
 	struct kl_backend_volume list[KL_BACKEND_VOLUMES_MAX];
-	uint64_t now;
+	const char *name;
 	unsigned changed;
-	unsigned shown;
+	unsigned fresh;
 	size_t count;
 	size_t index;
 	int known;
@@ -93,38 +78,32 @@ kwl_media_tick(
 	changed = 0U;
 	(void)kl_backend_volumes_update(media_view.volumes, &changed);
 
-	/* The blinks ask for frames until they are over. */
-	if (media_view.blink_ms != 0U) {
-		server->dirty = 1;
-		now = kwl_milliseconds();
-		if (now - media_view.blink_ms >= MEDIA_BLINKS * MEDIA_BLINK_MS)
-			media_view.blink_ms = 0U;
-	}
-
 	/* The list did not change. */
 	if ((changed & KL_BACKEND_VOLUMES_CHANGED_LIST) == 0U)
 		return changed;
 
-	/* The new list; a fresh volume that was not fresh before starts the blinks. */
+	/* The new list; a fresh volume that was not fresh before is told, by its label (or its ID). */
 	count = kl_backend_volumes_get(media_view.volumes, list, KL_BACKEND_VOLUMES_MAX);
-	shown = 0U;
+	fresh = 0U;
 	for (index = 0U; index < count; index++) {
 		if (list[index].fresh == 0U || list[index].path[0] != '\0')
 			continue;
-		shown = 1U;
+		fresh++;
 		known = media_fresh(list[index].id);
-		if (!known) {
-			media_view.blink_ms = kwl_milliseconds();
-			printf("KWL MEDIA new id=%s label=%s\n", list[index].id, list[index].label);
-		}
+		if (known)
+			continue;
+		printf("KWL MEDIA new id=%s label=%s\n", list[index].id, list[index].label);
+		name = list[index].label;
+		if (name[0] == '\0')
+			name = list[index].id;
+		(void)kwl_notify_system_post(server, kl_tr("USB drive connected"), name, 0U, MEDIA_FILES);
 	}
 
 	/* Kept, and drawn. */
 	memcpy(media_view.list, list, count * sizeof(list[0]));
 	media_view.count = count;
-	media_view.shown = shown;
 	server->dirty = 1;
-	printf("KWL MEDIA volumes=%zu icon=%u\n", count, shown);
+	printf("KWL MEDIA volumes=%zu fresh=%u\n", count, fresh);
 
 	/* Succeeded: what changed. */
 	return changed;
@@ -203,25 +182,18 @@ kwl_media_take_result(
 }
 
 /*
- * The bar's room for the icon: none while no fresh volume is there.
+ * The bar's room for a media icon: none, the notification tells of a
+ * volume (WS156 H7).
  */
 int32_t
 kwl_media_width(
 	void)
 {
-	/* The icon only while it shows. */
-	if (!media_view.shown)
-		return 0;
-
-	/* Succeeded: its room. */
-	return MEDIA_ICON_ROOM;
+	/* No icon. */
+	return 0;
 }
 
-/*
- * Draws the icon at x: the USB trident (the 2026-10-05 user decision; it
- * was a stick whose plug's holes were drawn in the body's own colour and
- * did not show), fading out and back in for each of its three blinks.
- */
+/* Draws the bar's media icon: there is none (WS156 H7). */
 void
 kwl_media_draw_icon(
 	struct kwl_server *server,
@@ -229,69 +201,25 @@ kwl_media_draw_icon(
 	int32_t x,
 	const float *ink)
 {
-	float color[4];
-	uint64_t elapsed;
-	uint64_t phase;
-
-	/* Where a click lands, even while hidden (an empty place takes no click). */
-	media_view.icon_x = x - 5;
-	media_view.icon_y = 3;
-	media_view.icon_width = MEDIA_ICON_ROOM - 4;
-	media_view.icon_height = KWL_GLASS_BAR - 6;
-	if (!media_view.shown) {
-		media_view.icon_logged = 0U;
-		return;
-	}
-
-	/* Where it is, once each time it shows (the tests click it). */
-	if (!media_view.icon_logged) {
-		media_view.icon_logged = 1U;
-		printf("KWL MEDIA icon x=%d y=%d width=%d height=%d\n", media_view.icon_x, media_view.icon_y, media_view.icon_width, media_view.icon_height);
-	}
-
-	/* The ink, fading in each blink's first half and coming back in its second. */
-	memcpy(color, ink, sizeof(color));
-	if (media_view.blink_ms != 0U) {
-		elapsed = kwl_milliseconds() - media_view.blink_ms;
-		phase = elapsed % MEDIA_BLINK_MS;
-		if (phase < MEDIA_BLINK_MS / 2U) {
-			color[3] *= 1.0f - 0.85f * (float)phase / (float)(MEDIA_BLINK_MS / 2U);
-		} else {
-			color[3] *= 0.15f + 0.85f * (float)(phase - MEDIA_BLINK_MS / 2U) / (float)(MEDIA_BLINK_MS / 2U);
-		}
-	}
-
-	/* The trident, at the size of the bar's other icons (the volume's). */
-	glass_draw_icon(server, command, GLASS_ICON_USB, x, KWL_GLASS_BAR_MIDDLE - 10, MEDIA_ICON_PIXELS, color);
+	(void)server;
+	(void)command;
+	(void)x;
+	(void)ink;
 }
 
-/*
- * Takes a left press on the icon: Files starts on its devices.  Returns 1
- * when the press was the icon's, 0 otherwise.
- */
+/* Takes a press on the bar's media icon: there is none, so never (WS156 H7). */
 int
 kwl_media_button(
 	struct kwl_server *server,
 	uint32_t button,
 	uint32_t state)
 {
-	pid_t child;
-	int inside;
+	(void)server;
+	(void)button;
+	(void)state;
 
-	/* Only a left press, on the icon while it shows. */
-	if (!media_view.shown || state == 0U || button != KWL_BUTTON_LEFT)
-		return 0;
-	inside = media_in_icon(server->pointer_x, server->pointer_y);
-	if (!inside)
-		return 0;
-
-	/* Files on its devices; the blinks end. */
-	media_view.blink_ms = 0U;
-	child = kwl_spawn(server, MEDIA_FILES);
-	printf("KWL MEDIA files pid=%d\n", (int)child);
-
-	/* Succeeded: the press was the icon's. */
-	return 1;
+	/* Not the media's. */
+	return 0;
 }
 
 /* Tells whether a volume was already fresh in the last report. */
@@ -311,20 +239,4 @@ media_fresh(
 
 	/* Not before. */
 	return 0;
-}
-
-/* Tells whether a point is on the icon. */
-static int
-media_in_icon(
-	int32_t x,
-	int32_t y)
-{
-	/* The icon's rectangle. */
-	if (x < media_view.icon_x || x >= media_view.icon_x + media_view.icon_width)
-		return 0;
-	if (y < media_view.icon_y || y >= media_view.icon_y + media_view.icon_height)
-		return 0;
-
-	/* Succeeded: inside. */
-	return 1;
 }
