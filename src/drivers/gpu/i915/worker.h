@@ -91,6 +91,7 @@ void drv_i915_worker_destroy(struct i915_device *device);
 
 int drv_i915_worker_context_create(struct i915_device *device, struct i915_engine *engine, struct i915_ppgtt *vm, uint32_t sw_id, struct i915_context *context);
 void drv_i915_worker_context_destroy(struct i915_device *device, struct i915_context *context);
+int drv_i915_worker_context_attach(struct i915_device *device, struct i915_context *context);
 void drv_i915_worker_kick(struct i915_engine *engine);
 int drv_i915_worker_run_sync(struct i915_device *device, struct i915_context *context, uint64_t batch_va);
 

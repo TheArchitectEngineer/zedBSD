@@ -29,14 +29,16 @@ struct i915_gem_object;
 struct i915_ppgtt;
 struct i915_session;
 
-/* The engine records of the node: the render engine and the copy engine. */
+/* The engine records of the node: the render engine, the copy engine and the video decode engine VCS0 (ws083-p003a). */
 #define I915_ENGINE_RCS0		0U
 #define I915_ENGINE_BCS0		1U
-#define I915_ENGINE_COUNT		2U
+#define I915_ENGINE_VCS0		2U
+#define I915_ENGINE_COUNT		3U
 
 /* The engine class of each record, as the engine information names it. */
 #define I915_CLASS_RENDER		I915_RENDER_CLASS
 #define I915_CLASS_COPY			I915_COPY_ENGINE_CLASS
+#define I915_CLASS_VIDEO		I915_VIDEO_DECODE_CLASS
 
 /* How many requests one engine record holds at once, queued or in flight. */
 #define I915_REQUEST_SLOTS		32U
