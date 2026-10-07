@@ -511,6 +511,9 @@ struct i915_compile_state {
 	uint32_t gs_vertex_hwords;
 	uint32_t gs_control_hwords;
 	uint32_t gs_urb_entry_size;
+
+	/* Geometry: the bits of the control data header, a cut bit to each vertex the shader may emit, or none. */
+	uint32_t gs_control_bits;
 };
 
 static uint32_t i915_compile_sources(const struct i915_shader_ir_inst *inst);
@@ -611,6 +614,11 @@ static int i915_compile_vertex_slot(const struct i915_compile_state *state, cons
 static void i915_compile_geometry_system(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
 static void i915_compile_terminate_geometry(struct i915_compile_state *state);
 static void i915_compile_describe_geometry(const struct i915_compile_state *state, struct i915_shader_binary *binary);
+static void i915_compile_emit_vertex(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static void i915_compile_end_primitive(struct i915_compile_state *state, const struct i915_shader_ir_inst *inst);
+static void i915_compile_flush_cut_bits(struct i915_compile_state *state, uint32_t live_grf);
+static void i915_compile_control_write(struct i915_compile_state *state, int predicated);
+static uint32_t i915_compile_urb_write_descriptor(uint32_t global, uint32_t header_regs, int per_slot, int channel_mask);
 
 /*
  * Compiles one shader IR into a Gen12 EU binary, without a stage before it.
@@ -1864,9 +1872,11 @@ i915_compile_instruction(
 		break;
 
 	case I915_IR_EMIT_VERTEX:
+		i915_compile_emit_vertex(state, inst);
+		break;
+
 	case I915_IR_END_PRIMITIVE:
-		/* XXX unimplemented path: the emit and the end of a geometry shader (ws075-p007a, increment a3). */
-		state->unsupported = 1;
+		i915_compile_end_primitive(state, inst);
 		break;
 
 	case I915_IR_LOAD_PUSH:

@@ -416,12 +416,19 @@ struct eu_model {
 
 	/*
 	 * A geometry thread (ws075-p007a): the input VUEs a URB read finds by handle (EU_MODEL_GS_HANDLE + 8 v + c is
-	 * vertex v of channel c's primitive), and the vertex count the thread's last write leaves (once written).
+	 * vertex v of channel c's primitive).  Its writes go to eu_model_gs_entry.
 	 */
 	uint32_t gs_input[EU_MODEL_GS_HANDLES][EU_MODEL_VUE_SLOTS][4];
-	uint32_t gs_count[8];
-	int gs_count_written;
 };
+
+/*
+ * The output URB entries of a geometry thread's eight channels, EU_MODEL_GS_ENTRY_DWORDS dwords each, which its
+ * URB writes fill when a test points this at them (ws075-p007a); NULL for a vertex thread, whose writes go to the
+ * model's VUE.  A dword no write reached keeps EU_MODEL_GS_UNWRITTEN.
+ */
+#define EU_MODEL_GS_ENTRY_DWORDS	4096U
+#define EU_MODEL_GS_UNWRITTEN		0xDEADBEEFU
+static uint32_t *eu_model_gs_entry;
 
 static float
 mget(const struct eu_model *m, unsigned r, unsigned c)
@@ -519,8 +526,10 @@ eu_model_scratch(struct eu_model *m, const struct i915_shader_binary *binary, co
 
 /*
  * A URB message: a SIMD8 read of a geometry thread's input VUE (the handle per channel in src0, a register to a
- * component in the reply), a geometry thread's vertex count (one data register at offset 0), or a vertex thread's
- * slots from its second payload run, from the global offset in the descriptor on.
+ * component in the reply), a geometry thread's write into its output entry (the handles, then per-slot offsets
+ * and a channel mask when the descriptor says so, the data in the second payload run: register d to dword d from
+ * the OWord the offsets name, the mask picking dword d % 4), or a vertex thread's slots from its second payload
+ * run, from the global offset in the descriptor on.
  */
 static void
 eu_model_urb(struct eu_model *m, const uint32_t *inst, unsigned enabled)
@@ -548,13 +557,27 @@ eu_model_urb(struct eu_model *m, const uint32_t *inst, unsigned enabled)
 		return;
 	}
 
-	/* a geometry thread's vertex count: one data register at the entry's start, which ends the thread */
-	if (inst_field(inst, 103U, 99U) == 1U) {
-		assert(descriptor == COMPILE_DESC_URB_WRITE(0U) && inst_bit(inst, EU_SEND_EOT_BIT) != 0U);
-		for (c = 0U; c < 8U; c++)
-			if ((enabled >> c) & 1U)
-				m->gs_count[c] = m->grf[data][c];
-		m->gs_count_written = 1;
+	/* a geometry thread's write into its output entry */
+	if (eu_model_gs_entry != NULL) {
+		unsigned per_slot = (descriptor >> 17) & 1U, mask = (descriptor >> 15) & 1U;
+		unsigned length = inst_field(inst, 103U, 99U), dword, d;
+		uint32_t base;
+
+		assert((descriptor & 0xFU) == COMPILE_URB_OPCODE_SIMD8_WRITE);
+		assert(((descriptor >> EU_DESC_MLEN_SHIFT) & 0xFU) == 1U + per_slot + mask && length >= 1U && length <= 8U);
+		for (c = 0U; c < 8U; c++) {
+			if (((enabled >> c) & 1U) == 0U)
+				continue;
+			assert((m->grf[src0][c] & 0xFFFF0000U) == 0U);         /* the handle without the instance bits */
+			base = first + (per_slot ? m->grf[src0 + 1U][c] : 0U);
+			for (d = 0U; d < length; d++) {
+				if (mask && ((m->grf[src0 + 1U + per_slot][c] >> (16U + d % 4U)) & 1U) == 0U)
+					continue;
+				dword = 4U * base + d;
+				assert(dword < EU_MODEL_GS_ENTRY_DWORDS);
+				eu_model_gs_entry[c * EU_MODEL_GS_ENTRY_DWORDS + dword] = m->grf[data + d][c];
+			}
+		}
 		return;
 	}
 
@@ -2326,6 +2349,20 @@ compile_geometry(const char *name, const struct i915_shader_binary *producer, st
 	return error;
 }
 
+/* The output entries of a geometry test's eight channels. */
+static uint32_t gs_entry[8U * EU_MODEL_GS_ENTRY_DWORDS];
+
+/* Starts a geometry run: every dword of the entries unwritten, the model's writes going to them. */
+static void
+gs_entry_clear(void)
+{
+	unsigned index;
+
+	for (index = 0U; index < 8U * EU_MODEL_GS_ENTRY_DWORDS; index++)
+		gs_entry[index] = EU_MODEL_GS_UNWRITTEN;
+	eu_model_gs_entry = gs_entry;
+}
+
 /* The value the model's input VUE of vertex v of channel c's primitive holds at a slot and component. */
 static float
 gs_input_value(unsigned v, unsigned c, unsigned slot, unsigned k)
@@ -2365,9 +2402,6 @@ test_geometry_reads(void)
 	producer.stage = I915_STAGE_FRAGMENT;
 	assert(compile_geometry("noemit.geom.spv", &producer, &binary) == EINVAL && binary == NULL);
 	producer.stage = I915_STAGE_VERTEX;
-
-	/* EmitVertex is increment a3's */
-	assert(compile_geometry("points.geom.spv", &producer, &binary) == ENOTSUP && binary == NULL);
 
 	error = compile_geometry("noemit.geom.spv", &producer, &binary);
 	assert(error == 0);
@@ -2434,15 +2468,18 @@ test_geometry_reads(void)
 				for (k = 0U; k < 4U; k++)
 					m->gs_input[8U * v + c][slot][k] = float_bits(gs_input_value(v, c, slot, k));
 	sbc = eu_model_scoreboard_checks;
+	gs_entry_clear();
 	eu_model_run(m, binary);
+	eu_model_gs_entry = NULL;
 	assert(eu_model_scoreboard_checks == sbc + 1U);
-	assert(m->ended && m->gs_count_written);
+	assert(m->ended);
 
 	/* no vertex emitted; the staged VUE: [header: 0, layer 1][position][location 0][location 69] */
 	vue = COMPILE_MAX_GRF - 4U * 4U;
 	for (c = 0U; c < 8U; c++) {
 		i = (c & 3U) < 2U ? (c & 3U) : 2U;
-		assert(m->gs_count[c] == 0U);
+		assert(gs_entry[c * EU_MODEL_GS_ENTRY_DWORDS] == 0U);
+		assert(gs_entry[c * EU_MODEL_GS_ENTRY_DWORDS + 1U] == EU_MODEL_GS_UNWRITTEN);
 		assert(m->grf[vue + COMPILE_VUE_LAYER][c] == 1U);
 		for (k = 0U; k < 4U; k++) {
 			float colour = gs_input_value(i, c, 2U, k) + (k < 2U ? gs_input_value(1U, c, 3U, k) : 0.0f) +
@@ -2457,6 +2494,295 @@ test_geometry_reads(void)
 	free(m);
 	drv_i915_shader_binary_free(binary);
 	printf("  geometry (ws075-p007a a2): noemit.geom pulls 14 slots from the producer's VUEs (a vertex chosen per channel), stages its VUE, ends with a count of 0\n");
+}
+
+/*
+ * Starts a geometry thread on the model: channel c's primitive is number c, the r1 handles carry instance bits,
+ * vertex v's handle of channel c is EU_MODEL_GS_HANDLE + 8 v + c, every input VUE dword is gs_input_value(), and
+ * the output entries are unwritten.
+ */
+static void
+gs_model_start(struct eu_model *m, const struct i915_shader_binary *binary)
+{
+	unsigned handle_grf = binary->dispatch_grf_start - binary->vertices_in, v, c, slot, k;
+
+	eu_model_init(m);
+	for (c = 0U; c < 8U; c++) {
+		m->grf[COMPILE_GS_OUTPUT_HANDLES_GRF][c] = 0x08000000U | (0x40U + c);
+		if (binary->uses_primitive_id != 0U)
+			m->grf[COMPILE_GS_PRIMITIVE_ID_GRF][c] = c;
+		for (v = 0U; v < binary->vertices_in; v++)
+			m->grf[handle_grf + v][c] = EU_MODEL_GS_HANDLE + 8U * v + c;
+	}
+	for (v = 0U; v < 6U; v++)
+		for (c = 0U; c < 8U; c++)
+			for (slot = 0U; slot < EU_MODEL_VUE_SLOTS; slot++)
+				for (k = 0U; k < 4U; k++)
+					m->gs_input[8U * v + c][slot][k] = float_bits(gs_input_value(v, c, slot, k));
+	gs_entry_clear();
+}
+
+/* Runs a geometry thread started with gs_model_start(); the thread must end. */
+static void
+gs_model_run(struct eu_model *m, const struct i915_shader_binary *binary)
+{
+	eu_model_run(m, binary);
+	eu_model_gs_entry = NULL;
+	assert(m->ended);
+}
+
+/* The dword of channel c's output entry that holds component k of slot `slot` of the emitted vertex v. */
+static uint32_t
+gs_vertex_word(const struct i915_shader_binary *binary, unsigned c, unsigned v, unsigned slot, unsigned k)
+{
+	unsigned oword = 2U + 2U * binary->control_data_hwords + 2U * binary->output_vertex_hwords * v + slot;
+
+	return gs_entry[c * EU_MODEL_GS_ENTRY_DWORDS + 4U * oword + k];
+}
+
+/* The vertex count and dword n of the cut bits of channel c's output entry. */
+static uint32_t
+gs_count(unsigned c)
+{
+	return gs_entry[c * EU_MODEL_GS_ENTRY_DWORDS];
+}
+
+static uint32_t
+gs_cut(unsigned c, unsigned n)
+{
+	return gs_entry[c * EU_MODEL_GS_ENTRY_DWORDS + 8U + n];
+}
+
+/*
+ * ws075-p007a increment a3: geometry shaders that emit.  Each runs on the EU model over eight primitives, and the
+ * output entries hold the vertex count, the cut bits and every emitted vertex: glxtest's three shaders, WS068's
+ * varyings, emits past OutputVertices (lost), emits under selections (a count per channel), and 64 and 160 cut bits
+ * (a channel mask, then per-slot offsets as well).  The sends carry what Mesa's write lowering gives them.
+ */
+static void
+test_geometry_emits(void)
+{
+	static const float corner[4][2] = { { -1.0f, -1.0f }, { 1.0f, -1.0f }, { -1.0f, 1.0f }, { 1.0f, 1.0f } };
+	struct i915_shader_binary producer, *binary;
+	struct eu_model *m;
+	const uint32_t *inst;
+	unsigned c, v, k, i, layer, copy, n, emitted, writes, index, count;
+	uint32_t want, cut;
+	float colour[4] = { 0.25f, 0.5f, 0.75f, 1.0f };
+
+	m = malloc(sizeof(*m));
+	assert(m != NULL);
+	memset(&producer, 0, sizeof(producer));
+	producer.stage = I915_STAGE_VERTEX;
+
+	/* points.geom: a square of four vertices around each point, of the pushed colour, then one strip end */
+	assert(compile_geometry("points.geom.spv", &producer, &binary) == 0);
+	assert(binary->vertices_in == 1U && binary->dispatch_grf_start == 3U && binary->push_regs == 1U);
+	assert(binary->output_vertex_hwords == 2U && binary->control_data_hwords == 1U);
+	assert(binary->urb_entry_size == (32U + 32U + 4U * 64U + 63U) / 64U);
+
+	/* every vertex write: mlen 2 (handles, per-slot offsets), bit 17, after the count and the control data; none ends */
+	count = binary->code_bytes / 16U;
+	writes = 0U;
+	for (index = 0U; index + 1U < count; index++) {
+		uint32_t descriptor;
+
+		inst = binary->code + index * 4U;
+		if (inst_field(inst, EU_OPCODE_HI, EU_OPCODE_LO) != EU_OP_SEND)
+			continue;
+		descriptor = eu_model_descriptor(inst);
+		if ((descriptor & 0xFU) != COMPILE_URB_OPCODE_SIMD8_WRITE)
+			continue;
+		assert(inst_bit(inst, EU_SEND_EOT_BIT) == 0U);
+		if ((descriptor & COMPILE_URB_PER_SLOT_PRESENT) == 0U) {
+			/* the cut bits at the end: OWord 2, the handles alone, one data register */
+			assert(descriptor == ((1U << EU_DESC_MLEN_SHIFT) | EU_DESC_HEADER_PRESENT | (2U << 4) | 7U));
+			assert(inst_field(inst, 103U, 99U) == 1U);
+			continue;
+		}
+		assert(((descriptor >> EU_DESC_MLEN_SHIFT) & 0xFU) == 2U && (descriptor & EU_DESC_HEADER_PRESENT) != 0U);
+		assert(inst_field(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO) != 0U);
+		assert(((descriptor >> 4) & 0x7FFU) == 4U || ((descriptor >> 4) & 0x7FFU) == 6U);
+		writes++;
+	}
+	assert(writes == 8U);             /* four emits, two writes each (slots 0-1 and slot 2) */
+
+	gs_model_start(&m[0], binary);
+	for (k = 0U; k < 4U; k++)
+		m->grf[3][k] = float_bits(colour[k]);
+	gs_model_run(m, binary);
+	for (c = 0U; c < 8U; c++) {
+		assert(gs_count(c) == 4U && gs_cut(c, 0U) == (1U << 3));
+		for (v = 0U; v < 4U; v++) {
+			for (k = 0U; k < 4U; k++) {
+				float position = gs_input_value(0U, c, 1U, k) + (k < 2U ? corner[v][k] : 0.0f);
+
+				assert(gs_vertex_word(binary, c, v, 0U, k) == 0U);
+				assert(gs_vertex_word(binary, c, v, 1U, k) == float_bits(position));
+				assert(gs_vertex_word(binary, c, v, 2U, k) == float_bits(colour[k]));
+			}
+		}
+		assert(gs_vertex_word(binary, c, 4U, 1U, 0U) == EU_MODEL_GS_UNWRITTEN);
+	}
+	drv_i915_shader_binary_free(binary);
+
+	/* adjacency.geom: blue where the fourth vertex is right of 0.5 (the even channels here), red elsewhere */
+	assert(compile_geometry("adjacency.geom.spv", &producer, &binary) == 0);
+	assert(binary->vertices_in == 4U && binary->dispatch_grf_start == 6U);
+	gs_model_start(m, binary);
+	for (c = 1U; c < 8U; c += 2U)
+		m->gs_input[8U * 3U + c][1][0] = float_bits(0.25f);
+	gs_model_run(m, binary);
+	for (c = 0U; c < 8U; c++) {
+		assert(gs_count(c) == 4U && gs_cut(c, 0U) == (1U << 3));
+		for (v = 0U; v < 4U; v++) {
+			assert(gs_vertex_word(binary, c, v, 1U, 0U) == float_bits(corner[v][0]));
+			assert(gs_vertex_word(binary, c, v, 1U, 1U) == float_bits(corner[v][1]));
+			assert(gs_vertex_word(binary, c, v, 2U, 0U) == float_bits((c & 1U) != 0U ? 1.0f : 0.0f));
+			assert(gs_vertex_word(binary, c, v, 2U, 2U) == float_bits((c & 1U) != 0U ? 0.0f : 1.0f));
+		}
+	}
+	drv_i915_shader_binary_free(binary);
+
+	/* layers.geom: the triangle into layer 0 in green, then into layer 1 in red, a strip each */
+	assert(compile_geometry("layers.geom.spv", &producer, &binary) == 0);
+	assert(binary->writes_layer == 1U && binary->vertices_in == 3U);
+	gs_model_start(m, binary);
+	gs_model_run(m, binary);
+	for (c = 0U; c < 8U; c++) {
+		assert(gs_count(c) == 6U && gs_cut(c, 0U) == ((1U << 2) | (1U << 5)));
+		for (v = 0U; v < 6U; v++) {
+			layer = v / 3U;
+			i = v % 3U;
+			assert(gs_vertex_word(binary, c, v, 0U, COMPILE_VUE_LAYER) == layer);
+			for (k = 0U; k < 4U; k++)
+				assert(gs_vertex_word(binary, c, v, 1U, k) == float_bits(gs_input_value(i, c, 1U, k)));
+			assert(gs_vertex_word(binary, c, v, 2U, 0U) == float_bits((float)layer));
+			assert(gs_vertex_word(binary, c, v, 2U, 1U) == float_bits((float)(1U - layer)));
+			assert(gs_vertex_word(binary, c, v, 2U, 3U) == float_bits(1.0f));
+		}
+	}
+	drv_i915_shader_binary_free(binary);
+
+	/* varyings.geom: located per-vertex inputs and a block of them, the primitive's number in and out, a pushed offset */
+	producer.varying_count = 3U;
+	producer.varying_locations[0] = 0U;
+	producer.varying_locations[1] = 1U;
+	producer.varying_locations[2] = 2U;
+	assert(compile_geometry("varyings.geom.spv", &producer, &binary) == 0);
+	assert(binary->dispatch_grf_start == 6U && binary->push_regs == 1U && binary->varying_count == 3U);
+	assert(binary->varying_locations[2] == I915_SHADER_LOCATION_PRIMITIVE_ID && binary->output_vertex_hwords == 3U);
+	gs_model_start(m, binary);
+	m->grf[6][0] = float_bits(0.5f);
+	gs_model_run(m, binary);
+	for (c = 0U; c < 8U; c++) {
+		assert(gs_count(c) == 6U && gs_cut(c, 0U) == ((1U << 2) | (1U << 5)));
+		for (v = 0U; v < 6U; v++) {
+			copy = v / 3U;
+			i = v % 3U;
+			assert(gs_vertex_word(binary, c, v, 0U, COMPILE_VUE_LAYER) == 0U);
+			for (k = 0U; k < 4U; k++) {
+				float position = gs_input_value(i, c, 1U, k) + (k == 0U ? 0.5f * (float)copy : 0.0f);
+
+				assert(gs_vertex_word(binary, c, v, 1U, k) == float_bits(position));
+			}
+			for (k = 0U; k < 3U; k++) {
+				float factor = k < 2U ? gs_input_value(i, c, 3U, k) : 1.0f;
+
+				assert(gs_vertex_word(binary, c, v, 2U, k) == float_bits(gs_input_value(i, c, 2U, k) * factor));
+			}
+			want = float_bits(gs_input_value(i, c, 4U, 0U)) + c;
+			assert(gs_vertex_word(binary, c, v, 3U, 0U) == want);
+			assert(gs_vertex_word(binary, c, v, 4U, 0U) == c);
+		}
+	}
+	drv_i915_shader_binary_free(binary);
+	producer.varying_count = 0U;
+
+	/* overflow.geom: five emits with room for three; the last two are lost */
+	assert(compile_geometry("overflow.geom.spv", &producer, &binary) == 0);
+	assert(binary->control_data_hwords == 0U && binary->output_vertex_hwords == 1U);
+	gs_model_start(m, binary);
+	gs_model_run(m, binary);
+	for (c = 0U; c < 8U; c++) {
+		assert(gs_count(c) == 3U);
+		for (v = 0U; v < 3U; v++)
+			assert(gs_vertex_word(binary, c, v, 1U, 0U) == float_bits(gs_input_value(0U, c, 1U, 0U) + (float)v));
+		for (k = 0U; k < 8U; k++)
+			assert(gs_vertex_word(binary, c, 3U, 0U, k) == EU_MODEL_GS_UNWRITTEN);
+	}
+	drv_i915_shader_binary_free(binary);
+
+	/* emitif.geom: odd primitives emit first, all second, those below 4 third; even ones end the strip */
+	assert(compile_geometry("emitif.geom.spv", &producer, &binary) == 0);
+	gs_model_start(m, binary);
+	gs_model_run(m, binary);
+	for (c = 0U; c < 8U; c++) {
+		float values[3];
+
+		emitted = 0U;
+		if ((c & 1U) != 0U)
+			values[emitted++] = 1.0f;
+		values[emitted++] = 2.0f;
+		if (c < 4U)
+			values[emitted++] = 3.0f;
+		assert(gs_count(c) == emitted);
+		for (v = 0U; v < emitted; v++)
+			assert(gs_vertex_word(binary, c, v, 2U, 0U) == float_bits(values[v]));
+		assert(gs_vertex_word(binary, c, emitted, 2U, 0U) == EU_MODEL_GS_UNWRITTEN);
+		cut = 0U;
+		if ((c & 1U) == 0U)
+			cut = 1U << (emitted - 1U);
+		assert(gs_cut(c, 0U) == cut);
+	}
+	drv_i915_shader_binary_free(binary);
+
+	/* cut64.geom and cut160.geom: forty and a hundred and forty vertices, the bits a dword at a time */
+	for (n = 0U; n < 2U; n++) {
+		unsigned total = n == 0U ? 40U : 140U, every = n == 0U ? 3U : 5U, masked = 0U, offsets = 0U;
+
+		assert(compile_geometry(n == 0U ? "cut64.geom.spv" : "cut160.geom.spv", &producer, &binary) == 0);
+		assert(binary->control_data_hwords == 1U && binary->output_vertex_hwords == 1U);
+		count = binary->code_bytes / 16U;
+		for (index = 0U; index < count; index++) {
+			uint32_t descriptor;
+
+			inst = binary->code + index * 4U;
+			if (inst_field(inst, EU_OPCODE_HI, EU_OPCODE_LO) != EU_OP_SEND)
+				continue;
+			descriptor = eu_model_descriptor(inst);
+			if ((descriptor & 0xFU) != COMPILE_URB_OPCODE_SIMD8_WRITE || ((descriptor >> 4) & 0x7FFU) != 2U)
+				continue;
+			/* a cut-bit write: the channel mask always, per-slot offsets past 128 bits; four copies of the dword */
+			assert((descriptor & COMPILE_URB_CHANNEL_MASK_PRESENT) != 0U && inst_field(inst, 103U, 99U) == 4U);
+			masked++;
+			if ((descriptor & COMPILE_URB_PER_SLOT_PRESENT) != 0U)
+				offsets++;
+		}
+		assert(masked == 2U && offsets == (n == 0U ? 0U : 2U));
+		gs_model_start(m, binary);
+		gs_model_run(m, binary);
+		for (c = 0U; c < 8U; c++) {
+			assert(gs_count(c) == total);
+			for (k = 0U; k <= (total - 1U) / 32U; k++) {
+				want = 0U;
+				for (v = 32U * k; v < total && v < 32U * (k + 1U); v++)
+					if (v % every == every - 1U)
+						want |= 1U << (v % 32U);
+				assert(gs_cut(c, k) == want);
+			}
+			assert(gs_cut(c, k) == EU_MODEL_GS_UNWRITTEN);
+			for (v = 0U; v < total; v++)
+				assert(gs_vertex_word(binary, c, v, 1U, 0U) == float_bits(gs_input_value(0U, c, 1U, 0U) + (float)v));
+		}
+		drv_i915_shader_binary_free(binary);
+	}
+
+	/* an entry past 32 KiB is refused */
+	assert(compile_geometry("refuse-entry.geom.spv", &producer, &binary) == ENOTSUP && binary == NULL);
+
+	free(m);
+	printf("  geometry (ws075-p007a a3): points / adjacency / layers / varyings / overflow / emitif / cut64 / cut160 emit the right vertices, counts and cut bits on 8 primitives\n");
 }
 
 int
@@ -2481,6 +2807,7 @@ main(void)
 	test_eu_generality_fragment();
 	test_eu_generality_interfaces();
 	test_geometry_reads();
+	test_geometry_emits();
 	assert(fixture_live == 0U);
 	printf("  scoreboard: %u kernels checked (ws075-p022)\n", eu_model_scoreboard_checks);
 	printf("  skippable regions and guards (ws075-p023): %u IFs run, %u jumped over\n", eu_model_ifs, eu_model_ifs_jumped);
