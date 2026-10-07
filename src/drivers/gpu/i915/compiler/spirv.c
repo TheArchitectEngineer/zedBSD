@@ -251,6 +251,10 @@
 #define OP_ATOMIC_XOR 242U
 #define OP_EXECUTION_MODE_ID 331U
 
+/* Opcodes of geometry shaders (ws075-p007a, spirv-geometry.inc). */
+#define OP_EMIT_VERTEX 218U
+#define OP_END_PRIMITIVE 219U
+
 /* Storage classes (SPIR-V spec, section 3.7). */
 #define SC_UNIFORM_CONSTANT 0U
 #define SC_INPUT 1U
@@ -303,8 +307,15 @@
 #define BUILTIN_GLOBAL_INVOCATION_ID 28U
 #define BUILTIN_LOCAL_INVOCATION_INDEX 29U
 
+/* The built-ins of a geometry shader (ws075-p007a). */
+#define BUILTIN_PRIMITIVE_ID 7U
+#define BUILTIN_INVOCATION_ID 8U
+#define BUILTIN_LAYER 9U
+#define BUILTIN_VIEWPORT_INDEX 10U
+
 /* Execution models (SPIR-V spec, section 3.3). */
 #define EM_VERTEX 0U
+#define EM_GEOMETRY 3U
 #define EM_FRAGMENT 4U
 #define EM_GL_COMPUTE 5U
 
@@ -447,6 +458,7 @@
 #define PTR_SSBO 8U	/* a storage buffer: words in memory at offsets the shader computes */
 #define PTR_SYSTEM 9U	/* a compute shader's built-in input: the dispatch's values (ws101-p002) */
 #define PTR_SHARED 10U	/* a compute shader's Workgroup variable: words of the group's shared memory (ws101-p006) */
+#define PTR_VERTEX 11U	/* a geometry shader's per-vertex input: gl_in or a located array, one element to an input vertex (ws075-p007a) */
 
 /* What the scalars of a value are, as a type says. */
 #define SCALAR_NONE 0U
@@ -619,6 +631,16 @@ struct i915_spirv_id {
 	uint32_t dynamic_index;
 	uint32_t dynamic_stride;
 	uint32_t dynamic_length;
+
+	/*
+	 * A pointer into a geometry shader's per-vertex input (ws075-p007a):
+	 * nonzero once the chain's first index chose the input vertex; the
+	 * vertex's number when that index is a constant; and the IR integer of
+	 * the number when it is chosen at run time (NO_VALUE for a constant).
+	 */
+	uint8_t vertex_chosen;
+	uint32_t vertex;
+	uint32_t vertex_index;
 };
 
 /*
@@ -835,7 +857,7 @@ static int i915_spirv_declare_constant_bool(struct i915_spirv_parser *parser, co
 static int i915_spirv_declare_constant_composite(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_declare_variable(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int i915_spirv_decoration_ignored(uint32_t decoration);
-static int i915_spirv_add_io(struct i915_spirv_parser *parser, uint32_t id, int is_input, uint32_t opcode, uint32_t offset);
+static int i915_spirv_add_io(struct i915_spirv_parser *parser, uint32_t id, uint32_t type_id, int is_input, uint32_t opcode, uint32_t offset);
 static int i915_spirv_add_io_run(struct i915_spirv_parser *parser, int is_input, uint32_t location, uint32_t count, uint32_t components, uint32_t flat, uint32_t noperspective);
 static void i915_spirv_add_uniform(struct i915_spirv_parser *parser, uint32_t id, uint32_t kind);
 static int i915_spirv_pass_body(struct i915_spirv_parser *parser);
@@ -983,6 +1005,14 @@ static int i915_spirv_lower_shared(struct i915_spirv_parser *parser, const uint3
 static int i915_spirv_semantics(struct i915_spirv_parser *parser, uint32_t semantics_id, uint32_t *fences, uint32_t opcode, uint32_t offset);
 static void i915_spirv_fence(struct i915_spirv_parser *parser, uint32_t fences);
 static int i915_spirv_lower_barrier(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_geometry_mode(struct i915_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int i915_spirv_geometry_declared(struct i915_spirv_parser *parser);
+static int i915_spirv_declare_geometry_input(struct i915_spirv_parser *parser, struct i915_spirv_id *record, uint32_t opcode, uint32_t offset);
+static int i915_spirv_chain_vertex(struct i915_spirv_parser *parser, struct i915_spirv_id *record, struct i915_spirv_id *pointee, struct i915_spirv_id *index_record, uint32_t index_id, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_load_vertex(struct i915_spirv_parser *parser, const uint32_t *word, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, uint32_t components, uint32_t opcode, uint32_t offset);
+static int i915_spirv_gl_in_location(struct i915_spirv_parser *parser, const struct i915_spirv_id *pointer, const struct i915_spirv_id *variable, uint32_t slot, uint32_t *location, uint32_t *component, uint32_t opcode, uint32_t offset);
+static int i915_spirv_geometry_output(struct i915_spirv_parser *parser, uint32_t builtin, uint32_t *location, uint32_t opcode, uint32_t offset);
+static int i915_spirv_lower_emit(struct i915_spirv_parser *parser, uint32_t opcode, uint32_t offset);
 
 /*
  * Parses SPIR-V words into the scalar IR of one stage.
@@ -1084,6 +1114,10 @@ drv_i915_shader_parse(
 	/* A compute shader's workgroup size is settled once every constant is declared. */
 	if (error == 0)
 		error = i915_spirv_compute_declared(&parser);
+
+	/* A geometry shader must have said what it takes and emits (ws075-p007a). */
+	if (error == 0)
+		error = i915_spirv_geometry_declared(&parser);
 
 	/*
 	 * The stream starts with room for the common lowerings and grows for the
@@ -1324,15 +1358,17 @@ i915_spirv_declare_entry_point(
 	if (count < 3U)
 		return EINVAL;
 
-	/* Vertex, fragment and compute shaders are lowered. */
+	/* Vertex, fragment, compute and geometry shaders are lowered. */
 	if (word[1] == EM_VERTEX) {
 		parser->ir->stage = I915_STAGE_VERTEX;
 	} else if (word[1] == EM_FRAGMENT) {
 		parser->ir->stage = I915_STAGE_FRAGMENT;
 	} else if (word[1] == EM_GL_COMPUTE) {
 		parser->ir->stage = I915_STAGE_COMPUTE;
+	} else if (word[1] == EM_GEOMETRY) {
+		parser->ir->stage = I915_STAGE_GEOMETRY;
 	} else {
-		return i915_spirv_refuse(parser, opcode, offset, "execution model other than Vertex / Fragment / GLCompute");
+		return i915_spirv_refuse(parser, opcode, offset, "execution model other than Vertex / Fragment / GLCompute / Geometry");
 	}
 
 	/* Succeeded: the stage is known. */
@@ -1824,6 +1860,11 @@ i915_spirv_declare_variable(
 		} else if (record->builtin == BUILTIN_POINT_COORD) {
 			record->has_location = 1U;
 			record->location = I915_SHADER_LOCATION_POINT_COORD;
+		} else if (record->builtin == BUILTIN_PRIMITIVE_ID) {
+			/* gl_PrimitiveID: the primitive's number, the same for all its pixels (ws075-p007a). */
+			record->has_location = 1U;
+			record->location = I915_SHADER_LOCATION_PRIMITIVE_ID;
+			record->flat = 1U;
 		}
 	}
 
@@ -1838,14 +1879,18 @@ i915_spirv_declare_variable(
 		error = i915_spirv_declare_system(parser, record, opcode, offset);
 		if (error != 0)
 			return error;
+	} else if (storage == SC_INPUT && parser->ir->stage == I915_STAGE_GEOMETRY) {
+		error = i915_spirv_declare_geometry_input(parser, record, opcode, offset);
+		if (error != 0)
+			return error;
 	} else if (storage == SC_INPUT && record->has_location != 0U) {
 		record->ptr_kind = PTR_INPUT;
-		error = i915_spirv_add_io(parser, word[2], 1, opcode, offset);
+		error = i915_spirv_add_io(parser, word[2], record->pointee, 1, opcode, offset);
 		if (error != 0)
 			return error;
 	} else if (storage == SC_OUTPUT && record->has_location != 0U) {
 		record->ptr_kind = PTR_OUTPUT;
-		error = i915_spirv_add_io(parser, word[2], 0, opcode, offset);
+		error = i915_spirv_add_io(parser, word[2], record->pointee, 0, opcode, offset);
 		if (error != 0)
 			return error;
 	} else if (storage == SC_OUTPUT) {
@@ -1895,16 +1940,19 @@ i915_spirv_declare_variable(
 
 /*
  * Adds the interface locations of an input or an output variable: one entry
- * to each location its type takes, from its own location on -- a scalar or a
- * vector one, a matrix one to a column, an array its elements', an
- * interface block its members' in order -- each Flat or NoPerspective as
- * the variable or its block member is.  Refuses a variable whose locations
- * run into the ones the draw generates.
+ * to each location the type `type_id` takes, from the variable's own
+ * location on -- a scalar or a vector one, a matrix one to a column, an
+ * array its elements', an interface block its members' in order -- each
+ * Flat or NoPerspective as the variable or its block member is.  The type
+ * is the variable's pointee, or, for a geometry shader's per-vertex input,
+ * the element one input vertex has.  Refuses a variable whose locations run
+ * into the ones the draw generates.
  */
 static int
 i915_spirv_add_io(
 	struct i915_spirv_parser *parser,
 	uint32_t id,
+	uint32_t type_id,
 	int is_input,
 	uint32_t opcode,
 	uint32_t offset)
@@ -1918,14 +1966,14 @@ i915_spirv_add_io(
 	uint32_t member;
 	int error;
 
-	/* Resolves the variable and what it holds. */
+	/* Resolves the variable and the type whose locations it takes. */
 	variable = &parser->ids[id];
-	type = i915_spirv_id(parser, variable->pointee);
+	type = i915_spirv_id(parser, type_id);
 	if (type == NULL)
 		return EINVAL;
 
 	/* A scalar or a vector counts its float components, one when it holds none. */
-	components = i915_spirv_float_components(parser, variable->pointee);
+	components = i915_spirv_float_components(parser, type_id);
 	if (components == 0U)
 		components = 1U;
 
@@ -1940,7 +1988,7 @@ i915_spirv_add_io(
 	/* A variable that is not an interface block takes its locations with its own interpolation. */
 	location = variable->location;
 	if (type->kind != ID_TYPE_STRUCT) {
-		error = i915_spirv_type_size(parser, variable->pointee, 0U, &scalars, &locations);
+		error = i915_spirv_type_size(parser, type_id, 0U, &scalars, &locations);
 		if (error != 0)
 			return i915_spirv_refuse(parser, opcode, offset, "interface variable that is not made of scalars");
 		if (location + locations > MAX_USER_LOCATION)
@@ -2286,6 +2334,10 @@ i915_spirv_lower(
 	case OP_MEMORY_BARRIER:
 		return i915_spirv_lower_barrier(parser, word, count, opcode, offset);
 
+	case OP_EMIT_VERTEX:
+	case OP_END_PRIMITIVE:
+		return i915_spirv_lower_emit(parser, opcode, offset);
+
 	case OP_FADD:
 	case OP_FSUB:
 	case OP_FMUL:
@@ -2518,13 +2570,19 @@ i915_spirv_lower_access_chain(
 		if (index_record == NULL || pointee == NULL)
 			return EINVAL;
 
-		/* Memory the draw delivers is addressed in bytes; a compute built-in by component; anything else in scalars. */
+		/*
+		 * Memory the draw delivers is addressed in bytes; a compute built-in
+		 * by component; a geometry shader's per-vertex input first by its
+		 * input vertex; anything else in scalars.
+		 */
 		if (record->ptr_kind == PTR_PUSH || record->ptr_kind == PTR_UBO || record->ptr_kind == PTR_SSBO) {
 			error = i915_spirv_chain_block(parser, record, pointee, index_record, word[index], opcode, offset);
 		} else if (record->ptr_kind == PTR_SYSTEM) {
 			error = i915_spirv_chain_system(parser, record, pointee, index_record, opcode, offset);
 		} else if (record->ptr_kind == PTR_SHARED) {
 			error = i915_spirv_chain_shared(parser, record, pointee, index_record, word[index], opcode, offset);
+		} else if (record->ptr_kind == PTR_VERTEX && record->vertex_chosen == 0U) {
+			error = i915_spirv_chain_vertex(parser, record, pointee, index_record, word[index], opcode, offset);
 		} else {
 			error = i915_spirv_chain_scalars(parser, record, pointee, index_record, word[index], opcode, offset);
 		}
@@ -2896,6 +2954,8 @@ i915_spirv_lower_load(
 		error = i915_spirv_lower_load_system(parser, word, base, variable, components, opcode, offset);
 	} else if (base->ptr_kind == PTR_SHARED) {
 		error = i915_spirv_lower_shared(parser, word, base, NULL, components, opcode, offset);
+	} else if (base->ptr_kind == PTR_VERTEX) {
+		error = i915_spirv_lower_load_vertex(parser, word, base, variable, components, opcode, offset);
 	} else {
 		return i915_spirv_refuse(parser, opcode, offset, "load through a pointer that is not an input, push constant, uniform block, sampler or local");
 	}
@@ -3593,9 +3653,10 @@ i915_spirv_lower_store_local(
  * Lowers a store to an output: one output write to each scalar, at the
  * location and component of its interface slot -- a located output's own,
  * or the Position or the PointSize builtin of an output block or of a
- * builtin variable.  Under the block's predicate a slot keeps what it held
- * where the predicate is false: the last value stored, or the zero every
- * output starts as.
+ * builtin variable (a geometry shader's Position, Layer or PrimitiveId:
+ * i915_spirv_geometry_output()).  Under the block's predicate a slot keeps
+ * what it held where the predicate is false: the last value stored, or the
+ * zero every output starts as.
  */
 static int
 i915_spirv_lower_store_output(
@@ -3616,6 +3677,7 @@ i915_spirv_lower_store_output(
 	uint32_t previous;
 	uint32_t value;
 	uint32_t builtin;
+	uint32_t builtin_location;
 	uint32_t index;
 	int is_builtin;
 	int error;
@@ -3627,6 +3689,7 @@ i915_spirv_lower_store_output(
 
 	/* An output that is not located is written only through its Position or PointSize builtin. */
 	builtin = 0U;
+	builtin_location = I915_IR_LOCATION_POSITION;
 	is_builtin = 0;
 	if (pointer->ptr_kind == PTR_OUTPUT_BLOCK) {
 		/* The builtin is on the variable, or on the member the chain selected. */
@@ -3642,9 +3705,22 @@ i915_spirv_lower_store_output(
 			is_builtin = 1;
 		}
 
-		/* Any other builtin, or an unlocated plain output, is refused. */
-		if (is_builtin == 0 || (builtin != BUILTIN_POSITION && builtin != BUILTIN_POINT_SIZE))
+		/* An unlocated plain output is refused. */
+		if (is_builtin == 0)
 			return i915_spirv_refuse(parser, opcode, offset, "store to an output that is neither located nor the Position or PointSize builtin");
+
+		/* A geometry shader has builtins of its own; elsewhere any but Position and PointSize is refused. */
+		if (parser->ir->stage == I915_STAGE_GEOMETRY) {
+			error = i915_spirv_geometry_output(parser, builtin, &builtin_location, opcode, offset);
+			if (error != 0)
+				return error;
+		} else if (builtin == BUILTIN_POSITION) {
+			builtin_location = I915_IR_LOCATION_POSITION;
+		} else if (builtin == BUILTIN_POINT_SIZE) {
+			builtin_location = I915_IR_LOCATION_POINT_SIZE;
+		} else {
+			return i915_spirv_refuse(parser, opcode, offset, "store to an output that is neither located nor the Position or PointSize builtin");
+		}
 	}
 
 	/* Finds the interface slot of each scalar stored. */
@@ -3686,12 +3762,12 @@ i915_spirv_lower_store_output(
 		if (inst == NULL)
 			continue;
 
-		/* The builtins are written to their own locations; a located output to its slot's. */
-		if (is_builtin != 0 && builtin == BUILTIN_POSITION) {
+		/* The builtins are written to their own locations, a scalar one at component 0; a located output to its slot's. */
+		if (is_builtin != 0 && builtin_location == I915_IR_LOCATION_POSITION) {
 			inst->location = I915_IR_LOCATION_POSITION;
 			inst->component = map[index] % 4U;
 		} else if (is_builtin != 0) {
-			inst->location = I915_IR_LOCATION_POINT_SIZE;
+			inst->location = builtin_location;
 			inst->component = 0U;
 		} else if (variable->index != 0U) {
 			/* The second colour (Index 1) of Location 0: a fragment shader's dual-source write. */
@@ -9445,3 +9521,6 @@ i915_spirv_result(
 
 /* The compute part of the parser (ws101-p002). */
 #include "spirv-compute.inc"
+
+/* The geometry part of the parser (ws075-p007a). */
+#include "spirv-geometry.inc"

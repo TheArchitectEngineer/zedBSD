@@ -65,6 +65,14 @@
 #define I915_SHADER_LOCATION_POINT_COORD	68U
 
 /*
+ * The location gl_PrimitiveID travels at (ws075-p007a): a geometry shader's
+ * output written to it is a varying like a located one, and a fragment
+ * shader reads its gl_PrimitiveID there as a Flat input.  It comes after
+ * every user location, so it is the last varying of a VUE.
+ */
+#define I915_SHADER_LOCATION_PRIMITIVE_ID	69U
+
+/*
  * Compute: the registers of per-thread push data after the cross-thread
  * data, in this order -- LocalInvocationID x, y, z and LocalInvocationIndex
  * of the thread's eight channels, a dword each (ws101-p002).

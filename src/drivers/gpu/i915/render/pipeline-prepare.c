@@ -461,11 +461,13 @@ static const char *
 i915_pipeline_stage_name(
 	enum i915_shader_stage stage)
 {
-	/* The vertex and the compute stage by name. */
+	/* The vertex, the compute and the geometry stage by name. */
 	if (stage == I915_STAGE_VERTEX)
 		return "vertex";
 	if (stage == I915_STAGE_COMPUTE)
 		return "compute";
+	if (stage == I915_STAGE_GEOMETRY)
+		return "geometry";
 
 	/* Succeeded: every other stage is the fragment stage. */
 	return "fragment";

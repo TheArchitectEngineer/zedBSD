@@ -7,6 +7,8 @@ per-cell inputs and the bounds every output must fall in."""
 #
 # Writes <name>.spv next to each GLSL source (read by the host fixtures plan/ws031/tests/i915-vk-lower-test.c
 # and i915-vk-compile-test.c) and tests/fixtures/compiler-shaders-gen.inc (included by tests/render/compiler.c).
+# The geometry shaders (ws075-p007a) and the hand-written assembly are only written as <name>.spv, for the host
+# fixtures (plan/ws031/tests/i915-vk-spirv-test.c); the kernel test does not embed them.
 #
 # The target is 64 x 64 pixels of R32G32B32A32_SFLOAT.  A "cell" test draws 16 x 16 cells of 4 x 4 pixels, each a
 # quad whose vertices all carry the same attributes, so every pixel of a cell receives them exactly; a "pixel" test
@@ -36,6 +38,25 @@ SHADERS = (
     ('branch.frag', 'fragment', 'i915_vkc_branch_frag'),
     ('discard.frag', 'fragment', 'i915_vkc_discard_frag'),
     ('shade.frag', 'fragment', 'i915_vkc_shade_frag'),
+)
+
+# The shaders of the geometry stage the host fixtures parse and compile (ws075-p007a): glxtest's three geometry
+# shaders, WS068's varyings, the ones the parser refuses, and a fragment shader reading gl_PrimitiveID.  Source, stage.
+GEOMETRY = (
+    ('points.geom', 'geometry'),
+    ('adjacency.geom', 'geometry'),
+    ('layers.geom', 'geometry'),
+    ('varyings.geom', 'geometry'),
+    ('refuse-invocations.geom', 'geometry'),
+    ('refuse-invocation-id.geom', 'geometry'),
+    ('refuse-viewport.geom', 'geometry'),
+    ('refuse-clip-distance.geom', 'geometry'),
+    ('primitive-id.frag', 'fragment'),
+)
+
+# SPIR-V written by hand, for what no GLSL compiler emits: assembled with spirv-as.
+ASSEMBLED = (
+    'refuse-length.spvasm',
 )
 
 # mview's shaders as the application ships them (userland/tests/mview/shaders/), embedded unchanged.
@@ -335,6 +356,17 @@ def main():
         words = struct.unpack(f'<{len(binary) // 4}I', binary)
         lines.extend(['', f'/* {source} (sha256 {hashlib.sha256(path.read_bytes()).hexdigest()}), {len(words)} words. */'])
         c_words(lines, symbol, words)
+
+    for source, stage in GEOMETRY:
+        output = directory / (source + '.spv')
+        run(['glslc', '--target-env=vulkan1.1', '--target-spv=spv1.0', f'-fshader-stage={stage}',
+             '-O0', str(directory / source), '-o', str(output)])
+        run(['spirv-val', '--target-env', 'vulkan1.1', str(output)])
+
+    for source in ASSEMBLED:
+        output = directory / (source.rsplit('.', 1)[0] + '.spv')
+        run(['spirv-as', '--target-env', 'vulkan1.0', str(directory / source), '-o', str(output)])
+        run(['spirv-val', '--target-env', 'vulkan1.1', str(output)])
 
     shipped = directory.parents[6] / 'userland' / 'tests' / 'mview' / 'shaders'
     for source, symbol in SHIPPED:

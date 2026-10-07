@@ -89,6 +89,16 @@ i915_spirv_declare_execution_mode(
 	if (count < 3U)
 		return EINVAL;
 
+	/* A geometry shader's modes say what it takes and emits (ws075-p007a, spirv-geometry.inc). */
+	if (parser->ir->stage == I915_STAGE_GEOMETRY) {
+		error = i915_spirv_geometry_mode(parser, word, count, opcode, offset);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the geometry mode is recorded. */
+		return 0;
+	}
+
 	/* LocalSize: the three sizes are literals. */
 	if (opcode == OP_EXECUTION_MODE && word[2] == EXECUTION_MODE_LOCAL_SIZE) {
 		if (count < 6U)
@@ -301,12 +311,14 @@ i915_spirv_lower_load_system(
 }
 
 /*
- * Returns the IR value of one component of a compute built-in.
+ * Returns the IR value of one component of a compute built-in, or of a
+ * geometry shader's gl_PrimitiveIDIn.
  *
  * The invocation's place in its group and the group's place in the dispatch
- * are the thread's payload (LOAD_SYSTEM); the global invocation is the
- * group's first invocation plus the local one; the group counts are words
- * in memory the dispatch places (the system storage buffer).
+ * are the thread's payload (LOAD_SYSTEM), as is a geometry invocation's
+ * input primitive; the global invocation is the group's first invocation
+ * plus the local one; the group counts are words in memory the dispatch
+ * places (the system storage buffer).
  */
 static uint32_t
 i915_spirv_system_component(
@@ -339,6 +351,12 @@ i915_spirv_system_component(
 	case BUILTIN_WORKGROUP_ID:
 		/* The group's place in the dispatch along the axis. */
 		value = i915_spirv_load_system(parser, I915_IR_SYSTEM_GROUP_ID_X + component);
+		return value;
+
+	case BUILTIN_PRIMITIVE_ID:
+		/* A geometry invocation's input primitive: the thread's payload (ws075-p007a). */
+		parser->ir->uses_primitive_id = 1U;
+		value = i915_spirv_load_system(parser, I915_IR_SYSTEM_PRIMITIVE_ID);
 		return value;
 
 	case BUILTIN_GLOBAL_INVOCATION_ID:
