@@ -88,56 +88,56 @@ drv_i915_render_instance_dispatch(
 	/* Picks the command, or reports the opcode as someone else's. */
 	*handled = 1;
 	switch (opcode) {
-	case 0U:
+	case GPU_OP_CREATE_INSTANCE:
 		/* vkCreateInstance */
 		error = i915_instance_create(session, reader, reply);
 		break;
-	case 1U:
+	case GPU_OP_DESTROY_INSTANCE:
 		/* vkDestroyInstance */
 		error = i915_instance_destroy(session, I915_VK_OBJ_INSTANCE, reader);
 		break;
-	case 2U:
+	case GPU_OP_ENUMERATE_PHYSICAL_DEVICES:
 		/* vkEnumeratePhysicalDevices */
 		error = i915_instance_enumerate_physical_devices(session, reader, reply);
 		break;
-	case 3U:
+	case GPU_OP_GET_PHYSICAL_DEVICE_FEATURES:
 		/* vkGetPhysicalDeviceFeatures */
 		error = i915_instance_features(session, reader, reply);
 		break;
-	case 4U:
+	case GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES:
 		/* vkGetPhysicalDeviceFormatProperties */
 		error = i915_instance_format_properties(reader, reply);
 		break;
-	case 5U:
+	case GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES:
 		/* vkGetPhysicalDeviceImageFormatProperties */
 		error = i915_instance_image_format_properties(reader, reply);
 		break;
-	case 6U:
+	case GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES:
 		/* vkGetPhysicalDeviceProperties */
 		error = i915_instance_properties(session, reader, reply);
 		break;
-	case 7U:
+	case GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_PROPERTIES:
 		/* vkGetPhysicalDeviceQueueFamilyProperties */
 		error = i915_instance_queue_families(session, reader, reply);
 		break;
-	case 8U:
+	case GPU_OP_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES:
 		/* vkGetPhysicalDeviceMemoryProperties */
 		error = i915_instance_memory_properties(session, reader, reply);
 		break;
-	case 11U:
+	case GPU_OP_CREATE_DEVICE:
 		/* vkCreateDevice */
 		error = i915_instance_create_device(session, reader, reply);
 		break;
-	case 12U:
+	case GPU_OP_DESTROY_DEVICE:
 		/* vkDestroyDevice */
 		error = i915_instance_destroy(session, I915_VK_OBJ_DEVICE, reader);
 		break;
-	case 19U:
-	case 20U:
+	case GPU_OP_QUEUE_WAIT_IDLE:
+	case GPU_OP_DEVICE_WAIT_IDLE:
 		/* vkQueueWaitIdle and vkDeviceWaitIdle */
 		error = i915_instance_wait_idle(reader, reply);
 		break;
-	case 155U:
+	case GPU_OP_GET_DEVICE_QUEUE2:
 		/* vkGetDeviceQueue2 */
 		error = i915_instance_get_device_queue2(session, reader, reply);
 		break;

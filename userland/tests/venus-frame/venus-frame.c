@@ -23,30 +23,11 @@
 #include <unistd.h>
 #include "client.h"
 
+#include <uapi/gpu-op.h>
+
 #define FRAME_WIDTH 256U
 #define FRAME_HEIGHT 192U
 #define FRAME_BYTES (FRAME_WIDTH * FRAME_HEIGHT * 4U)
-
-/* Stable public Venus command numbers, not native Vulkan function addresses. */
-enum venus_command {
-	VENUS_QUEUE_SUBMIT = 18,
-	VENUS_ALLOCATE_MEMORY = 21,
-	VENUS_BIND_BUFFER_MEMORY = 28,
-	VENUS_BIND_IMAGE_MEMORY = 29,
-	VENUS_GET_BUFFER_REQUIREMENTS = 30,
-	VENUS_GET_IMAGE_REQUIREMENTS = 31,
-	VENUS_CREATE_FENCE = 35,
-	VENUS_GET_FENCE_STATUS = 38,
-	VENUS_CREATE_BUFFER = 50,
-	VENUS_CREATE_IMAGE = 54,
-	VENUS_CREATE_COMMAND_POOL = 85,
-	VENUS_ALLOCATE_COMMAND_BUFFERS = 88,
-	VENUS_BEGIN_COMMAND_BUFFER = 90,
-	VENUS_END_COMMAND_BUFFER = 91,
-	VENUS_COPY_IMAGE_TO_BUFFER = 116,
-	VENUS_CLEAR_COLOR_IMAGE = 119,
-	VENUS_PIPELINE_BARRIER = 126
-};
 
 /* Vulkan structure tags carried on the wire, independent of C structure layout. */
 enum venus_structure {
@@ -268,9 +249,9 @@ allocate_object_memory(
 	int status;
 
 	/* Choose the requirements query for this object type. */
-	command = VENUS_GET_BUFFER_REQUIREMENTS;
+	command = GPU_OP_GET_BUFFER_MEMORY_REQUIREMENTS;
 	if (image) {
-		command = VENUS_GET_IMAGE_REQUIREMENTS;
+		command = GPU_OP_GET_IMAGE_MEMORY_REQUIREMENTS;
 	}
 
 	/* Encode the selected object operation. */
@@ -338,7 +319,7 @@ allocate_object_memory(
 		client.memory_flags[selected]);
 
 	/* Exportable memory is a renderer property of the Venus allocation. */
-	venus_client_command_begin(&client, VENUS_ALLOCATE_MEMORY);
+	venus_client_command_begin(&client, GPU_OP_ALLOCATE_MEMORY);
 	venus_client_wire_u64(&client, VENUS_OBJECT_DEVICE);
 	venus_client_wire_u64(&client, 1);
 	venus_client_wire_structure(&client, STRUCTURE_MEMORY_ALLOCATE_INFO);
@@ -361,9 +342,9 @@ allocate_object_memory(
 	}
 
 	/* Both allocations bind at zero, satisfying all reported alignments. */
-	command = VENUS_BIND_BUFFER_MEMORY;
+	command = GPU_OP_BIND_BUFFER_MEMORY;
 	if (image) {
-		command = VENUS_BIND_IMAGE_MEMORY;
+		command = GPU_OP_BIND_IMAGE_MEMORY;
 	}
 
 	/* Encode the selected object operation. */
@@ -390,7 +371,7 @@ create_render_objects(void)
 	int status;
 
 	/* The half-width image is cleared twice and copied into separate bands. */
-	venus_client_command_begin(&client, VENUS_CREATE_IMAGE);
+	venus_client_command_begin(&client, GPU_OP_CREATE_IMAGE);
 	venus_client_wire_u64(&client, VENUS_OBJECT_DEVICE);
 	venus_client_wire_u64(&client, 1);
 	venus_client_wire_structure(&client, STRUCTURE_IMAGE_CREATE_INFO);
@@ -432,7 +413,7 @@ create_render_objects(void)
 	}
 
 	/* The linear buffer is only a transfer destination, never CPU-painted. */
-	venus_client_command_begin(&client, VENUS_CREATE_BUFFER);
+	venus_client_command_begin(&client, GPU_OP_CREATE_BUFFER);
 	venus_client_wire_u64(&client, VENUS_OBJECT_DEVICE);
 	venus_client_wire_u64(&client, 1);
 	venus_client_wire_structure(&client, STRUCTURE_BUFFER_CREATE_INFO);
@@ -465,7 +446,7 @@ create_render_objects(void)
 	}
 
 	/* One primary command buffer records the complete Vulkan frame. */
-	venus_client_command_begin(&client, VENUS_CREATE_COMMAND_POOL);
+	venus_client_command_begin(&client, GPU_OP_CREATE_COMMAND_POOL);
 	venus_client_wire_u64(&client, VENUS_OBJECT_DEVICE);
 	venus_client_wire_u64(&client, 1);
 	venus_client_wire_structure(&client, STRUCTURE_COMMAND_POOL_CREATE_INFO);
@@ -488,7 +469,7 @@ create_render_objects(void)
 	}
 
 	/* Encode allocate command buffers. */
-	venus_client_command_begin(&client, VENUS_ALLOCATE_COMMAND_BUFFERS);
+	venus_client_command_begin(&client, GPU_OP_ALLOCATE_COMMAND_BUFFERS);
 	venus_client_wire_u64(&client, VENUS_OBJECT_DEVICE);
 	venus_client_wire_u64(&client, 1);
 	venus_client_wire_structure(&client, STRUCTURE_COMMAND_BUFFER_ALLOCATE_INFO);
@@ -511,7 +492,7 @@ create_render_objects(void)
 	}
 
 	/* An initially unsignaled fence proves execution, beyond stream decode. */
-	venus_client_command_begin(&client, VENUS_CREATE_FENCE);
+	venus_client_command_begin(&client, GPU_OP_CREATE_FENCE);
 	venus_client_wire_u64(&client, VENUS_OBJECT_DEVICE);
 	venus_client_wire_u64(&client, 1);
 	venus_client_wire_structure(&client, STRUCTURE_FENCE_CREATE_INFO);
@@ -554,7 +535,7 @@ image_barrier(
 	}
 
 	/* Encode pipeline barrier. */
-	venus_client_command_begin(&client, VENUS_PIPELINE_BARRIER);
+	venus_client_command_begin(&client, GPU_OP_CMD_PIPELINE_BARRIER);
 	venus_client_wire_u64(&client, OBJECT_COMMAND_BUFFER);
 	venus_client_wire_u32(&client, source_stage);
 	venus_client_wire_u32(&client, 0x1000);
@@ -595,7 +576,7 @@ clear_image(
 	int status;
 
 	/* Encode clear color image. */
-	venus_client_command_begin(&client, VENUS_CLEAR_COLOR_IMAGE);
+	venus_client_command_begin(&client, GPU_OP_CMD_CLEAR_COLOR_IMAGE);
 	venus_client_wire_u64(&client, OBJECT_COMMAND_BUFFER);
 	venus_client_wire_u64(&client, OBJECT_IMAGE);
 	venus_client_wire_u32(&client, 7);
@@ -638,7 +619,7 @@ copy_image(
 	int status;
 
 	/* Encode copy image to buffer. */
-	venus_client_command_begin(&client, VENUS_COPY_IMAGE_TO_BUFFER);
+	venus_client_command_begin(&client, GPU_OP_CMD_COPY_IMAGE_TO_BUFFER);
 	venus_client_wire_u64(&client, OBJECT_COMMAND_BUFFER);
 	venus_client_wire_u64(&client, OBJECT_IMAGE);
 	venus_client_wire_u32(&client, 6);
@@ -679,7 +660,7 @@ record_commands(void)
 	int status;
 
 	/* Encode begin command buffer. */
-	venus_client_command_begin(&client, VENUS_BEGIN_COMMAND_BUFFER);
+	venus_client_command_begin(&client, GPU_OP_BEGIN_COMMAND_BUFFER);
 	venus_client_wire_u64(&client, OBJECT_COMMAND_BUFFER);
 	venus_client_wire_u64(&client, 1);
 	venus_client_wire_structure(&client, STRUCTURE_COMMAND_BUFFER_BEGIN_INFO);
@@ -729,7 +710,7 @@ record_commands(void)
 	}
 
 	/* Make all transfer writes visible to coherent host reads after the fence. */
-	venus_client_command_begin(&client, VENUS_PIPELINE_BARRIER);
+	venus_client_command_begin(&client, GPU_OP_CMD_PIPELINE_BARRIER);
 	venus_client_wire_u64(&client, OBJECT_COMMAND_BUFFER);
 	venus_client_wire_u32(&client, 0x1000);
 	venus_client_wire_u32(&client, 0x4000);
@@ -756,7 +737,7 @@ record_commands(void)
 	}
 
 	/* Encode end command buffer. */
-	venus_client_command_begin(&client, VENUS_END_COMMAND_BUFFER);
+	venus_client_command_begin(&client, GPU_OP_END_COMMAND_BUFFER);
 	venus_client_wire_u64(&client, OBJECT_COMMAND_BUFFER);
 
 	/* Submit the completed encoding and validate its renderer reply. */
@@ -777,7 +758,7 @@ submit_and_wait(void)
 	int status;
 
 	/* Encode queue submit. */
-	venus_client_command_begin(&client, VENUS_QUEUE_SUBMIT);
+	venus_client_command_begin(&client, GPU_OP_QUEUE_SUBMIT);
 	venus_client_wire_u64(&client, VENUS_OBJECT_QUEUE);
 	venus_client_wire_u32(&client, 1);
 	venus_client_wire_u64(&client, 1);
@@ -801,7 +782,7 @@ submit_and_wait(void)
 	/* VK_NOT_READY is expected until the GPU completes the recorded transfers. */
 	for (poll = 0; poll < VENUS_CLIENT_POLL_LIMIT; poll++) {
 		/* Encode get fence status. */
-		venus_client_command_begin(&client, VENUS_GET_FENCE_STATUS);
+		venus_client_command_begin(&client, GPU_OP_GET_FENCE_STATUS);
 		venus_client_wire_u64(&client, VENUS_OBJECT_DEVICE);
 		venus_client_wire_u64(&client, OBJECT_FENCE);
 

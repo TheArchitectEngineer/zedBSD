@@ -51,14 +51,14 @@ vkCreateFence(
 
 	/* Allocate one fence using this call's effective allocation policy. */
 	owner = vulkan_device(device);
-	status = sync_create(owner, VULKAN_OBJECT_FENCE, VULKAN_OPCODE_vkCreateFence, VULKAN_OPCODE_vkDestroyFence, VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, pCreateInfo->flags, pAllocator, &sync);
+	status = sync_create(owner, VULKAN_OBJECT_FENCE, GPU_OP_CREATE_FENCE, GPU_OP_DESTROY_FENCE, VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, pCreateInfo->flags, pAllocator, &sync);
 	if (status != VK_SUCCESS)
 		return status;
 
 	/* Completes exported reference ownership before exposing this fence. */
 	status = vulkan_external_fence_create(owner, sync, pCreateInfo);
 	if (status != VK_SUCCESS) {
-		sync_destroy(owner, sync, VULKAN_OPCODE_vkDestroyFence, pAllocator);
+		sync_destroy(owner, sync, GPU_OP_DESTROY_FENCE, pAllocator);
 		return status;
 	}
 
@@ -93,7 +93,7 @@ vkDestroyFence(
 	/* The destruction call may supply compatible callbacks with different userdata. */
 	owner = vulkan_device(device);
 	sync = vulkan_sync_object((uint64_t)(uintptr_t)fence);
-	sync_destroy(owner, sync, VULKAN_OPCODE_vkDestroyFence, pAllocator);
+	sync_destroy(owner, sync, GPU_OP_DESTROY_FENCE, pAllocator);
 
 	/* Succeeded: null fences are ignored and ordinary fence ownership is consumed. */
 	return;
@@ -126,7 +126,7 @@ vkResetFences(
 	}
 
 	vulkan_writer_init_for_object(&writer, &owner->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkResetFences);
+	vulkan_command_begin(&writer, GPU_OP_RESET_FENCES);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u32(&writer, fenceCount);
 	vulkan_write_u64(&writer, fenceCount);
@@ -192,7 +192,7 @@ vkGetFenceStatus(
 		} else if (sync->software_signaled) {
 			status = VK_SUCCESS;
 		} else {
-			status = vulkan_sync_status_locked(owner, sync, VULKAN_OPCODE_vkGetFenceStatus);
+			status = vulkan_sync_status_locked(owner, sync, GPU_OP_GET_FENCE_STATUS);
 		}
 	}
 
@@ -250,7 +250,7 @@ vkCreateSemaphore(
 
 	/* Create the native payload before allowing queue or WSI use. */
 	owner = vulkan_device(device);
-	status = sync_create(owner, VULKAN_OBJECT_SEMAPHORE, VULKAN_OPCODE_vkCreateSemaphore, VULKAN_OPCODE_vkDestroySemaphore, VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, pCreateInfo->flags, pAllocator, &sync);
+	status = sync_create(owner, VULKAN_OBJECT_SEMAPHORE, GPU_OP_CREATE_SEMAPHORE, GPU_OP_DESTROY_SEMAPHORE, VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, pCreateInfo->flags, pAllocator, &sync);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -277,7 +277,7 @@ vkDestroySemaphore(
 	/* Honor compatible destruction callbacks while consuming this semaphore. */
 	owner = vulkan_device(device);
 	sync = vulkan_sync_object((uint64_t)(uintptr_t)semaphore);
-	sync_destroy(owner, sync, VULKAN_OPCODE_vkDestroySemaphore, pAllocator);
+	sync_destroy(owner, sync, GPU_OP_DESTROY_SEMAPHORE, pAllocator);
 
 	/* Succeeded: the semaphore's local and native ownership is consumed. */
 	return;
@@ -300,7 +300,7 @@ vkCreateEvent(
 
 	/* Keep event state native so command buffers observe later host changes. */
 	owner = vulkan_device(device);
-	status = sync_create(owner, VULKAN_OBJECT_EVENT, VULKAN_OPCODE_vkCreateEvent, VULKAN_OPCODE_vkDestroyEvent, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, pCreateInfo->flags, pAllocator, &sync);
+	status = sync_create(owner, VULKAN_OBJECT_EVENT, GPU_OP_CREATE_EVENT, GPU_OP_DESTROY_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, pCreateInfo->flags, pAllocator, &sync);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -327,7 +327,7 @@ vkDestroyEvent(
 	/* Honor the effective destruction allocator, including null-handle cleanup. */
 	owner = vulkan_device(device);
 	sync = vulkan_sync_object((uint64_t)(uintptr_t)event);
-	sync_destroy(owner, sync, VULKAN_OPCODE_vkDestroyEvent, pAllocator);
+	sync_destroy(owner, sync, GPU_OP_DESTROY_EVENT, pAllocator);
 
 	/* Succeeded: the application no longer owns this event. */
 	return;
@@ -344,7 +344,7 @@ vkGetEventStatus(
 	VkResult status;
 
 	/* Preserve EVENT_SET and EVENT_RESET as the event's meaningful answers. */
-	status = sync_event_operation(device, event, VULKAN_OPCODE_vkGetEventStatus);
+	status = sync_event_operation(device, event, GPU_OP_GET_EVENT_STATUS);
 	if (status < 0)
 		return status;
 
@@ -363,7 +363,7 @@ vkSetEvent(
 	VkResult status;
 
 	/* Execute this short host operation independently of GPU fence waiters. */
-	status = sync_event_operation(device, event, VULKAN_OPCODE_vkSetEvent);
+	status = sync_event_operation(device, event, GPU_OP_SET_EVENT);
 	if (status != VK_SUCCESS)
 		return status;
 
@@ -382,7 +382,7 @@ vkResetEvent(
 	VkResult status;
 
 	/* Keep host reset visible to the same event used by command buffers. */
-	status = sync_event_operation(device, event, VULKAN_OPCODE_vkResetEvent);
+	status = sync_event_operation(device, event, GPU_OP_RESET_EVENT);
 	if (status != VK_SUCCESS)
 		return status;
 

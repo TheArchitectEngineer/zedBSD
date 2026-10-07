@@ -33,11 +33,11 @@ vkCreateBuffer(
 
 	/* Encodes every active field using its declared type and protocol array count. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateBuffer);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_BUFFER);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkBufferCreateInfo(&writer, pCreateInfo);
-	status = vulkan_object_create_complete(owner, object, &writer, VULKAN_OPCODE_vkDestroyBuffer);
+	status = vulkan_object_create_complete(owner, object, &writer, GPU_OP_DESTROY_BUFFER);
 	vulkan_writer_finish(&writer);
 	if (status != VK_SUCCESS) {
 		vulkan_object_free(object);
@@ -62,7 +62,7 @@ vkDestroyBuffer(
 	const VkAllocationCallbacks *pAllocator)
 {
 	/* Consumes native and local ownership without imposing GPU-specific publication rules. */
-	resource_destroy(vulkan_device(device), (uint64_t)resource, VULKAN_OPCODE_vkDestroyBuffer, pAllocator);
+	resource_destroy(vulkan_device(device), (uint64_t)resource, GPU_OP_DESTROY_BUFFER, pAllocator);
 
 	/* Succeeded: a null handle is ignored and ordinary ownership is released. */
 	return;
@@ -92,11 +92,11 @@ vkCreateBufferView(
 
 	/* Encodes every active field using its declared type and protocol array count. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateBufferView);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_BUFFER_VIEW);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkBufferViewCreateInfo(&writer, pCreateInfo);
-	status = vulkan_object_create_complete(owner, object, &writer, VULKAN_OPCODE_vkDestroyBufferView);
+	status = vulkan_object_create_complete(owner, object, &writer, GPU_OP_DESTROY_BUFFER_VIEW);
 	vulkan_writer_finish(&writer);
 	if (status != VK_SUCCESS) {
 		vulkan_object_free(object);
@@ -121,7 +121,7 @@ vkDestroyBufferView(
 	const VkAllocationCallbacks *pAllocator)
 {
 	/* Consumes native and local ownership without imposing GPU-specific publication rules. */
-	resource_destroy(vulkan_device(device), (uint64_t)resource, VULKAN_OPCODE_vkDestroyBufferView, pAllocator);
+	resource_destroy(vulkan_device(device), (uint64_t)resource, GPU_OP_DESTROY_BUFFER_VIEW, pAllocator);
 
 	/* Succeeded: a null handle is ignored and ordinary ownership is released. */
 	return;
@@ -152,11 +152,11 @@ vkCreateImage(
 
 	/* Encodes every active field using its declared type and protocol array count. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateImage);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_IMAGE);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkImageCreateInfo(&writer, pCreateInfo);
-	status = vulkan_object_create_complete(owner, object, &writer, VULKAN_OPCODE_vkDestroyImage);
+	status = vulkan_object_create_complete(owner, object, &writer, GPU_OP_DESTROY_IMAGE);
 	vulkan_writer_finish(&writer);
 	if (status != VK_SUCCESS) {
 		vulkan_object_free(object);
@@ -193,7 +193,7 @@ vkDestroyImage(
 	const VkAllocationCallbacks *pAllocator)
 {
 	/* Consumes native and local ownership without imposing GPU-specific publication rules. */
-	resource_destroy(vulkan_device(device), (uint64_t)resource, VULKAN_OPCODE_vkDestroyImage, pAllocator);
+	resource_destroy(vulkan_device(device), (uint64_t)resource, GPU_OP_DESTROY_IMAGE, pAllocator);
 
 	/* Succeeded: a null handle is ignored and ordinary ownership is released. */
 	return;
@@ -223,11 +223,11 @@ vkCreateImageView(
 
 	/* Encodes every active field using its declared type and protocol array count. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateImageView);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_IMAGE_VIEW);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkImageViewCreateInfo(&writer, pCreateInfo);
-	status = vulkan_object_create_complete(owner, object, &writer, VULKAN_OPCODE_vkDestroyImageView);
+	status = vulkan_object_create_complete(owner, object, &writer, GPU_OP_DESTROY_IMAGE_VIEW);
 	vulkan_writer_finish(&writer);
 	if (status != VK_SUCCESS) {
 		vulkan_object_free(object);
@@ -252,7 +252,7 @@ vkDestroyImageView(
 	const VkAllocationCallbacks *pAllocator)
 {
 	/* Consumes native and local ownership without imposing GPU-specific publication rules. */
-	resource_destroy(vulkan_device(device), (uint64_t)resource, VULKAN_OPCODE_vkDestroyImageView, pAllocator);
+	resource_destroy(vulkan_device(device), (uint64_t)resource, GPU_OP_DESTROY_IMAGE_VIEW, pAllocator);
 
 	/* Succeeded: a null handle is ignored and ordinary ownership is released. */
 	return;
@@ -282,11 +282,11 @@ vkCreateShaderModule(
 
 	/* Encodes every active field using its declared type and protocol array count. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateShaderModule);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_SHADER_MODULE);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkShaderModuleCreateInfo(&writer, pCreateInfo);
-	status = vulkan_object_create_complete(owner, object, &writer, VULKAN_OPCODE_vkDestroyShaderModule);
+	status = vulkan_object_create_complete(owner, object, &writer, GPU_OP_DESTROY_SHADER_MODULE);
 	vulkan_writer_finish(&writer);
 	if (status != VK_SUCCESS) {
 		vulkan_object_free(object);
@@ -311,7 +311,7 @@ vkDestroyShaderModule(
 	const VkAllocationCallbacks *pAllocator)
 {
 	/* Consumes native and local ownership without imposing GPU-specific publication rules. */
-	resource_destroy(vulkan_device(device), (uint64_t)resource, VULKAN_OPCODE_vkDestroyShaderModule, pAllocator);
+	resource_destroy(vulkan_device(device), (uint64_t)resource, GPU_OP_DESTROY_SHADER_MODULE, pAllocator);
 
 	/* Succeeded: a null handle is ignored and ordinary ownership is released. */
 	return;
@@ -341,11 +341,11 @@ vkCreateSampler(
 
 	/* Encodes every active field using its declared type and protocol array count. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateSampler);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_SAMPLER);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkSamplerCreateInfo(&writer, pCreateInfo);
-	status = vulkan_object_create_complete(owner, object, &writer, VULKAN_OPCODE_vkDestroySampler);
+	status = vulkan_object_create_complete(owner, object, &writer, GPU_OP_DESTROY_SAMPLER);
 	vulkan_writer_finish(&writer);
 	if (status != VK_SUCCESS) {
 		vulkan_object_free(object);
@@ -370,7 +370,7 @@ vkDestroySampler(
 	const VkAllocationCallbacks *pAllocator)
 {
 	/* Consumes native and local ownership without imposing GPU-specific publication rules. */
-	resource_destroy(vulkan_device(device), (uint64_t)resource, VULKAN_OPCODE_vkDestroySampler, pAllocator);
+	resource_destroy(vulkan_device(device), (uint64_t)resource, GPU_OP_DESTROY_SAMPLER, pAllocator);
 
 	/* Succeeded: a null handle is ignored and ordinary ownership is released. */
 	return;
@@ -400,11 +400,11 @@ vkCreateFramebuffer(
 
 	/* Encodes every active field using its declared type and protocol array count. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateFramebuffer);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_FRAMEBUFFER);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, 1);
 	vulkan_encode_VkFramebufferCreateInfo(&writer, pCreateInfo);
-	status = vulkan_object_create_complete(owner, object, &writer, VULKAN_OPCODE_vkDestroyFramebuffer);
+	status = vulkan_object_create_complete(owner, object, &writer, GPU_OP_DESTROY_FRAMEBUFFER);
 	vulkan_writer_finish(&writer);
 	if (status != VK_SUCCESS) {
 		vulkan_object_free(object);
@@ -429,7 +429,7 @@ vkDestroyFramebuffer(
 	const VkAllocationCallbacks *pAllocator)
 {
 	/* Consumes native and local ownership without imposing GPU-specific publication rules. */
-	resource_destroy(vulkan_device(device), (uint64_t)resource, VULKAN_OPCODE_vkDestroyFramebuffer, pAllocator);
+	resource_destroy(vulkan_device(device), (uint64_t)resource, GPU_OP_DESTROY_FRAMEBUFFER, pAllocator);
 
 	/* Succeeded: a null handle is ignored and ordinary ownership is released. */
 	return;

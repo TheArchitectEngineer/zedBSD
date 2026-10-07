@@ -147,9 +147,17 @@ The public command set is now 173: the three `VK_KHR_get_memory_requirements2`
 commands (`vkGetBufferMemoryRequirements2KHR`, `vkGetImageMemoryRequirements2KHR`,
 `vkGetImageSparseMemoryRequirements2KHR`). `VK_KHR_dedicated_allocation` adds no
 command. `maintain-dispatch.noct` regenerated `dispatch-table.inc` and
-`api-commands.tsv` with these records; it was run with the pinned
-`src/venus/venus-protocol/vn_protocol_renderer_defines.h` of the same commit
-(SHA-256 `ff73828cb8b5b0364d701cc0baea1d99e233410c4eec8f4af4a24616bcd67743`), and
-`opcodes.h` came out identical to the tree. The three commands are answered in
+`api-commands.tsv` with these records. The three commands are answered in
 the library from the 1.0 queries and need no wire identifier. Core Vulkan
 remains 1.0.
+
+## The command numbers (ws167-p002)
+
+The numbers of the Vulkan commands in the stream libvulkan submits are the Kei
+GPU command protocol's, declared in `include/uapi/gpu-op.h` with zedBSD's own
+names (`GPU_OP_CREATE_INSTANCE` and so on), which libvulkan, the i915 Vulkan
+executor and `venus-frame` share. Version 1 reuses the numbers of the Venus
+protocol's wire format 1 (virglrenderer 1.1.0) for the same Vulkan commands, so
+that a Venus renderer on a virtual machine's host accepts the stream; the file,
+its names and later numbers are zedBSD's. No virglrenderer file is read to make
+it, and libvulkan no longer carries `opcodes.h` or `LICENSE-PROTOCOL`.

@@ -121,11 +121,11 @@ vkCreateDescriptorSetLayout(
 
 	/* Create native state with the effective object allocator owning command storage. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateDescriptorSetLayout);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_DESCRIPTOR_SET_LAYOUT);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_pointer(&writer, pCreateInfo);
 	vulkan_encode_VkDescriptorSetLayoutCreateInfo(&writer, pCreateInfo);
-	status = vulkan_object_create_complete(owner, object, &writer, VULKAN_OPCODE_vkDestroyDescriptorSetLayout);
+	status = vulkan_object_create_complete(owner, object, &writer, GPU_OP_DESTROY_DESCRIPTOR_SET_LAYOUT);
 	vulkan_writer_finish(&writer);
 	if (status != VK_SUCCESS) {
 		vulkan_object_free(object);
@@ -167,7 +167,7 @@ vkDestroyDescriptorSetLayout(
 	}
 
 	/* A failed void destruction leaves uncertain native state owned by terminal context cleanup. */
-	status = vulkan_object_destroy_remote(owner, object, VULKAN_OPCODE_vkDestroyDescriptorSetLayout);
+	status = vulkan_object_destroy_remote(owner, object, GPU_OP_DESTROY_DESCRIPTOR_SET_LAYOUT);
 	if (status != VK_SUCCESS)
 		vulkan_context_error(owner->object.context, VK_ERROR_DEVICE_LOST);
 
@@ -224,11 +224,11 @@ vkCreateDescriptorPool(
 
 	/* Create native state with the effective object allocator owning command storage. */
 	vulkan_writer_init_for_object(&writer, object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkCreateDescriptorPool);
+	vulkan_command_begin(&writer, GPU_OP_CREATE_DESCRIPTOR_POOL);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_pointer(&writer, pCreateInfo);
 	vulkan_encode_VkDescriptorPoolCreateInfo(&writer, pCreateInfo);
-	status = vulkan_object_create_complete(owner, object, &writer, VULKAN_OPCODE_vkDestroyDescriptorPool);
+	status = vulkan_object_create_complete(owner, object, &writer, GPU_OP_DESTROY_DESCRIPTOR_POOL);
 	vulkan_writer_finish(&writer);
 	if (status != VK_SUCCESS) {
 		vulkan_object_free(object);
@@ -270,7 +270,7 @@ vkDestroyDescriptorPool(
 	}
 
 	/* A failed native destroy cannot leave apparently usable local handles into an uncertain pool. */
-	status = vulkan_object_destroy_remote(owner, &pool->object, VULKAN_OPCODE_vkDestroyDescriptorPool);
+	status = vulkan_object_destroy_remote(owner, &pool->object, GPU_OP_DESTROY_DESCRIPTOR_POOL);
 	if (status != VK_SUCCESS)
 		vulkan_context_error(owner->object.context, VK_ERROR_DEVICE_LOST);
 
@@ -301,7 +301,7 @@ vkResetDescriptorPool(
 	owner = vulkan_device(device);
 	pool = (struct descriptor_pool *)vulkan_nondispatchable_object((uint64_t)(uintptr_t)descriptorPool);
 	vulkan_writer_init_for_object(&writer, &pool->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkResetDescriptorPool);
+	vulkan_command_begin(&writer, GPU_OP_RESET_DESCRIPTOR_POOL);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, pool->object.wire_id);
 	vulkan_write_u32(&writer, flags);
@@ -372,7 +372,7 @@ vkAllocateDescriptorSets(
 
 	/* Local publication cannot fail after native allocation; pool access is externally synchronized. */
 	vulkan_writer_init_for_object(&writer, &pool->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkAllocateDescriptorSets);
+	vulkan_command_begin(&writer, GPU_OP_ALLOCATE_DESCRIPTOR_SETS);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_pointer(&writer, pAllocateInfo);
 	vulkan_encode_VkDescriptorSetAllocateInfo(&writer, pAllocateInfo);
@@ -444,7 +444,7 @@ vkFreeDescriptorSets(
 	owner = vulkan_device(device);
 	pool = (struct descriptor_pool *)vulkan_nondispatchable_object((uint64_t)(uintptr_t)descriptorPool);
 	vulkan_writer_init_for_object(&writer, &pool->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkFreeDescriptorSets);
+	vulkan_command_begin(&writer, GPU_OP_FREE_DESCRIPTOR_SETS);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u64(&writer, pool->object.wire_id);
 	vulkan_write_u32(&writer, descriptorSetCount);
@@ -491,7 +491,7 @@ vkUpdateDescriptorSets(
 	/* App synchronization is per updated set; independent sets share only a short wire transaction. */
 	owner = vulkan_device(device);
 	vulkan_writer_init_for_object(&writer, &owner->object);
-	vulkan_command_begin(&writer, VULKAN_OPCODE_vkUpdateDescriptorSets);
+	vulkan_command_begin(&writer, GPU_OP_UPDATE_DESCRIPTOR_SETS);
 	vulkan_write_u64(&writer, owner->object.wire_id);
 	vulkan_write_u32(&writer, descriptorWriteCount);
 	vulkan_write_u64(&writer, descriptorWriteCount);

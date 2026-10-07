@@ -51,6 +51,22 @@ func encodeScalar(handles, records, type, expression, indent) {
     if (type == "VkDeviceSize" || type == "uint64_t" || type == "size_t") { primitive = "u64"; }
     return indent + "vulkan_write_" + primitive + "(&writer, " + expression + ");\n";
 }
+// The Kei GPU command protocol's name of a Vulkan command (uapi/gpu-op.h): vkCmdBindPipeline -> GPU_OP_CMD_BIND_PIPELINE.
+func opName(name) {
+    var lower = "abcdefghijklmnopqrstuvwxyz";
+    var upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    var digits = "0123456789";
+    var out = "GPU_OP_";
+    var previous = "";
+    for (i in 2..String.charCount(name)) {
+        var c = String.charAt(name, i);
+        var at = String.indexOf(lower, c);
+        if (String.indexOf(upper, c) >= 0 && previous != "" && (String.indexOf(lower, previous) >= 0 || String.indexOf(digits, previous) >= 0)) { out = out + "_"; }
+        if (at >= 0) { out = out + String.charAt(upper, at); } else { out = out + c; }
+        previous = c;
+    }
+    return out;
+}
 func main(args) {
     if (Array.size(args) != 2) { System.error("usage: maintain-commands.noct PUBLIC_HEADER OUTPUT_INC"); }
     var input = split(FileUtil.readText(args[0]), "\n"); var handles = []; var records = [];
@@ -90,7 +106,7 @@ func main(args) {
         output = output + "\tstruct VkCommandBuffer_T *command;\n\tstruct vulkan_writer writer;\n\tVkBool32 active;\n";
         if (loop) { output = output + "\tuint32_t index;\n"; }
         if (array) { output = output + "\tuint64_t count;\n"; }
-        output = output + "\n\t/* Preserves the first recording failure for vkEndCommandBuffer to report. */\n\tcommand = (struct VkCommandBuffer_T *)commandBuffer;\n\tactive = command_record_begin(command, &writer, VULKAN_OPCODE_" + name + ");\n\tif (!active)\n\t\treturn;\n";
+        output = output + "\n\t/* Preserves the first recording failure for vkEndCommandBuffer to report. */\n\tcommand = (struct VkCommandBuffer_T *)commandBuffer;\n\tactive = command_record_begin(command, &writer, " + opName(name) + ");\n\tif (!active)\n\t\treturn;\n";
         var scalars = false;
         for (j in 1..Array.size(parameters)) {
             var type = types[j]; var member = names[j];

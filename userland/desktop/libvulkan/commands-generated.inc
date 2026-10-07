@@ -24,7 +24,7 @@ vkCmdBindPipeline(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdBindPipeline);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_BIND_PIPELINE);
 	if (!active)
 		return;
 
@@ -57,7 +57,7 @@ vkCmdSetViewport(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdSetViewport);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_SET_VIEWPORT);
 	if (!active)
 		return;
 
@@ -106,7 +106,7 @@ vkCmdSetScissor(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdSetScissor);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_SET_SCISSOR);
 	if (!active)
 		return;
 
@@ -151,7 +151,7 @@ vkCmdSetLineWidth(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdSetLineWidth);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_SET_LINE_WIDTH);
 	if (!active)
 		return;
 
@@ -181,7 +181,7 @@ vkCmdSetDepthBias(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdSetDepthBias);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_SET_DEPTH_BIAS);
 	if (!active)
 		return;
 
@@ -213,7 +213,7 @@ vkCmdSetBlendConstants(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdSetBlendConstants);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_SET_BLEND_CONSTANTS);
 	if (!active)
 		return;
 
@@ -255,7 +255,7 @@ vkCmdSetDepthBounds(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdSetDepthBounds);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_SET_DEPTH_BOUNDS);
 	if (!active)
 		return;
 
@@ -285,7 +285,7 @@ vkCmdSetStencilCompareMask(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdSetStencilCompareMask);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_SET_STENCIL_COMPARE_MASK);
 	if (!active)
 		return;
 
@@ -315,7 +315,7 @@ vkCmdSetStencilWriteMask(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdSetStencilWriteMask);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_SET_STENCIL_WRITE_MASK);
 	if (!active)
 		return;
 
@@ -345,7 +345,7 @@ vkCmdSetStencilReference(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdSetStencilReference);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_SET_STENCIL_REFERENCE);
 	if (!active)
 		return;
 
@@ -382,7 +382,7 @@ vkCmdBindDescriptorSets(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdBindDescriptorSets);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_BIND_DESCRIPTOR_SETS);
 	if (!active)
 		return;
 
@@ -450,7 +450,7 @@ vkCmdBindIndexBuffer(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdBindIndexBuffer);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_BIND_INDEX_BUFFER);
 	if (!active)
 		return;
 
@@ -485,7 +485,7 @@ vkCmdBindVertexBuffers(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdBindVertexBuffers);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_BIND_VERTEX_BUFFERS);
 	if (!active)
 		return;
 
@@ -549,7 +549,7 @@ vkCmdDraw(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdDraw);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_DRAW);
 	if (!active)
 		return;
 
@@ -584,7 +584,7 @@ vkCmdDrawIndexed(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdDrawIndexed);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_DRAW_INDEXED);
 	if (!active)
 		return;
 
@@ -619,7 +619,7 @@ vkCmdDrawIndirect(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdDrawIndirect);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_DRAW_INDIRECT);
 	if (!active)
 		return;
 
@@ -653,7 +653,7 @@ vkCmdDrawIndexedIndirect(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdDrawIndexedIndirect);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_DRAW_INDEXED_INDIRECT);
 	if (!active)
 		return;
 
@@ -686,7 +686,7 @@ vkCmdDispatch(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdDispatch);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_DISPATCH);
 	if (!active)
 		return;
 
@@ -717,7 +717,7 @@ vkCmdDispatchIndirect(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdDispatchIndirect);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_DISPATCH_INDIRECT);
 	if (!active)
 		return;
 
@@ -751,7 +751,7 @@ vkCmdCopyBuffer(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdCopyBuffer);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_COPY_BUFFER);
 	if (!active)
 		return;
 
@@ -804,7 +804,7 @@ vkCmdCopyImage(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdCopyImage);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_COPY_IMAGE);
 	if (!active)
 		return;
 
@@ -860,7 +860,7 @@ vkCmdBlitImage(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdBlitImage);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_BLIT_IMAGE);
 	if (!active)
 		return;
 
@@ -917,7 +917,7 @@ vkCmdCopyBufferToImage(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdCopyBufferToImage);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_COPY_BUFFER_TO_IMAGE);
 	if (!active)
 		return;
 
@@ -970,7 +970,7 @@ vkCmdCopyImageToBuffer(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdCopyImageToBuffer);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_COPY_IMAGE_TO_BUFFER);
 	if (!active)
 		return;
 
@@ -1021,7 +1021,7 @@ vkCmdUpdateBuffer(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdUpdateBuffer);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_UPDATE_BUFFER);
 	if (!active)
 		return;
 
@@ -1063,7 +1063,7 @@ vkCmdFillBuffer(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdFillBuffer);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_FILL_BUFFER);
 	if (!active)
 		return;
 
@@ -1100,7 +1100,7 @@ vkCmdClearColorImage(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdClearColorImage);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_CLEAR_COLOR_IMAGE);
 	if (!active)
 		return;
 
@@ -1166,7 +1166,7 @@ vkCmdClearDepthStencilImage(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdClearDepthStencilImage);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_CLEAR_DEPTH_STENCIL_IMAGE);
 	if (!active)
 		return;
 
@@ -1231,7 +1231,7 @@ vkCmdClearAttachments(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdClearAttachments);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_CLEAR_ATTACHMENTS);
 	if (!active)
 		return;
 
@@ -1301,7 +1301,7 @@ vkCmdResolveImage(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdResolveImage);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_RESOLVE_IMAGE);
 	if (!active)
 		return;
 
@@ -1350,7 +1350,7 @@ vkCmdSetEvent(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdSetEvent);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_SET_EVENT);
 	if (!active)
 		return;
 
@@ -1380,7 +1380,7 @@ vkCmdResetEvent(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdResetEvent);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_RESET_EVENT);
 	if (!active)
 		return;
 
@@ -1420,7 +1420,7 @@ vkCmdWaitEvents(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdWaitEvents);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_WAIT_EVENTS);
 	if (!active)
 		return;
 
@@ -1533,7 +1533,7 @@ vkCmdPipelineBarrier(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdPipelineBarrier);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_PIPELINE_BARRIER);
 	if (!active)
 		return;
 
@@ -1620,7 +1620,7 @@ vkCmdBeginQuery(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdBeginQuery);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_BEGIN_QUERY);
 	if (!active)
 		return;
 
@@ -1651,7 +1651,7 @@ vkCmdEndQuery(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdEndQuery);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_END_QUERY);
 	if (!active)
 		return;
 
@@ -1682,7 +1682,7 @@ vkCmdResetQueryPool(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdResetQueryPool);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_RESET_QUERY_POOL);
 	if (!active)
 		return;
 
@@ -1714,7 +1714,7 @@ vkCmdWriteTimestamp(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdWriteTimestamp);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_WRITE_TIMESTAMP);
 	if (!active)
 		return;
 
@@ -1750,7 +1750,7 @@ vkCmdCopyQueryPoolResults(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdCopyQueryPoolResults);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_COPY_QUERY_POOL_RESULTS);
 	if (!active)
 		return;
 
@@ -1789,7 +1789,7 @@ vkCmdPushConstants(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdPushConstants);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_PUSH_CONSTANTS);
 	if (!active)
 		return;
 
@@ -1831,7 +1831,7 @@ vkCmdBeginRenderPass(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdBeginRenderPass);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_BEGIN_RENDER_PASS);
 	if (!active)
 		return;
 
@@ -1871,7 +1871,7 @@ vkCmdNextSubpass(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdNextSubpass);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_NEXT_SUBPASS);
 	if (!active)
 		return;
 
@@ -1898,7 +1898,7 @@ vkCmdEndRenderPass(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdEndRenderPass);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_END_RENDER_PASS);
 	if (!active)
 		return;
 
@@ -1926,7 +1926,7 @@ vkCmdExecuteCommands(
 
 	/* Preserves the first recording failure for vkEndCommandBuffer to report. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	active = command_record_begin(command, &writer, VULKAN_OPCODE_vkCmdExecuteCommands);
+	active = command_record_begin(command, &writer, GPU_OP_CMD_EXECUTE_COMMANDS);
 	if (!active)
 		return;
 
