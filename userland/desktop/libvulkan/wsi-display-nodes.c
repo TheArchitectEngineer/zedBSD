@@ -182,6 +182,66 @@ vulkan_wsi_display_node_ioctl(
 }
 
 /*
+ * Sums the topology sequences of the display nodes assigned to this renderer.
+ *
+ * Each node's sequence only grows, so the sum grows exactly when one of them
+ * does: a hotplug fence compares it with the sum taken at registration.  The
+ * query is the non-destructive one on the node's discovery open, which no
+ * lease shares, and it acknowledges nothing.  A node without topology events
+ * contributes nothing.
+ */
+VkResult
+vulkan_wsi_display_node_topology(
+	struct VkPhysicalDevice_T *physical,
+	uint64_t *sequence)
+{
+	struct wsi_display_inventory *inventory;
+	struct wsi_display_node *node;
+	struct gpu_display_events request;
+	uint64_t renderer;
+	uint64_t total;
+	VkResult error;
+	int status;
+
+	/* The cached inventory names the nodes and their discovery opens. */
+	error = inventory_get(physical->instance, &inventory);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Adds the current sequence of every display node assigned to this renderer. */
+	renderer = renderer_identity(inventory, physical);
+	total = 0U;
+	for (node = inventory->nodes; node != NULL; node = node->next) {
+		/* Another renderer's outputs and render-only nodes have no hotplug for this device. */
+		if (renderer == 0U ||
+		    node->renderer != renderer ||
+		    (node->info.roles & GPU_DEVICE_DISPLAY) == 0U)
+			continue;
+
+		/* Samples the node's topology sequence without acknowledging it. */
+		memset(&request, 0, sizeof(request));
+		request.version = GPU_ABI_VERSION;
+		request.size = sizeof(request);
+		status = node_ioctl(node, GPU_DISPLAY_EVENTS, &request);
+		if (status != 0) {
+			/* A node without topology events never reports a hotplug. */
+			if (errno == EOPNOTSUPP)
+				continue;
+
+			/* A failed node cannot say whether its topology changed. */
+			return VK_ERROR_SURFACE_LOST_KHR;
+		}
+
+		/* The sum cannot wrap: each sequence counts events from one. */
+		total += request.sequence;
+	}
+
+	/* Succeeded: the caller compares this sum with an earlier one. */
+	*sequence = total;
+	return VK_SUCCESS;
+}
+
+/*
  * Retires cached native discovery opens after every instance-owned surface has been destroyed.
  */
 void

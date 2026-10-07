@@ -136,6 +136,7 @@ struct vulkan_wsi_platform_ops {
 VkResult vulkan_wsi_display_node_query(struct VkPhysicalDevice_T *physical, uint32_t index, uint32_t *count, struct gpu_display_info *request, uint64_t *device_id, char *path);
 int vulkan_wsi_display_node_ioctl(struct VkPhysicalDevice_T *physical, const struct vulkan_wsi_output *output, unsigned long command, void *argument);
 void vulkan_wsi_display_nodes_finish(struct VkInstance_T *instance);
+VkResult vulkan_wsi_display_node_topology(struct VkPhysicalDevice_T *physical, uint64_t *sequence);
 
 /* The direct adapter supplies these after its kernel contract is finalized. */
 /* Native ownership changes wake image acquisition without dispatching application events. */
@@ -150,6 +151,7 @@ struct vulkan_surface *vulkan_wsi_surface(VkSurfaceKHR surface);
 struct vulkan_display *vulkan_wsi_display(VkDisplayKHR display);
 struct vulkan_display_mode *vulkan_wsi_display_mode(VkDisplayModeKHR mode);
 VkResult vulkan_wsi_display_snapshot(struct vulkan_display *display, struct vulkan_wsi_output *output);
+VkResult vulkan_wsi_display_power(struct VkDevice_T *device, struct vulkan_display *display, uint32_t state);
 VkResult vulkan_wsi_display_refresh(struct vulkan_display *display);
 VkResult vulkan_wsi_surface_retain(struct vulkan_surface *surface);
 void vulkan_wsi_surface_release(struct vulkan_surface *surface);

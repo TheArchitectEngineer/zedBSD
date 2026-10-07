@@ -201,3 +201,8 @@
 	{"vkCmdPipelineBarrier2KHR", (PFN_vkVoidFunction)vkCmdPipelineBarrier2KHR, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_SYNCHRONIZATION2},
 	{"vkCmdWriteTimestamp2KHR", (PFN_vkVoidFunction)vkCmdWriteTimestamp2KHR, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_SYNCHRONIZATION2},
 	{"vkQueueSubmit2KHR", (PFN_vkVoidFunction)vkQueueSubmit2KHR, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_SYNCHRONIZATION2},
+	{"vkGetPhysicalDeviceSurfaceCapabilities2EXT", (PFN_vkVoidFunction)vkGetPhysicalDeviceSurfaceCapabilities2EXT, VULKAN_ENTRY_INSTANCE, VULKAN_INSTANCE_SURFACE_COUNTER},
+	{"vkDisplayPowerControlEXT", (PFN_vkVoidFunction)vkDisplayPowerControlEXT, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_DISPLAY_CONTROL},
+	{"vkRegisterDeviceEventEXT", (PFN_vkVoidFunction)vkRegisterDeviceEventEXT, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_DISPLAY_CONTROL},
+	{"vkRegisterDisplayEventEXT", (PFN_vkVoidFunction)vkRegisterDisplayEventEXT, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_DISPLAY_CONTROL},
+	{"vkGetSwapchainCounterEXT", (PFN_vkVoidFunction)vkGetSwapchainCounterEXT, VULKAN_ENTRY_DEVICE, VULKAN_DEVICE_DISPLAY_CONTROL},

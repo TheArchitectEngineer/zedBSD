@@ -3,10 +3,10 @@
 # ws113-p003: Vulkan Displayの列挙・通知
 
 Parent: [WS113](../ws.md)
-Status: planned
+Status: in-progress（q850-i01、P2、2026-10-07。実装・build（warning 0）・host 試験まで。QEMU は T1 への依頼を Q1 へ送った（test-wait の番号は Q1 が付ける）、実機の抜き差しは p008）
 Disposition: normal
 Primary Milestone: MG006（WSから継承）
-Queue / attempts: none / 実装未承認
+Queue / attempts: q850 / q850-i01（P2、2026-10-07 ユーザーの N8 の決定でベータ2 へ）
 Purpose / goal: libvulkanから標準Display API/拡張でhotplugと複数出力を公開
 Prerequisites: p002 cleared/実driverイベント
 Investigation bound: 120分の有限1 Phase Queue案。選定時にscope/時間を再照合する。
@@ -66,3 +66,30 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 ### D-LIMIT の反映（2026-10-05）
 
 native の `ENOSPC`（同時に出せる数の制限）を `display_error()` の既定の `SURFACE_LOST` と分け、display の claim を伴う swapchain の作成では `VK_ERROR_INITIALIZATION_FAILED`（致命的でない）にする。Venus の scanout の数の上限でも同じ。host の試験に ENOSPC の変換の case を足す。
+
+## 実装（2026-10-07、q850-i01、P2）
+
+| 部分 | file |
+| --- | --- |
+| 宣言 | `include/libc/vulkan/vulkan_display_control.h`（新規、`tools/maintain-display.noct` で Debian の Vulkan-Headers 1.4.309 から 2 拡張の block をそのまま選ぶ）、`vulkan.h` が include、`API-PROVENANCE.md` に出所と license |
+| dispatch | `tools/maintain-dispatch.noct`（新しい header を読む、192 → 197）、`dispatch-table.inc`・`api-commands.tsv` を再生成（差分は 5 行の追加だけ） |
+| 拡張の bit・列挙・依存 | `internal.h`（`VULKAN_INSTANCE_SURFACE_COUNTER`・`VULKAN_DEVICE_DISPLAY_CONTROL`）、`instance.c`（instance の拡張は常に列挙、KHR_display が要る。device の拡張は renderer の node が `GPU_CAP_DISPLAY`・`_EVENTS`・`_CONTROL` を全部持つ時だけ）、`device.c`（display_control は swapchain と instance の surface_counter が要る） |
+| 4 entry と capabilities2 | `wsi-display-control.c`（新規）。thread は作らない: event の fence は登録時の cursor を持ち、`vkGetFenceStatus` の観測ごとに kernel に一度だけ待たずに聞く（wait は既存の 1 ms ごとの観測の経路）。hotplug の cursor は renderer に属す display node の `GPU_DISPLAY_EVENTS` の sequence の和（discovery の open で非破壊の QUERY、ACK しない）。FIRST_PIXEL_OUT は `GPU_DISPLAY_REFRESH` の数（timeout 0）、generation が変われば cursor を取り直す（再接続そのものでは signal しない）、切断中は pending のまま |
+| fence | `sync-internal.h`（`struct vulkan_sync` に event の欄）、`sync.c`（status: 未発火の event を観測し latch、未 submit の event fence は native に聞かず NOT_READY。reset: signal 済みの event は SPENT にして再生しない、未発火の reset は監視を続ける） |
+| power | `wsi-display.c` の `vulkan_wsi_display_power`（この device の plane の lease の open で `GPU_DISPLAY_POWER`、ESTALE は snapshot を更新して 1 回だけ再試行。lease が無い・EOPNOTSUPP・切断は `VK_ERROR_UNKNOWN`） |
+| D-LIMIT | `wsi-display.c` の claim: native の `ENOSPC` を `VK_ERROR_INITIALIZATION_FAILED` に（他は今の `display_error()`） |
+| counter | `wsi-swapchain.c`: `VkSwapchainCounterCreateInfoEXT` の 0 でない counter を拒む。`vkGetSwapchainCounterEXT` は `VK_ERROR_OUT_OF_DATE_KHR` |
+| node | `wsi-display-nodes.c` の `vulkan_wsi_display_node_topology` |
+| 試験 | `plan/ws113/tests/host-display-events.c`・`.sh`（host）、`userland/tests/display-events/`（独立の Vulkan client、`platform/amd64/vmunix.mk` に vkdemo と同じ link の規則）、`plan/ws113/tests/config-amd64-p003.mk`・`display-events-p003.sh`（T1） |
+| 文書 | `userland/desktop/libvulkan/README.md` の「Display の制御と抜き差しの通知」 |
+
+設計からの差: contracts.md §4.1 の「library 内の monitor」は thread ではなく、観測の時の fence ごとの比較にした。ACK と POLLPRI を使わないので、他の open・他の process の通知を消費しない（§4.1 の 2・3 の目的は満たす）。compositor が hotplug を待つには、自分の loop で fence の status を見る（p004）。
+
+規格との差（記録）: `vkDisplayPowerControlEXT` の失敗は規格では OUT_OF_HOST_MEMORY だけ。lease の無い display・power の制御の無い出力（i915 の HDMI）・切断は `VK_ERROR_UNKNOWN` を返す。power は swapchain を持つ device だけが変えられる。
+
+## 確認（2026-10-07）
+
+- `sh plan/ws113/tests/host-display-events.sh` PASS（plain と ASan/UBSan: hotplug の fence ごとの cursor（後で登録した fence は前の変化で signal しない）、登録時の sample の失敗の後の cursor、未知の event の拒否、refresh の cursor と次の境界、generation の変化の後の rebase（ESTALE → snapshot の更新 → 新しい cursor → 次の境界で signal）、切断中の pending、数 0 からの最初の境界、他の physical の display の拒否、power の state の変換と未知の state、capabilities2 の写しと counter 0、foreign の record の拒否、counter の読みは OUT_OF_DATE で値を書かない）。
+- build（warning 0）: `make BUILD=build/ws113-p003 ZEDBSD_CONFIG=plan/ws014/tests/config-vkdemo-amd64.mk build/ws113-p003/dynamic/libvulkan.so`（ELF の checker が 197 の export を api-commands.tsv と照合）、`ZEDBSD_CONFIG=plan/ws113/tests/config-amd64-p003.mk build/ws113-p003/bin/display-events`。
+- style-check: 新規の file（wsi-display-control.c・display-events/main.c・host-display-events.c）は違反 0、変えた既存の file は新しい違反 0。
+- 未実施: QEMU（T1: `config-amd64-p003.mk` の image で `display-events-p003.sh`。2 出力は `zdesktop-guest.sh` の `max_outputs=1` が固定なので、`VENUS_OUTPUTS` を足す変更を Q1 に依頼した）、QEMU での抜き差し（QMP に virtio-gpu の出力を切る方法を見つけていない。抜き差しは実機の p008）、実機（5330: eDP の FIRST_PIXEL_OUT、2 つ目の出力の swapchain が `ENOSPC` → INITIALIZATION_FAILED（p011 の前）、HDMI の抜き差しで hotplug の fence が signal し再列挙が変わる。p008 にまとめる）。fence の status・reset の sync.c の経路は host では通していない（QEMU の reset-spent で確かめる）。

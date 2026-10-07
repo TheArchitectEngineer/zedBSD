@@ -203,3 +203,30 @@ too: the 13 video and 6 synchronization2 commands bring the dispatch table from
 `userland/desktop/libvulkan/video.c` (not by `tools/maintain-codec.noct`, whose
 input stays the core selection), because their chains, their bit-field flags and
 the H.264 two-dimensional scaling lists need rules of their own.
+
+## Display-control and surface-counter declarations (ws113-p003)
+
+`vulkan_display_control.h` selects the declaration data of `VK_EXT_display_surface_counter`
+(revision 1) and `VK_EXT_display_control` (revision 1) verbatim from the same input as
+the video selection above: Khronos Vulkan-Headers 1.4.309 as packaged by Debian
+(`libvulkan-dev` 1.4.309.0-1), `/usr/include/vulkan/vulkan_core.h`, SHA-256
+`39f358bb99f7be5206524d119de4a5b5ab5c515c329c2857ff395d37e6387b4c`. The declarations of
+both extensions are unchanged since their first revisions; the structure-type values
+they use were already present in the core selection. Declaration license: Apache-2.0,
+copyright 2015–2025 The Khronos Group Inc. (`LICENSE-API`). The independent selection
+tool `tools/maintain-display.noct` is Zlib.
+
+```sh
+timeout 90 build/NoctLang/build-static/noct \
+  userland/desktop/libvulkan/tools/maintain-display.noct \
+  /usr/include/vulkan/vulkan_core.h include/libc/vulkan/vulkan_display_control.h
+```
+
+`vulkan.h` includes `vulkan_display_control.h`, which keeps the Khronos line comments
+(C99 or GNU89, as for the video header). `tools/maintain-dispatch.noct` reads it too:
+the five commands (`vkGetPhysicalDeviceSurfaceCapabilities2EXT`,
+`vkDisplayPowerControlEXT`, `vkRegisterDeviceEventEXT`, `vkRegisterDisplayEventEXT`,
+`vkGetSwapchainCounterEXT`) bring the dispatch table from 192 to 197 records. The
+instance extension is always offered; the device extension only on a renderer whose
+node has the display, topology-event and display-control capabilities. Core Vulkan
+remains 1.0.

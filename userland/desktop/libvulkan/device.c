@@ -372,6 +372,13 @@ device_validate(
 			continue;
 		}
 
+		/* Selects display power, hotplug and refresh events. */
+		match = strcmp(info->ppEnabledExtensionNames[index], VK_EXT_DISPLAY_CONTROL_EXTENSION_NAME);
+		if (match == 0) {
+			bits |= VULKAN_DEVICE_DISPLAY_CONTROL;
+			continue;
+		}
+
 		/* Does not forward renderer-private extensions as guest capabilities. */
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 	}
@@ -388,6 +395,12 @@ device_validate(
 	if ((bits & VULKAN_DEVICE_DISPLAY_SWAPCHAIN) &&
 	    (!(bits & VULKAN_DEVICE_SWAPCHAIN) ||
 	     !(physical->instance->enabled_extensions & VULKAN_INSTANCE_DISPLAY)))
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+
+	/* Display control depends on the swapchain and on the instance's surface counters. */
+	if ((bits & VULKAN_DEVICE_DISPLAY_CONTROL) &&
+	    (!(bits & VULKAN_DEVICE_SWAPCHAIN) ||
+	     !(physical->instance->enabled_extensions & VULKAN_INSTANCE_SURFACE_COUNTER)))
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 
 	/* Vulkan 1.0 external fd extensions retain both their device and instance dependencies. */
