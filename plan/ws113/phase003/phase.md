@@ -3,7 +3,7 @@
 # ws113-p003: Vulkan Displayの列挙・通知
 
 Parent: [WS113](../ws.md)
-Status: in-progress（q850-i01、P2、2026-10-07。実装・build（warning 0）・host 試験まで。QEMU は T1 への依頼を Q1 へ送った（test-wait の番号は Q1 が付ける）、実機の抜き差しは p008）
+Status: cleared（2026-10-07 Q1 の判定: T1-355c QEMU Venus `display-events-p003: PASS`（両拡張・swapchain・first.png e60000・power off 000000/on e60000・reset-spent・hotplug なし・done error=0）。2 出力・hotplug の QEMU の確認は dbus の launcher の後（p004a と一緒）、実機は p008）
 Disposition: normal
 Primary Milestone: MG006（WSから継承）
 Queue / attempts: q850 / q850-i01（P2、2026-10-07 ユーザーの N8 の決定でベータ2 へ）

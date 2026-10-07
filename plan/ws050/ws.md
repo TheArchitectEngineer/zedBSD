@@ -79,3 +79,7 @@ UCSI 1.x と 2.x の両方。向きは 1.x でも i915 から。HPD・pin は UC
   `two-changes` が error 110 で 5320 と同じ形になることを確かめた）、ACPI の host（5330 の table）PASS、`kernel-check` warning 0（stack の最大は
   `ucsi_pending_handle` 584 byte、旧 312）、kernel の build warning 0。
 - 未実施: 5320・5330 の実機（kernel の入れ替えは Q1 経由。合否: dmesg に timeout と「did not start」が無く、`/dev/typec` の 2 connector が読めること）。
+
+## 5320 の実機（2026-10-07 Q1）
+
+UCSI の ACK の直し（9f836b951）入りの main 173fa2115 の kernel を 5320 に入れ（ユーザーの承認・再起動）: kernel.log に `ucsi: version 1.0.0, 1.x mailbox`、`ucsi: 2 connectors, 4 Alternate Modes`、`command 0x12 timed out`・`the PPM did not start` は無い、/dev/typec あり。5330 の実機は未実施。
