@@ -56,7 +56,7 @@ start)
 	printf '%s\n' "$GUEST_RUNTIME" > "$last_runtime"
 	exec python3 plan/tools/guest/guest.py start "$image" \
 	    --symbols build/ws035-sq/vmunix \
-	    --qemu-extra "-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem -device virtio-gpu-gl-pci,id=venus,venus=on,blob=on,hostmem=$VENUS_HOSTMEM,max_outputs=1$size -display egl-headless,rendernode=/dev/dri/renderD128 -vnc unix:$GUEST_RUNTIME/vnc.sock,display=venus -device usb-tablet,bus=xhci.0,port=4"
+	    --qemu-extra "-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem -device virtio-gpu-gl-pci,id=venus,venus=on,blob=on,hostmem=$VENUS_HOSTMEM,max_outputs=${VENUS_OUTPUTS:-1}$size -display egl-headless,rendernode=/dev/dri/renderD128 -vnc unix:$GUEST_RUNTIME/vnc.sock,display=venus -device usb-tablet,bus=xhci.0,port=4"
 	;;
 *)
 	exec python3 plan/tools/guest/guest.py "$@"

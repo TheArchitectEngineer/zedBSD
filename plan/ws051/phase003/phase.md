@@ -4,7 +4,7 @@
 
 Phase ID: `ws051-p003`
 Parent: [WS051](../ws.md)
-Status: in-progress（2026-10-07 P1、q847-i01: 実装済み、host PASS、build warning 0。ktest（P5C-DPLL-TC ほか）は 5330 の T1 待ち。TC の port の実際の出力は p004b）
+Status: cleared（2026-10-07 Q1 の判定: q848 の正解値と一致（TC PLL 2 の 8 語・readout・PORTTC2・DDI_CLK_SEL・FIA）、Linux 6.8.12 の計算と 6927 件一致、host 試験 PASS、build warning 0、T1-354 5330 の ktest execution 391 checks 0 failures（+3 は TC の 3 件、pass では名前の行が出ない）・display_ktest verdict PASS。DP_MODE と TC の clock の enable は TC の modeset（p004b）まで実機で通らない）
 Phase disposition: normal
 Queue: q847（P1）。承認: ユーザー 2026-10-07「UCSIとDP alt modeってもう動いてるんですか？シェーダコンパイラより優先してほしいです」（Q1 経由、担当 P1、正解値は q848 で 5330 から採取）
 

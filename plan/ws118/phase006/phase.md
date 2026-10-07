@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws118-p006 -->
 # ws118-p006: Tiger Lake の DPLL と firmware の表示の引き継ぎ（5320 で Keiland を表示する）、世代に依らない fallback
 
-Status: in-progress, test-wait（T1-352、5330 の回帰。5320 の実機は 2026-10-07 に表示を確認）（q846-i01、P3、2026-10-07）
+Status: cleared（2026-10-07 Q1 の判定: 5320 実機で Keiland の desktop（ユーザーの目視）。5330 の回帰は T1-353 の kernel.log で `resident display: picture up`、stop は `lease 1 released ... (stop done)`、`LCD-B reference error`・`UNPORTED`・`pipe_off wait timed out`・`to get idle` は 0（ユーザー「5330の試験はまずQEMUでOK」）。c5-hw の harness は login 画面で止まり FAIL（`Wrong password`）、harness の問題として別に直す。素の 5330 の B は ws084 の起動の時。fallback は F-081）
 Disposition: normal
 Parent: [WS118](../ws.md)
 Queue: q846
