@@ -338,8 +338,10 @@ def pdf_edit_text(item):
 	run.key("end")
 	mark = run.mark()
 	run.type(" ZEBRA")
-	typed = run.wait(r"NOTES TEXT box (input|reported)", mark, 5)
-	time.sleep(0.4)
+	# The box has all six characters (the 39 bytes of the line and " ZEBRA") before the screenshot.
+	typed = run.wait(r"NOTES TEXT box reported=\d+ bytes=45\b", mark, 10)
+	if not typed:
+		typed = run.wait(r"NOTES TEXT box (input|reported)", mark, 1)
 	item.step("typed ZEBRA", typed or "no NOTES TEXT box line (the keys did not reach the box)")
 	run.shot(item, "zebra-typed")
 	mark = run.mark()

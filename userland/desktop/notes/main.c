@@ -185,6 +185,10 @@
 #define MAIN_HANDLE_REACH	12.0f
 #define MAIN_SELECT_COLOR	0x2f7cf6ffU
 #define MAIN_DRAG_PREVIEW_MS	100U
+
+/* The most extra frames the text box draws at once to take keys that wait for it (one key a frame). */
+#define MAIN_BOX_CATCH_UP	32U
+
 #define MAIN_SIDE_MIN		4.0
 #define MAIN_SIDE_TIMES_PAGE	4.0
 #define MAIN_NUDGE		1.0
@@ -692,8 +696,15 @@ main(
 				fflush(stdout);
 			}
 
-			/* The frame. */
+			/*
+			 * The frame, and more while keys typed faster than the widget
+			 * takes them wait (one a frame), so that the box catches up
+			 * before the window is drawn (T1-331: the screenshot showed
+			 * "ZE" of "ZEBRA" while the rest waited for later frames).
+			 */
 			if (app.box.open)
+				app_box_frame(&app);
+			for (index = 0; index < MAIN_BOX_CATCH_UP && app.box.open && app.box.again; index++)
 				app_box_frame(&app);
 		}
 
