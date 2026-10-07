@@ -44,4 +44,16 @@ Queue: q849
 
 - `make -j16 ZEDBSD_CONFIG=plan/ws118/tests/config-remote-log.mk BUILD=build/p3-ws118 vmunix`: rc=0、warning 0、kernel include check・amd64 vmunix check PASS。vmunix sha256 `eec9c3c6a612…`。
 - host 試験: lpss-i2c に host 試験は無い（追加しない、変更は表と定数）。QEMU は未実施（QEMU には LPSS が無い）。
-- 5320 実機: 新しい kernel を `/esp/vmunix` に複写（今までの物は `/esp/vmunix.prev`、`vmunix.orig` は残す、`zedbsd.cfg` は不変、`cmp` 一致、umount 済み）。**再起動はユーザー待ち**。
+- 5320 実機: 新しい kernel を `/esp/vmunix` に複写（今までの物は `/esp/vmunix.prev`、`vmunix.orig` は残す、`zedbsd.cfg` は不変、`cmp` 一致、umount 済み）。ユーザーが再起動（2026-10-07 18:4x JST）。
+- 再起動の後の 5320 の `/var/log/kernel.log`（実機、SSH、写しは P3 の worktree の `build/p3-ws118-hw2/`）:
+  `lpss-i2c: 00:15.1 ready, FIFO tx 64 rx 64, clock 120000 kHz`、`00:15.0` も同じ、
+  `input: /dev/input/event2: 0488:1024 Touchpad`、`i2c-hid: \_SB_.PC00.I2C1.TPD0 0488:1024 at 0x2c on \_SB.PC00.I2C1: 0488:1024 Touchpad, 1 fingers, 1 buttons`、
+  `i2c-hid: ... TPD0 samples its input (line: 6)`。`lpss-i2c: transfer ...` と `reads failed` の行は無い。`/dev/input/event2` がある。
+- **ユーザーの目視（pointer が動くか）は未確認**（Q1 経由で依頼）。
+
+### 割り込みでなく sampling の理由（直していない）
+
+- `line: 6` は ENOENT で、TPD0 の `_CRS` に GpioInt が無いため（`/dev/acpi` で評価: I2cSerialBus 0x2c の後は Extended Interrupt `89 06 00 15 01 33 00 00 00` = APIC の IRQ 51、level・active low・shared）。
+  Dell の ASL は GpioInt の版（`SBFG`）と Interrupt の版（`SBFI`）を持ち、5320 は Interrupt の版を返す。i2c-hid は GpioInt の pad しか扱わないので、sampling（指が動く間 6 ms、静止中 25 ms 毎の read）に落ちる。touchpad は動く前提。
+- 付記: TGL の `\_SB.GPCL` の group の package は 7 要素（ADL は 9、`intel-gpio.c` の `GROUP_FIELDS` 9・`GROUP_FIRST_NUMBER` 8）。TGL で GpioInt の touchpad が来たら pad が見つからない（ENOENT）。5320 では使われないので直していない。
+- IRQ 51 を使う割り込みの経路（i2c-hid が Extended Interrupt を `kern_irq` で取る）は最小の範囲を越えるので、必要なら別の Phase（Q1 の判断）。
