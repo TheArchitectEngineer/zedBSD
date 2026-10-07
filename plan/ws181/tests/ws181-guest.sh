@@ -210,8 +210,12 @@ pointer move $((${1:-560} + 40)) 22 sleep 300 down sleep 60 up sleep 800
 expect_some menu-open 'KWL ARRANGE menu open'
 shot c10-arrange-menu
 set -- $(last 'KWL ARRANGE menu item=right-main ' | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\).*/\1 \2/p')
+glides=$(count 'KWL ARRANGE glide-end')
 pointer move ${1:-640} ${2:-200} sleep 300 down sleep 60 up sleep 1200
 expect_some arranged 'KWL ARRANGE apply layout=right-main desktop=1 windows=3'
+# The picture is taken once the three windows' glides (180 ms) are over, and their clients have drawn the slot's size.
+i=0; while [ "$(count 'KWL ARRANGE glide-end')" -lt $((${glides:-0} + 3)) ] 2>/dev/null && [ $i -lt 10 ]; do sleep 0.3; i=$((i+1)); done
+sleep 0.5
 shot c10-arranged
 
 # C11. The window of slot 1 (left top) dragged by its title onto slot 0 (the right one): a swap.

@@ -1701,6 +1701,7 @@ void kwl_glass_mapped(struct kwl_server *server, struct kwl_object *surface);
 void kwl_glass_forget(struct kwl_server *server, struct kwl_object *surface);
 struct kwl_arrange_rect;
 void kwl_glass_desktops_pill(struct kwl_server *server, int32_t *x, int32_t *width);
+int kwl_glass_bar_control_at(struct kwl_server *server, int32_t x, int32_t y);
 void kwl_glass_desktop_turn(struct kwl_server *server, int desktop, const char *via);
 void kwl_glass_work_area(struct kwl_server *server, struct kwl_arrange_rect *area);
 void kwl_glass_leave_quiet(struct kwl_server *server, const char *via);

@@ -1889,6 +1889,10 @@ i915_display_core_init(
 	display->pwc.vga = &display->vga_client;
 	display->pwc.irqs_enabled = 0;
 
+	/* The Dekel PHY access the Type-C AUX wells read the PHY's health through. */
+	drv_i915_dkl_phy_init(&display->dkl, &gt->mmio);
+	display->pwc.dkl = &display->dkl;
+
 	/* The display core over the one power, CDCLK, MMIO and sideband state. */
 	kern_memset(dcore, 0, sizeof(*dcore));
 	dcore->pd = &display->power_domains;

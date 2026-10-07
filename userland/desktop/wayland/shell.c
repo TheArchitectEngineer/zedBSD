@@ -2375,6 +2375,44 @@ kwl_glass_desktops_pill(
 	*width = bar.desktops_width;
 }
 
+/*
+ * Tells whether a point is on one of the docked window's controls in the
+ * system bar (close, restore, minimize): 1 or 0 (for the top-right
+ * corner's swipe, corner.c, which leaves a mouse press there to the bar,
+ * BUG-245).  Without a docked window, or while a fullscreen window keeps
+ * the bar away, there are none.
+ */
+int
+kwl_glass_bar_control_at(
+	struct kwl_server *server,
+	int32_t x,
+	int32_t y)
+{
+	struct shell_bar bar;
+	struct kwl_object *cover;
+	struct kwl_object *docked;
+	int button;
+
+	/* A fullscreen window that keeps the bar away leaves no control to press. */
+	cover = bar_cover(server);
+	if (cover != NULL)
+		return 0;
+
+	/* Only a docked window has controls in the bar. */
+	docked = docked_window(server);
+	if (docked == NULL)
+		return 0;
+
+	/* Looks for a control at the point in the bar's layout now. */
+	bar_layout(server, &bar);
+	button = bar_button_at(&bar, x, y);
+	if (button < 0)
+		return 0;
+
+	/* Succeeded: the point is on a control. */
+	return 1;
+}
+
 /* Switches to a desktop, sliding (for the arrangement menu's pictures, arrange-shell.c). */
 void
 kwl_glass_desktop_turn(

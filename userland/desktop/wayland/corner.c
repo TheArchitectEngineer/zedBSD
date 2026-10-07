@@ -180,6 +180,7 @@ kwl_corner_contact_begin(
 	uint32_t time)
 {
 	int inside;
+	int control;
 	int open;
 
 	/* The login and lock screens have no corner gesture. */
@@ -194,6 +195,17 @@ kwl_corner_contact_begin(
 	inside = corner_in_zone(server, x, y);
 	if (!inside)
 		return 0;
+
+	/*
+	 * A mouse press on a docked window's control in the bar (its close
+	 * button lies in the corner) is the bar's, not the gesture's (BUG-245).
+	 * A finger there still starts the swipe.
+	 */
+	if (source == KWL_CONTACT_POINTER) {
+		control = kwl_glass_bar_control_at(server, x, y);
+		if (control)
+			return 0;
+	}
 
 	/* An open menu closes on a press anywhere, the corner too, before the gesture could start. */
 	open = kwl_network_is_open();

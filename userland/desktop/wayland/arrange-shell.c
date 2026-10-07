@@ -467,9 +467,12 @@ kwl_arrange_glide(
 	/* Only while it glides. */
 	if (slot->glide_ms == 0U)
 		return 0;
+
+	/* A glide that has run its time is over: the window is drawn in its slot from now on (the tests wait for this line). */
 	elapsed = kwl_milliseconds() - slot->glide_ms;
 	if (elapsed >= ARRANGE_MS) {
 		slot->glide_ms = 0U;
+		printf("KWL ARRANGE glide-end surface=%u slot=%d\n", surface->id, index);
 		return 0;
 	}
 

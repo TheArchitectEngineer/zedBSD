@@ -45,6 +45,7 @@
 #include "dc9.h"
 #include "takeover.h"
 #include "modeset.h"
+#include "dkl-phy.h"
 #include <kern/kcrt.h>
 
 #include "../mmio.h"
@@ -95,6 +96,18 @@
 #define IDX_AUX_TBT2	10u
 #define IDX_AUX_TBT3	11u
 #define IDX_AUX_TBT4	12u
+
+/*
+ * The AUX channel control of channel A and the distance to the next
+ * channel's (DP_AUX_CH_CTL), and its bit that routes a Type-C channel
+ * through the Thunderbolt I/O (TBT_IO, bit 11).
+ */
+#define I915_TC_AUX_CH_CTL_A		0x64010u
+#define I915_TC_AUX_CH_CTL_STRIDE	0x100u
+#define I915_TC_AUX_CH_CTL_TBT_IO	(1u << 11)
+
+/* How long an AUX_USBC well's enable waits for the PHY microcontroller's health (1 ms, as Linux). */
+#define I915_TC_UC_HEALTH_TIMEOUT_US	1000u
 
 /* Tiger Lake (display version 12) adds PW_3..PW_5. */
 #define IDX_PW_3	2u
@@ -259,6 +272,9 @@ static uint32_t i915_pw_req(unsigned idx);
 static uint32_t i915_pw_state(unsigned idx);
 static int i915_pw_wait_fuse(struct i915_pw_ctx *pwc, unsigned pg);
 static void i915_pw_post_enable(struct i915_power_well *well, struct i915_pw_ctx *pwc);
+static int i915_pw_tc_aux_port(const struct i915_power_well *well);
+static void i915_pw_tc_aux_route(struct i915_pw_ctx *pwc, unsigned tc_port, int tbt);
+static int i915_pw_tc_uc_health_wait(const struct i915_power_well *well, struct i915_pw_ctx *pwc, unsigned tc_port);
 static int i915_mask_test(const struct i915_pw_domain_mask *mask, unsigned domain);
 static void i915_mask_set(struct i915_pw_domain_mask *mask, unsigned domain);
 static void i915_mask_clear(struct i915_pw_domain_mask *mask, unsigned domain);
@@ -481,6 +497,7 @@ drv_i915_power_well_enable(
 	unsigned pg;
 	unsigned timeout_ms;
 	int wait_result;
+	int tc_port;
 
 	/* An always-on well is simply on. */
 	if (well->ops == I915_PW_OPS_ALWAYS_ON) {
@@ -520,6 +537,15 @@ drv_i915_power_well_enable(
 		}
 	}
 
+	/*
+	 * A Type-C port's AUX well first routes the channel: through the
+	 * Thunderbolt I/O for a Thunderbolt AUX well, directly for the AUX_USBC
+	 * well of DP-alt and legacy mode.
+	 */
+	tc_port = i915_pw_tc_aux_port(well);
+	if (tc_port >= 0)
+		i915_pw_tc_aux_route(pwc, (unsigned)tc_port, well->is_tc_tbt);
+
 	/* Sets the driver request bit (intel_de_rmw(driver, 0, REQ)). */
 	value = drv_i915_raw_read32(pwc->mmio, reg);
 	drv_i915_raw_write32(pwc->mmio, reg, value | req);
@@ -538,12 +564,21 @@ drv_i915_power_well_enable(
 
 	/*
 	 * A real acknowledge timeout is warned and the enable continues (AUX in
-	 * particular expects one); it is recorded, never unwound.
+	 * particular expects one); it is recorded, never unwound.  A Type-C AUX
+	 * well may time out by design: a Thunderbolt tunnel that is down, or the
+	 * TC cold exit the AUX_USBC well itself starts.
 	 */
 	if (wait_result != 0) {
 		pwc->ack_timeouts++;
 		kern_logf("i915: power well %s enable ACK timeout (continuing)\n",
 			well->name);
+	}
+
+	/* A Type-C port's AUX_USBC well waits for the PHY's microcontroller to report itself healthy. */
+	if (tc_port >= 0 && !well->is_tc_tbt) {
+		wait_result = i915_pw_tc_uc_health_wait(well, pwc, (unsigned)tc_port);
+		if (wait_result == EIO)
+			return EIO;
 	}
 
 	/* A fused well waits for its own power gate's fuses. */
@@ -1809,6 +1844,99 @@ drv_i915_lcd_power_put_async(
 	drv_i915_display_power_put_async(kernel->d->pd, (enum i915_power_domain)domain, kernel->d->pwc, delay_ms);
 }
 
+/*
+ * Names the power domain that powers an AUX channel outside Thunderbolt.
+ *
+ * A combo channel (A to C, and display version 13's D and E) takes its AUX
+ * well.  A Type-C channel takes its AUX_USBC well, which is also what keeps
+ * the Type-C subsystem out of TC cold while the port is used in DP-alt or
+ * legacy mode (Linux v6.8.12 intel_display_power.c, the display version 12
+ * and 13 port-domain tables).  An unknown channel takes AUX_A, the answer
+ * Linux warns about and gives.
+ */
+enum i915_power_domain
+drv_i915_aux_legacy_power_domain(
+	unsigned display_ver,
+	int aux_ch)
+{
+	/* Channels A to C are the combo PHY ports of every version. */
+	if (aux_ch >= I915_AUX_CH_A && aux_ch <= I915_AUX_CH_C)
+		return (enum i915_power_domain)(I915_PW_DOMAIN_AUX_A + (aux_ch - I915_AUX_CH_A));
+
+	/* Display version 13 has four Type-C channels and then the combo ports D and E. */
+	if (display_ver >= 13u) {
+		/* A Type-C channel takes the AUX_USBC well of its number. */
+		if (aux_ch >= I915_AUX_CH_USBC1 && aux_ch <= I915_AUX_CH_USBC4)
+			return (enum i915_power_domain)(I915_PW_DOMAIN_AUX_USBC1 + (aux_ch - I915_AUX_CH_USBC1));
+
+		/* The combo ports D and E take the AUX wells D and E. */
+		if (aux_ch >= I915_AUX_CH_D_XELPD && aux_ch <= I915_AUX_CH_E_XELPD)
+			return (enum i915_power_domain)(I915_PW_DOMAIN_AUX_D + (aux_ch - I915_AUX_CH_D_XELPD));
+
+		/* Succeeded: any other channel falls back to AUX_A. */
+		return I915_PW_DOMAIN_AUX_A;
+	}
+
+	/* Display version 12 has six Type-C channels. */
+	if (aux_ch >= I915_AUX_CH_USBC1 && aux_ch <= I915_AUX_CH_USBC6)
+		return (enum i915_power_domain)(I915_PW_DOMAIN_AUX_USBC1 + (aux_ch - I915_AUX_CH_USBC1));
+
+	/* Succeeded: any other channel falls back to AUX_A. */
+	return I915_PW_DOMAIN_AUX_A;
+}
+
+/*
+ * Names the power domain of an AUX channel used through Thunderbolt.
+ *
+ * Only a Type-C channel has one (AUX_TBT1 on); any other channel answers
+ * I915_PW_DOMAIN_NUM, which no well provides.
+ */
+enum i915_power_domain
+drv_i915_aux_tbt_power_domain(
+	unsigned display_ver,
+	int aux_ch)
+{
+	int last_tc;
+
+	/* Display version 13 has four Type-C channels, version 12 six. */
+	last_tc = I915_AUX_CH_USBC6;
+	if (display_ver >= 13u)
+		last_tc = I915_AUX_CH_USBC4;
+
+	/* A Type-C channel takes the Thunderbolt AUX well of the same number. */
+	if (aux_ch >= I915_AUX_CH_USBC1 && aux_ch <= last_tc)
+		return (enum i915_power_domain)(I915_PW_DOMAIN_AUX_TBT1 + (aux_ch - I915_AUX_CH_USBC1));
+
+	/* Succeeded: a combo channel has no Thunderbolt domain. */
+	return I915_PW_DOMAIN_NUM;
+}
+
+/*
+ * Names the power domain of an AUX channel's I/O.
+ *
+ * Only a combo channel has one: A to C, and on display version 13 the
+ * combo ports D and E.  A Type-C channel has none and takes AUX_IO_A, the
+ * answer Linux warns about and gives.
+ */
+enum i915_power_domain
+drv_i915_aux_io_power_domain(
+	unsigned display_ver,
+	int aux_ch)
+{
+	/* Channels A to C are the combo PHY ports of every version. */
+	if (aux_ch >= I915_AUX_CH_A && aux_ch <= I915_AUX_CH_C)
+		return (enum i915_power_domain)(I915_PW_DOMAIN_AUX_IO_A + (aux_ch - I915_AUX_CH_A));
+
+	/* Display version 13's combo ports D and E. */
+	if (display_ver >= 13u &&
+	    aux_ch >= I915_AUX_CH_D_XELPD &&
+	    aux_ch <= I915_AUX_CH_E_XELPD)
+		return (enum i915_power_domain)(I915_PW_DOMAIN_AUX_IO_D + (aux_ch - I915_AUX_CH_D_XELPD));
+
+	/* Succeeded: a Type-C channel falls back to AUX_IO_A. */
+	return I915_PW_DOMAIN_AUX_IO_A;
+}
+
 /* Adds a domain to a well's domain mask. */
 static void
 i915_pw_dom(
@@ -2301,6 +2429,107 @@ i915_pw_post_enable(
 				pwc->irq_ops->post_enable(pwc->irq_ctx, well->irq_pipe_mask);
 		}
 	}
+}
+
+/*
+ * Tells which Type-C port an AUX well belongs to: 0 for the first, or -1
+ * for a well that is not a Type-C port's AUX well.
+ *
+ * The control indices are the hardware's (i915_reg.h of Linux v6.8.12):
+ * AUX_USBC1 to 4 at 3 to 6 and AUX_TBT1 to 4 at 9 to 12 on display versions
+ * 12 and 13, the only maps built here.  The port follows from the index
+ * alone, whether or not the VBT declares the port.
+ */
+static int
+i915_pw_tc_aux_port(
+	const struct i915_power_well *well)
+{
+	/* Only an ICL-style AUX well can be a Type-C port's. */
+	if (well->ops != I915_PW_OPS_ICL_AUX)
+		return -1;
+
+	/* A Thunderbolt AUX well serves the port of its number. */
+	if (well->is_tc_tbt) {
+		if (well->hsw_idx >= IDX_AUX_TBT1 && well->hsw_idx <= IDX_AUX_TBT4)
+			return (int)(well->hsw_idx - IDX_AUX_TBT1);
+
+		/* Succeeded: a Thunderbolt well outside the four ports belongs to none. */
+		return -1;
+	}
+
+	/* An AUX_USBC well serves the port of its number. */
+	if (well->hsw_idx >= IDX_AUX_TC1 && well->hsw_idx <= IDX_AUX_TC4)
+		return (int)(well->hsw_idx - IDX_AUX_TC1);
+
+	/* Succeeded: a combo port's AUX well. */
+	return -1;
+}
+
+/*
+ * Routes a Type-C port's AUX channel before its AUX well powers up: through
+ * the Thunderbolt I/O, or directly (DP_AUX_CH_CTL bit 11, TBT_IO).
+ */
+static void
+i915_pw_tc_aux_route(
+	struct i915_pw_ctx *pwc,
+	unsigned tc_port,
+	int tbt)
+{
+	uint32_t reg;
+	uint32_t control;
+
+	/* The port's AUX channel is USBC1 on from AUX_CH_D, 0x100 apart from channel A's control. */
+	reg = I915_TC_AUX_CH_CTL_A + I915_TC_AUX_CH_CTL_STRIDE * ((unsigned)I915_AUX_CH_USBC1 + tc_port);
+
+	/* Reads the control, whose other bits are the channel's transfer settings. */
+	control = drv_i915_raw_read32(pwc->mmio, reg);
+
+	/* A Thunderbolt well routes through the Thunderbolt I/O, an AUX_USBC well directly. */
+	if (tbt) {
+		control |= I915_TC_AUX_CH_CTL_TBT_IO;
+	} else {
+		control &= ~I915_TC_AUX_CH_CTL_TBT_IO;
+	}
+
+	/* Writes the routing back. */
+	drv_i915_raw_write32(pwc->mmio, reg, control);
+}
+
+/*
+ * Waits up to a millisecond for a Type-C port's PHY microcontroller to
+ * report itself healthy after its AUX_USBC well came up.
+ *
+ * A PHY that does not report it is warned about and counted, and the
+ * enable continues, as Linux does.  Returns 0, or EIO when the time base
+ * failed.
+ */
+static int
+i915_pw_tc_uc_health_wait(
+	const struct i915_power_well *well,
+	struct i915_pw_ctx *pwc,
+	unsigned tc_port)
+{
+	int wait_result;
+
+	/* Without the PHY access (the GPU-free tests) there is nothing to read. */
+	if (pwc->dkl == NULL)
+		return 0;
+
+	/* Polls the microcontroller's health bit. */
+	wait_result = drv_i915_dkl_phy_wait_set(pwc->dkl, tc_port, I915_DKL_CMN_UC_DW27, I915_DKL_CMN_UC_DW27_UC_HEALTH, I915_TC_UC_HEALTH_TIMEOUT_US);
+	if (wait_result == EIO)
+		return EIO;
+
+	/* A PHY that stayed unhealthy is warned about; the enable goes on. */
+	if (wait_result != 0) {
+		pwc->tc_uc_health_timeouts++;
+		kern_logf("i915: power well %s: timeout waiting for the Type-C PHY's microcontroller health (TC%u)\n",
+			well->name,
+			tc_port + 1u);
+	}
+
+	/* Succeeded: the wait is over. */
+	return 0;
 }
 
 /* Tells whether a domain is in a mask (1 or 0). */

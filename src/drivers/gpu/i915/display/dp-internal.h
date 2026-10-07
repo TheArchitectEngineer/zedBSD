@@ -1201,14 +1201,28 @@ i915_dp_is_edp(
  * The power domain of a port's AUX channel (the Linux
  * intel_aux_power_domain()).
  *
- * A non-TBT AUX channel maps to POWER_DOMAIN_AUX_A + (aux_ch - AUX_CH_A).
+ * A port outside Thunderbolt takes the legacy AUX domain of its channel from
+ * the display version's port-domain table (power.c): a combo channel its AUX
+ * well, a Type-C channel its AUX_USBC well, which also blocks TC cold.  The
+ * value is that of enum i915_power_domain.
  */
 static __inline int
 i915_aux_power_domain(
 	struct intel_digital_port *dig_port)
 {
-	/* Reports the AUX domain of the port's channel. */
-	return POWER_DOMAIN_AUX_A + (int)(dig_port->aux_ch - AUX_CH_A);
+	struct drm_i915_private *i915;
+	int display_ver;
+	enum i915_power_domain domain;
+
+	/* Resolves the device's display version. */
+	i915 = i915_dp_to_i915(dig_port->base.base.dev);
+	display_ver = i915_vbt_display_ver(i915);
+
+	/* Looks the channel up in the port-domain table. */
+	domain = drv_i915_aux_legacy_power_domain((unsigned)display_ver, (int)dig_port->aux_ch);
+
+	/* Succeeded: reports the AUX domain of the port's channel. */
+	return (int)domain;
 }
 
 /* Tells whether a Type-C port is in TBT-alt mode (the Linux intel_tc_port_in_tbt_alt_mode()): the eDP port is not Type-C. */

@@ -80,6 +80,8 @@
 #include "../sync.h"
 #include "../trace.h"
 #include "../workqueue.h"
+#include "dkl-phy.h"
+#include "tc.h"
 
 /*
  * Marks a parameter a function receives by contract but does not use.
@@ -299,6 +301,23 @@ enum i915_power_domain {
 	I915_PW_DOMAIN_NUM
 };
 
+/*
+ * The AUX channel numbers of display versions 12 and 13 (enum aux_ch): the
+ * combo channels A to C, then the Type-C channels USBC1 on from AUX_CH_D.
+ * Display version 13 reuses USBC5 and USBC6 for its combo ports D and E.
+ */
+#define I915_AUX_CH_A		0
+#define I915_AUX_CH_C		2
+#define I915_AUX_CH_USBC1	3
+#define I915_AUX_CH_USBC4	6
+#define I915_AUX_CH_USBC6	8
+#define I915_AUX_CH_D_XELPD	7
+#define I915_AUX_CH_E_XELPD	8
+
+enum i915_power_domain drv_i915_aux_legacy_power_domain(unsigned display_ver, int aux_ch);
+enum i915_power_domain drv_i915_aux_tbt_power_domain(unsigned display_ver, int aux_ch);
+enum i915_power_domain drv_i915_aux_io_power_domain(unsigned display_ver, int aux_ch);
+
 /* DC state flags -- reference register-bit encodings (intel_dmc_regs / power). */
 #define I915_DC_STATE_EN_UPTO_DC5   0x00000001u
 #define I915_DC_STATE_EN_UPTO_DC6   0x00000002u
@@ -408,6 +427,7 @@ struct i915_pw_irq_ops {
  * (has_vga post-enable) and the IRQ-enabled gate (intel_irqs_enabled(); 0 before
  * P4).  The *_calls counters are diagnostics the GPU-free tests observe.
  */
+struct i915_dkl_phy;
 struct i915_pw_ctx {
 	struct i915_mmio *mmio;
 	struct i915_vga_client *vga;
@@ -449,6 +469,14 @@ struct i915_pw_ctx {
 	unsigned dc_off_disable_calls;
 	unsigned dc_state_writes;
 	unsigned dc_state_rewrites;
+	/*
+	 * The display's DKL PHY access, which a Type-C AUX well's enable reads the
+	 * PHY microcontroller's health through; NULL (the GPU-free tests) skips
+	 * that read.  tc_uc_health_timeouts counts the enables whose PHY did not
+	 * report itself healthy in time.
+	 */
+	struct i915_dkl_phy *dkl;
+	unsigned tc_uc_health_timeouts;
 };
 
 /* pmdemand state: mutex + waitqueue, initialised early. */
@@ -3473,6 +3501,9 @@ struct i915_display {
 
 	/* The firmware's output read from it, the only one the driver lights by itself (ws113-p002). */
 	struct i915_gop_output gop;
+
+	/* The Dekel PHY access of the Type-C ports, which the AUX_USBC wells' enable reads through (pwc.dkl). */
+	struct i915_dkl_phy dkl;
 
 	/* Nonzero once the display core was initialized (intel_power_domains_init_hw). */
 	int display_core_inited;
