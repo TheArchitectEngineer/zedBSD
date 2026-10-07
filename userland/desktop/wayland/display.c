@@ -117,6 +117,9 @@ kwl_schedule(
 	if (server->os_paused != 0)
 		return;
 
+	/* The sleep's causes and its course (sleep.c, ws052-p012), before the lock screen's own tick. */
+	kwl_sleep_tick(server);
+
 	/* The glass look's clock turns over. */
 	if (server->glass)
 		kwl_glass_tick(server);
@@ -141,6 +144,14 @@ kwl_schedule(
 				adopt_commit(server, surface);
 		}
 	}
+
+	/*
+	 * While a sleep's request waits for its answer no frame is presented:
+	 * the GPU driver parks the display, and a presentation in progress
+	 * would hold it (ws052-p007 section 0.3).  The answer draws again.
+	 */
+	if (server->sleep_hold)
+		return;
 
 	/* A fullscreen video or game alone on the output is shown straight (the game mode, scanout.c); then nothing is composed. */
 	top = kwl_top_window(server);

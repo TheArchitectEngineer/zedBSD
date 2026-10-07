@@ -619,6 +619,20 @@ settings_apply(
 		return;
 	}
 
+	/* The minutes without input before a sleep on the power adapter (ws052-p012, sleep.c reads them each tick). */
+	differs = strcmp(name, "power.sleep.ac");
+	if (differs == 0) {
+		settings_apply_number(server, name, &server->sleep_ac_minutes);
+		return;
+	}
+
+	/* And on battery. */
+	differs = strcmp(name, "power.sleep.battery");
+	if (differs == 0) {
+		settings_apply_number(server, name, &server->sleep_battery_minutes);
+		return;
+	}
+
 	/* Chooses the input method, which is started again with it (WS154). */
 	differs = strcmp(name, "ime.method");
 	if (differs == 0) {

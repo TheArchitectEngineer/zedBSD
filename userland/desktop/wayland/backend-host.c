@@ -24,7 +24,6 @@
 #include <stdio.h>
 #include <string.h>
 
-static void lid_screen_off(struct kwl_server *server);
 static struct kwl_input_device *backend_input(struct kwl_server *server, const char *path);
 static const char *power_source_text(unsigned source);
 
@@ -198,29 +197,35 @@ kwl_backend_power_changed(
 }
 
 /*
- * A power or sleep button was pressed (ws132-p003).  What it does waits
- * for the decision D1 (ws132-p008); it is only written in the log.
+ * A power or sleep button was pressed (ws132-p003).  The sleep button
+ * sleeps the machine (ws052-p012, N5); the power button's short press is
+ * only written in the log until its menu (Log Out, Shut Down; WS182, the
+ * 2026-10-07 user decision) is called from here.
  */
 void
 kwl_backend_power_button(
 	void *data,
 	unsigned button)
 {
-	/* Only the log, until p008. */
-	(void)data;
+	struct kwl_server *server;
+
+	/* The sleep button: the sleep's rules decide (sleep.c). */
+	server = data;
 	if (button == KL_BACKEND_BUTTON_SLEEP) {
 		printf("KWL EVENT sleep button\n");
+		kwl_sleep_button(server);
 		return;
 	}
 
-	/* The power button. */
+	/* The power button: its menu (WS182) is called here. */
 	printf("KWL EVENT power button\n");
 }
 
 /*
  * The lid opened or closed (ws132-p003; what it does is ws132-p008, the
- * decision D2): closing it puts the screen out and locks the session;
- * opening it within 15 minutes unlocks the lock the closing made (lid.c).
+ * decision D2, and ws052-p012): closing it puts the screen out and locks
+ * the session (the sleep follows at the next tick, sleep.c); opening it
+ * within 15 minutes unlocks the lock the closing made (lid.c).
  */
 void
 kwl_backend_lid_changed(
@@ -228,9 +233,6 @@ kwl_backend_lid_changed(
 	unsigned open)
 {
 	struct kwl_server *server;
-	unsigned actions;
-	int session;
-	int locked;
 
 	/* The change, logged. */
 	server = data;
@@ -238,6 +240,45 @@ kwl_backend_lid_changed(
 		printf("KWL EVENT lid open\n");
 	} else {
 		printf("KWL EVENT lid closed\n");
+	}
+
+	/* What it does. */
+	kwl_lid_follow(server, open);
+}
+
+/*
+ * Carries out a change of the lid, from its event or from its level read
+ * after a sleep: the lock, the screen out, the unlock, the light.
+ */
+void
+kwl_lid_follow(
+	struct kwl_server *server,
+	unsigned open)
+{
+	unsigned actions;
+	int session;
+	int locked;
+	int matters;
+	int deferred;
+
+	/*
+	 * Opened while a sleep's request waits: the sleep is cancelled if it
+	 * can still be, and the opening is carried out after its answer, so
+	 * that no unlock comes before the machine sleeps (sleep.c).
+	 */
+	if (open != 0U) {
+		deferred = kwl_sleep_lid_opened(server);
+		if (deferred)
+			return;
+	}
+
+	/* An external display shown goes on with the lid closed (N8, R5): the closing changes nothing. */
+	if (open == 0U) {
+		matters = kwl_output_lid_matters(server);
+		if (!matters) {
+			printf("KWL LID ignored: the output shown is an external display\n");
+			return;
+		}
 	}
 
 	/* What it asks for: a session is any but the login screen's. */
@@ -262,7 +303,7 @@ kwl_backend_lid_changed(
 
 	/* The screen out. */
 	if ((actions & KWL_LID_SCREEN_OFF) != 0U)
-		lid_screen_off(server);
+		kwl_screen_off(server, "lid");
 
 	/* The lid's own lock goes without the password. */
 	if ((actions & KWL_LID_UNLOCK) != 0U)
@@ -292,7 +333,8 @@ kwl_lid_screen_restore(
 		server->backlight_out = 0;
 	}
 
-	/* The desktop drawn again. */
+	/* The desktop drawn again (the time without input no longer holds it out). */
+	server->screen_idle_off = 0U;
 	if (server->screen_off) {
 		server->screen_off = 0;
 		server->dirty = 1;
@@ -326,6 +368,58 @@ kwl_power_read(
 	server->power = state;
 	printf("KWL POWER source=%s percent=%d charging=%u\n", power_source_text(state.source), state.percent,
 	       state.charging);
+}
+
+/*
+ * Puts the screen out (the lid closed, or half the time without input
+ * before a sleep, why): the panel's backlight off when the machine has one
+ * the compositor may set (its brightness kept for the light), and black
+ * drawn in any case (WS113 p013's backlight, or none).
+ */
+void
+kwl_screen_off(
+	struct kwl_server *server,
+	const char *why)
+{
+	unsigned percent;
+	int error;
+
+	/* Black from the next frame. */
+	if (!server->screen_off) {
+		server->screen_off = 1;
+		server->dirty = 1;
+		printf("KWL LID screen off why=%s\n", why);
+	}
+
+	/* The backlight, opened the first time it is needed. */
+	if (server->backlight == NULL) {
+		error = kl_backend_backlight_open(&server->backlight);
+		if (error != 0) {
+			server->backlight = NULL;
+			printf("KWL LID backlight none error=%d\n", error);
+			return;
+		}
+	}
+
+	/* Already out. */
+	if (server->backlight_out)
+		return;
+
+	/* Its brightness kept (full when it cannot say, or was already dark), then off. */
+	percent = 100U;
+	error = kl_backend_backlight_get(server->backlight, &percent);
+	if (error != 0 || percent == 0U)
+		percent = 100U;
+	error = kl_backend_backlight_set(server->backlight, 0U);
+	if (error != 0) {
+		printf("KWL LID backlight off error=%d\n", error);
+		return;
+	}
+
+	/* Succeeded: out, to come back at the opening. */
+	server->backlight_saved = percent;
+	server->backlight_out = 1;
+	printf("KWL LID backlight off saved=%u\n", percent);
 }
 
 /* Names a power source for the log. */
@@ -363,54 +457,4 @@ backend_input(
 
 	/* No input of that path. */
 	return NULL;
-}
-
-/*
- * Puts the screen out: the panel's backlight off when the machine has one
- * the compositor may set (its brightness kept for the opening), and black
- * drawn in any case (WS113 p013's backlight, or none).
- */
-static void
-lid_screen_off(
-	struct kwl_server *server)
-{
-	unsigned percent;
-	int error;
-
-	/* Black from the next frame. */
-	if (!server->screen_off) {
-		server->screen_off = 1;
-		server->dirty = 1;
-		printf("KWL LID screen off\n");
-	}
-
-	/* The backlight, opened the first time it is needed. */
-	if (server->backlight == NULL) {
-		error = kl_backend_backlight_open(&server->backlight);
-		if (error != 0) {
-			server->backlight = NULL;
-			printf("KWL LID backlight none error=%d\n", error);
-			return;
-		}
-	}
-
-	/* Already out. */
-	if (server->backlight_out)
-		return;
-
-	/* Its brightness kept (full when it cannot say, or was already dark), then off. */
-	percent = 100U;
-	error = kl_backend_backlight_get(server->backlight, &percent);
-	if (error != 0 || percent == 0U)
-		percent = 100U;
-	error = kl_backend_backlight_set(server->backlight, 0U);
-	if (error != 0) {
-		printf("KWL LID backlight off error=%d\n", error);
-		return;
-	}
-
-	/* Succeeded: out, to come back at the opening. */
-	server->backlight_saved = percent;
-	server->backlight_out = 1;
-	printf("KWL LID backlight off saved=%u\n", percent);
 }

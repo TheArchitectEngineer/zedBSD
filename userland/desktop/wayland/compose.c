@@ -134,6 +134,40 @@ kwl_compose_open(
 }
 
 /*
+ * Tells whether the lid matters to the output shown: it does unless that
+ * output is an external display (an HDMI or DisplayPort connector's key,
+ * D-ID A2 "zedbsd-port-v1:...:hdmi:B"), which goes on with the lid closed
+ * (ws052-p012, the 2026-10-07 user decision N8; R5: a machine started with
+ * its lid closed on an external display).  The built-in panel, a virtual
+ * display and a display without a name are the machine's own.
+ */
+int
+kwl_output_lid_matters(
+	struct kwl_server *server)
+{
+	const char *name;
+	const char *found;
+
+	/* Without the output nothing is shown on an external display. */
+	if (server->compose == NULL)
+		return 1;
+	name = server->compose->display_name;
+
+	/* An HDMI connector's display goes on with the lid closed. */
+	found = strstr(name, ":hdmi:");
+	if (found != NULL)
+		return 0;
+
+	/* So does a DisplayPort connector's. */
+	found = strstr(name, ":dp:");
+	if (found != NULL)
+		return 0;
+
+	/* Succeeded: the output is the machine's own. */
+	return 1;
+}
+
+/*
  * Creates window mode's display surface, and the render pass and pipelines
  * for its format the first time, without taking the display (ws035-p130).
  *
@@ -808,9 +842,12 @@ compose_display(
 		if ((properties[index].supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) == 0U)
 			continue;
 
-		/* This display, and its native resolution. */
+		/* This display, its native resolution and its name. */
 		display = properties[index].display;
 		resolution = properties[index].physicalResolution;
+		if (properties[index].displayName != NULL) {
+			(void)snprintf(compose->display_name, sizeof(compose->display_name), "%s", properties[index].displayName);
+		}
 		break;
 	}
 

@@ -48,7 +48,7 @@
 /* The longest request line. */
 #define POWER_LINE_MAX 32U
 
-static unsigned power_actions(const struct kl_backend *backend);
+static unsigned power_actions(const struct kl_backend *backend, unsigned can_sleep);
 static int power_administrator(void);
 static void power_read(struct kl_backend_power_state *state);
 static int power_sleep(struct kl_backend *backend);
@@ -70,7 +70,7 @@ kl_backend_power_get_state(
 	power_read(state);
 
 	/* The actions sessiond takes from this compositor. */
-	state->actions = power_actions(backend);
+	state->actions = power_actions(backend, state->can_sleep);
 
 	/* Succeeded: the state is filled. */
 	return 0;
@@ -140,7 +140,7 @@ kl_backend_power_action(
 	/* Only the actions sessiond takes from this compositor. */
 	if (action >= 32U)
 		return ENOTSUP;
-	offered = power_actions(backend);
+	offered = power_actions(backend, 0U);
 	bit = KL_BACKEND_POWER_ACTION_BIT(action);
 	if ((offered & bit) == 0U)
 		return ENOTSUP;
@@ -165,10 +165,16 @@ kl_backend_power_action(
 	return 0;
 }
 
-/* The actions sessiond takes: power off and restart, from the login screen or a session (none without sessiond). */
+/*
+ * The actions sessiond takes: power off and restart, from the login screen
+ * or a session of root or wheel; and a sleep, from the login screen or any
+ * user's session, when the machine can sleep (ws052-p012, N2) and sessiond
+ * has not answered that it cannot (none without sessiond).
+ */
 static unsigned
 power_actions(
-	const struct kl_backend *backend)
+	const struct kl_backend *backend,
+	unsigned can_sleep)
 {
 	unsigned actions;
 	int administrator;
@@ -176,16 +182,23 @@ power_actions(
 	/* Without sessiond's descriptor nothing can be asked. */
 	if (backend->options.greeter_descriptor < 0 && backend->options.session_descriptor < 0)
 		return 0U;
+	if (backend->session_gone)
+		return 0U;
 
-	/* A session's user that is neither root nor in wheel may not (sessiond refuses it too, power.c). */
+	/* A sleep, by any user, on a machine that can sleep and has not been refused for good. */
+	actions = 0U;
+	if (can_sleep && backend->power_outcome.kind != KL_BACKEND_SLEEP_UNSUPPORTED)
+		actions |= KL_BACKEND_POWER_ACTION_BIT(KL_BACKEND_POWER_SUSPEND);
+
+	/* A session's user that is neither root nor in wheel may not power off or restart (sessiond refuses it too, power.c). */
 	if (backend->options.greeter_descriptor < 0) {
 		administrator = power_administrator();
 		if (!administrator)
-			return 0U;
+			return actions;
 	}
 
-	/* Power off and restart. */
-	actions = KL_BACKEND_POWER_ACTION_BIT(KL_BACKEND_POWER_POWEROFF) |
+	/* Succeeded: power off and restart too. */
+	actions |= KL_BACKEND_POWER_ACTION_BIT(KL_BACKEND_POWER_POWEROFF) |
 	    KL_BACKEND_POWER_ACTION_BIT(KL_BACKEND_POWER_REBOOT);
 	return actions;
 }

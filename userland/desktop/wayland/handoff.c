@@ -160,9 +160,21 @@ kwl_handoff_answer(
 {
 	struct kwl_server *server;
 	int taken;
+	int waiting;
 
 	/* The compositor the backend was opened for. */
 	server = data;
+
+	/*
+	 * A sleep's answer is the sleep's (sleep.c), before the login and lock
+	 * screens could take it for a password's (a refused sleep is not a
+	 * wrong password, ws052-p007 section 1.2).
+	 */
+	waiting = kwl_sleep_waiting(server);
+	if (request == KL_BACKEND_SESSION_POWER && waiting) {
+		kwl_sleep_answer(server, error);
+		return;
+	}
 
 	/* Remote Login's answer is the system extension's, also while the screen is locked (ws089-p025). */
 	if (request == KL_BACKEND_SESSION_SERVICE) {

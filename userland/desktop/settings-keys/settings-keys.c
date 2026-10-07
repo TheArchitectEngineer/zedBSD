@@ -35,6 +35,9 @@
  * pointer setting of before (pointer.*) is only read, to be moved to the
  * mouse's (settings.c).  Files keeps the width of each list column the
  * user dragged (BUG-220), in pixels, 0 for the column's own width.
+ * power.sleep.ac and power.sleep.battery (ws052-p012) are the minutes
+ * without input before the machine sleeps, on the power adapter and on
+ * battery (0 never); the screen goes out at half that time.
  */
 static const struct kl_settings_key settings_keys[] = {
 	{ "wallpaper", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_PATH, 0, 0, 0, KL_SETTINGS_KEY_KEPT },
@@ -60,6 +63,8 @@ static const struct kl_settings_key settings_keys[] = {
 	{ "sound.available", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_READ_ONLY },
 	{ "mail.codes.browser", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, KL_SETTINGS_KEY_KEPT },
 	{ "phone.backend", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 1, 0, KL_SETTINGS_KEY_KEPT },
+	{ "power.sleep.ac", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 240, 30, KL_SETTINGS_KEY_KEPT },
+	{ "power.sleep.battery", KL_SETTINGS_RESOLVER_COMPOSITOR, KL_SETTINGS_TYPE_INT, 0, 240, 15, KL_SETTINGS_KEY_KEPT },
 	{ "terminal.ambiguous-wide", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_BOOL, 0, 1, 0, 0U },
 	{ "terminal.font-size", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 8, 32, 16, 0U },
 	{ "terminal.theme", KL_SETTINGS_RESOLVER_APP, KL_SETTINGS_TYPE_INT, 0, 2, 0, 0U },
