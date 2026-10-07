@@ -618,6 +618,10 @@ main_loop(
 		if (main_language != NULL)
 			(void)kl_settings_dispatch(main_language);
 
+		/* A change of the accent the desktop's icons take (the watch draws them again, ws179-p001). */
+		if (main_accent_settings != NULL)
+			(void)kl_settings_dispatch(main_accent_settings);
+
 		/* Every input queued (the menus' choices and a held key's repeats among them); the desktop has its own (ui-desktop.c). */
 		now = fm_clock();
 		inputs = 0;
@@ -1641,6 +1645,13 @@ main_desktop_accent_changed(
 	/* The icons stay light whatever the appearance. */
 	kl_accent_values((unsigned)accent, KL_APPEARANCE_LIGHT, &values);
 	fm_palette_take(KL_APPEARANCE_LIGHT, &values);
+
+	/*
+	 * Every cell is drawn again: the kept frame's cells record what they
+	 * show, not the colours they were drawn in, so a selected icon's pill
+	 * would otherwise keep the old accent.
+	 */
+	fm_desktop_repaint(&main_app.desk);
 	main_app.dirty = 1;
 	fm_log("ACCENT index=%d", accent);
 }

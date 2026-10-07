@@ -43,3 +43,11 @@ host の描画（各色 × ライト・ダーク）、build、T1 で Settings �
 | `python3 userland/desktop/libkeiland/exports.py --check`、`tools/i18n/tr.py check …/ja/settings.tr` | 一致、107 件 0 problems |
 
 未実施: QEMU（T1: Settings の Appearance で色を変え、Settings・Files・bar・titlebar・OSK を撮る）、実機。
+
+## T1-335 の FAIL の疑いの直し（2026-10-07 夕、P1）
+
+- 所見（T1-335）: Files の desktop の icon の pill が accent を purple・graphite にしても青のまま、`ZFILES ACCENT index=` が log に無い。
+- 原因（code の読み）: desktop mode の Files は `main_accent_settings` を `kl_settings_watch` していたが、main の loop が `kl_settings_dispatch` するのは `main_language`（window の時だけ開く）だけで、`main_accent_settings` の queue を一度も dispatch していなかった。watch は呼ばれず、起動の時の accent（blue）のまま。もう 1 つ、desktop は前の frame を残して変わった cell だけを描き直す（ws094-p009）ので、選ばれたままの icon の pill は accent が変わっても描き直されない。
+- 直し（`userland/desktop/files/main.c`）: loop で `main_accent_settings` も dispatch する。`main_desktop_accent_changed` で `fm_desktop_repaint`（残した frame を捨て全体を描く）。
+- 起動の時の `ZFILES ACCENT index=0` の 1 行も log に無かった点は、code の上は起動の時に必ず出るので、T1 の log の取り方（起動の前の行）か読んだ範囲と推定（未確認）。再撮影で起動の行と変更の行の両方を確かめる。
+- 確認: target の clang（`-Werror -fsyntax-only`）で `files/main.c`・`ui-desktop.c` は warning 0。`git diff --check` は空。QEMU は T1（再撮影）。
