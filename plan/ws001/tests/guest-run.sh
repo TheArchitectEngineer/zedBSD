@@ -23,9 +23,10 @@ fi
 noct=${NOCT:-$(cd "$(dirname -- "$0")/../../.." && pwd)/build/NoctLang/build-static/noct}
 export GUEST_RUNTIME=build/ws001/guest-rt
 
-# The cases and their references.
-rm -rf build/ws001/export
-mkdir -p build/ws001
+# The cases and their references.  Each run exports into new directories behind the names (2026-10-06 user:
+# deleting is Q1's step; plan/tools/q1-clean.sh removes the old runs).
+. plan/tools/fresh-out.sh
+fresh_out build/ws001/export
 if [ $# -eq 0 ]; then
 	python3 plan/tools/utils/util-diff.py --bin build/ws001/bin \
 		--export build/ws001/export > /dev/null
@@ -36,6 +37,7 @@ else
 			python3 plan/ws001/tests/pinned-cases.py --export build/ws001/export > /dev/null
 			continue
 		fi
+		fresh_out "build/ws001/export-$name"
 		python3 plan/tools/utils/util-diff.py --bin build/ws001/bin \
 			--only "$name" --export "build/ws001/export-$name" > /dev/null
 		mkdir -p build/ws001/export
@@ -44,11 +46,10 @@ else
 				cp "$file" "build/ws001/export/$(basename "$group")-$name-$(basename "$file")"
 			done
 		done
-		rm -rf "build/ws001/export-$name"
 	done
 	# guest-cases.sh reads GG/NNNN.*; one directory holds them all.
 	mkdir -p build/ws001/export/00
-	find build/ws001/export -maxdepth 1 -type f -exec mv {} build/ws001/export/00/ \;
+	find build/ws001/export/ -maxdepth 1 -type f -exec mv {} build/ws001/export/00/ \;
 fi
 tar --format=ustar -C build/ws001/export -cf build/ws001/cases.tar .
 
