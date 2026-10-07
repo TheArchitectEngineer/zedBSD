@@ -57,3 +57,10 @@ Q1 が source を調べた（読むだけ、2026-10-06）。IME を受けるの�
 - build: zedBSD amd64 の libkeiland・textedit・mailer・calendar・terminal・files・settings・wayland（exit 0、warning 0）、`make keiland-linux` の gcc と clang（exit 0、warning・error 0）、`exports.py --check` OK、`keiland-os-boundary/check.sh` PASS。
 - host: run-host-mailer（10 PASS、本文に "hello"）、run-host-calendar（9 PASS、memo の click を行の末尾に直した: click が caret を置くので）、host-widgets 94/94、host-chooser 85/85、run-host-phone PASS、terminal-p006（rm を除いて直に）PASS、files-render の改名に commit と compose（`build/ws090-p022/rename.png`: base日本語、語が下線）、host-account-admin 34/34、host-settings 38/38。`plan/tools/files/host-render.c` に `commit=`・`compose=` を足した。
 - 未実施（T1）: 各欄に日本語を打つ guest の試験（keiland-ime を選んだ image）: file chooser の Save As の名前、Text Editor の置換、Mailer の本文、Calendar の memo、Files の改名、Settings の新しい利用者の氏名、Terminal の検索、App Home の検索。
+
+## T1-260 の結果と修正（2026-10-07、P1）
+
+7 欄は IME で入った（置換の 2 欄・Terminal の検索・Files の改名・Calendar の memo・Settings の氏名・App Home の検索・Mailer の名前）。Text Editor の Save As の file chooser の名前の欄だけ、IME が on でも `nihon` が literal で入った。
+原因: file chooser の窓は app の接続の上の別の窓（`keiui_window_open_shared`）で、その global の探索が `zwp_text_input_manager_v3` を拾わず、窓の text input が作られていなかった（`kl_ui_window_text` が `kl_window_text_input` を呼んでも、送る相手が無い）。全ての app の file chooser で同じ。
+修正: `libkeiland/ui/window.c` の `window_search`・`window_setup_shared` で text input の manager を探して bind し、app の queue に移して `keiui_text_input_start`。compositor は client の全ての text input に enter を送り、各窓は自分の surface の enter だけを受ける（既存）。
+確認: Linux の build と disk-image が warning 0。QEMU は未実施（T1 に依頼）。

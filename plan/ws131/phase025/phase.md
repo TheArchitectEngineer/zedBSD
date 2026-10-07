@@ -83,3 +83,8 @@ WS074 の状態: Q1 の確認で B1 は停止中、libbrowser は触らない（
 ## Resume
 
 p020 の cleared と main への統合、WS074 との衝突の確認の後に、Q1 が Queue を作る。
+
+## T1-272 の browser-p045・p056 の FAIL（2026-10-07、P1）
+
+`95: 1: parameter not set`・`120: …`（exit 2）。原因は試験: link の位置を host の build（`build/ws074-host/plain/browser --dump=layout`）から取るが、T1 の worktree にその build が無く（`not found`）、`$link` が空だった。browser の不具合ではない（p014 は PASS、titlebar の control も ok）。
+修正: 2 つの試験は host の build が無ければ `plan/ws074/tests/host-build.sh plain` で作り、`$link` が空なら理由を出して止まる。
