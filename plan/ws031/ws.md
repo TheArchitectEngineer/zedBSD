@@ -82,13 +82,13 @@ p015〜p018は大きすぎるため、1 Queueのスロットで終わる大き�
 | ws031-p027 | present mode（FIFO/MAILBOX/IMMEDIATE）でvsyncを選ぶ。UAPIで運べなければ変更を事前に提示 | 移した（2026-09-27、[WS075](../ws075/ws.md) の p008） | 同上 | p015・p018 | `libvulkan`、`zwl`、i915 display |
 | ws031-p028 | 入力とmview: PS/2 keyboardのkeyがzwlに届かない件、QMP abortの回避記録、mviewの再現性・blend material・pixel shadingのLCD写真 | planning | 同上 | p015 | `zwl`、input |
 | ws031-p029 | WS031の統合回帰（p014の回帰一覧を1回） | planning | p022〜p028 | p015 | 試験のみ |
-| ws031-p019 | 設計: executorの未実装機能（p030〜p037） | planning | p022, p023, p025 | 新規 | 文書 |
+| [ws031-p019](phase019/phase.md) | 設計: executorの未実装機能（正常系: p032・p033） | cleared 候補（2026-10-07 P1、design-reviewer の review を反映） | — | 新規 | 文書 |
 | ws031-p020 | 設計: compilerの未実装機能（p038〜p043） | planning | p024 | 新規 | 文書 |
 | ws031-p021 | 設計: 性能の構造（p044〜p047）。schedulerの扱い（本WSか新WSか）の判断を含む | planning | p029 | 新規 | 文書 |
 | ws031-p030 | executor: mip level 0以外・array layerへの描画とattachment clear | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/` |
 | ws031-p031 | executor: 複数colour attachment（MRT） | 移した（2026-09-27、[WS075](../ws075/ws.md) の p006） | p019 | p016 | `render/` |
 | ws031-p032 | executor: blendのlogic op・dual source | planning | p019 | p016 | `render/` |
-| ws031-p033 | executor: image viewのformat読替え（MUTABLE_FORMAT）・component swizzle・usage照合 | planning | p019 | p016 | `render/`、`vk/` |
+| [ws031-p033](phase033/phase.md) | executor: image viewのformat読替え（MUTABLE_FORMAT）・component swizzle（usage照合は変えない、2026-10-07 範囲の変更） | cleared 候補（2026-10-07 P1、host PASS） | p019 | p016 | `render/` |
 | ws031-p034 | executor: sampler（anisotropy、depth compare、border colour、unnormalized座標）、mirrored blit | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/` |
 | ws031-p035 | executor: descriptor配列・`vkUpdateDescriptorSets` のcopy・VSのsampled image | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/`、`vk/` |
 | ws031-p036 | executor: UBOのdataport読み出し（push dataの上限超え）とdraw間の順序 | planning | p019 | p016 | `render/`、`compiler/` |

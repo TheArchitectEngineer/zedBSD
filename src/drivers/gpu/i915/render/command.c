@@ -2155,8 +2155,10 @@ i915_image_plane_surface(
 
 /*
  * Describes the image of a render pass attachment: the level and the layer
- * its view starts at.  XXX: a view of several layers is written at its
- * first layer only (no layered rendering).
+ * its view starts at, in the format the view reads the texels as (a clear
+ * of an SRGB view of an UNORM image encodes as the draw does, ws031-p033).
+ * XXX: a view of several layers is written at its first layer only (no
+ * layered rendering).
  */
 static int
 i915_attachment_surface(
@@ -2170,7 +2172,8 @@ i915_attachment_surface(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the surface describes the attachment. */
+	/* Succeeded: the surface describes the attachment, in the view's format. */
+	surface->format = drv_i915_gfx_view_format(view);
 	return 0;
 }
 
