@@ -39,3 +39,34 @@ Queue: q846
 
 - HAL の API は変えない。toolchain は変えない。rm は打たない（Q1 に path を送る）。security の判定で止まったら止まって Q1 に返す。
 - 実機 5320 への image・kernel の入れ替えと再起動は、方法を決めたら Q1 に送る（ユーザーの立会いが要るなら Q1 が聞く）。
+
+## q846-i01 の結果（P3、2026-10-07、base main `cee1699d2`）
+
+### 原因（source と実機の log から）
+
+- `display/modeset-internal.h` の `I915_LCD_IS_DISPLAY_VER()` が固定の 13 を答えていた。TGL（12）で `drv_i915_phy_is_combo()`（`ALDERLAKE_P || IS_DISPLAY_VER(11, 12)`）が偽になり、
+  takeover の readout が `icl_ddi_combo_get_config` を結ばず、crtc の state に PLL が無い（log の `DPLL-1 ... 0 kHz`）。N1 の sanitize が「誰も使わない」DPLL0 を
+  firmware の pipe の下で止め（`DPLL0_ENABLE 0xcc000000→0`）、clock の無い pipe は止まれない（`pipe_off wait timed out`・`DDI BUF idle` の timeout、TRANSCONF の状態 bit が残る）。
+  ws084 で ADL-P に起きたのと同じ仕組み。同じ述語で TGL の combo PHY の lane の power-up（`i915_ddi_power_up_lanes`）も飛ばされていた。
+- 5320 の firmware の mode は起動で違う: `k5320-20261007-greeter-fail.log` は PIPESRC 1366x768（scaler 無し）、2026-10-07 稼働中の起動は PIPESRC `0x027f01df`（640x480、pipe scaler で 1366x768）。
+  scaler の readout（`skl_scaler_get_config`）と停止（`skl_scaler_disable`）は未移植だった。
+- P5 の nogem の DPLL の管理は ADL-P の表だけ（`dplls=0(mgr=0)`）。CDCLK の hook は TGL にも crawl を付けていた（TGL の gen12 は crawl しない）。
+
+### 修正（commit `13573574f`）
+
+- `I915_LCD_IS_DISPLAY_VER()` を device の版で答える（ADL-P の答えは同じ: (12,13)・(5,7)・(8,10)・(10,12) の 4 か所とも 13 で不変）。
+- `drv_i915_skl_scaler_get_config()`・`drv_i915_skl_scaler_disable()`（`pipe.c`、Linux v6.8.12 の skl_scaler.c の通り: 有効で plane に結ばれない scaler を pfit として読み、停止は pipe の 2 つの scaler の CTRL・WIN_POS・WIN_SZ を 0）。crtc の state に `scaler_state.scalers[].in_use`・`scaler_users`。
+- `drv_i915_shared_dpll_init()` に tgl_plls（DPLL0/1、TBT、TC1..6 は MG_PLL_ENABLE `0x46030+4n`）、`I915_NOGEM_MAX_DPLLS` 8→10。ktest（`ktest-display-probe.c`）に TGL の表の確認を足した（kernel の試験の build は未実行）。
+- `drv_i915_init_cdclk_hooks()`: TGL は tgl の関数、crawl は ADL-P だけ。
+
+### 確認
+
+- `make -j16 ZEDBSD_CONFIG=plan/ws118/tests/config-remote-log.mk BUILD=build/p3-ws118 vmunix`: rc=0、warning 0、kernel include check・amd64 vmunix check PASS（vmunix sha256 `1b7ae5df…`）。
+- host 試験 `sh plan/ws118/tests/run-tgl-display-host-test.sh`: 13 checks 0 failures（12 と 13 の両方で combo PHY・DPLL の表・CDCLK の hook・pipe A/B の scaler の readout と停止）。
+  `plan/ws084/tests/run-native-decide-host-test.sh`: 14 checks 0 failures。
+- 未実施: 5320 の実機（kernel の入れ替えの方法を Q1 に提案、返事待ち）、5330 の回帰（T1）、QEMU。
+
+### 残り・既知の未対応
+
+- `IS_TIGERLAKE_UY` は常に 0（9a49 は Linux では UY）。HBR2 以上の DP/eDP の buf trans の表だけが変わる。5320 の panel は HBR x1 なので影響なし。
+- VBT と DP の環境（`vbt.h` の `i915_vbt_display_ver()` が 13 固定）: TGL の Type-C/HDMI の port の対応（xelpd の表）と DPLS の WA（TGL でも掛かる、無害）。eDP の AUX の power domain は 12 と 13 で同じ。範囲外（TC/TBT）として残す。
