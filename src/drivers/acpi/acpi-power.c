@@ -579,6 +579,19 @@ refresh(
 	/* Posts a change. */
 	if (!post)
 		return;
+
+	/*
+	 * Every notify of the lid is logged with what _LID answered and when,
+	 * changed or not: an opening the firmware reports while the lid is
+	 * closed (BUG-255) is told from a real one by its time.
+	 */
+	if (device->kind == POWER_LID) {
+		kern_logf("acpi: lid notify: _LID %d (%s) at %llu ms\n",
+		    value,
+		    changed ? "posted" : "unchanged",
+		    (unsigned long long)kern_ticks_to_ms(sched_ticks()));
+	}
+
 	if (!changed)
 		return;
 	if (charging) {
