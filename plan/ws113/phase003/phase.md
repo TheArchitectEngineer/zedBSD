@@ -93,3 +93,7 @@ native の `ENOSPC`（同時に出せる数の制限）を `display_error()` の
 - build（warning 0）: `make BUILD=build/ws113-p003 ZEDBSD_CONFIG=plan/ws014/tests/config-vkdemo-amd64.mk build/ws113-p003/dynamic/libvulkan.so`（ELF の checker が 197 の export を api-commands.tsv と照合）、`ZEDBSD_CONFIG=plan/ws113/tests/config-amd64-p003.mk build/ws113-p003/bin/display-events`。
 - style-check: 新規の file（wsi-display-control.c・display-events/main.c・host-display-events.c）は違反 0、変えた既存の file は新しい違反 0。
 - 未実施: QEMU（T1: `config-amd64-p003.mk` の image で `display-events-p003.sh`。2 出力は `zdesktop-guest.sh` の `max_outputs=1` が固定なので、`VENUS_OUTPUTS` を足す変更を Q1 に依頼した）、QEMU での抜き差し（QMP に virtio-gpu の出力を切る方法を見つけていない。抜き差しは実機の p008）、実機（5330: eDP の FIRST_PIXEL_OUT、2 つ目の出力の swapchain が `ENOSPC` → INITIALIZATION_FAILED（p011 の前）、HDMI の抜き差しで hotplug の fence が signal し再列挙が変わる。p008 にまとめる）。fence の status・reset の sync.c の経路は host では通していない（QEMU の reset-spent で確かめる）。
+
+## T1-355 の判定（2026-10-07 Q1）
+
+FAIL（QEMU Venus）: 列挙・swapchain・120 frames・first-pixel 11 ms・first.png 赤は ok、`power ... state=off result=0` の後に止まり power on・reset-spent・hotplug・done が出ない。`VENUS_OUTPUTS=2` でも displays count=1。P2 が解析して直す。
