@@ -9,8 +9,11 @@
 #  2. display-events watching, head 1 unplugged and plugged: its hotplug fence signals (hotplug count=1, then count=2).
 #  3. The compositor (/bin/wayland --testing --glass, at the native size) follows both displays (KWL OUTPUT displays
 #     count=2); head 0 unplugged: the output is lost and moves to display 1 at 1024x768 (KWL OUTPUT switch ... width=1024
-#     height=768, KWL OUTPUT resized width=1024 height=768); head 0 plugged again and head 1 unplugged: the output moves
-#     back to display 0 at 1280x800.  The compositor runs on (no KWL FAILED, the process alive).
+#     height=768, KWL OUTPUT resized width=1024 height=768); head 0 plugged again: the output stays on display 1; head 1
+#     unplugged: the output moves back to display 0 at 1280x800.  The compositor runs on (no KWL FAILED, the process
+#     alive).
+# Both heads are given their size first: QEMU ignores a SetUIInfo equal to the last one a console was given, and a head
+# never given one holds 0x0, so unplugging head 0 without it would change nothing (T1-357's first run).
 # PASS: every "ok" line and the last line output-switch-p004a: PASS.
 #   plan/ws113/tests/output-switch-p004a.sh [OUTDIR]     (default build/ws113-p004a-guest)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -54,7 +57,8 @@ done
 sh plan/tools/guest/venus-head.sh list > "$out/consoles.txt" 2>&1
 guest "$stop_all" >/dev/null
 
-# 1. Two heads: display-events presents to both.
+# 1. Two heads: display-events presents to both.  Head 0 is given its size too, so that its later unplugging is a change.
+head_set 0 1280x800
 head_set 1 1024x768
 sleep 3
 guest 'nohup /bin/display-events --watch=1 --frames=30 --hold=1 > /tmp/events2.txt 2>&1 </dev/null & echo started' >/dev/null
@@ -88,6 +92,13 @@ expect_line "$out/zdesktop.log" 'KWL OUTPUT switch name=Venus virtual display 1 
 expect_line "$out/zdesktop.log" 'KWL OUTPUT resized width=1024 height=768' "the desktop is fitted to 1024x768"
 head_set 0 1280x800
 sleep 3
+guest 'cat /tmp/zdesktop.log' > "$out/zdesktop-replug.log"
+if grep -q 'KWL OUTPUT switch name=Venus virtual display 0' "$out/zdesktop-replug.log"; then
+	echo "FAIL: plugging head 0 again leaves the output on display 1"
+	status=1
+else
+	echo "ok: plugging head 0 again leaves the output on display 1"
+fi
 head_set 1 off
 wait_line /tmp/zdesktop.log 'KWL OUTPUT switch name=Venus virtual display 0 width=1280 height=800' 20
 expect_line "$out/zdesktop.log" 'KWL OUTPUT switch name=Venus virtual display 0 width=1280 height=800' "the output moves back to display 0"
