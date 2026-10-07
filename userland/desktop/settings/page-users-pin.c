@@ -208,7 +208,7 @@ se_users_pin_key(
 {
 	struct se_users *users;
 	struct kl_field *field;
-	char typed;
+	uint32_t character;
 	int ready;
 	int used;
 
@@ -251,20 +251,26 @@ se_users_pin_key(
 		return 1;
 	}
 
-	/* Anything else types into the field with the keyboard. */
+	/*
+	 * The PIN's fields keep digits only, six at most: a character that is
+	 * not a digit, or one more than six (without a selection it would
+	 * replace), is taken and dropped before the field sees it (BUG-257:
+	 * taking it back from the field's end left the caret past the text,
+	 * and the next key wrote outside it).
+	 */
 	field = &users->pin_fields[users->pin_focus];
+	character = kl_key_character(event->key, event->modifiers);
+	if (users->pin_focus != PIN_PASSWORD && character != 0U && (event->modifiers & SE_MOD_CTRL) == 0U) {
+		if (character < '0' || character > '9')
+			return 1;
+		if (field->length >= PIN_DIGITS && field->caret == field->anchor)
+			return 1;
+	}
+
+	/* Anything else types into the field with the keyboard. */
 	used = se_field_key(field, event);
 	if (used == 0)
 		return 0;
-
-	/* The PIN's fields keep digits only, six at most: anything else typed is taken back. */
-	if (users->pin_focus != PIN_PASSWORD && field->length > 0) {
-		typed = field->text[field->length - 1U];
-		if (typed < '0' || typed > '9' || field->length > PIN_DIGITS) {
-			field->length--;
-			field->text[field->length] = '\0';
-		}
-	}
 
 	/* A new character takes the last answer away. */
 	if (!users->pin_asked)
