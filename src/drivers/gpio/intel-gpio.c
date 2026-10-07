@@ -15,7 +15,8 @@
  * platform data that Intel's reference ACPI code puts in the firmware's own
  * tables: \_SB.GPCL holds one package per group (its community's offset in
  * the sideband space, its pad count, the offset of its first pad's
- * configuration, and, last, its first GPIO number), and \SBRG is the
+ * configuration, and, last on Alder Lake, its first GPIO number; Tiger
+ * Lake's has none, its groups numbered by their place), and \SBRG is the
  * sideband space's base.  So a pad is found without a table of this
  * driver's own: its configuration (DW0) is at SBRG + the community's
  * offset + the group's pad offset + 16 bytes a pad.  The address is checked
@@ -66,13 +67,23 @@
 #define GPIO_GROUP_TABLE	"\\_SB.GPCL"
 #define GPIO_SIDEBAND_BASE	"\\SBRG"
 
-/* The fields of one group's package: the community's offset, the pad count, the first pad's offset, HOSTSW_OWN's offset, the first GPIO number. */
+/*
+ * The fields of one group's package: the community's offset, the pad
+ * count, the first pad's offset, HOSTSW_OWN's offset, and on Alder Lake
+ * (nine fields) the first GPIO number.  Tiger Lake's package has seven
+ * fields and no first number (ws183-p001, the Latitude 5320): its groups
+ * are numbered GROUP_NUMBER_STEP apart in the table's order (Linux's
+ * pinctrl-tigerlake gives TGL-LP's groups the bases 0, 32, 64, ... in the
+ * communities' order; Alder Lake's numbers have gaps, hence its field).
+ */
 #define GROUP_COMMUNITY		0U
 #define GROUP_PADS		1U
 #define GROUP_PAD_OFFSET	2U
 #define GROUP_HOSTSW_OWN	3U
 #define GROUP_FIRST_NUMBER	8U
 #define GROUP_FIELDS		9U
+#define GROUP_FIELDS_TGL	7U
+#define GROUP_NUMBER_STEP	32U
 
 /* The size of one pad's configuration, and the bit of DW0 that is the pad's input. */
 #define PAD_CONFIG_SIZE		16U
@@ -185,6 +196,7 @@ drv_intel_gpio_pad_find(
 	uint64_t hostsw;
 	uint64_t first;
 	uint64_t page;
+	unsigned fields;
 	unsigned count;
 	unsigned index;
 	bool found;
@@ -229,7 +241,13 @@ drv_intel_gpio_pad_find(
 			error = group_field(group, GROUP_PAD_OFFSET, &pad_offset);
 		if (error == 0)
 			error = group_field(group, GROUP_HOSTSW_OWN, &hostsw);
-		if (error == 0)
+		if (error != 0)
+			continue;
+
+		/* Its first GPIO number: Alder Lake's last field, or Tiger Lake's place in the table. */
+		fields = drv_acpi_object_package_count(group);
+		first = (uint64_t)index * GROUP_NUMBER_STEP;
+		if (fields >= GROUP_FIELDS)
 			error = group_field(group, GROUP_FIRST_NUMBER, &first);
 		if (error != 0)
 			continue;
@@ -620,7 +638,7 @@ group_field(
 	if (type != DRV_ACPI_TYPE_PACKAGE)
 		return EINVAL;
 	count = drv_acpi_object_package_count(group);
-	if (count < GROUP_FIELDS)
+	if (count < GROUP_FIELDS_TGL || index >= count)
 		return EINVAL;
 
 	/* The field, an integer. */

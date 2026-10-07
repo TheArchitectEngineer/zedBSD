@@ -3,14 +3,14 @@
 # WS183: I2C HID の割り込み（Extended Interrupt）と Tiger Lake の GPIO の group
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete
 Primary Milestone: MG003
 Related Milestones: —
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: なし
+Queue: P1 の列（2026-10-08）
 Target: ベータ2（他のベータ2 の WS と同じ優先度、後回し。2026-10-07 ユーザー）
-Resume point: p001 から。
+Resume point: p001 test-wait（2026-10-08 P1: 実装・build・host 試験まで。5320 の実機の確認がユーザーの時期）。
 <!-- awesome-plan-current:end -->
 
 ## 目標（2026-10-07 ユーザー）
@@ -25,4 +25,4 @@ Resume point: p001 から。
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| p001 | i2c-hid の Extended Interrupt の経路と TGL の GPIO の group、5320 の実機で確認 | planned | — |
+| [p001](phase001/phase.md) | i2c-hid の Extended Interrupt の経路と TGL の GPIO の group、5320 の実機で確認 | test-wait（2026-10-08 P1） | — |

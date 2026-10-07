@@ -1,6 +1,7 @@
 #!/bin/sh
 # Builds and runs the host test of the Intel GPIO pad lookup (ws159-p006)
-# with the Latitude 5330's pad group table.  The driver is compiled
+# with the Latitude 5330's pad group table (and, "tgl", the same groups in
+# Tiger Lake's seven-field shape, ws183-p001).  The driver is compiled
 # freestanding like the kernel; the test supplies the ACPI and mapping
 # stand-ins with the host C library.
 # Usage: plan/ws159/tests/run-host-intel-gpio.sh [build-dir]
@@ -21,3 +22,4 @@ $cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -I "$root/include" $extra \
 $cc $extra "$out/host-intel-gpio.o" "$out/intel-gpio.o" -o "$out/host-intel-gpio"
 "$out/host-intel-gpio"
 "$out/host-intel-gpio" nomode
+"$out/host-intel-gpio" tgl

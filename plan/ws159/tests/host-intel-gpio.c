@@ -85,6 +85,14 @@ static const uint64_t gpcl[GROUPS][FIELDS] = {
 	{ 0x6b0000, 0x5b, 0x7f0, 0xb4, 0x28, 0xffff, 0x88, 0x8c, 0xffff }
 };
 
+/*
+ * A "tgl" run (ws183-p001) gives the same groups as Tiger Lake's seven-field
+ * packages (no first GPIO number: the groups are numbered 32 apart in the
+ * table's order).
+ */
+#define FIELDS_TGL		7U
+static int tgl;
+
 /* The controller's memory ranges, the second of which a "narrow" run leaves out. */
 static const uint64_t ranges[4] = { 0xfd6e0000ULL, 0xfd6d0000ULL, 0xfd6a0000ULL, 0xfd690000ULL };
 static int narrow;
@@ -616,7 +624,9 @@ gpcl_object(void)
 		group = calloc(1, sizeof(*group));
 		group->type = DRV_ACPI_TYPE_PACKAGE;
 		group->count = FIELDS;
-		for (field = 0; field < FIELDS; field++)
+		if (tgl)
+			group->count = FIELDS_TGL;
+		for (field = 0; field < group->count; field++)
 			group->elements[field] = integer_object(gpcl[index][field]);
 		table->elements[index] = group;
 	}
@@ -649,6 +659,32 @@ main(
 	/* The "nomode" HAL refuses the mode. */
 	if (nomode)
 		mode_error = 95;
+
+	/* The "tgl" run: pin 327 is the eleventh group's (320 = 10 x 32) pad 7, its DW0 at 0xfd6d0c40; pin 700 is past the table. */
+	if (argc > 1) {
+		error = strcmp(argv[1], "tgl");
+		if (error == 0)
+			tgl = 1;
+	}
+
+	/* The "tgl" run is these checks alone. */
+	if (tgl) {
+		pad = NULL;
+		error = drv_intel_gpio_pad_find("\\_SB.GPI0", 327U, &pad);
+		check(error == 0 && pad != NULL, "with seven fields pin 327 is found by the group's place");
+		check(mapped_page == 0xfd6d0000ULL, "the page of 0xfd6d0c40 is mapped");
+		free(pad);
+		error = drv_intel_gpio_pad_find("\\_SB.GPI0", 700U, &pad);
+		check(error != 0, "pin 700 is past the eighteen groups");
+		if (failures != 0) {
+			printf("host-intel-gpio: FAIL (tgl, %d of %d checks)\n", failures, checks);
+			return 1;
+		}
+
+		/* Succeeded: every check of the run held. */
+		printf("host-intel-gpio: ok (tgl, %d checks)\n", checks);
+		return 0;
+	}
 
 	/* 1. The touchpad's pin 327: group 14's pad 7, its DW0 at 0xfd6a0ae0. */
 	pad = NULL;
