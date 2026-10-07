@@ -1,0 +1,51 @@
+[    0.005120] ACPI: SSDT 0x000000006175C000 002357 (v02 DELL   TbtTypeC 00000000 INTL 20200717)
+[    1.093052] ACPI: bus type drm_connector registered
+[    2.588789] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+[    2.604494] systemd[1]: modprobe@drm.service: Deactivated successfully.
+[    2.604735] systemd[1]: Finished modprobe@drm.service - Load Kernel Module drm.
+[  687.424670] i915 0000:00:02.0: [drm] Found alderlake_p (device ID 46a8) integrated display version 13.00 stepping D0
+[  687.425421] i915 0000:00:02.0: [drm] VT-d active for gfx access
+[  687.425424] i915 0000:00:02.0: vgaarb: deactivate vga console
+[  687.425462] i915 0000:00:02.0: [drm] Using Transparent Hugepages
+[  687.426123] i915 0000:00:02.0: vgaarb: VGA decodes changed: olddecodes=io+mem,decodes=io+mem:owns=io+mem
+[  687.430897] i915 0000:00:02.0: [drm] Finished loading DMC firmware i915/adlp_dmc.bin (v2.20)
+[  687.658985] i915 0000:00:02.0: [drm] GT0: GuC firmware i915/adlp_guc_70.bin version 70.49.4
+[  687.658990] i915 0000:00:02.0: [drm] GT0: HuC firmware i915/tgl_huc.bin version 7.9.3
+[  687.674178] i915 0000:00:02.0: [drm] GT0: HuC: authenticated for all workloads
+[  687.675211] i915 0000:00:02.0: [drm] GT0: GUC: submission enabled
+[  687.675212] i915 0000:00:02.0: [drm] GT0: GUC: SLPC enabled
+[  687.675673] i915 0000:00:02.0: [drm] GT0: GUC: RC enabled
+[  687.676630] mei_pxp 0000:00:16.0-fbf6fcf1-96cf-4e2e-a6a6-1bab8cbe36b1: bound 0000:00:02.0 (ops i915_pxp_tee_component_ops [i915])
+[  687.676753] i915 0000:00:02.0: [drm] Protected Xe Path (PXP) protected content support initialized
+[  687.676756] mei_hdcp 0000:00:16.0-b638ab7e-94e2-4ea2-a552-d1c54b627f04: bound 0000:00:02.0 (ops i915_hdcp_ops [i915])
+[  687.677706] i915 0000:00:02.0: [drm] Registered 4 planes with drm panic
+[  687.691869] [drm] Initialized i915 1.6.0 for 0000:00:02.0 on minor 0
+[  687.703255] fbcon: i915drmfb (fb0) is primary device
+[  688.041563] i915 0000:00:02.0: [drm] fb0: i915drmfb frame buffer device
+[  688.248109] snd_hda_intel 0000:00:1f.3: bound 0000:00:02.0 (ops intel_audio_component_bind_ops [i915])
+[ 3445.996742] i915 0000:00:02.0: [drm] Found alderlake_p (device ID 46a8) integrated display version 13.00 stepping D0
+[ 3445.997850] i915 0000:00:02.0: [drm] VT-d active for gfx access
+[ 3445.997859] i915 0000:00:02.0: vgaarb: deactivate vga console
+[ 3445.997903] i915 0000:00:02.0: [drm] Using Transparent Hugepages
+[ 3446.002448] i915 0000:00:02.0: [drm] Finished loading DMC firmware i915/adlp_dmc.bin (v2.20)
+[ 3446.232976] i915 0000:00:02.0: [drm] GT0: GuC firmware i915/adlp_guc_70.bin version 70.49.4
+[ 3446.232981] i915 0000:00:02.0: [drm] GT0: HuC firmware i915/tgl_huc.bin version 7.9.3
+[ 3446.249873] i915 0000:00:02.0: [drm] GT0: HuC: authenticated for all workloads
+[ 3446.250901] i915 0000:00:02.0: [drm] GT0: GUC: submission enabled
+[ 3446.250902] i915 0000:00:02.0: [drm] GT0: GUC: SLPC enabled
+[ 3446.251392] i915 0000:00:02.0: [drm] GT0: GUC: RC enabled
+[ 3446.252291] mei_pxp 0000:00:16.0-fbf6fcf1-96cf-4e2e-a6a6-1bab8cbe36b1: bound 0000:00:02.0 (ops i915_pxp_tee_component_ops [i915])
+[ 3446.252399] i915 0000:00:02.0: [drm] Protected Xe Path (PXP) protected content support initialized
+[ 3446.252402] mei_hdcp 0000:00:16.0-b638ab7e-94e2-4ea2-a552-d1c54b627f04: bound 0000:00:02.0 (ops i915_hdcp_ops [i915])
+[ 3446.253551] i915 0000:00:02.0: [drm] Registered 4 planes with drm panic
+[ 3446.281081] [drm] Initialized i915 1.6.0 for 0000:00:02.0 on minor 0
+[ 3446.285341] snd_hda_intel 0000:00:1f.3: bound 0000:00:02.0 (ops intel_audio_component_bind_ops [i915])
+[ 3446.348004] fbcon: i915drmfb (fb0) is primary device
+[ 3446.813497] i915 0000:00:02.0: [drm] fb0: i915drmfb frame buffer device
+[ 3461.929013] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[ 3461.971023] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[ 3461.987344] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[ 3462.002038] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[ 3462.025774] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[ 3462.040547] i915 0000:00:02.0: [drm] Invalid mmio detected during user access
+[ 3462.054556] i915 0000:00:02.0: [drm] Invalid mmio detected during user access

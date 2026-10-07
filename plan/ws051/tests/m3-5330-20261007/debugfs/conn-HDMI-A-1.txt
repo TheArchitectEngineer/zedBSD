@@ -1,0 +1,17 @@
+== HDMI-A-1/edid_override
+== HDMI-A-1/force
+unspecified
+== HDMI-A-1/i915_force_hdcp14
+cat: HDMI-A-1/i915_force_hdcp14: No such device
+== HDMI-A-1/i915_hdcp_sink_capability
+cat: HDMI-A-1/i915_hdcp_sink_capability: No such device
+== HDMI-A-1/i915_lpsp_capability
+cat: HDMI-A-1/i915_lpsp_capability: No such device
+== HDMI-A-1/infoframes
+cat: HDMI-A-1/infoframes: Is a directory
+== HDMI-A-1/intel_force_link_bpp
+0.0000
+== HDMI-A-1/output_bpc
+cat: HDMI-A-1/output_bpc: No such device
+== HDMI-A-1/vrr_range
+cat: HDMI-A-1/vrr_range: No such device

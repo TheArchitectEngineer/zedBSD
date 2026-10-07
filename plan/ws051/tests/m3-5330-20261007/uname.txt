@@ -1,0 +1,1 @@
+Linux chaos 6.19.13+deb13-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.19.13-1~bpo13+1 (2026-04-26) x86_64 GNU/Linux

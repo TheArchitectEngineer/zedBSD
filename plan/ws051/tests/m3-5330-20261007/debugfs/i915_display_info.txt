@@ -1,0 +1,143 @@
+CRTC info
+---------
+[CRTC:148:pipe A]:
+	uapi: enable=yes, active=yes, mode="1920x1080": 60 140800 1920 1936 1952 2080 1080 1083 1097 1128 0x48 0x9
+	hw: enable=yes, active=yes
+	adjusted_mode="1920x1080": 60 140800 1920 1936 1952 2080 1080 1083 1097 1128 0x48 0x9
+	pipe__mode="1920x1080": 60 140800 1920 1936 1952 2080 1080 1083 1097 1128 0x40 0x9
+	pipe src=1920x1080+0+0, dither=yes, bpp=18
+	port_clock=270000, lane_count=2
+	num_scalers=2, scaler_users=0 scaler_id=-1 scaling_filter=0, scalers[0]: use=no, mode=0, scalers[1]: use=no, mode=0
+	[ENCODER:501:DDI A/PHY A]: connectors:
+		[CONNECTOR:502:eDP-1]
+	[PLANE:33:plane 1A]: type=PRI
+		uapi: [FB:539] XR24 little-endian (0x34325258),0x0,1920x1280, visible=visible, src=1920.000000x1080.000000+0.000000+0.000000, dst=1920x1080+0+0, rotation=0 (0x00000001)
+		hw: [FB:539] XR24 little-endian (0x34325258),0x0,1920x1280, visible=yes, src=1920.000000x1080.000000+0.000000+0.000000, dst=1920x1080+0+0, rotation=0 (0x00000001)
+	[PLANE:63:plane 2A]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:93:plane 3A]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:123:plane 4A]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:133:plane 5A]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:143:cursor A]: type=CUR
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	underrun reporting: cpu=yes pch=yes
+[CRTC:265:pipe B]:
+	uapi: enable=yes, active=yes, mode="1920x1280": 60 164360 1920 1968 2000 2080 1280 1283 1293 1317 0x48 0x9
+	hw: enable=yes, active=yes
+	adjusted_mode="1920x1280": 60 164360 1920 1968 2000 2080 1280 1283 1293 1317 0x48 0x9
+	pipe__mode="1920x1280": 60 164360 1920 1968 2000 2080 1280 1283 1293 1317 0x40 0x9
+	pipe src=1920x1280+0+0, dither=no, bpp=30
+	port_clock=162000, lane_count=4
+	num_scalers=2, scaler_users=0 scaler_id=-1 scaling_filter=0, scalers[0]: use=no, mode=0, scalers[1]: use=no, mode=0
+	[ENCODER:529:DDI TC2/PHY TC2]: connectors:
+		[CONNECTOR:530:DP-2]
+	[PLANE:150:plane 1B]: type=PRI
+		uapi: [FB:539] XR24 little-endian (0x34325258),0x0,1920x1280, visible=visible, src=1920.000000x1280.000000+0.000000+0.000000, dst=1920x1280+0+0, rotation=0 (0x00000001)
+		hw: [FB:539] XR24 little-endian (0x34325258),0x0,1920x1280, visible=yes, src=1920.000000x1280.000000+0.000000+0.000000, dst=1920x1280+0+0, rotation=0 (0x00000001)
+	[PLANE:180:plane 2B]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:210:plane 3B]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:240:plane 4B]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:250:plane 5B]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:260:cursor B]: type=CUR
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	underrun reporting: cpu=yes pch=yes
+[CRTC:382:pipe C]:
+	uapi: enable=no, active=no, mode="": 0 0 0 0 0 0 0 0 0 0 0x0 0x0
+	hw: enable=no, active=no
+	adjusted_mode="": 0 0 0 0 0 0 0 0 0 0 0x0 0x0
+	pipe__mode="": 0 0 0 0 0 0 0 0 0 0 0x0 0x0
+	pipe src=0x0+0+0, dither=no, bpp=0
+	port_clock=0, lane_count=0
+	num_scalers=2, scaler_users=0 scaler_id=-1 scaling_filter=0, scalers[0]: use=no, mode=0, scalers[1]: use=no, mode=0
+	[PLANE:267:plane 1C]: type=PRI
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:297:plane 2C]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:327:plane 3C]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:357:plane 4C]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:367:plane 5C]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:377:cursor C]: type=CUR
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	underrun reporting: cpu=yes pch=yes
+[CRTC:499:pipe D]:
+	uapi: enable=no, active=no, mode="": 0 0 0 0 0 0 0 0 0 0 0x0 0x0
+	hw: enable=no, active=no
+	adjusted_mode="": 0 0 0 0 0 0 0 0 0 0 0x0 0x0
+	pipe__mode="": 0 0 0 0 0 0 0 0 0 0 0x0 0x0
+	pipe src=0x0+0+0, dither=no, bpp=0
+	port_clock=0, lane_count=0
+	num_scalers=2, scaler_users=0 scaler_id=-1 scaling_filter=0, scalers[0]: use=no, mode=0, scalers[1]: use=no, mode=0
+	[PLANE:384:plane 1D]: type=PRI
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:414:plane 2D]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:444:plane 3D]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:474:plane 4D]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:484:plane 5D]: type=OVL
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	[PLANE:494:cursor D]: type=CUR
+		uapi: [FB:0] n/a,0x0,0x0,, visible=hidden, src=0.000000x0.000000+0.000000+0.000000, dst=0x0+0+0, rotation=0 (0x00000001)
+	underrun reporting: cpu=yes pch=yes
+
+Connector info
+--------------
+[CONNECTOR:502:eDP-1]: status: connected
+	physical dimensions: 290x170mm
+	subpixel order: Unknown
+	CEA rev: 0
+	DPCD rev: 11
+	audio support: no
+	DP branch device present: no
+	HDCP version: No Connector Support
+	max bpc: 6
+	fixed modes:
+		"1920x1080": 60 140800 1920 1936 1952 2080 1080 1083 1097 1128 0x48 0x9
+		"1920x1080": 48 112640 1920 1936 1952 2080 1080 1083 1097 1128 0x40 0x9
+	modes:
+		"1920x1080": 60 140800 1920 1936 1952 2080 1080 1083 1097 1128 0x48 0x9
+		"1920x1080": 48 112640 1920 1936 1952 2080 1080 1083 1097 1128 0x40 0x9
+[CONNECTOR:511:HDMI-A-1]: status: disconnected
+[CONNECTOR:520:DP-1]: status: disconnected
+[CONNECTOR:530:DP-2]: status: connected
+	physical dimensions: 260x170mm
+	subpixel order: Unknown
+	CEA rev: 3
+	DPCD rev: 14
+	audio support: yes
+	DP branch device present: no
+	TC Port E/TC#2: mode: dp-alt, pin assignment: C, max lanes: 4
+	HDCP version: HDCP1.4 HDCP2.2 
+	max bpc: 10
+	modes:
+		"1920x1280": 60 164360 1920 1968 2000 2080 1280 1283 1293 1317 0x48 0x9
+		"1920x1080": 60 148500 1920 2008 2052 2200 1080 1084 1089 1125 0x40 0x5
+		"1920x1080": 60 148500 1920 2008 2052 2200 1080 1084 1089 1125 0x40 0x5
+		"1920x1080": 60 148352 1920 2008 2052 2200 1080 1084 1089 1125 0x40 0x5
+		"1680x1050": 60 146250 1680 1784 1960 2240 1050 1053 1059 1089 0x40 0x6
+		"1280x1024": 60 108000 1280 1328 1440 1688 1024 1025 1028 1066 0x40 0x5
+		"1440x900": 60 106500 1440 1520 1672 1904 900 903 909 934 0x40 0x6
+		"1280x800": 60 83500 1280 1352 1480 1680 800 803 809 831 0x40 0x6
+		"1280x720": 60 74250 1280 1390 1430 1650 720 725 730 750 0x40 0x5
+		"1280x720": 60 74250 1280 1390 1430 1650 720 725 730 750 0x40 0x5
+		"1280x720": 60 74176 1280 1390 1430 1650 720 725 730 750 0x40 0x5
+		"1024x768": 60 65000 1024 1048 1184 1344 768 771 777 806 0x40 0xa
+		"800x600": 60 40000 800 840 968 1056 600 601 605 628 0x40 0x5
+		"720x480": 60 27027 720 736 798 858 480 489 495 525 0x40 0xa
+		"720x480": 60 27027 720 736 798 858 480 489 495 525 0x40 0xa
+		"720x480": 60 27000 720 736 798 858 480 489 495 525 0x40 0xa
+		"720x480": 60 27000 720 736 798 858 480 489 495 525 0x40 0xa
+		"640x480": 60 25200 640 656 752 800 480 490 492 525 0x40 0xa
+		"640x480": 60 25175 640 656 752 800 480 490 492 525 0x40 0xa
+		"640x480": 60 25175 640 656 752 800 480 490 492 525 0x40 0xa

@@ -1,0 +1,50 @@
+== DP-2/edid_override
+== DP-2/force
+unspecified
+== DP-2/i915_dp_force_lane_count
+[auto] 1 2 4*
+== DP-2/i915_dp_force_link_rate
+[auto] 162000* 216000 270000 324000 432000 540000 648000 810000
+== DP-2/i915_dp_force_link_retrain
+0
+== DP-2/i915_dp_force_link_training_failure
+0
+== DP-2/i915_dp_link_retrain_disabled
+no
+== DP-2/i915_dp_max_lane_count
+4
+== DP-2/i915_dp_max_link_rate
+540000
+== DP-2/i915_dsc_bpc
+Input_BPC: 0
+== DP-2/i915_dsc_fec_support
+DSC_Enabled: no
+DSC_Sink_Support: no
+DSC_Output_Format_Sink_Support: RGB: no YCBCR420: no YCBCR444: no
+DSC_Sink_BPP_Precision: 16
+DSC_Sink_Max_Slice_Count: 0
+Force_DSC_Enable: no
+FEC_Sink_Support: no
+== DP-2/i915_dsc_fractional_bpp
+Force_DSC_Fractional_BPP_Enable: no
+== DP-2/i915_dsc_output_format
+DSC_Output_Format: RGB
+== DP-2/i915_force_hdcp14
+no
+== DP-2/i915_hdcp_sink_capability
+DP-2:530 HDCP version: HDCP1.4 HDCP2.2 
+== DP-2/i915_joiner_force_enable
+0
+== DP-2/i915_lpsp_capability
+LPSP: incapable
+== DP-2/i915_psr_sink_status
+cat: DP-2/i915_psr_sink_status: No such device
+== DP-2/i915_psr_status
+Sink support: PSR = no, Panel Replay = no, Panel Replay Selective Update = no, Panel Replay DSC support = not supported
+== DP-2/intel_force_link_bpp
+0.0000
+== DP-2/output_bpc
+Maximum: 10
+== DP-2/vrr_range
+Min: 48
+Max: 60

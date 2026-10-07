@@ -1,0 +1,4 @@
+card0-DP-1 disconnected disabled
+card0-DP-2 connected enabled
+card0-HDMI-A-1 disconnected disabled
+card0-eDP-1 connected enabled

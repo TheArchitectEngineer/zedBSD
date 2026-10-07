@@ -1,0 +1,43 @@
+== DP-1/edid_override
+== DP-1/force
+unspecified
+== DP-1/i915_dp_force_lane_count
+[auto] 1 2 4
+== DP-1/i915_dp_force_link_rate
+[auto] 162000 216000 270000 324000 432000 540000 648000 810000
+== DP-1/i915_dp_force_link_retrain
+0
+== DP-1/i915_dp_force_link_training_failure
+0
+== DP-1/i915_dp_link_retrain_disabled
+no
+== DP-1/i915_dp_max_lane_count
+1
+== DP-1/i915_dp_max_link_rate
+162000
+== DP-1/i915_dsc_bpc
+cat: DP-1/i915_dsc_bpc: No such device
+== DP-1/i915_dsc_fec_support
+cat: DP-1/i915_dsc_fec_support: No such device
+== DP-1/i915_dsc_fractional_bpp
+cat: DP-1/i915_dsc_fractional_bpp: No such device
+== DP-1/i915_dsc_output_format
+cat: DP-1/i915_dsc_output_format: No such device
+== DP-1/i915_force_hdcp14
+cat: DP-1/i915_force_hdcp14: No such device
+== DP-1/i915_hdcp_sink_capability
+cat: DP-1/i915_hdcp_sink_capability: No such device
+== DP-1/i915_joiner_force_enable
+0
+== DP-1/i915_lpsp_capability
+cat: DP-1/i915_lpsp_capability: No such device
+== DP-1/i915_psr_sink_status
+cat: DP-1/i915_psr_sink_status: No such device
+== DP-1/i915_psr_status
+Sink support: PSR = no, Panel Replay = no, Panel Replay Selective Update = no, Panel Replay DSC support = not supported
+== DP-1/intel_force_link_bpp
+0.0000
+== DP-1/output_bpc
+cat: DP-1/output_bpc: No such device
+== DP-1/vrr_range
+cat: DP-1/vrr_range: No such device
