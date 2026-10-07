@@ -10,7 +10,7 @@
   置き換え: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
 <!-- master:agents:start -->
 - 2026-10-07 夜（利用の上限の前のラップアップ、ユーザーの指示）。体制は N=2（P1・P2、phase-runner high）＋T1（test-runner、Sonnet 5.5 medium）。全担当は削除の command を実行しない（Q1 が消す、plan/agents/protocol.md 末尾）。
-  - **P1**（q833・q836・q839）: WS179 アクセントカラー p001・p002 は merge 済み（KL 57、T1-335・337 の撮影待ち）→ WS083 Vulkan Video（p001 設計から、host で作れる所まで）→ WS178 libGL を GL だけ・libGLX.so を xserver に「完全に分ける」→ WS075 → WS052。ws090-p025 の Settings の User name の IME（T1-336 で key は欄に届くのに画面は n だけ、描画か ja の keysym を疑う）。
+  - **P1**（q833・q836・q839）: 75d7e4b84 まで merge 済み。WS179 p001・p002（T1-335・337 待ち、Files の desktop の pill が青のまま → 直す）、ws090-p025 の User name は kl_field の scroll の直し（66dcf6edd、T1-338 待ち）。WS083 p001 設計の第 1 版と design-reviewer の結果（blocking 4、§13 に未反映、人の判断 H1〜H5・HD1〜HD6 は第 2 版の後にユーザーへ）→ WS178 libGL を GL だけ・libGLX.so を xserver に「完全に分ける」→ WS075 → WS052。ws090-p025 の Settings の User name の IME（T1-336 で key は欄に届くのに画面は n だけ、描画か ja の keysym を疑う）。
   - **P2**（q842 → q834）: WS181（窓の状態・App Home の独立のモード・gesture・整列、UAT 優先）p001 設計の途中 → p002〜p004 → ws051-p002b（TC の核）→ WS050 p005 → WS084（p003 は実機）。
   - **T1**: T1-335・337 は途中（台帳 b31012b2a）。T1-335: 各色で Settings・Files・検索・OSK・bar と主の button の文字は期待どおり、**Files の desktop の icon の pill が青のまま（`ZFILES ACCENT` の行が無い）→ P1 へ**、App Home・greeter の確認と dark の purple・pink・red は未実施。T1-337: purple だけ撮影（PNG は未判定）、music.play は HDA 無しで fail（HDA 付きで再撮影）、yellow は未実施。T1-334 は 5330 待ち、T1-216・202b・227 は保留。
   - 再開: 各担当の返却の報告（SHA・再開の情報）を Q1 が merge し、同じ列で新しく起動する（context が大きいので新しい世代で）。
