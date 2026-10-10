@@ -87,3 +87,7 @@ USB `3e9ace7b9` とGPU `461906448` を専用worktreeでmerge `afe01157f` にま�
 ## p011 r0-i02変更の全文規約確認（2026-10-11）
 
 [p011実機CD4誤拒否の修正](../phase011/phase.md)のdisplay-start.c差分を全文C規約/Guardrailと照合。コメントはfieldの意味を説明、two-clause guardは副作用無し、既存失敗診断と早期returnを維持。Linuxはregister layout/既存8bpc設定の根拠だけ、追加したCD4の意味は一次GCP表で確認。GPL code転記無し。clang-format19.1.7変更範囲確認、実captureの16値host試験と旧guardでの失敗確認、arm64 warning/error0・image checker・diff-check PASS。p007は今回changed sourceについてclearedを維持し、p011の実機scanout未確認を肩代わりしない。自動main統合承認に従う。
+
+## p011 r0-i03変更の規約・build確認（2026-10-11）
+
+[p011 r0-i03](../phase011/phase.md)のdisplay-execute.cと既存executor host差分を全文C/Guardrailと照合。通知単位のENOTSUP対応は実transportのerror由来とLinux一次実装を照合し、余分な再送や他tag判定変更は無い。source転記無し。追加分の段落/宣言/guard/引数/所有・失敗順を確認。clang-format19.1.7範囲review、host before失敗/after成功、arm64 warning0/image PASS/diff-check PASS。p007 changed-source確認clearedを維持。実機R0とKeilandはp003/p011/WSに未達として残す。

@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws141-p011 -->
 
-# ws141-p011: R0 preflight ENOTSUP の識別
+# ws141-p011: R0の拒否とブラックアウトの修正
 
 Status: uncleared
 Disposition: normal
@@ -88,3 +88,44 @@ a77ee65bd528b01c7560f7e8557ca0f80f12dc29666844bf0bf2fcb1c69ebc6b  src/drivers/gp
 ## r0-i02 main統合結果（2026-10-11）
 
 source/検証記録 `75813e358` をclean main `acf20e54c` からfast-forward統合。変更4pathとconfig.mkが検証worktreeと一致しmain cleanをread-back確認。自動統合承認を適用。実機修復は未確認のまま、次回起動ログで継続する。共有投影はQ1、push未実施。
+
+## r0-i03開始: 表示終了通知後のブラックアウト（2026-10-11）
+
+ユーザー「R0 begin ... このあとブラックアウトしてフリーズ」に基づき、同じdisplay修復を継続する。SSH read-onlyは成功、init/V3D render nodeまで進んでおり全カーネル停止ではなかった。host keyは既存承認の範囲で更新。生ログはown build/ws141-r0-blackout-dmesg.txt、必要箇所:
+
+```text
+rpi4gpu: R0 mode 1920x1080 tmds 148500000 order 3 format 1
+rpi4gpu: R0 porches h 88/44/148 v 4/5/36
+rpi4gpu: R0 begin hdmi0 1920x1080 tmds 148500000
+rpi4gpu: R0 waits 3000 ms before writing
+rpi4-firmware: tag 30066 not supported
+rpi4gpu: R0 failed op 0 error 21
+rpi4gpu: R0 not started (21)
+```
+
+p011を実機で判明したR0通知段階へ進める。r0-i01/i02の履歴と部分clearanceは保持。有限範囲は通知応答の扱い、既存executor host確認、arm64 warning0 build、p007差分規約確認、自動main統合。実機更新/reboot/pushは行わない。表示開始・Keiland実機関門は保持。
+
+transport read_answerはmessage全体SUCCESSを確認した後、tagのresponse bitが無ければENOTSUPを返す。したがって今回はmailbox timeout/全体拒否ではない。Linux [rpi-6.12.y raspberrypi.c](https://raw.githubusercontent.com/raspberrypi/linux/rpi-6.12.y/drivers/firmware/raspberrypi.c) のproperty_listは全体statusだけで成功とし、固定vc4_drv.cもdisplay-done送信後component bindへ進む。今回の通知はpayload0なのでtagから値を読む必要も無い。display-doneの呼出箇所だけENOTSUPを非致命として明示logし、geometry確認と再初期化へ進める。transport/他tagの意味は変えず、全体拒否EIO・timeout等は引き続き停止する。Linuxと同じ再初期化という既存ユーザー方針内の応答互換修正。表示終了通知でfirmware出力が消えた後に誤って中断したことが今回のブラックアウトに整合するが、修正版での実機復旧は未確認。
+
+## r0-i03結果（software部分cleared、実機R0未確認）
+
+変更はdisplay-execute.cの通知呼出後の判定と診断のみ。ENOTSUPの場合も既存verify_framebufferを通し、変化ならEIOで停止。通知の再送はしない。初期化操作列・全体エラー時停止・mailbox本体は変更無し。
+
+未完了WSの初期scanoutで継続使用する `tests/display-execute-host-test.c` に成功message/tag応答無し、EIO、timeout、応答無し後のframebuffer変化を追加。実executor/生成器/IRQのhostモデルでPASS。旧executorで同じ試験を実行すると今回の経路がFAIL3（終了1）、修正版でPASS（終了0）。実機の電気的なscanoutは証明しない。全display suiteやQEMUは未実施。
+
+```sh
+cc -std=c99 -D_POSIX_C_SOURCE=200809L -include time.h -Wall -Wextra -Werror -Iinclude -Isrc -I. plan/ws141/tests/display-execute-host-test.c src/drivers/gpu/bcm2711/display-program.c src/drivers/gpu/bcm2711/display-execute.c src/drivers/gpu/bcm2711/display-irq.c src/drivers/gpu/bcm2711/display-flip.c plan/ws141/tests/display-lock-host.c -o build/ws141-r0-notify-host
+build/ws141-r0-notify-host
+make -j16 build/arm64/vmunix > build/ws141-r0-notify-build.log 2>&1
+```
+
+arm64 build exit0、warning/error0、image checker PASS。clang-format19.1.7範囲出力を比較し、規約の一引数一行/既存定義を優先して無関係なformat差分を避けた。C全文規約で追加guard/comment/短絡順・所有・returnを確認、git diff --check PASS。HAL/UAPI/toolchain変更無し。
+
+```text
+56c11753594045c9edce375c3eefa3dd0c3f9bfb50de3e5ea81867d380760c06  config.mk
+0b96e8eb1178912b17fe26690e2a90a99e282b3422b333d6e49a32a118cbab49  src/drivers/gpu/bcm2711/display-execute.c
+428ddc80c9d312a14810d944b56517c3297304927a263a6451b9fd2691dcdaa1  plan/ws141/tests/display-execute-host-test.c
+28fdba0a3a9df120fe9cf8863127801718b93fd61e787be267e8c0cca1b2b775  build/arm64/vmunix
+```
+
+r0-i03の限定software scopeはcleared。p011は次回実機R0 ok（または次の失敗段階）待ちでuncleared。SSHで実機が生存していた証拠と表示修正後の実機検証は別であり、後者は未実施。共有投影はQ1へ保留。自動main統合を行う。

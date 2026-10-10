@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: 既存履歴 q691（p001）・q695（p002）。現在の独立セッションの実行範囲は [execution-20261009.md](execution-20261009.md)
-Resume point: [p011](phase011/phase.md) r0-i02で実機deep-color=0x204（CD4=8bpc）の誤拒否を修正。実capture host16値/before失敗・arm64 warning0 build・p007確認済み。修正75813e358をmain統合済み。次は実機R0成功、または次の拒否点を確認。前回: [p010](phase010/phase.md)のcore gate判定/実時間job期限を修正しhost/build確認済み、afe01157fでmain統合済み、次は実機表示確認。前回: 実機のN0 clock-off/V3 VA35拒否を[p009](phase009/phase.md)で修正、対象host/build確認済み、3e0ef9b45をmainへ統合済み。次は実機確認。従来のsoftware結果: i11〜i18のsoftware実装/静的改善/共通compiler/全文監査/main統合は終了。最新source merge ab268b857、RPi4 y/n・amd64 i915 y build、対象parser/EU/QPU/client host、caller/IRQ込み16KiB ordinary stack（margin704）PASS。次はユーザーのRPi4/Keiland/console RAM寿命確認とQ1/T1回帰。[今回終了/証拠/未確認条件](compiler-refactor-20261010.md#i18-main統合今回software実行の終了2026-10-10)。共有投影/GitHubはQ1。
+Resume point: [p011](phase011/phase.md) r0-i03でR0開始後のブラックアウトをSSH調査。カーネル/SSHは生存、display-doneのmessage成功/tag応答無しをENOTSUPとしてop0で中断していた。通知だけLinux同様に継続する修正とhost/build確認済み。次は実機R0成功または次の失敗段階を確認。r0-i02のCD4=RGB8修正は実機でpreflight通過を確認。WS/Keiland実機受入れは未達、共有投影はQ1。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
@@ -74,7 +74,7 @@ Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver �
 | [p005](phase005/phase.md) | `drv_gpu_interface` への統合と desktop の表示（Keiland の compositor） | in-progress | p003・p004のsoftware出力、desktopはp006 | 4h〜 |
 | [p006](phase006/phase.md) | kernel Vulkan実行器・SPIR-V compilerとKeiland描画経路（2026-10-09 scope拡張） | in-progress（compiler/native prepared job/public runtime/Keiland software経路とhost/build/stack監査PASS、実機待ち） | p004・p005 | 未見積 |
 | [p007](phase007/phase.md) | 規約の全文の確認と最終の確認。**license と GPL の code との類似の監査**（字面・設計、道具と目視）、BLOB の移動の確認 | cleared（p010差分監査/組合せbuild/main統合済み） | 全て | 3〜4h |
-| [p011](phase011/phase.md) | R0 preflight拒否点の特定と修正 | uncleared（診断補完済み、実値待ち） | N0実機成功、拒否値の観測待ち | 今回部分scope |
+| [p011](phase011/phase.md) | R0拒否とブラックアウトの修正 | uncleared（通知応答互換修正済み、実機待ち） | N0/preflight実機成功 | 今回部分scope |
 | [p010](phase010/phase.md) | core clock/実時間job期限 | cleared（software/実機表示未確認） | main211be00dcと実機ログ | 今回有限scope |
 | [p009](phase009/phase.md) | 実機clock/VA幅の初期化停止修正 | cleared（software。実機未確認） | mainの既存software出力 | 今回有限scope |
 | [p008](phase008/phase.md) | GPU共通SPIR-V frontend/IR、i915・VC4参照移行 | cleared（software/build/host。実機は他Phase） | p006 software出力、p007再監査 | 今回有限scope |
@@ -316,3 +316,7 @@ N0の実機成功とR0 ENOTSUPをSSH/user logで確認。p011の有限調査を�
 ## p011 r0-i02: 実機RGB8の誤拒否修正（2026-10-11）
 
 ユーザーのR0 reject deep-color=00000204で原因が確定。明示的8bpcのCD4を、Linuxの未指定CD0とともに許容する修正を実装し、限定host/build/規約確認はcleared。[証拠と結果](phase011/phase.md)。p011全体は実機scanout未確認でuncleared、WS incomplete。既存の自動main統合承認を適用、Master等の共有投影はQ1に保持する。
+
+## p011 r0-i03: 通知後ブラックアウトの修正（2026-10-11）
+
+R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなくop0の通知応答判定中断と特定。通知のmessage全体成功を採用し再初期化へ進む差分を実装。限定host/build/p007確認はcleared。p003へ通知の扱い変更を記録、p011/WSは実機R0/Keiland未確認でuncleared/incompleteを保持する。[証拠・検証・再開条件](phase011/phase.md)。承認済み自動main統合を適用。

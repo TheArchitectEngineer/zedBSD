@@ -51,7 +51,7 @@ static unsigned test_notified;
 static unsigned test_cleaned;
 static unsigned test_recenter;
 static unsigned test_delays;
-static bool test_refuse_notification;
+static int test_notification_error;
 static bool test_changed_framebuffer;
 static bool test_zero_hsm;
 static bool test_stall_frame;
@@ -117,15 +117,29 @@ main(
 	check(!test_display.first_frame, "old list does not complete the new frame");
 	check(test_memory[test_timing][0x28 / 4] == 0, "old frame source acknowledged");
 
+	/* A message-success notification without a tag reply must finish restart. */
+	setup(0);
+	test_notification_error = ENOTSUP;
+	error = bcm2711_display_program_execute(&test_program, test_windows, &test_screen, &test_display);
+	check(error == 0 && test_display.first_frame, "reply-less display notification completes scanout");
+	check(test_notified == 1 && test_cleaned == 1, "reply-less notification is not retried");
+
+	/* A timed-out notification must not permit register programming. */
+	setup(0);
+	test_notification_error = ETIMEDOUT;
+	error = bcm2711_display_program_execute(&test_program, test_windows, &test_screen, &test_display);
+	check(error == ETIMEDOUT && test_writes == 0, "notification timeout stops all register writes");
+
 	/* A refused ownership transfer must leave all display registers untouched. */
 	setup(0);
-	test_refuse_notification = true;
+	test_notification_error = EIO;
 	error = bcm2711_display_program_execute(&test_program, test_windows, &test_screen, &test_display);
-	check(error == ENOTSUP && test_writes == 0 && test_program.failure == 0, "notification refusal stops all register writes");
+	check(error == EIO && test_writes == 0 && test_program.failure == 0, "notification refusal stops all register writes");
 
 	/* A visible framebuffer change after notification stops HVS initialization. */
 	setup(0);
 	test_changed_framebuffer = true;
+	test_notification_error = ENOTSUP;
 	error = bcm2711_display_program_execute(&test_program, test_windows, &test_screen, &test_display);
 	check(error == EIO && test_writes == 0, "changed framebuffer stops all register writes");
 
@@ -180,8 +194,8 @@ drv_rpi4_firmware_property(
 	if (tag == 0x00030066U) {
 		check(values == NULL && request_count == 0 && capacity == 0, "zero-byte display-done wire shape");
 		test_notified++;
-		if (test_refuse_notification)
-			return ENOTSUP;
+		if (test_notification_error != 0)
+			return test_notification_error;
 		*answered = 0;
 		return 0;
 	}
@@ -419,6 +433,20 @@ kern_irq_enable(
 	/* No asynchronous host thread delivers interrupts in this model. */
 }
 
+/*
+ * Retains production diagnostics without a physical console in this model.
+ */
+void
+bcm2711_stage_mark(
+	const char *family,
+	const char *format,
+	...)
+{
+	/* The observable acceptance result comes from executor state below. */
+	(void)family;
+	(void)format;
+}
+
 /* Records one failed observation without abandoning the remaining scenarios. */
 static void
 check(
@@ -452,7 +480,7 @@ setup(
 	test_cleaned = 0;
 	test_recenter = 0;
 	test_delays = 0;
-	test_refuse_notification = false;
+	test_notification_error = 0;
 	test_changed_framebuffer = false;
 	test_zero_hsm = false;
 	test_stall_frame = false;

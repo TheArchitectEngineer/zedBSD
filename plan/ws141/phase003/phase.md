@@ -123,3 +123,7 @@ Linux順initial scanout/独自filter/flip/二node presentの最終sourceを[p007
 ## R0 preflight診断（2026-10-11）
 
 [p011](../phase011/phase.md)でN0成功後のR0 ENOTSUPを調査。今回の診断sourceをp007で再確認する。拒否原因と実機R0復旧はまだ未確定で、旧software clearanceを実機成功としない。
+
+## R0通知段階の実機不具合と応答互換修正（2026-10-11）
+
+[p011 r0-i03](../phase011/phase.md)のSSH証拠で、R0開始後のブラックアウトはop0/display-done通知のENOTSUP中断と判明。message全体SUCCESS後のtag応答bit欠落を、このpayload無し通知だけ非致命としてLinux同様に再初期化へ進める設計に修正。全体EIO/timeout・geometry変化は停止、mailbox本体/他tag/操作順は不変。既存display executor host（本Phaseの未完了実機scanoutを支える試験）を更新しPASS、arm64 warning0。実機表示回復/初期list採用・Keilandは未確認で従来関門を保持する。
