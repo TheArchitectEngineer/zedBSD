@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: 既存履歴 q691（p001）・q695（p002）。現在の独立セッションの実行範囲は [execution-20261009.md](execution-20261009.md)
-Resume point: [p011](phase011/phase.md) r0-i03でR0開始後のブラックアウトをSSH調査。カーネル/SSHは生存、display-doneのmessage成功/tag応答無しをENOTSUPとしてop0で中断していた。通知だけLinux同様に継続する修正とhost/build確認済み、c3989e0c4をmain統合済み。次は実機R0成功または次の失敗段階を確認。r0-i02のCD4=RGB8修正は実機でpreflight通過を確認。WS/Keiland実機受入れは未達、共有投影はQ1。
+Resume point: [p011](phase011/phase.md) r0-i03でR0開始後のブラックアウトをSSH調査。カーネル/SSHは生存、display-doneのmessage成功/tag応答無しをENOTSUPとしてop0で中断していた。通知だけLinux同様に継続する修正とhost/build確認済み、c3989e0c4をmain統合済み。ユーザーのSSH更新依頼により修正版カーネルを/boot/boot0/vmunixへ配置・sync・読み戻し一致確認済み。旧版backup保持、再起動未実施。次は実機R0成功または次の失敗段階を確認。r0-i02のCD4=RGB8修正は実機でpreflight通過を確認。WS/Keiland実機受入れは未達、共有投影はQ1。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 

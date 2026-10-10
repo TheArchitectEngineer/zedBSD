@@ -133,3 +133,11 @@ r0-i03の限定software scopeはcleared。p011は次回実機R0 ok（または�
 ## r0-i03 main統合結果（2026-10-11）
 
 修正/検証記録 `c3989e0c4` をclean main `ac1d53726` からfast-forward統合。変更6pathとconfig.mkの一致、main cleanをread-back確認。実機更新/再起動/pushは未実施。次回R0ログで再開する。共有投影はQ1。
+
+## SSHカーネル更新の承認・実行（2026-10-11）
+
+ユーザー「SSHでカーネルを更新できますか？」により修正版の実機配置を承認。再起動は行わない。10.0.30.2の/dev/mmcblk0p1が/boot/boot0へfat rw,bindでmount済み、config.txtはkernel=vmunix/kernel_address=0x80000を確認。空き43066 sectors（約21MiB）、旧8073216byte、新8077312byteでバックアップと新ファイルの並存可能。
+
+旧版はown build/rpi4-vmunix-before-notify-20261011へread-back保存しSHA256=1bb6df3c4b10d24f0444484455bc1b1cc88d10312e42346e7d3ec21a98a6296d（r0-i02）。新c3989e0c4 sourceのbuildは28fdba0a3a9df120fe9cf8863127801718b93fd61e787be267e8c0cca1b2b775。image checkerを再確認し、/tmp/vmunix-c3989e0c4.newへ転送、両端cksum=4051373307/8077312一致。sudoでboot0内vmunix.before-r0-notify-20261011へ旧版copy/cmp、新版を別名copy/cmp、sync、vmunixへrename、sync/cmpする手順を実行し、exit0で完了。実機表示の検証は再起動後に保持。
+
+配置完了: SD上の/boot/boot0/vmunixは8077312byte。配置後sync/cmp成功、さらにown build/rpi4-vmunix-after-notify-20261011へ読み戻し、ビルド入力とbyte一致/SHA256 `28fdba0a3a9df120fe9cf8863127801718b93fd61e787be267e8c0cca1b2b775` を確認。旧版は/boot/boot0/vmunix.before-r0-notify-20261011に8073216byteで保存され、置換前cmp成功。実機再起動は未実施なので、現在動いているのは旧カーネル。新カーネルによるscanout復旧は次回起動で確認する。
