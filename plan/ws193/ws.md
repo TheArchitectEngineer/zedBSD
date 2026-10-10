@@ -142,3 +142,9 @@ p010の共通rootfs定義/source/host/AArch64 build受入はcleared。amd64配�
 ## Main integration follow-up / 2026-10-11
 
 User explicitly approved main integration of `1b3d6cd03` (answer「mainへ統合する」). Clean main at 3ba73d2c8 fast-forwarded to the exact verified source commit; read-back confirms all 16 integrated files match the tested worktree. Source integration complete; preceding approval-pending text is historical. Documentation follow-up records this integration within the same approved scope. RPi4 physical host-key/SSH execution and whole-WS acceptance remain pending. No push; shared Master/Queue/history/cache/GitHub reconciliation stays Q1 pending.
+
+## main integration / 2026-10-11
+
+User「/boot/boot0がないようですが、これもマージしてもらえますか？」and standing automatic-integration approval authorize this integration. Source `067ae96d8` and its read-only investigation record `9507b898e` merged into current main source in private worktree as `4cfddb3f9`; no source conflicts or extra source changes. Focused production publication host model passes for RPi4/amd64. `make -j16 build/arm64/vmunix > build/rpi4-boot0-integration.log 2>&1` exits0 with warnings0/errors0 and ELF/raw-image checks PASS. VFS source remains byte-identical to the previously reviewed fix; config.mk matches main. `git diff --check` PASS.
+
+Clean main `40cba8951` fast-forwarded to `4cfddb3f9`; all9 integrated paths read back identical to verified worktree. Main integration complete. Previous approval-pending text is historical. Next user boot with this kernel should expose firmware FAT at /boot/boot0; physical mount/write/kernel-update confirmation is still unverified. No push, deployment, runtime mount or reboot. Shared Master/Queue/history/cache/GitHub projections remain Q1-owned.
