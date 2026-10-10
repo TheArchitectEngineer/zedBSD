@@ -16,3 +16,8 @@ User runtime DMA evidence: `DMA PCI 400000000 CPU 0 size c0000000 window 1000000
 ## Terminal outcome / 2026-10-11
 
 Attempt rpi4-xhci-irq-20261011-i01 cleared its finite source/host/build criteria. [Final evidence](../tests/irq-repair-20261011.md) records exact checks, hashes, full changed-source review, limitations and next-stage logs. Both host fixtures pass (11 + 8 scenarios); current-config arm64 kernel/raw-image build and format checks pass, warning/error 0. Final poll/fault publication is serialized under the event lock. This does not clear physical USB/boot acceptance or complete WS048. Main integration and shared projections remain pending; no push or remote action.
+
+
+## Main integration follow-up
+
+User explicitly approved「mainへ統合する」for `a1acbc44aac7384b4d0dce8e646ac19ca5e72980`. Clean main `4b70292ef` fast-forwarded to that exact commit without conflict. All eight integrated files were read back byte-identical to the verified private worktree; current config.mk is identical, and xHCI source SHA256 matches the final build evidence. The 19 focused host scenarios and warning0 arm64 kernel/raw-image checks therefore apply to the integrated source; no redundant rebuild. Earlier integration-pending statements record the prior state. Physical boot/USB recovery remains unverified and WS048 remains incomplete. No push or remote deployment/reboot. Shared Master/Queue/history/cache/GitHub projections remain Q1 pending.

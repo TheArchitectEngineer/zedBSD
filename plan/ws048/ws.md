@@ -9,7 +9,7 @@ Related Milestones: MG003, MG006
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: [IRQ修正限定Queue](codex-irq-repair-20261011.md) finished。旧実行記録は保持。
-Resume point: p013修正のmain統合承認待ち。統合後にuser実機でboot/USB入力と追加stage logを確認。p012統合後のdoorbell complete停止は未解決扱い。従来p005〜p007の履歴/未完criteriaは保持。
+Resume point: p013修正a1acbc44aはmain統合済み。user実機でboot/USB入力と追加stage logを確認。p012統合後のdoorbell complete停止は未解決扱い。従来p005〜p007の履歴/未完criteriaは保持。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
@@ -141,3 +141,8 @@ User新報告で[p013](phase013/phase.md)/[限定Queue](codex-irq-repair-2026101
 ### p013 terminal / 2026-10-11
 
 IRQ ack/readback、空ringを含むEHB完了、1 ringのIRQ処理上限、fault時の新規操作停止とcommand EIO、RPi4 wait/resume stage logを実装。[証拠](tests/irq-repair-20261011.md)。最終changed-source規約review、production抽出host 11+8 scenarios、現在config arm64 warning/error 0 kernel/raw-image build/check、diff-check PASS。実機の原因確定・USB復旧は未確認、WS incompleteを維持。Main統合承認と共有投影はpending、push/実機更新なし。
+
+
+## Main integration follow-up
+
+User explicitly approved「mainへ統合する」for `a1acbc44aac7384b4d0dce8e646ac19ca5e72980`. Clean main `4b70292ef` fast-forwarded to that exact commit without conflict. All eight integrated files were read back byte-identical to the verified private worktree; current config.mk is identical, and xHCI source SHA256 matches the final build evidence. The 19 focused host scenarios and warning0 arm64 kernel/raw-image checks therefore apply to the integrated source; no redundant rebuild. Earlier integration-pending statements record the prior state. Physical boot/USB recovery remains unverified and WS048 remains incomplete. No push or remote deployment/reboot. Shared Master/Queue/history/cache/GitHub projections remain Q1 pending.
