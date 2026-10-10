@@ -314,6 +314,7 @@ int bcm2711_irq_install(struct bcm2711_irq_line *line);
 /* Questions to the firmware through the mailbox (firmware.c). */
 int bcm2711_firmware_get(uint32_t tag, uint32_t *values, unsigned request_count, unsigned answer_words);
 int bcm2711_clock_hz(uint32_t clock_id, uint32_t *hz);
+int bcm2711_clock_prepare(uint32_t clock_id, uint32_t minimum_hz, uint32_t *hz);
 void bcm2711_clock_report(const char *family, const char *name, uint32_t clock_id);
 
 /* The decoding of a compositor display list (list.c). */

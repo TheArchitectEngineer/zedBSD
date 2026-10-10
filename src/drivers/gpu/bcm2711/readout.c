@@ -11,15 +11,15 @@
  * Before the driver may take the screen over, it has to know what the
  * firmware set up: which HDMI port the firmware's screen goes out of, which
  * compositor channel feeds that port, and whether the channel's display list
- * shows the firmware's framebuffer one to one.  N0 learns this by reading
- * only: get tags of the firmware mailbox and register reads.  Nothing is
- * written, so the picture is untouched.
+ * shows the firmware's framebuffer one to one.  N0 prepares the clocks
+ * needed for register access, then reads the display configuration.  It
+ * does not write pipeline registers or release the firmware framebuffer.
  *
  * Two guards come before the first register read.  The VideoCore firmware
  * stamps its revision with its build time, while an emulator answers a small
  * constant; an emulator (QEMU's raspi4b has no compositor and faults on its
- * registers) is left alone.  And when the HDMI state machine's clock is off,
- * the board shows nothing and the display hardware is not read at all.
+ * registers) is left alone.  The HSM and core clocks must then be enabled
+ * at usable rates; a provider failure leaves the display registers unread.
  *
  * The register offsets and bit positions are hardware facts of the BCM2711.
  */
@@ -169,19 +169,35 @@ bcm2711_display_readout(
 	/* Shows the firmware's screen as the mailbox and the boot handoff describe it. */
 	read_screen(screen);
 
-	/* Leaves the hardware unread when the HDMI state machine has no clock. */
-	error = bcm2711_clock_hz(READOUT_CLOCK_HDMI_MACHINE, &hdmi_hz);
-	if (error != 0 || hdmi_hz == 0) {
-		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "N0 hdmi clock off (%d): no display", error);
+	/* Prepares the HSM minimum before touching the firmware display registers. */
+	error = bcm2711_clock_prepare(
+		READOUT_CLOCK_HDMI_MACHINE,
+		120000000U,
+		&hdmi_hz);
+	if (error != 0) {
+		bcm2711_stage_mark(
+			BCM2711_FAMILY_DISPLAY,
+			"N0 hdmi clock preparation failed (%d): no display",
+			error);
 		return ENODEV;
 	}
 
 	/* Requires the HVS core clock before its first register access as well. */
-	error = bcm2711_clock_hz(4U, &core_hz);
-	if (error != 0 || core_hz == 0) {
-		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "N0 core clock off (%d): no display", error);
+	error = bcm2711_clock_prepare(4U, 0U, &core_hz);
+	if (error != 0) {
+		bcm2711_stage_mark(
+			BCM2711_FAMILY_DISPLAY,
+			"N0 core clock preparation failed (%d): no display",
+			error);
 		return ENODEV;
 	}
+
+	/* Exposes prepared rates before proceeding to the first HVS register read. */
+	bcm2711_stage_mark(
+		BCM2711_FAMILY_DISPLAY,
+		"N0 clocks ready hdmi %u core %u Hz",
+		(unsigned)hdmi_hz,
+		(unsigned)core_hz);
 
 	/* Refuses a compositor window too small for the registers and the list memory. */
 	if (display->compositor.size < READOUT_COMPOSITOR_SPAN) {

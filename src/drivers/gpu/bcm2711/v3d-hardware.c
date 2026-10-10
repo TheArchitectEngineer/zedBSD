@@ -461,7 +461,9 @@ identify(
 		hardware->virtual_bits);
 	if (hardware->physical_bits < 30U || hardware->physical_bits > 36U)
 		return ENOTSUP;
-	if (hardware->virtual_bits != 32U)
+
+	/* The reported capability may exceed the driver's lower 4 GiB VA window. */
+	if (hardware->virtual_bits < 32U)
 		return ENOTSUP;
 
 	/* Succeeded: register layout and address widths match the private hardware owner. */

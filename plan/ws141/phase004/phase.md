@@ -73,3 +73,7 @@ p005へ渡す契約はsingle worker、callerによる全buffer/VA保持、失敗
 ## 最終software監査（2026-10-10）
 
 native電源/MMU/IRQ/job/resetの最終sourceを[p007 audit](../p007-software-audit.md)で確認。対応hostとnamed rpi4 y/n build PASS、code修正と制限は[実行記録i15](../execution-20261009.md#i15-最終software監査と検証2026-10-10)。software結果で実機のwhole acceptanceをclearせず、Statusはin-progressを保持する。Master/共有投影はQ1。
+
+## 実機初期化の追加修正（2026-10-11）
+
+[p009](../phase009/phase.md)でN0のclock preparationとV3のVA35識別を修正する。p003/p004の実機受け入れは保持し、p007の今回変更sourceの準拠/buildを再確認する。旧software検証履歴は保持し、今回結果は別attemptへ記録する。共有投影はQ1。

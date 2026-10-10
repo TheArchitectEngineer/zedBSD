@@ -135,6 +135,13 @@ main(
 	error = bcm2711_v3d_hardware_start(&test_engine);
 	assert(error == ENOTSUP && test_allocated == allocations && test_unmasks == 0);
 
+	/* A smaller hardware VA space cannot cover this driver's fixed 4 GiB table. */
+	fixture();
+	test_hub[0x1238 / 4] = 0x510;
+	allocations = test_allocated;
+	error = bcm2711_v3d_hardware_start(&test_engine);
+	assert(error == ENOTSUP && test_allocated == allocations && test_writes == 0);
+
 	/* Failure of scratch allocation safely releases the still-unpublished table owner. */
 	fixture();
 	test_fail_allocation = test_allocated + 2;
@@ -143,10 +150,13 @@ main(
 	assert(error == ENOMEM && test_released == releases + 1);
 	assert(test_engine.hardware.pages == NULL && !test_engine.hardware.mmu_published);
 
-	/* Full startup uses zeroed 4 MiB storage and native PFNs, never bus aliases. */
+	/* Actual RPi4 PA35/VA35 still uses the lower 4 GiB and the same 4 MiB table. */
 	fixture();
+	test_hub[0x1238 / 4] = 0x550;
 	error = bcm2711_v3d_hardware_start(&test_engine);
 	assert(error == 0 && test_engine.hardware.ready && test_unmasks == 1);
+	assert(test_engine.hardware.physical_bits == 35);
+	assert(test_engine.hardware.virtual_bits == 35);
 	pages = test_engine.hardware.pages;
 	scratch = test_engine.hardware.scratch;
 	table = pages->address;

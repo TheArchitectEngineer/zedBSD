@@ -10,8 +10,8 @@
  *
  * The firmware owns the clocks of the display path and of V3D, and it set up
  * the screen the kernel's console is drawn on.  The ARM side asks about them
- * through the mailbox's property channel.  This file only asks (the get
- * tags); nothing here changes the firmware's state.  The tag values and the
+ * through the mailbox's property channel.  Display register access first
+ * prepares the required clocks through the same provider.  The tag values and the
  * clock numbers are those of the Raspberry Pi firmware wiki's mailbox
  * property interface.
  */
@@ -32,6 +32,12 @@
 
 /* Asks the highest rate a clock may be set to, in hertz. */
 #define FIRMWARE_TAG_CLOCK_TOP_HZ	0x00030004U
+
+/* Supplies a usable rate before starting an initially stopped provider. */
+#define FIRMWARE_TAG_CLOCK_SET_HZ	0x00038002U
+
+/* Enables a clock without changing any display pipeline registers. */
+#define FIRMWARE_TAG_CLOCK_ENABLE	0x00038001U
 
 /* The on/off answer: bit 0 is set while the clock runs. */
 #define FIRMWARE_CLOCK_RUNNING		0x00000001U
@@ -109,6 +115,108 @@ bcm2711_clock_hz(
 		return error;
 
 	/* Succeeded: hz holds the clock's rate. */
+	return 0;
+}
+
+/*
+ * Prepares a firmware clock before any dependent display register is read.
+ *
+ * A configured rate survives an off state.  Preserve it when sufficient,
+ * otherwise set the required minimum before enabling, as the HSM cannot
+ * safely service register accesses with a zero rate.  Leave enabled clocks
+ * running on failure because the firmware console may still need them.
+ */
+int
+bcm2711_clock_prepare(
+	uint32_t clock_id,
+	uint32_t minimum_hz,
+	uint32_t *hz)
+{
+	uint32_t state;
+	uint32_t rate;
+	uint32_t values[3];
+	uint32_t answered;
+	int error;
+
+	/* Refuses an absent provider without issuing any state changes. */
+	*hz = 0;
+	error = ask_clock(FIRMWARE_TAG_CLOCK_ON_OFF, clock_id, &state);
+	if (error != 0)
+		return error;
+
+	/* A missing clock cannot make dependent MMIO accessible. */
+	if ((state & FIRMWARE_CLOCK_ABSENT) != 0)
+		return ENODEV;
+
+	/* Reads the next-enable rate even when GET_STATE reports the clock off. */
+	error = ask_clock(FIRMWARE_TAG_CLOCK_HZ, clock_id, &rate);
+	if (error != 0)
+		return error;
+
+	/* Raises a zero or insufficient rate without lowering an active console clock. */
+	if (rate < minimum_hz) {
+		values[0] = clock_id;
+		values[1] = minimum_hz;
+		values[2] = 1;
+		error = drv_rpi4_firmware_property(
+			FIRMWARE_TAG_CLOCK_SET_HZ,
+			values,
+			3U,
+			3U,
+			&answered);
+		if (error != 0)
+			return error;
+
+		/* Requires the provider's response to describe the clock we requested. */
+		if (answered < 8U)
+			return EIO;
+
+		/* A response for another provider cannot authorize register access. */
+		if (values[0] != clock_id)
+			return EIO;
+
+		/* Verifies clamping before enabling a possibly unusable clock. */
+		error = ask_clock(FIRMWARE_TAG_CLOCK_HZ, clock_id, &rate);
+		if (error != 0)
+			return error;
+	}
+
+	/* A provider with no configured rate cannot be enabled for MMIO. */
+	if (rate == 0)
+		return ENODEV;
+
+	/* Rejects a rate the provider could not raise to the required minimum. */
+	if (rate < minimum_hz)
+		return EIO;
+
+	/* Enables only a stopped clock; an already-running console keeps its state. */
+	if ((state & FIRMWARE_CLOCK_RUNNING) == 0) {
+		values[0] = clock_id;
+		values[1] = FIRMWARE_CLOCK_RUNNING;
+		error = bcm2711_firmware_get(FIRMWARE_TAG_CLOCK_ENABLE, values, 2U, 2U);
+		if (error != 0)
+			return error;
+
+		/* Requires the acknowledgement to name the requested provider. */
+		if (values[0] != clock_id)
+			return EIO;
+	}
+
+	/* Confirms both running state and a usable rate through fresh provider reads. */
+	error = bcm2711_clock_hz(clock_id, &rate);
+	if (error != 0)
+		return error;
+
+	/* A refused enable leaves downstream registers inaccessible. */
+	if (rate == 0)
+		return ENODEV;
+
+	/* An enable-time rate change must still meet the consumer's requirement. */
+	if (rate < minimum_hz)
+		return EIO;
+
+	/* Succeeded: the caller may access registers supplied by this clock. */
+	*hz = rate;
 	return 0;
 }
 

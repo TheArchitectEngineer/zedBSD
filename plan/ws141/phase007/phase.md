@@ -2,7 +2,7 @@
 
 # ws141-p007: 全規約・license/類似・最終確認
 
-Status: cleared
+Status: in-progress
 Disposition: normal
 Parent: [WS141](../ws.md)
 Queue: [完成までの承認と有限実行scope](../execution-20261009.md#完成までの継続承認2026-10-09)
@@ -45,3 +45,11 @@ i15の最終source監査・build/host・main統合criteriaを満たしcleared。
 ## i18 clearance・main統合（2026-10-10）
 
 今回最終sourceの全文規約/境界/license、対象build/host/ordinary stackとmain統合/readbackのcriteriaを満たしi18/p007をcleared。source `fca9cd37f`、main親 `0206f4f88`、merge `ab268b857`。対象212/212 source hash一致、build/host入力差分0、main/own/integration cleanを確認した。[今回終了と残件](../compiler-refactor-20261010.md#i18-main統合今回software実行の終了2026-10-10)。旧i15 clearance・source変更による失効/再開の履歴は保持する。RPi4/Keilandの実機条件は他Phase/WSに未達のまま保持し、remote closure/projectionはQ1へ保留する。
+
+## 実機初期化の追加修正（2026-10-11）
+
+[p009](../phase009/phase.md)でN0のclock preparationとV3のVA35識別を修正する。p003/p004の実機受け入れは保持し、p007の今回変更sourceの準拠/buildを再確認する。旧software検証履歴は保持し、今回結果は別attemptへ記録する。共有投影はQ1。
+
+## p009変更差分の準拠再確認（2026-10-11）
+
+今回のC全文規約/境界/独自実装と対象host/buildを確認し、gpu-init-i02のsoftware部分をcleared。p007はmain統合条件の確認までin-progress。i18以前の監査履歴を保持、無関係な全回帰は再実行しない。[対象/結果](../phase009/evidence.md)。
