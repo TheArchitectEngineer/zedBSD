@@ -27,6 +27,7 @@ struct media_worker {
 	int busy;
 	int ready;
 	int notice;
+	int removing;
 	/* A duplicate Wayland descriptor permits close to interrupt a blocked request. */
 	int cancel;
 	struct ph_media_result result;
@@ -43,11 +44,13 @@ static struct media_worker worker = {PTHREAD_MUTEX_INITIALIZER,
 				     0,
 				     0,
 				     0,
+				     0,
 				     -1,
-				     {-1, 0, 0, 0}};
+				     {-1, 0, 0, 0, 0}};
 
 static void *media_main(void *unused);
-static void media_run(const char *path, int notice, struct ph_media_result *result);
+static void media_run(const char *path, int notice, int removing, struct ph_media_result *result);
+static int media_queue(const char *path, int notice, int removing);
 
 /*
  * Starts the background compositor client before any import is queued.
@@ -110,36 +113,34 @@ ph_media_worker_queue(
 	const char *path,
 	int notice)
 {
-	size_t length;
+	int error;
 
-	/* Copies the chooser's path before its storage is destroyed. */
-	length = 0U;
-	if (path != NULL)
-		length = strlen(path);
-	if (length >= sizeof(worker.path))
-		return ENAMETOOLONG;
-	if (!worker.running)
-		return ENOTSUP;
-	pthread_mutex_lock(&worker.lock);
+	/* Import and refresh retain the existing one-slot worker ownership. */
+	error = media_queue(path, notice, 0);
+	if (error != 0)
+		return error;
 
-	/* An import cannot overwrite the path or descriptor of the preceding request. */
-	if (worker.busy || worker.stop) {
-		pthread_mutex_unlock(&worker.lock);
-		return EBUSY;
-	}
+	/* Succeeded: the worker owns the import or refresh request. */
+	return 0;
+}
 
-	/* A single job is owned until its result is taken, including on failure. */
-	worker.path[0] = '\0';
-	if (path != NULL)
-		memcpy(worker.path, path, length + 1U);
-	worker.notice = notice;
-	worker.queued = 1;
-	worker.busy = 1;
-	pthread_cond_signal(&worker.wake);
+/*
+ * Enqueues deletion by identity without blocking the application's thread.
+ */
+int
+ph_media_worker_remove(
+	const char *id)
+{
+	int error;
 
-	pthread_mutex_unlock(&worker.lock);
+	/* Copies the selected stable identity, never its mutable array index. */
+	if (id == NULL || id[0] == '\0')
+		return EINVAL;
+	error = media_queue(id, 1, 1);
+	if (error != 0)
+		return error;
 
-	/* Succeeded: only the copied path crosses to the worker. */
+	/* Succeeded: only the private compositor client performs deletion. */
 	return 0;
 }
 
@@ -191,6 +192,47 @@ ph_media_worker_busy(
 	return busy;
 }
 
+/* Copies one import, refresh or deletion job into the idle worker slot. */
+static int
+media_queue(
+	const char *path,
+	int notice,
+	int removing)
+{
+	size_t length;
+
+	/* Copies a chooser path or stable identity before its caller-owned storage expires. */
+	length = 0U;
+	if (path != NULL)
+		length = strlen(path);
+	if (length >= sizeof(worker.path))
+		return ENAMETOOLONG;
+	if (!worker.running)
+		return ENOTSUP;
+	pthread_mutex_lock(&worker.lock);
+
+	/* A new job cannot overwrite the identity, path or descriptor of the preceding request. */
+	if (worker.busy || worker.stop) {
+		pthread_mutex_unlock(&worker.lock);
+		return EBUSY;
+	}
+
+	/* A single job is owned until its result is taken, including on failure. */
+	worker.path[0] = '\0';
+	if (path != NULL)
+		memcpy(worker.path, path, length + 1U);
+	worker.notice = notice;
+	worker.removing = removing;
+	worker.queued = 1;
+	worker.busy = 1;
+	pthread_cond_signal(&worker.wake);
+
+	pthread_mutex_unlock(&worker.lock);
+
+	/* Succeeded: only the copied job input crosses to the worker. */
+	return 0;
+}
+
 /* Runs jobs using local copies while the UI continues drawing and processing input. */
 static void *
 media_main(
@@ -199,6 +241,7 @@ media_main(
 	char path[sizeof(worker.path)];
 	struct ph_media_result result;
 	int notice;
+	int removing;
 
 	/* The thread entry has no caller-owned context. */
 	(void)unused;
@@ -218,10 +261,11 @@ media_main(
 		/* Private copies permit IO without holding the job lock. */
 		memcpy(path, worker.path, sizeof(path));
 		notice = worker.notice;
+		removing = worker.removing;
 		worker.queued = 0;
 
 		pthread_mutex_unlock(&worker.lock);
-		media_run(path, notice, &result);
+		media_run(path, notice, removing, &result);
 		pthread_mutex_lock(&worker.lock);
 
 		/* Publishes a complete descriptor and status as one result. */
@@ -240,6 +284,7 @@ static void
 media_run(
 	const char *path,
 	int notice,
+	int removing,
 	struct ph_media_result *result)
 {
 	struct wl_display *display;
@@ -253,7 +298,9 @@ media_run(
 	memset(result, 0, sizeof(*result));
 	result->descriptor = -1;
 	result->notice = notice;
-	if (path[0] != '\0')
+	if (removing)
+		result->removed = 1;
+	else if (path[0] != '\0')
 		result->imported = 1;
 	display = wl_display_connect(NULL);
 	if (display == NULL) {
@@ -286,7 +333,11 @@ media_run(
 		if (result->error == 0)
 			result->error = ENOTSUP;
 	} else {
-		if (result->imported) {
+		if (result->removed) {
+			/* The CLI resolves this identity in its latest locked database. */
+			paths[0] = path;
+			result->error = kl_system_media_remove_ids(system, paths, 1U, &result->descriptor);
+		} else if (result->imported) {
 			paths[0] = path;
 			result->error = kl_system_media_add_paths(
 			    system, paths, 1U, &result->descriptor);

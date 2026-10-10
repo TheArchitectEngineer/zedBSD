@@ -43,7 +43,7 @@ static void media_deliver(struct media_pending *pending);
 static void media_watchers(struct kwl_server *server);
 
 /*
- * Creates a version-one metadata object for a version-29 manager.
+ * Creates the media object version supported by the bound manager.
  */
 int
 kwl_media_library_create(
@@ -53,12 +53,16 @@ kwl_media_library_create(
 {
 	struct kwl_object *object;
 	uint32_t id;
+	uint32_t version;
 
 	/* The manager provides only the new object id. */
 	if (size != 4U)
 		return EPROTO;
 	id = media_word(bytes, 0U);
-	object = kwl_create(manager->client, id, KWL_SYSTEM_MEDIA, 1U);
+	version = 1U;
+	if (manager->version >= KL_SYSTEM_SINCE_MEDIA_REMOVE)
+		version = 2U;
+	object = kwl_create(manager->client, id, KWL_SYSTEM_MEDIA, version);
 	if (object == NULL)
 		return EPROTO;
 
@@ -125,11 +129,15 @@ kwl_media_library_request(
 	command = 0U;
 	if (opcode == KL_SYSTEM_MEDIA_LIST && size == 4U) {
 		command = KL_BACKEND_MEDIA_LIST;
-	} else if (opcode == KL_SYSTEM_MEDIA_ADD) {
+	} else if (opcode == KL_SYSTEM_MEDIA_ADD || opcode == KL_SYSTEM_MEDIA_REMOVE) {
+		if (opcode == KL_SYSTEM_MEDIA_REMOVE && object->version < 2U)
+			return EPROTO;
 		error = media_argument(bytes, size, &argument);
 		if (error != 0)
 			return error;
 		command = KL_BACKEND_MEDIA_ADD;
+		if (opcode == KL_SYSTEM_MEDIA_REMOVE)
+			command = KL_BACKEND_MEDIA_REMOVE;
 	} else if (opcode == KL_SYSTEM_MEDIA_APPLY && size == 4U) {
 		descriptor = kwl_take_fd(object->client);
 		if (descriptor < 0)

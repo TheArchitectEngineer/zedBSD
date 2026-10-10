@@ -14,9 +14,14 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
+/* The CLI owns this preserved document until command exit. */
 static struct mj_value *database;
+
+/* Deletions require persistence even when the remaining model has no dirty rows. */
+static int database_changed;
 static int database_container(const char *key, struct mj_value **array);
 static const char *database_text(struct mj_value *object, const char *key);
 static int database_number(struct mj_value *object, const char *key, int64_t *number);
@@ -67,6 +72,7 @@ ph_db_load(
 	/* Never silently replace malformed or unsupported metadata with an empty database. */
 	mj_free(database);
 	database = NULL;
+	database_changed = 0;
 	length = snprintf(path, sizeof(path), "%s/metadata.db", root);
 	if (length < 0 || (size_t)length >= sizeof(path))
 		return ENAMETOOLONG;
@@ -135,7 +141,7 @@ ph_db_save(
 	int result;
 
 	/* Read-only queries and duplicate imports leave the metadata file untouched. */
-	changed = 0;
+	changed = database_changed;
 	photos = ph_photos(&count);
 	for (index = 0U; index < count; index++) {
 		if (photos[index].changed)
@@ -205,6 +211,148 @@ ph_db_save(
 	}
 
 	/* Succeeded: metadata and unknown extension fields are recoverable as ordinary JSON. */
+	return 0;
+}
+
+/*
+ * Deletes one managed file and metadata identity, preserving files on a failed commit.
+ */
+int
+media_database_remove(
+	const char *root,
+	const char *id)
+{
+	struct mj_value *array;
+	struct mj_value *record;
+	struct mj_value *previous;
+	struct ph_photo *photos;
+	struct stat file;
+	char original[PH_PATH_MAX];
+	char staged[PH_PATH_MAX];
+	const char *known;
+	const char *part;
+	const char *slash;
+	long found;
+	size_t count;
+	size_t length;
+	int same;
+	int descriptor;
+	int error;
+	int moved;
+	int regular;
+	int status;
+
+	/* The latest locked database resolves a caller's identity to its managed copy. */
+	found = ph_library_find_id(id);
+	if (found < 0)
+		return ENOENT;
+	photos = ph_photos(&count);
+	part = photos[found].relative;
+
+	/* Managed paths cannot escape Files through dot or empty components. */
+	while (*part != '\0') {
+		slash = strchr(part, '/');
+		length = strlen(part);
+		if (slash != NULL)
+			length = (size_t)(slash - part);
+		if (length == 0U ||
+		    (length == 1U && part[0] == '.') ||
+		    (length == 2U && part[0] == '.' && part[1] == '.'))
+			return EINVAL;
+		if (slash == NULL)
+			break;
+		part = slash + 1U;
+	}
+
+	/* Save paths independently because removing the model releases their storage. */
+	status = snprintf(original, sizeof(original), "%s", photos[found].path);
+	if (status < 0 || (size_t)status >= sizeof(original))
+		return ENAMETOOLONG;
+	status = snprintf(staged, sizeof(staged), "%s/.deleting-%s-XXXXXX", root, id);
+	if (status < 0 || (size_t)status >= sizeof(staged))
+		return ENAMETOOLONG;
+	error = database_container("media", &array);
+	if (error != 0)
+		return error;
+
+	/* Locate the preserved JSON node without creating an absent record. */
+	previous = NULL;
+	for (record = array->child; record != NULL; record = record->next) {
+		known = database_text(record, "id");
+		same = 1;
+		if (known != NULL)
+			same = strcmp(known, id);
+		if (same == 0)
+			break;
+		previous = record;
+	}
+
+	/* An inconsistent model must not delete a file before it can update metadata. */
+	if (record == NULL)
+		return EINVAL;
+
+	/* A managed item is a regular copied file, never a folder or linked external source. */
+	status = lstat(original, &file);
+	if (status == 0) {
+		regular = S_ISREG(file.st_mode);
+		if (!regular)
+			return EINVAL;
+	} else if (errno != ENOENT) {
+		return errno;
+	}
+
+	/* Reserves a same-filesystem staging name while the command holds the database lock. */
+	descriptor = mkstemp(staged);
+	if (descriptor < 0)
+		return errno;
+	close(descriptor);
+
+	/* Retains the managed copy until its metadata replacement has succeeded. */
+	moved = 0;
+	status = rename(original, staged);
+	if (status == 0) {
+		moved = 1;
+	} else if (errno != ENOENT) {
+		error = errno;
+		unlink(staged);
+		return error;
+	}
+
+	/* Detach only this record, leaving all other extensible JSON nodes intact. */
+	if (previous == NULL)
+		array->child = record->next;
+	else
+		previous->next = record->next;
+	if (array->tail == record)
+		array->tail = previous;
+	record->next = NULL;
+	mj_free(record);
+	error = ph_library_remove(id);
+	if (error == 0) {
+		database_changed = 1;
+		error = ph_db_save(root);
+	}
+
+	/* A failed commit restores the managed copy; the previous JSON remains on disk. */
+	if (error != 0) {
+		if (moved) {
+			status = rename(staged, original);
+			if (status != 0)
+				return errno;
+		} else {
+			unlink(staged);
+		}
+
+		/* The CLI exits on this refusal rather than using a partially edited model. */
+		return error;
+	}
+
+	/* The committed metadata no longer references the copy, which may now be unlinked. */
+	status = unlink(staged);
+	if (status != 0)
+		return errno;
+
+	/* Succeeded: the source outside Media was never renamed or deleted. */
 	return 0;
 }
 
