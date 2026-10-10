@@ -35,6 +35,8 @@ asm_task_dispatch:
 
 	.global arm64_kernel_task_entry
 arm64_kernel_task_entry:
+	/* A new worker has no suspended scheduler call to restore IRQ delivery. */
+	msr daifclr, #2
 	mov x0,x20
 	blr x19
 	bl arm64_task_returned

@@ -1350,15 +1350,23 @@ command_ex(
 		}
 
 #if defined(HAL_BOARD_RPI4)
-		/* Confirms that the command owner returned from its scheduling point. */
+		/* Marks polling entry, including callers that cannot yield with IRQ off. */
 		if (n == 0U && ((control >> 10) & 0x3fU) == 9U) {
 			kern_logf(
-			    "xhci: enable slot completion poll resumed\n");
+			    "xhci: enable slot completion poll begin\n");
 		}
 #endif
 
 		/* Serializes polling and fault publication against the controller IRQ. */
 		event_lock(c);
+
+#if defined(HAL_BOARD_RPI4)
+		/* Distinguishes lock contention from a stall while reading event DMA. */
+		if (n == 0U && ((control >> 10) & 0x3fU) == 9U) {
+			kern_logf(
+			    "xhci: enable slot completion event lock acquired\n");
+		}
+#endif
 
 		/* Refuses event DMA after the IRQ observed a controller fault. */
 		controller_fault =
@@ -1393,6 +1401,16 @@ command_ex(
 		/* Reopens IRQ delivery before inspecting or waiting for the next event. */
 		if (enabled)
 			kern_irq_enable();
+
+#if defined(HAL_BOARD_RPI4)
+		/* Confirms that event sampling and any dequeue acknowledgement returned. */
+		if (n == 0U && ((control >> 10) & 0x3fU) == 9U) {
+			kern_logf("xhci: enable slot completion event poll done "
+				  "available=%u type=%u\n",
+				  (unsigned)available,
+				  type);
+		}
+#endif
 
 		/* Waits for the next event when the ring is empty. */
 		if (!available)
