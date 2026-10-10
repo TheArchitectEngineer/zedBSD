@@ -9,7 +9,7 @@ Related Milestones: MG003, MG006
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: [cancel logging限定Queue](codex-cancel-logging-20261011.md) finished。旧実行記録は保持。
-Resume point: p015修正の具体的main統合承認待ち。user実機で通常cancel logが止まることとUSB入力を確認。p014後の起動成功は確認済み。
+Resume point: p015修正はafe01157fでmain統合済み。user実機で通常cancel logが止まることとUSB入力を確認。p014後の起動成功は確認済み。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
@@ -169,3 +169,11 @@ User confirms boot success after p014. Boot freeze recovery is accepted at that 
 ### p015 terminal
 
 通常cancel中のStopped(26/27)ログを抑制、ring snapshotはcancel失敗時だけに変更しIRQ保護を追加。[証拠](tests/cancel-logging-20261011.md)。最終changed-source規約/所有権review、current-config warning0 arm64 kernel/raw-image check、diff-check PASS。通常の転送と監視周期は変更なし。main承認/実機log確認はpending、WS incomplete。
+
+## 自動統合の承認と統合結果（2026-10-11）
+
+ユーザー「mainへのコミットは自動でお願いします。」、確認回答「今後は自動で統合してください。」により、このセッションの承認済み作業のmainコミット/統合は以後自動実施する。従来のQ1担当による個別main統合確認をこの指示で置換する。pushや実機更新の指示ではない。共有記録への投影は引き続きQ1へ保留。
+
+USB `3e9ace7b9` とGPU `461906448` を専用worktreeでmerge `afe01157f` にまとめ、現在のconfig.mkで `make -j16 build/arm64/vmunix` を実行。warning0/error0、arm64 ELF/raw-image check PASS。USB/GPU sourceが各個別検証版と一致することも確認。clean main `211be00dc` を `afe01157f` へfast-forwardし、変更17path全てが検証済みworktreeとbyte一致した。main統合完了。実機の新core判定/待ち時間/USBログ抑制は未確認で、WSの残る実機条件は保持。push・実機更新/再起動は未実施。
+
+最新USBログでdevice1/port1 `2109:3431` class09、usb-hub、4portsの登録を確認し、slot1の反復Stopped通知がhub監視と整合することを確認。USBキーボードの入力成功を意味しない。GPUは旧版のV7〜V10成功とrender node登録までユーザー確認済み。

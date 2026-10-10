@@ -36,3 +36,13 @@ f3fe16017ebdf09d4258506d23c74524bb46244e379dd5eda149696cb295116f  plan/ws141/tes
 fc4cdb8907bce6b1e66c309937613d15a4d01712eee0ad0c7d06723e450b3148  plan/ws141/tests/v3d-hardware-host-test.c
 c5a25361bce87f5ce37c6dccbe76fe879a7afbbc3056ebac8f29c366083ce74d  build/arm64/vmunix
 ```
+
+## 自動統合の承認と統合結果（2026-10-11）
+
+ユーザー「mainへのコミットは自動でお願いします。」、確認回答「今後は自動で統合してください。」により、このセッションの承認済み作業のmainコミット/統合は以後自動実施する。従来のQ1担当による個別main統合確認をこの指示で置換する。pushや実機更新の指示ではない。共有記録への投影は引き続きQ1へ保留。
+
+USB `3e9ace7b9` とGPU `461906448` を専用worktreeでmerge `afe01157f` にまとめ、現在のconfig.mkで `make -j16 build/arm64/vmunix` を実行。warning0/error0、arm64 ELF/raw-image check PASS。USB/GPU sourceが各個別検証版と一致することも確認。clean main `211be00dc` を `afe01157f` へfast-forwardし、変更17path全てが検証済みworktreeとbyte一致した。main統合完了。実機の新core判定/待ち時間/USBログ抑制は未確認で、WSの残る実機条件は保持。push・実機更新/再起動は未実施。
+
+最新USBログでdevice1/port1 `2109:3431` class09、usb-hub、4portsの登録を確認し、slot1の反復Stopped通知がhub監視と整合することを確認。USBキーボードの入力成功を意味しない。GPUは旧版のV7〜V10成功とrender node登録までユーザー確認済み。
+
+Combined artifact SHA256: `3d0f1e879be8d1e4bf03f10560695f1454e91243273848813e1e2c179abb12be` (`build/arm64/vmunix`)。旧個別build hashは当時の証拠として保持。組合せbuild log: `build/ws141-gpu-usb-integration.log`。

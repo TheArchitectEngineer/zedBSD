@@ -2,7 +2,7 @@
 
 # ws141-p007: 全規約・license/類似・最終確認
 
-Status: in-progress
+Status: cleared
 Disposition: normal
 Parent: [WS141](../ws.md)
 Queue: [完成までの承認と有限実行scope](../execution-20261009.md#完成までの継続承認2026-10-09)
@@ -67,3 +67,11 @@ main統合完了。p007の今回統合条件も満たしcleared、p009のsoftwar
 ## p010変更差分の準拠確認（2026-10-11）
 
 [今回evidence](../phase010/evidence.md)のsource範囲についてC全文規約・provider境界・counter障害時DMA寿命とhost/buildを確認。core-timeout-i02 software範囲はcleared、main統合条件待ちでp007 in-progress。過去の監査履歴と未確認の実機表示条件は保持。
+
+## 自動統合の承認と統合結果（2026-10-11）
+
+ユーザー「mainへのコミットは自動でお願いします。」、確認回答「今後は自動で統合してください。」により、このセッションの承認済み作業のmainコミット/統合は以後自動実施する。従来のQ1担当による個別main統合確認をこの指示で置換する。pushや実機更新の指示ではない。共有記録への投影は引き続きQ1へ保留。
+
+USB `3e9ace7b9` とGPU `461906448` を専用worktreeでmerge `afe01157f` にまとめ、現在のconfig.mkで `make -j16 build/arm64/vmunix` を実行。warning0/error0、arm64 ELF/raw-image check PASS。USB/GPU sourceが各個別検証版と一致することも確認。clean main `211be00dc` を `afe01157f` へfast-forwardし、変更17path全てが検証済みworktreeとbyte一致した。main統合完了。実機の新core判定/待ち時間/USBログ抑制は未確認で、WSの残る実機条件は保持。push・実機更新/再起動は未実施。
+
+最新USBログでdevice1/port1 `2109:3431` class09、usb-hub、4portsの登録を確認し、slot1の反復Stopped通知がhub監視と整合することを確認。USBキーボードの入力成功を意味しない。GPUは旧版のV7〜V10成功とrender node登録までユーザー確認済み。
