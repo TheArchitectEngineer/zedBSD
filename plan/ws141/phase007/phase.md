@@ -95,3 +95,7 @@ USB `3e9ace7b9` とGPU `461906448` を専用worktreeでmerge `afe01157f` にま�
 ## p012最終差分確認（2026-10-11）
 
 [p012](../phase012/phase.md)のlocore.Sの3命令と説明をAGENTS/Guardrail/既存assembly規約で確認。HAL API不変の実装補完で、C formatterは非適用。EL1共通経路/x1 scratch/ISB/bit1だけの初期値/後続上書き無しをreview。実機ELF+0x1000のtrap命令照合、生成kernel命令列、arm64 warning0/image checker、diff-check PASS。今回sourceのsoftware準拠はcleared、実機counterとKeiland結果はp012/p005/p006に残す。
+
+## submit-i01診断差分レビュー（2026-10-11）
+
+v3d-job.c/vulkan-native-job.c/vulkan-queue.cの失敗時だけの診断を確認。GPU同期・retirement/timeout/refusalの動作を変えず、mask/reset前のqueue位置・IRQ結果と元のerrorを記録する。MMIOはpowered runnerの既存mapped core内のread-only register。shader/画像内容はdumpしない。C全文に対し宣言/段落/引数/分岐/unwindをmanual review、style-check total0/diff-check PASS。実機因果はこの診断取得後に判断し、現段階を修復済みとはしない。

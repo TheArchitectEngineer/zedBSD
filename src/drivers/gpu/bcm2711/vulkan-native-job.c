@@ -170,15 +170,31 @@ bcm2711_vulkan_native_job_execute(
 		}
 
 		/* A refused whole-pass preparation owns no launched DMA and leaves the primary pending until disposal. */
-		if (error != 0)
+		if (error != 0) {
+			bcm2711_stage_mark(
+				BCM2711_FAMILY_V3D,
+				"submit prepare opcode=%u error=%d",
+				event->opcode,
+				error);
 			return error;
+		}
 
 		/* Exact clear, supervised bin/render and GPU cache visibility execute while every independent owner is held. */
 		error = bcm2711_vulkan_native_pass_run(job->pass, &completion);
 		job->retired = completion.retired;
 		*retired = completion.retired;
-		if (error != 0)
+		if (error != 0) {
+			bcm2711_stage_mark(
+				BCM2711_FAMILY_V3D,
+				"submit execute opcode=%u draws=%u size=%ux%u error=%d retired=%u",
+				event->opcode,
+				job->pass->draws,
+				job->pass->state.width,
+				job->pass->state.height,
+				error,
+				(unsigned)completion.retired);
 			return error;
+		}
 
 		/* Confirmed DMA retirement permits this resident pass budget and its mappings to be reused by the next FIFO pass. */
 		bytes = job->pass->bytes;

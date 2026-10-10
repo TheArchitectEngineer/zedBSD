@@ -132,6 +132,10 @@ bcm2711_vulkan_queue_dispatch(
 	error = run_submission(session, submission);
 	status = VK_SUCCESS;
 	if (error != 0) {
+		bcm2711_stage_mark(
+			BCM2711_FAMILY_V3D,
+			"submit failed error=%d",
+			error);
 		publish_failure(session, submission);
 		status = VK_ERROR_DEVICE_LOST;
 	}

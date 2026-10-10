@@ -229,3 +229,11 @@ i14 compiler/Vulkan/Keiland software経路のsoftware/統合部分をcleared。f
 ## counter修正後の実機到達点（2026-10-11）
 
 [p012](../phase012/phase.md)のcounter trap消失をSSH確認。自動ログインとgreeterはOUTPUT open 1920x1080/images3まで進むが、最初の描画submitがresult=-4（VK_ERROR_DEVICE_LOST）でframes0/error5。実描画の受入れは未達、Phase状態を維持。kernel/SSHは応答し、原因のjob/register証拠は未採取。過去のsignal10と今回のsubmit失敗を区別する。次は既存p006内のGPU送信失敗調査、実機の更新・再起動は今回行っていない。
+
+## submit-i01: 初回描画失敗の修復（2026-10-11）
+
+Queue ws141-first-submit-20261011 / active / submit-i01 / in-progress / Codex。ユーザー「修正を行ってください。」とKeiland完成までの継続承認に基づく有限scope。既存V3D描画経路の最初のsubmit失敗を実code/Mesa固定一次資料と照合し、特定できた不整合を修復する。必要な失敗段階・native IRQ/queue register診断、限定host確認、arm64 warning0 build、p007規約レビュー、承認済み自動main統合を含む。HAL API/shared計画/toolchain変更無し。実機での最終表示成功は別証拠を要し、実機再起動はユーザーが行う運用を保持。一次sourceの数値事実を参照しcodeは独自実装、GPL資料はignored temp内のみ。
+
+### 診断配置と再起動の承認
+
+ユーザー回答「配置してよい。配置後に電源OFF/ONする」。続いて「デバッグダンプはカーネルにもアプリにも入れていいです。SSHで自由に更新してください。カーネルについて、リセットは私に言ってくれればやります。rebootコマンドが効くなら使っていいです。」と承認。これ以後、この修復に必要な診断追加・SSH配置・利用可能なreboot実行は再確認せず実施できる。保存済みの復帰用kernelを保持し、更新時はsync/read-back照合する。
