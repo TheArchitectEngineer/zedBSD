@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: 既存履歴 q691（p001）・q695（p002）。現在の独立セッションの実行範囲は [execution-20261009.md](execution-20261009.md)
-Resume point: [p011](phase011/phase.md) r0-i03でR0開始後のブラックアウトをSSH調査。カーネル/SSHは生存、display-doneのmessage成功/tag応答無しをENOTSUPとしてop0で中断していた。通知だけLinux同様に継続する修正とhost/build確認済み、c3989e0c4をmain統合済み。ユーザーのSSH更新依頼により修正版カーネルを/boot/boot0/vmunixへ配置・sync・読み戻し一致確認済み。旧版backup保持、再起動未実施。次は実機R0成功または次の失敗段階を確認。r0-i02のCD4=RGB8修正は実機でpreflight通過を確認。WS/Keiland実機受入れは未達、共有投影はQ1。
+Resume point: p011は実機R0/list43採用成功でcleared。P2二flip/P3合成とconsole復帰/P5 display登録、V3D V7〜V10/render登録も確認。KeilandはV3Dで初期化するが、EL0 CNTVCT読出しがSIGBUS。[p012](phase012/phase.md)でARM64 counter初期化を補完し、build/生成命令を確認済み。実機更新は未実施。WS incomplete、desktop実描画/視覚確認は保持。共有投影はQ1。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
@@ -70,11 +70,12 @@ Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver �
 | [p001](phase001/phase.md) | 文書: Linux の vc4・v3d の初期化の順と command の投入の順、正本の一覧と license の監査、BCM2711 の display と V3D の構成、我々の interface への対応表、段の印の設計 | in-progress（q691、文書と review 済み、判定待ち） | なし | 4〜6h |
 | [p002](phase002/phase.md) | **定数の一括の改名**（作業の文書、temp）の後に、段の印の仕組み（framebuffer に進み具合を書く debug の口）と driver の骨格（FDT の attach、MMIO の map、clock・power の mailbox、IRQ） | in-progress（q695、実装済み。骨格版のT1-092 PASS、2026-10-09 y/n build・host PASS。実機待ち） | p001 | 4h |
 | [p003](phase003/phase.md) | display: boot出力先/modeの特定→Linux順R0再初期化/初回scanout→vblank/flip/合成/resident統合。旧コピー引き継ぎ/P4後回しは置換 | in-progress（i11 allocator/登録/copy present/2-plane合成/起動診断を実装、host/build PASS。実機待ち） | p002の骨格・WS048 mailbox限定修正。実機のwhole acceptanceは残る | 6h〜 |
-| [p004](phase004/phase.md) | V3D: power・MMU・buffer object、bin/render・TFUのjob、reset、fence（CSDはp006後） | in-progress（V1〜V10/native runnerを実装、固定XML照合・host/build PASS。実機電源/register/job観測は未実施） | p002（骨格出力でsoftware準備、hardwareは実機V0確認後） | 6h〜 |
+| [p004](phase004/phase.md) | V3D: power・MMU・buffer object、bin/render・TFUのjob、reset、fence（CSDはp006後） | in-progress（V1〜V10/native runnerを実装、固定XML照合・host/build PASS。実機V1〜V10成功、公開描画は未確認） | p002（骨格出力でsoftware準備、hardwareは実機V0確認後） | 6h〜 |
 | [p005](phase005/phase.md) | `drv_gpu_interface` への統合と desktop の表示（Keiland の compositor） | in-progress | p003・p004のsoftware出力、desktopはp006 | 4h〜 |
 | [p006](phase006/phase.md) | kernel Vulkan実行器・SPIR-V compilerとKeiland描画経路（2026-10-09 scope拡張） | in-progress（compiler/native prepared job/public runtime/Keiland software経路とhost/build/stack監査PASS、実機待ち） | p004・p005 | 未見積 |
 | [p007](phase007/phase.md) | 規約の全文の確認と最終の確認。**license と GPL の code との類似の監査**（字面・設計、道具と目視）、BLOB の移動の確認 | cleared（p010差分監査/組合せbuild/main統合済み） | 全て | 3〜4h |
-| [p011](phase011/phase.md) | R0拒否とブラックアウトの修正 | uncleared（通知応答互換修正済み、実機待ち） | N0/preflight実機成功 | 今回部分scope |
+| [p012](phase012/phase.md) | KeilandのEL0 counter例外 | uncleared（software/build確認済み、実機待ち） | p011実機成功、p005/p006起動経路 | 今回有限scope |
+| [p011](phase011/phase.md) | R0拒否とブラックアウトの修正 | cleared（実機R0/list43採用成功） | N0/preflight実機成功 | 今回部分scope |
 | [p010](phase010/phase.md) | core clock/実時間job期限 | cleared（software/実機表示未確認） | main211be00dcと実機ログ | 今回有限scope |
 | [p009](phase009/phase.md) | 実機clock/VA幅の初期化停止修正 | cleared（software。実機未確認） | mainの既存software出力 | 今回有限scope |
 | [p008](phase008/phase.md) | GPU共通SPIR-V frontend/IR、i915・VC4参照移行 | cleared（software/build/host。実機は他Phase） | p006 software出力、p007再監査 | 今回有限scope |
@@ -320,3 +321,7 @@ N0の実機成功とR0 ENOTSUPをSSH/user logで確認。p011の有限調査を�
 ## p011 r0-i03: 通知後ブラックアウトの修正（2026-10-11）
 
 R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなくop0の通知応答判定中断と特定。通知のmessage全体成功を採用し再初期化へ進む差分を実装。限定host/build/p007確認はcleared。p003へ通知の扱い変更を記録、p011/WSは実機R0/Keiland未確認でuncleared/incompleteを保持する。[証拠・検証・再開条件](phase011/phase.md)。承認済み自動main統合を適用。
+
+## 実機R0〜V10成功とp012の開始（2026-10-11）
+
+ユーザーの成功ログとSSHでp011をclearedとした。p003のflip/合成/登録、p004のnative job/resetの実機出力を記録。p005/p006のKeilandはcounter-read例外に阻まれるためp012を追加し、既存「Keiland表示まで」の継続承認内でHAL実装の初期化補完を進める。実機証拠/修正/検証は[p012](phase012/phase.md)、過去の未達履歴は保持。p007は最終差分review、Master/共有投影はQ1。

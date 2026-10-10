@@ -60,6 +60,14 @@ arm64_el1_low:
 	orr x1, x1, #(3 << 20)
 	msr cpacr_el1, x1
 	isb
+	/*
+	 * Let EL0 read the virtual counter and its frequency for user timing.
+	 * Keep timer controls and the physical counter privileged, with no
+	 * event stream inherited from firmware (CNTKCTL_EL1.EL0VCTEN only).
+	 */
+	mov x1, #2
+	msr cntkctl_el1, x1
+	isb
 	adrp x1, arm64_boot_stack_top
 	add x1, x1, :lo12:arm64_boot_stack_top
 	mov sp, x1

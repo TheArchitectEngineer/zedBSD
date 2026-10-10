@@ -221,3 +221,7 @@ i14 compiler/Vulkan/Keiland software経路のsoftware/統合部分をcleared。f
 ## 共通frontendへの移行（2026-10-10）
 
 ユーザーの明示指示でparser/IR依存を新[p008](../phase008/phase.md)のGPU共通moduleへ移す。V3D QPU backendとpublic Vulkan/Keiland契約は保持。静的改善と最終検証は[今回i16〜i18](../compiler-refactor-20261010.md)、実機whole acceptance未確認。
+
+## Keiland起動の実機依存補完（2026-10-11）
+
+実機でV3D選択とVulkan objects/compose初期化からKWL READYまで進むが、user timing命令のSIGBUSで終了。[p012](../phase012/phase.md)のEL0 counter初期化補完後に実描画を再確認する。現時点でcompiler/render queueが実frameを完了したと主張せず、software確認と物理受入れを区別する。

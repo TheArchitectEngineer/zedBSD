@@ -114,3 +114,7 @@ actual render openでcomplete Vulkan ownerを作り、production combined20route
 ## software統合の終了（2026-10-10）
 
 i13 二node/share/GPU APIのsoftware/統合部分をcleared。final runtime/stack/全source監査とmain merge5eb8867f3を確認。whole Phaseの実機/Keiland条件は未達、Statusはin-progressを維持。[全結果と復帰条件](../execution-20261009.md#i15-main統合software実行の終了2026-10-10)。
+
+## 実機二node登録とKeilandの次の依存（2026-10-11）
+
+/dev/gpu0・/dev/gpu1が存在し、sessiondが双方をgreeterへ渡す。Keilandはdevice=zedBSD V3D 4.2 (Keiland graphics)/1920x1080/60000mHzを選択しKWL READYに達するが、loopのCNTVCT_EL0でSIGBUS終了。[p012](../phase012/phase.md)でARM64初期化を補完する。p003/p004の今回実機出力は得たが、desktop表示/操作・継続動作のacceptanceは未達のまま。

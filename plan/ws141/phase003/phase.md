@@ -127,3 +127,7 @@ Linux順initial scanout/独自filter/flip/二node presentの最終sourceを[p007
 ## R0通知段階の実機不具合と応答互換修正（2026-10-11）
 
 [p011 r0-i03](../phase011/phase.md)のSSH証拠で、R0開始後のブラックアウトはop0/display-done通知のENOTSUP中断と判明。message全体SUCCESS後のtag応答bit欠落を、このpayload無し通知だけ非致命としてLinux同様に再初期化へ進める設計に修正。全体EIO/timeout・geometry変化は停止、mailbox本体/他tag/操作順は不変。既存display executor host（本Phaseの未完了実機scanoutを支える試験）を更新しPASS、arm64 warning0。実機表示回復/初期list採用・Keilandは未確認で従来関門を保持する。
+
+## R0/P2/P3/P5の実機結果（2026-10-11）
+
+ユーザー提供ログとSSH dmesgでR0 hdmi0/ch0/list43 frame観測、P2二flip/console採用、P3合成/console採用、P5 display登録を確認。[p011](../phase011/phase.md)をcleared。写真による色/透過の視覚確認、console RAM寿命、P1の実時間cadenceなどwhole条件は保持。P1は1000回の1ms sleepを1sと表示する実装なので126framesが実126Hzとは未確定。以後のKeilandは[p012](../phase012/phase.md)のEL0 counter例外で停止する。

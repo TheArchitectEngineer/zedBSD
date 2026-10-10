@@ -81,3 +81,7 @@ native電源/MMU/IRQ/job/resetの最終sourceを[p007 audit](../p007-software-au
 ## p010 follow-up（2026-10-11）
 
 [p010](../phase010/phase.md)でcore clock gateの解釈と実時間job期限を修正する。実機のV3〜V9通過およびV10待機後復帰を記録し、未確認のscanout/Keiland条件は保持。p007は今回変更差分を再監査する。
+
+## V3D実機診断の成功（2026-10-11）
+
+ユーザー提供ログとSSH dmesgでV7 noop BFC1/RFC1、V8 RGBA8全4096pixels ff317ce0、V9 TFU全64pixels、V10実timeout/reset後noop、render node readyを確認。MMU table1c83000/scratchc8b000、PA35/VA35。これらの未実施表示を今回観測済みに更新する。公開VulkanでのKeiland実描画は[p012](../phase012/phase.md)のEL0 counter例外でまだ未達、Phase/WS全受入れを自動clearしない。

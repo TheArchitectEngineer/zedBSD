@@ -2,7 +2,7 @@
 
 # ws141-p011: R0の拒否とブラックアウトの修正
 
-Status: uncleared
+Status: cleared
 Disposition: normal
 Parent: [WS141](../ws.md)
 Queue: ws141-r0-preflight-20261011 / finished / Codex
@@ -141,3 +141,9 @@ r0-i03の限定software scopeはcleared。p011は次回実機R0 ok（または�
 旧版はown build/rpi4-vmunix-before-notify-20261011へread-back保存しSHA256=1bb6df3c4b10d24f0444484455bc1b1cc88d10312e42346e7d3ec21a98a6296d（r0-i02）。新c3989e0c4 sourceのbuildは28fdba0a3a9df120fe9cf8863127801718b93fd61e787be267e8c0cca1b2b775。image checkerを再確認し、/tmp/vmunix-c3989e0c4.newへ転送、両端cksum=4051373307/8077312一致。sudoでboot0内vmunix.before-r0-notify-20261011へ旧版copy/cmp、新版を別名copy/cmp、sync、vmunixへrename、sync/cmpする手順を実行し、exit0で完了。実機表示の検証は再起動後に保持。
 
 配置完了: SD上の/boot/boot0/vmunixは8077312byte。配置後sync/cmp成功、さらにown build/rpi4-vmunix-after-notify-20261011へ読み戻し、ビルド入力とbyte一致/SHA256 `28fdba0a3a9df120fe9cf8863127801718b93fd61e787be267e8c0cca1b2b775` を確認。旧版は/boot/boot0/vmunix.before-r0-notify-20261011に8073216byteで保存され、置換前cmp成功。実機再起動は未実施なので、現在動いているのは旧カーネル。新カーネルによるscanout復旧は次回起動で確認する。
+
+## 実機R0成功・p011 clearance（2026-10-11）
+
+SSH更新後、ユーザーが起動し `R0 ok hdmi0 ch0 list43 frame observed`、P2 two flips and console adopted、P3 composed frame and console adopted、P5 display node readyを報告。SSHの現在dmesgでも一致確認（own build/ws141-r0-success-dmesg.txt）。CD4拒否・通知応答による中断が解消し、新規scanout/list採用が確認できたためp011をclearedとする。r0-i01/i02/i03の部分scopeと当時のuncleared履歴は保持。
+
+V3D V7 noop、V8全4096pixels、V9全64pixels、V10 timeout/reset後noop、render node登録も報告あり。WS全体はまだincomplete。sessiondはV3Dを選んだKeiland/greeterを起動したが、描画loopのCNTVCT_EL0命令がSIGBUSとなる別のARM64初期化漏れを確認し[p012](../phase012/phase.md)へ進む。P1は固定1000回sleepを1sと表示しており、126framesだけで実60Hzを否定しない。実測時間/視覚/Keilandの残件はp003/p005へ保持。共有投影はQ1。

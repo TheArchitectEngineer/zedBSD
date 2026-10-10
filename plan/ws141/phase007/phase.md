@@ -91,3 +91,7 @@ USB `3e9ace7b9` とGPU `461906448` を専用worktreeでmerge `afe01157f` にま�
 ## p011 r0-i03変更の規約・build確認（2026-10-11）
 
 [p011 r0-i03](../phase011/phase.md)のdisplay-execute.cと既存executor host差分を全文C/Guardrailと照合。通知単位のENOTSUP対応は実transportのerror由来とLinux一次実装を照合し、余分な再送や他tag判定変更は無い。source転記無し。追加分の段落/宣言/guard/引数/所有・失敗順を確認。clang-format19.1.7範囲review、host before失敗/after成功、arm64 warning0/image PASS/diff-check PASS。p007 changed-source確認clearedを維持。実機R0とKeilandはp003/p011/WSに未達として残す。
+
+## p012最終差分確認（2026-10-11）
+
+[p012](../phase012/phase.md)のlocore.Sの3命令と説明をAGENTS/Guardrail/既存assembly規約で確認。HAL API不変の実装補完で、C formatterは非適用。EL1共通経路/x1 scratch/ISB/bit1だけの初期値/後続上書き無しをreview。実機ELF+0x1000のtrap命令照合、生成kernel命令列、arm64 warning0/image checker、diff-check PASS。今回sourceのsoftware準拠はcleared、実機counterとKeiland結果はp012/p005/p006に残す。
