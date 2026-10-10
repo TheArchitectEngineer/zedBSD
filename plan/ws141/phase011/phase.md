@@ -84,3 +84,7 @@ a77ee65bd528b01c7560f7e8557ca0f80f12dc29666844bf0bf2fcb1c69ebc6b  src/drivers/gp
 ```
 
 誤拒否修正の限定attempt r0-i02はcleared。p011全体は実機R0成功未確認のためuncleared、WS incomplete。次はこの版で起動しR0 ok、または次のreject/error項目を観測する。push/実機更新/reboot未実施。共有投影はQ1に保留。
+
+## r0-i02 main統合結果（2026-10-11）
+
+source/検証記録 `75813e358` をclean main `acf20e54c` からfast-forward統合。変更4pathとconfig.mkが検証worktreeと一致しmain cleanをread-back確認。自動統合承認を適用。実機修復は未確認のまま、次回起動ログで継続する。共有投影はQ1、push未実施。
