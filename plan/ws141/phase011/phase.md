@@ -129,3 +129,7 @@ arm64 build exit0、warning/error0、image checker PASS。clang-format19.1.7範�
 ```
 
 r0-i03の限定software scopeはcleared。p011は次回実機R0 ok（または次の失敗段階）待ちでuncleared。SSHで実機が生存していた証拠と表示修正後の実機検証は別であり、後者は未実施。共有投影はQ1へ保留。自動main統合を行う。
+
+## r0-i03 main統合結果（2026-10-11）
+
+修正/検証記録 `c3989e0c4` をclean main `ac1d53726` からfast-forward統合。変更6pathとconfig.mkの一致、main cleanをread-back確認。実機更新/再起動/pushは未実施。次回R0ログで再開する。共有投影はQ1。
