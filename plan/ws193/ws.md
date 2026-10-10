@@ -2,6 +2,10 @@
 
 # WS193: make menuconfig のメニュー階層の作り直しと Build boot image（進捗表示）
 
+## RPi4 boot0 investigation / 2026-10-11
+
+Userの追加指摘をread-onlyで確認。[証拠](tests/rpi4-boot0-readout-20261011.md)。実機rootはmmcblk0p2 UFS rw、/boot/boot0は不存在。cmdlineはlogin=だけを生成し、legacy native UFS経路がboot source登録とboot swap準備をskipしている。vmunix読み込み指定とは別のruntime mount問題。source修正・remote mount/swap/update/rebootは行っていない。既存p009/p010の限定criteriaとWS incompleteは維持、追加実装/実機確認は未実施。共有投影/GitHubはQ1 pending。
+
 <!-- awesome-plan-current:start -->
 Status: incomplete（p004〜p008 sourceはmain統合済み、p009 Graphical login・p010共通rootfsの限定criteriaはcleared）
 Primary Milestone: MG006
