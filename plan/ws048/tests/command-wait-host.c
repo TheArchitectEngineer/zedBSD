@@ -34,7 +34,9 @@ struct xhci_ring {
 /* The command/event ownership fields consumed by the production function. */
 struct xhci_controller {
 	unsigned command_busy;
+	unsigned irq_busy;
 	unsigned command_failed;
+	uint32_t irq_fault_status;
 	unsigned dma_quiesced;
 	unsigned command_event_ready;
 	uint64_t command_address;
@@ -82,6 +84,7 @@ static uint64_t ring_push(struct xhci_ring *ring, uint64_t parameter, uint32_t s
 static void event_lock(struct xhci_controller *c);
 static void event_unlock(struct xhci_controller *c);
 static void xhci_ring_doorbell(struct xhci_controller *c, unsigned slot, uint32_t target);
+static void xhci_event_dequeue_publish_locked(struct xhci_controller *c, unsigned clear_busy);
 static int event_take(struct xhci_controller *c, struct xhci_trb *event);
 static int transfer_claim(struct xhci_controller *c, const struct xhci_trb *event);
 static void port_change_defer(struct xhci_controller *c);
@@ -165,8 +168,25 @@ main(
 	assert(rung == 0);
 	assert(irq_enabled);
 
+	/* An IRQ fault must retire no DMA and must stop the waiter before any ring poll. */
+	reset_fixture(8, true);
+	error = command_ex(&controller, 0, 0, 9U << 10, NULL, NULL);
+	assert(error == EIO);
+	assert(irq_enabled);
+	assert(polled == 0U);
+	assert(controller.command_failed == 1U);
+	assert(controller.command_busy == 0U);
+
+	/* A previous IRQ fault must refuse admission before another doorbell. */
+	reset_fixture(1, true);
+	controller.irq_fault_status = 0x1008U;
+	error = command_ex(&controller, 0, 0, 9U << 10, NULL, NULL);
+	assert(error == EIO);
+	assert(rung == 0U);
+	assert(irq_enabled);
+
 	/* Reports that the actual command wait function met the scenario checks. */
-	puts("production xHCI command wait: PASS (9 scenarios)");
+	puts("production xHCI command wait: PASS (11 scenarios)");
 
 	/* Succeeded: all production waiter scenarios met their assertions. */
 	return 0;
@@ -206,6 +226,10 @@ sched_yield(
 	assert(irq_enabled);
 	yielded++;
 	ticks += 1000;
+
+	/* Models the handler stopping hardware before event DMA can be consumed. */
+	if (mode == 8U && rung != 0U)
+		controller.irq_fault_status = 0x1008U;
 
 	/* Models the handler publishing a completion after the doorbell. */
 	if (mode == 3 && rung != 0) {
@@ -447,4 +471,17 @@ reset_fixture(
 	polled = 0;
 	rung = 0;
 	reported = 0;
+}
+
+/* Requires polling acknowledgement to run inside the event-ring critical section. */
+static void
+xhci_event_dequeue_publish_locked(
+	struct xhci_controller *c,
+	unsigned clear_busy)
+{
+	(void)c;
+
+	/* A poll may end EHB only while it protects the shared event cursor. */
+	assert(event_locked == 1U);
+	assert(clear_busy == 1U);
 }

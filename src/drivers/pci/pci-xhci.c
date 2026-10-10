@@ -117,6 +117,8 @@
 #define XHCI_PCI_COMMAND_IO 0x0001U
 #define XHCI_PCI_COMMAND_MEMORY 0x0002U
 #define XHCI_PCI_COMMAND_MASTER 0x0004U
+/* Stops this function from asserting a shared PCI pin after a fatal fault. */
+#define XHCI_PCI_COMMAND_INTX_DISABLE 0x0400U
 #define XHCI_PCI_COMMAND_ENABLE                                                \
 	(XHCI_PCI_COMMAND_IO | XHCI_PCI_COMMAND_MEMORY |                       \
 	 XHCI_PCI_COMMAND_MASTER)
@@ -233,6 +235,8 @@ struct xhci_controller {
 	struct thread *port_worker;
 	volatile unsigned command_busy, command_failed, completion_busy;
 	volatile unsigned irq_busy;
+	/* IRQ publishes fatal status; no command can retire DMA after a fault. */
+	uint32_t irq_fault_status;
 	volatile unsigned event_busy;
 	volatile unsigned command_event_ready;
 	/*
@@ -327,6 +331,8 @@ static int xhci_endpoint_dequeue_all(struct xhci_controller *, struct xhci_devic
 static int ring_alloc(struct xhci_controller *c, struct xhci_ring *r);
 static void ring_free(struct xhci_controller *c, struct xhci_ring *r);
 static uint64_t ring_push(struct xhci_ring *r, uint64_t parameter, uint32_t status, uint32_t control);
+static void xhci_event_dequeue_publish_locked(struct xhci_controller *c, unsigned clear_busy);
+static void xhci_irq_fail(struct xhci_controller *c, uint32_t status);
 static int event_take(struct xhci_controller *c, struct xhci_trb *out);
 static void event_lock(struct xhci_controller *c);
 static void event_unlock(struct xhci_controller *c);
@@ -1052,31 +1058,61 @@ ring_push(
 	return trb_address;
 }
 
-/* Takes the next event the controller has posted, if any. */
+/* Publishes the protected event cursor and ends a batch only when requested. */
+static void
+xhci_event_dequeue_publish_locked(
+	struct xhci_controller *c,
+	unsigned clear_busy)
+{
+	uint64_t dequeue;
+
+	/* Returns consumed descriptors while retaining EHB during an IRQ batch. */
+	dequeue = c->event_memory.device_address;
+	dequeue += (uint64_t)c->event_dequeue * sizeof(struct xhci_trb);
+
+	/* Only the batch owner may reopen interrupt notification. */
+	if (clear_busy != 0U)
+		dequeue |= 8U;
+	wr64(c->runtime, XHCI_ERDP, dequeue);
+
+	/* Completes an EHB acknowledgement before the PCI dispatcher issues EOI. */
+	if (clear_busy != 0U)
+		(void)rd32(c->runtime, XHCI_ERDP);
+}
+
+/* Takes one DMA event without prematurely ending the IRQ consumer's batch. */
 static int
 event_take(
 	struct xhci_controller *c,
 	struct xhci_trb *out)
 {
-	struct xhci_trb *t = &c->events[c->event_dequeue];
-	uint32_t control = t->control;
+	const volatile struct xhci_trb *event;
+	uint32_t control;
 
-	/* Handles the control condition. */
-	if ((control & 1U) != c->event_cycle)
+	/* Samples the producer's cycle before consuming the published descriptor. */
+	event = &c->events[c->event_dequeue];
+	control = event->control;
+	if ((control & XHCI_TRB_CYCLE) != c->event_cycle)
 		return 0;
 	kern_io_read_barrier();
-	*out = *t;
-	/* Classifies the current input character. */
-	if (++c->event_dequeue == XHCI_RING_TRBS) {
+
+	/* Copies controller-owned words only after the producer's publication. */
+	out->parameter_low = event->parameter_low;
+	out->parameter_high = event->parameter_high;
+	out->status = event->status;
+	out->control = control;
+
+	/* Starts the next ring generation after its last descriptor. */
+	c->event_dequeue++;
+	if (c->event_dequeue == XHCI_RING_TRBS) {
 		c->event_dequeue = 0;
 		c->event_cycle ^= 1U;
 	}
 
-	wr64(c->runtime, 0x38U,
-	     (c->event_memory.device_address + c->event_dequeue * sizeof(*t)) |
-		     8U);
+	/* Returns ring capacity without clearing the handler-busy notification. */
+	xhci_event_dequeue_publish_locked(c, 0U);
 
-	/* Reports operation failure. */
+	/* Succeeded: the caller owns a copied event and the cursor advanced. */
 	return 1;
 }
 
@@ -1119,6 +1155,9 @@ xhci_interrupter_write_locked(
 		value |= 1U;
 
 	wr32(c->runtime, 0x20U, value);
+
+	/* Flushes posted IP/IE changes before interrupt delivery resumes. */
+	(void)rd32(c->runtime, 0x20U);
 }
 
 /* Hands a root port change to the worker thread. */
@@ -1178,6 +1217,8 @@ command_ex(
 	int command_error;
 	int matches;
 	unsigned command_owner;
+	unsigned irq_owner;
+	uint32_t controller_fault;
 
 	/* Saves the caller's IRQ state before claiming command ownership. */
 	enabled = kern_irq_disable();
@@ -1202,7 +1243,11 @@ command_ex(
 	}
 
 	/* Refuses a controller whose command or DMA ownership is unresolved. */
-	if (c->dma_quiesced || c->command_failed) {
+	controller_fault =
+	    __atomic_load_n(&c->irq_fault_status, __ATOMIC_ACQUIRE);
+	if (c->dma_quiesced ||
+	    c->command_failed ||
+	    controller_fault != 0U) {
 		__atomic_store_n(&c->command_busy, 0U, __ATOMIC_RELEASE);
 
 		/* Restores the caller's permitted interrupt delivery. */
@@ -1290,14 +1335,39 @@ command_ex(
 				break;
 		}
 
+#if defined(HAL_BOARD_RPI4)
+		/* Marks the first completion wait before giving up this CPU. */
+		if (n == 0U && ((control >> 10) & 0x3fU) == 9U) {
+			kern_logf("xhci: enable slot completion wait irq=%u\n",
+				  (unsigned)enabled);
+		}
+#endif
+
 		/* Lets init and networking run between short event-ring critical sections. */
 		if (enabled) {
 			sched_yield();
 			(void)kern_irq_disable();
 		}
 
-		/* Serializes the shared event consumer against the controller IRQ. */
+#if defined(HAL_BOARD_RPI4)
+		/* Confirms that the command owner returned from its scheduling point. */
+		if (n == 0U && ((control >> 10) & 0x3fU) == 9U) {
+			kern_logf(
+			    "xhci: enable slot completion poll resumed\n");
+		}
+#endif
+
+		/* Serializes polling and fault publication against the controller IRQ. */
 		event_lock(c);
+
+		/* Refuses event DMA after the IRQ observed a controller fault. */
+		controller_fault =
+		    __atomic_load_n(&c->irq_fault_status, __ATOMIC_ACQUIRE);
+		if (controller_fault != 0U) {
+			command_error = EIO;
+			event_unlock(c);
+			break;
+		}
 
 		/* Takes the IRQ handoff before polling another hardware event. */
 		if (c->command_event_ready) {
@@ -1312,6 +1382,11 @@ command_ex(
 		type = available ? (event.control >> 10) & 0x3fU : 0;
 		if (available && type == 32U)
 			(void)transfer_claim(c, &event);
+
+		/* Leaves a competing IRQ batch in charge of its own final EHB clear. */
+		irq_owner = __atomic_load_n(&c->irq_busy, __ATOMIC_ACQUIRE);
+		if (available && irq_owner == 0U)
+			xhci_event_dequeue_publish_locked(c, 1U);
 
 		event_unlock(c);
 
@@ -1386,7 +1461,15 @@ command_ex(
 	event_unlock(c);
 
 	/* Blocks reuse of a ring whose last command was never completed. */
-	if (command_error == ETIMEDOUT)
+	controller_fault =
+	    __atomic_load_n(&c->irq_fault_status, __ATOMIC_ACQUIRE);
+
+	/* A fault observed at retirement invalidates even a matching completion. */
+	if (controller_fault != 0U)
+		command_error = EIO;
+
+	/* Keeps unresolved or faulted command DMA from being reused. */
+	if (command_error == ETIMEDOUT || controller_fault != 0U)
 		c->command_failed = 1;
 	__atomic_store_n(&c->command_busy, 0U, __ATOMIC_RELEASE);
 
@@ -2769,101 +2852,199 @@ xhci_completion_drain(
 	}
 }
 
-/* Serves one interrupt from the controller. */
+/* Stops interrupt production after a fatal controller status, retaining DMA. */
+static void
+xhci_irq_fail(
+	struct xhci_controller *c,
+	uint32_t status)
+{
+	uint32_t command;
+	uint16_t pci_command;
+	uint16_t readback;
+	unsigned long irq;
+	int mask_error;
+
+	/* Serializes the fault with polling event consumers on other CPUs. */
+	event_lock(c);
+
+	__atomic_store_n(&c->irq_fault_status, status, __ATOMIC_RELEASE);
+
+	event_unlock(c);
+
+	/* Prevents fresh USB operations or transfers from joining this controller. */
+	irq = spin_lock_irqsave(&c->active_lock);
+
+	c->controller_stopping = 1U;
+
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* An inaccessible BAR must not be used to acknowledge or drain event data. */
+	if (status != UINT32_MAX) {
+		/* Disables the local interrupter without changing a shared GIC line. */
+		event_lock(c);
+
+		c->interrupter_enabled = 0U;
+		xhci_interrupter_write_locked(c, 1U);
+
+		event_unlock(c);
+
+		/* Requests a stop without waiting in IRQ or claiming DMA quiescence. */
+		command = rd32(c->operational, XHCI_USBCMD);
+		command &= ~(XHCI_CMD_RUN | XHCI_CMD_INTE);
+		wr32(c->operational, XHCI_USBCMD, command);
+		(void)rd32(c->operational, XHCI_USBSTS);
+	}
+
+	/* Contains this PCI function's level pin without masking other users. */
+	pci_command = 0U;
+	readback = 0U;
+	mask_error = drv_pci_device_config_read16(
+	    c->pci,
+	    XHCI_PCI_COMMAND,
+	    &pci_command);
+	if (mask_error == 0) {
+		mask_error = drv_pci_device_config_write16(
+		    c->pci,
+		    XHCI_PCI_COMMAND,
+		    (uint16_t)(pci_command | XHCI_PCI_COMMAND_INTX_DISABLE));
+		if (mask_error == 0) {
+			mask_error = drv_pci_device_config_read16(
+			    c->pci,
+			    XHCI_PCI_COMMAND,
+			    &readback);
+			if (mask_error == 0 &&
+			    (readback & XHCI_PCI_COMMAND_INTX_DISABLE) == 0U)
+				mask_error = EIO;
+		}
+	}
+
+	/* Reports one fault; the sticky status prevents hot-loop repetition. */
+	kern_logf("xhci: controller IRQ fault USBSTS=%08x INTx mask=%d; "
+		  "retaining DMA\n",
+		  status,
+		  mask_error);
+}
+
+/* Serves one bounded event batch and completes its interrupt acknowledgement. */
 static int
 xhci_irq(
 	void *argument)
 {
-	uint64_t pointer;
-	unsigned type;
-	struct xhci_controller *c = argument;
+	struct xhci_controller *c;
 	struct xhci_trb event;
-	int available;
-	int handled = 0;
+	uint64_t pointer;
 	uint32_t status;
+	uint32_t fault_status;
+	unsigned type;
 	unsigned suspend_state;
+	unsigned count;
+	unsigned busy;
+	int available;
+	int handled;
+	int matches;
 
+	/* Keeps teardown from retiring the controller during this callback. */
+	c = argument;
+	handled = 0;
 	io_stats_record(IO_XHCI_IRQ_ENTRY, 0);
-
-	/* Checks the atomic raw fetch add relaxed result. */
-	if (atomic_raw_fetch_add_relaxed(&c->irq_busy, 1U) == UINT_MAX)
+	busy = atomic_raw_fetch_add_relaxed(&c->irq_busy, 1U);
+	if (busy == UINT_MAX)
 		__builtin_trap();
 
-	/*
-	 * Checks the operation status; a controller halted for S0 idle is not
-	 * touched, since in D3hot it reads all ones (ws052-p004).
-	 */
+	/* A halted or faulted controller cannot provide valid event DMA. */
 	suspend_state = __atomic_load_n(&c->suspend_state, __ATOMIC_ACQUIRE);
-	status = 0;
-	if (suspend_state != XHCI_SUSPEND_HALTED)
+	fault_status = __atomic_load_n(&c->irq_fault_status, __ATOMIC_ACQUIRE);
+	if (suspend_state != XHCI_SUSPEND_HALTED && fault_status == 0U) {
+		/* Tests fatal status before trusting any producer-owned descriptor. */
 		status = rd32(c->operational, XHCI_USBSTS);
-	if (!(status & (XHCI_STS_EINT | XHCI_STS_FATAL)))
-		goto out;
-	io_stats_record(IO_XHCI_IRQ_OWNED, 0);
-	wr32(c->operational, XHCI_USBSTS, status);
+		if (status == UINT32_MAX ||
+		    (status & (XHCI_STS_HCE | XHCI_STS_FATAL)) != 0U) {
+			xhci_irq_fail(c, status);
+			handled = 1;
+		} else if ((status & XHCI_STS_EINT) != 0U) {
+			/* Acknowledges only EINT, preserving unrelated W1C status. */
+			io_stats_record(IO_XHCI_IRQ_OWNED, 0);
+			handled = 1;
+			wr32(c->operational, XHCI_USBSTS, XHCI_STS_EINT);
 
-	/* Acknowledges IP, keeping the enable the driver wants rather than the one read back. */
-	event_lock(c);
-	xhci_interrupter_write_locked(c, 1U);
-	event_unlock(c);
-
-	/* Continue until the operation reaches a terminal state. */
-	for (;;) {
-		event_lock(c);
-		available = event_take(c, &event);
-
-		/* Handles the available condition. */
-		type = available ? (event.control >> 10) & 0x3fU : 0;
-		if (available && type == 32U)
-			(void)transfer_claim(c, &event);
-		event_unlock(c);
-
-		/* Handles the available condition. */
-		if (!available)
-			break;
-		io_stats_record(IO_XHCI_IRQ_EVENT, 0);
-		handled = 1;
-
-		/* Handles the type condition. */
-		if (type == 33U) {
-			pointer = xhci_event_pointer(&event);
-
+			/* Completes posted IMAN.IP acknowledgement before consuming the batch. */
 			event_lock(c);
 
-			/* Checks the atomic load n result. */
-			if (__atomic_load_n(&c->command_busy,
-					    __ATOMIC_ACQUIRE) != 0 &&
-			    drv_xhci_command_completion_matches(
-				    c->command_address, pointer) &&
-			    !c->command_event_ready) {
-				c->command_event = event;
-				c->command_event_ready = 1;
-			} else {
-				kern_logf("xhci: unmatched command completion "
-					   "%x:%x\n",
-					   event.parameter_high,
-					   event.parameter_low);
-			}
+			xhci_interrupter_write_locked(c, 1U);
 
 			event_unlock(c);
-		} else if (type == 34U)
-			port_change_defer(c);
+
+			/* Limits hard IRQ work to one ring so timer and command owner can resume. */
+			for (count = 0; count < XHCI_RING_TRBS; count++) {
+				/* Copies and claims one event against the competing command consumer. */
+				event_lock(c);
+
+				available = event_take(c, &event);
+
+				/* Classifies only descriptors published by the producer. */
+				type = 0U;
+				if (available)
+					type = (event.control >> 10) & 0x3fU;
+
+				/* Claims transfer ownership before another consumer can advance. */
+				if (available && type == 32U)
+					(void)transfer_claim(c, &event);
+
+				event_unlock(c);
+
+				/* Even an empty/spurious interrupt must end EHB below. */
+				if (!available)
+					break;
+				io_stats_record(IO_XHCI_IRQ_EVENT, 0);
+				handled = 1;
+
+				/* Hands matching command events to their waiting ring owner. */
+				if (type == 33U) {
+					pointer = xhci_event_pointer(&event);
+					event_lock(c);
+
+					busy = __atomic_load_n(
+					    &c->command_busy,
+					    __ATOMIC_ACQUIRE);
+					matches =
+					    drv_xhci_command_completion_matches(
+						c->command_address,
+						pointer);
+					if (busy != 0U &&
+					    matches &&
+					    !c->command_event_ready) {
+						c->command_event = event;
+						c->command_event_ready = 1U;
+					}
+
+					event_unlock(c);
+				} else if (type == 34U) {
+					/* Wakes enumeration outside hard IRQ context. */
+					port_change_defer(c);
+				}
+			}
+
+			/* Ends the batch even when no descriptor matched the current cycle. */
+			event_lock(c);
+
+			xhci_event_dequeue_publish_locked(c, 1U);
+
+			event_unlock(c);
+
+			/* Defers command-recursive callbacks until the waiting gate is released. */
+			busy =
+			    __atomic_load_n(&c->command_busy, __ATOMIC_ACQUIRE);
+			if (busy == 0U)
+				xhci_completion_drain(c);
+		}
 	}
 
-	/*
-	 * A polling command owns command_busy and will drain every claim after
-	 * it releases that gate.  Never run a command-recursive callback from
-	 * the competing IRQ path while the command is still in flight.
-	 */
-	if (__atomic_load_n(&c->command_busy, __ATOMIC_ACQUIRE) == 0)
-		xhci_completion_drain(c);
-out:
-
-	/* Checks the atomic raw fetch add release result. */
-	if (atomic_raw_fetch_add_release(&c->irq_busy, (unsigned)-1) == 0)
+	/* Publishes that IRQ no longer owns the controller or its DMA. */
+	busy = atomic_raw_fetch_add_release(&c->irq_busy, (unsigned)-1);
+	if (busy == 0U)
 		__builtin_trap();
 
-	/* Returns the computed result. */
+	/* Succeeded: reports whether this callback consumed a controller cause. */
 	return handled;
 }
 

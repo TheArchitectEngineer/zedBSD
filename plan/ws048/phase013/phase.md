@@ -1,0 +1,18 @@
+<!-- awesome-plan project=zedbsd record=ws048-p013 -->
+# WS048 p013: xHCI interrupt acknowledgement and fault containment
+
+Status: cleared (limited source/host/build criteria; physical acceptance remains pending)
+Disposition: normal
+Parent: [WS048](../ws.md)
+Queue: [rpi4-xhci-irq-20261011](../codex-irq-repair-20261011.md)
+
+User reports freeze at `enable slot doorbell complete` on p012-integrated kernel. Doorbell publication returned; completion-wait recovery still unverified. IRQ callback runs before its PCI dispatcher issues EOI. Current IRQ path does not reject fatal/HCE state before event DMA reads, does not finish EHB on an empty event ring, has no posted IMAN acknowledgement readback, and drains events without a per-dispatch limit. Linux primary reference: xhci-ring.c, xhci_irq/clear_interrupt_pending/update_erst_dequeue; factual protocol behavior only, original implementation. This is a source finding, not proof of the specific physical stopping cause.
+
+Finite scope: correct acknowledgements and EHB ownership for IRQ vs polling; bounded IRQ event batch, controller-fault refusal/interrupt containment without freeing DMA or claiming halt; first Enable Slot wait scheduling stages. Reuse production command-wait fixture and add a focused IRQ register/event model exercising exact extracted functions; current config warning0 arm64 kernel/raw-image checks; final full changed-source standards review and diff-check. No DMA-alias guess, MSI, GPU, boot0/CI, HAL API, toolchain, SSH probing/deployment/reboot/push or shared plan/cache writes. Main integration is separately approved. Actual USB/boot acceptance remains p009/p006; WS incomplete. Standards: AGENTS/Guardrail/full coding-style.md/.clang-format.
+
+User runtime DMA evidence: `DMA PCI 400000000 CPU 0 size c0000000 window 100000000`. This confirms PCI alias16GiB, CPU0, firmware range3GiB, programmed power-of-two window4GiB. Earlier uncertainty over runtime DMA base is now resolved; no alias change is justified by this log alone.
+
+
+## Terminal outcome / 2026-10-11
+
+Attempt rpi4-xhci-irq-20261011-i01 cleared its finite source/host/build criteria. [Final evidence](../tests/irq-repair-20261011.md) records exact checks, hashes, full changed-source review, limitations and next-stage logs. Both host fixtures pass (11 + 8 scenarios); current-config arm64 kernel/raw-image build and format checks pass, warning/error 0. Final poll/fault publication is serialized under the event lock. This does not clear physical USB/boot acceptance or complete WS048. Main integration and shared projections remain pending; no push or remote action.

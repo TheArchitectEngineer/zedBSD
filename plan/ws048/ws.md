@@ -3,13 +3,13 @@
 # WS048: Raspberry Pi 4 の USB（PCIe・VL805 の xHCI・USB キーボード）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p012 command待機のsource/host/build cleared、最新実機フリーズの復旧未確認）
+Status: incomplete（p013 IRQ修正のsource/host/build cleared、実機フリーズの復旧未確認）
 Primary Milestone: MG008
 Related Milestones: MG003, MG006
 Objectives: O2, O4
 Parent: [Master](../master.md)
-Queue: [command-freeze限定Queue](codex-command-freeze-20261011.md) finished。旧PCIe boot/USB/sessiond実行記録は保持。
-Resume point: p012 source17898a746はmain統合済み、新kernelの起動/USB入力をuserが確認。p011はmain統合済み、最新写真ではport reset後にboot停止。従来p005〜p007の履歴/未完criteriaは保持。
+Queue: [IRQ修正限定Queue](codex-irq-repair-20261011.md) finished。旧実行記録は保持。
+Resume point: p013修正のmain統合承認待ち。統合後にuser実機でboot/USB入力と追加stage logを確認。p012統合後のdoorbell complete停止は未解決扱い。従来p005〜p007の履歴/未完criteriaは保持。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
@@ -55,6 +55,7 @@ Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS11
 | [ws048-p010](phase010/phase.md) | VL805起動時の非coherent DMA size契約と最終規約/build | cleared（source/buildのみ、実機未実施） | 現在main/configと実機写真 | API変更なし |
 | [ws048-p011](phase011/phase.md) | VL805 command completion / PCI DMA aliasとdoorbell flush | cleared（source/buildのみ、実機USB未確認） | main402598d27 / 実機log | HAL API不変 |
 | [ws048-p012](phase012/phase.md) | Command待機の実時間上限とIRQ/CPU進行 | cleared（限定source/host/build、実機復旧未確認） | main9a0ddc6cb / 起動停止写真 | HAL API不変 |
+| [ws048-p013](phase013/phase.md) | IRQ acknowledgement / EHB・fault containment | cleared（限定source/host/build、実機未確認） | main4b70292ef / doorbell complete後の実機停止 | HAL API不変 |
 
 ## 2026-10-11 port reset後の起動停止
 
@@ -132,3 +133,11 @@ Current user「mainへ統合する」で具体的commit `16c139e9f` を承認。
 ## Main integration / 2026-10-11
 
 Current user「mainにマージしてください。」approves the exact USB repair commit `17898a7465b9125bb5f4afef9539cdeb66e9b162`. Clean main `9a0ddc6cb` fast-forwarded to this commit without conflict. Read-back confirms all seven integrated files byte-identical to the verified private worktree; config.mk matches the warning0 arm64 build configuration and xHCI SHA256 matches the recorded final source hash. Previous nine host scenarios and kernel/raw-image validation apply to this identical source; no redundant rebuild/test. Source integration is complete; earlier integration-pending statements are historical. Physical boot/USB recovery remains unverified and WS048 stays incomplete. Pending boot0/CI commits remain separate. No push or remote update/reboot. Shared Master/Queue/history/cache/GitHub projections remain Q1 pending.
+
+## 2026-10-11 doorbell complete後の停止
+
+User新報告で[p013](phase013/phase.md)/[限定Queue](codex-irq-repair-20261011.md)を開始。p012の限定source/build clearanceは保持し、実機boot/USB復旧は未達と記録。doorbell readbackは戻った。IRQ acknowledgement/fault pathsの確認を進める。共有投影/GitHub Q1 pending。
+
+### p013 terminal / 2026-10-11
+
+IRQ ack/readback、空ringを含むEHB完了、1 ringのIRQ処理上限、fault時の新規操作停止とcommand EIO、RPi4 wait/resume stage logを実装。[証拠](tests/irq-repair-20261011.md)。最終changed-source規約review、production抽出host 11+8 scenarios、現在config arm64 warning/error 0 kernel/raw-image build/check、diff-check PASS。実機の原因確定・USB復旧は未確認、WS incompleteを維持。Main統合承認と共有投影はpending、push/実機更新なし。
