@@ -2627,14 +2627,19 @@ transfer_claim(
 		spin_unlock_irqrestore(&c->active_lock, irq);
 
 		/*
-		 * A completion that reaches a request already being cancelled
-		 * for a timeout tells whether the controller had finished the
-		 * transfer (success or short) or only stopped it (BUG-030).
+		 * Stop Endpoint normally ends an idle interrupt read this way.
+		 * Keep other completions visible for timeout/completion races
+		 * (BUG-030), without logging every quiet hub polling interval.
 		 */
-		kern_logf("xhci: cancelled request slot=%u endpoint=%u "
-			   "completion=%u residual=%u\n",
-			   request->slot, request->dci, code,
-			   (unsigned)residual);
+		if (code != XHCI_COMPLETION_STOPPED &&
+		    code != XHCI_COMPLETION_STOPPED_LENGTH) {
+			kern_logf("xhci: cancelled request slot=%u endpoint=%u "
+				  "completion=%u residual=%u\n",
+				  request->slot,
+				  request->dci,
+				  code,
+				  (unsigned)residual);
+		}
 
 		/* Reports operation failure. */
 		return 1;
@@ -4247,11 +4252,10 @@ xhci_endpoint_state(
 	return context[0] & 7U;
 }
 
-/* Stops one outstanding request and takes it off its ring. */
 /*
- * Logs what the event ring and interrupter 0 hold when a transfer is
- * cancelled, normally for a timeout.  Unprocessed events with the driver's
- * cycle bit mean the completion was posted but never taken (BUG-030).
+ * Logs retained controller state after cancellation fails. Normal interrupt
+ * polling timeouts do not need a ring snapshot. Pending events can explain
+ * a completion that was posted but never consumed (BUG-030).
  */
 static void
 xhci_cancel_diagnose(
@@ -4259,14 +4263,29 @@ xhci_cancel_diagnose(
 	const struct xhci_request *r)
 {
 	unsigned pending, index, cycle, first_type;
+	unsigned dequeue;
 	uint32_t control, iman, usbsts, erdp;
+	uint32_t fault_status;
+	bool enabled;
 
-	/* Counts the events the controller posted that nobody has taken yet. */
+	/* Prevents the local IRQ consumer from reentering this event lock. */
+	enabled = kern_irq_disable();
 	event_lock(c);
 
+	/* A reported controller fault already explains why DMA cannot be trusted. */
+	fault_status = __atomic_load_n(&c->irq_fault_status, __ATOMIC_ACQUIRE);
+	if (fault_status != 0U) {
+		event_unlock(c);
+		if (enabled)
+			kern_irq_enable();
+		return;
+	}
+
+	/* Counts the events the controller posted that nobody has taken yet. */
 	pending = 0;
 	first_type = 0;
-	index = c->event_dequeue;
+	dequeue = c->event_dequeue;
+	index = dequeue;
 	cycle = c->event_cycle;
 	for (;;) {
 		control = c->events[index].control;
@@ -4289,11 +4308,22 @@ xhci_cancel_diagnose(
 
 	event_unlock(c);
 
+	/* Restores the caller's interrupt delivery before formatting diagnostics. */
+	if (enabled)
+		kern_irq_enable();
+
+	/* Reports the protected cursor together with its retained hardware state. */
 	kern_logf("xhci: cancel slot=%u endpoint=%u pending-events=%u "
 		   "first-type=%u iman=%x usbsts=%x erdp=%x dequeue=%u "
 		   "command-busy=%u irq-busy=%u\n",
-		   r->slot, r->dci, pending, first_type, iman, usbsts, erdp,
-		   c->event_dequeue,
+		   r->slot,
+		   r->dci,
+		   pending,
+		   first_type,
+		   iman,
+		   usbsts,
+		   erdp,
+		   dequeue,
 		   __atomic_load_n(&c->command_busy, __ATOMIC_ACQUIRE),
 		   __atomic_load_n(&c->irq_busy, __ATOMIC_ACQUIRE));
 }
@@ -4429,6 +4459,8 @@ retain:
 
 	spin_unlock_irqrestore(&c->active_lock, irq);
 
+	/* Captures ring state only when cancellation could not retire the request. */
+	xhci_cancel_diagnose(c, r);
 	kern_logf("xhci: slot %u endpoint %u port %u cancel failed (%d, "
 		   "completion=%u, state=%u); request and DMA retained\n",
 		   r->slot, r->dci, r->port, error, completion,
@@ -4516,9 +4548,6 @@ xhci_urb_dequeue(
 	r->cancelling = 1U;
 
 	spin_unlock_irqrestore(&c->active_lock, irq);
-
-	/* Records the event ring and interrupter state the cancel starts from. */
-	xhci_cancel_diagnose(c, r);
 
 	/* Obtains the xhci cancel request result. */
 	error = xhci_cancel_request(c, d, r);
