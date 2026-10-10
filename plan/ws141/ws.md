@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: 既存履歴 q691（p001）・q695（p002）。現在の独立セッションの実行範囲は [execution-20261009.md](execution-20261009.md)
-Resume point: p011は実機R0/list43採用成功でcleared。P2二flip/P3合成とconsole復帰/P5 display登録、V3D V7〜V10/render登録も確認。KeilandはV3Dで初期化するが、EL0 CNTVCT読出しがSIGBUS。[p012](phase012/phase.md)でARM64 counter初期化を補完し、build/生成命令を確認済み。実機更新は未実施。WS incomplete、desktop実描画/視覚確認は保持。共有投影はQ1。
+Resume point: p011は実機R0/list43採用成功でcleared。P2二flip/P3合成とconsole復帰/P5 display登録、V3D V7〜V10/render登録も確認。KeilandはV3Dで初期化するが、EL0 CNTVCT読出しがSIGBUS。[p012](phase012/phase.md)でARM64 counter初期化を補完し、build/生成命令を確認済み、823f116f5をmain統合済み。実機更新は未実施。WS incomplete、desktop実描画/視覚確認は保持。共有投影はQ1。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 

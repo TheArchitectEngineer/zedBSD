@@ -38,3 +38,7 @@ locoreのEL1共通経路にCNTKCTL_EL1=2とISBを追加。scratch x1のみ、sta
 ```
 
 限定software scope counter-i01はcleared、Phase全体は実機のSIGBUS消失/Keiland進行待ちでuncleared。次回カーネル更新・起動後に同じfault PC消失とKWL表示を確認する。p005/p006の実機受入れを肩代わりしない。自動main統合を行い共有投影はQ1に残す。
+
+## main統合（2026-10-11）
+
+修正 `823f116f5` をclean main `9c05da58a` からfast-forward統合。変更9path/config.mkの一致とmain cleanをread-back確認。実機更新/reboot/pushは未実施、次は新kernelでのKeiland例外消失確認。
