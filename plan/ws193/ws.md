@@ -84,6 +84,13 @@ Build boot imageはプログレスバーを表示して、何をビルド中な�
 | [p009](phase009/phase.md) | RPi4 Graphical loginをfirmware command lineへ渡す | cleared（source/option/image、実機desktop未確認） | 現在main/config |
 | [p008](phase008/phase.md) | 選択したRPi4 configのrootfs/desktopビルドルール補完 | cleared（df1d2be26 main統合済み） | p005〜p007 main source |
 | [p010](phase010/phase.md) | ユーザーランド配置の共通化・OpenSSH runtime欠落修正 | cleared（限定source/host/build） | p008 main source |
+| [p011](phase011/phase.md) | RPi4起動FATを/boot/boot0へ自動公開 | cleared（限定source/host/build、実機未確認） | native UFS起動/共通VFS |
+
+## RPi4 automatic boot mount / 2026-10-11
+
+Userの自動マウント指示で[p011](phase011/phase.md)、[限定Queue](codex-rpi4-boot0-queue.md)を追加。現在のUFS rootは保ち、起動FATを共通slot0に保持してread-write bindを公開する。swap/USB/GPU/toolchain変更・実機更新は含めない。WS incompleteを維持、共有投影/GitHubはQ1 pending。
+
+p011限定source/build criteria cleared。[証拠](tests/rpi4-boot0-20261011.md): RPi4/amd64 production publication models、amd64 VFS compile、現在arm64 kernel/image warning0、最終変更全文review PASS。/boot/boot0はread-writeで自動公開し、旧overlayの二重FAT mountは避ける。実機での新kernel起動・SSH書込みは未確認でWS incompleteを維持。具体的commitのmain承認と共有投影/GitHubはpending、push/実機更新/rebootなし。
 
 ## 2026-10-10 RPi4 UAT前のarm64選択修正
 
