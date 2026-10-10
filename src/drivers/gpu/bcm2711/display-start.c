@@ -270,9 +270,12 @@ capture_mode(
 		return ENOTSUP;
 	}
 
-	/* Requires the RGB8 packing accepted by the restart program. */
+	/*
+	 * Accepts both unspecified depth and explicit 24-bit RGB packing.
+	 * Firmware can use depth code 4 where Linux programs code 0 for RGB8.
+	 */
 	value = encoder_read(base, BCM2711_ENCODER_CORE, 0x170);
-	if ((value & 0x0fU) != 0) {
+	if ((value & 0x0fU) != 0 && (value & 0x0fU) != 4U) {
 		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 reject deep-color=%08x", value);
 		return ENOTSUP;
 	}

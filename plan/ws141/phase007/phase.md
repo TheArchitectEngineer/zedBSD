@@ -83,3 +83,7 @@ USB `3e9ace7b9` とGPU `461906448` を専用worktreeでmerge `afe01157f` にま�
 ## main統合（2026-10-11）
 
 自動統合の継続承認に基づきsource `0494ed96d` をclean main `21050e5c0` からfast-forward統合。変更5pathとconfig.mkが検証worktreeと一致することをread-back確認。p007の今回診断sourceの規約/build/統合確認はcleared。p011は原因実値・修復待ちでuncleared、WS incompleteを保持する。次回起動の `R0 reject ...` と続く境界error行が再開証拠。push/実機更新/再起動は未実施、共有投影はQ1。
+
+## p011 r0-i02変更の全文規約確認（2026-10-11）
+
+[p011実機CD4誤拒否の修正](../phase011/phase.md)のdisplay-start.c差分を全文C規約/Guardrailと照合。コメントはfieldの意味を説明、two-clause guardは副作用無し、既存失敗診断と早期returnを維持。Linuxはregister layout/既存8bpc設定の根拠だけ、追加したCD4の意味は一次GCP表で確認。GPL code転記無し。clang-format19.1.7変更範囲確認、実captureの16値host試験と旧guardでの失敗確認、arm64 warning/error0・image checker・diff-check PASS。p007は今回changed sourceについてclearedを維持し、p011の実機scanout未確認を肩代わりしない。自動main統合承認に従う。
