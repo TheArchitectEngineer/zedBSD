@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 #include <sys/mman.h>
@@ -1018,15 +1019,28 @@ vulkan_decoder_wait(
 		status = ioctl(context->fd, GPU_COMMAND_WAIT, &wait);
 		if (status == 0) {
 			/* Transport success and renderer Vulkan results occupy different domains. */
-			if (wait.status != 0)
+			if (wait.status != 0) {
+				fprintf(
+					stderr,
+					"VULKAN decoder failed status=%u sequence=%llu\n",
+					wait.status,
+					(unsigned long long)sequence);
 				return VK_ERROR_DEVICE_LOST;
+			}
 
 			return VK_SUCCESS;
 		}
 
 		/* Only an interruption may resume waiting for this same unconsumed record. */
-		if (errno != EINTR)
+		if (errno != EINTR) {
+			fprintf(
+				stderr,
+				"VULKAN decoder wait failed errno=%d sequence=%llu timeout_ns=%llu\n",
+				errno,
+				(unsigned long long)sequence,
+				(unsigned long long)wait.timeout_ns);
 			return VK_ERROR_DEVICE_LOST;
+		}
 
 		error = vulkan_clock_read(&now);
 		if (error != VK_SUCCESS)

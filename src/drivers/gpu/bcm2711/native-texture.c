@@ -191,6 +191,7 @@ bcm2711_native_texture_copy(
 	uint32_t block_rows;
 	uint32_t x;
 	uint32_t y;
+	uint32_t run;
 	uint32_t column;
 	uint32_t block;
 	uint32_t offset;
@@ -244,7 +245,7 @@ bcm2711_native_texture_copy(
 	/* Four-block-wide columns advance through all block rows before moving to the next column. */
 	for (y = 0; y < height; y++) {
 		/* Each eight-by-eight UIF block contains four raster-ordered four-by-four utiles. */
-		for (x = 0; x < width; x++) {
+		for (x = 0; x < width; x += 4U) {
 			/* Resolves the column-major block before selecting its utile and exact pixel word. */
 			column = x / 32U;
 			block = column * block_rows * 4U + (y / 8U) * 4U + (x / 8U) % 4U;
@@ -252,7 +253,12 @@ bcm2711_native_texture_copy(
 			offset += ((x / 4U) % 2U) * 64U;
 			offset += ((y / 4U) % 2U) * 128U;
 			offset += (y % 4U) * 16U + (x % 4U) * 4U;
-			kern_memcpy(destination + offset, source + (size_t)y * pitch + (size_t)x * 4U, 4U);
+
+			/* One utile row is contiguous; word copies avoid four uncached byte reads per pixel. */
+			run = width - x;
+			if (run > 4U)
+				run = 4U;
+			kern_memcpy(destination + offset, source + (size_t)y * pitch + (size_t)x * 4U, run * 4U);
 		}
 	}
 

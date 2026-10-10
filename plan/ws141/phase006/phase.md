@@ -237,3 +237,19 @@ Queue ws141-first-submit-20261011 / active / submit-i01 / in-progress / Codex。
 ### 診断配置と再起動の承認
 
 ユーザー回答「配置してよい。配置後に電源OFF/ONする」。続いて「デバッグダンプはカーネルにもアプリにも入れていいです。SSHで自由に更新してください。カーネルについて、リセットは私に言ってくれればやります。rebootコマンドが効くなら使っていいです。」と承認。これ以後、この修復に必要な診断追加・SSH配置・利用可能なreboot実行は再確認せず実施できる。保存済みの復帰用kernelを保持し、更新時はsync/read-back照合する。
+
+### submit-i01診断checkpoint
+
+診断82094cc1aをmain統合。make -j16 build/arm64/vmunix exit0/warning0/error0、ARM64 checker3 PASS。C全文manual/style-check total0/diff-check PASS、clang-format19.1.7対象範囲出力を確認し全文規約の独立引数/tabsを保持。failure loggingのみのため実装を写す追加mockは作らない。image SHA256=61bbed74b2f2ae961d783bb04543cdf50a3db4ce9402f844538f0661bb24702f、cksum599806020/8077312。実機へ転送後FAT staging/cmp/sync/rename/sync/cmpと全体cksum一致を確認。旧版はUFS /var/backups/vmunix.before-submit-diag-20261011へ保存（counter修正2c674080版）。転送中に先行確認が部分長7833600を観測したが、転送終了と配置完了後のcmp/cksumで正しい8077312全体一致を確認してからreboot手順へ進んだ。
+
+配置後の再cmpとcksumで/tmpと/boot/boot0の双方599806020/8077312、UFS旧版3003282929/8077312を確認。sync後/sbin/rebootはexit0で要求受理、SSH切断後に復帰せず。ユーザーへ連絡し「電源OFF/ONした」の回答を受領。再起動コマンドによる実際のreset成立は未確認で、GPU修復と混同しない。
+
+### submit-i01 実機での期限切れ確認とコピー改善
+
+電源再投入後の82094cc1aで、通常描画はnative jobを投入する前の `submit prepare opcode=133 error=5`。V10の意図的timeout42とは別事象。libvulkanの通知結果診断をSSH配置し、`VULKAN decoder failed status=42` を実測。GPU_COMMAND_WAITのioctl自体のtimeoutではなく、kernelがcompletionへETIMEDOUTを公開していた。QueueSubmitの予約は応答後にcommitされるため、実行も同期で行う現在のV3D backendでは準備中も10秒のreservation期限が走る。期限を延ばして成功とはせず、まず準備の過剰な処理を減らす。
+
+native texture converterは4byteごとのkern_memcpyを呼び、arm64のword8byte経路に入れず、Normal NCのsourceを1pixelあたり4回byte-readしていた。UIF内で連続した4pixel/16byteのutile行をまとめ、右端だけ有効pixel数に縮める。source/padding/alias/overflowの検証とUIF配置は維持。pass準備の段階・元error・完成draw数・staging bytes・所要msを、失敗または1秒以上の場合にteardown前に記録する。実機での速度改善と描画成立は次のkernel起動待ちで未確認。
+
+libvulkan buildの初回は既存sysrootの前提からLLVM再取得へ進もうとしてDNS失敗。toolchainを再buildせず、既存の本worktree arm64 sysroot completionをmake -oで保持し、`make -j16 -o /home/awe/zedBSD-claude1/.claude/worktrees/rpi4-sshd/build/arm64/sysroot/.zedbsd-sysroot-complete build/arm64/dynamic/libvulkan.so` がwarning/error0で成功。旧実機libraryを `/var/backups/libvulkan.before-submit-diag.so` に保存、staging/cmp/rename/sync後cksum2182268690/222880を確認、`service restart greeter` 成功。ユーザーの継続SSH更新承認の範囲内。shared LLVM/ソース/成果物は変更しない。
+
+改善版 `make -j16 build/arm64/vmunix` はwarning/error0、ARM64 checker3 PASS。libvulkan最終整形後再buildもwarning/error0、配置済みbinaryとcksum一致。kernel SHA256 `46d65e3ef46c82fb47480441048e9bc4ec48640ed798cd325aab31a82a38054f`、cksum `2120890253 8077312`。source統合と実機転送へ進む。p007変更scope検証完了、whole p006実機描画は未達。

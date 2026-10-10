@@ -99,3 +99,7 @@ USB `3e9ace7b9` とGPU `461906448` を専用worktreeでmerge `afe01157f` にま�
 ## submit-i01診断差分レビュー（2026-10-11）
 
 v3d-job.c/vulkan-native-job.c/vulkan-queue.cの失敗時だけの診断を確認。GPU同期・retirement/timeout/refusalの動作を変えず、mask/reset前のqueue位置・IRQ結果と元のerrorを記録する。MMIOはpowered runnerの既存mapped core内のread-only register。shader/画像内容はdumpしない。C全文に対し宣言/段落/引数/分岐/unwindをmanual review、style-check total0/diff-check PASS。実機因果はこの診断取得後に判断し、現段階を修復済みとはしない。
+
+## submit-i01 コピー改善と準備診断のレビュー（2026-10-11）
+
+native-texture.cはUIFの4pixel行が連続であること、幅37/高さ131の端・padding・入力不変を既存inverse oracleで検証。native-state-host-test.shはXML8record/BCL/4847pixel照合PASS。vulkan-native-pass.cはowned rootが生きている間、teardown前に元error/段階/経過tickを記録。context.cはtransport statusとioctl errnoを区別する失敗時診断のみ。C全文で変更scopeの宣言/段落/引数/既存unwind/所有権を確認。clang-format19.1.7の変更範囲出力を照合し、正本と衝突するコメント折返し/複数引数同一行/space-indentは適用しない。driver2fileのstyle-check total0、context.c全体の既存22指摘はbefore/after同数・変更範囲新規0、diff-check PASS。元来の周辺指摘を今回新規違反とはせず残す。arm64 kernel最終buildと実機再起動の結果はp006へ追記する。

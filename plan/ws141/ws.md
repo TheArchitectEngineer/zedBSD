@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: 既存履歴 q691（p001）・q695（p002）。現在の独立セッションの実行範囲は [execution-20261009.md](execution-20261009.md)
-Resume point: p011のR0とp012のEL0 counter例外修正は実機確認でcleared。修正版kernelでKeilandはHANDOFF/OUTPUT openまで到達しSIGBUS無し。現在は最初の描画submitがresult=-4（device lost）、frames0で失敗する。既存p006の実機描画調査が次の再開点。WS incomplete、原因確定/desktop実描画/視覚確認は未達。共有投影はQ1。
+Resume point: p011 R0/p012 counterは実機cleared。p006 submit-i01で診断kernelとlibvulkanを実機配置し、最初の描画準備中に予約のETIMEDOUT、その後prepare EIOを確認。UIF変換の4byte逐次コピーを16byte行単位へ改善し、準備段階/所要時間診断を追加。改善版の再起動とKeiland実描画を確認する。WS incomplete、視覚確認は未達。共有投影はQ1。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 

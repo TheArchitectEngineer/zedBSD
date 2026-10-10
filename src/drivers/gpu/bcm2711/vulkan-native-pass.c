@@ -6,7 +6,9 @@
  */
 
 /* Native FIFO pass preparation owns all allocations before list publication, with no MMIO launch or target mutation. */
+#include <kern/clock.h>
 #include <kern/kcrt.h>
+#include <kern/klog.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
@@ -43,6 +45,9 @@ bcm2711_vulkan_native_pass_create(
 {
 	struct bcm2711_vulkan_native_pass *created;
 	const struct bcm2711_vulkan_prepared_event *following;
+	uint64_t started;
+	uint64_t elapsed;
+	const char *stage;
 	uint64_t remaining;
 	int error;
 	int released;
@@ -73,15 +78,34 @@ bcm2711_vulkan_native_pass_create(
 	created->job.kind = BCM2711_V3D_JOB_CL;
 
 	/* Complete output ownership precedes every draw or command-storage allocation. */
+	started = clock_ticks();
+	stage = "target";
 	error = prepare_target(created, begin);
 
 	/* Draw inputs are copied only after the independent framebuffer hold has succeeded. */
-	if (error == 0)
+	if (error == 0) {
+		stage = "draws";
 		error = collect_draws(created, begin, &remaining, &following);
+	}
 
 	/* Native command storage follows the complete independent draw prefix. */
-	if (error == 0)
+	if (error == 0) {
+		stage = "lists";
 		error = prepare_lists(created, &remaining);
+	}
+
+	/* Reports slow preparation before teardown can replace its original failure. */
+	elapsed = clock_ticks() - started;
+	elapsed = kern_ticks_to_ms(elapsed);
+	if (error != 0 || elapsed >= 1000) {
+		kern_logf(
+			"v3d: pass prepare stage=%s error=%d draws=%u bytes=%llu ms=%llu\n",
+			stage,
+			error,
+			created->draws,
+			(unsigned long long)created->bytes,
+			(unsigned long long)elapsed);
+	}
 
 	/* Preparation never launched DMA; each owner retires once even when a late translation teardown fails. */
 	if (error != 0) {
