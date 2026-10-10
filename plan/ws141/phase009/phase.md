@@ -14,7 +14,7 @@ Queue: ws141-gpu-init-20261011（独立Codex担当、finished）
 | Attempt | Scope | Status | Dependency |
 | --- | --- | --- | --- |
 | gpu-init-i01 | p009の2停止条件のsoftware修正と確認 | cleared | main 091c65e4aのWS141実装と今回実機ログ |
-| gpu-init-i02 | p007の今回差分の全文規約再確認 | cleared（software、main統合は保留） | gpu-init-i01 |
+| gpu-init-i02 | p007の今回差分の全文規約再確認 | cleared（software/main統合） | gpu-init-i01 |
 
 Dependency: main既存実装 → i01 → i02。今回調査は2停止条件の原因と直接の初期化順序に限定。未知の実機停止は結果・再開条件として残す。
 
@@ -41,3 +41,9 @@ clock provider request順序/zero-rate/拒否応答、実機PA35/VA35でMMUま�
 N0のHSM/core準備とV3の能力幅判定を修正。9件の実provider-helper試験と、既存V3D hardware試験（実機PA35/VA35・狭いVA拒否を追加）がPASS。arm64 kernel/raw-image検査PASS、warning/error0。今回C全文規約/境界/独自実装レビューとdiff-checkを完了。i01/i02の有限software範囲をcleared、Queue finished。main統合と実機確認は未実施で、p007の統合条件は保留。Keiland表示成功とは判定しない。
 
 再開条件: 具体的commitのmain統合承認、次いでユーザーの実機起動。期待ログは `N0 clocks ready hdmi ... core ... Hz` とV3以後のV4/V5/V6。次の停止があればその直前からのログで追跡する。[commands/hash/限界](evidence.md)。
+
+## main統合・read-back（2026-10-11）
+
+ユーザー「mainに統合してください」でsource commit `3e0ef9b456500c0caebf238d5210236948090939` の統合を承認。clean main `091c65e4a` から当該commitへfast-forwardし、変更12pathとconfig.mkが検証済みworktreeとbyte一致すること、evidenceに記録したsource/config/kernel hashが一致することを確認。警告0のarm64 buildと対象host結果がそのまま適用されるため、同一sourceの再buildは実施しない。
+
+main統合完了。p007の今回統合条件も満たしcleared、p009のsoftware clearanceを保持。実機のN0/V4/V5/V6進行とKeiland表示は未確認でWS incompleteを保持する。push・実機更新/再起動は未実施。Master/共有Queue/history/cache/GitHub投影はQ1へ保留。以前の統合承認待ちの記述は当時の履歴。

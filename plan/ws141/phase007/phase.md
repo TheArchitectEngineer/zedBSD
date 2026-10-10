@@ -2,7 +2,7 @@
 
 # ws141-p007: 全規約・license/類似・最終確認
 
-Status: in-progress
+Status: cleared
 Disposition: normal
 Parent: [WS141](../ws.md)
 Queue: [完成までの承認と有限実行scope](../execution-20261009.md#完成までの継続承認2026-10-09)
@@ -53,3 +53,9 @@ i15の最終source監査・build/host・main統合criteriaを満たしcleared。
 ## p009変更差分の準拠再確認（2026-10-11）
 
 今回のC全文規約/境界/独自実装と対象host/buildを確認し、gpu-init-i02のsoftware部分をcleared。p007はmain統合条件の確認までin-progress。i18以前の監査履歴を保持、無関係な全回帰は再実行しない。[対象/結果](../phase009/evidence.md)。
+
+## main統合・read-back（2026-10-11）
+
+ユーザー「mainに統合してください」でsource commit `3e0ef9b456500c0caebf238d5210236948090939` の統合を承認。clean main `091c65e4a` から当該commitへfast-forwardし、変更12pathとconfig.mkが検証済みworktreeとbyte一致すること、evidenceに記録したsource/config/kernel hashが一致することを確認。警告0のarm64 buildと対象host結果がそのまま適用されるため、同一sourceの再buildは実施しない。
+
+main統合完了。p007の今回統合条件も満たしcleared、p009のsoftware clearanceを保持。実機のN0/V4/V5/V6進行とKeiland表示は未確認でWS incompleteを保持する。push・実機更新/再起動は未実施。Master/共有Queue/history/cache/GitHub投影はQ1へ保留。以前の統合承認待ちの記述は当時の履歴。
