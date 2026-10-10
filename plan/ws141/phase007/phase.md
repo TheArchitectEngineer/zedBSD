@@ -2,7 +2,7 @@
 
 # ws141-p007: 全規約・license/類似・最終確認
 
-Status: in-progress
+Status: cleared
 Disposition: normal
 Parent: [WS141](../ws.md)
 Queue: [完成までの承認と有限実行scope](../execution-20261009.md#完成までの継続承認2026-10-09)
@@ -79,3 +79,7 @@ USB `3e9ace7b9` とGPU `461906448` を専用worktreeでmerge `afe01157f` にま�
 ## R0 preflight診断（2026-10-11）
 
 [p011](../phase011/phase.md)でN0成功後のR0 ENOTSUPを調査。今回の診断sourceをp007で再確認する。拒否原因と実機R0復旧はまだ未確定で、旧software clearanceを実機成功としない。
+
+## main統合（2026-10-11）
+
+自動統合の継続承認に基づきsource `0494ed96d` をclean main `21050e5c0` からfast-forward統合。変更5pathとconfig.mkが検証worktreeと一致することをread-back確認。p007の今回診断sourceの規約/build/統合確認はcleared。p011は原因実値・修復待ちでuncleared、WS incompleteを保持する。次回起動の `R0 reject ...` と続く境界error行が再開証拠。push/実機更新/再起動は未実施、共有投影はQ1。

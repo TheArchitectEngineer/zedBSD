@@ -56,3 +56,7 @@ rpi4gpu: R0 not started (21)
 8af016ca5476c4f2ff5e92685d0c86b865b8a32d0446a08502435f044e4683ca  src/drivers/gpu/bcm2711/display-start.c
 7acec83ee799251efedc5959367c980ccd335aa7dd9bbb45e82eb41e1bdd532a  build/arm64/vmunix
 ```
+
+## main統合（2026-10-11）
+
+自動統合の継続承認に基づきsource `0494ed96d` をclean main `21050e5c0` からfast-forward統合。変更5pathとconfig.mkが検証worktreeと一致することをread-back確認。p007の今回診断sourceの規約/build/統合確認はcleared。p011は原因実値・修復待ちでuncleared、WS incompleteを保持する。次回起動の `R0 reject ...` と続く境界error行が再開証拠。push/実機更新/再起動は未実施、共有投影はQ1。
