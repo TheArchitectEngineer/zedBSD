@@ -459,13 +459,35 @@ kern_vfs_init(
 	vfs_scan_physical_disks(handoff, boot_physical, &loader_boot_partition);
 
 #if defined(VFS_LEGACY_NULL_AUTOROOT)
-	/* The legacy autoroot mounts the root directly and skips the boot sources. */
+	/* Discovers the legacy root before retaining any separate boot FAT. */
 	if (legacy_autoroot) {
-		error = vfs_mount_legacy_root(loader_boot_partition, boot_physical,
-		    &root_partition, &root_mount);
+		error = vfs_mount_legacy_root(loader_boot_partition,
+					      boot_physical,
+					      &root_partition,
+					      &root_mount);
 		if (error != 0)
 			return error;
 
+#if defined(HAL_BOARD_RPI4)
+		/*
+		 * Keeps the firmware's FAT beside a native UFS root for kernel
+		 * updates.  An overlay already owns its FAT mount, and a root
+		 * on the boot partition must not mount that partition twice.
+		 */
+		if (root_partition != NULL &&
+		    root_partition != loader_boot_partition) {
+			error = kern_boot_source_context_mount(
+			    &boot_sources,
+			    parameters,
+			    loader_boot_partition,
+			    NULL);
+			if (error != 0) {
+				VFS_LOG("vfs: RPi4 boot FAT unavailable (error %d)\n",
+				    error);
+			}
+		}
+
+#endif
 		/*
 		 * Legacy root discovery has no swapN parameters, but the runtime
 		 * UAPI still owns the same active (initially empty) four-source
@@ -963,6 +985,8 @@ vfs_ensure_root_directory(
  * the files in use stay readable but cannot be changed (the backing
  * claims).  A publication that fails is logged and leaves the mount
  * private; the system boots either way.
+ * RPi4 also shows slot 0 without a file reference so its firmware files
+ * and kernel can be updated through the running system.
  */
 static void
 vfs_publish_boot_filesystems(
@@ -977,6 +1001,11 @@ vfs_publish_boot_filesystems(
 	/* Nothing is referenced yet. */
 	for (index = 0; index < KERN_BOOT_SOURCE_SLOT_COUNT; index++)
 		referenced[index] = 0;
+
+#if defined(HAL_BOARD_RPI4)
+	/* Exposes the firmware's boot files even when the root is native UFS. */
+	referenced[0] = 1;
+#endif
 
 	/* Marks the slots of the overlay root and data images. */
 	value = kern_boot_parameters_overlay_root(parameters);
@@ -1006,7 +1035,7 @@ vfs_publish_boot_filesystems(
 		/* Lets an fstab mount of the partition show the kernel's mount. */
 		(void)mount_private_allow_adoption(slot->mount);
 
-		/* A slot used only through a direct selector stays hidden. */
+		/* Leaves slots hidden unless their files or the board require them. */
 		if (!referenced[index])
 			continue;
 		vfs_publish_boot_slot(index, slot->mount, slot->disk);
