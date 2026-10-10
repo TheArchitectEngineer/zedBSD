@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: 既存履歴 q691（p001）・q695（p002）。現在の独立セッションの実行範囲は [execution-20261009.md](execution-20261009.md)
-Resume point: p011は実機R0/list43採用成功でcleared。P2二flip/P3合成とconsole復帰/P5 display登録、V3D V7〜V10/render登録も確認。KeilandはV3Dで初期化するが、EL0 CNTVCT読出しがSIGBUS。[p012](phase012/phase.md)でARM64 counter初期化を補完し、build/生成命令を確認済み、823f116f5をmain統合済み。実機更新は未実施。WS incomplete、desktop実描画/視覚確認は保持。共有投影はQ1。
+Resume point: p011のR0とp012のEL0 counter例外修正は実機確認でcleared。修正版kernelでKeilandはHANDOFF/OUTPUT openまで到達しSIGBUS無し。現在は最初の描画submitがresult=-4（device lost）、frames0で失敗する。既存p006の実機描画調査が次の再開点。WS incomplete、原因確定/desktop実描画/視覚確認は未達。共有投影はQ1。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
@@ -74,7 +74,7 @@ Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver �
 | [p005](phase005/phase.md) | `drv_gpu_interface` への統合と desktop の表示（Keiland の compositor） | in-progress | p003・p004のsoftware出力、desktopはp006 | 4h〜 |
 | [p006](phase006/phase.md) | kernel Vulkan実行器・SPIR-V compilerとKeiland描画経路（2026-10-09 scope拡張） | in-progress（compiler/native prepared job/public runtime/Keiland software経路とhost/build/stack監査PASS、実機待ち） | p004・p005 | 未見積 |
 | [p007](phase007/phase.md) | 規約の全文の確認と最終の確認。**license と GPL の code との類似の監査**（字面・設計、道具と目視）、BLOB の移動の確認 | cleared（p010差分監査/組合せbuild/main統合済み） | 全て | 3〜4h |
-| [p012](phase012/phase.md) | KeilandのEL0 counter例外 | uncleared（software/build確認済み、実機待ち） | p011実機成功、p005/p006起動経路 | 今回有限scope |
+| [p012](phase012/phase.md) | KeilandのEL0 counter例外 | cleared（実機でcounter trap消失・描画送信到達） | p011実機成功、p005/p006起動経路 | 今回有限scope |
 | [p011](phase011/phase.md) | R0拒否とブラックアウトの修正 | cleared（実機R0/list43採用成功） | N0/preflight実機成功 | 今回部分scope |
 | [p010](phase010/phase.md) | core clock/実時間job期限 | cleared（software/実機表示未確認） | main211be00dcと実機ログ | 今回有限scope |
 | [p009](phase009/phase.md) | 実機clock/VA幅の初期化停止修正 | cleared（software。実機未確認） | mainの既存software出力 | 今回有限scope |
@@ -329,3 +329,7 @@ R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなく
 ## p012修正版の実機配置（2026-10-11）
 
 ユーザーの明示指示で823f116f5のkernelをRPi4 10.0.30.2の/boot/boot0/vmunixへ配置。UFSへ旧kernel退避、syncとread-backのバイト/SHA256一致を確認し、配置部分はcleared。agentは再起動していない。再開点はユーザーの電源OFF/ON後のSIGBUS消失とKeiland表示確認。p012はuncleared/WS incompleteを保持。[配置承認・結果](phase012/phase.md)。共有投影はQ1。
+
+## p012実機clearと次の障害（2026-10-11）
+
+再起動後のSSH確認でcounter trapは消失し、p012をcleared。p005/p006のKeilandはOUTPUT openまで到達したが、最初の描画submitがVK_ERROR_DEVICE_LOSTでframes0のまま終了する。p006の実機受入れを保持し、原因のjob/MMIO証拠が次の調査点。今回read-only、ソース・実機更新無し。[証拠](phase012/phase.md)。

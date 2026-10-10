@@ -2,7 +2,7 @@
 
 # ws141-p012: KeilandのARM64 counter-read例外
 
-Status: uncleared
+Status: cleared
 Disposition: normal
 Parent: [WS141](../ws.md)
 Queue: ws141-el0-counter-20261011 / finished / counter-i01 / Codex
@@ -53,3 +53,11 @@ FAT空き13645KiB、UFS空き99880KiBを確認したため、現行kernelの追�
 
 counter-deploy-i01 / Queue ws141-counter-deploy-20261011はfinished/cleared。転送先/tmp/vmunix-823f116f5.newのcksum=3003282929 size=8077312でown build一致。旧kernel（cksum4051373307 size8077312）をUFS /var/backups/vmunix.before-el0-counter-20261011にコピーしcmp/sync成功。FAT /boot/boot0/vmunix-823f116f5.newへcopy/cmp/sync後にvmunixへrename、sync/cmp成功。起動設定kernel=vmunix、kernel_address=0x80000を確認済み。
 実機/boot/boot0/vmunixをown build/rpi4-vmunix-after-el0-counter-20261011へread-backし、build/arm64/vmunixとのcmp exit0、SHA256=2c674080e48cf499786decf72a8e337b64ae0eeaf3c2a95e4737f6daaf4da1f1一致を確認。全操作exit0。既存FAT backupも保持。agentによる再起動は未実施。次はユーザーの電源OFF/ON後にSIGBUS消失とKeiland表示を確認する。Phase全体uncleared、WS incompleteを維持。
+
+## counter-verify-i01: 再起動後のSSH確認（2026-10-11）
+
+Queue ws141-counter-verify-20261011 / finished / counter-verify-i01 / cleared。ユーザー「起動しました。SSHで確認をお願いします。」によるread-only確認。起動partitionのcksum3003282929 size8077312が配置版と一致。現在dmesgにsignal10/vector24のcounter trap無し。自動ログインpid23はKWL READYに続きHANDOFF ready=1、OUTPUT open 1920x1080/images3/format37と描画送信まで到達。counter例外を実行した経路の通過を確認したためp012をclearedとする。
+
+一方、実画面の描画は未達。/run/user/1000/session.logのpid23はoperation=submit result=-4、site=compose_draw errno5、frames0/error5/cleanup_failed1、exit status256。greeter pid39/53も同じsubmit失敗。現在dmesgではV3D識別registerの再出力（回復経路）を確認するが、原因のjob/register値は記録されておらず、timeout/コマンド/compiler等の原因確定はできない。旧greeter.log/sessiond.logには以前のsignal10も残るため、今回の起動境界とpid/新規出力を区別した。kernel/SSHは応答継続。Vulkan描画失敗は既存p006の未達条件として保持し、WS全体はincomplete。
+
+生のread-only証拠はown build/ws141-counter-boot-ssh-20261011.log。確認のみで実機のファイル更新・サービス再起動・再bootは行っていない。共有投影はQ1。

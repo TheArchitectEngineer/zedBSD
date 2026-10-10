@@ -225,3 +225,7 @@ i14 compiler/Vulkan/Keiland software経路のsoftware/統合部分をcleared。f
 ## Keiland起動の実機依存補完（2026-10-11）
 
 実機でV3D選択とVulkan objects/compose初期化からKWL READYまで進むが、user timing命令のSIGBUSで終了。[p012](../phase012/phase.md)のEL0 counter初期化補完後に実描画を再確認する。現時点でcompiler/render queueが実frameを完了したと主張せず、software確認と物理受入れを区別する。
+
+## counter修正後の実機到達点（2026-10-11）
+
+[p012](../phase012/phase.md)のcounter trap消失をSSH確認。自動ログインとgreeterはOUTPUT open 1920x1080/images3まで進むが、最初の描画submitがresult=-4（VK_ERROR_DEVICE_LOST）でframes0/error5。実描画の受入れは未達、Phase状態を維持。kernel/SSHは応答し、原因のjob/register証拠は未採取。過去のsignal10と今回のsubmit失敗を区別する。次は既存p006内のGPU送信失敗調査、実機の更新・再起動は今回行っていない。

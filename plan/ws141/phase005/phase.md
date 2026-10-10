@@ -118,3 +118,7 @@ i13 二node/share/GPU APIのsoftware/統合部分をcleared。final runtime/stac
 ## 実機二node登録とKeilandの次の依存（2026-10-11）
 
 /dev/gpu0・/dev/gpu1が存在し、sessiondが双方をgreeterへ渡す。Keilandはdevice=zedBSD V3D 4.2 (Keiland graphics)/1920x1080/60000mHzを選択しKWL READYに達するが、loopのCNTVCT_EL0でSIGBUS終了。[p012](../phase012/phase.md)でARM64初期化を補完する。p003/p004の今回実機出力は得たが、desktop表示/操作・継続動作のacceptanceは未達のまま。
+
+## counter修正後の実機到達点（2026-10-11）
+
+[p012](../phase012/phase.md)のcounter trap消失をSSH確認。自動ログインとgreeterはOUTPUT open 1920x1080/images3まで進むが、最初の描画submitがresult=-4（VK_ERROR_DEVICE_LOST）でframes0/error5。実描画の受入れは未達、Phase状態を維持。kernel/SSHは応答し、原因のjob/register証拠は未採取。過去のsignal10と今回のsubmit失敗を区別する。次は既存p006内のGPU送信失敗調査、実機の更新・再起動は今回行っていない。
