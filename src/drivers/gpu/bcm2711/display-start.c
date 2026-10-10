@@ -85,23 +85,50 @@ bcm2711_display_start(
 
 	/* Maps all required resources without touching registers. */
 	error = map_regions(fdt, display);
-	if (error != 0)
+	if (error != 0) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 map error %d", error);
 		return error;
+	}
 
 	/* Installs source service while the previously registered lines are masked. */
 	error = bcm2711_display_irq_prepare(display);
-	if (error != 0)
+	if (error != 0) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 irq error %d", error);
 		return error;
+	}
 
 	/* Captures the mode and sink metadata before any firmware notification. */
 	error = capture_mode(display, &mode, &order, &max_core_hz);
-	if (error != 0)
+	if (error != 0) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 capture error %d", error);
 		return error;
+	}
+
+	/* Identifies the exact captured mode when pure program validation refuses it. */
+	bcm2711_stage_mark(
+		BCM2711_FAMILY_DISPLAY,
+		"R0 mode %ux%u tmds %u order %u format %u",
+		mode.width,
+		mode.height,
+		mode.tmds_hz,
+		order,
+		display->screen.format);
+	bcm2711_stage_mark(
+		BCM2711_FAMILY_DISPLAY,
+		"R0 porches h %u/%u/%u v %u/%u/%u",
+		mode.hfront,
+		mode.hsync,
+		mode.hback,
+		mode.vfront,
+		mode.vsync,
+		mode.vback);
 
 	/* Ensures no invalid field can fail preparation after the screen is stopped. */
 	error = bcm2711_display_program_prepare(&start_program, &mode, &display->screen, display->port, order, max_core_hz);
-	if (error != 0)
+	if (error != 0) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 program error %d", error);
 		return error;
+	}
 
 	/* Publishes the selected port and gives time to record the last visible mark. */
 	bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 begin hdmi%u %ux%u tmds %u",
@@ -231,17 +258,31 @@ capture_mode(
 	if ((value & 0x80000000U) == 0)
 		return ENODEV;
 	value = kern_mmio_read32(timing->mapped + 0x04);
-	if ((value & 0x11U) != 1U)
+	if ((value & 0x11U) != 1U) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 reject pv-vcontrol=%08x", value);
 		return ENOTSUP;
+	}
+
+	/* Rejects pixel repetition before decoding full-pixel timings. */
 	value = encoder_read(base, BCM2711_ENCODER_CORE, 0x100);
-	if ((value & 0x0fU) != 0)
+	if ((value & 0x0fU) != 0) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 reject pixel-repeat=%08x", value);
 		return ENOTSUP;
+	}
+
+	/* Requires the RGB8 packing accepted by the restart program. */
 	value = encoder_read(base, BCM2711_ENCODER_CORE, 0x170);
-	if ((value & 0x0fU) != 0)
+	if ((value & 0x0fU) != 0) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 reject deep-color=%08x", value);
 		return ENOTSUP;
+	}
+
+	/* Keeps scrambled links out of the existing non-SCDC restart path. */
 	value = encoder_read(base, BCM2711_ENCODER_CORE, 0x1c4);
-	if ((value & 1U) != 0)
+	if ((value & 1U) != 0) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 reject scrambler=%08x", value);
 		return ENOTSUP;
+	}
 
 	/* Extracts full-pixel HDMI timings rather than mistaking PV clocks for pixels. */
 	horizontal = encoder_read(base, BCM2711_ENCODER_CORE, 0xe4);
@@ -279,22 +320,40 @@ capture_mode(
 
 	/* Requires the oscillator representation used by the fixed-point recovery. */
 	value = encoder_read(base, BCM2711_ENCODER_RATE, 0x1c);
-	if ((value & 0x03000000U) != 0x02000000U)
+	if ((value & 0x03000000U) != 0x02000000U) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 reject rm-format=%08x", value);
 		return ENOTSUP;
+	}
+
+	/* Requires the PLL prescaler used by the rate recovery formula. */
 	value = encoder_read(base, BCM2711_ENCODER_PHY, 0x34);
-	if ((value & 0x0fU) != 1U)
+	if ((value & 0x0fU) != 1U) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 reject pll-pdiv=%08x", value);
 		return ENOTSUP;
+	}
+
+	/* Requires the reference doubler assumed by the captured oscillator ratio. */
 	value = encoder_read(base, BCM2711_ENCODER_PHY, 0x20);
-	if ((value & 0x2000U) == 0)
+	if ((value & 0x2000U) == 0) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 reject pll-doubler=%08x", value);
 		return ENOTSUP;
+	}
 
 	/* Recovers the programmed TMDS rate from the oscillator's fixed-point ratio. */
 	divider = encoder_read(base, BCM2711_ENCODER_PHY, 0x28);
 	divider = (divider >> 8) & 0xffU;
 	offset = encoder_read(base, BCM2711_ENCODER_RATE, 0x18);
 	offset &= 0x7fffffffU;
-	if (divider == 0 || offset == 0)
+	if (divider == 0 || offset == 0) {
+		bcm2711_stage_mark(
+			BCM2711_FAMILY_DISPLAY,
+			"R0 reject pll-vco-div=%u rm-offset=%08x",
+			divider,
+			offset);
 		return ENOTSUP;
+	}
+
+	/* Converts the proven divider representation into a whole-kHz TMDS rate. */
 	frequency = (uint64_t)offset * 54000000U;
 	frequency /= (uint64_t)divider * 20U * 1048576U;
 	frequency = (frequency + 500U) / 1000U * 1000U;
@@ -315,17 +374,33 @@ capture_mode(
 		if (plane->format != 7U ||
 		    plane->scaled ||
 		    plane->flipped ||
-		    plane->words != 8U)
+		    plane->words != 8U) {
+			bcm2711_stage_mark(
+				BCM2711_FAMILY_DISPLAY,
+				"R0 reject plane fmt=%u scaled=%u flip=%u words=%u",
+				plane->format,
+				(unsigned)plane->scaled,
+				(unsigned)plane->flipped,
+				plane->words);
 			return ENOTSUP;
-		if ((plane->control & 0x00300000U) != 0)
+		}
+
+		/* Reports the layout bits that prevent a packed RGB32 takeover. */
+		if ((plane->control & 0x00300000U) != 0) {
+			bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 reject plane-control=%08x", plane->control);
 			return ENOTSUP;
+		}
+
+		/* Retains the verified console plane byte order. */
 		*order = plane->order;
 		break;
 	}
 
 	/* No retained plane supplied a usable RGB32 order. */
-	if (*order == 0)
+	if (*order == 0) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 reject plane-order=%u count=%u", *order, count);
 		return ENOTSUP;
+	}
 
 	/* Captures sink metadata only after all timing and framebuffer checks. */
 	value = encoder_read(base, BCM2711_ENCODER_CORE, 0xe0);
@@ -344,6 +419,18 @@ capture_mode(
 		error = capture_avi(base, mode);
 		if (error != 0)
 			return error;
+	}
+
+	/* Retains metadata needed to explain a later RGB/repetition/header refusal. */
+	if (mode->hdmi) {
+		bcm2711_stage_mark(
+			BCM2711_FAMILY_DISPLAY,
+			"R0 AVI %02x/%02x/%02x color=%02x repeat=%02x",
+			(unsigned)mode->avi[0],
+			(unsigned)mode->avi[1],
+			(unsigned)mode->avi[2],
+			(unsigned)mode->avi[4],
+			(unsigned)mode->avi[8]);
 	}
 
 	/* Requires the core maximum used by both setup and sustained-rate requests. */
@@ -391,8 +478,12 @@ capture_avi(
 
 	/* Requires AVI transmission to be enabled and the packet RAM to exist. */
 	value = encoder_read(base, BCM2711_ENCODER_CORE, 0xbc);
-	if ((value & 0x10004U) != 0x10004U)
+	if ((value & 0x10004U) != 0x10004U) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 reject avi-enable=%08x", value);
 		return ENOTSUP;
+	}
+
+	/* Decodes the transmitted packet only after the slot-enable check. */
 	checksum = 0;
 	for (index = 0; index < 17U; index++) {
 		/* Reads the two hardware words that encode each seven-byte group. */
@@ -416,8 +507,12 @@ capture_avi(
 
 	/* Explicit AVI quantization takes precedence over the CEA default. */
 	quantization = (mode->avi[6] >> 2) & 3U;
-	if (quantization == 3U)
+	if (quantization == 3U) {
+		bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "R0 reject avi-quantization=%u", quantization);
 		return ENOTSUP;
+	}
+
+	/* Applies explicit limited range or the default CEA range. */
 	if (quantization == 1U)
 		mode->limited = true;
 	if (quantization == 0U && (mode->avi[7] & 0x7fU) > 1U)

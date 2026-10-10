@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: 既存履歴 q691（p001）・q695（p002）。現在の独立セッションの実行範囲は [execution-20261009.md](execution-20261009.md)
-Resume point: [p010](phase010/phase.md)のcore gate判定/実時間job期限を修正しhost/build確認済み、afe01157fでmain統合済み、次は実機表示確認。前回: 実機のN0 clock-off/V3 VA35拒否を[p009](phase009/phase.md)で修正、対象host/build確認済み、3e0ef9b45をmainへ統合済み。次は実機確認。従来のsoftware結果: i11〜i18のsoftware実装/静的改善/共通compiler/全文監査/main統合は終了。最新source merge ab268b857、RPi4 y/n・amd64 i915 y build、対象parser/EU/QPU/client host、caller/IRQ込み16KiB ordinary stack（margin704）PASS。次はユーザーのRPi4/Keiland/console RAM寿命確認とQ1/T1回帰。[今回終了/証拠/未確認条件](compiler-refactor-20261010.md#i18-main統合今回software実行の終了2026-10-10)。共有投影/GitHubはQ1。
+Resume point: [p011](phase011/phase.md)のR0診断補完をbuild確認済み。次回実機のR0 reject項目/値待ち。前回: [p010](phase010/phase.md)のcore gate判定/実時間job期限を修正しhost/build確認済み、afe01157fでmain統合済み、次は実機表示確認。前回: 実機のN0 clock-off/V3 VA35拒否を[p009](phase009/phase.md)で修正、対象host/build確認済み、3e0ef9b45をmainへ統合済み。次は実機確認。従来のsoftware結果: i11〜i18のsoftware実装/静的改善/共通compiler/全文監査/main統合は終了。最新source merge ab268b857、RPi4 y/n・amd64 i915 y build、対象parser/EU/QPU/client host、caller/IRQ込み16KiB ordinary stack（margin704）PASS。次はユーザーのRPi4/Keiland/console RAM寿命確認とQ1/T1回帰。[今回終了/証拠/未確認条件](compiler-refactor-20261010.md#i18-main統合今回software実行の終了2026-10-10)。共有投影/GitHubはQ1。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
@@ -74,6 +74,7 @@ Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver �
 | [p005](phase005/phase.md) | `drv_gpu_interface` への統合と desktop の表示（Keiland の compositor） | in-progress | p003・p004のsoftware出力、desktopはp006 | 4h〜 |
 | [p006](phase006/phase.md) | kernel Vulkan実行器・SPIR-V compilerとKeiland描画経路（2026-10-09 scope拡張） | in-progress（compiler/native prepared job/public runtime/Keiland software経路とhost/build/stack監査PASS、実機待ち） | p004・p005 | 未見積 |
 | [p007](phase007/phase.md) | 規約の全文の確認と最終の確認。**license と GPL の code との類似の監査**（字面・設計、道具と目視）、BLOB の移動の確認 | cleared（p010差分監査/組合せbuild/main統合済み） | 全て | 3〜4h |
+| [p011](phase011/phase.md) | R0 preflight拒否点の特定と修正 | uncleared（診断補完済み、実値待ち） | N0実機成功、拒否値の観測待ち | 今回部分scope |
 | [p010](phase010/phase.md) | core clock/実時間job期限 | cleared（software/実機表示未確認） | main211be00dcと実機ログ | 今回有限scope |
 | [p009](phase009/phase.md) | 実機clock/VA幅の初期化停止修正 | cleared（software。実機未確認） | mainの既存software出力 | 今回有限scope |
 | [p008](phase008/phase.md) | GPU共通SPIR-V frontend/IR、i915・VC4参照移行 | cleared（software/build/host。実機は他Phase） | p006 software出力、p007再監査 | 今回有限scope |
@@ -303,3 +304,7 @@ main統合完了。p007の今回統合条件も満たしcleared、p009のsoftwar
 USB `3e9ace7b9` とGPU `461906448` を専用worktreeでmerge `afe01157f` にまとめ、現在のconfig.mkで `make -j16 build/arm64/vmunix` を実行。warning0/error0、arm64 ELF/raw-image check PASS。USB/GPU sourceが各個別検証版と一致することも確認。clean main `211be00dc` を `afe01157f` へfast-forwardし、変更17path全てが検証済みworktreeとbyte一致した。main統合完了。実機の新core判定/待ち時間/USBログ抑制は未確認で、WSの残る実機条件は保持。push・実機更新/再起動は未実施。
 
 最新USBログでdevice1/port1 `2109:3431` class09、usb-hub、4portsの登録を確認し、slot1の反復Stopped通知がhub監視と整合することを確認。USBキーボードの入力成功を意味しない。GPUは旧版のV7〜V10成功とrender node登録までユーザー確認済み。
+
+## R0 preflightの再調査（2026-10-11）
+
+N0の実機成功とR0 ENOTSUPをSSH/user logで確認。p011の有限調査を開始し、p003/p007へ証拠と診断差分を反映する。R0修復の実機条件は未達。自動main統合のユーザー承認を継続適用。[scope](phase011/phase.md)。

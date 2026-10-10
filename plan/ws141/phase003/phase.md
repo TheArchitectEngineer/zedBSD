@@ -119,3 +119,7 @@ Linux順initial scanout/独自filter/flip/二node presentの最終sourceを[p007
 ## p010 follow-up（2026-10-11）
 
 [p010](../phase010/phase.md)でcore clock gateの解釈と実時間job期限を修正する。実機のV3〜V9通過およびV10待機後復帰を記録し、未確認のscanout/Keiland条件は保持。p007は今回変更差分を再監査する。
+
+## R0 preflight診断（2026-10-11）
+
+[p011](../phase011/phase.md)でN0成功後のR0 ENOTSUPを調査。今回の診断sourceをp007で再確認する。拒否原因と実機R0復旧はまだ未確定で、旧software clearanceを実機成功としない。
