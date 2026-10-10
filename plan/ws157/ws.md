@@ -71,4 +71,4 @@ ws157-p008, ws157-p009 cleared。source `e654733f1eb6e1296eacf34b5dff6002a5dd17e
 
 ## 2026-10-10 Photos削除の追加
 
-ユーザーの指示を有限Queue/p010/p011へ記録。既存p006/p008のcleared履歴を保ち、削除requestとbackground job、CLI file/metadata処理、既存Wayland通知で全watcher更新を追加する。完全削除とtrashの任意質問は未回答のため、確認dialog付き完全削除/元source保持を明示した前提で進めた。p010 cleared、p011は全文規約/最終build確認済みでmain read-backを残す。[証拠](tests/photos-delete-verification-20261010.md)。共有master/Queue/cacheの投影はQ1。WS全体のベータ3未完は維持。
+ユーザーの指示を有限Queue/p010/p011へ記録。既存p006/p008のcleared履歴を保ち、削除requestとbackground job、CLI file/metadata処理、既存Wayland通知で全watcher更新を追加する。完全削除とtrashの任意質問は未回答のため、確認dialog付き完全削除/元source保持を明示した前提で進めた。p010 cleared、p011は全文規約/最終build確認済み。source commit `4a8856cc5`のmain統合は自動承認reviewが以前の別task承認では適用不可として拒否し、今回のmain統合承認を質問中。mainのbase `39ebb1b06`は変更無し。[証拠](tests/photos-delete-verification-20261010.md)。共有master/Queue/cacheの投影はQ1。WS全体のベータ3未完は維持。

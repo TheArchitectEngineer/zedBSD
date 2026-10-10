@@ -82,3 +82,7 @@ GUI操作は実機でユーザー確認。新libkeiland/compositor/Photos/medias
 metadata saveの通常failureはfile復元を試験済み。停電/killでrenameとcommitの間に止まる場合のjournal recoveryは実装しておらず、Media直下の `.deleting-<id>-*` にcopyが残ることがある。複数IDは各項目commitで、後のdisk errorによって先の項目だけ削除され得る。commit後unlink failureはmetadataから除かれてcopyがstagingに残るためerrorと最新snapshotで結果を示す。batch全体のatomicityや停電耐性は主張しない。
 
 QEMU/image build/aggregate make check/負荷・耐久/全回帰無し。WS157全体のベータ3 acceptanceは未完、今回のscoped Queueだけcleared予定。shared Master/Queue/cache投影・GitHub公開はQ1、push無し。
+
+## 統合状況
+
+source/証拠のWIP commit `4a8856cc5`、own worktree clean。mainはcleanの `39ebb1b06`。main fast-forwardは自動承認reviewが実行前に拒否し、以前の別task承認では今回の統合を許可できないとした。今回のmain統合承認をユーザーへ質問中、mainへの統合済みとは主張しない。
