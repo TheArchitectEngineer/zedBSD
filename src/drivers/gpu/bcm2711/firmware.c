@@ -45,6 +45,9 @@
 /* The on/off answer: bit 1 is set when the firmware has no such clock. */
 #define FIRMWARE_CLOCK_ABSENT		0x00000002U
 
+/* CORE supplies the shared bus and is critical, not an independently gated leaf. */
+#define FIRMWARE_CLOCK_CORE		4U
+
 /* The words of a clock question and of its answer: the clock number and one value. */
 #define FIRMWARE_CLOCK_WORDS		2U
 
@@ -81,8 +84,9 @@ bcm2711_firmware_get(
 }
 
 /*
- * Asks a clock's present rate; a clock the firmware lacks or keeps off has
- * a rate of zero.
+ * Asks a clock's present rate, rejecting absent or gated leaf clocks.
+ * CORE is the critical bus clock: its rate remains meaningful even when
+ * firmware does not report an enabled leaf gate.
  */
 int
 bcm2711_clock_hz(
@@ -103,8 +107,8 @@ bcm2711_clock_hz(
 		return 0;
 	}
 
-	/* A stopped clock runs at no rate at all. */
-	if ((on_off & FIRMWARE_CLOCK_RUNNING) == 0) {
+	/* CORE stays live for the shared bus; only leaf clocks require a gate bit. */
+	if (clock_id != FIRMWARE_CLOCK_CORE && (on_off & FIRMWARE_CLOCK_RUNNING) == 0) {
 		*hz = 0;
 		return 0;
 	}

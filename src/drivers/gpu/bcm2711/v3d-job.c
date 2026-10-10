@@ -15,7 +15,7 @@
 #include "drivers/gpu/bcm2711/buffer.h"
 #include "drivers/gpu/bcm2711/v3d-job.h"
 
-/* Each progress sample gets 500 ms; a finite job occupies at most four windows. */
+/* Real counter time bounds each 500 ms window; polling count is a fallback guard. */
 #define JOB_POLL_US 10U
 #define JOB_POLL_STEPS 50000U
 #define JOB_PROGRESS_WINDOWS 4U
@@ -476,6 +476,12 @@ wait_queue(
 	uint32_t returned;
 	uint32_t previous_current;
 	uint32_t previous_return;
+	uint64_t started;
+	uint64_t frequency;
+	uint64_t now;
+	uint64_t current_frequency;
+	uint64_t window_ticks;
+	bool timed;
 	int error;
 
 	/* No motion from launch through the first 500 ms constitutes a stalled queue. */
@@ -488,6 +494,18 @@ wait_queue(
 
 	/* A finite upper bound also stops a cyclic CL that keeps changing its current pointer. */
 	for (window = 0; window < JOB_PROGRESS_WINDOWS; window++) {
+		/* Sleep rounds to scheduler ticks, so a count of 10us sleeps is not elapsed time. */
+		timed = kern_rtc_read_counter(&started, &frequency);
+		if (!timed)
+			return EIO;
+
+		/* A missing timebase cannot grant an unbounded hardware wait. */
+		if (frequency == 0)
+			return EIO;
+
+		/* Rounds half a second upward without overflowing the counter frequency. */
+		window_ticks = frequency / 2U + frequency % 2U;
+
 		/* Consumes real events without acquiring an IRQ guard around the wait. */
 		for (attempt = 0; attempt <= JOB_POLL_STEPS; attempt++) {
 			bcm2711_v3d_hardware_events(engine, &events);
@@ -508,7 +526,20 @@ wait_queue(
 					return error;
 			}
 
-			/* The final sample is at the bound, with no additional unobserved delay. */
+			/* Measures actual elapsed time after checking events, including a final completion. */
+			timed = kern_rtc_read_counter(&now, &current_frequency);
+			if (!timed)
+				return EIO;
+
+			/* A changed timebase supplies no comparable deadline. */
+			if (current_frequency != frequency)
+				return EIO;
+
+			/* Finishes this window even when one yield took an entire scheduler tick. */
+			if (now - started >= window_ticks)
+				break;
+
+			/* The finite poll guard also stops a counter that fails to advance. */
 			if (attempt == JOB_POLL_STEPS)
 				break;
 			kern_usleep_range(JOB_POLL_US, JOB_POLL_US);

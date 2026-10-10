@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: 既存履歴 q691（p001）・q695（p002）。現在の独立セッションの実行範囲は [execution-20261009.md](execution-20261009.md)
-Resume point: 実機のN0 clock-off/V3 VA35拒否を[p009](phase009/phase.md)で修正、対象host/build確認済み、3e0ef9b45をmainへ統合済み。次は実機確認。従来のsoftware結果: i11〜i18のsoftware実装/静的改善/共通compiler/全文監査/main統合は終了。最新source merge ab268b857、RPi4 y/n・amd64 i915 y build、対象parser/EU/QPU/client host、caller/IRQ込み16KiB ordinary stack（margin704）PASS。次はユーザーのRPi4/Keiland/console RAM寿命確認とQ1/T1回帰。[今回終了/証拠/未確認条件](compiler-refactor-20261010.md#i18-main統合今回software実行の終了2026-10-10)。共有投影/GitHubはQ1。
+Resume point: [p010](phase010/phase.md)のcore gate判定/実時間job期限を修正しhost/build確認済み、main統合承認待ち。前回: 実機のN0 clock-off/V3 VA35拒否を[p009](phase009/phase.md)で修正、対象host/build確認済み、3e0ef9b45をmainへ統合済み。次は実機確認。従来のsoftware結果: i11〜i18のsoftware実装/静的改善/共通compiler/全文監査/main統合は終了。最新source merge ab268b857、RPi4 y/n・amd64 i915 y build、対象parser/EU/QPU/client host、caller/IRQ込み16KiB ordinary stack（margin704）PASS。次はユーザーのRPi4/Keiland/console RAM寿命確認とQ1/T1回帰。[今回終了/証拠/未確認条件](compiler-refactor-20261010.md#i18-main統合今回software実行の終了2026-10-10)。共有投影/GitHubはQ1。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
@@ -73,7 +73,8 @@ Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver �
 | [p004](phase004/phase.md) | V3D: power・MMU・buffer object、bin/render・TFUのjob、reset、fence（CSDはp006後） | in-progress（V1〜V10/native runnerを実装、固定XML照合・host/build PASS。実機電源/register/job観測は未実施） | p002（骨格出力でsoftware準備、hardwareは実機V0確認後） | 6h〜 |
 | [p005](phase005/phase.md) | `drv_gpu_interface` への統合と desktop の表示（Keiland の compositor） | in-progress | p003・p004のsoftware出力、desktopはp006 | 4h〜 |
 | [p006](phase006/phase.md) | kernel Vulkan実行器・SPIR-V compilerとKeiland描画経路（2026-10-09 scope拡張） | in-progress（compiler/native prepared job/public runtime/Keiland software経路とhost/build/stack監査PASS、実機待ち） | p004・p005 | 未見積 |
-| [p007](phase007/phase.md) | 規約の全文の確認と最終の確認。**license と GPL の code との類似の監査**（字面・設計、道具と目視）、BLOB の移動の確認 | cleared（i18履歴保持。p009差分再確認/main統合完了） | 全て | 3〜4h |
+| [p007](phase007/phase.md) | 規約の全文の確認と最終の確認。**license と GPL の code との類似の監査**（字面・設計、道具と目視）、BLOB の移動の確認 | in-progress（p010差分監査済み、main統合待ち） | 全て | 3〜4h |
+| [p010](phase010/phase.md) | core clock/実時間job期限 | cleared（software/実機表示未確認） | main211be00dcと実機ログ | 今回有限scope |
 | [p009](phase009/phase.md) | 実機clock/VA幅の初期化停止修正 | cleared（software。実機未確認） | mainの既存software出力 | 今回有限scope |
 | [p008](phase008/phase.md) | GPU共通SPIR-V frontend/IR、i915・VC4参照移行 | cleared（software/build/host。実機は他Phase） | p006 software出力、p007再監査 | 今回有限scope |
 
@@ -286,3 +287,11 @@ p008/i17とp007/i18をcleared。source `fca9cd37f` を最新mainへmerge `ab268b
 ユーザー「mainに統合してください」でsource commit `3e0ef9b456500c0caebf238d5210236948090939` の統合を承認。clean main `091c65e4a` から当該commitへfast-forwardし、変更12pathとconfig.mkが検証済みworktreeとbyte一致すること、evidenceに記録したsource/config/kernel hashが一致することを確認。警告0のarm64 buildと対象host結果がそのまま適用されるため、同一sourceの再buildは実施しない。
 
 main統合完了。p007の今回統合条件も満たしcleared、p009のsoftware clearanceを保持。実機のN0/V4/V5/V6進行とKeiland表示は未確認でWS incompleteを保持する。push・実機更新/再起動は未実施。Master/共有Queue/history/cache/GitHub投影はQ1へ保留。以前の統合承認待ちの記述は当時の履歴。
+
+## p010追加（2026-10-11）
+
+実機でV3〜V9が進み、V10も待機後復帰したという報告を反映。coreのENODEVと過長待機をp010で修正し、p007差分監査を再開。V10フリーズを既知事実とは扱わない。[scope/実機観測](phase010/phase.md)。
+
+## p010 software終了（2026-10-11）
+
+実機ログではV7〜V10とrender node登録成功を確認。残るcore ENODEVと長いtimeoutを修正して対象host/arm64 buildに合格、main統合承認待ち。Keiland/scanoutの受け入れ未達につきWS incompleteを保持。[証拠と再開条件](phase010/evidence.md)。

@@ -2,7 +2,7 @@
 
 # ws141-p007: 全規約・license/類似・最終確認
 
-Status: cleared
+Status: in-progress
 Disposition: normal
 Parent: [WS141](../ws.md)
 Queue: [完成までの承認と有限実行scope](../execution-20261009.md#完成までの継続承認2026-10-09)
@@ -59,3 +59,11 @@ i15の最終source監査・build/host・main統合criteriaを満たしcleared。
 ユーザー「mainに統合してください」でsource commit `3e0ef9b456500c0caebf238d5210236948090939` の統合を承認。clean main `091c65e4a` から当該commitへfast-forwardし、変更12pathとconfig.mkが検証済みworktreeとbyte一致すること、evidenceに記録したsource/config/kernel hashが一致することを確認。警告0のarm64 buildと対象host結果がそのまま適用されるため、同一sourceの再buildは実施しない。
 
 main統合完了。p007の今回統合条件も満たしcleared、p009のsoftware clearanceを保持。実機のN0/V4/V5/V6進行とKeiland表示は未確認でWS incompleteを保持する。push・実機更新/再起動は未実施。Master/共有Queue/history/cache/GitHub投影はQ1へ保留。以前の統合承認待ちの記述は当時の履歴。
+
+## p010 follow-up（2026-10-11）
+
+[p010](../phase010/phase.md)でcore clock gateの解釈と実時間job期限を修正する。実機のV3〜V9通過およびV10待機後復帰を記録し、未確認のscanout/Keiland条件は保持。p007は今回変更差分を再監査する。
+
+## p010変更差分の準拠確認（2026-10-11）
+
+[今回evidence](../phase010/evidence.md)のsource範囲についてC全文規約・provider境界・counter障害時DMA寿命とhost/buildを確認。core-timeout-i02 software範囲はcleared、main統合条件待ちでp007 in-progress。過去の監査履歴と未確認の実機表示条件は保持。

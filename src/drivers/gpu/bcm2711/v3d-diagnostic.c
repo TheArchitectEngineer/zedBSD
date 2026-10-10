@@ -220,6 +220,9 @@ run_timeout(
 		return EIO;
 	}
 
+	/* Distinguishes the expected deadline from any later provider-reset wait. */
+	bcm2711_stage_mark(BCM2711_FAMILY_V3D, "V10 timeout observed; reset begin");
+
 	/* Boot owns all DMA here; successful reset also verifies the original identifiers. */
 	error = bcm2711_v3d_hardware_reset(engine);
 	if (error != 0)

@@ -52,6 +52,12 @@ static unsigned test_waits;
 static unsigned test_unmasks;
 static const char *test_stop;
 
+/* The real-time model rounds sleeps to scheduler ticks independently of poll count. */
+static uint64_t test_counter;
+static unsigned test_tick_us;
+static bool test_counter_failed;
+static bool test_frequency_changed;
+
 /* Deferred native queue execution lets actual IRQ service run outside publication spin. */
 static unsigned test_pending;
 static bool test_bin_done;
@@ -456,6 +462,30 @@ kern_mmio_write32(
 }
 
 /*
+ * Supplies elapsed counter time independently of the requested sleep interval.
+ */
+bool
+kern_rtc_read_counter(
+	uint64_t *counter,
+	uint64_t *frequency)
+{
+	/* Models a failed or changed timebase without waiting for a host wall clock. */
+	if (test_counter_failed)
+		return false;
+
+	/* Each modeled scheduler wake advances this fixed microsecond counter. */
+	*counter = test_counter;
+	*frequency = 1000000;
+
+	/* A changed provider invalidates comparison with the previous sample. */
+	if (test_frequency_changed && test_waits != 0)
+		*frequency = 2000000;
+
+	/* Succeeded: the caller receives the explicit modeled timebase. */
+	return true;
+}
+
+/*
  * Detects waits under spin and records the model's finite command poll bound.
  */
 void
@@ -470,6 +500,7 @@ kern_usleep_range(
 	assert(test_engine.hardware.guard.held.value == 0);
 	assert(minimum == 10 && maximum == 10);
 	test_waits++;
+	test_counter += test_tick_us;
 
 	/* Native queue events occur only after actual launch and outside the worker spin. */
 	if (test_pending == 0 || test_hang || test_forced_loop)
@@ -979,6 +1010,10 @@ fixture(
 	test_stuck_hub = 0;
 	test_stuck_core = 0;
 	test_waits = 0;
+	test_counter = 0;
+	test_tick_us = 1000;
+	test_counter_failed = false;
+	test_frequency_changed = false;
 	test_unmasks = 0;
 	test_writes = 0;
 	test_stop = NULL;
@@ -1103,11 +1138,39 @@ check_jobs(
 	test_waits = 0;
 	test_writes = 0;
 	error = bcm2711_v3d_job_run(&test_engine, &job, &result);
-	assert(error == ETIMEDOUT && !result.retired && test_waits == 50000);
+	assert(error == ETIMEDOUT && !result.retired && test_waits == 500);
 	assert(!test_engine.hardware.ready && !test_engine.hardware.irq_live);
 	writes = test_writes;
 	error = bcm2711_v3d_job_run(&test_engine, &job, &result);
 	assert(error == ENODEV && result.retired && test_writes == writes);
+
+	/* A coarser tick keeps the same half-second timeout instead of multiplying it. */
+	error = bcm2711_v3d_hardware_reset(&test_engine);
+	assert(error == 0);
+	test_hang = true;
+	test_tick_us = 10000;
+	test_waits = 0;
+	error = bcm2711_v3d_job_run(&test_engine, &job, &result);
+	assert(error == ETIMEDOUT && !result.retired && test_waits == 50);
+
+	/* Losing the counter after launch retains DMA and ends the job immediately. */
+	error = bcm2711_v3d_hardware_reset(&test_engine);
+	assert(error == 0);
+	test_counter_failed = true;
+	test_waits = 0;
+	error = bcm2711_v3d_job_run(&test_engine, &job, &result);
+	assert(error == EIO && !result.retired && test_waits == 0);
+	test_counter_failed = false;
+
+	/* A frequency change cannot silently extend the original deadline. */
+	error = bcm2711_v3d_hardware_reset(&test_engine);
+	assert(error == 0);
+	test_hang = true;
+	test_waits = 0;
+	test_frequency_changed = true;
+	error = bcm2711_v3d_job_run(&test_engine, &job, &result);
+	assert(error == EIO && !result.retired && test_waits == 1);
+	test_frequency_changed = false;
 
 	/* The actual boot diagnostic builds noop packets, executes IRQ waits and removes PTEs. */
 	fixture();

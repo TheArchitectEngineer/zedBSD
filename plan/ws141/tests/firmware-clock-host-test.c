@@ -49,11 +49,17 @@ main(
 	assert(error == 0 && hz == 300000000);
 	assert(rate_writes == 0 && state_writes == 0);
 
-	/* Enables the core's existing configured rate even when GET_STATE says off. */
+	/* The critical core rate remains valid when firmware exposes no enabled gate. */
 	fixture(0, 200000000);
+	enable_refused = true;
 	error = bcm2711_clock_prepare(4, 0, &hz);
 	assert(error == 0 && hz == 200000000);
-	assert(rate_writes == 0 && state_writes == 1);
+	assert(rate_writes == 0 && state_writes == 1 && clock_state == 0);
+
+	/* A critical clock still needs a nonzero configured rate before MMIO access. */
+	fixture(0, 0);
+	error = bcm2711_clock_prepare(4, 0, &hz);
+	assert(error == ENODEV && hz == 0 && state_writes == 0);
 
 	/* Rejects nonexistent providers without changing their state. */
 	fixture(2, 0);
@@ -92,7 +98,7 @@ main(
 	assert(error == EIO && hz == 0 && state_writes == 0);
 
 	/* Succeeded: provider transitions and failure guards behaved as specified. */
-	puts("PASS firmware clock preparation (9 cases)");
+	puts("PASS firmware clock preparation (10 cases)");
 	return 0;
 }
 

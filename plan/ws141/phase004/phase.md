@@ -77,3 +77,7 @@ native電源/MMU/IRQ/job/resetの最終sourceを[p007 audit](../p007-software-au
 ## 実機初期化の追加修正（2026-10-11）
 
 [p009](../phase009/phase.md)でN0のclock preparationとV3のVA35識別を修正する。p003/p004の実機受け入れは保持し、p007の今回変更sourceの準拠/buildを再確認する。旧software検証履歴は保持し、今回結果は別attemptへ記録する。共有投影はQ1。
+
+## p010 follow-up（2026-10-11）
+
+[p010](../phase010/phase.md)でcore clock gateの解釈と実時間job期限を修正する。実機のV3〜V9通過およびV10待機後復帰を記録し、未確認のscanout/Keiland条件は保持。p007は今回変更差分を再監査する。
