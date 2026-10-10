@@ -9,7 +9,7 @@ Related Milestones: MG003, MG006
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: [worker IRQ修正限定Queue](codex-thread-irq-20261011.md) finished。旧実行記録は保持。
-Resume point: p014修正の具体的main統合承認待ち。user実機で初回wait irq=1、boot/USB入力と追加event stageを確認。p013後のフリーズは未解決扱い。
+Resume point: p014修正7723c323fはmain統合済み。user実機で初回wait irq=1、boot/USB入力と追加event stageを確認。p013後のフリーズは未解決扱い。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
@@ -155,3 +155,8 @@ User explicitly approved「mainへ統合する」for `a1acbc44aac7384b4d0dce8e64
 ### p014 terminal
 
 初回ARM64 kernel workerのIRQ有効化欠落を修正、poll logの意味を訂正してevent lock/readback前後を追加。[証拠](tests/thread-irq-20261011.md)。生成命令の順序確認、既存host 11 cases、current config warning0 kernel/raw-image build/check、final changed-source規約review/diff-check PASS。実機boot/USB復旧は未確認、WS incomplete。main承認と共有投影はpending。
+
+
+## Main integration follow-up / 2026-10-11
+
+User explicitly approved「mainに統合してください」for `7723c323fe90866a424c49a852ad38df9ad08412`. Clean main2008584ae fast-forwarded to that exact commit without conflict. All six integrated files were read back byte-identical to the verified worktree, and both changed source hashes plus current config.mk match the recorded warning0 build evidence. Prior instruction-order check, 11 host scenarios and arm64 kernel/raw-image validation apply to this identical source; no redundant rebuild. Main integration is complete; earlier approval-pending text is historical. Physical freeze recovery and USB input remain unverified, WS048 incomplete. No push or remote deployment/reboot; shared Master/Queue/history/cache/GitHub projections remain Q1 pending.

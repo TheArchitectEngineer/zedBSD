@@ -15,3 +15,8 @@ Finite criteria: focused source/disassembly review of first-entry interrupt stat
 ## Terminal outcome
 
 Attempt rpi4-thread-irq-20261011-i01 clears its finite criteria. [Evidence](../tests/thread-irq-20261011.md) records source finding, generated instruction order, 11 host cases, current-config warning0 kernel/raw-image build, full changed-source review and limits. Main integration pending concrete approval. Physical acceptance remains unmet.
+
+
+## Main integration follow-up / 2026-10-11
+
+User explicitly approved「mainに統合してください」for `7723c323fe90866a424c49a852ad38df9ad08412`. Clean main2008584ae fast-forwarded to that exact commit without conflict. All six integrated files were read back byte-identical to the verified worktree, and both changed source hashes plus current config.mk match the recorded warning0 build evidence. Prior instruction-order check, 11 host scenarios and arm64 kernel/raw-image validation apply to this identical source; no redundant rebuild. Main integration is complete; earlier approval-pending text is historical. Physical freeze recovery and USB input remain unverified, WS048 incomplete. No push or remote deployment/reboot; shared Master/Queue/history/cache/GitHub projections remain Q1 pending.
