@@ -325,3 +325,7 @@ R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなく
 ## 実機R0〜V10成功とp012の開始（2026-10-11）
 
 ユーザーの成功ログとSSHでp011をclearedとした。p003のflip/合成/登録、p004のnative job/resetの実機出力を記録。p005/p006のKeilandはcounter-read例外に阻まれるためp012を追加し、既存「Keiland表示まで」の継続承認内でHAL実装の初期化補完を進める。実機証拠/修正/検証は[p012](phase012/phase.md)、過去の未達履歴は保持。p007は最終差分review、Master/共有投影はQ1。
+
+## p012修正版の実機配置（2026-10-11）
+
+ユーザーの明示指示で823f116f5のkernelをRPi4 10.0.30.2の/boot/boot0/vmunixへ配置。UFSへ旧kernel退避、syncとread-backのバイト/SHA256一致を確認し、配置部分はcleared。agentは再起動していない。再開点はユーザーの電源OFF/ON後のSIGBUS消失とKeiland表示確認。p012はuncleared/WS incompleteを保持。[配置承認・結果](phase012/phase.md)。共有投影はQ1。

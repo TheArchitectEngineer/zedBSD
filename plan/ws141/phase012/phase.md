@@ -42,3 +42,14 @@ locoreのEL1共通経路にCNTKCTL_EL1=2とISBを追加。scratch x1のみ、sta
 ## main統合（2026-10-11）
 
 修正 `823f116f5` をclean main `9c05da58a` からfast-forward統合。変更9path/config.mkの一致とmain cleanをread-back確認。実機更新/reboot/pushは未実施、次は新kernelでのKeiland例外消失確認。
+
+## counter-deploy-i01: 実機配置の承認（2026-10-11）
+
+Queue: ws141-counter-deploy-20261011 / active / counter-deploy-i01 / in-progress / Codex。
+ユーザー「カーネルは実機に送ってください。私が電源OFF/ONで再起動します。」を正確な配置承認として記録。上記の未配置方針はこの追加指示で更新。範囲はビルド済み823f116f5のkernelをkei@10.0.30.2へ転送、現行kernelをUFSへ退避、FATへ段階的配置、sync、read-back照合まで。agentは再起動しない。物理再起動とKeiland結果はユーザー待ちでPhase unclearedを維持。
+FAT空き13645KiB、UFS空き99880KiBを確認したため、現行kernelの追加バックアップはUFSへ置く。既存FATのr0-notify前backupは維持。新kernel SHA256=2c674080e48cf499786decf72a8e337b64ae0eeaf3c2a95e4737f6daaf4da1f1、8077312bytes。
+
+### 配置結果: cleared
+
+counter-deploy-i01 / Queue ws141-counter-deploy-20261011はfinished/cleared。転送先/tmp/vmunix-823f116f5.newのcksum=3003282929 size=8077312でown build一致。旧kernel（cksum4051373307 size8077312）をUFS /var/backups/vmunix.before-el0-counter-20261011にコピーしcmp/sync成功。FAT /boot/boot0/vmunix-823f116f5.newへcopy/cmp/sync後にvmunixへrename、sync/cmp成功。起動設定kernel=vmunix、kernel_address=0x80000を確認済み。
+実機/boot/boot0/vmunixをown build/rpi4-vmunix-after-el0-counter-20261011へread-backし、build/arm64/vmunixとのcmp exit0、SHA256=2c674080e48cf499786decf72a8e337b64ae0eeaf3c2a95e4737f6daaf4da1f1一致を確認。全操作exit0。既存FAT backupも保持。agentによる再起動は未実施。次はユーザーの電源OFF/ON後にSIGBUS消失とKeiland表示を確認する。Phase全体uncleared、WS incompleteを維持。
