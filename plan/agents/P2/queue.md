@@ -6,6 +6,7 @@ Worktree: `/home/awe/zedBSD-worktrees/p2`、branch `agent/p2`。agent type phase
 | Queue | 対象 | State |
 | --- | --- | --- |
 | q938 | [BUG-288](../../bugs/BUG-288.md)（Pi 4 の reboot の後に戻らない・書いた file が消える・read-only） | active |
+| q939 | [WS208](../../ws208/ws.md) arm64 の HAL の SMP（2026-10-11 ユーザー「arm64 の HAL の SMP（WS208）はP2にアサインします。現在の処理の後です。」） | reserved（q938 の後） |
 
 ---
 
