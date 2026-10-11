@@ -77,11 +77,18 @@ hal_irq_send_eoi(
 	cpu->active_ack = HAL_IRQ_ACK_NONE;
 }
 
+/*
+ * Installs or removes the handler of one numbered line.
+ */
 int
-hal_irq_set_handler(int irq, hal_irq_handler_t handler, void *argument)
+hal_irq_set_handler(
+	int irq,
+	hal_irq_handler_t handler,
+	void *argument)
 {
 	bool enabled;
 
+	/* Refuses a line the table does not have. */
 	if (irq < 0 || irq >= IRQ_MAX)
 		return HAL_ERR_INVALID;
 

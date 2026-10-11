@@ -34,29 +34,59 @@ static void write8(volatile uint32_t *base, unsigned offset, uint8_t value)
 	volatile uint8_t *p=(volatile uint8_t *)base;p[offset]=value;
 }
 
+/*
+ * Sets up the GIC-400's distributor and the boot CPU's part of it.
+ *
+ * Every shared line starts disabled, not pending, at one priority, level
+ * triggered and routed to CPU interface 0, the boot CPU (ws208 D1: the
+ * device interrupts stay on the boot CPU).
+ */
 void
-rpi4_gic_init(void)
+rpi4_gic_init(
+	void)
 {
-	const struct rpi4_fdt_info *info=rpi4_boot_info();
-	uint32_t lines,i;
-	if(!info->gic_dist_base||!info->gic_cpu_base)HAL_FATAL("GIC missing from FDT");
-	dist=(volatile uint32_t *)(ARM64_DIRECT_BASE+(uintptr_t)info->gic_dist_base);
-	cpuif=(volatile uint32_t *)(ARM64_DIRECT_BASE+(uintptr_t)info->gic_cpu_base);
-	dist[GICD_CTLR/4]=0;
-	lines=((dist[GICD_TYPER/4]&0x1f)+1)*32;if(lines>1020)lines=1020;irq_count=lines;
-	for(i=0;i<(lines+31)/32;i++){
-		dist[GICD_ICENABLER/4+i]=0xffffffffU;
-		dist[GICD_ICPENDR/4+i]=0xffffffffU;
-		dist[GICD_IGROUPR/4+i]=0xffffffffU;
+	const struct rpi4_fdt_info *info;
+	uint32_t lines;
+	uint32_t index;
+
+	/* Finds the distributor and the CPU interface in the device tree. */
+	info = rpi4_boot_info();
+	if (info->gic_dist_base == 0 || info->gic_cpu_base == 0)
+		HAL_FATAL("GIC missing from FDT");
+	dist = (volatile uint32_t *)(ARM64_DIRECT_BASE + (uintptr_t)info->gic_dist_base);
+	cpuif = (volatile uint32_t *)(ARM64_DIRECT_BASE + (uintptr_t)info->gic_cpu_base);
+
+	/* Stops the distributor and reads how many lines it has, up to 1020. */
+	dist[GICD_CTLR / 4] = 0;
+	lines = ((dist[GICD_TYPER / 4] & 0x1fU) + 1U) * 32U;
+	if (lines > 1020U)
+		lines = 1020U;
+	irq_count = lines;
+
+	/* Disables every line, drops what is pending, and puts it in Group 1. */
+	for (index = 0; index < (lines + 31U) / 32U; index++) {
+		dist[GICD_ICENABLER / 4 + index] = 0xffffffffU;
+		dist[GICD_ICPENDR / 4 + index] = 0xffffffffU;
+		dist[GICD_IGROUPR / 4 + index] = 0xffffffffU;
 	}
-	for(i=0;i<lines;i++)write8(dist,GICD_IPRIORITYR+i,0xa0);
-	/* CNTP PPI is Group 0, acknowledged through the primary IAR. */
-	dist[GICD_IGROUPR/4]&=~(1U<<30);
-	for(i=32;i<lines;i++)write8(dist,GICD_ITARGETSR+i,1);
-	for(i=2;i<(lines+15)/16;i++)dist[GICD_ICFGR/4+i]=0;
+
+	/* Gives every line the same priority. */
+	for (index = 0; index < lines; index++)
+		write8(dist, GICD_IPRIORITYR + index, 0xa0);
+
+	/* Routes every shared line to the boot CPU's interface. */
+	for (index = 32U; index < lines; index++)
+		write8(dist, GICD_ITARGETSR + index, 1);
+
+	/* Makes every shared line level triggered. */
+	for (index = 2U; index < (lines + 15U) / 16U; index++)
+		dist[GICD_ICFGR / 4 + index] = 0;
+
 	/* The boot CPU's private lines and CPU interface, as every other CPU's. */
 	rpi4_gic_init_cpu();
-	dist[GICD_CTLR/4]=3;
+
+	/* Starts the distributor for both groups. */
+	dist[GICD_CTLR / 4] = 3;
 	hal_io_mb();
 }
 

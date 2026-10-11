@@ -121,68 +121,108 @@ map_device_block(uint64_t physical)
 	    PTE_PXN | PTE_UXN;
 }
 
+/*
+ * Builds the kernel's final tables and switches the boot CPU to them.
+ *
+ * TTBR1 maps all RAM through the direct map, the first 2 MiB of RAM page
+ * by page with W^X for the kernel's sections there, and the firmware's
+ * peripheral blocks as device memory; TTBR0 gets an empty user table.  The secondary CPUs load
+ * the same TTBR1 when they come up (smp.c).
+ */
 void
-arm64_space_init(void)
+arm64_space_init(
+	void)
 {
-	uint64_t total=hal_pmem_get_total_size(); unsigned i;
-	uintptr_t text_start=arm64_direct_to_phys(__kernel_text_start);
-	uintptr_t text_end=arm64_direct_to_phys(__kernel_text_end);
-	uintptr_t rodata_start=arm64_direct_to_phys(__kernel_rodata_start);
-	uintptr_t rodata_end=arm64_direct_to_phys(__kernel_rodata_end);
-	uintptr_t data_start=arm64_direct_to_phys(__kernel_data_start);
-	space_registry=NULL;
-	hal_memset(system_user_l0,0,sizeof(system_user_l0));
-	hal_memset(system_kernel_l0,0,sizeof(system_kernel_l0));
-	hal_memset(system_kernel_l1,0,sizeof(system_kernel_l1));
-	hal_memset(system_kernel_l2_low,0,sizeof(system_kernel_l2_low));
-	hal_memset(system_kernel_l3_low,0,sizeof(system_kernel_l3_low));
-	hal_memset(system_kernel_l2_high,0,sizeof(system_kernel_l2_high));
-	system_kernel_l0[0]=table_desc(system_kernel_l1);
-	for(i=0;i<512;i++) {
-		uint64_t physical=(uint64_t)i<<30;
-		if(physical>=total) break;
-		system_kernel_l1[i]=physical|BLOCK_FLAGS|PTE_PXN|PTE_UXN;
+	const struct rpi4_fdt_info *info;
+	uint64_t total;
+	uint64_t physical;
+	uint64_t flags;
+	uintptr_t text_start;
+	uintptr_t text_end;
+	uintptr_t rodata_start;
+	uintptr_t rodata_end;
+	uintptr_t data_start;
+	unsigned index;
+	int text_executable;
+	int rodata_protected;
+	int data_protected;
+
+	/* Locates the kernel image's sections physically. */
+	total = hal_pmem_get_total_size();
+	text_start = arm64_direct_to_phys(__kernel_text_start);
+	text_end = arm64_direct_to_phys(__kernel_text_end);
+	rodata_start = arm64_direct_to_phys(__kernel_rodata_start);
+	rodata_end = arm64_direct_to_phys(__kernel_rodata_end);
+	data_start = arm64_direct_to_phys(__kernel_data_start);
+
+	/* Starts from no user space and empty tables. */
+	space_registry = NULL;
+	hal_memset(system_user_l0, 0, sizeof(system_user_l0));
+	hal_memset(system_kernel_l0, 0, sizeof(system_kernel_l0));
+	hal_memset(system_kernel_l1, 0, sizeof(system_kernel_l1));
+	hal_memset(system_kernel_l2_low, 0, sizeof(system_kernel_l2_low));
+	hal_memset(system_kernel_l3_low, 0, sizeof(system_kernel_l3_low));
+	hal_memset(system_kernel_l2_high, 0, sizeof(system_kernel_l2_high));
+
+	/* Maps RAM in 1 GiB blocks, never executable. */
+	system_kernel_l0[0] = table_desc(system_kernel_l1);
+	for (index = 0; index < 512U; index++) {
+		physical = (uint64_t)index << 30;
+		if (physical >= total)
+			break;
+		system_kernel_l1[index] = physical | BLOCK_FLAGS | PTE_PXN | PTE_UXN;
 	}
+
 	/*
-	 * Do not turn the complete 3--4 GiB aperture into Device memory: a
-	 * 4 GiB Pi has ordinary RAM there.  Split that L1 entry and replace only
-	 * the FDT-discovered peripheral blocks with Device-nGnRE mappings.
+	 * Does not turn the complete 3--4 GiB aperture into Device memory: a
+	 * 4 GiB Pi has ordinary RAM there.  Splits that L1 entry and replaces
+	 * only the FDT-discovered peripheral blocks with Device-nGnRE mappings.
 	 */
-	system_kernel_l1[3]=table_desc(system_kernel_l2_high);
-	for(i=0;i<512;i++) {
-		uint64_t physical=0xc0000000ULL+((uint64_t)i<<21);
-		if(physical<total)
-			system_kernel_l2_high[i]=physical|BLOCK_FLAGS|PTE_PXN|PTE_UXN;
+	system_kernel_l1[3] = table_desc(system_kernel_l2_high);
+	for (index = 0; index < 512U; index++) {
+		physical = 0xc0000000ULL + ((uint64_t)index << 21);
+		if (physical < total)
+			system_kernel_l2_high[index] = physical | BLOCK_FLAGS | PTE_PXN | PTE_UXN;
 	}
-	{
-		const struct rpi4_fdt_info *info=rpi4_boot_info();
-		map_device_block(info->uart_base);
-		map_device_block(info->mailbox_base);
-		map_device_block(info->gic_dist_base);
-		map_device_block(info->gic_cpu_base);
-		map_device_block(info->sdhci_base);
+
+	/* Maps the peripherals the HAL itself uses. */
+	info = rpi4_boot_info();
+	map_device_block(info->uart_base);
+	map_device_block(info->mailbox_base);
+	map_device_block(info->gic_dist_base);
+	map_device_block(info->gic_cpu_base);
+	map_device_block(info->sdhci_base);
+
+	/* Splits the first GiB into 2 MiB blocks. */
+	system_kernel_l1[0] = table_desc(system_kernel_l2_low);
+	for (index = 0; index < 512U; index++)
+		system_kernel_l2_low[index] = ((uint64_t)index << 21) | BLOCK_FLAGS | PTE_PXN | PTE_UXN;
+
+	/* Maps the first 2 MiB of RAM page by page: text read-only and executable, rodata read-only. */
+	system_kernel_l2_low[0] = table_desc(system_kernel_l3_low);
+	for (index = 0; index < 512U; index++) {
+		physical = (uint64_t)index * ARM64_PAGE_SIZE;
+		flags = PAGE_FLAGS | PTE_PXN | PTE_UXN;
+		if (physical >= text_start && physical < text_end) {
+			flags = (flags | PTE_RO) & ~PTE_PXN;
+		} else if (physical >= rodata_start && physical < rodata_end) {
+			flags |= PTE_RO;
+		}
+		system_kernel_l3_low[index] = physical | flags;
 	}
-	system_kernel_l1[0]=table_desc(system_kernel_l2_low);
-	for(i=0;i<512;i++)
-		system_kernel_l2_low[i]=((uint64_t)i<<21)|BLOCK_FLAGS|PTE_PXN|PTE_UXN;
-	system_kernel_l2_low[0]=table_desc(system_kernel_l3_low);
-	for(i=0;i<512;i++) {
-		uint64_t p=(uint64_t)i*ARM64_PAGE_SIZE;
-		uint64_t flags=PAGE_FLAGS|PTE_PXN|PTE_UXN;
-		if(p>=text_start && p<text_end)
-			flags=(flags|PTE_RO)&~PTE_PXN;
-		else if(p>=rodata_start && p<rodata_end)
-			flags|=PTE_RO;
-		system_kernel_l3_low[i]=p|flags;
-	}
-	system_ttbr0=arm64_direct_to_phys(system_user_l0);
+
+	/* Switches the boot CPU to the final tables, with the kernel alone selected. */
+	system_ttbr0 = arm64_direct_to_phys(system_user_l0);
 	arm64_write_ttbr1(arm64_direct_to_phys(system_kernel_l0));
 	arm64_write_ttbr0(system_ttbr0);
 	arm64_flush_tlb();
 	arm64_percpu_current()->current_space = HAL_SPACE_SYS;
-	if ((system_kernel_l3_low[(text_start>>12)&511] & PTE_PXN) ||
-	    !(system_kernel_l3_low[(rodata_start>>12)&511] & PTE_PXN) ||
-	    !(system_kernel_l3_low[(data_start>>12)&511] & PTE_PXN))
+
+	/* Checks W^X on the three sections the kernel runs from. */
+	text_executable = (system_kernel_l3_low[(text_start >> 12) & 511U] & PTE_PXN) == 0;
+	rodata_protected = (system_kernel_l3_low[(rodata_start >> 12) & 511U] & PTE_PXN) != 0;
+	data_protected = (system_kernel_l3_low[(data_start >> 12) & 511U] & PTE_PXN) != 0;
+	if (!text_executable || !rodata_protected || !data_protected)
 		HAL_FATAL("arm64 kernel W^X table validation failed");
 	hal_puts("ARM64 PAGING PASS\nARM64 W^X PASS\n");
 }
