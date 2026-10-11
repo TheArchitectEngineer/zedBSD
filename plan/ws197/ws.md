@@ -52,8 +52,8 @@ Resume point: main の d5296c23e（2026-10-11）。p001〜p005・p011〜p013 cle
 | p004b | Phone の app の保存と同期（目印・merge・E.164 の key・送信の状態） | 3.5 | cleared（2026-10-11 Q1 照合: main に merge 778c1e377、host 試験 PASS。国番号は既定 81（P8）） |
 | p004c | Settings の「Use as phone」と通知（WS156 の lock_text の変更は P1 が同じ Phase で行う、Q1） | 1.5 | cleared（2026-10-11 Q1 照合: e7a478d33 は main に統合済み、host 試験 PASS。実機は p008） |
 | [p005](phase005/phase.md) | PBAP・Phoneの電話帳/名前/通話履歴・直列同期・Settings。第3.1版i01〜i07 | 11.5 | cleared（2026-10-10 Codex、host・全文規約・named build warning0。実機PBAPはp008） |
-| p006 | HFP の制御（AT の SLC、indicator、応答・終話・発信、発信者、割り込み、codec の交渉） | 12 | planned |
-| [p007](phase007/phase.md) | HFP の音: p007a xHCI の isochronous・usb-bt の interface 1・SCO の口、p007b SCO・audiod・CVSD の後に mSBC（Q9 の SCO の UAPI は p007a の設計の後にユーザーに聞く） | 47 | planning（設計 2 2026-10-11: review-1・Q9〜Q11・音の route を反映、再 review と Q12〜Q14 待ち） |
+| [p006](phase006/phase.md) | HFP の制御（AT の SLC、indicator、応答・終話・発信、発信者、割り込み、codec の交渉） | 12 | in-progress（実装・main 統合済み 60a50fdbf、UAT beta2 #13 待ち。BRSF の bit 9 は p007b1 で足す） |
+| [p007](phase007/phase.md) | HFP の音: p007a xHCI の isochronous・usb-bt の interface 1・SCO の口、p007b SCO・audiod・CVSD の後に mSBC（Q9 の SCO の UAPI は p007a の設計の後にユーザーに聞く） | 47 | planning（設計 2.1 2026-10-11: review-2 の X・S2・S5・S8 を反映、X 節の再 review と Q12〜Q14 待ち） |
 | p008 | 実機（Android が先、iPhone は HFP の後、Q13）。PHONE PROBE は p003 で消すので MAP の操作で確かめる | 20 | planned |
 | p009 | 規約の全文の見直し（2026-10-08 ユーザー: 規約の Phase はベータ3） | 2 | planned（ベータ3） |
 | [p010](phase010/phase.md) | MMS写真/動画送受信（受信統合済み、送信は未完。p012がviewer起動を補完） | 3（送信の残り） | in-progress（受信の部分 cleared） |
