@@ -14,6 +14,7 @@
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <kern/sched.h>
+#include <kern/text-display.h>
 #include <uapi/errno.h>
 #include <uapi/gpu-allocation.h>
 
@@ -385,6 +386,10 @@ device_close(
 			bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "lease close retains uncertain copy buffers (%d)", error);
 		controller->owner = NULL;
 		session->lease = 0;
+
+		/* An uncertain native restore cannot safely return framebuffer writes to text. */
+		if (error == 0)
+			kern_text_resume();
 	}
 
 	mutex_unlock(&controller->mutex);
@@ -721,6 +726,9 @@ output_claim(
 	session->lease = controller->next_lease;
 	controller->next_lease++;
 	controller->owner = session;
+
+	/* Stops console pixel writes before this lease may publish a graphics frame. */
+	kern_text_suspend();
 	request->lease = session->lease;
 
 	mutex_unlock(&controller->mutex);
@@ -760,6 +768,9 @@ output_release(
 	/* Only confirmed restoration gives the plane back to another open. */
 	controller->owner = NULL;
 	session->lease = 0;
+
+	/* Repaints retained text only after actual console scanout is confirmed. */
+	kern_text_resume();
 
 	mutex_unlock(&controller->mutex);
 

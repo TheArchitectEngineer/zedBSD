@@ -26,6 +26,7 @@
 #include <hal/hal.h>
 
 #include "../bsp.h"
+#include "cons.h"
 #include "framebuffer.h"
 #include "uart.h"
 
@@ -124,17 +125,41 @@ rpi4_cons_suspend_output(
 	output_leave(interrupts_enabled);
 }
 
+/*
+ * Restores retained console cells after the display driver gives back scanout.
+ */
 void
 rpi4_cons_resume_output(
 	void)
 {
 	bool interrupts_enabled;
+	unsigned row;
+	unsigned column;
 
-	/* Restores framebuffer output and repaints a known state. */
+	/* Repeated restoration does not blank or repaint an already visible console. */
 	interrupts_enabled = output_enter();
+
+	/* An already active console has no retained graphics interval to repaint. */
+	if (!output_suspended) {
+		output_leave(interrupts_enabled);
+		return;
+	}
+
+	/* Keeps the log accumulated during graphics ownership and repaints it once. */
 	output_suspended = 0;
-	clear_locked();
+	for (row = 0; row < CONS_ROWS; row++) {
+		for (column = 0; column < CONS_COLUMNS; column++)
+			draw_locked(row, column);
+	}
+
+	/* Restores the cursor only after its underlying retained cell is visible. */
+	update_cursor_locked();
+
+	/* Releases output ownership after the retained grid and cursor are visible. */
 	output_leave(interrupts_enabled);
+
+	/* Succeeded: framebuffer output is active with the retained console contents. */
+	return;
 }
 
 /*

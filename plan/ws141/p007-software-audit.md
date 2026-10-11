@@ -133,3 +133,6 @@ coalesced診断最終確認: native device host PASS、C全文manual/diff-check/
 
 
 2026-10-11 clipped quad（glass.c/compose.c/compose.h/backdrop.c/heads.c）をC全文規約でmanual review。layer/head座標後だけscissor非交差を判断、pure shape shadersにstorage side effects無し、border1pixel余裕/負extent保守/64bit境界算術を保持。backdropのsmall viewportは全sceneが必要なのでprivate recording flagで無効化、head初回wallpaper前のscissor stateを同期。全vkCmdSetScissor/BeginRenderPass callsiteを確認。style変更0（compose未変更4指摘）、formatter19比較/diff-check/arm64 warning0/app dependency checker PASS。物理結果はp006で追跡。
+
+
+2026-10-11 graphics lease/console補完: user再作成imageにはinline kernel666078535とcull compositor1980286597が導入済み。UFS51%/tmp8KB/FAT84%で容量不足なし、greeter停止後SSH0.25秒。RPi text suspend/resume未接続を修正し、claim成功でpixel描画停止、confirmed release/closeだけ復帰。failed restore/recovery時のholdは維持、HALはboard-private cons header/retained resumeだけでhal.h/API不変。実callback host PASS（failed release/closeではsuspended維持、recovery claimも維持、successful release/closeはresume）。C全文manual/formatter19範囲比較/diff-check、production style変更範囲0（cons既存6件は未変更）を確認。arm64 make exit0/warning0/error0/checker3PASS、kernel959624230/8077312。実機更新/効果はこれから、33ms未達・submit-i01 in-progress。Q1共有projection/公開は保留のまま。

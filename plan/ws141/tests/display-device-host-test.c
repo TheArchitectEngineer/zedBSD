@@ -20,6 +20,7 @@
 #include <kern/kmem.h>
 #include <kern/pmem.h>
 #include <kern/sched.h>
+#include <kern/text-display.h>
 #include <drivers/gpu/gpu.h>
 #include <uapi/errno.h>
 #include <uapi/gpu-allocation.h>
@@ -44,6 +45,9 @@ static uint8_t *test_console;
 static unsigned test_run_count;
 static unsigned test_freed;
 static bool test_stall;
+
+/* Text painting remains stopped until actual console adoption is confirmed. */
+static bool test_text_suspended;
 
 /* Models an allocator that violates requested placement before any DMA publication. */
 static bool test_misplaced;
@@ -141,6 +145,7 @@ main(
 	claim.generation = 1;
 	error = test_operations->display->claim(test_device, first, &claim);
 	assert(error == 0 && claim.lease != 0);
+	assert(test_text_suspended);
 	lease = claim.lease;
 	error = test_operations->display->claim(test_device, second, &claim);
 	assert(error == EBUSY);
@@ -200,6 +205,7 @@ main(
 	test_stall = true;
 	error = test_operations->display->release(test_device, first, &release);
 	assert(error == ETIMEDOUT && test_freed == freed_before + 1);
+	assert(test_text_suspended);
 	error = test_operations->display->claim(test_device, second, &claim);
 	assert(error == EBUSY);
 	test_stall = false;
@@ -207,6 +213,7 @@ main(
 	assert(error == 0);
 	bcm2711_display_flip_snapshot(&test_display, &status);
 	assert(status.retained_mask == 0 && status.active_list == 43);
+	assert(!test_text_suspended);
 
 	/* A fresh lease cannot observe an earlier owner's completed presentation. */
 	error = test_operations->display->claim(test_device, second, &claim);
@@ -216,6 +223,7 @@ main(
 	error = test_operations->display->wait(test_device, second, &wait);
 	assert(error == ETIMEDOUT);
 	test_operations->close(test_device, second);
+	assert(!test_text_suspended);
 	test_operations->close(test_device, first);
 	assert(test_freed == 1);
 
@@ -343,12 +351,15 @@ main(
 	test_operations->resource_destroy(test_device, second, other);
 	test_operations->close(test_device, second);
 	assert(test_freed == freed_before);
+	assert(test_text_suspended);
 	test_stall = false;
 	error = test_operations->open(test_device, &first);
 	assert(error == 0);
 	error = test_operations->display->claim(test_device, first, &claim);
 	assert(error == 0 && test_freed == freed_before + 2);
+	assert(test_text_suspended);
 	test_operations->close(test_device, first);
+	assert(!test_text_suspended);
 
 	/* Succeeded: private scanout storage survives every ordinary open and resource. */
 	puts("display-device-host-test PASS");
@@ -730,4 +741,32 @@ kern_irq_mask(
 {
 	/* Owned source W1C is modeled by register writes above. */
 	(void)irq;
+}
+
+/*
+ * Models the existing text backend's framebuffer suspension during a display lease.
+ */
+void
+kern_text_suspend(
+	void)
+{
+	/* Tracks whether any later restore could paint into graphics-owned memory. */
+	test_text_suspended = true;
+
+	/* Succeeded: the text backend is suspended. */
+	return;
+}
+
+/*
+ * Models text repaint only after a confirmed console restoration.
+ */
+void
+kern_text_resume(
+	void)
+{
+	/* Returns pixel output to the retained console. */
+	test_text_suspended = false;
+
+	/* Succeeded: the text backend is active. */
+	return;
 }

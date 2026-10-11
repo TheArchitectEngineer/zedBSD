@@ -23,6 +23,8 @@
 #include "drivers/platform/rpi4/rpi4-console.h"
 
 #include <hal/hal.h>
+
+#include "hal/arm64/bsp-rpi4/cons.h"
 #include <kern/clock.h>
 #include <kern/device-io.h>
 #include <kern/sched.h>
@@ -55,6 +57,8 @@ static int console_set_cursor(unsigned row, unsigned column);
 static void console_get_cursor(unsigned *row, unsigned *column, int *visible);
 static void console_show_cursor(int visible);
 static void console_nothing(void);
+static void console_suspend(void);
+static void console_resume(void);
 static uint32_t uart_read(unsigned offset);
 static void console_input_worker(void *argument);
 
@@ -72,8 +76,8 @@ static const struct kern_text_ops rpi4_console_ops = {
 	.get_cursor = console_get_cursor,
 	.show_cursor = console_show_cursor,
 	.update_cursor = console_nothing,
-	.suspend = console_nothing,
-	.resume = console_nothing
+	.suspend = console_suspend,
+	.resume = console_resume
 };
 
 /*
@@ -276,4 +280,28 @@ console_input_worker(
 		wake = sched_ticks() + kern_ms_to_ticks(RPI4_CONSOLE_POLL_MS);
 		sched_sleep(wake);
 	}
+}
+
+/* Keeps UART output and retained text active while graphics owns the framebuffer. */
+static void
+console_suspend(
+	void)
+{
+	/* Stops only the early console's pixel writes under its own output lock. */
+	rpi4_cons_suspend_output();
+
+	/* Succeeded: subsequent text cannot paint into graphics-owned scanout. */
+	return;
+}
+
+/* Restores framebuffer text after the display driver confirms console adoption. */
+static void
+console_resume(
+	void)
+{
+	/* Repaints the retained early console without discarding newer log messages. */
+	rpi4_cons_resume_output();
+
+	/* Succeeded: serial and framebuffer output both show the console again. */
+	return;
 }

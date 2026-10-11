@@ -409,3 +409,11 @@ clip周辺reviewでoffscreen backdropはlogical output座標を小viewportへsca
 2026-10-11 fixed utile copy 10a543fd3をmainへ自動統合、666078535/8077312を実機/tmp転送。旧260505095を/var/backups/vmunix.before-texture-inline-20261011へ保存/cmpし、greeter停止後FAT stage/cmp/sync/rename/sync/cmpで更新exit0。reboot exit0だがSSH timeout→No route to host。userへ電源OFF/ON依頼、復帰・実機効果未確認。
 
 clipped quad最終source: glass/output image quadsのpure vertex/fragment描画のみ省き、intersect/境界1pixel/負scaleは保持。current scissor trackingはoutput/head/temporary shell clip/restoreをsource全件確認、offscreen backdropは専用flagで省略を止める。C全文manual、formatter19範囲出力比較、diff-check PASS、style変更行0（compose既存blank4は対象外）。arm64 compositor build exit0/warning0/error0/dynamic ELF checker exit0、cksum1980286597/949392。実機未転送。33ms目標未達のまま。
+
+
+2026-10-11 再作成imageの実機: user電源ON後SSH復帰、host key再登録（image更新の既存承認）。installed kernel666078535/8077312、wayland1980286597/949392はinline-copy/cull最終成果と一致。root UFS使用51%、/tmp8KB、FAT84%で容量不足ではない。greeter停止後SSH応答0.25秒。userによる「DHCP/sshd起動後、Wayland起動でping停止」の事実を保持し、焼直しが必要だった原因はまだ未確定。
+
+sourceでRPi text ops suspend/resumeがno-op、early consoleのsuspend関数は未接続と確認。newline scrollはIRQをmaskして2000cellを描画し、cellごとに16rowのcache clean/barrierを行う。GPU所有中のログで長いIRQ停止になる仮説を検証する。既存kern_text_suspend/resumeをdisplay leaseのclaim成功/console restore成功へ接続し、board private cons headerで既存HAL実装のsuspend/resumeをRPi text opsへ配線。公開hal.h/API・common GPU API不変。failed restoreはsuspendedを保持、成功release/closeだけresume、新claimのrestoreは途中resumeしない。resumeはretained cellsを保持して復描画し、同状態resumeはno-op。短い実display callback hostでclaim/failed release/close/recovery順を検証しwarning0 build、実機比較する。33ms未達、submit-i01はin-progress。
+
+
+console lease最終source: actual display-device host PASS、failed release/close/reclaimとsuccessful release/closeのtext state検証。C全文manualでmutex→text observer→console output lockの順序/IRQ復帰/retained state、no rendering while graphics-owned、HAL内部headerのみを確認。clang-format19範囲比較/production変更行style0/diff-check PASS（cons既存style6件は変更なし）。arm64 make exit0/warning0/error0/checker3PASS、kernel959624230/8077312。旧image初期kernel666078535へ戻せるbackupをUFSへ保存し、修正版の配置/比較へ進む。

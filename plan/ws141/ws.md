@@ -341,3 +341,6 @@ R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなく
 1024read版の実機maintenance yield0でもprepare/releaseが残る。同pass exact code3/default1を元drawのDMA retirementまで共有する版をhost/arm64 warning0で確認。次はkernelを配置し、全体応答を比較する。p006/submit-i01 in-progress。
 
 2026-10-11 最新再開点: main/実機のshared code版07b549f07（1591733483/8077312）はreboot後SSHが未復帰、電源OFF/ONを依頼済み。次のtranslation batch版1299371254/8077312はsource/host/arm64 warning0/checker検証済みで未配置。SSH復帰後に実機状態を確認し、このkernelを配置・照合・rebootしてprepare/release/renderを比較する。stage pause100msは先の実機で成立、7mode compositorは2734866792/949352で配置済み、GPUexecution48〜177msへ改善は確認済み。全体応答の修復完了とはしない。
+
+
+2026-10-11 graphics lease/console補完: user再作成imageにはinline kernel666078535とcull compositor1980286597が導入済み。UFS51%/tmp8KB/FAT84%で容量不足なし、greeter停止後SSH0.25秒。RPi text suspend/resume未接続を修正し、claim成功でpixel描画停止、confirmed release/closeだけ復帰。failed restore/recovery時のholdは維持、HALはboard-private cons header/retained resumeだけでhal.h/API不変。実callback host PASS（failed release/closeではsuspended維持、recovery claimも維持、successful release/closeはresume）。C全文manual/formatter19範囲比較/diff-check、production style変更範囲0（cons既存6件は未変更）を確認。arm64 make exit0/warning0/error0/checker3PASS、kernel959624230/8077312。実機更新/効果はこれから、33ms未達・submit-i01 in-progress。Q1共有projection/公開は保留のまま。
