@@ -1228,6 +1228,47 @@ native_draw_test(
 	assert(allocations == baseline);
 	space->cache_limit = 0;
 
+	/* A never-mapped source lends one converted snapshot to later draws until its generation moves. */
+	space->snapshot_limit = BCM2711_NATIVE_SNAPSHOT_BYTES;
+	memset(cpu, 0x75, 512);
+	view->buffer->host_mapped = false;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw != NULL && draw->count == 10 && draw->textures[0].snapshot != NULL);
+	assert(draw->textures[0].snapshot->users == 1 && ((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x75);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && space->snapshots != NULL && space->snapshots->users == 0);
+	memset(cpu, 0x24, 512);
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x75);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A device or kernel write moves the generation, and the unused snapshot is converted again in place. */
+	view->buffer->generation++;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x24);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A host-mapped source gets a private conversion every time. */
+	view->buffer->host_mapped = true;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw->count == 11 && draw->textures[0].snapshot == NULL);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+	view->buffer->host_mapped = false;
+
+	/* Draining releases the unused snapshot and its source hold. */
+	error = bcm2711_native_storage_drain(space);
+	assert(error == 0 && space->snapshots == NULL && space->snapshot_bytes == 0 && allocations == baseline);
+	space->snapshot_limit = 0;
+
 	/* Early and late ordinary OOM retire complete mapped prefixes, including an independently copied scalar stream. */
 	for (index = 1; index <= 4; index++) {
 		fail_after = index * 10U;

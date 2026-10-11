@@ -13,6 +13,7 @@
 #include "drivers/gpu/bcm2711/buffer.h"
 
 struct bcm2711_v3d;
+struct bcm2711_native_snapshot;
 
 /* Each mapping owns its allocation independently of any resource descriptor. */
 struct bcm2711_v3d_view {
@@ -47,6 +48,11 @@ struct bcm2711_v3d_space {
 	uint64_t cache_bytes;
 	/* The renderer sets the cache's capacity when it registers; zero keeps no idle view. */
 	uint64_t cache_limit;
+	/* Converted textures of never-mapped images, reused while their source generation is unchanged. */
+	struct bcm2711_native_snapshot *snapshots;
+	uint64_t snapshot_bytes;
+	uint64_t snapshot_limit;
+	uint64_t snapshot_serial;
 };
 
 /* No DMA or overlapping edits may occur between begin and checked end. */
