@@ -9653,8 +9653,14 @@ glass_motion_take(
 	int still;
 	int calm;
 
-	/* The hover of buttons, the dock hint and the moves are redrawn (over a window's own area only the cursor is, damage.c). */
+	/*
+	 * The hover of buttons, the dock hint and the moves are redrawn (over a
+	 * window's own area only the cursor is, damage.c), unless no hover the
+	 * scene was drawn with changes.
+	 */
 	calm = kwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
+	if (!calm)
+		calm = kwl_hover_unchanged(server);
 	if (!calm)
 		server->dirty = 1;
 
