@@ -96,3 +96,5 @@ event（購読者へ）: `PHONE HF state=off|connecting|ready|failed why=<語> s
 確認: phone-shell・phone-backend の試験に通話を足して PASS、phone-store・run-host-mediastorage PASS、zedBSD の phone・wayland・libkeiland.so・bluetoothd・settings、Linux の libkeiland.so・wayland の named build warning 0、style 新規 0、exports --check・boundary PASS。
 
 未実施（ユーザーの UAT、5330＋Android、音は p007）: Settings の Bluetooth で phone の calls を on → Phone を開いて着信を待つ → card に名前・番号、Answer で通話中・時間が進む、Keypad で DTMF（自動音声で確かめる）、Hang Up。Phone を閉じた状態の着信で通知。会話の Call で発信。
+- Settings（ebf270695）: capability `KL_SYSTEM_HAS_PHONE_HF`、「Use as phone」で calls も on（compositor が持つ時）、既に使っている phone には「Also use contacts」の次に「Also use calls」。zedBSD・Linux の settings の build warning 0。
+- Status: 実装済み・UAT（実機）待ち。音は p007。
