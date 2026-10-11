@@ -1527,6 +1527,9 @@ check_translation_batch(
 	assert(error == 0 && test_writes == 0);
 	error = bcm2711_v3d_memory_end(&space);
 	assert(error == EINVAL);
+
+	/* Succeeded: all independent ownership or scalar comparisons passed. */
+	return;
 }
 
 /* Checks exact code upload and separates uncertain DMA from consumed failed-flush ownership. */

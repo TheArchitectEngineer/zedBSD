@@ -910,6 +910,9 @@ verify_panel_mode(
 		else
 			assert(variant.lookups == 1);
 	}
+
+	/* Succeeded: all independent ownership or scalar comparisons passed. */
+	return;
 }
 
 /* Checks source meaning, native metadata, implicit FIFO use, output formats and all native program words. */
