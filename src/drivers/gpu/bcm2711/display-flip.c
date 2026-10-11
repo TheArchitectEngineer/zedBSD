@@ -272,6 +272,41 @@ bcm2711_display_flip_cursor(
 }
 
 /*
+ * Tells whether a cursor image may be read by the HVS or by a coming list.
+ *
+ * It is named while a retained list shows it or while the recorded cursor
+ * (published or not) uses it; any other image may be rewritten at once.
+ */
+bool
+bcm2711_display_flip_cursor_named(
+	struct bcm2711_display *display,
+	uint32_t physical)
+{
+	unsigned long enabled;
+	uint32_t slot;
+	bool named;
+
+	/* Nothing names an image before the guard exists. */
+	if (!display->flip.initialized)
+		return false;
+
+	/* Retained lists and the recorded cursor are read together. */
+	enabled = spin_lock_irqsave(&display->flip.guard);
+
+	named = display->flip.cursor.physical == physical;
+	for (slot = 0; slot < BCM2711_FLIP_SLOTS; slot++) {
+		/* Only a list the HVS may still fetch keeps its image. */
+		if ((display->flip.retained_mask & (1U << slot)) != 0 && display->flip.cursor_images[slot] == physical)
+			named = true;
+	}
+
+	spin_unlock_irqrestore(&display->flip.guard, enabled);
+
+	/* Succeeded: the answer holds while the caller excludes other cursor changes. */
+	return named;
+}
+
+/*
  * Waits until no published list is pending, so that both slots' contents are known.
  *
  * The caller holds the display's mutex, so no submitter or cursor change
@@ -616,12 +651,15 @@ submit_frame(
 
 	/* A composed list keeps its planes for cursor changes and carries the cursor above them. */
 	display->flip.composed[slot] = false;
+	display->flip.cursor_images[slot] = 0;
 	if (composed && count == FLIP_COMPOSE_WORDS) {
 		kern_memcpy(display->flip.base_words[slot], words, sizeof(display->flip.base_words[slot]));
 		display->flip.composed[slot] = true;
 		extra = cursor_words(display, cursor);
 		for (index = 0; index < extra; index++)
 			kern_mmio_write32(display->compositor.mapped + 0x4000U + (list + count - 1U + index) * 4U, cursor[index]);
+		if (extra != 0)
+			display->flip.cursor_images[slot] = display->flip.cursor.physical;
 		display->flip.cursor_dirty = false;
 		count += extra;
 	}
@@ -1155,6 +1193,9 @@ publish_cursor_locked(
 	/* The free slot shows the same frame, which stays retained through it. */
 	kern_memcpy(display->flip.base_words[slot], display->flip.base_words[active], sizeof(display->flip.base_words[slot]));
 	display->flip.composed[slot] = true;
+	display->flip.cursor_images[slot] = 0;
+	if (count != 0)
+		display->flip.cursor_images[slot] = display->flip.cursor.physical;
 	display->flip.frames[slot] = display->flip.frames[active];
 	display->flip.retained_mask |= 1U << slot;
 	display->flip.cursor_dirty = false;

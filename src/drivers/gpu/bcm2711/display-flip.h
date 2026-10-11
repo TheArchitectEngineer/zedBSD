@@ -58,6 +58,8 @@ struct bcm2711_flip_state {
 	 */
 	uint32_t base_words[BCM2711_FLIP_SLOTS][16];
 	bool composed[BCM2711_FLIP_SLOTS];
+	/* The cursor image each slot's list shows, 0 for none. */
+	uint32_t cursor_images[BCM2711_FLIP_SLOTS];
 	struct bcm2711_flip_cursor cursor;
 	bool cursor_dirty;
 	uint64_t cursor_lists;
@@ -114,6 +116,9 @@ int bcm2711_display_flip_compose(struct bcm2711_display *display, const struct d
  * without it is adopted (bcm2711_display_flip_settle after the change).
  */
 int bcm2711_display_flip_cursor(struct bcm2711_display *display, const struct bcm2711_flip_cursor *cursor);
+
+/* Tells whether a retained list or the recorded cursor names a cursor image, which must then stay unchanged. */
+bool bcm2711_display_flip_cursor_named(struct bcm2711_display *display, uint32_t physical);
 
 /* Waits until no published list is pending; the caller excludes other publishers. */
 int bcm2711_display_flip_settle(struct bcm2711_display *display);

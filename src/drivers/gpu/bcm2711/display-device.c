@@ -49,6 +49,9 @@ struct display_resource {
 	bool has_image;
 };
 
+/* The cursor plane keeps four images: shown, pending, recorded and one to write. */
+#define DISPLAY_CURSOR_IMAGES 4U
+
 /* One boot output owns persistent operation tables and private scanout buffers. */
 struct display_device {
 	struct mutex mutex;
@@ -60,9 +63,11 @@ struct display_device {
 	struct drv_gpu_share_ops share_operations;
 	struct bcm2711_buffer *copies[2];
 	struct bcm2711_buffer *holds[2];
-	/* The cursor plane's two images, made at the first cursor image; index names the one a list may show. */
-	struct bcm2711_buffer *cursors[2];
-	uint32_t cursor_index;
+	/*
+	 * The cursor plane's images, made at the first cursor image: the shown,
+	 * the pending and the recorded one may differ, so a fourth is always free.
+	 */
+	struct bcm2711_buffer *cursors[DISPLAY_CURSOR_IMAGES];
 	struct bcm2711_flip_cursor cursor;
 	struct display_session *owner;
 	uint64_t next_lease;
@@ -1631,8 +1636,8 @@ output_cursor_set(
 		return EINVAL;
 	}
 
-	/* The two images are made once, below one GiB for the HVS. */
-	for (index = 0; index < 2U; index++) {
+	/* The images are made once, below one GiB for the HVS. */
+	for (index = 0; index < DISPLAY_CURSOR_IMAGES; index++) {
 		if (controller->cursors[index] != NULL)
 			continue;
 		error = bcm2711_buffer_create(GPU_DISPLAY_CURSOR_MAX * GPU_DISPLAY_CURSOR_MAX * 4U, 0x3fffffffU, 4096, &controller->cursors[index]);
@@ -1642,16 +1647,16 @@ output_cursor_set(
 		}
 	}
 
-	/* No pending list may still name the image about to be written. */
-	error = bcm2711_display_flip_settle(controller->native);
-	if (error != 0) {
-		mutex_unlock(&controller->mutex);
-		return error;
+	/* An image no list or recorded cursor names takes the rows, packed at the plane's pitch, without waiting. */
+	target = NULL;
+	for (index = 0; index < DISPLAY_CURSOR_IMAGES && target == NULL; index++) {
+		if (!bcm2711_display_flip_cursor_named(controller->native, (uint32_t)controller->cursors[index]->memory.paddr))
+			target = controller->cursors[index];
 	}
-
-	/* The image a shown list does not name takes the rows, packed at the plane's pitch. */
-	index = 1U - controller->cursor_index;
-	target = controller->cursors[index];
+	if (target == NULL) {
+		mutex_unlock(&controller->mutex);
+		return EBUSY;
+	}
 	for (row = 0; row < request->height; row++) {
 		source = (const uint8_t *)resource->buffer->address + request->offset + (uint64_t)row * request->stride;
 		kern_memcpy((uint8_t *)target->address + (uint64_t)row * GPU_DISPLAY_CURSOR_MAX * 4U, source, request->width * 4U);
@@ -1669,10 +1674,8 @@ output_cursor_set(
 	if (request->format == GPU_PIXEL_RGBA8888)
 		cursor.format = 1;
 	error = bcm2711_display_flip_cursor(controller->native, &cursor);
-	if (error == 0) {
+	if (error == 0)
 		controller->cursor = cursor;
-		controller->cursor_index = index;
-	}
 
 	mutex_unlock(&controller->mutex);
 

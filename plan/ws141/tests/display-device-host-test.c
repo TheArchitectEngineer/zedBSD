@@ -423,12 +423,19 @@ main(
 	assert(words[19] == ((8U << 16) | 16U) && words[21] == (0xc0000000U | test_display.flip.cursor.physical));
 	assert(words[23] == 256 && words[24] == 0x80000000);
 
+	/* A new image while that list is pending goes to another image at once; the pending list keeps its own. */
+	identifier = test_display.flip.cursor.physical;
+	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
+	assert(error == 0 && test_display.flip.pending_list == 160 && test_display.flip.cursor_dirty);
+	assert(test_display.flip.cursor.physical != identifier && words[21] == (0xc0000000U | identifier));
+
 	/* The next frame waits for that list and carries the cursor itself. */
 	present.sequence = 0;
 	error = test_operations->display->present(test_device, first, resource, &present);
 	assert(error == 0 && test_display.flip.pending_list == 4096U);
 	words = &test_hvs[0x4000 / 4 + test_display.flip.active_list];
 	assert(words[16] == 0x4800d807 && words[17] == ((20U << 16) | 10U) && words[24] == 0x80000000);
+	assert(words[21] == (0xc0000000U | test_display.flip.cursor.physical));
 
 	/* Hiding publishes the frame alone; the release takes the cursor and its image away. */
 	memset(&cursor_hide, 0, sizeof(cursor_hide));
