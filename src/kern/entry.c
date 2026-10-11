@@ -55,11 +55,21 @@
 #define KERNEL_LARGE_THRESHOLD (2U * KERN_PAGE_SIZE)
 #define KERNEL_ALLOCATION_ALIGNMENT 16U
 
+/* Marks a live large allocation's header, so kern_free() finds it without a search. */
+#define KERNEL_LARGE_MAGIC 0x6b6c617267656d6bULL
+
 struct kernel_large_allocation {
 	struct kernel_large_allocation *next;
+	struct kernel_large_allocation *prev;
 	void *pointer;
+	uint64_t magic;
 	struct kern_pmem memory;
 };
+
+/* The hidden header's size: the block starts this far into its first page. */
+#define KERNEL_LARGE_HEADER \
+	((sizeof(struct kernel_large_allocation) + KERNEL_ALLOCATION_ALIGNMENT - 1U) & \
+	 ~(size_t)(KERNEL_ALLOCATION_ALIGNMENT - 1U))
 
 static uint8_t kernel_heap_storage[KERNEL_HEAP_SIZE]
     __attribute__((section(".kernel_heap"), aligned(KERN_PAGE_SIZE)));
@@ -145,8 +155,7 @@ kern_malloc(
 	}
 
 	/* Sizes the hidden header and rejects a request that overflows with it. */
-	header_size = (sizeof(*large) + KERNEL_ALLOCATION_ALIGNMENT - 1U) &
-		      ~(size_t)(KERNEL_ALLOCATION_ALIGNMENT - 1U);
+	header_size = KERNEL_LARGE_HEADER;
 	if (size > SIZE_MAX - header_size)
 		return NULL;
 
@@ -162,8 +171,11 @@ kern_malloc(
 	large->pointer = (uint8_t *)hal_pmem_to_kernel(memory.paddr) +
 	    header_size;
 	large->memory = memory;
+	large->magic = KERNEL_LARGE_MAGIC;
 	enabled = kernel_heap_lock_enter();
 	large->next = kernel_large_allocations;
+	if (large->next != NULL)
+		large->next->prev = large;
 	kernel_large_allocations = large;
 	kernel_heap_lock_leave(enabled);
 	result = large->pointer;
@@ -201,13 +213,16 @@ kern_calloc(
  * Frees kernel memory from either allocator.
  *
  * A pointer inside the fixed heap goes back to it; anything else must be a
- * recorded large allocation, and freeing an unknown pointer is fatal.
+ * recorded large allocation, and freeing an unknown pointer is fatal.  A
+ * large allocation's header sits just before the block at the start of its
+ * page, so it is found without searching the list: a driver that holds many
+ * page-backed blocks freed them in time growing with their number (ws141,
+ * 2026-10-12).
  */
 void
 kern_free(
 	void *pointer)
 {
-	struct kernel_large_allocation **link;
 	struct kernel_large_allocation *large;
 	struct kern_pmem memory;
 	uintptr_t address;
@@ -230,18 +245,22 @@ kern_free(
 		return;
 	}
 
-	/* Unlinks the large allocation that owns the pointer. */
-	for (link = &kernel_large_allocations; *link != NULL;
-	     link = &(*link)->next) {
-		if ((*link)->pointer == pointer) {
-			large = *link;
-			*link = large->next;
-			break;
-		}
+	/* Finds the header of the large allocation that owns the pointer, and unlinks it. */
+	if ((address & (KERN_PAGE_SIZE - 1U)) == KERNEL_LARGE_HEADER) {
+		large = (struct kernel_large_allocation *)(address - KERNEL_LARGE_HEADER);
+		if (large->magic != KERNEL_LARGE_MAGIC || large->pointer != pointer)
+			large = NULL;
 	}
-
-	if (large != NULL)
+	if (large != NULL) {
+		if (large->prev != NULL)
+			large->prev->next = large->next;
+		else
+			kernel_large_allocations = large->next;
+		if (large->next != NULL)
+			large->next->prev = large->prev;
+		large->magic = 0;
 		memory = large->memory;
+	}
 
 	kernel_heap_lock_leave(enabled);
 
