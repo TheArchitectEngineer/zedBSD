@@ -158,7 +158,8 @@ R（audiod の endpoint と route、新 WS を推す）、p006 の BRSF の bit 
 ### p007a0: 5330 の確かめ（p007a1 の前、読むだけ）
 
 - 2026-10-11 済み: 5330 の zedBSD の `lsusb -v`・dmesg・`bt show`: AX211 は 8087:0033、bcdUSB 2.01、class e0/01/01、interface 2 つ、HCI 版 13（5.4）、manufacturer 2（Intel）。**zedBSD の lsusb は alternate を出さず、bt は HCI の supported commands・codec を出さない**。
-- 残り（小さな変更 2 つ、試験の image で T1 が 5330 で読む。controller の状態は変えない）: (a) usb-bt の attach で interface 1 の各 alternate の wMaxPacketSize を klog に 1 行、(b) bluetoothd の起動の時に Read Local Supported Commands の SCO に関わる bit（Setup/Accept Synchronous、Enhanced Setup/Accept、Write Loopback Mode）、Read Local Supported Codecs（v1）、Read Buffer Size の SCO の値を log に 1 行ずつ。(c) HCI Local Loopback の試しは bluetoothd を止める必要があるので p007a2 の中（Q1 に先に知らせる）。だめ（SCO が HCI に来ない）なら p007a1 に入らず Q1 へ。
+- 2026-10-11 実装（5883e5881、kernel と bluetoothd の build rc 0・warning 0、bt-phone の host 試験 PASS）: usb-bt の attach の後に `usb-bt: <name>: SCO interface N alternate A endpoints 0xEP/size/interval …`（各 alternate 1 行、claim も set もしない）、bluetoothd の READY の後に `BLUETOOTHD SCO length= count= commands1= commands13= commands14= commands16= commands29=`（Read Buffer Size の SCO と supported commands の octet、HCI の command は増やさない。Read Local Supported Codecs は送らない）。T1 がこの image を 5330 で起こして dmesg と syslog を読む。
+- 元の計画（小さな変更 2 つ、試験の image で T1 が 5330 で読む。controller の状態は変えない）: (a) usb-bt の attach で interface 1 の各 alternate の wMaxPacketSize を klog に 1 行、(b) bluetoothd の起動の時に Read Local Supported Commands の SCO に関わる bit（Setup/Accept Synchronous、Enhanced Setup/Accept、Write Loopback Mode）、Read Local Supported Codecs（v1）、Read Buffer Size の SCO の値を log に 1 行ずつ。(c) HCI Local Loopback の試しは bluetoothd を止める必要があるので p007a2 の中（Q1 に先に知らせる）。だめ（SCO が HCI に来ない）なら p007a1 に入らず Q1 へ。
 
 ### X 節（置き換え）
 
