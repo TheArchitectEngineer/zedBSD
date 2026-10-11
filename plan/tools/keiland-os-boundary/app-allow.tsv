@@ -24,3 +24,4 @@ A4	userland/desktop/terminal/main.c	*	the terminal runs its shell and the comman
 A1	userland/desktop/files/places.c	*	the file manager's places: the system's own trees (/dev /proc /sys /run /var/lib) are not offered as places
 A1	userland/desktop/files/search.c	*	the file manager's search does not go down into /dev /proc /sys /run
 A1	userland/desktop/files/trash.c	*	the Trash: /var and /var/tmp and the system's own trees are not looked through for a volume's Trash
+A4	userland/desktop/phone/main.c	posix_spawn	Phone opens a received attachment in Image Viewer or Video Player (a program starting another; F-085)
