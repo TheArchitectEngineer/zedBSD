@@ -1205,6 +1205,29 @@ native_draw_test(
 	assert(error == 0 && draw == NULL && allocations == baseline);
 	space->native->hardware.tfu_uif_ready = false;
 
+	/* With a cache capacity a retired draw's uploads stay mapped, and the next draw of the same sizes reuses them zeroed. */
+	space->cache_limit = BCM2711_NATIVE_CACHE_BYTES;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw != NULL && draw->bytes == owned);
+	memset(draw->storage[9]->view->buffer->address, 0x5a, 4096);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && draw == NULL && space->cache_bytes == owned && allocations > baseline);
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw != NULL && draw->bytes == owned && space->cache_bytes == 0);
+	source = draw->storage[9]->view->buffer->address;
+	for (index = 48; index < 4096; index++)
+		assert(source[index] == 0);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && draw == NULL && space->cache_bytes == owned);
+
+	/* Draining unmaps every cached view and returns all storage. */
+	error = bcm2711_native_storage_drain(space);
+	assert(error == 0 && space->cache_bytes == 0 && space->cache_pages == NULL && space->cache_runs == NULL);
+	assert(allocations == baseline);
+	space->cache_limit = 0;
+
 	/* Early and late ordinary OOM retire complete mapped prefixes, including an independently copied scalar stream. */
 	for (index = 1; index <= 4; index++) {
 		fail_after = index * 10U;

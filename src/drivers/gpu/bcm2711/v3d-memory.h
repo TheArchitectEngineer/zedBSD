@@ -24,6 +24,8 @@ struct bcm2711_v3d_view {
 	bool quarantined;
 	/* A zero-reference batch retirement keeps physical storage until the final flush. */
 	bool pending_release;
+	/* Links an idle, still mapped private upload view in the space's reuse cache. */
+	struct bcm2711_v3d_view *cache_next;
 };
 
 /* The controller mutex serializes every edit with all submitted native jobs. */
@@ -34,6 +36,17 @@ struct bcm2711_v3d_space {
 	bool deferred;
 	uint32_t pending_address;
 	uint64_t pending_end;
+	/*
+	 * Idle private upload views stay mapped for reuse by later passes, which
+	 * avoids allocating, mapping and flushing the same sizes every frame.
+	 * Single pages and larger runs keep separate lists; each holds one view
+	 * reference.  Recovery drains both before reclaiming translations.
+	 */
+	struct bcm2711_v3d_view *cache_pages;
+	struct bcm2711_v3d_view *cache_runs;
+	uint64_t cache_bytes;
+	/* The renderer sets the cache's capacity when it registers; zero keeps no idle view. */
+	uint64_t cache_limit;
 };
 
 /* No DMA or overlapping edits may occur between begin and checked end. */

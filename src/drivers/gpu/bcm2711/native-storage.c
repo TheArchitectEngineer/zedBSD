@@ -18,6 +18,12 @@
 /* The underlying contiguous owner accepts at most 256 MiB per physical allocation. */
 #define NATIVE_STORAGE_BYTES (256ULL * 1024U * 1024U)
 
+/* An idle view kept for reuse holds at most 16 MiB. */
+#define NATIVE_CACHE_VIEW_BYTES (16ULL * 1024U * 1024U)
+
+static struct bcm2711_v3d_view *cache_take(struct bcm2711_v3d_space *space, uint64_t bytes);
+static bool cache_put(struct bcm2711_v3d_space *space, struct bcm2711_v3d_view *view);
+
 /*
  * Allocates and maps one complete native upload interval before giving it to a prepared job owner.
  *
@@ -62,6 +68,22 @@ bcm2711_native_storage_create(
 	created = kern_calloc(1, sizeof(*created));
 	if (created == NULL)
 		return ENOMEM;
+
+	/* An idle cached view of the same size is zeroed again and reused with its mapping. */
+	started = clock_ticks();
+	view = cache_take(space, bytes);
+	if (view != NULL) {
+		kern_memset(view->buffer->address, 0, (size_t)view->bytes);
+		view->buffer->bytes = bytes;
+		created->allocation_ticks = clock_ticks() - started;
+		created->space = space;
+		created->view = view;
+		created->bytes = bytes;
+		*storage = created;
+
+		/* Succeeded: the caller owns the cached VA and its zeroed physical run. */
+		return 0;
+	}
 
 	/* Cached private storage has no exported user alias and is explicitly cleaned before device reads. */
 	started = clock_ticks();
@@ -212,6 +234,7 @@ bcm2711_native_storage_release(
 	bool retired)
 {
 	struct bcm2711_native_storage *owned;
+	bool cached;
 	int error;
 
 	/* A missing owner pointer cannot participate in an explicit consumption contract. */
@@ -237,8 +260,15 @@ bcm2711_native_storage_release(
 	if (owned->space != space)
 		return EINVAL;
 
-	/* The native space owns a failed final unmap/flush; callers must never retry a consumed mapped reference. */
+	/* An idle view of a reusable size stays mapped for the next pass instead of being unmapped. */
 	*storage = NULL;
+	cached = cache_put(space, owned->view);
+	if (cached) {
+		kern_free(owned);
+		return 0;
+	}
+
+	/* The native space owns a failed final unmap/flush; callers must never retry a consumed mapped reference. */
 	error = bcm2711_v3d_memory_release(space, owned->view);
 	kern_free(owned);
 	if (error != 0)
@@ -246,4 +276,121 @@ bcm2711_native_storage_release(
 
 	/* Succeeded: the CPU root is consumed; a translation batch still owns backing until its checked end. */
 	return 0;
+}
+
+/*
+ * Unmaps every cached idle upload view.
+ *
+ * Recovery calls this after the native reset and before reclaiming
+ * translations, so no cached reference keeps a VA reservation alive.
+ */
+int
+bcm2711_native_storage_drain(
+	struct bcm2711_v3d_space *space)
+{
+	struct bcm2711_v3d_view *view;
+	int first;
+	int error;
+
+	/* Releases both lists; a failed release stays in the space's quarantine. */
+	first = 0;
+	for (;;) {
+		/* Takes the next cached view from either list. */
+		view = space->cache_pages;
+		if (view != NULL) {
+			space->cache_pages = view->cache_next;
+		} else {
+			view = space->cache_runs;
+			if (view == NULL)
+				break;
+			space->cache_runs = view->cache_next;
+		}
+		view->cache_next = NULL;
+		space->cache_bytes -= view->bytes;
+
+		/* The cache's reference was the last, so this unmaps and frees the view. */
+		error = bcm2711_v3d_memory_release(space, view);
+		if (first == 0 && error != 0)
+			first = error;
+	}
+
+	/* Reports the first failed release. */
+	if (first != 0)
+		return first;
+
+	/* Succeeded: no cached view holds a translation. */
+	return 0;
+}
+
+/* Takes one idle cached view of exactly the page-rounded size, or NULL. */
+static struct bcm2711_v3d_view *
+cache_take(
+	struct bcm2711_v3d_space *space,
+	uint64_t bytes)
+{
+	struct bcm2711_v3d_view **position;
+	struct bcm2711_v3d_view *view;
+	uint64_t rounded;
+
+	/* Single pages come from their own list without a search. */
+	rounded = (bytes + 4095U) & ~4095ULL;
+	if (rounded == 4096U) {
+		view = space->cache_pages;
+		if (view == NULL)
+			return NULL;
+		space->cache_pages = view->cache_next;
+		view->cache_next = NULL;
+		space->cache_bytes -= view->bytes;
+		return view;
+	}
+
+	/* Larger runs are matched by exact size. */
+	for (position = &space->cache_runs; *position != NULL; position = &(*position)->cache_next) {
+		/* The first run of the same page count is taken. */
+		if ((*position)->bytes == rounded)
+			break;
+	}
+	view = *position;
+	if (view == NULL)
+		return NULL;
+	*position = view->cache_next;
+	view->cache_next = NULL;
+	space->cache_bytes -= view->bytes;
+
+	/* Succeeded: the caller now owns the cache's reference of the view. */
+	return view;
+}
+
+/* Keeps one retired private upload view mapped for reuse when it fits the cache. */
+static bool
+cache_put(
+	struct bcm2711_v3d_space *space,
+	struct bcm2711_v3d_view *view)
+{
+	/* Only a sole, healthy, cached-RAM private view of bounded size is kept. */
+	if (view->references != 1 ||
+	    view->quarantined ||
+	    view->pending_release ||
+	    view->buffer == NULL ||
+	    view->buffer->uncached)
+		return false;
+	if (view->bytes > NATIVE_CACHE_VIEW_BYTES || space->cache_bytes + view->bytes > space->cache_limit)
+		return false;
+
+	/* A faulted engine retires views through recovery instead of keeping them. */
+	if (!space->native->hardware.ready || space->native->hardware.faulted)
+		return false;
+
+	/* Pushes the view on the list of its size class. */
+	if (view->bytes == 4096U) {
+		view->cache_next = space->cache_pages;
+		space->cache_pages = view;
+	} else {
+		view->cache_next = space->cache_runs;
+		space->cache_runs = view;
+	}
+	space->cache_bytes += view->bytes;
+
+	/* Succeeded: the cache holds the view's last reference. */
+	return true;
 }

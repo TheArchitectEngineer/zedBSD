@@ -67,6 +67,7 @@ bcm2711_render_register(
 	if (controller->registered || controller->space.native != NULL)
 		return EBUSY;
 	controller->space.native = engine;
+	controller->space.cache_limit = BCM2711_NATIVE_CACHE_BYTES;
 	ready = render_ready(controller);
 	if (!ready || engine->hardware.diagnostic != NULL) {
 		controller->space.native = NULL;
@@ -659,6 +660,13 @@ render_reset(
 
 	/* Checked DMA stop retires whole prepared/native graphs and internally closed sessions before translation recovery. */
 	error = bcm2711_vulkan_native_jobs_recover(controller);
+	if (error != 0) {
+		mutex_unlock(&controller->mutex);
+		return error;
+	}
+
+	/* Cached idle uploads give up their translations so recovery sees only quarantined views. */
+	error = bcm2711_native_storage_drain(&controller->space);
 	if (error != 0) {
 		mutex_unlock(&controller->mutex);
 		return error;
