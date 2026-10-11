@@ -18,7 +18,7 @@
 
 static int validate_pass(struct bcm2711_vulkan_native_pass *pass);
 static int clear_target(struct bcm2711_vulkan_native_pass *pass);
-static int convert_textures(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result, uint64_t *ticks);
+static int convert_textures(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result, uint64_t *ticks, uint32_t *jobs, uint64_t *longest);
 
 /*
  * Executes one completely prepared native pass while its enclosing submission retains all pending owners.
@@ -126,10 +126,12 @@ bcm2711_vulkan_native_pass_launch(
 	struct bcm2711_v3d_job_result *result)
 {
 	uint64_t converted;
+	uint64_t longest;
+	uint32_t jobs;
 	int error;
 
 	/* The texture formatting unit fills every converted texture before any draw samples it. */
-	error = convert_textures(pass, result, &converted);
+	error = convert_textures(pass, result, &converted, &jobs, &longest);
 	pass->retired = result->retired;
 	if (error != 0)
 		return error;
@@ -139,6 +141,8 @@ bcm2711_vulkan_native_pass_launch(
 	error = bcm2711_v3d_job_run(pass->space->native, &pass->job, result);
 	pass->retired = result->retired;
 	result->tfu_ticks = converted;
+	result->tfu_jobs = jobs;
+	result->tfu_max_ticks = longest;
 	if (error != 0)
 		return error;
 
@@ -412,16 +416,21 @@ static int
 convert_textures(
 	struct bcm2711_vulkan_native_pass *pass,
 	struct bcm2711_v3d_job_result *result,
-	uint64_t *ticks)
+	uint64_t *ticks,
+	uint32_t *jobs,
+	uint64_t *longest)
 {
 	struct bcm2711_vulkan_native_draw *draw;
 	struct bcm2711_v3d_job job;
 	uint64_t started;
+	uint64_t step;
 	uint32_t index;
 	int error;
 
 	/* Nothing has launched yet, so a pass without conversions retires as before. */
 	*ticks = 0;
+	*jobs = 0;
+	*longest = 0;
 	result->retired = true;
 	kern_memset(&job, 0, sizeof(job));
 	job.kind = BCM2711_V3D_JOB_TFU;
@@ -436,9 +445,16 @@ convert_textures(
 
 			/* Each conversion completes before the next starts; one queue holds one job. */
 			job.command.tfu = draw->textures[index].tfu;
+			step = clock_ticks();
 			error = bcm2711_v3d_job_run(pass->space->native, &job, result);
 			if (error != 0)
 				return error;
+
+			/* The diagnostic count and the longest conversion. */
+			step = clock_ticks() - step;
+			(*jobs)++;
+			if (step > *longest)
+				*longest = step;
 		}
 	}
 	*ticks = clock_ticks() - started;

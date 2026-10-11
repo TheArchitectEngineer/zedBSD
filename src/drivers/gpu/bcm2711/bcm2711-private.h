@@ -298,6 +298,7 @@ struct bcm2711_v3d {
 /* Stage marks and the driver's boot parameters (stage.c). */
 bool bcm2711_stage_driver_off(void);
 bool bcm2711_stage_allowed(const char *family, const char *stage);
+bool bcm2711_stage_tfu_off(void);
 void bcm2711_stage_mark(const char *family, const char *format, ...) __attribute__((format(printf, 2, 3)));
 void bcm2711_stage_pause(const char *family, const char *stage);
 

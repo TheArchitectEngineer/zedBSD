@@ -100,8 +100,10 @@ struct bcm2711_v3d_job_result {
 	uint64_t bin_ticks;
 	uint64_t render_ticks;
 	uint64_t clean_ticks;
-	/* Diagnostic wall time of the texture formatting jobs that preceded a CL job. */
+	/* Diagnostic wall time of the texture formatting jobs that preceded a CL job, their number and the longest one. */
 	uint64_t tfu_ticks;
+	uint32_t tfu_jobs;
+	uint64_t tfu_max_ticks;
 	/* The performance counters' increase over the render queue's run (BCM2711_V3D_COUNTER_* order). */
 	uint32_t counters[BCM2711_V3D_COUNTERS];
 };

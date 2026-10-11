@@ -69,14 +69,16 @@ static unsigned test_pending;
 static bool test_bin_done;
 static bool test_oom;
 static bool test_hang;
+/* The boot line's v3d.tfu=0, as the fixture sets it. */
+static bool test_tfu_off;
 static bool test_job_fault;
 static bool test_drop_store;
 static unsigned test_invalidations;
 static bool test_forced_loop;
 
 /* Literal write trace distinguishes cache/barrier/IO publication and source bank. */
-static uint32_t test_offsets[256];
-static uint32_t test_values[256];
+static uint32_t test_offsets[512];
+static uint32_t test_values[512];
 static unsigned test_writes;
 
 /* Records the last CPU publication range for bounded PTE-clean assertions. */
@@ -660,7 +662,15 @@ kern_dcache_invalidate_range(
 {
 	/* No output cache maintenance is permitted while DMA or an IRQ spin guard is active. */
 	assert(test_engine.hardware.guard.held.value == 0 && test_pending == 0);
-	assert(address != NULL && (bytes == 16384 || bytes == 256 || bytes == 15360 || bytes == 262144));
+	/* V8's target, V9's block, and the five UIF self-test outputs with their 64-byte guard. */
+	assert(address != NULL &&
+	    (bytes == 16384 ||
+	     bytes == 256 ||
+	     bytes == 15360 + 64 ||
+	     bytes == 4096 + 64 ||
+	     bytes == 1024 + 64 ||
+	     bytes == 136192 + 64 ||
+	     bytes == 262144 + 64));
 	test_invalidations++;
 }
 
@@ -758,6 +768,17 @@ bcm2711_stage_allowed(
 
 	/* Earlier stages remain authorized before the requested native stop. */
 	return true;
+}
+
+/*
+ * Honors the boot line's v3d.tfu=0 as the fixture sets it.
+ */
+bool
+bcm2711_stage_tfu_off(
+	void)
+{
+	/* The fixture supplies the boot parameter. */
+	return test_tfu_off;
 }
 
 /*
@@ -1311,10 +1332,21 @@ check_jobs(
 	assert(error == 0);
 	error = bcm2711_v3d_diagnostic(&test_engine);
 	assert(error == 0 && test_engine.hardware.diagnostic == NULL);
-	/* V8, V9 and the two UIF self-test conversions each read their output back. */
-	assert(test_invalidations == 4 && test_engine.hardware.resets == 1);
+	/* V8, V9 and the five UIF self-test conversions each read their output back; all matched, so the unit converts. */
+	assert(test_invalidations == 7 && test_engine.hardware.resets == 1);
+	assert(test_engine.hardware.tfu_uif_ready);
 	table = test_engine.hardware.pages->address;
 	assert(table[0x100] == 0 && table[0x2ff] == 0);
+
+	/* The boot line's v3d.tfu=0 keeps the CPU conversion after the same passing self-test. */
+	fixture();
+	error = bcm2711_v3d_hardware_start(&test_engine);
+	assert(error == 0);
+	test_engine.hardware.tfu_uif_ready = false;
+	test_tfu_off = true;
+	error = bcm2711_v3d_diagnostic(&test_engine);
+	test_tfu_off = false;
+	assert(error == 0 && test_invalidations == 7 && !test_engine.hardware.tfu_uif_ready);
 
 	/* A failed native reset retains the diagnostic's actual allocation and VA mapping. */
 	fixture();
@@ -1472,7 +1504,7 @@ trace(
 	uint32_t data)
 {
 	/* Cache/MMU polling does not append unbounded reads to the publication trace. */
-	assert(test_writes < 256);
+	assert(test_writes < 512);
 	test_offsets[test_writes] = offset;
 	test_values[test_writes++] = data;
 }

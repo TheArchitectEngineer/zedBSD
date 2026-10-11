@@ -202,6 +202,14 @@ executor の pass ごとの 3 区分:
 - **display の generation の guard（M4）**: `bcm2711_v3d_memory_written`・`memory_changes` は run の guard の下で generation と ring を読み書きし、display の `resource_write` の generation の加算も同じ guard の下にした。
 - host 試験: (a)(l)(p) vulkan-device: executor が QueueSubmit の pass を実行する間に、模した decoder が mutex を取れる（窓の間）。その中の解放は delayed、map は EIO（ioctl は map_lock で待つ）、窓を閉じた後に view は消える。窓の前の待ち手 1 つは先に通り、後から来た待ち手は窓を止めない。(b) TFU も窓の中（CL と同じく窓と mutex なしを確かめる、fixture の assert）。(a)(b)(l)(m) v3d-hardware: 窓の間の解放で PTE が変わらず flush も無い、map と batch の開始は EIO、閉じた後に 1 回で解放、fault の後は残り reset と recover で回収。display の host 試験は PASS。
 
+## 計測と並行の直し（2026-10-12 P3、A2 の後）
+
+- 計測の準備: Pi の image a4b833e（A1・A2 入り）。kernel.log の perf（操作中の窓）: submission あたり xfer（CPU の buffer copy）10〜22ms が最大、prep 3〜7ms、exec 4〜15ms、max_us は毎窓 220〜360ms、submit ioctl の mutex 待ち submit_lock_us 平均 1〜3ms・最大 120〜216ms、markers_max 4〜8。compositor の `--log-frames` は session の書き換えが要り、権限の判定で止まった（2026-10-12 にユーザーが Pi への書き込みを許可、再開後に行う）。/tmp/wayland（main 349f5650d、cksum 3455874609/968248）と /tmp/session.new は Pi の /tmp に置いてある。
+- Vulkan の予算（Music が他の app と同時に起動しない件、Q1 の指示）: b9d011eef（main 20c7ef161）。予算と heap の大きさを 1 つの定数 `BCM2711_VULKAN_MEMORY_BUDGET`（512MiB）に、計上を run（bcm2711_buffer）ごとに 1 回（import の二重計上をやめる）、perf に `v3d: memory kib= max_kib= budget_kib= refused= last_kib=`。実機は未確認。
+- TFU の有効化（Q1 了承の形）: boot の V9 の比較を 5 つ（96x40 pitch 512、33x9 pitch 132、1x1、200x150 pitch 1024 で入力を 64 byte ずらす、256x256 pitch 1024）にし、見える texel の byte（全部 1 の raster の CPU 変換で padding を除く）の一致と、出力の後ろ 64 byte を書かないことを確かめ、全部通れば `tfu_uif_ready = true`。perf に `v3d: tfu jobs= avg_us= max_us=`。
+- **TFU を止める方法**: boot の行（Pi の FAT の cmdline.txt）に `v3d.tfu=0` を足す（build し直し不要。V9 は走り「v3d.tfu=0 keeps conversion on the CPU」と出る）。`v3d.stop=V9` は使わない（V9 以降を止め、render device が登録されず GPU が無くなる）。
+- 次: snapshot_fill の部分変換（write ring の box、UIF block 単位）→ (B) の設計（review へ）→ HAL arm64 の allocator（呼び出し元の監査が先）。
+
 ## 段（第 4 版）
 
 | 段 | 内容 | 確かめ |

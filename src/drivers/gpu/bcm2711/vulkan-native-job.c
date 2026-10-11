@@ -293,6 +293,9 @@ bcm2711_vulkan_native_job_step(
 		}
 		execute_ticks += clock_ticks() - step;
 		perf->tfu_ticks += completion.tfu_ticks;
+		perf->tfu_jobs += completion.tfu_jobs;
+		if (completion.tfu_max_ticks > perf->tfu_max_ticks)
+			perf->tfu_max_ticks = completion.tfu_max_ticks;
 		perf->bin_ticks += completion.bin_ticks;
 		perf->render_ticks += completion.render_ticks;
 		perf->output_clean_ticks += completion.clean_ticks;
@@ -671,6 +674,15 @@ report_perf(
 			(unsigned long long)(perf->copy_tiles != 0U ? perf->copy_cycles / perf->copy_tiles : 0U),
 			perf->draw_tiles,
 			(unsigned long long)(perf->draw_tiles != 0U ? perf->draw_cycles / perf->draw_tiles : 0U));
+	}
+
+	/* The texture formatting unit's conversions: how many, and their average and longest wall time. */
+	if (perf->tfu_jobs != 0U) {
+		kern_logf(
+			"v3d: tfu jobs=%u avg_us=%llu max_us=%llu\n",
+			perf->tfu_jobs,
+			(unsigned long long)average_us(perf->tfu_ticks, perf->tfu_jobs),
+			(unsigned long long)kern_ticks_to_rate(perf->tfu_max_ticks, 1000000U));
 	}
 
 	/* The Vulkan allocation budget: in use now, the window's most, and what it refused. */
