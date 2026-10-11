@@ -132,6 +132,9 @@ union gpu_display_request {
 	struct gpu_display_present present;
 	struct gpu_display_wait wait;
 	struct gpu_display_power power;
+	struct gpu_display_cursor_image cursor_image;
+	struct gpu_display_cursor_move cursor_move;
+	struct gpu_display_cursor_hide cursor_hide;
 };
 
 /*
@@ -1044,6 +1047,16 @@ gpu_ops_validate(
 			return EINVAL;
 	}
 
+	/* A cursor plane has all three operations or none. */
+	if (ops->display != NULL &&
+	    (ops->display->cursor_set != NULL ||
+	     ops->display->cursor_move != NULL ||
+	     ops->display->cursor_hide != NULL) &&
+	    (ops->display->cursor_set == NULL ||
+	     ops->display->cursor_move == NULL ||
+	     ops->display->cursor_hide == NULL))
+		return EINVAL;
+
 	/* Exported allocations need independent release and receiver-context import together. */
 	if ((ops->capabilities & (GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE)) != 0) {
 		/* Shared resources must originate in a supported blob namespace. */
@@ -1692,6 +1705,9 @@ gpu_ioctl_body(
 	case GPU_DISPLAY_PRESENT:
 	case GPU_DISPLAY_WAIT:
 	case GPU_DISPLAY_POWER:
+	case GPU_DISPLAY_CURSOR_SET:
+	case GPU_DISPLAY_CURSOR_MOVE:
+	case GPU_DISPLAY_CURSOR_HIDE:
 		/* Native display requests share validation and access admission. */
 		error = gpu_display_ioctl(session, command, argument);
 		break;
@@ -3108,7 +3124,10 @@ gpu_display_ioctl(
 	if (command == GPU_DISPLAY_CLAIM ||
 	    command == GPU_DISPLAY_RELEASE ||
 	    command == GPU_DISPLAY_PRESENT ||
-	    command == GPU_DISPLAY_POWER)
+	    command == GPU_DISPLAY_POWER ||
+	    command == GPU_DISPLAY_CURSOR_SET ||
+	    command == GPU_DISPLAY_CURSOR_MOVE ||
+	    command == GPU_DISPLAY_CURSOR_HIDE)
 		writing = 1;
 
 	/* Read-only opens can enumerate displays and observe owned completion state. */
@@ -3141,6 +3160,15 @@ gpu_display_ioctl(
 		break;
 	case GPU_DISPLAY_POWER:
 		bytes = sizeof(request.power);
+		break;
+	case GPU_DISPLAY_CURSOR_SET:
+		bytes = sizeof(request.cursor_image);
+		break;
+	case GPU_DISPLAY_CURSOR_MOVE:
+		bytes = sizeof(request.cursor_move);
+		break;
+	case GPU_DISPLAY_CURSOR_HIDE:
+		bytes = sizeof(request.cursor_hide);
 		break;
 	default:
 		return EOPNOTSUPP;
@@ -3365,6 +3393,87 @@ gpu_display_ioctl(
 
 		/* The backend checks this open's lease before any side effect. */
 		error = ops->power(device->private_data, session->backend, &request.power);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the request has no reply to copy out. */
+		return 0;
+	case GPU_DISPLAY_CURSOR_SET:
+		/* A backend without a cursor plane has none of its operations. */
+		if (ops->cursor_set == NULL)
+			return EOPNOTSUPP;
+
+		/* A lease of a generation, a small image of a packed format, and nothing else. */
+		if (request.cursor_image.lease == 0U ||
+		    request.cursor_image.generation == 0U ||
+		    request.cursor_image.reserved != 0U ||
+		    request.cursor_image.width == 0U ||
+		    request.cursor_image.width > GPU_DISPLAY_CURSOR_MAX ||
+		    request.cursor_image.height == 0U ||
+		    request.cursor_image.height > GPU_DISPLAY_CURSOR_MAX)
+			return EINVAL;
+		if (request.cursor_image.format != GPU_PIXEL_BGRA8888 &&
+		    request.cursor_image.format != GPU_PIXEL_RGBA8888)
+			return EINVAL;
+		if (request.cursor_image.stride < request.cursor_image.width * 4U ||
+		    (request.cursor_image.stride & 3U) != 0U)
+			return EINVAL;
+
+		/* The image is in storage this open owns, as a presented frame is. */
+		error = gpu_resource_lookup(session, request.cursor_image.handle, &resource);
+		if (error != 0)
+			return error;
+		if (resource->kind != GPU_RESOURCE_STORAGE &&
+		    resource->kind != GPU_RESOURCE_BLOB &&
+		    resource->kind != GPU_RESOURCE_SCANOUT)
+			return EINVAL;
+
+		/* Every row lies inside the storage before the backend reads a pixel. */
+		if (request.cursor_image.offset > resource->bytes)
+			return EINVAL;
+		image_bytes = (uint64_t)request.cursor_image.stride * (request.cursor_image.height - 1U) +
+		    (uint64_t)request.cursor_image.width * 4U;
+		if (image_bytes > resource->bytes - request.cursor_image.offset)
+			return EINVAL;
+
+		/* The backend checks this open's lease and copies the image before it returns. */
+		error = ops->cursor_set(device->private_data, session->backend, resource->object, &request.cursor_image);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the request has no reply to copy out. */
+		return 0;
+	case GPU_DISPLAY_CURSOR_MOVE:
+		/* A backend without a cursor plane has none of its operations. */
+		if (ops->cursor_move == NULL)
+			return EOPNOTSUPP;
+
+		/* A lease of a generation and a position; the backend clips it to the output. */
+		if (request.cursor_move.lease == 0U ||
+		    request.cursor_move.generation == 0U ||
+		    request.cursor_move.reserved != 0U)
+			return EINVAL;
+
+		/* The backend checks this open's lease before any side effect. */
+		error = ops->cursor_move(device->private_data, session->backend, &request.cursor_move);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the request has no reply to copy out. */
+		return 0;
+	case GPU_DISPLAY_CURSOR_HIDE:
+		/* A backend without a cursor plane has none of its operations. */
+		if (ops->cursor_hide == NULL)
+			return EOPNOTSUPP;
+
+		/* A lease of a generation and nothing else. */
+		if (request.cursor_hide.lease == 0U ||
+		    request.cursor_hide.generation == 0U ||
+		    request.cursor_hide.reserved != 0U)
+			return EINVAL;
+
+		/* The backend checks this open's lease before any side effect. */
+		error = ops->cursor_hide(device->private_data, session->backend, &request.cursor_hide);
 		if (error != 0)
 			return error;
 

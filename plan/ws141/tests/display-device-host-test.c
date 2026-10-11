@@ -35,7 +35,7 @@ struct test_allocation {
 };
 
 /* The model retains both private scanout targets and ordinary session resources. */
-static struct test_allocation test_allocations[16];
+static struct test_allocation test_allocations[24];
 static uint32_t test_hvs[8192];
 static uint32_t test_pv[2][32];
 static struct bcm2711_display test_display;
@@ -78,6 +78,10 @@ main(
 	struct gpu_image_descriptor image;
 	struct drv_gpu_scanout_backing backing;
 	struct gpu_scanout_constraints constraints;
+	struct gpu_display_cursor_image cursor_image;
+	struct gpu_display_cursor_move cursor_move;
+	struct gpu_display_cursor_hide cursor_hide;
+	uint8_t arrow[16 * 4 * 8];
 	void *capability;
 	void *imported;
 	void *alias;
@@ -362,6 +366,83 @@ main(
 	test_operations->close(test_device, first);
 	assert(!test_text_suspended);
 
+	/* The output has a cursor plane, and only the lease's open uses it. */
+	error = test_operations->open(test_device, &first);
+	assert(error == 0);
+	memset(&output, 0, sizeof(output));
+	error = test_operations->display->query(test_device, first, &output);
+	assert(error == 0 && (output.flags & GPU_DISPLAY_HAS_CURSOR) != 0 && output.plane_count == 1);
+	memset(&claim, 0, sizeof(claim));
+	claim.display_id = 1;
+	claim.generation = 1;
+	error = test_operations->display->claim(test_device, first, &claim);
+	assert(error == 0);
+	memset(&create, 0, sizeof(create));
+	create.bytes = 8294400;
+	create.usage = GPU_RESOURCE_USAGE_STORAGE;
+	error = test_operations->resource_create(test_device, first, &create, &resource);
+	assert(error == 0);
+	present.lease = claim.lease;
+	present.flags = GPU_DISPLAY_PRESENT_FIFO;
+	present.format = GPU_PIXEL_RGBA8888;
+	present.sequence = 0;
+	error = test_operations->display->present(test_device, first, resource, &present);
+	assert(error == 0 && test_display.flip.active_list == 128);
+
+	/* A 16x8 image from the open's storage; a wrong lease or an imageless move is refused. */
+	memset(arrow, 0x7f, sizeof(arrow));
+	error = test_operations->resource_write(test_device, first, resource, 0, arrow, sizeof(arrow));
+	assert(error == 0);
+	memset(&cursor_image, 0, sizeof(cursor_image));
+	cursor_image.lease = claim.lease + 1U;
+	cursor_image.width = 16;
+	cursor_image.height = 8;
+	cursor_image.stride = 64;
+	cursor_image.format = GPU_PIXEL_BGRA8888;
+	cursor_image.generation = 1;
+	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
+	assert(error == EBUSY);
+	memset(&cursor_move, 0, sizeof(cursor_move));
+	cursor_move.lease = claim.lease;
+	cursor_move.generation = 1;
+	cursor_move.x = 10;
+	cursor_move.y = 20;
+	error = test_operations->display->cursor_move(test_device, first, &cursor_move);
+	assert(error == EINVAL);
+
+	/* Setting a hidden cursor's image publishes nothing; a move shows it without waiting. */
+	cursor_image.lease = claim.lease;
+	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
+	assert(error == 0 && test_display.flip.pending_list == 4096U && test_display.flip.cursor.physical != 0);
+	native = kern_pmem_to_kernel(test_display.flip.cursor.physical);
+	assert(native != NULL && native[0] == 0x7f && native[63] == 0x7f && native[64] == 0 && native[256] == 0x7f);
+	error = test_operations->display->cursor_move(test_device, first, &cursor_move);
+	words = &test_hvs[0x4000 / 4 + 160];
+	assert(error == 0 && test_display.flip.pending_list == 160);
+	assert(words[16] == 0x4800d807 && words[17] == ((20U << 16) | 10U) && words[18] == 0x2000fff0);
+	assert(words[19] == ((8U << 16) | 16U) && words[21] == (0xc0000000U | test_display.flip.cursor.physical));
+	assert(words[23] == 256 && words[24] == 0x80000000);
+
+	/* The next frame waits for that list and carries the cursor itself. */
+	present.sequence = 0;
+	error = test_operations->display->present(test_device, first, resource, &present);
+	assert(error == 0 && test_display.flip.pending_list == 4096U);
+	words = &test_hvs[0x4000 / 4 + test_display.flip.active_list];
+	assert(words[16] == 0x4800d807 && words[17] == ((20U << 16) | 10U) && words[24] == 0x80000000);
+
+	/* Hiding publishes the frame alone; the release takes the cursor and its image away. */
+	memset(&cursor_hide, 0, sizeof(cursor_hide));
+	cursor_hide.lease = claim.lease;
+	cursor_hide.generation = 1;
+	error = test_operations->display->cursor_hide(test_device, first, &cursor_hide);
+	assert(error == 0 && test_hvs[0x4000 / 4 + test_display.flip.pending_list + 16] == 0x80000000);
+	release.lease = claim.lease;
+	error = test_operations->display->release(test_device, first, &release);
+	assert(error == 0 && test_display.flip.active_list == 43);
+	assert(!test_display.flip.cursor.shown && test_display.flip.cursor.physical == 0);
+	test_operations->resource_destroy(test_device, first, resource);
+	test_operations->close(test_device, first);
+
 	/* Succeeded: private scanout storage survives every ordinary open and resource. */
 	puts("display-device-host-test PASS");
 	return 0;
@@ -440,7 +521,7 @@ kern_pmem_alloc_limited(
 	struct test_allocation *allocation;
 
 	/* Sequential physical slots are disjoint and satisfy the actual one-GiB request. */
-	assert(test_run_count < 16 && alignment == 4096 && boundary == 0);
+	assert(test_run_count < 24 && alignment == 4096 && boundary == 0);
 	allocation = &test_allocations[test_run_count];
 	allocation->physical = 0x02000000ULL + test_run_count * 0x02000000ULL;
 	if (test_misplaced) {

@@ -11,6 +11,8 @@
 
 #include <drivers/gpu/gpu.h>
 #include <kern/clock.h>
+#include <kern/dcache.h>
+#include <kern/device-io.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <kern/sched.h>
@@ -58,6 +60,10 @@ struct display_device {
 	struct drv_gpu_share_ops share_operations;
 	struct bcm2711_buffer *copies[2];
 	struct bcm2711_buffer *holds[2];
+	/* The cursor plane's two images, made at the first cursor image; index names the one a list may show. */
+	struct bcm2711_buffer *cursors[2];
+	uint32_t cursor_index;
+	struct bcm2711_flip_cursor cursor;
 	struct display_session *owner;
 	uint64_t next_lease;
 	uint64_t completed;
@@ -86,6 +92,11 @@ static int import_image(void *opaque, void *private_session, const struct gpu_im
 static int retain_resource(struct display_device *controller, struct display_session *session, struct bcm2711_buffer *buffer, const struct gpu_image_descriptor *image, void **result);
 static int shared_frame(struct display_device *controller, const struct display_resource *resource, const struct gpu_display_present *request, struct drv_bcm2711_boot_screen *frame);
 static void retire_holds(struct display_device *controller);
+static int output_cursor_set(void *opaque, void *private_session, void *private_resource, const struct gpu_display_cursor_image *request);
+static int output_cursor_move(void *opaque, void *private_session, const struct gpu_display_cursor_move *request);
+static int output_cursor_hide(void *opaque, void *private_session, const struct gpu_display_cursor_hide *request);
+static int cursor_owner(struct display_device *controller, struct display_session *session, uint64_t lease, uint64_t generation);
+static void cursor_reset(struct display_device *controller);
 static int resource_map(void *opaque, void *private_session, void *private_resource, struct drv_gpu_mapping *mapping);
 static int output_query(void *opaque, void *private_session, struct gpu_display_info *request);
 static int output_mode(void *opaque, void *private_session, struct gpu_display_mode *request);
@@ -380,7 +391,8 @@ device_close(
 	mutex_lock(&controller->mutex);
 
 	if (controller->owner == session) {
-		/* Copy targets belong to the permanent controller, never to this session. */
+		/* The lease's cursor goes with it; copy targets belong to the permanent controller, never to this session. */
+		cursor_reset(controller);
 		error = restore_console(controller);
 		if (error != 0)
 			bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "lease close retains uncertain copy buffers (%d)", error);
@@ -622,7 +634,7 @@ output_query(
 		return EINVAL;
 	request->display_id = display->port + 1U;
 	request->generation = 1;
-	request->flags = GPU_DISPLAY_CONNECTED | GPU_DISPLAY_ACTIVE | GPU_DISPLAY_FIFO;
+	request->flags = GPU_DISPLAY_CONNECTED | GPU_DISPLAY_ACTIVE | GPU_DISPLAY_FIFO | GPU_DISPLAY_HAS_CURSOR;
 	request->plane_count = 1;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
 	request->max_frame_bytes = DISPLAY_RESOURCE_BYTES;
@@ -725,6 +737,9 @@ output_claim(
 		return EOVERFLOW;
 	}
 
+	/* A new lease starts without a cursor image. */
+	cursor_reset(controller);
+
 	/* Publishes an independent observation cursor for the new exclusive lease. */
 	session->completed = 0;
 	session->present_time = 0;
@@ -762,6 +777,9 @@ output_release(
 		mutex_unlock(&controller->mutex);
 		return EINVAL;
 	}
+
+	/* The lease's cursor goes with it. */
+	cursor_reset(controller);
 
 	/* Restores console adoption before changing output ownership. */
 	error = restore_console(controller);
@@ -821,6 +839,13 @@ output_present(
 	if (controller->completed == UINT64_MAX) {
 		mutex_unlock(&controller->mutex);
 		return EOVERFLOW;
+	}
+
+	/* A pending cursor list is adopted first, so both slots' frames are known. */
+	error = bcm2711_display_flip_settle(controller->native);
+	if (error != 0) {
+		mutex_unlock(&controller->mutex);
+		return error;
 	}
 
 	/* Reclaims only references that actual selected-PV adoption no longer retains. */
@@ -1004,6 +1029,9 @@ restore_console(
 	struct bcm2711_flip_status status;
 	int error;
 
+	/* A pending cursor list is adopted first; an uncertain one is left to the restore. */
+	(void)bcm2711_display_flip_settle(controller->native);
+
 	/* A confirmed unheld console needs no redundant hardware transaction. */
 	bcm2711_display_flip_snapshot(controller->native, &status);
 	if (!status.uncertain && status.retained_mask == 0) {
@@ -1038,6 +1066,7 @@ copy_frame(
 	uint8_t *destination;
 	uint64_t span;
 	uint32_t native_format;
+	uint32_t index;
 	uint32_t slot;
 	uint32_t row;
 	uint32_t column;
@@ -1059,14 +1088,29 @@ copy_frame(
 	if (request->offset > resource->buffer->bytes || span > resource->buffer->bytes - request->offset)
 		return EINVAL;
 
-	/* DMA holds select the inactive target rather than a CPU-only alternation counter. */
+	/*
+	 * DMA holds select the target no retained list names, rather than a
+	 * CPU-only alternation counter or the slot (a cursor list shows the
+	 * same frame from both slots).
+	 */
 	bcm2711_display_flip_snapshot(controller->native, &status);
 	if (status.uncertain || status.busy)
 		return EBUSY;
-	slot = 0;
-	if ((status.retained_mask & 1U) != 0)
-		slot = 1;
-	target = controller->copies[slot];
+	target = NULL;
+	for (index = 0; index < 2U && target == NULL; index++) {
+		target = controller->copies[index];
+		for (slot = 0; slot < 2U; slot++) {
+			/* A retained frame inside this copy keeps it from being written. */
+			if ((status.retained_mask & (1U << slot)) != 0 &&
+			    status.frames[slot].physical >= target->memory.paddr &&
+			    status.frames[slot].physical < target->memory.paddr + target->bytes)
+				target = NULL;
+			if (target == NULL)
+				break;
+		}
+	}
+	if (target == NULL)
+		return EBUSY;
 	native_format = GPU_PIXEL_BGRA8888;
 	if (controller->native->screen.format == 1)
 		native_format = GPU_PIXEL_RGBA8888;
@@ -1112,6 +1156,9 @@ bind_operations(
 	controller->display_operations.present = output_present;
 	controller->display_operations.wait = output_wait;
 	controller->display_operations.events = output_events;
+	controller->display_operations.cursor_set = output_cursor_set;
+	controller->display_operations.cursor_move = output_cursor_move;
+	controller->display_operations.cursor_hide = output_cursor_hide;
 
 	/* Publishes checked foreign native imports with actual physical constraints. */
 	controller->scanout_operations.query_device = output_device;
@@ -1508,6 +1555,7 @@ retire_holds(
 {
 	struct bcm2711_flip_status status;
 	uint32_t slot;
+	uint32_t other;
 
 	/* Actual adoption is the retirement boundary; a late uncertain IRQ cannot resolve it. */
 	bcm2711_display_flip_snapshot(controller->native, &status);
@@ -1517,6 +1565,20 @@ retire_holds(
 		if ((status.retained_mask & (1U << slot)) != 0 || controller->holds[slot] == NULL)
 			continue;
 
+		/*
+		 * A cursor list shows the same frame from the other slot: its hold
+		 * moves there instead of ending while the HVS still reads it.
+		 */
+		other = 1U - slot;
+		if ((status.retained_mask & (1U << other)) != 0 &&
+		    controller->holds[other] == NULL &&
+		    status.frames[other].physical >= controller->holds[slot]->memory.paddr &&
+		    status.frames[other].physical < controller->holds[slot]->memory.paddr + controller->holds[slot]->bytes) {
+			controller->holds[other] = controller->holds[slot];
+			controller->holds[slot] = NULL;
+			continue;
+		}
+
 		/* Native HVS has proved this slot retired, including a rejected unpublished candidate. */
 		bcm2711_buffer_release(controller->holds[slot]);
 		controller->holds[slot] = NULL;
@@ -1524,4 +1586,199 @@ retire_holds(
 
 	/* Succeeded: every independent scanout hold has been retired. */
 	return;
+}
+
+/*
+ * Copies a cursor image into the cursor plane's free image (GPU_DISPLAY_CURSOR_SET).
+ *
+ * A shown cursor shows the new image from the next refresh boundary; a
+ * hidden one stays hidden until it is moved.
+ */
+static int
+output_cursor_set(
+	void *opaque,
+	void *private_session,
+	void *private_resource,
+	const struct gpu_display_cursor_image *request)
+{
+	struct display_device *controller;
+	struct display_resource *resource;
+	struct bcm2711_flip_cursor cursor;
+	struct bcm2711_buffer *target;
+	const uint8_t *source;
+	uint64_t span;
+	uint32_t index;
+	uint32_t row;
+	int error;
+
+	/* Only the lease's own open changes its cursor, from storage it owns. */
+	controller = opaque;
+	resource = private_resource;
+	mutex_lock(&controller->mutex);
+
+	error = cursor_owner(controller, private_session, request->lease, request->generation);
+	if (error == 0 && resource->owner != private_session)
+		error = ESTALE;
+	if (error != 0) {
+		mutex_unlock(&controller->mutex);
+		return error;
+	}
+
+	/* The rows lie inside the buffer the resource names (the core checked its size). */
+	span = (uint64_t)request->stride * (request->height - 1U) + (uint64_t)request->width * 4U;
+	if (request->offset > resource->buffer->bytes || span > resource->buffer->bytes - request->offset) {
+		mutex_unlock(&controller->mutex);
+		return EINVAL;
+	}
+
+	/* The two images are made once, below one GiB for the HVS. */
+	for (index = 0; index < 2U; index++) {
+		if (controller->cursors[index] != NULL)
+			continue;
+		error = bcm2711_buffer_create(GPU_DISPLAY_CURSOR_MAX * GPU_DISPLAY_CURSOR_MAX * 4U, 0x3fffffffU, 4096, &controller->cursors[index]);
+		if (error != 0) {
+			mutex_unlock(&controller->mutex);
+			return error;
+		}
+	}
+
+	/* No pending list may still name the image about to be written. */
+	error = bcm2711_display_flip_settle(controller->native);
+	if (error != 0) {
+		mutex_unlock(&controller->mutex);
+		return error;
+	}
+
+	/* The image a shown list does not name takes the rows, packed at the plane's pitch. */
+	index = 1U - controller->cursor_index;
+	target = controller->cursors[index];
+	for (row = 0; row < request->height; row++) {
+		source = (const uint8_t *)resource->buffer->address + request->offset + (uint64_t)row * request->stride;
+		kern_memcpy((uint8_t *)target->address + (uint64_t)row * GPU_DISPLAY_CURSOR_MAX * 4U, source, request->width * 4U);
+	}
+	kern_dcache_clean_range(target->address, (size_t)GPU_DISPLAY_CURSOR_MAX * 4U * request->height);
+	kern_io_write_barrier();
+
+	/* The plane names the new image from now on, shown or not. */
+	cursor = controller->cursor;
+	cursor.physical = (uint32_t)target->memory.paddr;
+	cursor.width = request->width;
+	cursor.height = request->height;
+	cursor.pitch = GPU_DISPLAY_CURSOR_MAX * 4U;
+	cursor.format = 0;
+	if (request->format == GPU_PIXEL_RGBA8888)
+		cursor.format = 1;
+	error = bcm2711_display_flip_cursor(controller->native, &cursor);
+	if (error == 0) {
+		controller->cursor = cursor;
+		controller->cursor_index = index;
+	}
+
+	mutex_unlock(&controller->mutex);
+
+	/* Succeeded or not, the previous image stays whole while a list may name it. */
+	return error;
+}
+
+/* Shows the cursor with its top-left corner at a point (GPU_DISPLAY_CURSOR_MOVE). */
+static int
+output_cursor_move(
+	void *opaque,
+	void *private_session,
+	const struct gpu_display_cursor_move *request)
+{
+	struct display_device *controller;
+	struct bcm2711_flip_cursor cursor;
+	int error;
+
+	/* Only the lease's own open moves its cursor, once it has an image. */
+	controller = opaque;
+	mutex_lock(&controller->mutex);
+
+	error = cursor_owner(controller, private_session, request->lease, request->generation);
+	if (error == 0 && controller->cursor.physical == 0)
+		error = EINVAL;
+	if (error != 0) {
+		mutex_unlock(&controller->mutex);
+		return error;
+	}
+
+	/* The flip state publishes it without waiting. */
+	cursor = controller->cursor;
+	cursor.shown = true;
+	cursor.x = request->x;
+	cursor.y = request->y;
+	error = bcm2711_display_flip_cursor(controller->native, &cursor);
+	if (error == 0)
+		controller->cursor = cursor;
+
+	mutex_unlock(&controller->mutex);
+
+	/* Succeeded: the cursor shows there from a coming refresh boundary. */
+	return error;
+}
+
+/* Hides the cursor, keeping its image (GPU_DISPLAY_CURSOR_HIDE). */
+static int
+output_cursor_hide(
+	void *opaque,
+	void *private_session,
+	const struct gpu_display_cursor_hide *request)
+{
+	struct display_device *controller;
+	struct bcm2711_flip_cursor cursor;
+	int error;
+
+	/* Only the lease's own open hides its cursor. */
+	controller = opaque;
+	mutex_lock(&controller->mutex);
+
+	error = cursor_owner(controller, private_session, request->lease, request->generation);
+	if (error != 0) {
+		mutex_unlock(&controller->mutex);
+		return error;
+	}
+
+	/* The flip state publishes a list without it. */
+	cursor = controller->cursor;
+	cursor.shown = false;
+	error = bcm2711_display_flip_cursor(controller->native, &cursor);
+	if (error == 0)
+		controller->cursor = cursor;
+
+	mutex_unlock(&controller->mutex);
+
+	/* Succeeded: the cursor is gone from a coming refresh boundary. */
+	return error;
+}
+
+/* Checks that an open holds the output's lease of the current generation; the caller holds the mutex. */
+static int
+cursor_owner(
+	struct display_device *controller,
+	struct display_session *session,
+	uint64_t lease,
+	uint64_t generation)
+{
+	/* Another open's lease, or none, cannot change the cursor. */
+	if (controller->owner != session || lease != session->lease)
+		return EBUSY;
+	if (generation != 1)
+		return ESTALE;
+
+	/* Succeeded: the open owns the output. */
+	return 0;
+}
+
+/* Hides the cursor and forgets its image when a lease begins or ends; the caller holds the mutex. */
+static void
+cursor_reset(
+	struct display_device *controller)
+{
+	struct bcm2711_flip_cursor cursor;
+
+	/* A hidden, imageless cursor adds no plane to any later list. */
+	kern_memset(&cursor, 0, sizeof(cursor));
+	if (bcm2711_display_flip_cursor(controller->native, &cursor) == 0)
+		kern_memset(&controller->cursor, 0, sizeof(controller->cursor));
 }

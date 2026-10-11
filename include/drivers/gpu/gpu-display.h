@@ -46,6 +46,18 @@ struct drv_gpu_display_ops {
 	 */
 	int (*power)(void *, void *, const struct gpu_display_power *);
 	int (*refresh)(void *, void *, struct gpu_display_refresh *);
+
+	/*
+	 * Optional cursor plane (GPU_DISPLAY_HAS_CURSOR on an output): all three,
+	 * or none.  Each gets a checked request from a writable open, inside the
+	 * ordinary admission, and checks this open's lease before any side effect.
+	 * cursor_set also gets the resolved storage object, whose bounds the core
+	 * checked, and copies the image before it returns; none of them waits for
+	 * the refresh boundary that shows the change.
+	 */
+	int (*cursor_set)(void *, void *, void *, const struct gpu_display_cursor_image *);
+	int (*cursor_move)(void *, void *, const struct gpu_display_cursor_move *);
+	int (*cursor_hide)(void *, void *, const struct gpu_display_cursor_hide *);
 };
 
 #endif
