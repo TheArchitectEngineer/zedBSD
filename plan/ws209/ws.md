@@ -28,7 +28,7 @@ audiod に音の endpoint（HDA の speaker・mic、Bluetooth の headset の A2
 | Phase | 内容 | Status |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 再設計と review（第 1 版 → review-1 → 設計 1.1（P1 1acb8d9cc、未統合）、E・R・P の再 review 中。判断 G1・G2 は推しどおり、G3・G4 は確認中） | in-progress |
-| p002 | audiod の endpoint・route・権限・protocol 版 2 | planned（7 LW、review-2 の N22） |
+| [p002](phase002/phase.md) | audiod の endpoint・route・権限・protocol 版 2 | in-progress（2026-10-11 P1 0349a118c: 制御の面、host 試験 PASS、未統合） |
 | p003 | ASRC と拍（M8・M9 を先に） | planned（5 LW） |
 | p004 | desktop の口（libkeiland・compositor・3 OS の backend・Settings・Phone、M10 を先に、WS191 の後） | planned（5〜6 LW） |
 | p005 | QEMU の確かめ | planned（1 LW） |
