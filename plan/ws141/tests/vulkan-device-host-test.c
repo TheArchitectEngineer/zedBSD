@@ -3575,7 +3575,7 @@ record_test(
 	memset(&recording, 0, sizeof(recording));
 	recording.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-	/* A fifth native event allocation refusal must consume the rest of the real stream, report End OOM, and permit clean re-recording. */
+	/* A refused event-chunk allocation must consume the rest of the real stream, report End OOM, and permit clean re-recording. */
 	for (index = 0; index < 2; index++) {
 		begin(&writer, wire, sizeof(wire), GPU_OP_BEGIN_COMMAND_BUFFER, 1);
 		vulkan_write_u64(&writer, 151);
@@ -3590,7 +3590,7 @@ record_test(
 		vulkan_write_u32(&writer, 1);
 		vulkan_write_u64(&writer, 151);
 		if (index == 0)
-			fail_after = 5;
+			fail_after = 1;
 		error = execute(session, &writer, &reader);
 		assert(error == 0);
 		if (index == 0) {
@@ -3600,6 +3600,38 @@ record_test(
 			assert(vulkan_read_u32(&reader) == VK_SUCCESS && command->state == BCM2711_VULKAN_COMMAND_EXECUTABLE && !command->render_open);
 		}
 	}
+
+	/*
+	 * The recording budget admits events up to BCM2711_VULKAN_RECORD_BYTES and
+	 * refuses the next one: the nine-event recording fits exactly behind nine
+	 * events' worth of budget, is refused behind eight, and an ordinary
+	 * recording follows.
+	 */
+	for (index = 0; index < 3; index++) {
+		begin(&writer, wire, sizeof(wire), GPU_OP_BEGIN_COMMAND_BUFFER, 1);
+		vulkan_write_u64(&writer, 151);
+		vulkan_write_u64(&writer, 1);
+		vulkan_encode_VkCommandBufferBeginInfo(&writer, &recording);
+		error = execute(session, &writer, &reader);
+		assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
+		if (index < 2)
+			command->recorded_bytes = BCM2711_VULKAN_RECORD_BYTES - (9U - index) * (uint32_t)sizeof(struct bcm2711_vulkan_record);
+		begin(&writer, wire, sizeof(wire), GPU_OP_END_COMMAND_BUFFER, 1);
+		writer.bytes -= 8;
+		ws141_client_encode_recording(&writer, 151);
+		vulkan_write_u32(&writer, GPU_OP_END_COMMAND_BUFFER);
+		vulkan_write_u32(&writer, 1);
+		vulkan_write_u64(&writer, 151);
+		error = execute(session, &writer, &reader);
+		assert(error == 0);
+		if (index == 1) {
+			assert(vulkan_read_u32(&reader) == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY);
+			assert(command->recording_error == ENOMEM && command->state == BCM2711_VULKAN_COMMAND_INVALID);
+		} else {
+			assert(vulkan_read_u32(&reader) == VK_SUCCESS && command->state == BCM2711_VULKAN_COMMAND_EXECUTABLE);
+		}
+	}
+	assert(BCM2711_VULKAN_RECORD_BYTES / sizeof(struct bcm2711_vulkan_record) > 16000U);
 
 	/* Exact nine-event ordering, selected clear union and raw push words come from real public client encoding. */
 	nodes = 0;
@@ -3992,7 +4024,7 @@ queue_test(
 		if (index == 0) {
 			fail_after = 1;
 		} else {
-			fail_after = 5;
+			fail_after = 1;
 		}
 
 		/* Both refusal points occur before live semaphore/fence publication or the explicit mock native runner. */

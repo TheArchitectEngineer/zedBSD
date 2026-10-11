@@ -13,7 +13,10 @@
 #include "drivers/gpu/bcm2711/vulkan-pipeline.h"
 
 /* Every primary shares this whole immutable recording budget across graphics, transfer and dependency nodes. */
-#define BCM2711_VULKAN_RECORD_BYTES (1024U * 1024U)
+#define BCM2711_VULKAN_RECORD_BYTES (8U * 1024U * 1024U)
+
+/* Events one chunk of a recording holds. */
+#define BCM2711_VULKAN_RECORD_CHUNK 128U
 
 /* One bounded graphics event copies its selected scalar payload and independently retains every referenced object. */
 struct bcm2711_vulkan_record {
@@ -32,6 +35,9 @@ struct bcm2711_vulkan_record {
 	VkImageLayout layout;
 	int semantic_error;
 };
+
+/* Frees a cleared recording's event chunks; every event has been released. */
+void bcm2711_vulkan_record_chunks_free(struct bcm2711_vulkan_command_buffer *command);
 
 int bcm2711_vulkan_record_dispatch(struct bcm2711_vulkan_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int bcm2711_vulkan_record_current(struct bcm2711_vulkan_command_buffer *command);
