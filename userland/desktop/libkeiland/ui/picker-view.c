@@ -204,7 +204,7 @@ view_header(
 
 	/* What the selection is, in words. */
 	if (picker->selected != 0U && picker->limit > 1U)
-		(void)snprintf(line, sizeof(line), "%zu of %zu selected", picker->selected, picker->limit);
+		(void)snprintf(line, sizeof(line), "%zu selected, up to %zu", picker->selected, picker->limit);
 	else if (picker->limit > 1U)
 		(void)snprintf(line, sizeof(line), "Choose up to %zu", picker->limit);
 	else

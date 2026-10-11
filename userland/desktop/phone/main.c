@@ -1089,8 +1089,10 @@ ph_media_choose(
 
 	/* One open sheet answers for the conversation chosen when it opened. */
 	error = ph_attach_contact(phone, contact);
-	if (error != 0)
+	if (error != 0) {
+		ph_log("FAILED operation=media-picker-contact error=%d", error);
 		return;
+	}
 
 	/* As many as the draft still takes, and at least one so that a full draft says why. */
 	room = PH_DRAFT_MAX - ph_draft_count(&phone->view, phone->chooser_contact);
@@ -1106,6 +1108,7 @@ ph_media_choose(
 	options.thumbnail_data = NULL;
 	phone->picker = kl_media_picker_open(kl_app_display(phone->app), kl_window_toplevel(phone->window), &options, &listener, phone);
 	if (phone->picker == NULL) {
+		ph_log("FAILED operation=media-picker error=%d", errno);
 		free(phone->chooser_contact);
 		phone->chooser_contact = NULL;
 		ph_view_notice(&phone->view, "The media library is unavailable.", kl_clock_us());

@@ -295,6 +295,7 @@ ph_view_action(
 		view->attach_choices = 0;
 		if (view->selected >= 0)
 			view_request(view, action, view->selected);
+		ph_log("REQUEST action=attach media=%d contact=%ld", action == PH_ACTION_ATTACH_MEDIA, view->selected);
 		break;
 	case PH_ACTION_CALL_ANSWER:
 	case PH_ACTION_CALL_HANGUP:
