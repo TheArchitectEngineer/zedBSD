@@ -513,6 +513,7 @@ ph_loop(
 	uint64_t started;
 	uint64_t now;
 	uint64_t second;
+	int changed;
 	int status;
 	int taken;
 	int wait;
@@ -564,6 +565,11 @@ ph_loop(
 		/* The phone's events, and what the view asked. */
 		ph_phone_round(phone);
 		ph_requests(phone);
+
+		/* The previews keiland-preview has made meanwhile (ws157-p015). */
+		changed = ph_view_media_follow();
+		if (changed)
+			phone->dirty = 1;
 
 		/* The end: the window closed or Quit. */
 		now = kl_clock_us();
@@ -858,6 +864,7 @@ ph_wait(
 	const struct ph_window *phone,
 	uint64_t now_us)
 {
+	int busy;
 	int wait;
 
 	/* A frame due now (or its lit part), or requests to carry out. */
@@ -868,6 +875,11 @@ ph_wait(
 
 	/* Something moving. */
 	if (phone->moving)
+		return PH_MOVING_MS;
+
+	/* Previews being made are looked at again soon. */
+	busy = ph_view_media_busy();
+	if (busy)
 		return PH_MOVING_MS;
 
 	/* The view's notice, or a second. */
@@ -1167,8 +1179,8 @@ ph_media_picked(
 
 /*
  * Makes a photo's square thumbnail for the media picker, on the picker's
- * thread: the photo decoded (the same decoder as the drafts' previews) and
- * the middle square scaled to the side.
+ * thread: the middle square at the side, made by keiland-preview in its
+ * sandbox (photos/decode.c, ws157-p015).
  */
 static int
 ph_media_thumbnail(
@@ -1177,20 +1189,13 @@ ph_media_thumbnail(
 	int side,
 	struct kl_image *image)
 {
-	struct kl_image decoded;
 	int error;
 
-	/* No context: the decoder keeps no state between photos. */
+	/* No context: nothing is kept between photos. */
 	(void)data;
 
-	/* The photo. */
-	error = ph_decode(path, &decoded);
-	if (error != 0)
-		return error;
-
-	/* Its middle square at the side, and the decoded photo released. */
-	error = ph_thumbnail(&decoded, side, image);
-	kl_image_release(&decoded);
+	/* The photo's middle square at the side. */
+	error = ph_preview(path, side, 1, image);
 	if (error != 0)
 		return error;
 

@@ -38,12 +38,13 @@ ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror \
 	plan/ws157/tests/host-media-wire.c plan/ws197/tests/host-media-receive.c \
 	userland/desktop/phone/receive.c userland/desktop/phone/store.c userland/desktop/phone/phonebook.c \
 	userland/desktop/libmms/mms.c userland/desktop/photos/library.c userland/desktop/photos/snapshot.c \
-	userland/desktop/photos/decode.c userland/desktop/picture/picture.c \
+	userland/desktop/photos/decode.c \
+	userland/desktop/preview/client.c userland/desktop/preview/linux/spawn.c "-DKEILAND_LIBEXECDIR=\"$media_host/libexec\"" \
 	userland/desktop/photos/cache-folders.c "$media_host/sha2.o" userland/desktop/wayland/media-library.c \
 	userland/desktop/libkeiland-backend/media/media.c \
 	userland/desktop/libkeiland/system/system-protocol.c \
 	-L"$media_linux/lib" -Wl,-rpath-link,"$media_linux/lib" \
-	-lkeiland -lwayland-server -lwayland-client -l:libpng-compat.so -l:libjpeg-compat.so -l:libgif-compat.so -lpthread -o "$media_host/host-media-wire"
+	-lkeiland -lwayland-server -lwayland-client -lpthread -o "$media_host/host-media-wire"
 ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror \
 	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
 	-I. -Iuserland/desktop/include plan/ws197/tests/host-media-select.c \
