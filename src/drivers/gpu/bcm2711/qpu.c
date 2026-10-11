@@ -221,6 +221,10 @@ operation_fields(
 		encoding->multiply_operation = 14;
 		encoding->multiply_right = 3;
 		break;
+	case BCM2711_QPU_PACK_HALVES:
+		/* The left float becomes the low half and the right float the high half, both rounded to sixteen bits. */
+		encoding->add_operation = 53;
+		break;
 	case BCM2711_QPU_FLOAT_ADD:
 		encoding->add_operation = 5;
 		encoding->order = 1;
