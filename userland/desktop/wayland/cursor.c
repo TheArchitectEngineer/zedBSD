@@ -271,9 +271,9 @@ kwl_cursor_frame(
 		}
 	}
 
-	/* The next frame draws the new cursor. */
+	/* The next frame draws the new cursor, which is not part of the scene: only its place is damaged. */
 	server->frame_edges = edges;
-	server->dirty = 1;
+	kwl_damage_pointer(server, server->pointer_x, server->pointer_y);
 
 	/* Succeeded: the log line the tests read. */
 	printf("KWL CURSOR frame edges=%u\n", edges);
