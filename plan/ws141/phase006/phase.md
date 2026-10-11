@@ -304,3 +304,12 @@ reboot要求はexit0。初めの2回はtimeout/No routeだったが、約2分後
 範囲同期版は通常18frameで再びstatus42。prepareは96draw/32,714,752bytes/7,506msまで増え、frameの全処理が予約期限に届く可能性が残る。greeter serviceを停止し、既存slow-pass診断へtex/copy/program/recordの内訳を追加する。clockはwall time（preemptionを含む）でCPU占有時間と誤認しない。copyはtexの内数、成功したdrawの合計なので失敗drawの未publish分は含まない。余計なper-drawログを出さず、既存の1秒以上/失敗passの行へ記録する。public API/動作制御変更なし。対象device host PASS、production style0/diff-check PASS。
 
 内訳診断kernel最終build exit0/warning0/error0/ARM64 checker PASS。1466012252 8077312 build/arm64/vmunix、dffbdc237d5b20fad3bc462a1636b6c5cf0b84c105a1d272fd8a252e7a026c46  build/arm64/vmunix。
+
+
+内訳診断25fb2ba4bをmain統合、旧kernelを /var/backups/vmunix.before-prepare-timing-20261011（513824364/8077312）へ保存し、新版1466012252/8077312をFAT staging/cmp/sync/rename/sync/cmpで配置。reboot exit0、約2分でSSH復帰。定常43drawの代表値はtotal2385ms/tex410ms（内copy170ms）/program1505ms/record382ms。起動負荷中はtotal5968ms/program3650ms。画像copyだけが主因ではない。
+
+既存MMU/cache waitは最初のbusy read直後にkern_usleep_range(10,10)を呼ぶ。実装は次のscheduler tickまで休止し、CPU負荷でそれ以上待つため、1drawあたり多数の小さなcode/uniform mappingへ待ちが累積する可能性がある。private wait_clearに最大32回の短いMMIO readを追加し、それでもbusyの場合のみ従来の有限yield loopへ移る。IRQを禁止せず、既存flush順序/異常時保持を変えない。実機効果は次の配置後に判定する。
+
+短いpoll版build exit0/warning0/error0/ARM64 checker PASS。4227642040 8077312 build/arm64/vmunix、1ba0b953d89d5db6e5bfc97135a776a9ba31419a6eb2eada75215f9ebed0bb51  build/arm64/vmunix。host初回はmockがclear命令前のcontrol readにもbusyを注入していたため失敗。命令write後だけbusyにするfixtureへ修正し再実行する（productionをtestに合わせて変更しない）。
+
+host再実行PASS、短時間busyのsleep0完了とstuck時の既存timeout/retirementを確認。実機性能は配置後に確認する。

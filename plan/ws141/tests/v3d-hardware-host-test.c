@@ -46,6 +46,11 @@ static unsigned test_released;
 static unsigned test_fail_allocation;
 static uint32_t test_stuck_hub;
 static uint32_t test_stuck_core;
+
+/* Delays one MMUC and TLB completion by a few reads without requiring a scheduler wake. */
+static unsigned test_mmuc_reads;
+static unsigned test_tlb_reads;
+static bool test_tlb_delay_armed;
 static bool test_accessible;
 static bool test_reset_failed;
 static unsigned test_waits;
@@ -211,6 +216,14 @@ main(
 	assert(error == EINVAL && test_writes == 0);
 	error = bcm2711_v3d_hardware_pages_sync(&test_engine, 0, 0);
 	assert(error == EINVAL && test_writes == 0);
+
+	/* Brief MMU latency must not turn every small mapping into a scheduler-tick sleep. */
+	test_mmuc_reads = 4;
+	test_tlb_reads = 4;
+	test_waits = 0;
+	error = bcm2711_v3d_hardware_pages_sync(&test_engine, 0x1000, 4096);
+	assert(error == 0 && test_waits == 0);
+	assert(test_mmuc_reads == 0 && test_tlb_reads == 0);
 
 	/* 4.2 invalidates only L2T then slices; clean drains the TMU combiner first. */
 	test_writes = 0;
@@ -401,6 +414,23 @@ kern_mmio_read32(
 {
 	/* Reads after a failed reset would access an unproved power/clock domain. */
 	assert(test_accessible);
+
+	/* Real commands can remain busy on the first few posted-write readbacks. */
+	if (address == &test_hub[0x1000 / 4] && test_mmuc_reads != 0) {
+		test_mmuc_reads--;
+		if (test_mmuc_reads != 0)
+			return test_hub[0x1000 / 4] | 4U;
+	}
+
+	/* TLB completion follows MMUC publication but has its own short latency. */
+	if (address == &test_hub[0x1200 / 4] && test_tlb_delay_armed) {
+		test_tlb_reads--;
+		if (test_tlb_reads != 0)
+			return test_hub[0x1200 / 4] | 0x80U;
+		test_tlb_delay_armed = false;
+	}
+
+	/* Succeeded: the remaining modeled register state is directly visible. */
 	return *(const volatile uint32_t *)address;
 }
 
@@ -450,6 +480,9 @@ kern_mmio_write32(
 		if (test_stuck_hub == offset)
 			registers[offset / 4] |= 4;
 	} else if (hub && offset == 0x1200) {
+		/* Latency begins with the clear command, not its preceding control read. */
+		if ((data & 4U) != 0 && test_tlb_reads != 0)
+			test_tlb_delay_armed = true;
 		registers[offset / 4] = data & ~4U;
 		if (test_stuck_hub == offset)
 			registers[offset / 4] |= 0x80;

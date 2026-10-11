@@ -27,6 +27,8 @@
 #define ENGINE_TABLE_BYTES (BCM2711_V3D_PAGE_ENTRIES * 4U)
 
 /* Bounds every cache and MMU wait without borrowing an IRQ spin guard. */
+/* A short register-only retry avoids a scheduler tick for ordinary MMU completion. */
+#define ENGINE_FAST_READS 32U
 #define ENGINE_WAIT_STEP_US 10U
 #define ENGINE_WAIT_STEPS 10000U
 
@@ -583,7 +585,7 @@ flush_translation(
 	return 0;
 }
 
-/* Polls a self-clearing command outside spin guards with a finite 100 ms bound. */
+/* Polls a self-clearing command briefly before falling back to bounded yielding waits. */
 static int
 wait_clear(
 	volatile uint8_t *window,
@@ -593,7 +595,14 @@ wait_clear(
 	uint32_t attempt;
 	uint32_t status;
 
-	/* Allows immediate completion, then one final sample at the requested bound. */
+	/* Normal MMU commands finish within a few reads; no IRQ guard spans this polling. */
+	for (attempt = 0; attempt < ENGINE_FAST_READS; attempt++) {
+		status = kern_mmio_read32(window + offset);
+		if ((status & mask) == 0)
+			return 0;
+	}
+
+	/* Slow hardware still yields; the scheduler can round each requested delay upward. */
 	for (attempt = 0; attempt <= ENGINE_WAIT_STEPS; attempt++) {
 		status = kern_mmio_read32(window + offset);
 		if ((status & mask) == 0)

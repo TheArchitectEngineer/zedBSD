@@ -82,3 +82,7 @@ v3d-hardware.c/.h、v3d-memory.c、v3d-diagnostic.cのprivate APIと全callerを
 ## 2026-10-11 準備時間の内訳診断
 
 private draw ownerへtex/copy/program/record wall ticksを記録し、既存slow-pass行で生存prefixを集計。資源所有/判定/期限の制御には用いず、failureの解放前だけ参照する。copyはtexの内数。C全文manual/style0/diff-check、clang-format19出力比較（全文規約を優先）、actual device host PASS。実機診断は既存ユーザー承認。
+
+## 2026-10-11 短いMMU完了待ち
+
+v3d-hardware wait_clearへ32回上限の初期readを追加。CPUを長時間専有するwaitやIRQ maskは増やさず、残るbusyは従来yieldへ入る。hostでは4read遅延のMMUC/TLBがsleep0で完了し、stuckの既存timeout/所有保持を再確認。normal code pathの修正でtest switch無し。C全文manual/style0/diff-check、formatter出力比較を適用。実機準備時間は未確認。
