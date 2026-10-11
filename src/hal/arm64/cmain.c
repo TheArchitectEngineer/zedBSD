@@ -8,6 +8,7 @@
 #include "task.h"
 #include "bsp-rpi4/framebuffer.h"
 #include "bsp-rpi4/led.h"
+#include "percpu.h"
 
 void
 arm64_cmain(uintptr_t fdt_phys)
@@ -15,6 +16,9 @@ arm64_cmain(uintptr_t fdt_phys)
 	const void *fdt;
 	struct rpi4_fdt_info info;
 	int error;
+
+	/* The boot CPU's record comes first: everything after may take a lock. */
+	arm64_smp_bootstrap();
 
 	prekern_bsp_cons_init();
 

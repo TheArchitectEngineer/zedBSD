@@ -35,6 +35,11 @@ asm_task_dispatch:
 
 	.global arm64_kernel_task_entry
 arm64_kernel_task_entry:
+	/*
+	 * Every new context first releases the task its CPU switched away
+	 * from (arm64_task_finish_switch); x19 and x20 survive the call.
+	 */
+	bl arm64_task_finish_switch
 	/* A new worker has no suspended scheduler call to restore IRQ delivery. */
 	msr daifclr, #2
 	mov x0,x20
@@ -44,6 +49,7 @@ arm64_kernel_task_entry:
 
 	.global arm64_user_task_entry
 arm64_user_task_entry:
+	bl arm64_task_finish_switch
 	msr sp_el0,x20
 	msr elr_el1,x19
 	msr spsr_el1,xzr
@@ -51,6 +57,8 @@ arm64_user_task_entry:
 
 	.global arm64_user_frame_entry
 arm64_user_frame_entry:
+	/* The frame on the stack survives the call; every register is reloaded. */
+	bl arm64_task_finish_switch
 	ldp x0,x1,[sp,#248]
 	msr elr_el1,x0
 	msr spsr_el1,x1

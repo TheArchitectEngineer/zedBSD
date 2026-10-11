@@ -8,7 +8,18 @@
 struct arm64_task {
 	struct arm64_task *next;
 	hal_space_t space;
+
+	/*
+	 * The CPU the task runs on, or -1 while it runs nowhere.  It stays set
+	 * on the CPU a task is switched away from until the next context there
+	 * has left the task's stack (arm64_task_finish_switch()).  Read by
+	 * other CPUs with an acquire.
+	 */
 	int run_cpu;
+
+	/* The CPU the task is next resumed on (hal_task_transfer()). */
+	hal_cpu_id_t target_cpu;
+
 	void *sys_stack;
 	void *sys_stack_allocation;
 	uintptr_t resume_sp;
@@ -43,6 +54,7 @@ void arm64_context_selftest(void);
 void arm64_task_enter_user_frame(void *);
 void arm64_task_leave_user_frame(void);
 struct arm64_task *arm64_task_running(void);
+void arm64_task_finish_switch(void);
 void arm64_debug_init(void);
 void arm64_debug_switch(struct arm64_task *to);
 

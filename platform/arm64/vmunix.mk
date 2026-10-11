@@ -28,7 +28,7 @@ ARM64_CFLAGS := -march=armv8-a -mno-outline-atomics -mgeneral-regs-only -ffreest
 # HAL; the assembly stays native.
 ARM64_KERNEL_LTO_CFLAGS := $(ZEDBSD_KERNEL_LTO_CFLAGS)
 
-ARM64_BOOT_C := src/hal/cpu-up.c src/hal/idle-suspend-unsupported.c src/hal/arm64/asm.c src/hal/arm64/lib.c \
+ARM64_BOOT_C := src/hal/arm64/smp.c src/hal/arm64/percpu.c src/hal/idle-suspend-unsupported.c src/hal/arm64/asm.c src/hal/arm64/lib.c \
 	src/hal/arm64/page.c src/hal/arm64/space.c \
 	src/hal/arm64/int.c src/hal/arm64/irq.c \
 	src/hal/arm64/task.c \
