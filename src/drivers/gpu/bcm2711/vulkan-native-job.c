@@ -101,6 +101,7 @@ bcm2711_vulkan_native_job_execute(
 	uint64_t started;
 	uint64_t step;
 	uint64_t prepare_ticks;
+	uint32_t tiles;
 	uint64_t execute_ticks;
 	uint64_t release_ticks;
 	uint64_t copy_ticks;
@@ -225,15 +226,26 @@ bcm2711_vulkan_native_job_execute(
 		/* Accumulate preparation separately from device execution and retirement. */
 		prepare_ticks += clock_ticks() - step;
 
+		/* A copy whose destination already holds its source's bytes prepared no pass. */
+		if (error == 0 && job->pass == NULL) {
+			perf->skipped_copies++;
+			event = next;
+			continue;
+		}
+
 		/* The cost report separates graphics passes, image clears and image transfers. */
 		if (error == 0) {
 			bcm2711_vulkan_native_pass_costs(job->pass, perf);
+			tiles = (job->pass->state.last_x - job->pass->state.first_x + 1U) *
+			    (job->pass->state.last_y - job->pass->state.first_y + 1U);
 			if (event->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
 				perf->render_passes++;
+				perf->render_tiles += tiles;
 			} else if (event->opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
 				perf->clear_passes++;
 			} else {
 				perf->image_passes++;
+				perf->image_tiles += tiles;
 			}
 		}
 
@@ -496,13 +508,14 @@ report_perf(
 
 	/* Prints the window's per-submission averages and its worst submission. */
 	kern_logf(
-		"v3d: perf ms=%llu busy=%llu%% subs=%llu passes=%u/%u/%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu\n",
+		"v3d: perf ms=%llu busy=%llu%% subs=%llu passes=%u/%u/%u skipped=%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu snap=%u/%u/%u/%u mapped_kib=%llu largest=%ux%u%c tiles=%u/%u\n",
 		(unsigned long long)kern_ticks_to_ms(now - perf->window_start),
 		(unsigned long long)busy,
 		(unsigned long long)count,
 		perf->render_passes,
 		perf->clear_passes,
 		perf->image_passes,
+		perf->skipped_copies,
 		perf->draws,
 		(unsigned long long)(perf->staged_bytes / 1024U),
 		(unsigned long long)average_us(perf->total_ticks, count),
@@ -521,7 +534,17 @@ report_perf(
 		(unsigned long long)average_us(perf->output_clean_ticks, count),
 		(unsigned long long)average_us(perf->release_ticks, count),
 		(unsigned long long)average_us(perf->transfer_ticks, count),
-		(unsigned long long)average_us(perf->max_ticks, 1U));
+		(unsigned long long)average_us(perf->max_ticks, 1U),
+		perf->snapshot_hits,
+		perf->snapshot_fills,
+		perf->mapped_textures,
+		perf->private_textures,
+		(unsigned long long)(perf->mapped_bytes / 1024U),
+		perf->largest_size >> 16,
+		perf->largest_size & 0xffffU,
+		perf->largest_kind != 0 ? perf->largest_kind : '-',
+		perf->render_tiles,
+		perf->image_tiles);
 
 	/* The next window starts empty at this report. */
 	kern_memset(perf, 0, sizeof(*perf));

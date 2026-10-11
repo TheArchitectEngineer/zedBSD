@@ -35,9 +35,12 @@ bcm2711_vulkan_native_pass_run(
 	struct bcm2711_vulkan_native_pass *pass,
 	struct bcm2711_v3d_job_result *result)
 {
+	struct bcm2711_buffer *output;
 	uint64_t started;
 	uint64_t elapsed;
 	uint64_t converted;
+	uint64_t offset;
+	uint32_t box[4];
 	int error;
 
 	/* Missing completion storage cannot report safe retirement. */
@@ -96,10 +99,25 @@ bcm2711_vulkan_native_pass_run(
 	pass->retired = result->retired;
 	result->tfu_ticks = converted;
 
-	/* Launched or not, the output may have changed, so snapshots of it are stale. */
-	pass->output->buffer->generation++;
+	/* Launched or not, the render area of the output may have changed, so snapshots and copies of it are stale. */
+	output = pass->output->buffer;
+	offset = (uint64_t)pass->state.output - pass->output->address;
+	box[0] = (uint32_t)pass->area.offset.x;
+	box[1] = (uint32_t)pass->area.offset.y;
+	box[2] = box[0] + pass->area.extent.width;
+	box[3] = box[1] + pass->area.extent.height;
+	bcm2711_v3d_memory_written(output, offset, box);
 	if (error != 0)
 		return error;
+
+	/* A completed whole-image copy leaves its output equal to the source at the copied generation. */
+	if (pass->sync && result->retired) {
+		output->synced_identity = pass->sync_identity;
+		output->synced_offset = pass->sync_offset;
+		output->synced_target_offset = offset;
+		output->synced_source_generation = pass->sync_generation;
+		output->synced_generation = output->generation;
+	}
 
 	/* A successful callback without actual retired DMA cannot permit source reuse or native owner release. */
 	if (!result->retired)
@@ -347,6 +365,10 @@ convert_textures(
 			error = bcm2711_v3d_job_run(pass->space->native, &job, result);
 			if (error != 0)
 				return error;
+
+			/* A snapshot the unit filled is valid for later passes from now on. */
+			if (draw->textures[index].snapshot != NULL)
+				bcm2711_native_snapshot_filled(draw->textures[index].snapshot);
 		}
 	}
 	*ticks = clock_ticks() - started;

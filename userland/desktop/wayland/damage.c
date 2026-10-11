@@ -45,6 +45,7 @@ kwl_damage_pointer(
 {
 	int unseen;
 	int calm;
+	int plane;
 
 	/*
 	 * A cursor the window's client hid, over that client's window at both
@@ -61,11 +62,15 @@ kwl_damage_pointer(
 	if (server->log_frames)
 		server->pointer_accepted_us = kwl_microseconds();
 
+	/* The cursor plane shows the move by itself (cursor-plane.c); a frame is drawn only for what the move changes under it. */
+	plane = kwl_cursor_plane_takes(server);
+
 	/* The next frame shows the move without waiting for the windows (frame pacing, display.c). */
-	server->pointer_moved = 1U;
+	if (!plane)
+		server->pointer_moved = 1U;
 
 	/* A client's own cursor surface may be of any size, and so may a drag's icon. */
-	if (server->cursor_surface != NULL || server->dnd_active) {
+	if (!plane && (server->cursor_surface != NULL || server->dnd_active)) {
 		server->dirty = 1;
 		return;
 	}
@@ -86,6 +91,10 @@ kwl_damage_pointer(
 			return;
 		}
 	}
+
+	/* The plane moves the cursor; the frame keeps its pixels. */
+	if (plane)
+		return;
 
 	/* The cursor where it was and where it is. */
 	damage_add(server, old_x - DAMAGE_CURSOR, old_y - DAMAGE_CURSOR, old_x + DAMAGE_CURSOR, old_y + DAMAGE_CURSOR);

@@ -12,6 +12,7 @@
 #include "wsi-internal.h"
 
 #include <limits.h>
+#include <stdbool.h>
 #include <string.h>
 
 /*
@@ -37,6 +38,7 @@ static VkResult wsi_discovery_error(VkResult error);
 static VkResult wsi_display_get(struct VkPhysicalDevice_T *physical, const struct vulkan_wsi_output *output, struct vulkan_display **result);
 static VkResult wsi_mode_get(struct vulkan_display *display, uint64_t generation, const VkDisplayModeParametersKHR *parameters, const VkAllocationCallbacks *allocator, struct vulkan_display_mode **result);
 static VkResult wsi_plane_count(struct VkPhysicalDevice_T *physical, uint32_t *count);
+static bool wsi_cursor_plane(const struct vulkan_wsi_output *output, uint32_t local_plane);
 static VkResult wsi_plane_lookup(struct VkPhysicalDevice_T *physical, uint32_t plane, struct vulkan_display **display, uint32_t *local_plane);
 static VkBool32 wsi_mode_equal(const VkDisplayModeParametersKHR *first, const VkDisplayModeParametersKHR *second);
 static void wsi_surface_unlink(struct vulkan_surface *surface);
@@ -512,8 +514,24 @@ vkGetDisplayPlaneCapabilitiesKHR(
 		return error;
 	}
 
-	/* Describes only full-image 1:1 opaque presentation, without scaling claims. */
+	/* A cursor plane shows a small premultiplied image anywhere, partly off the output too. */
 	memset(capabilities, 0, sizeof(*capabilities));
+	if (wsi_cursor_plane(&output, local_plane)) {
+		capabilities->supportedAlpha = VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_PREMULTIPLIED_BIT_KHR;
+		capabilities->minSrcExtent.width = 1U;
+		capabilities->minSrcExtent.height = 1U;
+		capabilities->maxSrcExtent.width = GPU_DISPLAY_CURSOR_MAX;
+		capabilities->maxSrcExtent.height = GPU_DISPLAY_CURSOR_MAX;
+		capabilities->minDstExtent = capabilities->minSrcExtent;
+		capabilities->maxDstExtent = capabilities->maxSrcExtent;
+		capabilities->minDstPosition.x = 1 - (int32_t)GPU_DISPLAY_CURSOR_MAX;
+		capabilities->minDstPosition.y = 1 - (int32_t)GPU_DISPLAY_CURSOR_MAX;
+		capabilities->maxDstPosition.x = (int32_t)mode->parameters.visibleRegion.width - 1;
+		capabilities->maxDstPosition.y = (int32_t)mode->parameters.visibleRegion.height - 1;
+		return VK_SUCCESS;
+	}
+
+	/* Describes only full-image 1:1 opaque presentation, without scaling claims. */
 	capabilities->supportedAlpha = VK_DISPLAY_PLANE_ALPHA_OPAQUE_BIT_KHR;
 	capabilities->minSrcExtent = mode->parameters.visibleRegion;
 	capabilities->maxSrcExtent = mode->parameters.visibleRegion;
@@ -540,7 +558,9 @@ vkCreateDisplayPlaneSurfaceKHR(
 	struct vulkan_surface *surface;
 	struct vulkan_object *object;
 	VkDisplayPlaneCapabilitiesKHR capabilities;
+	struct vulkan_wsi_output output;
 	uint32_t local_plane;
+	bool cursor;
 	VkResult error;
 
 	/* Resolves the instance and the mode before allocating a surface. */
@@ -565,18 +585,6 @@ vkCreateDisplayPlaneSurfaceKHR(
 	if (mode->display->physical->instance != instance)
 		return VK_ERROR_INITIALIZATION_FAILED;
 
-	/* Exposes the direct adapter's supported transform and composition behavior. */
-	if (create_info->transform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR ||
-	    create_info->alphaMode != VK_DISPLAY_PLANE_ALPHA_OPAQUE_BIT_KHR) {
-		return VK_ERROR_INITIALIZATION_FAILED;
-	}
-
-	/* The initial adapter supports the complete selected mode without scaling. */
-	if (create_info->imageExtent.width != mode->parameters.visibleRegion.width ||
-	    create_info->imageExtent.height != mode->parameters.visibleRegion.height) {
-		return VK_ERROR_INITIALIZATION_FAILED;
-	}
-
 	/* Verifies that this mode can be presented by the requested global plane. */
 	error = vkGetDisplayPlaneCapabilitiesKHR(
 		(VkPhysicalDevice)mode->display->physical,
@@ -590,6 +598,28 @@ vkCreateDisplayPlaneSurfaceKHR(
 	error = wsi_plane_lookup(mode->display->physical, create_info->planeIndex, &display, &local_plane);
 	if (error != VK_SUCCESS)
 		return error;
+	error = vulkan_wsi_display_snapshot(display, &output);
+	if (error != VK_SUCCESS)
+		return error;
+	cursor = wsi_cursor_plane(&output, local_plane);
+
+	/* Exposes the direct adapter's supported transform and the plane's composition behavior. */
+	if (create_info->transform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR ||
+	    create_info->alphaMode != capabilities.supportedAlpha) {
+		return VK_ERROR_INITIALIZATION_FAILED;
+	}
+
+	/* A cursor image fits the plane's limits; a full plane takes the complete selected mode without scaling. */
+	if (cursor) {
+		if (create_info->imageExtent.width < capabilities.minSrcExtent.width ||
+		    create_info->imageExtent.width > capabilities.maxSrcExtent.width ||
+		    create_info->imageExtent.height < capabilities.minSrcExtent.height ||
+		    create_info->imageExtent.height > capabilities.maxSrcExtent.height)
+			return VK_ERROR_INITIALIZATION_FAILED;
+	} else if (create_info->imageExtent.width != mode->parameters.visibleRegion.width ||
+	    create_info->imageExtent.height != mode->parameters.visibleRegion.height) {
+		return VK_ERROR_INITIALIZATION_FAILED;
+	}
 
 	/* Plane ordering is fixed by the adapter's reported current stack index. */
 	if (create_info->planeStackIndex != local_plane)
@@ -618,6 +648,7 @@ vkCreateDisplayPlaneSurfaceKHR(
 	surface->display_info = *create_info;
 	surface->display_info.pNext = NULL;
 	surface->native_plane = local_plane;
+	surface->cursor = cursor ? VK_TRUE : VK_FALSE;
 	surface->swapchain_references = 0U;
 
 	/* Publishes generic ownership before making the surface discoverable to WSI. */
@@ -1497,4 +1528,16 @@ wsi_display_free(
 
 	/* Succeeded: the instance no longer retains this native display identity. */
 	return;
+}
+
+/* Tells whether a local plane is its output's cursor plane (the last one, when the output has it). */
+static bool
+wsi_cursor_plane(
+	const struct vulkan_wsi_output *output,
+	uint32_t local_plane)
+{
+	/* Only an output with a cursor plane has one, after its ordinary planes. */
+	if ((output->flags & VULKAN_WSI_OUTPUT_CURSOR) == 0U || output->plane_count == 0U)
+		return false;
+	return local_plane == output->plane_count - 1U;
 }

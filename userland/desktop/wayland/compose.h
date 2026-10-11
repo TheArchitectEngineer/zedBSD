@@ -87,6 +87,8 @@ struct kwl_import {
 	VkImage staging;
 	VkDeviceMemory staging_memory;
 	unsigned written;
+	/* Counts the staging's writes (kwl_host_image_written), so that a copy of it can tell it is stale. */
+	uint32_t version;
 	struct kwl_import *host_next;
 	/* A client's image waiting for its move to the general layout in the next frame (ws099-p016). */
 	unsigned layout_pending;
@@ -164,6 +166,38 @@ struct kwl_head {
 	uint32_t global;
 };
 
+/* How many images and acquisitions the cursor plane's swapchain uses at most. */
+#define KWL_CURSOR_PLANE_IMAGES	4U
+
+/*
+ * The output's cursor plane (cursor-plane.c, ws141-p014): a small
+ * VK_KHR_display plane above the output's, with per-pixel premultiplied
+ * alpha, that shows the cursor without composing a frame.  shown says the
+ * plane shows the cursor (the frames draw none); held says which cursor
+ * image (and its version) each swapchain image holds; source, version, x
+ * and y are what was presented last.
+ */
+struct kwl_cursor_plane {
+	unsigned open;
+	unsigned shown;
+	unsigned presented;
+	struct vkdemo_display output;
+	VkCommandBuffer commands[KWL_CURSOR_PLANE_IMAGES];
+	VkFence fences[KWL_CURSOR_PLANE_IMAGES];
+	VkSemaphore acquired[KWL_CURSOR_PLANE_IMAGES + 1U];
+	VkSemaphore ready[KWL_CURSOR_PLANE_IMAGES];
+	unsigned next;
+	unsigned held_valid[KWL_CURSOR_PLANE_IMAGES];
+	const struct kwl_import *held[KWL_CURSOR_PLANE_IMAGES];
+	uint32_t held_version[KWL_CURSOR_PLANE_IMAGES];
+	const struct kwl_import *source;
+	uint32_t version;
+	int32_t x;
+	int32_t y;
+	uint64_t presents;
+	uint64_t copies;
+};
+
 /* How many frames' damage is kept, for images that missed that many frames. */
 #define KWL_DAMAGE_HISTORY	8U
 
@@ -220,6 +254,8 @@ struct kwl_compose {
 	unsigned readback;
 	/* Cursor-free scene is optional and never replaces redraws after scene changes. */
 	struct kwl_scene scene;
+	/* The cursor plane, when the output has one (cursor-plane.c). */
+	struct kwl_cursor_plane cursor_plane;
 	unsigned output_prepared;
 	unsigned output_open;
 	VkFormat format;
@@ -391,6 +427,13 @@ void kwl_import_layouts_done(struct kwl_compose *compose);
 
 /* The image window mode samples for a surface (compose.c). */
 const struct kwl_import *kwl_compose_surface_image(const struct kwl_object *surface);
+
+/* The cursor's image and hotspot: 1 with an image, 0 when nothing shows, -1 when only composing can show it (compose.c). */
+int kwl_compose_cursor_source(struct kwl_server *server, const struct kwl_import **image, int32_t *hotspot_x, int32_t *hotspot_y);
+
+/* The cursor plane's swapchain, made after the output's and destroyed before it (cursor-plane.c). */
+void kwl_cursor_plane_open(struct kwl_server *server);
+void kwl_cursor_plane_close(struct kwl_server *server);
 
 /* The display's acquisition and release through libkeiland-backend (os.c, ws131-p008). */
 VkResult kwl_os_display_acquire(struct kwl_server *server, VkPhysicalDevice physical, VkDisplayKHR display);

@@ -42,6 +42,8 @@ static bool frames_overlap(const struct drv_bcm2711_boot_screen *a, const struct
 static void publish_list(struct bcm2711_display *display, uint32_t list);
 static int wait_adoption(struct bcm2711_display *display);
 static void report_flips(struct bcm2711_display *display, uint64_t clean, uint64_t raise, uint64_t wait);
+static uint32_t cursor_words(const struct bcm2711_display *display, uint32_t *words);
+static void publish_cursor_locked(struct bcm2711_display *display);
 
 /*
  * Initializes persistent IRQ state before installing source callback owners.
@@ -228,6 +230,132 @@ bcm2711_display_flip_compose(
 }
 
 /*
+ * Records the cursor and publishes it over the shown composed frame.
+ *
+ * The list is published without waiting for its adoption; a list already
+ * pending, or a submitter in flight, carries the change in the next list.
+ */
+int
+bcm2711_display_flip_cursor(
+	struct bcm2711_display *display,
+	const struct bcm2711_flip_cursor *cursor)
+{
+	unsigned long enabled;
+
+	/* A shown image is small, unscaled and readable by the HVS below one GiB. */
+	if (!display->flip.initialized)
+		return ENODEV;
+	if (cursor->shown) {
+		if (cursor->width == 0 || cursor->width > 64U || cursor->height == 0 || cursor->height > 64U)
+			return EINVAL;
+		if (cursor->format > 1U || cursor->pitch < cursor->width * 4U || (cursor->pitch & 3U) != 0)
+			return EINVAL;
+		if (cursor->physical == 0 || (cursor->physical & 3U) != 0)
+			return EINVAL;
+		if ((uint64_t)cursor->physical + (uint64_t)cursor->pitch * cursor->height > 0x40000000ULL)
+			return EINVAL;
+	}
+
+	/* The newest cursor replaces any change not yet in a list. */
+	enabled = spin_lock_irqsave(&display->flip.guard);
+
+	/* A change of a cursor hidden before and after shows nothing new. */
+	if (cursor->shown || display->flip.cursor.shown)
+		display->flip.cursor_dirty = true;
+	display->flip.cursor = *cursor;
+	publish_cursor_locked(display);
+
+	spin_unlock_irqrestore(&display->flip.guard, enabled);
+
+	/* Succeeded: the cursor shows from a coming refresh boundary. */
+	return 0;
+}
+
+/*
+ * Tells whether a cursor image may be read by the HVS or by a coming list.
+ *
+ * It is named while a retained list shows it or while the recorded cursor
+ * (published or not) uses it; any other image may be rewritten at once.
+ */
+bool
+bcm2711_display_flip_cursor_named(
+	struct bcm2711_display *display,
+	uint32_t physical)
+{
+	unsigned long enabled;
+	uint32_t slot;
+	bool named;
+
+	/* Nothing names an image before the guard exists. */
+	if (!display->flip.initialized)
+		return false;
+
+	/* Retained lists and the recorded cursor are read together. */
+	enabled = spin_lock_irqsave(&display->flip.guard);
+
+	named = display->flip.cursor.physical == physical;
+	for (slot = 0; slot < BCM2711_FLIP_SLOTS; slot++) {
+		/* Only a list the HVS may still fetch keeps its image. */
+		if ((display->flip.retained_mask & (1U << slot)) != 0 && display->flip.cursor_images[slot] == physical)
+			named = true;
+	}
+
+	spin_unlock_irqrestore(&display->flip.guard, enabled);
+
+	/* Succeeded: the answer holds while the caller excludes other cursor changes. */
+	return named;
+}
+
+/*
+ * Waits until no published list is pending, so that both slots' contents are known.
+ *
+ * The caller holds the display's mutex, so no submitter or cursor change
+ * publishes meanwhile; a list adopted now publishes no other unless the
+ * cursor changed while it was pending.
+ */
+int
+bcm2711_display_flip_settle(
+	struct bcm2711_display *display)
+{
+	unsigned long enabled;
+	uint32_t waited;
+	int error;
+
+	/* Nothing to wait for before the guard exists. */
+	if (!display->flip.initialized)
+		return 0;
+
+	/* Polls adoption like a submitter, bounded the same way. */
+	waited = 0;
+	for (;;) {
+		/* Samples the pending list with the IRQ observer excluded. */
+		enabled = spin_lock_irqsave(&display->flip.guard);
+
+		error = 0;
+		if (display->flip.pending_list == FLIP_NO_LIST || display->flip.uncertain) {
+			/* Settled, or left to recovery. */
+		} else if (waited >= 100000U) {
+			/* Both lists stay retained if adoption arrives later. */
+			display->flip.uncertain = true;
+			error = ETIMEDOUT;
+		} else {
+			error = EAGAIN;
+		}
+
+		spin_unlock_irqrestore(&display->flip.guard, enabled);
+
+		/* Leaves once settled or out of time. */
+		if (error != EAGAIN)
+			break;
+		kern_usleep_range(10, 10);
+		waited += 10;
+	}
+
+	/* Succeeded or timed out: no list is left pending without uncertainty. */
+	return error;
+}
+
+/*
  * Restores the retained boot console without changing mode or routing.
  * A fresh matching PV interrupt is required even after a late uncertain flip.
  */
@@ -382,6 +510,9 @@ bcm2711_display_flip_vblank_locked(
 	kern_mmio_write32(display->compositor.mapped, control | 0x200U);
 	display->flip.completed = true;
 
+	/* A cursor change made while this list was pending goes into the next one. */
+	publish_cursor_locked(display);
+
 	/* Succeeded: the adopted list has one completed sequence visible to waiters. */
 	return;
 }
@@ -399,6 +530,8 @@ submit_frame(
 	uint32_t index;
 	uint32_t list;
 	uint32_t required;
+	uint32_t cursor[8];
+	uint32_t extra;
 	uint64_t load;
 	unsigned long enabled;
 	bool overlap;
@@ -444,8 +577,8 @@ submit_frame(
 		return ENODEV;
 	}
 
-	/* An existing operation or uncertain DMA requires admission refusal. */
-	if (display->flip.busy || display->flip.uncertain) {
+	/* An existing operation, a pending cursor list or uncertain DMA requires admission refusal. */
+	if (display->flip.busy || display->flip.uncertain || display->flip.pending_list != FLIP_NO_LIST) {
 		spin_unlock_irqrestore(&display->flip.guard, enabled);
 		return EBUSY;
 	}
@@ -511,10 +644,28 @@ submit_frame(
 	list = FLIP_FIRST_LIST + slot * FLIP_LIST_STRIDE;
 	if (composed)
 		list = FLIP_COMPOSE_FIRST + slot * FLIP_COMPOSE_STRIDE;
-	for (index = 0; index < count; index++) {
+	for (index = 0; index + 1U < count; index++) {
 		/* Context placeholders are fresh even when this retired slot is reused. */
 		kern_mmio_write32(display->compositor.mapped + 0x4000U + (list + index) * 4U, words[index]);
 	}
+
+	/* A composed list keeps its planes for cursor changes and carries the cursor above them. */
+	display->flip.composed[slot] = false;
+	display->flip.cursor_images[slot] = 0;
+	if (composed && count == FLIP_COMPOSE_WORDS) {
+		kern_memcpy(display->flip.base_words[slot], words, sizeof(display->flip.base_words[slot]));
+		display->flip.composed[slot] = true;
+		extra = cursor_words(display, cursor);
+		for (index = 0; index < extra; index++)
+			kern_mmio_write32(display->compositor.mapped + 0x4000U + (list + count - 1U + index) * 4U, cursor[index]);
+		if (extra != 0)
+			display->flip.cursor_images[slot] = display->flip.cursor.physical;
+		display->flip.cursor_dirty = false;
+		count += extra;
+	}
+
+	/* The terminator follows every plane. */
+	kern_mmio_write32(display->compositor.mapped + 0x4000U + (list + count - 1U) * 4U, 0x80000000U);
 
 	/* Retains the candidate before hardware can fetch its newly published list. */
 	display->flip.frames[slot] = *frame;
@@ -641,6 +792,9 @@ finish_adoption(
 	if (error == 0)
 		display->flip.core_hz = required;
 	display->flip.busy = false;
+
+	/* A cursor change made while the submitter was busy goes into a list of its own. */
+	publish_cursor_locked(display);
 
 	spin_unlock_irqrestore(&display->flip.guard, enabled);
 
@@ -914,4 +1068,137 @@ report_flips(
 	display->flip.perf_raise = 0;
 	display->flip.perf_wait = 0;
 	display->flip.perf_finish = 0;
+}
+
+/*
+ * Encodes the cursor plane clipped to the output, returning its word count (0 when nothing shows).
+ *
+ * The plane is unscaled with per-pixel premultiplied alpha, like the
+ * composed upper plane; clipping at the left and top moves the start of the
+ * image rather than the plane.
+ */
+static uint32_t
+cursor_words(
+	const struct bcm2711_display *display,
+	uint32_t *words)
+{
+	const struct bcm2711_flip_cursor *cursor;
+	int64_t x;
+	int64_t y;
+	int64_t width;
+	int64_t height;
+	uint32_t offset;
+	uint32_t order;
+
+	/* A hidden cursor adds no plane. */
+	cursor = &display->flip.cursor;
+	if (!cursor->shown)
+		return 0;
+	x = cursor->x;
+	y = cursor->y;
+	width = cursor->width;
+	height = cursor->height;
+	offset = 0;
+
+	/* Columns left of the output and rows above it are skipped in the image. */
+	if (x < 0) {
+		if (-x >= width)
+			return 0;
+		offset += (uint32_t)(-x) * 4U;
+		width += x;
+		x = 0;
+	}
+	if (y < 0) {
+		if (-y >= height)
+			return 0;
+		offset += (uint32_t)(-y) * cursor->pitch;
+		height += y;
+		y = 0;
+	}
+
+	/* Columns and rows beyond the right and bottom are cut off. */
+	if (x >= display->screen.width || y >= display->screen.height)
+		return 0;
+	if (x + width > display->screen.width)
+		width = display->screen.width - x;
+	if (y + height > display->screen.height)
+		height = display->screen.height - y;
+
+	/* The same eight words as a frame plane, at its position and with per-pixel alpha. */
+	order = 2;
+	if (cursor->format == 1)
+		order = 3;
+	words[0] = 0x48009807U | (order << 13);
+	words[1] = ((uint32_t)y << 16) | (uint32_t)x;
+	words[2] = 0x2000fff0U;
+	words[3] = ((uint32_t)height << 16) | (uint32_t)width;
+	words[4] = 0xc0c0c0c0U;
+	words[5] = 0xc0000000U | (cursor->physical + offset);
+	words[6] = 0xc0c0c0c0U;
+	words[7] = cursor->pitch;
+
+	/* Succeeded: one plane follows the frame's. */
+	return 8;
+}
+
+/*
+ * Publishes the shown composed frame again with the changed cursor, in the other slot, without waiting.
+ *
+ * Called with the guard held, by a cursor change, after an adoption and
+ * when a submitter finishes.  Nothing is published while a list is pending,
+ * a submitter is in flight, adoption is uncertain or no composed frame is
+ * shown; the change stays recorded for the next chance or the next frame.
+ */
+static void
+publish_cursor_locked(
+	struct bcm2711_display *display)
+{
+	uint32_t cursor[8];
+	uint32_t active;
+	uint32_t slot;
+	uint32_t list;
+	uint32_t count;
+	uint32_t index;
+
+	/* Only a quiet, attached pipeline takes a list of its own. */
+	if (!display->flip.cursor_dirty ||
+	    !display->flip.attached ||
+	    display->flip.busy ||
+	    display->flip.uncertain ||
+	    display->flip.pending_list != FLIP_NO_LIST)
+		return;
+
+	/* The shown list must be a composed one whose planes are known. */
+	if (display->flip.active_list < FLIP_COMPOSE_FIRST ||
+	    display->flip.active_list >= FLIP_COMPOSE_FIRST + BCM2711_FLIP_SLOTS * FLIP_COMPOSE_STRIDE)
+		return;
+	active = (display->flip.active_list - FLIP_COMPOSE_FIRST) / FLIP_COMPOSE_STRIDE;
+	if (!display->flip.composed[active])
+		return;
+	slot = 1U - active;
+	if ((display->flip.retained_mask & (1U << slot)) != 0)
+		return;
+	if (check_pipeline(display, false) != 0)
+		return;
+
+	/* The shown planes, the cursor and the terminator, in the free slot. */
+	list = FLIP_COMPOSE_FIRST + slot * FLIP_COMPOSE_STRIDE;
+	for (index = 0; index < 16U; index++)
+		kern_mmio_write32(display->compositor.mapped + 0x4000U + (list + index) * 4U, display->flip.base_words[active][index]);
+	count = cursor_words(display, cursor);
+	for (index = 0; index < count; index++)
+		kern_mmio_write32(display->compositor.mapped + 0x4000U + (list + 16U + index) * 4U, cursor[index]);
+	kern_mmio_write32(display->compositor.mapped + 0x4000U + (list + 16U + count) * 4U, 0x80000000U);
+
+	/* The free slot shows the same frame, which stays retained through it. */
+	kern_memcpy(display->flip.base_words[slot], display->flip.base_words[active], sizeof(display->flip.base_words[slot]));
+	display->flip.composed[slot] = true;
+	display->flip.cursor_images[slot] = 0;
+	if (count != 0)
+		display->flip.cursor_images[slot] = display->flip.cursor.physical;
+	display->flip.frames[slot] = display->flip.frames[active];
+	display->flip.retained_mask |= 1U << slot;
+	display->flip.cursor_dirty = false;
+	display->flip.cursor_lists++;
+	publish_list(display, list);
 }

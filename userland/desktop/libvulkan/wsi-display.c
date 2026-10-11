@@ -72,6 +72,10 @@ struct wsi_display_lease {
 	uint64_t storage_bytes;
 	struct gpu_scanout_constraints constraints;
 	uint32_t references;
+	/* A cursor-plane lease borrows its output's primary claim; x and y place its next image. */
+	VkBool32 cursor;
+	int32_t x;
+	int32_t y;
 };
 
 /* Live planes are linked under display_mutex until their last surface lease retires. */
@@ -107,6 +111,8 @@ static VkResult display_wait_native(void *private_lease, uint64_t sequence, uint
 static VkResult display_error(int error);
 static VkResult display_placement(void *private_lease, struct gpu_placement *placement);
 static VkResult display_validate_surface(struct vulkan_surface *surface, struct VkPhysicalDevice_T *physical);
+static VkResult display_present_cursor(struct wsi_display_lease *lease, struct wsi_display_image *image, uint64_t *sequence);
+static void display_position(void *private_lease, int32_t x, int32_t y);
 
 /* Future window-system adapters implement this same private presentation boundary. */
 const struct vulkan_wsi_platform_ops vulkan_wsi_display_platform = {
@@ -114,7 +120,7 @@ const struct vulkan_wsi_platform_ops vulkan_wsi_display_platform = {
 	display_claim_native, display_release_native, display_present_native,
 	display_wait_native, NULL, display_import_image, display_present_image,
 	display_progress, display_image_available, display_destroy_image, display_prepare_copy, display_present_image_sync, display_placement, display_wait_descriptor,
-	NULL, NULL, NULL
+	NULL, NULL, NULL, display_position
 };
 
 /*
@@ -174,6 +180,12 @@ vulkan_wsi_display_query(
 	/* Marks the plane active only when the native engine currently owns a displayed image. */
 	if ((request.flags & GPU_DISPLAY_ACTIVE) != 0U)
 		output->flags |= VULKAN_WSI_OUTPUT_ACTIVE;
+
+	/* A cursor plane follows the output's ordinary planes, on top of them. */
+	if ((request.flags & GPU_DISPLAY_HAS_CURSOR) != 0U && output->plane_count != 0U && output->plane_count < UINT32_MAX) {
+		output->flags |= VULKAN_WSI_OUTPUT_CURSOR;
+		output->plane_count++;
+	}
 
 	/* Includes the red-first packed format supported by native presentation. */
 	if ((request.formats & GPU_DISPLAY_FORMAT_RGBA8888) != 0U)
@@ -640,15 +652,24 @@ display_claim_native(
 	/* Independent surfaces on the same device may share a native display plane. */
 	plane = display_planes;
 
-	/* Finds existing ownership of the same device display plane before claiming it again. */
+	/* Finds existing ownership of the same device display plane before claiming it again; a cursor plane borrows the first plane's. */
 	while (plane != NULL) {
 		/* Node identity keeps equal local display identifiers in separate ownership domains. */
 		if (plane->device == device &&
 		    plane->display == output.identifier &&
 		    plane->connection->device_identifier == output.device_identifier &&
-		    plane->plane == surface->native_plane)
+		    (plane->plane == surface->native_plane || (surface->cursor != VK_FALSE && plane->plane == 0U)))
 			break;
 		plane = plane->next;
+	}
+
+	/* The cursor plane has no claim of its own: the output's first plane must be claimed by this device. */
+	if (surface->cursor != VK_FALSE && plane == NULL) {
+		pthread_mutex_unlock(&display_mutex);
+		vulkan_free(&device->object.allocator, new_plane);
+		vulkan_free(&device->object.allocator, new_connection);
+		vulkan_free(&surface->object.allocator, candidate);
+		return VK_ERROR_INITIALIZATION_FAILED;
 	}
 
 	/* Shares the existing native claim between independent surface descriptions. */
@@ -762,6 +783,7 @@ display_claim_native(
 	candidate->generation = surface->display_mode->generation;
 	candidate->constraints = constraints;
 	candidate->references = 1U;
+	candidate->cursor = surface->cursor;
 	surface->platform_private = candidate;
 	*result = candidate;
 
@@ -784,6 +806,7 @@ display_release_native(
 	struct wsi_display_plane **link;
 	struct wsi_display_connection *retired_connection;
 	struct gpu_display_release request;
+	struct gpu_display_cursor_hide hide;
 	struct gpu_resource_destroy destroy;
 	struct vulkan_allocator allocator;
 	VkBool32 final_plane;
@@ -817,6 +840,18 @@ display_release_native(
 	/* Recognizes the final surface release which must retire native plane ownership. */
 	if (plane->references == 0U)
 		final_plane = VK_TRUE;
+
+	/* A cursor goes with its surface; the primary claim it borrowed may stay. */
+	if (lease->cursor != VK_FALSE && final_plane == VK_FALSE) {
+		memset(&hide, 0, sizeof(hide));
+		hide.version = GPU_ABI_VERSION;
+		hide.size = sizeof(hide);
+		hide.lease = plane->identifier;
+		hide.generation = lease->generation;
+		status = ioctl(plane->connection->fd, GPU_DISPLAY_CURSOR_HIDE, &hide);
+		if (status != 0 && errno != ESTALE)
+			error = display_error(errno);
+	}
 
 	/* Copied storage belongs to this surface lease and is idle after its final accepted job drained. */
 	if (lease->storage != 0U) {
@@ -1017,6 +1052,14 @@ display_present_image_sync(
 	image = private_image;
 	if (image->connection != lease->plane->connection)
 		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* A cursor plane takes a copy of the image and a position, after the producer completed (the worker waited). */
+	if (lease->cursor != VK_FALSE) {
+		(void)wait_fd;
+		(void)wait_generation;
+		error = display_present_cursor(lease, image, sequence);
+		return error;
+	}
 
 	/* No caller pixel pointer or transfer ioctl participates in normal presentation. */
 	descriptor = &image->imported.image;
@@ -1394,6 +1437,12 @@ display_present_native(
 
 	/* A native lease serializes storage replacement with every presentation. */
 	lease = private_lease;
+
+	/* A cursor plane takes only shared images, which the kernel copies; it has no copied-pixel route. */
+	if (lease->cursor != VK_FALSE)
+		return VK_ERROR_FEATURE_NOT_PRESENT;
+
+	/* The copied frame's size, against the storage prepared for it. */
 	bytes = (uint64_t)pixels->stride * pixels->extent.height;
 	pthread_mutex_lock(&display_mutex);
 
@@ -1688,4 +1737,89 @@ display_progress(
 
 	/* Succeeded: this open no longer repeatedly wakes for the acknowledged inventory. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Shows a completed image on the output's cursor plane at the lease's position.
+ *
+ * The kernel copies the image at once, so the plane keeps no hold on it and
+ * the swapchain may reuse it as soon as this returns.
+ */
+static VkResult
+display_present_cursor(
+	struct wsi_display_lease *lease,
+	struct wsi_display_image *image,
+	uint64_t *sequence)
+{
+	struct gpu_display_cursor_image request;
+	struct gpu_display_cursor_move move;
+	const struct gpu_image_descriptor *descriptor;
+	VkResult error;
+	int status;
+
+	/* The image, as the display open imported it. */
+	descriptor = &image->imported.image;
+	memset(&request, 0, sizeof(request));
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	request.lease = lease->identifier;
+	request.handle = image->imported.handle;
+	request.offset = descriptor->offset;
+	request.width = descriptor->width;
+	request.height = descriptor->height;
+	request.stride = descriptor->stride;
+	request.format = descriptor->format;
+	request.generation = lease->generation;
+
+	/* Its position, taken under the same serialization as the image. */
+	memset(&move, 0, sizeof(move));
+	move.version = GPU_ABI_VERSION;
+	move.size = sizeof(move);
+	move.lease = lease->identifier;
+	move.generation = lease->generation;
+	pthread_mutex_lock(&display_mutex);
+
+	move.x = lease->x;
+	move.y = lease->y;
+
+	/* The image first, then the position that shows it. */
+	status = ioctl(lease->plane->connection->fd, GPU_DISPLAY_CURSOR_SET, &request);
+	if (status == 0)
+		status = ioctl(lease->plane->connection->fd, GPU_DISPLAY_CURSOR_MOVE, &move);
+	if (status != 0) {
+		error = display_error(errno);
+		pthread_mutex_unlock(&display_mutex);
+		return error;
+	}
+
+	/* The plane's frames are counted by its primary presents; the cursor adds none. */
+	*sequence = lease->plane->frame;
+
+	pthread_mutex_unlock(&display_mutex);
+
+	/* Succeeded: the cursor shows from a coming refresh boundary. */
+	return VK_SUCCESS;
+}
+
+/* Records where a cursor-plane lease places its next image (the present's dstRect). */
+static void
+display_position(
+	void *private_lease,
+	int32_t x,
+	int32_t y)
+{
+	struct wsi_display_lease *lease;
+
+	/* Only a cursor plane is placed; a full-output plane ignores it. */
+	lease = private_lease;
+	if (lease->cursor == VK_FALSE)
+		return;
+
+	/* Read by the next present under the same lock. */
+	pthread_mutex_lock(&display_mutex);
+
+	lease->x = x;
+	lease->y = y;
+
+	pthread_mutex_unlock(&display_mutex);
 }

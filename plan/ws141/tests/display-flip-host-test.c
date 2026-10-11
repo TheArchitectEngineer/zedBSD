@@ -48,6 +48,7 @@ static void setup(uint32_t port, uint32_t format);
 static void deliver(uint32_t port, uint32_t current);
 static void normal_flips(uint32_t port, uint32_t format);
 static void uncertain_flips(void);
+static void cursor_flips(void);
 
 /*
  * Checks publication, adoption and retained-buffer lifetime through real code.
@@ -66,6 +67,7 @@ main(
 	normal_flips(0, 0);
 	normal_flips(1, 1);
 	uncertain_flips();
+	cursor_flips();
 
 	/* Rejects invalid DMA geometry before any hardware publication. */
 	setup(0, 0);
@@ -189,7 +191,14 @@ kern_mmio_write32(
 		check(test_display.flip.pending_list == word, "completion armed before pointer");
 		check(test_cleaned != 0 && test_barriers >= 2, "cache/barrier before publication");
 		check(test_pv[test_display.port][0x28 / 4] == 0, "stale PV status discarded");
-		if (word != 43) {
+		if (word == 128 || word == 160) {
+			/* A composed list: console and frame planes, then the cursor plane or the terminator. */
+			check(test_hvs[0x30 / 4] != word, "active composed list never overwritten");
+			list = &test_hvs[0x4000 / 4 + word];
+			check(list[5] == (0xc0000000U | (uint32_t)test_display.screen.physical), "console plane first");
+			check(list[16] == 0x80000000U || ((list[16] & ~0x6000U) == 0x48009807U && list[18] == 0x2000fff0U && list[24] == 0x80000000U),
+			      "cursor plane with per-pixel alpha, then END");
+		} else if (word != 43) {
 			/* Context words and terminator must already exist in the inactive slot. */
 			check(word == 64 || word == 80, "dedicated SRAM slot");
 			check(test_hvs[0x30 / 4] != word, "active list never overwritten");
@@ -517,4 +526,80 @@ kern_logf(
 	...)
 {
 	(void)format;
+}
+
+/* Exercises cursor lists over a composed frame: published without waiting, coalesced while pending, clipped and hidden. */
+static void
+cursor_flips(
+	void)
+{
+	struct bcm2711_flip_status status;
+	struct bcm2711_flip_cursor cursor;
+	uint32_t *list;
+	int error;
+
+	/* One composed frame is shown from the first composed slot. */
+	setup(0, 0);
+	error = bcm2711_display_flip_attach(&test_display);
+	check(error == 0, "attach cursor scenario");
+	test_ticks = 0;
+	error = bcm2711_display_flip_compose(&test_display, &test_frames[0], 0, 0, false);
+	check(error == 0 && test_display.flip.active_list == 128 && test_display.flip.composed[0], "composed frame shown");
+
+	/* A shown cursor republishes the frame with it in the other slot, without waiting. */
+	memset(&cursor, 0, sizeof(cursor));
+	cursor.shown = true;
+	cursor.physical = 0x05000000U;
+	cursor.width = 64;
+	cursor.height = 64;
+	cursor.pitch = 256;
+	cursor.x = 100;
+	cursor.y = 200;
+	error = bcm2711_display_flip_cursor(&test_display, &cursor);
+	list = &test_hvs[0x4000 / 4 + 160];
+	check(error == 0 && test_display.flip.pending_list == 160, "cursor list pending at once");
+	check(memcmp(list, &test_hvs[0x4000 / 4 + 128], 16U * 4U) == 0, "same console and frame planes");
+	check(list[17] == ((200U << 16) | 100U) && list[19] == ((64U << 16) | 64U), "cursor position and size");
+	check(list[21] == (0xc0000000U | 0x05000000U) && list[23] == 256U && list[24] == 0x80000000U, "cursor image and END");
+	bcm2711_display_flip_snapshot(&test_display, &status);
+	check(status.retained_mask == 3U && status.frames[1].physical == test_frames[0].physical, "both slots retain the frame");
+
+	/* A move while that list is pending waits for its adoption, then goes out clipped. */
+	cursor.x = -10;
+	cursor.y = -5;
+	error = bcm2711_display_flip_cursor(&test_display, &cursor);
+	check(error == 0 && test_display.flip.pending_list == 160 && test_display.flip.cursor_dirty, "move coalesced while pending");
+	deliver(0, 160);
+	list = &test_hvs[0x4000 / 4 + 128];
+	check(test_display.flip.active_list == 160 && test_display.flip.pending_list == 128, "next cursor list at adoption");
+	check(list[17] == 0U && list[19] == ((59U << 16) | 54U), "clipped at the top-left");
+	check(list[21] == (0xc0000000U | (0x05000000U + 5U * 256U + 10U * 4U)), "clipped image start");
+
+	/* Settling waits for the pending list; a hidden cursor leaves the frame alone on top. */
+	test_ticks = 2;
+	error = bcm2711_display_flip_settle(&test_display);
+	check(error == 0 && test_display.flip.pending_list == 4096U && test_display.flip.active_list == 128, "settled");
+	cursor.shown = false;
+	error = bcm2711_display_flip_cursor(&test_display, &cursor);
+	check(error == 0 && test_display.flip.pending_list == 160 && test_hvs[0x4000 / 4 + 160 + 16] == 0x80000000U, "hidden cursor list");
+
+	/* A frame is refused while a cursor list is pending, and taken once it is settled. */
+	error = bcm2711_display_flip_compose(&test_display, &test_frames[1], 0, 0, false);
+	check(error == EBUSY, "frame waits for the pending cursor list");
+	test_ticks = 2;
+	error = bcm2711_display_flip_settle(&test_display);
+	check(error == 0, "settled before the frame");
+	test_ticks = 0;
+	error = bcm2711_display_flip_compose(&test_display, &test_frames[1], 0, 0, false);
+	check(error == 0 && test_display.flip.active_list == 128, "next frame after the cursor list");
+
+	/* A cursor wholly off the output adds no plane; a bad image is refused. */
+	cursor.shown = true;
+	cursor.x = 1920;
+	cursor.y = 0;
+	error = bcm2711_display_flip_cursor(&test_display, &cursor);
+	check(error == 0 && test_hvs[0x4000 / 4 + 160 + 16] == 0x80000000U, "off-output cursor adds no plane");
+	cursor.width = 65;
+	error = bcm2711_display_flip_cursor(&test_display, &cursor);
+	check(error == EINVAL, "cursor larger than 64 refused");
 }

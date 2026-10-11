@@ -18,6 +18,23 @@
 /* Two private SRAM lists alternate while the boot console list stays intact. */
 #define BCM2711_FLIP_SLOTS 2U
 
+/*
+ * The cursor plane drawn above a composed frame: an unscaled image of at most
+ * 64x64 pixels with premultiplied alpha, in contiguous RAM below one GiB that
+ * stays unchanged while a list names it.  x and y place its top-left corner
+ * and may lie partly outside the output, which clips it.
+ */
+struct bcm2711_flip_cursor {
+	bool shown;
+	uint32_t physical;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pitch;
+	uint32_t format;
+	int32_t x;
+	int32_t y;
+};
+
 /* One display owns this state until shutdown; guard protects IRQ and callers. */
 struct bcm2711_flip_state {
 	struct spinlock guard;
@@ -33,6 +50,19 @@ struct bcm2711_flip_state {
 	uint32_t core_hz;
 	int clock_error;
 	struct drv_bcm2711_boot_screen frames[BCM2711_FLIP_SLOTS];
+	/*
+	 * The planes of each slot's composed list before the cursor (console and
+	 * frame), so that a cursor change republishes the shown frame with the
+	 * cursor in the other slot; composed[slot] says the slot has them.
+	 * cursor_dirty says the cursor changed since the last list was written.
+	 */
+	uint32_t base_words[BCM2711_FLIP_SLOTS][16];
+	bool composed[BCM2711_FLIP_SLOTS];
+	/* The cursor image each slot's list shows, 0 for none. */
+	uint32_t cursor_images[BCM2711_FLIP_SLOTS];
+	struct bcm2711_flip_cursor cursor;
+	bool cursor_dirty;
+	uint64_t cursor_lists;
 	/* Diagnostic flip-stage tick totals of one reporting window, written only by the BUSY owner. */
 	uint64_t perf_start;
 	uint64_t perf_flips;
@@ -78,6 +108,20 @@ int bcm2711_display_flip_present(struct bcm2711_display *display, const struct d
 
 /* Composes an unscaled upper plane over the console, with optional premultiplied alpha. */
 int bcm2711_display_flip_compose(struct bcm2711_display *display, const struct drv_bcm2711_boot_screen *frame, uint32_t x, uint32_t y, bool premultiplied);
+
+/*
+ * Records the cursor and shows it from the next refresh boundary without
+ * waiting: over the shown composed frame now when no list is pending, or in
+ * the next list otherwise.  The image must stay unchanged until a list
+ * without it is adopted (bcm2711_display_flip_settle after the change).
+ */
+int bcm2711_display_flip_cursor(struct bcm2711_display *display, const struct bcm2711_flip_cursor *cursor);
+
+/* Tells whether a retained list or the recorded cursor names a cursor image, which must then stay unchanged. */
+bool bcm2711_display_flip_cursor_named(struct bcm2711_display *display, uint32_t physical);
+
+/* Waits until no published list is pending; the caller excludes other publishers. */
+int bcm2711_display_flip_settle(struct bcm2711_display *display);
 
 /* Only confirmed boot-console adoption releases buffers after uncertain DMA. */
 int bcm2711_display_flip_restore(struct bcm2711_display *display);

@@ -396,6 +396,9 @@ kwl_compose_output_open(
 	kwl_heads_config_load(server);
 	compose->heads_stale = 1U;
 
+	/* The cursor plane, when the output has one (it borrows the output's claim). */
+	kwl_cursor_plane_open(server);
+
 	/* Succeeded: window mode owns the display through the swapchain. */
 	compose->output_open = 1;
 	server->dirty = 1;
@@ -429,8 +432,9 @@ kwl_compose_output_close(
 	/* No frame may still use the swapchain's images. */
 	(void)vkDeviceWaitIdle(compose->device);
 
-	/* The heads go with the output (ws113-p004b). */
+	/* The heads go with the output (ws113-p004b), and the cursor plane before it. */
 	kwl_heads_close_all(server);
+	kwl_cursor_plane_close(server);
 
 	/* The backdrop, the targets, then the swapchain and surface. */
 	kwl_scene_close(&compose->scene, compose->device);
@@ -2448,6 +2452,10 @@ compose_cursor(
 	if (server->pointer_unmoved)
 		return;
 
+	/* The cursor plane shows the cursor without the frame (cursor-plane.c). */
+	if (server->compose->cursor_plane.shown)
+		return;
+
 	/* A client's cursor only over its own window (BUG-118): elsewhere the frame's arrow or the compositor's. */
 	shown = kwl_cursor_client_shown(server);
 	if (!shown) {
@@ -2500,6 +2508,87 @@ compose_cursor(
 	/* Otherwise the arrow, its tip at the pointer. */
 	if (server->arrow != NULL)
 		compose_quad(server, command, server->arrow, server->pointer_x, server->pointer_y);
+}
+
+/*
+ * Tells which image shows the cursor and where its hotspot is, as compose_cursor draws it.
+ *
+ * Returns 1 with the image, 0 when no cursor shows (unmoved, hidden, a
+ * cursor surface without an image) and -1 for a drag, whose icon and marks
+ * only composing draws.
+ */
+int
+kwl_compose_cursor_source(
+	struct kwl_server *server,
+	const struct kwl_import **image,
+	int32_t *hotspot_x,
+	int32_t *hotspot_y)
+{
+	const struct kwl_import *found;
+	struct kwl_object *surface;
+	int shown;
+
+	/* Nothing found yet. */
+	*image = NULL;
+	*hotspot_x = 0;
+	*hotspot_y = 0;
+
+	/* A drag's icon and marks are composed with the cursor. */
+	if (server->dnd_active)
+		return -1;
+
+	/* A cursor that has not moved since the start shows nothing. */
+	if (server->pointer_unmoved)
+		return 0;
+
+	/* Away from the client's window: the frame's arrow or the compositor's. */
+	shown = kwl_cursor_client_shown(server);
+	if (!shown) {
+		if (server->frame_edges != 0U) {
+			found = kwl_cursor_image(server, hotspot_x, hotspot_y);
+			if (found != NULL) {
+				*image = found;
+				return 1;
+			}
+		}
+		*hotspot_x = 0;
+		*hotspot_y = 0;
+		*image = server->arrow;
+		return server->arrow != NULL ? 1 : 0;
+	}
+
+	/* A hidden cursor shows nothing. */
+	if (server->cursor_hidden)
+		return 0;
+
+	/* A window frame's resize arrow, over the client's own cursor. */
+	if (server->frame_edges != 0U) {
+		found = kwl_cursor_image(server, hotspot_x, hotspot_y);
+		if (found != NULL) {
+			*image = found;
+			return 1;
+		}
+	}
+
+	/* The client's surface, when it has an image. */
+	surface = server->cursor_surface;
+	if (surface != NULL && !surface->dead) {
+		*image = surface_image(surface);
+		*hotspot_x = server->cursor_hotspot_x;
+		*hotspot_y = server->cursor_hotspot_y;
+		return *image != NULL ? 1 : 0;
+	}
+
+	/* A shape the client asked for, else the arrow. */
+	found = kwl_cursor_image(server, hotspot_x, hotspot_y);
+	if (found != NULL) {
+		*image = found;
+		return 1;
+	}
+	*hotspot_x = 0;
+	*hotspot_y = 0;
+	*image = server->arrow;
+	return server->arrow != NULL ? 1 : 0;
 }
 
 /* Submits the frame, presents it, and exports its fence as the fd the event loop polls. */

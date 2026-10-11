@@ -30,6 +30,7 @@
 #define GPU_DISPLAY_POWERED_OFF		128U
 #define GPU_DISPLAY_REFRESH_COUNTER	256U
 #define GPU_DISPLAY_LIMITED		512U
+#define GPU_DISPLAY_HAS_CURSOR		1024U
 #define GPU_DISPLAY_FORMAT_BGRA8888	1U
 #define GPU_DISPLAY_FORMAT_RGBA8888	2U
 #define GPU_DISPLAY_MODE_ENUMERATE	0U
@@ -40,6 +41,7 @@
 #define GPU_DISPLAY_POWER_ON		0U
 #define GPU_DISPLAY_POWER_OFF		1U
 #define GPU_DISPLAY_POWER_SUSPEND	2U
+#define GPU_DISPLAY_CURSOR_MAX		64U
 
 #define GPU_DISPLAY_QUERY		_IOWR('G', 24, struct gpu_display_info)
 #define GPU_DISPLAY_MODE		_IOWR('G', 25, struct gpu_display_mode)
@@ -50,6 +52,9 @@
 #define GPU_DISPLAY_EVENTS		_IOWR('G', 32, struct gpu_display_events)
 #define GPU_DISPLAY_POWER		_IOW('G', 39, struct gpu_display_power)
 #define GPU_DISPLAY_REFRESH		_IOWR('G', 40, struct gpu_display_refresh)
+#define GPU_DISPLAY_CURSOR_SET		_IOW('G', 41, struct gpu_display_cursor_image)
+#define GPU_DISPLAY_CURSOR_MOVE		_IOW('G', 42, struct gpu_display_cursor_move)
+#define GPU_DISPLAY_CURSOR_HIDE		_IOW('G', 43, struct gpu_display_cursor_hide)
 
 /*
  * One non-destructive display-change snapshot, with an optional exact acknowledgement.
@@ -78,7 +83,9 @@ struct gpu_display_events {
  * the output, POWERED_OFF that its lease holder powered it off, and
  * REFRESH_COUNTER that GPU_DISPLAY_REFRESH reports its refresh boundaries.
  * LIMITED marks a connected output that cannot be lit now because of the
- * limit of outputs shown at once (its claim answers ENOSPC).
+ * limit of outputs shown at once (its claim answers ENOSPC).  HAS_CURSOR
+ * says the output has a cursor plane: GPU_DISPLAY_CURSOR_SET, MOVE and HIDE
+ * work on its primary lease.
  */
 struct gpu_display_info {
 	uint32_t version;
@@ -225,6 +232,61 @@ struct gpu_display_refresh {
 	uint64_t timeout_ns;
 	uint64_t sequence;
 	uint64_t time_ns;
+};
+
+/*
+ * Sets the cursor image of the output this open leases (its primary plane's
+ * lease), copied at once from session storage: width and height 1 to
+ * GPU_DISPLAY_CURSOR_MAX, stride at least width * 4 and a multiple of 4,
+ * format GPU_PIXEL_BGRA8888 or GPU_PIXEL_RGBA8888 with premultiplied alpha.
+ * The storage is not borrowed after the call.  A shown cursor shows the new
+ * image from the next refresh boundary; a hidden one stays hidden until
+ * GPU_DISPLAY_CURSOR_MOVE.  Every field is an input; reserved fields are zero.
+ * It needs a writable open: EBUSY when the lease is not this open's, ESTALE
+ * for an old generation, ENXIO when disconnected, EOPNOTSUPP without
+ * GPU_DISPLAY_HAS_CURSOR.
+ */
+struct gpu_display_cursor_image {
+	uint32_t version;
+	uint32_t size;
+	uint64_t lease;
+	uint64_t handle;
+	uint64_t offset;
+	uint32_t width;
+	uint32_t height;
+	uint32_t stride;
+	uint32_t format;
+	uint64_t generation;
+	uint64_t reserved;
+};
+
+/*
+ * Shows the cursor image with its top-left corner at (x, y) in output pixels
+ * (the caller subtracts the image's hotspot); parts outside the output are
+ * clipped.  The change takes effect at the next refresh boundary and the call
+ * does not wait for it; a later move before that boundary replaces it.  The
+ * lease must have an image (EINVAL otherwise).  Errors as for CURSOR_SET.
+ */
+struct gpu_display_cursor_move {
+	uint32_t version;
+	uint32_t size;
+	uint64_t lease;
+	int32_t x;
+	int32_t y;
+	uint64_t generation;
+	uint64_t reserved;
+};
+
+/*
+ * Hides the cursor from the next refresh boundary; its image is kept.  The
+ * lease's release and a device fault hide it too.  Errors as for CURSOR_SET.
+ */
+struct gpu_display_cursor_hide {
+	uint32_t version;
+	uint32_t size;
+	uint64_t lease;
+	uint64_t generation;
+	uint64_t reserved;
 };
 
 #endif

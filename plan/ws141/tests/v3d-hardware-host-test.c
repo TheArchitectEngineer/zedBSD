@@ -25,6 +25,7 @@
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
 #include "drivers/gpu/bcm2711/buffer.h"
 #include "drivers/gpu/bcm2711/v3d-job.h"
+#include "drivers/gpu/bcm2711/native-state.h"
 #include "drivers/gpu/bcm2711/render-device.h"
 #include "drivers/gpu/bcm2711/native-storage.h"
 #include "drivers/gpu/bcm2711/vulkan-memory.h"
@@ -97,6 +98,7 @@ static struct bcm2711_render_session *test_callback_session;
 static unsigned test_executed;
 static unsigned test_disposed;
 
+static void model_wait(void);
 static void fixture(void);
 static void registers_reset(void);
 static void trace(uint32_t offset, uint32_t data);
@@ -552,12 +554,23 @@ kern_usleep_range(
 	unsigned minimum,
 	unsigned maximum)
 {
-	bool handled;
-	unsigned pending;
-
 	/* IRQ publication never borrows sleeping cache/MMU operations. */
 	assert(test_engine.hardware.guard.held.value == 0);
 	assert(minimum == 10 && maximum == 10);
+	model_wait();
+}
+
+/*
+ * Advances the modeled time and native queue by one short wait, delivering any completion IRQ.
+ */
+static void
+model_wait(
+	void)
+{
+	bool handled;
+	unsigned pending;
+
+	/* Each wait advances the modeled counter by one step. */
 	test_waits++;
 	test_counter += test_tick_us;
 
@@ -647,7 +660,7 @@ kern_dcache_invalidate_range(
 {
 	/* No output cache maintenance is permitted while DMA or an IRQ spin guard is active. */
 	assert(test_engine.hardware.guard.held.value == 0 && test_pending == 0);
-	assert(address != NULL && (bytes == 16384 || bytes == 256));
+	assert(address != NULL && (bytes == 16384 || bytes == 256 || bytes == 15360 || bytes == 262144));
 	test_invalidations++;
 }
 
@@ -1009,6 +1022,18 @@ waitq_sleep(
 	unsigned long enabled;
 	int error;
 
+	/* A queue wait for native events advances the model once, outside the IRQ guard, unless an IRQ already came. */
+	if (queue == &test_engine.hardware.events_queue) {
+		assert(flags == 0 && guard == &test_engine.hardware.guard && guard->held.value == 1);
+		if (observed != queue->sequence)
+			return EAGAIN;
+		spin_unlock_irqrestore(guard, 1);
+		model_wait();
+		enabled = spin_lock_irqsave(guard);
+		assert(enabled == 1);
+		return 0;
+	}
+
 	/* Drain cannot lose a completion between its pending check and condition observation. */
 	assert(queue == &test_controller->worker.retired && observed == queue->sequence);
 	assert(deadline == 0 && flags == 0 && guard->held.value == 1);
@@ -1260,7 +1285,8 @@ check_jobs(
 	assert(error == 0);
 	error = bcm2711_v3d_diagnostic(&test_engine);
 	assert(error == 0 && test_engine.hardware.diagnostic == NULL);
-	assert(test_invalidations == 2 && test_engine.hardware.resets == 1);
+	/* V8, V9 and the two UIF self-test conversions each read their output back. */
+	assert(test_invalidations == 4 && test_engine.hardware.resets == 1);
 	table = test_engine.hardware.pages->address;
 	assert(table[0x100] == 0 && table[0x2ff] == 0);
 
@@ -1296,6 +1322,28 @@ model_tfu(
 	uint32_t x;
 	uint32_t y;
 	uint32_t utile;
+	uint32_t width;
+	uint32_t height;
+	uint32_t bytes;
+	int error;
+
+	/* A UIF output (format 6) is modeled by the CPU conversion the boot self-test compares with. */
+	if (((test_hub[0x41c / 4] >> 3) & 7U) == 6U) {
+		width = test_hub[0x420 / 4] & 0xffffU;
+		height = test_hub[0x420 / 4] >> 16;
+		error = bcm2711_native_texture_size(width, height, &bytes);
+		assert(error == 0);
+		error = bcm2711_native_texture_copy(
+			width,
+			height,
+			gpu_pointer(test_hub[0x40c / 4]),
+			test_hub[0x414 / 4] * 4U,
+			(size_t)test_hub[0x414 / 4] * 4U * height,
+			gpu_pointer(test_hub[0x41c / 4] & ~63U),
+			bytes);
+		assert(error == 0);
+		return;
+	}
 
 	/* Register-only job tests intentionally supply no image contents to this output model. */
 	if (test_hub[0x420 / 4] != 0x00080008)
@@ -2197,5 +2245,16 @@ dispose_payload(
 		return error;
 
 	/* Succeeded: the job descriptor is gone while other native storage owners remain valid. */
+	return 0;
+}
+
+/*
+ * Supplies the scheduler tick that bounds native event waits; the model counts its own time.
+ */
+uint64_t
+sched_ticks(
+	void)
+{
+	/* The modeled waits do not depend on the deadline's value. */
 	return 0;
 }

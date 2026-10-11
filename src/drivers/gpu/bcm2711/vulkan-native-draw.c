@@ -30,6 +30,8 @@ static int allocate_storage(struct bcm2711_vulkan_native_draw *draw, uint64_t by
 static struct bcm2711_native_storage *find_texture(const struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_resource *image);
 static int prepare_textures(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_prepared_event *event, uint64_t available);
 static int prepare_texture(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_descriptor *descriptor, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
+static bool conversion_supported(const struct bcm2711_vulkan_resource *image, uint32_t address);
+static uint64_t texture_area(uint32_t size);
 static int prepare_texture_image(struct bcm2711_vulkan_native_draw *draw, struct bcm2711_vulkan_resource *image, const struct bcm2711_vulkan_sampler *source, uint32_t swap, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
 static int prepare_conversion(const struct bcm2711_vulkan_resource *image, uint32_t address, const struct bcm2711_native_storage *pixels, uint32_t bytes, struct bcm2711_v3d_tfu_job *tfu);
 static int prepare_meta_texture(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_meta_draw *meta, uint64_t available);
@@ -372,6 +374,9 @@ prepare_texture_image(
 	uint32_t address;
 	uint32_t bytes;
 	uint64_t started;
+	uint64_t fills;
+	bool unit;
+	char kind;
 	int error;
 
 	/* Complete coherent logical raster storage is read only at execution, after previous GPU writes become visible. */
@@ -393,6 +398,8 @@ prepare_texture_image(
 
 		/* A source no process maps reuses its converted snapshot until a device or kernel write changes it. */
 		started = clock_ticks();
+		fills = draw->space->snapshot_fills;
+		unit = draw->space->native->hardware.tfu_uif_ready && conversion_supported(image, address);
 		error = bcm2711_native_snapshot_get(
 			draw->space,
 			source_view->buffer,
@@ -400,7 +407,7 @@ prepare_texture_image(
 			image->width,
 			image->height,
 			image->pitch,
-			cpu,
+			unit ? NULL : cpu,
 			(size_t)image->bytes,
 			&entry->snapshot);
 		draw->copy_ticks += clock_ticks() - started;
@@ -408,6 +415,39 @@ prepare_texture_image(
 			return error;
 		if (error == 0)
 			pixels = entry->snapshot->pixels;
+
+		/* A snapshot left to the unit is filled when the pass runs, before its draws. */
+		if (error == 0 && unit && draw->space->snapshot_fills != fills) {
+			error = prepare_conversion(image, address, pixels, bytes, &entry->tfu);
+			if (error == 0)
+				error = bcm2711_native_storage_clean(pixels);
+			if (error != 0) {
+				bcm2711_native_snapshot_put(entry->snapshot);
+				entry->snapshot = NULL;
+				return error;
+			}
+			entry->convert = true;
+		}
+
+		/* Diagnostics count how the texture was obtained and keep the largest conversion. */
+		kind = 0;
+		if (error == 0 && draw->space->snapshot_fills == fills) {
+			draw->snapshot_hits++;
+		} else if (error == 0) {
+			draw->snapshot_fills++;
+			kind = 'f';
+		} else if (source_view->buffer->host_mapped) {
+			draw->mapped_textures++;
+			draw->mapped_bytes += image->bytes;
+			kind = 'm';
+		} else {
+			draw->private_textures++;
+			kind = 'p';
+		}
+		if (kind != 0 && (uint64_t)image->width * image->height > texture_area(draw->largest_size)) {
+			draw->largest_size = image->width << 16 | image->height;
+			draw->largest_kind = kind;
+		}
 	}
 
 	/* A private conversion serves a source that may change behind the device's back. */
@@ -940,6 +980,26 @@ write_word(
 	return;
 }
 
+/* Reports whether the texture formatting unit can read the raster image at address. */
+static bool
+conversion_supported(
+	const struct bcm2711_vulkan_resource *image,
+	uint32_t address)
+{
+	/* The unit copies 32-bit RGBA8 texels unchanged, which also keeps BGRA bytes in place. */
+	if (image->format != VK_FORMAT_R8G8B8A8_UNORM && image->format != VK_FORMAT_B8G8R8A8_UNORM)
+		return false;
+
+	/* Raster input is addressed in whole pixels from a 64-byte aligned start. */
+	if ((address & 63U) != 0 ||
+	    (image->pitch & 3U) != 0 ||
+	    image->pitch / 4U < image->width)
+		return false;
+
+	/* The stride field holds sixteen bits of pixels. */
+	return image->pitch / 4U <= 0xffffU;
+}
+
 /*
  * Describes one raster-to-UIF conversion by the texture formatting unit.
  *
@@ -955,16 +1015,8 @@ prepare_conversion(
 {
 	uint64_t input_bytes;
 
-	/* The unit copies 32-bit RGBA8 texels unchanged, which also keeps BGRA bytes in place. */
-	if (image->format != VK_FORMAT_R8G8B8A8_UNORM && image->format != VK_FORMAT_B8G8R8A8_UNORM)
-		return ENOTSUP;
-
-	/* Raster input is addressed in whole pixels from a 64-byte aligned start. */
-	if ((address & 63U) != 0 ||
-	    (image->pitch & 3U) != 0 ||
-	    image->pitch / 4U < image->width)
-		return ENOTSUP;
-	if (image->pitch / 4U > 0xffffU)
+	/* Formats and layouts the unit cannot read stay with the CPU conversion. */
+	if (!conversion_supported(image, address))
 		return ENOTSUP;
 
 	/* The read covers every visible pixel of every row inside the image's binding. */
@@ -1057,4 +1109,13 @@ find_texture(
 
 	/* No retained snapshot exists in this pass; the caller must convert the current raster. */
 	return NULL;
+}
+
+/* The area of a texture size kept as width << 16 | height. */
+static uint64_t
+texture_area(
+	uint32_t size)
+{
+	/* Width and height are each sixteen bits of the packed size. */
+	return (uint64_t)(size >> 16) * (size & 0xffffU);
 }

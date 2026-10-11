@@ -17,7 +17,6 @@
 #include "drivers/gpu/bcm2711/v3d-job.h"
 
 /* Real counter time bounds each 500 ms window; polling count is a fallback guard. */
-#define JOB_POLL_US 10U
 #define JOB_POLL_STEPS 50000U
 #define JOB_PROGRESS_WINDOWS 4U
 
@@ -531,6 +530,7 @@ wait_queue(
 	uint64_t current_frequency;
 	uint64_t window_ticks;
 	uint64_t completion_delay;
+	uint64_t observed;
 	bool timed;
 	int error;
 
@@ -558,6 +558,7 @@ wait_queue(
 
 		/* Consumes real events without acquiring an IRQ guard around the wait. */
 		for (attempt = 0; attempt <= JOB_POLL_STEPS; attempt++) {
+			observed = bcm2711_v3d_hardware_event_sequence(engine);
 			bcm2711_v3d_hardware_events(engine, &events);
 			result->core_events |= events.core;
 			result->hub_events |= events.hub;
@@ -606,7 +607,7 @@ wait_queue(
 			/* The finite poll guard also stops a counter that fails to advance. */
 			if (attempt == JOB_POLL_STEPS)
 				break;
-			kern_usleep_range(JOB_POLL_US, JOB_POLL_US);
+			bcm2711_v3d_hardware_event_wait(engine, observed);
 		}
 
 		/* TFU has no native progress register and uses a single timeout window. */

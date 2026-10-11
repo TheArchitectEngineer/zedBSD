@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <kern/lock.h>
+#include <kern/waitq.h>
 
 struct bcm2711_buffer;
 struct bcm2711_v3d;
@@ -41,6 +42,7 @@ struct bcm2711_v3d_perf {
 	uint32_t render_passes;
 	uint32_t clear_passes;
 	uint32_t image_passes;
+	uint32_t skipped_copies;
 	uint32_t draws;
 	uint64_t staged_bytes;
 	uint64_t total_ticks;
@@ -60,6 +62,15 @@ struct bcm2711_v3d_perf {
 	uint64_t output_clean_ticks;
 	uint64_t release_ticks;
 	uint64_t transfer_ticks;
+	uint32_t snapshot_hits;
+	uint32_t snapshot_fills;
+	uint32_t mapped_textures;
+	uint32_t private_textures;
+	uint64_t mapped_bytes;
+	uint32_t largest_size;
+	char largest_kind;
+	uint32_t render_tiles;
+	uint32_t image_tiles;
 };
 
 /*
@@ -77,6 +88,8 @@ struct bcm2711_v3d_hardware {
 	struct bcm2711_buffer *diagnostic;
 	uint32_t diagnostic_address;
 	struct bcm2711_v3d_events events;
+	/* The IRQ handler advances this queue under guard after latching events; the worker sleeps on it. */
+	struct wait_queue events_queue;
 	uint32_t hub_ident[4];
 	uint32_t core_ident[3];
 	uint32_t physical_bits;
@@ -104,5 +117,11 @@ int bcm2711_v3d_hardware_pages_sync(struct bcm2711_v3d *engine, uint32_t address
 int bcm2711_v3d_hardware_invalidate(struct bcm2711_v3d *engine);
 int bcm2711_v3d_hardware_clean(struct bcm2711_v3d *engine);
 void bcm2711_v3d_hardware_events(struct bcm2711_v3d *engine, struct bcm2711_v3d_events *events);
+
+/* Reads the event queue's sequence before looking at the events, so a later IRQ ends the next wait at once. */
+uint64_t bcm2711_v3d_hardware_event_sequence(struct bcm2711_v3d *engine);
+
+/* Sleeps until an IRQ after the observed sequence, or until the next scheduler tick at the latest. */
+void bcm2711_v3d_hardware_event_wait(struct bcm2711_v3d *engine, uint64_t observed);
 
 #endif
