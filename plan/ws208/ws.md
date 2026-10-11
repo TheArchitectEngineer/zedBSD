@@ -3,12 +3,12 @@
 # WS208: arm64 の HAL の SMP（Raspberry Pi 4 の 4 core）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-11 Q1 作成、P2 の予約の Queue q939）
+Status: planning（2026-10-11 Q1 作成。q939 P2 が p001 の設計の第 1 版、判断 D1〜D6 待ち）
 Primary Milestone: MG008
 Related Milestones: MG006
 Parent: [Master](../master.md)
 Queue: [P2 の lane](../agents/P2/queue.md)
-Resume point: p001（調査と設計）から。
+Resume point: p001 の判断 D1〜D6（[設計](phase001/phase.md) §4）の答えの後、p002（下地）から。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -40,4 +40,9 @@ Pi 4 の起動の log が `CPUs ready: 4`、desktop・network・SSH が動き、
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 調査と設計 | planned |
+| [p001](phase001/phase.md) | 調査と設計 | in-progress（設計 第 1 版、判断待ち） |
+| p002 | 下地（percpu・TPIDR_EL1・lock・task の切り替えの手順、まだ 1 CPU） | planning |
+| p003 | secondary の起動（spin-table・GIC・timer・TLB・`cpus=N`）、QEMU `-smp 4` | planning |
+| p004 | 負荷と driver の競合（QEMU） | planning |
+| p005 | Pi 4 の実機（4 core・reboot 10 回） | planning |
+| p006 | 規約の全文の見直し | planning |
