@@ -26,7 +26,7 @@ App Home（`userland/desktop/wayland/apps.conf`・`icons.c`・`icons.h`）、AAT
 
 ## 確かめ（2026-10-07、P2）
 
-- host: `sh plan/ws157/tests/run-host-photos.sh` → PASS 26（本物の thread で縮小画像・全面の画像を作る: 壊れた file の縮小画像は EINVAL で灰色、8 枚、4 列、
+- host: `sh plan/ws157/tests/run-host-photos.sh`（2026-10-11 削除: 古い期待で FAIL、開発中の試験） → PASS 26（本物の thread で縮小画像・全面の画像を作る: 壊れた file の縮小画像は EINVAL で灰色、8 枚、4 列、
   Favorites・album・Timeline の切り替え、1 click は選ぶだけ・double click で全面、EXIF の向きの JPEG が 640x480、→、R（450x800 に回る・縮小画像も）、F・save の印、
   Shift+R、Esc で戻り選んだまま、↓・Enter で GIF、Favorites の 1 枚、slideshow の開始・進み・端から最初へ・停止、壊れた file の全面、glass、空の library）。
   PNG: `build/review/ws157/host-photos-*.png`、App Home の tile: `build/review/ws157/app-icons.png`。
