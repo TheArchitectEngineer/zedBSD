@@ -22,7 +22,7 @@
 - WS199・WS200 は実装と QEMU の試験が済み、残りは次の UAT。
 - WS083（Vulkan Video）は既定で ON（2026-10-11 ユーザー）。残りは p007 の hang の実機の確かめ。[WS202](ws202/ws.md)（libmedia だけで mp4・m4a）は software を main に統合済み、実機と受け入れの全項目が未確認。
 - Raspberry Pi 4: [WS141](ws141/ws.md) の VC6 の描画の改善を P3 が Codex から引き継いだ（mouse の移動 300 ms → 33 ms → 16 ms）。
-  - 2026-10-12: App Home の遷移 9 秒 → 1 秒（HAL の uncached の unmap の TLB の flush を 1 回 b17a753d4、kern_free の O(1) 4d3d7eddf、draw の pool）、drag は非常に速く、Settings の present-copy 305 → 2〜15 ms。3 回目の App Home の compositor の終了（record の上限 1MiB）と preview の hover の全面の再合成を直した（main f07c345d3、実機の確認待ち）。vkQueueSubmit の非同期化 [ws141-p016](ws141/phase016/phase.md) は review-4 を通り A1 を agent/p3 で実装済み（実機の確認の後に merge）、A2・A3（lazy map）が続く。
+  - 2026-10-12: App Home の遷移 9 秒 → 1 秒（HAL の uncached の unmap の TLB の flush を 1 回 b17a753d4、kern_free の O(1) 4d3d7eddf、draw の pool）、drag は非常に速く、Settings の present-copy 305 → 2〜15 ms。3 回目の App Home の compositor の終了（record の上限 1MiB）と preview の hover の全面の再合成を直した（main f07c345d3、実機の確認待ち）。vkQueueSubmit の非同期化 [ws141-p016](ws141/phase016/phase.md) は review-4 を通り A1・A2 を実装、2026-10-12 ユーザーの判断で実機の確認の前に main に merge（d9e0c35af、今回の image で確かめる）、A3（lazy map）が続く。App Home の hover は変わったアイコンだけの damage（efe8f8b63）。
 - WS157 Photos の削除の統合は P1 の q924。WS202 の再生の実機・QEMU の確認は T1-529。
 - 残る既知の Bug は USB LAN の遅さ（BUG-222）。
 
