@@ -282,7 +282,12 @@ static uint64_t leaf_flags(uint32_t attr)
 	uint64_t f=PAGE_FLAGS|PTE_USER|PTE_PXN;
 	if(!(attr&HAL_SPACE_WRITE))f|=PTE_RO;else f|=PTE_SW_DIRTY;
 	if(!(attr&HAL_SPACE_EXEC))f|=PTE_UXN;
-	if(attr&HAL_SPACE_DEVICE)f|=PTE_ATTR(1);else if(attr&HAL_SPACE_NOCACHE)f|=PTE_ATTR(2);
+	/*
+	 * Uncached user pages are managed RAM a device reads without snooping: they are
+	 * Normal non-cacheable, as the kernel's view of the same RAM is, so that user code
+	 * may access them at any alignment; Device memory would fault those accesses.
+	 */
+	if(attr&HAL_SPACE_DEVICE)f|=PTE_ATTR(1);else if(attr&HAL_SPACE_NOCACHE)f|=PTE_ATTR(ARM64_ATTR_NORMAL_NC);
 	return f;
 }
 int hal_space_map(hal_space_t h,void *v,hal_physaddr_t p,size_t n,uint32_t attr)
