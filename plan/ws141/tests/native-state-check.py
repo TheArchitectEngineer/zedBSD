@@ -66,6 +66,7 @@ def shader_fields():
         fields[f"{stage} Shader Uniforms Address"] = 0x56789000 + index * 4096
         fields[f"{stage} Shader Propagate NaNs"] = 1
         fields[f"{stage} Shader start in final thread section"] = int(index != 2)
+    fields["Fragment Shader 4-way threadable"] = 1
     return fields
 
 

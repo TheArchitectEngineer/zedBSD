@@ -21,6 +21,8 @@
 
 static int preflight_declaration(const uint32_t *instruction, uint32_t count, uint8_t *levels, uint32_t bound, uint32_t model, const char **reason);
 static int compile_program(struct bcm2711_shader_compiler *compiler);
+static int compile_threads(const struct drv_gpu_shader_ir *ir, const struct bcm2711_shader_key *key, enum bcm2711_shader_stage stage, uint32_t threads, struct bcm2711_shader_diagnostic *diagnostic, struct bcm2711_shader_binary **binary);
+static int encode_register(const struct bcm2711_shader_compiler *compiler, uint32_t *number);
 static uint32_t operation_gaps(enum bcm2711_qpu_operation operation, uint32_t destination, uint32_t peripheral);
 
 /*
@@ -35,7 +37,6 @@ bcm2711_shader_compile(
 	struct bcm2711_shader_binary **binary,
 	struct bcm2711_shader_diagnostic *diagnostic)
 {
-	struct bcm2711_shader_compiler *compiler;
 	struct bcm2711_shader_binary *created;
 	struct drv_gpu_shader_ir *ir;
 	struct drv_gpu_compile_diagnostic parse_diagnostic;
@@ -79,43 +80,29 @@ bcm2711_shader_compile(
 		return error;
 	}
 
-	/* Large register/output tables live in unpublished CPU storage while the parser and lowering use the finite kernel stack. */
-	compiler = kern_calloc(1, sizeof(*compiler));
-	if (compiler == NULL) {
-		drv_gpu_shader_ir_free(ir);
-		return ENOMEM;
+	/*
+	 * A fragment program first tries four threads per QPU, which hide texture
+	 * latency better but leave each thread only rf0 to rf31; a program whose
+	 * values do not fit is compiled again for two threads.  Vertex programs
+	 * use two threads.
+	 */
+	created = NULL;
+	error = E2BIG;
+	if (stage == BCM2711_SHADER_FRAGMENT)
+		error = compile_threads(ir, key, stage, 4, diagnostic, &created);
+	if (error == E2BIG) {
+		/* The four-thread attempt's refusal is not this program's outcome. */
+		if (diagnostic != NULL)
+			kern_memset(diagnostic, 0, sizeof(*diagnostic));
+		error = compile_threads(ir, key, stage, 2, diagnostic, &created);
 	}
 
-	/* Compiler state owns no device reference and retires before any complete native program is published. */
-	compiler->ir = ir;
-	compiler->key = key;
-	compiler->diagnostic = diagnostic;
-
-	/* Allocates the public program independently so every later failure has a single complete unwind. */
-	compiler->binary = kern_calloc(1, sizeof(*compiler->binary));
-	if (compiler->binary == NULL) {
-		drv_gpu_shader_ir_free(ir);
-		kern_free(compiler);
-		return ENOMEM;
-	}
-
-	/* The stage remains immutable throughout both interface validation and native output construction. */
-	compiler->binary->stage = stage;
-
-	/* One builder owns the complete unpublished prefix and supplies one checked outcome for common cleanup. */
-	error = compile_program(compiler);
-
-	/* Source IR and allocator metadata retire before the immutable native program becomes visible. */
-	created = compiler->binary;
-	kern_free(compiler->values);
+	/* Source IR retires before the immutable native program becomes visible. */
 	drv_gpu_shader_ir_free(ir);
-	kern_free(compiler);
 
 	/* A failed native prefix can never escape as a usable shader binary. */
-	if (error != 0) {
-		bcm2711_shader_binary_free(created);
+	if (error != 0)
 		return error;
-	}
 
 	/* Publication transfers all completed code and uniform storage to the caller at once. */
 	*binary = created;
@@ -152,6 +139,7 @@ bcm2711_shader_append(
 	struct bcm2711_shader_compiler *compiler,
 	const struct bcm2711_qpu_instruction *instruction)
 {
+	struct bcm2711_qpu_instruction encoded;
 	uint64_t word;
 	int error;
 
@@ -159,8 +147,31 @@ bcm2711_shader_append(
 	if (compiler->binary->code_count == compiler->code_capacity)
 		return E2BIG;
 
+	/* Physical registers take this program's thread window before the encoder sees them. */
+	encoded = *instruction;
+	if (encoded.destination.peripheral == 0) {
+		error = encode_register(compiler, &encoded.destination.number);
+		if (error != 0)
+			return error;
+	}
+	if (encoded.left.kind == BCM2711_QPU_REGISTER) {
+		error = encode_register(compiler, &encoded.left.number);
+		if (error != 0)
+			return error;
+	}
+	if (encoded.right.kind == BCM2711_QPU_REGISTER) {
+		error = encode_register(compiler, &encoded.right.number);
+		if (error != 0)
+			return error;
+	}
+	if (encoded.signal != BCM2711_QPU_SIGNAL_NONE && encoded.signal_destination.peripheral == 0) {
+		error = encode_register(compiler, &encoded.signal_destination.number);
+		if (error != 0)
+			return error;
+	}
+
 	/* The encoder validates shared port, signal and flag fields before returning an atomic word. */
-	error = bcm2711_qpu_encode(instruction, &word);
+	error = bcm2711_qpu_encode(&encoded, &word);
 	if (error != 0)
 		return error;
 	compiler->binary->code[compiler->binary->code_count] = word;
@@ -319,7 +330,7 @@ bcm2711_shader_register(
 	uint32_t index;
 
 	/* Payload and materialization scratch registers are permanently excluded from expression allocation. */
-	for (index = BCM2711_SHADER_FIRST_REGISTER; index < BCM2711_SHADER_REGISTER_END; index++) {
+	for (index = BCM2711_SHADER_FIRST_REGISTER; index < compiler->register_end; index++) {
 		if (compiler->registers[index] == 0) {
 			compiler->registers[index] = 1;
 			*number = index;
@@ -703,5 +714,98 @@ operation_gaps(
 	}
 
 	/* A plain ALU result is ready for the next instruction. */
+	return 0;
+}
+
+/*
+ * Compiles one parsed program for a number of threads per QPU.
+ *
+ * E2BIG reports that the program's values do not fit the thread's registers
+ * (or its code does not fit), so the caller may try fewer threads.
+ */
+static int
+compile_threads(
+	const struct drv_gpu_shader_ir *ir,
+	const struct bcm2711_shader_key *key,
+	enum bcm2711_shader_stage stage,
+	uint32_t threads,
+	struct bcm2711_shader_diagnostic *diagnostic,
+	struct bcm2711_shader_binary **binary)
+{
+	struct bcm2711_shader_compiler *compiler;
+	struct bcm2711_shader_binary *created;
+	int error;
+
+	/* Large register/output tables live in unpublished CPU storage while lowering uses the finite kernel stack. */
+	*binary = NULL;
+	compiler = kern_calloc(1, sizeof(*compiler));
+	if (compiler == NULL)
+		return ENOMEM;
+
+	/* Compiler state owns no device reference and retires before any complete native program is published. */
+	compiler->ir = ir;
+	compiler->key = key;
+	compiler->diagnostic = diagnostic;
+	compiler->threads = threads;
+	compiler->register_end = BCM2711_SHADER_REGISTER_END;
+	if (threads == 4)
+		compiler->register_end = BCM2711_SHADER_QUAD_REGISTER_END;
+
+	/* Allocates the public program independently so every later failure has a single complete unwind. */
+	compiler->binary = kern_calloc(1, sizeof(*compiler->binary));
+	if (compiler->binary == NULL) {
+		kern_free(compiler);
+		return ENOMEM;
+	}
+
+	/* The stage remains immutable throughout both interface validation and native output construction. */
+	compiler->binary->stage = stage;
+
+	/* One builder owns the complete unpublished prefix and supplies one checked outcome for common cleanup. */
+	error = compile_program(compiler);
+
+	/* Allocator metadata retires before the immutable native program becomes visible. */
+	created = compiler->binary;
+	kern_free(compiler->values);
+	kern_free(compiler);
+
+	/* A failed native prefix can never escape as a usable shader binary. */
+	if (error != 0) {
+		bcm2711_shader_binary_free(created);
+		return error;
+	}
+
+	/* Succeeded: the caller owns the complete program. */
+	*binary = created;
+	return 0;
+}
+
+/*
+ * Places one physical register number in the program's thread window.
+ *
+ * Expression and payload registers keep their numbers; the scratch registers
+ * rf60 to rf63 become rf28 to rf31 in a four-thread program.  E2BIG reports
+ * a register a four-thread program cannot reach.
+ */
+static int
+encode_register(
+	const struct bcm2711_shader_compiler *compiler,
+	uint32_t *number)
+{
+	/* Two-thread programs see all sixty-four registers. */
+	if (compiler->threads != 4)
+		return 0;
+
+	/* The scratch registers move to the top of the four-thread window. */
+	if (*number >= BCM2711_SHADER_SCRATCH_LEFT && *number < 64U) {
+		*number -= BCM2711_SHADER_SCRATCH_LEFT - BCM2711_SHADER_QUAD_REGISTER_END;
+		return 0;
+	}
+
+	/* A register between the window and the scratch registers cannot be reached. */
+	if (*number >= BCM2711_SHADER_QUAD_REGISTER_END)
+		return E2BIG;
+
+	/* Succeeded: the register is inside the four-thread window. */
 	return 0;
 }

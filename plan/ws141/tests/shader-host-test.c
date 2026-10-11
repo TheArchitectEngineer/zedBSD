@@ -936,7 +936,12 @@ verify_program(
 	}
 
 	/* A final switch and both explicit no-operation delay slots must be inside the actual owned code extent. */
-	assert(binary->code_count >= 3 && binary->threads == 2 && binary->registers_used == 64);
+	assert(binary->code_count >= 3);
+	if (binary->threads == 4) {
+		assert(stage == BCM2711_SHADER_FRAGMENT && binary->registers_used == 32);
+	} else {
+		assert(binary->threads == 2 && binary->registers_used == 64);
+	}
 	accepted = v3d_qpu_instr_unpack(device, binary->code[binary->code_count - 3], &last);
 	assert(accepted && last.sig.thrsw);
 	assert(binary->code[binary->code_count - 2] == UINT64_C(0x3c003186bb800000));
@@ -1227,6 +1232,20 @@ verify_hazards(
 		assert(accepted);
 		assert(instruction.type == V3D_QPU_INSTR_TYPE_ALU);
 		assert(unit_count(device, &instruction) <= 1);
+
+		/* A four-thread program's threads each see only rf0 to rf31. */
+		if (binary->threads == 4) {
+			if (v3d_qpu_uses_mux(&instruction, V3D_QPU_MUX_A))
+				assert(instruction.raddr_a < 32);
+			if (v3d_qpu_uses_mux(&instruction, V3D_QPU_MUX_B) && !instruction.sig.small_imm_b)
+				assert(instruction.raddr_b < 32);
+			if (instruction.alu.add.op != V3D_QPU_A_NOP && !instruction.alu.add.magic_write)
+				assert(instruction.alu.add.waddr < 32);
+			if (instruction.alu.mul.op != V3D_QPU_M_NOP && !instruction.alu.mul.magic_write)
+				assert(instruction.alu.mul.waddr < 32);
+			if (v3d_qpu_sig_writes_address(device, &instruction.sig) && !instruction.sig_magic)
+				assert(instruction.sig_addr < 32);
+		}
 
 		/* A special function's register result and unit stay untouched for two instructions. */
 		special = v3d_qpu_instr_is_sfu(&instruction);
