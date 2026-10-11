@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: [P1 の lane](../agents/P1/queue.md)
-Resume point: p001 の設計の第 1 版（phase001/phase.md）の review と判断 G1〜G5 の後に p002。
+Resume point: p001 の設計 1.1（review-1 を反映、phase001/phase.md）を Q1 が確かめた後、p002 の spike（host の shader の数え、Pi の draw・頂点の費用）。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -31,7 +31,20 @@ Pi 4 で標準 app（Files・Settings・Phone など）の再描画が CPU の�
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 調査と設計（今の canvas・text・image の作り、app の present の経路、GPU の back end の形、shader、fallback、移行の順、試験） | in-progress（設計の第 1 版、review 待ち） |
+| [p001](phase001/phase.md) | 調査と設計（今の canvas・text・image の作り、app の present の経路、GPU の back end の形、shader、fallback、移行の順、試験） | in-progress（設計 1.1、Q1 の確認待ち） |
+| p002 | spike: bcm2711 の shader の命令数・register（host）、Pi の draw・頂点・fragment・compile の時間 | planned |
+| p003 | GPU の canvas の核（記録、shape の pipeline、W の readback、host の一致の試験） | planned |
+| p004 | 文字の atlas・画像の cache・polygon の coverage・mark・fill_replace | planned |
+| p005 | window の frame の口、基準の PNG と Pi の基準、Settings を移す | planned |
+| p006 | Pi の計測と調整 | planned |
+| p007 | widget・chooser・picker と app の第 1 組を移す | planned |
+| p008 | Text Editor・PDF Viewer・Image Viewer と Notes の overlay・IME の popup | planned |
+| p009 | Calendar の 3D を GPU に | planned |
+| p010 | Video Player の色の変換を GPU に | planned |
+| p011 | T1 の QEMU の回帰と Pi の実機の確認 | planned |
+| p012 | 規約の全文の見直し | planned |
+
+見積 計 約 32 LW（p001 の設計 1.1 の Phase の表）。
 
 ## 2026-10-12 ユーザーの決定: G1〜G5
 
