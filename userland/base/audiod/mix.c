@@ -193,6 +193,10 @@ audiod_mix_period(
 	int16_t sample16;
 	int32_t sample32;
 	int missing;
+	int to_device;
+
+	/* Whether the media goes to the device this period (ws209-p002). */
+	to_device = audiod_route_media_to_device();
 
 	/* The period, started from silence. */
 	frames = device->period_frames;
@@ -204,6 +208,17 @@ audiod_mix_period(
 		for (stream = client->streams; stream != NULL; stream = stream->next) {
 			if (stream->direction != AUDIOD_PLAYBACK ||
 			    !stream->running || stream->broken)
+				continue;
+
+			/*
+			 * Held since its output went away, or media whose route
+			 * is not the device's (ws209-p002: a daemon's endpoint is
+			 * p003's to feed; until then the stream waits).  Alerts
+			 * play on the device.
+			 */
+			if (stream->held)
+				continue;
+			if (stream->role == AUDIOD_ROLE_MEDIA && !to_device)
 				continue;
 			shm = stream->shm;
 

@@ -20,6 +20,7 @@
 #include <setjmp.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/types.h>
 
 #define AUDIOD_CLIENT_INPUT	1024U
 #define AUDIOD_BUFFER_MAX	(1U << 20)	/* frames in one ring */
@@ -54,6 +55,15 @@ struct audiod_stream {
 	uint64_t last_request;		/* read (playback) or write (capture) position at the last REQUEST */
 	uint32_t underruns_reported;
 	uint32_t overruns_reported;
+
+	/*
+	 * Version 2 (ws209-p002): the stream's role (AUDIOD_ROLE_*), and
+	 * whether it is held because its output went away (design 1.2 G5:
+	 * not read until the client stops and starts it again, or the
+	 * compositor releases it).
+	 */
+	uint32_t role;
+	unsigned held;
 };
 
 struct audiod_client {
@@ -61,6 +71,11 @@ struct audiod_client {
 	int fd;
 	unsigned dead;
 	unsigned subscribed;
+
+	/* The protocol version agreed in HELLO (1 until then), and who the peer is (ws209-p002). */
+	uint32_t version;
+	uid_t uid;
+	int uid_known;
 	uint8_t input[AUDIOD_CLIENT_INPUT];
 	size_t input_used;
 	struct audiod_stream *streams;
@@ -131,6 +146,24 @@ extern volatile int audiod_bus_armed;
 /* main.c */
 void audiod_send_event(struct audiod_stream *stream, uint32_t type, uint32_t count);
 int64_t audiod_now_ns(void);
+void audiod_send(struct audiod_client *client, void *message, uint32_t length, int fd);
+void audiod_send_result(struct audiod_client *client, const struct audiod_header *request, int error);
+int audiod_shm_make(uint32_t format, uint32_t channels, uint32_t rate, uint32_t capacity, uint32_t period, int *fd,
+    struct audiod_shm_header **shm, size_t *bytes);
+
+/* route.c (ws209-p002): the endpoints and routes. */
+void audiod_route_init(void);
+int audiod_route_request(struct audiod_client *client, const uint8_t *bytes, uint32_t length);
+void audiod_route_client_gone(struct audiod_client *client);
+void audiod_route_tick(int64_t now_ns);
+int audiod_route_timeout_ms(int64_t now_ns);
+int audiod_route_media_to_device(void);
+int audiod_route_output_exists(void);
+int audiod_route_capture_allowed(const struct audiod_client *client);
+void audiod_route_stream_started(struct audiod_stream *stream);
+int audiod_route_volume_get(uint32_t *left, uint32_t *right, uint32_t *muted);
+int audiod_route_volume_set(uint32_t left, uint32_t right, uint32_t muted);
+void audiod_route_send_volume(struct audiod_client *client);
 
 /* mix.c */
 uint32_t audiod_frame_bytes(uint32_t format, uint32_t channels);

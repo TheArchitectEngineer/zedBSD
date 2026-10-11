@@ -372,7 +372,7 @@ loop_connect(
 	/* The greeting, answered WELCOME. */
 	memset(&hello, 0, sizeof(hello));
 	hello.header.type = AUDIOD_HELLO;
-	hello.version = AUDIOD_VERSION;
+	hello.version = AUDIOD_PROTOCOL_VERSION_1;
 	error = loop_request(link, &hello, sizeof(hello), reply, NULL);
 	if (error != 0)
 		return error;
