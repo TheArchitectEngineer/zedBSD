@@ -37,7 +37,7 @@
 #define PRESENT_VERTICES	6U
 
 static VkResult present_device(struct keiui_present *present);
-static VkResult present_swapchain(struct keiui_present *present, uint32_t width, uint32_t height, VkSwapchainKHR old);
+static VkResult present_swapchain(struct keiui_present *present, uint32_t width, uint32_t height);
 static VkResult present_pass(struct keiui_present *present);
 static VkResult present_targets(struct keiui_present *present);
 static void present_targets_free(struct keiui_present *present);
@@ -103,7 +103,7 @@ keiui_present_open(
 		return error;
 
 	/* The swapchain at the window's size. */
-	error = present_swapchain(present, window->width, window->height, VK_NULL_HANDLE);
+	error = present_swapchain(present, window->width, window->height);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -148,6 +148,13 @@ keiui_present_open(
 
 /*
  * Replaces the swapchain and the canvas image with ones of a new size.
+ *
+ * The old swapchain and canvas go before the new ones are made (BUG-290):
+ * nothing needs them once the device is idle, and a device's memory may be
+ * shared by every window and the compositor (the Raspberry Pi 4's V3D
+ * declares at most 256 MiB for all of them), where the old and the new
+ * held at once may find no room.  A failure leaves neither, and frames
+ * fail until a resize succeeds.
  */
 VkResult
 keiui_present_resize(
@@ -155,7 +162,6 @@ keiui_present_resize(
 	uint32_t width,
 	uint32_t height)
 {
-	VkSwapchainKHR old;
 	VkResult error;
 
 	/* Nothing may still use the old images. */
@@ -164,12 +170,14 @@ keiui_present_resize(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The old targets go, and the new chain replaces the old one. */
+	/* The old targets, canvas and chain go. */
 	present_targets_free(present);
-	old = present->swapchain;
+	present_canvas_free(present);
+	vkDestroySwapchainKHR(present->device, present->swapchain, NULL);
 	present->swapchain = VK_NULL_HANDLE;
-	error = present_swapchain(present, width, height, old);
-	vkDestroySwapchainKHR(present->device, old, NULL);
+
+	/* The new chain. */
+	error = present_swapchain(present, width, height);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -179,7 +187,6 @@ keiui_present_resize(
 		return error;
 
 	/* A canvas image of the new size. */
-	present_canvas_free(present);
 	error = present_canvas(present);
 	if (error != VK_SUCCESS)
 		return error;
@@ -218,6 +225,12 @@ keiui_present_frame(
 	uint32_t image;
 	int partial;
 	VkResult error;
+
+	/* A failed resize left no swapchain or canvas: nothing is shown until one succeeds. */
+	if (present->swapchain == VK_NULL_HANDLE || present->canvas_map == NULL) {
+		present->operation = "keiui_present_frame";
+		return VK_ERROR_INITIALIZATION_FAILED;
+	}
 
 	/* The part to copy and tell: the whole frame for a new canvas, or without a part. */
 	partial = 0;
@@ -471,8 +484,7 @@ static VkResult
 present_swapchain(
 	struct keiui_present *present,
 	uint32_t width,
-	uint32_t height,
-	VkSwapchainKHR old)
+	uint32_t height)
 {
 	VkSurfaceCapabilitiesKHR capabilities;
 	VkSurfaceFormatKHR formats[16];
@@ -527,7 +539,7 @@ present_swapchain(
 	if ((capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) != 0U)
 		present->premultiplied = 1;
 
-	/* Three images when the surface allows, replacing the old chain. */
+	/* Three images when the surface allows (the old chain, if any, is gone already). */
 	memset(&create, 0, sizeof(create));
 	create.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 	create.surface = present->surface;
@@ -548,7 +560,6 @@ present_swapchain(
 		create.compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
 	create.presentMode = VK_PRESENT_MODE_FIFO_KHR;
 	create.clipped = VK_TRUE;
-	create.oldSwapchain = old;
 	present->operation = "vkCreateSwapchainKHR";
 	error = vkCreateSwapchainKHR(present->device, &create, NULL, &present->swapchain);
 	if (error != VK_SUCCESS)
