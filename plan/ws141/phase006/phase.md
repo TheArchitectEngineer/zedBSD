@@ -283,3 +283,13 @@ actual vulkan-device-host-testで既存確認と、2drawの1画像共有・第�
 ユーザーは時刻が時々更新されるため、GPU負荷によるカーネル応答の極端な遅延を指摘。ARP削除後もFAILED、30秒SSHもNo route。V3D workerはSCHED_PRIORITY_DEFAULT、pass preparationはsleepable controller mutex内、hardware guardは短い状態取得/発行部分だけ。tile copyとcache cleanの全体をirq禁止にする経路は調べた範囲ではない。GPU job待機もguard外でsleepする。したがって「GPU準備7〜10秒」は実測事実だが、「それがネットワーク不通の直接原因」は未確定。ユーザーへ電源再投入を依頼し「電源ONしました1分待ってアクセス」の指示を受領、既存再接続loopを止めて待機する。
 
 電源ONの回答後、依頼どおり1分待ってSSHを試行。さらに30秒追加待機して再試行したが、いずれもNo route to host。サービス停止コマンドは接続できていないため実行されず、重複コピー削減版も未配置のまま。実機の `ifconfig en0` または操作不能の情報を依頼。GPU負荷だけを原因と断定せず、現行IP/link/RX/TXの証拠を次の再開条件とする。SSH不通が続く場合はbuild/arm64/vmunix（cksum952016436/8077312）をSDから手動更新する必要がある。
+
+### submit-i01 SSH復帰とPTE同期範囲（2026-10-11）
+
+ユーザー「ssh kei@10.0.30.2 で入れます」の後に接続成功。実機 /boot/boot0/vmunix はcksum952016436/8077312で、既に同一pass画像共有版と一致（配置経緯は未確認、旧未配置記録は当時の観測）。通常43drawは17,063,936bytes/約2.1〜2.7秒に減り14frame表示したが、1回11,132msの準備がありdecoder status42で終了。fallback greeterは70draw/12,304,384bytes/約2.7〜2.9秒。greeterをservice stopで停止し、独立診断を実施。sessiondはservice名ではなくunknown-serviceとなったため停止成立とはしない。
+
+実機offscreen再読み戻しはblend無効=(32,64,0,128)、alpha0.5=(58,115,77,255)、alpha0=(51,102,153,255)、alpha1=(64,128,0,255)。全て期待値に一致し、ユーザーの正常表示報告を数値でも確認した。RGBA順の交換は不要。
+
+次の準備負荷として、各native bufferのmap/unmapごとに4MiBのページ表全体をcache cleanしていた。private pages_syncへGPU VAと長さを渡し、変更PTEに対応するCPU範囲だけcleanする。HALは端のcache lineを含める実装でありAPI変更なし。MMUC flush→TLB invalidate、前後admit、失敗時quarantine/保持、全体recoverのfull-table cleanは維持。範囲は4KiB整列・非空・4GiB内で事前検証する。
+
+v3d-hardware hostの初回linkは既存pass timing診断のclock_ticks/kern_logf stub不足で失敗。未完了p006が参照する実hardware fixtureに観測用stubを補い、再実行PASS。変更PTE先頭/末尾/全体recover/無効範囲と従来cache/retirementを確認。vulkan-device hostもPASS。make -j16 build/arm64/vmunix exit0/warning0/error0、ARM64 checker PASS。production style-check total0、diff-check PASS、clang-format19出力との比較は全文規約を優先して独立引数行を保持。kernel SHA256=4dd6fbfcc4edd875c7b7cd576d45e6b0b83d28929d824dcfbb832b9dc64c5796、cksum513824364/8077312。新kernelの実機速度はまだ未確認。

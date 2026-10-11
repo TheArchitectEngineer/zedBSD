@@ -383,8 +383,14 @@ kern_dcache_clean_range(
  */
 int
 bcm2711_v3d_hardware_pages_sync(
-	struct bcm2711_v3d *engine)
+	struct bcm2711_v3d *engine,
+	uint32_t address,
+	uint64_t bytes)
 {
+	/* The real mapping owner supplies a complete page-rounded span. */
+	assert(bytes != 0 && bytes <= 0x100000000ULL - address);
+	assert((address & 4095U) == 0 && (bytes & 4095U) == 0);
+
 	/* Native flush refusal closes subsequent admission; actual VA source must retain its mapped storage. */
 	if (fail_sync != 0) {
 		fail_sync--;

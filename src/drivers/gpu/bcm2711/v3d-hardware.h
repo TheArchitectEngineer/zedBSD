@@ -57,7 +57,7 @@ int bcm2711_v3d_hardware_start(struct bcm2711_v3d *engine);
 int bcm2711_v3d_diagnostic(struct bcm2711_v3d *engine);
 void bcm2711_v3d_hardware_mask(struct bcm2711_v3d *engine);
 int bcm2711_v3d_hardware_reset(struct bcm2711_v3d *engine);
-int bcm2711_v3d_hardware_pages_sync(struct bcm2711_v3d *engine);
+int bcm2711_v3d_hardware_pages_sync(struct bcm2711_v3d *engine, uint32_t address, uint64_t bytes);
 int bcm2711_v3d_hardware_invalidate(struct bcm2711_v3d *engine);
 int bcm2711_v3d_hardware_clean(struct bcm2711_v3d *engine);
 void bcm2711_v3d_hardware_events(struct bcm2711_v3d *engine, struct bcm2711_v3d_events *events);

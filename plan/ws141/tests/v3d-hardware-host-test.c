@@ -73,6 +73,10 @@ static uint32_t test_offsets[256];
 static uint32_t test_values[256];
 static unsigned test_writes;
 
+/* Records the last CPU publication range for bounded PTE-clean assertions. */
+static const void *test_clean_address;
+static size_t test_clean_bytes;
+
 /* Captures the actual native renderer node and common error publications. */
 static const struct drv_gpu_ops *test_operations;
 static struct bcm2711_render_device *test_controller;
@@ -183,10 +187,30 @@ main(
 	test_writes = 0;
 	error = bcm2711_v3d_pages_map(table, 0x1000, 0x800000, 4096);
 	assert(error == 0 && table[1] == 0x30000800 && table[0] == 0);
-	error = bcm2711_v3d_hardware_pages_sync(&test_engine);
+	error = bcm2711_v3d_hardware_pages_sync(&test_engine, 0x1000, 4096);
 	assert(error == 0 && test_offsets[0] == 0x20000 && test_offsets[1] == 0x20001);
 	assert(test_offsets[2] == 0x11000 && test_values[2] == 3);
 	assert(test_offsets[3] == 0x11200 && (test_values[3] & 4) != 0);
+	assert(test_clean_address == table + 1 && test_clean_bytes == 4);
+
+	/* The last PTE and full recovery span publish without wrapping at 4 GiB. */
+	error = bcm2711_v3d_hardware_pages_sync(&test_engine, 0xfffff000U, 4096);
+	assert(error == 0);
+	assert(test_clean_address == table + 0xfffff && test_clean_bytes == 4);
+	error = bcm2711_v3d_hardware_pages_sync(&test_engine, 0, 0x100000000ULL);
+	assert(error == 0);
+	assert(test_clean_address == table && test_clean_bytes == 0x400000);
+
+	/* Invalid spans touch neither the CPU cache nor the hardware translation domains. */
+	test_writes = 0;
+	error = bcm2711_v3d_hardware_pages_sync(&test_engine, 0xfffff000U, 8192);
+	assert(error == EINVAL && test_writes == 0);
+	error = bcm2711_v3d_hardware_pages_sync(&test_engine, 1, 4096);
+	assert(error == EINVAL && test_writes == 0);
+	error = bcm2711_v3d_hardware_pages_sync(&test_engine, 0, 1);
+	assert(error == EINVAL && test_writes == 0);
+	error = bcm2711_v3d_hardware_pages_sync(&test_engine, 0, 0);
+	assert(error == EINVAL && test_writes == 0);
 
 	/* 4.2 invalidates only L2T then slices; clean drains the TMU combiner first. */
 	test_writes = 0;
@@ -540,6 +564,28 @@ kern_usleep_range(
 	assert(handled);
 }
 
+/* Supplies no wall-clock elapsed time to non-timing pass diagnostics. */
+uint64_t
+clock_ticks(
+	void)
+{
+	/* Succeeded: pass diagnostic timing is outside this fixture's contract. */
+	return 0;
+}
+
+/* Leaves optional pass messages out of the native hardware trace. */
+void
+kern_logf(
+	const char *format,
+	...)
+{
+	/* The production return values remain observable independently of logging. */
+	(void)format;
+
+	/* Succeeded: the diagnostic does not change the simulated hardware. */
+	return;
+}
+
 /*
  * Checks CPU cache publication before any native MMU/cache wait can start.
  */
@@ -548,10 +594,11 @@ kern_dcache_clean_range(
 	const void *address,
 	size_t bytes)
 {
-	/* Clean reaches the entire actual table or scratch allocation, outside spin. */
+	/* CPU publication remains outside spin and includes exactly the requested span. */
 	assert(test_engine.hardware.guard.held.value == 0 && address != NULL);
-	assert(bytes == 0x400000 || bytes == 0x200000 || bytes == 0x100000 ||
-	       bytes == 4096 || bytes == 256);
+	assert(bytes != 0 && bytes <= 0x400000);
+	test_clean_address = address;
+	test_clean_bytes = bytes;
 	trace(0x20000, (uint32_t)bytes);
 }
 
@@ -1047,7 +1094,7 @@ check_jobs(
 	table = test_engine.hardware.pages->address;
 	error = bcm2711_v3d_pages_map(table, 0x1000, 0x20000000, 0x100000);
 	assert(error == 0);
-	error = bcm2711_v3d_hardware_pages_sync(&test_engine);
+	error = bcm2711_v3d_hardware_pages_sync(&test_engine, 0x1000, 0x100000);
 	assert(error == 0);
 	memset(&job, 0, sizeof(job));
 	job.kind = BCM2711_V3D_JOB_CL;

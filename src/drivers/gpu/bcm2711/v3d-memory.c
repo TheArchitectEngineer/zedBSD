@@ -82,7 +82,10 @@ bcm2711_v3d_memory_map(
 	bcm2711_buffer_retain(buffer);
 	view->next = *position;
 	*position = view;
-	error = bcm2711_v3d_hardware_pages_sync(space->native);
+	error = bcm2711_v3d_hardware_pages_sync(
+		space->native,
+		view->address,
+		view->bytes);
 	if (error != 0) {
 		/* Failed publication retains both the VA and allocation until an explicit global recovery. */
 		view->references = 0;
@@ -143,7 +146,10 @@ bcm2711_v3d_memory_release(
 	error = bcm2711_v3d_pages_unmap(space->native->hardware.pages->address, view->address, view->bytes);
 	if (error != 0)
 		return error;
-	error = bcm2711_v3d_hardware_pages_sync(space->native);
+	error = bcm2711_v3d_hardware_pages_sync(
+		space->native,
+		view->address,
+		view->bytes);
 	if (error != 0)
 		return error;
 
@@ -189,7 +195,7 @@ bcm2711_v3d_memory_recover(
 	}
 
 	/* Hardware must observe the whole retirement before the first physical reference is dropped. */
-	error = bcm2711_v3d_hardware_pages_sync(space->native);
+	error = bcm2711_v3d_hardware_pages_sync(space->native, 0, 0x100000000ULL);
 	if (error != 0)
 		return error;
 	view = space->views;

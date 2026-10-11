@@ -373,7 +373,10 @@ prepare_storage(
 
 	/* Failed translation publication retains the descriptor and occupied VA interval. */
 	hardware->diagnostic_address = DIAGNOSTIC_ADDRESS;
-	error = bcm2711_v3d_hardware_pages_sync(engine);
+	error = bcm2711_v3d_hardware_pages_sync(
+		engine,
+		hardware->diagnostic_address,
+		DIAGNOSTIC_BYTES);
 	if (error != 0)
 		return error;
 
@@ -399,7 +402,10 @@ retire_storage(
 		return error;
 
 	/* A cached older PTE still owns the allocation until both translation flushes finish. */
-	error = bcm2711_v3d_hardware_pages_sync(engine);
+	error = bcm2711_v3d_hardware_pages_sync(
+		engine,
+		hardware->diagnostic_address,
+		DIAGNOSTIC_BYTES);
 	if (error != 0)
 		return error;
 	bcm2711_buffer_release(hardware->diagnostic);

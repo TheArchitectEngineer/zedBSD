@@ -270,17 +270,33 @@ bcm2711_v3d_hardware_reset(
  */
 int
 bcm2711_v3d_hardware_pages_sync(
-	struct bcm2711_v3d *engine)
+	struct bcm2711_v3d *engine,
+	uint32_t address,
+	uint64_t bytes)
 {
+	uint32_t *entries;
+	size_t first;
+	size_t count;
 	int error;
+
+	/* Bounds the changed GPU span before deriving its CPU page-table range. */
+	if (bytes == 0 || bytes > 0x100000000ULL - address)
+		return EINVAL;
+	if ((address & (BCM2711_V3D_PAGE_BYTES - 1U)) != 0)
+		return EINVAL;
+	if ((bytes & (BCM2711_V3D_PAGE_BYTES - 1U)) != 0)
+		return EINVAL;
 
 	/* Faulted or reset domains cannot safely execute a translation command. */
 	error = worker_admit(engine);
 	if (error != 0)
 		return error;
 
-	/* The DMA table uses a cached CPU view, so every changed entry reaches RAM first. */
-	kern_dcache_clean_range(engine->hardware.pages->address, ENGINE_TABLE_BYTES);
+	/* Publishes only changed PTEs; the cache API includes their containing lines. */
+	entries = engine->hardware.pages->address;
+	first = address / BCM2711_V3D_PAGE_BYTES;
+	count = (size_t)(bytes / BCM2711_V3D_PAGE_BYTES);
+	kern_dcache_clean_range(entries + first, count * sizeof(*entries));
 	kern_io_write_barrier();
 	error = flush_translation(engine);
 	if (error != 0) {

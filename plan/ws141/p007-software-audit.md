@@ -74,3 +74,7 @@ qpu.c/qpu.h/shader-output.cの変更範囲をC全文規約とprivate ownership�
 ## 2026-10-11 same-pass texture snapshot共有
 
 vulkan-native-draw.c/.hとnative-pass.cのprivate API差分をC全文規約で確認。共有の範囲は同じpassだけ、元drawのstorage vectorが唯一の所有者、後続はnative addressのみを借用し全体退役後だけ解放。pending primaryのresource保持、画像feedback拒否とFIFO順序を再確認。構築中のearlier pointerは成功前にNULLへ戻す。budget/OOM時はwhole prefixの既存releaseへ戻す。clang-format19出力と手動全文規約（one argument/line・目的comment）を照合し、production style total0。actual native hostで2draw共有と借用後失敗rollbackを追加、対象build warning/error0、実機未実施。
+
+## 2026-10-11 PTE同期範囲の差分監査
+
+v3d-hardware.c/.h、v3d-memory.c、v3d-diagnostic.cのprivate APIと全callerを確認。32bit VA・64bit lengthの事前検証で4GiB全体も終端pageも表内に収まる。HAL cache cleanが端のlineを含むことを確認し、変更PTEだけを渡す。既存single worker/controller mutexによる編集排他とjob退役を保持、GPU MMUC/TLBのflush順とエラー時quarantineを変えない。recover/initは全体clean。C全文manual review、clang-format19比較、production style0/diff-check PASS、actual hardware/device host PASS、arm64 warning/error0。物理性能と最終WS受入れは未確認。
