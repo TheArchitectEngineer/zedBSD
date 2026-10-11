@@ -58,3 +58,18 @@ kernel 1595355601（TLB copy、busy%）・compositor 1093875040（main＋Codex �
 - 22230e7f4 compositor: CPU で書く画像（shm の窓・矢印・cursor・glass の壁紙・blurred・atlas・tiles・large）を map した LINEAR の staging と map しない OPTIMAL の sample 用の 2 枚にし、書いた所で `kwl_host_image_written`、次の frame の先頭で全体を vkCmdCopyImage。増える memory は 1920x1080 の glass で約 16MB＋shm の窓ごとに窓の大きさ×4 byte。T1-539（Venus・llvmpipe の回帰）を Q1 が依頼済み。
 - 60e18a09f kernel: buffer ごとに直近 8 回の書き込みの矩形（generation と image の offset）を記録し、同じ source からの全体の TLB copy は、前回の copy 以後に source が変わった矩形の tile だけを copy する（変化が無ければ copy を省く、perf 行の skipped）。present の swapchain→scanout の copy が cursor の周りの tile だけになる見込み。CPU に map された run と、記録の無い書き込み（RESOURCE_WRITE など）は全体の copy。vulkan-device host に write log の試験を追加して PASS。
 - 実機の順（Q1 了承）: 焼き直しの image（main 42b5bdbea）で基準 → b53da0069（storage cache）→ 523b18345＋22230e7f4（snapshot と staging）→ 60e18a09f（incremental copy）。
+
+## 実機の結果 3〜5（2026-10-11）
+
+- B（523b18345 snapshot＋22230e7f4 staging）の image で compositor が起動直後に落ちた。main は kernel の 2 つを戻した。compositor の staging の copy を frame の先頭から submit の時の別の command buffer へ移した（a0b4fb103、frame の途中で作る glyph・cursor の形が copy に間に合わなかった）。
+- main の image（kernel 2028059803＝vmunix.good、wayland 3904490197）で 60 秒の操作: 窓のふち・画面のふちで全面の再合成（1 frame 約 0.43 秒）が連続 → shell.c の glass_motion_take の別の dirty 判定が原因、7d318020d で直した。中央の cursor だけの frame は input→shown 中央値 38ms・p90 56ms。
+- 7d318020d（1264254195）の実の fps: 動かしている間の cursor だけの frame 613、画面に出た frame の間隔 中央値 35ms（約 28fps）、p10 30ms、p90 59ms。draw→shown 26ms（vkQueueSubmit 7、present 10、fence 3、acquire・record 各 2）＋前の frame の完了から次の draw まで 9ms。
+- 診断の起動（snapshot 入り kernel 2714848246＋7d318020d）: compositor は落ちない（B の crash は再現せず、原因は未確定）。snapshot を d4833c730 に再 commit。待機中の再描画でも texture の CPU 変換は submission あたり 25〜88ms 残る。
+
+## 修正 9〜12（2026-10-11、実機未確認）
+
+- aa2659dd3 compositor: 窓のふちで cursor の形が変わる時の dirty（全面の再合成）を cursor の位置の damage に。dock の preview の tile の hover を probe に記録。
+- 3d4c6ecea kernel: GPU の job の完了待ちを 1ms の tick の poll から IRQ で worker を起こす形に（v3d-hardware の events_queue）。
+- cbfc88b19 kernel: 変化した tile だけの present の copy（60e18a09f）を再適用。
+- 93dc73c59・55e8ea3ce・83b8cbd48 kernel（診断だけ）: perf 行に `snap=再利用/変換/map された元/その他`、`mapped_kib`、`largest=WxH<f|m|p>`（最大の変換）、`tiles=render/image`（pass の tile 数）を足す。待機中の変換が何の画像かを数で確かめるため。
+- 見直し: client の窓（Wayland の WSI の swapchain の画像）は libvulkan で共有の GPU 専用の allocation で、RESOURCE_MAP されない（host_mapped にならない）と source から読める。「client の窓は host-mapped で snapshot が効かない」という前の見立ては誤りの可能性が高い。client の画像の copy は、上の計数で変換の元を確かめてから作るか決める。
