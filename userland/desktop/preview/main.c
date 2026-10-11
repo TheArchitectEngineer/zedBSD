@@ -81,6 +81,13 @@ main_parse(
 
 	/* Each argument. */
 	for (index = 1; index < argc; index++) {
+		/* What the file is, instead of a picture. */
+		same = strcmp(argv[index], "--info");
+		if (same == 0) {
+			request->info = 1;
+			continue;
+		}
+
 		/* The size. */
 		same = strncmp(argv[index], "--width=", 8U);
 		if (same == 0) {
@@ -141,7 +148,17 @@ main_parse(
 		memcpy(request->stamp, argv[index] + 8, length + 1U);
 	}
 
-	/* Both sides were given. */
+	/* --info alone. */
+	if (request->info) {
+		if (request->width != 0 ||
+		    request->height != 0 ||
+		    request->cover ||
+		    request->stamp[0] != '\0')
+			return -1;
+		return 0;
+	}
+
+	/* Else both sides were given. */
 	if (request->width == 0 || request->height == 0)
 		return -1;
 	return 0;

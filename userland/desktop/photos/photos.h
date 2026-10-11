@@ -139,6 +139,7 @@ int ph_time_parse(const char *text, ph_time *when);
 
 /* The import (import.c). */
 int ph_import(const char *root, const char *source, struct ph_import_result *result);
+void ph_import_clean(const char *root);
 
 /* The compositor transport snapshot, independent of persistent database files. */
 int ph_snapshot_write(FILE *output, const char *root);

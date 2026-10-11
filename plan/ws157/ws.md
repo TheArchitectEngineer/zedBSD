@@ -35,6 +35,10 @@ Keiland の標準 app として、写真を集めて整理し、見る app を�
 | [ws157-p009](phase009/phase.md) | 今回UAT全sourceの全文規約/host/build/main統合 | cleared | ws197-p012、ws127-p013、p008 |
 | [ws157-p010](phase010/phase.md) | Photos削除/API/CLI/通知/背景worker | cleared | p006/p008 outputs |
 | [ws157-p011](phase011/phase.md) | 削除source全文規約/検証/main | in-progress | p010 |
+| [ws157-p012](phase012/phase.md) | media の経路の review（q937）と小さな直し、jail 化の設計 | in-progress（review・直し済み、設計は承認） | p011 |
+| [ws157-p013](phase013/phase.md) | mediastorage の解析を keiland-preview `--info` の jail へ（J1〜J7）、取り込みの時間と一時の名前（#4） | in-progress（実装・host 済み、T1 待ち） | p012 |
+| ws157-p014 | libkeiland の media の API を非同期に、picker・chooser はすぐ窓を開く（#1） | planned | p012 |
+| ws157-p015 | Photos・Phone の thumbnail の decode を jail へ（#11） | planned | p013 |
 
 ## p001 の観点（要件の検討）
 

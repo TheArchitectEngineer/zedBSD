@@ -138,4 +138,14 @@ for malformed in (b'{"version":1,}', b'{"version":true}', b'{"version":1,"media"
     assert process.returncode != 0 and metadata.read_bytes() == malformed
 metadata.write_bytes(good)
 assert len(photos(command("list"))) == 17
+# ws157-p013: a copy cut short (the CLI killed) stays in .incoming, never in Files; the next import empties it.
+incoming = library / ".incoming"
+incoming.mkdir(exist_ok=True)
+(incoming / "import-stale").write_bytes(b"cut short")
+later = originals / "later.png"
+Image.new("RGB", (11, 7), (1, 2, 3)).save(later)
+rows = photos(command("add", [later]))
+assert next(row for row in rows if row[11] == "later.png")[7:9] == ["11", "7"]
+assert not any(incoming.iterdir())
+assert not any(path.name.startswith("import-") for path in (library / "Files").rglob("*"))
 print("PASS Media JSON: default root, date fallback/EXIF, JPEG/PNG sizes, unknown extensions/Unicode, malformed metadata preservation")
