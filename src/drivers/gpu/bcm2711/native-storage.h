@@ -12,6 +12,9 @@
 #include "drivers/gpu/bcm2711/v3d-memory.h"
 #include "drivers/gpu/bcm2711/shader.h"
 
+/* The registered renderer keeps up to this many bytes of idle upload views mapped for reuse. */
+#define BCM2711_NATIVE_CACHE_BYTES (96ULL * 1024U * 1024U)
+
 /* One unpublished or prepared job owns this complete cached allocation through its independent native mapping reference. */
 struct bcm2711_native_storage {
 	struct bcm2711_v3d_space *space;
@@ -30,5 +33,8 @@ int bcm2711_native_program_upload(struct bcm2711_v3d_space *space, const struct 
 
 /* retired=false preserves the whole owner; true consumes and nulls it even if final translation flush fails into the space quarantine. */
 int bcm2711_native_storage_release(struct bcm2711_v3d_space *space, struct bcm2711_native_storage **storage, bool retired);
+
+/* Unmaps every cached idle upload view; recovery calls it before reclaiming translations. */
+int bcm2711_native_storage_drain(struct bcm2711_v3d_space *space);
 
 #endif
