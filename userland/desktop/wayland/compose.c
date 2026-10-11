@@ -2202,6 +2202,12 @@ compose_record(
 	compose->backdrop_set = VK_NULL_HANDLE;
 	pass.renderArea.extent.width = compose->output.width;
 	pass.renderArea.extent.height = compose->output.height;
+
+	/* Restrict tile loading and storing to the same preserved damage as rasterization. */
+	if (region != NULL)
+		pass.renderArea = *region;
+
+	/* The clear value belongs to a whole frame; the partial pass retains old pixels. */
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
 	vkCmdBeginRenderPass(compose->command, &pass, VK_SUBPASS_CONTENTS_INLINE);

@@ -370,3 +370,11 @@ ca30cbc4dの1502649265/8077312をFATへ全体cmp/sync付き配置、旧230921565
 2026-10-11 translation batch最終source: hardware host PASS（2mapのflush4trace一回/dirty12byte、2retirementのphysical holdをend成功まで維持、nested/active-DMA拒否、empty/double end、prepare/retirement flush失敗のRAM保持とchecked reset/recover）。device host PASS（未完batchはCPU clear/native launchを拒否、実FIFO job/budget/late-OOM/uncertain DMA retentionの既存確認も維持）。C全文manualでcaller mutex/no-DMA間隔、PTE dirty範囲、map publication、zero-reference backing、single batch consumption、failed flush quarantine、ordinary immediate resource操作の契約を確認。production style0/diff-check PASS、clang-format19比較は規約の定義/引数/paragraph形式を優先。最終arm64 kernel build exit0/warning0/error0/checker3PASS、cksum1299371254/8077312。
 
 共有code版07b549f07の1591733483/8077312をFATへ全体cmp/sync付き配置（旧1502649265はUFS /var/backups/vmunix.before-shared-code-20261011）しreboot exit0。その後SSH timeout/no-routeが続いたためユーザーへ電源OFF/ONを依頼。最新translation batch kernel1299371254は未転送・未起動。物理shared-code効果/新batchの性能は未確認で、再起動失敗の原因も未判定。SSH復帰後にscreen/ログを確認し、転送・全体照合・rebootと測定を再開する。submit-i01/p006はin-progress、WS incompleteを保持。
+
+
+2026-10-11 user再起動後の観測: cursor移動は約100ms。追加受け入れ目標はマウス移動33ms以内（30fps相当）、16ms（60fps相当）はstretch。既存submit-i01の応答修復をこの測定条件で継続する。shared-code kernelのSSH再確認は10.0.30.2のARP応答無し/No route to host、現在IPをuserへ確認中。translation-batch kernel1299371254/8077312はまだ未転送。
+
+source調査: compose_regionはbuffer ageを含むdamageを正しく蓄積してscissorへ渡すが、compose_recordのrenderAreaは常にwhole output。LOAD passの部分更新でもV3D RCLが全画面tile load/storeを行う。regionが存在する時だけrenderAreaにも同じ矩形を設定する。whole frame/CLEAR、viewport、buffer age、exact scissor、LOAD保持は維持し、既存native passのpartial tile保存契約を使う。新API/HAL責務変更無し。実機効果は配置後に確認する。
+
+
+2026-10-11 damage renderArea補完: whole/CLEAR passは従来全域、partial LOAD passだけbuffer-ageを含むregionをrenderArea/scissor双方へ渡す。全source周辺manual reviewで変更範囲/LOAD既存画素/viewport不変を確認、style変更箇所0（compose.c既存blank-after-brace4件は範囲外）、clang-format19範囲比較/diff-check PASS。既存native-pass fixed-Mesa XML oracle PASS（7 complete streams、partial/grouped tile geometry・draw preservation）、arm64 compositor build exit0/warning0/error0、dynamic ELF dependency checker exit0。cksum2528461358/949352。性能/描画の実機確認は未実施、SSH接続の現在IP回答待ち。33ms目標は未達のまま、submit-i01 in-progress。
