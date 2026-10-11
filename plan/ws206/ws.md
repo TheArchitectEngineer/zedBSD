@@ -27,4 +27,10 @@ Pi 4（10.0.30.2）で scan・WPA2 の接続・DHCP・ping が通る（実機）
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 調査と設計（既存の code・hardware・規格、判断が要る点をユーザーへ） | planned |
+| [p001](phase001/phase.md) | 調査と設計（既存の code・hardware・規格、判断が要る点をユーザーへ） | in-progress（設計の第 1 版、E1〜E3 と実機の読み待ち） |
+| p002 | SDHCI の SDIO の mode・2 つ目の instance・pin・電源・clock | planned |
+| p003 | firmware の package と license の監査 | planned |
+| p004 | Broadcom の bring-up と SDPCM・BCDC | planned |
+| p005 | WLAN の core の FullMAC の形と firmware の supplicant | planned |
+| p006 | 実機の scan・WPA2・DHCP・ping | planned |
+| p007 | 規約の全文の見直し | planned |
