@@ -1,3 +1,14 @@
+# P2 の Queue lane（2026-10-11 第 2 generation、Q1 投入）
+
+承認: 2026-10-11 ユーザー（BUG-288 の直しの担当の推し「P2 を立て直して任せる」に）「これでお願いします。」
+Worktree: `/home/awe/zedBSD-worktrees/p2`、branch `agent/p2`。agent type phase-runner（high）。
+
+| Queue | 対象 | State |
+| --- | --- | --- |
+| q938 | [BUG-288](../../bugs/BUG-288.md)（Pi 4 の reboot の後に戻らない・書いた file が消える・read-only） | active |
+
+---
+
 # P2 の Queue lane（2026-10-11 generation、Q1 投入）
 
 承認: 2026-10-11 ユーザー（このセッション、N=3＋T1 の指示）「P2はバグ修正です。・BUG-263、BUG-274、その他バグがでたら対処。バグが出るまでいったんP2を畳んでおき、必要なときに再度立てる。」
