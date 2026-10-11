@@ -102,7 +102,10 @@ vkGetInstanceProcAddr(
 		return entry->function;
 	}
 
-	/* Device extension commands are visible when any owned physical device supports them. */
+	/*
+	 * Device extension commands, and physical-device commands of a device
+	 * extension, are visible when any owned physical device supports them.
+	 */
 	supported = VK_FALSE;
 	for (index = 0; index < instance->physical_device_count; index++) {
 		physical = instance->physical_devices[index];
