@@ -82,6 +82,7 @@
 #define HDA_VERB_GET_PARAMETER		0xF00U
 #define HDA_VERB_GET_CONNECTION_LIST	0xF02U
 #define HDA_VERB_GET_CONFIG_DEFAULT	0xF1CU
+#define HDA_VERB_GET_PIN_SENSE		0xF09U
 #define HDA_VERB_SET_CONNECTION_SELECT	0x701U
 #define HDA_VERB_SET_POWER_STATE	0x705U
 #define HDA_VERB_SET_CHANNEL_STREAM	0x706U
@@ -114,6 +115,7 @@
 #define HDA_WIDGET_PIN			4U
 
 /* Pin capability, pin control and configuration bits. */
+#define HDA_PIN_CAP_PRESENCE		0x00000004U
 #define HDA_PIN_CAP_HEADPHONE		0x00000008U
 #define HDA_PIN_CAP_OUTPUT		0x00000010U
 #define HDA_PIN_CAP_INPUT		0x00000020U
@@ -121,6 +123,28 @@
 #define HDA_PIN_CONTROL_HEADPHONE	0x80U
 #define HDA_PIN_CONTROL_OUTPUT		0x40U
 #define HDA_PIN_CONTROL_INPUT		0x20U
+
+/* A pin's sense (a plug is in), its microphone bias (VRef) capabilities and the pin control's VRef values (ws204-p002). */
+#define HDA_PIN_SENSE_PRESENT		0x80000000U
+#define HDA_PIN_CAP_VREF_50		0x00000200U
+#define HDA_PIN_CAP_VREF_80		0x00001000U
+#define HDA_PIN_CAP_VREF_100		0x00002000U
+#define HDA_PIN_CONTROL_VREF_50		0x01U
+#define HDA_PIN_CONTROL_VREF_80		0x04U
+#define HDA_PIN_CONTROL_VREF_100	0x05U
+
+/* The configuration default's device (a microphone, a line in) and connection type (digital ones need no bias). */
+#define HDA_CONFIG_DEVICE_SHIFT		20U
+#define HDA_CONFIG_DEVICE_MASK		0xfU
+#define HDA_CONFIG_DEVICE_LINE_IN	0x8U
+#define HDA_CONFIG_DEVICE_MIC		0xaU
+#define HDA_CONFIG_CONNECTION_SHIFT	16U
+#define HDA_CONFIG_CONNECTION_MASK	0xfU
+#define HDA_CONFIG_CONNECTION_OPTICAL	0x5U
+#define HDA_CONFIG_CONNECTION_DIGITAL	0x6U
+
+/* The microphone boost a pin's input amplifier is set to (quarter decibels: +20 dB). */
+#define HDA_MIC_BOOST_QUARTERS		80U
 #define HDA_EAPD_ENABLE			0x02U
 #define HDA_CONFIG_CONNECTIVITY_SHIFT	30U
 #define HDA_CONNECTIVITY_JACK		0U
@@ -363,6 +387,12 @@ static int hda_path_search(struct hda_controller *controller, uint8_t nid, unsig
 static int hda_path_accepts(const struct hda_widget *widget, unsigned target, unsigned pass);
 static int hda_outputs_find(struct hda_controller *controller);
 static int hda_input_find(struct hda_controller *controller);
+static int hda_input_choose(struct hda_controller *controller);
+static int hda_input_candidate(struct hda_controller *controller, unsigned nid, unsigned pass);
+static int hda_route(struct hda_controller *controller, uint8_t nid, uint8_t pin, struct hda_path *path);
+static uint32_t hda_pin_input_control(const struct hda_widget *widget);
+static uint32_t hda_mic_boost(const struct hda_widget *widget);
+static void hda_inputs_log(struct hda_controller *controller);
 static int hda_path_program(struct hda_controller *controller, const struct hda_path *path, int capture);
 static void hda_volume_target_find(struct hda_controller *controller);
 static int hda_volume_write(struct hda_controller *controller, const struct audio_volume *volume);
@@ -760,6 +790,9 @@ hda_publish(
 	    controller->volume_steps != 0U ? "yes" : "no",
 	    controller->format_count,
 	    controller->irq.type == DRV_PCI_IRQ_MSI ? "MSI" : "INTx");
+
+	/* The input pins, for a recording that picks the wrong one (ws204-p002). */
+	hda_inputs_log(controller);
 
 	/* Succeeded: the audio nodes are visible. */
 	return 0;
@@ -2014,6 +2047,259 @@ hda_input_find(
 }
 
 /*
+ * Chooses the input pin the next recording takes (ws204-p002), through the
+ * capture converter chosen at attach: a mic jack whose sense says a plug
+ * is in, else an internal microphone, else the first connected input pin;
+ * and programs its path.  Returns 0, ENODEV without a reachable pin, or an
+ * errno value of the codec.
+ */
+static int
+hda_input_choose(
+	struct hda_controller *controller)
+{
+	struct hda_path path;
+	struct hda_widget *pin;
+	const char *why;
+	unsigned pass;
+	unsigned nid;
+	uint8_t converter;
+	int candidate;
+	int found;
+	int error;
+
+	/* No input: nothing to choose. */
+	if (controller->has_input == 0U)
+		return ENODEV;
+	converter = controller->input.nids[0];
+
+	/* Each kind of pin in turn, each pin that is one, the first the converter reaches. */
+	for (pass = 0; pass < 3U; pass++) {
+		for (nid = 1; nid < HDA_NID_MAX; nid++) {
+			candidate = hda_input_candidate(controller, nid, pass);
+			if (candidate == 0)
+				continue;
+			kern_memset(&path, 0, sizeof(path));
+			found = hda_route(controller, converter, (uint8_t)nid, &path);
+			if (found == 0)
+				continue;
+
+			/* Its path, programmed. */
+			controller->input = path;
+			error = hda_path_program(controller, &controller->input, 1);
+			if (error != 0)
+				return error;
+
+			/* Logged, which pin and why. */
+			pin = &controller->widgets[nid];
+			why = "connected pin";
+			if (pass == 0U)
+				why = "plugged jack";
+			else if (pass == 1U)
+				why = "internal mic";
+			kern_logf("hda: capture from pin 0x%02x (%s) config 0x%08x through %u widget(s)\n",
+			    nid,
+			    why,
+			    pin->config,
+			    path.length);
+			return 0;
+		}
+	}
+
+	/* No pin the converter reaches. */
+	return ENODEV;
+}
+
+/*
+ * Tells whether a pin is a candidate of a pass of hda_input_choose: 0 a
+ * jack that senses a plug, 1 an internal microphone, 2 any connected input
+ * pin.  Reads the pin's sense in the first pass.
+ */
+static int
+hda_input_candidate(
+	struct hda_controller *controller,
+	unsigned nid,
+	unsigned pass)
+{
+	struct hda_widget *widget;
+	unsigned connectivity;
+	unsigned device;
+	uint32_t sense;
+	int error;
+
+	/* A connected input pin. */
+	widget = &controller->widgets[nid];
+	if (widget->present == 0U || widget->type != HDA_WIDGET_PIN)
+		return 0;
+	if ((widget->pin_caps & HDA_PIN_CAP_INPUT) == 0U)
+		return 0;
+	connectivity = hda_connectivity(widget);
+	if (connectivity == HDA_CONNECTIVITY_NONE)
+		return 0;
+
+	/* The last pass takes any. */
+	if (pass == 2U)
+		return 1;
+
+	/* The second: a microphone that is part of the machine. */
+	device = (widget->config >> HDA_CONFIG_DEVICE_SHIFT) & HDA_CONFIG_DEVICE_MASK;
+	if (pass == 1U) {
+		if (connectivity == HDA_CONNECTIVITY_INTERNAL && device == HDA_CONFIG_DEVICE_MIC)
+			return 1;
+		return 0;
+	}
+
+	/* The first: a jack that can tell a plug, with one in. */
+	if (connectivity != HDA_CONNECTIVITY_JACK)
+		return 0;
+	if ((widget->pin_caps & HDA_PIN_CAP_PRESENCE) == 0U)
+		return 0;
+	sense = 0U;
+	error = hda_verb(controller, (uint8_t)nid, HDA_VERB_GET_PIN_SENSE, 0U, &sense);
+	if (error != 0)
+		return 0;
+	if ((sense & HDA_PIN_SENSE_PRESENT) == 0U)
+		return 0;
+
+	/* A plug is in. */
+	return 1;
+}
+
+/*
+ * Searches depth first from a node through mixers and selectors to one
+ * pin.  On success path holds the route from nid to the pin.
+ */
+static int
+hda_route(
+	struct hda_controller *controller,
+	uint8_t nid,
+	uint8_t pin,
+	struct hda_path *path)
+{
+	struct hda_widget *widget;
+	unsigned depth;
+	unsigned index;
+	int found;
+
+	/* Refuses an unknown node or a path that is already too long. */
+	if (nid >= HDA_NID_MAX)
+		return 0;
+	widget = &controller->widgets[nid];
+	if (widget->present == 0U)
+		return 0;
+	if (path->length >= HDA_PATH_MAX)
+		return 0;
+
+	/* Appends the node. */
+	depth = path->length;
+	path->nids[depth] = nid;
+	path->selects[depth] = 0U;
+	path->length++;
+
+	/* The pin wanted ends the route. */
+	if (depth > 0U && nid == pin)
+		return 1;
+
+	/* Continues through the connections of the start or of a mixer or selector. */
+	if (depth == 0U ||
+	    widget->type == HDA_WIDGET_MIXER ||
+	    widget->type == HDA_WIDGET_SELECTOR) {
+		for (index = 0; index < widget->connection_count; index++) {
+			found = hda_route(controller, widget->connections[index], pin, path);
+			if (found != 0) {
+				path->selects[depth] = (uint8_t)index;
+				return 1;
+			}
+		}
+	}
+
+	/* Takes the node back off the path. */
+	path->length--;
+	return 0;
+}
+
+/*
+ * Gives the pin control of an input pin: input enabled, and an analog
+ * microphone's or line input's bias (VRef 80%, else 50%, else 100%); a
+ * digital microphone takes none.
+ */
+static uint32_t
+hda_pin_input_control(
+	const struct hda_widget *widget)
+{
+	unsigned device;
+	unsigned connection;
+
+	/* A digital or optical input, or another device than a microphone or a line in: no bias. */
+	device = (widget->config >> HDA_CONFIG_DEVICE_SHIFT) & HDA_CONFIG_DEVICE_MASK;
+	connection = (widget->config >> HDA_CONFIG_CONNECTION_SHIFT) & HDA_CONFIG_CONNECTION_MASK;
+	if (device != HDA_CONFIG_DEVICE_MIC && device != HDA_CONFIG_DEVICE_LINE_IN)
+		return HDA_PIN_CONTROL_INPUT;
+	if (connection == HDA_CONFIG_CONNECTION_DIGITAL || connection == HDA_CONFIG_CONNECTION_OPTICAL)
+		return HDA_PIN_CONTROL_INPUT;
+
+	/* The bias the pin offers, 80% first. */
+	if ((widget->pin_caps & HDA_PIN_CAP_VREF_80) != 0U)
+		return HDA_PIN_CONTROL_INPUT | HDA_PIN_CONTROL_VREF_80;
+	if ((widget->pin_caps & HDA_PIN_CAP_VREF_50) != 0U)
+		return HDA_PIN_CONTROL_INPUT | HDA_PIN_CONTROL_VREF_50;
+	if ((widget->pin_caps & HDA_PIN_CAP_VREF_100) != 0U)
+		return HDA_PIN_CONTROL_INPUT | HDA_PIN_CONTROL_VREF_100;
+
+	/* None offered. */
+	return HDA_PIN_CONTROL_INPUT;
+}
+
+/*
+ * Gives the gain of a pin's input amplifier nearest HDA_MIC_BOOST_QUARTERS
+ * above 0 dB (its offset), within its steps.
+ */
+static uint32_t
+hda_mic_boost(
+	const struct hda_widget *widget)
+{
+	uint32_t offset;
+	uint32_t steps;
+	uint32_t size;
+	uint32_t gain;
+
+	/* The amplifier's 0 dB, its last step, and a step's size in quarter decibels. */
+	offset = widget->amp_in_caps & HDA_AMP_CAP_OFFSET_MASK;
+	steps = (widget->amp_in_caps >> HDA_AMP_CAP_STEPS_SHIFT) & HDA_AMP_CAP_STEPS_MASK;
+	size = ((widget->amp_in_caps >> HDA_AMP_CAP_SIZE_SHIFT) & HDA_AMP_CAP_SIZE_MASK) + 1U;
+
+	/* The steps nearest the boost above 0 dB, within the amplifier. */
+	gain = offset + (HDA_MIC_BOOST_QUARTERS + size / 2U) / size;
+	if (gain > steps)
+		gain = steps;
+
+	/* The gain. */
+	return gain;
+}
+
+/* Logs each input pin: its configuration default, capabilities and amplifier (ws204-p002, for the machine's microphones). */
+static void
+hda_inputs_log(
+	struct hda_controller *controller)
+{
+	struct hda_widget *widget;
+	unsigned nid;
+
+	/* Each input pin. */
+	for (nid = 1; nid < HDA_NID_MAX; nid++) {
+		widget = &controller->widgets[nid];
+		if (widget->present == 0U || widget->type != HDA_WIDGET_PIN)
+			continue;
+		if ((widget->pin_caps & HDA_PIN_CAP_INPUT) == 0U)
+			continue;
+		kern_logf("hda: input pin 0x%02x config 0x%08x pin caps 0x%08x amp 0x%08x\n",
+		    nid,
+		    widget->config,
+		    widget->pin_caps,
+		    widget->amp_in_caps);
+	}
+}
+
+/*
  * Programs one path: power, connection selects, amplifiers and the pin.
  *
  * Every amplifier on the path is unmuted at 0 dB; the volume target is
@@ -2080,9 +2366,18 @@ hda_path_program(
 				return error;
 		}
 
-		/* Enables the pin in the path's direction. */
+		/* A capture pin's own input amplifier: the microphone boost (ws204-p002). */
+		if (capture != 0 && widget->type == HDA_WIDGET_PIN && (widget->caps & HDA_WIDGET_IN_AMP) != 0U) {
+			gain = hda_mic_boost(widget);
+			error = hda_verb4(controller, nid, HDA_VERB4_SET_AMP,
+			    HDA_AMP_SET_INPUT | HDA_AMP_SET_LEFT | HDA_AMP_SET_RIGHT | gain);
+			if (error != 0)
+				return error;
+		}
+
+		/* Enables the pin in the path's direction (an analog microphone with its bias). */
 		if (widget->type == HDA_WIDGET_PIN) {
-			control = HDA_PIN_CONTROL_INPUT;
+			control = hda_pin_input_control(widget);
 			if (capture == 0) {
 				control = HDA_PIN_CONTROL_OUTPUT;
 				if ((widget->pin_caps & HDA_PIN_CAP_HEADPHONE) != 0U)
@@ -2558,6 +2853,13 @@ hda_ops_prepare(
 		return EINVAL;
 	if (capture != 0 && chosen->capture == 0U)
 		return EINVAL;
+
+	/* A recording takes the input pin there is now: a plugged mic jack, else an internal mic (ws204-p002). */
+	if (capture != 0) {
+		error = hda_input_choose(controller);
+		if (error != 0)
+			return error;
+	}
 
 	/* The controller needs 128-byte aligned buffers and at most one list's entries. */
 	if ((buffer->device_address & 127U) != 0U || (fragment_bytes & 127U) != 0U)
