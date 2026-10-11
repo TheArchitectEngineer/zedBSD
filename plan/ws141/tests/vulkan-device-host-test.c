@@ -1508,6 +1508,16 @@ native_execute_test(
 	writes = native_write_barriers;
 	reads = native_read_barriers;
 
+	/* An unfinished translation batch refuses before target clear or any native launch. */
+	error = bcm2711_v3d_memory_begin(space);
+	assert(error == 0);
+	error = bcm2711_vulkan_native_pass_run(pass, &result);
+	assert(error == EBUSY && result.retired && !pass->executed && native_execute_calls == calls);
+	for (index = 0; index < 512; index++)
+		assert(cpu[index] == 0x6c);
+	error = bcm2711_v3d_memory_end(space);
+	assert(error == 0);
+
 	/* Faulted admission refuses before CPU clear, root execution publication or any mocked native handoff. */
 	space->native->hardware.ready = false;
 	error = bcm2711_vulkan_native_pass_run(pass, &result);

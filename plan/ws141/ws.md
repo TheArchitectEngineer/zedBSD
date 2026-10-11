@@ -339,3 +339,5 @@ R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなく
 7mode compositor5243251c9はmain統合/実機更新済み。render48〜177msへ改善、prepare/releaseは残る。MMUの有限1024read burstとyield counter版1502649265/8077312をhost/build検証済み、実機配置して比較する。
 
 1024read版の実機maintenance yield0でもprepare/releaseが残る。同pass exact code3/default1を元drawのDMA retirementまで共有する版をhost/arm64 warning0で確認。次はkernelを配置し、全体応答を比較する。p006/submit-i01 in-progress。
+
+2026-10-11 最新再開点: main/実機のshared code版07b549f07（1591733483/8077312）はreboot後SSHが未復帰、電源OFF/ONを依頼済み。次のtranslation batch版1299371254/8077312はsource/host/arm64 warning0/checker検証済みで未配置。SSH復帰後に実機状態を確認し、このkernelを配置・照合・rebootしてprepare/release/renderを比較する。stage pause100msは先の実機で成立、7mode compositorは2734866792/949352で配置済み、GPUexecution48〜177msへ改善は確認済み。全体応答の修復完了とはしない。

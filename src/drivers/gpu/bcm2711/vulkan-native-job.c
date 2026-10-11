@@ -107,6 +107,7 @@ bcm2711_vulkan_native_job_execute(
 	uint32_t passes;
 	uint32_t region;
 	int error;
+	int synchronized;
 
 	/* Initial refusals launch no work and therefore retain no device borrow. */
 	if (retired == NULL)
@@ -171,8 +172,13 @@ bcm2711_vulkan_native_job_execute(
 			continue;
 		}
 
-		/* Graphics, full-image clears and each copied image region use the same independent native owner and checked retirement path. */
+		/* Measures preparation while deferring input translations until one checked publication. */
 		step = clock_ticks();
+		error = bcm2711_v3d_memory_begin(&controller->space);
+		if (error != 0)
+			return error;
+
+		/* Graphics, clears and copied image regions acquire complete independent native owners. */
 		if (event->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
 			error = bcm2711_vulkan_native_pass_create(&controller->space, event, &remaining, &job->pass, &next);
 		} else if (event->opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
@@ -187,8 +193,13 @@ bcm2711_vulkan_native_job_execute(
 				region = 0;
 			}
 		} else {
-			return ENOTSUP;
+			error = ENOTSUP;
 		}
+
+		/* Even a rolled-back preparation must flush its edits before any retired VA or RAM is reused. */
+		synchronized = bcm2711_v3d_memory_end(&controller->space);
+		if (synchronized != 0)
+			error = synchronized;
 
 		/* Accumulate preparation separately from device execution and retirement. */
 		prepare_ticks += clock_ticks() - step;
@@ -226,7 +237,17 @@ bcm2711_vulkan_native_job_execute(
 		/* Confirmed DMA retirement permits this resident pass budget and its mappings to be reused by the next FIFO pass. */
 		bytes = job->pass->bytes;
 		step = clock_ticks();
+		error = bcm2711_v3d_memory_begin(&controller->space);
+		if (error != 0)
+			return error;
+
+		/* Consumes all stopped pass roots while their physical allocations remain batch-owned. */
 		error = bcm2711_vulkan_native_pass_release(&job->pass, true);
+
+		/* Physical backing stays owned until the complete batch of PTE withdrawals is flushed. */
+		synchronized = bcm2711_v3d_memory_end(&controller->space);
+		if (synchronized != 0)
+			error = synchronized;
 		release_ticks += clock_ticks() - step;
 		if (error != 0)
 			return error;

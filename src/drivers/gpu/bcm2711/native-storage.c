@@ -203,6 +203,7 @@ bcm2711_native_program_upload(
 
 /*
  * Consumes one upload owner only after native DMA retirement, preserving failed translation teardown in the space quarantine.
+ * A caller-owned translation batch retains the mapped backing until checked end.
  */
 int
 bcm2711_native_storage_release(
@@ -243,6 +244,6 @@ bcm2711_native_storage_release(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: both the independent upload owner and its fully flushed native mapping retired. */
+	/* Succeeded: the CPU root is consumed; a translation batch still owns backing until its checked end. */
 	return 0;
 }

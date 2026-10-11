@@ -103,6 +103,7 @@ static void trace(uint32_t offset, uint32_t data);
 static unsigned find_write(uint32_t offset, unsigned from);
 static void check_jobs(void);
 static void check_resources(void);
+static void check_translation_batch(void);
 static void check_upload_storage(void);
 static void check_worker(struct bcm2711_render_session *session);
 static void check_reservations(void);
@@ -318,6 +319,7 @@ main(
 	check_jobs();
 
 	/* Exercises real renderer callbacks and quarantined native VA ownership after boot work. */
+	check_translation_batch();
 	check_upload_storage();
 	check_resources();
 
@@ -1418,6 +1420,113 @@ find_write(
 	/* No matching write may be silently substituted by a neighboring command. */
 	assert(0);
 	return test_writes;
+}
+
+/* Checks batched PTE publication and proves physical holds survive failed final retirement. */
+static void
+check_translation_batch(
+	void)
+{
+	struct bcm2711_v3d_space space;
+	struct bcm2711_native_storage *first;
+	struct bcm2711_native_storage *second;
+	struct bcm2711_buffer *first_buffer;
+	struct bcm2711_buffer *second_buffer;
+	unsigned releases;
+	int error;
+
+	/* The actual hardware owner supplies all cache and translation completion evidence. */
+	fixture();
+	error = bcm2711_v3d_hardware_start(&test_engine);
+	assert(error == 0);
+	memset(&space, 0, sizeof(space));
+	space.native = &test_engine;
+
+	/* Active DMA and nested ownership cannot admit a translation batch. */
+	test_engine.hardware.job_busy = true;
+	error = bcm2711_v3d_memory_begin(&space);
+	assert(error == EIO && !space.deferred);
+	test_engine.hardware.job_busy = false;
+	error = bcm2711_v3d_memory_begin(&space);
+	assert(error == 0);
+	error = bcm2711_v3d_memory_begin(&space);
+	assert(error == EBUSY && space.deferred);
+
+	/* Two page-rounded maps remain reserved without any hardware publication yet. */
+	test_writes = 0;
+	error = bcm2711_native_storage_create(&space, 64, &first);
+	assert(error == 0);
+	error = bcm2711_native_storage_create(&space, 8192, &second);
+	assert(error == 0 && test_writes == 0);
+	first_buffer = first->view->buffer;
+	second_buffer = second->view->buffer;
+	error = bcm2711_v3d_memory_end(&space);
+	assert(error == 0 && !space.deferred && test_writes == 4);
+	assert(test_clean_address == (uint32_t *)test_engine.hardware.pages->address + 1);
+	assert(test_clean_bytes == 12);
+
+	/* Root consumption clears PTEs while both physical allocations and VA reservations stay held. */
+	error = bcm2711_v3d_memory_begin(&space);
+	assert(error == 0);
+	releases = test_released;
+	test_writes = 0;
+	error = bcm2711_native_storage_release(&space, &first, true);
+	assert(error == 0 && first == NULL);
+	error = bcm2711_native_storage_release(&space, &second, true);
+	assert(error == 0 && second == NULL && test_writes == 0);
+	assert(first_buffer->references == 1 && second_buffer->references == 1);
+	assert(test_released == releases && space.views != NULL);
+	error = bcm2711_v3d_memory_end(&space);
+	assert(error == 0 && space.views == NULL && test_released == releases + 2);
+	assert(first_buffer->references == 0 && second_buffer->references == 0);
+
+	/* A failed final flush keeps software-unmapped backing until checked engine recovery. */
+	error = bcm2711_native_storage_create(&space, 4096, &first);
+	assert(error == 0);
+	first_buffer = first->view->buffer;
+	error = bcm2711_v3d_memory_begin(&space);
+	assert(error == 0);
+	error = bcm2711_native_storage_release(&space, &first, true);
+	assert(error == 0 && first == NULL);
+	test_stuck_hub = 0x1000;
+	error = bcm2711_v3d_memory_end(&space);
+	assert(error == ETIMEDOUT && !space.deferred && space.views != NULL);
+	assert(space.views->pending_release && space.views->quarantined && space.views->references == 0);
+	assert(first_buffer->references == 1);
+	test_stuck_hub = 0;
+	test_writes = 0;
+	error = bcm2711_v3d_hardware_reset(&test_engine);
+	assert(error == 0);
+	error = bcm2711_v3d_memory_recover(&space);
+	assert(error == 0 && space.views == NULL && first_buffer->references == 0);
+
+	/* Failed initial batch publication also keeps each new owner until explicit no-launch cleanup. */
+	error = bcm2711_v3d_memory_begin(&space);
+	assert(error == 0);
+	error = bcm2711_native_storage_create(&space, 4096, &first);
+	assert(error == 0);
+	first_buffer = first->view->buffer;
+	test_stuck_hub = 0x1000;
+	error = bcm2711_v3d_memory_end(&space);
+	assert(error == ETIMEDOUT && first_buffer->references == 1);
+	error = bcm2711_native_storage_release(&space, &first, true);
+	assert(error == EIO && first == NULL && space.views->quarantined);
+	assert(space.views->references == 0 && first_buffer->references == 1);
+	test_stuck_hub = 0;
+	test_writes = 0;
+	error = bcm2711_v3d_hardware_reset(&test_engine);
+	assert(error == 0);
+	error = bcm2711_v3d_memory_recover(&space);
+	assert(error == 0 && space.views == NULL && first_buffer->references == 0);
+
+	/* An empty batch has no register publication and ending it twice is refused. */
+	error = bcm2711_v3d_memory_begin(&space);
+	assert(error == 0);
+	test_writes = 0;
+	error = bcm2711_v3d_memory_end(&space);
+	assert(error == 0 && test_writes == 0);
+	error = bcm2711_v3d_memory_end(&space);
+	assert(error == EINVAL);
 }
 
 /* Checks exact code upload and separates uncertain DMA from consumed failed-flush ownership. */

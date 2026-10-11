@@ -120,6 +120,10 @@ validate_pass(
 	    pass->cpu == NULL)
 		return EINVAL;
 
+	/* Deferred translations are not executable until the batch owner proves publication. */
+	if (pass->space->deferred)
+		return EBUSY;
+
 	/* Faulted or stopped native hardware refuses before coherent CPU clear changes target contents. */
 	if (!pass->space->native->hardware.initialized ||
 	    !pass->space->native->hardware.ready ||

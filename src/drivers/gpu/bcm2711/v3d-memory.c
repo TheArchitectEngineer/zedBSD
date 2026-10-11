@@ -13,12 +13,97 @@
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
 #include "drivers/gpu/bcm2711/v3d-memory.h"
 
+static int synchronize_range(struct bcm2711_v3d_space *space, uint32_t address, uint64_t bytes);
 static bool memory_ready(struct bcm2711_v3d_space *space);
 static void remove_view(struct bcm2711_v3d_space *space, struct bcm2711_v3d_view *view);
 
 /*
+ * Starts one serialized translation batch before DMA launch or after DMA retirement.
+ */
+int
+bcm2711_v3d_memory_begin(
+	struct bcm2711_v3d_space *space)
+{
+	bool ready;
+
+	/* Only the actual native space can own a deferred publication interval. */
+	if (space == NULL || space->native == NULL)
+		return EINVAL;
+
+	/* Nested batches cannot give two callers the same completion boundary. */
+	if (space->deferred)
+		return EBUSY;
+
+	/* An active or faulted engine cannot edit translations underneath native work. */
+	ready = memory_ready(space);
+	if (!ready)
+		return EIO;
+
+	/* No earlier interval contributes dirty PTEs to this new caller-owned batch. */
+	space->pending_address = 0;
+	space->pending_end = 0;
+	space->deferred = true;
+
+	/* Succeeded: the caller must end publication before launching DMA or reusing retired RAM. */
+	return 0;
+}
+
+/*
+ * Publishes one complete translation batch before freeing any retired backing.
+ * A failed flush preserves every pending view and physical hold in quarantine.
+ */
+int
+bcm2711_v3d_memory_end(
+	struct bcm2711_v3d_space *space)
+{
+	struct bcm2711_v3d_view *view;
+	struct bcm2711_v3d_view *next;
+	uint32_t address;
+	uint64_t end;
+	int error;
+
+	/* A matching begin is required even for an interval with no changes. */
+	if (space == NULL || space->native == NULL)
+		return EINVAL;
+	if (!space->deferred)
+		return EINVAL;
+
+	/* Consumes this publication interval once, including a later failed hardware flush. */
+	address = space->pending_address;
+	end = space->pending_end;
+	space->deferred = false;
+	space->pending_address = 0;
+	space->pending_end = 0;
+
+	/* Retained references alone need no PTE publication or physical release. */
+	if (end == 0)
+		return 0;
+
+	/* One cache/TLB completion covers every changed entry and precedes all VA or RAM reuse. */
+	error = bcm2711_v3d_hardware_pages_sync(space->native, address, end - address);
+	if (error != 0)
+		return error;
+
+	/* Only software-unmapped zero-reference views from this batch may now retire. */
+	for (view = space->views; view != NULL; view = next) {
+		next = view->next;
+		if (!view->pending_release)
+			continue;
+
+		/* The completed flush proves these reserved addresses no longer reach the allocation. */
+		remove_view(space, view);
+		bcm2711_buffer_release(view->buffer);
+		kern_free(view);
+	}
+
+	/* Succeeded: live maps are publishable and all confirmed batch retirements are consumed. */
+	return 0;
+}
+
+/*
  * Maps an independent allocation hold before publishing a usable renderer address.
  * The caller excludes native jobs and every other map edit with its controller mutex.
+ * Inside a batch, the returned address becomes executable only after checked end.
  */
 int
 bcm2711_v3d_memory_map(
@@ -82,10 +167,7 @@ bcm2711_v3d_memory_map(
 	bcm2711_buffer_retain(buffer);
 	view->next = *position;
 	*position = view;
-	error = bcm2711_v3d_hardware_pages_sync(
-		space->native,
-		view->address,
-		view->bytes);
+	error = synchronize_range(space, view->address, view->bytes);
 	if (error != 0) {
 		/* Failed publication retains both the VA and allocation until an explicit global recovery. */
 		view->references = 0;
@@ -93,7 +175,7 @@ bcm2711_v3d_memory_map(
 		return error;
 	}
 
-	/* Succeeded: the caller owns one mapped reference and can publish this renderer address. */
+	/* Succeeded: the caller owns one mapped reference; a batch owner still owes publication before DMA. */
 	*result = view;
 	return 0;
 }
@@ -120,6 +202,7 @@ bcm2711_v3d_memory_retain(
 /*
  * Retires a view only after its last resource or job owner has stopped native access.
  * Failed unmap or flush keeps its descriptor, VA reservation and allocation hold.
+ * Batch retirement also keeps that backing until the checked end flush.
  */
 int
 bcm2711_v3d_memory_release(
@@ -146,12 +229,15 @@ bcm2711_v3d_memory_release(
 	error = bcm2711_v3d_pages_unmap(space->native->hardware.pages->address, view->address, view->bytes);
 	if (error != 0)
 		return error;
-	error = bcm2711_v3d_hardware_pages_sync(
-		space->native,
-		view->address,
-		view->bytes);
+	error = synchronize_range(space, view->address, view->bytes);
 	if (error != 0)
 		return error;
+
+	/* The final batch flush must complete before this zero-reference backing can be reused. */
+	if (space->deferred) {
+		view->pending_release = true;
+		return 0;
+	}
 
 	/* No device can still use this mapping, so VA and physical storage can be reused. */
 	remove_view(space, view);
@@ -180,6 +266,10 @@ bcm2711_v3d_memory_recover(
 	ready = memory_ready(space);
 	if (!ready)
 		return EIO;
+
+	/* A caller still owns an unfinished translation-publication interval. */
+	if (space->deferred)
+		return EBUSY;
 
 	/* No surviving resource or job may lose its VA underneath an automatic recovery. */
 	for (view = space->views; view != NULL; view = view->next) {
@@ -210,6 +300,35 @@ bcm2711_v3d_memory_recover(
 	}
 
 	/* Succeeded: all quarantined storage and VA reservations are safe to reuse. */
+	return 0;
+}
+
+/* Publishes a range immediately or accumulates it in the caller's no-DMA batch. */
+static int
+synchronize_range(
+	struct bcm2711_v3d_space *space,
+	uint32_t address,
+	uint64_t bytes)
+{
+	uint64_t end;
+	int error;
+
+	/* Ordinary resource operations preserve their existing immediate visibility contract. */
+	if (!space->deferred) {
+		error = bcm2711_v3d_hardware_pages_sync(space->native, address, bytes);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* One bounded interval covers all edited PTEs, including holes that stayed unchanged. */
+	end = (uint64_t)address + bytes;
+	if (space->pending_end == 0 || address < space->pending_address)
+		space->pending_address = address;
+	if (end > space->pending_end)
+		space->pending_end = end;
+
+	/* Succeeded: actual hardware publication remains the batch owner's checked end operation. */
 	return 0;
 }
 
