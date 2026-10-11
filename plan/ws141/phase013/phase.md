@@ -51,3 +51,10 @@ kernel 1595355601（TLB copy、busy%）・compositor 1093875040（main＋Codex �
 - flip ごとの firmware clock の上げ下げを、変化が無い時は送らない・合成中は下げない。NC の frame の cache clean を省く（c2e17c674）。display host 試験 PASS（合成中の clock の期待値を 500MHz に直した）。
 - private upload の view の再利用の cache（native-storage.c、最大 96MiB、1 view 16MiB まで、4KB と それ以上の 2 本の list、recovery の前に drain）。frame ごとの alloc・map・MMU flush・release を減らす。vulkan-device host に cache の試験を追加して PASS（b53da0069、main 未統合）。
 - 以後は Pi で reboot しない（ユーザーが手で電源を入れ直す）。main の 42b5bdbea 以降で image を作り直す。
+
+## 修正 6〜8（2026-10-11、実機未確認、main 未統合）
+
+- 523b18345 kernel: 変換済み texture の snapshot の cache（CPU に一度も map されていない画像だけ、最大 128MiB、LRU、buffer の generation が変わった時だけ再変換、render/display の resource_map で host_mapped にして以後は使わない）。
+- 22230e7f4 compositor: CPU で書く画像（shm の窓・矢印・cursor・glass の壁紙・blurred・atlas・tiles・large）を map した LINEAR の staging と map しない OPTIMAL の sample 用の 2 枚にし、書いた所で `kwl_host_image_written`、次の frame の先頭で全体を vkCmdCopyImage。増える memory は 1920x1080 の glass で約 16MB＋shm の窓ごとに窓の大きさ×4 byte。T1-539（Venus・llvmpipe の回帰）を Q1 が依頼済み。
+- 60e18a09f kernel: buffer ごとに直近 8 回の書き込みの矩形（generation と image の offset）を記録し、同じ source からの全体の TLB copy は、前回の copy 以後に source が変わった矩形の tile だけを copy する（変化が無ければ copy を省く、perf 行の skipped）。present の swapchain→scanout の copy が cursor の周りの tile だけになる見込み。CPU に map された run と、記録の無い書き込み（RESOURCE_WRITE など）は全体の copy。vulkan-device host に write log の試験を追加して PASS。
+- 実機の順（Q1 了承）: 焼き直しの image（main 42b5bdbea）で基準 → b53da0069（storage cache）→ 523b18345＋22230e7f4（snapshot と staging）→ 60e18a09f（incremental copy）。
