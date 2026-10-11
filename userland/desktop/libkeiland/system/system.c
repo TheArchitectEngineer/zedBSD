@@ -43,7 +43,22 @@
 /* How long a media request is waited for: an import (the backend's hour and a little), the others (ws157-p013). */
 #define SYSTEM_MEDIA_IMPORT_WAIT_MS	3605000LL
 #define SYSTEM_MEDIA_WAIT_MS		125000LL
+
 #define UNUSED_PARAMETER(name) ((void)(name))
+
+/*
+ * A media request under way (ws157-p014): its number (0: the slot is
+ * free), the snapshot's descriptor once it came (-1 before), whether its
+ * answer came and its errno value, and whether the caller gave it up (its
+ * answer is then dropped when it comes).
+ */
+struct system_media_pending {
+	uint32_t request;
+	int descriptor;
+	int done;
+	int error;
+	int abandoned;
+};
 
 /*
  * One application's system: the display, the library's queue with the
@@ -69,12 +84,9 @@ struct kl_system {
 	struct wl_proxy *displays;
 	struct wl_proxy *machine;
 	struct wl_proxy *bluetooth;
-	/* One metadata request owns its response until returned to the caller. */
+	/* The media library's object and its requests under way (ws157-p014), each owning its response until taken. */
 	struct wl_proxy *media;
-	uint32_t media_request;
-	int media_descriptor;
-	int media_done;
-	int media_error;
+	struct system_media_pending media_pending[KL_SYSTEM_MEDIA_PENDING_MAX];
 	struct system_view view;
 	uint32_t next_request;
 	unsigned lost;
@@ -229,7 +241,12 @@ static void system_media_snapshot(void *data, struct wl_proxy *proxy, uint32_t r
 static void system_media_done(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t error);
 static void system_media_changed(void *data, struct wl_proxy *proxy, uint32_t generation);
 static int system_media_run(struct kl_system *system, uint32_t opcode, const char *paths, int input, int *output);
-static int system_media_wait(struct kl_system *system, int64_t limit_ms);
+static int system_media_wait(struct kl_system *system, uint32_t request, int64_t limit_ms);
+static int system_media_begin(struct kl_system *system, uint32_t opcode, const char *paths, int input, uint32_t *request);
+static struct system_media_pending *system_media_find(struct kl_system *system, uint32_t request);
+static void system_media_free(struct system_media_pending *pending);
+static int system_media_paths(const char *const *paths, size_t count, char **list);
+static int system_media_ids(const char *const *ids, size_t count, char *list, size_t size);
 
 static void system_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void system_notify_posted(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t id);
@@ -463,6 +480,7 @@ kl_system_open(
 	struct wl_display *display)
 {
 	struct kl_system *system;
+	size_t index;
 	int error;
 
 	/* A display to open it on. */
@@ -481,7 +499,8 @@ kl_system_open(
 	/* Nothing told yet. */
 	system->display = display;
 	system->next_request = 1U;
-	system->media_descriptor = -1;
+	for (index = 0U; index < KL_SYSTEM_MEDIA_PENDING_MAX; index++)
+		system->media_pending[index].descriptor = -1;
 	system_view_init(&system->view);
 
 	/* Binds the extension and takes the first state. */
@@ -506,6 +525,8 @@ void
 kl_system_close(
 	struct kl_system *system)
 {
+	size_t index;
+
 	/* Nothing to close. */
 	if (system == NULL)
 		return;
@@ -525,8 +546,8 @@ kl_system_close(
 	system_destroy(system->machine, KL_SYSTEM_MACHINE_DESTROY);
 	system_destroy(system->bluetooth, KL_SYSTEM_BLUETOOTH_DESTROY);
 	system_destroy(system->media, KL_SYSTEM_MEDIA_DESTROY);
-	if (system->media_descriptor >= 0)
-		close(system->media_descriptor);
+	for (index = 0U; index < KL_SYSTEM_MEDIA_PENDING_MAX; index++)
+		system_media_free(&system->media_pending[index]);
 	system_destroy(system->manager, KL_SYSTEM_MANAGER_DESTROY);
 
 	/* Then the queue they lived on. */
@@ -3098,7 +3119,8 @@ kl_system_account_touched(
 }
 
 /*
- * Retrieves a metadata snapshot with absolute paths; the caller closes its descriptor.
+ * Retrieves a metadata snapshot with absolute paths, waiting for it; the
+ * caller closes its descriptor.
  */
 int
 kl_system_media_list(
@@ -3117,7 +3139,8 @@ kl_system_media_list(
 }
 
 /*
- * Adds a finite list of paths through the compositor and returns the newest metadata.
+ * Adds a finite list of paths through the compositor, waiting for the
+ * newest metadata.
  */
 int
 kl_system_media_add_paths(
@@ -3127,46 +3150,15 @@ kl_system_media_add_paths(
 	int *descriptor)
 {
 	char *list;
-	size_t index;
-	size_t length;
-	size_t used;
-	size_t clean;
 	int error;
 
-	/* Requires complete path lines without loading image or video contents. */
-	if (paths == NULL || count == 0U || count > 256U)
-		return EINVAL;
-	list = malloc(KL_SYSTEM_MEDIA_PATHS_MAX + 1U);
-	if (list == NULL)
-		return ENOMEM;
-
-	/* Encodes paths as data; spaces and non-ASCII names need no shell quoting. */
-	used = 0U;
-	error = 0;
-	for (index = 0U; index < count; index++) {
-		if (paths[index] == NULL) {
-			error = EINVAL;
-			break;
-		}
-
-		/* Reports filenames that cannot be represented in the line-oriented list. */
-		length = strlen(paths[index]);
-		clean = strcspn(paths[index], "\r\n");
-		if (length == 0U || clean != length || length + 1U > KL_SYSTEM_MEDIA_PATHS_MAX - used) {
-			error = EINVAL;
-			break;
-		}
-
-		/* Separates each complete source with one newline. */
-		memcpy(list + used, paths[index], length);
-		used += length;
-		list[used++] = '\n';
-	}
+	/* The paths as lines. */
+	error = system_media_paths(paths, count, &list);
+	if (error != 0)
+		return error;
 
 	/* The CLI makes recoverable copies and returns only metadata. */
-	list[used] = '\0';
-	if (error == 0)
-		error = system_media_run(system, KL_SYSTEM_MEDIA_ADD, list, -1, descriptor);
+	error = system_media_run(system, KL_SYSTEM_MEDIA_ADD, list, -1, descriptor);
 	free(list);
 	if (error != 0)
 		return error;
@@ -3176,7 +3168,8 @@ kl_system_media_add_paths(
 }
 
 /*
- * Removes a bounded stable-ID list through the compositor's media backend.
+ * Removes a bounded stable-ID list through the compositor's media backend,
+ * waiting for the snapshot.
  */
 int
 kl_system_media_remove_ids(
@@ -3185,11 +3178,7 @@ kl_system_media_remove_ids(
 	size_t count,
 	int *descriptor)
 {
-	char list[256U * 33U + 1U];
-	size_t index;
-	size_t length;
-	size_t clean;
-	size_t used;
+	char list[KL_SYSTEM_MEDIA_IDS_MAX * 33U + 1U];
 	int error;
 
 	/* Refuses a call without a system or a place for the snapshot. */
@@ -3203,34 +3192,12 @@ kl_system_media_remove_ids(
 	if (system->manager_version < KL_SYSTEM_SINCE_MEDIA_REMOVE)
 		return ENOTSUP;
 
-	/* Refuses an empty list or one longer than a request carries. */
-	if (ids == NULL ||
-	    count == 0U ||
-	    count > 256U)
-		return EINVAL;
-
-	/* Encodes identities rather than trusting caller-supplied paths to delete. */
-	used = 0U;
-	for (index = 0U; index < count; index++) {
-		/* A missing identity spoils the whole request. */
-		if (ids[index] == NULL)
-			return EINVAL;
-
-		/* An identity is exactly 32 lowercase hexadecimal digits. */
-		length = strlen(ids[index]);
-		clean = strspn(ids[index], "0123456789abcdef");
-		if (length != 32U || clean != length)
-			return EINVAL;
-
-		/* Appends the identity as one line of the list. */
-		memcpy(list + used, ids[index], length);
-		used += length;
-		list[used] = '\n';
-		used++;
-	}
+	/* The identities as lines. */
+	error = system_media_ids(ids, count, list, sizeof(list));
+	if (error != 0)
+		return error;
 
 	/* Returns the committed metadata snapshot, never image or video bytes. */
-	list[used] = '\0';
 	error = system_media_run(system, KL_SYSTEM_MEDIA_REMOVE, list, -1, descriptor);
 	if (error != 0)
 		return error;
@@ -3240,7 +3207,8 @@ kl_system_media_remove_ids(
 }
 
 /*
- * Applies id-based mutable metadata, preserving concurrent library additions.
+ * Applies id-based mutable metadata, preserving concurrent library
+ * additions, waiting for the snapshot.
  */
 int
 kl_system_media_apply(
@@ -3259,6 +3227,183 @@ kl_system_media_apply(
 
 	/* Succeeded: the CLI merged these identities with its latest database. */
 	return 0;
+}
+
+/*
+ * Starts a list without waiting (ws157-p014).
+ */
+int
+kl_system_media_list_begin(
+	struct kl_system *system,
+	uint32_t *request)
+{
+	int error;
+
+	/* The request, its answer taken later. */
+	error = system_media_begin(system, KL_SYSTEM_MEDIA_LIST, "", -1, request);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: under way. */
+	return 0;
+}
+
+/*
+ * Starts an import of paths without waiting (ws157-p014).
+ */
+int
+kl_system_media_add_paths_begin(
+	struct kl_system *system,
+	const char *const *paths,
+	size_t count,
+	uint32_t *request)
+{
+	char *list;
+	int error;
+
+	/* The paths as lines. */
+	error = system_media_paths(paths, count, &list);
+	if (error != 0)
+		return error;
+
+	/* The request, its answer taken later. */
+	error = system_media_begin(system, KL_SYSTEM_MEDIA_ADD, list, -1, request);
+	free(list);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: under way. */
+	return 0;
+}
+
+/*
+ * Starts a removal of identities without waiting (ws157-p014).
+ */
+int
+kl_system_media_remove_ids_begin(
+	struct kl_system *system,
+	const char *const *ids,
+	size_t count,
+	uint32_t *request)
+{
+	char list[KL_SYSTEM_MEDIA_IDS_MAX * 33U + 1U];
+	int error;
+
+	/* An older server must never receive an opcode it does not implement. */
+	if (system == NULL || request == NULL)
+		return EINVAL;
+	if (system->manager_version < KL_SYSTEM_SINCE_MEDIA_REMOVE)
+		return ENOTSUP;
+
+	/* The identities as lines. */
+	error = system_media_ids(ids, count, list, sizeof(list));
+	if (error != 0)
+		return error;
+
+	/* The request, its answer taken later. */
+	error = system_media_begin(system, KL_SYSTEM_MEDIA_REMOVE, list, -1, request);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: under way. */
+	return 0;
+}
+
+/*
+ * Starts an update of marks and albums without waiting (ws157-p014); the
+ * descriptor is borrowed only for the call.
+ */
+int
+kl_system_media_apply_begin(
+	struct kl_system *system,
+	int changes,
+	uint32_t *request)
+{
+	int error;
+
+	/* A descriptor to send. */
+	if (changes < 0)
+		return EINVAL;
+
+	/* The request, its answer taken later. */
+	error = system_media_begin(system, KL_SYSTEM_MEDIA_APPLY, "", changes, request);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: under way. */
+	return 0;
+}
+
+/*
+ * Takes one answered request (ws157-p014): its number, its errno value and
+ * (when it succeeded) the snapshot's descriptor, the caller's.  Returns 1
+ * when one was taken, 0 when none is answered.
+ */
+int
+kl_system_media_take(
+	struct kl_system *system,
+	uint32_t *request,
+	int *error,
+	int *descriptor)
+{
+	struct system_media_pending *pending;
+	size_t index;
+
+	/* Nothing answered yet. */
+	*request = 0U;
+	*error = 0;
+	*descriptor = -1;
+	if (system == NULL)
+		return 0;
+
+	/* The first answered request the caller still wants. */
+	for (index = 0U; index < KL_SYSTEM_MEDIA_PENDING_MAX; index++) {
+		pending = &system->media_pending[index];
+		if (pending->request == 0U || !pending->done || pending->abandoned)
+			continue;
+
+		/* Its result: a success brings a snapshot. */
+		*request = pending->request;
+		*error = pending->error;
+		if (*error == 0 && pending->descriptor < 0)
+			*error = EPROTO;
+		if (*error == 0) {
+			*descriptor = pending->descriptor;
+			pending->descriptor = -1;
+		}
+
+		/* The slot is free again. */
+		system_media_free(pending);
+		return 1;
+	}
+
+	/* Succeeded: nothing is answered. */
+	return 0;
+}
+
+/*
+ * Gives up a request (ws157-p014): its answer, now or later, is dropped.
+ */
+void
+kl_system_media_cancel(
+	struct kl_system *system,
+	uint32_t request)
+{
+	struct system_media_pending *pending;
+
+	/* The request, if it is under way. */
+	if (system == NULL || request == 0U)
+		return;
+	pending = system_media_find(system, request);
+	if (pending == NULL)
+		return;
+
+	/* Answered: freed now; else freed when its answer comes. */
+	if (pending->done) {
+		system_media_free(pending);
+		return;
+	}
+	pending->abandoned = 1;
 }
 
 /*
@@ -5648,7 +5793,7 @@ system_machine_mount(
 	system_view_machine_mount(&system->view, &mount);
 }
 
-/* Retains a metadata descriptor only for the currently waiting operation. */
+/* Keeps the snapshot's descriptor of a request under way; one of no request under way is closed. */
 static void
 system_media_snapshot(
 	void *data,
@@ -5656,25 +5801,30 @@ system_media_snapshot(
 	uint32_t request,
 	int descriptor)
 {
+	struct system_media_pending *pending;
 	struct kl_system *system;
 
 	/* The owning system and request IDs identify these events. */
 	(void)proxy;
 
-	/* Late responses after a timeout must not replace another operation's metadata. */
+	/* A request this system is waiting for, not answered yet. */
 	system = data;
-	if (request != system->media_request || system->media_done) {
+	pending = system_media_find(system, request);
+	if (pending == NULL || pending->done) {
 		close(descriptor);
 		return;
 	}
 
 	/* Closes a duplicate before accepting its replacement. */
-	if (system->media_descriptor >= 0)
-		close(system->media_descriptor);
-	system->media_descriptor = descriptor;
+	if (pending->descriptor >= 0)
+		close(pending->descriptor);
+	pending->descriptor = descriptor;
 }
 
-/* Records the CLI errno for the matching metadata request. */
+/*
+ * Records a request's answer (the CLI's errno value) and tells the caller
+ * with KL_SYSTEM_CHANGED_MEDIA_DONE; one given up is dropped.
+ */
 static void
 system_media_done(
 	void *data,
@@ -5682,17 +5832,28 @@ system_media_done(
 	uint32_t request,
 	uint32_t error)
 {
+	struct system_media_pending *pending;
 	struct kl_system *system;
 
 	/* The owning system and request IDs identify these events. */
 	(void)proxy;
 
-	/* Unrelated or late answers do not finish the current request. */
+	/* Unrelated or late answers do not finish any request. */
 	system = data;
-	if (request != system->media_request)
+	pending = system_media_find(system, request);
+	if (pending == NULL || pending->done)
 		return;
-	system->media_error = (int)error;
-	system->media_done = 1;
+
+	/* A request given up: dropped with its snapshot. */
+	if (pending->abandoned) {
+		system_media_free(pending);
+		return;
+	}
+
+	/* Answered; the caller hears of it at its next dispatch. */
+	pending->error = (int)error;
+	pending->done = 1;
+	system->view.changed |= KL_SYSTEM_CHANGED_MEDIA_DONE;
 }
 
 /* Marks the app's library stale without transporting image/video bytes. */
@@ -5713,7 +5874,10 @@ system_media_changed(
 	system->view.changed |= KL_SYSTEM_CHANGED_MEDIA;
 }
 
-/* Marshals a metadata operation and transfers its final response to the caller. */
+/*
+ * Starts a metadata operation and waits for its answer: the snapshot's
+ * descriptor goes to the caller.
+ */
 static int
 system_media_run(
 	struct kl_system *system,
@@ -5722,28 +5886,20 @@ system_media_run(
 	int input,
 	int *output)
 {
+	struct system_media_pending *pending;
+	uint32_t request;
 	int64_t limit_ms;
 	int error;
 
-	/* One synchronous operation owns the response slot at a time. */
+	/* A place for the snapshot. */
 	if (system == NULL || output == NULL)
 		return EINVAL;
 	*output = -1;
-	if (system->media == NULL)
-		return ENOTSUP;
-	if (system->lost)
-		return EPIPE;
-	if (system->media_request != 0U)
-		return EBUSY;
-	system->media_request = system_number(system, NULL);
-	system->media_done = 0;
-	system->media_error = 0;
-	if (opcode == KL_SYSTEM_MEDIA_ADD || opcode == KL_SYSTEM_MEDIA_REMOVE)
-		wl_proxy_marshal(system->media, opcode, system->media_request, paths);
-	else if (opcode == KL_SYSTEM_MEDIA_APPLY)
-		wl_proxy_marshal(system->media, opcode, system->media_request, input);
-	else
-		wl_proxy_marshal(system->media, opcode, system->media_request);
+
+	/* The request. */
+	error = system_media_begin(system, opcode, paths, input, &request);
+	if (error != 0)
+		return error;
 
 	/*
 	 * Waits on the private system queue; app callbacks stay on their own
@@ -5754,21 +5910,24 @@ system_media_run(
 	limit_ms = SYSTEM_MEDIA_WAIT_MS;
 	if (opcode == KL_SYSTEM_MEDIA_ADD)
 		limit_ms = SYSTEM_MEDIA_IMPORT_WAIT_MS;
-	error = system_media_wait(system, limit_ms);
-	if (error == 0)
-		error = system->media_error;
-	if (error == 0 && system->media_descriptor < 0)
-		error = EPROTO;
+	error = system_media_wait(system, request, limit_ms);
+
+	/* A request not answered is given up (a late answer is dropped). */
+	pending = system_media_find(system, request);
 	if (error != 0) {
-		if (system->media_descriptor >= 0)
-			close(system->media_descriptor);
-	} else {
-		*output = system->media_descriptor;
+		kl_system_media_cancel(system, request);
+		return error;
 	}
 
-	/* Retires the request before another operation may own a response. */
-	system->media_descriptor = -1;
-	system->media_request = 0U;
+	/* Its result: a success brings a snapshot. */
+	error = pending->error;
+	if (error == 0 && pending->descriptor < 0)
+		error = EPROTO;
+	if (error == 0) {
+		*output = pending->descriptor;
+		pending->descriptor = -1;
+	}
+	system_media_free(pending);
 	if (error != 0)
 		return error;
 
@@ -5776,12 +5935,210 @@ system_media_run(
 	return 0;
 }
 
-/* Reads the private queue with a finite monotonic deadline while the CLI runs. */
+/*
+ * Sends a metadata operation in a free slot.  Returns 0 with the request's
+ * number, ENOTSUP without the media object, EPIPE once the compositor went,
+ * or EBUSY when KL_SYSTEM_MEDIA_PENDING_MAX requests are under way.
+ */
+static int
+system_media_begin(
+	struct kl_system *system,
+	uint32_t opcode,
+	const char *paths,
+	int input,
+	uint32_t *request)
+{
+	struct system_media_pending *pending;
+	size_t index;
+	int status;
+
+	/* The object, and a live connection. */
+	if (system == NULL || request == NULL)
+		return EINVAL;
+	*request = 0U;
+	if (system->media == NULL)
+		return ENOTSUP;
+	if (system->lost)
+		return EPIPE;
+
+	/* A free slot. */
+	pending = NULL;
+	for (index = 0U; index < KL_SYSTEM_MEDIA_PENDING_MAX; index++) {
+		if (system->media_pending[index].request == 0U) {
+			pending = &system->media_pending[index];
+			break;
+		}
+	}
+	if (pending == NULL)
+		return EBUSY;
+
+	/* The slot holds the request until its answer is taken. */
+	pending->request = system_number(system, NULL);
+	pending->descriptor = -1;
+	pending->done = 0;
+	pending->error = 0;
+	pending->abandoned = 0;
+
+	/* The request, with its paths, its descriptor (duplicated by the marshalling) or nothing. */
+	if (opcode == KL_SYSTEM_MEDIA_ADD || opcode == KL_SYSTEM_MEDIA_REMOVE) {
+		wl_proxy_marshal(system->media, opcode, pending->request, paths);
+	} else if (opcode == KL_SYSTEM_MEDIA_APPLY) {
+		wl_proxy_marshal(system->media, opcode, pending->request, input);
+	} else {
+		wl_proxy_marshal(system->media, opcode, pending->request);
+	}
+
+	/* Sent now; a full socket sends it at the next flush. */
+	status = wl_display_flush(system->display);
+	(void)status;
+
+	/* Succeeded: under way. */
+	*request = pending->request;
+	return 0;
+}
+
+/* Finds the slot of a request under way; NULL when there is none. */
+static struct system_media_pending *
+system_media_find(
+	struct kl_system *system,
+	uint32_t request)
+{
+	size_t index;
+
+	/* The slot whose number it is. */
+	if (request == 0U)
+		return NULL;
+	for (index = 0U; index < KL_SYSTEM_MEDIA_PENDING_MAX; index++) {
+		if (system->media_pending[index].request == request)
+			return &system->media_pending[index];
+	}
+
+	/* Succeeded: none. */
+	return NULL;
+}
+
+/* Frees a slot, closing a snapshot nobody took. */
+static void
+system_media_free(
+	struct system_media_pending *pending)
+{
+	/* The descriptor, then the slot. */
+	if (pending->descriptor >= 0)
+		close(pending->descriptor);
+	memset(pending, 0, sizeof(*pending));
+	pending->descriptor = -1;
+}
+
+/*
+ * Encodes a path list for an import (a newline after each path) in a new
+ * string, the caller's.  Returns 0, EINVAL for a list that cannot be
+ * lines, or ENOMEM.
+ */
+static int
+system_media_paths(
+	const char *const *paths,
+	size_t count,
+	char **list)
+{
+	char *text;
+	size_t index;
+	size_t length;
+	size_t used;
+	size_t clean;
+
+	/* Requires complete path lines without loading image or video contents. */
+	*list = NULL;
+	if (paths == NULL || count == 0U || count > KL_SYSTEM_MEDIA_IDS_MAX)
+		return EINVAL;
+	text = malloc(KL_SYSTEM_MEDIA_PATHS_MAX + 1U);
+	if (text == NULL)
+		return ENOMEM;
+
+	/* Encodes paths as data; spaces and non-ASCII names need no shell quoting. */
+	used = 0U;
+	for (index = 0U; index < count; index++) {
+		/* A missing path spoils the list. */
+		if (paths[index] == NULL) {
+			free(text);
+			return EINVAL;
+		}
+
+		/* Reports filenames that cannot be represented in the line-oriented list. */
+		length = strlen(paths[index]);
+		clean = strcspn(paths[index], "\r\n");
+		if (length == 0U || clean != length || length + 1U > KL_SYSTEM_MEDIA_PATHS_MAX - used) {
+			free(text);
+			return EINVAL;
+		}
+
+		/* Separates each complete source with one newline. */
+		memcpy(text + used, paths[index], length);
+		used += length;
+		text[used] = '\n';
+		used++;
+	}
+
+	/* Succeeded: the list. */
+	text[used] = '\0';
+	*list = text;
+	return 0;
+}
+
+/*
+ * Encodes stable identities (32 lowercase hexadecimal digits each) as
+ * lines into list (size bytes).  Returns 0 or EINVAL.
+ */
+static int
+system_media_ids(
+	const char *const *ids,
+	size_t count,
+	char *list,
+	size_t size)
+{
+	size_t index;
+	size_t length;
+	size_t clean;
+	size_t used;
+
+	/* Refuses an empty list or one longer than a request carries. */
+	if (ids == NULL ||
+	    count == 0U ||
+	    count > KL_SYSTEM_MEDIA_IDS_MAX)
+		return EINVAL;
+
+	/* Encodes identities rather than trusting caller-supplied paths to delete. */
+	used = 0U;
+	for (index = 0U; index < count; index++) {
+		/* A missing identity spoils the whole request. */
+		if (ids[index] == NULL)
+			return EINVAL;
+
+		/* An identity is exactly 32 lowercase hexadecimal digits. */
+		length = strlen(ids[index]);
+		clean = strspn(ids[index], "0123456789abcdef");
+		if (length != 32U || clean != length || used + length + 2U > size)
+			return EINVAL;
+
+		/* Appends the identity as one line of the list. */
+		memcpy(list + used, ids[index], length);
+		used += length;
+		list[used] = '\n';
+		used++;
+	}
+
+	/* Succeeded: the list. */
+	list[used] = '\0';
+	return 0;
+}
+
+/* Reads the private queue with a finite monotonic deadline until one request is answered. */
 static int
 system_media_wait(
 	struct kl_system *system,
+	uint32_t request,
 	int64_t limit_ms)
 {
+	struct system_media_pending *pending;
 	struct pollfd descriptor;
 	struct timespec now;
 	int64_t deadline;
@@ -5797,11 +6154,12 @@ system_media_wait(
 	deadline = (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000 + limit_ms;
 	descriptor.fd = wl_display_get_fd(system->display);
 	descriptor.events = POLLIN;
-	while (!system->media_done) {
+	pending = system_media_find(system, request);
+	while (pending != NULL && !pending->done) {
 		status = wl_display_dispatch_queue_pending(system->display, system->queue);
 		if (status < 0)
 			return EPIPE;
-		if (system->media_done)
+		if (pending->done)
 			break;
 		status = clock_gettime(CLOCK_MONOTONIC, &now);
 		if (status != 0)
@@ -5842,6 +6200,10 @@ system_media_wait(
 		if (status < 0)
 			return EPIPE;
 	}
+
+	/* A request that vanished (the system closed under it) was not answered. */
+	if (pending == NULL)
+		return EPROTO;
 
 	/* Succeeded: the compositor finished this operation before the deadline. */
 	return 0;
