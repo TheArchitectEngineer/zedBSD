@@ -32,6 +32,8 @@ static int validate_job(struct bcm2711_v3d *engine, const struct bcm2711_v3d_job
 static int validate_span(struct bcm2711_v3d *engine, uint32_t address, uint64_t bytes);
 static int admit_job(struct bcm2711_v3d *engine);
 static void finish_job(struct bcm2711_v3d *engine, bool failed_dma);
+static void counters_prepare(struct bcm2711_v3d *engine);
+static void counters_read(struct bcm2711_v3d *engine, uint32_t *values);
 static int run_cl(struct bcm2711_v3d *engine, const struct bcm2711_v3d_cl_job *job, struct bcm2711_v3d_job_result *result);
 static int run_tfu(struct bcm2711_v3d *engine, const struct bcm2711_v3d_tfu_job *job, struct bcm2711_v3d_job_result *result);
 static int run_compute(struct bcm2711_v3d *engine, const struct bcm2711_v3d_compute_job *job, struct bcm2711_v3d_job_result *result);
@@ -313,6 +315,9 @@ run_cl(
 {
 	const struct job_queue bin = {2, 0, 0x110, 0x118};
 	const struct job_queue render = {1, 0, 0x114, 0x11c};
+	uint32_t before[BCM2711_V3D_COUNTERS];
+	uint32_t after[BCM2711_V3D_COUNTERS];
+	uint32_t index;
 	unsigned long enabled;
 	uint64_t step;
 	uint64_t bin_ticks;
@@ -370,6 +375,10 @@ run_cl(
 		return error;
 	}
 
+	/* The counters before the run, as the render queue alone runs from here. */
+	counters_prepare(engine);
+	counters_read(engine, before);
+
 	/* No bin-dependent renderer is placed in a hardware FIFO before software completion. */
 	kern_mmio_write32(engine->core.mapped + 0x164, job->render_start);
 	result->retired = false;
@@ -383,6 +392,9 @@ run_cl(
 	render_ticks = clock_ticks() - step;
 	if (error != 0)
 		return error;
+	counters_read(engine, after);
+	for (index = 0; index < BCM2711_V3D_COUNTERS; index++)
+		result->counters[index] = after[index] - before[index];
 	if (job->clean_output) {
 		step = clock_ticks();
 		error = bcm2711_v3d_hardware_clean(engine);
@@ -677,4 +689,50 @@ launch_admit_locked(
 
 	/* Succeeded: the caller owns the job reservation and IRQ publication boundary. */
 	return 0;
+}
+
+/*
+ * Gives the performance counters their sources and starts them, once after each power-up or reset.
+ *
+ * The sources are V3D 4.2 event numbers, four 7-bit fields a register.
+ */
+static void
+counters_prepare(
+	struct bcm2711_v3d *engine)
+{
+	static const uint8_t sources[BCM2711_V3D_COUNTERS] = {
+		32, 13, 15, 16, 17, 18, 19, 34, 24, 25, 54, 29, 3, 9, 84, 82
+	};
+	uint32_t index;
+	uint32_t word;
+
+	/* Already counting. */
+	if (engine->hardware.counters_ready)
+		return;
+
+	/* The sources of counters 0 to 15, then enabled, cleared and without overflow. */
+	for (index = 0; index < BCM2711_V3D_COUNTERS / 4U; index++) {
+		word = (uint32_t)sources[index * 4U] |
+		    (uint32_t)sources[index * 4U + 1U] << 8 |
+		    (uint32_t)sources[index * 4U + 2U] << 16 |
+		    (uint32_t)sources[index * 4U + 3U] << 24;
+		kern_mmio_write32(engine->core.mapped + 0x660 + index * 4U, word);
+	}
+	kern_mmio_write32(engine->core.mapped + 0x650, 0xffffU);
+	kern_mmio_write32(engine->core.mapped + 0x654, 0xffffU);
+	kern_mmio_write32(engine->core.mapped + 0x658, 0xffffU);
+	engine->hardware.counters_ready = true;
+}
+
+/* Reads the performance counters 0 to 15. */
+static void
+counters_read(
+	struct bcm2711_v3d *engine,
+	uint32_t *values)
+{
+	uint32_t index;
+
+	/* Free-running 32-bit counts; their differences give a run's share. */
+	for (index = 0; index < BCM2711_V3D_COUNTERS; index++)
+		values[index] = kern_mmio_read32(engine->core.mapped + 0x680 + index * 4U);
 }
