@@ -35,6 +35,7 @@
 #include <sys/resource.h>
 #include <sys/mount.h>
 #include <sys/statvfs.h>
+#include <sys/time.h>
 #include <sys/utsname.h>
 #include <time.h>
 #include <termios.h>
@@ -102,6 +103,8 @@ main(
 	int pipefd[2], pair[2], listener, client, accepted, poll_result;
 	int pty_master, pty_slave;
 	int datagram_server, datagram_client;
+	struct timeval receive_timeout;
+	int timeout_error;
 	int rights_pipe[2], received_fd;
 	struct msghdr message;
 	struct iovec vector;
@@ -695,7 +698,42 @@ main(
 		/* Returns the computed result. */
 		return function_result;
 	}
+
+	/*
+	 * A datagram pair whose other end closed is at its end (BUG-263): the
+	 * receive timeout turns a receive that waits after poll said readable
+	 * into a failure instead of a hang.
+	 */
 	(void)close(pair[0]);
+	receive_timeout.tv_sec = 2;
+	receive_timeout.tv_usec = 0;
+	timeout_error = setsockopt(pair[1], SOL_SOCKET, SO_RCVTIMEO,
+				   &receive_timeout, sizeof(receive_timeout));
+	if (timeout_error != 0) {
+		function_result = fail_errno("unix-dgram-eof-timeout");
+		return function_result;
+	}
+
+	/* Asks whether the pair with its other end closed reads as readable. */
+	event.fd = pair[1];
+	event.events = POLLIN;
+	event.revents = 0;
+	poll_result = poll(&event, 1, 2000);
+	if (poll_result != 1 || (event.revents & POLLIN) == 0) {
+		function_result = fail("unix-dgram-eof-poll");
+		return function_result;
+	}
+
+	/* Receives the end of file that poll promised, without waiting. */
+	received = recv(pair[1], &byte, 1, 0);
+	if (received < 0) {
+		function_result = fail_errno("unix-dgram-eof-recv");
+		return function_result;
+	}
+	if (received != 0) {
+		function_result = fail("unix-dgram-eof-data");
+		return function_result;
+	}
 	(void)close(pair[1]);
 	memset(&local, 0, sizeof(local));
 	local.sun_family = AF_UNIX;
