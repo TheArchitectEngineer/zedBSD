@@ -147,6 +147,7 @@
 #define AUDIOD_REASON_OUTPUT_LOST	3U
 #define AUDIOD_REASON_REMOVED		4U
 #define AUDIOD_REASON_BROKEN		5U
+#define AUDIOD_REASON_CALL		6U
 
 /* A stream's role (version 2's STREAM_CREATE): media, or an alert (notifications, ringing) that a call does not stop. */
 #define AUDIOD_ROLE_MEDIA		0U

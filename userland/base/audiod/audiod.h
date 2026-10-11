@@ -64,6 +64,9 @@ struct audiod_stream {
 	 */
 	uint32_t role;
 	unsigned held;
+
+	/* The played position last published (ws209-p003, N4: what is heard now, never going back). */
+	uint64_t played_last;
 };
 
 struct audiod_client {
@@ -160,6 +163,14 @@ int audiod_route_timeout_ms(int64_t now_ns);
 int audiod_route_media_to_device(void);
 int audiod_route_output_exists(void);
 int audiod_route_capture_allowed(const struct audiod_client *client);
+int audiod_route_stream_plays(const struct audiod_stream *stream);
+uint32_t audiod_route_stream_gain(const struct audiod_stream *stream);
+unsigned audiod_route_fill_fragments(void);
+double audiod_route_output_delay(void);
+void audiod_flow_playback(struct audiod_device *device, int64_t *mix, uint32_t frames);
+void audiod_flow_capture(struct audiod_device *device, const int32_t *frames_stereo, uint32_t frames);
+void audiod_flow_input(struct audiod_device *device, int32_t *frames_stereo, uint32_t frames);
+uint32_t audiod_soft_factor(uint32_t percent);
 void audiod_route_stream_started(struct audiod_stream *stream);
 int audiod_route_volume_get(uint32_t *left, uint32_t *right, uint32_t *muted);
 int audiod_route_volume_set(uint32_t left, uint32_t right, uint32_t muted);

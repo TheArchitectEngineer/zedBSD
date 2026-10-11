@@ -2,7 +2,8 @@
 # ws209-p002: audiod's endpoints and routes on the host.  Builds audiod for the host (-DAUDIOD_HOST_TEST: its socket and
 # the Bluetooth daemon's and the seat's uids from the environment, compiled in only for this test) and the test client,
 # in a new folder of the build (old folders are Q1's to remove); runs the scenario with this process's uid as the
-# daemon's and the seat's, then the refusals with other uids.  The last line is "audiod-route: all PASS".
+# daemon's and the seat's, then the refusals with other uids, then the sound (ws209-p003: this process playing the
+# daemon's side of the rings in real time).  Each part ends with its "all PASS" line.
 # usage: sh plan/ws209/tests/run-audiod-route-test.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -12,8 +13,8 @@ work=$(mktemp -d "$repo/build/tmp/ws209-route.XXXXXX")
 cd "$repo"
 cc -std=gnu11 -D_GNU_SOURCE -DAUDIOD_HOST_TEST -Wall -Wextra -Werror -Wno-clobbered -O1 -g -fsanitize=address,undefined \
 	-I. -Iinclude userland/base/audiod/main.c userland/base/audiod/mix.c userland/base/audiod/device.c \
-	userland/base/audiod/route.c -lm -o "$work/audiod"
-cc -std=gnu11 -D_GNU_SOURCE -Wall -Wextra -Werror -O1 -g -I. plan/ws209/tests/audiod-route-test.c -o "$work/test"
+	userland/base/audiod/route.c userland/base/audiod/asrc.c -lm -o "$work/audiod"
+cc -std=gnu11 -D_GNU_SOURCE -Wall -Wextra -Werror -O1 -g -I. plan/ws209/tests/audiod-route-test.c -lm -o "$work/test"
 me=$(id -u)
 # The scenario.
 AUDIOD_TEST_SOCKET="$work/a.sock" AUDIOD_TEST_BLUETOOTH_UID=$me AUDIOD_TEST_SEAT_UID=$me "$work/audiod" 2>"$work/a.log" &
@@ -29,6 +30,13 @@ AUDIOD_TEST_SOCKET="$work/b.sock" AUDIOD_TEST_BLUETOOTH_UID=$other AUDIOD_TEST_S
 pid=$!
 sleep 0.5
 timeout 30 "$work/test" "$work/b.sock" denied || status=$?
+kill "$pid" 2>/dev/null || true
+wait "$pid" 2>/dev/null || true
+# The sound (ws209-p003).
+AUDIOD_TEST_SOCKET="$work/c.sock" AUDIOD_TEST_BLUETOOTH_UID=$me AUDIOD_TEST_SEAT_UID=$me "$work/audiod" 2>"$work/c.log" &
+pid=$!
+sleep 0.5
+timeout 60 "$work/test" "$work/c.sock" flow || status=$?
 kill "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
 exit $status

@@ -31,10 +31,13 @@
  */
 
 #include "userland/base/audiod/audiod.h"
+#include "userland/base/audiod/asrc.h"
 
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <pwd.h>
+#include <setjmp.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -54,6 +57,25 @@
 
 /* The volume an endpoint starts at until its daemon tells one (0..100, N5). */
 #define ROUTE_VOLUME_START	50U
+
+/*
+ * The flow (p003): the periods a fill is averaged over, the error past
+ * which the middle stage moves whole blocks (ms, M9), the fade of a
+ * block moved (ms), the gain over a call (-12 dB, Q13), a chunk of a ring
+ * converted at a time (frames), the mix's full scale, and the device's
+ * fragments ahead of it while a call runs (M8, G4).
+ */
+#define ROUTE_FILL_PERIODS	8U
+#define ROUTE_MIDDLE_MS		10.0
+#define ROUTE_FADE_MS		2.0
+#define ROUTE_CALL_GAIN		0.25
+#define ROUTE_CHUNK_FRAMES	256U
+#define ROUTE_MIX_SCALE		2147483648.0
+#define ROUTE_CALL_FRAGMENTS	1U
+#define ROUTE_FILL_FRAGMENTS	2U
+
+/* The most frames of a master period the flow holds at once. */
+#define ROUTE_PERIOD_MAX	4096U
 
 /* One endpoint. */
 struct route_endpoint {
@@ -87,6 +109,20 @@ struct route_endpoint {
 	uint32_t volume_left;
 	uint32_t volume_right;
 	uint32_t muted;
+
+	/*
+	 * The flow (p003): its converter (to the endpoint's rate for a sink,
+	 * from it for a source), whether it is made, whether the ring was
+	 * filled to its target (primed), the fill of the last periods (frames)
+	 * and where the next goes, and the blocks the middle stage moved.
+	 */
+	struct asrc converter;
+	unsigned converter_ready;
+	unsigned primed;
+	double fills[ROUTE_FILL_PERIODS];
+	unsigned fill_next;
+	unsigned fill_count;
+	uint64_t moved;
 };
 
 /* The media route: output and input (0: none), why it last changed, and whether its output was lost (G5). */
@@ -113,6 +149,9 @@ static struct route_endpoint *route_endpoints;
 static uint32_t route_next_id = AUDIOD_ENDPOINT_FIRST;
 static struct route_media route_media;
 static struct route_call route_call;
+
+/* Whether media is held because a call is on the speaker (Q13), as last told. */
+static unsigned route_call_held;
 static int64_t route_media_last_ns;
 static uid_t route_bluetooth_uid;
 static int route_bluetooth_known;
@@ -151,6 +190,19 @@ static void route_broadcast_route(uint32_t route);
 static void route_fill_route(uint32_t route, struct audiod_route_info *info);
 static void route_broadcast_volume(void);
 static void route_copy_text(char *target, const char *source, size_t size);
+static int route_flowing(void);
+static struct route_endpoint *route_far(uint32_t kind);
+static int route_flow_ready(struct route_endpoint *endpoint, uint32_t rate_in, uint32_t rate_out);
+static double route_fill_average(struct route_endpoint *endpoint, double fill);
+static void route_fill_reset(struct route_endpoint *endpoint);
+static int route_write_sink(struct route_endpoint *endpoint, const float *stereo, uint32_t frames);
+static int route_read_source(struct route_endpoint *endpoint, float *stereo, uint32_t frames);
+static void route_ring_put(struct route_endpoint *endpoint, uint64_t position, const float *samples, size_t frames);
+static void route_ring_get(struct route_endpoint *endpoint, uint64_t position, float *samples, size_t frames);
+static void route_broken(struct route_endpoint *endpoint);
+static void route_volume_gain(const struct route_endpoint *endpoint, float gain[2]);
+static void route_ring_fade(struct route_endpoint *endpoint, uint64_t position, size_t frames, int rising);
+static void route_call_hold(void);
 
 /*
  * Starts the endpoints and routes: device:out and device:in when the kernel
@@ -870,10 +922,14 @@ route_state(
 	if (request.state < AUDIOD_ENDPOINT_ACTIVE || request.state > AUDIOD_ENDPOINT_DORMANT)
 		return EINVAL;
 
-	/* The state and the latency. */
+	/* The state and the latency; opened, the ring starts from its target of silence (N3, C3 (a)). */
 	endpoint->state = request.state;
 	endpoint->latency_us = request.latency_us;
 	endpoint->open = 0U;
+	endpoint->primed = 0U;
+	route_fill_reset(endpoint);
+	if (endpoint->converter_ready)
+		asrc_reset(&endpoint->converter);
 	if (request.state == AUDIOD_ENDPOINT_ACTIVE && request.ticket == endpoint->ticket)
 		endpoint->open = 1U;
 
@@ -1248,6 +1304,8 @@ route_remove(
 
 	/* The subscribers, then the record. */
 	route_broadcast_endpoint(endpoint, 1);
+	if (endpoint->converter_ready)
+		asrc_free(&endpoint->converter);
 	if (endpoint->shm != NULL)
 		(void)munmap(endpoint->shm, endpoint->shm_bytes);
 	free(endpoint);
@@ -1468,6 +1526,12 @@ route_held_changed(
 	struct audiod_media_held message;
 	struct audiod_client *client;
 
+	/* A call on the speaker holds the media whatever else is released (Q13). */
+	if (!held && route_call_held) {
+		held = 1U;
+		reason = AUDIOD_REASON_CALL;
+	}
+
 	/* The message. */
 	memset(&message, 0, sizeof(message));
 	message.header.type = AUDIOD_MEDIA_HELD;
@@ -1629,4 +1693,820 @@ route_copy_text(
 	/* Succeeded: copied and ended. */
 	memcpy(target, source, length);
 	target[length] = '\0';
+}
+
+/*
+ * Tells whether a stream is read this period (p003): its output open (the
+ * device's, or a daemon's endpoint that answered ACTIVE, N2 and N20).
+ * While a call flows its output is the call's: on the speaker media
+ * stops and alerts go on (Q13), on a headset both go on, quieter.
+ */
+int
+audiod_route_stream_plays(
+	const struct audiod_stream *stream)
+{
+	struct route_endpoint *output;
+	int flowing;
+
+	/* A call's output, the media stopped on the speaker. */
+	flowing = route_flowing();
+	if (flowing) {
+		output = route_find(route_call.output);
+		if (output == NULL)
+			return 0;
+		if (stream->role == AUDIOD_ROLE_MEDIA && output->owner == NULL)
+			return 0;
+		return output->open;
+	}
+
+	/* The media output, open. */
+	output = route_find(route_media.output);
+	if (output == NULL)
+		return 0;
+
+	/* Succeeded or not. */
+	return output->open;
+}
+
+/* Gives a stream's gain (65536 is unity): -12 dB over a call (Q13), else unity. */
+uint32_t
+audiod_route_stream_gain(
+	const struct audiod_stream *stream)
+{
+	int flowing;
+
+	/* Over a call. */
+	(void)stream;
+	flowing = route_flowing();
+	if (flowing)
+		return (uint32_t)(65536.0 * ROUTE_CALL_GAIN);
+
+	/* Unity. */
+	return 65536U;
+}
+
+/* Tells the device's fragments ahead of it: one while a call runs (M8, G4), else two. */
+unsigned
+audiod_route_fill_fragments(
+	void)
+{
+	int flowing;
+
+	/* Fewer over a call. */
+	flowing = route_flowing();
+	if (flowing)
+		return ROUTE_CALL_FRAGMENTS;
+
+	/* Succeeded: as before. */
+	return ROUTE_FILL_FRAGMENTS;
+}
+
+/*
+ * Tells how far behind what was read what is heard now is, in seconds
+ * (N4): the device's fragments ahead and the kernel's lead for device:out;
+ * the ring's fill and the daemon's latency for a daemon's sink (an
+ * endpoint's converter adds its half window, under a millisecond, left out).
+ */
+double
+audiod_route_output_delay(
+	void)
+{
+	struct route_endpoint *output;
+	struct audiod_shm_header *shm;
+	double seconds;
+	uint64_t fill;
+	int faulted;
+	int flowing;
+
+	/* The output the streams play to: the call's while one flows, else the media's. */
+	output = route_find(route_media.output);
+	flowing = route_flowing();
+	if (flowing)
+		output = route_find(route_call.output);
+	if (output == NULL || audiod_device.rate == 0U || audiod_device.frame_bytes == 0U)
+		return 0.0;
+
+	/* The device's: its fragments ahead and the kernel's lead. */
+	if (output->owner == NULL) {
+		seconds = (double)audiod_route_fill_fragments() * (double)audiod_device.period_frames / (double)audiod_device.rate;
+		seconds += (double)(audiod_device.lead_bytes / audiod_device.frame_bytes) / (double)audiod_device.rate;
+		return seconds;
+	}
+
+	/* A daemon's: its ring's fill (audiod's own ring, guarded as any) and its latency. */
+	shm = output->shm;
+	/*
+	 * A fault comes back past sigsetjmp with the guard still armed (the
+	 * handler jumps only when it is): the call stands alone as the C
+	 * standard allows, and the guard tells which return this is.
+	 */
+	audiod_bus_armed = 0;
+	(void)sigsetjmp(audiod_bus_jump, 1);
+	faulted = audiod_bus_armed;
+	if (faulted) {
+		audiod_bus_armed = 0;
+		return 0.0;
+	}
+
+	/* From here a fault jumps back above. */
+	audiod_bus_armed = 1;
+	fill = shm->write_position - audiod_position_load(&shm->read_position, &shm->read_sequence);
+	audiod_bus_armed = 0;
+	if (fill > output->capacity_frames)
+		fill = 0U;
+	seconds = (double)fill / (double)output->rate + (double)output->latency_us / 1000000.0;
+
+	/* Succeeded. */
+	return seconds;
+}
+
+/*
+ * Takes the period the streams were mixed into (the mix's scale, stereo)
+ * where the routes say: to the media output when it is a daemon's sink
+ * (the device then plays silence), and over a call the far side's voice to
+ * the user's output with the mix under it (Q13), and the user's voice from
+ * a daemon's source to the far side.
+ */
+void
+audiod_flow_playback(
+	struct audiod_device *device,
+	int64_t *mix,
+	uint32_t frames)
+{
+	static float stereo[ROUTE_PERIOD_MAX * 2U];
+	static float voice[ROUTE_PERIOD_MAX * 2U];
+	struct route_endpoint *output;
+	struct route_endpoint *user_output;
+	struct route_endpoint *user_input;
+	struct route_endpoint *far_input;
+	struct route_endpoint *far_output;
+	uint32_t index;
+	int flowing;
+
+	/* Media held while a call is on the speaker (Q13), told when that changes. */
+	route_call_hold();
+
+	/* A period the flow holds. */
+	if (frames > ROUTE_PERIOD_MAX)
+		return;
+
+	/* The mix as floats. */
+	for (index = 0U; index < frames * 2U; index++)
+		stereo[index] = (float)((double)mix[index] / ROUTE_MIX_SCALE);
+
+	/* A call: the far voice to the user's output, the user's voice from a daemon's source to the far side. */
+	flowing = route_flowing();
+	if (flowing) {
+		far_input = route_far(AUDIOD_KIND_SOURCE);
+		far_output = route_far(AUDIOD_KIND_SINK);
+		user_output = route_find(route_call.output);
+		user_input = route_find(route_call.input);
+		(void)route_read_source(far_input, voice, frames);
+
+		/* On the speaker: the voice into the device's mix. */
+		if (user_output == NULL || user_output->owner == NULL) {
+			for (index = 0U; index < frames * 2U; index++)
+				mix[index] += (int64_t)((double)voice[index] * ROUTE_MIX_SCALE);
+		} else {
+			/* On a headset: the voice with the mix under it, the device silent. */
+			for (index = 0U; index < frames * 2U; index++) {
+				voice[index] += stereo[index];
+				mix[index] = 0;
+			}
+
+			/* To the headset. */
+			(void)route_write_sink(user_output, voice, frames);
+		}
+
+		/* The user's voice from a daemon's source (the device's comes through audiod_flow_capture). */
+		if (user_input != NULL && user_input->owner != NULL) {
+			(void)route_read_source(user_input, voice, frames);
+			(void)route_write_sink(far_output, voice, frames);
+		}
+
+		/* The call takes the period. */
+		return;
+	}
+
+	/* No call: the media to a daemon's sink, the device silent. */
+	output = route_find(route_media.output);
+	if (output == NULL || output->owner == NULL)
+		return;
+	for (index = 0U; index < frames * 2U; index++)
+		mix[index] = 0;
+	(void)route_write_sink(output, stereo, frames);
+	(void)device;
+}
+
+/* Takes a recorded period of the device (stereo, 32-bit) to a call's far side when the user's input is the device's. */
+void
+audiod_flow_capture(
+	struct audiod_device *device,
+	const int32_t *frames_stereo,
+	uint32_t frames)
+{
+	static float stereo[ROUTE_PERIOD_MAX * 2U];
+	struct route_endpoint *user_input;
+	uint32_t index;
+	int flowing;
+
+	/* Only over a call whose input is the device's. */
+	(void)device;
+	flowing = route_flowing();
+	if (!flowing || frames > ROUTE_PERIOD_MAX)
+		return;
+	user_input = route_find(route_call.input);
+	if (user_input == NULL || user_input->owner != NULL)
+		return;
+
+	/* The period as floats, to the far side. */
+	for (index = 0U; index < frames * 2U; index++)
+		stereo[index] = (float)((double)frames_stereo[index] / ROUTE_MIX_SCALE);
+	(void)route_write_sink(route_far(AUDIOD_KIND_SINK), stereo, frames);
+}
+
+/*
+ * Gives the recording streams a period from the media input when it is a
+ * daemon's source (stereo, 32-bit, in place of the device's period), at
+ * the device's capture as the clock.  A source the call reads at the same
+ * time (its user's input) gives silence here (one reader a ring).
+ */
+void
+audiod_flow_input(
+	struct audiod_device *device,
+	int32_t *frames_stereo,
+	uint32_t frames)
+{
+	static float stereo[ROUTE_PERIOD_MAX * 2U];
+	struct route_endpoint *input;
+	uint32_t index;
+	double value;
+	int flowing;
+	int result;
+
+	/* A daemon's source as the media input. */
+	(void)device;
+	input = route_find(route_media.input);
+	if (input == NULL || input->owner == NULL || frames > ROUTE_PERIOD_MAX)
+		return;
+
+	/* Silence while it does not stream or the call reads it. */
+	memset(frames_stereo, 0, (size_t)frames * 2U * sizeof(*frames_stereo));
+	flowing = route_flowing();
+	if (flowing && route_call.input == input->id)
+		return;
+	result = route_read_source(input, stereo, frames);
+	if (result != 0)
+		return;
+
+	/* As the mix's scale, saturated. */
+	for (index = 0U; index < frames * 2U; index++) {
+		value = (double)stereo[index] * ROUTE_MIX_SCALE;
+		if (value > 2147483647.0)
+			value = 2147483647.0;
+		if (value < -2147483648.0)
+			value = -2147483648.0;
+		frames_stereo[index] = (int32_t)value;
+	}
+}
+
+/* Tells whether a call's voice flows through the PC (set, and its audio not on the phone, G3). */
+static int
+route_flowing(
+	void)
+{
+	/* Set and here. */
+	if (!route_call.set)
+		return 0;
+
+	/* Succeeded or not. */
+	return route_call.audio_here != 0U;
+}
+
+/* Finds the call's far endpoint of a kind (the far sink takes the user's voice, the far source gives the far one). */
+static struct route_endpoint *
+route_far(
+	uint32_t kind)
+{
+	struct route_endpoint *endpoint;
+
+	/* The call's daemon's endpoint of the far group and the kind. */
+	for (endpoint = route_endpoints; endpoint != NULL; endpoint = endpoint->next) {
+		if (endpoint->owner == route_call.far_owner && endpoint->group == route_call.far_group && endpoint->kind == kind &&
+		    (endpoint->endpoint_class == AUDIOD_CLASS_PHONE_CALL || endpoint->endpoint_class == AUDIOD_CLASS_MODEM_CALL))
+			return endpoint;
+	}
+
+	/* None. */
+	return NULL;
+}
+
+/* Makes an endpoint's converter on first use; 0 or an errno. */
+static int
+route_flow_ready(
+	struct route_endpoint *endpoint,
+	uint32_t rate_in,
+	uint32_t rate_out)
+{
+	int error;
+
+	/* Made once. */
+	if (endpoint->converter_ready)
+		return 0;
+	error = asrc_init(&endpoint->converter, rate_in, rate_out, endpoint->channels);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: ready. */
+	endpoint->converter_ready = 1U;
+	return 0;
+}
+
+/* Keeps a period's fill and gives the average of the last ROUTE_FILL_PERIODS (M9's measuring point). */
+static double
+route_fill_average(
+	struct route_endpoint *endpoint,
+	double fill)
+{
+	double sum;
+	unsigned index;
+
+	/* Kept. */
+	endpoint->fills[endpoint->fill_next] = fill;
+	endpoint->fill_next = (endpoint->fill_next + 1U) % ROUTE_FILL_PERIODS;
+	if (endpoint->fill_count < ROUTE_FILL_PERIODS)
+		endpoint->fill_count++;
+
+	/* The average. */
+	sum = 0.0;
+	for (index = 0U; index < endpoint->fill_count; index++)
+		sum += endpoint->fills[index];
+
+	/* Succeeded. */
+	return sum / (double)endpoint->fill_count;
+}
+
+/* Starts an endpoint's fill average afresh (opened, or after the middle stage moved a block). */
+static void
+route_fill_reset(
+	struct route_endpoint *endpoint)
+{
+	/* Empty. */
+	endpoint->fill_count = 0U;
+	endpoint->fill_next = 0U;
+}
+
+/*
+ * Writes a master period (stereo floats) into a daemon's sink: converted to
+ * its rate and channels at its volume, the first time after its target of
+ * silence, kept at its target by the controller (C3) or, past 10 ms, by
+ * writing a block less or more (M9).  Returns 0, or -1 when the sink is not
+ * open or broke.
+ */
+static int
+route_write_sink(
+	struct route_endpoint *endpoint,
+	const float *stereo,
+	uint32_t frames)
+{
+	static float input[ROUTE_PERIOD_MAX * 2U];
+	static float converted[ROUTE_PERIOD_MAX * 2U * 8U];
+	struct audiod_shm_header *shm;
+	uint64_t write_position;
+	uint64_t read_position;
+	double average;
+	double error_ms;
+	double target;
+	size_t made;
+	size_t used;
+	size_t room;
+	size_t skip;
+	size_t fade;
+	uint32_t index;
+	int jumped;
+	int whole;
+	unsigned channel;
+	float gain[2];
+	int error;
+	int faulted;
+
+	/* An open sink only (N2, N20). */
+	if (endpoint == NULL || !endpoint->open || endpoint->kind != AUDIOD_KIND_SINK)
+		return -1;
+	error = route_flow_ready(endpoint, audiod_device.rate, endpoint->rate);
+	if (error != 0)
+		return -1;
+
+	/* Its channels and volume (a daemon that takes the volume gets unity, N5). */
+	route_volume_gain(endpoint, gain);
+	for (index = 0U; index < frames; index++) {
+		if (endpoint->channels == 1U) {
+			input[index] = (gain[0] * stereo[index * 2U] + gain[1] * stereo[index * 2U + 1U]) / 2.0f;
+			continue;
+		}
+
+		/* Stereo as it is. */
+		for (channel = 0U; channel < 2U; channel++)
+			input[index * 2U + channel] = gain[channel] * stereo[index * 2U + channel];
+	}
+
+	/* Converted (a 48 kHz period makes at most its frames at 48 kHz). */
+	made = asrc_process(&endpoint->converter, input, frames, converted, ROUTE_PERIOD_MAX * 8U, &used);
+
+	/* The ring's positions, checked (E6); a fault in its memory breaks it. */
+	shm = endpoint->shm;
+	/*
+	 * A fault comes back past sigsetjmp with the guard still armed (the
+	 * handler jumps only when it is): the call stands alone as the C
+	 * standard allows, and the guard tells which return this is.
+	 */
+	audiod_bus_armed = 0;
+	(void)sigsetjmp(audiod_bus_jump, 1);
+	faulted = audiod_bus_armed;
+	if (faulted) {
+		audiod_bus_armed = 0;
+		route_broken(endpoint);
+		return -1;
+	}
+
+	/* From here a fault jumps back above. */
+	audiod_bus_armed = 1;
+	write_position = shm->write_position;
+	read_position = audiod_position_load(&shm->read_position, &shm->read_sequence);
+	if (read_position > write_position || write_position - read_position > endpoint->capacity_frames) {
+		audiod_bus_armed = 0;
+		route_broken(endpoint);
+		return -1;
+	}
+
+	/* The first time: its target of silence first (C3 (a)). */
+	target = (double)endpoint->target_frames;
+	if (!endpoint->primed) {
+		route_ring_put(endpoint, write_position, NULL, endpoint->target_frames);
+		write_position += endpoint->target_frames;
+		endpoint->primed = 1U;
+	}
+
+	/* The fill, averaged; past 10 ms a block less or more (M9), within it the controller. */
+	average = route_fill_average(endpoint, (double)(write_position - read_position));
+	error_ms = (average - target) * 1000.0 / (double)endpoint->rate;
+	skip = 0U;
+	fade = (size_t)(ROUTE_FADE_MS * (double)endpoint->rate / 1000.0);
+	jumped = 0;
+	whole = endpoint->fill_count == ROUTE_FILL_PERIODS;
+	if (!whole)
+		error_ms = 0.0;
+	if (error_ms > ROUTE_MIDDLE_MS || error_ms < -ROUTE_MIDDLE_MS) {
+		/* The written end faded out where the reader is not yet, the next written faded in. */
+		if (write_position - read_position >= 2U * fade)
+			route_ring_fade(endpoint, write_position - fade, fade, 0);
+		jumped = 1;
+		endpoint->moved++;
+		route_fill_reset(endpoint);
+		endpoint->converter.integral = 0.0;
+	}
+
+	/* Too full: a block less; too empty: silence first; else the controller. */
+	if (error_ms > ROUTE_MIDDLE_MS) {
+		skip = (size_t)(average - target);
+		if (skip > made)
+			skip = made;
+	} else if (error_ms < -ROUTE_MIDDLE_MS) {
+		route_ring_put(endpoint, write_position, NULL, (size_t)(target - average));
+		write_position += (uint64_t)(target - average);
+	} else {
+		asrc_steer(&endpoint->converter, (average - target) / target);
+	}
+
+	/* The frames, as many as the ring takes; the rest is lost, counted (N16: a sink's overruns are audiod's). */
+	room = endpoint->capacity_frames - (size_t)(write_position - read_position);
+	if (made - skip > room) {
+		skip = made - room;
+		shm->overruns++;
+	}
+
+	/* Written, faded in after a jump. */
+	route_ring_put(endpoint, write_position, converted + skip * endpoint->channels, made - skip);
+	if (jumped && made - skip < fade)
+		fade = made - skip;
+	if (jumped)
+		route_ring_fade(endpoint, write_position, fade, 1);
+	write_position += made - skip;
+	audiod_position_store(&shm->write_position, &shm->write_sequence, write_position);
+	audiod_bus_armed = 0;
+
+	/* Succeeded: written. */
+	return 0;
+}
+
+/*
+ * Reads a master period (stereo floats) from a daemon's source: converted
+ * from its rate, once its fill reached its target (and again after it ran
+ * dry), kept at its target by the controller or, past 10 ms over, by
+ * dropping a block (M9).  Silence when it is not open or has nothing yet.
+ * Returns 0, or -1 for silence.
+ */
+static int
+route_read_source(
+	struct route_endpoint *endpoint,
+	float *stereo,
+	uint32_t frames)
+{
+	static float chunk[ROUTE_CHUNK_FRAMES * 2U];
+	static float converted[ROUTE_PERIOD_MAX * 2U];
+	struct audiod_shm_header *shm;
+	uint64_t write_position;
+	uint64_t read_position;
+	uint64_t available;
+	double average;
+	double error_ms;
+	double target;
+	size_t made;
+	size_t used;
+	size_t take;
+	size_t step;
+	size_t fade;
+	uint64_t drop;
+	double need;
+	uint32_t index;
+	unsigned channel;
+	int dropped;
+	int error;
+	int faulted;
+
+	/* Silence unless it streams. */
+	memset(stereo, 0, (size_t)frames * 2U * sizeof(float));
+	if (endpoint == NULL || !endpoint->open || endpoint->kind != AUDIOD_KIND_SOURCE)
+		return -1;
+	error = route_flow_ready(endpoint, endpoint->rate, audiod_device.rate);
+	if (error != 0)
+		return -1;
+
+	/* The ring's positions, checked (E6). */
+	shm = endpoint->shm;
+	/*
+	 * A fault comes back past sigsetjmp with the guard still armed (the
+	 * handler jumps only when it is): the call stands alone as the C
+	 * standard allows, and the guard tells which return this is.
+	 */
+	audiod_bus_armed = 0;
+	(void)sigsetjmp(audiod_bus_jump, 1);
+	faulted = audiod_bus_armed;
+	if (faulted) {
+		audiod_bus_armed = 0;
+		route_broken(endpoint);
+		return -1;
+	}
+
+	/* From here a fault jumps back above. */
+	audiod_bus_armed = 1;
+	write_position = audiod_position_load(&shm->write_position, &shm->write_sequence);
+	read_position = shm->read_position;
+	if (read_position > write_position || write_position - read_position > endpoint->capacity_frames) {
+		audiod_bus_armed = 0;
+		route_broken(endpoint);
+		return -1;
+	}
+
+	/* What is there. */
+	available = write_position - read_position;
+
+	/*
+	 * What a period takes from it, and its fill as what stays after that
+	 * (the target is what stays).  Filled to its target and a period
+	 * first (C3 (a)), again after running dry.
+	 */
+	need = (double)frames * (double)endpoint->rate / (double)audiod_device.rate;
+	target = (double)endpoint->target_frames;
+	if (!endpoint->primed && (double)available < target + need) {
+		audiod_bus_armed = 0;
+		return -1;
+	}
+
+	/* Primed. */
+	endpoint->primed = 1U;
+
+	/* Too full past 10 ms: the oldest block dropped (M9); within it the controller. */
+	average = route_fill_average(endpoint, (double)available - need);
+	error_ms = (average - target) * 1000.0 / (double)endpoint->rate;
+	dropped = 0;
+	if (endpoint->fill_count == ROUTE_FILL_PERIODS && error_ms > ROUTE_MIDDLE_MS) {
+		drop = (uint64_t)(average - target);
+		if (drop > available)
+			drop = available;
+		read_position += drop;
+		available = write_position - read_position;
+		dropped = 1;
+		endpoint->moved++;
+		route_fill_reset(endpoint);
+		endpoint->converter.integral = 0.0;
+	} else {
+		asrc_steer(&endpoint->converter, (average - target) / target);
+	}
+
+	/* Converted a chunk at a time until the period is made or the ring is dry. */
+	made = 0U;
+	while (made < frames && available != 0U) {
+		take = ROUTE_CHUNK_FRAMES;
+		if (take > available)
+			take = (size_t)available;
+		route_ring_get(endpoint, read_position, chunk, take);
+		used = 0U;
+		step = asrc_process(&endpoint->converter, chunk, take, converted + made * endpoint->channels, frames - made, &used);
+		made += step;
+		read_position += used;
+		available -= used;
+		if (used == 0U && step == 0U)
+			break;
+	}
+
+	/* Given back. */
+	audiod_position_store(&shm->read_position, &shm->read_sequence, read_position);
+
+	/* Ran dry: silence for the rest, counted (N16: a source's underruns are audiod's), refilled to the target before reading again. */
+	if (made < frames) {
+		shm->underruns++;
+		endpoint->primed = 0U;
+		route_fill_reset(endpoint);
+		asrc_reset(&endpoint->converter);
+	}
+
+	/* The ring is no longer touched. */
+	audiod_bus_armed = 0;
+
+	/* After a dropped block, faded in over ROUTE_FADE_MS. */
+	if (dropped) {
+		fade = (size_t)(ROUTE_FADE_MS * (double)audiod_device.rate / 1000.0);
+		for (index = 0U; index < made && index < fade; index++) {
+			for (channel = 0U; channel < endpoint->channels; channel++)
+				converted[index * endpoint->channels + channel] *= (float)index / (float)fade;
+		}
+	}
+
+	/* As stereo. */
+	for (index = 0U; index < made; index++) {
+		if (endpoint->channels == 1U) {
+			stereo[index * 2U] = converted[index];
+			stereo[index * 2U + 1U] = converted[index];
+			continue;
+		}
+
+		/* Stereo as it is. */
+		stereo[index * 2U] = converted[index * 2U];
+		stereo[index * 2U + 1U] = converted[index * 2U + 1U];
+	}
+
+	/* Succeeded: read. */
+	return 0;
+}
+
+/* Puts frames (floats, the endpoint's channels; NULL for silence) into a sink's ring as S16 from a position. */
+static void
+route_ring_put(
+	struct route_endpoint *endpoint,
+	uint64_t position,
+	const float *samples,
+	size_t frames)
+{
+	int16_t *ring;
+	size_t index;
+	size_t slot;
+	unsigned channel;
+	float value;
+
+	/* Each frame at its place in the ring. */
+	ring = (int16_t *)(void *)((uint8_t *)endpoint->shm + AUDIOD_SHM_HEADER);
+	for (index = 0U; index < frames; index++) {
+		slot = (size_t)((position + index) % endpoint->capacity_frames);
+		for (channel = 0U; channel < endpoint->channels; channel++) {
+			value = 0.0f;
+			if (samples != NULL)
+				value = samples[index * endpoint->channels + channel];
+
+			/* Saturated. */
+			if (value > 32767.0f / 32768.0f)
+				value = 32767.0f / 32768.0f;
+			if (value < -1.0f)
+				value = -1.0f;
+			ring[slot * endpoint->channels + channel] = (int16_t)lrintf(value * 32768.0f);
+		}
+	}
+}
+
+/* Gets frames from a source's ring (S16) as floats of its channels from a position. */
+static void
+route_ring_get(
+	struct route_endpoint *endpoint,
+	uint64_t position,
+	float *samples,
+	size_t frames)
+{
+	const int16_t *ring;
+	size_t index;
+	size_t slot;
+	unsigned channel;
+
+	/* Each frame from its place in the ring. */
+	ring = (const int16_t *)(const void *)((const uint8_t *)endpoint->shm + AUDIOD_SHM_HEADER);
+	for (index = 0U; index < frames; index++) {
+		slot = (size_t)((position + index) % endpoint->capacity_frames);
+		for (channel = 0U; channel < endpoint->channels; channel++)
+			samples[index * endpoint->channels + channel] = (float)ring[slot * endpoint->channels + channel] / 32768.0f;
+	}
+}
+
+/* Takes away an endpoint whose ring broke (positions out of range, or its memory faulted), told to its owner (E6). */
+static void
+route_broken(
+	struct route_endpoint *endpoint)
+{
+	/* Gone, the routes moved as for any removal. */
+	route_remove(endpoint, AUDIOD_REASON_BROKEN, 1);
+}
+
+/* Gives an endpoint's soft gain a channel: unity when its daemon takes the volume (N5) or it is a call's far side, else the device's curve, 0 muted. */
+static void
+route_volume_gain(
+	const struct route_endpoint *endpoint,
+	float gain[2])
+{
+	/* The daemon's, or the far side's (what the user hears is not what the far side hears). */
+	gain[0] = 1.0f;
+	gain[1] = 1.0f;
+	if ((endpoint->flags & AUDIOD_ENDPOINT_FLAG_VOLUME) != 0U)
+		return;
+	if (endpoint->endpoint_class == AUDIOD_CLASS_PHONE_CALL || endpoint->endpoint_class == AUDIOD_CLASS_MODEM_CALL)
+		return;
+
+	/* Muted, or the curve audiod uses for the device. */
+	gain[0] = 0.0f;
+	gain[1] = 0.0f;
+	if (endpoint->muted)
+		return;
+	gain[0] = (float)audiod_soft_factor(endpoint->volume_left) / 65536.0f;
+	gain[1] = (float)audiod_soft_factor(endpoint->volume_right) / 65536.0f;
+}
+
+/* Fades a sink's written frames from a position: out (to silence) or in (from it). */
+static void
+route_ring_fade(
+	struct route_endpoint *endpoint,
+	uint64_t position,
+	size_t frames,
+	int rising)
+{
+	int16_t *ring;
+	size_t index;
+	size_t slot;
+	unsigned channel;
+	float factor;
+
+	/* Each frame, scaled by its place in the fade. */
+	ring = (int16_t *)(void *)((uint8_t *)endpoint->shm + AUDIOD_SHM_HEADER);
+	for (index = 0U; index < frames; index++) {
+		factor = (float)(frames - index) / (float)frames;
+		if (rising)
+			factor = (float)index / (float)frames;
+		slot = (size_t)((position + index) % endpoint->capacity_frames);
+		for (channel = 0U; channel < endpoint->channels; channel++)
+			ring[slot * endpoint->channels + channel] = (int16_t)lrintf((float)ring[slot * endpoint->channels + channel] * factor);
+	}
+}
+
+/*
+ * Each period: records from the device's microphone while it is a flowing
+ * call's input, and holds the media while a call is on the speaker (Q13,
+ * MEDIA_HELD reason CALL), released when it ends or moves.
+ */
+static void
+route_call_hold(
+	void)
+{
+	struct route_endpoint *output;
+	unsigned speaker;
+	uint32_t reason;
+	int flowing;
+
+	/* The device's microphone recording while it is the call's input. */
+	speaker = 0U;
+	flowing = route_flowing();
+	if (flowing && route_call.input == AUDIOD_ENDPOINT_DEVICE_IN)
+		audiod_device_start_capture(&audiod_device);
+
+	/* On the speaker: flowing, its output the device's. */
+	if (flowing) {
+		output = route_find(route_call.output);
+		speaker = output == NULL || output->owner == NULL;
+	}
+
+	/* Told only when it changes. */
+	if (speaker == route_call_held)
+		return;
+	route_call_held = speaker;
+
+	/* Told, a hold for a lost output kept. */
+	reason = AUDIOD_REASON_CALL;
+	if (!speaker && route_media.lost)
+		reason = AUDIOD_REASON_OUTPUT_LOST;
+	route_held_changed(speaker || route_media.lost, reason);
 }
