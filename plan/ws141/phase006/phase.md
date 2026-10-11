@@ -265,3 +265,15 @@ ee848d0eb起動後、ユーザーから「GPUでWaylandが表示された」と�
 実機offscreen 64x64（同じ頂点色、背景RGBA=(51,102,153,255)）で、blend無効=(32,64,0,128)、alpha0.5=(32,65,0,129)、alpha0=(0,2,0,2)、alpha1=(64,128,0,255)。opaqueは正しく、透明で背景を保持できない。APIはADD/ONE/ONE_MINUS_SRC_ALPHAを正しく保持している。Mesa固定一次資料のformat keyではUNORM8はhalf-float tile readであり、2個のpacked RG/BAを4成分へ展開する。現在のfloat32読み出しという仮定と実測の小値が一致するため、private QPUにhalf-low/high変換を追加し、tile読み出しを2pairに修復した。write側の既存float32変換とチャンネル順は維持。
 
 限定検証: qpu-format-host-test（固定Mesa pack/unpackによるFMOV low/highの一致）、shader-host-test（実Keiland SPIR-Vと数値比較）PASS。fixtureの誤ったfloat32 tile前提も修正し、halfで正確に表せる非対称の背景値を使用。make -j16 build/arm64/vmunix exit0/warning0/error0/checker PASS、production style-check total0/diff-check PASS。SHA256=6a930700e67354bbf80e9f0c3a2356a831dc7ab2fdfcbe0848ee40568a5b88eb、cksum2513064968/8077312。実機の修正版結果は未確認。
+
+修正commit70879c7c9をmainへfast-forwardしcleanを確認。実機の旧kernelをUFS `/var/backups/vmunix.before-alpha-20261011`（cksum2120890253/8077312）へ保存/cmp、新版をFAT stagingへcopy/cmp/sync/rename/sync/cmp。配置完了のcksum2513064968/8077312で一致、2026-10-11 09:06 JSTにsync後reboot要求を送った。物理再起動と修正後結果の確認待ち。
+
+### 実表示の改善と接続待ち
+
+ユーザー回答「Waylandが正常表示されました」。70879c7c9のアルファ修復は物理画面で改善した。ただしユーザー回答には電源操作の有無が明記されていないためreboot自体の成功/失敗とは分ける。SSHは10.0.30.2へtimeout/No route、ホストのARP隣接状態FAILEDでpingも届かない。現在IPをユーザーへ確認中。修正版のoffscreen再読み戻しは未実施、実機の表示証拠を数値試験と偽らない。
+
+### 同一passの画像変換の共有
+
+準備期限切れの独立修復として、描画ごとに同じ画像全体をコピーしていた処理を、同一の未送信pass内だけで再利用する。最初のdrawが所有する変換済みtexelを後続drawが借り、sampler/texture record・shader・uniform・vertexは個別に保持。passに画像書き込みやattachment feedbackは入れられず、先行queueは退役済み、primaryが実resourceを保持。別pass/別frameにはキャッシュを持ち越さない。whole-pass退役が証明されるまで元のdrawも保持し、途中失敗は借りた画像を解放しない。既存budgetは実際に新しく獲得したpage分だけ減らし、timeout定数の延長はしない。
+
+actual vulkan-device-host-testで既存確認と、2drawの1画像共有・第二drawの4KiB削減・全体解放・借用後budget失敗時のrollback/二重解放なしを確認。既存diagnosticがhostリンクへ追加したclock/log依存にfixtureの非時間測定/表示なしstubを補い、productionを切り替える試験環境変数は追加していない。build最終sourceでmake -j16 build/arm64/vmunix exit0/warning0/error0/checker PASS、style-check production total0/diff-check PASS。SHA256 d06bf2e8410ad99493f56b588254f1af03c2dda499e9be3fc011b51378cbe8a3、cksum952016436/8077312。実機へは未配置（接続待ち）、速度向上を実測済みとはしない。

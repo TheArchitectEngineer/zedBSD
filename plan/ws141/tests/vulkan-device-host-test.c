@@ -615,6 +615,41 @@ bcm2711_render_fail(
 }
 
 /*
+ * Supplies a stationary clock for this allocation/ownership fixture, which does not measure runtime.
+ */
+uint64_t
+clock_ticks(
+	void)
+{
+	/* No time elapses in the host's synchronous fake device. */
+	return 0;
+}
+
+/*
+ * Discards production diagnostics while retaining real error returns in the fixture.
+ */
+void
+kern_logf(
+	const char *format,
+	...)
+{
+	(void)format;
+}
+
+/*
+ * Keeps physical stage output outside the scope of this CPU-only fixture.
+ */
+void
+bcm2711_stage_mark(
+	const char *family,
+	const char *format,
+	...)
+{
+	(void)family;
+	(void)format;
+}
+
+/*
  * Exercises real discovery/device records, queue ownership and explicit unsupported/fault outcomes.
  */
 int
@@ -1087,7 +1122,7 @@ native_draw_test(
 	memset(cpu, 0x75, 512);
 	cleans = native_cleans;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
 	assert(error == 0 && draw != NULL && draw->vertices == 6 && draw->attributes == 1 && draw->count == 11);
 	owned = draw->bytes;
 	assert(owned == 11U * 4096U && available == 1024U * 1024U - owned && native_cleans == cleans + 11);
@@ -1138,14 +1173,14 @@ native_draw_test(
 	for (index = 1; index <= 4; index++) {
 		fail_after = index * 10U;
 		available = 1024U * 1024U;
-		error = bcm2711_vulkan_native_draw_create(space, event, &available, &draw);
+		error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
 		assert(error == ENOMEM && draw == NULL && allocations == baseline && available == 1024U * 1024U);
 		assert(fail_after == 0);
 	}
 
 	/* An insufficient whole-job budget refuses after a valid allocation prefix and preserves the caller's exact budget. */
 	available = 4096;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
 	assert(error == ENOMEM && draw == NULL && available == 4096 && allocations == baseline);
 
 	/* Complete synthetic prepared copies exercise firstVertex rebasing and late logical fetch refusal without changing the real primary. */
@@ -1163,7 +1198,7 @@ native_draw_test(
 	for (index = 0; index < 48; index++)
 		((uint8_t *)cpu)[index] = (uint8_t)(index + 1);
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, changed, &available, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, &draw);
 	assert(error == 0 && draw->vertices == 3 && draw->storage[9]->bytes == 24);
 	assert(draw->bin[16] == 2 && draw->bin[18] == 1 && draw->bin[20] == 4 && draw->bin[22] == 3);
 	source = draw->storage[9]->view->buffer->address;
@@ -1185,7 +1220,7 @@ native_draw_test(
 	pipeline->attributes[0].format = VK_FORMAT_R32_SFLOAT;
 	changed->pipeline = pipeline;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, changed, &available, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, &draw);
 	assert(error == 0 && draw->attributes == 1 && draw->storage[9]->bytes == 24);
 	source = draw->storage[9]->view->buffer->address;
 	for (index = 0; index < 3; index++) {
@@ -1211,7 +1246,7 @@ native_draw_test(
 	/* Defaults already belong to the native root, so the dummy needs no extra fetch mapping. */
 	pipeline->attribute_count = 0;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, changed, &available, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, &draw);
 	assert(error == 0 && draw->attributes == 1 && draw->count == 10);
 	record = draw->storage[9]->view->buffer->address;
 	assert(record[40] == 9U && record[41] == 0x11U && record[44] == 0);
@@ -1225,7 +1260,7 @@ native_draw_test(
 	changed->pipeline = event->pipeline;
 	changed->draw[0] = 4;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, changed, &available, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, &draw);
 	assert(error == EINVAL && draw == NULL && allocations == baseline + 1 && available == 1024U * 1024U);
 	kern_free(changed);
 	puts("WS141 real compiled/native mapped draw/TMU-fetch snapshots/budget/uncertain retirement: PASS");
@@ -1301,6 +1336,34 @@ native_pass_test(
 	assert(view->references == references + 1U && pass->first != NULL && pass->count == 9U);
 	error = bcm2711_vulkan_native_pass_release(&pass, true);
 	assert(error == 0 && pass == NULL && allocations == baseline && view->references == references);
+
+	/* Two draws in one pass share only converted texels; records, shaders and vertices keep separate owners. */
+	events = kern_calloc(4, sizeof(*events));
+	assert(events != NULL);
+	events[0] = *begin_event;
+	events[1] = *begin_event->next;
+	events[2] = events[1];
+	events[3] = *begin_event->next->next;
+	for (index = 0; index < 3; index++)
+		events[index].next = &events[index + 1];
+	available = 8U * 1024U * 1024U;
+	error = bcm2711_vulkan_native_pass_create(space, events, &available, &pass, &following);
+	assert(error == 0 && pass->draws == 2 && pass->first != pass->last);
+	assert(pass->first->texture_count == 1 && pass->last->texture_count == 0);
+	assert(pass->last->count == pass->first->count - 1U);
+	assert(pass->last->bytes == pass->first->bytes - 4096U);
+	assert(pass->first->earlier == NULL && pass->last->earlier == NULL);
+	assert(pass->bytes == bytes + pass->last->bytes);
+	error = bcm2711_vulkan_native_pass_release(&pass, true);
+	assert(error == 0 && allocations == baseline + 1U && view->references == references);
+
+	/* A borrower failing after the first draw exhausted the budget must not release the original texture twice. */
+	available = 11U * 4096U;
+	error = bcm2711_vulkan_native_pass_create(space, events, &available, &pass, &following);
+	assert(error == ENOMEM && pass == NULL && following == NULL);
+	assert(allocations == baseline + 1U && view->references == references);
+	assert(available == 11U * 4096U);
+	kern_free(events);
 
 	/* Selected late allocation failures retire complete draw/list/overflow prefixes and restore the caller's exact aggregate budget. */
 	for (index = 0; index < 3U; index++) {

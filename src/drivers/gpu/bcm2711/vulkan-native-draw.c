@@ -26,6 +26,7 @@ struct native_fetch {
 };
 
 static int allocate_storage(struct bcm2711_vulkan_native_draw *draw, uint64_t bytes, uint64_t available, const struct bcm2711_shader_binary *program, struct bcm2711_native_storage **storage);
+static struct bcm2711_native_storage *find_texture(const struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_resource *image);
 static int prepare_textures(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_prepared_event *event, uint64_t available);
 static int prepare_texture(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_descriptor *descriptor, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
 static int prepare_texture_image(struct bcm2711_vulkan_native_draw *draw, struct bcm2711_vulkan_resource *image, const struct bcm2711_vulkan_sampler *source, uint32_t swap, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
@@ -39,17 +40,20 @@ static int format_components(VkFormat format, uint32_t *components);
 static void write_word(uint8_t *destination, uint32_t word);
 
 /*
- * Builds a complete independently mapped draw at FIFO execution after earlier writes become CPU-visible.
+ * Builds a complete draw at FIFO execution after earlier writes become CPU-visible.
  *
  * The enclosing job retains the pending prepared primary through DMA and
- * uncertainty.  This root copies all GPU-read inputs and consumes no public
- * identities.  Failure releases every acquired unpublished upload owner.
+ * uncertainty.  Code, uniforms and vertices have independent owners; converted
+ * texels may borrow an earlier draw in this same pass.  Every referenced draw
+ * remains alive until whole-pass retirement.  Failure releases only this
+ * root's acquired uploads, leaving borrowed texels with their original owner.
  */
 int
 bcm2711_vulkan_native_draw_create(
 	struct bcm2711_v3d_space *space,
 	const struct bcm2711_vulkan_prepared_event *event,
 	uint64_t *available,
+	const struct bcm2711_vulkan_native_draw *earlier,
 	struct bcm2711_vulkan_native_draw **draw)
 {
 	struct bcm2711_vulkan_native_draw *created;
@@ -81,13 +85,14 @@ bcm2711_vulkan_native_draw_create(
 	if (created == NULL)
 		return ENOMEM;
 	created->space = space;
+	created->earlier = earlier;
 	created->vertices = event->draw[0];
 	kern_memset(&shader, 0, sizeof(shader));
 
 	/* Real IDENT1 determines available VPM; native encoders reject insufficient capacity without launching. */
 	shader.vpm_bytes = ((space->native->hardware.core_ident[1] >> 28) & 15U) * 8192U;
 
-	/* Every texture is copied now rather than frozen before prior queue writes retire. */
+	/* Texture snapshots are made or reused within this pass after prior queue writes retire. */
 	error = prepare_textures(created, event, *available);
 	if (error == 0)
 		error = prepare_programs(created, event, *available, &shader);
@@ -105,10 +110,11 @@ bcm2711_vulkan_native_draw_create(
 	}
 
 	/* The job budget changes only when a complete native root becomes caller-owned. */
+	created->earlier = NULL;
 	*available -= created->bytes;
 	*draw = created;
 
-	/* Succeeded: all code, uniforms, texture/fetch data and records remain independently owned until checked retirement. */
+	/* Succeeded: all inputs remain owned by this root or the caller's retained same-pass prefix. */
 	return 0;
 }
 
@@ -148,7 +154,7 @@ bcm2711_vulkan_native_meta_draw_create(
 	kern_memcpy(event->viewport, meta->viewport, sizeof(event->viewport));
 
 	/* Native upload copies every shader, scalar, source texel and vertex before the temporary description retires. */
-	error = bcm2711_vulkan_native_draw_create(space, event, available, draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, available, NULL, draw);
 	kern_free(event);
 	if (error != 0)
 		return error;
@@ -317,7 +323,7 @@ prepare_texture(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: every numerical binding references independently uploaded texture and sampler storage. */
+	/* Succeeded: each binding uses pass-owned texture storage and independently uploaded sampler records. */
 	return 0;
 }
 
@@ -349,15 +355,27 @@ prepare_texture_image(
 	error = bcm2711_native_texture_size(image->width, image->height, &bytes);
 	if (error != 0)
 		return error;
-	error = allocate_storage(draw, bytes, available, NULL, &pixels);
-	if (error != 0)
-		return error;
-	error = bcm2711_native_texture_copy(image->width, image->height, cpu, image->pitch, (size_t)image->bytes, pixels->view->buffer->address, (size_t)pixels->bytes);
-	if (error != 0)
-		return error;
-	error = bcm2711_native_storage_clean(pixels);
-	if (error != 0)
-		return error;
+	/* Reuse only a snapshot within this pass, which contains no intervening image writes. */
+	pixels = find_texture(draw, image);
+	if (pixels == NULL) {
+		/* A new image consumes the same bounded owner slot and staging budget as before. */
+		if (draw->texture_count == BCM2711_VULKAN_PIPELINE_SETS * BCM2711_VULKAN_LAYOUT_BINDINGS)
+			return ENOMEM;
+		error = allocate_storage(draw, bytes, available, NULL, &pixels);
+		if (error != 0)
+			return error;
+		error = bcm2711_native_texture_copy(image->width, image->height, cpu, image->pitch, (size_t)image->bytes, pixels->view->buffer->address, (size_t)pixels->bytes);
+		if (error != 0)
+			return error;
+		error = bcm2711_native_storage_clean(pixels);
+		if (error != 0)
+			return error;
+
+		/* Publish the cache entry only after the original draw owns a complete cleaned snapshot. */
+		draw->textures[draw->texture_count].image = image;
+		draw->textures[draw->texture_count].pixels = pixels;
+		draw->texture_count++;
+	}
 
 	/* Both 24-byte records have independent 32-byte alignment within the same zero-padded allocation. */
 	error = allocate_storage(draw, 64, available, NULL, &records);
@@ -846,4 +864,35 @@ prepare_meta_texture(
 
 	/* Succeeded: transfer shader binding zero owns all staged texels and numerical sampler/texture records. */
 	return 0;
+}
+
+/* Finds a same-pass raster snapshot without transferring or duplicating its allocation ownership. */
+static struct bcm2711_native_storage *
+find_texture(
+	const struct bcm2711_vulkan_native_draw *draw,
+	const struct bcm2711_vulkan_resource *image)
+{
+	const struct bcm2711_vulkan_native_draw *owner;
+	uint32_t index;
+
+	/* Multiple descriptors in this draw may use the same raster with different sampler records. */
+	for (index = 0; index < draw->texture_count; index++) {
+		if (draw->textures[index].image == image)
+			return draw->textures[index].pixels;
+	}
+
+	/* The pass retains every earlier owner until all referencing commands have stopped. */
+	owner = draw->earlier;
+	while (owner != NULL) {
+		for (index = 0; index < owner->texture_count; index++) {
+			if (owner->textures[index].image == image)
+				return owner->textures[index].pixels;
+		}
+
+		/* Traverse only the caller's completed prefix, never an unrelated pass or frame. */
+		owner = owner->next;
+	}
+
+	/* No retained snapshot exists in this pass; the caller must convert the current raster. */
+	return NULL;
 }

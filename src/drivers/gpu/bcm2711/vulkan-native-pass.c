@@ -425,7 +425,7 @@ collect_draws(
 		}
 
 		/* Complete native draw preparation occurs at FIFO execution after preceding GPU output becomes CPU-visible. */
-		error = bcm2711_vulkan_native_draw_create(pass->space, event, remaining, &draw);
+		error = bcm2711_vulkan_native_draw_create(pass->space, event, remaining, pass->first, &draw);
 		if (error != 0)
 			return error;
 

@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: 既存履歴 q691（p001）・q695（p002）。現在の独立セッションの実行範囲は [execution-20261009.md](execution-20261009.md)
-Resume point: p011 R0/p012 counterは実機cleared。p006 submit-i01で診断kernelとlibvulkanを実機配置し、最初の描画準備中に予約のETIMEDOUT、その後prepare EIOを確認。UIF変換の4byte逐次コピーを16byte行単位へ改善し、準備段階/所要時間診断を追加。改善版の再起動とKeiland実描画を確認する。WS incomplete、視覚確認は未達。共有投影はQ1。
+Resume point: ユーザーが70879c7c9の実機で「Waylandが正常表示」と確認。alpha tile read修復は視覚的に改善。reboot後に10.0.30.2のSSH/ARP応答が戻らず、現在IPの確認待ち。実機読み戻しの再確認と、通常session初回予約timeoutの解消が残る。同一pass内の重複画像変換を共有する修正をhost/buildで確認済み、実機未配置。WS incomplete、共有投影はQ1。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 

@@ -70,3 +70,7 @@ software実装/監査/統合後もWS incomplete、p002〜p006のwhole acceptance
 ## 2026-10-11 alpha tile read修復の差分監査
 
 qpu.c/qpu.h/shader-output.cの変更範囲をC全文規約とprivate ownershipに照合。新しい2命令はnative4.2 FMOV低/高halfを独立符号化し、固定Mesa decoder/encoderとのroundtripを確認。既存register確保・error unwind・FIFO uniform消費を保持。fragmentは各pairをscratchに読んで2つの独立registerへ展開し、source alpha保持後のsource-overへ渡す。追加HAL/public API無し。clang-format19の出力比較、style-check total0、qpu-format/shader host PASS、arm64 warning0 build PASS。実機読み戻しは後続であり、whole WS acceptanceをclearしない。
+
+## 2026-10-11 same-pass texture snapshot共有
+
+vulkan-native-draw.c/.hとnative-pass.cのprivate API差分をC全文規約で確認。共有の範囲は同じpassだけ、元drawのstorage vectorが唯一の所有者、後続はnative addressのみを借用し全体退役後だけ解放。pending primaryのresource保持、画像feedback拒否とFIFO順序を再確認。構築中のearlier pointerは成功前にNULLへ戻す。budget/OOM時はwhole prefixの既存releaseへ戻す。clang-format19出力と手動全文規約（one argument/line・目的comment）を照合し、production style total0。actual native hostで2draw共有と借用後失敗rollbackを追加、対象build warning/error0、実機未実施。
