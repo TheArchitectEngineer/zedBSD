@@ -13,8 +13,9 @@
  * the thumbnails and the picture the window gives it, lists the photos it
  * wants pictures of, and sets flags for what the window does for it
  * (saving the marks, reading the library again).  The thread (thumbs.c)
- * decodes the files (decode.c) and makes their pictures, one job at a
- * time, the photo shown whole before the thumbnails.
+ * has keiland-preview make the files' pictures in its sandbox (decode.c,
+ * ws157-p015), one job at a time, the photo shown whole before the
+ * thumbnails.
  */
 
 #ifndef PHOTOS_APP_H
@@ -161,10 +162,10 @@ struct ph_result {
 	struct kl_image image;
 };
 
-/* The pictures of the files (decode.c). */
-int ph_decode(const char *path, struct kl_image *image);
-int ph_thumbnail(const struct kl_image *picture, int side, struct kl_image *thumb);
-int ph_fit(const struct kl_image *picture, int side, struct kl_image *fitted);
+/* The pictures of the files, made by keiland-preview in its sandbox (photos/decode.c, ws157-p015). */
+struct preview_picture;
+int ph_preview(const char *path, int side, int cover, struct kl_image *image);
+void ph_preview_adopt(struct preview_picture *picture, struct kl_image *image);
 int ph_turn(const struct kl_image *picture, int turns, struct kl_image *turned);
 
 /* The thread that makes them, the thumbnails kept in a cache folder (thumbs.c). */

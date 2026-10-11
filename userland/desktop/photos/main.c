@@ -933,7 +933,8 @@ ph_drag_start(
 
 /*
  * Makes the PNG of a photo for a drag: the picture shown whole when it is
- * the one, else its file decoded, fitted to PH_DRAG_SIDE and turned as the
+ * the one, else its file's picture fitted to PH_DRAG_SIDE (made by
+ * keiland-preview in its sandbox) and turned as the
  * library says.  Returns 0 with the PNG (the caller frees it), or an errno
  * value.
  */
@@ -945,7 +946,6 @@ ph_drag_picture(
 	size_t *size)
 {
 	struct ph_photo *list;
-	struct kl_image decoded;
 	struct kl_image fitted;
 	struct kl_image turned;
 	const struct kl_image *source;
@@ -963,17 +963,9 @@ ph_drag_picture(
 		return 0;
 	}
 
-	/* Otherwise the file, decoded. */
+	/* Otherwise the file's picture, fitted. */
 	list = ph_photos(&count);
-	memset(&decoded, 0, sizeof(decoded));
-	error = ph_decode(list[photo].path, &decoded);
-	if (error != 0)
-		return error;
-
-	/* Fitted. */
-	memset(&fitted, 0, sizeof(fitted));
-	error = ph_fit(&decoded, PH_DRAG_SIDE, &fitted);
-	kl_image_release(&decoded);
+	error = ph_preview(list[photo].path, PH_DRAG_SIDE, 0, &fitted);
 	if (error != 0)
 		return error;
 

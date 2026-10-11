@@ -83,6 +83,7 @@ struct preview_info {
 	long height;
 	int dated;
 	int64_t taken;
+	int utc;
 };
 
 /* The callers' side (client.c). */

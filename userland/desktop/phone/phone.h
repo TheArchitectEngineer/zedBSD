@@ -302,9 +302,10 @@ int ph_import_finish(struct ph_import *import, int error, int metadata, struct p
 void ph_import_free(struct ph_import *import);
 void ph_received_release(struct ph_received *received);
 int ph_store_media(long contact, size_t item, const struct ph_received *received);
-int ph_decode(const char *path, struct kl_image *image);
-int ph_fit(const struct kl_image *picture, int side, struct kl_image *fitted);
-int ph_thumbnail(const struct kl_image *picture, int side, struct kl_image *thumb);
+/* The pictures of the files, made by keiland-preview in its sandbox (photos/decode.c, ws157-p015). */
+struct preview_picture;
+int ph_preview(const char *path, int side, int cover, struct kl_image *image);
+void ph_preview_adopt(struct preview_picture *picture, struct kl_image *image);
 
 int ph_store_open(const char *root);
 void ph_store_close(void);
@@ -358,6 +359,8 @@ void ph_view_key(struct ph_view *view, uint32_t key, unsigned modifiers, uint64_
 void ph_view_draw(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, uint64_t now_us);
 size_t ph_view_panels(struct ph_view *view, int width, int height, struct kl_glass_panel *panels, size_t capacity);
 int ph_view_wait(const struct ph_view *view, uint64_t now_us);
+int ph_view_media_follow(void);
+int ph_view_media_busy(void);
 int ph_view_take_request(struct ph_view *view, struct ph_request *request);
 void ph_view_notice(struct ph_view *view, const char *message, uint64_t now_us);
 

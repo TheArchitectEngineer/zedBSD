@@ -46,11 +46,16 @@
 #define PREVIEW_USAGE		64	/* the arguments are wrong */
 #define PREVIEW_NO_SANDBOX	70	/* the system's confinement could not be entered (Linux, FreeBSD) */
 
-/* The largest input read, the largest side asked for, and the largest picture decoded. */
-#define PREVIEW_INPUT_MAX	(64UL * 1024UL * 1024UL)
+/*
+ * The largest input read, the largest side asked for, and the largest
+ * picture decoded: Photos' own limits since its pictures are made here
+ * (ws157-p015, the user's decision L1 of 2026-10-11), within the child's
+ * 1 GiB of memory and 10 s of processor time (client.h).
+ */
+#define PREVIEW_INPUT_MAX	(96UL * 1024UL * 1024UL)
 #define PREVIEW_SIDE_MAX	4096
-#define PREVIEW_DECODE_SIDE	8192U
-#define PREVIEW_DECODE_PIXELS	(16UL * 1024UL * 1024UL)
+#define PREVIEW_DECODE_SIDE	16384U
+#define PREVIEW_DECODE_PIXELS	(64UL * 1024UL * 1024UL)
 
 /* The most of the input --info reads, from its start. */
 #define PREVIEW_INFO_MAX	(4UL * 1024UL * 1024UL)

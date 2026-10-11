@@ -234,6 +234,19 @@ struct btd_session {
 	/* Read Buffer Size's SCO packet length and count (ws197-p007a0, told in the log). */
 	uint8_t sco_length;
 	uint16_t sco_count;
+
+	/*
+	 * The standard codecs the controller has (ws197-p007a2 L1, told in the
+	 * log): Read Local Supported Codecs v2's ids and their transports (bit 1
+	 * is BR/EDR SCO), or v1's ids with transports 0xff (not told); codecs
+	 * counts them, vendor_codecs the vendor's, codecs_version 0 when neither
+	 * answered.
+	 */
+	uint8_t codec[16];
+	uint8_t codec_transports[16];
+	unsigned codecs;
+	unsigned vendor_codecs;
+	unsigned codecs_version;
 	int intel;
 	struct btd_intel_version intel_version;
 	int firmware_loaded;

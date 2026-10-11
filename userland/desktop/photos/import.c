@@ -259,7 +259,7 @@ import_descriptor(
 
 	/*
 	 * What the file says of itself, read in keiland-preview's sandbox: a
-	 * picture's size and a JPEG's date.  A file the reader cannot read,
+	 * picture's or a video's size and a JPEG's or an MP4's date.  A file the reader cannot read,
 	 * or reads as another kind than its first bytes say, is kept without
 	 * them (dated the day it was imported).
 	 */
@@ -269,6 +269,10 @@ import_descriptor(
 		photo.height = (int)info.height;
 		if (info.dated)
 			photo.taken = (ph_time)info.taken;
+
+		/* A video's UTC date, on the local calendar as a camera's would be. */
+		if (info.dated && info.utc)
+			photo.taken = import_local((time_t)info.taken);
 	}
 
 	/* No marks yet, and the paths set when it joins the library. */

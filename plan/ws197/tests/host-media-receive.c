@@ -100,8 +100,8 @@ phone_media_regression(
 	assert(same == 0);
 	fclose(saved);
 
-	/* The exact saved original is accepted by the production photo decoder. */
-	error = ph_decode(received.paths[0], &decoded);
+	/* The exact saved original is made a picture by the production path (keiland-preview in its sandbox, ws157-p015). */
+	error = ph_preview(received.paths[0], 480, 0, &decoded);
 	assert(error == 0 && decoded.width == 2 && decoded.height == 3 && decoded.pixels != NULL);
 	kl_image_release(&decoded);
 

@@ -9,7 +9,8 @@
  * The thread that makes the photos' pictures (ws157-p003; app.h): the
  * window queues jobs -- a thumbnail, or the picture of the photo shown
  * whole, which goes before the thumbnails -- and takes the results.  The
- * thread decodes one file at a time (decode.c), so that the window goes on
+ * thread has one file at a time made a picture (decode.c, by keiland-preview
+ * in its sandbox), so that the window goes on
  * drawing while a large photo is read.  A job already queued, or being
  * made, is not queued twice; the thumbnails no longer wanted (scrolled
  * away) are dropped before each frame's are queued.
@@ -310,7 +311,6 @@ worker_make(
 	const struct worker_job *job,
 	struct ph_result *result)
 {
-	struct kl_image decoded;
 	struct kl_image sized;
 	int error;
 
@@ -326,20 +326,12 @@ worker_make(
 	if (!job->whole)
 		error = worker_cache_read(job->id, &sized);
 
-	/* Else the file's picture. */
+	/* Else the file's picture, made in the sandbox: fitted for the window, or a thumbnail (kept for the next time). */
 	if (error != 0) {
-		error = ph_decode(job->path, &decoded);
-		if (error != 0) {
-			result->error = error;
-			return;
-		}
-
-		/* Its size: a thumbnail (kept for the next time), or fitted for the window. */
 		if (job->whole)
-			error = ph_fit(&decoded, PH_VIEW_SIDE, &sized);
+			error = ph_preview(job->path, PH_VIEW_SIDE, 0, &sized);
 		else
-			error = ph_thumbnail(&decoded, PH_THUMB_SIDE, &sized);
-		kl_image_release(&decoded);
+			error = ph_preview(job->path, PH_THUMB_SIDE, 1, &sized);
 		if (error != 0) {
 			result->error = error;
 			return;

@@ -9,7 +9,9 @@
  * The pure part of the Bluetooth HCI class (drivers/generic/bt-hci.h,
  * ws143-p002): the rings that queue the received packets, the reassembly
  * of a received byte stream into packets, and the checks of a packet a
- * program writes.  Nothing here locks, sleeps or allocates; the class
+ * program writes; and for SCO (ws197-p007a2) the queue that drops its
+ * oldest, the links' checks and alternate, the reassembly of the
+ * isochronous IN bytes, and the queue of bytes for the OUT pipe.  Nothing here locks, sleeps or allocates; the class
  * holds its lock around the rings, and the host test builds this file as
  * it is.
  *
@@ -28,6 +30,7 @@ static void ring_get(const struct bt_hci_ring *ring, size_t offset, uint8_t *tar
 static size_t assembler_header(unsigned mode);
 static int assembler_total(const struct bt_hci_assembler *assembler, size_t *total);
 static size_t assembler_take(struct bt_hci_assembler *assembler, const uint8_t *data, size_t size, size_t wanted);
+static int sco_header_fits(const struct bt_hci_sco_assembler *assembler);
 
 /*
  * Prepares an empty ring over capacity bytes, reserve of which only the
@@ -363,7 +366,7 @@ bt_hci_check_write(
 		return 0;
 	}
 
-	/* Anything but a command or an ACL packet is not carried. */
+	/* Anything but a command or an ACL packet is not carried here (SCO: bt_hci_check_sco). */
 	if (packet[0] != BT_PACKET_ACL)
 		return EINVAL;
 
@@ -517,4 +520,340 @@ assembler_take(
 
 	/* Succeeded: the bytes taken. */
 	return taken;
+}
+
+/*
+ * Checks an SCO packet a program writes (ws197-p007a2): the type's byte,
+ * the handle and the data length, and exactly that much data.  Returns 0
+ * or EINVAL.
+ */
+int
+bt_hci_check_sco(
+	const uint8_t *packet,
+	size_t size)
+{
+	/* The type and the header. */
+	if (size < 1U + BT_SCO_HEADER || packet[0] != BT_PACKET_SCO)
+		return EINVAL;
+
+	/* Exactly the data the header says. */
+	if (size != 1U + BT_SCO_HEADER + (size_t)packet[3])
+		return EINVAL;
+
+	/* Succeeded: a whole SCO packet. */
+	return 0;
+}
+
+/*
+ * Queues a record as bt_hci_ring_push does, taking the oldest records out
+ * until it fits (the SCO packets' ring: the newest sound matters, ws197-
+ * p007a2); *dropped counts them.  Returns 0, or EINVAL for a record the
+ * ring cannot hold even empty.
+ */
+int
+bt_hci_ring_push_drop(
+	struct bt_hci_ring *ring,
+	uint8_t type,
+	uint32_t sequence,
+	const uint8_t *body,
+	size_t length,
+	unsigned *dropped)
+{
+	int error;
+
+	/* Until it fits, or nothing is left to drop. */
+	*dropped = 0U;
+	for (;;) {
+		error = bt_hci_ring_push(ring, type, sequence, body, length, 0);
+		if (error != ENOSPC)
+			break;
+		if (ring->count == 0U)
+			return EINVAL;
+
+		/* The oldest goes. */
+		bt_hci_ring_pop(ring);
+		(*dropped)++;
+	}
+
+	/* Queued, or refused for its length. */
+	return error;
+}
+
+/*
+ * Checks the synchronous links a program sets (struct bt_sco, ws197-p007a2
+ * design S2): reserved zero, at most BT_SCO_LINKS_MAX, each handle in range
+ * and once, each length 1 to BT_SCO_DATA_MAX, CVSD links all of one sample
+ * size, or one transparent link.  Returns 0 or EINVAL.
+ */
+int
+bt_hci_sco_check(
+	const struct bt_sco *links)
+{
+	unsigned index;
+	unsigned other;
+	unsigned transparent;
+	unsigned sixteen;
+	unsigned first_sixteen;
+
+	/* Reserved words and the count. */
+	if (links->reserved[0] != 0U || links->reserved[1] != 0U)
+		return EINVAL;
+	if (links->count > BT_SCO_LINKS_MAX)
+		return EINVAL;
+
+	/* Each link. */
+	transparent = 0U;
+	first_sixteen = 0U;
+	for (index = 0U; index < links->count; index++) {
+		/* Its handle, its length. */
+		if (links->handle[index] > BT_HCI_SCO_HANDLE_MAX)
+			return EINVAL;
+		if (links->packet_length[index] == 0U || links->packet_length[index] > BT_SCO_DATA_MAX)
+			return EINVAL;
+		for (other = 0U; other < index; other++) {
+			if (links->handle[other] == links->handle[index])
+				return EINVAL;
+		}
+
+		/* Its coding: transparent alone, CVSD of one sample size. */
+		if ((links->voice_setting[index] & BT_HCI_VOICE_AIR_MASK) == BT_HCI_VOICE_AIR_TRANSPARENT) {
+			transparent++;
+			continue;
+		}
+
+		/* A CVSD link's sample size, the same as the first's. */
+		sixteen = (links->voice_setting[index] & BT_HCI_VOICE_SIXTEEN_BITS) != 0U;
+		if (index == 0U)
+			first_sixteen = sixteen;
+		if (sixteen != first_sixteen)
+			return EINVAL;
+	}
+
+	/* One transparent link, alone. */
+	if (transparent != 0U && links->count != 1U)
+		return EINVAL;
+
+	/* Succeeded: the links can be streamed. */
+	return 0;
+}
+
+/*
+ * Chooses the isochronous interface's alternate setting for checked links
+ * (design S3, as Linux's btusb does): none for no link, the transparent
+ * alternate (6, or 1 when the interface has no 6) for a transparent link,
+ * 2, 4 or 5 for one to three 16-bit CVSD links, and 1 to 3 for 8-bit ones.
+ */
+unsigned
+bt_hci_sco_alternate(
+	const struct bt_sco *links,
+	int transparent_alternate)
+{
+	static const unsigned sixteen_bits[BT_SCO_LINKS_MAX] = { 2U, 4U, 5U };
+
+	/* No link: the alternate without bandwidth. */
+	if (links->count == 0U)
+		return 0U;
+
+	/* A transparent link. */
+	if ((links->voice_setting[0] & BT_HCI_VOICE_AIR_MASK) == BT_HCI_VOICE_AIR_TRANSPARENT) {
+		if (transparent_alternate)
+			return 6U;
+		return 1U;
+	}
+
+	/* 16-bit CVSD links. */
+	if ((links->voice_setting[0] & BT_HCI_VOICE_SIXTEEN_BITS) != 0U)
+		return sixteen_bits[links->count - 1U];
+
+	/* Succeeded: 8-bit CVSD links, one alternate a link. */
+	return links->count;
+}
+
+/* Starts an SCO assembler for the links streamed, with nothing gathered. */
+void
+bt_hci_sco_assembler_init(
+	struct bt_hci_sco_assembler *assembler,
+	const struct bt_sco *links)
+{
+	unsigned index;
+
+	/* The links' handles and lengths. */
+	assembler->count = links->count;
+	for (index = 0U; index < BT_SCO_LINKS_MAX; index++) {
+		assembler->handle[index] = 0U;
+		assembler->length[index] = 0U;
+		if (index < links->count) {
+			assembler->handle[index] = links->handle[index];
+			assembler->length[index] = links->packet_length[index];
+		}
+	}
+
+	/* Nothing gathered, nothing lost. */
+	assembler->have = 0U;
+	assembler->total = 0U;
+	assembler->searching = 0U;
+	assembler->resyncs = 0U;
+}
+
+/* Drops the packet being gathered at a gap in the bytes (a missed or failed isochronous packet). */
+void
+bt_hci_sco_gap(
+	struct bt_hci_sco_assembler *assembler)
+{
+	/* A packet cut short is lost. */
+	if (assembler->have != 0U && !assembler->searching)
+		assembler->resyncs++;
+
+	/* The next header starts afresh. */
+	assembler->have = 0U;
+	assembler->total = 0U;
+}
+
+/*
+ * Feeds isochronous IN bytes: each SCO packet put together goes to deliver
+ * (header first).  Bytes that start no fitting header are passed by, one
+ * at a time, until one does.
+ */
+void
+bt_hci_sco_feed(
+	struct bt_hci_sco_assembler *assembler,
+	const uint8_t *data,
+	size_t size,
+	bt_hci_sco_fn deliver,
+	void *context)
+{
+	size_t index;
+	int fits;
+
+	/* Byte by byte (17 to 63 a millisecond). */
+	for (index = 0U; index < size; index++) {
+		assembler->buffer[assembler->have] = data[index];
+		assembler->have++;
+
+		/* A header complete: a streamed handle with its length, or the next byte tried as its start. */
+		if (assembler->total == 0U && assembler->have == BT_SCO_HEADER) {
+			fits = sco_header_fits(assembler);
+			if (!fits) {
+				if (!assembler->searching)
+					assembler->resyncs++;
+				assembler->searching = 1U;
+				assembler->buffer[0] = assembler->buffer[1];
+				assembler->buffer[1] = assembler->buffer[2];
+				assembler->have = 2U;
+				continue;
+			}
+
+			/* In step again. */
+			assembler->searching = 0U;
+			assembler->total = BT_SCO_HEADER + (size_t)assembler->buffer[2];
+		}
+
+		/* A whole packet. */
+		if (assembler->total != 0U && assembler->have == assembler->total) {
+			deliver(context, assembler->buffer, assembler->total);
+			assembler->have = 0U;
+			assembler->total = 0U;
+		}
+	}
+}
+
+/* Tells whether a gathered header names a streamed link with that link's packet length. */
+static int
+sco_header_fits(
+	const struct bt_hci_sco_assembler *assembler)
+{
+	unsigned handle;
+	unsigned index;
+
+	/* The handle without the Packet Status Flag. */
+	handle = ((unsigned)assembler->buffer[0] | ((unsigned)assembler->buffer[1] << 8)) & BT_HCI_SCO_HANDLE_MASK;
+
+	/* One of the links, with its length. */
+	for (index = 0U; index < assembler->count; index++) {
+		if (assembler->handle[index] == handle && assembler->length[index] == assembler->buffer[2])
+			return 1;
+	}
+
+	/* Not a header of ours. */
+	return 0;
+}
+
+/* Prepares an empty queue of bytes over capacity bytes. */
+void
+bt_hci_fifo_init(
+	struct bt_hci_fifo *fifo,
+	uint8_t *bytes,
+	size_t capacity)
+{
+	/* Empty. */
+	fifo->bytes = bytes;
+	fifo->capacity = capacity;
+	fifo->head = 0U;
+	fifo->used = 0U;
+}
+
+/* Tells how many bytes the queue takes now. */
+size_t
+bt_hci_fifo_room(
+	const struct bt_hci_fifo *fifo)
+{
+	/* The free bytes. */
+	return fifo->capacity - fifo->used;
+}
+
+/* Queues bytes whole; 0, or EAGAIN when they do not fit. */
+int
+bt_hci_fifo_put(
+	struct bt_hci_fifo *fifo,
+	const uint8_t *data,
+	size_t size)
+{
+	size_t tail;
+	size_t index;
+
+	/* Whole or not at all. */
+	if (size > fifo->capacity - fifo->used)
+		return EAGAIN;
+
+	/* After the last byte, around the end. */
+	tail = fifo->head + fifo->used;
+	for (index = 0U; index < size; index++)
+		fifo->bytes[(tail + index) % fifo->capacity] = data[index];
+	fifo->used += size;
+
+	/* Succeeded: queued. */
+	return 0;
+}
+
+/* Takes up to size bytes, oldest first; returns how many. */
+size_t
+bt_hci_fifo_get(
+	struct bt_hci_fifo *fifo,
+	uint8_t *target,
+	size_t size)
+{
+	size_t index;
+
+	/* At most what is there. */
+	if (size > fifo->used)
+		size = fifo->used;
+	for (index = 0U; index < size; index++)
+		target[index] = fifo->bytes[(fifo->head + index) % fifo->capacity];
+
+	/* They leave the queue. */
+	fifo->head = (fifo->head + size) % fifo->capacity;
+	fifo->used -= size;
+
+	/* Succeeded: the count. */
+	return size;
+}
+
+/* Empties the queue. */
+void
+bt_hci_fifo_clear(
+	struct bt_hci_fifo *fifo)
+{
+	/* Nothing queued. */
+	fifo->head = 0U;
+	fifo->used = 0U;
 }
