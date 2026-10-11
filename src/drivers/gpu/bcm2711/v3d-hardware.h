@@ -96,6 +96,15 @@ struct bcm2711_v3d_perf {
 	uint64_t submit_lock_ticks;
 	uint64_t submit_lock_max;
 	uint64_t submit_locks;
+	/*
+	 * The Vulkan allocation budget in use now (kept across windows), the
+	 * most in the window, and the window's refused allocations and the
+	 * size of the last one.
+	 */
+	uint64_t memory_bytes;
+	uint64_t memory_max;
+	uint32_t memory_refusals;
+	uint64_t memory_refused_bytes;
 };
 
 /*

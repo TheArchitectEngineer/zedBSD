@@ -10,13 +10,13 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/vulkan-device.h"
+#include "drivers/gpu/bcm2711/vulkan-memory.h"
 
 /* Generated device-independent Zlib record encoding remains shared read-only source. */
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
 
 /* Driver-owned limits bound the implemented single-sample, one-layer graphics path. */
 #define VULKAN_IMAGE_SIDE 4096U
-#define VULKAN_MEMORY_BYTES (256U << 20)
 #define VULKAN_PUSH_BYTES 128U
 #define VULKAN_DESCRIPTOR_SETS 4U
 #define VULKAN_TEXTURES 8U
@@ -138,7 +138,7 @@ fixed_query(
 	memory->memoryTypes[0].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	memory->memoryTypes[0].heapIndex = 0;
 	memory->memoryHeapCount = 1;
-	memory->memoryHeaps[0].size = VULKAN_MEMORY_BYTES;
+	memory->memoryHeaps[0].size = BCM2711_VULKAN_MEMORY_BUDGET;
 	memory->memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
 	drv_i915_wire_reply_u64(reply, 1);
 	i915_vkc_enc_VkPhysicalDeviceMemoryProperties(reply, memory);
