@@ -29,6 +29,39 @@ struct bcm2711_v3d_events {
 };
 
 /*
+ * Diagnostic totals of native submissions over one reporting window.
+ *
+ * The controller mutex serializes every update and report.  Wall times
+ * include preemption by other runnable threads and never control lifetime,
+ * retirement or scheduling.
+ */
+struct bcm2711_v3d_perf {
+	uint64_t window_start;
+	uint32_t submissions;
+	uint32_t render_passes;
+	uint32_t clear_passes;
+	uint32_t image_passes;
+	uint32_t draws;
+	uint64_t staged_bytes;
+	uint64_t total_ticks;
+	uint64_t max_ticks;
+	uint64_t prepare_ticks;
+	uint64_t texture_ticks;
+	uint64_t texel_copy_ticks;
+	uint64_t program_ticks;
+	uint64_t record_ticks;
+	uint64_t allocation_ticks;
+	uint64_t mapping_ticks;
+	uint64_t clean_ticks;
+	uint64_t execute_ticks;
+	uint64_t bin_ticks;
+	uint64_t render_ticks;
+	uint64_t output_clean_ticks;
+	uint64_t release_ticks;
+	uint64_t transfer_ticks;
+};
+
+/*
  * The engine retains both allocations once the MMU can fetch them.
  * The single worker owns cache/MMU commands and ready/reset counters.  guard
  * protects IRQ admission, faulted, and event latches; no waits occur under it.
@@ -50,8 +83,8 @@ struct bcm2711_v3d_hardware {
 	uint64_t resets;
 	/* Serialized maintenance diagnostics count actual yielding waits, never IRQ work. */
 	uint64_t maintenance_yields;
-	/* The controller mutex serializes the once-per-second slow-preparation diagnostic. */
-	uint64_t prepare_logged_ticks;
+	/* The controller mutex serializes the periodic submission cost report. */
+	struct bcm2711_v3d_perf perf;
 	bool initialized;
 	bool ready;
 	bool mmu_published;

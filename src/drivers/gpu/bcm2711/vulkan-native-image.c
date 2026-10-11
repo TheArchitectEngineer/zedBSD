@@ -25,6 +25,8 @@ static int prepare_meta(struct bcm2711_vulkan_meta_draw *meta, const struct bcm2
 static int prepare_programs(struct bcm2711_vulkan_meta_draw *meta, VkFormat destination);
 static void release_meta(struct bcm2711_vulkan_meta_draw *meta);
 static int prepare_output(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_vulkan_resource *image, VkImageLayout layout, const VkRect2D *area);
+static bool copy_whole(const struct bcm2711_vulkan_transfer *transfer, uint32_t region, const struct bcm2711_vulkan_resource *source, const struct bcm2711_vulkan_resource *destination);
+static int prepare_copy(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_transfer *transfer, struct bcm2711_vulkan_resource *source, struct bcm2711_vulkan_resource *destination, uint64_t *remaining);
 static uint32_t ratio_bits(uint32_t numerator, uint32_t denominator);
 
 /*
@@ -48,6 +50,7 @@ bcm2711_vulkan_native_image_create(
 	struct bcm2711_vulkan_resource *source;
 	struct bcm2711_vulkan_resource *destination;
 	uint64_t remaining;
+	bool whole;
 	int error;
 	int released;
 
@@ -81,6 +84,30 @@ bcm2711_vulkan_native_image_create(
 		return ENOMEM;
 	created->space = space;
 	created->job.kind = BCM2711_V3D_JOB_CL;
+
+	/*
+	 * A whole-image copy between equal raster images needs no shader or
+	 * texture: the tile buffer loads the source and stores the destination.
+	 */
+	whole = copy_whole(transfer, region, source, destination);
+	if (whole) {
+		error = prepare_copy(created, transfer, source, destination, &remaining);
+		if (error != 0) {
+			released = bcm2711_vulkan_native_pass_release(&created, true);
+			if (released != 0)
+				return released;
+			return error;
+		}
+
+		/* Only a complete native pass consumes the caller's padded budget. */
+		*available = remaining;
+		*pass = created;
+
+		/* Succeeded: the destination changes only when the native tile copy executes. */
+		return 0;
+	}
+
+	/* Every other transfer draws one texture quad. */
 	meta = kern_calloc(1, sizeof(*meta));
 	if (meta == NULL) {
 		kern_free(created);
@@ -345,4 +372,104 @@ ratio_bits(
 
 	/* Succeeded: finite copied rational fields have one complete IEEE word and no kernel FP instruction. */
 	return ((uint32_t)(exponent + 127) << 23) | ((uint32_t)significand & 0x7fffffU);
+}
+
+/* Tells whether one copy region is a whole-image copy that the tile buffer can perform unchanged. */
+static bool
+copy_whole(
+	const struct bcm2711_vulkan_transfer *transfer,
+	uint32_t region,
+	const struct bcm2711_vulkan_resource *source,
+	const struct bcm2711_vulkan_resource *destination)
+{
+	const struct bcm2711_vulkan_transfer_region *box;
+	uint32_t axis;
+
+	/* Blits sample and may scale or convert; only a raw copy keeps every byte. */
+	if (transfer->record.opcode != GPU_OP_CMD_COPY_IMAGE)
+		return false;
+
+	/* Copying an image onto itself would load tiles the same pass stores. */
+	if (source == destination)
+		return false;
+
+	/* The tile load and store keep bytes, so both images share one implemented 32-bit format. */
+	if (source->format != destination->format)
+		return false;
+	if (source->format != VK_FORMAT_R8G8B8A8_UNORM && source->format != VK_FORMAT_B8G8R8A8_UNORM)
+		return false;
+
+	/* Tiles load and store at the same coordinates, so both images have one extent. */
+	if (source->width != destination->width || source->height != destination->height)
+		return false;
+
+	/* Raster loads and stores need 64-byte aligned pitches the 32-bit address space can hold. */
+	if ((source->pitch & 63U) != 0 || (destination->pitch & 63U) != 0)
+		return false;
+	if (source->bytes > 0xffffffffU || destination->bytes > 0xffffffffU)
+		return false;
+
+	/* Whole tiles are stored, so the region covers the whole destination from the same origin. */
+	box = &transfer->regions[region];
+	for (axis = 0; axis < 2U; axis++) {
+		/* The source and destination boxes start at the origin of both images. */
+		if (box->source[axis] != 0 || box->destination[axis] != 0)
+			return false;
+	}
+
+	/* The boxes end at the images' full extent. */
+	if (box->source[2] != (int32_t)destination->width || box->source[3] != (int32_t)destination->height)
+		return false;
+	if (box->destination[2] != (int32_t)destination->width || box->destination[3] != (int32_t)destination->height)
+		return false;
+
+	/* Succeeded: the tile buffer can copy the whole image byte for byte. */
+	return true;
+}
+
+/* Prepares a zero-draw pass that loads every tile from the source and stores it to the destination. */
+static int
+prepare_copy(
+	struct bcm2711_vulkan_native_pass *pass,
+	const struct bcm2711_vulkan_transfer *transfer,
+	struct bcm2711_vulkan_resource *source,
+	struct bcm2711_vulkan_resource *destination,
+	uint64_t *remaining)
+{
+	struct bcm2711_v3d_view *view;
+	VkRect2D area;
+	uint32_t address;
+	void *cpu;
+	int error;
+
+	/* The destination is the pass's output over its whole extent. */
+	area.offset.x = 0;
+	area.offset.y = 0;
+	area.extent.width = destination->width;
+	area.extent.height = destination->height;
+	error = prepare_output(pass, destination, transfer->destination_layout, &area);
+	if (error != 0)
+		return error;
+
+	/* The source's backing must be representable before its address enters the tile loads. */
+	error = bcm2711_vulkan_resource_backing(source, 0, source->bytes, &view, &address, &cpu);
+	if (error != 0)
+		return error;
+	if (view->references == 0 || view->references == 0xffffffffU)
+		return EOVERFLOW;
+
+	/* The pass holds the source's view through native retirement, like its output. */
+	bcm2711_v3d_memory_retain(view);
+	pass->source = view;
+	pass->state.source = address;
+	pass->state.source_pitch = source->pitch;
+	pass->state.source_bytes = (uint32_t)source->bytes;
+
+	/* The lists hold no draw: each tile is loaded from the source and stored. */
+	error = bcm2711_vulkan_native_pass_build_lists(pass, remaining);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the complete copy pass owns its lists and both image views. */
+	return 0;
 }

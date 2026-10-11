@@ -2528,6 +2528,10 @@ compose_submit(
 		return result;
 	}
 
+	/* Separates the queue submission from the presentation in the per-frame lines. */
+	if (server->log_frames)
+		printf("KWL LAT queued frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
+
 	/* The image goes to the display after the commands. */
 	memset(&present, 0, sizeof(present));
 	present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;

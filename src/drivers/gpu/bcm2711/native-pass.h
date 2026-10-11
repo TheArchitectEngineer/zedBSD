@@ -33,6 +33,10 @@ struct bcm2711_native_pass {
 	uint32_t load;
 	uint32_t store;
 	uint32_t clear_colour;
+	/* A nonzero source makes the tile load read another raster image at the same pixel coordinates (a TLB copy). */
+	uint32_t source;
+	uint32_t source_pitch;
+	uint32_t source_bytes;
 };
 
 /* Exact active list lengths and minimum binning storage are measured before mapped owners are allocated. */

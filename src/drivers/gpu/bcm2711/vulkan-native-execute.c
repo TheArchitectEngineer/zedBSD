@@ -180,6 +180,18 @@ validate_pass(
 	if ((uint64_t)pass->area.offset.x + pass->area.extent.width > pass->state.width || (uint64_t)pass->area.offset.y + pass->area.extent.height > pass->state.height)
 		return EINVAL;
 
+	/* A TLB copy's source stays mapped and covers every row its tile loads read. */
+	if (pass->source != NULL) {
+		if (pass->source->quarantined || pass->source->references == 0)
+			return EIO;
+		offset = (uint64_t)pass->state.source - pass->source->address;
+		bytes = (uint64_t)pass->state.source_pitch * pass->state.height;
+		if (offset > pass->source->bytes ||
+		    pass->state.source_bytes > pass->source->bytes - offset ||
+		    bytes > pass->state.source_bytes)
+			return EINVAL;
+	}
+
 	/* Every command/pool/state/overflow allocation remains live before the native runner's final mapping checks. */
 	if (pass->count != BCM2711_VULKAN_PASS_STORAGE || pass->job.kind != BCM2711_V3D_JOB_CL)
 		return EINVAL;
