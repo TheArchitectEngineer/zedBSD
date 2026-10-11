@@ -41,6 +41,7 @@ static void test_foreign(void);
 static void test_cancel(void);
 static void test_halt(void);
 static void test_wrap(void);
+static void test_retain(void);
 
 /* Records one check. */
 static void
@@ -546,6 +547,51 @@ test_wrap(
 	check(error == 0 && position == 1U && packet == 5U, "the new TD is found, not the retired one");
 }
 
+/*
+ * A failed command (design 2.1b): the endpoint retained with its TDs,
+ * enqueue and owners refused, a Stopped - Short Packet counted, and the
+ * flush after the DMA is quiesced.
+ */
+static void
+test_retain(
+	void)
+{
+	struct drv_xhci_isoch_request taken;
+	struct drv_xhci_isoch isoch;
+	unsigned first;
+	unsigned flags;
+	int error;
+	int got;
+
+	/* A cancel whose Stop timed out. */
+	drv_xhci_isoch_init(&isoch, TEST_SLOTS);
+	(void)queue(&isoch, 1U, 8U, &first);
+	(void)drv_xhci_isoch_begin(&isoch, DRV_XHCI_ISOCH_CANCELLING);
+	drv_xhci_isoch_retain(&isoch);
+	check(isoch.state == DRV_XHCI_ISOCH_RETAINED && isoch.outstanding == 8U, "retained with its TDs");
+
+	/* Enqueue and every owner refused. */
+	error = queue(&isoch, 2U, 1U, &first);
+	check(error == EIO, "enqueue on a retained endpoint");
+	error = drv_xhci_isoch_begin(&isoch, DRV_XHCI_ISOCH_CANCELLING);
+	check(error == EIO, "cancel on a retained endpoint");
+	error = drv_xhci_isoch_begin(&isoch, DRV_XHCI_ISOCH_RECOVERING);
+	check(error == EIO, "recovery on a retained endpoint");
+
+	/* A late Stopped - Short Packet and a TD event: recorded or counted only. */
+	flags = drv_xhci_isoch_event(&isoch, DRV_XHCI_COMPLETION_STOPPED_SHORT, 1, 2U, 0U);
+	check(flags == 0U && isoch.stopped == 1U && isoch.foreign_stops == 0U, "Stopped - Short Packet counted");
+	flags = drv_xhci_isoch_event(&isoch, DRV_XHCI_COMPLETION_SUCCESS, 1, 0U, 0U);
+	check(flags == 0U && isoch.outstanding == 8U, "a TD event on a retained endpoint is only recorded");
+
+	/* The quiesce's flush ends them. */
+	flags = drv_xhci_isoch_flush(&isoch, DRV_XHCI_ISO_CANCELLED);
+	got = drv_xhci_isoch_take(&isoch, &taken);
+	check(flags == DRV_XHCI_ISOCH_COMPLETE && got && taken.result[0] == DRV_XHCI_ISO_OK && taken.result[7] == DRV_XHCI_ISO_CANCELLED,
+	    "flushed after the quiesce");
+	check(isoch.state == DRV_XHCI_ISOCH_NORMAL, "normal after the flush");
+}
+
 /* Runs every group. */
 int
 main(
@@ -562,6 +608,7 @@ main(
 	test_cancel();
 	test_halt();
 	test_wrap();
+	test_retain();
 
 	/* The summary. */
 	if (failures != 0U) {

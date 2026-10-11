@@ -21,8 +21,14 @@
  *   - Missed Service, Ring Underrun and Ring Overrun end nothing; with
  *     TDs outstanding they put the endpoint in SKIP_WAIT, and the
  *     worker stops the endpoint if no TD event comes in time.
- *   - Stopped and Stopped - Length Invalid only count: the TD they name
- *     runs again from its start after the endpoint is rung.
+ *   - Stopped, Stopped - Length Invalid and Stopped - Short Packet only
+ *     count: the TD they name runs again from its start after the
+ *     endpoint is rung.
+ *   - An owner whose command failed (a timeout, a context state the
+ *     command cannot change) leaves the endpoint RETAINED (design
+ *     2.1b): its TDs and their DMA stay as they are, enqueue and every
+ *     owner are refused with EIO, and only a flush after the
+ *     controller's DMA is quiesced ends them.
  *   - While an owner (STOPPING, CANCELLING, RECOVERING) or a halt
  *     (HALT_PENDING) holds the endpoint, a TD event only records its
  *     TD's result; the owner's cleanup ends the TDs.
@@ -50,6 +56,7 @@
 #define DRV_XHCI_COMPLETION_MISSED_SERVICE	23U
 #define DRV_XHCI_COMPLETION_STOPPED		26U
 #define DRV_XHCI_COMPLETION_STOPPED_LENGTH	27U
+#define DRV_XHCI_COMPLETION_STOPPED_SHORT	28U
 
 /* What an event or a cleanup asks of the driver (bits). */
 #define DRV_XHCI_ISOCH_COMPLETE		0x1U	/* requests at the head are done: take them */
@@ -74,7 +81,8 @@ enum drv_xhci_isoch_state {
 	DRV_XHCI_ISOCH_STOPPING,
 	DRV_XHCI_ISOCH_CANCELLING,
 	DRV_XHCI_ISOCH_HALT_PENDING,
-	DRV_XHCI_ISOCH_RECOVERING
+	DRV_XHCI_ISOCH_RECOVERING,
+	DRV_XHCI_ISOCH_RETAINED
 };
 
 /*
@@ -124,6 +132,7 @@ int drv_xhci_isoch_bei(unsigned index, unsigned count);
 int drv_xhci_isoch_locate(const struct drv_xhci_isoch *isoch, unsigned slot, unsigned *position, unsigned *packet);
 unsigned drv_xhci_isoch_event(struct drv_xhci_isoch *isoch, unsigned code, int pointed, unsigned slot, uint32_t residual);
 void drv_xhci_isoch_halted(struct drv_xhci_isoch *isoch);
+void drv_xhci_isoch_retain(struct drv_xhci_isoch *isoch);
 int drv_xhci_isoch_begin(struct drv_xhci_isoch *isoch, enum drv_xhci_isoch_state owner);
 unsigned drv_xhci_isoch_stop_done(struct drv_xhci_isoch *isoch, unsigned dequeue);
 unsigned drv_xhci_isoch_flush(struct drv_xhci_isoch *isoch, enum drv_xhci_iso_result result);

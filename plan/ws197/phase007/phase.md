@@ -3,7 +3,7 @@
 # ws197-p007: HFP の音（通話の声）— 詳細設計
 
 Parent: [WS197](../ws.md)
-Status: planning（q930-i01、P1。設計 2.1a（review-3 の blocker 1・major を反映）、X 節の短い確かめ待ち。Q12〜Q14 は承認済み）
+Status: in-progress（q930-i01、P1。設計 2.1b（review-4 の major 4 を反映、Q1 が差分を確かめる）、p007a1 の実装中: TD の状態機械と host 試験は済み）
 Phase disposition: normal
 Queue: q930（[P1 の lane](../../agents/P1/queue.md)）
 
@@ -262,6 +262,49 @@ Read Local Supported Codecs は送らないので、AX211 の SCO が HCI を通
 | USB の core の隔離からの回復 | SET_INTERFACE の timeout などで隔離された device を port の reset と列挙のやり直しで戻す道が無い（S8） | USB の core の別 Phase（Future Work か WS のどれか）。p007 はそれまで「抜き差しか再起動」と記録 |
 | usb.h の isoch の契約 | isoch の callback は wake だけ、cancel は endpoint 全体（X5・X9）。今の isoch の利用者は無い | p007a1 の中 |
 
+## 設計 2.1b（2026-10-11、review-4（main の `plan/ws197/phase007/review-4.md`）の major 4 を足す。再 review は不要、Q1 が差分を確かめる）
+
+### 状態表に足す行と状態
+
+| ID | 2.1b の決め |
+| --- | --- |
+| B-R1 | **RETAINED**（新しい状態）: 持ち主の command が失敗した時（`command_ex` の 5 秒の timeout とその後の `command_failed`（pci-xhci.c:1478-1480、以後の command は全部 EIO）、または context を読み直しても状態を変えられない時）。FIFO の TD と、その DMA をそのまま持つ。enqueue は EIO、dequeue・quiesce・begin は EIO を返す。外すのは `dma_quiesced` の後の `xhci_controller_drain_requests` だけ（`drv_xhci_isoch_flush`）。今の `cancelling = 2`（4447-4463）と同じ考え。Stop が 19（Context State Error）で返った時は context を読み直し、`drv_xhci_cancel_action`・`drv_xhci_recovery_action`（lifecycle.h:113・148）の判定でやり直す（Halted なら Reset Endpoint から、Stopped なら止まったものとして片付け）。やり直しても変わらなければ RETAINED。表の STOPPING・CANCELLING・RECOVERING の各行に「失敗 → RETAINED」 |
+| B-R2 | Stopped の行に 28（Stopped - Short Packet）を足す（26・27・28 は同じ扱い） |
+| B-R3 | enqueue で hardware が Halted だったら（今の `xhci_endpoint_state` の読み）、HALT_PENDING に移して worker を起こし、EBUSY |
+
+### GATED（suspend）と doorbell（BUG-289 も一緒に）
+
+| ID | 2.1b の決め |
+| --- | --- |
+| B-G1 | suspend の wait_idle が失敗した道（`xhci_suspend_end` を呼ぶ 6493・6508・6522・6574・6584・6858）では、`xhci_suspend_end` の前に `xhci_resume_endpoints`（7240）で全部の endpoint を鳴らす。GATED の間に積んだ TD（isoch も bulk も）が動く。**BUG-289 の直し**（p007a1 の中で） |
+| B-G2 | isoch の FIFO が空でない endpoint がある時、suspend の準備は GATED に入る前に EBUSY（X10 の「流している間は suspend が失敗する」を GATED の前に決める）。FIFO が空で GATED になった後の isoch の enqueue は EBUSY |
+| B-G3 | 表の enqueue の行に「GATED の間は doorbell を鳴らさない（今のまま）。B-G1 で失敗の道でも鳴らす」 |
+
+### isoch の worker の生き死にと endpoint の探し方
+
+| ID | 2.1b の決め |
+| --- | --- |
+| B-W1 | controller ごとの `xhci_isoch_worker`（優先度は既定の 8、B-P2）は、最初の isoch の endpoint が Configure された時に作り、controller の止め（`xhci_quiesce` 5475-5531）では **`dma_quiesced` を立てる前に**止めて join する。`xhci_reinit_forget_devices`（6663）でも device を解放する前に止める。suspend の間は眠る（GATED の印を見て待つ）。detach は quiesce を通るのでそれで止まる |
+| B-W2 | worker は仕事のたびに `xhci_submission_enter` 相当の数（`isoch_workers`）を取る。`xhci_operation_enter`（3715-3725）は suspend の間眠るので使わない |
+| B-W3 | worker は `struct xhci_device *` を持ち越さない。仕事の印（endpoint の slot と dci）だけを持ち、毎回 `active_lock` の下で device の list から探し直し、`quiescing`・`slot_disabled`・endpoint の `enabled` を確かめる（どれかなら何もしない）。古い `d` の use-after-free を防ぐ |
+| B-W4 | 他の操作との競り: `xhci_endpoint_disable` は isoch では NORMAL かつ FIFO が空の時だけ（他は EBUSY）。`xhci_endpoint_reset` は isoch で EINVAL（isoch の回復は X6 の worker だけ）。`xhci_controller_drain_requests` は isoch の状態を見ずに FIFO を外し（`drv_xhci_isoch_flush`）、5291-5295 の trap に isoch の印を足さない |
+
+### 優先度 4 の回り待ち（優先度の逆転）
+
+| ID | 2.1b の決め |
+| --- | --- |
+| B-P1 | `command_ex` は command ring の持ち主を `sched_yield` で回って待つ（1231-1243）。sched_yield は同じ CPU で最も高い優先度の thread を選び直すので、優先度 4 の thread が回っている間、command を持つ優先度 8 の thread は走れない（CPU 1 つで逆転）。**優先度 4 の thread（isoch の worker、usb-bt の SCO の thread）は、低い優先度の thread が持つ物を `sched_yield` で回って待たない**: 待つ時は 1 tick 以上眠る（`sched_sleep`）。 |
+| B-P2 | **isoch の worker は既定の優先度（8）で作る**（X6 の「優先度 4」を改める）。worker の仕事は Stop・Reset Endpoint の command（`command_ex` の回り待ちを含む）で、遅れの予算に入らない（skip 待ちの締め切りは URB 2 本分の粗い時間）。kernel に thread の優先度を変える口は無い（`kthread_create` の引数だけ）ので、下げ戻しはしない。優先度 4 は usb-bt の SCO の thread だけで、その thread の NORMAL 待ち・`drv_usb_urb_drain`（usb.c:2593-2604）の待ちは B-P1 のとおり眠る形に |
+| B-P3 | T1 の ktest を `-smp 1` でも流す（逆転が出れば止まる） |
+
+### minor（p007a1 の中で直す、記録だけ）
+
+X4: X3 の後の consumer は context の TR Dequeue（TD k から後ろが残る）、producer に合わせるのは X5・X6 の dequeue_all の後だけ（純粋な関数で済み）。X9・X11: `command_ex` の poll が claim した isoch の完了も drain し、dispatch の印を wait_idle と `xhci_device_quiesce` に足す。X5: dequeue(X) で X が FIFO に無く FIFO が空でなければ endpoint 全体の cancel、X は EALREADY（usb.h に「EALREADY でも endpoint は空になる」）。IRQ からの worker の起こしは印だけ、notify は event_unlock の後。isoch は `xhci_completion_finish` の log を出さず数える（S9 の counter）。X12: QEMU の ktest に「流している間の suspend の失敗で流れが続く」「流している間の抜き差し」「`-smp 1`」。
+
+### 純粋な関数の進み（2026-10-11 P1）
+
+`include/drivers/pci/pci-xhci-isoch.h`・`src/drivers/pci/pci-xhci-isoch.c`（TD の状態機械: FIFO・ring の空き・BEI・照合・飛ばしの規則・skip 待ち・Stop の 3 例・外の Stop・endpoint 全体の cancel・halt と回復・RETAINED・Stopped 28・ring の巻き・退いた TD の slot の再使用）と host 試験 `plan/ws197/tests/run-xhci-isoch-test.sh`（通常と ASan/UBSan で all PASS、kernel の arm64・amd64 の freestanding の compile も warning 0）。設計は X12 の「`pci-xhci-control.h` の純粋な関数」だったが、大きさ（約 500 行）から別の header と .c にした。kernel の build への組み込みは p007a1 の xHCI の統合と一緒に。
+
 ## 判断（Q1 経由でユーザーへ、推し付き）
 
 | ID | 問い | 推し |
@@ -277,3 +320,4 @@ Read Local Supported Codecs は送らないので、AX211 の SCO が HCI を通
 - 2026-10-11: 設計 2.1（X 節・S2・S5・S8、P1）。次は X 節の短い再 review、p007a0 の残り（T1）、Q12〜Q14。R の再設計（15〜20 LW）は Q12〜Q14 の後で p007b1 の条件。
 - 2026-10-11: [review-3](review-3.md)（main、blocker 1: X3 の自分の Stop の Stopped、major: X5 と core・後の状態・thread と状態表・遅れ・S8・B1）。Q12〜Q14 はユーザーが推しで承認（R は WS209）。
 - 2026-10-11: 設計 2.1a（状態表、X3・X5・X6・X8・X9・X11・X12、S2・S5・S8・B1、p007a0 の残る危険、計画に無い依存、P1）。次は X 節の短い確かめ → p007a1。p007a0 の結果は開始の条件のまま。
+- 2026-10-11: review-4（main、blocker 0、major 4）→ 設計 2.1b（RETAINED、GATED と doorbell・BUG-289、worker の生き死に、優先度の逆転、P1）。p007a1 に入る: TD の状態機械（pci-xhci-isoch.c）と host 試験を先に。

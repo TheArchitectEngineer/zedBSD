@@ -107,7 +107,9 @@ drv_xhci_isoch_enqueue(
 	if (count == 0U || count > DRV_XHCI_ISOCH_PACKETS_MAX)
 		return EINVAL;
 
-	/* Only while nothing else holds the endpoint. */
+	/* Never on a retained endpoint; only while nothing else holds it. */
+	if (isoch->state == DRV_XHCI_ISOCH_RETAINED)
+		return EIO;
 	running = isoch_running(isoch);
 	if (!running)
 		return EBUSY;
@@ -224,7 +226,9 @@ drv_xhci_isoch_event(
 
 	/* Stopped: counted only; the TD it names runs again (a Stop not this bookkeeping's owner's is counted apart). */
 	running = isoch_running(isoch);
-	if (code == DRV_XHCI_COMPLETION_STOPPED || code == DRV_XHCI_COMPLETION_STOPPED_LENGTH) {
+	if (code == DRV_XHCI_COMPLETION_STOPPED ||
+	    code == DRV_XHCI_COMPLETION_STOPPED_LENGTH ||
+	    code == DRV_XHCI_COMPLETION_STOPPED_SHORT) {
 		isoch->stopped++;
 		if (running)
 			isoch->foreign_stops++;
@@ -319,18 +323,36 @@ drv_xhci_isoch_halted(
 }
 
 /*
+ * Records that an owner's command failed (it timed out, or the endpoint's
+ * state could not be changed even after the context was read again): the
+ * endpoint keeps its TDs, and with them their DMA, until a flush after
+ * the controller's DMA is quiesced.
+ */
+void
+drv_xhci_isoch_retain(
+	struct drv_xhci_isoch *isoch)
+{
+	/* Held as it is. */
+	isoch->state = DRV_XHCI_ISOCH_RETAINED;
+}
+
+/*
  * Makes the caller the endpoint's owner for a command: STOPPING (the
  * worker, after a skip wait), CANCELLING (a cancel or a quiesce, which
  * takes over a skip wait or a halt) or RECOVERING (the worker, after a
  * halt).  Returns 0, EALREADY when a cancel is already under way, EBUSY
  * when another owner holds it or there is nothing to do (wait and try
- * again), or EINVAL.
+ * again), EIO on a retained endpoint, or EINVAL.
  */
 int
 drv_xhci_isoch_begin(
 	struct drv_xhci_isoch *isoch,
 	enum drv_xhci_isoch_state owner)
 {
+	/* A retained endpoint has no owner but the quiesce's flush. */
+	if (isoch->state == DRV_XHCI_ISOCH_RETAINED)
+		return EIO;
+
 	/* A cancel under way answers every other cancel. */
 	if (owner == DRV_XHCI_ISOCH_CANCELLING && isoch->state == DRV_XHCI_ISOCH_CANCELLING)
 		return EALREADY;
@@ -408,7 +430,8 @@ drv_xhci_isoch_stop_done(
 
 /*
  * Ends a cancel (result CANCELLED) or a recovery (result ERROR) after the
- * ring was emptied (xhci_endpoint_dequeue_all): every TD without a result
+ * ring was emptied (xhci_endpoint_dequeue_all), or a retained endpoint
+ * after the controller's DMA was quiesced: every TD without a result
  * takes the result, the ring is empty, and the endpoint runs again (it is
  * left stopped until the next enqueue rings it).  Returns
  * DRV_XHCI_ISOCH_COMPLETE when requests are to be taken.
