@@ -166,6 +166,7 @@ static int input_created(struct bcm2711_vulkan_session *session, struct vulkan_w
 static void resource_test(struct bcm2711_vulkan_session *session);
 static void sync_test(struct bcm2711_vulkan_session *session);
 static void runtime_test(struct bcm2711_vulkan_session *session);
+static void executor_order_test(struct bcm2711_render_device *controller);
 static void runtime_trailer(struct vulkan_writer *writer);
 static void memory_test(struct bcm2711_vulkan_session *session, struct bcm2711_render_session *render);
 static void external_barrier_test(struct bcm2711_vulkan_object *memory_object);
@@ -873,6 +874,7 @@ main(
 	queue = bcm2711_vulkan_object_find(session, I915_VK_OBJ_QUEUE, 40);
 	assert(queue != NULL);
 	runtime_test(session);
+	executor_order_test(&controller);
 	sync_test(session);
 	memory_test(session, &render);
 	resource_test(session);
@@ -3986,6 +3988,175 @@ runtime_test(
 	puts("WS141 actual public runtime capset/snapshot/FIFO/fence/callback/domain/OOM/capacity/close drain: PASS");
 
 	/* Succeeded: public callback software was verified separately from common ioctl integration, scheduler and physical GPU behavior. */
+	return;
+}
+
+/* A fixture execution: a tag for the log and the steps it still needs. */
+struct order_execution {
+	struct bcm2711_render_execution base;
+	unsigned tag;
+	unsigned steps;
+	bool ended;
+};
+
+static unsigned order_log[64];
+static unsigned order_count;
+
+/* Logs one fixture step; the execution is done after its last. */
+static int
+order_step(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	bool *done)
+{
+	struct order_execution *execution;
+
+	/* Steps run under the controller mutex, one at a time. */
+	(void)controller;
+	execution = (struct order_execution *)base;
+	assert(controller->mutex.locked == 1 && execution->steps != 0 && order_count < 64);
+	order_log[order_count++] = execution->tag;
+	execution->steps--;
+	*done = execution->steps == 0;
+
+	/* Succeeded: one step ran. */
+	return 0;
+}
+
+/* A fixture step that fails, as a native pass without retirement would. */
+static int
+order_fail(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	bool *done)
+{
+	/* The executor turns the error into a global fault. */
+	(void)controller;
+	(void)base;
+	*done = false;
+
+	/* Failed: the pass did not retire. */
+	return EIO;
+}
+
+/* Records the fixture execution's end, failed or not. */
+static int
+order_failed_end(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	int error)
+{
+	struct order_execution *execution;
+
+	/* The end receives the step's error. */
+	(void)controller;
+	execution = (struct order_execution *)base;
+	assert(error == EIO && !execution->ended);
+	execution->ended = true;
+
+	/* Succeeded: nothing to release. */
+	return 0;
+}
+
+/* Records the fixture execution's end. */
+static int
+order_end(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	int error)
+{
+	struct order_execution *execution;
+
+	/* The end follows the last step. */
+	(void)controller;
+	execution = (struct order_execution *)base;
+	assert(error == 0 && execution->steps == 0 && !execution->ended);
+	execution->ended = true;
+
+	/* Succeeded: nothing to release. */
+	return 0;
+}
+
+/* Exercises the executor's round robin and the display executions' turn (q). */
+static void
+executor_order_test(
+	struct bcm2711_render_device *controller)
+{
+	struct bcm2711_render_session sessions[3];
+	struct order_execution executions[6];
+	static const unsigned owners[6] = { 0, 0, 1, 1, 2, 2 };
+	static const unsigned steps[6] = { 3, 2, 2, 1, 1, 1 };
+	unsigned last[3];
+	unsigned waited;
+	unsigned index;
+	unsigned tag;
+	unsigned callbacks;
+	unsigned faults;
+	void *token;
+	int error;
+
+	/* Two ordinary sessions with two-pass executions; a third whose executions use a displayed run. */
+	memset(sessions, 0, sizeof(sessions));
+	for (index = 0; index < 3; index++)
+		sessions[index].device = controller;
+	memset(executions, 0, sizeof(executions));
+	order_count = 0;
+	for (index = 0; index < 6; index++) {
+		executions[index].tag = index;
+		executions[index].steps = steps[index];
+		executions[index].base.step = order_step;
+		executions[index].base.end = order_end;
+		executions[index].base.display = owners[index] == 2;
+		bcm2711_render_execution_submit(&sessions[owners[index]], &executions[index].base);
+	}
+	assert(sessions[0].pending == 2 && sessions[2].pending == 2 && controller->worker.executions == 6);
+
+	/* Every step runs; then nothing waits. */
+	assert(executor_drain(controller) == 10 && order_count == 10);
+	for (index = 0; index < 6; index++)
+		assert(executions[index].ended);
+	for (index = 0; index < 3; index++)
+		assert(sessions[index].pending == 0 && sessions[index].executed == 2 && !sessions[index].ready);
+	assert(controller->worker.ready_head == NULL && controller->worker.ready_tail == NULL && controller->worker.executions == 0);
+
+	/* Within a session executions run in order; a display execution goes first and waits at most one other step. */
+	memset(last, 0, sizeof(last));
+	waited = 0;
+	for (index = 0; index < order_count; index++) {
+		tag = order_log[index];
+		assert(tag + 1U >= last[owners[tag]]);
+		last[owners[tag]] = tag + 1U;
+		if (owners[tag] == 2) {
+			assert(waited <= 1);
+			waited = 0;
+		} else if (last[2] < 6) {
+			waited++;
+		}
+	}
+	assert(order_log[0] == 4 && order_log[2] == 5);
+	controller->worker.display_last = false;
+
+	/* (g) A failed step faults the engine; the parked marker behind it reports EIO after the loss is published. */
+	memset(&executions[0], 0, sizeof(executions[0]));
+	executions[0].base.step = order_fail;
+	executions[0].base.end = order_failed_end;
+	bcm2711_render_execution_submit(runtime_session, &executions[0].base);
+	error = controller->operations.jobs->reserve(controller, runtime_session, 7, (struct drv_gpu_completion *)(uintptr_t)(runtime_callbacks + 1U), &token);
+	assert(error == 0);
+	error = controller->operations.jobs->commit(controller, runtime_session, token, (struct drv_gpu_completion *)(uintptr_t)(runtime_callbacks + 1U));
+	assert(error == 0);
+	callbacks = runtime_callbacks;
+	faults = runtime_faults;
+	error = bcm2711_render_worker_step(controller);
+	assert(error == 0 && runtime_callbacks == callbacks && controller->worker.parked != NULL);
+	assert(executor_drain(controller) == 1 && executions[0].ended);
+	assert(runtime_callbacks == callbacks + 1U && runtime_errors[callbacks] == EIO && runtime_faults == faults + 1U);
+	assert(controller->worker.parked == NULL && runtime_session->pending == 0 && controller->worker.uncertain);
+	controller->space.native->hardware.faulted = false;
+	controller->worker.uncertain = false;
+	puts("WS141 executor round robin, in-session order, display turn and failed step: PASS");
+
+	/* Succeeded: the executor's choice of session was verified with fixture executions. */
 	return;
 }
 

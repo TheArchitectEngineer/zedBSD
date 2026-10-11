@@ -71,6 +71,8 @@ struct bcm2711_render_execution {
 	bcm2711_render_execution_end end;
 	/* The staging bytes the execution's prepared work may hold, for the session's limit. */
 	uint64_t bytes;
+	/* The execution uses a run the display holds (a frame, a present copy, the cursor): it runs first. */
+	bool display;
 };
 
 /* The native IRQ guard protects every slot field while its prepared payload remains owned. */
@@ -119,6 +121,8 @@ struct bcm2711_render_worker {
 	 */
 	struct bcm2711_render_session *ready_head;
 	struct bcm2711_render_session *ready_tail;
+	/* The last step ran a display execution: the next turn goes to another session if one is ready. */
+	bool display_last;
 	struct bcm2711_render_request *parked;
 	struct thread *executor;
 	struct wait_queue executable;

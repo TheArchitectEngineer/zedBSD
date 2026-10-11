@@ -55,6 +55,7 @@ static void worker_main(void *opaque);
 static void executor_main(void *opaque);
 static bool park_request(struct bcm2711_render_device *controller, struct bcm2711_render_request *request, int error);
 static int parked_outcome(struct bcm2711_render_device *controller, struct bcm2711_render_request *request);
+static struct bcm2711_render_session *select_session(struct bcm2711_render_worker *worker);
 static struct bcm2711_render_request *take_request(struct bcm2711_render_device *controller);
 static void finish_request(struct bcm2711_render_device *controller, struct bcm2711_render_request *request, int error);
 
@@ -1145,6 +1146,9 @@ bcm2711_render_execution_submit(
 
 	/* The executor sees the new work. */
 	waitq_wake_all(&controller->worker.executable);
+
+	/* Succeeded: the execution is queued. */
+	return;
 }
 
 /*
@@ -1164,20 +1168,26 @@ bcm2711_render_executor_step(
 	struct bcm2711_render_request **link;
 	struct bcm2711_render_request *request;
 	struct bcm2711_render_request *next;
+	struct bcm2711_render_session **ready;
+	struct bcm2711_render_session *previous;
 	unsigned long enabled;
 	uint64_t bytes;
+	bool display;
 	bool failed;
 	bool done;
 	int ended;
 	int error;
 
-	/* The ready session at the head runs its oldest execution. */
+	/* The chosen ready session runs its oldest execution. */
 	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
-	session = controller->worker.ready_head;
+	session = select_session(&controller->worker);
 	execution = NULL;
-	if (session != NULL)
+	display = false;
+	if (session != NULL) {
 		execution = session->execution_head;
+		display = execution->display;
+	}
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
@@ -1240,10 +1250,17 @@ bcm2711_render_executor_step(
 	finished = NULL;
 	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
-	controller->worker.ready_head = session->ready_next;
-	if (controller->worker.ready_head == NULL)
-		controller->worker.ready_tail = NULL;
+	previous = NULL;
+	ready = &controller->worker.ready_head;
+	while (*ready != session) {
+		previous = *ready;
+		ready = &previous->ready_next;
+	}
+	*ready = session->ready_next;
+	if (controller->worker.ready_tail == session)
+		controller->worker.ready_tail = previous;
 	session->ready_next = NULL;
+	controller->worker.display_last = display;
 	if (done) {
 		session->executed++;
 		session->execution_bytes -= bytes;
@@ -1340,6 +1357,38 @@ park_request(
 
 	/* Reports whether the executor now owns the completion. */
 	return parked;
+}
+
+/*
+ * Chooses the ready session whose oldest execution runs next; the caller holds the native IRQ guard.
+ *
+ * A display execution (a frame, a present copy, the cursor) goes first, but
+ * after one ran another session's turn comes if one is ready, so the display
+ * waits at most one other step and no session starves.  Otherwise the round
+ * robin's head.
+ */
+static struct bcm2711_render_session *
+select_session(
+	struct bcm2711_render_worker *worker)
+{
+	struct bcm2711_render_session *session;
+
+	/* After a display step, the first session whose oldest execution is not a display one. */
+	if (worker->display_last) {
+		for (session = worker->ready_head; session != NULL; session = session->ready_next) {
+			if (!session->execution_head->display)
+				return session;
+		}
+	} else {
+		/* Otherwise the first display execution. */
+		for (session = worker->ready_head; session != NULL; session = session->ready_next) {
+			if (session->execution_head->display)
+				return session;
+		}
+	}
+
+	/* Succeeded: the round robin's head, or none. */
+	return worker->ready_head;
 }
 
 /* Returns the outcome a released parked request reports: its own, else the stop or fault that came while it waited. */
@@ -1442,6 +1491,9 @@ bcm2711_render_worker_session_close(
 	controller->worker.sessions--;
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* Succeeded: the session no longer counts. */
+	return;
 }
 
 /* Tells whether a live request still names the session's domain; the caller holds the native IRQ guard. */

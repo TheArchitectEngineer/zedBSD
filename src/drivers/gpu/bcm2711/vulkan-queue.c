@@ -15,6 +15,13 @@
 #include "drivers/gpu/bcm2711/vulkan-device.h"
 #include "drivers/gpu/bcm2711/vulkan-sync.h"
 #include "drivers/gpu/bcm2711/vulkan-native-job.h"
+#include "drivers/gpu/bcm2711/vulkan-prepared.h"
+#include "drivers/gpu/bcm2711/vulkan-record.h"
+#include "drivers/gpu/bcm2711/vulkan-target.h"
+#include "drivers/gpu/bcm2711/vulkan-input.h"
+#include "drivers/gpu/bcm2711/vulkan-resource.h"
+#include "drivers/gpu/bcm2711/vulkan-memory.h"
+#include "drivers/gpu/bcm2711/buffer.h"
 
 /* Submission metadata and prepared snapshots have independent finite bounds and never occupy the kernel stack. */
 #define QUEUE_BATCHES 64U
@@ -96,6 +103,8 @@ static int prepare_sync(struct bcm2711_vulkan_session *session, struct queue_sub
 static int prepare_command(struct bcm2711_vulkan_session *session, struct queue_submission *submission, uint64_t identity);
 static struct queue_execution *create_execution(struct bcm2711_vulkan_session *session, struct queue_submission *submission);
 static void publish_reservations(struct queue_owner *owner);
+static bool owner_displayed(const struct queue_owner *owner);
+static bool object_displayed(const struct bcm2711_vulkan_object *object);
 static int execution_step(struct bcm2711_render_device *controller, struct bcm2711_render_execution *base, bool *done);
 static int execution_end(struct bcm2711_render_device *controller, struct bcm2711_render_execution *base, int error);
 static void publish_completion(struct queue_owner *owner);
@@ -571,9 +580,97 @@ create_execution(
 	execution->base.step = execution_step;
 	execution->base.end = execution_end;
 	execution->base.bytes = submission->bytes;
+	execution->base.display = owner_displayed(&execution->owner);
 
 	/* Succeeded: the execution owns everything the submission prepared. */
 	return execution;
+}
+
+/*
+ * Tells whether a submission's commands use a run the display holds.
+ *
+ * Every object the recorded passes and transfers name counts, read or
+ * written: a frame's target, a present copy's destination, the cursor image.
+ */
+static bool
+owner_displayed(
+	const struct queue_owner *owner)
+{
+	const struct bcm2711_vulkan_prepared_event *event;
+	const struct bcm2711_vulkan_record *records[2];
+	uint32_t index;
+	uint32_t record;
+	uint32_t object;
+
+	/* Each command's prepared events and the pass each belongs to. */
+	for (index = 0; index < owner->action_count; index++) {
+		if (owner->actions[index].kind != QUEUE_COMMAND)
+			continue;
+		for (event = owner->actions[index].job->prepared->first; event != NULL; event = event->next) {
+			records[0] = event->record;
+			records[1] = event->pass;
+			for (record = 0; record < 2; record++) {
+				if (records[record] == NULL)
+					continue;
+				for (object = 0; object < BCM2711_VULKAN_VERTEX_BINDINGS + 1U; object++) {
+					if (object_displayed(records[record]->objects[object]))
+						return true;
+				}
+			}
+		}
+	}
+
+	/* Succeeded: no displayed run is used. */
+	return false;
+}
+
+/* Tells whether an image, buffer, image view or framebuffer is backed by a run the display holds. */
+static bool
+object_displayed(
+	const struct bcm2711_vulkan_object *object)
+{
+	const struct bcm2711_vulkan_framebuffer *framebuffer;
+	const struct bcm2711_vulkan_image_view *view;
+	const struct bcm2711_vulkan_resource *resource;
+	const struct bcm2711_vulkan_memory *memory;
+	struct bcm2711_buffer *buffer;
+	unsigned long enabled;
+	bool displayed;
+
+	/* A framebuffer names its view, and a view its image. */
+	if (object == NULL || object->payload == NULL)
+		return false;
+	if (object->kind == I915_VK_OBJ_FRAMEBUFFER) {
+		framebuffer = object->payload;
+		object = framebuffer->view;
+		if (object == NULL || object->payload == NULL)
+			return false;
+	}
+	if (object->kind == I915_VK_OBJ_IMAGE_VIEW) {
+		view = object->payload;
+		object = view->owner.parent;
+		if (object == NULL || object->payload == NULL)
+			return false;
+	}
+	if (object->kind != I915_VK_OBJ_IMAGE && object->kind != I915_VK_OBJ_BUFFER)
+		return false;
+
+	/* The bound memory's run. */
+	resource = object->payload;
+	if (resource->memory == NULL || resource->memory->payload == NULL)
+		return false;
+	memory = resource->memory->payload;
+	if (memory->view == NULL || memory->view->buffer == NULL)
+		return false;
+	buffer = memory->view->buffer;
+	enabled = spin_lock_irqsave(&buffer->guard);
+
+	displayed = buffer->displayed != 0;
+
+	spin_unlock_irqrestore(&buffer->guard, enabled);
+
+	/* Succeeded: reports whether the display holds the run. */
+	return displayed;
 }
 
 /* Publishes the submission's reserved binary operations and its pending fence. */
