@@ -311,6 +311,10 @@ kwl_hover_damage(
 		after = probe_contains(probe, server->pointer_x, server->pointer_y);
 		if (before == after)
 			continue;
+
+		/* The scene itself changes there: the cursor-free copy of it is stale (compose.c). */
+		if (server->compose != NULL)
+			server->compose->scene.changed = 1U;
 		damage_add(server,
 			   probe->x - DAMAGE_HOVER,
 			   probe->y - DAMAGE_HOVER,
@@ -510,6 +514,10 @@ kwl_damage_rect(
 	int32_t right,
 	int32_t bottom)
 {
+	/* The scene itself changes there: the cursor-free copy of it is stale (compose.c). */
+	if (server->compose != NULL)
+		server->compose->scene.changed = 1U;
+
 	/* Gathered with the rest of the frame's damage. */
 	damage_add(server, left, top, right, bottom);
 }
