@@ -602,6 +602,8 @@ kl_system_capabilities(
 		bits |= KL_SYSTEM_HAS_PHONE_SYNC;
 	if (system->phone != NULL && system->manager_version >= KL_SYSTEM_SINCE_PHONE_CONTACTS)
 		bits |= KL_SYSTEM_HAS_PHONE_CONTACTS;
+	if (system->phone != NULL && system->manager_version >= KL_SYSTEM_SINCE_PHONE_CALLS)
+		bits |= KL_SYSTEM_HAS_PHONE_HF;
 	if (system->printers != NULL)
 		bits |= KL_SYSTEM_HAS_PRINTERS;
 	if (system->displays != NULL)

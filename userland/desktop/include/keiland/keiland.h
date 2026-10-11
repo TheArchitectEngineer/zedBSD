@@ -1264,6 +1264,7 @@ int kl_settings_take_result(struct kl_settings *settings, uint32_t *request, int
 #define KL_SYSTEM_HAS_METHODS	0x80000U	/* kl_system_account_methods and _set_methods (KL_VERSION 78, WS200) */
 #define KL_SYSTEM_HAS_PHONE_SYNC	0x100000U	/* kl_system_phone_listen, _link, _watch_link, _link_set, _sync, _page_end, _send_text, _mark_read, kl_system_take_phone_item (KL_VERSION 79, ws197-p004a) */
 #define KL_SYSTEM_HAS_PHONE_CONTACTS	0x200000U	/* kl_system_phone_sync of KL_PHONE_CONTACTS and KL_PHONE_CALLS, kl_phone_link's contacts and record (KL_VERSION 80, ws197-p005) */
+#define KL_SYSTEM_HAS_PHONE_HF		0x800000U	/* kl_system_phone_calls, _hf and _control, the paired phone's calls (KL_VERSION 87, ws197-p006) */
 
 /* What a kl_system_dispatch found changed. */
 #define KL_SYSTEM_CHANGED_NETWORK	0x1U	/* the network's state */
