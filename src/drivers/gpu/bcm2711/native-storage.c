@@ -374,7 +374,7 @@ bcm2711_native_snapshot_get(
 
 	/* A known snapshot is converted again only when its source changed and no draw samples it. */
 	if (snapshot != NULL) {
-		if (snapshot->generation != buffer->generation) {
+		if (!snapshot->valid || snapshot->generation != buffer->generation) {
 			if (snapshot->users != 0)
 				return ENOTSUP;
 			error = snapshot_fill(snapshot, raster, raster_bytes);
@@ -442,6 +442,19 @@ bcm2711_native_snapshot_put(
 	if (snapshot->users == 0)
 		__builtin_trap();
 	snapshot->users--;
+}
+
+/*
+ * Marks a snapshot's pixels as converted once the unit job that writes them completed.
+ *
+ * A pass that never ran or failed leaves the snapshot invalid, and its next use converts it again.
+ */
+void
+bcm2711_native_snapshot_filled(
+	struct bcm2711_native_snapshot *snapshot)
+{
+	/* The generation recorded when the job was prepared stays the one the pixels match at least. */
+	snapshot->valid = true;
 }
 
 /* Takes one idle cached view of exactly the page-rounded size, or NULL. */
@@ -517,7 +530,13 @@ cache_put(
 	return true;
 }
 
-/* Converts the snapshot's source raster into its UIF pixels and records the source generation. */
+/*
+ * Converts the snapshot's source raster into its UIF pixels and records the source generation.
+ *
+ * Without a raster the caller's texture formatting unit job writes the
+ * pixels when its pass runs; the snapshot stays invalid until
+ * bcm2711_native_snapshot_filled reports that job's completion.
+ */
 static int
 snapshot_fill(
 	struct bcm2711_native_snapshot *snapshot,
@@ -525,6 +544,12 @@ snapshot_fill(
 	size_t raster_bytes)
 {
 	int error;
+
+	/* The generation is recorded first; a unit fill reads the source no earlier than this. */
+	snapshot->generation = snapshot->buffer->generation;
+	snapshot->valid = false;
+	if (raster == NULL)
+		return 0;
 
 	/* The CPU conversion writes every block, including zero padding. */
 	error = bcm2711_native_texture_copy(
@@ -544,7 +569,7 @@ snapshot_fill(
 		return error;
 
 	/* Succeeded: the snapshot matches its source until the source's generation moves. */
-	snapshot->generation = snapshot->buffer->generation;
+	snapshot->valid = true;
 	return 0;
 }
 

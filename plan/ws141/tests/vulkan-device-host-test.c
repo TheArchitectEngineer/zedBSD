@@ -1265,6 +1265,32 @@ native_draw_test(
 	assert(error == 0);
 	view->buffer->host_mapped = false;
 
+	/* After the unit's self-test a changed snapshot is filled by the unit, and stays invalid until its job completes. */
+	space->native->hardware.tfu_uif_ready = true;
+	view->buffer->generation++;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && draw->textures[0].convert);
+	assert(draw->textures[0].tfu.output == draw->textures[0].pixels->view->address && !space->snapshots->valid);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A pass that never ran leaves the snapshot to be filled again. */
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && draw->textures[0].convert);
+	bcm2711_native_snapshot_filled(draw->textures[0].snapshot);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && space->snapshots->valid);
+
+	/* A completed fill is reused without another job. */
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && !draw->textures[0].convert);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+	space->native->hardware.tfu_uif_ready = false;
+
 	/* Draining releases the unused snapshot and its source hold. */
 	error = bcm2711_native_storage_drain(space);
 	assert(error == 0 && space->snapshots == NULL && space->snapshot_bytes == 0 && allocations == baseline);

@@ -44,6 +44,8 @@ struct bcm2711_native_snapshot {
 	uint32_t height;
 	uint32_t pitch;
 	uint64_t generation;
+	/* Pixels converted at generation; false while the texture formatting unit has yet to fill them. */
+	bool valid;
 	struct bcm2711_native_storage *pixels;
 	uint32_t users;
 	uint64_t used;
@@ -60,8 +62,12 @@ int bcm2711_native_storage_release(struct bcm2711_v3d_space *space, struct bcm27
 /* Unmaps every cached idle upload view and every unused snapshot; recovery calls it before reclaiming translations. */
 int bcm2711_native_storage_drain(struct bcm2711_v3d_space *space);
 
-/* ENOTSUP means the source may change without a generation step, and the caller converts a private copy. */
+/*
+ * ENOTSUP means the source may change without a generation step, and the caller converts a private copy.
+ * A NULL raster leaves a stale snapshot's pixels to the caller's unit job, which reports them with _filled.
+ */
 int bcm2711_native_snapshot_get(struct bcm2711_v3d_space *space, struct bcm2711_buffer *buffer, uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch, const void *raster, size_t raster_bytes, struct bcm2711_native_snapshot **result);
 void bcm2711_native_snapshot_put(struct bcm2711_native_snapshot *snapshot);
+void bcm2711_native_snapshot_filled(struct bcm2711_native_snapshot *snapshot);
 
 #endif

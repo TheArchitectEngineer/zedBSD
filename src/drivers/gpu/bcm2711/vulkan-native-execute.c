@@ -365,6 +365,10 @@ convert_textures(
 			error = bcm2711_v3d_job_run(pass->space->native, &job, result);
 			if (error != 0)
 				return error;
+
+			/* A snapshot the unit filled is valid for later passes from now on. */
+			if (draw->textures[index].snapshot != NULL)
+				bcm2711_native_snapshot_filled(draw->textures[index].snapshot);
 		}
 	}
 	*ticks = clock_ticks() - started;
