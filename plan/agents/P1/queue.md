@@ -6,6 +6,7 @@ Worktree: `/home/awe/zedBSD-worktrees/p1`、branch `agent/p1`、base main fc3d31
 | Queue | Phase | 範囲 | State |
 | --- | --- | --- | --- |
 | q924 | [WS157](../../ws157/ws.md) p010・p011 | codex/ws197-media-uat の 2 commit（305ab43c1、Photos の削除）を agent/p1 に merge し、keiland.h・manager の版の衝突を main と照合、host 試験と build warning 0 → Q1 に merge 依頼 | finished（8ba4c833e → main 787c1904c、host・build PASS、GUI は未実施） |
+| q937 | WS157・WS197（Codex の media 管理の設計の review） | 2026-10-11 ユーザー「Codexが実装した部分の設計が若干不安です。libkeiland --> コンポジタ --> mediastorage --> コンポジタに通知 --> libkeilandに通知 --> Phone/Photo appsに通知、この仕組みが本当に適切に実装されているか、P1に見てほしいです。」→ 経路の全段を source で review し、結果を Q1 へ。小さな欠陥はその場で直す、設計の変更は案にしてユーザーへ | active（q929 p003 より先） |
 | q925 | [WS202](../../ws202/ws.md) p009・p010・p017、[WS083](../../ws083/ws.md) p007 | Vulkan Video の i915 の完了: T1-529（5330・QEMU の再生の確認）の結果で直す。p007 の hang の回復の実機の手順を T1 に依頼 | active（T1-529 の FAIL の直し） |
 | q926 | [ws197-p014](../../ws197/phase014/phase.md) | 「＋」→ 写真の media picker の popup（libkeiland の UI）／file chooser | finished（a2f74e07e → main 4e054d03b、host・build・境界 PASS、GUI は T1-533） |
 | q927 | [ws197-p010](../../ws197/phase010/phase.md) | MMS の添付・写真・動画の送信（旧試作の差分は `.claude/worktrees/ws197-media` に未 commit で残る、読むだけ） | finished（d6b9b5ded → main、host・build PASS、実機はユーザーの UAT） |
