@@ -23,7 +23,7 @@
 | P2 / 2026-10-11 generation（終了、両 Queue の後のラップアップ） | phase-runner（high） | BUG-263・BUG-274 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | — | — | stopped | 24199bd29 → main c695cc34d、64c0be752 → main 048dc8c4b |
 | P3 / 2026-10-11 generation | phase-runner（high） | WS141 p013（VC6 の描画の速さ） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q936 | — | running | base d27925686 |
 | T1 / 2026-10-11 generation（終了） | test-runner | T1-529〜534 | `/home/awe/zedBSD-worktrees/t1` / `agent/t1` | — | — | stopped | T1-530・531・533・534 PASS、T1-529 の 5330 と T1-532 は 5330 不通で未実施 |
-| P2 / 2026-10-11 第 2 generation | phase-runner（high） | BUG-288 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | q938 | — | running | base main |
+| P2 / 2026-10-11 第 2 generation（終了、T1-537 待ち） | phase-runner（high） | BUG-288・WS208 p001〜p004 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | — | p005（実機）・p006 | stopped | BUG-288 → main f39fd61c5、WS208 は ea8ecb4cf（未統合、T1-537 の後） |
 | P5〜P8 | — | 未配属 | — | — | — | N=4 の間は起動しない | — |
 
 担当の WS と最初の Queue は、ベータ1（fg019）の内容をユーザーと決めてから割り当てる。
