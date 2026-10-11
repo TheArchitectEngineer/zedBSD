@@ -92,3 +92,12 @@ kernel 1595355601（TLB copy、busy%）・compositor 1093875040（main＋Codex �
 | 起動時・壁紙の変更時だけ | 壁紙の拡大縮小・CPU の blur（glass.c）、icon・tile・cursor の形 | 一度 | — |
 
 dock の preview: GPU が窓の画像を小さく sample して描く（CPU の縮小・readback は無い、preview 専用の cache も無い）。窓の画像の変換は snapshot を通常の描画と共有するが、client が commit するたびに窓全体を CPU で変換し直す。
+
+## 性能 counter の結果と hardware blend（2026-10-12、P3）
+
+- 実機（kernel ffb8e5666 の counter 版、libkeiland は P2 の BUG-290 版、ユーザーの 60 秒の操作と Settings の dock→undock。log は worktree の build/p3-logs/boot-pctr/、commit しない）: 866 の render run の平均で 1 run 11.4M cycle（V3D 500MHz で 23ms）、quad 238k → wall で 1 quad あたり 48 cycle。QPU の有効命令の cycle は 1 quad あたり 87（2 slice×4 QPU の容量の約 23%）。TMU の miss は 3%（texture は原因でない）。
+- 原因（source と host の確かめ）: (a) kernel の shader compiler の出力の約 7 割が NOP（全命令の後に 2 つ、add と mul を組まない）。host の probe（build/p3-probe/shader-size、commit しない）で quad 75 命令（NOP 49）、blend 付き 120、窓（panel mode 2）288、glass 684、blur 471。(b) blend を shader の中で行い（tile buffer を読んで source-over）、tile の読み書きの区間が scoreboard で順番待ちになる。
+- BUG-290: 同じ起動で Settings の dock(1904x1020)→undock(1180x800) は落ちない（Q1 に報告、判定は Q1・P2）。
+- Settings の title bar の hover の重さ: client（libkeiland）の窓全体の描き直し。SLOW-FRAME 25 回の平均で draw 102ms、copy 305ms（canvas の行を map した memory へ memcpy、libc の memcpy が 1 byte ずつで canvas は Normal non-cacheable）、vkQueueSubmit 約 180ms。libc は BUG-291（Q1 が P2 へ）。
+- 修正 13（ad7ebb2cb、実機未確認）: hardware blend。blend の pipeline の draw は Cfg Bits の Blend enable・Blend Enables=1・Blend Cfg（色と alpha とも ONE / INV_SRC_ALPHA / ADD、RT0）を出し、shader は tile を読まない（software blend の経路と shader の key の field を削除）。draw の bin は 116→121 byte。host: native-state（Mesa XML の oracle で bin の全 byte）・shader・native-pass・clear・vulkan-device PASS、arm64 vmunix warning 0。blend 付きの shader は 45 命令減（quad 120→75、窓 288→243）。Pi の /boot/boot0/vmunix に配置済み（1109485435）、電源の入れ直し待ち。
+- 次: (a) compiler の NOP の削減と add/mul の組（bcm2711 の backend だけ、i915 は別の backend で影響なし）。
