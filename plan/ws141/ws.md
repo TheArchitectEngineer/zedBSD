@@ -367,3 +367,7 @@ R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなく
 ## 2026-10-12 cursor の plane の実機の結果
 
 main 8eb7c81 の image の Pi 4 で cursor の plane が開き（`KWL CURSOR_PLANE open plane=1 64x64 images=3`）、ユーザー「おお、カーソルは60fpsです！」。窓の中身の frame は約 15 fps のまま（CPU の texture 変換が主因、libvulkan の map の token の直し 3b0d9db5c を試験中）。
+
+## 2026-10-12 hardware blend の実機の結果
+
+P3 の ad7ebb2cb（bcm2711 の draw で hardware blend を使い、shader は tile buffer を読まない）の kernel の Pi 4 で、ユーザー「見た目は大丈夫です。描画は2.5倍くらい速くなりました。」次は shader の compiler の NOP の削減と add/mul の組（P3）。

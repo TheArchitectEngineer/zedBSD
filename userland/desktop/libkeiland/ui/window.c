@@ -29,6 +29,7 @@
 
 #include <errno.h>
 #include <poll.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -117,6 +118,7 @@ static int window_surface(struct kl_window *window, const struct kl_window_optio
 static void window_search(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void window_woken(void *data, struct wl_callback *callback, uint32_t time);
 static void window_inset(void *data, int32_t right, int32_t bottom, uint32_t reason);
+static void window_present_tell(struct kl_window *window, const char *call, VkResult result, int error);
 
 /*
  * The globals a window on another's connection finds through a registry of
@@ -598,12 +600,16 @@ kl_window_present_resize(
 	uint32_t *height)
 {
 	VkResult result;
+	int error;
 
 	/* Vulkan: a swapchain of the size, whose extent may differ. */
 	if (window->present == KL_PRESENT_VULKAN) {
 		result = keiui_present_resize(&window->vulkan, window->width, window->height);
-		if (result != VK_SUCCESS)
+		error = errno;
+		if (result != VK_SUCCESS) {
+			window_present_tell(window, "kl_window_present_resize", result, error);
 			return EIO;
+		}
 		*width = window->vulkan.extent.width;
 		*height = window->vulkan.extent.height;
 		return 0;
@@ -671,10 +677,13 @@ kl_window_present_part(
 
 	/* Vulkan: out of date asks for a resize and another frame. */
 	result = keiui_present_frame(&window->vulkan, pixels, stride, part);
+	error = errno;
 	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
 		return EAGAIN;
-	if (result != VK_SUCCESS)
+	if (result != VK_SUCCESS) {
+		window_present_tell(window, "kl_window_present", result, error);
 		return EIO;
+	}
 
 	/* Succeeded: the frame is shown. */
 	return 0;
@@ -2691,4 +2700,51 @@ window_desktop_configure(
 	if (resized)
 		(void)window_push(window, KL_WINDOW_RESIZE);
 	keiui_window_wake(window);
+}
+
+/*
+ * Tells stderr, once a window, which Vulkan call of the presenter failed
+ * (BUG-290): the library's call, the Vulkan call inside it and its result,
+ * errno as that call left it, the window's size and the presenter's
+ * extent, and the connection's error with the compositor's protocol error
+ * when it sent one (a connection the compositor ended fails the next
+ * Vulkan call too).  Later failures follow from the first and are not told.
+ */
+static void
+window_present_tell(
+	struct kl_window *window,
+	const char *call,
+	VkResult result,
+	int error)
+{
+	const struct wl_interface *interface;
+	const char *operation;
+	const char *name;
+	uint32_t code;
+	uint32_t object;
+	int connection;
+
+	/* Once a window. */
+	if (window->present_told != 0)
+		return;
+	window->present_told = 1;
+
+	/* The Vulkan call the presenter made last (none before the first). */
+	operation = window->vulkan.operation;
+	if (operation == NULL)
+		operation = "none";
+
+	/* The connection's error, and the compositor's protocol error behind it. */
+	connection = wl_display_get_error(window->display);
+	interface = NULL;
+	code = 0U;
+	object = 0U;
+	if (connection == EPROTO)
+		code = wl_display_get_protocol_error(window->display, &interface, &object);
+	name = "none";
+	if (interface != NULL)
+		name = interface->name;
+
+	/* One line, for the application's log. */
+	(void)fprintf(stderr, "KEILAND PRESENT_FAILED call=%s operation=%s result=%d errno=%d width=%u height=%u extent=%ux%u maximized=%d connection=%d protocol=%u interface=%s object=%u\n", call, operation, (int)result, error, window->width, window->height, window->vulkan.extent.width, window->vulkan.extent.height, window->maximized, connection, code, name, object);
 }

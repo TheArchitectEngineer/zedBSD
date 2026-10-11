@@ -24,7 +24,21 @@ arm64_classify(const struct arm64_exception_frame *f, uint32_t ec,
 {
 	*mode = HAL_TRAP_MODE_NONE;
 	*address = 0;
-	if (ec == 0x20 || ec == 0x21 || ec == 0x24 || ec == 0x25) {
+
+	/*
+	 * Only an abort whose fault status is a translation, access flag or
+	 * permission fault (0x04-0x0f) is a page fault the address space can
+	 * resolve.  An alignment fault (0x21) and any other abort would fault
+	 * again if the instruction were retried, so they become signals.
+	 */
+	if ((ec == 0x24 || ec == 0x25) && (f->esr & 0x3fULL) == 0x21U) {
+		*cause = HAL_TRAP_CAUSE_ALIGNMENT;
+		*address = (uintptr_t)f->far;
+	} else if ((ec == 0x20 || ec == 0x21 || ec == 0x24 || ec == 0x25) &&
+	    ((f->esr & 0x3fULL) < 0x04U || (f->esr & 0x3fULL) > 0x0fU)) {
+		*cause = HAL_TRAP_CAUSE_OTHER;
+		*address = (uintptr_t)f->far;
+	} else if (ec == 0x20 || ec == 0x21 || ec == 0x24 || ec == 0x25) {
 		*cause = HAL_TRAP_CAUSE_PAGE_FAULT;
 		*address = (uintptr_t)f->far;
 		if (ec == 0x20 || ec == 0x21)

@@ -322,9 +322,13 @@ struct kl_window {
 	unsigned event_first;
 	unsigned event_count;
 
-	/* How the frames are shown, and the presenters. */
+	/*
+	 * How the frames are shown, the presenters, and whether a failure of
+	 * the Vulkan presenter was told on stderr (once, BUG-290).
+	 */
 	unsigned present;
 	struct keiui_present vulkan;
+	int present_told;
 	struct keiui_shm_buffer buffers[KEIUI_SHM_BUFFERS];
 	uint32_t shm_width;
 	uint32_t shm_height;
