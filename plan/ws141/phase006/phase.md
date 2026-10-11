@@ -277,3 +277,9 @@ ee848d0eb起動後、ユーザーから「GPUでWaylandが表示された」と�
 準備期限切れの独立修復として、描画ごとに同じ画像全体をコピーしていた処理を、同一の未送信pass内だけで再利用する。最初のdrawが所有する変換済みtexelを後続drawが借り、sampler/texture record・shader・uniform・vertexは個別に保持。passに画像書き込みやattachment feedbackは入れられず、先行queueは退役済み、primaryが実resourceを保持。別pass/別frameにはキャッシュを持ち越さない。whole-pass退役が証明されるまで元のdrawも保持し、途中失敗は借りた画像を解放しない。既存budgetは実際に新しく獲得したpage分だけ減らし、timeout定数の延長はしない。
 
 actual vulkan-device-host-testで既存確認と、2drawの1画像共有・第二drawの4KiB削減・全体解放・借用後budget失敗時のrollback/二重解放なしを確認。既存diagnosticがhostリンクへ追加したclock/log依存にfixtureの非時間測定/表示なしstubを補い、productionを切り替える試験環境変数は追加していない。build最終sourceでmake -j16 build/arm64/vmunix exit0/warning0/error0/checker PASS、style-check production total0/diff-check PASS。SHA256 d06bf2e8410ad99493f56b588254f1af03c2dda499e9be3fc011b51378cbe8a3、cksum952016436/8077312。実機へは未配置（接続待ち）、速度向上を実測済みとはしない。
+
+### 応答遅延の仮説と起動直後の採取
+
+ユーザーは時刻が時々更新されるため、GPU負荷によるカーネル応答の極端な遅延を指摘。ARP削除後もFAILED、30秒SSHもNo route。V3D workerはSCHED_PRIORITY_DEFAULT、pass preparationはsleepable controller mutex内、hardware guardは短い状態取得/発行部分だけ。tile copyとcache cleanの全体をirq禁止にする経路は調べた範囲ではない。GPU job待機もguard外でsleepする。したがって「GPU準備7〜10秒」は実測事実だが、「それがネットワーク不通の直接原因」は未確定。ユーザーへ電源再投入を依頼し「電源ONしました1分待ってアクセス」の指示を受領、既存再接続loopを止めて待機する。
+
+電源ONの回答後、依頼どおり1分待ってSSHを試行。さらに30秒追加待機して再試行したが、いずれもNo route to host。サービス停止コマンドは接続できていないため実行されず、重複コピー削減版も未配置のまま。実機の `ifconfig en0` または操作不能の情報を依頼。GPU負荷だけを原因と断定せず、現行IP/link/RX/TXの証拠を次の再開条件とする。SSH不通が続く場合はbuild/arm64/vmunix（cksum952016436/8077312）をSDから手動更新する必要がある。
