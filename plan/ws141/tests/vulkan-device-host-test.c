@@ -1324,7 +1324,7 @@ native_pass_test(
 	assert(pass->job.command.cl.render_end - pass->job.command.cl.render_start == 106U);
 	assert(pass->job.command.cl.pool_bytes == 0x83000U && pass->job.command.cl.state_bytes == 4096U);
 	assert(pass->job.command.cl.overflow_count == 4U && pass->job.command.cl.clean_output);
-	assert(pass->state.output == address && pass->state.load == 1U && pass->state.store == 1U);
+	assert(pass->state.output == address && pass->state.load == 0U && pass->state.store == 1U);
 	assert(pass->load == VK_ATTACHMENT_LOAD_OP_CLEAR && pass->cpu == cpu);
 	for (index = 0; index < BCM2711_NATIVE_BIN_BYTES; index++)
 		assert(((uint8_t *)pass->storage[0]->view->buffer->address)[BCM2711_NATIVE_PASS_BIN_PREFIX + index] == pass->first->bin[index]);
@@ -1555,6 +1555,30 @@ native_execute_test(
 	assert(error == 0 && allocations == baseline + 1);
 	native_execute_error = 0;
 	native_execute_retired = true;
+
+	/* Full-image CLEAR delegates initialization to tile memory and leaves the CPU alias untouched. */
+	fixture->record.area.offset.x = 0;
+	fixture->record.area.offset.y = 0;
+	fixture->record.area.extent.width = 16;
+	fixture->record.area.extent.height = 8;
+	available = 8U * 1024U * 1024U;
+	error = bcm2711_vulkan_native_pass_create(space, fixture->events, &available, &pass, &following);
+	assert(error == 0);
+	assert(pass->state.load == 0 && pass->state.clear_colour == 0xffbf8040U);
+	cpu = pass->cpu;
+	memset(cpu, 0x6c, 512);
+
+	/* The runner is synthetic: only CPU-write avoidance and native handoff are asserted here. */
+	error = bcm2711_vulkan_native_pass_run(pass, &result);
+	assert(error == 0 && result.retired);
+
+	/* Every old byte survives until hardware, rather than this host fixture, performs the clear. */
+	for (index = 0; index < 512; index++)
+		assert(cpu[index] == 0x6c);
+
+	/* Retire the fixture's complete native owner graph. */
+	error = bcm2711_vulkan_native_pass_release(&pass, true);
+	assert(error == 0 && allocations == baseline + 1);
 	kern_free(fixture);
 	assert(allocations == baseline);
 	puts("WS141 real rectangular coherent clear/native-runner fixture handoff/single-use retirement: PASS");

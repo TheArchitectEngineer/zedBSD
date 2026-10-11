@@ -20,6 +20,7 @@
 
 static int prepare_clear(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_record *record);
 static int prepare_target(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_prepared_event *begin);
+static int prepare_target_clear(struct bcm2711_vulkan_native_pass *pass);
 static int collect_draws(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_prepared_event *begin, uint64_t *remaining, const struct bcm2711_vulkan_prepared_event **next);
 static int allocate_storage(struct bcm2711_vulkan_native_pass *pass, uint64_t bytes, uint64_t *remaining, struct bcm2711_native_storage **storage);
 static int prepare_lists(struct bcm2711_vulkan_native_pass *pass, uint64_t *remaining);
@@ -412,7 +413,7 @@ prepare_target(
 	pass->initial_layout = description->colour.initialLayout;
 	pass->final_layout = description->colour.finalLayout;
 
-	/* Every selected tile loads existing samples, preserving partial render areas and extra grouped supertile tiles. */
+	/* Default tile loads preserve partial render areas and extra grouped supertile tiles. */
 	pass->state.width = framebuffer->width;
 	pass->state.height = framebuffer->height;
 	pass->state.pitch = image->pitch;
@@ -434,7 +435,52 @@ prepare_target(
 	pass->load = description->colour.loadOp;
 	kern_memcpy(pass->clear, record->words, sizeof(pass->clear));
 
+	/* Whole-image clears can initialize tile memory without uncached CPU writes or an image load. */
+	error = prepare_target_clear(pass);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: all later target references borrow this independently retained view, never a public framebuffer identity. */
+	return 0;
+}
+
+/* Selects native tile clear only when no sample outside the render area needs preservation. */
+static int
+prepare_target_clear(
+	struct bcm2711_vulkan_native_pass *pass)
+{
+	uint32_t colour;
+	uint32_t swap;
+	int error;
+
+	/* Loading and discarding retain the existing tile preservation path. */
+	if (pass->load != VK_ATTACHMENT_LOAD_OP_CLEAR)
+		return 0;
+
+	/* A partial rectangle still needs exact CPU clear followed by tile load. */
+	if (pass->area.offset.x != 0 || pass->area.offset.y != 0)
+		return 0;
+
+	/* Cover the whole backing image, including when the framebuffer is smaller. */
+	if (pass->area.extent.width != pass->target->width ||
+	    pass->area.extent.height != pass->target->height)
+		return 0;
+
+	/* Use the same raw tile colour packing as the native full-image clear command. */
+	swap = 0;
+	if (pass->format == VK_FORMAT_B8G8R8A8_UNORM)
+		swap = 1;
+
+	/* Reject unrepresentable clear state before any native command is published. */
+	error = bcm2711_native_colour_pack(pass->clear, swap, &colour);
+	if (error != 0)
+		return error;
+
+	/* Clear initializes every rendered tile; no prior image contents are consumed. */
+	pass->state.clear_colour = colour;
+	pass->state.load = 0;
+
+	/* Succeeded: native execution owns the complete clear and subsequent drawing. */
 	return 0;
 }
 

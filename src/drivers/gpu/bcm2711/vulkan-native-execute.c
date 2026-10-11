@@ -213,6 +213,10 @@ clear_target(
 	if (pass->load != VK_ATTACHMENT_LOAD_OP_CLEAR)
 		return 0;
 
+	/* Complete-image clears are encoded in tile memory and need no CPU writes. */
+	if (pass->state.load == 0)
+		return 0;
+
 	/* Only the implemented numerical colour storage formats supply an exact clamped packed clear. */
 	swap = 0;
 	if (pass->format == VK_FORMAT_B8G8R8A8_UNORM)

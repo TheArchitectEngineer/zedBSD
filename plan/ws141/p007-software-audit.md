@@ -94,3 +94,8 @@ native-storage.c/.hにallocation/map/clean wall tickを保持し、pass diagnost
 ## 2026-10-11 arm64物理page検索の占有prefix保持
 
 src/hal/arm64/page.cの変更領域をC全文で確認。private candidateの初期化/単一CPUのIRQ除外/解放時巻き戻しを明記し、HAL API変更なし。page.cの既存規約差（macro条件/旧宣言/forward等）は対象外、変更行へ違反を追加しない。新host試験はstyle0、diff-check PASS。実allocatorと独立参照4096回比較PASS。clang-format19出力との比較では既存全文規約に合わせた引数行とcommentを保持。WSの新しい物理補完としてp006記録へリンクし、性能とwhole受入れは実機待ち。
+
+
+### 2026-10-11 全面render-pass clear
+
+vulkan-native-pass.c/execute.cの新差分をC全文review。image全域かつCLEARのみnative tile初期化、partial/small framebufferの外側保持・事前準備失敗時target不変・UNORM pack/チャネル順・GPU retirementを確認。対象device host PASS、production style0/diff-check PASS、clang-format19比較は全文規約優先。arm64 warning0/checkerPASS。実機速度/色はp006へ追記する。WS/p006 acceptanceは未完了。

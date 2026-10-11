@@ -326,3 +326,9 @@ HAL APIを変えず、arm64/page.cに「ここより前は全て使用中」と�
 実page.cを含む限定host試験: `cc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -idirafter include -I src plan/ws141/tests/arm64-page-cursor-host.c -Wl,--gc-sections -o build/ws141-page-cursor-host && build/ws141-page-cursor-host` PASS。固定seed4096回の断片化/解放/size/alignment/DMA上限/boundaryを独立first-fit参照と比較し、選ぶ物理pageも一致、全解放後の低位再利用と候補以前の使用中不変条件を確認。GPU performanceの実機証拠は配置後に採取する。
 
 候補保持版の最終arm64 build exit0/warning0/error0/ARM64 checker PASS。4190670006 8077312 build/arm64/vmunix、7007255529342daec9988c20307ca3a9538064a9b2ba0d2db000d8321cda4766  build/arm64/vmunix。
+
+
+物理page候補版13737b751をmain統合し、旧2232080428/8077312をUFS /var/backups/vmunix.before-page-cursor-20261011へ保存、新4190670006/8077312をFAT staging/cmp/sync/rename/sync/cmpで配置。rebootから約2分でSSH復帰。SSH応答約0.46秒、prepareが1秒以上の診断は出ず、desktopは継続。ただしcomposeは0.8〜2.4秒、後の操作中は2.8秒程度を観測。ユーザーも「多少反応するがまだ1000ms程度」と報告。idle poll90%は操作時の描画性能を証明しない。引き続きsubmit-i01 in-progress。
+
+残る全面CLEARはuncached RAMへ4byte単位の各byte storeを全画素で行い、その後GPUでLOADしていた。全面かつimage全域のCLEARだけ既存のnative tile clearへ切替。partial rectangle/小さいframebufferはCPUで正確な矩形のみclear後LOADする従来契約を保持。BGRAは既存vkCmdClearColorImageと同じpackを使い、prepareはtargetを変更せず、GPUの完了/retirement契約も維持。
+対象vulkan-device-host PASS（初回は旧state.load==1の固定期待で失敗、全面clearの期待のみ修正。partial矩形の既存確認と全面時CPU未変更の実executor確認を実施）。production style0、全文manual review/diff-check PASS、clang-format19比較は独立引数/宣言行の全文規約を優先。arm64 build exit0/warning0/error0/checkerPASS。kernel2480702249/8077312、sha256 aaaaf3fca26c48b623e51ab33c8a984671cbcdb15b25768fd7fbdcfd2f92563d。実機効果は配置後に確認する。
