@@ -27,9 +27,14 @@
 /* How far around the pointer a cursor may draw (the compositor's shapes and arrow are smaller). */
 #define DAMAGE_CURSOR		64
 
+/* How far a hovered thing's light and the glass's blur over it reach beyond its probe. */
+#define DAMAGE_HOVER		96
+
 static void damage_add(struct kwl_server *server, int32_t left, int32_t top, int32_t right, int32_t bottom);
 static int cursor_unseen(struct kwl_server *server, int32_t x, int32_t y);
 static int probes_changed(struct kwl_server *server);
+static int hover_record_usable(struct kwl_server *server);
+static int probes_damaged(struct kwl_server *server);
 static int probe_contains(const struct kwl_hover_probe *probe, int32_t x, int32_t y);
 
 /*
@@ -85,7 +90,7 @@ kwl_damage_pointer(
 		if (calm)
 			calm = kwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
 		if (!calm)
-			calm = kwl_hover_unchanged(server);
+			calm = kwl_hover_damage(server);
 		if (!calm) {
 			server->dirty = 1;
 			return;
@@ -123,6 +128,10 @@ kwl_damage_commit(
 	/* Client pixels changed even when their measured damage is only a window body. */
 	if (server->compose != NULL)
 		server->compose->scene.changed = 1U;
+
+	/* A cursor's new image is the cursor plane's alone while the plane shows it (cursor-plane.c). */
+	if (surface->cursor_role && kwl_cursor_plane_takes(server))
+		return;
 
 	/* A first image, an image taken away, or a sub-surface's, a popup's or a cursor's: everything. */
 	if (previous == NULL || surface->current == NULL || surface->sub_role != NULL || surface->cursor_role) {
@@ -216,6 +225,13 @@ kwl_hover_begin(
 	if (!whole) {
 		if (server->hover_complete && !probes_changed(server))
 			return;
+
+		/* Probes whose answer changed inside the damage are drawn for the pointer's place now. */
+		if (server->hover_complete && probes_damaged(server)) {
+			server->hover_x = server->pointer_x;
+			server->hover_y = server->pointer_y;
+			return;
+		}
 		server->hover_complete = 0U;
 		return;
 	}
@@ -253,6 +269,66 @@ kwl_hover_unchanged(
 {
 	int open;
 
+	/* A record that can vouch for the scene. */
+	open = hover_record_usable(server);
+	if (!open)
+		return 0;
+
+	/* Every probe answers as it did when the scene was drawn. */
+	open = probes_changed(server);
+	if (open)
+		return 0;
+
+	/* Succeeded: only the cursor differs. */
+	return 1;
+}
+
+/*
+ * Marks the probes whose answer the pointer changed since the scene was drawn, with the reach of their light, as damage.
+ *
+ * Returns 0, marking nothing, when the record cannot vouch for the rest of
+ * the scene; the caller then redraws the whole output.
+ */
+int
+kwl_hover_damage(
+	struct kwl_server *server)
+{
+	const struct kwl_hover_probe *probe;
+	unsigned index;
+	int usable;
+	int before;
+	int after;
+
+	/* A record that can vouch for the scene. */
+	usable = hover_record_usable(server);
+	if (!usable)
+		return 0;
+
+	/* Each probe that answers differently, and the light around it. */
+	for (index = 0; index < server->hover_count; index++) {
+		probe = &server->hover_probes[index];
+		before = probe_contains(probe, server->hover_x, server->hover_y);
+		after = probe_contains(probe, server->pointer_x, server->pointer_y);
+		if (before == after)
+			continue;
+		damage_add(server,
+			   probe->x - DAMAGE_HOVER,
+			   probe->y - DAMAGE_HOVER,
+			   probe->x + probe->width + DAMAGE_HOVER,
+			   probe->y + probe->height + DAMAGE_HOVER);
+	}
+
+	/* Succeeded: the rest of the scene stays as drawn. */
+	return 1;
+}
+
+/* Tells whether the hover record can vouch for the scene apart from its probes. */
+static int
+hover_record_usable(
+	struct kwl_server *server)
+{
+	int open;
+
 	/* A whole scene's complete record is needed. */
 	if (!server->hover_complete)
 		return 0;
@@ -280,12 +356,39 @@ kwl_hover_unchanged(
 	if (server->switcher.on)
 		return 0;
 
-	/* Every probe answers as it did when the scene was drawn. */
-	open = probes_changed(server);
-	if (open)
+	/* Succeeded: only the probes can differ. */
+	return 1;
+}
+
+/* Tells whether every probe that answers differently now lies inside the damage the next frame draws. */
+static int
+probes_damaged(
+	struct kwl_server *server)
+{
+	const struct kwl_hover_probe *probe;
+	unsigned index;
+	int before;
+	int after;
+
+	/* No damage holds nothing. */
+	if (!server->damaged)
 		return 0;
 
-	/* Succeeded: only the cursor differs. */
+	/* Each changed probe, with its reach, inside the damage's box. */
+	for (index = 0; index < server->hover_count; index++) {
+		probe = &server->hover_probes[index];
+		before = probe_contains(probe, server->hover_x, server->hover_y);
+		after = probe_contains(probe, server->pointer_x, server->pointer_y);
+		if (before == after)
+			continue;
+		if (probe->x - DAMAGE_HOVER < server->damage[0] ||
+		    probe->y - DAMAGE_HOVER < server->damage[1] ||
+		    probe->x + probe->width + DAMAGE_HOVER > server->damage[2] ||
+		    probe->y + probe->height + DAMAGE_HOVER > server->damage[3])
+			return 0;
+	}
+
+	/* Succeeded: the frame draws every changed answer. */
 	return 1;
 }
 
@@ -396,4 +499,17 @@ probe_contains(
 
 	/* Inside. */
 	return 1;
+}
+
+/* Marks a rectangle (left, top, right, bottom) of the output as damage, for changes measured elsewhere (a window's move, shell.c). */
+void
+kwl_damage_rect(
+	struct kwl_server *server,
+	int32_t left,
+	int32_t top,
+	int32_t right,
+	int32_t bottom)
+{
+	/* Gathered with the rest of the frame's damage. */
+	damage_add(server, left, top, right, bottom);
 }

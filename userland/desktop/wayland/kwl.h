@@ -1834,6 +1834,8 @@ void kwl_hover_probe(struct kwl_server *server, int32_t x, int32_t y, int32_t wi
 void kwl_hover_begin(struct kwl_server *server, int whole);
 void kwl_hover_end(struct kwl_server *server);
 int kwl_hover_unchanged(struct kwl_server *server);
+int kwl_hover_damage(struct kwl_server *server);
+void kwl_damage_rect(struct kwl_server *server, int32_t left, int32_t top, int32_t right, int32_t bottom);
 void kwl_damage_commit(struct kwl_server *server, struct kwl_object *surface, struct kwl_object *previous);
 void kwl_window_bounds_refresh(struct kwl_server *server);
 int kwl_window_send_configure(struct kwl_object *surface);
