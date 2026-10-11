@@ -385,7 +385,7 @@ struct shell_bar {
 	unsigned output;
 };
 
-static int glass_still(struct kwl_server *server, int home_settled);
+static int glass_still(struct kwl_server *server, int hover);
 static void bar_layout(struct kwl_server *server, struct shell_bar *bar);
 static void bar_layout_on(struct kwl_server *server, unsigned slot, struct shell_bar *bar);
 static void draw_window(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned focused, const struct shell_bar *bar);
@@ -2015,8 +2015,10 @@ kwl_glass_still(
 /*
  * Tells whether the look is still for the hover record (damage.c): as
  * kwl_glass_still(), but Home open and settled counts as still, its icons'
- * light being probes (home.c).  The whole output was drawn again for each
- * motion over Home, at a few frames a second on the Pi 4 (2026-10-12).
+ * light being probes (home.c), and so does the status pill's panel, which
+ * lights nothing under the pointer (status-panel.c).  The whole output was
+ * drawn again for each motion over Home or with the panel open, at a few
+ * frames a second on the Pi 4 (2026-10-12 user).
  */
 int
 kwl_glass_hover_still(
@@ -2026,11 +2028,11 @@ kwl_glass_hover_still(
 	return glass_still(server, 1);
 }
 
-/* Tells whether the look is still; home_settled allows Home open with nothing in it moving. */
+/* Tells whether the look is still; hover allows what the hover record can vouch for (Home settled, the status panel). */
 static int
 glass_still(
 	struct kwl_server *server,
-	int home_settled)
+	int hover)
 {
 	struct kwl_object *popups[1];
 	float home;
@@ -2047,7 +2049,7 @@ glass_still(
 	/* Home, even closing; settled open only when allowed. */
 	home = kwl_home_progress(server);
 	if (home > 0.0f) {
-		if (!home_settled)
+		if (!hover)
 			return 0;
 		open = (unsigned)kwl_home_settled(server);
 		if (!open)
@@ -2090,7 +2092,7 @@ glass_still(
 	if (open)
 		return 0;
 	open = (unsigned)kwl_status_panel_is_open();
-	if (open)
+	if (open && !hover)
 		return 0;
 
 	/* Still. */
