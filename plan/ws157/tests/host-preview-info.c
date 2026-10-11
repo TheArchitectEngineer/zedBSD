@@ -6,7 +6,7 @@
  */
 
 /*
- * The host test of preview_info_read (ws157-p013): the reader of
+ * The host test of preview_info_read (ws157-p013, p016's zone): the reader of
  * keiland-preview --info's answer, against a stand-in child (a script in
  * the folder KEILAND_LIBEXECDIR names) that answers what the case file
  * says: a good answer, answers that are not --info's, a failure status,
@@ -15,7 +15,7 @@
  *
  *   host-preview-info CASE INPUT
  *
- * CASE is good, header, kind, side, taken, status, hang or real; prints
+ * CASE is good, utc, zone, header, kind, side, taken, status, hang or real; prints
  * one line, PASS or FAIL.
  */
 
@@ -68,7 +68,13 @@ main(
 	/* What each case expects. */
 	good = 0;
 	same = strcmp(name, "good");
-	if (same == 0 && error == 0 && info.kind == KL_MEDIA_JPEG && info.width == 640 && info.height == 480 && info.dated && info.taken == 1700000000)
+	if (same == 0 && error == 0 && info.kind == KL_MEDIA_JPEG && info.width == 640 && info.height == 480 && info.dated && info.taken == 1700000000 && !info.utc)
+		good = 1;
+	same = strcmp(name, "utc");
+	if (same == 0 && error == 0 && info.kind == KL_MEDIA_VIDEO && info.width == 1920 && info.dated && info.taken == 1700000000 && info.utc)
+		good = 1;
+	same = strcmp(name, "zone");
+	if (same == 0 && error == EPROTO)
 		good = 1;
 	same = strcmp(name, "header");
 	if (same == 0 && error == EPROTO)
