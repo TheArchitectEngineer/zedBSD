@@ -13,6 +13,7 @@
 #include <drivers/pci/pci.h>
 #include <drivers/pci/pci-xhci-capability.h>
 #include <drivers/pci/pci-xhci-control.h>
+#include <drivers/pci/pci-xhci-isoch.h>
 #include <drivers/pci/pci-xhci-lifecycle.h>
 #include <drivers/usb/usb.h>
 #include <kern/kcrt.h>
@@ -72,6 +73,18 @@
 /* Bounded waits for a quiescence, a reset or an endpoint to run again. */
 #define XHCI_WAIT_MS 1000U
 #define XHCI_ROOT_POLL_MS 100U
+/*
+ * Isochronous endpoints (ws197-p007a1): the Isoch TRB's type, Block Event
+ * Interrupt, Interrupt-on-Short-Packet and Start Isoch ASAP bits; how long
+ * a skip wait lasts before the worker stops the endpoint (more than two
+ * URBs of 16 ms); and how often the worker looks when nothing wakes it.
+ */
+#define XHCI_TRB_ISOCH 5U
+#define XHCI_TRB_BEI 0x00000200U
+#define XHCI_TRB_ISP 0x00000004U
+#define XHCI_TRB_SIA 0x80000000U
+#define XHCI_ISOCH_SKIP_MS 40U
+#define XHCI_ISOCH_POLL_MS 10U
 /* TRSTRCY, the recovery interval after a port reset. */
 #define XHCI_PORT_RECOVERY_MS 10U
 #define XHCI_PCI_COMMAND 0x04U
@@ -147,6 +160,13 @@ struct xhci_endpoint {
 	struct xhci_request *active;
 	unsigned dci;
 	unsigned enabled, recovering, stall_publishing;
+
+	/*
+	 * An isochronous endpoint's bookkeeping (pci-xhci-isoch.h, NULL for
+	 * any other) and when its skip wait ends (ticks), under active_lock.
+	 */
+	struct drv_xhci_isoch *isoch;
+	uint64_t isoch_deadline;
 };
 
 struct xhci_device {
@@ -198,6 +218,8 @@ struct xhci_request {
 	unsigned completion_trb_offset;
 	enum drv_usb_urb_status terminal_status;
 	struct xhci_request *completion_next;
+	/* The request's packets live in its endpoint's isochronous FIFO. */
+	unsigned isoch;
 };
 
 struct xhci_urb_reservation {
@@ -294,6 +316,21 @@ struct xhci_controller {
 	 * worker's thread.
 	 */
 	uint8_t forced_port_change[32];
+
+	/*
+	 * Isochronous endpoints (ws197-p007a1, design 2.1a/2.1b): finished
+	 * requests waiting for their callbacks (delivered even while a command
+	 * holds the ring, since an isochronous callback only wakes a thread),
+	 * whether a dispatch runs, and the worker that stops endpoints after a
+	 * skip wait and recovers halted ones: its thread, whether it has work
+	 * or is to stop, and whether it is working (the suspend and the
+	 * quiesce wait for it).  Under active_lock except the atomics.
+	 */
+	struct xhci_request *isoch_head, *isoch_tail;
+	unsigned isoch_dispatch_busy;
+	struct thread *isoch_worker;
+	volatile unsigned isoch_pending, isoch_stopping, isoch_working;
+	volatile unsigned isoch_worker_made;
 };
 
 static struct xhci_controller *controllers;
@@ -303,6 +340,27 @@ static void xhci_urb_unreserve(struct drv_usb_hcd *hcd, void *opaque);
 static void *xhci_urb_reserve_buffer(struct drv_usb_hcd *hcd, void *opaque, size_t *capacity);
 static int xhci_sg_plan(struct xhci_request *request, size_t length);
 static int xhci_sg_short(const struct xhci_request *request, unsigned offset, size_t residual, size_t *actual);
+static int xhci_isoch_open(struct xhci_controller *c, struct drv_xhci_isoch **isoch);
+static int xhci_isoch_slot(const struct xhci_endpoint *ep, uint64_t pointer, unsigned *slot);
+static enum drv_usb_iso_status xhci_isoch_status(unsigned result);
+static void xhci_isoch_take_locked(struct xhci_controller *c, struct xhci_device *d, struct xhci_endpoint *ep, enum drv_usb_urb_status terminal, struct drv_usb_urb *keep, struct xhci_request **kept);
+static int xhci_isoch_event_locked(struct xhci_controller *c, const struct xhci_trb *event);
+static void xhci_isoch_finish(struct xhci_controller *c, struct xhci_request *r);
+static void xhci_isoch_drain(struct xhci_controller *c);
+static void xhci_isoch_kick(struct xhci_controller *c);
+static int xhci_isoch_address(const struct xhci_request *r, size_t offset, size_t length, uint64_t *address);
+static int xhci_isoch_enqueue(struct xhci_controller *c, struct drv_usb_hcd *h, struct xhci_device *d, struct xhci_endpoint *ep, unsigned dci, struct drv_usb_urb *u);
+static int xhci_isoch_quiet(struct xhci_controller *c, struct xhci_device *d, struct xhci_endpoint *ep, unsigned dci, int empty);
+static int xhci_isoch_dequeue_slot(struct xhci_controller *c, struct xhci_device *d, struct xhci_endpoint *ep, unsigned dci, unsigned *slot);
+static int xhci_isoch_queued_locked(const struct xhci_endpoint *ep, const struct drv_usb_urb *u);
+static int xhci_isoch_cancel(struct xhci_controller *c, struct xhci_device *d, struct xhci_endpoint *ep, unsigned dci, struct drv_usb_urb *keep, enum drv_usb_urb_status terminal);
+static void xhci_isoch_work(struct xhci_controller *c);
+static void xhci_isoch_worker(void *argument);
+static int xhci_isoch_worker_start(struct xhci_controller *c);
+static void xhci_isoch_worker_stop(struct xhci_controller *c);
+static int xhci_isoch_busy_locked(const struct xhci_endpoint *ep);
+static void xhci_isoch_drain_controller(struct xhci_controller *c);
+static bool xhci_transfer_busy_isoch_locked(struct xhci_controller *c);
 static void xhci_sg_enqueue(struct xhci_ring *ring, const struct xhci_request *request, int input, size_t packet_size, int zero_packet);
 static void xhci_request_release(struct xhci_controller *, struct xhci_request *);
 static uint8_t rd8(volatile uint8_t *b, unsigned o);
@@ -1416,9 +1474,12 @@ command_ex(
 		if (!available)
 			continue;
 
-		/* Defers claimed transfer callbacks until the command gate is open. */
-		if (type == 32U)
+		/* Defers claimed transfer callbacks until the command gate is open; isochronous ones go now. */
+		if (type == 32U) {
+			xhci_isoch_drain(c);
+			xhci_isoch_kick(c);
 			continue;
+		}
 
 		/* Wakes the port worker for a root-port state change. */
 		if (type == 34U) {
@@ -1824,11 +1885,17 @@ xhci_device_request_busy_locked(
 	const struct xhci_device *device)
 {
 	unsigned dci;
+	int busy;
 
 	/* Process each element required by the operation. */
 	for (dci = 1; dci < 32U; dci++) {
 		/* Handles the active availability. */
 		if (device->endpoints[dci].active != NULL)
+			return 1;
+
+		/* An isochronous FIFO, or its owner at work. */
+		busy = xhci_isoch_busy_locked(&device->endpoints[dci]);
+		if (busy)
 			return 1;
 	}
 
@@ -1912,6 +1979,8 @@ xhci_device_release(
 	for (i = 1; i < 32; i++) {
 		ring_free(c, &d->endpoints[i].ring);
 		xhci_streams_free(c, &d->endpoints[i]);
+		kern_free(d->endpoints[i].isoch);
+		d->endpoints[i].isoch = NULL;
 	}
 
 	/* Handles the address availability. */
@@ -2306,9 +2375,11 @@ xhci_endpoint_enable(
 	const struct drv_usb_superspeed_endpoint_companion_descriptor
 		*companion;
 	const struct drv_usb_endpoint_descriptor *desc;
+	struct drv_xhci_isoch *isoch;
 	uint8_t *input;
 	uint32_t *control;
 	unsigned number, dci, entries, type;
+	unsigned long irq;
 	int ring_allocated = 0;
 	int e;
 
@@ -2353,14 +2424,28 @@ xhci_endpoint_enable(
 		return EINVAL;
 	}
 
+	/* An isochronous endpoint's bookkeeping, published once it is configured (ws197-p007a1). */
+	isoch = NULL;
+	if (type == 1U || type == 5U) {
+		e = xhci_isoch_open(c, &isoch);
+		if (e != 0)
+			return e;
+	}
+
 	/* Handles the address availability. */
 	if (ep->ring.dma.address == NULL) {
 		/* Checks the ring alloc result. */
-		if ((e = ring_alloc(c, &ep->ring)) != 0)
+		e = ring_alloc(c, &ep->ring);
+		if (e != 0) {
+			kern_free(isoch);
 			return e;
+		}
+
+		/* A ring of its own, freed again on a failure. */
 		ring_allocated = 1;
 	} else if (ep->dci != dci) {
 		/* Failed. */
+		kern_free(isoch);
 		return EIO;
 	}
 
@@ -2384,11 +2469,25 @@ xhci_endpoint_enable(
 			ep->dci = 0;
 		}
 
+		/* The bookkeeping goes too. */
+		kern_free(isoch);
+
 		/* Returns the computed result. */
 		return e;
 	}
 
 	d->context_entries = entries;
+
+	/* The bookkeeping starts with the ring (its producer is the ring's enqueue). */
+	if (isoch != NULL) {
+		isoch->producer = ep->ring.enqueue;
+		isoch->consumer = ep->ring.enqueue;
+		irq = spin_lock_irqsave(&c->active_lock);
+		ep->isoch = isoch;
+		spin_unlock_irqrestore(&c->active_lock, irq);
+	}
+
+	/* Enabled. */
 	ep->enabled = 1;
 
 	/* Succeeded. */
@@ -2505,10 +2604,12 @@ xhci_endpoint_disable(
 	struct xhci_controller *c = hcd_controller(h);
 	struct xhci_device *d = xhci_usb_device(drv_usb_endpoint_device(usbep));
 	struct xhci_endpoint *ep;
+	struct drv_xhci_isoch *isoch;
 	uint8_t *input;
 	uint32_t *control;
 	unsigned dci, entries;
 	unsigned long irq;
+	int busy;
 	int error;
 
 	/* Checks the current descriptor. */
@@ -2526,10 +2627,13 @@ xhci_endpoint_disable(
 		return 0;
 	ep = &d->endpoints[dci];
 
-	/* Handles the active availability. */
+	/* Handles the active availability (an isochronous endpoint only empty and idle, design 2.1b B-W4). */
 	irq = spin_lock_irqsave(&c->active_lock);
-	if (ep->active != NULL || ep->recovering || d->quiescing) {
-		error = d->quiescing ? ENODEV : EBUSY;
+	busy = xhci_isoch_busy_locked(ep);
+	if (ep->active != NULL || ep->recovering || d->quiescing || busy) {
+		error = EBUSY;
+		if (d->quiescing)
+			error = ENODEV;
 		spin_unlock_irqrestore(&c->active_lock, irq);
 
 		/* Failed. */
@@ -2574,6 +2678,13 @@ xhci_endpoint_disable(
 	d->context_entries = entries;
 	xhci_streams_free(c, ep);
 
+	/* An isochronous endpoint's bookkeeping goes with it. */
+	irq = spin_lock_irqsave(&c->active_lock);
+	isoch = ep->isoch;
+	ep->isoch = NULL;
+	spin_unlock_irqrestore(&c->active_lock, irq);
+	kern_free(isoch);
+
 	/* Succeeded. */
 	return 0;
 }
@@ -2596,6 +2707,12 @@ transfer_claim(
 	size_t residual = event->status & 0x00ffffffU, actual;
 	unsigned trb_offset;
 	int normal_short_valid = 1;
+	int isochronous;
+
+	/* An isochronous endpoint's event follows its own rules (ws197-p007a1). */
+	isochronous = xhci_isoch_event_locked(c, event);
+	if (isochronous)
+		return 1;
 
 	irq = spin_lock_irqsave(&c->active_lock);
 
@@ -3054,6 +3171,10 @@ xhci_irq(
 
 			event_unlock(c);
 
+			/* Isochronous callbacks only wake, so they go even while a command holds the ring. */
+			xhci_isoch_drain(c);
+			xhci_isoch_kick(c);
+
 			/* Defers command-recursive callbacks until the waiting gate is released. */
 			busy =
 			    __atomic_load_n(&c->command_busy, __ATOMIC_ACQUIRE);
@@ -3421,6 +3542,10 @@ xhci_endpoint_reset(
 	if (dci < 2U || dci >= 32U)
 		return EINVAL;
 	endpoint = &d->endpoints[dci];
+
+	/* An isochronous endpoint recovers only through its worker (design 2.1b B-W4). */
+	if (endpoint->isoch != NULL)
+		return EINVAL;
 	wait_started = sched_ticks();
 	/* Continue until the operation reaches a terminal state. */
 	for (;;) {
@@ -3982,6 +4107,12 @@ xhci_urb_enqueue(
 
 	ep = &d->endpoints[dci];
 
+	/* An isochronous endpoint queues on its FIFO (ws197-p007a1). */
+	if (q == NULL && ep->isoch != NULL) {
+		e = xhci_isoch_enqueue(c, h, d, ep, dci, u);
+		return e;
+	}
+
 	/* Handles the q availability. */
 	if (q == NULL) {
 		/* Handles the maximum packet size condition. */
@@ -4526,6 +4657,14 @@ xhci_urb_dequeue(
 	if (dci == 0 || dci >= 32U)
 		return EINVAL;
 	endpoint = &d->endpoints[dci];
+
+	/* An isochronous URB's cancel empties its whole endpoint (design 2.1a X5). */
+	if (control == NULL && endpoint->isoch != NULL) {
+		error = xhci_isoch_cancel(c, d, endpoint, dci, u, DRV_USB_URB_CANCELLED);
+		return error;
+	}
+
+	/* Any other endpoint's single request. */
 	irq = spin_lock_irqsave(&c->active_lock);
 
 	/* Handles the r availability. */
@@ -4637,6 +4776,7 @@ xhci_device_quiesce(
 	unsigned dci, owned, wait_for_cancel;
 	unsigned long irq;
 	uint64_t wait_started;
+	int busy;
 	int error, first_error = 0;
 
 	/* Handles the d availability. */
@@ -4680,6 +4820,18 @@ xhci_device_quiesce(
 		}
 
 		sched_yield();
+	}
+
+	/* Every isochronous endpoint's URBs end DISCONNECTED (ws197-p007a1); a retained one keeps the device. */
+	for (dci = 1; dci < 32U; dci++) {
+		irq = spin_lock_irqsave(&c->active_lock);
+		busy = xhci_isoch_busy_locked(&d->endpoints[dci]);
+		spin_unlock_irqrestore(&c->active_lock, irq);
+		if (!busy)
+			continue;
+		error = xhci_isoch_cancel(c, d, &d->endpoints[dci], dci, NULL, DRV_USB_URB_DISCONNECTED);
+		if (error != 0 && error != EBUSY && first_error == 0)
+			first_error = error;
 	}
 
 	/*
@@ -5260,6 +5412,9 @@ xhci_controller_drain_requests(
 	unsigned dci;
 	unsigned long irq;
 
+	/* The isochronous FIFOs first, retained ones included (design 2.1b B-W4). */
+	xhci_isoch_drain_controller(c);
+
 	/* Continue until the operation reaches a terminal state. */
 	for (;;) {
 		device = NULL;
@@ -5487,6 +5642,10 @@ xhci_quiesce(
 	barrier_error = xhci_submission_quiesce(c);
 	if (barrier_error != 0)
 		return barrier_error;
+
+	/* The isochronous worker stops before the DMA is declared quiesced (design 2.1b B-W1). */
+	xhci_isoch_worker_stop(c);
+
 	/* Turns the interrupter off for good and discards a pending interrupt. */
 	event_lock(c);
 	c->interrupter_enabled = 0U;
@@ -6475,6 +6634,8 @@ xhci_suspend(
 	struct drv_pci_device *device)
 {
 	struct xhci_controller *c;
+	unsigned long irq;
+	bool streaming;
 	int error;
 
 	/* Finds the controller. */
@@ -6482,14 +6643,22 @@ xhci_suspend(
 	if (c == NULL)
 		return ENODEV;
 
+	/* An isochronous stream refuses the sleep before the gates close (design 2.1b B-G2). */
+	irq = spin_lock_irqsave(&c->active_lock);
+	streaming = xhci_transfer_busy_isoch_locked(c);
+	spin_unlock_irqrestore(&c->active_lock, irq);
+	if (streaming)
+		return EBUSY;
+
 	/* Closes the gates. */
 	error = xhci_suspend_gate(c);
 	if (error != 0)
 		return error;
 
-	/* Waits for the transfers that send or control. */
+	/* Waits for the transfers that send or control; on a failure, what was queued meanwhile is rung (BUG-289). */
 	error = xhci_suspend_wait_idle(c);
 	if (error != 0) {
+		xhci_resume_endpoints(c);
 		xhci_suspend_end(c);
 		return error;
 	}
@@ -6670,6 +6839,9 @@ xhci_reinit_forget_devices(
 	uint64_t now;
 	unsigned busy;
 	unsigned dci;
+
+	/* The isochronous worker stops before the devices are forgotten (design 2.1b B-W1). */
+	xhci_isoch_worker_stop(c);
 
 	/* dma_quiesced refuses new submissions and tells the drain the hardware no longer reaches the transfers. */
 	irq = spin_lock_irqsave(&c->active_lock);
@@ -6912,7 +7084,9 @@ xhci_suspend_wait_idle(
 		busy = xhci_transfer_busy_locked(c);
 		if (c->operations_busy != 0 ||
 		    c->endpoint_recoveries_busy != 0 ||
-		    c->completion_dispatch_busy != 0)
+		    c->completion_dispatch_busy != 0 ||
+		    c->isoch_dispatch_busy != 0 ||
+		    c->isoch_working != 0)
 			busy = true;
 
 		spin_unlock_irqrestore(&c->active_lock, irq);
@@ -6946,6 +7120,7 @@ xhci_transfer_busy_locked(
 	struct drv_usb_endpoint *endpoint;
 	enum drv_usb_transfer_type type;
 	unsigned dci;
+	int busy;
 
 	/* Looks at every endpoint of every device. */
 	for (device = c->devices;
@@ -6974,6 +7149,17 @@ xhci_transfer_busy_locked(
 
 			/* A transfer that sends or controls runs. */
 			return true;
+		}
+	}
+
+	/* An isochronous stream, or its owner at work (design 2.1a X10). */
+	for (device = c->devices;
+	     device != NULL;
+	     device = device->next) {
+		for (dci = 1; dci < 32U; dci++) {
+			busy = xhci_isoch_busy_locked(&device->endpoints[dci]);
+			if (busy)
+				return true;
 		}
 	}
 
@@ -7522,3 +7708,1040 @@ xhci_sg_enqueue(
 /*
  * XHCI
  */
+
+/*
+ * Isochronous endpoints (ws197-p007a1; design 2.1a and 2.1b of
+ * plan/ws197/phase007/phase.md).  Each isochronous endpoint keeps a FIFO
+ * of requests whose TDs (one Isoch TRB each) are on its ring; the
+ * bookkeeping is pci-xhci-isoch.c's, under active_lock.  Events are matched
+ * by the TRB they name; finished requests go to their own completion list,
+ * delivered even while a command holds the ring (an isochronous callback
+ * only wakes a thread).  A skip wait that no TD event ends, and a halt, are
+ * the worker's: it owns the endpoint for its commands, as a cancel does
+ * for its own.  An owner whose commands fail leaves the endpoint RETAINED,
+ * its TDs and DMA kept until the controller's DMA is quiesced.
+ */
+
+/* Makes an isochronous endpoint's bookkeeping and starts the worker; 0 or ENOMEM. */
+static int
+xhci_isoch_open(
+	struct xhci_controller *c,
+	struct drv_xhci_isoch **isoch)
+{
+	struct drv_xhci_isoch *made;
+	unsigned started;
+	int error;
+
+	/* The bookkeeping, for a ring of its TRBs less the link. */
+	made = kern_malloc(sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+	drv_xhci_isoch_init(made, XHCI_RING_TRBS - 1U);
+
+	/* The worker, once for the controller (two endpoints configured at once start one). */
+	started = __atomic_exchange_n(&c->isoch_worker_made, 1U, __ATOMIC_ACQ_REL);
+	if (started == 0U) {
+		error = xhci_isoch_worker_start(c);
+		if (error != 0) {
+			__atomic_store_n(&c->isoch_worker_made, 0U, __ATOMIC_RELEASE);
+			kern_free(made);
+			return error;
+		}
+	}
+
+	/* Succeeded: the caller publishes it once the endpoint is configured. */
+	*isoch = made;
+	return 0;
+}
+
+/* Tells which TRB of an endpoint's ring an address names; 0, or ENOENT (the link TRB names slot 0). */
+static int
+xhci_isoch_slot(
+	const struct xhci_endpoint *ep,
+	uint64_t pointer,
+	unsigned *slot)
+{
+	uint64_t base;
+	uint64_t offset;
+	unsigned index;
+
+	/* Within the ring, on a TRB's boundary. */
+	base = ep->ring.dma.device_address;
+	if (pointer < base)
+		return ENOENT;
+	offset = pointer - base;
+	if (offset % sizeof(struct xhci_trb) != 0U)
+		return ENOENT;
+	if (offset / sizeof(struct xhci_trb) >= XHCI_RING_TRBS)
+		return ENOENT;
+	index = (unsigned)(offset / sizeof(struct xhci_trb));
+
+	/* The link TRB is followed by the first. */
+	if (index == XHCI_RING_TRBS - 1U)
+		index = 0U;
+
+	/* Succeeded: the slot. */
+	*slot = index;
+	return 0;
+}
+
+/* Gives a packet result of the bookkeeping as the USB core's. */
+static enum drv_usb_iso_status
+xhci_isoch_status(
+	unsigned result)
+{
+	/* Each result; one without a result was not served. */
+	switch (result) {
+	case DRV_XHCI_ISO_OK:
+		return DRV_USB_ISO_OK;
+	case DRV_XHCI_ISO_SHORT:
+		return DRV_USB_ISO_SHORT;
+	case DRV_XHCI_ISO_ERROR:
+		return DRV_USB_ISO_ERROR;
+	case DRV_XHCI_ISO_CANCELLED:
+		return DRV_USB_ISO_CANCELLED;
+	default:
+		return DRV_USB_ISO_MISSED;
+	}
+}
+
+/*
+ * Takes an endpoint's finished requests, under active_lock: their packets'
+ * results go to their URBs and the requests, with a terminal status, to
+ * the completion list -- except the one of keep (a cancel's own URB, which
+ * the USB core publishes), given back in *kept.
+ */
+static void
+xhci_isoch_take_locked(
+	struct xhci_controller *c,
+	struct xhci_device *d,
+	struct xhci_endpoint *ep,
+	enum drv_usb_urb_status terminal,
+	struct drv_usb_urb *keep,
+	struct xhci_request **kept)
+{
+	struct drv_xhci_isoch_request done;
+	struct xhci_request *r;
+	size_t total;
+	unsigned packet;
+	unsigned before;
+	int taken;
+
+	/* Each finished request, in order. */
+	for (;;) {
+		taken = drv_xhci_isoch_take(ep->isoch, &done);
+		if (!taken)
+			return;
+
+		/* Its packets' results, and their sum. */
+		r = (struct xhci_request *)done.tag;
+		total = 0U;
+		for (packet = 0U; packet < done.count; packet++) {
+			drv_usb_urb_iso_result_set(r->urb, packet, done.actual[packet], xhci_isoch_status(done.result[packet]));
+			total += done.actual[packet];
+		}
+
+		/* The request's terminal status and length. */
+		r->completion_actual = total;
+		r->terminal_status = terminal;
+
+		/* The cancel's own URB stays with the cancel. */
+		if (keep != NULL && r->urb == keep) {
+			*kept = r;
+			continue;
+		}
+
+		/* Onto the completion list; the device's teardown waits for it. */
+		before = atomic_raw_fetch_add_relaxed(&c->completion_busy, 1U);
+		if (d->completions_busy == UINT_MAX || before == UINT_MAX)
+			__builtin_trap();
+		d->completions_busy++;
+		r->completion_next = NULL;
+		if (c->isoch_tail != NULL)
+			c->isoch_tail->completion_next = r;
+		else
+			c->isoch_head = r;
+		c->isoch_tail = r;
+	}
+}
+
+/*
+ * Applies a Transfer Event of an isochronous endpoint (transfer_claim,
+ * event_lock held).  Returns 1 when the event was an isochronous
+ * endpoint's, 0 for any other.
+ */
+static int
+xhci_isoch_event_locked(
+	struct xhci_controller *c,
+	const struct xhci_trb *event)
+{
+	struct xhci_device *d;
+	struct xhci_endpoint *ep;
+	uint64_t pointer;
+	uint32_t residual;
+	unsigned long irq;
+	unsigned slot;
+	unsigned dci;
+	unsigned code;
+	unsigned index;
+	unsigned flags;
+	unsigned state;
+	int pointed;
+	int error;
+
+	/* The endpoint the event names. */
+	slot = event->control >> 24;
+	dci = (event->control >> 16) & 31U;
+	code = (event->status >> 24) & 0xffU;
+	residual = event->status & 0x00ffffffU;
+	if (dci == 0U || dci >= 32U)
+		return 0;
+	irq = spin_lock_irqsave(&c->active_lock);
+	d = xhci_slot_device_locked(c, slot);
+	if (d == NULL || d->endpoints[dci].isoch == NULL) {
+		spin_unlock_irqrestore(&c->active_lock, irq);
+		return 0;
+	}
+
+	/* An isochronous endpoint's. */
+	ep = &d->endpoints[dci];
+
+	/* The TD its pointer names, if any. */
+	pointer = xhci_event_pointer(event);
+	index = 0U;
+	error = xhci_isoch_slot(ep, pointer, &index);
+	pointed = error == 0 && pointer != 0U;
+
+	/* The bookkeeping's rules. */
+	flags = drv_xhci_isoch_event(ep->isoch, code, pointed, index, residual);
+
+	/* A babble or a transaction error: the context says whether it halted. */
+	if ((flags & DRV_XHCI_ISOCH_CHECK_HALT) != 0U) {
+		state = xhci_endpoint_state(c, d, dci);
+		if (state == DRV_XHCI_ENDPOINT_HALTED) {
+			drv_xhci_isoch_halted(ep->isoch);
+			flags |= DRV_XHCI_ISOCH_WAKE;
+		}
+	}
+
+	/* The worker's work: the skip wait's end, or the halt (woken after event_lock). */
+	if ((flags & DRV_XHCI_ISOCH_WAKE) != 0U) {
+		if (ep->isoch->state == DRV_XHCI_ISOCH_SKIP_WAIT)
+			ep->isoch_deadline = sched_ticks() + kern_ms_to_ticks(XHCI_ISOCH_SKIP_MS);
+		__atomic_store_n(&c->isoch_pending, 1U, __ATOMIC_RELEASE);
+	}
+
+	/* Finished requests to their callbacks. */
+	if ((flags & DRV_XHCI_ISOCH_COMPLETE) != 0U)
+		xhci_isoch_take_locked(c, d, ep, DRV_USB_URB_COMPLETE, NULL, NULL);
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* Succeeded: the event was this endpoint's. */
+	return 1;
+}
+
+/* Completes one finished isochronous request: its packets' bytes in, its DMA back, its URB published. */
+static void
+xhci_isoch_finish(
+	struct xhci_controller *c,
+	struct xhci_request *r)
+{
+	struct xhci_device *d;
+	struct drv_usb_urb *urb;
+	enum drv_usb_urb_status terminal;
+	enum drv_usb_iso_status status;
+	uint8_t *buffer;
+	size_t actual;
+	size_t total;
+	size_t offset;
+	size_t length;
+	unsigned count;
+	unsigned packet;
+	unsigned before;
+	unsigned long irq;
+	int error;
+
+	/* What the request carries. */
+	d = r->device;
+	urb = r->urb;
+	terminal = r->terminal_status;
+	total = r->completion_actual;
+	buffer = drv_usb_urb_buffer(urb);
+
+	/* An IN transfer's packets, each from its place in the staging. */
+	count = drv_usb_urb_iso_count(urb);
+	if (r->input && buffer != NULL && buffer != r->staging) {
+		for (packet = 0U; packet < count; packet++) {
+			error = drv_usb_urb_iso_result(urb, packet, &actual, &status);
+			if (error != 0 || actual == 0U)
+				continue;
+			error = drv_usb_urb_iso_packet(urb, packet, &offset, &length);
+			if (error != 0)
+				continue;
+			kern_memcpy(buffer + offset, (const uint8_t *)r->staging + offset, actual);
+		}
+	}
+
+	/* The DMA back before the callback, then the URB published (no log: counted by its class). */
+	drv_usb_urb_set_hcd_data(urb, NULL);
+	xhci_request_release(c, r);
+	drv_usb_hcd_complete(&c->hcd, urb, terminal, total);
+
+	/* The device's teardown may go on. */
+	irq = spin_lock_irqsave(&c->active_lock);
+	if (d->completions_busy == 0)
+		__builtin_trap();
+	d->completions_busy--;
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* And the controller's. */
+	before = atomic_raw_fetch_add_release(&c->completion_busy, (unsigned)-1);
+	if (before == 0)
+		__builtin_trap();
+}
+
+/* Delivers the finished isochronous requests (from the IRQ, a command's poll, a cancel or the worker). */
+static void
+xhci_isoch_drain(
+	struct xhci_controller *c)
+{
+	struct xhci_request *r;
+	unsigned long irq;
+
+	/* One dispatcher at a time. */
+	irq = spin_lock_irqsave(&c->active_lock);
+	if (c->isoch_dispatch_busy) {
+		spin_unlock_irqrestore(&c->active_lock, irq);
+		return;
+	}
+
+	/* This one. */
+	c->isoch_dispatch_busy = 1U;
+
+	/* Each request, outside the lock. */
+	for (;;) {
+		r = c->isoch_head;
+		if (r == NULL) {
+			c->isoch_tail = NULL;
+			c->isoch_dispatch_busy = 0U;
+			spin_unlock_irqrestore(&c->active_lock, irq);
+			return;
+		}
+
+		/* Off the list. */
+		c->isoch_head = r->completion_next;
+		if (c->isoch_head == NULL)
+			c->isoch_tail = NULL;
+		r->completion_next = NULL;
+		spin_unlock_irqrestore(&c->active_lock, irq);
+
+		/* Completed, then the next. */
+		xhci_isoch_finish(c, r);
+		irq = spin_lock_irqsave(&c->active_lock);
+	}
+}
+
+/* Wakes the worker when an event left it work (called outside event_lock). */
+static void
+xhci_isoch_kick(
+	struct xhci_controller *c)
+{
+	struct thread *worker;
+	unsigned pending;
+
+	/* Only when there is work and a worker. */
+	pending = __atomic_load_n(&c->isoch_pending, __ATOMIC_ACQUIRE);
+	worker = c->isoch_worker;
+	if (pending != 0U && worker != NULL)
+		kernel_notify_task(worker->task);
+}
+
+/* Finds the DMA address of a request's bytes from offset, which must lie in one segment; 0 or EINVAL. */
+static int
+xhci_isoch_address(
+	const struct xhci_request *r,
+	size_t offset,
+	size_t length,
+	uint64_t *address)
+{
+	struct drv_dma_segment segment;
+	size_t start;
+	unsigned count;
+	unsigned index;
+	int error;
+
+	/* A contiguous buffer. */
+	if (r->vector == NULL) {
+		*address = r->bounce.device_address + offset;
+		return 0;
+	}
+
+	/* A vector: the segment holding the whole packet. */
+	start = 0U;
+	count = drv_dma_vector_count(r->vector);
+	for (index = 0U; index < count; index++) {
+		error = drv_dma_vector_segment(r->vector, index, &segment);
+		if (error != 0)
+			return EINVAL;
+		if (offset >= start && offset - start + length <= segment.length) {
+			*address = segment.address + (offset - start);
+			return 0;
+		}
+
+		/* The next segment starts after it. */
+		start += segment.length;
+	}
+
+	/* Across segments. */
+	return EINVAL;
+}
+
+/*
+ * Queues an isochronous URB (xhci_urb_enqueue, inside the submission
+ * gate, which this leaves): a TD (one Isoch TRB) for each packet, Start
+ * Isoch ASAP, IOC on each and BEI on all but every eighth and the last.
+ */
+static int
+xhci_isoch_enqueue(
+	struct xhci_controller *c,
+	struct drv_usb_hcd *h,
+	struct xhci_device *d,
+	struct xhci_endpoint *ep,
+	unsigned dci,
+	struct drv_usb_urb *u)
+{
+	uint32_t lengths[DRV_XHCI_ISOCH_PACKETS_MAX];
+	uint64_t addresses[DRV_XHCI_ISOCH_PACKETS_MAX];
+	struct xhci_request *r;
+	void *buffer;
+	uint32_t control;
+	size_t length;
+	size_t offset;
+	size_t packet_length;
+	unsigned maximum;
+	unsigned count;
+	unsigned packet;
+	unsigned first;
+	unsigned state;
+	unsigned long irq;
+	int bei;
+	int e;
+
+	/* Its packets: at most a FIFO entry's, none over the endpoint's packet size. */
+	count = drv_usb_urb_iso_count(u);
+	maximum = drv_usb_endpoint_max_packet_size(drv_usb_urb_endpoint(u)) & 0x7ffU;
+	length = drv_usb_urb_length(u);
+	if (count == 0U || count > DRV_XHCI_ISOCH_PACKETS_MAX || maximum == 0U) {
+		xhci_submission_leave(c);
+		return EINVAL;
+	}
+
+	/* Each packet's length. */
+	for (packet = 0U; packet < count; packet++) {
+		e = drv_usb_urb_iso_packet(u, packet, &offset, &packet_length);
+		if (e != 0 || packet_length > maximum) {
+			xhci_submission_leave(c);
+			return EINVAL;
+		}
+
+		/* Its TD's length. */
+		lengths[packet] = (uint32_t)packet_length;
+	}
+
+	/* The request and its DMA (the URB's reserve when it has one). */
+	r = xhci_request_alloc(c, h, length, drv_usb_urb_flags(u), u, &e);
+	if (r == NULL) {
+		xhci_submission_leave(c);
+		return e;
+	}
+
+	/* What the request is. */
+	r->urb = u;
+	r->device = d;
+	r->endpoint = ep;
+	r->ring = &ep->ring;
+	r->length = length;
+	r->input = drv_usb_endpoint_is_input(drv_usb_urb_endpoint(u));
+	r->slot = d->slot;
+	r->dci = dci;
+	r->port = drv_usb_device_port(drv_usb_urb_device(u));
+	r->isoch = 1U;
+
+	/* OUT data into the staging. */
+	buffer = drv_usb_urb_buffer(u);
+	if (!r->input && length != 0U && r->staging != buffer) {
+		kern_memcpy(r->staging, buffer, length);
+		io_stats_record(IO_XHCI_BOUNCE_COPY, length);
+	}
+
+	/* Each packet's DMA address, within one segment and not across 64 KiB. */
+	for (packet = 0U; packet < count; packet++) {
+		(void)drv_usb_urb_iso_packet(u, packet, &offset, &packet_length);
+		e = xhci_isoch_address(r, offset, packet_length, &addresses[packet]);
+		if (e == 0 && (addresses[packet] & 0xffffU) + packet_length > 0x10000U)
+			e = EINVAL;
+		if (e != 0) {
+			xhci_request_release(c, r);
+			xhci_submission_leave(c);
+			return e;
+		}
+	}
+
+	/* Admission, under the lock the events take. */
+	irq = spin_lock_irqsave(&c->active_lock);
+	if (!ep->enabled || ep->isoch == NULL || d->quiescing || c->controller_stopping) {
+		e = ENODEV;
+	} else if (c->suspend_state != XHCI_SUSPEND_NONE) {
+		/* A suspend is under way (design 2.1b B-G2). */
+		e = EBUSY;
+	} else {
+		/* A halted endpoint is the worker's first (B-R3). */
+		state = xhci_endpoint_state(c, d, dci);
+		if (state == DRV_XHCI_ENDPOINT_HALTED) {
+			drv_xhci_isoch_halted(ep->isoch);
+			__atomic_store_n(&c->isoch_pending, 1U, __ATOMIC_RELEASE);
+			e = EBUSY;
+		} else {
+			e = drv_xhci_isoch_enqueue(ep->isoch, (uintptr_t)r, count, lengths, &first);
+		}
+	}
+
+	/* Refused: the request goes back. */
+	if (e != 0) {
+		spin_unlock_irqrestore(&c->active_lock, irq);
+		xhci_request_release(c, r);
+		xhci_isoch_kick(c);
+		xhci_submission_leave(c);
+		return e;
+	}
+
+	/* The bookkeeping's slots are the ring's. */
+	if (first != ep->ring.enqueue)
+		__builtin_trap();
+
+	/* One Isoch TRB a packet. */
+	for (packet = 0U; packet < count; packet++) {
+		control = XHCI_TRB_TYPE(XHCI_TRB_ISOCH) | XHCI_TRB_IOC | XHCI_TRB_SIA;
+		if (r->input)
+			control |= XHCI_TRB_ISP;
+		bei = drv_xhci_isoch_bei(packet, count);
+		if (bei)
+			control |= XHCI_TRB_BEI;
+		(void)ring_push(&ep->ring, addresses[packet], lengths[packet], control);
+	}
+
+	/* The URB knows its request. */
+	drv_usb_urb_set_hcd_data(u, r);
+
+	/* Rung, unless a suspend holds the endpoints (it rings them when it ends). */
+	if (c->suspend_state == XHCI_SUSPEND_NONE)
+		xhci_ring_doorbell(c, d->slot, dci);
+	spin_unlock_irqrestore(&c->active_lock, irq);
+	xhci_submission_leave(c);
+
+	/* Succeeded: queued. */
+	return 0;
+}
+
+/*
+ * Brings an isochronous endpoint to a stop with the commands its context
+ * state allows, read again after each (a Context State Error, 19, makes it
+ * read again rather than fail): Stop Endpoint when it runs, Reset Endpoint
+ * when it halted, and, when empty is set, Set TR Dequeue to the producer
+ * once it stopped.  Returns 0, or the error that leaves the endpoint
+ * retained.
+ */
+static int
+xhci_isoch_quiet(
+	struct xhci_controller *c,
+	struct xhci_device *d,
+	struct xhci_endpoint *ep,
+	unsigned dci,
+	int empty)
+{
+	enum drv_xhci_cancel_action action;
+	enum drv_xhci_cancel_action previous_action;
+	unsigned previous_state;
+	unsigned completion;
+	unsigned attempt;
+	unsigned state;
+	int error;
+
+	/* Each command the state allows, until the endpoint is where it is wanted. */
+	previous_action = DRV_XHCI_CANCEL_QUIESCE_CONTROLLER;
+	previous_state = UINT_MAX;
+	error = EIO;
+	for (attempt = 0U; attempt < 8U; attempt++) {
+		state = xhci_endpoint_state(c, d, dci);
+		action = drv_xhci_cancel_action((enum drv_xhci_endpoint_state)state, c->dma_quiesced != 0);
+
+		/* The same state and action again: the command does not change it. */
+		if (attempt != 0U && state == previous_state && action == previous_action)
+			return EIO;
+		previous_state = state;
+		previous_action = action;
+		completion = 0U;
+
+		/* The command for the state. */
+		switch (action) {
+		case DRV_XHCI_CANCEL_COMPLETE:
+			return 0;
+		case DRV_XHCI_CANCEL_STOP_ENDPOINT:
+			error = command_ex(c, 0, 0, XHCI_TRB_TYPE(15) | (dci << 16) | XHCI_TRB_SLOT(d->slot), NULL, &completion);
+			break;
+		case DRV_XHCI_CANCEL_RESET_ENDPOINT:
+			error = command_ex(c, 0, 0, XHCI_TRB_TYPE(14) | (dci << 16) | XHCI_TRB_SLOT(d->slot), NULL, &completion);
+			break;
+		case DRV_XHCI_CANCEL_SET_TR_DEQUEUE:
+			if (!empty)
+				return 0;
+			error = xhci_endpoint_dequeue_all(c, d, ep, dci, &completion);
+			if (error == 0)
+				return 0;
+			break;
+		default:
+			return EIO;
+		}
+
+		/* A failure other than a Context State Error ends it. */
+		if (error != 0 && completion != 19U)
+			return error;
+	}
+
+	/* The state never settled. */
+	return EIO;
+}
+
+/* Reads where a stopped endpoint's TR Dequeue Pointer is, as a ring slot; 0 or EIO. */
+static int
+xhci_isoch_dequeue_slot(
+	struct xhci_controller *c,
+	struct xhci_device *d,
+	struct xhci_endpoint *ep,
+	unsigned dci,
+	unsigned *slot)
+{
+	volatile uint32_t *context;
+	uint64_t pointer;
+	int error;
+
+	/* The output context's dequeue pointer (dwords 2 and 3, the low four bits flags). */
+	if (d->output_context.address == NULL)
+		return EIO;
+	context = (volatile uint32_t *)((uint8_t *)d->output_context.address + (size_t)dci * c->context_size);
+	kern_io_read_barrier();
+	pointer = (uint64_t)context[2] | ((uint64_t)context[3] << 32);
+	pointer &= ~(uint64_t)0xfU;
+
+	/* As a slot of the ring. */
+	error = xhci_isoch_slot(ep, pointer, slot);
+	if (error != 0)
+		return EIO;
+
+	/* Succeeded: the slot. */
+	return 0;
+}
+
+/* Tells whether a URB's request is in an endpoint's FIFO, under active_lock. */
+static int
+xhci_isoch_queued_locked(
+	const struct xhci_endpoint *ep,
+	const struct drv_usb_urb *u)
+{
+	const struct drv_xhci_isoch *isoch;
+	const struct xhci_request *r;
+	unsigned position;
+
+	/* Each queued request. */
+	isoch = ep->isoch;
+	for (position = 0U; position < isoch->queued; position++) {
+		r = (const struct xhci_request *)isoch->requests[(isoch->head + position) % DRV_XHCI_ISOCH_QUEUE_MAX].tag;
+		if (r->urb == u)
+			return 1;
+	}
+
+	/* Not there. */
+	return 0;
+}
+
+/*
+ * Cancels every URB of an isochronous endpoint (design 2.1a X5): owns the
+ * endpoint (waiting for the worker's command), stops it and empties its
+ * ring, and ends the TDs without a result CANCELLED.  keep, the URB a
+ * cancel was asked for, is left to the USB core to publish (0); the
+ * others complete with terminal before this returns.  EALREADY when
+ * another cancel is under way or keep was no longer queued (the endpoint
+ * is emptied all the same), EBUSY when nothing is queued, or EIO when the
+ * endpoint is retained.
+ */
+static int
+xhci_isoch_cancel(
+	struct xhci_controller *c,
+	struct xhci_device *d,
+	struct xhci_endpoint *ep,
+	unsigned dci,
+	struct drv_usb_urb *keep,
+	enum drv_usb_urb_status terminal)
+{
+	struct xhci_request *kept;
+	uint64_t started;
+	uint64_t waited;
+	uint64_t bound;
+	unsigned long irq;
+	int absent;
+	int error;
+
+	/* Owns the endpoint, waiting while the worker holds it. */
+	started = sched_ticks();
+	absent = 0;
+	for (;;) {
+		irq = spin_lock_irqsave(&c->active_lock);
+		if (ep->isoch == NULL) {
+			spin_unlock_irqrestore(&c->active_lock, irq);
+			return EBUSY;
+		}
+
+		/* A URB already finished: its completion is under way. */
+		if (keep != NULL) {
+			absent = !xhci_isoch_queued_locked(ep, keep);
+			if (absent && ep->isoch->queued == 0U) {
+				spin_unlock_irqrestore(&c->active_lock, irq);
+				return EBUSY;
+			}
+		}
+
+		/* The cancel's ownership. */
+		error = drv_xhci_isoch_begin(ep->isoch, DRV_XHCI_ISOCH_CANCELLING);
+		if (error == 0) {
+			c->isoch_working++;
+			spin_unlock_irqrestore(&c->active_lock, irq);
+			break;
+		}
+
+		/* Not now. */
+		spin_unlock_irqrestore(&c->active_lock, irq);
+
+		/* Another cancel, or a retained endpoint. */
+		if (error != EBUSY)
+			return error;
+
+		/* The worker's command: sleep a tick, never spin (design 2.1b B-P1). */
+		waited = sched_ticks() - started;
+		bound = kern_ms_to_ticks(XHCI_WAIT_MS * 6U);
+		if (waited >= bound)
+			return EBUSY;
+		xhci_sleep_ms(1U);
+	}
+
+	/* Stopped, the ring emptied. */
+	error = xhci_isoch_quiet(c, d, ep, dci, 1);
+
+	/* The TDs ended, or the endpoint retained with them. */
+	kept = NULL;
+	irq = spin_lock_irqsave(&c->active_lock);
+	if (error != 0 && !c->dma_quiesced) {
+		drv_xhci_isoch_retain(ep->isoch);
+	} else if (error != 0) {
+		/* The controller's DMA was quiesced meanwhile: its drain ended the TDs. */
+		(void)drv_xhci_isoch_flush(ep->isoch, DRV_XHCI_ISO_CANCELLED);
+		xhci_isoch_take_locked(c, d, ep, DRV_USB_URB_DISCONNECTED, keep, &kept);
+		error = 0;
+	} else {
+		(void)drv_xhci_isoch_flush(ep->isoch, DRV_XHCI_ISO_CANCELLED);
+		xhci_isoch_take_locked(c, d, ep, terminal, keep, &kept);
+	}
+
+	/* The ownership ends. */
+	c->isoch_working--;
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* A failed command keeps the TDs and their DMA. */
+	if (error != 0) {
+		kern_logf("xhci: slot %u isochronous endpoint %u cancel failed (%d); requests and DMA retained\n", d->slot, dci, error);
+		return EIO;
+	}
+
+	/* The others' callbacks before this returns. */
+	xhci_isoch_drain(c);
+
+	/* The asked URB's request goes; the USB core publishes it. */
+	if (kept != NULL) {
+		drv_usb_urb_set_hcd_data(keep, NULL);
+		xhci_request_release(c, kept);
+		return 0;
+	}
+
+	/* Succeeded: emptied (the asked URB had already finished). */
+	if (keep != NULL && absent)
+		return EALREADY;
+	return 0;
+}
+
+/*
+ * Does the worker's work: an endpoint whose skip wait ran out is stopped
+ * and its TDs before the stop are ended MISSED; a halted one is reset and
+ * its TDs ended in error.  Each endpoint is found again under the lock;
+ * owning it keeps its device from being released meanwhile.
+ */
+static void
+xhci_isoch_work(
+	struct xhci_controller *c)
+{
+	struct xhci_device *d;
+	struct xhci_endpoint *ep;
+	enum drv_xhci_isoch_state owner;
+	const char *stage;
+	uint64_t now;
+	unsigned long irq;
+	unsigned flags;
+	unsigned slot;
+	unsigned dci;
+	int found;
+	int error;
+
+	/* One endpoint's work at a time, until none has any. */
+	for (;;) {
+		/* An endpoint with work, unless the controller sleeps or stops. */
+		found = 0;
+		owner = DRV_XHCI_ISOCH_NORMAL;
+		dci = 0U;
+		ep = NULL;
+		irq = spin_lock_irqsave(&c->active_lock);
+		if (c->suspend_state != XHCI_SUSPEND_NONE || c->controller_stopping || c->dma_quiesced) {
+			spin_unlock_irqrestore(&c->active_lock, irq);
+			return;
+		}
+
+		/* Each device that is not going away, each of its isochronous endpoints. */
+		now = sched_ticks();
+		for (d = c->devices; d != NULL && !found; d = d->next) {
+			if (d->quiescing || d->slot_disabled)
+				continue;
+			for (dci = 1U; dci < 32U; dci++) {
+				ep = &d->endpoints[dci];
+				if (!ep->enabled || ep->isoch == NULL)
+					continue;
+
+				/* A halt, or a skip wait whose time is up. */
+				if (ep->isoch->state == DRV_XHCI_ISOCH_HALT_PENDING) {
+					owner = DRV_XHCI_ISOCH_RECOVERING;
+				} else if (ep->isoch->state == DRV_XHCI_ISOCH_SKIP_WAIT && now >= ep->isoch_deadline) {
+					owner = DRV_XHCI_ISOCH_STOPPING;
+				} else {
+					continue;
+				}
+
+				/* Owned. */
+				error = drv_xhci_isoch_begin(ep->isoch, owner);
+				if (error == 0) {
+					found = 1;
+					break;
+				}
+			}
+
+			/* The first found is done first. */
+			if (found)
+				break;
+		}
+
+		/* Nothing to do. */
+		if (!found) {
+			spin_unlock_irqrestore(&c->active_lock, irq);
+			return;
+		}
+
+		/* Working (the suspend and the quiesce wait). */
+		c->isoch_working++;
+		spin_unlock_irqrestore(&c->active_lock, irq);
+
+		/* The commands: a stop, or a reset and the ring emptied. */
+		slot = 0U;
+		if (owner == DRV_XHCI_ISOCH_STOPPING) {
+			error = xhci_isoch_quiet(c, d, ep, dci, 0);
+			if (error == 0)
+				error = xhci_isoch_dequeue_slot(c, d, ep, dci, &slot);
+		} else {
+			error = xhci_isoch_quiet(c, d, ep, dci, 1);
+		}
+
+		/* The TDs ended as the rules say, or the endpoint retained. */
+		irq = spin_lock_irqsave(&c->active_lock);
+		if (error != 0 && c->dma_quiesced) {
+			/* The controller's DMA was quiesced meanwhile: its drain ends the TDs. */
+			(void)drv_xhci_isoch_flush(ep->isoch, DRV_XHCI_ISO_CANCELLED);
+			xhci_isoch_take_locked(c, d, ep, DRV_USB_URB_DISCONNECTED, NULL, NULL);
+			error = 0;
+		} else if (error != 0) {
+			drv_xhci_isoch_retain(ep->isoch);
+		} else if (owner == DRV_XHCI_ISOCH_STOPPING) {
+			flags = drv_xhci_isoch_stop_done(ep->isoch, slot);
+			if ((flags & DRV_XHCI_ISOCH_COMPLETE) != 0U)
+				xhci_isoch_take_locked(c, d, ep, DRV_USB_URB_COMPLETE, NULL, NULL);
+			if ((flags & DRV_XHCI_ISOCH_RING) != 0U && c->suspend_state == XHCI_SUSPEND_NONE)
+				xhci_ring_doorbell(c, d->slot, dci);
+		} else {
+			(void)drv_xhci_isoch_flush(ep->isoch, DRV_XHCI_ISO_ERROR);
+			xhci_isoch_take_locked(c, d, ep, DRV_USB_URB_IO_ERROR, NULL, NULL);
+		}
+
+		/* Done working. */
+		c->isoch_working--;
+		spin_unlock_irqrestore(&c->active_lock, irq);
+
+		/* Said once; the callbacks. */
+		if (error != 0) {
+			stage = "recovery";
+			if (owner == DRV_XHCI_ISOCH_STOPPING)
+				stage = "stop";
+			kern_logf("xhci: slot %u isochronous endpoint %u %s failed (%d); requests and DMA retained\n", d->slot, dci, stage, error);
+		}
+
+		/* The callbacks. */
+		xhci_isoch_drain(c);
+	}
+}
+
+/* The isochronous worker's thread (default priority, design 2.1b B-P2). */
+static void
+xhci_isoch_worker(
+	void *argument)
+{
+	struct xhci_controller *c;
+	unsigned stopping;
+	unsigned pending;
+
+	/* Until it is stopped: the work, then a short sleep unless more came. */
+	c = argument;
+	for (;;) {
+		stopping = __atomic_load_n(&c->isoch_stopping, __ATOMIC_ACQUIRE);
+		if (stopping)
+			return;
+		(void)__atomic_exchange_n(&c->isoch_pending, 0U, __ATOMIC_ACQ_REL);
+		xhci_isoch_work(c);
+
+		/* More work meanwhile is done at once. */
+		pending = __atomic_load_n(&c->isoch_pending, __ATOMIC_ACQUIRE);
+		if (pending)
+			continue;
+		xhci_sleep_ms(XHCI_ISOCH_POLL_MS);
+	}
+}
+
+/* Starts the isochronous worker; 0 or an error. */
+static int
+xhci_isoch_worker_start(
+	struct xhci_controller *c)
+{
+	struct thread *worker;
+	int error;
+
+	/* A thread of the default priority. */
+	c->isoch_stopping = 0U;
+	c->isoch_pending = 0U;
+	error = kthread_create(xhci_isoch_worker, c, SCHED_PRIORITY_DEFAULT, &worker);
+	if (error != 0)
+		return error;
+	c->isoch_worker = worker;
+	thread_start(worker);
+
+	/* Succeeded: running. */
+	return 0;
+}
+
+/* Stops the isochronous worker and waits for it (before the DMA is quiesced or the devices forgotten). */
+static void
+xhci_isoch_worker_stop(
+	struct xhci_controller *c)
+{
+	struct thread *worker;
+
+	/* None running. */
+	worker = c->isoch_worker;
+	if (worker == NULL)
+		return;
+
+	/* Told, woken, and waited for. */
+	c->isoch_worker = NULL;
+	__atomic_store_n(&c->isoch_stopping, 1U, __ATOMIC_RELEASE);
+	kernel_notify_task(worker->task);
+	while (worker->state != THREAD_ZOMBIE)
+		xhci_sleep_ms(1U);
+	(void)thread_wait(worker, NULL);
+
+	/* A later isochronous endpoint starts another. */
+	__atomic_store_n(&c->isoch_worker_made, 0U, __ATOMIC_RELEASE);
+}
+
+/* Tells whether an endpoint's isochronous FIFO holds requests or an owner, under active_lock. */
+static int
+xhci_isoch_busy_locked(
+	const struct xhci_endpoint *ep)
+{
+	/* Not isochronous. */
+	if (ep->isoch == NULL)
+		return 0;
+
+	/* Requests queued, or an owner at work. */
+	if (ep->isoch->queued != 0U)
+		return 1;
+	if (ep->isoch->state != DRV_XHCI_ISOCH_NORMAL && ep->isoch->state != DRV_XHCI_ISOCH_SKIP_WAIT)
+		return 1;
+
+	/* Idle. */
+	return 0;
+}
+
+/*
+ * Ends every isochronous request of the controller after its DMA was
+ * quiesced (xhci_controller_drain_requests), retained ones included: each
+ * DISCONNECTED.
+ */
+static void
+xhci_isoch_drain_controller(
+	struct xhci_controller *c)
+{
+	struct xhci_device *d;
+	struct xhci_endpoint *ep;
+	unsigned long irq;
+	unsigned dci;
+
+	/* Every endpoint's FIFO, whatever its state. */
+	irq = spin_lock_irqsave(&c->active_lock);
+	for (d = c->devices; d != NULL; d = d->next) {
+		for (dci = 1U; dci < 32U; dci++) {
+			ep = &d->endpoints[dci];
+			if (ep->isoch == NULL || ep->isoch->queued == 0U)
+				continue;
+			(void)drv_xhci_isoch_flush(ep->isoch, DRV_XHCI_ISO_CANCELLED);
+			xhci_isoch_take_locked(c, d, ep, DRV_USB_URB_DISCONNECTED, NULL, NULL);
+		}
+	}
+
+	/* Taken. */
+	spin_unlock_irqrestore(&c->active_lock, irq);
+
+	/* Their callbacks. */
+	xhci_isoch_drain(c);
+}
+
+/* Tells whether any isochronous endpoint of the controller streams, under active_lock. */
+static bool
+xhci_transfer_busy_isoch_locked(
+	struct xhci_controller *c)
+{
+	struct xhci_device *device;
+	unsigned dci;
+	int busy;
+
+	/* Every endpoint of every device. */
+	for (device = c->devices; device != NULL; device = device->next) {
+		for (dci = 1U; dci < 32U; dci++) {
+			busy = xhci_isoch_busy_locked(&device->endpoints[dci]);
+			if (busy)
+				return true;
+		}
+	}
+
+	/* None. */
+	return false;
+}

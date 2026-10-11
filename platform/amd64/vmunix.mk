@@ -121,7 +121,7 @@ ifeq ($(CONFIG_DRIVER_PCI_EHCI),y)
 AMD64_USB_HCD_SOURCES += src/drivers/pci/pci-ehci.c
 endif
 ifeq ($(CONFIG_DRIVER_PCI_XHCI),y)
-AMD64_USB_HCD_SOURCES += src/drivers/pci/pci-xhci.c
+AMD64_USB_HCD_SOURCES += src/drivers/pci/pci-xhci.c src/drivers/pci/pci-xhci-isoch.c
 endif
 AMD64_USB_CLASS_SOURCES :=
 ifeq ($(CONFIG_DRIVER_USB_STORAGE),y)

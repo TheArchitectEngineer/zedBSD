@@ -305,6 +305,16 @@ X4: X3 の後の consumer は context の TR Dequeue（TD k から後ろが残�
 
 `include/drivers/pci/pci-xhci-isoch.h`・`src/drivers/pci/pci-xhci-isoch.c`（TD の状態機械: FIFO・ring の空き・BEI・照合・飛ばしの規則・skip 待ち・Stop の 3 例・外の Stop・endpoint 全体の cancel・halt と回復・RETAINED・Stopped 28・ring の巻き・退いた TD の slot の再使用）と host 試験 `plan/ws197/tests/run-xhci-isoch-test.sh`（通常と ASan/UBSan で all PASS、kernel の arm64・amd64 の freestanding の compile も warning 0）。設計は X12 の「`pci-xhci-control.h` の純粋な関数」だったが、大きさ（約 500 行）から別の header と .c にした。kernel の build への組み込みは p007a1 の xHCI の統合と一緒に。
 
+## p007a1 の実装の進み（2026-10-11 P1）
+
+| 段 | 内容 | 確かめ |
+| --- | --- | --- |
+| 1 | TD の状態機械 `src/drivers/pci/pci-xhci-isoch.c`・`include/drivers/pci/pci-xhci-isoch.h`（2.1a・2.1b: FIFO、ring の空き、BEI、照合、飛ばし、skip 待ち、Stop の 3 例、外の Stop、endpoint 全体の cancel、halt、RETAINED、Stopped 28、退いた slot の再使用） | `sh plan/ws197/tests/run-xhci-isoch-test.sh`（通常と ASan/UBSan で all PASS） |
+| 2 | X7: `drv_xhci_endpoint_context_encode` の isoch（FS・HS の 1 interval 1 transaction、CErr 0、FS の Interval = bInterval + 2、Max ESIT、SS・high bandwidth・15 を越える Interval は拒否）。X8: usb の core の `enum drv_usb_iso_status`、`drv_usb_urb_iso_count`・`_iso_packet`・`_iso_result_set`・`_iso_result`、`drv_usb_urb_setup_isochronous` の検査（PENDING・hcd_owned は EBUSY、packet は buffer の中で空でない）、isoch の URB の transfer reservation、usb.h に isoch の契約（callback は wake だけ、cancel は endpoint 全体、EALREADY でも空になる） | 同じ host 試験に X7 の 8 例、amd64・arm64 の kernel の build（rc 0、warning 0） |
+| 3 | `pci-xhci.c` への統合: endpoint の enable で bookkeeping（Configure の後に公開）と worker（controller に 1 つ、既定の優先度）、enqueue（packet ごとに Isoch TRB、SIA、IOC、BEI、IN は ISP、64 KiB と vector の segment の検査、GATED は EBUSY、Halted なら HALT_PENDING）、`transfer_claim` の前で isoch の event を照合（Babble・Transaction Error で context を読む、skip 待ちの締め切り 40 ms）、isoch の完了の list（IRQ と command の poll の両方で drain、command_busy の間も）、cancel（endpoint 全体、X は core が publish、他は戻る前に完了、EALREADY・EBUSY・EIO）、worker（skip 待ちの Stop と TR Dequeue、halt の Reset Endpoint と dequeue_all、19 は context を読み直す、失敗は RETAINED、毎回 lock の下で探し直す、眠って待つ）、device の quiesce（isoch を DISCONNECTED で）、controller の drain（RETAINED も）、disable は空で NORMAL の時だけ、endpoint_reset は EINVAL、suspend は isoch が流れていれば GATED の前に EBUSY、wait_idle の失敗で endpoint を鳴らす（**BUG-289**）、worker は quiesce の DMA の宣言と reinit の前に止める | amd64・arm64 の kernel の build（rc 0、warning 0）、style-check の新しい指摘 0。実機・QEMU は未実施 |
+
+残り（p007a1 の中）: X12 (b) の QEMU の ktest（`-device usb-audio` の isoch OUT を流す小さな試験の driver と結果の読み出しの口。結果は console でなく SSH で読む口が要るので、作り方を Q1 と決める）、T1 の回帰（今の USB: keyboard・storage・network が QEMU で変わらず動くこと、event の経路に isoch の照合が入ったため）、5330 の確かめは p007a2（usb-bt の SCO）で。
+
 ## 判断（Q1 経由でユーザーへ、推し付き）
 
 | ID | 問い | 推し |
