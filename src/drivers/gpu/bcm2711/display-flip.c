@@ -490,7 +490,8 @@ submit_frame(
 	mark = clock_ticks();
 	if (console_mapping != NULL)
 		kern_dcache_clean_range(console_mapping, (size_t)display->screen.size);
-	kern_dcache_clean_range(mapping, (size_t)frame->size);
+	if (!frame->uncached)
+		kern_dcache_clean_range(mapping, (size_t)frame->size);
 	kern_io_write_barrier();
 	clean_ticks = clock_ticks() - mark;
 
@@ -533,6 +534,13 @@ submit_frame(
 	mark = clock_ticks();
 	report_flips(display, clean_ticks, raise_ticks, wait_ticks);
 
+	/*
+	 * A composed frame keeps the transition floor for the frames that
+	 * follow; only the return to the console lowers the clock again.
+	 */
+	if (composed)
+		required = display->flip.core_hz;
+
 	/* Releases temporary bandwidth only after the frame has actually adopted. */
 	finish_adoption(display, required);
 	finish_ticks = clock_ticks() - mark;
@@ -564,8 +572,8 @@ raise_clock(
 	if (hz > display->max_core_hz)
 		hz = display->max_core_hz;
 
-	/* Requests the same temporary floor as R0 before publishing any new list. */
-	if (error == 0)
+	/* Requests the same temporary floor as R0 before publishing any new list, unless the clock already runs at it. */
+	if (error == 0 && hz != display->flip.core_hz)
 		error = request_clock(hz);
 
 	/* A failed request relinquishes admission without publishing the candidate. */
@@ -621,8 +629,10 @@ finish_adoption(
 	unsigned long enabled;
 	int error;
 
-	/* A refused reduction leaves the higher safe floor and the adopted image intact. */
-	error = request_clock(required);
+	/* A refused reduction leaves the higher safe floor and the adopted image intact; an unchanged rate needs no request. */
+	error = 0;
+	if (required != display->flip.core_hz)
+		error = request_clock(required);
 
 	/* Publishes the clock diagnostic alongside permission for another submission. */
 	enabled = spin_lock_irqsave(&display->flip.guard);
