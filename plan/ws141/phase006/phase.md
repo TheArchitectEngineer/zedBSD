@@ -357,3 +357,10 @@ HAL APIを変えず、arm64/page.cに「ここより前は全て使用中」と�
 MMU/cacheのself-clearは32readで未完了だと10us sleepに入るが、schedulerはtickへ丸める。IRQguard外の有限fast burstのみ1024readへ拡張して短い命令を待つ。既存yield/異常timeout/retirementは保持し、serialized hardware counterで実yield数を記録して効果を区別する。hostの80/96read遅延モデルとstuck timeoutを確認し、実機比較する。
 
 2026-10-11 bounded maintenance burst: hardware host PASS（80/96readの短いMMUC/TLB busyをyieldなしで処理、stuck10000yieldの既存拒否/retentionも維持）。device host PASS、C全文manual/style0/diff-check PASS、clang-format19出力比較。arm64 kernel make exit0/warning0/error0/checker3PASS。cksum1502649265/8077312。変更はprivate hardware counter/finite burstでHAL API不変、実機効果は未確認。
+
+
+ca30cbc4dの1502649265/8077312をFATへ全体cmp/sync付き配置、旧2309215655はUFS /var/backups/vmunix.before-maintenance-20261011。rebootからSSHが自動復帰、通常session/Files/Settingsを確認。maintenance-yields=0でprepare186〜448ms/release81〜726msは残る。スリープ回数を増やした修正とはせず、CPU側の多重upload/mapを減らす。
+
+同pass内のearlier drawが持つ、exact compiled program pointerのcode3個と常に同じdefault256bytesを借用する。uniform/push/texture-sampler/fetch/shader recordはdraw別を保持し、元drawと借用drawはwhole-pass DMA retirementまで保持。別pass/別compiled objectでは共有しない。借用はowner一覧/予算へ二重計上せず、失敗時は自分の取得prefixだけ巻戻す。既存texel共有と同じprivateなlifetime境界、HAL/user/API変更無し。
+
+2026-10-11 pass内code/default共有: 実device host PASS。2drawで既存texture+code3+defaults1の5page/owner削減、code/default同一owner、別compiled identityは同じ命令列でも独立upload、borrow後budget/late-OOMと退避/二重free無しを確認。uniform/vertex snapshotの既存確認は維持。C全文manualでprepared pipeline lifetime/whole-pass retention/partial cleanup/budgetを確認、production style0/diff-check PASS、clang-format19範囲比較は全文規約優先。arm64 kernel exit0/warning0/error0/checker3PASS。実機比較は配置後。

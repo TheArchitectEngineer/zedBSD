@@ -1282,6 +1282,8 @@ native_pass_test(
 	const struct bcm2711_vulkan_prepared_event *begin_event)
 {
 	struct bcm2711_vulkan_native_pass *pass;
+	struct bcm2711_vulkan_pipeline alternate_pipeline;
+	struct bcm2711_shader_binary alternate_program;
 	const struct bcm2711_vulkan_prepared_event *following;
 	struct bcm2711_vulkan_prepared_event *events;
 	struct bcm2711_vulkan_framebuffer *framebuffer;
@@ -1343,7 +1345,7 @@ native_pass_test(
 	error = bcm2711_vulkan_native_pass_release(&pass, true);
 	assert(error == 0 && pass == NULL && allocations == baseline && view->references == references);
 
-	/* Two draws in one pass share only converted texels; records, shaders and vertices keep separate owners. */
+	/* Two draws share immutable texels, exact code and defaults; scalar/fetch/shader records remain independent. */
 	events = kern_calloc(4, sizeof(*events));
 	assert(events != NULL);
 	events[0] = *begin_event;
@@ -1356,14 +1358,33 @@ native_pass_test(
 	error = bcm2711_vulkan_native_pass_create(space, events, &available, &pass, &following);
 	assert(error == 0 && pass->draws == 2 && pass->first != pass->last);
 	assert(pass->first->texture_count == 1 && pass->last->texture_count == 0);
-	assert(pass->last->count == pass->first->count - 1U);
-	assert(pass->last->bytes == pass->first->bytes - 4096U);
+	assert(pass->last->count == pass->first->count - 5U);
+	assert(pass->last->bytes == pass->first->bytes - 5U * 4096U);
+	assert(pass->last->defaults == pass->first->defaults);
+	for (index = 0; index < 3; index++)
+		assert(pass->last->code[index] == pass->first->code[index]);
 	assert(pass->first->earlier == NULL && pass->last->earlier == NULL);
 	assert(pass->bytes == bytes + pass->last->bytes);
 	error = bcm2711_vulkan_native_pass_release(&pass, true);
 	assert(error == 0 && allocations == baseline + 1U && view->references == references);
 
-	/* A borrower failing after the first draw exhausted the budget must not release the original texture twice. */
+	/* Identical words in a different compiled owner must receive an independent code upload. */
+	alternate_pipeline = *events[2].pipeline;
+	alternate_program = *alternate_pipeline.programs[0];
+	alternate_pipeline.programs[0] = &alternate_program;
+	events[2].pipeline = &alternate_pipeline;
+	available = 8U * 1024U * 1024U;
+	error = bcm2711_vulkan_native_pass_create(space, events, &available, &pass, &following);
+	assert(error == 0 && pass->draws == 2);
+	assert(pass->last->code[0] != pass->first->code[0]);
+	assert(pass->last->code[1] == pass->first->code[1]);
+	assert(pass->last->code[2] == pass->first->code[2]);
+	assert(pass->last->defaults == pass->first->defaults);
+	error = bcm2711_vulkan_native_pass_release(&pass, true);
+	assert(error == 0 && allocations == baseline + 1U && view->references == references);
+	events[2].pipeline = events[1].pipeline;
+
+	/* A late borrower refusal must not release the original texture, code or defaults twice. */
 	available = 11U * 4096U;
 	error = bcm2711_vulkan_native_pass_create(space, events, &available, &pass, &following);
 	assert(error == ENOMEM && pass == NULL && following == NULL);

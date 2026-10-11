@@ -112,3 +112,5 @@ vulkan-native-pass.c/execute.cの新差分をC全文review。image全域かつCL
 Style checkerの今回対象全fileではcompose.c既存未変更335/498/517/551相当のblank-after-brace4件のみ。変更したclose/pipeline/drawと新試験/生成headerの指摘は0。無関係な旧関数は変更しない。
 
 2026-10-11 bounded maintenance burst: hardware host PASS（80/96readの短いMMUC/TLB busyをyieldなしで処理、stuck10000yieldの既存拒否/retentionも維持）。device host PASS、C全文manual/style0/diff-check PASS、clang-format19出力比較。arm64 kernel make exit0/warning0/error0/checker3PASS。cksum1502649265/8077312。変更はprivate hardware counter/finite burstでHAL API不変、実機効果は未確認。
+
+2026-10-11 pass内code/default共有: 実device host PASS。2drawで既存texture+code3+defaults1の5page/owner削減、code/default同一owner、別compiled identityは同じ命令列でも独立upload、borrow後budget/late-OOMと退避/二重free無しを確認。uniform/vertex snapshotの既存確認は維持。C全文manualでprepared pipeline lifetime/whole-pass retention/partial cleanup/budgetを確認、production style0/diff-check PASS、clang-format19範囲比較は全文規約優先。arm64 kernel exit0/warning0/error0/checker3PASS。実機比較は配置後。

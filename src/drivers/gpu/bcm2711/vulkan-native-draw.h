@@ -22,7 +22,7 @@ struct bcm2711_vulkan_native_texture_copy {
 	struct bcm2711_native_storage *pixels;
 };
 
-/* One complete draw owns its uploads and borrows earlier pass textures; the enclosing pass retains all draws through uncertainty. */
+/* One complete draw owns its uploads and borrows earlier immutable pass inputs; the pass retains all draws through uncertainty. */
 struct bcm2711_vulkan_native_draw {
 	/* The enclosing pass links fully owned draw roots; individual release never traverses this link. */
 	struct bcm2711_vulkan_native_draw *next;
@@ -33,6 +33,11 @@ struct bcm2711_vulkan_native_draw {
 	const struct bcm2711_vulkan_native_draw *earlier;
 	struct bcm2711_vulkan_native_texture_copy textures[BCM2711_VULKAN_PIPELINE_SETS * BCM2711_VULKAN_LAYOUT_BINDINGS];
 	uint32_t texture_count;
+	/* Exact compiled objects identify immutable code; storage belongs to this or an earlier retained draw. */
+	const struct bcm2711_shader_binary *programs[3];
+	struct bcm2711_native_storage *code[3];
+	/* All draws use the same immutable sixteen float (0,0,0,1) defaults. */
+	struct bcm2711_native_storage *defaults;
 	/* Preparation diagnostics include scheduler delay and never affect admission. */
 	uint64_t texture_ticks;
 	uint64_t copy_ticks;

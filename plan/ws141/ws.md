@@ -337,3 +337,5 @@ R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなく
 2026-10-11 checkpoint: stage pause100msの実機初期化成立。CL診断でrender304〜1051ms、IRQ-to-worker20ms以上無し。panelのif-conversionによる全mode評価を7mode shaderへ分割し、数値同等/縮小varying/native shader/arm64 warning0 build検証済み。cksum2734866792/949352を実機に配置して応答時間を比較する。submit-i01 in-progress、master/共有queueは変更なし。
 
 7mode compositor5243251c9はmain統合/実機更新済み。render48〜177msへ改善、prepare/releaseは残る。MMUの有限1024read burstとyield counter版1502649265/8077312をhost/build検証済み、実機配置して比較する。
+
+1024read版の実機maintenance yield0でもprepare/releaseが残る。同pass exact code3/default1を元drawのDMA retirementまで共有する版をhost/arm64 warning0で確認。次はkernelを配置し、全体応答を比較する。p006/submit-i01 in-progress。

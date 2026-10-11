@@ -33,6 +33,7 @@ static int prepare_texture(struct bcm2711_vulkan_native_draw *draw, const struct
 static int prepare_texture_image(struct bcm2711_vulkan_native_draw *draw, struct bcm2711_vulkan_resource *image, const struct bcm2711_vulkan_sampler *source, uint32_t swap, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
 static int prepare_meta_texture(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_meta_draw *meta, uint64_t available);
 static int prepare_sampler(const struct bcm2711_vulkan_sampler *source, struct bcm2711_native_sampler *sampler);
+static struct bcm2711_native_storage *find_program(const struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_shader_binary *program, uint32_t stage);
 static int prepare_programs(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_prepared_event *event, uint64_t available, struct bcm2711_native_shader *shader);
 static int prepare_records(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_prepared_event *event, uint64_t available, const struct bcm2711_native_shader *shader);
 static int prepare_fetch(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_prepared_event *event, uint64_t available, struct bcm2711_native_attribute attributes[BCM2711_VULKAN_VERTEX_ATTRIBUTES]);
@@ -477,7 +478,7 @@ prepare_sampler(
 	return 0;
 }
 
-/* Uploads all three native programs and their FIFO scalar streams, then prepares float defaults. */
+/* Reuses immutable pass code and defaults while uploading each draw's exact FIFO scalar streams. */
 static int
 prepare_programs(
 	struct bcm2711_vulkan_native_draw *draw,
@@ -496,7 +497,7 @@ prepare_programs(
 	uint32_t index;
 	int error;
 
-	/* Every emitted program retains independent code and exact current scalar consumption. */
+	/* Shared code stays pass-owned; each draw keeps independent current scalar consumption. */
 	for (stage = 0; stage < 3; stage++) {
 		program = event->pipeline->programs[stage];
 		if (program == NULL ||
@@ -504,10 +505,20 @@ prepare_programs(
 		    program->code_count == 0 ||
 		    (uint32_t)program->stage != stage)
 			return EINVAL;
-		bytes = (uint64_t)program->code_count * 8U;
-		error = allocate_storage(draw, bytes, available, program, &code);
-		if (error != 0)
-			return error;
+		/* Only exact compiled program identity permits an earlier immutable upload to be reused. */
+		code = find_program(draw, program, stage);
+		if (code == NULL) {
+			bytes = (uint64_t)program->code_count * 8U;
+			error = allocate_storage(draw, bytes, available, program, &code);
+			if (error != 0)
+				return error;
+		}
+
+		/* The pass retains the owning draw even if a later draw borrows this same upload. */
+		draw->programs[stage] = program;
+		draw->code[stage] = code;
+
+		/* Push constants and texture bindings always produce this draw's own scalar stream. */
 		error = bcm2711_vulkan_uniform_create(event, stage, draw->bindings, &words);
 		if (error != 0)
 			return error;
@@ -535,20 +546,49 @@ prepare_programs(
 		shader->programs[stage].uniforms = uniforms->view->address;
 	}
 
-	/* Every default attribute is exactly float (0,0,0,1), including locations the shader does not consume. */
-	error = allocate_storage(draw, 256, available, NULL, &defaults);
-	if (error != 0)
-		return error;
-	destination = defaults->view->buffer->address;
-	for (index = 0; index < 16; index++)
-		write_word(destination + index * 16U + 12U, 0x3f800000U);
-	error = bcm2711_native_storage_clean(defaults);
-	if (error != 0)
-		return error;
+	/* Every default attribute is exactly float (0,0,0,1), independent of pipeline and draw. */
+	defaults = NULL;
+	if (draw->earlier != NULL)
+		defaults = draw->earlier->defaults;
+
+	/* Only the first draw allocates defaults; later draws borrow its whole-pass lifetime. */
+	if (defaults == NULL) {
+		error = allocate_storage(draw, 256, available, NULL, &defaults);
+		if (error != 0)
+			return error;
+		destination = defaults->view->buffer->address;
+		for (index = 0; index < 16; index++)
+			write_word(destination + index * 16U + 12U, 0x3f800000U);
+		error = bcm2711_native_storage_clean(defaults);
+		if (error != 0)
+			return error;
+	}
+
+	/* The shader record references only an existing independently owned pass allocation. */
+	draw->defaults = defaults;
 	shader->defaults = defaults->view->address;
 
 	/* Succeeded: shader record construction can reference only independently uploaded complete code/scalar/default intervals. */
 	return 0;
+}
+
+/* Finds an exact immutable compiled program uploaded by an earlier retained draw. */
+static struct bcm2711_native_storage *
+find_program(
+	const struct bcm2711_vulkan_native_draw *draw,
+	const struct bcm2711_shader_binary *program,
+	uint32_t stage)
+{
+	const struct bcm2711_vulkan_native_draw *owner;
+
+	/* The pass retains all earlier owners until no referencing command can execute. */
+	for (owner = draw->earlier; owner != NULL; owner = owner->next) {
+		if (owner->programs[stage] == program)
+			return owner->code[stage];
+	}
+
+	/* A different compiled object receives its own upload even if its words happen to match. */
+	return NULL;
 }
 
 /* Encodes contiguous shader and canonical fetch records after every backing interval exists. */
