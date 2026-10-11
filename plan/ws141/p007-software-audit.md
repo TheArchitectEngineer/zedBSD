@@ -90,3 +90,7 @@ v3d-hardware wait_clearへ32回上限の初期readを追加。CPUを長時間専
 ## 2026-10-11 storage時間内訳
 
 native-storage.c/.hにallocation/map/clean wall tickを保持し、pass diagnosticで元所有者だけ合算。計測は判定・所有・budgetに影響させず、共有画像を二重計上しない。C全文manual/style0/diff-check/formatter比較と対象device host、arm64 warning0 buildを確認。性能修復の成功判定は実機証拠待ち。
+
+## 2026-10-11 arm64物理page検索の占有prefix保持
+
+src/hal/arm64/page.cの変更領域をC全文で確認。private candidateの初期化/単一CPUのIRQ除外/解放時巻き戻しを明記し、HAL API変更なし。page.cの既存規約差（macro条件/旧宣言/forward等）は対象外、変更行へ違反を追加しない。新host試験はstyle0、diff-check PASS。実allocatorと独立参照4096回比較PASS。clang-format19出力との比較では既存全文規約に合わせた引数行とcommentを保持。WSの新しい物理補完としてp006記録へリンクし、性能とwhole受入れは実機待ち。

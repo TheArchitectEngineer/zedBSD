@@ -317,3 +317,12 @@ host再実行PASS、短時間busyのsleep0完了とstuck時の既存timeout/reti
 
 短いpoll版5d6b650d1をmain統合、旧1466012252/8077312を /var/backups/vmunix.before-fast-mmu-20261011へ保存し、新4227642040/8077312をFAT staging/cmp/sync/rename/sync/cmpで配置。reboot exit0、再接続成功。43drawの代表total2383ms/program1502msで前版との差は明瞭でなく、速さの修復成功とはしない。native storageに物理確保/map/cleanの内訳を追加、既存slow-pass行へoriginal ownerだけ合算する（tex等の内数）。この追加計測は対象device host PASS、C全文manual/style0/diff-check/clang-format19比較、arm64 warning0 build PASS。
 2232080428 8077312 build/arm64/vmunix、78965e0b160dc05c1df9dc63e04fb2e9d1aacb97faa2d655c7ac0392a9d1441a  build/arm64/vmunix。新診断版は未配置。service stop greeterのSSHが途中切断したため停止成功は未確認、接続を再確認する。
+
+
+storage内訳診断9f3a203e9をmain統合、新2232080428/8077312をFAT staging/cmp/sync/rename/sync/cmpで配置。旧4227642040/8077312は /var/backups/vmunix.before-storage-timing-20261011。reboot exit0でSSH復帰。43drawの代表total2280ms/alloc943ms/map499ms/clean5ms、copy149ms。GPU MMU待ち以外に物理確保も遅い。arm64のalloc_ramが毎回page1からbitmapを走査し、512KiBの固定heapで収まらない小さいkern_mallocも物理pageへfallbackする実codeを確認。
+
+HAL APIを変えず、arm64/page.cに「ここより前は全て使用中」というfirst_free_candidateを保持する。先頭の占有bitだけを飛ばしてから従来と同じalignment/boundary/limit/sizeのfirst-fit検索に入り、低いpageの解放時は同じIRQ除外内で候補を戻す。サイズやalignmentの都合で飛ばした空きholeを候補から除外しない。既存1CPU実装と排他を維持。ユーザーのGPU応答遅延修復およびHAL実装変更の既存許可に基づく必要な補完で、hal.h/責務/ABIの変更なし。
+
+実page.cを含む限定host試験: `cc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -idirafter include -I src plan/ws141/tests/arm64-page-cursor-host.c -Wl,--gc-sections -o build/ws141-page-cursor-host && build/ws141-page-cursor-host` PASS。固定seed4096回の断片化/解放/size/alignment/DMA上限/boundaryを独立first-fit参照と比較し、選ぶ物理pageも一致、全解放後の低位再利用と候補以前の使用中不変条件を確認。GPU performanceの実機証拠は配置後に採取する。
+
+候補保持版の最終arm64 build exit0/warning0/error0/ARM64 checker PASS。4190670006 8077312 build/arm64/vmunix、7007255529342daec9988c20307ca3a9538064a9b2ba0d2db000d8321cda4766  build/arm64/vmunix。

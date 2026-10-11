@@ -18,6 +18,13 @@ static uint32_t phys_pages;
 static uint32_t reserved_pages;
 static uint32_t allocated_pages;
 
+/*
+ * All pages below this candidate are occupied.  Allocation advances it only
+ * across occupied bits; freeing an earlier run rewinds it before IRQ restore.
+ * The existing single-CPU allocator's IRQ exclusion protects this cursor too.
+ */
+static uint32_t first_free_candidate;
+
 static void
 release_range(uint64_t base, uint64_t size)
 {
@@ -86,6 +93,9 @@ arm64_page_init(void)
 	reserve_range(rpi4_boot_fdt_phys(), info->totalsize);
 	for (i = 0; i < info->reserved_count; i++)
 		reserve_range(info->reserved[i].base, info->reserved[i].size);
+
+	/* The first allocation skips the reserved prefix once, after boot reservations. */
+	first_free_candidate = 1;
 	hal_printf("ARM64 MEMORY MAP PASS total=%llu MiB free=%llu MiB\n",
 	    (uint64_t)phys_pages * ARM64_PAGE_SIZE / (1024 * 1024),
 	    ((uint64_t)phys_pages - reserved_pages) * ARM64_PAGE_SIZE / (1024 * 1024));
@@ -106,6 +116,7 @@ alloc_ram(
 	hal_physaddr_t *block)
 {
 	uint32_t need, end, start, index, align_pages;
+	uint32_t occupied;
 	uint64_t state, first_byte, last_byte;
 	uintptr_t limit = (uintptr_t)phys_pages * ARM64_PAGE_SIZE;
 
@@ -132,8 +143,16 @@ alloc_ram(
 
 	state = arm64_irq_save();
 
-	/* Searches for an aligned free run meeting every constraint. */
-	for (start = 1; start + need <= end; start++) {
+	/* Reuses the known occupied prefix rather than rescanning it for every small allocation. */
+	while (first_free_candidate < phys_pages) {
+		occupied = BIT_GET(page_bitmap, first_free_candidate);
+		if (occupied == 0)
+			break;
+		first_free_candidate++;
+	}
+
+	/* Alignment and size constraints cannot skip a lower free hole in the shared cursor. */
+	for (start = first_free_candidate; start + need <= end; start++) {
 		/* Skips candidates which do not meet the alignment. */
 		if ((start & (align_pages - 1U)) != 0)
 			continue;
@@ -213,6 +232,10 @@ free_ram(
 	for (i = 0; i < count; i++)
 		BIT_CLEAR(page_bitmap, first + i);
 	allocated_pages -= count;
+
+	/* A later allocation must revisit newly released low pages, including constrained DMA requests. */
+	if (first < first_free_candidate)
+		first_free_candidate = first;
 	arm64_irq_restore(state);
 
 	/* Clears the caller address so a double free is visible. */
