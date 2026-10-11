@@ -53,6 +53,9 @@
 #define BT_HCI_EVENT_RESERVE	(4U * BT_HCI_RECORD_HEADER)
 #define BT_HCI_ACL_RING		(32U * 1024U)
 
+/* The SCO packets' ring (ws197-p007a2): about 250 ms of 16-bit CVSD, the oldest dropped when full. */
+#define BT_HCI_SCO_RING		(8U * 1024U)
+
 /* One published controller. */
 struct drv_bt_hci {
 	/*
@@ -64,8 +67,13 @@ struct drv_bt_hci {
 	struct wait_queue waitq;
 	struct bt_hci_ring events;
 	struct bt_hci_ring acl;
+	struct bt_hci_ring sco;
 	uint8_t *event_bytes;
 	uint8_t *acl_bytes;
+	uint8_t *sco_bytes;
+
+	/* Whether the open set SCO links (its close stops them). */
+	unsigned sco_streaming;
 
 	/*
 	 * The number the next queued record gets.  It wraps; two records are
@@ -115,6 +123,9 @@ static int bt_hci_slot_claim(struct drv_bt_hci *hci);
 static void bt_hci_slot_release(struct drv_bt_hci *hci);
 static void bt_hci_finalize(void *data);
 static void bt_hci_copy_text(char *target, const char *source);
+static ssize_t bt_hci_write_sco(struct drv_bt_hci *hci, const void *buffer, size_t size);
+static int bt_hci_set_sco(struct drv_bt_hci *hci, struct bt_sco *links);
+static void bt_hci_stop_sco(struct drv_bt_hci *hci);
 
 /* The operations of every controller's node. */
 static const struct cdev_ops bt_hci_cdev_ops = {
@@ -181,9 +192,19 @@ drv_bt_hci_register(
 		return ENOMEM;
 	}
 
+	/* The SCO packets' ring. */
+	hci->sco_bytes = kern_malloc(BT_HCI_SCO_RING);
+	if (hci->sco_bytes == NULL) {
+		kern_free(hci->acl_bytes);
+		kern_free(hci->event_bytes);
+		kern_free(hci);
+		return ENOMEM;
+	}
+
 	/* The operations' lock. */
 	error = mutex_init(&hci->op_lock, LOCK_RANK_DEVICE, "bt-hci op");
 	if (error != 0) {
+		kern_free(hci->sco_bytes);
 		kern_free(hci->acl_bytes);
 		kern_free(hci->event_bytes);
 		kern_free(hci);
@@ -195,6 +216,7 @@ drv_bt_hci_register(
 	waitq_init(&hci->waitq, "bt-hci packet");
 	bt_hci_ring_init(&hci->events, hci->event_bytes, BT_HCI_EVENT_RING, BT_HCI_EVENT_RESERVE);
 	bt_hci_ring_init(&hci->acl, hci->acl_bytes, BT_HCI_ACL_RING, 0U);
+	bt_hci_ring_init(&hci->sco, hci->sco_bytes, BT_HCI_SCO_RING, 0U);
 
 	/* What the controller is, and the transport. */
 	hci->info.vendor = description->vendor;
@@ -202,6 +224,9 @@ drv_bt_hci_register(
 	hci->info.version = description->version;
 	hci->info.bus = description->bus;
 	hci->info.acl_data_max = BT_ACL_DATA_DEFAULT;
+	hci->info.flags = 0U;
+	if (ops->sco_set != NULL && ops->sco_send != NULL)
+		hci->info.flags = description->flags & BT_INFO_SCO;
 	bt_hci_copy_text(hci->info.name, description->name);
 	bt_hci_copy_text(hci->info.physical_path, description->physical_path);
 	hci->ops = ops;
@@ -211,6 +236,7 @@ drv_bt_hci_register(
 	/* The lowest free number. */
 	error = bt_hci_slot_claim(hci);
 	if (error != 0) {
+		kern_free(hci->sco_bytes);
 		kern_free(hci->acl_bytes);
 		kern_free(hci->event_bytes);
 		kern_free(hci);
@@ -227,6 +253,7 @@ drv_bt_hci_register(
 	    &node);
 	if (error != 0) {
 		bt_hci_slot_release(hci);
+		kern_free(hci->sco_bytes);
 		kern_free(hci->acl_bytes);
 		kern_free(hci->event_bytes);
 		kern_free(hci);
@@ -449,6 +476,7 @@ bt_hci_open(
 		hci->opened = 1U;
 		bt_hci_ring_clear(&hci->events);
 		bt_hci_ring_clear(&hci->acl);
+		bt_hci_ring_clear(&hci->sco);
 		file->f_data = hci;
 	}
 
@@ -484,8 +512,12 @@ bt_hci_close(
 	hci->opened = 0U;
 	bt_hci_ring_clear(&hci->events);
 	bt_hci_ring_clear(&hci->acl);
+	bt_hci_ring_clear(&hci->sco);
 
 	spin_unlock_irqrestore(&hci->lock, irq);
+
+	/* The SCO links the open set stop with it (design S8). */
+	bt_hci_stop_sco(hci);
 
 	/* The transport may take packets again (they are dropped until the next open). */
 	file->f_data = NULL;
@@ -593,6 +625,10 @@ bt_hci_write(
 	if (size > BT_ACL_PACKET_MAX)
 		return -EINVAL;
 
+	/* An SCO packet only queues for the isochronous pipe, without the operations' mutex (ws197-p007a2). */
+	if (size != 0U && ((const uint8_t *)buffer)[0] == BT_PACKET_SCO)
+		return bt_hci_write_sco(hci, buffer, size);
+
 	/* The ACL limit now. */
 	irq = spin_lock_irqsave(&hci->lock);
 
@@ -650,6 +686,7 @@ bt_hci_ioctl(
 	struct drv_bt_hci *hci;
 	struct bt_info info;
 	struct bt_stats stats;
+	struct bt_sco links;
 	unsigned long irq;
 	uint32_t value;
 	int error;
@@ -699,6 +736,14 @@ bt_hci_ioctl(
 		/* The controller reset in place. */
 		error = bt_hci_operate(hci, request, 0U);
 		break;
+	case BT_IOC_SET_SCO:
+		/* The links in, the transport's answer out (ws197-p007a2). */
+		error = copyin(argument, &links, sizeof(links));
+		if (error == 0)
+			error = bt_hci_set_sco(hci, &links);
+		if (error == 0)
+			error = copyout(&links, argument, sizeof(links));
+		break;
 	default:
 		/* Anything else is not a controller's request. */
 		return ENOTTY;
@@ -739,7 +784,7 @@ bt_hci_poll(
 	if (!hci->registered) {
 		result |= POLLHUP;
 	} else {
-		if (hci->events.count != 0U || hci->acl.count != 0U)
+		if (hci->events.count != 0U || hci->acl.count != 0U || hci->sco.count != 0U)
 			result |= requested & (POLLIN | POLLRDNORM);
 		result |= requested & (POLLOUT | POLLWRNORM);
 	}
@@ -779,29 +824,36 @@ static struct bt_hci_ring *
 bt_hci_oldest(
 	struct drv_bt_hci *hci)
 {
-	uint32_t event_sequence;
-	uint32_t acl_sequence;
+	struct bt_hci_ring *rings[3];
+	struct bt_hci_ring *oldest;
+	uint32_t oldest_sequence;
+	uint32_t sequence;
 	size_t length;
+	unsigned index;
 	uint8_t type;
 	int32_t difference;
 
-	/* Only one ring, or none, has a record. */
-	if (hci->events.count == 0U && hci->acl.count == 0U)
-		return NULL;
-	if (hci->acl.count == 0U)
-		return &hci->events;
-	if (hci->events.count == 0U)
-		return &hci->acl;
+	/* The events, the ACL packets and the SCO packets: the record with the lowest sequence number. */
+	rings[0] = &hci->events;
+	rings[1] = &hci->acl;
+	rings[2] = &hci->sco;
+	oldest = NULL;
+	oldest_sequence = 0U;
+	for (index = 0U; index < 3U; index++) {
+		if (rings[index]->count == 0U)
+			continue;
+		(void)bt_hci_ring_peek(rings[index], &type, &sequence, &length);
 
-	/* Both: the lower sequence number, by the sign of the wrapped difference. */
-	(void)bt_hci_ring_peek(&hci->events, &type, &event_sequence, &length);
-	(void)bt_hci_ring_peek(&hci->acl, &type, &acl_sequence, &length);
-	difference = (int32_t)(event_sequence - acl_sequence);
-	if (difference < 0)
-		return &hci->events;
+		/* Earlier by the sign of the wrapped difference. */
+		difference = (int32_t)(sequence - oldest_sequence);
+		if (oldest == NULL || difference < 0) {
+			oldest = rings[index];
+			oldest_sequence = sequence;
+		}
+	}
 
-	/* The ACL packet came first. */
-	return &hci->acl;
+	/* The ring of the oldest record, or none. */
+	return oldest;
 }
 
 /*
@@ -968,6 +1020,7 @@ bt_hci_finalize(
 
 	/* The rings and the record. */
 	hci = data;
+	kern_free(hci->sco_bytes);
 	kern_free(hci->acl_bytes);
 	kern_free(hci->event_bytes);
 	kern_free(hci);
@@ -992,4 +1045,205 @@ bt_hci_copy_text(
 		length = BT_TEXT_MAX - 1U;
 	kern_memcpy(target, source, length);
 	target[length] = '\0';
+}
+
+/*
+ * Queues one SCO packet the program wrote for the transport's isochronous
+ * pipe: checked, then handed over without the operations' mutex (it never
+ * sleeps), counted like the room calls so the withdrawal waits it out.
+ */
+static ssize_t
+bt_hci_write_sco(
+	struct drv_bt_hci *hci,
+	const void *buffer,
+	size_t size)
+{
+	int (*sco_send)(void *, const uint8_t *, size_t);
+	unsigned long irq;
+	void *context;
+	int error;
+
+	/* A whole SCO packet. */
+	error = bt_hci_check_sco(buffer, size);
+	if (error != 0)
+		return -error;
+
+	/* The transport's queue, while the controller is registered. */
+	sco_send = NULL;
+	context = NULL;
+	irq = spin_lock_irqsave(&hci->lock);
+	if (hci->registered && hci->ops != NULL && hci->ops->sco_send != NULL) {
+		sco_send = hci->ops->sco_send;
+		context = hci->context;
+		hci->room_calls++;
+	}
+
+	/* Taken. */
+	spin_unlock_irqrestore(&hci->lock, irq);
+
+	/* Gone, or no SCO. */
+	if (sco_send == NULL) {
+		if (!hci->registered)
+			return -ENODEV;
+		return -ENOTSUP;
+	}
+
+	/* Queued, or refused (EAGAIN, ENOTCONN). */
+	error = sco_send(context, buffer, size);
+
+	/* The call is over; counted when queued. */
+	irq = spin_lock_irqsave(&hci->lock);
+	hci->room_calls--;
+	if (error == 0)
+		hci->stats.sco_out++;
+	spin_unlock_irqrestore(&hci->lock, irq);
+
+	/* Refused. */
+	if (error != 0)
+		return -error;
+
+	/* Succeeded: the whole packet is queued. */
+	return (ssize_t)size;
+}
+
+/*
+ * Sets the SCO links (BT_IOC_SET_SCO): checked here, then the transport
+ * chooses the alternate and starts or stops the stream, under the
+ * operations' mutex; the answer goes back in links.
+ */
+static int
+bt_hci_set_sco(
+	struct drv_bt_hci *hci,
+	struct bt_sco *links)
+{
+	struct bt_sco answer;
+	unsigned long irq;
+	int error;
+
+	/* Links that can be streamed. */
+	error = bt_hci_sco_check(links);
+	if (error != 0)
+		return error;
+
+	/* One operation at a time, none after the withdrawal, none in the bootloader. */
+	error = mutex_lock_interruptible(&hci->op_lock);
+	if (error != 0)
+		return EINTR;
+	if (hci->ops == NULL) {
+		mutex_unlock(&hci->op_lock);
+		return ENODEV;
+	}
+
+	/* A transport without SCO, or a controller in its bootloader. */
+	if (hci->ops->sco_set == NULL || (hci->info.flags & BT_INFO_SCO) == 0U) {
+		mutex_unlock(&hci->op_lock);
+		return ENOTSUP;
+	}
+
+	/* The bootloader takes no links. */
+	if ((hci->info.flags & BT_INFO_BOOTLOADER) != 0U) {
+		mutex_unlock(&hci->op_lock);
+		return EBUSY;
+	}
+
+	/* The transport's part, and whether the open now streams. */
+	answer = *links;
+	error = hci->ops->sco_set(hci->context, links, &answer);
+	if (error == 0) {
+		irq = spin_lock_irqsave(&hci->lock);
+		hci->sco_streaming = links->count != 0U;
+		if (links->count == 0U)
+			bt_hci_ring_clear(&hci->sco);
+		spin_unlock_irqrestore(&hci->lock, irq);
+	}
+
+	/* The operation is over. */
+	mutex_unlock(&hci->op_lock);
+
+	/* Refused. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the alternate and its packet size. */
+	*links = answer;
+	return 0;
+}
+
+/* Stops the SCO links an open set (its close). */
+static void
+bt_hci_stop_sco(
+	struct drv_bt_hci *hci)
+{
+	struct bt_sco none;
+	struct bt_sco answer;
+	unsigned long irq;
+	unsigned streaming;
+
+	/* Only when the open set some. */
+	irq = spin_lock_irqsave(&hci->lock);
+	streaming = hci->sco_streaming;
+	hci->sco_streaming = 0U;
+	spin_unlock_irqrestore(&hci->lock, irq);
+	if (!streaming)
+		return;
+
+	/* No link: the transport goes back to the alternate without bandwidth. */
+	kern_memset(&none, 0, sizeof(none));
+	mutex_lock(&hci->op_lock);
+	if (hci->ops != NULL && hci->ops->sco_set != NULL)
+		(void)hci->ops->sco_set(hci->context, &none, &answer);
+	mutex_unlock(&hci->op_lock);
+}
+
+/*
+ * Queues one SCO packet the transport put together (header first, without
+ * the type's byte): the oldest dropped when the ring is full, counted.  A
+ * packet of a withdrawn controller, or one nobody has open, is dropped.
+ */
+void
+drv_bt_hci_sco_input(
+	struct drv_bt_hci *hci,
+	const uint8_t *packet,
+	size_t length)
+{
+	unsigned long irq;
+	unsigned dropped;
+	int error;
+
+	/* Queued while somebody reads, the oldest dropped for room. */
+	irq = spin_lock_irqsave(&hci->lock);
+	if (hci->registered && hci->opened) {
+		dropped = 0U;
+		error = bt_hci_ring_push_drop(&hci->sco, BT_PACKET_SCO, hci->sequence, packet, length, &dropped);
+		if (error == 0) {
+			hci->sequence++;
+			hci->stats.sco_in++;
+		}
+
+		/* The packets the room cost. */
+		hci->stats.sco_dropped += dropped;
+	}
+
+	/* Done with the ring. */
+	spin_unlock_irqrestore(&hci->lock, irq);
+
+	/* The reader and the pollers. */
+	waitq_wake_all(&hci->waitq);
+	poll_notify();
+}
+
+/* Adds the transport's SCO packets lost and sets the bytes its send queue holds now. */
+void
+drv_bt_hci_sco_count(
+	struct drv_bt_hci *hci,
+	uint64_t dropped,
+	uint64_t queued)
+{
+	unsigned long irq;
+
+	/* Under the lock. */
+	irq = spin_lock_irqsave(&hci->lock);
+	hci->stats.sco_dropped += dropped;
+	hci->stats.sco_out_queued = queued;
+	spin_unlock_irqrestore(&hci->lock, irq);
 }
