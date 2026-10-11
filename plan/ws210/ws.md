@@ -32,7 +32,7 @@ Pi 4 で標準 app（Files・Settings・Phone など）の再描画が CPU の�
 | Phase | 内容 | Status |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 調査と設計（今の canvas・text・image の作り、app の present の経路、GPU の back end の形、shader、fallback、移行の順、試験） | in-progress（設計 1.1、Q1 の確認待ち） |
-| p002 | spike: bcm2711 の shader の命令数・register（host）、Pi の draw・頂点・fragment・compile の時間 | planned |
+| [p002](phase002/phase.md) | spike: bcm2711 の shader の命令数・register（host）、Pi の draw・頂点・fragment・compile の時間 | in-progress（host の数は済み、Pi は未着手） |
 | p003 | GPU の canvas の核（記録、shape の pipeline、W の readback、host の一致の試験） | planned |
 | p004 | 文字の atlas・画像の cache・polygon の coverage・mark・fill_replace | planned |
 | p005 | window の frame の口、基準の PNG と Pi の基準、Settings を移す | planned |
