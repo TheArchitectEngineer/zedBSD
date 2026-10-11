@@ -40,6 +40,7 @@ Keiland の標準 app として、写真を集めて整理し、見る app を�
 | [ws157-p014](phase014/phase.md) | libkeiland の media の API を非同期に、picker・chooser はすぐ窓を開く（#1） | in-progress（実装・host 済み、T1 待ち） | p012 |
 | ws157-p015 | Photos・Phone の thumbnail の decode を jail へ（#11） | planned | p013 |
 | ws157-p016 | 動画の寸法と撮影日時を mp4 の header（moov の mvhd・tkhd）から jail（`keiland-preview --info`）の中で読む（2026-10-11 ユーザー「OKです」、T1-538 で動画が寸法 0・取り込みの日だった件） | in-progress（2026-10-11 P1 a1d5efa46: 実装・host・build 済み、main に未統合、T1 待ち） | p013 |
+| ws157-p017 | libjpeg-compat に 1/2・1/4・1/8 の縮小 decode（L1、2026-10-11 ユーザー「Q1の推しにします」、約 3 LW） | planned | p015 |
 
 ## p001 の観点（要件の検討）
 
