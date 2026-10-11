@@ -1072,7 +1072,7 @@ bt_hci_write_sco(
 	sco_send = NULL;
 	context = NULL;
 	irq = spin_lock_irqsave(&hci->lock);
-	if (hci->registered && hci->ops != NULL && hci->ops->sco_send != NULL) {
+	if (hci->registered && hci->ops != NULL && hci->ops->sco_send != NULL && (hci->info.flags & BT_INFO_SCO) != 0U) {
 		sco_send = hci->ops->sco_send;
 		context = hci->context;
 		hci->room_calls++;
@@ -1081,11 +1081,11 @@ bt_hci_write_sco(
 	/* Taken. */
 	spin_unlock_irqrestore(&hci->lock, irq);
 
-	/* Gone, or no SCO. */
+	/* Gone, or a controller without SCO (it is not carried: EINVAL, as before SCO was). */
 	if (sco_send == NULL) {
 		if (!hci->registered)
 			return -ENODEV;
-		return -ENOTSUP;
+		return -EINVAL;
 	}
 
 	/* Queued, or refused (EAGAIN, ENOTCONN). */

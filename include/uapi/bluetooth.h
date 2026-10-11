@@ -24,8 +24,9 @@
  *            ACL packet returns when the controller has taken it.  An SCO
  *            packet (ws197-p007a2) is only queued for the controller's
  *            isochronous pipe, about 36 ms of it, and never waits: a full
- *            queue answers EAGAIN, whatever O_NONBLOCK says, and a
- *            controller not streaming SCO (BT_IOC_SET_SCO) ENOTCONN.
+ *            queue answers EAGAIN, whatever O_NONBLOCK says, a
+ *            controller not streaming SCO (BT_IOC_SET_SCO) ENOTCONN, and
+ *            one without SCO (no BT_INFO_SCO) EINVAL.
  *   read()   one whole event, ACL or SCO packet, or a notice of the
  *            kernel's (type 0x80 and above, one byte long), in the order
  *            they came.  A buffer shorter than the packet answers EMSGSIZE
