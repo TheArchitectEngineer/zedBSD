@@ -69,6 +69,8 @@ struct bcm2711_v3d_perf {
 	uint64_t mapped_bytes;
 	uint32_t largest_size;
 	char largest_kind;
+	uint32_t render_tiles;
+	uint32_t image_tiles;
 };
 
 /*
