@@ -85,6 +85,12 @@ struct bcm2711_v3d_perf {
 	uint64_t request_run_ticks;
 	uint64_t request_wait_max;
 	uint64_t request_run_max;
+	/* Release diagnostics: draw teardown and batch-end ticks, released draws, and views kept in the cache or unmapped. */
+	uint64_t release_draw_ticks;
+	uint64_t release_end_ticks;
+	uint64_t released_draws;
+	uint64_t views_cached;
+	uint64_t views_unmapped;
 };
 
 /*

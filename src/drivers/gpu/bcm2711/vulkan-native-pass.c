@@ -237,6 +237,8 @@ bcm2711_vulkan_native_pass_release(
 	struct bcm2711_vulkan_native_pass *owned;
 	struct bcm2711_vulkan_native_draw *draw;
 	struct bcm2711_vulkan_native_draw *next;
+	struct bcm2711_v3d_perf *perf;
+	uint64_t started;
 	uint32_t index;
 	int first;
 	int error;
@@ -255,6 +257,8 @@ bcm2711_vulkan_native_pass_release(
 	/* The whole root is consumed once; failed mapping teardown is held independently by the native address space. */
 	*pass = NULL;
 	first = 0;
+	started = clock_ticks();
+	perf = &owned->space->native->hardware.perf;
 	draw = owned->first;
 	while (draw != NULL) {
 		/* Preserve the linked successor before consuming each complete independent draw. */
@@ -262,8 +266,10 @@ bcm2711_vulkan_native_pass_release(
 		error = bcm2711_vulkan_native_draw_release(&draw, true);
 		if (first == 0 && error != 0)
 			first = error;
+		perf->released_draws++;
 		draw = next;
 	}
+	perf->release_draw_ticks += clock_ticks() - started;
 
 	/* Every command/tile/overflow owner retires even if an earlier draw teardown failed. */
 	for (index = 0; index < owned->count; index++) {

@@ -100,6 +100,7 @@ bcm2711_vulkan_native_job_execute(
 	uint64_t bytes;
 	uint64_t started;
 	uint64_t step;
+	uint64_t end_step;
 	uint64_t prepare_ticks;
 	uint32_t tiles;
 	uint64_t execute_ticks;
@@ -308,7 +309,9 @@ bcm2711_vulkan_native_job_execute(
 		error = bcm2711_vulkan_native_pass_release(&job->pass, true);
 
 		/* Physical backing stays owned until the complete batch of PTE withdrawals is flushed. */
+		end_step = clock_ticks();
 		synchronized = bcm2711_v3d_memory_end(&controller->space);
+		perf->release_end_ticks += clock_ticks() - end_step;
 		if (synchronized != 0)
 			error = synchronized;
 		release_ticks += clock_ticks() - step;
@@ -600,6 +603,17 @@ report_perf(
 			(unsigned long long)released,
 			(unsigned long long)(released_bytes / 1024U),
 			(unsigned long long)kern_ticks_to_rate(released_ticks, 1000000U));
+	}
+
+	/* Where the release time goes: draw teardown, the batch end's flush and frees, and the views' fate. */
+	if (perf->submissions != 0U) {
+		kern_logf(
+			"v3d: release draws=%llu draw_us=%llu end_us=%llu views cached=%llu unmapped=%llu\n",
+			(unsigned long long)perf->released_draws,
+			(unsigned long long)kern_ticks_to_rate(perf->release_draw_ticks, 1000000U),
+			(unsigned long long)kern_ticks_to_rate(perf->release_end_ticks, 1000000U),
+			(unsigned long long)perf->views_cached,
+			(unsigned long long)perf->views_unmapped);
 	}
 
 	/* Cycles a tile takes when it is only loaded and stored, and when it is also drawn. */
