@@ -87,6 +87,12 @@ struct bcm2711_v3d_job_result {
 	uint32_t render_counter;
 	uint32_t fault_client;
 	uint32_t fault_address;
+	/* Diagnostic wall times of the bin and render queues and the output cache clean. */
+	uint64_t bin_ticks;
+	uint64_t render_ticks;
+	uint64_t clean_ticks;
+	/* Diagnostic wall time of the texture formatting jobs that preceded a CL job. */
+	uint64_t tfu_ticks;
 };
 
 int bcm2711_v3d_job_run(struct bcm2711_v3d *engine, const struct bcm2711_v3d_job *job, struct bcm2711_v3d_job_result *result);

@@ -9,9 +9,9 @@
  * Window mode: draws the background and every window, bottom to top, into
  * a VK_KHR_display swapchain (WS035 compositing design, D1).
  *
- * A frame is one command buffer and one render pass that clears to the
- * background and draws each window as a textured quad placed by push
- * constants.  Only one frame is in flight: its fence is exported as an fd
+ * A frame is one command buffer. Scene changes render the windows and
+ * optionally capture cursor-free pixels; cursor-only damage can restore
+ * those pixels before its LOAD pass. Only one frame is in flight: its fence is exported as an fd
  * that the event loop polls, and the buffers the frame sampled and the frame
  * callbacks of the surfaces it showed are held until the fence signals.
  */
@@ -297,6 +297,7 @@ kwl_compose_output_open(
 	uint64_t started;
 	VkResult result;
 	int readback;
+	unsigned scene_supported;
 	int error;
 
 	/* An open output needs nothing. */
@@ -325,7 +326,21 @@ kwl_compose_output_open(
 	 */
 	started = kwl_milliseconds();
 	readback = 1;
-	result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, readback);
+	scene_supported = 1U;
+	result = vkdemo_display_create_swapchain_usage(
+		compose->physical,
+		compose->device,
+		compose->family,
+		&compose->output,
+		VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+
+	/* A surface without both transfer directions keeps the existing capture-only path. */
+	if (result == VK_ERROR_FORMAT_NOT_SUPPORTED) {
+		scene_supported = 0U;
+		result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, readback);
+	}
+
+	/* A surface without readback retains the ordinary colour-only swapchain. */
 	if (result == VK_ERROR_FORMAT_NOT_SUPPORTED && readback) {
 		/* A display whose images cannot be read back still shows the desktop, without the capture (ws173-p002). */
 		printf("KWL SHOT unsupported: the swapchain images cannot be a copy's source\n");
@@ -354,6 +369,23 @@ kwl_compose_output_open(
 		kwl_os_display_release(server, compose->physical, compose->display);
 		compose->output_prepared = 0;
 		return EIO;
+	}
+
+	/* Unsupported or exhausted optional cache storage leaves ordinary rendering available. */
+	if (scene_supported) {
+		result = kwl_compose_load_pass(compose);
+		if (result == VK_SUCCESS) {
+			result = kwl_scene_open(
+				&compose->scene,
+				compose->physical,
+				compose->device,
+				compose->output.width,
+				compose->output.height);
+		}
+
+		/* An optional cache failure does not prevent ordinary window composition. */
+		if (result != VK_SUCCESS)
+			printf("KWL SCENE unavailable result=%d\n", (int)result);
 	}
 
 	/* No image has been drawn yet: the first frame of each is drawn whole. */
@@ -401,6 +433,7 @@ kwl_compose_output_close(
 	kwl_heads_close_all(server);
 
 	/* The backdrop, the targets, then the swapchain and surface. */
+	kwl_scene_close(&compose->scene, compose->device);
 	kwl_backdrop_destroy(compose);
 	compose_targets_destroy(compose);
 	vkdemo_display_close(compose->instance, compose->device, &compose->output);
@@ -529,6 +562,7 @@ kwl_compose_draw(
 		region_drawn = &region;
 	result = compose_record(server, image, windows, count, region_drawn);
 	if (result != VK_SUCCESS) {
+		compose->scene.valid = 0U;
 		printf("KWL VULKAN_ERROR operation=record result=%d\n", (int)result);
 		kwl_heads_frame_skipped(server);
 		return EIO;
@@ -541,6 +575,7 @@ kwl_compose_draw(
 	result = compose_submit(server, image);
 	server->perf.compose_present_cycles += kwl_cycles() - mark;
 	if (result != VK_SUCCESS) {
+		compose->scene.valid = 0U;
 		printf("KWL VULKAN_ERROR operation=submit result=%d\n", (int)result);
 		return EIO;
 	}
@@ -559,6 +594,7 @@ kwl_compose_draw(
 	if (missed > 0U)
 		server->dirty = 1;
 	server->damaged = 0;
+	compose->scene.changed = 0U;
 	server->frame++;
 	/* The first frame after App Home or Wiseview was asked to open or close, logged once (C5, also without --log-frames). */
 	if (server->transition != NULL) {
@@ -606,9 +642,15 @@ kwl_compose_complete(
 	if (result == VK_SUCCESS)
 		result = vkResetFences(compose->device, 1U, &compose->fence);
 	if (result != VK_SUCCESS) {
+		compose->scene.valid = 0U;
 		printf("KWL VULKAN_ERROR operation=fence result=%d\n", (int)result);
 		return EIO;
 	}
+
+	/* Only confirmed command completion publishes the cursor-free captured scene. */
+	if (compose->scene.written)
+		compose->scene.valid = 1U;
+	compose->scene.written = 0U;
 
 	/* The sampled buffers, and the frame callbacks. */
 	for (index = 0; index < compose->held_count; index++)
@@ -2188,6 +2230,7 @@ compose_record(
 	VkRect2D scissor;
 	VkDeviceSize offset;
 	unsigned index;
+	unsigned reuse;
 	VkResult result;
 
 	/*
@@ -2203,6 +2246,38 @@ compose_record(
 	if (result != VK_SUCCESS)
 		return result;
 
+	/* Unknown cache contents require one whole scene before any reuse. */
+	if (compose->scene.buffer != VK_NULL_HANDLE && !compose->scene.valid)
+		region = NULL;
+
+	/*
+	 * Only cursor damage over an unchanged initialized scene may skip client
+	 * sampling.  An image that is whole only because of its buffer age is
+	 * restored whole from the same scene.
+	 */
+	reuse = 0U;
+	compose->scene.written = 0U;
+	if (compose->scene.valid && !compose->scene.changed && !server->dirty) {
+		reuse = 1U;
+
+		/* Other outputs retain their independent scene construction and callback order. */
+		for (index = 0U; index < KWL_HEADS; index++) {
+			/* A live secondary output needs the ordinary whole-scene recording. */
+			if (compose->heads[index].open)
+				reuse = 0U;
+		}
+	}
+
+	/* Log the actual reuse decision only through the supported frame diagnostic. */
+	if (server->log_frames) {
+		printf(
+			"KWL SCENE frame=%llu reuse=%u changed=%u valid=%u\n",
+			(unsigned long long)server->frame + 1U,
+			reuse,
+			compose->scene.changed,
+			compose->scene.valid);
+	}
+
 	/* The clients' images imported since the last frame go to the layout they are sampled in (ws099-p016). */
 	kwl_import_layouts_record(compose, compose->command);
 
@@ -2213,6 +2288,10 @@ compose_record(
 	server->view_width = 0U;
 	server->view_height = 0U;
 
+	/* Removes every older cursor covered by buffer-age damage before drawing its new place. */
+	if (reuse)
+		kwl_scene_copy(&compose->scene, compose->command, compose->output.images[image], region, 1U);
+
 	/* The pass clears the image to the background. */
 	memset(&clear, 0, sizeof(clear));
 	clear.color.float32[0] = KWL_BACKGROUND_RED;
@@ -2222,7 +2301,7 @@ compose_record(
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	pass.renderPass = compose->pass;
-	if (region != NULL)
+	if (region != NULL || reuse)
 		pass.renderPass = compose->pass_load;
 	pass.framebuffer = compose->framebuffers[image];
 	compose->framebuffer_now = compose->framebuffers[image];
@@ -2235,7 +2314,7 @@ compose_record(
 	if (region != NULL)
 		pass.renderArea = *region;
 
-	/* The clear value belongs to a whole frame; the partial pass retains old pixels. */
+	/* The clear value belongs to a whole frame; the partial pass and a restored scene retain old pixels. */
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
 	vkCmdBeginRenderPass(compose->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
@@ -2263,26 +2342,39 @@ compose_record(
 	 * look with the wallpaper, their title bars and the system bar.  Then the
 	 * cursor over them.
 	 */
-	if (server->glass) {
-		kwl_glass_draw(server, compose->command, windows, count);
-	} else {
-		/* The desktop's icons under the windows (desktop.c). */
-		kwl_desktop_draw(server, compose->command);
+	if (!reuse) {
+		if (server->glass) {
+			kwl_glass_draw(server, compose->command, windows, count);
+		} else {
+			/* The desktop's icons under the windows (desktop.c). */
+			kwl_desktop_draw(server, compose->command);
 
-		/* Each window. */
-		for (index = 0; index < count; index++) {
-			/* A window between its sub-surfaces below and above it (subsurface.c). */
-			kwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 0U);
-			kwl_compose_surface_quad(server, compose->command, windows[index], surface_image(windows[index]), windows[index]->x, windows[index]->y);
-			kwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 1U);
+			/* Each window. */
+			for (index = 0; index < count; index++) {
+				/* A window between its sub-surfaces below and above it (subsurface.c). */
+				kwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 0U);
+				kwl_compose_surface_quad(server, compose->command, windows[index], surface_image(windows[index]), windows[index]->x, windows[index]->y);
+				kwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 1U);
+			}
+
+			/* The popups over the windows. */
+			kwl_popup_draw(server, compose->command);
 		}
 
-		/* The popups over the windows. */
-		kwl_popup_draw(server, compose->command);
+		/* The input method's candidate window over the windows and their popups, in both looks (input-method.c). */
+		kwl_ime_popup_draw(server, compose->command);
 	}
 
-	/* The input method's candidate window over the windows and their popups, in both looks (input-method.c). */
-	kwl_ime_popup_draw(server, compose->command);
+	/* Captures scene pixels before the cursor can contaminate the reusable background. */
+	if (!reuse && compose->scene.buffer != VK_NULL_HANDLE) {
+		vkCmdEndRenderPass(compose->command);
+		kwl_scene_copy(&compose->scene, compose->command, compose->output.images[image], region, 0U);
+		compose->scene.written = 1U;
+
+		/* The compatible LOAD pass retains scene pixels and adds only the cursor. */
+		pass.renderPass = compose->pass_load;
+		vkCmdBeginRenderPass(compose->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	}
 
 	/* The cursor over everything. */
 	compose_cursor(server, compose->command);
@@ -2421,7 +2513,7 @@ compose_submit(
 	 */
 	compose = server->compose;
 	waits[0] = compose->acquired;
-	stages[0] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	stages[0] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
 	wait_count = 1U + kwl_heads_waits(server, waits + 1, stages + 1, KWL_HEADS);
 	signals[0] = compose->rendered[image];
 	signal_count = 1U + kwl_heads_signals(server, signals + 1, KWL_HEADS);
@@ -2439,6 +2531,10 @@ compose_submit(
 		kwl_heads_frame_skipped(server);
 		return result;
 	}
+
+	/* Separates the queue submission from the presentation in the per-frame lines. */
+	if (server->log_frames)
+		printf("KWL LAT queued frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
 
 	/* The image goes to the display after the commands. */
 	memset(&present, 0, sizeof(present));

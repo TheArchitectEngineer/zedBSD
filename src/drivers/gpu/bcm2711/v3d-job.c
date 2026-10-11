@@ -315,16 +315,13 @@ run_cl(
 	const struct job_queue bin = {2, 0, 0x110, 0x118};
 	const struct job_queue render = {1, 0, 0x114, 0x11c};
 	unsigned long enabled;
-	uint64_t started;
 	uint64_t step;
 	uint64_t bin_ticks;
 	uint64_t render_ticks;
 	uint64_t clean_ticks;
-	uint64_t elapsed;
 	int error;
 
 	/* Measure queue completion separately from output cache drain. */
-	started = clock_ticks();
 	bin_ticks = 0;
 	clean_ticks = 0;
 
@@ -400,16 +397,10 @@ run_cl(
 	result->render_counter = kern_mmio_read32(engine->core.mapped + 0x138);
 	result->retired = true;
 
-	/* A slow queue report includes scheduler delay and cannot alone establish GPU busy time. */
-	elapsed = kern_ticks_to_ms(clock_ticks() - started);
-	if (elapsed >= 100U) {
-		kern_logf(
-			"v3d: CL timing ms=%llu bin=%llu render=%llu clean=%llu\n",
-			(unsigned long long)elapsed,
-			(unsigned long long)kern_ticks_to_ms(bin_ticks),
-			(unsigned long long)kern_ticks_to_ms(render_ticks),
-			(unsigned long long)kern_ticks_to_ms(clean_ticks));
-	}
+	/* The submission cost report totals queue waits, which include scheduler delay as well as GPU busy time. */
+	result->bin_ticks = bin_ticks;
+	result->render_ticks = render_ticks;
+	result->clean_ticks = clean_ticks;
 
 	/* Succeeded: both queues and any requested output cache clean finished. */
 	return 0;

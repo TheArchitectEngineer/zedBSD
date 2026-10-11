@@ -11,6 +11,7 @@
 
 #include "drivers/gpu/bcm2711/native-storage.h"
 #include "drivers/gpu/bcm2711/native-bin.h"
+#include "drivers/gpu/bcm2711/v3d-job.h"
 #include "drivers/gpu/bcm2711/vulkan-uniform.h"
 
 /* Each canonical slot needs at most one image and one descriptor allocation, plus three code/uniform pairs and fetch/default/shader storage. */
@@ -20,6 +21,9 @@
 struct bcm2711_vulkan_native_texture_copy {
 	const struct bcm2711_vulkan_resource *image;
 	struct bcm2711_native_storage *pixels;
+	/* The texture formatting unit fills pixels from the raster image when the pass runs, before its draws. */
+	bool convert;
+	struct bcm2711_v3d_tfu_job tfu;
 };
 
 /* One complete draw owns its uploads and borrows earlier immutable pass inputs; the pass retains all draws through uncertainty. */

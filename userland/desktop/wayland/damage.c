@@ -19,6 +19,7 @@
  */
 
 #include "kwl.h"
+#include "compose.h"
 #include "popup.h"
 
 /* How far around the pointer a cursor may draw (the compositor's shapes and arrow are smaller). */
@@ -99,6 +100,10 @@ kwl_damage_commit(
 	uint32_t width;
 	uint32_t height;
 	int alone;
+
+	/* Client pixels changed even when their measured damage is only a window body. */
+	if (server->compose != NULL)
+		server->compose->scene.changed = 1U;
 
 	/* A first image, an image taken away, or a sub-surface's, a popup's or a cursor's: everything. */
 	if (previous == NULL || surface->current == NULL || surface->sub_role != NULL || surface->cursor_role) {
