@@ -823,7 +823,15 @@ ph_input(
 	if (event->kind == KL_WINDOW_BUTTON && !event->pressed)
 		photos->view.drag_armed = 0;
 
-	/* The widgets' input draws again. */
+	/* A motion of the pointer draws again only when it lights another widget or moves a held one (as Music, 2026-10-12). */
+	if (event->kind == KL_WINDOW_MOTION) {
+		taken = kl_ui_pointer_motion(photos->ui, event->x, event->y);
+		if (taken)
+			photos->dirty = 1;
+		return;
+	}
+
+	/* The widgets' other input draws again. */
 	taken = kl_ui_window_input(photos->ui, event);
 	if (taken) {
 		photos->dirty = 1;

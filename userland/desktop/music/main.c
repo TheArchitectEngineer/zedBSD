@@ -540,7 +540,20 @@ mu_input(
 		return;
 	}
 
-	/* The widgets' input draws again. */
+	/*
+	 * A motion of the pointer draws again only when it lights another
+	 * widget or moves a held one: a frame of the whole window for every
+	 * motion over Music slowed the cursor everywhere on the Pi 4
+	 * (2026-10-12 user).
+	 */
+	if (event->kind == KL_WINDOW_MOTION) {
+		taken = kl_ui_pointer_motion(music->ui, event->x, event->y);
+		if (taken)
+			music->dirty = 1;
+		return;
+	}
+
+	/* The widgets' other input draws again. */
 	taken = kl_ui_window_input(music->ui, event);
 	if (taken) {
 		music->dirty = 1;
