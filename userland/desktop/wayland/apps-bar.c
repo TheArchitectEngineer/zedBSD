@@ -299,6 +299,7 @@ kwl_apps_bar_motion(
 	int same;
 	int built;
 	int in_panel;
+	int lit;
 
 	/*
 	 * The bar followed: the one whose wait, previews or press there is, or
@@ -333,8 +334,10 @@ kwl_apps_bar_motion(
 		if (!in_panel)
 			return 0;
 
-		/* Over the previews the motion lights them. */
-		server->dirty = 1;
+		/* Over the previews the motion lights them: only a preview whose light changed is drawn again. */
+		lit = kwl_hover_damage(server);
+		if (!lit)
+			server->dirty = 1;
 		return 1;
 	}
 
@@ -432,10 +435,17 @@ kwl_apps_bar_motion(
 		return 0;
 	}
 
-	/* Over the panel: it stays, and the motion lights its previews. */
+	/*
+	 * Over the panel: it stays, and the motion lights its previews.  The
+	 * previews' hover probes (kwl_apps_bar_draw) mark only a preview whose
+	 * light changed; a move within one preview redraws nothing but the
+	 * cursor, where the whole output was drawn again for each motion.
+	 */
 	if (in_panel) {
 		state->left = 0;
-		server->dirty = 1;
+		lit = kwl_hover_damage(server);
+		if (!lit)
+			server->dirty = 1;
 		return 1;
 	}
 
