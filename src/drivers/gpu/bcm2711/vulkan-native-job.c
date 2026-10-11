@@ -456,6 +456,7 @@ report_perf(
 {
 	uint64_t now;
 	uint64_t count;
+	uint64_t busy;
 
 	/* The first submission opens the window that later reports measure. */
 	now = clock_ticks();
@@ -468,11 +469,15 @@ report_perf(
 	if (kern_ticks_to_ms(now - perf->window_start) < 2000U)
 		return;
 
-	/* Prints the window's per-submission averages and its worst submission. */
+	/* The share of the window the submissions held the worker shows how much CPU and GPU time frames took. */
 	count = perf->submissions;
+	busy = perf->total_ticks * 100U / (now - perf->window_start);
+
+	/* Prints the window's per-submission averages and its worst submission. */
 	kern_logf(
-		"v3d: perf ms=%llu subs=%llu passes=%u/%u/%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu\n",
+		"v3d: perf ms=%llu busy=%llu%% subs=%llu passes=%u/%u/%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu\n",
 		(unsigned long long)kern_ticks_to_ms(now - perf->window_start),
+		(unsigned long long)busy,
 		(unsigned long long)count,
 		perf->render_passes,
 		perf->clear_passes,

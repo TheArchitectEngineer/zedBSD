@@ -86,6 +86,8 @@ struct bcm2711_v3d_hardware {
 	uint64_t maintenance_yields;
 	/* The controller mutex serializes the periodic submission cost report. */
 	struct bcm2711_v3d_perf perf;
+	/* A boot self-test proved TFU raster-to-UIF output equal to the CPU conversion; until then textures use the CPU. */
+	bool tfu_uif_ready;
 	bool initialized;
 	bool ready;
 	bool mmu_published;

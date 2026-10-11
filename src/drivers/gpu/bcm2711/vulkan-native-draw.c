@@ -390,7 +390,9 @@ prepare_texture_image(
 		 */
 		started = clock_ticks();
 		entry = &draw->textures[draw->texture_count];
-		error = prepare_conversion(image, address, pixels, bytes, &entry->tfu);
+		error = ENOTSUP;
+		if (draw->space->native->hardware.tfu_uif_ready)
+			error = prepare_conversion(image, address, pixels, bytes, &entry->tfu);
 		if (error == 0) {
 			entry->convert = true;
 		} else if (error == ENOTSUP) {
