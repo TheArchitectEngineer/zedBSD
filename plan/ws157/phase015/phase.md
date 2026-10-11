@@ -36,6 +36,14 @@ Queue: P1 の lane（p012 の #11、2026-10-11 ユーザー承認「全部承認
 | --- | --- | --- |
 | L1 | 大きな写真の上限 | 今までの Photos の中の decoder は 64 M pixel・辺 16384・96 MiB まで、keiland-preview（Files と同じ）は **16 M pixel・辺 8192・64 MiB**。jail へ移すと **16 MP を越える写真（スマホの 48・50 MP の高解像度の写真）は Photos・Phone で絵が出ない**（「作れなかった」の印）。libjpeg の縮小 decode（scale_denom）で直そうとしたが、tree の `libjpeg-compat` は縮小に対応しない（`decompress.c` は常に全体を decode、試して確かめ戻した）。案: (a) **keiland-preview の上限を Photos と同じに上げる**（jail の memory 1 GiB・CPU 10 秒の枠の中、Files の preview も同じ上限になる。Pi 4 では 50 MP の decode が 5 秒の時間切れになりうる）、(b) `libjpeg-compat` に縮小 decode（1/2・1/4・1/8）を足す別の Phase（thumbnail も 8〜64 倍速くなる、正しい直し、base の library の変更）、(c) 今のまま（16 MP まで）。**推し: (b) を別 Phase で、それまで (a)**（(a) は定数 3 つ） |
 
+## L1 の決定と上限の引き上げ（2026-10-11）
+
+ユーザーの決定（main の `plan/ws157/ws.md` の末尾）: libjpeg-compat の縮小 decode は別 Phase（[p017](../phase017/phase.md)）、それまで keiland-preview の上限を Photos の今の値に上げる。`userland/desktop/preview/preview.h`: 入力 64 → **96 MiB**、decode の辺 8192 → **16384**、画素 16 M → **64 M**（Files の preview も同じ上限）。
+
+確かめ（host、Linux の build の preview を `prlimit --as=1073741824 --cpu=10`（zedBSD の jail と同じ 1 GiB・10 秒）の下で）: 8192×8192（64 M pixel、雑音で 49 MB の JPEG）を cover 160・contain 2048 → どちらも成功、**2.9 秒、最大の常駐 410 MB**（1 GiB の枠の半分以下）。9000×8000（72 M）は status 3 で拒否。`run-host-preview-sizes.sh`（54 MP は作る、72 MP は拒否に改めた）と `run-host-preview-info.sh` は all PASS、zedBSD の keiland-preview・files・settings・photos・phone と Linux の keiland の build は warning 0。
+
+残る危険（記録）: Pi 4 では 64 MP の decode が client の待ちの 5 秒（`PREVIEW_LIMIT_MS`）か CPU の 10 秒を越えうる（この host の 2.9 秒の数倍の見込み、未測定）。越えた写真は「作れなかった」の印になる。p017 の縮小 decode で解く。
+
 ## 未実施
 
 - T1（QEMU、current-uat）: Photos の一覧の thumbnail、写真を開いた絵、drag、Phone の会話の写真と下書き、picker の thumbnail が出ること、`ps` で `keiland-preview` が起きること。合否: 絵が出る、Photos・Phone の process が libjpeg 等を読み込まない（`ldd` 相当）。

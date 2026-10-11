@@ -1,8 +1,9 @@
 #!/bin/sh
 # ws157-p015: keiland-preview (the Linux build's, seccomp) makes Photos' and Phone's pictures at their sizes: a
 # 12-megapixel photo's thumbnail (cover 160), its view picture (contain 2048), Phone's 480 and the drag's, also when
-# its EXIF turns it, a small one never made larger; and a photo over the preview's limit (54 M pixels > 16 M) is
-# refused (status 3), which Photos shows as a picture that could not be made.  The last line is "preview sizes: all PASS".
+# its EXIF turns it, a small one never made larger; a 54-megapixel photo (under the limit of 64 M pixels, the user's
+# decision L1) is made, and one over it (72 M pixels) refused (status 3), which Photos shows as a picture that could not
+# be made.  The last line is "preview sizes: all PASS".
 # usage: sh plan/ws157/tests/run-host-preview-sizes.sh LINUX_BUILD   (the keiland-linux.mk build with keiland-preview)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -19,6 +20,7 @@ photo.save(w + "/photo.jpg", quality=50)
 exif = Image.Exif(); exif[0x0112] = 6
 photo.save(w + "/turned.jpg", quality=50, exif=exif.tobytes())
 Image.new("RGB", (9000, 6000), (40, 40, 200)).save(w + "/big.jpg", quality=50)
+Image.new("RGB", (9000, 8000), (40, 200, 40)).save(w + "/huge.jpg", quality=50)
 Image.new("RGB", (120, 90), (10, 200, 10)).save(w + "/small.jpg")
 PY
 size() {
@@ -38,7 +40,9 @@ expect turned "$(size --width=2048 --height=2048)" 1536x2048
 input="$work/small.jpg"
 expect small "$(size --width=2048 --height=2048)" 120x90
 expect small-cover "$(size --width=160 --height=160 --fit=cover)" 160x160
+input="$work/big.jpg"
+expect big "$(size --width=160 --height=160 --fit=cover)" 160x160
 status=0
-LD_LIBRARY_PATH="$linux/lib" "$linux/libexec/keiland-preview" --width=160 --height=160 --fit=cover <"$work/big.jpg" >"$work/out.ppm" || status=$?
-expect big-refused "$status" 3
+LD_LIBRARY_PATH="$linux/lib" "$linux/libexec/keiland-preview" --width=160 --height=160 --fit=cover <"$work/huge.jpg" >"$work/out.ppm" || status=$?
+expect huge-refused "$status" 3
 echo "preview sizes: all PASS"
