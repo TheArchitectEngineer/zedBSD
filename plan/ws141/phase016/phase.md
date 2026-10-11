@@ -175,7 +175,7 @@ executor の pass ごとの 3 区分:
 
 ## A0 の結果（2026-10-12 P3）
 
-- cursor-plane.c: 最後に submit した copy の fence を acquire の前に `vkGetFenceStatus` で見て、VK_NOT_READY なら今回は acquire しない（acquire 済みの image を present せずに残さない）。copy は 1 本の queue で順に完了するので、後の image ごとの待ちは塞がらない。plane の struct は open・close で 0 に戻る（`last_copy`・`copied` も）。arm64 の compositor の build は warning 0。
+- cursor-plane.c: 最後に submit した copy の fence を acquire の前に `vkGetFenceStatus` で見て、VK_NOT_READY なら今回は acquire しない（acquire 済みの image を present せずに残さない）。再試行: `kwl_schedule`（`display.c`）は main loop の毎回（poll の上限 10ms）に `kwl_cursor_plane_update` を呼び、それは「見せたい像と位置」と「present 済みの像と位置」を比べて違えば `plane_present` を呼ぶ。早く return した時は present 済みの状態を変えないので、pointer が止まっていても次の pass で再試行され、最後の形・位置が出ないまま残らない。copy は 1 本の queue で順に完了するので、後の image ごとの待ちは塞がらない。plane の struct は open・close で 0 に戻る（`last_copy`・`copied` も）。arm64 の compositor の build は warning 0。
 - EBUSY の候補: `kwl_compose_set_put` の呼び出し元（import の解放 `import.c:394,398`、shm の `image_release` `shm.c:940,942`、backdrop の破棄 `backdrop.c:174`）は「frame が完了まで buffer を持つ」（`import.c:107` の注記）・「device が idle」（`backdrop.c:152`）の前提で、in_flight の frame が使う set を書き直さない。非同期の後も成り立つ（A1 の試験で確かめる）。
 - libvulkan の WSI: early commit（review-4 の確認）。compositor は client の acquire の fence を poll する。session をまたぐ順序は marker の完了で保たれる。
 - M-5 の libglesv2・libegl・libmedia の点検: review-4 も具体の誤りは未発見。A1 の後の T1 の回帰で見る。
@@ -186,16 +186,16 @@ executor の pass ごとの 3 区分:
 | --- | --- | --- |
 | M | 計測（済み・続き）: request の待ちと実行、解放の内訳、markers_max、submit の mutex の待ち | 実機の数 |
 | A0 | userland: cursor-plane.c の acquire の前の fence の確認、EBUSY の候補の確認、libvulkan の WSI の commit の同期・early の確認と記録 | host build、T1 |
-| A1 | executor・session ごとの列・1 歩の step・表示の session の優先・round-robin・execution（heap）・背圧（RESERVE の EAGAIN）・PARKED を execution の entry に・状態と取り消し・公開の順序・session をまたぐ wait・旧来の拒否・wait_idle の EOPNOTSUPP。executor は歩の間 mutex を持つ（効果は A2 から） | host（決定的な fixture） |
+| A1 | executor・session ごとの列・1 歩の step・表示の session の優先（execution ごとの印）・round-robin・execution（heap）・session ごとの submitted・executed・required・背圧（RESERVE の EAGAIN、件数・bytes・全体・最低の枠・session の数）・PARKED を execution の entry に・状態と取り消し・公開の順序・旧来の拒否・wait_idle の EOPNOTSUPP。executor は歩の間 mutex を持つ（効果は A2 から） | host（決定的な fixture） |
 | A2 | 窓（3 区分、window の判定、遅延解放の list と fault の quarantine、map の待ち、pte_waiters の世代、mutex の順番渡し、display の generation の guard） | host |
 | A3 | lazy map（GPU の VA の map を executor の窓の前へ、import・blob の作成が窓を待たない）。最初に V3D の MMU が無効な PTE を TLB に持つかを確かめる | host、実機（受け入れ A） |
 | B | cursor の plane（別の版の設計の review の後） | 実機（受け入れ B） |
 
 ## 試験（M5）
 
-- vulkan-device の host 試験に、executor の 1 歩（`executor_step`）と decoder の 1 歩（`worker_step`）を外から順に呼べる**決定的な fixture** を作る（本物の thread では interleave が再現しない）。場面: (a) 窓の間の decoder の vkFreeMemory・vkDestroyImage と別 session の close（遅延解放、EIO にならない）(b) TFU と CL の隙間で PTE が変わらない (c) execution の上限と OUT_OF_HOST_MEMORY (d) marker の枠が他の session で埋まっても compositor の submit が戻る (e) cursor plane の fence が NOT_READY で plane が閉じない（compositor の host 試験）(f) marker の完了の直後の vkResetFences・vkResetCommandBuffer・vkUpdateDescriptorSets が成功 (g) fault で PARKED が EIO で終わり render_fail が届く (h) checked stop と保留の execution (i) 細工した stream（1 request に多数の QueueSubmit、同じ session の複数 request）(j) N の signal を N+1 が wait する semaphore の鎖 (k) 旧来の経路の QueueSubmit が EOPNOTSUPP。
+- vulkan-device の host 試験に、executor の 1 歩（`executor_step`）と decoder の 1 歩（`worker_step`）を外から順に呼べる**決定的な fixture** を作る（本物の thread では interleave が再現しない）。場面: (a) 窓の間の decoder の vkFreeMemory・vkDestroyImage と別 session の close（遅延解放、EIO にならない）(b) TFU と CL の隙間で PTE が変わらない (c) RESERVE の EAGAIN の背圧（件数・bytes・全体・最低の枠）、OOM は細工の stream だけ (d) marker の枠が他の session で埋まっても compositor の submit が戻る (e) cursor plane の fence が NOT_READY で plane が閉じない（compositor の host 試験）(f) marker の完了の直後の vkResetFences・vkResetCommandBuffer・vkUpdateDescriptorSets が成功 (g) fault で PARKED が EIO で終わり render_fail が届く (h) checked stop と保留の execution (i) 細工した stream（1 request に多数の QueueSubmit、同じ session の複数 request）(j) N の signal を N+1 が wait する semaphore の鎖 (k) 旧来の経路の QueueSubmit が EOPNOTSUPP。
 - 実機: compositor の queue-submit が GPU の時間から外れる、App Home・drag の間の cursor と入力、窓の間の解放（`views` の遅延解放の数を perf 行に）。i915・Venus は T1（A0 の userland の変更の回帰）。
-- 第 4 版で足す場面（N9 ほか）: (l) 窓の間の map の ioctl（GPU_BLOB_CREATE・RESOURCE_IMPORT）が待って成功し EIO が userland に届かない (m) 窓の間の解放＋fault→reset の成功 (n) compositor が上限に当たっても RESERVE の EAGAIN で待ち、終わらず plane も閉じない (o) cursor の copy の fence が NOT_READY のまま image の数を超えて続いた後に回復 (p) map の ioctl が続いても executor が進む・executor が続いても decoder が進む (q) 2 つの session の列の round-robin と表示の session の優先 (r) session をまたぐ wait の semaphore（N の signal を別 session の M が wait）(s) stop の取り消しが他の session に影響しない。
+- 第 4 版で足す場面（N9 ほか）: (l) 窓の間の map の ioctl（GPU_BLOB_CREATE・RESOURCE_IMPORT）が待って成功し EIO が userland に届かない (m) 窓の間の解放＋fault→reset の成功 (n) compositor が上限に当たっても RESERVE の EAGAIN で待ち、終わらず plane も閉じない (o) cursor の copy の fence が NOT_READY のまま image の数を超えて続いた後に回復 (p) map の ioctl が続いても executor が進む・executor が続いても decoder が進む (q) 2 つの session の列の round-robin と表示の session の優先 (r) early commit の client と compositor の poll で、compositor は client の marker の完了の前に buffer を使わない(s) stop の取り消しが他の session に影響しない。
 
 ## 未解決
 
