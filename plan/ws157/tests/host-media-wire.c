@@ -199,8 +199,14 @@ main(
 	int descriptor;
 	int error;
 	int present;
+	int taken;
 	ssize_t bytes;
 	unsigned changed;
+	unsigned answered;
+	uint32_t first;
+	uint32_t second;
+	uint32_t dropped;
+	uint32_t request;
 
 	pid_t external;
 	int external_status;
@@ -299,6 +305,41 @@ main(
 	}
 
 	assert((changed & KL_SYSTEM_CHANGED_MEDIA) != 0U);
+
+	/* ws157-p014: two lists started without waiting, and a third given up whose answer leaves nothing. */
+	error = kl_system_media_list_begin(system, &first);
+	assert(error == 0 && first != 0U);
+	error = kl_system_media_list_begin(system, &second);
+	assert(error == 0 && second != first);
+	error = kl_system_media_list_begin(system, &dropped);
+	assert(error == 0);
+	kl_system_media_cancel(system, dropped);
+	answered = 0U;
+	for (tries = 0U; tries < 5000U && answered < 2U; tries++) {
+		wl_display_roundtrip(display);
+		kl_system_dispatch(system, &changed);
+		for (;;) {
+			taken = kl_system_media_take(system, &request, &error, &descriptor);
+			if (!taken)
+				break;
+			assert(request == first || request == second);
+			assert(error == 0 && descriptor >= 0);
+			bytes = read(descriptor, text, sizeof(text));
+			assert(bytes > 0);
+			close(descriptor);
+			answered++;
+		}
+		usleep(1000U);
+	}
+	assert(answered == 2U);
+	for (tries = 0U; tries < 200U; tries++) {
+		wl_display_roundtrip(display);
+		kl_system_dispatch(system, &changed);
+		usleep(1000U);
+	}
+	taken = kl_system_media_take(system, &request, &error, &descriptor);
+	assert(!taken);
+
 	/* Tests the Phone receiver against this production media relay and CLI. */
 	phone_media_regression(system, argv[1]);
 
@@ -315,7 +356,7 @@ main(
 	close(stopping[0]);
 	close(stopping[1]);
 	free(wire_server);
-	printf("PASS media wire: real client/compositor/CLI, list, path add, apply FD, external CLI notification/watch, consumed backpressure retry\n");
+	printf("PASS media wire: real client/compositor/CLI, list, path add, apply FD, external CLI notification/watch, consumed backpressure retry, requests without waiting\n");
 	/* Succeeded: this fixture operation completed. */
 	return 0;
 }

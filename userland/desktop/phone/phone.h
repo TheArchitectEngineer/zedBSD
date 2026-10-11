@@ -270,7 +270,36 @@ struct ph_view {
 
 /* The contacts and their timelines (store.c). */
 const struct ph_contact *ph_contacts(size_t *count);
+/*
+ * One import of an MMS's media into the library (receive.c, ws157-p014):
+ * the next in the window's list, the temporary folder and originals
+ * written apart, their hashes and which are videos, how many, the
+ * compositor's request (0: not begun), the item whose media they are (its
+ * serial), the synchronisation's request it came in (0: none), and whether
+ * it was sent from here.
+ */
+/* An import's path and hash rooms: photos.h's PH_PATH_MAX and PH_HASH_SIZE (receive.c checks they agree). */
+#define PH_IMPORT_PATH_MAX 1024U
+#define PH_IMPORT_HASH_SIZE 65U
+
+struct ph_import {
+	struct ph_import *next;
+	char directory[64];
+	char temporary[PH_MEDIA_MAX][PH_IMPORT_PATH_MAX];
+	char hashes[PH_MEDIA_MAX][PH_IMPORT_HASH_SIZE];
+	unsigned video[PH_MEDIA_MAX];
+	size_t count;
+	uint32_t request;
+	unsigned long serial;
+	uint32_t sync_request;
+	int sending;
+};
+
 int ph_receive_media(struct kl_system *system, int descriptor, struct ph_received *received);
+int ph_import_prepare(int descriptor, struct ph_import **import);
+int ph_import_begin(struct kl_system *system, struct ph_import *import);
+int ph_import_finish(struct ph_import *import, int error, int metadata, struct ph_received *received);
+void ph_import_free(struct ph_import *import);
 void ph_received_release(struct ph_received *received);
 int ph_store_media(long contact, size_t item, const struct ph_received *received);
 int ph_decode(const char *path, struct kl_image *image);
