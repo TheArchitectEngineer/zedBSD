@@ -2281,6 +2281,9 @@ compose_record(
 	/* The clients' images imported since the last frame go to the layout they are sampled in (ws099-p016). */
 	kwl_import_layouts_record(compose, compose->command);
 
+	/* The host images written since the last frame reach their sampled images before any drawing. */
+	kwl_host_images_record(compose, compose->command);
+
 	/* The anchor's pass: its own part of the plane (ws113-p007). */
 	server->view_output = KWL_PLANE_ANCHOR;
 	server->view_x = 0;

@@ -806,6 +806,9 @@ wallpaper_draw(
 			blur_average(sums, &small[(size_t)(y / GLASS_BLUR_SCALE) * small_width * 3U], small_width);
 	}
 
+	/* The next frame copies the written picture into the sampled wallpaper. */
+	kwl_host_image_written(&glass->wallpaper);
+
 	/* The rows are made; the picture and the working rows are no longer needed. */
 	free(line);
 	free(columns);
@@ -1073,6 +1076,9 @@ blur_fill(
 			row[x] = pack_pixel(&small[((size_t)y * width + x) * 3U]);
 	}
 
+	/* The next frame copies the written rows into the sampled image. */
+	kwl_host_image_written(&glass->blurred);
+
 	/* Succeeded. */
 	free(scratch);
 	return 0;
@@ -1316,6 +1322,9 @@ atlas_fill(
 						row[pen_x + x] = (value << 24) | (value << 16) | (value << 8) | value;
 					}
 				}
+
+				/* The next frame copies the new glyph into the sampled atlas. */
+				kwl_host_image_written(&glass->atlas);
 			}
 
 			/* The pen moves past it. */
@@ -2668,7 +2677,8 @@ tiles_create(
 		pen_y += pixels + GLASS_TILE_GAP;
 	}
 
-	/* Succeeded: the tiles are drawn. */
+	/* Succeeded: the tiles are drawn, and the next frame copies them into the sampled image. */
+	kwl_host_image_written(&glass->tiles);
 	glass->tiles_ready = 1U;
 	return 0;
 }
@@ -2776,6 +2786,9 @@ large_put(
 			row[pen_x + x] = (value << 24) | (value << 16) | (value << 8) | value;
 		}
 	}
+
+	/* The next frame copies the new glyph into the sampled image. */
+	kwl_host_image_written(&glass->large);
 }
 
 /* Gives the large glyph of a character: a digit or the colon (NULL for any other). */
@@ -2884,6 +2897,9 @@ atlas_put(
 			row[x + column] = (value << 24) | (value << 16) | (value << 8) | value;
 		}
 	}
+
+	/* The next frame copies the new coverage into the sampled atlas. */
+	kwl_host_image_written(&glass->atlas);
 }
 
 /*
@@ -3128,8 +3144,9 @@ glass_cache_color(
 		memcpy(row + cell->glyph.x, image.pixels + (size_t)line * (size_t)image.width, (size_t)image.width * sizeof(uint32_t));
 	}
 
-	/* The colours are in the atlas now. */
+	/* The colours are in the atlas now, and the next frame copies them into the sampled atlas. */
 	free(image.pixels);
+	kwl_host_image_written(&glass->atlas);
 
 	/* Succeeded: the cell holds the character's colour glyph. */
 	cell->codepoint = codepoint;

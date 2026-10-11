@@ -75,9 +75,19 @@ struct kwl_import {
 	uint32_t width;
 	uint32_t height;
 	enum kwl_draw draw;
-	/* A host-written image (wl_shm, the arrow): its mapping and the length of a row in it. */
+	/*
+	 * A host-written image (wl_shm, the arrow, the glass look's pictures):
+	 * the CPU writes a separate linear staging image through map, and the
+	 * frame copies it into the sampled image above once written is set.
+	 * The sampled image is never mapped, so a GPU may keep a converted copy
+	 * of it until the next copy.  host_next links every host image.
+	 */
 	void *map;
 	VkDeviceSize row_pitch;
+	VkImage staging;
+	VkDeviceMemory staging_memory;
+	unsigned written;
+	struct kwl_import *host_next;
 	/* A client's image waiting for its move to the general layout in the next frame (ws099-p016). */
 	unsigned layout_pending;
 };
@@ -199,6 +209,8 @@ struct kwl_compose {
 	 */
 	unsigned setup_batching;
 	VkCommandBuffer setup_command;
+	/* Every host image, whose written staging the next frame copies into its sampled image (shm.c). */
+	struct kwl_import *host_images;
 	VkFence fence;
 	VkSemaphore acquired;
 	struct vkdemo_display output;
@@ -339,6 +351,8 @@ struct kwl_compose {
 /* Host-written images (shm.c), sampled with the given sampler. */
 VkResult kwl_host_image_create(struct kwl_compose *compose, uint32_t width, uint32_t height, VkSampler sampler, struct kwl_import *import);
 void kwl_host_image_release(struct kwl_compose *compose, struct kwl_import *import);
+void kwl_host_image_written(struct kwl_import *import);
+void kwl_host_images_record(struct kwl_compose *compose, VkCommandBuffer command);
 void kwl_host_image_batch_begin(struct kwl_compose *compose);
 VkResult kwl_host_image_batch_end(struct kwl_compose *compose);
 
