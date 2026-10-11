@@ -1652,6 +1652,7 @@ glass_shape_draw(
 	float width;
 	float height;
 	VkDescriptorSet set;
+	VkPipeline pipeline;
 
 	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home, ws181-p008). */
 	if (server->layer_on && server->layer_opacity <= 0.0f)
@@ -1746,8 +1747,25 @@ glass_shape_draw(
 	if (set == VK_NULL_HANDLE)
 		set = compose->glass->blurred.set;
 
-	/* The pipeline, the image and the strip. */
-	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, compose->panel_pipeline);
+	/* Known modes omit unused branches; other values keep the original shader. */
+	pipeline = compose->panel_pipeline;
+	if (shape->mode == MODE_GLASS)
+		pipeline = compose->panel_pipelines[0];
+	else if (shape->mode == MODE_SHADOW)
+		pipeline = compose->panel_pipelines[1];
+	else if (shape->mode == MODE_IMAGE)
+		pipeline = compose->panel_pipelines[2];
+	else if (shape->mode == MODE_SOLID)
+		pipeline = compose->panel_pipelines[3];
+	else if (shape->mode == MODE_RING)
+		pipeline = compose->panel_pipelines[4];
+	else if (shape->mode == MODE_TEXT)
+		pipeline = compose->panel_pipelines[5];
+	else if (shape->mode == MODE_BLUR)
+		pipeline = compose->panel_pipelines[6];
+
+	/* The chosen pipeline keeps the same constants, image and triangle pair. */
+	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 	vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, compose->panel_layout, 0U, 1U, &set, 0U, NULL);
 	vkCmdPushConstants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
 	vkCmdDraw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);

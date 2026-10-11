@@ -63,6 +63,7 @@ static uint32_t machine_source(const struct v3d_device_info *device, const struc
 static uint32_t machine_add(const struct v3d_qpu_instr *instruction, struct shader_machine *machine, uint32_t left, uint32_t right);
 static void machine_write(const struct bcm2711_shader_binary *binary, struct shader_machine *machine, uint32_t address, uint32_t magic, uint32_t bits);
 static void machine_program(const struct v3d_device_info *device, const struct bcm2711_shader_binary *binary, struct shader_machine *machine);
+static void verify_panel_mode(const struct drv_gpu_shader_ir *generic, const struct drv_gpu_shader_ir *specialized, uint32_t mode);
 static void pipeline_key(const struct drv_gpu_shader_ir *ir, struct bcm2711_shader_key *key);
 static void initialize_machine(struct shader_machine *machine, uint32_t fragment, uint32_t trial);
 static void compare_number(uint32_t native, uint32_t expected);
@@ -170,12 +171,14 @@ main(
 	const size_t bytes[4] = {sizeof(kwl_quad_vert), sizeof(kwl_quad_frag), sizeof(kwl_panel_vert), sizeof(kwl_panel_frag)};
 	struct drv_gpu_shader_ir *vertex;
 	struct drv_gpu_shader_ir *fragment;
+	struct drv_gpu_shader_ir *generic;
 	struct drv_gpu_compile_diagnostic diagnostic;
 	struct bcm2711_shader_key key;
 	struct v3d_device_info device;
 	uint32_t pair;
 	uint32_t blend;
 	uint32_t swap;
+	uint32_t mode;
 	int error;
 
 	/* The unmodified fixed decoder interprets actual 4.2 machine words independently of production field construction. */
@@ -213,6 +216,39 @@ main(
 		drv_gpu_shader_ir_free(vertex);
 		drv_gpu_shader_ir_free(fragment);
 	}
+
+	/* Every specialized shader must agree with the generic shader at its actual mode. */
+	error = drv_gpu_shader_parse(
+		kwl_panel_frag,
+		sizeof(kwl_panel_frag) / 4,
+		DRV_GPU_STAGE_FRAGMENT,
+		&generic,
+		&diagnostic);
+	assert(error == 0);
+
+	/* Native varying interfaces may shrink when a mode needs only texture or position. */
+	for (mode = 0; mode < 7; mode++) {
+		/* Parses each immutable variant and the matching shared vertex shader. */
+		error = drv_gpu_shader_parse(kwl_panel_vert, sizeof(kwl_panel_vert) / 4, DRV_GPU_STAGE_VERTEX, &vertex, &diagnostic);
+		assert(error == 0);
+		error = drv_gpu_shader_parse(kwl_panel_variants[mode].words, kwl_panel_variants[mode].bytes / 4, DRV_GPU_STAGE_FRAGMENT, &fragment, &diagnostic);
+		assert(error == 0);
+		pipeline_key(fragment, &key);
+
+		/* Independent scalar evaluation checks both original colors and unused-sample removal. */
+		verify_panel_mode(generic, fragment, mode);
+		verify_program(&device, kwl_panel_vert, sizeof(kwl_panel_vert) / 4, vertex, BCM2711_SHADER_COORDINATE, &key);
+		verify_program(&device, kwl_panel_vert, sizeof(kwl_panel_vert) / 4, vertex, BCM2711_SHADER_VERTEX, &key);
+		key.premultiplied_blend = 1;
+		verify_program(&device, kwl_panel_variants[mode].words, kwl_panel_variants[mode].bytes / 4, fragment, BCM2711_SHADER_FRAGMENT, &key);
+
+		/* Compiled and parsed owners retire independently for each mode. */
+		drv_gpu_shader_ir_free(vertex);
+		drv_gpu_shader_ir_free(fragment);
+	}
+
+	/* The comparison baseline lives until every specialized mode has been checked. */
+	drv_gpu_shader_ir_free(generic);
 
 	/* All compiler and parser objects must retire after the final completed program owner releases them. */
 	assert(allocations_live == 0);
@@ -837,6 +873,45 @@ compare_number(
 	}
 }
 
+/* Compares each specialized body against the original shader at the same visible mode. */
+static void
+verify_panel_mode(
+	const struct drv_gpu_shader_ir *generic,
+	const struct drv_gpu_shader_ir *specialized,
+	uint32_t mode)
+{
+	struct shader_machine original;
+	struct shader_machine variant;
+	uint32_t trial;
+	uint32_t component;
+
+	/* Glass includes both light and dark appearances; other modes have one exact selector. */
+	for (trial = 0; trial < 32; trial++) {
+		/* All source inputs agree, including nontrivial position, texture and opacity. */
+		initialize_machine(&original, 1, trial);
+		original.push[17] = float_bits((float)mode);
+		if (mode == 0) {
+			if ((trial & 1) != 0)
+				original.push[17] = float_bits(-1.0f);
+		}
+
+		/* These evaluations share no native instruction or register representation. */
+		variant = original;
+		source_program(generic, &original);
+		source_program(specialized, &variant);
+		for (component = 0; component < 4; component++)
+			compare_number(variant.output[component], original.output[component]);
+
+		/* Texture-free shapes sample nothing, text/images/glass once, and blur five times. */
+		if (mode == 1 || mode == 3 || mode == 4)
+			assert(variant.lookups == 0);
+		else if (mode == 6)
+			assert(variant.lookups == 5);
+		else
+			assert(variant.lookups == 1);
+	}
+}
+
 /* Checks source meaning, native metadata, implicit FIFO use, output formats and all native program words. */
 static void
 verify_program(
@@ -880,6 +955,16 @@ verify_program(
 	for (trial = 0; trial < 32; trial++) {
 		initialize_machine(&source, stage == BCM2711_SHADER_FRAGMENT, trial);
 		native = source;
+
+		/* The native FIFO packs only the inputs retained by this fragment variant. */
+		if (stage == BCM2711_SHADER_FRAGMENT) {
+			for (index = 0; index < key->varying_count; index++) {
+				component = key->varyings[index].location * 2 + key->varyings[index].component;
+				native.input[index] = source.input[component];
+			}
+		}
+
+		/* The physical tile representation follows the selected target channel order. */
 		if (key->swap_red_blue != 0) {
 			temporary = native.tile[0];
 			native.tile[0] = native.tile[2];

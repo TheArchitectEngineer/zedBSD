@@ -342,3 +342,11 @@ HAL APIを変えず、arm64/page.cに「ここより前は全て使用中」と�
 
 9f3d3d14a短縮版994709821/8077312をFATへ配置/cmp/syncしreboot、SSH復帰と通常Waylandを確認。100msのstage pauseで初期化成立。代表submissionは461〜548ms（prepare100〜133、execute304〜306、release55〜113）、操作負荷中は1.2〜3.2秒。small64x64 offscreen alpha0.5は期待58,115,77,255、250ms以上のsubmission診断は新たに出ず。
 次の診断はCLのbin/render/cache-cleanのwall時間と、CPUtarget validation/clear時間を区別し、IRQ到着tickからworkerがcompletionを消費するまで20ms以上の遅れを記録。IRQguard内はtick記録だけ、待機/allocateなし。イベント優先/retirement/timeout制御には時刻を使わない。既存hardware/device限定host PASS、production style0/diff-check/C全文manual/clang-format19比較、arm64 warning0/checkerPASS。kernel2309215655/8077312。実機へ配置して原因を絞る。submit-i01はin-progress。
+
+
+2309215655/8077312を実機へ全体cmp/sync付きで配置し、reboot後SSHと通常sessionを確認。CL代表値bin1〜2ms/render304〜1051ms/clean0、target clear slowとIRQ-to-worker20ms以上のdiagnosticは無し。prepare/releaseは負荷中0.5〜1秒だがrender側にも明確な遅延がある。
+
+共通compilerのif-conversionはpanel.fragの全branchを算術評価してSELECTで選び、文字/画像でもglassと5tap blurを実行する実codeを確認。ユーザーのGPU応答修復scope内で、compositorの同じGLSLを7個のimmutable modeへpreprocessする必要補完を実装。既存generic fallback、dark glass mode -1、premultiplied blend、descriptor/push APIは保持。7pipelineのpartial-open cleanupと縮小varying契約を確認し、source-vs-specializedの数値比較と実native compiler検証、arm64 compositor build後にSSH更新して計測する。shared master/queueは変更せず、submit-i01はin-progress。
+
+
+2026-10-11 panel mode分割: 7生成SPIR-Vとgenericはglslc/vulkan1.0 validator PASS。固定Mesa independent decoder/native compilerに7vertex/coordinate/fragment pairを渡すhost PASS。32inputs/modeのgeneric sourceとspecialized source出力一致（light/dark glass含む）、texture無し3mode/1sample3mode/blur5samplesを確認。縮小varyingをnative FIFOへ詰め、実compiled sourceとのscalar差分も一致。既存blend/swizzle試験もPASS。新pipeline部分のownership/error cleanupとABI不変をC全文manual確認、clang-format19範囲比較は定義の独立引数/blank/tabs規約を優先。arm64 compositor make（既存sysroot完了stampを-oで維持、toolchain再build無し）exit0/warning0/error0、dynamic ELF dependency checker PASS。wayland cksum2734866792/949352。実機へ未配置、速度改善はまだ未確認。

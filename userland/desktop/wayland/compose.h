@@ -43,6 +43,9 @@
 /* The glass look's push constants: six vec4 (see shaders/panel.frag). */
 #define KWL_PANEL_CONSTANTS	24U
 
+/* The immutable glass, shadow, image, solid, ring, text and blur modes. */
+#define KWL_PANEL_MODES		7U
+
 /* Bound the buffers that hold a descriptor set at once. */
 #define KWL_DESCRIPTOR_MAX	512U
 
@@ -178,6 +181,8 @@ struct kwl_compose {
 	/* The glass look's pipeline (shapes, glass, text) and the sampler of its blurred wallpaper. */
 	VkPipelineLayout panel_layout;
 	VkPipeline panel_pipeline;
+	/* Each known shape mode executes only its own fragment operations. */
+	VkPipeline panel_pipelines[KWL_PANEL_MODES];
 	VkSampler linear_sampler;
 	struct kwl_glass *glass;
 	VkDescriptorPool descriptors;

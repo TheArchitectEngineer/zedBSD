@@ -105,3 +105,8 @@ vulkan-native-pass.c/execute.cの新差分をC全文review。image全域かつCL
 2026-10-11 user指示のstage撮影待ち短縮（3000→100ms）は定数のみの機能差分、hardware待ちを分離確認。stage-host/style0/diff-check/arm64 warning0/checkerPASS。
 
 2026-10-11 CL/CPU clear/IRQ-to-worker内訳診断の変更4fileをC全文review。IRQ追加はguard保護tick格納のみ、retirementやtimeoutに使用しない。hardware/device限定host、style0、diff-check、arm64 warning0/checkerPASS。
+
+
+2026-10-11 panel mode分割: 7生成SPIR-Vとgenericはglslc/vulkan1.0 validator PASS。固定Mesa independent decoder/native compilerに7vertex/coordinate/fragment pairを渡すhost PASS。32inputs/modeのgeneric sourceとspecialized source出力一致（light/dark glass含む）、texture無し3mode/1sample3mode/blur5samplesを確認。縮小varyingをnative FIFOへ詰め、実compiled sourceとのscalar差分も一致。既存blend/swizzle試験もPASS。新pipeline部分のownership/error cleanupとABI不変をC全文manual確認、clang-format19範囲比較は定義の独立引数/blank/tabs規約を優先。arm64 compositor make（既存sysroot完了stampを-oで維持、toolchain再build無し）exit0/warning0/error0、dynamic ELF dependency checker PASS。wayland cksum2734866792/949352。実機へ未配置、速度改善はまだ未確認。
+
+Style checkerの今回対象全fileではcompose.c既存未変更335/498/517/551相当のblank-after-brace4件のみ。変更したclose/pipeline/drawと新試験/生成headerの指摘は0。無関係な旧関数は変更しない。

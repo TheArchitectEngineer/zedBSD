@@ -712,6 +712,14 @@ kwl_compose_close(
 		/* The glass look's pipeline, layout and sampler. */
 		if (compose->panel_pipeline != VK_NULL_HANDLE)
 			vkDestroyPipeline(compose->device, compose->panel_pipeline, NULL);
+
+		/* Retires every mode, including a partially constructed family. */
+		for (index = 0; index < KWL_PANEL_MODES; index++) {
+			if (compose->panel_pipelines[index] != VK_NULL_HANDLE)
+				vkDestroyPipeline(compose->device, compose->panel_pipelines[index], NULL);
+		}
+
+		/* The family shares its constants, descriptors and sampler. */
 		vkDestroyPipelineLayout(compose->device, compose->panel_layout, NULL);
 		vkDestroySampler(compose->device, compose->linear_sampler, NULL);
 
@@ -1413,7 +1421,7 @@ compose_pass(
 	return result;
 }
 
-/* Creates the glass look's pipeline: its shaders, blended with premultiplied alpha. */
+/* Creates premultiplied panel pipelines without computing unused shape modes. */
 static VkResult
 compose_panel_pipeline(
 	struct kwl_compose *compose)
@@ -1421,29 +1429,57 @@ compose_panel_pipeline(
 	VkShaderModuleCreateInfo module;
 	VkShaderModule vertex;
 	VkShaderModule fragment;
-	VkResult result;
+	VkPipeline *pipeline;
+	VkResult error;
+	uint32_t mode;
 
-	/* The shaders, needed only while the pipeline is created. */
+	/* All modes share the same quad and push-constant representation. */
 	memset(&module, 0, sizeof(module));
 	module.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	module.codeSize = sizeof(kwl_panel_vert);
 	module.pCode = kwl_panel_vert;
-	result = vkCreateShaderModule(compose->device, &module, NULL, &vertex);
-	if (result != VK_SUCCESS)
-		return result;
-	module.codeSize = sizeof(kwl_panel_frag);
-	module.pCode = kwl_panel_frag;
-	result = vkCreateShaderModule(compose->device, &module, NULL, &fragment);
-	if (result != VK_SUCCESS) {
-		vkDestroyShaderModule(compose->device, vertex, NULL);
-		return result;
+	error = vkCreateShaderModule(compose->device, &module, NULL, &vertex);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Builds each exact mode and the original shader for unfamiliar mode values. */
+	for (mode = 0; mode <= KWL_PANEL_MODES; mode++) {
+		/* Only the fallback retains every branch of the panel shader. */
+		if (mode == KWL_PANEL_MODES) {
+			module.codeSize = sizeof(kwl_panel_frag);
+			module.pCode = kwl_panel_frag;
+			pipeline = &compose->panel_pipeline;
+		} else {
+			module.codeSize = kwl_panel_variants[mode].bytes;
+			module.pCode = kwl_panel_variants[mode].words;
+			pipeline = &compose->panel_pipelines[mode];
+		}
+
+		/* Modules exist only while their pipelines are compiled. */
+		error = vkCreateShaderModule(compose->device, &module, NULL, &fragment);
+		if (error != VK_SUCCESS) {
+			vkDestroyShaderModule(compose->device, vertex, NULL);
+			return error;
+		}
+
+		/* Every mode preserves the original premultiplied source-over blend. */
+		error = compose_pipeline(
+			compose,
+			KWL_DRAW_ALPHA,
+			vertex,
+			fragment,
+			compose->panel_layout,
+			pipeline);
+		vkDestroyShaderModule(compose->device, fragment, NULL);
+		if (error != VK_SUCCESS) {
+			vkDestroyShaderModule(compose->device, vertex, NULL);
+			return error;
+		}
 	}
 
-	/* Every shape is blended: the shader's output is premultiplied. */
-	result = compose_pipeline(compose, KWL_DRAW_ALPHA, vertex, fragment, compose->panel_layout, &compose->panel_pipeline);
+	/* The compositor owns pipelines until its normal or failed-open cleanup. */
 	vkDestroyShaderModule(compose->device, vertex, NULL);
-	vkDestroyShaderModule(compose->device, fragment, NULL);
-	return result;
+	return VK_SUCCESS;
 }
 
 /* Creates a pipeline that draws a quad the given way, with the given layout. */
