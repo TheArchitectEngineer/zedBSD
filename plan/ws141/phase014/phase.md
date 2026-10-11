@@ -1,9 +1,9 @@
 <!-- awesome-plan project=zedbsd record=ws141-p014 -->
 
-# ws141-p014: HVS の cursor plane（合成しない cursor、設計）
+# ws141-p014: HVS の cursor plane（合成しない cursor）
 
 Parent: [WS141](../ws.md)
-Status: planning（設計、ユーザーの確認待ち）
+Status: in-progress（2026-10-12 ユーザー承認、実装中）
 Phase disposition: normal
 Queue: q936 の続き（P3、Q1 が割り当て）
 
@@ -11,6 +11,7 @@ Queue: q936 の続き（P3、Q1 が割り当て）
 
 - 2026-10-11 ユーザー（Q1 経由）:「displayなのにplaneのx,yですか…cursorと明示されたplaneならいいと思います。」→ present に x,y を足さず、cursor 専用の UAPI と、libvulkan が VK_KHR_display の plane の 1 つを cursor の plane として見せる形。
 - 2026-10-11 ユーザー（Q1 経由）:「その案でOKです。」→ この Phase で UAPI の差分の設計を書き、ユーザーに見せてから実装する。i915 の cursor plane は別の WS（Future Work）。
+- 2026-10-12 ユーザー（Q1 経由）:「VK_KHR_display＋cursor 専用の UAPIでOKです。承認します。」（vendor の Vulkan 拡張は作らない）→ libvulkan は cursor の plane を標準の VK_KHR_display の plane（能力: 最大 64x64・per-pixel premultiplied・一番上の stack）として列挙し、その swapchain の present と VkDisplayPresentInfoKHR の dstRect を `GPU_DISPLAY_CURSOR_SET`（画像が変わった時）・`MOVE`・`HIDE` に変える。compositor は標準の VK_KHR_display・VK_KHR_display_swapchain だけを使い、能力で cursor の plane を選ぶ（無ければ合成）。hotspot は compositor が dstRect に含めるので、UAPI には hotspot を置かない。
 
 ## 目的
 
@@ -27,9 +28,9 @@ cursor の表示を描画（Vulkan の合成）から切り離し、pointer が�
 /*
  * Sets the cursor image of the display this open leases, copied at once from
  * session storage: width and height 1..GPU_DISPLAY_CURSOR_MAX, stride >= width*4,
- * format GPU_PIXEL_BGRA8888 or GPU_PIXEL_RGBA8888 with premultiplied alpha,
- * hotspot inside the image.  The storage is not borrowed after the call.  The
- * cursor stays hidden until the first GPU_DISPLAY_CURSOR_MOVE.
+ * format GPU_PIXEL_BGRA8888 or GPU_PIXEL_RGBA8888 with premultiplied alpha.
+ * The storage is not borrowed after the call.  The cursor stays hidden until
+ * the first GPU_DISPLAY_CURSOR_MOVE.
  */
 struct gpu_display_cursor_image {
 	uint32_t version;
@@ -41,15 +42,14 @@ struct gpu_display_cursor_image {
 	uint32_t height;
 	uint32_t stride;
 	uint32_t format;
-	uint32_t hotspot_x;
-	uint32_t hotspot_y;
+	uint32_t reserved0;	/* zero */
 	uint64_t generation;
 	uint64_t reserved;	/* zero */
 };
 
 /*
- * Shows the cursor with its hotspot at (x, y) in output pixels; parts outside
- * the output are clipped.  The change takes effect at the next refresh
+ * Shows the cursor image with its top-left corner at (x, y) in output pixels
+ * (the caller subtracts its hotspot); parts outside the output are clipped.  The change takes effect at the next refresh
  * boundary and the call does not wait for it; a later move before that
  * boundary replaces it.
  */
@@ -77,7 +77,7 @@ struct gpu_display_cursor_hide {
 #define GPU_DISPLAY_CURSOR_HIDE		_IOW('G', 43, struct gpu_display_cursor_hide)
 ```
 
-- エラー: ENOTSUP（driver に cursor plane が無い、`GPU_DISPLAY_HAS_CURSOR` が無い）、EBUSY（この open の lease ではない）、ESTALE（古い generation）、EINVAL（大きさ・stride・format・hotspot・reserved）、ENXIO（切断）。lease の release と device の fault では cursor を隠す。
+- エラー: ENOTSUP（driver に cursor plane が無い、`GPU_DISPLAY_HAS_CURSOR` が無い）、EBUSY（この open の lease ではない）、ESTALE（古い generation）、EINVAL（大きさ・stride・format・reserved）、ENXIO（切断）。lease の release と device の fault では cursor を隠す。
 - cursor は primary の lease（plane 0 の claim）に付く。別の claim は要らない（cursor だけを他の open が持つ形は作らない）。
 
 ## kernel の共通部（`include/drivers/gpu/gpu-display.h`・`src/drivers/gpu/gpu.c`）
@@ -96,7 +96,7 @@ struct gpu_display_cursor_hide {
 
 - `vkGetPhysicalDeviceDisplayPlanePropertiesKHR`: cursor のある出力は plane を 2 つ（0 = primary、1 = cursor）。
 - `vkGetDisplayPlaneCapabilitiesKHR`（plane 1）: supportedAlpha = PER_PIXEL_PREMULTIPLIED、min/max SrcExtent・DstExtent = 1x1〜64x64、minDstPosition = (-63, -63)、maxDstPosition = (幅-1, 高さ-1)。
-- plane 1 の display surface（`VkDisplaySurfaceCreateInfoKHR.planeIndex = 1`、imageExtent ≤ 64x64）の swapchain は scanout の native image を作らない。present では、wait semaphore と GPU の完了の後に、表示する image の storage を `GPU_DISPLAY_CURSOR_SET` に渡し（16KB の copy）、`VkDisplayPresentInfoKHR.dstRect.offset` を `GPU_DISPLAY_CURSOR_MOVE` に渡す（dstRect の extent は image の大きさと同じであること、違えば VK_ERROR_INITIALIZATION_FAILED）。同じ image を続けて present する時は SET を省く（image ごとに最後に送った present の世代を記録）。
+- plane 1 の display surface（`VkDisplaySurfaceCreateInfoKHR.planeIndex = 1`、imageExtent ≤ 64x64）の swapchain は scanout の native image を作らない。present では、wait semaphore と GPU の完了の後に、表示する image の storage を `GPU_DISPLAY_CURSOR_SET` に渡し（16KB の copy）、`VkDisplayPresentInfoKHR.dstRect.offset`（compositor が hotspot を引いた左上の位置）を `GPU_DISPLAY_CURSOR_MOVE` に渡す（dstRect の extent は image の大きさと同じであること、違えば VK_ERROR_INITIALIZATION_FAILED）。同じ image を続けて present する時は SET を省く（image ごとに最後に送った present の世代を記録）。
 - primary の plane の lease を持つ同じ connection の中だけで使える（cursor の plane は primary の lease に付く）。
 
 ## compositor（`userland/desktop/wayland/`）
