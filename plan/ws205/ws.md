@@ -28,3 +28,7 @@ Bluetooth の headset で音楽が SBC と AAC で鳴る（実機）。スマホ
 | Phase | 内容 | Status |
 | --- | --- | --- |
 | p001 | 調査と設計（既存の code・hardware・規格、判断が要る点をユーザーへ） | planned |
+
+## 2026-10-11 ユーザー「全部承認です。」（Q1 が示した推しを全て承認）
+
+D2〜D6 は推しどおり: D2 audiod に Bluetooth の出力の口（全部の音を headset へ、app ごとの行き先は後）D3 AAC-LC だけ・TNS/PNS 無し・256 kbps まで・44.1/48 kHz D4 AVRCP は Absolute Volume だけ D5 headset が AAC なら AAC、無ければ SBC bitpool 53 D6 codec と A2DP を先、headset の通話は ws197-p007 の後。D1（試験の headset の機種と AAC・mSBC の対応）は推しの無い問いなので未回答 → headset が分かるまで AAC・mSBC は host の試験だけで確かめる。音の route の model（ws197 の 2026-10-11 の決定）に乗せる。

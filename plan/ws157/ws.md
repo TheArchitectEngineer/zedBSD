@@ -77,3 +77,6 @@ ws157-p008, ws157-p009 cleared。source `e654733f1eb6e1296eacf34b5dff6002a5dd17e
 
 ユーザー:「mediastorageがメディアファイルをパースするのは権限的に避けたいです。既存のjailがありますよね、サムネイルで使っている。あれの仕組みを使ってほしいです。できればサムネイルのCLIもそのまま流用するのがよさそう。」→ `/bin/mediastorage` は画像・動画の中身（寸法・EXIF の撮影日時など、今の `mediastorage/dimensions.c` ほか）を自分の process で読まない。中身の解析は keiland-preview（`userland/desktop/preview/`、サムネイルの sandbox: zedBSD は `sandbox_spawn`、Linux・FreeBSD は各 OS の spawn）の jail の中で行い、できればサムネイルの CLI をそのまま使う。P1 の q937（media 管理の review）で設計と実装を直す。
 
+## 2026-10-11 ユーザー「全部承認です。」（Q1 が示した推しを全て承認）: media の解析の jail と review の提案
+
+phase012 の推しを全て採用: (a) J3 mediastorage が keiland-preview（`--info`）を起こす (b) J5 SHA-256 は mediastorage に残す (c) J4 解析の失敗・時間切れ（5 秒）でも取り込む（大きさ 0、撮影日は取り込みの日、種類は固定位置の magic の比較）(d) #1 libkeiland の media の API を非同期に（picker・chooser はすぐ窓を開いて Loading…）(e) #4 大きな取り込みの時間の上限を大きさに合わせ、一時の名前に書いて rename（jail の変更と同じ Phase）(f) #11 Photos・Phone の thumbnail の decode を jail へ（後の別の Phase）。J2（先頭 4 MiB）・J6（FreeBSD は Capsicum まで process の中）・J7（試験）も設計どおり。
