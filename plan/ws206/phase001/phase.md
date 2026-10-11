@@ -3,7 +3,7 @@
 # ws206-p001: Raspberry Pi 4 の WiFi の調査と設計
 
 Parent: [WS206](../ws.md)
-Status: in-progress（q932、P1。設計の第 1 版、判断の点を Q1 へ。Pi 4 の実機の読みは未）
+Status: in-progress（q932、P1。設計の第 1 版、Pi 4 の DT・boot の読み済み、E1〜E3 を Q1 へ）
 Phase disposition: normal
 Queue: q932（[P1 の lane](../../agents/P1/queue.md)）
 
@@ -55,6 +55,11 @@ Queue: q932（[P1 の lane](../../agents/P1/queue.md)）
 | E2 | 試験の AP | **Pi 4 から見える WPA2-PSK の AP の SSID と passphrase** をユーザーに（2.4 GHz と 5 GHz のどちらも） |
 | E3 | WLAN の core の FullMAC の形（kernel の内部の API の追加） | **足す**（W4、HAL・UAPI は変えない） |
 
-## 未確認（次に読む、Pi 4 は読むだけ）
+## Pi 4 の実機の読み（2026-10-11 P1、読むだけ、10.0.30.2、beta2 82f2dfc）
 
-Pi 4（10.0.30.2）の DT（`mmcnr` の status、`expgpio`、`wifi_pwrseq`）、`/boot` の firmware の版、mailbox の GPIO 129 の今の状態、0xfe300000 の SDHCI の capabilities・version、BCM43455 の chip の rev（CMD5 の後）。
+- boot: VideoCore の firmware（`start4.elf`・`fixup4.dat`）、`config.txt` は `device_tree=bcm2711-rpi-4-b.dtb`、`dtoverlay=disable-bt`（BT の UART を外すだけ、WiFi は残る）。`/lib/firmware` は `rtw88` だけ（brcmfmac の file は無い）。dmesg: eMMC2 の sdhci は 0xfe340000（caps 45ee6432、version 1002）、mailbox の firmware は動く（tag 30066 は非対応の log）。
+- DT（`bcm2711-rpi-4-b.dtb` を dtc で読んだ）: `mmcnr@7e300000`（ARM 0xfe300000）、`compatible = "brcm,bcm2835-mmc", "brcm,bcm2835-sdhci"`、割り込み SPI 0x7e、clock `<&clocks 0x1c>`、DMA channel 11、`bus-width = 4`、`non-removable`、`brcm,overclock-50 = 0`、子の `wifi@1`（`brcm,bcm4329-fmac`）。pin: `sdio_pins` = GPIO 34〜39、function 7（ALT3）、pull は CLK なし・他は pull up。**WL_ON は firmware の GPIO の拡張の 2 本目（`gpio-line-names` の "BT_ON", "WL_ON", …、mailbox の GPIO 129）**。この DT には `mmc-pwrseq` の node が無い（firmware が WL_ON を上げたままか、p002 で mailbox の GET_GPIO_STATE で読む）。
+
+## 未確認（p002 の最初に、kernel の中で）
+
+mailbox の GPIO 129 の今の状態、clock 0x1c の rate、0xfe300000 の SDHCI の capabilities・version、BCM43455 の chip の rev（CMD5 の後）。
