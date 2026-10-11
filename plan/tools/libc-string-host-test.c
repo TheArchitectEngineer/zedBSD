@@ -18,6 +18,7 @@
  * write outside the block is reported as well.
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +40,15 @@
 
 /* A 1180x800 canvas of 32-bit pixels, the copy that found the fault. */
 #define TEST_CANVAS_SIZE (1180U * 800U * 4U)
+
+/* The page size the image rows start on. */
+#define TEST_PAGE_SIZE 4096U
+
+/* The bytes between the rows of the tile image (a row of 1024 pixels plus a pad). */
+#define TEST_TILE_PITCH (1040U * 4U)
+
+/* The rows of the tile image. */
+#define TEST_TILE_ROWS 600U
 
 /*
  * The functions under test, from src/libc/string.c.
@@ -72,6 +82,7 @@ static void test_fail(const char *operation, size_t length, size_t first, size_t
 static void test_copy(size_t length, size_t source_offset, size_t destination_offset);
 static void test_move(size_t length, size_t source_offset, size_t destination_offset);
 static void test_set(size_t length, size_t offset, int value);
+static void test_tiles(void);
 
 /*
  * Runs every check and reports the result.
@@ -126,6 +137,9 @@ main(void)
 		}
 		test_set(TEST_CANVAS_SIZE + 3, 1, values[index]);
 	}
+
+	/* Clears and draws a page-aligned image the way the compositor's tile image is. */
+	test_tiles();
 
 	/* Reports the result. */
 	if (test_failures != 0) {
@@ -289,4 +303,77 @@ test_set(
 
 	free(expected);
 	free(buffer);
+}
+
+/*
+ * Clears a page-aligned image whole, then clears and copies square tiles
+ * into it at every pixel column of the first two words, row by row.
+ *
+ * This is what the compositor's tiles_create does to a mapped GPU image,
+ * where the word stores first ran: a large fill from a page boundary, then
+ * rows that start 4 bytes past a word boundary or half a 16-byte pair in.
+ */
+static void
+test_tiles(void)
+{
+	unsigned char *image;
+	unsigned char *expected;
+	unsigned char *picture;
+	unsigned char *line;
+	unsigned char *reference;
+	size_t size;
+	size_t column;
+	size_t row;
+	size_t pixels;
+	size_t place;
+	void *memory;
+
+	/* Allocates the image on a page boundary, its reference, and a source picture. */
+	size = (size_t)TEST_TILE_PITCH * TEST_TILE_ROWS;
+	memory = NULL;
+	if (posix_memalign(&memory, TEST_PAGE_SIZE, size) != 0) {
+		printf("out of memory\n");
+		exit(2);
+	}
+	image = memory;
+	expected = malloc(size);
+	picture = malloc((size_t)TEST_TILE_PITCH * 64U);
+	if (expected == NULL || picture == NULL) {
+		printf("out of memory\n");
+		exit(2);
+	}
+
+	/* Clears the whole image from its page boundary. */
+	memset(image, TEST_GUARD_BYTE, size);
+	memset(expected, 0, size);
+	zedbsd_memset(image, 0, size);
+	test_checks++;
+	if (memcmp(image, expected, size) != 0)
+		test_fail("memset", size, 0, 0, "page-aligned image");
+
+	/* Clears and copies a tile at each of the first sixteen pixel columns, at a few sizes. */
+	test_fill_pattern(picture, (size_t)TEST_TILE_PITCH * 64U, 7U);
+	place = 0;
+	for (pixels = 1; pixels <= 64; pixels += 9) {
+		for (column = 0; column < 16; column++) {
+			/* The tile's rows: cleared, then the picture's row copied over most of it. */
+			for (row = 0; row < pixels; row++) {
+				line = image + (place + row) * TEST_TILE_PITCH + column * 4U;
+				reference = expected + (place + row) * TEST_TILE_PITCH + column * 4U;
+				memset(line, TEST_GUARD_BYTE, pixels * 4U);
+				zedbsd_memset(line, 0, pixels * 4U);
+				memset(reference, 0, pixels * 4U);
+				zedbsd_memcpy(line, picture + row * TEST_TILE_PITCH + column, pixels * 4U - column % 4U);
+				memcpy(reference, picture + row * TEST_TILE_PITCH + column, pixels * 4U - column % 4U);
+			}
+			test_checks++;
+			if (memcmp(image, expected, size) != 0)
+				test_fail("tile", pixels, column, place, "wrong bytes");
+		}
+		place += pixels;
+	}
+
+	free(picture);
+	free(expected);
+	free(memory);
 }
