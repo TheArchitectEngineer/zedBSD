@@ -3,11 +3,13 @@
 # ws141-p016: GPU の実行中に ioctl と cursor を止めない（worker の mutex、cursor の plane の GPU 無しの更新）
 
 Parent: [WS141](../ws.md)
-Status: planning（設計の第 3 版。[review-1](review-1.md)・[review-2](review-2.md) を反映、review-3 の前）
+Status: planning（設計の第 4 版。[review-1](review-1.md)〜[review-3](review-3.md) と 2026-10-12 のユーザーの判断（列を app ごとに）を反映、review-4 の前）
 Phase disposition: normal
 Queue: P3（Q1 が割り当て、2026-10-12）
 
 ## 由来
+
+- 2026-10-12 ユーザー（review-3 の N4 への判断、Q1 経由）:「列を app ごとに」→ executor の実行の列を session ごとに分け、pass の単位で round-robin するところまで p016 に含める。受け入れの条件を「A: main loop と入力が止まらない」「B: cursor が動く」に分ける。
 
 - 2026-10-12 ユーザー（Q1 経由、kernel 237d26834 の実機）:「App Homeへの遷移がまだ数秒かかっています。ウィンドウドラッグは5fpsくらい。…アプリアイコンのポイントは1秒くらいマウス移動が2fpsに重くなります」。
 - 2026-10-12 Q1:「(A) を先に: 並行の設計（mutex を外す区間、hold で守る object、job の queue の順序と fence の通知、reset・recovery・suspend・close との競り、mutex の下に残す物）を phase に書いて design-reviewer に掛け…その後に実装。(B) は cursor の像が変わった時だけ kernel が 16KB を写す形で、Guardrail の『内容が変わった時の一度だけの用意』に入るので可（位置だけの present は MOVE だけ）。i915・Venus は変わらないことを確かめて記録。」
@@ -101,20 +103,83 @@ executor の pass ごとの 3 区分:
 
 - (A) の後。F6・F7 の対処は第 2 版のとおり。F8（swapchain の image を display に import する詳細）は (B) の別の版の設計で、その review を通るまで (B) の実装は止める（L5）。
 
-## 段（第 3 版）
+## 第 4 版の差分（review-3 とユーザーの判断）
+
+第 3 版の (A) の本文は、この節と食い違う所をこの節で置き換える。第 3 版で解決とされた所（C1 の窓の判定と遅延解放、H1 の idle の保留の廃止、H5 の公開の順序、PARKED の状態の表の骨格、3 区分の窓）はそのまま。
+
+### 受け入れの条件（N4、ユーザーの判断）
+
+- **A: main loop と入力が止まらない**: compositor の main loop が他の session の GPU の仕事で塞がらない。compositor の vkQueueSubmit・vkQueueWaitIdle（import・shm の時、`import.c:352`・`shm.c:391,881`）・WSI の present は、compositor 自身の session の仕事の完了だけを待ち、他の session の pass の後ろに並ばない。測り方: compositor の log の queue-submit・input→draw が、重い client（Settings の描き直し、App Home を開いた直後）の間も数十 ms 以下。
+- **B: cursor が動く**: cursor の plane の copy と位置の present が、他の session の pass の後ろに並ばない（(B) の GPU 無しの位置の present と、compositor の session の優先、下）。測り方: `KWL CURSOR_PLANE present` の間隔が入力の間隔に従い、App Home・drag の間も 100ms を超えて空かない。
+
+### session ごとの列と pass の単位の round-robin
+
+- executor は session ごとの execution の列を持つ。各 execution は今の native job の列（pass と CPU の段）で、executor は **1 歩＝1 つの pass（または CPU だけの段 1 つ）** を実行する step 関数で進める（今の `bcm2711_vulkan_native_job_execute` の loop を、event の位置を execution に保存して 1 歩ずつ進める形に分ける）。
+- 選び方: 準備のできた session（列の先頭の execution が wait の依存を満たしている）を round-robin で回し、1 歩ずつ実行する。**表示の session の優先**: display の import を持つ buffer（scanout の native image、cursor の image）に書く execution を出した session を「表示の session」として印を付け（kernel が share の相手が display の buffer への書き込みで判定、compositor を名指さない）、他の session の 1 歩の後に毎回、表示の session に準備のできた歩があれば先にそれを実行する。これで compositor の frame・present の copy・cursor の copy は、他の session の pass 1 つ分より長く待たない。
+- 同じ session の中の順序は今と同じ（列の順、pass の順）。layout の検査と公開は execution の歩の時だけ（session の中で順序どおり）。
+
+### session をまたぐ順序（cross-session）
+
+- **client の窓の画像**: 今の Wayland の WSI（libvulkan `wsi-wayland.c`）は client の present で GPU の完了（fence）を待ってから compositor に commit するか（同期）、early commit（explicit sync の semaphore・fence の fd を渡す）か。前者なら compositor の pass が client の画像を読む時には client の execution は完了済みで、列が分かれても順序は保たれる。後者の時は compositor の execution がその fd（client の session の execution が signal する sync）を wait として持つので、下の「session をまたぐ wait」で順序が保たれる。A1 の前に libvulkan の WSI がどちらを使うかを source で確かめて phase に記録する（確かめる所: `wsi-wayland.c` の present と `vulkan_sync` の export）。
+- **session をまたぐ wait の semaphore・外に出した fence の fd**: execution の wait の semaphore の payload が別の session の execution の signal（import した sync の fd を含む）の時、その execution は「依存の execution の完了」まで準備ができていない扱いにし、round-robin は飛ばす。依存は sync の payload が「signal する execution（session と sequence）」を記録して表す（今の `signals_reserved` に execution の参照を足す）。循環（A が B を待ち B が A を待つ）は Vulkan の誤りで、timeline の期限（job の監視と同じ上限）で依存の待ちを fault にせず、その execution を DEVICE_LOST で終える（その session だけ）。
+- **buffer の暗黙の依存**: Vulkan の外（同じ memory を 2 つの session が GPU で書いて読む、明示の sync 無し）は順序を保証しない（Vulkan の規則どおり）。kernel の安全（memory・PTE）は hold で守る。
+
+### 上限と背圧（N1・N2）
+
+- **背圧は EAGAIN**: session ごとの execution の上限を `job_reserve`・`job_capacity` の判定に入れ、上限なら RESERVE が EAGAIN（libvulkan は `vulkan_sync_capacity_wait` で待って再試行、`queue.c:345-366`、`sync.c:636-645`）。libvulkan は 1 transaction に 1 QueueSubmit と 1 marker なので、marker の session の上限 ≤ execution の session の上限なら QueueSubmit が上限で OOM になることは無い。kernel の OUT_OF_HOST_MEMORY は細工の stream（1 request に多数の QueueSubmit）への防御だけに残す。
+- 値: session ごとの execution 12・bytes 48MiB、全体の execution 64・bytes 192MiB（compositor の同時の execution＝frame 1・WSI の present 1・cursor の copy と present 最大 8 を下回らない。M の `markers_max` の実測で決め直す）。上限は execution の完了で `drv_gpu_capacity_changed` と retired の wake で解く（H5 の (3) の後に）。
+- **slot**（N2）: PARKED の marker を worker の slot から外し、execution の heap の entry に持たせる（marker の completion と session の pending の数を移す）。slot は decoder の command（FIFO）だけに使い、16 のまま足りる。`reservation_capacity` は session を受け取り、session ごとの上限で判定する。
+
+### execution の状態と取り消し（N8）
+
+| 状態 | 意味 | stop（session） | fault（全体） | close | recovery |
+| --- | --- | --- | --- | --- | --- |
+| QUEUED | 列にある、未実行 | 取り消し: 実行せず dispose、その execution の sync・fence を DEVICE_LOST、`release_submission`。`bcm2711_render_worker_fault` は呼ばない（他の session に影響しない） | 取り消し（fault の印、dispose は executor） | drain が待つ（stop の取り消しで終わる） | 列が空であること |
+| RUNNING | 歩の途中（窓の外か中） | 今の歩を終えてから取り消し（窓の中は待つ） | 今どおり fault の流れ | 同上 | — |
+| CANCELED・DONE | 完了 | — | — | — | — |
+
+- 取り消された execution も `executed` を進める。その session の PARKED の marker は required ≤ executed まで待ち、ECANCELED で完了する（「marker の完了 ⇒ 前の仕事は退役済み」を保つ。外に出した fence の fd を見る他の process が書き途中の buffer を読まない）。
+- fault の時は executor の眠り（pte_waiters の waitq）と窓の待ち手の両方を起こす。
+
+### 遅延解放と fault（N5）・close と destroy（N6）
+
+- 窓の間に参照 0 になった view は遅延解放の list へ（第 3 版のとおり）。fault の経路（`bcm2711_render_worker_fault` と同じ guard の下）で list の view を quarantined=true に移し、`render_reset` の hardware の reset の後の `bcm2711_v3d_memory_recover` で回収する。
+- 解放の側（vkFreeMemory → `render_destroy`、compositor の import の解放、close）は窓を待たずに list へ入れる（第 3 版の「close・destroy は窓の終わりを待つ」は誤りで削る）。窓を待つのは新しい PTE を作る map の ioctl（blob の作成・import の `memory_map`）だけ。import の map が compositor の main thread を窓の長さ止める点は、GPU の VA の map を executor の「窓の前」まで遅らせる lazy map で避けられる見込み（V3D の MMU が無効の PTE を TLB に持つかを確かめてから、A2 の後の段で検討）。
+
+### 公平と飢え（N7）
+
+- kernel の mutex は handoff しない（`src/kern/lock.c`）。executor は 1 歩ごとに mutex を外し、decoder と ioctl の待ち手（mutex の待ちの数）がいれば一度眠って順番を渡す（待ち手が mutex を取った sequence を見て起きる）。
+- pte_waiters は「executor が待ち始める前から居た待ち手」だけを優先する世代番号を持ち、1 回の窓の開始を最大 1 回だけ譲る（map の ioctl が続いても executor が窓を開けない状態にしない）。
+
+### 窓を開く者（L-c）
+
+- 不変条件: 窓を開くのは controller の mutex を持つ executor だけ（C1 の遅延解放の安全はこれに依る）。
+
+### wait_idle（L-a）
+
+- `GPU_OP_QUEUE_WAIT_IDLE`・`DEVICE_WAIT_IDLE` は EOPNOTSUPP（libvulkan は使わない、host 試験を直す）。
+
+### A0（userland の点検、N3・N4・N9）
+
+- cursor-plane.c（N3）: 最後に submit した copy の fence を **acquire の前に** `vkGetFenceStatus` で見て、NOT_READY なら acquire しない（acquire 済みの image を present せずに残さない）。queue は session の中で 1 本の順なので signaled なら前の copy も完了。再試行は main loop の poll の上限 10ms（`main.c:856`）。`kwl_cursor_plane_close` の `vkDeviceWaitIdle`（`cursor-plane.c:117`）は close の時だけで残す。
+- compositor の main thread の `vkQueueWaitIdle`（import・shm）: session ごとの列の後は compositor 自身の列だけを待つので A の妨げにならない。残す（点検の記録）。
+- EBUSY の候補（N9）: `compose.c:1958-1969` の spare_sets を `kwl_compose_set_get` の後に `vkUpdateDescriptorSets`、`backdrop.c:174,456` が frame の in_flight の間に起きないか。非同期の後は EBUSY→DEVICE_LOST になり得るので source で確かめ、起きるなら直す。
+
+## 段（第 4 版）
 
 | 段 | 内容 | 確かめ |
 | --- | --- | --- |
-| M | 計測: request の FIFO の待ちと実行、解放の内訳、`markers_max`、submit の mutex の待ち（kernel 07a445a75 まで） | 実機の数 |
-| A0 | userland の点検と直し（cursor-plane.c の非 blocking の fence、他の短い待ち・EBUSY の扱い）、libvulkan の確認の記録 | host build、T1 |
-| A1 | executor・execution（heap、上限）・PARKED・公開の順序・旧来の拒否・semaphore の予約・wait_idle の即時判定・marker の枠。executor は GPU の実行の間も mutex を持つ（効果は A2 から、L2） | host（決定的な fixture） |
-| A2 | 窓（3 区分、window の判定、遅延解放の list、pte_waiters、display の generation の guard） | host |
-| B | cursor の plane（別の版の設計の review の後） | — |
+| M | 計測（済み・続き）: request の待ちと実行、解放の内訳、markers_max、submit の mutex の待ち | 実機の数 |
+| A0 | userland: cursor-plane.c の acquire の前の fence の確認、EBUSY の候補の確認、libvulkan の WSI の commit の同期・early の確認と記録 | host build、T1 |
+| A1 | executor・session ごとの列・1 歩の step・表示の session の優先・round-robin・execution（heap）・背圧（RESERVE の EAGAIN）・PARKED を execution の entry に・状態と取り消し・公開の順序・session をまたぐ wait・旧来の拒否・wait_idle の EOPNOTSUPP。executor は歩の間 mutex を持つ（効果は A2 から） | host（決定的な fixture） |
+| A2 | 窓（3 区分、window の判定、遅延解放の list と fault の quarantine、map の待ち、pte_waiters の世代、mutex の順番渡し、display の generation の guard） | host、実機（受け入れ A） |
+| B | cursor の plane（別の版の設計の review の後） | 実機（受け入れ B） |
 
 ## 試験（M5）
 
 - vulkan-device の host 試験に、executor の 1 歩（`executor_step`）と decoder の 1 歩（`worker_step`）を外から順に呼べる**決定的な fixture** を作る（本物の thread では interleave が再現しない）。場面: (a) 窓の間の decoder の vkFreeMemory・vkDestroyImage と別 session の close（遅延解放、EIO にならない）(b) TFU と CL の隙間で PTE が変わらない (c) execution の上限と OUT_OF_HOST_MEMORY (d) marker の枠が他の session で埋まっても compositor の submit が戻る (e) cursor plane の fence が NOT_READY で plane が閉じない（compositor の host 試験）(f) marker の完了の直後の vkResetFences・vkResetCommandBuffer・vkUpdateDescriptorSets が成功 (g) fault で PARKED が EIO で終わり render_fail が届く (h) checked stop と保留の execution (i) 細工した stream（1 request に多数の QueueSubmit、同じ session の複数 request）(j) N の signal を N+1 が wait する semaphore の鎖 (k) 旧来の経路の QueueSubmit が EOPNOTSUPP。
 - 実機: compositor の queue-submit が GPU の時間から外れる、App Home・drag の間の cursor と入力、窓の間の解放（`views` の遅延解放の数を perf 行に）。i915・Venus は T1（A0 の userland の変更の回帰）。
+- 第 4 版で足す場面（N9 ほか）: (l) 窓の間の map の ioctl（GPU_BLOB_CREATE・RESOURCE_IMPORT）が待って成功し EIO が userland に届かない (m) 窓の間の解放＋fault→reset の成功 (n) compositor が上限に当たっても RESERVE の EAGAIN で待ち、終わらず plane も閉じない (o) cursor の copy の fence が NOT_READY のまま image の数を超えて続いた後に回復 (p) map の ioctl が続いても executor が進む・executor が続いても decoder が進む (q) 2 つの session の列の round-robin と表示の session の優先 (r) session をまたぐ wait の semaphore（N の signal を別 session の M が wait）(s) stop の取り消しが他の session に影響しない。
 
 ## 未解決
 
