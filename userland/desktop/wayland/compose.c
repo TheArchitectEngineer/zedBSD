@@ -2278,8 +2278,15 @@ compose_record(
 			compose->scene.valid);
 	}
 
+	/* A redrawn scene records the hover tests its drawing makes; a whole one can vouch for later cursor-only moves. */
+	if (!reuse)
+		kwl_hover_begin(server, region == NULL);
+
 	/* The clients' images imported since the last frame go to the layout they are sampled in (ws099-p016). */
 	kwl_import_layouts_record(compose, compose->command);
+
+	/* The host images written since the last frame reach their sampled images before any drawing. */
+	kwl_host_images_record(compose, compose->command);
 
 	/* The anchor's pass: its own part of the plane (ws113-p007). */
 	server->view_output = KWL_PLANE_ANCHOR;
@@ -2385,6 +2392,10 @@ compose_record(
 
 	/* The heads' pictures: the finished image copied (mirror), or the wallpaper (extended, ws113-p004b). */
 	kwl_heads_record(server, compose->command, compose->output.images[image]);
+
+	/* The scene's hover tests, including the heads' bars, are all recorded. */
+	if (!reuse)
+		kwl_hover_end(server);
 
 	/* The recording is complete. */
 	return vkEndCommandBuffer(compose->command);

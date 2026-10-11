@@ -428,7 +428,8 @@ kwl_menu_draw_bar(
 				open = 1;
 		}
 
-		/* The open item is tinted; the one under the pointer, with no menu open, is lit. */
+		/* The open item is tinted; the one under the pointer, with no menu open, is lit (a hover probe, damage.c). */
+		kwl_hover_probe(server, x, area->top, widths[index], area->height);
 		if (open) {
 			kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 0.20f * fade, pill);
 			kept = kwl_accent_as_is(server);

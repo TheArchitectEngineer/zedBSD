@@ -138,6 +138,7 @@ static void native_job_test(struct bcm2711_vulkan_session *session, struct bcm27
 static void native_execute_test(struct bcm2711_vulkan_session *session, const struct bcm2711_vulkan_prepared_event *begin);
 static void native_pass_test(struct bcm2711_vulkan_session *session, const struct bcm2711_vulkan_prepared_event *begin);
 static void native_draw_test(struct bcm2711_vulkan_session *session, const struct bcm2711_vulkan_prepared_event *event);
+static void write_log_test(void);
 static void uniform_test(struct bcm2711_vulkan_session *session, const struct bcm2711_vulkan_prepared_event *event);
 static void prepared_test(struct bcm2711_vulkan_session *session, struct bcm2711_vulkan_object *command);
 static void draw_test(struct bcm2711_vulkan_command_buffer *command);
@@ -1228,6 +1229,47 @@ native_draw_test(
 	assert(allocations == baseline);
 	space->cache_limit = 0;
 
+	/* A never-mapped source lends one converted snapshot to later draws until its generation moves. */
+	space->snapshot_limit = BCM2711_NATIVE_SNAPSHOT_BYTES;
+	memset(cpu, 0x75, 512);
+	view->buffer->host_mapped = false;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw != NULL && draw->count == 10 && draw->textures[0].snapshot != NULL);
+	assert(draw->textures[0].snapshot->users == 1 && ((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x75);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && space->snapshots != NULL && space->snapshots->users == 0);
+	memset(cpu, 0x24, 512);
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x75);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A device or kernel write moves the generation, and the unused snapshot is converted again in place. */
+	view->buffer->generation++;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x24);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A host-mapped source gets a private conversion every time. */
+	view->buffer->host_mapped = true;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw->count == 11 && draw->textures[0].snapshot == NULL);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+	view->buffer->host_mapped = false;
+
+	/* Draining releases the unused snapshot and its source hold. */
+	error = bcm2711_native_storage_drain(space);
+	assert(error == 0 && space->snapshots == NULL && space->snapshot_bytes == 0 && allocations == baseline);
+	space->snapshot_limit = 0;
+
 	/* Early and late ordinary OOM retire complete mapped prefixes, including an independently copied scalar stream. */
 	for (index = 1; index <= 4; index++) {
 		fail_after = index * 10U;
@@ -2002,6 +2044,7 @@ prepared_test(
 	assert(event->push[0][0] == 0x3f000000U && event->vertices[0]->bytes == 48);
 	assert(event->next->opcode == GPU_OP_CMD_END_RENDER_PASS && event->next->next == NULL);
 	native_draw_test(session, event);
+	write_log_test();
 	native_pass_test(session, prepared->first);
 	native_execute_test(session, prepared->first);
 	uniform_test(session, event);
@@ -6003,4 +6046,50 @@ pipeline_test(
 	error = bcm2711_vulkan_pipeline_release(session, pipeline);
 	assert(error == 0 && allocations == baseline);
 	puts("WS141 Vulkan actual quad compiler/push visibility/attribute interface/OOM/compiled pipeline ownership: PASS");
+}
+
+/*
+ * Checks the run's write log: unions of recent boxes, and refusal for forgotten, unknown or other-image writes.
+ */
+static void
+write_log_test(
+	void)
+{
+	struct bcm2711_buffer buffer;
+	uint32_t first[4] = {10, 20, 30, 40};
+	uint32_t second[4] = {5, 25, 15, 60};
+	uint32_t box[4];
+	uint32_t index;
+	bool known;
+
+	/* Two writes of one image give the union of their boxes; none gives an empty box. */
+	memset(&buffer, 0, sizeof(buffer));
+	bcm2711_v3d_memory_written(&buffer, 4096, first);
+	bcm2711_v3d_memory_written(&buffer, 4096, second);
+	assert(buffer.generation == 2);
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, 0, box);
+	assert(known && box[0] == 5 && box[1] == 20 && box[2] == 30 && box[3] == 60);
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, 1, box);
+	assert(known && box[0] == 5 && box[1] == 25 && box[2] == 15 && box[3] == 60);
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, 2, box);
+	assert(known && box[2] <= box[0]);
+
+	/* Another image's write, an unknown write and an unrecorded step each force a whole copy. */
+	known = bcm2711_v3d_memory_changes(&buffer, 0, 0, box);
+	assert(!known);
+	bcm2711_v3d_memory_written(&buffer, 4096, NULL);
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, 2, box);
+	assert(!known);
+	buffer.generation++;
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, 3, box);
+	assert(!known);
+
+	/* More writes than the ring holds forget the oldest. */
+	for (index = 0; index < BCM2711_BUFFER_WRITES; index++)
+		bcm2711_v3d_memory_written(&buffer, 4096, first);
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, buffer.generation - BCM2711_BUFFER_WRITES, box);
+	assert(known && box[0] == 10 && box[3] == 40);
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, buffer.generation - BCM2711_BUFFER_WRITES - 1U, box);
+	assert(!known);
+	puts("WS141 run write log unions/forgotten/unknown/other-image refusal: PASS");
 }

@@ -20,6 +20,8 @@
 
 #include "kwl.h"
 #include "compose.h"
+#include "glass.h"
+#include "notify-view.h"
 #include "popup.h"
 
 /* How far around the pointer a cursor may draw (the compositor's shapes and arrow are smaller). */
@@ -27,6 +29,8 @@
 
 static void damage_add(struct kwl_server *server, int32_t left, int32_t top, int32_t right, int32_t bottom);
 static int cursor_unseen(struct kwl_server *server, int32_t x, int32_t y);
+static int hover_unchanged(struct kwl_server *server);
+static int probe_contains(const struct kwl_hover_probe *probe, int32_t x, int32_t y);
 
 /*
  * Marks the damage of the pointer's move from an old place: the cursor's
@@ -66,11 +70,17 @@ kwl_damage_pointer(
 		return;
 	}
 
-	/* In the glass look both places must be over windows' own areas, in a still look. */
+	/*
+	 * In the glass look both places must be over windows' own areas, in a
+	 * still look; elsewhere a move that changes no hover answer the scene
+	 * was drawn with changes only the cursor.
+	 */
 	if (server->glass) {
 		calm = kwl_glass_pointer_calm(server, old_x, old_y);
 		if (calm)
 			calm = kwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
+		if (!calm)
+			calm = hover_unchanged(server);
 		if (!calm) {
 			server->dirty = 1;
 			return;
@@ -142,6 +152,78 @@ kwl_damage_commit(
 	damage_add(server, surface->x, surface->y, surface->x + (int32_t)width, surface->y + (int32_t)height);
 }
 
+
+/*
+ * Records one rectangle a whole scene's drawing tests the pointer against.
+ *
+ * Drawing that lights something under the pointer calls this with the
+ * rectangle it tests, while the compositor records a whole scene; outside
+ * that recording it does nothing.
+ */
+void
+kwl_hover_probe(
+	struct kwl_server *server,
+	int32_t x,
+	int32_t y,
+	int32_t width,
+	int32_t height)
+{
+	struct kwl_hover_probe *probe;
+
+	/* Only a whole scene's drawing records. */
+	if (!server->hover_recording)
+		return;
+
+	/* A full list makes the record incomplete, so moves redraw as before. */
+	if (server->hover_count == KWL_HOVER_PROBES) {
+		server->hover_overflow = 1U;
+		return;
+	}
+	probe = &server->hover_probes[server->hover_count];
+	server->hover_count++;
+	probe->x = x;
+	probe->y = y;
+	probe->width = width;
+	probe->height = height;
+}
+
+/*
+ * Starts or abandons the hover record of the frame being drawn.
+ *
+ * A whole scene starts a new record at the pointer's place; a partial
+ * redraw leaves parts drawn at other places, so the record is dropped.
+ */
+void
+kwl_hover_begin(
+	struct kwl_server *server,
+	int whole)
+{
+	/* The record is unusable until a whole scene finishes it. */
+	server->hover_complete = 0U;
+	server->hover_recording = 0U;
+	if (!whole)
+		return;
+
+	/* The new record starts empty at the place the scene is drawn for. */
+	server->hover_count = 0U;
+	server->hover_overflow = 0U;
+	server->hover_x = server->pointer_x;
+	server->hover_y = server->pointer_y;
+	server->hover_recording = 1U;
+}
+
+/*
+ * Ends the hover record of a whole scene; it holds every probe unless the list overflowed.
+ */
+void
+kwl_hover_end(
+	struct kwl_server *server)
+{
+	/* A record that ran out of room cannot vouch for an unchanged scene. */
+	if (server->hover_recording && !server->hover_overflow)
+		server->hover_complete = 1U;
+	server->hover_recording = 0U;
+}
 /* Adds a rectangle (left, top, right, bottom) to the damage the next frame draws. */
 static void
 damage_add(
@@ -208,5 +290,78 @@ cursor_unseen(
 		return 0;
 
 	/* Succeeded: nothing is drawn there. */
+	return 1;
+}
+
+/*
+ * Tells whether the scene drawn for the recorded pointer place looks the same with the pointer where it is now.
+ *
+ * Only a still look with no dialog, switcher or held button qualifies, and
+ * every recorded probe must give the same answer at both places.
+ */
+static int
+hover_unchanged(
+	struct kwl_server *server)
+{
+	unsigned index;
+	int before;
+	int after;
+	int open;
+
+	/* A whole scene's complete record is needed. */
+	if (!server->hover_complete)
+		return 0;
+
+	/* Moving, dragging and held buttons keep redrawing. */
+	if (server->buttons_down != 0U)
+		return 0;
+	open = kwl_glass_still(server);
+	if (!open)
+		return 0;
+
+	/* Dialogs and panels draw their own hover without probes. */
+	open = kwl_power_dialog_showing(server);
+	if (open)
+		return 0;
+	open = kwl_bluetooth_ask_showing();
+	if (open)
+		return 0;
+	open = kwl_arrange_showing(server);
+	if (open)
+		return 0;
+	open = kwl_notify_log_showing();
+	if (open)
+		return 0;
+	if (server->switcher.on)
+		return 0;
+
+	/* Every probe answers as it did when the scene was drawn. */
+	for (index = 0; index < server->hover_count; index++) {
+		before = probe_contains(&server->hover_probes[index], server->hover_x, server->hover_y);
+		after = probe_contains(&server->hover_probes[index], server->pointer_x, server->pointer_y);
+		if (before != after)
+			return 0;
+	}
+
+	/* Succeeded: only the cursor differs. */
+	return 1;
+}
+
+/* Tells whether a probe's rectangle holds a point. */
+static int
+probe_contains(
+	const struct kwl_hover_probe *probe,
+	int32_t x,
+	int32_t y)
+{
+	/* Left of or right of it. */
+	if (x < probe->x || x >= probe->x + probe->width)
+		return 0;
+
+	/* Above or below it. */
+	if (y < probe->y || y >= probe->y + probe->height)
+		return 0;
+
+	/* Inside. */
 	return 1;
 }

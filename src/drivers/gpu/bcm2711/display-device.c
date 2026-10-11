@@ -559,6 +559,8 @@ resource_write(
 	mutex_lock(&controller->mutex);
 
 	kern_memcpy((uint8_t *)resource->buffer->address + offset, data, bytes);
+	/* An unrecorded generation step: snapshots go stale and the next copy from this run is whole. */
+	resource->buffer->generation++;
 
 	mutex_unlock(&controller->mutex);
 
@@ -583,6 +585,9 @@ resource_map(
 		return EINVAL;
 	if (!resource->mappable)
 		return ENOTSUP;
+
+	/* A shared run mapped here can change without a generation step, so render snapshots stop trusting it. */
+	resource->buffer->host_mapped = true;
 	mapping->physical = resource->buffer->memory.paddr;
 	mapping->address = resource->buffer->address;
 	mapping->bytes = resource->buffer->bytes;

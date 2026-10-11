@@ -98,6 +98,10 @@ bcm2711_vulkan_native_image_create(
 			released = bcm2711_vulkan_native_pass_release(&created, true);
 			if (released != 0)
 				return released;
+
+			/* An unchanged source leaves no pass: the destination already holds its bytes. */
+			if (error == EALREADY)
+				return 0;
 			return error;
 		}
 
@@ -559,8 +563,12 @@ prepare_copy(
 	uint64_t *remaining)
 {
 	struct bcm2711_v3d_view *view;
+	struct bcm2711_buffer *target;
 	VkRect2D area;
+	uint64_t target_offset;
 	uint32_t address;
+	uint32_t box[4];
+	bool changed;
 	void *cpu;
 	int error;
 
@@ -579,6 +587,50 @@ prepare_copy(
 		return error;
 	if (view->references == 0 || view->references == 0xffffffffU)
 		return EOVERFLOW;
+
+	/*
+	 * When the destination still equals this source at an earlier
+	 * generation, only the tiles the source changed since then are copied;
+	 * the other tiles of both images are already equal.  A CPU mapping of
+	 * either run could change bytes without a recorded write.
+	 */
+	pass->sync = true;
+	pass->sync_identity = view->buffer->identity;
+	pass->sync_offset = address - view->address;
+	pass->sync_generation = view->buffer->generation;
+	target = pass->output->buffer;
+	target_offset = (uint64_t)pass->state.output - pass->output->address;
+	changed = false;
+	if (!target->host_mapped &&
+	    !view->buffer->host_mapped &&
+	    view->buffer->identity != 0 &&
+	    target->synced_identity == view->buffer->identity &&
+	    target->synced_offset == pass->sync_offset &&
+	    target->synced_target_offset == target_offset &&
+	    target->synced_generation == target->generation)
+		changed = bcm2711_v3d_memory_changes(view->buffer, pass->sync_offset, target->synced_source_generation, box);
+
+	/* Nothing changed: the destination already equals the source. */
+	if (changed && (box[2] <= box[0] || box[3] <= box[1]))
+		return EALREADY;
+
+	/* A known change narrows the copy to its box, clamped to the image. */
+	if (changed) {
+		if (box[2] > destination->width)
+			box[2] = destination->width;
+		if (box[3] > destination->height)
+			box[3] = destination->height;
+		if (box[0] < box[2] && box[1] < box[3]) {
+			pass->area.offset.x = (int32_t)box[0];
+			pass->area.offset.y = (int32_t)box[1];
+			pass->area.extent.width = box[2] - box[0];
+			pass->area.extent.height = box[3] - box[1];
+			pass->state.first_x = box[0] / 64U;
+			pass->state.first_y = box[1] / 64U;
+			pass->state.last_x = (box[2] - 1U) / 64U;
+			pass->state.last_y = (box[3] - 1U) / 64U;
+		}
+	}
 
 	/* The pass holds the source's view through native retirement, like its output. */
 	bcm2711_v3d_memory_retain(view);

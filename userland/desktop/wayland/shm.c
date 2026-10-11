@@ -37,8 +37,9 @@ static int pool_buffer(struct kwl_object *pool, const unsigned char *bytes, size
 static int pool_resize(struct kwl_object *pool, const unsigned char *bytes, size_t size);
 static int surface_upload(struct kwl_server *server, struct kwl_object *surface);
 static VkResult image_create(struct kwl_compose *compose, uint32_t width, uint32_t height, VkSampler sampler, struct kwl_import *import);
-static VkResult image_layout(struct kwl_compose *compose, VkImage image);
-static VkResult image_layout_record(VkCommandBuffer command, VkImage image);
+static VkResult image_layout(struct kwl_compose *compose, VkImage image, VkImageLayout old_layout);
+static VkResult image_layout_record(VkCommandBuffer command, VkImage image, VkImageLayout old_layout);
+static void image_copy_record(VkCommandBuffer command, struct kwl_import *import);
 static void image_release(struct kwl_compose *compose, struct kwl_import *import);
 static uint32_t word(const unsigned char *bytes, size_t offset);
 static uint32_t kwl_row_sum(const unsigned char *row, uint32_t width);
@@ -305,6 +306,37 @@ kwl_host_image_release(
 {
 	/* Whatever part of it was made. */
 	image_release(compose, import);
+}
+
+/*
+ * Marks a host image's staging as written, so the next frame copies it into the sampled image.
+ */
+void
+kwl_host_image_written(
+	struct kwl_import *import)
+{
+	/* The next kwl_host_images_record copies this image and clears the mark. */
+	import->written = 1U;
+}
+
+/*
+ * Records, before the frame's drawing, the copies of every written host image into its sampled image.
+ */
+void
+kwl_host_images_record(
+	struct kwl_compose *compose,
+	VkCommandBuffer command)
+{
+	struct kwl_import *import;
+
+	/* Each written image, once. */
+	for (import = compose->host_images; import != NULL; import = import->host_next) {
+		/* An unchanged staging has nothing new to copy. */
+		if (!import->written)
+			continue;
+		image_copy_record(command, import);
+		import->written = 0U;
+	}
 }
 
 /*
@@ -577,6 +609,7 @@ surface_upload(
 	target = image->map;
 	for (y = first; y < last; y++)
 		memcpy(target + (size_t)y * image->row_pitch, source + (size_t)y * shm->stride, (size_t)shm->width * 4U);
+	kwl_host_image_written(image);
 	server->perf.shm_copies++;
 	server->perf.shm_copy_cycles += kwl_cycles() - mark;
 	surface->committed_damaged = 0;
@@ -608,8 +641,10 @@ surface_upload(
 }
 
 /*
- * Creates a linear BGRA image in host-visible, coherent memory, mapped for
- * good, with its view and descriptor set, in the general layout.
+ * Creates a host-written BGRA image: a linear staging image in host-visible,
+ * coherent memory, mapped for good, and an optimal sampled image that the
+ * frame fills from it (kwl_host_images_record), with its view and
+ * descriptor set; both in the general layout.
  */
 static VkResult
 image_create(
@@ -632,7 +667,7 @@ image_create(
 	uint32_t index;
 	VkResult result;
 
-	/* The image. */
+	/* The staging image the CPU writes. */
 	import->width = width;
 	import->height = height;
 	memset(&create, 0, sizeof(create));
@@ -646,15 +681,15 @@ image_create(
 	create.arrayLayers = 1U;
 	create.samples = VK_SAMPLE_COUNT_1_BIT;
 	create.tiling = VK_IMAGE_TILING_LINEAR;
-	create.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+	create.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	create.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
-	result = vkCreateImage(compose->device, &create, NULL, &import->image);
+	result = vkCreateImage(compose->device, &create, NULL, &import->staging);
 	if (result != VK_SUCCESS)
 		return result;
 
 	/* A host-visible, coherent memory type it can use. */
-	vkGetImageMemoryRequirements(compose->device, import->image, &requirements);
+	vkGetImageMemoryRequirements(compose->device, import->staging, &requirements);
 	vkGetPhysicalDeviceMemoryProperties(compose->physical, &memory);
 	wanted = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	for (index = 0; index < memory.memoryTypeCount; index++) {
@@ -667,7 +702,56 @@ image_create(
 	if (index == memory.memoryTypeCount)
 		return VK_ERROR_FORMAT_NOT_SUPPORTED;
 
-	/* The memory, bound and mapped for good. */
+	/* The staging memory, bound and mapped for good. */
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate.allocationSize = requirements.size;
+	allocate.memoryTypeIndex = index;
+	result = vkAllocateMemory(compose->device, &allocate, NULL, &import->staging_memory);
+	if (result != VK_SUCCESS)
+		return result;
+	result = vkBindImageMemory(compose->device, import->staging, import->staging_memory, 0U);
+	if (result != VK_SUCCESS)
+		return result;
+	result = vkMapMemory(compose->device, import->staging_memory, 0U, VK_WHOLE_SIZE, 0U, &import->map);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Where each row starts in that memory. */
+	memset(&subresource, 0, sizeof(subresource));
+	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	vkGetImageSubresourceLayout(compose->device, import->staging, &subresource, &layout);
+	import->map = (unsigned char *)import->map + layout.offset;
+	import->row_pitch = layout.rowPitch;
+
+	/* The sampled image, which no CPU maps. */
+	create.tiling = VK_IMAGE_TILING_OPTIMAL;
+	create.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	result = vkCreateImage(compose->device, &create, NULL, &import->image);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Device-local memory when the device has it, else any type the image accepts. */
+	vkGetImageMemoryRequirements(compose->device, import->image, &requirements);
+	for (index = 0; index < memory.memoryTypeCount; index++) {
+		if ((requirements.memoryTypeBits & (1U << index)) != 0U &&
+		    (memory.memoryTypes[index].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0U)
+			break;
+	}
+	if (index == memory.memoryTypeCount) {
+		/* Falls back to the first type the image accepts. */
+		for (index = 0; index < memory.memoryTypeCount; index++) {
+			if ((requirements.memoryTypeBits & (1U << index)) != 0U)
+				break;
+		}
+	}
+
+	/* Without one the image cannot be sampled. */
+	if (index == memory.memoryTypeCount)
+		return VK_ERROR_FORMAT_NOT_SUPPORTED;
+
+	/* The sampled memory, bound. */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocate.allocationSize = requirements.size;
@@ -678,16 +762,6 @@ image_create(
 	result = vkBindImageMemory(compose->device, import->image, import->memory, 0U);
 	if (result != VK_SUCCESS)
 		return result;
-	result = vkMapMemory(compose->device, import->memory, 0U, VK_WHOLE_SIZE, 0U, &import->map);
-	if (result != VK_SUCCESS)
-		return result;
-
-	/* Where each row starts in that memory. */
-	memset(&subresource, 0, sizeof(subresource));
-	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	vkGetImageSubresourceLayout(compose->device, import->image, &subresource, &layout);
-	import->map = (unsigned char *)import->map + layout.offset;
-	import->row_pitch = layout.rowPitch;
 
 	/* The view the shader samples. */
 	memset(&view, 0, sizeof(view));
@@ -702,10 +776,18 @@ image_create(
 	if (result != VK_SUCCESS)
 		return result;
 
-	/* The general layout, where the CPU writes and the shader reads. */
-	result = image_layout(compose, import->image);
+	/* The general layout for both: the CPU writes the staging image, copies fill the sampled one. */
+	result = image_layout(compose, import->staging, VK_IMAGE_LAYOUT_PREINITIALIZED);
 	if (result != VK_SUCCESS)
 		return result;
+	result = image_layout(compose, import->image, VK_IMAGE_LAYOUT_UNDEFINED);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* The first frame copies whatever the creator writes before it. */
+	import->written = 1U;
+	import->host_next = compose->host_images;
+	compose->host_images = import;
 
 	/* Its descriptor set (a spare one when there is one). */
 	result = kwl_compose_set_get(compose, &import->set);
@@ -737,7 +819,8 @@ image_create(
 static VkResult
 image_layout(
 	struct kwl_compose *compose,
-	VkImage image)
+	VkImage image,
+	VkImageLayout old_layout)
 {
 	VkCommandBufferAllocateInfo allocate;
 	VkCommandBufferBeginInfo begin;
@@ -747,7 +830,7 @@ image_layout(
 
 	/* The start's batch: its command buffer made and begun by the first image. */
 	if (compose->setup_batching && compose->setup_command != VK_NULL_HANDLE) {
-		result = image_layout_record(compose->setup_command, image);
+		result = image_layout_record(compose->setup_command, image, old_layout);
 		return result;
 	}
 
@@ -767,7 +850,7 @@ image_layout(
 
 	/* The move, recorded. */
 	if (result == VK_SUCCESS)
-		result = image_layout_record(command, image);
+		result = image_layout_record(command, image, old_layout);
 
 	/* In the batch, the command buffer waits for the others (kwl_host_image_batch_end). */
 	if (result == VK_SUCCESS && compose->setup_batching) {
@@ -799,20 +882,21 @@ image_layout(
 	return VK_SUCCESS;
 }
 
-/* Records one image's move from preinitialized (the host's writes kept) to general. */
+/* Records one image's move to general: from preinitialized keeping the host's writes, or from undefined. */
 static VkResult
 image_layout_record(
 	VkCommandBuffer command,
-	VkImage image)
+	VkImage image,
+	VkImageLayout old_layout)
 {
 	VkImageMemoryBarrier barrier;
 
-	/* The host's writes, before and after this, are seen by the fragment shader. */
+	/* The host's writes, before and after this, are seen by later copies and the fragment shader. */
 	memset(&barrier, 0, sizeof(barrier));
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 	barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.oldLayout = old_layout;
 	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
 	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -820,7 +904,7 @@ image_layout_record(
 	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	barrier.subresourceRange.levelCount = 1U;
 	barrier.subresourceRange.layerCount = 1U;
-	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 
 	/* Succeeded: the move is recorded. */
 	return VK_SUCCESS;
@@ -832,6 +916,17 @@ image_release(
 	struct kwl_compose *compose,
 	struct kwl_import *import)
 {
+	struct kwl_import **position;
+
+	/* The image leaves the list the frames copy from. */
+	for (position = &compose->host_images; *position != NULL; position = &(*position)->host_next) {
+		/* Unlinks this exact record. */
+		if (*position == import) {
+			*position = import->host_next;
+			break;
+		}
+	}
+
 	/* Each object, in the reverse order of its making. */
 	if (import->set != VK_NULL_HANDLE)
 		kwl_compose_set_put(compose, import->set);
@@ -843,6 +938,10 @@ image_release(
 		vkDestroyImage(compose->device, import->image, NULL);
 	if (import->memory != VK_NULL_HANDLE)
 		vkFreeMemory(compose->device, import->memory, NULL);
+	if (import->staging != VK_NULL_HANDLE)
+		vkDestroyImage(compose->device, import->staging, NULL);
+	if (import->staging_memory != VK_NULL_HANDLE)
+		vkFreeMemory(compose->device, import->staging_memory, NULL);
 	memset(import, 0, sizeof(*import));
 }
 
@@ -878,4 +977,48 @@ kwl_row_sum(
 
 	/* The sum. */
 	return sum;
+}
+
+/* Records one host image's whole copy from its staging into its sampled image, between the frames' reads. */
+static void
+image_copy_record(
+	VkCommandBuffer command,
+	struct kwl_import *import)
+{
+	VkImageMemoryBarrier barriers[2];
+	VkImageCopy copy;
+
+	/* The host's writes reach the copy, and earlier frames' sampling ends before it overwrites. */
+	memset(barriers, 0, sizeof(barriers));
+	barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barriers[0].srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+	barriers[0].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	barriers[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+	barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barriers[0].image = import->staging;
+	barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barriers[0].subresourceRange.levelCount = 1U;
+	barriers[0].subresourceRange.layerCount = 1U;
+	barriers[1] = barriers[0];
+	barriers[1].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	barriers[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barriers[1].image = import->image;
+	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 2U, barriers);
+
+	/* The whole image, staging to sampled. */
+	memset(&copy, 0, sizeof(copy));
+	copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.srcSubresource.layerCount = 1U;
+	copy.dstSubresource = copy.srcSubresource;
+	copy.extent.width = import->width;
+	copy.extent.height = import->height;
+	copy.extent.depth = 1U;
+	vkCmdCopyImage(command, import->staging, VK_IMAGE_LAYOUT_GENERAL, import->image, VK_IMAGE_LAYOUT_GENERAL, 1U, &copy);
+
+	/* The copy reaches the fragment shader of this frame and the next ones. */
+	barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barriers[1]);
 }

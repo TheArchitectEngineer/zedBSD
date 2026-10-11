@@ -442,6 +442,8 @@ static uint32_t frame_edges(struct kwl_server *server, const struct kwl_object *
 static uint32_t frame_under_pointer(struct kwl_server *server);
 static int glass_motion_take(struct kwl_server *server);
 static int button_at(const struct kwl_object *surface, int32_t x, int32_t y);
+static void probe_buttons(struct kwl_server *server, const struct kwl_object *surface);
+static void probe_bar_buttons(struct kwl_server *server, const struct shell_bar *bar);
 static void button_centre(const struct kwl_object *surface, int button, int32_t *x, int32_t *y);
 static int bar_button_at(const struct shell_bar *bar, int32_t x, int32_t y);
 static struct kwl_object *window_at(struct kwl_server *server, int32_t x, int32_t y, enum shell_hit *hit);
@@ -3938,9 +3940,10 @@ draw_title_bar(
 	area.origin = panel->x;
 	kwl_titlebar_draw(server, command, surface, 0, &area, ink, buttons);
 
-	/* The buttons, as they fade. */
+	/* The buttons, as they fade, each lit under the pointer (a hover probe, damage.c). */
 	if (buttons <= 0.0f)
 		return;
+	probe_buttons(server, surface);
 	for (button = 0; button < BUTTON_COUNT; button++) {
 		cx = panel->x + panel->width - 26 - button * BUTTON_SPACING;
 		cy = panel->y + panel->height / 2;
@@ -4466,6 +4469,7 @@ draw_head_bar(
 		/* Its buttons in their pill, the one under the pointer lit. */
 		draw_bar_group_at(server, command, bar.buttons_x, output.y, bar.buttons_width, BAR_BUTTONS_HEIGHT, 1.0f);
 		over = -1;
+		probe_bar_buttons(server, &bar);
 		if (server->pointer_output == slot)
 			over = bar_button_at(&bar, server->pointer_x, server->pointer_y);
 		for (button = 0; button < BUTTON_COUNT; button++)
@@ -4753,6 +4757,7 @@ draw_bar_buttons(
 	/* The buttons, faded with it, the one under the pointer lit while a window is docked. */
 	memcpy(ink, colours->ink, sizeof(ink));
 	over = -1;
+	probe_bar_buttons(server, bar);
 	if (docked != NULL)
 		over = bar_button_at(bar, server->pointer_x, server->pointer_y);
 	for (button = 0; button < BUTTON_COUNT; button++) {
@@ -5540,6 +5545,40 @@ button_at(
 
 	/* None. */
 	return -1;
+}
+
+/* Records a floating title bar's button boxes as hover probes (damage.c). */
+static void
+probe_buttons(
+	struct kwl_server *server,
+	const struct kwl_object *surface)
+{
+	int32_t cx;
+	int32_t cy;
+	int button;
+
+	/* A docked window's buttons are in the bar, probed there. */
+	if (surface->maximized)
+		return;
+
+	/* The same boxes button_at tests. */
+	for (button = 0; button < BUTTON_COUNT; button++) {
+		button_centre(surface, button, &cx, &cy);
+		kwl_hover_probe(server, cx - BUTTON_WIDTH / 2, cy - BUTTON_HEIGHT / 2, BUTTON_WIDTH, BUTTON_HEIGHT);
+	}
+}
+
+/* Records a bar's button boxes as hover probes (damage.c). */
+static void
+probe_bar_buttons(
+	struct kwl_server *server,
+	const struct shell_bar *bar)
+{
+	int button;
+
+	/* The same boxes bar_button_at tests. */
+	for (button = 0; button < BUTTON_COUNT; button++)
+		kwl_hover_probe(server, bar->buttons[button] - BUTTON_WIDTH / 2, bar->top, BUTTON_WIDTH, KWL_GLASS_BAR);
 }
 
 /* The centre of a floating title bar button (counted from the right edge). */
