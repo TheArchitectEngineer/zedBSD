@@ -149,6 +149,7 @@ static void test_send(void);
 static void test_read(void);
 static void test_failures(void);
 static void test_opening(void);
+static void test_send_mms(void);
 
 /*
  * Runs every part and reports the checks.
@@ -165,7 +166,12 @@ main(
 	test_send();
 	test_read();
 	test_failures();
+	test_send_mms();
 	test_opening();
+
+	/* The last MAS body room goes, so that the leak checker sees none. */
+	free(map.body);
+	map.body = NULL;
 
 	/* The count of what failed. */
 	printf("bt-map-host-test: %u checks, %u failed\n", checks, failures);
@@ -419,6 +425,10 @@ start(
 	hooks.room = hook_room;
 	hooks.changed = hook_changed;
 	hooks.up = hook_up;
+
+	/* The last test's MAS body room goes (btd_map_init starts a record afresh), then the record. */
+	free(map.body);
+	map.body = NULL;
 	btd_map_init(&map, &hooks, TEST_FIRST_SESSION);
 }
 
@@ -1484,4 +1494,98 @@ test_opening(
 	check(world.sdp_queries == 2U, "opening: SDP asked again after 2 s");
 	sdp_answer(0x0eU, 1, 0x0000001fU);
 	check(world.dlc_opens == 2U, "opening: the DLC asked for again");
+}
+
+/* An MMS sent (ws197-p010): its MIME body pushed as a bMessage of type MMS, one large one at a time, a bad body and a phone without MMS refused. */
+static void
+test_send_mms(
+	void)
+{
+	static const char mime[] =
+		"MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"=_Keiland_MMS_1\"\r\n\r\n"
+		"--=_Keiland_MMS_1\r\nContent-Type: image/png; name=\"a.png\"\r\nContent-Disposition: inline; filename=\"a.png\"\r\n"
+		"Content-Transfer-Encoding: base64\r\n\r\niVBORw0KGgo=\r\n--=_Keiland_MMS_1--\r\n";
+	static const uint8_t name_31[] = { 0x01U, 0x00U, 0x09U, 0x00U, '3', 0x00U, '1', 0x00U, 0x00U };
+	struct btd_obex_header header;
+	static uint8_t packet[65536];
+	uint8_t *large;
+	const char *refused;
+	size_t length;
+	size_t size;
+	size_t used;
+	unsigned puts_seen;
+	int found;
+
+	/* PushMessage to the outbox: a bMessage of type MMS whose body is the MIME. */
+	setup();
+	refused = btd_map_send_mms(&map, 5U, "+15551234", (const uint8_t *)mime, strlen(mime));
+	check(refused == NULL, "mms: started");
+	length = take(packet, sizeof(packet));
+	check(length != 0U && packet[0] == 0x82U, "mms: one Put with the Final bit");
+	found = find_header(packet, length, 3U, 0x01U, &header);
+	check(found && is_text(&header, "outbox"), "mms: Name outbox");
+	found = find_header(packet, length, 3U, 0x49U, &header);
+	check(found && memmem(header.data, header.length, "TYPE:MMS\r\n", 10U) != NULL, "mms: type MMS");
+	check(found && memmem(header.data, header.length, "iVBORw0KGgo=", 12U) != NULL, "mms: the MIME body carried");
+
+	/* The answer names the message 31: the client told it was pushed. */
+	respond(0xa0U, name_31, sizeof(name_31));
+	check(has_answer("state=pushed\n5: DONE\n"), "mms: pushed");
+
+	/* A large MMS (past an SMS's bMessage) under way: a second one waits its turn as busy. */
+	size = 24000U;
+	large = malloc(size);
+	check(large != NULL, "mms: room for a large one");
+	if (large == NULL)
+		return;
+	used = (size_t)snprintf((char *)large, size, "MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: image/png\r\nContent-Transfer-Encoding: base64\r\n\r\n");
+	while (used + 78U + 32U < size) {
+		memset(large + used, 'A', 76U);
+		large[used + 76U] = '\r';
+		large[used + 77U] = '\n';
+		used += 78U;
+	}
+	used += (size_t)snprintf((char *)large + used, 32U, "--b--\r\n");
+	refused = btd_map_send_mms(&map, 5U, "+15551234", large, used);
+	check(refused == NULL, "mms: a large one started");
+	refused = btd_map_send_mms(&map, 5U, "+15551234", large, used);
+	check(refused != NULL && strcmp(refused, "busy") == 0, "mms: a second large one is busy");
+	free(large);
+
+	/* The large one goes in several Puts, each answered Continue, the last named. */
+	puts_seen = 0U;
+	for (;;) {
+		length = take(packet, sizeof(packet));
+		if (length == 0U)
+			break;
+		puts_seen++;
+		if (packet[0] == 0x82U) {
+			respond(0xa0U, name_31, sizeof(name_31));
+			break;
+		}
+		respond(0x90U, NULL, 0U);
+	}
+	check(puts_seen > 1U, "mms: the large one in several Puts");
+
+	/* A body that is not MIME, and a number that is not one. */
+	refused = btd_map_send_mms(&map, 5U, "+15551234", (const uint8_t *)"plain", 5U);
+	check(refused != NULL && strcmp(refused, "argument") == 0, "mms: not MIME");
+	refused = btd_map_send_mms(&map, 5U, "+1 555", (const uint8_t *)mime, strlen(mime));
+	check(refused != NULL && strcmp(refused, "number") == 0, "mms: a bad number");
+
+	/* A phone that takes SMS but not MMS (SupportedMessageTypes 0x06). */
+	start();
+	btd_map_ready(&map);
+	sdp_answer(0x06U, 1, 0x0000001fU);
+	btd_map_opened(&map, TEST_MAS_DLCI, TEST_MAS_CHANNEL, 1);
+	(void)take(packet, sizeof(packet));
+	respond_connect();
+	(void)take(packet, sizeof(packet));
+	respond(0xa0U, NULL, 0U);
+	(void)take(packet, sizeof(packet));
+	respond(0xa0U, NULL, 0U);
+	(void)take(packet, sizeof(packet));
+	respond(0xa0U, NULL, 0U);
+	refused = btd_map_send_mms(&map, 5U, "+15551234", (const uint8_t *)mime, strlen(mime));
+	check(refused != NULL && strcmp(refused, "no-send") == 0, "mms: a phone without MMS");
 }

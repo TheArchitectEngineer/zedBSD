@@ -21,7 +21,7 @@
 /* The start of a PHONE SEND line, and the longest decimal length it gives. */
 #define PHONEIO_SEND		"PHONE SEND "
 #define PHONEIO_SEND_BYTES	11U
-#define PHONEIO_DIGITS_MAX	5U
+#define PHONEIO_DIGITS_MAX	8U
 
 static int phoneio_hex(char letter);
 static int phoneio_put(char *line, size_t size, size_t *used, const char *text);
@@ -157,7 +157,9 @@ btd_phoneio_send_length(
 	size_t digits;
 	size_t index;
 	size_t number;
+	size_t limit;
 	int found;
+	int media;
 	int same;
 	int got;
 
@@ -169,6 +171,7 @@ btd_phoneio_send_length(
 	/* Each argument, the length once among them. */
 	cursor = line + PHONEIO_SEND_BYTES;
 	found = 0;
+	media = 0;
 	number = 0U;
 	for (;;) {
 		got = btd_phoneio_next(&cursor, key, sizeof(key), value, sizeof(value));
@@ -176,6 +179,16 @@ btd_phoneio_send_length(
 			break;
 		if (got != BTD_PHONEIO_ARGUMENT)
 			return EINVAL;
+
+		/* type=mms, once, says the text is an MMS's MIME body, which may be longer. */
+		same = strcmp(key, "type");
+		if (same == 0) {
+			same = strcmp(value, "mms");
+			if (same != 0 || media)
+				return EINVAL;
+			media = 1;
+			continue;
+		}
 
 		/* Another argument is the request's to read. */
 		same = strcmp(key, "length");
@@ -196,8 +209,11 @@ btd_phoneio_send_length(
 		found = 1;
 	}
 
-	/* A length within the range. */
-	if (!found || number == 0U || number > BTD_PHONE_SEND_MAX)
+	/* A length within the range: a text's, or an MMS body's. */
+	limit = BTD_PHONE_SEND_MAX;
+	if (media)
+		limit = BTD_PHONE_MIME_MAX;
+	if (!found || number == 0U || number > limit)
 		return EINVAL;
 
 	/* Succeeded: the length of the text that follows. */

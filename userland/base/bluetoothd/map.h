@@ -371,6 +371,7 @@ void btd_map_open_failed(void *context, unsigned server_channel);
 const char *btd_map_page(struct btd_map *map, uint64_t token, int64_t since, unsigned limit, const char *cursor, unsigned count);
 const char *btd_map_read(struct btd_map *map, uint64_t token, const char *handle);
 const char *btd_map_send(struct btd_map *map, uint64_t token, const char *number, const uint8_t *text, size_t length);
+const char *btd_map_send_mms(struct btd_map *map, uint64_t token, const char *number, const uint8_t *mime, size_t length);
 void btd_map_cancel(struct btd_map *map, uint64_t token);
 void btd_map_check(struct btd_map *map);
 void btd_map_pump(struct btd_map *map);

@@ -48,6 +48,7 @@ struct mms_reader {
 static int mms_utf8_ok(const uint8_t *input, size_t length);
 static int mms_media(struct mms_reader *reader, const uint8_t *input, size_t length, const struct mms_headers *headers);
 static int mms_write_base64(FILE *output, const uint8_t *input, size_t length);
+static int mms_part_ok(const struct mms_part *part);
 static int mms_line(const uint8_t *input, size_t length, size_t *at, size_t *start, size_t *end);
 static int mms_headers_read(const uint8_t *input, size_t length, struct mms_headers *headers);
 static int mms_header_keep(struct mms_headers *headers, const char *line);
@@ -180,29 +181,58 @@ mms_write(
 	size_t length,
 	const char *caption)
 {
-	size_t span;
+	struct mms_part part;
+	int error;
+
+	/* The one part. */
+	part.type = type;
+	part.name = name;
+	part.data = data;
+	part.length = length;
+
+	/* Written as a message of one part. */
+	error = mms_write_parts(output, &part, 1U, caption);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the stream contains one complete MIME message. */
+	return 0;
+}
+
+/*
+ * Writes original images/videos (1 to MMS_MEDIA_COUNT, MMS_MEDIA_MAX bytes
+ * in all) and an optional UTF-8 caption as one multipart MIME message.
+ * Nothing is written when a part or the caption is refused.
+ */
+int
+mms_write_parts(
+	FILE *output,
+	const struct mms_part *parts,
+	size_t count,
+	const char *caption)
+{
+	const struct mms_part *part;
+	size_t total;
+	size_t index;
 	size_t caption_length;
-	int selected;
 	int written;
 	int error;
 	int valid;
 
-	/* Requires one nonempty bounded media payload. */
-	if (output == NULL || type == NULL || name == NULL || data == NULL || length == 0U || length > MMS_MEDIA_MAX)
+	/* Requires one to MMS_MEDIA_COUNT parts. */
+	if (output == NULL || parts == NULL || count == 0U || count > MMS_MEDIA_COUNT)
 		return EINVAL;
 
-	/* Accepts media tokens without allowing folded or injected headers. */
-	selected = strncmp(type, "image/", 6U);
-	if (selected != 0)
-		selected = strncmp(type, "video/", 6U);
-	span = strspn(type, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/.-+");
-	if (selected != 0 || type[span] != '\0' || span >= MMS_TYPE_MAX)
-		return EINVAL;
-
-	/* Keeps a quoted filename on one line without escaped delimiters. */
-	span = strcspn(name, "\r\n\"\\");
-	if (name[span] != '\0' || span == 0U || span >= MMS_NAME_MAX)
-		return EINVAL;
+	/* Checks every part, and the bytes in all, before producing any. */
+	total = 0U;
+	for (index = 0U; index < count; index++) {
+		valid = mms_part_ok(&parts[index]);
+		if (!valid)
+			return EINVAL;
+		if (parts[index].length > MMS_MEDIA_MAX - total)
+			return EFBIG;
+		total += parts[index].length;
+	}
 
 	/* Validates the optional caption before producing any bytes. */
 	if (caption == NULL)
@@ -227,13 +257,16 @@ mms_write(
 			return error;
 	}
 
-	/* Writes the original binary file rather than transcoding it. */
-	written = fprintf(output, "--=_Keiland_MMS_1\r\nContent-Type: %s; name=\"%s\"\r\nContent-Disposition: inline; filename=\"%s\"\r\nContent-Transfer-Encoding: base64\r\n\r\n", type, name, name);
-	if (written < 0)
-		return EIO;
-	error = mms_write_base64(output, data, length);
-	if (error != 0)
-		return error;
+	/* Writes each original file rather than transcoding it. */
+	for (index = 0U; index < count; index++) {
+		part = &parts[index];
+		written = fprintf(output, "--=_Keiland_MMS_1\r\nContent-Type: %s; name=\"%s\"\r\nContent-Disposition: inline; filename=\"%s\"\r\nContent-Transfer-Encoding: base64\r\n\r\n", part->type, part->name, part->name);
+		if (written < 0)
+			return EIO;
+		error = mms_write_base64(output, part->data, part->length);
+		if (error != 0)
+			return error;
+	}
 
 	/* Terminates the multipart and exposes write failures. */
 	written = fprintf(output, "--=_Keiland_MMS_1--\r\n");
@@ -242,6 +275,39 @@ mms_write(
 
 	/* Succeeded: the stream contains one complete MIME message. */
 	return 0;
+}
+
+/* Checks one part to write: an image/video type token, a one-line file name, and some bytes. */
+static int
+mms_part_ok(
+	const struct mms_part *part)
+{
+	size_t span;
+	int selected;
+
+	/* Requires one nonempty bounded media payload. */
+	if (part->type == NULL || part->name == NULL || part->data == NULL)
+		return 0;
+	if (part->length == 0U || part->length > MMS_MEDIA_MAX)
+		return 0;
+
+	/* Accepts media tokens without allowing folded or injected headers. */
+	selected = strncmp(part->type, "image/", 6U);
+	if (selected != 0)
+		selected = strncmp(part->type, "video/", 6U);
+	if (selected != 0)
+		return 0;
+	span = strspn(part->type, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/.-+");
+	if (part->type[span] != '\0' || span >= MMS_TYPE_MAX)
+		return 0;
+
+	/* Keeps a quoted filename on one line without escaped delimiters. */
+	span = strcspn(part->name, "\r\n\"\\");
+	if (part->name[span] != '\0' || span == 0U || span >= MMS_NAME_MAX)
+		return 0;
+
+	/* A part that can be written. */
+	return 1;
 }
 
 /* Validates UTF-8 scalar values and excludes embedded NUL in captions. */

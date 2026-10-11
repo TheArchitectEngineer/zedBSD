@@ -1292,6 +1292,7 @@ btd_phone_send_request(
 	const char *cursor;
 	const char *refused;
 	int allowed;
+	int media;
 	int got;
 	int same;
 
@@ -1305,6 +1306,7 @@ btd_phone_send_request(
 
 	/* The number among the arguments (the length was read by the input). */
 	number[0] = '\0';
+	media = 0;
 	cursor = line + strlen("PHONE SEND");
 	for (;;) {
 		got = btd_phoneio_next(&cursor, key, sizeof(key), value, sizeof(value));
@@ -1315,6 +1317,13 @@ btd_phone_send_request(
 		same = strcmp(key, "to");
 		if (same == 0) {
 			(void)snprintf(number, sizeof(number), "%s", value);
+			continue;
+		}
+
+		/* type=mms says the text is an MMS's MIME body (the input checked it once). */
+		same = strcmp(key, "type");
+		if (same == 0) {
+			media = 1;
 			continue;
 		}
 
@@ -1334,7 +1343,10 @@ btd_phone_send_request(
 
 	/* Asked of MAP, the client waiting for its DONE (a refusal answered now). */
 	client->waits_phone = 1;
-	refused = btd_map_send(&btd_messages, btd_token(index), number, text, length);
+	if (media)
+		refused = btd_map_send_mms(&btd_messages, btd_token(index), number, text, length);
+	else
+		refused = btd_map_send(&btd_messages, btd_token(index), number, text, length);
 	if (refused != NULL) {
 		client->waits_phone = 0;
 		btd_write(client, "ERROR %s\nDONE\n", refused);
