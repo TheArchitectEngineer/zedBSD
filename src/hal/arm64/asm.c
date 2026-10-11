@@ -30,6 +30,21 @@ void arm64_write_ttbr1(uintptr_t physical)
 void arm64_flush_tlb(void)
 { __asm__ volatile("dsb ishst\n\ttlbi vmalle1is\n\tdsb ish\n\tisb" ::: "memory"); }
 
+/*
+ * Drops every EL1 translation cached by the calling CPU alone.
+ *
+ * A CPU selecting another address space needs only its own TLB emptied:
+ * no ASIDs are used, so the entries of the space it leaves must not
+ * survive, but no other CPU holds entries of this CPU's selection.
+ */
+void
+arm64_flush_tlb_local(
+	void)
+{
+	/* Orders earlier table stores, drops this CPU's entries, and waits for it. */
+	__asm__ volatile("dsb ishst\n\ttlbi vmalle1\n\tdsb nsh\n\tisb" ::: "memory");
+}
+
 void hal_mb(void){__asm__ volatile("dmb ish":::"memory");}
 void hal_rmb(void){__asm__ volatile("dmb ishld":::"memory");}
 void hal_wmb(void){__asm__ volatile("dmb ishst":::"memory");}

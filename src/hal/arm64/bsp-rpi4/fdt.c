@@ -25,6 +25,9 @@ struct fdt_node {
 	uint8_t is_gic;
 	uint8_t is_sdhci;
 	uint8_t is_chosen;
+	uint8_t is_cpu;
+	uint8_t spin_table;
+	uint64_t release_addr;
 	uint32_t reg[FDT_MAX_CELLS];
 	uint32_t reg_count;
 	uint32_t ranges[FDT_MAX_CELLS];
@@ -142,6 +145,8 @@ decode_irq(const uint32_t *cells, unsigned count)
 	return cells[1];
 }
 
+static int commit_cpu(const struct fdt_node *node, struct rpi4_fdt_info *info);
+
 static int
 commit_node(struct fdt_node *node, const struct fdt_node *parent,
 	struct rpi4_fdt_info *info)
@@ -150,6 +155,11 @@ commit_node(struct fdt_node *node, const struct fdt_node *parent,
 	unsigned offset;
 	int error;
 	if (node->is_rpi4) info->compatible_rpi4 = 1;
+	if (node->is_cpu) {
+		error = commit_cpu(node, info);
+		if (error != FDT_OK)
+			return error;
+	}
 	if (node->is_memory && stride != 0) {
 		for (offset = 0; offset + stride <= node->reg_count; offset += stride) {
 			uint64_t base, size;
@@ -281,6 +291,14 @@ rpi4_fdt_parse(const void *blob, size_t available, struct rpi4_fdt_info *info)
 				node->size_cells = (uint8_t)read_be32(value);
 			else if (string_equal(name, name_length, "device_type") &&
 			    length >= 7 && string_equal(value, 6, "memory")) node->is_memory = 1;
+			else if (string_equal(name, name_length, "device_type") &&
+			    length >= 4 && string_equal(value, 3, "cpu")) node->is_cpu = 1;
+			else if (string_equal(name, name_length, "enable-method"))
+				node->spin_table = (uint8_t)compatible_has(value, length, "spin-table");
+			else if (string_equal(name, name_length, "cpu-release-addr") && length == 8)
+				node->release_addr = read_be64(value);
+			else if (string_equal(name, name_length, "cpu-release-addr") && length == 4)
+				node->release_addr = read_be32(value);
 			else if (string_equal(name, name_length, "compatible")) {
 				node->is_rpi4 |= compatible_has(value, length, "raspberrypi,4-model-b");
 				node->is_rpi4 |= compatible_has(value, length, "brcm,bcm2711");
@@ -318,6 +336,45 @@ rpi4_fdt_parse(const void *blob, size_t available, struct rpi4_fdt_info *info)
 		} else return FDT_E_STRUCTURE;
 	}
 	return FDT_E_STRUCTURE;
+}
+
+/*
+ * Records one cpu node: its affinity from reg, and its spin table.
+ *
+ * A tree with more CPUs than the table holds keeps the first ones; the
+ * HAL brings up no more than four anyway.
+ */
+static int
+commit_cpu(
+	const struct fdt_node *node,
+	struct rpi4_fdt_info *info)
+{
+	struct rpi4_fdt_cpu *cpu;
+	uint64_t mpidr;
+	int error;
+
+	/* A cpu node without an address cannot be named to the interrupt controller. */
+	if (node->parent_addr_cells == 0 || node->reg_count < node->parent_addr_cells)
+		return FDT_E_CELLS;
+
+	/* The reg cells are the CPU's affinity. */
+	error = cells_to_u64(node->reg, node->parent_addr_cells, &mpidr);
+	if (error != FDT_OK)
+		return error;
+
+	/* CPUs past the table are left out. */
+	if (info->cpu_count >= RPI4_FDT_MAX_CPUS)
+		return FDT_OK;
+
+	/* Appends the CPU. */
+	cpu = &info->cpus[info->cpu_count];
+	cpu->mpidr = mpidr;
+	cpu->release_addr = node->release_addr;
+	cpu->spin_table = node->spin_table;
+	info->cpu_count++;
+
+	/* Succeeded: the CPU is recorded. */
+	return FDT_OK;
 }
 
 const char *

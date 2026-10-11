@@ -45,6 +45,9 @@ arm64_cmain(uintptr_t fdt_phys)
 	hal_printf("RPI4 MMIO uart=%llx gic=%llx/%llx sd=%llx\n",
 	    info.uart_base, info.gic_dist_base, info.gic_cpu_base, info.sdhci_base);
 	rpi4_boot_set_info(&info, fdt_phys);
+
+	/* Fixes the number of CPUs before the kernel can ask for it. */
+	arm64_smp_configure();
 	if(rpi4_framebuffer_init(info.mailbox_base)==0){
 		hal_puts("RPI4 FRAMEBUFFER PASS\n");
 		rpi4_framebuffer_describe();

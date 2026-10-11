@@ -5,6 +5,21 @@
 
 #define RPI4_FDT_MAX_MEMORY 8
 #define RPI4_FDT_MAX_RESERVED 24
+#define RPI4_FDT_MAX_CPUS 8
+
+/*
+ * One CPU the device tree names: its affinity (the cpu node's reg, which
+ * is MPIDR_EL1's affinity fields) and how the firmware holds it back.
+ */
+struct rpi4_fdt_cpu {
+	uint64_t mpidr;
+
+	/* Where a spin-table CPU waits for its entry address; 0 when none was given. */
+	uint64_t release_addr;
+
+	/* Nonzero when enable-method names "spin-table". */
+	uint32_t spin_table;
+};
 
 struct rpi4_fdt_range {
 	uint64_t base;
@@ -31,6 +46,10 @@ struct rpi4_fdt_info {
 	 */
 	uint32_t bootargs_offset;
 	uint32_t bootargs_length;
+
+	/* The CPUs of /cpus in the order the tree lists them. */
+	unsigned cpu_count;
+	struct rpi4_fdt_cpu cpus[RPI4_FDT_MAX_CPUS];
 };
 
 int rpi4_fdt_parse(const void *blob, size_t available,

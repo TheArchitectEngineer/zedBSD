@@ -12,6 +12,7 @@
 #define GICD_IPRIORITYR 0x400
 #define GICD_ITARGETSR 0x800
 #define GICD_ICFGR 0xc00
+#define GICD_SGIR 0xf00
 #define GICC_CTLR 0x000
 #define GICC_PMR 0x004
 #define GICC_IAR 0x00c
@@ -46,10 +47,71 @@ rpi4_gic_init(void)
 	dist[GICD_IGROUPR/4]&=~(1U<<30);
 	for(i=32;i<lines;i++)write8(dist,GICD_ITARGETSR+i,1);
 	for(i=2;i<(lines+15)/16;i++)dist[GICD_ICFGR/4+i]=0;
-	cpuif[GICC_PMR/4]=0xff;
-	/* Enable both views; on a non-secure CPU bit 0 aliases Group 1. */
-	cpuif[GICC_CTLR/4]=3;
+	/* The boot CPU's private lines and CPU interface, as every other CPU's. */
+	rpi4_gic_init_cpu();
 	dist[GICD_CTLR/4]=3;
+	hal_io_mb();
+}
+
+/*
+ * Sets up the calling CPU's banked part of the GIC: its private lines
+ * (SGI 0-15, PPI 16-31) and its CPU interface.
+ *
+ * The timer's PPI and the HAL's two SGIs are put in Group 0, which the
+ * primary IAR serves when the CPU runs in the secure state (QEMU's direct
+ * boot).  Under the firmware the CPU is non-secure, the group writes are
+ * ignored and the primary IAR serves Group 1, where the firmware put them.
+ */
+void
+rpi4_gic_init_cpu(
+	void)
+{
+	uint32_t groups;
+	uint32_t line;
+
+	/* Starts with every private line disabled and nothing pending. */
+	dist[GICD_ICENABLER / 4] = 0xffffffffU;
+	dist[GICD_ICPENDR / 4] = 0xffffffffU;
+
+	/* Groups the private lines, the HAL's SGIs and the timer in Group 0. */
+	groups = 0xffffffffU;
+	groups &= ~(1U << 30);
+	groups &= ~(1U << RPI4_SGI_STOP);
+	groups &= ~(1U << RPI4_SGI_NOTIFY);
+	dist[GICD_IGROUPR / 4] = groups;
+
+	/* Gives the private lines the same priority as the shared ones. */
+	for (line = 0; line < 32U; line++)
+		write8(dist, GICD_IPRIORITYR + line, 0xa0);
+
+	/* Enables the HAL's SGIs; the GIC-400 keeps SGIs enabled in any case. */
+	dist[GICD_ISENABLER / 4] = (1U << RPI4_SGI_STOP) | (1U << RPI4_SGI_NOTIFY);
+
+	/* Lets every priority through and enables both groups at the interface. */
+	cpuif[GICC_PMR / 4] = 0xff;
+	cpuif[GICC_CTLR / 4] = 3;
+	hal_io_mb();
+}
+
+/*
+ * Sends a software-generated interrupt to the CPU interfaces of a mask.
+ *
+ * The barrier first makes the sender's writes visible to the targets
+ * before they take the interrupt.
+ */
+void
+rpi4_gic_send_sgi(
+	uint32_t sgi,
+	uint32_t target_interfaces)
+{
+	uint32_t request;
+
+	/* Publishes the sender's memory writes to the targets. */
+	__asm__ volatile("dsb ish" : : : "memory");
+
+	/* Names the targets by CPU interface (bits 16-23) and the SGI (bits 0-3). */
+	request = ((target_interfaces & 0xffU) << 16) | (sgi & 0xfU);
+	dist[GICD_SGIR / 4] = request;
 	hal_io_mb();
 }
 

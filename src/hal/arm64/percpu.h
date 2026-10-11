@@ -73,5 +73,6 @@ void arm64_percpu_bootstrap(hal_cpu_id_t cpu, uint64_t mpidr);
 struct arm64_percpu *arm64_percpu_current(void);
 struct arm64_percpu *arm64_percpu_get(hal_cpu_id_t cpu);
 void arm64_smp_bootstrap(void);
+void arm64_smp_configure(void);
 
 #endif

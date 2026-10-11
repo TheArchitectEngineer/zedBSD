@@ -33,5 +33,7 @@ void arm64_page_init(void);
 void arm64_space_init(void);
 uintptr_t arm64_direct_to_phys(const void *address);
 void *arm64_phys_to_direct(uintptr_t address);
+uintptr_t arm64_space_kernel_ttbr1(void);
+void arm64_space_select_system(void);
 
 #endif

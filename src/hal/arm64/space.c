@@ -130,7 +130,6 @@ arm64_space_init(void)
 	uintptr_t rodata_start=arm64_direct_to_phys(__kernel_rodata_start);
 	uintptr_t rodata_end=arm64_direct_to_phys(__kernel_rodata_end);
 	uintptr_t data_start=arm64_direct_to_phys(__kernel_data_start);
-	if(hal_cpu_count()!=1)HAL_FATAL("arm64 space implementation is UP-only");
 	space_registry=NULL;
 	hal_memset(system_user_l0,0,sizeof(system_user_l0));
 	hal_memset(system_kernel_l0,0,sizeof(system_kernel_l0));
@@ -605,7 +604,9 @@ hal_space_destroy(
  * Selects a user space, or the kernel alone, on the calling CPU.
  *
  * The selection is published before TTBR0 changes, so a CPU that changes
- * the space's tables afterwards sees it and flushes this CPU too.
+ * the space's tables afterwards sees it and flushes this CPU too.  Only
+ * this CPU's TLB is emptied: without ASIDs, what it cached of the space
+ * it leaves must go, and no other CPU holds entries for its selection.
  */
 void
 hal_space_switch(
@@ -628,7 +629,7 @@ hal_space_switch(
 		__atomic_store_n(&cpu->current_space, handle, __ATOMIC_RELEASE);
 		hal_mb();
 		arm64_write_ttbr0(system_ttbr0);
-		arm64_flush_tlb();
+		arm64_flush_tlb_local();
 		if (enabled)
 			hal_irq_enable();
 		return;
@@ -643,9 +644,44 @@ hal_space_switch(
 	hal_mb();
 	ttbr = (uintptr_t)space->l0_memory;
 	arm64_write_ttbr0(ttbr);
-	arm64_flush_tlb();
+	arm64_flush_tlb_local();
 
 	space_unlock(space, enabled);
+}
+
+/*
+ * Reports the physical address of the kernel's level-0 table, which every
+ * CPU loads into TTBR1 once arm64_space_init() has built it.
+ */
+uintptr_t
+arm64_space_kernel_ttbr1(
+	void)
+{
+	uintptr_t physical;
+
+	/* The table lives in the kernel image, inside the direct map. */
+	physical = arm64_direct_to_phys(system_kernel_l0);
+
+	/* Succeeded: the table's physical address. */
+	return physical;
+}
+
+/*
+ * Makes a secondary CPU select the kernel alone, as the boot CPU does
+ * after arm64_space_init(); it arrives with the boot identity map.
+ */
+void
+arm64_space_select_system(
+	void)
+{
+	struct arm64_percpu *cpu;
+
+	/* Publishes the selection, then installs the empty user table. */
+	cpu = arm64_percpu_current();
+	__atomic_store_n(&cpu->current_space, HAL_SPACE_SYS, __ATOMIC_RELEASE);
+	hal_mb();
+	arm64_write_ttbr0(system_ttbr0);
+	arm64_flush_tlb_local();
 }
 
 /*
