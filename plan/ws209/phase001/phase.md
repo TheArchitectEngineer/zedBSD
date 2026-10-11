@@ -3,7 +3,7 @@
 # ws209-p001: audiod の音の endpoint と route — 再設計
 
 Parent: [WS209](../ws.md)
-Status: in-progress（P1。設計 1.1（review-1 の M1〜M7・M11）、E・R・P 節の短い再 review 待ち、G1〜G4 はユーザーへ）
+Status: in-progress（P1。設計 1.2（review-2 の N1〜N5・N7/G5）、Q1 の確認で p002 へ。G1〜G5 はユーザーの決定済み）
 Phase disposition: normal
 Queue: P1 の lane
 
@@ -187,6 +187,41 @@ Queue: P1 の lane
 | --- | --- | --- |
 | G3 | 通話の音がスマホにある間（スマホで応答した通話・スマホへ移した通話）も、PC の音楽・動画を止めるか | **止めない**（PC の音はスマホの通話と関係が無い） |
 | G4 | 通話の片道の遅れ（相手 → PC の speaker） | **約 170 ms を受け入れる**（電話として普通の範囲。水位を詰めると途切れやすい）。詰めるなら SCO の水位 20〜25 ms と call の間の先行 1 fragment で 150 ms 以下 |
+
+## 設計 1.2（2026-10-11、review-2（main の `plan/ws209/phase001/review-2.md`）の N1〜N5・N7（G5）を直す。Q1 の確認で p002 へ）
+
+ユーザーの決定（main の ws.md）: G1・G2 は推しどおり、G3 = 通話の音がスマホにある間は PC の media を止めない、G4 = call の間だけ詰めて 150 ms を目指し届かなければ約 170 ms、**G5 = 利用者の操作によらず media の出力が消えたら再生を止める**。
+
+| ID | 1.2 の決め（1.1 の同じ行を置き換える） |
+| --- | --- |
+| N1（E5'' を置き換え） | **期限切れで route を変えない**。WANTED=1 から期限（A2DP 2 秒・SCO 3 秒）までに ACTIVE が来なければ `ROUTE_INFO.reason = TIMEOUT` を出し、daemon に `WANTED=0`（その番号、N2）。待たせた media の stream は**待たせ続ける**（読まない、app の ring が満ちて app が待つ）。speaker へ移すかは compositor の policy（R8'）で、移すなら ROUTE_SET、移さなければ利用者が選び直すまで鳴らない。`ENDPOINT_FAILED` も同じ。T1（p005）に「期限切れでも speaker から音が出ない」 |
+| N2（E5'・E4） | **WANTED に通し番号**: `ENDPOINT_WANTED {id, wanted, ticket}`（ticket は endpoint ごとに 1 ずつ増える 32 bit）。daemon は開けたら `ENDPOINT_STATE {id, ACTIVE, ticket}` を返し、**audiod はその ticket の ACTIVE を受けるまで書かない**（WANTED=0 を送った時点でその endpoint は「開いていない」とみなし、待たせる）。古い ticket の ACTIVE は無視。SUSPENDED → ACTIVE も同じ（daemon が SUSPENDED を送った後の ACTIVE は ticket 付きで、audiod は次の WANTED=1 の ticket を待つ） |
+| N3（E7） | **SUSPENDED → ACTIVE の古い中身は daemon が捨てる**: daemon は ACTIVE を送る前に sink の `read_position` を `write_position` まで進める（位置の持ち主は daemon）。audiod は SUSPENDED の間その sink に書かず、ACTIVE を受けたら C3 の (a)（目標まで無音を先に書く）から始める。1.1 の「audiod が無音で埋め直す」は消す |
+| N4（E9） | **`played_position` を「今聞こえている位置」に**: 時刻（`played_time_ns`）は今のまま「その位置を測った時」。位置は `read_position` から今の出力の遅れを引いた物: `device:out` は audiod の先行（`device.c:35・438` の 2 fragment、call の間は G4 で 1）と kernel の mmap の lead（`audio.c:67`）、外の sink は ring の水位 + `latency_us`。出力が変わって位置が戻りそうな時は戻さず止める（単調、変わった遅れまで追いつくのを待つ）。videoplayer（`videoplayer/audio.c:191`、位置だけを使う）はこれで headset の遅れに合う。ring の layout は不変（`AUDIOD_SHM_VERSION` 1）。T2（p003）に「headset の遅れの分だけ position が遅れる」 |
+| N5（R7'） | **音量**: (a) call が張られている間、`DEVICE_VOLUME`・`VOLUME_CHANGED` は **call の利用者の出力**の音量（通話中に音量の key で通話の音量が変わる）、call が外れたら media の出力へ戻る。(b) daemon → audiod の `ENDPOINT_VOLUME_REPORT {id, left, right, muted}`（headset の釦の音量: AVRCP の Absolute Volume、`+VGS`）、audiod は endpoint の音量を更新して `VOLUME_CHANGED` を出す。(c) `ENDPOINT_ADD` に `flags`（`AUDIOD_ENDPOINT_VOLUME` = daemon が音量を受ける）、無ければ audiod の soft volume。(d) 音量は endpoint ごとに持ち、初めは daemon の報告か、無ければ 50%（大きな音を出さない）。0..100 と AVRCP の 0..127・`+VGS` の 0..15 の換算は daemon |
+| N7・G5（R4 を置き換え） | **出力が消えたら止める**: media の出力の endpoint が消えた・REMOVED・登録した接続が切れた時、audiod は media の stream を待たせ（`MEDIA_HELD {held=1, reason=OUTPUT_LOST}`）、route の出力を「無し」にする（speaker へ自動で移さない）。compositor の policy（G2）が ROUTE_SET で speaker を選んでも、**待たせた stream はそのまま**（鳴らない）で、stream の client が STOP・FLUSH してから START するか、compositor が `AUDIOD_MEDIA_RELEASE`（seat の uid、利用者が再生を押した時）を送るまで解かない。新しく作られた stream は新しい出力で鳴る。call の利用者の側の出力が消えた時は、call を speaker・mic へ移す（通話は止めない: 通話の音を失わないため）。app（Music など）に「止まった」を知らせる口は 1.1 の R5''' の Future Work のまま（それまで app の表示は再生中のまま音が止まる、記録） |
+
+### N6・minor の行き先
+
+| 指摘 | 行き先 |
+| --- | --- |
+| N6（stream の役を運ぶ経路） | p004 に「stream の役を kl-audio の wire（`kl-audio-protocol.h`）・compositor（`audio-stream.c`）・backend（`audio-stream-zedbsd.c`）へ、版と古い compositor・app の扱い（古い物は media）」、依存に WS191。p003 の T2 は audiod の直接の client で役を試し、p004 の試験に「app の alert が通話中に鳴る」 |
+| N8 | 録音の stream も「使う」に入れる（headset-voice の source を開ける）。`AUDIOD_FEEDBACK` は WANTED の契機にしない（DORMANT の出力では鳴らない、と書く）。猶予は audiod の 5 秒だけ（daemon は WANTED=0 ですぐ閉じてよい） |
+| N9 | p002 で 3 つの HELLO を `AUDIOD_PROTOCOL_VERSION_1` に、backend の assert を `AUDIOD_SHM_VERSION` に、`AUDIOD_VERSION` は消す。version 0 と短い HELLO は 1 |
+| N10 | SUBSCRIBE の mask を bit で見る（`mask & VOLUME`）、版 1 は VOLUME だけ。MEDIA_HELD・ENDPOINT_REMOVED は ROUTES・ENDPOINTS の bit |
+| N11 | 版 1 の `STREAM_CREATE`（40 byte）は不変、版 2 だけ `audiod_stream_create2`（48 byte、role 付き）、版 1 の長さなら role = media |
+| N12 | `CALL_STATE` は far の endpoint を登録した接続だけ、P3 に番号、G3（止めない）なので audiod は記録して `ROUTE_INFO` に載せるだけ |
+| N13 | 通話中（call が張られている間）の録音の stream は seat の uid と root に限る（他は EACCES）。版 1 の 0666 の socket の残る穴として記録 |
+| N14 | `CALL_SET` の far_group は phone-call・modem-call の class の group だけ（他は EINVAL）。id は使い回さない 32 bit（wrap は audiod の寿命の中で起きない） |
+| N15 | endpoint の一意は (key, kind)。同じ (key, kind) の登録は古い方を消して新しい方（daemon の再起動）。内の endpoint の key は `dev:dsp0:out`・`dev:dsp0:in` |
+| N16 | endpoint の ring の書き手: sink は `underruns` を daemon・`overruns` を audiod、source は逆。`played_*`・`state` は audiod が書く（daemon は読まない）。daemon の数は表示だけ |
+| N17 | compositor は WELCOME（audiod の再起動）の後に覚えた選び（ROUTE_SET）を送り直す。daemon は `ENDPOINT_REMOVED` で登録し直し、通話中なら `CALL_SET` |
+| N18 | message を数え直し、`AUDIOD_MESSAGE_MAX` を 256 に（ENDPOINT_ADD・INFO は約 128 byte、余裕 2 倍）。P3 の番号表を p002 の最初に確定 |
+| N19 | WELCOME の `device` の意味（出力がある）は全部の版で変える（版 1 の backend も A2DP だけの機械で NO_DEVICE にならない） |
+| N20 | SUSPENDED も DORMANT と同じく待たせる（通話の R5' の media を除く: 通話の間の A2DP の Suspend では media は call の出力に −12 dB で重なる、headset の時） |
+| N21 | speaker と内蔵の mic で話す時の AEC は範囲の外（AG の EC/NR に頼る前提、`AT+NREC` を送らない）、ws197-p007c で確かめる、と記録 |
+| N22 | p002 を 7 LW（main の ws.md は Q1 が揃えた） |
+| N23 | 接続の上限 64 のうち 8 を root・`_bluetooth` の枠に残す（それ以外の uid は 56 まで） |
 
 ## 判断（Q1 経由でユーザーへ、推し付き）
 
