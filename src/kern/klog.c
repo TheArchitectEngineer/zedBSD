@@ -28,10 +28,15 @@
 /*
  * The size of the ring.  amd64 keeps 512 KiB, so a driver's long start log
  * (the i915's, read over SSH after a start root asked for, ws118-p005) is
- * still whole when dmesg reads it; the smaller machines keep 32 KiB.
+ * still whole when dmesg reads it.  The Raspberry Pi 4 keeps 256 KiB, so
+ * the start of a boot that failed is still there when the bootlog service
+ * keeps the log on the boot FAT (BUG-288).  The smaller machines keep
+ * 32 KiB.
  */
 #if defined(__x86_64__)
 #define KLOG_CAPACITY (512U * 1024U)
+#elif defined(HAL_BOARD_RPI4)
+#define KLOG_CAPACITY (256U * 1024U)
 #else
 #define KLOG_CAPACITY (32U * 1024U)
 #endif
@@ -220,8 +225,8 @@ kern_log_snapshot(
 	uint64_t *dropped)
 {
 	unsigned long irq;
-	size_t i;
 	size_t needed;
+	size_t first;
 
 	irq = spin_lock_irqsave(&klog_lock);
 
@@ -230,10 +235,18 @@ kern_log_snapshot(
 	if (dropped)
 		*dropped = klog_dropped;
 
-	/* Copies the ring contents in order when the buffer is large enough. */
+	/*
+	 * Copies the ring contents in order when the buffer is large enough:
+	 * the part from the oldest byte to the end of the ring, then the part
+	 * that wrapped to its start.  Interrupts are off for the copy, so it
+	 * is two block copies rather than one division per byte.
+	 */
 	if (buffer && capacity >= needed) {
-		for (i = 0; i < needed; i++)
-			buffer[i] = klog_buffer[(klog_oldest + i) % KLOG_CAPACITY];
+		first = KLOG_CAPACITY - klog_oldest;
+		if (first > needed)
+			first = needed;
+		kern_memcpy(buffer, klog_buffer + klog_oldest, first);
+		kern_memcpy(buffer + first, klog_buffer, needed - first);
 	}
 
 	spin_unlock_irqrestore(&klog_lock, irq);
