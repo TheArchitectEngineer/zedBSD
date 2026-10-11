@@ -78,3 +78,10 @@ event（購読者へ）: `PHONE HF state=off|connecting|ready|failed why=<語> s
 
 - host: `plan/ws197/tests/bt-hfp-host-test.c`（台本の AG: SLC の順、CIND の順の違い、着信 RING・+CLIP→ANSWER→active→HANGUP、発信、3-way の待ちと切り替え、CLCC 無しの AG、無応答の timeout、AG からの DLC、知らない応答・長すぎる行の捨て、PHONE の request の答え）、at の解析の試験（fuzz 風の入力）。phone-backend・phone-shell の試験に call を足す。
 - 実機（p008 と同じ、ユーザーの UAT）: 5330＋Android で着信・応答・終話・発信・DTMF。音は p007。
+
+## 進み（q928-i01）
+
+### 1. bluetoothd の HF（済み）
+
+- 新 `userland/base/bluetoothd/at.c`・`at.h`（行の切り分け・結果の欄・数・indicator の名前）、`hfp.c`・`hfp.h`（D1〜D5）。phonemux の 3 番目の子（main.c）、HF の SDP の record（phone.c、channel 17、calls が on の時だけ）、PHONE DIAL・ANSWER・HANGUP・HOLD・DTMF・VOLUME・VOICE、subscribe の時に PHONE HF と通話の行、PHONE SHOW・STATE の行に `calls=`。Makefile に 2 file。
+- 確認: 新 `plan/ws197/tests/bt-hfp-host-test.c`（143 checks: at の解析、SLC の順、着信→応答→DTMF→終話（ended は 1 回）、発信、無応答の timeout、拒否の語、SLC の拒否と再試行、CLCC の無い AG の推測、link の終わり）を `bt-phone-host-test.sh` に足して全 PASS（ASan/UBSan）。zedBSD の bluetoothd の named build warning 0。style 新規 0。
