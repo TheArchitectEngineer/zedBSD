@@ -14,6 +14,7 @@
 #include <kern/device-io.h>
 #include <kern/pmem.h>
 #include <kern/kcrt.h>
+#include <kern/klog.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
@@ -40,6 +41,7 @@ static int prepare_frame(const struct drv_bcm2711_boot_screen *console, const st
 static bool frames_overlap(const struct drv_bcm2711_boot_screen *a, const struct drv_bcm2711_boot_screen *b);
 static void publish_list(struct bcm2711_display *display, uint32_t list);
 static int wait_adoption(struct bcm2711_display *display);
+static void report_flips(struct bcm2711_display *display, uint64_t clean, uint64_t raise, uint64_t wait);
 
 /*
  * Initializes persistent IRQ state before installing source callback owners.
@@ -402,6 +404,11 @@ submit_frame(
 	bool overlap;
 	void *mapping;
 	void *console_mapping;
+	uint64_t mark;
+	uint64_t clean_ticks;
+	uint64_t raise_ticks;
+	uint64_t wait_ticks;
+	uint64_t finish_ticks;
 	int error;
 
 	/* Computes the two unscaled planes at four pixels per compositor cycle. */
@@ -473,15 +480,19 @@ submit_frame(
 	spin_unlock_irqrestore(&display->flip.guard, enabled);
 
 	/* Raises bandwidth before any SRAM or next-list write, outside the IRQ guard. */
+	mark = clock_ticks();
 	error = raise_clock(display, required);
+	raise_ticks = clock_ticks() - mark;
 	if (error != 0)
 		return error;
 
 	/* Publishes both lower-console and upper-image bytes before the composed list. */
+	mark = clock_ticks();
 	if (console_mapping != NULL)
 		kern_dcache_clean_range(console_mapping, (size_t)display->screen.size);
 	kern_dcache_clean_range(mapping, (size_t)frame->size);
 	kern_io_write_barrier();
+	clean_ticks = clock_ticks() - mark;
 
 	/* Rechecks ownership, then installs all words before the next-list pointer. */
 	enabled = spin_lock_irqsave(&display->flip.guard);
@@ -512,12 +523,20 @@ submit_frame(
 	spin_unlock_irqrestore(&display->flip.guard, enabled);
 
 	/* Waits without holding the IRQ guard; timeout never releases borrowed DMA. */
+	mark = clock_ticks();
 	error = wait_adoption(display);
+	wait_ticks = clock_ticks() - mark;
 	if (error != 0)
 		return error;
 
+	/* The stage report is written while BUSY still excludes every other submitter. */
+	mark = clock_ticks();
+	report_flips(display, clean_ticks, raise_ticks, wait_ticks);
+
 	/* Releases temporary bandwidth only after the frame has actually adopted. */
 	finish_adoption(display, required);
+	finish_ticks = clock_ticks() - mark;
+	display->flip.perf_finish += finish_ticks;
 
 	/* Succeeded: status now retains only the adopted framebuffer. */
 	return 0;
@@ -832,4 +851,57 @@ wait_adoption(
 
 	/* Succeeded: a real selected-PV frame matched the requested current list. */
 	return 0;
+}
+
+/*
+ * Adds one flip's stage times to the report and prints the window every two seconds.
+ *
+ * The caller still holds BUSY, so no other submitter changes these totals.
+ * The release step of a flip is added by the caller after its own report.
+ */
+static void
+report_flips(
+	struct bcm2711_display *display,
+	uint64_t clean,
+	uint64_t raise,
+	uint64_t wait)
+{
+	uint64_t now;
+	uint64_t count;
+
+	/* Adds this flip's stages to the window. */
+	display->flip.perf_flips++;
+	display->flip.perf_clean += clean;
+	display->flip.perf_raise += raise;
+	display->flip.perf_wait += wait;
+
+	/* The first flip opens the window that later reports measure. */
+	now = clock_ticks();
+	if (display->flip.perf_start == 0) {
+		display->flip.perf_start = now;
+		return;
+	}
+
+	/* A window shorter than two seconds keeps accumulating. */
+	if (kern_ticks_to_ms(now - display->flip.perf_start) < 2000U)
+		return;
+
+	/* Prints microseconds per flip for each stage of the window. */
+	count = display->flip.perf_flips;
+	kern_logf(
+		"bcm2711: flip perf ms=%llu flips=%llu avg_us clean=%llu raise=%llu wait=%llu finish=%llu\n",
+		(unsigned long long)kern_ticks_to_ms(now - display->flip.perf_start),
+		(unsigned long long)count,
+		(unsigned long long)(kern_ticks_to_rate(display->flip.perf_clean, 1000000U) / count),
+		(unsigned long long)(kern_ticks_to_rate(display->flip.perf_raise, 1000000U) / count),
+		(unsigned long long)(kern_ticks_to_rate(display->flip.perf_wait, 1000000U) / count),
+		(unsigned long long)(kern_ticks_to_rate(display->flip.perf_finish, 1000000U) / count));
+
+	/* The next window starts empty at this report. */
+	display->flip.perf_start = now;
+	display->flip.perf_flips = 0;
+	display->flip.perf_clean = 0;
+	display->flip.perf_raise = 0;
+	display->flip.perf_wait = 0;
+	display->flip.perf_finish = 0;
 }

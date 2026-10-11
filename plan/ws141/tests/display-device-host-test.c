@@ -770,3 +770,14 @@ kern_text_resume(
 	/* Succeeded: the text backend is active. */
 	return;
 }
+
+/*
+ * Supplies a stationary clock for this fixture, which does not measure runtime.
+ */
+uint64_t
+clock_ticks(
+	void)
+{
+	/* No time elapses in the host's synchronous fake display. */
+	return 0;
+}

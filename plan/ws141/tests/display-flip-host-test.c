@@ -496,3 +496,25 @@ uncertain_flips(
 	bcm2711_display_flip_snapshot(&test_display, &status);
 	check(!status.uncertain && status.retained_mask == 0, "console adoption releases uncertain buffers");
 }
+
+/*
+ * Supplies a stationary clock for this fixture, which does not measure runtime.
+ */
+uint64_t
+clock_ticks(
+	void)
+{
+	/* No time elapses in the host's synchronous fake display. */
+	return 0;
+}
+
+/*
+ * Discards production diagnostics while retaining real error returns in the fixture.
+ */
+void
+kern_logf(
+	const char *format,
+	...)
+{
+	(void)format;
+}
