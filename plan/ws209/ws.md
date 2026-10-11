@@ -28,3 +28,7 @@ audiod に音の endpoint（HDA の speaker・mic、Bluetooth の headset の A2
 | Phase | 内容 | Status |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 再設計と review（第 1 版 2026-10-11 P1、review 中。判断 G1・G2） | in-progress |
+
+## 2026-10-11 ユーザー「推し通りです。」
+
+G1: 通話の時 headset が繋がっていれば最初から headset で話す。G2: A2DP の headset が繋がったら media を自動で headset へ移し、切れたら speaker に戻す。

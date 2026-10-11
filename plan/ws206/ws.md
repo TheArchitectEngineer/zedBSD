@@ -34,3 +34,7 @@ Pi 4（10.0.30.2）で scan・WPA2 の接続・DHCP・ping が通る（実機）
 | p005 | WLAN の core の FullMAC の形と firmware の supplicant | planned |
 | p006 | 実機の scan・WPA2・DHCP・ping | planned |
 | p007 | 規約の全文の見直し | planned |
+
+## 2026-10-11 ユーザー「推し通りです。」
+
+E1: 4-way handshake は firmware の supplicant（PMK は core が計算）。E3: WLAN の core に FullMAC の mode を足す。E2（試験の AP の SSID・passphrase・帯域）は未回答。

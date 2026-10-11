@@ -351,3 +351,7 @@ R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなく
 ## 2026-10-11 Q1: P3 への引き継ぎ
 
 ユーザーの指示で、WS141 の描画の速さの改善を Codex のセッションから P3（Claude Code のサブエージェント、worktree `/home/awe/zedBSD-worktrees/p3`、branch agent/p3、起点 d27925686）へ引き継ぐ。新しい Phase [ws141-p013](phase013/phase.md)（frame 33 ms → 16 ms）。以後 ws141/ は P3 が書き、Q1 が merge する。
+
+## 2026-10-11 ユーザー「推し通りです。」: Pi 4 の image は案 A
+
+版 B で Wayland が起動直後に落ちた（ユーザー）。amd64 の Venus では同じ compositor が PASS（T1-539）なので、Pi だけの経路（kernel の snapshot の cache 523b18345 と変化した tile の写し 60e18a09f）を main から外した: `src/drivers/gpu/bcm2711/` と `plan/ws141/tests/vulkan-device-host-test.c` を feac3891d（実機で確かめた storage cache まで）に戻した。compositor の変更（staging の 2 枚・hover の記録）は main に残す。2 つの kernel の変更は P3 が Pi で 1 つずつ確かめてから戻す。
