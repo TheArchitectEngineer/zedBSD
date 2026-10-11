@@ -93,9 +93,14 @@ bcm2711_v3d_diagnostic(
 		if (converted == 0)
 			converted = run_tfu_uif(engine, 256U, 256U, 1024U, false);
 
-		/* A launched job that failed leaves the engine faulted; boot still owns all DMA and resets it. */
+		/*
+		 * A launched job that failed leaves the engine faulted; boot still
+		 * owns all DMA and resets it.  A passing self-test is only reported
+		 * for now: texture conversion by the unit stays off until its slow
+		 * frames on the device are explained.
+		 */
 		if (converted == 0) {
-			engine->hardware.tfu_uif_ready = true;
+			bcm2711_stage_mark(BCM2711_FAMILY_V3D, "V9 TFU UIF self-test passed; texture conversion stays on the CPU");
 		} else if (engine->hardware.faulted) {
 			error = bcm2711_v3d_hardware_reset(engine);
 			bcm2711_stage_mark(BCM2711_FAMILY_V3D, "V9 TFU UIF error %d; CPU conversion, reset %d", converted, error);
