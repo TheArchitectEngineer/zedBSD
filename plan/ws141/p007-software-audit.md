@@ -136,3 +136,6 @@ coalesced診断最終確認: native device host PASS、C全文manual/diff-check/
 
 
 2026-10-11 graphics lease/console補完: user再作成imageにはinline kernel666078535とcull compositor1980286597が導入済み。UFS51%/tmp8KB/FAT84%で容量不足なし、greeter停止後SSH0.25秒。RPi text suspend/resume未接続を修正し、claim成功でpixel描画停止、confirmed release/closeだけ復帰。failed restore/recovery時のholdは維持、HALはboard-private cons header/retained resumeだけでhal.h/API不変。実callback host PASS（failed release/closeではsuspended維持、recovery claimも維持、successful release/closeはresume）。C全文manual/formatter19範囲比較/diff-check、production style変更範囲0（cons既存6件は未変更）を確認。arm64 make exit0/warning0/error0/checker3PASS、kernel959624230/8077312。実機更新/効果はこれから、33ms未達・submit-i01 in-progress。Q1共有projection/公開は保留のまま。
+
+
+2026-10-11 cursor-only scene cache: private scene.c/h、three-OS source list、compose/damage/shellへ標準Vulkan transfer bufferを追加。cursor前scene capture→fence後valid→unchanged cursor-only region復元→cursor LOAD。client commit/unknown dirtyは再合成、optional failureは旧経路、multiheadは普通の再合成。acquireのTRANSFER wait/partial full-width stride/retained lifetime/old cursor消去をproduction recorder hostとactual device transfer hostでPASS、C全文manual/formatter19範囲/diff-check、arm64 app warning0/error0/checker0、wayland886953165/953832。newコンソール版の36 input software samplesはmin288/median919.5/max1300ms（user窓内約300ms）、33ms未達でcache実機を比較する。p006/submit-i01 in-progress、shared projection/publication保留。

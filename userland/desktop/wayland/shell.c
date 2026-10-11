@@ -2136,9 +2136,21 @@ kwl_glass_pointer_calm(
 	if (!still)
 		return 0;
 
-	/* Over a body. */
+	/* Finds any window decoration whose hover would change the composed scene. */
 	surface = window_at(server, x, y, &hit);
-	if (surface == NULL || hit != HIT_BODY)
+	if (surface == NULL) {
+		/* Screen edges and the system bar retain their gestures and hover redraws. */
+		if (x < 16 || x >= (int32_t)server->width - 16)
+			return 0;
+		if (y < KWL_GLASS_BAR + 16 || y >= (int32_t)server->height - 48)
+			return 0;
+
+		/* The still desktop has no compositor decoration that follows the pointer. */
+		return 1;
+	}
+
+	/* Window borders and title bars still redraw their own hover state. */
+	if (hit != HIT_BODY)
 		return 0;
 
 	/* Calm. */
