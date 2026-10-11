@@ -381,7 +381,10 @@ bcm2711_buffer_create(
 }
 
 /*
- * Observes complete padded cache-clean requests without claiming real host or device cache maintenance.
+ * Observes cache-clean requests without claiming real host or device cache maintenance.
+ *
+ * Whole allocations clean padded pages; uploads carved from a pass's shared
+ * chunk clean just their bytes, as the kernel's line-granular clean allows.
  */
 void
 kern_dcache_clean_range(
@@ -389,7 +392,7 @@ kern_dcache_clean_range(
 	size_t bytes)
 {
 	/* No coherent fixture alias is treated as cached upload storage. */
-	assert(address != NULL && address != backing_storage && bytes != 0 && (bytes & 4095U) == 0);
+	assert(address != NULL && address != backing_storage && bytes != 0);
 	native_cleans++;
 
 	/* Succeeded: the complete cache-maintenance request has been observed. */
@@ -1455,9 +1458,14 @@ native_pass_test(
 	assert(error == 0 && pass != NULL && following == NULL);
 	assert(pass->output == view && view->references == references + 1U);
 	assert(pass->count == 9U && pass->draws == 1U && pass->first == pass->last && pass->last->next == NULL);
+	/*
+	 * The draw's six small uploads (three uniform streams, texture records,
+	 * shader record and fetch) share one 64 KiB upload chunk instead of six
+	 * pages, cleaned once whole and then over each written range.
+	 */
 	bytes = pass->bytes;
-	assert(bytes == 1646592U && available == 8U * 1024U * 1024U - bytes);
-	assert(native_cleans == cleans + 20U && pass->job.kind == BCM2711_V3D_JOB_CL);
+	assert(bytes == 1687552U && available == 8U * 1024U * 1024U - bytes);
+	assert(native_cleans == cleans + 21U && pass->job.kind == BCM2711_V3D_JOB_CL);
 	assert(pass->job.command.cl.bin_end - pass->job.command.cl.bin_start == 135U);
 	assert(pass->job.command.cl.render_end - pass->job.command.cl.render_start == 106U);
 	assert(pass->job.command.cl.pool_bytes == 0x83000U && pass->job.command.cl.state_bytes == 4096U);
@@ -1481,7 +1489,11 @@ native_pass_test(
 	error = bcm2711_vulkan_native_pass_release(&pass, true);
 	assert(error == 0 && pass == NULL && allocations == baseline && view->references == references);
 
-	/* Two draws share immutable texels, exact code and defaults; scalar/fetch/shader records remain independent. */
+	/*
+	 * Two draws share immutable texels, exact code and defaults; scalar/fetch/shader records
+	 * remain independent but are carved from the first draw's upload chunk, so the second
+	 * draw owns no allocation of its own.
+	 */
 	events = kern_calloc(4, sizeof(*events));
 	assert(events != NULL);
 	events[0] = *begin_event;
@@ -1495,7 +1507,7 @@ native_pass_test(
 	assert(error == 0 && pass->draws == 2 && pass->first != pass->last);
 	assert(pass->first->texture_count == 1 && pass->last->texture_count == 0);
 	assert(pass->last->count == pass->first->count - 5U);
-	assert(pass->last->bytes == pass->first->bytes - 5U * 4096U);
+	assert(pass->last->count == 0U && pass->last->bytes == 0U);
 	assert(pass->last->defaults == pass->first->defaults);
 	for (index = 0; index < 3; index++)
 		assert(pass->last->code[index] == pass->first->code[index]);

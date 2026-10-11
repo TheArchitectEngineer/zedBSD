@@ -7,6 +7,7 @@
 
 /* Complete FIFO draw preparation owns cached GPU inputs without launching a native command list. */
 #include <kern/clock.h>
+#include <kern/dcache.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
@@ -26,6 +27,20 @@ struct native_fetch {
 	uint32_t components;
 };
 
+/* One upload chunk's size, and the largest upload carved from a chunk; larger ones get storage of their own. */
+#define NATIVE_UPLOAD_CHUNK_BYTES (64U * 1024U)
+#define NATIVE_UPLOAD_LARGEST (16U * 1024U)
+
+/* Every carved upload starts on this boundary, which covers the shader record's and texture records' alignment. */
+#define NATIVE_UPLOAD_ALIGNMENT 64U
+
+/* One upload chunk of a pass's pool: its mapped storage and the bytes carved from it. */
+struct bcm2711_vulkan_native_upload_chunk {
+	struct bcm2711_vulkan_native_upload_chunk *next;
+	struct bcm2711_native_storage *storage;
+	uint32_t used;
+};
+
 /* One chunk of a pass's draw pool: its draws in creation order, the first used of them. */
 struct bcm2711_vulkan_native_draw_chunk {
 	struct bcm2711_vulkan_native_draw_chunk *next;
@@ -35,6 +50,7 @@ struct bcm2711_vulkan_native_draw_chunk {
 
 static int allocate_storage(struct bcm2711_vulkan_native_draw *draw, uint64_t bytes, uint64_t available, const struct bcm2711_shader_binary *program, struct bcm2711_native_storage **storage);
 static struct bcm2711_vulkan_native_draw *pool_take(struct bcm2711_vulkan_native_draw_pool *pool);
+static int upload_take(struct bcm2711_vulkan_native_draw *draw, uint64_t bytes, uint64_t available, uint8_t **cpu, uint32_t *gpu);
 static struct bcm2711_native_storage *find_texture(const struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_resource *image);
 static int prepare_textures(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_prepared_event *event, uint64_t available);
 static int prepare_texture(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_descriptor *descriptor, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
@@ -384,7 +400,7 @@ prepare_texture_image(
 {
 	struct bcm2711_vulkan_native_texture_copy *entry;
 	struct bcm2711_native_storage *pixels;
-	struct bcm2711_native_storage *records;
+	uint32_t records_address;
 	struct bcm2711_native_texture texture;
 	struct bcm2711_native_sampler sampler;
 	struct bcm2711_v3d_view *source_view;
@@ -505,8 +521,8 @@ prepare_texture_image(
 		draw->texture_count++;
 	}
 
-	/* Both 24-byte records have independent 32-byte alignment within the same zero-padded allocation. */
-	error = allocate_storage(draw, 64, available, NULL, &records);
+	/* Both 24-byte records have independent 32-byte alignment within the same zeroed upload. */
+	error = upload_take(draw, 64, available, &destination, &records_address);
 	if (error != 0)
 		return error;
 	kern_memset(&texture, 0, sizeof(texture));
@@ -515,7 +531,6 @@ prepare_texture_image(
 	texture.height = image->height;
 	texture.bytes = bytes;
 	texture.swap_red_blue = swap;
-	destination = records->view->buffer->address;
 	error = bcm2711_native_texture_encode(&texture, destination, 32);
 	if (error != 0)
 		return error;
@@ -525,13 +540,11 @@ prepare_texture_image(
 	error = bcm2711_native_sampler_encode(&sampler, destination + 32, 32);
 	if (error != 0)
 		return error;
-	error = bcm2711_native_storage_clean(records);
-	if (error != 0)
-		return error;
+	kern_dcache_clean_range(destination, 64);
 
 	/* Uniform words borrow these exact addresses only after the whole input records have been cleaned. */
-	binding->texture = records->view->address;
-	binding->sampler = records->view->address + 32U;
+	binding->texture = records_address;
+	binding->sampler = records_address + 32U;
 
 	/* Succeeded: sampling cannot reference the raster layout or another job's transient descriptor records. */
 	return 0;
@@ -597,7 +610,7 @@ prepare_programs(
 	const struct bcm2711_shader_binary *program;
 	struct bcm2711_vulkan_uniform_words *words;
 	struct bcm2711_native_storage *code;
-	struct bcm2711_native_storage *uniforms;
+	uint32_t uniforms;
 	struct bcm2711_native_storage *defaults;
 	uint8_t *destination;
 	uint64_t bytes;
@@ -635,23 +648,20 @@ prepare_programs(
 		bytes = (uint64_t)words->count * 4U;
 		if (bytes == 0)
 			bytes = 4;
-		error = allocate_storage(draw, bytes, available, NULL, &uniforms);
+		error = upload_take(draw, bytes, available, &destination, &uniforms);
 		if (error != 0) {
 			bcm2711_vulkan_uniform_release(words);
 			return error;
 		}
 
 		/* Scalar words are copied before their temporary CPU owner is retired. */
-		destination = uniforms->view->buffer->address;
 		for (index = 0; index < words->count; index++)
 			write_word(destination + (size_t)index * 4U, words->words[index]);
 		bcm2711_vulkan_uniform_release(words);
-		error = bcm2711_native_storage_clean(uniforms);
-		if (error != 0)
-			return error;
+		kern_dcache_clean_range(destination, (size_t)bytes);
 		shader->programs[stage].binary = program;
 		shader->programs[stage].code = code->view->address;
-		shader->programs[stage].uniforms = uniforms->view->address;
+		shader->programs[stage].uniforms = uniforms;
 	}
 
 	/* Every default attribute is exactly float (0,0,0,1), independent of pipeline and draw. */
@@ -708,7 +718,7 @@ prepare_records(
 	const struct bcm2711_native_shader *shader)
 {
 	struct bcm2711_native_attribute attributes[BCM2711_VULKAN_VERTEX_ATTRIBUTES];
-	struct bcm2711_native_storage *records;
+	uint32_t records;
 	uint8_t *destination;
 	uint32_t bytes;
 	uint32_t index;
@@ -732,10 +742,9 @@ prepare_records(
 
 	/* The mandatory unused fetch reuses owned defaults and requires no extra physical allocation. */
 	bytes = BCM2711_NATIVE_SHADER_BYTES + draw->attributes * BCM2711_NATIVE_ATTRIBUTE_BYTES;
-	error = allocate_storage(draw, bytes, available, NULL, &records);
+	error = upload_take(draw, bytes, available, &destination, &records);
 	if (error != 0)
 		return error;
-	destination = records->view->buffer->address;
 	error = bcm2711_native_shader_encode(shader, destination, bytes);
 	if (error != 0)
 		return error;
@@ -747,11 +756,9 @@ prepare_records(
 			return error;
 	}
 
-	/* No pointer can reach the native BCL before complete records and zero page padding are CPU-clean. */
-	error = bcm2711_native_storage_clean(records);
-	if (error != 0)
-		return error;
-	draw->shader = records->view->address;
+	/* No pointer can reach the native BCL before the complete records are CPU-clean. */
+	kern_dcache_clean_range(destination, bytes);
+	draw->shader = records;
 
 	/* Succeeded: one aligned native shader pointer and its exact attribute count describe this complete owned draw. */
 	return 0;
@@ -768,7 +775,7 @@ prepare_fetch(
 	const struct bcm2711_shader_binary *coordinate;
 	const struct bcm2711_shader_binary *vertex;
 	struct native_fetch fetch[BCM2711_VULKAN_VERTEX_ATTRIBUTES];
-	struct bcm2711_native_storage *storage;
+	uint32_t fetched;
 	uint8_t *destination;
 	const uint8_t *source;
 	uint64_t bytes;
@@ -822,10 +829,9 @@ prepare_fetch(
 	stride = vertex->input_count * 4U;
 	if (stride != 0) {
 		bytes = (uint64_t)draw->vertices * stride;
-		error = allocate_storage(draw, bytes, available, NULL, &storage);
+		error = upload_take(draw, bytes, available, &destination, &fetched);
 		if (error != 0)
 			return error;
-		destination = storage->view->buffer->address;
 
 		/* Each copied vertex contains only consumed scalars; native draws start at zero after source firstVertex is applied. */
 		for (item = 0; item < draw->vertices; item++) {
@@ -848,7 +854,7 @@ prepare_fetch(
 		/* Exact leading counts preserve both VPM FIFOs while native maximum index cannot enter padded storage. */
 		offset = 0;
 		for (index = 0; index < count; index++) {
-			attributes[index].address = storage->view->address + offset;
+			attributes[index].address = fetched + offset;
 			attributes[index].stride = stride;
 			attributes[index].maximum_index = draw->vertices - 1U;
 			attributes[index].components = fetch[index].components;
@@ -857,10 +863,8 @@ prepare_fetch(
 			offset += fetch[index].components * 4U;
 		}
 
-		/* Complete packed values and page padding become device-visible before record construction. */
-		error = bcm2711_native_storage_clean(storage);
-		if (error != 0)
-			return error;
+		/* Complete packed values become device-visible before record construction. */
+		kern_dcache_clean_range(destination, (size_t)bytes);
 	}
 
 	/* No attribute metadata retains a coherent source pointer after the complete packed GPU copy exists. */
@@ -1140,14 +1144,18 @@ texture_area(
 }
 
 /*
- * Frees a pass pool's chunks.
+ * Frees a pass pool's draw chunks and releases its upload chunks.
  */
-void
+int
 bcm2711_vulkan_native_draw_pool_release(
 	struct bcm2711_vulkan_native_draw_pool *pool)
 {
 	struct bcm2711_vulkan_native_draw_chunk *chunk;
 	struct bcm2711_vulkan_native_draw_chunk *next;
+	struct bcm2711_vulkan_native_upload_chunk *upload;
+	struct bcm2711_vulkan_native_upload_chunk *following;
+	int first;
+	int error;
 
 	/* Every draw of every chunk has been released by the pass. */
 	for (chunk = pool->chunks; chunk != NULL; chunk = next) {
@@ -1155,6 +1163,24 @@ bcm2711_vulkan_native_draw_pool_release(
 		kern_free(chunk);
 	}
 	pool->chunks = NULL;
+
+	/* The upload chunks retire after the pass's DMA; a failed translation teardown stays with the native space. */
+	first = 0;
+	for (upload = pool->uploads; upload != NULL; upload = following) {
+		following = upload->next;
+		error = bcm2711_native_storage_release(upload->storage->space, &upload->storage, true);
+		if (first == 0 && error != 0)
+			first = error;
+		kern_free(upload);
+	}
+	pool->uploads = NULL;
+
+	/* Reports the first failed upload release. */
+	if (first != 0)
+		return first;
+
+	/* Succeeded: the pool owns nothing. */
+	return 0;
 }
 
 /* Takes the next zeroed draw from a pass pool, adding a chunk when the newest is full. */
@@ -1177,4 +1203,73 @@ pool_take(
 	/* Reports the next unused draw of the newest chunk. */
 	chunk->used++;
 	return &chunk->draws[chunk->used - 1U];
+}
+
+/*
+ * Carves one zeroed, aligned upload for a draw and reports its CPU and GPU addresses.
+ *
+ * A pass's draw takes it from the pool's newest upload chunk, adding a
+ * chunk when it does not fit; the chunk is zeroed and cleaned once when it
+ * is made, and the caller cleans the bytes it writes.  An independent draw,
+ * or an upload larger than NATIVE_UPLOAD_LARGEST, gets storage of its own.
+ */
+static int
+upload_take(
+	struct bcm2711_vulkan_native_draw *draw,
+	uint64_t bytes,
+	uint64_t available,
+	uint8_t **cpu,
+	uint32_t *gpu)
+{
+	struct bcm2711_vulkan_native_upload_chunk *chunk;
+	struct bcm2711_native_storage *storage;
+	uint32_t offset;
+	int error;
+
+	/* An independent draw or a large upload keeps the per-allocation path. */
+	if (draw->pool == NULL || bytes == 0 || bytes > NATIVE_UPLOAD_LARGEST) {
+		error = allocate_storage(draw, bytes, available, NULL, &storage);
+		if (error != 0)
+			return error;
+		*cpu = storage->view->buffer->address;
+		*gpu = storage->view->address;
+		return 0;
+	}
+
+	/* The newest chunk serves the upload when the aligned bytes still fit in it. */
+	chunk = draw->pool->uploads;
+	offset = 0;
+	if (chunk != NULL)
+		offset = (chunk->used + NATIVE_UPLOAD_ALIGNMENT - 1U) & ~(NATIVE_UPLOAD_ALIGNMENT - 1U);
+	if (chunk == NULL || offset + bytes > NATIVE_UPLOAD_CHUNK_BYTES) {
+		/* A new chunk counts against the job's padded staging budget like any upload. */
+		if (draw->bytes > available || NATIVE_UPLOAD_CHUNK_BYTES > available - draw->bytes)
+			return ENOMEM;
+		chunk = kern_calloc(1, sizeof(*chunk));
+		if (chunk == NULL)
+			return ENOMEM;
+		error = bcm2711_native_storage_create(draw->space, NATIVE_UPLOAD_CHUNK_BYTES, &chunk->storage);
+		if (error != 0) {
+			kern_free(chunk);
+			return error;
+		}
+
+		/* The zeroed chunk is written back once, so no dirty zero line can later land over device-read bytes. */
+		error = bcm2711_native_storage_clean(chunk->storage);
+		if (error != 0) {
+			(void)bcm2711_native_storage_release(draw->space, &chunk->storage, true);
+			kern_free(chunk);
+			return error;
+		}
+		chunk->next = draw->pool->uploads;
+		draw->pool->uploads = chunk;
+		draw->bytes += NATIVE_UPLOAD_CHUNK_BYTES;
+		offset = 0;
+	}
+
+	/* Succeeded: the caller writes the carved bytes and cleans them before any pointer reaches the device. */
+	chunk->used = offset + (uint32_t)bytes;
+	*cpu = (uint8_t *)chunk->storage->view->buffer->address + offset;
+	*gpu = chunk->storage->view->address + offset;
+	return 0;
 }

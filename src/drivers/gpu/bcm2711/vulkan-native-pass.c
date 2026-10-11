@@ -269,7 +269,9 @@ bcm2711_vulkan_native_pass_release(
 		perf->released_draws++;
 		draw = next;
 	}
-	bcm2711_vulkan_native_draw_pool_release(&owned->draw_pool);
+	error = bcm2711_vulkan_native_draw_pool_release(&owned->draw_pool);
+	if (first == 0 && error != 0)
+		first = error;
 	perf->release_draw_ticks += clock_ticks() - started;
 
 	/* Every command/tile/overflow owner retires even if an earlier draw teardown failed. */

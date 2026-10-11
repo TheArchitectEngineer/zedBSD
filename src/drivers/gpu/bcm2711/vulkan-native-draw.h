@@ -32,14 +32,19 @@ struct bcm2711_vulkan_native_texture_copy {
 #define BCM2711_VULKAN_DRAW_CHUNK 64U
 
 struct bcm2711_vulkan_native_draw_chunk;
+struct bcm2711_vulkan_native_upload_chunk;
 
 /*
  * A pass's draws come from chunks of BCM2711_VULKAN_DRAW_CHUNK draws instead
- * of one kernel allocation each; the pass frees the chunks after releasing
- * every draw.  Only the controller-serialized pass owner touches it.
+ * of one kernel allocation each, and their small uploads (texture and shader
+ * records, uniform streams, defaults, vertex fetch) are carved from shared
+ * upload chunks instead of one mapped page each.  The pass releases both
+ * after releasing every draw.  Only the controller-serialized pass owner
+ * touches it.
  */
 struct bcm2711_vulkan_native_draw_pool {
 	struct bcm2711_vulkan_native_draw_chunk *chunks;
+	struct bcm2711_vulkan_native_upload_chunk *uploads;
 };
 
 /* One complete draw owns its uploads and borrows earlier immutable pass inputs; the pass retains all draws through uncertainty. */
@@ -107,8 +112,8 @@ int bcm2711_vulkan_native_meta_draw_create(struct bcm2711_v3d_space *space, cons
  */
 int bcm2711_vulkan_native_draw_create(struct bcm2711_v3d_space *space, const struct bcm2711_vulkan_prepared_event *event, uint64_t *available, const struct bcm2711_vulkan_native_draw *earlier, struct bcm2711_vulkan_native_draw_pool *pool, struct bcm2711_vulkan_native_draw **draw);
 
-/* Frees a pass pool's chunks; every draw from it has been released. */
-void bcm2711_vulkan_native_draw_pool_release(struct bcm2711_vulkan_native_draw_pool *pool);
+/* Frees a pass pool's chunks and releases its upload chunks; every draw from it has been released and its DMA retired. */
+int bcm2711_vulkan_native_draw_pool_release(struct bcm2711_vulkan_native_draw_pool *pool);
 
 /* true consumes/nulls all storage even when translation teardown fails; false keeps the whole root unchanged. */
 int bcm2711_vulkan_native_draw_release(struct bcm2711_vulkan_native_draw **draw, bool retired);
