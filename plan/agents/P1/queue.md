@@ -5,8 +5,8 @@ Worktree: `/home/awe/zedBSD-worktrees/p1`、branch `agent/p1`、base main fc3d31
 
 | Queue | Phase | 範囲 | State |
 | --- | --- | --- | --- |
-| q924 | [WS157](../../ws157/ws.md) p010・p011 | codex/ws197-media-uat の 2 commit（305ab43c1、Photos の削除）を agent/p1 に merge し、keiland.h・manager の版の衝突を main と照合、host 試験と build warning 0 → Q1 に merge 依頼 | active |
-| q925 | [WS202](../../ws202/ws.md) p009・p010・p017、[WS083](../../ws083/ws.md) p007 | Vulkan Video の i915 の完了: T1-529（5330・QEMU の再生の確認）の結果で直す。p007 の hang の回復の実機の手順を T1 に依頼 | reserved |
+| q924 | [WS157](../../ws157/ws.md) p010・p011 | codex/ws197-media-uat の 2 commit（305ab43c1、Photos の削除）を agent/p1 に merge し、keiland.h・manager の版の衝突を main と照合、host 試験と build warning 0 → Q1 に merge 依頼 | finished（8ba4c833e → main 787c1904c、host・build PASS、GUI は未実施） |
+| q925 | [WS202](../../ws202/ws.md) p009・p010・p017、[WS083](../../ws083/ws.md) p007 | Vulkan Video の i915 の完了: T1-529（5330・QEMU の再生の確認）の結果で直す。p007 の hang の回復の実機の手順を T1 に依頼 | active |
 | q926 | [ws197-p014](../../ws197/phase014/phase.md) | 「＋」→ 写真の media picker の popup（libkeiland の UI）／file chooser | reserved |
 | q927 | [ws197-p010](../../ws197/phase010/phase.md) | MMS の添付・写真・動画の送信（旧試作の差分は `.claude/worktrees/ws197-media` に未 commit で残る、読むだけ） | reserved |
 | q928 | ws197-p006 | HFP の制御 | reserved |
