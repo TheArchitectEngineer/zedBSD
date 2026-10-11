@@ -93,3 +93,17 @@ V3D 4.2 の TMU は raster の 2D の画像を sample できない。bcm2711 の
 
 - host: 既存の native-pass・vulkan-device・display の試験に UIF の場面を足す。aggregate の make check は走らせない。
 - 実機（Pi 4）: 自己試験の log、2 秒の計数（tex・xfer・snap）、ユーザーの体感。QEMU（T1）は i915・Venus・llvmpipe の回帰（この Phase の kernel の変更は bcm2711 だけ）。
+
+## design-reviewer の指摘（2026-10-12、未反映、次の generation で設計を直す）
+
+重大:
+1. 同じ位置の部分の copy を TLB copy にはできない（tile 単位の load/store が範囲の外の destination を source で上書きする。今の部分の TLB copy は「範囲の外は既に等しい」前提の同期の場合だけ正しい、`vulkan-native-image.c:597-601`）。scene の戻しは古い画素を貼る。→ tile に揃う・画像の端まで・等しさの同期の場合だけ TLB、他は meta の draw（UIF の source を直接 sample、destination の tile を load）。4 と A3 を直す。
+2. TLB が断る buffer↔image（部分・複数の region・64 byte に揃わない行・揃わない bufferOffset、`vulkan-native-image.c:680-720`）は CPU の行の copy（`vulkan-buffer-copy.c:527-529`、`image->pitch` で番地を計算）に落ちるので、UIF の画像では壊れる。in-tree の利用: wayland/shot.c:316、libbrowser/paint/vulkan.c:475、libglesv2/texture.c:340・framebuffer.c:707,2996-3006、xserver/vulkan.c:813、libvulkan/wsi-swapchain.c:2164、libvulkan-compat。→ UIF を知る fallback（readback は一時の raster へ TLB→memcpy、upload は TFU か一時の UIF＋meta draw、まれな所は数えた CPU の swizzle）、CPU の span の経路は UIF を断る。
+3. A1 だけでは出せない: display の WSI の swapchain の画像は既に OPTIMAL（`wsi-swapchain.c:1226`）なので A1 で compositor の出力の画像が UIF になり、scene の部分 copy・shm の upload・present の copy・cursor の plane が A2/A3 の前に壊れる。pitch=0 でも `copy_whole`・`buffer_image_whole` の 64 の検査を通る。→ 「OPTIMAL＝UIF」の門は A2 と 2 の fallback の後の最後の段。A3（kernel 不要）を先に。7 に display の WSI の swapchain の画像が UIF になることを書く。
+高:
+4. 自己試験の 96x40 は padding が無い。store だけで load（LOAD_OP_LOAD・UIF→raster）・部分の tile・画像より小さい framebuffer を試していない。padding を含む byte 比較は誤り（CPU は 0 で埋める）。V8 は `cl.c` の builder で runtime の encoder ではない。結果の置き場（`hardware.*_ready`、V7〜V9 の失敗・不許可で off）を決めていない。→ 100x70（2x2 tile、両方の padding）、native pass で raster→UIF→raster の往復、見える画素だけ比較。
+5. UB の高さは framebuffer でなく画像から（`vulkan-native-pass.c:440-443` は framebuffer の大きさ）。raster だけの検査に UIF の分岐（`native-pass.c:66-68,243,252`、`vulkan-native-execute.c:195-201,220`）。copy の source にも形と UB の高さ。UB の高さ＝block_rows は推定（自己試験で確かめる）。
+6. 直接の sample は texture の entry の形を変える（`vulkan-native-draw.h:21-29`、find_texture、validate_pass、release、不確かな退役の経路も）。`conversion_supported`・TFU は pitch を使うので UIF を除く。
+7. A4 の漏れ: `GPU_IMAGE_LINEAR` は `include/uapi/gpu.h:36`。LINEAR 以外を断る所（`gpu.c:3998`（i915 と共通）、`bcm2711/share.c:287`、`libvulkan/dedicated.c:42,50`、`gpu-zedbsd.c:84`）、import の rowPitch と stride の照合（`gpu-buffer-zedbsd.c:529-533`、`memory.c:1479`）、UIF の stride の意味と `same_image`（`share.c:306-322`）、display の import（`display-device.c:1476`）は UIF を断り続ける、game mode は frame ごとに決めるので scanout-rules に「UIF → direct=0」、protocol の能力は bcm2711 の UIF の layout を名指す（汎用の flag にしない）。
+中・低: 8 `vulkan-transfer.c:409-452` の重なりの判定が pitch の byte の区間。9 部分の LOAD_OP_CLEAR の quad は新しい shader が要る（1x1 の UIF の clear 色を sample する meta draw が安い）、`clear_target` は UIF を断る。10 1 節の誤り: kernel は既に OPTIMAL の `vkGetImageSubresourceLayout` に ENOTSUP を返し libvulkan が 0 にする（`vulkan-resource.c:546-547`、`resources.c:269-271`）。11 完了の条件 (1) は今の perf 行では測れない（canvas を分けられない、直接 UIF の数と種類ごとの数を足す）、(3) は「T1 の回帰」に。12 alignment 4096 の根拠が無い（小さな画像が太る）。13 OPTIMAL の画像に bind した memory を map して raster で書く app は黙って壊れる（in-tree は見つからず）。
+確かめられた点: pass は 1 つずつ準備・実行・解放され、各 job の前に L2T と slice の cache を invalidate するので、前の pass が書いた UIF の画像を次で sample する順は正しい。write log は画素の箱なので UIF でも incremental copy は動く。4096x4096 の UIF の大きさは maxResourceSize と同じ。HAL の変更は要らない。
