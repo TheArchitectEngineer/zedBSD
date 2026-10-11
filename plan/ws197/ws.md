@@ -164,3 +164,10 @@ p013を追加。実機ではprocessが残りbt showが無応答、既存service 
 ## 2026-10-10 Codex p013 clearance
 
 [p013](phase013/phase.md) / bt-recovery-i01 cleared。main 7fa0a0e9cへ統合しread-back済み。root親が15秒の処理進捗停止を検知→子TERM/3秒後KILL/reap→parent exit1、initが既存on-failureで再起動。実機でCLI5.11秒timeoutと約20秒でHCI readyへの復旧、bt reopen/reset各exit0を確認。sessiond/compositorへの新root API無し。build warning0、6source全文規約/manual/host PASS。[詳細証拠](tests/bluetooth-recovery-verification-20261010.md)。初回native CLI timeout未達を記録し、deadline pollへ修正して追加1回検証。既存init上限5failure restarts、元hang根因未確定を保持。スマホ再pair無し。今回のQueueはfinished、WS全体incompleteを維持しshared/remote投影はQ1。
+
+## 2026-10-11 ユーザーの決定: p007 の Q9〜Q11 と音の経路の model
+
+- Q10・Q11: ユーザー「Q10,Q11 おすすめでいいです。」→ PC で応答・発信した通話は PC で鳴らし、スマホで応答した通話はスマホのまま、通話の card の button で切り替える。mSBC は WS205 の SBC の後（それまで CVSD）。
+- Q9: 別の node（`/dev/bluetoothN.sco`）の案をやめる（ユーザー「デバイスを追加するのはad-hocでよくないと感じますが。」）。Q1 の新しい案 ── 今の `/dev/bluetoothN` で `BT_PACKET_SCO` を有効にし、kernel は SCO だけ専用の小さな ring（あふれたら古い物から捨てる、ACL・event を塞がない）、interface 1 の alternate の ioctl を 1 つ、bluetoothd は fd の読み手の thread を 1 つ置いて session と SCO の thread へ振り分ける ── をユーザーが承認（「Q9は承認します。それがいいです。」）。
+- 音の経路の model（ユーザー「今後モデムを実装するときも、音声はPCM取得ではなく、デバイスに直接出力なので、そういう出力先指定のモデルがあったほうがいいと思いました。」）: 通話の音は app が PCM を中継せず、出力先（と入力元）を指定して device の間で直に流す model にする。audiod に音の endpoint（HDA の speaker・mic、Bluetooth の headset、phone の SCO、将来の modem）と route を持たせ、app（Phone・Settings）は route を選ぶだけ。HFP（p007b1）・WS205 の A1・H3 はこの model の上に作る。設計は P1 が p007 と WS205 の p001 を直して出す。
+
