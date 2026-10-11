@@ -853,7 +853,7 @@ main(
 	vulkan_decode_VkPhysicalDeviceMemoryProperties(&reader, &memory);
 	assert(reader.error == VK_SUCCESS && memory.memoryTypeCount == 1 && memory.memoryHeapCount == 1);
 	assert(memory.memoryTypes[0].propertyFlags == (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
-	assert(memory.memoryHeaps[0].size == (256U << 20));
+	assert(memory.memoryHeaps[0].size == BCM2711_VULKAN_MEMORY_BUDGET);
 
 	/* Count-only and array family queries describe exactly one graphics/transfer queue and no timestamps. */
 	begin(&writer, wire, sizeof(wire), GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_PROPERTIES, 1);
@@ -4935,6 +4935,7 @@ memory_test(
 	struct bcm2711_vulkan_memory *memory;
 	struct bcm2711_v3d_view *view;
 	unsigned baseline;
+	uint32_t refusals;
 	int error;
 
 	/* A declared allocation reserves its budget and device edge without allocating physical backing yet. */
@@ -4983,9 +4984,15 @@ memory_test(
 	imported_resource.shareable = true;
 	imported_resource.view = view;
 	error = memory_allocate(session, 51, 8192, 1000384002U, 2);
-	assert(error == VK_SUCCESS && view->references == 2 && render->device->vulkan_memory_bytes == 16384);
+	assert(error == VK_SUCCESS && view->references == 2);
+
+	/* The export and its import hold one run, charged once. */
+	assert(render->device->vulkan_memory_bytes == 8192 && first->vulkan_holders == 2 && first->vulkan_charge == 8192);
+	assert(render->device->space.native->hardware.perf.memory_bytes == 8192);
+
+	/* The export freed first: the import still holds the run, and its charge stays. */
 	memory_free(session, 50);
-	assert(first->references == 2 && render->device->vulkan_memory_bytes == 8192);
+	assert(first->references == 2 && render->device->vulkan_memory_bytes == 8192 && first->vulkan_holders == 1);
 	bcm2711_buffer_release(first);
 
 	/* The imported allocation independently owns its view after the original resource descriptor retires. */
@@ -4995,9 +5002,10 @@ memory_test(
 	memory_free(session, 51);
 	assert(render->device->space.views == NULL && render->device->vulkan_memory_bytes == 0 && allocations == baseline);
 
-	/* Aggregate declared heap exhaustion has an explicit Vulkan failure and no new backing allocation. */
-	error = memory_allocate(session, 52, 256ULL << 20, 0, 0);
-	assert(error == VK_SUCCESS);
+	/* Aggregate declared heap exhaustion has an explicit Vulkan failure and no new backing allocation; the whole budget fits. */
+	refusals = render->device->space.native->hardware.perf.memory_refusals;
+	error = memory_allocate(session, 52, BCM2711_VULKAN_MEMORY_BUDGET, 0, 0);
+	assert(error == VK_SUCCESS && render->device->vulkan_memory_bytes == BCM2711_VULKAN_MEMORY_BUDGET);
 
 	/* An actual private declaration cannot acquire external queue ownership merely by selecting a special family number. */
 	object = bcm2711_vulkan_object_find(session, I915_VK_OBJ_MEMORY, 52);
@@ -5005,7 +5013,21 @@ memory_test(
 	external_barrier_test(object);
 	error = memory_allocate(session, 53, 4096, 0, 0);
 	assert(error == (int)VK_ERROR_OUT_OF_DEVICE_MEMORY && backing_allocations == 1);
+	assert(render->device->space.native->hardware.perf.memory_refusals == refusals + 1);
+	assert(render->device->space.native->hardware.perf.memory_refused_bytes == 4096);
 	memory_free(session, 52);
+	assert(render->device->vulkan_memory_bytes == 0);
+
+	/* The budget less a page leaves room for exactly one more page. */
+	error = memory_allocate(session, 52, BCM2711_VULKAN_MEMORY_BUDGET - 4096U, 0, 0);
+	assert(error == VK_SUCCESS);
+	error = memory_allocate(session, 53, 4096, 0, 0);
+	assert(error == VK_SUCCESS && render->device->vulkan_memory_bytes == BCM2711_VULKAN_MEMORY_BUDGET);
+	error = memory_allocate(session, 56, 1, 0, 0);
+	assert(error == (int)VK_ERROR_OUT_OF_DEVICE_MEMORY);
+	memory_free(session, 53);
+	memory_free(session, 52);
+	assert(render->device->vulkan_memory_bytes == 0);
 
 	/* Both ordinary payload and registry allocation refusal retire every budget charge and acquired device dependency. */
 	fail_after = 1;

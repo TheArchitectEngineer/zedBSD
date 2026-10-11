@@ -65,6 +65,15 @@ struct bcm2711_buffer {
 	 * runs first the executions that use a displayed run.
 	 */
 	uint32_t displayed;
+
+	/*
+	 * The Vulkan allocation declarations bound to the run, and the budget
+	 * charged for it, under the render controller's mutex.  The first
+	 * declaration charges the run; later ones (imports) add nothing; the
+	 * charge returns when the last one goes.
+	 */
+	uint32_t vulkan_holders;
+	uint64_t vulkan_charge;
 };
 
 int bcm2711_buffer_create(uint64_t bytes, uint64_t limit, size_t alignment, struct bcm2711_buffer **result);

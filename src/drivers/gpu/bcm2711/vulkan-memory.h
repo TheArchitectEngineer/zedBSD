@@ -12,6 +12,14 @@
 #include "drivers/gpu/bcm2711/vulkan-private.h"
 #include <uapi/gpu-scanout.h>
 
+/*
+ * The one heap the physical query reports, and the budget every live
+ * allocation declaration of all sessions shares.  Each physical run is
+ * charged once, however many declarations (an export and its imports) hold
+ * it.
+ */
+#define BCM2711_VULKAN_MEMORY_BUDGET (512ULL << 20)
+
 struct bcm2711_buffer;
 struct bcm2711_v3d_view;
 
@@ -20,6 +28,7 @@ struct bcm2711_vulkan_memory {
 	struct bcm2711_vulkan_object *device;
 	struct bcm2711_v3d_view *view;
 	uint64_t bytes;
+	/* The budget this declaration holds itself, while it has no run; a bound declaration's charge is its run's. */
 	uint64_t charged;
 	uint32_t external_type;
 };

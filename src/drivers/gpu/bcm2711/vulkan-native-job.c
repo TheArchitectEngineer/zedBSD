@@ -16,6 +16,7 @@
 #include "drivers/gpu/bcm2711/vulkan-barrier.h"
 #include "drivers/gpu/bcm2711/vulkan-native-image.h"
 #include "drivers/gpu/bcm2711/vulkan-buffer-copy.h"
+#include "drivers/gpu/bcm2711/vulkan-memory.h"
 
 /* All concurrently resident native pass/draw uploads share this submission-wide padded budget. */
 #define NATIVE_JOB_BYTES (256ULL * 1024U * 1024U)
@@ -553,6 +554,7 @@ report_perf(
 	uint64_t released;
 	uint64_t released_bytes;
 	uint64_t released_ticks;
+	uint64_t in_use;
 
 	/* The first submission opens the window that later reports measure. */
 	now = clock_ticks();
@@ -671,9 +673,21 @@ report_perf(
 			(unsigned long long)(perf->draw_tiles != 0U ? perf->draw_cycles / perf->draw_tiles : 0U));
 	}
 
-	/* The next window starts empty at this report. */
+	/* The Vulkan allocation budget: in use now, the window's most, and what it refused. */
+	kern_logf(
+		"v3d: memory kib=%llu max_kib=%llu budget_kib=%llu refused=%u last_kib=%llu\n",
+		(unsigned long long)(perf->memory_bytes / 1024U),
+		(unsigned long long)(perf->memory_max / 1024U),
+		(unsigned long long)(BCM2711_VULKAN_MEMORY_BUDGET / 1024U),
+		perf->memory_refusals,
+		(unsigned long long)(perf->memory_refused_bytes / 1024U));
+
+	/* The next window starts empty at this report; the budget in use carries over. */
+	in_use = perf->memory_bytes;
 	kern_memset(perf, 0, sizeof(*perf));
 	perf->window_start = now;
+	perf->memory_bytes = in_use;
+	perf->memory_max = in_use;
 }
 
 /* Converts a tick total into microseconds per item, rounding down. */

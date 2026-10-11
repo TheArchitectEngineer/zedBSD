@@ -9,11 +9,11 @@
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
+#include "drivers/gpu/bcm2711/bcm2711-private.h"
 #include "drivers/gpu/bcm2711/render-device.h"
 #include "drivers/gpu/bcm2711/vulkan-memory.h"
 
-/* The physical query exposes one bounded logical heap and one coherent memory type. */
-#define VULKAN_MEMORY_BUDGET (256ULL << 20)
+/* The physical query exposes one bounded logical heap (BCM2711_VULKAN_MEMORY_BUDGET) and one coherent memory type. */
 #define VULKAN_MEMORY_IMPORT 1000384002U
 #define VULKAN_MEMORY_OPAQUE 1U
 #define VULKAN_MEMORY_NATIVE_SHARE 0x200U
@@ -24,6 +24,9 @@ static int release_memory(struct bcm2711_vulkan_session *session, void *payload)
 static int placement_requirements(const struct gpu_placement *placement, uint64_t *limit, size_t *alignment);
 static int backing_matches(struct bcm2711_buffer *buffer, uint64_t bytes, uint64_t limit, size_t alignment);
 static void allocation_reply(struct i915_wire_writer *reply, VkResult status, uint64_t identity);
+static void budget_charge(struct bcm2711_render_device *controller, uint64_t bytes);
+static void budget_return(struct bcm2711_render_device *controller, uint64_t bytes);
+static void budget_refused(struct bcm2711_render_device *controller, uint64_t bytes);
 
 /*
  * Executes allocation and retirement commands without transferring ownership of the real client's BLOB aliases.
@@ -122,6 +125,11 @@ bcm2711_vulkan_memory_blob(
 		if (error != 0)
 			return error;
 		memory->view = view;
+
+		/* The new run takes the declaration's charge: an import of it later charges nothing more. */
+		view->buffer->vulkan_holders = 1;
+		view->buffer->vulkan_charge = memory->charged;
+		memory->charged = 0;
 	}
 
 	/* Repeated aliases must satisfy their conditions from actual existing storage, without relocation. */
@@ -152,6 +160,7 @@ allocate_memory(
 	struct bcm2711_vulkan_object *device;
 	struct bcm2711_vulkan_object *object;
 	struct bcm2711_vulkan_memory *memory;
+	struct bcm2711_buffer *run;
 	uint64_t device_id;
 	uint64_t present;
 	uint64_t chain;
@@ -202,7 +211,7 @@ allocate_memory(
 	    identity == 0)
 		return EINVAL;
 	if (bytes == 0 ||
-	    bytes > VULKAN_MEMORY_BUDGET ||
+	    bytes > BCM2711_VULKAN_MEMORY_BUDGET ||
 	    memory_type != 0)
 		return EINVAL;
 	device = bcm2711_vulkan_object_find(session, I915_VK_OBJ_DEVICE, device_id);
@@ -227,11 +236,21 @@ allocate_memory(
 			return EINVAL;
 	}
 
-	/* The queried heap budget bounds aggregate live declarations, including conservative charges for imported aliases. */
+	/*
+	 * The queried heap budget bounds the live physical runs: a declaration
+	 * charges its size, except an import of a run another declaration
+	 * already holds, which charges nothing.
+	 */
 	controller = session->render->device;
 	rounded = (bytes + 4095U) & ~4095ULL;
-	if (controller->vulkan_memory_bytes > VULKAN_MEMORY_BUDGET ||
-	    rounded > VULKAN_MEMORY_BUDGET - controller->vulkan_memory_bytes) {
+	run = NULL;
+	if (resource != NULL)
+		run = resource->view->buffer;
+	if (run != NULL && run->vulkan_holders != 0)
+		rounded = 0;
+	if (controller->vulkan_memory_bytes > BCM2711_VULKAN_MEMORY_BUDGET ||
+	    rounded > BCM2711_VULKAN_MEMORY_BUDGET - controller->vulkan_memory_bytes) {
+		budget_refused(controller, rounded);
 		allocation_reply(reply, VK_ERROR_OUT_OF_DEVICE_MEMORY, 0);
 		return 0;
 	}
@@ -263,10 +282,16 @@ allocate_memory(
 		memory->view = resource->view;
 		if (resource->shareable)
 			memory->external_type = VULKAN_MEMORY_OPAQUE;
+
+		/* The import holds the run with the others; the first holder's charge is the run's. */
+		if (run->vulkan_holders == 0)
+			run->vulkan_charge = rounded;
+		run->vulkan_holders++;
+		memory->charged = 0;
 	}
 
 	/* Charge the complete declaration before its registry entry can become visible. */
-	controller->vulkan_memory_bytes += rounded;
+	budget_charge(controller, rounded);
 
 	/* A failed identity publication unwinds every acquired dependency and charge through the same destructor. */
 	error = bcm2711_vulkan_object_publish(session, I915_VK_OBJ_MEMORY, identity, memory, release_memory, &object);
@@ -343,20 +368,31 @@ release_memory(
 {
 	struct bcm2711_vulkan_memory *memory;
 	struct bcm2711_render_device *controller;
+	struct bcm2711_buffer *run;
 	int error;
 	int parent_error;
 
-	/* GPU retirement precedes logical budget and host metadata retirement. */
+	/* The last declaration that holds a run returns the run's charge, before the view (and with it the run) may go. */
 	memory = payload;
 	controller = session->render->device;
+	if (memory->view != NULL) {
+		run = memory->view->buffer;
+		if (run->vulkan_holders == 0)
+			__builtin_trap();
+		run->vulkan_holders--;
+		if (run->vulkan_holders == 0) {
+			budget_return(controller, run->vulkan_charge);
+			run->vulkan_charge = 0;
+		}
+	}
+
+	/* GPU retirement precedes host metadata retirement. */
 	error = 0;
 	if (memory->view != NULL)
 		error = bcm2711_v3d_memory_release(&controller->space, memory->view);
 
-	/* Charges count live VkMemory declarations, not physical measurements of surviving resource/VM aliases. */
-	if (controller->vulkan_memory_bytes < memory->charged)
-		__builtin_trap();
-	controller->vulkan_memory_bytes -= memory->charged;
+	/* A declaration that never had a run returns its own charge. */
+	budget_return(controller, memory->charged);
 	parent_error = bcm2711_vulkan_object_release(memory->device);
 	kern_free(memory);
 
@@ -442,4 +478,57 @@ allocation_reply(
 
 	/* Succeeded: the reply carries the selected allocation status and complete output vector. */
 	return;
+}
+
+/* Adds a charge to the budget in use, and to the diagnostic window's most. */
+static void
+budget_charge(
+	struct bcm2711_render_device *controller,
+	uint64_t bytes)
+{
+	struct bcm2711_v3d_perf *perf;
+
+	/* The budget the next declaration is checked against. */
+	controller->vulkan_memory_bytes += bytes;
+
+	/* The diagnostic copy, when the native device is there. */
+	if (controller->space.native == NULL)
+		return;
+	perf = &controller->space.native->hardware.perf;
+	perf->memory_bytes = controller->vulkan_memory_bytes;
+	if (perf->memory_bytes > perf->memory_max)
+		perf->memory_max = perf->memory_bytes;
+}
+
+/* Returns a charge to the budget. */
+static void
+budget_return(
+	struct bcm2711_render_device *controller,
+	uint64_t bytes)
+{
+	/* A charge never returns more than was taken. */
+	if (controller->vulkan_memory_bytes < bytes)
+		__builtin_trap();
+	controller->vulkan_memory_bytes -= bytes;
+
+	/* The diagnostic copy, when the native device is there. */
+	if (controller->space.native == NULL)
+		return;
+	controller->space.native->hardware.perf.memory_bytes = controller->vulkan_memory_bytes;
+}
+
+/* Counts an allocation the budget refused, for the diagnostic report. */
+static void
+budget_refused(
+	struct bcm2711_render_device *controller,
+	uint64_t bytes)
+{
+	struct bcm2711_v3d_perf *perf;
+
+	/* Nothing to count without the native device. */
+	if (controller->space.native == NULL)
+		return;
+	perf = &controller->space.native->hardware.perf;
+	perf->memory_refusals++;
+	perf->memory_refused_bytes = bytes;
 }
