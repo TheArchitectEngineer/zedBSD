@@ -1706,8 +1706,20 @@ present_prepare(
 			return error;
 		job->results[index] = error;
 
+		/* A cursor plane's image is shown whole, unscaled, wherever its destination puts it (the kernel clips). */
+		if (job->has_display != VK_FALSE && chain->surface->cursor != VK_FALSE) {
+			if (job->display.srcRect.offset.x != 0 ||
+			    job->display.srcRect.offset.y != 0 ||
+			    job->display.srcRect.extent.width != chain->extent.width ||
+			    job->display.srcRect.extent.height != chain->extent.height ||
+			    job->display.dstRect.extent.width != chain->extent.width ||
+			    job->display.dstRect.extent.height != chain->extent.height ||
+			    job->display.persistent != VK_FALSE)
+				return VK_ERROR_INITIALIZATION_FAILED;
+		}
+
 		/* Invalid rectangles cannot escape their checked source or destination image. */
-		if (job->has_display != VK_FALSE) {
+		if (job->has_display != VK_FALSE && chain->surface->cursor == VK_FALSE) {
 			if (job->display.srcRect.offset.x < 0 ||
 			    job->display.srcRect.offset.y < 0 ||
 			    job->display.dstRect.offset.x < 0 ||
@@ -1902,9 +1914,9 @@ present_record(
 		if (job->results[index] != VK_SUCCESS)
 			continue;
 
-		/* Optional display composition remains GPU-resident on both direct and shared-image paths. */
+		/* Optional display composition remains GPU-resident on both direct and shared-image paths; a cursor image is copied whole. */
 		display = NULL;
-		if (job->has_display != VK_FALSE)
+		if (job->has_display != VK_FALSE && job->chains[index]->surface->cursor == VK_FALSE)
 			display = &job->display;
 
 		/* Copy and composition preserve the application's optimal image contents. */
@@ -2312,6 +2324,10 @@ present_native(
 			} else if (chain->gpu_present != VK_FALSE) {
 				/* Names this GPU image commit without creating a CPU pixel staging view. */
 				chain->frame++;
+
+				/* A cursor plane's image goes where the present's destination puts it. */
+				if (job->has_display != VK_FALSE && chain->surface->cursor != VK_FALSE && chain->surface->platform->position != NULL)
+					chain->surface->platform->position(chain->lease, job->display.dstRect.offset.x, job->display.dstRect.offset.y);
 
 				/* The part that changed, when the application named it and the backend damages parts. */
 				if (job->damage != NULL && job->damage[index].known && chain->surface->platform->damage != NULL)
