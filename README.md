@@ -19,9 +19,8 @@ and a futuristic touch UI/UX.
 
 zedBSD aim to become a commercial UNIX in the line of macOS and
 Solaris: an operating system made for newly-designed cutting-edge
-computers, that changes "the way computing is".  They are written to
-conform to `POSIX.1-2024` and to the `Single UNIX Specification,
-Version 4` (SUSv4).  It is not yet a certified UNIX system.
+computers, that changes "the way computing is".  It is written to
+conform to `POSIX.1-2024`, and not yet a certified UNIX system.
 Conformance will keep being raised, and UNIX certification from The
 Open Group is a goal.  (UNIX is a registered trademark of The Open
 Group.)
@@ -42,6 +41,17 @@ designed by the same person who directs the OS.  Everything that runs
 on open hardware stays free to use.  Features that need the project's
 own hardware are still published as source, and only run on that
 hardware.
+
+---
+
+## Vulkan-direct GPU Drivers
+
+GPU support is a native, Vulkan-direct stack.  It does not require
+Linux DRM/KMS or Mesa, and it does not use user-space drivers and
+compilers.
+
+Intel iGPU (Xe-LP) and Raspberry Pi 4 (VideoCore VI) are the current
+drivers.  NVIDIA and AMD drivers will follow soon.
 
 ---
 
@@ -69,13 +79,13 @@ Supported hardware:
 
 - Dell Latitude 5330:
 -- CPU: Intel Core i5 1245P
--- GPU: Intel Iris Xe
+-- GPU: Intel Iris Xe (Xe-LP)
 -- WiFi: Intel AX211
 -- Bluetooth: Intel AX211
 -- USB: USB 3.0, USB-C DisplayPort Alt Mode
 
 - Raspberry Pi4
--- No onboard WiFi & Bluetooth, use USB ones.
+-- GPU, USB, WiFi, and Ethernet are supported
 
 ### Windows (VM)
 
@@ -293,15 +303,6 @@ the OS level.
 | Kernel HAL (CPU + BSP)                                                            |
 +-----------------------------------------------------------------------------------+
 ```
-
----
-
-## Direct Vulkan GPU Drivers
-
-GPU support is a native, direct Vulkan stack. It does not require
-Linux DRM/KMS or Mesa, and it does not use user-space drivers.
-
-Intel Xe-LP is the current driver. NVIDIA and AMD support are planned.
 
 ---
 
