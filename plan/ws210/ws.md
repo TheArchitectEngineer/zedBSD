@@ -32,3 +32,7 @@ Pi 4 で標準 app（Files・Settings・Phone など）の再描画が CPU の�
 | Phase | 内容 | Status |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 調査と設計（今の canvas・text・image の作り、app の present の経路、GPU の back end の形、shader、fallback、移行の順、試験） | in-progress（設計の第 1 版、review 待ち） |
+
+## 2026-10-12 ユーザーの決定: G1〜G5
+
+ユーザー「承認します。」→ G1〜G5 は推しの (a): G1 描画の口は同じ・window の frame の口を足す（review-1 の M3: 公開の struct を変えない）、G2 CPU の back end を残す、G3 Text Editor・PDF Viewer・Image Viewer・Notes の overlay と、後の Phase で Calendar の 3D・Video Player の色の変換も WS210（review-1 の M2・L7 を見積に）、G4 線の端を capsule の SDF にそろえる、G5 WS210 の完了は「app の側の CPU の画素の処理 0、Pi で前より速い（数で）」、60 fps は WS141 の案 (A) と合わせた目標（review-1 の M8・M9 を足す）。次は設計 1.1（review-1 の H1〜H3・M1〜M11・L1〜L8）→ p002 の最初に Pi の shader の受理と時間の spike。
