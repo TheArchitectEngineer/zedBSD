@@ -320,23 +320,29 @@ kwl_host_image_written(
 }
 
 /*
- * Records, before the frame's drawing, the copies of every written host image into its sampled image.
+ * Records the copies of every written host image into its sampled image, for a command buffer that runs before the frame's; returns how many.
  */
-void
+unsigned
 kwl_host_images_record(
 	struct kwl_compose *compose,
 	VkCommandBuffer command)
 {
 	struct kwl_import *import;
+	unsigned count;
 
 	/* Each written image, once. */
+	count = 0U;
 	for (import = compose->host_images; import != NULL; import = import->host_next) {
 		/* An unchanged staging has nothing new to copy. */
 		if (!import->written)
 			continue;
 		image_copy_record(command, import);
 		import->written = 0U;
+		count++;
 	}
+
+	/* The number of copies recorded. */
+	return count;
 }
 
 /*

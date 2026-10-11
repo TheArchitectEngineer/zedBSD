@@ -199,6 +199,8 @@ struct kwl_compose {
 	VkDescriptorPool descriptors;
 	VkCommandPool pool;
 	VkCommandBuffer command;
+	/* Recorded at submission, after the frame's drawing wrote its host images, and run before command. */
+	VkCommandBuffer copy_command;
 	/*
 	 * The start's images (ws035-p131): while setup_batching is set, a new
 	 * host image's move to the general layout is recorded into
@@ -352,7 +354,7 @@ struct kwl_compose {
 VkResult kwl_host_image_create(struct kwl_compose *compose, uint32_t width, uint32_t height, VkSampler sampler, struct kwl_import *import);
 void kwl_host_image_release(struct kwl_compose *compose, struct kwl_import *import);
 void kwl_host_image_written(struct kwl_import *import);
-void kwl_host_images_record(struct kwl_compose *compose, VkCommandBuffer command);
+unsigned kwl_host_images_record(struct kwl_compose *compose, VkCommandBuffer command);
 void kwl_host_image_batch_begin(struct kwl_compose *compose);
 VkResult kwl_host_image_batch_end(struct kwl_compose *compose);
 
