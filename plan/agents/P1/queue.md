@@ -9,8 +9,8 @@ Worktree: `/home/awe/zedBSD-worktrees/p1`、branch `agent/p1`、base main fc3d31
 | q925 | [WS202](../../ws202/ws.md) p009・p010・p017、[WS083](../../ws083/ws.md) p007 | Vulkan Video の i915 の完了: T1-529（5330・QEMU の再生の確認）の結果で直す。p007 の hang の回復の実機の手順を T1 に依頼 | active（T1-529 の FAIL の直し） |
 | q926 | [ws197-p014](../../ws197/phase014/phase.md) | 「＋」→ 写真の media picker の popup（libkeiland の UI）／file chooser | finished（a2f74e07e → main 4e054d03b、host・build・境界 PASS、GUI は T1-533） |
 | q927 | [ws197-p010](../../ws197/phase010/phase.md) | MMS の添付・写真・動画の送信（旧試作の差分は `.claude/worktrees/ws197-media` に未 commit で残る、読むだけ） | finished（d6b9b5ded → main、host・build PASS、実機はユーザーの UAT） |
-| q928 | ws197-p006 | HFP の制御 | reserved |
-| q929 | [WS204](../../ws204/ws.md) | HD Audio の録音、HFP の音（ws197-p007 と一緒に） | reserved |
+| q928 | ws197-p006 | HFP の制御 | finished（60a50fdbf → main、host・build PASS、実機はユーザーの UAT） |
+| q929 | [WS204](../../ws204/ws.md) | HD Audio の録音、HFP の音（ws197-p007 と一緒に） | active |
 | q930 | ws197-p007 | HFP の音（SCO、usb-bt の isochronous）→ 内蔵のマイク・スピーカーで通話 | reserved |
 | q931 | [WS205](../../ws205/ws.md) | Bluetooth audio（SBC・AAC の encode、A2DP、headset で HFP） | reserved |
 | q932 | [WS206](../../ws206/ws.md) | Raspberry Pi 4 の WiFi | reserved |
