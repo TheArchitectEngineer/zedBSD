@@ -363,3 +363,7 @@ R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなく
 ## 2026-10-12 ユーザーの承認: cursor の plane は標準の VK_KHR_display＋cursor 専用の UAPI
 
 ユーザー「待って、ベンダ拡張はおかしいのでは？display の hardware plane を列挙して使う拡張を、標準として使うべきでは？」「VK_KHR_display＋cursor 専用の UAPIでOKです。承認します。」→ vendor の Vulkan 拡張は作らない。libvulkan は cursor の plane を VK_KHR_display の plane（能力: 小さな最大の大きさ（64x64）・per-pixel premultiplied の α・一番上の stack）として列挙し、その plane の swapchain の present と VkDisplayPresentInfoKHR の dstRect を kernel の cursor 専用の ioctl（`GPU_DISPLAY_CURSOR_SET`・`MOVE`・`HIDE`、KMS の legacy cursor に相当）に変える。compositor は標準の VK_KHR_display・VK_KHR_display_swapchain だけを使い、能力で cursor の plane を選ぶ（無ければ合成の fallback）。hotspot は compositor が dstRect に含める。phase014 の設計を P3 がこの形に直して実装する。
+
+## 2026-10-12 cursor の plane の実機の結果
+
+main 8eb7c81 の image の Pi 4 で cursor の plane が開き（`KWL CURSOR_PLANE open plane=1 64x64 images=3`）、ユーザー「おお、カーソルは60fpsです！」。窓の中身の frame は約 15 fps のまま（CPU の texture 変換が主因、libvulkan の map の token の直し 3b0d9db5c を試験中）。
