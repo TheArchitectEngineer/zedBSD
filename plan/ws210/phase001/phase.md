@@ -178,6 +178,7 @@ B2. **pipeline は形ごとに分ける**（H3、全ての shader は直線の c
 | triangle | 3 点の `polygon`（C2） | 位置 2、辺への距離 3、色 1（3 頂点） | 距離 3（noperspective）・色 4 = 7 | `clamp(0.5 + min(d0, d1, d2))`。辺は外へ 1 px ずらした三角形で描く（1 つの三角形なので継ぎ目の重なりは無い） |
 
 - 4 点以上の polygon は shader を持たない（C2）。
+- **不透明の単色の塗り**（alpha 255 の `fill` と角丸・影の内側の不透明な矩形）は replace の pipeline で描く（不透明の source-over は置き換えと同じ画素。p002 の数: replace の fragment 54 命令、fill 231 命令）。
 - 頂点の大きさ（6 頂点の合計）: fill 30、round 66、shadow 60、ring 60、capsule 60、atlas 36、image 60、replace 18、triangle 18（3 頂点）scalar。2000 の形の frame で概ね 10 万 scalar（第 1 版の 6×24 = 144 の約 3 分の 1）。
 - 出力は location 0 の 4 成分、premultiplied、blend は premultiplied の source-over（replace を除く）。`pixel` の varying（noperspective）、early return・discard・loop 無し。
 - 命令数と register は p002 の spike で数え、収まらない・2 thread にならない物は分ける（round を塗り／枠に、など）。逆に draw の費用が大きければ fill を round に、shadow を round に寄せて pipeline を減らす（B3）。両方の向きの判断を数で行う。
