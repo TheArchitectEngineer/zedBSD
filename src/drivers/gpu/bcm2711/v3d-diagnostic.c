@@ -6,13 +6,16 @@
  */
 
 /* Boot diagnostics execute before a render device or any other job owner exists. */
+#include <kern/clock.h>
 #include <kern/dcache.h>
 #include <kern/device-io.h>
 #include <kern/kcrt.h>
+#include <kern/kmem.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
 #include "drivers/gpu/bcm2711/buffer.h"
+#include "drivers/gpu/bcm2711/native-state.h"
 #include "drivers/gpu/bcm2711/v3d-job.h"
 
 /* One mapped diagnostic run keeps CLs, tile state, pool and overflow together. */
@@ -29,6 +32,7 @@ static int retire_storage(struct bcm2711_v3d *engine);
 static int run_noop(struct bcm2711_v3d *engine);
 static int run_clear(struct bcm2711_v3d *engine);
 static int run_tfu(struct bcm2711_v3d *engine);
+static int run_tfu_uif(struct bcm2711_v3d *engine, uint32_t width, uint32_t height, uint32_t pitch, bool compare);
 static int run_timeout(struct bcm2711_v3d *engine);
 static uint32_t pattern_pixel(uint32_t x, uint32_t y);
 
@@ -45,6 +49,7 @@ bcm2711_v3d_diagnostic(
 	int error;
 	int reset_error;
 	int retired;
+	int converted;
 
 	/* Honors the ordinary native stop before any diagnostic memory publication. */
 	allowed = bcm2711_stage_allowed(BCM2711_FAMILY_V3D, "V7");
@@ -76,6 +81,27 @@ bcm2711_v3d_diagnostic(
 			error = run_tfu(engine);
 		else
 			error = ECANCELED;
+	}
+
+	/*
+	 * Texture conversion by the unit is used only after its UIF output for a
+	 * multi-column image matches the CPU conversion; a mismatch is reported
+	 * and leaves the CPU conversion in charge without failing the boot.
+	 */
+	if (error == 0) {
+		converted = run_tfu_uif(engine, 96U, 40U, 512U, true);
+		if (converted == 0)
+			converted = run_tfu_uif(engine, 256U, 256U, 1024U, false);
+
+		/* A launched job that failed leaves the engine faulted; boot still owns all DMA and resets it. */
+		if (converted == 0) {
+			engine->hardware.tfu_uif_ready = true;
+		} else if (engine->hardware.faulted) {
+			error = bcm2711_v3d_hardware_reset(engine);
+			bcm2711_stage_mark(BCM2711_FAMILY_V3D, "V9 TFU UIF error %d; CPU conversion, reset %d", converted, error);
+		} else {
+			bcm2711_stage_mark(BCM2711_FAMILY_V3D, "V9 TFU UIF unavailable %d; CPU conversion", converted);
+		}
 	}
 
 	/* Intentional timeout occurs before client registration, with one retained boot owner. */
@@ -480,5 +506,115 @@ run_noop(
 		result.overflow_used);
 
 	/* Succeeded: the caller can proceed to visible render with these same retained owners. */
+	return 0;
+}
+
+/*
+ * Converts one raster pattern to strict UIF with the unit and, when asked, compares it with the CPU conversion.
+ *
+ * EBADMSG reports a layout mismatch, which disables unit conversion but is
+ * not a hardware failure.  The elapsed time of each conversion is printed.
+ */
+static int
+run_tfu_uif(
+	struct bcm2711_v3d *engine,
+	uint32_t width,
+	uint32_t height,
+	uint32_t pitch,
+	bool compare)
+{
+	struct bcm2711_v3d_job job;
+	struct bcm2711_v3d_job_result result;
+	uint8_t *storage;
+	uint32_t *input;
+	uint8_t *output;
+	uint8_t *expected;
+	uint32_t bytes;
+	uint32_t x;
+	uint32_t y;
+	uint64_t started;
+	uint64_t finished;
+	uint64_t frequency;
+	bool started_valid;
+	bool finished_valid;
+	int same;
+	int error;
+
+	/* Both images fit the diagnostic run's raster and TFU intervals. */
+	error = bcm2711_native_texture_size(width, height, &bytes);
+	if (error != 0)
+		return error;
+	if (pitch * height > DIAGNOSTIC_TFU_OFFSET - DIAGNOSTIC_TARGET_OFFSET || bytes > DIAGNOSTIC_BYTES - DIAGNOSTIC_TFU_OFFSET)
+		return EINVAL;
+
+	/* Each pixel carries both of its coordinates, so a misplaced texel cannot match. */
+	storage = engine->hardware.diagnostic->address;
+	input = (uint32_t *)(storage + DIAGNOSTIC_TARGET_OFFSET);
+	output = storage + DIAGNOSTIC_TFU_OFFSET;
+	for (y = 0; y < height; y++) {
+		/* Fills the visible part of each row. */
+		for (x = 0; x < width; x++)
+			input[y * (pitch / 4U) + x] = 0xff000000U | (x << 12) | y;
+	}
+	kern_memset(output, 0xa5, bytes);
+
+	/* Raster RGBA8 input in whole pixels, UIF without XOR output, exactly as texture sampling uses it. */
+	kern_memset(&job, 0, sizeof(job));
+	job.kind = BCM2711_V3D_JOB_TFU;
+	job.command.tfu.input = DIAGNOSTIC_ADDRESS + DIAGNOSTIC_TARGET_OFFSET;
+	job.command.tfu.input_bytes = (height - 1U) * pitch + width * 4U;
+	job.command.tfu.output = DIAGNOSTIC_ADDRESS + DIAGNOSTIC_TFU_OFFSET;
+	job.command.tfu.output_bytes = bytes;
+	job.command.tfu.output_format = 6U;
+	job.command.tfu.stride = pitch / 4U;
+	job.command.tfu.size = (height << 16) | width;
+	job.command.tfu.configuration = 4U << 9;
+	kern_dcache_clean_range(input, pitch * height);
+	kern_dcache_clean_range(output, bytes);
+	kern_io_write_barrier();
+
+	/* The counter brackets only the unit's job, including its IRQ wait. */
+	started_valid = kern_rtc_read_counter(&started, &frequency);
+	error = bcm2711_v3d_job_run(engine, &job, &result);
+	if (error != 0)
+		return error;
+	finished_valid = kern_rtc_read_counter(&finished, &frequency);
+	kern_dcache_invalidate_range(output, bytes);
+	kern_io_read_barrier();
+
+	/* Prints the conversion time, which decides whether the unit is worth its IRQ wait. */
+	if (started_valid && finished_valid && frequency != 0) {
+		bcm2711_stage_mark(
+			BCM2711_FAMILY_V3D,
+			"V9 TFU UIF %ux%u us=%llu",
+			width,
+			height,
+			(unsigned long long)((finished - started) * 1000000U / frequency));
+	}
+
+	/* A timing-only run needs no reference image. */
+	if (!compare)
+		return 0;
+
+	/* The CPU conversion of the same raster is the reference layout. */
+	expected = kern_malloc(bytes);
+	if (expected == NULL)
+		return ENOMEM;
+	error = bcm2711_native_texture_copy(width, height, input, pitch, (size_t)pitch * height, expected, bytes);
+	if (error != 0) {
+		kern_free(expected);
+		return error;
+	}
+	same = kern_memcmp(expected, output, bytes);
+	kern_free(expected);
+
+	/* A different layout keeps the CPU conversion for every texture. */
+	if (same != 0) {
+		bcm2711_stage_mark(BCM2711_FAMILY_V3D, "V9 TFU UIF %ux%u differs from CPU layout", width, height);
+		return EBADMSG;
+	}
+
+	/* Succeeded: the unit wrote exactly the CPU conversion's bytes. */
+	bcm2711_stage_mark(BCM2711_FAMILY_V3D, "V9 TFU UIF %ux%u matches CPU layout", width, height);
 	return 0;
 }
