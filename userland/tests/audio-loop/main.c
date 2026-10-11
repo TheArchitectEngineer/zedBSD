@@ -54,6 +54,16 @@
 #define LOOP_CHANNELS		2U
 #define LOOP_PERIOD_FRAMES	1024U
 
+/* The numeric options, in loop_parse's table. */
+#define LOOP_SECONDS		0U
+#define LOOP_FREQUENCY		1U
+#define LOOP_LEVEL		2U
+#define LOOP_RATE		3U
+#define LOOP_MARGIN		4U
+#define LOOP_DEVICE_VOLUME	5U
+#define LOOP_RECORD		6U
+#define LOOP_NUMBERS		7U
+
 /* How long a recording may stand still, and the time allowed beyond the expected (milliseconds). */
 #define LOOP_STALL_MS		2000L
 #define LOOP_SLACK_MS		5000L
@@ -196,6 +206,8 @@ main(
 	} else {
 		error = loop_play(&link, &capture, &playback, &take, &options, &tone_start);
 	}
+
+	/* How long it took; a recording that stopped short is reported. */
 	elapsed = loop_ms_since(&start);
 	if (error != 0) {
 		fprintf(stderr, "audio-loop: recording stopped after %zu frames: %s\n", take.count, strerror(error));
@@ -237,64 +249,60 @@ loop_parse(
 	char **argv,
 	struct loop_options *options)
 {
+	static const char *const names[LOOP_NUMBERS] = {
+		"--seconds=", "--frequency=", "--level=", "--rate=", "--margin=", "--device-volume=", "--record="
+	};
+	double numbers[LOOP_NUMBERS] = {3.0, 1000.0, -12.0, 48000.0, 20.0, -1.0, 0.0};
 	const char *argument;
-	double value;
+	size_t length;
+	size_t name;
 	int index;
+	int same;
 	int error;
 
-	/* The defaults. */
-	options->seconds = 3.0;
-	options->frequency = 1000.0;
-	options->level = -12.0;
-	options->rate = 48000U;
-	options->margin = 20.0;
-	options->device_volume = -1;
+	/* No WAV file unless one is named. */
 	options->wav = NULL;
-	options->record = 0.0;
 
 	/* Each argument, a --name=value. */
 	for (index = 1; index < argc; index++) {
 		argument = argv[index];
 
 		/* The WAV file's path, as it is. */
-		if (strncmp(argument, "--wav=", 6U) == 0) {
+		same = strncmp(argument, "--wav=", 6U);
+		if (same == 0) {
 			options->wav = argument + 6;
 			if (options->wav[0] == '\0')
 				return EINVAL;
 			continue;
 		}
 
-		/* Every other option is a number. */
-		error = EINVAL;
-		value = 0.0;
-		if (strncmp(argument, "--seconds=", 10U) == 0) {
-			error = loop_number(argument + 10, &value);
-			options->seconds = value;
-		} else if (strncmp(argument, "--frequency=", 12U) == 0) {
-			error = loop_number(argument + 12, &value);
-			options->frequency = value;
-		} else if (strncmp(argument, "--level=", 8U) == 0) {
-			error = loop_number(argument + 8, &value);
-			options->level = value;
-		} else if (strncmp(argument, "--rate=", 7U) == 0) {
-			error = loop_number(argument + 7, &value);
-			options->rate = (unsigned)value;
-		} else if (strncmp(argument, "--margin=", 9U) == 0) {
-			error = loop_number(argument + 9, &value);
-			options->margin = value;
-		} else if (strncmp(argument, "--device-volume=", 16U) == 0) {
-			error = loop_number(argument + 16, &value);
-			options->device_volume = (int)value;
-		} else if (strncmp(argument, "--record=", 9U) == 0) {
-			error = loop_number(argument + 9, &value);
-			options->record = value;
+		/* Every other option is a number, by its name. */
+		for (name = 0U; name < LOOP_NUMBERS; name++) {
+			length = strlen(names[name]);
+			same = strncmp(argument, names[name], length);
+			if (same == 0)
+				break;
 		}
+
+		/* An unknown name, or a value that is not a number. */
+		if (name == LOOP_NUMBERS)
+			return EINVAL;
+		error = loop_number(argument + length, &numbers[name]);
 		if (error != 0)
 			return EINVAL;
 	}
 
+	/* The numbers in their places. */
+	options->seconds = numbers[LOOP_SECONDS];
+	options->frequency = numbers[LOOP_FREQUENCY];
+	options->level = numbers[LOOP_LEVEL];
+	options->rate = (unsigned)numbers[LOOP_RATE];
+	options->margin = numbers[LOOP_MARGIN];
+	options->device_volume = (int)numbers[LOOP_DEVICE_VOLUME];
+	options->record = numbers[LOOP_RECORD];
+
 	/* The rate audiod takes, a tone below half of it, at most full scale, long enough to measure. */
-	if (options->rate < 8000U || options->rate > 192000U)
+	if (numbers[LOOP_RATE] < 8000.0 || numbers[LOOP_RATE] > 192000.0)
 		return EINVAL;
 	if (options->frequency <= 0.0 || options->frequency >= (double)options->rate / 2.0)
 		return EINVAL;
@@ -487,6 +495,8 @@ loop_request(
 		} else if (received >= 0) {
 			close(received);
 		}
+
+		/* Found. */
 		break;
 	}
 
@@ -698,6 +708,8 @@ loop_collect(
 			take->count++;
 			kept++;
 		}
+
+		/* Past it, kept or not. */
 		read_position++;
 	}
 
@@ -767,6 +779,7 @@ loop_record(
 {
 	struct timespec moved;
 	size_t kept;
+	long still;
 	int error;
 
 	/* The recording started. */
@@ -780,7 +793,8 @@ loop_record(
 		kept = loop_collect(capture, take);
 		if (kept != 0U)
 			clock_gettime(CLOCK_MONOTONIC, &moved);
-		if (loop_ms_since(&moved) > LOOP_STALL_MS)
+		still = loop_ms_since(&moved);
+		if (still > LOOP_STALL_MS)
 			return ETIMEDOUT;
 		error = loop_wait(link, 50);
 		if (error != 0)
@@ -816,6 +830,7 @@ loop_play(
 	uint64_t tone_frames;
 	uint64_t written;
 	long limit;
+	long still;
 	size_t kept;
 	int playing;
 	int drained;
@@ -839,9 +854,11 @@ loop_play(
 		kept = loop_collect(capture, take);
 		if (kept != 0U)
 			clock_gettime(CLOCK_MONOTONIC, &moved);
-		if (loop_ms_since(&moved) > LOOP_STALL_MS)
+		still = loop_ms_since(&moved);
+		if (still > LOOP_STALL_MS)
 			return ETIMEDOUT;
-		if (loop_ms_since(&began) > limit)
+		still = loop_ms_since(&began);
+		if (still > limit)
 			return ETIMEDOUT;
 
 		/* The tone started after the quiet's second. */
@@ -904,6 +921,8 @@ loop_save(
 		fclose(file);
 		return EIO;
 	}
+
+	/* The frames. */
 	done = fwrite(take->frames, LOOP_CHANNELS * sizeof(int16_t), take->count, file);
 	if (done != take->count) {
 		fclose(file);
@@ -941,16 +960,23 @@ loop_judge(
 	double tone_rms;
 	double peak;
 	double margin;
+	size_t room;
 	size_t noise_from;
 	size_t tone_from;
 	size_t tone_to;
+	int same;
 
-	/* The take in one channel. */
-	mono = calloc(take->count != 0U ? take->count : 1U, sizeof(double));
+	/* The take in one channel (room for one sample at least). */
+	room = take->count;
+	if (room == 0U)
+		room = 1U;
+	mono = calloc(room, sizeof(double));
 	if (mono == NULL) {
 		fprintf(stderr, "audio-loop: no memory to measure\n");
 		return 1;
 	}
+
+	/* Mixed. */
 	loop_mono(take->frames, take->count, LOOP_CHANNELS, mono);
 
 	/* The windows. */
@@ -989,7 +1015,8 @@ loop_judge(
 	    noise_rms, noise_tone, tone, tone_rms, peak, margin, result);
 
 	/* Only a pass is a pass. */
-	if (strcmp(result, "PASS") != 0)
+	same = strcmp(result, "PASS");
+	if (same != 0)
 		return 1;
 
 	/* Succeeded: passed. */
