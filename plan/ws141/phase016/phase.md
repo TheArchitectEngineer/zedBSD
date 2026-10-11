@@ -120,8 +120,7 @@ executor の pass ごとの 3 区分:
 
 ### session をまたぐ順序（cross-session）
 
-- **client の窓の画像**: 今の Wayland の WSI（libvulkan `wsi-wayland.c`）は client の present で GPU の完了（fence）を待ってから compositor に commit するか（同期）、early commit（explicit sync の semaphore・fence の fd を渡す）か。前者なら compositor の pass が client の画像を読む時には client の execution は完了済みで、列が分かれても順序は保たれる。後者の時は compositor の execution がその fd（client の session の execution が signal する sync）を wait として持つので、下の「session をまたぐ wait」で順序が保たれる。A1 の前に libvulkan の WSI がどちらを使うかを source で確かめて phase に記録する（確かめる所: `wsi-wayland.c` の present と `vulkan_sync` の export）。
-- **session をまたぐ wait の semaphore・外に出した fence の fd**: execution の wait の semaphore の payload が別の session の execution の signal（import した sync の fd を含む）の時、その execution は「依存の execution の完了」まで準備ができていない扱いにし、round-robin は飛ばす。依存は sync の payload が「signal する execution（session と sequence）」を記録して表す（今の `signals_reserved` に execution の参照を足す）。循環（A が B を待ち B が A を待つ）は Vulkan の誤りで、timeline の期限（job の監視と同じ上限）で依存の待ちを fault にせず、その execution を DEVICE_LOST で終える（その session だけ）。
+- **session をまたぐ順序は marker の完了（C-1）だけに依る**（review-4 の H-1）: Wayland の WSI は early commit（acquire の fence 付き、`wsi-wayland.c:711-721,826-827`）で、compositor は client の acquire の fence を CPU で poll（`wayland/display.c:49-97`）してから buffer を使う。fence は client の session の marker で、client の execution の完了まで完了しない。semaphore・fence は session の中だけで、session をまたぐ GPU の依存の機構は作らない。
 - **buffer の暗黙の依存**: Vulkan の外（同じ memory を 2 つの session が GPU で書いて読む、明示の sync 無し）は順序を保証しない（Vulkan の規則どおり）。kernel の安全（memory・PTE）は hold で守る。
 
 ### 上限と背圧（N1・N2）
