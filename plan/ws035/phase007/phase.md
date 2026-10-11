@@ -17,7 +17,7 @@ Queue: q342（q342-i01）
 | `src/drivers/pci/pci-hda.c`、`include/drivers/pci/pci-hda.h` | HD Audio driver。class 0x0403 の controller ごとに `/dev/dspN`・`/dev/mixerN` |
 | `Makefile`、`config/drivers/pci.drivers`、`platform/amd64/vmunix.mk`、`src/kern/platform/pcat.c` | `CONFIG_DRIVER_PCI_HDA`（amd64、既定 n）。`KERN_AUDIO_BACKENDS ?= $(CONFIG_DRIVER_PCI_HDA)` |
 | `include/drivers/audio/audio.h`、`src/drivers/audio/audio.c` | p006 の変更（下の「フレームワークの変更」） |
-| `plan/ws035/tests/` | `hda-fixture.c`・`run-hda-fixture-test.sh`（host）、`audiotest.c`（ゲスト）、`hda-wav-check.py`、`boot-hda.sh`、`run-hda-qemu.sh`、`config-amd64-hda*.mk` |
+| `plan/ws035/tests/` | （host の fixture は 2026-10-11 に WS204 の `plan/ws204/tests/run-hda-fixture-test.sh` へ置き換えて削除）、`audiotest.c`（ゲスト）、`hda-wav-check.py`、`boot-hda.sh`、`run-hda-qemu.sh`、`config-amd64-hda*.mk` |
 
 ## フレームワーク（p006）の変更
 
@@ -48,7 +48,7 @@ Queue: q342（q342-i01）
 
 | 検証 | 結果 |
 | --- | --- |
-| host fixture `run-hda-fixture-test.sh`（通常＋ASan/UBSan） | **PASS** 3 試験 |
+| host fixture（当時の `plan/ws035/tests/run-hda-fixture-test.sh`、2026-10-11 削除） | **PASS** 3 試験 |
 | audio framework の fixture（p006、変更後） | **PASS** 12 試験 |
 | amd64（hda あり・なし）、pcat・pc98（audio のみ）の `vmunix` | PASS、warning 0。hda なしの CI 構成は audio の symbol 0 |
 | QEMU 6 構成（`run-hda-qemu.sh`、最終 source で再実行） | **全部 PASS**（下表） |
