@@ -101,3 +101,5 @@ src/hal/arm64/page.cの変更領域をC全文で確認。private candidateの初
 vulkan-native-pass.c/execute.cの新差分をC全文review。image全域かつCLEARのみnative tile初期化、partial/small framebufferの外側保持・事前準備失敗時target不変・UNORM pack/チャネル順・GPU retirementを確認。対象device host PASS、production style0/diff-check PASS、clang-format19比較は全文規約優先。arm64 warning0/checkerPASS。実機速度/色はp006へ追記する。WS/p006 acceptanceは未完了。
 
 2026-10-11: native-job成功時250ms以上の集計診断を全文review。時刻計測は公開制御に使わず、preemptionを含むwall時間と明記。対象host/build warning0/style0/diff-check PASS。実機はp006へ。
+
+2026-10-11 user指示のstage撮影待ち短縮（3000→100ms）は定数のみの機能差分、hardware待ちを分離確認。stage-host/style0/diff-check/arm64 warning0/checkerPASS。

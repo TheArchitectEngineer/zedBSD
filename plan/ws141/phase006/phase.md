@@ -335,3 +335,6 @@ HAL APIを変えず、arm64/page.cに「ここより前は全て使用中」と�
 
 
 全面clear e6914742dをmain統合、旧4190670006/8077312を /var/backups/vmunix.before-native-clear-20261011へ保存、新2480702249/8077312を全体cmp/sync付きで配置。reboot後SSH復帰し通常sessionは継続。offscreen4条件の読み戻しは前回と同じ期待RGBA全件一致。compose0.8〜3.8秒は残り、clear変更だけの実測改善とはしない。250ms以上のnative submissionにprepare/execute/release/buffer-copyのwall時間内訳を1行記録する診断を追加。公開API/動作順序/timeout変更なし。対象device host PASS、production style0/全文manual/diff-check PASS、clang-format19比較は全文規約優先、arm64 build warning0/checkerPASS。診断kernel1993742562/8077312を次に配置する。
+
+
+ユーザー「初期化時の3000msのウェイトも短くしてほしい」に従い、診断撮影用stage pauseのみ3000→100msへ短縮。HW固有のsettling/ready/timeout値は変更しない。stage-host限定PASS、C全文review/style0/diff-check PASS、arm64 warning0/checkerPASS。kernel994709821/8077312。直前の355d15c26診断kernel1993742562はFATへ配置・照合済みだが再起動前だったため、短縮版を配置して一度だけ再起動する。旧動作版2480702249は /var/backups/vmunix.before-submit-timing-20261011に保全済み。

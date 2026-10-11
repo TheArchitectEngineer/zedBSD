@@ -35,7 +35,7 @@
 #define BCM2711_STAGE_LINE_COLUMNS	79U
 
 /* How long a stage waits before a write that may blank the screen, in ms. */
-#define BCM2711_STAGE_PAUSE_MS		3000U
+#define BCM2711_STAGE_PAUSE_MS		100U
 
 /* The two timing generators that feed the HDMI ports: HDMI0 and HDMI1. */
 #define BCM2711_TIMING_COUNT		2U

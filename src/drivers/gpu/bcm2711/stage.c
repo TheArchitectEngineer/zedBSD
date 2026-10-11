@@ -140,9 +140,9 @@ bcm2711_stage_mark(
 /*
  * Waits before a write that may blank the screen.
  *
- * The begin line of the stage is already on the screen; the wait lets a
- * photograph catch it before the screen may go dark.  The wait polls the
- * monotonic counter, because the driver may run before interrupts are on.
+ * The begin line briefly remains visible before the screen may go dark.
+ * This observation pause does not replace hardware-specific settling or
+ * completion waits.  The sleep also works during early boot.
  */
 void
 bcm2711_stage_pause(
