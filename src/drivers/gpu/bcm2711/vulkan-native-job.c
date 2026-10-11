@@ -225,6 +225,13 @@ bcm2711_vulkan_native_job_execute(
 		/* Accumulate preparation separately from device execution and retirement. */
 		prepare_ticks += clock_ticks() - step;
 
+		/* A copy whose destination already holds its source's bytes prepared no pass. */
+		if (error == 0 && job->pass == NULL) {
+			perf->skipped_copies++;
+			event = next;
+			continue;
+		}
+
 		/* The cost report separates graphics passes, image clears and image transfers. */
 		if (error == 0) {
 			bcm2711_vulkan_native_pass_costs(job->pass, perf);
@@ -496,13 +503,14 @@ report_perf(
 
 	/* Prints the window's per-submission averages and its worst submission. */
 	kern_logf(
-		"v3d: perf ms=%llu busy=%llu%% subs=%llu passes=%u/%u/%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu\n",
+		"v3d: perf ms=%llu busy=%llu%% subs=%llu passes=%u/%u/%u skipped=%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu\n",
 		(unsigned long long)kern_ticks_to_ms(now - perf->window_start),
 		(unsigned long long)busy,
 		(unsigned long long)count,
 		perf->render_passes,
 		perf->clear_passes,
 		perf->image_passes,
+		perf->skipped_copies,
 		perf->draws,
 		(unsigned long long)(perf->staged_bytes / 1024U),
 		(unsigned long long)average_us(perf->total_ticks, count),

@@ -303,6 +303,83 @@ bcm2711_v3d_memory_recover(
 	return 0;
 }
 
+/*
+ * Records one write of the box of the image at offset and advances the generation.
+ *
+ * The caller serializes writes of the run with its device mutex.  A NULL box
+ * stands for a write whose extent is unknown, which forces whole copies.
+ */
+void
+bcm2711_v3d_memory_written(
+	struct bcm2711_buffer *buffer,
+	uint64_t offset,
+	const uint32_t *box)
+{
+	struct bcm2711_buffer_write *write;
+
+	/* The new generation names this write in the ring. */
+	buffer->generation++;
+	write = &buffer->writes[buffer->write_next % BCM2711_BUFFER_WRITES];
+	buffer->write_next++;
+	write->generation = buffer->generation;
+	write->offset = offset;
+
+	/* An unknown extent is recorded as an impossible box. */
+	if (box == NULL) {
+		write->offset = UINT64_MAX;
+		kern_memset(write->box, 0, sizeof(write->box));
+		return;
+	}
+	kern_memcpy(write->box, box, sizeof(write->box));
+}
+
+/*
+ * Reports the union of the writes of the image at offset after generation since.
+ *
+ * Every generation after since must still be in the ring and belong to the
+ * same image; otherwise the caller copies the whole image.
+ */
+bool
+bcm2711_v3d_memory_changes(
+	const struct bcm2711_buffer *buffer,
+	uint64_t offset,
+	uint64_t since,
+	uint32_t *box)
+{
+	const struct bcm2711_buffer_write *write;
+	uint64_t generation;
+	uint32_t index;
+
+	/* No change leaves an empty box. */
+	box[0] = UINT32_MAX;
+	box[1] = UINT32_MAX;
+	box[2] = 0;
+	box[3] = 0;
+	if (since > buffer->generation || buffer->generation - since > BCM2711_BUFFER_WRITES)
+		return false;
+
+	/* Each later generation's write, found by its place in the ring. */
+	for (generation = since + 1U; generation <= buffer->generation; generation++) {
+		index = (uint32_t)((buffer->write_next - 1U - (buffer->generation - generation)) % BCM2711_BUFFER_WRITES);
+		write = &buffer->writes[index];
+
+		/* A forgotten, unknown or other image's write leaves only a whole copy. */
+		if (write->generation != generation || write->offset != offset)
+			return false;
+		if (write->box[0] < box[0])
+			box[0] = write->box[0];
+		if (write->box[1] < box[1])
+			box[1] = write->box[1];
+		if (write->box[2] > box[2])
+			box[2] = write->box[2];
+		if (write->box[3] > box[3])
+			box[3] = write->box[3];
+	}
+
+	/* Succeeded: box covers every pixel the image changed after since. */
+	return true;
+}
+
 /* Publishes a range immediately or accumulates it in the caller's no-DMA batch. */
 static int
 synchronize_range(
