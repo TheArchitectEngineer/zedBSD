@@ -77,6 +77,7 @@ static void view_item(const struct keiui_picker *picker, const struct kl_style *
 static void view_badge(const struct kl_style *style, const struct kl_rect *picture, unsigned order, size_t limit);
 static void view_video_mark(const struct kl_style *style, const struct kl_rect *picture);
 static void view_empty(const struct kl_style *style, const struct view_layout *layout);
+static void view_lines(const struct kl_style *style, const struct view_layout *layout, const char *title, const char *line);
 static int view_bar(struct keiui_picker *picker, struct kl_ui *ui, const struct kl_style *style, const struct view_layout *layout);
 static void view_message(const struct keiui_picker *picker, const struct kl_style *style, const struct view_layout *layout);
 static int view_key(struct keiui_picker *picker, uint32_t code, uint64_t now_us);
@@ -234,6 +235,18 @@ view_grid(
 	size_t index;
 	int changed;
 	int pending;
+
+	/* The list still being read: frames keep coming until it is (ws157-p014). */
+	if (picker->loading) {
+		view_lines(style, layout, "Loading\xe2\x80\xa6", "");
+		return 1;
+	}
+
+	/* A library that could not be read says so. */
+	if (picker->unavailable) {
+		view_lines(style, layout, "The media library is unavailable", "Try again later.");
+		return 0;
+	}
 
 	/* An empty library says so. */
 	if (picker->count == 0U) {
@@ -407,8 +420,18 @@ view_empty(
 	const struct kl_style *style,
 	const struct view_layout *layout)
 {
-	static const char title[] = "No photos or videos";
-	static const char line[] = "Import them into the library with Photos.";
+	/* Its two lines. */
+	view_lines(style, layout, "No photos or videos", "Import them into the library with Photos.");
+}
+
+/* Draws two lines in the middle of the grid: a title and the line under it (empty: none). */
+static void
+view_lines(
+	const struct kl_style *style,
+	const struct view_layout *layout,
+	const char *title,
+	const char *line)
+{
 	int width;
 	int middle;
 
@@ -416,6 +439,8 @@ view_empty(
 	middle = layout->grid.y + layout->grid.height / 2;
 	width = kl_text_width(style->text, title, strlen(title), VIEW_TEXT_TITLE, 1);
 	(void)kl_text_draw(style->text, style->canvas, layout->grid.x + (layout->grid.width - width) / 2, middle - 6, title, strlen(title), VIEW_TEXT_TITLE, 1, style->theme->text_secondary);
+	if (line[0] == '\0')
+		return;
 	width = kl_text_width(style->text, line, strlen(line), VIEW_TEXT_ROW, 0);
 	(void)kl_text_draw(style->text, style->canvas, layout->grid.x + (layout->grid.width - width) / 2, middle + 18, line, strlen(line), VIEW_TEXT_ROW, 0, style->theme->text_faint);
 }

@@ -18,12 +18,19 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* The import's rooms are the library's and libmms's. */
+_Static_assert(PH_IMPORT_PATH_MAX == PH_PATH_MAX, "an import's path is a library path");
+_Static_assert(PH_IMPORT_HASH_SIZE == PH_HASH_SIZE, "an import's hash is the library's");
+_Static_assert(PH_MEDIA_MAX == MMS_MEDIA_COUNT, "an import holds an MMS's media");
+
 static int receive_document(int descriptor, struct mms_document *document);
 static int receive_file(const struct mms_media *media, const char *directory, size_t index, char *path, size_t size);
 
 /*
- * Copies attachments to mediastorage, returning its permanent paths by hash.
- * The caller retains the MIME descriptor and releases the returned paths.
+ * Copies attachments to mediastorage, returning its permanent paths by
+ * hash, and waits for it (a worker's call: the window's thread uses
+ * ph_import_prepare, ph_import_begin and ph_import_finish).  The caller
+ * retains the MIME descriptor and releases the returned paths.
  */
 int
 ph_receive_media(
@@ -31,27 +38,56 @@ ph_receive_media(
 	int descriptor,
 	struct ph_received *received)
 {
-	struct mms_document document;
-	struct ph_photo *photos;
-	SHA2_CTX context;
-	char directory[] = "/tmp/phone-mms-XXXXXX";
-	char temporary[MMS_MEDIA_COUNT][PH_PATH_MAX];
-	char hashes[MMS_MEDIA_COUNT][PH_HASH_SIZE];
+	struct ph_import *import;
 	const char *paths[MMS_MEDIA_COUNT];
-	char root[PH_PATH_MAX];
-	FILE *snapshot;
-	char *created;
-	size_t made;
-	size_t count;
 	size_t index;
-	long found;
 	int metadata;
 	int error;
+
+	/* The originals written apart; text-only MMS needs no library operation. */
+	memset(received, 0, sizeof(*received));
+	error = ph_import_prepare(descriptor, &import);
+	if (error != 0)
+		return error;
+	if (import == NULL)
+		return 0;
+
+	/* The compositor's OS backend runs the CLI and returns committed metadata. */
+	for (index = 0U; index < import->count; index++)
+		paths[index] = import->temporary[index];
+	metadata = -1;
+	error = kl_system_media_add_paths(system, paths, import->count, &metadata);
+
+	/* The paths it kept, and the temporary originals gone. */
+	error = ph_import_finish(import, error, metadata, received);
+	ph_import_free(import);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the complete operation is ready for its caller. */
+	return 0;
+}
+
+/*
+ * Reads an MMS's MIME body and writes its media apart, each hashed
+ * (ws157-p014): *import is the import to begin (NULL for an MMS without
+ * media).  Returns 0 or an errno value (nothing is left).
+ */
+int
+ph_import_prepare(
+	int descriptor,
+	struct ph_import **import)
+{
+	struct mms_document document;
+	struct ph_import *made;
+	SHA2_CTX context;
+	char *created;
+	size_t index;
+	int error;
 	int same;
-	int closed;
 
 	/* Refuses incomplete MIME before writing any original. */
-	memset(received, 0, sizeof(*received));
+	*import = NULL;
 	error = receive_document(descriptor, &document);
 	if (error != 0)
 		return error;
@@ -62,31 +98,100 @@ ph_receive_media(
 		return 0;
 	}
 
+	/* The import's record. */
+	made = calloc(1U, sizeof(*made));
+	if (made == NULL) {
+		mms_release(&document);
+		return ENOMEM;
+	}
+
 	/* Uses a private temporary directory only until the CLI copies originals. */
-	created = mkdtemp(directory);
+	(void)snprintf(made->directory, sizeof(made->directory), "/tmp/phone-mms-XXXXXX");
+	created = mkdtemp(made->directory);
 	if (created == NULL) {
 		error = errno;
+		free(made);
 		mms_release(&document);
 		return error;
 	}
 
-	/* Copies and hashes every part before issuing the path-list request. */
-	made = 0U;
+	/* Copies and hashes every part, and notes each video. */
 	for (index = 0U; index < document.count; index++) {
-		error = receive_file(&document.media[index], directory, index, temporary[index], sizeof(temporary[index]));
+		error = receive_file(&document.media[index], made->directory, index, made->temporary[index], sizeof(made->temporary[index]));
 		if (error != 0)
 			break;
-		made++;
-		paths[index] = temporary[index];
+		made->count++;
 		SHA256Init(&context);
 		SHA256Update(&context, document.media[index].data, document.media[index].length);
-		(void)SHA256End(&context, hashes[index]);
+		(void)SHA256End(&context, made->hashes[index]);
+		same = strncmp(document.media[index].type, "video/", 6U);
+		if (same == 0)
+			made->video[index] = 1U;
 	}
 
-	/* The compositor's OS backend runs the CLI and returns committed metadata. */
-	metadata = -1;
-	if (error == 0)
-		error = kl_system_media_add_paths(system, paths, document.count, &metadata);
+	/* The MIME no longer needed; a part not written leaves nothing. */
+	mms_release(&document);
+	if (error != 0) {
+		ph_import_free(made);
+		return error;
+	}
+
+	/* Succeeded: ready to begin. */
+	*import = made;
+	return 0;
+}
+
+/*
+ * Asks the compositor to copy an import's media into the library, without
+ * waiting (ws157-p014): import->request is its request.  Returns 0, or
+ * EBUSY with too many requests under way (begin it again later), or
+ * another errno value.
+ */
+int
+ph_import_begin(
+	struct kl_system *system,
+	struct ph_import *import)
+{
+	const char *paths[MMS_MEDIA_COUNT];
+	size_t index;
+	int error;
+
+	/* The temporary originals' paths. */
+	for (index = 0U; index < import->count; index++)
+		paths[index] = import->temporary[index];
+
+	/* The request. */
+	error = kl_system_media_add_paths_begin(system, paths, import->count, &import->request);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: under way. */
+	return 0;
+}
+
+/*
+ * Ends an import with its answer (error, and the snapshot's descriptor,
+ * closed here): each medium's permanent path found by its hash in the
+ * snapshot.  The temporary originals are left for ph_import_free.
+ * Returns 0 with received (the caller releases it) or an errno value.
+ */
+int
+ph_import_finish(
+	struct ph_import *import,
+	int error,
+	int metadata,
+	struct ph_received *received)
+{
+	struct ph_photo *photos;
+	char root[PH_PATH_MAX];
+	FILE *snapshot;
+	size_t count;
+	size_t index;
+	long found;
+	int closed;
+
+	/* The snapshot, read into the library model. */
+	memset(received, 0, sizeof(*received));
 	ph_library_release();
 	if (error == 0) {
 		snapshot = fdopen(metadata, "r");
@@ -99,13 +204,15 @@ ph_receive_media(
 			if (closed != 0 && error == 0)
 				error = EIO;
 		}
+	} else if (metadata >= 0) {
+		close(metadata);
 	}
 
 	/* Resolves deduplicated and renamed originals without guessing their date folders. */
 	if (error == 0) {
 		photos = ph_photos(&count);
-		for (index = 0U; index < document.count; index++) {
-			found = ph_library_find_hash(hashes[index]);
+		for (index = 0U; index < import->count; index++) {
+			found = ph_library_find_hash(import->hashes[index]);
 			if (found < 0 || (size_t)found >= count) {
 				error = ENOENT;
 				break;
@@ -119,28 +226,40 @@ ph_receive_media(
 			}
 
 			/* Classifies the saved original for the timeline. */
-			same = strncmp(document.media[index].type, "video/", 6U);
-			if (same == 0)
-				received->video[index] = 1U;
+			received->video[index] = import->video[index];
 			received->count++;
 		}
 	}
 
-	/* Cleans only temporary originals owned by this import, even after a partial CLI failure. */
-	for (index = 0U; index < made; index++)
-		(void)unlink(temporary[index]);
-	(void)rmdir(directory);
+	/* The model is no longer needed; a failure gives no paths. */
 	ph_library_release();
-	mms_release(&document);
 	if (error != 0)
 		ph_received_release(received);
-
-	/* Reports a failed import without exposing partially resolved paths. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the complete operation is ready for its caller. */
+	/* Succeeded: the paths the library keeps. */
 	return 0;
+}
+
+/*
+ * Removes an import's temporary originals and frees it.
+ */
+void
+ph_import_free(
+	struct ph_import *import)
+{
+	size_t index;
+
+	/* Nothing to free. */
+	if (import == NULL)
+		return;
+
+	/* Cleans only temporary originals owned by this import, even after a partial CLI failure. */
+	for (index = 0U; index < import->count; index++)
+		(void)unlink(import->temporary[index]);
+	(void)rmdir(import->directory);
+	free(import);
 }
 
 /*

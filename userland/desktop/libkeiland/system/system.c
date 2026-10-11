@@ -3403,6 +3403,8 @@ kl_system_media_cancel(
 		system_media_free(pending);
 		return;
 	}
+
+	/* Marked: the answer's arrival frees it (system_media_done). */
 	pending->abandoned = 1;
 }
 
@@ -5927,6 +5929,8 @@ system_media_run(
 		*output = pending->descriptor;
 		pending->descriptor = -1;
 	}
+
+	/* The slot is free again. */
 	system_media_free(pending);
 	if (error != 0)
 		return error;
@@ -5969,6 +5973,8 @@ system_media_begin(
 			break;
 		}
 	}
+
+	/* None free: too many under way. */
 	if (pending == NULL)
 		return EBUSY;
 

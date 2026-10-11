@@ -198,6 +198,8 @@ struct ph_window {
 	struct kl_media_picker *picker;
 	char *chooser_contact;
 	struct kl_system *system;
+	/* The imports of media into the library under way or waiting to begin, in their order (ws157-p014). */
+	struct ph_import *imports;
 	struct ph_pending {
 		uint32_t request;
 		unsigned long serial;
@@ -260,6 +262,11 @@ static void ph_file_chosen(void *data, struct kl_file_chooser *chooser, unsigned
 static void ph_media_drop(struct ph_window *phone);
 static int ph_media_image(struct ph_view *view, const char *bytes, size_t length, const char *contact);
 static void ph_requests(struct ph_window *phone);
+static void ph_imports_add(struct ph_window *phone, struct ph_import *import);
+static void ph_imports_pump(struct ph_window *phone);
+static void ph_imports_taken(struct ph_window *phone);
+static void ph_imports_failed(struct ph_window *phone, const struct ph_import *import, int error);
+static void ph_imports_free(struct ph_window *phone);
 static void ph_open_media(struct ph_window *phone, const struct ph_request *request);
 static void ph_reap_viewers(struct ph_window *phone);
 static void ph_send(struct ph_window *phone, long contact);
@@ -392,7 +399,8 @@ main(
 	kl_media_picker_destroy(phone.picker);
 	free(phone.chooser_contact);
 
-	/* Everything goes. */
+	/* Everything goes; imports not answered leave no temporary originals. */
+	ph_imports_free(&phone);
 	kl_ui_destroy(phone.ui);
 	if (phone.canvas_made)
 		kl_canvas_release(&phone.canvas);
@@ -917,8 +925,13 @@ ph_phone_round(
 	status = kl_system_dispatch(phone->system, &changed);
 	if (status != 0) {
 		phone->system = NULL;
+		ph_imports_free(phone);
 		return;
 	}
+
+	/* The library's answers to the imports of media. */
+	if ((changed & KL_SYSTEM_CHANGED_MEDIA_DONE) != 0U)
+		ph_imports_taken(phone);
 
 	/* The paired phone's messages that came. */
 	ph_items(phone);
@@ -1639,7 +1652,7 @@ ph_send_media(
 	int paired)
 {
 	const struct ph_contact *contacts;
-	struct ph_received received;
+	struct ph_import *import;
 	unsigned long serial;
 	uint32_t request;
 	size_t count;
@@ -1668,28 +1681,29 @@ ph_send_media(
 		return;
 	}
 
-	/* The media copied into the library (one already there is found by its hash), for the item to show. */
-	imported = ph_receive_media(phone->system, descriptor, &received);
-	if (imported != 0)
-		memset(&received, 0, sizeof(received));
+	/* The media written apart for the library (copied without waiting: the item shows them once they are, ws157-p014). */
+	import = NULL;
+	imported = ph_import_prepare(descriptor, &import);
 
-	/* Kept as sending, with its media, the timeline at its end. */
+	/* Kept as sending, the timeline at its end. */
 	error = ph_store_add_item(contact, PH_TEXT, PH_MMS, 1, time(NULL), PH_STATE_SENDING, phone->view.message.text, NULL, &item);
 	if (error != 0) {
-		ph_received_release(&received);
+		ph_import_free(import);
 		(void)close(descriptor);
 		ph_view_notice(&phone->view, "The message could not be kept.", kl_clock_us());
 		return;
 	}
 
-	/* Its media, as the library keeps them. */
-	if (received.count != 0U)
-		(void)ph_store_media(contact, item, &received);
-	ph_received_release(&received);
-
 	/* Its name for this run, and the new item shown. */
 	serial = contacts[contact].items[item].serial;
 	phone->view.to_end = 1;
+
+	/* Its media into the library; their answer gives the item its media. */
+	if (import != NULL) {
+		import->serial = serial;
+		import->sending = 1;
+		ph_imports_add(phone, import);
+	}
 
 	/* Sent through the compositor's phone, which reads the body from the file. */
 	request = 0U;
@@ -1989,7 +2003,7 @@ ph_item(
 	const struct kl_phone_item *item)
 {
 	struct ph_phone_message message;
-	struct ph_received received;
+	struct ph_import *import;
 	const struct ph_contact *contacts;
 	const struct ph_item *kept;
 	char title[160];
@@ -2062,12 +2076,18 @@ ph_item(
 		return;
 	}
 
-	/* Imports originals through the compositor and persists their permanent paths. */
+	/* Imports originals through the compositor without waiting; their answer persists their permanent paths (ws157-p014). */
 	if (item->has_mime) {
-		error = ph_receive_media(phone->system, item->mime_descriptor, &received);
-		if (error == 0 && received.count > 0U)
-			error = ph_store_media(contact, at, &received);
-		ph_received_release(&received);
+		import = NULL;
+		error = ph_import_prepare(item->mime_descriptor, &import);
+		if (error == 0 && import != NULL) {
+			contacts = ph_contacts(&count);
+			import->serial = contacts[contact].items[at].serial;
+			import->sync_request = item->request;
+			ph_imports_add(phone, import);
+		}
+
+		/* The log the tests read, and a failure told. */
 		ph_log("MEDIA request=%u error=%d", item->request, error);
 		if (error != 0) {
 			phone->sync.store_failed = 1;
@@ -2761,4 +2781,164 @@ ph_read_conversation(
 
 	/* Read here. */
 	(void)ph_store_mark_read(contact);
+}
+
+/*
+ * Puts an import of media at the end of the window's list and begins
+ * what can begin (ws157-p014).
+ */
+static void
+ph_imports_add(
+	struct ph_window *phone,
+	struct ph_import *import)
+{
+	struct ph_import **last;
+
+	/* At the end. */
+	import->next = NULL;
+	for (last = &phone->imports; *last != NULL; last = &(*last)->next)
+		;
+	*last = import;
+
+	/* Begun when a request is free. */
+	ph_imports_pump(phone);
+}
+
+/*
+ * Begins the imports waiting, in order, until the compositor's requests
+ * are all taken (EBUSY: the rest wait for an answer); one that cannot
+ * begin fails.
+ */
+static void
+ph_imports_pump(
+	struct ph_window *phone)
+{
+	struct ph_import **link;
+	struct ph_import *import;
+	int error;
+
+	/* Each import not begun. */
+	link = &phone->imports;
+	while (*link != NULL) {
+		import = *link;
+		if (import->request != 0U) {
+			link = &import->next;
+			continue;
+		}
+
+		/* No system: it cannot begin. */
+		error = ENOTSUP;
+		if (phone->system != NULL)
+			error = ph_import_begin(phone->system, import);
+		if (error == EBUSY)
+			return;
+		if (error == 0) {
+			link = &import->next;
+			continue;
+		}
+
+		/* Failed: out of the list. */
+		*link = import->next;
+		ph_imports_failed(phone, import, error);
+		ph_import_free(import);
+	}
+}
+
+/*
+ * Takes the library's answers: each import's media paths stored in its
+ * item, or its failure told; then the imports waiting begin.
+ */
+static void
+ph_imports_taken(
+	struct ph_window *phone)
+{
+	struct ph_received received;
+	struct ph_import **link;
+	struct ph_import *import;
+	uint32_t request;
+	size_t item;
+	long contact;
+	int descriptor;
+	int error;
+	int taken;
+
+	/* Each answer. */
+	for (;;) {
+		taken = kl_system_media_take(phone->system, &request, &error, &descriptor);
+		if (!taken)
+			break;
+
+		/* Its import, out of the list; an answer of none is dropped. */
+		for (link = &phone->imports; *link != NULL && (*link)->request != request; link = &(*link)->next)
+			;
+		import = *link;
+		if (import == NULL) {
+			if (descriptor >= 0)
+				(void)close(descriptor);
+			continue;
+		}
+
+		/* Out of the list. */
+		*link = import->next;
+
+		/* The paths the library keeps, stored in the item (still there). */
+		error = ph_import_finish(import, error, descriptor, &received);
+		if (error == 0)
+			error = ph_store_find_serial(import->serial, &contact, &item);
+		if (error == 0 && received.count > 0U)
+			error = ph_store_media(contact, item, &received);
+		ph_received_release(&received);
+		ph_log("MEDIA serial=%lu sending=%d error=%d", import->serial, import->sending, error);
+		if (error != 0)
+			ph_imports_failed(phone, import, error);
+		ph_import_free(import);
+		phone->dirty = 1;
+	}
+
+	/* The imports waiting. */
+	ph_imports_pump(phone);
+}
+
+/*
+ * Tells an import's failure: a received message's media are fetched
+ * again by the next synchronisation (its pass is marked failed while it
+ * runs); a sent message's are not shown.
+ */
+static void
+ph_imports_failed(
+	struct ph_window *phone,
+	const struct ph_import *import,
+	int error)
+{
+	/* The log the tests read. */
+	ph_log("MEDIA failed serial=%lu error=%d", import->serial, error);
+
+	/* A sent message: its media stay with the phone's copy. */
+	if (import->sending) {
+		ph_view_notice(&phone->view, "The photos and videos could not be kept in the library.", kl_clock_us());
+		return;
+	}
+
+	/* A received one: its synchronisation, while it runs, tries again. */
+	if (phone->sync.running && import->sync_request == phone->sync.request)
+		phone->sync.store_failed = 1;
+	ph_view_notice(&phone->view, "Media could not be saved; sync to retry", kl_clock_us());
+}
+
+/*
+ * Frees every import (the window goes, or the compositor went): their
+ * temporary originals go; requests under way are dropped with the system.
+ */
+static void
+ph_imports_free(
+	struct ph_window *phone)
+{
+	struct ph_import *import;
+
+	/* Each one. */
+	while (phone->imports != NULL) {
+		import = phone->imports;
+		phone->imports = import->next;
+		ph_import_free(import);
+	}
 }
