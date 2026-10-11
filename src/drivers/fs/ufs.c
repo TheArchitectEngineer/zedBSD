@@ -25,6 +25,7 @@
 #include "kern/file.h"
 #include "kern/inode.h"
 #include "kern/io-stats.h"
+#include "kern/klog.h"
 #include "kern/kmem.h"
 #include "kern/lock.h"
 #include "kern/mount.h"
@@ -712,6 +713,7 @@ static void encode_inode_locked(struct inode *inode, uint8_t *block);
 static ssize_t ufs_getxattr(struct inode *, const char *, void *, size_t);
 static int ufs_setxattr(struct inode *, const char *, const void *, size_t, unsigned);
 static struct ufs_mount_state *state(const struct mount *mountp);
+static void stop_writing(struct mount *mountp, const char *reason, int error);
 static struct ufs_inode_info *info(const struct inode *inode);
 static int journal_read_image(struct ufs_mount_state *ms, uint64_t first, uint32_t count, void *buffer);
 static int read_metadata_sectors(struct mount *mountp, uint64_t first, uint32_t count, void *buffer);
@@ -2875,7 +2877,7 @@ journal_checkpoint_locked(
 
 	/* A poisoned journal leaves the volume unwritable. */
 	if (ms->journal.poisoned)
-		ms->writable = 0;
+		stop_writing(mountp, "the journal could not be checkpointed", error);
 
 	/* Reports the failure. */
 	if (error != 0)
@@ -3471,7 +3473,7 @@ write_sectors_impl(
 			ms->journal_io.context = NULL;
 		}
 		if (error != 0 && ms->journal.poisoned)
-			ms->writable = 0;
+			stop_writing(mountp, "a journal commit failed", error);
 		mutex_unlock(&ms->journal_lock);
 
 		/* Releases the snapshot hold the preservation took. */
@@ -3586,6 +3588,50 @@ state(
 
 	/* Reports the state this mount was given when it was set up. */
 	return mountp->m_data;
+}
+
+/*
+ * Refuses every later write to the volume, and says why the first time.
+ *
+ * A volume stops taking writes when a rollback, a quota credit or a journal
+ * step leaves its on-disk state uncertain, since a later write would build
+ * on that state.  Until the next mount the volume answers EROFS, and
+ * without this report nothing says why (BUG-288).  Only the transition is
+ * reported, so a volume that keeps failing does not flood the log.
+ */
+static void
+stop_writing(
+	struct mount *mountp,
+	const char *reason,
+	int error)
+{
+	struct ufs_mount_state *ms;
+	const char *volume;
+	int was_writable;
+
+	/* A mount that has gone away has nothing left to stop. */
+	ms = state(mountp);
+	if (ms == NULL)
+		return;
+
+	/* Clears the flag every write path tests before it touches the disk. */
+	was_writable = ms->writable;
+	ms->writable = 0;
+
+	/* A volume already refusing writes has been reported. */
+	if (!was_writable)
+		return;
+
+	/* Names the disk the volume lives on. */
+	volume = "(no disk)";
+	if (mountp->m_disk != NULL)
+		volume = mountp->m_disk->d_name;
+
+	/* Reports the transition and its cause. */
+	kern_logf("ufs: %s: the volume refuses writes until it is mounted again: %s (error %d)\n",
+		  volume,
+		  reason,
+		  error);
 }
 
 /* Takes the private inode this driver keeps beside a kernel one. */
@@ -4341,15 +4387,13 @@ write_cg_rollback(
 	struct mount *mountp,
 	int original_error)
 {
-	struct ufs_mount_state *ms;
 	int rollback;
 
-	ms = state(mountp);
 	rollback = write_cg(mountp);
 
 	/* A failed rollback leaves the volume unwritable. */
 	if (rollback != 0) {
-		ms->writable = 0;
+		stop_writing(mountp, "a cylinder group could not be rolled back", rollback);
 
 		/* Failed. */
 		return rollback;
@@ -4832,7 +4876,7 @@ free_block(
 
 		/* An account that cannot be credited must not be written to. */
 		if (released != 0) {
-			ms->writable = 0;
+			stop_writing(mountp, "a freed block could not be credited to its quota", released);
 
 			/* Failed. */
 			return EIO;
@@ -5035,7 +5079,7 @@ free_inode_number(
 
 		/* An account that cannot be credited must not be written to. */
 		if (released != 0) {
-			ms->writable = 0;
+			stop_writing(mountp, "a freed inode could not be credited to its quota", released);
 
 			/* Failed. */
 			return EIO;
@@ -5598,7 +5642,7 @@ bmap_ensure(
 				 * unaccounted, so nothing more may be written.
 				 */
 				if (rollback_value != 0)
-					state(inode->i_mount)->writable = 0;
+					stop_writing(inode->i_mount, "a block allocation could not be rolled back", rollback_value);
 
 				return error;	/* Failed. */
 			}
@@ -5676,7 +5720,7 @@ bmap_ensure(
 			 * unaccounted, so nothing more may be written.
 			 */
 			if (rollback_value != 0)
-				state(inode->i_mount)->writable = 0;
+				stop_writing(inode->i_mount, "a block allocation could not be rolled back", rollback_value);
 
 			return error;	/* Failed. */
 		}
@@ -5758,7 +5802,7 @@ bmap_ensure(
 						 * uncertain storage or continue writable.
 						 */
 						ui->blocks += s->bsize / UFS_SECTOR_SIZE;
-						state(inode->i_mount)->writable = 0;
+						stop_writing(inode->i_mount, "an indirect block allocation could not be rolled back", rollback_error);
 					}
 				}
 
@@ -6359,7 +6403,7 @@ metadata_group_commit(
 
 		/* An uncertain outcome leaves the volume unwritable. */
 		if (outcome->uncertain)
-			ms->writable = 0;
+			stop_writing(mountp, "a metadata group commit has an uncertain outcome", error);
 
 		ms->journal_io.context = NULL;
 		mutex_unlock(&ms->journal_lock);
@@ -7024,7 +7068,7 @@ allocation_run_abort(
 	 * uncertain.
 	 */
 	if (error != 0) {
-		ms->writable = 0;
+		stop_writing(inode->i_mount, "an allocation run could not be undone", error);
 
 		/* Failed. */
 		return error;
@@ -7042,7 +7086,7 @@ allocation_run_abort(
 	if (error == 0)
 		error = order_barrier(inode->i_mount);
 	if (error != 0)
-		ms->writable = 0;
+		stop_writing(inode->i_mount, "the blocks of an aborted allocation could not be freed", error);
 
 	/*
 	 * Let the caller retain charges when rollback durability remains
@@ -7748,7 +7792,7 @@ xattr_existing_locked(
 						    0);
 		}
 		if (quota_error != 0) {
-			ms->writable = 0;
+			stop_writing(inode->i_mount, "an extended attribute could not be credited to its quota", quota_error);
 
 			/* Only a committed release may give the quota back. */
 			if (error == 0)
@@ -8852,7 +8896,7 @@ release_group_locked(
 		quota_error = quota_release(&ms->quota, inode->i_uid,
 					    inode->i_gid, 1, 0);
 		if (quota_error != 0) {
-			ms->writable = 0;
+			stop_writing(inode->i_mount, "a released block could not be credited to its quota", quota_error);
 
 			/* Publishes the inode as the group committed it. */
 			if (error == 0)
@@ -9015,7 +9059,7 @@ detach_inode_block(
 				   inode->i_gid);
 	}
 	if (error != 0)
-		ms->writable = 0;
+		stop_writing(inode->i_mount, "a block could not be detached from its inode", error);
 
 	/* Reports the failure. */
 	if (error != 0)
@@ -9137,7 +9181,7 @@ truncate_indirect(
 					   inode->i_gid);
 		}
 		if (error != 0) {
-			ms->writable = 0;
+			stop_writing(inode->i_mount, "an indirect block could not be truncated", error);
 			goto out;
 		}
 	}
@@ -9865,15 +9909,13 @@ restore_directory_block(
 	const uint8_t *original,
 	int original_error)
 {
-	struct ufs_mount_state *ms;
 	int rollback;
 
-	ms = state(directory->i_mount);
 	rollback = write_block(directory->i_mount, fragment, original);
 
 	/* A failed restore leaves the volume unwritable. */
 	if (rollback != 0) {
-		ms->writable = 0;
+		stop_writing(directory->i_mount, "a directory block could not be restored", rollback);
 
 		/* Failed. */
 		return rollback;
@@ -10448,7 +10490,7 @@ dir_add_finish(
 	if (error == 0)
 		error = order_barrier(directory->i_mount);
 	if (error != 0) {
-		ms->writable = 0;
+		stop_writing(directory->i_mount, "a directory addition could not be undone", error);
 
 		/* Reports why the volume could not be put back. */
 		return error;
@@ -10458,7 +10500,7 @@ dir_add_finish(
 	if (ms->writable && change->allocated != 0) {
 		error = free_block(directory->i_mount, change->allocated, directory->i_uid, directory->i_gid);
 		if (error != 0) {
-			ms->writable = 0;
+			stop_writing(directory->i_mount, "the block of an undone directory addition could not be freed", error);
 
 			/* Reports why the block could not be given back. */
 			return error;
@@ -10697,7 +10739,7 @@ discard_new_inode(
 	for (n = 1; n < UFS_NDADDR; n++) {
 		/* A direct pointer that was filled has a block to free. */
 		if (ui->direct[n] != 0) {
-			ms->writable = 0;
+			stop_writing(inode->i_mount, "a new inode with direct blocks could not be discarded", 0);
 			inode_release(inode);
 
 			/* Failed. */
@@ -10709,7 +10751,7 @@ discard_new_inode(
 	for (n = 0; n < UFS_NIADDR; n++) {
 		/* An indirect pointer that was filled has a block to free. */
 		if (ui->indirect[n] != 0) {
-			ms->writable = 0;
+			stop_writing(inode->i_mount, "a new inode with indirect blocks could not be discarded", 0);
 			inode_release(inode);
 
 			/* Failed. */
@@ -10749,7 +10791,7 @@ discard_new_inode(
 		for (n = 0; n < UFS_NXADDR; n++)
 			ui->extattr[n] = extattr[n];
 		ui->blocks = old_blocks;
-		ms->writable = 0;
+		stop_writing(inode->i_mount, "a new inode could not be cleared", cleanup);
 		inode_release(inode);
 
 		/* Failed. */
@@ -10789,7 +10831,7 @@ discard_new_inode(
 	if (error == 0 && cleanup != 0)
 		error = cleanup;
 	if (error != 0)
-		ms->writable = 0;
+		stop_writing(inode->i_mount, "the storage of a new inode could not be given back", error);
 	inode->i_ino = 0;
 	inode->i_flags |= INODE_DEAD;
 	inode_release(inode);
@@ -11181,7 +11223,7 @@ new_inode(
 			error = free_inode_number(mountp, number, request->uid,
 						  request->gid);
 			if (error != 0) {
-				state(mountp)->writable = 0;
+				stop_writing(mountp, "an inode number could not be given back", error);
 
 				/* Failed. */
 				return error;
@@ -13248,7 +13290,7 @@ ufs_mkdir(
 		 * unwritable.
 		 */
 		if (!name_removed) {
-			ms->writable = 0;
+			stop_writing(directory->i_mount, "the name of a failed new directory could not be removed", rollback_error);
 			inode_release(inode);
 		} else {
 			/*
@@ -13258,7 +13300,7 @@ ufs_mkdir(
 			if (rollback_error == 0 && cleanup != 0)
 				rollback_error = cleanup;
 			if (rollback_error != 0)
-				ms->writable = 0;
+				stop_writing(directory->i_mount, "a failed new directory could not be undone", rollback_error);
 		}
 		if (rollback_error != 0)
 			error = rollback_error;
@@ -13441,7 +13483,7 @@ ufs_unlink(
 						 dir_type(target->i_type));
 		}
 		if (rollback_error != 0)
-			ms->writable = 0;
+			stop_writing(directory->i_mount, "a failed unlink could not be undone", rollback_error);
 	}
 
 out:
@@ -13610,7 +13652,7 @@ ufs_rmdir(
 		if (rollback_error == 0)
 			rollback_error = dir_add(directory, name, number, 4);
 		if (rollback_error != 0)
-			ms->writable = 0;
+			stop_writing(directory->i_mount, "a failed rmdir could not be undone", rollback_error);
 	}
 
 out:
@@ -13997,7 +14039,7 @@ out:
 			mutex_unlock(&new_directory->i_lock);
 		}
 		if (rollback_error != 0)
-			ms->writable = 0;
+			stop_writing(old_directory->i_mount, "a failed rename could not be undone", rollback_error);
 	}
 
 	inode_release(target);
@@ -14093,7 +14135,7 @@ ufs_link(
 					dir_remove(directory, name, &removed);
 			}
 			if (rollback_error != 0)
-				ms->writable = 0;
+				stop_writing(directory->i_mount, "a failed link could not be undone", rollback_error);
 		}
 	}
 
@@ -14766,7 +14808,7 @@ extattr_publish(
 
 			/* A failed write leaves the volume unwritable. */
 			if (persisted != 0)
-				ms->writable = 0;
+				stop_writing(inode->i_mount, "an inode could not be restored after an extended attribute change", persisted);
 
 			kern_free(old_area);
 
@@ -14784,7 +14826,7 @@ extattr_publish(
 
 			/* A block that cannot be freed leaves it unwritable. */
 			if (rollback != 0) {
-				ms->writable = 0;
+				stop_writing(inode->i_mount, "an extended attribute block could not be freed", rollback);
 				error = rollback;
 				break;
 			}
@@ -14868,7 +14910,7 @@ extattr_publish(
 
 		/* A block that cannot be freed leaves it unwritable. */
 		if (rollback != 0) {
-			ms->writable = 0;
+			stop_writing(inode->i_mount, "the second extended attribute block could not be freed", rollback);
 			error = rollback;
 		}
 	}
@@ -14891,7 +14933,7 @@ rollback_metadata:
 		/*
 		 * The new pointer may still be committed: keep its allocation.
 		 */
-		ms->writable = 0;
+		stop_writing(inode->i_mount, "an extended attribute area could not be restored", rollback);
 		goto out;
 	}
 
@@ -14905,7 +14947,7 @@ rollback_data:
 
 			/* A block that cannot be freed leaves it unwritable. */
 			if (rollback != 0)
-				ms->writable = 0;
+				stop_writing(inode->i_mount, "a new extended attribute block could not be freed", rollback);
 		}
 	} else if (old_area != NULL) {
 		/* Puts the previous attribute area back where it was. */
@@ -14913,7 +14955,7 @@ rollback_data:
 
 		/* A write that fails leaves the volume unwritable. */
 		if (rollback != 0)
-			ms->writable = 0;
+			stop_writing(inode->i_mount, "the previous extended attribute area could not be written back", rollback);
 	}
 
 out:
@@ -15753,7 +15795,7 @@ retire_inode_locked(
 		quota_error = quota_release(&ms->quota, inode->i_uid,
 					    inode->i_gid, 0, 1);
 		if (quota_error != 0) {
-			ms->writable = 0;
+			stop_writing(inode->i_mount, "a retired inode could not be credited to its quota", quota_error);
 
 			/*
 			 * Only a committed retirement may give the quota back.
@@ -16829,7 +16871,7 @@ orphan_recover(
 	/* Walks the volume for inodes nothing names. */
 	error = orphan_scan_locked(mountp, scan);
 	if (error != 0)
-		ms->writable = 0;
+		stop_writing(mountp, "the scan for orphaned inodes failed", error);
 
 	namespace_leave(ms);
 
@@ -17532,7 +17574,7 @@ ufs_quotactl(
 
 		/* A configuration that cannot be restored ends writing. */
 		if (restored != 0)
-			ms->writable = 0;
+			stop_writing(mountp, "the quota configuration could not be restored", restored);
 	}
 	kern_free(saved);
 
@@ -19645,7 +19687,7 @@ j3_close_transaction(
 	error = j3_commit_payload(mountp, j3, descriptor, desc_sectors);
 	if (error != 0) {
 		kern_free(descriptor);
-		ms->writable = 0;
+		stop_writing(mountp, "a j3 transaction could not be committed", error);
 		return error;
 	}
 
@@ -19773,7 +19815,7 @@ j3_finish_commit(
 	 * commit or let go when the journal goes out of service.
 	 */
 	if (error != 0) {
-		ms->writable = 0;
+		stop_writing(mountp, "a j3 commit did not complete", error);
 	} else {
 		/* Empties the closed side for the next close. */
 		j3->closed_count = 0;
@@ -19805,7 +19847,7 @@ j3_finish_commit(
 	 * but no later transaction may be built on the line meanwhile.
 	 */
 	if (home_error != 0)
-		ms->writable = 0;
+		stop_writing(mountp, "a j3 home block could not be written", home_error);
 
 	/* The commit is over, sealed or not; a close waiting for it may go on. */
 	j3->closing = 0;
