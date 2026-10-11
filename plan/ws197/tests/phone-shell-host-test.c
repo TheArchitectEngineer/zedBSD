@@ -93,6 +93,8 @@ struct kl_backend_phone {
 	uint32_t sents[TEST_QUEUE_MAX];
 	unsigned sent_states[TEST_QUEUE_MAX];
 	unsigned sent_count;
+	unsigned mms_count;
+	int last_mms_descriptor;
 };
 
 /* The events sent to the capture clients, in order. */
@@ -137,6 +139,7 @@ static const char *test_get_string(const struct test_event *event, size_t offset
 static int test_word_request(struct kwl_object *object, uint32_t opcode, uint32_t word);
 static int test_sync(struct kwl_object *object, uint32_t request);
 static int test_send_text(struct kwl_object *object, uint32_t request, const char *to, const char *text);
+static int test_send_mms(struct kwl_object *object, uint32_t request, const char *to);
 static void test_item(uint32_t id, const char *key);
 static void test_result(uint32_t id, int error, uint32_t sent_request);
 static int test_find(uint64_t client, uint32_t opcode, unsigned from, unsigned *at);
@@ -390,6 +393,41 @@ kl_backend_phone_read(
 	return 0;
 }
 
+/* The descriptor the next request carries (kwl_take_fd), -1 for none. */
+static int test_take_fd = -1;
+
+/* Takes the descriptor the test put for the request (the compositor closes it). */
+int
+kwl_take_fd(
+	struct kwl_client *client)
+{
+	int descriptor;
+
+	/* Once. */
+	(void)client;
+	descriptor = test_take_fd;
+	test_take_fd = -1;
+	return descriptor;
+}
+
+/* An MMS sent: its descriptor seen, its id. */
+int
+kl_backend_phone_send_mms(
+	struct kl_backend_phone *phone,
+	const char *to,
+	int descriptor,
+	uint32_t *id)
+{
+	(void)to;
+	if (phone->refuse != 0)
+		return phone->refuse;
+	phone->mms_count++;
+	phone->last_mms_descriptor = descriptor;
+	*id = phone->next_id++;
+	phone->last_send_id = *id;
+	return 0;
+}
+
 /* A text sent: its id. */
 int
 kl_backend_phone_send(
@@ -526,6 +564,7 @@ test_shell(
 	int found;
 	int error;
 	FILE *mime;
+	int mms_descriptor;
 
 	/* Three clients of the user: the phone program, another program, a second phone program. */
 	app.server = &server;
@@ -723,6 +762,25 @@ test_shell(
 	test_check("live-mime-old-event", found);
 	phone->version = KL_SYSTEM_SINCE_PHONE_SYNC;
 	fclose(mime);
+
+	/* An MMS of version 32 (ws197-p010): the backend gets its file, the compositor closes it, done follows the result. */
+	phone->version = KL_SYSTEM_SINCE_PHONE_MMS;
+	test_event_count = 0U;
+	test_take_fd = open("/dev/null", O_RDONLY);
+	mms_descriptor = test_take_fd;
+	error = test_send_mms(phone, 19U, "+15550100");
+	test_check("mms-asked", error == 0 && test_phone.mms_count == 1U && test_phone.last_mms_descriptor == mms_descriptor);
+	test_check("mms-file-closed", fcntl(mms_descriptor, F_GETFD) < 0);
+	test_result(test_phone.last_send_id, 0, 0U);
+	test_phone.changed = KL_BACKEND_PHONE_CHANGED_RESULT;
+	kwl_phone_tick(&server);
+	found = test_find(1U, KL_SYSTEM_PHONE_EVENT_DONE, 0U, &at);
+	test_check("mms-done", found && test_get_word(&test_events[at], 0U) == 19U && test_get_word(&test_events[at], 4U) == KL_SYSTEM_RESULT_OK);
+
+	/* An object of version 27 cannot ask for one. */
+	phone->version = KL_SYSTEM_SINCE_PHONE_SYNC;
+	error = test_send_mms(phone, 20U, "+15550100");
+	test_check("mms-old-version", error == EPROTO && test_phone.mms_count == 1U);
 
 	/* bluetoothd dropped an event: the phone programs hear dropped. */
 	test_event_count = 0U;
@@ -1068,6 +1126,22 @@ test_sync(
 	offset = test_put_string(bytes, offset, "");
 	offset = test_put_word(bytes, offset, 32U);
 	return kwl_phone_request(object, KL_SYSTEM_PHONE_SYNC, bytes, offset);
+}
+
+/* Sends send_mms(request, to) (its descriptor is test_take_fd). */
+static int
+test_send_mms(
+	struct kwl_object *object,
+	uint32_t request,
+	const char *to)
+{
+	unsigned char bytes[128];
+	size_t offset;
+
+	/* The request's number and the number to send to. */
+	offset = test_put_word(bytes, 0U, request);
+	offset = test_put_string(bytes, offset, to);
+	return kwl_phone_request(object, KL_SYSTEM_PHONE_SEND_MMS, bytes, offset);
 }
 
 /* Sends send_text(request, SMS, to, text). */

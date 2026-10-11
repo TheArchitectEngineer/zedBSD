@@ -389,6 +389,8 @@ main(
 	unsigned sent_state;
 	int events;
 	int requests;
+	FILE *mms_file;
+	int mms_pipe[2];
 	int pages;
 	int error;
 	int index;
@@ -531,6 +533,31 @@ main(
 	check(got && sent_request == 77U && sent_state == KL_BACKEND_PHONE_SENT, "sent state first: %d %u %u", got, sent_request, sent_state);
 	got = wait_result(phone, id, &result);
 	check(got && result.error == 0 && result.sent_request == 77U, "send result %d %d %u", got, result.error, result.sent_request);
+
+	/* An MMS (ws197-p010): its MIME body read from the file, sent after a type=mms line, answered as a text. */
+	mms_file = tmpfile();
+	check(mms_file != NULL, "mms spool");
+	(void)fputs("MIME-Version: 1.0\r\n\r\nbody", mms_file);
+	(void)fflush(mms_file);
+	error = kl_backend_phone_send_mms(phone, "+819012345678", fileno(mms_file), &id);
+	check(error == 0, "send mms %d", error);
+	(void)step(phone);
+	requests = fake_take("PHONE SEND to=\"+819012345678\" type=mms length=25", line, sizeof(line), body, 25U);
+	check(requests >= 0 && memcmp(body, "MIME-Version: 1.0\r\n\r\nbody", 25U) == 0, "the mms's line and body");
+	fake_write(requests, "PHONE SENT request=78 handle=0000000a.0000000000000004 state=pushed\nDONE\n");
+	got = wait_result(phone, id, &result);
+	check(got && result.error == 0 && result.sent_request == 78U, "mms result %d %d %u", got, result.error, result.sent_request);
+	(void)fclose(mms_file);
+
+	/* An MMS's body that is not a regular file, or no descriptor. */
+	error = pipe(mms_pipe);
+	check(error == 0, "mms pipe");
+	error = kl_backend_phone_send_mms(phone, "+81", mms_pipe[0], &id);
+	check(error == EINVAL, "send mms from a pipe %d", error);
+	(void)close(mms_pipe[0]);
+	(void)close(mms_pipe[1]);
+	error = kl_backend_phone_send_mms(phone, "+81", -1, &id);
+	check(error == EINVAL, "send mms without a file %d", error);
 
 	/* The arguments refused. */
 	error = kl_backend_phone_send(phone, "+81", (const uint8_t *)"", 0U, &id);
