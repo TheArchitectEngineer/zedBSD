@@ -62,6 +62,11 @@ struct bcm2711_v3d_perf {
 	uint64_t output_clean_ticks;
 	uint64_t release_ticks;
 	uint64_t transfer_ticks;
+	uint32_t snapshot_hits;
+	uint32_t snapshot_fills;
+	uint32_t mapped_textures;
+	uint32_t private_textures;
+	uint64_t mapped_bytes;
 };
 
 /*

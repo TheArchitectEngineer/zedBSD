@@ -315,6 +315,11 @@ bcm2711_vulkan_native_pass_costs(
 		perf->texel_copy_ticks += draw->copy_ticks;
 		perf->program_ticks += draw->program_ticks;
 		perf->record_ticks += draw->record_ticks;
+		perf->snapshot_hits += draw->snapshot_hits;
+		perf->snapshot_fills += draw->snapshot_fills;
+		perf->mapped_textures += draw->mapped_textures;
+		perf->private_textures += draw->private_textures;
+		perf->mapped_bytes += draw->mapped_bytes;
 
 		/* Each storage owner reports its own allocation, translation and cache clean. */
 		for (index = 0; index < draw->count; index++) {

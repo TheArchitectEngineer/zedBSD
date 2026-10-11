@@ -503,7 +503,7 @@ report_perf(
 
 	/* Prints the window's per-submission averages and its worst submission. */
 	kern_logf(
-		"v3d: perf ms=%llu busy=%llu%% subs=%llu passes=%u/%u/%u skipped=%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu\n",
+		"v3d: perf ms=%llu busy=%llu%% subs=%llu passes=%u/%u/%u skipped=%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu snap=%u/%u/%u/%u mapped_kib=%llu\n",
 		(unsigned long long)kern_ticks_to_ms(now - perf->window_start),
 		(unsigned long long)busy,
 		(unsigned long long)count,
@@ -529,7 +529,12 @@ report_perf(
 		(unsigned long long)average_us(perf->output_clean_ticks, count),
 		(unsigned long long)average_us(perf->release_ticks, count),
 		(unsigned long long)average_us(perf->transfer_ticks, count),
-		(unsigned long long)average_us(perf->max_ticks, 1U));
+		(unsigned long long)average_us(perf->max_ticks, 1U),
+		perf->snapshot_hits,
+		perf->snapshot_fills,
+		perf->mapped_textures,
+		perf->private_textures,
+		(unsigned long long)(perf->mapped_bytes / 1024U));
 
 	/* The next window starts empty at this report. */
 	kern_memset(perf, 0, sizeof(*perf));

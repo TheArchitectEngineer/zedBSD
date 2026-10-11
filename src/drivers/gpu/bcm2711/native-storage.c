@@ -380,6 +380,7 @@ bcm2711_native_snapshot_get(
 			error = snapshot_fill(snapshot, raster, raster_bytes);
 			if (error != 0)
 				return error;
+			space->snapshot_fills++;
 		}
 		snapshot->users++;
 		snapshot->used = space->snapshot_serial;
@@ -415,6 +416,7 @@ bcm2711_native_snapshot_get(
 		kern_free(snapshot);
 		return error;
 	}
+	space->snapshot_fills++;
 
 	/* The snapshot holds its source run, so the run's flags and generation stay readable. */
 	bcm2711_buffer_retain(buffer);

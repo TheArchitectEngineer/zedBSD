@@ -53,6 +53,8 @@ struct bcm2711_v3d_space {
 	uint64_t snapshot_bytes;
 	uint64_t snapshot_limit;
 	uint64_t snapshot_serial;
+	/* Conversions made by snapshot lookups, which diagnostics tell apart from reuses. */
+	uint64_t snapshot_fills;
 };
 
 /* No DMA or overlapping edits may occur between begin and checked end. */

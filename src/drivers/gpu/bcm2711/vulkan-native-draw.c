@@ -372,6 +372,7 @@ prepare_texture_image(
 	uint32_t address;
 	uint32_t bytes;
 	uint64_t started;
+	uint64_t fills;
 	int error;
 
 	/* Complete coherent logical raster storage is read only at execution, after previous GPU writes become visible. */
@@ -393,6 +394,7 @@ prepare_texture_image(
 
 		/* A source no process maps reuses its converted snapshot until a device or kernel write changes it. */
 		started = clock_ticks();
+		fills = draw->space->snapshot_fills;
 		error = bcm2711_native_snapshot_get(
 			draw->space,
 			source_view->buffer,
@@ -408,6 +410,18 @@ prepare_texture_image(
 			return error;
 		if (error == 0)
 			pixels = entry->snapshot->pixels;
+
+		/* Diagnostics count how the texture was obtained. */
+		if (error == 0 && draw->space->snapshot_fills == fills) {
+			draw->snapshot_hits++;
+		} else if (error == 0) {
+			draw->snapshot_fills++;
+		} else if (source_view->buffer->host_mapped) {
+			draw->mapped_textures++;
+			draw->mapped_bytes += image->bytes;
+		} else {
+			draw->private_textures++;
+		}
 	}
 
 	/* A private conversion serves a source that may change behind the device's back. */
