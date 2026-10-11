@@ -277,3 +277,18 @@ Read Local Supported Codecs は送らないので、AX211 の SCO が HCI を通
 - 2026-10-11: 設計 2.1（X 節・S2・S5・S8、P1）。次は X 節の短い再 review、p007a0 の残り（T1）、Q12〜Q14。R の再設計（15〜20 LW）は Q12〜Q14 の後で p007b1 の条件。
 - 2026-10-11: [review-3](review-3.md)（main、blocker 1: X3 の自分の Stop の Stopped、major: X5 と core・後の状態・thread と状態表・遅れ・S8・B1）。Q12〜Q14 はユーザーが推しで承認（R は WS209）。
 - 2026-10-11: 設計 2.1a（状態表、X3・X5・X6・X8・X9・X11・X12、S2・S5・S8・B1、p007a0 の残る危険、計画に無い依存、P1）。次は X 節の短い確かめ → p007a1。p007a0 の結果は開始の条件のまま。
+
+## 2026-10-11 p007a0 の 5330 の読み（Q1、image 8c2ab68、読むだけ）
+
+```
+usb-bt: USB Bluetooth controller: SCO interface 1 alternate 0 endpoints 0x03/0/1 0x83/0/1
+usb-bt: USB Bluetooth controller: SCO interface 1 alternate 1 endpoints 0x03/9/1 0x83/9/1
+usb-bt: USB Bluetooth controller: SCO interface 1 alternate 2 endpoints 0x03/17/1 0x83/17/1
+usb-bt: USB Bluetooth controller: SCO interface 1 alternate 3 endpoints 0x03/25/1 0x83/25/1
+usb-bt: USB Bluetooth controller: SCO interface 1 alternate 4 endpoints 0x03/33/1 0x83/33/1
+usb-bt: USB Bluetooth controller: SCO interface 1 alternate 5 endpoints 0x03/49/1 0x83/49/1
+usb-bt: USB Bluetooth controller: SCO interface 1 alternate 6 endpoints 0x03/63/1 0x83/63/1
+<30>Oct 11 14:00:18 bluetoothd[9]: BLUETOOTHD SCO length=96 count=6 commands1=0xff commands13=0x0f commands14=0xe8 commands16=0x3f commands29=0xb8
+```
+
+解読は P1（次の世代）。
