@@ -68,6 +68,9 @@ static void pipeline_key(const struct drv_gpu_shader_ir *ir, struct bcm2711_shad
 static void initialize_machine(struct shader_machine *machine, uint32_t fragment, uint32_t trial);
 static void compare_number(uint32_t native, uint32_t expected);
 static void verify_program(const struct v3d_device_info *device, const uint32_t *words, size_t word_count, const struct drv_gpu_shader_ir *ir, enum bcm2711_shader_stage stage, struct bcm2711_shader_key *key);
+static void verify_hazards(const struct v3d_device_info *device, const struct bcm2711_shader_binary *binary);
+static bool reads_register(const struct v3d_qpu_instr *instruction, uint32_t number);
+static uint32_t unit_count(const struct v3d_device_info *device, const struct v3d_qpu_instr *instruction);
 static void verify_allocation_refusal(const struct bcm2711_shader_key *key);
 static void verify_graphics_profile(const struct bcm2711_shader_key *key);
 
@@ -935,6 +938,9 @@ verify_program(
 	assert(binary->code[binary->code_count - 2] == UINT64_C(0x3c003186bb800000));
 	assert(binary->code[binary->code_count - 1] == UINT64_C(0x3c003186bb800000));
 
+	/* The shortened schedule still keeps every 4.2 timing rule. */
+	verify_hazards(device, binary);
+
 	/* Panel mode and position variations expose several if-converted source paths and native register lifetimes. */
 	for (trial = 0; trial < 32; trial++) {
 		initialize_machine(&source, stage == BCM2711_SHADER_FRAGMENT, trial);
@@ -1185,4 +1191,140 @@ verify_allocation_refusal(
 
 	/* All following host comparisons use the ordinary allocation path. */
 	allocation_refusal = 0;
+}
+
+/*
+ * Checks the 4.2 timing rules the compiler's schedule must keep.
+ *
+ * The rules are hardware facts recorded by the MIT Mesa validator and
+ * scheduler: a special-function result is not read, and no other special
+ * function starts, in the two instructions after it; the instruction after a
+ * varying load neither reads accumulator five nor loads a uniform into it;
+ * a thread switch's two delay slots start no special function or varying
+ * load; and one instruction talks to at most one of the TMU, special
+ * function, TLB, VPM and synchronization units.
+ */
+static void
+verify_hazards(
+	const struct v3d_device_info *device,
+	const struct bcm2711_shader_binary *binary)
+{
+	struct v3d_qpu_instr instruction;
+	struct v3d_qpu_instr later;
+	uint32_t index;
+	uint32_t next;
+	uint32_t destination;
+	bool accepted;
+	bool special;
+
+	/* Every instruction is checked against the ones that follow it. */
+	for (index = 0; index < binary->code_count; index++) {
+		accepted = v3d_qpu_instr_unpack(device, binary->code[index], &instruction);
+		assert(accepted);
+		assert(instruction.type == V3D_QPU_INSTR_TYPE_ALU);
+		assert(unit_count(device, &instruction) <= 1);
+
+		/* A special function's register result and unit stay untouched for two instructions. */
+		special = v3d_qpu_instr_is_sfu(&instruction);
+		if (special) {
+			destination = instruction.alu.add.waddr;
+			for (next = index + 1; next <= index + 2 && next < binary->code_count; next++) {
+				accepted = v3d_qpu_instr_unpack(device, binary->code[next], &later);
+				assert(accepted);
+				assert(!v3d_qpu_instr_is_sfu(&later));
+				assert(!v3d_qpu_uses_mux(&later, V3D_QPU_MUX_R4));
+				if (!instruction.alu.add.magic_write)
+					assert(!reads_register(&later, destination));
+			}
+		}
+
+		/* Accumulator five receives a varying's constant term one instruction after its load. */
+		if (instruction.sig.ldvary && index + 1 < binary->code_count) {
+			accepted = v3d_qpu_instr_unpack(device, binary->code[index + 1], &later);
+			assert(accepted);
+			assert(!v3d_qpu_uses_mux(&later, V3D_QPU_MUX_R5));
+			assert(!later.sig.ldunif && !later.sig.ldunifa);
+		}
+
+		/* A thread switch's delay slots run before the switch and start nothing that would land in the other thread. */
+		if (instruction.sig.thrsw) {
+			for (next = index + 1; next <= index + 2 && next < binary->code_count; next++) {
+				accepted = v3d_qpu_instr_unpack(device, binary->code[next], &later);
+				assert(accepted);
+				assert(!v3d_qpu_instr_is_sfu(&later));
+				assert(!later.sig.ldvary);
+			}
+		}
+	}
+}
+
+/* Tells whether an instruction's ALUs read one physical register through either read port. */
+static bool
+reads_register(
+	const struct v3d_qpu_instr *instruction,
+	uint32_t number)
+{
+	/* Port A is read through the A multiplexer. */
+	if (v3d_qpu_uses_mux(instruction, V3D_QPU_MUX_A) && instruction->raddr_a == number)
+		return true;
+
+	/* Port B holds a register unless it carries a small immediate. */
+	if (v3d_qpu_uses_mux(instruction, V3D_QPU_MUX_B) &&
+	    !instruction->sig.small_imm_b &&
+	    instruction->raddr_b == number)
+		return true;
+
+	/* Neither port names the register. */
+	return false;
+}
+
+/* Counts the TMU, special-function, TLB, VPM and synchronization transactions one instruction starts. */
+static uint32_t
+unit_count(
+	const struct v3d_device_info *device,
+	const struct v3d_qpu_instr *instruction)
+{
+	uint32_t count;
+
+	/* Signals that read a unit. */
+	count = 0;
+	if (instruction->sig.ldtmu)
+		count++;
+	if (instruction->sig.ldtlb)
+		count++;
+	if (instruction->sig.ldtlbu)
+		count++;
+	if (instruction->sig.ldvpm)
+		count++;
+
+	/* An add ALU write to a unit's magic address. */
+	if (instruction->alu.add.op != V3D_QPU_A_NOP && instruction->alu.add.magic_write) {
+		if (v3d_qpu_magic_waddr_is_tmu(device, instruction->alu.add.waddr))
+			count++;
+		if (v3d_qpu_magic_waddr_is_sfu(instruction->alu.add.waddr))
+			count++;
+		if (v3d_qpu_magic_waddr_is_vpm(instruction->alu.add.waddr))
+			count++;
+		if (v3d_qpu_magic_waddr_is_tlb(instruction->alu.add.waddr))
+			count++;
+		if (v3d_qpu_magic_waddr_is_tsy(instruction->alu.add.waddr))
+			count++;
+	}
+
+	/* A mul ALU write to a unit's magic address. */
+	if (instruction->alu.mul.op != V3D_QPU_M_NOP && instruction->alu.mul.magic_write) {
+		if (v3d_qpu_magic_waddr_is_tmu(device, instruction->alu.mul.waddr))
+			count++;
+		if (v3d_qpu_magic_waddr_is_sfu(instruction->alu.mul.waddr))
+			count++;
+		if (v3d_qpu_magic_waddr_is_vpm(instruction->alu.mul.waddr))
+			count++;
+		if (v3d_qpu_magic_waddr_is_tlb(instruction->alu.mul.waddr))
+			count++;
+		if (v3d_qpu_magic_waddr_is_tsy(instruction->alu.mul.waddr))
+			count++;
+	}
+
+	/* Reports the transactions this one instruction starts. */
+	return count;
 }

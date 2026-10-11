@@ -272,6 +272,15 @@ bcm2711_vulkan_native_job_execute(
 			for (index = 0; index < BCM2711_V3D_COUNTERS; index++)
 				perf->counters[index] += completion.counters[index];
 			perf->counter_runs++;
+
+			/* Tile copies and clears only load and store tiles; drawing passes also shade. */
+			if (job->pass->draws == 0) {
+				perf->copy_cycles += completion.counters[0];
+				perf->copy_tiles += tiles;
+			} else {
+				perf->draw_cycles += completion.counters[0];
+				perf->draw_tiles += tiles;
+			}
 		}
 		job->retired = completion.retired;
 		*retired = completion.retired;
@@ -573,6 +582,16 @@ report_perf(
 			(unsigned long long)(perf->counters[13] / perf->counter_runs / 1000U),
 			(unsigned long long)(perf->counters[14] / perf->counter_runs / 1000U),
 			(unsigned long long)(perf->counters[15] / perf->counter_runs / 1000U));
+	}
+
+	/* Cycles a tile takes when it is only loaded and stored, and when it is also drawn. */
+	if (perf->copy_tiles != 0U || perf->draw_tiles != 0U) {
+		kern_logf(
+			"v3d: gpu tiles copy=%u cycles/tile=%llu draw=%u cycles/tile=%llu\n",
+			perf->copy_tiles,
+			(unsigned long long)(perf->copy_tiles != 0U ? perf->copy_cycles / perf->copy_tiles : 0U),
+			perf->draw_tiles,
+			(unsigned long long)(perf->draw_tiles != 0U ? perf->draw_cycles / perf->draw_tiles : 0U));
 	}
 
 	/* The next window starts empty at this report. */

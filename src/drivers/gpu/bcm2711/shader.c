@@ -21,6 +21,7 @@
 
 static int preflight_declaration(const uint32_t *instruction, uint32_t count, uint8_t *levels, uint32_t bound, uint32_t model, const char **reason);
 static int compile_program(struct bcm2711_shader_compiler *compiler);
+static uint32_t operation_gaps(enum bcm2711_qpu_operation operation, uint32_t destination, uint32_t peripheral);
 
 /*
  * Compiles one SPIR-V entry point into a fully owned native graphics program.
@@ -196,7 +197,7 @@ bcm2711_shader_nops(
 }
 
 /*
- * Emits one semantic operation followed by conservative register and SFU dependency spacing.
+ * Emits one semantic operation followed by the idle words its result needs before a consumer.
  */
 int
 bcm2711_shader_operation(
@@ -225,12 +226,12 @@ bcm2711_shader_operation(
 	if (error != 0)
 		return error;
 
-	/* Two explicit idle words avoid immediate register and three-cycle SFU reuse hazards. */
-	error = bcm2711_shader_nops(compiler, 2);
+	/* Special-function, VPM, wait and peripheral transactions keep two idle words; a plain result needs none. */
+	error = bcm2711_shader_nops(compiler, operation_gaps(operation, destination, peripheral));
 	if (error != 0)
 		return error;
 
-	/* The destination is ready for the following source operation under the conservative schedule. */
+	/* The destination is ready for the following source operation. */
 	return 0;
 }
 
@@ -268,8 +269,8 @@ bcm2711_shader_uniform_load(
 	if (error != 0)
 		return error;
 
-	/* Addressed uniform loads use the 4.2 direct register signal and explicit latency slots. */
-	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_UNIFORM_REGISTER, destination, 2);
+	/* Addressed uniform loads use the 4.2 direct register signal; the next instruction can read the word. */
+	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_UNIFORM_REGISTER, destination, 0);
 	if (error != 0)
 		return error;
 
@@ -655,5 +656,52 @@ compile_program(
 		return error;
 
 	/* All native instructions and stage epilogues fit their validated owned storage. */
+	return 0;
+}
+
+/*
+ * Tells how many idle words follow one operation before an instruction may consume its result.
+ *
+ * A 4.2 ALU result in the physical register file is readable by the very next
+ * instruction, and colour writes to the tile buffer and texture coordinate
+ * writes to the TMU follow each other directly.  Special-function results
+ * arrive later, and VPM and wait operations and VPM writes talk to the vertex
+ * pipeline, so those keep two idle words.
+ */
+static uint32_t
+operation_gaps(
+	enum bcm2711_qpu_operation operation,
+	uint32_t destination,
+	uint32_t peripheral)
+{
+	/* The tile buffer's colour write addresses (with and without a configuration uniform) take consecutive words. */
+	if (peripheral != 0 && (destination == 7 || destination == 8))
+		return 0;
+
+	/* The TMU's coordinate and parameter addresses take consecutive words; its results come after a thread switch. */
+	if (peripheral != 0 && destination >= 32 && destination <= 44)
+		return 0;
+
+	/* Any other peripheral write starts a VPM transaction. */
+	if (peripheral != 0)
+		return 2;
+
+	/* Operations whose results or effects come from another unit. */
+	switch (operation) {
+	case BCM2711_QPU_FLOAT_RECIPROCAL:
+	case BCM2711_QPU_FLOAT_INVERSE_ROOT:
+	case BCM2711_QPU_FLOAT_EXPONENT:
+	case BCM2711_QPU_FLOAT_LOGARITHM:
+	case BCM2711_QPU_FLOAT_SINE:
+	case BCM2711_QPU_VPM_LOAD:
+	case BCM2711_QPU_VPM_STORE:
+	case BCM2711_QPU_TEXTURE_WAIT:
+	case BCM2711_QPU_VPM_WAIT:
+		return 2;
+	default:
+		break;
+	}
+
+	/* A plain ALU result is ready for the next instruction. */
 	return 0;
 }
