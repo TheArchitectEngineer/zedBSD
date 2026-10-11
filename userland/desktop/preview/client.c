@@ -643,6 +643,8 @@ client_info_field(
 	int same;
 	int width;
 	int height;
+	int zone;
+	int utc;
 
 	/* The kind, by its name (KL_MEDIA_* are their places). */
 	same = strcmp(name, "kind");
@@ -663,6 +665,16 @@ client_info_field(
 	same = strcmp(name, "taken");
 	if (same == 0 && value[0] == '\0') {
 		info->dated = 0;
+		return 0;
+	}
+
+	/* The date's zone: only UTC is said. */
+	zone = strcmp(name, "zone");
+	if (zone == 0) {
+		utc = strcmp(value, "utc");
+		if (utc != 0)
+			return EPROTO;
+		info->utc = 1;
 		return 0;
 	}
 

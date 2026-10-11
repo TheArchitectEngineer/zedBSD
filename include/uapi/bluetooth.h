@@ -18,21 +18,28 @@
  * specification lays it out.
  *
  *   open()   one open at a time (a second one answers EBUSY).
- *   write()  one whole command or ACL packet; a packet whose length does
- *            not match its header, an ACL packet longer than the data
- *            limit, or another type answers EINVAL.  It returns when the
- *            controller has taken the packet.
- *   read()   one whole event or ACL packet, or a notice of the kernel's
- *            (type 0x80 and above, one byte long), in the order they came.
- *            A buffer shorter than the packet answers EMSGSIZE and the
- *            packet stays.  It waits for one unless the file is
+ *   write()  one whole command, ACL or SCO packet; a packet whose length
+ *            does not match its header, an ACL packet longer than the
+ *            data limit, or another type answers EINVAL.  A command or an
+ *            ACL packet returns when the controller has taken it.  An SCO
+ *            packet (ws197-p007a2) is only queued for the controller's
+ *            isochronous pipe, about 36 ms of it, and never waits: a full
+ *            queue answers EAGAIN, whatever O_NONBLOCK says, a
+ *            controller not streaming SCO (BT_IOC_SET_SCO) ENOTCONN, and
+ *            one without SCO (no BT_INFO_SCO) EINVAL.
+ *   read()   one whole event, ACL or SCO packet, or a notice of the
+ *            kernel's (type 0x80 and above, one byte long), in the order
+ *            they came.  A buffer shorter than the packet answers EMSGSIZE
+ *            and the packet stays.  It waits for one unless the file is
  *            O_NONBLOCK (EAGAIN).
  *   poll()   POLLIN while a packet waits, POLLOUT while the controller is
  *            there, POLLHUP once it is gone (every call then answers
  *            ENODEV).
  *
- * When the program does not read, the kernel stops taking packets from
- * the controller, which holds them; no packet is dropped.  The request
+ * When the program does not read, the kernel stops taking events and ACL
+ * packets from the controller, which holds them; none of those is
+ * dropped.  SCO packets are not held: their queue keeps about 250 ms and
+ * drops the oldest (bt_stats.sco_dropped counts them).  The request
  * numbers and the structures are zedBSD's own.
  */
 
@@ -44,7 +51,7 @@
 
 #define KERN_BT_IOC_GROUP	'b'
 
-/* The H4 packet types; SCO and ISO are reserved (not carried yet). */
+/* The H4 packet types; ISO is reserved (not carried yet). */
 #define BT_PACKET_COMMAND	0x01U
 #define BT_PACKET_ACL		0x02U
 #define BT_PACKET_SCO		0x03U
@@ -69,8 +76,16 @@
 /* The bus a controller is on. */
 #define BT_BUS_USB		1U
 
-/* bt_info flags: the Intel bootloader's path is on. */
+/* bt_info flags: the Intel bootloader's path is on; the controller carries SCO (BT_IOC_SET_SCO). */
 #define BT_INFO_BOOTLOADER	0x0001U
+#define BT_INFO_SCO		0x0002U
+
+/* The longest SCO data of a packet, and its header (handle and flags 2, length 1). */
+#define BT_SCO_DATA_MAX		255U
+#define BT_SCO_HEADER		3U
+
+/* The most synchronous links one controller streams at once. */
+#define BT_SCO_LINKS_MAX	3U
 
 /* The room of a name and a place, the NUL included. */
 #define BT_TEXT_MAX		64U
@@ -105,8 +120,32 @@ struct bt_stats {
 	uint64_t acl_out;
 	uint64_t malformed;
 	uint64_t stalls;
-	uint64_t reserved[4];
+	uint64_t sco_in;
+	uint64_t sco_out;
+	uint64_t sco_dropped;
+	uint64_t sco_out_queued;
 };
+
+/*
+ * BT_IOC_SET_SCO (ws197-p007a2): the synchronous links the controller's
+ * isochronous pipe streams.  In: count (0 to BT_SCO_LINKS_MAX, 0 stops
+ * the stream), each link's connection handle (from Synchronous Connection
+ * Complete), Voice Setting and SCO packet data length; reserved zero.  Out:
+ * the interface's alternate setting chosen and its packets' size.  CVSD
+ * links all 16-bit or all 8-bit, or one transparent link (mSBC); anything
+ * else, a handle out of range or twice, or a length of 0 answers EINVAL.
+ */
+struct bt_sco {
+	uint16_t handle[BT_SCO_LINKS_MAX];
+	uint16_t voice_setting[BT_SCO_LINKS_MAX];
+	uint16_t packet_length[BT_SCO_LINKS_MAX];
+	uint16_t count;
+	uint16_t alternate;
+	uint16_t mtu;
+	uint32_t reserved[2];
+};
+
+_Static_assert(sizeof(struct bt_sco) == 32, "struct bt_sco is 32 bytes");
 
 /*
  * BT_IOC_SET_BOOTLOADER: 1 sends the Intel Secure Send commands (opcode
@@ -115,11 +154,14 @@ struct bt_stats {
  * (ENOTSUP when it is not on a root port) and queues the RESET notice.
  * BT_IOC_SET_ACL_MAX sets the ACL data length limit (the controller's,
  * from HCI_Read_Buffer_Size); a value out of range answers EINVAL.
+ * BT_IOC_SET_SCO sets the synchronous links (struct bt_sco); a controller
+ * without them answers ENOTSUP, one in its bootloader EBUSY.
  */
 #define BT_IOC_GET_INFO		_IOR(KERN_BT_IOC_GROUP, 0, struct bt_info)
 #define BT_IOC_SET_BOOTLOADER	_IOW(KERN_BT_IOC_GROUP, 1, uint32_t)
 #define BT_IOC_RESET		_IO(KERN_BT_IOC_GROUP, 2)
 #define BT_IOC_SET_ACL_MAX	_IOW(KERN_BT_IOC_GROUP, 3, uint32_t)
 #define BT_IOC_GET_STATS	_IOR(KERN_BT_IOC_GROUP, 4, struct bt_stats)
+#define BT_IOC_SET_SCO		_IOWR(KERN_BT_IOC_GROUP, 5, struct bt_sco)
 
 #endif

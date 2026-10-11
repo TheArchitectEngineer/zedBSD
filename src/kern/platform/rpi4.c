@@ -26,6 +26,9 @@
 #if CONFIG_DRIVER_USB_HID
 #include <drivers/usb/usb-hid.h>
 #endif
+#if CONFIG_DRIVER_BCM2711_AUDIO
+#include "drivers/platform/rpi4/rpi4-audio.h"
+#endif
 #include "drivers/platform/rpi4/rpi4-console.h"
 #include "drivers/platform/rpi4/rpi4-pcie.h"
 #include "drivers/platform/rpi4/rpi4-sdhci.h"
@@ -103,6 +106,11 @@ kern_platform_init(
 	 * a usable controller boots without PCI devices.
 	 */
 	(void)drv_rpi4_pcie_init(rpi4->fdt_phys);
+
+#if CONFIG_DRIVER_BCM2711_AUDIO
+	/* Publishes the headphone jack; a board without it boots without sound. */
+	(void)drv_rpi4_audio_init(rpi4->fdt_phys);
+#endif
 
 #if CONFIG_DRIVER_BCM2711_GPU
 	/* Describes the firmware's screen to the graphics driver. */

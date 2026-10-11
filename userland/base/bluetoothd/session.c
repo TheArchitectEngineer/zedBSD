@@ -45,6 +45,8 @@
 #define SESSION_READ_COMMANDS		0x1002U
 #define SESSION_READ_FEATURES		0x1003U
 #define SESSION_READ_BUFFER_SIZE	0x1005U
+#define SESSION_READ_CODECS		0x100bU
+#define SESSION_READ_CODECS_V2		0x100dU
 #define SESSION_READ_ADDRESS		0x1009U
 #define SESSION_LE_SET_EVENT_MASK	0x2001U
 #define SESSION_LE_READ_BUFFER_SIZE	0x2002U
@@ -174,6 +176,7 @@ static struct btd_link_count *session_link(struct btd_session *session, uint16_t
 static struct btd_pool *session_pool(struct btd_session *session, const struct btd_link_count *link);
 static int session_flush(struct btd_session *session);
 static void session_core_buffers(struct btd_session *session);
+static int session_codecs(struct btd_session *session);
 static int session_scan_event(const struct btd_event *event);
 static uint16_t session_handle(const uint8_t *bytes);
 
@@ -1571,6 +1574,11 @@ session_core(
 	if (session->state == BTD_STATE_LOST)
 		return ENODEV;
 
+	/* The codecs the controller has, for the log (ws197-p007a2 L1: is CVSD carried over the HCI's SCO?). */
+	error = session_codecs(session);
+	if (error == ENODEV)
+		return error;
+
 	/* The events the scan, the connections and the pairing need; without the mask none of them would come. */
 	error = session_step(session, "event-mask", SESSION_SET_EVENT_MASK, event_mask, sizeof(event_mask));
 	if (error != 0)
@@ -2576,4 +2584,88 @@ session_handle(
 
 	/* Succeeded: the handle. */
 	return (uint16_t)value;
+}
+
+/*
+ * Reads the standard codecs the controller has (ws197-p007a2 L1): Read
+ * Local Supported Codecs v2 (each id with its transports) when the
+ * supported commands have it, else v1 (ids only).  A controller that
+ * answers neither leaves codecs_version 0.  Returns ENODEV when the
+ * controller is gone, else 0 (the answer only goes to the log).
+ */
+static int
+session_codecs(
+	struct btd_session *session)
+{
+	size_t at;
+	unsigned count;
+	unsigned index;
+	int v2;
+	int v1;
+	int error;
+
+	/* Nothing known yet. */
+	session->codecs = 0U;
+	session->vendor_codecs = 0U;
+	session->codecs_version = 0U;
+
+	/* v2 (octet 45 bit 2) first: its ids come with their transports. */
+	v2 = btd_hci_supported(session->commands, sizeof(session->commands), 45U, 2U);
+	if (v2) {
+		error = session_command(session, SESSION_READ_CODECS_V2, NULL, 0U, session->timing.command_ms);
+		if (error == ENODEV)
+			return error;
+		if (error == 0 && session->returned_length >= 1U) {
+			count = session->returned[0];
+			at = 1U;
+			for (index = 0U; index < count && at + 2U <= session->returned_length; index++) {
+				if (session->codecs < sizeof(session->codec)) {
+					session->codec[session->codecs] = session->returned[at];
+					session->codec_transports[session->codecs] = session->returned[at + 1U];
+					session->codecs++;
+				}
+
+				/* The next id and its transports. */
+				at += 2U;
+			}
+
+			/* The vendor's count after them. */
+			if (at < session->returned_length)
+				session->vendor_codecs = session->returned[at];
+			session->codecs_version = 2U;
+			return 0;
+		}
+	}
+
+	/* v1 (octet 29 bit 5): ids only. */
+	v1 = btd_hci_supported(session->commands, sizeof(session->commands), 29U, 5U);
+	if (!v1)
+		return 0;
+	error = session_command(session, SESSION_READ_CODECS, NULL, 0U, session->timing.command_ms);
+	if (error == ENODEV)
+		return error;
+	if (error != 0 || session->returned_length < 1U)
+		return 0;
+
+	/* Each standard id. */
+	count = session->returned[0];
+	at = 1U;
+	for (index = 0U; index < count && at < session->returned_length; index++) {
+		if (session->codecs < sizeof(session->codec)) {
+			session->codec[session->codecs] = session->returned[at];
+			session->codec_transports[session->codecs] = 0xffU;
+			session->codecs++;
+		}
+
+		/* The next id. */
+		at++;
+	}
+
+	/* The vendor's count after them. */
+	if (at < session->returned_length)
+		session->vendor_codecs = session->returned[at];
+	session->codecs_version = 1U;
+
+	/* Succeeded: told in the log. */
+	return 0;
 }

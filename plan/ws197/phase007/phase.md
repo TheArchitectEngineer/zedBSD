@@ -4,6 +4,8 @@
 
 Parent: [WS197](../ws.md)
 Status: planning（q930-i01、P1。設計 2.1a（review-3 の blocker 1・major を反映）、X 節の短い確かめ待ち。Q12〜Q14 は承認済み）
+
+Status: in-progress（q930-i01、P1。設計 2.1b（review-4 の major 4 を反映、Q1 が差分を確かめる）、p007a1 の実装中: TD の状態機械と host 試験は済み）
 Phase disposition: normal
 Queue: q930（[P1 の lane](../../agents/P1/queue.md)）
 
@@ -262,6 +264,124 @@ Read Local Supported Codecs は送らないので、AX211 の SCO が HCI を通
 | USB の core の隔離からの回復 | SET_INTERFACE の timeout などで隔離された device を port の reset と列挙のやり直しで戻す道が無い（S8） | USB の core の別 Phase（Future Work か WS のどれか）。p007 はそれまで「抜き差しか再起動」と記録 |
 | usb.h の isoch の契約 | isoch の callback は wake だけ、cancel は endpoint 全体（X5・X9）。今の isoch の利用者は無い | p007a1 の中 |
 
+
+## 設計 2.1b（2026-10-11、review-4（main の `plan/ws197/phase007/review-4.md`）の major 4 を足す。再 review は不要、Q1 が差分を確かめる）
+
+### 状態表に足す行と状態
+
+| ID | 2.1b の決め |
+| --- | --- |
+| B-R1 | **RETAINED**（新しい状態）: 持ち主の command が失敗した時（`command_ex` の 5 秒の timeout とその後の `command_failed`（pci-xhci.c:1478-1480、以後の command は全部 EIO）、または context を読み直しても状態を変えられない時）。FIFO の TD と、その DMA をそのまま持つ。enqueue は EIO、dequeue・quiesce・begin は EIO を返す。外すのは `dma_quiesced` の後の `xhci_controller_drain_requests` だけ（`drv_xhci_isoch_flush`）。今の `cancelling = 2`（4447-4463）と同じ考え。Stop が 19（Context State Error）で返った時は context を読み直し、`drv_xhci_cancel_action`・`drv_xhci_recovery_action`（lifecycle.h:113・148）の判定でやり直す（Halted なら Reset Endpoint から、Stopped なら止まったものとして片付け）。やり直しても変わらなければ RETAINED。表の STOPPING・CANCELLING・RECOVERING の各行に「失敗 → RETAINED」 |
+| B-R2 | Stopped の行に 28（Stopped - Short Packet）を足す（26・27・28 は同じ扱い） |
+| B-R3 | enqueue で hardware が Halted だったら（今の `xhci_endpoint_state` の読み）、HALT_PENDING に移して worker を起こし、EBUSY |
+
+### GATED（suspend）と doorbell（BUG-289 も一緒に）
+
+| ID | 2.1b の決め |
+| --- | --- |
+| B-G1 | suspend の wait_idle が失敗した道（`xhci_suspend_end` を呼ぶ 6493・6508・6522・6574・6584・6858）では、`xhci_suspend_end` の前に `xhci_resume_endpoints`（7240）で全部の endpoint を鳴らす。GATED の間に積んだ TD（isoch も bulk も）が動く。**BUG-289 の直し**（p007a1 の中で） |
+| B-G2 | isoch の FIFO が空でない endpoint がある時、suspend の準備は GATED に入る前に EBUSY（X10 の「流している間は suspend が失敗する」を GATED の前に決める）。FIFO が空で GATED になった後の isoch の enqueue は EBUSY |
+| B-G3 | 表の enqueue の行に「GATED の間は doorbell を鳴らさない（今のまま）。B-G1 で失敗の道でも鳴らす」 |
+
+### isoch の worker の生き死にと endpoint の探し方
+
+| ID | 2.1b の決め |
+| --- | --- |
+| B-W1 | controller ごとの `xhci_isoch_worker`（優先度は既定の 8、B-P2）は、最初の isoch の endpoint が Configure された時に作り、controller の止め（`xhci_quiesce` 5475-5531）では **`dma_quiesced` を立てる前に**止めて join する。`xhci_reinit_forget_devices`（6663）でも device を解放する前に止める。suspend の間は眠る（GATED の印を見て待つ）。detach は quiesce を通るのでそれで止まる |
+| B-W2 | worker は仕事のたびに `xhci_submission_enter` 相当の数（`isoch_workers`）を取る。`xhci_operation_enter`（3715-3725）は suspend の間眠るので使わない |
+| B-W3 | worker は `struct xhci_device *` を持ち越さない。仕事の印（endpoint の slot と dci）だけを持ち、毎回 `active_lock` の下で device の list から探し直し、`quiescing`・`slot_disabled`・endpoint の `enabled` を確かめる（どれかなら何もしない）。古い `d` の use-after-free を防ぐ |
+| B-W4 | 他の操作との競り: `xhci_endpoint_disable` は isoch では NORMAL かつ FIFO が空の時だけ（他は EBUSY）。`xhci_endpoint_reset` は isoch で EINVAL（isoch の回復は X6 の worker だけ）。`xhci_controller_drain_requests` は isoch の状態を見ずに FIFO を外し（`drv_xhci_isoch_flush`）、5291-5295 の trap に isoch の印を足さない |
+
+### 優先度 4 の回り待ち（優先度の逆転）
+
+| ID | 2.1b の決め |
+| --- | --- |
+| B-P1 | `command_ex` は command ring の持ち主を `sched_yield` で回って待つ（1231-1243）。sched_yield は同じ CPU で最も高い優先度の thread を選び直すので、優先度 4 の thread が回っている間、command を持つ優先度 8 の thread は走れない（CPU 1 つで逆転）。**優先度 4 の thread（isoch の worker、usb-bt の SCO の thread）は、低い優先度の thread が持つ物を `sched_yield` で回って待たない**: 待つ時は 1 tick 以上眠る（`sched_sleep`）。 |
+| B-P2 | **isoch の worker は既定の優先度（8）で作る**（X6 の「優先度 4」を改める）。worker の仕事は Stop・Reset Endpoint の command（`command_ex` の回り待ちを含む）で、遅れの予算に入らない（skip 待ちの締め切りは URB 2 本分の粗い時間）。kernel に thread の優先度を変える口は無い（`kthread_create` の引数だけ）ので、下げ戻しはしない。優先度 4 は usb-bt の SCO の thread だけで、その thread の NORMAL 待ち・`drv_usb_urb_drain`（usb.c:2593-2604）の待ちは B-P1 のとおり眠る形に |
+| B-P3 | T1 の ktest を `-smp 1` でも流す（逆転が出れば止まる） |
+
+### minor（p007a1 の中で直す、記録だけ）
+
+X4: X3 の後の consumer は context の TR Dequeue（TD k から後ろが残る）、producer に合わせるのは X5・X6 の dequeue_all の後だけ（純粋な関数で済み）。X9・X11: `command_ex` の poll が claim した isoch の完了も drain し、dispatch の印を wait_idle と `xhci_device_quiesce` に足す。X5: dequeue(X) で X が FIFO に無く FIFO が空でなければ endpoint 全体の cancel、X は EALREADY（usb.h に「EALREADY でも endpoint は空になる」）。IRQ からの worker の起こしは印だけ、notify は event_unlock の後。isoch は `xhci_completion_finish` の log を出さず数える（S9 の counter）。X12: QEMU の ktest に「流している間の suspend の失敗で流れが続く」「流している間の抜き差し」「`-smp 1`」。
+
+### 純粋な関数の進み（2026-10-11 P1）
+
+`include/drivers/pci/pci-xhci-isoch.h`・`src/drivers/pci/pci-xhci-isoch.c`（TD の状態機械: FIFO・ring の空き・BEI・照合・飛ばしの規則・skip 待ち・Stop の 3 例・外の Stop・endpoint 全体の cancel・halt と回復・RETAINED・Stopped 28・ring の巻き・退いた TD の slot の再使用）と host 試験 `plan/ws197/tests/run-xhci-isoch-test.sh`（通常と ASan/UBSan で all PASS、kernel の arm64・amd64 の freestanding の compile も warning 0）。設計は X12 の「`pci-xhci-control.h` の純粋な関数」だったが、大きさ（約 500 行）から別の header と .c にした。kernel の build への組み込みは p007a1 の xHCI の統合と一緒に。
+
+## p007a1 の実装の進み（2026-10-11 P1）
+
+| 段 | 内容 | 確かめ |
+| --- | --- | --- |
+| 1 | TD の状態機械 `src/drivers/pci/pci-xhci-isoch.c`・`include/drivers/pci/pci-xhci-isoch.h`（2.1a・2.1b: FIFO、ring の空き、BEI、照合、飛ばし、skip 待ち、Stop の 3 例、外の Stop、endpoint 全体の cancel、halt、RETAINED、Stopped 28、退いた slot の再使用） | `sh plan/ws197/tests/run-xhci-isoch-test.sh`（通常と ASan/UBSan で all PASS） |
+| 2 | X7: `drv_xhci_endpoint_context_encode` の isoch（FS・HS の 1 interval 1 transaction、CErr 0、FS の Interval = bInterval + 2、Max ESIT、SS・high bandwidth・15 を越える Interval は拒否）。X8: usb の core の `enum drv_usb_iso_status`、`drv_usb_urb_iso_count`・`_iso_packet`・`_iso_result_set`・`_iso_result`、`drv_usb_urb_setup_isochronous` の検査（PENDING・hcd_owned は EBUSY、packet は buffer の中で空でない）、isoch の URB の transfer reservation、usb.h に isoch の契約（callback は wake だけ、cancel は endpoint 全体、EALREADY でも空になる） | 同じ host 試験に X7 の 8 例、amd64・arm64 の kernel の build（rc 0、warning 0） |
+| 3 | `pci-xhci.c` への統合（2026-10-11 追記: `xhci_endpoint_reset` は isoch で EINVAL ではなく「空で idle なら 0、FIFO か持ち主があれば EBUSY」に改めた。usb の core は alternate を選ぶたびに新しい endpoint を `endpoint_reset` するので（`host_interface_reset_endpoints`、usb.c:8318）、EINVAL では SET_INTERFACE の後に device が隔離されていた。B-W4 の「EINVAL」はこの形に直す）: endpoint の enable で bookkeeping（Configure の後に公開）と worker（controller に 1 つ、既定の優先度）、enqueue（packet ごとに Isoch TRB、SIA、IOC、BEI、IN は ISP、64 KiB と vector の segment の検査、GATED は EBUSY、Halted なら HALT_PENDING）、`transfer_claim` の前で isoch の event を照合（Babble・Transaction Error で context を読む、skip 待ちの締め切り 40 ms）、isoch の完了の list（IRQ と command の poll の両方で drain、command_busy の間も）、cancel（endpoint 全体、X は core が publish、他は戻る前に完了、EALREADY・EBUSY・EIO）、worker（skip 待ちの Stop と TR Dequeue、halt の Reset Endpoint と dequeue_all、19 は context を読み直す、失敗は RETAINED、毎回 lock の下で探し直す、眠って待つ）、device の quiesce（isoch を DISCONNECTED で）、controller の drain（RETAINED も）、disable は空で NORMAL の時だけ、endpoint_reset は EINVAL、suspend は isoch が流れていれば GATED の前に EBUSY、wait_idle の失敗で endpoint を鳴らす（**BUG-289**）、worker は quiesce の DMA の宣言と reinit の前に止める | amd64・arm64 の kernel の build（rc 0、warning 0）、style-check の新しい指摘 0。実機・QEMU は未実施 |
+
+**2026-10-11 Q1 の決定（技術の選択、案 B）**: X12 (b) の QEMU の ktest は作らない。p007a1 の受け入れは host 試験と USB の回帰（T1-542、b69d89349 の tree）。isoch の実地は p007a2 の最初の 5330 の HCI Local Loopback（WS207 p003 の UAC1 も isoch の実地）、BUG-289 の bulk の再現も p007a2 の時に。
+
+（決定の前の記録）残り（p007a1 の中）: X12 (b) の QEMU の ktest（`-device usb-audio` の isoch OUT を流す小さな試験の driver と結果の読み出しの口。結果は console でなく SSH で読む口が要るので、作り方を Q1 と決める）、T1 の回帰（今の USB: keyboard・storage・network が QEMU で変わらず動くこと、event の経路に isoch の照合が入ったため）、5330 の確かめは p007a2（usb-bt の SCO）で。
+
+## p007a2 の設計の詰め（2026-10-11 P1、設計 2.1 の S1〜S9・2.1a・2.1b の上に。p007a1 の xHCI の isoch（e2f4edce7）を使う）
+
+### 5330 の読みの解読（p007a0、Q1 が 8c2ab68 の image で読んだ生の行は上の節）
+
+| 項目 | 値 | 意味と使い方 |
+| --- | --- | --- |
+| interface 1 の alternate | 0〜6、wMaxPacketSize 0・9・17・25・33・49・63、EP 0x03 OUT・0x83 IN、bInterval 1 | Linux の btusb の表と同じ形。FS の 1 frame（1 ms）ごとに 1 packet。S3 の規則がそのまま使える: CVSD 16 bit 1 本 = **alt 2（17 byte/ms）**、2 本 = alt 4（33）、3 本 = alt 5（49）、8 bit は本数（alt 1〜3）、transparent（mSBC）1 本 = **alt 6（63、有る）**。X7 の context: FS、Interval = 1 + 2 = 3（2^3 microframe = 1 ms）、Max ESIT = packet |
+| Read Buffer Size の SCO | length 96、count 6 | controller が受ける SCO の data は 1 packet 96 byte まで、6 個まで。CVSD 16 bit・alt 2 の SCO の packet は Linux と同じく **data 48 byte（header 3 と合わせ 51 = isoch の 3 packet）**、6 個は 18 ms 分 → S5 の送りの queue（約 40 ms）は controller の側の 6 個と別、kernel の queue の上限は 12 packet（約 36 ms） |
+| supported commands octet 1 | 0xff | Accept Connection Request（bit 0）・Change Connection Packet Type（bit 6）など全部 |
+| octet 13 | 0x0f | AFH の channel assessment の command など（SCO には関わらない） |
+| octet 14 | 0xe8 | Read Local Version（bit 3）・Features（5）・Extended Features（6）・**Read Buffer Size（7）** |
+| octet 16 | 0x3f | **Read・Write Loopback Mode（bit 0・1）**、Enable Device Under Test、**Setup・Accept・Reject Synchronous Connection（bit 3・4・5）** |
+| octet 29 | 0xb8 | **Enhanced Setup・Enhanced Accept Synchronous Connection（bit 3・4）、Read Local Supported Codecs（bit 5）**、Set External Frame Configuration（bit 7） |
+
+結論: AX211 は HCI Local Loopback（Write Loopback Mode）と SCO・eSCO の確立と Read Local Supported Codecs を持つ。SCO が HCI（USB の isoch）を通るかは、まだ Read Local Supported Codecs と実際の loopback で確かめる（下の L1・L2）。
+
+### A: usb-bt の interface 1 と SCO の thread
+
+| ID | 決め |
+| --- | --- |
+| A1 | attach で interface 0 の次の interface（同じ E0/01/01、isoch の endpoint だけ）を `drv_usb_interface_claim(interface0, interface1)` で取る（alternate 0 のまま、何も流さない）。取れなければ SCO 無し（`bt_info.flags` に `BT_INFO_SCO` を立てない、`BT_IOC_SET_SCO` は ENOTSUP）。detach で release |
+| A2 | **SCO の thread**（`usb_bt_sco`、controller ごと、優先度 4）は `BT_IOC_SET_SCO` の本数 1 以上で作り、0 本・reset・detach・close で止めて join する。isoch の URB の callback は thread を起こすだけ（usb.h の契約）。thread は眠って待つ（`sched_sleep` の 1 tick 以上、他の thread の持ち物を `sched_yield` で回って待たない: 2.1b B-P1） |
+| A3 | IN: **3 本 × 8 packet**（packet の大きさ = alt の wMaxPacketSize、URB の buffer は reservation で 64 KiB を跨がない）。完了ごとに packet の結果（OK・SHORT は actual の byte、MISSED・ERROR は 0 byte で「途切れ」）を組み立て直しへ渡し、同じ URB をすぐ出し直す |
+| A4 | OUT: **4 本 × 4 packet**（p007a1 の X11・2.1b）。送りの queue の SCO の packet の bytes を wMaxPacketSize ずつに切って packet に詰める（Linux の btusb と同じく、SCO の packet は isoch の packet の境と無関係に続く byte の流れ）。queue が空なら出さない（xHCI は Underrun を数えるだけ、2.1a）。data が来たら SIA で始まる |
+| A5 | 組み立て直し（S6）: IN の byte の流れから `handle(12 bit)+flags 2 byte、length 1 byte、data` を組む。handle が SET_SCO の物で length が SET_SCO の packet の長さと合う所でだけ同期、途切れ（MISSED・ERROR・SHORT の後）で組み立て中を捨て、次の packet の頭で同期し直す（`sco_dropped` を数える）。組めた packet は bt-hci の SCO の ring へ |
+| A6 | SET_INTERFACE（alternate の切替）は SCO の thread を止め、interface 1 の URB を全部 cancel・drain（在中 0）してから（S8 の前提）。EP0 が HCI command で塞がっていたら（`device_control_try_lock` の EBUSY）5 ms ごとに 50 ms まで待ち直す（S7）。SET_INTERFACE の timeout で device が隔離されたら（ENODEV）controller を withdraw（2.1a S8、回復は USB の core の計画外の依存） |
+| A7 | reset（BT_IOC_RESET）・detach・close: interface 0 の前に SCO の thread を止め、interface 1 の URB を cancel・drain、alternate 0 へ、送りの queue と受けの ring を捨てる。reset の後は SCO 0 本（bluetoothd が張り直す） |
+
+### B: UAPI と bt-hci の class（Q9 の形、2.1 の S2・S5 と 2.1a の差分）
+
+| ID | 決め |
+| --- | --- |
+| B1 | `include/uapi/bluetooth.h`: `BT_PACKET_SCO` を有効に、`BT_INFO_SCO` 0x0002、`BT_IOC_SET_SCO` = `_IOWR('b', 5, struct bt_sco)`（32 byte、2.1 の S2 と 2.1a の検査）、`BT_SCO_DATA_MAX` 255、`bt_stats.reserved[4]` を `sco_in`・`sco_out`・`sco_dropped`・`sco_out_queued` に（使い切り、記録済み）。冒頭の契約の文を S5 のとおり書き直す |
+| B2 | bt-hci の class に 3 つ目の ring（SCO の受け、8 KiB ≒ CVSD 16 bit で約 250 ms、**満ちたら古い物を捨てて数える**: event・ACL の ring は今どおり捨てない）。read は event・ACL・SCO を通しの番号（今の sequence）で届いた順に |
+| B3 | 書き: SCO の packet の write は `op_lock` を取らず、transport の新しい op `sco_send(context, packet, length)`（spinlock の下で送りの queue に積むだけ、満ちたら EAGAIN、流していない時 ENOTCONN、O_NONBLOCK に関係なく眠らない）。`BT_IOC_SET_SCO` は transport の新しい op `sco_set(context, const struct bt_sco *, struct bt_sco *answer)`（眠ってよい、session の thread から） |
+| B4 | kernel の内部の API の追加だけ（`drv_bt_hci_ops` に 2 つ、`drv_bt_hci_sco_input()`）。HAL は変えない。loopback の controller（`CONFIG_BT_TEST_LOOPBACK`）は SCO の op を持たない（SET_SCO は ENOTSUP）→ UAPI の host・QEMU 試験は ENOTSUP の道と、bt-hci の SCO の ring の pure の試験（`bt-hci-proto.c` の ring に drop-oldest の push を足し、host 試験） |
+
+### L: 5330 の確かめ（T1、Q1 経由）
+
+| ID | 手順 | 合否 |
+| --- | --- | --- |
+| L1 | p007a2 の image で bluetoothd の起動の log に Read Local Supported Codecs（v1）の答えを 1 行足す（codec の id の並び: CVSD 0x02・transparent 0x03・mSBC 0x05 が HCI の transport に有るか）。bluetoothd を止めずに読める | CVSD が有る（無ければ AX211 の SCO は HCI を通らない見込み → p007b1 に入らず Q1 へ） |
+| L2 | **HCI Local Loopback**（新しい道具 `userland/tests/bt-sco-loopback`）: **bluetoothd を止めて**（`/dev/bluetooth0` は open が 1 つだけ。止める・戻すは Q1 経由でユーザーの許可: 5330 のスマホとの接続が数分切れる）、Reset → Read Buffer Size → Write Loopback Mode(1)（controller が ACL 1 本と SCO の Connection Complete を返す）→ その SCO の handle で `BT_IOC_SET_SCO`（CVSD 16 bit、Voice Setting 0x0060、alt 2）→ 30 秒、20 ms ごとに番号入りの SCO の packet（data 48 byte）を書き、返ってくる物を読む → Write Loopback Mode(0) → Reset → 道具が終わり、bluetoothd を戻す。結果は道具の標準出力（送った数・返った数・順・欠け・遅れの中央値と最大、`bt_stats` の sco_*）を SSH で読む（console の log で判定しない） | 返り 99% 以上、順の乱れ 0、遅れの最大 100 ms 以下、`sco_dropped` は返りの欠けと同じ数。xHCI の isoch の初めての実地（p007a1 の受け入れの続き） |
+| L3 | 同じ道具で transparent（alt 6、Voice Setting 0x0063）を 10 秒（mSBC の前の確かめ） | 返り 99% 以上 |
+
+### BUG-289 の bulk の再現（T1、QEMU、p007a1 の直しの確かめ）
+
+`plan/ws052/tests/config-amd64-sleep.mk` の guest（q35、USB の network の adapter が xHCI の上）に `-device usb-storage` を足し、guest の中で USB の storage へ大きな file を書き続け（`dd` を background で 60 秒）、その間に `sleepctl devices` を流す。直す前: wait_idle が 2 秒で EBUSY（`sleep result=16`）になった後、GATED の間に積まれた bulk OUT の TD が鳴らされず dd が止まる（書けた byte が増えない、SSH は USB の network なので同じく止まりうる）。直した後（e2f4edce7）: `sleep result=16` の後も dd が進み、終わって sync・読み戻しの checksum が合う。合否は SSH で読む dd の進みと checksum（console の log は読まない）。
+
+### 見積もりと順
+
+p007a2 は 8 LW のまま（A1〜A7・B1〜B4・道具と試験）。順: B（UAPI と class、host 試験）→ A（usb-bt）→ L1 の image（T1）→ L2・L3（ユーザーの許可の後）。BUG-289 の再現は p007a1 の T1-542 の後に T1 へ。
+
+## p007a2 の実装の進み（2026-10-11 P1）
+
+| 段 | 内容 | 確かめ |
+| --- | --- | --- |
+| B | UAPI（`BT_INFO_SCO`、`struct bt_sco` 32 byte、`BT_IOC_SET_SCO`、`bt_stats` の sco_*、契約の文）、bt-hci の SCO の ring（8 KiB、古い物を捨てる）と通しの番号の read、SCO の write（op_lock 無し、SCO の無い controller は今どおり EINVAL）、SET_SCO（bootloader は EBUSY）、close で止める、proto の部品（`bt_hci_check_sco`、push_drop、links の検査と alternate、組み立て直し、FIFO） | `sh plan/ws197/tests/run-bt-sco-proto-test.sh` all PASS、WS143 の `bt-hci-proto-host-test.sh` all passed（SCO を拒む check_write は不変）、kernel の build（amd64・arm64、warning 0） |
+| A | usb-bt: interface 1 の claim（`BT_INFO_SCO`）、`sco_set`（止める → alternate を選ぶ（EP0 の EBUSY は 5 ms ごとに 50 ms）→ 始める、IN と OUT の packet の大きさが違えば EINVAL）、`sco_send`（眠らない、12 packet まで）、SCO の thread（優先度 4、IN 3×8・OUT 4×4、OUT は 4 packet 分たまってから、完了は起こすだけ、retire は 1 ms ずつ眠って待つ: 新しい `drv_usb_urb_retired`）、reset・detach の前に止める、detach で interface 1 を release | kernel の build（amd64・arm64、warning 0）、style-check の新しい指摘 0。実機は L2 |
+| L1 | bluetoothd が起動の時に Read Local Supported Codecs（v2 があれば v2、無ければ v1）を読み `BLUETOOTHD CODECS version= standard= vendor= ids id/transports …` を 1 行 | bluetoothd の build（warning 0）、`bt-phone-host-test.sh` PASS |
+| L2・L3 | 道具 `userland/tests/bt-sco-loopback`（Reset → Read Buffer Size → Write Voice Setting → Write Loopback Mode(1) → SCO の Connection Complete → SET_SCO → 30 秒（`-T` は transparent）→ 止めて Loopback を切り Reset、`BTSCO …` の行と `BTSCO PASS`/`FAIL`）、image の config `plan/ws197/tests/config-amd64-sco.mk`（current-uat ＋ 道具） | build（warning 0）。5330 は新しい image の後 |
+
 ## 判断（Q1 経由でユーザーへ、推し付き）
 
 | ID | 問い | 推し |
@@ -292,3 +412,5 @@ usb-bt: USB Bluetooth controller: SCO interface 1 alternate 6 endpoints 0x03/63/
 ```
 
 解読は P1（次の世代）。
+
+- 2026-10-11: review-4（main、blocker 0、major 4）→ 設計 2.1b（RETAINED、GATED と doorbell・BUG-289、worker の生き死に、優先度の逆転、P1）。p007a1 に入る: TD の状態機械（pci-xhci-isoch.c）と host 試験を先に。
