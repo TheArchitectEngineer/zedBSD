@@ -1,4 +1,4 @@
-# libmedia: original AAC-LC and standard Vulkan Video H.264 decoding, SBC encoding and decoding (ws205-p002), container readers and a silent video engine.
+# libmedia: original AAC-LC and standard Vulkan Video H.264 decoding, SBC encoding and decoding (ws205-p002), AAC-LC encoding (ws205-p003), container readers and a silent video engine.
 # Optional software codecs and sound streams belong to applications; this library needs libc alone.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 LIBMEDIA_SOURCES := userland/desktop/libmedia/engine.c userland/desktop/libmedia/decoder.c \
@@ -9,7 +9,7 @@ LIBMEDIA_SOURCES := userland/desktop/libmedia/engine.c userland/desktop/libmedia
 	userland/desktop/libmedia/aac-huffman.c userland/desktop/libmedia/aac-codec.c \
 	userland/desktop/libmedia/aac-bands.c userland/desktop/libmedia/aac-frame.c \
 	userland/desktop/libmedia/aac-synth.c userland/desktop/libmedia/aac.c userland/desktop/libmedia/sound.c \
-	userland/desktop/libmedia/sbc.c \
+	userland/desktop/libmedia/sbc.c userland/desktop/libmedia/aac-encode.c \
 	userland/desktop/mediafile/mediafile.c userland/desktop/mediafile/mp4.c userland/desktop/mediafile/mkv.c \
 	userland/desktop/mediafile/ts.c userland/desktop/mediafile/ogg.c userland/desktop/mediafile/avi.c
 LIBMEDIA_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libmedia.so=$(BUILD)/dynamic/libmedia.so)

@@ -362,11 +362,18 @@ struct vulkan_instance_context {
 	struct vulkan_instance_context *next;
 };
 
-/* Separates global, instance, and device function lookup rules. */
+/*
+ * Separates global, instance, and device function lookup rules.
+ * VULKAN_ENTRY_PHYSICAL is a physical-device command of a device
+ * extension (vkGetPhysicalDeviceVideoCapabilitiesKHR): instance-level, but
+ * visible when a physical device supports its device extension, which no
+ * instance enables (ws202, T1-529).
+ */
 enum vulkan_entry_scope {
 	VULKAN_ENTRY_GLOBAL,
 	VULKAN_ENTRY_INSTANCE,
-	VULKAN_ENTRY_DEVICE
+	VULKAN_ENTRY_DEVICE,
+	VULKAN_ENTRY_PHYSICAL
 };
 
 /* Describes a callable name without advertising unimplemented capabilities. */

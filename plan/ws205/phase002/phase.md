@@ -20,4 +20,4 @@ Queue: q931（[P1 の lane](../../agents/P1/queue.md)）
 | `make … BUILD=build/ws157-q937 … dynamic/libmedia.so` | rc 0、warning 0、`media_sbc_*` 9 個を export |
 | `plan/tools/style-check.py` sbc.c・media-sbc.h | 0 |
 
-残り: `plan/ws205/tests/sbc-tool.c`（試験の道具）に規約の指摘 37（条件の中の呼び出し・段落の空行）、p011 の全文の見直しで直す。
+試験の道具の規約の指摘（37）は 2026-10-11 に直した（style-check 0）。

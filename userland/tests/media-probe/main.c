@@ -6,6 +6,7 @@
  */
 
 /* Native libmedia acceptance observes linear CPU pictures, never a vendor-specific GPU allocation or optional application codec. */
+#include "userland/desktop/libmedia/media.h"
 #include "userland/desktop/libmedia/media-private.h"
 #include "userland/desktop/libmedia/picture.h"
 #include "userland/base/common/sha256.h"
@@ -53,6 +54,7 @@ static int probe_complete(struct probe *probe);
 static void probe_sound(struct probe *probe, unsigned decoder);
 static void probe_rms(struct probe *probe);
 static uint64_t probe_now(void);
+static void probe_log(void *context, const char *line);
 
 /*
  * Print native display hashes or normalized stereo RMS, optionally checking a second simultaneous decoder and seek.
@@ -78,6 +80,9 @@ main(
 	int error;
 	int read;
 	int compared;
+
+	/* libmedia's diagnostics (why a device or a profile was refused) go to stderr for the tests to read. */
+	media_set_log(probe_log, NULL);
 
 	/* All options are bounded to this file's native acceptance; no software fallback can obscure a device refusal. */
 	memset(&probe, 0, sizeof(probe));
@@ -531,4 +536,15 @@ probe_now(void)
 	(void)clock_gettime(CLOCK_MONOTONIC, &now);
 	microseconds = (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
 	return microseconds;
+}
+
+/* Writes one libmedia diagnostic line to stderr. */
+static void
+probe_log(
+	void *context,
+	const char *line)
+{
+	/* The line, marked as the library's. */
+	(void)context;
+	fprintf(stderr, "media-probe: log %s\n", line);
 }

@@ -204,15 +204,8 @@ bcm2711_vulkan_native_draw_release(
 	if (!retired)
 		return EBUSY;
 
-	/* Lent snapshots get their use back now that the draw's DMA has retired. */
-	*draw = NULL;
-	for (index = 0; index < owned->texture_count; index++) {
-		/* Only lent entries hold a use; private pixels are among the owned storage. */
-		if (owned->textures[index].snapshot != NULL)
-			bcm2711_native_snapshot_put(owned->textures[index].snapshot);
-	}
-
 	/* Each mapped reference is consumed once; the space preserves failed unmaps without this CPU root. */
+	*draw = NULL;
 	first = 0;
 	for (index = 0; index < owned->count; index++) {
 		error = bcm2711_native_storage_release(owned->space, &owned->storage[index], true);
@@ -381,37 +374,12 @@ prepare_texture_image(
 	error = bcm2711_native_texture_size(image->width, image->height, &bytes);
 	if (error != 0)
 		return error;
-
 	/* Reuse only a snapshot within this pass, which contains no intervening image writes. */
-	entry = NULL;
 	pixels = find_texture(draw, image);
 	if (pixels == NULL) {
 		/* A new image consumes the same bounded owner slot and staging budget as before. */
 		if (draw->texture_count == BCM2711_VULKAN_PIPELINE_SETS * BCM2711_VULKAN_LAYOUT_BINDINGS)
 			return ENOMEM;
-		entry = &draw->textures[draw->texture_count];
-
-		/* A source no process maps reuses its converted snapshot until a device or kernel write changes it. */
-		started = clock_ticks();
-		error = bcm2711_native_snapshot_get(
-			draw->space,
-			source_view->buffer,
-			address - source_view->address,
-			image->width,
-			image->height,
-			image->pitch,
-			cpu,
-			(size_t)image->bytes,
-			&entry->snapshot);
-		draw->copy_ticks += clock_ticks() - started;
-		if (error != 0 && error != ENOTSUP)
-			return error;
-		if (error == 0)
-			pixels = entry->snapshot->pixels;
-	}
-
-	/* A private conversion serves a source that may change behind the device's back. */
-	if (pixels == NULL) {
 		error = allocate_storage(draw, bytes, available, NULL, &pixels);
 		if (error != 0)
 			return error;
@@ -421,6 +389,7 @@ prepare_texture_image(
 		 * runs; the CPU reads the uncached raster only when it cannot.
 		 */
 		started = clock_ticks();
+		entry = &draw->textures[draw->texture_count];
 		error = ENOTSUP;
 		if (draw->space->native->hardware.tfu_uif_ready)
 			error = prepare_conversion(image, address, pixels, bytes, &entry->tfu);
@@ -437,10 +406,8 @@ prepare_texture_image(
 		error = bcm2711_native_storage_clean(pixels);
 		if (error != 0)
 			return error;
-	}
 
-	/* A newly converted or lent texture becomes this draw's entry for later draws of the pass, published only when complete. */
-	if (entry != NULL) {
+		/* Publish the cache entry only after the original draw owns a complete cleaned snapshot or its conversion. */
 		entry->image = image;
 		entry->pixels = pixels;
 		draw->texture_count++;

@@ -21,8 +21,10 @@
  * once a frame and keeps asking for frames while the grid glides or
  * thumbnails in sight are still being made by its thread.
  *
- * The list is the library's metadata (kl_system_media_list), read once
- * when the picker opens; the picker never reads the library's database.
+ * The list is the library's metadata, asked for once when the picker
+ * opens without waiting for it (kl_system_media_list_begin, ws157-p014):
+ * the window shows "Loading…" and polls the answer at each frame until it
+ * comes; the picker never reads the library's database.
  * The answer is told through the listener from a wl_display.sync callback
  * after the window is gone, so that the application may destroy the picker
  * from its callback.
@@ -86,9 +88,15 @@ struct kl_media_picker {
 	struct wl_callback *telling;
 	const struct kl_media_picker_listener *listener;
 	void *data;
+
+	/* The system object the list is asked of until it comes (NULL after), and the request. */
+	struct kl_system *system;
+	uint32_t list_request;
 };
 
-static int picker_list(struct kl_media_picker *picker);
+static void picker_list_begin(struct kl_media_picker *picker);
+static void picker_list_poll(struct kl_media_picker *picker);
+static void picker_list_end(struct kl_media_picker *picker);
 static void picker_woken(void *data);
 static void picker_sheet(struct kl_media_picker *picker);
 static void picker_glass(struct kl_media_picker *picker);
@@ -155,21 +163,8 @@ kl_media_picker_open(
 		return NULL;
 	}
 
-	/* The library's items, through the compositor; an unavailable library is refused. */
-	error = picker_list(picker);
-	if (error != 0) {
-		kl_media_picker_destroy(picker);
-		errno = error;
-		return NULL;
-	}
-
-	/* The thread that makes the thumbnails, waiting until items show. */
-	error = keiui_picker_start(&picker->model);
-	if (error != 0) {
-		kl_media_picker_destroy(picker);
-		errno = error;
-		return NULL;
-	}
+	/* The library's items asked for through the compositor; the window shows "Loading…" until they come. */
+	picker_list_begin(picker);
 
 	/* The fonts, the application's or the system's, and the application's name. */
 	font = PICKER_FONT;
@@ -245,7 +240,8 @@ kl_media_picker_destroy(
 	if (picker == NULL)
 		return;
 
-	/* The window, and the answer not told any more. */
+	/* The list not waited for any more, the window, and the answer not told any more. */
+	picker_list_end(picker);
 	picker_window_gone(picker);
 	if (picker->telling != NULL)
 		wl_callback_destroy(picker->telling);
@@ -264,34 +260,112 @@ kl_media_picker_destroy(
 	free(picker);
 }
 
-/* Reads the library's metadata through a connection of its own to the compositor's system extension. */
-static int
-picker_list(
+/*
+ * Asks for the library's metadata through a system object of its own on
+ * the application's connection, without waiting; a library that cannot be
+ * asked shows as unavailable.
+ */
+static void
+picker_list_begin(
 	struct kl_media_picker *picker)
 {
-	struct kl_system *system;
-	int descriptor;
 	int error;
 
-	/* The compositor's system extension; without it there is no library. */
-	system = kl_system_open(picker->display);
-	if (system == NULL)
-		return ENOTSUP;
+	/* Loading until the answer comes. */
+	picker->model.loading = 1;
 
-	/* The snapshot of the metadata, never the photos' bytes. */
-	error = kl_system_media_list(system, &descriptor);
-	if (error == 0) {
-		error = keiui_picker_load(&picker->model, descriptor);
-		(void)close(descriptor);
+	/* The compositor's system extension; without it there is no library. */
+	picker->system = kl_system_open(picker->display);
+	if (picker->system == NULL) {
+		picker->model.loading = 0;
+		picker->model.unavailable = 1;
+		return;
 	}
 
-	/* The snapshot no longer needs the system's connection. */
-	kl_system_close(system);
-	if (error != 0)
-		return error;
+	/* The snapshot of the metadata asked for, never the photos' bytes. */
+	error = kl_system_media_list_begin(picker->system, &picker->list_request);
+	if (error != 0) {
+		picker_list_end(picker);
+		picker->model.loading = 0;
+		picker->model.unavailable = 1;
+	}
+}
 
-	/* Succeeded: the items are listed. */
-	return 0;
+/*
+ * Takes the list's answer when it came: the items loaded and their
+ * thumbnails' thread started, or the library shown unavailable.
+ */
+static void
+picker_list_poll(
+	struct kl_media_picker *picker)
+{
+	uint32_t request;
+	unsigned changed;
+	int descriptor;
+	int status;
+	int error;
+	int taken;
+
+	/* Nothing asked for any more. */
+	if (picker->system == NULL)
+		return;
+
+	/* The compositor's answers; a compositor gone sends none. */
+	changed = 0U;
+	status = kl_system_dispatch(picker->system, &changed);
+	if (status != 0) {
+		picker_list_end(picker);
+		picker->model.loading = 0;
+		picker->model.unavailable = 1;
+		return;
+	}
+
+	/* The list's answer, any other dropped. */
+	for (;;) {
+		taken = kl_system_media_take(picker->system, &request, &error, &descriptor);
+		if (!taken)
+			return;
+		if (request != picker->list_request) {
+			if (descriptor >= 0)
+				(void)close(descriptor);
+			continue;
+		}
+
+		/* The items, then the thread that makes their thumbnails (waiting until items show). */
+		if (error == 0) {
+			error = keiui_picker_load(&picker->model, descriptor);
+			(void)close(descriptor);
+		}
+
+		/* The thread, once the items are there. */
+		if (error == 0)
+			error = keiui_picker_start(&picker->model);
+
+		/* Loaded, or unavailable; the system object is no longer needed. */
+		picker->list_request = 0U;
+		picker_list_end(picker);
+		picker->model.loading = 0;
+		if (error != 0)
+			picker->model.unavailable = 1;
+		return;
+	}
+}
+
+/* Gives up the list's request (its answer is dropped) and closes the system object. */
+static void
+picker_list_end(
+	struct kl_media_picker *picker)
+{
+	/* Nothing open. */
+	if (picker->system == NULL)
+		return;
+
+	/* The request, then the object. */
+	if (picker->list_request != 0U)
+		kl_system_media_cancel(picker->system, picker->list_request);
+	kl_system_close(picker->system);
+	picker->system = NULL;
+	picker->list_request = 0U;
 }
 
 /* The window's input is queued, its configure came or a buffer came back: carries out the input and draws. */
@@ -349,6 +423,9 @@ picker_draw(
 		if (status != 0)
 			return;
 	}
+
+	/* The library's list, when it came. */
+	picker_list_poll(picker);
 
 	/* The frame and its input. */
 	again = keiui_picker_frame(&picker->model, picker->ui, &picker->style, (int)picker->width, (int)picker->height, kl_clock_us());

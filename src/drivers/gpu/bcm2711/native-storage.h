@@ -26,29 +26,6 @@ struct bcm2711_native_storage {
 	uint64_t clean_ticks;
 };
 
-/* The registered renderer keeps up to this many bytes of converted texture snapshots. */
-#define BCM2711_NATIVE_SNAPSHOT_BYTES (128ULL * 1024U * 1024U)
-
-/*
- * One converted UIF texture of one raster image interval, owned by the space.
- *
- * users counts the draws of the current pass that sample it; a snapshot with
- * users can be neither rewritten nor evicted.  The buffer reference keeps the
- * source's generation and flags readable for the snapshot's lifetime.
- */
-struct bcm2711_native_snapshot {
-	struct bcm2711_native_snapshot *next;
-	struct bcm2711_buffer *buffer;
-	uint64_t offset;
-	uint32_t width;
-	uint32_t height;
-	uint32_t pitch;
-	uint64_t generation;
-	struct bcm2711_native_storage *pixels;
-	uint32_t users;
-	uint64_t used;
-};
-
 /* The controller mutex serializes every operation with native execution and recovery. */
 int bcm2711_native_storage_create(struct bcm2711_v3d_space *space, uint64_t bytes, struct bcm2711_native_storage **storage);
 int bcm2711_native_storage_clean(struct bcm2711_native_storage *storage);
@@ -57,11 +34,7 @@ int bcm2711_native_program_upload(struct bcm2711_v3d_space *space, const struct 
 /* retired=false preserves the whole owner; true consumes and nulls it even if final translation flush fails into the space quarantine. */
 int bcm2711_native_storage_release(struct bcm2711_v3d_space *space, struct bcm2711_native_storage **storage, bool retired);
 
-/* Unmaps every cached idle upload view and every unused snapshot; recovery calls it before reclaiming translations. */
+/* Unmaps every cached idle upload view; recovery calls it before reclaiming translations. */
 int bcm2711_native_storage_drain(struct bcm2711_v3d_space *space);
-
-/* ENOTSUP means the source may change without a generation step, and the caller converts a private copy. */
-int bcm2711_native_snapshot_get(struct bcm2711_v3d_space *space, struct bcm2711_buffer *buffer, uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch, const void *raster, size_t raster_bytes, struct bcm2711_native_snapshot **result);
-void bcm2711_native_snapshot_put(struct bcm2711_native_snapshot *snapshot);
 
 #endif

@@ -262,8 +262,12 @@ media_vkvideo_runtime_open(
 	/* The loader is optional; native media reports unavailable video without loading FFmpeg. */
 	*runtime = NULL;
 	pthread_once(&vkvideo_loader_once, vkvideo_loader);
-	if (vkvideo_library == NULL)
+	if (vkvideo_library == NULL) {
+		media_log("Vulkan Video: no Vulkan library (libvulkan.so.1, libvulkan.so)");
 		return MEDIA_PROBLEM_DEVICE;
+	}
+
+	/* The context, sized for the sequence. */
 	video = calloc(1U, sizeof(*video));
 	if (video == NULL)
 		return ENOMEM;
@@ -1228,8 +1232,12 @@ vkvideo_dispatch(
 			address = video->fn.vkGetInstanceProcAddr(video->instance, vkvideo_symbols[index].name);
 		else
 			address = video->fn.vkGetDeviceProcAddr(video->device, vkvideo_symbols[index].name);
-		if (address == NULL)
+		if (address == NULL) {
+			media_log("Vulkan Video: no %s", vkvideo_symbols[index].name);
 			missing = 1;
+		}
+
+		/* The entry point kept (NULL when missing). */
 		memcpy((uint8_t *)&video->fn + vkvideo_symbols[index].offset, &address, sizeof(address));
 	}
 
@@ -1258,15 +1266,23 @@ vkvideo_instance(
 	/* Obtain the global creation operation before an instance exists. */
 	if (video->fn.vkGetInstanceProcAddr == NULL) {
 		symbol = dlsym(vkvideo_library, "vkGetInstanceProcAddr");
-		if (symbol == NULL)
+		if (symbol == NULL) {
+			media_log("Vulkan Video: no vkGetInstanceProcAddr");
 			return ENODEV;
+		}
+
+		/* The entry point kept. */
 		memcpy(&video->fn.vkGetInstanceProcAddr, &symbol, sizeof(symbol));
 	}
 
 	/* Resolve instance creation from the process-wide Vulkan loader. */
 	address = video->fn.vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkCreateInstance");
-	if (address == NULL)
+	if (address == NULL) {
+		media_log("Vulkan Video: no vkCreateInstance");
 		return ENODEV;
+	}
+
+	/* Instance creation, version 1.0 with the properties-two extension. */
 	memcpy(&video->fn.vkCreateInstance, &address, sizeof(address));
 	memset(&application, 0, sizeof(application));
 	application.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -1308,8 +1324,12 @@ vkvideo_family(
 	/* Query the count first so a truncated fixed array can never be indexed past its storage. */
 	count = 0U;
 	video->fn.vkGetPhysicalDeviceQueueFamilyProperties2KHR(video->physical, &count, NULL);
-	if (count == 0U || count > VKVIDEO_FAMILIES)
+	if (count == 0U || count > VKVIDEO_FAMILIES) {
+		media_log("Vulkan Video: %u queue families", count);
 		return ENODEV;
+	}
+
+	/* The chains of every family. */
 	memset(families, 0, sizeof(families));
 	memset(properties, 0, sizeof(properties));
 	memset(status, 0, sizeof(status));
@@ -1326,6 +1346,9 @@ vkvideo_family(
 	transfer = -1;
 	decoder = -1;
 	for (index = 0U; index < count; index++) {
+		/* Each family's flags and decode operations, for the log. */
+		media_log("Vulkan Video: queue family %u flags 0x%x operations 0x%x", index, (unsigned)families[index].queueFamilyProperties.queueFlags,
+		    (unsigned)properties[index].videoCodecOperations);
 		if ((families[index].queueFamilyProperties.queueFlags & (VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) != 0U)
 			transfer = (int)index;
 		if ((families[index].queueFamilyProperties.queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) == 0U)
@@ -1423,6 +1446,13 @@ vkvideo_capabilities(
 		return error;
 	}
 
+	/* The limits, for the log. */
+	media_log("Vulkan Video: extent %ux%u of %ux%u..%ux%u, level %u of %u, slots %u of %u, references %u of %u, flags 0x%x",
+	    video->extent.width, video->extent.height, video->capabilities.minCodedExtent.width, video->capabilities.minCodedExtent.height,
+	    video->capabilities.maxCodedExtent.width, video->capabilities.maxCodedExtent.height, (unsigned)video->level,
+	    (unsigned)video->h264_caps.maxLevelIdc, video->slots, video->capabilities.maxDpbSlots, video->max_references,
+	    video->capabilities.maxActiveReferencePictures, (unsigned)video->decode_caps.flags);
+
 	/* The sequence must fit both coded-extent limits and the advertised profile level. */
 	if (video->extent.width > video->capabilities.maxCodedExtent.width || video->extent.height > video->capabilities.maxCodedExtent.height)
 		return ENOTSUP;
@@ -1503,8 +1533,12 @@ vkvideo_device(
 	}
 
 	/* Empty or excessive enumeration cannot supply this runtime's bounded device selection. */
-	if (count == 0U || count > 32U)
+	if (count == 0U || count > 32U) {
+		media_log("Vulkan Video: %u physical devices", count);
 		return ENODEV;
+	}
+
+	/* The devices. */
 	result = video->fn.vkEnumeratePhysicalDevices(video->instance, &count, devices);
 	if (result != VK_SUCCESS) {
 		error = vkvideo_failed(result, "vkEnumeratePhysicalDevices");
@@ -1515,8 +1549,12 @@ vkvideo_device(
 	for (index = 0U; index < count; index++) {
 		video->physical = devices[index];
 		error = vkvideo_family(video);
-		if (error != 0)
+		if (error != 0) {
+			media_log("Vulkan Video: device %u has no H.264 decode and transfer queue families", index);
 			continue;
+		}
+
+		/* The device's extensions. */
 		extension_count = 0U;
 		result = video->fn.vkEnumerateDeviceExtensionProperties(video->physical, NULL, &extension_count, NULL);
 		if (result != VK_SUCCESS) {
@@ -1553,11 +1591,19 @@ vkvideo_device(
 
 		/* Release temporary extension enumeration before deciding whether this device is admitted. */
 		free(available);
-		if (matched != 4U)
+		if (matched != 4U) {
+			media_log("Vulkan Video: device %u has %u of the 4 video extensions", index, matched);
 			continue;
+		}
+
+		/* The profile's capabilities on this device. */
 		error = vkvideo_capabilities(video);
-		if (error == ENOTSUP || error == ENODEV)
+		if (error == ENOTSUP || error == ENODEV) {
+			media_log("Vulkan Video: device %u refuses the profile (%d)", index, error);
 			continue;
+		}
+
+		/* Another failure ends the search. */
 		if (error != 0)
 			return error;
 		memset(&features, 0, sizeof(features));
@@ -1566,8 +1612,12 @@ vkvideo_device(
 		features.pNext = &synchronization;
 		synchronization.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
 		video->fn.vkGetPhysicalDeviceFeatures2KHR(video->physical, &features);
-		if (!synchronization.synchronization2)
+		if (!synchronization.synchronization2) {
+			media_log("Vulkan Video: device %u lacks synchronization2", index);
 			continue;
+		}
+
+		/* The decode and transfer queues of the logical device. */
 		priority = 1.0f;
 		memset(queue, 0, sizeof(queue));
 		queue[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -1588,8 +1638,12 @@ vkvideo_device(
 		result = video->fn.vkCreateDevice(video->physical, &info, NULL, &video->device);
 		if (result == VK_ERROR_OUT_OF_HOST_MEMORY || result == VK_ERROR_OUT_OF_DEVICE_MEMORY)
 			return ENOMEM;
-		if (result != VK_SUCCESS)
+		if (result != VK_SUCCESS) {
+			media_log("Vulkan Video: device %u vkCreateDevice failed (%d)", index, (int)result);
 			continue;
+		}
+
+		/* The device's entry points, memory and queues. */
 		error = vkvideo_dispatch(video, 0);
 		if (error != 0)
 			return error;

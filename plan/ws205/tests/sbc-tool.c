@@ -54,14 +54,34 @@ main(
 	char **argv)
 {
 	struct media_sbc_config config;
+	const char *command;
 	unsigned mode;
+	unsigned channels;
+	unsigned asked;
 	char *snr;
+	int same;
 	int error;
+	int status;
 
-	/* The command. */
-	if (argc == 6 && strcmp(argv[1], "signal") == 0)
-		return tool_signal((unsigned)atoi(argv[2]), (unsigned)atoi(argv[3]), atof(argv[4]), argv[5]);
-	if (argc == 10 && strcmp(argv[1], "encode") == 0) {
+	/* A command named. */
+	if (argc < 2) {
+		fprintf(stderr, "usage: sbc-tool signal|encode|encode-msbc|decode|compare|self ...\n");
+		return 2;
+	}
+
+	/* Its name. */
+	command = argv[1];
+
+	/* A test signal. */
+	same = strcmp(command, "signal");
+	if (same == 0 && argc == 6) {
+		status = tool_signal((unsigned)atoi(argv[2]), (unsigned)atoi(argv[3]), atof(argv[4]), argv[5]);
+		return status;
+	}
+
+	/* An encoding of given settings; "-snr" after the mode for the SNR allocation. */
+	same = strcmp(command, "encode");
+	if (same == 0 && argc == 10) {
 		memset(&config, 0, sizeof(config));
 		config.allocation = MEDIA_SBC_LOUDNESS;
 		snr = strstr(argv[4], "-snr");
@@ -69,6 +89,8 @@ main(
 			config.allocation = MEDIA_SBC_SNR;
 			*snr = '\0';
 		}
+
+		/* The mode, then the rest of the settings. */
 		error = tool_mode(argv[4], &mode);
 		if (error != 0)
 			return 2;
@@ -77,20 +99,44 @@ main(
 		config.subbands = (unsigned)atoi(argv[5]);
 		config.blocks = (unsigned)atoi(argv[6]);
 		config.bitpool = (unsigned)atoi(argv[7]);
-		if ((unsigned)atoi(argv[3]) != media_sbc_channels(&config))
+
+		/* The channels the mode has. */
+		channels = media_sbc_channels(&config);
+		asked = (unsigned)atoi(argv[3]);
+		if (asked != channels)
 			return 2;
-		return tool_encode(&config, argv[8], argv[9]);
+		status = tool_encode(&config, argv[8], argv[9]);
+		return status;
 	}
-	if (argc == 4 && strcmp(argv[1], "encode-msbc") == 0) {
+
+	/* An mSBC encoding. */
+	same = strcmp(command, "encode-msbc");
+	if (same == 0 && argc == 4) {
 		media_sbc_msbc_config(&config);
-		return tool_encode(&config, argv[2], argv[3]);
+		status = tool_encode(&config, argv[2], argv[3]);
+		return status;
 	}
-	if (argc == 4 && strcmp(argv[1], "decode") == 0)
-		return tool_decode(argv[2], argv[3]);
-	if (argc == 6 && strcmp(argv[1], "compare") == 0)
-		return tool_compare(argv[2], argv[3], (unsigned)atoi(argv[4]), atof(argv[5]));
-	if (argc == 2 && strcmp(argv[1], "self") == 0)
-		return tool_self();
+
+	/* A decoding. */
+	same = strcmp(command, "decode");
+	if (same == 0 && argc == 4) {
+		status = tool_decode(argv[2], argv[3]);
+		return status;
+	}
+
+	/* A comparison. */
+	same = strcmp(command, "compare");
+	if (same == 0 && argc == 6) {
+		status = tool_compare(argv[2], argv[3], (unsigned)atoi(argv[4]), atof(argv[5]));
+		return status;
+	}
+
+	/* The checks without FFmpeg. */
+	same = strcmp(command, "self");
+	if (same == 0 && argc == 2) {
+		status = tool_self();
+		return status;
+	}
 
 	/* Anything else. */
 	fprintf(stderr, "usage: sbc-tool signal|encode|encode-msbc|decode|compare|self ...\n");
@@ -168,6 +214,8 @@ tool_encode(
 		printf("FAIL encode read: %s\n", strerror(error));
 		return 1;
 	}
+
+	/* The encoder. */
 	error = media_sbc_encoder_create(config, &codec);
 	if (error != 0) {
 		printf("FAIL encoder: %s\n", strerror(error));
@@ -187,6 +235,8 @@ tool_encode(
 			break;
 		written += length;
 	}
+
+	/* The encoder and the input are no longer needed. */
 	media_sbc_destroy(codec);
 	free(data);
 	if (out == NULL || error != 0) {
@@ -236,6 +286,8 @@ tool_decode(
 		printf("FAIL decode read: %s\n", strerror(error));
 		return 1;
 	}
+
+	/* The decoder, and room for the whole output. */
 	error = media_sbc_decoder_create(&codec);
 	room = size * 64U + 1U;
 	pcm = malloc(room * sizeof(int16_t));
@@ -261,18 +313,26 @@ tool_decode(
 			offset += used;
 			continue;
 		}
+
+		/* Another failure ends the reading. */
 		if (error != 0) {
 			printf("FAIL decode: %s\n", strerror(error));
 			break;
 		}
+
+		/* The frame's samples kept. */
 		channels = media_sbc_channels(&config);
 		if (samples + count * channels <= room) {
 			memcpy(pcm + samples, frame, count * channels * sizeof(int16_t));
 			samples += count * channels;
 		}
+
+		/* Counted. */
 		frames++;
 		offset += used;
 	}
+
+	/* The decoder and the input are no longer needed. */
 	media_sbc_destroy(codec);
 	free(data);
 
@@ -328,6 +388,8 @@ tool_compare(
 		printf("FAIL compare read\n");
 		return 1;
 	}
+
+	/* The signals, and their frames. */
 	x = (const int16_t *)(const void *)a;
 	y = (const int16_t *)(const void *)b;
 	a_frames = a_size / (channels * sizeof(int16_t));
@@ -351,6 +413,8 @@ tool_compare(
 				noise += error_value * error_value;
 			}
 		}
+
+		/* A delay without overlap says nothing. */
 		if (signal == 0.0)
 			continue;
 		snr = 200.0;
@@ -361,6 +425,8 @@ tool_compare(
 			best_delay = delay;
 		}
 	}
+
+	/* The files are no longer needed. */
 	free(a);
 	free(b);
 
@@ -369,6 +435,8 @@ tool_compare(
 		printf("FAIL compare snr=%.1f delay=%ld least=%.1f\n", best, best_delay, least);
 		return 1;
 	}
+
+	/* The best fit. */
 	printf("compare snr=%.1f delay=%ld\n", best, best_delay);
 	return 0;
 }
@@ -392,12 +460,15 @@ tool_self(
 	unsigned index;
 	unsigned round;
 	double peak;
+	double magnitude;
+	size_t bytes;
 	int error;
 
 	/* Frame lengths of known settings: mSBC 57; 44.1 kHz joint 8/16 bitpool 53 is 119; mono 4/8 bitpool 16 is 22. */
 	failures = 0U;
 	media_sbc_msbc_config(&config);
-	if (media_sbc_frame_bytes(&config) != MEDIA_SBC_MSBC_BYTES)
+	bytes = media_sbc_frame_bytes(&config);
+	if (bytes != MEDIA_SBC_MSBC_BYTES)
 		failures++;
 	memset(&config, 0, sizeof(config));
 	config.rate = 44100U;
@@ -405,15 +476,23 @@ tool_self(
 	config.channel_mode = MEDIA_SBC_JOINT;
 	config.subbands = 8U;
 	config.bitpool = 53U;
-	if (media_sbc_frame_bytes(&config) != 119U)
+	bytes = media_sbc_frame_bytes(&config);
+	if (bytes != 119U)
 		failures++;
 	config.channel_mode = MEDIA_SBC_MONO;
 	config.subbands = 4U;
 	config.blocks = 8U;
 	config.bitpool = 16U;
-	if (media_sbc_frame_bytes(&config) != 22U)
+	bytes = media_sbc_frame_bytes(&config);
+	if (bytes != 22U)
 		failures++;
-	printf("%s frame lengths\n", failures == 0U ? "ok" : "FAIL");
+
+	/* Their verdict. */
+	if (failures == 0U) {
+		printf("ok frame lengths\n");
+	} else {
+		printf("FAIL frame lengths\n");
+	}
 
 	/* Settings SBC does not have. */
 	config.bitpool = 65U;
@@ -437,12 +516,16 @@ tool_self(
 		printf("FAIL codecs: %s\n", strerror(error));
 		return 1;
 	}
+
+	/* The frames, the first ten left to the filters' delay. */
 	peak = 0.0;
 	for (round = 0U; round < 40U; round++) {
 		for (index = 0U; index < 128U; index++) {
 			pcm[index * 2U] = (int16_t)lrint(16384.0 * sin(2.0 * TOOL_PI * 1000.0 * (double)(round * 128U + index) / 48000.0));
 			pcm[index * 2U + 1U] = pcm[index * 2U];
 		}
+
+		/* Encoded and decoded. */
 		error = media_sbc_encode(encoder, pcm, frame, sizeof(frame), &length);
 		if (error == 0)
 			error = media_sbc_decode(decoder, frame, length, &used, out, sizeof(out) / sizeof(out[0]), &count, &found);
@@ -451,11 +534,16 @@ tool_self(
 			failures++;
 			break;
 		}
+
+		/* The largest output. */
 		for (index = 0U; round >= 10U && index < 256U; index++) {
-			if (fabs((double)out[index]) > peak)
-				peak = fabs((double)out[index]);
+			magnitude = fabs((double)out[index]);
+			if (magnitude > peak)
+				peak = magnitude;
 		}
 	}
+
+	/* The peak within 3 % of the input's. */
 	if (peak < 16384.0 * 0.97 || peak > 16384.0 * 1.03) {
 		printf("FAIL reconstruction peak %.0f, expected 16384 +- 3%%\n", peak);
 		failures++;
@@ -489,6 +577,8 @@ tool_self(
 		printf("FAIL self: %u\n", failures);
 		return 1;
 	}
+
+	/* All passed. */
 	printf("self all PASS\n");
 	return 0;
 }
@@ -518,6 +608,8 @@ tool_read(
 		fclose(file);
 		return ENOMEM;
 	}
+
+	/* The bytes. */
 	got = fread(*data, 1U, (size_t)length, file);
 	fclose(file);
 	*size = got;
@@ -551,17 +643,19 @@ tool_mode(
 	const char *name,
 	unsigned *mode)
 {
-	/* The four names. */
-	if (strcmp(name, "mono") == 0) {
-		*mode = MEDIA_SBC_MONO;
-	} else if (strcmp(name, "dual") == 0) {
-		*mode = MEDIA_SBC_DUAL;
-	} else if (strcmp(name, "stereo") == 0) {
-		*mode = MEDIA_SBC_STEREO;
-	} else if (strcmp(name, "joint") == 0) {
-		*mode = MEDIA_SBC_JOINT;
-	} else {
-		return EINVAL;
+	static const char *const names[4] = {"mono", "dual", "stereo", "joint"};
+	unsigned index;
+	int same;
+
+	/* The four names, in the modes' order. */
+	for (index = 0U; index < 4U; index++) {
+		same = strcmp(name, names[index]);
+		if (same == 0) {
+			*mode = index;
+			return 0;
+		}
 	}
-	return 0;
+
+	/* No mode of that name. */
+	return EINVAL;
 }

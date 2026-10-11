@@ -106,6 +106,13 @@ struct keiui_picker {
 	/* A line that says why something was refused (empty when none). */
 	char message[KEIUI_PICKER_MESSAGE_MAX];
 
+	/*
+	 * The library's list is being read (the window shows "Loading…"
+	 * meanwhile, ws157-p014), or could not be read (the window says so).
+	 */
+	int loading;
+	int unavailable;
+
 	/* The answer, once it is given: the items chosen in their order (borrowing the items' strings). */
 	int answered;
 	unsigned result;

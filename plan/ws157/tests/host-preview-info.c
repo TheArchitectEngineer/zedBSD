@@ -50,6 +50,8 @@ main(
 		fprintf(stderr, "usage: host-preview-info CASE INPUT\n");
 		return 2;
 	}
+
+	/* The case's name and the input. */
 	name = argv[1];
 	input = open(argv[2], O_RDONLY | O_CLOEXEC);
 	if (input < 0) {
@@ -95,6 +97,8 @@ main(
 		printf("FAIL %s\n", name);
 		return 1;
 	}
+
+	/* Passed. */
 	printf("PASS %s\n", name);
 	return 0;
 }
