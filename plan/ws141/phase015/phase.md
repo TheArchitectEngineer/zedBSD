@@ -3,7 +3,7 @@
 # ws141-p015: GPU が書いて GPU が読む画像を UIF で持つ（設計）
 
 Parent: [WS141](../ws.md)
-Status: planning（設計の第 2 版、design-reviewer の指摘を反映、Q1・ユーザーの確認の前）
+Status: planning（設計の第 3 版、第 2 版への review の指摘を反映、design-reviewer・Q1 の確認の前）
 Phase disposition: normal
 Queue: 未割当（Q1）
 
@@ -148,6 +148,71 @@ compositor の scene の写し（`wayland/scene.c`）: buffer をやめ、出力
 | 11 完了の条件の測り方 | 完了の条件と B0 の計数 |
 | 12 alignment 4096 | 1 節: 1024、自己試験で確かめる |
 | 13 OPTIMAL の memory を map する app | 1 節に記録（規則の外、in-tree に無し） |
+
+## 第 3 版（2026-10-12 P3）: 第 2 版からの変更
+
+第 2 版の本文のうち、この節と食い違う所はこの節が優先する。
+
+### 新しい根拠: raster の tile の load・store の費用（p013 の counter）
+
+hardware blend の後の実機の counter で、1 tile（64x64）あたり約 39k cycle（78µs）のうち QPU が働いているのは約 1/4。raster の 1920 幅の画像は行の間隔が 7680 byte なので、1 tile の 64 行がそれぞれ別の 4 KiB の page にあり、tile の load・store のたびに約 64 の GPU の page の変換が要る（UIF の tile は 16 KiB の連続）。p013 の次の起動の `v3d: gpu tiles copy=… draw=…`（draw 無しの pass と draw の pass の 1 tile の cycle）で、この固定の費用の大きさを確かめる。copy の 1 tile が draw の 1 tile に近ければ、render target の UIF 化（A3）は CPU の変換を消すだけでなく GPU の 1 pass も大きく短くする。その場合 A1〜A3 の優先を上げる（Q1 に相談）。
+
+### 4 節の copy の規則（review v2 の重大 1・高 4）
+
+- TLB copy は (a) 全体の copy（元と先の extent が等しい）と (c) sync（範囲の外が等しいと write log で分かる場合）だけ。第 2 版の (b)「tile に揃う同じ位置の部分」は消す（supertile が 128・256 px の時に隣の tile を上書きする）。
+- それ以外の部分の copy と blit は meta の draw。
+- 同じ位置の部分の copy で元と先が両方 raster の時（門が偽の間の compositor の scene の写し）は、今の buffer↔image と同じ CPU の行の copy にする（`vulkan-buffer-copy.c` の行の経路を image↔image にも）。これで A2（scene を image に）は門が偽でも今と同じ費用で、遅くならない（高 3 の前半）。
+- 重なりの判定: 同じ resource（同じ memory・offset）は画素の矩形で判定する（UIF でも画像の中の画素と番地は 1 対 1）。memory を共有する別の resource の時だけ byte の区間で判定する。
+
+### 4 節の buffer↔image の UIF の経路（高 2・中）
+
+- upload（buffer→UIF の画像、TLB に乗らない物）: TFU は使わない（本番で無効）。frame＝範囲（幅・高さ＝region、raster の load の元＝buffer、stride＝行の長さ、base＝bufferOffset）の draw 無しの pass で一時の UIF の画像に store し、続けてその一時の UIF を sample する meta の draw で先の範囲に描く。base と stride が 64 byte の倍数でない物は数える CPU の swizzle（`uiffb`）で、書いた箱を `bcm2711_v3d_memory_written` に記録する。
+- readback（UIF→buffer、TLB に乗らない物）: frame＝範囲の raster の store（自己試験 (d) で frame の外を書かないことを確かめる）。64 byte の制約に合わない物は一時の raster の画像へ TLB で写して行の memcpy（`uiffb`）。
+- 置き場: CPU へ回す判断は `vulkan-native-job.c:158-185`（ENOTSUP で `buffer_copy_run`）。job は event ごとに pass が 1 つなので、2 段（pass→pass、pass→退役→memcpy）と複数の region の反復のために job の loop を「event ごとに pass の列」にする。一時の画像は job の `NATIVE_JOB_BYTES` の予算から取り、所有は pass の root（不確かな退役の quarantine も pass と同じ）。A1 の file に `vulkan-native-job.c` を足す。
+
+### 2 節の部分の LOAD_OP_CLEAR（中）
+
+- `prepare_meta_texture` は Vulkan の resource を要るので、pass が所有する内部の 1x1 の UIF の storage（4 byte の clear 色を CPU で書く、画像の処理ではない）を texture にする入口を足す。pass の予算から取り、pass の release で解放。user の pass の最初の draw として、scissor＝render area、blend 無しで挿す。
+
+### 3 節の feedback（中）
+
+- 今は出力と sample の重なりの検査は無い（snapshot なので動いている）。UIF の直接の sample では、pass の出力と同じ memory を sample する draw を新しく断る（EINVAL）。meta の copy の src==dst は copy の入口で既に別に扱う（`vulkan-native-image.c:520-522`）ので巻き込まない。
+
+### 5 節の自己試験（高 5）
+
+- (a)(b)(d)(e) に足す: UIF の allocation の後ろの guard の 256 byte が変わらないこと、画像より小さい framebuffer の UIF の store（frame の外の UIF の block が変わらない）、UIF の base が 4096 の倍数でない 1024 の境界の時の load。
+- (c)（UIF を sample する quad）は shader・bin・直接の sample の record が要り、boot の diagnostic には space が無いので、A1 で render device の登録の後に 1 度だけ走らせる（失敗なら門を偽にして log）。B0 は (a)(b)(d)(e) と guard だけ。
+- 門の名前: 自己試験の結果は `hardware->uif_ready`、新しい OPTIMAL を UIF にするかは `uif_optimal`＝build の既定 ∧ `uif_ready` ∧ (c) の成功。V9 の TFU の結果は門に含めない。
+
+### 1 節の alignment（低）
+
+- UIF の画像の alignment は 4096 にする（Mesa の v3dv の tiled の画像と同じ考え、page の中で UIF の column が切れない）。小さな画像（1 page 未満）は 1024。自己試験は 1024 の境界も試す。
+
+### 完了の条件 1 の測り方（中）
+
+- perf は hardware に 1 つで client の submission と混ざる。測る時は client を止めた状態（compositor だけ）で 2 秒の計数を取る手順にする。session ごとの計数は作らない。
+
+### 直す所の一覧の補い（低）
+
+- `pitch` を代入する所: `vulkan-native-pass.c:775-785`（clear）、`vulkan-native-image.c:220,229,437`。
+- in-tree の利用の fixture に足す: `wayland/shm.c:1026`（全体の staging→OPTIMAL、raster→UIF の TLB）、`cursor-plane.c:533-559`（UIF の swapchain への clear と mapped の staging からの部分の copy・blit）、`heads.c:1172-1197`（UIF を元にした blit）、`backdrop.c:388`、`notes/render.c:304`、`libegl/vulkan.c:1037,1380`、`wsi-swapchain.c:2611`。
+
+### P1 の提案 F（WS210 設計 1.1、書き込みの記録で変換を tile に絞る）の位置
+
+- 案: LINEAR の画像の sample の時の CPU の raster→UIF の変換を、snapshot の前回の変換の後に書かれた箱（`bcm2711_v3d_memory_changes`）の tile だけにする。CPU に map された画像（client の canvas）は記録が無いので対象外。
+- 効く所: compositor が sample する client の swapchain の画像（GPU が書く、map されない）。ただし今の libkeiland の present は毎 frame swapchain の画像の全体に quad を描く（scissor＝全体、`ui/present.c` の present_record）ので、書いた箱は窓の全体になり、このままでは縮まない。libkeiland が damage の矩形だけを描く（scissor＝damage、残りは buffer age で前の画像を保つ）変更と組みにして初めて効く。
+- 位置: A4（WSI の UIF）で同じ所の変換は 0 になるが、A4 は UAPI の承認待ち。F は kernel だけで A1 と独立なので、段 F として A1 の前でも後でも入れられる。libkeiland の damage の描画の変更（WS210 か P2 の担当）と組で、効果を数で確かめてから決める（Q1 の判断）。
+
+### 段（第 3 版）
+
+| 段 | 内容 | 依存 |
+| --- | --- | --- |
+| B0 | 計数（`uifs`・`conv=mapped/other`・`uiffb`）と自己試験 (a)(b)(d)(e)＋guard、門は偽 | なし |
+| A1 | kernel の UIF の全経路（上の規則、job の loop、内部の 1x1 の texture、feedback の拒否）と (c) の登録後の自己試験、門は build の既定で偽。raster↔raster の同じ位置の部分 copy の CPU の行の経路 | B0 |
+| A2 | compositor の scene を OPTIMAL の画像に（門が偽でも今と同じ費用） | A1（raster の部分 copy の経路） |
+| A3 | 門の既定を真に。Pi で測る | A2 |
+| F | 書き込みの記録で LINEAR の変換を箱に絞る（libkeiland の damage の描画と組） | 独立 |
+| A4 | WSI の UIF（UAPI の承認） | A3 |
 
 ## design-reviewer の指摘（2026-10-12、第 1 版への指摘。第 2 版で反映、上の表）
 
