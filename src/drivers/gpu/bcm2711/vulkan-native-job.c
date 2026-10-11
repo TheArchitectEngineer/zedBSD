@@ -6,7 +6,9 @@
  */
 
 /* Logical callbacks, whole pending graph ownership and checked native DMA retirement are separate boundaries. */
+#include <kern/clock.h>
 #include <kern/kmem.h>
+#include <kern/klog.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
@@ -94,6 +96,14 @@ bcm2711_vulkan_native_job_execute(
 	struct bcm2711_v3d_job_result completion;
 	uint64_t remaining;
 	uint64_t bytes;
+	uint64_t started;
+	uint64_t step;
+	uint64_t prepare_ticks;
+	uint64_t execute_ticks;
+	uint64_t release_ticks;
+	uint64_t copy_ticks;
+	uint64_t elapsed;
+	uint32_t passes;
 	uint32_t region;
 	int error;
 
@@ -127,6 +137,12 @@ bcm2711_vulkan_native_job_execute(
 
 	/* One finite resident upload budget covers every pass and its complete independent draw input prefix. */
 	job->executed = true;
+	started = clock_ticks();
+	prepare_ticks = 0;
+	execute_ticks = 0;
+	release_ticks = 0;
+	copy_ticks = 0;
+	passes = 0;
 	remaining = NATIVE_JOB_BYTES;
 	region = 0;
 	event = job->prepared->first;
@@ -135,7 +151,9 @@ bcm2711_vulkan_native_job_execute(
 		if (event->opcode == GPU_OP_CMD_COPY_BUFFER ||
 		    event->opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE ||
 		    event->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER) {
+			step = clock_ticks();
 			error = bcm2711_vulkan_buffer_copy_run(event->record);
+			copy_ticks += clock_ticks() - step;
 			if (error != 0)
 				return error;
 			event = event->next;
@@ -152,6 +170,7 @@ bcm2711_vulkan_native_job_execute(
 		}
 
 		/* Graphics, full-image clears and each copied image region use the same independent native owner and checked retirement path. */
+		step = clock_ticks();
 		if (event->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
 			error = bcm2711_vulkan_native_pass_create(&controller->space, event, &remaining, &job->pass, &next);
 		} else if (event->opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
@@ -169,6 +188,10 @@ bcm2711_vulkan_native_job_execute(
 			return ENOTSUP;
 		}
 
+		/* Accumulate preparation separately from device execution and retirement. */
+		prepare_ticks += clock_ticks() - step;
+		passes++;
+
 		/* A refused whole-pass preparation owns no launched DMA and leaves the primary pending until disposal. */
 		if (error != 0) {
 			bcm2711_stage_mark(
@@ -180,7 +203,9 @@ bcm2711_vulkan_native_job_execute(
 		}
 
 		/* Exact clear, supervised bin/render and GPU cache visibility execute while every independent owner is held. */
+		step = clock_ticks();
 		error = bcm2711_vulkan_native_pass_run(job->pass, &completion);
+		execute_ticks += clock_ticks() - step;
 		job->retired = completion.retired;
 		*retired = completion.retired;
 		if (error != 0) {
@@ -198,11 +223,26 @@ bcm2711_vulkan_native_job_execute(
 
 		/* Confirmed DMA retirement permits this resident pass budget and its mappings to be reused by the next FIFO pass. */
 		bytes = job->pass->bytes;
+		step = clock_ticks();
 		error = bcm2711_vulkan_native_pass_release(&job->pass, true);
+		release_ticks += clock_ticks() - step;
 		if (error != 0)
 			return error;
 		remaining += bytes;
 		event = next;
+	}
+
+	/* Report slow submissions once, including time preempted by other runnable threads. */
+	elapsed = kern_ticks_to_ms(clock_ticks() - started);
+	if (elapsed >= 250U) {
+		kern_logf(
+			"v3d: submit timing passes=%u ms=%llu prepare=%llu execute=%llu release=%llu copy=%llu\n",
+			passes,
+			(unsigned long long)elapsed,
+			(unsigned long long)kern_ticks_to_ms(prepare_ticks),
+			(unsigned long long)kern_ticks_to_ms(execute_ticks),
+			(unsigned long long)kern_ticks_to_ms(release_ticks),
+			(unsigned long long)kern_ticks_to_ms(copy_ticks));
 	}
 
 	/* Succeeded: the pending primary remains owned until worker disposal, after actual native completion of every pass. */

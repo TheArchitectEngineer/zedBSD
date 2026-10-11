@@ -332,3 +332,6 @@ HAL APIを変えず、arm64/page.cに「ここより前は全て使用中」と�
 
 残る全面CLEARはuncached RAMへ4byte単位の各byte storeを全画素で行い、その後GPUでLOADしていた。全面かつimage全域のCLEARだけ既存のnative tile clearへ切替。partial rectangle/小さいframebufferはCPUで正確な矩形のみclear後LOADする従来契約を保持。BGRAは既存vkCmdClearColorImageと同じpackを使い、prepareはtargetを変更せず、GPUの完了/retirement契約も維持。
 対象vulkan-device-host PASS（初回は旧state.load==1の固定期待で失敗、全面clearの期待のみ修正。partial矩形の既存確認と全面時CPU未変更の実executor確認を実施）。production style0、全文manual review/diff-check PASS、clang-format19比較は独立引数/宣言行の全文規約を優先。arm64 build exit0/warning0/error0/checkerPASS。kernel2480702249/8077312、sha256 aaaaf3fca26c48b623e51ab33c8a984671cbcdb15b25768fd7fbdcfd2f92563d。実機効果は配置後に確認する。
+
+
+全面clear e6914742dをmain統合、旧4190670006/8077312を /var/backups/vmunix.before-native-clear-20261011へ保存、新2480702249/8077312を全体cmp/sync付きで配置。reboot後SSH復帰し通常sessionは継続。offscreen4条件の読み戻しは前回と同じ期待RGBA全件一致。compose0.8〜3.8秒は残り、clear変更だけの実測改善とはしない。250ms以上のnative submissionにprepare/execute/release/buffer-copyのwall時間内訳を1行記録する診断を追加。公開API/動作順序/timeout変更なし。対象device host PASS、production style0/全文manual/diff-check PASS、clang-format19比較は全文規約優先、arm64 build warning0/checkerPASS。診断kernel1993742562/8077312を次に配置する。
