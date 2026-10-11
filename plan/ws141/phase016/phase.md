@@ -165,6 +165,21 @@ executor の pass ごとの 3 区分:
 - compositor の main thread の `vkQueueWaitIdle`（import・shm）: session ごとの列の後は compositor 自身の列だけを待つので A の妨げにならない。残す（点検の記録）。
 - EBUSY の候補（N9）: `compose.c:1958-1969` の spare_sets を `kwl_compose_set_get` の後に `vkUpdateDescriptorSets`、`backdrop.c:174,456` が frame の in_flight の間に起きないか。非同期の後は EBUSY→DEVICE_LOST になり得るので source で確かめ、起きるなら直す。
 
+## review-4 への加筆（2026-10-12、A1 の前、Q1 が差分を確かめる）
+
+- **C-1 executed・required は session ごと**: 全体の 1 本の番号（第 3 版の「順序と marker」・第 4 版の表の「executed」）を、session ごとの `submitted`（その session の列に入れた execution の数）と `executed`（その session で完了した数）に置き換える。marker は decoder が受けた時に `required = session->submitted` を記録し、`session->executed < required` なら PARKED、executor はその session の execution を終えるたびに `session->executed++` の後に、その session の PARKED だけを集めて完了させる。session に未完了の execution が無ければ marker は decoder がその場で完了させる。drain・stop_poll・recovered も session の数で判定する。他の session が先に進んでも、自分の marker は自分の execution の完了まで完了しない（試験 (q) に足す）。
+- **H-1 session をまたぐ wait の機構は作らない**: semaphore・fence は session の中だけ（`vulkan-sync.c:131`、import は ENOTSUP `:139-141`）、libvulkan が出し入れするのは OPAQUE_FD の fence だけで CPU で待たれる（compositor の poll `wayland/display.c:49-97`、`GPU_DISPLAY_PRESENT_SYNC`）。Wayland の WSI は factory の revision 2 以上で early commit（acquire の fence 付き、`wsi-wayland.c:711-721,826-827`）。よって **session をまたぐ順序は marker の完了（C-1）だけに依る** を不変条件とし、第 4 版の「session をまたぐ wait の semaphore・外に出した fence の fd」の段落・依存の記録・列の飛ばし・循環の期限・A1 の「session をまたぐ wait」は削る。試験 (r) は「early commit の client と compositor の poll で、compositor は client の marker の完了の前に buffer を使わない」に差し替える。
+- **H-2 背圧の判定**: RESERVE（`job_reserve`・`job_capacity`、session を受け取る）で (a) 件数と bytes の両方（保留中の bytes＋8MiB ≤ session の上限）、(b) 全体の件数と bytes、ただし session ごとに最低の枠（2 件・16MiB）は全体の上限に関わらず保証、(c) session の数に上限（render の open の数、超えたら open を EBUSY）、(d) 件数・bytes の減算は H5 の (3)（guard の下、`finish_request` より前）で行い、marker の完了の直後の RESERVE と decoder の受け入れが食い違わないようにする。全体の bytes の上限は連続の物理 page（`hal_pmem_alloc`）の取り合いを避けて M の実測でもっと小さくする（今の候補 64MiB）。
+- **Q1 の判断（H-3）**: lazy map（GPU の VA の map を executor の「窓の前」まで遅らせ、compositor の import・blob の作成の main thread が窓を待たない）を **段 A3** として表に入れ、受け入れ A の前提にする（受け入れ A は狭めない）。A3 の最初に V3D の MMU が無効な PTE を TLB に持つかを確かめる。
+- **Q1 の判断（M-2）**: 表示の優先の印は execution ごと（sticky にしない）。display に import された buffer への書き込みがある execution だけに付ける。buffer に display の import の数（buffer の guard の下）を持ち、decode の時に書き込み先（attachment・copy/blit/clear の先）を列挙して判定する。game mode の client が scanout 中に優先を得るのは許す（その時はそれが画面）。
+
+## A0 の結果（2026-10-12 P3）
+
+- cursor-plane.c: 最後に submit した copy の fence を acquire の前に `vkGetFenceStatus` で見て、VK_NOT_READY なら今回は acquire しない（acquire 済みの image を present せずに残さない）。copy は 1 本の queue で順に完了するので、後の image ごとの待ちは塞がらない。plane の struct は open・close で 0 に戻る（`last_copy`・`copied` も）。arm64 の compositor の build は warning 0。
+- EBUSY の候補: `kwl_compose_set_put` の呼び出し元（import の解放 `import.c:394,398`、shm の `image_release` `shm.c:940,942`、backdrop の破棄 `backdrop.c:174`）は「frame が完了まで buffer を持つ」（`import.c:107` の注記）・「device が idle」（`backdrop.c:152`）の前提で、in_flight の frame が使う set を書き直さない。非同期の後も成り立つ（A1 の試験で確かめる）。
+- libvulkan の WSI: early commit（review-4 の確認）。compositor は client の acquire の fence を poll する。session をまたぐ順序は marker の完了で保たれる。
+- M-5 の libglesv2・libegl・libmedia の点検: review-4 も具体の誤りは未発見。A1 の後の T1 の回帰で見る。
+
 ## 段（第 4 版）
 
 | 段 | 内容 | 確かめ |
@@ -172,7 +187,8 @@ executor の pass ごとの 3 区分:
 | M | 計測（済み・続き）: request の待ちと実行、解放の内訳、markers_max、submit の mutex の待ち | 実機の数 |
 | A0 | userland: cursor-plane.c の acquire の前の fence の確認、EBUSY の候補の確認、libvulkan の WSI の commit の同期・early の確認と記録 | host build、T1 |
 | A1 | executor・session ごとの列・1 歩の step・表示の session の優先・round-robin・execution（heap）・背圧（RESERVE の EAGAIN）・PARKED を execution の entry に・状態と取り消し・公開の順序・session をまたぐ wait・旧来の拒否・wait_idle の EOPNOTSUPP。executor は歩の間 mutex を持つ（効果は A2 から） | host（決定的な fixture） |
-| A2 | 窓（3 区分、window の判定、遅延解放の list と fault の quarantine、map の待ち、pte_waiters の世代、mutex の順番渡し、display の generation の guard） | host、実機（受け入れ A） |
+| A2 | 窓（3 区分、window の判定、遅延解放の list と fault の quarantine、map の待ち、pte_waiters の世代、mutex の順番渡し、display の generation の guard） | host |
+| A3 | lazy map（GPU の VA の map を executor の窓の前へ、import・blob の作成が窓を待たない）。最初に V3D の MMU が無効な PTE を TLB に持つかを確かめる | host、実機（受け入れ A） |
 | B | cursor の plane（別の版の設計の review の後） | 実機（受け入れ B） |
 
 ## 試験（M5）
