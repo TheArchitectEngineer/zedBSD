@@ -107,6 +107,7 @@ bcm2711_vulkan_native_job_execute(
 	uint64_t elapsed;
 	struct bcm2711_v3d_perf *perf;
 	uint32_t region;
+	int tiled;
 	int error;
 	int synchronized;
 
@@ -150,10 +151,27 @@ bcm2711_vulkan_native_job_execute(
 	region = 0;
 	event = job->prepared->first;
 	while (event != NULL) {
+		/* A whole-image upload or readback becomes a tile copy pass; ENOTSUP leaves it to the CPU. */
+		tiled = ENOTSUP;
+		if (event->opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE || event->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER) {
+			step = clock_ticks();
+			error = bcm2711_v3d_memory_begin(&controller->space);
+			if (error != 0)
+				return error;
+			tiled = bcm2711_vulkan_native_buffer_image_create(&controller->space, event->record, &remaining, &job->pass);
+			synchronized = bcm2711_v3d_memory_end(&controller->space);
+			prepare_ticks += clock_ticks() - step;
+			if (tiled == 0 && synchronized != 0)
+				tiled = synchronized;
+			if (tiled != 0 && tiled != ENOTSUP)
+				return tiled;
+		}
+
 		/* Exact coherent buffer transfers execute only after every preceding native pass has retired and published its output. */
-		if (event->opcode == GPU_OP_CMD_COPY_BUFFER ||
-		    event->opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE ||
-		    event->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER) {
+		if (tiled == ENOTSUP &&
+		    (event->opcode == GPU_OP_CMD_COPY_BUFFER ||
+		     event->opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE ||
+		     event->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER)) {
 			step = clock_ticks();
 			error = bcm2711_vulkan_buffer_copy_run(event->record);
 			copy_ticks += clock_ticks() - step;
@@ -179,7 +197,10 @@ bcm2711_vulkan_native_job_execute(
 			return error;
 
 		/* Graphics, clears and copied image regions acquire complete independent native owners. */
-		if (event->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
+		if (tiled == 0) {
+			error = 0;
+			next = event->next;
+		} else if (event->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
 			error = bcm2711_vulkan_native_pass_create(&controller->space, event, &remaining, &job->pass, &next);
 		} else if (event->opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
 			error = bcm2711_vulkan_native_clear_create(&controller->space, event, &remaining, &job->pass);

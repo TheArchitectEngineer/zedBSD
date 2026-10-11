@@ -2250,10 +2250,14 @@ compose_record(
 	if (compose->scene.buffer != VK_NULL_HANDLE && !compose->scene.valid)
 		region = NULL;
 
-	/* Only cursor damage over an unchanged initialized scene may skip client sampling. */
+	/*
+	 * Only cursor damage over an unchanged initialized scene may skip client
+	 * sampling.  An image that is whole only because of its buffer age is
+	 * restored whole from the same scene.
+	 */
 	reuse = 0U;
 	compose->scene.written = 0U;
-	if (region != NULL && compose->scene.valid && !compose->scene.changed && !server->dirty) {
+	if (compose->scene.valid && !compose->scene.changed && !server->dirty) {
 		reuse = 1U;
 
 		/* Other outputs retain their independent scene construction and callback order. */
@@ -2297,7 +2301,7 @@ compose_record(
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	pass.renderPass = compose->pass;
-	if (region != NULL)
+	if (region != NULL || reuse)
 		pass.renderPass = compose->pass_load;
 	pass.framebuffer = compose->framebuffers[image];
 	compose->framebuffer_now = compose->framebuffers[image];
@@ -2310,7 +2314,7 @@ compose_record(
 	if (region != NULL)
 		pass.renderArea = *region;
 
-	/* The clear value belongs to a whole frame; the partial pass retains old pixels. */
+	/* The clear value belongs to a whole frame; the partial pass and a restored scene retain old pixels. */
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
 	vkCmdBeginRenderPass(compose->command, &pass, VK_SUBPASS_CONTENTS_INLINE);

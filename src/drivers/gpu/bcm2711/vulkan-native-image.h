@@ -11,7 +11,10 @@
 
 #include "drivers/gpu/bcm2711/vulkan-native-pass.h"
 #include "drivers/gpu/bcm2711/vulkan-transfer.h"
+#include "drivers/gpu/bcm2711/vulkan-buffer-copy.h"
 
+/* ENOTSUP before any allocation means the copy is not one whole-image raster copy and stays a CPU copy. */
+int bcm2711_vulkan_native_buffer_image_create(struct bcm2711_v3d_space *space, const struct bcm2711_vulkan_record *record, uint64_t *available, struct bcm2711_vulkan_native_pass **pass);
 int bcm2711_vulkan_native_image_create(struct bcm2711_v3d_space *space, const struct bcm2711_vulkan_transfer *transfer, uint32_t region, uint64_t *available, struct bcm2711_vulkan_native_pass **pass);
 
 #endif

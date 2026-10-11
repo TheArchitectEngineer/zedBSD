@@ -1182,16 +1182,28 @@ native_draw_test(
 	error = bcm2711_vulkan_resource_backing(image, 0, image->bytes, &view, &address, &cpu);
 	assert(error == 0);
 
-	/* The sampled raster is converted by the formatting unit when the pass runs, from the image into the draw's scratch. */
-	assert(draw->texture_count == 1 && draw->textures[0].convert && draw->textures[0].pixels == draw->storage[0]);
-	assert(draw->textures[0].tfu.input == address && draw->textures[0].tfu.output == draw->storage[0]->view->address);
-	assert(draw->textures[0].tfu.stride == image->pitch / 4U);
-	assert(draw->textures[0].tfu.size == ((image->height << 16) | image->width));
+	/* Without a passed unit self-test the CPU snapshot is taken at preparation and later raster writes do not reach it. */
+	assert(draw->texture_count == 1 && !draw->textures[0].convert);
+	memset(cpu, 0x24, 512);
+	assert(((uint8_t *)draw->storage[0]->view->buffer->address)[0] == 0x75);
 	used = allocations;
 	error = bcm2711_vulkan_native_draw_release(&draw, false);
 	assert(error == EBUSY && draw != NULL && draw->bytes == owned && allocations == used);
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
 	assert(error == 0 && draw == NULL && allocations == baseline);
+
+	/* After the unit's self-test the raster is described for conversion when the pass runs, from the image into the draw's scratch. */
+	space->native->hardware.tfu_uif_ready = true;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	assert(error == 0 && draw != NULL);
+	assert(draw->texture_count == 1 && draw->textures[0].convert && draw->textures[0].pixels == draw->storage[0]);
+	assert(draw->textures[0].tfu.input == address && draw->textures[0].tfu.output == draw->storage[0]->view->address);
+	assert(draw->textures[0].tfu.stride == image->pitch / 4U);
+	assert(draw->textures[0].tfu.size == ((image->height << 16) | image->width));
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && draw == NULL && allocations == baseline);
+	space->native->hardware.tfu_uif_ready = false;
 
 	/* Early and late ordinary OOM retire complete mapped prefixes, including an independently copied scalar stream. */
 	for (index = 1; index <= 4; index++) {
