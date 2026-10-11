@@ -41,3 +41,7 @@ G1: 通話の時 headset が繋がっていれば最初から headset で話す�
 ## 2026-10-11 ユーザーの決定: G3・G4
 
 ユーザー「許可します。」「Q1の推しにします」→ G3: 通話の音がスマホにある間は PC の media を止めない（Q1 と P1 の推しを「止めない」に揃えた後の答え）。G4: call の間だけ buffer を詰めて（SCO の水位 20〜25 ms、通話の間の audiod の先行 1 fragment）片道 150 ms を目指し、届かなければ約 170 ms を受け入れる。
+
+## 2026-10-11 ユーザーの決定: G5
+
+ユーザー「G5は推しにします。」→ 利用者の操作によらず media の出力（headset など）が消えた時は再生を止める（`MEDIA_HELD reason=OUTPUT_LOST` で待たせ、compositor が ROUTE_SET を出すまで鳴らさない。speaker へ自動で戻して鳴らさない）。review-2 の N7。
