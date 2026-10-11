@@ -792,6 +792,85 @@ btd_map_send(
 }
 
 /*
+ * Sends an MMS (ws197-p010): its MIME body, as Phone made it, pushed to the
+ * phone's outbox as a bMessage of type MMS, answered as btd_map_send is.
+ * Returns NULL when it is under way, else why not: not-ready, no-send (the
+ * phone takes no MMS to send), number, argument (not a MIME body the reader
+ * takes), busy (another MMS waits or is being pushed).
+ */
+const char *
+btd_map_send_mms(
+	struct btd_map *map,
+	uint64_t token,
+	const char *number,
+	const uint8_t *mime,
+	size_t length)
+{
+	struct btd_map_op op;
+	uint8_t *message;
+	size_t size;
+	size_t used;
+	unsigned index;
+	int error;
+	int ok;
+
+	/* MAP ready, and the phone takes MMS to send. */
+	if (map->state != BTD_MAP_READY)
+		return "not-ready";
+	if (!map->send)
+		return "no-send";
+	if ((map->message_types & MAP_TYPES_MMS) == 0U)
+		return "no-send";
+
+	/* A number a message can go to, and a body within the bound. */
+	ok = btd_bmsg_number_ok(number);
+	if (!ok)
+		return "number";
+	if (length == 0U || length > BTD_BMSG_INPUT_MAX - 1024U)
+		return "argument";
+
+	/* Room in the queue, and one large message at a time (the one being pushed counts). */
+	if (map->queue_count >= BTD_MAP_QUEUE_MAX)
+		return "busy";
+	if (map->running && map->current.message_length > BTD_BMSG_BUILD_MAX)
+		return "busy";
+	for (index = 0U; index < map->queue_count; index++) {
+		if (map->queue[index].message_length > BTD_BMSG_BUILD_MAX)
+			return "busy";
+	}
+
+	/* The bMessage's room: every line end may become CR LF, and the envelope. */
+	size = 2U * length + 1024U;
+	message = malloc(size);
+	if (message == NULL)
+		return "busy";
+
+	/* The bMessage, the MIME body checked by the reader first. */
+	error = btd_bmsg_build(number, mime, length, BTD_MAP_TYPE_MMS, message, size, &used);
+	if (error != 0 || used > BTD_BMSG_INPUT_MAX) {
+		free(message);
+		return "argument";
+	}
+
+	/* Queued, with its request number; the queue owns the bMessage until its answer. */
+	map->next_request++;
+	map_op_init(&op, BTD_MAP_OP_PUSH);
+	op.token = token;
+	op.request = map->next_request;
+	op.message = message;
+	op.message_length = used;
+	error = map_enqueue(map, &op);
+	if (error != 0) {
+		free(message);
+		return "busy";
+	}
+
+	/* Succeeded: under way. */
+	map_settle(map);
+	return NULL;
+}
+
+/*
  * Forgets the requests of a client that went (the token's): its queued
  * operations go, its pages end quietly (an operation running for it ends
  * without an answer).

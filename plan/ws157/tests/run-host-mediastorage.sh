@@ -41,7 +41,7 @@ ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror \
 ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror \
 	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
 	-I. -Iuserland/desktop/include plan/ws197/tests/host-media-select.c \
-	userland/desktop/phone/media.c userland/desktop/libkeiland/ui/chooser-model.c \
+	userland/desktop/phone/media.c userland/desktop/libmms/mms.c userland/desktop/libkeiland/ui/chooser-model.c \
 	-L"$media_linux/lib" -Wl,-rpath-link,"$media_linux/lib" -lkeiland -lwayland-client \
 	-o "$media_host/host-media-select"
 export LD_LIBRARY_PATH="$media_linux/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"

@@ -14,12 +14,14 @@ struct ph_media_result {
 	int descriptor;
 	int error;
 	int imported;
+	int removed;
 	int notice;
 };
 
 int ph_media_worker_start(void);
 void ph_media_worker_stop(void);
 int ph_media_worker_queue(const char *path, int notice);
+int ph_media_worker_remove(const char *id);
 int ph_media_worker_take(struct ph_media_result *result);
 int ph_media_worker_busy(void);
 

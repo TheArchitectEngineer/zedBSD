@@ -61,6 +61,9 @@ LIBKEILAND_SOURCES += \
 	userland/desktop/libkeiland/ui/chooser.c \
 	userland/desktop/libkeiland/ui/chooser-model.c \
 	userland/desktop/libkeiland/ui/chooser-view.c \
+	userland/desktop/libkeiland/ui/picker.c \
+	userland/desktop/libkeiland/ui/picker-model.c \
+	userland/desktop/libkeiland/ui/picker-view.c \
 	userland/desktop/picture/color-glyph.c
 
 LIBKEILAND_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libkeiland.so=$(BUILD)/dynamic/libkeiland.so)

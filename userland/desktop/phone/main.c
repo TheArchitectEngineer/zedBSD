@@ -191,6 +191,8 @@ struct ph_window {
 	 * kl_system_phone_send_text (a request of 0 is a free row).
 	 */
 	struct kl_file_chooser *chooser;
+	/* The media picker open for the plus's photos and videos (NULL when none); one of the two at a time answers for chooser_contact. */
+	struct kl_media_picker *picker;
 	char *chooser_contact;
 	struct kl_system *system;
 	struct ph_pending {
@@ -229,6 +231,7 @@ static const struct kl_menu_entry ph_menu[] = {
     {4U, 3U, KL_MENU_ITEM_NORMAL, "Call", PH_ACTION_CALL, KL_MENU_ROLE_NONE, 0U, 0U},
     {5U, 3U, KL_MENU_ITEM_NORMAL, "Send Message", PH_ACTION_SEND, KL_MENU_ROLE_NONE, 0U, 0U},
     {6U, 3U, KL_MENU_ITEM_NORMAL, "Attach File...", PH_ACTION_ATTACH, KL_MENU_ROLE_NONE, 0U, 0U},
+    {8U, 3U, KL_MENU_ITEM_NORMAL, "Attach Photo or Video...", PH_ACTION_ATTACH_MEDIA, KL_MENU_ROLE_NONE, 0U, 0U},
     {7U, 3U, KL_MENU_ITEM_NORMAL, "Sync Now", PH_ACTION_SYNC, KL_MENU_ROLE_NONE, 0U, 0U}};
 
 int main(int argc, char **argv);
@@ -243,7 +246,12 @@ static void ph_phone_round(struct ph_window *phone);
 static void ph_received(struct ph_window *phone, const struct kl_phone_event *event);
 static void ph_status(struct ph_window *phone, uint32_t request, unsigned state, int failed);
 static void ph_media_choose(struct ph_window *phone, long contact);
-static void ph_media_chosen(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter);
+static void ph_send_media(struct ph_window *phone, long contact, int paired);
+static void ph_media_picked(void *data, struct kl_media_picker *picker, unsigned result, const struct kl_media_item *items, size_t count);
+static int ph_media_thumbnail(void *data, const char *path, int side, struct kl_image *image);
+static int ph_attach_contact(struct ph_window *phone, long contact);
+static void ph_file_choose(struct ph_window *phone, long contact);
+static void ph_file_chosen(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 static void ph_media_drop(struct ph_window *phone);
 static int ph_media_image(struct ph_view *view, const char *bytes, size_t length, const char *contact);
 static void ph_requests(struct ph_window *phone);
@@ -376,6 +384,7 @@ main(
 
 	/* The selector must stop using its parent connection before the application closes. */
 	kl_file_chooser_destroy(phone.chooser);
+	kl_media_picker_destroy(phone.picker);
 	free(phone.chooser_contact);
 
 	/* Everything goes. */
@@ -1048,45 +1057,178 @@ ph_status(
 		phone->pending[index].request = 0;
 }
 
-/* Opens the compositor's media library without exposing its database to Phone. */
+/* Opens the media picker over the window for photos and videos of the library, as many as the draft has room for. */
 static void
 ph_media_choose(
 	struct ph_window *phone,
 	long contact)
 {
-	static const struct kl_file_chooser_listener listener = {ph_media_chosen};
-	struct kl_file_chooser_options options;
-	const struct ph_contact *contacts;
-	size_t count;
+	static const struct kl_media_picker_listener listener = {ph_media_picked};
+	struct kl_media_picker_options options;
+	size_t room;
+	int error;
 
-	/* One active sheet answers for the contact chosen when it opened. */
-	if (phone->chooser != NULL)
+	/* One open sheet answers for the conversation chosen when it opened. */
+	error = ph_attach_contact(phone, contact);
+	if (error != 0)
 		return;
-	contacts = ph_contacts(&count);
-	if (contact < 0 || (size_t)contact >= count)
-		return;
-	phone->chooser_contact = strdup(contacts[contact].id);
-	if (phone->chooser_contact == NULL) {
-		ph_view_notice(&phone->view, "The media selector could not be opened.", kl_clock_us());
-		return;
-	}
 
-	/* A library selector obtains metadata through the compositor and returns a file path. */
+	/* As many as the draft still takes, and at least one so that a full draft says why. */
+	room = PH_DRAFT_MAX - ph_draft_count(&phone->view, phone->chooser_contact);
+	if (room == 0U)
+		room = 1U;
+
+	/* The picker reads the library's metadata through the compositor; Phone makes the thumbnails the cache lacks. */
 	memset(&options, 0, sizeof(options));
-	options.mode = KL_FILE_CHOOSER_MEDIA;
-	options.title = "Attach Photo or Video";
+	options.title = "Attach Photos & Videos";
 	options.application = "phone";
-	phone->chooser = kl_file_chooser_open(kl_app_display(phone->app), kl_window_toplevel(phone->window), &options, &listener, phone);
-	if (phone->chooser == NULL) {
+	options.limit = room;
+	options.thumbnail = ph_media_thumbnail;
+	options.thumbnail_data = NULL;
+	phone->picker = kl_media_picker_open(kl_app_display(phone->app), kl_window_toplevel(phone->window), &options, &listener, phone);
+	if (phone->picker == NULL) {
 		free(phone->chooser_contact);
 		phone->chooser_contact = NULL;
 		ph_view_notice(&phone->view, "The media library is unavailable.", kl_clock_us());
 	}
 }
 
-/* Retains a selected path as an unsent attachment, then closes the selector. */
+/* Keeps the chosen photos and videos as unsent attachments, then closes the picker. */
 static void
-ph_media_chosen(
+ph_media_picked(
+	void *data,
+	struct kl_media_picker *picker,
+	unsigned result,
+	const struct kl_media_item *items,
+	size_t count)
+{
+	struct ph_window *phone;
+	size_t index;
+	int failed;
+	int error;
+
+	/* Each item's path is copied by the draft before the picker's answer goes. */
+	phone = data;
+	failed = 0;
+	if (result == KL_MEDIA_PICKER_CHOSEN) {
+		for (index = 0U; index < count; index++) {
+			error = ph_draft_add(&phone->view, items[index].path, phone->chooser_contact, 0);
+			if (error != 0)
+				failed = 1;
+		}
+	}
+
+	/* A refused item (the draft full, or a file no longer there) is said. */
+	if (failed)
+		ph_view_notice(&phone->view, "Some photos or videos could not be attached.", kl_clock_us());
+
+	/* Choosing and cancelling both leave the draft unsent. */
+	phone->picker = NULL;
+	free(phone->chooser_contact);
+	phone->chooser_contact = NULL;
+	kl_media_picker_destroy(picker);
+	phone->dirty = 1;
+}
+
+/*
+ * Makes a photo's square thumbnail for the media picker, on the picker's
+ * thread: the photo decoded (the same decoder as the drafts' previews) and
+ * the middle square scaled to the side.
+ */
+static int
+ph_media_thumbnail(
+	void *data,
+	const char *path,
+	int side,
+	struct kl_image *image)
+{
+	struct kl_image decoded;
+	int error;
+
+	/* No context: the decoder keeps no state between photos. */
+	(void)data;
+
+	/* The photo. */
+	error = ph_decode(path, &decoded);
+	if (error != 0)
+		return error;
+
+	/* Its middle square at the side, and the decoded photo released. */
+	error = ph_thumbnail(&decoded, side, image);
+	kl_image_release(&decoded);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the picker owns the square. */
+	return 0;
+}
+
+/* Records the conversation a picker or a chooser answers for; nonzero when one is open or the contact is not there. */
+static int
+ph_attach_contact(
+	struct ph_window *phone,
+	long contact)
+{
+	const struct ph_contact *contacts;
+	size_t count;
+
+	/* One open sheet at a time. */
+	if (phone->chooser != NULL || phone->picker != NULL)
+		return EBUSY;
+
+	/* The conversation chosen. */
+	contacts = ph_contacts(&count);
+	if (contact < 0 || (size_t)contact >= count)
+		return EINVAL;
+
+	/* Its identity, kept until the answer. */
+	phone->chooser_contact = strdup(contacts[contact].id);
+	if (phone->chooser_contact == NULL) {
+		ph_view_notice(&phone->view, "The selector could not be opened.", kl_clock_us());
+		return ENOMEM;
+	}
+
+	/* Succeeded: the answer goes to this conversation's draft. */
+	return 0;
+}
+
+/* Opens the file chooser for a photo or video file anywhere on the computer. */
+static void
+ph_file_choose(
+	struct ph_window *phone,
+	long contact)
+{
+	static const struct kl_file_chooser_listener listener = {ph_file_chosen};
+	static const struct kl_file_filter filters[] = {
+		{"Photos and Videos", "jpg jpeg png gif mp4 m4v mov 3gp"},
+		{"All Files", NULL}};
+	struct kl_file_chooser_options options;
+	int error;
+
+	/* One open sheet answers for the conversation chosen when it opened. */
+	error = ph_attach_contact(phone, contact);
+	if (error != 0)
+		return;
+
+	/* The ordinary chooser, in the home folder. */
+	memset(&options, 0, sizeof(options));
+	options.mode = KL_FILE_CHOOSER_OPEN;
+	options.title = "Attach File";
+	options.application = "phone";
+	options.filters = filters;
+	options.filter_count = sizeof(filters) / sizeof(filters[0]);
+	options.filter = 0U;
+	phone->chooser = kl_file_chooser_open(kl_app_display(phone->app), kl_window_toplevel(phone->window), &options, &listener, phone);
+	if (phone->chooser == NULL) {
+		free(phone->chooser_contact);
+		phone->chooser_contact = NULL;
+		ph_view_notice(&phone->view, "The file chooser could not be opened.", kl_clock_us());
+	}
+}
+
+/* Retains a chosen file as an unsent attachment, then closes the chooser. */
+static void
+ph_file_chosen(
 	void *data,
 	struct kl_file_chooser *chooser,
 	unsigned result,
@@ -1096,18 +1238,20 @@ ph_media_chosen(
 	struct ph_window *phone;
 	int error;
 
-	/* The selector has one unfiltered media list. */
+	/* The filter chosen does not change what is attached. */
 	(void)filter;
 
-	/* The path is copied before the chooser's result storage disappears. */
+	/* The path is copied before the chooser's result storage disappears; only a photo or a video can be attached. */
 	phone = data;
 	if (result == KL_FILE_CHOOSER_CHOSEN) {
 		error = ph_draft_add(&phone->view, path, phone->chooser_contact, 0);
-		if (error != 0)
-			ph_view_notice(&phone->view, "The photo or video could not be attached.", kl_clock_us());
+		if (error == ENOTSUP)
+			ph_view_notice(&phone->view, "Only photos and videos can be attached.", kl_clock_us());
+		else if (error != 0)
+			ph_view_notice(&phone->view, "The file could not be attached.", kl_clock_us());
 	}
 
-	/* Selection and cancellation both leave the draft unsent. */
+	/* Choosing and cancelling both leave the draft unsent. */
 	phone->chooser = NULL;
 	free(phone->chooser_contact);
 	phone->chooser_contact = NULL;
@@ -1237,6 +1381,9 @@ ph_requests(
 			ph_open_media(phone, &request);
 			break;
 		case PH_ACTION_ATTACH:
+			ph_file_choose(phone, request.contact);
+			break;
+		case PH_ACTION_ATTACH_MEDIA:
 			ph_media_choose(phone, request.contact);
 			break;
 		case PH_ACTION_SEND:
@@ -1361,15 +1508,9 @@ ph_send(
 	if (contact < 0 || (size_t)contact >= count)
 		return;
 
-	/* Media transfer is a follow-up; never send a caption while silently losing its attachments. */
+	/* An empty draft without attachments needs no transport request. */
 	attachments = ph_draft_count(&phone->view, contacts[contact].id);
-	if (attachments != 0U) {
-		ph_view_notice(&phone->view, "Attachment sending is not available yet. Your draft is kept.", kl_clock_us());
-		return;
-	}
-
-	/* An empty text-only draft needs no transport request. */
-	if (phone->view.message.length == 0U)
+	if (phone->view.message.length == 0U && attachments == 0U)
 		return;
 
 	/* No phone set up: nothing kept or sent, and where to set one up (the text stays to send later, BUG-287). */
@@ -1388,6 +1529,12 @@ ph_send(
 	/* The paired phone that takes no text: nothing kept or sent. */
 	if (paired && !phone->link.can_send) {
 		ph_view_notice(&phone->view, "The phone does not take texts to send.", kl_clock_us());
+		return;
+	}
+
+	/* Photos and videos go as an MMS through the paired phone, the words their caption. */
+	if (attachments != 0U) {
+		ph_send_media(phone, contact, paired);
 		return;
 	}
 
@@ -1442,6 +1589,98 @@ ph_send(
 
 	/* Its states to come. */
 	ph_remember(phone, request, serial, paired);
+}
+
+/*
+ * Sends a contact's photos and videos as one MMS through the paired phone
+ * (ws197-p010), the words written as their caption: the MIME body made from
+ * the drafts, the media copied into the library (the item shows them), the
+ * item kept as sending, then the body handed to the compositor.  The draft
+ * stays when nothing could be sent.
+ */
+static void
+ph_send_media(
+	struct ph_window *phone,
+	long contact,
+	int paired)
+{
+	const struct ph_contact *contacts;
+	struct ph_received received;
+	unsigned long serial;
+	uint32_t request;
+	size_t count;
+	size_t item;
+	int descriptor;
+	int imported;
+	int error;
+
+	/* Photos and videos go only through a paired phone. */
+	contacts = ph_contacts(&count);
+	if (!paired) {
+		ph_view_notice(&phone->view, "Photos and videos are sent through a paired phone.", kl_clock_us());
+		return;
+	}
+
+	/* The MIME body of the drafts and the words; the draft stays when it cannot be made. */
+	error = ph_draft_mime(&phone->view, contacts[contact].id, phone->view.message.text, &descriptor);
+	if (error == EFBIG) {
+		ph_view_notice(&phone->view, "The photos and videos are too large for one message.", kl_clock_us());
+		return;
+	}
+
+	/* Another refusal: a file gone or unreadable. */
+	if (error != 0) {
+		ph_view_notice(&phone->view, "The photos and videos could not be read.", kl_clock_us());
+		return;
+	}
+
+	/* The media copied into the library (one already there is found by its hash), for the item to show. */
+	imported = ph_receive_media(phone->system, descriptor, &received);
+	if (imported != 0)
+		memset(&received, 0, sizeof(received));
+
+	/* Kept as sending, with its media, the timeline at its end. */
+	error = ph_store_add_item(contact, PH_TEXT, PH_MMS, 1, time(NULL), PH_STATE_SENDING, phone->view.message.text, NULL, &item);
+	if (error != 0) {
+		ph_received_release(&received);
+		(void)close(descriptor);
+		ph_view_notice(&phone->view, "The message could not be kept.", kl_clock_us());
+		return;
+	}
+
+	/* Its media, as the library keeps them. */
+	if (received.count != 0U)
+		(void)ph_store_media(contact, item, &received);
+	ph_received_release(&received);
+
+	/* Its name for this run, and the new item shown. */
+	serial = contacts[contact].items[item].serial;
+	phone->view.to_end = 1;
+
+	/* Sent through the compositor's phone, which reads the body from the file. */
+	request = 0U;
+	error = kl_system_phone_send_mms(phone->system, contacts[contact].number, descriptor, &request);
+	(void)close(descriptor);
+
+	/* The log the tests read: no number, no words, no paths. */
+	ph_log("SEND contact=%ld channel=mms length=%zu import=%d error=%d", contact, phone->view.message.length, imported, error);
+
+	/* The draft is the item now. */
+	kl_field_set(&phone->view.message, "");
+	ph_draft_clear(&phone->view, contacts[contact].id);
+
+	/* A refusal fails the item at once. */
+	if (error != 0) {
+		(void)ph_store_set_state(contact, item, PH_STATE_FAILED, NULL);
+		if (error == ENOTSUP)
+			ph_view_notice(&phone->view, "This desktop cannot send photos and videos to the phone.", kl_clock_us());
+		else
+			ph_view_notice(&phone->view, "The photos and videos cannot be sent.", kl_clock_us());
+		return;
+	}
+
+	/* Succeeded: its states come as a text's do. */
+	ph_remember(phone, request, serial, 1);
 }
 
 /* Calls the contact on the line and keeps the call with how it ends. */

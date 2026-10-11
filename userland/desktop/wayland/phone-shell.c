@@ -143,6 +143,7 @@ struct phone_backend {
 	void (*sync)(struct kwl_object *object, uint32_t request, const struct phone_page *page);
 	void (*send_text)(struct kwl_object *object, uint32_t request, const char *to, const uint8_t *text, size_t length);
 	void (*mark_read)(struct kwl_object *object, uint32_t request, const char *handle);
+	void (*send_mms)(struct kwl_object *object, uint32_t request, const char *to, int descriptor);
 };
 
 /*
@@ -254,12 +255,13 @@ static void phone_bluetooth_send(struct kwl_object *object, uint32_t request, ui
 static void phone_bluetooth_sync(struct kwl_object *object, uint32_t request, const struct phone_page *page);
 static void phone_bluetooth_send_text(struct kwl_object *object, uint32_t request, const char *to, const uint8_t *text, size_t length);
 static void phone_bluetooth_mark_read(struct kwl_object *object, uint32_t request, const char *handle);
+static void phone_bluetooth_send_mms(struct kwl_object *object, uint32_t request, const char *to, int descriptor);
 
 /* The backends by phone.backend's value (index 0 is none).  The table is constant for the compositor's life. */
 static const struct phone_backend phone_backends[] = {
-	{ "none", NULL, NULL, NULL, NULL, NULL },
-	{ "loopback", phone_loopback_send, phone_loopback_call, phone_loopback_sync, phone_loopback_send_text, phone_loopback_mark_read },
-	{ "bluetooth", phone_bluetooth_send, NULL, phone_bluetooth_sync, phone_bluetooth_send_text, phone_bluetooth_mark_read }
+	{ "none", NULL, NULL, NULL, NULL, NULL, NULL },
+	{ "loopback", phone_loopback_send, phone_loopback_call, phone_loopback_sync, phone_loopback_send_text, phone_loopback_mark_read, NULL },
+	{ "bluetooth", phone_bluetooth_send, NULL, phone_bluetooth_sync, phone_bluetooth_send_text, phone_bluetooth_mark_read, phone_bluetooth_send_mms }
 };
 
 /* The phone's state (zero: nothing opened, nothing followed). */
@@ -270,6 +272,7 @@ static int phone_call(struct kwl_object *object, const unsigned char *bytes, siz
 static int phone_listen(struct kwl_object *object, const unsigned char *bytes, size_t size, unsigned watch);
 static int phone_sync(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int phone_send_text(struct kwl_object *object, const unsigned char *bytes, size_t size);
+static int phone_send_mms(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int phone_mark_read(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int phone_link_set(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int phone_setting(struct kwl_server *server);
@@ -397,6 +400,12 @@ kwl_phone_request(
 		break;
 	case KL_SYSTEM_PHONE_SEND_TEXT:
 		error = phone_send_text(object, bytes, size);
+		break;
+	case KL_SYSTEM_PHONE_SEND_MMS:
+		/* An MMS, of version 32 (ws197-p010). */
+		error = EPROTO;
+		if (object->version >= KL_SYSTEM_SINCE_PHONE_MMS)
+			error = phone_send_mms(object, bytes, size);
 		break;
 	case KL_SYSTEM_PHONE_MARK_READ:
 		error = phone_mark_read(object, bytes, size);
@@ -861,6 +870,69 @@ phone_send_text(
 	return 0;
 }
 
+/* Carries out send_mms(request, to, mime): the MIME body is the file the client sent, read by the backend. */
+static int
+phone_send_mms(
+	struct kwl_object *object,
+	const unsigned char *bytes,
+	size_t size)
+{
+	const struct phone_backend *backend;
+	const char *to;
+	uint32_t request;
+	size_t offset;
+	int descriptor;
+	int error;
+	int app;
+
+	/* The request's number, the number to send to, and nothing after them. */
+	if (size < 4U)
+		return EPROTO;
+	request = phone_word(bytes, 0U);
+	error = phone_string(bytes, size, 4U, KL_SYSTEM_PHONE_TO_MAX, &to, &offset);
+	if (error != 0)
+		return error;
+	if (offset != size)
+		return EPROTO;
+
+	/* The MIME body's file, the request's descriptor (the compositor's to close). */
+	descriptor = kwl_take_fd(object->client);
+	if (descriptor < 0)
+		return EPROTO;
+
+	/* The phone program only, and a number. */
+	app = phone_is_phone_app(object->client);
+	if (!app) {
+		close(descriptor);
+		phone_done(object, request, KL_SYSTEM_RESULT_REFUSED);
+		return 0;
+	}
+
+	/* A number to send to. */
+	if (to[0] == '\0') {
+		close(descriptor);
+		phone_done(object, request, KL_SYSTEM_RESULT_INVALID);
+		return 0;
+	}
+
+	/* Without a backend that sends MMS: unavailable. */
+	backend = phone_backend(object->client->server);
+	printf("KWL PHONE send_mms client=%llu request=%u to=%lu backend=%s\n", (unsigned long long)object->client->number, request,
+	    (unsigned long)strlen(to), backend->name);
+	if (backend->send_mms == NULL) {
+		close(descriptor);
+		phone_done(object, request, KL_SYSTEM_RESULT_UNAVAILABLE);
+		return 0;
+	}
+
+	/* The backend reads the body; the descriptor is not kept. */
+	backend->send_mms(object, request, to, descriptor);
+	close(descriptor);
+
+	/* Succeeded: answered by done, then its states. */
+	return 0;
+}
+
 /* Carries out mark_read(request, handle). */
 static int
 phone_mark_read(
@@ -1187,6 +1259,31 @@ phone_bluetooth_send_text(
 
 	/* Asked of the backend; a refusal is answered at once. */
 	error = kl_backend_phone_send(phone_state.backend, to, text, length, &id);
+	if (error != 0) {
+		phone_done(object, request, phone_code(error));
+		return;
+	}
+
+	/* Answered when the backend answers (busy without room to follow it). */
+	pending = phone_pending_add(PHONE_PENDING_SEND, object, request, id);
+	if (pending == NULL)
+		phone_done(object, request, KL_SYSTEM_RESULT_BUSY);
+}
+
+/* The paired phone's MMS: answered by done when the phone's outbox has it, then its states (as a text's). */
+static void
+phone_bluetooth_send_mms(
+	struct kwl_object *object,
+	uint32_t request,
+	const char *to,
+	int descriptor)
+{
+	struct phone_pending *pending;
+	uint32_t id;
+	int error;
+
+	/* Asked of the backend, which reads the body now; a refusal is answered at once. */
+	error = kl_backend_phone_send_mms(phone_state.backend, to, descriptor, &id);
 	if (error != 0) {
 		phone_done(object, request, phone_code(error));
 		return;

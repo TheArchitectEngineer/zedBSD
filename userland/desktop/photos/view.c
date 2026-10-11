@@ -270,8 +270,25 @@ ph_view_action(
 	unsigned action,
 	uint64_t now_us)
 {
+	struct ph_photo *photos;
+	size_t count;
+	long target;
+
 	/* Each action. */
 	switch (action) {
+	case PH_ACTION_DELETE:
+		/* The request carries a stable ID rather than a transient view index. */
+		target = view_target(view);
+		photos = ph_photos(&count);
+		if (target < 0 || (size_t)target >= count) {
+			ph_view_notice(view, "Select media to delete.", now_us);
+			break;
+		}
+
+		/* Stop the slideshow while the application asks for confirmation. */
+		view->slideshow = 0;
+		memcpy(view->removing, photos[target].id, PH_ID_SIZE);
+		break;
 	case PH_ACTION_QUIT:
 		view->quit = 1;
 		break;
@@ -351,6 +368,9 @@ ph_view_key(
 
 	/* The keys of both. */
 	switch (key) {
+	case KL_KEY_DELETE:
+		ph_view_action(view, PH_ACTION_DELETE, now_us);
+		return;
 	case KL_KEY_SPACE:
 		ph_view_action(view, PH_ACTION_SLIDESHOW, now_us);
 		return;

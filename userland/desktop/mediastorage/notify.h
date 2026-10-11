@@ -11,5 +11,6 @@
 /* Publishes a completed database mutation through the compositor's media extension. */
 void media_db_notify(void);
 void media_database_release(void);
+int media_database_remove(const char *root, const char *id);
 
 #endif

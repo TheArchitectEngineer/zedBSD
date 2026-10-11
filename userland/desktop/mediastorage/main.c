@@ -21,6 +21,7 @@
 int main(int argc, char **argv);
 static int media_execute(const char *root, const char *command, const char *argument);
 static int media_add_list(const char *root);
+static int media_remove_list(const char *root);
 
 /*
  * Executes one locked metadata query, path-list import or metadata update.
@@ -43,7 +44,7 @@ main(
 
 	/* Requires one documented command; an optional root supports recovery and offline use. */
 	if (argc < 2 || argc > 4) {
-		fprintf(stderr, "usage: mediastorage list|add PATH|add-list|apply [--root=PATH]\n");
+		fprintf(stderr, "usage: mediastorage list|add PATH|add-list|apply|remove-list [--root=PATH]\n");
 		return 2;
 	}
 
@@ -118,6 +119,8 @@ main(
 		changed = strcmp(command, "add-list");
 	if (changed != 0)
 		changed = strcmp(command, "apply");
+	if (changed != 0)
+		changed = strcmp(command, "remove-list");
 	if (changed == 0)
 		media_db_notify();
 	ph_library_release();
@@ -154,6 +157,20 @@ media_execute(
 	struct ph_import_result result;
 	int same;
 	int error;
+
+	/* Removal resolves stable IDs from the current database rather than arbitrary paths. */
+	same = strcmp(command, "remove-list");
+	if (same == 0) {
+		error = media_remove_list(root);
+		if (error != 0)
+			return error;
+		error = ph_snapshot_write(stdout, root);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the response excludes committed deleted identities. */
+		return 0;
+	}
 
 	/* Adds files or folders by copying, never moving the user's originals. */
 	same = strcmp(command, "add");
@@ -260,5 +277,70 @@ media_add_list(
 		return ENOTSUP;
 
 	/* Succeeded: every accepted original has a recoverable copy and metadata. */
+	return 0;
+}
+
+/* Validates the full identity list before committing any managed-file deletion. */
+static int
+media_remove_list(
+	const char *root)
+{
+	char ids[256U][PH_ID_SIZE];
+	char line[PH_ID_SIZE + 2U];
+	char *got;
+	size_t count;
+	size_t index;
+	size_t prior;
+	size_t length;
+	size_t clean;
+	long found;
+	int same;
+	int error;
+
+	/* Complete lowercase hexadecimal identities are the CLI's only deletion input. */
+	count = 0U;
+	for (;;) {
+		got = fgets(line, sizeof(line), stdin);
+		if (got == NULL)
+			break;
+		length = strlen(line);
+		clean = strspn(line, "0123456789abcdef");
+		if (length != PH_ID_SIZE ||
+		    clean != PH_ID_SIZE - 1U ||
+		    line[length - 1U] != '\n' ||
+		    count == 256U)
+			return EINVAL;
+		line[length - 1U] = '\0';
+		found = ph_library_find_id(line);
+		if (found < 0)
+			return ENOENT;
+
+		/* Duplicate IDs in one request must not turn a successful deletion into failure. */
+		for (prior = 0U; prior < count; prior++) {
+			same = strcmp(ids[prior], line);
+			if (same == 0)
+				break;
+		}
+
+		/* Only unique identities consume a deletion slot. */
+		if (prior == count) {
+			memcpy(ids[count], line, PH_ID_SIZE);
+			count++;
+		}
+	}
+
+	/* A malformed or truncated input stream never authorizes a partial request. */
+	error = ferror(stdin);
+	if (error != 0)
+		return EIO;
+	if (count == 0U)
+		return EINVAL;
+	for (index = 0U; index < count; index++) {
+		error = media_database_remove(root, ids[index]);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: each identity has a committed metadata removal and deleted copy. */
 	return 0;
 }

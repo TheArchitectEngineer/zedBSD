@@ -415,6 +415,7 @@ static const struct wl_message system_phone_requests[] = {
 	{ "mark_read", "27us", system_plain_types },
 	{ "link_set", "27usuu", system_plain_types },
 	{ "watch_link", "27u", system_plain_types },
+	{ "send_mms", "32ush", system_plain_types },
 };
 
 /* The events of kl_system_phone_v1 (item and the others since 27, ws197-p004a; link_contacts since 28, ws197-p005). */
@@ -431,11 +432,11 @@ static const struct wl_message system_phone_events[] = {
 	{ "item_mime", "30uussuuiuusssuah", system_plain_types },
 };
 
-/* kl_system_phone_v1, made at the manager's version (16, its messages' syncs since 27, the contacts and calls since 28): nine requests and ten events.  It lives for the program. */
+/* kl_system_phone_v1, made at the manager's version (16, its messages' syncs since 27, the contacts and calls since 28, received MIME since 30, send_mms since 32): ten requests and ten events.  It lives for the program. */
 const struct wl_interface kl_system_phone_v1_interface = {
 	KL_SYSTEM_PHONE_NAME,
-	KL_SYSTEM_SINCE_PHONE_MIME,
-	9,
+	KL_SYSTEM_SINCE_PHONE_MMS,
+	10,
 	system_phone_requests,
 	10,
 	system_phone_events
@@ -558,6 +559,7 @@ static const struct wl_message system_media_requests[] = {
     {"apply", "uh", system_plain_types},
     {"watch", "u", system_plain_types},
     {"notify", "", NULL},
+    {"remove", "2us", system_plain_types},
 };
 
 /* Each CLI response is a snapshot descriptor followed by its completion errno. */
@@ -567,6 +569,6 @@ static const struct wl_message system_media_events[] = {
     {"changed", "u", system_plain_types},
 };
 
-/* A version-one media object is obtained from version 29 of the manager. */
+/* Manager 29 provides media v1; manager 31 adds removal through media v2. */
 const struct wl_interface kl_system_media_v1_interface = {
-    KL_SYSTEM_MEDIA_NAME, 1, 6, system_media_requests, 3, system_media_events};
+    KL_SYSTEM_MEDIA_NAME, 2, 7, system_media_requests, 3, system_media_events};

@@ -88,6 +88,9 @@
 #define PH_ID_NEW_NUMBER	12U
 #define PH_ID_SAVE		13U
 #define PH_ID_CANCEL		14U
+#define PH_ID_ATTACH_AWAY	15U
+#define PH_ID_ATTACH_MEDIA	16U
+#define PH_ID_ATTACH_FILE	17U
 
 /*
  * The colors: the person's bubbles and cards (on glass, see-through
@@ -151,6 +154,7 @@ static int view_call(const struct kl_style *style, const struct ph_item *item, i
 static int view_photo(const struct kl_style *style, const struct ph_item *item, int x, int y, int width, int draw);
 static int view_file(const struct kl_style *style, const struct ph_item *item, int x, int y, int width, int draw);
 static void view_composer(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, const struct ph_contact *contact, const struct kl_rect *area, uint64_t now_us);
+static void view_attach_choices(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, const struct kl_rect *composer, uint64_t now_us);
 static void view_empty(const struct kl_style *style, const struct kl_rect *area, const char *title, const char *line);
 static void view_handset(struct kl_canvas *canvas, float x, float y, float size, kl_color color);
 static void view_centred(const struct kl_style *style, int cx, int baseline, const char *text, unsigned pixels, int bold, kl_color color);
@@ -277,9 +281,22 @@ ph_view_action(
 		ph_log("REQUEST action=call contact=%ld", view->selected);
 		break;
 	case PH_ACTION_ATTACH:
-		/* Selects media without sending or recording a timeline item. */
+	case PH_ACTION_ATTACH_MEDIA:
+		/* Chooses a file, or photos and videos, without sending or recording a timeline item. */
+		view->attach_choices = 0;
 		if (view->selected >= 0)
-			view_request(view, PH_ACTION_ATTACH, view->selected);
+			view_request(view, action, view->selected);
+		break;
+	case PH_ACTION_ATTACH_CHOICES:
+		/* The plus hides its two choices when they show. */
+		if (view->attach_choices) {
+			view->attach_choices = 0;
+			break;
+		}
+
+		/* Otherwise it shows them, for the conversation chosen. */
+		if (view->selected >= 0)
+			view->attach_choices = 1;
 		break;
 	case PH_ACTION_ADD:
 		/* The form of a new contact, in place of the timeline. */
@@ -336,6 +353,12 @@ ph_view_key(
 	(void)now_us;
 	if ((modifiers & (KL_MOD_CTRL | KL_MOD_ALT | KL_MOD_SUPER)) != 0U)
 		return;
+
+	/* Esc hides the plus's choices first. */
+	if (key == KL_KEY_ESC && view->attach_choices) {
+		view->attach_choices = 0;
+		return;
+	}
 
 	/* Esc goes back to the list of a narrow window. */
 	if (key == KL_KEY_ESC) {
@@ -1020,6 +1043,10 @@ view_conversation(
 	view_timeline(view, ui, style, contact, &timeline, now_us);
 	view_header(view, ui, style, contact, &header, now_us);
 	view_composer(view, ui, style, contact, &composer, now_us);
+
+	/* The plus's two choices over the conversation, on top of everything in it. */
+	if (view->attach_choices)
+		view_attach_choices(view, ui, style, area, &composer, now_us);
 }
 
 /*
@@ -1949,7 +1976,7 @@ view_composer(
 	button.height = 32;
 	hit = kl_ui_hit(ui, PH_ID_ATTACH, 0U, &button);
 	if ((hit & KL_HIT_CLICKED) != 0U)
-		ph_view_action(view, PH_ACTION_ATTACH, now_us);
+		ph_view_action(view, PH_ACTION_ATTACH_CHOICES, now_us);
 	ground = kl_theme_choose(KL_RGB(0xeef1f5), KL_RGB(0x2f3540));
 	if ((hit & (KL_HIT_HOT | KL_HIT_ACTIVE)) != 0U)
 		ground = kl_theme_choose(KL_RGB(0xe1e6ee), KL_RGB(0x3a414d));
@@ -1982,6 +2009,60 @@ view_composer(
 		ground = style->theme->accent;
 	kl_canvas_circle(style->canvas, (float)button.x + 18.0f, (float)button.y + 18.0f, 16.0f, ground);
 	kl_icon_draw(style->canvas, KL_ICON_UP, (float)button.x + 8.0f, (float)button.y + 8.0f, 20.0f, PH_COLOR_WHITE);
+}
+
+/*
+ * Draws the plus's card of two choices above it -- photos and videos from
+ * the library, or a file -- and carries out a click: a choice asks the
+ * window for it, and a click anywhere else in the conversation hides the
+ * card.
+ */
+static void
+view_attach_choices(
+	struct ph_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	const struct kl_rect *area,
+	const struct kl_rect *composer,
+	uint64_t now_us)
+{
+	struct kl_rect card;
+	struct kl_rect button;
+	unsigned hit;
+	int pressed;
+
+	/* A click outside the card, over the conversation, hides it (recorded under the card). */
+	hit = kl_ui_hit(ui, PH_ID_ATTACH_AWAY, 0U, area);
+	if ((hit & KL_HIT_CLICKED) != 0U) {
+		view->attach_choices = 0;
+		return;
+	}
+
+	/* The card above the plus, with a soft shadow, the way a menu stands over a window. */
+	card.x = composer->x + 8;
+	card.width = 220;
+	card.height = 2 * 36 + 3 * 8;
+	card.y = composer->y + composer->height - PH_VIEW_COMPOSER - card.height + 4;
+	kl_canvas_shadow(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 12.0f, 12.0f, KL_RGBA(0x000000, 60));
+	kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 12.0f, style->theme->card);
+	kl_canvas_round_border(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 12.0f, 1.0f, style->theme->card_edge);
+
+	/* Photos and videos of the library, through the media picker. */
+	button.x = card.x + 8;
+	button.y = card.y + 8;
+	button.width = card.width - 16;
+	button.height = 36;
+	pressed = kl_button(ui, style, PH_ID_ATTACH_MEDIA, &button, "Photos & Videos", 0U);
+	if (pressed) {
+		ph_view_action(view, PH_ACTION_ATTACH_MEDIA, now_us);
+		return;
+	}
+
+	/* A file, through the file chooser. */
+	button.y += 36 + 8;
+	pressed = kl_button(ui, style, PH_ID_ATTACH_FILE, &button, "File\xe2\x80\xa6", 0U);
+	if (pressed)
+		ph_view_action(view, PH_ACTION_ATTACH, now_us);
 }
 
 /*

@@ -1060,6 +1060,14 @@ int kl_backend_phone_read(struct kl_backend_phone *phone, const char *handle, ui
 /* Sends a text (1 to KL_BACKEND_PHONE_SEND_MAX bytes, no NUL) to a number ([0-9+*#], 1 to 32).  Returns as kl_backend_phone_page. */
 int kl_backend_phone_send(struct kl_backend_phone *phone, const char *to, const uint8_t *text, size_t length, uint32_t *id);
 
+/*
+ * Sends an MMS (ws197-p010): its MIME body, the whole of a regular file the
+ * caller keeps open (1 to KL_BACKEND_PHONE_MIME_MAX bytes, read from its
+ * start), to a number, answered and followed as kl_backend_phone_send.
+ * Returns as kl_backend_phone_page, and EMSGSIZE for a body too long.
+ */
+int kl_backend_phone_send_mms(struct kl_backend_phone *phone, const char *to, int descriptor, uint32_t *id);
+
 /* Turns the phone's switch on with its profiles (KL_BACKEND_PHONE_PROFILE_*), or off keeping them.  Returns as kl_backend_phone_page. */
 int kl_backend_phone_link_set(struct kl_backend_phone *phone, const char *address, unsigned on, unsigned profiles, uint32_t *id);
 
@@ -2076,6 +2084,7 @@ void kl_backend_sharing_get(const struct kl_backend *backend, struct kl_backend_
 #define KL_BACKEND_MEDIA_LIST 1U
 #define KL_BACKEND_MEDIA_ADD 2U
 #define KL_BACKEND_MEDIA_APPLY 4U
+#define KL_BACKEND_MEDIA_REMOVE 8U
 
 /* An asynchronous spawned CLI queue with pipe input/output; notification uses libkeiland. */
 struct kl_backend_media;

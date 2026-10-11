@@ -43,7 +43,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
@@ -63,6 +65,9 @@
 #define PHONE_SHOW_MS		30000U
 #define PHONE_BUSY_MS		10000U
 #define PHONE_ANSWER_MS		120000U
+
+/* The slowest a phone's Bluetooth takes an MMS's body (bytes a second): a large body's answer is due that much later. */
+#define PHONE_MMS_BYTES_PER_S	16384U
 
 /* The longest line read (bluetoothd writes 2047 bytes at most with the newline), and the longest request written. */
 #define PHONE_INPUT_MAX		2048U
@@ -526,6 +531,95 @@ kl_backend_phone_send(
 }
 
 /*
+ * Sends an MMS (ws197-p010): bluetoothd pushes its MIME body, read whole
+ * from the caller's regular file, to the phone's outbox as a bMessage of
+ * type MMS.  One MMS waits at a time.
+ */
+int
+kl_backend_phone_send_mms(
+	struct kl_backend_phone *phone,
+	const char *to,
+	int descriptor,
+	uint32_t *id)
+{
+	struct phone_request *request;
+	struct stat status;
+	char line[PHONE_LINE_MAX];
+	uint8_t *mime;
+	size_t length;
+	size_t done;
+	size_t index;
+	ssize_t got;
+	int valid;
+	int regular;
+	int error;
+
+	/* A record, a number, a descriptor and somewhere for the id. */
+	if (phone == NULL || id == NULL || to == NULL || descriptor < 0)
+		return EINVAL;
+	valid = phone_number_valid(to);
+	if (!valid)
+		return EINVAL;
+
+	/* bluetoothd answers. */
+	if (!phone->state.reachable)
+		return ENOTCONN;
+
+	/* One MMS waits or is written at a time: its body may be megabytes. */
+	for (index = 0U; index < phone->requests.count; index++) {
+		if (phone->requests.requests[index].length > KL_BACKEND_PHONE_SEND_MAX)
+			return EBUSY;
+	}
+
+	/* A regular file (a pipe could block the desktop), of a length bluetoothd takes. */
+	error = fstat(descriptor, &status);
+	if (error != 0)
+		return errno;
+	regular = S_ISREG(status.st_mode);
+	if (!regular)
+		return EINVAL;
+	if (status.st_size <= 0)
+		return EINVAL;
+	if ((uintmax_t)status.st_size > KL_BACKEND_PHONE_MIME_MAX)
+		return EMSGSIZE;
+	length = (size_t)status.st_size;
+
+	/* The body's own copy, read from the file's start whatever its offset. */
+	mime = malloc(length);
+	if (mime == NULL)
+		return ENOMEM;
+	done = 0U;
+	while (done < length) {
+		got = pread(descriptor, mime + done, length - done, (off_t)done);
+		if (got < 0 && errno == EINTR)
+			continue;
+		if (got <= 0) {
+			free(mime);
+			return EIO;
+		}
+
+		/* Read so far. */
+		done += (size_t)got;
+	}
+
+	/* Waits its turn on the requests' connection, the line asking for an MMS of that length. */
+	(void)snprintf(line, sizeof(line), "PHONE SEND to=\"%s\" type=mms length=%lu\n", to, (unsigned long)length);
+	error = phone_queue(phone, &phone->requests, PHONE_KIND_SEND, line, NULL, 0U, id);
+	if (error != 0) {
+		free(mime);
+		return error;
+	}
+
+	/* The request queued last owns the body, sent after its line (not copied again). */
+	request = &phone->requests.requests[phone->requests.count - 1U];
+	request->text = mime;
+	request->length = length;
+
+	/* Succeeded: asked. */
+	return 0;
+}
+
+/*
  * Turns the phone's switch on with its profiles, or off keeping them
  * (bluetoothd's PHONE LINK); the record is read again once it is
  * answered.
@@ -953,9 +1047,11 @@ phone_start(
 	connection->output_length = line_length + request->length;
 	connection->output_sent = 0U;
 
-	/* Written: its answer is due in two minutes, gathered from nothing. */
+	/* Written: its answer is due in two minutes (and an MMS's body's time over the radio), gathered from nothing. */
 	connection->written = 1U;
 	connection->due_ms = now + PHONE_ANSWER_MS;
+	if (request->length > KL_BACKEND_PHONE_SEND_MAX)
+		connection->due_ms += (uint64_t)request->length * 1000U / PHONE_MMS_BYTES_PER_S;
 	memset(&connection->answer, 0, sizeof(connection->answer));
 	connection->answer.id = request->id;
 	connection->show_line = 0U;

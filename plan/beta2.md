@@ -43,6 +43,7 @@
 | # | 項目 | 手順 | 期待 |
 | --- | --- | --- | --- |
 | 11 | [WS197](ws197/ws.md) スマホの SMS（Android） | 手順は ws197/ws.md の「5330 の UAT の手順」: Settings → Bluetooth でスマホを pairing して「Use as phone」→ Phone の app で受信・送信・同期、app を閉じている間の通知 | SMS が送受信でき、履歴が同期される |
+| 12 | [WS197](ws197/ws.md) 写真・動画の MMS の送信と「＋」の添付の選択（2026-10-11、main e7ff23fba 以降の image） | 手順は [phase010](ws197/phase010/phase.md) の末尾: Phone の「＋」→ Photos & Videos で写真・動画を選ぶ（File… でも可）→ 文を添えて Send | スマホから相手に MMS が届く。1 通は元の bytes で合計 8 MiB まで（carrier の上限を越えるとスマホ側で失敗しうる） |
 
 ## 既知の問題に書いて出す（ベータ3 以降）
 

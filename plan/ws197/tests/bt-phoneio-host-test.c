@@ -304,6 +304,18 @@ test_length(void)
 	check(error == EINVAL, "length: twice");
 	error = btd_phoneio_send_length("PHONE SEND to=\"x length=5", &length);
 	check(error == EINVAL, "length: a malformed argument");
+
+	/* An MMS's MIME body (ws197-p010): type=mms, once, takes up to 16 MiB. */
+	error = btd_phoneio_send_length("PHONE SEND to=\"+8190\" type=mms length=16777216", &length);
+	check(error == 0 && length == 16777216U, "length: an MMS of 16 MiB");
+	error = btd_phoneio_send_length("PHONE SEND type=mms length=16777217", &length);
+	check(error == EINVAL, "length: an MMS past 16 MiB");
+	error = btd_phoneio_send_length("PHONE SEND length=9000", &length);
+	check(error == EINVAL, "length: a text past 8192 without type=mms");
+	error = btd_phoneio_send_length("PHONE SEND type=sms length=5", &length);
+	check(error == EINVAL, "length: another type");
+	error = btd_phoneio_send_length("PHONE SEND type=mms type=mms length=5", &length);
+	check(error == EINVAL, "length: type twice");
 }
 
 /* A client's bytes in pieces. */

@@ -64,3 +64,25 @@ mainへ受信source/evidence `035d1d25b` をfast-forward統合済み。source同
 最新ユーザーの5項目を扱う[ws197-p012](../phase012/phase.md)が受信媒体をdouble-clickでImage Viewer/Video Playerへ開くsourceを実装する。保存pathをview requestへcopyして後続syncの並べ替えから切り離す。p010のplayer起動の出力はこのPhaseの成果を参照する。送信の未完条件とin-progress状態は保持。
 
 2026-10-10結果: p012の添付viewer起動/thumbnail/起動NULL参照修正はmain `e654733f1eb6e1296eacf34b5dff6002a5dd17e1`、scoped cleared。p010の送信残件とin-progress statusは維持。
+
+## 2026-10-11 q927（P1）: 写真・動画の送信（新しい mediastorage・path の API の上に作り直し）
+
+承認: 2026-10-11 ユーザー（P1 lane の先頭）「MMSの添付ファイル送信、画像送信、動画送信」。旧試作（`.claude/worktrees/ws197-media`、未 commit）は読むだけで、今の main（受信の MIME FD・libmms・Media JSON）に合わせて書き直した。
+
+経路: Phone（下書きの写真・動画と文字 → `ph_draft_mime` が libmms の `mms_write_parts` で MIME を private の file に書く）→ 同じ MIME を `ph_receive_media` で library に取り込み（hash で重複は既存の path）、timeline の item（PH_MMS、送信中）に media の path を保存 → `kl_system_phone_send_mms(system, to, fd, &request)`（KL_VERSION 86、manager 32、phone の request 9 `send_mms(uint request, string to, fd mime)`）→ compositor `phone-shell.c` が fd を取り backend へ（読んだら close）→ `kl_backend_phone_send_mms`（zedBSD: 正規 file だけ、16 MiB まで pread、`PHONE SEND to=… type=mms length=N` の後に本体、答えの期限は 120 秒＋本体 16 KiB/秒）→ bluetoothd（phoneio が type=mms で 16 MiB まで、`btd_map_send_mms` が MMS の MIME を検査して bMessage TYPE:MMS で PushMessage、大きい物は 1 つずつ、phone が MMS を受けなければ no-send）→ 状態は text と同じ（done、PHONE SENT の sent・delivered）。Linux・FreeBSD の backend は ENOTSUP。
+
+上限: 1 通に写真・動画 16 個まで、元の bytes で合計 8 MiB（libmms の MMS_MEDIA_MAX）。越えると「too large」の notice、下書きは残す。変換・縮小はしない（carrier の上限はスマホ側の結果として失敗の状態で出る）。
+
+### 確認（host・build）
+
+| コマンド | 結果 |
+| --- | --- |
+| `sh plan/ws197/tests/bt-phone-host-test.sh`（OUT=build/ws197-p010-bthost） | 全 PASS。runner に libmms を足した（main で bt-mms・bt-bmsg・bt-map が link できなかった）。bt-map の試験が btd_map_init で MAS の body を捨てて LSan が leak を出していたので、試験の start で free（試験の直し）。新: bt-map の MMS の push（TYPE:MMS、MIME の本体、大きい物の複数 Put、2 つ目の大きい物は busy、MIME でない物は argument、番号、MMS を受けない phone は no-send）、bt-phoneio の type=mms の長さ（16 MiB まで、type 2 回・他の type は拒否） |
+| `sh plan/ws197/tests/phone-backend-host-test.sh` | PASS（新: MMS の line と本体、結果、pipe と fd 無しは EINVAL） |
+| `sh plan/ws197/tests/phone-shell-host-test.sh` | PASS（新: version 32 の send_mms が backend に届き fd を compositor が close、done OK、version 27 は EPROTO） |
+| `sh plan/ws157/tests/run-host-mediastorage.sh`（host-media-select に libmms を足し、下書きの MIME の試験を追加） | 全 PASS（写真と動画と caption が 1 つの MIME、他の会話の下書きは残る、無ければ ENOENT） |
+| zedBSD named build（config/current-uat.mk、BUILD=build/ws197-p010）: libkeiland.so・phone・wayland・bluetoothd・photos・settings | rc 0、warning 0 |
+| Linux: libkeiland.so・wayland・mediastorage | rc 0、warning 0 |
+| style-check（変えた file）・`git diff --check`・`exports.py --check`・`keiland-os-boundary/check.sh` | 新規 0・PASS |
+
+未実施: 実機（5330＋Android の実際の MMS の送信、写真・動画）。ユーザーの UAT に回す: Phone で会話を開き「＋」→ Photos & Videos で 1〜2 枚 → 文字を書いて Send → timeline に送信中の項目（写真の thumbnail）→ スマホの送信済みに MMS、相手に届く。動画も同じ。失敗の時は項目が Failed と notice。

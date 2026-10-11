@@ -42,6 +42,15 @@ struct mms_document {
 int mms_parse(const uint8_t *input, size_t length, struct mms_document *document);
 void mms_release(struct mms_document *document);
 int mms_extract_text(const uint8_t *input, size_t length, char *output, size_t size, size_t *used, int *truncated);
+/* One original image/video written into a message: its MIME type, file name and bytes (the caller's). */
+struct mms_part {
+	const char *type;
+	const char *name;
+	const uint8_t *data;
+	size_t length;
+};
+
 int mms_write(FILE *output, const char *type, const char *name, const uint8_t *data, size_t length, const char *caption);
+int mms_write_parts(FILE *output, const struct mms_part *parts, size_t count, const char *caption);
 
 #endif

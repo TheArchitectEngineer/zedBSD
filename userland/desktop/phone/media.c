@@ -8,15 +8,20 @@
 /* Keeps unsent attachments separate from the message store and transport. */
 #include "phone.h"
 #include "userland/desktop/picture/media-kind.h"
+#include "userland/desktop/libmms/mms.h"
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 static int draft_kind(const char *path, int *video);
+static int draft_part(const char *path, size_t room, struct mms_part *part, uint8_t **data, char *name);
 static int draft_uri(const char *uri, size_t length, char *path, size_t size);
 static int draft_hex(unsigned char byte);
 
@@ -138,6 +143,133 @@ ph_draft_count(
 
 	/* Succeeded: other conversations' drafts do not affect this composer. */
 	return count;
+}
+
+/*
+ * Writes a contact's unsent photos and videos, with the message's words as
+ * their caption, as one MMS's MIME body into a private file already removed
+ * from its folder (ws197-p010).  *descriptor is the caller's to close.
+ * Returns 0, ENOENT without attachments, EFBIG when they pass an MMS's
+ * bound, or an errno value of reading them or of the file.
+ */
+int
+ph_draft_mime(
+	const struct ph_view *view,
+	const char *contact,
+	const char *caption,
+	int *descriptor)
+{
+	struct mms_part parts[MMS_MEDIA_COUNT];
+	uint8_t *datas[MMS_MEDIA_COUNT];
+	char names[MMS_MEDIA_COUNT][MMS_NAME_MAX];
+	char path[] = "/tmp/phone-mms-out-XXXXXX";
+	FILE *output;
+	size_t count;
+	size_t total;
+	size_t index;
+	size_t at;
+	int copy;
+	int same;
+	int error;
+	int file;
+
+	/* Each attachment of the contact, read whole, within an MMS's bounds. */
+	*descriptor = -1;
+	count = 0U;
+	total = 0U;
+	error = 0;
+	for (index = 0U; index < view->attachment_count; index++) {
+		same = strcmp(view->attachments[index].contact, contact);
+		if (same != 0)
+			continue;
+
+		/* One more part than an MMS carries. */
+		if (count == MMS_MEDIA_COUNT) {
+			error = EFBIG;
+			break;
+		}
+
+		/* Its bytes, its type and its name. */
+		error = draft_part(view->attachments[index].path, MMS_MEDIA_MAX - total, &parts[count], &datas[count], names[count]);
+		if (error != 0)
+			break;
+		total += parts[count].length;
+		count++;
+	}
+
+	/* Nothing to send is not an MMS. */
+	if (error == 0 && count == 0U)
+		error = ENOENT;
+
+	/* The private file, gone from its folder at once so that nothing is left behind. */
+	file = -1;
+	if (error == 0) {
+		file = mkstemp(path);
+		if (file < 0)
+			error = errno;
+		else
+			(void)unlink(path);
+	}
+
+	/* The MIME body written through a stream of its own descriptor. */
+	output = NULL;
+	if (error == 0) {
+		copy = dup(file);
+		if (copy >= 0)
+			output = fdopen(copy, "w");
+		if (output == NULL) {
+			error = errno;
+			if (copy >= 0)
+				(void)close(copy);
+		}
+	}
+
+	/* The body itself. */
+	if (error == 0)
+		error = mms_write_parts(output, parts, count, caption);
+
+	/* The stream flushed and closed; a failure to write is the body's. */
+	if (output != NULL) {
+		same = fclose(output);
+		if (same != 0 && error == 0)
+			error = EIO;
+	}
+
+	/* The bytes read go in every case. */
+	for (at = 0U; at < count; at++)
+		free(datas[at]);
+
+	/* A refusal leaves no file open. */
+	if (error != 0) {
+		if (file >= 0)
+			(void)close(file);
+		return error;
+	}
+
+	/* Succeeded: the caller owns the body's file. */
+	*descriptor = file;
+	return 0;
+}
+
+/*
+ * Removes every unsent attachment of a contact (a message sent with them).
+ */
+void
+ph_draft_clear(
+	struct ph_view *view,
+	const char *contact)
+{
+	size_t index;
+	int same;
+
+	/* From the last, so that the ones before keep their places. */
+	index = view->attachment_count;
+	while (index > 0U) {
+		index--;
+		same = strcmp(view->attachments[index].contact, contact);
+		if (same == 0)
+			ph_draft_remove(view, index);
+	}
 }
 
 /*
@@ -273,6 +405,137 @@ draft_kind(
 		*video = 1;
 
 	/* Succeeded: the path describes a supported photo or video container. */
+	return 0;
+}
+
+/*
+ * Reads one attachment for an MMS: its bytes (at most room), its MIME type
+ * from its header (and a video's name), and a file name safe in a header.
+ * Returns 0, EFBIG past room, ENOTSUP for a file not a photo or a video, or
+ * an errno value of reading it.
+ */
+static int
+draft_part(
+	const char *path,
+	size_t room,
+	struct mms_part *part,
+	uint8_t **data,
+	char *name)
+{
+	struct stat status;
+	const char *base;
+	const char *dot;
+	uint8_t *bytes;
+	size_t length;
+	size_t done;
+	size_t span;
+	ssize_t got;
+	int descriptor;
+	int regular;
+	int kind;
+	int error;
+	int same;
+
+	/* The file, a regular one without blocking. */
+	descriptor = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+	if (descriptor < 0)
+		return errno;
+	error = fstat(descriptor, &status);
+	if (error != 0) {
+		error = errno;
+		(void)close(descriptor);
+		return error;
+	}
+
+	/* A regular file with some bytes. */
+	regular = S_ISREG(status.st_mode);
+	if (!regular || status.st_size <= 0) {
+		(void)close(descriptor);
+		return EINVAL;
+	}
+
+	/* Within the room left in the message. */
+	if ((uintmax_t)status.st_size > room) {
+		(void)close(descriptor);
+		return EFBIG;
+	}
+
+	/* Its length. */
+	length = (size_t)status.st_size;
+
+	/* Its bytes, whole. */
+	bytes = malloc(length);
+	if (bytes == NULL) {
+		(void)close(descriptor);
+		return ENOMEM;
+	}
+
+	/* Read to its end. */
+	done = 0U;
+	while (done < length) {
+		got = pread(descriptor, bytes + done, length - done, (off_t)done);
+		if (got < 0 && errno == EINTR)
+			continue;
+		if (got <= 0)
+			break;
+		done += (size_t)got;
+	}
+
+	/* The file closed; a short read is an error. */
+	(void)close(descriptor);
+	if (done != length) {
+		free(bytes);
+		return EIO;
+	}
+
+	/* Its type by its header, a video's by its name's ending. */
+	kind = kl_media_kind(bytes, length);
+	base = strrchr(path, '/');
+	if (base == NULL)
+		base = path;
+	else
+		base++;
+	dot = strrchr(base, '.');
+	switch (kind) {
+	case KL_MEDIA_JPEG:
+		part->type = "image/jpeg";
+		break;
+	case KL_MEDIA_PNG:
+		part->type = "image/png";
+		break;
+	case KL_MEDIA_GIF:
+		part->type = "image/gif";
+		break;
+	case KL_MEDIA_VIDEO:
+		/* MP4 unless the name says 3GP or QuickTime. */
+		part->type = "video/mp4";
+		if (dot != NULL) {
+			same = strcasecmp(dot, ".3gp");
+			if (same == 0)
+				part->type = "video/3gpp";
+			same = strcasecmp(dot, ".mov");
+			if (same == 0)
+				part->type = "video/quicktime";
+		}
+
+		/* The video's type chosen. */
+		break;
+	default:
+		free(bytes);
+		return ENOTSUP;
+	}
+
+	/* Its name, unless it holds what a header cannot (then a plain one). */
+	span = strcspn(base, "\r\n\"\\");
+	if (base[span] != '\0' || span == 0U || span >= MMS_NAME_MAX)
+		base = "attachment";
+	(void)snprintf(name, MMS_NAME_MAX, "%s", base);
+
+	/* Succeeded: the part borrows the bytes and the name, the caller frees the bytes. */
+	part->name = name;
+	part->data = bytes;
+	part->length = length;
+	*data = bytes;
 	return 0;
 }
 

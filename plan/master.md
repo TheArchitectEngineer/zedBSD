@@ -13,8 +13,9 @@
 <!-- master:agents:start -->
 - **2026-10-11（Q1）: N=3＋T1**（ユーザー）。[Queue](queue.md) の 2026-10-11 の節、[台帳](agents/registry.md)。
   - P1（agent/p1、新規の実装）: q924 WS157 Photos の削除の統合 → q925 Vulkan Video i915 の完了（WS202・WS083 p007）→ q926 ws197-p014 media picker の popup → q927 MMS の送信（p010）→ q928 HFP の制御 → q929 [WS204](ws204/ws.md) HDA の録音 → q930 HFP の音 → q931 [WS205](ws205/ws.md) Bluetooth audio → q932 [WS206](ws206/ws.md) Pi 4 WiFi → q933 [WS207](ws207/ws.md) Pi 4 audio。
-  - P2（agent/p2、Bug）: q934 BUG-263 → q935 BUG-274 → 終了（Bug が出たら立て直す）。
-  - P3（agent/p3、起点 d27925686）: q936 [ws141-p013](ws141/phase013/phase.md) VC6 の描画（mouse の移動 300 ms → 33 ms → 16 ms、Pi 4 は 10.0.30.2）。WS141 は Codex のセッションから P3 へ引き継いだ。
+  - P2: q934 BUG-263（c695cc34d、test-wait T1-530）・q935 BUG-274（048dc8c4b、guest の script の実行はユーザーの判断待ち）を終えて終了。
+  - P1 の q924（WS157 Photos の削除）を merge（787c1904c）。GUI の確かめは T1 に後でまとめる。既存の keiland-os-boundary A4 の FAIL（phone/main.c の posix_spawn）は P1 が q926 で直す。
+  - P3（agent/p3、起点 d27925686）: q936 [ws141-p013](ws141/phase013/phase.md) VC6 の描画（mouse の移動 300 ms → 33 ms → 16 ms、Pi 4 は 10.0.30.2）。WS141 は Codex のセッションから P3 へ引き継いだ。**Codex は全て終了（2026-10-11 ユーザー「Codexはもう動かしません。終了しました。」）**。Pi 4 は image を焼き直した（ユーザー）: P3 が SSH で kernel を入れて reboot。
   - T1（agent/t1）: T1-529 WS202 の再生（QEMU と 5330 の scp）。
 <!-- master:agents:end -->
 

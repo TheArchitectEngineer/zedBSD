@@ -100,6 +100,54 @@ ph_library_add(
 }
 
 /*
+ * Removes one media identity and its album memberships from the in-memory model.
+ */
+int
+ph_library_remove(
+	const char *id)
+{
+	long found;
+	size_t index;
+	size_t album;
+	size_t member;
+	struct ph_album *chosen;
+	char identity[PH_ID_SIZE];
+	int same;
+
+	/* Resolves the identity before freeing strings shared by its path fields. */
+	found = ph_library_find_id(id);
+	if (found < 0)
+		return ENOENT;
+
+	/* Keep a private identity even when the caller borrowed it from the shifted array. */
+	memcpy(identity, library.photos[found].id, sizeof(identity));
+	index = (size_t)found;
+	free(library.photos[index].path);
+	free(library.photos[index].original);
+	library.photo_count--;
+	if (index < library.photo_count)
+		memmove(library.photos + index, library.photos + index + 1U, (library.photo_count - index) * sizeof(library.photos[0]));
+
+	/* An album survives removal, but no longer contains the deleted identity. */
+	for (album = 0U; album < library.album_count; album++) {
+		chosen = &library.albums[album];
+		for (member = 0U; member < chosen->count; member++) {
+			same = strcmp(chosen->members[member], identity);
+			if (same != 0)
+				continue;
+			chosen->count--;
+			if (member < chosen->count)
+				memmove(chosen->members + member, chosen->members + member + 1U, (chosen->count - member) * sizeof(chosen->members[0]));
+			chosen->changed = 1;
+			break;
+		}
+	}
+
+	/* Succeeded: the model no longer exposes this media or dangling memberships. */
+	return 0;
+}
+
+/*
  * Puts the photos in the order of their dates (the newest first, then of
  * their paths) and the albums in the order of their names.
  */

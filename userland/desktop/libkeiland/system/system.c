@@ -1862,6 +1862,47 @@ kl_system_phone_send_text(
 }
 
 /*
+ * Sends an MMS's MIME body, a regular file the caller keeps, to a number
+ * through the phone (ws197-p010): the result 0 says the phone's outbox has
+ * it; KL_PHONE_STATUS events follow.
+ */
+int
+kl_system_phone_send_mms(
+	struct kl_system *system,
+	const char *to,
+	int descriptor,
+	uint32_t *request)
+{
+	char number[KL_SYSTEM_PHONE_TO_MAX];
+	uint32_t asked;
+	int offered;
+	int error;
+
+	/* A system, a number and a body. */
+	if (system == NULL || to == NULL || descriptor < 0)
+		return EINVAL;
+
+	/* The phone's messages, of a compositor that takes an MMS. */
+	offered = system_phone_sync_offered(system);
+	if (!offered)
+		return ENOTSUP;
+	if (system->manager_version < KL_SYSTEM_SINCE_PHONE_MMS)
+		return ENOTSUP;
+
+	/* The number without its separators. */
+	error = system_phone_number(to, number, sizeof(number));
+	if (error != 0)
+		return error;
+
+	/* The request, the body's descriptor duplicated with it, sent with the application's next flush. */
+	asked = system_number(system, request);
+	wl_proxy_marshal(system->phone, KL_SYSTEM_PHONE_SEND_MMS, asked, number, descriptor);
+
+	/* Succeeded: the result follows, then its states. */
+	return 0;
+}
+
+/*
  * Marks a message read on the phone by its item's handle (ws197-p004a).
  */
 int
@@ -3003,6 +3044,70 @@ kl_system_media_add_paths(
 		return error;
 
 	/* Succeeded: the returned snapshot names all accepted files. */
+	return 0;
+}
+
+/*
+ * Removes a bounded stable-ID list through the compositor's media backend.
+ */
+int
+kl_system_media_remove_ids(
+	struct kl_system *system,
+	const char *const *ids,
+	size_t count,
+	int *descriptor)
+{
+	char list[256U * 33U + 1U];
+	size_t index;
+	size_t length;
+	size_t clean;
+	size_t used;
+	int error;
+
+	/* Refuses a call without a system or a place for the snapshot. */
+	if (system == NULL || descriptor == NULL)
+		return EINVAL;
+
+	/* The caller owns no descriptor until a snapshot arrives. */
+	*descriptor = -1;
+
+	/* An older server must never receive an opcode it does not implement. */
+	if (system->manager_version < KL_SYSTEM_SINCE_MEDIA_REMOVE)
+		return ENOTSUP;
+
+	/* Refuses an empty list or one longer than a request carries. */
+	if (ids == NULL ||
+	    count == 0U ||
+	    count > 256U)
+		return EINVAL;
+
+	/* Encodes identities rather than trusting caller-supplied paths to delete. */
+	used = 0U;
+	for (index = 0U; index < count; index++) {
+		/* A missing identity spoils the whole request. */
+		if (ids[index] == NULL)
+			return EINVAL;
+
+		/* An identity is exactly 32 lowercase hexadecimal digits. */
+		length = strlen(ids[index]);
+		clean = strspn(ids[index], "0123456789abcdef");
+		if (length != 32U || clean != length)
+			return EINVAL;
+
+		/* Appends the identity as one line of the list. */
+		memcpy(list + used, ids[index], length);
+		used += length;
+		list[used] = '\n';
+		used++;
+	}
+
+	/* Returns the committed metadata snapshot, never image or video bytes. */
+	list[used] = '\0';
+	error = system_media_run(system, KL_SYSTEM_MEDIA_REMOVE, list, -1, descriptor);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns a snapshot with removed identities absent. */
 	return 0;
 }
 
@@ -4819,7 +4924,13 @@ system_make(
 		return NULL;
 
 	/* The object, under a new ID. */
-	proxy = wl_proxy_marshal_constructor(system->manager, opcode, interface, NULL);
+	if (opcode == KL_SYSTEM_MANAGER_GET_MEDIA && system->manager_version < KL_SYSTEM_SINCE_MEDIA_REMOVE) {
+		proxy = wl_proxy_marshal_constructor_versioned(system->manager, opcode, interface, 1U, NULL);
+	} else {
+		proxy = wl_proxy_marshal_constructor(system->manager, opcode, interface, NULL);
+	}
+
+	/* Allocation failure leaves this optional system object unavailable. */
 	if (proxy == NULL)
 		return NULL;
 
@@ -5437,7 +5548,7 @@ system_media_run(
 	system->media_request = system_number(system, NULL);
 	system->media_done = 0;
 	system->media_error = 0;
-	if (opcode == KL_SYSTEM_MEDIA_ADD)
+	if (opcode == KL_SYSTEM_MEDIA_ADD || opcode == KL_SYSTEM_MEDIA_REMOVE)
 		wl_proxy_marshal(system->media, opcode, system->media_request, paths);
 	else if (opcode == KL_SYSTEM_MEDIA_APPLY)
 		wl_proxy_marshal(system->media, opcode, system->media_request, input);

@@ -64,3 +64,10 @@ Video PlayerのSAR/trim/codec-backend OPEN/FRAMES-time-late/end-audio-drain/fail
 Event: `ws202-main-integration-20261010-p011`。ユーザー「mainへの統合はあなたがやってOKです。」によりsourceと記録をmainへ統合。最新の承認済み方針・手順・確認・残件は[統合記録](../main-integration-20261010.md)と[policy](../policy-20261010.md)。上の設計時点の推奨、旧未実装/統合pendingは履歴として保存する。software出力の有無とwhole clearanceを区別する。標準readbackの依存はp017、ref-listは既存p016。p012/T1→p013/User UAT→whole p014の確認は未実施、Master/共有Board/GitHubへの投影はQ1に保持。
 
 共有AAT helper/scenarioと旧host-codec/layoutの移管追従は今回mainへ適用。実行結果は統合記録に記載し、旧proposal/pendingを現在の状態として扱わない。
+
+## 2026-10-11 q925（P1）: T1-529 の FAIL の直し
+
+- (a) libavcodec 無しの QEMU で Video Player が DEVICE の notice でなく「The file could not be opened (error 21)」: `MEDIA_PROBLEM_*` が 1〜6 で、同じ口が errno も返すため zedBSD の ENOMEM（4）＝DEVICE、ENOENT（6）＝BUSY と衝突していた。videoplayer の `media_reader_open` が ENOMEM（＝DEVICE）を 0 にして notice の分類を失った（Music・engine にも同じ形）。`userland/desktop/libmedia/media-decoder.h` の値を 1001〜1006 にした（名前で比べる所は不変、数値に依る試験・AAT は無いことを grep で確認）。
+- (b) libavcodec 有りの AAT `apps.videoplayer.play` の「frames did not advance: [1], None」: 22f1d6480（WS202）で一時停止の log が `PAUSE shown=` から `FRAMES shown=` に変わり、AAT が `VIDEOPLAYER PAUSE shown=` を 5 秒待って得られなかった（一時停止は効いていた: T1 の app log に `ACTION action=4` と停止）。`PAUSE shown=%u time_ms=%lld late=%u` に戻した（late は残す）。QEMU で late が多い（153）のは合否の外。
+- 確認: `run-host-app-fallback.sh`・`run-host-native-playback.sh` PASS（ASan/UBSan）。named build（current-uat.mk の videoplayer・music・libmedia.so、plan/ws202/tests/config-media.mk の media-probe・videoplayer）warning 0。style 新規 0。
+- 再試験（T1）: T1-529 の (a)(b) と同じ。

@@ -25,13 +25,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Why decoding could not start (media_codec_load, media_decoder_open). */
-#define MEDIA_PROBLEM_MISSING	1	/* libavcodec is not installed */
-#define MEDIA_PROBLEM_VERSION	2	/* a version of libavcodec the add-in does not know */
-#define MEDIA_PROBLEM_FORMAT	3	/* the file's codec has no decoder */
-#define MEDIA_PROBLEM_DEVICE	4	/* no GPU with the required standard video capabilities */
-#define MEDIA_PROBLEM_PROFILE	5	/* a native codec's signalled profile or tools are unsupported */
-#define MEDIA_PROBLEM_BUSY	6	/* all hardware video contexts are occupied */
+/*
+ * Why decoding could not start (media_codec_load, media_decoder_open).  The
+ * values are above every errno value of the systems the desktop runs on,
+ * because the same calls also answer an allocation's errno: with 1 to 6, a
+ * zedBSD ENOMEM (4) read as DEVICE and its ENOENT (6) as BUSY (T1-529).
+ */
+#define MEDIA_PROBLEM_MISSING	1001	/* libavcodec is not installed */
+#define MEDIA_PROBLEM_VERSION	1002	/* a version of libavcodec the add-in does not know */
+#define MEDIA_PROBLEM_FORMAT	1003	/* the file's codec has no decoder */
+#define MEDIA_PROBLEM_DEVICE	1004	/* no GPU with the required standard video capabilities */
+#define MEDIA_PROBLEM_PROFILE	1005	/* a native codec's signalled profile or tools are unsupported */
+#define MEDIA_PROBLEM_BUSY	1006	/* all hardware video contexts are occupied */
 
 struct media_decoder;
 struct media_frame;

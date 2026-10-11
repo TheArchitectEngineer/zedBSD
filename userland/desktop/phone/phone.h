@@ -144,6 +144,8 @@ struct ph_contact {
 #define PH_ACTION_CANCEL	8U
 #define PH_ACTION_SYNC		9U
 #define PH_ACTION_OPEN_MEDIA 10U
+#define PH_ACTION_ATTACH_MEDIA	11U	/* photos and videos from the library (the media picker) */
+#define PH_ACTION_ATTACH_CHOICES	12U	/* the plus's two choices shown or hidden */
 
 /* The most requests the view queues for the window between two frames. */
 #define PH_REQUESTS_MAX		8U
@@ -243,6 +245,8 @@ struct ph_view {
 	struct ph_attachment attachments[PH_DRAFT_MAX];
 	size_t attachment_count;
 	size_t attachment_page;
+	/* The plus's card of two choices (photos and videos, or a file) is shown. */
+	int attach_choices;
 	int cannot_send;
 	int quit;
 };
@@ -254,6 +258,7 @@ void ph_received_release(struct ph_received *received);
 int ph_store_media(long contact, size_t item, const struct ph_received *received);
 int ph_decode(const char *path, struct kl_image *image);
 int ph_fit(const struct kl_image *picture, int side, struct kl_image *fitted);
+int ph_thumbnail(const struct kl_image *picture, int side, struct kl_image *thumb);
 
 int ph_store_open(const char *root);
 void ph_store_close(void);
@@ -293,6 +298,8 @@ int ph_draft_add(struct ph_view *view, const char *path, const char *contact, in
 void ph_draft_remove(struct ph_view *view, size_t index);
 void ph_draft_release(struct ph_view *view);
 size_t ph_draft_count(const struct ph_view *view, const char *contact);
+int ph_draft_mime(const struct ph_view *view, const char *contact, const char *caption, int *descriptor);
+void ph_draft_clear(struct ph_view *view, const char *contact);
 int ph_draft_text(struct ph_view *view, const char *text, size_t length);
 int ph_draft_uris(struct ph_view *view, const char *text, size_t length, const char *contact);
 

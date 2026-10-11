@@ -5,8 +5,8 @@ Worktree: `/home/awe/zedBSD-worktrees/p2`、branch `agent/p2`、base main fc3d31
 
 | Queue | 対象 | State |
 | --- | --- | --- |
-| q934 | [BUG-263](../../bugs/BUG-263.md)（AF_UNIX の datagram で相手が閉じた後 recv が待ち続ける） | active |
-| q935 | [BUG-274](../../bugs/BUG-274.md)（`ps -o args` が argv[0] だけ） | reserved |
+| q934 | [BUG-263](../../bugs/BUG-263.md)（AF_UNIX の datagram で相手が閉じた後 recv が待ち続ける） | finished（kernel の直しは q914 で main、POSIX-R2 の case を追加 c695cc34d、test-wait T1-530） |
+| q935 | [BUG-274](../../bugs/BUG-274.md)（`ps -o args` が argv[0] だけ） | finished（直しは main、host PASS、guest の script を追加 048dc8c4b。guest の確かめはユーザーの判断待ち） |
 
 両方の後は通常のラップアップで終了（次の Bug が出たら Q1 が新しい generation を立てる）。
 

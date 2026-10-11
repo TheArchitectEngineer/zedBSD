@@ -23,8 +23,9 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-/* The longest text PHONE SEND carries. */
+/* The longest text PHONE SEND carries, and the longest MMS's MIME body one with type=mms carries (ws197-p010). */
 #define BTD_PHONE_SEND_MAX		8192U
+#define BTD_PHONE_MIME_MAX		(16U * 1024U * 1024U)
 
 /* The longest key and value of a request's argument (a value's NUL included). */
 #define BTD_PHONEIO_KEY_MAX		16U
