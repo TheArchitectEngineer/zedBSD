@@ -13,6 +13,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
+#include "drivers/gpu/bcm2711/native-state.h"
 #include "drivers/gpu/bcm2711/native-storage.h"
 
 /* The underlying contiguous owner accepts at most 256 MiB per physical allocation. */
@@ -23,6 +24,9 @@
 
 static struct bcm2711_v3d_view *cache_take(struct bcm2711_v3d_space *space, uint64_t bytes);
 static bool cache_put(struct bcm2711_v3d_space *space, struct bcm2711_v3d_view *view);
+static int snapshot_fill(struct bcm2711_native_snapshot *snapshot, const void *raster, size_t raster_bytes);
+static int snapshot_evict(struct bcm2711_v3d_space *space, uint64_t bytes, bool all);
+static int snapshot_release(struct bcm2711_v3d_space *space, struct bcm2711_native_snapshot *snapshot);
 
 /*
  * Allocates and maps one complete native upload interval before giving it to a prepared job owner.
@@ -292,8 +296,10 @@ bcm2711_native_storage_drain(
 	int first;
 	int error;
 
+	/* Unused snapshots go first, so their pixels join the idle views released below. */
+	first = snapshot_evict(space, 0, true);
+
 	/* Releases both lists; a failed release stays in the space's quarantine. */
-	first = 0;
 	for (;;) {
 		/* Takes the next cached view from either list. */
 		view = space->cache_pages;
@@ -320,6 +326,120 @@ bcm2711_native_storage_drain(
 
 	/* Succeeded: no cached view holds a translation. */
 	return 0;
+}
+
+/*
+ * Finds or makes the converted texture of one raster image interval and counts one more user.
+ *
+ * A snapshot is reused while its never-mapped source keeps the generation it
+ * was converted at; a stale unused one is converted again in place.  The
+ * caller holds the controller mutex, every earlier pass has retired, and the
+ * caller drops its use with bcm2711_native_snapshot_put when its draw retires.
+ */
+int
+bcm2711_native_snapshot_get(
+	struct bcm2711_v3d_space *space,
+	struct bcm2711_buffer *buffer,
+	uint64_t offset,
+	uint32_t width,
+	uint32_t height,
+	uint32_t pitch,
+	const void *raster,
+	size_t raster_bytes,
+	struct bcm2711_native_snapshot **result)
+{
+	struct bcm2711_native_snapshot *snapshot;
+	uint32_t bytes;
+	int error;
+
+	/* A source a process can write through a CPU mapping has no generation to trust. */
+	*result = NULL;
+	if (space->snapshot_limit == 0 || buffer->host_mapped)
+		return ENOTSUP;
+	error = bcm2711_native_texture_size(width, height, &bytes);
+	if (error != 0)
+		return error;
+	space->snapshot_serial++;
+
+	/* Finds the snapshot of exactly this interval and layout. */
+	for (snapshot = space->snapshots; snapshot != NULL; snapshot = snapshot->next) {
+		/* Every key field must match; a different view of the same run is another snapshot. */
+		if (snapshot->buffer == buffer &&
+		    snapshot->offset == offset &&
+		    snapshot->width == width &&
+		    snapshot->height == height &&
+		    snapshot->pitch == pitch)
+			break;
+	}
+
+	/* A known snapshot is converted again only when its source changed and no draw samples it. */
+	if (snapshot != NULL) {
+		if (snapshot->generation != buffer->generation) {
+			if (snapshot->users != 0)
+				return ENOTSUP;
+			error = snapshot_fill(snapshot, raster, raster_bytes);
+			if (error != 0)
+				return error;
+		}
+		snapshot->users++;
+		snapshot->used = space->snapshot_serial;
+		*result = snapshot;
+		return 0;
+	}
+
+	/* Makes room among unused snapshots; a full cache of used ones leaves the private copy. */
+	error = snapshot_evict(space, bytes, false);
+	if (error != 0)
+		return error;
+
+	/* Creates the new entry with its own pixels before converting. */
+	snapshot = kern_calloc(1, sizeof(*snapshot));
+	if (snapshot == NULL)
+		return ENOMEM;
+	error = bcm2711_native_storage_create(space, bytes, &snapshot->pixels);
+	if (error != 0) {
+		kern_free(snapshot);
+		return error;
+	}
+	snapshot->offset = offset;
+	snapshot->width = width;
+	snapshot->height = height;
+	snapshot->pitch = pitch;
+
+	/* The first conversion defines the generation the snapshot is valid for. */
+	snapshot->buffer = buffer;
+	error = snapshot_fill(snapshot, raster, raster_bytes);
+	if (error != 0) {
+		snapshot->buffer = NULL;
+		(void)bcm2711_native_storage_release(space, &snapshot->pixels, true);
+		kern_free(snapshot);
+		return error;
+	}
+
+	/* The snapshot holds its source run, so the run's flags and generation stay readable. */
+	bcm2711_buffer_retain(buffer);
+	snapshot->users = 1;
+	snapshot->used = space->snapshot_serial;
+	snapshot->next = space->snapshots;
+	space->snapshots = snapshot;
+	space->snapshot_bytes += snapshot->pixels->view->bytes;
+	*result = snapshot;
+
+	/* Succeeded: the caller samples the snapshot's pixels until its draw retires. */
+	return 0;
+}
+
+/*
+ * Drops one draw's use of a snapshot after the draw's DMA retired.
+ */
+void
+bcm2711_native_snapshot_put(
+	struct bcm2711_native_snapshot *snapshot)
+{
+	/* A snapshot with no user may be converted again or evicted by a later pass. */
+	if (snapshot->users == 0)
+		__builtin_trap();
+	snapshot->users--;
 }
 
 /* Takes one idle cached view of exactly the page-rounded size, or NULL. */
@@ -393,4 +513,123 @@ cache_put(
 
 	/* Succeeded: the cache holds the view's last reference. */
 	return true;
+}
+
+/* Converts the snapshot's source raster into its UIF pixels and records the source generation. */
+static int
+snapshot_fill(
+	struct bcm2711_native_snapshot *snapshot,
+	const void *raster,
+	size_t raster_bytes)
+{
+	int error;
+
+	/* The CPU conversion writes every block, including zero padding. */
+	error = bcm2711_native_texture_copy(
+		snapshot->width,
+		snapshot->height,
+		raster,
+		snapshot->pitch,
+		raster_bytes,
+		snapshot->pixels->view->buffer->address,
+		(size_t)snapshot->pixels->bytes);
+	if (error != 0)
+		return error;
+
+	/* The device reads the pixels only after the CPU cache wrote them back. */
+	error = bcm2711_native_storage_clean(snapshot->pixels);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the snapshot matches its source until the source's generation moves. */
+	snapshot->generation = snapshot->buffer->generation;
+	return 0;
+}
+
+/*
+ * Evicts unused snapshots until bytes more fit, or every unused one when all is set.
+ *
+ * Snapshots whose source only the cache still holds go first, then the least
+ * recently used.  ENOTSUP means the used snapshots alone fill the cache.
+ */
+static int
+snapshot_evict(
+	struct bcm2711_v3d_space *space,
+	uint64_t bytes,
+	bool all)
+{
+	struct bcm2711_native_snapshot **position;
+	struct bcm2711_native_snapshot **oldest;
+	struct bcm2711_native_snapshot *snapshot;
+	uint64_t padded;
+	int first;
+	int error;
+
+	/* Releases snapshots of destroyed sources and, for a drain, every unused one. */
+	first = 0;
+	position = &space->snapshots;
+	while (*position != NULL) {
+		snapshot = *position;
+
+		/* A sampled snapshot stays until its draw retires. */
+		if (snapshot->users != 0 || (!all && snapshot->buffer->references > 1)) {
+			position = &snapshot->next;
+			continue;
+		}
+		*position = snapshot->next;
+		error = snapshot_release(space, snapshot);
+		if (first == 0 && error != 0)
+			first = error;
+	}
+
+	/* Evicts least recently used snapshots until the new pixels fit. */
+	padded = (bytes + 4095U) & ~4095ULL;
+	while (space->snapshot_bytes + padded > space->snapshot_limit) {
+		/* Finds the unused snapshot used longest ago. */
+		oldest = NULL;
+		for (position = &space->snapshots; *position != NULL; position = &(*position)->next) {
+			/* Only an unused snapshot is a candidate. */
+			if ((*position)->users == 0 && (oldest == NULL || (*position)->used < (*oldest)->used))
+				oldest = position;
+		}
+
+		/* Used snapshots alone fill the cache; the caller keeps a private copy. */
+		if (oldest == NULL) {
+			if (first != 0)
+				return first;
+			return ENOTSUP;
+		}
+		snapshot = *oldest;
+		*oldest = snapshot->next;
+		error = snapshot_release(space, snapshot);
+		if (first == 0 && error != 0)
+			first = error;
+	}
+
+	/* Reports the first failed release, which stays in the space's quarantine. */
+	if (first != 0)
+		return first;
+
+	/* Succeeded: the requested bytes fit beside the remaining snapshots. */
+	return 0;
+}
+
+/* Releases one unlinked unused snapshot's pixels and source hold. */
+static int
+snapshot_release(
+	struct bcm2711_v3d_space *space,
+	struct bcm2711_native_snapshot *snapshot)
+{
+	int error;
+
+	/* Every pass that sampled the pixels has retired, so they can join the idle views. */
+	space->snapshot_bytes -= snapshot->pixels->view->bytes;
+	error = bcm2711_native_storage_release(space, &snapshot->pixels, true);
+	bcm2711_buffer_release(snapshot->buffer);
+	kern_free(snapshot);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: neither the pixels nor the source hold remain. */
+	return 0;
 }

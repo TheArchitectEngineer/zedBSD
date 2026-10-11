@@ -218,6 +218,9 @@ bcm2711_vulkan_buffer_copy_run(
 	uint32_t row;
 	uint64_t source_offset;
 	uint64_t destination_offset;
+	struct bcm2711_v3d_view *view;
+	uint32_t address;
+	void *destination;
 	int error;
 
 	/* Typed pending resources remain alive across the entire synchronous controller-protected transfer. */
@@ -273,6 +276,11 @@ bcm2711_vulkan_buffer_copy_run(
 	/* Normal uncached output publication precedes the next FIFO CPU read or native launch; transient CPU metadata then retires. */
 	kern_io_write_barrier();
 	kern_free(spans);
+
+	/* The destination's converted snapshots no longer match its bytes. */
+	error = bcm2711_vulkan_resource_backing(resources[1], 0, resources[1]->bytes, &view, &address, &destination);
+	if (error == 0)
+		view->buffer->generation++;
 
 	/* Succeeded: selected raw bytes changed with no channel conversion, native launch or false DMA completion. */
 	return 0;
