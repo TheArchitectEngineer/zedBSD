@@ -3007,6 +3007,70 @@ kl_system_media_add_paths(
 }
 
 /*
+ * Removes a bounded stable-ID list through the compositor's media backend.
+ */
+int
+kl_system_media_remove_ids(
+	struct kl_system *system,
+	const char *const *ids,
+	size_t count,
+	int *descriptor)
+{
+	char list[256U * 33U + 1U];
+	size_t index;
+	size_t length;
+	size_t clean;
+	size_t used;
+	int error;
+
+	/* Refuses a call without a system or a place for the snapshot. */
+	if (system == NULL || descriptor == NULL)
+		return EINVAL;
+
+	/* The caller owns no descriptor until a snapshot arrives. */
+	*descriptor = -1;
+
+	/* An older server must never receive an opcode it does not implement. */
+	if (system->manager_version < KL_SYSTEM_SINCE_MEDIA_REMOVE)
+		return ENOTSUP;
+
+	/* Refuses an empty list or one longer than a request carries. */
+	if (ids == NULL ||
+	    count == 0U ||
+	    count > 256U)
+		return EINVAL;
+
+	/* Encodes identities rather than trusting caller-supplied paths to delete. */
+	used = 0U;
+	for (index = 0U; index < count; index++) {
+		/* A missing identity spoils the whole request. */
+		if (ids[index] == NULL)
+			return EINVAL;
+
+		/* An identity is exactly 32 lowercase hexadecimal digits. */
+		length = strlen(ids[index]);
+		clean = strspn(ids[index], "0123456789abcdef");
+		if (length != 32U || clean != length)
+			return EINVAL;
+
+		/* Appends the identity as one line of the list. */
+		memcpy(list + used, ids[index], length);
+		used += length;
+		list[used] = '\n';
+		used++;
+	}
+
+	/* Returns the committed metadata snapshot, never image or video bytes. */
+	list[used] = '\0';
+	error = system_media_run(system, KL_SYSTEM_MEDIA_REMOVE, list, -1, descriptor);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns a snapshot with removed identities absent. */
+	return 0;
+}
+
+/*
  * Applies id-based mutable metadata, preserving concurrent library additions.
  */
 int
@@ -4819,7 +4883,13 @@ system_make(
 		return NULL;
 
 	/* The object, under a new ID. */
-	proxy = wl_proxy_marshal_constructor(system->manager, opcode, interface, NULL);
+	if (opcode == KL_SYSTEM_MANAGER_GET_MEDIA && system->manager_version < KL_SYSTEM_SINCE_MEDIA_REMOVE) {
+		proxy = wl_proxy_marshal_constructor_versioned(system->manager, opcode, interface, 1U, NULL);
+	} else {
+		proxy = wl_proxy_marshal_constructor(system->manager, opcode, interface, NULL);
+	}
+
+	/* Allocation failure leaves this optional system object unavailable. */
 	if (proxy == NULL)
 		return NULL;
 
@@ -5437,7 +5507,7 @@ system_media_run(
 	system->media_request = system_number(system, NULL);
 	system->media_done = 0;
 	system->media_error = 0;
-	if (opcode == KL_SYSTEM_MEDIA_ADD)
+	if (opcode == KL_SYSTEM_MEDIA_ADD || opcode == KL_SYSTEM_MEDIA_REMOVE)
 		wl_proxy_marshal(system->media, opcode, system->media_request, paths);
 	else if (opcode == KL_SYSTEM_MEDIA_APPLY)
 		wl_proxy_marshal(system->media, opcode, system->media_request, input);

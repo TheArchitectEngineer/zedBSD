@@ -51,6 +51,8 @@
 #define PH_ACTION_IMPORT_FOLDER	12U	/* the folder of a photo chosen in it */
 #define PH_ACTION_ALBUM		13U	/* the card that adds the photo to an album */
 
+#define PH_ACTION_DELETE 14U
+
 /* What the view has of a photo's thumbnail. */
 #define PH_THUMB_NONE		0
 #define PH_THUMB_READY		1
@@ -119,6 +121,8 @@ struct ph_view {
 	long card_photo;
 	struct kl_field album_name;
 
+	/* Captures the requested deletion identity before a refreshed model changes indices. */
+	char removing[PH_ID_SIZE];
 	int save;
 	int refresh;
 	unsigned import;

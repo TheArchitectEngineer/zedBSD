@@ -86,6 +86,8 @@ struct ph_window {
 
 	/* Coalesces media notifications while a background import or refresh is running. */
 	int media_again;
+	/* A confirmation retains its identity independently of library refreshes. */
+	char removing[PH_ID_SIZE];
 	struct kl_file_chooser *chooser;
 	unsigned chooser_for;
 	int answered;
@@ -109,7 +111,8 @@ static const struct kl_menu_entry ph_menu[] = {
 	{ 9U, 6U, KL_MENU_ITEM_NORMAL, "Rotate Right", PH_ACTION_TURN_RIGHT, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ 10U, 6U, KL_MENU_ITEM_NORMAL, "Add to Album...", PH_ACTION_ALBUM, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ 11U, 6U, KL_MENU_ITEM_NORMAL, "Slideshow", PH_ACTION_SLIDESHOW, KL_MENU_ROLE_NONE, 0U, 0U },
-	{ 12U, 6U, KL_MENU_ITEM_NORMAL, "Back to Photos", PH_ACTION_BACK, KL_MENU_ROLE_NONE, 0U, 0U }
+	{ 12U, 6U, KL_MENU_ITEM_NORMAL, "Back to Photos", PH_ACTION_BACK, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ 13U, 6U, KL_MENU_ITEM_NORMAL, "Delete...", PH_ACTION_DELETE, KL_MENU_ROLE_NONE, 0U, 0U }
 };
 
 int main(int argc, char **argv);
@@ -117,6 +120,7 @@ static int ph_parse(int argc, char **argv, unsigned *width, unsigned *height, un
 static void ph_library_start(struct ph_window *photos);
 static void ph_media_results(struct ph_window *photos);
 static void ph_import_path(struct ph_window *photos, const char *source, int notice);
+static void ph_delete_dialog(struct ph_window *photos, uint64_t now_us);
 static void ph_refresh(struct ph_window *photos);
 static void ph_choose(struct ph_window *photos, unsigned purpose);
 static void ph_chooser_done(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter);
@@ -484,8 +488,10 @@ ph_media_results(
 	/* Completion gives a useful status while the metadata and view remain UI-owned. */
 	if (error != 0 || result.error != 0) {
 		ph_view_notice(&photos->view,
-			       "Some media could not be imported or refreshed.",
+			       "The media operation could not be completed.",
 			       kl_clock_us());
+	} else if (result.removed) {
+		ph_view_notice(&photos->view, "Media deleted from the library.", kl_clock_us());
 	} else if (result.imported && result.notice) {
 		ph_view_notice(&photos->view,
 			       "Media imported into the library.",
@@ -667,6 +673,13 @@ ph_loop(
 			return 0;
 		}
 
+		/* Preserves the chosen identity before a completed refresh replaces the view. */
+		if (photos->view.removing[0] != '\0') {
+			memcpy(photos->removing, photos->view.removing, PH_ID_SIZE);
+			photos->view.removing[0] = '\0';
+			photos->dirty = 1;
+		}
+
 		/* Installs ready snapshots without blocking the next input dispatch. */
 		ph_media_results(photos);
 
@@ -697,7 +710,9 @@ ph_loop(
 
 			/* An action of the menu, or input. */
 			if (event.input.kind == KL_WINDOW_ACTION) {
-				ph_view_action(&photos->view, event.input.code, kl_clock_us());
+				/* A pending confirmation cannot be retargeted by menu actions. */
+				if (photos->removing[0] == '\0' || event.input.code == PH_ACTION_QUIT)
+					ph_view_action(&photos->view, event.input.code, kl_clock_us());
 				photos->dirty = 1;
 			} else {
 				ph_input(photos, &event.input);
@@ -1224,6 +1239,10 @@ ph_draw(
 	if (open != photos->view.open || chosen != photos->view.chosen || list != photos->view.list || album != photos->view.album ||
 	    adding != photos->view.adding)
 		photos->dirty = 1;
+
+	/* The dialog consumes input after the view, using the common modal widget. */
+	if (photos->removing[0] != '\0')
+		ph_delete_dialog(photos, now_us);
 	photos->moving = kl_ui_end(photos->ui, now_us);
 	kl_ui_window_text(photos->ui, photos->window);
 	ph_jobs(photos);
@@ -1251,10 +1270,61 @@ ph_draw(
 		if (!taken)
 			break;
 		if (event.kind == KL_EVENT_KEY) {
-			ph_view_key(&photos->view, event.code, event.modifiers, now_us);
+			if (photos->removing[0] == '\0')
+				ph_view_key(&photos->view, event.code, event.modifiers, now_us);
 			photos->dirty = 1;
 		}
 	}
+}
+
+/* Confirms one selected identity before admitting a background deletion job. */
+static void
+ph_delete_dialog(
+	struct ph_window *photos,
+	uint64_t now_us)
+{
+	static const char *const labels[] = {"Delete", "Cancel"};
+	struct kl_rect area;
+	int answer;
+	int error;
+
+	/* The confirmation covers both the managed file and its library entry. */
+	area.x = 0;
+	area.y = 0;
+	area.width = (int)photos->width;
+	area.height = (int)photos->height;
+	answer = kl_dialog(photos->ui, &photos->style, 100U, &area, "Delete media?", "Permanently delete this item from the library? The original import source is kept.", labels, 2);
+	if (answer < 0)
+		return;
+
+	/* Cancel leaves the database and the pending worker untouched. */
+	if (answer != 0) {
+		photos->removing[0] = '\0';
+		photos->dirty = 1;
+		return;
+	}
+
+	/* Preserve local metadata changes before the worker requests the latest database. */
+	ph_marks(photos);
+	error = EIO;
+	if (!photos->marks_failed)
+		error = ph_media_worker_remove(photos->removing);
+	photos->removing[0] = '\0';
+	photos->dirty = 1;
+	if (error == EBUSY) {
+		ph_view_notice(&photos->view, "A media operation is already running. Try again when it finishes.", now_us);
+		return;
+	}
+
+	/* A refusal cannot be presented as a completed deletion. */
+	if (error != 0) {
+		ph_view_notice(&photos->view, "The media deletion could not be started.", now_us);
+		return;
+	}
+
+	/* Succeeded: the UI remains usable while the worker waits for the CLI. */
+	ph_view_notice(&photos->view, "Deleting media in the background...", now_us);
+	return;
 }
 
 /*

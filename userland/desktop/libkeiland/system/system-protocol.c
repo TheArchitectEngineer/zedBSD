@@ -558,6 +558,7 @@ static const struct wl_message system_media_requests[] = {
     {"apply", "uh", system_plain_types},
     {"watch", "u", system_plain_types},
     {"notify", "", NULL},
+    {"remove", "2us", system_plain_types},
 };
 
 /* Each CLI response is a snapshot descriptor followed by its completion errno. */
@@ -567,6 +568,6 @@ static const struct wl_message system_media_events[] = {
     {"changed", "u", system_plain_types},
 };
 
-/* A version-one media object is obtained from version 29 of the manager. */
+/* Manager 29 provides media v1; manager 31 adds removal through media v2. */
 const struct wl_interface kl_system_media_v1_interface = {
-    KL_SYSTEM_MEDIA_NAME, 1, 6, system_media_requests, 3, system_media_events};
+    KL_SYSTEM_MEDIA_NAME, 2, 7, system_media_requests, 3, system_media_events};
