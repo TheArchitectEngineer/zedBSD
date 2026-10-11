@@ -631,7 +631,7 @@ vp_toggle(
 	/* The other. */
 	if (state == VP_PLAYING) {
 		vp_media_pause(&player->media);
-		vp_log("FRAMES shown=%u time_ms=%lld late=%u", player->shown, (long long)(vp_media_clock(&player->media) * 1000.0), player->media.late);
+		vp_log("PAUSE shown=%u time_ms=%lld late=%u", player->shown, (long long)(vp_media_clock(&player->media) * 1000.0), player->media.late);
 	} else if (state != VP_EMPTY) {
 		vp_log("PLAY shown=%u time_ms=%lld", player->shown, (long long)(vp_media_clock(&player->media) * 1000.0));
 		vp_media_play(&player->media);
