@@ -85,3 +85,14 @@ event（購読者へ）: `PHONE HF state=off|connecting|ready|failed why=<語> s
 
 - 新 `userland/base/bluetoothd/at.c`・`at.h`（行の切り分け・結果の欄・数・indicator の名前）、`hfp.c`・`hfp.h`（D1〜D5）。phonemux の 3 番目の子（main.c）、HF の SDP の record（phone.c、channel 17、calls が on の時だけ）、PHONE DIAL・ANSWER・HANGUP・HOLD・DTMF・VOLUME・VOICE、subscribe の時に PHONE HF と通話の行、PHONE SHOW・STATE の行に `calls=`。Makefile に 2 file。
 - 確認: 新 `plan/ws197/tests/bt-hfp-host-test.c`（143 checks: at の解析、SLC の順、着信→応答→DTMF→終話（ended は 1 回）、発信、無応答の timeout、拒否の語、SLC の拒否と再試行、CLCC の無い AG の推測、link の終わり）を `bt-phone-host-test.sh` に足して全 PASS（ASan/UBSan）。zedBSD の bluetoothd の named build warning 0。style 新規 0。
+
+### 2. desktop の経路（済み）
+
+- backend（keiland-backend.h）: `kl_backend_phone_call_ask`（PHONE DIAL・ANSWER・HANGUP・HOLD・DTMF・VOLUME・VOICE、引数は数字・+*#ABCD だけ）、`kl_backend_phone_take_call`（PHONE CALL の変化の ring）、`kl_backend_phone_get_hf`（PHONE HF）、CHANGED_CALL・CHANGED_HF。events の接続が切れたら HF は off。Linux・FreeBSD は ENOTSUP。
+- compositor（phone の version 33、manager 33）: request 10 `control(request, ask, argument)`（phone の program だけ、bluetooth の backend だけ、done で答える）、event 10 `call`・11 `hf`（listen している phone の program の version 33 へ、listen した時に今の HF と通話も）。listen している phone の program が無い時の着信は通知（「Incoming call」、押せば Phone）。HF が ready でなければ通話の表を空に。
+- libkeiland（KL_VERSION 87）: `kl_system_phone_calls`・`kl_system_phone_hf`・`kl_system_phone_control`、phone event `KL_PHONE_CALLS_CHANGED`・`KL_PHONE_HF_CHANGED`、`struct kl_phone_call`・`kl_phone_hf`（既存の `kl_phone_event` は変えない）。
+- Phone: 通話の card（窓の上、鳴っている時は Answer・Decline、通話中は経過時間・Hang Up・Keypad（DTMF）・2 本で Swap）、会話の Call は paired なら HF の DIAL（HF が ready でなければ notice）、通話の時間で 1 秒ごとに再描画。
+
+確認: phone-shell・phone-backend の試験に通話を足して PASS、phone-store・run-host-mediastorage PASS、zedBSD の phone・wayland・libkeiland.so・bluetoothd・settings、Linux の libkeiland.so・wayland の named build warning 0、style 新規 0、exports --check・boundary PASS。
+
+未実施（ユーザーの UAT、5330＋Android、音は p007）: Settings の Bluetooth で phone の calls を on → Phone を開いて着信を待つ → card に名前・番号、Answer で通話中・時間が進む、Keypad で DTMF（自動音声で確かめる）、Hang Up。Phone を閉じた状態の着信で通知。会話の Call で発信。

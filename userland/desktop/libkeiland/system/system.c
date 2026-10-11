@@ -173,6 +173,8 @@ struct system_phone_listener {
 	void (*done)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t code);
 	void (*link_contacts)(void *data, struct wl_proxy *proxy, uint32_t contacts, uint32_t record, const char *contacts_why);
 	void (*item_mime)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t what, const char *handle, const char *key, uint32_t folder, uint32_t direction, int32_t time_high, uint32_t time_low, uint32_t zone, const char *datetime, const char *peer, const char *name, uint32_t flags, struct wl_array *text, int32_t descriptor);
+	void (*call)(void *data, struct wl_proxy *proxy, uint32_t index, uint32_t state, uint32_t outgoing, const char *number, const char *name);
+	void (*hf)(void *data, struct wl_proxy *proxy, uint32_t state, int32_t service, int32_t signal, int32_t battery, int32_t roam, int32_t speaker, uint32_t flags);
 };
 
 /* The listener of kl_system_printers_v1's events (ws145-p003), in their order. */
@@ -242,6 +244,8 @@ static void system_phone_link(void *data, struct wl_proxy *proxy, uint32_t backe
 static void system_phone_dropped(void *data, struct wl_proxy *proxy);
 static void system_phone_done(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t code);
 static void system_phone_link_contacts(void *data, struct wl_proxy *proxy, uint32_t contacts, uint32_t record, const char *contacts_why);
+static void system_phone_call(void *data, struct wl_proxy *proxy, uint32_t index, uint32_t state, uint32_t outgoing, const char *number, const char *name);
+static void system_phone_hf(void *data, struct wl_proxy *proxy, uint32_t state, int32_t service, int32_t signal, int32_t battery, int32_t roam, int32_t speaker, uint32_t flags);
 static int system_phone_sync_offered(const struct kl_system *system);
 static int system_phone_number(const char *to, char *number, size_t size);
 static int system_phone_word(const char *word, size_t size);
@@ -392,7 +396,9 @@ static const struct system_phone_listener system_phone_listener = {
 	system_phone_dropped,
 	system_phone_done,
 	system_phone_link_contacts,
-	system_phone_item_mime
+	system_phone_item_mime,
+	system_phone_call,
+	system_phone_hf
 };
 
 /* The printers object's callbacks (ws145-p003). */
@@ -1899,6 +1905,122 @@ kl_system_phone_send_mms(
 	wl_proxy_marshal(system->phone, KL_SYSTEM_PHONE_SEND_MMS, asked, number, descriptor);
 
 	/* Succeeded: the result follows, then its states. */
+	return 0;
+}
+
+/*
+ * Copies the paired phone's calls there are (ws197-p006): at most capacity,
+ * *count of them.
+ */
+int
+kl_system_phone_calls(
+	const struct kl_system *system,
+	struct kl_phone_call *calls,
+	size_t capacity,
+	size_t *count)
+{
+	size_t found;
+	unsigned row;
+	int offered;
+
+	/* A system, somewhere to copy to, and a compositor that tells calls. */
+	if (system == NULL || count == NULL || (calls == NULL && capacity != 0U))
+		return EINVAL;
+	*count = 0U;
+	offered = system_phone_sync_offered(system);
+	if (!offered)
+		return ENOTSUP;
+	if (system->manager_version < KL_SYSTEM_SINCE_PHONE_CALLS)
+		return ENOTSUP;
+
+	/* Each call there is, as many as fit. */
+	found = 0U;
+	for (row = 0U; row < KL_PHONE_CALLS_MAX; row++) {
+		if (system->view.phone_calls[row].state == 0U)
+			continue;
+		if (found < capacity)
+			calls[found] = system->view.phone_calls[row];
+		found++;
+	}
+
+	/* Succeeded: how many there are. */
+	*count = found;
+	return 0;
+}
+
+/*
+ * Copies the paired phone's hands-free unit's state (ws197-p006).
+ */
+int
+kl_system_phone_hf(
+	const struct kl_system *system,
+	struct kl_phone_hf *hf)
+{
+	int offered;
+
+	/* A system, somewhere to copy to, and a compositor that tells it. */
+	if (system == NULL || hf == NULL)
+		return EINVAL;
+	offered = system_phone_sync_offered(system);
+	if (!offered)
+		return ENOTSUP;
+	if (system->manager_version < KL_SYSTEM_SINCE_PHONE_CALLS)
+		return ENOTSUP;
+
+	/* Succeeded: the copy. */
+	*hf = system->view.phone_hf;
+	return 0;
+}
+
+/*
+ * Asks a call's request of the paired phone (ws197-p006): the result
+ * follows.
+ */
+int
+kl_system_phone_control(
+	struct kl_system *system,
+	unsigned ask,
+	const char *argument,
+	uint32_t *request)
+{
+	char text[KL_SYSTEM_PHONE_TO_MAX];
+	uint32_t asked;
+	size_t length;
+	int offered;
+	int error;
+
+	/* A system, a request known, and a compositor that takes it. */
+	if (system == NULL)
+		return EINVAL;
+	if (ask < KL_PHONE_ASK_DIAL || ask > KL_PHONE_ASK_VOICE)
+		return EINVAL;
+	offered = system_phone_sync_offered(system);
+	if (!offered)
+		return ENOTSUP;
+	if (system->manager_version < KL_SYSTEM_SINCE_PHONE_CALLS)
+		return ENOTSUP;
+
+	/* A number dialed, without its separators. */
+	text[0] = '\0';
+	if (ask == KL_PHONE_ASK_DIAL) {
+		if (argument == NULL)
+			return EINVAL;
+		error = system_phone_number(argument, text, sizeof(text));
+		if (error != 0)
+			return error;
+	} else if (argument != NULL) {
+		/* Another argument as it is (empty for none), short enough for the wire. */
+		length = strlen(argument);
+		if (length >= sizeof(text))
+			return EINVAL;
+		memcpy(text, argument, length + 1U);
+	}
+
+	/* The request, sent with the application's next flush. */
+	asked = system_number(system, request);
+	wl_proxy_marshal(system->phone, KL_SYSTEM_PHONE_CONTROL, asked, (uint32_t)ask, text);
+
+	/* Succeeded: the result follows. */
 	return 0;
 }
 
@@ -4591,6 +4713,67 @@ system_phone_done(
 	/* The result, and the program's sync ended when it is the sync's. */
 	system = data;
 	system_view_phone_done(&system->view, request, code);
+}
+
+/* A call's change (ws197-p006). */
+static void
+system_phone_call(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t index,
+	uint32_t state,
+	uint32_t outgoing,
+	const char *number,
+	const char *name)
+{
+	struct kl_system *system;
+	struct kl_phone_call call;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* For kl_system_phone_calls. */
+	system = data;
+	memset(&call, 0, sizeof(call));
+	call.index = index;
+	call.state = state;
+	call.outgoing = outgoing;
+	system_mail_cut(call.number, sizeof(call.number), number);
+	system_mail_cut(call.name, sizeof(call.name), name);
+	system_view_phone_call(&system->view, &call);
+}
+
+/* The hands-free unit's state (ws197-p006). */
+static void
+system_phone_hf(
+	void *data,
+	struct wl_proxy *proxy,
+	uint32_t state,
+	int32_t service,
+	int32_t signal,
+	int32_t battery,
+	int32_t roam,
+	int32_t speaker,
+	uint32_t flags)
+{
+	struct kl_system *system;
+	struct kl_phone_hf hf;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* For kl_system_phone_hf. */
+	system = data;
+	memset(&hf, 0, sizeof(hf));
+	hf.state = state;
+	hf.service = service;
+	hf.signal = signal;
+	hf.battery = battery;
+	hf.roam = roam;
+	hf.speaker = speaker;
+	if ((flags & KL_SYSTEM_PHONE_HF_VOICE) != 0U)
+		hf.voice = 1U;
+	if ((flags & KL_SYSTEM_PHONE_HF_HOLD) != 0U)
+		hf.hold = 1U;
+	system_view_phone_hf(&system->view, &hf);
 }
 
 /* The contacts' part of the link that follows it (ws197-p005). */

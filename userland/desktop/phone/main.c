@@ -184,6 +184,9 @@ struct ph_window {
 	/* Viewer children are reaped without waiting for their windows to close. */
 	pid_t viewers[16];
 
+	/* The second of the call's time drawn last (ws197-p006). */
+	uint64_t call_second;
+
 	/*
 	 * The compositor's phone (NULL when the compositor has none), and the
 	 * requests sent that wait for their states: the request's number, the
@@ -247,6 +250,8 @@ static void ph_received(struct ph_window *phone, const struct kl_phone_event *ev
 static void ph_status(struct ph_window *phone, uint32_t request, unsigned state, int failed);
 static void ph_media_choose(struct ph_window *phone, long contact);
 static void ph_send_media(struct ph_window *phone, long contact, int paired);
+static void ph_calls(struct ph_window *phone);
+static void ph_call_ask(struct ph_window *phone, unsigned ask, const char *argument);
 static void ph_media_picked(void *data, struct kl_media_picker *picker, unsigned result, const struct kl_media_item *items, size_t count);
 static int ph_media_thumbnail(void *data, const char *path, int side, struct kl_image *image);
 static int ph_attach_contact(struct ph_window *phone, long contact);
@@ -499,6 +504,7 @@ ph_loop(
 	struct kl_app_event event;
 	uint64_t started;
 	uint64_t now;
+	uint64_t second;
 	int status;
 	int taken;
 	int wait;
@@ -576,6 +582,15 @@ ph_loop(
 		if (phone->view.notice != NULL && now >= phone->view.notice_until) {
 			phone->view.notice = NULL;
 			phone->dirty = 1;
+		}
+
+		/* A call on: drawn again at each new second of its time (ws197-p006). */
+		if (phone->view.call_since_us != 0U && now >= phone->view.call_since_us) {
+			second = (now - phone->view.call_since_us) / 1000000U;
+			if (second != phone->call_second) {
+				phone->call_second = second;
+				phone->dirty = 1;
+			}
 		}
 
 		/* A frame, then what its buttons asked. */
@@ -924,6 +939,10 @@ ph_phone_round(
 			break;
 		case KL_PHONE_LINK_CHANGED:
 			ph_link(phone);
+			break;
+		case KL_PHONE_CALLS_CHANGED:
+		case KL_PHONE_HF_CHANGED:
+			ph_calls(phone);
 			break;
 		case KL_PHONE_DROPPED:
 			ph_items(phone);
@@ -1386,6 +1405,18 @@ ph_requests(
 		case PH_ACTION_ATTACH_MEDIA:
 			ph_media_choose(phone, request.contact);
 			break;
+		case PH_ACTION_CALL_ANSWER:
+			ph_call_ask(phone, KL_PHONE_ASK_ANSWER, NULL);
+			break;
+		case PH_ACTION_CALL_HANGUP:
+			ph_call_ask(phone, KL_PHONE_ASK_HANGUP, NULL);
+			break;
+		case PH_ACTION_CALL_KEY:
+			ph_call_ask(phone, KL_PHONE_ASK_DTMF, request.key);
+			break;
+		case PH_ACTION_CALL_SWAP:
+			ph_call_ask(phone, KL_PHONE_ASK_HOLD, "2");
+			break;
 		case PH_ACTION_SEND:
 			ph_send(phone, request.contact);
 			break;
@@ -1693,12 +1724,26 @@ ph_call(
 	uint32_t request;
 	size_t count;
 	size_t item;
+	int paired;
 	int error;
 
 	/* The contact. */
 	contacts = ph_contacts(&count);
 	if (contact < 0 || (size_t)contact >= count)
 		return;
+
+	/* Through the paired phone (ws197-p006): dialed by its hands-free unit; the phone's call history brings the call. */
+	paired = ph_paired(phone);
+	if (paired) {
+		if (phone->view.hf.state != KL_PHONE_HF_READY) {
+			ph_view_notice(&phone->view, "Calls are not connected to the phone yet.", kl_clock_us());
+			return;
+		}
+
+		/* Dialed. */
+		ph_call_ask(phone, KL_PHONE_ASK_DIAL, contacts[contact].number);
+		return;
+	}
 
 	/* Kept as a call going out, not answered until the phone says otherwise. */
 	error = ph_store_add_item(contact, PH_CALL, PH_LINE, 1, time(NULL), PH_STATE_NONE, NULL, NULL, &item);
@@ -1720,6 +1765,80 @@ ph_call(
 
 	/* Its end to come. */
 	ph_remember(phone, request, contacts[contact].items[item].serial, 0);
+}
+
+/*
+ * Takes the paired phone's calls and hands-free unit as libkeiland tells
+ * them (ws197-p006): the call card shows while there is a call, the time
+ * runs from the moment one is on, and the keypad goes with the last call.
+ */
+static void
+ph_calls(
+	struct ph_window *phone)
+{
+	size_t count;
+	size_t index;
+	int error;
+	int on;
+
+	/* The hands-free unit (off when not told). */
+	error = kl_system_phone_hf(phone->system, &phone->view.hf);
+	if (error != 0) {
+		memset(&phone->view.hf, 0, sizeof(phone->view.hf));
+		phone->view.hf.speaker = -1;
+	}
+
+	/* The calls there are. */
+	count = 0U;
+	error = kl_system_phone_calls(phone->system, phone->view.calls, KL_PHONE_CALLS_MAX, &count);
+	if (error != 0 || count > KL_PHONE_CALLS_MAX)
+		count = 0U;
+	phone->view.call_count = count;
+
+	/* Whether one is on: its time from now when it just came on, none when nothing is on. */
+	on = 0;
+	for (index = 0U; index < count; index++) {
+		if (phone->view.calls[index].state == KL_PHONE_CALL_ACTIVE)
+			on = 1;
+	}
+
+	/* Its time runs from when it came on. */
+	if (on && phone->view.call_since_us == 0U) {
+		phone->view.call_since_us = kl_clock_us();
+		phone->call_second = 0U;
+	}
+
+	/* Nothing on: no time. */
+	if (!on)
+		phone->view.call_since_us = 0U;
+
+	/* No call: no keypad. */
+	if (count == 0U)
+		phone->view.keypad = 0;
+	ph_log("CALLS count=%zu on=%d hf=%u", count, on, phone->view.hf.state);
+	phone->dirty = 1;
+}
+
+/* Asks a call's request of the paired phone (KL_PHONE_ASK_*); a refusal is told. */
+static void
+ph_call_ask(
+	struct ph_window *phone,
+	unsigned ask,
+	const char *argument)
+{
+	uint32_t request;
+	int error;
+
+	/* Asked of the compositor; its result comes later. */
+	error = ENOTSUP;
+	request = 0U;
+	if (phone->system != NULL)
+		error = kl_system_phone_control(phone->system, ask, argument, &request);
+	ph_log("CALL ask=%u error=%d", ask, error);
+
+	/* Refused at once. */
+	if (error != 0)
+		ph_view_notice(&phone->view, "The phone could not be asked.", kl_clock_us());
 }
 
 /* Keeps the new contact of the view's form and shows it. */
