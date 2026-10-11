@@ -963,6 +963,32 @@ thread_start(
 }
 
 /*
+ * The executor's yield between steps; no host thread runs it.
+ */
+void
+sched_yield(
+	void)
+{
+	/* No scheduler exists in this fixture. */
+	return;
+}
+
+/*
+ * Reports no diagnostic releases; the fixture's buffers are host memory.
+ */
+void
+bcm2711_buffer_release_stats(
+	uint64_t *count,
+	uint64_t *bytes,
+	uint64_t *ticks)
+{
+	/* The fixture keeps no release timing. */
+	*count = 0;
+	*bytes = 0;
+	*ticks = 0;
+}
+
+/*
  * Initializes host condition sequences for the real queue and callback-retirement waits.
  */
 void

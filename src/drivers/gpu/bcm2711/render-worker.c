@@ -23,6 +23,8 @@
 #define REQUEST_FINISHING 3U
 #define REQUEST_RESERVED 4U
 #define REQUEST_RETAINED 5U
+/* A queue domain completion whose session still has executions waits here until they finish. */
+#define REQUEST_PARKED 6U
 
 /* Constant operation-table entries need declarations before ANSI C initialization. */
 static int job_reserve(void *opaque, void *private_session, uint32_t timeline, struct drv_gpu_completion *completion, void **token);
@@ -45,6 +47,9 @@ static int dispose_marker(struct bcm2711_render_device *controller, void *payloa
 static unsigned reservation_capacity(struct bcm2711_render_worker *worker);
 
 static void worker_main(void *opaque);
+static void executor_main(void *opaque);
+static bool park_request(struct bcm2711_render_device *controller, struct bcm2711_render_request *request, int error);
+static int parked_outcome(struct bcm2711_render_device *controller, struct bcm2711_render_request *request);
 static struct bcm2711_render_request *take_request(struct bcm2711_render_device *controller);
 static void finish_request(struct bcm2711_render_device *controller, struct bcm2711_render_request *request, int error);
 
@@ -73,6 +78,7 @@ bcm2711_render_worker_init(
 	kern_memset(&controller->worker, 0, sizeof(controller->worker));
 	waitq_init(&controller->worker.available, "bcm2711-render-work");
 	waitq_init(&controller->worker.retired, "bcm2711-render-retired");
+	waitq_init(&controller->worker.executable, "bcm2711-render-execute");
 
 	/* Succeeded: the worker starts with an empty FIFO and no native uncertainty. */
 	return;
@@ -91,6 +97,15 @@ bcm2711_render_worker_start(
 	/* Every later open reuses the existing worker and its permanent queue owner. */
 	if (controller->worker.thread != NULL)
 		return 0;
+
+	/* The executor runs the queued executions; it exists before the worker can accept a QueueSubmit. */
+	if (controller->worker.executor == NULL) {
+		error = kthread_create(executor_main, controller, SCHED_PRIORITY_DEFAULT, &thread);
+		if (error != 0)
+			return error;
+		controller->worker.executor = thread;
+		thread_start(thread);
+	}
 	error = kthread_create(worker_main, controller, SCHED_PRIORITY_DEFAULT, &thread);
 	if (error != 0)
 		return error;
@@ -207,6 +222,7 @@ bcm2711_render_worker_step(
 	uint64_t started;
 	uint64_t waited;
 	uint64_t taken;
+	bool parked;
 	bool retired;
 	bool global_failure;
 	bool native_fault;
@@ -292,6 +308,11 @@ bcm2711_render_worker_step(
 	if (global_failure)
 		bcm2711_render_fail(controller, error);
 
+	/* A queue domain's completion behind unfinished executions of its session waits for them; the executor completes it. */
+	parked = park_request(controller, request, error);
+	if (parked)
+		return 0;
+
 	/* Completion delivery runs outside controller and IRQ locks, before slot reuse or close. */
 	finish_request(controller, request, error);
 
@@ -335,8 +356,9 @@ bcm2711_render_worker_stop(
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
-	/* Queued canceled payloads still require disposal and exactly one common completion. */
+	/* Queued canceled payloads still require disposal and exactly one common completion; queued executions are canceled by the executor. */
 	waitq_wake_one(&controller->worker.available);
+	waitq_wake_all(&controller->worker.executable);
 
 	/* Succeeded: the selected session no longer admits new worker requests. */
 	return;
@@ -460,8 +482,9 @@ bcm2711_render_worker_fault(
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
-	/* The permanent worker disposes canceled payloads without claiming that native DMA stopped. */
+	/* The permanent worker disposes canceled payloads without claiming that native DMA stopped; the executor cancels queued executions. */
 	waitq_wake_one(&controller->worker.available);
+	waitq_wake_all(&controller->worker.executable);
 
 	/* Succeeded: the worker fault is visible to subsequent admission. */
 	return;
@@ -486,6 +509,12 @@ bcm2711_render_worker_recovered(
 			spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 			return EBUSY;
 		}
+	}
+
+	/* No execution or parked completion may outlive the recovery. */
+	if (controller->worker.ready_head != NULL || controller->worker.parked != NULL) {
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+		return EBUSY;
 	}
 
 	/* The native reset's readbacks, cache and translation flushes supply the actual retirement proof. */
@@ -941,7 +970,7 @@ finish_request(
 	/* FINISHING keeps the slot and session alive across reentrant common completion observers. */
 	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
-	if (request->state != REQUEST_ACTIVE)
+	if (request->state != REQUEST_ACTIVE && request->state != REQUEST_PARKED)
 		__builtin_trap();
 	request->state = REQUEST_FINISHING;
 	completion = request->completion;
@@ -966,4 +995,307 @@ finish_request(
 
 	/* Succeeded: the callback outcome is delivered and its pending hold is retired. */
 	return;
+}
+
+/*
+ * Queues an accepted execution behind its session's earlier ones.
+ *
+ * The session's pending count holds it through its end, so drain and close
+ * wait for it; the session joins the executor's round robin if it was idle.
+ */
+void
+bcm2711_render_execution_submit(
+	struct bcm2711_render_session *session,
+	struct bcm2711_render_execution *execution)
+{
+	struct bcm2711_render_device *controller;
+	unsigned long enabled;
+
+	/* The execution joins the tail of its session's queue. */
+	controller = session->device;
+	execution->session = session;
+	execution->next = NULL;
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	if (session->execution_tail == NULL) {
+		session->execution_head = execution;
+	} else {
+		session->execution_tail->next = execution;
+	}
+	session->execution_tail = execution;
+	session->submitted++;
+	session->execution_bytes += execution->bytes;
+	session->pending++;
+
+	/* An idle session joins the round robin's tail. */
+	if (!session->ready) {
+		session->ready = true;
+		session->ready_next = NULL;
+		if (controller->worker.ready_tail == NULL) {
+			controller->worker.ready_head = session;
+		} else {
+			controller->worker.ready_tail->ready_next = session;
+		}
+		controller->worker.ready_tail = session;
+	}
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* The executor sees the new work. */
+	waitq_wake_all(&controller->worker.executable);
+}
+
+/*
+ * Runs one step of the execution at the head of the next ready session.
+ *
+ * Sessions take turns a step at a time.  A stopped session's or a faulted
+ * engine's executions are ended without running.  When an execution ends,
+ * the completions of its session that waited for it are delivered outside every lock.
+ */
+int
+bcm2711_render_executor_step(
+	struct bcm2711_render_device *controller)
+{
+	struct bcm2711_render_session *session;
+	struct bcm2711_render_execution *execution;
+	struct bcm2711_render_request *finished;
+	struct bcm2711_render_request **link;
+	struct bcm2711_render_request *request;
+	struct bcm2711_render_request *next;
+	unsigned long enabled;
+	uint64_t bytes;
+	bool failed;
+	bool done;
+	int ended;
+	int error;
+
+	/* The ready session at the head runs its oldest execution. */
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	session = controller->worker.ready_head;
+	execution = NULL;
+	if (session != NULL)
+		execution = session->execution_head;
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* Nothing waits. */
+	if (session == NULL || execution == NULL)
+		return EAGAIN;
+	mutex_lock(&controller->mutex);
+
+	/* A stopped session or a faulted engine ends the execution without running it. */
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	error = 0;
+	if (session->stopping)
+		error = ECANCELED;
+	if (controller->space.native->hardware.faulted || controller->worker.uncertain)
+		error = EIO;
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* One step, or the end of an execution that cannot run; a step's failure is the engine's. */
+	done = true;
+	failed = false;
+	if (error == 0) {
+		error = execution->step(controller, execution, &done);
+		if (error != 0) {
+			done = true;
+			failed = true;
+		}
+	}
+	bytes = execution->bytes;
+	if (done) {
+		/* The finished execution leaves its queue before its end frees it; a submit may be linking behind it. */
+		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+		session->execution_head = execution->next;
+		if (session->execution_head == NULL)
+			session->execution_tail = NULL;
+
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+		ended = execution->end(controller, execution, error);
+		if (ended != 0) {
+			failed = true;
+			if (error == 0)
+				error = ended;
+		}
+	}
+
+	/* A failure closes native admission before the mutex lets anyone observe it. */
+	if (failed)
+		bcm2711_render_worker_fault(controller, error);
+
+	mutex_unlock(&controller->mutex);
+
+	/* Common observers see the loss outside the mutex. */
+	if (failed)
+		bcm2711_render_fail(controller, error);
+
+	/* The session leaves the round robin's head; a finished execution releases the completions that waited for it. */
+	finished = NULL;
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	controller->worker.ready_head = session->ready_next;
+	if (controller->worker.ready_head == NULL)
+		controller->worker.ready_tail = NULL;
+	session->ready_next = NULL;
+	if (done) {
+		session->executed++;
+		session->execution_bytes -= bytes;
+		link = &controller->worker.parked;
+		while (*link != NULL) {
+			request = *link;
+			if (request->session == session && request->required <= session->executed) {
+				*link = request->parked_next;
+				request->parked_next = finished;
+				finished = request;
+				continue;
+			}
+			link = &request->parked_next;
+		}
+	}
+
+	/* A session with more work takes its next turn at the tail. */
+	session->ready = false;
+	if (session->execution_head != NULL) {
+		session->ready = true;
+		if (controller->worker.ready_tail == NULL) {
+			controller->worker.ready_head = session;
+		} else {
+			controller->worker.ready_tail->ready_next = session;
+		}
+		controller->worker.ready_tail = session;
+	}
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* The released requests complete outside every lock with their own outcome, or the stop or fault that came meanwhile. */
+	for (request = finished; request != NULL; request = next) {
+		next = request->parked_next;
+		request->parked_next = NULL;
+		finish_request(controller, request, parked_outcome(controller, request));
+	}
+
+	/* A finished execution gives back its session's pending hold. */
+	if (done) {
+		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+		if (session->pending == 0)
+			__builtin_trap();
+		session->pending--;
+
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+		waitq_wake_all(&controller->worker.retired);
+		drv_gpu_capacity_changed(controller->gpu);
+	}
+
+	/* Succeeded: one step ran or one execution ended. */
+	return 0;
+}
+
+/*
+ * Parks a queue domain's completion while its session has unfinished executions; reports whether it was parked.
+ *
+ * A request with a domain (a producer's marker or a selected context fence)
+ * completes only after every execution its session accepted before it, a
+ * canceled one too: its completion proves the earlier work retired.  The
+ * request's own outcome is kept for the release.  A request without a domain
+ * reports decoder progress and completes at once.
+ */
+static bool
+park_request(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_request *request,
+	int error)
+{
+	struct bcm2711_render_session *session;
+	unsigned long enabled;
+	bool parked;
+
+	/* Decoder notifications do not wait. */
+	if (request->timeline == 0)
+		return false;
+	session = request->session;
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	parked = false;
+	if (session->executed < session->submitted) {
+		request->state = REQUEST_PARKED;
+		request->canceled = error;
+		request->required = session->submitted;
+		request->parked_next = controller->worker.parked;
+		controller->worker.parked = request;
+		parked = true;
+	}
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* Reports whether the executor now owns the completion. */
+	return parked;
+}
+
+/* Returns the outcome a released parked request reports: its own, else the stop or fault that came while it waited. */
+static int
+parked_outcome(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_request *request)
+{
+	unsigned long enabled;
+	int error;
+
+	/* The request's own outcome first, then stop, then a native fault. */
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	error = request->canceled;
+	if (error == 0 && request->session->stopping)
+		error = ECANCELED;
+	if (error == 0 && controller->space.native->hardware.faulted)
+		error = EIO;
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* Succeeded: zero when the marker completes normally. */
+	return error;
+}
+
+/* Runs executions for the controller's lifetime, sleeping while none waits. */
+static void
+executor_main(
+	void *opaque)
+{
+	struct bcm2711_render_device *controller;
+	unsigned long enabled;
+	uint64_t observed;
+	int error;
+
+	/* The registered controller and its thread live for the kernel's lifetime. */
+	controller = opaque;
+
+	/* Steps run until no execution waits; then the executor sleeps until one is queued. */
+	while (true) {
+		error = bcm2711_render_executor_step(controller);
+
+		/* The mutex is not handed off: a decoder or ioctl waiting for it gets a turn between steps. */
+		if (error == 0) {
+			sched_yield();
+			continue;
+		}
+		if (error != EAGAIN)
+			__builtin_trap();
+		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+		/* A queued execution cannot appear between the empty observation and the sleep. */
+		while (controller->worker.ready_head == NULL) {
+			observed = waitq_sequence(&controller->worker.executable);
+			error = waitq_sleep(&controller->worker.executable, &controller->space.native->hardware.guard, observed, 0, 0);
+			if (error != 0 && error != EAGAIN)
+				__builtin_trap();
+		}
+
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+	}
 }

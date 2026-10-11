@@ -179,6 +179,14 @@ executor の pass ごとの 3 区分:
 - libvulkan の WSI: early commit（review-4 の確認）。compositor は client の acquire の fence を poll する。session をまたぐ順序は marker の完了で保たれる。
 - M-5 の libglesv2・libegl・libmedia の点検: review-4 も具体の誤りは未発見。A1 の後の T1 の回帰で見る。
 
+## A1 の進捗（2026-10-12 P3）
+
+- **A1a**（46ed1959e）: `bcm2711_vulkan_native_job_step`（1 歩＝CPU の段から次の pass まで、job に cursor・region・remaining・tick の和を保存）。`job_execute` は step の loop。
+- **A1b**: executor の thread（`executor_main`、controller に 1 つ、最初の open で decoder の前に起動）、session ごとの execution の列（`execution_head/tail`、`submitted`・`executed`・`execution_bytes`）、ready の session の round-robin（1 歩ごとに列の後ろへ）、`bcm2711_render_execution_submit`・`bcm2711_render_executor_step`。QueueSubmit は decode・prepare の後に heap の execution（actions・syncs を写す）を作り、予約を公開して列に入れ、VK_SUCCESS を返す。execution の step は wait・signal を順に進め command の job を 1 歩、end は成功なら completed・signaled を公開、失敗・取り消しなら DEVICE_LOST（その execution の分だけ）、`release_owner` の後に free。step の失敗と release の失敗は executor が `worker_fault`（mutex の下）と `render_fail`（mutex の外）にする。stop（ECANCELED）・fault（EIO）の取り消しは実行せずに end し、stop は global fault にしない。semaphore・fence の `pending` は数、`prepare_sync` は予約の数どうしで判定（pending が 0 の時だけ completed・signaled との一致も）。旧来の GPU_COMMAND の QueueSubmit は EOPNOTSUPP（`bcm2711_vulkan_session.synchronous`）、QUEUE_WAIT_IDLE・DEVICE_WAIT_IDLE は EOPNOTSUPP。executor は 1 歩ごとに `sched_yield`（mutex は handoff しない）。
+- **設計からの差（A1b）**: PARKED は domain（timeline≠0）を持つ request の完了全部に広げた（job の marker と、選ばれた context fence の command）。decoder が実行と dispose を終えた後、session に未完了の execution があれば PARKED にして自分の結果を残し、executor が `required ≤ executed` で `stop・fault・自分の結果` を付けて完了させる。timeline 0 の command（libvulkan の decoder の通知）は待たない。**PARKED はまだ worker の slot に居る**（slot から外して execution の entry に持たせるのは A1c の背圧と一緒に行う）。
+- host 試験（vulkan-device）: 既存の場面を executor の後で確かめる形に（`execute()` は executor を空になるまで回す、`execute_queued()` は回さない、drain の fixture は decoder が空なら executor を 1 歩）。足した場面: (j) 予約だけの signal を後の submission が wait する鎖と、予約の signal が残る間の 2 度目の signal の拒否、(k) 旧来の経路の EOPNOTSUPP、PARKED の marker が executor の後に完了、(h)・(s) の一部（stop で列の execution が取り消され fence は DEVICE_LOST、PARKED は ECANCELED、global fault にならない）、uncertain の job は accept の後に fault。v3d-hardware の host 試験に stub（`sched_yield`、以前からの `bcm2711_buffer_release_stats` の欠け）を足した。
+- 残り（A1c・A1d）: 背圧（RESERVE の EAGAIN、件数・bytes・全体・最低の枠・session の数）と PARKED を slot から外す、表示の session の優先の印、(c)(d)(g)(i)(q) の試験。
+
 ## 段（第 4 版）
 
 | 段 | 内容 | 確かめ |

@@ -174,6 +174,8 @@ static void memory_free(struct bcm2711_vulkan_session *session, uint64_t identit
 static int dispatch(struct bcm2711_vulkan_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static void begin(struct vulkan_writer *writer, void *storage, size_t capacity, uint32_t opcode, uint32_t requested);
 static int execute(struct bcm2711_vulkan_session *session, struct vulkan_writer *writer, struct vulkan_reader *reader);
+static unsigned executor_drain(struct bcm2711_render_device *controller);
+static int execute_queued(struct bcm2711_vulkan_session *session, struct vulkan_writer *writer, struct vulkan_reader *reader);
 static void encode_instance(struct vulkan_writer *writer, uint64_t identity, uint32_t version);
 static void encode_device(struct vulkan_writer *writer, uint64_t physical, uint64_t identity, uint32_t family, VkPhysicalDeviceFeatures *features);
 static void encode_queue(struct vulkan_writer *writer, uint64_t device, uint64_t identity, uint32_t timeline);
@@ -561,6 +563,8 @@ waitq_sleep(
 	assert(deadline == 0 && flags == 0 && guard->held.value == 1);
 	spin_unlock_irqrestore(guard, 1);
 	error = bcm2711_render_worker_step(runtime_session->device);
+	if (error == EAGAIN)
+		error = bcm2711_render_executor_step(runtime_session->device);
 	assert(error == 0);
 	enabled = spin_lock_irqsave(guard);
 	assert(enabled == 1);
@@ -889,17 +893,15 @@ main(
 	error = execute(session, &writer, &reader);
 	assert(error == EEXIST && allocations == baseline && render.timelines == (UINT64_C(1) << 7));
 
-	/* Native busy/fault state cannot be hidden by an unconditional idle reply. */
+	/* Queue and device idle are refused: libvulkan waits on an empty submit's fence, and the executor has no immediate answer. */
 	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_WAIT_IDLE, 1);
 	vulkan_write_u64(&writer, 40);
 	error = execute(session, &writer, &reader);
-	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
-	engine.hardware.job_busy = true;
-	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_WAIT_IDLE, 1);
-	vulkan_write_u64(&writer, 40);
+	assert(error == EOPNOTSUPP);
+	begin(&writer, wire, sizeof(wire), GPU_OP_DEVICE_WAIT_IDLE, 1);
+	vulkan_write_u64(&writer, 30);
 	error = execute(session, &writer, &reader);
-	assert(error == 0 && vulkan_read_u32(&reader) == (uint32_t)VK_ERROR_DEVICE_LOST);
-	engine.hardware.job_busy = false;
+	assert(error == EOPNOTSUPP);
 
 	/* Removing a device's wire identity preserves a prepared queue reference and its original domain. */
 	error = bcm2711_vulkan_object_retain(queue);
@@ -3745,6 +3747,8 @@ runtime_test(
 	struct vulkan_reader reader;
 	struct gpu_capset capset;
 	VkFenceCreateInfo create;
+	uint64_t submitted;
+	void *token;
 	uint8_t wire[512];
 	uint32_t protocol;
 	uint32_t xml;
@@ -3821,7 +3825,9 @@ runtime_test(
 	assert(error == EAGAIN && !fence->signaled);
 	error = bcm2711_render_worker_step(controller);
 	assert(error == 0 && runtime_callbacks == 1 && runtime_errors[0] == 0);
-	assert(fence->signaled && runtime_session->pending == 0 && reply_storage[2047] == 0x00401000);
+	assert(!fence->signaled && fence->pending == 1 && runtime_session->pending == 1 && reply_storage[2047] == 0x00401000);
+	assert(executor_drain(controller) == 1);
+	assert(fence->signaled && fence->pending == 0 && runtime_session->pending == 0);
 
 	/* Snapshot OOM and a non-owned completion domain leave neither a callback nor a queued prefix. */
 	baseline = allocations;
@@ -3883,6 +3889,64 @@ runtime_test(
 	/* The explicit fixture restores synthetic admission for independent checks; no checked physical reset is asserted. */
 	controller->space.native->hardware.faulted = false;
 	controller->worker.uncertain = false;
+
+	/* A legacy synchronous frame has no callback to complete after an execution, so its QueueSubmit is refused. */
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 0, 0, 0, 0);
+	runtime_trailer(&writer);
+	error = controller->operations.command(controller, runtime_session, wire, (uint32_t)writer.bytes);
+	assert(error == EOPNOTSUPP && runtime_session->pending == 0 && runtime_session->submitted == runtime_session->executed);
+	assert(!session->synchronous && runtime_faults == 1);
+
+	/* The decoder notification comes at once; the queue domain's marker waits parked for the accepted execution. */
+	submitted = runtime_session->submitted;
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 0, 0, 0, 0);
+	runtime_trailer(&writer);
+	error = controller->operations.commands->submit(controller, runtime_session, wire, (uint32_t)writer.bytes, GPU_COMMAND_CONTEXT_FENCE, 0, (struct drv_gpu_completion *)(uintptr_t)21);
+	assert(error == 0);
+	error = bcm2711_render_worker_step(controller);
+	assert(error == 0 && runtime_callbacks == 21 && runtime_errors[20] == 0);
+	assert(runtime_session->submitted == submitted + 1U && runtime_session->pending == 1);
+	error = controller->operations.jobs->reserve(controller, runtime_session, 7, (struct drv_gpu_completion *)(uintptr_t)22, &token);
+	assert(error == 0 && runtime_session->pending == 2);
+	error = controller->operations.jobs->commit(controller, runtime_session, token, (struct drv_gpu_completion *)(uintptr_t)22);
+	assert(error == 0);
+	error = bcm2711_render_worker_step(controller);
+	assert(error == 0 && runtime_callbacks == 21 && controller->worker.parked != NULL && runtime_session->pending == 2);
+	error = bcm2711_render_worker_step(controller);
+	assert(error == EAGAIN);
+	assert(executor_drain(controller) == 1);
+	assert(runtime_callbacks == 22 && runtime_errors[21] == 0 && controller->worker.parked == NULL);
+	assert(runtime_session->pending == 0 && runtime_session->executed == submitted + 1U);
+
+	/* A stopped session's queued execution is canceled without a global fault; its fence is lost and its parked marker reports the stop. */
+	begin(&writer, wire, sizeof(wire), GPU_OP_RESET_FENCES, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u32(&writer, 1);
+	vulkan_write_u64(&writer, 1);
+	vulkan_write_u64(&writer, 910);
+	error = execute(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS && !fence->signaled);
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 0, 0, 910, 0);
+	runtime_trailer(&writer);
+	error = controller->operations.commands->submit(controller, runtime_session, wire, (uint32_t)writer.bytes, GPU_COMMAND_CONTEXT_FENCE, 0, (struct drv_gpu_completion *)(uintptr_t)23);
+	assert(error == 0);
+	error = bcm2711_render_worker_step(controller);
+	assert(error == 0 && runtime_callbacks == 23 && fence->pending == 1);
+	error = controller->operations.jobs->reserve(controller, runtime_session, 7, (struct drv_gpu_completion *)(uintptr_t)24, &token);
+	assert(error == 0);
+	error = controller->operations.jobs->commit(controller, runtime_session, token, (struct drv_gpu_completion *)(uintptr_t)24);
+	assert(error == 0);
+	error = bcm2711_render_worker_step(controller);
+	assert(error == 0 && runtime_callbacks == 23 && controller->worker.parked != NULL);
+	bcm2711_render_worker_stop(runtime_session, ECANCELED);
+	assert(executor_drain(controller) == 1);
+	assert(runtime_callbacks == 24 && runtime_errors[23] == ECANCELED && runtime_session->pending == 0);
+	assert(!fence->signaled && fence->pending == 0 && fence->status == VK_ERROR_DEVICE_LOST);
+	assert(runtime_faults == 1 && !controller->worker.uncertain && !controller->space.native->hardware.faulted);
+	runtime_session->stopping = false;
 	destroy(session, GPU_OP_DESTROY_FENCE, 910);
 	session->render->vulkan = old_namespace;
 	puts("WS141 actual public runtime capset/snapshot/FIFO/fence/callback/domain/OOM/capacity/close drain: PASS");
@@ -4046,6 +4110,28 @@ queue_test(
 	assert(semaphore->waits_reserved == 2 && semaphore->waits_completed == 2 && !semaphore->signaled && !semaphore->pending);
 	assert(fence->signaled && !fence->pending && allocations == prepared_baseline);
 
+	/* A later submission may wait for a signal that an earlier queued one only reserved; nothing completes before the executor runs. */
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 151, 901, 0, 1);
+	error = execute_queued(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS && semaphore->pending == 1 && !semaphore->signaled);
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 151, 901, 0, 1);
+	error = execute_queued(session, &writer, &reader);
+	assert(error == EINVAL && semaphore->pending == 1 && semaphore->signals_reserved == 3);
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 151, 901, 0, 3);
+	error = execute_queued(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS && semaphore->pending == 2 && command->pending == 1);
+	assert(semaphore->signals_reserved == 4 && semaphore->waits_reserved == 4);
+	assert(semaphore->signals_completed == 2 && semaphore->waits_completed == 2 && native_execute_calls == calls + 1U);
+	assert(session->render->submitted == session->render->executed + 2U && session->render->pending == 2);
+	assert(executor_drain(controller) >= 2);
+	assert(semaphore->signals_completed == 4 && semaphore->waits_completed == 4 && !semaphore->signaled && semaphore->pending == 0);
+	assert(command->pending == 0 && native_execute_calls == calls + 2U && session->render->pending == 0);
+	assert(allocations == prepared_baseline);
+	calls++;
+
 	/* A real independently recorded empty one-time primary becomes invalid only after actual accepted execution, with no GPU launch. */
 	memset(&pool, 0, sizeof(pool));
 	pool.wire_id = 150;
@@ -4090,7 +4176,7 @@ queue_test(
 	error = bcm2711_vulkan_object_remove(session, I915_VK_OBJ_COMMAND_BUFFER, 157);
 	assert(error == 0 && allocations == prepared_baseline);
 
-	/* An uncertain real native-job handoff reports DEVICE_LOST and keeps the whole pending primary instead of signaling its fence. */
+	/* An uncertain real native-job handoff is accepted, then loses the device and keeps the whole pending primary instead of signaling its fence. */
 	begin(&writer, wire, sizeof(wire), GPU_OP_RESET_FENCES, 1);
 	vulkan_write_u64(&writer, 30);
 	vulkan_write_u32(&writer, 1);
@@ -4103,7 +4189,7 @@ queue_test(
 	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
 	ws141_client_encode_submit(&writer, 151, 901, 900, 4);
 	error = execute(session, &writer, &reader);
-	assert(error == 0 && vulkan_read_u32(&reader) == (uint32_t)VK_ERROR_DEVICE_LOST);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
 	assert(controller->worker.uncertain && controller->space.native->hardware.faulted && controller->quarantine != NULL);
 	assert(command->pending == 1 && !fence->signaled && !fence->pending && fence->status == VK_ERROR_DEVICE_LOST);
 
@@ -4347,9 +4433,50 @@ begin(
 	writer->bytes += sizeof(header);
 }
 
-/* Executes through actual native transport and makes a genuine client decoder cursor over the returned payload. */
+/* Runs the executor until no execution waits; returns the number of steps. */
+static unsigned
+executor_drain(
+	struct bcm2711_render_device *controller)
+{
+	unsigned steps;
+	int error;
+
+	/* Each step runs one pass or ends one execution. */
+	steps = 0;
+	while (true) {
+		error = bcm2711_render_executor_step(controller);
+		if (error == EAGAIN)
+			break;
+		assert(error == 0);
+		steps++;
+	}
+
+	/* Succeeded: every queued execution ended. */
+	return steps;
+}
+
+/* Executes through actual native transport and waits for the accepted executions, like a fence wait. */
 static int
 execute(
+	struct bcm2711_vulkan_session *session,
+	struct vulkan_writer *writer,
+	struct vulkan_reader *reader)
+{
+	int error;
+
+	/* The decoder replies first; the executor then runs what it accepted. */
+	error = execute_queued(session, writer, reader);
+	executor_drain(session->render->device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the reply is decoded and every accepted execution ended. */
+	return 0;
+}
+
+/* Executes through actual native transport and makes a genuine client decoder cursor over the returned payload; accepted executions stay queued. */
+static int
+execute_queued(
 	struct bcm2711_vulkan_session *session,
 	struct vulkan_writer *writer,
 	struct vulkan_reader *reader)
