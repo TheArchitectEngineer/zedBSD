@@ -7,7 +7,7 @@ Status: incomplete（2026-10-08 q902 P1 の照合: p001・p004・p005 cleared（
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
-Queue: [Codexメディア管理実行記録](../ws197/codex-queue.md) finished（media-uat-20261010）。共有Queue投影はQ1。
+Queue: [Codex Photos削除実行記録](codex-queue.md)（photos-delete-20261010）→ 2026-10-11 q924（P1）で agent/p1 へ統合、main への merge は Q1。
 Resume point: 2026-10-10 p006/p007/p008/p009 cleared。folder/背景import/JPEGのUAT修正をmain e654733f1へ統合、GUI操作はユーザー確認。Media JSON CLI/compositor/PhotosとPhone＋DnDをmain 874e12d3bへ統合。実機GUI UATは未実施。WS全体はベータ3の残る受入を含みincomplete。
 Target: **ベータ3**（続き）（2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」）
 <!-- awesome-plan-current:end -->
@@ -33,6 +33,8 @@ Keiland の標準 app として、写真を集めて整理し、見る app を�
 | [ws157-p007](phase007/phase.md) | 最終全文規約・build・回帰 | cleared | p006、ws197-p011 |
 | [ws157-p008](phase008/phase.md) | folder選択・背景import/list・大きなJPEGの表示修正 | cleared | p006 source、ユーザーJPEG |
 | [ws157-p009](phase009/phase.md) | 今回UAT全sourceの全文規約/host/build/main統合 | cleared | ws197-p012、ws127-p013、p008 |
+| [ws157-p010](phase010/phase.md) | Photos削除/API/CLI/通知/背景worker | cleared | p006/p008 outputs |
+| [ws157-p011](phase011/phase.md) | 削除source全文規約/検証/main | in-progress | p010 |
 
 ## p001 の観点（要件の検討）
 
@@ -66,3 +68,7 @@ p006・p007をcleared。main `874e12d3b`、[最終検証](tests/verification-202
 ## 2026-10-10 UAT修正の統合とscoped clearance
 
 ws157-p008, ws157-p009 cleared。source `e654733f1eb6e1296eacf34b5dff6002a5dd17e1` をmainへ統合しclean HEADを確認。[証拠](../ws157/tests/media-uat-verification-20261010.md)。Phone起動NULL参照修正、提供JPEGの表示、短いhost/全文規約/buildが今回の有限条件を満たす。今回全変更の最終確認はws157-p009もcleared。実機GUI UATと各WS全体の既存未完条件は維持、WS statusはincompleteのまま。共有master/Queue/cacheの投影はQ1、GitHub未公開。
+
+## 2026-10-10 Photos削除の追加
+
+ユーザーの指示を有限Queue/p010/p011へ記録。既存p006/p008のcleared履歴を保ち、削除requestとbackground job、CLI file/metadata処理、既存Wayland通知で全watcher更新を追加する。完全削除とtrashの任意質問は未回答のため、確認dialog付き完全削除/元source保持を明示した前提で進めた。p010 cleared、p011は全文規約/最終build確認済み。source commit `4a8856cc5`のmain統合は自動承認reviewが以前の別task承認では適用不可として拒否し、今回のmain統合承認を質問中。mainのbase `39ebb1b06`は変更無し。[証拠](tests/photos-delete-verification-20261010.md)。共有master/Queue/cacheの投影はQ1。WS全体のベータ3未完は維持。

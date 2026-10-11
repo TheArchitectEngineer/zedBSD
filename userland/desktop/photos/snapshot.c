@@ -170,9 +170,11 @@ ph_snapshot_apply(
 			error = snapshot_number(fields[3], &turns);
 			if (error != 0 || favorite < 0 || favorite > 1 || turns < 0 || turns > 3)
 				return EINVAL;
+
+			/* Another app may have deleted an identity while these marks were edited. */
 			index = ph_library_find_id(fields[1]);
 			if (index < 0)
-				return ENOENT;
+				continue;
 			photos = ph_photos(&count);
 			photos[index].favorite = (int)favorite;
 			photos[index].turns = (int)turns;
@@ -373,6 +375,12 @@ snapshot_member(
 	size_t index;
 	int same;
 	int error;
+	long media;
+
+	/* Stale album edits cannot restore a deleted media membership. */
+	media = ph_library_find_id(fields[2]);
+	if (media < 0)
+		return 0;
 
 	/* Finds the album by identity rather than its sort position. */
 	albums = ph_albums(&count);

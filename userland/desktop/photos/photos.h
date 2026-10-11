@@ -115,6 +115,7 @@ void ph_time_split(ph_time when, int *year, int *month, int *day);
 
 /* The library in memory (library.c). */
 int ph_library_add(const struct ph_photo *photo, const char *root, const char *relative, const char *original);
+int ph_library_remove(const char *id);
 void ph_library_sort(void);
 struct ph_photo *ph_photos(size_t *count);
 struct ph_album *ph_albums(size_t *count);

@@ -490,6 +490,7 @@
 		kl_system_media_list;
 		kl_system_media_add_paths;
 		kl_system_media_apply;
+		kl_system_media_remove_ids;
 		kl_system_media_watch;
 		kl_system_media_notify;
 	local:

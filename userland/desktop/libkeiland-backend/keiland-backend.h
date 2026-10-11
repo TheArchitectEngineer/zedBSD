@@ -2076,6 +2076,7 @@ void kl_backend_sharing_get(const struct kl_backend *backend, struct kl_backend_
 #define KL_BACKEND_MEDIA_LIST 1U
 #define KL_BACKEND_MEDIA_ADD 2U
 #define KL_BACKEND_MEDIA_APPLY 4U
+#define KL_BACKEND_MEDIA_REMOVE 8U
 
 /* An asynchronous spawned CLI queue with pipe input/output; notification uses libkeiland. */
 struct kl_backend_media;

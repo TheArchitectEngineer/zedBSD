@@ -142,6 +142,9 @@ kl_backend_media_request(
 	case KL_BACKEND_MEDIA_ADD:
 		operation = "add-list";
 		break;
+	case KL_BACKEND_MEDIA_REMOVE:
+		operation = "remove-list";
+		break;
 	case KL_BACKEND_MEDIA_APPLY:
 		operation = "apply";
 		break;
@@ -525,7 +528,7 @@ media_prepare(
 	int regular;
 
 	/* Only update snapshots arrive as descriptors; path lists are ordinary strings. */
-	if (command == KL_BACKEND_MEDIA_ADD) {
+	if (command == KL_BACKEND_MEDIA_ADD || command == KL_BACKEND_MEDIA_REMOVE) {
 		job->length = strlen(argument);
 		if (job->length == 0U || job->length > 32768U)
 			return EINVAL;
@@ -546,7 +549,7 @@ media_prepare(
 		job->request = malloc(job->length);
 		if (job->request == NULL)
 			return ENOMEM;
-		if (command == KL_BACKEND_MEDIA_ADD) {
+		if (command == KL_BACKEND_MEDIA_ADD || command == KL_BACKEND_MEDIA_REMOVE) {
 			memcpy(job->request, argument, job->length);
 		} else {
 			done = 0U;
