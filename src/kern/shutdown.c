@@ -16,9 +16,16 @@
 #include "kern/atomic.h"
 #include "kern/sched.h"
 #include "kern/readahead.h"
+#include "kern/klog.h"
 #include <uapi/errno.h>
 
-extern void net_shutdown_for_boot(void) __attribute__((weak));
+/*
+ * The layers a kernel may be built without.
+ *
+ * Each is weak so a configuration that leaves the layer out still links,
+ * and every call site tests the symbol before it calls.
+ */
+extern int net_shutdown_for_boot(void) __attribute__((weak));
 extern void drv_usb_shutdown(void) __attribute__((weak));
 extern void drv_pci_shutdown(void) __attribute__((weak));
 
@@ -47,6 +54,7 @@ system_shutdown_prepare(
 	void)
 {
 	unsigned expected;
+	int network_stopped;
 	int error;
 
 	/* Joins a successful shutdown or retries preparation after a reported failure. */
@@ -68,14 +76,19 @@ system_shutdown_prepare(
 
 		error = readahead_boundary_begin(&shutdown_readahead, NULL);
 		if (error != 0) {
+			kern_logf("shutdown: the speculative readers could not be stopped (error %d)\n",
+				  error);
 			atomic_store_release(&shutdown_preparation_state, 0);
 			return error;
 		}
 	}
 
+	/* Drops the pages read ahead, which a shutdown has no use for. */
 	if (readahead_trim != NULL) {
 		error = readahead_trim();
 		if (error != 0) {
+			kern_logf("shutdown: the read-ahead pages could not be dropped (error %d)\n",
+				  error);
 			shutdown_readers_restore();
 			return error;
 		}
@@ -90,14 +103,19 @@ system_shutdown_prepare(
 
 		error = writeback_shutdown_begin();
 		if (error != 0) {
+			kern_logf("shutdown: the writeback could not be closed (error %d)\n",
+				  error);
 			shutdown_readers_restore();
 			return error;
 		}
 	}
 
+	/* Writes every mounted volume out; a failure keeps the devices alive for a retry. */
 	if (mount_sync_all != NULL) {
 		error = mount_sync_all();
 		if (error != 0) {
+			kern_logf("shutdown: the volumes could not be synced (error %d); the devices stay up for a retry\n",
+				  error);
 			if (writeback_shutdown_finish != NULL)
 				writeback_shutdown_finish(0);
 			shutdown_readers_restore();
@@ -105,22 +123,42 @@ system_shutdown_prepare(
 		}
 	}
 
+	/* Ends the writeback; from here on the volumes are on disk. */
 	if (writeback_shutdown_finish != NULL)
 		writeback_shutdown_finish(1);
+	kern_logf("shutdown: the volumes are synced; stopping the network\n");
 
 	/*
 	 * Network close joins driver RX/TX producers.  USB then disconnects
 	 * class interfaces and drains HCD ownership before PCI shutdown runs.
+	 * A network that does not stop in time may still have producers in
+	 * USB and PCI memory, so their teardown is skipped: the data is
+	 * already on disk, and the reset or halt that follows stops them.
 	 */
-	if (net_shutdown_for_boot != NULL)
-		net_shutdown_for_boot();
-	if (drv_usb_shutdown != NULL)
-		drv_usb_shutdown();
-	if (drv_pci_shutdown != NULL)
-		drv_pci_shutdown();
+	network_stopped = 1;
+	if (net_shutdown_for_boot != NULL) {
+		error = net_shutdown_for_boot();
+		if (error != 0) {
+			kern_logf("shutdown: the network did not stop (error %d); USB and PCI are left to the reset\n",
+				  error);
+			network_stopped = 0;
+		}
+	}
+
+	/* Takes USB and then PCI out of service behind a stopped network. */
+	if (network_stopped) {
+		kern_logf("shutdown: stopping USB and PCI\n");
+		if (drv_usb_shutdown != NULL)
+			drv_usb_shutdown();
+		if (drv_pci_shutdown != NULL)
+			drv_pci_shutdown();
+	}
 
 	/* Publishes the finished preparation to the waiting callers. */
+	kern_logf("shutdown: the devices are quiet\n");
 	atomic_store_release(&shutdown_preparation_state, 2U);
+
+	/* Succeeded: the machine may be reset, halted or turned off. */
 	return 0;
 }
 

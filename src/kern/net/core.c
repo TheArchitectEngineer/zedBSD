@@ -41,6 +41,9 @@
 #define NET_WORK_BUDGET 32U
 #define NET_INPUT_QUEUE_LIMIT PACKET_BUF_POOL_COUNT
 
+/* How long the shutdown waits for the network producers to retire. */
+#define NET_SHUTDOWN_LIMIT_MS 10000U
+
 extern int ethernet_input(struct packet_buf *packet);
 
 static struct packet_buf *input_head;
@@ -248,14 +251,19 @@ net_init(
  * Stops the network before the kernel hands the machine back to a boot.
  *
  * Input is refused, every device and WLAN station is shut down behind a
- * retried barrier, and the queued packets are dropped.
+ * retried barrier, and the queued packets are dropped.  The barriers are
+ * retried for NET_SHUTDOWN_LIMIT_MS at most: a producer that never retires
+ * would otherwise hold the shutdown, and the reboot after it, for ever
+ * (BUG-288).  ETIMEDOUT tells the caller the producers may still run, so
+ * the USB and PCI teardown behind them must not run either.
  */
-void
+int
 net_shutdown_for_boot(
 	void)
 {
 	struct packet_buf *packet;
 	unsigned long irq;
+	uint64_t deadline;
 	int error;
 	int last_error;
 
@@ -269,29 +277,51 @@ net_shutdown_for_boot(
 	/*
 	 * USB and PCI teardown must not run past a failed network producer
 	 * join.  Keep the checked barrier live until every admitted callback
-	 * and radio producer has retired.  Log only error transitions to
-	 * avoid an unbounded shutdown-time diagnostic storm while a retry is
-	 * still making progress.
+	 * and radio producer has retired, or the limit passes.  Log only
+	 * error transitions to avoid an unbounded shutdown-time diagnostic
+	 * storm while a retry is still making progress.
 	 */
+	deadline = clock_ticks() + KERN_MS_TO_TICKS(NET_SHUTDOWN_LIMIT_MS);
 	last_error = 0;
 	for (;;) {
 		error = net_device_shutdown_all();
 		if (error == 0)
 			break;
+
+		/* Reports a new kind of failure once. */
 		if (error != last_error)
 			kern_logf("net: shutdown barrier retry (%d)\n", error);
 		last_error = error;
+
+		/* A barrier that does not close in time is given up on. */
+		if (clock_ticks() >= deadline) {
+			kern_logf("net: the devices did not stop in %u ms (error %d)\n",
+				  (unsigned)NET_SHUTDOWN_LIMIT_MS,
+				  error);
+			return ETIMEDOUT;
+		}
 		sched_yield();
 	}
 
+	/* Retires the WLAN stations behind the same limit. */
 	last_error = 0;
 	for (;;) {
 		error = wlan_station_shutdown_all();
 		if (error == 0)
 			break;
+
+		/* Reports a new kind of failure once. */
 		if (error != last_error)
 			kern_logf("net: WLAN shutdown barrier retry (%d)\n", error);
 		last_error = error;
+
+		/* A barrier that does not close in time is given up on. */
+		if (clock_ticks() >= deadline) {
+			kern_logf("net: the WLAN stations did not stop in %u ms (error %d)\n",
+				  (unsigned)NET_SHUTDOWN_LIMIT_MS,
+				  error);
+			return ETIMEDOUT;
+		}
 		sched_yield();
 	}
 
@@ -302,6 +332,9 @@ net_shutdown_for_boot(
 			break;
 		packet_buf_free(packet);
 	}
+
+	/* Succeeded: no network producer runs any more. */
+	return 0;
 }
 
 /*

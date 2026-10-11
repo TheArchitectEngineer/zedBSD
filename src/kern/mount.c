@@ -952,6 +952,7 @@ mount_sync_all(
 	unsigned long irq;
 	struct mount *mountp;
 	struct mount *target;
+	const char *type_name;
 	int first_error;
 	int error;
 	int taken;
@@ -988,6 +989,22 @@ mount_sync_all(
 	/* Syncs each mount and drops its reference. */
 	for (index = 0; index < count; index++) {
 		error = mount_sync(snapshot[index]);
+
+		/*
+		 * A failed sync is named, since the caller sees only the
+		 * first error and a shutdown waits on it (BUG-288).
+		 */
+		if (error != 0) {
+			type_name = "no type";
+			if (snapshot[index]->m_type != NULL)
+				type_name = snapshot[index]->m_type->fs_name;
+			kern_logf("mount: the sync of %s (%s) failed: error %d\n",
+				  snapshot[index]->m_path,
+				  type_name,
+				  error);
+		}
+
+		/* The first failure is what the caller is told. */
 		if (first_error == 0 && error != 0)
 			first_error = error;
 		mount_release(snapshot[index]);

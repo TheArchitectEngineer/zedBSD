@@ -536,8 +536,10 @@ system_ioctl(
 		if (curthread->proc->pid != 1)
 			return EPERM;
 		error = system_shutdown_prepare();
-		if (error != 0)
+		if (error != 0) {
+			kern_logf("system: the halt was not taken: the shutdown preparation failed (error %d)\n", error);
 			return error;
+		}
 		kern_platform_halt();
 		error = 0;
 		break;
@@ -546,8 +548,10 @@ system_ioctl(
 		if (curthread->proc->pid != 1)
 			return EPERM;
 		error = system_shutdown_prepare();
-		if (error != 0)
+		if (error != 0) {
+			kern_logf("system: the power-off was not taken: the shutdown preparation failed (error %d)\n", error);
 			return error;
+		}
 
 		/* A platform that could not cut its power answers EOPNOTSUPP, so that init halts it. */
 		error = kern_platform_poweroff();
@@ -561,8 +565,10 @@ system_ioctl(
 		if (curthread->proc->pid != 1)
 			return EPERM;
 		error = system_shutdown_prepare();
-		if (error != 0)
+		if (error != 0) {
+			kern_logf("system: the reboot was not taken: the shutdown preparation failed (error %d)\n", error);
 			return error;
+		}
 		kern_platform_reboot();
 		error = 0;
 		break;
