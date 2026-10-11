@@ -165,9 +165,17 @@ render_open(
 		return error;
 	}
 
+	/* The marker pool covers the minimum of a bounded number of open sessions. */
+	error = bcm2711_render_worker_session_open(controller);
+	if (error != 0) {
+		mutex_unlock(&controller->mutex);
+		return error;
+	}
+
 	/* One open retains its local identity counter and complete resource list. */
 	session = kern_calloc(1, sizeof(*session));
 	if (session == NULL) {
+		bcm2711_render_worker_session_close(controller);
 		mutex_unlock(&controller->mutex);
 		return ENOMEM;
 	}
@@ -177,6 +185,7 @@ render_open(
 	error = bcm2711_vulkan_session_open(session, &session->vulkan);
 	if (error != 0) {
 		kern_free(session);
+		bcm2711_render_worker_session_close(controller);
 		mutex_unlock(&controller->mutex);
 		return error;
 	}
@@ -214,6 +223,7 @@ render_close(
 	    controller->sessions == 0)
 		__builtin_trap();
 	controller->sessions--;
+	bcm2711_render_worker_session_close(controller);
 
 	/* Pending Vulkan owners withdraw public identities but retain this exact renderer through uncertain DMA retirement. */
 	error = bcm2711_vulkan_session_close(&session->vulkan);
@@ -230,6 +240,9 @@ render_close(
 		bcm2711_render_worker_fault(controller, error);
 
 	mutex_unlock(&controller->mutex);
+
+	/* The other sessions' reservations may use the closed session's minimum. */
+	drv_gpu_capacity_changed(controller->gpu);
 
 	/* Common observers see failure only after the closing namespace and all persistent native/session owners are rooted. */
 	if (error != 0)
@@ -521,7 +534,7 @@ render_release(
 	return;
 }
 
-/* Imports native storage into a new session-specific VA and local resource identity. */
+/* Imports native storage into a new session-specific VA and local resource identity, outside the executor's window. */
 static int
 render_import(
 	void *opaque,
@@ -538,12 +551,12 @@ render_import(
 	/* The retained common capability guarantees the borrowed allocation survives this call. */
 	controller = opaque;
 	buffer = bcm2711_shared_buffer(shared);
-	mutex_lock(&controller->mutex);
+	bcm2711_render_map_lock(controller);
 
 	error = import_buffer(controller, private_session, buffer, true, true, true, result, identifier);
 	ready = render_ready(controller);
 
-	mutex_unlock(&controller->mutex);
+	bcm2711_render_map_unlock(controller);
 
 	/* Failed translation publication keeps uncertain RAM in the native view owner. */
 	if (error != 0) {
@@ -694,7 +707,7 @@ render_reset(
 	return 0;
 }
 
-/* Allocates source storage and publishes its native view under one controller transaction. */
+/* Allocates source storage and publishes its native view under one controller transaction, outside the executor's window. */
 static int
 allocate_resource(
 	struct bcm2711_render_device *controller,
@@ -716,11 +729,11 @@ allocate_resource(
 	*identifier = 0;
 	if (request->bytes > RENDER_RESOURCE_BYTES)
 		return ENOTSUP;
-	mutex_lock(&controller->mutex);
+	bcm2711_render_map_lock(controller);
 
 	ready = session_ready(session);
 	if (!ready) {
-		mutex_unlock(&controller->mutex);
+		bcm2711_render_map_unlock(controller);
 		return EIO;
 	}
 
@@ -732,7 +745,7 @@ allocate_resource(
 	if (error != 0) {
 		/* A lazy Vulkan backing map can fail after native translation publication became uncertain. */
 		ready = render_ready(controller);
-		mutex_unlock(&controller->mutex);
+		bcm2711_render_map_unlock(controller);
 		if (!ready)
 			bcm2711_render_fail(controller, error);
 		return error;
@@ -749,7 +762,7 @@ allocate_resource(
 	bcm2711_buffer_release(buffer);
 	ready = render_ready(controller);
 
-	mutex_unlock(&controller->mutex);
+	bcm2711_render_map_unlock(controller);
 
 	/* Translation uncertainty is quarantined before other sessions observe common device loss. */
 	if (error != 0) {

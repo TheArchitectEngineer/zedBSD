@@ -21,11 +21,27 @@ struct bcm2711_vulkan_native_job {
 	bool executed;
 	bool retired;
 	bool quarantined;
+	/*
+	 * A job runs in steps of at most one native pass: stepping is true from
+	 * the first step until the last, and cursor, region and remaining say
+	 * where the next step starts; the tick sums gather its cost report.
+	 */
+	bool stepping;
+	const struct bcm2711_vulkan_prepared_event *cursor;
+	uint32_t region;
+	uint64_t remaining;
+	uint64_t started;
+	uint64_t prepare_ticks;
+	uint64_t execute_ticks;
+	uint64_t release_ticks;
+	uint64_t copy_ticks;
 };
 
 /* The renderer must own the same Vulkan session before a primary can become independently pending native work. */
 int bcm2711_vulkan_native_job_create(struct bcm2711_vulkan_object *command, struct bcm2711_vulkan_native_job **job);
-int bcm2711_vulkan_native_job_execute(struct bcm2711_render_device *controller, struct bcm2711_render_session *session, void *payload, bool *retired);
+
+/* Runs the job's next step (at most one native pass); done tells that the job has finished. */
+int bcm2711_vulkan_native_job_step(struct bcm2711_render_device *controller, struct bcm2711_render_session *session, void *payload, bool *done, bool *retired);
 int bcm2711_vulkan_native_job_dispose(struct bcm2711_render_device *controller, void *payload, bool retired);
 
 /* Only checked global native reset and zero external sessions authorize whole quarantine/closed-session retirement. */

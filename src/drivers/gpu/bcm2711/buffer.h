@@ -59,6 +59,12 @@ struct bcm2711_buffer {
 	uint64_t synced_target_offset;
 	uint64_t synced_source_generation;
 	uint64_t synced_generation;
+
+	/*
+	 * The display resources that hold the run (under guard).  The executor
+	 * runs first the executions that use a displayed run.
+	 */
+	uint32_t displayed;
 };
 
 int bcm2711_buffer_create(uint64_t bytes, uint64_t limit, size_t alignment, struct bcm2711_buffer **result);

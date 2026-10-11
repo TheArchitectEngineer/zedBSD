@@ -134,6 +134,13 @@ struct bcm2711_v3d_hardware {
 	bool irq_live;
 	bool faulted;
 	bool job_busy;
+	/*
+	 * The render executor runs a pass's native jobs without the controller
+	 * mutex (guard).  While it is open no translation may change: a view
+	 * whose last reference ends waits as delayed, and a new mapping waits.
+	 * Only the executor, holding the mutex, opens it.
+	 */
+	bool window;
 };
 
 int bcm2711_v3d_hardware_start(struct bcm2711_v3d *engine);

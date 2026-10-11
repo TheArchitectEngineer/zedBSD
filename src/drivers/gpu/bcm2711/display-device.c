@@ -84,6 +84,7 @@ static void device_close(void *opaque, void *private_session);
 static int device_info(void *opaque, void *private_session, struct gpu_info *info);
 static int resource_create(void *opaque, void *private_session, const struct gpu_resource_create *request, void **result);
 static void resource_destroy(void *opaque, void *private_session, void *private_resource);
+static void display_hold(struct bcm2711_buffer *buffer, bool hold);
 static int resource_read(void *opaque, void *private_session, void *private_resource, uint64_t offset, void *data, uint32_t bytes);
 static int resource_write(void *opaque, void *private_session, void *private_resource, uint64_t offset, const void *data, uint32_t bytes);
 static int blob_create(void *opaque, void *private_session, const struct gpu_blob_create *request, void **result, uint32_t *identifier);
@@ -481,6 +482,7 @@ resource_create(
 	}
 
 	/* Publishes ownership only after the allocation and CPU view are complete. */
+	display_hold(resource->buffer, true);
 	resource->owner = session;
 	resource->mappable = true;
 	session->resources++;
@@ -512,6 +514,7 @@ resource_destroy(
 	if (resource->owner != session || session->resources == 0)
 		__builtin_trap();
 	session->resources--;
+	display_hold(resource->buffer, false);
 	bcm2711_buffer_release(resource->buffer);
 
 	mutex_unlock(&controller->mutex);
@@ -565,6 +568,7 @@ resource_write(
 {
 	struct display_device *controller;
 	struct display_resource *resource;
+	unsigned long enabled;
 
 	/* Uses immutable allocation bounds to reject a truncated transfer. */
 	controller = opaque;
@@ -576,8 +580,17 @@ resource_write(
 	mutex_lock(&controller->mutex);
 
 	kern_memcpy((uint8_t *)resource->buffer->address + offset, data, bytes);
-	/* An unrecorded generation step: snapshots go stale and the next copy from this run is whole. */
+
+	/*
+	 * An unrecorded generation step: snapshots go stale and the next copy
+	 * from this run is whole.  The run's guard orders it with the render
+	 * device's writes, which do not take this mutex.
+	 */
+	enabled = spin_lock_irqsave(&resource->buffer->guard);
+
 	resource->buffer->generation++;
+
+	spin_unlock_irqrestore(&resource->buffer->guard, enabled);
 
 	mutex_unlock(&controller->mutex);
 
@@ -1279,6 +1292,7 @@ allocate_blob(
 	}
 
 	/* Publishes immutable blob semantics with a never-reused per-open identifier. */
+	display_hold(resource->buffer, true);
 	resource->owner = session;
 	resource->blob = true;
 	if ((request->flags & GPU_BLOB_SHAREABLE) != 0)
@@ -1494,6 +1508,7 @@ retain_resource(
 
 	/* This reference belongs to the receiver, independently of the exporting capability. */
 	bcm2711_buffer_retain(buffer);
+	display_hold(buffer, true);
 	session->resources++;
 	*result = resource;
 
@@ -1784,4 +1799,31 @@ cursor_reset(
 	kern_memset(&cursor, 0, sizeof(cursor));
 	if (bcm2711_display_flip_cursor(controller->native, &cursor) == 0)
 		kern_memset(&controller->cursor, 0, sizeof(controller->cursor));
+}
+
+/* Counts one display resource more or less on a run; the render executor favours executions that use a displayed run. */
+static void
+display_hold(
+	struct bcm2711_buffer *buffer,
+	bool hold)
+{
+	unsigned long enabled;
+
+	/* The run's guard also protects its references. */
+	enabled = spin_lock_irqsave(&buffer->guard);
+
+	if (hold) {
+		if (buffer->displayed == UINT32_MAX)
+			__builtin_trap();
+		buffer->displayed++;
+	} else {
+		if (buffer->displayed == 0)
+			__builtin_trap();
+		buffer->displayed--;
+	}
+
+	spin_unlock_irqrestore(&buffer->guard, enabled);
+
+	/* Succeeded: the count follows the display resources. */
+	return;
 }

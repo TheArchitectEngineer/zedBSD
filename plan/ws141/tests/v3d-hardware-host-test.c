@@ -963,6 +963,32 @@ thread_start(
 }
 
 /*
+ * The executor's yield between steps; no host thread runs it.
+ */
+void
+sched_yield(
+	void)
+{
+	/* No scheduler exists in this fixture. */
+	return;
+}
+
+/*
+ * Reports no diagnostic releases; the fixture's buffers are host memory.
+ */
+void
+bcm2711_buffer_release_stats(
+	uint64_t *count,
+	uint64_t *bytes,
+	uint64_t *ticks)
+{
+	/* The fixture keeps no release timing. */
+	*count = 0;
+	*bytes = 0;
+	*ticks = 0;
+}
+
+/*
  * Initializes host condition sequences for the real queue and callback-retirement waits.
  */
 void
@@ -1480,6 +1506,9 @@ check_translation_batch(
 	struct bcm2711_native_storage *second;
 	struct bcm2711_buffer *first_buffer;
 	struct bcm2711_buffer *second_buffer;
+	struct bcm2711_v3d_view *view;
+	uint32_t *pages;
+	uint32_t entry;
 	unsigned releases;
 	int error;
 
@@ -1575,6 +1604,54 @@ check_translation_batch(
 	assert(error == 0 && test_writes == 0);
 	error = bcm2711_v3d_memory_end(&space);
 	assert(error == EINVAL);
+
+	/* (a)(b) Inside the executor's window a released view stays mapped, its PTEs unchanged, until the window closes. */
+	pages = test_engine.hardware.pages->address;
+	error = bcm2711_native_storage_create(&space, 4096, &first);
+	assert(error == 0);
+	view = first->view;
+	first_buffer = view->buffer;
+	entry = pages[view->address / 4096U];
+	assert(entry != 0);
+	test_engine.hardware.window = true;
+	test_writes = 0;
+	error = bcm2711_native_storage_release(&space, &first, true);
+	assert(error == 0 && first == NULL && space.views == view);
+	assert(view->delayed && !view->quarantined && view->references == 0);
+	assert(pages[view->address / 4096U] == entry && first_buffer->references == 1 && test_writes == 0);
+
+	/* (l) A new mapping cannot change translations while the window is open; a batch cannot begin either. */
+	error = bcm2711_native_storage_create(&space, 4096, &second);
+	assert(error == EIO && second == NULL && space.views == view && view->next == NULL);
+	error = bcm2711_v3d_memory_begin(&space);
+	assert(error == EIO && !space.deferred);
+
+	/* Closing the window unmaps the delayed view in one flush and frees its backing; mapping works again. */
+	test_engine.hardware.window = false;
+	releases = test_released;
+	error = bcm2711_v3d_memory_release_delayed(&space);
+	assert(error == 0 && space.views == NULL && pages[view->address / 4096U] == 0);
+	assert(first_buffer->references == 0 && test_released == releases + 1U);
+	error = bcm2711_v3d_memory_release_delayed(&space);
+	assert(error == 0);
+
+	/* (m) A view released inside a window that ends in a fault stays for checked recovery, which reclaims it. */
+	error = bcm2711_native_storage_create(&space, 4096, &first);
+	assert(error == 0);
+	view = first->view;
+	first_buffer = view->buffer;
+	test_engine.hardware.window = true;
+	error = bcm2711_native_storage_release(&space, &first, true);
+	assert(error == 0 && view->delayed);
+	test_engine.hardware.faulted = true;
+	test_engine.hardware.window = false;
+	error = bcm2711_v3d_memory_release_delayed(&space);
+	assert(error == 0 && space.views == view && view->delayed && first_buffer->references == 1);
+	test_writes = 0;
+	error = bcm2711_v3d_hardware_reset(&test_engine);
+	assert(error == 0 && !test_engine.hardware.faulted);
+	error = bcm2711_v3d_memory_recover(&space);
+	assert(error == 0 && space.views == NULL && first_buffer->references == 0);
 
 	/* Succeeded: all independent ownership or scalar comparisons passed. */
 	return;
@@ -1935,8 +2012,14 @@ check_reservations(
 	struct bcm2711_buffer *buffer;
 	struct test_payload *payload;
 	struct gpu_blob_create blob;
-	void *tokens[BCM2711_RENDER_RESERVATIONS];
+	struct bcm2711_render_session *opened[BCM2711_RENDER_SESSIONS];
+	void *tokens[BCM2711_RENDER_SESSION_EXECUTIONS];
+	void *pool[BCM2711_RENDER_MARKERS];
+	struct bcm2711_render_session *owners[BCM2711_RENDER_MARKERS];
 	void *token;
+	uint32_t held;
+	uint32_t count;
+	uint32_t index;
 	void *object;
 	unsigned long enabled;
 	unsigned available;
@@ -1964,26 +2047,28 @@ check_reservations(
 
 	spin_unlock_irqrestore(&test_engine.hardware.guard, enabled);
 
-	/* Capacity observation consumes no slot and validates the actual per-session domain. */
+	/* Capacity observation consumes no marker and validates the actual per-session domain. */
 	error = operations.jobs->capacity(test_controller, session, 1, &available);
-	assert(error == 0 && available == BCM2711_RENDER_RESERVATIONS);
+	assert(error == 0 && available == BCM2711_RENDER_SESSION_EXECUTIONS);
 	error = operations.jobs->reserve(test_controller, session, 0, (struct drv_gpu_completion *)(uintptr_t)100U, &token);
 	assert(error == EINVAL);
 	error = operations.jobs->reserve(test_controller, session, 2, (struct drv_gpu_completion *)(uintptr_t)100U, &token);
 	assert(error == EINVAL && token == NULL);
 
-	/* Producer saturation still leaves half the fixed pool for actual decoder command storage. */
+	/* A session's markers stop at its limit; the decoder's command slots are a separate pool. */
 	before = test_completed;
-	for (slot = 0; slot < BCM2711_RENDER_RESERVATIONS; slot++) {
+	for (slot = 0; slot < BCM2711_RENDER_SESSION_EXECUTIONS; slot++) {
 		error = operations.jobs->reserve(test_controller, session, 1, (struct drv_gpu_completion *)(uintptr_t)(100U + slot), &tokens[slot]);
 		assert(error == 0 && session->pending == slot + 1);
 	}
 
-	/* A full reservation pool refuses ownership before token publication. */
-	error = operations.jobs->reserve(test_controller, session, 1, (struct drv_gpu_completion *)(uintptr_t)108U, &token);
+	/* A session at its limit is refused before token publication; the other session keeps its room. */
+	error = operations.jobs->reserve(test_controller, session, 1, (struct drv_gpu_completion *)(uintptr_t)200U, &token);
 	assert(error == EAGAIN && token == NULL);
 	error = operations.jobs->capacity(test_controller, session, 1, &available);
 	assert(error == 0 && available == 0);
+	for (slot = 0; slot < BCM2711_RENDER_REQUESTS; slot++)
+		assert(test_controller->worker.requests[slot].state == 0);
 
 	/* Neither a foreign owner, an invented pointer nor a changed original callback can commit a slot. */
 	error = operations.jobs->commit(test_controller, other, tokens[0], (struct drv_gpu_completion *)(uintptr_t)100U);
@@ -1994,15 +2079,58 @@ check_reservations(
 	assert(error == ESTALE);
 
 	/* Definite nonacceptance withdraws every original callback without inventing terminal completion. */
-	for (slot = 0; slot < BCM2711_RENDER_RESERVATIONS; slot++) {
+	for (slot = 0; slot < BCM2711_RENDER_SESSION_EXECUTIONS; slot++) {
 		error = operations.jobs->cancel(test_controller, session, tokens[slot], (struct drv_gpu_completion *)(uintptr_t)(100U + slot), 0);
 		assert(error == 0);
 	}
 
 	/* A withdrawn exact token remains stale and all original holds have ended. */
-	assert(session->pending == 0 && test_completed == before);
+	assert(session->pending == 0 && session->markers == 0 && test_controller->worker.covered == 0 && test_completed == before);
 	error = operations.jobs->commit(test_controller, session, tokens[0], (struct drv_gpu_completion *)(uintptr_t)100U);
 	assert(error == ESTALE);
+
+	/* Sessions open up to the bound the marker pool covers; greedy sessions cannot take another's minimum. */
+	count = 0;
+	opened[count++] = session;
+	opened[count++] = other;
+	while (count < BCM2711_RENDER_SESSIONS) {
+		error = test_operations->open(test_controller, &object);
+		assert(error == 0);
+		opened[count++] = object;
+	}
+	error = test_operations->open(test_controller, &object);
+	assert(error == EBUSY && test_controller->worker.sessions == BCM2711_RENDER_SESSIONS);
+	held = 0;
+	for (index = 0; index < count; index++) {
+		enabled = spin_lock_irqsave(&test_engine.hardware.guard);
+
+		opened[index]->timelines = 2;
+
+		spin_unlock_irqrestore(&test_engine.hardware.guard, enabled);
+
+		/* Each session takes everything it may; every one still gets at least the minimum. */
+		slot = 0;
+		while (true) {
+			error = operations.jobs->reserve(test_controller, opened[index], 1, (struct drv_gpu_completion *)(uintptr_t)(300U + held), &token);
+			if (error == EAGAIN)
+				break;
+			assert(error == 0 && held < BCM2711_RENDER_MARKERS);
+			pool[held] = token;
+			owners[held] = opened[index];
+			held++;
+			slot++;
+		}
+		assert(slot >= BCM2711_RENDER_MINIMUM && slot <= BCM2711_RENDER_SESSION_EXECUTIONS);
+	}
+	assert(held == BCM2711_RENDER_MARKERS && test_controller->worker.covered == BCM2711_RENDER_MINIMUM * BCM2711_RENDER_SESSIONS);
+	for (index = 0; index < held; index++) {
+		error = operations.jobs->cancel(test_controller, owners[index], pool[index], (struct drv_gpu_completion *)(uintptr_t)(300U + index), 0);
+		assert(error == 0);
+	}
+	assert(test_controller->worker.covered == 0);
+	for (index = 2; index < count; index++)
+		test_operations->close(test_controller, opened[index]);
+	assert(test_controller->worker.sessions == 2 && test_completed == before);
 
 	/* An accepted native noop precedes its reserved marker in the actual worker FIFO. */
 	memset(&blob, 0, sizeof(blob));

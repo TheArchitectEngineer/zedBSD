@@ -46,6 +46,8 @@ struct bcm2711_vulkan_native_pass {
 	/* Single-use execution refuses replay and preserves the last native DMA-retirement result. */
 	bool executed;
 	bool retired;
+	/* Every texture conversion of the launch completed; the finish marks their snapshots filled. */
+	bool converted;
 	/* A whole-image copy records which source state its output now equals, for later incremental copies. */
 	bool sync;
 	uint64_t sync_identity;
@@ -64,6 +66,16 @@ int bcm2711_vulkan_native_pass_build_lists(struct bcm2711_vulkan_native_pass *pa
 
 /* Run once under the controller mutex, then retain the whole parent payload when the returned native retirement proof is false. */
 int bcm2711_vulkan_native_pass_run(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result);
+
+/*
+ * The same run in three parts, for the render executor's window: start
+ * (validation and CPU clear) and finish (publishing the output) under the
+ * controller mutex, launch (the native jobs) inside the window without it.
+ * Launch touches only the pass and the engine; finish takes launch's result.
+ */
+int bcm2711_vulkan_native_pass_start(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result);
+int bcm2711_vulkan_native_pass_launch(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result);
+int bcm2711_vulkan_native_pass_finish(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result, int error);
 
 /* Adds the draws' and lists' diagnostic preparation times, draw count and staged bytes to a report under the controller mutex. */
 void bcm2711_vulkan_native_pass_costs(const struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_perf *perf);

@@ -15,6 +15,8 @@
 
 static int synchronize_range(struct bcm2711_v3d_space *space, uint32_t address, uint64_t bytes);
 static bool memory_ready(struct bcm2711_v3d_space *space);
+static bool window_open(struct bcm2711_v3d_space *space);
+static bool changes_locked(const struct bcm2711_buffer *buffer, uint64_t offset, uint64_t since, uint32_t *box);
 static void remove_view(struct bcm2711_v3d_space *space, struct bcm2711_v3d_view *view);
 
 /*
@@ -209,6 +211,7 @@ bcm2711_v3d_memory_release(
 	struct bcm2711_v3d_space *space,
 	struct bcm2711_v3d_view *view)
 {
+	bool window;
 	bool ready;
 	int error;
 
@@ -218,6 +221,13 @@ bcm2711_v3d_memory_release(
 	view->references--;
 	if (view->references != 0)
 		return 0;
+
+	/* Inside the executor's window the GPU may be running: the view stays mapped until the window closes. */
+	window = window_open(space);
+	if (window) {
+		view->delayed = true;
+		return 0;
+	}
 
 	/* A faulted engine supplies no proof that a former translation or job is retired. */
 	view->quarantined = true;
@@ -271,9 +281,9 @@ bcm2711_v3d_memory_recover(
 	if (space->deferred)
 		return EBUSY;
 
-	/* No surviving resource or job may lose its VA underneath an automatic recovery. */
+	/* No surviving resource or job may lose its VA underneath an automatic recovery; a delayed view counts as quarantined. */
 	for (view = space->views; view != NULL; view = view->next) {
-		if (view->references != 0 || !view->quarantined)
+		if (view->references != 0 || (!view->quarantined && !view->delayed))
 			return EBUSY;
 	}
 
@@ -306,7 +316,7 @@ bcm2711_v3d_memory_recover(
 /*
  * Records one write of the box of the image at offset and advances the generation.
  *
- * The caller serializes writes of the run with its device mutex.  A NULL box
+ * The run's guard orders writes from the render and display devices.  A NULL box
  * stands for a write whose extent is unknown, which forces whole copies.
  */
 void
@@ -316,8 +326,11 @@ bcm2711_v3d_memory_written(
 	const uint32_t *box)
 {
 	struct bcm2711_buffer_write *write;
+	unsigned long enabled;
 
-	/* The new generation names this write in the ring. */
+	/* The new generation names this write in the ring; the run's guard orders it with the display's writes. */
+	enabled = spin_lock_irqsave(&buffer->guard);
+
 	buffer->generation++;
 	write = &buffer->writes[buffer->write_next % BCM2711_BUFFER_WRITES];
 	buffer->write_next++;
@@ -328,9 +341,14 @@ bcm2711_v3d_memory_written(
 	if (box == NULL) {
 		write->offset = UINT64_MAX;
 		kern_memset(write->box, 0, sizeof(write->box));
-		return;
+	} else {
+		kern_memcpy(write->box, box, sizeof(write->box));
 	}
-	kern_memcpy(write->box, box, sizeof(write->box));
+
+	spin_unlock_irqrestore(&buffer->guard, enabled);
+
+	/* Succeeded: the write is recorded. */
+	return;
 }
 
 /*
@@ -341,6 +359,28 @@ bcm2711_v3d_memory_written(
  */
 bool
 bcm2711_v3d_memory_changes(
+	struct bcm2711_buffer *buffer,
+	uint64_t offset,
+	uint64_t since,
+	uint32_t *box)
+{
+	unsigned long enabled;
+	bool known;
+
+	/* The generation and the ring are read together under the run's guard. */
+	enabled = spin_lock_irqsave(&buffer->guard);
+
+	known = changes_locked(buffer, offset, since, box);
+
+	spin_unlock_irqrestore(&buffer->guard, enabled);
+
+	/* Reports whether box covers every change. */
+	return known;
+}
+
+/* Computes the union of the writes after since; the caller holds the run's guard. */
+static bool
+changes_locked(
 	const struct bcm2711_buffer *buffer,
 	uint64_t offset,
 	uint64_t since,
@@ -445,7 +485,8 @@ memory_ready(
 	ready = false;
 	if (space->native->hardware.ready &&
 	    !space->native->hardware.faulted &&
-	    !space->native->hardware.job_busy)
+	    !space->native->hardware.job_busy &&
+	    !space->native->hardware.window)
 		ready = true;
 
 	spin_unlock_irqrestore(&space->native->hardware.guard, enabled);
@@ -453,3 +494,80 @@ memory_ready(
 	/* Succeeded: the caller knows whether one serialized mapping operation can be admitted. */
 	return ready;
 }
+
+/* Tells whether the executor's window is open. */
+static bool
+window_open(
+	struct bcm2711_v3d_space *space)
+{
+	unsigned long enabled;
+	bool window;
+
+	/* The executor opens and closes it under the native IRQ guard. */
+	enabled = spin_lock_irqsave(&space->native->hardware.guard);
+
+	window = space->native->hardware.window;
+
+	spin_unlock_irqrestore(&space->native->hardware.guard, enabled);
+
+	/* Succeeded: the caller knows whether translations must stay unchanged. */
+	return window;
+}
+
+/*
+ * Unmaps and frees the views whose last reference ended inside the window.
+ *
+ * One batch publishes all their PTE withdrawals before any backing is freed.
+ * A faulted engine proves nothing: the views stay for checked recovery.
+ */
+int
+bcm2711_v3d_memory_release_delayed(
+	struct bcm2711_v3d_space *space)
+{
+	struct bcm2711_v3d_view *view;
+	bool found;
+	bool ready;
+	int error;
+	int ended;
+
+	/* Nothing to do without a delayed view. */
+	found = false;
+	for (view = space->views; view != NULL; view = view->next) {
+		if (view->delayed)
+			found = true;
+	}
+	if (!found)
+		return 0;
+
+	/* Recovery reclaims them after a fault. */
+	ready = memory_ready(space);
+	if (!ready)
+		return 0;
+
+	/* Every withdrawal joins one batch; the end flushes once and frees them. */
+	error = bcm2711_v3d_memory_begin(space);
+	if (error != 0)
+		return error;
+	for (view = space->views; view != NULL; view = view->next) {
+		if (!view->delayed)
+			continue;
+		view->delayed = false;
+		view->quarantined = true;
+		error = bcm2711_v3d_pages_unmap(space->native->hardware.pages->address, view->address, view->bytes);
+		if (error != 0)
+			break;
+		error = synchronize_range(space, view->address, view->bytes);
+		if (error != 0)
+			break;
+		view->pending_release = true;
+	}
+	ended = bcm2711_v3d_memory_end(space);
+	if (error == 0)
+		error = ended;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the delayed views and their backing are retired. */
+	return 0;
+}
+

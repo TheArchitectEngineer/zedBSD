@@ -5,8 +5,9 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Complete native retirement precedes the QueueSubmit reply; common producer markers remain separate FIFO work. */
+/* A prepared QueueSubmit is replied to at once and runs later on the executor; a common marker completes after it. */
 #include <kern/kcrt.h>
+#include <kern/kmem.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
@@ -14,11 +15,18 @@
 #include "drivers/gpu/bcm2711/vulkan-device.h"
 #include "drivers/gpu/bcm2711/vulkan-sync.h"
 #include "drivers/gpu/bcm2711/vulkan-native-job.h"
+#include "drivers/gpu/bcm2711/vulkan-prepared.h"
+#include "drivers/gpu/bcm2711/vulkan-record.h"
+#include "drivers/gpu/bcm2711/vulkan-target.h"
+#include "drivers/gpu/bcm2711/vulkan-input.h"
+#include "drivers/gpu/bcm2711/vulkan-resource.h"
+#include "drivers/gpu/bcm2711/vulkan-memory.h"
+#include "drivers/gpu/bcm2711/buffer.h"
 
 /* Submission metadata and prepared snapshots have independent finite bounds and never occupy the kernel stack. */
 #define QUEUE_BATCHES 64U
 #define QUEUE_ACTIONS 256U
-#define QUEUE_PREPARED_BYTES (8U * 1024U * 1024U)
+#define QUEUE_PREPARED_BYTES BCM2711_RENDER_SUBMISSION_BYTES
 #define QUEUE_STAGE_MASK (VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT)
 
 /* One action represents an ordered binary wait, complete pending primary or binary signal inside a controller-serialized submission. */
@@ -53,18 +61,37 @@ struct queue_sync {
 	uint64_t waits;
 };
 
-/* The complete command-arena submission owns all fallible preparations before any pixel, layout, fence or semaphore changes. */
-struct queue_submission {
+/* The retained queue and fence, the ordered actions and the distinct binary payloads one submission owns. */
+struct queue_owner {
 	struct bcm2711_vulkan_object *queue;
 	struct bcm2711_vulkan_object *fence;
+	struct queue_action *actions;
+	struct queue_sync *syncs;
+	uint32_t action_count;
+	uint32_t sync_count;
+};
+
+/* The complete command-arena submission owns all fallible preparations before any pixel, layout, fence or semaphore changes. */
+struct queue_submission {
+	struct queue_owner owner;
 	struct bcm2711_vulkan_object *device;
 	struct queue_batch batches[QUEUE_BATCHES];
 	struct queue_action actions[QUEUE_ACTIONS];
 	struct queue_sync syncs[QUEUE_ACTIONS];
 	uint32_t count;
-	uint32_t action_count;
-	uint32_t sync_count;
 	uint32_t bytes;
+};
+
+/*
+ * An accepted submission in its session's execution queue: a heap copy of
+ * the owned actions and payloads, and the next action to run.  The arrays
+ * follow the structure in the same allocation.
+ */
+struct queue_execution {
+	struct bcm2711_render_execution base;
+	struct bcm2711_vulkan_session *session;
+	struct queue_owner owner;
+	uint32_t cursor;
 };
 
 static int check_admission(struct bcm2711_vulkan_session *session);
@@ -74,12 +101,22 @@ static int decode_ids(struct bcm2711_vulkan_session *session, struct i915_wire_r
 static int prepare_submission(struct bcm2711_vulkan_session *session, struct queue_submission *submission);
 static int prepare_sync(struct bcm2711_vulkan_session *session, struct queue_submission *submission, uint64_t identity, enum queue_action_kind kind);
 static int prepare_command(struct bcm2711_vulkan_session *session, struct queue_submission *submission, uint64_t identity);
-static int run_submission(struct bcm2711_vulkan_session *session, struct queue_submission *submission);
-static int release_submission(struct bcm2711_vulkan_session *session, struct queue_submission *submission);
-static void publish_failure(struct bcm2711_vulkan_session *session, struct queue_submission *submission);
+static struct queue_execution *create_execution(struct bcm2711_vulkan_session *session, struct queue_submission *submission);
+static void publish_reservations(struct queue_owner *owner);
+static bool owner_displayed(const struct queue_owner *owner);
+static bool object_displayed(const struct bcm2711_vulkan_object *object);
+static int execution_step(struct bcm2711_render_device *controller, struct bcm2711_render_execution *base, bool *done);
+static int execution_end(struct bcm2711_render_device *controller, struct bcm2711_render_execution *base, int error);
+static void publish_completion(struct queue_owner *owner);
+static void publish_failure(struct queue_owner *owner);
+static int release_owner(struct bcm2711_vulkan_session *session, struct queue_owner *owner);
 
 /*
- * Executes one complete QueueSubmit on the ordered command worker with all-or-nothing preflight and explicit native retirement.
+ * Accepts one complete QueueSubmit with all-or-nothing preflight and queues it for the executor.
+ *
+ * The reply reports acceptance, not completion: the binary payloads and the
+ * fence publish their reserved operations now and their completion or loss
+ * when the execution ends, before a later common marker of the session.
  */
 int
 bcm2711_vulkan_queue_dispatch(
@@ -91,7 +128,7 @@ bcm2711_vulkan_queue_dispatch(
 	int *handled)
 {
 	struct queue_submission *submission;
-	VkResult status;
+	struct queue_execution *execution;
 	int error;
 	int released;
 
@@ -103,6 +140,10 @@ bcm2711_vulkan_queue_dispatch(
 	if (requested != 1)
 		return EINVAL;
 
+	/* A synchronous legacy frame has no callback to complete after the execution. */
+	if (session->synchronous)
+		return EOPNOTSUPP;
+
 	/* Even empty or signal-only work cannot resurrect a stopped or uncertain native controller. */
 	error = check_admission(session);
 	if (error != 0)
@@ -112,11 +153,23 @@ bcm2711_vulkan_queue_dispatch(
 	submission = i915_vkc_array(reader, &session->arena, 1, sizeof(*submission));
 	if (submission == NULL)
 		return EINVAL;
+	submission->owner.actions = submission->actions;
+	submission->owner.syncs = submission->syncs;
 	error = decode_submission(session, reader, submission);
 	if (error == 0)
 		error = prepare_submission(session, submission);
+
+	/* A stream past the hard limits is refused; the execution's heap copy is the last fallible step before publication. */
+	execution = NULL;
+	if (error == 0)
+		error = bcm2711_render_execution_admit(session->render, submission->bytes);
+	if (error == 0) {
+		execution = create_execution(session, submission);
+		if (execution == NULL)
+			error = ENOMEM;
+	}
 	if (error != 0) {
-		released = release_submission(session, submission);
+		released = release_owner(session, &submission->owner);
 		if (released != 0)
 			return released;
 		if (error == ENOMEM) {
@@ -128,29 +181,14 @@ bcm2711_vulkan_queue_dispatch(
 		return error;
 	}
 
-	/* The already ordered command worker executes every complete primary before decoder completion acknowledges this submit. */
-	error = run_submission(session, submission);
-	status = VK_SUCCESS;
-	if (error != 0) {
-		bcm2711_stage_mark(
-			BCM2711_FAMILY_V3D,
-			"submit failed error=%d",
-			error);
-		publish_failure(session, submission);
-		status = VK_ERROR_DEVICE_LOST;
-	}
+	/* The reserved operations are visible before the execution can run or a later submission can check them. */
+	publish_reservations(&execution->owner);
+	bcm2711_render_execution_submit(session->render, &execution->base);
 
-	/* Whole uncertain primary jobs transfer to controller quarantine before sync metadata or common callbacks retire. */
-	released = release_submission(session, submission);
-	if (released != 0) {
-		bcm2711_render_worker_fault(session->render->device, released);
-		status = VK_ERROR_DEVICE_LOST;
-	}
+	/* The reply acknowledges acceptance; completion and loss travel through the payloads and the session's markers. */
+	drv_i915_wire_reply_u32(reply, (uint32_t)VK_SUCCESS);
 
-	/* Only terminal native retirement or sticky device loss becomes a submit result. */
-	drv_i915_wire_reply_u32(reply, (uint32_t)status);
-
-	/* Succeeded: the Vulkan result reflects actual work retirement or sticky native loss, never decoder progress alone. */
+	/* Succeeded: the execution owns every prepared job and retained payload until it ends. */
 	return 0;
 }
 
@@ -247,12 +285,12 @@ decode_submission(
 	error = bcm2711_vulkan_object_retain(queue);
 	if (error != 0)
 		return error;
-	submission->queue = queue;
+	submission->owner.queue = queue;
 	if (fence != NULL) {
 		error = bcm2711_vulkan_object_retain(fence);
 		if (error != 0)
 			return error;
-		submission->fence = fence;
+		submission->owner.fence = fence;
 	}
 
 	/* Succeeded: complete numerical batches and retained exact queue/fence roots are ready for CPU-only preparation. */
@@ -401,34 +439,38 @@ prepare_sync(
 	int error;
 
 	/* Finite action count includes waits, primaries and signals together rather than bounding each vector independently. */
-	if (submission->action_count == QUEUE_ACTIONS)
+	if (submission->owner.action_count == QUEUE_ACTIONS)
 		return ENOMEM;
 	object = bcm2711_vulkan_object_find(session, I915_VK_OBJ_SEMAPHORE, identity);
 	if (object == NULL || object->payload == NULL)
 		return EINVAL;
 	sync = object->payload;
-	if (sync->device != submission->device ||
-	    sync->pending ||
-	    sync->status != VK_SUCCESS ||
-	    sync->signals_reserved != sync->signals_completed ||
-	    sync->waits_reserved != sync->waits_completed)
+	if (sync->device != submission->device || sync->status != VK_SUCCESS)
 		return EINVAL;
 
-	/* Binary native sequence and observable payload state must agree before proposing any additional operation. */
+	/*
+	 * New operations follow the reserved ones, which may still wait for an
+	 * earlier execution: a wait may consume a signal that is only reserved.
+	 * Without pending operations the observable state must agree too.
+	 */
 	if (sync->waits_reserved > sync->signals_reserved ||
 	    sync->signals_reserved - sync->waits_reserved > 1)
 		return EINVAL;
-	if (sync->signaled) {
-		if (sync->signals_reserved == sync->waits_reserved)
+	if (sync->pending == 0) {
+		if (sync->signals_reserved != sync->signals_completed || sync->waits_reserved != sync->waits_completed)
 			return EINVAL;
-	} else {
-		if (sync->signals_reserved != sync->waits_reserved)
-			return EINVAL;
+		if (sync->signaled) {
+			if (sync->signals_reserved == sync->waits_reserved)
+				return EINVAL;
+		} else {
+			if (sync->signals_reserved != sync->waits_reserved)
+				return EINVAL;
+		}
 	}
 
 	/* A distinct payload acquires exactly one independent edge regardless of the number of operations in this complete transaction. */
 	shadow = NULL;
-	for (index = 0; index < submission->sync_count; index++) {
+	for (index = 0; index < submission->owner.sync_count; index++) {
 		if (submission->syncs[index].object == object) {
 			shadow = &submission->syncs[index];
 			break;
@@ -440,11 +482,11 @@ prepare_sync(
 		error = bcm2711_vulkan_object_retain(object);
 		if (error != 0)
 			return error;
-		shadow = &submission->syncs[submission->sync_count];
+		shadow = &submission->syncs[submission->owner.sync_count];
 		shadow->object = object;
 		shadow->signals = sync->signals_reserved;
 		shadow->waits = sync->waits_reserved;
-		submission->sync_count++;
+		submission->owner.sync_count++;
 	}
 
 	/* Binary waits consume one already submitted signal; signals require its earlier payload to have been consumed. */
@@ -461,10 +503,10 @@ prepare_sync(
 	}
 
 	/* Only the complete private transition enters the ordered owned action vector. */
-	action = &submission->actions[submission->action_count];
+	action = &submission->actions[submission->owner.action_count];
 	action->kind = kind;
 	action->object = object;
-	submission->action_count++;
+	submission->owner.action_count++;
 
 	/* Succeeded: one independently retained binary action joins the complete unpublished submission. */
 	return 0;
@@ -483,7 +525,7 @@ prepare_command(
 	int error;
 
 	/* The exact native primary belongs to the sole graphics family through its actual same-device pool. */
-	if (submission->action_count == QUEUE_ACTIONS)
+	if (submission->owner.action_count == QUEUE_ACTIONS)
 		return ENOMEM;
 	object = bcm2711_vulkan_object_find(session, I915_VK_OBJ_COMMAND_BUFFER, identity);
 	if (object == NULL || object->payload == NULL)
@@ -493,13 +535,13 @@ prepare_command(
 		return EINVAL;
 
 	/* Complete construction owns its pending primary graph before aggregate budget refusal can unwind it. */
-	action = &submission->actions[submission->action_count];
+	action = &submission->actions[submission->owner.action_count];
 	action->kind = QUEUE_COMMAND;
 	action->object = object;
 	error = bcm2711_vulkan_native_job_create(object, &action->job);
 	if (error != 0)
 		return error;
-	submission->action_count++;
+	submission->owner.action_count++;
 	if (action->job->prepared->bytes > QUEUE_PREPARED_BYTES - submission->bytes)
 		return ENOMEM;
 	submission->bytes += action->job->prepared->bytes;
@@ -508,54 +550,185 @@ prepare_command(
 	return 0;
 }
 
-/* Publishes reserved native sync state and executes ordered complete actions only after whole preparation succeeded. */
-static int
-run_submission(
+/* Copies the submission's owned actions and payloads into one heap execution; NULL when memory is short. */
+static struct queue_execution *
+create_execution(
 	struct bcm2711_vulkan_session *session,
 	struct queue_submission *submission)
 {
-	struct bcm2711_vulkan_sync *sync;
-	struct bcm2711_vulkan_command_buffer *command;
-	struct queue_action *action;
+	struct queue_execution *execution;
+	size_t bytes;
+
+	/* The arrays follow the structure; pointers keep their natural alignment. */
+	bytes = sizeof(*execution);
+	bytes += (size_t)submission->owner.action_count * sizeof(struct queue_action);
+	bytes += (size_t)submission->owner.sync_count * sizeof(struct queue_sync);
+	execution = kern_calloc(1, bytes);
+	if (execution == NULL)
+		return NULL;
+
+	/* Ownership moves without another reference: the arena copy is never released. */
+	execution->owner.actions = (struct queue_action *)(execution + 1);
+	execution->owner.syncs = (struct queue_sync *)(execution->owner.actions + submission->owner.action_count);
+	kern_memcpy(execution->owner.actions, submission->actions, (size_t)submission->owner.action_count * sizeof(struct queue_action));
+	kern_memcpy(execution->owner.syncs, submission->syncs, (size_t)submission->owner.sync_count * sizeof(struct queue_sync));
+	execution->owner.action_count = submission->owner.action_count;
+	execution->owner.sync_count = submission->owner.sync_count;
+	execution->owner.queue = submission->owner.queue;
+	execution->owner.fence = submission->owner.fence;
+	execution->session = session;
+	execution->base.step = execution_step;
+	execution->base.end = execution_end;
+	execution->base.bytes = submission->bytes;
+	execution->base.display = owner_displayed(&execution->owner);
+
+	/* Succeeded: the execution owns everything the submission prepared. */
+	return execution;
+}
+
+/*
+ * Tells whether a submission's commands use a run the display holds.
+ *
+ * Every object the recorded passes and transfers name counts, read or
+ * written: a frame's target, a present copy's destination, the cursor image.
+ */
+static bool
+owner_displayed(
+	const struct queue_owner *owner)
+{
+	const struct bcm2711_vulkan_prepared_event *event;
+	const struct bcm2711_vulkan_record *records[2];
 	uint32_t index;
+	uint32_t record;
+	uint32_t object;
+
+	/* Each command's prepared events and the pass each belongs to. */
+	for (index = 0; index < owner->action_count; index++) {
+		if (owner->actions[index].kind != QUEUE_COMMAND)
+			continue;
+		for (event = owner->actions[index].job->prepared->first; event != NULL; event = event->next) {
+			records[0] = event->record;
+			records[1] = event->pass;
+			for (record = 0; record < 2; record++) {
+				if (records[record] == NULL)
+					continue;
+				for (object = 0; object < BCM2711_VULKAN_VERTEX_BINDINGS + 1U; object++) {
+					if (object_displayed(records[record]->objects[object]))
+						return true;
+				}
+			}
+		}
+	}
+
+	/* Succeeded: no displayed run is used. */
+	return false;
+}
+
+/* Tells whether an image, buffer, image view or framebuffer is backed by a run the display holds. */
+static bool
+object_displayed(
+	const struct bcm2711_vulkan_object *object)
+{
+	const struct bcm2711_vulkan_framebuffer *framebuffer;
+	const struct bcm2711_vulkan_image_view *view;
+	const struct bcm2711_vulkan_resource *resource;
+	const struct bcm2711_vulkan_memory *memory;
+	struct bcm2711_buffer *buffer;
+	unsigned long enabled;
+	bool displayed;
+
+	/* A framebuffer names its view, and a view its image. */
+	if (object == NULL || object->payload == NULL)
+		return false;
+	if (object->kind == I915_VK_OBJ_FRAMEBUFFER) {
+		framebuffer = object->payload;
+		object = framebuffer->view;
+		if (object == NULL || object->payload == NULL)
+			return false;
+	}
+	if (object->kind == I915_VK_OBJ_IMAGE_VIEW) {
+		view = object->payload;
+		object = view->owner.parent;
+		if (object == NULL || object->payload == NULL)
+			return false;
+	}
+	if (object->kind != I915_VK_OBJ_IMAGE && object->kind != I915_VK_OBJ_BUFFER)
+		return false;
+
+	/* The bound memory's run. */
+	resource = object->payload;
+	if (resource->memory == NULL || resource->memory->payload == NULL)
+		return false;
+	memory = resource->memory->payload;
+	if (memory->view == NULL || memory->view->buffer == NULL)
+		return false;
+	buffer = memory->view->buffer;
+	enabled = spin_lock_irqsave(&buffer->guard);
+
+	displayed = buffer->displayed != 0;
+
+	spin_unlock_irqrestore(&buffer->guard, enabled);
+
+	/* Succeeded: reports whether the display holds the run. */
+	return displayed;
+}
+
+/* Publishes the submission's reserved binary operations and its pending fence. */
+static void
+publish_reservations(
+	struct queue_owner *owner)
+{
+	struct bcm2711_vulkan_sync *sync;
+	uint32_t index;
+
+	/* Each distinct binary payload counts one more execution with operations on it. */
+	for (index = 0; index < owner->sync_count; index++) {
+		sync = owner->syncs[index].object->payload;
+		sync->signals_reserved = owner->syncs[index].signals;
+		sync->waits_reserved = owner->syncs[index].waits;
+		sync->pending++;
+	}
+
+	/* The fence cannot be reset or observed completed before the execution ends. */
+	if (owner->fence != NULL) {
+		sync = owner->fence->payload;
+		sync->pending++;
+	}
+
+	/* Succeeded: later submissions and fence operations see the reservation. */
+	return;
+}
+
+/*
+ * Runs one step of an execution: the binary waits and signals up to the next
+ * native pass, and that pass.  A command buffer's job runs one pass per step;
+ * the execution is done after its last action.
+ */
+static int
+execution_step(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	bool *done)
+{
+	struct queue_execution *execution;
+	struct bcm2711_vulkan_command_buffer *command;
+	struct bcm2711_vulkan_sync *sync;
+	struct queue_action *action;
+	bool finished;
 	bool retired;
-	int error;
+	bool ran;
 	int disposed;
+	int error;
 
-	/* Each exact binary payload now owns its complete proposed operation sequence until this synchronous worker command retires. */
-	for (index = 0; index < submission->sync_count; index++) {
-		sync = submission->syncs[index].object->payload;
-		sync->signals_reserved = submission->syncs[index].signals;
-		sync->waits_reserved = submission->syncs[index].waits;
-		sync->pending = true;
-	}
+	/* Actions run in submission order from where the last step stopped. */
+	execution = (struct queue_execution *)base;
+	*done = false;
+	ran = false;
+	while (execution->cursor < execution->owner.action_count) {
+		action = &execution->owner.actions[execution->cursor];
 
-	/* The fence cannot be reset or observed completed before all preceding actions truly retire. */
-	if (submission->fence != NULL) {
-		sync = submission->fence->payload;
-		sync->pending = true;
-	}
-
-	/* Strict native retirement supplies stronger ordering than each supported wait stage, without a second worker or hidden completion. */
-	for (index = 0; index < submission->action_count; index++) {
-		action = &submission->actions[index];
-		if (action->kind == QUEUE_COMMAND) {
-			error = bcm2711_vulkan_native_job_execute(session->render->device, session->render, action->job, &retired);
-			command = action->object->payload;
-			if (action->job->executed && (command->flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) != 0)
-				command->state = BCM2711_VULKAN_COMMAND_INVALID;
-			if (error != 0)
-				return error;
-
-			/* A nominal runner success without actual DMA retirement can never signal this submission's fence. */
-			if (!retired)
-				return EIO;
-			disposed = bcm2711_vulkan_native_job_dispose(session->render->device, action->job, retired);
-			action->job = NULL;
-			if (disposed != 0)
-				return disposed;
-		} else {
-			/* Actual completed binary counters advance only at their ordered wait or signal execution point. */
+		/* Binary counters advance at their ordered point; earlier executions of the session already ran. */
+		if (action->kind != QUEUE_COMMAND) {
 			sync = action->object->payload;
 			if (action->kind == QUEUE_WAIT) {
 				sync->waits_completed++;
@@ -564,31 +737,99 @@ run_submission(
 				sync->signals_completed++;
 				sync->signaled = true;
 			}
+			execution->cursor++;
+			continue;
 		}
+
+		/* One native pass per step: a second command waits for the next step. */
+		if (ran)
+			return 0;
+		ran = true;
+		error = bcm2711_vulkan_native_job_step(controller, execution->session->render, action->job, &finished, &retired);
+		command = action->object->payload;
+		if (action->job->executed && (command->flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) != 0)
+			command->state = BCM2711_VULKAN_COMMAND_INVALID;
+		if (error != 0) {
+			bcm2711_stage_mark(BCM2711_FAMILY_V3D, "submit failed error=%d", error);
+			return error;
+		}
+
+		/* A nominal runner success without actual DMA retirement can never signal this submission's fence. */
+		if (!retired)
+			return EIO;
+		if (!finished)
+			return 0;
+		disposed = bcm2711_vulkan_native_job_dispose(controller, action->job, retired);
+		action->job = NULL;
+		if (disposed != 0)
+			return disposed;
+		execution->cursor++;
 	}
 
-	/* Every binary payload has completed the exact finite reserved sequence before it becomes reusable. */
-	for (index = 0; index < submission->sync_count; index++) {
-		sync = submission->syncs[index].object->payload;
-		sync->pending = false;
-	}
-
-	/* Only full successful native and metadata retirement signals the optional fence, including an empty submit after preceding FIFO work. */
-	if (submission->fence != NULL) {
-		sync = submission->fence->payload;
-		sync->pending = false;
-		sync->signaled = true;
-	}
-
-	/* Succeeded: every complete primary, wait and signal retired in order before the submit acknowledgement. */
+	/* Succeeded: every action ran. */
+	*done = true;
 	return 0;
 }
 
-/* Retains uncertain whole primary roots in the controller and retires every independent CPU synchronization and queue edge. */
+/* Publishes the execution's completion or loss, releases what it owns and frees it. */
 static int
-release_submission(
+execution_end(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	int error)
+{
+	struct queue_execution *execution;
+	int released;
+
+	/* The payloads see the outcome before the session's later markers complete. */
+	(void)controller;
+	execution = (struct queue_execution *)base;
+	if (error == 0) {
+		publish_completion(&execution->owner);
+	} else {
+		publish_failure(&execution->owner);
+	}
+
+	/* Whole uncertain primary jobs transfer to controller quarantine before the payload edges retire. */
+	released = release_owner(execution->session, &execution->owner);
+	kern_free(execution);
+	if (released != 0)
+		return released;
+
+	/* Succeeded: the execution and everything it owned retired. */
+	return 0;
+}
+
+/* Ends one execution's operations on its payloads and signals its fence. */
+static void
+publish_completion(
+	struct queue_owner *owner)
+{
+	struct bcm2711_vulkan_sync *sync;
+	uint32_t index;
+
+	/* Each binary payload has one execution fewer with pending operations. */
+	for (index = 0; index < owner->sync_count; index++) {
+		sync = owner->syncs[index].object->payload;
+		sync->pending--;
+	}
+
+	/* Only full successful native and metadata retirement signals the optional fence, including an empty submit. */
+	if (owner->fence != NULL) {
+		sync = owner->fence->payload;
+		sync->pending--;
+		sync->signaled = true;
+	}
+
+	/* Succeeded: the fence and the payloads show the completion. */
+	return;
+}
+
+/* Releases unlaunched and retired jobs, transfers uncertain ones to quarantine, and drops the payload, fence and queue edges. */
+static int
+release_owner(
 	struct bcm2711_vulkan_session *session,
-	struct queue_submission *submission)
+	struct queue_owner *owner)
 {
 	struct queue_action *action;
 	uint32_t index;
@@ -597,27 +838,28 @@ release_submission(
 
 	/* Unlaunched and confirmed retired jobs release normally; an uncertain DMA root transfers without allocation to controller quarantine. */
 	first = 0;
-	for (index = 0; index < submission->action_count; index++) {
-		action = &submission->actions[index];
+	for (index = 0; index < owner->action_count; index++) {
+		action = &owner->actions[index];
 		if (action->job == NULL)
 			continue;
 		error = bcm2711_vulkan_native_job_dispose(session->render->device, action->job, action->job->retired);
+		action->job = NULL;
 		if (first == 0 && error != 0)
 			first = error;
 	}
 
 	/* Distinct binary CPU payloads retire after all native roots independently preserved their pending primary and session owners. */
-	for (index = 0; index < submission->sync_count; index++) {
-		error = bcm2711_vulkan_object_release(submission->syncs[index].object);
+	for (index = 0; index < owner->sync_count; index++) {
+		error = bcm2711_vulkan_object_release(owner->syncs[index].object);
 		if (first == 0 && error != 0)
 			first = error;
 	}
 
 	/* Optional fence and queue edges retire last while the complete CPU root remains the unwind authority. */
-	error = bcm2711_vulkan_object_release(submission->fence);
+	error = bcm2711_vulkan_object_release(owner->fence);
 	if (first == 0 && error != 0)
 		first = error;
-	error = bcm2711_vulkan_object_release(submission->queue);
+	error = bcm2711_vulkan_object_release(owner->queue);
 	if (first == 0 && error != 0)
 		first = error;
 	if (first != 0)
@@ -627,31 +869,34 @@ release_submission(
 	return 0;
 }
 
-/* Publishes sticky loss before any failed submission can retire a callback or report its fence complete. */
+/*
+ * Ends one failed or canceled execution's operations with sticky loss.
+ *
+ * Only this execution's payloads and fence fail; the executor decides
+ * whether the failure is the engine's.
+ */
 static void
 publish_failure(
-	struct bcm2711_vulkan_session *session,
-	struct queue_submission *submission)
+	struct queue_owner *owner)
 {
 	struct bcm2711_vulkan_sync *sync;
 	uint32_t index;
 
-	/* Native admission closes before uncertain jobs transfer to the persistent controller owner. */
-	bcm2711_render_worker_fault(session->render->device, EIO);
-	for (index = 0; index < submission->sync_count; index++) {
-		sync = submission->syncs[index].object->payload;
+	/* Each binary payload is lost, with one execution fewer pending on it. */
+	for (index = 0; index < owner->sync_count; index++) {
+		sync = owner->syncs[index].object->payload;
 		sync->status = VK_ERROR_DEVICE_LOST;
-		sync->pending = false;
+		sync->pending--;
 	}
 
 	/* A failed fence remains unsignaled with sticky loss even when preceding actions already modified images or consumed waits. */
-	if (submission->fence != NULL) {
-		sync = submission->fence->payload;
+	if (owner->fence != NULL) {
+		sync = owner->fence->payload;
 		sync->status = VK_ERROR_DEVICE_LOST;
-		sync->pending = false;
+		sync->pending--;
 		sync->signaled = false;
 	}
 
-	/* Succeeded: device loss precedes all subsequent payload and common marker observations. */
+	/* Succeeded: the loss is visible before the session's later markers complete. */
 	return;
 }

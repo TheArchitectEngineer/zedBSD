@@ -26,7 +26,6 @@ static int enumerate_physical(struct bcm2711_vulkan_session *session, struct i91
 static int create_device(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int device_queue(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int destroy_root(struct bcm2711_vulkan_session *session, enum i915_vk_object_kind kind, struct i915_wire_reader *reader);
-static int wait_idle(struct bcm2711_vulkan_session *session, enum i915_vk_object_kind kind, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int publish_root(struct bcm2711_vulkan_session *session, enum i915_vk_object_kind kind, uint64_t identity, struct bcm2711_vulkan_object *parent, uint32_t queues, uint32_t timeline, struct bcm2711_vulkan_object **object);
 static int release_root(struct bcm2711_vulkan_session *session, void *payload);
 static int claim_timeline(struct bcm2711_vulkan_session *session, uint32_t timeline);
@@ -89,11 +88,9 @@ bcm2711_vulkan_device_dispatch(
 	case GPU_OP_DESTROY_DEVICE:
 		error = destroy_root(session, I915_VK_OBJ_DEVICE, reader);
 		break;
-	case GPU_OP_QUEUE_WAIT_IDLE:
-		error = wait_idle(session, I915_VK_OBJ_QUEUE, reader, reply);
-		break;
 	default:
-		error = wait_idle(session, I915_VK_OBJ_DEVICE, reader, reply);
+		/* Queue and device idle: libvulkan waits on an empty submit's fence instead; the executor gives no immediate answer. */
+		error = EOPNOTSUPP;
 		break;
 	}
 
@@ -464,51 +461,6 @@ destroy_root(
 	return 0;
 }
 
-/* Proves preceding synchronous native execution has retired before reporting a queue/device idle result. */
-static int
-wait_idle(
-	struct bcm2711_vulkan_session *session,
-	enum i915_vk_object_kind kind,
-	struct i915_wire_reader *reader,
-	struct i915_wire_writer *reply)
-{
-	struct bcm2711_vulkan_object *object;
-	struct bcm2711_render_device *controller;
-	struct bcm2711_v3d_hardware *hardware;
-	uint64_t identity;
-	unsigned long enabled;
-	VkResult status;
-
-	/* Only a live typed native owner may wait on its preceding ordered work. */
-	identity = drv_i915_wire_read_u64(reader);
-	if (reader->error != 0)
-		return EINVAL;
-	object = bcm2711_vulkan_object_find(session, kind, identity);
-	if (object == NULL)
-		return EINVAL;
-
-	/* The sole controller-serialized worker executes every preceding QueueSubmit to native retirement. */
-	controller = session->render->device;
-	hardware = &controller->space.native->hardware;
-	enabled = spin_lock_irqsave(&hardware->guard);
-
-	status = VK_SUCCESS;
-	if (session->render->stopping ||
-	    controller->worker.uncertain ||
-	    !hardware->ready ||
-	    hardware->faulted ||
-	    hardware->job_busy)
-		status = VK_ERROR_DEVICE_LOST;
-
-	spin_unlock_irqrestore(&hardware->guard, enabled);
-
-	/* A loss or uncertain native owner is never hidden behind decoder progress. */
-	drv_i915_wire_reply_u32(reply, (uint32_t)status);
-
-	/* Succeeded: this typed idle query reports the actual serialized native retirement state. */
-	return 0;
-}
-
 /* Constructs one retained parent edge before publishing a typed native root. */
 static int
 publish_root(
@@ -587,10 +539,8 @@ claim_timeline(
 {
 	struct bcm2711_render_session *render;
 	struct bcm2711_render_device *controller;
-	struct bcm2711_render_request *request;
 	uint64_t mask;
 	unsigned long enabled;
-	uint32_t slot;
 
 	/* All queue publication shares the native IRQ guard with producer reservation and callback retirement. */
 	render = session->render;
@@ -612,13 +562,10 @@ claim_timeline(
 		return EEXIST;
 	}
 
-	/* Even a withdrawn queue cannot hand an old RESERVED/QUEUED/ACTIVE/FINISHING callback's domain to a new identity. */
-	for (slot = 0; slot < BCM2711_RENDER_REQUESTS; slot++) {
-		request = &controller->worker.requests[slot];
-		if (request->session == render && request->timeline == timeline) {
-			spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
-			return EAGAIN;
-		}
+	/* Even a withdrawn queue cannot hand an old RESERVED/QUEUED/ACTIVE/PARKED/FINISHING callback's domain to a new identity. */
+	if (bcm2711_render_worker_timeline_busy(controller, render, timeline)) {
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+		return EAGAIN;
 	}
 
 	/* A freshly published native queue becomes the sole producer admission owner of this domain. */

@@ -26,6 +26,8 @@ struct bcm2711_vulkan_session {
 	uint32_t object_count;
 	uint32_t live_objects;
 	bool closing;
+	/* A legacy synchronous frame is executing: it cannot accept a QueueSubmit. */
+	bool synchronous;
 	struct i915_wire_arena arena;
 };
 

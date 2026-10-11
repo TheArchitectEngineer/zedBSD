@@ -77,19 +77,17 @@ bcm2711_vulkan_native_job_create(
 }
 
 /*
- * Executes one pending primary through complete sequential native passes under the controller mutex.
+ * Runs one step of a job: the CPU-only events up to the next native pass, that pass, and its release.
  *
- * Each following pass stages its coherent source bytes only after the
- * previous pass's actual native completion/output visibility.  A failed
- * launched pass keeps all native inputs and the whole pending primary in
- * this root.  Later callback disposal transfers it to controller quarantine
- * rather than dropping a last CPU pointer to still referenced DMA storage.
+ * The first step starts the job; the step that reaches the end of the
+ * prepared events adds the job to the cost report and reports done.
  */
 int
-bcm2711_vulkan_native_job_execute(
+bcm2711_vulkan_native_job_step(
 	struct bcm2711_render_device *controller,
 	struct bcm2711_render_session *session,
 	void *payload,
+	bool *done,
 	bool *retired)
 {
 	struct bcm2711_vulkan_native_job *job;
@@ -112,12 +110,14 @@ bcm2711_vulkan_native_job_execute(
 	uint32_t index;
 	int tiled;
 	int error;
+	int closed;
 	int synchronized;
 
 	/* Initial refusals launch no work and therefore retain no device borrow. */
-	if (retired == NULL)
+	if (retired == NULL || done == NULL)
 		return EINVAL;
 	*retired = true;
+	*done = false;
 	job = payload;
 
 	/* The accepted payload must belong to the same exact renderer namespace and native controller. */
@@ -131,7 +131,7 @@ bcm2711_vulkan_native_job_execute(
 		return EINVAL;
 
 	/* A completed or uncertain payload never replays coherent source reads, clear or native work. */
-	if (job->executed || job->quarantined) {
+	if (job->quarantined || (job->executed && !job->stepping)) {
 		*retired = job->retired;
 		return EBUSY;
 	}
@@ -142,17 +142,30 @@ bcm2711_vulkan_native_job_execute(
 	    !controller->space.native->power.ready)
 		return EIO;
 
-	/* One finite resident upload budget covers every pass and its complete independent draw input prefix. */
-	job->executed = true;
-	started = clock_ticks();
+	/* The first step starts the job: one finite resident upload budget covers every pass and its complete independent draw input prefix. */
+	if (!job->executed) {
+		job->executed = true;
+		job->stepping = true;
+		job->started = clock_ticks();
+		job->prepare_ticks = 0;
+		job->execute_ticks = 0;
+		job->release_ticks = 0;
+		job->copy_ticks = 0;
+		job->remaining = NATIVE_JOB_BYTES;
+		job->region = 0;
+		job->cursor = job->prepared->first;
+	}
+
+	/* This step continues where the last one stopped. */
 	perf = &controller->space.native->hardware.perf;
-	prepare_ticks = 0;
-	execute_ticks = 0;
-	release_ticks = 0;
-	copy_ticks = 0;
-	remaining = NATIVE_JOB_BYTES;
-	region = 0;
-	event = job->prepared->first;
+	started = job->started;
+	prepare_ticks = job->prepare_ticks;
+	execute_ticks = job->execute_ticks;
+	release_ticks = job->release_ticks;
+	copy_ticks = job->copy_ticks;
+	remaining = job->remaining;
+	region = job->region;
+	event = job->cursor;
 	while (event != NULL) {
 		/* A whole-image upload or readback becomes a tile copy pass; ENOTSUP leaves it to the CPU. */
 		tiled = ENOTSUP;
@@ -261,9 +274,22 @@ bcm2711_vulkan_native_job_execute(
 			return error;
 		}
 
-		/* Exact clear, supervised bin/render and GPU cache visibility execute while every independent owner is held. */
+		/*
+		 * Exact clear, supervised bin/render and GPU cache visibility execute
+		 * while every independent owner is held.  The native jobs run inside
+		 * the window, without the controller mutex: the decoder and ioctls
+		 * proceed meanwhile, and no translation changes.
+		 */
 		step = clock_ticks();
-		error = bcm2711_vulkan_native_pass_run(job->pass, &completion);
+		error = bcm2711_vulkan_native_pass_start(job->pass, &completion);
+		if (error == 0) {
+			bcm2711_render_window_open(controller);
+			error = bcm2711_vulkan_native_pass_launch(job->pass, &completion);
+			closed = bcm2711_render_window_close(controller);
+			error = bcm2711_vulkan_native_pass_finish(job->pass, &completion, error);
+			if (error == 0 && closed != 0)
+				error = closed;
+		}
 		execute_ticks += clock_ticks() - step;
 		perf->tfu_ticks += completion.tfu_ticks;
 		perf->bin_ticks += completion.bin_ticks;
@@ -318,8 +344,24 @@ bcm2711_vulkan_native_job_execute(
 		if (error != 0)
 			return error;
 		remaining += bytes;
+
+		/* One pass ends the step; the next step starts at the following event. */
+		job->cursor = next;
+		job->region = region;
+		job->remaining = remaining;
+		job->prepare_ticks = prepare_ticks;
+		job->execute_ticks = execute_ticks;
+		job->release_ticks = release_ticks;
+		job->copy_ticks = copy_ticks;
+		if (next != NULL)
+			return 0;
 		event = next;
 	}
+
+	/* The last step: the job ran every pass. */
+	job->cursor = NULL;
+	job->stepping = false;
+	*done = true;
 
 	/* Adds this completed submission to the periodic cost report. */
 	elapsed = clock_ticks() - started;

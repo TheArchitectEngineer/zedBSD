@@ -159,8 +159,11 @@ runtime_command(
 		error = runtime_ready(session);
 
 	/* The complete private namespace and typed dispatcher execute under their single ownership mutex. */
-	if (error == 0)
+	if (error == 0) {
+		session->vulkan->synchronous = true;
 		error = bcm2711_vulkan_stream_execute(session->vulkan, wire, bytes, bcm2711_vulkan_dispatch);
+		session->vulkan->synchronous = false;
+	}
 
 	/* Native faults remain visible even if the protocol encoded an ordinary Vulkan result. */
 	uncertain = runtime_uncertain(controller);
