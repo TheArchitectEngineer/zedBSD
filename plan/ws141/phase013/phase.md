@@ -32,3 +32,22 @@ kernel 2274404613/8077312（計測版）・compositor 3165096962/953832（Codex 
 ## 修正 1: 全画面の vkCmdCopyImage を TLB copy に（2026-10-11、実機未確認）
 
 同じ大きさ・同じ形式の raster image の全体の copy は、shader と texture を使わず、tile buffer へ source を load して destination へ store する draw 0 の pass にした（`native-pass` に copy の source を足し、`vulkan-native-image.c` に `copy_whole`/`prepare_copy`）。それ以外の copy・blit は従来の texture quad。host: native-pass-host（Mesa XML oracle、copy の load/store の packet と拒否の条件を追加）PASS、vulkan-device-host PASS、arm64 kernel warning 0（3398207561/8081408）。実機へ配置して reboot したが、Pi が戻らず（ping 不通）、ユーザーの電源の確認待ち。
+
+## 実機の結果 1: TLB copy（2026-10-11）
+
+kernel 366458516（fa59e5c8e＋flip の集計）: 待機中の再描画で vkQueuePresentKHR 中央値 90ms（最小 45）→ 7ms、draw→shown 中央値 490 → 263ms。flip の内訳は vblank 待ち 8.5〜11ms、firmware の core clock の上げ 1ms・下げ 1.5〜2.3ms（毎 flip）。
+
+## 実機の結果 2: マウスの測定（2026-10-11、ユーザーが desktop 20 秒＋窓の中 20 秒）
+
+kernel 1595355601（TLB copy、busy%）・compositor 1093875040（main＋Codex の scene cache＋queued 行）。426 frame（log は worktree の build/p3-logs/kwl-mouse1.log、kernel-mouse1.log、commit しない）。
+- cursor だけの frame（scene の再利用）357: input→shown 中央値 48ms・p90 67ms（input→draw 11、record 3、vkQueueSubmit 10、present 17、fence 4）。ユーザーの所見「窓の中は 100ms くらいで相対的にスムーズ」。
+- 全面の再合成 69: draw→shown 中央値 916ms。kernel は submission あたり（present の copy を含む 2 つの平均で）release 173〜182ms、texture の CPU 変換 95〜180ms、GPU render 94ms、scene の取り込みの CPU copy 30〜49ms、map 25ms、alloc 16〜24ms。busy は 84〜94%。
+- 窓の外が数秒になる理由: pointer が画面の端（左右 16px・下 48px・上の bar）や窓の枠・title bar に入ると compositor は dirty（全面の再合成）にし、swapchain が 3 枚なので buffer age の規則で続く 2 frame も全面になる → 1 回の dirty で約 3×0.9 秒。ユーザーの所見「ウィンドウ外では数秒」。
+
+## 修正 2〜5（2026-10-11、実機は未確認）
+
+- TFU（814a6c96e まで）: texture の raster→UIF を V3D の TFU で行う版は、実機で描画が極端に遅く操作不能になった（log は焼き直しで消え、原因は未確定）。起動時の V9 に UIF の自己試験（96x40 の CPU 変換との一致と 256x256 の時間）を足し、結果は log に出すだけで TFU は使わない（4502ffbd9）。
+- 画像全体の buffer↔image copy も TLB copy に（vulkan-native-image.c `bcm2711_vulkan_native_buffer_image_create`）。compositor は buffer age だけで全面になる frame も scene cache から全面を復元し cursor だけ描く（compose.c）。814a6c96e。この版で reboot した後 Pi が戻らなかった（原因未確定、reboot の不具合 BUG-288 の可能性もある）。
+- flip ごとの firmware clock の上げ下げを、変化が無い時は送らない・合成中は下げない。NC の frame の cache clean を省く（c2e17c674）。display host 試験 PASS（合成中の clock の期待値を 500MHz に直した）。
+- private upload の view の再利用の cache（native-storage.c、最大 96MiB、1 view 16MiB まで、4KB と それ以上の 2 本の list、recovery の前に drain）。frame ごとの alloc・map・MMU flush・release を減らす。vulkan-device host に cache の試験を追加して PASS（b53da0069、main 未統合）。
+- 以後は Pi で reboot しない（ユーザーが手で電源を入れ直す）。main の 42b5bdbea 以降で image を作り直す。
