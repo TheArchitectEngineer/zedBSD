@@ -3,7 +3,8 @@
 # library.c, exif.c, db.c, import.c, the pictures' decoding and libkeiland's drawing, text and widgets and libtruetype) on
 # Linux, on the folder make-photos.py --view writes into a fresh folder each run (imported into a library there), and turns the pictures into PNG files
 # (the frame on glass laid on a wallpaper, roughly as zdesktop shows it).
-#   sh plan/ws157/tests/run-host-photos.sh [OUTPUT]   (default build/ws157/host-photos; pictures beside it; Q1's
+#   sh plan/ws157/tests/run-host-photos.sh [OUTPUT [LINUX_BUILD]]   (default build/ws157/host-photos; pictures beside it;
+#   LINUX_BUILD is a keiland-linux.mk build with keiland-preview; Q1's
 #   cleaning removes the old folders)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e
@@ -11,6 +12,13 @@ cd "$(dirname "$0")/../../.."
 out=${1:-build/ws157/host-photos}
 dir=$(dirname "$out")
 mkdir -p "$dir/inc/truetype" "$dir/inc/keiland"
+# ws157-p013: import.c asks keiland-preview --info (the Linux build's, LINUX_BUILD) for sizes and EXIF dates; the child
+# starts without an environment, so a wrapper gives it the build's libraries.
+linux=$(realpath "${2:-build/ws157-q937-linux}")
+mkdir -p "$dir/libexec"
+printf '#!/bin/sh\nLD_LIBRARY_PATH=%s exec %s "$@"\n' "$linux/lib" "$linux/libexec/keiland-preview" >"$dir/libexec/keiland-preview"
+chmod 0755 "$dir/libexec/keiland-preview"
+libexec=$(realpath "$dir/libexec")
 cp userland/desktop/include/truetype/truetype.h "$dir/inc/truetype/"
 cp userland/desktop/include/keiland/keiland.h "$dir/inc/keiland/"
 ln -sfn "$(pwd)/include/libc/compat" "$dir/inc/compat"
@@ -21,8 +29,8 @@ K=$U/libkeiland/ui
 L=$U/libkeiland
 M=$U/photos
 B=userland/base
-cc -std=c11 -D_GNU_SOURCE -O2 -g -Wall -Wextra -Werror -I"$dir/inc" -I. -I$K -I$U/libtruetype \
-	plan/ws157/tests/host-photos.c $M/view.c $M/thumbs.c $M/decode.c $M/library.c $M/exif.c $M/db.c $M/import.c $U/mediastorage/dimensions.c "$dir/sha2.o" \
+cc -std=c11 -D_GNU_SOURCE -O2 -g -Wall -Wextra -Werror -I"$dir/inc" -I. -I$K -I$U/libtruetype "-DKEILAND_LIBEXECDIR=\"$libexec\"" \
+	plan/ws157/tests/host-photos.c $M/view.c $M/thumbs.c $M/decode.c $M/library.c $M/exif.c $M/db.c $M/import.c $U/preview/client.c $U/preview/linux/spawn.c "$dir/sha2.o" \
 	$U/picture/picture.c \
 	$K/canvas.c $K/text.c $K/icons.c $K/icons-line.c $K/theme.c $K/input.c $K/scroll.c $K/scroll-bar.c \
 	$K/text-touch.c $K/text-bar.c $K/text-select.c $K/ui.c $K/widgets.c $K/field.c $K/text-area.c $K/list.c $K/cards.c \

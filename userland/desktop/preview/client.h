@@ -71,6 +71,20 @@ struct preview_picture {
 	int height;
 };
 
+/*
+ * What a media file is (preview_info_read, ws157-p013): its kind
+ * (KL_MEDIA_* of picture/media-kind.h), a picture's size (0 when it is
+ * not known), and whether its date is known and the date (seconds of the
+ * camera's calendar, as photos.h's ph_time has them).
+ */
+struct preview_info {
+	int kind;
+	long width;
+	long height;
+	int dated;
+	int64_t taken;
+};
+
 /* The callers' side (client.c). */
 int preview_start(const char *input, int output, const struct preview_request *request, struct preview_job *job);
 int preview_poll(struct preview_job *job);
@@ -82,6 +96,7 @@ void preview_picture_cancel(struct preview_pending *pending);
 int preview_status_error(int status);
 int preview_read(int fd, struct preview_picture *picture);
 void preview_picture_release(struct preview_picture *picture);
+int preview_info_read(int input, struct preview_info *info);
 
 /* The system's way of starting one (each system's spawn.c). */
 int preview_spawn(int input, int output, const struct preview_request *request, pid_t *pid, int *status);

@@ -47,6 +47,12 @@ preview_make(
 	int error;
 	int result;
 
+	/* What the file is, asked instead of a picture (info.c). */
+	if (request->info) {
+		result = preview_info(input, output);
+		return result;
+	}
+
 	/* The input, whole. */
 	error = make_read(input, &data, &size);
 	if (error == EFBIG)

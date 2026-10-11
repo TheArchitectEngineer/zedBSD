@@ -39,6 +39,10 @@
 /* The largest document printed, and the bytes looked through for "%PDF-" (ws145-p003). */
 #define SYSTEM_PRINT_FILE_MAX	(256LL * 1024 * 1024)
 #define SYSTEM_PRINT_HEAD	1024U
+
+/* How long a media request is waited for: an import (the backend's hour and a little), the others (ws157-p013). */
+#define SYSTEM_MEDIA_IMPORT_WAIT_MS	3605000LL
+#define SYSTEM_MEDIA_WAIT_MS		125000LL
 #define UNUSED_PARAMETER(name) ((void)(name))
 
 /*
@@ -225,7 +229,7 @@ static void system_media_snapshot(void *data, struct wl_proxy *proxy, uint32_t r
 static void system_media_done(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t error);
 static void system_media_changed(void *data, struct wl_proxy *proxy, uint32_t generation);
 static int system_media_run(struct kl_system *system, uint32_t opcode, const char *paths, int input, int *output);
-static int system_media_wait(struct kl_system *system);
+static int system_media_wait(struct kl_system *system, int64_t limit_ms);
 
 static void system_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void system_notify_posted(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t id);
@@ -5718,6 +5722,7 @@ system_media_run(
 	int input,
 	int *output)
 {
+	int64_t limit_ms;
 	int error;
 
 	/* One synchronous operation owns the response slot at a time. */
@@ -5740,8 +5745,16 @@ system_media_run(
 	else
 		wl_proxy_marshal(system->media, opcode, system->media_request);
 
-	/* Waits on the private system queue; app callbacks stay on their own queue. */
-	error = system_media_wait(system);
+	/*
+	 * Waits on the private system queue; app callbacks stay on their own
+	 * queue.  An import may copy large videos: the backend gives it up to
+	 * an hour (ws157-p013), the others two minutes, and this waits a little
+	 * longer than the backend.
+	 */
+	limit_ms = SYSTEM_MEDIA_WAIT_MS;
+	if (opcode == KL_SYSTEM_MEDIA_ADD)
+		limit_ms = SYSTEM_MEDIA_IMPORT_WAIT_MS;
+	error = system_media_wait(system, limit_ms);
 	if (error == 0)
 		error = system->media_error;
 	if (error == 0 && system->media_descriptor < 0)
@@ -5766,7 +5779,8 @@ system_media_run(
 /* Reads the private queue with a finite monotonic deadline while the CLI runs. */
 static int
 system_media_wait(
-	struct kl_system *system)
+	struct kl_system *system,
+	int64_t limit_ms)
 {
 	struct pollfd descriptor;
 	struct timespec now;
@@ -5780,7 +5794,7 @@ system_media_wait(
 	status = clock_gettime(CLOCK_MONOTONIC, &now);
 	if (status != 0)
 		return errno;
-	deadline = (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000 + 125000;
+	deadline = (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000 + limit_ms;
 	descriptor.fd = wl_display_get_fd(system->display);
 	descriptor.events = POLLIN;
 	while (!system->media_done) {

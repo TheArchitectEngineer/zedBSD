@@ -3,7 +3,7 @@
 # ws157-p012: media 管理の経路の review と mediastorage の解析の jail 化
 
 Parent: [WS157](../ws.md)
-Status: in-progress（q937-i01、P1。review 済み・小さな直しを commit、設計の案を Q1 へ）
+Status: in-progress（q937-i01、P1。review 済み・小さな直しを commit。設計はユーザー承認（2026-10-11「全部承認です。」）→ 実装は p013（jail・#4）、p014（#1）、p015（#11））
 Phase disposition: normal
 Queue: q937（[P1 の lane](../../agents/P1/queue.md)）
 

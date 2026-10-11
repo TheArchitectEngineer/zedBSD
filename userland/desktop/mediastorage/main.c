@@ -45,6 +45,7 @@ main(
 	int notify;
 	int index;
 	int lock;
+	int importing;
 
 	/*
 	 * Takes "--no-notify" out of the arguments: the compositor's own runs
@@ -146,6 +147,11 @@ main(
 	/* Loads the latest model under the lock, including changes from other applications. */
 	if (error == 0)
 		error = ph_db_load(root);
+
+	/* An import first empties the copies an import killed earlier left (none can be under way: the lock is ours). */
+	importing = strncmp(command, "add", 3U);
+	if (error == 0 && importing == 0)
+		ph_import_clean(root);
 	if (error == 0)
 		error = media_execute(root, command, argument);
 	if (error == 0) {
