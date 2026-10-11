@@ -166,6 +166,7 @@ struct btd_own_bond {
 };
 
 static void btd_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
+static void btd_log_codecs(const struct btd_session *session);
 static int btd_node_control(void *context, unsigned long request, void *argument);
 static void btd_random(void *context, uint8_t *bytes, size_t length);
 static void btd_key(const struct bt_info *info, char *key, size_t size);
@@ -688,6 +689,9 @@ main(
 	    (unsigned)btd_session.sco_length, (unsigned)btd_session.sco_count, (unsigned)btd_session.commands[1],
 	    (unsigned)btd_session.commands[13], (unsigned)btd_session.commands[14], (unsigned)btd_session.commands[16],
 	    (unsigned)btd_session.commands[29]);
+
+	/* The codecs the controller has: id/transports (bit 1 BR/EDR SCO, ff not told), and the vendor's count (ws197-p007a2 L1). */
+	btd_log_codecs(&btd_session);
 
 	/* Clients, the controller's packets, the deadlines and the look for nodes. */
 	for (;;) {
@@ -4557,4 +4561,30 @@ btd_decimal(
 	/* Succeeded: the number. */
 	*value = number;
 	return 0;
+}
+
+/* Logs the codecs the controller has, one line (ws197-p007a2 L1). */
+static void
+btd_log_codecs(
+	const struct btd_session *session)
+{
+	char line[16U * 6U + 1U];
+	size_t used;
+	unsigned index;
+	int written;
+
+	/* Each id with its transports. */
+	used = 0U;
+	line[0] = '\0';
+	for (index = 0U; index < session->codecs; index++) {
+		written = snprintf(line + used, sizeof(line) - used, " %02x/%02x", (unsigned)session->codec[index],
+		    (unsigned)session->codec_transports[index]);
+		if (written < 0 || (size_t)written >= sizeof(line) - used)
+			break;
+		used += (size_t)written;
+	}
+
+	/* The line. */
+	btd_log("BLUETOOTHD CODECS version=%u standard=%u vendor=%u ids%s\n", session->codecs_version, session->codecs,
+	    session->vendor_codecs, line);
 }
