@@ -29,7 +29,7 @@ Bluetooth の headset で音楽が SBC と AAC で鳴る（実機）。スマホ
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 調査と設計（既存の code・hardware・規格、判断が要る点をユーザーへ） | in-progress（設計済み、D1〜D6 待ち） |
 | [p002](phase002/phase.md) | libmedia の SBC の encoder・decoder（A2DP と mSBC）、host の試験 | in-progress（実装・host 試験済み） |
-| p003 | libmedia の AAC-LC の encoder、host の試験 | planned |
+| [p003](phase003/phase.md) | libmedia の AAC-LC の encoder、host の試験 | in-progress（実装・host 試験済み） |
 | p004 | A2DP の sink の endpoint と route `media`（audiod の route の model の上） | planned |
 | p005 | bluetoothd の A2DP の source（SBC）、headset の接続 | planned |
 | p006 | A2DP の AAC | planned |

@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Only the calls media.h, media-decoder.h, media-sbc.h and mediafile.h declare leave the library; format readers and native reconstruction stay private. */
+/* Only the calls media.h, media-decoder.h, media-sbc.h, media-aac-encoder.h and mediafile.h declare leave the library; format readers and native reconstruction stay private. */
 {
 	global:
 		media_set_log;
@@ -17,6 +17,10 @@
 		media_frame_*;
 		media_scaler_free;
 		media_sbc_*;
+		media_aac_encoder_*;
+		media_aac_encode;
+		media_aac_adts_header;
+		media_aac_audio_specific_config;
 	local:
 		*;
 };
