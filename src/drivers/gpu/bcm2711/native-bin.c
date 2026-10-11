@@ -18,10 +18,11 @@ static void write_varyings(uint8_t *bytes, uint8_t opcode, uint32_t mask);
 /*
  * Encodes complete fixed graphics state followed by one non-indexed triangle-list draw rebased to vertex zero.
  *
- * Every inherited flag is reset explicitly.  Blending occurs in compiled
- * fragment code, so hardware blending remains disabled.  Depth/stencil,
- * multisampling, transform feedback and queries remain disabled.  The
- * caller owns every referenced native interval and cleans the enclosing BCL.
+ * Every inherited flag is reset explicitly.  A blending draw uses the tile
+ * buffer's premultiplied source-over, so fragment code never reads the tile
+ * buffer.  Depth/stencil, multisampling, transform feedback and queries
+ * remain disabled.  The caller owns every referenced native interval and
+ * cleans the enclosing BCL.
  */
 int
 bcm2711_native_bin_encode(
@@ -51,7 +52,8 @@ bcm2711_native_bin_encode(
 	/* Finite raster state can encode only the implemented Boolean facing choices. */
 	if (state->forward > 1 ||
 	    state->reverse > 1 ||
-	    state->clockwise > 1)
+	    state->clockwise > 1 ||
+	    state->blend > 1)
 		return EINVAL;
 
 	/* Clipping stays inside the advertised drawable extent, including empty intersections. */
@@ -110,20 +112,22 @@ bcm2711_native_bin_encode(
 	write_word(bytes + 52, state->clipper.x_offset);
 	write_word(bytes + 56, state->clipper.y_offset);
 
-	/* Vulkan uses the first provoking vertex; no depth updates/early-Z/stencil/hardware blend can suppress software tile blending. */
+	/* Vulkan uses the first provoking vertex; depth updates, early-Z and stencil stay off, and blending follows the draw. */
 	config = (1U << 21) | (7U << 12) | (1U << 4);
 	config |= state->forward;
 	config |= state->reverse << 1;
 	config |= state->clockwise << 2;
+	config |= state->blend << 19;
 	bytes[60] = 96;
 	bytes[61] = (uint8_t)config;
 	bytes[62] = (uint8_t)(config >> 8);
 	bytes[63] = (uint8_t)(config >> 16);
 
-	/* Only target zero writes all channels; unused targets and fixed-function blending remain disabled. */
+	/* Only target zero writes all channels and only it may blend; unused targets stay disabled. */
 	bytes[64] = 87;
 	write_word(bytes + 65, 0xfff0U);
 	bytes[69] = 83;
+	bytes[70] = (uint8_t)state->blend;
 
 	/* Disabled feedback/query state cannot accidentally reference a previous job's native addresses. */
 	bytes[71] = 74;
@@ -140,11 +144,19 @@ bcm2711_native_bin_encode(
 	bytes[101] = 64;
 	write_word(bytes + 102, state->shader | state->attributes);
 
+	/*
+	 * Target zero's blend is premultiplied source-over for colour and alpha:
+	 * one times the source plus one minus source alpha times the target.
+	 * It takes effect only while the blend enables above select the target.
+	 */
+	bytes[106] = 84;
+	write_word(bytes + 107, (1U << 24) | (7U << 20) | (1U << 16) | (7U << 8) | (1U << 4));
+
 	/* Packed fetch already applied source firstVertex; this hardware array starts at zero and consumes exactly copied vertices. */
-	bytes[106] = 36;
-	bytes[107] = 4;
-	write_word(bytes + 108, state->vertices);
-	write_word(bytes + 112, 0);
+	bytes[111] = 36;
+	bytes[112] = 4;
+	write_word(bytes + 113, state->vertices);
+	write_word(bytes + 117, 0);
 
 	/* Succeeded: the complete atomic sequence can be copied into the owned enclosing bin list before native launch. */
 	return 0;

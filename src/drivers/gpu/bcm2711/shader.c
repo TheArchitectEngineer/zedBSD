@@ -53,7 +53,7 @@ bcm2711_shader_compile(
 	    stage > BCM2711_SHADER_FRAGMENT ||
 	    word_count > 1048576U)
 		return EINVAL;
-	if (key->swap_red_blue > 1 || key->premultiplied_blend > 1)
+	if (key->swap_red_blue > 1)
 		return EINVAL;
 
 	/* Bounds declaration recursion and fixes the graphics execution model before the shared parser allocates or expands constants. */

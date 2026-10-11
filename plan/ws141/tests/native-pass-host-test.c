@@ -70,7 +70,7 @@ main(
 	state.store = 1;
 	state.clear_colour = 0x12345678U;
 	error = bcm2711_native_pass_measure(&state, 2, &sizes);
-	assert(error == 0 && sizes.bin == 246U && sizes.render == 121U && sizes.tile == 41U);
+	assert(error == 0 && sizes.bin == 256U && sizes.render == 121U && sizes.tile == 41U);
 	assert(sizes.pool == state.pool_bytes && sizes.state == 2304U);
 	for (index = 0; index < 2U * BCM2711_NATIVE_BIN_BYTES; index++)
 		images[0].bytes[BCM2711_NATIVE_PASS_BIN_PREFIX + index] = (uint8_t)(index * 17U + 3U);

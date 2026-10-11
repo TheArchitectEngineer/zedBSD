@@ -48,7 +48,6 @@ struct bcm2711_shader_key {
 	struct bcm2711_shader_component varyings[BCM2711_SHADER_INTERFACE_WORDS];
 	uint32_t varying_count;
 	uint32_t swap_red_blue;
-	uint32_t premultiplied_blend;
 };
 
 /* One uniform belongs to one emitted hardware consumption, including implicit tile writes. */

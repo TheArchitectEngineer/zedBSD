@@ -1443,7 +1443,7 @@ native_pass_test(
 	bytes = pass->bytes;
 	assert(bytes == 1646592U && available == 8U * 1024U * 1024U - bytes);
 	assert(native_cleans == cleans + 20U && pass->job.kind == BCM2711_V3D_JOB_CL);
-	assert(pass->job.command.cl.bin_end - pass->job.command.cl.bin_start == 130U);
+	assert(pass->job.command.cl.bin_end - pass->job.command.cl.bin_start == 135U);
 	assert(pass->job.command.cl.render_end - pass->job.command.cl.render_start == 106U);
 	assert(pass->job.command.cl.pool_bytes == 0x83000U && pass->job.command.cl.state_bytes == 4096U);
 	assert(pass->job.command.cl.overflow_count == 4U && pass->job.command.cl.clean_output);

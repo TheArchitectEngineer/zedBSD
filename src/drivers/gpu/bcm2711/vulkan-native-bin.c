@@ -76,6 +76,10 @@ bcm2711_vulkan_native_bin_prepare(
 	if (event->pipeline->front == VK_FRONT_FACE_COUNTER_CLOCKWISE)
 		state.clockwise = 1;
 
+	/* A blending pipeline's premultiplied source-over happens in the tile buffer, not in its fragment code. */
+	if (event->pipeline->blend)
+		state.blend = 1;
+
 	/* Native varying flag order follows the exact fragment scalar FIFO, including locations crossing group twenty-four. */
 	fragment = event->pipeline->programs[BCM2711_SHADER_FRAGMENT];
 	if (fragment == NULL || fragment->input_count > BCM2711_SHADER_INTERFACE_WORDS)
