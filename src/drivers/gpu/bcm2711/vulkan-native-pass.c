@@ -269,6 +269,7 @@ bcm2711_vulkan_native_pass_release(
 		perf->released_draws++;
 		draw = next;
 	}
+	bcm2711_vulkan_native_draw_pool_release(&owned->draw_pool);
 	perf->release_draw_ticks += clock_ticks() - started;
 
 	/* Every command/tile/overflow owner retires even if an earlier draw teardown failed. */
@@ -540,7 +541,7 @@ collect_draws(
 		}
 
 		/* Complete native draw preparation occurs at FIFO execution after preceding GPU output becomes CPU-visible. */
-		error = bcm2711_vulkan_native_draw_create(pass->space, event, remaining, pass->first, &draw);
+		error = bcm2711_vulkan_native_draw_create(pass->space, event, remaining, pass->first, &pass->draw_pool, &draw);
 		if (error != 0)
 			return error;
 

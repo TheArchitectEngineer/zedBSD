@@ -26,7 +26,15 @@ struct native_fetch {
 	uint32_t components;
 };
 
+/* One chunk of a pass's draw pool: its draws in creation order, the first used of them. */
+struct bcm2711_vulkan_native_draw_chunk {
+	struct bcm2711_vulkan_native_draw_chunk *next;
+	uint32_t used;
+	struct bcm2711_vulkan_native_draw draws[BCM2711_VULKAN_DRAW_CHUNK];
+};
+
 static int allocate_storage(struct bcm2711_vulkan_native_draw *draw, uint64_t bytes, uint64_t available, const struct bcm2711_shader_binary *program, struct bcm2711_native_storage **storage);
+static struct bcm2711_vulkan_native_draw *pool_take(struct bcm2711_vulkan_native_draw_pool *pool);
 static struct bcm2711_native_storage *find_texture(const struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_resource *image);
 static int prepare_textures(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_prepared_event *event, uint64_t available);
 static int prepare_texture(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_descriptor *descriptor, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
@@ -59,6 +67,7 @@ bcm2711_vulkan_native_draw_create(
 	const struct bcm2711_vulkan_prepared_event *event,
 	uint64_t *available,
 	const struct bcm2711_vulkan_native_draw *earlier,
+	struct bcm2711_vulkan_native_draw_pool *pool,
 	struct bcm2711_vulkan_native_draw **draw)
 {
 	struct bcm2711_vulkan_native_draw *created;
@@ -87,9 +96,16 @@ bcm2711_vulkan_native_draw_create(
 	/* One finite job-wide budget prevents independent draws from bypassing the total native staging bound. */
 	if (available == NULL || *available > NATIVE_DRAW_BYTES)
 		return EINVAL;
-	created = kern_calloc(1, sizeof(*created));
+
+	/* A pass's draw comes from its pool; an independent draw has an allocation of its own. */
+	if (pool != NULL) {
+		created = pool_take(pool);
+	} else {
+		created = kern_calloc(1, sizeof(*created));
+	}
 	if (created == NULL)
 		return ENOMEM;
+	created->pool = pool;
 	created->space = space;
 	created->earlier = earlier;
 	created->vertices = event->draw[0];
@@ -173,7 +189,7 @@ bcm2711_vulkan_native_meta_draw_create(
 	kern_memcpy(event->viewport, meta->viewport, sizeof(event->viewport));
 
 	/* Native upload copies every shader, scalar, source texel and vertex before the temporary description retires. */
-	error = bcm2711_vulkan_native_draw_create(space, event, available, NULL, draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, available, NULL, NULL, draw);
 	kern_free(event);
 	if (error != 0)
 		return error;
@@ -222,8 +238,11 @@ bcm2711_vulkan_native_draw_release(
 			first = error;
 	}
 
+	/* A pooled draw's memory belongs to its pass's chunk; an independent draw is freed now. */
+	if (owned->pool == NULL)
+		kern_free(owned);
+
 	/* Complete remaining owners still retire after an earlier translation failure, preserving the first refusal. */
-	kern_free(owned);
 	if (first != 0)
 		return first;
 
@@ -1118,4 +1137,44 @@ texture_area(
 {
 	/* Width and height are each sixteen bits of the packed size. */
 	return (uint64_t)(size >> 16) * (size & 0xffffU);
+}
+
+/*
+ * Frees a pass pool's chunks.
+ */
+void
+bcm2711_vulkan_native_draw_pool_release(
+	struct bcm2711_vulkan_native_draw_pool *pool)
+{
+	struct bcm2711_vulkan_native_draw_chunk *chunk;
+	struct bcm2711_vulkan_native_draw_chunk *next;
+
+	/* Every draw of every chunk has been released by the pass. */
+	for (chunk = pool->chunks; chunk != NULL; chunk = next) {
+		next = chunk->next;
+		kern_free(chunk);
+	}
+	pool->chunks = NULL;
+}
+
+/* Takes the next zeroed draw from a pass pool, adding a chunk when the newest is full. */
+static struct bcm2711_vulkan_native_draw *
+pool_take(
+	struct bcm2711_vulkan_native_draw_pool *pool)
+{
+	struct bcm2711_vulkan_native_draw_chunk *chunk;
+
+	/* A new chunk goes to the head of the pool; its draws are zeroed. */
+	chunk = pool->chunks;
+	if (chunk == NULL || chunk->used == BCM2711_VULKAN_DRAW_CHUNK) {
+		chunk = kern_calloc(1, sizeof(*chunk));
+		if (chunk == NULL)
+			return NULL;
+		chunk->next = pool->chunks;
+		pool->chunks = chunk;
+	}
+
+	/* Reports the next unused draw of the newest chunk. */
+	chunk->used++;
+	return &chunk->draws[chunk->used - 1U];
 }

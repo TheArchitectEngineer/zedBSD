@@ -30,6 +30,8 @@ struct bcm2711_vulkan_native_pass {
 	VkImageLayout final_layout;
 	struct bcm2711_vulkan_native_draw *first;
 	struct bcm2711_vulkan_native_draw *last;
+	/* The chunks the pass's draws come from, freed after every draw is released. */
+	struct bcm2711_vulkan_native_draw_pool draw_pool;
 	struct bcm2711_native_storage *storage[BCM2711_VULKAN_PASS_STORAGE];
 	uint64_t bytes;
 	uint32_t count;

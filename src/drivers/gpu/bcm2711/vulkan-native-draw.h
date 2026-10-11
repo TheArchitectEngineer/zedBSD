@@ -28,10 +28,26 @@ struct bcm2711_vulkan_native_texture_copy {
 	struct bcm2711_v3d_tfu_job tfu;
 };
 
+/* Draws one chunk of a pass's draw pool holds. */
+#define BCM2711_VULKAN_DRAW_CHUNK 64U
+
+struct bcm2711_vulkan_native_draw_chunk;
+
+/*
+ * A pass's draws come from chunks of BCM2711_VULKAN_DRAW_CHUNK draws instead
+ * of one kernel allocation each; the pass frees the chunks after releasing
+ * every draw.  Only the controller-serialized pass owner touches it.
+ */
+struct bcm2711_vulkan_native_draw_pool {
+	struct bcm2711_vulkan_native_draw_chunk *chunks;
+};
+
 /* One complete draw owns its uploads and borrows earlier immutable pass inputs; the pass retains all draws through uncertainty. */
 struct bcm2711_vulkan_native_draw {
 	/* The enclosing pass links fully owned draw roots; individual release never traverses this link. */
 	struct bcm2711_vulkan_native_draw *next;
+	/* The pass pool whose chunk holds this draw, or NULL for a draw allocated on its own. */
+	struct bcm2711_vulkan_native_draw_pool *pool;
 	struct bcm2711_v3d_space *space;
 	struct bcm2711_native_storage *storage[BCM2711_VULKAN_DRAW_STORAGE];
 	struct bcm2711_vulkan_native_binding bindings[BCM2711_VULKAN_PIPELINE_SETS][BCM2711_VULKAN_LAYOUT_BINDINGS];
@@ -89,7 +105,10 @@ int bcm2711_vulkan_native_meta_draw_create(struct bcm2711_v3d_space *space, cons
  * Controller serialization and prior queue visibility are required; available is the remaining padded job budget.
  * Earlier draws must belong to this same pass and remain alive until the entire pass retires; NULL gives an independent draw.
  */
-int bcm2711_vulkan_native_draw_create(struct bcm2711_v3d_space *space, const struct bcm2711_vulkan_prepared_event *event, uint64_t *available, const struct bcm2711_vulkan_native_draw *earlier, struct bcm2711_vulkan_native_draw **draw);
+int bcm2711_vulkan_native_draw_create(struct bcm2711_v3d_space *space, const struct bcm2711_vulkan_prepared_event *event, uint64_t *available, const struct bcm2711_vulkan_native_draw *earlier, struct bcm2711_vulkan_native_draw_pool *pool, struct bcm2711_vulkan_native_draw **draw);
+
+/* Frees a pass pool's chunks; every draw from it has been released. */
+void bcm2711_vulkan_native_draw_pool_release(struct bcm2711_vulkan_native_draw_pool *pool);
 
 /* true consumes/nulls all storage even when translation teardown fails; false keeps the whole root unchanged. */
 int bcm2711_vulkan_native_draw_release(struct bcm2711_vulkan_native_draw **draw, bool retired);
