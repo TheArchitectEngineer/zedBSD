@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: 既存履歴 q691（p001）・q695（p002）。現在の独立セッションの実行範囲は [execution-20261009.md](execution-20261009.md)
-Resume point: user実機cursor約100ms、目標33ms以内/16ms stretch。translation-batch kernel1299371254/8077312とdamage renderArea/採用timestamp版wayland4130193432/949384はbuild済/main統合、実機未配置。10.0.30.2はARP FAILED/No route to host、現在IP回答待ち。SSH復帰後に保存/cmp/sync更新/reboot、入力→draw→submit→shownを測定して修復継続。p006 submit-i01/WS incomplete、共有投影はQ1。
+Resume point: SSH復帰、診断kernel260505095/app459945060を実機へ配置・照合/reboot済み。40sampleのaccepted input→shownは845〜1149ms、median1035ms、user目視約1000ms。96draw/約30MBのtexture変換copy154〜273msを固定16byte inline copyで削減する。arm64 build/host PASS、部分描画がwholeへ戻る経路も調査。目標33ms以内/16ms stretchは未達、p006 submit-i01/WS incomplete、共有投影はQ1。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 

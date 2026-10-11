@@ -390,3 +390,12 @@ cursor計測準備: 既存の明示 --log-frames 診断へaccepted pointer座標
 
 
 coalesced診断最終確認: native device host PASS、C全文manual/diff-check/style変更範囲0（compose既存blank4は範囲外）、clang-format19範囲比較。初回kernel buildはengine forward declarationのままhardware時刻に触れincomplete-typeで失敗、private headerを明示して修正。最終arm64 kernel/app build exit0/warning0/error0、kernel checker3PASS/dynamic app checker exit0。kernel260505095/8077312、wayland459945060/949352。両方を実機/tmpへ転送exit0、配置前の旧kernel/appをUFSへ保存して更新・rebootする。33ms目標は未達でsubmit-i01継続。
+
+
+702a1dca7をmainへ自動統合。旧kernel1299371254/app4130193432を実機UFS /var/backups/vmunix.before-cursor-prepare-20261011 とwayland.before-coalesced-trace-20261011へ保存・全体cmpし、greeter停止後に新kernel260505095/app459945060をstage/cmp/sync/rename/sync/cmpで配置。全体照合exit0。rebootを別のSSHで実行、復帰確認と新しいログによる全域無効化の切り分けを続ける。
+
+
+診断版reboot exit0、約1分後にSSH/ARP/ping復帰（ping0.923ms）。kernel260505095/app459945060のinstalled cksum一致。実pass96draw/29,941,760bytesでprepare197〜369ms、texture169〜315ms、その内copy154〜273ms。code19〜33/records7〜19ms。Raster→UIF変換の16byte utile rowごとに可変長kern_memcpyを呼んでおり、数百万の小コピーに一般引数検証/word loopを繰り返す。4pixel完全行は固定16byteの明示compiler builtinへ置換し、境界1〜3pixelは従来exact-length copyを保持。kernel -mgeneral-regs-only/-fno-builtinのまま、明示builtinの数値コピーだけを使う。unaligned input/padding/byte order/UIF layout/所有/キャッシュ順序は不変。既存native-state independent pixel oracleとARM64 machine codeで実長16byte/尾の正確なaccessを確認し、実機測定する。
+
+
+2026-10-11 lightweight mouse再計測: user「やりました。目視では1000msくらい」。40 complete input samplesはaccepted→shown min845/median1035/max1149ms（build/ws141-coalesced-full-trace.log）。dirty0/damage1の連続frameもあるがKWL DAMAGE部分passは出ていない。native texture固定16byte化はindependent native-state host PASS、style0/diff-check/C全文manual PASS。ARM64同一flagsの-Sで完全utile行はldp/stp各16byte、端だけkern_memcpyを確認、SIMDなし。arm64 kernel warning0/error0/checker3PASS、cksum666078535/8077312。実機配置前、性能効果未確認。

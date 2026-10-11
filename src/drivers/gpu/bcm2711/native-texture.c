@@ -258,7 +258,20 @@ bcm2711_native_texture_copy(
 			run = width - x;
 			if (run > 4U)
 				run = 4U;
-			kern_memcpy(destination + offset, source + (size_t)y * pitch + (size_t)x * 4U, run * 4U);
+
+			/* Compile a complete sixteen-byte utile row inline instead of calling the variable-size copy per four pixels. */
+			if (run == 4U) {
+				__builtin_memcpy(
+					destination + offset,
+					source + (size_t)y * pitch + (size_t)x * 4U,
+					16U);
+			} else {
+				/* Copy only visible edge bytes, retaining support for unaligned and odd-sized images. */
+				kern_memcpy(
+					destination + offset,
+					source + (size_t)y * pitch + (size_t)x * 4U,
+					run * 4U);
+			}
 		}
 	}
 

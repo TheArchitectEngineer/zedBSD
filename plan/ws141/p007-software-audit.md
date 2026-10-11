@@ -127,3 +127,6 @@ Style checkerの今回対象全fileではcompose.c既存未変更335/498/517/551
 
 
 coalesced診断最終確認: native device host PASS、C全文manual/diff-check/style変更範囲0（compose既存blank4は範囲外）、clang-format19範囲比較。初回kernel buildはengine forward declarationのままhardware時刻に触れincomplete-typeで失敗、private headerを明示して修正。最終arm64 kernel/app build exit0/warning0/error0、kernel checker3PASS/dynamic app checker exit0。kernel260505095/8077312、wayland459945060/949352。両方を実機/tmpへ転送exit0、配置前の旧kernel/appをUFSへ保存して更新・rebootする。33ms目標は未達でsubmit-i01継続。
+
+
+2026-10-11 native-texture.c差分をC全文規約で確認。leading宣言/目的comment/対称brace/独立split引数/guardと末尾successを保持。16byte builtinは明示compiler extension、常に完全4pixel行だけを読み書きし、端はexact-length/unaligned支持、UIF padding0/source非変更の既存契約維持。固定Mesa pixel oracle4847pixels PASS。style0/diff-check PASS、clang-format19出力比較は全文規約の引数形式を優先。ARM64 machine code ldp/stp、kernel warning0/checker3PASS。実機効果はp006で追跡、WSはincomplete。
