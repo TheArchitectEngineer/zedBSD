@@ -559,6 +559,7 @@ resource_write(
 	mutex_lock(&controller->mutex);
 
 	kern_memcpy((uint8_t *)resource->buffer->address + offset, data, bytes);
+	/* An unrecorded generation step: snapshots go stale and the next copy from this run is whole. */
 	resource->buffer->generation++;
 
 	mutex_unlock(&controller->mutex);

@@ -64,4 +64,10 @@ void bcm2711_v3d_memory_retain(struct bcm2711_v3d_view *view);
 int bcm2711_v3d_memory_release(struct bcm2711_v3d_space *space, struct bcm2711_v3d_view *view);
 int bcm2711_v3d_memory_recover(struct bcm2711_v3d_space *space);
 
+/* Records one write of the box of the image at offset and advances the run's generation; a NULL box covers everything. */
+void bcm2711_v3d_memory_written(struct bcm2711_buffer *buffer, uint64_t offset, const uint32_t *box);
+
+/* Reports in box the union of a run's writes of the image at offset after since; false when they are not all known. */
+bool bcm2711_v3d_memory_changes(const struct bcm2711_buffer *buffer, uint64_t offset, uint64_t since, uint32_t *box);
+
 #endif

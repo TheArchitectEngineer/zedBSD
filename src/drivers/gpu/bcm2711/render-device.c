@@ -429,7 +429,7 @@ render_write(
 	mutex_lock(&controller->mutex);
 
 	kern_memcpy((uint8_t *)buffer->address + offset, data, bytes);
-	buffer->generation++;
+	bcm2711_v3d_memory_written(buffer, offset, NULL);
 
 	mutex_unlock(&controller->mutex);
 

@@ -31,6 +31,7 @@ static void decode_image_region(struct i915_wire_reader *reader, VkBufferImageCo
 static int decode_copy(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct bcm2711_vulkan_buffer_copy *copy);
 static int resolve_resources(const struct bcm2711_vulkan_buffer_copy *copy, struct bcm2711_vulkan_object *device, struct bcm2711_vulkan_resource *resources[2], void *cpu[2]);
 static int release_copy(struct bcm2711_vulkan_command_node *node);
+static bool written_box(const struct bcm2711_vulkan_buffer_copy *copy, uint32_t box[4]);
 
 /*
  * Records one complete reply-free buffer transfer with all byte or image regions and independently retained resources.
@@ -220,7 +221,9 @@ bcm2711_vulkan_buffer_copy_run(
 	uint64_t destination_offset;
 	struct bcm2711_v3d_view *view;
 	uint32_t address;
+	uint32_t box[4];
 	void *destination;
+	bool known;
 	int error;
 
 	/* Typed pending resources remain alive across the entire synchronous controller-protected transfer. */
@@ -277,10 +280,15 @@ bcm2711_vulkan_buffer_copy_run(
 	kern_io_write_barrier();
 	kern_free(spans);
 
-	/* The destination's converted snapshots no longer match its bytes. */
+	/* The destination's snapshots and incremental copies learn the written box of an image, or an unknown extent. */
 	error = bcm2711_vulkan_resource_backing(resources[1], 0, resources[1]->bytes, &view, &address, &destination);
-	if (error == 0)
-		view->buffer->generation++;
+	if (error == 0) {
+		known = written_box(copy, box);
+		if (known)
+			bcm2711_v3d_memory_written(view->buffer, address - view->address, box);
+		else
+			bcm2711_v3d_memory_written(view->buffer, address - view->address, NULL);
+	}
 
 	/* Succeeded: selected raw bytes changed with no channel conversion, native launch or false DMA completion. */
 	return 0;
@@ -635,4 +643,38 @@ release_copy(
 
 	/* Succeeded: neither complete nor unpublished copy metadata owns a resource edge. */
 	return 0;
+}
+
+/* Reports the union of an upload's image regions; a buffer destination has no image box. */
+static bool
+written_box(
+	const struct bcm2711_vulkan_buffer_copy *copy,
+	uint32_t box[4])
+{
+	const VkBufferImageCopy *region;
+	uint32_t index;
+
+	/* Only uploads write an image. */
+	if (copy->record.opcode != GPU_OP_CMD_COPY_BUFFER_TO_IMAGE)
+		return false;
+
+	/* The union of every region's box. */
+	box[0] = UINT32_MAX;
+	box[1] = UINT32_MAX;
+	box[2] = 0;
+	box[3] = 0;
+	for (index = 0; index < copy->record.count; index++) {
+		region = &copy->regions.images[index];
+		if ((uint32_t)region->imageOffset.x < box[0])
+			box[0] = (uint32_t)region->imageOffset.x;
+		if ((uint32_t)region->imageOffset.y < box[1])
+			box[1] = (uint32_t)region->imageOffset.y;
+		if ((uint32_t)region->imageOffset.x + region->imageExtent.width > box[2])
+			box[2] = (uint32_t)region->imageOffset.x + region->imageExtent.width;
+		if ((uint32_t)region->imageOffset.y + region->imageExtent.height > box[3])
+			box[3] = (uint32_t)region->imageOffset.y + region->imageExtent.height;
+	}
+
+	/* Succeeded: the box covers every written pixel of the image. */
+	return true;
 }

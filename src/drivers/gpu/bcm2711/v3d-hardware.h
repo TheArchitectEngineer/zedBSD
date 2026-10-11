@@ -42,6 +42,7 @@ struct bcm2711_v3d_perf {
 	uint32_t render_passes;
 	uint32_t clear_passes;
 	uint32_t image_passes;
+	uint32_t skipped_copies;
 	uint32_t draws;
 	uint64_t staged_bytes;
 	uint64_t total_ticks;
