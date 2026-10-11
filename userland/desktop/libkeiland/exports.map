@@ -475,6 +475,8 @@
 		kl_progress;
 		kl_file_chooser_open;
 		kl_file_chooser_destroy;
+		kl_media_picker_open;
+		kl_media_picker_destroy;
 		kl_audio_stream_open;
 		kl_audio_stream_close;
 		kl_audio_stream_start;

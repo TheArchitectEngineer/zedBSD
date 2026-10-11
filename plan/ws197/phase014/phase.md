@@ -3,7 +3,7 @@
 # ws197-p014: Phone の「＋」の添付の選択（写真の popup と file chooser、libkeiland の UI）
 
 Parent: [WS197](../ws.md)
-Status: planned
+Status: in-progress（実装・host 試験・build 済み、GUI は T1 待ち）
 Phase disposition: normal
 Queue: q926（[P1 の lane](../../agents/P1/queue.md)）
 
@@ -35,3 +35,22 @@ Queue: q926（[P1 の lane](../../agents/P1/queue.md)）
 | M6 | 答え: `KL_MEDIA_PICKER_CHOSEN` と `struct kl_media_item`（id・path・name・video）の配列（選んだ順）、または CANCELLED。配列は callback の間だけ有効 | file chooser の path と同じ寿命 | 配列を app に渡して app が解放 |
 
 A4（keiland-os-boundary、`phone/main.c` の attachment の viewer の posix_spawn）: Settings・PDF viewer の先例（app-allow.tsv の「a program starting another; F-085」）と同じ扱いの行を足す案を Q1 に送る。
+
+## 実装（2026-10-11 P1、q926-i01）
+
+- libkeiland: `kl_media_picker_open`・`kl_media_picker_destroy`、`struct kl_media_item`・`kl_media_picker_options`・`kl_media_picker_listener`（keiland.h、KL_VERSION 85、exports.map は exports.py で生成）。`ui/picker.c`（window・glass・sheet、file chooser と同じ寿命）、`ui/picker-model.c`（snapshot の読み、撮影日の新しい順、選択と上限と番号、答え、サムネイルの thread と共有 cache の読み書き）、`ui/picker-view.c`（card・grid・選択の番号の円・動画の印・Cancel と Add・Esc／Enter／矢印／Space）。Makefile・Makefile.linux・Makefile.freebsd に 3 file。
+- Phone: 「＋」→ composer の上の card に「Photos & Videos」「File…」（外の click・Esc で閉じる）。Photos & Videos → picker（上限は下書きの空き、サムネイルは `ph_decode`＋`ph_thumbnail` を picker の thread で）。File… と menu の「Attach File...」→ 普通の file chooser（OPEN、filter「Photos and Videos」「All Files」、写真・動画でない file は「Only photos and videos can be attached.」）。menu に「Attach Photo or Video...」。
+- A4（keiland-os-boundary）: `plan/tools/keiland-os-boundary/app-allow.tsv` に Phone の viewer の posix_spawn の行（Q1 の許可、ecbed1686）。check.sh PASS。
+
+### 確認
+
+| コマンド | 結果 |
+| --- | --- |
+| `make -j16 BUILD=build/ws197-p014 ZEDBSD_CONFIG=config/current-uat.mk … build/ws197-p014/{dynamic/libkeiland.so,bin/phone,bin/wayland,bin/photos}` | rc 0、warning 0 |
+| `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws197-p014-linux …/lib/libkeiland.so …/bin/mediastorage` | rc 0、warning 0（gcc） |
+| `sh plan/ws197/tests/picker-model-host-test.sh`（新、ASan/UBSan） | PASS ×3: 並び、album の行を除く、選択の番号と上限と詰め、答えの順と動画の判定、答えの後は不変、thread のサムネイル（写真 2 つで decoder 2 回、動画は icon）、cache の書き込み、2 つ目の picker は cache から（decoder 0 回、色が一致）、単一選択の移動、double click、cancel、上限超え EINVAL、壊れた snapshot 4 種 |
+| `sh plan/ws157/tests/run-host-mediastorage.sh <tmp> build/ws197-p014-linux` | 全 PASS（media selection の既存の試験を含む） |
+| `python3 plan/tools/style-check.py`（新 4 file と試験） | 0 |
+| `exports.py --check`・`git diff --check`・`keiland-os-boundary/check.sh` | PASS |
+
+未実施: FreeBSD の build（host が無い）、QEMU の GUI（T1 に依頼）: Phone の「＋」→ 2 button、Photos & Videos で grid にサムネイル（cache 無しで decode、2 回目は cache）、複数選択の番号、Add で下書きに並ぶ、Cancel、File… で file chooser、写真でない file の notice。
