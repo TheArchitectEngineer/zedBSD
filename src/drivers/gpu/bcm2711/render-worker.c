@@ -779,6 +779,7 @@ queue_marker(
 	request->canceled = error;
 	request->state = REQUEST_QUEUED;
 	request->next = NULL;
+	request->queued_ticks = clock_ticks();
 	if (controller->worker.tail == NULL) {
 		controller->worker.head = request;
 	} else {
