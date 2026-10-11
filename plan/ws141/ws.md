@@ -355,3 +355,7 @@ R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなく
 ## 2026-10-11 ユーザー「推し通りです。」: Pi 4 の image は案 A
 
 版 B で Wayland が起動直後に落ちた（ユーザー）。amd64 の Venus では同じ compositor が PASS（T1-539）なので、Pi だけの経路（kernel の snapshot の cache 523b18345 と変化した tile の写し 60e18a09f）を main から外した: `src/drivers/gpu/bcm2711/` と `plan/ws141/tests/vulkan-device-host-test.c` を feac3891d（実機で確かめた storage cache まで）に戻した。compositor の変更（staging の 2 枚・hover の記録）は main に残す。2 つの kernel の変更は P3 が Pi で 1 つずつ確かめてから戻す。
+
+## 2026-10-11 ユーザーの決定: cursor の plane
+
+ユーザー「displayなのにplaneのx,yですか。…cursorと明示されたplaneならいいと思います。」「その案でOKです。」→ present に plane の x,y を足さない。cursor 専用の UAPI（`include/uapi/gpu-display.h` に `GPU_DISPLAY_CURSOR_SET`（画像・小さな固定の大きさ・hotspot）・`GPU_DISPLAY_CURSOR_MOVE`（x,y、vblank で）・`GPU_DISPLAY_CURSOR_HIDE`、無い driver は ENOTSUP）と、libvulkan が VK_KHR_display の plane の 1 つを cursor の plane として見せ、その swapchain の present・dstRect を cursor の ioctl に変える。compositor は libvulkan だけのまま。bcm2711 は HVS の display list に cursor の plane を 1 枚。UAPI の差分の設計は P3 が書き、実装の前にユーザーに見せる。HAL は不変。i915 の hardware cursor は後で別の WS（ユーザー）。
