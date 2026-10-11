@@ -67,6 +67,8 @@ struct bcm2711_v3d_perf {
 	uint32_t mapped_textures;
 	uint32_t private_textures;
 	uint64_t mapped_bytes;
+	uint32_t largest_size;
+	char largest_kind;
 };
 
 /*

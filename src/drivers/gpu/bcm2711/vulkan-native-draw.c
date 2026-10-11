@@ -30,6 +30,7 @@ static int allocate_storage(struct bcm2711_vulkan_native_draw *draw, uint64_t by
 static struct bcm2711_native_storage *find_texture(const struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_resource *image);
 static int prepare_textures(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_prepared_event *event, uint64_t available);
 static int prepare_texture(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_descriptor *descriptor, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
+static uint64_t texture_area(uint32_t size);
 static int prepare_texture_image(struct bcm2711_vulkan_native_draw *draw, struct bcm2711_vulkan_resource *image, const struct bcm2711_vulkan_sampler *source, uint32_t swap, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
 static int prepare_conversion(const struct bcm2711_vulkan_resource *image, uint32_t address, const struct bcm2711_native_storage *pixels, uint32_t bytes, struct bcm2711_v3d_tfu_job *tfu);
 static int prepare_meta_texture(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_meta_draw *meta, uint64_t available);
@@ -373,6 +374,7 @@ prepare_texture_image(
 	uint32_t bytes;
 	uint64_t started;
 	uint64_t fills;
+	char kind;
 	int error;
 
 	/* Complete coherent logical raster storage is read only at execution, after previous GPU writes become visible. */
@@ -411,16 +413,24 @@ prepare_texture_image(
 		if (error == 0)
 			pixels = entry->snapshot->pixels;
 
-		/* Diagnostics count how the texture was obtained. */
+		/* Diagnostics count how the texture was obtained and keep the largest conversion. */
+		kind = 0;
 		if (error == 0 && draw->space->snapshot_fills == fills) {
 			draw->snapshot_hits++;
 		} else if (error == 0) {
 			draw->snapshot_fills++;
+			kind = 'f';
 		} else if (source_view->buffer->host_mapped) {
 			draw->mapped_textures++;
 			draw->mapped_bytes += image->bytes;
+			kind = 'm';
 		} else {
 			draw->private_textures++;
+			kind = 'p';
+		}
+		if (kind != 0 && (uint64_t)image->width * image->height > texture_area(draw->largest_size)) {
+			draw->largest_size = image->width << 16 | image->height;
+			draw->largest_kind = kind;
 		}
 	}
 
@@ -1071,4 +1081,13 @@ find_texture(
 
 	/* No retained snapshot exists in this pass; the caller must convert the current raster. */
 	return NULL;
+}
+
+/* The area of a texture size kept as width << 16 | height. */
+static uint64_t
+texture_area(
+	uint32_t size)
+{
+	/* Width and height are each sixteen bits of the packed size. */
+	return (uint64_t)(size >> 16) * (size & 0xffffU);
 }

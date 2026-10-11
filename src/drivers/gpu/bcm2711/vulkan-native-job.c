@@ -503,7 +503,7 @@ report_perf(
 
 	/* Prints the window's per-submission averages and its worst submission. */
 	kern_logf(
-		"v3d: perf ms=%llu busy=%llu%% subs=%llu passes=%u/%u/%u skipped=%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu snap=%u/%u/%u/%u mapped_kib=%llu\n",
+		"v3d: perf ms=%llu busy=%llu%% subs=%llu passes=%u/%u/%u skipped=%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu snap=%u/%u/%u/%u mapped_kib=%llu largest=%ux%u%c\n",
 		(unsigned long long)kern_ticks_to_ms(now - perf->window_start),
 		(unsigned long long)busy,
 		(unsigned long long)count,
@@ -534,7 +534,10 @@ report_perf(
 		perf->snapshot_fills,
 		perf->mapped_textures,
 		perf->private_textures,
-		(unsigned long long)(perf->mapped_bytes / 1024U));
+		(unsigned long long)(perf->mapped_bytes / 1024U),
+		perf->largest_size >> 16,
+		perf->largest_size & 0xffffU,
+		perf->largest_kind != 0 ? perf->largest_kind : '-');
 
 	/* The next window starts empty at this report. */
 	kern_memset(perf, 0, sizeof(*perf));

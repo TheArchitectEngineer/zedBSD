@@ -55,6 +55,9 @@ struct bcm2711_vulkan_native_draw {
 	uint32_t mapped_textures;
 	uint32_t private_textures;
 	uint64_t mapped_bytes;
+	/* The largest texture the draw converted, as width << 16 | height, and how ('f', 'm' or 'p'). */
+	uint32_t largest_size;
+	char largest_kind;
 	uint64_t bytes;
 	uint32_t count;
 	uint32_t shader;

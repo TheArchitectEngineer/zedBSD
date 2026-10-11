@@ -320,6 +320,11 @@ bcm2711_vulkan_native_pass_costs(
 		perf->mapped_textures += draw->mapped_textures;
 		perf->private_textures += draw->private_textures;
 		perf->mapped_bytes += draw->mapped_bytes;
+		if ((uint64_t)(draw->largest_size >> 16) * (draw->largest_size & 0xffffU) >
+		    (uint64_t)(perf->largest_size >> 16) * (perf->largest_size & 0xffffU)) {
+			perf->largest_size = draw->largest_size;
+			perf->largest_kind = draw->largest_kind;
+		}
 
 		/* Each storage owner reports its own allocation, translation and cache clean. */
 		for (index = 0; index < draw->count; index++) {
