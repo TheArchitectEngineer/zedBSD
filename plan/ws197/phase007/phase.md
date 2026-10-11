@@ -370,6 +370,15 @@ X4: X3 の後の consumer は context の TR Dequeue（TD k から後ろが残�
 
 p007a2 は 8 LW のまま（A1〜A7・B1〜B4・道具と試験）。順: B（UAPI と class、host 試験）→ A（usb-bt）→ L1 の image（T1）→ L2・L3（ユーザーの許可の後）。BUG-289 の再現は p007a1 の T1-542 の後に T1 へ。
 
+## p007a2 の実装の進み（2026-10-11 P1）
+
+| 段 | 内容 | 確かめ |
+| --- | --- | --- |
+| B | UAPI（`BT_INFO_SCO`、`struct bt_sco` 32 byte、`BT_IOC_SET_SCO`、`bt_stats` の sco_*、契約の文）、bt-hci の SCO の ring（8 KiB、古い物を捨てる）と通しの番号の read、SCO の write（op_lock 無し、SCO の無い controller は今どおり EINVAL）、SET_SCO（bootloader は EBUSY）、close で止める、proto の部品（`bt_hci_check_sco`、push_drop、links の検査と alternate、組み立て直し、FIFO） | `sh plan/ws197/tests/run-bt-sco-proto-test.sh` all PASS、WS143 の `bt-hci-proto-host-test.sh` all passed（SCO を拒む check_write は不変）、kernel の build（amd64・arm64、warning 0） |
+| A | usb-bt: interface 1 の claim（`BT_INFO_SCO`）、`sco_set`（止める → alternate を選ぶ（EP0 の EBUSY は 5 ms ごとに 50 ms）→ 始める、IN と OUT の packet の大きさが違えば EINVAL）、`sco_send`（眠らない、12 packet まで）、SCO の thread（優先度 4、IN 3×8・OUT 4×4、OUT は 4 packet 分たまってから、完了は起こすだけ、retire は 1 ms ずつ眠って待つ: 新しい `drv_usb_urb_retired`）、reset・detach の前に止める、detach で interface 1 を release | kernel の build（amd64・arm64、warning 0）、style-check の新しい指摘 0。実機は L2 |
+| L1 | bluetoothd が起動の時に Read Local Supported Codecs（v2 があれば v2、無ければ v1）を読み `BLUETOOTHD CODECS version= standard= vendor= ids id/transports …` を 1 行 | bluetoothd の build（warning 0）、`bt-phone-host-test.sh` PASS |
+| L2・L3 | 道具 `userland/tests/bt-sco-loopback`（Reset → Read Buffer Size → Write Voice Setting → Write Loopback Mode(1) → SCO の Connection Complete → SET_SCO → 30 秒（`-T` は transparent）→ 止めて Loopback を切り Reset、`BTSCO …` の行と `BTSCO PASS`/`FAIL`）、image の config `plan/ws197/tests/config-amd64-sco.mk`（current-uat ＋ 道具） | build（warning 0）。5330 は新しい image の後 |
+
 ## 判断（Q1 経由でユーザーへ、推し付き）
 
 | ID | 問い | 推し |
