@@ -6,6 +6,7 @@
  */
 
 /* Complete FIFO draw preparation owns cached GPU inputs without launching a native command list. */
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
@@ -58,6 +59,7 @@ bcm2711_vulkan_native_draw_create(
 {
 	struct bcm2711_vulkan_native_draw *created;
 	struct bcm2711_native_shader shader;
+	uint64_t started;
 	int error;
 	int released;
 
@@ -93,11 +95,24 @@ bcm2711_vulkan_native_draw_create(
 	shader.vpm_bytes = ((space->native->hardware.core_ident[1] >> 28) & 15U) * 8192U;
 
 	/* Texture snapshots are made or reused within this pass after prior queue writes retire. */
+	started = clock_ticks();
 	error = prepare_textures(created, event, *available);
-	if (error == 0)
+	created->texture_ticks = clock_ticks() - started;
+	if (error == 0) {
+		/* Separates code/uniform publication from image conversion costs. */
+		started = clock_ticks();
 		error = prepare_programs(created, event, *available, &shader);
-	if (error == 0)
+		created->program_ticks = clock_ticks() - started;
+	}
+
+	/* Measures vertex fetch and shader records independently of texture uploads. */
+	if (error == 0) {
+		started = clock_ticks();
 		error = prepare_records(created, event, *available, &shader);
+		created->record_ticks = clock_ticks() - started;
+	}
+
+	/* Binning state is encoded only after all measured input stages succeed. */
 	if (error == 0)
 		error = bcm2711_vulkan_native_bin_prepare(event, created);
 
@@ -346,6 +361,7 @@ prepare_texture_image(
 	uint8_t *destination;
 	uint32_t address;
 	uint32_t bytes;
+	uint64_t started;
 	int error;
 
 	/* Complete coherent logical raster storage is read only at execution, after previous GPU writes become visible. */
@@ -364,7 +380,10 @@ prepare_texture_image(
 		error = allocate_storage(draw, bytes, available, NULL, &pixels);
 		if (error != 0)
 			return error;
+		/* Separates the raster read/conversion from allocation and cache maintenance. */
+		started = clock_ticks();
 		error = bcm2711_native_texture_copy(image->width, image->height, cpu, image->pitch, (size_t)image->bytes, pixels->view->buffer->address, (size_t)pixels->bytes);
+		draw->copy_ticks += clock_ticks() - started;
 		if (error != 0)
 			return error;
 		error = bcm2711_native_storage_clean(pixels);

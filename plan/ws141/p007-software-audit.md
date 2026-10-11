@@ -78,3 +78,7 @@ vulkan-native-draw.c/.hとnative-pass.cのprivate API差分をC全文規約で�
 ## 2026-10-11 PTE同期範囲の差分監査
 
 v3d-hardware.c/.h、v3d-memory.c、v3d-diagnostic.cのprivate APIと全callerを確認。32bit VA・64bit lengthの事前検証で4GiB全体も終端pageも表内に収まる。HAL cache cleanが端のlineを含むことを確認し、変更PTEだけを渡す。既存single worker/controller mutexによる編集排他とjob退役を保持、GPU MMUC/TLBのflush順とエラー時quarantineを変えない。recover/initは全体clean。C全文manual review、clang-format19比較、production style0/diff-check PASS、actual hardware/device host PASS、arm64 warning/error0。物理性能と最終WS受入れは未確認。
+
+## 2026-10-11 準備時間の内訳診断
+
+private draw ownerへtex/copy/program/record wall ticksを記録し、既存slow-pass行で生存prefixを集計。資源所有/判定/期限の制御には用いず、failureの解放前だけ参照する。copyはtexの内数。C全文manual/style0/diff-check、clang-format19出力比較（全文規約を優先）、actual device host PASS。実機診断は既存ユーザー承認。

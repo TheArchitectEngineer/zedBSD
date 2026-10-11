@@ -33,6 +33,11 @@ struct bcm2711_vulkan_native_draw {
 	const struct bcm2711_vulkan_native_draw *earlier;
 	struct bcm2711_vulkan_native_texture_copy textures[BCM2711_VULKAN_PIPELINE_SETS * BCM2711_VULKAN_LAYOUT_BINDINGS];
 	uint32_t texture_count;
+	/* Preparation diagnostics include scheduler delay and never affect admission. */
+	uint64_t texture_ticks;
+	uint64_t copy_ticks;
+	uint64_t program_ticks;
+	uint64_t record_ticks;
 	uint64_t bytes;
 	uint32_t count;
 	uint32_t shader;

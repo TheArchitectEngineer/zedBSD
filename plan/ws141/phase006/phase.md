@@ -293,3 +293,14 @@ actual vulkan-device-host-testで既存確認と、2drawの1画像共有・第�
 次の準備負荷として、各native bufferのmap/unmapごとに4MiBのページ表全体をcache cleanしていた。private pages_syncへGPU VAと長さを渡し、変更PTEに対応するCPU範囲だけcleanする。HALは端のcache lineを含める実装でありAPI変更なし。MMUC flush→TLB invalidate、前後admit、失敗時quarantine/保持、全体recoverのfull-table cleanは維持。範囲は4KiB整列・非空・4GiB内で事前検証する。
 
 v3d-hardware hostの初回linkは既存pass timing診断のclock_ticks/kern_logf stub不足で失敗。未完了p006が参照する実hardware fixtureに観測用stubを補い、再実行PASS。変更PTE先頭/末尾/全体recover/無効範囲と従来cache/retirementを確認。vulkan-device hostもPASS。make -j16 build/arm64/vmunix exit0/warning0/error0、ARM64 checker PASS。production style-check total0、diff-check PASS、clang-format19出力との比較は全文規約を優先して独立引数行を保持。kernel SHA256=4dd6fbfcc4edd875c7b7cd576d45e6b0b83d28929d824dcfbb832b9dc64c5796、cksum513824364/8077312。新kernelの実機速度はまだ未確認。
+
+
+PTE範囲修正da55b9a53をmainへfast-forward統合しclean確認。SSH転送終了後、旧kernelをUFS /var/backups/vmunix.before-range-sync-20261011へ保存/cmp（952016436/8077312）。新版をFAT stagingへcopy/cmp/sync/rename/sync/cmpし、最終513824364/8077312の一致とexit0を確認。進捗照会はコピー途中7,208,960bytesを観測したが、再起動は完了後の最終全体照合を待った。次はreboot後の描画・SSH・準備時間を確認する。
+
+
+reboot要求はexit0。初めの2回はtimeout/No routeだったが、約2分後の3回目にSSHが戻り、起動直後のkernel/session logを取得。今回は電源操作を依頼せず再起動できた。通常desktopは描画開始したが準備は約2〜5秒であり、範囲cleanだけで応答遅延が解消したとは判定しない。内訳採取を続ける。
+
+
+範囲同期版は通常18frameで再びstatus42。prepareは96draw/32,714,752bytes/7,506msまで増え、frameの全処理が予約期限に届く可能性が残る。greeter serviceを停止し、既存slow-pass診断へtex/copy/program/recordの内訳を追加する。clockはwall time（preemptionを含む）でCPU占有時間と誤認しない。copyはtexの内数、成功したdrawの合計なので失敗drawの未publish分は含まない。余計なper-drawログを出さず、既存の1秒以上/失敗passの行へ記録する。public API/動作制御変更なし。対象device host PASS、production style0/diff-check PASS。
+
+内訳診断kernel最終build exit0/warning0/error0/ARM64 checker PASS。1466012252 8077312 build/arm64/vmunix、dffbdc237d5b20fad3bc462a1636b6c5cf0b84c105a1d272fd8a252e7a026c46  build/arm64/vmunix。
