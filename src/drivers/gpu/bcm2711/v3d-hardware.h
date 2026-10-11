@@ -79,6 +79,12 @@ struct bcm2711_v3d_perf {
 	uint64_t draw_cycles;
 	uint32_t copy_tiles;
 	uint32_t draw_tiles;
+	/* Worker requests: their FIFO waits and worker time, sums and maxima. */
+	uint64_t requests;
+	uint64_t request_wait_ticks;
+	uint64_t request_run_ticks;
+	uint64_t request_wait_max;
+	uint64_t request_run_max;
 };
 
 /*

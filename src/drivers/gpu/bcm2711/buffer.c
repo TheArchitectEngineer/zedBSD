@@ -6,12 +6,18 @@
  */
 
 /* Every allocation has one contiguous run, a stable CPU view and checked owners. */
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <kern/klog.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/buffer.h"
+
+/* Diagnostic sums of final buffer releases since the last report, updated atomically by any releasing thread. */
+static uint64_t release_count;
+static uint64_t release_bytes;
+static uint64_t release_ticks;
 
 /* Bounds storage descriptions independently of available physical memory. */
 #define BUFFER_MAX_BYTES (256ULL * 1024U * 1024U)
@@ -177,6 +183,8 @@ bcm2711_buffer_release(
 	struct bcm2711_buffer *buffer)
 {
 	unsigned long enabled;
+	uint64_t started;
+	uint64_t bytes;
 	uint64_t remaining;
 	int error;
 
@@ -193,6 +201,10 @@ bcm2711_buffer_release(
 	/* Other resource or DMA owners still need the same CPU and physical addresses. */
 	if (remaining != 0)
 		return;
+
+	/* Diagnostic: the time the uncached unmap and the physical free take. */
+	started = clock_ticks();
+	bytes = buffer->memory.size;
 
 	/* Every native, resource and VM owner has retired before its uncached translation can be removed. */
 	if (buffer->uncached) {
@@ -214,9 +226,29 @@ bcm2711_buffer_release(
 		return;
 	}
 
+	/* Diagnostic sums for the GPU's periodic report. */
+	(void)__atomic_fetch_add(&release_count, 1U, __ATOMIC_RELAXED);
+	(void)__atomic_fetch_add(&release_bytes, bytes, __ATOMIC_RELAXED);
+	(void)__atomic_fetch_add(&release_ticks, clock_ticks() - started, __ATOMIC_RELAXED);
+
 	/* No shared reference or native access remains. */
 	kern_free(buffer);
 
 	/* Succeeded: the last retired allocation no longer owns CPU or physical storage. */
 	return;
+}
+
+/*
+ * Reports and clears the diagnostic count, bytes and ticks of final buffer releases.
+ */
+void
+bcm2711_buffer_release_stats(
+	uint64_t *count,
+	uint64_t *bytes,
+	uint64_t *ticks)
+{
+	/* Each sum is read and cleared on its own; a release between them lands in the next report. */
+	*count = __atomic_exchange_n(&release_count, 0U, __ATOMIC_RELAXED);
+	*bytes = __atomic_exchange_n(&release_bytes, 0U, __ATOMIC_RELAXED);
+	*ticks = __atomic_exchange_n(&release_ticks, 0U, __ATOMIC_RELAXED);
 }

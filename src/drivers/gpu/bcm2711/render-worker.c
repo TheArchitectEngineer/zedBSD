@@ -6,6 +6,7 @@
  */
 
 /* Bounded trusted jobs share one worker; callback retirement never substitutes for DMA stop. */
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/sched.h>
 #include <kern/thread.h>
@@ -173,6 +174,7 @@ bcm2711_render_worker_submit(
 	request->state = REQUEST_QUEUED;
 	request->canceled = 0;
 	request->next = NULL;
+	request->queued_ticks = clock_ticks();
 	session->pending++;
 	if (worker->tail == NULL) {
 		worker->head = request;
@@ -200,7 +202,11 @@ bcm2711_render_worker_step(
 	struct bcm2711_render_device *controller)
 {
 	struct bcm2711_render_request *request;
+	struct bcm2711_v3d_perf *perf;
 	unsigned long enabled;
+	uint64_t started;
+	uint64_t waited;
+	uint64_t taken;
 	bool retired;
 	bool global_failure;
 	bool native_fault;
@@ -211,6 +217,7 @@ bcm2711_render_worker_step(
 	request = take_request(controller);
 	if (request == NULL)
 		return EAGAIN;
+	started = clock_ticks();
 	mutex_lock(&controller->mutex);
 
 	/* Stop and global fault may arrive after dequeue while this worker waits for the controller. */
@@ -262,6 +269,22 @@ bcm2711_render_worker_step(
 		if (error == 0)
 			error = disposed;
 	}
+
+	/*
+	 * Diagnostic: how long the request waited in the FIFO behind earlier
+	 * ones, and how long it then held the worker; a synchronous submit
+	 * returns after both.
+	 */
+	perf = &controller->space.native->hardware.perf;
+	waited = started - request->queued_ticks;
+	taken = clock_ticks() - started;
+	perf->requests++;
+	perf->request_wait_ticks += waited;
+	perf->request_run_ticks += taken;
+	if (waited > perf->request_wait_max)
+		perf->request_wait_max = waited;
+	if (taken > perf->request_run_max)
+		perf->request_run_max = taken;
 
 	mutex_unlock(&controller->mutex);
 

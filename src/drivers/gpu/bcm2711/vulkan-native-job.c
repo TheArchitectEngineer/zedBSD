@@ -505,6 +505,9 @@ report_perf(
 	uint64_t now;
 	uint64_t count;
 	uint64_t busy;
+	uint64_t released;
+	uint64_t released_bytes;
+	uint64_t released_ticks;
 
 	/* The first submission opens the window that later reports measure. */
 	now = clock_ticks();
@@ -582,6 +585,21 @@ report_perf(
 			(unsigned long long)(perf->counters[13] / perf->counter_runs / 1000U),
 			(unsigned long long)(perf->counters[14] / perf->counter_runs / 1000U),
 			(unsigned long long)(perf->counters[15] / perf->counter_runs / 1000U));
+	}
+
+	/* Worker requests' FIFO waits and worker time, and the final buffer releases, in the window. */
+	bcm2711_buffer_release_stats(&released, &released_bytes, &released_ticks);
+	if (perf->requests != 0U) {
+		kern_logf(
+			"v3d: requests=%llu wait_us avg=%llu max=%llu run_us avg=%llu max=%llu freed=%llu kib=%llu free_us=%llu\n",
+			(unsigned long long)perf->requests,
+			(unsigned long long)(kern_ticks_to_rate(perf->request_wait_ticks, 1000000U) / perf->requests),
+			(unsigned long long)kern_ticks_to_rate(perf->request_wait_max, 1000000U),
+			(unsigned long long)(kern_ticks_to_rate(perf->request_run_ticks, 1000000U) / perf->requests),
+			(unsigned long long)kern_ticks_to_rate(perf->request_run_max, 1000000U),
+			(unsigned long long)released,
+			(unsigned long long)(released_bytes / 1024U),
+			(unsigned long long)kern_ticks_to_rate(released_ticks, 1000000U));
 	}
 
 	/* Cycles a tile takes when it is only loaded and stored, and when it is also drawn. */
