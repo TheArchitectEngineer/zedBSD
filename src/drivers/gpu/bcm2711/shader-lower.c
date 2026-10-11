@@ -82,6 +82,7 @@ preload_inputs(
 	struct bcm2711_shader_uniform uniform;
 	uint32_t index;
 	uint32_t destination;
+	uint32_t gaps;
 	int error;
 
 	/* The varying coefficient accumulator survives all explicit idle slots and addressed uniform loads. */
@@ -111,11 +112,19 @@ preload_inputs(
 			continue;
 		}
 
-		/* A varying transaction provides its interpolated term and places the constant term in accumulator five. */
-		error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_VARYING, BCM2711_SHADER_SCRATCH_LEFT, 2);
+		/*
+		 * A varying transaction provides its interpolated term and places the
+		 * constant term in accumulator five one instruction later, so nothing
+		 * reads the accumulator in the instruction right after the load.  A
+		 * smooth varying's multiply fills that instruction; the others idle.
+		 */
+		component = &compiler->binary->inputs[index];
+		gaps = 1;
+		if (component->flat == 0 && component->noperspective == 0)
+			gaps = 0;
+		error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_VARYING, BCM2711_SHADER_SCRATCH_LEFT, gaps);
 		if (error != 0)
 			return error;
-		component = &compiler->binary->inputs[index];
 
 		/* Flat interpolation takes the provoking vertex's constant term while still advancing the FIFO. */
 		if (component->flat != 0) {
@@ -624,7 +633,7 @@ lower_sample(
 	error = bcm2711_shader_uniform_append(compiler, &uniform);
 	if (error != 0)
 		return error;
-	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TEXTURE_CONFIG, 0, 2);
+	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TEXTURE_CONFIG, 0, 0);
 	if (error != 0)
 		return error;
 
@@ -634,7 +643,7 @@ lower_sample(
 	error = bcm2711_shader_uniform_append(compiler, &uniform);
 	if (error != 0)
 		return error;
-	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TEXTURE_CONFIG, 0, 2);
+	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TEXTURE_CONFIG, 0, 0);
 	if (error != 0)
 		return error;
 
@@ -651,14 +660,14 @@ lower_sample(
 	if (error != 0)
 		return error;
 
-	/* Every requested FIFO result word gets its own independently live physical register. */
+	/* Every requested FIFO result word gets its own independently live physical register, readable by the next instruction. */
 	for (index = 0; index < 4; index++) {
 		error = bcm2711_shader_register(compiler, &destination);
 		if (error != 0)
 			return error;
 		compiler->values[instruction->dst + index].number = destination;
 		compiler->values[instruction->dst + index].register_live = 1;
-		error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TEXTURE, destination, 2);
+		error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TEXTURE, destination, 0);
 		if (error != 0)
 			return error;
 	}
