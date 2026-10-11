@@ -49,8 +49,9 @@ static void decode_adopt(struct kl_picture *picture, struct kl_image *image);
 
 /*
  * Decodes a photo's file.  Returns 0 (the image's pixels are the caller's,
- * kl_image_release), EINVAL for a file that is not a picture read, EFBIG,
- * ENOMEM, or an errno value of the file's.
+ * kl_image_release), ENOTSUP for a video (it has no picture to decode
+ * here), EINVAL for a file that is not a picture read, EFBIG, ENOMEM, or
+ * an errno value of the file's.
  */
 int
 ph_decode(
@@ -79,6 +80,9 @@ ph_decode(
 		break;
 	case PH_KIND_GIF:
 		error = decode_gif(data, size, image);
+		break;
+	case PH_KIND_VIDEO:
+		error = ENOTSUP;
 		break;
 	default:
 		error = EINVAL;

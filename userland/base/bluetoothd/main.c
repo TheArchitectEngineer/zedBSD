@@ -39,6 +39,7 @@
 #include "userland/base/bluetoothd/phone.h"
 #include "userland/base/bluetoothd/phonemux.h"
 #include "userland/base/bluetoothd/pbap.h"
+#include "userland/base/bluetoothd/hfp.h"
 #include "userland/base/bluetoothd/privsep.h"
 #include "userland/base/bluetoothd/protocol.h"
 #include "userland/base/bluetoothd/linkmgr.h"
@@ -248,6 +249,10 @@ static int btd_contacts_wanted(void *context);
 static int btd_contacts_address(void *context, uint8_t *address);
 static int btd_contacts_sdp(void *context, uint16_t uuid);
 static int btd_contacts_open(void *context, unsigned server_channel);
+static int btd_calls_wanted(void *context);
+static int btd_calls_sdp(void *context, uint16_t uuid);
+static int btd_calls_open(void *context, unsigned server_channel);
+static void btd_phone_call_request(int index, unsigned ask, const char *argument);
 static int btd_profiles_open(void *context, unsigned server_channel);
 static void btd_profiles_close(void *context, unsigned dlci);
 static int btd_messages_write(void *context, unsigned dlci, const uint8_t *data, size_t length, size_t *written);
@@ -336,6 +341,33 @@ static unsigned btd_messages_child;
  */
 static struct btd_pbap btd_contacts;
 static unsigned btd_contacts_child;
+
+/*
+ * The HFP hands-free unit on the phone link (ws197-p006): started when the
+ * link is ready and the owner wants calls, its requests answered and its
+ * events told through MAP's hooks; and its index among the mux's children.
+ * They live as long as the daemon.
+ */
+static struct btd_hfp btd_calls;
+static unsigned btd_calls_child;
+
+/* The PHONE requests of the calls (ws197-p006): each word, the HF's request, and the argument's key (NULL: none). */
+struct btd_call_request {
+	const char *word;
+	unsigned ask;
+	const char *key;
+};
+
+/* The calls' requests, constant for the daemon's life. */
+static const struct btd_call_request btd_call_requests[] = {
+	{ "DIAL", BTD_HFP_ASK_DIAL, "to" },
+	{ "ANSWER", BTD_HFP_ASK_ANSWER, NULL },
+	{ "HANGUP", BTD_HFP_ASK_HANGUP, NULL },
+	{ "HOLD", BTD_HFP_ASK_HOLD, "action" },
+	{ "DTMF", BTD_HFP_ASK_DTMF, "key" },
+	{ "VOLUME", BTD_HFP_ASK_VOLUME, "speaker" },
+	{ "VOICE", BTD_HFP_ASK_VOICE, "on" }
+};
 
 /*
  * What the phone's subscribers were told last (the line of PHONE STATE,
@@ -445,6 +477,7 @@ main(
 	struct btd_phonemux_hooks mux_hooks;
 	struct btd_map_hooks map_hooks;
 	struct btd_pbap_hooks pbap_hooks;
+	struct btd_hfp_hooks hfp_hooks;
 	uint32_t first_session;
 	uint32_t first_generation;
 	char expired_text[24];
@@ -615,6 +648,33 @@ main(
 	phone_profile.open_failed = btd_pbap_open_failed;
 	(void)btd_phonemux_add(&btd_profiles, &phone_profile, &btd_contacts_child);
 
+	/* The HFP hands-free unit (ws197-p006): MAP's clock, answers, events, writes and closes. */
+	memset(&hfp_hooks, 0, sizeof(hfp_hooks));
+	hfp_hooks.clock = btd_messages_clock;
+	hfp_hooks.wanted = btd_calls_wanted;
+	hfp_hooks.sdp_query = btd_calls_sdp;
+	hfp_hooks.dlc_open = btd_calls_open;
+	hfp_hooks.dlc_write = btd_messages_write;
+	hfp_hooks.dlc_close = btd_messages_close;
+	hfp_hooks.answer = btd_messages_answer;
+	hfp_hooks.emit = btd_messages_emit;
+	hfp_hooks.log = btd_messages_log;
+	btd_hfp_init(&btd_calls, &hfp_hooks);
+
+	/* The HF as the mux's third child. */
+	memset(&phone_profile, 0, sizeof(phone_profile));
+	phone_profile.context = &btd_calls;
+	phone_profile.ready = btd_hfp_ready;
+	phone_profile.ended = btd_hfp_ended;
+	phone_profile.sdp_done = btd_hfp_sdp_done;
+	phone_profile.accept = btd_hfp_accept;
+	phone_profile.opened = btd_hfp_opened;
+	phone_profile.data = btd_hfp_data;
+	phone_profile.writable = btd_hfp_writable;
+	phone_profile.closed = btd_hfp_closed;
+	phone_profile.open_failed = btd_hfp_open_failed;
+	(void)btd_phonemux_add(&btd_profiles, &phone_profile, &btd_calls_child);
+
 	/* The mux as the phone link's profile. */
 	btd_phonemux_profile(&btd_profiles, &phone_profile);
 	btd_phone_set_profile(&btd_phone_link, &phone_profile);
@@ -713,6 +773,9 @@ main(
 
 		/* PBAP's timers, the same kinds. */
 		btd_pbap_tick(&btd_contacts, now);
+
+		/* The HF's timers: its DLCs to close, an unanswered command, the attempts after failures. */
+		btd_hfp_tick(&btd_calls, now);
 
 		/* The link manager's refused page scan write, and a page nobody ended in time. */
 		if (btd_session_open && btd_session.state == BTD_STATE_READY) {
@@ -1057,6 +1120,11 @@ btd_timeout(
 
 	/* PBAP's next timer. */
 	deadline = btd_pbap_deadline(&btd_contacts);
+	if (deadline != 0U && (earliest == 0U || deadline < earliest))
+		earliest = deadline;
+
+	/* The HF's next timer. */
+	deadline = btd_hfp_deadline(&btd_calls);
 	if (deadline != 0U && (earliest == 0U || deadline < earliest))
 		earliest = deadline;
 	deadline = btd_linkmgr_deadline(&btd_links, now);
@@ -2342,6 +2410,7 @@ btd_phone_request(
 	uint8_t address[BTD_ADDRESS_BYTES];
 	const char *rest;
 	size_t length;
+	unsigned ask;
 	int same;
 	int error;
 
@@ -2379,6 +2448,16 @@ btd_phone_request(
 	if (same == 0) {
 		btd_phone_read_request(index, argument + 5);
 		return;
+	}
+
+	/* The calls' requests (ws197-p006): DIAL to=..., ANSWER, HANGUP, HOLD action=..., DTMF key=..., VOLUME speaker=..., VOICE on=.... */
+	for (ask = 0U; ask < sizeof(btd_call_requests) / sizeof(btd_call_requests[0]); ask++) {
+		length = strlen(btd_call_requests[ask].word);
+		same = strncmp(argument, btd_call_requests[ask].word, length);
+		if (same == 0 && (argument[length] == '\0' || argument[length] == ' ')) {
+			btd_phone_call_request(index, btd_call_requests[ask].ask, argument + length);
+			return;
+		}
 	}
 
 	/* DROP is root's alone. */
@@ -2546,9 +2625,10 @@ btd_phone_link_request(
 	btd_log("bluetoothd: phone link of %s %s by uid %u\n", address_text, switched, (unsigned)client->uid);
 	btd_write(client, "DONE\n");
 
-	/* MAP and PBAP follow the switch and the profiles (stopped, started, or a failed one tried again at once). */
+	/* MAP, PBAP and the HF follow the switch and the profiles (stopped, started, or a failed one tried again at once). */
 	btd_map_check(&btd_messages);
 	btd_pbap_check(&btd_contacts);
+	btd_hfp_check(&btd_calls);
 }
 
 /* Gives the name of a uid's account (the phone link's hook).  Returns 0 or ENOENT. */
@@ -2847,6 +2927,7 @@ btd_client_close(
 	if (client->waits_phone) {
 		btd_map_cancel(&btd_messages, btd_token(index));
 		btd_pbap_cancel(&btd_contacts, btd_token(index));
+		btd_hfp_cancel(&btd_calls, btd_token(index));
 	}
 
 	/* It waits for nothing and hears nothing more. */
@@ -3607,11 +3688,11 @@ btd_phone_line(
 	if (error != 0)
 		messages[0] = '\0';
 
-	/* PBAP's part after it (ws197-p005 section 5.4). */
+	/* PBAP's part after it (ws197-p005 section 5.4), then the HF's (ws197-p006). */
 	error = btd_pbap_state_text(&btd_contacts, contacts, sizeof(contacts));
 	if (error != 0)
 		contacts[0] = '\0';
-	(void)snprintf(both, sizeof(both), "%s %s", messages, contacts);
+	(void)snprintf(both, sizeof(both), "%s %s calls=%s", messages, contacts, btd_hfp_state_word(&btd_calls));
 
 	/* Why the link stopped, when MAP says no why of its own. */
 	own_why = strstr(messages, " why=");
@@ -3681,6 +3762,7 @@ btd_phone_watch(void)
 			if (client->waits_phone) {
 				btd_map_cancel(&btd_messages, btd_token((int)index));
 				btd_pbap_cancel(&btd_contacts, btd_token((int)index));
+				btd_hfp_cancel(&btd_calls, btd_token((int)index));
 			}
 
 			/* Closed at the round's end. */
@@ -3688,9 +3770,10 @@ btd_phone_watch(void)
 			client->dead = 1;
 		}
 
-		/* MAP and PBAP look again whether they are wanted. */
+		/* MAP, PBAP and the HF look again whether they are wanted. */
 		btd_map_check(&btd_messages);
 		btd_pbap_check(&btd_contacts);
+		btd_hfp_check(&btd_calls);
 	}
 
 	/* The pages waiting for their clients' room. */
@@ -3768,6 +3851,13 @@ btd_phone_subscribe_request(
 	error = btd_phone_line(0, 1, "PHONE STATE ", line, sizeof(line));
 	if (error == 0)
 		btd_client_raw(client, line, NULL, 0U);
+
+	/* The HF's line and the calls there are now (ws197-p006). */
+	for (slot = 0U; slot <= BTD_HFP_CALLS_MAX; slot++) {
+		error = btd_hfp_line(&btd_calls, slot, line, sizeof(line));
+		if (error == 0)
+			btd_client_raw(client, line, NULL, 0U);
+	}
 }
 
 /*
@@ -3969,6 +4059,73 @@ btd_phone_read_request(
 	}
 }
 
+/*
+ * Starts a call's request (ws197-p006): DIAL to="N", ANSWER, HANGUP,
+ * HOLD action=0|1|2, DTMF key=K, VOLUME speaker=0..15, VOICE on=0|1, the
+ * owner's and root's, answered by the HF (DONE, or ERROR and why).
+ */
+static void
+btd_phone_call_request(
+	int index,
+	unsigned ask,
+	const char *argument)
+{
+	struct btd_client *client;
+	char key[BTD_PHONEIO_KEY_MAX];
+	char value[BTD_PHONEIO_VALUE_MAX];
+	const char *cursor;
+	const char *refused;
+	const char *wanted;
+	const char *given;
+	unsigned slot;
+	int allowed;
+	int got;
+	int same;
+
+	/* The owner and root. */
+	client = &btd_clients[index];
+	allowed = btd_phone_allowed(client->uid);
+	if (!allowed) {
+		btd_write(client, "ERROR permission\nDONE\n");
+		return;
+	}
+
+	/* The argument's key the request takes (none for ANSWER and HANGUP). */
+	wanted = NULL;
+	for (slot = 0U; slot < sizeof(btd_call_requests) / sizeof(btd_call_requests[0]); slot++) {
+		if (btd_call_requests[slot].ask == ask)
+			wanted = btd_call_requests[slot].key;
+	}
+
+	/* That key's value alone, or nothing. */
+	given = NULL;
+	cursor = argument;
+	got = btd_phoneio_next(&cursor, key, sizeof(key), value, sizeof(value));
+	if (got == BTD_PHONEIO_ARGUMENT) {
+		same = 1;
+		if (wanted != NULL)
+			same = strcmp(key, wanted);
+		if (same != 0 || *cursor != '\0') {
+			btd_write(client, "ERROR argument\nDONE\n");
+			return;
+		}
+
+		/* The value given. */
+		given = value;
+	} else if (got != BTD_PHONEIO_END || wanted != NULL) {
+		btd_write(client, "ERROR argument\nDONE\n");
+		return;
+	}
+
+	/* Asked of the HF, the client waiting for its DONE (a refusal answered now). */
+	client->waits_phone = 1;
+	refused = btd_hfp_ask(&btd_calls, btd_token(index), ask, given);
+	if (refused != NULL) {
+		client->waits_phone = 0;
+		btd_write(client, "ERROR %s\nDONE\n", refused);
+	}
+}
+
 /* MAP's clock: the daemon's monotonic milliseconds. */
 static uint64_t
 btd_messages_clock(
@@ -4105,6 +4262,57 @@ btd_contacts_open(
 
 	/* The mux's DLC for PBAP. */
 	error = btd_phonemux_dlc_open(&btd_profiles, btd_contacts_child, server_channel);
+	return error;
+}
+
+/* Tells whether the owner wants calls (the HF's hook): a valid record, on, with calls. */
+static int
+btd_calls_wanted(
+	void *context)
+{
+	UNUSED_PARAMETER(context);
+
+	/* No valid record. */
+	if (!btd_phone_link.have_record || !btd_phone_link.record_valid)
+		return 0;
+
+	/* Off, or without calls. */
+	if (!btd_phone_link.record.enabled)
+		return 0;
+	if ((btd_phone_link.record.profiles & BTD_PHONEREC_CALLS) == 0U)
+		return 0;
+
+	/* Wanted. */
+	return 1;
+}
+
+/* The HF's SDP query, through the mux. */
+static int
+btd_calls_sdp(
+	void *context,
+	uint16_t uuid)
+{
+	int error;
+
+	UNUSED_PARAMETER(context);
+
+	/* The mux's query for the HF. */
+	error = btd_phonemux_sdp_query(&btd_profiles, btd_calls_child, uuid);
+	return error;
+}
+
+/* The HF's DLC asked for, through the mux. */
+static int
+btd_calls_open(
+	void *context,
+	unsigned server_channel)
+{
+	int error;
+
+	UNUSED_PARAMETER(context);
+
+	/* The mux's DLC for the HF. */
+	error = btd_phonemux_dlc_open(&btd_profiles, btd_calls_child, server_channel);
 	return error;
 }
 

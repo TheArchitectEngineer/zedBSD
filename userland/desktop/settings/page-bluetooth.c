@@ -473,6 +473,7 @@ bluetooth_list(
 	const char *subtitle;
 	const char *empty;
 	const char *label;
+	const char *more;
 	const char *connected;
 	const char *legacy;
 	char line[160];
@@ -600,10 +601,15 @@ bluetooth_list(
 				(void)se_button_draw(app, canvas, right - button, y + 10, label, 0, enabled && bluetooth->phone_step == SE_PHONE_STEP_NONE,
 						     BLUETOOTH_PHONE_FIRST + (int)drawn);
 				right -= button + 10;
-				/* Existing phones acquire contacts only through this explicit action. */
-				if ((capabilities & KL_SYSTEM_HAS_PHONE_CONTACTS) != 0U && used && bluetooth->phone_link.enabled && (bluetooth->phone_link.profiles & KL_PHONE_PROFILE_CONTACTS) == 0U) {
-					button = se_button_width(app, "Also use contacts");
-					(void)se_button_draw(app, canvas, right - button, y + 10, "Also use contacts", 0, enabled && bluetooth->phone_step == SE_PHONE_STEP_NONE, BLUETOOTH_CONTACTS_FIRST + (int)drawn);
+				/* Existing phones acquire contacts, then calls (ws197-p006), only through this explicit action. */
+				more = NULL;
+				if ((capabilities & KL_SYSTEM_HAS_PHONE_CONTACTS) != 0U && (bluetooth->phone_link.profiles & KL_PHONE_PROFILE_CONTACTS) == 0U)
+					more = "Also use contacts";
+				else if ((capabilities & KL_SYSTEM_HAS_PHONE_HF) != 0U && (bluetooth->phone_link.profiles & KL_PHONE_PROFILE_CALLS) == 0U)
+					more = "Also use calls";
+				if (more != NULL && used && bluetooth->phone_link.enabled) {
+					button = se_button_width(app, more);
+					(void)se_button_draw(app, canvas, right - button, y + 10, more, 0, enabled && bluetooth->phone_step == SE_PHONE_STEP_NONE, BLUETOOTH_CONTACTS_FIRST + (int)drawn);
 				}
 			}
 		}
@@ -870,6 +876,8 @@ bluetooth_phone_link(
 		profiles |= KL_PHONE_PROFILE_MESSAGES;
 		if ((capabilities & KL_SYSTEM_HAS_PHONE_CONTACTS) != 0U)
 			profiles |= KL_PHONE_PROFILE_CONTACTS;
+		if ((capabilities & KL_SYSTEM_HAS_PHONE_HF) != 0U)
+			profiles |= KL_PHONE_PROFILE_CALLS;
 	}
 
 	/* Sends the requested profiles through the compositor interface. */

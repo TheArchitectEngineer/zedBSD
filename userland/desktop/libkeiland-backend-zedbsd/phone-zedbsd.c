@@ -80,6 +80,9 @@
 #define PHONE_RESULTS_MAX	48U
 #define PHONE_SENTS_MAX		32U
 
+/* The most changes of calls kept until they are taken (ws197-p006). */
+#define PHONE_CALLS_MAX		16U
+
 /* What a request is. */
 #define PHONE_KIND_PAGE		1U
 #define PHONE_KIND_READ		2U
@@ -203,6 +206,12 @@ struct kl_backend_phone {
 	size_t sent_head;
 	size_t sent_count;
 
+	/* The calls' changes waiting to be taken (a ring), and the hands-free unit's state as last told (ws197-p006). */
+	struct kl_backend_phone_call calls[PHONE_CALLS_MAX];
+	size_t call_head;
+	size_t call_count;
+	struct kl_backend_phone_hf hf;
+
 	/* What changed since the last update (bits), and whether something was dropped. */
 	unsigned changed;
 };
@@ -233,6 +242,9 @@ static int phone_mime_take(struct phone_connection *connection);
 static void phone_item_push(struct kl_backend_phone *phone, struct phone_connection *connection);
 static void phone_result_push(struct kl_backend_phone *phone, const struct kl_backend_phone_result *result);
 static void phone_sent_line(struct kl_backend_phone *phone, const char *line);
+static void phone_call_line(struct kl_backend_phone *phone, const char *line);
+static void phone_hf_line(struct kl_backend_phone *phone, const char *line);
+static int phone_field_int(const char *line, const char *name);
 static void phone_state_line(struct kl_backend_phone *phone, const char *line, unsigned whole);
 static void phone_state_why(struct kl_backend_phone *phone, const char *why);
 static void phone_contacts_line(struct kl_backend_phone *phone, const char *line);
@@ -271,6 +283,7 @@ kl_backend_phone_open(
 	(void)snprintf(phone->state.why, sizeof(phone->state.why), "%s", "unreachable");
 	phone->next_id = 1U;
 	phone->taken_mime = -1;
+	phone->hf.speaker = -1;
 
 	/* Succeeded: the first update asks for the events. */
 	return phone;
@@ -777,6 +790,92 @@ kl_backend_phone_take_sent(
 }
 
 /*
+ * Asks something of the calls (ws197-p006): bluetoothd's PHONE DIAL,
+ * ANSWER, HANGUP, HOLD, DTMF, VOLUME or VOICE, answered DONE or ERROR.
+ */
+int
+kl_backend_phone_call_ask(
+	struct kl_backend_phone *phone,
+	unsigned ask,
+	const char *argument,
+	uint32_t *id)
+{
+	static const char *const words[] = { NULL, "DIAL", "ANSWER", "HANGUP", "HOLD", "DTMF", "VOLUME", "VOICE" };
+	static const char *const keys[] = { NULL, "to", NULL, NULL, "action", "key", "speaker", "on" };
+	char line[PHONE_LINE_MAX];
+	size_t span;
+	int error;
+
+	/* A record, a request known, and somewhere for the id. */
+	if (phone == NULL || id == NULL)
+		return EINVAL;
+	if (ask < KL_BACKEND_PHONE_ASK_DIAL || ask > KL_BACKEND_PHONE_ASK_VOICE)
+		return EINVAL;
+
+	/* The argument the request takes: short, of the letters a number, a key or a level has. */
+	if (keys[ask] != NULL) {
+		if (argument == NULL || argument[0] == '\0')
+			return EINVAL;
+		span = strspn(argument, "0123456789+*#ABCD");
+		if (argument[span] != '\0' || span > 32U)
+			return EINVAL;
+	}
+
+	/* bluetoothd answers. */
+	if (!phone->state.reachable)
+		return ENOTCONN;
+
+	/* The line: the word, then the argument quoted. */
+	if (keys[ask] != NULL)
+		(void)snprintf(line, sizeof(line), "PHONE %s %s=\"%s\"\n", words[ask], keys[ask], argument);
+	else
+		(void)snprintf(line, sizeof(line), "PHONE %s\n", words[ask]);
+
+	/* Waits its turn on the requests' connection. */
+	error = phone_queue(phone, &phone->requests, PHONE_KIND_READ, line, NULL, 0U, id);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: asked. */
+	return 0;
+}
+
+/*
+ * Takes the oldest change of a call (ws197-p006).
+ */
+int
+kl_backend_phone_take_call(
+	struct kl_backend_phone *phone,
+	struct kl_backend_phone_call *call)
+{
+	/* A record, somewhere for it, and one waiting. */
+	if (phone == NULL || call == NULL)
+		return 0;
+	if (phone->call_count == 0U)
+		return 0;
+
+	/* The oldest. */
+	*call = phone->calls[phone->call_head];
+	phone->call_head = (phone->call_head + 1U) % PHONE_CALLS_MAX;
+	phone->call_count--;
+
+	/* Succeeded: one taken. */
+	return 1;
+}
+
+/*
+ * Copies the hands-free unit's state as last told (ws197-p006).
+ */
+void
+kl_backend_phone_get_hf(
+	const struct kl_backend_phone *phone,
+	struct kl_backend_phone_hf *hf)
+{
+	/* The copy. */
+	*hf = phone->hf;
+}
+
+/*
  * Reads the record and asks for the events again at once (a pairing of
  * the phone or a forget may have made this user the owner or not).
  */
@@ -1161,6 +1260,11 @@ phone_lost(
 			phone->changed |= KL_BACKEND_PHONE_CHANGED_STATE;
 		}
 
+		/* The hands-free unit is not known any more: off until the events tell it again (with its calls). */
+		memset(&phone->hf, 0, sizeof(phone->hf));
+		phone->hf.speaker = -1;
+		phone->changed |= KL_BACKEND_PHONE_CHANGED_HF;
+
 		/* Asked for again in a second. */
 		phone->events_stand = PHONE_EVENTS_NONE;
 		phone->events_due_ms = now + PHONE_RETRY_MS;
@@ -1348,6 +1452,20 @@ phone_events_line(
 		return;
 	}
 
+	/* A call's change (ws197-p006). */
+	same = strncmp(line, "PHONE CALL ", 11U);
+	if (same == 0) {
+		phone_call_line(phone, line);
+		return;
+	}
+
+	/* The hands-free unit's state (ws197-p006). */
+	same = strncmp(line, "PHONE HF ", 9U);
+	if (same == 0) {
+		phone_hf_line(phone, line);
+		return;
+	}
+
 	/* bluetoothd dropped an event: the caller synchronises again. */
 	same = strcmp(line, "PHONE DROPPED");
 	if (same == 0) {
@@ -1356,6 +1474,122 @@ phone_events_line(
 	}
 
 	/* PHONE MESSAGE-GONE and anything newer are not followed here. */
+}
+
+/*
+ * Takes PHONE CALL index=N state=W dir=in|out number="..." name="..."
+ * (ws197-p006): a change of a call, kept for the caller (the oldest goes
+ * when the ring is full).
+ */
+static void
+phone_call_line(
+	struct kl_backend_phone *phone,
+	const char *line)
+{
+	static const char *const states[] = { "", "incoming", "dialing", "alerting", "active", "held", "waiting", "ended" };
+	struct kl_backend_phone_call *call;
+	char value[16];
+	unsigned state;
+	unsigned index;
+	size_t slot;
+	int same;
+
+	/* The state's word. */
+	(void)phone_field(line, "state=", value, sizeof(value));
+	state = 0U;
+	for (index = KL_BACKEND_PHONE_CALL_INCOMING; index <= KL_BACKEND_PHONE_CALL_ENDED; index++) {
+		same = strcmp(value, states[index]);
+		if (same == 0)
+			state = index;
+	}
+
+	/* Another word is not a call's. */
+	if (state == 0U)
+		return;
+
+	/* No room: the oldest goes. */
+	if (phone->call_count == PHONE_CALLS_MAX) {
+		phone->call_head = (phone->call_head + 1U) % PHONE_CALLS_MAX;
+		phone->call_count--;
+	}
+
+	/* The change for the caller. */
+	slot = (phone->call_head + phone->call_count) % PHONE_CALLS_MAX;
+	call = &phone->calls[slot];
+	memset(call, 0, sizeof(*call));
+	call->index = phone_field_number(line, "index=");
+	call->state = state;
+	(void)phone_field(line, "dir=", value, sizeof(value));
+	same = strcmp(value, "out");
+	if (same == 0)
+		call->outgoing = 1U;
+	(void)phone_field(line, "number=", call->number, sizeof(call->number));
+	(void)phone_field(line, "name=", call->name, sizeof(call->name));
+	phone->call_count++;
+	phone->changed |= KL_BACKEND_PHONE_CHANGED_CALL;
+}
+
+/*
+ * Takes PHONE HF state=W why=W service=N signal=N battery=N roam=N
+ * speaker=N voice=N hold=N (ws197-p006): the hands-free unit's state.
+ */
+static void
+phone_hf_line(
+	struct kl_backend_phone *phone,
+	const char *line)
+{
+	char value[16];
+	unsigned number;
+	int same;
+
+	/* The state's word (off for another). */
+	(void)phone_field(line, "state=", value, sizeof(value));
+	phone->hf.state = KL_BACKEND_PHONE_HF_OFF;
+	same = strcmp(value, "connecting");
+	if (same == 0)
+		phone->hf.state = KL_BACKEND_PHONE_HF_CONNECTING;
+	same = strcmp(value, "ready");
+	if (same == 0)
+		phone->hf.state = KL_BACKEND_PHONE_HF_READY;
+	same = strcmp(value, "failed");
+	if (same == 0)
+		phone->hf.state = KL_BACKEND_PHONE_HF_FAILED;
+
+	/* The values. */
+	phone->hf.service = phone_field_int(line, "service=");
+	phone->hf.signal = phone_field_int(line, "signal=");
+	phone->hf.battery = phone_field_int(line, "battery=");
+	phone->hf.roam = phone_field_int(line, "roam=");
+	phone->hf.speaker = phone_field_int(line, "speaker=");
+	number = phone_field_number(line, "voice=");
+	phone->hf.voice = 0U;
+	if (number != 0U)
+		phone->hf.voice = 1U;
+	number = phone_field_number(line, "hold=");
+	phone->hf.hold = 0U;
+	if (number != 0U)
+		phone->hf.hold = 1U;
+	phone->changed |= KL_BACKEND_PHONE_CHANGED_HF;
+}
+
+/* Reads a field as a signed decimal number (0 when it is not one). */
+static int
+phone_field_int(
+	const char *line,
+	const char *name)
+{
+	char value[16];
+	char *end;
+	long number;
+
+	/* The field. */
+	(void)phone_field(line, name, value, sizeof(value));
+	number = strtol(value, &end, 10);
+	if (end == value || *end != '\0')
+		return 0;
+
+	/* Succeeded: the number. */
+	return (int)number;
 }
 
 /*

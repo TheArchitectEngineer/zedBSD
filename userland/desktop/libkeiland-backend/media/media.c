@@ -24,6 +24,15 @@
 /* Bounds concurrent helpers and time spent waiting for any one operation. */
 #define MEDIA_JOBS_MAX 16U
 #define MEDIA_JOB_SECONDS 120
+
+/*
+ * An import copies its files, which takes as long as they are large: its
+ * time is MEDIA_JOB_SECONDS and a second for each MEDIA_IMPORT_RATE bytes
+ * of the files named, MEDIA_IMPORT_SECONDS at most (a folder named counts
+ * as that much; ws157-p013).
+ */
+#define MEDIA_IMPORT_RATE (8U * 1024U * 1024U)
+#define MEDIA_IMPORT_SECONDS 3600
 #define MEDIA_INPUT_MAX (4U * 1024U * 1024U)
 #define MEDIA_OUTPUT_MAX (64U * 1024U * 1024U)
 
@@ -43,6 +52,7 @@ struct media_job {
 	int error;
 	int done;
 	time_t started;
+	long limit;
 };
 
 /* The desktop's media helper queue, owned by its event-loop thread. */
@@ -60,6 +70,7 @@ static int media_nonblock(int descriptor);
 static int media_prepare(struct media_job *job, unsigned command, const char *argument, int descriptor);
 static int media_spawn(struct media_job *job, const char *operation);
 static ssize_t media_write(int descriptor, const void *bytes, size_t length);
+static long media_import_limit(const char *list, size_t length);
 
 /*
  * Opens the asynchronous CLI queue for this desktop.
@@ -214,7 +225,7 @@ kl_backend_media_update(
 		media_pump(job);
 		if (job->done || job->process <= 0)
 			continue;
-		if (now - job->started > MEDIA_JOB_SECONDS) {
+		if (now - job->started > job->limit) {
 			kill(job->process, SIGKILL);
 			job->error = ETIMEDOUT;
 		}
@@ -528,10 +539,13 @@ media_prepare(
 	int regular;
 
 	/* Only update snapshots arrive as descriptors; path lists are ordinary strings. */
+	job->limit = MEDIA_JOB_SECONDS;
 	if (command == KL_BACKEND_MEDIA_ADD || command == KL_BACKEND_MEDIA_REMOVE) {
 		job->length = strlen(argument);
 		if (job->length == 0U || job->length > 32768U)
 			return EINVAL;
+		if (command == KL_BACKEND_MEDIA_ADD)
+			job->limit = media_import_limit(argument, job->length);
 	} else if (command == KL_BACKEND_MEDIA_APPLY) {
 		if (descriptor < 0)
 			return EINVAL;
@@ -580,7 +594,7 @@ media_spawn(
 	const char *operation)
 {
 	posix_spawn_file_actions_t actions;
-	char *arguments[3];
+	char *arguments[4];
 	int input[2];
 	int output[2];
 	int error;
@@ -616,7 +630,9 @@ media_spawn(
 			error = posix_spawn_file_actions_adddup2(&actions, output[1], STDOUT_FILENO);
 		arguments[0] = KEILAND_BINDIR "/mediastorage";
 		arguments[1] = (char *)operation;
-		arguments[2] = NULL;
+		/* The compositor tells its watchers itself once the run has ended (media-library.c). */
+		arguments[2] = "--no-notify";
+		arguments[3] = NULL;
 		if (error == 0)
 			error = posix_spawn(&job->process, arguments[0], &actions, NULL, arguments, environ);
 		posix_spawn_file_actions_destroy(&actions);
@@ -676,4 +692,59 @@ media_write(
 
 	/* Succeeded: the caller advances only the bytes actually written. */
 	return result;
+}
+
+/*
+ * Gives an import's time (seconds) from the sizes of the files its path
+ * list names (one path a line): MEDIA_JOB_SECONDS and a second for each
+ * MEDIA_IMPORT_RATE bytes, at most MEDIA_IMPORT_SECONDS, which is also a
+ * folder's.  A path that is not there counts nothing.
+ */
+static long
+media_import_limit(
+	const char *list,
+	size_t length)
+{
+	struct stat state;
+	char path[4096];
+	const char *line;
+	const char *end;
+	uint64_t bytes;
+	size_t size;
+	long limit;
+	int result;
+	int folder;
+
+	/* Each line. */
+	bytes = 0U;
+	for (line = list; line < list + length; line = end + 1) {
+		end = memchr(line, '\n', (size_t)(list + length - line));
+		if (end == NULL)
+			end = list + length;
+
+		/* A path that fits. */
+		size = (size_t)(end - line);
+		if (size == 0U || size >= sizeof(path))
+			continue;
+		memcpy(path, line, size);
+		path[size] = '\0';
+
+		/* Its size; a folder takes the most time. */
+		result = stat(path, &state);
+		if (result != 0)
+			continue;
+		folder = S_ISDIR(state.st_mode);
+		if (folder)
+			return MEDIA_IMPORT_SECONDS;
+		if (state.st_size > 0)
+			bytes += (uint64_t)state.st_size;
+	}
+
+	/* The time, at most the largest. */
+	limit = MEDIA_JOB_SECONDS + (long)(bytes / MEDIA_IMPORT_RATE);
+	if (limit > MEDIA_IMPORT_SECONDS)
+		limit = MEDIA_IMPORT_SECONDS;
+
+	/* Succeeded: the import's time. */
+	return limit;
 }

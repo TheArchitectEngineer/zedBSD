@@ -57,6 +57,8 @@
 #define PH_THUMB_NONE		0
 #define PH_THUMB_READY		1
 #define PH_THUMB_FAILED		2
+/* A video: no picture is decoded, its icon and the play mark are drawn (ws157-p012). */
+#define PH_THUMB_VIDEO		3
 
 /*
  * A photo's thumbnail: what the view has of it, the picture (turned as

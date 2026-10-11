@@ -21,6 +21,7 @@ for test in "bt-phone-host-test userland/base/bluetoothd/rfcomm.c" \
 	"bt-bmsg-host-test userland/base/bluetoothd/bmsg.c userland/base/bluetoothd/mms.c userland/desktop/libmms/mms.c userland/base/bluetoothd/mapxml.c" \
 	"bt-vcard-host-test userland/base/bluetoothd/vcard.c userland/base/bluetoothd/mapxml.c" \
 	"bt-phonemux-host-test userland/base/bluetoothd/phonemux.c" \
+	"bt-hfp-host-test userland/base/bluetoothd/hfp.c userland/base/bluetoothd/at.c userland/base/bluetoothd/phoneio.c userland/base/bluetoothd/mapxml.c userland/base/bluetoothd/sdp.c" \
 	"bt-pbap-host-test userland/base/bluetoothd/pbap.c userland/base/bluetoothd/obex.c userland/base/bluetoothd/vcard.c userland/base/bluetoothd/mapxml.c userland/base/bluetoothd/phoneio.c userland/base/bluetoothd/sdp.c" \
 	"bt-map-host-test userland/base/bluetoothd/map.c userland/base/bluetoothd/obex.c userland/base/bluetoothd/mapxml.c userland/base/bluetoothd/bmsg.c userland/base/bluetoothd/mms.c userland/desktop/libmms/mms.c userland/base/bluetoothd/phoneio.c userland/base/bluetoothd/sdp.c" \
 	"bt-obex-host-test userland/base/bluetoothd/obex.c" \

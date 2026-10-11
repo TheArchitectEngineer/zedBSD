@@ -56,13 +56,19 @@ preview_spawn(
 	(void)snprintf(height, sizeof(height), "--height=%d", request->height);
 	count = 0;
 	argv[count++] = "keiland-preview";
-	argv[count++] = width;
-	argv[count++] = height;
-	if (request->cover)
-		argv[count++] = "--fit=cover";
-	if (request->stamp[0] != '\0') {
-		(void)snprintf(stamp, sizeof(stamp), "--stamp=%s", request->stamp);
-		argv[count++] = stamp;
+	if (request->info) {
+		/* What the file is (ws157-p013). */
+		argv[count++] = "--info";
+	} else {
+		/* A picture of a size. */
+		argv[count++] = width;
+		argv[count++] = height;
+		if (request->cover)
+			argv[count++] = "--fit=cover";
+		if (request->stamp[0] != '\0') {
+			(void)snprintf(stamp, sizeof(stamp), "--stamp=%s", request->stamp);
+			argv[count++] = stamp;
+		}
 	}
 
 	/* The list's end. */

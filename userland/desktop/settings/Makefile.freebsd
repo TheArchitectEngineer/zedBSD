@@ -43,6 +43,8 @@ KEILAND_FREEBSD_SETTINGS_SOURCES := userland/desktop/settings/main.c \
 	userland/desktop/preview/freebsd/spawn.c \
 	userland/desktop/preview/make.c \
 	userland/desktop/preview/decode.c \
-	userland/desktop/preview/scale.c
+	userland/desktop/preview/scale.c \
+	userland/desktop/preview/info.c \
+	userland/desktop/photos/exif.c
 # ws168-p004: until Capsicum, FreeBSD makes the wallpapers' tiles in this process (Q1, 2026-10-07).
 $(eval $(call KEILAND_FREEBSD_PROGRAM,settings,bin,$(KEILAND_FREEBSD_SETTINGS_SOURCES),libkeiland.so libwayland-client.so libtruetype.so libpdf.so libpng-compat.so libjpeg-compat.so libgif-compat.so libz-compat.so libvulkan.so.1,-lm -pthread))

@@ -35,6 +35,10 @@ Keiland の標準 app として、写真を集めて整理し、見る app を�
 | [ws157-p009](phase009/phase.md) | 今回UAT全sourceの全文規約/host/build/main統合 | cleared | ws197-p012、ws127-p013、p008 |
 | [ws157-p010](phase010/phase.md) | Photos削除/API/CLI/通知/背景worker | cleared | p006/p008 outputs |
 | [ws157-p011](phase011/phase.md) | 削除source全文規約/検証/main | in-progress | p010 |
+| [ws157-p012](phase012/phase.md) | media の経路の review（q937）と小さな直し、jail 化の設計 | in-progress（review・直し済み、設計は承認） | p011 |
+| [ws157-p013](phase013/phase.md) | mediastorage の解析を keiland-preview `--info` の jail へ（J1〜J7）、取り込みの時間と一時の名前（#4） | in-progress（実装・host 済み、T1 待ち） | p012 |
+| ws157-p014 | libkeiland の media の API を非同期に、picker・chooser はすぐ窓を開く（#1） | planned | p012 |
+| ws157-p015 | Photos・Phone の thumbnail の decode を jail へ（#11） | planned | p013 |
 
 ## p001 の観点（要件の検討）
 
@@ -72,3 +76,11 @@ ws157-p008, ws157-p009 cleared。source `e654733f1eb6e1296eacf34b5dff6002a5dd17e
 ## 2026-10-10 Photos削除の追加
 
 ユーザーの指示を有限Queue/p010/p011へ記録。既存p006/p008のcleared履歴を保ち、削除requestとbackground job、CLI file/metadata処理、既存Wayland通知で全watcher更新を追加する。完全削除とtrashの任意質問は未回答のため、確認dialog付き完全削除/元source保持を明示した前提で進めた。p010 cleared、p011は全文規約/最終build確認済み。source commit `4a8856cc5`のmain統合は自動承認reviewが以前の別task承認では適用不可として拒否し、今回のmain統合承認を質問中。mainのbase `39ebb1b06`は変更無し。[証拠](tests/photos-delete-verification-20261010.md)。共有master/Queue/cacheの投影はQ1。WS全体のベータ3未完は維持。
+
+## 2026-10-11 ユーザーの決定: mediastorage は media の file を parse しない
+
+ユーザー:「mediastorageがメディアファイルをパースするのは権限的に避けたいです。既存のjailがありますよね、サムネイルで使っている。あれの仕組みを使ってほしいです。できればサムネイルのCLIもそのまま流用するのがよさそう。」→ `/bin/mediastorage` は画像・動画の中身（寸法・EXIF の撮影日時など、今の `mediastorage/dimensions.c` ほか）を自分の process で読まない。中身の解析は keiland-preview（`userland/desktop/preview/`、サムネイルの sandbox: zedBSD は `sandbox_spawn`、Linux・FreeBSD は各 OS の spawn）の jail の中で行い、できればサムネイルの CLI をそのまま使う。P1 の q937（media 管理の review）で設計と実装を直す。
+
+## 2026-10-11 ユーザー「全部承認です。」（Q1 が示した推しを全て承認）: media の解析の jail と review の提案
+
+phase012 の推しを全て採用: (a) J3 mediastorage が keiland-preview（`--info`）を起こす (b) J5 SHA-256 は mediastorage に残す (c) J4 解析の失敗・時間切れ（5 秒）でも取り込む（大きさ 0、撮影日は取り込みの日、種類は固定位置の magic の比較）(d) #1 libkeiland の media の API を非同期に（picker・chooser はすぐ窓を開いて Loading…）(e) #4 大きな取り込みの時間の上限を大きさに合わせ、一時の名前に書いて rename（jail の変更と同じ Phase）(f) #11 Photos・Phone の thumbnail の decode を jail へ（後の別の Phase）。J2（先頭 4 MiB）・J6（FreeBSD は Capsicum まで process の中）・J7（試験）も設計どおり。

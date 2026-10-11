@@ -245,6 +245,14 @@ struct btd_phone {
 	 */
 	int pce_registered;
 	uint32_t pce_handle;
+
+	/*
+	 * bluetoothd's HF record (ws197-p006): whether it is offered, and its
+	 * handle.  Offered while the link is ready and the record's calls are
+	 * on.
+	 */
+	int hf_registered;
+	uint32_t hf_handle;
 	int profile_started;
 	uint16_t sdp_uuid;
 	unsigned pending_count;

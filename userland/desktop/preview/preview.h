@@ -15,6 +15,7 @@
  * seccomp before it reads a byte (confine.c of each system's directory).
  *
  *   keiland-preview --width=N --height=N [--fit=contain|cover] [--stamp=TEXT]
+ *   keiland-preview --info
  *
  * The input is read whole (64 MiB at most), its kind told by its first
  * bytes (PNG, JPEG, GIF, PPM and PGM, PDF's first page), decoded and
@@ -23,6 +24,10 @@
  * binary PPM (P6), its comment "# TEXT" when a stamp is given, written to
  * fd 1 with write(2) (the C library's stdio is not used: its first use
  * asks whether the descriptor is a terminal).
+ *
+ * --info (ws157-p013, info.c) reads only the input's first
+ * PREVIEW_INFO_MAX bytes and writes, instead of a picture, what the file
+ * is: its kind, a picture's size and a JPEG's date, as text.
  */
 
 #ifndef KEILAND_PREVIEW_H
@@ -46,6 +51,9 @@
 #define PREVIEW_SIDE_MAX	4096
 #define PREVIEW_DECODE_SIDE	8192U
 #define PREVIEW_DECODE_PIXELS	(16UL * 1024UL * 1024UL)
+
+/* The most of the input --info reads, from its start. */
+#define PREVIEW_INFO_MAX	(4UL * 1024UL * 1024UL)
 
 /* The longest stamp, with its NUL. */
 #define PREVIEW_STAMP_MAX	256U
@@ -73,8 +81,9 @@ struct preview_image {
 #define PREVIEW_ESCAPE_SOCKET	2
 #define PREVIEW_ESCAPE_FORK	3
 
-/* What is asked: the size, cover (else contain), the stamp (empty for none) and a test build's escape. */
+/* What is asked: what the file is (--info, the rest unused), else the size, cover (else contain), the stamp (empty for none) and a test build's escape. */
 struct preview_request {
+	int info;
 	int width;
 	int height;
 	int cover;
@@ -89,6 +98,9 @@ int preview_decode(const unsigned char *data, size_t size, const struct preview_
 void preview_fit(int width, int height, const struct preview_request *request, int *fitted_width, int *fitted_height);
 int preview_scale(const struct preview_image *source, const struct preview_request *request, struct preview_image *scaled);
 void preview_image_release(struct preview_image *image);
+
+/* What a file is (info.c). */
+int preview_info(int input, int output);
 
 /* The making and the output (make.c). */
 int preview_make(int input, int output, const struct preview_request *request);

@@ -82,8 +82,8 @@
 /* The longest item event: nine words, five strings with their lengths, and the text's array with its length. */
 #define PHONE_ITEM_MAX		(9U * 4U + 5U * 4U + KL_SYSTEM_PHONE_HANDLE_MAX + KL_SYSTEM_PHONE_KEY_MAX + KL_SYSTEM_PHONE_DATETIME_MAX + 2U * KL_SYSTEM_PHONE_PEER_MAX + 4U + KL_SYSTEM_PHONE_ITEM_TEXT_MAX + 16U)
 
-/* The longest event owed: the link's nine words and two strings with their lengths (link_contacts, sent with it, is shorter). */
-#define PHONE_OWED_BYTES	(9U * 4U + 4U + KL_SYSTEM_PHONE_ADDRESS_MAX + 4U + KL_SYSTEM_PHONE_WHY_MAX + 8U)
+/* The longest event owed: a call's three words and two strings with their lengths (longer than the link's nine words and two strings, ws197-p006). */
+#define PHONE_OWED_BYTES	(3U * 4U + 2U * (4U + KL_BACKEND_PHONE_PEER_MAX + 4U))
 
 /* The program the messages go to (its window's app_id), its name on a notification, the setting that lets it notify, and how it is started at a conversation. */
 #define PHONE_APP		"phone"
@@ -100,6 +100,9 @@
 #define PHONE_PENDING_MAX	48U
 #define PHONE_HELD_MAX		8U
 
+/* The most calls followed at once (HFP carries two). */
+#define PHONE_CALLS_MAX		2U
+
 /* How long a text's state waits for the answer that names its number, and how long a sync waits its turn (milliseconds). */
 #define PHONE_HOLD_MS		10000U
 #define PHONE_SYNC_WAIT_MS	150000U
@@ -109,6 +112,8 @@
 #define PHONE_OWED_DONE		2U
 #define PHONE_OWED_LINK		3U
 #define PHONE_OWED_DROPPED	4U
+#define PHONE_OWED_CALL		5U
+#define PHONE_OWED_HF		6U
 
 /* What a request waiting for the backend is. */
 #define PHONE_PENDING_SYNC	1U
@@ -169,13 +174,15 @@ struct phone_link_event {
 	char contacts_why[KL_SYSTEM_PHONE_WHY_MAX];
 };
 
-/* One event owed to a client: its kind, the request and its code (a done), the page's end, or the link. */
+/* One event owed to a client: its kind, the request and its code (a done), the page's end, the link, a call's change or the hands-free unit's state. */
 struct phone_owed {
 	unsigned kind;
 	uint32_t request;
 	uint32_t code;
 	struct kl_backend_phone_result end;
 	struct phone_link_event link;
+	struct kl_backend_phone_call call;
+	struct kl_backend_phone_hf hf;
 };
 
 /*
@@ -244,6 +251,10 @@ struct phone_shell_state {
 	unsigned sync_running;
 	uint64_t order;
 	uint32_t loopback_key;
+
+	/* The paired phone's calls as last told (state 0: a free row) and its hands-free unit (ws197-p006), told to a phone program at listen. */
+	struct kl_backend_phone_call calls[PHONE_CALLS_MAX];
+	struct kl_backend_phone_hf hf;
 };
 
 static void phone_loopback_send(struct kwl_object *object, uint32_t request, uint32_t channel, const char *to, const char *text);
@@ -273,6 +284,12 @@ static int phone_listen(struct kwl_object *object, const unsigned char *bytes, s
 static int phone_sync(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int phone_send_text(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int phone_send_mms(struct kwl_object *object, const unsigned char *bytes, size_t size);
+static int phone_control(struct kwl_object *object, const unsigned char *bytes, size_t size);
+static void phone_calls(struct kwl_server *server);
+static void phone_hf_changed(void);
+static void phone_calls_tell(struct kwl_object *object);
+static void phone_call_notify(struct kwl_server *server, const struct kl_backend_phone_call *call);
+static int phone_app_listening(void);
 static int phone_mark_read(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int phone_link_set(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int phone_setting(struct kwl_server *server);
@@ -407,6 +424,12 @@ kwl_phone_request(
 		if (object->version >= KL_SYSTEM_SINCE_PHONE_MMS)
 			error = phone_send_mms(object, bytes, size);
 		break;
+	case KL_SYSTEM_PHONE_CONTROL:
+		/* A call's request, of version 33 (ws197-p006). */
+		error = EPROTO;
+		if (object->version >= KL_SYSTEM_SINCE_PHONE_CALLS)
+			error = phone_control(object, bytes, size);
+		break;
 	case KL_SYSTEM_PHONE_MARK_READ:
 		error = phone_mark_read(object, bytes, size);
 		break;
@@ -496,6 +519,12 @@ kwl_phone_tick(
 	/* bluetoothd dropped an event: every phone program synchronises again. */
 	if ((changed & KL_BACKEND_PHONE_CHANGED_DROPPED) != 0U)
 		phone_drops();
+
+	/* The hands-free unit, then the calls' changes (ws197-p006). */
+	if ((changed & KL_BACKEND_PHONE_CHANGED_HF) != 0U)
+		phone_hf_changed();
+	if ((changed & KL_BACKEND_PHONE_CHANGED_CALL) != 0U)
+		phone_calls(server);
 
 	/* The texts' states held, a sync that waited, and what the clients were owed. */
 	phone_held_check(now);
@@ -705,6 +734,10 @@ phone_listen(
 	printf("KWL PHONE listen client=%llu on=%u app=%d\n", (unsigned long long)object->client->number, on, app);
 	if (on)
 		phone_link_tell(object, (unsigned)!app);
+
+	/* The phone program hears the hands-free unit and the calls there are (ws197-p006). */
+	if (on && app)
+		phone_calls_tell(object);
 
 	/* Succeeded: heard or not. */
 	return 0;
@@ -930,6 +963,277 @@ phone_send_mms(
 	close(descriptor);
 
 	/* Succeeded: answered by done, then its states. */
+	return 0;
+}
+
+/* Carries out control(request, ask, argument) (ws197-p006): a call's request of the phone program, answered by done. */
+static int
+phone_control(
+	struct kwl_object *object,
+	const unsigned char *bytes,
+	size_t size)
+{
+	struct phone_pending *pending;
+	const char *argument;
+	uint32_t request;
+	uint32_t ask;
+	uint32_t id;
+	size_t offset;
+	int error;
+	int app;
+
+	/* The request's number, the ask, the argument and nothing after them. */
+	if (size < 8U)
+		return EPROTO;
+	request = phone_word(bytes, 0U);
+	ask = phone_word(bytes, 4U);
+	error = phone_string(bytes, size, 8U, KL_SYSTEM_PHONE_TO_MAX, &argument, &offset);
+	if (error != 0)
+		return error;
+	if (offset != size)
+		return EPROTO;
+
+	/* The phone program only, and a request known. */
+	app = phone_is_phone_app(object->client);
+	if (!app) {
+		phone_done(object, request, KL_SYSTEM_RESULT_REFUSED);
+		return 0;
+	}
+
+	/* A request known. */
+	if (ask < KL_SYSTEM_PHONE_ASK_DIAL || ask > KL_SYSTEM_PHONE_ASK_VOICE) {
+		phone_done(object, request, KL_SYSTEM_RESULT_INVALID);
+		return 0;
+	}
+
+	/* The paired phone only (its calls are HFP's). */
+	printf("KWL PHONE control client=%llu request=%u ask=%u argument=%lu\n", (unsigned long long)object->client->number, request, ask, (unsigned long)strlen(argument));
+	if (phone_state.setting != KL_SYSTEM_PHONE_BACKEND_BLUETOOTH || phone_state.backend == NULL) {
+		phone_done(object, request, KL_SYSTEM_RESULT_UNAVAILABLE);
+		return 0;
+	}
+
+	/* Asked of the backend (an empty argument for the requests without one); a refusal is answered at once. */
+	if (argument[0] == '\0')
+		argument = NULL;
+	error = kl_backend_phone_call_ask(phone_state.backend, ask, argument, &id);
+	if (error != 0) {
+		phone_done(object, request, phone_code(error));
+		return 0;
+	}
+
+	/* Answered when the backend answers (busy without room to follow it). */
+	pending = phone_pending_add(PHONE_PENDING_READ, object, request, id);
+	if (pending == NULL)
+		phone_done(object, request, KL_SYSTEM_RESULT_BUSY);
+
+	/* Succeeded: asked. */
+	return 0;
+}
+
+/*
+ * Takes the calls' changes (ws197-p006): each kept in the table (an ended
+ * one leaves it) and told to the phone programs that listen; a call that
+ * starts ringing while no phone program listens is a notification.
+ */
+static void
+phone_calls(
+	struct kwl_server *server)
+{
+	struct kl_backend_phone_call call;
+	struct phone_owed owed;
+	struct phone_slot *slot;
+	unsigned row;
+	unsigned found;
+	unsigned index;
+	int ringing_before;
+	int listening;
+	int taken;
+	int app;
+
+	/* Each change waiting. */
+	for (;;) {
+		taken = kl_backend_phone_take_call(phone_state.backend, &call);
+		if (!taken)
+			break;
+
+		/* Its row: the same index, else a free one (the first when none is). */
+		found = PHONE_CALLS_MAX;
+		for (row = 0U; row < PHONE_CALLS_MAX; row++) {
+			if (phone_state.calls[row].state != 0U && phone_state.calls[row].index == call.index) {
+				found = row;
+				break;
+			}
+		}
+
+		/* Else a free one. */
+		for (row = 0U; found == PHONE_CALLS_MAX && row < PHONE_CALLS_MAX; row++) {
+			if (phone_state.calls[row].state == 0U)
+				found = row;
+		}
+
+		/* Else the first. */
+		if (found == PHONE_CALLS_MAX)
+			found = 0U;
+
+		/* Whether it rang already, then the row as told (an ended call frees it). */
+		ringing_before = 0;
+		if (phone_state.calls[found].state == KL_BACKEND_PHONE_CALL_INCOMING && phone_state.calls[found].index == call.index)
+			ringing_before = 1;
+		phone_state.calls[found] = call;
+		if (call.state == KL_BACKEND_PHONE_CALL_ENDED)
+			memset(&phone_state.calls[found], 0, sizeof(phone_state.calls[found]));
+		printf("KWL PHONE call index=%u state=%u out=%u number=%lu name=%lu\n", call.index, call.state, call.outgoing, (unsigned long)strlen(call.number), (unsigned long)strlen(call.name));
+
+		/* Told to each phone program that listens, of version 33. */
+		memset(&owed, 0, sizeof(owed));
+		owed.kind = PHONE_OWED_CALL;
+		owed.call = call;
+		for (index = 0U; index < PHONE_SLOTS; index++) {
+			slot = &phone_state.slots[index];
+			if (slot->object == NULL || !slot->listening || slot->object->version < KL_SYSTEM_SINCE_PHONE_CALLS)
+				continue;
+			app = phone_is_phone_app(slot->object->client);
+			if (app)
+				phone_owe(slot->object, &owed);
+		}
+
+		/* A call that starts ringing while no phone program listens. */
+		listening = phone_app_listening();
+		if (call.state == KL_BACKEND_PHONE_CALL_INCOMING && !ringing_before && !listening)
+			phone_call_notify(server, &call);
+	}
+}
+
+/*
+ * Takes the hands-free unit's state (ws197-p006): kept, told to the phone
+ * programs that listen; a unit that is not ready has no calls.
+ */
+static void
+phone_hf_changed(
+	void)
+{
+	struct phone_owed owed;
+	struct phone_slot *slot;
+	unsigned index;
+	int app;
+
+	/* The state; without a ready unit the calls are gone (the events tell them again). */
+	kl_backend_phone_get_hf(phone_state.backend, &phone_state.hf);
+	if (phone_state.hf.state != KL_BACKEND_PHONE_HF_READY)
+		memset(phone_state.calls, 0, sizeof(phone_state.calls));
+	printf("KWL PHONE hf state=%u service=%d signal=%d battery=%d speaker=%d\n", phone_state.hf.state, phone_state.hf.service, phone_state.hf.signal,
+	    phone_state.hf.battery, phone_state.hf.speaker);
+
+	/* Its event: the state and the flags. */
+	memset(&owed, 0, sizeof(owed));
+	owed.kind = PHONE_OWED_HF;
+	owed.hf = phone_state.hf;
+	if (phone_state.hf.voice)
+		owed.code |= KL_SYSTEM_PHONE_HF_VOICE;
+	if (phone_state.hf.hold)
+		owed.code |= KL_SYSTEM_PHONE_HF_HOLD;
+
+	/* Told to each phone program that listens, of version 33. */
+	for (index = 0U; index < PHONE_SLOTS; index++) {
+		slot = &phone_state.slots[index];
+		if (slot->object == NULL || !slot->listening || slot->object->version < KL_SYSTEM_SINCE_PHONE_CALLS)
+			continue;
+		app = phone_is_phone_app(slot->object->client);
+		if (app)
+			phone_owe(slot->object, &owed);
+	}
+}
+
+/* Tells a phone program that starts to listen the hands-free unit's state and the calls there are (ws197-p006). */
+static void
+phone_calls_tell(
+	struct kwl_object *object)
+{
+	struct phone_owed owed;
+	unsigned row;
+
+	/* Of version 33 only. */
+	if (object->version < KL_SYSTEM_SINCE_PHONE_CALLS)
+		return;
+
+	/* The unit. */
+	memset(&owed, 0, sizeof(owed));
+	owed.kind = PHONE_OWED_HF;
+	owed.hf = phone_state.hf;
+	if (phone_state.hf.voice)
+		owed.code |= KL_SYSTEM_PHONE_HF_VOICE;
+	if (phone_state.hf.hold)
+		owed.code |= KL_SYSTEM_PHONE_HF_HOLD;
+	if (phone_state.backend == NULL)
+		owed.hf.speaker = -1;
+	phone_owe(object, &owed);
+
+	/* Each call there is. */
+	for (row = 0U; row < PHONE_CALLS_MAX; row++) {
+		if (phone_state.calls[row].state == 0U)
+			continue;
+		memset(&owed, 0, sizeof(owed));
+		owed.kind = PHONE_OWED_CALL;
+		owed.call = phone_state.calls[row];
+		phone_owe(object, &owed);
+	}
+}
+
+/* Posts the notification of a call that rings while no phone program listens: who calls, and a click opens the phone program. */
+static void
+phone_call_notify(
+	struct kwl_server *server,
+	const struct kl_backend_phone_call *call)
+{
+	char title[KWL_NOTIFY_TITLE_MAX + 1U];
+	char body[KWL_NOTIFY_BODY_MAX + 1U];
+	char lock_text[KWL_NOTIFY_TITLE_MAX + 1U];
+	const char *who;
+	uint32_t id;
+	int allowed;
+	int error;
+
+	/* The user's switch of the phone's notifications (on unless turned off). */
+	error = kwl_settings_number(server, PHONE_NOTIFY_SETTING, &allowed);
+	if (error == 0 && allowed == 0)
+		return;
+
+	/* Who calls: the name the phone gave, else the number, else nobody known. */
+	who = "Unknown caller";
+	if (call->number[0] != '\0')
+		who = call->number;
+	if (call->name[0] != '\0')
+		who = call->name;
+	(void)kwl_notify_clean(title, sizeof(title), who, 0);
+	(void)kwl_notify_clean(body, sizeof(body), "Incoming call", 0);
+	(void)kwl_notify_clean(lock_text, sizeof(lock_text), "Incoming call", 0);
+
+	/* Posted; a click opens the phone program, which shows the call. */
+	id = kwl_notify_app_post(server, PHONE_APP_NAME, title, body, PHONE_COMMAND, lock_text);
+	printf("KWL PHONE call notify id=%u title=%lu\n", id, (unsigned long)strlen(title));
+}
+
+/* Tells whether a phone program listens now (1) or none does (0). */
+static int
+phone_app_listening(
+	void)
+{
+	struct phone_slot *slot;
+	unsigned index;
+	int app;
+
+	/* Each listening object. */
+	for (index = 0U; index < PHONE_SLOTS; index++) {
+		slot = &phone_state.slots[index];
+		if (slot->object == NULL || !slot->listening)
+			continue;
+		app = phone_is_phone_app(slot->object->client);
+		if (app)
+			return 1;
+	}
+
+	/* None. */
 	return 0;
 }
 
@@ -1683,11 +1987,11 @@ phone_owe(
 			return;
 	}
 
-	/* One drop owed is enough; a link owed gives way to the last. */
+	/* One drop owed is enough; a link or a hands-free state owed gives way to the last. */
 	for (index = 0U; index < slot->owed_count; index++) {
 		if (owed->kind == PHONE_OWED_DROPPED && slot->owed[index].kind == PHONE_OWED_DROPPED)
 			return;
-		if (owed->kind == PHONE_OWED_LINK && slot->owed[index].kind == PHONE_OWED_LINK) {
+		if ((owed->kind == PHONE_OWED_LINK || owed->kind == PHONE_OWED_HF) && slot->owed[index].kind == owed->kind) {
 			memmove(&slot->owed[index], &slot->owed[index + 1U], (slot->owed_count - index - 1U) * sizeof(slot->owed[0]));
 			slot->owed_count--;
 			break;
@@ -1796,6 +2100,24 @@ phone_emit_owed(
 		break;
 	case PHONE_OWED_DROPPED:
 		error = kwl_emit(object->client, object->id, KL_SYSTEM_PHONE_EVENT_DROPPED, NULL, 0U);
+		break;
+	case PHONE_OWED_CALL:
+		length = phone_put_word(payload, 0U, owed->call.index);
+		length = phone_put_word(payload, length, owed->call.state);
+		length = phone_put_word(payload, length, owed->call.outgoing);
+		length = phone_put_string(payload, length, owed->call.number);
+		length = phone_put_string(payload, length, owed->call.name);
+		error = kwl_emit(object->client, object->id, KL_SYSTEM_PHONE_EVENT_CALL, payload, length);
+		break;
+	case PHONE_OWED_HF:
+		length = phone_put_word(payload, 0U, owed->hf.state);
+		length = phone_put_word(payload, length, (uint32_t)owed->hf.service);
+		length = phone_put_word(payload, length, (uint32_t)owed->hf.signal);
+		length = phone_put_word(payload, length, (uint32_t)owed->hf.battery);
+		length = phone_put_word(payload, length, (uint32_t)owed->hf.roam);
+		length = phone_put_word(payload, length, (uint32_t)owed->hf.speaker);
+		length = phone_put_word(payload, length, owed->code);
+		error = kwl_emit(object->client, object->id, KL_SYSTEM_PHONE_EVENT_HF, payload, length);
 		break;
 	default:
 		break;

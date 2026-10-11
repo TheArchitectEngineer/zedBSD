@@ -3,7 +3,7 @@
 # WS205: Bluetooth audio（A2DP の SBC・AAC と、headset での HFP 通話）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-11 Q1 作成、P1 の予約の Queue）
+Status: planning（2026-10-11 Q1 作成、P1 の予約の Queue。p001 の設計を P1 が書いた）
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
@@ -27,4 +27,18 @@ Bluetooth の headset で音楽が SBC と AAC で鳴る（実機）。スマホ
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 調査と設計（既存の code・hardware・規格、判断が要る点をユーザーへ） | planned |
+| [p001](phase001/phase.md) | 調査と設計（既存の code・hardware・規格、判断が要る点をユーザーへ） | in-progress（設計済み、D1〜D6 待ち） |
+| [p002](phase002/phase.md) | libmedia の SBC の encoder・decoder（A2DP と mSBC）、host の試験 | in-progress（実装・host 試験済み） |
+| p003 | libmedia の AAC-LC の encoder、host の試験 | planned |
+| p004 | audiod の Bluetooth の出力の口、Settings の出力の選択 | planned |
+| p005 | bluetoothd の A2DP の source（SBC）、headset の接続 | planned |
+| p006 | A2DP の AAC | planned |
+| p007 | AVRCP の Absolute Volume | planned |
+| p008 | HFP の AG と通話の制御の橋渡し | planned |
+| p009 | SCO の音の橋渡し（ws197-p007 の後） | planned |
+| p010 | 実機（T1）と通話の UAT | planned |
+| p011 | 規約の全文の見直し | planned |
+
+## 2026-10-11 ユーザー「全部承認です。」（Q1 が示した推しを全て承認）
+
+D2〜D6 は推しどおり: D2 audiod に Bluetooth の出力の口（全部の音を headset へ、app ごとの行き先は後）D3 AAC-LC だけ・TNS/PNS 無し・256 kbps まで・44.1/48 kHz D4 AVRCP は Absolute Volume だけ D5 headset が AAC なら AAC、無ければ SBC bitpool 53 D6 codec と A2DP を先、headset の通話は ws197-p007 の後。D1（試験の headset の機種と AAC・mSBC の対応）は推しの無い問いなので未回答 → headset が分かるまで AAC・mSBC は host の試験だけで確かめる。音の route の model（ws197 の 2026-10-11 の決定）に乗せる。

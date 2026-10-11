@@ -48,6 +48,7 @@ struct model_widget {
 	uint32_t pcm;
 	uint8_t connections[8];
 	unsigned connection_count;
+	uint32_t sense;
 };
 
 /* One model codec. */
@@ -536,6 +537,11 @@ model_answer(unsigned address, uint32_t command)
 		assert(widget != NULL);
 		return widget->config;
 
+	case 0xF09:
+		/* The pin's sense (ws204-p002): a plug in or not. */
+		assert(widget != NULL);
+		return widget->sense;
+
 	default:
 		assert(set_count < SETS_MAX);
 		sets[set_count].codec = address;
@@ -948,11 +954,11 @@ test_qemu_duplex(void)
 	volume.muted = 0;
 	volume.reserved = 0;
 	assert(audio_ops->set_volume(audio_private, &volume) == 0);
-	assert(set_seen(0, 2, 3, 0x8000 | 0x2000 | (0x4a * 50 / 100)));
+	assert(set_seen(0, 2, 3, 0x8000 | 0x2000 | 59));
 	assert(set_seen(0, 2, 3, 0x8000 | 0x1000 | 0x4a));
 	volume.muted = 1;
 	assert(audio_ops->set_volume(audio_private, &volume) == 0);
-	assert(set_seen(0, 2, 3, 0x8000 | 0x2000 | 0x80 | (0x4a * 50 / 100)));
+	assert(set_seen(0, 2, 3, 0x8000 | 0x2000 | 0x80 | 59));
 	memset(&volume, 0, sizeof(volume));
 	assert(audio_ops->get_volume(audio_private, &volume) == 0);
 	assert(volume.left == 50 && volume.muted == 1);
@@ -997,6 +1003,55 @@ test_laptop(void)
 	printf("hda laptop: display codec skipped, speaker+HP on one DAC, EAPD, mic jack preferred PASS\n");
 }
 
+/*
+ * ws204-p002: a recording takes the internal mic while the jack is empty
+ * (a digital mic: no bias), and the mic jack with its bias and boost once
+ * a plug is in.
+ */
+static void
+test_laptop_capture(void)
+{
+	struct drv_dma_buffer ring;
+	struct model_widget *jack;
+	unsigned index;
+
+	/* The laptop, its mic jack able to sense a plug, with 80% bias and a boost of 3 steps of 10 dB. */
+	model_reset();
+	model_laptop(0);
+	jack = NULL;
+	for (index = 0; index < codecs[0].widget_count; index++) {
+		if (codecs[0].widgets[index].nid == 0x19)
+			jack = &codecs[0].widgets[index];
+	}
+	assert(jack != NULL);
+	jack->caps |= 0x2U | 0x8U;
+	jack->pin_caps |= 0x4U | 0x1000U;
+	jack->amp_in = (0x27U << 16) | (3U << 8);
+	assert(attach(0) != NULL);
+	assert(service->publish(fake_device, service_argument) == 0);
+	assert(drv_dma_alloc_coherent((struct drv_dma_device *)fake_dma, 32768, 4096, &ring) == 0);
+
+	/* The jack empty: the internal digital mic 0x12 through selector 0x23, no bias. */
+	set_count = 0;
+	assert(audio_ops->prepare(audio_private, 1, &audio_ops->formats[0], &ring, 4096, 8) == 0);
+	assert(set_seen(0, 0x23, 0x701, 0));
+	assert(set_seen(0, 0x12, 0x707, 0x20));
+	assert(!set_seen(0, 0x19, 0x707, 0x24));
+
+	/* A plug in: the jack 0x19, selector 1, 80% bias, boost +20 dB (2 steps). */
+	jack->sense = 0x80000000U;
+	set_count = 0;
+	assert(audio_ops->prepare(audio_private, 1, &audio_ops->formats[0], &ring, 4096, 8) == 0);
+	assert(set_seen(0, 0x23, 0x701, 1));
+	assert(set_seen(0, 0x19, 0x707, 0x24));
+	assert(set_seen(0, 0x19, 3, 0x4000 | 0x2000 | 0x1000 | 2));
+
+	drv_dma_free_coherent((struct drv_dma_device *)fake_dma, &ring);
+	assert(service->unpublish(fake_device, service_argument) == 0);
+	detach();
+	printf("hda laptop capture: internal digital mic while the jack is empty, plugged jack with bias and boost PASS\n");
+}
+
 static void
 test_failures(void)
 {
@@ -1021,6 +1076,7 @@ main(void)
 {
 	test_qemu_duplex();
 	test_laptop();
+	test_laptop_capture();
 	test_failures();
 	printf("hda fixture: all PASS\n");
 	return 0;

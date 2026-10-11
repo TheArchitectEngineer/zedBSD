@@ -22,6 +22,8 @@
 ### 統合と試験の待ち
 
 <!-- master:merge:start -->
+- 2026-10-11 夜: ユーザー「5330はほかの用途に使いませんし私はタッチしません。自由に使ってください。」→ 5330（10.0.30.3、UAT image b67a6d7）は T1・P が自由に使ってよい（元を退避）。ESP への書き込みは安全の判定の経緯があるので Q1 が扱う。Pi 4（10.0.30.2）は main 82f2dfc の image、reboot は手動（ユーザーの電源の入れ直し）。
+- 2026-10-11 夕: ユーザー「らちがあかないので、vc6の作業内容をmainにマージしてください。最新のイメージをビルドして焼きます。バグが修正されるまで再起動は手動にします。」→ P3 の VC6（agent/p3 c2e17c674、TLB copy・scene cache の全面の経路・計測の行・TFU は自己試験なしでは無効）を merge（a7ac0e4aa）。P1 の q937 review の直しと WS204 p003 audio-loop（641f5b894）、P2 の BUG-288（d25384091）も merge（f39fd61c5）。rpi4 vmunix・amd64 vmunix/wayland の build warning 0、boundary PASS。Pi 4 は BUG-288 の確認まで reboot は手動。5330 の UAT image は merge の前の b67a6d7e1 で build（SHA256 f617cff3…df21）。
 - 2026-10-11 Q1: P1 の WS197 i06 の書きかけを照合し、main に無かった直し（満杯の時に連絡先の file を書かない）と、同じ秒の item の順を決める直しを merge（d5296c23e、Phone の host 試験 PASS、Phone の named build warning 0）。残りは破棄（写しは build/q1-p1-ws197-i06-discarded.diff）。
 - 2026-10-11: Vulkan Video を既定で ON（c7aeea0c7、ユーザー）。BUG-287 の直し全部（usb-bt の Transaction Error の後の回復、同じ人の bond での phone=1、settings の store 24→64、Settings の Connect・案内、Phone app の案内、phone link の log）を merge 済み（7bfc667e7）。
 - 2026-10-10 Codex: WS197 p005 i06・i07（bee41dded）、MMS の受信（89d487814）、媒体の UAT の直し（e654733f1）、Bluetooth の自動復旧 p013（7fa0a0e9c）を main に統合済み。
@@ -33,7 +35,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-288、WS208、q937、T1-530。次の KL_VERSION は 84、manager は 31（main は 83・30。未統合の codex/ws197-media-uat も keiland.h・manager を変えるので、統合の時に衝突を見る）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-289、WS209、q940、T1-535。次の KL_VERSION は 84、manager は 31（main は 83・30。未統合の codex/ws197-media-uat も keiland.h・manager を変えるので、統合の時に衝突を見る）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -505,6 +507,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS205](ws205/ws.md) | MG006 | Bluetooth audio（A2DP の SBC・AAC、headset で HFP 通話、libmedia の encoder）（2026-10-11 ユーザー） | planning | P1 q931 |
 | [WS206](ws206/ws.md) | MG005 | Raspberry Pi 4 の WiFi（2026-10-11 ユーザー） | planning | P1 q932 |
 | [WS207](ws207/ws.md) | MG006 | Raspberry Pi 4 のオーディオ（再生・録音）（2026-10-11 ユーザー） | planning | P1 q933 |
+| [WS208](ws208/ws.md) | MG008 | arm64 の HAL の SMP（Pi 4 の 4 core）（2026-10-11 ユーザー） | planning | P2 q939（q938 BUG-288 の後） |
 | [WS198](ws198/ws.md) | MG002 | zedBSD の上で zedBSD を self-build（host の clang、2026-10-09 ユーザー、優先度低、ベータ2 の見込み） | planning | p001 前提の調べ |
 | [WS199](ws199/ws.md) | MG006 | Settings のセキュリティキーの独立の頁とウィザード（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
 | [WS200](ws200/ws.md) | MG006 | Settings の Users のパスワード変更のウィザードと認証方式の選択（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |

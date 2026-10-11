@@ -37,6 +37,7 @@ system_view_init(
 	memset(view, 0, sizeof(*view));
 	view->power.percent = -1;
 	view->power_pending.percent = -1;
+	view->phone_hf.speaker = -1;
 }
 
 /*
@@ -1484,6 +1485,65 @@ system_view_bluetooth_done(
 	memcpy(view->bluetooth_devices, view->bluetooth_devices_pending, view->bluetooth_pending_count * sizeof(view->bluetooth_devices[0]));
 	view->bluetooth_count = view->bluetooth_pending_count;
 	view->changed |= KL_SYSTEM_CHANGED_BLUETOOTH;
+}
+
+/*
+ * Keeps a call's change (ws197-p006): in the row of its index, else a free
+ * one; an ended call (state KL_SYSTEM_PHONE_CALL_ENDED) leaves its row.
+ * Told to the program as KL_PHONE_CALLS_CHANGED.
+ */
+void
+system_view_phone_call(
+	struct system_view *view,
+	const struct kl_phone_call *call)
+{
+	unsigned found;
+	unsigned row;
+
+	/* Its row: the same index, else a free one, else the last. */
+	found = KL_PHONE_CALLS_MAX;
+	for (row = 0U; row < KL_PHONE_CALLS_MAX; row++) {
+		if (view->phone_calls[row].state != 0U && view->phone_calls[row].index == call->index) {
+			found = row;
+			break;
+		}
+	}
+
+	/* Else a free one. */
+	for (row = 0U; found == KL_PHONE_CALLS_MAX && row < KL_PHONE_CALLS_MAX; row++) {
+		if (view->phone_calls[row].state == 0U)
+			found = row;
+	}
+
+	/* Else the last. */
+	if (found == KL_PHONE_CALLS_MAX)
+		found = KL_PHONE_CALLS_MAX - 1U;
+
+	/* Kept, or the row freed for an ended call. */
+	view->phone_calls[found] = *call;
+	if (call->state == KL_SYSTEM_PHONE_CALL_ENDED || call->state == 0U)
+		memset(&view->phone_calls[found], 0, sizeof(view->phone_calls[found]));
+
+	/* Told to the program. */
+	system_view_phone_mark(view, KL_PHONE_CALLS_CHANGED);
+}
+
+/*
+ * Keeps the hands-free unit's state (ws197-p006); a unit that is not ready
+ * has no calls.  Told to the program as KL_PHONE_HF_CHANGED.
+ */
+void
+system_view_phone_hf(
+	struct system_view *view,
+	const struct kl_phone_hf *hf)
+{
+	/* The state; the calls gone with a unit that is not ready. */
+	view->phone_hf = *hf;
+	if (hf->state != KL_PHONE_HF_READY)
+		memset(view->phone_calls, 0, sizeof(view->phone_calls));
+
+	/* Told to the program. */
+	system_view_phone_mark(view, KL_PHONE_HF_CHANGED);
 }
 
 /* Keeps a phone event of a kind alone (KL_PHONE_ITEMS, _LINK_CHANGED, _DROPPED) for kl_system_take_phone_event. */

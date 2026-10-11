@@ -416,6 +416,7 @@ static const struct wl_message system_phone_requests[] = {
 	{ "link_set", "27usuu", system_plain_types },
 	{ "watch_link", "27u", system_plain_types },
 	{ "send_mms", "32ush", system_plain_types },
+	{ "control", "33uus", system_plain_types },
 };
 
 /* The events of kl_system_phone_v1 (item and the others since 27, ws197-p004a; link_contacts since 28, ws197-p005). */
@@ -430,15 +431,17 @@ static const struct wl_message system_phone_events[] = {
 	{ "done", "27uu", system_plain_types },
 	{ "link_contacts", "28uus", system_plain_types },
 	{ "item_mime", "30uussuuiuusssuah", system_plain_types },
+	{ "call", "33uuuss", system_plain_types },
+	{ "hf", "33uiiiiiu", system_plain_types },
 };
 
-/* kl_system_phone_v1, made at the manager's version (16, its messages' syncs since 27, the contacts and calls since 28, received MIME since 30, send_mms since 32): ten requests and ten events.  It lives for the program. */
+/* kl_system_phone_v1, made at the manager's version (16, its messages' syncs since 27, the contacts and calls since 28, received MIME since 30, send_mms since 32, the calls' control since 33): eleven requests and twelve events.  It lives for the program. */
 const struct wl_interface kl_system_phone_v1_interface = {
 	KL_SYSTEM_PHONE_NAME,
-	KL_SYSTEM_SINCE_PHONE_MMS,
-	10,
+	KL_SYSTEM_SINCE_PHONE_CALLS,
+	11,
 	system_phone_requests,
-	10,
+	12,
 	system_phone_events
 };
 

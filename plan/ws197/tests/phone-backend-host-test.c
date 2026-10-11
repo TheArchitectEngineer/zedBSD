@@ -389,6 +389,8 @@ main(
 	unsigned sent_state;
 	int events;
 	int requests;
+	struct kl_backend_phone_hf hf;
+	struct kl_backend_phone_call call;
 	FILE *mms_file;
 	int mms_pipe[2];
 	int pages;
@@ -548,6 +550,36 @@ main(
 	got = wait_result(phone, id, &result);
 	check(got && result.error == 0 && result.sent_request == 78U, "mms result %d %d %u", got, result.error, result.sent_request);
 	(void)fclose(mms_file);
+
+	/* The calls (ws197-p006): the hands-free unit's state and a call's change on the events, a request's line and answer. */
+	fake_write(events, "PHONE HF state=ready why=- service=1 signal=4 battery=3 roam=0 speaker=-1 voice=0 hold=1\nPHONE CALL index=1 state=incoming dir=in number=\"+819012345678\" name=\"Taro \\\"T\\\"\"\n");
+	(void)step(phone);
+	kl_backend_phone_get_hf(phone, &hf);
+	check(hf.state == KL_BACKEND_PHONE_HF_READY && hf.signal == 4 && hf.battery == 3 && hf.speaker == -1 && hf.hold == 1U, "hf state %u %d %d %d %u", hf.state, hf.signal, hf.battery, hf.speaker, hf.hold);
+	got = kl_backend_phone_take_call(phone, &call);
+	check(got && call.index == 1U && call.state == KL_BACKEND_PHONE_CALL_INCOMING && !call.outgoing && strcmp(call.number, "+819012345678") == 0 && strcmp(call.name, "Taro \"T\"") == 0, "call change %d %u %u %s %s", got, call.index, call.state, call.number, call.name);
+	got = kl_backend_phone_take_call(phone, &call);
+	check(!got, "one call change");
+	error = kl_backend_phone_call_ask(phone, KL_BACKEND_PHONE_ASK_DIAL, "+8190", &id);
+	check(error == 0, "dial %d", error);
+	(void)step(phone);
+	requests = fake_take("PHONE DIAL to=\"+8190\"", line, sizeof(line), NULL, 0U);
+	check(requests >= 0, "the dial's line");
+	fake_write(requests, "DONE\n");
+	got = wait_result(phone, id, &result);
+	check(got && result.error == 0, "dial result %d %d", got, result.error);
+	error = kl_backend_phone_call_ask(phone, KL_BACKEND_PHONE_ASK_ANSWER, NULL, &id);
+	check(error == 0, "answer %d", error);
+	(void)step(phone);
+	requests = fake_take("PHONE ANSWER", line, sizeof(line), NULL, 0U);
+	check(requests >= 0 && strcmp(line, "PHONE ANSWER") == 0, "the answer's line");
+	fake_write(requests, "ERROR no-call\nDONE\n");
+	got = wait_result(phone, id, &result);
+	check(got && result.error != 0, "answer refused %d %d", got, result.error);
+	error = kl_backend_phone_call_ask(phone, KL_BACKEND_PHONE_ASK_DTMF, "5\"", &id);
+	check(error == EINVAL, "a key with a quote %d", error);
+	error = kl_backend_phone_call_ask(phone, 99U, NULL, &id);
+	check(error == EINVAL, "an ask not known %d", error);
 
 	/* An MMS's body that is not a regular file, or no descriptor. */
 	error = pipe(mms_pipe);

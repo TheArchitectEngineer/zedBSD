@@ -110,6 +110,9 @@
 #define VIEW_COLOR_PALE		KL_RGB(0xb4b9c2)
 #define VIEW_COLOR_HEART	KL_RGB(0xff4d6d)
 
+/* The dark chip of a video's play mark (the media picker's). */
+#define VIEW_COLOR_VIDEO	KL_RGBA(0x000000, 150)
+
 /* The most photos a list shows. */
 #define VIEW_LIST_MAX		PH_PHOTOS_MAX
 
@@ -146,6 +149,7 @@ static int view_grid_place(const size_t *indices, size_t count, int columns, int
 static int view_month(ph_time when);
 static void view_cell(struct ph_view *view, const struct kl_style *style, size_t photo, const struct kl_rect *rect, unsigned hit);
 static void view_thumb(struct ph_view *view, const struct kl_style *style, size_t photo, int x, int y, int side, float radius);
+static void view_video_mark(const struct kl_style *style, int x, int y, int side);
 static void view_whole(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, uint64_t now_us);
 static int view_side_button(struct kl_ui *ui, const struct kl_style *style, uint32_t id, int cx, int cy, enum kl_icon icon);
 static void view_heart(struct kl_canvas *canvas, float cx, float cy, float size, kl_color color);
@@ -477,6 +481,12 @@ ph_view_result(
 	thumb = &view->thumbs[result->photo];
 	if (thumb->state != PH_THUMB_NONE) {
 		kl_image_release(&result->image);
+		return;
+	}
+
+	/* A video keeps its icon and mark, and is not asked for again. */
+	if (result->error == ENOTSUP) {
+		thumb->state = PH_THUMB_VIDEO;
 		return;
 	}
 
@@ -1472,6 +1482,16 @@ view_thumb(
 
 	/* Waiting, or a picture that cannot be made. */
 	kl_canvas_round(style->canvas, (float)x, (float)y, (float)side, (float)side, radius, VIEW_COLOR_WAITING);
+
+	/* A video: the films' icon, and the play mark at the bottom left as the media picker draws it. */
+	if (thumb->state == PH_THUMB_VIDEO) {
+		kl_icon_draw(style->canvas, KL_ICON_MOVIES, (float)x + (float)side * 0.3f, (float)y + (float)side * 0.3f, (float)side * 0.4f,
+		    style->theme->text_faint);
+		view_video_mark(style, x, y, side);
+		return;
+	}
+
+	/* A picture that cannot be made. */
 	if (thumb->state == PH_THUMB_FAILED) {
 		kl_icon_draw(style->canvas, KL_ICON_PICTURE, (float)x + (float)side * 0.3f, (float)y + (float)side * 0.3f, (float)side * 0.4f,
 		    style->theme->text_faint);
@@ -1480,6 +1500,33 @@ view_thumb(
 
 	/* Asked for. */
 	view_want(view, photo);
+}
+
+/* Draws a video's mark at the bottom left of its square: a play triangle on a dark chip. */
+static void
+view_video_mark(
+	const struct kl_style *style,
+	int x,
+	int y,
+	int side)
+{
+	float points[6];
+	float left;
+	float top;
+
+	/* The chip. */
+	left = (float)x + 6.0f;
+	top = (float)(y + side) - 26.0f;
+	kl_canvas_round(style->canvas, left, top, 30.0f, 20.0f, 6.0f, VIEW_COLOR_VIDEO);
+
+	/* The triangle, pointing right. */
+	points[0] = left + 11.0f;
+	points[1] = top + 5.0f;
+	points[2] = left + 11.0f;
+	points[3] = top + 15.0f;
+	points[4] = left + 20.0f;
+	points[5] = top + 10.0f;
+	kl_canvas_polygon(style->canvas, points, 3, VIEW_COLOR_WHITE);
 }
 
 /*
