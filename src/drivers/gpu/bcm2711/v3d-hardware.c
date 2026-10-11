@@ -750,6 +750,9 @@ service_sources(
 	hardware->events.core |= core;
 	hardware->events.hub |= hub;
 
+	/* Timestamp the protected IRQ snapshot for worker-latency diagnostics. */
+	hardware->events.arrival_tick = clock_ticks();
+
 	/* Faults take precedence over simultaneous queue completion in the worker. */
 	if ((core & ENGINE_CORE_FAULT) != 0 || (hub & ENGINE_HUB_FAULTS) != 0) {
 		hardware->faulted = true;

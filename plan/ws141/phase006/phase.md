@@ -338,3 +338,7 @@ HAL APIを変えず、arm64/page.cに「ここより前は全て使用中」と�
 
 
 ユーザー「初期化時の3000msのウェイトも短くしてほしい」に従い、診断撮影用stage pauseのみ3000→100msへ短縮。HW固有のsettling/ready/timeout値は変更しない。stage-host限定PASS、C全文review/style0/diff-check PASS、arm64 warning0/checkerPASS。kernel994709821/8077312。直前の355d15c26診断kernel1993742562はFATへ配置・照合済みだが再起動前だったため、短縮版を配置して一度だけ再起動する。旧動作版2480702249は /var/backups/vmunix.before-submit-timing-20261011に保全済み。
+
+
+9f3d3d14a短縮版994709821/8077312をFATへ配置/cmp/syncしreboot、SSH復帰と通常Waylandを確認。100msのstage pauseで初期化成立。代表submissionは461〜548ms（prepare100〜133、execute304〜306、release55〜113）、操作負荷中は1.2〜3.2秒。small64x64 offscreen alpha0.5は期待58,115,77,255、250ms以上のsubmission診断は新たに出ず。
+次の診断はCLのbin/render/cache-cleanのwall時間と、CPUtarget validation/clear時間を区別し、IRQ到着tickからworkerがcompletionを消費するまで20ms以上の遅れを記録。IRQguard内はtick記録だけ、待機/allocateなし。イベント優先/retirement/timeout制御には時刻を使わない。既存hardware/device限定host PASS、production style0/diff-check/C全文manual/clang-format19比較、arm64 warning0/checkerPASS。kernel2309215655/8077312。実機へ配置して原因を絞る。submit-i01はin-progress。

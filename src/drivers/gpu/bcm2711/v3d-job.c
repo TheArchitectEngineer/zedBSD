@@ -9,6 +9,7 @@
 #include <kern/clock.h>
 #include <kern/device-io.h>
 #include <kern/kcrt.h>
+#include <kern/klog.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
@@ -314,7 +315,18 @@ run_cl(
 	const struct job_queue bin = {2, 0, 0x110, 0x118};
 	const struct job_queue render = {1, 0, 0x114, 0x11c};
 	unsigned long enabled;
+	uint64_t started;
+	uint64_t step;
+	uint64_t bin_ticks;
+	uint64_t render_ticks;
+	uint64_t clean_ticks;
+	uint64_t elapsed;
 	int error;
+
+	/* Measure queue completion separately from output cache drain. */
+	started = clock_ticks();
+	bin_ticks = 0;
+	clean_ticks = 0;
 
 	/* The bin queue writes tile lists into its prevalidated pool and state allocations. */
 	if (job->bin_start != 0) {
@@ -343,7 +355,9 @@ run_cl(
 		spin_unlock_irqrestore(&engine->hardware.guard, enabled);
 
 		/* Render remains unsubmitted while bin completion or overflow is still pending. */
+		step = clock_ticks();
 		error = wait_queue(engine, &bin, job, result);
+		bin_ticks = clock_ticks() - step;
 		if (error != 0)
 			return error;
 	}
@@ -368,11 +382,15 @@ run_cl(
 	spin_unlock_irqrestore(&engine->hardware.guard, enabled);
 
 	/* The same caller-owned pool and overflow storage stay alive through render completion. */
+	step = clock_ticks();
 	error = wait_queue(engine, &render, NULL, result);
+	render_ticks = clock_ticks() - step;
 	if (error != 0)
 		return error;
 	if (job->clean_output) {
+		step = clock_ticks();
 		error = bcm2711_v3d_hardware_clean(engine);
+		clean_ticks = clock_ticks() - step;
 		if (error != 0)
 			return error;
 	}
@@ -381,6 +399,17 @@ run_cl(
 	result->bin_counter = kern_mmio_read32(engine->core.mapped + 0x134);
 	result->render_counter = kern_mmio_read32(engine->core.mapped + 0x138);
 	result->retired = true;
+
+	/* A slow queue report includes scheduler delay and cannot alone establish GPU busy time. */
+	elapsed = kern_ticks_to_ms(clock_ticks() - started);
+	if (elapsed >= 100U) {
+		kern_logf(
+			"v3d: CL timing ms=%llu bin=%llu render=%llu clean=%llu\n",
+			(unsigned long long)elapsed,
+			(unsigned long long)kern_ticks_to_ms(bin_ticks),
+			(unsigned long long)kern_ticks_to_ms(render_ticks),
+			(unsigned long long)kern_ticks_to_ms(clean_ticks));
+	}
 
 	/* Succeeded: both queues and any requested output cache clean finished. */
 	return 0;
@@ -510,6 +539,7 @@ wait_queue(
 	uint64_t now;
 	uint64_t current_frequency;
 	uint64_t window_ticks;
+	uint64_t completion_delay;
 	bool timed;
 	int error;
 
@@ -547,8 +577,22 @@ wait_queue(
 			}
 
 			/* Completion outranks a simultaneous early OOM warning from the retiring binner. */
-			if ((events.core & queue->core_event) != 0 || (events.hub & queue->hub_event) != 0)
+			if ((events.core & queue->core_event) != 0 || (events.hub & queue->hub_event) != 0) {
+				/* Measure IRQ-to-worker delay without changing the event retirement rule. */
+				completion_delay = kern_ticks_to_ms(clock_ticks() - events.arrival_tick);
+				if (completion_delay >= 20U) {
+					kern_logf(
+						"v3d: completion delay ms=%llu event=%x/%x\n",
+						(unsigned long long)completion_delay,
+						queue->core_event,
+						queue->hub_event);
+				}
+
+				/* Succeeded: the required native event was observed. */
 				return 0;
+			}
+
+			/* Feed a preallocated overflow interval only while binning remains pending. */
 			if (bin != NULL && (events.core & 4U) != 0) {
 				error = feed_overflow(engine, bin, result);
 				if (error != 0)

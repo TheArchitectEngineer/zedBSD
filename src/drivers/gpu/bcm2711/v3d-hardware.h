@@ -20,6 +20,9 @@ struct bcm2711_v3d;
 struct bcm2711_v3d_events {
 	uint32_t core;
 	uint32_t hub;
+
+	/* Arrival time diagnoses completion-to-worker delay; it never controls retirement. */
+	uint64_t arrival_tick;
 	uint32_t fault_client;
 	uint32_t fault_address;
 	int error;

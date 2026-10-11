@@ -103,3 +103,5 @@ vulkan-native-pass.c/execute.cの新差分をC全文review。image全域かつCL
 2026-10-11: native-job成功時250ms以上の集計診断を全文review。時刻計測は公開制御に使わず、preemptionを含むwall時間と明記。対象host/build warning0/style0/diff-check PASS。実機はp006へ。
 
 2026-10-11 user指示のstage撮影待ち短縮（3000→100ms）は定数のみの機能差分、hardware待ちを分離確認。stage-host/style0/diff-check/arm64 warning0/checkerPASS。
+
+2026-10-11 CL/CPU clear/IRQ-to-worker内訳診断の変更4fileをC全文review。IRQ追加はguard保護tick格納のみ、retirementやtimeoutに使用しない。hardware/device限定host、style0、diff-check、arm64 warning0/checkerPASS。

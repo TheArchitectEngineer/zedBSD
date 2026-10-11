@@ -6,7 +6,9 @@
  */
 
 /* FIFO execution clears only the exact colour render area before supervised native bin/render launch; callback completion never retires uncertain DMA. */
+#include <kern/clock.h>
 #include <kern/device-io.h>
+#include <kern/klog.h>
 #include <kern/kcrt.h>
 #include <uapi/errno.h>
 
@@ -32,6 +34,8 @@ bcm2711_vulkan_native_pass_run(
 	struct bcm2711_vulkan_native_pass *pass,
 	struct bcm2711_v3d_job_result *result)
 {
+	uint64_t started;
+	uint64_t elapsed;
 	int error;
 
 	/* Missing completion storage cannot report safe retirement. */
@@ -51,6 +55,7 @@ bcm2711_vulkan_native_pass_run(
 	}
 
 	/* Complete live mapped ownership and numerical target state are checked before any target byte changes. */
+	started = clock_ticks();
 	error = validate_pass(pass);
 	if (error != 0)
 		return error;
@@ -59,6 +64,19 @@ bcm2711_vulkan_native_pass_run(
 	error = clear_target(pass);
 	if (error != 0)
 		return error;
+
+	/* Identify expensive CPU clear without confusing it with native queue execution. */
+	elapsed = kern_ticks_to_ms(clock_ticks() - started);
+	if (elapsed >= 100U) {
+		kern_logf(
+			"v3d: CPU target ms=%llu size=%ux%u area=%ux%u load=%u\n",
+			(unsigned long long)elapsed,
+			pass->state.width,
+			pass->state.height,
+			pass->area.extent.width,
+			pass->area.extent.height,
+			pass->state.load);
+	}
 
 	/* The single-use root and every coherent CPU write precede the native runner's supervised launch. */
 	pass->executed = true;

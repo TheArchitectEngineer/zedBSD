@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: 既存履歴 q691（p001）・q695（p002）。現在の独立セッションの実行範囲は [execution-20261009.md](execution-20261009.md)
-Resume point: alpha4条件の実機読み戻しは期待値一致。物理page候補保持13737b751でSSH応答とdesktop継続が回復。ただし操作の応答は約1秒以上残る。全面CPU clearをnative tile clearへ移す修正はhost/arm64 build PASS、実機配置と計測を続ける。p006 submit-i01/WS incomplete。共有投影はQ1。
+Resume point: alpha読み戻しは期待値一致、物理page候補保持でSSH/desktop継続が回復。stage pause100ms版は実機初期化PASS。大画面のsubmission約470ms（execute305ms）以上が残るため、CL/CPUclear/IRQ-to-worker内訳版2309215655を配置して調査。p006 submit-i01/WS incomplete。共有投影はQ1。
 Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
