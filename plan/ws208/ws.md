@@ -42,7 +42,7 @@ Pi 4 の起動の log が `CPUs ready: 4`、desktop・network・SSH が動き、
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 調査と設計 | in-progress（設計 第 1 版、判断待ち） |
 | p002 | 下地（percpu・TPIDR_EL1・lock・task の切り替えの手順、まだ 1 CPU） | planning |
-| p003 | secondary の起動（spin-table・GIC・timer・TLB・`cpus=N`）、QEMU `-smp 4` | planning |
+| p003 | secondary の起動（spin-table・GIC・timer・TLB・`cpus=N`）、QEMU raspi4b（4 core 固定） | planning |
 | p004 | 負荷と driver の競合（QEMU） | planning |
 | p005 | Pi 4 の実機（4 core・reboot 10 回） | planning |
 | p006 | 規約の全文の見直し | planning |

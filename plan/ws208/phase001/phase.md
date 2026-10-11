@@ -31,6 +31,7 @@ kernel の MI の部分は SMP に対応済みで amd64 で動いている。arm
   | `asm.c` | `arm64_flush_tlb()` は `tlbi vmalle1is`（broadcast）。`hal_reset`・`hal_panic` は自分の CPU だけ | D2。panic は他の CPU を止める（`hal_cpu_panic_all`） |
 - 既に SMP に向いている所: TCR の SH0・SH1 は inner shareable、page の descriptor の SH も inner shareable（0x701、leaf_flags）、cache の保守は `dsb ish`・`ic ivau`（PoU の IS の broadcast）、`hal_mb` は `dmb ish`。kernel の atomic は `-march=armv8-a -mno-outline-atomics` の LL/SC（MMU 有効・Normal の inner shareable で動く）。
 - 起動の方式: Pi 4 の firmware（armstub8）と QEMU raspi4b の `-kernel`（arm64 の Linux の header を持つ image として boot）は共に spin-table。secondary は firmware の stub の中で `wfe` しながら `cpu-release-addr`（Pi 4 の DT では 0xd8・0xe0・0xe8・0xf0）を見ており、そこへ入口の物理 address を書いて `sev` すると飛んでくる。入るのは EL2（非 secure）か QEMU の場合の EL1。低位 1 MiB は `arm64_page_init` が予約済みなので spin-table は壊れない。PSCI は Pi 4 の既定の firmware には無い。
+- QEMU raspi4b は machine が 4 core 固定（`-smp` は要らない）。今は secondary が firmware 相当の stub の spin-table で待ったまま。
 - Pi 4 の driver: `rpi4-sdhci.c` は mutex（SMP で可）。GENET・xHCI・PCIe・firmware の mailbox・console と、WS141 の bcm2711 の GPU（`src/drivers/gpu/bcm2711/`）は p004 で競合を確かめる。今の割り込みは全て CPU 0 に届く（ITARGETSR=1）。
 
 ## 2. 設計
@@ -86,8 +87,8 @@ kernel の MI の部分は SMP に対応済みで amd64 で動いている。arm
 | Phase | 内容 | 確かめ | 見積もり（LW） |
 | --- | --- | --- | --- |
 | p002 | 下地: percpu と TPIDR_EL1、`hal_cpu_current`、pmem・space・task・irq の lock、task の `switching_from`・`target_cpu`、CPU ごとの current space・active_ack・timer・debug。まだ 1 CPU で動かす（cpu-up.c のまま、count=1） | build・UP の起動（T1、QEMU raspi4b、boot-test の PNG） | 4〜5 |
-| p003 | secondary の起動: FDT の cpu の表（host 試験）、`locore.S` の secondary の入口、`smp.c`（start_others・notify・park・panic_all・ready mask）、GIC と timer の CPU ごと、TLB の切り替えの local と変更の broadcast、`cpus=N` の boot parameter（D3） | build、host 試験、T1 で QEMU raspi4b `-smp 4` の起動と `CPUs ready: 4` の PNG | 4〜6 |
-| p004 | 負荷と driver の競合: QEMU の `-smp 4` で build・desktop・network の負荷、GENET・xHCI・PCIe・mailbox・console の競合の直し（GPU は D5） | T1（QEMU）、短い負荷 | 2〜4 |
+| p003 | secondary の起動: FDT の cpu の表（host 試験）、`locore.S` の secondary の入口、`smp.c`（start_others・notify・park・panic_all・ready mask）、GIC と timer の CPU ごと、TLB の切り替えの local と変更の broadcast、`cpus=N` の boot parameter（D3） | build、host 試験、T1 で QEMU raspi4b（machine が 4 core 固定、`plan/tools/boot-test.sh` の `BOOT_MODE=raspi4b`）の起動と `CPUs ready: 4` の PNG | 4〜6 |
+| p004 | 負荷と driver の競合: QEMU raspi4b の 4 core で build・desktop・network の負荷、GENET・xHCI・PCIe・mailbox・console の競合の直し（GPU は D5） | T1（QEMU）、短い負荷 | 2〜4 |
 | p005 | Pi 4 の実機: 4 core の起動、desktop・network・SSH、reboot 10 回（Q1 が P3 と順を合わせる） | 実機 | 4〜6 |
 | p006 | 規約の全文の見直し | build・diff の確かめ | 1 |
 
