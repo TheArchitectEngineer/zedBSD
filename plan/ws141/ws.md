@@ -347,3 +347,7 @@ R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなく
 
 
 2026-10-11 cursor-only scene cache: private scene.c/h、three-OS source list、compose/damage/shellへ標準Vulkan transfer bufferを追加。cursor前scene capture→fence後valid→unchanged cursor-only region復元→cursor LOAD。client commit/unknown dirtyは再合成、optional failureは旧経路、multiheadは普通の再合成。acquireのTRANSFER wait/partial full-width stride/retained lifetime/old cursor消去をproduction recorder hostとactual device transfer hostでPASS、C全文manual/formatter19範囲/diff-check、arm64 app warning0/error0/checker0、wayland886953165/953832。newコンソール版の36 input software samplesはmin288/median919.5/max1300ms（user窓内約300ms）、33ms未達でcache実機を比較する。p006/submit-i01 in-progress、shared projection/publication保留。
+
+## 2026-10-11 Q1: P3 への引き継ぎ
+
+ユーザーの指示で、WS141 の描画の速さの改善を Codex のセッションから P3（Claude Code のサブエージェント、worktree `/home/awe/zedBSD-worktrees/p3`、branch agent/p3、起点 d27925686）へ引き継ぐ。新しい Phase [ws141-p013](phase013/phase.md)（frame 33 ms → 16 ms）。以後 ws141/ は P3 が書き、Q1 が merge する。

@@ -225,6 +225,8 @@ calls_and_overflow(
 	const struct ph_contact *contacts;
 	struct stat before;
 	struct stat after;
+	struct stat full_before;
+	struct stat full_after;
 	char path[2048];
 	char number[32];
 	size_t count;
@@ -292,6 +294,16 @@ calls_and_overflow(
 	contacts = ph_contacts(&count);
 	check("bounded rows", count == 1024U && strcmp(contacts[contact].id, "o") == 0);
 	check("overflow peer retained", contacts[contact].items[item].extra != NULL && strstr(contacts[contact].items[item].extra, message.peer) != NULL);
+
+	/* A new contact past the bound is refused before its file is written. */
+	(void)snprintf(path, sizeof(path), "%s/contacts", root);
+	(void)mkdir(path, 0700);
+	error = stat(path, &full_before);
+	check("contacts folder", error == 0);
+	error = ph_store_add_contact("Full", "+819777777777", &contact);
+	check("full contact refused", error == ENOSPC);
+	error = stat(path, &full_after);
+	check("full contact no file", error == 0 && full_before.st_mtim.tv_sec == full_after.st_mtim.tv_sec && full_before.st_mtim.tv_nsec == full_after.st_mtim.tv_nsec);
 	ph_store_close();
 
 	/* Reopening an older store with excess folders still succeeds. */

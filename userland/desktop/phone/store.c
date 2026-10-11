@@ -103,9 +103,12 @@ static int store_load_contact(const char *id);
 static int store_load_conversations(void);
 static int store_load_items(long contact, const char *folder);
 static void store_sort_items(long contact);
+static int store_item_later(const struct ph_item *left, const struct ph_item *right);
+static unsigned long store_path_serial(const char *path);
 static int store_load_item(long contact, const char *path);
 static int store_extra_add(char **extra, size_t *length, const char *key, const char *value);
 static int store_append_contact(const char *id, const char *name, const char *number);
+static int store_has_room(const char *id);
 static int store_append_item(long contact, const struct ph_item *item);
 static int store_write_item(const struct ph_item *item, const char *path);
 static int store_put(char *text, size_t *used, const char *format, ...);
@@ -252,6 +255,7 @@ ph_store_add_contact(
 	long conversation;
 	int length;
 	int failed;
+	int room;
 	int error;
 
 	/* A number is needed; the name may be the number. */
@@ -263,9 +267,14 @@ ph_store_add_contact(
 	if (conversation >= 0 && !store_contacts[conversation].conversation)
 		conversation = -1;
 
-	/* Its ID and file. */
+	/* Its ID; a new row needs room (the file is not written without it). */
 	store_serial++;
 	(void)snprintf(id, sizeof(id), "c%lld-%lu", (long long)time(NULL), store_serial);
+	room = store_has_room(id);
+	if (conversation < 0 && !room)
+		return ENOSPC;
+
+	/* Its file. */
 	(void)snprintf(path, sizeof(path), "%s/contacts/%s.vcf", store_root, id);
 	length = snprintf(text, sizeof(text), "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:%s\r\nTEL:%s\r\nEND:VCARD\r\n", name, number);
 	if (length < 0 || (size_t)length >= sizeof(text))
@@ -1599,7 +1608,7 @@ store_sort_items(
 	for (i = 1; i < kept->item_count; i++) {
 		moved = kept->items[i];
 		at = i;
-		while (at > 0U && kept->items[at - 1U].date > moved.date) {
+		while (at > 0U && store_item_later(&kept->items[at - 1U], &moved)) {
 			kept->items[at] = kept->items[at - 1U];
 			at--;
 		}
@@ -1607,6 +1616,50 @@ store_sort_items(
 		/* Its place. */
 		kept->items[at] = moved;
 	}
+}
+
+/*
+ * Whether one item goes after another in a timeline: by the time, then
+ * for the same second by the serial in its file's name
+ * (<date>-<serial>-<direction>.txt), so that a reopened store keeps the
+ * order whatever order the folder is read in.
+ */
+static int
+store_item_later(
+	const struct ph_item *left,
+	const struct ph_item *right)
+{
+	unsigned long left_serial;
+	unsigned long right_serial;
+
+	/* By the time. */
+	if (left->date != right->date)
+		return left->date > right->date;
+
+	/* The same second: by the serial. */
+	left_serial = store_path_serial(left->path);
+	right_serial = store_path_serial(right->path);
+	return left_serial > right_serial;
+}
+
+/* The serial in an item's file's name (0 for a name without one). */
+static unsigned long
+store_path_serial(
+	const char *path)
+{
+	const char *name;
+	const char *dash;
+
+	/* The file's name and the number after its first '-'. */
+	if (path == NULL)
+		return 0UL;
+	name = strrchr(path, '/');
+	if (name == NULL)
+		name = path;
+	dash = strchr(name, '-');
+	if (dash == NULL)
+		return 0UL;
+	return strtoul(dash + 1, NULL, 10);
 }
 
 /* Reads one item's file. */
@@ -1737,6 +1790,36 @@ store_extra_add(
 	return 0;
 }
 
+/*
+ * Whether a row of the given ID has room: the last row is left for the
+ * conversation of other numbers ("o") until it is there.
+ */
+static int
+store_has_room(
+	const char *id)
+{
+	size_t index;
+	int have_overflow;
+	int reserved;
+	int same;
+
+	/* Leaves the last row available for the overflow conversation. */
+	reserved = strcmp(id, "o");
+	have_overflow = 0;
+	for (index = 0U; index < store_contact_count; index++) {
+		same = strcmp(store_contacts[index].id, "o");
+		if (same == 0)
+			have_overflow = 1;
+	}
+
+	/* Existing overflow already occupies the reservation, so other rows may use the remainder. */
+	if (!have_overflow && reserved != 0 && store_contact_count >= STORE_CONTACTS_MAX - 1U)
+		return 0;
+
+	/* Room for one more. */
+	return store_contact_count < STORE_CONTACTS_MAX;
+}
+
 /* Appends a contact (its strings copied, its initials and color made). */
 static int
 store_append_contact(
@@ -1747,26 +1830,12 @@ store_append_contact(
 	struct ph_contact *grown;
 	struct ph_contact *kept;
 	size_t capacity;
-	size_t index;
-	int have_overflow;
-	int reserved;
 	int failed;
-
-	/* Leaves the last row available for the overflow conversation. */
-	reserved = strcmp(id, "o");
-	have_overflow = 0;
-	for (index = 0U; index < store_contact_count; index++) {
-		failed = strcmp(store_contacts[index].id, "o");
-		if (failed == 0)
-			have_overflow = 1;
-	}
-
-	/* Existing overflow already occupies the reservation, so other rows may use the remainder. */
-	if (!have_overflow && reserved != 0 && store_contact_count >= STORE_CONTACTS_MAX - 1U)
-		return ENOSPC;
+	int room;
 
 	/* Room for one more. */
-	if (store_contact_count == STORE_CONTACTS_MAX)
+	room = store_has_room(id);
+	if (!room)
 		return ENOSPC;
 	if (store_contact_count == store_contact_capacity) {
 		capacity = store_contact_capacity * 2U;

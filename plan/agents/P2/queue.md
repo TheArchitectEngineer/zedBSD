@@ -1,3 +1,19 @@
+# P2 の Queue lane（2026-10-11 generation、Q1 投入）
+
+承認: 2026-10-11 ユーザー（このセッション、N=3＋T1 の指示）「P2はバグ修正です。・BUG-263、BUG-274、その他バグがでたら対処。バグが出るまでいったんP2を畳んでおき、必要なときに再度立てる。」
+Worktree: `/home/awe/zedBSD-worktrees/p2`、branch `agent/p2`、base main fc3d317ca。agent type phase-runner（high）。
+
+| Queue | 対象 | State |
+| --- | --- | --- |
+| q934 | [BUG-263](../../bugs/BUG-263.md)（AF_UNIX の datagram で相手が閉じた後 recv が待ち続ける） | active |
+| q935 | [BUG-274](../../bugs/BUG-274.md)（`ps -o args` が argv[0] だけ） | reserved |
+
+両方の後は通常のラップアップで終了（次の Bug が出たら Q1 が新しい generation を立てる）。
+
+---
+
+以前の記録（履歴）:
+
 # P2 Queue lane
 
 | Queue / attempt | Phase | Scope | Approval | Timebox | State |

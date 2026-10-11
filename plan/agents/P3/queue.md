@@ -1,3 +1,16 @@
+# P3 の Queue lane（2026-10-11 generation、Q1 投入）
+
+承認: 2026-10-11 ユーザー（このセッション、N=3＋T1 の指示）「P3はRaspberry Pi 4のVC6ドライバの改善です。ssh kei@10.0.30.2で接続できます。パスワードはkeiです。…これを引き継いで、30fpsの33msが1つめの目標、60fsの16ms以下が最終目標です。」
+Worktree: `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3`、base codex/rpi4-gpu-init d27925686。agent type phase-runner（high）。
+
+| Queue | Phase | State |
+| --- | --- | --- |
+| q936 | [ws141-p013](../../ws141/phase013/phase.md) | active |
+
+---
+
+以前の記録（履歴）:
+
 # P3 Queue lane
 
 | Queue / attempt | Phase | Scope | Approval | Timebox | State |

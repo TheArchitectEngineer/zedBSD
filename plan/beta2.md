@@ -1,9 +1,9 @@
 <!-- awesome-plan project=zedbsd record=beta2-triage -->
 
-# ベータ2 の残り作業（2026-10-10 Q1 更新）
+# ベータ2 の残り作業（2026-10-11 Q1 更新）
 
 公開は 10/17（OSC 当日、朝から会場）なので、**10/16 中にリリースの準備を終える**。
-体制: P1（実装・debug）＋T1（QEMU と 5330 の試験）＋ユーザー（UAT・判断）。この表は計画で、Queue の承認ではない。
+体制（2026-10-11 ユーザー）: Q1＋P1（新規の実装）・P2（Bug）・P3（Pi 4 の VC6 の描画）＋T1（試験）＋ユーザー（UAT・判断）。WS203（Pi 4 の Ethernet）は Codex の別のセッション。この表は計画で、Queue の承認ではない。
 見積もりは LW（1 LW ≈ エージェントの実時間 20 分）。完了した項目は消す。Q1 は進むたびに更新する。
 
 ## 日程
@@ -17,11 +17,13 @@
 
 ## 今の状況
 
-- 2026-10-11: [BUG-287](bugs/BUG-287.md)（スマホ連携が「connecting」のまま）の原因は USB の Transaction Error の後に Bluetooth の受けが止まること。P1 の直し（usb-bt の回復、同じ人の bond での phone=1、settings の store 24→64）を main に merge（b91d5675c、kernel の build warning 0）。Settings の Connect を phone に出さない・失敗の案内・Phone app の案内・phone link の log も merge（7bfc667e7）。BUG-287 の直しは全部 main に入った。**image を作り直してよい**。
-- WS199・WS200 は実装と QEMU の試験が済み、残りは次の UAT（#4〜#8）。
-- WS083（Vulkan Video）は既定で ON にした（2026-10-11 ユーザー）。残りは p007 の hang の実機の確かめ。libavcodec なしで libmedia だけで mp4（H.264・AAC）と .m4a を再生する [WS202](ws202/ws.md) は設計だけを書き、実装は別のセッション。
-- T1 の WS143 の HID の回帰はもう流さない（ユーザー）。P2 は WS083 を終えて退いた。
-- 残る既知の Bug は USB LAN の遅さ（BUG-222、4.9 MB/s）。
+- 2026-10-11: [WS197](ws197/ws.md)（スマホ連携）は SMS・MMS の受信と表示（日本語・写真を実機で確認済み）、PBAP の連絡先と通話の履歴、Bluetooth の自動復旧まで main に入った。P1 の書きかけの差分は照合して必要な 1 点だけ merge（d5296c23e）。残りは HFP（通話）と MMS の写真・動画の送信。**HFP をベータ2 に入れるかはユーザーの判断待ち。**
+- [BUG-287](bugs/BUG-287.md)（スマホ連携が「connecting」のまま）の直しは全部 main に入った。image を作り直してよい。
+- WS199・WS200 は実装と QEMU の試験が済み、残りは次の UAT。
+- WS083（Vulkan Video）は既定で ON（2026-10-11 ユーザー）。残りは p007 の hang の実機の確かめ。[WS202](ws202/ws.md)（libmedia だけで mp4・m4a）は software を main に統合済み、実機と受け入れの全項目が未確認。
+- Raspberry Pi 4: [WS141](ws141/ws.md) の VC6 の描画の改善を P3 が Codex から引き継いだ（mouse の移動 300 ms → 33 ms → 16 ms）。
+- WS157 Photos の削除の統合は P1 の q924。WS202 の再生の実機・QEMU の確認は T1-529。
+- 残る既知の Bug は USB LAN の遅さ（BUG-222）。
 
 ## 必須
 
@@ -29,12 +31,12 @@
 | --- | --- | --- | --- |
 | [WS083](ws083/ws.md) Vulkan Video（H.264） | p001〜p006・p008 cleared（実機で全 stream 一致、1080p 相当 1 frame 約 5 ms）。2026-10-11 から既定で ON（ユーザー）。残り: p007 の hang の回復の実機の確かめ（hang の kernel を 1 回置く、手順は phase007、ユーザーの判断） | 0.5 | ユーザー・Q1 |
 | [WS202](ws202/ws.md) 動画再生） | libmediaにH.264, AACを実装、動画app, 音楽appで利用。） | 4.0 | ユーザー |
-| [WS197](ws197/ws.md) Bluetooth のスマホ連携（SMS の MAP・通話の HFP・連絡先の PBAP）（2026-10-10 ユーザー「WS197はbeta2.mdで必須に入れておいてください。」） | p001・p002 cleared、p003 MAP は i01〜i07 実装（i06 まで main に merge、i07 は T1-527）、p004 の SMS の interface の設計は cleared（判断 P1〜P8 は推しどおり）。p004a〜c（SMS を Phone の app で）を 2026-10-10 夜に main に merge（bc4c7f9f6、host 試験 PASS、実機は UAT）。p005 PBAP は設計の第 1 版と review-1（blocker 1）、ユーザーの判断 Pc1〜Pc6 待ち、i01（vCard の読み）は先に始めてよい（55e471604、backend の欄の読みの欠陥の直しも merge） → p006・p007 HFP → p008 実機 | 約 64 | P1 |
+| [WS197](ws197/ws.md) Bluetooth のスマホ連携（SMS の MAP・通話の HFP・連絡先の PBAP）（2026-10-10 ユーザー「WS197はbeta2.mdで必須に入れておいてください。」） | 2026-10-11: p001〜p005・p011〜p013 cleared。SMS・MMS（文と写真）の受信・表示、PBAP の電話帳・通話の履歴・Settings、Bluetooth の自動復旧は main。残り: p010 の写真・動画の送信（約 3）、HFP の制御 p006（12）と音 p007（25）、実機の UAT p008（Android）。**HFP をベータ2 に入れるかは判断待ち**。規約の p009 はベータ3 | 約 40（HFP を含む。除けば約 6） | 未割当 |
 | [WS129](ws129/ws.md) p005・p013 release notes・既知の問題・利用の手引き | 下書き済み（[notes](../docs/release/zedbsd-1.0.0-beta2.md)・[known issues](../docs/release/zedbsd-1.0.0-beta2-known-issues.md)・[guide](../docs/release/zedbsd-1.0.0-beta2-guide.md)）。**ユーザーの review 待ち**。WS199・WS200 の機能を足し、RC で review の comment を消す | 1.5 | ユーザー・P1 |
 | [WS129](ws129/ws.md) p006 最終回帰（release の image） | 10/14 | 3 | T1 |
 | [WS129](ws129/ws.md) p008 公開の準備（tag・CI・配布物） | 手順は用意済み。10/16、公開はユーザーの指示 | 0.5 | Q1・P1 |
 | 次の UAT で出る Bug の枠 | — | 5 | P1 |
-| **計** | | **約 88 LW**（約 29 時間、うち WS197 が約 75） | |
+| **計** | | **約 55 LW**（約 18 時間、うち WS197 が約 40。HFP をベータ3 に回すと約 18 LW） | |
 
 ## 次の UAT で確認してほしい事項（5330、WS199・WS200 の後の image）
 

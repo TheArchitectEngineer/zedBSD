@@ -8,41 +8,45 @@
   Q1 の操作盤。先頭（awesome-plan-current）は「今」だけを書き、各 block は「master:<名前>:start」〜「master:<名前>:end」で丸ごと置き換えてよい。
   block: updated・agents・merge・next・open-decisions・focus・blocked（先頭）、priority・outlook（本体）、decisions-log・history-log（末尾の付録、新しい物を block の先頭に足す）。
   置き換え: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
-- **2026-10-11（Q1）**: 体制は N=1 P1＋T1（P2 は WS083 を終えて退いた）。ベータ2 の残りは [plan/beta2.md](beta2.md) が正（毎回更新する）。
-  - P1: branch agent/p1-ws197、worktree /home/awe/zedBSD-worktrees/p1。WS197 p005（PBAP）の i06 後半（Phone app の store・名前の引き・同期の流れ）と i07（Settings）を実行中。i01〜i05 と i06 前半は main に merge 済み（a10f68c32、KL_VERSION 80・manager 28）。再開は plan/ws197/phase005/phase.md の末尾。i06・i07 はユーザーの Pc1〜Pc6 待ち（推しを仮で入れてよい）。P1 の test runner は build/ws197-phone-host/ に pairkeys.*・pr.* を残すので Q1 が消す。
-  - T1: branch agent/t1。今は依頼なし。WS143 の HID の回帰はもう流さない（ユーザー）。
-  - WS202（libmedia の mp4・m4a）は設計だけ完了（第 4 版、review 3 回）、ユーザーの H1〜H6・J1〜J10 待ち、実装は別のセッション。
+-->
+
+<!-- master:agents:start -->
+- **2026-10-11（Q1）: N=3＋T1**（ユーザー）。[Queue](queue.md) の 2026-10-11 の節、[台帳](agents/registry.md)。
+  - P1（agent/p1、新規の実装）: q924 WS157 Photos の削除の統合 → q925 Vulkan Video i915 の完了（WS202・WS083 p007）→ q926 ws197-p014 media picker の popup → q927 MMS の送信（p010）→ q928 HFP の制御 → q929 [WS204](ws204/ws.md) HDA の録音 → q930 HFP の音 → q931 [WS205](ws205/ws.md) Bluetooth audio → q932 [WS206](ws206/ws.md) Pi 4 WiFi → q933 [WS207](ws207/ws.md) Pi 4 audio。
+  - P2（agent/p2、Bug）: q934 BUG-263 → q935 BUG-274 → 終了（Bug が出たら立て直す）。
+  - P3（agent/p3、起点 d27925686）: q936 [ws141-p013](ws141/phase013/phase.md) VC6 の描画（mouse の移動 300 ms → 33 ms → 16 ms、Pi 4 は 10.0.30.2）。WS141 は Codex のセッションから P3 へ引き継いだ。
+  - T1（agent/t1）: T1-529 WS202 の再生（QEMU と 5330 の scp）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
 
 <!-- master:merge:start -->
-- 2026-10-11: Vulkan Video を既定で ON（c7aeea0c7、ユーザー）。BUG-287 の直し全部（usb-bt の Transaction Error 後の回復、同じ人の bond での phone=1、settings の store 24→64、Settings の Connect・案内、Phone app の案内、phone link の log）を merge（7bfc667e7）。WS197 p005 i01〜i04（vCard・rfcomm の DLC 単位の timeout・phonemux・MAP の OPENING の穴・pbap.c）を merge（1821cbd11）。
-- ユーザーは BUG-287 の後の image を作り直して UAT（plan/beta2.md の「次の UAT」、BUG-287 の ticket の 5 項目）。
+- 2026-10-11 Q1: P1 の WS197 i06 の書きかけを照合し、main に無かった直し（満杯の時に連絡先の file を書かない）と、同じ秒の item の順を決める直しを merge（d5296c23e、Phone の host 試験 PASS、Phone の named build warning 0）。残りは破棄（写しは build/q1-p1-ws197-i06-discarded.diff）。
+- 2026-10-11: Vulkan Video を既定で ON（c7aeea0c7、ユーザー）。BUG-287 の直し全部（usb-bt の Transaction Error の後の回復、同じ人の bond での phone=1、settings の store 24→64、Settings の Connect・案内、Phone app の案内、phone link の log）を merge 済み（7bfc667e7）。
+- 2026-10-10 Codex: WS197 p005 i06・i07（bee41dded）、MMS の受信（89d487814）、媒体の UAT の直し（e654733f1）、Bluetooth の自動復旧 p013（7fa0a0e9c）を main に統合済み。
+- ユーザーは BUG-287 の後の image を作り直して UAT（plan/beta2.md の「次の UAT」）。
 - 5330（10.0.30.3）: SSH は `sshpass -p kei ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no kei@10.0.30.3`、sudo は `echo kei | sudo -S`、service は `service start bluetoothd`（順に注意）。btsnoop は `/sbin/bluetoothd -s /var/tmp/x.snoop`（/var/tmp を 1777 に、daemon は uid 80 に落ちる）。
 <!-- master:merge:end -->
 
 ### Q1 の次の手順
 
 <!-- master:next:start -->
-1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・plan/ws197/ws.md・plan/ws197/phase005/phase.md を読む。P1・T1 は新しい世代で起動する（P1 は agent/p1-ws197 で p005 の再開の手順から）。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-288、WS203、KL_VERSION 81・manager 29（80・28 は P1 の i05）。
+1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-288、WS208、q937、T1-530。次の KL_VERSION は 84、manager は 31（main は 83・30。未統合の codex/ws197-media-uat も keiland.h・manager を変えるので、統合の時に衝突を見る）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
-- **WS197 p005 Pc1〜Pc6**（スマホの連絡先・通話の履歴、推しは Pc1 a・Pc2 a・Pc3 b・Pc4 a・Pc5 a・Pc6 a、phase005/phase.md §12）。
-- **WS202 H1〜H6・J1〜J10**（libmedia の mp4・m4a、推しは ws202/ws.md の表）。
-- BUG-222 を既知の問題にするか close か。WS083 p007（hang の回復の実機）をいつ流すか。
+- WS197 の HFP（p006・p007）・WS204・WS205 がベータ2 に入るか、ベータ3 か（P1 の順で進める。10/13 の凍結の扱いはユーザーと）。
+- WS202 H1〜H6・J1〜J10: software は main に統合済み、判断がまだ要るかは WS202 の記録で確かめる。
+- BUG-222 を既知の問題にするか close か。
+- WS129 の release notes・既知の問題・手引きの review。
 - **WS084 の 10 回の reboot（素の起動）**: ユーザーが zedBSD で起動する時。
 - WS153 U2〜U15 はユーザーが検討中（聞かない）。
-- （解決 2026-10-08）WS005（ネットワークと WiFi）: ユーザー「記録のミス、とっくに完了」→ completed。
-- （解決 2026-10-08）規約の全文の見直しの Phase: ユーザー「コーディング規約による整形はベータ3でやります。」→ 各 WS の規約の Phase はベータ3 へ（ベータ2 の WS の完了の条件から外す）。
-- （解決 2026-10-08）WS172（passkey の認証の枠組み、PIN・FIDO2・TPM）: ユーザー「ベータ3に回します。」→ p004 の survey の review もベータ3 で。lock の画面の方式の選択は WS187 p003 でベータ2。
-- （解決 2026-10-08）電源ボタンのメニュー（WS182 D1）: 「現状ではオーケーです」。追加の要望 → WS187（lock の大きな時計）・ws172-p007（PIN・Password・Hardware Key の選択）。
-- （解決 2026-10-08）2 番目以降の display の dock bar: 「その画面に置いた window の window icon を出し、時計・状態・App Home・切り替えのつまみも表示する」（ws113-p015）。
+- （解決 2026-10-11）WS157 Photos の削除の統合: P1 の q924 で行う（ユーザー）。
+- （解決 2026-10-10）WS197 p005 Pc1〜Pc6: 6 項目とも推しどおり。
 <!-- master:open-decisions:end -->
 
 ### Focus
@@ -495,7 +499,11 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS194](ws194/ws.md) | MG006 | make keiland-linux（apt・yum・pacman）・keiland-freebsd（pkg）の必要な package の確認と導入、build 後の install の確認（2026-10-09 ユーザー、ベータ2） | planned | p001 実装 |
 | [WS195](ws195/ws.md) | MG006 | zedBSD でも userland/desktop を /opt/keiland/ に、account-admin を base から Keiland へ（2026-10-09 ユーザー、ベータ3） | planning | p001 設計 |
 | [WS196](ws196/ws.md) | MG002 | useradd・usermod・userdel（2026-10-09 ユーザーの問い、ベータ3 以降の提案） | planning | p001 範囲 |
-| [WS197](ws197/ws.md) | MG006 | Bluetooth のスマホ連携: MAP（SMS）・Integration（WS170）・PBAP・HFP（通話、SCO）、約 129 LW、ベータ3（code は branch agent/p1-ws197） | incomplete | p001・p002 cleared、p003 i03 の途中（再開の手順は ws.md） |
+| [WS197](ws197/ws.md) | MG006 | Bluetooth のスマホ連携: MAP（SMS・MMS）・Integration（WS170）・PBAP・HFP（通話、SCO）。ベータ2 の必須（2026-10-10 ユーザー） | incomplete | 2026-10-11: p001〜p005・p011〜p013 cleared、p010 は受信だけ。残りは HFP p006・p007、MMS の送信、実機 p008、規約 p009（ベータ3） |
+| [WS204](ws204/ws.md) | MG006 | HD Audio の録音（内蔵マイク）と HFP 通話の音（2026-10-11 ユーザー） | planning | P1 q929 |
+| [WS205](ws205/ws.md) | MG006 | Bluetooth audio（A2DP の SBC・AAC、headset で HFP 通話、libmedia の encoder）（2026-10-11 ユーザー） | planning | P1 q931 |
+| [WS206](ws206/ws.md) | MG005 | Raspberry Pi 4 の WiFi（2026-10-11 ユーザー） | planning | P1 q932 |
+| [WS207](ws207/ws.md) | MG006 | Raspberry Pi 4 のオーディオ（再生・録音）（2026-10-11 ユーザー） | planning | P1 q933 |
 | [WS198](ws198/ws.md) | MG002 | zedBSD の上で zedBSD を self-build（host の clang、2026-10-09 ユーザー、優先度低、ベータ2 の見込み） | planning | p001 前提の調べ |
 | [WS199](ws199/ws.md) | MG006 | Settings のセキュリティキーの独立の頁とウィザード（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
 | [WS200](ws200/ws.md) | MG006 | Settings の Users のパスワード変更のウィザードと認証方式の選択（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
