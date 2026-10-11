@@ -2022,8 +2022,8 @@ drv_usb_urb_reserve_transfer(
 	int shared;
 	int error;
 
-	/* Validates the reservation owner and controller contract. */
-	if (urb == NULL || capacity == 0 || urb->iso_packet_count != 0)
+	/* Validates the reservation owner and controller contract (an isochronous URB may reserve too, ws197-p007a1). */
+	if (urb == NULL || capacity == 0)
 		return EINVAL;
 
 	/* Checks the hal atomic load acquire result. */
@@ -2303,7 +2303,9 @@ drv_usb_urb_setup_control(
 }
 
 /*
- * Describes an isochronous transfer.
+ * Describes the packets of an isochronous transfer (usb.h): after
+ * drv_usb_urb_setup gave its buffer, each packet within the buffer and not
+ * empty; their results start pending.
  */
 int
 drv_usb_urb_setup_isochronous(
@@ -2311,15 +2313,106 @@ drv_usb_urb_setup_isochronous(
 	struct drv_usb_iso_packet *p,
 	unsigned n)
 {
-	/* Handles the u condition. */
+	unsigned status;
+	unsigned owned;
+	unsigned index;
+
+	/* An isochronous URB with as many packets as it was made for. */
 	if (!u || !p || n != u->iso_packet_count ||
 	    u->endpoint->type != DRV_USB_TRANSFER_ISOCHRONOUS) {
 		/* Failed. */
 		return EINVAL;
 	}
+
+	/* Not while the controller holds it. */
+	status = atomic_raw_load_acquire(&u->status);
+	owned = atomic_raw_load_acquire(&u->hcd_owned);
+	if (status == DRV_USB_URB_PENDING || owned != 0)
+		return EBUSY;
+
+	/* Each packet within the buffer, without wrapping, and not empty. */
+	for (index = 0U; index < n; index++) {
+		if (p[index].length == 0U || p[index].offset > u->length)
+			return EINVAL;
+		if (p[index].length > u->length - p[index].offset)
+			return EINVAL;
+	}
+
+	/* The packets, their results pending. */
 	kern_memcpy(u->iso_packets, p, n * sizeof(*p));
+	for (index = 0U; index < n; index++) {
+		u->iso_packets[index].actual_length = 0U;
+		u->iso_packets[index].status = DRV_USB_ISO_PENDING;
+	}
 
 	/* Succeeded. */
+	return 0;
+}
+
+/* Tells how many packets an isochronous URB has (0 for any other). */
+unsigned
+drv_usb_urb_iso_count(
+	const struct drv_usb_urb *u)
+{
+	/* The count it was made with. */
+	return u->iso_packet_count;
+}
+
+/* Gives a packet's place and length in the URB's buffer; 0 or EINVAL. */
+int
+drv_usb_urb_iso_packet(
+	const struct drv_usb_urb *u,
+	unsigned index,
+	size_t *offset,
+	size_t *length)
+{
+	/* A packet of the URB. */
+	if (index >= u->iso_packet_count)
+		return EINVAL;
+
+	/* Succeeded: its place. */
+	*offset = u->iso_packets[index].offset;
+	*length = u->iso_packets[index].length;
+	return 0;
+}
+
+/*
+ * Records a packet's result (the host controller driver, before it
+ * completes the URB with the packets' sum as its actual length).
+ */
+void
+drv_usb_urb_iso_result_set(
+	struct drv_usb_urb *u,
+	unsigned index,
+	size_t actual,
+	enum drv_usb_iso_status status)
+{
+	/* A packet of the URB, never more than it asked for. */
+	if (index >= u->iso_packet_count)
+		return;
+	if (actual > u->iso_packets[index].length)
+		actual = u->iso_packets[index].length;
+
+	/* Its result. */
+	u->iso_packets[index].actual_length = actual;
+	u->iso_packets[index].status = status;
+}
+
+/* Gives a finished packet's result; 0, or EINVAL for no such packet. */
+int
+drv_usb_urb_iso_result(
+	const struct drv_usb_urb *u,
+	unsigned index,
+	size_t *actual,
+	enum drv_usb_iso_status *status)
+{
+	/* A packet of the URB. */
+	if (index >= u->iso_packet_count)
+		return EINVAL;
+
+	/* Succeeded: its result. */
+	*actual = u->iso_packets[index].actual_length;
+	*status = u->iso_packets[index].status;
 	return 0;
 }
 

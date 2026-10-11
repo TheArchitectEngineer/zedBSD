@@ -7,7 +7,7 @@ set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 mkdir -p "$repo/build/tmp"
 work=$(mktemp -d "$repo/build/tmp/ws197-isoch.XXXXXX")
-flags="-std=c99 -Wall -Wextra -Werror -I$repo/include"
+flags="-std=gnu11 -Wall -Wextra -Werror -I$repo/include"
 sources="$repo/plan/ws197/tests/xhci-isoch-test.c $repo/src/drivers/pci/pci-xhci-isoch.c"
 # shellcheck disable=SC2086
 cc $flags -O2 $sources -o "$work/isoch-test"

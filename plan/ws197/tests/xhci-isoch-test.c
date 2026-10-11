@@ -12,10 +12,12 @@
  * rule, the skip wait, Stopped from the worker's Stop at three points,
  * a Stop not the bookkeeping's, the endpoint-wide cancel (a Stopped of an
  * earlier URB meanwhile, EALREADY, EBUSY), a halt and its recovery, the
- * consumer after a flush, the ring's wrap and stray events.  Prints a
+ * consumer after a flush, the ring's wrap, stray events, a failed command
+ * (RETAINED) and the isochronous endpoint context (X7).  Prints a
  * line for each failed check and "xhci-isoch: all PASS" at the end.
  */
 
+#include <drivers/pci/pci-xhci-control.h>
 #include <drivers/pci/pci-xhci-isoch.h>
 
 #include <uapi/errno.h>
@@ -42,6 +44,7 @@ static void test_cancel(void);
 static void test_halt(void);
 static void test_wrap(void);
 static void test_retain(void);
+static void test_context(void);
 
 /* Records one check. */
 static void
@@ -592,6 +595,41 @@ test_retain(
 	check(isoch.state == DRV_XHCI_ISOCH_NORMAL, "normal after the flush");
 }
 
+/* The isochronous endpoint context (X7): full and high speed, one transaction an interval, CErr 0. */
+static void
+test_context(
+	void)
+{
+	struct drv_xhci_endpoint_context_words words;
+	int made;
+
+	/* Full speed IN, bInterval 1 (every frame), 49 bytes: interval 3, CErr 0. */
+	made = drv_xhci_endpoint_context_encode(DRV_USB_SPEED_FULL, 5U, 49U, 1U, NULL, &words);
+	check(made && words.word0 == (3U << 16), "full speed interval");
+	check(words.word1 == ((5U << 3) | (49U << 16)), "isochronous word 1 without retries");
+	check(words.word4 == ((49U << 16) | 49U), "max ESIT payload and average TRB");
+
+	/* High speed OUT, bInterval 4: interval 3. */
+	made = drv_xhci_endpoint_context_encode(DRV_USB_SPEED_HIGH, 1U, 192U, 4U, NULL, &words);
+	check(made && words.word0 == (3U << 16) && words.word1 == ((1U << 3) | (192U << 16)), "high speed interval");
+
+	/* Refused: high bandwidth, SuperSpeed, an interval past 15, bInterval 0, no packet. */
+	made = drv_xhci_endpoint_context_encode(DRV_USB_SPEED_HIGH, 5U, 0x0800U | 512U, 1U, NULL, &words);
+	check(!made, "high bandwidth refused");
+	made = drv_xhci_endpoint_context_encode(DRV_USB_SPEED_SUPER, 5U, 512U, 1U, NULL, &words);
+	check(!made, "SuperSpeed isochronous refused");
+	made = drv_xhci_endpoint_context_encode(DRV_USB_SPEED_FULL, 5U, 49U, 14U, NULL, &words);
+	check(!made, "an interval past 15 refused");
+	made = drv_xhci_endpoint_context_encode(DRV_USB_SPEED_FULL, 5U, 49U, 0U, NULL, &words);
+	check(!made, "bInterval 0 refused");
+	made = drv_xhci_endpoint_context_encode(DRV_USB_SPEED_FULL, 1U, 0U, 1U, NULL, &words);
+	check(!made, "a zero-bandwidth endpoint refused");
+
+	/* Interrupt keeps its encoding (CErr 3). */
+	made = drv_xhci_endpoint_context_encode(DRV_USB_SPEED_FULL, 7U, 8U, 10U, NULL, &words);
+	check(made && (words.word1 & 6U) == 6U, "interrupt keeps CErr 3");
+}
+
 /* Runs every group. */
 int
 main(
@@ -609,6 +647,7 @@ main(
 	test_halt();
 	test_wrap();
 	test_retain();
+	test_context();
 
 	/* The summary. */
 	if (failures != 0U) {
