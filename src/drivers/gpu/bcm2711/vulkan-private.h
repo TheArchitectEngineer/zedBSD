@@ -28,6 +28,8 @@ struct bcm2711_vulkan_session {
 	bool closing;
 	/* A legacy synchronous frame is executing: it cannot accept a QueueSubmit. */
 	bool synchronous;
+	/* The opcode of the last command the decoder refused, for the failure log. */
+	uint32_t failed_opcode;
 	struct i915_wire_arena arena;
 };
 

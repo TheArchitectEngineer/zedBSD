@@ -73,6 +73,13 @@ struct bcm2711_render_execution {
 	uint64_t bytes;
 	/* The execution uses a run the display holds (a frame, a present copy, the cursor): it runs first. */
 	bool display;
+	/*
+	 * Set by a failed step whose failure is the engine's (a launched pass,
+	 * translations that could not be published, uncertain retirement); a step
+	 * that failed while preparing, before anything launched, clears it and
+	 * only this execution fails.
+	 */
+	bool engine;
 };
 
 /* The native IRQ guard protects every slot field while its prepared payload remains owned. */
@@ -135,6 +142,8 @@ struct bcm2711_render_worker {
 	uint32_t pte_waiters;
 	uint64_t pte_done;
 	struct wait_queue window_queue;
+	/* Failure lines the kernel log has taken, bounded so a failing client cannot flood it; the controller mutex protects it. */
+	uint32_t failure_lines;
 };
 
 void bcm2711_render_jobs_bind(struct drv_gpu_ops *operations);
@@ -146,6 +155,9 @@ void bcm2711_render_worker_stop(struct bcm2711_render_session *session, int erro
 int bcm2711_render_worker_stopped(struct bcm2711_render_session *session);
 void bcm2711_render_worker_drain(struct bcm2711_render_session *session);
 void bcm2711_render_worker_fault(struct bcm2711_render_device *controller, int error);
+
+/* Tells whether one more failure line fits the log's bound; the caller holds the controller mutex. */
+bool bcm2711_render_failure_line(struct bcm2711_render_device *controller);
 int bcm2711_render_worker_recovered(struct bcm2711_render_device *controller);
 
 /* Counts an opened or closed session for the marker minimum; EBUSY when no more may open.  The closer reports the capacity change outside the mutex. */

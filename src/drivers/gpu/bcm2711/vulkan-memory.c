@@ -6,6 +6,7 @@
  */
 
 /* Native allocation declarations precede physical placement; independent views keep BLOB and GPU owners alive. */
+#include <kern/klog.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
@@ -524,6 +525,7 @@ budget_refused(
 	uint64_t bytes)
 {
 	struct bcm2711_v3d_perf *perf;
+	bool allowed;
 
 	/* Nothing to count without the native device. */
 	if (controller->space.native == NULL)
@@ -531,4 +533,14 @@ budget_refused(
 	perf = &controller->space.native->hardware.perf;
 	perf->memory_refusals++;
 	perf->memory_refused_bytes = bytes;
+
+	/* The refusal also goes to the bounded failure log, with what the budget held. */
+	allowed = bcm2711_render_failure_line(controller);
+	if (allowed) {
+		kern_logf(
+			"v3d: memory refused kib=%llu used_kib=%llu budget_kib=%llu\n",
+			(unsigned long long)(bytes / 1024U),
+			(unsigned long long)(controller->vulkan_memory_bytes / 1024U),
+			(unsigned long long)(BCM2711_VULKAN_MEMORY_BUDGET / 1024U));
+	}
 }

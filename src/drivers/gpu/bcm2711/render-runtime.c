@@ -8,6 +8,7 @@
 /* Complete Vulkan transport callbacks bind only after native ownership and recovery exist. */
 #include <kern/clock.h>
 #include <kern/kcrt.h>
+#include <kern/klog.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 #include <uapi/gpu-job.h>
@@ -293,15 +294,33 @@ execute_command(
 	bool *retired)
 {
 	struct runtime_command *command;
+	uint32_t opcode;
 	bool uncertain;
+	bool allowed;
 	int error;
 
 	/* A selected empty context marker owns no native work and follows all older FIFO frames. */
 	command = payload;
 	*retired = true;
 	error = runtime_ready(session);
-	if (error == 0 && command->bytes != 0)
+	opcode = 0;
+	if (error == 0 && command->bytes != 0) {
+		session->vulkan->failed_opcode = 0;
 		error = bcm2711_vulkan_stream_execute(session->vulkan, command->wire, command->bytes, bcm2711_vulkan_dispatch);
+		opcode = session->vulkan->failed_opcode;
+	}
+
+	/* Names the refused command (a busy command buffer at Begin or End, a malformed stream) in the bounded log. */
+	if (error != 0 && command->bytes != 0) {
+		allowed = bcm2711_render_failure_line(controller);
+		if (allowed) {
+			kern_logf(
+				"v3d: command failed opcode=%u error=%d bytes=%u\n",
+				opcode,
+				error,
+				command->bytes);
+		}
+	}
 
 	/* A Vulkan DEVICE_LOST reply may accompany transport success, so actual native uncertainty is sampled separately. */
 	uncertain = runtime_uncertain(controller);
