@@ -33,6 +33,7 @@ main(
 {
 	char root[PH_PATH_MAX];
 	char lockpath[PH_PATH_MAX];
+	char *words[4];
 	const char *command;
 	const char *argument;
 	int arguments;
@@ -41,12 +42,46 @@ main(
 	int error;
 	int length;
 	int changed;
+	int notify;
+	int index;
+	int lock;
+
+	/*
+	 * Takes "--no-notify" out of the arguments: the compositor's own runs
+	 * pass it, because the compositor tells its watchers itself when the
+	 * run ends (a second wakeup would make every app read the library
+	 * twice).
+	 */
+	notify = 1;
+	arguments = 0;
+	for (index = 0; index < argc; index++) {
+		/* The compositor's flag, not kept as a word. */
+		same = strcmp(argv[index], "--no-notify");
+		if (index >= 2 && same == 0) {
+			notify = 0;
+			continue;
+		}
+
+		/* More words than any command takes. */
+		if (arguments == 4) {
+			arguments = 5;
+			break;
+		}
+
+		/* The word kept. */
+		words[arguments] = argv[index];
+		arguments++;
+	}
 
 	/* Requires one documented command; an optional root supports recovery and offline use. */
-	if (argc < 2 || argc > 4) {
-		fprintf(stderr, "usage: mediastorage list|add PATH|add-list|apply|remove-list [--root=PATH]\n");
+	if (arguments < 2 || arguments > 4) {
+		fprintf(stderr, "usage: mediastorage list|add PATH|add-list|apply|remove-list [--root=PATH] [--no-notify]\n");
 		return 2;
 	}
+
+	/* The words without the flag are read as the arguments from here on. */
+	argc = arguments;
+	argv = words;
 
 	/* Derives the default library without guessing a home for a missing session. */
 	error = ph_library_root(root, sizeof(root));
@@ -93,9 +128,17 @@ main(
 			error = errno;
 	}
 
-	/* The exclusive lock also makes a snapshot observe one completed command. */
+	/*
+	 * A change takes the lock alone; a list shares it with other lists.
+	 * A list only reads, and metadata.db is replaced by rename, so it sees
+	 * one completed change; it still waits for a change under way.
+	 */
 	if (error == 0) {
-		error = flock(descriptor, LOCK_EX);
+		lock = LOCK_EX;
+		same = strcmp(command, "list");
+		if (same == 0)
+			lock = LOCK_SH;
+		error = flock(descriptor, lock);
 		if (error != 0)
 			error = errno;
 	}
@@ -121,7 +164,7 @@ main(
 		changed = strcmp(command, "apply");
 	if (changed != 0)
 		changed = strcmp(command, "remove-list");
-	if (changed == 0)
+	if (changed == 0 && notify)
 		media_db_notify();
 	ph_library_release();
 	media_database_release();

@@ -580,7 +580,7 @@ media_spawn(
 	const char *operation)
 {
 	posix_spawn_file_actions_t actions;
-	char *arguments[3];
+	char *arguments[4];
 	int input[2];
 	int output[2];
 	int error;
@@ -616,7 +616,9 @@ media_spawn(
 			error = posix_spawn_file_actions_adddup2(&actions, output[1], STDOUT_FILENO);
 		arguments[0] = KEILAND_BINDIR "/mediastorage";
 		arguments[1] = (char *)operation;
-		arguments[2] = NULL;
+		/* The compositor tells its watchers itself once the run has ended (media-library.c). */
+		arguments[2] = "--no-notify";
+		arguments[3] = NULL;
 		if (error == 0)
 			error = posix_spawn(&job->process, arguments[0], &actions, NULL, arguments, environ);
 		posix_spawn_file_actions_destroy(&actions);
