@@ -27,4 +27,4 @@ audiod に音の endpoint（HDA の speaker・mic、Bluetooth の headset の A2
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 再設計と review | planned |
+| [p001](phase001/phase.md) | 再設計と review（第 1 版 2026-10-11 P1、review 中。判断 G1・G2） | in-progress |
