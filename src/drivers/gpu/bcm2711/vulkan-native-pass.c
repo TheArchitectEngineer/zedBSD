@@ -52,6 +52,10 @@ bcm2711_vulkan_native_pass_create(
 	uint64_t copy_ticks;
 	uint64_t program_ticks;
 	uint64_t record_ticks;
+	uint64_t allocation_ticks;
+	uint64_t mapping_ticks;
+	uint64_t clean_ticks;
+	uint32_t index;
 	const char *stage;
 	uint64_t remaining;
 	int error;
@@ -108,16 +112,26 @@ bcm2711_vulkan_native_pass_create(
 		copy_ticks = 0;
 		program_ticks = 0;
 		record_ticks = 0;
+		allocation_ticks = 0;
+		mapping_ticks = 0;
+		clean_ticks = 0;
 		for (draw = created->first; draw != NULL; draw = draw->next) {
 			texture_ticks += draw->texture_ticks;
 			copy_ticks += draw->copy_ticks;
 			program_ticks += draw->program_ticks;
 			record_ticks += draw->record_ticks;
+
+			/* Only original owners count a shared texture's storage costs. */
+			for (index = 0; index < draw->count; index++) {
+				allocation_ticks += draw->storage[index]->allocation_ticks;
+				mapping_ticks += draw->storage[index]->mapping_ticks;
+				clean_ticks += draw->storage[index]->clean_ticks;
+			}
 		}
 
 		/* Slow-pass durations include time preempted by other runnable threads. */
 		kern_logf(
-			"v3d: pass prepare stage=%s error=%d draws=%u bytes=%llu ms=%llu tex=%llu copy=%llu program=%llu record=%llu\n",
+			"v3d: pass prepare stage=%s error=%d draws=%u bytes=%llu ms=%llu tex=%llu copy=%llu program=%llu record=%llu alloc=%llu map=%llu clean=%llu\n",
 			stage,
 			error,
 			created->draws,
@@ -126,7 +140,10 @@ bcm2711_vulkan_native_pass_create(
 			(unsigned long long)kern_ticks_to_ms(texture_ticks),
 			(unsigned long long)kern_ticks_to_ms(copy_ticks),
 			(unsigned long long)kern_ticks_to_ms(program_ticks),
-			(unsigned long long)kern_ticks_to_ms(record_ticks));
+			(unsigned long long)kern_ticks_to_ms(record_ticks),
+			(unsigned long long)kern_ticks_to_ms(allocation_ticks),
+			(unsigned long long)kern_ticks_to_ms(mapping_ticks),
+			(unsigned long long)kern_ticks_to_ms(clean_ticks));
 	}
 
 	/* Preparation never launched DMA; each owner retires once even when a late translation teardown fails. */

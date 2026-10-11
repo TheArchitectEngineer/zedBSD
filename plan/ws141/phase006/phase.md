@@ -313,3 +313,7 @@ reboot要求はexit0。初めの2回はtimeout/No routeだったが、約2分後
 短いpoll版build exit0/warning0/error0/ARM64 checker PASS。4227642040 8077312 build/arm64/vmunix、1ba0b953d89d5db6e5bfc97135a776a9ba31419a6eb2eada75215f9ebed0bb51  build/arm64/vmunix。host初回はmockがclear命令前のcontrol readにもbusyを注入していたため失敗。命令write後だけbusyにするfixtureへ修正し再実行する（productionをtestに合わせて変更しない）。
 
 host再実行PASS、短時間busyのsleep0完了とstuck時の既存timeout/retirementを確認。実機性能は配置後に確認する。
+
+
+短いpoll版5d6b650d1をmain統合、旧1466012252/8077312を /var/backups/vmunix.before-fast-mmu-20261011へ保存し、新4227642040/8077312をFAT staging/cmp/sync/rename/sync/cmpで配置。reboot exit0、再接続成功。43drawの代表total2383ms/program1502msで前版との差は明瞭でなく、速さの修復成功とはしない。native storageに物理確保/map/cleanの内訳を追加、既存slow-pass行へoriginal ownerだけ合算する（tex等の内数）。この追加計測は対象device host PASS、C全文manual/style0/diff-check/clang-format19比較、arm64 warning0 build PASS。
+2232080428 8077312 build/arm64/vmunix、78965e0b160dc05c1df9dc63e04fb2e9d1aacb97faa2d655c7ac0392a9d1441a  build/arm64/vmunix。新診断版は未配置。service stop greeterのSSHが途中切断したため停止成功は未確認、接続を再確認する。

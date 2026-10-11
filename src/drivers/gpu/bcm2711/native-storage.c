@@ -6,6 +6,7 @@
  */
 
 /* Native upload owners separate logical callback completion, DMA retirement and final translation flush. */
+#include <kern/clock.h>
 #include <kern/dcache.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
@@ -34,6 +35,7 @@ bcm2711_native_storage_create(
 	struct bcm2711_buffer *buffer;
 	struct bcm2711_v3d_view *view;
 	uint64_t limit;
+	uint64_t started;
 	uint32_t physical_bits;
 	int error;
 
@@ -62,14 +64,18 @@ bcm2711_native_storage_create(
 		return ENOMEM;
 
 	/* Cached private storage has no exported user alias and is explicitly cleaned before device reads. */
+	started = clock_ticks();
 	error = bcm2711_buffer_create(bytes, limit, 4096U, &buffer);
+	created->allocation_ticks = clock_ticks() - started;
 	if (error != 0) {
 		kern_free(created);
 		return error;
 	}
 
 	/* Mapping acquires its own allocation hold before the temporary source reference is retired. */
+	started = clock_ticks();
 	error = bcm2711_v3d_memory_map(space, buffer, &view);
+	created->mapping_ticks = clock_ticks() - started;
 	bcm2711_buffer_release(buffer);
 	if (error != 0) {
 		kern_free(created);
@@ -95,6 +101,7 @@ bcm2711_native_storage_clean(
 {
 	struct bcm2711_v3d_view *view;
 	struct bcm2711_buffer *buffer;
+	uint64_t started;
 
 	/* An absent or partially retired owner grants no usable native input. */
 	if (storage == NULL || storage->view == NULL)
@@ -122,7 +129,9 @@ bcm2711_native_storage_clean(
 		return EINVAL;
 
 	/* Cache maintenance completes CPU writes before the caller's later command publication barrier. */
+	started = clock_ticks();
 	kern_dcache_clean_range(buffer->address, (size_t)buffer->memory.size);
+	storage->clean_ticks += clock_ticks() - started;
 
 	/* Succeeded: device reads can consume the immutable upload bytes without a dirty CPU cache alias. */
 	return 0;

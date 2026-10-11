@@ -17,6 +17,10 @@ struct bcm2711_native_storage {
 	struct bcm2711_v3d_space *space;
 	struct bcm2711_v3d_view *view;
 	uint64_t bytes;
+	/* Diagnostic wall times belong to this owner and never control its lifetime. */
+	uint64_t allocation_ticks;
+	uint64_t mapping_ticks;
+	uint64_t clean_ticks;
 };
 
 /* The controller mutex serializes every operation with native execution and recovery. */
