@@ -321,7 +321,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION 32U
+#define KL_SYSTEM_MANAGER_VERSION 33U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -687,6 +687,24 @@
 /* Since version 32 (ws197-p010): request 9 send_mms(uint request, string to, fd mime), an MMS's MIME body in a regular file: done, then status as send_text's. */
 #define KL_SYSTEM_PHONE_SEND_MMS		9U
 #define KL_SYSTEM_SINCE_PHONE_MMS		32U
+/*
+ * Since version 33 (ws197-p006, the calls of the paired phone, HFP), for the phone program only:
+ *   request 10 control(uint request, uint ask, string argument)
+ *       a call's request (KL_SYSTEM_PHONE_ASK_*): done answers it
+ *   event 10 call(uint index, uint state, uint outgoing, string number, string name)
+ *       a call's change (KL_SYSTEM_PHONE_CALL_*, ENDED once); the calls there are are told at listen
+ *   event 11 hf(uint state, int service, int signal, int battery, int roam, int speaker, uint flags)
+ *       the hands-free unit's state (KL_SYSTEM_PHONE_HF_*), flags 1 voice recognition on, 2 calls can be held; told at listen
+ */
+#define KL_SYSTEM_PHONE_CONTROL			10U
+#define KL_SYSTEM_PHONE_EVENT_CALL		10U
+#define KL_SYSTEM_PHONE_EVENT_HF		11U
+#define KL_SYSTEM_SINCE_PHONE_CALLS		33U
+#define KL_SYSTEM_PHONE_ASK_DIAL		1U
+#define KL_SYSTEM_PHONE_ASK_VOICE		7U
+#define KL_SYSTEM_PHONE_CALL_ENDED		7U
+#define KL_SYSTEM_PHONE_HF_VOICE		1U
+#define KL_SYSTEM_PHONE_HF_HOLD			2U
 
 /* The channel of SMS (keiland.h's KL_PHONE_SMS) and what a sync asks for (KL_PHONE_MESSAGES, _CONTACTS and _CALLS). */
 #define KL_SYSTEM_PHONE_SMS			0U

@@ -95,6 +95,12 @@ struct kl_backend_phone {
 	unsigned sent_count;
 	unsigned mms_count;
 	int last_mms_descriptor;
+	unsigned last_ask;
+	int last_ask_had_argument;
+	uint32_t last_ask_id;
+	struct kl_backend_phone_call calls[TEST_QUEUE_MAX];
+	unsigned call_count;
+	struct kl_backend_phone_hf hf;
 };
 
 /* The events sent to the capture clients, in order. */
@@ -140,6 +146,7 @@ static int test_word_request(struct kwl_object *object, uint32_t opcode, uint32_
 static int test_sync(struct kwl_object *object, uint32_t request);
 static int test_send_text(struct kwl_object *object, uint32_t request, const char *to, const char *text);
 static int test_send_mms(struct kwl_object *object, uint32_t request, const char *to);
+static int test_control(struct kwl_object *object, uint32_t request, uint32_t ask, const char *argument);
 static void test_item(uint32_t id, const char *key);
 static void test_result(uint32_t id, int error, uint32_t sent_request);
 static int test_find(uint64_t client, uint32_t opcode, unsigned from, unsigned *at);
@@ -408,6 +415,46 @@ kwl_take_fd(
 	descriptor = test_take_fd;
 	test_take_fd = -1;
 	return descriptor;
+}
+
+/* A call's request: what was asked, its id (ws197-p006). */
+int
+kl_backend_phone_call_ask(
+	struct kl_backend_phone *phone,
+	unsigned ask,
+	const char *argument,
+	uint32_t *id)
+{
+	if (phone->refuse != 0)
+		return phone->refuse;
+	phone->last_ask = ask;
+	phone->last_ask_had_argument = argument != NULL;
+	*id = phone->next_id++;
+	phone->last_ask_id = *id;
+	return 0;
+}
+
+/* A call's change waiting, the oldest first. */
+int
+kl_backend_phone_take_call(
+	struct kl_backend_phone *phone,
+	struct kl_backend_phone_call *call)
+{
+	if (phone->call_count == 0U)
+		return 0;
+	*call = phone->calls[0];
+	phone->call_count--;
+	memmove(&phone->calls[0], &phone->calls[1], phone->call_count * sizeof(phone->calls[0]));
+	return 1;
+}
+
+/* The hands-free unit's state the test set. */
+void
+kl_backend_phone_get_hf(
+	const struct kl_backend_phone *phone,
+	struct kl_backend_phone_hf *hf)
+{
+	*hf = phone->hf;
 }
 
 /* An MMS sent: its descriptor seen, its id. */
@@ -782,6 +829,41 @@ test_shell(
 	error = test_send_mms(phone, 20U, "+15550100");
 	test_check("mms-old-version", error == EPROTO && test_phone.mms_count == 1U);
 
+	/* The calls of version 33 (ws197-p006): a request reaches the backend, its done follows the result. */
+	phone->version = KL_SYSTEM_SINCE_PHONE_CALLS;
+	test_event_count = 0U;
+	error = test_control(phone, 21U, KL_SYSTEM_PHONE_ASK_DIAL + 1U, "");
+	test_check("call-asked", error == 0 && test_phone.last_ask == KL_SYSTEM_PHONE_ASK_DIAL + 1U && !test_phone.last_ask_had_argument);
+	test_result(test_phone.last_ask_id, 0, 0U);
+	test_phone.changed = KL_BACKEND_PHONE_CHANGED_RESULT;
+	kwl_phone_tick(&server);
+	found = test_find(1U, KL_SYSTEM_PHONE_EVENT_DONE, 0U, &at);
+	test_check("call-done", found && test_get_word(&test_events[at], 0U) == 21U && test_get_word(&test_events[at], 4U) == KL_SYSTEM_RESULT_OK);
+	error = test_control(phone, 22U, 99U, "");
+	test_check("call-unknown-ask", error == 0 && test_phone.last_ask == KL_SYSTEM_PHONE_ASK_DIAL + 1U);
+
+	/* The hands-free unit and a ringing call: told to the phone program of version 33. */
+	test_event_count = 0U;
+	test_phone.hf.state = KL_BACKEND_PHONE_HF_READY;
+	test_phone.hf.speaker = 9;
+	test_phone.hf.hold = 1U;
+	memset(&test_phone.calls[0], 0, sizeof(test_phone.calls[0]));
+	test_phone.calls[0].index = 1U;
+	test_phone.calls[0].state = KL_BACKEND_PHONE_CALL_INCOMING;
+	(void)snprintf(test_phone.calls[0].number, sizeof(test_phone.calls[0].number), "%s", "+819012345678");
+	(void)snprintf(test_phone.calls[0].name, sizeof(test_phone.calls[0].name), "%s", "Taro");
+	test_phone.call_count = 1U;
+	test_phone.changed = KL_BACKEND_PHONE_CHANGED_HF | KL_BACKEND_PHONE_CHANGED_CALL;
+	kwl_phone_tick(&server);
+	found = test_find(1U, KL_SYSTEM_PHONE_EVENT_HF, 0U, &at);
+	test_check("call-hf", found && test_get_word(&test_events[at], 0U) == KL_BACKEND_PHONE_HF_READY &&
+	    test_get_word(&test_events[at], 20U) == 9U && test_get_word(&test_events[at], 24U) == KL_SYSTEM_PHONE_HF_HOLD);
+	found = test_find(1U, KL_SYSTEM_PHONE_EVENT_CALL, 0U, &at);
+	test_check("call-ringing", found && test_get_word(&test_events[at], 0U) == 1U && test_get_word(&test_events[at], 4U) == KL_BACKEND_PHONE_CALL_INCOMING);
+	found = test_find(3U, KL_SYSTEM_PHONE_EVENT_CALL, 0U, &at);
+	test_check("call-old-version-hears-nothing", !found);
+	phone->version = KL_SYSTEM_SINCE_PHONE_SYNC;
+
 	/* bluetoothd dropped an event: the phone programs hear dropped. */
 	test_event_count = 0U;
 	test_phone.changed = KL_BACKEND_PHONE_CHANGED_DROPPED;
@@ -1126,6 +1208,24 @@ test_sync(
 	offset = test_put_string(bytes, offset, "");
 	offset = test_put_word(bytes, offset, 32U);
 	return kwl_phone_request(object, KL_SYSTEM_PHONE_SYNC, bytes, offset);
+}
+
+/* Sends control(request, ask, argument). */
+static int
+test_control(
+	struct kwl_object *object,
+	uint32_t request,
+	uint32_t ask,
+	const char *argument)
+{
+	unsigned char bytes[128];
+	size_t offset;
+
+	/* The request's number, the ask and the argument. */
+	offset = test_put_word(bytes, 0U, request);
+	offset = test_put_word(bytes, offset, ask);
+	offset = test_put_string(bytes, offset, argument);
+	return kwl_phone_request(object, KL_SYSTEM_PHONE_CONTROL, bytes, offset);
 }
 
 /* Sends send_mms(request, to) (its descriptor is test_take_fd). */

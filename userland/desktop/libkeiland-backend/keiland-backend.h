@@ -884,6 +884,32 @@ struct kl_backend_phone;
 #define KL_BACKEND_PHONE_CHANGED_RESULT		4U	/* a request's result came */
 #define KL_BACKEND_PHONE_CHANGED_SENT		8U	/* a sent message's state came on the events */
 #define KL_BACKEND_PHONE_CHANGED_DROPPED	16U	/* bluetoothd or this dropped an event (synchronise again) */
+#define KL_BACKEND_PHONE_CHANGED_CALL		32U	/* a call's state came (ws197-p006) */
+#define KL_BACKEND_PHONE_CHANGED_HF		64U	/* the hands-free unit's state came (ws197-p006) */
+
+/*
+ * The calls (ws197-p006, HFP): a call's state (keiland.h's KL_PHONE_CALL_*
+ * have the same values), the hands-free unit's state, and what the owner
+ * asks of a call (keiland.h's KL_PHONE_ASK_*).
+ */
+#define KL_BACKEND_PHONE_CALL_INCOMING	1U
+#define KL_BACKEND_PHONE_CALL_DIALING	2U
+#define KL_BACKEND_PHONE_CALL_ALERTING	3U
+#define KL_BACKEND_PHONE_CALL_ACTIVE	4U
+#define KL_BACKEND_PHONE_CALL_HELD	5U
+#define KL_BACKEND_PHONE_CALL_WAITING	6U
+#define KL_BACKEND_PHONE_CALL_ENDED	7U
+#define KL_BACKEND_PHONE_HF_OFF		0U
+#define KL_BACKEND_PHONE_HF_CONNECTING	1U
+#define KL_BACKEND_PHONE_HF_READY	2U
+#define KL_BACKEND_PHONE_HF_FAILED	3U
+#define KL_BACKEND_PHONE_ASK_DIAL	1U
+#define KL_BACKEND_PHONE_ASK_ANSWER	2U
+#define KL_BACKEND_PHONE_ASK_HANGUP	3U
+#define KL_BACKEND_PHONE_ASK_HOLD	4U
+#define KL_BACKEND_PHONE_ASK_DTMF	5U
+#define KL_BACKEND_PHONE_ASK_VOLUME	6U
+#define KL_BACKEND_PHONE_ASK_VOICE	7U
 
 /* A sent message's state (keiland.h's KL_PHONE_SENT, _DELIVERED and _FAILED have the same values). */
 #define KL_BACKEND_PHONE_SENT		1U
@@ -1082,6 +1108,51 @@ int kl_backend_phone_take_sent(struct kl_backend_phone *phone, uint32_t *sent_re
 
 /* Reads the record and follows the events again at once (after a pairing of the phone or a forget). */
 void kl_backend_phone_refresh(struct kl_backend_phone *phone);
+
+/*
+ * One change of a call (ws197-p006): the phone's index of it, its state
+ * (KL_BACKEND_PHONE_CALL_*, ENDED once when it ends), whether it was
+ * dialed here or there, the number and the name the phone gave (UTF-8,
+ * possibly empty).
+ */
+struct kl_backend_phone_call {
+	unsigned index;
+	unsigned state;
+	unsigned outgoing;
+	char number[KL_BACKEND_PHONE_PEER_MAX];
+	char name[KL_BACKEND_PHONE_PEER_MAX];
+};
+
+/*
+ * The hands-free unit's state (ws197-p006): KL_BACKEND_PHONE_HF_*, the
+ * phone's network service (0 or 1), signal (0 to 5), battery (0 to 5),
+ * roaming (0 or 1), the speaker's volume (0 to 15, -1 not told), whether
+ * voice recognition is on, and whether calls can be held.
+ */
+struct kl_backend_phone_hf {
+	unsigned state;
+	int service;
+	int signal;
+	int battery;
+	int roam;
+	int speaker;
+	unsigned voice;
+	unsigned hold;
+};
+
+/*
+ * Asks something of the calls (KL_BACKEND_PHONE_ASK_*): DIAL with the
+ * number, HOLD with CHLD's action "0" to "2", DTMF with a key, VOLUME
+ * with "0" to "15", VOICE with "0" or "1", ANSWER and HANGUP with NULL.
+ * Returns as kl_backend_phone_page.
+ */
+int kl_backend_phone_call_ask(struct kl_backend_phone *phone, unsigned ask, const char *argument, uint32_t *id);
+
+/* Takes the oldest change of a call.  Returns 1 with one, 0 when none waits. */
+int kl_backend_phone_take_call(struct kl_backend_phone *phone, struct kl_backend_phone_call *call);
+
+/* Copies the hands-free unit's state as last told (all zero before; speaker -1). */
+void kl_backend_phone_get_hf(const struct kl_backend_phone *phone, struct kl_backend_phone_hf *hf);
 
 /*
  * The printers (ws145-p003, plan/ws145/design.md section 4): the user's

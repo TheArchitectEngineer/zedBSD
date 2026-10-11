@@ -127,6 +127,55 @@ kl_backend_phone_read(
 }
 
 /*
+ * Refuses a call's request.
+ */
+int
+kl_backend_phone_call_ask(
+	struct kl_backend_phone *phone,
+	unsigned ask,
+	const char *argument,
+	uint32_t *id)
+{
+	(void)phone;
+	(void)ask;
+	(void)argument;
+	(void)id;
+
+	/* Not here. */
+	return ENOTSUP;
+}
+
+/*
+ * Has no call's change.
+ */
+int
+kl_backend_phone_take_call(
+	struct kl_backend_phone *phone,
+	struct kl_backend_phone_call *call)
+{
+	(void)phone;
+	(void)call;
+
+	/* None. */
+	return 0;
+}
+
+/*
+ * Has no hands-free unit: off.
+ */
+void
+kl_backend_phone_get_hf(
+	const struct kl_backend_phone *phone,
+	struct kl_backend_phone_hf *hf)
+{
+	(void)phone;
+
+	/* Off, the volume not told. */
+	memset(hf, 0, sizeof(*hf));
+	hf->speaker = -1;
+}
+
+/*
  * Refuses an MMS sent.
  */
 int

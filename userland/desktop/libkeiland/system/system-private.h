@@ -210,6 +210,10 @@ struct system_view {
 	char phone_contacts_why[KL_PHONE_WHY_MAX];
 	uint32_t phone_sync_request;
 	uint64_t phone_sync_started_ms;
+
+	/* The paired phone's calls as last told (state 0: a free row) and its hands-free unit (ws197-p006). */
+	struct kl_phone_call phone_calls[KL_PHONE_CALLS_MAX];
+	struct kl_phone_hf phone_hf;
 	struct kl_printer printers[KL_PRINTERS_MAX];
 	size_t printer_count;
 	struct kl_printer printers_pending[KL_PRINTERS_MAX];
@@ -386,6 +390,8 @@ int system_view_phone_page_end_of(const struct system_view *view, uint32_t reque
 void system_view_phone_link(struct system_view *view, const struct kl_phone_link *link);
 void system_view_phone_link_contacts(struct system_view *view, unsigned contacts, unsigned record, const char *why);
 int system_view_phone_link_get(const struct system_view *view, struct kl_phone_link *link, size_t size);
+void system_view_phone_call(struct system_view *view, const struct kl_phone_call *call);
+void system_view_phone_hf(struct system_view *view, const struct kl_phone_hf *hf);
 void system_view_phone_dropped(struct system_view *view);
 int system_view_phone_sync_start(struct system_view *view, uint32_t request, uint64_t now_ms);
 void system_view_phone_done(struct system_view *view, uint32_t request, uint32_t code);

@@ -19,6 +19,7 @@
  */
 
 #include "userland/base/bluetoothd/phone.h"
+#include "userland/base/bluetoothd/hfp.h"
 
 #include <errno.h>
 #include <stdarg.h>
@@ -186,6 +187,8 @@ static void phone_profiles_text(unsigned profiles, char *text, size_t size);
 static void phone_records_update(struct btd_phone *phone);
 static void phone_mns_update(struct btd_phone *phone);
 static void phone_pce_update(struct btd_phone *phone);
+static void phone_hf_update(struct btd_phone *phone);
+static size_t phone_hf_record(uint8_t *bytes, size_t size);
 static size_t phone_pce_record(uint8_t *bytes, size_t size);
 static size_t phone_mns_record(uint8_t *bytes, size_t size);
 
@@ -3223,6 +3226,7 @@ phone_records_update(
 	/* Each record by its own profile. */
 	phone_mns_update(phone);
 	phone_pce_update(phone);
+	phone_hf_update(phone);
 }
 
 /*
@@ -3330,6 +3334,121 @@ phone_mns_record(
 	/* ServiceName. */
 	btd_sdp_put_uint16(&writer, 0x0100U);
 	btd_sdp_put_text(&writer, "Keiland MNS");
+
+	/* Succeeded: the pairs' length (0 when they did not fit, which register refuses). */
+	if (writer.overflow)
+		return 0U;
+	return writer.used;
+}
+
+/*
+ * Offers or withdraws bluetoothd's HF record (ws197-p006, HFP 1.8 section
+ * 5.3): offered while the link is ready and the valid record's calls are
+ * on and enabled, withdrawn otherwise (a phone does not try HFP with a
+ * computer that does not want calls).
+ */
+static void
+phone_hf_update(
+	struct btd_phone *phone)
+{
+	uint8_t pairs[BTD_SDPS_RECORD_MAX];
+	size_t length;
+	int wanted;
+	int error;
+
+	/* Wanted: a ready link, a valid record with calls, enabled. */
+	wanted = 0;
+	if (phone->state == BTD_PHONE_READY &&
+	    phone->have_record &&
+	    phone->record_valid &&
+	    phone->record.enabled &&
+	    (phone->record.profiles & BTD_PHONEREC_CALLS) != 0U)
+		wanted = 1;
+
+	/* No database to offer it in. */
+	if (phone->db == NULL)
+		return;
+
+	/* Withdrawn. */
+	if (!wanted) {
+		if (phone->hf_registered)
+			(void)btd_sdps_unregister(phone->db, phone->hf_handle);
+		phone->hf_registered = 0;
+		return;
+	}
+
+	/* Offered already. */
+	if (phone->hf_registered)
+		return;
+
+	/* Offered. */
+	length = phone_hf_record(pairs, sizeof(pairs));
+	error = btd_sdps_register(phone->db, pairs, length, &phone->hf_handle);
+	if (error != 0)
+		return;
+
+	/* Succeeded: offered. */
+	phone->hf_registered = 1;
+}
+
+/*
+ * Writes the attribute pairs of bluetoothd's HF record (HFP 1.8 section
+ * 5.3): the classes 0x111E and 0x1203, L2CAP and RFCOMM on the HF channel,
+ * the language base (English, UTF-8, 0x0100), HFP 1.8, the name and the
+ * SupportedFeatures.  The handle and the browse group are the SDP
+ * server's.  Gives the length.
+ */
+static size_t
+phone_hf_record(
+	uint8_t *bytes,
+	size_t size)
+{
+	struct btd_sdp_writer writer;
+
+	/* ServiceClassIDList: the hands-free unit, generic audio. */
+	btd_sdp_writer_init(&writer, bytes, size);
+	btd_sdp_put_uint16(&writer, 0x0001U);
+	btd_sdp_begin(&writer);
+	btd_sdp_put_uuid16(&writer, 0x111eU);
+	btd_sdp_put_uuid16(&writer, 0x1203U);
+	btd_sdp_end(&writer);
+
+	/* ProtocolDescriptorList: L2CAP, RFCOMM on the HF channel. */
+	btd_sdp_put_uint16(&writer, 0x0004U);
+	btd_sdp_begin(&writer);
+	btd_sdp_begin(&writer);
+	btd_sdp_put_uuid16(&writer, 0x0100U);
+	btd_sdp_end(&writer);
+	btd_sdp_begin(&writer);
+	btd_sdp_put_uuid16(&writer, 0x0003U);
+	btd_sdp_put_uint8(&writer, (uint8_t)BTD_HFP_HF_CHANNEL);
+	btd_sdp_end(&writer);
+	btd_sdp_end(&writer);
+
+	/* LanguageBaseAttributeIDList: "en", UTF-8 (MIBenum 106), the base 0x0100. */
+	btd_sdp_put_uint16(&writer, 0x0006U);
+	btd_sdp_begin(&writer);
+	btd_sdp_put_uint16(&writer, 0x656eU);
+	btd_sdp_put_uint16(&writer, 0x006aU);
+	btd_sdp_put_uint16(&writer, 0x0100U);
+	btd_sdp_end(&writer);
+
+	/* BluetoothProfileDescriptorList: HFP 1.8. */
+	btd_sdp_put_uint16(&writer, 0x0009U);
+	btd_sdp_begin(&writer);
+	btd_sdp_begin(&writer);
+	btd_sdp_put_uuid16(&writer, 0x111eU);
+	btd_sdp_put_uint16(&writer, 0x0108U);
+	btd_sdp_end(&writer);
+	btd_sdp_end(&writer);
+
+	/* ServiceName. */
+	btd_sdp_put_uint16(&writer, 0x0100U);
+	btd_sdp_put_text(&writer, "Keiland Hands-Free");
+
+	/* SupportedFeatures. */
+	btd_sdp_put_uint16(&writer, 0x0311U);
+	btd_sdp_put_uint16(&writer, (uint16_t)BTD_HFP_SDP_FEATURES);
 
 	/* Succeeded: the pairs' length (0 when they did not fit, which register refuses). */
 	if (writer.overflow)

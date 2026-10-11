@@ -91,6 +91,12 @@
 #define PH_ID_ATTACH_AWAY	15U
 #define PH_ID_ATTACH_MEDIA	16U
 #define PH_ID_ATTACH_FILE	17U
+#define PH_ID_CALL_ANSWER	18U
+#define PH_ID_CALL_HANGUP	19U
+#define PH_ID_CALL_KEYPAD	20U
+#define PH_ID_CALL_SWAP		21U
+#define PH_ID_CALL_KEYS		22U	/* to 33: the keypad's twelve keys */
+#define PH_ID_CALL_CARD		40U
 
 /*
  * The colors: the person's bubbles and cards (on glass, see-through
@@ -155,6 +161,9 @@ static int view_photo(const struct kl_style *style, const struct ph_item *item, 
 static int view_file(const struct kl_style *style, const struct ph_item *item, int x, int y, int width, int draw);
 static void view_composer(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, const struct ph_contact *contact, const struct kl_rect *area, uint64_t now_us);
 static void view_attach_choices(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, const struct kl_rect *composer, uint64_t now_us);
+static void view_call_card(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, int width, uint64_t now_us);
+static void view_call_keypad(struct ph_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area);
+static const char *view_call_words(const struct kl_phone_call *call, uint64_t since_us, uint64_t now_us, char *text, size_t size);
 static void view_empty(const struct kl_style *style, const struct kl_rect *area, const char *title, const char *line);
 static void view_handset(struct kl_canvas *canvas, float x, float y, float size, kl_color color);
 static void view_centred(const struct kl_style *style, int cx, int baseline, const char *text, unsigned pixels, int bold, kl_color color);
@@ -286,6 +295,12 @@ ph_view_action(
 		view->attach_choices = 0;
 		if (view->selected >= 0)
 			view_request(view, action, view->selected);
+		break;
+	case PH_ACTION_CALL_ANSWER:
+	case PH_ACTION_CALL_HANGUP:
+	case PH_ACTION_CALL_SWAP:
+		/* The paired phone's call: asked of the window. */
+		view_request(view, action, view->selected);
 		break;
 	case PH_ACTION_ATTACH_CHOICES:
 		/* The plus hides its two choices when they show. */
@@ -448,6 +463,10 @@ ph_view_draw(
 		/* The chip in the middle of it, above the field. */
 		kl_chip(style, conversation.x + conversation.width / 2, conversation.y + conversation.height - PH_VIEW_COMPOSER - 14, view->notice);
 	}
+
+	/* The paired phone's call over everything, while there is one (ws197-p006). */
+	if (view->call_count != 0U)
+		view_call_card(view, ui, style, width, now_us);
 }
 
 /*
@@ -500,13 +519,24 @@ ph_view_wait(
 	uint64_t now_us)
 {
 	uint64_t left;
+	uint64_t tick;
+	int wait;
 
-	/* No notice: only input changes the view. */
+	/* A call on: its time changes at the next whole second since it started (ws197-p006). */
+	wait = -1;
+	if (view->call_since_us != 0U && now_us >= view->call_since_us) {
+		tick = 1000000U - (now_us - view->call_since_us) % 1000000U;
+		wait = (int)(tick / 1000U) + 1;
+	}
+
+	/* No notice: the call's second, or only input changes the view. */
 	if (view->notice == NULL || now_us >= view->notice_until)
-		return -1;
+		return wait;
 
-	/* The notice's time left, rounded up. */
+	/* The notice's time left, rounded up, or the call's second when it comes first. */
 	left = view->notice_until - now_us;
+	if (wait >= 0 && (uint64_t)wait < left / 1000U + 1U)
+		return wait;
 	return (int)(left / 1000U) + 1;
 }
 
@@ -2063,6 +2093,188 @@ view_attach_choices(
 	pressed = kl_button(ui, style, PH_ID_ATTACH_FILE, &button, "File\xe2\x80\xa6", 0U);
 	if (pressed)
 		ph_view_action(view, PH_ACTION_ATTACH, now_us);
+}
+
+/*
+ * Draws the paired phone's call as a card at the window's top (ws197-p006):
+ * who, what the call is doing, and its buttons -- Answer and Decline while
+ * it rings, Hang Up, Keypad and (with two calls) Swap once it is on; the
+ * keypad under them when it shows.
+ */
+static void
+view_call_card(
+	struct ph_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	int width,
+	uint64_t now_us)
+{
+	const struct kl_phone_call *call;
+	struct kl_rect card;
+	struct kl_rect button;
+	char words[64];
+	const char *who;
+	const char *what;
+	size_t index;
+	int pressed;
+	int ringing;
+
+	/* The call to show: one that rings, else the first. */
+	call = &view->calls[0];
+	for (index = 0U; index < view->call_count; index++) {
+		if (view->calls[index].state == KL_PHONE_CALL_INCOMING)
+			call = &view->calls[index];
+	}
+
+	/* Whether it rings. */
+	ringing = 0;
+	if (call->state == KL_PHONE_CALL_INCOMING)
+		ringing = 1;
+
+	/* The card at the top, in the middle; taller with the keypad. */
+	card.width = 420;
+	if (card.width > width - 24)
+		card.width = width - 24;
+	card.height = 132;
+	if (view->keypad && !ringing)
+		card.height += 4 * 44 + 12;
+	card.x = (width - card.width) / 2;
+	card.y = 12;
+	kl_canvas_shadow(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 16.0f, 16.0f, KL_RGBA(0x000000, 70));
+	kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 16.0f, style->theme->card);
+	kl_canvas_round_border(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, 16.0f, 1.0f, style->theme->card_edge);
+
+	/* A click on the card stays on it (recorded under its buttons). */
+	(void)kl_ui_hit(ui, PH_ID_CALL_CARD, 0U, &card);
+
+	/* Who: the name the phone gave, else the number. */
+	who = "Unknown caller";
+	if (call->number[0] != '\0')
+		who = call->number;
+	if (call->name[0] != '\0')
+		who = call->name;
+	(void)kl_text_draw_fit(style->text, style->canvas, card.x + 20, card.y + 34, who, PH_VIEW_TEXT_TITLE, 1, card.width - 40, style->theme->text);
+
+	/* What the call is doing (with two calls, how many). */
+	what = view_call_words(call, view->call_since_us, now_us, words, sizeof(words));
+	(void)kl_text_draw_fit(style->text, style->canvas, card.x + 20, card.y + 58, what, PH_VIEW_TEXT_BODY, 0, card.width - 40, style->theme->text_secondary);
+
+	/* The buttons' row. */
+	button.y = card.y + 80;
+	button.height = 36;
+	button.width = (card.width - 20 * 2 - 10 * 2) / 3;
+	button.x = card.x + 20;
+
+	/* Ringing: Answer and Decline. */
+	if (ringing) {
+		button.width = (card.width - 20 * 2 - 10) / 2;
+		pressed = kl_button(ui, style, PH_ID_CALL_ANSWER, &button, "Answer", KL_BUTTON_PRIMARY);
+		if (pressed)
+			ph_view_action(view, PH_ACTION_CALL_ANSWER, now_us);
+		button.x += button.width + 10;
+		pressed = kl_button(ui, style, PH_ID_CALL_HANGUP, &button, "Decline", KL_BUTTON_DANGER);
+		if (pressed)
+			ph_view_action(view, PH_ACTION_CALL_HANGUP, now_us);
+		return;
+	}
+
+	/* On, being made, held or waiting: Hang Up, Keypad, and Swap when calls can be held and there are two. */
+	pressed = kl_button(ui, style, PH_ID_CALL_HANGUP, &button, "Hang Up", KL_BUTTON_DANGER);
+	if (pressed)
+		ph_view_action(view, PH_ACTION_CALL_HANGUP, now_us);
+	button.x += button.width + 10;
+	pressed = kl_button(ui, style, PH_ID_CALL_KEYPAD, &button, "Keypad", 0U);
+	if (pressed)
+		view->keypad = !view->keypad;
+	button.x += button.width + 10;
+	if (view->call_count > 1U && view->hf.hold) {
+		pressed = kl_button(ui, style, PH_ID_CALL_SWAP, &button, "Swap", 0U);
+		if (pressed)
+			ph_view_action(view, PH_ACTION_CALL_SWAP, now_us);
+	}
+
+	/* The keypad under them. */
+	if (view->keypad) {
+		button.x = card.x + 20;
+		button.y = card.y + 128;
+		button.width = card.width - 40;
+		button.height = 4 * 44;
+		view_call_keypad(view, ui, style, &button);
+	}
+}
+
+/* Draws the call's keypad of twelve keys in an area; a key pressed is sent as DTMF. */
+static void
+view_call_keypad(
+	struct ph_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	const struct kl_rect *area)
+{
+	static const char keys[] = "123456789*0#";
+	struct kl_rect key;
+	char label[2];
+	unsigned index;
+	int pressed;
+
+	/* Each key in its row and column. */
+	key.width = (area->width - 2 * 8) / 3;
+	key.height = 36;
+	for (index = 0U; index < 12U; index++) {
+		key.x = area->x + (int)(index % 3U) * (key.width + 8);
+		key.y = area->y + (int)(index / 3U) * 44;
+		label[0] = keys[index];
+		label[1] = '\0';
+		pressed = kl_button(ui, style, PH_ID_CALL_KEYS + index, &key, label, 0U);
+		if (!pressed)
+			continue;
+
+		/* Sent as DTMF by the window. */
+		if (view->request_count < PH_REQUESTS_MAX) {
+			memset(&view->requests[view->request_count], 0, sizeof(view->requests[0]));
+			view->requests[view->request_count].action = PH_ACTION_CALL_KEY;
+			view->requests[view->request_count].contact = view->selected;
+			view->requests[view->request_count].key[0] = keys[index];
+			view->request_count++;
+		}
+	}
+}
+
+/* Writes what a call is doing in words: ringing, calling, the time it has been on, on hold, waiting. */
+static const char *
+view_call_words(
+	const struct kl_phone_call *call,
+	uint64_t since_us,
+	uint64_t now_us,
+	char *text,
+	size_t size)
+{
+	uint64_t seconds;
+
+	/* Each state's words. */
+	switch (call->state) {
+	case KL_PHONE_CALL_INCOMING:
+		return "Incoming call";
+	case KL_PHONE_CALL_DIALING:
+		return "Calling\xe2\x80\xa6";
+	case KL_PHONE_CALL_ALERTING:
+		return "Ringing\xe2\x80\xa6";
+	case KL_PHONE_CALL_HELD:
+		return "On hold";
+	case KL_PHONE_CALL_WAITING:
+		return "Waiting";
+	default:
+		break;
+	}
+
+	/* On: the minutes and seconds since it started. */
+	seconds = 0U;
+	if (since_us != 0U && now_us > since_us)
+		seconds = (now_us - since_us) / 1000000U;
+	(void)snprintf(text, size, "%02u:%02u", (unsigned)(seconds / 60U), (unsigned)(seconds % 60U));
+
+	/* Succeeded: the time. */
+	return text;
 }
 
 /*
