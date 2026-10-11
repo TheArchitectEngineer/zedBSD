@@ -8,15 +8,12 @@
   Q1 の操作盤。先頭（awesome-plan-current）は「今」だけを書き、各 block は「master:<名前>:start」〜「master:<名前>:end」で丸ごと置き換えてよい。
   block: updated・agents・merge・next・open-decisions・focus・blocked（先頭）、priority・outlook（本体）、decisions-log・history-log（末尾の付録、新しい物を block の先頭に足す）。
   置き換え: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
--->
-
-<!-- master:agents:start -->
-- **2026-10-11（Q1）: N=3＋T1**（ユーザー）。[Queue](queue.md) の 2026-10-11 の節、[台帳](agents/registry.md)。
-  - P1（agent/p1、新規の実装）: q924 WS157 Photos の削除の統合 → q925 Vulkan Video i915 の完了（WS202・WS083 p007）→ q926 ws197-p014 media picker の popup → q927 MMS の送信（p010）→ q928 HFP の制御 → q929 [WS204](ws204/ws.md) HDA の録音 → q930 HFP の音 → q931 [WS205](ws205/ws.md) Bluetooth audio → q932 [WS206](ws206/ws.md) Pi 4 WiFi → q933 [WS207](ws207/ws.md) Pi 4 audio。
-  - P2: q934 BUG-263（c695cc34d、test-wait T1-530）・q935 BUG-274（048dc8c4b、guest の script の実行はユーザーの判断待ち）を終えて終了。
-  - P1 の q924（WS157 Photos の削除）を merge（787c1904c）。GUI の確かめは T1 に後でまとめる。既存の keiland-os-boundary A4 の FAIL（phone/main.c の posix_spawn）は P1 が q926 で直す。
-  - P3（agent/p3、起点 d27925686）: q936 [ws141-p013](ws141/phase013/phase.md) VC6 の描画（mouse の移動 300 ms → 33 ms → 16 ms、Pi 4 は 10.0.30.2）。WS141 は Codex のセッションから P3 へ引き継いだ。**Codex は全て終了（2026-10-11 ユーザー「Codexはもう動かしません。終了しました。」）**。Pi 4 は image を焼き直した（ユーザー）: P3 が SSH で kernel を入れて reboot。
-  - T1（agent/t1）: T1-529 WS202 の再生（QEMU と 5330 の scp）。
+- **2026-10-12（Q1）: 動いているのは P3 だけ**（P1・P2・T1 は停止）。
+  - P3（agent/p3）: [WS141](ws141/ws.md) Pi 4 VC6 の描画の速さ。Pi 4（10.0.30.2）の kernel は P3 が置き、電源の入れ直しはユーザー。今の Pi: kernel 6d6c29332（計測の行入り）・libc 2418688519（BUG-291 の直しの word copy）。
+    - 次: (a) bcm2711 の draw ごとの kernel の小さな allocation を pass・submission の塊に（draw の pool、per-draw の upload の arena、prepared の作成と dispose）。次の Pi の kernel は main の 4d3d7eddf（kern_free の O(1)）＋07a445a75（計測）＋(a) を 1 つに。
+    - 並行: [ws141-p016](ws141/phase016/phase.md)（vkQueueSubmit の非同期化）v4。review-1〜3 は phase016/review-*.md。2026-10-12 ユーザー「列を app ごとに」→ executor の列を session ごとに分け pass の単位で round-robin まで含める。v4 の review を通るまで実装しない。
+  - 結果（2026-10-12 ユーザー）: App Home の遷移 9 秒 → 3 秒（初回 5 秒）、drag は非常に速くなった、hover の体感は変わらず（同期の submit が主因、p016）。Settings の present-copy 305ms → 2〜15ms。
+  - WS208（arm64 SMP、agent/p2 ea8ecb4cf 未統合）は最後（ユーザー）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
@@ -543,6 +540,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-12 ユーザー（クリック）: ws141-p016 の非同期化は「列を app ごとに」— GPU の実行の列を session ごとに分け、pass の単位で round-robin するところまで p016 に含める（review-3 N4: 全体 1 本の列では cursor・drag が重い client の後ろに並ぶ）。2026-10-12 ユーザー「描画が終わらなくても制御が戻るのがコマンドバッファ形式のメリットで、Vulkan移行の目的」→ i915 の非同期の submit は F-093。Q1: arm64 の HAL の uncached の unmap の TLB の flush を 1 回に（b17a753d4）、kern_free の large の allocation を O(1) に（4d3d7eddf）。
 - 2026-10-08 午後 ユーザー:「サウンドはlibkeiland-backendに入れてください。libkeilandのAPIはkl_audio_がいいです。」→ WS191 の音の出力は libkeiland-backend の中、公開の API は `kl_audio_*`。
 - 2026-10-08 午後 ユーザー（クリック）: WS191 の Linux の再生の経路は「alsa-lib を dlopen」（ALSA の default、普通は pipewire-alsa で PipeWire）。Q1: D4 は stream ごとの接続のまま限りは pid ごと、p004 は Linux・FreeBSD の正弦波の試験の client を入れる（plan/ws191/phase001/phase.md）。
 - 2026-10-08 夜 ユーザー:「SSHのホストキーは無視するか登録を削除していいです。」「N=2で再開します。」→ P1（BUG-267 の 2 本指の gesture → WS143 p005 i02b）、P2（WS177 M の T1 依頼 → WS191 の Linux の uid → BUG-269）を新しい世代で起動。
