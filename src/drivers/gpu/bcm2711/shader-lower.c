@@ -60,8 +60,10 @@ bcm2711_shader_lower(
 	if (error != 0)
 		return error;
 
-	/* Two-thread shaders have sixty-four physical registers, including the four reserved scratch registers. */
+	/* Two-thread programs use the sixty-four physical registers and four-thread programs rf0 to rf31, scratch included. */
 	compiler->binary->registers_used = 64;
+	if (compiler->threads == 4)
+		compiler->binary->registers_used = 32;
 	compiler->binary->starts_final = 0;
 	if (compiler->binary->stage != BCM2711_SHADER_FRAGMENT && compiler->samples == 0)
 		compiler->binary->starts_final = 1;

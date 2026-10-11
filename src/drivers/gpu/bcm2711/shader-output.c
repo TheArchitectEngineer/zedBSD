@@ -11,8 +11,6 @@
 
 #include "drivers/gpu/bcm2711/shader-private.h"
 
-/* Four float components of render target zero use one per-pixel tile configuration byte. */
-#define SHADER_RGBA_TILE_CONFIGURATION 0xffffff3fU
 
 static int vertex_output(struct bcm2711_shader_compiler *compiler);
 static int fragment_output(struct bcm2711_shader_compiler *compiler);
@@ -235,8 +233,9 @@ fragment_output(
 	struct bcm2711_shader_compiler *compiler)
 {
 	struct bcm2711_qpu_source source;
+	struct bcm2711_qpu_source left;
+	struct bcm2711_qpu_source right;
 	struct bcm2711_qpu_source ignored;
-	struct bcm2711_shader_uniform uniform;
 	uint32_t colors[4];
 	uint32_t index;
 	uint32_t component;
@@ -264,37 +263,25 @@ fragment_output(
 			return error;
 	}
 
-	/* The first color write consumes an explicit float RGBA per-pixel configuration word. */
-	kern_memset(&uniform, 0, sizeof(uniform));
-	uniform.kind = BCM2711_SHADER_CONSTANT;
-	uniform.bits = SHADER_RGBA_TILE_CONFIGURATION;
-	error = bcm2711_shader_uniform_append(compiler, &uniform);
-	if (error != 0)
-		return error;
-
-	/* Physical target channel order is applied once, as the canonical colour is written. */
-	for (index = 0; index < 4; index++) {
-		component = index;
-		if (compiler->key->swap_red_blue != 0) {
-			if (index == 0)
-				component = 2;
-			if (index == 2)
-				component = 0;
-		}
-
-		/* The chosen physical target channel is written only after its complete canonical color is available. */
-		source = bcm2711_shader_rf(colors[component]);
-		if (index == 0) {
-			error = bcm2711_shader_operation(compiler, BCM2711_QPU_MOVE, 8, 1, source, ignored, 0, 0);
-		} else {
-			error = bcm2711_shader_operation(compiler, BCM2711_QPU_MOVE, 7, 1, source, ignored, 0, 0);
-		}
+	/*
+	 * The tile buffer's default write format, which needs no configuration
+	 * uniform, takes render target zero per pixel as four half floats in two
+	 * words: red and green, then blue and alpha.  Physical target channel
+	 * order is applied as the canonical colour is packed.
+	 */
+	for (index = 0; index < 2; index++) {
+		component = index * 2;
+		if (compiler->key->swap_red_blue != 0)
+			component = 2 - index * 2;
+		left = bcm2711_shader_rf(colors[component]);
+		right = bcm2711_shader_rf(colors[index * 2 + 1]);
+		error = bcm2711_shader_operation(compiler, BCM2711_QPU_PACK_HALVES, 7, 1, left, right, 0, 0);
 
 		/* A missing native color write prevents successful fragment termination. */
 		if (error != 0)
 			return error;
 	}
 
-	/* The native tile transaction contains exactly four completed color component writes. */
+	/* The native tile transaction contains both completed packed colour writes. */
 	return 0;
 }

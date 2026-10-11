@@ -299,6 +299,21 @@ bcm2711_buffer_release(
 }
 
 /*
+ * Reports no diagnostic releases; the fixture's buffers are host memory.
+ */
+void
+bcm2711_buffer_release_stats(
+	uint64_t *count,
+	uint64_t *bytes,
+	uint64_t *ticks)
+{
+	/* The fixture keeps no release timing. */
+	*count = 0;
+	*bytes = 0;
+	*ticks = 0;
+}
+
+/*
  * Supplies a bounded coherent fixture run while observing the actual late placement requirements.
  */
 int
@@ -366,7 +381,10 @@ bcm2711_buffer_create(
 }
 
 /*
- * Observes complete padded cache-clean requests without claiming real host or device cache maintenance.
+ * Observes cache-clean requests without claiming real host or device cache maintenance.
+ *
+ * Whole allocations clean padded pages; uploads carved from a pass's shared
+ * chunk clean just their bytes, as the kernel's line-granular clean allows.
  */
 void
 kern_dcache_clean_range(
@@ -374,7 +392,7 @@ kern_dcache_clean_range(
 	size_t bytes)
 {
 	/* No coherent fixture alias is treated as cached upload storage. */
-	assert(address != NULL && address != backing_storage && bytes != 0 && (bytes & 4095U) == 0);
+	assert(address != NULL && address != backing_storage && bytes != 0);
 	native_cleans++;
 
 	/* Succeeded: the complete cache-maintenance request has been observed. */
@@ -1143,7 +1161,7 @@ native_draw_test(
 	memset(cpu, 0x75, 512);
 	cleans = native_cleans;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw != NULL && draw->vertices == 6 && draw->attributes == 1 && draw->count == 11);
 	owned = draw->bytes;
 	assert(owned == 11U * 4096U && available == 1024U * 1024U - owned && native_cleans == cleans + 11);
@@ -1196,7 +1214,7 @@ native_draw_test(
 	/* After the unit's self-test the raster is described for conversion when the pass runs, from the image into the draw's scratch. */
 	space->native->hardware.tfu_uif_ready = true;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw != NULL);
 	assert(draw->texture_count == 1 && draw->textures[0].convert && draw->textures[0].pixels == draw->storage[0]);
 	assert(draw->textures[0].tfu.input == address && draw->textures[0].tfu.output == draw->storage[0]->view->address);
@@ -1209,13 +1227,13 @@ native_draw_test(
 	/* With a cache capacity a retired draw's uploads stay mapped, and the next draw of the same sizes reuses them zeroed. */
 	space->cache_limit = BCM2711_NATIVE_CACHE_BYTES;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw != NULL && draw->bytes == owned);
 	memset(draw->storage[9]->view->buffer->address, 0x5a, 4096);
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
 	assert(error == 0 && draw == NULL && space->cache_bytes == owned && allocations > baseline);
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw != NULL && draw->bytes == owned && space->cache_bytes == 0);
 	source = draw->storage[9]->view->buffer->address;
 	for (index = 48; index < 4096; index++)
@@ -1234,14 +1252,14 @@ native_draw_test(
 	memset(cpu, 0x75, 512);
 	view->buffer->host_mapped = false;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw != NULL && draw->count == 10 && draw->textures[0].snapshot != NULL);
 	assert(draw->textures[0].snapshot->users == 1 && ((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x75);
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
 	assert(error == 0 && space->snapshots != NULL && space->snapshots->users == 0);
 	memset(cpu, 0x24, 512);
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->textures[0].snapshot == space->snapshots);
 	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x75);
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
@@ -1250,7 +1268,7 @@ native_draw_test(
 	/* A device or kernel write moves the generation, and the unused snapshot is converted again in place. */
 	view->buffer->generation++;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->textures[0].snapshot == space->snapshots);
 	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x24);
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
@@ -1259,7 +1277,7 @@ native_draw_test(
 	/* A host-mapped source gets a private conversion every time. */
 	view->buffer->host_mapped = true;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->count == 11 && draw->textures[0].snapshot == NULL);
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
 	assert(error == 0);
@@ -1269,7 +1287,7 @@ native_draw_test(
 	space->native->hardware.tfu_uif_ready = true;
 	view->buffer->generation++;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && draw->textures[0].convert);
 	assert(draw->textures[0].tfu.output == draw->textures[0].pixels->view->address && !space->snapshots->valid);
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
@@ -1277,7 +1295,7 @@ native_draw_test(
 
 	/* A pass that never ran leaves the snapshot to be filled again. */
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && draw->textures[0].convert);
 	bcm2711_native_snapshot_filled(draw->textures[0].snapshot);
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
@@ -1285,7 +1303,7 @@ native_draw_test(
 
 	/* A completed fill is reused without another job. */
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && !draw->textures[0].convert);
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
 	assert(error == 0);
@@ -1300,14 +1318,14 @@ native_draw_test(
 	for (index = 1; index <= 4; index++) {
 		fail_after = index * 10U;
 		available = 1024U * 1024U;
-		error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+		error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 		assert(error == ENOMEM && draw == NULL && allocations == baseline && available == 1024U * 1024U);
 		assert(fail_after == 0);
 	}
 
 	/* An insufficient whole-job budget refuses after a valid allocation prefix and preserves the caller's exact budget. */
 	available = 4096;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == ENOMEM && draw == NULL && available == 4096 && allocations == baseline);
 
 	/* Complete synthetic prepared copies exercise firstVertex rebasing and late logical fetch refusal without changing the real primary. */
@@ -1325,7 +1343,7 @@ native_draw_test(
 	for (index = 0; index < 48; index++)
 		((uint8_t *)cpu)[index] = (uint8_t)(index + 1);
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->vertices == 3 && draw->storage[9]->bytes == 24);
 	assert(draw->bin[16] == 2 && draw->bin[18] == 1 && draw->bin[20] == 4 && draw->bin[22] == 3);
 	source = draw->storage[9]->view->buffer->address;
@@ -1347,7 +1365,7 @@ native_draw_test(
 	pipeline->attributes[0].format = VK_FORMAT_R32_SFLOAT;
 	changed->pipeline = pipeline;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->attributes == 1 && draw->storage[9]->bytes == 24);
 	source = draw->storage[9]->view->buffer->address;
 	for (index = 0; index < 3; index++) {
@@ -1373,7 +1391,7 @@ native_draw_test(
 	/* Defaults already belong to the native root, so the dummy needs no extra fetch mapping. */
 	pipeline->attribute_count = 0;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->attributes == 1 && draw->count == 10);
 	record = draw->storage[9]->view->buffer->address;
 	assert(record[40] == 9U && record[41] == 0x11U && record[44] == 0);
@@ -1387,7 +1405,7 @@ native_draw_test(
 	changed->pipeline = event->pipeline;
 	changed->draw[0] = 4;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, NULL, &draw);
 	assert(error == EINVAL && draw == NULL && allocations == baseline + 1 && available == 1024U * 1024U);
 	kern_free(changed);
 	puts("WS141 real compiled/native mapped draw/TMU-fetch snapshots/budget/uncertain retirement: PASS");
@@ -1440,9 +1458,14 @@ native_pass_test(
 	assert(error == 0 && pass != NULL && following == NULL);
 	assert(pass->output == view && view->references == references + 1U);
 	assert(pass->count == 9U && pass->draws == 1U && pass->first == pass->last && pass->last->next == NULL);
+	/*
+	 * The draw's six small uploads (three uniform streams, texture records,
+	 * shader record and fetch) share one 64 KiB upload chunk instead of six
+	 * pages, cleaned once whole and then over each written range.
+	 */
 	bytes = pass->bytes;
-	assert(bytes == 1646592U && available == 8U * 1024U * 1024U - bytes);
-	assert(native_cleans == cleans + 20U && pass->job.kind == BCM2711_V3D_JOB_CL);
+	assert(bytes == 1687552U && available == 8U * 1024U * 1024U - bytes);
+	assert(native_cleans == cleans + 21U && pass->job.kind == BCM2711_V3D_JOB_CL);
 	assert(pass->job.command.cl.bin_end - pass->job.command.cl.bin_start == 135U);
 	assert(pass->job.command.cl.render_end - pass->job.command.cl.render_start == 106U);
 	assert(pass->job.command.cl.pool_bytes == 0x83000U && pass->job.command.cl.state_bytes == 4096U);
@@ -1466,7 +1489,11 @@ native_pass_test(
 	error = bcm2711_vulkan_native_pass_release(&pass, true);
 	assert(error == 0 && pass == NULL && allocations == baseline && view->references == references);
 
-	/* Two draws share immutable texels, exact code and defaults; scalar/fetch/shader records remain independent. */
+	/*
+	 * Two draws share immutable texels, exact code and defaults; scalar/fetch/shader records
+	 * remain independent but are carved from the first draw's upload chunk, so the second
+	 * draw owns no allocation of its own.
+	 */
 	events = kern_calloc(4, sizeof(*events));
 	assert(events != NULL);
 	events[0] = *begin_event;
@@ -1480,7 +1507,7 @@ native_pass_test(
 	assert(error == 0 && pass->draws == 2 && pass->first != pass->last);
 	assert(pass->first->texture_count == 1 && pass->last->texture_count == 0);
 	assert(pass->last->count == pass->first->count - 5U);
-	assert(pass->last->bytes == pass->first->bytes - 5U * 4096U);
+	assert(pass->last->count == 0U && pass->last->bytes == 0U);
 	assert(pass->last->defaults == pass->first->defaults);
 	for (index = 0; index < 3; index++)
 		assert(pass->last->code[index] == pass->first->code[index]);
@@ -2023,7 +2050,8 @@ prepared_test(
 	sampler = set->bindings[0].sampler;
 	view_references = view->references;
 	sampler_references = sampler->references;
-	for (index = 1; index <= 6; index++) {
+	/* The root, one event chunk for all events, and the set record are the three allocations. */
+	for (index = 1; index <= 3; index++) {
 		fail_after = index;
 		error = bcm2711_vulkan_prepared_create(command_object, &prepared);
 		assert(error == ENOMEM && prepared == NULL && allocations == baseline);
@@ -3548,7 +3576,7 @@ record_test(
 	memset(&recording, 0, sizeof(recording));
 	recording.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-	/* A fifth native event allocation refusal must consume the rest of the real stream, report End OOM, and permit clean re-recording. */
+	/* A refused event-chunk allocation must consume the rest of the real stream, report End OOM, and permit clean re-recording. */
 	for (index = 0; index < 2; index++) {
 		begin(&writer, wire, sizeof(wire), GPU_OP_BEGIN_COMMAND_BUFFER, 1);
 		vulkan_write_u64(&writer, 151);
@@ -3563,7 +3591,7 @@ record_test(
 		vulkan_write_u32(&writer, 1);
 		vulkan_write_u64(&writer, 151);
 		if (index == 0)
-			fail_after = 5;
+			fail_after = 1;
 		error = execute(session, &writer, &reader);
 		assert(error == 0);
 		if (index == 0) {
@@ -3573,6 +3601,38 @@ record_test(
 			assert(vulkan_read_u32(&reader) == VK_SUCCESS && command->state == BCM2711_VULKAN_COMMAND_EXECUTABLE && !command->render_open);
 		}
 	}
+
+	/*
+	 * The recording budget admits events up to BCM2711_VULKAN_RECORD_BYTES and
+	 * refuses the next one: the nine-event recording fits exactly behind nine
+	 * events' worth of budget, is refused behind eight, and an ordinary
+	 * recording follows.
+	 */
+	for (index = 0; index < 3; index++) {
+		begin(&writer, wire, sizeof(wire), GPU_OP_BEGIN_COMMAND_BUFFER, 1);
+		vulkan_write_u64(&writer, 151);
+		vulkan_write_u64(&writer, 1);
+		vulkan_encode_VkCommandBufferBeginInfo(&writer, &recording);
+		error = execute(session, &writer, &reader);
+		assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
+		if (index < 2)
+			command->recorded_bytes = BCM2711_VULKAN_RECORD_BYTES - (9U - index) * (uint32_t)sizeof(struct bcm2711_vulkan_record);
+		begin(&writer, wire, sizeof(wire), GPU_OP_END_COMMAND_BUFFER, 1);
+		writer.bytes -= 8;
+		ws141_client_encode_recording(&writer, 151);
+		vulkan_write_u32(&writer, GPU_OP_END_COMMAND_BUFFER);
+		vulkan_write_u32(&writer, 1);
+		vulkan_write_u64(&writer, 151);
+		error = execute(session, &writer, &reader);
+		assert(error == 0);
+		if (index == 1) {
+			assert(vulkan_read_u32(&reader) == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY);
+			assert(command->recording_error == ENOMEM && command->state == BCM2711_VULKAN_COMMAND_INVALID);
+		} else {
+			assert(vulkan_read_u32(&reader) == VK_SUCCESS && command->state == BCM2711_VULKAN_COMMAND_EXECUTABLE);
+		}
+	}
+	assert(BCM2711_VULKAN_RECORD_BYTES / sizeof(struct bcm2711_vulkan_record) > 16000U);
 
 	/* Exact nine-event ordering, selected clear union and raw push words come from real public client encoding. */
 	nodes = 0;
@@ -3965,7 +4025,7 @@ queue_test(
 		if (index == 0) {
 			fail_after = 1;
 		} else {
-			fail_after = 5;
+			fail_after = 1;
 		}
 
 		/* Both refusal points occur before live semaphore/fence publication or the explicit mock native runner. */

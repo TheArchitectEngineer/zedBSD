@@ -175,7 +175,9 @@ struct kwl_head {
  * alpha, that shows the cursor without composing a frame.  shown says the
  * plane shows the cursor (the frames draw none); held says which cursor
  * image (and its version) each swapchain image holds; source, version, x
- * and y are what was presented last.
+ * and y are what was presented last.  last_copy is the image whose copy was
+ * submitted last (copied says one was): copies complete in submission order
+ * on the one queue, so its fence tells whether every copy is done.
  */
 struct kwl_cursor_plane {
 	unsigned open;
@@ -196,6 +198,8 @@ struct kwl_cursor_plane {
 	int32_t y;
 	uint64_t presents;
 	uint64_t copies;
+	unsigned copied;
+	unsigned last_copy;
 };
 
 /* How many frames' damage is kept, for images that missed that many frames. */

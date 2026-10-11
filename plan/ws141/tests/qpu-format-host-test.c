@@ -29,6 +29,7 @@ static const struct expected_operation expected_operations[] = {
     {BCM2711_QPU_MOVE, V3D_QPU_A_NOP, V3D_QPU_M_MOV},
     {BCM2711_QPU_HALF_LOW, V3D_QPU_A_NOP, V3D_QPU_M_FMOV},
     {BCM2711_QPU_HALF_HIGH, V3D_QPU_A_NOP, V3D_QPU_M_FMOV},
+    {BCM2711_QPU_PACK_HALVES, V3D_QPU_A_VFPACK, V3D_QPU_M_NOP},
     {BCM2711_QPU_FLOAT_ADD, V3D_QPU_A_FADD, V3D_QPU_M_NOP},
     {BCM2711_QPU_FLOAT_SUBTRACT, V3D_QPU_A_FSUB, V3D_QPU_M_NOP},
     {BCM2711_QPU_FLOAT_MULTIPLY, V3D_QPU_A_NOP, V3D_QPU_M_FMUL},
@@ -178,6 +179,12 @@ check_word(
 		assert(decoded.alu.mul.a.unpack == V3D_QPU_UNPACK_L);
 	if (instruction->operation == BCM2711_QPU_HALF_HIGH)
 		assert(decoded.alu.mul.a.unpack == V3D_QPU_UNPACK_H);
+
+	/* Half packing reads both inputs as whole floats. */
+	if (instruction->operation == BCM2711_QPU_PACK_HALVES) {
+		assert(decoded.alu.add.a.unpack == V3D_QPU_UNPACK_NONE);
+		assert(decoded.alu.add.b.unpack == V3D_QPU_UNPACK_NONE);
+	}
 
 	/* The unchanged encoder must reconstruct exactly the independent production word. */
 	accepted = v3d_qpu_instr_pack(device, &decoded, &repacked);

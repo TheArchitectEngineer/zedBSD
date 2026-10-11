@@ -407,8 +407,24 @@ plane_present(
 	uint32_t version;
 	VkResult result;
 
-	/* A free image now, or at a later pass. */
+	/*
+	 * A copy still running holds this pass back before an image is acquired:
+	 * an acquired image must be presented, and waiting here would stop the
+	 * main loop behind the GPU.  The next pass tries again.
+	 */
 	compose = server->compose;
+	if (plane->copied) {
+		result = vkGetFenceStatus(compose->device, plane->fences[plane->last_copy]);
+		if (result == VK_NOT_READY)
+			return;
+		if (result != VK_SUCCESS) {
+			printf("KWL CURSOR_PLANE failed step=fence result=%d\n", (int)result);
+			kwl_cursor_plane_close(server);
+			return;
+		}
+	}
+
+	/* A free image now, or at a later pass. */
 	acquired = plane->acquired[plane->next];
 	result = vkAcquireNextImageKHR(compose->device, plane->output.swapchain, 0U, acquired, VK_NULL_HANDLE, &image);
 	if (result == VK_NOT_READY || result == VK_TIMEOUT)
@@ -456,6 +472,8 @@ plane_present(
 		plane->held[image] = source;
 		plane->held_version[image] = version;
 		plane->copies++;
+		plane->copied = 1U;
+		plane->last_copy = image;
 		wait = plane->ready[image];
 	}
 

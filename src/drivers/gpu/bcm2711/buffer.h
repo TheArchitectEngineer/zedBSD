@@ -66,5 +66,6 @@ int bcm2711_buffer_create_uncached(uint64_t bytes, uint64_t limit, size_t alignm
 void bcm2711_buffer_retain(struct bcm2711_buffer *buffer);
 
 void bcm2711_buffer_release(struct bcm2711_buffer *buffer);
+void bcm2711_buffer_release_stats(uint64_t *count, uint64_t *bytes, uint64_t *ticks);
 
 #endif

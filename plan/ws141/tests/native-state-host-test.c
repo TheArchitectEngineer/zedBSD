@@ -112,6 +112,7 @@ verify_shader(
 	programs[1].vpm_output_words = 36;
 	programs[1].starts_final = 1;
 	programs[2].input_count = 32;
+	programs[2].threads = 4;
 	shader.defaults = 0xabcde000U;
 	shader.vpm_bytes = 16384;
 	memset(record_bytes, 0xa5, sizeof(record_bytes));

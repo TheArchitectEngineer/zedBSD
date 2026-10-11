@@ -20,9 +20,15 @@
 /* An absent definition, last use or output never aliases IR value zero. */
 #define BCM2711_SHADER_ABSENT 0xffffffffU
 
-/* Expression storage excludes fragment payload and the four materialization scratch registers. */
+/*
+ * Expression storage excludes fragment payload and the four materialization
+ * scratch registers.  The scratch registers are named rf60 to rf63 while
+ * compiling; a four-thread program, whose threads see rf0 to rf31, encodes
+ * them as rf28 to rf31 and keeps its expressions below rf28.
+ */
 #define BCM2711_SHADER_FIRST_REGISTER 4U
 #define BCM2711_SHADER_REGISTER_END 60U
+#define BCM2711_SHADER_QUAD_REGISTER_END 28U
 #define BCM2711_SHADER_SCRATCH_LEFT 60U
 #define BCM2711_SHADER_SCRATCH_RIGHT 61U
 #define BCM2711_SHADER_SCRATCH_WORK 62U
@@ -49,6 +55,10 @@ struct bcm2711_shader_compiler {
 	uint32_t input_registers[BCM2711_SHADER_INTERFACE_WORDS];
 	uint32_t outputs[BCM2711_SHADER_OUTPUT_WORDS];
 	uint32_t instruction;
+	/* Two or four threads a QPU runs this program as; four leave each thread rf0 to rf31. */
+	uint32_t threads;
+	/* The first physical register above the expression registers (the four scratch registers' first one in the encoding). */
+	uint32_t register_end;
 	uint32_t code_capacity;
 	uint32_t uniform_capacity;
 	uint32_t samples;

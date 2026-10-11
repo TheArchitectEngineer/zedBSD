@@ -39,6 +39,8 @@ struct bcm2711_render_request {
 	uint32_t state;
 	int canceled;
 	bool supervised;
+	/* Diagnostic tick count when the request entered the FIFO. */
+	uint64_t queued_ticks;
 };
 
 /* The native IRQ guard protects the FIFO, slots, pending counts and uncertain flag. */

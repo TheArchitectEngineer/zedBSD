@@ -61,12 +61,15 @@ static void source_program(const struct drv_gpu_shader_ir *ir, struct shader_mac
 static uint32_t machine_uniform(const struct bcm2711_shader_binary *binary, struct shader_machine *machine);
 static uint32_t machine_source(const struct v3d_device_info *device, const struct v3d_qpu_instr *instruction, const struct shader_machine *machine, enum v3d_qpu_mux mux);
 static uint32_t machine_add(const struct v3d_qpu_instr *instruction, struct shader_machine *machine, uint32_t left, uint32_t right);
-static void machine_write(const struct bcm2711_shader_binary *binary, struct shader_machine *machine, uint32_t address, uint32_t magic, uint32_t bits);
+static void machine_write(struct shader_machine *machine, uint32_t address, uint32_t magic, uint32_t bits);
 static void machine_program(const struct v3d_device_info *device, const struct bcm2711_shader_binary *binary, struct shader_machine *machine);
 static void verify_panel_mode(const struct drv_gpu_shader_ir *generic, const struct drv_gpu_shader_ir *specialized, uint32_t mode);
 static void pipeline_key(const struct drv_gpu_shader_ir *ir, struct bcm2711_shader_key *key);
 static void initialize_machine(struct shader_machine *machine, uint32_t fragment, uint32_t trial);
 static void compare_number(uint32_t native, uint32_t expected);
+static uint32_t half_bits(float number);
+static float half_float(uint32_t half);
+static void compare_half(uint32_t native, uint32_t expected);
 static void verify_program(const struct v3d_device_info *device, const uint32_t *words, size_t word_count, const struct drv_gpu_shader_ir *ir, enum bcm2711_shader_stage stage, struct bcm2711_shader_key *key);
 static void verify_hazards(const struct v3d_device_info *device, const struct bcm2711_shader_binary *binary);
 static bool reads_register(const struct v3d_qpu_instr *instruction, uint32_t number);
@@ -562,6 +565,12 @@ machine_add(
 	case V3D_QPU_A_FTOIZ:
 		bits = (uint32_t)(int32_t)a;
 		break;
+	case V3D_QPU_A_VFPACK:
+		/* Both inputs are whole floats; an unpacked input would read a half instead. */
+		assert(instruction->alu.add.a.unpack == V3D_QPU_UNPACK_NONE);
+		assert(instruction->alu.add.b.unpack == V3D_QPU_UNPACK_NONE);
+		bits = half_bits(a) | (half_bits(b) << 16);
+		break;
 	case V3D_QPU_A_FCMP:
 		if (instruction->flags.apf == V3D_QPU_PF_PUSHZ)
 			machine->flag = truth(a == b);
@@ -591,17 +600,15 @@ machine_add(
 	return bits;
 }
 
-/* Applies actual physical or peripheral destinations, including implicit uniform and texture FIFO effects. */
+/* Applies actual physical or peripheral destinations, including texture FIFO and tile effects. */
 static void
 machine_write(
-	const struct bcm2711_shader_binary *binary,
 	struct shader_machine *machine,
 	uint32_t address,
 	uint32_t magic,
 	uint32_t bits)
 {
 	uint32_t component;
-	uint32_t configuration;
 
 	/* Physical register writes remain completely separate from native peripheral effects. */
 	if (magic == 0) {
@@ -624,12 +631,9 @@ machine_write(
 		machine->lookups++;
 		machine->configurations = 0;
 		break;
-	case V3D_QPU_WADDR_TLBU:
-		configuration = machine_uniform(binary, machine);
-		assert(configuration == 0xffffff3fU);
-		/* The configured first write falls through to the ordinary per-component tile write. */
 	case V3D_QPU_WADDR_TLB:
-		assert(machine->tile_write < 4);
+		/* The default tile format takes two packed half-float pairs per pixel and no configuration uniform. */
+		assert(machine->tile_write < 2);
 		machine->output[machine->tile_write++] = bits;
 		break;
 	default:
@@ -666,7 +670,7 @@ machine_program(
 
 		/* VPM stores have an indexed effect and no ordinary register destination. */
 		if (instruction.alu.add.op != V3D_QPU_A_NOP && instruction.alu.add.op != V3D_QPU_A_STVPMV)
-			machine_write(binary, machine, instruction.alu.add.waddr, instruction.alu.add.magic_write, bits);
+			machine_write(machine, instruction.alu.add.waddr, instruction.alu.add.magic_write, bits);
 
 		/* The independent decoded multiply instruction distinguishes bit moves from floating multiplication. */
 		if (instruction.alu.mul.op != V3D_QPU_M_NOP) {
@@ -696,7 +700,7 @@ machine_program(
 				accepted = false;
 			assert(instruction.flags.mc != V3D_QPU_COND_IFB && instruction.flags.mc != V3D_QPU_COND_IFNB);
 			if (accepted)
-				machine_write(binary, machine, instruction.alu.mul.waddr, instruction.alu.mul.magic_write, bits);
+				machine_write(machine, instruction.alu.mul.waddr, instruction.alu.mul.magic_write, bits);
 		}
 
 		/* Direct uniform transactions consume the immutable runtime binding stream. */
@@ -932,7 +936,12 @@ verify_program(
 	}
 
 	/* A final switch and both explicit no-operation delay slots must be inside the actual owned code extent. */
-	assert(binary->code_count >= 3 && binary->threads == 2 && binary->registers_used == 64);
+	assert(binary->code_count >= 3);
+	if (binary->threads == 4) {
+		assert(stage == BCM2711_SHADER_FRAGMENT && binary->registers_used == 32);
+	} else {
+		assert(binary->threads == 2 && binary->registers_used == 64);
+	}
 	accepted = v3d_qpu_instr_unpack(device, binary->code[binary->code_count - 3], &last);
 	assert(accepted && last.sig.thrsw);
 	assert(binary->code[binary->code_count - 2] == UINT64_C(0x3c003186bb800000));
@@ -968,7 +977,7 @@ verify_program(
 
 		/* Native fragment color is compared after actual blend and target-channel-order choices. */
 		if (stage == BCM2711_SHADER_FRAGMENT) {
-			assert(native.tile_write == 4);
+			assert(native.tile_write == 2);
 			assert(native.varying_read == binary->input_count);
 			for (index = 0; index < 4; index++) {
 				component = index;
@@ -982,8 +991,8 @@ verify_program(
 				/* The physical channel carries the source colour unchanged; the tile buffer blends it. */
 				expected = source.output[component];
 
-				/* Native register reuse and target swapping must preserve the independently interpreted source color. */
-				compare_number(native.output[index], expected);
+				/* Native register reuse, target swapping and half packing must preserve the independently interpreted source color. */
+				compare_half((native.output[index / 2] >> (16 * (index % 2))) & 0xffffU, half_bits(bits_float(expected)));
 			}
 
 			/* Fragment variants have no vertex VPM header to compare. */
@@ -1224,6 +1233,20 @@ verify_hazards(
 		assert(instruction.type == V3D_QPU_INSTR_TYPE_ALU);
 		assert(unit_count(device, &instruction) <= 1);
 
+		/* A four-thread program's threads each see only rf0 to rf31. */
+		if (binary->threads == 4) {
+			if (v3d_qpu_uses_mux(&instruction, V3D_QPU_MUX_A))
+				assert(instruction.raddr_a < 32);
+			if (v3d_qpu_uses_mux(&instruction, V3D_QPU_MUX_B) && !instruction.sig.small_imm_b)
+				assert(instruction.raddr_b < 32);
+			if (instruction.alu.add.op != V3D_QPU_A_NOP && !instruction.alu.add.magic_write)
+				assert(instruction.alu.add.waddr < 32);
+			if (instruction.alu.mul.op != V3D_QPU_M_NOP && !instruction.alu.mul.magic_write)
+				assert(instruction.alu.mul.waddr < 32);
+			if (v3d_qpu_sig_writes_address(device, &instruction.sig) && !instruction.sig_magic)
+				assert(instruction.sig_addr < 32);
+		}
+
 		/* A special function's register result and unit stay untouched for two instructions. */
 		special = v3d_qpu_instr_is_sfu(&instruction);
 		if (special) {
@@ -1327,4 +1350,60 @@ unit_count(
 
 	/* Reports the transactions this one instruction starts. */
 	return count;
+}
+
+/* Rounds one float to the nearest half float, as the native pack does. */
+static uint32_t
+half_bits(
+	float number)
+{
+	_Float16 half;
+	uint16_t bits;
+
+	/* The host's conversion rounds to nearest even. */
+	half = (_Float16)number;
+	memcpy(&bits, &half, sizeof(bits));
+
+	/* Reports the sixteen-bit pattern. */
+	return bits;
+}
+
+/* Widens one half float's bits to a float. */
+static float
+half_float(
+	uint32_t half)
+{
+	_Float16 value;
+	uint16_t bits;
+
+	/* Reinterprets the low sixteen bits. */
+	bits = (uint16_t)half;
+	memcpy(&value, &bits, sizeof(value));
+
+	/* Reports the exact widened value. */
+	return (float)value;
+}
+
+/* Compares two packed half-float channels within one half-float rounding step. */
+static void
+compare_half(
+	uint32_t native,
+	uint32_t expected)
+{
+	float a;
+	float b;
+	float limit;
+
+	/* Exact bits need no tolerance. */
+	if (native == expected)
+		return;
+
+	/* Host and native arithmetic may land on neighbouring halves before packing. */
+	a = half_float(native);
+	b = half_float(expected);
+	limit = 0.001f * (1.0f + fabsf(b));
+	if (!(fabsf(a - b) <= limit)) {
+		fprintf(stderr, "native half %04x %.6g differs from source %04x %.6g\n", native, a, expected, b);
+		assert(0);
+	}
 }
