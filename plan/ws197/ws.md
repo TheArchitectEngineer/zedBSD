@@ -3,15 +3,23 @@
 # WS197: Bluetooth のスマホ連携（SMS の MAP、通話の HFP、連絡先の PBAP）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p005 cleared、HFP・実機PBAP UAT・WS最終規約は未完）
+Status: incomplete（2026-10-11 Q1 照合: SMS・MMS の受信と表示、PBAP の連絡先・通話の履歴、Bluetooth の自動復旧まで main に統合済み。残りは HFP（p006・p007）、MMS の写真・動画の送信（p010 の残り）、実機の UAT（p008）、規約の全文（p009、ベータ3）
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: [Codex承認済み実行記録](codex-queue.md)、bluetooth-recovery-20261010 finished。共有QueueはQ1が反映。
-Target: **ベータ2**（2026-10-10 ユーザー「WS197はbeta2.mdで必須に入れておいてください。」）
-Resume point: p005/p011/p012/p013 cleared。Bluetooth無応答のroot親監視→init自動restart、bt check/reopen/reset、CLI deadlineをmain 7fa0a0e9cへ統合・実機更新済み。停止注入で自動復旧、CLI5秒timeout、reopen/reset後HCI ready。スマホ側の接続削除は現状維持。媒体UAT修正をmain e654733f1へ統合、Phone起動SIGSEGVは実機修正版exit0。添付操作GUI UATは次回起動。p010受信のMIME相互運用修正はhost/buildとSSHでの写真保存を確認、ユーザーがテキスト/写真MMSの受信・表示を確認。受信部分Queue finished、source 89d487814。送信は未完。HFP・実機PBAP UAT・WS最終規約は未完。
+Queue: [Codex の実行記録](codex-queue.md)（bluetooth-recovery-20261010 finished）。共有の Queue は Q1。いま active な WS197 の Queue は無い。
+Target: **ベータ2**（2026-10-10 ユーザー「WS197はbeta2.mdで必須に入れておいてください。」）。HFP をベータ2 に入れるかは未決（2026-10-11 Q1 がユーザーに確認中）。
+Resume point: main の d5296c23e（2026-10-11）。p001〜p005・p011〜p013 cleared。p004a〜c は host・build の条件を満たし main に統合、実機の SMS・MMS の受信と日本語の表示、写真の MMS の受信と表示はユーザーが 2026-10-10 に確認。p010 は受信の部分だけ cleared（source 89d487814）、写真・動画の送信が未完。次は (1) p010 の送信、(2) HFP の制御 p006 → 音 p007、(3) 実機の UAT p008（Android）。P1 の保留の branch agent/p1-ws197 の作業は全部 main に入った（下の 2026-10-11 の節）。
 <!-- awesome-plan-current:end -->
+
+## 2026-10-11 Q1: 状況の照合と P1 の差分の統合
+
+- 2026-10-10 に Codex（別のセッション）が p005 の i06・i07 を実装して main に merge（bee41dded）。同じ時に P1 が worktree の agent/p1-ws197 で i06 を別に書きかけていた（未 commit、phone.h・store.c の約 290 行）。
+- 照合の結果、P1 の差分の機能（電話帳の写し、番号の索引、名前の優先、通話の履歴、番号の無い通話の会話「w」、上限を越えた番号の会話「o」、Peer の保持、国番号の変更の後の索引の作り直し、上限の行の読み飛ばし）は全て main の phonebook.c・store.c に別の形で入っていた。**main に無かったのは 1 点だけ**: 行が満杯の時に `ph_store_add_contact` が連絡先の file と folder を書いた後で ENOSPC を返し、file が残る。P1 の直し（書く前に行の空きを確かめる、`store_has_room`）を main に取り込んだ。
+- 試験を足したら、同じ秒の 2 つの item が開き直しで folder の読みの順に並ぶ（MMS と SMS の順が入れ替わる）既存の不定が出たので、同じ秒は file の名前の serial の順にした（`store_item_later`）。
+- 確認: `plan/ws197/tests/phone-store-host-test.sh`・`phone-pbap-store-host-test.sh` PASS（各 3 回、ASan・UBSan）、zedBSD の Phone の named build（`BUILD=build/q1-phone`、config/current-uat.mk）rc 0・warning 0。main d5296c23e。
+- 残りの P1 の差分は main の実装と重なるので破棄した（写しは `build/q1-p1-ws197-i06-discarded.diff`、git の外）。branch agent/p1-ws197 には main に無い commit は無い。
 
 ## 由来（2026-10-09 ユーザー）
 
@@ -40,15 +48,15 @@ Resume point: p005/p011/p012/p013 cleared。Bluetooth無応答のroot親監視�
 | p002 | RFCOMM・OBEX・SDP の server と client・phone.c・phone の pairing・linkmgr・drop の回復・WS143 の変更（i01〜i08）。詳細は branch の phase002/phase.md | 22 | **cleared**（host 約 2,500 checks、T1-518 HID の回帰 PASS、2026-10-10 Q1） |
 | p003 | MAP（MCE の MAS と MNS）。2026-10-10: i01〜i07 実装済み、c56043c2b（i06）まで main に merge（T1-526 PASS）、i07＋owner の純粋な関数 5c6219e7a も T1-527 PASS（p004 の 1 回目の Just Works の CONSENT は前からの flake、T1-502 と同じ）で main に merge。**p003 は cleared**（実機の MAP は p008）。、phone link の持ち主・記録・再接続、socket の PHONE。詳細設計 第 2.1 版（review 2 回）、i01〜i08。詳細は branch の phase003/phase.md | 24 | cleared（main統合済み、実機UATはp008） |
 | [p004](phase004/phase.md) | SMS の層の interface の設計（Phone app・libkeiland・compositor・libkeiland-backend・bluetoothd、v3.1、review 3 回）。ユーザーの決定 P1〜P8 | — | cleared（設計、2026-10-10） |
-| p004a | libkeiland-backend の phone-zedbsd.c（bluetoothd の socket）・compositor の phone-shell.c の bluetooth の backend・libkeiland の追加（phase004 §3〜§5・§11.2〜§11.4） | 6.5 | cleared 候補（2026-10-10、main に merge 4faf17473、KL_VERSION 79・manager 27、host 試験 PASS。実機は下の UAT。詳細は [phase004](phase004/phase.md) の「実装の進み」） |
-| p004b | Phone の app の保存と同期（目印・merge・E.164 の key・送信の状態） | 3.5 | cleared 候補（2026-10-10、main に merge 778c1e377、host 試験 PASS。region の設定が無いので国番号は既定 81（P8）） |
-| p004c | Settings の「Use as phone」と通知（WS156 の lock_text の変更は P1 が同じ Phase で行う、Q1） | 1.5 | cleared 候補（2026-10-10 P1、e7a478d33、host 試験 PASS、merge 待ち。実機は下の UAT） |
+| p004a | libkeiland-backend の phone-zedbsd.c（bluetoothd の socket）・compositor の phone-shell.c の bluetooth の backend・libkeiland の追加（phase004 §3〜§5・§11.2〜§11.4） | 6.5 | cleared（2026-10-11 Q1 照合: main に merge 4faf17473、host 試験 PASS、実機の受信・表示は 2026-10-10 ユーザー確認。全項目の実機 UAT は p008） |
+| p004b | Phone の app の保存と同期（目印・merge・E.164 の key・送信の状態） | 3.5 | cleared（2026-10-11 Q1 照合: main に merge 778c1e377、host 試験 PASS。国番号は既定 81（P8）） |
+| p004c | Settings の「Use as phone」と通知（WS156 の lock_text の変更は P1 が同じ Phase で行う、Q1） | 1.5 | cleared（2026-10-11 Q1 照合: e7a478d33 は main に統合済み、host 試験 PASS。実機は p008） |
 | [p005](phase005/phase.md) | PBAP・Phoneの電話帳/名前/通話履歴・直列同期・Settings。第3.1版i01〜i07 | 11.5 | cleared（2026-10-10 Codex、host・全文規約・named build warning0。実機PBAPはp008） |
 | p006 | HFP の制御（AT の SLC、indicator、応答・終話・発信、発信者、割り込み、codec の交渉） | 12 | planned |
 | p007 | HFP の音: p007a xHCI の isochronous・usb-bt の interface 1・SCO の口、p007b SCO・audiod・CVSD の後に mSBC（Q9 の SCO の UAPI は p007a の設計の後にユーザーに聞く） | 25 | planned |
 | p008 | 実機（Android が先、iPhone は HFP の後、Q13）。PHONE PROBE は p003 で消すので MAP の操作で確かめる | 20 | planned |
-| p009 | 規約の全文の見直し | 2 | planned |
-| [p010](phase010/phase.md) | MMS写真/動画送受信（受信統合済み、送信は未完。p012がviewer起動を補完） | — | in-progress |
+| p009 | 規約の全文の見直し（2026-10-08 ユーザー: 規約の Phase はベータ3） | 2 | planned（ベータ3） |
+| [p010](phase010/phase.md) | MMS写真/動画送受信（受信統合済み、送信は未完。p012がviewer起動を補完） | 3（送信の残り） | in-progress（受信の部分 cleared） |
 | [ws197-p011](phase011/phase.md) | Phoneの＋によるメディア選択とDnD・仮添付（ws157-p006 API出力に依存） | — | cleared |
 | [ws197-p012](phase012/phase.md) | 添付のdouble-click起動・draftサムネイル・captionなし写真の起動SIGSEGV修正 | — | cleared |
 | [ws197-p013](phase013/phase.md) | Bluetooth無応答の診断、daemon restartとdevice check/reopen/reset、親監視→自動restart | — | cleared |
