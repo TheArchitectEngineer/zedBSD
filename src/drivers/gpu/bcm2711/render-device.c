@@ -68,6 +68,7 @@ bcm2711_render_register(
 		return EBUSY;
 	controller->space.native = engine;
 	controller->space.cache_limit = BCM2711_NATIVE_CACHE_BYTES;
+	controller->space.snapshot_limit = BCM2711_NATIVE_SNAPSHOT_BYTES;
 	ready = render_ready(controller);
 	if (!ready || engine->hardware.diagnostic != NULL) {
 		controller->space.native = NULL;
@@ -428,6 +429,7 @@ render_write(
 	mutex_lock(&controller->mutex);
 
 	kern_memcpy((uint8_t *)buffer->address + offset, data, bytes);
+	buffer->generation++;
 
 	mutex_unlock(&controller->mutex);
 
@@ -452,6 +454,9 @@ render_map(
 	if (resource->owner != private_session || !resource->mappable)
 		return ENOTSUP;
 	buffer = resource->view->buffer;
+
+	/* A CPU mapping lets a process change the run without a generation step, so no snapshot trusts it again. */
+	buffer->host_mapped = true;
 	mapping->physical = buffer->memory.paddr;
 	mapping->address = buffer->address;
 	mapping->bytes = buffer->bytes;

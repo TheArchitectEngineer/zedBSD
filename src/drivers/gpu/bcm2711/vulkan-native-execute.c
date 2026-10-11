@@ -95,6 +95,9 @@ bcm2711_vulkan_native_pass_run(
 	error = bcm2711_v3d_job_run(pass->space->native, &pass->job, result);
 	pass->retired = result->retired;
 	result->tfu_ticks = converted;
+
+	/* Launched or not, the output may have changed, so snapshots of it are stale. */
+	pass->output->buffer->generation++;
 	if (error != 0)
 		return error;
 
@@ -227,6 +230,19 @@ validate_pass(
 			/* Input mappings remain independently held even when their public resource or pipeline identity was withdrawn. */
 			if (storage == NULL ||
 			    storage->space != pass->space ||
+			    storage->view == NULL ||
+			    storage->view->quarantined ||
+			    storage->view->references == 0)
+				return EIO;
+		}
+
+		/* Lent snapshot pixels stay mapped while this draw holds its use. */
+		for (index = 0; index < draw->texture_count; index++) {
+			/* Private pixels were checked among the owned storage above. */
+			if (draw->textures[index].snapshot == NULL)
+				continue;
+			storage = draw->textures[index].pixels;
+			if (storage == NULL ||
 			    storage->view == NULL ||
 			    storage->view->quarantined ||
 			    storage->view->references == 0)

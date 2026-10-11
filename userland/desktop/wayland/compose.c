@@ -1309,6 +1309,11 @@ compose_objects(
 	if (result != VK_SUCCESS)
 		return result;
 
+	/* The host images' copies, recorded when the frame is submitted. */
+	result = vkAllocateCommandBuffers(compose->device, &command, &compose->copy_command);
+	if (result != VK_SUCCESS)
+		return result;
+
 	/* The frame's fence, exportable as an fd the event loop polls (design D3). */
 	memset(&export, 0, sizeof(export));
 	export.sType = VK_STRUCTURE_TYPE_EXPORT_FENCE_CREATE_INFO;
@@ -2285,9 +2290,6 @@ compose_record(
 	/* The clients' images imported since the last frame go to the layout they are sampled in (ws099-p016). */
 	kwl_import_layouts_record(compose, compose->command);
 
-	/* The host images written since the last frame reach their sampled images before any drawing. */
-	kwl_host_images_record(compose, compose->command);
-
 	/* The anchor's pass: its own part of the plane (ws113-p007). */
 	server->view_output = KWL_PLANE_ANCHOR;
 	server->view_x = 0;
@@ -2513,6 +2515,9 @@ compose_submit(
 	VkSubmitInfo submit;
 	VkPresentInfoKHR present;
 	VkFenceGetFdInfoKHR fd_info;
+	VkCommandBufferBeginInfo begin;
+	VkCommandBuffer buffers[2];
+	unsigned copies;
 	unsigned wait_count;
 	unsigned signal_count;
 	VkResult result;
@@ -2535,6 +2540,32 @@ compose_submit(
 	submit.pWaitDstStageMask = stages;
 	submit.commandBufferCount = 1U;
 	submit.pCommandBuffers = &compose->command;
+
+	/*
+	 * Host images written up to now, the frame's own drawing included (a
+	 * glyph first drawn, a cursor shape first shown), reach their sampled
+	 * images in a command buffer that runs first in the same submission.
+	 */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	result = vkBeginCommandBuffer(compose->copy_command, &begin);
+	if (result != VK_SUCCESS) {
+		kwl_heads_frame_skipped(server);
+		return result;
+	}
+	copies = kwl_host_images_record(compose, compose->copy_command);
+	result = vkEndCommandBuffer(compose->copy_command);
+	if (result != VK_SUCCESS) {
+		kwl_heads_frame_skipped(server);
+		return result;
+	}
+	if (copies != 0U) {
+		buffers[0] = compose->copy_command;
+		buffers[1] = compose->command;
+		submit.commandBufferCount = 2U;
+		submit.pCommandBuffers = buffers;
+	}
 	submit.signalSemaphoreCount = signal_count;
 	submit.pSignalSemaphores = signals;
 	result = vkQueueSubmit(compose->queue, 1U, &submit, compose->fence);

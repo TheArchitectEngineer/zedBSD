@@ -29,7 +29,7 @@
 
 static void damage_add(struct kwl_server *server, int32_t left, int32_t top, int32_t right, int32_t bottom);
 static int cursor_unseen(struct kwl_server *server, int32_t x, int32_t y);
-static int hover_unchanged(struct kwl_server *server);
+static int probes_changed(struct kwl_server *server);
 static int probe_contains(const struct kwl_hover_probe *probe, int32_t x, int32_t y);
 
 /*
@@ -80,7 +80,7 @@ kwl_damage_pointer(
 		if (calm)
 			calm = kwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
 		if (!calm)
-			calm = hover_unchanged(server);
+			calm = kwl_hover_unchanged(server);
 		if (!calm) {
 			server->dirty = 1;
 			return;
@@ -198,11 +198,19 @@ kwl_hover_begin(
 	struct kwl_server *server,
 	int whole)
 {
-	/* The record is unusable until a whole scene finishes it. */
-	server->hover_complete = 0U;
+	/*
+	 * A partial redraw draws every hover answer as the record has it when
+	 * no probe changed, so the record stays valid; otherwise it is unusable
+	 * until a whole scene finishes a new one.
+	 */
 	server->hover_recording = 0U;
-	if (!whole)
+	if (!whole) {
+		if (server->hover_complete && !probes_changed(server))
+			return;
+		server->hover_complete = 0U;
 		return;
+	}
+	server->hover_complete = 0U;
 
 	/* The new record starts empty at the place the scene is drawn for. */
 	server->hover_count = 0U;
@@ -224,6 +232,54 @@ kwl_hover_end(
 		server->hover_complete = 1U;
 	server->hover_recording = 0U;
 }
+/*
+ * Tells whether the scene drawn for the recorded pointer place looks the same with the pointer where it is now.
+ *
+ * Only a still look with no dialog, switcher or held button qualifies, and
+ * every recorded probe must give the same answer at both places.
+ */
+int
+kwl_hover_unchanged(
+	struct kwl_server *server)
+{
+	int open;
+
+	/* A whole scene's complete record is needed. */
+	if (!server->hover_complete)
+		return 0;
+
+	/* Moving, dragging and held buttons keep redrawing. */
+	if (server->buttons_down != 0U)
+		return 0;
+	open = kwl_glass_still(server);
+	if (!open)
+		return 0;
+
+	/* Dialogs and panels draw their own hover without probes. */
+	open = kwl_power_dialog_showing(server);
+	if (open)
+		return 0;
+	open = kwl_bluetooth_ask_showing();
+	if (open)
+		return 0;
+	open = kwl_arrange_showing(server);
+	if (open)
+		return 0;
+	open = kwl_notify_log_showing();
+	if (open)
+		return 0;
+	if (server->switcher.on)
+		return 0;
+
+	/* Every probe answers as it did when the scene was drawn. */
+	open = probes_changed(server);
+	if (open)
+		return 0;
+
+	/* Succeeded: only the cursor differs. */
+	return 1;
+}
+
 /* Adds a rectangle (left, top, right, bottom) to the damage the next frame draws. */
 static void
 damage_add(
@@ -293,58 +349,25 @@ cursor_unseen(
 	return 1;
 }
 
-/*
- * Tells whether the scene drawn for the recorded pointer place looks the same with the pointer where it is now.
- *
- * Only a still look with no dialog, switcher or held button qualifies, and
- * every recorded probe must give the same answer at both places.
- */
+/* Tells whether any recorded probe answers differently with the pointer where it is now. */
 static int
-hover_unchanged(
+probes_changed(
 	struct kwl_server *server)
 {
 	unsigned index;
 	int before;
 	int after;
-	int open;
 
-	/* A whole scene's complete record is needed. */
-	if (!server->hover_complete)
-		return 0;
-
-	/* Moving, dragging and held buttons keep redrawing. */
-	if (server->buttons_down != 0U)
-		return 0;
-	open = kwl_glass_still(server);
-	if (!open)
-		return 0;
-
-	/* Dialogs and panels draw their own hover without probes. */
-	open = kwl_power_dialog_showing(server);
-	if (open)
-		return 0;
-	open = kwl_bluetooth_ask_showing();
-	if (open)
-		return 0;
-	open = kwl_arrange_showing(server);
-	if (open)
-		return 0;
-	open = kwl_notify_log_showing();
-	if (open)
-		return 0;
-	if (server->switcher.on)
-		return 0;
-
-	/* Every probe answers as it did when the scene was drawn. */
+	/* Each probe, at the recorded place and at the pointer. */
 	for (index = 0; index < server->hover_count; index++) {
 		before = probe_contains(&server->hover_probes[index], server->hover_x, server->hover_y);
 		after = probe_contains(&server->hover_probes[index], server->pointer_x, server->pointer_y);
 		if (before != after)
-			return 0;
+			return 1;
 	}
 
-	/* Succeeded: only the cursor differs. */
-	return 1;
+	/* None differs. */
+	return 0;
 }
 
 /* Tells whether a probe's rectangle holds a point. */

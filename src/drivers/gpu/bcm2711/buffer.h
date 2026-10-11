@@ -24,6 +24,15 @@ struct bcm2711_buffer {
 
 	/* An uncached run is never read or written through its cached direct-map alias. */
 	bool uncached;
+
+	/*
+	 * generation advances after every device or kernel write of the run;
+	 * host_mapped means some process may write it through a CPU mapping at
+	 * any time.  Converted texture snapshots are valid only for a run that
+	 * was never host mapped and only while generation is unchanged.
+	 */
+	uint64_t generation;
+	bool host_mapped;
 };
 
 int bcm2711_buffer_create(uint64_t bytes, uint64_t limit, size_t alignment, struct bcm2711_buffer **result);

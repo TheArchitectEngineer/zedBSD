@@ -267,9 +267,10 @@ kwl_apps_bar_draw_popup(
 	shape.edge = 0.8f;
 	glass_shape_draw(server, command, &shape);
 
-	/* Each window's preview, the one under the pointer lit, a minimized one faint (D11). */
+	/* Each window's preview, the one under the pointer lit (a hover probe, damage.c), a minimized one faint (D11). */
 	over = kwl_apps_tile_at(panel.tiles, panel.count, server->pointer_x, server->pointer_y);
 	for (index = 0; index < panel.count; index++) {
+		kwl_hover_probe(server, panel.tiles[index].x, panel.tiles[index].y, panel.tiles[index].width, panel.tiles[index].height);
 		kwl_glass_draw_preview(server, command, panel.surfaces[index], panel.tiles[index].x, panel.tiles[index].y, panel.tiles[index].width, panel.tiles[index].height, over == (int)index);
 		if (panel.surfaces[index]->minimized)
 			glass_draw_solid(server, command, (float)panel.tiles[index].x, (float)panel.tiles[index].y, (float)panel.tiles[index].width, (float)panel.tiles[index].height, 10.0f, faint);
