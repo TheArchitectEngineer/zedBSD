@@ -6,6 +6,7 @@
  */
 
 /* Complete Vulkan transport callbacks bind only after native ownership and recovery exist. */
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
@@ -191,6 +192,9 @@ runtime_submit(
 {
 	struct bcm2711_render_session *session;
 	struct runtime_command *command;
+	struct bcm2711_v3d_perf *perf;
+	uint64_t started;
+	uint64_t waited;
 	int error;
 
 	/* Refused callback arguments never transfer a completion or retain borrowed command bytes. */
@@ -231,7 +235,16 @@ runtime_submit(
 		kern_memcpy(command->wire, wire, bytes);
 
 	/* Namespace ownership and ordinary resource changes remain mutually exclusive with this callback. */
+	started = clock_ticks();
 	mutex_lock(&session->device->mutex);
+
+	/* Diagnostic: how long this submit waited for the controller, which the worker holds while it executes. */
+	perf = &session->device->space.native->hardware.perf;
+	waited = clock_ticks() - started;
+	perf->submit_locks++;
+	perf->submit_lock_ticks += waited;
+	if (waited > perf->submit_lock_max)
+		perf->submit_lock_max = waited;
 
 	/* Callback admission and namespace publication cannot interleave with close or typed owner destruction. */
 	error = runtime_ready(session);

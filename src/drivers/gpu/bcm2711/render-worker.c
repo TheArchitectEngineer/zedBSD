@@ -574,6 +574,10 @@ job_reserve(
 	session->pending++;
 	*token = request;
 
+	/* Diagnostic: the most markers held at once in the report window, this one included. */
+	if (BCM2711_RENDER_RESERVATIONS - capacity + 1U > controller->space.native->hardware.perf.markers_max)
+		controller->space.native->hardware.perf.markers_max = BCM2711_RENDER_RESERVATIONS - capacity + 1U;
+
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 	/* Succeeded: the producer owns one bounded marker until exact commit or cancel. */

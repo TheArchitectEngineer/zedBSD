@@ -91,6 +91,11 @@ struct bcm2711_v3d_perf {
 	uint64_t released_draws;
 	uint64_t views_cached;
 	uint64_t views_unmapped;
+	/* The most supervised markers held at once, and the submit ioctls' waits for the controller mutex. */
+	uint32_t markers_max;
+	uint64_t submit_lock_ticks;
+	uint64_t submit_lock_max;
+	uint64_t submit_locks;
 };
 
 /*
