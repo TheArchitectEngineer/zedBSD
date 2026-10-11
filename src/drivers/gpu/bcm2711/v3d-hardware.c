@@ -257,6 +257,9 @@ bcm2711_v3d_hardware_reset(
 		return error;
 	}
 
+	/* The reset cleared the performance counters' sources. */
+	hardware->counters_ready = false;
+
 	/* Reads the now-powered identifiers again before restoring translation storage. */
 	error = identify(engine);
 	if (error != 0) {

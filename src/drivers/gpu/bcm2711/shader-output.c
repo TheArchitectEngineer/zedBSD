@@ -14,9 +14,6 @@
 /* Four float components of render target zero use one per-pixel tile configuration byte. */
 #define SHADER_RGBA_TILE_CONFIGURATION 0xffffff3fU
 
-/* Normalized eight-bit targets return two packed pairs of half floats on tile reads. */
-#define SHADER_RGBA_TILE_READ_CONFIGURATION 0xffffffffU
-
 static int vertex_output(struct bcm2711_shader_compiler *compiler);
 static int fragment_output(struct bcm2711_shader_compiler *compiler);
 static int vpm_store(struct bcm2711_shader_compiler *compiler, uint32_t index, struct bcm2711_qpu_source source);
@@ -232,23 +229,20 @@ vpm_store(
 	return 0;
 }
 
-/* Acquires the tile scoreboard, optionally blends premultiplied RGBA, and exports all four target components. */
+/* Acquires the tile scoreboard and exports all four target components; any blending happens in the tile buffer. */
 static int
 fragment_output(
 	struct bcm2711_shader_compiler *compiler)
 {
 	struct bcm2711_qpu_source source;
-	struct bcm2711_qpu_source previous;
-	struct bcm2711_qpu_source inverse_alpha;
 	struct bcm2711_qpu_source ignored;
 	struct bcm2711_shader_uniform uniform;
 	uint32_t colors[4];
-	uint32_t retained[4];
 	uint32_t index;
 	uint32_t component;
 	int error;
 
-	/* The final pre-output switch is marked in its first delay slot before any tile read or write. */
+	/* The final pre-output switch is marked in its first delay slot before any tile write. */
 	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_SWITCH, 0, 0);
 	if (error != 0)
 		return error;
@@ -270,74 +264,6 @@ fragment_output(
 			return error;
 	}
 
-	/* Normalized RGBA8 tile reads deliver RG and BA as half-float pairs after the scoreboard-owning switch. */
-	if (compiler->key->premultiplied_blend != 0) {
-		kern_memset(&uniform, 0, sizeof(uniform));
-		uniform.kind = BCM2711_SHADER_CONSTANT;
-		uniform.bits = SHADER_RGBA_TILE_READ_CONFIGURATION;
-		error = bcm2711_shader_uniform_append(compiler, &uniform);
-		if (error != 0)
-			return error;
-		for (index = 0; index < 4; index += 2) {
-			/* Each pair is expanded into two independent canonical float registers. */
-			error = bcm2711_shader_register(compiler, &retained[index]);
-			if (error != 0)
-				return error;
-			error = bcm2711_shader_register(compiler, &retained[index + 1]);
-			if (error != 0)
-				return error;
-
-			/* The configured first read consumes the format uniform; the second advances to BA. */
-			if (index == 0) {
-				error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TILE_CONFIGURED, BCM2711_SHADER_SCRATCH_WORK, 2);
-			} else {
-				error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TILE, BCM2711_SHADER_SCRATCH_WORK, 2);
-			}
-
-			/* A missing packed pair cannot feed successful blending. */
-			if (error != 0)
-				return error;
-
-			/* Low and high halves convert numerically, rather than reinterpreting packed bits as float32. */
-			source = bcm2711_shader_rf(BCM2711_SHADER_SCRATCH_WORK);
-			error = bcm2711_shader_operation(compiler, BCM2711_QPU_HALF_LOW, retained[index], 0, source, ignored, 0, 0);
-			if (error != 0)
-				return error;
-			error = bcm2711_shader_operation(compiler, BCM2711_QPU_HALF_HIGH, retained[index + 1], 0, source, ignored, 0, 0);
-			if (error != 0)
-				return error;
-		}
-
-		/* Premultiplied source-over uses the original source alpha for every color and alpha component. */
-		source = bcm2711_shader_bits(0x3f800000U);
-		previous = bcm2711_shader_rf(colors[3]);
-		error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_SUBTRACT, BCM2711_SHADER_SCRATCH_AUX, 0, source, previous, 0, 0);
-		if (error != 0)
-			return error;
-		inverse_alpha = bcm2711_shader_rf(BCM2711_SHADER_SCRATCH_AUX);
-		for (index = 0; index < 4; index++) {
-			/* Tile channel order follows the target format; shader source values remain canonical RGBA. */
-			component = index;
-			if (compiler->key->swap_red_blue != 0) {
-				if (index == 0)
-					component = 2;
-				if (index == 2)
-					component = 0;
-			}
-
-			/* Previous target channels are interpreted as canonical RGBA before source-over arithmetic. */
-			previous = bcm2711_shader_rf(retained[component]);
-			error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_MULTIPLY, BCM2711_SHADER_SCRATCH_WORK, 0, previous, inverse_alpha, 0, 0);
-			if (error != 0)
-				return error;
-			source = bcm2711_shader_rf(colors[index]);
-			previous = bcm2711_shader_rf(BCM2711_SHADER_SCRATCH_WORK);
-			error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_ADD, colors[index], 0, source, previous, 0, 0);
-			if (error != 0)
-				return error;
-		}
-	}
-
 	/* The first color write consumes an explicit float RGBA per-pixel configuration word. */
 	kern_memset(&uniform, 0, sizeof(uniform));
 	uniform.kind = BCM2711_SHADER_CONSTANT;
@@ -346,7 +272,7 @@ fragment_output(
 	if (error != 0)
 		return error;
 
-	/* Physical target channel order is applied once, after any canonical source-over arithmetic. */
+	/* Physical target channel order is applied once, as the canonical colour is written. */
 	for (index = 0; index < 4; index++) {
 		component = index;
 		if (compiler->key->swap_red_blue != 0) {

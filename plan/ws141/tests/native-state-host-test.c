@@ -649,6 +649,7 @@ verify_bins(
 	state.vertices = 9;
 	state.reverse = 1;
 	state.clockwise = 1;
+	state.blend = 1;
 	state.flat = 0x81000001U;
 	state.noperspective = 0x40000002U;
 	memset(bytes, 0xa5, sizeof(bytes));

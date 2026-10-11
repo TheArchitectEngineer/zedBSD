@@ -71,6 +71,9 @@ struct bcm2711_v3d_perf {
 	char largest_kind;
 	uint32_t render_tiles;
 	uint32_t image_tiles;
+	/* The performance counters' sums over the window's render runs, and how many runs. */
+	uint64_t counters[16];
+	uint32_t counter_runs;
 };
 
 /*
@@ -101,6 +104,8 @@ struct bcm2711_v3d_hardware {
 	struct bcm2711_v3d_perf perf;
 	/* A boot self-test proved TFU raster-to-UIF output equal to the CPU conversion; until then textures use the CPU. */
 	bool tfu_uif_ready;
+	/* The performance counters have their sources and run (cleared by a reset). */
+	bool counters_ready;
 	bool initialized;
 	bool ready;
 	bool mmu_published;

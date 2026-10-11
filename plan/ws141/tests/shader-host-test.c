@@ -176,7 +176,6 @@ main(
 	struct bcm2711_shader_key key;
 	struct v3d_device_info device;
 	uint32_t pair;
-	uint32_t blend;
 	uint32_t swap;
 	uint32_t mode;
 	int error;
@@ -203,13 +202,10 @@ main(
 		verify_program(&device, modules[pair * 2], bytes[pair * 2] / 4, vertex, BCM2711_SHADER_COORDINATE, &key);
 		verify_program(&device, modules[pair * 2], bytes[pair * 2] / 4, vertex, BCM2711_SHADER_VERTEX, &key);
 
-		/* Actual source-over and target swizzling are tested in all four supported output combinations. */
-		for (blend = 0; blend < 2; blend++) {
-			for (swap = 0; swap < 2; swap++) {
-				key.premultiplied_blend = blend;
-				key.swap_red_blue = swap;
-				verify_program(&device, modules[pair * 2 + 1], bytes[pair * 2 + 1] / 4, fragment, BCM2711_SHADER_FRAGMENT, &key);
-			}
+		/* Both supported target channel orders are tested. */
+		for (swap = 0; swap < 2; swap++) {
+			key.swap_red_blue = swap;
+			verify_program(&device, modules[pair * 2 + 1], bytes[pair * 2 + 1] / 4, fragment, BCM2711_SHADER_FRAGMENT, &key);
 		}
 
 		/* Parser ownership retires only after all native variants have been checked. */
@@ -239,7 +235,6 @@ main(
 		verify_panel_mode(generic, fragment, mode);
 		verify_program(&device, kwl_panel_vert, sizeof(kwl_panel_vert) / 4, vertex, BCM2711_SHADER_COORDINATE, &key);
 		verify_program(&device, kwl_panel_vert, sizeof(kwl_panel_vert) / 4, vertex, BCM2711_SHADER_VERTEX, &key);
-		key.premultiplied_blend = 1;
 		verify_program(&device, kwl_panel_variants[mode].words, kwl_panel_variants[mode].bytes / 4, fragment, BCM2711_SHADER_FRAGMENT, &key);
 
 		/* Compiled and parsed owners retire independently for each mode. */
@@ -734,21 +729,8 @@ machine_program(
 				machine->texture_read = 0;
 		}
 
-		/* RGBA8 hardware returns two half-float pairs, even though ordinary shader arithmetic is float32. */
-		if (instruction.sig.ldtlb || instruction.sig.ldtlbu) {
-			if (instruction.sig.ldtlbu) {
-				configuration = machine_uniform(binary, machine);
-				assert(configuration == 0xffffffffU);
-			}
-
-			/* No destination channel can be skipped or read twice. */
-			assert(machine->tile_read < 4);
-			left = machine->tile[machine->tile_read++];
-			right = machine->tile[machine->tile_read++];
-			left = (((left >> 23) - 112U) << 10) | ((left >> 13) & 1023U);
-			right = (((right >> 23) - 112U) << 10) | ((right >> 13) & 1023U);
-			machine->rf[instruction.sig_addr] = left | (right << 16);
-		}
+		/* Blending belongs to the tile buffer, so no program reads the tile. */
+		assert(!instruction.sig.ldtlb && !instruction.sig.ldtlbu);
 	}
 
 	/* Uniform and result FIFOs are fully accounted for by actual decoded hardware transactions. */
@@ -935,7 +917,6 @@ verify_program(
 	uint32_t component;
 	uint32_t temporary;
 	uint32_t expected;
-	float alpha;
 	float number;
 	bool accepted;
 	int error;
@@ -983,7 +964,6 @@ verify_program(
 		if (stage == BCM2711_SHADER_FRAGMENT) {
 			assert(native.tile_write == 4);
 			assert(native.varying_read == binary->input_count);
-			alpha = bits_float(source.output[3]);
 			for (index = 0; index < 4; index++) {
 				component = index;
 				if (key->swap_red_blue != 0) {
@@ -993,12 +973,8 @@ verify_program(
 						component = 0;
 				}
 
-				/* The reference applies the pipeline's source-over choice before comparing the physical channel. */
+				/* The physical channel carries the source colour unchanged; the tile buffer blends it. */
 				expected = source.output[component];
-				if (key->premultiplied_blend != 0) {
-					number = bits_float(expected) + bits_float(source.tile[component]) * (1.0f - alpha);
-					expected = float_bits(number);
-				}
 
 				/* Native register reuse and target swapping must preserve the independently interpreted source color. */
 				compare_number(native.output[index], expected);

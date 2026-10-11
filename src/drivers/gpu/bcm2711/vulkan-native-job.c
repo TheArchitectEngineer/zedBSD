@@ -108,6 +108,7 @@ bcm2711_vulkan_native_job_execute(
 	uint64_t elapsed;
 	struct bcm2711_v3d_perf *perf;
 	uint32_t region;
+	uint32_t index;
 	int tiled;
 	int error;
 	int synchronized;
@@ -267,6 +268,11 @@ bcm2711_vulkan_native_job_execute(
 		perf->bin_ticks += completion.bin_ticks;
 		perf->render_ticks += completion.render_ticks;
 		perf->output_clean_ticks += completion.clean_ticks;
+		if (completion.counters[0] != 0U) {
+			for (index = 0; index < BCM2711_V3D_COUNTERS; index++)
+				perf->counters[index] += completion.counters[index];
+			perf->counter_runs++;
+		}
 		job->retired = completion.retired;
 		*retired = completion.retired;
 		if (error != 0) {
@@ -545,6 +551,29 @@ report_perf(
 		perf->largest_kind != 0 ? perf->largest_kind : '-',
 		perf->render_tiles,
 		perf->image_tiles);
+
+	/* The render runs' performance counters, in thousands per run. */
+	if (perf->counter_runs != 0U) {
+		kern_logf(
+			"v3d: gpu runs=%u k/run cycles=%llu qidle=%llu qfrag=%llu qvalid=%llu qtmu=%llu qsb=%llu qvary=%llu qstall=%llu tmu=%llu tmumiss=%llu tmustall=%llu cle=%llu quads=%llu written=%llu tlbrd=%llu tlbwr=%llu\n",
+			perf->counter_runs,
+			(unsigned long long)(perf->counters[0] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[1] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[2] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[3] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[4] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[5] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[6] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[7] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[8] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[9] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[10] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[11] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[12] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[13] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[14] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[15] / perf->counter_runs / 1000U));
+	}
 
 	/* The next window starts empty at this report. */
 	kern_memset(perf, 0, sizeof(*perf));

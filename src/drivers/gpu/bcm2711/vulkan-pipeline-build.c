@@ -152,13 +152,10 @@ build_pipeline(
 		return error;
 	}
 
-	/* The immutable key selects the same channel and blend semantics for every native variant. */
+	/* The immutable key selects the same channel order for every native variant; blending belongs to the tile buffer. */
 	key->swap_red_blue = 0;
 	if (pass->colour.format == VK_FORMAT_B8G8R8A8_UNORM)
 		key->swap_red_blue = 1;
-	key->premultiplied_blend = 0;
-	if (pipeline->blend)
-		key->premultiplied_blend = 1;
 
 	/* All three native programs share an exact varying ABI and independently owned code/uniform arrays. */
 	for (index = 0; index < 3; index++) {
