@@ -100,6 +100,8 @@ static bool native_execute_retired;
 
 /* Only expected executor handoffs increment this fixture counter; refused replay or preflight must leave it unchanged. */
 static unsigned native_execute_calls;
+/* Counts texture conversions the real executor hands to the formatting unit. */
+static unsigned native_convert_calls;
 
 /* Device publication barriers are observed independently of the mocked native runner in this single-thread host fixture. */
 static unsigned native_write_barriers;
@@ -414,6 +416,18 @@ bcm2711_v3d_job_run(
 	const struct bcm2711_v3d_job *job,
 	struct bcm2711_v3d_job_result *result)
 {
+	/* A texture conversion carries a complete raster-to-UIF description and always completes in the fixture. */
+	if (job->kind == BCM2711_V3D_JOB_TFU) {
+		assert(engine != NULL && engine->hardware.ready);
+		assert(job->command.tfu.output_format == 6U && job->command.tfu.configuration == (4U << 9));
+		assert(job->command.tfu.input >= 4096U && job->command.tfu.output >= 4096U);
+		assert((job->command.tfu.size & 0xffffU) != 0 && (job->command.tfu.size >> 16) != 0);
+		native_convert_calls++;
+		memset(result, 0, sizeof(*result));
+		result->retired = true;
+		return 0;
+	}
+
 	/* Only a real independently prepared native CL job may reach this explicit host completion source. */
 	assert(engine != NULL && engine->hardware.ready && job->kind == BCM2711_V3D_JOB_CL);
 	assert(job->command.cl.bin_end > job->command.cl.bin_start && job->command.cl.render_end > job->command.cl.render_start);
@@ -1167,8 +1181,12 @@ native_draw_test(
 	assert(source[0] == 1 && source[47] == 48);
 	error = bcm2711_vulkan_resource_backing(image, 0, image->bytes, &view, &address, &cpu);
 	assert(error == 0);
-	memset(cpu, 0x24, 512);
-	assert(((uint8_t *)draw->storage[0]->view->buffer->address)[0] == 0x75);
+
+	/* The sampled raster is converted by the formatting unit when the pass runs, from the image into the draw's scratch. */
+	assert(draw->texture_count == 1 && draw->textures[0].convert && draw->textures[0].pixels == draw->storage[0]);
+	assert(draw->textures[0].tfu.input == address && draw->textures[0].tfu.output == draw->storage[0]->view->address);
+	assert(draw->textures[0].tfu.stride == image->pitch / 4U);
+	assert(draw->textures[0].tfu.size == ((image->height << 16) | image->width));
 	used = allocations;
 	error = bcm2711_vulkan_native_draw_release(&draw, false);
 	assert(error == EBUSY && draw != NULL && draw->bytes == owned && allocations == used);

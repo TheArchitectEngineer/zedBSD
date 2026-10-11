@@ -230,6 +230,7 @@ bcm2711_vulkan_native_job_execute(
 		step = clock_ticks();
 		error = bcm2711_vulkan_native_pass_run(job->pass, &completion);
 		execute_ticks += clock_ticks() - step;
+		perf->tfu_ticks += completion.tfu_ticks;
 		perf->bin_ticks += completion.bin_ticks;
 		perf->render_ticks += completion.render_ticks;
 		perf->output_clean_ticks += completion.clean_ticks;
@@ -470,7 +471,7 @@ report_perf(
 	/* Prints the window's per-submission averages and its worst submission. */
 	count = perf->submissions;
 	kern_logf(
-		"v3d: perf ms=%llu subs=%llu passes=%u/%u/%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu\n",
+		"v3d: perf ms=%llu subs=%llu passes=%u/%u/%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu\n",
 		(unsigned long long)kern_ticks_to_ms(now - perf->window_start),
 		(unsigned long long)count,
 		perf->render_passes,
@@ -488,6 +489,7 @@ report_perf(
 		(unsigned long long)average_us(perf->mapping_ticks, count),
 		(unsigned long long)average_us(perf->clean_ticks, count),
 		(unsigned long long)average_us(perf->execute_ticks, count),
+		(unsigned long long)average_us(perf->tfu_ticks, count),
 		(unsigned long long)average_us(perf->bin_ticks, count),
 		(unsigned long long)average_us(perf->render_ticks, count),
 		(unsigned long long)average_us(perf->output_clean_ticks, count),

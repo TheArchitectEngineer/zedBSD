@@ -18,6 +18,7 @@
 
 static int validate_pass(struct bcm2711_vulkan_native_pass *pass);
 static int clear_target(struct bcm2711_vulkan_native_pass *pass);
+static int convert_textures(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result, uint64_t *ticks);
 
 /*
  * Executes one completely prepared native pass while its enclosing submission retains all pending owners.
@@ -36,6 +37,7 @@ bcm2711_vulkan_native_pass_run(
 {
 	uint64_t started;
 	uint64_t elapsed;
+	uint64_t converted;
 	int error;
 
 	/* Missing completion storage cannot report safe retirement. */
@@ -82,8 +84,17 @@ bcm2711_vulkan_native_pass_run(
 	pass->executed = true;
 	pass->retired = false;
 	kern_io_write_barrier();
+
+	/* The texture formatting unit fills every converted texture before any draw samples it. */
+	error = convert_textures(pass, result, &converted);
+	pass->retired = result->retired;
+	if (error != 0)
+		return error;
+
+	/* The draws run once all their textures are in place. */
 	error = bcm2711_v3d_job_run(pass->space->native, &pass->job, result);
 	pass->retired = result->retired;
+	result->tfu_ticks = converted;
 	if (error != 0)
 		return error;
 
@@ -280,5 +291,50 @@ clear_target(
 	}
 
 	/* Succeeded: exact coherent target writes await the native publication barrier and never change surrounding samples. */
+	return 0;
+}
+
+/*
+ * Runs the texture formatting unit for each texture the pass's draws convert.
+ *
+ * A conversion that fails after launch leaves result->retired false, so the
+ * caller keeps the whole pass for checked recovery like a failed CL job.
+ */
+static int
+convert_textures(
+	struct bcm2711_vulkan_native_pass *pass,
+	struct bcm2711_v3d_job_result *result,
+	uint64_t *ticks)
+{
+	struct bcm2711_vulkan_native_draw *draw;
+	struct bcm2711_v3d_job job;
+	uint64_t started;
+	uint32_t index;
+	int error;
+
+	/* Nothing has launched yet, so a pass without conversions retires as before. */
+	*ticks = 0;
+	result->retired = true;
+	kern_memset(&job, 0, sizeof(job));
+	job.kind = BCM2711_V3D_JOB_TFU;
+
+	/* Converts the textures in draw order; shared textures belong to the first draw only. */
+	started = clock_ticks();
+	for (draw = pass->first; draw != NULL; draw = draw->next) {
+		for (index = 0; index < draw->texture_count; index++) {
+			/* A texture the CPU already converted needs no unit job. */
+			if (!draw->textures[index].convert)
+				continue;
+
+			/* Each conversion completes before the next starts; one queue holds one job. */
+			job.command.tfu = draw->textures[index].tfu;
+			error = bcm2711_v3d_job_run(pass->space->native, &job, result);
+			if (error != 0)
+				return error;
+		}
+	}
+	*ticks = clock_ticks() - started;
+
+	/* Succeeded: every converted texture is in memory for the following CL job. */
 	return 0;
 }

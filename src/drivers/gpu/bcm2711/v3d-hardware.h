@@ -54,6 +54,7 @@ struct bcm2711_v3d_perf {
 	uint64_t mapping_ticks;
 	uint64_t clean_ticks;
 	uint64_t execute_ticks;
+	uint64_t tfu_ticks;
 	uint64_t bin_ticks;
 	uint64_t render_ticks;
 	uint64_t output_clean_ticks;

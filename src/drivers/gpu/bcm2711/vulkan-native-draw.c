@@ -31,6 +31,7 @@ static struct bcm2711_native_storage *find_texture(const struct bcm2711_vulkan_n
 static int prepare_textures(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_prepared_event *event, uint64_t available);
 static int prepare_texture(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_descriptor *descriptor, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
 static int prepare_texture_image(struct bcm2711_vulkan_native_draw *draw, struct bcm2711_vulkan_resource *image, const struct bcm2711_vulkan_sampler *source, uint32_t swap, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
+static int prepare_conversion(const struct bcm2711_vulkan_resource *image, uint32_t address, const struct bcm2711_native_storage *pixels, uint32_t bytes, struct bcm2711_v3d_tfu_job *tfu);
 static int prepare_meta_texture(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_meta_draw *meta, uint64_t available);
 static int prepare_sampler(const struct bcm2711_vulkan_sampler *source, struct bcm2711_native_sampler *sampler);
 static struct bcm2711_native_storage *find_program(const struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_shader_binary *program, uint32_t stage);
@@ -353,6 +354,7 @@ prepare_texture_image(
 	uint64_t available,
 	struct bcm2711_vulkan_native_binding *binding)
 {
+	struct bcm2711_vulkan_native_texture_copy *entry;
 	struct bcm2711_native_storage *pixels;
 	struct bcm2711_native_storage *records;
 	struct bcm2711_native_texture texture;
@@ -381,19 +383,31 @@ prepare_texture_image(
 		error = allocate_storage(draw, bytes, available, NULL, &pixels);
 		if (error != 0)
 			return error;
-		/* Separates the raster read/conversion from allocation and cache maintenance. */
+
+		/*
+		 * The texture formatting unit converts at GPU speed when the pass
+		 * runs; the CPU reads the uncached raster only when it cannot.
+		 */
 		started = clock_ticks();
-		error = bcm2711_native_texture_copy(image->width, image->height, cpu, image->pitch, (size_t)image->bytes, pixels->view->buffer->address, (size_t)pixels->bytes);
+		entry = &draw->textures[draw->texture_count];
+		error = prepare_conversion(image, address, pixels, bytes, &entry->tfu);
+		if (error == 0) {
+			entry->convert = true;
+		} else if (error == ENOTSUP) {
+			error = bcm2711_native_texture_copy(image->width, image->height, cpu, image->pitch, (size_t)image->bytes, pixels->view->buffer->address, (size_t)pixels->bytes);
+		}
 		draw->copy_ticks += clock_ticks() - started;
 		if (error != 0)
 			return error;
+
+		/* Writes back the CPU's zeroing or conversion, so no dirty line can later overwrite device output. */
 		error = bcm2711_native_storage_clean(pixels);
 		if (error != 0)
 			return error;
 
-		/* Publish the cache entry only after the original draw owns a complete cleaned snapshot. */
-		draw->textures[draw->texture_count].image = image;
-		draw->textures[draw->texture_count].pixels = pixels;
+		/* Publish the cache entry only after the original draw owns a complete cleaned snapshot or its conversion. */
+		entry->image = image;
+		entry->pixels = pixels;
 		draw->texture_count++;
 	}
 
@@ -889,6 +903,60 @@ write_word(
 
 	/* Succeeded: the complete numerical word occupies its exact four-byte native field. */
 	return;
+}
+
+/*
+ * Describes one raster-to-UIF conversion by the texture formatting unit.
+ *
+ * ENOTSUP leaves the CPU conversion in charge of a layout the unit cannot read.
+ */
+static int
+prepare_conversion(
+	const struct bcm2711_vulkan_resource *image,
+	uint32_t address,
+	const struct bcm2711_native_storage *pixels,
+	uint32_t bytes,
+	struct bcm2711_v3d_tfu_job *tfu)
+{
+	uint64_t input_bytes;
+
+	/* The unit copies 32-bit RGBA8 texels unchanged, which also keeps BGRA bytes in place. */
+	if (image->format != VK_FORMAT_R8G8B8A8_UNORM && image->format != VK_FORMAT_B8G8R8A8_UNORM)
+		return ENOTSUP;
+
+	/* Raster input is addressed in whole pixels from a 64-byte aligned start. */
+	if ((address & 63U) != 0 ||
+	    (image->pitch & 3U) != 0 ||
+	    image->pitch / 4U < image->width)
+		return ENOTSUP;
+	if (image->pitch / 4U > 0xffffU)
+		return ENOTSUP;
+
+	/* The read covers every visible pixel of every row inside the image's binding. */
+	input_bytes = (uint64_t)(image->height - 1U) * image->pitch + (uint64_t)image->width * 4U;
+	if (input_bytes > image->bytes || input_bytes > 0xffffffffU)
+		return EINVAL;
+
+	/* The output is the whole strict UIF scratch image, without extra block padding. */
+	if (bytes > pixels->bytes || (pixels->view->address & 63U) != 0)
+		return EINVAL;
+
+	/*
+	 * Input is raster RGBA8 (input format 0, texel type 4) of the given
+	 * stride in pixels; output is UIF without XOR (format 6) at level 0.
+	 */
+	kern_memset(tfu, 0, sizeof(*tfu));
+	tfu->input = address;
+	tfu->input_bytes = (uint32_t)input_bytes;
+	tfu->output = pixels->view->address;
+	tfu->output_bytes = bytes;
+	tfu->output_format = 6U;
+	tfu->stride = image->pitch / 4U;
+	tfu->size = (image->height << 16) | image->width;
+	tfu->configuration = 4U << 9;
+
+	/* Succeeded: the pass runs this conversion before any draw samples the pixels. */
+	return 0;
 }
 
 /* Stages one transfer source with exact nearest/linear clamp semantics and optional raw-channel copy interpretation. */
