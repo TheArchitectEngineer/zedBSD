@@ -12,6 +12,7 @@
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
+#include "drivers/gpu/bcm2711/bcm2711-private.h"
 #include "drivers/gpu/bcm2711/vulkan-native-pass.h"
 #include "drivers/gpu/bcm2711/native-colour.h"
 
@@ -49,6 +50,7 @@ bcm2711_vulkan_native_pass_create(
 	const struct bcm2711_vulkan_prepared_event *following;
 	uint64_t started;
 	uint64_t elapsed;
+	uint64_t since_log;
 	uint64_t texture_ticks;
 	uint64_t copy_ticks;
 	uint64_t program_ticks;
@@ -107,7 +109,12 @@ bcm2711_vulkan_native_pass_create(
 	/* Reports slow preparation before teardown can replace its original failure. */
 	elapsed = clock_ticks() - started;
 	elapsed = kern_ticks_to_ms(elapsed);
-	if (error != 0 || elapsed >= 1000) {
+	since_log = kern_ticks_to_ms(started - space->native->hardware.prepare_logged_ticks);
+
+	/* Rate-limit successful slow-pass diagnostics while retaining every preparation failure. */
+	if (error != 0 || (elapsed >= 33U && since_log >= 1000U)) {
+		space->native->hardware.prepare_logged_ticks = started;
+
 		/* Totals completed draws without adding per-draw console output. */
 		texture_ticks = 0;
 		copy_ticks = 0;

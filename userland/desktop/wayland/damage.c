@@ -20,7 +20,6 @@
 
 #include "kwl.h"
 #include "popup.h"
-#include <stdio.h>
 
 /* How far around the pointer a cursor may draw (the compositor's shapes and arrow are smaller). */
 #define DAMAGE_CURSOR		64
@@ -53,14 +52,9 @@ kwl_damage_pointer(
 	if (unseen)
 		return;
 
-	/* The supported frame trace separates accepted input from drawing and display completion. */
-	if (server->log_frames) {
-		printf(
-			"KWL LAT pointer x=%d y=%d at_us=%llu\n",
-			server->pointer_x,
-			server->pointer_y,
-			(unsigned long long)kwl_microseconds());
-	}
+	/* Remember the latest accepted motion without writing a log for every input report. */
+	if (server->log_frames)
+		server->pointer_accepted_us = kwl_microseconds();
 
 	/* The next frame shows the move without waiting for the windows (frame pacing, display.c). */
 	server->pointer_moved = 1U;

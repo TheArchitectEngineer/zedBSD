@@ -967,6 +967,8 @@ struct kwl_server {
 	uint64_t max_frames;
 	/* Nonzero with --log-frames: every presentation and buffer release is printed (for the tests that read them). */
 	unsigned log_frames;
+	/* The event loop records the latest traced motion; recording a frame consumes this timestamp. */
+	uint64_t pointer_accepted_us;
 	/*
 	 * The graphical login (ws035-p095): with --greeter the compositor draws the
 	 * login screen (greeter.c), opens no socket and asks sessiond on

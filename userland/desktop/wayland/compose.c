@@ -438,6 +438,7 @@ kwl_compose_draw(
 	unsigned popups;
 	unsigned subsurfaces;
 	int partial;
+	unsigned cursor_id;
 	VkResult result;
 
 	/* One frame at a time, and only with an output. */
@@ -466,12 +467,24 @@ kwl_compose_draw(
 
 	/* The frame's start, when the per-frame lines were asked for (ws099-p002's parts of a frame). */
 	if (server->log_frames) {
+		/* Identify a client cursor surface and whole-output invalidation in this frame. */
+		cursor_id = 0U;
+		if (server->cursor_surface != NULL)
+			cursor_id = server->cursor_surface->id;
+
+		/* One frame line carries the latest coalesced input instead of flooding the file. */
 		printf(
-			"KWL LAT draw frame=%llu x=%d y=%d at_us=%llu\n",
+			"KWL LAT draw frame=%llu x=%d y=%d input_us=%llu dirty=%u damage=%u cursor=%u opacity=%.3f at_us=%llu\n",
 			(unsigned long long)server->frame + 1U,
 			server->pointer_x,
 			server->pointer_y,
+			(unsigned long long)server->pointer_accepted_us,
+			(unsigned)server->dirty,
+			(unsigned)server->damaged,
+			cursor_id,
+			(double)server->window_opacity,
 			(unsigned long long)kwl_microseconds());
+		server->pointer_accepted_us = 0U;
 	}
 
 	/* The next swapchain image (the wait for it is measured apart). */

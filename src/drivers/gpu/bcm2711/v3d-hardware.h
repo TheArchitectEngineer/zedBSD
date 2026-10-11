@@ -50,6 +50,8 @@ struct bcm2711_v3d_hardware {
 	uint64_t resets;
 	/* Serialized maintenance diagnostics count actual yielding waits, never IRQ work. */
 	uint64_t maintenance_yields;
+	/* The controller mutex serializes the once-per-second slow-preparation diagnostic. */
+	uint64_t prepare_logged_ticks;
 	bool initialized;
 	bool ready;
 	bool mmu_published;
