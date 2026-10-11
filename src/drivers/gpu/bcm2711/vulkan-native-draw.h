@@ -21,8 +21,6 @@
 struct bcm2711_vulkan_native_texture_copy {
 	const struct bcm2711_vulkan_resource *image;
 	struct bcm2711_native_storage *pixels;
-	/* A space-owned snapshot lends pixels to this draw, which holds one use of it until it retires. */
-	struct bcm2711_native_snapshot *snapshot;
 	/* The texture formatting unit fills pixels from the raster image when the pass runs, before its draws. */
 	bool convert;
 	struct bcm2711_v3d_tfu_job tfu;

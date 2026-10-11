@@ -16,9 +16,6 @@
 /* Bounds storage descriptions independently of available physical memory. */
 #define BUFFER_MAX_BYTES (256ULL * 1024U * 1024U)
 
-/* The last identity handed to a run; allocation is serialized by each device's mutex, and the counter only grows. */
-static uint64_t buffer_identities;
-
 /* Architectures without Normal non-cacheable RAM cannot satisfy coherent allocations. */
 extern int kern_pmem_map_uncached(const struct kern_pmem *run, void **mapped) __attribute__((weak));
 extern int kern_pmem_unmap_uncached(void *mapped, size_t size) __attribute__((weak));
@@ -98,7 +95,6 @@ bcm2711_buffer_create(
 	spin_init(&buffer->guard, LOCK_RANK_DEVICE, "bcm2711-buffer");
 	buffer->bytes = bytes;
 	buffer->references = 1;
-	buffer->identity = __atomic_add_fetch(&buffer_identities, 1U, __ATOMIC_RELAXED);
 	*result = buffer;
 
 	/* Succeeded: the caller holds the initial reference to zeroed contiguous RAM. */

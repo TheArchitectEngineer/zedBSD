@@ -13,7 +13,6 @@
 #include "drivers/gpu/bcm2711/buffer.h"
 
 struct bcm2711_v3d;
-struct bcm2711_native_snapshot;
 
 /* Each mapping owns its allocation independently of any resource descriptor. */
 struct bcm2711_v3d_view {
@@ -48,11 +47,6 @@ struct bcm2711_v3d_space {
 	uint64_t cache_bytes;
 	/* The renderer sets the cache's capacity when it registers; zero keeps no idle view. */
 	uint64_t cache_limit;
-	/* Converted textures of never-mapped images, reused while their source generation is unchanged. */
-	struct bcm2711_native_snapshot *snapshots;
-	uint64_t snapshot_bytes;
-	uint64_t snapshot_limit;
-	uint64_t snapshot_serial;
 };
 
 /* No DMA or overlapping edits may occur between begin and checked end. */
@@ -63,11 +57,5 @@ int bcm2711_v3d_memory_map(struct bcm2711_v3d_space *space, struct bcm2711_buffe
 void bcm2711_v3d_memory_retain(struct bcm2711_v3d_view *view);
 int bcm2711_v3d_memory_release(struct bcm2711_v3d_space *space, struct bcm2711_v3d_view *view);
 int bcm2711_v3d_memory_recover(struct bcm2711_v3d_space *space);
-
-/* Records one write of the box of the image at offset and advances the run's generation; a NULL box covers everything. */
-void bcm2711_v3d_memory_written(struct bcm2711_buffer *buffer, uint64_t offset, const uint32_t *box);
-
-/* Reports in box the union of a run's writes of the image at offset after since; false when they are not all known. */
-bool bcm2711_v3d_memory_changes(const struct bcm2711_buffer *buffer, uint64_t offset, uint64_t since, uint32_t *box);
 
 #endif

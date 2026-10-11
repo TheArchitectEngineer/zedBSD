@@ -44,11 +44,6 @@ struct bcm2711_vulkan_native_pass {
 	/* Single-use execution refuses replay and preserves the last native DMA-retirement result. */
 	bool executed;
 	bool retired;
-	/* A whole-image copy records which source state its output now equals, for later incremental copies. */
-	bool sync;
-	uint64_t sync_identity;
-	uint64_t sync_offset;
-	uint64_t sync_generation;
 };
 
 /* Earlier queue writes must have completed and become CPU-visible; next borrows the event after this pass's END from the enclosing prepared primary. */
