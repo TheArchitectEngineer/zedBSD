@@ -444,6 +444,8 @@ static int glass_motion_take(struct kwl_server *server);
 static int button_at(const struct kwl_object *surface, int32_t x, int32_t y);
 static void probe_buttons(struct kwl_server *server, const struct kwl_object *surface);
 static void probe_bar_buttons(struct kwl_server *server, const struct shell_bar *bar);
+static int drag_measured(struct kwl_server *server);
+static void drag_damage(struct kwl_server *server, const struct kwl_object *surface);
 static void button_centre(const struct kwl_object *surface, int button, int32_t *x, int32_t *y);
 static int bar_button_at(const struct shell_bar *bar, int32_t x, int32_t y);
 static struct kwl_object *window_at(struct kwl_server *server, int32_t x, int32_t y, enum shell_hit *hit);
@@ -5568,6 +5570,61 @@ probe_buttons(
 	}
 }
 
+/*
+ * Tells whether a window's move changes only the window's old and new
+ * places: a floating window moving within its output, the pointer away
+ * from the system bar (whose docking hint the move may light), in a look
+ * where nothing else moves.  Otherwise the move redraws the whole output.
+ */
+static int
+drag_measured(
+	struct kwl_server *server)
+{
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	struct kwl_object *surface;
+
+	/* A move of a mapped, floating window. */
+	surface = server->drag;
+	if (surface == NULL || surface->dead || !surface->mapped || surface->maximized || surface->fullscreen)
+		return 0;
+
+	/* Within the output it is on, away from that output's system bar. */
+	(void)kwl_outputs(server, outputs);
+	if (surface->output != server->pointer_output)
+		return 0;
+	if (server->pointer_y < outputs[surface->output].y + KWL_GLASS_BAR + KWL_GLASS_TITLE + KWL_GLASS_GAP)
+		return 0;
+
+	/* Nothing else moving (animations, sliding desktops, Wiseview, a menu). */
+	if (server->anim != NULL || server->desktop_moving || server->wiseview_moving || server->wiseview > 0.0f)
+		return 0;
+
+	/* Succeeded: the window's places are the change. */
+	return 1;
+}
+
+/* Marks a moving window's place as damage: its title bar and body, with the reach of its shadow and the glass's blur. */
+static void
+drag_damage(
+	struct kwl_server *server,
+	const struct kwl_object *surface)
+{
+	struct shell_rect body;
+	int32_t top;
+
+	/* The hover record's probes were where the window was: a later hover redraws the whole output once. */
+	server->hover_complete = 0U;
+
+	/* From the title bar's top to the body's bottom, and the reach around. */
+	body_rect(server, surface, &body);
+	top = body.y - KWL_GLASS_GAP - KWL_GLASS_TITLE;
+	kwl_damage_rect(server,
+			body.x - DAMAGE_REACH,
+			top - DAMAGE_REACH,
+			body.x + body.width + DAMAGE_REACH,
+			body.y + body.height + DAMAGE_REACH);
+}
+
 /* Records a bar's button boxes as hover probes (damage.c). */
 static void
 probe_bar_buttons(
@@ -9652,6 +9709,7 @@ glass_motion_take(
 	int taken;
 	int still;
 	int calm;
+	int measured;
 
 	/*
 	 * The hover of buttons, the dock hint and the moves are redrawn (over a
@@ -9660,7 +9718,9 @@ glass_motion_take(
 	 */
 	calm = kwl_glass_pointer_calm(server, server->pointer_x, server->pointer_y);
 	if (!calm)
-		calm = kwl_hover_unchanged(server);
+		calm = kwl_hover_damage(server);
+	if (!calm)
+		calm = drag_measured(server);
 	if (!calm)
 		server->dirty = 1;
 
@@ -9835,12 +9895,19 @@ glass_motion_take(
 		return 1;
 
 	/* The body follows the pointer; the title bar stays below the system bar (below the head's top on a head). */
+	measured = drag_measured(server);
+	if (measured)
+		drag_damage(server, surface);
 	surface->x = server->pointer_x - server->drag_dx;
 	surface->y = server->pointer_y - server->drag_dy;
 	(void)kwl_outputs(server, outputs);
 	lowest = outputs[surface->output].y + kwl_output_top(server, surface->output);
 	if (surface->y < lowest)
 		surface->y = lowest;
+
+	/* A measured move draws the window's old place and its new one alone. */
+	if (measured)
+		drag_damage(server, surface);
 
 	/* Succeeded: the motion was the compositor's. */
 	return 1;

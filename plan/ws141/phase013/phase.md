@@ -73,3 +73,22 @@ kernel 1595355601（TLB copy、busy%）・compositor 1093875040（main＋Codex �
 - cbfc88b19 kernel: 変化した tile だけの present の copy（60e18a09f）を再適用。
 - 93dc73c59・55e8ea3ce・83b8cbd48 kernel（診断だけ）: perf 行に `snap=再利用/変換/map された元/その他`、`mapped_kib`、`largest=WxH<f|m|p>`（最大の変換）、`tiles=render/image`（pass の tile 数）を足す。待機中の変換が何の画像かを数で確かめるため。
 - 見直し: client の窓（Wayland の WSI の swapchain の画像）は libvulkan で共有の GPU 専用の allocation で、RESOURCE_MAP されない（host_mapped にならない）と source から読める。「client の窓は host-mapped で snapshot が効かない」という前の見立ては誤りの可能性が高い。client の画像の copy は、上の計数で変換の元を確かめてから作るか決める。
+
+## CPU が画素を触る所（2026-10-12、source の調べ、Pi の ms は未測定）
+
+ユーザーの方針（2026-10-12、Guardrail）: Pi 4 では毎 frame の経路で画素を CPU で触らない。
+
+| 所 | 何 | 頻度 | 大きさ |
+| --- | --- | --- | --- |
+| bcm2711 `native-texture.c` `bcm2711_native_texture_copy`（`vulkan-native-draw.c` の texture の用意、`native-storage.c` の snapshot） | sample する画像の raster→UIF の CPU 変換。TFU は自己試験が通っても使っていない | sample する画像ごと。snapshot は generation が同じ間は再利用、CPU に map された画像（client の canvas など）は毎 pass | 画像の全体 |
+| bcm2711 `vulkan-native-image.c` の copy・blit | 同じ大きさの全体の copy は GPU の TLB copy、それ以外の copy と全ての blit は texture の draw で、元の画像が上の CPU 変換を通る | vkCmdCopyImage・vkCmdBlitImage ごと | 元の画像 |
+| bcm2711 `vulkan-buffer-copy.c` | buffer↔image の一部の copy の行の memcpy（scene の cache の部分の取り込み・戻し） | frame ごと（damage の矩形） | damage |
+| libkeiland `ui/canvas.c`・`ui/text.c` | client の UI の描画の全部が CPU の software rasterizer（塗り・角丸・影・画像の拡大縮小・文字の合成） | client の再描画ごと | 窓か変化した部分 |
+| libkeiland `ui/present.c` | CPU に map した canvas を GPU の quad で sample → map されているので kernel が毎 frame 窓全体を CPU 変換、compositor 側でも commit ごとに窓全体をもう一度変換 | client の frame ごと | 窓 ×2 |
+| compositor `shm.c` | wl_shm の行の memcpy、staging→sampled の全体の copy（pitch が 64 byte に揃わなければ CPU 変換） | commit ごと | 窓 |
+| compositor `glass.c` | glyph の atlas への追加で 1024x1024 の atlas 全体を書いた印 → 4 MiB の copy と CPU 変換 | 新しい文字ごと | 1024² |
+| compositor `backdrop.c` | GPU の blur だが、各 pass の入力（直前の render の出力）が毎回 CPU 変換 | blur のある frame ごと（1/8 の大きさ ×約 5） | 小 |
+| compositor `heads.c` の mirror | 出力の全体の blit → 全画面の CPU 変換 | mirror の frame ごと | 全画面 |
+| 起動時・壁紙の変更時だけ | 壁紙の拡大縮小・CPU の blur（glass.c）、icon・tile・cursor の形 | 一度 | — |
+
+dock の preview: GPU が窓の画像を小さく sample して描く（CPU の縮小・readback は無い、preview 専用の cache も無い）。窓の画像の変換は snapshot を通常の描画と共有するが、client が commit するたびに窓全体を CPU で変換し直す。

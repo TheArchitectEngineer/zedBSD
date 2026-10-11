@@ -122,3 +122,9 @@ struct gpu_display_cursor_hide {
 - a189f9b13 compositor（`cursor-plane.c`）: output の swapchain の後に、output の display・mode の plane のうち premultiplied・最大 32〜256・負の位置を許す物を探し、64x64 の surface と swapchain を作る。毎 pass、cursor の像（compose_cursor と同じ選び方: 矢印・形・frame の resize・client の cursor の面）と位置（pointer − hotspot）が変わったら acquire（timeout 0、空きが無ければ次の pass）し、像が変わった時だけ host image の staging を写して（format が違えば blit）present、位置だけなら写さずに present。plane が見せている間は frame は cursor を描かず、pointer の移動は frame の damage を出さない（glass の hover の変化は従来どおり再描画）。drag・staging の無い client の cursor・64 より大きい cursor・別の display の上の pointer は合成に戻す（切り替えで全体を再描画）。`--log-frames` で `KWL CURSOR_PLANE present x y copy input_us at_us`。cursor の plane の無い出力（i915・Venus・Linux・FreeBSD）は従来と同じ。
 - host 試験: `display-host-test.sh`（flip: list の形・待たない publish・pending の間の coalesce・clip・hide・frame の settle、device: lease の検査・hidden の SET は publish しない・pending の間の SET は別の画像へ・release で消える）PASS、`host-display-cursor.sh`（core の検査、ordinary と ASan/UBSan）PASS、ws113 の `host-display-events.sh` PASS。arm64 の vmunix・libvulkan.so・wayland は warning 0。
 - 未実施: Pi 4 の実機（kernel・libvulkan・compositor の 3 つの置き換えが要る）、Venus・llvmpipe の回帰（T1）。
+
+## 実機の結果（2026-10-12、Pi 4、main 8eb7c81 の image、`--log-frames` は /tmp）
+
+- ユーザー（Q1 経由）:「おお、カーソルは60fpsです！」「マウスカーソルはすごくよくなってます。ウィンドウのふちでカーソルが変化するときに遅くならなくなりました。」
+- compositor の log（約 60 秒の操作、build/p3-logs/kwl-base8eb.log、commit しない）: `KWL CURSOR_PLANE open plane=1 width=64 height=64 images=3 format=37`。cursor の plane の present 1327 回、間隔の中央値 9ms（p10 7、p90 17、入力の来る間隔に従う）、入力の受け付け→present の中央値 8ms（p90 12）。像の copy は 22 回（形が変わった時だけ）。kernel の側では cursor の present ごとの libvulkan の 64x64 の copy の submission が 1 回あたり約 1.3ms。
+- 同じ時間の窓の中身の frame は 52 だけで、draw→shown の中央値 365ms（vkQueueSubmit の中の kernel の実行が中央値 324ms）。cursor は frame と無関係に動くようになったが、frame 自体の遅さは残る（p013 の続き: CPU に map された扱いの全画面の画像の毎回の変換）。
