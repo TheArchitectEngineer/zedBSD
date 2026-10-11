@@ -8,29 +8,11 @@
 #include "src/libc/heap.h"
 
 #include <stddef.h>
-#include <stdint.h>
 #include <errno.h>
 #include <string.h>
 
 /* The longest "Unknown error N" description, with its terminator. */
 #define ERROR_UNKNOWN_SIZE 32
-
-/* The size in bytes of the word the block operations move. */
-#define STRING_WORD_SIZE sizeof(unsigned long)
-
-/* The low address bits that say how far an address is past a word boundary. */
-#define STRING_WORD_MASK (STRING_WORD_SIZE - 1U)
-
-/* The number of words one pass of an unrolled word loop moves. */
-#define STRING_WORD_RUN 4U
-
-/*
- * The shortest block that is moved by words.
- *
- * A shorter block is moved byte by byte: aligning it would cost more than
- * the words would save.
- */
-#define STRING_WORD_MINIMUM (STRING_WORD_SIZE * 2U)
 
 /*
  * One error number and the description strerror gives it.
@@ -42,28 +24,6 @@ struct error_description {
 	int number;
 	const char *text;
 };
-
-/*
- * The word memcpy, memmove and memset move once the destination is aligned.
- *
- * A whole word is stored at a time so that a copy into an uncached or
- * write-combined mapping costs one bus write per word rather than one per
- * byte.  The type may alias an object of any type, because the bytes the
- * block operations move belong to objects of every type, and this libc is
- * also built with strict aliasing.
- */
-typedef unsigned long string_word __attribute__((__may_alias__));
-
-/*
- * A word read from an address that need not be word aligned.
- *
- * A source whose alignment differs from the destination's is read through
- * this type.  A target that loads unaligned words (amd64, arm64) reads it
- * with one load each; on a target that cannot (m68k, sparcv9) the compiler
- * reads its bytes one by one.  The store is a whole aligned word on every
- * target.
- */
-typedef unsigned long string_unaligned_word __attribute__((__may_alias__, __aligned__(1)));
 
 /*
  * The description of every error number of <uapi/errno.h>, in its order.
@@ -165,95 +125,43 @@ static char error_unknown[ERROR_UNKNOWN_SIZE];
 
 static const char *error_text(int error);
 static void error_format_unknown(int error, char *buffer, size_t size);
-static void string_copy_forward(unsigned char *destination, const unsigned char *source, size_t count);
-static void string_copy_backward(unsigned char *destination_end, const unsigned char *source_end, size_t count);
-static void string_copy_words(string_word *destination, const string_word *source, size_t words);
-static void string_copy_unaligned_words(string_word *destination, const string_unaligned_word *source, size_t words);
-static void string_copy_words_backward(string_word *destination_end, const string_word *source_end, size_t words);
-static void string_copy_unaligned_words_backward(string_word *destination_end, const string_unaligned_word *source_end, size_t words);
-static void string_fill(unsigned char *destination, unsigned char value, size_t count);
-static void string_fill_words(string_word *destination, string_word pattern, size_t words);
 
-/*
- * Copies a block of memory that does not overlap its destination.
- *
- * The destination is written a whole aligned word at a time between its
- * unaligned ends.
- */
 void *
-memcpy(
-	void *destination,
-	const void *source,
-	size_t count)
+memcpy(void *destination, const void *source, size_t count)
 {
-	/* Copies the block front to back. */
-	string_copy_forward(destination, source, count);
+	unsigned char *dst = destination;
+	const unsigned char *src = source;
 
-	/* Succeeded: the destination, as the standard asks. */
+	while (count-- != 0)
+		*dst++ = *src++;
 	return destination;
 }
 
-/*
- * Copies a block of memory that may overlap its destination.
- *
- * A destination below the source, or one that does not overlap it, is
- * copied front to back; a destination that overlaps the source from above
- * is copied back to front, so that every source byte is read before it is
- * overwritten.
- */
 void *
-memmove(
-	void *destination,
-	const void *source,
-	size_t count)
+memmove(void *destination, const void *source, size_t count)
 {
-	uintptr_t destination_address;
-	uintptr_t source_address;
-	unsigned char *destination_bytes;
-	const unsigned char *source_bytes;
+	unsigned char *dst = destination;
+	const unsigned char *src = source;
 
-	/* Takes both addresses as numbers, so that their order can be compared. */
-	destination_address = (uintptr_t)destination;
-	source_address = (uintptr_t)source;
-	destination_bytes = destination;
-	source_bytes = source;
-
-	/* A block copied onto itself is already in place. */
-	if (destination_address == source_address)
-		return destination;
-
-	/* Chooses the direction that reads every source byte before overwriting it. */
-	if (destination_address < source_address) {
-		/* A destination below the source never overtakes it front to back. */
-		string_copy_forward(destination_bytes, source_bytes, count);
-	} else if (destination_address - source_address >= count) {
-		/* A destination past the end of the source does not overlap it. */
-		string_copy_forward(destination_bytes, source_bytes, count);
-	} else {
-		/* A destination overlapping the source from above is copied from the end. */
-		string_copy_backward(destination_bytes + count, source_bytes + count, count);
+	if (dst < src) {
+		while (count-- != 0)
+			*dst++ = *src++;
+	} else if (dst > src) {
+		dst += count;
+		src += count;
+		while (count-- != 0)
+			*--dst = *--src;
 	}
-
-	/* Succeeded: the destination, as the standard asks. */
 	return destination;
 }
 
-/*
- * Fills a block of memory with one byte value.
- *
- * The block is written a whole aligned word at a time between its
- * unaligned ends.
- */
 void *
-memset(
-	void *destination,
-	int value,
-	size_t count)
+memset(void *destination, int value, size_t count)
 {
-	/* Stores the byte value over the whole block. */
-	string_fill(destination, (unsigned char)value, count);
+	unsigned char *dst = destination;
 
-	/* Succeeded: the destination, as the standard asks. */
+	while (count-- != 0)
+		*dst++ = (unsigned char)value;
 	return destination;
 }
 
@@ -549,331 +457,4 @@ error_format_unknown(
 
 	/* Terminates the description. */
 	buffer[length] = '\0';
-}
-
-/* Copies a block front to back, storing whole aligned words where it can. */
-static void
-string_copy_forward(
-	unsigned char *destination,
-	const unsigned char *source,
-	size_t count)
-{
-	size_t words;
-	size_t word_bytes;
-
-	/* A block long enough to be worth aligning is copied mostly by words. */
-	if (count >= STRING_WORD_MINIMUM) {
-		/* Copies single bytes up to the destination's first word boundary. */
-		while (((uintptr_t)destination & STRING_WORD_MASK) != 0) {
-			*destination = *source;
-			destination++;
-			source++;
-			count--;
-		}
-
-		/* Copies the whole words, reading the source as its alignment allows. */
-		words = count / STRING_WORD_SIZE;
-		if (((uintptr_t)source & STRING_WORD_MASK) == 0) {
-			string_copy_words(
-				(string_word *)(void *)destination,
-				(const string_word *)(const void *)source,
-				words);
-		} else {
-			string_copy_unaligned_words(
-				(string_word *)(void *)destination,
-				(const string_unaligned_word *)(const void *)source,
-				words);
-		}
-
-		/* Steps past the words just copied. */
-		word_bytes = words * STRING_WORD_SIZE;
-		destination += word_bytes;
-		source += word_bytes;
-		count -= word_bytes;
-	}
-
-	/* Copies the bytes after the last whole word, or a short block. */
-	while (count != 0) {
-		*destination = *source;
-		destination++;
-		source++;
-		count--;
-	}
-}
-
-/* Copies a block back to front from the ends given, storing whole aligned words where it can. */
-static void
-string_copy_backward(
-	unsigned char *destination_end,
-	const unsigned char *source_end,
-	size_t count)
-{
-	size_t words;
-	size_t word_bytes;
-
-	/* A block long enough to be worth aligning is copied mostly by words. */
-	if (count >= STRING_WORD_MINIMUM) {
-		/* Copies single bytes down to the destination's last word boundary. */
-		while (((uintptr_t)destination_end & STRING_WORD_MASK) != 0) {
-			destination_end--;
-			source_end--;
-			*destination_end = *source_end;
-			count--;
-		}
-
-		/* Copies the whole words, reading the source as its alignment allows. */
-		words = count / STRING_WORD_SIZE;
-		if (((uintptr_t)source_end & STRING_WORD_MASK) == 0) {
-			string_copy_words_backward(
-				(string_word *)(void *)destination_end,
-				(const string_word *)(const void *)source_end,
-				words);
-		} else {
-			string_copy_unaligned_words_backward(
-				(string_word *)(void *)destination_end,
-				(const string_unaligned_word *)(const void *)source_end,
-				words);
-		}
-
-		/* Steps back past the words just copied. */
-		word_bytes = words * STRING_WORD_SIZE;
-		destination_end -= word_bytes;
-		source_end -= word_bytes;
-		count -= word_bytes;
-	}
-
-	/* Copies the bytes before the first whole word, or a short block. */
-	while (count != 0) {
-		destination_end--;
-		source_end--;
-		*destination_end = *source_end;
-		count--;
-	}
-}
-
-/* Copies aligned words front to back from an aligned source. */
-static void
-string_copy_words(
-	string_word *destination,
-	const string_word *source,
-	size_t words)
-{
-	string_word first;
-	string_word second;
-	string_word third;
-	string_word fourth;
-
-	/*
-	 * Copies a run of words a pass.  The run is loaded before it is stored,
-	 * which memmove relies on when the destination lies below the source.
-	 */
-	while (words >= STRING_WORD_RUN) {
-		first = source[0];
-		second = source[1];
-		third = source[2];
-		fourth = source[3];
-		destination[0] = first;
-		destination[1] = second;
-		destination[2] = third;
-		destination[3] = fourth;
-		destination += STRING_WORD_RUN;
-		source += STRING_WORD_RUN;
-		words -= STRING_WORD_RUN;
-	}
-
-	/* Copies the words that do not fill a run. */
-	while (words != 0) {
-		*destination = *source;
-		destination++;
-		source++;
-		words--;
-	}
-}
-
-/* Copies aligned words front to back from a source that is not word aligned. */
-static void
-string_copy_unaligned_words(
-	string_word *destination,
-	const string_unaligned_word *source,
-	size_t words)
-{
-	string_word first;
-	string_word second;
-	string_word third;
-	string_word fourth;
-
-	/*
-	 * Copies a run of words a pass.  The run is loaded before it is stored,
-	 * which memmove relies on when the destination lies below the source.
-	 */
-	while (words >= STRING_WORD_RUN) {
-		first = source[0];
-		second = source[1];
-		third = source[2];
-		fourth = source[3];
-		destination[0] = first;
-		destination[1] = second;
-		destination[2] = third;
-		destination[3] = fourth;
-		destination += STRING_WORD_RUN;
-		source += STRING_WORD_RUN;
-		words -= STRING_WORD_RUN;
-	}
-
-	/* Copies the words that do not fill a run. */
-	while (words != 0) {
-		*destination = *source;
-		destination++;
-		source++;
-		words--;
-	}
-}
-
-/* Copies aligned words back to front from the ends of an aligned source. */
-static void
-string_copy_words_backward(
-	string_word *destination_end,
-	const string_word *source_end,
-	size_t words)
-{
-	string_word first;
-	string_word second;
-	string_word third;
-	string_word fourth;
-
-	/*
-	 * Copies a run of words a pass, last word first.  The run is loaded
-	 * before it is stored, so a destination overlapping the source from
-	 * above overwrites only source words already read.
-	 */
-	while (words >= STRING_WORD_RUN) {
-		destination_end -= STRING_WORD_RUN;
-		source_end -= STRING_WORD_RUN;
-		first = source_end[3];
-		second = source_end[2];
-		third = source_end[1];
-		fourth = source_end[0];
-		destination_end[3] = first;
-		destination_end[2] = second;
-		destination_end[1] = third;
-		destination_end[0] = fourth;
-		words -= STRING_WORD_RUN;
-	}
-
-	/* Copies the words that do not fill a run. */
-	while (words != 0) {
-		destination_end--;
-		source_end--;
-		*destination_end = *source_end;
-		words--;
-	}
-}
-
-/* Copies aligned words back to front from the ends of a source that is not word aligned. */
-static void
-string_copy_unaligned_words_backward(
-	string_word *destination_end,
-	const string_unaligned_word *source_end,
-	size_t words)
-{
-	string_word first;
-	string_word second;
-	string_word third;
-	string_word fourth;
-
-	/*
-	 * Copies a run of words a pass, last word first.  The run is loaded
-	 * before it is stored, so a destination overlapping the source from
-	 * above overwrites only source words already read.
-	 */
-	while (words >= STRING_WORD_RUN) {
-		destination_end -= STRING_WORD_RUN;
-		source_end -= STRING_WORD_RUN;
-		first = source_end[3];
-		second = source_end[2];
-		third = source_end[1];
-		fourth = source_end[0];
-		destination_end[3] = first;
-		destination_end[2] = second;
-		destination_end[1] = third;
-		destination_end[0] = fourth;
-		words -= STRING_WORD_RUN;
-	}
-
-	/* Copies the words that do not fill a run. */
-	while (words != 0) {
-		destination_end--;
-		source_end--;
-		*destination_end = *source_end;
-		words--;
-	}
-}
-
-/* Stores one byte value over a block, storing whole aligned words where it can. */
-static void
-string_fill(
-	unsigned char *destination,
-	unsigned char value,
-	size_t count)
-{
-	string_word pattern;
-	size_t words;
-	size_t word_bytes;
-
-	/* A block long enough to be worth aligning is filled mostly by words. */
-	if (count >= STRING_WORD_MINIMUM) {
-		/* Stores single bytes up to the destination's first word boundary. */
-		while (((uintptr_t)destination & STRING_WORD_MASK) != 0) {
-			*destination = value;
-			destination++;
-			count--;
-		}
-
-		/*
-		 * Repeats the byte in every byte of a word: the all-ones word divided
-		 * by 0xff has 0x01 in every byte.
-		 */
-		pattern = (~(string_word)0 / 0xffU) * value;
-
-		/* Stores the whole words. */
-		words = count / STRING_WORD_SIZE;
-		string_fill_words((string_word *)(void *)destination, pattern, words);
-
-		/* Steps past the words just stored. */
-		word_bytes = words * STRING_WORD_SIZE;
-		destination += word_bytes;
-		count -= word_bytes;
-	}
-
-	/* Stores the bytes after the last whole word, or a short block. */
-	while (count != 0) {
-		*destination = value;
-		destination++;
-		count--;
-	}
-}
-
-/* Stores one pattern over aligned words. */
-static void
-string_fill_words(
-	string_word *destination,
-	string_word pattern,
-	size_t words)
-{
-	/* Stores a run of words a pass. */
-	while (words >= STRING_WORD_RUN) {
-		destination[0] = pattern;
-		destination[1] = pattern;
-		destination[2] = pattern;
-		destination[3] = pattern;
-		destination += STRING_WORD_RUN;
-		words -= STRING_WORD_RUN;
-	}
-
-	/* Stores the words that do not fill a run. */
-	while (words != 0) {
-		*destination = pattern;
-		destination++;
-		words--;
-	}
 }
