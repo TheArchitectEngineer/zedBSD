@@ -3,7 +3,7 @@
 # ws197-p007: HFP の音（通話の声）— 詳細設計
 
 Parent: [WS197](../ws.md)
-Status: planning（q930-i01、P1。設計 2（review-1・Q9〜Q11・音の route の model を反映）、再 review と Q12〜Q14 待ち）
+Status: planning（q930-i01、P1。設計 2.1（review-2 の X・S2・S5 を反映）、X 節の短い再 review と Q12〜Q14 待ち）
 Phase disposition: normal
 Queue: q930（[P1 の lane](../../agents/P1/queue.md)）
 
@@ -69,7 +69,7 @@ Queue: q930（[P1 の lane](../../agents/P1/queue.md)）
 | R8 | endpoint が消えたら（headset が切れた）route は既定（speaker・mic）へ戻る。call の endpoint が消えたら call を外す | |
 | R9 | 試験: host で audiod の route の仕組み（偽の endpoint の daemon、偽の device）: 8 kHz の source を 48 kHz の sink へ、±0.1% の clock のずれで 10 分の水位、route の切り替え、endpoint の消滅。FIR の周波数応答（3.4 kHz まで ±0.5 dB、4 kHz 以上で −50 dB） | |
 
-### p007a1: xHCI の isochronous（review-1 の BLOCKER 1〜4・MAJOR を反映）
+### p007a1: xHCI の isochronous（review-1 の BLOCKER 1〜4・MAJOR を反映）— **設計 2.1 の X 節が置き換える**
 
 | ID | 決め |
 | --- | --- |
@@ -99,7 +99,7 @@ active を見ている所の扱い（review-1 BLOCKER 1）:
 | `xhci_device_quiesce`・`xhci_controller_drain_requests`・`xhci_transfer_busy_locked` | dci ごとに active 1 つ | queue の全部 |
 | `xhci_submission_quiesce`・`xhci_release_resources`・`xhci_start` | `active_count` | request ごとに数える（変えない） |
 
-### p007a2: usb-bt の interface 1 と SCO（Q9 の形）
+### p007a2: usb-bt の interface 1 と SCO（Q9 の形）— **S2・S5・S8 は設計 2.1 が置き換える**
 
 | ID | 決め |
 | --- | --- |
@@ -153,6 +153,52 @@ active を見ている所の扱い（review-1 BLOCKER 1）:
 
 R（audiod の endpoint と route、新 WS を推す）、p006 の BRSF の bit 9（p007b1 の中で直す）、usb の core の isoch の reservation（p007a1 の中）、vmunix.mk の ktest の knob（p007a1 の中）、5330 の descriptor と AX211 の SCO の経路（p007a2 の最初、Q1 の許可）、HCI Local Loopback の T1 の道具（p007a2）、Phone・libkeiland・compositor・backend の通話の音の口（B6、R の上）。privsep の SCO の口は Q9 の形（既に開いた fd への ioctl）で不要になった。
 
+## 設計 2.1（2026-10-11、[review-2](review-2.md) の X 節・S2・S5 を反映）
+
+### p007a0: 5330 の確かめ（p007a1 の前、読むだけ）
+
+- 2026-10-11 済み: 5330 の zedBSD の `lsusb -v`・dmesg・`bt show`: AX211 は 8087:0033、bcdUSB 2.01、class e0/01/01、interface 2 つ、HCI 版 13（5.4）、manufacturer 2（Intel）。**zedBSD の lsusb は alternate を出さず、bt は HCI の supported commands・codec を出さない**。
+- 2026-10-11 実装（5883e5881、kernel と bluetoothd の build rc 0・warning 0、bt-phone の host 試験 PASS）: usb-bt の attach の後に `usb-bt: <name>: SCO interface N alternate A endpoints 0xEP/size/interval …`（各 alternate 1 行、claim も set もしない）、bluetoothd の READY の後に `BLUETOOTHD SCO length= count= commands1= commands13= commands14= commands16= commands29=`（Read Buffer Size の SCO と supported commands の octet、HCI の command は増やさない。Read Local Supported Codecs は送らない）。T1 がこの image を 5330 で起こして dmesg と syslog を読む。
+- 元の計画（小さな変更 2 つ、試験の image で T1 が 5330 で読む。controller の状態は変えない）: (a) usb-bt の attach で interface 1 の各 alternate の wMaxPacketSize を klog に 1 行、(b) bluetoothd の起動の時に Read Local Supported Commands の SCO に関わる bit（Setup/Accept Synchronous、Enhanced Setup/Accept、Write Loopback Mode）、Read Local Supported Codecs（v1）、Read Buffer Size の SCO の値を log に 1 行ずつ。(c) HCI Local Loopback の試しは bluetoothd を止める必要があるので p007a2 の中（Q1 に先に知らせる）。だめ（SCO が HCI に来ない）なら p007a1 に入らず Q1 へ。
+
+### X 節（置き換え）
+
+| ID | 決め |
+| --- | --- |
+| X1 | isoch の endpoint だけ request の FIFO: `active` は先頭、残りは `isoch_next` の list（上限 4）。**不変条件: active == NULL なら list は空**（debug の assert）。FIFO から外すのは `xhci_request_unlink_locked`（完了の claim と cancel）だけ。`xhci_request_release` は今の「公開中なら trap」を「FIFO のどこかに居れば trap」に広げる（外さない） |
+| X2 | 照合: Transfer Event の TRB pointer で FIFO の各 request の TRB の範囲（ring の巻きを含む）を探す。request は残りの TD の数と packet ごとの結果（実の長さ・状態）を持つ。最後の TD が終わった request だけ completion へ |
+| X3 | **飛ばしの規則**: ある TD の event が来たら、FIFO の順でそれより前の event の無い TD を MISSED で終える。**Missed Service（23）・Ring Underrun（14）・Overrun（15）では何も完了させず「skip 待ち」の印だけ**（pointer 0 の MSE も同じ）。片付けは次の TD の event（飛ばしの規則）か、印から一定時間（URB 2 本分の時間）event が無い時に **thread** が Stop Endpoint を出し、その完了の後に endpoint context の TR Dequeue Pointer を読んで、それより前の TD は MISSED、後ろは続け（doorbell）。IRQ の中で TD を完了させないので、worker が出したばかりの TD の buffer を返すことは無い |
+| X4 | ring の空き: producer と consumer（最後に event の来た TRB）の位置を数え、足りなければ enqueue は EAGAIN。**1 TD = 1 Isoch TRB**、packet の buffer は 64 KiB を跨がない（reservation の中で並べる） |
+| X5 | **cancel は endpoint 全体**: Stop Endpoint → `xhci_endpoint_dequeue_all`（dequeue を enqueue に、producer の cycle も）→ その完了の後に FIFO の全 URB（X より前も）を CANCELLED で完了（既に結果の出た packet の結果は残す）。その間の enqueue は EBUSY。class（usb-bt）は SCO の流れを止める時にだけ cancel する。host 試験は停止点が X の前・中・後の 3 例 |
+| X6 | **halt**: event の側（IRQ）は「Halted を見た」を記録するだけ。回復は thread（xHCI の今の port_worker、無ければ isoch の回復の worker）: Reset Endpoint → `xhci_endpoint_dequeue_all` → FIFO の残りの URB は残りの packet を IO_ERROR にして完了（結果の出た packet は残す）。回復の間の enqueue は EBUSY |
+| X7 | context（isoch だけ、interrupt は変えない）: CErr 0、FS の Interval = bInterval + 2、Max ESIT = FS は packet・HS は packet ×（bit 12:11 + 1）、bit 12:11 は Max Burst へ、Mult 0。**対象は FS と HS の mult 0（1 interval 1 transaction）だけ、他は EINVAL**。TBC・TLBPC・TD Size 0、SIA 1、**IN は ISP 1** |
+| X8 | usb の core の API: isoch にも transfer reservation（HAL は変えない）、`drv_usb_urb_iso_packet_result_set`（HCD 用: index、実の長さ、状態）と `drv_usb_urb_iso_packet_result`（class 用）。packet の状態は OK・SHORT・MISSED・ERROR・CANCELLED。**URB 全体の状態**: cancel → CANCELLED、切断 → NODEV、X6 の回復 → IO_ERROR、それ以外は COMPLETE（packet ごとの結果を見る）。`drv_usb_urb_setup_isochronous` に PENDING・hcd_owned・offset/length の検査 |
+| X9 | event の数: 途中の TD は IOC + BEI、ただし **BEI は 7 つまで続けて、8 つ目ごとに BEI 無しの IOC**。event ring 256 に対し、SCO の IN・OUT の 2 本 × 1 ms に 1 event、IRQ の遅れの最悪（command_busy の後回し、24 ms）で 48 event、余裕あり（ktest で最長の後回しを測る） |
+| X10 | suspend: `xhci_transfer_busy_locked` は isoch の流れを転送中と見なすので、流している間の system の suspend は 2 秒待って失敗する（正しい振る舞い、記録）。通話の間は Phone が inhibit を持つ、蓋を閉じても通話中は suspend しない |
+| X11 | URB の大きさ: **IN は 8 packet（8 ms）× 3 本**、**OUT は 4 packet（4 ms、SCO の packet 1〜2 つ分）× 3 本**。遅れ: IN は束ねで最大 8 ms、OUT は queue で最大 12 ms（R7 の表に入れる） |
+| X12 | 試験: (a) TD の状態機械（照合・飛ばし・skip 待ち・cancel の停止点 3 例・halt・ring の空き・BEI の数え）を `pci-xhci-control.h` の純粋な関数にして host 試験。(b) QEMU の `-device usb-audio`（isoch OUT）の ktest の前に、qemu-xhci の isoch が動くかを T1 に小さく確かめてもらう（動かなければ (b) は無しで、合否は (a) と 5330）。結果は sysctl か node を SSH で。(c) IN・短い packet・Overrun は 5330（p007a2 の HCI Local Loopback） |
+
+active を見ている所の扱い（設計 2 の表に足す・直す）:
+
+| 所 | isoch での扱い |
+| --- | --- |
+| `xhci_request_unlink_locked` | FIFO の pop の中心: 先頭を外して次を active に（claim と cancel だけが呼ぶ） |
+| `xhci_device_request_busy_locked`（`xhci_device_release` の trap の判定） | FIFO の全部を見る |
+| `drv_xhci_endpoint_reset_admit(active, …)` | active に加えて list が空でない時も busy |
+| `xhci_request_release` | **外さない**: FIFO のどこかに居れば trap（今の不変条件を広げる） |
+
+### S2・S5・S8 の置き換え
+
+| ID | 決め |
+| --- | --- |
+| S2 | `BT_IOC_SET_SCO` = `_IOWR('b', 5, struct bt_sco)`、`struct bt_sco { uint16_t handle[3]; uint16_t voice_setting[3]; uint16_t packet_length[3]; uint16_t count; uint16_t alternate; uint16_t mtu; uint32_t reserved[2]; }`（32 byte、handle ごとに Voice Setting と packet の長さ）。alternate の規則: CVSD だけなら 16 bit の本数 1・2・3 で alt 2・4・5（8 bit は本数）、transparent（mSBC）1 本だけなら alt 6 が有れば 6・無ければ 1、**CVSD と transparent の混在・transparent 2 本は EINVAL**（WS205 H3 の phone CVSD・headset mSBC は、headset を CVSD に落とすか後の Phase で決める） |
+| S5 | **SCO の write は `op_lock` を取らない**: spinlock の下で SCO の送りの queue（約 40 ms）に積むだけで返る（満ちたら EAGAIN、流していない時 ENOTCONN）。withdraw は別の counter。`include/uapi/bluetooth.h` の冒頭の契約を書き直す: command・ACL の write は今のまま（controller が受けてから返る）、SCO の write は queue に積んで返る、read は届いた順（ACL・event・SCO を通しの番号で）、SCO の受けの ring は約 200 ms で古い物から捨てる、poll の POLLOUT は SCO の queue に空きのある時も、O_NONBLOCK は fd に共通。送りの queue の水位は `bt_stats` の reserved の `sco_out_queued`（B4 が見る） |
+| S8 | usb-bt に **SCO 専用の thread**: isoch の完了は wake だけ、再投入・組み立て直し・送りの queue からの詰めはその thread。今の worker の drain（最長 1 秒）や reset の quiesce は SCO の thread を止めない。reset・detach は interface 0 の前に SCO の thread を止め interface 1 の URB を cancel・drain、reset の後は SCO 0 本。interface 1 の claim の失敗（core が probe 中）は「SCO 無し」。SET_INTERFACE の timeout で device が隔離されたら bluetoothd は LOST → p013 の reset |
+
+### B1 に関わる確認（Q1 へ）
+
+読み手の thread の main への queue の上限: **4096 packet** を推し、越えたら LOST として reopen（p013 の回復）。main は同期の待ちもこの queue を読むので、越えるのは main が解析で止まった時だけ。kernel に SCO だけを読む口を足す案（review-2）は Q9 の範囲（ioctl 1 つ）を越えるので推さない。
+
 ## 判断（Q1 経由でユーザーへ、推し付き）
 
 | ID | 問い | 推し |
@@ -164,4 +210,5 @@ R（audiod の endpoint と route、新 WS を推す）、p006 の BRSF の bit 
 ## 進み
 
 - 2026-10-11: 設計 1（4e9a42e93）→ design-reviewer の [review-1](review-1.md)（BLOCKER 4）。
-- 2026-10-11: 設計 2（本節、P1）。次は Q1 の再 review（design-reviewer）と Q12〜Q14。
+- 2026-10-11: 設計 2（P1）→ [review-2](review-2.md)（blocker 3: X5・X3・X6）。
+- 2026-10-11: 設計 2.1（X 節・S2・S5・S8、P1）。次は X 節の短い再 review、p007a0 の残り（T1）、Q12〜Q14。R の再設計（15〜20 LW）は Q12〜Q14 の後で p007b1 の条件。

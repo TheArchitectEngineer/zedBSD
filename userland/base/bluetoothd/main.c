@@ -683,6 +683,12 @@ main(
 	btd_open();
 	btd_log("BLUETOOTHD READY state=%s uid=%u\n", btd_state_name(btd_session.state), (unsigned)getuid());
 
+	/* What the controller says of SCO: its buffers and the supported commands' octets of synchronous links and loopback (ws197-p007a0). */
+	btd_log("BLUETOOTHD SCO length=%u count=%u commands1=0x%02x commands13=0x%02x commands14=0x%02x commands16=0x%02x commands29=0x%02x\n",
+	    (unsigned)btd_session.sco_length, (unsigned)btd_session.sco_count, (unsigned)btd_session.commands[1],
+	    (unsigned)btd_session.commands[13], (unsigned)btd_session.commands[14], (unsigned)btd_session.commands[16],
+	    (unsigned)btd_session.commands[29]);
+
 	/* Clients, the controller's packets, the deadlines and the look for nodes. */
 	for (;;) {
 		/* Only the processing loop feeds the privileged parent's stall detector. */

@@ -150,6 +150,7 @@ struct usb_bt {
 
 static int usb_bt_match(struct drv_usb_interface *interface, const struct drv_usb_id *id);
 static int usb_bt_attach(struct drv_usb_interface *interface, const struct drv_usb_id *id);
+static void usb_bt_log_sco(const struct usb_bt *bt, struct drv_usb_interface *interface);
 static int usb_bt_detach(struct drv_usb_interface *interface, unsigned flags);
 static int usb_bt_pipe_prepare(struct usb_bt *bt, struct usb_bt_pipe *pipe, struct drv_usb_endpoint *endpoint, size_t buffer_size, unsigned mode);
 static void usb_bt_pipe_free(struct usb_bt_pipe *pipe);
@@ -364,9 +365,69 @@ usb_bt_attach(
 	/* The worker runs. */
 	thread_start(bt->worker);
 
-	/* Succeeded: the controller is in service. */
+	/* Succeeded: the controller is in service (the SCO interface's alternates told, ws197-p007a0). */
 	kern_logf("usb-bt: %s at %s: events %u bytes a transfer\n", bt->name, bt->physical_path, (unsigned)packet_size);
+	usb_bt_log_sco(bt, interface);
 	return 0;
+}
+
+/*
+ * Tells the controller's isochronous (SCO) interface, the next after the
+ * one taken: each alternate's endpoints and their packet sizes, one line
+ * an alternate (ws197-p007a0: the 5330's values before the SCO's design
+ * is built on them).  Nothing is claimed or set.
+ */
+static void
+usb_bt_log_sco(
+	const struct usb_bt *bt,
+	struct drv_usb_interface *interface)
+{
+	const struct drv_usb_host_interface *alternate;
+	const struct drv_usb_interface_descriptor *descriptor;
+	const struct drv_usb_endpoint_descriptor *endpoint;
+	struct drv_usb_configuration *configuration;
+	struct drv_usb_interface *sco;
+	char line[160];
+	size_t used;
+	unsigned count;
+	unsigned index;
+	unsigned point;
+	unsigned points;
+	int written;
+
+	/* The interface after this one in the active configuration. */
+	configuration = drv_usb_device_active_configuration(drv_usb_interface_device(interface));
+	sco = NULL;
+	if (configuration != NULL)
+		sco = drv_usb_configuration_find_interface(configuration, drv_usb_interface_number(interface) + 1U);
+	if (sco == NULL) {
+		kern_logf("usb-bt: %s: no SCO interface\n", bt->name);
+		return;
+	}
+
+	/* Each alternate: its setting, then each endpoint's address and packet size. */
+	count = drv_usb_interface_alternate_count(sco);
+	for (index = 0U; index < count; index++) {
+		alternate = drv_usb_interface_alternate(sco, index);
+		if (alternate == NULL)
+			continue;
+		descriptor = drv_usb_host_interface_descriptor(alternate);
+		used = 0U;
+		line[0] = '\0';
+		points = drv_usb_host_interface_endpoint_count(alternate);
+		for (point = 0U; point < points; point++) {
+			endpoint = drv_usb_endpoint_descriptor(drv_usb_host_interface_endpoint(alternate, point));
+			written = kern_snprintf(line + used, sizeof(line) - used, " 0x%02x/%u/%u", (unsigned)endpoint->address,
+			    (unsigned)(endpoint->maximum_packet_size & 0x7ffU), (unsigned)endpoint->interval);
+			if (written < 0 || (size_t)written >= sizeof(line) - used)
+				break;
+			used += (size_t)written;
+		}
+
+		/* The alternate's line. */
+		kern_logf("usb-bt: %s: SCO interface %u alternate %u endpoints%s\n", bt->name, (unsigned)descriptor->interface_number,
+		    (unsigned)descriptor->alternate_setting, line);
+	}
 }
 
 /* Gives the controller up: the class's operations stop, then the transfers and the worker, then the node. */

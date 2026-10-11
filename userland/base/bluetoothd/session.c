@@ -1549,10 +1549,16 @@ session_core(
 	if (session->le_supported && le_mask && le_parameters && le_enable)
 		session->le = 1;
 
-	/* The buffer size: the longest ACL packet the controller takes tells the node, and BR/EDR's pool. */
+	/* The buffer size: the longest ACL packet the controller takes tells the node, and BR/EDR's pool; SCO's kept for the log. */
 	error = session_command(session, SESSION_READ_BUFFER_SIZE, NULL, 0U, session->timing.command_ms);
 	if (error == ENODEV)
 		return error;
+	if (error == 0 && session->returned_length >= 7U) {
+		session->sco_length = session->returned[2];
+		session->sco_count = (uint16_t)(session->returned[5] | (session->returned[6] << 8));
+	}
+
+	/* The ACL length. */
 	if (error == 0 && session->returned_length >= 2U) {
 		session->acl_length = (uint16_t)(session->returned[0] | (session->returned[1] << 8));
 		acl = session->acl_length;
