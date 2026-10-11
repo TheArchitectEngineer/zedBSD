@@ -27,7 +27,7 @@ Queue: q930（[P1 の lane](../../agents/P1/queue.md)）
 | UAPI | `/dev/bluetoothN` は **open が 1 つだけ**、`BT_PACKET_SCO` は予約で EINVAL（`include/uapi/bluetooth.h`） |
 | bluetoothd | session は同期の HCI command を最長 2 秒待つ（その間も同じ fd を読む）。SCO の扱いは無い。HF の features に EC/NR は無い（AG の EC/NR が働く、`AT+NREC` を送らない） |
 | audiod | 8〜192 kHz の stream を受け、変換は線形補間（anti-alias の filter 無し）。device の rate は HDA で 48 kHz |
-| 5330 の BT | Intel AX211（USB 8087:0033、Full Speed）。interface 1 の alternate の実の値は**未確認**（公開の dump では alt 0〜5 で wMaxPacketSize 0・9・17・25・33・49、EP 0x03 OUT・0x83 IN、bInterval 1。alt 6（63 byte、mSBC 用）の有無も未確認）→ p007a の実装の前に 5330 で descriptor を読む |
+| 5330 の BT | Intel AX211（USB 8087:0033、bcdUSB 2.01、class e0/01/01、configuration 1 に interface 2 つ: 2026-10-11 P1 が 5330 の zedBSD の `lsusb -v` と dmesg で読んだ。zedBSD の lsusb は alternate を出さない → p007a2 の最初に usb-bt の attach で interface 1 の alternate と wMaxPacketSize を klog に出して読む）。interface 1 の alternate の実の値は**未確認**（公開の dump では alt 0〜5 で wMaxPacketSize 0・9・17・25・33・49、EP 0x03 OUT・0x83 IN、bInterval 1。alt 6（63 byte、mSBC 用）の有無も未確認）→ p007a の実装の前に 5330 で descriptor を読む |
 
 追加の事実（review-1 から、確かめた）: xHCI の event と request の照合は `endpoint->active` だけ（`xhci_event_request_locked`・`transfer_claim`・`xhci_request_publish_locked`）、`ring_push` に空きの計算が無い（「Queue depth is one per endpoint」）、cancel は dci ごとに 1 つ（`xhci_device_quiesce`）、isoch の URB は transfer reservation を持てない（usb.c）、完了の callback は hard IRQ（`xhci_irq`→`xhci_completion_drain`）、IN の bounce は連続の写しだけ（`xhci_completion_finish`）、`drv_usb_device_reset` は全 interface の URB 0 を求める、SET_INTERFACE と HCI command は EP0 の門を取り合う、bluetoothd は単一 thread（main.c の poll）。
 
