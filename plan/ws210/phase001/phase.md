@@ -3,7 +3,7 @@
 # ws210-p001: Keiland の app の描画を GPU へ — 調査と設計
 
 Parent: [WS210](../ws.md)
-Status: in-progress（P1。設計 1.1: [review-1](review-1.md) の指摘を全部反映。Q1 の確認待ち）
+Status: in-progress（P1。設計 1.2: review-1 の指摘を全部反映（1.1）、Q1 の条件（1.2）。H1〜H3 の再確認は Q1）
 Phase disposition: normal
 Queue: [P1 の lane](../../agents/P1/queue.md)
 
@@ -21,6 +21,7 @@ Queue: [P1 の lane](../../agents/P1/queue.md)
 | --- | --- | --- |
 | 1 | 2026-10-12 | 第 1 版（P1 第 1 generation） |
 | 1.1 | 2026-10-12 | [review-1](review-1.md) の H1〜H3・M1〜M11・L1〜L8 を反映（P1 第 2 generation）。直した点は末尾の表 |
+| 1.2 | 2026-10-12 | Q1 の確認（merge 0a53708b9 の後）: polygon の coverage の cache の条件（形の key、毎 frame 変わる形を CPU で毎 frame 作らない）→ 三角形は GPU の triangle の pipeline、他は subpixel を 1/4 px に揃えた key。動く polygon の使い手を列挙。`kl_surface_canvas_*` の OS 境界・3 OS の build・exports の確かめ |
 
 ## 今の tree の事実
 
@@ -133,7 +134,7 @@ void kl_window_frame_times(const struct kl_window *window, struct kl_frame_times
 - `frame_begin` は acquire しない（M6: CPU の記録が compositor を待たない）。戻り値 0。`draw` は普通は `part`（W の大きさで切った物）で、W が新しい時（初めて・resize・device の失いからの回復・CPU への切り替え）だけ全面。EINVAL: frame の中で再び呼んだ、canvas が無い。
 - `frame_end` は記録を実行し、acquire（frame の記録の後）→ W から swapchain の image への copy → present。戻り値: 0（出た）、**EAGAIN**（swapchain が out of date・suboptimal: W には描けている。app は今の `kl_window_present_resize` と同じく大きさを確かめて次の frame を出す。resize で W が変われば次の `draw` は全面）、**EIO**（device の失い・memory の不足: library は context を作り直し、できなければ CPU の canvas に切り替える。次の `draw` は全面。`KEILAND PRESENT_FAILED` の行（BUG-290）を 1 回出す）。
 - `kl_window_present`・`_part`・`kl_canvas_init` は CPU の canvas と fallback のために残す（G2）。
-- **IME の popup**（M2）: kl_window ではない surface 用に同じ frame の仕組みを口にする: `kl_surface_canvas_open(struct wl_display *, struct wl_surface *, int width, int height, struct kl_surface_canvas **)`・`kl_surface_canvas_get(…, struct kl_canvas **)`・`kl_surface_canvas_resize`・`kl_surface_frame_begin`・`_end`・`kl_surface_canvas_close`（keiland.h は既に wl_display・wl_surface を宣言している）。内部は kl_window と同じ frame の code。
+- **IME の popup**（M2）: kl_window ではない surface 用に同じ frame の仕組みを口にする: `kl_surface_canvas_open(struct wl_display *, struct wl_surface *, int width, int height, struct kl_surface_canvas **)`・`kl_surface_canvas_get(…, struct kl_canvas **)`・`kl_surface_canvas_resize`・`kl_surface_frame_begin`・`_end`・`kl_surface_canvas_close`（keiland.h は既に wl_display・wl_surface を宣言している）。内部は kl_window と同じ frame の code。入れる時（p008）に確かめる（Q1 2026-10-12）: OS 境界（`plan/tools/keiland-os-boundary/check.sh`、libkeiland に OS の header・macro を入れない）、`exports.py --check`（exports.map に新しい名前）、zedBSD・Linux（`make keiland-linux`）・FreeBSD の 3 つの build が warning 0、compositor の `nm -u`（B2）に出ないこと。
 
 A4. 画素を読む・書く使い方は GPU の canvas では使えない（`canvas->pixels` は NULL）。移す前に D 節の所を置き換える。
 
@@ -174,9 +175,10 @@ B2. **pipeline は形ごとに分ける**（H3、全ての shader は直線の c
 | atlas | `mask`（glyph・mark・polygon の coverage）・色の glyph | 位置 2、uv 2、色 1、k 1 | uv 2・色 4・k 1 = 7 | `color * tex.a + tex * k`（mask は頁に coverage を 4 成分で持ち k = 0、色の glyph は color = 0・k = 不透明度）。sampler は NEAREST（L3） |
 | image | `image`・`image_part` | 位置 2、uv 2、局所 2、半分 2、半径 1、不透明度 1 | uv 2・局所 2・半分 2・半径 1・不透明度 1 = 8 | 1 回 sample、角丸の SDF を掛ける（半径 0 なら SDF は常に 1）。filter は descriptor の sampler（bilinear・nearest）、回転は uv の並べ方 |
 | replace | `clear`・`fill_replace` | 位置 2、色 1 | 色 4 = 4 | 色をそのまま、blend 無し |
+| triangle | 3 点の `polygon`（C2） | 位置 2、辺への距離 3、色 1（3 頂点） | 距離 3（noperspective）・色 4 = 7 | `clamp(0.5 + min(d0, d1, d2))`。辺は外へ 1 px ずらした三角形で描く（1 つの三角形なので継ぎ目の重なりは無い） |
 
-- polygon は shader を持たない（C2）。
-- 頂点の大きさ（6 頂点の合計）: fill 30、round 66、shadow 60、ring 60、capsule 60、atlas 36、image 60、replace 18 scalar。2000 の形の frame で概ね 10 万 scalar（第 1 版の 6×24 = 144 の約 3 分の 1）。
+- 4 点以上の polygon は shader を持たない（C2）。
+- 頂点の大きさ（6 頂点の合計）: fill 30、round 66、shadow 60、ring 60、capsule 60、atlas 36、image 60、replace 18、triangle 18（3 頂点）scalar。2000 の形の frame で概ね 10 万 scalar（第 1 版の 6×24 = 144 の約 3 分の 1）。
 - 出力は location 0 の 4 成分、premultiplied、blend は premultiplied の source-over（replace を除く）。`pixel` の varying（noperspective）、early return・discard・loop 無し。
 - 命令数と register は p002 の spike で数え、収まらない・2 thread にならない物は分ける（round を塗り／枠に、など）。逆に draw の費用が大きければ fill を round に、shadow を round に寄せて pipeline を減らす（B3）。両方の向きの判断を数で行う。
 
@@ -216,8 +218,22 @@ W の分だけ窓あたりの memory が今の canvas の image（同じ大き�
 C1. **部分の再描画**: W が前の frame を持つので、app は今と同じく `part` だけを描けばよい。swapchain の image へは W の全体を copy する（bcm2711 では TLB copy で変わった tile だけ、i915・Venus・Mesa では GPU の数 MB の copy）。swapchain の image の内容が acquire の後に残ることに頼らない。copy は libvulkan の present の app の image → 共有の image の copy と合わせて frame あたり 2 回（どちらも GPU）。
 - 不採用: (b) swapchain の image に直接描く（buffer age 式。規格は内容を約束しない）、(c) 矩形の region の copy（bcm2711 では texture の quad になり CPU 変換が付く）。
 
-C2. **polygon**（M7、第 1 版の ear clipping と edge の pipeline をやめる）: polygon は glyph と同じく **coverage を CPU で一度だけ** rasterize して atlas に置き、atlas の pipeline で色を付けて描く。rasterize は今の CPU の算法（4 sub-row、nonzero）そのもの（画素が CPU の canvas と一致する）。key は 点の列から外接矩形の整数の原点を引いた値（float の bit）・点の数の hash＋点の列そのものの比較。整数の px だけ動かした icon は同じ key になり、再び rasterize しない。毎 frame 形が変わる polygon は毎 frame rasterize になる（Guardrail に反する）ので、frame あたりの rasterize の数を `kl_frame_times` に出し、p007 の移行で該当が無いことを確かめる（今の tree の 16 箇所は icon と固定の形）。
-- 不採用: ear clipping＋外周の辺の距離の AA（第 1 版）。凹の多角形で縁が隣の三角形に重なり半透明が 2 回 blend する（M7）、自己交差が近似になる、pipeline が 1 つ増える。
+C2. **polygon**（M7、第 1 版の ear clipping と edge の pipeline をやめる。1.2 で Q1 の条件を入れた）:
+- **3 点（三角形）は GPU の triangle の pipeline**（B2）で毎回描く。cache を使わないので、大きさ・位置が毎 frame 変わる三角形（再生の印・♥ の先・折れた角）でも CPU の画素の処理は無い。CPU の canvas の三角形も同じ式（3 辺への距離の最小、`clamp(0.5 + min)`）に変えて両者を一致させる（G4 の capsule と同じ考え、角の画素が今の 4 sub-row とわずかに違う）。
+- **4 点以上は coverage を CPU で一度だけ** rasterize して atlas に置き、atlas の pipeline で色を付けて描く（Q1 の確認: Guardrail の「内容が変わった時の一度だけの用意」）。rasterize は今の CPU の算法（4 sub-row、nonzero）そのもの。**形の key**: 点の数＋点の列から外接矩形の原点を引いた値（float の bit、hash と比較）＋原点の subpixel を **1/4 px に揃えた値**＋cache の世代。原点は整数＋1/4 px に丸めて描く（CPU の canvas も同じ丸めをして一致させる）→ scroll・移動では最大 16 通りの key しか生まれず、2 回目から rasterize しない。形そのもの（点の相対の位置・大きさ）が変わった時だけ作り直す。
+- **動く polygon の使い手**（今の tree の 16 箇所、2026-10-12 の grep）:
+
+| 使い手 | 点 | 形が変わる時 | 扱い |
+| --- | --- | --- | --- |
+| Photos `view.c:1529`・`1772`、Music `view.c:1069`・`1113`・`1122`、picker `picker-view.c:414`、icons `icons.c:114`・`283`、Calendar `view.c:1929` | 3 | 大きさの animation があれば毎 frame | triangle の pipeline（cache 無し） |
+| Phone `view.c:2463`（受話器、約 50 点） | 多 | 大きさは画面ごとに固定（18・16 px） | cache |
+| Phone `view.c:1643`（山、7 点） | 7 | 絵の大きさが変わった時 | cache |
+| Settings `glyphs.c:365`・icons `icons-line.c:373`（線の icon の弧の帯） | 多 | icon の大きさと固定の角度、変わらない | cache |
+| Settings `page-network.c:1118`（通信量の graph の面） | 多 | 標本が来た時（約 1 秒ごと）。scroll は 1/4 px の key | cache（1 秒に 1 回の作り直し、graph の面の大きさだけ） |
+| Files `ui-home.c:675`・`694`（hero の丘） | 8 | 絵を作る時だけ | offscreen の CPU の canvas（GPU の対象外） |
+
+  毎 frame 形が変わる 4 点以上の polygon は今の tree に無い。将来の animation・spinner・drag の形で必要になったら、三角形に分けられる凸の形は triangle の pipeline の列で、それ以外は変化を離散化（大きさを 1 px 刻みの key に）する。frame あたりの rasterize の数を `kl_frame_times` に出し、p007 の移行と p011 の回帰で 4 点以上の polygon の rasterize が毎 frame 起きないことを確かめる（`KEILAND_GPU_CHECK=1` で連続 8 frame の rasterize を `KEILAND GPU_POLYGON_CHURN` として 1 回出す）。
+- 不採用: ear clipping＋外周の辺の距離の AA（第 1 版）。凹の多角形で縁が隣の三角形に重なり半透明が 2 回 blend する（M7）、自己交差が近似になる。
 
 C3. **線**: 丸い端の線を capsule の SDF にする（G4）。CPU の canvas も同じ capsule の式に変えて両者を一致させる（p003）。
 
@@ -273,7 +289,7 @@ E3. Linux・FreeBSD は同じ source。OS の macro は増やさない。composi
 | Phase | 内容 | 見積 | 依存 |
 | --- | --- | --- | --- |
 | p001 | この設計と review | — | — |
-| p002 | **spike**: (1) host で B2 の 8 つの shader を bcm2711 の compiler に通して命令数・NOP・register・thread を数える（P3 の NOP の削減の前と後）。(2) Pi で draw あたりの kernel の費用・頂点の scalar あたりの写しの時間・pipeline ごとの fragment の時間・shader の compile の時間を測る小さな program（Pi の操作は Q1 経由）。(3) 結果で B2 の分け方・B3 の並べ替えの窓・B8 の予算を決め、この phase.md に書く | 1.5 LW＋Pi の待ち | p001 |
+| p002 | **spike**: (1) host で B2 の 9 つの shader を bcm2711 の compiler に通して命令数・NOP・register・thread を数える（P3 の NOP の削減の前と後）。(2) Pi で draw あたりの kernel の費用・頂点の scalar あたりの写しの時間・pipeline ごとの fragment の時間・shader の compile の時間を測る小さな program（Pi の操作は Q1 経由）。(3) 結果で B2 の分け方・B3 の並べ替えの窓・B8 の予算を決め、この phase.md に書く | 1.5 LW＋Pi の待ち | p001 |
 | p003 | GPU の canvas の核: context、記録、quad の切り詰め、fill・round・shadow・ring・capsule・replace の pipeline、角丸の内側の分割、batch と並べ替え、offscreen の W と readback、host の一致の試験の土台、shader の確かめ（i915・bcm2711）。CPU の線を capsule に（G4） | 5 LW | p002 |
 | p004 | 文字（RGBA8 の atlas の頁、色の glyph）、画像（cache・世代の表・退役の列・`kl_image_changed`・`kl_canvas_image_part`）、polygon の coverage の cache、`kl_canvas_mark`、`fill_replace` | 4 LW | p003 |
 | p005 | window の frame（`kl_window_canvas`・`frame_begin`・`frame_end`・`kl_window_frame_times`、W と swapchain の copy、renderArea、EAGAIN・EIO、fallback E1・E2）、`KL_VERSION` を次の版に、基準の PNG と Pi の基準（G 節）、最初の app（Settings、memset と mark を含む） | 4 LW | p004 |
@@ -289,13 +305,12 @@ E3. Linux・FreeBSD は同じ source。OS の macro は増やさない。composi
 
 ## 判断
 
-G1〜G5 は 2026-10-12 ユーザーの決定で全て (a)（[WS210](../ws.md)）。1.1 の直しは G1〜G5 の範囲の技術の選び方で、新しいユーザーの判断は無い。Q1 に確かめてほしい点:
-- C2 の polygon を「CPU で一度だけ coverage を作る（glyph と同じ扱い）」に変えた。Guardrail の「内容が変わった時の一度だけの用意」に入れてよいか（毎 frame 形が変わる polygon は今の tree に無い）。
-- A3 の IME の popup の口 `kl_surface_canvas_*` を足す（公開の新しい口）。
+G1〜G5 は 2026-10-12 ユーザーの決定で全て (a)（[WS210](../ws.md)）。1.1 の直しは G1〜G5 の範囲の技術の選び方で、新しいユーザーの判断は無い。
+- 2026-10-12 Q1（0a53708b9 の merge の後）: (1) polygon を CPU で一度 coverage を作って atlas に置くのは可（Guardrail の「内容が変わった時の一度だけの用意」）。条件: 形の key で cache し、毎 frame 形が変わる polygon の CPU の再生成が毎 frame にならないことを設計に書く（使い手を列挙し、GPU の edge の経路か変化の離散化）→ 1.2 の C2。(2) `kl_surface_canvas_*` は WS210 の範囲（G1 の延長）として可、OS 境界・3 OS の build・exports を確かめる → A3。design-reviewer の再確認は H1〜H3 の直しの部分だけ Q1 がかける。
 
 ## 未確認（p002 で）
 
-- B2 の 8 つの shader の bcm2711 の命令数・register・thread（P3 の NOP の削減の前と後）。round（varying 15）が 2 thread に収まるか。
+- B2 の 9 つの shader の bcm2711 の命令数・register・thread（P3 の NOP の削減の前と後）。round（varying 15）が 2 thread に収まるか。
 - draw あたりの kernel の CPU の用意と、頂点の scalar あたりの写しの時間（B3 の並べ替えの窓、B2 の pipeline の数の判断）。
 - shader の compile の時間（app の起動で 8 pipeline × 2 stage、kernel の中の compile）。
 - 色の 32 bit を float の bit で渡す属性が bcm2711 で bit のまま届くか（頂点の写しは scalar の bit の copy なので届く見込み、試験で確かめる）。
@@ -308,14 +323,14 @@ G1〜G5 は 2026-10-12 ユーザーの決定で全て (a)（[WS210](../ws.md)）
 | --- | --- | --- |
 | H1 W・pipeline の形式 | W と render pass・pipeline を swapchain の形式に合わせる（今は R8G8B8A8）。texture は B8G8R8A8（memory の順）。host の試験で W の両形式を比べる | 用語、B6、G |
 | H2 記録と実行の間の memory | 不変条件 (1)〜(4)（呼ばれた時に atlas か staging へ写し pointer を持たない、pin）。cache の key に大きさ・stride・世代、世代は private な表、create・release で世代、別 thread の release は退役の列と epoch。mark は `kl_canvas_mark` で library が持つ。text.c の色の glyph は atlas、`text_clear` で表を空に | A5、A6、B4、D |
-| H3 1 本の shader・pin・頂点の写し | pipeline を 8 つに分け（polygon は shader 無し）、clip は quad の切り詰めで varying から外し、色は 1 scalar の属性＋flat、一定の値は flat、角丸の内側は fill。頂点は 2000 形で約 10 万 scalar。p002 の最初に Pi で compile と時間 | B1、B2、C2、p002 |
+| H3 1 本の shader・pin・頂点の写し | pipeline を 9 つに分け（4 点以上の polygon は shader 無し）、clip は quad の切り詰めで varying から外し、色は 1 scalar の属性＋flat、一定の値は flat、角丸の内側は fill。頂点は 2000 形で約 10 万 scalar。p002 の最初に Pi で compile と時間 | B1、B2、C2、p002 |
 | M1 renderArea と LOAD | renderArea = draw を 64 px（と granularity）に揃えた物、loadOp LOAD、W の初期化は全体の CLEAR だけ | B6 |
 | M2 D 表の不足 | Settings・Files の memset（clip＋clear）、Calendar の under（描き直し）、IME の popup（`kl_surface_canvas_*`）、PDF の bar を足した | 事実の表、A3、D |
 | M3 公開の struct | 変えない。library が確保する private な struct の先頭に `kl_canvas`、`pixels == NULL` と coverage の tag で見分ける。atlas の位置・世代は private な表。版は新しい関数のためだけ | A2 |
 | M4 世代と書き換え | 世代は private な表、`kl_image_changed`、書き換える所を D 表に、debug の hash の検出 | A5、D |
 | M5 atlas の頁 | frame の頁の pin、全部 pin なら頁を足す、頁を超える glyph は単独の texture、cache を空にした時の表 | B4 |
 | M6 frame の口 | acquire は frame_end、戻り値 EAGAIN・EIO と全面の再描画、W の作成・resize・device の失いで clear、pointer は一生不変 | A3、B6、E1 |
-| M7 凹の polygon | ear clipping をやめ、polygon は CPU で一度だけ coverage（今の算法そのもの）を atlas に。半透明の凹の場面を厳しい基準で試験 | C2、G |
+| M7 凹の polygon | ear clipping をやめ、三角形は GPU の triangle の pipeline（CPU も同じ式）、4 点以上は CPU で一度だけ coverage（今の算法そのもの、1/4 px の key）を atlas に。動く polygon の使い手を列挙。半透明の凹の場面を厳しい基準で試験 | C2、G |
 | M8 WS141 との依存 | 持ち主（WS141・P3、Q1 が Phase）、gate、実機の確かめを p006 に、中間の案（書かれた tile だけ変換）を WS141 へ | F、p006 |
 | M9 試験 | Pi の上の GPU と CPU の一致の program、移す前の QEMU の PNG と Pi の基準、bcm2711 の compile の数を host で | G、p002、p005 |
 | M10 memory | 予算の表、頁 256×256、staging は ring と一時、画像の上限は Pi 16 MiB | B4、B5、B8 |
