@@ -399,3 +399,13 @@ coalesced診断最終確認: native device host PASS、C全文manual/diff-check/
 
 
 2026-10-11 lightweight mouse再計測: user「やりました。目視では1000msくらい」。40 complete input samplesはaccepted→shown min845/median1035/max1149ms（build/ws141-coalesced-full-trace.log）。dirty0/damage1の連続frameもあるがKWL DAMAGE部分passは出ていない。native texture固定16byte化はindependent native-state host PASS、style0/diff-check/C全文manual PASS。ARM64同一flagsの-Sで完全utile行はldp/stp各16byte、端だけkern_memcpyを確認、SIMDなし。arm64 kernel warning0/error0/checker3PASS、cksum666078535/8077312。実機配置前、性能効果未確認。
+
+
+訂正: lightweight full traceにはKWL DAMAGE frame31〜46等が存在し、clean/damageのcursor framesは部分passを使っていた（以前のtailだけの調査では見落とし）。部分passでも画像全体のnative snapshotが必要なdrawを96個recordしている。必要補完として、glass_shape_drawとcompose_quad_partで既存のhead/layer変換後のquadが現在scissorから完全に離れている時だけrecordを省く。border1pixelを保守的に残し、shapeの負extent/NaNは従来GPUへ任せる。重なるquadのUV/blend/geometry・描画順・render pass/loadは変えず、公開GPU/HAL API無し。scissor変更を追跡する既存scissor_nowを使う。実機でdraw/bytesと応答を比較する。
+
+clip周辺reviewでoffscreen backdropはlogical output座標を小viewportへscaleし、head wallpaperはscissor_now更新前だったと確認。backdrop_recording private flagで全small passのcullを無効にし、output再開だけ有効に戻す。headのscissor_nowを実vkCmdSetScissor直後へ先に更新。offscreen scene/blur・拡張headの描画を保つ。新HAL/UAPI変更なし。
+
+
+2026-10-11 fixed utile copy 10a543fd3をmainへ自動統合、666078535/8077312を実機/tmp転送。旧260505095を/var/backups/vmunix.before-texture-inline-20261011へ保存/cmpし、greeter停止後FAT stage/cmp/sync/rename/sync/cmpで更新exit0。reboot exit0だがSSH timeout→No route to host。userへ電源OFF/ON依頼、復帰・実機効果未確認。
+
+clipped quad最終source: glass/output image quadsのpure vertex/fragment描画のみ省き、intersect/境界1pixel/負scaleは保持。current scissor trackingはoutput/head/temporary shell clip/restoreをsource全件確認、offscreen backdropは専用flagで省略を止める。C全文manual、formatter19範囲出力比較、diff-check PASS、style変更行0（compose既存blank4は対象外）。arm64 compositor build exit0/warning0/error0/dynamic ELF checker exit0、cksum1980286597/949392。実機未転送。33ms目標未達のまま。

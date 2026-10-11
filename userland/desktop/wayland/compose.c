@@ -2060,6 +2060,14 @@ compose_quad_part(
 		height = (float)server->view_height;
 	}
 
+	/* Omit images wholly outside the actual pass scissor, retaining one pixel for viewport rounding. */
+	if (server->compose->backdrop_recording == 0U &&
+	    ((int64_t)x + quad_width < (int64_t)server->compose->scissor_now.offset.x - 1 ||
+	    (int64_t)y + quad_height < (int64_t)server->compose->scissor_now.offset.y - 1 ||
+	    (int64_t)x > (int64_t)server->compose->scissor_now.offset.x + server->compose->scissor_now.extent.width + 1 ||
+	    (int64_t)y > (int64_t)server->compose->scissor_now.offset.y + server->compose->scissor_now.extent.height + 1))
+		return;
+
 	/* The rectangle in normalized device coordinates, and the part of the image. */
 	constants[0] = 2.0f * (float)x / width - 1.0f;
 	constants[1] = 2.0f * (float)y / height - 1.0f;
@@ -2219,6 +2227,7 @@ compose_record(
 	pass.framebuffer = compose->framebuffers[image];
 	compose->framebuffer_now = compose->framebuffers[image];
 	compose->backdrop_set = VK_NULL_HANDLE;
+	compose->backdrop_recording = 0U;
 	pass.renderArea.extent.width = compose->output.width;
 	pass.renderArea.extent.height = compose->output.height;
 

@@ -1693,6 +1693,17 @@ glass_shape_draw(
 		height = (float)server->view_height;
 	}
 
+	/* Completely clipped quads cannot affect a pixel; retain a pixel of slack for viewport rounding. */
+	if (compose->backdrop_recording == 0U &&
+	    quad[2] >= 0.0f &&
+	    quad[3] >= 0.0f) {
+		if (quad[0] + quad[2] < (float)compose->scissor_now.offset.x - 1.0f ||
+		    quad[1] + quad[3] < (float)compose->scissor_now.offset.y - 1.0f ||
+		    quad[0] > (float)compose->scissor_now.offset.x + (float)compose->scissor_now.extent.width + 1.0f ||
+		    quad[1] > (float)compose->scissor_now.offset.y + (float)compose->scissor_now.extent.height + 1.0f)
+			return;
+	}
+
 	/* The quad in normalized device coordinates. */
 	constants[0] = 2.0f * quad[0] / width - 1.0f;
 	constants[1] = 2.0f * quad[1] / height - 1.0f;

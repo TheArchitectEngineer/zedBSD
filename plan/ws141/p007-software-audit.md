@@ -130,3 +130,6 @@ coalesced診断最終確認: native device host PASS、C全文manual/diff-check/
 
 
 2026-10-11 native-texture.c差分をC全文規約で確認。leading宣言/目的comment/対称brace/独立split引数/guardと末尾successを保持。16byte builtinは明示compiler extension、常に完全4pixel行だけを読み書きし、端はexact-length/unaligned支持、UIF padding0/source非変更の既存契約維持。固定Mesa pixel oracle4847pixels PASS。style0/diff-check PASS、clang-format19出力比較は全文規約の引数形式を優先。ARM64 machine code ldp/stp、kernel warning0/checker3PASS。実機効果はp006で追跡、WSはincomplete。
+
+
+2026-10-11 clipped quad（glass.c/compose.c/compose.h/backdrop.c/heads.c）をC全文規約でmanual review。layer/head座標後だけscissor非交差を判断、pure shape shadersにstorage side effects無し、border1pixel余裕/負extent保守/64bit境界算術を保持。backdropのsmall viewportは全sceneが必要なのでprivate recording flagで無効化、head初回wallpaper前のscissor stateを同期。全vkCmdSetScissor/BeginRenderPass callsiteを確認。style変更0（compose未変更4指摘）、formatter19比較/diff-check/arm64 warning0/app dependency checker PASS。物理結果はp006で追跡。

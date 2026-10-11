@@ -294,6 +294,8 @@ struct kwl_compose {
 	unsigned history_whole[KWL_DAMAGE_HISTORY];
 	VkRenderPass pass_load;
 	VkRect2D scissor_now;
+	/* Offscreen backdrop passes use scaled coordinates and must retain the complete scene. */
+	unsigned backdrop_recording;
 	/*
 	 * The clients' images imported since the last frame (ws099-p016): their
 	 * move to the general layout is recorded at the start of the next

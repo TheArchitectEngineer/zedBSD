@@ -130,6 +130,9 @@ kwl_backdrop_end(
 	backdrop_viewport(command, compose->output.width, compose->output.height);
 	vkCmdSetScissor(command, 0U, 1U, &compose->scissor_now);
 
+	/* Output-coordinate clipping resumes only after every small-image pass has ended. */
+	compose->backdrop_recording = 0U;
+
 	/* The glass from now on is on the blurred scene. */
 	compose->backdrop_set = backdrop->targets[0].set;
 }
@@ -498,6 +501,9 @@ backdrop_begin_small(
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
 	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+
+	/* The scene needs all source quads, including those outside the output damage. */
+	server->compose->backdrop_recording = 1U;
 
 	/* The output's coordinates land on the small image. */
 	backdrop_viewport(command, backdrop->width, backdrop->height);

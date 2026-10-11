@@ -1260,6 +1260,7 @@ heads_record_extended(
 	scissor.extent.width = head->output.width;
 	scissor.extent.height = head->output.height;
 	vkCmdSetScissor(command, 0U, 1U, &scissor);
+	compose->scissor_now = scissor;
 	offset = 0U;
 	vkCmdBindVertexBuffers(command, 0U, 1U, &compose->corners, &offset);
 
