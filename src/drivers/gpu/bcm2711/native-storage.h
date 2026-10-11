@@ -54,6 +54,7 @@ struct bcm2711_native_snapshot {
 /* The controller mutex serializes every operation with native execution and recovery. */
 int bcm2711_native_storage_create(struct bcm2711_v3d_space *space, uint64_t bytes, struct bcm2711_native_storage **storage);
 int bcm2711_native_storage_clean(struct bcm2711_native_storage *storage);
+int bcm2711_native_storage_clean_range(struct bcm2711_native_storage *storage, uint64_t offset, uint64_t bytes);
 int bcm2711_native_program_upload(struct bcm2711_v3d_space *space, const struct bcm2711_shader_binary *binary, struct bcm2711_native_storage **storage);
 
 /* retired=false preserves the whole owner; true consumes and nulls it even if final translation flush fails into the space quarantine. */
@@ -64,9 +65,10 @@ int bcm2711_native_storage_drain(struct bcm2711_v3d_space *space);
 
 /*
  * ENOTSUP means the source may change without a generation step, and the caller converts a private copy.
- * A NULL raster leaves a stale snapshot's pixels to the caller's unit job, which reports them with _filled.
+ * With unit set, a whole conversion is left to the caller's unit job, which reports it with _filled;
+ * the CPU still converts a small changed box of the raster in place.
  */
-int bcm2711_native_snapshot_get(struct bcm2711_v3d_space *space, struct bcm2711_buffer *buffer, uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch, const void *raster, size_t raster_bytes, struct bcm2711_native_snapshot **result);
+int bcm2711_native_snapshot_get(struct bcm2711_v3d_space *space, struct bcm2711_buffer *buffer, uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch, const void *raster, size_t raster_bytes, bool unit, struct bcm2711_native_snapshot **result);
 void bcm2711_native_snapshot_put(struct bcm2711_native_snapshot *snapshot);
 void bcm2711_native_snapshot_filled(struct bcm2711_native_snapshot *snapshot);
 

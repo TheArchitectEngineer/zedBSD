@@ -63,5 +63,6 @@ int bcm2711_native_texture_encode(const struct bcm2711_native_texture *texture, 
 int bcm2711_native_sampler_encode(const struct bcm2711_native_sampler *sampler, uint8_t *bytes, size_t capacity);
 int bcm2711_native_texture_size(uint32_t width, uint32_t height, uint32_t *bytes);
 int bcm2711_native_texture_copy(uint32_t width, uint32_t height, const void *raster, uint32_t pitch, size_t raster_bytes, void *tiled, size_t tiled_bytes);
+int bcm2711_native_texture_copy_box(uint32_t width, uint32_t height, const void *raster, uint32_t pitch, size_t raster_bytes, void *tiled, size_t tiled_bytes, const uint32_t *box);
 
 #endif

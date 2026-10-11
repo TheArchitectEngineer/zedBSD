@@ -1192,6 +1192,8 @@ native_draw_test(
 	unsigned used;
 	uint64_t available;
 	uint64_t owned;
+	uint64_t updates;
+	uint32_t box[4];
 	int error;
 
 	/* Known six-vertex vec2 data and a distinct sampled raster use actual coherent resource interval resolution. */
@@ -1353,6 +1355,50 @@ native_draw_test(
 	available = 1024U * 1024U;
 	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && !draw->textures[0].convert);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A recorded one-pixel write is converted in place by the CPU: only its utile changes, and no unit job runs. */
+	assert(image->width > 4U && image->height > 4U);
+	memset(cpu, 0x5c, 512);
+	box[0] = 1;
+	box[1] = 2;
+	box[2] = 2;
+	box[3] = 3;
+	bcm2711_v3d_memory_written(view->buffer, address - view->address, box);
+	updates = space->snapshot_updates;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && !draw->textures[0].convert);
+	assert(space->snapshots->valid && space->snapshots->generation == view->buffer->generation);
+	assert(space->snapshot_updates == updates + 1U && draw->snapshot_updates == 1U && draw->snapshot_hits == 0U);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x5c);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[63] == 0x5c);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[64] == 0x24);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[128] == 0x24);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A write of unknown extent leaves the whole conversion to the unit again. */
+	bcm2711_v3d_memory_written(view->buffer, address - view->address, NULL);
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && draw->textures[0].convert);
+	assert(space->snapshot_updates == updates + 1U && !space->snapshots->valid);
+	bcm2711_native_snapshot_filled(draw->textures[0].snapshot);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A recorded write outside the image leaves the converted pixels valid for the new generation, as a reuse. */
+	box[0] = image->width;
+	box[1] = 0;
+	box[2] = image->width + 4U;
+	box[3] = 4;
+	bcm2711_v3d_memory_written(view->buffer, address - view->address, box);
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && !draw->textures[0].convert && space->snapshots->generation == view->buffer->generation);
+	assert(space->snapshot_updates == updates + 1U && draw->snapshot_updates == 0U && draw->snapshot_hits == 1U);
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
 	assert(error == 0);
 	space->native->hardware.tfu_uif_ready = false;

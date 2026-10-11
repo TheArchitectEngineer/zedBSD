@@ -55,8 +55,9 @@ struct bcm2711_v3d_space {
 	uint64_t snapshot_bytes;
 	uint64_t snapshot_limit;
 	uint64_t snapshot_serial;
-	/* Conversions made by snapshot lookups, which diagnostics tell apart from reuses. */
+	/* Whole and in-place partial conversions made by snapshot lookups, which diagnostics tell apart from reuses. */
 	uint64_t snapshot_fills;
+	uint64_t snapshot_updates;
 };
 
 /* No DMA or overlapping edits may occur between begin and checked end. */
