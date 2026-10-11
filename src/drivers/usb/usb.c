@@ -2703,6 +2703,24 @@ drv_usb_urb_drain(
 	}
 }
 
+/* Tells whether a URB is terminal and no longer the HCD's (usb.h), without waiting. */
+int
+drv_usb_urb_retired(
+	const struct drv_usb_urb *u)
+{
+	unsigned status;
+	unsigned owned;
+
+	/* Both, as drv_usb_urb_drain looks at them. */
+	status = atomic_raw_load_acquire(&u->status);
+	owned = atomic_raw_load_acquire(&u->hcd_owned);
+	if (status != DRV_USB_URB_PENDING && owned == 0)
+		return 1;
+
+	/* Not yet. */
+	return 0;
+}
+
 /*
  * Waits until a transfer's state may be used again.
  */

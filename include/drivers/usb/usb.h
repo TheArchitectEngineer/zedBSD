@@ -1041,6 +1041,16 @@ drv_usb_urb_drain(
 	unsigned timeout_ms);
 
 /*
+ * Tells, without waiting, whether drv_usb_urb_drain would return 0 now:
+ * the URB is terminal and the HCD has dropped it.  A thread above the
+ * default priority waits on it asleep instead of draining, which yields
+ * in a loop (ws197-p007a2, design 2.1b B-P1).
+ */
+int
+drv_usb_urb_retired(
+	const struct drv_usb_urb *u);
+
+/*
  * Synchronous URBs have no callback. Success includes HCD retirement.
  * With reserve_sync (or zero data), failed cancellation returns finitely:
  * caller memory is isolated, but setup remains EBUSY until checked retirement.
