@@ -74,6 +74,10 @@ Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver �
 | [p005](phase005/phase.md) | `drv_gpu_interface` への統合と desktop の表示（Keiland の compositor） | in-progress | p003・p004のsoftware出力、desktopはp006 | 4h〜 |
 | [p006](phase006/phase.md) | kernel Vulkan実行器・SPIR-V compilerとKeiland描画経路（2026-10-09 scope拡張） | in-progress（compiler/native prepared job/public runtime/Keiland software経路とhost/build/stack監査PASS、実機待ち） | p004・p005 | 未見積 |
 | [p007](phase007/phase.md) | 規約の全文の確認と最終の確認。**license と GPL の code との類似の監査**（字面・設計、道具と目視）、BLOB の移動の確認 | cleared（p010差分監査/組合せbuild/main統合済み） | 全て | 3〜4h |
+| [p013](phase013/phase.md) | VC6 の Keiland の描画の速さ（frame 33 ms → 16 ms） | in-progress（hardware blend・compiler の NOP 削減は実機で見た目 OK・速い、tile buffer の f16 は実機待ち） | p006 | 未見積 |
+| [p014](phase014/phase.md) | HVS の cursor plane | in-progress（実機で 60fps、ユーザー確認） | p013 | — |
+| [p015](phase015/phase.md) | GPU が書いて GPU が読む画像を UIF で持つ（設計） | planning（第 3 版） | p013 | 未見積 |
+| [p016](phase016/phase.md) | GPU の実行中に ioctl と cursor を止めない（worker の mutex、cursor の GPU 無しの更新） | planning（設計の第 1 版、review 前） | p014 | 未見積 |
 | [p012](phase012/phase.md) | KeilandのEL0 counter例外 | cleared（実機でcounter trap消失・描画送信到達） | p011実機成功、p005/p006起動経路 | 今回有限scope |
 | [p011](phase011/phase.md) | R0拒否とブラックアウトの修正 | cleared（実機R0/list43採用成功） | N0/preflight実機成功 | 今回部分scope |
 | [p010](phase010/phase.md) | core clock/実時間job期限 | cleared（software/実機表示未確認） | main211be00dcと実機ログ | 今回有限scope |
