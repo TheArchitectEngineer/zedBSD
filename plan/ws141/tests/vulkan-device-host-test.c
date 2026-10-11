@@ -2050,7 +2050,8 @@ prepared_test(
 	sampler = set->bindings[0].sampler;
 	view_references = view->references;
 	sampler_references = sampler->references;
-	for (index = 1; index <= 6; index++) {
+	/* The root, one event chunk for all events, and the set record are the three allocations. */
+	for (index = 1; index <= 3; index++) {
 		fail_after = index;
 		error = bcm2711_vulkan_prepared_create(command_object, &prepared);
 		assert(error == ENOMEM && prepared == NULL && allocations == baseline);
