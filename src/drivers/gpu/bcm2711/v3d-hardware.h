@@ -48,6 +48,8 @@ struct bcm2711_v3d_hardware {
 	uint32_t physical_bits;
 	uint32_t virtual_bits;
 	uint64_t resets;
+	/* Serialized maintenance diagnostics count actual yielding waits, never IRQ work. */
+	uint64_t maintenance_yields;
 	bool initialized;
 	bool ready;
 	bool mmu_published;

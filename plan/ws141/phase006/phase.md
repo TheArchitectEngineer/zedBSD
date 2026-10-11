@@ -350,3 +350,10 @@ HAL APIを変えず、arm64/page.cに「ここより前は全て使用中」と�
 
 
 2026-10-11 panel mode分割: 7生成SPIR-Vとgenericはglslc/vulkan1.0 validator PASS。固定Mesa independent decoder/native compilerに7vertex/coordinate/fragment pairを渡すhost PASS。32inputs/modeのgeneric sourceとspecialized source出力一致（light/dark glass含む）、texture無し3mode/1sample3mode/blur5samplesを確認。縮小varyingをnative FIFOへ詰め、実compiled sourceとのscalar差分も一致。既存blend/swizzle試験もPASS。新pipeline部分のownership/error cleanupとABI不変をC全文manual確認、clang-format19範囲比較は定義の独立引数/blank/tabs規約を優先。arm64 compositor make（既存sysroot完了stampを-oで維持、toolchain再build無し）exit0/warning0/error0、dynamic ELF dependency checker PASS。wayland cksum2734866792/949352。実機へ未配置、速度改善はまだ未確認。
+
+
+5243251c9をmain自動統合し、旧コンポジタ259030305/936624をUFS /var/backups/wayland.before-panel-modes-20261011へ保存。service stop greeterはSSHが閉じたが再接続でき、2734866792/949352をstage/cmp/rename/sync/cmpで/bin/waylandへ配置しservice start greeter成功。通常session/Files/Settings起動を確認。GPUexecute代表48〜49ms、操作負荷137〜177msへ短縮。一方prepare190〜457ms/release108〜1016msが残り、全体改善の完了とはしない。
+
+MMU/cacheのself-clearは32readで未完了だと10us sleepに入るが、schedulerはtickへ丸める。IRQguard外の有限fast burstのみ1024readへ拡張して短い命令を待つ。既存yield/異常timeout/retirementは保持し、serialized hardware counterで実yield数を記録して効果を区別する。hostの80/96read遅延モデルとstuck timeoutを確認し、実機比較する。
+
+2026-10-11 bounded maintenance burst: hardware host PASS（80/96readの短いMMUC/TLB busyをyieldなしで処理、stuck10000yieldの既存拒否/retentionも維持）。device host PASS、C全文manual/style0/diff-check PASS、clang-format19出力比較。arm64 kernel make exit0/warning0/error0/checker3PASS。cksum1502649265/8077312。変更はprivate hardware counter/finite burstでHAL API不変、実機効果は未確認。

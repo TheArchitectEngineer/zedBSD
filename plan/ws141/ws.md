@@ -335,3 +335,5 @@ R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなく
 再起動後のSSH確認でcounter trapは消失し、p012をcleared。p005/p006のKeilandはOUTPUT openまで到達したが、最初の描画submitがVK_ERROR_DEVICE_LOSTでframes0のまま終了する。p006の実機受入れを保持し、原因のjob/MMIO証拠が次の調査点。今回read-only、ソース・実機更新無し。[証拠](phase012/phase.md)。
 
 2026-10-11 checkpoint: stage pause100msの実機初期化成立。CL診断でrender304〜1051ms、IRQ-to-worker20ms以上無し。panelのif-conversionによる全mode評価を7mode shaderへ分割し、数値同等/縮小varying/native shader/arm64 warning0 build検証済み。cksum2734866792/949352を実機に配置して応答時間を比較する。submit-i01 in-progress、master/共有queueは変更なし。
+
+7mode compositor5243251c9はmain統合/実機更新済み。render48〜177msへ改善、prepare/releaseは残る。MMUの有限1024read burstとyield counter版1502649265/8077312をhost/build検証済み、実機配置して比較する。

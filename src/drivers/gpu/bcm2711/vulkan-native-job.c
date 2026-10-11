@@ -103,6 +103,7 @@ bcm2711_vulkan_native_job_execute(
 	uint64_t release_ticks;
 	uint64_t copy_ticks;
 	uint64_t elapsed;
+	uint64_t maintenance_yields;
 	uint32_t passes;
 	uint32_t region;
 	int error;
@@ -138,6 +139,7 @@ bcm2711_vulkan_native_job_execute(
 	/* One finite resident upload budget covers every pass and its complete independent draw input prefix. */
 	job->executed = true;
 	started = clock_ticks();
+	maintenance_yields = controller->space.native->hardware.maintenance_yields;
 	prepare_ticks = 0;
 	execute_ticks = 0;
 	release_ticks = 0;
@@ -236,13 +238,14 @@ bcm2711_vulkan_native_job_execute(
 	elapsed = kern_ticks_to_ms(clock_ticks() - started);
 	if (elapsed >= 250U) {
 		kern_logf(
-			"v3d: submit timing passes=%u ms=%llu prepare=%llu execute=%llu release=%llu copy=%llu\n",
+			"v3d: submit timing passes=%u ms=%llu prepare=%llu execute=%llu release=%llu copy=%llu maintenance-yields=%llu\n",
 			passes,
 			(unsigned long long)elapsed,
 			(unsigned long long)kern_ticks_to_ms(prepare_ticks),
 			(unsigned long long)kern_ticks_to_ms(execute_ticks),
 			(unsigned long long)kern_ticks_to_ms(release_ticks),
-			(unsigned long long)kern_ticks_to_ms(copy_ticks));
+			(unsigned long long)kern_ticks_to_ms(copy_ticks),
+			(unsigned long long)(controller->space.native->hardware.maintenance_yields - maintenance_yields));
 	}
 
 	/* Succeeded: the pending primary remains owned until worker disposal, after actual native completion of every pass. */

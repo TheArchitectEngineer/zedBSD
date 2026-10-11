@@ -28,7 +28,7 @@
 
 /* Bounds every cache and MMU wait without borrowing an IRQ spin guard. */
 /* A short register-only retry avoids a scheduler tick for ordinary MMU completion. */
-#define ENGINE_FAST_READS 32U
+#define ENGINE_FAST_READS 1024U
 #define ENGINE_WAIT_STEP_US 10U
 #define ENGINE_WAIT_STEPS 10000U
 
@@ -36,7 +36,7 @@ static int identify(struct bcm2711_v3d *engine);
 static int allocate_tables(struct bcm2711_v3d *engine);
 static int bind_tables(struct bcm2711_v3d *engine);
 static int flush_translation(struct bcm2711_v3d *engine);
-static int wait_clear(volatile uint8_t *window, uint32_t offset, uint32_t mask);
+static int wait_clear(struct bcm2711_v3d *engine, volatile uint8_t *window, uint32_t offset, uint32_t mask);
 static int worker_admit(struct bcm2711_v3d *engine);
 static void record_failure(struct bcm2711_v3d *engine, int error);
 static void prepare_sources(struct bcm2711_v3d *engine);
@@ -362,7 +362,7 @@ bcm2711_v3d_hardware_clean(
 
 	/* Write combiners must finish before their resulting L2T lines are cleaned. */
 	kern_mmio_write32(engine->core.mapped + 0x30, 0x100);
-	error = wait_clear(engine->core.mapped, 0x30, 0x100);
+	error = wait_clear(engine, engine->core.mapped, 0x30, 0x100);
 	if (error != 0) {
 		record_failure(engine, error);
 		return error;
@@ -370,7 +370,7 @@ bcm2711_v3d_hardware_clean(
 
 	/* Cleans the full initialized L2T range and waits for actual drain completion. */
 	kern_mmio_write32(engine->core.mapped + 0x30, 5);
-	error = wait_clear(engine->core.mapped, 0x30, 1);
+	error = wait_clear(engine, engine->core.mapped, 0x30, 1);
 	if (error != 0) {
 		record_failure(engine, error);
 		return error;
@@ -570,14 +570,14 @@ flush_translation(
 
 	/* A current PTE cannot be bypassed by the MMU's cached older page entry. */
 	kern_mmio_write32(engine->hub.mapped + 0x1000, 3);
-	error = wait_clear(engine->hub.mapped, 0x1000, 4);
+	error = wait_clear(engine, engine->hub.mapped, 0x1000, 4);
 	if (error != 0)
 		return error;
 
 	/* Clears TLB entries only after the page-entry cache flush completed. */
 	control = kern_mmio_read32(engine->hub.mapped + 0x1200);
 	kern_mmio_write32(engine->hub.mapped + 0x1200, control | 4U);
-	error = wait_clear(engine->hub.mapped, 0x1200, 0x80);
+	error = wait_clear(engine, engine->hub.mapped, 0x1200, 0x80);
 	if (error != 0)
 		return error;
 
@@ -588,6 +588,7 @@ flush_translation(
 /* Polls a self-clearing command briefly before falling back to bounded yielding waits. */
 static int
 wait_clear(
+	struct bcm2711_v3d *engine,
 	volatile uint8_t *window,
 	uint32_t offset,
 	uint32_t mask)
@@ -595,7 +596,7 @@ wait_clear(
 	uint32_t attempt;
 	uint32_t status;
 
-	/* Normal MMU commands finish within a few reads; no IRQ guard spans this polling. */
+	/* A bounded register-only burst avoids a scheduler tick for short hardware commands. */
 	for (attempt = 0; attempt < ENGINE_FAST_READS; attempt++) {
 		status = kern_mmio_read32(window + offset);
 		if ((status & mask) == 0)
@@ -609,6 +610,9 @@ wait_clear(
 			return 0;
 		if (attempt == ENGINE_WAIT_STEPS)
 			break;
+
+		/* Counts only real yielding waits while the serialized maintenance owner is active. */
+		engine->hardware.maintenance_yields++;
 		kern_usleep_range(ENGINE_WAIT_STEP_US, ENGINE_WAIT_STEP_US);
 	}
 

@@ -218,8 +218,8 @@ main(
 	assert(error == EINVAL && test_writes == 0);
 
 	/* Brief MMU latency must not turn every small mapping into a scheduler-tick sleep. */
-	test_mmuc_reads = 4;
-	test_tlb_reads = 4;
+	test_mmuc_reads = 80;
+	test_tlb_reads = 96;
 	test_waits = 0;
 	error = bcm2711_v3d_hardware_pages_sync(&test_engine, 0x1000, 4096);
 	assert(error == 0 && test_waits == 0);
