@@ -568,6 +568,7 @@ resource_write(
 {
 	struct display_device *controller;
 	struct display_resource *resource;
+	unsigned long enabled;
 
 	/* Uses immutable allocation bounds to reject a truncated transfer. */
 	controller = opaque;
@@ -579,8 +580,17 @@ resource_write(
 	mutex_lock(&controller->mutex);
 
 	kern_memcpy((uint8_t *)resource->buffer->address + offset, data, bytes);
-	/* An unrecorded generation step: snapshots go stale and the next copy from this run is whole. */
+
+	/*
+	 * An unrecorded generation step: snapshots go stale and the next copy
+	 * from this run is whole.  The run's guard orders it with the render
+	 * device's writes, which do not take this mutex.
+	 */
+	enabled = spin_lock_irqsave(&resource->buffer->guard);
+
 	resource->buffer->generation++;
+
+	spin_unlock_irqrestore(&resource->buffer->guard, enabled);
 
 	mutex_unlock(&controller->mutex);
 

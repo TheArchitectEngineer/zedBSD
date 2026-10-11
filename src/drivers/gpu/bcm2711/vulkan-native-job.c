@@ -77,37 +77,6 @@ bcm2711_vulkan_native_job_create(
 }
 
 /*
- * Executes one pending primary through complete sequential native passes under the controller mutex.
- *
- * Each following pass stages its coherent source bytes only after the
- * previous pass's actual native completion/output visibility.  A failed
- * launched pass keeps all native inputs and the whole pending primary in
- * this root.  Later callback disposal transfers it to controller quarantine
- * rather than dropping a last CPU pointer to still referenced DMA storage.
- */
-int
-bcm2711_vulkan_native_job_execute(
-	struct bcm2711_render_device *controller,
-	struct bcm2711_render_session *session,
-	void *payload,
-	bool *retired)
-{
-	bool done;
-	int error;
-
-	/* Runs every step of the job in order. */
-	done = false;
-	while (!done) {
-		error = bcm2711_vulkan_native_job_step(controller, session, payload, &done, retired);
-		if (error != 0)
-			return error;
-	}
-
-	/* Succeeded: every pass of the job ran and retired. */
-	return 0;
-}
-
-/*
  * Runs one step of a job: the CPU-only events up to the next native pass, that pass, and its release.
  *
  * The first step starts the job; the step that reaches the end of the
@@ -141,6 +110,7 @@ bcm2711_vulkan_native_job_step(
 	uint32_t index;
 	int tiled;
 	int error;
+	int closed;
 	int synchronized;
 
 	/* Initial refusals launch no work and therefore retain no device borrow. */
@@ -304,9 +274,22 @@ bcm2711_vulkan_native_job_step(
 			return error;
 		}
 
-		/* Exact clear, supervised bin/render and GPU cache visibility execute while every independent owner is held. */
+		/*
+		 * Exact clear, supervised bin/render and GPU cache visibility execute
+		 * while every independent owner is held.  The native jobs run inside
+		 * the window, without the controller mutex: the decoder and ioctls
+		 * proceed meanwhile, and no translation changes.
+		 */
 		step = clock_ticks();
-		error = bcm2711_vulkan_native_pass_run(job->pass, &completion);
+		error = bcm2711_vulkan_native_pass_start(job->pass, &completion);
+		if (error == 0) {
+			bcm2711_render_window_open(controller);
+			error = bcm2711_vulkan_native_pass_launch(job->pass, &completion);
+			closed = bcm2711_render_window_close(controller);
+			error = bcm2711_vulkan_native_pass_finish(job->pass, &completion, error);
+			if (error == 0 && closed != 0)
+				error = closed;
+		}
 		execute_ticks += clock_ticks() - step;
 		perf->tfu_ticks += completion.tfu_ticks;
 		perf->bin_ticks += completion.bin_ticks;

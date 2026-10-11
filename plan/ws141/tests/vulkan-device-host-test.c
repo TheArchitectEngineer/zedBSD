@@ -85,6 +85,14 @@ static int runtime_errors[32];
 
 /* A native global error is counted only after the worker releases its ownership mutex. */
 static unsigned runtime_faults;
+/* A2 window fixture: the storage a simulated decoder releases inside the window, and what the window saw. */
+static struct bcm2711_native_storage *window_storage;
+static struct bcm2711_native_storage *window_scratch;
+static struct bcm2711_render_device *window_controller;
+static unsigned window_runs;
+static unsigned window_mapper_runs;
+static unsigned window_delayed;
+static int window_map_error;
 
 /* Unique numerical physical pages model independent cached upload allocation placement, without physical cache or GPU execution. */
 static uint64_t next_native_physical = 0x200000U;
@@ -176,6 +184,7 @@ static int dispatch(struct bcm2711_vulkan_session *session, uint32_t opcode, uin
 static void begin(struct vulkan_writer *writer, void *storage, size_t capacity, uint32_t opcode, uint32_t requested);
 static int execute(struct bcm2711_vulkan_session *session, struct vulkan_writer *writer, struct vulkan_reader *reader);
 static unsigned executor_drain(struct bcm2711_render_device *controller);
+static int job_execute(struct bcm2711_render_device *controller, struct bcm2711_render_session *session, struct bcm2711_vulkan_native_job *job, bool *retired);
 static int execute_queued(struct bcm2711_vulkan_session *session, struct vulkan_writer *writer, struct vulkan_reader *reader);
 static void encode_instance(struct vulkan_writer *writer, uint64_t identity, uint32_t version);
 static void encode_device(struct vulkan_writer *writer, uint64_t physical, uint64_t identity, uint32_t family, VkPhysicalDeviceFeatures *features);
@@ -438,12 +447,17 @@ bcm2711_v3d_job_run(
 	const struct bcm2711_v3d_job *job,
 	struct bcm2711_v3d_job_result *result)
 {
+	struct bcm2711_v3d_view *view;
+
 	/* A texture conversion carries a complete raster-to-UIF description and always completes in the fixture. */
 	if (job->kind == BCM2711_V3D_JOB_TFU) {
 		assert(engine != NULL && engine->hardware.ready);
 		assert(job->command.tfu.output_format == 6U && job->command.tfu.configuration == (4U << 9));
 		assert(job->command.tfu.input >= 4096U && job->command.tfu.output >= 4096U);
 		assert((job->command.tfu.size & 0xffffU) != 0 && (job->command.tfu.size >> 16) != 0);
+		/* (b) The window covers the conversions as well as the following CL job. */
+		if (window_controller != NULL)
+			assert(engine->hardware.window && window_controller->mutex.locked == 0);
 		native_convert_calls++;
 		memset(result, 0, sizeof(*result));
 		result->retired = true;
@@ -452,6 +466,22 @@ bcm2711_v3d_job_run(
 
 	/* Only a real independently prepared native CL job may reach this explicit host completion source. */
 	assert(engine != NULL && engine->hardware.ready && job->kind == BCM2711_V3D_JOB_CL);
+
+	/* (a)(l) Inside the executor's window a simulated decoder takes the free mutex: a map is refused, a release is delayed. */
+	if (window_controller != NULL) {
+		assert(engine->hardware.window && window_controller->mutex.locked == 0);
+		mutex_lock(&window_controller->mutex);
+		window_map_error = bcm2711_native_storage_create(&window_controller->space, 4096, &window_scratch);
+		if (window_storage != NULL) {
+			assert(bcm2711_native_storage_release(&window_controller->space, &window_storage, true) == 0);
+			for (view = window_controller->space.views; view != NULL; view = view->next) {
+				if (view->delayed && view->references == 0 && !view->quarantined)
+					window_delayed++;
+			}
+		}
+		mutex_unlock(&window_controller->mutex);
+		window_runs++;
+	}
 	assert(job->command.cl.bin_end > job->command.cl.bin_start && job->command.cl.render_end > job->command.cl.render_start);
 	assert(job->command.cl.overflow_count == 4 && job->command.cl.clean_output);
 	native_execute_calls++;
@@ -558,6 +588,20 @@ waitq_sleep(
 {
 	unsigned long enabled;
 	int error;
+
+	/*
+	 * (p) The executor waits for the mappers that were waiting before it opens
+	 * its window.  The fixture plays them: with the mutex free, a later mapper
+	 * arrives and the earlier one finishes, which ends the executor's wait.
+	 */
+	if (queue == &runtime_session->device->worker.window_queue) {
+		assert(runtime_session->device->mutex.locked == 0 && guard->held.value == 1);
+		runtime_session->device->worker.pte_waiters++;
+		runtime_session->device->worker.pte_waiters--;
+		runtime_session->device->worker.pte_done++;
+		window_mapper_runs++;
+		return 0;
+	}
 
 	/* The fixture may wait only for its known retained session's final callback barrier. */
 	assert(queue == &runtime_session->device->worker.retired && observed == queue->sequence);
@@ -1809,9 +1853,9 @@ native_job_test(
 	assert(error == 0 && job != NULL && job->pass == NULL && command->pending == 1);
 	native_execute_error = 0;
 	native_execute_retired = true;
-	error = bcm2711_vulkan_native_job_execute(controller, render, job, &retired);
+	error = job_execute(controller, render, job, &retired);
 	assert(error == 0 && retired && job->pass == NULL && job->executed && command->pending == 1);
-	error = bcm2711_vulkan_native_job_execute(controller, render, job, &retired);
+	error = job_execute(controller, render, job, &retired);
 	assert(error == EBUSY && retired);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, true);
 	assert(error == 0 && allocations == baseline && command->pending == 0 && controller->quarantine == NULL);
@@ -1821,7 +1865,7 @@ native_job_test(
 	assert(error == 0);
 	native_execute_error = ETIMEDOUT;
 	native_execute_retired = false;
-	error = bcm2711_vulkan_native_job_execute(controller, render, job, &retired);
+	error = job_execute(controller, render, job, &retired);
 	assert(error == ETIMEDOUT && !retired && job->pass != NULL && command->pending == 1);
 	held = allocations;
 	error = bcm2711_vulkan_native_job_dispose(controller, job, false);
@@ -2421,7 +2465,7 @@ barrier_test(
 	error = bcm2711_vulkan_native_job_create(object, &job);
 	assert(error == 0 && command->pending == 1);
 	images[1]->layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	error = bcm2711_vulkan_native_job_execute(session->render->device, session->render, job, &retired);
+	error = job_execute(session->render->device, session->render, job, &retired);
 	assert(error == EINVAL && retired && images[0]->layout == layouts[0]);
 	assert(native_write_barriers == writes && native_execute_calls == calls);
 	images[1]->layout = layouts[1];
@@ -2431,7 +2475,7 @@ barrier_test(
 	/* Complete successful serial execution changes both exact layouts once while retaining the primary until disposal. */
 	error = bcm2711_vulkan_native_job_create(object, &job);
 	assert(error == 0);
-	error = bcm2711_vulkan_native_job_execute(session->render->device, session->render, job, &retired);
+	error = job_execute(session->render->device, session->render, job, &retired);
 	assert(error == 0 && retired && command->pending == 1);
 	assert(images[0]->layout == VK_IMAGE_LAYOUT_GENERAL && images[1]->layout == VK_IMAGE_LAYOUT_GENERAL);
 	assert(native_write_barriers == writes + 1 && native_execute_calls == calls);
@@ -2629,7 +2673,7 @@ transfer_test(
 	error = bcm2711_vulkan_native_pass_release(&pass, true);
 	assert(error == 0 && pass == NULL);
 	calls = native_execute_calls;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == 0 && retired && native_execute_calls == calls + 2 && command->pending == 1 && job->pass == NULL);
 	assert(memcmp(cpu, saved, image->bytes) == 0);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, true);
@@ -2682,7 +2726,7 @@ transfer_test(
 	assert(error == 0);
 	native_execute_error = ETIMEDOUT;
 	native_execute_retired = false;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == ETIMEDOUT && !retired && command->pending == 1 && job->pass != NULL && job->pass->first != NULL);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, false);
 	assert(error == 0 && controller->quarantine == job);
@@ -2967,7 +3011,7 @@ raster_copy_test(
 	assert(error == 0);
 	image->layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	calls = native_execute_calls;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == EINVAL && retired && native_execute_calls == calls && memcmp(image_cpu, expected_image, sizeof(expected_image)) == 0);
 	assert(memcmp(buffer_cpu, expected_buffer, sizeof(expected_buffer)) == 0);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, true);
@@ -2990,7 +3034,7 @@ raster_copy_test(
 	}
 
 	/* Complete upload followed by both readbacks changes exactly selected row bytes and performs no native GPU launch. */
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == 0 && retired && native_execute_calls == calls && job->pass == NULL);
 	assert(memcmp(image_cpu, expected_image, sizeof(expected_image)) == 0 && memcmp(buffer_cpu, expected_buffer, sizeof(expected_buffer)) == 0);
 	assert(image->layout == VK_IMAGE_LAYOUT_GENERAL && command->pending == 1);
@@ -3175,10 +3219,10 @@ buffer_copy_test(
 	memcpy(expected + 7, (uint8_t *)cpu[0] + 1, 13);
 	memcpy(expected + 100, (uint8_t *)cpu[0] + 80, 17);
 	calls = native_execute_calls;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == 0 && retired && job->pass == NULL && native_execute_calls == calls);
 	assert(memcmp(cpu[1], expected, sizeof(expected)) == 0 && command->pending == 1);
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == EBUSY && memcmp(cpu[1], expected, sizeof(expected)) == 0);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, true);
 	assert(error == 0 && allocations == baseline && command->pending == 0);
@@ -3345,7 +3389,7 @@ clear_test(
 	/* FIFO layout mismatch refuses before launch or CPU framebuffer mutation and the whole pending graph remains disposable. */
 	calls = native_execute_calls;
 	image->layout = VK_IMAGE_LAYOUT_GENERAL;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == EINVAL && retired && native_execute_calls == calls && memcmp(cpu, saved, image->bytes) == 0);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, true);
 	assert(error == 0 && command->pending == 0 && allocations == baseline);
@@ -3356,7 +3400,7 @@ clear_test(
 	assert(error == 0);
 	native_execute_error = 0;
 	native_execute_retired = true;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == 0 && retired && job->pass == NULL && command->pending == 1 && native_execute_calls == calls + 1);
 	assert(image->layout == record->layout && memcmp(cpu, saved, image->bytes) == 0);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, true);
@@ -3367,7 +3411,7 @@ clear_test(
 	assert(error == 0);
 	native_execute_error = ETIMEDOUT;
 	native_execute_retired = false;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == ETIMEDOUT && !retired && job->pass != NULL && job->pass->first == NULL && job->pass->count == 9);
 	assert(job->pass->output == view && command->pending == 1 && memcmp(cpu, saved, image->bytes) == 0);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, false);
@@ -4188,6 +4232,9 @@ queue_test(
 	struct bcm2711_vulkan_session *old_namespace;
 	struct bcm2711_vulkan_object *fence_object;
 	struct bcm2711_vulkan_object *sem_object;
+	struct bcm2711_v3d_view *window_view;
+	struct bcm2711_v3d_view *found_view;
+	uint64_t done;
 	struct bcm2711_vulkan_object *once_object;
 	struct bcm2711_vulkan_command_buffer *command;
 	struct bcm2711_vulkan_command_buffer *once;
@@ -4335,6 +4382,35 @@ queue_test(
 	assert(semaphore->signals_completed == 4 && semaphore->waits_completed == 4 && !semaphore->signaled && semaphore->pending == 0);
 	assert(command->pending == 0 && native_execute_calls == calls + 2U && session->render->pending == 0);
 	assert(allocations == prepared_baseline);
+	calls++;
+
+	/*
+	 * A2 window: an earlier mapper goes first once, then the pass's native job
+	 * runs without the mutex; a release inside is delayed and done at close,
+	 * and a map inside is refused (ioctls wait in bcm2711_render_map_lock).
+	 */
+	error = bcm2711_native_storage_create(&controller->space, 4096, &window_storage);
+	assert(error == 0);
+	window_view = window_storage->view;
+	controller->worker.pte_waiters = 1;
+	done = controller->worker.pte_done;
+	window_controller = controller;
+	window_runs = 0;
+	window_mapper_runs = 0;
+	window_delayed = 0;
+	window_scratch = NULL;
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 151, 0, 0, 4);
+	error = execute(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS && native_execute_calls == calls + 2U);
+	assert(window_runs == 1 && window_mapper_runs == 1 && controller->worker.pte_done == done + 1U);
+	assert(controller->worker.pte_waiters == 1 && !controller->space.native->hardware.window);
+	assert(window_map_error == EIO && window_scratch == NULL && window_storage == NULL && window_delayed == 1);
+	for (found_view = controller->space.views; found_view != NULL; found_view = found_view->next)
+		assert(found_view != window_view && !found_view->delayed);
+	assert(command->pending == 0 && controller->mutex.locked == 0);
+	window_controller = NULL;
+	controller->worker.pte_waiters = 0;
 	calls++;
 
 	/* A real independently recorded empty one-time primary becomes invalid only after actual accepted execution, with no GPU launch. */
@@ -4636,6 +4712,34 @@ begin(
 	/* The actual ordinary client header requests an echoed opcode even for void Vulkan commands. */
 	memcpy(writer->data + writer->bytes, header, sizeof(header));
 	writer->bytes += sizeof(header);
+}
+
+/* Runs every step of a job under the controller mutex, as the executor does. */
+static int
+job_execute(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_session *session,
+	struct bcm2711_vulkan_native_job *job,
+	bool *retired)
+{
+	bool done;
+	int error;
+
+	/* The steps open and close the window around each pass. */
+	mutex_lock(&controller->mutex);
+
+	done = false;
+	error = 0;
+	while (!done) {
+		error = bcm2711_vulkan_native_job_step(controller, session, job, &done, retired);
+		if (error != 0)
+			break;
+	}
+
+	mutex_unlock(&controller->mutex);
+
+	/* Reports the first step's failure, or zero. */
+	return error;
 }
 
 /* Runs the executor until no execution waits; returns the number of steps. */

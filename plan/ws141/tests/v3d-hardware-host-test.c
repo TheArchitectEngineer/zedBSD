@@ -1506,6 +1506,9 @@ check_translation_batch(
 	struct bcm2711_native_storage *second;
 	struct bcm2711_buffer *first_buffer;
 	struct bcm2711_buffer *second_buffer;
+	struct bcm2711_v3d_view *view;
+	uint32_t *pages;
+	uint32_t entry;
 	unsigned releases;
 	int error;
 
@@ -1601,6 +1604,54 @@ check_translation_batch(
 	assert(error == 0 && test_writes == 0);
 	error = bcm2711_v3d_memory_end(&space);
 	assert(error == EINVAL);
+
+	/* (a)(b) Inside the executor's window a released view stays mapped, its PTEs unchanged, until the window closes. */
+	pages = test_engine.hardware.pages->address;
+	error = bcm2711_native_storage_create(&space, 4096, &first);
+	assert(error == 0);
+	view = first->view;
+	first_buffer = view->buffer;
+	entry = pages[view->address / 4096U];
+	assert(entry != 0);
+	test_engine.hardware.window = true;
+	test_writes = 0;
+	error = bcm2711_native_storage_release(&space, &first, true);
+	assert(error == 0 && first == NULL && space.views == view);
+	assert(view->delayed && !view->quarantined && view->references == 0);
+	assert(pages[view->address / 4096U] == entry && first_buffer->references == 1 && test_writes == 0);
+
+	/* (l) A new mapping cannot change translations while the window is open; a batch cannot begin either. */
+	error = bcm2711_native_storage_create(&space, 4096, &second);
+	assert(error == EIO && second == NULL && space.views == view && view->next == NULL);
+	error = bcm2711_v3d_memory_begin(&space);
+	assert(error == EIO && !space.deferred);
+
+	/* Closing the window unmaps the delayed view in one flush and frees its backing; mapping works again. */
+	test_engine.hardware.window = false;
+	releases = test_released;
+	error = bcm2711_v3d_memory_release_delayed(&space);
+	assert(error == 0 && space.views == NULL && pages[view->address / 4096U] == 0);
+	assert(first_buffer->references == 0 && test_released == releases + 1U);
+	error = bcm2711_v3d_memory_release_delayed(&space);
+	assert(error == 0);
+
+	/* (m) A view released inside a window that ends in a fault stays for checked recovery, which reclaims it. */
+	error = bcm2711_native_storage_create(&space, 4096, &first);
+	assert(error == 0);
+	view = first->view;
+	first_buffer = view->buffer;
+	test_engine.hardware.window = true;
+	error = bcm2711_native_storage_release(&space, &first, true);
+	assert(error == 0 && view->delayed);
+	test_engine.hardware.faulted = true;
+	test_engine.hardware.window = false;
+	error = bcm2711_v3d_memory_release_delayed(&space);
+	assert(error == 0 && space.views == view && view->delayed && first_buffer->references == 1);
+	test_writes = 0;
+	error = bcm2711_v3d_hardware_reset(&test_engine);
+	assert(error == 0 && !test_engine.hardware.faulted);
+	error = bcm2711_v3d_memory_recover(&space);
+	assert(error == 0 && space.views == NULL && first_buffer->references == 0);
 
 	/* Succeeded: all independent ownership or scalar comparisons passed. */
 	return;

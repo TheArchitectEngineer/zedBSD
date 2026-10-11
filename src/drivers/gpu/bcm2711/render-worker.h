@@ -126,6 +126,15 @@ struct bcm2711_render_worker {
 	struct bcm2711_render_request *parked;
 	struct thread *executor;
 	struct wait_queue executable;
+	/*
+	 * The executor's window: threads waiting to map (counted while they wait
+	 * and map) and how many have finished, and the wake-up of both the
+	 * mappers waiting for the window to close and the executor waiting for
+	 * the mappers that came before it.
+	 */
+	uint32_t pte_waiters;
+	uint64_t pte_done;
+	struct wait_queue window_queue;
 };
 
 void bcm2711_render_jobs_bind(struct drv_gpu_ops *operations);
@@ -148,6 +157,18 @@ bool bcm2711_render_worker_timeline_busy(struct bcm2711_render_device *controlle
 
 /* Refuses an execution past the hard limits (a stream submitting without markers); the caller holds the controller mutex. */
 int bcm2711_render_execution_admit(struct bcm2711_render_session *session, uint64_t bytes);
+
+/*
+ * The executor's window around a pass's native jobs.  Open is called by the
+ * executor holding the controller mutex and returns without it; close takes
+ * the mutex again, then unmaps the views released meanwhile.
+ */
+void bcm2711_render_window_open(struct bcm2711_render_device *controller);
+int bcm2711_render_window_close(struct bcm2711_render_device *controller);
+
+/* Takes the controller mutex outside the window, for an ioctl that maps; unlock gives it back. */
+void bcm2711_render_map_lock(struct bcm2711_render_device *controller);
+void bcm2711_render_map_unlock(struct bcm2711_render_device *controller);
 
 /* Queues an accepted execution behind its session's earlier ones; the caller holds the controller mutex. */
 void bcm2711_render_execution_submit(struct bcm2711_render_session *session, struct bcm2711_render_execution *execution);

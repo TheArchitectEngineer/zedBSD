@@ -191,6 +191,17 @@ executor の pass ごとの 3 区分:
 - host 試験: (q) 3 つの session（普通 2、display 1）の 10 歩で、session の中の順序、display が先、display の待ちは他の 1 歩まで。(g) 失敗の歩の後に global fault と `render_fail`、PARKED の marker は EIO。display の host 試験（4 つ）は PASS。
 - A1 の範囲はここまで。A2 の窓（(a)(b)(l)(m)(p)）と A3 の lazy map は後。(e) は A0 の compositor、(r) は実機。
 
+## A2 の進捗（2026-10-12 P3、Q1 の「A2 の実装に入ってよい」）
+
+- **3 区分**: `bcm2711_vulkan_native_pass_run` を `pass_start`（検証・CPU の clear、mutex あり）、`pass_launch`（TFU の変換と CL の job、窓の中・mutex なし、pass と結果だけを書く）、`pass_finish`（snapshot の filled・`memory_written`・synced・layout、mutex あり）に分けた。`pass_run` は 3 つを順に呼ぶ（mutex を外さない、host 試験の直接の呼び出し用）。job の step は start → `bcm2711_render_window_open`（mutex を外す）→ launch → `bcm2711_render_window_close`（mutex を取り直し、遅延解放）→ finish。TFU の snapshot の filled は変換の直後でなく finish でまとめて行う（変換の途中の失敗では filled にしない）。使われなくなった `bcm2711_vulkan_native_job_execute` は削った（host 試験は同じ形の helper を持つ）。
+- **窓の判定**: `hardware.window`（guard の下）。`memory_ready` は `!job_busy && !window`。窓を開くのは mutex を持つ executor だけ（L-c）。
+- **遅延解放**: 窓の間に参照が 0 になった view は unmap せず `delayed` にする（quarantine にしない、PTE は変えない）。窓を閉じた executor が `bcm2711_v3d_memory_release_delayed` で 1 回の batch（unmap → 1 回の flush → 解放）にする。fault の後は `memory_ready` が偽なので何もせず、`bcm2711_v3d_memory_recover` が delayed を quarantined と同じに扱って回収する（N5、fault の経路で list を触らない形にした）。
+- **map の待ち**: map する ioctl（`allocate_resource`・`render_import`）は `bcm2711_render_map_lock`/`unlock` で mutex を取る。待ち手として数えられ（`pte_waiters`）、窓が閉じるのを待ち、mutex を取った後に窓が開いていれば外して待ち直す。解放の側（vkFreeMemory・destroy・close）は待たない（N6）。
+- **pte_waiters の世代**: `window_open` は待ち手がいれば、その時の待ち手の数だけ完了する（`pte_done` が目標に達する）まで mutex を外して待ち、その後は新しい待ち手がいても窓を開く（1 回だけ譲る、N7）。fault で待ちは終わる。`worker_fault` は窓の待ち手も起こす。
+- **mutex の順番**: mutex は handoff しないので、executor は歩の間に `sched_yield` し、窓の間（GPU の実行の間）は mutex を持たない。decoder・ioctl はその間に進む。
+- **display の generation の guard（M4）**: `bcm2711_v3d_memory_written`・`memory_changes` は run の guard の下で generation と ring を読み書きし、display の `resource_write` の generation の加算も同じ guard の下にした。
+- host 試験: (a)(l)(p) vulkan-device: executor が QueueSubmit の pass を実行する間に、模した decoder が mutex を取れる（窓の間）。その中の解放は delayed、map は EIO（ioctl は map_lock で待つ）、窓を閉じた後に view は消える。窓の前の待ち手 1 つは先に通り、後から来た待ち手は窓を止めない。(b) TFU も窓の中（CL と同じく窓と mutex なしを確かめる、fixture の assert）。(a)(b)(l)(m) v3d-hardware: 窓の間の解放で PTE が変わらず flush も無い、map と batch の開始は EIO、閉じた後に 1 回で解放、fault の後は残り reset と recover で回収。display の host 試験は PASS。
+
 ## 段（第 4 版）
 
 | 段 | 内容 | 確かめ |

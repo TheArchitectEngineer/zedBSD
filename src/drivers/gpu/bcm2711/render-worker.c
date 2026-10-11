@@ -85,6 +85,7 @@ bcm2711_render_worker_init(
 	waitq_init(&controller->worker.available, "bcm2711-render-work");
 	waitq_init(&controller->worker.retired, "bcm2711-render-retired");
 	waitq_init(&controller->worker.executable, "bcm2711-render-execute");
+	waitq_init(&controller->worker.window_queue, "bcm2711-render-window");
 
 	/* Succeeded: the worker starts with an empty FIFO and no native uncertainty. */
 	return;
@@ -492,6 +493,7 @@ bcm2711_render_worker_fault(
 	/* The permanent worker disposes canceled payloads without claiming that native DMA stopped; the executor cancels queued executions. */
 	waitq_wake_one(&controller->worker.available);
 	waitq_wake_all(&controller->worker.executable);
+	waitq_wake_all(&controller->worker.window_queue);
 
 	/* Succeeded: the worker fault is visible to subsequent admission. */
 	return;
@@ -1546,3 +1548,160 @@ bcm2711_render_execution_admit(
 	/* Reports whether the execution may be queued. */
 	return error;
 }
+
+/*
+ * Opens the window: the executor gives up the controller mutex while a pass's native jobs run.
+ *
+ * Mappers that were already waiting go first, once: the executor lets them
+ * have the mutex and waits until as many have finished as were waiting, so
+ * a stream of later mappers cannot keep the window shut.
+ */
+void
+bcm2711_render_window_open(
+	struct bcm2711_render_device *controller)
+{
+	unsigned long enabled;
+	uint64_t observed;
+	uint64_t target;
+	int error;
+
+	/* The mappers counted now are the ones to let through. */
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	if (controller->worker.pte_waiters != 0) {
+		target = controller->worker.pte_done + controller->worker.pte_waiters;
+
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+		mutex_unlock(&controller->mutex);
+		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+		/* A fault ends the wait; the launch then refuses. */
+		while (controller->worker.pte_done < target && !controller->space.native->hardware.faulted) {
+			observed = waitq_sequence(&controller->worker.window_queue);
+			error = waitq_sleep(&controller->worker.window_queue, &controller->space.native->hardware.guard, observed, 0, 0);
+			if (error != 0 && error != EAGAIN)
+				__builtin_trap();
+		}
+
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+		mutex_lock(&controller->mutex);
+		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+	}
+
+	/* No translation changes from here until the window closes. */
+	if (controller->space.native->hardware.window)
+		__builtin_trap();
+	controller->space.native->hardware.window = true;
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	mutex_unlock(&controller->mutex);
+
+	/* Succeeded: the window is open and the mutex is free. */
+	return;
+}
+
+/* Closes the window: takes the controller mutex again and unmaps the views released inside it. */
+int
+bcm2711_render_window_close(
+	struct bcm2711_render_device *controller)
+{
+	unsigned long enabled;
+	int error;
+
+	/* The mutex first, so no mapper slips in between. */
+	mutex_lock(&controller->mutex);
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	if (!controller->space.native->hardware.window)
+		__builtin_trap();
+	controller->space.native->hardware.window = false;
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* Waiting mappers may proceed once the executor gives up the mutex. */
+	waitq_wake_all(&controller->worker.window_queue);
+
+	/* The views whose last reference ended inside the window. */
+	error = bcm2711_v3d_memory_release_delayed(&controller->space);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the window is closed and translations are current. */
+	return 0;
+}
+
+/*
+ * Takes the controller mutex with the window closed, for an ioctl that maps.
+ *
+ * The caller is counted as a mapper until it unlocks, so the executor lets
+ * it through before opening its next window.
+ */
+void
+bcm2711_render_map_lock(
+	struct bcm2711_render_device *controller)
+{
+	unsigned long enabled;
+	uint64_t observed;
+	int error;
+
+	/* Counted before waiting, so the executor knows to wait for it. */
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	controller->worker.pte_waiters++;
+	while (true) {
+		/* The window closes after its native jobs; a fault ends the wait and the map refuses. */
+		while (controller->space.native->hardware.window && !controller->space.native->hardware.faulted) {
+			observed = waitq_sequence(&controller->worker.window_queue);
+			error = waitq_sleep(&controller->worker.window_queue, &controller->space.native->hardware.guard, observed, 0, 0);
+			if (error != 0 && error != EAGAIN)
+				__builtin_trap();
+		}
+
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+		mutex_lock(&controller->mutex);
+		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+		/* The executor may have opened another window before this thread got the mutex. */
+		if (!controller->space.native->hardware.window || controller->space.native->hardware.faulted)
+			break;
+
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+		mutex_unlock(&controller->mutex);
+		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+	}
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* Succeeded: the caller holds the mutex and may map. */
+	return;
+}
+
+/* Gives back the controller mutex taken for a map and counts the mapper as done. */
+void
+bcm2711_render_map_unlock(
+	struct bcm2711_render_device *controller)
+{
+	unsigned long enabled;
+
+	/* The executor waiting for earlier mappers counts this one. */
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	if (controller->worker.pte_waiters == 0)
+		__builtin_trap();
+	controller->worker.pte_waiters--;
+	controller->worker.pte_done++;
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	mutex_unlock(&controller->mutex);
+	waitq_wake_all(&controller->worker.window_queue);
+
+	/* Succeeded: the mutex is free. */
+	return;
+}
+

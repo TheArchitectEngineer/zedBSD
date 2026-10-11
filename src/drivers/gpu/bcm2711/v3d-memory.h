@@ -25,6 +25,8 @@ struct bcm2711_v3d_view {
 	bool quarantined;
 	/* A zero-reference batch retirement keeps physical storage until the final flush. */
 	bool pending_release;
+	/* The last reference ended inside the executor's window: still mapped, unmapped once it closes. */
+	bool delayed;
 	/* Links an idle, still mapped private upload view in the space's reuse cache. */
 	struct bcm2711_v3d_view *cache_next;
 };
@@ -66,10 +68,13 @@ void bcm2711_v3d_memory_retain(struct bcm2711_v3d_view *view);
 int bcm2711_v3d_memory_release(struct bcm2711_v3d_space *space, struct bcm2711_v3d_view *view);
 int bcm2711_v3d_memory_recover(struct bcm2711_v3d_space *space);
 
+/* Unmaps and frees the views whose last reference ended inside the window; the caller holds the mutex after it closed. */
+int bcm2711_v3d_memory_release_delayed(struct bcm2711_v3d_space *space);
+
 /* Records one write of the box of the image at offset and advances the run's generation; a NULL box covers everything. */
 void bcm2711_v3d_memory_written(struct bcm2711_buffer *buffer, uint64_t offset, const uint32_t *box);
 
 /* Reports in box the union of a run's writes of the image at offset after since; false when they are not all known. */
-bool bcm2711_v3d_memory_changes(const struct bcm2711_buffer *buffer, uint64_t offset, uint64_t since, uint32_t *box);
+bool bcm2711_v3d_memory_changes(struct bcm2711_buffer *buffer, uint64_t offset, uint64_t since, uint32_t *box);
 
 #endif

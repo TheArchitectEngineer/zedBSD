@@ -35,12 +35,33 @@ bcm2711_vulkan_native_pass_run(
 	struct bcm2711_vulkan_native_pass *pass,
 	struct bcm2711_v3d_job_result *result)
 {
-	struct bcm2711_buffer *output;
+	int error;
+
+	/* The three parts in order under the caller's mutex. */
+	error = bcm2711_vulkan_native_pass_start(pass, result);
+	if (error != 0)
+		return error;
+	error = bcm2711_vulkan_native_pass_launch(pass, result);
+	error = bcm2711_vulkan_native_pass_finish(pass, result, error);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the pass ran and its output is published. */
+	return 0;
+}
+
+/*
+ * Validates the pass and performs its CPU clear before launch.
+ *
+ * Nothing has launched when it fails, so result->retired stays true.
+ */
+int
+bcm2711_vulkan_native_pass_start(
+	struct bcm2711_vulkan_native_pass *pass,
+	struct bcm2711_v3d_job_result *result)
+{
 	uint64_t started;
 	uint64_t elapsed;
-	uint64_t converted;
-	uint64_t offset;
-	uint32_t box[4];
 	int error;
 
 	/* Missing completion storage cannot report safe retirement. */
@@ -86,18 +107,71 @@ bcm2711_vulkan_native_pass_run(
 	/* The single-use root and every coherent CPU write precede the native runner's supervised launch. */
 	pass->executed = true;
 	pass->retired = false;
+	pass->converted = false;
 	kern_io_write_barrier();
+
+	/* Succeeded: the pass may launch. */
+	return 0;
+}
+
+/*
+ * Runs the pass's texture conversions and its bin/render job.
+ *
+ * Inside the executor's window this runs without the controller mutex, so
+ * it writes only the pass and the result; the finish publishes the rest.
+ */
+int
+bcm2711_vulkan_native_pass_launch(
+	struct bcm2711_vulkan_native_pass *pass,
+	struct bcm2711_v3d_job_result *result)
+{
+	uint64_t converted;
+	int error;
 
 	/* The texture formatting unit fills every converted texture before any draw samples it. */
 	error = convert_textures(pass, result, &converted);
 	pass->retired = result->retired;
 	if (error != 0)
 		return error;
+	pass->converted = true;
 
 	/* The draws run once all their textures are in place. */
 	error = bcm2711_v3d_job_run(pass->space->native, &pass->job, result);
 	pass->retired = result->retired;
 	result->tfu_ticks = converted;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the jobs ran; the finish checks retirement. */
+	return 0;
+}
+
+/*
+ * Publishes a launched pass's output under the controller mutex.
+ *
+ * error is the launch's.  The output may have changed even when it failed.
+ */
+int
+bcm2711_vulkan_native_pass_finish(
+	struct bcm2711_vulkan_native_pass *pass,
+	struct bcm2711_v3d_job_result *result,
+	int error)
+{
+	struct bcm2711_vulkan_native_draw *draw;
+	struct bcm2711_buffer *output;
+	uint64_t offset;
+	uint32_t box[4];
+	uint32_t index;
+
+	/* Snapshots the unit filled are valid for later passes from now on. */
+	if (pass->converted) {
+		for (draw = pass->first; draw != NULL; draw = draw->next) {
+			for (index = 0; index < draw->texture_count; index++) {
+				if (draw->textures[index].convert && draw->textures[index].snapshot != NULL)
+					bcm2711_native_snapshot_filled(draw->textures[index].snapshot);
+			}
+		}
+	}
 
 	/* Launched or not, the render area of the output may have changed, so snapshots and copies of it are stale. */
 	output = pass->output->buffer;
@@ -365,10 +439,6 @@ convert_textures(
 			error = bcm2711_v3d_job_run(pass->space->native, &job, result);
 			if (error != 0)
 				return error;
-
-			/* A snapshot the unit filled is valid for later passes from now on. */
-			if (draw->textures[index].snapshot != NULL)
-				bcm2711_native_snapshot_filled(draw->textures[index].snapshot);
 		}
 	}
 	*ticks = clock_ticks() - started;
