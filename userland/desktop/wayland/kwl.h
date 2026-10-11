@@ -933,6 +933,9 @@ struct kwl_apps_bar {
 	uint64_t spring_tile_since_ms;
 };
 
+/* The most hover probes one whole scene records (damage.c). */
+#define KWL_HOVER_PROBES 256
+
 struct kwl_server {
 	struct kwl_perf perf;
 	int listener;
@@ -969,6 +972,25 @@ struct kwl_server {
 	unsigned log_frames;
 	/* The event loop records the latest traced motion; recording a frame consumes this timestamp. */
 	uint64_t pointer_accepted_us;
+	/*
+	 * Hover probes (damage.c): the rectangles the last whole scene's drawing
+	 * tested the pointer against, and where the pointer was then.  A later
+	 * move that leaves every probe's answer unchanged changes only the
+	 * cursor.  complete is set only after a whole scene recorded every
+	 * probe; a partial redraw or an overflow clears it.
+	 */
+	struct kwl_hover_probe {
+		int32_t x;
+		int32_t y;
+		int32_t width;
+		int32_t height;
+	} hover_probes[KWL_HOVER_PROBES];
+	unsigned hover_count;
+	unsigned hover_recording;
+	unsigned hover_complete;
+	unsigned hover_overflow;
+	int32_t hover_x;
+	int32_t hover_y;
 	/*
 	 * The graphical login (ws035-p095): with --greeter the compositor draws the
 	 * login screen (greeter.c), opens no socket and asks sessiond on
@@ -1804,6 +1826,9 @@ int kwl_glass_still(struct kwl_server *server);
 int kwl_glass_body_damage(struct kwl_server *server, struct kwl_object *surface, int32_t *rect);
 int kwl_glass_pointer_calm(struct kwl_server *server, int32_t x, int32_t y);
 void kwl_damage_pointer(struct kwl_server *server, int32_t old_x, int32_t old_y);
+void kwl_hover_probe(struct kwl_server *server, int32_t x, int32_t y, int32_t width, int32_t height);
+void kwl_hover_begin(struct kwl_server *server, int whole);
+void kwl_hover_end(struct kwl_server *server);
 void kwl_damage_commit(struct kwl_server *server, struct kwl_object *surface, struct kwl_object *previous);
 void kwl_window_bounds_refresh(struct kwl_server *server);
 int kwl_window_send_configure(struct kwl_object *surface);

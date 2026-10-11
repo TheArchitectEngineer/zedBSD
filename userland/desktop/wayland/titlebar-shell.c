@@ -1343,6 +1343,7 @@ kwl_titlebar_draw_suggestions(
 	under = shell_suggest_at(server->pointer_x, server->pointer_y);
 	for (index = 0; index < suggestions->count; index++) {
 		row_y = suggestions->y + SUGGEST_PADDING + (int32_t)index * SUGGEST_ROW;
+		kwl_hover_probe(server, suggestions->x, row_y, suggestions->width, SUGGEST_ROW);
 		lit = 0;
 		if ((int)index == suggestions->lit || (suggestions->lit < 0 && (int)index == under))
 			lit = 1;
@@ -2687,6 +2688,9 @@ shell_hovered(
 	int32_t width,
 	int32_t height)
 {
+	/* The drawing's answer depends on this rectangle (a hover probe, damage.c). */
+	kwl_hover_probe(server, x, y, width, height);
+
 	/* Outside it. */
 	if (server->pointer_x < x || server->pointer_x >= x + width)
 		return 0;
