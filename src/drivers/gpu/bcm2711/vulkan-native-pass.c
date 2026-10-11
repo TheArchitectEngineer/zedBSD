@@ -326,6 +326,7 @@ bcm2711_vulkan_native_pass_costs(
 		perf->record_ticks += draw->record_ticks;
 		perf->snapshot_hits += draw->snapshot_hits;
 		perf->snapshot_fills += draw->snapshot_fills;
+		perf->snapshot_updates += draw->snapshot_updates;
 		perf->mapped_textures += draw->mapped_textures;
 		perf->private_textures += draw->private_textures;
 		perf->mapped_bytes += draw->mapped_bytes;

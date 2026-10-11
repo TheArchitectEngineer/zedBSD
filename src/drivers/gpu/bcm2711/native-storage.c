@@ -22,9 +22,14 @@
 /* An idle view kept for reuse holds at most 16 MiB. */
 #define NATIVE_CACHE_VIEW_BYTES (16ULL * 1024U * 1024U)
 
+/* Next to the texture formatting unit, the CPU converts a changed box of at most 256 KiB of pixels in place. */
+#define NATIVE_SNAPSHOT_UPDATE_BYTES (256U * 1024U)
+
 static struct bcm2711_v3d_view *cache_take(struct bcm2711_v3d_space *space, uint64_t bytes);
 static bool cache_put(struct bcm2711_v3d_space *space, struct bcm2711_v3d_view *view);
+static int storage_cleanable(const struct bcm2711_native_storage *storage);
 static int snapshot_fill(struct bcm2711_native_snapshot *snapshot, const void *raster, size_t raster_bytes);
+static int snapshot_update(struct bcm2711_v3d_space *space, struct bcm2711_native_snapshot *snapshot, const void *raster, size_t raster_bytes, bool unit, bool *updated);
 static int snapshot_evict(struct bcm2711_v3d_space *space, uint64_t bytes, bool all);
 static int snapshot_release(struct bcm2711_v3d_space *space, struct bcm2711_native_snapshot *snapshot);
 
@@ -125,34 +130,15 @@ int
 bcm2711_native_storage_clean(
 	struct bcm2711_native_storage *storage)
 {
-	struct bcm2711_v3d_view *view;
 	struct bcm2711_buffer *buffer;
 	uint64_t started;
+	int error;
 
-	/* An absent or partially retired owner grants no usable native input. */
-	if (storage == NULL || storage->view == NULL)
-		return EINVAL;
-	view = storage->view;
-
-	/* Quarantined or dead translations cannot be cleaned back into executable ownership. */
-	if (view->quarantined || view->references == 0)
-		return EIO;
-
-	/* Actual cached backing must cover the entire declared upload interval. */
-	buffer = view->buffer;
-	if (buffer == NULL || buffer->address == NULL)
-		return EINVAL;
-
-	/* This private owner never treats non-cacheable exported storage as a cached alias. */
-	if (buffer->uncached)
-		return EINVAL;
-
-	/* Padding and logical bytes belong to the same whole mapped allocation. */
-	if (storage->bytes == 0 ||
-	    storage->bytes > buffer->bytes ||
-	    buffer->bytes > buffer->memory.size ||
-	    buffer->memory.size != view->bytes)
-		return EINVAL;
+	/* Only a live, cached, whole private allocation can be written back. */
+	error = storage_cleanable(storage);
+	if (error != 0)
+		return error;
+	buffer = storage->view->buffer;
 
 	/* Cache maintenance completes CPU writes before the caller's later command publication barrier. */
 	started = clock_ticks();
@@ -160,6 +146,38 @@ bcm2711_native_storage_clean(
 	storage->clean_ticks += clock_ticks() - started;
 
 	/* Succeeded: device reads can consume the immutable upload bytes without a dirty CPU cache alias. */
+	return 0;
+}
+
+/*
+ * Cleans one interval of a cached upload allocation after the CPU rewrote only that interval.
+ */
+int
+bcm2711_native_storage_clean_range(
+	struct bcm2711_native_storage *storage,
+	uint64_t offset,
+	uint64_t bytes)
+{
+	struct bcm2711_buffer *buffer;
+	uint64_t started;
+	int error;
+
+	/* Only a live, cached, whole private allocation can be written back. */
+	error = storage_cleanable(storage);
+	if (error != 0)
+		return error;
+	buffer = storage->view->buffer;
+
+	/* The interval lies inside the declared upload bytes. */
+	if (bytes == 0 || offset > storage->bytes || bytes > storage->bytes - offset)
+		return EINVAL;
+
+	/* Cache maintenance completes the interval's CPU writes before the caller's later command publication barrier. */
+	started = clock_ticks();
+	kern_dcache_clean_range((uint8_t *)buffer->address + offset, (size_t)bytes);
+	storage->clean_ticks += clock_ticks() - started;
+
+	/* Succeeded: device reads of the interval see the CPU's writes. */
 	return 0;
 }
 
@@ -334,9 +352,11 @@ bcm2711_native_storage_drain(
  * Finds or makes the converted texture of one raster image interval and counts one more user.
  *
  * A snapshot is reused while its never-mapped source keeps the generation it
- * was converted at; a stale unused one is converted again in place.  The
- * caller holds the controller mutex, every earlier pass has retired, and the
- * caller drops its use with bcm2711_native_snapshot_put when its draw retires.
+ * was converted at.  A stale unused one is converted again in place: only the
+ * box the source's write ring names when it can, otherwise the whole image,
+ * by the CPU or, when unit is set, by the caller's texture formatting unit job.
+ * The caller holds the controller mutex, every earlier pass has retired, and
+ * the caller drops its use with bcm2711_native_snapshot_put when its draw retires.
  */
 int
 bcm2711_native_snapshot_get(
@@ -348,10 +368,13 @@ bcm2711_native_snapshot_get(
 	uint32_t pitch,
 	const void *raster,
 	size_t raster_bytes,
+	bool unit,
 	struct bcm2711_native_snapshot **result)
 {
 	struct bcm2711_native_snapshot *snapshot;
+	const void *whole;
 	uint32_t bytes;
+	bool updated;
 	int error;
 
 	/* A source a process can write through a CPU mapping has no generation to trust. */
@@ -362,6 +385,11 @@ bcm2711_native_snapshot_get(
 	if (error != 0)
 		return error;
 	space->snapshot_serial++;
+
+	/* A whole conversion left to the unit reads no raster on the CPU. */
+	whole = raster;
+	if (unit)
+		whole = NULL;
 
 	/* Finds the snapshot of exactly this interval and layout. */
 	for (snapshot = space->snapshots; snapshot != NULL; snapshot = snapshot->next) {
@@ -379,10 +407,22 @@ bcm2711_native_snapshot_get(
 		if (!snapshot->valid || snapshot->generation != buffer->generation) {
 			if (snapshot->users != 0)
 				return ENOTSUP;
-			error = snapshot_fill(snapshot, raster, raster_bytes);
-			if (error != 0)
-				return error;
-			space->snapshot_fills++;
+
+			/* Converted pixels with a known small change are brought up to date in place. */
+			updated = false;
+			if (snapshot->valid) {
+				error = snapshot_update(space, snapshot, raster, raster_bytes, unit, &updated);
+				if (error != 0)
+					return error;
+			}
+
+			/* Anything else is converted whole. */
+			if (!updated) {
+				error = snapshot_fill(snapshot, whole, raster_bytes);
+				if (error != 0)
+					return error;
+				space->snapshot_fills++;
+			}
 		}
 		snapshot->users++;
 		snapshot->used = space->snapshot_serial;
@@ -411,7 +451,7 @@ bcm2711_native_snapshot_get(
 
 	/* The first conversion defines the generation the snapshot is valid for. */
 	snapshot->buffer = buffer;
-	error = snapshot_fill(snapshot, raster, raster_bytes);
+	error = snapshot_fill(snapshot, whole, raster_bytes);
 	if (error != 0) {
 		snapshot->buffer = NULL;
 		(void)bcm2711_native_storage_release(space, &snapshot->pixels, true);
@@ -457,6 +497,43 @@ bcm2711_native_snapshot_filled(
 {
 	/* The generation recorded when the job was prepared stays the one the pixels match at least. */
 	snapshot->valid = true;
+}
+
+/* Reports whether an upload owner is a live, cached, whole private allocation the CPU may clean. */
+static int
+storage_cleanable(
+	const struct bcm2711_native_storage *storage)
+{
+	struct bcm2711_v3d_view *view;
+	struct bcm2711_buffer *buffer;
+
+	/* An absent or partially retired owner grants no usable native input. */
+	if (storage == NULL || storage->view == NULL)
+		return EINVAL;
+	view = storage->view;
+
+	/* Quarantined or dead translations cannot be cleaned back into executable ownership. */
+	if (view->quarantined || view->references == 0)
+		return EIO;
+
+	/* Actual cached backing must cover the entire declared upload interval. */
+	buffer = view->buffer;
+	if (buffer == NULL || buffer->address == NULL)
+		return EINVAL;
+
+	/* This private owner never treats non-cacheable exported storage as a cached alias. */
+	if (buffer->uncached)
+		return EINVAL;
+
+	/* Padding and logical bytes belong to the same whole mapped allocation. */
+	if (storage->bytes == 0 ||
+	    storage->bytes > buffer->bytes ||
+	    buffer->bytes > buffer->memory.size ||
+	    buffer->memory.size != view->bytes)
+		return EINVAL;
+
+	/* Succeeded: the owner's whole mapped allocation may be cleaned. */
+	return 0;
 }
 
 /* Takes one idle cached view of exactly the page-rounded size, or NULL. */
@@ -572,6 +649,105 @@ snapshot_fill(
 
 	/* Succeeded: the snapshot matches its source until the source's generation moves. */
 	snapshot->valid = true;
+	return 0;
+}
+
+/*
+ * Converts only the box a valid snapshot's source changed since the snapshot's generation.
+ *
+ * updated stays false when the source's write ring cannot name every change,
+ * or, when unit is set, when the change is too large for the CPU; the caller
+ * then converts the whole image.  A failure leaves the snapshot invalid.
+ */
+static int
+snapshot_update(
+	struct bcm2711_v3d_space *space,
+	struct bcm2711_native_snapshot *snapshot,
+	const void *raster,
+	size_t raster_bytes,
+	bool unit,
+	bool *updated)
+{
+	uint64_t generation;
+	uint64_t bytes;
+	uint64_t column_bytes;
+	uint32_t box[4];
+	uint32_t column;
+	uint32_t first_row;
+	uint32_t end_row;
+	bool known;
+	int error;
+
+	/* Without the raster on the CPU only a whole conversion by the unit is possible. */
+	*updated = false;
+	if (raster == NULL)
+		return 0;
+
+	/*
+	 * Reads the generation before the ring, so the box covers at least every
+	 * write up to it; a later write only widens the box.
+	 */
+	generation = snapshot->buffer->generation;
+	known = bcm2711_v3d_memory_changes(snapshot->buffer, snapshot->offset, snapshot->generation, box);
+	if (!known)
+		return 0;
+
+	/* Another view of the run at the same offset may name pixels outside this image. */
+	if (box[2] > snapshot->width)
+		box[2] = snapshot->width;
+	if (box[3] > snapshot->height)
+		box[3] = snapshot->height;
+
+	/* No change inside the image leaves the pixels valid for the new generation. */
+	if (box[0] >= box[2] || box[1] >= box[3]) {
+		snapshot->generation = generation;
+		*updated = true;
+		return 0;
+	}
+
+	/* Next to the unit, the CPU takes only a small box of whole utiles. */
+	bytes = (uint64_t)(((box[2] + 3U) & ~3U) - (box[0] & ~3U)) * (((box[3] + 3U) & ~3U) - (box[1] & ~3U)) * 4U;
+	if (unit && bytes > NATIVE_SNAPSHOT_UPDATE_BYTES)
+		return 0;
+
+	/* The pixels are invalid from the first byte the CPU writes until the clean completes. */
+	snapshot->valid = false;
+	error = bcm2711_native_texture_copy_box(
+		snapshot->width,
+		snapshot->height,
+		raster,
+		snapshot->pitch,
+		raster_bytes,
+		snapshot->pixels->view->buffer->address,
+		(size_t)snapshot->pixels->bytes,
+		box);
+	if (error != 0)
+		return error;
+
+	/*
+	 * Writes back the changed block rows of each touched 32-pixel column, which
+	 * is contiguous in the column-major layout.  Widening to utiles stays in the
+	 * block rows and columns of the box.
+	 */
+	column_bytes = (uint64_t)((snapshot->height + 7U) / 8U) * 1024U;
+	first_row = box[1] / 8U;
+	end_row = (box[3] - 1U) / 8U + 1U;
+	for (column = box[0] / 32U; column <= (box[2] - 1U) / 32U; column++) {
+		error = bcm2711_native_storage_clean_range(
+			snapshot->pixels,
+			column * column_bytes + (uint64_t)first_row * 1024U,
+			(uint64_t)(end_row - first_row) * 1024U);
+		if (error != 0)
+			return error;
+	}
+
+	/* The pixels match the source at the generation read before the ring. */
+	snapshot->generation = generation;
+	snapshot->valid = true;
+	space->snapshot_updates++;
+	*updated = true;
+
+	/* Succeeded: the snapshot is current without a whole conversion. */
 	return 0;
 }
 

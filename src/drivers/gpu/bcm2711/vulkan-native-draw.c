@@ -410,6 +410,7 @@ prepare_texture_image(
 	uint32_t bytes;
 	uint64_t started;
 	uint64_t fills;
+	uint64_t updates;
 	bool unit;
 	char kind;
 	int error;
@@ -434,6 +435,7 @@ prepare_texture_image(
 		/* A source no process maps reuses its converted snapshot until a device or kernel write changes it. */
 		started = clock_ticks();
 		fills = draw->space->snapshot_fills;
+		updates = draw->space->snapshot_updates;
 		unit = draw->space->native->hardware.tfu_uif_ready && conversion_supported(image, address);
 		error = bcm2711_native_snapshot_get(
 			draw->space,
@@ -442,8 +444,9 @@ prepare_texture_image(
 			image->width,
 			image->height,
 			image->pitch,
-			unit ? NULL : cpu,
+			cpu,
 			(size_t)image->bytes,
+			unit,
 			&entry->snapshot);
 		draw->copy_ticks += clock_ticks() - started;
 		if (error != 0 && error != ENOTSUP)
@@ -466,7 +469,9 @@ prepare_texture_image(
 
 		/* Diagnostics count how the texture was obtained and keep the largest conversion. */
 		kind = 0;
-		if (error == 0 && draw->space->snapshot_fills == fills) {
+		if (error == 0 && draw->space->snapshot_updates != updates) {
+			draw->snapshot_updates++;
+		} else if (error == 0 && draw->space->snapshot_fills == fills) {
 			draw->snapshot_hits++;
 		} else if (error == 0) {
 			draw->snapshot_fills++;
