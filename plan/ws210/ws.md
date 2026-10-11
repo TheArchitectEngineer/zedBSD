@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: [P1 の lane](../agents/P1/queue.md)
-Resume point: p001（調査と設計）から。
+Resume point: p001 の設計の第 1 版（phase001/phase.md）の review と判断 G1〜G5 の後に p002。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -31,4 +31,4 @@ Pi 4 で標準 app（Files・Settings・Phone など）の再描画が CPU の�
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 調査と設計（今の canvas・text・image の作り、app の present の経路、GPU の back end の形、shader、fallback、移行の順、試験） | planned |
+| [p001](phase001/phase.md) | 調査と設計（今の canvas・text・image の作り、app の present の経路、GPU の back end の形、shader、fallback、移行の順、試験） | in-progress（設計の第 1 版、review 待ち） |
