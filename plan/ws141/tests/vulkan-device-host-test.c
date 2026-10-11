@@ -3748,6 +3748,7 @@ runtime_test(
 	struct gpu_capset capset;
 	VkFenceCreateInfo create;
 	uint64_t submitted;
+	unsigned available;
 	void *token;
 	uint8_t wire[512];
 	uint32_t protocol;
@@ -3947,6 +3948,39 @@ runtime_test(
 	assert(!fence->signaled && fence->pending == 0 && fence->status == VK_ERROR_DEVICE_LOST);
 	assert(runtime_faults == 1 && !controller->worker.uncertain && !controller->space.native->hardware.faulted);
 	runtime_session->stopping = false;
+
+	/* Unfinished executions hold back marker reservations: the producer waits (EAGAIN) instead of failing. */
+	error = controller->operations.jobs->capacity(controller, runtime_session, 7, &available);
+	assert(error == 0 && available == BCM2711_RENDER_SESSION_EXECUTIONS);
+	for (index = 0; index < BCM2711_RENDER_SESSION_EXECUTIONS; index++) {
+		begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+		ws141_client_encode_submit(&writer, 0, 0, 0, 0);
+		error = execute_queued(session, &writer, &reader);
+		assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
+		error = controller->operations.jobs->capacity(controller, runtime_session, 7, &available);
+		assert(error == 0 && available == BCM2711_RENDER_SESSION_EXECUTIONS - index - 1U);
+	}
+	error = controller->operations.jobs->reserve(controller, runtime_session, 7, (struct drv_gpu_completion *)(uintptr_t)25, &token);
+	assert(error == EAGAIN && controller->worker.executions == BCM2711_RENDER_SESSION_EXECUTIONS);
+
+	/* A stream that keeps submitting without markers is refused at the hard limit with an ordinary allocation failure. */
+	for (index = BCM2711_RENDER_SESSION_EXECUTIONS; index < BCM2711_RENDER_HARD_EXECUTIONS; index++) {
+		begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+		ws141_client_encode_submit(&writer, 0, 0, 0, 0);
+		error = execute_queued(session, &writer, &reader);
+		assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
+	}
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 0, 0, 0, 0);
+	error = execute_queued(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY);
+	assert(runtime_session->submitted - runtime_session->executed == BCM2711_RENDER_HARD_EXECUTIONS);
+
+	/* Finished executions give the room back. */
+	assert(executor_drain(controller) == BCM2711_RENDER_HARD_EXECUTIONS);
+	assert(controller->worker.executions == 0 && controller->worker.execution_bytes == 0 && runtime_session->pending == 0);
+	error = controller->operations.jobs->capacity(controller, runtime_session, 7, &available);
+	assert(error == 0 && available == BCM2711_RENDER_SESSION_EXECUTIONS);
 	destroy(session, GPU_OP_DESTROY_FENCE, 910);
 	session->render->vulkan = old_namespace;
 	puts("WS141 actual public runtime capset/snapshot/FIFO/fence/callback/domain/OOM/capacity/close drain: PASS");

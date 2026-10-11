@@ -19,7 +19,7 @@
 /* Submission metadata and prepared snapshots have independent finite bounds and never occupy the kernel stack. */
 #define QUEUE_BATCHES 64U
 #define QUEUE_ACTIONS 256U
-#define QUEUE_PREPARED_BYTES (8U * 1024U * 1024U)
+#define QUEUE_PREPARED_BYTES BCM2711_RENDER_SUBMISSION_BYTES
 #define QUEUE_STAGE_MASK (VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT)
 
 /* One action represents an ordered binary wait, complete pending primary or binary signal inside a controller-serialized submission. */
@@ -150,8 +150,10 @@ bcm2711_vulkan_queue_dispatch(
 	if (error == 0)
 		error = prepare_submission(session, submission);
 
-	/* The execution's heap copy is the last fallible step before publication. */
+	/* A stream past the hard limits is refused; the execution's heap copy is the last fallible step before publication. */
 	execution = NULL;
+	if (error == 0)
+		error = bcm2711_render_execution_admit(session->render, submission->bytes);
 	if (error == 0) {
 		execution = create_execution(session, submission);
 		if (execution == NULL)

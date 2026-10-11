@@ -13,8 +13,28 @@
 #include <stdint.h>
 #include <kern/waitq.h>
 
+/* Decoder commands own the request slots; producer markers own a separate pool. */
 #define BCM2711_RENDER_REQUESTS 16U
-#define BCM2711_RENDER_RESERVATIONS 8U
+#define BCM2711_RENDER_MARKERS 96U
+
+/*
+ * Backpressure: a producer marker is reserved only while its session and the
+ * engine have room for one more execution of the largest submission.  Each
+ * open session may always hold the minimum, whatever the others hold, so the
+ * marker pool covers the minimum of every possible session.
+ */
+#define BCM2711_RENDER_SESSIONS 32U
+#define BCM2711_RENDER_MINIMUM 2U
+#define BCM2711_RENDER_MINIMUM_BYTES (16U * 1024U * 1024U)
+#define BCM2711_RENDER_SESSION_EXECUTIONS 12U
+#define BCM2711_RENDER_SESSION_BYTES (48U * 1024U * 1024U)
+#define BCM2711_RENDER_EXECUTIONS 64U
+#define BCM2711_RENDER_BYTES (UINT64_C(192) * 1024U * 1024U)
+#define BCM2711_RENDER_SUBMISSION_BYTES (8U * 1024U * 1024U)
+
+/* A stream that submits without markers is refused past twice the session's limits. */
+#define BCM2711_RENDER_HARD_EXECUTIONS (2U * BCM2711_RENDER_SESSION_EXECUTIONS)
+#define BCM2711_RENDER_HARD_BYTES (2U * BCM2711_RENDER_SESSION_BYTES)
 
 struct thread;
 struct drv_gpu_completion;
@@ -76,6 +96,16 @@ struct bcm2711_render_request {
 /* The native IRQ guard protects the FIFO, slots, pending counts and uncertain flag. */
 struct bcm2711_render_worker {
 	struct bcm2711_render_request requests[BCM2711_RENDER_REQUESTS];
+	struct bcm2711_render_request markers[BCM2711_RENDER_MARKERS];
+	/*
+	 * Backpressure counts: open sessions, the sum over sessions of the
+	 * markers each holds up to the minimum, and the unfinished executions
+	 * and their bytes of all sessions.
+	 */
+	uint32_t sessions;
+	uint32_t covered;
+	uint32_t executions;
+	uint64_t execution_bytes;
 	struct bcm2711_render_request *head;
 	struct bcm2711_render_request *tail;
 	struct thread *thread;
@@ -104,6 +134,16 @@ int bcm2711_render_worker_stopped(struct bcm2711_render_session *session);
 void bcm2711_render_worker_drain(struct bcm2711_render_session *session);
 void bcm2711_render_worker_fault(struct bcm2711_render_device *controller, int error);
 int bcm2711_render_worker_recovered(struct bcm2711_render_device *controller);
+
+/* Counts an opened or closed session for the marker minimum; EBUSY when no more may open.  The closer reports the capacity change outside the mutex. */
+int bcm2711_render_worker_session_open(struct bcm2711_render_device *controller);
+void bcm2711_render_worker_session_close(struct bcm2711_render_device *controller);
+
+/* Tells whether a live request still names the session's domain; the caller holds the native IRQ guard. */
+bool bcm2711_render_worker_timeline_busy(struct bcm2711_render_device *controller, struct bcm2711_render_session *session, uint32_t timeline);
+
+/* Refuses an execution past the hard limits (a stream submitting without markers); the caller holds the controller mutex. */
+int bcm2711_render_execution_admit(struct bcm2711_render_session *session, uint64_t bytes);
 
 /* Queues an accepted execution behind its session's earlier ones; the caller holds the controller mutex. */
 void bcm2711_render_execution_submit(struct bcm2711_render_session *session, struct bcm2711_render_execution *execution);

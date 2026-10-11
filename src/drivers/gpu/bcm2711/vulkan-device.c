@@ -539,10 +539,8 @@ claim_timeline(
 {
 	struct bcm2711_render_session *render;
 	struct bcm2711_render_device *controller;
-	struct bcm2711_render_request *request;
 	uint64_t mask;
 	unsigned long enabled;
-	uint32_t slot;
 
 	/* All queue publication shares the native IRQ guard with producer reservation and callback retirement. */
 	render = session->render;
@@ -564,13 +562,10 @@ claim_timeline(
 		return EEXIST;
 	}
 
-	/* Even a withdrawn queue cannot hand an old RESERVED/QUEUED/ACTIVE/FINISHING callback's domain to a new identity. */
-	for (slot = 0; slot < BCM2711_RENDER_REQUESTS; slot++) {
-		request = &controller->worker.requests[slot];
-		if (request->session == render && request->timeline == timeline) {
-			spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
-			return EAGAIN;
-		}
+	/* Even a withdrawn queue cannot hand an old RESERVED/QUEUED/ACTIVE/PARKED/FINISHING callback's domain to a new identity. */
+	if (bcm2711_render_worker_timeline_busy(controller, render, timeline)) {
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+		return EAGAIN;
 	}
 
 	/* A freshly published native queue becomes the sole producer admission owner of this domain. */

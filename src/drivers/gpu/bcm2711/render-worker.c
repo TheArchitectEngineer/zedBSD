@@ -26,6 +26,9 @@
 /* A queue domain completion whose session still has executions waits here until they finish. */
 #define REQUEST_PARKED 6U
 
+/* The command slots followed by the marker pool. */
+#define WORKER_ENTRIES (BCM2711_RENDER_REQUESTS + BCM2711_RENDER_MARKERS)
+
 /* Constant operation-table entries need declarations before ANSI C initialization. */
 static int job_reserve(void *opaque, void *private_session, uint32_t timeline, struct drv_gpu_completion *completion, void **token);
 static int job_commit(void *opaque, void *private_session, void *token, struct drv_gpu_completion *completion);
@@ -44,7 +47,9 @@ static struct bcm2711_render_request *find_reservation(struct bcm2711_render_dev
 static void queue_marker(struct bcm2711_render_device *controller, struct bcm2711_render_request *request, int error);
 static int execute_marker(struct bcm2711_render_device *controller, struct bcm2711_render_session *session, void *payload, bool *retired);
 static int dispose_marker(struct bcm2711_render_device *controller, void *payload, bool retired);
-static unsigned reservation_capacity(struct bcm2711_render_worker *worker);
+static unsigned marker_capacity(struct bcm2711_render_device *controller, struct bcm2711_render_session *session);
+static struct bcm2711_render_request *worker_entry(struct bcm2711_render_worker *worker, uint32_t index);
+static void retire_entry(struct bcm2711_render_device *controller, struct bcm2711_render_request *request);
 
 static void worker_main(void *opaque);
 static void executor_main(void *opaque);
@@ -342,8 +347,8 @@ bcm2711_render_worker_stop(
 	session->stopping = true;
 
 	/* An active bounded operation retains its callback until the worker's actual retirement result. */
-	for (slot = 0; slot < BCM2711_RENDER_REQUESTS; slot++) {
-		request = &controller->worker.requests[slot];
+	for (slot = 0; slot < WORKER_ENTRIES; slot++) {
+		request = worker_entry(&controller->worker, slot);
 		if (request->session != session)
 			continue;
 
@@ -372,6 +377,7 @@ bcm2711_render_worker_stopped(
 	struct bcm2711_render_session *session)
 {
 	struct bcm2711_render_device *controller;
+	struct bcm2711_render_request *request;
 	unsigned long enabled;
 	uint32_t slot;
 	uint32_t unpublished;
@@ -383,9 +389,9 @@ bcm2711_render_worker_stopped(
 
 	/* A reserved but unpublished callback supplies no native work and remains normally cancelable. */
 	unpublished = 0;
-	for (slot = 0; slot < BCM2711_RENDER_REQUESTS; slot++) {
-		if (controller->worker.requests[slot].session == session &&
-		    controller->worker.requests[slot].state == REQUEST_RESERVED)
+	for (slot = 0; slot < WORKER_ENTRIES; slot++) {
+		request = worker_entry(&controller->worker, slot);
+		if (request->session == session && request->state == REQUEST_RESERVED)
 			unpublished++;
 	}
 
@@ -427,8 +433,8 @@ bcm2711_render_worker_drain(
 	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
 	/* Final close joins unpublished callbacks that the common monitor has not withdrawn. */
-	for (slot = 0; slot < BCM2711_RENDER_REQUESTS; slot++) {
-		request = &controller->worker.requests[slot];
+	for (slot = 0; slot < WORKER_ENTRIES; slot++) {
+		request = worker_entry(&controller->worker, slot);
 		if (request->session == session && request->state == REQUEST_RESERVED)
 			queue_marker(controller, request, ECANCELED);
 	}
@@ -474,8 +480,8 @@ bcm2711_render_worker_fault(
 	controller->worker.uncertain = true;
 
 	/* Accepted queued callbacks still retire exactly once, without another native launch. */
-	for (slot = 0; slot < BCM2711_RENDER_REQUESTS; slot++) {
-		request = &controller->worker.requests[slot];
+	for (slot = 0; slot < WORKER_ENTRIES; slot++) {
+		request = worker_entry(&controller->worker, slot);
 		if (request->state == REQUEST_QUEUED)
 			request->canceled = error;
 	}
@@ -504,8 +510,8 @@ bcm2711_render_worker_recovered(
 	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
 	/* Callback delivery must have ended before reset can reopen any native publication. */
-	for (slot = 0; slot < BCM2711_RENDER_REQUESTS; slot++) {
-		if (controller->worker.requests[slot].state != REQUEST_FREE) {
+	for (slot = 0; slot < WORKER_ENTRIES; slot++) {
+		if (worker_entry(&controller->worker, slot)->state != REQUEST_FREE) {
 			spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 			return EBUSY;
 		}
@@ -547,6 +553,7 @@ job_reserve(
 	unsigned long enabled;
 	unsigned capacity;
 	uint64_t mask;
+	uint32_t held;
 	uint32_t slot;
 
 	/* A refused reservation transfers no callback or output token to the backend. */
@@ -576,20 +583,23 @@ job_reserve(
 		return EIO;
 	}
 
-	/* At most half the fixed slots are supervised markers, leaving room for actual decoder commands. */
-	capacity = reservation_capacity(&controller->worker);
+	/* Backpressure: the producer waits for room in its session and the engine, never failing for it. */
+	capacity = marker_capacity(controller, session);
 	if (capacity == 0 || session->pending == UINT32_MAX) {
 		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 		return EAGAIN;
 	}
 
-	/* The capacity snapshot and slot acquisition share this guard, so a free slot must exist. */
+	/* The capacity snapshot and pool acquisition share this guard, so a free marker must exist. */
 	request = NULL;
-	for (slot = 0; slot < BCM2711_RENDER_REQUESTS; slot++) {
-		if (controller->worker.requests[slot].state == REQUEST_FREE) {
-			request = &controller->worker.requests[slot];
-			break;
+	held = 0;
+	for (slot = 0; slot < BCM2711_RENDER_MARKERS; slot++) {
+		if (controller->worker.markers[slot].state != REQUEST_FREE) {
+			held++;
+			continue;
 		}
+		if (request == NULL)
+			request = &controller->worker.markers[slot];
 	}
 
 	/* A slot preserves the callback without entering the FIFO or touching native registers. */
@@ -601,11 +611,14 @@ job_reserve(
 	request->timeline = timeline;
 	request->state = REQUEST_RESERVED;
 	session->pending++;
+	if (session->markers < BCM2711_RENDER_MINIMUM)
+		controller->worker.covered++;
+	session->markers++;
 	*token = request;
 
 	/* Diagnostic: the most markers held at once in the report window, this one included. */
-	if (BCM2711_RENDER_RESERVATIONS - capacity + 1U > controller->space.native->hardware.perf.markers_max)
-		controller->space.native->hardware.perf.markers_max = BCM2711_RENDER_RESERVATIONS - capacity + 1U;
+	if (held + 1U > controller->space.native->hardware.perf.markers_max)
+		controller->space.native->hardware.perf.markers_max = held + 1U;
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
@@ -705,10 +718,7 @@ job_cancel(
 	}
 
 	/* The common core discards this completion after success; the backend must never call it again. */
-	if (session->pending == 0)
-		__builtin_trap();
-	kern_memset(request, 0, sizeof(*request));
-	session->pending--;
+	retire_entry(controller, request);
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
@@ -760,7 +770,7 @@ job_capacity(
 	}
 
 	/* The snapshot promises no ownership; reserve competes for the same guarded pool. */
-	*available = reservation_capacity(&controller->worker);
+	*available = marker_capacity(controller, session);
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
@@ -784,8 +794,8 @@ find_reservation(
 		return NULL;
 
 	/* The IRQ guard excludes slot reuse throughout identity validation and the caller's transition. */
-	for (slot = 0; slot < BCM2711_RENDER_REQUESTS; slot++) {
-		request = &controller->worker.requests[slot];
+	for (slot = 0; slot < BCM2711_RENDER_MARKERS; slot++) {
+		request = &controller->worker.markers[slot];
 		if (token != request ||
 		    request->session != session ||
 		    request->completion != completion ||
@@ -862,35 +872,128 @@ dispose_marker(
 	return 0;
 }
 
-/* Counts usable supervised slots while preserving eight slots for ordinary commands. */
+/*
+ * Counts the markers a session may reserve now; the caller holds the native IRQ guard.
+ *
+ * Up to the minimum, a session needs only a free marker, which the pool keeps
+ * for every open session.  Past it, the session's executions, bytes and
+ * markers stay within its limits, the engine's executions and bytes within
+ * the global ones, and the markers left cover the other sessions' minimum.
+ */
 static unsigned
-reservation_capacity(
-	struct bcm2711_render_worker *worker)
+marker_capacity(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_session *session)
 {
+	struct bcm2711_render_worker *worker;
+	uint64_t unfinished;
+	uint64_t bytes;
+	uint32_t free_markers;
+	uint32_t minimum;
+	uint32_t own;
+	uint32_t others;
 	uint32_t slot;
-	unsigned free_slots;
-	unsigned supervised;
+	unsigned minimum_room;
 	unsigned capacity;
 
-	/* Live queued and finishing supervised markers consume the same bound as unpublished reservations. */
-	free_slots = 0;
-	supervised = 0;
-	for (slot = 0; slot < BCM2711_RENDER_REQUESTS; slot++) {
-		if (worker->requests[slot].state == REQUEST_FREE)
-			free_slots++;
-		if (worker->requests[slot].supervised)
-			supervised++;
+	/* Free markers in the pool. */
+	worker = &controller->worker;
+	free_markers = 0;
+	for (slot = 0; slot < BCM2711_RENDER_MARKERS; slot++) {
+		if (worker->markers[slot].state == REQUEST_FREE)
+			free_markers++;
+	}
+	if (free_markers == 0)
+		return 0;
+	unfinished = session->submitted - session->executed;
+	bytes = session->execution_bytes;
+
+	/* The minimum is always available to a session below it. */
+	minimum_room = 0;
+	if (session->markers < BCM2711_RENDER_MINIMUM &&
+	    unfinished < BCM2711_RENDER_MINIMUM &&
+	    bytes + BCM2711_RENDER_SUBMISSION_BYTES <= BCM2711_RENDER_MINIMUM_BYTES) {
+		minimum_room = BCM2711_RENDER_MINIMUM - session->markers;
+		if (unfinished > session->markers)
+			minimum_room = BCM2711_RENDER_MINIMUM - (uint32_t)unfinished;
 	}
 
-	/* A full producer reservation pool cannot starve decoder command admission. */
-	if (supervised >= BCM2711_RENDER_RESERVATIONS)
-		return 0;
-	capacity = BCM2711_RENDER_RESERVATIONS - supervised;
-	if (capacity > free_slots)
-		capacity = free_slots;
+	/* Past the minimum: the session's limits, the engine's, and the other sessions' minimum left free. */
+	capacity = 0;
+	if (session->markers < BCM2711_RENDER_SESSION_EXECUTIONS &&
+	    unfinished < BCM2711_RENDER_SESSION_EXECUTIONS &&
+	    bytes + BCM2711_RENDER_SUBMISSION_BYTES <= BCM2711_RENDER_SESSION_BYTES &&
+	    worker->executions < BCM2711_RENDER_EXECUTIONS &&
+	    worker->execution_bytes + BCM2711_RENDER_SUBMISSION_BYTES <= BCM2711_RENDER_BYTES) {
+		own = 0;
+		if (session->markers < BCM2711_RENDER_MINIMUM)
+			own = BCM2711_RENDER_MINIMUM - session->markers;
+		minimum = BCM2711_RENDER_MINIMUM * worker->sessions;
+		others = 0;
+		if (minimum > worker->covered + own)
+			others = minimum - worker->covered - own;
+		if (free_markers > others) {
+			capacity = free_markers - others;
+			if (capacity > BCM2711_RENDER_SESSION_EXECUTIONS - session->markers)
+				capacity = BCM2711_RENDER_SESSION_EXECUTIONS - session->markers;
+			if (capacity > BCM2711_RENDER_SESSION_EXECUTIONS - unfinished)
+				capacity = BCM2711_RENDER_SESSION_EXECUTIONS - (uint32_t)unfinished;
+			if (capacity > BCM2711_RENDER_EXECUTIONS - worker->executions)
+				capacity = BCM2711_RENDER_EXECUTIONS - worker->executions;
+		}
+	}
 
-	/* Succeeded: this numerical snapshot grants no callback or slot ownership. */
+	/* The larger room, within the free markers. */
+	if (capacity < minimum_room)
+		capacity = minimum_room;
+	if (capacity > free_markers)
+		capacity = free_markers;
+
+	/* Succeeded: this numerical snapshot grants no marker. */
 	return capacity;
+}
+
+/* Returns one entry of the command slots followed by the marker pool. */
+static struct bcm2711_render_request *
+worker_entry(
+	struct bcm2711_render_worker *worker,
+	uint32_t index)
+{
+	/* Command slots first. */
+	if (index < BCM2711_RENDER_REQUESTS)
+		return &worker->requests[index];
+
+	/* Succeeded: a marker of the pool. */
+	return &worker->markers[index - BCM2711_RENDER_REQUESTS];
+}
+
+/* Frees a finished or withdrawn entry and its session's pending hold; the caller holds the native IRQ guard. */
+static void
+retire_entry(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_request *request)
+{
+	struct bcm2711_render_session *session;
+
+	/* A marker also leaves its session's count, and the minimum it covered. */
+	session = request->session;
+	if (session->pending == 0)
+		__builtin_trap();
+	if (request->supervised) {
+		if (session->markers == 0)
+			__builtin_trap();
+		session->markers--;
+		if (session->markers < BCM2711_RENDER_MINIMUM) {
+			if (controller->worker.covered == 0)
+				__builtin_trap();
+			controller->worker.covered--;
+		}
+	}
+	kern_memset(request, 0, sizeof(*request));
+	session->pending--;
+
+	/* Succeeded: the entry is free for reuse. */
+	return;
 }
 
 /* Serves the permanent FIFO and sleeps only with the queue condition guard held. */
@@ -964,7 +1067,6 @@ finish_request(
 	int error)
 {
 	struct drv_gpu_completion *completion;
-	struct bcm2711_render_session *session;
 	unsigned long enabled;
 
 	/* FINISHING keeps the slot and session alive across reentrant common completion observers. */
@@ -974,7 +1076,6 @@ finish_request(
 		__builtin_trap();
 	request->state = REQUEST_FINISHING;
 	completion = request->completion;
-	session = request->session;
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
@@ -982,10 +1083,9 @@ finish_request(
 	drv_gpu_complete(completion, error);
 	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
-	if (request->state != REQUEST_FINISHING || session->pending == 0)
+	if (request->state != REQUEST_FINISHING)
 		__builtin_trap();
-	kern_memset(request, 0, sizeof(*request));
-	session->pending--;
+	retire_entry(controller, request);
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
@@ -1026,6 +1126,8 @@ bcm2711_render_execution_submit(
 	session->submitted++;
 	session->execution_bytes += execution->bytes;
 	session->pending++;
+	controller->worker.executions++;
+	controller->worker.execution_bytes += execution->bytes;
 
 	/* An idle session joins the round robin's tail. */
 	if (!session->ready) {
@@ -1145,6 +1247,8 @@ bcm2711_render_executor_step(
 	if (done) {
 		session->executed++;
 		session->execution_bytes -= bytes;
+		controller->worker.executions--;
+		controller->worker.execution_bytes -= bytes;
 		link = &controller->worker.parked;
 		while (*link != NULL) {
 			request = *link;
@@ -1298,4 +1402,95 @@ executor_main(
 
 		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 	}
+}
+
+/* Counts an opened session for the marker minimum; EBUSY when the pool cannot cover one more. */
+int
+bcm2711_render_worker_session_open(
+	struct bcm2711_render_device *controller)
+{
+	unsigned long enabled;
+	int error;
+
+	/* The count changes under the guard the reservations read it under. */
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	error = EBUSY;
+	if (controller->worker.sessions < BCM2711_RENDER_SESSIONS) {
+		controller->worker.sessions++;
+		error = 0;
+	}
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* Reports whether the session may open. */
+	return error;
+}
+
+/* Uncounts a closed session. */
+void
+bcm2711_render_worker_session_close(
+	struct bcm2711_render_device *controller)
+{
+	unsigned long enabled;
+
+	/* Every close follows a counted open. */
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	if (controller->worker.sessions == 0)
+		__builtin_trap();
+	controller->worker.sessions--;
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+}
+
+/* Tells whether a live request still names the session's domain; the caller holds the native IRQ guard. */
+bool
+bcm2711_render_worker_timeline_busy(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_session *session,
+	uint32_t timeline)
+{
+	struct bcm2711_render_request *request;
+	uint32_t slot;
+
+	/* Every slot and marker, in any state but free (a free entry names no session). */
+	for (slot = 0; slot < WORKER_ENTRIES; slot++) {
+		request = worker_entry(&controller->worker, slot);
+		if (request->session == session && request->timeline == timeline)
+			return true;
+	}
+
+	/* Succeeded: no request keeps the domain. */
+	return false;
+}
+
+/*
+ * Refuses an execution past the hard limits.
+ *
+ * Producers that reserve a marker per submission never reach them; a stream
+ * submitting without markers is refused instead of growing without bound.
+ */
+int
+bcm2711_render_execution_admit(
+	struct bcm2711_render_session *session,
+	uint64_t bytes)
+{
+	struct bcm2711_render_device *controller;
+	unsigned long enabled;
+	int error;
+
+	/* The decoder holds the controller mutex, so only the executor changes the counts meanwhile, downward. */
+	controller = session->device;
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+	error = 0;
+	if (session->submitted - session->executed >= BCM2711_RENDER_HARD_EXECUTIONS ||
+	    session->execution_bytes + bytes > BCM2711_RENDER_HARD_BYTES)
+		error = ENOMEM;
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* Reports whether the execution may be queued. */
+	return error;
 }

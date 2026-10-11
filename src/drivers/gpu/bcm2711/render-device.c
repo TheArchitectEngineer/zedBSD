@@ -165,9 +165,17 @@ render_open(
 		return error;
 	}
 
+	/* The marker pool covers the minimum of a bounded number of open sessions. */
+	error = bcm2711_render_worker_session_open(controller);
+	if (error != 0) {
+		mutex_unlock(&controller->mutex);
+		return error;
+	}
+
 	/* One open retains its local identity counter and complete resource list. */
 	session = kern_calloc(1, sizeof(*session));
 	if (session == NULL) {
+		bcm2711_render_worker_session_close(controller);
 		mutex_unlock(&controller->mutex);
 		return ENOMEM;
 	}
@@ -177,6 +185,7 @@ render_open(
 	error = bcm2711_vulkan_session_open(session, &session->vulkan);
 	if (error != 0) {
 		kern_free(session);
+		bcm2711_render_worker_session_close(controller);
 		mutex_unlock(&controller->mutex);
 		return error;
 	}
@@ -214,6 +223,7 @@ render_close(
 	    controller->sessions == 0)
 		__builtin_trap();
 	controller->sessions--;
+	bcm2711_render_worker_session_close(controller);
 
 	/* Pending Vulkan owners withdraw public identities but retain this exact renderer through uncertain DMA retirement. */
 	error = bcm2711_vulkan_session_close(&session->vulkan);
@@ -230,6 +240,9 @@ render_close(
 		bcm2711_render_worker_fault(controller, error);
 
 	mutex_unlock(&controller->mutex);
+
+	/* The other sessions' reservations may use the closed session's minimum. */
+	drv_gpu_capacity_changed(controller->gpu);
 
 	/* Common observers see failure only after the closing namespace and all persistent native/session owners are rooted. */
 	if (error != 0)

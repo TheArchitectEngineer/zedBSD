@@ -52,6 +52,8 @@ struct bcm2711_render_session {
 	uint64_t submitted;
 	uint64_t executed;
 	uint64_t execution_bytes;
+	/* Producer markers the session holds in the marker pool, in any state. */
+	uint32_t markers;
 };
 
 /* One descriptor owns a native VA view; jobs hold independent mapped references. */
