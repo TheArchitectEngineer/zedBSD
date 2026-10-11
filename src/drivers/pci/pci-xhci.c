@@ -3525,6 +3525,7 @@ xhci_endpoint_reset(
 	uint64_t wait_started;
 	unsigned dci;
 	unsigned long irq;
+	int busy;
 	int error;
 
 	/* Handles the usbep availability. */
@@ -3543,9 +3544,21 @@ xhci_endpoint_reset(
 		return EINVAL;
 	endpoint = &d->endpoints[dci];
 
-	/* An isochronous endpoint recovers only through its worker (design 2.1b B-W4). */
-	if (endpoint->isoch != NULL)
-		return EINVAL;
+	/*
+	 * An isochronous endpoint recovers only through its worker (design
+	 * 2.1b B-W4): the core's reset of a newly selected alternate's
+	 * endpoints finds it empty and idle and has nothing to do; one with
+	 * requests or an owner is busy.  A halt it may have is the worker's
+	 * at the next enqueue (B-R3).
+	 */
+	if (endpoint->isoch != NULL) {
+		irq = spin_lock_irqsave(&c->active_lock);
+		busy = xhci_isoch_busy_locked(endpoint);
+		spin_unlock_irqrestore(&c->active_lock, irq);
+		if (busy)
+			return EBUSY;
+		return 0;
+	}
 	wait_started = sched_ticks();
 	/* Continue until the operation reaches a terminal state. */
 	for (;;) {
