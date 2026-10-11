@@ -465,8 +465,14 @@ kwl_compose_draw(
 	subsurfaces = kwl_subsurface_collect(server, windows + all + popups, KWL_FRAME_WINDOWS - all - popups);
 
 	/* The frame's start, when the per-frame lines were asked for (ws099-p002's parts of a frame). */
-	if (server->log_frames)
-		printf("KWL LAT draw frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
+	if (server->log_frames) {
+		printf(
+			"KWL LAT draw frame=%llu x=%d y=%d at_us=%llu\n",
+			(unsigned long long)server->frame + 1U,
+			server->pointer_x,
+			server->pointer_y,
+			(unsigned long long)kwl_microseconds());
+	}
 
 	/* The next swapchain image (the wait for it is measured apart). */
 	mark = kwl_cycles();

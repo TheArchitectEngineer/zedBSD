@@ -121,3 +121,6 @@ Style checkerの今回対象全fileではcompose.c既存未変更335/498/517/551
 
 
 2026-10-11 damage renderArea補完: whole/CLEAR passは従来全域、partial LOAD passだけbuffer-ageを含むregionをrenderArea/scissor双方へ渡す。全source周辺manual reviewで変更範囲/LOAD既存画素/viewport不変を確認、style変更箇所0（compose.c既存blank-after-brace4件は範囲外）、clang-format19範囲比較/diff-check PASS。既存native-pass fixed-Mesa XML oracle PASS（7 complete streams、partial/grouped tile geometry・draw preservation）、arm64 compositor build exit0/warning0/error0、dynamic ELF dependency checker exit0。cksum2528461358/949352。性能/描画の実機確認は未実施、SSH接続の現在IP回答待ち。33ms目標は未達のまま、submit-i01 in-progress。
+
+
+2026-10-11 cursor採用timestamp診断: --log-frames時のみpointer/drawの座標とmonotonic timestampを出し、既存submit/shownのframeへ対応可能。診断offでは追加の時計読取/log無し。C全文manualで単一event-loop ownership/動作不変/既存公開診断を確認、変更範囲style0（compose.c既存4件は範囲外）、clang-format19範囲比較/diff-check PASS。arm64 compositor最終build exit0/warning0/error0、dynamic ELF dependency checker exit0。cksum4130193432/949384。No route to host/ARP FAILEDが継続、現在IPのuser回答待ち。kernel1299371254/8077312とこのcompositorは未配置・未起動、33ms/16ms性能は未確認。main自動統合のみ実施、push/GitHub publication無し。p006 submit-i01 in-progress/WS incompleteを保持。
