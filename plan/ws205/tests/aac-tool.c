@@ -44,12 +44,18 @@ main(
 	FILE *output;
 	int error;
 	int pass;
+	int same;
 
 	/* The arguments. */
-	if (argc != 7 || strcmp(argv[1], "encode") != 0) {
+	same = 1;
+	if (argc == 7)
+		same = strcmp(argv[1], "encode");
+	if (same != 0) {
 		fprintf(stderr, "usage: aac-tool encode RATE CHANNELS BITRATE IN.raw OUT.aac\n");
 		return 2;
 	}
+
+	/* The settings and the encoder. */
 	rate = (unsigned)atoi(argv[2]);
 	channels = (unsigned)atoi(argv[3]);
 	bitrate = (unsigned)atoi(argv[4]);
@@ -58,6 +64,8 @@ main(
 		printf("FAIL create: %s\n", strerror(error));
 		return 1;
 	}
+
+	/* The files. */
 	input = fopen(argv[5], "rb");
 	output = fopen(argv[6], "wb");
 	if (input == NULL || output == NULL) {
@@ -80,11 +88,15 @@ main(
 			printf("FAIL encode: %s\n", strerror(error));
 			return 1;
 		}
+
+		/* Written as ADTS. */
 		fwrite(header, 1U, sizeof(header), output);
 		fwrite(unit, 1U, length, output);
 		frames++;
 		bytes += length;
 	}
+
+	/* The files and the encoder are no longer needed. */
 	fclose(input);
 	fclose(output);
 	media_aac_encoder_destroy(encoder);
