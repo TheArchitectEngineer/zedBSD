@@ -2,6 +2,7 @@
 #include "../bsp.h"
 #include "../defs.h"
 #include "gic.h"
+#include "../spin.h"
 
 #define GICD_CTLR 0x000
 #define GICD_TYPER 0x004
@@ -21,6 +22,12 @@
 static volatile uint32_t *dist;
 static volatile uint32_t *cpuif;
 static uint32_t irq_count;
+
+/*
+ * Guards the read-modify-write of the distributor's shared group and
+ * configuration words, which CPUs may change at once.  Zero when free.
+ */
+static volatile unsigned distributor_lock;
 
 static void write8(volatile uint32_t *base, unsigned offset, uint8_t value)
 {
@@ -125,15 +132,32 @@ void rpi4_gic_eoi(uint32_t value)
 	hal_io_mb();
 }
 void rpi4_gic_mask(uint32_t id){if(id<irq_count)dist[GICD_ICENABLER/4+id/32]=1U<<(id&31);}
-void rpi4_gic_unmask(uint32_t id)
+/*
+ * Enables one interrupt line, in the group the primary IAR serves.
+ *
+ * Direct QEMU boot enters secure EL1, where the primary IAR serves Group 0.
+ * Firmware normally enters non-secure EL1; there the group write is
+ * ignored and the primary IAR aliases Group 1.
+ */
+void
+rpi4_gic_unmask(
+	uint32_t id)
 {
-	if(id<irq_count){
-		/* Direct QEMU boot enters secure EL1, where the primary IAR serves
-		 * Group 0.  Firmware normally enters non-secure EL1; there this
-		 * group write is ignored and the primary IAR aliases Group 1. */
-		dist[GICD_IGROUPR/4+id/32]&=~(1U<<(id&31));
-		dist[GICD_ISENABLER/4+id/32]=1U<<(id&31);
-	}
+	bool enabled;
+
+	/* A line the distributor does not have is ignored. */
+	if (id >= irq_count)
+		return;
+
+	/* Moves the line to Group 0 without losing another CPU's change to the word. */
+	enabled = arm64_spin_lock(&distributor_lock);
+
+	dist[GICD_IGROUPR / 4 + id / 32] &= ~(1U << (id & 31));
+
+	arm64_spin_unlock(&distributor_lock, enabled);
+
+	/* Enables the line; the set-enable register needs no lock. */
+	dist[GICD_ISENABLER / 4 + id / 32] = 1U << (id & 31);
 }
 
 /*
@@ -167,18 +191,16 @@ rpi4_gic_set_trigger(
 		requested = mask;
 
 	/* Serializes distributor updates while the requested line stays disabled. */
-	enabled = hal_irq_disable();
+	enabled = arm64_spin_lock(&distributor_lock);
 	configuration = dist[offset];
 	if ((dist[GICD_ISENABLER / 4U + id / 32U] & (1U << (id % 32U))) != 0) {
-		if (enabled)
-			hal_irq_enable();
+		arm64_spin_unlock(&distributor_lock, enabled);
 		return HAL_ERR_BUSY;
 	}
 
 	/* Preserves fixed SGI/PPI configuration unless it already matches. */
 	if (id < 32U) {
-		if (enabled)
-			hal_irq_enable();
+		arm64_spin_unlock(&distributor_lock, enabled);
 
 		/* Refuses a private line that would need reprogramming. */
 		if ((configuration & mask) != requested)
@@ -192,8 +214,7 @@ rpi4_gic_set_trigger(
 	dist[offset] = (configuration & ~mask) | requested;
 	hal_io_mb();
 	observed = dist[offset] & mask;
-	if (enabled)
-		hal_irq_enable();
+	arm64_spin_unlock(&distributor_lock, enabled);
 
 	/* Refuses a controller that did not accept the requested trigger. */
 	if (observed != requested)
