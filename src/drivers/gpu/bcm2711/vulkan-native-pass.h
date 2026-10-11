@@ -15,10 +15,14 @@
 
 #define BCM2711_VULKAN_PASS_STORAGE 9U
 
+struct bcm2711_v3d_perf;
+
 /* The enclosing submission keeps its prepared primary pending; this root retains independent GPU owners and copied numerical target/clear state. */
 struct bcm2711_vulkan_native_pass {
 	struct bcm2711_v3d_space *space;
 	struct bcm2711_v3d_view *output;
+	/* A TLB copy's source view is retained like the output through native retirement. */
+	struct bcm2711_v3d_view *source;
 	void *cpu;
 	/* The enclosing pending primary retains this logical image through implicit pass layout transitions. */
 	struct bcm2711_vulkan_resource *target;
@@ -53,6 +57,9 @@ int bcm2711_vulkan_native_pass_build_lists(struct bcm2711_vulkan_native_pass *pa
 
 /* Run once under the controller mutex, then retain the whole parent payload when the returned native retirement proof is false. */
 int bcm2711_vulkan_native_pass_run(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result);
+
+/* Adds the draws' and lists' diagnostic preparation times, draw count and staged bytes to a report under the controller mutex. */
+void bcm2711_vulkan_native_pass_costs(const struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_perf *perf);
 
 /* false preserves the complete root, including output and every draw; a controller quarantine transfer is still required before worker payload disposal. */
 int bcm2711_vulkan_native_pass_release(struct bcm2711_vulkan_native_pass **pass, bool retired);

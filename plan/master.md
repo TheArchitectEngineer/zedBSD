@@ -22,6 +22,7 @@
 ### 統合と試験の待ち
 
 <!-- master:merge:start -->
+- 2026-10-11 夕: ユーザー「らちがあかないので、vc6の作業内容をmainにマージしてください。最新のイメージをビルドして焼きます。バグが修正されるまで再起動は手動にします。」→ P3 の VC6（agent/p3 c2e17c674、TLB copy・scene cache の全面の経路・計測の行・TFU は自己試験なしでは無効）を merge（a7ac0e4aa）。P1 の q937 review の直しと WS204 p003 audio-loop（641f5b894）、P2 の BUG-288（d25384091）も merge（f39fd61c5）。rpi4 vmunix・amd64 vmunix/wayland の build warning 0、boundary PASS。Pi 4 は BUG-288 の確認まで reboot は手動。5330 の UAT image は merge の前の b67a6d7e1 で build（SHA256 f617cff3…df21）。
 - 2026-10-11 Q1: P1 の WS197 i06 の書きかけを照合し、main に無かった直し（満杯の時に連絡先の file を書かない）と、同じ秒の item の順を決める直しを merge（d5296c23e、Phone の host 試験 PASS、Phone の named build warning 0）。残りは破棄（写しは build/q1-p1-ws197-i06-discarded.diff）。
 - 2026-10-11: Vulkan Video を既定で ON（c7aeea0c7、ユーザー）。BUG-287 の直し全部（usb-bt の Transaction Error の後の回復、同じ人の bond での phone=1、settings の store 24→64、Settings の Connect・案内、Phone app の案内、phone link の log）を merge 済み（7bfc667e7）。
 - 2026-10-10 Codex: WS197 p005 i06・i07（bee41dded）、MMS の受信（89d487814）、媒体の UAT の直し（e654733f1）、Bluetooth の自動復旧 p013（7fa0a0e9c）を main に統合済み。

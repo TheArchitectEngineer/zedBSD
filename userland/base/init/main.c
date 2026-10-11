@@ -40,6 +40,33 @@
 #define DEFERRED_MAX 8
 #define ONESHOT_POLL_MS 100
 
+/*
+ * How long a stopping process is given: a service after SIGTERM and after
+ * SIGKILL, and the processes no service owns after each of the two.  A
+ * process stuck in the kernel is left behind after these, so the shutdown
+ * still reaches its sync (BUG-288).
+ */
+#define STOP_GRACE_MS 5000U
+#define STOP_POLL_MS 100U
+
+/*
+ * The process states KERN_SYSTEM_GET_PROCESS reports for a process that has
+ * already exited (the kernel's PROCESS_ZOMBIE and PROCESS_DEAD).
+ */
+#define PROCESS_STATE_ZOMBIE 4U
+#define PROCESS_STATE_DEAD 5U
+
+/*
+ * How the final system action is retried when the kernel refuses it, which
+ * it does while the volumes cannot be written out.  The first retries come
+ * every few seconds; after them a warning says what is wrong, and the
+ * retries go on at a slower pace in case the storage recovers.  The machine
+ * is never reset or halted with the data unwritten.
+ */
+#define ACTION_QUICK_RETRIES 12U
+#define ACTION_QUICK_RETRY_SECONDS 5U
+#define ACTION_SLOW_RETRY_SECONDS 60U
+
 enum service_type { SERVICE_DAEMON, SERVICE_ONESHOT, SERVICE_RESPAWN };
 
 enum service_state {
@@ -146,6 +173,11 @@ static int valid_failure_record(const char *record);
 static void reap_children(void);
 static void shutdown_system(enum init_action action);
 static int stop_service(struct service *service);
+static int wait_for_exit(pid_t pid, unsigned milliseconds);
+static void stop_other_processes(void);
+static unsigned signal_other_processes(int signal_number);
+static unsigned wait_for_other_processes(unsigned milliseconds);
+static void pause_milliseconds(unsigned milliseconds);
 static int reload_policy(void);
 static void handle_request(int client);
 static void refuse_request(int client, int error);
@@ -1343,45 +1375,63 @@ reap_children(
 	}
 }
 
-/* Supports the shutdown system operation. */
+/*
+ * Stops the system and asks the kernel for the final action.
+ *
+ * The services are stopped in reverse order, then every other process,
+ * so nothing writes after the sync.  The kernel writes the volumes out
+ * once more before it acts, and refuses the action while that fails;
+ * the action is then retried, so data that can still be written is not
+ * lost to a reset.
+ */
 static void
 shutdown_system(
 	enum init_action action)
 {
 	size_t index;
 	const char *action_name;
+	unsigned retry_seconds;
+	unsigned retries;
 	int system_descriptor, system_action;
+	int status;
 
 	index = service_count;
 	services_stopping = 1;
 
 	printf("init: stopping services\n");
 
-	/* Process each remaining element. */
+	/* Stops the services, the last started first. */
 	while (index > 0)
 		(void)stop_service(&services[--index]);
 
+	/* Stops what no service owns: login shells, their children, orphans. */
+	stop_other_processes();
+
+	/* Writes the volumes out before the kernel is asked to act. */
 	sync();
-	action_name = action == INIT_ACTION_REBOOT     ? "reboot"
-		      : action == INIT_ACTION_POWEROFF ? "poweroff"
-						       : "halt";
-	printf("init: executing system action %s\n", action_name);
-	(void)fflush(stdout);
 
 	/* A power-off asks the kernel to cut the power; a halt and a reboot ask for those. */
 	if (action == INIT_ACTION_REBOOT) {
+		action_name = "reboot";
 		system_action = KERN_SYSTEM_REBOOT;
 	} else if (action == INIT_ACTION_POWEROFF) {
+		action_name = "poweroff";
 		system_action = KERN_SYSTEM_POWEROFF;
 	} else {
+		action_name = "halt";
 		system_action = KERN_SYSTEM_HALT;
 	}
+	printf("init: executing system action %s\n", action_name);
+	(void)fflush(stdout);
 
 	/* Keeps the requested action pending while storage can still recover. */
+	retries = 0;
 	for (;;) {
 		system_descriptor = open("/dev/system", O_RDONLY);
 		if (system_descriptor >= 0) {
-			if (ioctl(system_descriptor, system_action) == 0) {
+			/* An action the kernel takes does not return here. */
+			status = ioctl(system_descriptor, system_action);
+			if (status == 0) {
 				(void)close(system_descriptor);
 				break;
 			}
@@ -1394,11 +1444,24 @@ shutdown_system(
 				continue;
 			}
 		}
-		fprintf(stderr, "init: final system action failed: %s; retrying in 5 seconds\n",
-			strerror(errno));
+
+		/* The first retries come quickly; after them the user is told what is at stake. */
+		retries++;
+		retry_seconds = ACTION_QUICK_RETRY_SECONDS;
+		if (retries > ACTION_QUICK_RETRIES)
+			retry_seconds = ACTION_SLOW_RETRY_SECONDS;
+		fprintf(stderr, "init: final system action failed: %s; retrying in %u seconds\n",
+			strerror(errno), retry_seconds);
+		if (retries == ACTION_QUICK_RETRIES) {
+			fprintf(stderr, "init: the volumes could not be written out; "
+				"turning the power off now loses what was not written (see the kernel log)\n");
+		}
 		if (system_descriptor >= 0)
 			(void)close(system_descriptor);
-		(void)sleep(5);
+
+		/* Writes the volumes out again before the next try. */
+		(void)sleep(retry_seconds);
+		sync();
 	}
 
 	/* Continue until the operation reaches a terminal state. */
@@ -1406,47 +1469,211 @@ shutdown_system(
 		pause();
 }
 
-/* Supports the stop service operation. */
+/*
+ * Stops one service: SIGTERM, a grace period, then SIGKILL.
+ *
+ * A process that does not exit even after SIGKILL is stuck in the kernel;
+ * it is reported and left behind rather than waited for, so the shutdown
+ * still reaches its sync.
+ */
 static int
 stop_service(
 	struct service *service)
 {
-	unsigned attempt;
+	int exited;
 	int status;
 
-	/* Handles the service condition. */
+	/* A service with no process is already stopped. */
 	if (service->pid <= 0) {
 		service->state = SERVICE_STOPPED;
 
-		/* Reports successful completion. */
+		/* Succeeded: nothing was running. */
 		return 0;
 	}
 
-	/* Handles the reported system error. */
-	if (kill(service->pid, SIGTERM) != 0 && errno != ESRCH)
+	/* Asks the service to stop; one that is already gone is waited for all the same. */
+	status = kill(service->pid, SIGTERM);
+	if (status != 0 && errno != ESRCH)
 		return -1;
 
-	/* Process each element required by the operation. */
-	for (attempt = 0; attempt < 5; attempt++) {
-		/* Handles a failed waitpid operation. */
-		if (waitpid(service->pid, &status, WNOHANG) == service->pid) {
-			service->pid = 0;
-			service->state = SERVICE_STOPPED;
-
-			/* Reports successful completion. */
-			return 0;
+	/* Gives the service its grace period to exit. */
+	exited = wait_for_exit(service->pid, STOP_GRACE_MS);
+	if (!exited) {
+		/* Ends the service, and gives the kernel the same time to finish it. */
+		fprintf(stderr, "init: %s (pid %ld) did not stop; killing it\n",
+			service->name, (long)service->pid);
+		(void)kill(service->pid, SIGKILL);
+		exited = wait_for_exit(service->pid, STOP_GRACE_MS);
+		if (!exited) {
+			fprintf(stderr, "init: %s (pid %ld) did not exit after SIGKILL; leaving it\n",
+				service->name, (long)service->pid);
 		}
-		sleep(1);
 	}
-
-	(void)kill(service->pid, SIGKILL);
-	(void)waitpid(service->pid, &status, 0);
 
 	service->pid = 0;
 	service->state = SERVICE_STOPPED;
 
-	/* Reports successful completion. */
+	/* Succeeded: the service is stopped or left behind. */
 	return 0;
+}
+
+/* Reaps one child, waiting at most the given time; reports whether it exited. */
+static int
+wait_for_exit(
+	pid_t pid,
+	unsigned milliseconds)
+{
+	uint64_t deadline;
+	pid_t reaped;
+	int status;
+
+	/* Polls the child until it is reaped or the time is up. */
+	deadline = monotonic_milliseconds() + milliseconds;
+	for (;;) {
+		/* A child that is reaped, or that is no longer ours, has exited. */
+		reaped = waitpid(pid, &status, WNOHANG);
+		if (reaped == pid)
+			return 1;
+		if (reaped < 0 && errno == ECHILD)
+			return 1;
+
+		/* A child still running when the time is up has not exited. */
+		if (monotonic_milliseconds() >= deadline)
+			return 0;
+		pause_milliseconds(STOP_POLL_MS);
+	}
+}
+
+/*
+ * Stops every process that no service owns.
+ *
+ * A login shell, a program it started, or an orphan would otherwise keep
+ * writing after the sync, and what it wrote would be lost to the reset
+ * (BUG-288).  Each is sent SIGTERM, then SIGKILL after a grace period.
+ * Init itself is never signalled.
+ */
+static void
+stop_other_processes(
+	void)
+{
+	unsigned count;
+
+	/* Asks every other process to stop. */
+	count = signal_other_processes(SIGTERM);
+	if (count == 0)
+		return;
+	printf("init: stopping %u other processes\n", count);
+
+	/* Gives them their grace period. */
+	count = wait_for_other_processes(STOP_GRACE_MS);
+	if (count == 0)
+		return;
+
+	/* Ends the ones still running, and gives the kernel the time to finish them. */
+	printf("init: killing %u processes that did not stop\n", count);
+	(void)signal_other_processes(SIGKILL);
+	count = wait_for_other_processes(STOP_GRACE_MS);
+	if (count != 0)
+		fprintf(stderr, "init: %u processes did not exit after SIGKILL; leaving them\n", count);
+}
+
+/*
+ * Sends a signal to every live process other than init and the kernel.
+ *
+ * The processes are listed through KERN_SYSTEM_GET_PROCESS rather than
+ * reached with kill(-1), which would signal init as well.  A signal number
+ * of 0 only counts them.  Reports how many processes were live.
+ */
+static unsigned
+signal_other_processes(
+	int signal_number)
+{
+	struct process_info process;
+	unsigned count;
+	int descriptor;
+	int status;
+
+	/* Opens the system's device, which lists the processes. */
+	descriptor = open("/dev/system", O_RDONLY);
+	if (descriptor < 0)
+		return 0;
+
+	/* Asks for each process after the one before, until there is none. */
+	count = 0;
+	memset(&process, 0, sizeof(process));
+	process.pid = -1;
+	for (;;) {
+		status = ioctl(descriptor, KERN_SYSTEM_GET_PROCESS, &process);
+		if (status != 0)
+			break;
+
+		/* The kernel, init, and a process that has exited are passed over. */
+		if (process.pid <= 1)
+			continue;
+		if (process.state == PROCESS_STATE_ZOMBIE)
+			continue;
+		if (process.state == PROCESS_STATE_DEAD)
+			continue;
+
+		/* Counts the process and signals it. */
+		count++;
+		if (signal_number != 0)
+			(void)kill((pid_t)process.pid, signal_number);
+	}
+
+	(void)close(descriptor);
+
+	/* Succeeded: reports how many processes were live. */
+	return count;
+}
+
+/*
+ * Waits for the other processes to exit, reaping the ones init inherited.
+ *
+ * Reports how many are still live when the time is up, or 0 once none is.
+ */
+static unsigned
+wait_for_other_processes(
+	unsigned milliseconds)
+{
+	uint64_t deadline;
+	unsigned count;
+	pid_t reaped;
+	int status;
+
+	/* Polls until no other process is live or the time is up. */
+	deadline = monotonic_milliseconds() + milliseconds;
+	for (;;) {
+		/* Reaps every child that has exited, orphans included. */
+		for (;;) {
+			reaped = waitpid(-1, &status, WNOHANG);
+			if (reaped <= 0)
+				break;
+		}
+
+		/* Counts what is still live. */
+		count = signal_other_processes(0);
+		if (count == 0)
+			return 0;
+
+		/* Reports what is left when the time is up. */
+		if (monotonic_milliseconds() >= deadline)
+			return count;
+		pause_milliseconds(STOP_POLL_MS);
+	}
+}
+
+/* Sleeps for the given number of milliseconds. */
+static void
+pause_milliseconds(
+	unsigned milliseconds)
+{
+	struct timespec interval;
+
+	/* Splits the pause into seconds and nanoseconds. */
+	interval.tv_sec = (time_t)(milliseconds / 1000U);
+	interval.tv_nsec = (long)(milliseconds % 1000U) * 1000000L;
+	(void)nanosleep(&interval, NULL);
 }
 
 /* Supports the reload policy operation. */

@@ -54,6 +54,43 @@
 #define CMD_DATA 0x0020U
 #define XFER_READ 0x0010U
 
+/* The bits of the software reset register: the whole controller, or one line. */
+#define SOFTWARE_RESET_ALL 0x01U
+#define SOFTWARE_RESET_CMD 0x02U
+#define SOFTWARE_RESET_DATA 0x04U
+
+/* The card's state in the R1 status that CMD13 answers with. */
+#define CARD_STATE_SHIFT 9
+#define CARD_STATE_MASK 0x0fU
+#define CARD_STATE_TRANSFER 4U
+#define CARD_STATE_DATA 5U
+#define CARD_STATE_RECEIVE 6U
+#define CARD_STATE_PROGRAM 7U
+#define CARD_READY_FOR_DATA 0x00000100U
+
+/* How long a command, a data buffer and a read may take before it is abandoned. */
+#define SD_COMMAND_SECONDS 2U
+
+/*
+ * How long a written block may keep the card busy.  A card that tidies its
+ * flash in the background can hold the data line for well over the 250 to
+ * 500 ms the specification names, and a block given up while the card is
+ * still programming it is a block the next command collides with.
+ */
+#define SD_WRITE_BUSY_SECONDS 10U
+
+/* How long the card has to come back to the transfer state after an error. */
+#define SD_RECOVERY_SECONDS 10U
+
+/* How many times one block is tried, with a recovery between the tries. */
+#define SD_TRANSFER_ATTEMPTS 3U
+
+/* How many stop commands one recovery sends to a card stuck in a transfer. */
+#define SD_STOP_ATTEMPTS 3U
+
+/* The pause between two status questions while the card is busy. */
+#define SD_STATUS_POLL_MICROSECONDS 1000U
+
 struct rpi4_sd_unit {
 	volatile uint8_t *base;
 	struct disk *disk;
@@ -69,9 +106,23 @@ struct rpi4_sd_unit {
 
 	/* One command at a time: the controller has one set of registers. */
 	struct mutex lock;
+
+	/*
+	 * Set once a failed transfer could neither be recovered nor the card
+	 * initialized again.  Every later transfer fails at once instead of
+	 * waiting out its deadlines, so a sync or a shutdown that meets a dead
+	 * card ends with an error rather than hanging.  Under the lock.
+	 */
+	int failed;
 };
 
 static struct rpi4_sd_unit unit;
+
+/*
+ * The interrupt status the last failed wait saw, an error or a time-out.
+ * It is what a failure report shows, since the wait clears the register.
+ * Under the unit lock once the disk is published.
+ */
 static uint32_t last_error_status;
 
 static uint32_t r32(unsigned offset);
@@ -86,9 +137,14 @@ static int set_clock(uint32_t target);
 static void w16(unsigned offset, uint16_t value);
 static int command(uint32_t index, uint32_t argument, uint16_t flags, uint32_t *response);
 static int wait_bits(unsigned reg, uint32_t mask, uint32_t expected);
-static int wait_interrupt(uint32_t wanted);
+static int wait_interrupt(uint32_t wanted, unsigned seconds);
 static int app_command(uint32_t command_index, uint32_t argument, uint16_t flags, uint32_t *response);
 static int transfer_block(int write, uint64_t block, void *buffer);
+static int transfer_block_recovering(int write, uint64_t block, void *buffer);
+static int recover_card(void);
+static int reset_lines(uint8_t lines);
+static int stop_transmission(void);
+static void pause_microseconds(unsigned microseconds);
 static int sd_submit(struct disk *disk, struct bio *bio);
 static int sd_ioctl(struct disk *disk, unsigned long request, void *argument);
 
@@ -518,7 +574,7 @@ command(
 	w16(REG_COMMAND, (uint16_t)((index << 8) | flags));
 
 	/* Checks the operation status. */
-	error = wait_interrupt(INT_CMD_COMPLETE);
+	error = wait_interrupt(INT_CMD_COMPLETE, SD_COMMAND_SECONDS);
 	if (error)
 		return error;
 
@@ -549,37 +605,49 @@ wait_bits(
 	return 0;
 }
 
-/* Supports the wait interrupt operation. */
+/*
+ * Waits for the interrupt status to show the wanted event.
+ *
+ * An error bit ends the wait at once.  Whatever ends the wait other than
+ * the wanted event is kept in last_error_status for the failure report,
+ * since the status register is cleared here or by the recovery.
+ */
 static int
 wait_interrupt(
-	uint32_t wanted)
+	uint32_t wanted,
+	unsigned seconds)
 {
 	uint32_t status;
-	uint64_t deadline = counter() + frequency() * 2U;
+	uint64_t deadline;
 
-	/* Continue until the operation reaches a terminal state. */
+	/* Sets the deadline the controller has to answer by. */
+	deadline = counter() + frequency() * seconds;
+
+	/* Polls the status until the event, an error, or the deadline. */
 	for (;;) {
-		/* Checks the operation status. */
+		/* An error bit ends the wait, and is acknowledged. */
 		status = r32(REG_INT_STATUS);
-		if (status & (INT_ERROR | INT_ERROR_MASK)) {
+		if ((status & (INT_ERROR | INT_ERROR_MASK)) != 0) {
 			last_error_status = status;
 			w32(REG_INT_STATUS, status);
 
-			/* Failed. */
+			/* Failed: the controller reported an error. */
 			return EIO;
 		}
 
-		/* Checks the operation status. */
-		if (status & wanted) {
+		/* The wanted event is acknowledged and ends the wait. */
+		if ((status & wanted) != 0) {
 			w32(REG_INT_STATUS, wanted);
 
 			/* Succeeded. */
 			return 0;
 		}
 
-		/* Checks the counter result. */
-		if (counter() >= deadline)
+		/* A controller that never answers is given up on at the deadline. */
+		if (counter() >= deadline) {
+			last_error_status = status;
 			return ETIMEDOUT;
+		}
 	}
 }
 
@@ -604,94 +672,394 @@ app_command(
 	return function_result;
 }
 
-/* Supports the transfer block operation. */
+/*
+ * Moves one 512-byte block between the card and the buffer by PIO.
+ *
+ * A write waits for the transfer-complete interrupt, which the controller
+ * raises only when the card has released the data line after programming
+ * the block, so a block reported written is no longer held by the card.
+ */
 static int
 transfer_block(
 	int write,
 	uint64_t block,
 	void *buffer)
 {
-	int function_result;
-	unsigned i_index_for;
-	uint32_t argument,
-		ready = write ? INT_BUFFER_WRITE_READY : INT_BUFFER_READ_READY;
-	uint32_t *words = buffer;
+	uint32_t *words;
+	uint32_t argument;
+	uint32_t ready;
+	uint32_t command_index;
+	unsigned completion_seconds;
+	unsigned index;
 	int error;
 
-	/* Handles the block condition. */
+	/* A block past what a 32-bit argument can name is refused. */
 	if (block > 0xffffffffULL)
 		return EINVAL;
-	argument = (uint32_t)(unit.high_capacity ? block : block * 512U);
-	w16(REG_BLOCK_SIZE, 512);
-	w16(REG_BLOCK_COUNT, 1);
-	w16(REG_TRANSFER_MODE, write ? 0 : XFER_READ);
 
-	/* Checks the operation status. */
-	error = command(write ? 24U : 17U, argument,
-			CMD_RESP_SHORT | CMD_CRC | CMD_INDEX | CMD_DATA, 0);
-	if (error)
-		return error;
-	if ((error = wait_interrupt(ready)) != 0)
-		return error;
-	/* Process each remaining element. */
-	for (i_index_for = 0; i_index_for < 128U; i_index_for++) {
-		/* Handles the write condition. */
-		if (write)
-			w32(REG_BUFFER, words[i_index_for]);
-		else
-			words[i_index_for] = r32(REG_BUFFER);
+	/* A high-capacity card is addressed in blocks, an older one in bytes. */
+	if (unit.high_capacity) {
+		argument = (uint32_t)block;
+	} else {
+		argument = (uint32_t)(block * 512U);
 	}
 
-	/* Obtains the wait interrupt result. */
-	function_result = wait_interrupt(INT_TRANSFER_COMPLETE);
+	/* Picks the command, the buffer event and the completion wait of the direction. */
+	words = buffer;
+	if (write) {
+		command_index = 24U;
+		ready = INT_BUFFER_WRITE_READY;
+		completion_seconds = SD_WRITE_BUSY_SECONDS;
+	} else {
+		command_index = 17U;
+		ready = INT_BUFFER_READ_READY;
+		completion_seconds = SD_COMMAND_SECONDS;
+	}
 
-	/* Returns the computed result. */
-	return function_result;
+	/* Describes one block of 512 bytes in the direction of the transfer. */
+	w16(REG_BLOCK_SIZE, 512);
+	w16(REG_BLOCK_COUNT, 1);
+	if (write) {
+		w16(REG_TRANSFER_MODE, 0);
+	} else {
+		w16(REG_TRANSFER_MODE, XFER_READ);
+	}
+
+	/* Sends the single-block read or write command. */
+	error = command(command_index, argument,
+			CMD_RESP_SHORT | CMD_CRC | CMD_INDEX | CMD_DATA, 0);
+	if (error != 0)
+		return error;
+
+	/* Waits until the controller's buffer can take or give the block. */
+	error = wait_interrupt(ready, SD_COMMAND_SECONDS);
+	if (error != 0)
+		return error;
+
+	/* Moves the block through the buffer port, one word at a time. */
+	for (index = 0; index < 128U; index++) {
+		if (write) {
+			w32(REG_BUFFER, words[index]);
+		} else {
+			words[index] = r32(REG_BUFFER);
+		}
+	}
+
+	/* Waits until the block has crossed the bus and a write left the card idle. */
+	error = wait_interrupt(INT_TRANSFER_COMPLETE, completion_seconds);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the block is on the card or in the buffer. */
+	return 0;
 }
 
-/* Supports the sd submit operation. */
+/*
+ * Moves one block, recovering the controller and the card after a failure.
+ *
+ * Without the recovery one error leaves the inhibit bits set and every
+ * later command times out, so the volume above can neither write its
+ * buffers nor be synced at shutdown (BUG-288).  A block is tried again
+ * after each recovery; reading or writing the same block again is
+ * harmless.  A card that cannot be recovered is initialized again, and
+ * one that cannot be initialized either is marked failed.
+ */
+static int
+transfer_block_recovering(
+	int write,
+	uint64_t block,
+	void *buffer)
+{
+	const char *direction;
+	unsigned attempt;
+	int error;
+	int recovery;
+
+	/* Names the direction in the reports. */
+	if (write) {
+		direction = "write";
+	} else {
+		direction = "read";
+	}
+
+	/* Tries the block, recovering between the tries. */
+	error = EIO;
+	for (attempt = 1; attempt <= SD_TRANSFER_ATTEMPTS; attempt++) {
+		/* Moves the block; a success after a failure is reported as such. */
+		last_error_status = 0;
+		error = transfer_block(write, block, buffer);
+		if (error == 0) {
+			if (attempt > 1) {
+				kern_logf("sdhci: %s of block %llu succeeded on attempt %u\n",
+					  direction,
+					  (unsigned long long)block,
+					  attempt);
+			}
+
+			/* Succeeded: the block moved. */
+			return 0;
+		}
+
+		/* Reports the failure with what the controller showed. */
+		kern_logf("sdhci: %s of block %llu failed on attempt %u: error %d, interrupt status %x, present state %x\n",
+			  direction,
+			  (unsigned long long)block,
+			  attempt,
+			  error,
+			  last_error_status,
+			  r32(REG_PRESENT));
+
+		/* Brings the controller and the card back to the transfer state. */
+		recovery = recover_card();
+		if (recovery != 0) {
+			kern_logf("sdhci: the card did not return to the transfer state (error %d); initializing it again\n",
+				  recovery);
+			recovery = controller_init();
+		}
+
+		/* A card that cannot be initialized either fails its I/O from now on. */
+		if (recovery != 0) {
+			kern_logf("sdhci: the card could not be initialized again (error %d); failing every later transfer\n",
+				  recovery);
+			unit.failed = 1;
+			return EIO;
+		}
+	}
+
+	/* Failed: every attempt failed, though the card took commands again. */
+	return error;
+}
+
+/*
+ * Brings the controller and the card back to a state that takes commands.
+ *
+ * An error interrupt or a time-out leaves the controller's command and
+ * data state machines where they stopped, with their inhibit bits set.
+ * Both lines are reset, and the card is asked for its state until it is
+ * back in the transfer state and ready for data.  A card still sending or
+ * receiving the block is told to stop; one still programming is waited
+ * for.
+ */
+static int
+recover_card(
+	void)
+{
+	uint64_t deadline;
+	uint32_t card_status;
+	uint32_t card_state;
+	unsigned stops;
+	int error;
+
+	/* Resets the command and the data state machines of the controller. */
+	error = reset_lines(SOFTWARE_RESET_CMD | SOFTWARE_RESET_DATA);
+	if (error != 0)
+		return error;
+
+	/* Asks the card for its state until it can take the next transfer. */
+	stops = 0;
+	deadline = counter() + frequency() * SD_RECOVERY_SECONDS;
+	for (;;) {
+		/* A card that does not settle by the deadline is given up on. */
+		if (counter() >= deadline)
+			return ETIMEDOUT;
+
+		/* Reads the card's status; a failed question resets the command line. */
+		card_status = 0;
+		error = command(13, unit.rca << 16,
+				CMD_RESP_SHORT | CMD_CRC | CMD_INDEX,
+				&card_status);
+		if (error != 0) {
+			(void)reset_lines(SOFTWARE_RESET_CMD);
+			pause_microseconds(SD_STATUS_POLL_MICROSECONDS);
+			continue;
+		}
+
+		/* The state field says where the card's own state machine stands. */
+		card_state = (card_status >> CARD_STATE_SHIFT) & CARD_STATE_MASK;
+
+		/* A card in the transfer state and ready for data takes the next block. */
+		if (card_state == CARD_STATE_TRANSFER) {
+			if ((card_status & CARD_READY_FOR_DATA) != 0)
+				break;
+			pause_microseconds(SD_STATUS_POLL_MICROSECONDS);
+			continue;
+		}
+
+		/* A card still programming the block is waited for. */
+		if (card_state == CARD_STATE_PROGRAM) {
+			pause_microseconds(SD_STATUS_POLL_MICROSECONDS);
+			continue;
+		}
+
+		/* A card in any other state than a transfer is not ours to fix here. */
+		if (card_state != CARD_STATE_DATA &&
+		    card_state != CARD_STATE_RECEIVE) {
+			kern_logf("sdhci: the card is in state %u after an error\n",
+				  (unsigned)card_state);
+			return EIO;
+		}
+
+		/* A card still in a transfer is told to stop, a bounded number of times. */
+		if (stops >= SD_STOP_ATTEMPTS)
+			return ETIMEDOUT;
+		stops++;
+		error = stop_transmission();
+		if (error != 0)
+			(void)reset_lines(SOFTWARE_RESET_CMD | SOFTWARE_RESET_DATA);
+	}
+
+	/* Clears what the recovery itself left in the interrupt status. */
+	w32(REG_INT_STATUS, 0xffffffffU);
+
+	/* Succeeded: the card is in the transfer state and ready for data. */
+	return 0;
+}
+
+/*
+ * Resets the named lines of the controller and waits for the reset to end.
+ *
+ * Resetting the command line clears the command inhibit; resetting the data
+ * line clears the data inhibit and the buffer.  Neither touches the clock,
+ * the bus width or the card.
+ */
+static int
+reset_lines(
+	uint8_t lines)
+{
+	uint64_t deadline;
+	uint8_t pending;
+
+	/* Starts the reset of the lines. */
+	w8(REG_SOFTWARE_RESET, lines);
+
+	/* Waits until the controller clears the reset bits it was given. */
+	deadline = counter() + frequency();
+	for (;;) {
+		pending = (uint8_t)(r8(REG_SOFTWARE_RESET) & lines);
+		if (pending == 0)
+			break;
+
+		/* A reset that never ends is reported. */
+		if (counter() >= deadline) {
+			kern_logf("sdhci: the reset of lines %x did not end\n",
+				  (unsigned)lines);
+			return ETIMEDOUT;
+		}
+	}
+
+	/* Acknowledges whatever the interrupted operation had raised. */
+	w32(REG_INT_STATUS, 0xffffffffU);
+
+	/* Succeeded: the reset lines take commands again. */
+	return 0;
+}
+
+/*
+ * Tells the card to stop sending or receiving a block.
+ *
+ * CMD12 answers with R1b: the card may hold the data line busy while it
+ * finishes, and the controller keeps the data inhibit set until then.
+ */
+static int
+stop_transmission(
+	void)
+{
+	int error;
+
+	/* Sends the stop command. */
+	error = command(12, 0, CMD_RESP_BUSY | CMD_CRC | CMD_INDEX, 0);
+	if (error != 0)
+		return error;
+
+	/* Waits for the card to release the data line. */
+	error = wait_bits(REG_PRESENT, PRESENT_DATA_INHIBIT, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the card has left the transfer. */
+	return 0;
+}
+
+/* Spins for the given number of microseconds on the generic timer. */
+static void
+pause_microseconds(
+	unsigned microseconds)
+{
+	uint64_t deadline;
+
+	/* Converts the pause to timer ticks from now. */
+	deadline = counter() + frequency() * microseconds / 1000000U;
+
+	/* Spins until the timer passes the end of the pause. */
+	while (counter() < deadline)
+		;
+}
+
+/*
+ * Serves one block request from the disk layer.
+ *
+ * The card is driven by PIO one block at a time under the unit lock.  A
+ * flush has nothing to do: the card has no write cache enabled, and a
+ * written block is reported only once the card has programmed it.
+ */
 static int
 sd_submit(
 	struct disk *disk,
 	struct bio *bio)
 {
-	uint32_t i_index_for;
-	uint8_t *data = bio->b_data;
-	int error = 0;
+	uint8_t *data;
+	uint32_t index;
+	size_t transferred;
+	int error;
 
-	/* Handles the bio condition. */
-	if (bio->b_op == BIO_FLUSH)
+	(void)disk;
+
+	/* Picks the requests the card serves. */
+	data = bio->b_data;
+	error = 0;
+	if (bio->b_op == BIO_FLUSH) {
+		/* A flush has nothing left to write. */
 		error = 0;
-	else if (bio->b_op != BIO_READ && bio->b_op != BIO_WRITE)
+	} else if (bio->b_op != BIO_READ && bio->b_op != BIO_WRITE) {
+		/* Discards and the rest are not served. */
 		error = EOPNOTSUPP;
-	else {
+	} else {
+		/* Moves every block of the request, stopping at the first failure. */
 		mutex_lock(&unit.lock);
 
-		/* Process each remaining element. */
-		for (i_index_for = 0;
-		     i_index_for < bio->b_block_count && error == 0;
-		     i_index_for++) {
-			error = transfer_block(
+		/* A card marked failed is not tried again. */
+		if (unit.failed)
+			error = EIO;
+
+		/* Moves the blocks in order. */
+		for (index = 0;
+		     index < bio->b_block_count && error == 0;
+		     index++) {
+			error = transfer_block_recovering(
 				bio->b_op == BIO_WRITE,
-				bio->b_mapped_block + i_index_for,
-				data + (size_t)i_index_for * 512U);
+				bio->b_mapped_block + index,
+				data + (size_t)index * 512U);
 		}
+
 		mutex_unlock(&unit.lock);
 	}
 
-	/* Checks the operation status. */
-	if (error) {
-		kern_logf(
-			"sdhci: op=%u lba=%llu count=%u error=%d status=%x\n",
-			(unsigned)bio->b_op,
-			(unsigned long long)bio->b_mapped_block,
-			bio->b_block_count, error, r32(REG_INT_STATUS));
+	/* Reports a failed request with what it asked for. */
+	if (error != 0) {
+		kern_logf("sdhci: op=%u lba=%llu count=%u error=%d\n",
+			  (unsigned)bio->b_op,
+			  (unsigned long long)bio->b_mapped_block,
+			  bio->b_block_count,
+			  error);
 	}
 
-	bio_complete(bio, error, error ? 0 : (size_t)bio->b_block_count * 512U);
-	(void)disk;
+	/* Completes the request with the bytes it moved. */
+	transferred = 0;
+	if (error == 0)
+		transferred = (size_t)bio->b_block_count * 512U;
+	bio_complete(bio, error, transferred);
 
-	/* Succeeded. */
+	/* Succeeded: the request was completed, with its own error if any. */
 	return 0;
 }
 

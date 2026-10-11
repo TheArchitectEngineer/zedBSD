@@ -46,19 +46,9 @@ bcm2711_vulkan_native_pass_create(
 	const struct bcm2711_vulkan_prepared_event **next)
 {
 	struct bcm2711_vulkan_native_pass *created;
-	struct bcm2711_vulkan_native_draw *draw;
 	const struct bcm2711_vulkan_prepared_event *following;
+	struct bcm2711_v3d_perf costs;
 	uint64_t started;
-	uint64_t elapsed;
-	uint64_t since_log;
-	uint64_t texture_ticks;
-	uint64_t copy_ticks;
-	uint64_t program_ticks;
-	uint64_t record_ticks;
-	uint64_t allocation_ticks;
-	uint64_t mapping_ticks;
-	uint64_t clean_ticks;
-	uint32_t index;
 	const char *stage;
 	uint64_t remaining;
 	int error;
@@ -106,52 +96,21 @@ bcm2711_vulkan_native_pass_create(
 		error = prepare_lists(created, &remaining);
 	}
 
-	/* Reports slow preparation before teardown can replace its original failure. */
-	elapsed = clock_ticks() - started;
-	elapsed = kern_ticks_to_ms(elapsed);
-	since_log = kern_ticks_to_ms(started - space->native->hardware.prepare_logged_ticks);
-
-	/* Rate-limit successful slow-pass diagnostics while retaining every preparation failure. */
-	if (error != 0 || (elapsed >= 33U && since_log >= 1000U)) {
-		space->native->hardware.prepare_logged_ticks = started;
-
-		/* Totals completed draws without adding per-draw console output. */
-		texture_ticks = 0;
-		copy_ticks = 0;
-		program_ticks = 0;
-		record_ticks = 0;
-		allocation_ticks = 0;
-		mapping_ticks = 0;
-		clean_ticks = 0;
-		for (draw = created->first; draw != NULL; draw = draw->next) {
-			texture_ticks += draw->texture_ticks;
-			copy_ticks += draw->copy_ticks;
-			program_ticks += draw->program_ticks;
-			record_ticks += draw->record_ticks;
-
-			/* Only original owners count a shared texture's storage costs. */
-			for (index = 0; index < draw->count; index++) {
-				allocation_ticks += draw->storage[index]->allocation_ticks;
-				mapping_ticks += draw->storage[index]->mapping_ticks;
-				clean_ticks += draw->storage[index]->clean_ticks;
-			}
-		}
-
-		/* Slow-pass durations include time preempted by other runnable threads. */
+	/* Reports a refused preparation before teardown can replace its original failure. */
+	if (error != 0) {
+		kern_memset(&costs, 0, sizeof(costs));
+		bcm2711_vulkan_native_pass_costs(created, &costs);
 		kern_logf(
-			"v3d: pass prepare stage=%s error=%d draws=%u bytes=%llu ms=%llu tex=%llu copy=%llu program=%llu record=%llu alloc=%llu map=%llu clean=%llu\n",
+			"v3d: pass prepare stage=%s error=%d draws=%u bytes=%llu ms=%llu tex=%llu copy=%llu alloc=%llu map=%llu\n",
 			stage,
 			error,
 			created->draws,
 			(unsigned long long)created->bytes,
-			(unsigned long long)elapsed,
-			(unsigned long long)kern_ticks_to_ms(texture_ticks),
-			(unsigned long long)kern_ticks_to_ms(copy_ticks),
-			(unsigned long long)kern_ticks_to_ms(program_ticks),
-			(unsigned long long)kern_ticks_to_ms(record_ticks),
-			(unsigned long long)kern_ticks_to_ms(allocation_ticks),
-			(unsigned long long)kern_ticks_to_ms(mapping_ticks),
-			(unsigned long long)kern_ticks_to_ms(clean_ticks));
+			(unsigned long long)kern_ticks_to_ms(clock_ticks() - started),
+			(unsigned long long)kern_ticks_to_ms(costs.texture_ticks),
+			(unsigned long long)kern_ticks_to_ms(costs.texel_copy_ticks),
+			(unsigned long long)kern_ticks_to_ms(costs.allocation_ticks),
+			(unsigned long long)kern_ticks_to_ms(costs.mapping_ticks));
 	}
 
 	/* Preparation never launched DMA; each owner retires once even when a late translation teardown fails. */
@@ -320,6 +279,13 @@ bcm2711_vulkan_native_pass_release(
 			first = error;
 	}
 
+	/* A TLB copy's source hold retires with the output, after the copy's DMA stopped. */
+	if (owned->source != NULL) {
+		error = bcm2711_v3d_memory_release(owned->space, owned->source);
+		if (first == 0 && error != 0)
+			first = error;
+	}
+
 	/* Only the consumed CPU root disappears; uncertain failed-unmap storage remains native-space owned. */
 	kern_free(owned);
 	if (first != 0)
@@ -327,6 +293,47 @@ bcm2711_vulkan_native_pass_release(
 
 	/* Succeeded: all independent references of the complete pass have retired. */
 	return 0;
+}
+
+/*
+ * Adds the diagnostic preparation costs of every draw of one pass to a report.
+ *
+ * Only original owners count a shared texture's storage costs, so borrowed
+ * uploads are not counted twice.  The caller holds the controller mutex.
+ */
+void
+bcm2711_vulkan_native_pass_costs(
+	const struct bcm2711_vulkan_native_pass *pass,
+	struct bcm2711_v3d_perf *perf)
+{
+	const struct bcm2711_vulkan_native_draw *draw;
+	uint32_t index;
+
+	/* Totals the draws in their linked order without adding per-draw console output. */
+	for (draw = pass->first; draw != NULL; draw = draw->next) {
+		perf->texture_ticks += draw->texture_ticks;
+		perf->texel_copy_ticks += draw->copy_ticks;
+		perf->program_ticks += draw->program_ticks;
+		perf->record_ticks += draw->record_ticks;
+
+		/* Each storage owner reports its own allocation, translation and cache clean. */
+		for (index = 0; index < draw->count; index++) {
+			perf->allocation_ticks += draw->storage[index]->allocation_ticks;
+			perf->mapping_ticks += draw->storage[index]->mapping_ticks;
+			perf->clean_ticks += draw->storage[index]->clean_ticks;
+		}
+	}
+
+	/* Counts the pass's command, tile and overflow storage with the draws' inputs. */
+	for (index = 0; index < pass->count; index++) {
+		perf->allocation_ticks += pass->storage[index]->allocation_ticks;
+		perf->mapping_ticks += pass->storage[index]->mapping_ticks;
+		perf->clean_ticks += pass->storage[index]->clean_ticks;
+	}
+
+	/* Records the pass's draws and staged bytes. */
+	perf->draws += pass->draws;
+	perf->staged_bytes += pass->bytes;
 }
 
 /* Retains the actual coherent output view and copies immutable numerical area/lifecycle state without modifying any target sample. */

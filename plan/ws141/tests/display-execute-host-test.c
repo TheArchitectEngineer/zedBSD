@@ -599,3 +599,25 @@ deliver_timing(
 	if (handled)
 		line->count++;
 }
+
+/*
+ * Supplies a stationary clock for this fixture, which does not measure runtime.
+ */
+uint64_t
+clock_ticks(
+	void)
+{
+	/* No time elapses in the host's synchronous fake display. */
+	return 0;
+}
+
+/*
+ * Discards production diagnostics while retaining real error returns in the fixture.
+ */
+void
+kern_logf(
+	const char *format,
+	...)
+{
+	(void)format;
+}

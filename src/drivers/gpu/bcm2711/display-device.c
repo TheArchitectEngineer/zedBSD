@@ -1487,6 +1487,7 @@ shared_frame(
 	frame->physical = resource->buffer->memory.paddr + request->offset;
 	frame->size = bytes;
 	frame->pitch = request->stride;
+	frame->uncached = resource->buffer->uncached;
 	frame->format = 0;
 	if (request->format == GPU_PIXEL_RGBA8888)
 		frame->format = 1;

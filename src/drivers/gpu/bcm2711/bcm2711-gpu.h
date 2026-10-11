@@ -17,6 +17,7 @@
 #ifndef KERN_DRIVERS_GPU_BCM2711_GPU_H
 #define KERN_DRIVERS_GPU_BCM2711_GPU_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /*
@@ -33,6 +34,8 @@ struct drv_bcm2711_boot_screen {
 	uint32_t height;
 	uint32_t pitch;
 	uint32_t format;
+	/* Normal non-cacheable pixels are already in RAM, so a flip has no CPU cache to clean for them. */
+	bool uncached;
 };
 
 /*

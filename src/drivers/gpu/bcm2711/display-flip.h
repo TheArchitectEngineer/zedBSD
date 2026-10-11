@@ -33,6 +33,13 @@ struct bcm2711_flip_state {
 	uint32_t core_hz;
 	int clock_error;
 	struct drv_bcm2711_boot_screen frames[BCM2711_FLIP_SLOTS];
+	/* Diagnostic flip-stage tick totals of one reporting window, written only by the BUSY owner. */
+	uint64_t perf_start;
+	uint64_t perf_flips;
+	uint64_t perf_clean;
+	uint64_t perf_raise;
+	uint64_t perf_wait;
+	uint64_t perf_finish;
 };
 
 /* A caller-owned snapshot names borrowed buffers that must remain DMA-readable. */

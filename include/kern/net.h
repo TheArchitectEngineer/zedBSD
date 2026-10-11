@@ -24,7 +24,7 @@ struct net_stats {
 int
 net_init(void);
 
-void
+int
 net_shutdown_for_boot(void);
 
 void

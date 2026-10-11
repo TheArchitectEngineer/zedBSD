@@ -24,7 +24,7 @@ static int prepare_span(uint32_t address, uint32_t bytes, uint32_t alignment, st
 static int validate_images(const struct bcm2711_native_pass *state, const struct bcm2711_native_pass_sizes *sizes, struct bcm2711_native_pass_image *bin, struct bcm2711_native_pass_image *render, struct bcm2711_native_pass_image *tile);
 static void write_word(uint8_t *bytes, uint32_t word);
 static void write_half(uint8_t *bytes, uint32_t half);
-static void write_raster(uint8_t *bytes, uint8_t opcode, const struct bcm2711_native_pass *state);
+static void write_raster(uint8_t *bytes, uint8_t opcode, uint32_t pitch, uint32_t address);
 static void encode_render(const struct bcm2711_native_pass *state, const struct bcm2711_native_pass_image *tile, const struct bcm2711_native_pass_sizes *sizes, uint8_t *bytes);
 static void encode_tile(const struct bcm2711_native_pass *state, uint8_t *bytes);
 
@@ -71,6 +71,15 @@ bcm2711_native_pass_measure(
 	/* Load and store choices are Boolean, independently of whether any draw consumes the target. */
 	if (state->load > 1 || state->store > 1)
 		return EINVAL;
+
+	/* A copy source is loaded with its own pitch, which obeys the same raster limits as the target's. */
+	if (state->source != 0) {
+		if (state->load == 0 ||
+		    state->source_pitch < state->width * 4U ||
+		    state->source_pitch > 0xfffffU ||
+		    (state->source_pitch & 63U) != 0)
+			return EINVAL;
+	}
 
 	/* The complete selected tile rectangle must lie inside the framebuffer's binning grid. */
 	columns = (state->width + 63U) / 64U;
@@ -220,13 +229,14 @@ validate_images(
 	struct bcm2711_native_pass_image *render,
 	struct bcm2711_native_pass_image *tile)
 {
-	struct native_pass_span spans[6];
+	struct native_pass_span spans[7];
 	struct native_pass_span cpu[3];
 	struct bcm2711_native_pass_image *images[3];
 	uint32_t required[3];
 	uint32_t index;
 	uint32_t other;
 	uint64_t output_bytes;
+	uint32_t count;
 	int error;
 
 	/* All active list bytes and the complete raster rows must fit their independently owned intervals. */
@@ -235,6 +245,17 @@ validate_images(
 	    state->pool_bytes < sizes->pool ||
 	    state->state_bytes < sizes->state)
 		return ENOSPC;
+
+	/* A copy source supplies every row the loads of the selected tiles can read. */
+	count = 6U;
+	if (state->source != 0) {
+		if ((uint64_t)state->source_pitch * state->height > state->source_bytes)
+			return ENOSPC;
+		error = prepare_span(state->source, state->source_bytes, 64U, &spans[6]);
+		if (error != 0)
+			return error;
+		count = 7U;
+	}
 
 	/* The output, first-block pool and tile state are distinct from all command storage. */
 	error = prepare_span(state->output, state->output_bytes, 64U, &spans[3]);
@@ -279,9 +300,9 @@ validate_images(
 			return EINVAL;
 	}
 
-	/* No whole native allocation may alias a framebuffer, tile state, pool or another command image. */
-	for (index = 0; index < 6U; index++) {
-		for (other = index + 1U; other < 6U; other++) {
+	/* No whole native allocation may alias a framebuffer, copy source, tile state, pool or another command image. */
+	for (index = 0; index < count; index++) {
+		for (other = index + 1U; other < count; other++) {
 			/* Half-open allocations can meet at their endpoints but must never overlap. */
 			if (spans[index].first < spans[other].end && spans[other].first < spans[index].end)
 				return EINVAL;
@@ -336,15 +357,16 @@ static void
 write_raster(
 	uint8_t *bytes,
 	uint8_t opcode,
-	const struct bcm2711_native_pass *state)
+	uint32_t pitch,
+	uint32_t address)
 {
 	/* The hardware pitch starts at payload bit twenty-eight and uses bytes for raster storage. */
 	bytes[0] = opcode;
-	write_word(bytes + 1, (27U << 12) | (state->pitch << 28));
-	write_word(bytes + 5, state->pitch >> 4);
-	write_word(bytes + 9, state->output);
+	write_word(bytes + 1, (27U << 12) | (pitch << 28));
+	write_word(bytes + 5, pitch >> 4);
+	write_word(bytes + 9, address);
 
-	/* Succeeded: the complete packet references only the owned native output interval. */
+	/* Succeeded: the complete packet references only an owned native raster interval. */
 	return;
 }
 
@@ -439,9 +461,12 @@ encode_tile(
 	bytes[0] = 125;
 	cursor = 1;
 
-	/* A raster load preserves old samples before the compiled fragment code reads or updates the tile. */
-	if (state->load != 0) {
-		write_raster(bytes + cursor, 30, state);
+	/* A raster load preserves old samples, or reads the copy source, before fragment code reads or updates the tile. */
+	if (state->load != 0 && state->source != 0) {
+		write_raster(bytes + cursor, 30, state->source_pitch, state->source);
+		cursor += 13U;
+	} else if (state->load != 0) {
+		write_raster(bytes + cursor, 30, state->pitch, state->output);
 		cursor += 13U;
 	}
 
@@ -456,7 +481,7 @@ encode_tile(
 
 	/* Store writes the colour target, or the mandatory NONE packet when attachment storage is discarded. */
 	if (state->store != 0) {
-		write_raster(bytes + cursor, 29, state);
+		write_raster(bytes + cursor, 29, state->pitch, state->output);
 	} else {
 		bytes[cursor] = 29;
 		bytes[cursor + 1U] = 8;

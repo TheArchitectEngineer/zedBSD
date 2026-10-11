@@ -25,6 +25,7 @@
 
 #include "../../tests/vkdemo/display.h"
 #include "displays.h"
+#include "scene.h"
 
 /* Bound the swapchain images and the buffers one frame may sample. */
 /* The most displays the compositor follows at once (ws113-p004a). */
@@ -203,6 +204,8 @@ struct kwl_compose {
 	struct vkdemo_display output;
 	/* The swapchain images can be a copy's source (a test image's capture, ws173-p002). */
 	unsigned readback;
+	/* Cursor-free scene is optional and never replaces redraws after scene changes. */
+	struct kwl_scene scene;
 	unsigned output_prepared;
 	unsigned output_open;
 	VkFormat format;

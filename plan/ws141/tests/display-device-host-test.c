@@ -187,7 +187,8 @@ main(
 	assert(words[11] == 0x04380780 && words[13] == (0xc0000000U | (uint32_t)status.frames[0].physical));
 	assert(words[12] == 0xc0c0c0c0 && words[14] == 0xc0c0c0c0);
 	assert(words[15] == 7680 && words[16] == 0x80000000);
-	assert(test_core_hz == 137600000 && status.clock_error == 0);
+	/* A composed frame keeps the transition floor; only the return to the console lowers it. */
+	assert(test_core_hz == 500000000 && status.clock_error == 0);
 
 	/* The source may be destroyed immediately; HVS still references its private copy. */
 	freed_before = test_freed;
@@ -769,4 +770,15 @@ kern_text_resume(
 
 	/* Succeeded: the text backend is active. */
 	return;
+}
+
+/*
+ * Supplies a stationary clock for this fixture, which does not measure runtime.
+ */
+uint64_t
+clock_ticks(
+	void)
+{
+	/* No time elapses in the host's synchronous fake display. */
+	return 0;
 }
