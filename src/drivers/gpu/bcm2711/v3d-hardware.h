@@ -103,6 +103,9 @@ struct bcm2711_v3d_perf {
 	 */
 	uint64_t memory_bytes;
 	uint64_t memory_max;
+	/* The texture formatting unit's conversions in the window, and the longest one. */
+	uint32_t tfu_jobs;
+	uint64_t tfu_max_ticks;
 	uint32_t memory_refusals;
 	uint64_t memory_refused_bytes;
 };
