@@ -127,6 +127,25 @@ kl_backend_phone_read(
 }
 
 /*
+ * Refuses an MMS sent.
+ */
+int
+kl_backend_phone_send_mms(
+	struct kl_backend_phone *phone,
+	const char *to,
+	int descriptor,
+	uint32_t *id)
+{
+	(void)phone;
+	(void)to;
+	(void)descriptor;
+	(void)id;
+
+	/* Not here. */
+	return ENOTSUP;
+}
+
+/*
  * Refuses a text sent.
  */
 int

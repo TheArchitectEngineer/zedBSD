@@ -298,6 +298,8 @@ int ph_draft_add(struct ph_view *view, const char *path, const char *contact, in
 void ph_draft_remove(struct ph_view *view, size_t index);
 void ph_draft_release(struct ph_view *view);
 size_t ph_draft_count(const struct ph_view *view, const char *contact);
+int ph_draft_mime(const struct ph_view *view, const char *contact, const char *caption, int *descriptor);
+void ph_draft_clear(struct ph_view *view, const char *contact);
 int ph_draft_text(struct ph_view *view, const char *text, size_t length);
 int ph_draft_uris(struct ph_view *view, const char *text, size_t length, const char *contact);
 

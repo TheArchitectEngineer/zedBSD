@@ -7,6 +7,7 @@
 
 #include "userland/desktop/phone/phone.h"
 #include "userland/desktop/libkeiland/ui/chooser.h"
+#include "userland/desktop/libmms/mms.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -36,6 +37,11 @@ main(
 	int present;
 	unsigned index;
 	char contact[32];
+	char clip[4096];
+	struct mms_document document;
+	uint8_t *body;
+	size_t length;
+	int descriptor;
 
 	/* A private fixture supplies original files and a versioned metadata response. */
 	assert(argc == 2);
@@ -124,7 +130,43 @@ main(
 	ph_draft_release(&view);
 	present = access(photo, F_OK);
 	assert(present != 0);
-	printf("PASS media selection: compositor metadata model, chosen path, contact-bound drafts, dedup, URI/text drops, owned cleanup\n");
+	/* ws197-p010: a contact's photo and video become one MMS body with the caption; others' drafts stay; none is ENOENT. */
+	snprintf(clip, sizeof(clip), "%s/clip.mp4", argv[1]);
+	image = fopen(clip, "wb");
+	assert(image != NULL);
+	fwrite("\0\0\0\x18" "ftypmp42video", 1U, 17U, image);
+	fclose(image);
+	image = fopen(photo, "wb");
+	assert(image != NULL);
+	fwrite("\x89PNG\r\n\x1a\n", 1U, 8U, image);
+	fclose(image);
+	error = ph_draft_add(&view, photo, "contact-c", 0);
+	assert(error == 0);
+	error = ph_draft_add(&view, clip, "contact-c", 0);
+	assert(error == 0);
+	error = ph_draft_add(&view, photo, "contact-d", 0);
+	assert(error == 0);
+	error = ph_draft_mime(&view, "contact-c", "写真", &descriptor);
+	assert(error == 0 && descriptor >= 0);
+	length = (size_t)lseek(descriptor, 0, SEEK_END);
+	body = malloc(length);
+	assert(body != NULL);
+	assert(pread(descriptor, body, length, 0) == (ssize_t)length);
+	close(descriptor);
+	error = mms_parse(body, length, &document);
+	assert(error == 0 && document.count == 2U);
+	assert(strcmp(document.text, "写真") == 0);
+	assert(strcmp(document.media[0].type, "image/png") == 0 && strcmp(document.media[0].name, "photo space.png") == 0);
+	assert(strcmp(document.media[1].type, "video/mp4") == 0 && document.media[1].length == 17U);
+	mms_release(&document);
+	free(body);
+	ph_draft_clear(&view, "contact-c");
+	assert(ph_draft_count(&view, "contact-c") == 0U && ph_draft_count(&view, "contact-d") == 1U);
+	error = ph_draft_mime(&view, "contact-c", "", &descriptor);
+	assert(error == ENOENT && descriptor == -1);
+	ph_draft_release(&view);
+
+	printf("PASS media selection: compositor metadata model, chosen path, contact-bound drafts, dedup, URI/text drops, owned cleanup, MMS body of the drafts\n");
 
 	/* Succeeded: no transport or message-store operation was called. */
 	/* Succeeded: this fixture operation completed. */

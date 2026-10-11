@@ -321,7 +321,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION 31U
+#define KL_SYSTEM_MANAGER_VERSION 32U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -684,6 +684,9 @@
 #define KL_SYSTEM_PHONE_EVENT_LINK_CONTACTS	8U
 #define KL_SYSTEM_PHONE_EVENT_ITEM_MIME 9U
 #define KL_SYSTEM_SINCE_PHONE_MIME 30U
+/* Since version 32 (ws197-p010): request 9 send_mms(uint request, string to, fd mime), an MMS's MIME body in a regular file: done, then status as send_text's. */
+#define KL_SYSTEM_PHONE_SEND_MMS		9U
+#define KL_SYSTEM_SINCE_PHONE_MMS		32U
 
 /* The channel of SMS (keiland.h's KL_PHONE_SMS) and what a sync asks for (KL_PHONE_MESSAGES, _CONTACTS and _CALLS). */
 #define KL_SYSTEM_PHONE_SMS			0U

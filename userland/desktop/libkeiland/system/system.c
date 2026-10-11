@@ -1862,6 +1862,47 @@ kl_system_phone_send_text(
 }
 
 /*
+ * Sends an MMS's MIME body, a regular file the caller keeps, to a number
+ * through the phone (ws197-p010): the result 0 says the phone's outbox has
+ * it; KL_PHONE_STATUS events follow.
+ */
+int
+kl_system_phone_send_mms(
+	struct kl_system *system,
+	const char *to,
+	int descriptor,
+	uint32_t *request)
+{
+	char number[KL_SYSTEM_PHONE_TO_MAX];
+	uint32_t asked;
+	int offered;
+	int error;
+
+	/* A system, a number and a body. */
+	if (system == NULL || to == NULL || descriptor < 0)
+		return EINVAL;
+
+	/* The phone's messages, of a compositor that takes an MMS. */
+	offered = system_phone_sync_offered(system);
+	if (!offered)
+		return ENOTSUP;
+	if (system->manager_version < KL_SYSTEM_SINCE_PHONE_MMS)
+		return ENOTSUP;
+
+	/* The number without its separators. */
+	error = system_phone_number(to, number, sizeof(number));
+	if (error != 0)
+		return error;
+
+	/* The request, the body's descriptor duplicated with it, sent with the application's next flush. */
+	asked = system_number(system, request);
+	wl_proxy_marshal(system->phone, KL_SYSTEM_PHONE_SEND_MMS, asked, number, descriptor);
+
+	/* Succeeded: the result follows, then its states. */
+	return 0;
+}
+
+/*
  * Marks a message read on the phone by its item's handle (ws197-p004a).
  */
 int

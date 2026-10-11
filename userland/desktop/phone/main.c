@@ -246,6 +246,7 @@ static void ph_phone_round(struct ph_window *phone);
 static void ph_received(struct ph_window *phone, const struct kl_phone_event *event);
 static void ph_status(struct ph_window *phone, uint32_t request, unsigned state, int failed);
 static void ph_media_choose(struct ph_window *phone, long contact);
+static void ph_send_media(struct ph_window *phone, long contact, int paired);
 static void ph_media_picked(void *data, struct kl_media_picker *picker, unsigned result, const struct kl_media_item *items, size_t count);
 static int ph_media_thumbnail(void *data, const char *path, int side, struct kl_image *image);
 static int ph_attach_contact(struct ph_window *phone, long contact);
@@ -1507,15 +1508,9 @@ ph_send(
 	if (contact < 0 || (size_t)contact >= count)
 		return;
 
-	/* Media transfer is a follow-up; never send a caption while silently losing its attachments. */
+	/* An empty draft without attachments needs no transport request. */
 	attachments = ph_draft_count(&phone->view, contacts[contact].id);
-	if (attachments != 0U) {
-		ph_view_notice(&phone->view, "Attachment sending is not available yet. Your draft is kept.", kl_clock_us());
-		return;
-	}
-
-	/* An empty text-only draft needs no transport request. */
-	if (phone->view.message.length == 0U)
+	if (phone->view.message.length == 0U && attachments == 0U)
 		return;
 
 	/* No phone set up: nothing kept or sent, and where to set one up (the text stays to send later, BUG-287). */
@@ -1534,6 +1529,12 @@ ph_send(
 	/* The paired phone that takes no text: nothing kept or sent. */
 	if (paired && !phone->link.can_send) {
 		ph_view_notice(&phone->view, "The phone does not take texts to send.", kl_clock_us());
+		return;
+	}
+
+	/* Photos and videos go as an MMS through the paired phone, the words their caption. */
+	if (attachments != 0U) {
+		ph_send_media(phone, contact, paired);
 		return;
 	}
 
@@ -1588,6 +1589,98 @@ ph_send(
 
 	/* Its states to come. */
 	ph_remember(phone, request, serial, paired);
+}
+
+/*
+ * Sends a contact's photos and videos as one MMS through the paired phone
+ * (ws197-p010), the words written as their caption: the MIME body made from
+ * the drafts, the media copied into the library (the item shows them), the
+ * item kept as sending, then the body handed to the compositor.  The draft
+ * stays when nothing could be sent.
+ */
+static void
+ph_send_media(
+	struct ph_window *phone,
+	long contact,
+	int paired)
+{
+	const struct ph_contact *contacts;
+	struct ph_received received;
+	unsigned long serial;
+	uint32_t request;
+	size_t count;
+	size_t item;
+	int descriptor;
+	int imported;
+	int error;
+
+	/* Photos and videos go only through a paired phone. */
+	contacts = ph_contacts(&count);
+	if (!paired) {
+		ph_view_notice(&phone->view, "Photos and videos are sent through a paired phone.", kl_clock_us());
+		return;
+	}
+
+	/* The MIME body of the drafts and the words; the draft stays when it cannot be made. */
+	error = ph_draft_mime(&phone->view, contacts[contact].id, phone->view.message.text, &descriptor);
+	if (error == EFBIG) {
+		ph_view_notice(&phone->view, "The photos and videos are too large for one message.", kl_clock_us());
+		return;
+	}
+
+	/* Another refusal: a file gone or unreadable. */
+	if (error != 0) {
+		ph_view_notice(&phone->view, "The photos and videos could not be read.", kl_clock_us());
+		return;
+	}
+
+	/* The media copied into the library (one already there is found by its hash), for the item to show. */
+	imported = ph_receive_media(phone->system, descriptor, &received);
+	if (imported != 0)
+		memset(&received, 0, sizeof(received));
+
+	/* Kept as sending, with its media, the timeline at its end. */
+	error = ph_store_add_item(contact, PH_TEXT, PH_MMS, 1, time(NULL), PH_STATE_SENDING, phone->view.message.text, NULL, &item);
+	if (error != 0) {
+		ph_received_release(&received);
+		(void)close(descriptor);
+		ph_view_notice(&phone->view, "The message could not be kept.", kl_clock_us());
+		return;
+	}
+
+	/* Its media, as the library keeps them. */
+	if (received.count != 0U)
+		(void)ph_store_media(contact, item, &received);
+	ph_received_release(&received);
+
+	/* Its name for this run, and the new item shown. */
+	serial = contacts[contact].items[item].serial;
+	phone->view.to_end = 1;
+
+	/* Sent through the compositor's phone, which reads the body from the file. */
+	request = 0U;
+	error = kl_system_phone_send_mms(phone->system, contacts[contact].number, descriptor, &request);
+	(void)close(descriptor);
+
+	/* The log the tests read: no number, no words, no paths. */
+	ph_log("SEND contact=%ld channel=mms length=%zu import=%d error=%d", contact, phone->view.message.length, imported, error);
+
+	/* The draft is the item now. */
+	kl_field_set(&phone->view.message, "");
+	ph_draft_clear(&phone->view, contacts[contact].id);
+
+	/* A refusal fails the item at once. */
+	if (error != 0) {
+		(void)ph_store_set_state(contact, item, PH_STATE_FAILED, NULL);
+		if (error == ENOTSUP)
+			ph_view_notice(&phone->view, "This desktop cannot send photos and videos to the phone.", kl_clock_us());
+		else
+			ph_view_notice(&phone->view, "The photos and videos cannot be sent.", kl_clock_us());
+		return;
+	}
+
+	/* Succeeded: its states come as a text's do. */
+	ph_remember(phone, request, serial, 1);
 }
 
 /* Calls the contact on the line and keeps the call with how it ends. */
