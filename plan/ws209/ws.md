@@ -37,3 +37,7 @@ audiod に音の endpoint（HDA の speaker・mic、Bluetooth の headset の A2
 ## 2026-10-11 ユーザー「推し通りです。」
 
 G1: 通話の時 headset が繋がっていれば最初から headset で話す。G2: A2DP の headset が繋がったら media を自動で headset へ移し、切れたら speaker に戻す。
+
+## 2026-10-11 ユーザーの決定: G3・G4
+
+ユーザー「許可します。」「Q1の推しにします」→ G3: 通話の音がスマホにある間は PC の media を止めない（Q1 と P1 の推しを「止めない」に揃えた後の答え）。G4: call の間だけ buffer を詰めて（SCO の水位 20〜25 ms、通話の間の audiod の先行 1 fragment）片道 150 ms を目指し、届かなければ約 170 ms を受け入れる。

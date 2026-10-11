@@ -85,3 +85,7 @@ ws157-p008, ws157-p009 cleared。source `e654733f1eb6e1296eacf34b5dff6002a5dd17e
 ## 2026-10-11 ユーザー「全部承認です。」（Q1 が示した推しを全て承認）: media の解析の jail と review の提案
 
 phase012 の推しを全て採用: (a) J3 mediastorage が keiland-preview（`--info`）を起こす (b) J5 SHA-256 は mediastorage に残す (c) J4 解析の失敗・時間切れ（5 秒）でも取り込む（大きさ 0、撮影日は取り込みの日、種類は固定位置の magic の比較）(d) #1 libkeiland の media の API を非同期に（picker・chooser はすぐ窓を開いて Loading…）(e) #4 大きな取り込みの時間の上限を大きさに合わせ、一時の名前に書いて rename（jail の変更と同じ Phase）(f) #11 Photos・Phone の thumbnail の decode を jail へ（後の別の Phase）。J2（先頭 4 MiB）・J6（FreeBSD は Capsicum まで process の中）・J7（試験）も設計どおり。
+
+## 2026-10-11 ユーザーの決定: L1（16 MP を越える写真）
+
+ユーザー「Q1の推しにします」→ libjpeg-compat に 1/2・1/4・1/8 の縮小 decode を足す Phase を別に立て、それまでは keiland-preview の上限を Photos の今の値（64 M pixel・辺 16384・96 MiB）に上げる（ws157-p015 の L1）。
