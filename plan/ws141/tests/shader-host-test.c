@@ -641,6 +641,15 @@ machine_program(
 			bits = left;
 			if (instruction.alu.mul.op == V3D_QPU_M_FMUL) {
 				bits = float_bits(bits_float(left) * bits_float(right));
+			} else if (instruction.alu.mul.op == V3D_QPU_M_FMOV) {
+				/* This fixture's destination components are positive, normalized, exactly representable half floats. */
+				if (instruction.alu.mul.a.unpack == V3D_QPU_UNPACK_H)
+					left >>= 16;
+				else
+					assert(instruction.alu.mul.a.unpack == V3D_QPU_UNPACK_L);
+				left &= 0xffffU;
+				assert((left & 0x7c00U) != 0 && (left & 0x7c00U) != 0x7c00U);
+				bits = ((left & 0x8000U) << 16) | (((left >> 10) & 31U) + 112U) << 23 | ((left & 1023U) << 13);
 			} else {
 				assert(instruction.alu.mul.op == V3D_QPU_M_MOV);
 			}
@@ -689,16 +698,20 @@ machine_program(
 				machine->texture_read = 0;
 		}
 
-		/* Native tile reads consume exactly one configuration and four physical target components. */
+		/* RGBA8 hardware returns two half-float pairs, even though ordinary shader arithmetic is float32. */
 		if (instruction.sig.ldtlb || instruction.sig.ldtlbu) {
 			if (instruction.sig.ldtlbu) {
 				configuration = machine_uniform(binary, machine);
-				assert(configuration == 0xffffff3fU);
+				assert(configuration == 0xffffffffU);
 			}
 
 			/* No destination channel can be skipped or read twice. */
 			assert(machine->tile_read < 4);
-			machine->rf[instruction.sig_addr] = machine->tile[machine->tile_read++];
+			left = machine->tile[machine->tile_read++];
+			right = machine->tile[machine->tile_read++];
+			left = (((left >> 23) - 112U) << 10) | ((left >> 13) & 1023U);
+			right = (((right >> 23) - 112U) << 10) | ((right >> 13) & 1023U);
+			machine->rf[instruction.sig_addr] = left | (right << 16);
 		}
 	}
 
@@ -789,7 +802,7 @@ initialize_machine(
 
 	/* Prior tile data is neither opaque nor symmetric, exposing alpha errors and accidental red/blue swaps. */
 	for (index = 0; index < 4; index++)
-		machine->tile[index] = float_bits(0.1f + (float)index * 0.2f);
+		machine->tile[index] = float_bits(0.125f + (float)index * 0.125f);
 }
 
 /* Compares scalar floating outputs with bounded tolerance for distinct host square-root evaluation paths. */

@@ -255,3 +255,13 @@ libvulkan buildの初回は既存sysrootの前提からLLVM再取得へ進もう
 改善版 `make -j16 build/arm64/vmunix` はwarning/error0、ARM64 checker3 PASS。libvulkan最終整形後再buildもwarning/error0、配置済みbinaryとcksum一致。kernel SHA256 `46d65e3ef46c82fb47480441048e9bc4ec48640ed798cd325aab31a82a38054f`、cksum `2120890253 8077312`。source統合と実機転送へ進む。p007変更scope検証完了、whole p006実機描画は未達。
 
 改善/診断commit `ee848d0eb` をclean main `82094cc1a` からfast-forward統合し、3sourceが検証worktreeと同一、main cleanを確認。SSHで転送終了を待ってcksum2120890253/8077312を確認、greeterを停止。旧版を `/var/backups/vmunix.before-prepare-fix-20261011` に保存/cmp、新版をFATの別名へ書き込み/cmp/sync/rename/sync/cmp。最終 `/boot/boot0/vmunix` は2120890253/8077312、旧版599806020/8077312。全処理exit0。ユーザーへ電源OFF/ONを依頼済み。次はこの版のpass prepare行/decoder status/実描画をSSH確認する。現時点では旧kernelが稼働中で、改善版の物理効果は未確認。p006/WS未clear、shared投影Q1、push無し。
+
+### submit-i01 実描画到達とアルファ合成の調査
+
+ee848d0eb起動後、ユーザーから「GPUでWaylandが表示された」と写真の証拠。青いアイコンは青く、文字と角丸に矩形の背景が残る。RGBA順の単純な交換と決めず、実機の小さなoffscreen Vulkan読み戻しでblendを調査する。通常sessionは依然frames0/status42（35draw準備10177ms）、fallback greeterは70draw/251904000bytes/約6.5〜7.8秒で描画できている。初回期限とalphaの両方が未解消、whole受入れ未clear。3000ms待ちはboot診断だけで通常submitにはない。
+
+ユーザー「修正完了まで、SSHでカーネルを更新して、rebootコマンドを使い、自走のループ」「再起動できないときは教えて」の継続承認。必要なkernel/app更新・再起動・ログ確認を自走し、再起動が戻らない場合だけ物理電源操作を依頼する。色/alphaと既存準備期限の修復が有限scope、Master変更なし。診断はplan/ws141/temp/colour-probeに置き、通常公開Vulkanを使う。SSHの非seatユーザーにはGPUが列挙されないためsudoで試行する。
+
+実機offscreen 64x64（同じ頂点色、背景RGBA=(51,102,153,255)）で、blend無効=(32,64,0,128)、alpha0.5=(32,65,0,129)、alpha0=(0,2,0,2)、alpha1=(64,128,0,255)。opaqueは正しく、透明で背景を保持できない。APIはADD/ONE/ONE_MINUS_SRC_ALPHAを正しく保持している。Mesa固定一次資料のformat keyではUNORM8はhalf-float tile readであり、2個のpacked RG/BAを4成分へ展開する。現在のfloat32読み出しという仮定と実測の小値が一致するため、private QPUにhalf-low/high変換を追加し、tile読み出しを2pairに修復した。write側の既存float32変換とチャンネル順は維持。
+
+限定検証: qpu-format-host-test（固定Mesa pack/unpackによるFMOV low/highの一致）、shader-host-test（実Keiland SPIR-Vと数値比較）PASS。fixtureの誤ったfloat32 tile前提も修正し、halfで正確に表せる非対称の背景値を使用。make -j16 build/arm64/vmunix exit0/warning0/error0/checker PASS、production style-check total0/diff-check PASS。SHA256=6a930700e67354bbf80e9f0c3a2356a831dc7ab2fdfcbe0848ee40568a5b88eb、cksum2513064968/8077312。実機の修正版結果は未確認。

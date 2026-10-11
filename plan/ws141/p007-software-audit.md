@@ -66,3 +66,7 @@ software実装/監査/統合後もWS incomplete、p002〜p006のwhole acceptance
 ## この監査後の共通compiler変更（2026-10-10）
 
 本体はi15/source0f56e5200の履歴。追加の共通compiler抽出・heap state・両backend移行後の新source/hash/build/host/stack監査は[今回i18](compiler-refactor-20261010.md#i17-software-clearancei18最終検証)と[新台帳](compiler-refactor-source-sha256.tsv)。旧「frontend/Gen12 read-only」と旧stack marginは当時の範囲、今回sourceの証拠として再利用しない。今回実機関門は未確認。
+
+## 2026-10-11 alpha tile read修復の差分監査
+
+qpu.c/qpu.h/shader-output.cの変更範囲をC全文規約とprivate ownershipに照合。新しい2命令はnative4.2 FMOV低/高halfを独立符号化し、固定Mesa decoder/encoderとのroundtripを確認。既存register確保・error unwind・FIFO uniform消費を保持。fragmentは各pairをscratchに読んで2つの独立registerへ展開し、source alpha保持後のsource-overへ渡す。追加HAL/public API無し。clang-format19の出力比較、style-check total0、qpu-format/shader host PASS、arm64 warning0 build PASS。実機読み戻しは後続であり、whole WS acceptanceをclearしない。

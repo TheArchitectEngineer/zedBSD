@@ -14,6 +14,9 @@
 /* Four float components of render target zero use one per-pixel tile configuration byte. */
 #define SHADER_RGBA_TILE_CONFIGURATION 0xffffff3fU
 
+/* Normalized eight-bit targets return two packed pairs of half floats on tile reads. */
+#define SHADER_RGBA_TILE_READ_CONFIGURATION 0xffffffffU
+
 static int vertex_output(struct bcm2711_shader_compiler *compiler);
 static int fragment_output(struct bcm2711_shader_compiler *compiler);
 static int vpm_store(struct bcm2711_shader_compiler *compiler, uint32_t index, struct bcm2711_qpu_source source);
@@ -267,25 +270,40 @@ fragment_output(
 			return error;
 	}
 
-	/* Blending reads four float tile words only after the scoreboard-owning final switch. */
+	/* Normalized RGBA8 tile reads deliver RG and BA as half-float pairs after the scoreboard-owning switch. */
 	if (compiler->key->premultiplied_blend != 0) {
 		kern_memset(&uniform, 0, sizeof(uniform));
 		uniform.kind = BCM2711_SHADER_CONSTANT;
-		uniform.bits = SHADER_RGBA_TILE_CONFIGURATION;
+		uniform.bits = SHADER_RGBA_TILE_READ_CONFIGURATION;
 		error = bcm2711_shader_uniform_append(compiler, &uniform);
 		if (error != 0)
 			return error;
-		for (index = 0; index < 4; index++) {
+		for (index = 0; index < 4; index += 2) {
+			/* Each pair is expanded into two independent canonical float registers. */
 			error = bcm2711_shader_register(compiler, &retained[index]);
 			if (error != 0)
 				return error;
+			error = bcm2711_shader_register(compiler, &retained[index + 1]);
+			if (error != 0)
+				return error;
+
+			/* The configured first read consumes the format uniform; the second advances to BA. */
 			if (index == 0) {
-				error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TILE_CONFIGURED, retained[index], 2);
+				error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TILE_CONFIGURED, BCM2711_SHADER_SCRATCH_WORK, 2);
 			} else {
-				error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TILE, retained[index], 2);
+				error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TILE, BCM2711_SHADER_SCRATCH_WORK, 2);
 			}
 
-			/* Every requested tile component is checked before blend arithmetic can read it. */
+			/* A missing packed pair cannot feed successful blending. */
+			if (error != 0)
+				return error;
+
+			/* Low and high halves convert numerically, rather than reinterpreting packed bits as float32. */
+			source = bcm2711_shader_rf(BCM2711_SHADER_SCRATCH_WORK);
+			error = bcm2711_shader_operation(compiler, BCM2711_QPU_HALF_LOW, retained[index], 0, source, ignored, 0, 0);
+			if (error != 0)
+				return error;
+			error = bcm2711_shader_operation(compiler, BCM2711_QPU_HALF_HIGH, retained[index + 1], 0, source, ignored, 0, 0);
 			if (error != 0)
 				return error;
 		}

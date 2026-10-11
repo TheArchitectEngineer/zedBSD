@@ -209,6 +209,18 @@ operation_fields(
 		encoding->multiply_operation = 15;
 		encoding->multiply_right = 7;
 		break;
+	case BCM2711_QPU_HALF_LOW:
+		encoding->sources = 1;
+		encoding->multiply = 1;
+		encoding->multiply_operation = 14;
+		encoding->multiply_right = 2;
+		break;
+	case BCM2711_QPU_HALF_HIGH:
+		encoding->sources = 1;
+		encoding->multiply = 1;
+		encoding->multiply_operation = 14;
+		encoding->multiply_right = 3;
+		break;
 	case BCM2711_QPU_FLOAT_ADD:
 		encoding->add_operation = 5;
 		encoding->order = 1;

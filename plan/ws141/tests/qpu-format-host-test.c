@@ -27,6 +27,8 @@ struct expected_operation {
 static const struct expected_operation expected_operations[] = {
     {BCM2711_QPU_IDLE, V3D_QPU_A_NOP, V3D_QPU_M_NOP},
     {BCM2711_QPU_MOVE, V3D_QPU_A_NOP, V3D_QPU_M_MOV},
+    {BCM2711_QPU_HALF_LOW, V3D_QPU_A_NOP, V3D_QPU_M_FMOV},
+    {BCM2711_QPU_HALF_HIGH, V3D_QPU_A_NOP, V3D_QPU_M_FMOV},
     {BCM2711_QPU_FLOAT_ADD, V3D_QPU_A_FADD, V3D_QPU_M_NOP},
     {BCM2711_QPU_FLOAT_SUBTRACT, V3D_QPU_A_FSUB, V3D_QPU_M_NOP},
     {BCM2711_QPU_FLOAT_MULTIPLY, V3D_QPU_A_NOP, V3D_QPU_M_FMUL},
@@ -170,6 +172,12 @@ check_word(
 			(unsigned long long)word);
 		assert(0);
 	}
+
+	/* Tile half conversion must select the intended half without changing its float32 output. */
+	if (instruction->operation == BCM2711_QPU_HALF_LOW)
+		assert(decoded.alu.mul.a.unpack == V3D_QPU_UNPACK_L);
+	if (instruction->operation == BCM2711_QPU_HALF_HIGH)
+		assert(decoded.alu.mul.a.unpack == V3D_QPU_UNPACK_H);
 
 	/* The unchanged encoder must reconstruct exactly the independent production word. */
 	accepted = v3d_qpu_instr_pack(device, &decoded, &repacked);
