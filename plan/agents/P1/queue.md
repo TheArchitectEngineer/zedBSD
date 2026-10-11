@@ -1,3 +1,27 @@
+# P1 の Queue lane（2026-10-11 generation、Q1 投入）
+
+承認: 2026-10-11 ユーザー（このセッション、N=3＋T1 の指示）「P1は新規実装です。・未統合部分の統合（WS157）・Vulkan Video i915の完了・MMSの添付ファイル送信、画像送信、動画送信、メディア選択ポップアップ（libkeilandのUI機能として実装）、・HFPの実装(p006, p007)、HD audioサウンドドライバの録音機能実装、HD audioのマイクとスピーカーを使った実際のHFP通話が目標。AACはlibmediaにデコードを実装済み。・Bluetoothオーディオの実装、libmediaにAACエンコードの実装、SBCエンコードの実装、SBCとAACでBlueoothオーディオを使えるようにする。目標はPCに接続されたBluetoothヘッドセットで、スマホ経由のHFP通話できること。・RPi4のWiFiを実装。・RPi4のオーディオを実装。（再生、録音）」
+Worktree: `/home/awe/zedBSD-worktrees/p1`、branch `agent/p1`、base main fc3d317ca。agent type phase-runner（high）。
+
+| Queue | Phase | 範囲 | State |
+| --- | --- | --- | --- |
+| q924 | [WS157](../../ws157/ws.md) p010・p011 | codex/ws197-media-uat の 2 commit（305ab43c1、Photos の削除）を agent/p1 に merge し、keiland.h・manager の版の衝突を main と照合、host 試験と build warning 0 → Q1 に merge 依頼 | active |
+| q925 | [WS202](../../ws202/ws.md) p009・p010・p017、[WS083](../../ws083/ws.md) p007 | Vulkan Video の i915 の完了: T1-529（5330・QEMU の再生の確認）の結果で直す。p007 の hang の回復の実機の手順を T1 に依頼 | reserved |
+| q926 | [ws197-p014](../../ws197/phase014/phase.md) | 「＋」→ 写真の media picker の popup（libkeiland の UI）／file chooser | reserved |
+| q927 | [ws197-p010](../../ws197/phase010/phase.md) | MMS の添付・写真・動画の送信（旧試作の差分は `.claude/worktrees/ws197-media` に未 commit で残る、読むだけ） | reserved |
+| q928 | ws197-p006 | HFP の制御 | reserved |
+| q929 | [WS204](../../ws204/ws.md) | HD Audio の録音、HFP の音（ws197-p007 と一緒に） | reserved |
+| q930 | ws197-p007 | HFP の音（SCO、usb-bt の isochronous）→ 内蔵のマイク・スピーカーで通話 | reserved |
+| q931 | [WS205](../../ws205/ws.md) | Bluetooth audio（SBC・AAC の encode、A2DP、headset で HFP） | reserved |
+| q932 | [WS206](../../ws206/ws.md) | Raspberry Pi 4 の WiFi | reserved |
+| q933 | [WS207](../../ws207/ws.md) | Raspberry Pi 4 のオーディオ | reserved |
+
+各 WS の p001（設計）で人の判断が要る点は Q1 経由でユーザーへ。Pi 4（10.0.30.2）は P3 も使うので、P1 が Pi 4 を再起動・kernel を入れ替える時は Q1 に先に知らせて P3 と順を合わせる。
+
+---
+
+以前の記録（履歴）:
+
 # P1 Queue lane
 
 | Queue / attempt | Phase | Scope | Approval | Timebox | State |

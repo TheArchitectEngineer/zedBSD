@@ -19,6 +19,10 @@
 | T1（2026-10-04 19 時の generation、T1-091 の後に終了） | test-runner | 試験 | 同上 | — | — | stopped | T1-091 PASS |
 | T1（2026-10-04 17 時の generation、終了） | test-runner | 試験 | `/home/awe/zedBSD-worktrees/t1` / `agent/t1` | — | — | stopped（必要な時に起動） | TQ-1・TQ-2・T1-086〜T1-090 |
 | P2 / generation13（2026-10-04、利用枠でラップアップ、最後 0304720 → main 1adcc3a） | phase-runner（high） | WS141・WS037 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | — | 再開: ws141-p003 の QEMU 回帰（N0 の revision の判定の危険）→ 実機の N0 → N1、WS037 の判断 5〜18 | stopped | 全 commit 統合済み |
+| P1 / 2026-10-11 generation | phase-runner（high） | WS157 統合・WS202/WS083・WS197 p014/p010/p006/p007・WS204〜WS207 | `/home/awe/zedBSD-worktrees/p1` / `agent/p1` | q924 | q925〜q933 | running | base fc3d317ca |
+| P2 / 2026-10-11 generation | phase-runner（high） | BUG-263・BUG-274 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2` | q934 | q935 | running | base fc3d317ca |
+| P3 / 2026-10-11 generation | phase-runner（high） | WS141 p013（VC6 の描画の速さ） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3` | q936 | — | running | base d27925686 |
+| T1 / 2026-10-11 generation | test-runner | T1-529 | `/home/awe/zedBSD-worktrees/t1` / `agent/t1` | T1-529 | — | running | base fc3d317ca |
 | P5〜P8 | — | 未配属 | — | — | — | N=4 の間は起動しない | — |
 
 担当の WS と最初の Queue は、ベータ1（fg019）の内容をユーザーと決めてから割り当てる。

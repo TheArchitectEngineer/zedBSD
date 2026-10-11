@@ -3,7 +3,7 @@
 # ベータ2 の残り作業（2026-10-11 Q1 更新）
 
 公開は 10/17（OSC 当日、朝から会場）なので、**10/16 中にリリースの準備を終える**。
-体制: Q1＋サブエージェント（次の仕事が決まってから起動、2026-10-11 は 0 体）＋ユーザー（UAT・判断）。Raspberry Pi 4（WS141 GPU・WS203 Ethernet）は Codex の別のセッション。この表は計画で、Queue の承認ではない。
+体制（2026-10-11 ユーザー）: Q1＋P1（新規の実装）・P2（Bug）・P3（Pi 4 の VC6 の描画）＋T1（試験）＋ユーザー（UAT・判断）。WS203（Pi 4 の Ethernet）は Codex の別のセッション。この表は計画で、Queue の承認ではない。
 見積もりは LW（1 LW ≈ エージェントの実時間 20 分）。完了した項目は消す。Q1 は進むたびに更新する。
 
 ## 日程
@@ -21,8 +21,8 @@
 - [BUG-287](bugs/BUG-287.md)（スマホ連携が「connecting」のまま）の直しは全部 main に入った。image を作り直してよい。
 - WS199・WS200 は実装と QEMU の試験が済み、残りは次の UAT。
 - WS083（Vulkan Video）は既定で ON（2026-10-11 ユーザー）。残りは p007 の hang の実機の確かめ。[WS202](ws202/ws.md)（libmedia だけで mp4・m4a）は software を main に統合済み、実機と受け入れの全項目が未確認。
-- Raspberry Pi 4: Codex が [WS141](ws141/ws.md) の GPU の driver を改善中（VC6 で Wayland は起動、1 frame に約 1000 ms かかる原因を解析中）。
-- 未統合: [WS157](ws157/ws.md) Photos の削除（codex/ws197-media-uat の 2 commit）は main への統合の承認待ち。
+- Raspberry Pi 4: [WS141](ws141/ws.md) の VC6 の描画の改善を P3 が Codex から引き継いだ（mouse の移動 300 ms → 33 ms → 16 ms）。
+- WS157 Photos の削除の統合は P1 の q924。WS202 の再生の実機・QEMU の確認は T1-529。
 - 残る既知の Bug は USB LAN の遅さ（BUG-222）。
 
 ## 必須

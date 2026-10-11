@@ -11,10 +11,11 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-11（Q1、新しいセッション）**: いま動いているサブエージェントは無い（P1・T1 は前の世代で終わった。worktree p1 は clean、agent/p1-ws197 は main に無い commit を持たない）。
-  - WS197（スマホ連携）: SMS・MMS の受信と表示、PBAP の連絡先・通話の履歴、Bluetooth の自動復旧まで main に統合済み（p005 は 2026-10-10 Codex が完了）。P1 の書きかけの i06 は照合して、main に無かった 1 点（満杯の時に連絡先の file が残る）だけ取り込んだ（d5296c23e）。残りは HFP p006・p007、MMS の送信 p010、実機 p008。[WS197](ws197/ws.md)。
-  - 別のセッション（Codex）: [WS141](ws141/ws.md) Raspberry Pi 4 の GPU の改善（VC6 で Wayland が起動、1 frame に約 1000 ms かかる原因を解析中、2026-10-11 ユーザー）、[WS203](ws203/ws.md) Pi 4 の内蔵 Ethernet。ws141/ と ws203/ はそのセッションが更新し、Q1 は merge だけ。
-  - 未統合: codex/ws197-media-uat の 2 commit（[WS157](ws157/ws.md) p010・p011 Photos の削除、305ab43c1）。main への統合はユーザーの承認待ち（ws157-p011 の記録）。
+- **2026-10-11（Q1）: N=3＋T1**（ユーザー）。[Queue](queue.md) の 2026-10-11 の節、[台帳](agents/registry.md)。
+  - P1（agent/p1、新規の実装）: q924 WS157 Photos の削除の統合 → q925 Vulkan Video i915 の完了（WS202・WS083 p007）→ q926 ws197-p014 media picker の popup → q927 MMS の送信（p010）→ q928 HFP の制御 → q929 [WS204](ws204/ws.md) HDA の録音 → q930 HFP の音 → q931 [WS205](ws205/ws.md) Bluetooth audio → q932 [WS206](ws206/ws.md) Pi 4 WiFi → q933 [WS207](ws207/ws.md) Pi 4 audio。
+  - P2（agent/p2、Bug）: q934 BUG-263 → q935 BUG-274 → 終了（Bug が出たら立て直す）。
+  - P3（agent/p3、起点 d27925686）: q936 [ws141-p013](ws141/phase013/phase.md) VC6 の描画（mouse の移動 300 ms → 33 ms → 16 ms、Pi 4 は 10.0.30.2）。WS141 は Codex のセッションから P3 へ引き継いだ。
+  - T1（agent/t1）: T1-529 WS202 の再生（QEMU と 5330 の scp）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
@@ -31,21 +32,21 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-288、WS204（WS203 は Codex の Pi 4 の Ethernet が使用中）。次の KL_VERSION は 84、manager は 31（main は 83・30。未統合の codex/ws197-media-uat も keiland.h・manager を変えるので、統合の時に衝突を見る）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-288、WS208、q937、T1-530。次の KL_VERSION は 84、manager は 31（main は 83・30。未統合の codex/ws197-media-uat も keiland.h・manager を変えるので、統合の時に衝突を見る）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
-- **WS197 の HFP（p006 の制御 12 LW・p007 の音 25 LW）をベータ2 に入れるか**、ベータ3 に回すか（2026-10-11 Q1 が確認中）。MMS の写真・動画の送信（p010 の残り）も同じ。
-- **WS157 の Photos の削除（codex/ws197-media-uat の 305ab43c1）の main への統合**の承認。
-- WS202 H1〜H6・J1〜J10（libmedia の mp4・m4a）: software は main に統合済み（WS202 は incomplete、実機と受け入れの全項目が未確認）。判断がまだ要るかは WS202 の記録で確かめる。
-- BUG-222 を既知の問題にするか close か。WS083 p007（hang の回復の実機）をいつ流すか。
+- WS197 の HFP（p006・p007）・WS204・WS205 がベータ2 に入るか、ベータ3 か（P1 の順で進める。10/13 の凍結の扱いはユーザーと）。
+- WS202 H1〜H6・J1〜J10: software は main に統合済み、判断がまだ要るかは WS202 の記録で確かめる。
+- BUG-222 を既知の問題にするか close か。
 - WS129 の release notes・既知の問題・手引きの review。
 - **WS084 の 10 回の reboot（素の起動）**: ユーザーが zedBSD で起動する時。
 - WS153 U2〜U15 はユーザーが検討中（聞かない）。
-- （解決 2026-10-10）WS197 p005 Pc1〜Pc6: 6 項目とも推しどおり（Codex の引き継ぎに記録）。
+- （解決 2026-10-11）WS157 Photos の削除の統合: P1 の q924 で行う（ユーザー）。
+- （解決 2026-10-10）WS197 p005 Pc1〜Pc6: 6 項目とも推しどおり。
 <!-- master:open-decisions:end -->
 
 ### Focus
@@ -499,6 +500,10 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS195](ws195/ws.md) | MG006 | zedBSD でも userland/desktop を /opt/keiland/ に、account-admin を base から Keiland へ（2026-10-09 ユーザー、ベータ3） | planning | p001 設計 |
 | [WS196](ws196/ws.md) | MG002 | useradd・usermod・userdel（2026-10-09 ユーザーの問い、ベータ3 以降の提案） | planning | p001 範囲 |
 | [WS197](ws197/ws.md) | MG006 | Bluetooth のスマホ連携: MAP（SMS・MMS）・Integration（WS170）・PBAP・HFP（通話、SCO）。ベータ2 の必須（2026-10-10 ユーザー） | incomplete | 2026-10-11: p001〜p005・p011〜p013 cleared、p010 は受信だけ。残りは HFP p006・p007、MMS の送信、実機 p008、規約 p009（ベータ3） |
+| [WS204](ws204/ws.md) | MG006 | HD Audio の録音（内蔵マイク）と HFP 通話の音（2026-10-11 ユーザー） | planning | P1 q929 |
+| [WS205](ws205/ws.md) | MG006 | Bluetooth audio（A2DP の SBC・AAC、headset で HFP 通話、libmedia の encoder）（2026-10-11 ユーザー） | planning | P1 q931 |
+| [WS206](ws206/ws.md) | MG005 | Raspberry Pi 4 の WiFi（2026-10-11 ユーザー） | planning | P1 q932 |
+| [WS207](ws207/ws.md) | MG006 | Raspberry Pi 4 のオーディオ（再生・録音）（2026-10-11 ユーザー） | planning | P1 q933 |
 | [WS198](ws198/ws.md) | MG002 | zedBSD の上で zedBSD を self-build（host の clang、2026-10-09 ユーザー、優先度低、ベータ2 の見込み） | planning | p001 前提の調べ |
 | [WS199](ws199/ws.md) | MG006 | Settings のセキュリティキーの独立の頁とウィザード（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
 | [WS200](ws200/ws.md) | MG006 | Settings の Users のパスワード変更のウィザードと認証方式の選択（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
