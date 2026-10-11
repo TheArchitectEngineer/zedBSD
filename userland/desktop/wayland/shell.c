@@ -385,6 +385,7 @@ struct shell_bar {
 	unsigned output;
 };
 
+static int glass_still(struct kwl_server *server, int home_settled);
 static void bar_layout(struct kwl_server *server, struct shell_bar *bar);
 static void bar_layout_on(struct kwl_server *server, unsigned slot, struct shell_bar *bar);
 static void draw_window(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned focused, const struct shell_bar *bar);
@@ -2007,6 +2008,30 @@ int
 kwl_glass_still(
 	struct kwl_server *server)
 {
+	/* Reports the look still, with Home closed. */
+	return glass_still(server, 0);
+}
+
+/*
+ * Tells whether the look is still for the hover record (damage.c): as
+ * kwl_glass_still(), but Home open and settled counts as still, its icons'
+ * light being probes (home.c).  The whole output was drawn again for each
+ * motion over Home, at a few frames a second on the Pi 4 (2026-10-12).
+ */
+int
+kwl_glass_hover_still(
+	struct kwl_server *server)
+{
+	/* Reports the look still, Home open and settled allowed. */
+	return glass_still(server, 1);
+}
+
+/* Tells whether the look is still; home_settled allows Home open with nothing in it moving. */
+static int
+glass_still(
+	struct kwl_server *server,
+	int home_settled)
+{
 	struct kwl_object *popups[1];
 	float home;
 	unsigned open;
@@ -2019,10 +2044,15 @@ kwl_glass_still(
 	if (server->wiseview > 0.0f || server->wiseview_gesture || server->wiseview_moving)
 		return 0;
 
-	/* Home, even closing. */
+	/* Home, even closing; settled open only when allowed. */
 	home = kwl_home_progress(server);
-	if (home > 0.0f)
-		return 0;
+	if (home > 0.0f) {
+		if (!home_settled)
+			return 0;
+		open = (unsigned)kwl_home_settled(server);
+		if (!open)
+			return 0;
+	}
 
 	/* The top-right corner's hint (corner.c). */
 	open = (unsigned)kwl_corner_showing();

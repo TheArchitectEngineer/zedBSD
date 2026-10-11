@@ -778,6 +778,29 @@ kwl_home_button(
 }
 
 /*
+ * Tells whether Home is open and nothing in it moves (no opening or
+ * closing, drag, page turn, icons coming in or press), so that the
+ * pointer's motion changes only its icons' light (damage.c).
+ */
+int
+kwl_home_settled(
+	struct kwl_server *server)
+{
+	/* Open, where it went. */
+	if (server->home_dragging || server->home_moving || server->home < 1.0f)
+		return 0;
+
+	/* Nothing in it moves or is held. */
+	if (server->home_page_moving || home_content_rising)
+		return 0;
+	if (server->home_page_press || server->home_rise_press || server->home_press)
+		return 0;
+
+	/* Settled. */
+	return 1;
+}
+
+/*
  * Follows Home's presses: the swipe up from the bottom edge, a drag on
  * Home, and a press on the launcher that may move away.  Returns 1 when
  * the motion is Home's.
@@ -791,6 +814,7 @@ kwl_home_motion(
 	int32_t up;
 	float moved;
 	float progress;
+	int lit;
 
 	/* A swipe up from the bottom edge of the desktop: past HOME_RISE_START the desktop goes back with it, Home opening. */
 	if (server->home_rise_press) {
@@ -860,11 +884,17 @@ kwl_home_motion(
 		return 1;
 	}
 
-	/* Without a press Home may start from, the motion is Home's only while it shows (for the hover). */
+	/*
+	 * Without a press Home may start from, the motion is Home's only while
+	 * it shows (for the hover): only an icon whose light changed is drawn
+	 * again (its hover probe, home_draw_icon), else the whole output.
+	 */
 	if (!server->home_press) {
 		progress = kwl_home_progress(server);
 		if (progress > 0.0f) {
-			server->dirty = 1;
+			lit = kwl_hover_damage(server);
+			if (!lit)
+				server->dirty = 1;
 			return 1;
 		}
 
@@ -1811,6 +1841,7 @@ home_draw_icon(
 	over = 0;
 	if (server->pointer_x >= x && server->pointer_x < x + HOME_ICON && server->pointer_y >= y && server->pointer_y < y + HOME_ICON)
 		over = 1;
+	kwl_hover_probe(server, x, y, HOME_ICON, HOME_ICON);
 	y += (int32_t)(rise + 0.5f);
 
 	/* The started application's icon grows as Home closes (about its centre). */

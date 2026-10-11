@@ -340,7 +340,7 @@ hover_record_usable(
 	/* Moving, dragging and held buttons keep redrawing. */
 	if (server->buttons_down != 0U)
 		return 0;
-	open = kwl_glass_still(server);
+	open = kwl_glass_hover_still(server);
 	if (!open)
 		return 0;
 
