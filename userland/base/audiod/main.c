@@ -35,6 +35,9 @@
 #define AUDIOD_POLL_MAX		66U
 #define AUDIOD_CLIENT_MAX	64U
 
+/* The connections kept for root and the Bluetooth daemon: others take at most the rest (ws209-p002, N23). */
+#define AUDIOD_CLIENT_RESERVED	8U
+
 struct audiod_client *audiod_clients;
 struct audiod_device audiod_device;
 sigjmp_buf audiod_bus_jump;
@@ -57,7 +60,30 @@ static void destroy_stream(struct audiod_client *client, struct audiod_stream *s
 static void drop_client(struct audiod_client *client);
 static void reap_clients(void);
 static void broadcast_volume(void);
-static void send_volume(struct audiod_client *client);
+static int peer_uid(int fd, uid_t *uid);
+
+/* Sends one message to a client (route.c's way to send_message). */
+void
+audiod_send(
+	struct audiod_client *client,
+	void *message,
+	uint32_t length,
+	int fd)
+{
+	/* The same sending. */
+	send_message(client, message, length, fd);
+}
+
+/* Answers a request with DONE or ERROR (route.c's way to send_result). */
+void
+audiod_send_result(
+	struct audiod_client *client,
+	const struct audiod_header *request,
+	int error)
+{
+	/* The same answer. */
+	send_result(client, request, error);
+}
 
 /* Reports the monotonic time in nanoseconds. */
 int64_t
@@ -101,6 +127,8 @@ main(
 	short events;
 	int device_slot;
 	int device_fd;
+	int timeout;
+	int route_timeout;
 
 	/* A client that goes away must not end audiod with SIGPIPE. */
 	signal(SIGPIPE, SIG_IGN);
@@ -115,6 +143,7 @@ main(
 		fprintf(stderr, "audiod: cannot allocate the device buffers\n");
 		return 1;
 	}
+	audiod_route_init();
 	if (listen_socket() != 0)
 		return 1;
 	fprintf(stderr, "audiod: %s, %u Hz, %u frames a period, %s\n",
@@ -145,7 +174,12 @@ main(
 		for (index = 0; index < count; index++)
 			fds[index].revents = 0;
 
-		if (poll(fds, count, audiod_device_timeout_ms(&audiod_device)) < 0 &&
+		/* The device's next period, or an endpoint's deadline (ws209-p002), whichever is first. */
+		timeout = audiod_device_timeout_ms(&audiod_device);
+		route_timeout = audiod_route_timeout_ms(audiod_now_ns());
+		if (route_timeout >= 0 && (timeout < 0 || route_timeout < timeout))
+			timeout = route_timeout;
+		if (poll(fds, count, timeout) < 0 &&
 		    errno != EINTR)
 			return 1;
 
@@ -159,6 +193,9 @@ main(
 				read_client(clients[index]);
 		}
 		reap_clients();
+
+		/* The endpoints the routes use, opened and closed (ws209-p002). */
+		audiod_route_tick(audiod_now_ns());
 	}
 }
 
@@ -180,22 +217,33 @@ listen_socket(
 	void)
 {
 	struct sockaddr_un address;
+	const char *path;
+#ifdef AUDIOD_HOST_TEST
+	const char *test_path;
+#endif
 
 	listener = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (listener < 0) {
 		perror("audiod: socket");
 		return -1;
 	}
+	path = AUDIOD_SOCKET_PATH;
+#ifdef AUDIOD_HOST_TEST
+	/* A host test's own socket (ws209-p002, compiled in only there). */
+	test_path = getenv("AUDIOD_TEST_SOCKET");
+	if (test_path != NULL)
+		path = test_path;
+#endif
 	memset(&address, 0, sizeof(address));
 	address.sun_family = AF_UNIX;
-	strcpy(address.sun_path, AUDIOD_SOCKET_PATH);
-	unlink(AUDIOD_SOCKET_PATH);
+	snprintf(address.sun_path, sizeof(address.sun_path), "%s", path);
+	unlink(path);
 	if (bind(listener, (struct sockaddr *)&address, sizeof(address)) != 0 ||
 	    listen(listener, 16) != 0) {
-		perror("audiod: " AUDIOD_SOCKET_PATH);
+		perror("audiod: socket");
 		return -1;
 	}
-	(void)chmod(AUDIOD_SOCKET_PATH, 0666);
+	(void)chmod(path, 0666);
 	(void)fcntl(listener, F_SETFL, O_NONBLOCK);
 	return 0;
 }
@@ -206,12 +254,24 @@ accept_client(
 	void)
 {
 	struct audiod_client *client;
+	unsigned limit;
+	uid_t uid;
+	int known;
+	int error;
 	int fd;
 
 	fd = accept(listener, NULL, NULL);
 	if (fd < 0)
 		return;
-	if (client_count >= AUDIOD_CLIENT_MAX) {
+
+	/* Who it is (ws209-p002): the routes' permissions, and the connections kept for root and the daemon (N23). */
+	uid = (uid_t)-1;
+	error = peer_uid(fd, &uid);
+	known = error == 0;
+	limit = AUDIOD_CLIENT_MAX - AUDIOD_CLIENT_RESERVED;
+	if (known && uid == 0)
+		limit = AUDIOD_CLIENT_MAX;
+	if (client_count >= limit) {
 		close(fd);
 		return;
 	}
@@ -222,6 +282,9 @@ accept_client(
 	}
 	(void)fcntl(fd, F_SETFL, O_NONBLOCK);
 	client->fd = fd;
+	client->version = AUDIOD_PROTOCOL_VERSION_1;
+	client->uid = uid;
+	client->uid_known = known;
 	client->next = audiod_clients;
 	audiod_clients = client;
 	client_count++;
@@ -274,9 +337,14 @@ handle_message(
 		struct audiod_header header;
 		struct audiod_hello hello;
 		struct audiod_stream_create create;
+		struct audiod_stream_create2 create2;
 		struct audiod_volume volume;
 		struct audiod_subscribe subscribe;
 	} request;
+	uint32_t role;
+	int endpoint;
+	int handled;
+	int allowed;
 	struct audiod_welcome welcome;
 	struct audiod_stream_created created;
 	struct audiod_stream *stream;
@@ -288,14 +356,25 @@ handle_message(
 	stream = find_stream(client, request.header.stream);
 	error = 0;
 
+	/* Version 2's endpoints and routes (ws209-p002). */
+	handled = audiod_route_request(client, bytes, length);
+	if (handled)
+		return;
+
+	/* The streams' and the device's requests. */
+
 	switch (request.header.type) {
 	case AUDIOD_HELLO:
+		/* The version both speak: the client's, at most audiod's; a short HELLO or 0 is version 1 (N9). */
+		client->version = AUDIOD_PROTOCOL_VERSION_1;
+		if (length >= sizeof(request.hello) && request.hello.version >= AUDIOD_PROTOCOL_VERSION_2)
+			client->version = AUDIOD_PROTOCOL_VERSION;
 		memset(&welcome, 0, sizeof(welcome));
 		welcome.header.type = AUDIOD_WELCOME;
 		welcome.header.length = sizeof(welcome);
 		welcome.header.serial = request.header.serial;
-		welcome.version = AUDIOD_VERSION;
-		welcome.device = audiod_device.dsp >= 0;
+		welcome.version = client->version;
+		welcome.device = audiod_route_output_exists();
 		welcome.format = audiod_device.format;
 		welcome.channels = audiod_device.channels;
 		welcome.rate = audiod_device.rate;
@@ -304,7 +383,15 @@ handle_message(
 		return;
 
 	case AUDIOD_STREAM_CREATE:
-		if (length != sizeof(request.create)) {
+		/* Version 1's request (media), or version 2's with its role (N11). */
+		role = AUDIOD_ROLE_MEDIA;
+		if (length == sizeof(request.create2) && client->version >= AUDIOD_PROTOCOL_VERSION_2) {
+			role = request.create2.role;
+			if (role > AUDIOD_ROLE_ALERT || request.create2.reserved != 0U) {
+				error = EINVAL;
+				break;
+			}
+		} else if (length != sizeof(request.create)) {
 			error = EINVAL;
 			break;
 		}
@@ -312,10 +399,20 @@ handle_message(
 			error = EEXIST;
 			break;
 		}
+
+		/* While a call is set, recording is the seat's (N13). */
+		if (request.create.direction == AUDIOD_CAPTURE) {
+			allowed = audiod_route_capture_allowed(client);
+			if (!allowed) {
+				error = EACCES;
+				break;
+			}
+		}
 		error = create_stream(client, &request.create, &fd);
 		if (error != 0)
 			break;
 		stream = find_stream(client, request.header.stream);
+		stream->role = role;
 		memset(&created, 0, sizeof(created));
 		created.header.type = AUDIOD_STREAM_CREATED;
 		created.header.length = sizeof(created);
@@ -336,6 +433,9 @@ handle_message(
 			audiod_stream_rates(stream, &audiod_device);
 			stream->last_request = stream->direction == AUDIOD_PLAYBACK ?
 			    stream->shm->read_position : stream->shm->write_position;
+
+			/* Started again after a stop: a hold since its output was lost ends (G5). */
+			audiod_route_stream_started(stream);
 		}
 		stream->running = 1;
 		stream->draining = 0;
@@ -422,9 +522,15 @@ handle_message(
 			break;
 		}
 
-		/* The device's volume (or audiod's own), told to every subscriber. */
-		audiod_device_set_volume(&audiod_device, request.volume.left,
+		/* The volume of the output the keys act on (a call's, a headset's, N5), or the device's; told to every subscriber. */
+		endpoint = audiod_route_volume_set(request.volume.left,
 		    request.volume.right, request.volume.muted != 0);
+		if (!endpoint) {
+			audiod_device_set_volume(&audiod_device, request.volume.left,
+			    request.volume.right, request.volume.muted != 0);
+		}
+
+		/* Told. */
 		broadcast_volume();
 		break;
 
@@ -440,11 +546,13 @@ handle_message(
 		break;
 
 	case AUDIOD_SUBSCRIBE:
-		/* A new subscriber is told the volume as it stands. */
+		/* A new subscriber is told the volume as it stands; version 1 has only the volume's bit (N10). */
 		client->subscribed = request.subscribe.mask;
+		if (client->version < AUDIOD_PROTOCOL_VERSION_2)
+			client->subscribed &= AUDIOD_SUBSCRIBE_VOLUME;
 		send_result(client, &request.header, 0);
-		if (client->subscribed)
-			send_volume(client);
+		if ((client->subscribed & AUDIOD_SUBSCRIBE_VOLUME) != 0U)
+			audiod_route_send_volume(client);
 		return;
 
 	default:
@@ -468,12 +576,11 @@ create_stream(
 {
 	struct audiod_stream *stream;
 	struct audiod_shm_header *shm;
-	uint32_t frame_bytes;
 	uint32_t capacity;
-	size_t ring_bytes;
+	uint32_t period;
 	size_t bytes;
-	char name[64];
 	void *memory;
+	int error;
 
 	/* Refuses what audiod cannot convert. */
 	if (request->direction > AUDIOD_CAPTURE ||
@@ -486,44 +593,24 @@ create_stream(
 	    4U * audiod_device.period_frames;
 	if (capacity > AUDIOD_BUFFER_MAX || request->period_frames > capacity)
 		return EINVAL;
-	frame_bytes = audiod_frame_bytes(request->format, request->channels);
-	ring_bytes = ((size_t)capacity * frame_bytes + 4095U) & ~(size_t)4095U;
-	bytes = AUDIOD_SHM_HEADER + ring_bytes;
 
-	/* Makes the anonymous shared memory. */
-	snprintf(name, sizeof(name), "/audiod-%d-%u", (int)getpid(), shm_counter++);
-	*fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
-	if (*fd < 0)
-		return errno;
-	(void)shm_unlink(name);
-	if (ftruncate(*fd, (off_t)bytes) != 0) {
-		close(*fd);
-		return errno;
-	}
-	memory = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, *fd, 0);
-	if (memory == MAP_FAILED) {
-		close(*fd);
-		return errno;
-	}
+	/* The shared memory and its header. */
+	period = audiod_device.period_frames;
+	if (request->period_frames != 0U)
+		period = request->period_frames;
+	error = audiod_shm_make(request->format, request->channels, request->rate, capacity, period, fd, &shm, &bytes);
+	if (error != 0)
+		return error;
 
 	stream = calloc(1, sizeof(*stream));
 	if (stream == NULL) {
-		munmap(memory, bytes);
+		munmap(shm, bytes);
 		close(*fd);
 		return ENOMEM;
 	}
-	shm = memory;
-	memset(shm, 0, sizeof(*shm));
-	shm->magic = AUDIOD_SHM_MAGIC;
-	shm->version = AUDIOD_VERSION;
-	shm->format = request->format;
-	shm->channels = request->channels;
-	shm->rate = request->rate;
-	shm->frame_bytes = frame_bytes;
-	shm->capacity_frames = capacity;
-	shm->period_frames = request->period_frames != 0U ? request->period_frames :
-	    audiod_device.period_frames;
-	shm->state = AUDIOD_STATE_STOPPED;
+
+	/* The stream on its ring. */
+	memory = shm;
 
 	stream->client = client;
 	stream->id = request->header.stream;
@@ -630,35 +717,17 @@ send_message(
 		client->dead = 1;
 }
 
-/* Tells a client the device volume. */
-static void
-send_volume(
-	struct audiod_client *client)
-{
-	struct audiod_volume volume;
-
-	/* VOLUME_CHANGED with the volume in force. */
-	memset(&volume, 0, sizeof(volume));
-	volume.header.type = AUDIOD_VOLUME_CHANGED;
-	volume.header.length = sizeof(volume);
-	audiod_device_get_volume(&audiod_device, &volume.left, &volume.right,
-	    &volume.muted);
-
-	/* Sent without a descriptor. */
-	send_message(client, &volume, sizeof(volume), -1);
-}
-
-/* Tells every subscribed client the device volume. */
+/* Tells every subscribed client the volume of the output the keys act on. */
 static void
 broadcast_volume(
 	void)
 {
 	struct audiod_client *client;
 
-	/* Each client that subscribed. */
+	/* Each client that subscribed to the volume. */
 	for (client = audiod_clients; client != NULL; client = client->next) {
-		if (client->subscribed)
-			send_volume(client);
+		if ((client->subscribed & AUDIOD_SUBSCRIBE_VOLUME) != 0U)
+			audiod_route_send_volume(client);
 	}
 }
 
@@ -667,6 +736,7 @@ static void
 drop_client(
 	struct audiod_client *client)
 {
+	audiod_route_client_gone(client);
 	while (client->streams != NULL)
 		destroy_stream(client, client->streams);
 	close(client->fd);
@@ -692,4 +762,109 @@ reap_clients(
 			link = &client->next;
 		}
 	}
+}
+
+/*
+ * Makes a ring's shared memory: anonymous (unlinked the moment it exists,
+ * so only audiod and the client it is sent to reach it), its header set.
+ * Returns 0 with the descriptor, the mapping and its size, or an errno.
+ */
+int
+audiod_shm_make(
+	uint32_t format,
+	uint32_t channels,
+	uint32_t rate,
+	uint32_t capacity,
+	uint32_t period,
+	int *fd,
+	struct audiod_shm_header **shm,
+	size_t *bytes)
+{
+	struct audiod_shm_header *header;
+	uint32_t frame_bytes;
+	size_t ring_bytes;
+	size_t size;
+	char name[64];
+	void *memory;
+	int error;
+
+	/* The size: the header's page and the ring in whole pages. */
+	frame_bytes = audiod_frame_bytes(format, channels);
+	ring_bytes = ((size_t)capacity * frame_bytes + 4095U) & ~(size_t)4095U;
+	size = AUDIOD_SHM_HEADER + ring_bytes;
+
+	/* The memory object, unlinked at once. */
+	snprintf(name, sizeof(name), "/audiod-%d-%u", (int)getpid(), shm_counter++);
+	*fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
+	if (*fd < 0) {
+		error = errno;
+		return error;
+	}
+
+	/* Its size. */
+	(void)shm_unlink(name);
+	error = ftruncate(*fd, (off_t)size);
+	if (error != 0) {
+		error = errno;
+		close(*fd);
+		return error;
+	}
+
+	/* Mapped. */
+	memory = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, *fd, 0);
+	if (memory == MAP_FAILED) {
+		error = errno;
+		close(*fd);
+		return error;
+	}
+
+	/* The header. */
+	header = memory;
+	memset(header, 0, sizeof(*header));
+	header->magic = AUDIOD_SHM_MAGIC;
+	header->version = AUDIOD_SHM_VERSION;
+	header->format = format;
+	header->channels = channels;
+	header->rate = rate;
+	header->frame_bytes = frame_bytes;
+	header->capacity_frames = capacity;
+	header->period_frames = period;
+	header->state = AUDIOD_STATE_STOPPED;
+
+	/* Succeeded: the ring. */
+	*shm = header;
+	*bytes = size;
+	return 0;
+}
+
+/* Tells who is at the other end of a connection; 0 or an errno (ws209-p002). */
+static int
+peer_uid(
+	int fd,
+	uid_t *uid)
+{
+#ifdef __linux__
+	struct ucred credentials;
+	socklen_t size;
+	int error;
+
+	/* Linux (the host test): SO_PEERCRED. */
+	size = sizeof(credentials);
+	error = getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &size);
+	if (error != 0)
+		return errno;
+	*uid = credentials.uid;
+	return 0;
+#else
+	gid_t gid;
+	int error;
+
+	/* The peer's effective ids. */
+	error = getpeereid(fd, uid, &gid);
+	if (error != 0)
+		return errno;
+
+	/* Succeeded: the uid. */
+	return 0;
+#endif
 }

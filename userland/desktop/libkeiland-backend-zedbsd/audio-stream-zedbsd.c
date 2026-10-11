@@ -70,7 +70,7 @@ _Static_assert(offsetof(struct audiod_shm_header, underruns) == offsetof(struct 
 _Static_assert(offsetof(struct audiod_shm_header, overruns) == offsetof(struct kl_backend_audio_ring, overruns), "overruns");
 _Static_assert(offsetof(struct audiod_shm_header, state) == offsetof(struct kl_backend_audio_ring, state), "state");
 _Static_assert(AUDIOD_SHM_HEADER == KL_BACKEND_AUDIO_RING_HEADER, "the ring's page");
-_Static_assert(AUDIOD_VERSION == KL_BACKEND_AUDIO_RING_VERSION, "the ring's version is audiod's");
+_Static_assert(AUDIOD_SHM_VERSION == KL_BACKEND_AUDIO_RING_VERSION, "the ring's version is audiod's");
 _Static_assert(AUDIOD_FORMAT_S16_LE == KL_BACKEND_AUDIO_FORMAT_S16_LE, "S16_LE");
 _Static_assert(AUDIOD_FORMAT_S32_LE == KL_BACKEND_AUDIO_FORMAT_S32_LE, "S32_LE");
 _Static_assert(AUDIOD_FORMAT_F32_LE == KL_BACKEND_AUDIO_FORMAT_F32_LE, "F32_LE");
@@ -436,7 +436,7 @@ stream_connected(
 	hello.header.type = AUDIOD_HELLO;
 	hello.header.length = sizeof(hello);
 	hello.header.serial = stream->next_serial++;
-	hello.version = AUDIOD_VERSION;
+	hello.version = AUDIOD_PROTOCOL_VERSION_1;
 	error = stream_send(stream, &hello, sizeof(hello));
 	if (error != 0)
 		return;
