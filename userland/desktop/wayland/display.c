@@ -188,6 +188,9 @@ kwl_schedule(
 	/* wl_shm images are copied, and their buffers released, while no frame is in flight. */
 	(void)kwl_shm_upload(server);
 
+	/* The cursor plane shows the cursor's image at its place (cursor-plane.c). */
+	kwl_cursor_plane_update(server);
+
 	/*
 	 * The windows the last frame told get a moment to commit (frame
 	 * pacing), unless the pointer moved and waits to be shown, or App Home

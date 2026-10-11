@@ -1818,6 +1818,10 @@ int kwl_shm_request(struct kwl_object *object, uint32_t opcode, const unsigned c
 int kwl_shm_bind(struct kwl_object *shm);
 void kwl_cursor_default(struct kwl_server *server);
 int kwl_cursor_client_shown(struct kwl_server *server);
+
+/* The cursor plane (cursor-plane.c, ws141-p014): whether it shows the cursor now, and its update at each pass. */
+int kwl_cursor_plane_takes(struct kwl_server *server);
+void kwl_cursor_plane_update(struct kwl_server *server);
 int kwl_arrow_create(struct kwl_server *server);
 void kwl_arrow_destroy(struct kwl_server *server);
 struct kwl_object *kwl_top_window(struct kwl_server *server);

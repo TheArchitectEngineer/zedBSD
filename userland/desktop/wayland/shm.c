@@ -315,8 +315,9 @@ void
 kwl_host_image_written(
 	struct kwl_import *import)
 {
-	/* The next kwl_host_images_record copies this image and clears the mark. */
+	/* The next kwl_host_images_record copies this image and clears the mark; copies elsewhere see a new version. */
 	import->written = 1U;
+	import->version++;
 }
 
 /*
@@ -792,6 +793,7 @@ image_create(
 
 	/* The first frame copies whatever the creator writes before it. */
 	import->written = 1U;
+	import->version = 1U;
 	import->host_next = compose->host_images;
 	compose->host_images = import;
 
