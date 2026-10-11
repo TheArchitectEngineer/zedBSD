@@ -231,6 +231,9 @@ struct btd_session {
 	int secure_connections;
 	int no_flush;
 	uint16_t acl_length;
+	/* Read Buffer Size's SCO packet length and count (ws197-p007a0, told in the log). */
+	uint8_t sco_length;
+	uint16_t sco_count;
 	int intel;
 	struct btd_intel_version intel_version;
 	int firmware_loaded;
