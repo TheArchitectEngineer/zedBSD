@@ -205,10 +205,34 @@ vkdemo_display_create_swapchain_usage(
 	struct vkdemo_display *display,
 	VkImageUsageFlags extra)
 {
+	VkResult status;
+
+	/* The images are rendered directly, and used further only as the caller asks. */
+	status = vkdemo_display_create_swapchain_exact(physical, device, family, display, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | extra);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: each image supports rendering and the further uses asked for. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Create images with exactly the uses asked for (`usage`), from the
+ * surface's supported FIFO contract.  An image only ever written by
+ * transfers declares no other use: the Pi 4's driver then shows an
+ * unchanged cursor image without copying it again (ws141-p016 (B)).
+ */
+VkResult
+vkdemo_display_create_swapchain_exact(
+	VkPhysicalDevice physical,
+	VkDevice device,
+	uint32_t family,
+	struct vkdemo_display *display,
+	VkImageUsageFlags usage)
+{
 	VkSurfaceCapabilitiesKHR capabilities;
 	VkSwapchainCreateInfoKHR create;
 	VkBool32 supported;
-	VkImageUsageFlags usage;
 	VkResult status;
 	uint32_t count;
 
@@ -227,8 +251,7 @@ vkdemo_display_create_swapchain_usage(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* The image is rendered directly, and used further only as the caller asks. */
-	usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | extra;
+	/* The surface must support every use asked for. */
 	if ((capabilities.supportedUsageFlags & usage) != usage)
 		return VK_ERROR_FORMAT_NOT_SUPPORTED;
 
@@ -331,7 +354,7 @@ vkdemo_display_create_swapchain_usage(
 	/* Publish the count only after enumeration populated the array successfully. */
 	display->image_count = count;
 
-	/* Succeeded: each borrowed image supports rendering and the further uses asked for. */
+	/* Succeeded: each borrowed image supports the uses asked for. */
 	return VK_SUCCESS;
 }
 

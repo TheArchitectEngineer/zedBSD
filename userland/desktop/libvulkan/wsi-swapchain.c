@@ -140,6 +140,8 @@ struct wsi_cursor_log {
 	struct vulkan_wsi_cursor_times times;
 	uint32_t depth;
 	uint32_t retries;
+	/* Why a cursor present took its route: the first condition of the fast path it failed, or none. */
+	const char *why;
 };
 
 /* A job borrows its queue worker until the ordered completion path retires it. */
@@ -3686,14 +3688,17 @@ present_route(
 
 	/* A rejected target records nothing and shows nothing. */
 	chain = job->chains[0];
+	job->log.why = "result";
 	if (job->results[0] != VK_SUCCESS)
 		return WSI_ROUTE_COPY;
 
 	/* A chain the application may write by other means than transfers is always copied. */
+	job->log.why = "usage";
 	if (chain->transfer_only == VK_FALSE)
 		return WSI_ROUTE_COPY;
 
 	/* A record that asks for GPU completion (a present fence, an identifier) needs the worker. */
+	job->log.why = "next";
 	for (extension = info->pNext; extension != NULL; extension = extension->pNext) {
 		if (extension->sType != VK_STRUCTURE_TYPE_DISPLAY_PRESENT_INFO_KHR &&
 		    extension->sType != VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR)
@@ -3708,9 +3713,13 @@ present_route(
 
 	serial = __atomic_load_n(&image->content_serial, __ATOMIC_ACQUIRE);
 	epoch = __atomic_load_n(&chain->device->content_epoch, __ATOMIC_ACQUIRE);
-	if (presentation->copied_valid != VK_FALSE &&
-	    presentation->copied_serial == serial &&
-	    presentation->copied_epoch == epoch)
+	if (presentation->copied_valid == VK_FALSE)
+		job->log.why = "uncopied";
+	else if (presentation->copied_serial != serial)
+		job->log.why = "changed";
+	else if (presentation->copied_epoch != epoch)
+		job->log.why = "epoch";
+	else
 		unchanged = VK_TRUE;
 
 	pthread_mutex_unlock(&swapchain_mutex);
@@ -3720,11 +3729,13 @@ present_route(
 		return WSI_ROUTE_COPY;
 
 	/* Complete waits are consumed now; waits on GPU work are left to a submission. */
+	job->log.why = "waits";
 	consumed = present_waits_consume(job, info);
 	if (consumed == VK_FALSE)
 		return WSI_ROUTE_EMPTY;
 
 	/* Succeeded: the unchanged image is shown at once. */
+	job->log.why = "none";
 	return WSI_ROUTE_FAST;
 }
 
@@ -4053,6 +4064,7 @@ present_cursor_log(
 {
 	const struct wsi_cursor_log *log;
 	const char *outcome;
+	const char *why;
 	char line[512];
 	uint64_t stamps[5];
 	uint64_t lengths[5];
@@ -4068,6 +4080,9 @@ present_cursor_log(
 
 	/* Each step's time as a length from the call, or zero when it did not happen. */
 	log = &job->log;
+	why = "none";
+	if (log->why != NULL)
+		why = log->why;
 	stamps[0] = log->publish;
 	stamps[1] = log->fence;
 	stamps[2] = log->times.locked;
@@ -4083,7 +4098,7 @@ present_cursor_log(
 	length = snprintf(
 		line,
 		sizeof(line),
-		"VK CURSOR ticket=%llu path=%s result=%d outcome=%s image=%u x=%d y=%d depth=%u call_ns=%llu mutex=%llu queue=%llu publish=%llu fence=%llu lock=%llu set=%llu done=%llu retries=%u\n",
+		"VK CURSOR ticket=%llu path=%s result=%d outcome=%s image=%u x=%d y=%d depth=%u call_ns=%llu mutex=%llu queue=%llu publish=%llu fence=%llu lock=%llu set=%llu done=%llu retries=%u why=%s\n",
 		(unsigned long long)job->tickets[0],
 		path,
 		(int)job->results[0],
@@ -4100,7 +4115,8 @@ present_cursor_log(
 		(unsigned long long)lengths[2],
 		(unsigned long long)lengths[3],
 		(unsigned long long)lengths[4],
-		log->retries);
+		log->retries,
+		why);
 
 	/* A line that could not be formatted is not written; a long one is cut to the buffer. */
 	if (length <= 0)
