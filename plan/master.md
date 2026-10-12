@@ -32,7 +32,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-292、WS213、q940、T1-547。次の KL_VERSION は 90（WS210 p014 の frame の枠組み、P1）、WS210 の GPU canvas は 91 以降（89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-292、WS214、q940、T1-547。次の KL_VERSION は 90（WS210 p014 の frame の枠組み、P1）、WS210 の GPU canvas は 91 以降（89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -509,6 +509,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS210](ws210/ws.md) | MG006 | Keiland の app の描画を GPU へ（libkeiland の canvas・文字・画像を Vulkan で）（2026-10-12 ユーザー） | planning | P1 |
 | [WS211](ws211/ws.md) | MG006 | Pi 4 の compositor の描画の削減（App Home の遷移のクロスフェード、draw の束ね）（2026-10-12 ユーザー） | planning | P3 |
 | [WS212](ws212/ws.md) | MG006 | Wiseview の作り直し: 仮想デスクトップ 3 枚の矩形と窓の一覧、drag で仮想デスクトップ・display をまたいで移動、multi display の縦の積み重ね、display のローテーション（タグ・Shift+Super+←/→、比率の保持）（2026-10-12 ユーザー） | planning | 未割当 |
+| [WS213](ws213/ws.md) | MG006 | compositor の thread 化（入力・cursor と描画の分離、重いコマの間も入力と cursor が止まらない）（2026-10-12 ユーザー） | planning | P4（p001 設計） |
 | [WS198](ws198/ws.md) | MG002 | zedBSD の上で zedBSD を self-build（host の clang、2026-10-09 ユーザー、優先度低、ベータ2 の見込み） | planning | p001 前提の調べ |
 | [WS199](ws199/ws.md) | MG006 | Settings のセキュリティキーの独立の頁とウィザード（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
 | [WS200](ws200/ws.md) | MG006 | Settings の Users のパスワード変更のウィザードと認証方式の選択（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
@@ -542,6 +543,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-12 ユーザー:「コンポジタのマルチスレッド化も入れてください。ウィンドウへの通知の転送以外の処理はほとんどすべてスレッドにして…」→ Q1 の推し（main thread＝protocol・入力・cursor、描画 thread 1 本が Vulkan の queue を持つ、作業 thread、描画は event の queue に積まず最新の画面の状態の写しを受け箱に 1 つ）にユーザー「了解です。おすすめがいいと思います。あとでできたらレビューさせてください。」→ WS213（P4）、設計は design-reviewer の後にユーザーの review。
+- 2026-10-12 ユーザー:「libkeilandのウィジェットのイベントと描画の最適化 / コンポジタの時計などの描画最適化と、スレッド化 / ウィンドウドラッグの60fps化（方法は未知） 必要な分はWSを立て、現在のWSで取り組む分はこのままお願いします。」→ libkeiland の widget のイベントと描画は WS210（p013・p014、P1）、compositor の時計などの描画の最適化と drag の 60fps は WS211（p005・p006、P3）、thread 化は新しい WS213（未割当）。
 - 2026-10-12 ユーザー:「マウス移動イベントを受け取ったとしても、一定のFPS以上には処理しない工夫や、イベントをpeekして次もマウスイベントなら、一定のFPS以上ならマージするような統一的な枠組みが必要かも。」（Settings の左ペインで軌跡の全部の lit の変化に描画が積み重なる）→ libkeiland の統一の枠組み（motion の合流、frame callback までの描画の上限、hover の damage の共通の口）を P1 が WS210 の新しい Phase として設計する。補足「一律にFPSでマウス移動イベントをマージするのではなく、ウィンドウごとに申請されたらそうする感じがいいですね。」→ 既定は今のまま、window ごとの申請（opt-in）で効く。補足「書き直しが完了する前の書き直しイベントが来たら前の分をキャンセルするのでもいいです。ペインの実現方法がlibkeilandにあるなら、それがいい。」→ 訂正「前の描き直しが始まる前に次の描き直しが来たら、ですね。訂正します。レンダリングの途中キャンセルは意図してません。」→ 取り消すのは描き始める前の予約だけ、描いている途中の frame は最後まで描く。ペインは libkeiland の部品で。
 - 2026-10-12 ユーザー:「System Monitorは重いので、2fpsで更新できることが目標です。逆にそれ以上の頻度で更新しないようにしましょう。」→ System Monitor の更新（標本と描き直し）は 500ms ごとが上限で目標。補足「System Monitorのアニメですね。UIレスポンスは60fpsです。」→ 2fps は graph・数値の更新（アニメ）だけ、hover・click・scroll の応答は 60fps。同日「WS211 p003, WS141 (b)、さらに上記アプリの改善をやりましょう。libkeilandのウィジェットも。」→ P3: WS211 p003・WS141 (b)、P1（新しく起動）: app の hover の引っかかりと libkeiland（present の host-mapped の canvas、widget）・WS210。
 - 2026-10-12 ユーザー:「RPIのシリアルポートは使っていません。コンフィグで無効化してください。それから、GPU使用中は、コンソールの描画も裏側で行わずに完全に止めるのがいいです。取りこぼす結果になってOKです。」→ rpi4 の serial の console は config で既定無効、display の driver が画面を引き取った後は framebuffer の console の描画を止める（溜めない）。kernel の log は dmesg の ring と bootlog に残す（P3、WS141）。原因: kernel の log の 1 字ずつを IRQ を止めて UART に polling で送り early fb にも描き、v3d の perf の報告（約 1000 字、2 秒ごと、controller の mutex の下）で 50〜100ms 止まっていた。
