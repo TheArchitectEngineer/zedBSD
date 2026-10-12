@@ -32,7 +32,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-295、WS216、q940、T1-552。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-295、WS216、q940、T1-553。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -903,6 +903,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | tool | 用途 | 使い方 |
 | [ws213/tests/kd-host-test.sh](ws213/tests/kd-host-test.sh)（WS213 p007、2026-10-12） | kernel の K-D の計数（sched の起床・横取りの遅れ、metadata_lock の待ち・持ち、kern.perf=1 の行）の回帰、ASan・UBSan | host で `sh plan/ws213/tests/kd-host-test.sh`、PASS で終わる |
+| [ws213/tests/lock-host-test.sh](ws213/tests/lock-host-test.sh)・[pin-host-test.sh](ws213/tests/pin-host-test.sh)（WS213 p007、2026-10-12） | kernel の mutex（signal の保留・terminate の間の眠り、1 CPU で spin しない、起床の受け渡し）と copyin・copyout の pin（範囲の確かめ・準備の確かめ・EFAULT の副作用の無さ）の回帰、ASan・UBSan | host で `sh plan/ws213/tests/lock-host-test.sh`・`pin-host-test.sh`、PASS で終わる |
 | --- | --- | --- |
 | [q1-clean.sh](tools/q1-clean.sh)・[fresh-out.sh](tools/fresh-out.sh)・[files/host-clean.sh](tools/files/host-clean.sh)（2026-10-06） | 削除は Q1 の pipeline（ユーザーの規則）。host の試験の script は rm を持たず、`fresh_out NAME`（新しい `NAME.run.*` を作り NAME を symlink で向ける）か `build/tmp/` の mktemp を使う。Q1 が `q1-clean.sh WORKTREE` で古い run・tmp・old を消す | `. plan/tools/fresh-out.sh; fresh_out "$out"`、Q1: `sh plan/tools/q1-clean.sh /home/awe/zedBSD-worktrees/p1` |
 | [gtk4-linux/](tools/gtk4-linux/README.md)（WS114 から移した、2026-10-06） | Linux の Keiland の上の標準 GTK4 の装飾（CSD・SSD）の試験と session の起動 | `decoration-wire.py`・`start-session.sh` など、README を参照 |
