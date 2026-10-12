@@ -194,10 +194,57 @@ WS208 p007 の全部入りの kernel（`p29-kernel.elf`）で、使っている�
 - build（warning 0）: rpi4 `make -o /home/awe/zedBSD-worktrees/p9/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix`（`arm64 vmunix check: PASS`）、amd64 同じく `config-amd64.mk`（`amd64 vmunix check: PASS`）。
 - 未実施: Pi 4（4 core）での確かめ（Q1 が vmunix を置く）、T1 の amd64 の boot。
 
-### 残り（Q1 へ、この直しの外）
+### 残り（Q1 へ、この直しの外）→ 2026-10-13 P5 が直した（下の節）
 
 - `hal_cpu_current()`（`src/hal/arm64/smp.c`）は `record->watch_countdown--` を割り込みを止めずに行う。横取りされて移った thread は他の CPU の record を書き、その CPU の自分の tick の確かめの間隔がずれ得る（WS208 の stall watch）。
 - `hal_task_exec_current()`（arm64）は `task->fpregs` に初期値を写してから `arm64_fp_restore` するまでの間に横取りされると、切り替えの保存が古い program の FP の register で上書きし、新しい program が古い値で始まる。
+
+### 同じ種類の洗い出しと直し（2026-10-13 P5、Q1 の判断で今直す。`src/hal/arm64/` の実装だけ、hal.h は変えない）
+
+2 つの種類を探した: (A) TPIDR_EL1 で CPU の record を読み、割り込みを開けたまま record を使う。(B) task が走っている間は CPU の register（FP・TLS・debug の register）が本物で、切り替えが register を task の写しに保存するのに、写しと register を割り込みを開けたまま組で書き換える。
+
+直した所:
+
+| 所 | 種類 | 直し |
+| --- | --- | --- |
+| `smp.c` `hal_cpu_current()` | A | countdown と self-check は割り込みが止まっている呼び出しだけ（`arm64_irq_masked()`、DAIF.I）。開いている呼び出しは tick を受けるので要らない。番号の読みは今のまま（開いた呼び出しには読んだ時の CPU しか言えない） |
+| `smp.c` `hal_cpu_panic_all()` | A | 最初に割り込みを止める（自分の番号を読んだ後に移ると、元の CPU を止めずに残す） |
+| `watch.c` `arm64_watch_self_check()` | A | 割り込みが開いていれば何もしない（他の呼び出し元への備え） |
+| `watch.c` `arm64_watch_fatal()`・`arm64_watch_fault()` | A | 入口で割り込みを止める（直後に止まる CPU。kernel の fault の処理や syscall の後の HAL_FATAL は割り込みが開いたまま来得る） |
+| `watch.h` `arm64_watch_note_irq_on()` | A | 既に開いていれば何もしない（開いたままの `hal_irq_enable()`、例 `entry.c` で、移った先の CPU の印を消さない） |
+| `task.c` `hal_task_exec_current()` | B | space・TLS・signal・FP の写しと `arm64_fp_restore`・TPIDR_EL0 の 0・`hal_space_switch` を割り込みを止めた区間で。TPIDR_EL0 の register を 0 にしていなかった（`task->tls = 0` だけ）のも直した。今の唯一の呼び出し元 `src/kern/exec.c` は割り込みを止めて呼ぶので、実機ではこの窓は開いていなかった（HAL の契約に割り込みの条件が無いので HAL で閉じた） |
+| `task.c` `hal_task_set_tls()` | B | `task->tls` と TPIDR_EL0 を割り込みを止めて書く |
+| `debug.c` `hal_task_set_user_gpregs()` の TLS | B | 同じ |
+| `debug.c` `hal_task_set_user_fpregs()` | B | 保存・書き換え・読み込みを割り込みを止めて |
+| `debug.c` `hal_task_set_single_step()`・`hal_task_set_debug_points()` | A+B | 走っている task への `arm64_debug_switch()` を割り込みを止めて（途中で移ると、元の CPU に points が残り、その CPU の `debug_points_loaded` は 0 のまま → 次の task が他の task の breakpoint で止まる） |
+
+安全と判断した所（理由）:
+
+| 所 | 理由 |
+| --- | --- |
+| `task.c` `hal_task_context_switch()`・`arm64_task_finish_switch()`、`debug.c` `arm64_debug_switch()` の switch からの呼び出し | kernel の 4 か所の呼び出し（`sched.c`）は全部 `hal_irq_disable()` の後。finish_switch は dispatch の stub が割り込みを開ける前に呼ぶ |
+| `task.c` `running_task()` とその利用（enter/leave_user_frame・fork・exec_validate・signal・get_user_*） | 前の直しで割り込みを止めて読む。得た task は呼び出し元自身なので移っても変わらない |
+| `task.c` `hal_task_fork_current()` の `arm64_fp_save` → 写し、`debug.c` `hal_task_get_user_fpregs()` | 保存と写しの間の切り替えは同じ live の値を保存するだけ（kernel は FP を使わない: rpi4 の kernel.elf の逆 asm で FP/SIMD の register を使うのは `arm64_fp_save`・`arm64_fp_restore` だけ） |
+| `task.c` `hal_task_signal_enter()`・`signal_return()` | 保存先・読み元は `signal_fpregs` で切り替えが書かない。restore の後の切り替えは新しい値を保存する |
+| `debug.c` `hal_task_get_user_gpregs()` の TPIDR_EL0 の読み | register は task に付いて移る |
+| `irq.c` `hal_irq_disable()` | 先に止めてから記録 |
+| `irq.c` `arm64_irq_dispatch()`、`int.c` `arm64_irq_handler()`、`bsp-rpi4/clock.c` `rpi4_timer_interrupt()` | 割り込みの中（DAIF.I は例外の入口で立つ）。handler の中の切り替えから戻る時も止まったまま（`sched_preempt` は handler の中では `hal_irq_disable()` が false を返すので開けない）。handler の後は record を読み直す |
+| `irq.c` `hal_irq_send_eoi()` | handler の中で、ack した CPU で呼ぶ契約。移った後の呼び出しは `active_ack` の照合で HAL_FATAL になる |
+| `space.c` `space_lock_handle()`・`space_unlock()`・`hal_space_switch()` | registry の lock・前の直しで割り込みを止めた中 |
+| `space.c` `arm64_space_init` の 219 行・`arm64_space_select_system()`、`smp.c` `arm64_secondary_main()`、`bsp-rpi4/clock.c` `rpi4_timer_init()`、`task.c` `hal_task_create_for_init_context()` | boot 中（割り込みが開く前、task が無い） |
+| `space.c` `space_active_anywhere()`、`watch.c` の他の CPU の読み | 他の CPU の record を acquire・relaxed で読むだけ（どの CPU からでもよい） |
+| `spin.h` `arm64_spin_lock()`、`bsp-rpi4/cons.c` の output lock | `hal_irq_disable()` の後に spin |
+
+試験: `plan/ws213/tests/percpu-host-test.sh`（新、`current-host-test.sh` の形）。`hal_cpu_current`・`running_task`・`arm64_task_running`・`hal_task_exec_validate`・`hal_task_exec_current`・`hal_task_set_tls`・`hal_task_set_user_fpregs` を切り出し（TPIDR_EL0 の asm は模擬の register の書き込みに置換）、2 つの模擬 CPU の上の 2 task を本物の pthread で回す。移す thread は両方の割り込みが開いている時だけ、両方の FP・TLS の register を task に保存し、CPU を入れ替え、新しい CPU に読み込む。`hal_memcpy` と `arm64_irq_save` の前で yield（割り込みの入る所）。確かめ: 各 CPU の countdown が自分の CPU の割り込みを止めた呼び出しの数だけ動く、self-check は割り込みを止めた時だけ、exec の後の FP が初期値で TLS が 0、set_tls の後の register と task が一致、set_user_fpregs の新しい値が CPU の register にある。
+- 直した source: plain・TSan で PASS（2026-10-13）。
+- 直す前の source（`git show HEAD:` の smp.c・task.c・debug.c を第 2 引数で渡す）: FAIL（countdown のずれ 2 CPU、割り込みが開いた self-check 1550、exec の古い FP 83354・古い TLS 99991、set_tls の不一致 190、set_user_fpregs の喪失 96565）。
+- `current-host-test.sh` PASS。`git diff --check` OK。
+
+build（warning 0）: rpi4 `make -j8 -o /home/awe/zedBSD-worktrees/p9/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix` rc 0（`arm64 vmunix check: PASS`）。amd64 `config-amd64.mk` は arm64 の HAL の変更だけなので up to date（rc 0）。逆 asm で `hal_cpu_current` が `mrs DAIF` の bit 7 で countdown を飛ばすこと、`hal_task_exec_current` の `msr DAIFSet` から `msr DAIFClr` の間に `arm64_fp_restore`・`msr TPIDR_EL0, xzr`・`hal_space_switch` があることを確かめた。
+- vmunix: `/home/awe/zedBSD-worktrees/p9/build/ws213-p007-percpu/vmunix`（SHA256 1a3ef545…4e8e）、kernel.elf: 同じ directory（SHA256 5468b616…0051）。
+- 未実施: Pi 4（4 core）の実機、QEMU。
+
+その他の気づき（直していない）: `kernel_timer_handler()`（`src/kern/clock.c`、MI）は `sched_clock_cpu()` で切り替わって別の CPU で戻った後も、引数の古い `cpu` で `kern_random_tick(cpu)` を呼ぶ。`random_lock` の下なので害は sample の CPU 番号だけ。
 
 ## K-1 の設計（sched、候補 1 への直し）
 

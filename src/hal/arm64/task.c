@@ -288,6 +288,7 @@ hal_task_exec_current(
 {
 	struct arm64_exception_frame *frame;
 	struct arm64_task *task;
+	uint64_t irq;
 	int valid;
 
 	/* Refuses what hal_task_exec_validate() refuses. */
@@ -302,15 +303,26 @@ hal_task_exec_current(
 	frame->elr = (uint64_t)entry;
 	frame->user_sp = (uint64_t)user_stack_pointer;
 
-	/* The new program starts without the old one's TLS, signals or floating point. */
+	/*
+	 * The new program starts without the old one's TLS, signals or
+	 * floating point, in the new space.  While the task runs, its TLS and
+	 * floating-point registers live in the CPU and a task switch saves
+	 * them over the task's copies, so the copies and the registers are
+	 * replaced with interrupts off: a switch between the two would save
+	 * the old program's registers over the fresh copy, and the new
+	 * program would start with the old values.
+	 */
+	irq = arm64_irq_save();
+
 	task->space = new_space;
 	task->tls = 0;
 	task->signal_depth = 0;
 	hal_memcpy(task->fpregs, initial_fpregs, sizeof(initial_fpregs));
 	arm64_fp_restore(task->fpregs);
-
-	/* Selects the new space on this CPU. */
+	__asm__ volatile("msr tpidr_el0, xzr" : : : "memory");
 	hal_space_switch(new_space);
+
+	arm64_irq_restore(irq);
 
 	/* Succeeded: the return to user enters the new program. */
 	return 0;
@@ -657,17 +669,26 @@ hal_task_set_tls(
 {
 	struct arm64_task *task;
 	struct arm64_task *running;
+	uint64_t irq;
 
 	/* A missing task has no TLS. */
 	task = handle;
 	if (task == NULL)
 		return;
 
-	/* Keeps the value, and loads it when the task is this CPU's. */
+	/*
+	 * Keeps the value, and loads it when the task is the caller.  With
+	 * interrupts off, so that a task switch between the two stores does
+	 * not save the old register over the new value.
+	 */
+	irq = arm64_irq_save();
+
 	task->tls = value;
 	running = running_task();
 	if (task == running)
 		__asm__ volatile("msr tpidr_el0, %0" : : "r"((uint64_t)value));
+
+	arm64_irq_restore(irq);
 }
 
 /*

@@ -14,9 +14,10 @@
 #define KERN_HAL_ARM64_WATCH_H
 
 #include <hal/hal.h>
+#include "asm.h"
 #include "percpu.h"
 
-/* How many calls of hal_cpu_current() pass between two looks at the CPU's own tick. */
+/* How many calls of hal_cpu_current() with interrupts off pass between two looks at the CPU's own tick. */
 #define ARM64_WATCH_SELF_INTERVAL 4096U
 
 /* How many tries of a HAL spin loop pass between two looks at the CPU's own tick. */
@@ -95,12 +96,22 @@ arm64_watch_note_irq_off(
 
 /*
  * Notes that the calling CPU's interrupts are about to come on again.
+ *
+ * A caller whose interrupts are already on has nothing to clear, and
+ * could be moved to another CPU between reading the record and the
+ * store, clearing that CPU's note instead.
  */
 static __inline void
 arm64_watch_note_irq_on(
 	void)
 {
 	struct arm64_percpu *cpu;
+	int masked;
+
+	/* Interrupts that are on already were noted as on. */
+	masked = arm64_irq_masked();
+	if (!masked)
+		return;
 
 	/* A CPU without a record yet has nothing to clear. */
 	cpu = arm64_watch_record();

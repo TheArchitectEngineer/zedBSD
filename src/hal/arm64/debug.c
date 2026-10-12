@@ -18,6 +18,7 @@
  */
 
 #include <hal/hal.h>
+#include "asm.h"
 #include "int.h"
 #include "task.h"
 #include "percpu.h"
@@ -130,6 +131,9 @@ arm64_debug_init(void)
 
 /*
  * Loads the stepping and the hardware points of the task about to run.
+ *
+ * The caller has interrupts off: the registers written are this CPU's,
+ * and so is the record that says whether they hold a task's points.
  */
 void
 arm64_debug_switch(
@@ -220,6 +224,7 @@ hal_task_set_user_gpregs(
 	struct arm64_task *task;
 	struct arm64_task *running;
 	struct arm64_exception_frame *frame;
+	uint64_t irq;
 	int valid;
 	unsigned index;
 
@@ -260,10 +265,18 @@ hal_task_set_user_gpregs(
 	frame->spsr = (frame->spsr & ~ARM64_SPSR_NZCV) |
 	    (registers->pstate & ARM64_SPSR_NZCV);
 
-	/* The thread pointer follows the running task into the register. */
+	/*
+	 * The thread pointer follows the running task into the register, with
+	 * interrupts off so that a task switch between the two stores does
+	 * not save the old register over the new value.
+	 */
+	irq = arm64_irq_save();
+
 	task->tls = (uintptr_t)registers->tpidr;
 	if (task == running)
 		__asm__ volatile("msr tpidr_el0, %0" : : "r"(registers->tpidr));
+
+	arm64_irq_restore(irq);
 
 	/* Succeeded. */
 	return 0;
@@ -320,6 +333,7 @@ hal_task_set_user_fpregs(
 	struct arm64_task *running;
 	uint64_t control;
 	uint64_t status;
+	uint64_t irq;
 
 	/* Names the task, and the task now on the processor. */
 	task = handle;
@@ -329,13 +343,23 @@ hal_task_set_user_fpregs(
 	if (task == NULL || registers == NULL)
 		return -1;
 
+	/* The control and the status register, eight bytes each in the saved area. */
+	control = registers->fpcr;
+	status = registers->fpsr;
+
+	/*
+	 * Replaces the task's registers.  While the task runs, its live
+	 * registers are the truth and a task switch saves them over the saved
+	 * area, so the save, the write and the load go with interrupts off: a
+	 * switch between them would lose the new values.
+	 */
+	irq = arm64_irq_save();
+
 	/* Keeps the rest of a running task's live state in its saved area. */
 	if (task == running)
 		arm64_fp_save(task->fpregs);
 
 	/* Writes the registers into the saved area in its own layout. */
-	control = registers->fpcr;
-	status = registers->fpsr;
 	hal_memcpy(task->fpregs, registers->v, sizeof(registers->v));
 	hal_memcpy(task->fpregs + 512, &control, sizeof(control));
 	hal_memcpy(task->fpregs + 520, &status, sizeof(status));
@@ -343,6 +367,8 @@ hal_task_set_user_fpregs(
 	/* A running task takes the new values at once. */
 	if (task == running)
 		arm64_fp_restore(task->fpregs);
+
+	arm64_irq_restore(irq);
 
 	/* Succeeded. */
 	return 0;
@@ -391,6 +417,7 @@ hal_task_set_single_step(
 	struct arm64_task *task;
 	struct arm64_task *running;
 	struct arm64_exception_frame *frame;
+	uint64_t irq;
 
 	/* Names the task, and the task now on the processor. */
 	task = handle;
@@ -414,9 +441,17 @@ hal_task_set_single_step(
 		frame->spsr &= ~ARM64_SPSR_SS;
 	}
 
-	/* A running task takes the request at once. */
+	/*
+	 * A running task takes the request at once, on the CPU it runs on:
+	 * with interrupts off, so that it is not moved to another CPU while
+	 * the registers and the CPU's record are written.
+	 */
+	irq = arm64_irq_save();
+
 	if (task == running)
 		arm64_debug_switch(task);
+
+	arm64_irq_restore(irq);
 
 	/* Succeeded. */
 	return 0;
@@ -457,6 +492,7 @@ hal_task_set_debug_points(
 	struct arm64_task *running;
 	uint64_t address;
 	uint64_t control;
+	uint64_t irq;
 	unsigned breakpoints;
 	unsigned watchpoints;
 	unsigned index;
@@ -504,9 +540,18 @@ hal_task_set_debug_points(
 		task->debug_points[index] = points[index];
 	task->debug_point_count = count;
 
-	/* A running task takes them immediately. */
+	/*
+	 * A running task takes them immediately, on the CPU it runs on: with
+	 * interrupts off, so that it is not moved to another CPU half way
+	 * through, leaving its points in the old CPU's registers while the
+	 * old CPU's record says they are not loaded.
+	 */
+	irq = arm64_irq_save();
+
 	if (task == running)
 		arm64_debug_switch(task);
+
+	arm64_irq_restore(irq);
 
 	/* Succeeded. */
 	return 0;

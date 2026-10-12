@@ -17,4 +17,27 @@ void arm64_write_ttbr1(uintptr_t physical);
 void arm64_flush_tlb(void);
 void arm64_flush_tlb_local(void);
 
+/*
+ * Reports whether the calling CPU's IRQs are masked.
+ *
+ * Code that runs with them masked cannot be preempted, so it stays on the
+ * CPU whose per-CPU record it read.
+ */
+static __inline int
+arm64_irq_masked(
+	void)
+{
+	uint64_t state;
+
+	/* DAIF's bit 7 is the IRQ mask. */
+	__asm__ volatile("mrs %0, daif" : "=r"(state));
+
+	/* Masked: the caller is pinned to its CPU. */
+	if ((state & (1U << 7)) != 0)
+		return 1;
+
+	/* Unmasked: an interrupt may move the caller to another CPU. */
+	return 0;
+}
+
 #endif

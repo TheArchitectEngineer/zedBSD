@@ -171,19 +171,31 @@ hal_cpu_current(
 	void)
 {
 	struct arm64_percpu *record;
+	int masked;
 
-	/* The record TPIDR_EL1 names carries the CPU's number. */
+	/*
+	 * The record TPIDR_EL1 names carries the CPU's number.  A caller with
+	 * interrupts on may be moved to another CPU right after the read; it
+	 * gets the CPU it was on, which is all such a caller can be told.
+	 */
+	masked = arm64_irq_masked();
 	record = arm64_percpu_current();
 
 	/*
 	 * Every kernel spin lock asks for its CPU on each try, so a CPU that
 	 * spins here with its interrupts off looks at its own tick now and
-	 * then, and reports itself when the tick stopped.
+	 * then, and reports itself when the tick stopped.  Only a caller with
+	 * interrupts off counts: it stays on the CPU whose record it read, so
+	 * the countdown is written by its own CPU alone (a caller moved
+	 * between the read and the write would count down another CPU's),
+	 * and a CPU with interrupts on takes its tick and needs no look.
 	 */
-	record->watch_countdown--;
-	if (record->watch_countdown == 0) {
-		record->watch_countdown = ARM64_WATCH_SELF_INTERVAL;
-		arm64_watch_self_check();
+	if (masked) {
+		record->watch_countdown--;
+		if (record->watch_countdown == 0) {
+			record->watch_countdown = ARM64_WATCH_SELF_INTERVAL;
+			arm64_watch_self_check();
+		}
 	}
 
 	/* Succeeded: the caller's CPU. */
@@ -385,6 +397,13 @@ hal_cpu_panic_all(
 	hal_cpu_id_t cpu;
 	uint32_t interfaces;
 	int ready;
+
+	/*
+	 * Turns interrupts off for good first, so the CPU named as this one
+	 * is the one that parks below: a caller moved to another CPU after
+	 * naming itself would leave its old CPU running.
+	 */
+	(void)hal_irq_disable();
 
 	/* Collects every other CPU that is up. */
 	self = hal_cpu_current();
