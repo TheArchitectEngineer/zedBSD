@@ -71,6 +71,7 @@ struct machine {
 static void fail(const struct machine *machine, const char *reason);
 static void decode_word(struct machine *machine, uint32_t index, struct v3d_qpu_instr *instruction);
 static void run_alus(struct machine *machine, const struct v3d_qpu_instr *instruction);
+static void run_configuration(struct machine *machine, const struct v3d_qpu_instr *instruction);
 static void run_signals(struct machine *machine, const struct v3d_qpu_instr *instruction);
 static void run_switch(struct machine *machine, const struct v3d_qpu_instr *instruction);
 static uint32_t float_bits(float number);
@@ -139,9 +140,10 @@ qpu_machine_run(
 		if (machine.switch_effect == index)
 			switch_effect(&machine);
 
-		/* The word runs: its rules, both ALUs, its signals and a switch. */
+		/* The word runs: its rules, a texture configuration, both ALUs, its loads and a switch. */
 		decode_word(&machine, index, &instruction);
 		check_word_rules(&machine, &instruction);
+		run_configuration(&machine, &instruction);
 		run_alus(&machine, &instruction);
 		run_signals(&machine, &instruction);
 		run_switch(&machine, &instruction);
@@ -317,21 +319,15 @@ run_alus(
 	}
 }
 
-/*
- * Runs one word's signal: a texture configuration first, so it applies to a
- * lookup the same word launches, then uniform, varying and texture loads,
- * which write when the word ends.
- */
+/* Runs one word's texture configuration, before its ALUs, so it applies to a lookup the same word launches. */
 static void
-run_signals(
+run_configuration(
 	struct machine *machine,
 	const struct v3d_qpu_instr *instruction)
 {
-	const struct qpu_machine_setup *setup;
 	uint32_t word;
 
 	/* The texture configuration's two uniforms name the texture and its sampler. */
-	setup = machine->setup;
 	if (instruction->sig.wrtmuc) {
 		word = next_uniform(machine);
 		if (machine->configurations == 0) {
@@ -352,6 +348,20 @@ run_signals(
 		machine->configurations++;
 	}
 
+
+}
+
+/* Runs one word's uniform, varying and texture loads, which write when the word ends. */
+static void
+run_signals(
+	struct machine *machine,
+	const struct v3d_qpu_instr *instruction)
+{
+	const struct qpu_machine_setup *setup;
+	uint32_t word;
+
+	/* The setup supplies the varyings. */
+	setup = machine->setup;
 
 	/* A uniform load to a register. */
 	if (instruction->sig.ldunifrf) {
