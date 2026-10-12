@@ -1225,11 +1225,12 @@ mu_draw(
 	uint64_t now_us)
 {
 	struct kl_glass_panel panels[MU_PANELS_MAX];
-	const struct kl_rect *present_part;
+	struct kl_rect parts[KL_FRAME_PARTS_MAX];
 	struct kl_event event;
-	struct kl_rect part;
+	unsigned part_count;
+	unsigned index;
 	size_t count;
-	int partial;
+	int need;
 	int status;
 	int error;
 	int taken;
@@ -1239,24 +1240,39 @@ mu_draw(
 		return;
 
 	/*
-	 * Only another widget lit: the frame is drawn and shown within the two
-	 * widgets' part alone, as Calendar does (BUG-226); a whole window for
-	 * each hover was a CPU frame on the Pi 4 (2026-10-12).
+	 * Only another widget lit: the frame is drawn and shown within the
+	 * parts the widgets tell alone (BUG-226, ws210-p014): the widget lit
+	 * when the last frame was drawn and the one lit now; none when the
+	 * pointer came back to the widget lit then.
 	 */
-	partial = 0;
-	if (!music->dirty && !music->moving && !music->view.seek_pending && music->lit_changed)
-		partial = kl_ui_take_damage(music->ui, &part);
+	part_count = 0;
+	if (!music->dirty && !music->moving && !music->view.seek_pending && music->lit_changed) {
+		need = kl_ui_take_frame(music->ui, parts, KL_FRAME_PARTS_MAX, &part_count);
+		if (need == KL_FRAME_NONE) {
+			music->lit_changed = 0;
+			return;
+		}
+		if (need == KL_FRAME_WHOLE)
+			part_count = 0;
+	}
 	music->lit_changed = 0;
 
-	/* The view, within the part when there is one. */
+	/* The view, all of it. */
 	music->dirty = 0;
-	if (partial)
-		kl_canvas_clip_push(&music->canvas, &part);
-	kl_ui_begin(music->ui, now_us);
-	mu_view_draw(&music->view, music->ui, &music->style, (int)music->width, (int)music->height, now_us);
-	music->moving = kl_ui_end(music->ui, now_us);
-	if (partial)
+	if (part_count == 0U) {
+		kl_ui_begin(music->ui, now_us);
+		mu_view_draw(&music->view, music->ui, &music->style, (int)music->width, (int)music->height, now_us);
+		music->moving = kl_ui_end(music->ui, now_us);
+	}
+
+	/* Or within each part in turn, the rest keeping the last frame's pixels. */
+	for (index = 0; index < part_count; index++) {
+		kl_canvas_clip_push(&music->canvas, &parts[index]);
+		kl_ui_begin(music->ui, now_us);
+		mu_view_draw(&music->view, music->ui, &music->style, (int)music->width, (int)music->height, now_us);
+		music->moving = kl_ui_end(music->ui, now_us);
 		kl_canvas_clip_pop(&music->canvas);
+	}
 	kl_ui_window_text(music->ui, music->window);
 
 	/* The glass's panels for the frame; a compositor without glass leaves the window opaque from the next one. */
@@ -1271,11 +1287,8 @@ mu_draw(
 		}
 	}
 
-	/* The frame shown, by the part alone when it was drawn so. */
-	present_part = NULL;
-	if (partial)
-		present_part = &part;
-	status = kl_window_present_part(music->window, music->pixels, (size_t)music->width, present_part);
+	/* The frame shown, by its parts alone when it was drawn so. */
+	status = kl_window_present_parts(music->window, music->pixels, (size_t)music->width, parts, part_count);
 	if (status == EAGAIN)
 		music->resized = 1;
 
