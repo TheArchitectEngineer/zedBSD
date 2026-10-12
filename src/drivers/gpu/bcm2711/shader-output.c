@@ -16,6 +16,7 @@ static int vertex_output(struct bcm2711_shader_compiler *compiler);
 static int fragment_output(struct bcm2711_shader_compiler *compiler);
 static int vpm_store(struct bcm2711_shader_compiler *compiler, uint32_t index, struct bcm2711_qpu_source source);
 static int viewport_component(struct bcm2711_shader_compiler *compiler, uint32_t component);
+static int output_register(struct bcm2711_shader_compiler *compiler, struct bcm2711_qpu_source *source);
 
 /*
  * Emits complete native stage outputs and the final program switch with both explicit delay slots.
@@ -37,8 +38,8 @@ bcm2711_shader_finish(
 	if (error != 0)
 		return error;
 
-	/* The final thread switch ends the program only after its two uploaded idle delay slots execute. */
-	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_SWITCH, 0, 2);
+	/* The final thread switch ends the program only after its two uploaded delay slots execute. */
+	error = bcm2711_shader_switch(compiler, BCM2711_SHADER_SWITCH_END);
 	if (error != 0)
 		return error;
 
@@ -232,56 +233,74 @@ static int
 fragment_output(
 	struct bcm2711_shader_compiler *compiler)
 {
-	struct bcm2711_qpu_source source;
 	struct bcm2711_qpu_source left;
 	struct bcm2711_qpu_source right;
-	struct bcm2711_qpu_source ignored;
-	uint32_t colors[4];
 	uint32_t index;
 	uint32_t component;
 	int error;
 
-	/* The final pre-output switch is marked in its first delay slot before any tile write. */
-	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_SWITCH, 0, 0);
+	/* The last switch before the tile writes is marked by a second switch in its first delay slot. */
+	error = bcm2711_shader_switch(compiler, BCM2711_SHADER_SWITCH_LAST_FIRST);
 	if (error != 0)
 		return error;
-	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_SWITCH, 0, 1);
+	error = bcm2711_shader_switch(compiler, BCM2711_SHADER_SWITCH_LAST_SECOND);
 	if (error != 0)
 		return error;
-	ignored = bcm2711_shader_bits(0);
-
-	/* Source outputs are copied into independent physical registers so constants and channel swapping cannot clobber them. */
-	for (index = 0; index < 4; index++) {
-		error = bcm2711_shader_register(compiler, &colors[index]);
-		if (error != 0)
-			return error;
-		error = bcm2711_shader_operand(compiler, compiler->outputs[index], BCM2711_SHADER_SCRATCH_LEFT, &source);
-		if (error != 0)
-			return error;
-		error = bcm2711_shader_operation(compiler, BCM2711_QPU_MOVE, colors[index], 0, source, ignored, 0, 0);
-		if (error != 0)
-			return error;
-	}
 
 	/*
 	 * The tile buffer's default write format, which needs no configuration
 	 * uniform, takes render target zero per pixel as four half floats in two
 	 * words: red and green, then blue and alpha.  Physical target channel
-	 * order is applied as the canonical colour is packed.
+	 * order is applied as the canonical colour is packed.  The packs read the
+	 * source outputs where they live; a constant output is materialized, and
+	 * two different small constants cannot share the one constant port.
 	 */
 	for (index = 0; index < 2; index++) {
 		component = index * 2;
 		if (compiler->key->swap_red_blue != 0)
 			component = 2 - index * 2;
-		left = bcm2711_shader_rf(colors[component]);
-		right = bcm2711_shader_rf(colors[index * 2 + 1]);
-		error = bcm2711_shader_operation(compiler, BCM2711_QPU_PACK_HALVES, 7, 1, left, right, 0, 0);
+		error = bcm2711_shader_operand(compiler, compiler->outputs[component], BCM2711_SHADER_SCRATCH_LEFT, &left);
+		if (error != 0)
+			return error;
+		error = bcm2711_shader_operand(compiler, compiler->outputs[index * 2 + 1], BCM2711_SHADER_SCRATCH_RIGHT, &right);
+		if (error != 0)
+			return error;
+		if (left.kind == BCM2711_QPU_CONSTANT &&
+		    right.kind == BCM2711_QPU_CONSTANT &&
+		    left.number != right.number) {
+			error = output_register(compiler, &left);
+			if (error != 0)
+				return error;
+		}
 
 		/* A missing native color write prevents successful fragment termination. */
+		error = bcm2711_shader_operation(compiler, BCM2711_QPU_PACK_HALVES, 7, 1, left, right, 0, 0);
 		if (error != 0)
 			return error;
 	}
 
 	/* The native tile transaction contains both completed packed colour writes. */
+	return 0;
+}
+
+/* Copies a small constant output into a scratch register so the pack's other constant keeps the constant port. */
+static int
+output_register(
+	struct bcm2711_shader_compiler *compiler,
+	struct bcm2711_qpu_source *source)
+{
+	struct bcm2711_qpu_source ignored;
+	uint32_t number;
+	int error;
+
+	/* A bit-preserving move introduces no rounding before the pack's own conversion. */
+	ignored = bcm2711_shader_bits(0);
+	number = bcm2711_shader_scratch(compiler, BCM2711_SHADER_SCRATCH_WORK);
+	error = bcm2711_shader_operation(compiler, BCM2711_QPU_MOVE, number, 0, *source, ignored, 0, 0);
+	if (error != 0)
+		return error;
+	*source = bcm2711_shader_rf(number);
+
+	/* Succeeded: the pack reads this output from a register. */
 	return 0;
 }

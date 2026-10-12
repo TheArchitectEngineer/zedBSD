@@ -101,3 +101,57 @@ dock の preview: GPU が窓の画像を小さく sample して描く（CPU の�
 - Settings の title bar の hover の重さ: client（libkeiland）の窓全体の描き直し。SLOW-FRAME 25 回の平均で draw 102ms、copy 305ms（canvas の行を map した memory へ memcpy、libc の memcpy が 1 byte ずつで canvas は Normal non-cacheable）、vkQueueSubmit 約 180ms。libc は BUG-291（Q1 が P2 へ）。
 - 修正 13（ad7ebb2cb、実機未確認）: hardware blend。blend の pipeline の draw は Cfg Bits の Blend enable・Blend Enables=1・Blend Cfg（色と alpha とも ONE / INV_SRC_ALPHA / ADD、RT0）を出し、shader は tile を読まない（software blend の経路と shader の key の field を削除）。draw の bin は 116→121 byte。host: native-state（Mesa XML の oracle で bin の全 byte）・shader・native-pass・clear・vulkan-device PASS、arm64 vmunix warning 0。blend 付きの shader は 45 命令減（quad 120→75、窓 288→243）。Pi の /boot/boot0/vmunix に配置済み（1109485435）、電源の入れ直し待ち。
 - 次: (a) compiler の NOP の削減と add/mul の組（bcm2711 の backend だけ、i915 は別の backend で影響なし）。
+
+## 修正 14: kernel の shader compiler の dual issue・NOP の削減・並べ替え（2026-10-12 P3、設計）
+
+承認: 2026-10-12 ユーザー「進め方はおすすめでいいです」（残りの描画の最適化）、Q1 の割り当て（ws211-p011 §2.5 の残りの提案）。範囲は kernel の bcm2711 の shader compiler（`qpu.c/h`・`shader*.c/h`）だけ。display・gpu.c（P2 の WS214）、HAL の API、toolchain、Vulkan の wire は変えない。Mesa の compiler の source は写さず、hardware の事実（命令の形式・待ちの規則）は MIT の Mesa の decoder・validator の記述と公開の文書から取り、自分の模擬で確かめる。
+
+### 今（main 40caa547d の source、host の probe）
+
+- 1 つの source の演算が 1 語。add と mul の ALU は片方しか使わない。uniform の読み込み（ldunifrf）・varying・ldtmu・thread switch も 1 語ずつ。
+- 待ちの NOP: SFU（recip・rsqrt）の後に 2、null の宛先（m6）への flag の push の後に 2（「VPM の transaction」と扱っていたため、不要）、thread switch の delay slot 2 つ、varying の 1、終わりの last-thrsw の組の後と終わりの thrsw の後。
+- 出力: last-thrsw の組の後に色を 4 つの register へ mov し、2 つの vfpack で TLB へ書き、終わりの thrsw と NOP 2 つ。
+- 数（fragment、語/純粋な NOP/ALU 演算/uniform）: glass（panel 0）178/17/119/32、dark glass（7）202/19/138/35、blur（6）154/13/72/39、shadow（1）92/11/58/18、image（2）91/11/55/13、ring（4）87/9/57/16、solid（3）81/9/52/15、text（5）47/5/24/8、quad 29/5/12/2、batch 93/18/57/4。全 shader の表は確かめの節。
+
+### 方針
+
+lowering は今のまま 1 演算ずつ出すが、語に encode せず「演算の記録」（1 ALU 演算か 1 signal、register は thread の窓へ写した番号、消費する uniform）に溜める。fragment の program は、溜めた記録から依存の DAG を作り、list scheduling で 1 語に add の演算・mul の演算・signal を 1 つずつ組む。NOP の記録は捨て、必要な待ちは依存の最小距離で表す。結果は compiler の中の検証器（値の版の模擬）で確かめ、通らなければ今と同じ逐次の出力（記録ごとに 1 語、NOP 込み）に戻す。vertex（coordinate・vertex）の program は逐次の出力（VPM の規則を広げない。1 draw の頂点は少ない）。
+
+### 1 語に組める条件（hardware の事実と、安全側の自分の規則）
+
+- 枠: add の ALU に 1 演算、mul の ALU に 1 演算、signal 1 つ。mov は両方の ALU で行える（mul の mov、add では `or x, x`、どちらも bit を保つ）。fmul・fmov（unpack）は mul だけ、他は add だけ。
+- 読み出しの port: 物理 register の read port は A と B の 2 つ。2 つの演算の source の異なる register は合わせて 2 つまで、同じ register は port を共有する。small immediate は port B を使うので、使えば異なる register は 1 つまで、small immediate の値は 1 つだけ。fmin/fmax/fadd は mux の順で opcode を区別するので、port を割った後に順を合わせる（可換なので入れ替える）。
+- signal と small immediate: small immediate と組める signal は無し・ldvary・ldtmu だけ（signal 15・14・31）。宛先付きの signal（ldunifrf・ldtmu・ldvary）は cond の field を宛先に使うので、その語は predicate と flag の push を持てない。
+- cond の field: 片方の ALU の predicate か push、add の predicate＋mul の push、mul の predicate＋add の push、両方の predicate は表せる。両方の push は不可。
+- peripheral は 1 語に 1 つ: TMU の書き込み・ldtmu・wrtmuc・SFU・TLB の書き込み（validator の「Only one of [TMU, SFU, TSY, TLB read, VPM]」と scheduler の peripheral の規則）。uniform の消費（ldunifrf・wrtmuc）も 1 語に 1 つ。
+- 待ち（依存の最小距離、語の数）:
+  - ALU・signal（ldunifrf・ldtmu・ldvary の rf）の結果: 次の語から読める（RAW 1）。
+  - SFU（recip・rsqrt・exp・log・sin）の結果: 3 語後から読む（今の NOP 2 と同じ）。SFU の後の 2 語は宛先を読み書きしない、他の SFU を始めない（SFU を program の順の鎖にし距離 3）。
+  - ldvary の C 係数（r5）: 2 語後から読む（RAW 2）。
+  - flag の push: 次の語の predicate から（RAW 1）。null 宛先（m6）は peripheral ではなく、NOP は要らない。
+  - 書き込みの順（WAW）: 着地が program の順になる距離（ALU 後の SFU は 1、SFU 後の ALU は 3）。
+  - 読んだ後の書き込み（WAR）: ALU の書き込みは同じ語でよい（読みは語の始め、書き込みは終わり）。signal の書き込みと flag は安全側で次の語から。
+- 順序の鎖（program の順、距離 1）: TMU の書き込み・wrtmuc・ldtmu・sample の thrsw・last-thrsw の組・TLB の書き込み。sample の thrsw の後の ldtmu は 3（switch の後）。last-thrsw は 2 語続けて置き、TLB の書き込みは 2 つ目の 3 語後から（scoreboard の lock の後）。
+- thread switch をまたげない演算（switch で失われる・別 thread に着く物）: flag の読み書き、r5 の読み書き（ldvary）、SFU。program の順で switch の前の物は thrsw の語より前、後の物は switch の 3 語後から（各 thrsw への辺）。よって thrsw の語と delay slot 2 つには、これら以外の ALU 演算と ldunifrf だけが入る（validator の「SFU・ldvary は delay slot に置かない」）。rf は thread ごとに残る。
+- 終わり（thrend）: 終わりの thrsw は last-thrsw の組の 2 つ目から 3 語以上後。thrsw の語と後の 2 語は rf を書かない（ALU の非 magic の宛先、宛先付き signal）、rf0〜2 を読まない、ldvary・SFU を置かない、後の 2 語は uniform を消費しない。TLB の書き込み（vfpack m7）はこの 3 語に入れてよい。
+
+### 並べ方
+
+1. 本体: last-thrsw の組・TLB の書き込み・終わりの thrsw を除く記録を list scheduling（優先度は sink までの最長の距離、同じなら program の順）。語ごとに、依存の満ちた記録を優先度の順に試し、枠・port・cond・signal・peripheral の条件を encoder で試して入る物を入れる。何も入らない語は NOP。
+2. 終わり: last-thrsw の組の位置 p を、hard な依存（ldtmu・switch をまたげない演算）を満たす範囲で試し、各 p で TLB の書き込みを p+4 以降の最初の入る語へ置き、終わりの thrsw を規則を満たす最初の語に置く。全体の語数が最小の p のうち最も後の物を選ぶ（scoreboard の lock を遅く取る）。
+3. uniform の列は語の順で作り直す（uniform は記録に付いているので、並べ替えても対応は保たれる）。
+
+### register の選び方
+
+- 式の register は最も前に空いた物から（LRU）。直後に同じ register を使い回すと WAR・WAW の偽の依存で並べ替えが止まるため。同時に生きる値の数は変わらないので、4 thread に入るかは変わらない。
+- 全幅の定数（uniform）の materialize と sqrt・fract・fneg・fabs の作業 register は、空きが 4 より多い時は空いた式の register を一時に使い（source の命令ごとに返す）、無ければ今の scratch（rf28〜31）。scratch の使い回しの鎖を切るため。sample の結果 4 つの分は残す。
+- 出力: 色の mov をやめ、vfpack が出力の register を直接読む（定数の出力は materialize、異なる small immediate 2 つは片方を register へ）。
+
+### 正しさの確かめ
+
+- compiler の中の検証器: 並べた語を順に模擬し、各演算の各 source が program の順の最後の書き手の値（版）を見ること、書き込みの着地が program の順であること、上の待ち・peripheral・switch・thrend の規則を確かめる。通らなければ逐次の出力。
+- host: `plan/ws141/tests/qpu-machine.c`（新規、試験用）: Mesa の decoder で語を読み、add と mul を同じ語で同時に（読みは語の始め、書き込みは着地の時）実行し、SFU・r5・flag の着地の時刻、着地前の読み（assert）、thread switch（accumulator・flag を壊す、ldtmu・TLB の時期）、thrend の規則、peripheral の数を模擬する。
+  - `shader-host-test.sh`: 全部の Keiland の shader と variant を、SPIR-V の解釈（sqrt は native と同じ式）と模擬で、ランダムの入力の多数の試行で比べる。app の shader（compile できる物全部）も。命令数の表を出す。
+  - `glass-shader-host-test.sh`: glass（light・dark・generic）の SPIR-V の解釈と、compile した native の模擬の結果の一致を、同じ格子（3,856,896 fragment）で。
+  - `qpu-format-host-test.sh`: 組んだ語（両 ALU・cond の組み合わせ・port の共有・signal と small immediate）を Mesa の oracle で decode し、意味と repack の一致。
+- Pi（焼き直しの後、BUG-294）: 見た目が同じこと、`v3d: gpu` の cycles/quad・qvalid/quad が下がること。

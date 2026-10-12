@@ -75,6 +75,8 @@ struct bcm2711_shader_binary {
 	uint32_t registers_used;
 	uint32_t threads;
 	uint32_t starts_final;
+	/* Set when the words pair operations and fill delays; clear when they follow the source one operation per word. */
+	uint32_t scheduled;
 };
 
 /* One refusal names the source instruction; its reason points to immutable implementation text. */
