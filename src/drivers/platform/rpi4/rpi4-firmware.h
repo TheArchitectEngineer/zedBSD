@@ -30,7 +30,9 @@
 
 /*
  * Finds the mailbox in the device tree and prepares the request buffer.
- * Returns an errno; a second call does nothing.
+ * Returns an errno; a call after a successful one does nothing.  Callers on
+ * different CPUs may race: one prepares and the others wait for it, and a
+ * failed preparation is retried by the next call.
  */
 int drv_rpi4_firmware_init(const struct drv_fdt *fdt);
 

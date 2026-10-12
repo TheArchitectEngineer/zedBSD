@@ -77,21 +77,48 @@
 #define XHCI_RESET_FUNCTION_SHIFT	12U
 
 /*
+ * The steps of the mailbox's one-time preparation.
+ *
+ * ABSENT: nobody has prepared it, or the last attempt failed.  PREPARING:
+ * one caller is finding the mailbox and allocating the buffer.  READY: the
+ * mailbox, the buffer and its address are filled and never change again.
+ */
+#define FIRMWARE_STATE_ABSENT		0U
+#define FIRMWARE_STATE_PREPARING	1U
+#define FIRMWARE_STATE_READY		2U
+
+/*
  * The mailbox registers.
  *
  * Mapped once by drv_rpi4_firmware_init() and kept for as long as the kernel
- * runs; NULL until then, which makes every request fail with ENODEV.
+ * runs.  Only read after firmware_state has been seen READY with an acquire
+ * load, which orders the read after the store that filled it.
  */
 static volatile uint8_t *mailbox;
 
 /*
  * The request buffer and its physical address.
  *
- * One page below 1 GiB, allocated with the mailbox and never freed.  Only
- * the request in flight uses it; busy says whether one is.
+ * One page below 1 GiB, allocated with the mailbox and never freed, and
+ * published by firmware_state like the mailbox.  Only the request in flight
+ * uses it; busy says whether one is.
  */
 static uint32_t *message;
 static uint64_t message_physical;
+
+/*
+ * How far the mailbox's preparation has come: one of FIRMWARE_STATE_*.
+ *
+ * The GPU, the PCIe host, audio and the wireless drivers may each start the
+ * preparation, on different CPUs at the same time.  The caller that moves it
+ * from ABSENT to PREPARING with a compare-and-exchange is the only one that
+ * fills mailbox, message and message_physical; it then stores READY with
+ * release, so a CPU that loads READY with acquire also sees those three
+ * filled.  A failed preparation stores ABSENT again so a later caller may
+ * retry.  Zero means nothing has been prepared and every request fails with
+ * ENODEV.
+ */
+static volatile unsigned firmware_state;
 
 /*
  * Whether a request is in flight: zero when the buffer is free.
@@ -103,6 +130,7 @@ static uint64_t message_physical;
  */
 static volatile unsigned busy;
 
+static int prepare_mailbox(const struct drv_fdt *fdt);
 static int claim_buffer(void);
 static void release_buffer(void);
 static void build_request(uint32_t tag, const uint32_t *values, unsigned request_count, unsigned capacity);
@@ -112,56 +140,55 @@ static int read_answer(uint32_t *values, unsigned capacity, uint32_t *answered);
 
 /*
  * Finds the mailbox in the device tree and prepares the request buffer.
+ *
+ * Several drivers call it, possibly on different CPUs at once; exactly one
+ * of them prepares the mailbox and the others wait until it is ready.
  */
 int
 drv_rpi4_firmware_init(
 	const struct drv_fdt *fdt)
 {
-	struct kern_pmem run;
-	uint64_t address;
-	uint64_t size;
-	uint32_t node;
-	bool enabled;
-	void *registers;
+	unsigned state;
+	unsigned expected;
+	int claimed;
 	int error;
 
-	/* Does nothing the second time. */
-	if (mailbox != NULL)
-		return 0;
+	/*
+	 * Takes the preparation, or waits while another CPU holds it.  The
+	 * holder does not wait on anything but the device tree and the page
+	 * allocator, so it always finishes and the wait ends.
+	 */
+	for (;;) {
+		/* Does nothing once the mailbox is ready. */
+		state = atomic_raw_load_acquire(&firmware_state);
+		if (state == FIRMWARE_STATE_READY)
+			return 0;
 
-	/* Finds the mailbox the firmware's tree describes. */
-	error = drv_fdt_find_compatible(fdt, "brcm,bcm2835-mbox", DRV_FDT_NO_NODE, &node);
-	if (error != 0)
-		return ENODEV;
+		/* Becomes the one caller that prepares the mailbox. */
+		expected = FIRMWARE_STATE_ABSENT;
+		claimed = atomic_raw_compare_exchange(&firmware_state, &expected, FIRMWARE_STATE_PREPARING);
+		if (claimed)
+			break;
 
-	/* Refuses a disabled mailbox. */
-	enabled = drv_fdt_node_enabled(fdt, node);
-	if (!enabled)
-		return ENODEV;
+		/* Waits one polling interval for the other CPU's preparation. */
+		kern_usleep_range(MAILBOX_POLL_US, MAILBOX_POLL_MAX_US);
+	}
 
-	/* Reads where its registers are and refuses a block too small. */
-	error = drv_fdt_reg(fdt, node, 0, &address, &size);
-	if (error != 0)
-		return error;
-	if (size < MAILBOX_REGISTER_SPAN)
-		return EINVAL;
-
-	/* Allocates the request buffer below the VideoCore's 1 GiB alias. */
-	error = kern_pmem_alloc_limited(FIRMWARE_BUFFER_SIZE, FIRMWARE_BUFFER_SIZE, FIRMWARE_BUFFER_LIMIT, 0, &run);
-	if (error != 0)
-		return error;
-
-	/* Maps the registers; the buffer goes back if that fails. */
-	error = kern_device_map(address, (size_t)size, KERN_DEVICE_UNCACHED, &registers);
+	/* Finds the mailbox and allocates the buffer. */
+	error = prepare_mailbox(fdt);
 	if (error != 0) {
-		(void)kern_pmem_free(&run);
+		/* Gives the preparation back, so a later caller may try again. */
+		atomic_raw_store_release(&firmware_state, FIRMWARE_STATE_ABSENT);
 		return error;
 	}
 
-	/* Succeeded: publishes the buffer, then the mailbox that makes requests possible. */
-	message = kern_pmem_to_kernel(run.paddr);
-	message_physical = run.paddr;
-	mailbox = registers;
+	/*
+	 * READY publishes the mailbox and the buffer: a CPU that loads it with
+	 * acquire sees both filled.
+	 */
+	atomic_raw_store_release(&firmware_state, FIRMWARE_STATE_READY);
+
+	/* Succeeded: requests may now be sent. */
 	return 0;
 }
 
@@ -176,6 +203,7 @@ drv_rpi4_firmware_property(
 	unsigned capacity,
 	uint32_t *answered)
 {
+	unsigned state;
 	int error;
 
 	/* Requires answer metadata even for a notification without values. */
@@ -190,8 +218,12 @@ drv_rpi4_firmware_property(
 	if (request_count > capacity)
 		return EINVAL;
 
-	/* Refuses a request before the mailbox is known. */
-	if (mailbox == NULL)
+	/*
+	 * Refuses a request before the mailbox is ready.  The acquire load
+	 * orders the reads of the mailbox and the buffer after their filling.
+	 */
+	state = atomic_raw_load_acquire(&firmware_state);
+	if (state != FIRMWARE_STATE_READY)
 		return ENODEV;
 
 	/* Takes the buffer for this request. */
@@ -249,11 +281,69 @@ drv_rpi4_firmware_notify_xhci_reset(
 }
 
 /*
+ * Finds the mailbox, maps its registers and allocates the request buffer.
+ *
+ * Only the caller holding the PREPARING state runs it, so it fills the
+ * shared variables without a lock; nothing reads them until READY.
+ */
+static int
+prepare_mailbox(
+	const struct drv_fdt *fdt)
+{
+	struct kern_pmem run;
+	uint64_t address;
+	uint64_t size;
+	uint32_t node;
+	bool enabled;
+	void *registers;
+	int error;
+
+	/* Finds the mailbox the firmware's tree describes. */
+	error = drv_fdt_find_compatible(fdt, "brcm,bcm2835-mbox", DRV_FDT_NO_NODE, &node);
+	if (error != 0)
+		return ENODEV;
+
+	/* Refuses a disabled mailbox. */
+	enabled = drv_fdt_node_enabled(fdt, node);
+	if (!enabled)
+		return ENODEV;
+
+	/* Reads where its registers are and refuses a block too small. */
+	error = drv_fdt_reg(fdt, node, 0, &address, &size);
+	if (error != 0)
+		return error;
+	if (size < MAILBOX_REGISTER_SPAN)
+		return EINVAL;
+
+	/* Allocates the request buffer below the VideoCore's 1 GiB alias. */
+	error = kern_pmem_alloc_limited(FIRMWARE_BUFFER_SIZE, FIRMWARE_BUFFER_SIZE, FIRMWARE_BUFFER_LIMIT, 0, &run);
+	if (error != 0)
+		return error;
+
+	/* Maps the registers; the buffer goes back if that fails. */
+	error = kern_device_map(address, (size_t)size, KERN_DEVICE_UNCACHED, &registers);
+	if (error != 0) {
+		(void)kern_pmem_free(&run);
+		return error;
+	}
+
+	/* Fills the buffer and the mailbox; the caller publishes them. */
+	message = kern_pmem_to_kernel(run.paddr);
+	message_physical = run.paddr;
+	mailbox = registers;
+
+	/* Succeeded: the mailbox and the buffer are ready to publish. */
+	return 0;
+}
+
+/*
  * Takes the buffer for one request, waiting while another CPU's request
  * is in flight.
  *
- * A request ends within the mailbox's own polling limit, so the wait is
- * bounded by twice that; a buffer still taken then is reported as EBUSY.
+ * The wait gives up after twice the mailbox's polling limit, which a
+ * request answered normally never approaches; a buffer still taken then is
+ * reported as EBUSY without touching it.  The polling interval is a busy
+ * delay, so the wait is allowed wherever a request is.
  */
 static int
 claim_buffer(void)
