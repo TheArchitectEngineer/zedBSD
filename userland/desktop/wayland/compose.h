@@ -26,6 +26,7 @@
 #include "../../tests/vkdemo/display.h"
 #include "displays.h"
 #include "draw-list.h"
+#include "render-thread.h"
 #include "scene.h"
 
 /* Bound the swapchain images and the buffers one frame may sample. */
@@ -247,48 +248,45 @@ struct kwl_head {
 	uint32_t global;
 };
 
-/* How many images and acquisitions the cursor plane's swapchain uses at most. */
-#define KWL_CURSOR_PLANE_IMAGES	4U
+struct kwl_cursor_thread;
 
 /*
  * The output's cursor plane (cursor-plane.c, ws141-p014): a small
  * VK_KHR_display plane above the output's, with per-pixel premultiplied
- * alpha, that shows the cursor without composing a frame.  shown says the
- * plane shows the cursor (the frames draw none); held says which cursor
- * image (its generation, which tells a new image at a reused address
- * apart, ws213-p003, and its version) each swapchain image holds; source,
- * generation, version, x and y are what was presented last.  last_copy is the image whose copy was
- * submitted last (copied says one was): copies complete in submission order
- * on the one queue, so its fence tells whether every copy is done.
- * presented_us is when the plane's last present started (kwl_microseconds),
- * and deferred says a move of the same image waits for the next refresh: one
- * present per refresh, at the latest place (ws213-p001 C0, ws211-p006).
+ * alpha, that shows the cursor without composing a frame.  Since
+ * ws213-p004 the cursor thread (cursor-thread.c) presents it from the
+ * cursor's box; this is the main thread's side of it (design 6.2).
+ *
+ * open says the plane and its thread run; shown that the plane shows the
+ * cursor (the frames draw none).  width and height are the plane's extent.
+ * copies are the plane's two images of a client's cursor, which the main
+ * thread writes and the cursor thread copies from (design 4.7); copy_source,
+ * copy_generation and copy_version say which client image and which of its
+ * versions copy_index holds.  published_* is what the box was last given
+ * (the image, its generation, version and hotspot, and whether the plane
+ * shows the cursor), parked whether the main thread parked the thread
+ * (the game mode, a sleep's request), and thread the cursor thread.
  */
 struct kwl_cursor_plane {
 	unsigned open;
 	unsigned shown;
-	unsigned presented;
-	struct vkdemo_display output;
-	VkCommandBuffer commands[KWL_CURSOR_PLANE_IMAGES];
-	VkFence fences[KWL_CURSOR_PLANE_IMAGES];
-	VkSemaphore acquired[KWL_CURSOR_PLANE_IMAGES + 1U];
-	VkSemaphore ready[KWL_CURSOR_PLANE_IMAGES];
-	unsigned next;
-	unsigned held_valid[KWL_CURSOR_PLANE_IMAGES];
-	const struct kwl_import *held[KWL_CURSOR_PLANE_IMAGES];
-	uint64_t held_generation[KWL_CURSOR_PLANE_IMAGES];
-	uint32_t held_version[KWL_CURSOR_PLANE_IMAGES];
-	const struct kwl_import *source;
-	uint64_t generation;
-	uint32_t version;
-	int32_t x;
-	int32_t y;
-	uint64_t presents;
-	uint64_t copies;
-	unsigned copied;
-	unsigned last_copy;
-	uint64_t presented_us;
-	unsigned deferred;
+	uint32_t width;
+	uint32_t height;
+	struct kwl_import *copies[KWL_CURSOR_COPIES];
+	unsigned copy_valid;
+	const struct kwl_import *copy_source;
+	uint64_t copy_generation;
+	uint32_t copy_version;
+	unsigned copy_index;
+	unsigned published;
+	const struct kwl_import *published_image;
+	uint64_t published_generation;
+	uint32_t published_version;
+	int32_t published_hotspot_x;
+	int32_t published_hotspot_y;
+	unsigned published_show;
+	unsigned parked;
+	struct kwl_cursor_thread *thread;
 };
 
 /* How many frames' damage is kept, for images that missed that many frames. */
@@ -472,6 +470,36 @@ struct kwl_compose {
 	uint64_t frame_start_cycles;
 	uint64_t frame_start_ms;
 	/*
+	 * The render thread (render-thread.c, ws213-p004): it acquires, records
+	 * the list, submits, presents and waits for the fence.  render_started
+	 * says it runs.  want_kind and want_number are the want the main thread
+	 * last gave it (want_heads its heads), ready the ready the main thread
+	 * holds for it (ready_valid: one is held, not answered yet); park_depth
+	 * counts the parks the main thread is inside (the thread is parked
+	 * while it is not 0).  walk_cycles is the walk of the drawing in
+	 * flight, kept for its KWL PERF walk sample at its completion;
+	 * frame_number the frame number it was given.  want_ms is when the
+	 * want's number last moved, flight_ms when the drawing in flight was
+	 * given, done_ms when the last one completed; stall_ms and stall_lines
+	 * pace the KWL RENDER stalled lines of a wait for the thread that lasts.
+	 */
+	struct kwl_render_thread render;
+	unsigned render_started;
+	enum kwl_render_kind want_kind;
+	uint64_t want_number;
+	unsigned want_head_count;
+	unsigned want_heads[KWL_RENDER_HEADS];
+	struct kwl_render_message ready;
+	unsigned ready_valid;
+	unsigned park_depth;
+	uint64_t walk_cycles;
+	uint64_t frame_number;
+	uint64_t want_ms;
+	uint64_t flight_ms;
+	uint64_t done_ms;
+	uint64_t stall_ms;
+	unsigned stall_lines;
+	/*
 	 * The backdrop (backdrop.c); the framebuffer of the frame being
 	 * recorded, which its pass is taken up again on; and the blurred scene
 	 * the glass samples from now on in the frame (VK_NULL_HANDLE: the
@@ -559,6 +587,11 @@ int kwl_batch_add(struct kwl_server *server, struct kwl_list *command, const flo
 void kwl_batch_flush(struct kwl_server *server, struct kwl_list *command);
 void kwl_compose_count_commands(struct kwl_server *server, unsigned pushes, unsigned draws);
 VkResult kwl_compose_submit_quiet(struct kwl_server *server);
+int kwl_compose_render_start(struct kwl_server *server);
+int kwl_compose_want_layer(struct kwl_server *server);
+void kwl_compose_park(struct kwl_server *server);
+void kwl_compose_unpark(struct kwl_server *server);
+void kwl_compose_forget(struct kwl_server *server, unsigned output, unsigned heads_mask);
 uint64_t kwl_compose_generation(struct kwl_compose *compose);
 void kwl_compose_list_begin(struct kwl_compose *compose);
 void kwl_layers_open(struct kwl_server *server);
@@ -625,11 +658,10 @@ void kwl_heads_sync(struct kwl_server *server);
 void kwl_heads_close_display(struct kwl_server *server, VkDisplayKHR display);
 void kwl_heads_close_all(struct kwl_server *server);
 int kwl_heads_lost(struct kwl_server *server);
-unsigned kwl_heads_acquire(struct kwl_server *server);
+unsigned kwl_heads_wanted(struct kwl_server *server, unsigned *slots, unsigned room);
+unsigned kwl_heads_take(struct kwl_server *server, const struct kwl_render_held *held);
 void kwl_heads_record(struct kwl_server *server, struct kwl_list *command, VkImage source);
-unsigned kwl_heads_waits(struct kwl_server *server, VkSemaphore *semaphores, VkPipelineStageFlags *stages, unsigned room);
-unsigned kwl_heads_signals(struct kwl_server *server, VkSemaphore *semaphores, unsigned room);
-void kwl_heads_present(struct kwl_server *server);
+void kwl_heads_presented(struct kwl_server *server, const struct kwl_render_outcome *outcome);
 void kwl_heads_frame_skipped(struct kwl_server *server);
 int kwl_displays_apply(struct kwl_server *server, const struct kwl_display_config *wanted, int *saved);
 int kwl_displays_set_shown(struct kwl_server *server, const char *key, unsigned shown, int *saved);

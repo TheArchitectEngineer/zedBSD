@@ -121,11 +121,13 @@ struct cal_cell {
  * all day; a memo is only deleted), and the fields of its title and times.
  *
  * The cells of the last frame, where today's cell was last logged, the notice shown at the
- * bottom until a time (empty for none), whether the window stands on glass, and whether
- * the program is to end.
+ * bottom until a time (empty for none), whether the window stands on glass, whether
+ * the program is to end, and whether a click in the last frame changed what was drawn
+ * before it, so that the whole view is drawn again (the window clears it).
  *
  * The 3D: the desk calendar's target and picture, what the last full frame
- * had under it (its area, and whether it is kept), its mesh, the icons of
+ * had under it (its area, whether it is kept, and whether the frame being
+ * drawn met the desk calendar), its mesh, the icons of
  * the kinds of event, and the pictures of the two pages with their days
  * and the accent they were drawn in (ws179-p002).
  */
@@ -171,12 +173,14 @@ struct cal_view {
 	uint64_t notice_until;
 	int glass;
 	int quit;
+	int again;
 
 	struct r3_target target;
 	struct kl_image picture;
 	struct kl_image under;
 	struct kl_rect desk_area;
 	int desk_valid;
+	int desk_seen;
 	struct sc_mesh *mesh;
 	struct kl_image icons[SC_ICONS];
 	struct kl_image pages[SC_TEXTURES];
@@ -214,6 +218,7 @@ void cal_view_key(struct cal_view *view, uint32_t key, unsigned modifiers, uint6
 void cal_view_draw(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, uint64_t now_us);
 size_t cal_view_panels(const struct cal_view *view, int width, int height, struct kl_glass_panel *panels, size_t capacity);
 int cal_view_wait(const struct cal_view *view, uint64_t now_us);
+int cal_view_animating(const struct cal_view *view);
 int cal_view_desk_only(const struct cal_view *view);
 void cal_view_draw_desk(struct cal_view *view, const struct kl_style *style, uint64_t now_us);
 

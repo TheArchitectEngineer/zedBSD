@@ -824,8 +824,10 @@ object_release(
 {
 	uint64_t before;
 	uint64_t between;
+	uint64_t mark;
 
-	/* Window mode's Vulkan image goes with the buffer. */
+	/* Window mode's Vulkan image goes with the buffer, outside a walk (KWL PERF pass vk_outside_max_us, ws213-p004). */
+	mark = kwl_cycles();
 	before = kwl_microseconds();
 	kwl_import_destroy_with(server->compose, object);
 	between = kwl_microseconds();
@@ -834,6 +836,7 @@ object_release(
 	/* OS buffer descriptors (libkeiland-backend's) remain alive until the final Vulkan image use has retired. */
 	kl_backend_gpu_resource_free(kwl_gpu_host(), kwl_gpu_resource(object));
 	cleanup_backend_us += kwl_microseconds() - between;
+	kwl_perf_vk_outside(server, kwl_cycles() - mark);
 
 	/* Shared-memory buffer storage returns its separate pool reference. */
 	if (object->shm != NULL) {

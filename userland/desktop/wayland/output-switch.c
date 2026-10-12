@@ -51,6 +51,7 @@ static void output_hotplug_register(struct kwl_server *server);
 static void output_recover(struct kwl_server *server);
 static int output_fail_back(struct kwl_server *server);
 static void output_resized(struct kwl_server *server);
+static void output_pointer_clamp(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
 
 /*
  * Follows the displays once each pass of the event loop (at most every
@@ -659,6 +660,7 @@ static void
 output_resized(
 	struct kwl_server *server)
 {
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
 	int error;
 
 	/* The look's output-sized images. */
@@ -671,13 +673,36 @@ output_resized(
 	/* The windows. */
 	kwl_glass_output_resized(server);
 
-	/* The pointer inside the output, when it is on it (not on a head, ws113-p007). */
-	if (server->pointer_output == KWL_PLANE_ANCHOR && server->pointer_x >= (int32_t)server->width)
-		server->pointer_x = (int32_t)server->width - 1;
-	if (server->pointer_output == KWL_PLANE_ANCHOR && server->pointer_y >= (int32_t)server->height)
-		server->pointer_y = (int32_t)server->height - 1;
+	/*
+	 * The pointer inside the output, when it is on it (not on a head,
+	 * ws113-p007): kept from where the cursor's box has it, the output's new
+	 * size given to the box in the same warp (ws213-p004).
+	 */
+	(void)kwl_outputs(server, outputs);
+	kwl_pointer_warp(server, outputs, output_pointer_clamp, NULL);
 
 	/* Everything is drawn again. */
 	server->dirty = 1;
 	printf("KWL OUTPUT resized width=%u height=%u refresh_mhz=%u\n", server->width, server->height, server->refresh);
+}
+
+/* Keeps a pointer on the anchor inside its new size (a warp's move). */
+static void
+output_pointer_clamp(
+	const void *context,
+	const struct kwl_plane_rect *outputs,
+	int32_t *x,
+	int32_t *y,
+	unsigned *output)
+{
+	/* A pointer on a head keeps its place. */
+	(void)context;
+	if (*output != KWL_PLANE_ANCHOR)
+		return;
+
+	/* The last column and row of the anchor at most. */
+	if (*x >= (int32_t)outputs[KWL_PLANE_ANCHOR].width)
+		*x = (int32_t)outputs[KWL_PLANE_ANCHOR].width - 1;
+	if (*y >= (int32_t)outputs[KWL_PLANE_ANCHOR].height)
+		*y = (int32_t)outputs[KWL_PLANE_ANCHOR].height - 1;
 }

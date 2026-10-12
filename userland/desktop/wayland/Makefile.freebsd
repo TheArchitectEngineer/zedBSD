@@ -7,6 +7,8 @@ WAYLAND_FREEBSD_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/display.c \
 	userland/desktop/wayland/seat.c \
 	userland/desktop/wayland/input.c \
+	userland/desktop/wayland/input-thread.c \
+	userland/desktop/wayland/cursor-box.c \
 	userland/desktop/wayland/tablet.c \
 	userland/desktop/wayland/touch.c \
 	userland/desktop/wayland/touchpad.c \
@@ -37,6 +39,7 @@ WAYLAND_FREEBSD_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/decoration.c \
 	userland/desktop/wayland/cursor.c \
 	userland/desktop/wayland/cursor-plane.c \
+	userland/desktop/wayland/cursor-thread.c \
 	userland/desktop/wayland/viewport.c \
 	userland/desktop/wayland/content-type.c \
 	userland/desktop/wayland/scanout.c \
@@ -48,6 +51,7 @@ WAYLAND_FREEBSD_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/layer-cache.c \
 	userland/desktop/wayland/compose-bind.c \
 	userland/desktop/wayland/draw-list.c \
+	userland/desktop/wayland/render-thread.c \
 	userland/desktop/wayland/batch.c \
 	userland/desktop/wayland/damage.c \
 	userland/desktop/wayland/greeter.c \

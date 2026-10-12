@@ -56,6 +56,8 @@
 #include "super-tap.h"
 #include "plane.h"
 #include "title-tap.h"
+#include "cursor-box.h"
+#include "input-thread.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
@@ -380,6 +382,15 @@ struct kwl_packet {
 struct kwl_input_device {
 	int fd;
 	unsigned live;
+	/*
+	 * The input thread reads the descriptor (ws213-p004): set by the
+	 * attach command, cleared once a detach is acknowledged.  closing says
+	 * the device is going: its record stays until the input thread's last
+	 * event of it is applied, so the events before that one still find it,
+	 * and no new device takes its slot or its path meanwhile.
+	 */
+	unsigned attached;
+	unsigned closing;
 	unsigned pointer;
 	unsigned keyboard;
 	unsigned absolute;
@@ -390,22 +401,27 @@ struct kwl_input_device {
 	/*
 	 * A touch pad (touchpad.c, ws159-p004): its reports go to its touch
 	 * pad layer, whose actions move the pointer, press its buttons and
-	 * scroll; pad is that layer's state while the device is attached.
+	 * scroll; the layer is the input thread's while the device is attached.
 	 */
 	unsigned touchpad;
-	struct kwl_touchpad pad;
-	/* A relative mouse's acceleration (pointer-accel.c, ws089-p024): its fractions and its last report's time. */
-	struct kwl_pointer_accel accel;
-	unsigned discarding;
+	/*
+	 * What the input thread is given when the device is attached (its
+	 * kind, an absolute pointer's ranges and first place, a touch pad's
+	 * resolution and range; ws213-p004): a mouse's acceleration, the touch
+	 * pad's layer and the report being gathered are the input thread's.
+	 */
+	struct kwl_input_attach reading;
 	int32_t abs_x_minimum;
 	int32_t abs_x_maximum;
 	int32_t abs_y_minimum;
 	int32_t abs_y_maximum;
-	int32_t abs_x;
-	int32_t abs_y;
+	/*
+	 * The report being applied, as the input thread passed it (a pen
+	 * tablet's or touch screen's, which tablet.c and touch.c read), and
+	 * its evdev time (its SYN_REPORT), in microseconds (WS081).
+	 */
 	unsigned frame_count;
 	struct input_event frame[KWL_INPUT_FRAME_MAX];
-	/* The evdev time of the report being applied (its SYN_REPORT), in microseconds (WS081). */
 	uint64_t frame_time_us;
 	char path[KWL_INPUT_PATH_MAX];
 };
@@ -881,6 +897,10 @@ struct kwl_client {
 /* The drawings one KWL PERF window keeps the times of (five seconds at 60 frames and the quiet pictures, with room). */
 #define KWL_PERF_WALKS		1024U
 
+/* The box's writes one KWL PERF window keeps (five seconds of a 1000 Hz mouse, with room), and the passes. */
+#define KWL_PERF_BOX		8192U
+#define KWL_PERF_PASSES		8192U
+
 /* Cycle counts of the event loop, reported every few seconds (KWL PERF). */
 struct kwl_perf {
 	uint64_t window_start_ms;
@@ -943,9 +963,42 @@ struct kwl_perf {
 	uint64_t replay_cycles[KWL_PERF_WALKS];
 	uint32_t walk_things[KWL_PERF_WALKS];
 	uint8_t walk_quiet[KWL_PERF_WALKS];
+	/*
+	 * The cursor's box (ws213-p004, KWL PERF cursor): for each write of a
+	 * motion the main thread applied in the window, its lag from the
+	 * report's evdev time to the write, the lag beyond the reports' own
+	 * spacing (excess), and the time since the write before it while the
+	 * pointer moved (gap), in microseconds; how many lags went over a
+	 * refresh, and how many KWL CURSOR_LAG lines were printed.  A write
+	 * past KWL_PERF_BOX is only counted in box_dropped.
+	 */
+	uint32_t box_count;
+	uint32_t box_dropped;
+	uint32_t box_over;
+	uint32_t box_gap_count;
+	uint32_t box_lag_lines;
+	uint32_t box_lag_us[KWL_PERF_BOX];
+	uint32_t box_excess_us[KWL_PERF_BOX];
+	uint32_t box_gap_us[KWL_PERF_BOX];
+	/*
+	 * Each pass's work in cycles, for KWL PERF main's pass_max_us and
+	 * pass_p99_us (ws213-p004); a pass past KWL_PERF_PASSES only raises the
+	 * longest.
+	 */
+	uint32_t pass_count;
+	uint64_t pass_cycles[KWL_PERF_PASSES];
+	uint64_t pass_max_cycles;
+	/*
+	 * The longest of the main thread's Vulkan work outside a walk (a GPU
+	 * buffer's import or release, the wl_shm copies and their images, a
+	 * wait for the frame in flight), in cycles (KWL PERF pass
+	 * vk_outside_max_us, ws213-p004 6.4).
+	 */
+	uint64_t vk_outside_max_cycles;
 };
 
 uint64_t kwl_cycles(void);
+void kwl_perf_vk_outside(struct kwl_server *server, uint64_t cycles);
 
 /*
  * The compositor: one per process, alive from start to exit.
@@ -1155,6 +1208,25 @@ struct kwl_server {
 	 * are placed in (no width: the anchor's).
 	 */
 	unsigned pointer_output;
+	/*
+	 * The input thread and the cursor's box (ws213-p004): the pointer's
+	 * place the input thread writes (pointer_x and pointer_y are the main
+	 * thread's view, which follows it through the input thread's events),
+	 * the warp count the main thread's view was last set under, the
+	 * settings and outputs last given to the input thread, and the pipe the
+	 * threads wake the main thread with (wake[0] polled, wake[1] written).
+	 * box_last_* are the last applied write's times, for the box's gap and
+	 * excess (KWL PERF cursor).
+	 */
+	struct kwl_cursor_box cursor_box;
+	struct kwl_input_thread input_thread;
+	unsigned threads_prepared;
+	unsigned input_thread_ready;
+	uint64_t pointer_warp;
+	struct kwl_input_settings input_settings_given;
+	int wake[2];
+	uint64_t box_last_event_us;
+	uint64_t box_last_write_us;
 	unsigned view_output;
 	int32_t view_x;
 	int32_t view_y;
@@ -1955,7 +2027,7 @@ int kwl_cursor_client_shown(struct kwl_server *server);
  */
 int kwl_cursor_plane_takes(struct kwl_server *server);
 void kwl_cursor_plane_update(struct kwl_server *server);
-int kwl_cursor_plane_due_ms(struct kwl_server *server);
+void kwl_cursor_plane_hold(struct kwl_server *server);
 int kwl_arrow_create(struct kwl_server *server);
 void kwl_arrow_destroy(struct kwl_server *server);
 struct kwl_object *kwl_top_window(struct kwl_server *server);
@@ -1979,6 +2051,7 @@ int kwl_window_leave_fullscreen(struct kwl_object *surface);
 void kwl_window_centre(struct kwl_server *server, struct kwl_object *surface);
 int kwl_fence_ready(struct kwl_server *server, struct kwl_object *surface);
 int kwl_compose_waiting(struct kwl_server *server);
+void kwl_compose_want_frame(struct kwl_server *server);
 void kwl_compose_poll(struct kwl_server *server);
 int kwl_glass_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_glass_motion(struct kwl_server *server);
@@ -2156,7 +2229,6 @@ int32_t kwl_output_top(struct kwl_server *server, unsigned slot);
 unsigned kwl_window_output(struct kwl_object *surface);
 void kwl_window_to_output(struct kwl_server *server, struct kwl_object *window, unsigned slot, const char *why);
 void kwl_window_set_output(struct kwl_server *server, struct kwl_object *window, unsigned slot, const char *why);
-void kwl_pointer_relative(struct kwl_server *server, int32_t dx, int32_t dy, int32_t *x, int32_t *y);
 void kwl_pointer_absolute(struct kwl_server *server);
 
 /* The outputs each surface's client was told it is on, wl_surface.enter and leave (surface-outputs.c, ws177-p001). */
@@ -2372,11 +2444,19 @@ void kwl_input_scan(struct kwl_server *server);
 int kwl_input_probe(struct kwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);
 int kwl_input_alt_held(const struct kwl_server *server);
 int kwl_input_attach(struct kwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, const struct input_absinfo *x, const struct input_absinfo *y);
-void kwl_input_read_devices(struct kwl_server *server, struct kwl_input_device **devices, size_t count);
-void kwl_input_tick(struct kwl_server *server, uint64_t now);
+int kwl_threads_prepare(struct kwl_server *server);
+int kwl_input_threads_start(struct kwl_server *server);
+void kwl_input_threads_stop(struct kwl_server *server);
+void kwl_input_drain(struct kwl_server *server);
+void kwl_input_sync(struct kwl_server *server);
 void kwl_input_touchpads_changed(struct kwl_server *server);
-void kwl_input_close(struct kwl_server *server, struct kwl_input_device *device);
+void kwl_input_pause(struct kwl_server *server, struct kwl_input_device *device);
+void kwl_input_resume(struct kwl_server *server, struct kwl_input_device *device, int descriptor);
+void kwl_input_detach_all(struct kwl_server *server);
+void kwl_input_attach_all(struct kwl_server *server);
 void kwl_input_forget(struct kwl_server *server, struct kwl_input_device *device);
+void kwl_pointer_warp(struct kwl_server *server, const struct kwl_plane_rect *outputs, kwl_cursor_box_move_fn *move, const void *context);
+void kwl_pointer_warp_to(struct kwl_server *server, int32_t x, int32_t y);
 void kwl_input_cleanup(struct kwl_server *server);
 
 /* The metadata library delegates persistence to the mediastorage CLI. */

@@ -41,6 +41,9 @@ kwl_backend_session_paused(
 	server = data;
 	server->os_paused = 1;
 
+	/* The input thread lets go of every device before the seat takes them (ws213-p004). */
+	kwl_input_detach_all(server);
+
 	/* The frame in flight finishes and the output closes. */
 	if (server->compose != NULL) {
 		kwl_compose_quiesce(server);
@@ -68,6 +71,9 @@ kwl_backend_session_resumed(
 	server->input_scan_time = 0;
 	server->windowed = 0;
 	server->dirty = 1;
+
+	/* The devices the pause let go of whose descriptors the seat left open are read again (ws213-p004). */
+	kwl_input_attach_all(server);
 	printf("KWL SEAT resumed\n");
 }
 
@@ -86,7 +92,9 @@ kwl_backend_input_paused(
 	input = backend_input(data, path);
 	if (input == NULL)
 		return;
-	input->fd = -1;
+
+	/* The input thread lets go of it first (ws213-p004). */
+	kwl_input_pause(data, input);
 }
 
 /*
@@ -105,9 +113,9 @@ kwl_backend_input_resumed(
 	input = backend_input(data, path);
 	if (input == NULL)
 		return;
-	input->fd = descriptor;
-	input->frame_count = 0;
-	input->discarding = 0;
+
+	/* The input thread reads the new descriptor from a fresh report (ws213-p004). */
+	kwl_input_resume(data, input, descriptor);
 }
 
 /*
@@ -528,7 +536,7 @@ backend_input(
 
 	/* The path stays while the descriptors change. */
 	for (index = 0; index < KWL_INPUT_MAX; index++) {
-		if (server->inputs[index].live == 0)
+		if (server->inputs[index].live == 0 || server->inputs[index].closing)
 			continue;
 		same = strcmp(server->inputs[index].path, path);
 		if (same == 0)

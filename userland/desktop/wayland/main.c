@@ -49,7 +49,12 @@ static void kwl_perf_report(struct kwl_server *server, uint64_t now);
 static void perf_walk_report(const struct kwl_perf *perf, double per_ms);
 static void perf_walk_class(const struct kwl_perf *perf, double per_ms, const char *name, uint32_t lowest, uint32_t highest, unsigned quiet, unsigned replay);
 static int perf_cycles_order(const void *left, const void *right);
+static void perf_pass_report(struct kwl_perf *perf, double per_ms);
+static void perf_box_report(struct kwl_perf *perf, const struct kwl_cursor_stats *stats);
+static uint32_t perf_percentile(uint32_t *values, uint32_t count, unsigned percent, uint32_t *largest);
+static int perf_value_order(const void *left, const void *right);
 static int event_loop(struct kwl_server *server);
+static void wake_drain(struct kwl_server *server);
 static void service_cleanup(struct kwl_server *server);
 static uint64_t startup_step(const char *step, uint64_t since);
 
@@ -76,6 +81,8 @@ main(
 	server.frame_fd = -1;
 	server.auth_fd = -1;
 	server.control_fd = -1;
+	server.wake[0] = -1;
+	server.wake[1] = -1;
 	server.font_path = KEILAND_DATADIR "/fonts/keiland.ttf";
 	server.fallback_font_path = KEILAND_DATADIR "/fonts/keiland-fallback.ttf";
 	server.window_opacity = 1.0f;
@@ -214,6 +221,13 @@ main(
 	if (error == 0)
 		kwl_glass_prefetch(&server);
 
+	/* The threads' wake pipe and the cursor's box, which the cursor plane's thread reads from the output's opening on (ws213-p004). */
+	if (error == 0) {
+		error = kwl_threads_prepare(&server);
+		if (error != 0)
+			printf("KWL FAILED site=threads errno=%d\n", error);
+	}
+
 	/* The start is timed from the Vulkan device on (KWL STARTUP); the compositor opens no GPU node of its own (ws103-p006). */
 	step_start = kwl_milliseconds();
 
@@ -234,6 +248,13 @@ main(
 	server.pointer_x = (int32_t)(server.width / 2U);
 	server.pointer_y = (int32_t)(server.height / 2U);
 	server.pointer_unmoved = 1U;
+
+	/* The input thread reads the devices and moves the pointer in the cursor's box (ws213-p004). */
+	if (error == 0) {
+		error = kwl_input_threads_start(&server);
+		if (error != 0)
+			printf("KWL FAILED site=input-thread errno=%d\n", error);
+	}
 
 	/* Input devices are found before READY; a seat without devices is still valid. */
 	if (error == 0) {
@@ -729,17 +750,13 @@ event_loop(
 	struct kwl_client *client;
 	struct kwl_client **clients;
 	struct kwl_object *surface;
-	struct kwl_input_device *devices[KWL_INPUT_MAX];
-	struct kwl_input_device *ready_devices[KWL_INPUT_MAX];
-	size_t ready_count;
 	struct pollfd *descriptors;
 	uint64_t started;
 	uint64_t now;
 	uint64_t scan_period;
 	size_t count;
 	size_t index;
-	size_t first_input;
-	size_t last_input;
+	size_t wake_slot;
 	size_t frame_slot;
 	size_t first_fence;
 	size_t first_os;
@@ -747,11 +764,9 @@ event_loop(
 	unsigned fence;
 	int waiting;
 	int retire_ready;
-	unsigned slot;
 	uint64_t mark;
 	uint64_t part;
 	int timeout;
-	int due;
 	int ready;
 	int flushed;
 	int error;
@@ -785,9 +800,6 @@ event_loop(
 		if (server->os_paused == 0 && now - server->input_scan_time >= scan_period)
 			kwl_input_scan(server);
 
-		/* The touch pads' timers: a tap's click completes when no drag came (input.c, ws159-p004). */
-		kwl_input_tick(server, now);
-
 		/* A client that has left a ping unanswered too long is not responding (toplevel.c). */
 		kwl_ping_check(server, now);
 
@@ -810,18 +822,13 @@ event_loop(
 			count++;
 
 
-		/* Input devices follow the clients in the same poll snapshot. */
-		first_input = count;
-		for (slot = 0; slot < KWL_INPUT_MAX; slot++) {
-			/* Only open devices are polled; the table keeps each slot's address stable. */
-			if (server->inputs[slot].live) {
-				devices[count - first_input] = &server->inputs[slot];
-				count++;
-			}
-		}
-
-		/* The devices end here. */
-		last_input = count;
+		/*
+		 * The pipe the compositor's threads wake the loop with follows the
+		 * clients: the input thread's reports (ws213-p004).  The devices
+		 * themselves are the input thread's to poll.
+		 */
+		wake_slot = count;
+		count++;
 
 		/* The fence fd of window mode's frame in flight is polled next. */
 		frame_slot = 0;
@@ -898,11 +905,9 @@ event_loop(
 			index++;
 		}
 
-		/* Every open device is polled for readable events. */
-		for (; index < last_input; index++) {
-			descriptors[index].fd = devices[index - first_input]->fd;
-			descriptors[index].events = POLLIN;
-		}
+		/* The threads' wake pipe. */
+		descriptors[wake_slot].fd = server->wake[0];
+		descriptors[wake_slot].events = POLLIN;
 
 		/* The frame's fence becomes readable when the frame is done. */
 		if (frame_slot != 0) {
@@ -929,13 +934,11 @@ event_loop(
 			}
 		}
 
-		/* A cursor move held for the next refresh wakes the loop when it is due (cursor-plane.c, ws213-p001 C0). */
-		due = kwl_cursor_plane_due_ms(server);
-		if (due >= 0 && due < timeout)
-			timeout = due;
-
 		/* Lets the OS populate its entries in this descriptor snapshot. */
 		kwl_os_poll_fill(server, descriptors + first_os);
+
+		/* The input thread computes the motions from now on with the settings and outputs as they are (ws213-p004). */
+		kwl_input_sync(server);
 
 		/* Poll sees sockets only; typed image fds are consumed immediately during import. */
 		mark = kwl_cycles();
@@ -958,6 +961,14 @@ event_loop(
 			return error;
 		}
 
+		/*
+		 * The threads' wake pipe is emptied before any of their queues is
+		 * taken this pass (the render thread's below, the input thread's
+		 * after), so a message queued later wakes the next poll (ws213-p004).
+		 */
+		if (descriptors[wake_slot].revents != 0)
+			wake_drain(server);
+
 		/* Accept at most one client per pass so existing streams retain service opportunity. */
 		error = 0;
 		if ((descriptors[0].revents & POLLIN) != 0)
@@ -978,25 +989,17 @@ event_loop(
 		server->perf.frame_done_cycles += kwl_cycles() - part;
 
 		/*
-		 * Device events are applied before clients are flushed, so they leave in this pass.  A readable, failed or
-		 * vanished device is read, all of them together in the order their events were made (BUG-142); a read
-		 * failure closes the device.
+		 * The input thread's reports are applied before clients are flushed,
+		 * so they leave in this pass, in the order the devices made them
+		 * (BUG-142, ws213-p004).
 		 */
-		ready_count = 0;
-		for (index = first_input; index < last_input; index++) {
-			if (descriptors[index].revents != 0 && devices[index - first_input]->fd >= 0)
-				ready_devices[ready_count++] = devices[index - first_input];
-		}
-
-		/* Reads them together. */
 		part = kwl_cycles();
-		if (ready_count != 0)
-			kwl_input_read_devices(server, ready_devices, ready_count);
+		kwl_input_drain(server);
 		server->perf.input_cycles += kwl_cycles() - part;
 
 		/* Process only the clients captured by this poll snapshot. */
 		part = kwl_cycles();
-		for (index = 1; index < first_input; index++) {
+		for (index = 1; index < wake_slot; index++) {
 			/* Apply readiness only to this iteration's still-owned connection generation. */
 			client = clients[index];
 			remove = 0;
@@ -1092,10 +1095,21 @@ event_loop(
 				client->fatal_time = kwl_milliseconds();
 			}
 		}
+
+		/* The last flush's part (KWL PERF main). */
 		server->perf.flush_cycles += kwl_cycles() - part;
 
-		/* The pass's work. */
-		server->perf.work_cycles += kwl_cycles() - mark;
+		/* The pass's work, and the pass alone for its longest and 99th percentile (ws213-p004). */
+		part = kwl_cycles() - mark;
+		server->perf.work_cycles += part;
+		if (part > server->perf.pass_max_cycles)
+			server->perf.pass_max_cycles = part;
+		if (server->perf.pass_count < KWL_PERF_PASSES) {
+			server->perf.pass_cycles[server->perf.pass_count] = part;
+			server->perf.pass_count++;
+		}
+
+		/* The window's lines every five seconds. */
 		kwl_perf_report(server, now);
 	}
 
@@ -1133,7 +1147,8 @@ service_cleanup(
 	/* The swapchain and the Vulkan device go after every buffer's image. */
 	kwl_compose_close(server);
 
-	/* No client remains to hear from the seat, so its devices close quietly. */
+	/* The input thread lets go of every device; then, no client remaining to hear from the seat, they close quietly. */
+	kwl_input_threads_stop(server);
 	kwl_input_cleanup(server);
 
 	/* The session's volume and settings are kept for the next login (volume.c, BUG-161; settings.c, WS135). */
@@ -1188,12 +1203,27 @@ kwl_cycles(
 #endif
 }
 
+/*
+ * Counts one piece of the main thread's Vulkan work outside a walk for
+ * KWL PERF pass's vk_outside_max_us (ws213-p004, the design's 6.4).
+ */
+void
+kwl_perf_vk_outside(
+	struct kwl_server *server,
+	uint64_t cycles)
+{
+	/* The longest of the window. */
+	if (cycles > server->perf.vk_outside_max_cycles)
+		server->perf.vk_outside_max_cycles = cycles;
+}
+
 /* Prints the loop's timing every five seconds and starts a new window. */
 static void
 kwl_perf_report(
 	struct kwl_server *server,
 	uint64_t now)
 {
+	struct kwl_cursor_stats stats;
 	struct kwl_perf *perf;
 	uint64_t cycles;
 	uint64_t main_parts;
@@ -1211,6 +1241,18 @@ kwl_perf_report(
 	/* A window shorter than five seconds is not reported yet. */
 	if (now - perf->window_start_ms < 5000U)
 		return;
+
+	/* The cursor thread's counts of the window (ws213-p004). */
+	memset(&stats, 0, sizeof(stats));
+	if (server->threads_prepared)
+		kwl_cursor_box_take_stats(&server->cursor_box, &stats);
+	perf->cursor_presents = stats.presents;
+	perf->cursor_deferred = stats.held;
+	perf->cursor_fence_cycles = stats.fence_cycles;
+	perf->cursor_acquire_cycles = stats.acquire_cycles;
+	perf->cursor_copy_cycles = stats.copy_cycles;
+	perf->cursor_queue_present_cycles = stats.present_cycles;
+	perf->cursor_queue_present_max_cycles = stats.present_max_cycles;
 
 	/* The window's length in cycles scales the counters to milliseconds. */
 	cycles = kwl_cycles() - perf->window_start_cycles;
@@ -1265,6 +1307,10 @@ kwl_perf_report(
 	    (double)perf->cursor_copy_cycles / per_ms,
 	    (double)perf->cursor_queue_present_cycles / per_ms,
 	    (double)perf->cursor_queue_present_max_cycles / per_ms);
+
+	/* The passes' longest work, and the cursor's box (ws213-p004). */
+	perf_pass_report(perf, per_ms);
+	perf_box_report(perf, &stats);
 
 	/* The drawings' walks and replays (ws213-p003). */
 	perf_walk_report(perf, per_ms);
@@ -1438,4 +1484,160 @@ log_append(
 
 	/* Succeeded: the log is written at its end. */
 	return;
+}
+
+/*
+ * Empties the pipe the compositor's threads wake the event loop with; what
+ * they queued is taken after, so a later queue wakes the next poll.
+ */
+static void
+wake_drain(
+	struct kwl_server *server)
+{
+	unsigned char bytes[64];
+	ssize_t got;
+
+	/* Every byte waiting; the pipe does not block. */
+	do {
+		got = read(server->wake[0], bytes, sizeof(bytes));
+	} while (got > 0 || (got < 0 && errno == EINTR));
+}
+
+/*
+ * Prints the window's passes (KWL PERF pass, ws213-p004): the longest
+ * pass's work and the 99th percentile, the longest walk of a drawing, and
+ * the longest Vulkan work of the main thread outside a walk, in
+ * microseconds.  The passes' array
+ * is sorted in place; the window ends after the report.
+ */
+static void
+perf_pass_report(
+	struct kwl_perf *perf,
+	double per_ms)
+{
+	uint64_t p99;
+	uint64_t walk_max;
+	uint32_t index;
+
+	/* No pass was counted. */
+	if (perf->pass_count == 0U)
+		return;
+
+	/* The 99th percentile of the passes kept. */
+	qsort(perf->pass_cycles, perf->pass_count, sizeof(perf->pass_cycles[0]), perf_cycles_order);
+	index = (uint32_t)(((uint64_t)perf->pass_count * 99U) / 100U);
+	if (index >= perf->pass_count)
+		index = perf->pass_count - 1U;
+	p99 = perf->pass_cycles[index];
+
+	/* The longest walk of the window's drawings. */
+	walk_max = 0U;
+	for (index = 0U; index < perf->walk_count; index++) {
+		if (perf->walk_cycles[index] > walk_max)
+			walk_max = perf->walk_cycles[index];
+	}
+
+	/* In microseconds. */
+	printf("KWL PERF pass passes=%u pass_p99_us=%.0f pass_max_us=%.0f walk_max_us=%.0f vk_outside_max_us=%.0f\n",
+	    perf->pass_count,
+	    (double)p99 / per_ms * 1000.0,
+	    (double)perf->pass_max_cycles / per_ms * 1000.0,
+	    (double)walk_max / per_ms * 1000.0,
+	    (double)perf->vk_outside_max_cycles / per_ms * 1000.0);
+}
+
+/*
+ * Prints the cursor's box (KWL PERF cursor, ws213-p004, the design's 6.4):
+ * how many writes the main thread applied, their lag from the report's
+ * evdev time (the 99th percentile, the longest and how many over a
+ * refresh), the lag beyond the reports' spacing, and the gap between the
+ * writes while the pointer moved, in microseconds; then the cursor
+ * thread's presents, the moves it held, its copies, the longest time
+ * between two presents while the pointer moved and the longest present.
+ * The arrays are sorted in place.
+ */
+static void
+perf_box_report(
+	struct kwl_perf *perf,
+	const struct kwl_cursor_stats *stats)
+{
+	uint32_t lag_p99;
+	uint32_t lag_max;
+	uint32_t excess_p99;
+	uint32_t excess_max;
+	uint32_t gap_p99;
+	uint32_t gap_max;
+
+	/* No write and no present in the window. */
+	if (perf->box_count == 0U && perf->box_dropped == 0U && stats->presents == 0U)
+		return;
+
+	/* Each measure's 99th percentile and longest. */
+	lag_p99 = perf_percentile(perf->box_lag_us, perf->box_count, 99U, &lag_max);
+	excess_p99 = perf_percentile(perf->box_excess_us, perf->box_count, 99U, &excess_max);
+	gap_p99 = perf_percentile(perf->box_gap_us, perf->box_gap_count, 99U, &gap_max);
+
+	/* One line. */
+	printf("KWL PERF cursor box_writes=%u dropped=%u box_lag_p99_us=%u box_lag_max_us=%u box_lag_over=%u box_excess_p99_us=%u box_excess_max_us=%u box_gap_p99_us=%u box_gap_max_us=%u presents=%u held=%u copies=%u present_gap_max_us=%llu present_max_us=%llu\n",
+	    perf->box_count,
+	    perf->box_dropped,
+	    lag_p99,
+	    lag_max,
+	    perf->box_over,
+	    excess_p99,
+	    excess_max,
+	    gap_p99,
+	    gap_max,
+	    stats->presents,
+	    stats->held,
+	    stats->copies,
+	    (unsigned long long)stats->present_gap_max_us,
+	    (unsigned long long)stats->present_max_us);
+}
+
+/* Sorts values in place and gives a percentile of them and their largest (0 for none). */
+static uint32_t
+perf_percentile(
+	uint32_t *values,
+	uint32_t count,
+	unsigned percent,
+	uint32_t *largest)
+{
+	uint32_t index;
+
+	/* None. */
+	*largest = 0U;
+	if (count == 0U)
+		return 0U;
+
+	/* In order, the largest last. */
+	qsort(values, count, sizeof(values[0]), perf_value_order);
+	*largest = values[count - 1U];
+
+	/* Succeeded: the value at the percentile. */
+	index = (uint32_t)(((uint64_t)count * percent) / 100U);
+	if (index >= count)
+		index = count - 1U;
+	return values[index];
+}
+
+/* Orders two 32-bit values for qsort, the smaller first. */
+static int
+perf_value_order(
+	const void *left,
+	const void *right)
+{
+	uint32_t first;
+	uint32_t second;
+
+	/* The two values. */
+	first = *(const uint32_t *)left;
+	second = *(const uint32_t *)right;
+
+	/* Smaller, larger or the same. */
+	if (first < second)
+		return -1;
+	if (first > second)
+		return 1;
+	return 0;
 }

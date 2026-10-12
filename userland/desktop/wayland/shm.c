@@ -140,11 +140,15 @@ kwl_shm_upload(
 {
 	struct kwl_client *client;
 	struct kwl_object *surface;
+	uint64_t mark;
 	int error;
 
 	/* Without window mode, or with a frame in flight, the copies wait. */
 	if (server->compose == NULL || server->compose->in_flight)
 		return 0;
+
+	/* The copies and the images made for them are the main thread's work outside a walk (KWL PERF pass, ws213-p004). */
+	mark = kwl_cycles();
 
 	/* Each surface whose committed wl_shm image has not been copied. */
 	for (client = server->clients; client != NULL; client = client->next) {
@@ -162,6 +166,9 @@ kwl_shm_upload(
 			}
 		}
 	}
+
+	/* The time of the copies. */
+	kwl_perf_vk_outside(server, kwl_cycles() - mark);
 
 	/* Succeeded. */
 	return 0;
@@ -862,6 +869,14 @@ image_layout(
 		result = image_layout_record(compose->setup_command, image, old_layout);
 		return result;
 	}
+
+	/*
+	 * The render thread records and submits nothing meanwhile: the frames'
+	 * pool and the queue are used here outside a walk (a cursor shape made
+	 * late, ws213-p004).
+	 */
+	if (compose->render_started)
+		kwl_render_wait_idle(&compose->render);
 
 	/* A command buffer, the batch's or a one-time one. */
 	memset(&allocate, 0, sizeof(allocate));

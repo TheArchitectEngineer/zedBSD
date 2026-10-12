@@ -42,9 +42,10 @@ struct fx_fence {
 	int held;
 };
 
-/* One fake lease of the fake platform. */
+/* One fake lease of the fake platform, with the latest ticket its output applied. */
 struct fx_lease {
 	struct vulkan_surface *surface;
+	uint64_t applied;
 };
 
 /* The fixture's record of what the fakes were asked, and what they answer. */
@@ -67,7 +68,6 @@ struct fx_state {
 	unsigned cursor_shown;
 	unsigned cursor_shown_on_worker;
 	unsigned cursor_dropped;
-	uint64_t cursor_applied;
 	uint64_t cursor_last_ticket;
 	VkBool32 cursor_last_position;
 	int32_t cursor_x;
@@ -142,6 +142,8 @@ static void test_content(void);
 static void test_display_op(void);
 static void *test_display_holder(void *argument);
 static void test_wsi(void);
+static void test_compositor_calls(void);
+static int fx_held_here(pthread_mutex_t *mutex);
 
 /*
  * Runs the content, display op and WSI scenarios.
@@ -533,6 +535,9 @@ test_wsi(
 	fx_drain();
 	assert(fx.cursor_last_ticket > index && fx.cursor_x == 12);
 
+	/* u16: the compositor's own calls, on chains of both usages. */
+	test_compositor_calls();
+
 	/* u8: no cursor present found a lock it must not hold taken. */
 	assert(fx.lock_violations == 0U);
 
@@ -544,7 +549,87 @@ test_wsi(
 	vkDestroySwapchainKHR((VkDevice)fx.device, replacement, NULL);
 	vkDestroySwapchainKHR((VkDevice)fx.device, primary, NULL);
 	vulkan_wsi_device_finish(fx.device);
-	printf("u1 u2 u3 u4 u5 u6 u8 u9 u10 u11 u13 swapchain: ok\n");
+	printf("u1 u2 u3 u4 u5 u6 u8 u9 u10 u11 u13 u16 swapchain: ok\n");
+}
+
+/*
+ * u16: the compositor's calls as the Pi 4 made them (cursor-plane.c): the
+ * shape copied into each image once, by a submission that waits for the
+ * acquisition and signals a semaphore the present waits for; afterwards
+ * moves that acquire the next image and present it waiting for the
+ * acquisition alone, with the place in VkDisplayPresentInfoKHR.  A chain
+ * that also declares colour-attachment use (what the compositor asked for
+ * until ws141-p016 B-u place18) is always copied; a transfer-only one, as
+ * the compositor now asks, shows every move at once.
+ */
+static void
+test_compositor_calls(
+	void)
+{
+	static const VkImageUsageFlags usages[2] = {
+		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT
+	};
+	struct vulkan_surface *surface;
+	VkSwapchainKHR chain;
+	VkSemaphore acquired[FX_IMAGES + 1U];
+	VkSemaphore ready[FX_IMAGES];
+	VkBool32 held[FX_IMAGES];
+	uint32_t next;
+	uint32_t image;
+	unsigned kind;
+	unsigned move;
+	unsigned caller;
+	unsigned copies;
+	VkResult error;
+
+	for (kind = 0U; kind < 2U; kind++) {
+		/* The compositor's plane: its own surface and swapchain, a semaphore per image and one more for acquisitions. */
+		surface = fx_surface(VK_TRUE);
+		chain = fx_swapchain(surface, usages[kind], VK_NULL_HANDLE);
+		for (image = 0U; image <= FX_IMAGES; image++)
+			acquired[image] = fx_semaphore();
+		for (image = 0U; image < FX_IMAGES; image++) {
+			ready[image] = fx_semaphore();
+			held[image] = VK_FALSE;
+		}
+
+		/* Moves of one shape: the first present of each image carries its copy. */
+		caller = fx.cursor_on_caller;
+		copies = fx.wsi_copies;
+		next = 0U;
+		for (move = 0U; move < 4U * FX_IMAGES; move++) {
+			image = fx_acquire(chain, acquired[next]);
+			if (held[image] == VK_FALSE) {
+				fx_app_write(chain, image, acquired[next], ready[image]);
+				held[image] = VK_TRUE;
+				error = fx_present(chain, image, ready[image], VK_TRUE, (int32_t)move, 20);
+			} else {
+				error = fx_present(chain, image, acquired[next], VK_TRUE, (int32_t)move, 20);
+			}
+			assert(error == VK_SUCCESS);
+			next = (next + 1U) % (FX_IMAGES + 1U);
+
+			/* The compositor presents at most once a refresh; the copies finish in between. */
+			fx_drain();
+		}
+
+		/* Colour-attachment use: every move goes through the worker with a copy. */
+		if (kind == 0U) {
+			assert(fx.cursor_on_caller == caller);
+			assert(fx.wsi_copies == copies + 4U * FX_IMAGES);
+		}
+
+		/* Transfer use only: after the first copy of each image, every move is shown at once. */
+		if (kind == 1U) {
+			assert(fx.cursor_on_caller == caller + 3U * FX_IMAGES);
+			assert(fx.wsi_copies == copies + FX_IMAGES);
+		}
+		assert(fx.cursor_x == (int32_t)(4U * FX_IMAGES - 1U) && fx.cursor_y == 20);
+
+		/* The plane goes, after its jobs. */
+		vkDestroySwapchainKHR((VkDevice)fx.device, chain, NULL);
+	}
 }
 
 /* ---- fixture helpers ---- */
@@ -955,30 +1040,23 @@ fx_present_cursor(
 	struct vulkan_wsi_cursor_times *times)
 {
 	struct fx_lease *fake;
-	int status;
 
 	(void)image;
 	fake = lease;
 	assert(fake->surface->cursor != VK_FALSE);
 
-	/* u8: the swapchain, device and queue locks are all free. */
-	status = pthread_mutex_trylock(&swapchain_mutex);
-	if (status == 0)
-		pthread_mutex_unlock(&swapchain_mutex);
-	else
+	/*
+	 * u8: the present's thread holds none of the swapchain, device and
+	 * queue locks.  Another thread may hold one for a moment (the test's
+	 * thread waking in the drain, or u9's holder), which is not the
+	 * present's; a try-lock could not tell the two apart.
+	 */
+	if (fx_held_here(&swapchain_mutex))
 		fx.lock_violations++;
-	status = pthread_mutex_trylock(&fx.device->mutex);
-	if (status == 0)
-		pthread_mutex_unlock(&fx.device->mutex);
-	else
+	if (fx_held_here(&fx.device->mutex))
 		fx.lock_violations++;
-	if (fx.check_queue_lock) {
-		status = pthread_mutex_trylock(&fx.queue->mutex);
-		if (status == 0)
-			pthread_mutex_unlock(&fx.queue->mutex);
-		else
-			fx.lock_violations++;
-	}
+	if (fx.check_queue_lock && fx_held_here(&fx.queue->mutex))
+		fx.lock_violations++;
 
 	/* The times, when the log is on. */
 	if (times != NULL) {
@@ -994,14 +1072,14 @@ fx_present_cursor(
 		fx.cursor_on_caller++;
 	fx.cursor_last_ticket = ticket;
 	fx.cursor_last_position = has_position;
-	if (ticket <= fx.cursor_applied) {
+	if (ticket <= fake->applied) {
 		*outcome = VULKAN_WSI_CURSOR_DROPPED;
 		fx.cursor_dropped++;
 	} else if (fx.busy_left != 0U) {
 		fx.busy_left--;
 		*outcome = VULKAN_WSI_CURSOR_BUSY;
 	} else {
-		fx.cursor_applied = ticket;
+		fake->applied = ticket;
 		if (has_position != VK_FALSE) {
 			fx.cursor_x = x;
 			fx.cursor_y = y;
@@ -1016,6 +1094,18 @@ fx_present_cursor(
 	}
 	pthread_mutex_unlock(&fx.mutex);
 	return VK_SUCCESS;
+}
+
+/* Tells whether the calling thread holds a (glibc, default-kind) mutex. */
+static int
+fx_held_here(
+	pthread_mutex_t *mutex)
+{
+	pid_t owner;
+
+	/* glibc keeps the holder's thread ID in the mutex; zero when free. */
+	owner = __atomic_load_n(&mutex->__data.__owner, __ATOMIC_RELAXED);
+	return owner == gettid();
 }
 
 /* ---- the display's ioctl ---- */

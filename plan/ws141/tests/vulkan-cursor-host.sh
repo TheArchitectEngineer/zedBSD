@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws141-p016 (B) B-u: host test of libvulkan's cursor-plane presentation (wsi-swapchain.c, wsi-display.c,
 # content.c) with fake core calls, platform and display ioctl; ordinary and sanitized, with the cursor log
-# off and on (VULKAN_ZEDBSD_CURSOR_LOG=1, u12).
+# off and on (VULKAN_ZEDBSD_CURSOR_LOG=1, u12), and the compositor's own calls (u16).
 #   sh plan/ws141/tests/vulkan-cursor-host.sh [output-directory]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -27,10 +27,15 @@ for mode in ordinary sanitize; do
 	    timeout 60 "$out/$mode" 2> "$out/$mode-on.log"
 	lines=$(grep -c '^VK CURSOR ' "$out/$mode-on.log" || true)
 	fast=$(grep -c '^VK CURSOR .* path=fast ' "$out/$mode-on.log" || true)
-	other=$(grep -v '^VK CURSOR ticket=[0-9]* path=[a-z]* result=-\{0,1\}[0-9]* outcome=[a-z]* image=[0-9]* x=-\{0,1\}[0-9]* y=-\{0,1\}[0-9]* depth=[0-9]* call_ns=[0-9]* mutex=[0-9]* queue=[0-9]* publish=[0-9]* fence=[0-9]* lock=[0-9]* set=[0-9]* done=[0-9]* retries=[0-9]*$' "$out/$mode-on.log" | grep -c . || true)
+	other=$(grep -v '^VK CURSOR ticket=[0-9]* path=[a-z]* result=-\{0,1\}[0-9]* outcome=[a-z]* image=[0-9]* x=-\{0,1\}[0-9]* y=-\{0,1\}[0-9]* depth=[0-9]* call_ns=[0-9]* mutex=[0-9]* queue=[0-9]* publish=[0-9]* fence=[0-9]* lock=[0-9]* set=[0-9]* done=[0-9]* retries=[0-9]* why=[a-z]*$' "$out/$mode-on.log" | grep -c . || true)
 	echo "$mode: cursor log lines=$lines fast=$fast unexpected=$other"
 	test "$lines" -gt 20
 	test "$fast" -gt 5
 	test "$other" = 0
+	# u16: the colour-attachment chain names its failed condition; every fast present names none.
+	test "$(grep -c '^VK CURSOR .* path=worker .* why=usage$' "$out/$mode-on.log" || true)" -ge 12
+	test "$(grep '^VK CURSOR .* path=fast ' "$out/$mode-on.log" | grep -vc ' why=none$' || true)" = 0
 done
+# The compositor's cursor plane asks for transfer use only, which the fast path needs (u16, place17).
+grep -q 'vkdemo_display_create_swapchain_exact(.*, VK_IMAGE_USAGE_TRANSFER_DST_BIT);' "$repo/userland/desktop/wayland/cursor-plane.c"
 echo "vulkan-cursor-host.sh: PASS"

@@ -448,6 +448,7 @@ kwl_glass_landscape(
 
 	/* The frames in flight read the images; they end first. */
 	started = kwl_milliseconds();
+	kwl_compose_quiesce(server);
 	(void)vkDeviceWaitIdle(server->compose->device);
 
 	/* The landscape is a picture without pixels. */
@@ -490,6 +491,7 @@ kwl_glass_resize(
 
 	/* The frames in flight read the images; they end first. */
 	started = kwl_milliseconds();
+	kwl_compose_quiesce(server);
 	(void)vkDeviceWaitIdle(server->compose->device);
 
 	/* The images of the old size go. */
@@ -645,6 +647,7 @@ kwl_glass_wallpaper_poll(
 
 	/* The frames in flight read the images; they end first, then the picture is drawn. */
 	started = kwl_milliseconds();
+	kwl_compose_quiesce(server);
 	(void)vkDeviceWaitIdle(server->compose->device);
 	*error = wallpaper_draw(server, server->compose->glass, &picture);
 	if (*error != 0)
@@ -2149,6 +2152,7 @@ glass_large_prepare(
 		if (result != VK_SUCCESS)
 			return EIO;
 	} else {
+		kwl_compose_quiesce(server);
 		(void)vkDeviceWaitIdle(server->compose->device);
 	}
 

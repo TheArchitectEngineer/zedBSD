@@ -258,6 +258,15 @@ main(
 		return 1;
 	}
 
+	/*
+	 * The pointer's motions merged, and each frame drawn once the
+	 * compositor took the last one (ws210-p014 F2): the pointer crossing
+	 * the view while a frame is on its way draws its latest place once,
+	 * not a frame queued for every widget it crossed (2026-10-12, the Pi 4).
+	 */
+	error = kl_window_set_pacing(photos.window, KL_PACING_MOTION | KL_PACING_FRAME, 0U);
+	ph_log("PACING motion=1 frame=1 errno=%d", error);
+
 	/* The input of its frames. */
 	photos.ui = kl_ui_create();
 	if (photos.ui == NULL) {
@@ -1494,9 +1503,19 @@ ph_draw(
 	int error;
 	int taken;
 	int need;
+	int pace;
 
 	/* Nothing changed and nothing moves: no frame. */
 	if (!photos->dirty && !photos->moving && !photos->lit_changed)
+		return;
+
+	/*
+	 * A frame once the compositor took the last one (ws210-p014 F2.2):
+	 * until then nothing is consumed, so what changes meanwhile is drawn
+	 * as one frame in its latest state.
+	 */
+	pace = kl_window_frame_wait(photos->window, now_us);
+	if (pace != 0)
 		return;
 
 	/*
@@ -1675,25 +1694,32 @@ ph_remove_start(
 
 /*
  * Reports how long the loop may wait for input (ms): no time while a frame
- * is due, a frame's time while a widget moves, a little while the thread
- * makes pictures, the view's own time, or a second.
+ * is due, a frame's time while a widget moves, until the compositor took
+ * the last frame (ws210-p014 F2.6: its answer wakes the wait), a little
+ * while the thread makes pictures, the view's own time, or a second.
  */
 static int
 ph_wait(
 	const struct ph_window *photos,
 	uint64_t now_us)
 {
+	int pace;
 	int wait;
 	int busy;
 
+	/* A frame wanted: whether it may be drawn now, or how long the compositor's answer is waited for at most (-1: until it comes). */
+	pace = -1;
+	if (photos->dirty || photos->lit_changed || photos->moving)
+		pace = kl_window_frame_wait(photos->window, now_us);
+
 	/* A frame due now. */
-	if (photos->dirty)
+	if (pace == 0 && photos->dirty)
 		return 0;
-	if (photos->lit_changed)
+	if (pace == 0 && photos->lit_changed)
 		return 0;
 
 	/* A widget moving. */
-	if (photos->moving)
+	if (pace == 0 && photos->moving)
 		return PH_MOVING_MS;
 
 	/* The thread at work: its results are looked for soon. */
@@ -1707,5 +1733,9 @@ ph_wait(
 	wait = ph_view_wait(&photos->view, now_us);
 	if (wait < 0 || wait > PH_IDLE_MS)
 		wait = PH_IDLE_MS;
+
+	/* The compositor's answer, waited for at most so long. */
+	if (pace > 0 && pace < wait)
+		wait = pace;
 	return wait;
 }

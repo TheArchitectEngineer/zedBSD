@@ -242,6 +242,15 @@ main(
 		return 1;
 	}
 
+	/*
+	 * The pointer's motions merged, and each frame drawn once the
+	 * compositor took the last one (ws210-p014 F2): the pointer crossing
+	 * the view while a frame is on its way draws its latest place once,
+	 * not a frame queued for every widget it crossed (2026-10-12, the Pi 4).
+	 */
+	error = kl_window_set_pacing(mailer.window, KL_PACING_MOTION | KL_PACING_FRAME, 0U);
+	ml_log("PACING motion=1 frame=1 errno=%d", error);
+
 	/* The input of its frames. */
 	mailer.ui = kl_ui_create();
 	if (mailer.ui == NULL) {
@@ -675,9 +684,19 @@ ml_draw(
 	int error;
 	int taken;
 	int need;
+	int pace;
 
 	/* Nothing changed and nothing moves: no frame. */
 	if (!mailer->dirty && !mailer->moving && !mailer->lit_changed)
+		return;
+
+	/*
+	 * A frame once the compositor took the last one (ws210-p014 F2.2):
+	 * until then nothing is consumed, so what changes meanwhile is drawn
+	 * as one frame in its latest state.
+	 */
+	pace = kl_window_frame_wait(mailer->window, now_us);
+	if (pace != 0)
 		return;
 
 	/*
@@ -769,22 +788,32 @@ ml_wait(
 	const struct ml_window *mailer,
 	uint64_t now_us)
 {
+	int pace;
 	int wait;
 
-	/* A frame due now (or its lit part), or requests to carry out. */
-	if (mailer->dirty || mailer->lit_changed)
+	/* A frame wanted: whether it may be drawn now, or how long the compositor's answer is waited for at most (-1: until it comes, ws210-p014 F2.6). */
+	pace = -1;
+	if (mailer->dirty || mailer->lit_changed || mailer->moving)
+		pace = kl_window_frame_wait(mailer->window, now_us);
+
+	/* A frame due now (or its lit part), or requests to carry out (which do not wait for the compositor). */
+	if (pace == 0 && (mailer->dirty || mailer->lit_changed))
 		return 0;
 	if (mailer->view.request_count != 0U)
 		return 0;
 
 	/* Something moving. */
-	if (mailer->moving)
+	if (pace == 0 && mailer->moving)
 		return ML_MOVING_MS;
 
 	/* The view's notice, or a second. */
 	wait = ml_view_wait(&mailer->view, now_us);
 	if (wait < 0 || wait > ML_IDLE_MS)
 		wait = ML_IDLE_MS;
+
+	/* The compositor's answer, waited for at most so long. */
+	if (pace > 0 && pace < wait)
+		wait = pace;
 
 	/* The time to wait. */
 	return wait;

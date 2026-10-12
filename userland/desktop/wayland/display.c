@@ -166,22 +166,34 @@ kwl_schedule(
 	 * the GPU driver parks the display, and a presentation in progress
 	 * would hold it (ws052-p007 section 0.3).  The answer draws again.
 	 */
-	if (server->sleep_hold)
+	if (server->sleep_hold) {
+		kwl_cursor_plane_hold(server);
 		return;
+	}
 
-	/* A fullscreen video or game alone on the output is shown straight (the game mode, scanout.c); then nothing is composed. */
+	/*
+	 * A fullscreen video or game alone on the output is shown straight (the
+	 * game mode, scanout.c); then nothing is composed, and the cursor plane
+	 * is not presented (its thread parks, ws213-p004).
+	 */
 	top = kwl_top_window(server);
 	direct = kwl_scanout_pass(server, top);
-	if (direct)
+	if (direct) {
+		kwl_cursor_plane_hold(server);
 		return;
+	}
 
 	/* The first pass enters window mode, which the compositor stays in (and comes back to from the game mode). */
 	if (!server->windowed) {
 		error = enter_window_mode(server);
 		if (error != 0) {
-			/* A switch waiting for the frame in flight is tried again on a later pass. */
-			if (error == EAGAIN)
+			/* A switch waiting for the frame in flight is tried again on a later pass; the cursor plane waits too. */
+			if (error == EAGAIN) {
+				kwl_cursor_plane_hold(server);
 				return;
+			}
+
+			/* Any other failure ends the compositor. */
 			printf("KWL MODE_ERROR errno=%d\n", error);
 			server->failed = 1;
 			return;
@@ -201,6 +213,13 @@ kwl_schedule(
 	part = kwl_cycles();
 	kwl_cursor_plane_update(server);
 	server->perf.cursor_cycles += kwl_cycles() - part;
+
+	/*
+	 * A frame to draw is wanted now, before the frame pacing's wait: the
+	 * render thread acquires its images meanwhile (ws213-p004, design 4.1).
+	 */
+	if (server->dirty || server->damaged)
+		kwl_compose_want_frame(server);
 
 	/*
 	 * The windows the last frame told get a moment to commit (frame
