@@ -484,6 +484,16 @@ kwl_compose_draw(
 	if (compose->in_flight || !compose->output_open || compose->output_lost)
 		return 0;
 
+	/* How long the frame pacing waited for the windows since the last frame was shown (ws211-p002 段 0). */
+	if (server->log_frames) {
+		printf(
+			"KWL LAT pace frame=%llu awaiting=%u waited_ms=%llu wait_ms=%llu\n",
+			(unsigned long long)server->frame + 1U,
+			server->awaiting,
+			(unsigned long long)(kwl_milliseconds() - server->frame_done_ms),
+			(unsigned long long)server->frame_wait_ms);
+	}
+
 	/* The frame shows the pointer where it is now. */
 	server->pointer_moved = 0U;
 
@@ -2280,6 +2290,7 @@ compose_record(
 	VkDeviceSize offset;
 	unsigned index;
 	unsigned reuse;
+	unsigned capture;
 	VkResult result;
 
 	/*
@@ -2295,8 +2306,24 @@ compose_record(
 	if (result != VK_SUCCESS)
 		return result;
 
+	/*
+	 * The scene is kept only while the cursor is drawn into the frames: with
+	 * the cursor on its plane no frame differs from the one before by the
+	 * cursor alone, so none could reuse it (all 266 frames of the Pi's
+	 * 2026-10-12 boot were reuse=0), and capturing it cost a whole-image
+	 * copy and a second pass each frame (ws211-p002 段 0b).  One value
+	 * decides the whole frame's use of it (review-2 N1); a frame without
+	 * the capture leaves the scene unknown, so the first after the plane
+	 * closes is drawn whole.
+	 */
+	capture = 0U;
+	if (compose->scene.buffer != VK_NULL_HANDLE && !compose->cursor_plane.shown)
+		capture = 1U;
+	if (!capture)
+		compose->scene.valid = 0U;
+
 	/* Unknown cache contents require one whole scene before any reuse. */
-	if (compose->scene.buffer != VK_NULL_HANDLE && !compose->scene.valid)
+	if (capture && !compose->scene.valid)
 		region = NULL;
 
 	/*
@@ -2306,7 +2333,7 @@ compose_record(
 	 */
 	reuse = 0U;
 	compose->scene.written = 0U;
-	if (compose->scene.valid && !compose->scene.changed && !server->dirty) {
+	if (capture && compose->scene.valid && !compose->scene.changed && !server->dirty) {
 		reuse = 1U;
 
 		/* Other outputs retain their independent scene construction and callback order. */
@@ -2320,11 +2347,12 @@ compose_record(
 	/* Log the actual reuse decision only through the supported frame diagnostic. */
 	if (server->log_frames) {
 		printf(
-			"KWL SCENE frame=%llu reuse=%u changed=%u valid=%u\n",
+			"KWL SCENE frame=%llu reuse=%u changed=%u valid=%u capture=%u\n",
 			(unsigned long long)server->frame + 1U,
 			reuse,
 			compose->scene.changed,
-			compose->scene.valid);
+			compose->scene.valid,
+			capture);
 	}
 
 	/* The frame's draws are counted from nothing (KWL DRAWS, ws211-p002). */
@@ -2423,7 +2451,7 @@ compose_record(
 	}
 
 	/* Captures scene pixels before the cursor can contaminate the reusable background. */
-	if (!reuse && compose->scene.buffer != VK_NULL_HANDLE) {
+	if (!reuse && capture) {
 		vkCmdEndRenderPass(compose->command);
 		kwl_scene_copy(&compose->scene, compose->command, compose->output.images[image], region, 0U);
 		compose->scene.written = 1U;
