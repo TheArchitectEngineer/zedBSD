@@ -266,6 +266,38 @@ if (due) {
   - 試験: `run-host-calendar.sh` 13 PASS、`run-host-kl-ui-lit.sh` 46 PASS。build: rpi4・amd64 の calendar が warning 0。QEMU・Pi は未実施。commit b9cec0fe9。
   - Pi で見る所: 日付の click からパネルの更新まで（log の `DAY-FRAME`、`SLOW-FRAME ... why=`）、ページめくり、months の scroll。
 
+- 2026-10-13 サイドパネルの hover の遅れの区間ごとの計測と、clip の外の描画（Q1、ユーザー「サイドパネルのポイントの遅れは気になりますね。なんでだろう。」「サイドパネルはlibkeilandなんじゃないですか？ウィジェットの実装が問題？」。Pi 4、main 1392d52、1024x680、compositor の 1 コマは 15〜36ms）。
+  - trace（1f98f8151）: `KL_TRACE_FRAMES=1` で、libkeiland の window ごとに 1 フレーム 1 行 `KL TRACE ...` を stderr に出す（ui/trace.c・trace.h、window.c の hook、present.c の段の時刻）。公開の API と KL_VERSION は変えない。
+    - 時刻 `_at` は CLOCK_MONOTONIC の µs で、compositor の `KWL LAT ... at_us=` と同じ時計。区間 `_us`。
+    - 入力: `in`（queue に積んだ数）・`merged`（KL_PACING_MOTION で合流した数）・`in_at`（そのフレームが映す最初の入力の到着）・`in_last_at`（最後の到着）・`in_ev_at`（最後の motion の compositor の時刻）・`x`・`y`。
+    - pacing: `waited_at`（前のフレームの後、kl_window_frame_wait が最初に 0 以外を返した時刻）・`ready_at`（最後に 0 を返した時刻＝描き始め）・`paced_us`。
+    - 描画: `draw_us`（ready から kl_window_present_parts まで）・`parts`・`area`。
+    - present: `copy_us`・`acquire_us`・`submit_us`（記録と submit）・`queue_us`（vkQueuePresentKHR）・`fence_us`・`present_us`（全体）・`shown_at`。
+    - compositor: trace 専用の wl_surface.frame の done（`done_at`＝受けた時刻、`done_ev_at`＝compositor が送った時刻）。`lat_us`＝`in_last_at` から done まで、`ev_lat_us`＝`in_ev_at` から。
+    - callback は present の前に要求するので、WSI が前のフレームの commit を後から出すと、その commit の done になる（早く見える）。compositor の `KWL LAT adopt surface=` と時刻で突き合わせる。8 フレームより多く done を待つと、古い物から done なしで出す。
+    - host 試験 host-trace（run-host-present-damage.sh の中）25 checks・0 failures。
+  - host の計測（scratch の bench、commit しない。1024x680、glass、Xeon、他の担当の負荷あり。Pi は約 18 倍の見込み）:
+
+    | 場面 | 前 | 後（c12ae9572） |
+    | --- | --- | --- |
+    | Calendar 左ペインの隣の 2 行の hover（1 部分 18232 px） | 0.35 ms | 0.12 ms |
+    | Calendar 左ペインの離れた 2 行（2 部分 20776 px） | 0.62 ms | 0.13 ms |
+    | Calendar の 1x1 の clip（clip の外の走査だけ） | 0.27 ms | 0.035 ms |
+    | Calendar の全体のフレーム | 3.5 ms | 3.4 ms |
+    | Settings 左ペインの hover（Appearance・Wi-Fi・About・Display、1〜2 部分） | 0.15〜0.37 ms | 0.13〜0.35 ms |
+    | Settings の 1x1 の clip | 0.045〜0.07 ms | 0.04〜0.05 ms |
+
+    - Calendar の前の内訳（perf）: 文字の glyph の cache の探索（text_glyph の self）33%、months の cell ごとの予定の探し（view_day・cal_same_day、cell × 予定の数）15%。どちらも clip の外。
+    - Settings の内訳: clip の中の合成（左ペインの glass の veil と hover の角丸の blend）が約 55%。clip の外の走査は 2 割未満。
+  - 直し（c12ae9572、見た目は同じ）:
+    1. libkeiland text.c: glyph の cache の hash。乗算だけの hash の下位 12 bit は key の下位 12 bit（glyph の番号）だけで決まり、同じ glyph の大きさ・太さ・face が 1 つの slot に集まり、続き番号の文字が長い連続の slot を作っていた。key の全部の bit を混ぜる。slot は `& (size - 1)`。全部の app の文字の描画に効く。
+    2. libkeiland text.c: kl_text_draw は clip の行の外の glyph を描かず、pen だけ進める（戻り値は同じ）。
+    3. Calendar view.c: clip の外の cell は、hit・drop の記録・today の log の後で描画をやめる（予定の探しと文字を省く）。
+  - 画素の一致（host、前の text.c・view.c の build と比べた）: Calendar の左ペインの 4 組・months の cell の 2 組・Settings の 4 page × 2 組。hover の後の絵と全体の絵がどれも 0 画素の差。hover の後の絵は、同じ build の全体の描画とも一致した。
+  - 判断（数からの推測）: Pi の hover の 1 フレームの CPU の描画は、Calendar で約 2〜11ms→約 2ms、Settings で約 3〜6ms（×18 の見込み）。compositor の 1 コマ 15〜36ms より小さい。よって遅れの主因は描画ではなく、pacing（前のフレームの callback を待つ）・present（acquire・fence）・compositor の次のコマの段の和と見込む。Pi の trace の `paced_us`・`draw_us`・`present_us`・`lat_us` で確かめる。
+  - 見つけた事（直していない）: Text Editor の自前の glyph の cache（userland/desktop/textedit/text.c:621）が同じ hash を使う。WS210 p008 か別の依頼で直す。
+  - 試験: run-host-kl-ui-lit.sh 46 PASS、run-host-present-damage.sh（host-trace を含む）0 failures、run-host-calendar.sh 13 PASS。build: rpi4・amd64 の libkeiland.so・settings・calendar が warning 0。exports.py --check。keiland-os-boundary は B5 が FAIL（plan/ws141/tests/shader-host-test.c の keiland_inputs、main から merge した物で、この変更とは関係ない）。Linux・FreeBSD の libkeiland の build、QEMU、Pi は未実施。
+
 ## Phase の中の順
 
 1. F1（kl_ui の内側だけ、公開の口は変えない）。これだけで Music・Calendar・Photos・Phone の「軌跡」が消える。KL_VERSION は変えない。
