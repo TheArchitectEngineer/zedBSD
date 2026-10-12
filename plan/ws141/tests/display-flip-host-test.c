@@ -92,6 +92,8 @@ static void coalesced_flips(void);
 static void borrowed_flips(void);
 static void lease_flips(void);
 static void copy_target_flips(void);
+static void overlay_flips(void);
+static void overlay_change(struct bcm2711_flip_change *change, uint32_t plane, uint64_t serial, const struct drv_bcm2711_boot_screen *frame);
 static void cadence_report(void);
 static void refusals(void);
 static bool slot_used(uint32_t list);
@@ -113,6 +115,7 @@ main(
 	borrowed_flips();
 	lease_flips();
 	copy_target_flips();
+	overlay_flips();
 	cadence_report();
 	refusals();
 
@@ -890,6 +893,217 @@ copy_target_flips(
 	test_sleep_mode = SLEEP_ADOPT;
 }
 
+/* Describes a shown change of a plane: the primary over the whole output, or an overlay's 200x100 part at (100, 50) shown at (300, 400). */
+static void
+overlay_change(
+	struct bcm2711_flip_change *change,
+	uint32_t plane,
+	uint64_t serial,
+	const struct drv_bcm2711_boot_screen *frame)
+{
+	memset(change, 0, sizeof(*change));
+	change->plane = plane;
+	change->serial = serial;
+	change->shown = true;
+	if (frame != NULL) {
+		change->image = true;
+		change->frame = *frame;
+		change->hold = (struct bcm2711_buffer *)frame;
+	}
+	if (plane == 0) {
+		change->src_width = 1920;
+		change->src_height = 1080;
+		change->dst_width = 1920;
+		change->dst_height = 1080;
+		return;
+	}
+	change->src_x = 100;
+	change->src_y = 50;
+	change->src_width = 200;
+	change->src_height = 100;
+	change->dst_x = 300;
+	change->dst_y = 400;
+	change->dst_width = 200;
+	change->dst_height = 100;
+}
+
+/*
+ * Exercises overlay commits: the list's words, all planes at once, dropped
+ * serials, the limits and the budget, hiding, the lease's start and end,
+ * the sleeping number wait, and the report's pair and record times.
+ */
+static void
+overlay_flips(
+	void)
+{
+	struct bcm2711_flip_change changes[3];
+	struct bcm2711_flip_owner owner;
+	struct drv_bcm2711_boot_screen window;
+	struct drv_bcm2711_boot_screen band;
+	struct bcm2711_flip_cursor cursor;
+	uint64_t serial;
+	uint64_t adopted;
+	uint64_t ticks;
+	uint64_t before;
+	uint32_t *list;
+	int session;
+	int error;
+
+	/* A lease, and two uncached images for the overlays. */
+	setup(0, 0);
+	error = bcm2711_display_flip_attach(&test_display);
+	check(error == 0, "attach overlay scenario");
+	owner.session = &session;
+	owner.lease = 9;
+	bcm2711_display_flip_own(&test_display, &owner);
+	window = test_frames[1];
+	window.uncached = true;
+	band = test_frames[2];
+	band.uncached = true;
+	test_expected_physical = 0;
+
+	/* An overlay over no primary is refused; the primary goes first. */
+	overlay_change(&changes[0], 1, 1, &window);
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == EINVAL, "no overlay over the console alone");
+	overlay_change(&changes[0], 0, 1, &test_frames[0]);
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == 0 && changes[0].recorded && serial == test_display.flip.state_serial, "primary committed");
+	error = bcm2711_display_flip_wait(&test_display, &owner, serial);
+	check(error == 0, "primary adopted");
+
+	/* The window's overlay: its source part at its place, with per-pixel alpha, above the primary. */
+	overlay_change(&changes[0], 1, 1, &window);
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	list = &test_hvs[0x4000 / 4 + test_hvs[0x20 / 4]];
+	check(error == 0 && test_display.flip.pending_count == 1, "overlay list out without waiting");
+	check(list[0] == 0x4800d807U && list[5] == (0xc0000000U | (uint32_t)test_frames[0].physical), "primary first, no console");
+	check(list[8] == 0x4800d807U && list[9] == ((400U << 16) | 300U) && list[10] == 0x2000fff0U, "overlay header, place and alpha");
+	check(list[11] == ((100U << 16) | 200U) && list[13] == (0xc0000000U | ((uint32_t)window.physical + 50U * 7680U + 100U * 4U)), "overlay size and source start");
+	check(list[15] == 7680U && list[16] == 0x80000000U, "overlay pitch, then END");
+
+	/* A serial at or below the last one is dropped and changes nothing. */
+	before = test_display.flip.state_serial;
+	overlay_change(&changes[0], 1, 1, NULL);
+	changes[0].dst_x = 10;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == 0 && !changes[0].recorded && serial == before && test_display.flip.overlays[0].dst_x == 300U, "dropped serial");
+
+	/* Two overlays at once go out in one list, the band above the window. */
+	overlay_change(&changes[0], 1, 2, NULL);
+	changes[0].dst_x = 10;
+	overlay_change(&changes[1], 2, 1, &band);
+	changes[1].src_x = 0;
+	changes[1].src_y = 0;
+	changes[1].dst_x = 0;
+	changes[1].dst_y = 0;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 2, &serial, &adopted);
+	list = &test_hvs[0x4000 / 4 + test_hvs[0x20 / 4]];
+	check(error == 0 && serial == before + 1U && changes[0].recorded && changes[1].recorded, "one record for two planes");
+	check(list[9] == ((400U << 16) | 10U) && list[17] == 0U && list[21] == (0xc0000000U | (uint32_t)band.physical) && list[24] == 0x80000000U, "window then band in one list");
+
+	/* Out of the limits: a cached image, a scaled part, a place outside the output, a kept image that is not there. */
+	before = test_display.flip.state_serial;
+	window.uncached = false;
+	overlay_change(&changes[0], 1, 3, &window);
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == EINVAL, "a cached overlay image refused");
+	window.uncached = true;
+	overlay_change(&changes[0], 1, 3, &window);
+	changes[0].dst_width = 400;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == ENOSPC, "no scaling: outside the overlay's limits");
+	overlay_change(&changes[0], 1, 3, NULL);
+	changes[0].dst_x = 1800;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == EINVAL, "a place outside the output refused");
+	overlay_change(&changes[0], 1, 3, NULL);
+	changes[0].shown = false;
+	changes[0].image = true;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == EINVAL && test_display.flip.state_serial == before, "an image for a hidden plane refused; nothing changed");
+
+	/* The budget: three full planes fit 60 Hz, not 61 Hz; nothing changes when refused. */
+	overlay_change(&changes[0], 1, 3, &window);
+	changes[0].src_x = 0;
+	changes[0].src_y = 0;
+	changes[0].dst_x = 0;
+	changes[0].dst_y = 0;
+	changes[0].src_width = 1920;
+	changes[0].src_height = 1080;
+	changes[0].dst_width = 1920;
+	changes[0].dst_height = 1080;
+	changes[1] = changes[0];
+	changes[1].plane = 2;
+	changes[1].serial = 2;
+	changes[1].frame = band;
+	changes[1].hold = (struct bcm2711_buffer *)&test_frames[2];
+	test_display.refresh_millihz = 61000;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 2, &serial, &adopted);
+	check(error == ENOSPC && test_display.flip.state_serial == before, "over the budget: ENOSPC and nothing changed");
+	test_display.refresh_millihz = 60000;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 2, &serial, &adopted);
+	check(error == 0, "within the budget");
+
+	/* Hiding the band lets its image go after the adoption, in thread context. */
+	error = bcm2711_display_flip_wait(&test_display, &owner, serial);
+	check(error == 0, "full overlays adopted");
+	before = test_released;
+	overlay_change(&changes[0], 2, 3, NULL);
+	changes[0].shown = false;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == 0 && test_display.flip.retiring_count >= 1U, "hidden band waits to go");
+	error = bcm2711_display_flip_wait(&test_display, &owner, serial);
+	check(error == 0 && test_released > before && test_released_last == (struct bcm2711_buffer *)&test_frames[2], "the band's image goes after the adoption");
+
+	/* The number wait: EAGAIN without time, the adoption, and EBUSY for another lease. */
+	overlay_change(&changes[0], 1, 4, NULL);
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == 0, "a move to wait for");
+	error = bcm2711_display_flip_wait_number(&test_display, &owner, serial, 0, &adopted, &ticks);
+	check(error == EAGAIN && adopted < serial, "no time and no adoption: EAGAIN");
+	error = bcm2711_display_flip_wait_number(&test_display, &owner, serial, 10, &adopted, &ticks);
+	check(error == 0 && adopted >= serial && ticks != 0, "the number wait sleeps until the adoption");
+	owner.lease = 10;
+	error = bcm2711_display_flip_wait_number(&test_display, &owner, serial, 10, &adopted, &ticks);
+	check(error == EBUSY, "another lease's wait refused");
+	owner.lease = 9;
+
+	/* The report: a list moving the window and the cursor together, and the record's times. */
+	test_display.flip.cadence_state = BCM2711_FLIP_CADENCE_ON;
+	memset(&cursor, 0, sizeof(cursor));
+	cursor.shown = true;
+	cursor.physical = 0x05000000U;
+	cursor.width = 16;
+	cursor.height = 16;
+	cursor.pitch = 256;
+	cursor.x = 50;
+	error = bcm2711_display_flip_cursor(&test_display, &owner, &cursor);
+	check(error == 0, "cursor shown");
+	overlay_change(&changes[0], 1, 5, NULL);
+	changes[0].dst_x = 20;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == 0 && test_display.flip.times[0].plane == 1 && test_display.flip.times[0].plane_serial == 5, "the record's time joins the ring");
+	deliver(0, test_hvs[0x20 / 4]);
+	check(test_display.flip.perf.pair_window == 1 && test_display.flip.perf.pair_both == 1, "a list moving window and cursor together counts as a pair");
+	check(test_display.flip.times[0].adopted != 0, "the record's adoption time");
+	test_display.flip.cadence_state = BCM2711_FLIP_CADENCE_OFF;
+
+	/* The lease's end hides the overlays and lets every image go; the next lease counts serials afresh. */
+	before = test_released;
+	error = bcm2711_display_flip_revoke(&test_display, &owner);
+	check(error == 0, "the lease ends");
+	error = bcm2711_display_flip_restore(&test_display);
+	check(error == 0 && !test_display.flip.overlays[0].shown && test_display.flip.overlays[0].hold == NULL, "the restore hides the overlays");
+	check(test_released >= before + 2U, "the restore releases the primary's and the window's images");
+	bcm2711_display_flip_disown(&test_display);
+	owner.lease = 11;
+	bcm2711_display_flip_own(&test_display, &owner);
+	overlay_change(&changes[0], 0, 1, &test_frames[0]);
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == 0 && changes[0].recorded, "serials start again at the next lease");
+}
+
 /* Exercises refusals before any publication and the foreign-owner checks. */
 static void
 refusals(
@@ -1022,7 +1236,7 @@ cadence_report(
 		if (milliseconds < 2001U)
 			check(test_log[0] == '\0', "no cadence report before two seconds");
 	}
-	check(strcmp(test_log, "bcm2711: cadence ms=2000 per_s/min/med/max_us set=2/10000/20000/30000 move=125/8000/8000/8000 flip=0/0/0/0\n") == 0, "cadence report");
+	check(strcmp(test_log, "bcm2711: cadence ms=2000 per_s/min/med/max_us set=2/10000/20000/30000 move=125/8000/8000/8000 flip=0/0/0/0 overlay=0/0/0/0\n") == 0, "cadence report");
 	check(!test_display.flip.cadence_reporting && test_display.flip.cadence[BCM2711_FLIP_CADENCE_MOVE].count == 0, "cadence window restarts");
 
 	/* The next window measures from each kind's last event. */
@@ -1043,8 +1257,8 @@ cadence_report(
 	test_display.underruns = 5;
 	test_display.flip.perf.underruns = 1;
 	test_clock = 4000U * KERN_CLOCK_HZ / 1000U;
-	bcm2711_display_flip_report(&test_display, 0, 0, 0);
-	check(strstr(test_log, "records primary=3 cursor=7 lists=8 replaced=4 coalesced=2 underruns=4\n") != NULL, "flip report counts");
+	bcm2711_display_flip_report(&test_display, true, 0, 0, 0);
+	check(strstr(test_log, "records primary=3 cursor=7 overlay=0 dropped=0 lists=8 replaced=4 coalesced=2 underruns=4 pair=0/0\n") != NULL, "flip report counts");
 	test_logging = false;
 	test_clock = 0;
 	printf("WS213 display cadence: off by default, two-second report of rates and min/median/max intervals: %s\n", test_failures == 0 ? "PASS" : "FAIL");

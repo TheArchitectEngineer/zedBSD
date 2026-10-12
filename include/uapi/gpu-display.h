@@ -31,6 +31,9 @@
 #define GPU_DISPLAY_REFRESH_COUNTER	256U
 #define GPU_DISPLAY_LIMITED		512U
 #define GPU_DISPLAY_HAS_CURSOR		1024U
+
+/* gpu_display_info.flags: planes 1 to plane_count - 1 are overlays (GPU_DISPLAY_COMMIT, GPU_DISPLAY_OVERLAY_INFO). */
+#define GPU_DISPLAY_HAS_OVERLAYS	2048U
 #define GPU_DISPLAY_FORMAT_BGRA8888	1U
 #define GPU_DISPLAY_FORMAT_RGBA8888	2U
 #define GPU_DISPLAY_MODE_ENUMERATE	0U
@@ -42,6 +45,26 @@
 #define GPU_DISPLAY_POWER_OFF		1U
 #define GPU_DISPLAY_POWER_SUSPEND	2U
 #define GPU_DISPLAY_CURSOR_MAX		64U
+
+/* The planes of one commit: the primary (0) and at most four overlays. */
+#define GPU_DISPLAY_PLANE_PRIMARY	0U
+#define GPU_DISPLAY_OVERLAY_MAX		4U
+
+/* gpu_display_plane_state.flags (inputs). */
+#define GPU_DISPLAY_PLANE_SHOWN		1U	/* in the list; clear: hidden, no image read or borrowed */
+#define GPU_DISPLAY_PLANE_IMAGE		2U	/* handle to format name a new image; clear: keep the image */
+
+/* gpu_display_plane_state.result (output). */
+#define GPU_DISPLAY_PLANE_APPLIED	1U
+#define GPU_DISPLAY_PLANE_DROPPED	2U	/* a later serial of the plane was applied before */
+
+/* gpu_display_commit.flags (inputs). */
+#define GPU_DISPLAY_COMMIT_WAIT		1U	/* return after adoption; needs the primary named */
+
+/* gpu_display_overlay_info.flags (outputs). */
+#define GPU_DISPLAY_OVERLAY_SCALE_UP	1U	/* dst may be larger than src */
+#define GPU_DISPLAY_OVERLAY_SCALE_DOWN_X 2U	/* dst may be narrower than src */
+#define GPU_DISPLAY_OVERLAY_SCALE_DOWN_Y 4U	/* dst may be lower than src */
 
 #define GPU_DISPLAY_QUERY		_IOWR('G', 24, struct gpu_display_info)
 #define GPU_DISPLAY_MODE		_IOWR('G', 25, struct gpu_display_mode)
@@ -55,6 +78,8 @@
 #define GPU_DISPLAY_CURSOR_SET		_IOW('G', 41, struct gpu_display_cursor_image)
 #define GPU_DISPLAY_CURSOR_MOVE		_IOW('G', 42, struct gpu_display_cursor_move)
 #define GPU_DISPLAY_CURSOR_HIDE		_IOW('G', 43, struct gpu_display_cursor_hide)
+#define GPU_DISPLAY_COMMIT		_IOWR('G', 44, struct gpu_display_commit)
+#define GPU_DISPLAY_OVERLAY_INFO	_IOWR('G', 45, struct gpu_display_overlay_info)
 
 /*
  * One non-destructive display-change snapshot, with an optional exact acknowledgement.
@@ -181,6 +206,17 @@ struct gpu_display_present {
 /*
  * One completed-presentation observation scoped to an owning display lease.
  * Input lease, sequence and timeout_ns select the observation; other outputs0.
+ *
+ * Waits until the commit or present numbered sequence (the output's count,
+ * GPU_DISPLAY_COMMIT) has been adopted, at most timeout_ns (one call waits
+ * at most a second; zero answers at once).  completed_sequence is the
+ * highest number adopted with every lower one; images that only lower
+ * records named and the adopted list no longer names are no longer borrowed
+ * when it returns.  EAGAIN when timeout_ns is zero and the sequence is not
+ * yet adopted, ETIMEDOUT when the time ran out, EINTR on a signal, EBUSY
+ * when the lease is not this open's (also when it ends during the wait),
+ * ENXIO when disconnected.  An output whose presents return only once
+ * adopted answers at once.
  */
 struct gpu_display_wait {
 	uint32_t version;
@@ -291,6 +327,98 @@ struct gpu_display_cursor_hide {
 	uint32_t size;
 	uint64_t lease;
 	uint64_t generation;
+	uint64_t reserved;
+};
+
+/*
+ * One plane's new state in a commit.  plane is 0 (the primary) or an
+ * overlay.  The image is storage of this open, GPU_PIXEL_BGRA8888 or
+ * RGBA8888; an overlay's has premultiplied alpha and must be uncached
+ * native storage.  src (inside the image) is shown at dst (inside the
+ * output); an overlay may scale within its GPU_DISPLAY_OVERLAY_INFO limits,
+ * the primary is the whole output, unscaled.  SHOWN without IMAGE keeps the
+ * plane's image (EINVAL when it has none).  serial increases for each
+ * state of the plane; a state with a serial at or below the plane's last
+ * recorded one is not recorded and reports DROPPED.  wait_fd (-1 for none)
+ * with wait_generation is a fence the image's writes signal; the commit
+ * waits for it before the state is recorded.  The image is borrowed until
+ * a list without it is adopted.
+ */
+struct gpu_display_plane_state {
+	uint32_t plane;
+	uint32_t flags;
+	uint64_t serial;
+	uint64_t handle;
+	uint64_t offset;
+	uint32_t width;
+	uint32_t height;
+	uint32_t stride;
+	uint32_t format;
+	uint32_t src_x;
+	uint32_t src_y;
+	uint32_t src_width;
+	uint32_t src_height;
+	uint32_t dst_x;
+	uint32_t dst_y;
+	uint32_t dst_width;
+	uint32_t dst_height;
+	int32_t wait_fd;
+	uint32_t result;
+	uint64_t wait_generation;
+};
+
+/*
+ * Changes some planes of the output this open leases; planes not named keep
+ * their state, and a plane named twice is EINVAL.  The call first waits for
+ * every named wait_fd, then records the named states at once; every display
+ * list made afterwards shows them together, from one refresh boundary.  A
+ * state that reports DROPPED is not recorded while the others of the same
+ * call are: the one exception to all or nothing.  sequence (output) is the
+ * number the record got, from one count per output that never goes back and
+ * that GPU_DISPLAY_PRESENT shares (the output's last number when nothing
+ * was recorded); adopted (output) is the highest number that is adopted with
+ * every lower one (shown by the adopted list, or replaced by a later state it
+ * shows).  The call does not wait for the boundary unless COMMIT_WAIT is set
+ * (allowed only when the primary is named): then it returns after a list
+ * made from this record or a later one is adopted, and signals signal_fd
+ * (-1 for none; EINVAL without COMMIT_WAIT) at that adoption.  ENOSPC: the
+ * planes would exceed the output's bandwidth or the overlays' limits;
+ * nothing changed.  ESTALE for an old generation, EBUSY when the lease is not
+ * this open's (also when it ends while the call waits), ENXIO when
+ * disconnected.  ETIMEDOUT when the adoption did not come: the output keeps
+ * every borrowed image, the lease's later commits and presents fail with
+ * EBUSY, and releasing the lease or closing the open returns the output to
+ * the console and lets the images go.
+ */
+struct gpu_display_commit {
+	uint32_t version;
+	uint32_t size;
+	uint64_t lease;
+	uint64_t generation;
+	uint32_t flags;
+	uint32_t count;
+	struct gpu_display_plane_state planes[1 + GPU_DISPLAY_OVERLAY_MAX];
+	int32_t signal_fd;
+	uint32_t reserved0;
+	uint64_t signal_generation;
+	uint64_t sequence;
+	uint64_t adopted;
+	uint64_t reserved;
+};
+
+/* One overlay plane's limits on the output's current mode (vkGetDisplayPlaneCapabilitiesKHR). */
+struct gpu_display_overlay_info {
+	uint32_t version;
+	uint32_t size;
+	uint32_t display_id;
+	uint32_t plane;
+	uint64_t generation;
+	uint32_t max_src_width;
+	uint32_t max_src_height;
+	uint32_t max_dst_width;
+	uint32_t max_dst_height;
+	uint32_t flags;
+	uint32_t formats;	/* GPU_DISPLAY_FORMAT_* */
 	uint64_t reserved;
 };
 

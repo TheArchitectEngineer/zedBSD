@@ -29,6 +29,12 @@
 /* The borrowed images waiting for the adoption that lets them go. */
 #define BCM2711_FLIP_RETIRING 16U
 
+/* The overlay planes between the primary and the cursor (planes 1 and 2 of a commit). */
+#define BCM2711_FLIP_OVERLAYS 2U
+
+/* The primary and the overlays: the planes a commit names. */
+#define BCM2711_FLIP_PLANES (1U + BCM2711_FLIP_OVERLAYS)
+
 /* A shared allocation a recorded plane borrows (buffer.h). */
 struct bcm2711_buffer;
 
@@ -77,9 +83,57 @@ struct bcm2711_flip_primary {
 };
 
 /*
+ * One overlay plane: an unscaled part of an image with premultiplied alpha.
+ * frame describes the whole image (physical is its first pixel); the
+ * source rectangle inside it is shown at the destination rectangle inside
+ * the output.  hold is the borrowed allocation, as for the primary.
+ */
+struct bcm2711_flip_overlay {
+	bool shown;
+	struct drv_bcm2711_boot_screen frame;
+	struct bcm2711_buffer *hold;
+	uint32_t src_x;
+	uint32_t src_y;
+	uint32_t src_width;
+	uint32_t src_height;
+	uint32_t dst_x;
+	uint32_t dst_y;
+	uint32_t dst_width;
+	uint32_t dst_height;
+};
+
+/*
+ * One plane's new state in a commit (GPU_DISPLAY_COMMIT): plane 0 is the
+ * primary.  image says frame and hold name a new image (the caller's
+ * reference); otherwise the plane keeps its image.  recorded is the
+ * outcome: false when a later serial of the plane was recorded before
+ * (DROPPED), and the caller then keeps its reference.
+ */
+struct bcm2711_flip_change {
+	uint32_t plane;
+	uint64_t serial;
+	bool shown;
+	bool image;
+	struct drv_bcm2711_boot_screen frame;
+	struct bcm2711_buffer *hold;
+	uint32_t src_x;
+	uint32_t src_y;
+	uint32_t src_width;
+	uint32_t src_height;
+	uint32_t dst_x;
+	uint32_t dst_y;
+	uint32_t dst_width;
+	uint32_t dst_height;
+	bool recorded;
+};
+
+/*
  * One SRAM list slot: used while the hardware may read the list (the adopted
  * list and the published ones not yet seen adopted), with the state number
- * it was made from and the images it names.
+ * it was made from and the images it names.  window_x and window_y place
+ * the first overlay (window_shown) and cursor_x, cursor_y the cursor
+ * (cursor_shown), for the count of lists that move both together.
+ * records[p] is the number of the record that last changed plane p.
  */
 struct bcm2711_flip_slot {
 	bool used;
@@ -87,6 +141,28 @@ struct bcm2711_flip_slot {
 	bool has_frame;
 	struct drv_bcm2711_boot_screen frame;
 	uint32_t cursor_image;
+	bool window_shown;
+	uint32_t window_x;
+	uint32_t window_y;
+	bool cursor_shown;
+	int32_t cursor_x;
+	int32_t cursor_y;
+	uint64_t records[BCM2711_FLIP_PLANES];
+};
+
+/*
+ * One overlay record's times (v3d.perf=1 only): its plane and plane serial,
+ * the state number it got, when it was recorded and when a list showing it
+ * was adopted (zero until then, and for good when a later record replaced
+ * it before any adoption), in scheduler ticks.
+ */
+#define BCM2711_FLIP_TIMES 128U
+struct bcm2711_flip_time {
+	uint32_t plane;
+	uint64_t plane_serial;
+	uint64_t state_serial;
+	uint64_t recorded;
+	uint64_t adopted;
 };
 
 /* A borrowed image replaced by the record numbered serial; it goes once that record's list is adopted. */
@@ -108,11 +184,12 @@ struct bcm2711_flip_cadence {
 	uint32_t intervals[BCM2711_FLIP_CADENCE_SAMPLES];
 };
 
-/* The kinds of display event whose cadence is measured: cursor sets, cursor moves and adopted flips. */
+/* The kinds of display event whose cadence is measured: cursor sets, cursor moves, adopted flips and adopted lists that moved the first overlay. */
 #define BCM2711_FLIP_CADENCE_SET	0U
 #define BCM2711_FLIP_CADENCE_MOVE	1U
 #define BCM2711_FLIP_CADENCE_FLIP	2U
-#define BCM2711_FLIP_CADENCE_KINDS	3U
+#define BCM2711_FLIP_CADENCE_OVERLAY	3U
+#define BCM2711_FLIP_CADENCE_KINDS	4U
 
 /* Whether the cadence is measured: the boot line is read at the first event. */
 #define BCM2711_FLIP_CADENCE_UNREAD	0U
@@ -138,6 +215,10 @@ struct bcm2711_flip_perf {
 	uint64_t replaced;
 	uint64_t coalesced;
 	uint64_t underruns;
+	uint64_t overlay_records;
+	uint64_t dropped;
+	uint64_t pair_window;
+	uint64_t pair_both;
 };
 
 /*
@@ -164,7 +245,19 @@ struct bcm2711_flip_state {
 	uint64_t lease;
 	bool revoking;
 	struct bcm2711_flip_primary primary;
+	struct bcm2711_flip_overlay overlays[BCM2711_FLIP_OVERLAYS];
 	struct bcm2711_flip_cursor cursor;
+
+	/*
+	 * plane_serials[p] is the last serial a commit recorded for plane p (zero
+	 * at a lease's start); plane_records[p] the state number of the record
+	 * that last changed plane p; planes_generation counts primary and
+	 * overlay records, so a commit can tell its checked view is still the
+	 * state (cursor records do not move it).
+	 */
+	uint64_t plane_serials[BCM2711_FLIP_PLANES];
+	uint64_t plane_records[BCM2711_FLIP_PLANES];
+	uint64_t planes_generation;
 	uint64_t state_serial;
 	uint64_t list_serial;
 	uint64_t adopted_serial;
@@ -177,9 +270,23 @@ struct bcm2711_flip_state {
 	struct bcm2711_flip_retiring retiring[BCM2711_FLIP_RETIRING];
 	uint32_t retiring_count;
 	uint64_t frame_sequence;
+	uint64_t adopted_ticks;
 	uint32_t core_hz;
 	int clock_error;
 	struct bcm2711_flip_perf perf;
+
+	/*
+	 * The ring of overlay record times and the next entry to write, and the
+	 * first overlay's and the cursor's places in the last adopted list.
+	 */
+	struct bcm2711_flip_time times[BCM2711_FLIP_TIMES];
+	uint32_t times_next;
+	bool last_window_shown;
+	uint32_t last_window_x;
+	uint32_t last_window_y;
+	bool last_cursor_shown;
+	int32_t last_cursor_x;
+	int32_t last_cursor_y;
 
 	/*
 	 * The cursor images set in the window and those that needed their rows
@@ -216,6 +323,7 @@ struct bcm2711_flip_status {
 	uint32_t core_hz;
 	int clock_error;
 	struct bcm2711_flip_primary primary;
+	struct bcm2711_flip_overlay overlays[BCM2711_FLIP_OVERLAYS];
 	struct drv_bcm2711_boot_screen frames[BCM2711_FLIP_SLOTS];
 };
 
@@ -257,6 +365,23 @@ int bcm2711_display_flip_record(struct bcm2711_display *display, const struct bc
  */
 int bcm2711_display_flip_wait(struct bcm2711_display *display, const struct bcm2711_flip_owner *owner, uint64_t serial);
 
+/*
+ * Records the planes of a commit at once and returns the record's number
+ * (the state's number when nothing was recorded) and the adopted number,
+ * without waiting.  On success the state takes the reference of every
+ * recorded change's hold; ENOSPC when the planes would exceed the output's
+ * bandwidth or the overlays' limits, and then nothing changed.
+ */
+int bcm2711_display_flip_commit(struct bcm2711_display *display, const struct bcm2711_flip_owner *owner, struct bcm2711_flip_change *changes, uint32_t count, uint64_t *serial, uint64_t *adopted);
+
+/*
+ * Waits until the record numbered serial is adopted (GPU_DISPLAY_WAIT): at
+ * most timeout ticks, interruptibly; EAGAIN with no time and no adoption.
+ * A timeout leaves nothing uncertain.  Reports the adopted number and the
+ * time of the last adoption.
+ */
+int bcm2711_display_flip_wait_number(struct bcm2711_display *display, const struct bcm2711_flip_owner *owner, uint64_t serial, uint64_t timeout, uint64_t *adopted, uint64_t *adopted_ticks);
+
 /* Records a full-screen opaque frame of the driver's own and waits for its adoption. */
 int bcm2711_display_flip_present(struct bcm2711_display *display, const struct drv_bcm2711_boot_screen *frame);
 
@@ -280,8 +405,8 @@ void bcm2711_display_flip_count_cursor(struct bcm2711_display *display, bool cop
  */
 void bcm2711_display_flip_note(struct bcm2711_display *display, unsigned kind);
 
-/* Adds an adopted primary flip's stage times to the flip report, printing a full window. */
-void bcm2711_display_flip_report(struct bcm2711_display *display, uint64_t clean, uint64_t raise, uint64_t wait);
+/* Adds an event (an adopted primary flip with its stage times, or a commit) to the flip report, printing a full window. */
+void bcm2711_display_flip_report(struct bcm2711_display *display, bool flip, uint64_t clean, uint64_t raise, uint64_t wait);
 
 /* Tells whether a list the hardware may read or the recorded cursor names a cursor image. */
 bool bcm2711_display_flip_cursor_named(struct bcm2711_display *display, uint32_t physical);

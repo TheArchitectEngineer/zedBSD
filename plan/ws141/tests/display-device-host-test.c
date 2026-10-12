@@ -196,7 +196,7 @@ main(
 	assert(error == EIO && test_hvs[0x20 / 4] == 43 && !test_display.flip.restoring);
 	test_clock_refused = false;
 	error = present_frame(first, resource, &present);
-	assert(error == 0 && present.sequence == 1);
+	assert(error == 0 && present.sequence == test_display.flip.state_serial && present.sequence != 0);
 	sequence = present.sequence;
 	bcm2711_display_flip_snapshot(&test_display, &status);
 	native = kern_pmem_to_kernel(status.primary.frame.physical);
@@ -223,6 +223,16 @@ main(
 	error = test_operations->display->wait(test_device, first, &wait);
 	assert(error == 0 && wait.completed_sequence == sequence);
 
+	/* A number not yet recorded: EAGAIN at once without time, ETIMEDOUT after some frames. */
+	wait.sequence = sequence + 100U;
+	error = test_operations->display->wait(test_device, first, &wait);
+	assert(error == EAGAIN);
+	wait.timeout_ns = 5000000U;
+	error = test_operations->display->wait(test_device, first, &wait);
+	assert(error == ETIMEDOUT);
+	wait.timeout_ns = 0;
+	wait.sequence = sequence;
+
 	/* A failed restoration retains both the private storage and the retryable lease. */
 	memset(&release, 0, sizeof(release));
 	release.lease = lease;
@@ -239,13 +249,13 @@ main(
 	assert(status.used_mask == 0 && status.active_list == 43);
 	assert(!test_text_suspended);
 
-	/* A fresh lease cannot observe an earlier owner's completed presentation. */
+	/* The output's numbers go on across leases: an earlier lease's number is adopted for the next. */
 	error = test_operations->display->claim(test_device, second, &claim);
 	assert(error == 0 && claim.lease != lease);
 	wait.lease = claim.lease;
 	wait.sequence = sequence;
 	error = test_operations->display->wait(test_device, second, &wait);
-	assert(error == ETIMEDOUT);
+	assert(error == 0 && wait.completed_sequence > sequence);
 	wait.lease = lease;
 	error = test_operations->display->wait(test_device, first, &wait);
 	assert(error == EBUSY);
@@ -394,7 +404,8 @@ main(
 	assert(error == 0);
 	memset(&output, 0, sizeof(output));
 	error = test_operations->display->query(test_device, first, &output);
-	assert(error == 0 && (output.flags & GPU_DISPLAY_HAS_CURSOR) != 0 && output.plane_count == 1);
+	assert(error == 0 && (output.flags & GPU_DISPLAY_HAS_CURSOR) != 0 && (output.flags & GPU_DISPLAY_HAS_OVERLAYS) != 0);
+	assert(output.plane_count == 3);
 	memset(&claim, 0, sizeof(claim));
 	claim.display_id = 1;
 	claim.generation = 1;
@@ -537,7 +548,7 @@ present_frame(
 		return error;
 
 	/* The adoption wait, which numbers the present. */
-	error = test_operations->display->adoption_wait(test_device, session, present);
+	error = test_operations->display->adoption_wait(test_device, session, present->lease, &present->sequence, NULL);
 	if (error != 0)
 		return error;
 

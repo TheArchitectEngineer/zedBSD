@@ -32,8 +32,6 @@
 /* One open owns its resources and at most one nontransferrable display lease. */
 struct display_session {
 	uint64_t lease;
-	uint64_t completed;
-	uint64_t present_time;
 	uint32_t resources;
 	uint32_t next_resource;
 };
@@ -75,13 +73,13 @@ struct display_cursor_key {
  * mutex orders lease changes, the copy path and resource bookkeeping;
  * presentation of shared images and the cursor do not take it (the flip
  * state checks the lease under its own guard).  plane_mutex serializes the
- * cursor's images and is taken after mutex.  sequence_guard protects the
- * count of completed presents and their time.
+ * cursor's images and is taken after mutex.  The numbers presents and
+ * commits return are the flip state's record numbers (one count for the
+ * output that never goes back).
  */
 struct display_device {
 	struct mutex mutex;
 	struct mutex plane_mutex;
-	struct spinlock sequence_guard;
 	struct bcm2711_display *native;
 	struct drv_gpu_device *gpu;
 	struct drv_gpu_ops operations;
@@ -103,8 +101,6 @@ struct display_device {
 	struct display_cursor_key keys[DISPLAY_CURSOR_IMAGES];
 	struct display_session *owner;
 	uint64_t next_lease;
-	uint64_t completed;
-	uint64_t present_time;
 	bool registered;
 };
 
@@ -130,8 +126,11 @@ static int import_image(void *opaque, void *private_session, const struct gpu_im
 static int retain_resource(struct display_device *controller, struct display_session *session, struct bcm2711_buffer *buffer, const struct gpu_image_descriptor *image, void **result);
 static int shared_frame(struct display_device *controller, const struct display_resource *resource, const struct gpu_display_present *request, struct drv_bcm2711_boot_screen *frame);
 static int copy_present(struct display_device *controller, struct display_session *session, const struct display_resource *resource, struct gpu_display_present *request);
-static int output_adoption_wait(void *opaque, void *private_session, struct gpu_display_present *request);
+static int output_adoption_wait(void *opaque, void *private_session, uint64_t lease, uint64_t *sequence, uint64_t *adopted);
 static void lease_owner(struct display_session *session, uint64_t lease, struct bcm2711_flip_owner *owner);
+static int output_commit(void *opaque, void *private_session, void *const *objects, struct gpu_display_commit *request);
+static int commit_change(struct display_device *controller, struct display_session *session, void *object, const struct gpu_display_plane_state *state, struct bcm2711_flip_change *change);
+static int output_overlay_info(void *opaque, void *private_session, struct gpu_display_overlay_info *request);
 static int output_cursor_set(void *opaque, void *private_session, void *private_resource, const struct gpu_display_cursor_image *request);
 static int output_cursor_move(void *opaque, void *private_session, const struct gpu_display_cursor_move *request);
 static int output_cursor_hide(void *opaque, void *private_session, const struct gpu_display_cursor_hide *request);
@@ -196,10 +195,8 @@ bcm2711_display_register(
 	error = mutex_init(&controller->plane_mutex, LOCK_RANK_DEVICE, "bcm2711-display-cursor");
 	if (error != 0)
 		return error;
-	spin_init(&controller->sequence_guard, LOCK_RANK_DEVICE, "bcm2711-display-sequence");
 	controller->native = display;
 	controller->next_lease = 1;
-	controller->completed = 0;
 
 	/* Preallocates both copy targets before userspace can claim this output. */
 	for (slot = 0; slot < 2; slot++) {
@@ -698,8 +695,8 @@ output_query(
 		return EINVAL;
 	request->display_id = display->port + 1U;
 	request->generation = 1;
-	request->flags = GPU_DISPLAY_CONNECTED | GPU_DISPLAY_ACTIVE | GPU_DISPLAY_FIFO | GPU_DISPLAY_HAS_CURSOR;
-	request->plane_count = 1;
+	request->flags = GPU_DISPLAY_CONNECTED | GPU_DISPLAY_ACTIVE | GPU_DISPLAY_FIFO | GPU_DISPLAY_HAS_CURSOR | GPU_DISPLAY_HAS_OVERLAYS;
+	request->plane_count = 1U + BCM2711_FLIP_OVERLAYS;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
 	request->max_frame_bytes = DISPLAY_RESOURCE_BYTES;
 	request->current_width = display->screen.width;
@@ -806,8 +803,6 @@ output_claim(
 	cursor_reset(controller);
 
 	/* Publishes an independent observation cursor for the new exclusive lease. */
-	session->completed = 0;
-	session->present_time = 0;
 	session->lease = controller->next_lease;
 	controller->next_lease++;
 	controller->owner = session;
@@ -950,7 +945,12 @@ output_present(
 	return 0;
 }
 
-/* Observes already completed presents belonging to this lease, without waiting. */
+/*
+ * Waits until a present's or commit's number is adopted (GPU_DISPLAY_WAIT).
+ *
+ * Numbers are the output's record numbers, shared by every lease; one call
+ * waits at most a second, and a signal ends it.
+ */
 static int
 output_wait(
 	void *opaque,
@@ -960,34 +960,28 @@ output_wait(
 	struct display_device *controller;
 	struct display_session *session;
 	struct bcm2711_flip_owner owner;
-	unsigned long enabled;
-	uint64_t completed;
-	uint64_t present_time;
+	uint64_t timeout;
+	uint64_t adopted;
+	uint64_t adopted_ticks;
 	int error;
 
-	/* Only the lease's own open observes its presents. */
+	/* At most a second, in scheduler ticks, rounding a partial tick up. */
 	controller = opaque;
 	session = private_session;
+	timeout = request->timeout_ns;
+	if (timeout > KERN_NSEC_PER_SEC)
+		timeout = KERN_NSEC_PER_SEC;
+	timeout = (timeout + KERN_NSEC_PER_SEC / KERN_CLOCK_HZ - 1U) / (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
+
+	/* Sleeps for the adoption without any mutex; only the lease's own open waits. */
 	lease_owner(session, request->lease, &owner);
-	error = bcm2711_display_flip_owned(controller->native, &owner);
+	error = bcm2711_display_flip_wait_number(controller->native, &owner, request->sequence, timeout, &adopted, &adopted_ticks);
 	if (error != 0)
-		return EBUSY;
+		return error;
 
-	/* The completed count and time are read together. */
-	enabled = spin_lock_irqsave(&controller->sequence_guard);
-
-	completed = session->completed;
-	present_time = session->present_time;
-
-	spin_unlock_irqrestore(&controller->sequence_guard, enabled);
-
-	/* An earlier lease cannot supply the completion requested by this new owner. */
-	if (request->sequence > completed)
-		return ETIMEDOUT;
-
-	/* Returns the latest confirmed frame rather than the submission cursor. */
-	request->completed_sequence = completed;
-	request->present_time_ns = present_time;
+	/* The highest number adopted with every lower one, and the time of that adoption. */
+	request->completed_sequence = adopted;
+	request->present_time_ns = adopted_ticks * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
 	request->generation = 1;
 
 	/* Succeeded: the queried sequence was adopted on this actual output. */
@@ -1249,62 +1243,228 @@ copy_present(
 }
 
 /*
- * Waits for the adoption of a recorded present and numbers it (the ungated core's second step).
+ * Waits for the adoption of a recorded present or commit (the ungated core's second step).
  *
- * sequence holds the record's number on entry and the lease's count of
- * completed presents on success, as the synchronous present reported it.
+ * sequence holds the record's number, which is also the number the caller
+ * sees; adopted, when given, receives the highest adopted number.
  */
 static int
 output_adoption_wait(
 	void *opaque,
 	void *private_session,
-	struct gpu_display_present *request)
+	uint64_t lease,
+	uint64_t *sequence,
+	uint64_t *adopted)
 {
 	struct display_device *controller;
 	struct display_session *session;
 	struct bcm2711_flip_owner owner;
-	unsigned long enabled;
-	uint64_t serial;
+	struct bcm2711_flip_status status;
 	uint64_t mark;
 	uint64_t wait_ticks;
 	int error;
 
-	/* The record's number is consumed here; sequence answers only on success. */
+	/* Waits for a list showing the record, holding no lock or pin. */
 	controller = opaque;
 	session = private_session;
-	serial = request->sequence;
-	request->sequence = 0;
-
-	/* Waits for a list showing the record, holding no lock or pin. */
-	lease_owner(session, request->lease, &owner);
+	lease_owner(session, lease, &owner);
 	mark = clock_ticks();
-	error = bcm2711_display_flip_wait(controller->native, &owner, serial);
+	error = bcm2711_display_flip_wait(controller->native, &owner, *sequence);
 	wait_ticks = clock_ticks() - mark;
 	if (error != 0)
 		return error;
 
 	/* The adoption is a cadence event and a flip of the report. */
 	bcm2711_display_flip_note(controller->native, BCM2711_FLIP_CADENCE_FLIP);
-	bcm2711_display_flip_report(controller->native, 0, 0, wait_ticks);
+	bcm2711_display_flip_report(controller->native, true, 0, 0, wait_ticks);
 
-	/* Completion counts successful presents, independently of raw refresh interrupts. */
-	enabled = spin_lock_irqsave(&controller->sequence_guard);
-
-	if (controller->completed == UINT64_MAX) {
-		spin_unlock_irqrestore(&controller->sequence_guard, enabled);
-		return EOVERFLOW;
+	/* The highest adopted number, at least the record's own. */
+	if (adopted != NULL) {
+		bcm2711_display_flip_snapshot(controller->native, &status);
+		*adopted = status.adopted_serial;
 	}
 
-	/* The lease's count of completed presents and the time of this one. */
-	controller->completed++;
-	controller->present_time = sched_ticks() * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
-	session->completed = controller->completed;
-	session->present_time = controller->present_time;
-	request->sequence = session->completed;
+	/* Succeeded: the record is shown. */
+	return 0;
+}
 
-	spin_unlock_irqrestore(&controller->sequence_guard, enabled);
+/*
+ * Records some planes of the leased output at once (GPU_DISPLAY_COMMIT), without waiting.
+ *
+ * Each named image is a native blob of this open, borrowed with its own
+ * reference; a dropped plane's reference goes back at once.  The core waits
+ * for the adoption afterwards when the commit asks.
+ */
+static int
+output_commit(
+	void *opaque,
+	void *private_session,
+	void *const *objects,
+	struct gpu_display_commit *request)
+{
+	struct display_device *controller;
+	struct display_session *session;
+	struct bcm2711_flip_owner owner;
+	struct bcm2711_flip_change changes[BCM2711_FLIP_PLANES];
+	uint64_t sequence;
+	uint64_t adopted;
+	uint32_t index;
+	int error;
 
-	/* Succeeded: the frame is shown and numbered. */
+	/* Only the lease's own open changes its planes, on the output generation it leases. */
+	controller = opaque;
+	session = private_session;
+	lease_owner(session, request->lease, &owner);
+	error = bcm2711_display_flip_owned(controller->native, &owner);
+	if (error != 0)
+		return EBUSY;
+	if (request->generation != 1)
+		return ESTALE;
+	if (request->count > BCM2711_FLIP_PLANES)
+		return EINVAL;
+
+	/* Describes each plane's new state, taking a reference to each named image. */
+	kern_memset(changes, 0, sizeof(changes));
+	for (index = 0; index < request->count; index++) {
+		/* The plane's flags and rectangles; a named image is described below. */
+		error = commit_change(controller, session, objects[index], &request->planes[index], &changes[index]);
+		if (error != 0)
+			break;
+	}
+
+	/* Records every plane at once, or none. */
+	if (error == 0)
+		error = bcm2711_display_flip_commit(controller->native, &owner, changes, request->count, &sequence, &adopted);
+
+	/* A refused commit, or a dropped plane, gives its image's reference back. */
+	for (index = 0; index < request->count; index++) {
+		/* Only a described image holds a reference. */
+		if (changes[index].hold == NULL)
+			continue;
+		if (error != 0 || !changes[index].recorded)
+			bcm2711_buffer_release(changes[index].hold);
+	}
+
+	/* Reports the refused commit. */
+	if (error != 0)
+		return error;
+
+	/* Each plane's result, the record's number and the adopted number. */
+	for (index = 0; index < request->count; index++) {
+		/* A recorded state, or one a later serial overtook. */
+		request->planes[index].result = GPU_DISPLAY_PLANE_DROPPED;
+		if (changes[index].recorded)
+			request->planes[index].result = GPU_DISPLAY_PLANE_APPLIED;
+	}
+
+	/* The numbers the caller waits with. */
+	request->sequence = sequence;
+	request->adopted = adopted;
+
+	/* Succeeded: the planes show from the refresh boundary that adopts a list with them. */
+	return 0;
+}
+
+/* Describes one plane's state of a commit, taking a reference to a named image. */
+static int
+commit_change(
+	struct display_device *controller,
+	struct display_session *session,
+	void *object,
+	const struct gpu_display_plane_state *state,
+	struct bcm2711_flip_change *change)
+{
+	struct display_resource *resource;
+	uint64_t bytes;
+
+	/* The plane, its serial, whether it shows and its rectangles. */
+	(void)controller;
+	change->plane = state->plane;
+	change->serial = state->serial;
+	if ((state->flags & GPU_DISPLAY_PLANE_SHOWN) != 0U)
+		change->shown = true;
+	change->src_x = state->src_x;
+	change->src_y = state->src_y;
+	change->src_width = state->src_width;
+	change->src_height = state->src_height;
+	change->dst_x = state->dst_x;
+	change->dst_y = state->dst_y;
+	change->dst_width = state->dst_width;
+	change->dst_height = state->dst_height;
+
+	/* A plane keeping its image names no storage. */
+	if ((state->flags & GPU_DISPLAY_PLANE_IMAGE) == 0U)
+		return 0;
+
+	/* A native blob of this open, of the layout it was imported with. */
+	resource = object;
+	if (resource == NULL || resource->owner != session)
+		return ESTALE;
+	if (!resource->blob)
+		return EINVAL;
+	if (state->stride > 65535U)
+		return EINVAL;
+	bytes = (uint64_t)state->stride * state->height;
+	if (state->offset > resource->buffer->bytes || bytes > resource->buffer->bytes - state->offset)
+		return EINVAL;
+	if (resource->has_image) {
+		if (state->width != resource->image.width ||
+		    state->height != resource->image.height ||
+		    state->format != resource->image.format ||
+		    state->stride != resource->image.stride ||
+		    state->offset != resource->image.offset)
+			return EINVAL;
+	}
+
+	/* The image as the flip state reads it. */
+	change->image = true;
+	change->frame = controller->native->screen;
+	change->frame.physical = resource->buffer->memory.paddr + state->offset;
+	change->frame.size = bytes;
+	change->frame.width = state->width;
+	change->frame.height = state->height;
+	change->frame.pitch = state->stride;
+	change->frame.uncached = resource->buffer->uncached;
+	change->frame.format = 0;
+	if (state->format == GPU_PIXEL_RGBA8888)
+		change->frame.format = 1;
+
+	/* The state borrows the allocation with a reference of its own. */
+	bcm2711_buffer_retain(resource->buffer);
+	change->hold = resource->buffer;
+
+	/* Succeeded: the change names its image. */
+	return 0;
+}
+
+/* Reports an overlay plane's limits on the current mode (GPU_DISPLAY_OVERLAY_INFO). */
+static int
+output_overlay_info(
+	void *opaque,
+	void *private_session,
+	struct gpu_display_overlay_info *request)
+{
+	struct display_device *controller;
+	int error;
+
+	/* The boot output of its generation, and one of its overlays. */
+	(void)private_session;
+	controller = opaque;
+	error = find_output(controller, request->display_id, request->generation);
+	if (error != 0)
+		return error;
+	if (request->plane == 0 || request->plane > BCM2711_FLIP_OVERLAYS)
+		return EINVAL;
+
+	/* Any unscaled part of an image as large as the output, shown anywhere inside it. */
+	request->max_src_width = controller->native->screen.width;
+	request->max_src_height = controller->native->screen.height;
+	request->max_dst_width = controller->native->screen.width;
+	request->max_dst_height = controller->native->screen.height;
+	request->flags = 0;
+	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
+
+	/* Succeeded: the overlay's limits until the mode changes. */
 	return 0;
 }
 
@@ -1338,6 +1498,8 @@ bind_operations(
 	controller->display_operations.cursor_hide = output_cursor_hide;
 	controller->display_operations.adoption_wait = output_adoption_wait;
 	controller->display_operations.flags = DRV_GPU_DISPLAY_UNGATED;
+	controller->display_operations.commit = output_commit;
+	controller->display_operations.overlay_info = output_overlay_info;
 
 	/* Publishes checked foreign native imports with actual physical constraints. */
 	controller->scanout_operations.query_device = output_device;

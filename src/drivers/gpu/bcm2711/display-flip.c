@@ -48,11 +48,17 @@
 #define FLIP_PLANE_WORDS 8U
 #define FLIP_LIST_END 0x80000000U
 
-/* The longest list: console, primary, cursor and the terminator. */
-#define FLIP_LIST_MAX_WORDS (3U * FLIP_PLANE_WORDS + 1U)
+/* The longest list: console, primary, the overlays, cursor and the terminator. */
+#define FLIP_LIST_MAX_WORDS ((3U + BCM2711_FLIP_OVERLAYS) * FLIP_PLANE_WORDS + 1U)
 
 /* How long a recorded state may wait for the hardware to adopt a list showing it. */
 #define FLIP_ADOPTION_TICKS KERN_MS_TO_TICKS(100U)
+
+/*
+ * The bytes per second the HVS may read for one output's planes: a
+ * provisional budget until the Pi measurement (hvs-load) sets it.
+ */
+#define FLIP_BANDWIDTH_BUDGET 1500000000ULL
 
 /* How many times a record raises the clock again after a restore lowered it meanwhile. */
 #define FLIP_CLOCK_ATTEMPTS 3U
@@ -60,7 +66,16 @@
 static int check_primary(const struct bcm2711_display *display, const struct bcm2711_flip_primary *primary);
 static int encode_plane(const struct drv_bcm2711_boot_screen *extent, const struct drv_bcm2711_boot_screen *frame, uint32_t *words);
 static bool console_hidden(const struct bcm2711_display *display, const struct bcm2711_flip_primary *primary);
-static uint32_t required_clock(const struct bcm2711_display *display, const struct bcm2711_flip_primary *primary);
+static uint32_t required_clock(const struct bcm2711_display *display, const struct bcm2711_flip_primary *primary, const struct bcm2711_flip_overlay *overlays);
+static uint64_t read_bandwidth(const struct bcm2711_display *display, const struct bcm2711_flip_primary *primary, const struct bcm2711_flip_overlay *overlays);
+static int view_changes_locked(struct bcm2711_display *display, struct bcm2711_flip_change *changes, uint32_t count, struct bcm2711_flip_primary *primary, struct bcm2711_flip_overlay *overlays, uint32_t *retired);
+static int check_overlay(const struct bcm2711_display *display, const struct bcm2711_flip_overlay *overlay);
+static void apply_changes_locked(struct bcm2711_display *display, struct bcm2711_flip_change *changes, uint32_t count, const struct bcm2711_flip_primary *primary, const struct bcm2711_flip_overlay *overlays);
+static uint32_t overlay_words(const struct bcm2711_flip_overlay *overlay, uint32_t *words);
+static void note_locked(struct bcm2711_display *display, unsigned kind, uint64_t now);
+static void count_adoption_locked(struct bcm2711_display *display, uint32_t slot);
+static uint32_t take_times_locked(struct bcm2711_display *display, uint32_t *replaced);
+static void report_times(uint32_t count, uint32_t replaced);
 static int raise_clock(struct bcm2711_display *display, uint32_t required);
 static void lower_clock(struct bcm2711_display *display, uint32_t hz);
 static int request_clock(uint32_t hz);
@@ -82,6 +97,9 @@ static void cadence_summary(struct bcm2711_flip_cadence *cadence, uint64_t milli
 
 /* The window the note that ends it copies and prints, owned by the one caller that set cadence_reporting. */
 static struct bcm2711_flip_cadence cadence_copy[BCM2711_FLIP_CADENCE_KINDS];
+
+/* The settled overlay record times the report that took them prints, owned by the caller that set perf_reporting. */
+static struct bcm2711_flip_time times_copy[BCM2711_FLIP_TIMES];
 
 /*
  * Initializes persistent IRQ state before installing source callback owners.
@@ -224,6 +242,10 @@ bcm2711_display_flip_own(
 	display->flip.revoking = false;
 	kern_memset(&display->flip.cursor, 0, sizeof(display->flip.cursor));
 
+	/* The lease's planes start hidden, with serials counted afresh. */
+	kern_memset(display->flip.overlays, 0, sizeof(display->flip.overlays));
+	kern_memset(display->flip.plane_serials, 0, sizeof(display->flip.plane_serials));
+
 	spin_unlock_irqrestore(&display->flip.guard, enabled);
 }
 
@@ -323,6 +345,7 @@ bcm2711_display_flip_record(
 	const struct bcm2711_flip_primary *primary,
 	uint64_t *serial)
 {
+	struct bcm2711_flip_overlay overlays[BCM2711_FLIP_OVERLAYS];
 	unsigned long enabled;
 	uint32_t required;
 	uint32_t attempt;
@@ -363,8 +386,15 @@ bcm2711_display_flip_record(
 	/* Images replaced by adopted lists go first, so the waiting room has space. */
 	bcm2711_display_flip_reap(display);
 
+	/* The shown overlays stay in the list with the new primary. */
+	enabled = spin_lock_irqsave(&display->flip.guard);
+
+	kern_memcpy(overlays, display->flip.overlays, sizeof(overlays));
+
+	spin_unlock_irqrestore(&display->flip.guard, enabled);
+
 	/* Computes the clock the new list needs and the cache work outside the guard. */
-	required = required_clock(display, primary);
+	required = required_clock(display, primary, overlays);
 	raise_ticks = 0;
 	clean_ticks = 0;
 	for (attempt = 0; attempt < FLIP_CLOCK_ATTEMPTS; attempt++) {
@@ -436,6 +466,8 @@ bcm2711_display_flip_record(
 		/* The new primary is the recorded one, with the caller's reference. */
 		display->flip.primary = *primary;
 		display->flip.primary.shown = true;
+		display->flip.plane_records[0] = display->flip.state_serial;
+		display->flip.planes_generation++;
 		display->flip.perf.primary_records++;
 		display->flip.perf.clean += clean_ticks;
 		display->flip.perf.raise += raise_ticks;
@@ -527,6 +559,251 @@ bcm2711_display_flip_wait(
 }
 
 /*
+ * Records the planes of a commit at once and publishes a list showing them, without waiting.
+ *
+ * The new state is checked against a view taken under the guard; the clock
+ * is raised outside it; the view is applied only while no other primary or
+ * overlay record came between (a cursor record may).
+ */
+int
+bcm2711_display_flip_commit(
+	struct bcm2711_display *display,
+	const struct bcm2711_flip_owner *owner,
+	struct bcm2711_flip_change *changes,
+	uint32_t count,
+	uint64_t *serial,
+	uint64_t *adopted)
+{
+	struct bcm2711_flip_primary primary;
+	struct bcm2711_flip_overlay overlays[BCM2711_FLIP_OVERLAYS];
+	unsigned long enabled;
+	uint64_t generation;
+	uint64_t bandwidth;
+	uint32_t required;
+	uint32_t retired;
+	uint32_t attempt;
+	uint32_t index;
+	bool recorded;
+	void *mapping;
+	int error;
+
+	/* Nothing is recorded before the guard exists, or for a lease that is not the owner's. */
+	*serial = 0;
+	*adopted = 0;
+	if (!display->flip.initialized)
+		return ENODEV;
+	if (count == 0 || count > BCM2711_FLIP_PLANES)
+		return EINVAL;
+	error = bcm2711_display_flip_owned(display, owner);
+	if (error != 0)
+		return error;
+
+	/* Images replaced by adopted lists go first, so the waiting room has space. */
+	bcm2711_display_flip_reap(display);
+
+	/* Checks, raises the clock, then applies; another plane record in between starts it again. */
+	for (attempt = 0; attempt < FLIP_CLOCK_ATTEMPTS; attempt++) {
+		/* The new state of every plane, from the recorded one and the changes. */
+		enabled = spin_lock_irqsave(&display->flip.guard);
+
+		error = owner_matches_locked(display, owner);
+		if (error == 0 && !display->flip.attached)
+			error = ENODEV;
+		if (error == 0 && display->flip.restoring)
+			error = EBUSY;
+		if (error == 0 && display->flip.uncertain)
+			error = EBUSY;
+		if (error == 0)
+			error = view_changes_locked(display, changes, count, &primary, overlays, &retired);
+		generation = display->flip.planes_generation;
+
+		spin_unlock_irqrestore(&display->flip.guard, enabled);
+
+		/* Reports a refused lease or plane. */
+		if (error != 0)
+			return error;
+
+		/* The HVS cannot read more than its budget, nor the clock run faster than its ceiling. */
+		bandwidth = read_bandwidth(display, &primary, overlays);
+		if (bandwidth > FLIP_BANDWIDTH_BUDGET)
+			return ENOSPC;
+		required = required_clock(display, &primary, overlays);
+		if (required > display->max_core_hz)
+			return ENOSPC;
+
+		/* Raises the clock before any list that needs it is written. */
+		error = raise_clock(display, required);
+		if (error != 0)
+			return error;
+
+		/* A new cached primary image is cleaned from this thread; overlays are uncached. */
+		for (index = 0; index < count; index++) {
+			/* Only a recorded new image of the primary. */
+			if (!changes[index].recorded || !changes[index].image || changes[index].plane != 0)
+				continue;
+			if (changes[index].frame.uncached)
+				continue;
+			mapping = kern_pmem_to_kernel(changes[index].frame.physical);
+			if (mapping == NULL)
+				return EFAULT;
+			kern_dcache_clean_range(mapping, (size_t)changes[index].frame.size);
+		}
+
+		/* The cleaned bytes reach memory before any list names them. */
+		kern_io_write_barrier();
+
+		/* Applies the view unless another plane record or a lower clock came between. */
+		enabled = spin_lock_irqsave(&display->flip.guard);
+
+		error = owner_matches_locked(display, owner);
+		if (error == 0 && !display->flip.attached)
+			error = ENODEV;
+		if (error == 0 && (display->flip.restoring || display->flip.uncertain))
+			error = EBUSY;
+		if (error != 0) {
+			spin_unlock_irqrestore(&display->flip.guard, enabled);
+			return error;
+		}
+
+		/* The view is stale, or the clock went down: check again. */
+		if (display->flip.planes_generation != generation || display->flip.core_hz < required) {
+			spin_unlock_irqrestore(&display->flip.guard, enabled);
+			continue;
+		}
+
+		/* The replaced images need places among those waiting for adoption. */
+		if (display->flip.retiring_count + retired > BCM2711_FLIP_RETIRING) {
+			spin_unlock_irqrestore(&display->flip.guard, enabled);
+			return EBUSY;
+		}
+
+		/* A list goes out now unless two are out: the hardware must still be ours. */
+		if (display->flip.pending_count < 2U && !display->flip.console_pending) {
+			error = check_pipeline(display, false);
+			if (error != 0) {
+				display->flip.uncertain = true;
+				waitq_wake_all(&display->flip.adoption_waitq);
+				spin_unlock_irqrestore(&display->flip.guard, enabled);
+				return error;
+			}
+		}
+
+		/* Every recorded change gets the state's next number; dropped ones change nothing. */
+		recorded = false;
+		for (index = 0; index < count; index++) {
+			/* One recorded change is enough for a new state; the others are counted as dropped. */
+			if (changes[index].recorded) {
+				recorded = true;
+			} else {
+				display->flip.perf.dropped++;
+			}
+		}
+
+		/* A commit with a recorded change is a new state, and a list goes out or waits for an adoption. */
+		if (recorded) {
+			display->flip.state_serial++;
+			apply_changes_locked(display, changes, count, &primary, overlays);
+			(void)publish_locked(display);
+		}
+
+		/* The record's number (or the state's, when nothing was recorded) and the adopted one. */
+		*serial = display->flip.state_serial;
+		*adopted = display->flip.adopted_serial;
+
+		spin_unlock_irqrestore(&display->flip.guard, enabled);
+
+		/* A window of overlay changes is reported even while the primary does not change. */
+		bcm2711_display_flip_report(display, false, 0, 0, 0);
+
+		/* Succeeded: the planes show from the refresh boundary that adopts a list with them. */
+		return 0;
+	}
+
+	/* Other plane records kept coming between the check and the record. */
+	return EBUSY;
+}
+
+/*
+ * Waits until the record numbered serial is adopted (GPU_DISPLAY_WAIT).
+ *
+ * Unlike a present's own wait, a timeout here is the caller's choice and
+ * leaves nothing uncertain.  A signal ends the wait with EINTR.
+ */
+int
+bcm2711_display_flip_wait_number(
+	struct bcm2711_display *display,
+	const struct bcm2711_flip_owner *owner,
+	uint64_t serial,
+	uint64_t timeout,
+	uint64_t *adopted,
+	uint64_t *adopted_ticks)
+{
+	unsigned long enabled;
+	uint64_t deadline;
+	uint64_t observed;
+	uint64_t now;
+	int error;
+
+	/* Nothing was recorded before the guard exists. */
+	*adopted = 0;
+	*adopted_ticks = 0;
+	if (!display->flip.initialized)
+		return ENODEV;
+
+	/* Sleeps until the adoption, the lease's end, a signal or the deadline. */
+	now = sched_ticks();
+	deadline = now + timeout;
+	enabled = spin_lock_irqsave(&display->flip.guard);
+
+	for (;;) {
+		/* The lease ended, or another open owns the planes now. */
+		error = owner_matches_locked(display, owner);
+		if (error != 0)
+			break;
+
+		/* The record, or a later one, is adopted. */
+		if (display->flip.adopted_serial >= serial)
+			break;
+
+		/* No time to wait: the record is not yet adopted. */
+		if (timeout == 0) {
+			error = EAGAIN;
+			break;
+		}
+
+		/* The deadline passed. */
+		now = sched_ticks();
+		if (now >= deadline) {
+			error = ETIMEDOUT;
+			break;
+		}
+
+		/* Sleeps until the IRQ, a revocation or a signal. */
+		observed = waitq_sequence(&display->flip.adoption_waitq);
+		error = waitq_sleep(&display->flip.adoption_waitq, &display->flip.guard, observed, deadline, WAITQ_INTERRUPTIBLE);
+		if (error == EINTR)
+			break;
+		error = 0;
+	}
+
+	/* The adopted number and time the caller reports, whatever the outcome. */
+	*adopted = display->flip.adopted_serial;
+	*adopted_ticks = display->flip.adopted_ticks;
+
+	spin_unlock_irqrestore(&display->flip.guard, enabled);
+
+	/* Images the adoption no longer shows go now, in this thread. */
+	bcm2711_display_flip_reap(display);
+
+	/* Reports the lease's end, a signal or the time running out. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the record is adopted. */
+	return 0;
+}
+
+/*
  * Presents one buffer of the driver's own over the whole output and waits for it.
  */
 int
@@ -591,7 +868,7 @@ bcm2711_display_flip_compose(
 
 	/* The adoption is a cadence event and a flip of the report. */
 	bcm2711_display_flip_note(display, BCM2711_FLIP_CADENCE_FLIP);
-	bcm2711_display_flip_report(display, 0, 0, wait_ticks);
+	bcm2711_display_flip_report(display, true, 0, 0, wait_ticks);
 
 	/* Succeeded: a selected-PV frame adopted a list with the frame. */
 	return 0;
@@ -877,7 +1154,7 @@ int
 bcm2711_display_flip_restore(
 	struct bcm2711_display *display)
 {
-	struct bcm2711_buffer *released[BCM2711_FLIP_RETIRING + 1U];
+	struct bcm2711_buffer *released[BCM2711_FLIP_RETIRING + BCM2711_FLIP_PLANES];
 	unsigned long enabled;
 	uint32_t count;
 	uint32_t index;
@@ -935,10 +1212,13 @@ bcm2711_display_flip_restore(
 		return error;
 	}
 
-	/* The planes go: the primary and the cursor are hidden from now on. */
+	/* The planes go: the primary, the overlays and the cursor are hidden from now on. */
 	display->flip.state_serial++;
 	display->flip.primary.shown = false;
+	for (index = 0; index < BCM2711_FLIP_OVERLAYS; index++)
+		display->flip.overlays[index].shown = false;
 	kern_memset(&display->flip.cursor, 0, sizeof(display->flip.cursor));
+	display->flip.planes_generation++;
 
 	/* Requeues the preserved console list and demands a fresh matching source. */
 	display->flip.console_pending = true;
@@ -962,6 +1242,18 @@ bcm2711_display_flip_restore(
 
 	/* The primary was hidden by the restore and borrows nothing more. */
 	kern_memset(&display->flip.primary, 0, sizeof(display->flip.primary));
+
+	/* Neither do the overlays. */
+	for (index = 0; index < BCM2711_FLIP_OVERLAYS; index++) {
+		/* A hidden overlay's image, if it had one. */
+		if (display->flip.overlays[index].hold != NULL) {
+			released[count] = display->flip.overlays[index].hold;
+			count++;
+		}
+	}
+
+	/* The overlays are empty for the next lease. */
+	kern_memset(display->flip.overlays, 0, sizeof(display->flip.overlays));
 
 	/* Every image waiting for an adoption goes too. */
 	for (index = 0; index < display->flip.retiring_count; index++) {
@@ -1025,6 +1317,7 @@ bcm2711_display_flip_snapshot(
 	status->core_hz = display->flip.core_hz;
 	status->clock_error = display->flip.clock_error;
 	status->primary = display->flip.primary;
+	kern_memcpy(status->overlays, display->flip.overlays, sizeof(status->overlays));
 	for (slot = 0; slot < BCM2711_FLIP_SLOTS; slot++) {
 		/* A slot's frame means something only while the slot is used. */
 		if (display->flip.slots[slot].used)
@@ -1073,6 +1366,7 @@ bcm2711_display_flip_vblank_locked(
 			display->flip.slots[index].used = false;
 		display->flip.adopted_serial = display->flip.state_serial;
 		display->flip.list_serial = display->flip.state_serial;
+		display->flip.adopted_ticks = sched_ticks();
 		display->flip.uncertain = false;
 		waitq_wake_all(&display->flip.adoption_waitq);
 		return;
@@ -1097,6 +1391,8 @@ bcm2711_display_flip_vblank_locked(
 
 	/* Settles the adopted list and every older one, and wakes the waiters. */
 	adopt_slot_locked(display, found, current);
+	display->flip.adopted_ticks = sched_ticks();
+	count_adoption_locked(display, display->flip.active_slot);
 	waitq_wake_all(&display->flip.adoption_waitq);
 
 	/* Changes made while two lists were out go in a list of their own now. */
@@ -1185,14 +1481,17 @@ bcm2711_display_flip_note(
 }
 
 /*
- * Adds an adopted primary flip to the flip report and prints a window of two seconds or more (v3d.perf=1 only).
+ * Adds an event to the flip report and prints a window of two seconds or more (v3d.perf=1 only).
  *
- * clean and raise are the record's own stages when the caller measured them
- * itself (zero when the record added them); wait is the adoption wait.
+ * flip says the caller saw an adopted primary flip, with clean and raise
+ * the record's stages when the caller measured them (zero when the record
+ * added them) and wait the adoption wait; a commit calls it with flip false
+ * so a window of overlay changes alone is printed too.
  */
 void
 bcm2711_display_flip_report(
 	struct bcm2711_display *display,
+	bool flip,
 	uint64_t clean,
 	uint64_t raise,
 	uint64_t wait)
@@ -1205,6 +1504,8 @@ bcm2711_display_flip_report(
 	uint64_t sets;
 	uint64_t copies;
 	uint64_t count;
+	uint32_t times;
+	uint32_t replaced;
 	bool report;
 	bool measured;
 
@@ -1216,26 +1517,33 @@ bcm2711_display_flip_report(
 	/* Adds this flip, and takes a full window for one caller to print. */
 	now = clock_ticks();
 	report = false;
+	times = 0;
+	replaced = 0;
 	enabled = spin_lock_irqsave(&display->flip.guard);
 
-	display->flip.perf.flips++;
-	display->flip.perf.clean += clean;
-	display->flip.perf.raise += raise;
-	display->flip.perf.wait += wait;
+	if (flip) {
+		display->flip.perf.flips++;
+		display->flip.perf.clean += clean;
+		display->flip.perf.raise += raise;
+		display->flip.perf.wait += wait;
+	}
+
+	/* The window's age, and whether it is full. */
 	elapsed = 0;
 	if (display->flip.perf.start != 0)
 		elapsed = kern_ticks_to_ms(now - display->flip.perf.start);
 	if (display->flip.perf.start == 0) {
-		/* The first flip opens the window; underruns are counted from the total at its start. */
+		/* The first event opens the window; underruns are counted from the total at its start. */
 		display->flip.perf.start = now;
 		display->flip.perf.underruns = display->underruns;
 	} else if (elapsed >= 2000U && !display->flip.perf_reporting) {
-		/* The window is copied and starts again empty at this report. */
+		/* The window and its settled overlay times are copied; the window starts again empty. */
 		window = display->flip.perf;
 		kern_memset(&display->flip.perf, 0, sizeof(display->flip.perf));
 		display->flip.perf.start = now;
 		display->flip.perf.underruns = display->underruns;
 		display->flip.perf_reporting = true;
+		times = take_times_locked(display, &replaced);
 		report = true;
 	}
 
@@ -1255,7 +1563,7 @@ bcm2711_display_flip_report(
 	if (count == 0)
 		count = 1;
 	kern_logf(
-		"bcm2711: flip perf ms=%llu flips=%llu avg_us clean=%llu raise=%llu wait=%llu cursor sets=%llu copies=%llu records primary=%llu cursor=%llu lists=%llu replaced=%llu coalesced=%llu underruns=%llu\n",
+		"bcm2711: flip perf ms=%llu flips=%llu avg_us clean=%llu raise=%llu wait=%llu cursor sets=%llu copies=%llu records primary=%llu cursor=%llu overlay=%llu dropped=%llu lists=%llu replaced=%llu coalesced=%llu underruns=%llu pair=%llu/%llu\n",
 		(unsigned long long)kern_ticks_to_ms(now - window.start),
 		(unsigned long long)window.flips,
 		(unsigned long long)(kern_ticks_to_rate(window.clean, 1000000U) / count),
@@ -1265,10 +1573,17 @@ bcm2711_display_flip_report(
 		(unsigned long long)copies,
 		(unsigned long long)window.primary_records,
 		(unsigned long long)window.cursor_records,
+		(unsigned long long)window.overlay_records,
+		(unsigned long long)window.dropped,
 		(unsigned long long)window.lists,
 		(unsigned long long)window.replaced,
 		(unsigned long long)window.coalesced,
-		(unsigned long long)underruns);
+		(unsigned long long)underruns,
+		(unsigned long long)window.pair_both,
+		(unsigned long long)window.pair_window);
+
+	/* Prints the overlay records adopted in the window, and how many were replaced before any adoption. */
+	report_times(times, replaced);
 
 	/* Another caller may print the next window. */
 	enabled = spin_lock_irqsave(&display->flip.guard);
@@ -1381,34 +1696,84 @@ console_hidden(
 }
 
 /*
- * Computes the core clock a list with this primary needs: sixty percent of
- * the planes' pixels per second at four pixels per compositor cycle, and
- * never less than the console's.
+ * Computes the core clock a list of these planes needs: sixty percent of
+ * the planes' pixels per second at four pixels per compositor cycle (every
+ * plane is unscaled), and never less than the console's.
  */
 static uint32_t
 required_clock(
 	const struct bcm2711_display *display,
-	const struct bcm2711_flip_primary *primary)
+	const struct bcm2711_flip_primary *primary,
+	const struct bcm2711_flip_overlay *overlays)
 {
 	uint64_t load;
 	uint32_t required;
+	uint32_t index;
 	bool hidden;
 
 	/* The primary, and the console when it shows through. */
-	load = (uint64_t)primary->frame.width * primary->frame.height;
+	load = 0;
+	if (primary->shown)
+		load = (uint64_t)primary->frame.width * primary->frame.height;
 	hidden = console_hidden(display, primary);
 	if (!hidden)
 		load += (uint64_t)display->screen.width * display->screen.height;
+
+	/* Every shown overlay's shown part. */
+	for (index = 0; index < BCM2711_FLIP_OVERLAYS; index++) {
+		/* A hidden overlay is not in the list. */
+		if (overlays[index].shown)
+			load += (uint64_t)overlays[index].dst_width * overlays[index].dst_height;
+	}
 
 	/* One output uses sixty percent of the aggregate plane cycle demand. */
 	load = load * ((display->refresh_millihz + 500U) / 1000U) / 4U;
 	load = load * 60U / 100U;
 	required = display->console_core_hz;
-	if (load > required)
+	if (load > 0xffffffffULL) {
+		/* More than any clock: the caller refuses it. */
+		required = 0xffffffffU;
+	} else if (load > required) {
+		/* Above the console's floor. */
 		required = (uint32_t)load;
+	}
 
 	/* Succeeded: the floor the list needs. */
 	return required;
+}
+
+/*
+ * Computes the bytes per second the HVS reads for a list of these planes:
+ * each shown plane's source pixels, four bytes each, every refresh (no plane
+ * is scaled, so no row is read twice).
+ */
+static uint64_t
+read_bandwidth(
+	const struct bcm2711_display *display,
+	const struct bcm2711_flip_primary *primary,
+	const struct bcm2711_flip_overlay *overlays)
+{
+	uint64_t pixels;
+	uint32_t index;
+	bool hidden;
+
+	/* The primary, and the console when it shows through. */
+	pixels = 0;
+	if (primary->shown)
+		pixels = (uint64_t)primary->frame.width * primary->frame.height;
+	hidden = console_hidden(display, primary);
+	if (!hidden)
+		pixels += (uint64_t)display->screen.width * display->screen.height;
+
+	/* Every shown overlay's source rectangle. */
+	for (index = 0; index < BCM2711_FLIP_OVERLAYS; index++) {
+		/* A hidden overlay is not read. */
+		if (overlays[index].shown)
+			pixels += (uint64_t)overlays[index].src_width * overlays[index].src_height;
+	}
+
+	/* Four bytes a pixel at the mode's refresh rate. */
+	return pixels * 4U * display->refresh_millihz / 1000U;
 }
 
 /*
@@ -1829,6 +2194,10 @@ write_list_locked(
 		count += FLIP_PLANE_WORDS;
 	}
 
+	/* The overlays above the primary, in plane order. */
+	for (index = 0; index < BCM2711_FLIP_OVERLAYS; index++)
+		count += overlay_words(&display->flip.overlays[index], words + count);
+
 	/* The cursor on top, clipped to the output; it adds nothing when hidden or wholly outside. */
 	cursor = cursor_words(display, words + count);
 	count += cursor;
@@ -1852,6 +2221,15 @@ write_list_locked(
 	display->flip.slots[slot].cursor_image = 0;
 	if (cursor != 0)
 		display->flip.slots[slot].cursor_image = display->flip.cursor.physical;
+
+	/* The places and record numbers the adoption's counts compare. */
+	display->flip.slots[slot].window_shown = display->flip.overlays[0].shown;
+	display->flip.slots[slot].window_x = display->flip.overlays[0].dst_x;
+	display->flip.slots[slot].window_y = display->flip.overlays[0].dst_y;
+	display->flip.slots[slot].cursor_shown = display->flip.cursor.shown;
+	display->flip.slots[slot].cursor_x = display->flip.cursor.x;
+	display->flip.slots[slot].cursor_y = display->flip.cursor.y;
+	kern_memcpy(display->flip.slots[slot].records, display->flip.plane_records, sizeof(display->flip.slots[slot].records));
 
 	/* Succeeded: the complete list waits in its slot. */
 	return list;
@@ -2074,6 +2452,474 @@ wait_console(
 	return 0;
 }
 
+/*
+ * Makes the new state of every plane from the recorded one and a commit's changes; the caller holds the guard.
+ *
+ * A change whose serial is not above its plane's last one is dropped
+ * (recorded false) and changes nothing.  retired counts the borrowed images
+ * the recorded changes replace or hide.  Nothing of the state changes here.
+ */
+static int
+view_changes_locked(
+	struct bcm2711_display *display,
+	struct bcm2711_flip_change *changes,
+	uint32_t count,
+	struct bcm2711_flip_primary *primary,
+	struct bcm2711_flip_overlay *overlays,
+	uint32_t *retired)
+{
+	struct bcm2711_flip_change *change;
+	struct bcm2711_flip_overlay *overlay;
+	struct bcm2711_buffer *old_hold;
+	uint32_t index;
+	uint32_t shown;
+	int error;
+
+	/* Starts from the recorded planes. */
+	*primary = display->flip.primary;
+	kern_memcpy(overlays, display->flip.overlays, sizeof(display->flip.overlays));
+	*retired = 0;
+
+	/* Applies each change to the view, in the order given (each plane once). */
+	for (index = 0; index < count; index++) {
+		/* A plane this output has. */
+		change = &changes[index];
+		change->recorded = false;
+		if (change->plane >= BCM2711_FLIP_PLANES)
+			return EINVAL;
+
+		/* A new image is only for a shown plane. */
+		if (change->image && !change->shown)
+			return EINVAL;
+
+		/* A serial at or below the plane's last one was overtaken: dropped. */
+		if (change->serial <= display->flip.plane_serials[change->plane])
+			continue;
+		change->recorded = true;
+
+		/* The primary: the whole output, unscaled and opaque, from its new or kept image. */
+		if (change->plane == 0) {
+			old_hold = primary->hold;
+			if (change->shown) {
+				/* A kept image needs one recorded before. */
+				if (change->image) {
+					primary->frame = change->frame;
+					primary->hold = change->hold;
+				} else if (primary->frame.width == 0) {
+					return EINVAL;
+				}
+
+				/* The source is the whole image and the destination the whole output. */
+				if (change->src_x != 0 || change->src_y != 0 || change->dst_x != 0 || change->dst_y != 0)
+					return EINVAL;
+				if (change->src_width != primary->frame.width || change->src_height != primary->frame.height)
+					return EINVAL;
+				if (change->dst_width != display->screen.width || change->dst_height != display->screen.height)
+					return EINVAL;
+				primary->shown = true;
+				primary->premultiplied = false;
+				primary->x = 0;
+				primary->y = 0;
+				error = check_primary(display, primary);
+				if (error != 0)
+					return error;
+			} else {
+				/* A hidden primary borrows no image; the console shows. */
+				kern_memset(primary, 0, sizeof(*primary));
+			}
+
+			/* A new image, or hiding, lets the old one go once adopted. */
+			if (old_hold != NULL && (change->image || !change->shown))
+				(*retired)++;
+			continue;
+		}
+
+		/* An overlay: an unscaled part of its new or kept image, inside the output. */
+		overlay = &overlays[change->plane - 1U];
+		old_hold = overlay->hold;
+		if (change->shown) {
+			/* A kept image needs one recorded before. */
+			if (change->image) {
+				overlay->frame = change->frame;
+				overlay->hold = change->hold;
+			} else if (overlay->frame.width == 0) {
+				return EINVAL;
+			}
+
+			/* The overlay's rectangles, checked against its image and the output. */
+			overlay->shown = true;
+			overlay->src_x = change->src_x;
+			overlay->src_y = change->src_y;
+			overlay->src_width = change->src_width;
+			overlay->src_height = change->src_height;
+			overlay->dst_x = change->dst_x;
+			overlay->dst_y = change->dst_y;
+			overlay->dst_width = change->dst_width;
+			overlay->dst_height = change->dst_height;
+			error = check_overlay(display, overlay);
+			if (error != 0)
+				return error;
+		} else {
+			/* A hidden overlay borrows no image and keeps none. */
+			kern_memset(overlay, 0, sizeof(*overlay));
+		}
+
+		/* A new image, or hiding, lets the old one go once adopted. */
+		if (old_hold != NULL && (change->image || !change->shown))
+			(*retired)++;
+	}
+
+	/* An overlay shows over a primary, never over the console alone. */
+	shown = 0;
+	for (index = 0; index < BCM2711_FLIP_OVERLAYS; index++) {
+		/* Counts the shown overlays. */
+		if (overlays[index].shown)
+			shown++;
+	}
+
+	/* A shown overlay needs the primary under it. */
+	if (shown != 0 && !primary->shown)
+		return EINVAL;
+
+	/* Succeeded: the view is the state the commit would record. */
+	return 0;
+}
+
+/* Checks that an overlay shows an unscaled part of an uncached image, inside the output. */
+static int
+check_overlay(
+	const struct bcm2711_display *display,
+	const struct bcm2711_flip_overlay *overlay)
+{
+	const struct drv_bcm2711_boot_screen *frame;
+	bool overlap;
+
+	/* An encodable image: a known byte order, aligned rows inside storage below one GiB. */
+	frame = &overlay->frame;
+	if (frame->format > 1U)
+		return EINVAL;
+	if (frame->width == 0 || frame->width > 4096U || frame->height == 0 || frame->height > 4096U)
+		return EINVAL;
+	if ((frame->physical & 3U) != 0 || frame->physical >= 0x40000000ULL)
+		return EINVAL;
+	if (frame->size == 0 || frame->size > 0x40000000ULL - frame->physical)
+		return EINVAL;
+	if (frame->pitch < frame->width * 4U || frame->pitch > 65535U || (frame->pitch & 3U) != 0)
+		return EINVAL;
+	if ((uint64_t)frame->pitch * frame->height > frame->size)
+		return EINVAL;
+
+	/* The HVS reads it while the CPU may not hold newer lines in a cache. */
+	if (!frame->uncached)
+		return EINVAL;
+
+	/* The console is never scanned out from storage that also holds a frame. */
+	overlap = frames_overlap(frame, &display->screen);
+	if (overlap)
+		return EINVAL;
+
+	/* The source rectangle lies inside the image. */
+	if (overlay->src_width == 0 || overlay->src_height == 0)
+		return EINVAL;
+	if (overlay->src_x > frame->width || overlay->src_width > frame->width - overlay->src_x)
+		return EINVAL;
+	if (overlay->src_y > frame->height || overlay->src_height > frame->height - overlay->src_y)
+		return EINVAL;
+
+	/* The destination rectangle lies inside the output. */
+	if (overlay->dst_width == 0 || overlay->dst_height == 0)
+		return EINVAL;
+	if (overlay->dst_x > display->screen.width || overlay->dst_width > display->screen.width - overlay->dst_x)
+		return EINVAL;
+	if (overlay->dst_y > display->screen.height || overlay->dst_height > display->screen.height - overlay->dst_y)
+		return EINVAL;
+
+	/* No overlay is scaled: a different size is outside its limits. */
+	if (overlay->src_width != overlay->dst_width || overlay->src_height != overlay->dst_height)
+		return ENOSPC;
+
+	/* Succeeded: the overlay can be encoded into any later list. */
+	return 0;
+}
+
+/*
+ * Records a checked commit view as the state; the caller holds the guard and has advanced the state's number.
+ *
+ * Each recorded change's plane takes its new state and serial; a replaced
+ * or hidden borrowed image waits for the adoption of a list made from this
+ * number or later.
+ */
+static void
+apply_changes_locked(
+	struct bcm2711_display *display,
+	struct bcm2711_flip_change *changes,
+	uint32_t count,
+	const struct bcm2711_flip_primary *primary,
+	const struct bcm2711_flip_overlay *overlays)
+{
+	struct bcm2711_buffer *old_hold;
+	struct bcm2711_flip_time *time;
+	uint32_t index;
+	uint32_t plane;
+
+	/* Moves the replaced images to the waiting room and the plane serials forward. */
+	for (index = 0; index < count; index++) {
+		/* A dropped change leaves its plane alone. */
+		if (!changes[index].recorded)
+			continue;
+		plane = changes[index].plane;
+		old_hold = display->flip.primary.hold;
+		if (plane != 0)
+			old_hold = display->flip.overlays[plane - 1U].hold;
+		if (old_hold != NULL && (changes[index].image || !changes[index].shown)) {
+			display->flip.retiring[display->flip.retiring_count].hold = old_hold;
+			display->flip.retiring[display->flip.retiring_count].serial = display->flip.state_serial;
+			display->flip.retiring_count++;
+		}
+
+		/*
+		 * The plane's serial: later commits with a serial at or below it are
+		 * dropped.  Its record number tells which record a list shows.
+		 */
+		display->flip.plane_serials[plane] = changes[index].serial;
+		display->flip.plane_records[plane] = display->flip.state_serial;
+
+		/* An overlay record's time joins the ring (v3d.perf=1 only). */
+		if (plane != 0 && display->flip.cadence_state == BCM2711_FLIP_CADENCE_ON) {
+			time = &display->flip.times[display->flip.times_next];
+			time->plane = plane;
+			time->plane_serial = changes[index].serial;
+			time->state_serial = display->flip.state_serial;
+			time->recorded = sched_ticks();
+			time->adopted = 0;
+			display->flip.times_next = (display->flip.times_next + 1U) % BCM2711_FLIP_TIMES;
+		}
+
+		/* The report counts the plane's record. */
+		if (plane == 0) {
+			display->flip.perf.primary_records++;
+		} else {
+			display->flip.perf.overlay_records++;
+		}
+	}
+
+	/* The view is the state now; another commit's view taken before is stale. */
+	display->flip.primary = *primary;
+	kern_memcpy(display->flip.overlays, overlays, sizeof(display->flip.overlays));
+	display->flip.planes_generation++;
+}
+
+/* Encodes one overlay's plane: its source rectangle at its destination, with per-pixel premultiplied alpha. */
+static uint32_t
+overlay_words(
+	const struct bcm2711_flip_overlay *overlay,
+	uint32_t *words)
+{
+	uint32_t order;
+	uint32_t start;
+
+	/* A hidden overlay adds no plane. */
+	if (!overlay->shown)
+		return 0;
+
+	/* The source rectangle starts that many rows and columns into the image. */
+	start = (uint32_t)overlay->frame.physical + overlay->src_y * overlay->frame.pitch + overlay->src_x * 4U;
+	order = 2;
+	if (overlay->frame.format == 1)
+		order = 3;
+
+	/* The same eight words as the cursor's, at the destination and with the source's size. */
+	words[0] = 0x48009807U | (order << 13);
+	words[1] = (overlay->dst_y << 16) | overlay->dst_x;
+	words[2] = 0x2000fff0U;
+	words[3] = (overlay->src_height << 16) | overlay->src_width;
+	words[4] = 0xc0c0c0c0U;
+	words[5] = 0xc0000000U | start;
+	words[6] = 0xc0c0c0c0U;
+	words[7] = overlay->frame.pitch;
+
+	/* Succeeded: one plane. */
+	return FLIP_PLANE_WORDS;
+}
+
+/* Adds one event of a cadence kind to the window (v3d.perf=1 only); the caller holds the guard and prints nothing. */
+static void
+note_locked(
+	struct bcm2711_display *display,
+	unsigned kind,
+	uint64_t now)
+{
+	struct bcm2711_flip_cadence *cadence;
+	uint64_t interval;
+
+	/* The interval joins the window's samples while they fit. */
+	cadence = &display->flip.cadence[kind];
+	if (cadence->last != 0 && cadence->stored < BCM2711_FLIP_CADENCE_SAMPLES) {
+		interval = kern_ticks_to_rate(now - cadence->last, 1000000U);
+		if (interval > UINT32_MAX)
+			interval = UINT32_MAX;
+		cadence->intervals[cadence->stored] = (uint32_t)interval;
+		cadence->stored++;
+	}
+	cadence->last = now;
+	cadence->count++;
+
+	/* The first event opens the window. */
+	if (display->flip.cadence_start == 0)
+		display->flip.cadence_start = now;
+}
+
+/*
+ * Counts what an adopted list moved (v3d.perf=1 only); the caller holds the guard.
+ *
+ * A list that moved the first overlay counts for the overlay cadence and the
+ * pair, and as a pair too when it also moved the cursor; every overlay
+ * record the list shows gets its adoption time.
+ */
+static void
+count_adoption_locked(
+	struct bcm2711_display *display,
+	uint32_t slot)
+{
+	struct bcm2711_flip_slot *list;
+	struct bcm2711_flip_time *time;
+	uint64_t now;
+	uint32_t index;
+	bool window_moved;
+	bool cursor_moved;
+
+	/* Nothing is kept without v3d.perf=1 (read at the first note). */
+	if (display->flip.cadence_state != BCM2711_FLIP_CADENCE_ON)
+		return;
+
+	/* The first overlay's and the cursor's places against the last adopted list. */
+	list = &display->flip.slots[slot];
+	now = clock_ticks();
+	window_moved = false;
+	if (list->window_shown != display->flip.last_window_shown ||
+	    list->window_x != display->flip.last_window_x ||
+	    list->window_y != display->flip.last_window_y)
+		window_moved = true;
+	cursor_moved = false;
+	if (list->cursor_shown != display->flip.last_cursor_shown ||
+	    list->cursor_x != display->flip.last_cursor_x ||
+	    list->cursor_y != display->flip.last_cursor_y)
+		cursor_moved = true;
+
+	/* A moved window is an overlay adoption and a pair candidate. */
+	if (window_moved && list->window_shown) {
+		note_locked(display, BCM2711_FLIP_CADENCE_OVERLAY, now);
+		display->flip.perf.pair_window++;
+		if (cursor_moved)
+			display->flip.perf.pair_both++;
+	}
+
+	/* The places the next adoption compares with. */
+	display->flip.last_window_shown = list->window_shown;
+	display->flip.last_window_x = list->window_x;
+	display->flip.last_window_y = list->window_y;
+	display->flip.last_cursor_shown = list->cursor_shown;
+	display->flip.last_cursor_x = list->cursor_x;
+	display->flip.last_cursor_y = list->cursor_y;
+
+	/* The overlay records this list shows are adopted now. */
+	for (index = 0; index < BCM2711_FLIP_TIMES; index++) {
+		/* A record of a plane, shown by this list, not yet adopted. */
+		time = &display->flip.times[index];
+		if (time->plane == 0 || time->adopted != 0 || time->recorded == 0)
+			continue;
+		if (list->records[time->plane] != time->state_serial)
+			continue;
+		time->adopted = sched_ticks();
+	}
+}
+
+/*
+ * Copies the settled overlay record times out of the ring and frees their entries; the caller holds the guard.
+ *
+ * Settled is adopted, or replaced before any adoption (no time, and its
+ * number already adopted).  Returns how many adopted ones were copied to
+ * times_copy; replaced counts the others.
+ */
+static uint32_t
+take_times_locked(
+	struct bcm2711_display *display,
+	uint32_t *replaced)
+{
+	struct bcm2711_flip_time *time;
+	uint32_t index;
+	uint32_t copied;
+
+	/* Walks the whole ring once. */
+	copied = 0;
+	*replaced = 0;
+	for (index = 0; index < BCM2711_FLIP_TIMES; index++) {
+		/* An empty entry, or one whose record is still waiting. */
+		time = &display->flip.times[index];
+		if (time->recorded == 0)
+			continue;
+		if (time->adopted == 0 && time->state_serial > display->flip.adopted_serial)
+			continue;
+
+		/* A replaced record has no time to print; an adopted one is copied. */
+		if (time->adopted == 0) {
+			(*replaced)++;
+		} else {
+			times_copy[copied] = *time;
+			copied++;
+		}
+
+		/* The entry is free again. */
+		kern_memset(time, 0, sizeof(*time));
+	}
+
+	/* Succeeded: the number of adopted records copied. */
+	return copied;
+}
+
+/*
+ * Prints the copied overlay record times (v3d.perf=1 only): per record its
+ * plane, plane serial and milliseconds from record to adoption, sixteen to
+ * a line, after the count of records replaced before any adoption.
+ */
+static void
+report_times(
+	uint32_t count,
+	uint32_t replaced)
+{
+	char line[512];
+	uint32_t index;
+	uint32_t length;
+	int written;
+
+	/* A window without overlay records prints nothing. */
+	if (count == 0 && replaced == 0)
+		return;
+	kern_logf("bcm2711: overlay times adopted=%u replaced=%u\n", (unsigned)count, (unsigned)replaced);
+
+	/* Lines of plane:serial:milliseconds. */
+	length = 0;
+	for (index = 0; index < count; index++) {
+		/* One record. */
+		written = kern_snprintf(
+			line + length,
+			sizeof(line) - length,
+			" %u:%llu:%llu",
+			(unsigned)times_copy[index].plane,
+			(unsigned long long)times_copy[index].plane_serial,
+			(unsigned long long)kern_ticks_to_ms(times_copy[index].adopted - times_copy[index].recorded));
+		if (written > 0 && (uint32_t)written < sizeof(line) - length)
+			length += (uint32_t)written;
+
+		/* Sixteen records, or the last, end a line. */
+		if ((index + 1U) % 16U == 0 || index + 1U == count) {
+			kern_logf("bcm2711: overlay times%s\n", line);
+			length = 0;
+			line[0] = '\0';
+		}
+	}
+}
+
 /* Tells whether the flip report and the cadence are kept: the boot line is read at the first use. */
 static bool
 perf_enabled(
@@ -2105,17 +2951,20 @@ report_cadence(
 	uint64_t set[4];
 	uint64_t move[4];
 	uint64_t flip[4];
+	uint64_t overlay[4];
 
 	/* Each kind's summary from its own samples. */
 	cadence_summary(&cadence_copy[BCM2711_FLIP_CADENCE_SET], milliseconds, set);
 	cadence_summary(&cadence_copy[BCM2711_FLIP_CADENCE_MOVE], milliseconds, move);
 	cadence_summary(&cadence_copy[BCM2711_FLIP_CADENCE_FLIP], milliseconds, flip);
+	cadence_summary(&cadence_copy[BCM2711_FLIP_CADENCE_OVERLAY], milliseconds, overlay);
 	kern_logf(
-		"bcm2711: cadence ms=%llu per_s/min/med/max_us set=%llu/%llu/%llu/%llu move=%llu/%llu/%llu/%llu flip=%llu/%llu/%llu/%llu\n",
+		"bcm2711: cadence ms=%llu per_s/min/med/max_us set=%llu/%llu/%llu/%llu move=%llu/%llu/%llu/%llu flip=%llu/%llu/%llu/%llu overlay=%llu/%llu/%llu/%llu\n",
 		(unsigned long long)milliseconds,
 		(unsigned long long)set[0], (unsigned long long)set[1], (unsigned long long)set[2], (unsigned long long)set[3],
 		(unsigned long long)move[0], (unsigned long long)move[1], (unsigned long long)move[2], (unsigned long long)move[3],
-		(unsigned long long)flip[0], (unsigned long long)flip[1], (unsigned long long)flip[2], (unsigned long long)flip[3]);
+		(unsigned long long)flip[0], (unsigned long long)flip[1], (unsigned long long)flip[2], (unsigned long long)flip[3],
+		(unsigned long long)overlay[0], (unsigned long long)overlay[1], (unsigned long long)overlay[2], (unsigned long long)overlay[3]);
 }
 
 /*

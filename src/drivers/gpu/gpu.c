@@ -117,6 +117,11 @@ struct drv_gpu_device {
 	unsigned monitor_stopping;
 };
 
+/* The display commit ABI's sizes are the same for every userspace word size. */
+_Static_assert(sizeof(struct gpu_display_plane_state) == 96U, "display plane state size");
+_Static_assert(sizeof(struct gpu_display_commit) == 552U, "display commit size");
+_Static_assert(sizeof(struct gpu_display_overlay_info) == 56U, "display overlay info size");
+
 /*
  * One kernel snapshot of a selected display request; it retains no user pointers.
  */
@@ -135,6 +140,7 @@ union gpu_display_request {
 	struct gpu_display_cursor_image cursor_image;
 	struct gpu_display_cursor_move cursor_move;
 	struct gpu_display_cursor_hide cursor_hide;
+	struct gpu_display_overlay_info overlay_info;
 };
 
 /*
@@ -317,6 +323,10 @@ static int gpu_display_admit(struct gpu_session *session);
 static int gpu_display_present_resource(const struct drv_gpu_display_ops *ops, struct drv_gpu_device *device, struct gpu_session *session, struct gpu_resource *resource, struct gpu_display_present *request);
 static int gpu_display_cursor_resource(const struct drv_gpu_display_ops *ops, struct drv_gpu_device *device, struct gpu_session *session, struct gpu_resource *resource, const struct gpu_display_cursor_image *request);
 static unsigned gpu_display_ungated(struct gpu_session *session, unsigned long command);
+static int gpu_commit_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_commit_check(const struct gpu_display_commit *request);
+static int gpu_commit_plane_check(const struct gpu_display_plane_state *state);
+static int gpu_commit_record(struct gpu_session *session, struct gpu_display_commit *request);
 static int gpu_resource_reserve(struct gpu_session *session, uint64_t bytes, struct gpu_resource **result);
 static int gpu_user_range(uint64_t address, uint32_t bytes, uintptr_t *pointer);
 static int gpu_capset_ioctl(struct gpu_session *session, uintptr_t argument);
@@ -1093,6 +1103,14 @@ gpu_ops_validate(
 		/* A gated present waits by itself, so a separate wait would never run. */
 		if ((ops->display->flags & DRV_GPU_DISPLAY_UNGATED) == 0U && ops->display->adoption_wait != NULL)
 			return EINVAL;
+
+		/* Overlays have a commit and their limits together. */
+		if ((ops->display->commit == NULL) != (ops->display->overlay_info == NULL))
+			return EINVAL;
+
+		/* A commit records without waiting, so it needs the ungated adoption wait. */
+		if (ops->display->commit != NULL && (ops->display->flags & DRV_GPU_DISPLAY_UNGATED) == 0U)
+			return EINVAL;
 	}
 
 	/* Exported allocations need independent release and receiver-context import together. */
@@ -1675,6 +1693,16 @@ gpu_ioctl_body(
 			return error;
 
 		/* Succeeded: the submitted operation retained its exact prerequisite and completion capabilities. */
+		return 0;
+	}
+
+	/* A commit of display planes waits for its fences and records outside admission. */
+	if (command == GPU_DISPLAY_COMMIT) {
+		error = gpu_commit_ioctl(session, argument);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the planes are recorded, and adopted when the caller asked to wait. */
 		return 0;
 	}
 
@@ -3361,6 +3389,9 @@ gpu_display_ioctl(
 	case GPU_DISPLAY_CURSOR_HIDE:
 		bytes = sizeof(request.cursor_hide);
 		break;
+	case GPU_DISPLAY_OVERLAY_INFO:
+		bytes = sizeof(request.overlay_info);
+		break;
 	default:
 		return EOPNOTSUPP;
 	}
@@ -3537,7 +3568,7 @@ gpu_display_ioctl(
 
 		/* An ungated present waits for its adoption without a pin, an admission or a lock. */
 		if (ungated != 0U) {
-			error = ops->adoption_wait(device->private_data, session->backend, &request.present);
+			error = ops->adoption_wait(device->private_data, session->backend, request.present.lease, &request.present.sequence, NULL);
 			if (error != 0)
 				return error;
 		}
@@ -3657,6 +3688,30 @@ gpu_display_ioctl(
 
 		/* Succeeded: the request has no reply to copy out. */
 		return 0;
+	case GPU_DISPLAY_OVERLAY_INFO:
+		/* A display without overlays has no limits to report. */
+		if (ops->overlay_info == NULL)
+			return EOPNOTSUPP;
+
+		/* An overlay of a display of a generation; every output is zero on input. */
+		if (request.overlay_info.display_id == 0U ||
+		    request.overlay_info.generation == 0U ||
+		    request.overlay_info.plane == GPU_DISPLAY_PLANE_PRIMARY ||
+		    request.overlay_info.plane > GPU_DISPLAY_OVERLAY_MAX ||
+		    request.overlay_info.max_src_width != 0U ||
+		    request.overlay_info.max_src_height != 0U ||
+		    request.overlay_info.max_dst_width != 0U ||
+		    request.overlay_info.max_dst_height != 0U ||
+		    request.overlay_info.flags != 0U ||
+		    request.overlay_info.formats != 0U ||
+		    request.overlay_info.reserved != 0U)
+			return EINVAL;
+
+		/* The backend reports the overlay's limits on the output's current mode. */
+		error = ops->overlay_info(device->private_data, session->backend, &request.overlay_info);
+		if (error != 0)
+			return error;
+		break;
 	default:
 		return EOPNOTSUPP;
 	}
@@ -3784,6 +3839,8 @@ gpu_display_ungated(
 		return 1U;
 	if (command == GPU_DISPLAY_CURSOR_HIDE)
 		return 1U;
+	if (command == GPU_DISPLAY_OVERLAY_INFO)
+		return 1U;
 
 	/* Succeeded: every other request takes admission as before. */
 	return 0U;
@@ -3809,6 +3866,317 @@ gpu_display_admit(
 		return error;
 
 	/* Succeeded: the request may reach the backend. */
+	return 0;
+}
+
+/*
+ * Changes some planes of a leased output at once (GPU_DISPLAY_COMMIT).
+ *
+ * The plane fences are waited for before anything is looked up, holding no
+ * admission; the named images are pinned only while the backend records the
+ * planes; COMMIT_WAIT then waits for the adoption without a pin and signals
+ * the commit's fence.
+ */
+static int
+gpu_commit_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_display_commit request;
+	struct drv_gpu_device *device;
+	const struct drv_gpu_display_ops *ops;
+	struct kernel_handle *signal;
+	uint32_t index;
+	unsigned fenced;
+	int error;
+	int finish;
+
+	/* Only a display with overlays commits, and only from a writable open. */
+	device = session->device;
+	if ((device->ops->capabilities & GPU_CAP_DISPLAY) == 0U)
+		return EOPNOTSUPP;
+	ops = device->ops->display;
+	if (ops->commit == NULL)
+		return EOPNOTSUPP;
+	if (session->writable == 0U)
+		return EACCES;
+
+	/* Copies the whole fixed request and checks everything the backend need not. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+	error = gpu_commit_check(&request);
+	if (error != 0)
+		return error;
+
+	/* Fences need the shared completion capability of this node. */
+	fenced = 0U;
+	if (request.signal_fd >= 0)
+		fenced = 1U;
+	for (index = 0; index < request.count; index++) {
+		/* A plane that waits for its image's writes. */
+		if (request.planes[index].wait_fd >= 0)
+			fenced = 1U;
+	}
+	if (fenced != 0U && (device->ops->capabilities & GPU_CAP_FENCE) == 0U)
+		return EOPNOTSUPP;
+
+	/* Pins the signal capability before waiting, so a reused descriptor number cannot change it. */
+	signal = NULL;
+	if (request.signal_fd >= 0) {
+		error = gpu_fence_get(session, request.signal_fd, 0U, &signal);
+		if (error != 0)
+			return error;
+	}
+
+	/* Waits for every plane's image, holding no admission or table lock. */
+	for (index = 0; index < request.count; index++) {
+		/* A renderer's fence of the companion GPU is accepted, as for PRESENT_SYNC. */
+		error = gpu_dependency_wait(session, request.planes[index].wait_fd, request.planes[index].wait_generation, 1U);
+		if (error != 0) {
+			handle_put(signal);
+			return error;
+		}
+	}
+
+	/* Reserves the signal's binding before the record, so close can always end it. */
+	if (signal != NULL) {
+		error = gpu_fence_binding_add(session, signal, request.signal_generation, 0U);
+		if (error != 0) {
+			handle_put(signal);
+			return error;
+		}
+	}
+
+	/* Records the planes, then waits for their adoption when asked. */
+	error = gpu_commit_record(session, &request);
+	if (error == 0 && (request.flags & GPU_DISPLAY_COMMIT_WAIT) != 0U)
+		error = ops->adoption_wait(device->private_data, session->backend, request.lease, &request.sequence, &request.adopted);
+
+	/* The adoption (or the failure) signals the commit's fence. */
+	if (signal != NULL) {
+		finish = gpu_fence_binding_end(session, signal, request.signal_generation, 0U, error);
+		if (error == 0)
+			error = finish;
+	}
+	handle_put(signal);
+	if (error != 0)
+		return error;
+
+	/* Returns every plane's result, the record's number and the adopted number. */
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller sees what was recorded. */
+	return 0;
+}
+
+/* Checks a commit's framing and fields that do not depend on the backend. */
+static int
+gpu_commit_check(
+	const struct gpu_display_commit *request)
+{
+	uint32_t index;
+	uint32_t other;
+	unsigned primary;
+	int error;
+
+	/* The exact record of this ABI, a lease of a generation, and outputs zero on input. */
+	if (request->version != GPU_ABI_VERSION || request->size != sizeof(*request))
+		return EINVAL;
+	if (request->lease == 0U || request->generation == 0U)
+		return EINVAL;
+	if (request->reserved0 != 0U || request->reserved != 0U)
+		return EINVAL;
+	if (request->sequence != 0U || request->adopted != 0U)
+		return EINVAL;
+
+	/* COMMIT_WAIT is the only flag; one to five planes. */
+	if ((request->flags & ~GPU_DISPLAY_COMMIT_WAIT) != 0U)
+		return EINVAL;
+	if (request->count == 0U || request->count > 1U + GPU_DISPLAY_OVERLAY_MAX)
+		return EINVAL;
+
+	/* A signal fence exists only for a commit that waits, with an exact generation. */
+	if (request->signal_fd < -1)
+		return EINVAL;
+	if (request->signal_fd == -1 && request->signal_generation != 0U)
+		return EINVAL;
+	if (request->signal_fd >= 0 && request->signal_generation == 0U)
+		return EINVAL;
+	if (request->signal_fd >= 0 && (request->flags & GPU_DISPLAY_COMMIT_WAIT) == 0U)
+		return EINVAL;
+
+	/* Every plane is well formed and named once. */
+	primary = 0U;
+	for (index = 0; index < request->count; index++) {
+		/* The plane's own fields. */
+		error = gpu_commit_plane_check(&request->planes[index]);
+		if (error != 0)
+			return error;
+		if (request->planes[index].plane == GPU_DISPLAY_PLANE_PRIMARY)
+			primary = 1U;
+
+		/* A plane named twice has no single new state. */
+		for (other = 0; other < index; other++) {
+			if (request->planes[other].plane == request->planes[index].plane)
+				return EINVAL;
+		}
+	}
+
+	/* Waiting for the adoption is defined for a commit that changes the primary. */
+	if ((request->flags & GPU_DISPLAY_COMMIT_WAIT) != 0U && primary == 0U)
+		return EINVAL;
+
+	/* The planes after count are not part of the request. */
+	for (index = request->count; index < 1U + GPU_DISPLAY_OVERLAY_MAX; index++) {
+		/* An unused entry is zero, except its fence, which is none. */
+		if (request->planes[index].plane != 0U ||
+		    request->planes[index].flags != 0U ||
+		    request->planes[index].handle != 0U ||
+		    request->planes[index].wait_fd != -1 ||
+		    request->planes[index].result != 0U)
+			return EINVAL;
+	}
+
+	/* Succeeded: the backend checks the planes against the output and its images. */
+	return 0;
+}
+
+/* Checks one plane's state in a commit. */
+static int
+gpu_commit_plane_check(
+	const struct gpu_display_plane_state *state)
+{
+	/* An existing plane, the defined flags, and the result zero on input. */
+	if (state->plane > GPU_DISPLAY_OVERLAY_MAX)
+		return EINVAL;
+	if ((state->flags & ~(GPU_DISPLAY_PLANE_SHOWN | GPU_DISPLAY_PLANE_IMAGE)) != 0U)
+		return EINVAL;
+	if (state->result != 0U || state->serial == 0U)
+		return EINVAL;
+
+	/* A wait fence has an exact generation, and none has none. */
+	if (state->wait_fd < -1)
+		return EINVAL;
+	if (state->wait_fd == -1 && state->wait_generation != 0U)
+		return EINVAL;
+	if (state->wait_fd >= 0 && state->wait_generation == 0U)
+		return EINVAL;
+
+	/* A shown plane covers at least one pixel of the output. */
+	if ((state->flags & GPU_DISPLAY_PLANE_SHOWN) != 0U) {
+		if (state->src_width == 0U || state->src_height == 0U)
+			return EINVAL;
+		if (state->dst_width == 0U || state->dst_height == 0U)
+			return EINVAL;
+		if (state->dst_x > UINT32_MAX - state->dst_width || state->dst_y > UINT32_MAX - state->dst_height)
+			return EINVAL;
+	}
+
+	/* A plane keeping its image names none. */
+	if ((state->flags & GPU_DISPLAY_PLANE_IMAGE) == 0U) {
+		if (state->handle != 0U || state->wait_fd != -1)
+			return EINVAL;
+
+		/* Succeeded: the backend checks the rectangles against the kept image. */
+		return 0;
+	}
+
+	/* A new image is a packed RGB32 image in a known byte order, with its source rectangle inside it. */
+	if (state->handle == 0U || state->width == 0U || state->height == 0U)
+		return EINVAL;
+	if (state->format != GPU_PIXEL_BGRA8888 && state->format != GPU_PIXEL_RGBA8888)
+		return EINVAL;
+	if (state->width > UINT32_MAX / 4U || state->stride < state->width * 4U || (state->stride & 3U) != 0U)
+		return EINVAL;
+	if (state->src_x > state->width || state->src_width > state->width - state->src_x)
+		return EINVAL;
+	if (state->src_y > state->height || state->src_height > state->height - state->src_y)
+		return EINVAL;
+
+	/* Succeeded: the image is checked against its storage once the handle is resolved. */
+	return 0;
+}
+
+/*
+ * Pins the images a commit names and lets the backend record the planes.
+ *
+ * The pins end before the caller waits for the adoption: the backend keeps
+ * its own reference to every image it records.
+ */
+static int
+gpu_commit_record(
+	struct gpu_session *session,
+	struct gpu_display_commit *request)
+{
+	struct drv_gpu_device *device;
+	struct gpu_resource *resources[1 + GPU_DISPLAY_OVERLAY_MAX];
+	void *objects[1 + GPU_DISPLAY_OVERLAY_MAX];
+	const struct gpu_display_plane_state *state;
+	uint64_t image_bytes;
+	uint32_t index;
+	uint32_t pinned;
+	int error;
+
+	/* The device and the open may still take new work. */
+	device = session->device;
+	error = gpu_display_admit(session);
+	if (error != 0)
+		return error;
+
+	/* Pins each named image and checks it lies inside native shared storage. */
+	kern_memset(resources, 0, sizeof(resources));
+	kern_memset(objects, 0, sizeof(objects));
+	pinned = 0;
+	for (index = 0; index < request->count; index++) {
+		/* A plane keeping its image names no storage. */
+		state = &request->planes[index];
+		resources[index] = NULL;
+		objects[index] = NULL;
+		if ((state->flags & GPU_DISPLAY_PLANE_IMAGE) == 0U)
+			continue;
+		error = gpu_resource_pin(session, state->handle, &resources[index]);
+		if (error != 0)
+			break;
+		pinned++;
+		objects[index] = resources[index]->object;
+
+		/* Planes show native shared allocations, never ordinary copied storage. */
+		if (resources[index]->kind != GPU_RESOURCE_BLOB && resources[index]->kind != GPU_RESOURCE_SCANOUT) {
+			error = EINVAL;
+			break;
+		}
+
+		/* Every row of the image lies inside the storage. */
+		image_bytes = (uint64_t)state->stride * state->height;
+		if (state->offset > resources[index]->bytes || image_bytes > resources[index]->bytes - state->offset) {
+			error = EINVAL;
+			break;
+		}
+	}
+
+	/* The backend records every plane at once, or none. */
+	if (error == 0)
+		error = device->ops->display->commit(device->private_data, session->backend, (void *const *)objects, request);
+
+	/* The backend holds its own references now; every pin ends. */
+	for (index = 0; index < request->count && pinned != 0U; index++) {
+		/* Only the planes that pinned an image. */
+		if (resources[index] == NULL)
+			continue;
+		gpu_resource_unpin(session, resources[index]);
+		pinned--;
+	}
+
+	/* Reports a refused image or the backend's refusal. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the planes are recorded. */
 	return 0;
 }
 

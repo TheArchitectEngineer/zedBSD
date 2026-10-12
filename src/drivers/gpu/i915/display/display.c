@@ -239,7 +239,9 @@ static const struct drv_gpu_display_ops i915_display_ops = {
 	NULL,
 	NULL,
 	NULL,
-	0
+	0,
+	NULL,
+	NULL
 };
 
 /*

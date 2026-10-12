@@ -163,7 +163,8 @@ const struct drv_gpu_display_ops drv_venus_display_operations = {
 	display_release, display_present, display_wait, display_events,
 	display_power, display_refresh_boundary,
 	NULL, NULL, NULL,
-	NULL, 0
+	NULL, 0,
+	NULL, NULL
 };
 
 /* Native sharing is supported only within this Venus controller's resource namespace. */
