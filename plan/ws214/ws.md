@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: P2（p001 の調べと設計から）
-Resume point: p001（調べと設計）を P2 が始める。
+Resume point: p001 の設計の第 1 版（[phase001/phase.md](phase001/phase.md)、2026-10-12 P2）を design-reviewer に掛ける。未決（UAPI の追加の承認、glass の blur・中身を操作の間止める見た目、undock の拡大、前後の入れ替えを範囲から外す件、kernel の段の担当と WS141 p016 B-k2 との順序）は p001 の 9 節。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -35,5 +35,9 @@ Pi 4 で窓の drag と dock・undock のアニメが 60fps（実機の log と�
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 調べと設計（HVS の plane の能力と制約、口、compositor の載せ方、fallback、試験）→ design-reviewer | planning |
-| p002 | 規約の全文の見直し | planned |
+| [p001](phase001/phase.md) | 調べと設計（HVS の plane の能力と制約、口、compositor の載せ方、fallback、試験）→ design-reviewer | planning（第 1 版、review の前） |
+| p003 | kernel（bcm2711）: 状態から作る display list、overlay（unscaled・scaled・LBM）、hold、帯域・clock の予算、console の省略、overlay の commit の lock、UAPI（承認の後） | 案（p001 の 7 節、未投入） |
+| p004 | libvulkan: VK_KHR_display の overlay の plane、複数の swapchain の 1 回の present を 1 つの commit に、位置だけの fast path | 案（未投入） |
+| p005 | compositor: drag の間の窓の plane（焼き、入る・戻る、C の follow、fallback） | 案（未投入） |
+| p006 | compositor: 上の帯の plane と dock・undock・pull back の HVS の拡大 | 案（未投入） |
+| p002 | 規約の全文の見直し（最後に行う）と、新しい HVS の code の GPL との類似の監査 | planned |
