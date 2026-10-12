@@ -815,6 +815,15 @@ bcm2711_stage_allowed(
 	return true;
 }
 
+/* Reports the cost report as off in this model, which has no boot line. */
+bool
+bcm2711_stage_perf_on(
+	void)
+{
+	/* No cadence is kept. */
+	return false;
+}
+
 /*
  * Discards stage prose without changing any hardware or ownership observation.
  */
