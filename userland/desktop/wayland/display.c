@@ -222,6 +222,15 @@ kwl_schedule(
 
 	/* Window mode draws when something changed (all of it, or a part) and no frame is in flight. */
 	if (server->dirty || server->damaged) {
+		/* App Home's animation whose pictures are stale draws them first, after its first frame (layer-cache.c). */
+		error = kwl_layers_tick(server);
+		if (error < 0) {
+			printf("KWL FAILED site=layers_tick errno=%d\n", -error);
+			server->failed = 1;
+			return;
+		}
+		if (error > 0)
+			return;
 		error = kwl_compose_draw(server);
 		if (error != 0) {
 			printf("KWL FAILED site=compose_draw errno=%d\n", error);
@@ -414,6 +423,10 @@ adopt_commit(
 		surface->awaited = 0;
 		server->awaiting--;
 	}
+
+	/* A commit of anything but a cursor may change the desktop's picture (layer-cache.c, ws211-p002). */
+	if (!surface->cursor_role)
+		server->commit_count++;
 
 	/* A cursor, or a surface with no role, is not a window. */
 	if (surface->cursor_role || surface->role == NULL) {

@@ -676,6 +676,55 @@ kwl_home_draw(
 }
 
 /*
+ * Gives the tile of the application a launch from Home started, while Home
+ * closes after it (the pictures' frames grow it as kwl_home_draw does,
+ * layer-cache.c): its square's place and size on the output, unplaced, and
+ * its corner's radius.  Returns 0 when there is none.
+ */
+int
+kwl_home_launch_tile(
+	struct kwl_server *server,
+	float *x,
+	float *y,
+	float *size,
+	float *radius)
+{
+	unsigned slot;
+
+	/* Only while Home closes after a launch. */
+	if (server->home_launch_app < 0 || server->home_to > 0.0f)
+		return 0;
+
+	/* The started application's icon among those shown. */
+	for (slot = 0U; slot < home_shown_count; slot++) {
+		if ((int)home_shown[slot] != server->home_launch_app)
+			continue;
+		*x = (float)home_icon_x[slot];
+		*y = (float)home_icon_y[slot];
+		*size = (float)HOME_ICON;
+		*radius = HOME_ICON_RADIUS;
+		return 1;
+	}
+
+	/* Not shown. */
+	return 0;
+}
+
+/*
+ * Draws App Home's stage over the whole output in its own colours (the
+ * pictures' frames, layer-cache.c): the caller gives the appearance's
+ * colours back (keep_colours).
+ */
+void
+kwl_home_draw_stage(
+	struct kwl_server *server,
+	VkCommandBuffer command)
+{
+	/* The dark stage, whole. */
+	home_stage(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height);
+}
+
+/*
  * Draws Home's content without the stage and without placing it (ws211-p002
  * 段 1): the first page's clock, the rows' floors, the icons shown, the
  * search text and the pages' dots, faded in by progress, where the caller's
@@ -2365,17 +2414,14 @@ home_open(
 	server->drag = NULL;
 
 	/*
-	 * The content comes in after the stage (BUG-225), from now; Home already
-	 * partly open (a drag let go) shows it whole at once.  The first frames
-	 * of both are logged (the time from the request).
+	 * The content comes forward with Home itself, as one picture (the icons
+	 * no longer come in one after another: ws211-p002, the 2026-10-12 user
+	 * decision).  The first frames of the stage and the content are logged
+	 * (the time from the request).
 	 */
 	server->home_asked_ms = kwl_milliseconds();
-	server->home_content_ms = server->home_asked_ms;
-	home_content_rising = 1U;
-	if (from > 0.0f) {
-		server->home_content_ms = 0U;
-		home_content_rising = 0U;
-	}
+	server->home_content_ms = 0U;
+	home_content_rising = 0U;
 	server->home_cover_logged = 0U;
 	server->home_content_logged = 0U;
 	printf("KWL HOME open via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
@@ -2410,6 +2456,7 @@ home_settle(
 	server->home_from = from;
 	server->home_to = to;
 	server->home_start_ms = kwl_milliseconds();
+	server->home_start_pending = 1U;
 	server->home_moving = 1;
 	server->dirty = 1;
 
@@ -3042,7 +3089,9 @@ kwl_home_picture_key(
 	values[0] = home_shown_count;
 	values[1] = home_pages;
 	values[2] = server->home_page;
-	values[3] = (uint32_t)server->home_selected;
+	values[3] = UINT32_MAX;
+	if (server->home_query_length != 0U || server->home_selected > 0)
+		values[3] = (uint32_t)server->home_selected;
 	values[4] = (uint32_t)server->accent;
 	values[5] = glass_wallpaper_version(server);
 	values[6] = (server->width << 16) ^ server->height;

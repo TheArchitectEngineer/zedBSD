@@ -159,6 +159,10 @@ struct kwl_layers {
 	unsigned valid[KWL_LAYERS];
 	unsigned baking;
 	uint64_t baking_key;
+	uint64_t baking_commits;
+	uint64_t commits;
+	uint64_t anim_baked[KWL_LAYERS];
+	uint64_t shown_start;
 	uint64_t bake_started_us;
 	unsigned bake_draws;
 	uint64_t bake_times[2];
@@ -457,9 +461,13 @@ void kwl_glass_draw_head(struct kwl_server *server, VkCommandBuffer command, str
 void kwl_compose_cursor(struct kwl_server *server, VkCommandBuffer command);
 void kwl_compose_count_draw(struct kwl_server *server, VkPipeline pipeline, VkDescriptorSet set, unsigned shape);
 VkResult kwl_compose_submit_quiet(struct kwl_server *server);
+unsigned kwl_compose_layer_windows(struct kwl_server *server, struct kwl_object **windows, unsigned capacity);
+void kwl_compose_bake_hold(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 void kwl_layers_open(struct kwl_server *server);
 void kwl_layers_close(struct kwl_compose *compose);
 void kwl_layers_complete(struct kwl_server *server);
+int kwl_layers_showing(struct kwl_server *server);
+VkDescriptorSet kwl_layers_set(struct kwl_server *server, unsigned which);
 
 /* Descriptor sets of the image layout, reused rather than freed (compose.c). */
 VkResult kwl_compose_set_get(struct kwl_compose *compose, VkDescriptorSet *result);

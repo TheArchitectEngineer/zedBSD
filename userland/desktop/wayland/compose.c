@@ -57,6 +57,9 @@ static VkResult compose_submit(struct kwl_server *server, uint32_t image);
 static void compose_hold(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 static void compose_log_draws(struct kwl_server *server);
 
+/* How far into its way App Home's animation shows in its first frame, in milliseconds (review-2 N4). */
+#define COMPOSE_HOME_FIRST_MS	8U
+
 /*
  * Creates the Vulkan device, the pipelines' fixed objects and the frame's
  * synchronization; the output is opened separately.
@@ -501,6 +504,17 @@ kwl_compose_draw(
 	/* The frame shows the pointer where it is now. */
 	server->pointer_moved = 0U;
 
+	/*
+	 * App Home's animation starts with its first frame's recording, so that
+	 * the time before it (a frame or a picture in flight) is not taken from
+	 * its way; the first frame shows it a little on, never at its start,
+	 * where Home is not drawn (review-2 N4).
+	 */
+	if (server->home_start_pending) {
+		server->home_start_pending = 0U;
+		server->home_start_ms = kwl_milliseconds() - COMPOSE_HOME_FIRST_MS;
+	}
+
 	/* The windows to draw, bottom to top. */
 	compose->frame_start_cycles = kwl_cycles();
 	compose->frame_start_ms = kwl_milliseconds();
@@ -672,6 +686,9 @@ kwl_compose_complete(
 	 * nothing and told no client, so the frame's accounting stays as it was.
 	 */
 	if (compose->frame_bake) {
+		for (index = 0; index < compose->held_count; index++)
+			kwl_buffer_put(compose->held[index]);
+		compose->held_count = 0;
 		compose->frame_bake = 0U;
 		compose->in_flight = 0;
 		kwl_layers_complete(server);
@@ -2854,6 +2871,55 @@ compose_log_draws(
 		counts->sets,
 		server->compose->scene.written,
 		server->compose->frame_copies);
+}
+
+/*
+ * Gives the windows a layer's picture draws (layer-cache.c): the anchor's,
+ * bottom to top, as a frame has them; returns how many.
+ */
+unsigned
+kwl_compose_layer_windows(
+	struct kwl_server *server,
+	struct kwl_object **windows,
+	unsigned capacity)
+{
+	unsigned all;
+
+	/* Every drawable window, then the anchor's first. */
+	all = compose_windows(server, windows, capacity);
+	return compose_split(server, windows, all);
+}
+
+/*
+ * Holds the buffers a layer's picture samples (the windows' and their
+ * sub-surfaces'), until the drawing completes (kwl_compose_complete).  The
+ * windows are not told and are not awaited: the picture is no frame they
+ * were shown in.
+ */
+void
+kwl_compose_bake_hold(
+	struct kwl_server *server,
+	struct kwl_object **windows,
+	unsigned count)
+{
+	struct kwl_object *subsurfaces[KWL_FRAME_WINDOWS];
+	struct kwl_compose *compose;
+	unsigned held;
+	unsigned index;
+
+	/* Each window's current buffer, while there is room. */
+	compose = server->compose;
+	for (index = 0; index < count && compose->held_count < KWL_FRAME_WINDOWS; index++) {
+		kwl_buffer_get(windows[index]->current);
+		compose->held[compose->held_count++] = windows[index]->current;
+	}
+
+	/* The sub-surfaces drawn with them. */
+	held = kwl_subsurface_collect(server, subsurfaces, KWL_FRAME_WINDOWS);
+	for (index = 0; index < held && compose->held_count < KWL_FRAME_WINDOWS; index++) {
+		kwl_buffer_get(subsurfaces[index]->current);
+		compose->held[compose->held_count++] = subsurfaces[index]->current;
+	}
 }
 
 /*

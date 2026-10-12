@@ -1005,6 +1005,17 @@ struct kwl_server {
 	 */
 	struct kwl_draw_counts draw_counts;
 	unsigned draw_section;
+	/*
+	 * The layers' pictures (layer-cache.c, ws211-p002): the windows' commits
+	 * so far (a cursor's not counted), which the desktop's picture's key
+	 * holds; the window the desktop's picture leaves out (the one an
+	 * animation moves, drawn over the picture); and whether App Home's
+	 * animation starts at its first frame's recording (home_start_ms is set
+	 * then, review-2 N4).
+	 */
+	uint64_t commit_count;
+	struct kwl_object *layer_skip;
+	unsigned home_start_pending;
 	/* The event loop records the latest traced motion; recording a frame consumes this timestamp. */
 	uint64_t pointer_accepted_us;
 	/*
