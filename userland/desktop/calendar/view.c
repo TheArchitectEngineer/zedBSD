@@ -219,6 +219,7 @@ static void view_notice(struct cal_view *view, const char *message, uint64_t now
 static int view_month_top(const struct cal_view *view, int index, int cell_height);
 static int view_month_rows(const struct cal_view *view, int index, struct cal_date *first);
 static int view_cell_height(const struct kl_rect *grid);
+static int view_in_clip(const struct kl_canvas *canvas, const struct kl_rect *rect);
 static void view_centred(const struct kl_style *style, int cx, int baseline, const char *text, unsigned pixels, int bold, kl_color color);
 static float view_ease(float t);
 
@@ -1362,6 +1363,7 @@ view_cell(
 	kl_color tint;
 	int sinking;
 	int chosen;
+	int shown;
 	double px;
 	double py;
 	float depth;
@@ -1423,6 +1425,16 @@ view_cell(
 		view->today_y = seen.y;
 		cal_log("CELL today x=%d y=%d width=%d height=%d", seen.x, seen.y, seen.width, seen.height);
 	}
+
+	/*
+	 * A cell outside the part of the frame being drawn shows nothing of
+	 * what follows, which is drawn within the cell: its events are not
+	 * looked up nor its words set (ws210-p014: a frame of the lit row of
+	 * the sidebar spent half its time on the months' cells, the Pi 4).
+	 */
+	shown = view_in_clip(style->canvas, cell);
+	if (!shown)
+		return;
 
 	/* Sinking after a drop: pressed in a little, and shaded, for a moment. */
 	sinking = 0;
@@ -1516,6 +1528,27 @@ view_cell(
 			kl_canvas_round_border(style->canvas, (float)cell->x + 2.0f, (float)cell->y + 2.0f, (float)cell->width - 4.0f, (float)cell->height - 4.0f, 8.0f, 2.0f, KL_RGBA(style->theme->accent, 160));
 		}
 	}
+}
+
+/* Tells whether a rectangle has a pixel within a canvas's clip (the part of the frame being drawn). */
+static int
+view_in_clip(
+	const struct kl_canvas *canvas,
+	const struct kl_rect *rect)
+{
+	const struct kl_rect *clip;
+
+	/* Left or right of the clip. */
+	clip = &canvas->clip;
+	if (rect->x + rect->width <= clip->x || rect->x >= clip->x + clip->width)
+		return 0;
+
+	/* Above or below it. */
+	if (rect->y + rect->height <= clip->y || rect->y >= clip->y + clip->height)
+		return 0;
+
+	/* Some of it is within. */
+	return 1;
 }
 
 /*

@@ -38,7 +38,7 @@
 #include <truetype/truetype.h>
 #include <unistd.h>
 
-/* How many glyphs the cache holds before it is emptied. */
+/* How many slots the glyph cache has (a power of two: a slot is a hash's low bits); it is emptied when three quarters are used. */
 #define TEXT_CACHE_SIZE		4096U
 
 /* The largest font file read, in bytes. */
@@ -265,7 +265,14 @@ kl_text_draw(
 	struct kl_image image;
 	uint32_t codepoint;
 	size_t index;
+	int clip_top;
+	int clip_bottom;
+	int top;
 	int pen;
+
+	/* The rows being drawn (the canvas's clip). */
+	clip_top = canvas->clip.y;
+	clip_bottom = canvas->clip.y + canvas->clip.height;
 
 	/* Each character at the pen, which then moves by its advance. */
 	pen = x;
@@ -275,6 +282,17 @@ kl_text_draw(
 		glyph = text_glyph(text, codepoint, pixels, bold);
 		if (glyph == NULL)
 			continue;
+
+		/*
+		 * A glyph above or below the rows being drawn only moves the pen
+		 * (ws210-p014: a frame of a few lit rows lays out every line of
+		 * the window, and each glyph's drawing found nothing to draw).
+		 */
+		top = baseline - glyph->top;
+		if (top >= clip_bottom || top + glyph->height <= clip_top) {
+			pen += glyph->advance;
+			continue;
+		}
 
 		/* The glyph's coverage, in the color; a colour glyph in its own colours, as opaque as the color. */
 		if (glyph->bitmap != NULL)
@@ -675,12 +693,28 @@ text_slot(
 	struct kl_text *text,
 	uint32_t key)
 {
+	uint32_t hash;
 	unsigned slot;
 
-	/* Open addressing from the key's hash. */
-	slot = (key * 2654435761U) % text->cache_size;
+	/*
+	 * The key's hash, every bit of the key mixed into the low ones the
+	 * slot is taken from (the cache's size is a power of two): a hash that
+	 * only multiplied left a glyph's sizes, weights and faces, which differ
+	 * in the key's high bits, on one home slot, and the glyphs of a text,
+	 * whose indexes follow one another, in one long run of slots that each
+	 * lookup walked (ws210-p014, a third of a hover frame's time).
+	 */
+	hash = key;
+	hash ^= hash >> 16;
+	hash *= 0x7feb352dU;
+	hash ^= hash >> 15;
+	hash *= 0x846ca68bU;
+	hash ^= hash >> 16;
+
+	/* Open addressing from the key's hash, the slots' count a power of two. */
+	slot = hash & (text->cache_size - 1U);
 	while (text->cache[slot].key != 0U && text->cache[slot].key != key)
-		slot = (slot + 1U) % text->cache_size;
+		slot = (slot + 1U) & (text->cache_size - 1U);
 
 	/* Reports that slot. */
 	return &text->cache[slot];
