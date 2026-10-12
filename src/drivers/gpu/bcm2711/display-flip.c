@@ -43,6 +43,11 @@ static void publish_list(struct bcm2711_display *display, uint32_t list);
 static int wait_adoption(struct bcm2711_display *display);
 static void report_flips(struct bcm2711_display *display, uint64_t clean, uint64_t raise, uint64_t wait);
 static uint32_t cursor_words(const struct bcm2711_display *display, uint32_t *words);
+static void report_cadence(uint64_t milliseconds);
+static void cadence_summary(struct bcm2711_flip_cadence *cadence, uint64_t milliseconds, uint64_t summary[4]);
+
+/* The window the note that ends it copies and prints, owned by the one caller that set cadence_reporting. */
+static struct bcm2711_flip_cadence cadence_copy[BCM2711_FLIP_CADENCE_KINDS];
 static void publish_cursor_locked(struct bcm2711_display *display);
 
 /*
@@ -681,7 +686,8 @@ submit_frame(
 	if (error != 0)
 		return error;
 
-	/* The stage report is written while BUSY still excludes every other submitter. */
+	/* The adoption is a cadence event; the stage report is written while BUSY still excludes every other submitter. */
+	bcm2711_display_flip_note(display, BCM2711_FLIP_CADENCE_FLIP);
 	mark = clock_ticks();
 	report_flips(display, clean_ticks, raise_ticks, wait_ticks);
 
@@ -1031,6 +1037,138 @@ bcm2711_display_flip_count_cursor(
 	__atomic_fetch_add(&display->flip.perf_cursor_sets, 1U, __ATOMIC_RELAXED);
 	if (copied)
 		__atomic_fetch_add(&display->flip.perf_cursor_copies, 1U, __ATOMIC_RELAXED);
+}
+
+/*
+ * Notes one display event of a cadence kind (WS213): its interval from the
+ * previous one of the kind, and every two seconds the window's report.
+ */
+void
+bcm2711_display_flip_note(
+	struct bcm2711_display *display,
+	unsigned kind)
+{
+	struct bcm2711_flip_cadence *cadence;
+	unsigned long enabled;
+	uint64_t milliseconds;
+	uint64_t interval;
+	uint64_t now;
+	uint32_t index;
+	bool report;
+
+	/* The boot line is read once; nothing is kept without v3d.perf=1. */
+	if (display->flip.cadence_state == BCM2711_FLIP_CADENCE_UNREAD) {
+		display->flip.cadence_state = BCM2711_FLIP_CADENCE_OFF;
+		if (bcm2711_stage_perf_on())
+			display->flip.cadence_state = BCM2711_FLIP_CADENCE_ON;
+	}
+	if (display->flip.cadence_state != BCM2711_FLIP_CADENCE_ON || kind >= BCM2711_FLIP_CADENCE_KINDS)
+		return;
+
+	/* The interval joins the window's samples while they fit. */
+	now = clock_ticks();
+	report = false;
+	milliseconds = 0;
+	enabled = spin_lock_irqsave(&display->flip.guard);
+	cadence = &display->flip.cadence[kind];
+	if (cadence->last != 0 && cadence->stored < BCM2711_FLIP_CADENCE_SAMPLES) {
+		interval = kern_ticks_to_rate(now - cadence->last, 1000000U);
+		if (interval > UINT32_MAX)
+			interval = UINT32_MAX;
+		cadence->intervals[cadence->stored] = (uint32_t)interval;
+		cadence->stored++;
+	}
+	cadence->last = now;
+	cadence->count++;
+
+	/* The first event opens the window; one caller takes a window of two seconds or more to print. */
+	if (display->flip.cadence_start == 0)
+		display->flip.cadence_start = now;
+	milliseconds = kern_ticks_to_ms(now - display->flip.cadence_start);
+	if (milliseconds >= 2000U && !display->flip.cadence_reporting) {
+		display->flip.cadence_reporting = true;
+		for (index = 0; index < BCM2711_FLIP_CADENCE_KINDS; index++) {
+			/* The copy keeps the samples; the window starts empty, each kind keeping its last time. */
+			cadence_copy[index] = display->flip.cadence[index];
+			display->flip.cadence[index].count = 0;
+			display->flip.cadence[index].stored = 0;
+		}
+		display->flip.cadence_start = now;
+		report = true;
+	}
+	spin_unlock_irqrestore(&display->flip.guard, enabled);
+
+	/* The copied window is sorted and printed without the guard. */
+	if (!report)
+		return;
+	report_cadence(milliseconds);
+	enabled = spin_lock_irqsave(&display->flip.guard);
+	display->flip.cadence_reporting = false;
+	spin_unlock_irqrestore(&display->flip.guard, enabled);
+}
+
+/* Prints the copied cadence window: per kind, events per second and the interval minimum, median and maximum. */
+static void
+report_cadence(
+	uint64_t milliseconds)
+{
+	uint64_t set[4];
+	uint64_t move[4];
+	uint64_t flip[4];
+
+	/* Each kind's summary from its own samples. */
+	cadence_summary(&cadence_copy[BCM2711_FLIP_CADENCE_SET], milliseconds, set);
+	cadence_summary(&cadence_copy[BCM2711_FLIP_CADENCE_MOVE], milliseconds, move);
+	cadence_summary(&cadence_copy[BCM2711_FLIP_CADENCE_FLIP], milliseconds, flip);
+	kern_logf(
+		"bcm2711: cadence ms=%llu per_s/min/med/max_us set=%llu/%llu/%llu/%llu move=%llu/%llu/%llu/%llu flip=%llu/%llu/%llu/%llu\n",
+		(unsigned long long)milliseconds,
+		(unsigned long long)set[0], (unsigned long long)set[1], (unsigned long long)set[2], (unsigned long long)set[3],
+		(unsigned long long)move[0], (unsigned long long)move[1], (unsigned long long)move[2], (unsigned long long)move[3],
+		(unsigned long long)flip[0], (unsigned long long)flip[1], (unsigned long long)flip[2], (unsigned long long)flip[3]);
+}
+
+/*
+ * Summarizes one copied kind (summary: events per second, then the interval
+ * minimum, median and maximum in microseconds, zero without an interval).
+ * The samples are sorted in place.
+ */
+static void
+cadence_summary(
+	struct bcm2711_flip_cadence *cadence,
+	uint64_t milliseconds,
+	uint64_t summary[4])
+{
+	uint32_t *samples;
+	uint32_t value;
+	uint32_t index;
+	uint32_t position;
+
+	/* The rate counts every event of the window, sampled or not. */
+	summary[0] = 0;
+	if (milliseconds != 0)
+		summary[0] = (uint64_t)cadence->count * 1000U / milliseconds;
+	summary[1] = 0;
+	summary[2] = 0;
+	summary[3] = 0;
+	if (cadence->stored == 0)
+		return;
+
+	/* Insertion sort of at most the window's sample bound. */
+	samples = cadence->intervals;
+	for (index = 1; index < cadence->stored; index++) {
+		/* Moves each sample left past the larger ones. */
+		value = samples[index];
+		position = index;
+		while (position > 0 && samples[position - 1U] > value) {
+			samples[position] = samples[position - 1U];
+			position--;
+		}
+		samples[position] = value;
+	}
+	summary[1] = samples[0];
+	summary[2] = samples[cadence->stored / 2U];
+	summary[3] = samples[cadence->stored - 1U];
 }
 
 /*

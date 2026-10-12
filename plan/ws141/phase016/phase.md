@@ -353,6 +353,22 @@ executor の pass ごとの 3 区分:
   - L3: H1 (b)。TFU が UIF の padding を書くか、TMU が padding を読むか（線形 filter と REPEAT・CLAMP）を実機で確かめる（T1）。読む場合は、同じ session の古い byte が端の画素に出得る。これは他の session への漏れではない。この確かめは cleared の条件ではなく、残件とする。
   - overflow の reserve を controller に 1 つ持つ案は、M2 の代案として残す。
 
+## 計測: display の時刻の cadence（WS213 の依頼、2026-10-12 P3）
+
+- 目的: cursor の速さを display 側の時刻で測る（WS213）。
+- 記録: `bcm2711_display_flip_note(display, kind)` が、次の 3 種類の出来事の時刻を記録する。間隔は 1 window に最大 256 個を μs で持つ。flip の guard の下で記録する。
+  - CURSOR_SET と CURSOR_MOVE（`display-device.c`、mutex を外した後）。
+  - flip の adoption（`submit_frame` の wait_adoption の成功の後）。
+- 出力: 2 秒ごとに 1 行を ring に出す。v3d.perf=1 の時だけで、boot line は最初の出来事の時に 1 回読む。
+  - 書式: `bcm2711: cadence ms=<window> per_s/min/med/max_us set=a/b/c/d move=... flip=...`
+  - 報告する 1 つの呼び出しが、guard の下で window を static な複写に移す（`cadence_reporting`）。整列と kern_logf は guard の外で行う。cursor の 2 つは display の mutex の外で呼ぶ。
+  - 既存の `flip perf` の行は今までどおり（v3d.perf に依らない）。
+- 試験: display-flip の host 試験 `cadence_report`。
+  - v3d.perf が off の時は何も持たない。
+  - 8 ms ごとの move と 4 回の set を 2 秒流すと、`set=2/10000/20000/30000 move=125/8000/8000/8000 flip=0/0/0/0` の 1 行になる。
+  - window は空から始まり直し、間隔は window をまたいでも測る。
+- 確認: display・stage・vulkan-device の host 試験が PASS、kernel の rpi4 の build は warning 0。実機は未実施。
+
 ## HAL arm64 の物理 page の allocator: 呼び出し元の監査（2026-10-12 P3、変更はしない、Q1 に相談）
 
 - 実装（`src/hal/arm64/page.c` `alloc_ram`）: 8GiB 分の bitmap の first fit。`first_free_candidate`（そこより下は全部使用中）から上へ、**1 page ずつ** 候補を進め、候補ごとに alignment・boundary・空きの長さを測る。全部 **IRQ を止めたまま**（CPU は 1 つ）。zone・上からの配置は無い。

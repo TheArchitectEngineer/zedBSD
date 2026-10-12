@@ -1762,6 +1762,9 @@ output_cursor_set(
 
 	mutex_unlock(&controller->mutex);
 
+	/* The cadence notes the set's time outside the mutex, as its report may log. */
+	bcm2711_display_flip_note(controller->native, BCM2711_FLIP_CADENCE_SET);
+
 	/* Succeeded or not, the previous image stays whole while a list may name it. */
 	return error;
 }
@@ -1799,6 +1802,9 @@ output_cursor_move(
 		controller->cursor = cursor;
 
 	mutex_unlock(&controller->mutex);
+
+	/* The cadence notes the move's time outside the mutex, as its report may log. */
+	bcm2711_display_flip_note(controller->native, BCM2711_FLIP_CADENCE_MOVE);
 
 	/* Succeeded: the cursor shows there from a coming refresh boundary. */
 	return error;

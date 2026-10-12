@@ -7,6 +7,7 @@
 
 /* Real flip and source services run against a deferred-adoption MMIO model. */
 #include <assert.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -43,12 +44,18 @@ static bool test_stall;
 static bool test_probe_busy;
 static uint32_t test_expected_physical;
 
+/* The cadence scenario drives the clock in milliseconds and keeps the last report line. */
+static uint64_t test_clock;
+static bool test_logging;
+static char test_log[512];
+
 static void check(bool condition, const char *what);
 static void setup(uint32_t port, uint32_t format);
 static void deliver(uint32_t port, uint32_t current);
 static void normal_flips(uint32_t port, uint32_t format);
 static void uncertain_flips(void);
 static void cursor_flips(void);
+static void cadence_report(void);
 
 /*
  * Checks publication, adoption and retained-buffer lifetime through real code.
@@ -68,6 +75,7 @@ main(
 	normal_flips(1, 1);
 	uncertain_flips();
 	cursor_flips();
+	cadence_report();
 
 	/* Rejects invalid DMA geometry before any hardware publication. */
 	setup(0, 0);
@@ -513,8 +521,17 @@ uint64_t
 clock_ticks(
 	void)
 {
-	/* No time elapses in the host's synchronous fake display. */
-	return 0;
+	/* No time elapses in the host's synchronous fake display, except where the cadence scenario sets it. */
+	return test_clock;
+}
+
+/* Reports the cost report as off by default; the cadence scenario turns it on directly. */
+bool
+bcm2711_stage_perf_on(
+	void)
+{
+	/* No boot line in this model. */
+	return false;
 }
 
 /*
@@ -525,7 +542,60 @@ kern_logf(
 	const char *format,
 	...)
 {
-	(void)format;
+	va_list arguments;
+
+	/* Keeps only the cadence scenario's line. */
+	if (!test_logging)
+		return;
+	va_start(arguments, format);
+	vsnprintf(test_log, sizeof(test_log), format, arguments);
+	va_end(arguments);
+}
+
+/*
+ * Measures the cadence of cursor moves and sets (WS213): nothing without
+ * v3d.perf=1, then a two-second window of moves every 8 ms and four sets,
+ * reported once with rates and interval minimum, median and maximum.
+ */
+static void
+cadence_report(
+	void)
+{
+	uint64_t milliseconds;
+
+	/* Off: an event keeps nothing. */
+	setup(0, 0);
+	test_display.flip.cadence_state = BCM2711_FLIP_CADENCE_OFF;
+	test_clock = KERN_CLOCK_HZ;
+	bcm2711_display_flip_note(&test_display, BCM2711_FLIP_CADENCE_MOVE);
+	check(test_display.flip.cadence[BCM2711_FLIP_CADENCE_MOVE].count == 0, "cadence off keeps nothing");
+
+	/* On: moves every 8 ms from 1 ms, sets at 100, 110, 130 and 160 ms. */
+	test_display.flip.cadence_state = BCM2711_FLIP_CADENCE_ON;
+	test_logging = true;
+	test_log[0] = '\0';
+	for (milliseconds = 1; milliseconds <= 2001U; milliseconds++) {
+		/* Each event at its millisecond. */
+		test_clock = milliseconds * KERN_CLOCK_HZ / 1000U;
+		if (milliseconds == 100U || milliseconds == 110U || milliseconds == 130U || milliseconds == 160U)
+			bcm2711_display_flip_note(&test_display, BCM2711_FLIP_CADENCE_SET);
+		if ((milliseconds - 1U) % 8U == 0)
+			bcm2711_display_flip_note(&test_display, BCM2711_FLIP_CADENCE_MOVE);
+		if (milliseconds < 2001U)
+			check(test_log[0] == '\0', "no cadence report before two seconds");
+	}
+	check(strcmp(test_log, "bcm2711: cadence ms=2000 per_s/min/med/max_us set=2/10000/20000/30000 move=125/8000/8000/8000 flip=0/0/0/0\n") == 0, "cadence report");
+	check(!test_display.flip.cadence_reporting && test_display.flip.cadence[BCM2711_FLIP_CADENCE_MOVE].count == 0, "cadence window restarts");
+
+	/* The next window measures from each kind's last event. */
+	test_log[0] = '\0';
+	test_clock = 2009U * KERN_CLOCK_HZ / 1000U;
+	bcm2711_display_flip_note(&test_display, BCM2711_FLIP_CADENCE_MOVE);
+	check(test_log[0] == '\0' && test_display.flip.cadence[BCM2711_FLIP_CADENCE_MOVE].stored == 1, "next window");
+	check(test_display.flip.cadence[BCM2711_FLIP_CADENCE_MOVE].intervals[0] == 8000U, "interval across windows");
+	test_logging = false;
+	test_clock = 0;
+	printf("WS213 display cadence: off by default, two-second report of rates and min/median/max intervals: %s\n", test_failures == 0 ? "PASS" : "FAIL");
 }
 
 /* Exercises cursor lists over a composed frame: published without waiting, coalesced while pending, clipped and hidden. */

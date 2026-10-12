@@ -433,6 +433,15 @@ kern_irq_enable(
 	/* No asynchronous host thread delivers interrupts in this model. */
 }
 
+/* Reports the cost report as off in this model, which has no boot line. */
+bool
+bcm2711_stage_perf_on(
+	void)
+{
+	/* No cadence is kept. */
+	return false;
+}
+
 /*
  * Retains production diagnostics without a physical console in this model.
  */

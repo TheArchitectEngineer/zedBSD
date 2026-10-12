@@ -35,6 +35,30 @@ struct bcm2711_flip_cursor {
 	int32_t y;
 };
 
+/*
+ * The intervals between events of one kind in a cadence window (v3d.perf=1
+ * only): the time of the last event, the events of the window, and the
+ * first intervals of the window in microseconds.
+ */
+#define BCM2711_FLIP_CADENCE_SAMPLES	256U
+struct bcm2711_flip_cadence {
+	uint64_t last;
+	uint32_t count;
+	uint32_t stored;
+	uint32_t intervals[BCM2711_FLIP_CADENCE_SAMPLES];
+};
+
+/* The kinds of display event whose cadence is measured: cursor sets, cursor moves and adopted flips. */
+#define BCM2711_FLIP_CADENCE_SET	0U
+#define BCM2711_FLIP_CADENCE_MOVE	1U
+#define BCM2711_FLIP_CADENCE_FLIP	2U
+#define BCM2711_FLIP_CADENCE_KINDS	3U
+
+/* Whether the cadence is measured: the boot line is read at the first event. */
+#define BCM2711_FLIP_CADENCE_UNREAD	0U
+#define BCM2711_FLIP_CADENCE_OFF	1U
+#define BCM2711_FLIP_CADENCE_ON		2U
+
 /* One display owns this state until shutdown; guard protects IRQ and callers. */
 struct bcm2711_flip_state {
 	struct spinlock guard;
@@ -77,6 +101,14 @@ struct bcm2711_flip_state {
 	 */
 	uint64_t perf_cursor_sets;
 	uint64_t perf_cursor_copies;
+	/*
+	 * The cadence of display events (WS213), kept under guard; reporting
+	 * says one caller is printing the copied window, so no other starts.
+	 */
+	unsigned cadence_state;
+	uint64_t cadence_start;
+	bool cadence_reporting;
+	struct bcm2711_flip_cadence cadence[BCM2711_FLIP_CADENCE_KINDS];
 };
 
 /* A caller-owned snapshot names borrowed buffers that must remain DMA-readable. */
@@ -126,6 +158,13 @@ int bcm2711_display_flip_cursor(struct bcm2711_display *display, const struct bc
 
 /* Counts one cursor image set for the flip report, copied or shown again unchanged. */
 void bcm2711_display_flip_count_cursor(struct bcm2711_display *display, bool copied);
+
+/*
+ * Notes the time of one display event of a cadence kind, and prints the
+ * cadence window every two seconds; nothing without v3d.perf=1.  The
+ * caller holds no spinlock.
+ */
+void bcm2711_display_flip_note(struct bcm2711_display *display, unsigned kind);
 
 /* Tells whether a retained list or the recorded cursor names a cursor image, which must then stay unchanged. */
 bool bcm2711_display_flip_cursor_named(struct bcm2711_display *display, uint32_t physical);
