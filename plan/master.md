@@ -543,6 +543,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
+- 2026-10-12 ユーザー:「進め方はおすすめでいいです。」→ 残りの描画の最適化の順（Q1 の推し）: WS214 は第 3 版の後に p003a（承認不要の kernel の段、B-k2 を含む）、WS213 の残り（box_lag の超過と 401ms の止まりの切り分け、p005 の作業 thread）を P4、WS141 の WSI の present の copy の command buffer の使い回し（往復 2 回減）と compositor の窓の tile の費用（約 13 万 cycle/tile）の調べを P3。libvulkan の Begin を End に入れる案（内部の約束の変更）と render worker の優先度（方針）はその後に改めて問う。
 - 2026-10-12 ユーザー:「前言撤回になりますが、OSCデモはこの解像度でいきます。」（1024x680 を試した後）→ platform/arm64/config.txt の既定を 1024x680 60Hz（hdmi_cvt 1024 680 60 3）に（Q1、「この解像度」は 1024x680 と解した）。
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
