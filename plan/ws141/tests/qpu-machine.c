@@ -400,6 +400,10 @@ switch_effect(
 			fail(machine, "write in flight across a thread switch");
 	}
 
+	/* A switch that is neither the last one nor the thread end waits for an outstanding lookup. */
+	if (!machine->lookup_waiting && !(machine->last_marked && machine->last_switch == machine->last_marked_switch) && machine->thread_end == MACHINE_NONE)
+		fail(machine, "thread switch with no outstanding lookup");
+
 	/* Another thread runs here; it leaves the accumulators and flags meaningless. */
 	for (resource = MACHINE_ACCUMULATOR; resource < MACHINE_RESOURCES; resource++)
 		machine->lost[resource] = true;
@@ -812,7 +816,7 @@ check_word_rules(
 		machine->last_special = machine->word;
 	}
 
-	/* A switch word and its delay words start no special function, varying load or accumulator or flag work. */
+	/* A switch word and its delay words start no special function, varying load or texture result read; a launch may sit there. */
 	in_switch_window = instruction->sig.thrsw;
 	if (machine->last_switch != MACHINE_NONE && machine->word <= machine->last_switch + 2)
 		in_switch_window = true;
@@ -821,8 +825,6 @@ check_word_rules(
 			fail(machine, "special function in a thread switch's delay words");
 		if (instruction->sig.ldvary)
 			fail(machine, "varying load in a thread switch's delay words");
-		if (v3d_qpu_writes_tmu(machine->device, instruction) && !instruction->sig.thrsw)
-			fail(machine, "TMU write in a thread switch's delay words");
 		if (instruction->sig.ldtmu)
 			fail(machine, "texture load in a thread switch's delay words");
 	}

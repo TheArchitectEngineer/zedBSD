@@ -399,12 +399,12 @@ lower_arithmetic(
 	struct bcm2711_qpu_source left;
 	struct bcm2711_qpu_source right;
 	struct bcm2711_qpu_source temporary;
-	struct bcm2711_shader_uniform uniform;
 	enum bcm2711_qpu_operation native;
 	uint32_t sources;
 	uint32_t flags;
 	uint32_t predicate;
 	uint32_t scratch;
+	uint32_t mask;
 	int error;
 
 	/* Simple native operations use exactly their classified source arity. */
@@ -439,18 +439,15 @@ lower_arithmetic(
 		error = bcm2711_shader_operand(compiler, instruction->src[0], BCM2711_SHADER_SCRATCH_LEFT, &left);
 		if (error != 0)
 			return error;
-		kern_memset(&uniform, 0, sizeof(uniform));
-		uniform.kind = BCM2711_SHADER_CONSTANT;
-		uniform.bits = 0x80000000U;
+		mask = 0x80000000U;
 		native = BCM2711_QPU_BITS_XOR;
 		if (instruction->op == DRV_GPU_IR_FABS) {
-			uniform.bits = 0x7fffffffU;
+			mask = 0x7fffffffU;
 			native = BCM2711_QPU_BITS_AND;
 		}
 
-		/* Full-width sign masks are preserved through an independent second scratch register. */
-		scratch = bcm2711_shader_scratch(compiler, BCM2711_SHADER_SCRATCH_RIGHT);
-		error = bcm2711_shader_uniform_load(compiler, &uniform, scratch);
+		/* Full-width sign masks are preserved through a cached or independent second scratch register. */
+		error = bcm2711_shader_constant(compiler, mask, BCM2711_SHADER_SCRATCH_RIGHT, &scratch);
 		if (error != 0)
 			return error;
 		right = bcm2711_shader_rf(scratch);
@@ -539,11 +536,7 @@ lower_arithmetic(
 			return error;
 
 		/* Both signs of zero retain their original exact bits. */
-		kern_memset(&uniform, 0, sizeof(uniform));
-		uniform.kind = BCM2711_SHADER_CONSTANT;
-		uniform.bits = 0x7fffffffU;
-		scratch = bcm2711_shader_scratch(compiler, BCM2711_SHADER_SCRATCH_RIGHT);
-		error = bcm2711_shader_uniform_load(compiler, &uniform, scratch);
+		error = bcm2711_shader_constant(compiler, 0x7fffffffU, BCM2711_SHADER_SCRATCH_RIGHT, &scratch);
 		if (error != 0)
 			return error;
 		right = bcm2711_shader_rf(scratch);
@@ -555,9 +548,7 @@ lower_arithmetic(
 			return error;
 
 		/* Positive infinity must also survive the otherwise indeterminate multiply by its zero reciprocal root. */
-		uniform.bits = 0x7f800000U;
-		scratch = bcm2711_shader_scratch(compiler, BCM2711_SHADER_SCRATCH_RIGHT);
-		error = bcm2711_shader_uniform_load(compiler, &uniform, scratch);
+		error = bcm2711_shader_constant(compiler, 0x7f800000U, BCM2711_SHADER_SCRATCH_RIGHT, &scratch);
 		if (error != 0)
 			return error;
 		right = bcm2711_shader_rf(scratch);

@@ -41,6 +41,9 @@
  */
 #define BCM2711_SHADER_SCRATCH_RESERVE 4U
 
+/* Free expression registers a program keeps before it caches another full-width constant in one. */
+#define BCM2711_SHADER_CONSTANT_RESERVE 12U
+
 /* What a recorded thread switch is for; the scheduler places each kind under its own rules. */
 enum bcm2711_shader_switch {
 	BCM2711_SHADER_SWITCH_NONE,
@@ -116,6 +119,17 @@ struct bcm2711_shader_compiler {
 
 	/* Expression registers borrowed as scratch registers until the current source instruction is lowered. */
 	uint32_t borrowed[64];
+
+	/*
+	 * Expression registers holding a full-width constant for later reads:
+	 * its bits, when it was last read (by the release clock), and whether
+	 * the current source instruction reads it, which keeps it from being
+	 * given up for another value until the instruction is lowered.
+	 */
+	uint32_t constant_held[64];
+	uint32_t constant_bits[64];
+	uint32_t constant_clock[64];
+	uint32_t constant_touched[64];
 };
 
 int bcm2711_shader_analyze(struct bcm2711_shader_compiler *compiler);
@@ -130,6 +144,7 @@ int bcm2711_shader_signal(struct bcm2711_shader_compiler *compiler, enum bcm2711
 int bcm2711_shader_register(struct bcm2711_shader_compiler *compiler, uint32_t *number);
 void bcm2711_shader_release(struct bcm2711_shader_compiler *compiler, uint32_t number);
 uint32_t bcm2711_shader_scratch(struct bcm2711_shader_compiler *compiler, uint32_t preferred);
+int bcm2711_shader_constant(struct bcm2711_shader_compiler *compiler, uint32_t bits, uint32_t preferred, uint32_t *number);
 void bcm2711_shader_release_scratch(struct bcm2711_shader_compiler *compiler);
 int bcm2711_shader_switch(struct bcm2711_shader_compiler *compiler, enum bcm2711_shader_switch role);
 int bcm2711_shader_emit(struct bcm2711_shader_compiler *compiler);

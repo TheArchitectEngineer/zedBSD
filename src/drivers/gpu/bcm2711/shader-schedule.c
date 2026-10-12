@@ -40,9 +40,8 @@
 /* A thread switch takes effect after its two delay words; what must follow it waits three words. */
 #define SCHEDULE_SWITCH_DISTANCE 3U
 
-/* Accumulators zero to three take short-lived values; a value qualifies when its last read is this close. */
+/* Accumulators zero to three take short-lived values. */
 #define SCHEDULE_ACCUMULATORS 4U
-#define SCHEDULE_ACCUMULATOR_SPAN 8U
 
 /* The words a schedule may use for each record before it is refused, besides a fixed tail. */
 #define SCHEDULE_WORDS_PER_NODE 4U
@@ -161,9 +160,9 @@ struct schedule_state {
 	uint32_t tile_nodes[2];
 };
 
-static int schedule_attempt(struct bcm2711_shader_compiler *compiler, uint32_t accumulators);
-static int promote_accumulators(struct bcm2711_shader_compiler *compiler);
-static int promote_close(struct promote_value *open, struct promote_value *values, uint32_t *value_count, uint32_t capacity);
+static int schedule_attempt(struct bcm2711_shader_compiler *compiler, uint32_t span);
+static int promote_accumulators(struct bcm2711_shader_compiler *compiler, uint32_t span);
+static int promote_close(struct promote_value *open, struct promote_value *values, uint32_t *value_count, uint32_t capacity, uint32_t span);
 static void promote_assign(struct bcm2711_shader_compiler *compiler, struct promote_value *values, uint32_t value_count, const struct promote_use *uses);
 static uint32_t peripherals_clash(const struct schedule_node *first, const struct schedule_node *second);
 static uint32_t texture_pair(const struct schedule_node *first, const struct schedule_node *second);
@@ -177,6 +176,9 @@ static int link_successors(struct schedule_state *state);
 static void set_priorities(struct schedule_state *state);
 static int schedule_body(struct schedule_state *state);
 static void place(struct schedule_state *state, uint32_t index, uint32_t word, uint32_t slot);
+static uint32_t place_sample_switch(struct schedule_state *state, uint32_t launch, uint32_t word);
+static uint32_t switch_lowest(const struct schedule_state *state, uint32_t target, uint32_t launch);
+static uint32_t finishes_in_window(const struct schedule_node *node);
 static int fits(const struct schedule_state *state, const struct schedule_word *word, uint32_t index, uint32_t *slot);
 static int word_encode(const struct schedule_state *state, const struct schedule_word *word, uint64_t *encoded);
 static uint32_t word_node_count(const struct schedule_word *word, uint32_t *nodes);
@@ -197,26 +199,29 @@ static void release_state(struct schedule_state *state);
 /*
  * Schedules a recorded fragment program into paired native words.
  *
- * The program is scheduled twice, with values in registers only and with
- * short-lived values in accumulators, and the shorter program is kept: an
- * accumulator takes no read port, so more operations pair, but it cannot
- * cross a thread switch, which can hold a short program back.  A nonzero
- * result means the program keeps its source-order words: the program uses a
- * transaction these rules do not describe, or storage ran out, or both
- * finished schedules failed their independent check.
+ * The program is scheduled with values in registers only and with
+ * short-lived values in accumulators, for several lifetimes counted as
+ * short, and the shortest program is kept: an accumulator takes no read
+ * port, so more operations pair, but it cannot cross a thread switch and
+ * reusing one orders the operations around it.  A nonzero result means the
+ * program keeps its source-order words: the program uses a transaction these
+ * rules do not describe, or storage ran out, or every finished schedule
+ * failed its independent check.
  */
 int
 bcm2711_shader_schedule(
 	struct bcm2711_shader_compiler *compiler)
 {
+	static const uint32_t spans[5] = {0, 4, 12, 24, 1024};
 	struct bcm2711_shader_binary *binary;
 	struct bcm2711_qpu_instruction *saved;
-	uint64_t *plain_code;
-	struct bcm2711_shader_uniform *plain_uniforms;
-	uint32_t plain_count;
+	uint64_t *best_code;
+	struct bcm2711_shader_uniform *best_uniforms;
+	uint32_t best_count;
+	uint32_t attempt;
 	uint32_t index;
-	int plain;
-	int promoted;
+	int outcome;
+	int error;
 
 	/* The records are kept so each attempt, and a refusal, start from the source-order program. */
 	binary = compiler->binary;
@@ -226,45 +231,49 @@ bcm2711_shader_schedule(
 	for (index = 0; index < compiler->op_count; index++)
 		saved[index] = compiler->ops[index].instruction;
 
-	/* The registers-only schedule is kept aside while the accumulator schedule is tried. */
-	plain_code = NULL;
-	plain_uniforms = NULL;
-	plain_count = 0;
-	plain = schedule_attempt(compiler, 0);
-	if (plain == 0) {
-		plain_count = binary->code_count;
-		plain_code = kern_calloc(plain_count, sizeof(*plain_code));
-		plain_uniforms = kern_calloc(binary->uniform_count + 1, sizeof(*plain_uniforms));
-		if (plain_code == NULL || plain_uniforms == NULL) {
-			plain = ENOMEM;
-		} else {
-			kern_memcpy(plain_code, binary->code, plain_count * sizeof(*plain_code));
-			kern_memcpy(plain_uniforms, binary->uniforms, binary->uniform_count * sizeof(*plain_uniforms));
+	/* The best program so far is kept aside while the other attempts run. */
+	best_code = kern_calloc(compiler->code_capacity, sizeof(*best_code));
+	best_uniforms = kern_calloc(compiler->uniform_capacity, sizeof(*best_uniforms));
+	if (best_code == NULL || best_uniforms == NULL) {
+		kern_free(best_uniforms);
+		kern_free(best_code);
+		kern_free(saved);
+		return ENOMEM;
+	}
+
+	/* Each attempt starts from the saved records; a shorter program replaces the best one. */
+	best_count = 0;
+	outcome = ENOTSUP;
+	error = 0;
+	for (attempt = 0; attempt < 5 && error != ENOMEM; attempt++) {
+		error = schedule_attempt(compiler, spans[attempt]);
+		for (index = 0; index < compiler->op_count; index++)
+			compiler->ops[index].instruction = saved[index];
+		if (error != 0)
+			continue;
+		if (best_count == 0 || binary->code_count < best_count) {
+			best_count = binary->code_count;
+			kern_memcpy(best_code, binary->code, best_count * sizeof(*best_code));
+			kern_memcpy(best_uniforms, binary->uniforms, binary->uniform_count * sizeof(*best_uniforms));
+			outcome = 0;
 		}
 	}
-	for (index = 0; index < compiler->op_count; index++)
-		compiler->ops[index].instruction = saved[index];
-	promoted = ENOTSUP;
-	if (plain != ENOMEM)
-		promoted = schedule_attempt(compiler, 1);
-	for (index = 0; index < compiler->op_count; index++)
-		compiler->ops[index].instruction = saved[index];
 
-	/* The accumulator schedule stays in the program when it is shorter; otherwise the registers-only one returns. */
-	if (plain == 0 && (promoted != 0 || binary->code_count >= plain_count)) {
-		kern_memcpy(binary->code, plain_code, plain_count * sizeof(*plain_code));
-		kern_memcpy(binary->uniforms, plain_uniforms, binary->uniform_count * sizeof(*plain_uniforms));
-		binary->code_count = plain_count;
+	/* The best program returns to the binary; every attempt consumed the same uniform count. */
+	if (outcome == 0 && error != ENOMEM) {
+		kern_memcpy(binary->code, best_code, best_count * sizeof(*best_code));
+		kern_memcpy(binary->uniforms, best_uniforms, binary->uniform_count * sizeof(*best_uniforms));
+		binary->code_count = best_count;
 	}
-	kern_free(plain_uniforms);
-	kern_free(plain_code);
+	kern_free(best_uniforms);
+	kern_free(best_code);
 	kern_free(saved);
 
-	/* Running out of memory fails the compile; two refused attempts leave the source-order words to the caller. */
-	if (plain == ENOMEM || promoted == ENOMEM)
+	/* Running out of memory fails the compile; refused attempts leave the source-order words to the caller. */
+	if (error == ENOMEM)
 		return ENOMEM;
-	if (plain != 0 && promoted != 0)
-		return promoted;
+	if (outcome != 0)
+		return outcome;
 
 	/* Succeeded: the program's words and uniform stream are scheduled. */
 	return 0;
@@ -274,7 +283,7 @@ bcm2711_shader_schedule(
 static int
 schedule_attempt(
 	struct bcm2711_shader_compiler *compiler,
-	uint32_t accumulators)
+	uint32_t span)
 {
 	struct schedule_state state;
 	int error;
@@ -286,10 +295,10 @@ schedule_attempt(
 	state.last_second = BCM2711_SHADER_ABSENT;
 	state.end = BCM2711_SHADER_ABSENT;
 
-	/* Short-lived values may move to accumulators, which take no read port; then every record is classified. */
+	/* Values living at most span records may move to accumulators, which take no read port; then every record is classified. */
 	error = 0;
-	if (accumulators != 0)
-		error = promote_accumulators(compiler);
+	if (span != 0)
+		error = promote_accumulators(compiler, span);
 	if (error == 0)
 		error = classify(&state);
 	if (error == 0)
@@ -333,7 +342,8 @@ schedule_attempt(
  */
 static int
 promote_accumulators(
-	struct bcm2711_shader_compiler *compiler)
+	struct bcm2711_shader_compiler *compiler,
+	uint32_t span)
 {
 	struct bcm2711_shader_op *op;
 	const struct bcm2711_qpu_instruction *instruction;
@@ -425,7 +435,7 @@ promote_accumulators(
 			number = instruction->signal_destination.number;
 		if (number >= 64)
 			continue;
-		error = promote_close(&open[number], values, &value_count, compiler->op_count);
+		error = promote_close(&open[number], values, &value_count, compiler->op_count, span);
 		open[number].op = index;
 		open[number].first = position;
 		open[number].last = position;
@@ -449,7 +459,7 @@ promote_accumulators(
 
 	/* The values still open at the end of the program close too. */
 	for (number = 0; number < 64 && error == 0; number++)
-		error = promote_close(&open[number], values, &value_count, compiler->op_count);
+		error = promote_close(&open[number], values, &value_count, compiler->op_count, span);
 
 	/* Qualifying values take accumulators in source order. */
 	if (error == 0)
@@ -471,7 +481,8 @@ promote_close(
 	struct promote_value *open,
 	struct promote_value *values,
 	uint32_t *value_count,
-	uint32_t capacity)
+	uint32_t capacity,
+	uint32_t span)
 {
 	/* An unwritten register has no value to close. */
 	if (open->op == BCM2711_SHADER_ABSENT)
@@ -480,7 +491,7 @@ promote_close(
 	/* A value with a read, all of it close and inside one segment, qualifies. */
 	if (open->eligible != 0 &&
 	    open->uses != BCM2711_SHADER_ABSENT &&
-	    open->last - open->first <= SCHEDULE_ACCUMULATOR_SPAN) {
+	    open->last - open->first <= span) {
 		if (*value_count == capacity)
 			return E2BIG;
 		values[*value_count] = *open;
@@ -1226,6 +1237,10 @@ schedule_body(
 				break;
 			place(state, best, word, best_slot);
 			placed++;
+
+			/* A launched lookup's switch may take this word or one of the two before it. */
+			if (state->nodes[best].texture_write != 0)
+				placed += place_sample_switch(state, best, word);
 		}
 		word++;
 	}
@@ -1271,6 +1286,146 @@ place(
 
 	/* Succeeded: the node is placed. */
 	return;
+}
+
+/*
+ * Places the switch that waits for a lookup as soon as the lookup's launch is placed.
+ *
+ * A switch takes effect after its two delay words, so the switch may sit in
+ * the launch's word or up to two words before it, with the launch in its
+ * delay words; the lookup's results are read from three words after the
+ * switch.  The words from the switch to the launch hold no special
+ * function or varying load and no other transaction than this lookup's TMU
+ * writes.  Reports one when the switch was placed.
+ */
+static uint32_t
+place_sample_switch(
+	struct schedule_state *state,
+	uint32_t launch,
+	uint32_t word)
+{
+	struct schedule_node *node;
+	struct schedule_node *other;
+	struct schedule_edge *edge;
+	struct schedule_word trial;
+	uint32_t present[3];
+	uint32_t present_count;
+	uint32_t entry;
+	uint32_t position;
+	uint32_t target;
+	uint32_t lowest;
+	uint32_t candidate;
+	uint32_t later;
+	uint64_t encoded;
+	int error;
+	int usable;
+
+	/* The launch's ordered successor must be a sample switch that waits for nothing else. */
+	node = &state->nodes[launch];
+	target = BCM2711_SHADER_ABSENT;
+	for (position = 0; position < node->successor_count; position++) {
+		edge = &state->edges[state->successors[node->first_successor + position]];
+		if (state->nodes[edge->to].role == BCM2711_SHADER_SWITCH_SAMPLE)
+			target = edge->to;
+	}
+	if (target == BCM2711_SHADER_ABSENT)
+		return 0;
+	if (state->nodes[target].waiting != 0 || state->nodes[target].word != BCM2711_SHADER_ABSENT)
+		return 0;
+
+	/* The switch's other predecessors decide its earliest word; the launch allows two words before its own. */
+	lowest = switch_lowest(state, target, launch);
+	if (word >= 2 && lowest < word - 2)
+		lowest = word - 2;
+
+	/* The first word up to the launch's that takes the switch signal and holds only plain work and this lookup's writes. */
+	for (candidate = lowest; candidate <= word; candidate++) {
+		trial = state->words[candidate];
+		if (trial.signal != BCM2711_SHADER_ABSENT)
+			continue;
+		trial.signal = target;
+		error = word_encode(state, &trial, &encoded);
+		if (error != 0)
+			continue;
+		usable = 1;
+		for (later = candidate; later <= word && later <= candidate + 2; later++) {
+			present_count = word_node_count(&state->words[later], present);
+			for (entry = 0; entry < present_count; entry++) {
+				other = &state->nodes[present[entry]];
+				if (other->sensitive != 0 && finishes_in_window(other) == 0)
+					usable = 0;
+				if (other->ordered != 0 && other->texture_write == 0 && other->texture_config == 0)
+					usable = 0;
+			}
+		}
+		if (usable == 0)
+			continue;
+
+		/* The switch is placed; its results wait three words from here. */
+		place(state, target, candidate, 2);
+		return 1;
+	}
+
+	/* The switch waits for the ordinary placement after the launch. */
+	return 0;
+}
+
+/*
+ * Reports the earliest word a switch's placed predecessors allow, ignoring one launch.
+ *
+ * A switch takes effect after its two delay words.  Accumulator and flag
+ * work before it in source order only has to finish by then, so it may sit
+ * in the switch's word or delay words; a special function or varying load
+ * before it must start in an earlier word, and any other predecessor keeps
+ * its edge's distance.
+ */
+static uint32_t
+switch_lowest(
+	const struct schedule_state *state,
+	uint32_t target,
+	uint32_t launch)
+{
+	const struct schedule_edge *edge;
+	const struct schedule_node *from;
+	uint32_t position;
+	uint32_t lowest;
+	uint32_t bound;
+
+	/* Every predecessor is placed. */
+	lowest = 0;
+	for (position = 0; position < state->edge_count; position++) {
+		edge = &state->edges[position];
+		if (edge->to != target || edge->from == launch)
+			continue;
+		from = &state->nodes[edge->from];
+		bound = from->word + edge->distance;
+		if (finishes_in_window(from) != 0) {
+			bound = 0;
+			if (from->word >= 2)
+				bound = from->word - 2;
+		}
+		if (lowest < bound)
+			lowest = bound;
+	}
+
+	/* Reports the first word the predecessors allow. */
+	return lowest;
+}
+
+/* Tells whether a sensitive node may run in a switch's word or delay words when it comes before the switch in source order. */
+static uint32_t
+finishes_in_window(
+	const struct schedule_node *node)
+{
+	const struct schedule_node *plain;
+
+	/* Plain accumulator or flag work finishes when its word ends; transactions and late results do not. */
+	plain = node;
+	if (plain->sensitive == 0 || plain->ordered != 0 || plain->special != 0 || plain->is_signal != 0)
+		return 0;
+
+	/* The work is done before the switch takes effect. */
+	return 1;
 }
 
 /*
@@ -1439,10 +1594,10 @@ schedule_tail(
 	if (tile_count != 2)
 		return ENOTSUP;
 
-	/* The first switch waits for its placed predecessors. */
+	/* The first switch waits for its placed predecessors; accumulator and flag work may share its window. */
 	if (state->nodes[state->last_first].waiting != 0)
 		return EINVAL;
-	lowest = state->nodes[state->last_first].earliest;
+	lowest = switch_lowest(state, state->last_first, BCM2711_SHADER_ABSENT);
 
 	/* Tries every first-switch word up to just past the body; the best placement wins. */
 	best_first = BCM2711_SHADER_ABSENT;
@@ -1915,10 +2070,15 @@ verify_rules(
 			continue;
 		if (previous != BCM2711_SHADER_ABSENT) {
 			other = &state->nodes[previous];
-			if (node->word < other->word)
+			if (node->role == BCM2711_SHADER_SWITCH_SAMPLE) {
+				/* A sample switch may precede its launch by up to two words, which then sits in its delay words. */
+				if (node->word + 2 < other->word)
+					return EINVAL;
+			} else if (node->word < other->word) {
 				return EINVAL;
-			if (node->word == other->word && texture_pair(other, node) == 0)
+			} else if (node->word == other->word && texture_pair(other, node) == 0) {
 				return EINVAL;
+			}
 			if (other->role == BCM2711_SHADER_SWITCH_SAMPLE && node->word < other->word + SCHEDULE_SWITCH_DISTANCE)
 				return EINVAL;
 		}
@@ -1939,23 +2099,44 @@ verify_rules(
 		return EINVAL;
 
 	/*
-	 * Around every switch, sensitive work stays on its source side: before
-	 * the switch word, or after its two delay words.  The second switch of
-	 * the last pair shares the first's source position.
+	 * Around every switch, sensitive work stays on its source side: work
+	 * after it starts after its two delay words; work before it starts in
+	 * an earlier word, except plain accumulator and flag work, which may run
+	 * in the switch's word and delay words of any switch but the thread end.
+	 * The second switch of the last pair takes effect with the first.
 	 */
 	for (index = 0; index < state->node_count; index++) {
 		node = &state->nodes[index];
 		if (node->role == BCM2711_SHADER_SWITCH_NONE)
 			continue;
-		for (later = 0; later < state->node_count; later++) {
+		for (later = 0; later < state->node_count && node->role != BCM2711_SHADER_SWITCH_LAST_SECOND; later++) {
 			other = &state->nodes[later];
 			if (other->sensitive == 0)
 				continue;
+			if (later > index && other->word < node->word + 3)
+				return EINVAL;
+			if (later < index && other->word > node->word + 2)
+				return EINVAL;
+			if (later < index &&
+			    other->word >= node->word &&
+			    (finishes_in_window(other) == 0 || node->role == BCM2711_SHADER_SWITCH_END))
+				return EINVAL;
+		}
+
+		/*
+		 * A switch word and its delay words read no texture result and write
+		 * no tile, except the thread end's, and the last pair's mark, whose
+		 * scoreboard rule is the first switch's.
+		 */
+		for (later = 0; later < state->node_count; later++) {
+			other = &state->nodes[later];
+			if (other->texture_read == 0 && other->tile_write == 0)
+				continue;
+			if (other->tile_write != 0 && node->role == BCM2711_SHADER_SWITCH_END)
+				continue;
+			if (other->tile_write != 0 && node->role == BCM2711_SHADER_SWITCH_LAST_SECOND)
+				continue;
 			if (other->word >= node->word && other->word <= node->word + 2)
-				return EINVAL;
-			if (later < index && other->word > node->word)
-				return EINVAL;
-			if (later > index && other->word < node->word)
 				return EINVAL;
 		}
 	}
