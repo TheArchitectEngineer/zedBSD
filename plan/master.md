@@ -32,7 +32,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-295、WS215、q940、T1-551。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-295、WS216、q940、T1-551。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -511,6 +511,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS212](ws212/ws.md) | MG006 | Wiseview の作り直し: 仮想デスクトップ 3 枚の矩形と窓の一覧、drag で仮想デスクトップ・display をまたいで移動、multi display の縦の積み重ね、display のローテーション（タグ・Shift+Super+←/→、比率の保持）（2026-10-12 ユーザー） | planning | 未割当 |
 | [WS213](ws213/ws.md) | MG006 | compositor の thread 化（入力・cursor と描画の分離、重いコマの間も入力と cursor が止まらない）（2026-10-12 ユーザー） | planning | P4（p001 設計） |
 | [WS214](ws214/ws.md) | MG006 | 窓をディスプレイの重ね合わせ（HVS の plane）に載せる（Pi 4、drag・dock の間 GPU が窓を描き直さない）（2026-10-12 ユーザー「ぜんぶやりましょう。」） | planning | P2（p001 設計） |
+| [WS215](ws215/ws.md) | MG005 | Raspberry Pi 4 の Bluetooth（内蔵の BCM43455、UART の HCI）（2026-10-12 ユーザー） | planning | 未割当（SMP・最適化の終了の後） |
 | [WS198](ws198/ws.md) | MG002 | zedBSD の上で zedBSD を self-build（host の clang、2026-10-09 ユーザー、優先度低、ベータ2 の見込み） | planning | p001 前提の調べ |
 | [WS199](ws199/ws.md) | MG006 | Settings のセキュリティキーの独立の頁とウィザード（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
 | [WS200](ws200/ws.md) | MG006 | Settings の Users のパスワード変更のウィザードと認証方式の選択（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
@@ -542,6 +543,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ## 判断の記録（新しい順）
 
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
+- 2026-10-12 ユーザー:「描画の最適化の後、計測を取ったら、SMPを入れます。さらに計測をとって、最適化を終了したいです。そのあと、RPi4のWiFiとBluetoothを実装し、RPi4は完了です。」→ Pi 4 の順: (1) 描画の最適化（WS211・WS213・WS214・WS141 の残り）→ (2) 計測 → (3) SMP（WS208）→ (4) 計測 → 最適化の終了 → (5) WiFi（WS206）と Bluetooth（新しい WS215）→ Pi 4 の完了。
 
 - 2026-10-12 ユーザー（クリック、WS214 p001 第 3 版の 9 節）: UAPI の追加（GPU_DISPLAY_COMMIT・GPU_DISPLAY_OVERLAY_INFO・HAS_OVERLAYS、GPU_DISPLAY_WAIT を眠る形に、bcm2711 の表示の命令が EBUSY で失敗しなくなる）を「承認する」（p003b、差分は plan/ws214/phase001/phase.md の 4.2）。drag の間の glass の blur は始めの場所のまま「よい」。drag の間の窓の中身は「止めてよい」（動画は離すと飛ぶ、音は続く）。窓の前後の入れ替えは WS214 の目標から「外してよい」（Q1 が ws.md を直した）。undock の形は p003b の帯域の実測の後に問う。WS214 p003a を P2 で着手（承認不要の kernel の段、WS141 p016 B-k2 を含む）。
 - 2026-10-12 ユーザー:「進め方はおすすめでいいです。」→ 残りの描画の最適化の順（Q1 の推し）: WS214 は第 3 版の後に p003a（承認不要の kernel の段、B-k2 を含む）、WS213 の残り（box_lag の超過と 401ms の止まりの切り分け、p005 の作業 thread）を P4、WS141 の WSI の present の copy の command buffer の使い回し（往復 2 回減）と compositor の窓の tile の費用（約 13 万 cycle/tile）の調べを P3。libvulkan の Begin を End に入れる案（内部の約束の変更）と render worker の優先度（方針）はその後に改めて問う。
