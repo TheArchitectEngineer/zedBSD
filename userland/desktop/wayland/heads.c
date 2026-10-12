@@ -1310,6 +1310,7 @@ heads_record_extended(
 	server->view_height = 0U;
 
 	/* Done; the pass leaves the image for presentation. */
+	kwl_batch_flush(server, command);
 	vkCmdEndRenderPass(command);
 }
 

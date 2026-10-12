@@ -1028,6 +1028,8 @@ struct kwl_server {
 	uint64_t input_ms;
 	uint64_t commit_ms;
 	unsigned home_picture_stale;
+	/* Nonzero while App Home's floor lines are drawn: their small solid quads are joined into one draw (batch.c, ws211-p003). */
+	unsigned batch_floors;
 	/* Nonzero with --no-layer-cache: no layer's picture, every frame drawn whole (the reference, review-4 M4). */
 	unsigned layer_cache_off;
 	unsigned home_progress_frozen;
