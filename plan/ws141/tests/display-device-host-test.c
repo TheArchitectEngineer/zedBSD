@@ -97,6 +97,7 @@ main(
 	struct gpu_display_cursor_image cursor_image;
 	struct gpu_display_cursor_move cursor_move;
 	struct gpu_display_cursor_hide cursor_hide;
+	struct gpu_display_overlay_info overlay_info;
 	uint8_t arrow[16 * 4 * 8];
 	void *capability;
 	void *imported;
@@ -406,6 +407,16 @@ main(
 	error = test_operations->display->query(test_device, first, &output);
 	assert(error == 0 && (output.flags & GPU_DISPLAY_HAS_CURSOR) != 0 && (output.flags & GPU_DISPLAY_HAS_OVERLAYS) != 0);
 	assert(output.plane_count == 3);
+	memset(&overlay_info, 0, sizeof(overlay_info));
+	overlay_info.display_id = 1;
+	overlay_info.generation = 1;
+	overlay_info.plane = 3;
+	error = test_operations->display->overlay_info(test_device, first, &overlay_info);
+	assert(error == EINVAL);
+	overlay_info.plane = 2;
+	error = test_operations->display->overlay_info(test_device, first, &overlay_info);
+	assert(error == 0 && overlay_info.max_src_width == 1920 && overlay_info.max_dst_height == 1080);
+	assert(overlay_info.flags == (GPU_DISPLAY_OVERLAY_SCALE_UP | GPU_DISPLAY_OVERLAY_SCALE_DOWN_X | GPU_DISPLAY_OVERLAY_SCALE_DOWN_Y));
 	memset(&claim, 0, sizeof(claim));
 	claim.display_id = 1;
 	claim.generation = 1;

@@ -1456,12 +1456,20 @@ output_overlay_info(
 	if (request->plane == 0 || request->plane > BCM2711_FLIP_OVERLAYS)
 		return EINVAL;
 
-	/* Any unscaled part of an image as large as the output, shown anywhere inside it. */
+	/*
+	 * A part of an image as large as the output, scaled up or down on
+	 * either axis, shown anywhere inside it.  A vertically scaled overlay's
+	 * line buffer holds 2048 pixels, so the source is no wider than that
+	 * when the overlay may scale (an unscaled one may be wider; the commit
+	 * checks each case).
+	 */
 	request->max_src_width = controller->native->screen.width;
+	if (request->max_src_width > 2048U)
+		request->max_src_width = 2048U;
 	request->max_src_height = controller->native->screen.height;
 	request->max_dst_width = controller->native->screen.width;
 	request->max_dst_height = controller->native->screen.height;
-	request->flags = 0;
+	request->flags = GPU_DISPLAY_OVERLAY_SCALE_UP | GPU_DISPLAY_OVERLAY_SCALE_DOWN_X | GPU_DISPLAY_OVERLAY_SCALE_DOWN_Y;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
 
 	/* Succeeded: the overlay's limits until the mode changes. */

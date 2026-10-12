@@ -48,8 +48,33 @@
 #define FLIP_PLANE_WORDS 8U
 #define FLIP_LIST_END 0x80000000U
 
-/* The longest list: console, primary, the overlays, cursor and the terminator. */
-#define FLIP_LIST_MAX_WORDS ((3U + BCM2711_FLIP_OVERLAYS) * FLIP_PLANE_WORDS + 1U)
+/*
+ * A scaled overlay's plane: nine words, the line buffer's start, at most
+ * five words of horizontal and vertical scaling, and four filter places.
+ */
+#define FLIP_SCALED_MAX_WORDS 19U
+
+/* The longest list: console, primary, the scaled overlays, cursor and the terminator. */
+#define FLIP_LIST_MAX_WORDS (3U * FLIP_PLANE_WORDS + BCM2711_FLIP_OVERLAYS * FLIP_SCALED_MAX_WORDS + 1U)
+
+/* How an overlay is scaled along one axis: not at all, by the polyphase filter, or by the trapezoidal one. */
+#define FLIP_SCALE_NONE 0U
+#define FLIP_SCALE_PPF 1U
+#define FLIP_SCALE_TPZ 2U
+
+/*
+ * The resident scaling filter's first SRAM word (R0 writes it there for
+ * good, display-program.c), which a polyphase-scaled plane points at.
+ */
+#define FLIP_FILTER_WORD 32U
+
+/*
+ * The line buffer memory each overlay owns for vertical scaling: a fixed
+ * part of the HVS's 60K words, enough for a polyphase-scaled line of 2048
+ * pixels, so an overlay scaled vertically reads at most 2048 pixels a line.
+ */
+#define FLIP_LINE_BUFFER_WORDS 8192U
+#define FLIP_LINE_BUFFER_PIXELS 2048U
 
 /* How long a recorded state may wait for the hardware to adopt a list showing it. */
 #define FLIP_ADOPTION_TICKS KERN_MS_TO_TICKS(100U)
@@ -71,7 +96,11 @@ static uint64_t read_bandwidth(const struct bcm2711_display *display, const stru
 static int view_changes_locked(struct bcm2711_display *display, struct bcm2711_flip_change *changes, uint32_t count, struct bcm2711_flip_primary *primary, struct bcm2711_flip_overlay *overlays, uint32_t *retired);
 static int check_overlay(const struct bcm2711_display *display, const struct bcm2711_flip_overlay *overlay);
 static void apply_changes_locked(struct bcm2711_display *display, struct bcm2711_flip_change *changes, uint32_t count, const struct bcm2711_flip_primary *primary, const struct bcm2711_flip_overlay *overlays);
-static uint32_t overlay_words(const struct bcm2711_flip_overlay *overlay, uint32_t *words);
+static uint32_t overlay_words(const struct bcm2711_flip_overlay *overlay, uint32_t index, uint32_t *words);
+static unsigned scale_mode(uint32_t source, uint32_t destination);
+static uint32_t polyphase_word(uint32_t source, uint32_t destination);
+static void trapezoid_words(uint32_t source, uint32_t destination, uint32_t *words);
+static bool overlay_scaled(const struct bcm2711_flip_overlay *overlay);
 static void note_locked(struct bcm2711_display *display, unsigned kind, uint64_t now);
 static void count_adoption_locked(struct bcm2711_display *display, uint32_t slot);
 static uint32_t take_times_locked(struct bcm2711_display *display, uint32_t *replaced);
@@ -1697,8 +1726,8 @@ console_hidden(
 
 /*
  * Computes the core clock a list of these planes needs: sixty percent of
- * the planes' pixels per second at four pixels per compositor cycle (every
- * plane is unscaled), and never less than the console's.
+ * the planes' pixels per second, at four pixels per compositor cycle for an
+ * unscaled plane and two for a scaled one, and never less than the console's.
  */
 static uint32_t
 required_clock(
@@ -1706,28 +1735,35 @@ required_clock(
 	const struct bcm2711_flip_primary *primary,
 	const struct bcm2711_flip_overlay *overlays)
 {
+	uint64_t quarters;
 	uint64_t load;
 	uint32_t required;
 	uint32_t index;
 	bool hidden;
+	bool scaled;
 
-	/* The primary, and the console when it shows through. */
-	load = 0;
+	/* The primary, and the console when it shows through, at four pixels a cycle. */
+	quarters = 0;
 	if (primary->shown)
-		load = (uint64_t)primary->frame.width * primary->frame.height;
+		quarters = (uint64_t)primary->frame.width * primary->frame.height;
 	hidden = console_hidden(display, primary);
 	if (!hidden)
-		load += (uint64_t)display->screen.width * display->screen.height;
+		quarters += (uint64_t)display->screen.width * display->screen.height;
 
-	/* Every shown overlay's shown part. */
+	/* Every shown overlay's shown part, a scaled one counting twice (two pixels a cycle). */
 	for (index = 0; index < BCM2711_FLIP_OVERLAYS; index++) {
 		/* A hidden overlay is not in the list. */
-		if (overlays[index].shown)
-			load += (uint64_t)overlays[index].dst_width * overlays[index].dst_height;
+		if (!overlays[index].shown)
+			continue;
+		scaled = overlay_scaled(&overlays[index]);
+		load = (uint64_t)overlays[index].dst_width * overlays[index].dst_height;
+		if (scaled)
+			load *= 2U;
+		quarters += load;
 	}
 
 	/* One output uses sixty percent of the aggregate plane cycle demand. */
-	load = load * ((display->refresh_millihz + 500U) / 1000U) / 4U;
+	load = quarters * ((display->refresh_millihz + 500U) / 1000U) / 4U;
 	load = load * 60U / 100U;
 	required = display->console_core_hz;
 	if (load > 0xffffffffULL) {
@@ -1744,8 +1780,9 @@ required_clock(
 
 /*
  * Computes the bytes per second the HVS reads for a list of these planes:
- * each shown plane's source pixels, four bytes each, every refresh (no plane
- * is scaled, so no row is read twice).
+ * each shown plane's source pixels, four bytes each, every refresh, and a
+ * vertically reduced overlay's as many times as its reduction rounded up
+ * (it reads that many source rows in one output row's time).
  */
 static uint64_t
 read_bandwidth(
@@ -1754,6 +1791,7 @@ read_bandwidth(
 	const struct bcm2711_flip_overlay *overlays)
 {
 	uint64_t pixels;
+	uint64_t rows;
 	uint32_t index;
 	bool hidden;
 
@@ -1765,11 +1803,13 @@ read_bandwidth(
 	if (!hidden)
 		pixels += (uint64_t)display->screen.width * display->screen.height;
 
-	/* Every shown overlay's source rectangle. */
+	/* Every shown overlay's source rectangle, times its vertical reduction rounded up. */
 	for (index = 0; index < BCM2711_FLIP_OVERLAYS; index++) {
 		/* A hidden overlay is not read. */
-		if (overlays[index].shown)
-			pixels += (uint64_t)overlays[index].src_width * overlays[index].src_height;
+		if (!overlays[index].shown)
+			continue;
+		rows = (overlays[index].src_height + overlays[index].dst_height - 1U) / overlays[index].dst_height;
+		pixels += (uint64_t)overlays[index].src_width * overlays[index].src_height * rows;
 	}
 
 	/* Four bytes a pixel at the mode's refresh rate. */
@@ -2196,7 +2236,7 @@ write_list_locked(
 
 	/* The overlays above the primary, in plane order. */
 	for (index = 0; index < BCM2711_FLIP_OVERLAYS; index++)
-		count += overlay_words(&display->flip.overlays[index], words + count);
+		count += overlay_words(&display->flip.overlays[index], index, words + count);
 
 	/* The cursor on top, clipped to the output; it adds nothing when hidden or wholly outside. */
 	cursor = cursor_words(display, words + count);
@@ -2592,6 +2632,8 @@ check_overlay(
 	const struct bcm2711_flip_overlay *overlay)
 {
 	const struct drv_bcm2711_boot_screen *frame;
+	uint32_t line;
+	unsigned mode;
 	bool overlap;
 
 	/* An encodable image: a known byte order, aligned rows inside storage below one GiB. */
@@ -2634,9 +2676,25 @@ check_overlay(
 	if (overlay->dst_y > display->screen.height || overlay->dst_height > display->screen.height - overlay->dst_y)
 		return EINVAL;
 
-	/* No overlay is scaled: a different size is outside its limits. */
-	if (overlay->src_width != overlay->dst_width || overlay->src_height != overlay->dst_height)
+	/* The plane's size fields hold 13 bits, its position 12. */
+	if (overlay->dst_width > 8191U || overlay->dst_height > 8191U)
 		return ENOSPC;
+	if (overlay->dst_x > 4095U || overlay->dst_y > 4095U)
+		return ENOSPC;
+
+	/* The trapezoidal ratio field holds a reduction below 32 on each axis. */
+	if (overlay->src_width >= 32U * overlay->dst_width || overlay->src_height >= 32U * overlay->dst_height)
+		return ENOSPC;
+
+	/* A vertically scaled overlay's line fits its part of the line buffer. */
+	if (overlay->src_height != overlay->dst_height) {
+		line = overlay->src_width;
+		mode = scale_mode(overlay->src_width, overlay->dst_width);
+		if (mode == FLIP_SCALE_TPZ)
+			line = overlay->dst_width;
+		if (line > FLIP_LINE_BUFFER_PIXELS)
+			return ENOSPC;
+	}
 
 	/* Succeeded: the overlay can be encoded into any later list. */
 	return 0;
@@ -2709,14 +2767,25 @@ apply_changes_locked(
 	display->flip.planes_generation++;
 }
 
-/* Encodes one overlay's plane: its source rectangle at its destination, with per-pixel premultiplied alpha. */
+/*
+ * Encodes one overlay's plane: its source rectangle at its destination, with
+ * per-pixel premultiplied alpha, unscaled in eight words or scaled with the
+ * polyphase or trapezoidal filter on each axis (index picks the overlay's
+ * part of the line buffer).
+ */
 static uint32_t
 overlay_words(
 	const struct bcm2711_flip_overlay *overlay,
+	uint32_t index,
 	uint32_t *words)
 {
 	uint32_t order;
 	uint32_t start;
+	uint32_t count;
+	uint32_t method;
+	unsigned horizontal;
+	unsigned vertical;
+	bool scaled;
 
 	/* A hidden overlay adds no plane. */
 	if (!overlay->shown)
@@ -2728,18 +2797,180 @@ overlay_words(
 	if (overlay->frame.format == 1)
 		order = 3;
 
-	/* The same eight words as the cursor's, at the destination and with the source's size. */
-	words[0] = 0x48009807U | (order << 13);
+	/* An unscaled overlay: the same eight words as the cursor's, at the destination and with the source's size. */
+	scaled = overlay_scaled(overlay);
+	if (!scaled) {
+		words[0] = 0x48009807U | (order << 13);
+		words[1] = (overlay->dst_y << 16) | overlay->dst_x;
+		words[2] = 0x2000fff0U;
+		words[3] = (overlay->src_height << 16) | overlay->src_width;
+		words[4] = 0xc0c0c0c0U;
+		words[5] = 0xc0000000U | start;
+		words[6] = 0xc0c0c0c0U;
+		words[7] = overlay->frame.pitch;
+		return FLIP_PLANE_WORDS;
+	}
+
+	/* The method of each axis, and the method field's value for the pair. */
+	horizontal = scale_mode(overlay->src_width, overlay->dst_width);
+	vertical = scale_mode(overlay->src_height, overlay->dst_height);
+	method = 0;
+	if (horizontal == FLIP_SCALE_PPF && vertical == FLIP_SCALE_PPF)
+		method = 0;
+	else if (horizontal == FLIP_SCALE_TPZ && vertical == FLIP_SCALE_PPF)
+		method = 1;
+	else if (horizontal == FLIP_SCALE_PPF && vertical == FLIP_SCALE_TPZ)
+		method = 2;
+	else if (horizontal == FLIP_SCALE_TPZ && vertical == FLIP_SCALE_TPZ)
+		method = 3;
+	else if (horizontal == FLIP_SCALE_PPF && vertical == FLIP_SCALE_NONE)
+		method = 4;
+	else if (horizontal == FLIP_SCALE_NONE && vertical == FLIP_SCALE_PPF)
+		method = 5;
+	else if (horizontal == FLIP_SCALE_NONE && vertical == FLIP_SCALE_TPZ)
+		method = 6;
+	else
+		method = 7;
+
+	/* Placement, alpha, the scaled and the source sizes, and the image's rows. */
 	words[1] = (overlay->dst_y << 16) | overlay->dst_x;
 	words[2] = 0x2000fff0U;
-	words[3] = (overlay->src_height << 16) | overlay->src_width;
-	words[4] = 0xc0c0c0c0U;
-	words[5] = 0xc0000000U | start;
-	words[6] = 0xc0c0c0c0U;
-	words[7] = overlay->frame.pitch;
+	words[3] = (overlay->dst_height << 16) | overlay->dst_width;
+	words[4] = (overlay->src_height << 16) | overlay->src_width;
+	words[5] = 0xc0c0c0c0U;
+	words[6] = 0xc0000000U | start;
+	words[7] = 0xc0c0c0c0U;
+	words[8] = overlay->frame.pitch;
+	count = 9;
 
-	/* Succeeded: one plane. */
-	return FLIP_PLANE_WORDS;
+	/* Vertical scaling keeps lines in the overlay's own part of the line buffer. */
+	if (vertical != FLIP_SCALE_NONE) {
+		words[count] = index * FLIP_LINE_BUFFER_WORDS;
+		count++;
+	}
+
+	/* The horizontal polyphase step, then the vertical one with its context. */
+	if (horizontal == FLIP_SCALE_PPF) {
+		words[count] = polyphase_word(overlay->src_width, overlay->dst_width);
+		count++;
+	}
+
+	/* The vertical polyphase step keeps a context word after it. */
+	if (vertical == FLIP_SCALE_PPF) {
+		words[count] = polyphase_word(overlay->src_height, overlay->dst_height);
+		words[count + 1U] = 0xc0c0c0c0U;
+		count += 2U;
+	}
+
+	/* The horizontal trapezoidal step, then the vertical one with its context. */
+	if (horizontal == FLIP_SCALE_TPZ) {
+		trapezoid_words(overlay->src_width, overlay->dst_width, words + count);
+		count += 2U;
+	}
+
+	/* The vertical trapezoidal step keeps a context word after its two. */
+	if (vertical == FLIP_SCALE_TPZ) {
+		trapezoid_words(overlay->src_height, overlay->dst_height, words + count);
+		words[count + 2U] = 0xc0c0c0c0U;
+		count += 3U;
+	}
+
+	/* A polyphase step reads the resident filter, once for each of four uses. */
+	if (horizontal == FLIP_SCALE_PPF || vertical == FLIP_SCALE_PPF) {
+		words[count] = FLIP_FILTER_WORD;
+		words[count + 1U] = FLIP_FILTER_WORD;
+		words[count + 2U] = FLIP_FILTER_WORD;
+		words[count + 3U] = FLIP_FILTER_WORD;
+		count += 4U;
+	}
+
+	/*
+	 * The control word: valid, its word count, byte order, alpha and RGB
+	 * expansion, the method for both channels, and the RGB32 pixel format.
+	 */
+	words[0] = 0x40000000U | (count << 24) | (order << 13) | 0x1000U | 0x800U | (method << 8) | (method << 5) | 7U;
+
+	/* Succeeded: one scaled plane. */
+	return count;
+}
+
+/* Chooses an axis's scaling: none at the same size, the polyphase filter down to two thirds, the trapezoidal one below. */
+static unsigned
+scale_mode(
+	uint32_t source,
+	uint32_t destination)
+{
+	/* The same size needs no filter. */
+	if (source == destination)
+		return FLIP_SCALE_NONE;
+
+	/* Any enlargement, and a reduction to two thirds or more. */
+	if (3ULL * destination >= 2ULL * source)
+		return FLIP_SCALE_PPF;
+
+	/* Succeeded: a stronger reduction. */
+	return FLIP_SCALE_TPZ;
+}
+
+/*
+ * Encodes a polyphase step: the source-to-destination ratio in 16.16 with
+ * its lowest bit clear, and the starting phase half a pixel in, corrected by
+ * half of the ratio's rounding error, in 6 fractional bits.
+ */
+static uint32_t
+polyphase_word(
+	uint32_t source,
+	uint32_t destination)
+{
+	uint32_t ratio;
+	int64_t error;
+	int32_t phase;
+
+	/* The ratio, even, as the luma channel of a YUV image would use it. */
+	ratio = (uint32_t)(((uint64_t)source << 16) / destination);
+	ratio &= ~1U;
+
+	/* Half a pixel in, plus half the ratio's error over the whole line. */
+	error = ((int64_t)source << 16) - (int64_t)destination * ratio;
+	error >>= 10;
+	phase = -32 + (int32_t)(error >> 1);
+	if (phase >= 64)
+		phase = 63;
+
+	/* Automatic gain control, the ratio and the phase's low seven bits. */
+	return 0x40000000U | ((ratio << 8) & 0x01ffff00U) | ((uint32_t)phase & 0x7fU);
+}
+
+/* Encodes a trapezoidal step: the ratio in 16.16 with phase zero, then its reciprocal's low 16 bits. */
+static void
+trapezoid_words(
+	uint32_t source,
+	uint32_t destination,
+	uint32_t *words)
+{
+	uint32_t ratio;
+
+	/* The ratio, above one and a half here. */
+	ratio = (uint32_t)(((uint64_t)source << 16) / destination);
+
+	/* The ratio's field, then the reciprocal, which ~0 / ratio approximates closely enough. */
+	words[0] = (ratio << 8) & 0x1fffff00U;
+	words[1] = (0xffffffffU / ratio) & 0xffffU;
+}
+
+/* Tells whether an overlay is shown at another size than its source. */
+static bool
+overlay_scaled(
+	const struct bcm2711_flip_overlay *overlay)
+{
+	/* A different width or height. */
+	if (overlay->src_width != overlay->dst_width)
+		return true;
+	if (overlay->src_height != overlay->dst_height)
+		return true;
+
+	/* Succeeded: unscaled. */
+	return false;
 }
 
 /* Adds one event of a cadence kind to the window (v3d.perf=1 only); the caller holds the guard and prints nothing. */
@@ -2761,6 +2992,8 @@ note_locked(
 		cadence->intervals[cadence->stored] = (uint32_t)interval;
 		cadence->stored++;
 	}
+
+	/* The event is the kind's last, and one more of the window. */
 	cadence->last = now;
 	cadence->count++;
 
