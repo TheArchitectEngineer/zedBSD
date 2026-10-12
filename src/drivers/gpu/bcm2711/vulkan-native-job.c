@@ -710,6 +710,26 @@ report_perf(
 			(unsigned long long)kern_ticks_to_rate(perf->step_hold_max, 1000000U));
 	}
 
+	/*
+	 * The decoder on the fine counter (ws211-p010): the average cost of one
+	 * command, the longest request and its commands, and the most
+	 * identities a session held (the tick-based command= of the requests
+	 * line names the longest single command).
+	 */
+	if (perf->decode_requests != 0U &&
+	    perf->decode_commands != 0U &&
+	    perf->decode_frequency != 0U) {
+		perf_append(
+			"v3d: decode requests=%llu cmds=%llu us=%llu ns/cmd=%llu max_us=%llu/cmds%u objects=%u\n",
+			(unsigned long long)perf->decode_requests,
+			(unsigned long long)perf->decode_commands,
+			(unsigned long long)(perf->decode_counts * 1000000U / perf->decode_frequency),
+			(unsigned long long)(perf->decode_counts * 1000000000U / perf->decode_frequency / perf->decode_commands),
+			(unsigned long long)(perf->decode_counts_max * 1000000U / perf->decode_frequency),
+			perf->decode_counts_max_commands,
+			perf->decode_objects_max);
+	}
+
 	/* Where the alloc time goes: the runs made (the allocator and their zeroing) and the reused runs zeroed again. */
 	bcm2711_buffer_create_stats(created);
 	if (created[0] != 0U || created[4] != 0U || created[7] != 0U) {

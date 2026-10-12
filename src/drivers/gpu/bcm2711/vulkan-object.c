@@ -15,6 +15,18 @@
 #define VULKAN_SESSION_OBJECT_LIMIT 4096U
 
 /*
+ * The multiplier of the index's Fibonacci hash: 2^64 divided by the golden
+ * ratio.  libvulkan numbers identities one after another, and this spreads
+ * consecutive numbers evenly over the buckets.
+ */
+#define VULKAN_OBJECT_HASH UINT64_C(0x9e3779b97f4a7c15)
+
+/* The bits of the hashed identity that name a bucket (1024 buckets). */
+#define VULKAN_OBJECT_BUCKET_BITS 10U
+
+static uint32_t object_bucket(uint64_t identity);
+
+/*
  * Publishes one typed Vulkan identity with a separately owned registry reference.
  */
 int
@@ -28,6 +40,7 @@ bcm2711_vulkan_object_publish(
 {
 	struct bcm2711_vulkan_object *existing;
 	struct bcm2711_vulkan_object *created;
+	uint32_t bucket;
 
 	/* Refusal owns neither payload nor destructor responsibility. */
 	if (object == NULL)
@@ -66,9 +79,19 @@ bcm2711_vulkan_object_publish(
 	created->payload = payload;
 	created->destroy = destroy;
 
-	/* One controller-mutex publication makes both the index and its ownership visible together. */
+	/* One controller-mutex publication makes the list, the index and the ownership visible together. */
 	created->next = session->objects;
+	if (session->objects != NULL)
+		session->objects->link = &created->next;
+	created->link = &session->objects;
 	session->objects = created;
+
+	/* The index finds the identity in its bucket from now on. */
+	bucket = object_bucket(identity);
+	created->bucket_next = session->buckets[bucket];
+	session->buckets[bucket] = created;
+
+	/* The registry counts the published identity and its live payload. */
 	session->object_count++;
 	session->live_objects++;
 	*object = created;
@@ -87,13 +110,18 @@ bcm2711_vulkan_object_find(
 	uint64_t identity)
 {
 	struct bcm2711_vulkan_object *object;
+	uint32_t bucket;
 
 	/* No session or null wire identity can select an object of another namespace. */
 	if (session == NULL || identity == 0)
 		return NULL;
 
-	/* Lookups remain typed even when an application numbers different object kinds identically. */
-	for (object = session->objects; object != NULL; object = object->next) {
+	/*
+	 * Only the identity's bucket can hold it; lookups remain typed even
+	 * when an application numbers different object kinds identically.
+	 */
+	bucket = object_bucket(identity);
+	for (object = session->buckets[bucket]; object != NULL; object = object->bucket_next) {
 		if (object->kind == kind && object->identity == identity)
 			return object;
 	}
@@ -170,19 +198,26 @@ bcm2711_vulkan_object_remove(
 {
 	struct bcm2711_vulkan_object **link;
 	struct bcm2711_vulkan_object *object;
+	uint32_t bucket;
 	int error;
 
 	/* A nonexistent session cannot unlink any namespace. */
 	if (session == NULL)
 		return EINVAL;
 
-	/* The registry reference keeps each traversal target alive under the controller mutex. */
-	for (link = &session->objects; *link != NULL; link = &(*link)->next) {
+	/* The registry reference keeps each entry of the identity's bucket alive under the controller mutex. */
+	bucket = object_bucket(identity);
+	for (link = &session->buckets[bucket]; *link != NULL; link = &(*link)->bucket_next) {
 		object = *link;
 		if (object->kind == kind && object->identity == identity) {
-			/* Namespace removal precedes any destructor that may release another dependent object. */
-			*link = object->next;
+			/* Namespace removal from the index and the list precedes any destructor that may release another dependent object. */
+			*link = object->bucket_next;
+			object->bucket_next = NULL;
+			*object->link = object->next;
+			if (object->next != NULL)
+				object->next->link = object->link;
 			object->next = NULL;
+			object->link = NULL;
 			object->published = false;
 			session->object_count--;
 			error = bcm2711_vulkan_object_release(object);
@@ -207,6 +242,7 @@ bcm2711_vulkan_objects_close(
 {
 	struct bcm2711_vulkan_object *object;
 	struct bcm2711_vulkan_object *next;
+	uint32_t bucket;
 	int error;
 	int retirement_error;
 
@@ -221,10 +257,16 @@ bcm2711_vulkan_objects_close(
 	session->object_count = 0;
 	retirement_error = 0;
 
+	/* The index empties with the list. */
+	for (bucket = 0; bucket < BCM2711_VULKAN_OBJECT_BUCKETS; bucket++)
+		session->buckets[bucket] = NULL;
+
 	/* Each unvisited entry keeps its registry reference, so dependency releases cannot invalidate this traversal. */
 	while (object != NULL) {
 		next = object->next;
 		object->next = NULL;
+		object->link = NULL;
+		object->bucket_next = NULL;
 		object->published = false;
 		error = bcm2711_vulkan_object_release(object);
 		if (error != 0 && retirement_error == 0)
@@ -240,4 +282,18 @@ bcm2711_vulkan_objects_close(
 
 	/* The closed namespace grants no new protocol identity or object reference. */
 	return 0;
+}
+
+/* Names the bucket of the session's index that holds an identity. */
+static uint32_t
+object_bucket(
+	uint64_t identity)
+{
+	uint64_t hashed;
+
+	/* The top bits of the Fibonacci hash, which mix every bit of the identity. */
+	hashed = identity * VULKAN_OBJECT_HASH;
+
+	/* The bucket's number, below BCM2711_VULKAN_OBJECT_BUCKETS. */
+	return (uint32_t)(hashed >> (64U - VULKAN_OBJECT_BUCKET_BITS));
 }
