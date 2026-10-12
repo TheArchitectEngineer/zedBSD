@@ -2007,6 +2007,10 @@ kwl_compose_set_put(
 	struct kwl_compose *compose,
 	VkDescriptorSet set)
 {
+	/* A set given back may come back with another image: it is no longer known as bound (ws211-p003). */
+	if (set != VK_NULL_HANDLE && set == compose->bound_set)
+		kwl_compose_bind_forget(compose);
+
 	/* Nothing to keep, or no room (the pool frees it at the end). */
 	if (set == VK_NULL_HANDLE || compose->spare_count == KWL_DESCRIPTOR_MAX)
 		return;
@@ -2213,10 +2217,10 @@ compose_quad_part(
 
 	/* The pipeline for the window's way of drawing, its image, and the strip. */
 	kwl_compose_count_draw(server, server->compose->pipelines[import->draw], import->set, 0U);
-	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, server->compose->pipelines[import->draw]);
-	vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, server->compose->layout, 0U, 1U, &import->set, 0U, NULL);
+	kwl_compose_bind(server, command, server->compose->pipelines[import->draw], server->compose->layout, import->set);
 	vkCmdPushConstants(command, server->compose->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
 	vkCmdDraw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
+	kwl_compose_count_commands(server, 1U, 1U);
 }
 
 /*
@@ -2341,6 +2345,7 @@ compose_record(
 	result = vkBeginCommandBuffer(compose->command, &begin);
 	if (result != VK_SUCCESS)
 		return result;
+	kwl_compose_bind_forget(compose);
 
 	/*
 	 * The scene is kept only while the cursor is drawn into the frames: with
@@ -2443,6 +2448,7 @@ compose_record(
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
 	vkCmdBeginRenderPass(compose->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_compose_bind_forget(compose);
 
 	/* The whole output is placed; the drawing is kept to the damage when there is one (design D4). */
 	memset(&viewport, 0, sizeof(viewport));
@@ -2499,6 +2505,7 @@ compose_record(
 		/* The compatible LOAD pass retains scene pixels and adds only the cursor. */
 		pass.renderPass = compose->pass_load;
 		vkCmdBeginRenderPass(compose->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+		kwl_compose_bind_forget(compose);
 	}
 
 	/* The cursor over everything. */
@@ -2866,7 +2873,7 @@ compose_log_draws(
 	/* The counts compose_record and the drawing made. */
 	counts = &server->draw_counts;
 	printf(
-		"KWL DRAWS frame=%llu draws=%u shapes=%u quads=%u home=%u layer=%u bar=%u other=%u pipelines=%u sets=%u capture=%u copies=%u\n",
+		"KWL DRAWS frame=%llu draws=%u shapes=%u quads=%u home=%u layer=%u bar=%u other=%u pipelines=%u sets=%u capture=%u copies=%u cmds draw=%u pipeline=%u set=%u push=%u\n",
 		(unsigned long long)server->frame,
 		counts->shapes + counts->quads,
 		counts->shapes,
@@ -2878,7 +2885,11 @@ compose_log_draws(
 		counts->pipelines,
 		counts->sets,
 		server->compose->scene.written,
-		server->compose->frame_copies);
+		server->compose->frame_copies,
+		counts->cmd_draws,
+		counts->cmd_pipelines,
+		counts->cmd_sets,
+		counts->cmd_pushes);
 }
 
 /*

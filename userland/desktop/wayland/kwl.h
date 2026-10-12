@@ -133,6 +133,11 @@ struct kwl_draw_counts {
 	uint32_t sections[KWL_SECTIONS];
 	uint32_t pipelines;
 	uint32_t sets;
+	/* The commands actually recorded (ws211-p003 review-1 M2): draws, pipeline and set binds, push constants. */
+	uint32_t cmd_draws;
+	uint32_t cmd_pipelines;
+	uint32_t cmd_sets;
+	uint32_t cmd_pushes;
 	uint64_t last_pipeline;
 	uint64_t last_set;
 };
