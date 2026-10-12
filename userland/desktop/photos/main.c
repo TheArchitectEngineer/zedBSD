@@ -113,7 +113,7 @@ struct ph_window {
 	/*
 	 * Only the lit widget changed since the last frame (a motion or the
 	 * pointer leaving, BUG-226): the next frame is drawn and shown within
-	 * the part the widgets tell (kl_ui_take_damage) alone.  buttons_held
+	 * the parts the widgets tell (kl_ui_take_frame) alone.  buttons_held
 	 * counts the buttons held, while which a motion draws the whole window.
 	 */
 	int lit_changed;
@@ -164,6 +164,7 @@ static void ph_marks_finish(struct ph_window *photos);
 static void ph_remove_start(struct ph_window *photos, const char *id, uint64_t now_us);
 static int ph_resize(struct ph_window *photos);
 static void ph_draw(struct ph_window *photos, uint64_t now_us);
+static void ph_draw_view(struct ph_window *photos, uint64_t now_us);
 static int ph_wait(const struct ph_window *photos, uint64_t now_us);
 
 /*
@@ -1484,19 +1485,15 @@ ph_draw(
 	uint64_t now_us)
 {
 	struct kl_glass_panel panels[PH_PANELS_MAX];
-	const struct kl_rect *present_part;
+	struct kl_rect parts[KL_FRAME_PARTS_MAX];
 	struct kl_event event;
-	struct kl_rect part;
+	unsigned part_count;
+	unsigned index;
 	size_t count;
-	size_t album;
-	long open;
-	long chosen;
 	int status;
 	int error;
 	int taken;
-	int list;
-	int adding;
-	int partial;
+	int need;
 
 	/* Nothing changed and nothing moves: no frame. */
 	if (!photos->dirty && !photos->moving && !photos->lit_changed)
@@ -1504,35 +1501,34 @@ ph_draw(
 
 	/*
 	 * Only another widget lit: the frame is drawn and shown within the
-	 * widgets' part alone (BUG-226, as Music); a whole window for each
-	 * hover was a CPU frame on the Pi 4 (2026-10-12).
+	 * parts the widgets tell alone (BUG-226, ws210-p014: the widget lit
+	 * when the last frame was drawn and the one lit now; none when the
+	 * pointer came back); a whole window for each hover was a CPU frame on
+	 * the Pi 4 (2026-10-12).
 	 */
-	partial = 0;
-	if (!photos->dirty && !photos->moving && photos->lit_changed)
-		partial = kl_ui_take_damage(photos->ui, &part);
+	part_count = 0;
+	if (!photos->dirty && !photos->moving && photos->lit_changed) {
+		need = kl_ui_take_frame(photos->ui, parts, KL_FRAME_PARTS_MAX, &part_count);
+		if (need == KL_FRAME_NONE) {
+			photos->lit_changed = 0;
+			return;
+		}
+		if (need == KL_FRAME_WHOLE)
+			part_count = 0;
+	}
 	photos->lit_changed = 0;
 
-	/* The view, within the part when there is one, and the pictures it wants; what its widgets changed while it drew is drawn in the next frame. */
+	/* The view, all of it; what its widgets changed while it drew is drawn in the next frame. */
 	photos->dirty = 0;
-	open = photos->view.open;
-	chosen = photos->view.chosen;
-	list = photos->view.list;
-	album = photos->view.album;
-	adding = photos->view.adding;
-	if (partial)
-		kl_canvas_clip_push(&photos->canvas, &part);
-	kl_ui_begin(photos->ui, now_us);
-	ph_view_draw(&photos->view, photos->ui, &photos->style, (int)photos->width, (int)photos->height, now_us);
-	if (open != photos->view.open || chosen != photos->view.chosen || list != photos->view.list || album != photos->view.album ||
-	    adding != photos->view.adding)
-		photos->dirty = 1;
+	if (part_count == 0U)
+		ph_draw_view(photos, now_us);
 
-	/* The dialog consumes input after the view, using the common modal widget. */
-	if (photos->removing[0] != '\0')
-		ph_delete_dialog(photos, now_us);
-	photos->moving = kl_ui_end(photos->ui, now_us);
-	if (partial)
+	/* Or within each part in turn, the rest keeping the last frame's pixels. */
+	for (index = 0; index < part_count; index++) {
+		kl_canvas_clip_push(&photos->canvas, &parts[index]);
+		ph_draw_view(photos, now_us);
 		kl_canvas_clip_pop(&photos->canvas);
+	}
 	kl_ui_window_text(photos->ui, photos->window);
 	ph_jobs(photos);
 
@@ -1548,11 +1544,8 @@ ph_draw(
 		}
 	}
 
-	/* The frame shown, by the part alone when it was drawn so. */
-	present_part = NULL;
-	if (partial)
-		present_part = &part;
-	status = kl_window_present_part(photos->window, photos->pixels, (size_t)photos->width, present_part);
+	/* The frame shown, by its parts alone when it was drawn so. */
+	status = kl_window_present_parts(photos->window, photos->pixels, (size_t)photos->width, parts, part_count);
 	if (status == EAGAIN)
 		photos->resized = 1;
 
@@ -1567,6 +1560,42 @@ ph_draw(
 			photos->dirty = 1;
 		}
 	}
+}
+
+/*
+ * Draws the view and the dialog over it in one frame of the widgets, and
+ * the pictures the view wants; a change of what the view shows asks for
+ * another frame of the whole window.
+ */
+static void
+ph_draw_view(
+	struct ph_window *photos,
+	uint64_t now_us)
+{
+	size_t album;
+	long open;
+	long chosen;
+	int list;
+	int adding;
+
+	/* What the view shows before it draws. */
+	open = photos->view.open;
+	chosen = photos->view.chosen;
+	list = photos->view.list;
+	album = photos->view.album;
+	adding = photos->view.adding;
+
+	/* The view; what it changed while it drew is drawn in the next frame. */
+	kl_ui_begin(photos->ui, now_us);
+	ph_view_draw(&photos->view, photos->ui, &photos->style, (int)photos->width, (int)photos->height, now_us);
+	if (open != photos->view.open || chosen != photos->view.chosen || list != photos->view.list || album != photos->view.album ||
+	    adding != photos->view.adding)
+		photos->dirty = 1;
+
+	/* The dialog consumes input after the view, using the common modal widget. */
+	if (photos->removing[0] != '\0')
+		ph_delete_dialog(photos, now_us);
+	photos->moving = kl_ui_end(photos->ui, now_us);
 }
 
 /* Confirms one selected identity before admitting a background deletion job. */

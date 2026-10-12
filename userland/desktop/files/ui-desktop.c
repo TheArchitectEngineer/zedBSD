@@ -165,6 +165,7 @@ fm_desktop_draw(
 	/* A frame drawn whole until the kept frame allows parts (BUG-221). */
 	app->frame_partial = 0;
 	memset(&app->frame_part, 0, sizeof(app->frame_part));
+	app->frame_part_count = 0;
 
 	/* Only the changed cells, when the kept frame allows. */
 	if (!logging) {

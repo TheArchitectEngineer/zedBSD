@@ -1306,13 +1306,13 @@ struct se_app {
 	int hover_moved;
 
 	/*
-	 * What the last frame drawn changed (BUG-226): frame_partial when it
-	 * was drawn only within frame_part (the lit regions), and the window
-	 * is then shown by that part alone (kl_window_present_part); 0 for a
-	 * frame drawn whole.
+	 * What the last frame drawn changed (BUG-226): the frame_part_count
+	 * parts of frame_parts when it was drawn only within them (the lit
+	 * regions), and the window is then shown by those parts alone
+	 * (kl_window_present_parts); 0 for a frame drawn whole.
 	 */
-	int frame_partial;
-	struct kl_rect frame_part;
+	unsigned frame_part_count;
+	struct kl_rect frame_parts[SE_DAMAGE_PARTS];
 
 	/* The panes of the last frame and its clickable regions. */
 	struct se_layout layout;

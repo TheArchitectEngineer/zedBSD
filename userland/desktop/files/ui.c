@@ -392,6 +392,11 @@ fm_ui_draw(
 	for (index = 0; index < part_count; index++)
 		fm_ui_frame_part(app, &parts[index], 0);
 
+	/* The parts themselves, which the frame is shown by. */
+	app->frame_part_count = (unsigned)part_count;
+	for (index = 0; index < part_count; index++)
+		app->frame_parts[index] = parts[index];
+
 	/* The frame is drawn with the region under the pointer now lit (fm_input_hover_settle). */
 	app->drawn_hover_kind = app->hover_kind;
 	app->drawn_hover_index = app->hover_index;

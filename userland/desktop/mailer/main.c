@@ -86,7 +86,7 @@ struct ml_window {
 
 	/*
 	 * Only the lit widget changed since the last frame (BUG-226): the next
-	 * frame is drawn within the part kl_ui_take_damage gives, when nothing
+	 * frame is drawn within the parts kl_ui_take_frame gives, when nothing
 	 * else changed (dirty draws the whole window).
 	 */
 	int lit_changed;
@@ -667,37 +667,54 @@ ml_draw(
 {
 	struct kl_glass_panel panels[ML_PANELS_MAX];
 	struct kl_event event;
-	const struct kl_rect *present_part;
-	struct kl_rect part;
+	struct kl_rect parts[KL_FRAME_PARTS_MAX];
+	unsigned part_count;
+	unsigned index;
 	size_t count;
 	int status;
 	int error;
 	int taken;
-	int partial;
+	int need;
 
 	/* Nothing changed and nothing moves: no frame. */
 	if (!mailer->dirty && !mailer->moving && !mailer->lit_changed)
 		return;
 
 	/*
-	 * Only another widget lit: the frame is drawn within the two widgets'
-	 * part alone, the rest keeping its pixels (BUG-226; the whole window
-	 * when the part cannot be told).
+	 * Only another widget lit: the frame is drawn within the parts the
+	 * widgets tell alone, the rest keeping its pixels (BUG-226,
+	 * ws210-p014: the widget lit when the last frame was drawn and the one
+	 * lit now; none when the pointer came back; the whole window when the
+	 * parts cannot be told).
 	 */
-	partial = 0;
-	if (!mailer->dirty && !mailer->moving && mailer->lit_changed && mailer->view.question == ML_QUESTION_NONE)
-		partial = kl_ui_take_damage(mailer->ui, &part);
+	part_count = 0;
+	if (!mailer->dirty && !mailer->moving && mailer->lit_changed && mailer->view.question == ML_QUESTION_NONE) {
+		need = kl_ui_take_frame(mailer->ui, parts, KL_FRAME_PARTS_MAX, &part_count);
+		if (need == KL_FRAME_NONE) {
+			mailer->lit_changed = 0;
+			return;
+		}
+		if (need == KL_FRAME_WHOLE)
+			part_count = 0;
+	}
 	mailer->lit_changed = 0;
 
-	/* The view, within the part when there is one. */
+	/* The view, all of it. */
 	mailer->dirty = 0;
-	if (partial)
-		kl_canvas_clip_push(&mailer->canvas, &part);
-	kl_ui_begin(mailer->ui, now_us);
-	ml_view_draw(&mailer->view, mailer->ui, &mailer->style, (int)mailer->width, (int)mailer->height, now_us);
-	mailer->moving = kl_ui_end(mailer->ui, now_us);
-	if (partial)
+	if (part_count == 0U) {
+		kl_ui_begin(mailer->ui, now_us);
+		ml_view_draw(&mailer->view, mailer->ui, &mailer->style, (int)mailer->width, (int)mailer->height, now_us);
+		mailer->moving = kl_ui_end(mailer->ui, now_us);
+	}
+
+	/* Or within each part in turn, the rest keeping the last frame's pixels. */
+	for (index = 0; index < part_count; index++) {
+		kl_canvas_clip_push(&mailer->canvas, &parts[index]);
+		kl_ui_begin(mailer->ui, now_us);
+		ml_view_draw(&mailer->view, mailer->ui, &mailer->style, (int)mailer->width, (int)mailer->height, now_us);
+		mailer->moving = kl_ui_end(mailer->ui, now_us);
 		kl_canvas_clip_pop(&mailer->canvas);
+	}
 
 	/* The question over it. */
 	ml_draw_question(mailer, now_us);
@@ -723,11 +740,8 @@ ml_draw(
 		}
 	}
 
-	/* The frame shown, by the part alone when it was drawn so (BUG-221). */
-	present_part = NULL;
-	if (partial)
-		present_part = &part;
-	status = kl_window_present_part(mailer->window, mailer->pixels, (size_t)mailer->width, present_part);
+	/* The frame shown, by its parts alone when it was drawn so (BUG-221). */
+	status = kl_window_present_parts(mailer->window, mailer->pixels, (size_t)mailer->width, parts, part_count);
 	if (status == EAGAIN)
 		mailer->resized = 1;
 

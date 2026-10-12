@@ -1177,6 +1177,14 @@ struct fm_app {
 	struct kl_rect frame_part;
 
 	/*
+	 * The parts themselves of a window's frame drawn by parts (ws210-p014),
+	 * which it is shown by (kl_window_present_parts); 0 when the frame is
+	 * shown by frame_part (the desktop's frames, which keep only the box).
+	 */
+	unsigned frame_part_count;
+	struct kl_rect frame_parts[FM_DAMAGE_PARTS];
+
+	/*
 	 * Whether the window is glass: the compositor draws frosted glass under the
 	 * panels and shows the desktop between them, so the frame leaves its
 	 * ground clear and tints the panels only lightly.  Set once, before the

@@ -412,15 +412,10 @@ se_ui_draw(
 		parts[index] = app->hover_damage[index];
 	app->hover_pending = 0;
 
-	/* What the frame changes, for its showing: the box round the lit regions, or all of it. */
-	app->frame_partial = 0;
-	memset(&app->frame_part, 0, sizeof(app->frame_part));
-	if (part_count > 0) {
-		app->frame_partial = 1;
-		app->frame_part = parts[0];
-	}
-	for (index = 1; index < part_count; index++)
-		ui_rect_union(&app->frame_part, &parts[index]);
+	/* What the frame changes, for its showing: the lit regions, or all of it (none). */
+	app->frame_part_count = (unsigned)part_count;
+	for (index = 0; index < part_count; index++)
+		app->frame_parts[index] = parts[index];
 
 	/*
 	 * The frame is being brought up to date; drawing may ask for another

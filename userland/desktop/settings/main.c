@@ -561,7 +561,6 @@ main_loop(
 static int
 main_frame(void)
 {
-	const struct kl_rect *part;
 	VkResult result;
 	uint64_t started;
 	uint64_t drawn;
@@ -579,11 +578,8 @@ main_frame(void)
 		/* The frame's glass panels, sent to take effect with it. */
 		se_glass_refresh(&main_glass, &main_app);
 
-		/* Shown in the window, by the part it changed when it was drawn within the lit regions alone (BUG-226). */
-		part = NULL;
-		if (main_app.frame_partial != 0)
-			part = &main_app.frame_part;
-		result = se_present_frame(&main_present, main_pixels, (size_t)main_present.extent.width, part);
+		/* Shown in the window, by the parts it changed when it was drawn within the lit regions alone (BUG-226). */
+		result = se_present_frame(&main_present, main_pixels, (size_t)main_present.extent.width, main_app.frame_parts, main_app.frame_part_count);
 		shown = se_clock();
 
 		/* A slow frame is logged (a diagnostic: where the time of a frame goes). */
