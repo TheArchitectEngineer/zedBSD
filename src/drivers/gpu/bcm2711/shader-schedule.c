@@ -43,6 +43,12 @@
 /* Accumulators zero to three take short-lived values. */
 #define SCHEDULE_ACCUMULATORS 4U
 
+/*
+ * Schedules tried for each program: registers only, then accumulators for
+ * values living at most 4, 12, 24 and 1024 records (spans in the table).
+ */
+#define SCHEDULE_ATTEMPTS 5U
+
 /* The words a schedule may use for each record before it is refused, besides a fixed tail. */
 #define SCHEDULE_WORDS_PER_NODE 4U
 #define SCHEDULE_TAIL_WORDS 16U
@@ -213,7 +219,7 @@ int
 bcm2711_shader_schedule(
 	struct bcm2711_shader_compiler *compiler)
 {
-	static const uint32_t spans[5] = {0, 4, 12, 24, 1024};
+	static const uint32_t spans[SCHEDULE_ATTEMPTS] = {0, 4, 12, 24, 1024};
 	struct bcm2711_shader_binary *binary;
 	struct bcm2711_qpu_instruction *saved;
 	uint64_t *best_code;
@@ -246,7 +252,7 @@ bcm2711_shader_schedule(
 	best_count = 0;
 	outcome = ENOTSUP;
 	error = 0;
-	for (attempt = 0; attempt < 5 && error != ENOMEM; attempt++) {
+	for (attempt = 0; attempt < SCHEDULE_ATTEMPTS && error != ENOMEM; attempt++) {
 		error = schedule_attempt(compiler, spans[attempt]);
 		for (index = 0; index < compiler->op_count; index++)
 			compiler->ops[index].instruction = saved[index];
@@ -1420,11 +1426,14 @@ static uint32_t
 finishes_in_window(
 	const struct schedule_node *node)
 {
-	const struct schedule_node *plain;
-
-	/* Plain accumulator or flag work finishes when its word ends; transactions and late results do not. */
-	plain = node;
-	if (plain->sensitive == 0 || plain->ordered != 0 || plain->special != 0 || plain->is_signal != 0)
+	/* Plain accumulator or flag work finishes when its word ends; transactions, signals and late results do not. */
+	if (node->sensitive == 0)
+		return 0;
+	if (node->ordered != 0)
+		return 0;
+	if (node->special != 0)
+		return 0;
+	if (node->is_signal != 0)
 		return 0;
 
 	/* The work is done before the switch takes effect. */
