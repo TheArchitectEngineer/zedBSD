@@ -895,6 +895,28 @@ struct kwl_perf {
 	/* wl_shm: images copied, and the CPU time of the copies. */
 	uint32_t shm_copies;
 	uint64_t shm_copy_cycles;
+	/*
+	 * The event loop's parts (ws213-p001 M0): the ticks before the poll,
+	 * then, of the work after it, the input devices, the clients' requests,
+	 * the finished frame, the scheduler and the last flush.  The scheduler's
+	 * own parts follow: its ticks, the commits taken, the wl_shm copies, the
+	 * cursor plane, the layers' quiet pictures and the frame drawn.
+	 */
+	uint64_t tick_cycles;
+	uint64_t input_cycles;
+	uint64_t client_cycles;
+	uint64_t frame_done_cycles;
+	uint64_t schedule_cycles;
+	uint64_t flush_cycles;
+	uint64_t schedule_tick_cycles;
+	uint64_t adopt_cycles;
+	uint64_t shm_cycles;
+	uint64_t cursor_cycles;
+	uint64_t layers_cycles;
+	uint64_t draw_cycles;
+	/* The cursor plane's presents, and the passes that held a move for the next refresh (cursor-plane.c, ws213-p001 C0). */
+	uint32_t cursor_presents;
+	uint32_t cursor_deferred;
 };
 
 uint64_t kwl_cycles(void);
@@ -1885,9 +1907,14 @@ int kwl_shm_bind(struct kwl_object *shm);
 void kwl_cursor_default(struct kwl_server *server);
 int kwl_cursor_client_shown(struct kwl_server *server);
 
-/* The cursor plane (cursor-plane.c, ws141-p014): whether it shows the cursor now, and its update at each pass. */
+/*
+ * The cursor plane (cursor-plane.c, ws141-p014): whether it shows the
+ * cursor now, its update at each pass, and how long the event loop may
+ * sleep before a move held for the next refresh is presented (ws213-p001 C0).
+ */
 int kwl_cursor_plane_takes(struct kwl_server *server);
 void kwl_cursor_plane_update(struct kwl_server *server);
+int kwl_cursor_plane_due_ms(struct kwl_server *server);
 int kwl_arrow_create(struct kwl_server *server);
 void kwl_arrow_destroy(struct kwl_server *server);
 struct kwl_object *kwl_top_window(struct kwl_server *server);

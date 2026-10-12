@@ -242,6 +242,9 @@ struct kwl_head {
  * and y are what was presented last.  last_copy is the image whose copy was
  * submitted last (copied says one was): copies complete in submission order
  * on the one queue, so its fence tells whether every copy is done.
+ * presented_us is when the plane was last presented (kwl_microseconds), and
+ * deferred says a move of the same image waits for the next refresh: one
+ * present per refresh, at the latest place (ws213-p001 C0).
  */
 struct kwl_cursor_plane {
 	unsigned open;
@@ -264,6 +267,8 @@ struct kwl_cursor_plane {
 	uint64_t copies;
 	unsigned copied;
 	unsigned last_copy;
+	uint64_t presented_us;
+	unsigned deferred;
 };
 
 /* How many frames' damage is kept, for images that missed that many frames. */

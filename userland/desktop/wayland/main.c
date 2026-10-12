@@ -746,7 +746,9 @@ event_loop(
 	int retire_ready;
 	unsigned slot;
 	uint64_t mark;
+	uint64_t part;
 	int timeout;
+	int due;
 	int ready;
 	int flushed;
 	int error;
@@ -769,6 +771,9 @@ event_loop(
 		if (now - started >= server->timeout_ms ||
 		    (server->max_frames != 0 && server->frame >= server->max_frames))
 			break;
+
+		/* The ticks before the poll are timed as one part of the pass (KWL PERF main, ws213-p001 M0). */
+		part = kwl_cycles();
 
 		/* Evdev nodes that appeared since the last scan join the seat, soon after a device's event more often. */
 		scan_period = KWL_INPUT_SCAN_MS;
@@ -794,6 +799,7 @@ event_loop(
 
 		/* The input method is looked after: started again, passed by when it does not answer (input-method.c). */
 		kwl_ime_tick(server, now);
+		server->perf.tick_cycles += kwl_cycles() - part;
 
 		/* Allocate exactly enough poll storage for the presently live client and device set. */
 		count = 1;
@@ -920,6 +926,11 @@ event_loop(
 			}
 		}
 
+		/* A cursor move held for the next refresh wakes the loop when it is due (cursor-plane.c, ws213-p001 C0). */
+		due = kwl_cursor_plane_due_ms(server);
+		if (due >= 0 && due < timeout)
+			timeout = due;
+
 		/* Lets the OS populate its entries in this descriptor snapshot. */
 		kwl_os_poll_fill(server, descriptors + first_os);
 
@@ -957,9 +968,11 @@ event_loop(
 		kwl_os_poll_done(server, descriptors + first_os);
 
 		/* A finished frame releases its buffers and sends its callbacks; a fence without an fd is asked. */
+		part = kwl_cycles();
 		if (frame_slot != 0 && descriptors[frame_slot].revents != 0)
 			kwl_frame_done(server);
 		kwl_compose_poll(server);
+		server->perf.frame_done_cycles += kwl_cycles() - part;
 
 		/*
 		 * Device events are applied before clients are flushed, so they leave in this pass.  A readable, failed or
@@ -973,10 +986,13 @@ event_loop(
 		}
 
 		/* Reads them together. */
+		part = kwl_cycles();
 		if (ready_count != 0)
 			kwl_input_read_devices(server, ready_devices, ready_count);
+		server->perf.input_cycles += kwl_cycles() - part;
 
 		/* Process only the clients captured by this poll snapshot. */
+		part = kwl_cycles();
 		for (index = 1; index < first_input; index++) {
 			/* Apply readiness only to this iteration's still-owned connection generation. */
 			client = clients[index];
@@ -1025,6 +1041,9 @@ event_loop(
 			}
 		}
 
+		/* The clients' requests and events are timed as one part (KWL PERF main). */
+		server->perf.client_cycles += kwl_cycles() - part;
+
 		/* The clipboard's history reads what a source has written so far (clipboard.c; the pass is at most 10 ms). */
 		kwl_clipboard_poll(server);
 
@@ -1041,7 +1060,9 @@ event_loop(
 			return error;
 
 		/* The scheduler takes the committed images and draws a frame when one is due. */
+		part = kwl_cycles();
 		kwl_schedule(server);
+		server->perf.schedule_cycles += kwl_cycles() - part;
 
 		/*
 		 * One gone client's buffer released after the frame, only while the
@@ -1057,6 +1078,7 @@ event_loop(
 		 * leave now, not after the next poll, which would otherwise hold a
 		 * FIFO client for up to the poll timeout every frame.
 		 */
+		part = kwl_cycles();
 		for (client = server->clients; client != NULL; client = client->next) {
 			/* A connection that cannot take its events is retired on the next pass. */
 			if (client->fatal)
@@ -1067,6 +1089,7 @@ event_loop(
 				client->fatal_time = kwl_milliseconds();
 			}
 		}
+		server->perf.flush_cycles += kwl_cycles() - part;
 
 		/* The pass's work. */
 		server->perf.work_cycles += kwl_cycles() - mark;
@@ -1170,6 +1193,8 @@ kwl_perf_report(
 {
 	struct kwl_perf *perf;
 	uint64_t cycles;
+	uint64_t main_parts;
+	double main_other;
 	double per_ms;
 
 	/* The first call starts the window. */
@@ -1205,6 +1230,33 @@ kwl_perf_report(
 		    (double)perf->compose_present_cycles / per_ms / (double)perf->compose_frames,
 		    (double)perf->compose_cycles / per_ms / (double)perf->compose_frames);
 	}
+
+	/*
+	 * The pass's parts in milliseconds of the window (ws213-p001 M0): the
+	 * ticks before the poll (outside work), then the parts of work, and
+	 * the scheduler's own parts.  other is the work none of them covers
+	 * (the poll's descriptors, accept, the OS, the clipboard and the rest).
+	 */
+	main_parts = perf->input_cycles + perf->client_cycles + perf->frame_done_cycles + perf->schedule_cycles + perf->flush_cycles;
+	main_other = 0.0;
+	if (perf->work_cycles > main_parts)
+		main_other = (double)(perf->work_cycles - main_parts) / per_ms;
+	printf("KWL PERF main ticks=%.1f input=%.1f clients=%.1f frame_done=%.1f schedule=%.1f flush=%.1f other=%.1f | schedule ticks=%.1f adopt=%.1f shm=%.1f cursor=%.1f layers=%.1f draw=%.1f | cursor presents=%u held=%u\n",
+	    (double)perf->tick_cycles / per_ms,
+	    (double)perf->input_cycles / per_ms,
+	    (double)perf->client_cycles / per_ms,
+	    (double)perf->frame_done_cycles / per_ms,
+	    (double)perf->schedule_cycles / per_ms,
+	    (double)perf->flush_cycles / per_ms,
+	    main_other,
+	    (double)perf->schedule_tick_cycles / per_ms,
+	    (double)perf->adopt_cycles / per_ms,
+	    (double)perf->shm_cycles / per_ms,
+	    (double)perf->cursor_cycles / per_ms,
+	    (double)perf->layers_cycles / per_ms,
+	    (double)perf->draw_cycles / per_ms,
+	    perf->cursor_presents,
+	    perf->cursor_deferred);
 
 	/* wl_shm's copies: how many, and the CPU time of one. */
 	if (perf->shm_copies != 0) {

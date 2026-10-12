@@ -109,6 +109,7 @@ kwl_schedule(
 	struct kwl_object *surface;
 	struct kwl_object *top;
 	uint64_t now;
+	uint64_t part;
 	int direct;
 	int ready;
 	int error;
@@ -116,6 +117,9 @@ kwl_schedule(
 	/* An OS-paused display cannot compose or present until authority returns. */
 	if (server->os_paused != 0)
 		return;
+
+	/* The scheduler's parts are timed (KWL PERF main, ws213-p001 M0), its ticks first. */
+	part = kwl_cycles();
 
 	/* The sleep's causes and its course (sleep.c, ws052-p012), before the lock screen's own tick. */
 	kwl_sleep_tick(server);
@@ -132,8 +136,10 @@ kwl_schedule(
 
 	/* The desktop surface's program and place (desktop.c). */
 	kwl_desktop_tick(server);
+	server->perf.schedule_tick_cycles += kwl_cycles() - part;
 
 	/* Every committed surface takes its new image. */
+	part = kwl_cycles();
 	for (client = server->clients; client != NULL; client = client->next) {
 		if (client->fatal)
 			continue;
@@ -153,6 +159,7 @@ kwl_schedule(
 
 	/* Each client hears which outputs its surfaces came onto and left (surface-outputs.c, ws177-p001). */
 	kwl_surface_outputs_sync(server);
+	server->perf.adopt_cycles += kwl_cycles() - part;
 
 	/*
 	 * While a sleep's request waits for its answer no frame is presented:
@@ -186,10 +193,14 @@ kwl_schedule(
 	kwl_seat_focus(server);
 
 	/* wl_shm images are copied, and their buffers released, while no frame is in flight. */
+	part = kwl_cycles();
 	(void)kwl_shm_upload(server);
+	server->perf.shm_cycles += kwl_cycles() - part;
 
 	/* The cursor plane shows the cursor's image at its place (cursor-plane.c). */
+	part = kwl_cycles();
 	kwl_cursor_plane_update(server);
+	server->perf.cursor_cycles += kwl_cycles() - part;
 
 	/*
 	 * The windows the last frame told get a moment to commit (frame
@@ -214,21 +225,29 @@ kwl_schedule(
 
 	/* Nothing to draw: a layer's stale picture may be drawn again in the quiet (layer-cache.c, ws211-p002). */
 	if (!server->dirty && !server->damaged) {
+		part = kwl_cycles();
 		error = kwl_layers_tick(server);
 		if (error < 0) {
 			printf("KWL FAILED site=layers_tick errno=%d\n", -error);
 			server->failed = 1;
 		}
+
+		/* The quiet picture's time, a failed one too. */
+		server->perf.layers_cycles += kwl_cycles() - part;
 		return;
 	}
 
 	/* Window mode draws when something changed (all of it, or a part) and no frame is in flight. */
 	if (server->dirty || server->damaged) {
+		part = kwl_cycles();
 		error = kwl_compose_draw(server);
 		if (error != 0) {
 			printf("KWL FAILED site=compose_draw errno=%d\n", error);
 			server->failed = 1;
 		}
+
+		/* The frame's time, a failed one too. */
+		server->perf.draw_cycles += kwl_cycles() - part;
 	}
 }
 
