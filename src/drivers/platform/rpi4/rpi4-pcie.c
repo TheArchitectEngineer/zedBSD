@@ -9,12 +9,14 @@
  * Raspberry Pi 4 PCIe: the BCM2711 root complex and what sits behind it.
  *
  * The firmware's device tree says where the controller is and whether it is
- * present; QEMU's raspi4b marks it disabled because it does not emulate it.
- * A missing or disabled controller, and a link that does not come up, leave
- * the machine without PCI devices but do not stop the boot.
+ * present; QEMU's raspi4b, which does not emulate it, removes its node
+ * (rpi4-board.c).  A missing or disabled controller, and a link that does
+ * not come up, leave the machine without PCI devices but do not stop the
+ * boot.
  */
 
 #include "drivers/platform/rpi4/rpi4-pcie.h"
+#include "drivers/platform/rpi4/rpi4-board.h"
 #include "drivers/platform/rpi4/rpi4-firmware.h"
 #include <drivers/generic/fdt.h>
 #include <drivers/pci/pci.h>
@@ -66,6 +68,7 @@ drv_rpi4_pcie_init(
 	struct drv_fdt fdt;
 	const void *blob;
 	uint32_t node;
+	bool emulated;
 	int error;
 
 	/* Brings the PCI core into service, even when no controller follows. */
@@ -86,6 +89,13 @@ drv_rpi4_pcie_init(
 	if (error != 0) {
 		kern_logf("pcie: unreadable device tree (%d)\n", error);
 		return error;
+	}
+
+	/* Leaves QEMU's raspi4b alone: it has no controller behind the node it removed. */
+	emulated = drv_rpi4_board_emulated(&fdt);
+	if (emulated) {
+		kern_logf("pcie: emulated board without PCIe\n");
+		return ENODEV;
 	}
 
 	/* Finds the controller; a board without one has nothing to do. */
