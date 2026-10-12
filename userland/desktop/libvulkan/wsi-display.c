@@ -197,6 +197,14 @@ vulkan_wsi_display_query(
 	if ((request.flags & GPU_DISPLAY_ACTIVE) != 0U)
 		output->flags |= VULKAN_WSI_OUTPUT_ACTIVE;
 
+	/*
+	 * Overlay planes (GPU_DISPLAY_HAS_OVERLAYS, planes 1 and up) are not
+	 * presented through yet (ws214-p004): only the primary is enumerated,
+	 * so the cursor plane keeps its place right after it.
+	 */
+	if ((request.flags & GPU_DISPLAY_HAS_OVERLAYS) != 0U && output->plane_count > 1U)
+		output->plane_count = 1;
+
 	/* A cursor plane follows the output's ordinary planes, on top of them. */
 	if ((request.flags & GPU_DISPLAY_HAS_CURSOR) != 0U && output->plane_count != 0U && output->plane_count < UINT32_MAX) {
 		output->flags |= VULKAN_WSI_OUTPUT_CURSOR;
