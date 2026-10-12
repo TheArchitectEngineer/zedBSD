@@ -110,7 +110,8 @@ static const struct vulkan_wsi_platform_ops wayland_platform = {
 	wayland_capabilities, wayland_formats, wayland_modes,
 	wayland_claim, wayland_release, NULL, wayland_wait, wayland_destroy,
 	wayland_import, wayland_present, wayland_progress, wayland_available, wayland_destroy_image, NULL, wayland_present_sync, NULL, NULL,
-	wayland_commit_early, wayland_composite_alpha, wayland_damage, NULL
+	wayland_commit_early, wayland_composite_alpha, wayland_damage, NULL,
+	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 /* Registry discovery and buffer ownership are delivered only on the WSI queue. */
