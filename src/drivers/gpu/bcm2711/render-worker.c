@@ -16,6 +16,7 @@
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
 #include "drivers/gpu/bcm2711/render-device.h"
 #include "drivers/gpu/bcm2711/render-worker.h"
+#include "drivers/gpu/bcm2711/vulkan-native-job.h"
 
 /* Free slots acquire a callback, execute once and finish that callback before reuse. */
 #define REQUEST_FREE 0U
@@ -1307,6 +1308,9 @@ bcm2711_render_executor_step(
 		perf->step_hold_max = held;
 
 	mutex_unlock(&controller->mutex);
+
+	/* The cost report the step formatted (v3d.perf=1) reaches the log without the mutex. */
+	bcm2711_vulkan_native_perf_flush();
 
 	/* Common observers see the loss outside the mutex. */
 	if (failed)

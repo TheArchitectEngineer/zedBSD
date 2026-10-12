@@ -1018,6 +1018,22 @@ wait_adoption(
 }
 
 /*
+ * Counts one cursor image set (GPU_DISPLAY_CURSOR_SET) for the next flip
+ * report: copied when its rows were written into a plane image, otherwise
+ * shown again from an image that holds the same unchanged rows.
+ */
+void
+bcm2711_display_flip_count_cursor(
+	struct bcm2711_display *display,
+	bool copied)
+{
+	/* The display device's mutex is not the report's BUSY, so the counts are atomic. */
+	__atomic_fetch_add(&display->flip.perf_cursor_sets, 1U, __ATOMIC_RELAXED);
+	if (copied)
+		__atomic_fetch_add(&display->flip.perf_cursor_copies, 1U, __ATOMIC_RELAXED);
+}
+
+/*
  * Adds one flip's stage times to the report and prints the window every two seconds.
  *
  * The caller still holds BUSY, so no other submitter changes these totals.
@@ -1032,6 +1048,8 @@ report_flips(
 {
 	uint64_t now;
 	uint64_t count;
+	uint64_t sets;
+	uint64_t copies;
 
 	/* Adds this flip's stages to the window. */
 	display->flip.perf_flips++;
@@ -1050,16 +1068,22 @@ report_flips(
 	if (kern_ticks_to_ms(now - display->flip.perf_start) < 2000U)
 		return;
 
+	/* The window's cursor images, taken and cleared together with the window. */
+	sets = __atomic_exchange_n(&display->flip.perf_cursor_sets, 0, __ATOMIC_RELAXED);
+	copies = __atomic_exchange_n(&display->flip.perf_cursor_copies, 0, __ATOMIC_RELAXED);
+
 	/* Prints microseconds per flip for each stage of the window. */
 	count = display->flip.perf_flips;
 	kern_logf(
-		"bcm2711: flip perf ms=%llu flips=%llu avg_us clean=%llu raise=%llu wait=%llu finish=%llu\n",
+		"bcm2711: flip perf ms=%llu flips=%llu avg_us clean=%llu raise=%llu wait=%llu finish=%llu cursor sets=%llu copies=%llu\n",
 		(unsigned long long)kern_ticks_to_ms(now - display->flip.perf_start),
 		(unsigned long long)count,
 		(unsigned long long)(kern_ticks_to_rate(display->flip.perf_clean, 1000000U) / count),
 		(unsigned long long)(kern_ticks_to_rate(display->flip.perf_raise, 1000000U) / count),
 		(unsigned long long)(kern_ticks_to_rate(display->flip.perf_wait, 1000000U) / count),
-		(unsigned long long)(kern_ticks_to_rate(display->flip.perf_finish, 1000000U) / count));
+		(unsigned long long)(kern_ticks_to_rate(display->flip.perf_finish, 1000000U) / count),
+		(unsigned long long)sets,
+		(unsigned long long)copies);
 
 	/* The next window starts empty at this report. */
 	display->flip.perf_start = now;

@@ -782,6 +782,31 @@ bcm2711_stage_tfu_off(
 }
 
 /*
+ * Leaves the cost report off (v3d.perf=1 absent), as an ordinary boot has it.
+ */
+bool
+bcm2711_stage_perf_on(
+	void)
+{
+	/* No report by default. */
+	return false;
+}
+
+/*
+ * Consumes a log record; with the report off the executor logs none.
+ */
+void
+kern_log_write(
+	const char *bytes,
+	size_t length)
+{
+	/* The report is off in this fixture, so nothing is logged through here. */
+	(void)bytes;
+	(void)length;
+	abort();
+}
+
+/*
  * Consumes diagnostics without representing model logs as hardware evidence.
  */
 void
@@ -1007,6 +1032,33 @@ bcm2711_buffer_release_stats(
 	*count = 0;
 	*bytes = 0;
 	*ticks = 0;
+}
+
+/*
+ * Takes a reused run's zeroing; the fixture keeps no allocation timing.
+ */
+void
+bcm2711_buffer_zeroed(
+	uint64_t bytes,
+	uint64_t ticks)
+{
+	/* Nothing is kept. */
+	(void)bytes;
+	(void)ticks;
+}
+
+/*
+ * Reports no diagnostic creations; the fixture's buffers are host memory.
+ */
+void
+bcm2711_buffer_create_stats(
+	uint64_t stats[7])
+{
+	unsigned index;
+
+	/* The fixture keeps no creation timing. */
+	for (index = 0; index < 7U; index++)
+		stats[index] = 0;
 }
 
 /*

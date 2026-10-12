@@ -85,6 +85,7 @@ bcm2711_native_storage_create(
 		kern_memset(view->buffer->address, 0, (size_t)view->bytes);
 		view->buffer->bytes = bytes;
 		created->allocation_ticks = clock_ticks() - started;
+		bcm2711_buffer_zeroed(view->bytes, created->allocation_ticks);
 		created->space = space;
 		created->view = view;
 		created->bytes = bytes;

@@ -19,6 +19,20 @@ static uint64_t release_count;
 static uint64_t release_bytes;
 static uint64_t release_ticks;
 
+/*
+ * Diagnostic sums of buffer creations since the last report (the alloc cost's
+ * parts): the runs made, their bytes, the physical allocator's ticks, and the
+ * ticks of zeroing them; and the reused runs the native storage zeroed again
+ * (bcm2711_buffer_zeroed).  Updated atomically by any creating thread.
+ */
+static uint64_t create_count;
+static uint64_t create_bytes;
+static uint64_t create_pmem_ticks;
+static uint64_t create_zero_ticks;
+static uint64_t reuse_count;
+static uint64_t reuse_bytes;
+static uint64_t reuse_zero_ticks;
+
 /* Bounds storage descriptions independently of available physical memory. */
 #define BUFFER_MAX_BYTES (256ULL * 1024U * 1024U)
 
@@ -41,6 +55,7 @@ bcm2711_buffer_create(
 	struct bcm2711_buffer **result)
 {
 	struct bcm2711_buffer *buffer;
+	uint64_t started;
 	size_t rounded;
 	int error;
 	int released;
@@ -59,7 +74,9 @@ bcm2711_buffer_create(
 		return ENOMEM;
 
 	/* Allocates under the native placement contract, without a bus-address alias. */
+	started = clock_ticks();
 	error = kern_pmem_alloc_limited(rounded, alignment, limit, 0, &buffer->memory);
+	__atomic_add_fetch(&create_pmem_ticks, clock_ticks() - started, __ATOMIC_RELAXED);
 	if (error != 0) {
 		kern_free(buffer);
 		return error;
@@ -100,7 +117,11 @@ bcm2711_buffer_create(
 	}
 
 	/* Initializes the bytes before sharing this immutable placement with another owner. */
+	started = clock_ticks();
 	kern_memset(buffer->address, 0, rounded);
+	__atomic_add_fetch(&create_zero_ticks, clock_ticks() - started, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&create_count, 1U, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&create_bytes, (uint64_t)rounded, __ATOMIC_RELAXED);
 	spin_init(&buffer->guard, LOCK_RANK_DEVICE, "bcm2711-buffer");
 	buffer->bytes = bytes;
 	buffer->references = 1;
@@ -236,6 +257,40 @@ bcm2711_buffer_release(
 
 	/* Succeeded: the last retired allocation no longer owns CPU or physical storage. */
 	return;
+}
+
+/*
+ * Counts a reused run zeroed again before its next owner (native storage's
+ * idle views), for the alloc cost's parts.
+ */
+void
+bcm2711_buffer_zeroed(
+	uint64_t bytes,
+	uint64_t ticks)
+{
+	/* One more reuse, its bytes and its zeroing. */
+	__atomic_add_fetch(&reuse_count, 1U, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&reuse_bytes, bytes, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&reuse_zero_ticks, ticks, __ATOMIC_RELAXED);
+}
+
+/*
+ * Reports and clears the diagnostic sums of buffer creations and reuses
+ * (stats[0..6]: made, bytes, allocator ticks, zeroing ticks, reused, reused
+ * bytes, their zeroing ticks).
+ */
+void
+bcm2711_buffer_create_stats(
+	uint64_t stats[7])
+{
+	/* Each sum is read and cleared on its own; a creation between them lands in the next report. */
+	stats[0] = __atomic_exchange_n(&create_count, 0U, __ATOMIC_RELAXED);
+	stats[1] = __atomic_exchange_n(&create_bytes, 0U, __ATOMIC_RELAXED);
+	stats[2] = __atomic_exchange_n(&create_pmem_ticks, 0U, __ATOMIC_RELAXED);
+	stats[3] = __atomic_exchange_n(&create_zero_ticks, 0U, __ATOMIC_RELAXED);
+	stats[4] = __atomic_exchange_n(&reuse_count, 0U, __ATOMIC_RELAXED);
+	stats[5] = __atomic_exchange_n(&reuse_bytes, 0U, __ATOMIC_RELAXED);
+	stats[6] = __atomic_exchange_n(&reuse_zero_ticks, 0U, __ATOMIC_RELAXED);
 }
 
 /*

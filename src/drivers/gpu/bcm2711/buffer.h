@@ -82,5 +82,7 @@ void bcm2711_buffer_retain(struct bcm2711_buffer *buffer);
 
 void bcm2711_buffer_release(struct bcm2711_buffer *buffer);
 void bcm2711_buffer_release_stats(uint64_t *count, uint64_t *bytes, uint64_t *ticks);
+void bcm2711_buffer_zeroed(uint64_t bytes, uint64_t ticks);
+void bcm2711_buffer_create_stats(uint64_t stats[7]);
 
 #endif
