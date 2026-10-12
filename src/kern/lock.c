@@ -73,17 +73,26 @@ spin_trylock(
 {
 	unsigned cpu;
 	unsigned held;
+	unsigned owner_valid;
 	int acquired;
 
 	/*
 	 * Traps on a recursive acquisition by the owning CPU, and reports a
 	 * lock held by another CPU without the exchange, which would take
 	 * the line away from the holder on every spin.
+	 *
+	 * The owner is read with an acquire on owner_valid, which the owner
+	 * publishes with a release after it writes owner_cpu.  Two plain
+	 * loads may be satisfied in either order on a weakly ordered CPU
+	 * (arm64): a CPU that held the lock just before another one could
+	 * then see the new owner's owner_valid with its own old owner_cpu and
+	 * trap on an acquisition that is not recursive (ws208-p007).
 	 */
 	cpu = hal_cpu_current();
 	held = atomic_load_acquire(&lock->held);
 	if (held != 0) {
-		if (lock->owner_valid && lock->owner_cpu == cpu)
+		owner_valid = atomic_raw_load_acquire(&lock->owner_valid);
+		if (owner_valid && lock->owner_cpu == cpu)
 			__builtin_trap();
 		return 0;
 	}
