@@ -410,7 +410,10 @@ plane_present(
 	/*
 	 * A copy still running holds this pass back before an image is acquired:
 	 * an acquired image must be presented, and waiting here would stop the
-	 * main loop behind the GPU.  The next pass tries again.
+	 * main loop behind the GPU.  The next pass tries again.  Once the copy
+	 * is seen done it is not asked about again: each question is a round
+	 * trip to the kernel, which waited behind the other clients' work for
+	 * every move of the pointer on the Pi 4 (ws141-p016 (B) review C1).
 	 */
 	compose = server->compose;
 	if (plane->copied) {
@@ -422,6 +425,7 @@ plane_present(
 			kwl_cursor_plane_close(server);
 			return;
 		}
+		plane->copied = 0U;
 	}
 
 	/* A free image now, or at a later pass. */
