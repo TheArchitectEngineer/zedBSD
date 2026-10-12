@@ -1148,10 +1148,16 @@ value_text(
 			slide->direction = -1;
 	}
 
-	/* How far the slide has come (done at once with the clock stopped or no old value). */
+	/*
+	 * How far the slide has come: done at once with the clock stopped, no
+	 * old value, or frames further apart than the slide (2 fps), where the
+	 * first frame of a new value would show its changed characters faint
+	 * until the next one, half a second later (2026-10-12 user).
+	 */
 	progress = 1.0f;
 	if (!app->fixed_clock &&
 	    slide->old[0] != '\0' &&
+	    app->fps != 0U && 1000U / app->fps < SCENE_SLIDE_MS &&
 	    now_ms < slide->changed_ms + SCENE_SLIDE_MS)
 		progress = (float)(now_ms - slide->changed_ms) / (float)SCENE_SLIDE_MS;
 	progress = 1.0f - (1.0f - progress) * (1.0f - progress);
