@@ -42,6 +42,12 @@ struct fx_fence {
 	int held;
 };
 
+/* One fake command buffer: the copies its current recording holds (ws211-p011). */
+struct fx_command {
+	struct VkCommandBuffer_T base;
+	unsigned copies;
+};
+
 /* One fake lease of the fake platform, with the latest ticket its output applied. */
 struct fx_lease {
 	struct vulkan_surface *surface;
@@ -55,10 +61,13 @@ struct fx_state {
 	pthread_t main_thread;
 	struct VkDevice_T *device;
 	struct VkQueue_T *queue;
-	/* Submissions, the WSI's own copies, fence waits. */
+	/* Submissions, the WSI's own copies (submitted), fence waits. */
 	unsigned submits;
 	unsigned wsi_copies;
 	unsigned fence_waits;
+	/* Command buffer recordings (Begin) and resets (ws211-p011). */
+	unsigned recordings;
+	unsigned resets;
 	/* The next WSI submission's fence is held until released. */
 	int hold_next;
 	struct fx_fence *held;
@@ -535,7 +544,7 @@ test_wsi(
 	fx_drain();
 	assert(fx.cursor_last_ticket > index && fx.cursor_x == 12);
 
-	/* u16: the compositor's own calls, on chains of both usages. */
+	/* u16: the compositor's own calls, on chains of both usages; u17, u18: their copies' recordings kept and dropped (ws211-p011). */
 	test_compositor_calls();
 
 	/* u8: no cursor present found a lock it must not hold taken. */
@@ -549,7 +558,7 @@ test_wsi(
 	vkDestroySwapchainKHR((VkDevice)fx.device, replacement, NULL);
 	vkDestroySwapchainKHR((VkDevice)fx.device, primary, NULL);
 	vulkan_wsi_device_finish(fx.device);
-	printf("u1 u2 u3 u4 u5 u6 u8 u9 u10 u11 u13 u16 swapchain: ok\n");
+	printf("u1 u2 u3 u4 u5 u6 u8 u9 u10 u11 u13 u16 u17 u18 swapchain: ok\n");
 }
 
 /*
@@ -581,6 +590,8 @@ test_compositor_calls(
 	unsigned move;
 	unsigned caller;
 	unsigned copies;
+	unsigned recordings;
+	unsigned resets;
 	VkResult error;
 
 	for (kind = 0U; kind < 2U; kind++) {
@@ -597,6 +608,7 @@ test_compositor_calls(
 		/* Moves of one shape: the first present of each image carries its copy. */
 		caller = fx.cursor_on_caller;
 		copies = fx.wsi_copies;
+		recordings = fx.recordings;
 		next = 0U;
 		for (move = 0U; move < 4U * FX_IMAGES; move++) {
 			image = fx_acquire(chain, acquired[next]);
@@ -614,21 +626,30 @@ test_compositor_calls(
 			fx_drain();
 		}
 
-		/* Colour-attachment use: every move goes through the worker with a copy. */
+		/*
+		 * Colour-attachment use: every move goes through the worker with a
+		 * copy.  u17 (ws211-p011): each image's copy is recorded twice (its
+		 * first copy, then the one after the native image was presented) and
+		 * submitted again as it is after that.
+		 */
 		if (kind == 0U) {
 			assert(fx.cursor_on_caller == caller);
 			assert(fx.wsi_copies == copies + 4U * FX_IMAGES);
+			assert(fx.recordings == recordings + 2U * FX_IMAGES);
 		}
 
 		/* Transfer use only: after the first copy of each image, every move is shown at once. */
 		if (kind == 1U) {
 			assert(fx.cursor_on_caller == caller + 3U * FX_IMAGES);
 			assert(fx.wsi_copies == copies + FX_IMAGES);
+			assert(fx.recordings == recordings + FX_IMAGES);
 		}
 		assert(fx.cursor_x == (int32_t)(4U * FX_IMAGES - 1U) && fx.cursor_y == 20);
 
-		/* The plane goes, after its jobs. */
+		/* The plane goes, after its jobs; u18: its slots no longer hold its copies. */
+		resets = fx.resets;
 		vkDestroySwapchainKHR((VkDevice)fx.device, chain, NULL);
+		assert(fx.resets == resets + FX_IMAGES);
 	}
 }
 
@@ -1378,6 +1399,10 @@ vulkan_queue_submit_locked(
 
 	pthread_mutex_lock(&fx.mutex);
 	fx.submits++;
+	for (submit = 0U; submit < count; submit++) {
+		for (index = 0U; index < submits[submit].commandBufferCount; index++)
+			fx.wsi_copies += ((struct fx_command *)submits[submit].pCommandBuffers[index])->copies;
+	}
 	pending = (struct fx_fence *)(uintptr_t)fence;
 	pending->pending = 1;
 	if (fx.hold_next == 1) {
@@ -1477,11 +1502,12 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice 
 VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physical, VkFormat format, VkImageType type, VkImageTiling tiling, VkImageUsageFlags usage, VkImageCreateFlags flags, VkImageFormatProperties *properties) { (void)physical; (void)format; (void)type; (void)tiling; (void)usage; (void)flags; (void)properties; return VK_ERROR_FORMAT_NOT_SUPPORTED; }
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo *info, const VkAllocationCallbacks *allocator, VkCommandPool *pool) { (void)device; (void)info; (void)allocator; *pool = (VkCommandPool)(uintptr_t)malloc(1); return VK_SUCCESS; }
 VKAPI_ATTR void VKAPI_CALL vkDestroyCommandPool(VkDevice device, VkCommandPool pool, const VkAllocationCallbacks *allocator) { (void)device; (void)allocator; free((void *)(uintptr_t)pool); }
-VKAPI_ATTR VkResult VKAPI_CALL vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo *info, VkCommandBuffer *buffers) { (void)device; (void)info; buffers[0] = (VkCommandBuffer)calloc(1, sizeof(struct VkCommandBuffer_T)); return VK_SUCCESS; }
-VKAPI_ATTR VkResult VKAPI_CALL vkBeginCommandBuffer(VkCommandBuffer buffer, const VkCommandBufferBeginInfo *info) { (void)info; vulkan_content_clear((struct VkCommandBuffer_T *)buffer); return VK_SUCCESS; }
+VKAPI_ATTR VkResult VKAPI_CALL vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo *info, VkCommandBuffer *buffers) { (void)device; (void)info; buffers[0] = (VkCommandBuffer)calloc(1, sizeof(struct fx_command)); return VK_SUCCESS; }
+VKAPI_ATTR VkResult VKAPI_CALL vkBeginCommandBuffer(VkCommandBuffer buffer, const VkCommandBufferBeginInfo *info) { assert((info->flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) == 0U); vulkan_content_clear((struct VkCommandBuffer_T *)buffer); ((struct fx_command *)buffer)->copies = 0U; fx.recordings++; return VK_SUCCESS; }
+VKAPI_ATTR VkResult VKAPI_CALL vkResetCommandBuffer(VkCommandBuffer buffer, VkCommandBufferResetFlags flags) { (void)flags; vulkan_content_clear((struct VkCommandBuffer_T *)buffer); ((struct fx_command *)buffer)->copies = 0U; fx.resets++; return VK_SUCCESS; }
 VKAPI_ATTR VkResult VKAPI_CALL vkEndCommandBuffer(VkCommandBuffer buffer) { (void)buffer; return VK_SUCCESS; }
 VKAPI_ATTR void VKAPI_CALL vkCmdPipelineBarrier(VkCommandBuffer buffer, VkPipelineStageFlags source, VkPipelineStageFlags destination, VkDependencyFlags flags, uint32_t memory_count, const VkMemoryBarrier *memory, uint32_t buffer_count, const VkBufferMemoryBarrier *buffers, uint32_t image_count, const VkImageMemoryBarrier *images) { (void)buffer; (void)source; (void)destination; (void)flags; (void)memory_count; (void)memory; (void)buffer_count; (void)buffers; (void)image_count; (void)images; }
-VKAPI_ATTR void VKAPI_CALL vkCmdCopyImage(VkCommandBuffer buffer, VkImage source, VkImageLayout source_layout, VkImage destination, VkImageLayout destination_layout, uint32_t count, const VkImageCopy *regions) { (void)source; (void)source_layout; (void)destination_layout; (void)count; (void)regions; vulkan_content_note_image((struct VkCommandBuffer_T *)buffer, destination); fx.wsi_copies++; }
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyImage(VkCommandBuffer buffer, VkImage source, VkImageLayout source_layout, VkImage destination, VkImageLayout destination_layout, uint32_t count, const VkImageCopy *regions) { (void)source; (void)source_layout; (void)destination_layout; (void)count; (void)regions; vulkan_content_note_image((struct VkCommandBuffer_T *)buffer, destination); ((struct fx_command *)buffer)->copies++; }
 VKAPI_ATTR void VKAPI_CALL vkCmdBlitImage(VkCommandBuffer buffer, VkImage source, VkImageLayout source_layout, VkImage destination, VkImageLayout destination_layout, uint32_t count, const VkImageBlit *regions, VkFilter filter) { (void)buffer; (void)source; (void)source_layout; (void)destination; (void)destination_layout; (void)count; (void)regions; (void)filter; assert(0); }
 VKAPI_ATTR void VKAPI_CALL vkCmdClearColorImage(VkCommandBuffer buffer, VkImage image, VkImageLayout layout, const VkClearColorValue *color, uint32_t count, const VkImageSubresourceRange *ranges) { (void)buffer; (void)image; (void)layout; (void)color; (void)count; (void)ranges; assert(0); }
 VKAPI_ATTR void VKAPI_CALL vkCmdCopyImageToBuffer(VkCommandBuffer buffer, VkImage image, VkImageLayout layout, VkBuffer destination, uint32_t count, const VkBufferImageCopy *regions) { (void)buffer; (void)image; (void)layout; (void)destination; (void)count; (void)regions; assert(0); }

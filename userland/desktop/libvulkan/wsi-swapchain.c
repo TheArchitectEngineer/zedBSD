@@ -45,6 +45,12 @@
 /* Shared presentation allocations transfer ownership to another Vulkan instance. */
 #define WSI_QUEUE_FAMILY_EXTERNAL 0xfffffffeU
 
+/*
+ * How many slots of one payload kind a worker keeps before a present whose
+ * recording no idle slot holds records over an idle slot's (ws211-p011).
+ */
+#define WSI_PRESENT_SLOTS	8U
+
 /* One ordinary bound image whose allocation lives with a shared image group. */
 struct wsi_image {
 	VkImage image;
@@ -111,6 +117,12 @@ struct vulkan_swapchain {
 	 * cursor chain shows an earlier copy without copying again.
 	 */
 	VkBool32 transfer_only;
+	/*
+	 * The chain's number, which no other chain of the process ever has: a
+	 * slot's kept recording names its chain by it (ws211-p011), since a
+	 * freed chain's address can be a later chain's.
+	 */
+	uint64_t serial;
 };
 
 /* The independently ordered workers of one queue: ordinary presents, and the cursor plane's. */
@@ -147,6 +159,28 @@ struct wsi_cursor_log {
 /* A job borrows its queue worker until the ordered completion path retires it. */
 struct wsi_queue_worker;
 
+/*
+ * What one present's copy command buffer records (ws211-p011).
+ *
+ * The commands depend on nothing else: the chain's images, the image, how
+ * far the native image's ownership has come (shared_presented), the display
+ * rectangles composed into it, and whether a cursor present copies at all.
+ * A slot whose command buffer holds a recording with the same key is
+ * submitted again without recording it, which saves the Begin and End round
+ * trips to the renderer.  Zeroed, it is no recording (valid false); it is
+ * compared byte for byte, so it is always zeroed before it is filled.
+ */
+struct wsi_present_recording {
+	VkBool32 valid;
+	enum wsi_route route;
+	uint64_t chain;
+	uint32_t image;
+	VkBool32 presented;
+	VkBool32 composed;
+	VkRect2D source;
+	VkRect2D destination;
+};
+
 /* One concurrent job borrows cached command storage and a fence until GPU and native use retire. */
 struct wsi_present_fence {
 	struct wsi_present_fence *next;
@@ -163,6 +197,11 @@ struct wsi_present_fence {
 	 */
 	VkBool32 sent;
 	VkBool32 busy;
+	/*
+	 * What the command buffer holds after its last successful End, or no
+	 * recording.  Only the job that has the slot busy changes it.
+	 */
+	struct wsi_present_recording recording;
 };
 
 /* One owned presentation transaction outlives its caller until checked GPU and native completion. */
@@ -206,6 +245,12 @@ struct wsi_present_job {
 	VkBool32 copy_done;
 	/* The job carries no GPU work: its waits were consumed and only the native present remains. */
 	VkBool32 native_only;
+	/*
+	 * What the job's copy command buffer records, and whether the slot it
+	 * borrowed already held that recording, which it then submits as it is.
+	 */
+	struct wsi_present_recording recording;
+	VkBool32 reused;
 	/* What the cursor present did, and its log times when the log is on. */
 	enum vulkan_wsi_cursor_outcome outcome;
 	VkBool32 logged;
@@ -246,6 +291,12 @@ static struct wsi_queue_worker *workers;
 static pthread_cond_t swapchain_condition = PTHREAD_COND_INITIALIZER;
 
 /*
+ * The serial of the chain created last; a new chain takes the next one.
+ * It only ever increases, so no two chains of the process share a serial.
+ */
+static uint64_t swapchain_serial;
+
+/*
  * Nonzero once a cursor swapchain was created while the cursor log's
  * environment variable was set; it never returns to zero.  A present reads
  * the clocks only while it is set.
@@ -276,6 +327,11 @@ static VkResult present_reserve(struct wsi_present_job *job, const VkPresentInfo
 static VkResult present_regions(struct wsi_present_job *job, const VkPresentInfoKHR *info);
 static VkResult present_fence_prepare(struct wsi_present_job *job);
 static VkResult present_record(struct wsi_present_job *job, const VkPresentInfoKHR *info);
+static void present_recording_key(struct wsi_present_job *job, const VkPresentInfoKHR *info);
+static VkBool32 present_recording_same(const struct wsi_present_recording *kept, const struct wsi_present_recording *wanted);
+static VkBool32 present_recording_image(const struct wsi_present_recording *kept, const struct wsi_present_recording *wanted);
+static void present_slots_forget(struct vulkan_swapchain *chain);
+static struct wsi_present_fence *present_slot_of_chain(const struct vulkan_swapchain *chain);
 static void present_copy(VkCommandBuffer command, struct vulkan_swapchain *chain, uint32_t index, uint32_t family, const VkDisplayPresentInfoKHR *display);
 static void present_copy_shared(VkCommandBuffer command, struct vulkan_swapchain *chain, uint32_t index, uint32_t family, const VkDisplayPresentInfoKHR *display);
 static VkResult present_submit(struct wsi_present_job *job, const VkPresentInfoKHR *info);
@@ -934,6 +990,9 @@ swapchain_create(
 	chain->extent = info->imageExtent;
 	chain->present_mode = info->presentMode;
 
+	/* The chain's own number, which its slots' kept recordings name it by. */
+	chain->serial = __atomic_add_fetch(&swapchain_serial, 1U, __ATOMIC_RELAXED);
+
 	/* Only transfer commands, which the content serial counts, can write a transfer-only chain's images. */
 	if ((info->imageUsage & ~(VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)) == 0U)
 		chain->transfer_only = VK_TRUE;
@@ -1251,6 +1310,9 @@ swapchain_free(
 	}
 
 	pthread_mutex_unlock(&swapchain_mutex);
+
+	/* Idle slots stop holding copies of this chain's images, which their recordings keep alive. */
+	present_slots_forget(chain);
 
 	vulkan_object_unpublish(&chain->object);
 	allocator = swapchain_allocator(&chain->object.allocator);
@@ -2095,6 +2157,9 @@ present_record(
 	uint32_t index;
 	VkResult error;
 
+	/* What the copy command buffer is to hold, which picks a slot that already holds it. */
+	present_recording_key(job, info);
+
 	/* Reserves one independent slot before recording can overwrite cached command state. */
 	error = present_fence_prepare(job);
 	if (error != VK_SUCCESS)
@@ -2129,13 +2194,27 @@ present_record(
 	job->pool = job->completion->pool;
 	job->command = job->completion->command;
 
-	/* The whole command buffer is ready before the one submission consumes waits. */
-	memset(&begin, 0, sizeof(begin));
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	error = vkBeginCommandBuffer(job->command, &begin);
-	if (error != VK_SUCCESS)
-		return error;
+	/*
+	 * A recording interrupted part way holds nothing a later job may
+	 * submit again, so the slot keeps no recording until End succeeds.
+	 */
+	if (job->reused == VK_FALSE)
+		memset(&job->completion->recording, 0, sizeof(job->completion->recording));
+
+	/*
+	 * The whole command buffer is ready before the one submission consumes
+	 * waits.  It is not a one-time recording: the slot submits it again for
+	 * a later present of the same image (ws211-p011), each time after the
+	 * previous submission's fence completed.
+	 */
+	if (job->reused == VK_FALSE) {
+		memset(&begin, 0, sizeof(begin));
+		begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin.flags = 0U;
+		error = vkBeginCommandBuffer(job->command, &begin);
+		if (error != VK_SUCCESS)
+			return error;
+	}
 
 	/* Every admitted target records its chosen presentation route within this single submission. */
 	for (index = 0U; index < job->count; index++) {
@@ -2152,22 +2231,211 @@ present_record(
 		if (job->has_display != VK_FALSE && job->chains[index]->surface->cursor == VK_FALSE)
 			display = &job->display;
 
-		/* Copy and composition preserve the application's optimal image contents. */
-		present_copy(job->command, job->chains[index], info->pImageIndices[index], job->queue->family, display);
+		/* Copy and composition preserve the application's optimal image contents; a kept recording already holds them. */
+		if (job->reused == VK_FALSE)
+			present_copy(job->command, job->chains[index], info->pImageIndices[index], job->queue->family, display);
 
-		/* A cursor-lane copy's completion records what the native image now holds. */
+		/* A cursor-lane copy's completion records what the native image now holds, recorded now or kept. */
 		if (job->lane == WSI_LANE_CURSOR)
 			job->copy_recorded = VK_TRUE;
 	}
 
+	/* A kept recording is complete as it is. */
+	if (job->reused != VK_FALSE)
+		return VK_SUCCESS;
 
 	/* Final recording failure occurs before any semaphore-consuming submit is attempted. */
 	error = vkEndCommandBuffer(job->command);
 	if (error != VK_SUCCESS)
 		return error;
 
+	/* The slot now holds this recording, for a later present of the same image to submit again. */
+	memcpy(&job->completion->recording, &job->recording, sizeof(job->recording));
+
 	/* Succeeded: all fallible command storage exists before any queue operation. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Works out what a job's copy command buffer records (ws211-p011), so that
+ * a slot already holding it is submitted again without recording it.
+ *
+ * Only a job of one target that is still to be presented has such a key;
+ * any other job records afresh and leaves its slot no recording.
+ */
+static void
+present_recording_key(
+	struct wsi_present_job *job,
+	const VkPresentInfoKHR *info)
+{
+	struct wsi_present_recording *key;
+	struct vulkan_swapchain *chain;
+	uint32_t index;
+
+	/* No recording unless proven otherwise; the key is compared byte for byte. */
+	key = &job->recording;
+	memset(key, 0, sizeof(*key));
+
+	/* Several targets, or a target that already failed, record afresh. */
+	if (job->count != 1U)
+		return;
+	if (job->results[0] != VK_SUCCESS)
+		return;
+
+	/* A cursor image unchanged since its last copy records nothing, whichever chain it is. */
+	key->route = job->route;
+	if (job->route == WSI_ROUTE_EMPTY) {
+		key->valid = VK_TRUE;
+		return;
+	}
+
+	/* The chain and the image the copy reads and writes. */
+	chain = job->chains[0];
+	index = info->pImageIndices[0];
+	key->chain = chain->serial;
+	key->image = index;
+
+	/* The native image's first copy takes it from nothing, later ones from its outside reader. */
+	if (chain->gpu_present != VK_FALSE)
+		key->presented = chain->presentation[index].shared_presented;
+
+	/* A display rectangle composes into the native image; a cursor image is copied whole. */
+	if (job->has_display != VK_FALSE && chain->surface->cursor == VK_FALSE) {
+		key->composed = VK_TRUE;
+		key->source = job->display.srcRect;
+		key->destination = job->display.dstRect;
+	}
+
+	/* Succeeded: the job's recording is named. */
+	key->valid = VK_TRUE;
+}
+
+/* Reports whether a slot's kept recording is the one a job wants. */
+static VkBool32
+present_recording_same(
+	const struct wsi_present_recording *kept,
+	const struct wsi_present_recording *wanted)
+{
+	int difference;
+
+	/* A job with no key never takes a kept recording. */
+	if (wanted->valid == VK_FALSE)
+		return VK_FALSE;
+
+	/* Both keys are zeroed before they are filled, so their bytes compare. */
+	difference = memcmp(kept, wanted, sizeof(*kept));
+	if (difference != 0)
+		return VK_FALSE;
+
+	/* Succeeded: the kept recording is the wanted one. */
+	return VK_TRUE;
+}
+
+/* Reports whether a slot's kept recording copies the same image of the same chain as a job's, in another way. */
+static VkBool32
+present_recording_image(
+	const struct wsi_present_recording *kept,
+	const struct wsi_present_recording *wanted)
+{
+	/* Either side without a recording, or a cursor present that copies nothing, names no image. */
+	if (kept->valid == VK_FALSE)
+		return VK_FALSE;
+	if (wanted->valid == VK_FALSE)
+		return VK_FALSE;
+	if (wanted->route == WSI_ROUTE_EMPTY)
+		return VK_FALSE;
+
+	/* Another chain, or another image of it. */
+	if (kept->chain != wanted->chain)
+		return VK_FALSE;
+	if (kept->image != wanted->image)
+		return VK_FALSE;
+
+	/* Succeeded: the slot holds a copy of the job's image, which the job's recording replaces. */
+	return VK_TRUE;
+}
+
+/*
+ * Drops every idle slot's recording of a retiring chain (ws211-p011).
+ *
+ * A recording keeps the images it names alive in the renderer until the
+ * command buffer is recorded again or reset, so the chain's slots are reset
+ * now rather than when a later present happens to take them.  The chain has
+ * no job left, so none of its slots is busy for it.
+ */
+static void
+present_slots_forget(
+	struct vulkan_swapchain *chain)
+{
+	struct wsi_present_fence *completion;
+	VkCommandBuffer command;
+
+	/* Resets the chain's slots one at a time, each borrowed while its reset runs. */
+	for (;;) {
+		/* Finds an idle slot still holding a copy of this chain and borrows it. */
+		pthread_mutex_lock(&swapchain_mutex);
+
+		completion = present_slot_of_chain(chain);
+		if (completion != NULL) {
+			completion->busy = VK_TRUE;
+			memset(&completion->recording, 0, sizeof(completion->recording));
+		}
+
+		pthread_mutex_unlock(&swapchain_mutex);
+
+		/* No slot of the chain is left. */
+		if (completion == NULL)
+			break;
+
+		/* Releases what the recording held; a failure leaves it for the slot's next Begin, which resets it too. */
+		command = completion->command;
+		(void)vkResetCommandBuffer(command, 0U);
+
+		/* The slot is free again, holding no recording. */
+		pthread_mutex_lock(&swapchain_mutex);
+
+		completion->busy = VK_FALSE;
+
+		pthread_mutex_unlock(&swapchain_mutex);
+	}
+
+	/* Succeeded: no idle slot names the chain. */
+	return;
+}
+
+/* Finds an idle slot of the chain's device whose recording copies the chain's image; the caller holds swapchain_mutex. */
+static struct wsi_present_fence *
+present_slot_of_chain(
+	const struct vulkan_swapchain *chain)
+{
+	struct wsi_queue_worker *worker;
+	struct wsi_present_fence *completion;
+
+	/* Every worker of the chain's device, and every slot of each. */
+	for (worker = workers; worker != NULL; worker = worker->next) {
+		/* Another device's workers never record this chain. */
+		if (worker->queue->device != chain->device)
+			continue;
+
+		/* A busy slot belongs to another chain's job; an idle one may still hold this chain's copy. */
+		for (completion = worker->fences; completion != NULL; completion = completion->next) {
+			/* Skips a slot another job borrows. */
+			if (completion->busy != VK_FALSE)
+				continue;
+
+			/* Skips a slot without a recording, and one recording another chain or none at all. */
+			if (completion->recording.valid == VK_FALSE)
+				continue;
+			if (completion->recording.chain != chain->serial)
+				continue;
+
+			/* Succeeded: this slot holds a copy of the chain. */
+			return completion;
+		}
+	}
+
+	/* No idle slot names the chain. */
+	return NULL;
 }
 
 /* Borrows one queue-owned fence slot and prepares its exact next generation before submission. */
@@ -2176,6 +2444,10 @@ present_fence_prepare(
 	struct wsi_present_job *job)
 {
 	struct wsi_present_fence *completion;
+	struct wsi_present_fence *match;
+	struct wsi_present_fence *older;
+	struct wsi_present_fence *empty;
+	struct wsi_present_fence *idle;
 	VkFenceCreateInfo fence;
 	VkExportFenceCreateInfo export;
 	VkFenceGetFdInfoKHR get_fd;
@@ -2183,8 +2455,11 @@ present_fence_prepare(
 	const VkAllocationCallbacks *allocator;
 	VkBool32 shared_fence;
 	VkBool32 fresh;
+	VkBool32 same;
+	VkBool32 image;
 	VkResult error;
 	uint32_t index;
+	uint32_t slots;
 	int status;
 
 	/* A native adapter can receive this job's exact shared producer generation without borrowing caller state. */
@@ -2223,20 +2498,75 @@ present_fence_prepare(
 	/* Only idle slots of the right payload type can be borrowed by a new job. */
 	pthread_mutex_lock(&swapchain_mutex);
 
-	/* Cache reuse is exclusive until the previous job has retired every native request. */
+	/*
+	 * Cache reuse is exclusive until the previous job has retired every
+	 * native request.  An idle slot holding the job's recording is taken
+	 * first (ws211-p011), then one holding an older recording of the same
+	 * image (its first copy, before the native image was ever presented),
+	 * then one holding none, so that the slots settle one to an image and
+	 * keep their recordings.
+	 */
+	match = NULL;
+	older = NULL;
+	empty = NULL;
+	idle = NULL;
+	slots = 0U;
 	for (completion = job->worker->fences; completion != NULL; completion = completion->next) {
 		/* Payload type, and whether its fences are sent, cannot change while a cached native fence and fd remain alive. */
-		if (completion->busy == VK_FALSE &&
-		    completion->shared == shared_fence &&
-		    completion->sent == fresh)
+		if (completion->shared != shared_fence)
+			continue;
+		if (completion->sent != fresh)
+			continue;
+		slots++;
+
+		/* A slot an earlier job still borrows is not free. */
+		if (completion->busy != VK_FALSE)
+			continue;
+
+		/* The job's own recording, submitted again as it is. */
+		same = present_recording_same(&completion->recording, &job->recording);
+		if (same != VK_FALSE) {
+			match = completion;
 			break;
+		}
+
+		/* The first idle slot holding another recording of the job's image. */
+		image = present_recording_image(&completion->recording, &job->recording);
+		if (older == NULL && image != VK_FALSE)
+			older = completion;
+
+		/* The first idle slot without a recording, and the first idle slot at all. */
+		if (empty == NULL && completion->recording.valid == VK_FALSE)
+			empty = completion;
+		if (idle == NULL)
+			idle = completion;
 	}
+
+	/*
+	 * Without its recording, a job takes a slot holding none; a job with a
+	 * key keeps the other recordings while the worker has room for another
+	 * slot, and otherwise records over an idle slot's.
+	 */
+	completion = match;
+	if (completion == NULL)
+		completion = older;
+	if (completion == NULL)
+		completion = empty;
+	if (completion == NULL && job->recording.valid == VK_FALSE)
+		completion = idle;
+	if (completion == NULL && slots >= WSI_PRESENT_SLOTS)
+		completion = idle;
 
 	/* Busy transfers this slot to exactly one preparing or accepted job. */
 	if (completion != NULL)
 		completion->busy = VK_TRUE;
 
 	pthread_mutex_unlock(&swapchain_mutex);
+
+	/* A slot that already holds the job's recording is submitted without recording it. */
+	job->reused = VK_FALSE;
+	if (completion != NULL && completion == match)
+		job->reused = VK_TRUE;
 
 	/* New concurrency grows the cache once; allocation callbacks execute outside WSI serialization. */
 	if (completion == NULL) {
@@ -2455,8 +2785,11 @@ present_submit(
 	submit.commandBufferCount = 1U;
 	submit.pCommandBuffers = &job->command;
 	error = vulkan_queue_submit_locked(job->queue, 1U, &submit, job->fence);
-	if (error != VK_SUCCESS)
+	if (error != VK_SUCCESS) {
+		/* A refused submission's slot keeps no recording for a later present to trust. */
+		memset(&job->completion->recording, 0, sizeof(job->completion->recording));
 		return error;
+	}
 
 	/* Cleanup can no longer restore the transaction's pre-enqueue wait ownership. */
 	job->submitted = VK_TRUE;

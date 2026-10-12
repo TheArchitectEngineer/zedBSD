@@ -1,7 +1,8 @@
 #!/bin/sh
 # ws141-p016 (B) B-u: host test of libvulkan's cursor-plane presentation (wsi-swapchain.c, wsi-display.c,
 # content.c) with fake core calls, platform and display ioctl; ordinary and sanitized, with the cursor log
-# off and on (VULKAN_ZEDBSD_CURSOR_LOG=1, u12), and the compositor's own calls (u16).
+# off and on (VULKAN_ZEDBSD_CURSOR_LOG=1, u12), the compositor's own calls (u16), and the present copy's
+# recording kept per image and dropped with its chain (u17, u18, ws211-p011).
 #   sh plan/ws141/tests/vulkan-cursor-host.sh [output-directory]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
