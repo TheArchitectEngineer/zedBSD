@@ -190,6 +190,10 @@ render_open(
 		return error;
 	}
 
+	/* Each open gets a mark of its own that no later open reuses. */
+	controller->owners++;
+	session->owner = controller->owners;
+
 	/* Sessions count only complete opens, and zero permits checked global recovery. */
 	controller->sessions++;
 	*result = session;

@@ -20,6 +20,13 @@ struct bcm2711_native_storage {
 	struct bcm2711_v3d_space *space;
 	struct bcm2711_v3d_view *view;
 	uint64_t bytes;
+	/*
+	 * The session mark of an owned storage (zero for the other kinds), and
+	 * whether it was given again without zeroing, still holding that
+	 * session's earlier bytes.
+	 */
+	uint64_t owner;
+	bool stale;
 	/* Diagnostic wall times belong to this owner and never control its lifetime. */
 	uint64_t allocation_ticks;
 	uint64_t mapping_ticks;
@@ -49,6 +56,8 @@ struct bcm2711_native_snapshot {
 	struct bcm2711_native_storage *pixels;
 	uint32_t users;
 	uint64_t used;
+	/* The session whose earlier bytes the pixels may still hold outside what the conversion wrote, or zero. */
+	uint64_t owner;
 };
 
 /* The controller mutex serializes every operation with native execution and recovery. */
@@ -63,6 +72,14 @@ int bcm2711_native_storage_create(struct bcm2711_v3d_space *space, uint64_t byte
  */
 #define BCM2711_NATIVE_STORAGE_ZEROED	0U
 #define BCM2711_NATIVE_STORAGE_WRITTEN	1U
+
+/*
+ * Owned by the building session (space->builder): a cached view is given
+ * again as it is only when that same session left it, so bytes the device
+ * may read but the use does not write can only be the session's own
+ * (ws141-p016 (b), review-b2 H1 (a)).  Anything else is zeroed.
+ */
+#define BCM2711_NATIVE_STORAGE_OWNED	2U
 int bcm2711_native_storage_create_as(struct bcm2711_v3d_space *space, uint64_t bytes, unsigned fill, struct bcm2711_native_storage **storage);
 int bcm2711_native_storage_clean(struct bcm2711_native_storage *storage);
 int bcm2711_native_storage_clean_range(struct bcm2711_native_storage *storage, uint64_t offset, uint64_t bytes);

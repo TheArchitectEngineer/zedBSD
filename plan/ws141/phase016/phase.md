@@ -321,6 +321,24 @@ executor の pass ごとの 3 区分:
   - pass の pool の chunk の経路（pool の draw）は、この fixture では通らない（独立の draw だけ）。
 - **(2) の残り**: 変換先と snapshot の H1 (a)。draw は session を持たないので、印の元（job の session の番号）を draw の作成まで渡す必要がある。次の段で設計して入れる。
 
+## (b) 第 2 版 (2): 変換先と snapshot の session の印（review-b2 H1 (a)、2026-10-12 P3）
+
+- **印**: render の session ごとに、controller の中で再利用しない 0 以外の番号（`bcm2711_render_session.owner`、open の時に `controller->owners` を進めて付ける）。
+- **作る側**: job の step は、pass・clear・image の copy を組み立てる間だけ `space->builder` にその session の番号を置き、組み立ての直後に 0 に戻す。draw は executor だけが組み立てるので、他の storage の利用者がこの値を見ることはない。この値の持ち方は暗黙の状態だが、5 つの作成の入口（pass・clear・image・meta の draw・draw）と host 試験の引数を変えずに済ませるための選択である。
+- **storage**: 新しい種類 `BCM2711_NATIVE_STORAGE_OWNED` を足した。cached view を 0 で埋めずに渡すのは、view に付いた前の使用者の印が `space->builder`（0 以外）と同じ時だけで、それ以外は埋める。storage は `owner`（OWNED なら builder、他の種類は 0）と `stale`（埋めずに渡したか）を持つ。release で view の印を storage の owner にしてから cache に戻すので、ZEROED と WRITTEN の storage を戻すと印は 0 になる。大きな run は、同じ大きさの中で同じ印の物を先に取る（owner が 0 の時は今どおり最初の一致で止める）。1 page の list は検索しない。
+- **変換先**（host-mapped の canvas の private な変換）: OWNED にした。その draw と同じ pass の後の draw（同じ session）だけが読む。
+- **snapshot**: pixels を OWNED で作り、stale なら `snapshot->owner` に session を残す。snapshot は buffer を鍵に session をまたいで共有されるので、owner が 0 でなく今の builder と違う時は次のように扱う。
+  - 使用中なら ENOTSUP（private な変換に回す）。
+  - 使っていなければ、pixels の全体を 0 にして clean し、owner を 0、valid を false にして、全体を変換し直す（TFU なら TFU、そうでなければ CPU）。
+  - CPU の全体の変換は texture の bytes の全部を書く（padding も 0）が、page の残りは書かないので、印は消さない。
+- **安全の試験**（vulkan-device の fixture、`WS141 session marks ... PASS`）:
+  - session 7 が 0xA5 で残した page は、session 8 と builder 0 には 0 で渡る。印の無い view は session にも 0 で渡る。同じ session（9）には 0xA5 のまま渡り、kept に数えられる。
+  - 同じ大きさの run が 2 つあれば、自分の印の付いた物を先に取る。ZEROED で戻すと印が消える。
+  - session 9 が TFU で作る snapshot は印 9 を持ち、page の末尾に 0xA5 が残る。session 9 はそのまま使う。session 10 は、9 が使っている間は ENOTSUP。使い終わった後は全体が 0 になり、全体の変換が数えられ（fills +1）、印は 0 になる。
+  - CPU の変換の後も印は残り、session 10 が使うと 0 にしてから変換し直す（先頭の画素は変換した値、page の末尾は 0）。
+- **確認**: kernel の rpi4 の build は warning 0。host 試験は vulkan-device・v3d-hardware・vulkan-stream・display・stage・native-state・native-pass が PASS。実機の計測（`v3d: alloc ... kept=` の変化と zero_us の減り）は未実施。
+- **残り**: TFU が padding を書くか、TMU が padding を読むかの実機の確かめ（H1 (b)）は T1 の後の候補。overflow の controller に 1 つの reserve は M2 の代案として残す。
+
 ## HAL arm64 の物理 page の allocator: 呼び出し元の監査（2026-10-12 P3、変更はしない、Q1 に相談）
 
 - 実装（`src/hal/arm64/page.c` `alloc_ram`）: 8GiB 分の bitmap の first fit。`first_free_candidate`（そこより下は全部使用中）から上へ、**1 page ずつ** 候補を進め、候補ごとに alignment・boundary・空きの長さを測る。全部 **IRQ を止めたまま**（CPU は 1 つ）。zone・上からの配置は無い。

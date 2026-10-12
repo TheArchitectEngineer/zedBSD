@@ -54,6 +54,9 @@ struct bcm2711_render_session {
 	uint64_t execution_bytes;
 	/* Producer markers the session holds in the marker pool, in any state. */
 	uint32_t markers;
+
+	/* Nonzero and never given to another session of the controller; it marks the storage this session's work may leave bytes in. */
+	uint64_t owner;
 };
 
 /* One descriptor owns a native VA view; jobs hold independent mapped references. */
@@ -84,6 +87,8 @@ struct bcm2711_render_device {
 	/* Internally held closed descriptors do not count as live external sessions or prevent checked reset. */
 	struct bcm2711_render_session *closed;
 	uint32_t sessions;
+	/* The last session owner mark given; marks only grow. */
+	uint64_t owners;
 	bool registered;
 };
 

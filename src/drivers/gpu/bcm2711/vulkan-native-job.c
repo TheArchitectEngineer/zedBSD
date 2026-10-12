@@ -247,7 +247,12 @@ bcm2711_vulkan_native_job_step(
 		if (error != 0)
 			return error;
 
-		/* Graphics, clears and copied image regions acquire complete independent native owners. */
+		/*
+		 * Graphics, clears and copied image regions acquire complete
+		 * independent native owners; their owned storage carries this
+		 * session's mark only while they are built.
+		 */
+		controller->space.builder = session->owner;
 		if (tiled == 0) {
 			error = 0;
 			next = event->next;
@@ -267,6 +272,7 @@ bcm2711_vulkan_native_job_step(
 		} else {
 			error = ENOTSUP;
 		}
+		controller->space.builder = 0;
 
 		/* Even a rolled-back preparation must flush its edits before any retired VA or RAM is reused. */
 		synchronized = bcm2711_v3d_memory_end(&controller->space);
