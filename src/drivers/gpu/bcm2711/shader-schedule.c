@@ -100,6 +100,7 @@ struct schedule_word {
 	uint32_t add;
 	uint32_t multiply;
 	uint32_t signal;
+	uint32_t thread_switch;
 };
 
 /* One read of a resource since the resource was last written, kept in a per-resource list. */
@@ -1272,8 +1273,10 @@ place(
 		state->words[word].add = index;
 	else if (slot == 1)
 		state->words[word].multiply = index;
-	else
+	else if (slot == 2)
 		state->words[word].signal = index;
+	else
+		state->words[word].thread_switch = index;
 
 	/* Each successor may start its edge's distance after this word. */
 	for (position = 0; position < node->successor_count; position++) {
@@ -1308,7 +1311,7 @@ place_sample_switch(
 	struct schedule_node *other;
 	struct schedule_edge *edge;
 	struct schedule_word trial;
-	uint32_t present[3];
+	uint32_t present[4];
 	uint32_t present_count;
 	uint32_t entry;
 	uint32_t position;
@@ -1341,9 +1344,9 @@ place_sample_switch(
 	/* The first word up to the launch's that takes the switch signal and holds only plain work and this lookup's writes. */
 	for (candidate = lowest; candidate <= word; candidate++) {
 		trial = state->words[candidate];
-		if (trial.signal != BCM2711_SHADER_ABSENT)
+		if (trial.thread_switch != BCM2711_SHADER_ABSENT)
 			continue;
-		trial.signal = target;
+		trial.thread_switch = target;
 		error = word_encode(state, &trial, &encoded);
 		if (error != 0)
 			continue;
@@ -1362,7 +1365,7 @@ place_sample_switch(
 			continue;
 
 		/* The switch is placed; its results wait three words from here. */
-		place(state, target, candidate, 2);
+		place(state, target, candidate, 3);
 		return 1;
 	}
 
@@ -1443,7 +1446,7 @@ fits(
 {
 	const struct schedule_node *node;
 	struct schedule_word trial;
-	uint32_t present[3];
+	uint32_t present[4];
 	uint32_t present_count;
 	uint32_t entry;
 	uint64_t encoded;
@@ -1459,9 +1462,14 @@ fits(
 			return ENOTSUP;
 	}
 
-	/* A signal takes the signal slot; a move prefers the multiply ALU and takes the add ALU when that is busy. */
+	/* A switch takes the switch slot, another signal the signal slot; a move prefers the multiply ALU and takes the add ALU when that is busy. */
 	trial = *word;
-	if (node->is_signal != 0) {
+	if (node->role != BCM2711_SHADER_SWITCH_NONE) {
+		if (trial.thread_switch != BCM2711_SHADER_ABSENT)
+			return ENOTSUP;
+		trial.thread_switch = index;
+		*slot = 3;
+	} else if (node->is_signal != 0) {
 		if (trial.signal != BCM2711_SHADER_ABSENT)
 			return ENOTSUP;
 		trial.signal = index;
@@ -1518,6 +1526,8 @@ word_encode(
 		bundle.signal = op->instruction.signal;
 		bundle.signal_destination = op->instruction.signal_destination;
 	}
+	if (word->thread_switch != BCM2711_SHADER_ABSENT)
+		bundle.thread_switch = 1;
 
 	/* The encoder checks everything the word's fields share. */
 	error = bcm2711_qpu_encode_bundle(&bundle, encoded);
@@ -1548,6 +1558,10 @@ word_node_count(
 	}
 	if (word->signal != BCM2711_SHADER_ABSENT) {
 		nodes[count] = word->signal;
+		count++;
+	}
+	if (word->thread_switch != BCM2711_SHADER_ABSENT) {
+		nodes[count] = word->thread_switch;
 		count++;
 	}
 
@@ -1624,11 +1638,11 @@ schedule_tail(
 	error = grow_words(state, best_length);
 	if (error != 0)
 		return error;
-	place(state, state->last_first, best_first, 2);
-	place(state, state->last_second, best_first + 1, 2);
+	place(state, state->last_first, best_first, 3);
+	place(state, state->last_second, best_first + 1, 3);
 	place(state, state->tile_nodes[0], best_tiles[0], 0);
 	place(state, state->tile_nodes[1], best_tiles[1], 0);
-	place(state, state->end, best_end, 2);
+	place(state, state->end, best_end, 3);
 	state->word_count = best_length;
 
 	/* Succeeded: the program ends two words after its thread end. */
@@ -1746,6 +1760,7 @@ trial_word(
 	trial->add = BCM2711_SHADER_ABSENT;
 	trial->multiply = BCM2711_SHADER_ABSENT;
 	trial->signal = BCM2711_SHADER_ABSENT;
+	trial->thread_switch = BCM2711_SHADER_ABSENT;
 	if (word < state->word_count)
 		*trial = state->words[word];
 
@@ -1770,13 +1785,13 @@ switch_fits(
 	uint64_t encoded;
 	int error;
 
-	/* The signal slot must be free. */
+	/* The switch slot must be free. */
 	trial_word(state, word, NULL, 0, &trial);
-	if (trial.signal != BCM2711_SHADER_ABSENT)
+	if (trial.thread_switch != BCM2711_SHADER_ABSENT)
 		return ENOTSUP;
 
-	/* The switch signal must encode beside the word's operations. */
-	trial.signal = index;
+	/* The switch must encode beside the word's operations and signal. */
+	trial.thread_switch = index;
 	error = word_encode(state, &trial, &encoded);
 	if (error != 0)
 		return error;
@@ -1794,7 +1809,7 @@ ends_in(
 	const uint32_t *tiles)
 {
 	struct schedule_word trial;
-	uint32_t present[3];
+	uint32_t present[4];
 	uint32_t present_count;
 	uint32_t entry;
 	uint32_t word;
@@ -1816,11 +1831,11 @@ ends_in(
 		}
 	}
 
-	/* The thread end's own word needs a free signal slot that encodes with any tile write there. */
+	/* The thread end's own word needs a free switch slot that encodes with the word's signal and any tile write there. */
 	trial_word(state, end, tiles, 2, &trial);
-	if (trial.signal != BCM2711_SHADER_ABSENT)
+	if (trial.thread_switch != BCM2711_SHADER_ABSENT)
 		return ENOTSUP;
-	trial.signal = state->end;
+	trial.thread_switch = state->end;
 	error = word_encode(state, &trial, &encoded);
 	if (error != 0)
 		return error;
@@ -1877,6 +1892,7 @@ grow_words(
 		state->words[index].add = BCM2711_SHADER_ABSENT;
 		state->words[index].multiply = BCM2711_SHADER_ABSENT;
 		state->words[index].signal = BCM2711_SHADER_ABSENT;
+		state->words[index].thread_switch = BCM2711_SHADER_ABSENT;
 	}
 	if (count > state->word_count)
 		state->word_count = count;
@@ -1907,7 +1923,8 @@ verify(
 			return EINVAL;
 		if (state->words[word].add != index &&
 		    state->words[word].multiply != index &&
-		    state->words[word].signal != index)
+		    state->words[word].signal != index &&
+		    state->words[word].thread_switch != index)
 			return EINVAL;
 	}
 
@@ -1942,7 +1959,7 @@ verify_values(
 	uint32_t visible[SCHEDULE_RESOURCES];
 	uint32_t pending[SCHEDULE_RESOURCES];
 	uint32_t lands[SCHEDULE_RESOURCES];
-	uint32_t present[3];
+	uint32_t present[4];
 	uint32_t present_count;
 	uint32_t entry;
 	uint32_t index;
@@ -2031,7 +2048,7 @@ verify_rules(
 	struct schedule_node *node;
 	struct schedule_node *other;
 	struct schedule_word *slots;
-	uint32_t present[3];
+	uint32_t present[4];
 	uint32_t present_count;
 	uint32_t entry;
 	uint32_t peripherals;
@@ -2180,7 +2197,7 @@ emit_words(
 {
 	struct bcm2711_shader_binary *binary;
 	struct schedule_word *slots;
-	uint32_t present[3];
+	uint32_t present[4];
 	uint32_t present_count;
 	uint32_t entry;
 	uint32_t word;

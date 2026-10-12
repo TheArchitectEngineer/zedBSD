@@ -132,6 +132,8 @@ struct bcm2711_qpu_bundle {
 	struct bcm2711_qpu_instruction multiply;
 	enum bcm2711_qpu_signal signal;
 	struct bcm2711_qpu_destination signal_destination;
+	/* Set to add a thread switch to the word's signal, where the native signal table combines them. */
+	uint32_t thread_switch;
 };
 
 int bcm2711_qpu_encode(const struct bcm2711_qpu_instruction *instruction, uint64_t *word);
