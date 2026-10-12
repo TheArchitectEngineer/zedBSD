@@ -238,6 +238,13 @@ executor の pass ごとの 3 区分:
 - 観察（1803317345 の kernel、App Home 中）: compositor の frame の record（vkBegin/EndCommandBuffer の同期の request）が 85〜149ms、`submit_lock_us` の最大 113〜168ms。controller の mutex は decoder（request ごと）と executor（1 歩の窓の外: pass の準備・finish・解放）が持つ。
 - 計測を足した（a80ce65fa）: `hold_us decode=<最大>/op<opcode> step=<executor の 1 歩の窓の外の最大>`。次の配置の実機の数で、長く持つのが decoder の特定の op（resource の作成・map の memset など）か executor の準備（CPU の変換・upload）かを分け、そこを mutex の外に出す設計を書く（候補: 準備の draw ごとの区切りで待ち手に譲る、session の object の状態を session ごとの lock に分ける、重い CPU 作業（memset・変換）を mutex の外の所有物に対して行う）。
 
+## HAL arm64 の物理 page の allocator: 呼び出し元の監査（2026-10-12 P3、変更はしない、Q1 に相談）
+
+- 実装（`src/hal/arm64/page.c` `alloc_ram`）: 8GiB 分の bitmap の first fit。`first_free_candidate`（そこより下は全部使用中）から上へ、**1 page ずつ** 候補を進め、候補ごとに alignment・boundary・空きの長さを測る。全部 **IRQ を止めたまま**（CPU は 1 つ）。zone・上からの配置は無い。
+- 呼び出し元（arm64 で動くもの）: 1 page: `vm_private_page_alloc`（`vm.c:6374`、user の page・fault ごと）、`space.c:76`（page table）、`tmpfs-pages.c:295`。連続の大きな run: bcm2711 の `buffer.c:62`（GPU の storage・snapshot・import の run、`kern_pmem_alloc_limited`、上限は V3D の PA 35 bit＝実質なし、display の cursor 等は 0x3fffffff）、`buf.c:1745`（buffer cache の slab・line）、`disk.c:2695`（async I/O の領域、起動時）、`io.c:352`（I/O pool、起動時）、`ufs.c:3064`（journal image）、`audio.c:2048`（ring）。上限付きの DMA: `drivers/generic/dma.c:384`（xHCI は brcmstb の PCIe で 31 bit かつ inbound 3GiB→2GiB 未満、GENET・audio は 32 bit）、`rpi4-firmware.c:147`（firmware の buffer、上限付き）。
+- 問題: (1) 大きな連続の要求は、使用中の page を 1 つずつ越えて走査するので、使用量に比例した時間 IRQ が止まる。perf の `alloc` は submission あたり平均 0.4〜2.2ms（実機 1803317345）で、GPU の storage の確保（`native_storage_create`→`buffer_create`）の費用がほぼこれ。(2) 1 page の確保も GPU の大きな run も DMA の上限付きの run も、全部下から first fit なので、GPU の大きな run が DMA の上限の下（2GiB 未満）を占め、user の page と混ざって断片化する。長く動かすと上限付きの確保や大きな run が ENOMEM になり得る。
+- 案（どれも `hal.h` の API は変えない実装の変更、Q1 の判断待ち）: **P1** 走査を 32 page（bitmap の 1 word）単位に: 全部使用中の word は 1 回で飛ばし、空きの長さも word 単位で数える（IRQ の停止と `alloc` を 1/10 以下に）。**P2** 配置の方針: 上限の無い大きな run（例 64KiB 以上）は上から first fit（上の cursor を別に持つ）、1 page と上限付きは今どおり下から。**P3** 走査を区切って IRQ を開ける（世代の数で途中の変更を検出してやり直す）。P1 が最小で効果が明確、P2 は断片化の実測（`hal_get_memstat` の free と最大の連続の空き）の後。
+
 ## 段（第 4 版）
 
 | 段 | 内容 | 確かめ |
