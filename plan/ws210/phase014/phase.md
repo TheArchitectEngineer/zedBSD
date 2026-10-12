@@ -45,83 +45,76 @@ Queue: [P1 の lane](../../agents/P1/queue.md)
 - 入力の配達は変えない。全部の motion が今と同じに app に届く。描き込み・drag の app にも安全。
 - 押した widget（active）・click・`kl_ui_pointer_cancel` も、同じく「描いた時」と「今」の比べで damage にする。
 
-### F2. window ごとの申請: motion の合流と frame の速さ（第 2 版、review-1 の H3・H4・M2・M3・L4・L5・L7・M8 を反映）
+### F2. window ごとの申請: motion の合流と frame の速さ（第 3 版、review-1 と [review-2](review-2.md) を反映）
 
 既定は今のまま（全部の motion を届け、frame の速さに上限なし）。app が window ごとに申請した時だけ効く（ユーザーの補足）。描き込み・drag の精度が要る app（Notes の pen、Paint、Image Viewer の drag、Text Editor の選択の drag）は申請しない。
 
-**口**（KL_VERSION 91。WS210 の GPU の canvas の版は 92 以降に送る。master の記載は Q1）:
-- `int kl_window_set_pacing(struct kl_window *window, unsigned flags, unsigned max_fps)`:
-  - `flags` は `KL_PACING_MOTION`・`KL_PACING_FRAME` の和。`max_fps` 0 は compositor の速さ（callback）。
-  - 0 を返す。EINVAL は未知の flag の時。
-- `int kl_window_frame_due(struct kl_window *window, uint64_t now_us, int *wait_ms)`:
-  - 描いてよい時に 1 を返す。いけない時は 0 を返し、`wait_ms` に「次に due になり得るまでの ms」を入れる（下の F2.4）。
-  - 申請していない window は常に 1。
+**着手の条件（review-2 M5、Q1 2026-10-12）**: F2.2〜F2.6 は、Pi の hover 中の `kl_window_present_times` の acquire_ms と wait_ms（Settings の SLOW-FRAME の行、settings/main.c:582-583）を見てから着手を決める。描画が compositor より遅ければ pacing は何もしないので、どちらも 0 に近ければ着手しない。F2.1 だけを先に入れた（既定にはしない）。
 
-#### F2.1 `KL_PACING_MOTION`（L4）
+**口**:
+- `kl_window_set_pacing(window, flags, max_fps)`（KL_VERSION 91、F2.1 で入れた）。今は `KL_PACING_MOTION` だけで、max_fps は 0。
+- F2.2 以降で `KL_PACING_FRAME`、max_fps、`kl_window_frame_wait` を足す時は次の版（92）にする。WS210 の GPU の canvas はその後の版（Q1 が master に記録）。
+- `KL_PRESENT_NONE` の window（app が自分で present する）に `KL_PACING_FRAME` を申請すると ENOTSUP（L5）。
 
-- 合流は `window_push`（ui/window.c:1603-1638）で行う。`keiui_app_push`（ui/app.c:461-475）は kind を受けないので、`window_push` が kind を知った所で、queue の一番新しい event を見る。
-  - app の queue（`kl_app` の環）と window の queue の両方。
-  - 一番新しい event が同じ window の `KL_WINDOW_MOTION` なら、それの x・y・modifiers・serial・time を新しい値で置き換え、新しい slot を取らない。
-- 合流しないもの: 間に BUTTON・LEAVE・KEY・AXIS などがある MOTION（press と release の位置を保つ）、touch の motion（gesture の速さが要る）、tablet。
-- 判定は純関数 `keiui_pacing_merge(const struct kl_window_event *newest, const struct kl_window *window, unsigned kind)` に分け、host で試験する（M8）。
-- 効果（L4、推測）: F1 と (a) の後は、溜まった motion を全部処理しても描く部分は 2 つなので、合流で減るのは event の処理の CPU（hit の探索）だけ。Pi で測ってから申請の既定を決める（F2.6）。
+#### F2.1 `KL_PACING_MOTION`（実装済み 37e00bcd5、既定ではない）
 
-#### F2.2 `KL_PACING_FRAME`: callback の要求と状態（H3・M3・L5）
+- `window_pointer_motion`（ui/window.c）で、申請した window の新しい motion が、queue の一番新しい event が同じ window の MOTION なら、その slot の x・y・modifiers・serial・arrival_us（今）・time_us を置き換える。新しい slot は取らない。
+  - app の queue（`kl_app_event` の window と input.kind で判定）と window の queue の両方。
+  - 置き換えた後も `keiui_window_stamp`（compositor の時刻）と `keiui_window_wake` を呼ぶ（L1）。
+- 判定は `keiui_motion_merges`（ui/internal.h の static inline、純関数）。host の試験 6 項目（plan/ws210/tests/run-host-kl-ui-lit.sh の merge-*）。
+- 合流しない: 間に BUTTON・LEAVE・KEY などがある MOTION、enter の motion（push の経路が別）、touch・tablet。
+- 効果は F1 の後では event の処理の CPU だけの見込み（L4、推測）。app に申請させるかは Pi で測ってから決める。
 
-- window の pacing の状態:
-  - `callback`（wl_callback、最大 1 つ）。
-  - `requested_us`（要求した時刻、watchdog 用）。
-  - `presented_us`（最後に present を呼んだ時刻、max_fps 用、L5）。
-  - `urgent`（F2.3）。
-- **要求の点**: commit が確かに起きる直前。
-  - Vulkan: `kl_window_present_parts` の中、`vkQueuePresentKHR` の直前に `wl_surface_frame(window->surface)` を要求する。
-    - surface の保留の状態に入り、WSI の commit が運ぶ。
-    - zedBSD の libvulkan は commit を worker thread で非同期に行う（wsi-swapchain.c:2698、wsi-wayland.c:774-783）。そのため callback は、要求の後の最初の commit（この frame か、worker に並んだ前の frame の commit）に付く。早く戻ることはあっても、止まることは無い。
-    - Linux の compat は 100ms 待ってから commit する（libvulkan-compat/wsi-swapchain.c:1502-1544）。
-    - libkeiland の window の呼び手の thread は 1 つ（app の main loop）。callback の proxy は window の queue で dispatch される。
-  - SHM: `keiui_shm_present` の `wl_surface_commit` の直前。
-- **失敗**: present が commit に至らなかった時は、callback の proxy を `wl_callback_destroy` し、due に戻す。
-  - Vulkan の OUT_OF_DATE・SUBOPTIMAL・EIO（window.c:678-686、present.c:255-317）、SHM の EAGAIN（present-shm.c:46-74）。
-- **無条件に due**:
-  - 最初の frame。
-  - resize と configure（window の大きさ・状態の変化）。
-  - 申請を外した時（flags から FRAME を落とす）。この時、残った callback は destroy する。
-- **callback は常に高々 1 つ**: 要求の前に古い物があれば destroy する。window の破棄で destroy する。done で `callback = NULL`。
-- **max_fps**: 前の present（`presented_us`）から `1000000 / max_fps` µs たつまでは due でない。0 なら上限なし（callback だけ）。
+#### F2.2 frame の要否は「描画の関数の最初」で決め、消費は due の時だけ（H1）
 
-#### F2.3 kl_ui の入力と due（M2）
+- 申請すると (a) の効果が消える穴（H1）: settle（settings/main.c:549、files/main.c:764）が周ごとに damage を足す一方で、drawn_hover は描いた時だけ更新される（settings/ui.c:426-429）。due でない周が続くと、settle のたびに「描いた時の hover と、その周の hover」が積まれて軌跡が戻る。
+  - 同じ型: Calendar の `animating = 0`（calendar/main.c:587-588）、Music の `lit_changed = 0`（music/main.c:1252・1258）、`kl_ui_take_frame` の消費。
+- 規則: 描画の関数の最初で due を問い、due でなければ何も消費せずに戻る。settle・`kl_ui_take_frame`・animating・lit_changed の消費は due の時だけ行う。
+  - Settings・Files の settle は、main loop の「frame の判断の前」から描画の関数（main_frame）の最初に移す。
+- host の試験: due でない周を 2 回挟んで sidebar を通った後の frame の部分が 2 つだけ（最初の行と今の行）であること。
 
-- kl_ui は click を 1 つの slot に持ち（ui.c:189-196）、key を frame ごとに 1 つずつ app に渡し（ui.c:1035-1069）、scroll・gesture・drag を `kl_ui_begin` で進める（ui.c:852-867）。frame を待たせると、2 つ目の click が失われ、key が遅れる。
-- そこで、frame を要る入力は待たせない。`window_push` が次の kind を積んだら `urgent = 1` にし、`kl_window_frame_due` は urgent なら callback と max_fps に関わらず 1 を返す（返したら urgent を 0 に）。
-  - 対象の kind: BUTTON、KEY、TEXT_COMMIT・PREEDIT・DELETE、TOUCH_DOWN・UP・CANCEL、FOCUS、CLOSE、ACTION（menu）、DROP。
-  - 待たせてよい物: MOTION・LEAVE（F1 で lit は「描いた時と今」）、AXIS（scroll は次の frame でまとめて進む）、TOUCH_MOTION（gesture の速さは時刻で持つ）、app の animation と時計。
-- 説明の直し: 「待つ間も入力を受けて状態を進める」ではなく、「入力は溜まり、kl_ui の動作（click・key・scroll）は次の frame で行われる。click・key・touch の上げ下げは frame を待たせない」。
+#### F2.3 urgent（待たせない入力）は「待たせてよい物」の列挙で決める（M1）
 
-#### F2.4 待ちの時間（H4）
+- 待たせてよい物だけを列挙し、他の kind は全部 urgent にする。
+  - 待たせてよい物: `KL_WINDOW_MOTION`・`LEAVE`・`AXIS`・`TOUCH_MOTION`・`DROP_MOTION`・`TABLET_MOTION`・`TABLET_HOVER`・`DROP_ACTION`。
+  - urgent になる物の例（review-2 M1 の漏れ）: POST・CONTROL_TEXT・CONTROL_DONE・TAB・POPUP_DONE・DRAG_DONE・DROP_ENTER/LEAVE・CONTROL_DROP・TABLET_DOWN/UP・AXIS_STOP・RESIZE（立て所 window.c の configure と resize）。
+- kl_ui は click を 1 つの slot に持ち、key を frame ごとに 1 つずつ渡し、scroll・gesture・drag を `kl_ui_begin` で進める。urgent は「入力が溜まり、kl_ui の動作は次の frame」を短くする。
 
-- app の main loop の待ち（kl_app_dispatch の timeout）は、「描きたい物があり、due でない」時には `kl_window_frame_due` の `wait_ms` と、app の他の待ち（時計・animation・worker）の短い方にする。
-  - 今の 7 つの関数はどれも「描きたい物があれば 0」を返し、そのままでは spin になる: Settings `main_timeout`（settings/main.c:674）、Files `main_timeout`（files/main.c:967）、Music `mu_wait`（music/main.c:1313）、Calendar `cal_wait`（calendar/main.c:682）、Photos `ph_wait`（photos/main.c:1682）、Phone `ph_wait`（phone/main.c:887）、Mailer `ml_wait`（mailer/main.c:768）。これを直す。
-- `wait_ms` の値:
-  - callback を待つ間は、watchdog（F2.5）の残り。callback は Wayland の fd に届くので、`kl_app_dispatch` の poll が先に起こす。
-  - max_fps を待つ間は、その残り。
-  - due なら 0。
-- 試験（M8）: host で、due の状態の純関数（callback 待ち・失敗・resize・urgent・max_fps・watchdog）の表と、「描きたい物があり due でない」時の待ちが 0 にならないこと。Pi の perf で、hover 中の app の CPU の時間を申請の前後で比べる。
+#### F2.4 問い合わせは副作用なし、解除は present の時（M2）
 
-#### F2.5 隠れた window（L7）
+- `int kl_window_frame_wait(const struct kl_window *window, uint64_t now_us)`: 副作用の無い問い合わせ。0 は「今描いてよい」、正の値は「その ms 後に描いてよくなり得る」、-1 は「callback を待つ（poll が起こす）」。値は ms に切り上げる。
+- 1 周に何度呼んでもよい（待ちの関数と描画の関数の両方、Music の key（music/main.c:1296-1304）が遅れない）。
+- urgent の解除・watchdog の時の callback の destroy と要求し直しは、`kl_window_present_parts` の中（present の時）だけで行う。
+- host の試験: 同じ状態で 2 回呼んで同じ答え。present の後に urgent が解ける。
 
-- compositor は合成しなかった window（他の窓の下、別の画面）の callback を保留する（wayland/compose.c:3001-3033、display.c:435-454）。Linux の compat は 100ms で打ち切る（L7）。
-- libkeiland も watchdog を持つ。callback を要求してから 100ms たっても戻らなければ due にする（callback は destroy して次に要求し直す）。隠れた window は高々 10 fps で描く。
-- urgent の入力は watchdog を待たない。
-- OS の違い: zedBSD の compositor は保留する。Linux（Mesa の WSI、他の compositor）は compositor による。どちらも watchdog で同じ上限になる。
+#### F2.5 callback の要求と失敗（H3・M3・M4・M7）
 
-#### F2.6 申請する app と測り方
+- **要求の場所（M7）**: commit を要求する内部の hook を 1 つにする（`keiui_present_commit_hook`）。今の `keiui_present_frame`（present.c）・p013 の E1・E2 の copy の経路・p005 の `kl_window_frame_end` が同じ hook を呼ぶ。p013 と p014 の順は ws.md に書く（p013 を先に入れ、F2.5 はその hook に載せる）。
+- **OS ごとの期待（M3）**:
+  - zedBSD の libvulkan: `vkQueuePresentKHR` は積んで戻り（wsi-swapchain.c:576-591）、worker の `wayland_commit` が 1 つ前の callback を待ってから commit する（wsi-wayland.c:774-783・797-845）。main で present の前に要求した callback は、普通は 1 つ前の commit に乗る（推測）。定常で 1 frame 先行する。
+  - Linux・FreeBSD の compat: 同期で commit する（libvulkan-compat/wsi-swapchain.c:1502-1544）。100ms で打ち切るので、watchdog と重なると約 5 fps（L3）。
+  - 受け入れ（F2.7）に「worker に並ぶ frame の数が 1 以下」と、acquire_ms・wait_ms を入れる。足りなければ WSI の側（libvulkan、別 Phase、Q1 の判断）。
+- **失敗の経路（M4）**:
+  - (a) SHM の EAGAIN（present-shm.c:58-61、compositor が 2 枚とも読んでいる）: due に戻すと忙しい待ちになる。`shm_release`（present-shm.c:213-226）が来るまで due にしない。
+  - (b) worker の非同期の失敗: `vkQueuePresentKHR` には返らず、次の acquire で返る（wsi-swapchain.c:567-570）。救いは watchdog。SUBOPTIMAL は commit 済みとして扱う（present.c:337-338）。
+  - (c) compositor が callback を保留するのは compose が起きない時だけ（sleep_hold display.c:162、出力の喪失、image の無い window）。重なって隠れた window と別の head の window は compose されて解放される（compose.c:1825-1868）。
+    - 保留中に present すると、WSI の worker が前の callback を最大 10 秒待つ（WAYLAND_WAIT_NS、wsi-wayland.c:25・776）。3 枚が尽きると `vkAcquireNextImageKHR` が最大 10 秒待つ（PRESENT_TIMEOUT present.c:31、wsi-swapchain.c:3054-3110）。超えると SURFACE_LOST が残り、Settings は EIO→DEVICE_LOST で終わる（settings/present.c:101-104）。
+    - F2 では、watchdog の present は callback が戻るまで 1 回だけにする。zedBSD の watchdog は 1 秒程度にする。urgent も保留中は 1 回にする。
+    - 「保留が 10 秒続くと surface を失う」は F2 より前からの問題で、Q1 が bug として記録する（Q1 2026-10-12）。
+- callback は高々 1 つ。最初の frame・resize・configure では無条件に due。申請を外した時と window の破棄で destroy。max_fps は前の present の時刻から測る（L5）。
 
-- 申請する（初め）: Settings・Files・Music・Calendar・Photos・Phone・Mailer の UI の window に `KL_PACING_FRAME`（max_fps 0）。`KL_PACING_MOTION` は F2.1 の測りの後に決める。
-- Pi の perf（P3 の計測、Q1 経由）で、申請の前後を比べる（M3）:
-  - hover の連続の間の frame の数と、入力から commit までの時間。
-  - worker に並ぶ frame の数。
-  - app の CPU の時間。
-- 受け入れ（H5）: app の描く frame の数と面積が減り、click・key の遅れが増えないこと。
+#### F2.6 待ちの関数（H4・M6）
+
+- app ごとに、描画の理由と描画以外の理由を表にする。描画以外の理由は due に関わらず待ちを 0 にする: Music・Phone・Mailer の `request_count`（music/main.c:1320、phone/main.c:896、mailer/main.c:777）、worker の結果、時計。
+- 描画の理由（dirty・lit_changed・hover_pending・moving・animating）だけがある時は、`kl_window_frame_wait` の値と他の待ちの短い方にする。Calendar の animating は main loop（calendar/main.c:389-391）で見る。
+- callback の done は default queue に届くので、取りこぼさない（app.c:200-262、wsi-wayland.c:940-1000）。
+- host の試験: 待ちの関数の表（描画の理由だけ・描画以外の理由あり・due）の答え。spin が無いこと。
+
+#### F2.7 申請と受け入れ
+
+- 申請（F2.2〜F2.6 の後）: Settings・Files・Music・Calendar・Photos・Phone・Mailer の UI の window に `KL_PACING_FRAME`（max_fps 0）。
+- 受け入れの数値は先に決める（review-2 F2.6）: Pi の hover の連続で、(1) app の描く frame の数が申請の前より少ない、(2) click・key の入力から commit までの時間が前より長くない、(3) worker に並ぶ frame の数が 1 以下、(4) app の CPU の時間が前より短い。P3 の perf の計測で取る。
+- L2 の訂正: display.c:435-454 は unmap の時の解放で、保留の根拠ではない（保留は display.c:162 と compose.c:1825-1868）。
 
 ### F3. 共通の口: frame で何を描くか（Q1 (3)）
 
@@ -158,8 +151,10 @@ if (due) {
 
 ### F5. 版
 
-- 新しい口（`kl_window_set_pacing`・`kl_window_frame_due`・`kl_ui_damage`・`kl_ui_damage_whole`・`kl_ui_take_frame`・`kl_window_present_parts` と定数）で KL_VERSION を 90 にする。
-- WS210 の GPU の canvas の版（p001 の A2、今は「90 以降」）は 91 以降に送る。Q1 が master の「次の KL_VERSION」を直す。
+- KL_VERSION 90: `kl_ui_take_frame`・`kl_ui_damage`・`kl_ui_damage_whole`・`kl_window_present_parts`（F3、main 6d9df4d23）。
+- KL_VERSION 91: `kl_window_set_pacing`・`KL_PACING_MOTION`（F2.1）。
+- KL_VERSION 92: F2.2 以降の `KL_PACING_FRAME`・`kl_window_frame_wait`（着手した時）。
+- WS210 の GPU の canvas の版は、その後に送る。Q1 が master の「次の KL_VERSION」を直す。
 
 ### F6. 試験
 
@@ -214,7 +209,7 @@ if (due) {
     - L3: drawn_hot が無い（invalid）時は何も足さない（ui_damage_key は invalid の key で 0）。
     - 試験: run-host-kl-ui-lit.sh 22 PASS。Phone 19・Calendar 13・Music 16・Mailer 18 PASS。Files の保留の hover の画素は 3 場面で一致。
     - build: rpi4・amd64 の libkeiland と 7 app（files・settings・music・calendar・photos・phone・mailer）が warning 0。keiland-os-boundary PASS、exports.py --check。
-  - **(c)** F2（KL_PACING_FRAME）は H3・H4・M2・M3・L7 を直した設計を書き直してから review（後回し）。MOTION の合流は L4 のとおり window_push で、効果は小さい見込み。→ 2026-10-12 F2 の第 2 版を書いた（下の F2 の節）。review 待ち。
+  - **(c)** F2（KL_PACING_FRAME）は H3・H4・M2・M3・L7 を直した設計を書き直してから review（後回し）。MOTION の合流は L4 のとおり window_push で、効果は小さい見込み。→ 2026-10-12 F2 の第 2 版を書いた。[review-2](review-2.md) の後、第 3 版に直し、F2.1 を実装した（37e00bcd5、KL_VERSION 91、既定ではない）。F2.2 以降は Pi の計測の後。
   - 2026-10-12 7 つの app を `kl_ui_take_frame`・`kl_window_present_parts` に移した（music 3e2726cc2〜files 597dd899a → main c6348fba6）。
   - **(d)** F4 は保留。Music は不要（L1）。
   - **H5（受け入れの範囲）**: p014 の受け入れは「app の描く面積と frame の数」に限る。compositor の側の効果（wl_surface.damage と VkPresentRegionsKHR が外接の 1 つにまとめられる、wsi-swapchain.c:3304-3349・wsi-wayland.c:833-842）は、p013 と WSI の複数矩形の damage（別 WS、Q1 が判断）に回す。
@@ -223,7 +218,7 @@ if (due) {
 
 1. F1（kl_ui の内側だけ、公開の口は変えない）。これだけで Music・Calendar・Photos・Phone の「軌跡」が消える。KL_VERSION は変えない。
 2. F3 の口と F5 の版。Settings を載せ替える（F4 の Settings の左ペインを含む。ユーザーの報告の本体）。
-3. F2 の申請と frame の callback。Settings で効きを Pi で見る。
+3. F2.1（実装済み、既定ではない）。F2.2〜F2.7 は Pi の hover の acquire_ms・wait_ms を見てから（review-2 M5）。p013 を先に入れ、F2.5 はその commit の hook に載せる（M7）。
 4. Files・Music の左ペイン（F4）と、残りの app の載せ替え。
 
 ## 見積

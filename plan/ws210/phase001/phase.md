@@ -115,7 +115,7 @@ struct canvas_gpu {
 };
 ```
 
-GPU の canvas は `pixels == NULL` で、`coverage` が自分の `tag` を指す（`kl_canvas_init` は pixels に NULL を取らず、coverage は calloc の領域を指すので CPU の canvas と混ざらない）。描画の口は先頭で `canvas->pixels == NULL && canvas->coverage == &((struct canvas_gpu *)canvas)->tag` を見て GPU の記録へ分ける（registry も新しい field も要らない）。app は `width`・`height`・`clip` を今どおり読める。`kl_canvas_release` は GPU の canvas では何もしない。glyph の atlas の位置・画像の世代は private な表に持つ。`KL_VERSION` は新しい関数が入る Phase（p005）で次の版（**90** 以降。89 は 2026-10-12 に hover の直しの `kl_ui_hit_still` が使った、Q1）に上げ、新しい関数のためだけに使う。
+GPU の canvas は `pixels == NULL` で、`coverage` が自分の `tag` を指す（`kl_canvas_init` は pixels に NULL を取らず、coverage は calloc の領域を指すので CPU の canvas と混ざらない）。描画の口は先頭で `canvas->pixels == NULL && canvas->coverage == &((struct canvas_gpu *)canvas)->tag` を見て GPU の記録へ分ける（registry も新しい field も要らない）。app は `width`・`height`・`clip` を今どおり読める。`kl_canvas_release` は GPU の canvas では何もしない。glyph の atlas の位置・画像の世代は private な表に持つ。`KL_VERSION` は新しい関数が入る Phase（p005）で次の版（**93** 以降の見込み。89〜91 は 2026-10-12 の hover の直し（`kl_ui_hit_still`、p014 の F3・F2.1）が使い、92 は p014 の F2.2 の予定。Q1）に上げ、新しい関数のためだけに使う。
 
 A3. 新しい口（window の frame）:
 
@@ -293,7 +293,7 @@ E3. Linux・FreeBSD は同じ source。OS の macro は増やさない。composi
 | p002 | **spike**: (1) host で B2 の 9 つの shader を bcm2711 の compiler に通して命令数・NOP・register・thread を数える（P3 の NOP の削減の前と後）。(2) Pi で draw あたりの kernel の費用・頂点の scalar あたりの写しの時間・pipeline ごとの fragment の時間・shader の compile の時間を測る小さな program（Pi の操作は Q1 経由）。(3) 結果で B2 の分け方・B3 の並べ替えの窓・B8 の予算を決め、この phase.md に書く | 1.5 LW＋Pi の待ち | p001 |
 | p003 | GPU の canvas の核: context、記録、quad の切り詰め、fill・round・shadow・ring・capsule・replace の pipeline、角丸の内側の分割、batch と並べ替え、offscreen の W と readback、host の一致の試験の土台、shader の確かめ（i915・bcm2711）。CPU の線を capsule に（G4） | 5 LW | p002 |
 | p004 | 文字（RGBA8 の atlas の頁、色の glyph）、画像（cache・世代の表・退役の列・`kl_image_changed`・`kl_canvas_image_part`）、polygon の coverage の cache、`kl_canvas_mark`、`fill_replace` | 4 LW | p003 |
-| p005 | window の frame（`kl_window_canvas`・`frame_begin`・`frame_end`・`kl_window_frame_times`、W と swapchain の copy、renderArea、EAGAIN・EIO、fallback E1・E2）、`KL_VERSION` を次の版（90 以降）に、基準の PNG と Pi の基準（G 節）、最初の app（Settings、memset と mark を含む） | 4 LW | p004 |
+| p005 | window の frame（`kl_window_canvas`・`frame_begin`・`frame_end`・`kl_window_frame_times`、W と swapchain の copy、renderArea、EAGAIN・EIO、fallback E1・E2）、`KL_VERSION` を次の版（93 以降の見込み）に、基準の PNG と Pi の基準（G 節）、最初の app（Settings、memset と mark を含む） | 4 LW | p004 |
 | p006 | **Pi の計測と調整**（L8）: Settings の GPU の canvas の版を Pi で測り（Q1 経由）、pipeline の分け方・batch・予算・llvmpipe の既定（E2）を直す。TLB copy の incremental と snapshot の実機の正しさ（M8） | 2 LW＋Pi の待ち | p005 |
 | p007 | libkeiland の widget・chooser・picker（SHM→Vulkan）と app の第 1 組（Files・Phone・Mailer・Photos・Music・Calendar の 2D と under・Video Player の UI）を移す | 5 LW | p006 |
 | p008 | 自前の CPU の canvas の app（Text Editor・PDF Viewer）、`KL_PRESENT_NONE` の overlay（Image Viewer・Notes、`kl_canvas_gpu_record`）、IME の popup（`kl_surface_canvas_*`） | 4.5 LW | p006 |
