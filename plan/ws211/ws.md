@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: P3（WS141 の Pi の直しの次）
-Resume point: p001 の設計の第 1 版を [phase001/phase.md](phase001/phase.md) に書いた（2026-10-12 P3）。design-reviewer の review とユーザーの判断（icon の時間差、見た目の変化）の待ち。review を通るまで実装しない。
+Resume point: p001 の設計の第 2 版（[phase001/phase.md](phase001/phase.md)、2026-10-12 P3）。[review-1](phase001/review-1.md) の指摘と、ユーザーの判断（icon の時間差はやめる、見た目の変化は受け入れる、部分の描き直しの方式は Pi の実測で選ぶ）を反映した。再 review の待ち。p002 段 0 の計測は先に始めてよい（review-1）。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -33,7 +33,7 @@ Pi 4 で App Home の開閉が目で滑らか（ユーザーの確認）、1 コ
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 調査と設計（draw の数え、クロスフェードの絵の持ち方と無効化、束ねの形、Pi の見積もり、試験） | planning（第 1 版、review 待ち） |
+| [p001](phase001/phase.md) | 調査と設計（draw の数え、クロスフェードの絵の持ち方と無効化、束ねの形、Pi の見積もり、試験） | planning（第 2 版、再 review 待ち） |
 | p002 | クロスフェードの実装と Pi の確かめ | planned |
 | p003 | draw の束ね（文字・tile・影）と Pi の確かめ | planned |
 | p004 | 規約の全文の見直し | planned |
