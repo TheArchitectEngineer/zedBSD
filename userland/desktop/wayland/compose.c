@@ -3103,8 +3103,11 @@ compose_walk_timed(
 	struct kwl_perf *perf;
 	uint32_t slot;
 
-	/* No room left in the window. */
+	/* The pass's walks, for its KWL SLOW_PASS line (ws213-p004). */
 	perf = &server->perf;
+	perf->pass_walk_cycles += walk;
+
+	/* No room left in the window. */
 	if (perf->walk_count == KWL_PERF_WALKS) {
 		perf->walk_dropped++;
 		return;
