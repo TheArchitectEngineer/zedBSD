@@ -183,6 +183,15 @@ kwl_compose_set_put(
 	(void)set;
 }
 
+/* Grants a quiet picture at once, as an idle render thread does (ws213-p004). */
+int
+kwl_compose_want_layer(
+	struct kwl_server *server)
+{
+	(void)server;
+	return 1;
+}
+
 /* Submits nothing. */
 VkResult
 kwl_compose_submit_quiet(

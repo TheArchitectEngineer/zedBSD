@@ -10,17 +10,5 @@ cc -std=c99 -D_POSIX_C_SOURCE=200809L -O2 -Wall -Wextra -Werror -Iinclude -Isrc 
 	-o "$out/object-index-host-test"
 "$out/object-index-host-test"
 
-# The WS141 driver test, with the two symbols its link lacks (ws211-tests/ws141-link-stubs.c).
-. plan/ws141/tests/vulkan-sources.sh
-mkdir -p "$out/client-headers"
-if [ ! -e "$out/client-headers/vulkan" ]; then
-	ln -s "$(pwd)/include/libc/vulkan" "$out/client-headers/vulkan"
-fi
-cc -std=c99 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -include time.h -Wall -Wextra -Werror \
-	-ffunction-sections -fdata-sections -Iplan/ws141/tests/host -I"$out/client-headers" -Iinclude -Isrc -I. \
-	plan/ws141/tests/vulkan-device-host-test.c plan/ws141/tests/vulkan-client-pipeline-host.c plan/ws141/tests/display-lock-host.c \
-	plan/ws211/tests/ws141-link-stubs.c \
-	src/drivers/gpu/bcm2711/v3d-memory.c src/drivers/gpu/bcm2711/mmu.c \
-	userland/desktop/libvulkan/wire.c userland/desktop/libvulkan/codec.c userland/desktop/libvulkan/objects.c \
-	$ws141_vulkan_sources -Wl,--gc-sections -o "$out/vulkan-device-host-test"
-"$out/vulkan-device-host-test"
+# The WS141 driver host test against the changed driver.
+sh plan/ws141/tests/vulkan-device-host-test.sh "$out/ws141-vulkan-device"

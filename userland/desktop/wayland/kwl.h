@@ -915,6 +915,22 @@ struct kwl_perf {
 	uint64_t compose_draw_cycles;
 	uint64_t compose_acquire_cycles;
 	uint64_t compose_present_cycles;
+	/*
+	 * The render thread's steps of a frame (ws211-p010): frames, those that
+	 * copied host images, and the sums and longest of the Begins, the
+	 * encoding of the list, the drawing's End (the kernel's decode), the
+	 * submit and the presents.
+	 */
+	uint32_t rec_frames;
+	uint32_t rec_copied;
+	uint64_t rec_begin_cycles;
+	uint64_t rec_encode_cycles;
+	uint64_t rec_end_cycles;
+	uint64_t rec_submit_cycles;
+	uint64_t rec_present_cycles;
+	uint64_t rec_end_max_cycles;
+	uint64_t rec_submit_max_cycles;
+	uint64_t rec_present_max_cycles;
 	/* wl_shm: images copied, and the CPU time of the copies. */
 	uint32_t shm_copies;
 	uint64_t shm_copy_cycles;

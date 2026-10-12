@@ -65,7 +65,8 @@ static VkResult compose_op_acquire_output(void *context, uint64_t timeout_ns, ui
 static VkResult compose_op_acquire_head(void *context, unsigned slot, uint32_t *image);
 static void compose_op_run(void *context, const struct kwl_render_job *job, struct kwl_render_outcome *outcome);
 static VkResult compose_op_wait(void *context, uint64_t timeout_ns);
-static VkResult compose_replay_commands(struct kwl_compose *compose);
+static VkResult compose_replay_commands(struct kwl_compose *compose, struct kwl_render_outcome *outcome);
+static void compose_rec_timed(struct kwl_server *server, const struct kwl_render_outcome *outcome);
 static void compose_hold(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 static void compose_log_draws(struct kwl_server *server);
 
@@ -3507,6 +3508,7 @@ compose_completed(
 	if (message->want_kind == KWL_RENDER_FRAME) {
 		compose_frame_presented(server, outcome);
 		server->perf.compose_present_cycles += outcome->run_cycles;
+		compose_rec_timed(server, outcome);
 	}
 
 	/*
@@ -3703,13 +3705,14 @@ compose_op_run(
 	unsigned signal_count;
 	unsigned index;
 	uint64_t start;
+	uint64_t mark;
 	VkResult result;
 
 	/* The list into the command buffers. */
 	compose = context;
 	memset(outcome, 0, sizeof(*outcome));
 	start = kwl_cycles();
-	result = compose_replay_commands(compose);
+	result = compose_replay_commands(compose, outcome);
 	outcome->replay_cycles = kwl_cycles() - start;
 	outcome->recorded_us = kwl_microseconds();
 	outcome->present_result = VK_SUCCESS;
@@ -3761,7 +3764,11 @@ compose_op_run(
 		submit.commandBufferCount = 2U;
 		submit.pCommandBuffers = buffers;
 	}
+
+	/* The submission, timed for KWL PERF rec. */
+	mark = kwl_cycles();
 	result = vkQueueSubmit(compose->queue, 1U, &submit, compose->fence);
+	outcome->submit_cycles = kwl_cycles() - mark;
 	outcome->queued_us = kwl_microseconds();
 	if (result != VK_SUCCESS) {
 		outcome->result = result;
@@ -3774,7 +3781,8 @@ compose_op_run(
 		return;
 	}
 
-	/* The output's image goes to the display after the commands. */
+	/* The output's image goes to the display after the commands; the presents are timed together. */
+	mark = kwl_cycles();
 	memset(&present, 0, sizeof(present));
 	present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	present.waitSemaphoreCount = 1U;
@@ -3801,6 +3809,7 @@ compose_op_run(
 	}
 
 	/* The present's end, and the render thread's time of the job. */
+	outcome->present_cycles = kwl_cycles() - mark;
 	outcome->presented_us = kwl_microseconds();
 	outcome->run_cycles = kwl_cycles() - start;
 }
@@ -3840,9 +3849,11 @@ compose_op_wait(
  */
 static VkResult
 compose_replay_commands(
-	struct kwl_compose *compose)
+	struct kwl_compose *compose,
+	struct kwl_render_outcome *outcome)
 {
 	VkCommandBufferBeginInfo begin;
+	uint64_t mark;
 	VkResult result;
 
 	/*
@@ -3853,31 +3864,85 @@ compose_replay_commands(
 	memset(&begin, 0, sizeof(begin));
 	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	result = vkBeginCommandBuffer(compose->copy_command, &begin);
-	if (result != VK_SUCCESS)
-		return result;
 
-	/* The host images' copies, which run before the drawing in the same submission. */
-	compose->frame_copies = kwl_host_images_record(&compose->list, compose->copy_command);
-	result = vkEndCommandBuffer(compose->copy_command);
-	if (result != VK_SUCCESS)
-		return result;
+	/*
+	 * The host images' copies, which run before the drawing in the same
+	 * submission.  Most frames copy none, and then copy_command is neither
+	 * begun nor ended: each is a round trip to the kernel (ws211-p010), and
+	 * compose_op_run submits copy_command only when frame_copies says so.
+	 */
+	compose->frame_copies = 0U;
+	if (compose->list.copy_count != 0U) {
+		mark = kwl_cycles();
+		result = vkBeginCommandBuffer(compose->copy_command, &begin);
+		outcome->begin_cycles += kwl_cycles() - mark;
+		if (result != VK_SUCCESS)
+			return result;
+
+		/* The copies the list took, ended into their own command buffer. */
+		compose->frame_copies = kwl_host_images_record(&compose->list, compose->copy_command);
+		result = vkEndCommandBuffer(compose->copy_command);
+		if (result != VK_SUCCESS)
+			return result;
+
+		/* The frame's KWL PERF rec line counts it among those that copied. */
+		outcome->copied = 1U;
+	}
 
 	/* The joined quads' vertices where the batch's draws read them. */
 	if (compose->list.vertex_used != 0U)
 		memcpy(compose->batch.map, compose->list.vertices, compose->list.vertex_used);
 
 	/* The drawing's command buffer begun afresh. */
+	mark = kwl_cycles();
 	result = vkBeginCommandBuffer(compose->command, &begin);
+	outcome->begin_cycles += kwl_cycles() - mark;
 	if (result != VK_SUCCESS)
 		return result;
 
 	/* The drawing's operations, in the order it wrote them. */
 	kwl_list_replay(&compose->list, compose->command);
+
+	/* The End sends the encoded operations, which the kernel decodes before it answers. */
+	mark = kwl_cycles();
 	result = vkEndCommandBuffer(compose->command);
+	outcome->end_cycles = kwl_cycles() - mark;
 	if (result != VK_SUCCESS)
 		return result;
 
 	/* Succeeded: the command buffers are ready to submit. */
 	return VK_SUCCESS;
+}
+
+/* Adds a frame's render-thread steps to the window's KWL PERF rec line (ws211-p010). */
+static void
+compose_rec_timed(
+	struct kwl_server *server,
+	const struct kwl_render_outcome *outcome)
+{
+	struct kwl_perf *perf;
+	uint64_t encode;
+
+	/* The encoding is the replay less its Begins and its End (and a copy's End, which is short). */
+	perf = &server->perf;
+	encode = 0U;
+	if (outcome->replay_cycles > outcome->begin_cycles + outcome->end_cycles)
+		encode = outcome->replay_cycles - outcome->begin_cycles - outcome->end_cycles;
+
+	/* The window's sums. */
+	perf->rec_frames++;
+	perf->rec_copied += outcome->copied;
+	perf->rec_begin_cycles += outcome->begin_cycles;
+	perf->rec_encode_cycles += encode;
+	perf->rec_end_cycles += outcome->end_cycles;
+	perf->rec_submit_cycles += outcome->submit_cycles;
+	perf->rec_present_cycles += outcome->present_cycles;
+
+	/* The window's longest End, submit and presents. */
+	if (outcome->end_cycles > perf->rec_end_max_cycles)
+		perf->rec_end_max_cycles = outcome->end_cycles;
+	if (outcome->submit_cycles > perf->rec_submit_max_cycles)
+		perf->rec_submit_max_cycles = outcome->submit_cycles;
+	if (outcome->present_cycles > perf->rec_present_max_cycles)
+		perf->rec_present_max_cycles = outcome->present_cycles;
 }
