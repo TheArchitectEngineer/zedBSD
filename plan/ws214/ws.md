@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: P2（p001 の調べと設計から）
-Resume point: p003a は実装・host 試験・build 済み（main 4438fc682、[phase003a/phase.md](phase003a/phase.md)）、clear は Pi（焼き直しの後、受け入れ 3）と T1（i915・Venus）の後。p003b（UAPI の承認済み 2026-10-12、4.2 のとおり）を P2 が実装中。
+Resume point: p003a・p003b は実装・host 試験・build 済み（main 114e7c68c、[phase003a](phase003a/phase.md)・[phase003b](phase003b/phase.md)、hvs-load で Pi の帯域を測る手順は phase003b）、clear は Pi（焼き直しの後）と T1（i915・Venus）の後。p004（libvulkan の overlay）を P2 で着手（clear は WS141 p016 B-u の Pi の受け入れの後）。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -37,7 +37,7 @@ Pi 4 で窓の drag と dock・undock のアニメが 60fps（窓の前後の入
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 調べと設計（HVS の plane の能力と制約、口、compositor の載せ方、fallback、試験）→ design-reviewer | planning（第 3 版、review-2 を反映、Q1 の確かめの前） | — |
 | p003a | kernel（core と bcm2711、担当 1 人、WS141 p016 B-k2 を含む、**承認不要**）: display の op の gate 外し（table_lock・pin・`adoption_wait`）、状態から作る list と 3 slot の差し替え、primary も coalesce（settle・EBUSY をやめる）、IRQ の採用の記録と waitq、既存の op（PRESENT・PRESENT_SYNC・CURSOR_*）を状態の変更に、借りの thread の文脈の解放、lease の失効、copy の経路、console の省略、underrun の計数。UAPI と WAIT は今のまま | 実装と host・build 済み（4438fc682）、Pi・T1 待ち | —（承認不要） |
-| p003b | kernel（p003a と同じ担当、**UAPI の承認の後**）: UAPI（COMMIT・OVERLAY_INFO・HAS_OVERLAYS、WAIT を眠る形に、番号を controller の 1 本に）、overlay（unscaled・scaled・LBM）、帯域の予算と ENOSPC、値の出典の表と GPL の監査、Pi の帯域の実測（`hvs-load`） | in-progress（P2、UAPI の承認済み 2026-10-12） | p003a、UAPI の承認（ユーザー、p001 の 9 の 1） |
+| p003b | kernel（p003a と同じ担当、**UAPI の承認の後**）: UAPI（COMMIT・OVERLAY_INFO・HAS_OVERLAYS、WAIT を眠る形に、番号を controller の 1 本に）、overlay（unscaled・scaled・LBM）、帯域の予算と ENOSPC、値の出典の表と GPL の監査、Pi の帯域の実測（`hvs-load`） | 実装と host・build 済み（114e7c68c）、Pi・T1 待ち | p003a、UAPI の承認（ユーザー、p001 の 9 の 1） |
 | p004 | libvulkan: overlay の plane、plane ごとの present、切り替えの保留（`min_primary`、置き換え、期限と単独の flush）と primary との 1 commit、隠す約束、位置だけの fast path、借りと acquire、失敗した保留は primary ごと捨てる | 案（未投入） | p003b、WS141 p016 B-u の Pi の受け入れ |
 | p005 | compositor: drag の間の窓の plane と上の帯（bar）の plane（焼き、入る・戻る、C への持ち主の移し、fallback） | 案（未投入） | p004、WS213 p004 の clear、ユーザーの判断（glass の blur・中身の停止） |
 | p006 | compositor: dock・undock・pull back の HVS の拡大縮小 | 案（未投入） | p005、p003b の帯域の実測 |
