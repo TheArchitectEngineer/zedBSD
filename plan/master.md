@@ -902,6 +902,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 注意（2026-10-09 P1 の所見）: BUG-274 の直しで `ps -o args` が command line の全体を出すようになった。guest の試験で `ps -A -o pid,args | grep <語>` で選んで kill する形は、その語が試験自身を走らせる shell の行にも出ると自分を kill する（ws172 の passkey の FAIL の原因）。新しく書く試験は `ps -A -o pid,comm` で選ぶ。既存の約 380 箇所は一斉に直さず、FAIL した時に追従する（試験の整理の基準を当てる）。
 
 | tool | 用途 | 使い方 |
+| [ws213/tests/kd-host-test.sh](ws213/tests/kd-host-test.sh)（WS213 p007、2026-10-12） | kernel の K-D の計数（sched の起床・横取りの遅れ、metadata_lock の待ち・持ち、kern.perf=1 の行）の回帰、ASan・UBSan | host で `sh plan/ws213/tests/kd-host-test.sh`、PASS で終わる |
 | --- | --- | --- |
 | [q1-clean.sh](tools/q1-clean.sh)・[fresh-out.sh](tools/fresh-out.sh)・[files/host-clean.sh](tools/files/host-clean.sh)（2026-10-06） | 削除は Q1 の pipeline（ユーザーの規則）。host の試験の script は rm を持たず、`fresh_out NAME`（新しい `NAME.run.*` を作り NAME を symlink で向ける）か `build/tmp/` の mktemp を使う。Q1 が `q1-clean.sh WORKTREE` で古い run・tmp・old を消す | `. plan/tools/fresh-out.sh; fresh_out "$out"`、Q1: `sh plan/tools/q1-clean.sh /home/awe/zedBSD-worktrees/p1` |
 | [gtk4-linux/](tools/gtk4-linux/README.md)（WS114 から移した、2026-10-06） | Linux の Keiland の上の標準 GTK4 の装飾（CSD・SSD）の試験と session の起動 | `decoration-wire.py`・`start-session.sh` など、README を参照 |
