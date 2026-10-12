@@ -26,6 +26,7 @@
 #include "../../tests/vkdemo/display.h"
 #include "displays.h"
 #include "draw-list.h"
+#include "render-thread.h"
 #include "scene.h"
 
 /* Bound the swapchain images and the buffers one frame may sample. */
@@ -469,6 +470,28 @@ struct kwl_compose {
 	uint64_t frame_start_cycles;
 	uint64_t frame_start_ms;
 	/*
+	 * The render thread (render-thread.c, ws213-p004): it acquires, records
+	 * the list, submits, presents and waits for the fence.  render_started
+	 * says it runs.  want_kind and want_number are the want the main thread
+	 * last gave it (want_heads its heads), ready the ready the main thread
+	 * holds for it (ready_valid: one is held, not answered yet); park_depth
+	 * counts the parks the main thread is inside (the thread is parked
+	 * while it is not 0).  walk_cycles is the walk of the drawing in
+	 * flight, kept for its KWL PERF walk sample at its completion;
+	 * frame_number the frame number it was given.
+	 */
+	struct kwl_render_thread render;
+	unsigned render_started;
+	enum kwl_render_kind want_kind;
+	uint64_t want_number;
+	unsigned want_head_count;
+	unsigned want_heads[KWL_RENDER_HEADS];
+	struct kwl_render_message ready;
+	unsigned ready_valid;
+	unsigned park_depth;
+	uint64_t walk_cycles;
+	uint64_t frame_number;
+	/*
 	 * The backdrop (backdrop.c); the framebuffer of the frame being
 	 * recorded, which its pass is taken up again on; and the blurred scene
 	 * the glass samples from now on in the frame (VK_NULL_HANDLE: the
@@ -556,6 +579,11 @@ int kwl_batch_add(struct kwl_server *server, struct kwl_list *command, const flo
 void kwl_batch_flush(struct kwl_server *server, struct kwl_list *command);
 void kwl_compose_count_commands(struct kwl_server *server, unsigned pushes, unsigned draws);
 VkResult kwl_compose_submit_quiet(struct kwl_server *server);
+int kwl_compose_render_start(struct kwl_server *server);
+int kwl_compose_want_layer(struct kwl_server *server);
+void kwl_compose_park(struct kwl_server *server);
+void kwl_compose_unpark(struct kwl_server *server);
+void kwl_compose_forget(struct kwl_server *server, unsigned output, unsigned heads_mask);
 uint64_t kwl_compose_generation(struct kwl_compose *compose);
 void kwl_compose_list_begin(struct kwl_compose *compose);
 void kwl_layers_open(struct kwl_server *server);
@@ -622,11 +650,10 @@ void kwl_heads_sync(struct kwl_server *server);
 void kwl_heads_close_display(struct kwl_server *server, VkDisplayKHR display);
 void kwl_heads_close_all(struct kwl_server *server);
 int kwl_heads_lost(struct kwl_server *server);
-unsigned kwl_heads_acquire(struct kwl_server *server);
+unsigned kwl_heads_wanted(struct kwl_server *server, unsigned *slots, unsigned room);
+unsigned kwl_heads_take(struct kwl_server *server, const struct kwl_render_held *held);
 void kwl_heads_record(struct kwl_server *server, struct kwl_list *command, VkImage source);
-unsigned kwl_heads_waits(struct kwl_server *server, VkSemaphore *semaphores, VkPipelineStageFlags *stages, unsigned room);
-unsigned kwl_heads_signals(struct kwl_server *server, VkSemaphore *semaphores, unsigned room);
-void kwl_heads_present(struct kwl_server *server);
+void kwl_heads_presented(struct kwl_server *server, const struct kwl_render_outcome *outcome);
 void kwl_heads_frame_skipped(struct kwl_server *server);
 int kwl_displays_apply(struct kwl_server *server, const struct kwl_display_config *wanted, int *saved);
 int kwl_displays_set_shown(struct kwl_server *server, const char *key, unsigned shown, int *saved);

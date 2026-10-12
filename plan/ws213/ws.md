@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: P4（2026-10-12 ユーザー「コンポジタのマルチスレッド化も入れてください。」、p001 の設計から）
-Resume point: p003（S1、描く物の一覧）は実装済み（agent/p4 db29b07f5、host 試験 PASS・build warning 0、[phase003/phase.md](phase003/phase.md)）、T1 と Pi（walk の閾値、`KWL PERF walk`）の確かめ待ち。p002 は Pi・T1 の確認待ち。p001 の第 6 版は Q1 の確認とユーザーの review 待ち。
+Resume point: p004（R・C・I の thread）は段 I・C・R を実装済み（agent/p4 f63ea685d、host 試験 4 本 PASS（TSan 0）・build warning 0、[phase004/phase.md](phase004/phase.md)）、T1（i915・Venus・Linux の TSan の guest）と Pi（6.4 の場面）の確かめ待ち。p003 は T1-547 と Pi place17 の結果で Q1 が判定。p002 は Pi・T1 の確認待ち。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -42,6 +42,6 @@ Pi 4 で App Home の開閉・drag・app の起動の間も、cursor が 60fps �
 | [p001](phase001/phase.md) | 調査と設計（main loop の内訳と Pi の実測、描く物の一覧＋2 段の pull、不変条件、Vulkan の持ち主、cursor の thread・入力の thread と WS141 の依存、試験） | planning（第 6 版、review-5 で S2 条件付き可、Q1 の確認とユーザーの review 待ち） |
 | [p002](phase002/phase.md) | M0（main loop の区間・cursor の present の内訳・event_us）と C0（cursor の present を 1 refresh に 1 回） | in-progress（main 41bd7a5a4 まで、Pi・T1 の確認待ち） |
 | [p003](phase003/phase.md) | S1: display list（同じ thread で再生、等価の試験、walk の費用を測る） | in-progress（実装済み、T1・Pi の確かめ待ち） |
-| [p004](phase004/phase.md) | S2: 描画 thread・cursor の thread・入力の thread（2 段の pull、park、R→M の通り道） | planned（p003 の閾値か WS211 の後） |
+| [p004](phase004/phase.md) | S2: 描画 thread・cursor の thread・入力の thread（2 段の pull、park、R→M の通り道） | in-progress（段 I・C・R 実装済み、T1・Pi の確かめ待ち） |
 | [p005](phase005/phase.md) | S3: 作業 thread（glyph・壁紙・大きな字） | planned |
 | [p006](phase006/phase.md) | 規約の全文の見直し | planned |

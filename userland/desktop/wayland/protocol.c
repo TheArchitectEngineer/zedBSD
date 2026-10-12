@@ -118,6 +118,7 @@ kwl_dispatch(
 	struct kwl_object *created;
 	uint32_t new_id;
 	enum kwl_kind kind;
+	uint64_t mark;
 	int error;
 
 	/* Unknown IDs cannot select another client's protocol objects or GPU resources. */
@@ -200,7 +201,10 @@ kwl_dispatch(
 		break;
 	case KWL_GPU_OBJECT:
 	case KWL_FACTORY:
+		/* A GPU buffer's import calls Vulkan outside a walk (KWL PERF pass vk_outside_max_us, ws213-p004). */
+		mark = kwl_cycles();
 		error = kl_backend_gpu_request(kwl_gpu_host(), kwl_gpu_resource(object), opcode, bytes, size);
+		kwl_perf_vk_outside(client->server, kwl_cycles() - mark);
 		break;
 	case KWL_SHM:
 	case KWL_SHM_POOL:

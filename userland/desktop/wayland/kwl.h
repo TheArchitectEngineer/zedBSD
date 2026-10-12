@@ -988,9 +988,17 @@ struct kwl_perf {
 	uint32_t pass_count;
 	uint64_t pass_cycles[KWL_PERF_PASSES];
 	uint64_t pass_max_cycles;
+	/*
+	 * The longest of the main thread's Vulkan work outside a walk (a GPU
+	 * buffer's import or release, the wl_shm copies and their images, a
+	 * wait for the frame in flight), in cycles (KWL PERF pass
+	 * vk_outside_max_us, ws213-p004 6.4).
+	 */
+	uint64_t vk_outside_max_cycles;
 };
 
 uint64_t kwl_cycles(void);
+void kwl_perf_vk_outside(struct kwl_server *server, uint64_t cycles);
 
 /*
  * The compositor: one per process, alive from start to exit.
@@ -2043,6 +2051,7 @@ int kwl_window_leave_fullscreen(struct kwl_object *surface);
 void kwl_window_centre(struct kwl_server *server, struct kwl_object *surface);
 int kwl_fence_ready(struct kwl_server *server, struct kwl_object *surface);
 int kwl_compose_waiting(struct kwl_server *server);
+void kwl_compose_want_frame(struct kwl_server *server);
 void kwl_compose_poll(struct kwl_server *server);
 int kwl_glass_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_glass_motion(struct kwl_server *server);

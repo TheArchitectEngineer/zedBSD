@@ -215,6 +215,13 @@ kwl_schedule(
 	server->perf.cursor_cycles += kwl_cycles() - part;
 
 	/*
+	 * A frame to draw is wanted now, before the frame pacing's wait: the
+	 * render thread acquires its images meanwhile (ws213-p004, design 4.1).
+	 */
+	if (server->dirty || server->damaged)
+		kwl_compose_want_frame(server);
+
+	/*
 	 * The windows the last frame told get a moment to commit (frame
 	 * pacing), unless the pointer moved and waits to be shown, or App Home
 	 * or Wiseview was asked to open or close (ws099-p002), or the

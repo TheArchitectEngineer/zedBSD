@@ -3,7 +3,7 @@
 # ws213-p004: S2: 描画 thread・cursor の thread・入力の thread（2 段の pull）
 
 Parent: [WS213](../ws.md)
-Status: in-progress（2026-10-12 Q1「p004 に進む」。段 I（入力の thread、main に merge 済み）・段 C（cursor の thread）を実装、R は次）
+Status: in-progress（2026-10-12 Q1「p004 に進む」。段 I・C（main に merge 済み）・R（描画の thread）を実装、T1・Pi の確かめ待ち）
 
 ## 依存と再開の条件（review-4 L-f）
 
@@ -83,3 +83,34 @@ Phase disposition: normal
 - `input-thread-host-test.sh` PASS、`list-replay-host-test.sh` PASS（一覧の外の vkCmd* の例外を cursor-plane.c から cursor-thread.c に替えた）。
 - build（warning 0）: rpi4・amd64・keiland-linux。style-check: 新しい・触った file の指摘は plane_find の元からの 3 件だけ（p006）。
 - 未実施: Pi・T1。Pi では段 C で初めて画面の cursor が M と切り離される（WS141 p016 B-u と合わせて判定）。
+
+### 段 R: 描画の thread（2 段の pull、2026-10-12 P4）
+
+- **新しい file**: `userland/desktop/wayland/render-thread.{c,h}`（R の pull の手順だけ。Vulkan の仕事は compose.c が渡す 4 つの op（出力の acquire（50ms ずつ）、head の acquire（待たない）、一覧の記録・submit・present、fence の待ち（100ms ずつ））で行い、host 試験は fake の op で同じ code を動かす）。
+  - want（番号・種類（コマ / layer の絵）・要る heads）は M が `kwl_render_set_want` で置く。番号は種類が変わった時（と下ろした後に立て直した時）だけ進み、heads の list の置き換えでは進まない（4.1）。
+  - R の 1 歩（`kwl_render_step`）: IDLE で want を見て、コマなら持っていない出力の画像と持っていない heads を acquire し、持っている全部を付けて ready。ANSWER では M の答えを待つ間 Vulkan を呼ばない（3.2 の不変条件）。取り消しなら画像を持ったまま IDLE へ。一覧（job）なら want を compare-and-clear で下ろし、job の画像を帳簿から落とし、記録・submit・present、FLIGHT で fence を待って完了を知らせる。出力の acquire の失敗は want を compare-and-clear で下ろして知らせる。完了は必ず次の ready より前（R→M の 1 本の FIFO、4.5）。完了の message は job を取る前に作る（失われない）。
+  - park（`kwl_render_park`、M は 2 秒まで待つ）: R は飛んでいるコマ（と、一覧を渡されてまだ取っていない job）を終えてから止まる。止まっている間に M は `kwl_render_forget` で作り直す swapchain の画像を帳簿から落とせる。stop も同じ（飛んでいるコマの後）。
+- **compose.c**: `kwl_compose_draw` は ready（今の want の番号のコマ）が来ていれば walk して一覧を R に渡す（`in_flight` は渡してから完了を当てるまで、`server->frame++` は渡した時）、来ていなければ want だけ置いて 0 を返す。want は `kwl_schedule` が dirty・damaged の時に pacing の待ちの前に置く（R が待ちの間に acquire を済ませる）。layer の静かな絵（`kwl_layers_tick`）は `kwl_compose_want_layer` が ready を返した時に walk して `kwl_compose_submit_quiet` で渡す。R の message は `kwl_compose_poll`（毎 pass、wake pipe を空にした後）で順に当てる: ready は保存（want が違えば即取り消し）、acquire の失敗は出力の消失か失敗、完了は今の `kwl_compose_complete` の後ろ半分（layer の完了、scene、保持した buffer の解放、frame callback、shot、pacing）と present の結果（`switch_proving`・`output_lost`・`kwl_displays_move_settled`）と heads の present の結果と `KWL LAT recorded/queued/submit`・`KWL DRAWS` の行。fence の fd の export と M の fence の poll はやめた（`kwl_compose_waiting` は常に 0）。`kwl_compose_quiesce`・`kwl_compose_complete` は R の完了を待って当てる。
+- **heads.c**: `kwl_heads_acquire`・`kwl_heads_waits`・`kwl_heads_signals`・`kwl_heads_present` を、M の `kwl_heads_wanted`（want の heads）・`kwl_heads_take`（walk で R の持つ head を全部描く、持っていない要る head は dirty・missed、失敗は lost）・`kwl_heads_presented`（完了で dirty・lost を当てる）と、R の op（compose.c、job の heads で wait・signal・present）に分けた。R は head の状態を書かない（4.1）。
+- **park と swapchain**: `kwl_compose_park`・`kwl_compose_unpark`（入れ子）・`kwl_compose_forget`（帳簿から落とし、出す前の ready を取り消し、出力の画像を持っていたら acquire の semaphore を作り直す、review-3 M-5）。出力の open・close、`kwl_heads_sync`、`heads_close` を park の中で行う。出力の close では want も下ろす。
+- **M の queue・pool の使用**: walk の外の `import_layout`（import の溢れ）と shm の `image_layout` は `kwl_render_wait_idle`（R が job を持っていない）の後に、glass の `vkDeviceWaitIdle` 4 か所は `kwl_compose_quiesce` の後に。R の Vulkan は job の外では acquire（swapchain・semaphore）だけなので、job の無い間の M の作成・破棄・submit とは重ならない（Vulkan の外部同期: command pool・queue・descriptor pool は job の間 R だけ）。
+- **設計からの違い（記録）**:
+  1. object の破棄を R の step 1 にしていない（4.2・M-C）。M の破棄は今どおり飛んでいるコマが無い時（quiesce・retire の in_flight の確かめ）だけで、その時 R が呼ぶのは acquire だけなので重ならない。
+  2. client の破棄の延ばし（4.9）はしていない。`objects.c:554` の quiesce は R の完了を待つ（今と同じく最大 1 コマ M が止まる）。
+  3. walk の外の host image の staging の書き込み（IME の tick の glyph など、5 節 H-b）は今のまま（今も GPU の copy と重なり得る種類で、1 コマの乱れ）。p005 で W と合わせて扱う。
+  4. Mesa の build の `queue_lock`（3.3）は足していない。Linux・FreeBSD では plane が開かず C は queue を使わず、M は job の間 queue を使わない（上）ので、queue を同時に使う thread が無い。
+  5. 一覧の buffer は 1 つ（M は飛んでいるコマがある間 walk しないので足りる）。
+- **計数**: `KWL PERF pass` に `walk_max_us=`（窓の walk の最長）と `vk_outside_max_us=`（M の walk の外の Vulkan: GPU buffer の import・解放、shm の写し、飛んでいるコマの待ちの最長）。`KWL PERF compose` の `draw_ms` は M の walk と渡しまで、`acquire` と `submit+present` は R の時間。`KWL LAT acquired` は R の acquire の時刻（ready を当てた時に出す）、`recorded`・`queued`・`submit` は R の時刻（完了を当てた時に出す）、`shown` は M が完了を当てた時（11 節 4）。
+
+確かめ（host、2026-10-12）:
+- `sh plan/ws213/tests/render-thread-host-test.sh` → PASS（145 checks、plain と ThreadSanitizer）。1 歩ずつ（9 (b)(c)(e)(h)）: want が無いと acquire しない、want で出力と要る head を acquire して ready、heads の list だけでは番号が進まない、種類が変われば番号が進み取り消しで画像を持ち続け次の ready で acquire し直さない、head を二度 acquire しない、一覧で持つ head も全部 present、完了が次の ready より前、古い番号の一覧は新しい want を下ろさない（compare-and-clear）、acquire の失敗で want が下りて知らせ立て直すまで acquire しない、失敗の間に M が立て直した want は残る、park は飛んでいるコマの後・ready の答え待ちでも止まり何も acquire しない、forget で落とした画像は acquire し直す、渡された一覧は park より先に走る、submit できなかった job はすぐ完了。thread: 本物の R と、want・walk・答え・取り消し・park・forget を乱数で 10 万歩の M、op が walk の間と lock を持ったまま呼ばれないこと、acquire していない画像を present しないこと（初めの版で 1 件の取りこぼしを見つけて直した: park が「渡されたがまだ取っていない一覧」を残して止まり、forget の後にその一覧を走らせていた → 一覧が渡されている間は park・stop を待たせる）、TSan の報告 0。
+- 他の host 試験 PASS（input-thread・cursor-due・list-replay）。
+- build（warning 0）: rpi4・amd64・keiland-linux。ThreadSanitizer 付きの Linux の build も通る: `make -j16 KEILAND_ASK=n KEILAND_LINUX_BUILD=build/keiland-linux-tsan CC="gcc -fsanitize=thread -Wno-tsan" KEILAND_LINUX_OPT="-O1 -g" keiland-linux`（`-Wno-tsan` は既存の `libkeiland-backend/audio/pump.c:815` の `atomic_thread_fence` の警告のため。その pump の報告は既存の thread どうしの物として扱う）。
+- 試験の道具: `plan/ws213/tests/uinput-drive.c`（guest の uinput の mouse と keyboard、`all` で円 60 秒・super 10 回・drag 30 秒）、`plan/ws213/tests/tsan.supp`（Mesa の driver と LLVM の中だけ）。
+- 未実施: T1（i915・Venus・Linux の TSan の guest）と Pi。
+
+### T1 と Pi で見る事（段 I・C・R をまとめて）
+
+- T1（i915 の 5330・Venus の QEMU、30 分まで）: shot.c の画が前と同じ、`KWL VULKAN_ERROR`・`KWL FAILED` なし、App Home の開閉・窓の drag・終了（終了で `KWL FAILED site=park` が出ないこと）、`KWL PERF pass`・`KWL PERF cursor` の行が出ること。FreeBSD の build（`plan/tools/keiland-freebsd/backend-test.sh`）。
+- T1（WS131 の Debian の QEMU+KVM guest、受け入れ 3）: 上の TSan の build を guest に入れ、`TSAN_OPTIONS="suppressions=plan/ws213/tests/tsan.supp"` で compositor を 10 分。guest の中で `gcc -O1 plan/ws213/tests/uinput-drive.c -lm -o uinput-drive && sudo ./uinput-drive all`、加えて app の起動を 1 回。判定は WS213 の thread（input・render、Linux では cursor の thread は plane が無く動かない）と lock に触れる報告 0。既存の thread どうしの報告は `tsan.supp` に理由付きで足し Q1 に ticket を頼む。
+- Pi（1 boot、ユーザーか Q1 の手で）: 場面 (1) pointer だけ 10 秒、(2) pointer を動かしながら App Home を 5 回開閉、(3) 窓の drag 10 秒、(4) Music・Settings の起動 1 回ずつ。各場面の `KWL PERF cursor` の `box_lag_p99_us` ≤ 16700（必達）と `box_lag_max_us`（超えたら `KWL CURSOR_LAG` の行を kernel の `hold_us` の行と並べる）、`KWL PERF pass` の `pass_max_us` ≤ 33300（(1)〜(3)）と `pass_p99_us`（(4)）、`vk_outside_max_us` ≤ 16700、`KWL PERF cursor` の `presents`・`present_max_us`、`KWL LAT` の入力→walk（`draw`）が p003 より短いか。画面の cursor の 60fps は WS141 p016 (B) の後。

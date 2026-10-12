@@ -301,6 +301,14 @@ import_layout(
 	VkCommandBuffer command;
 	VkResult status;
 
+	/*
+	 * The render thread records and submits nothing meanwhile: the frames'
+	 * pool and the queue are used here, at an import, outside a walk
+	 * (ws213-p004).
+	 */
+	if (compose->render_started)
+		kwl_render_wait_idle(&compose->render);
+
 	/* A one-time command buffer. */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
