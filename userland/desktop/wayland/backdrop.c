@@ -45,9 +45,9 @@
 static VkResult backdrop_create(struct kwl_compose *compose, uint32_t width, uint32_t height);
 static VkResult backdrop_pass(struct kwl_compose *compose);
 static VkResult backdrop_target(struct kwl_compose *compose, struct kwl_backdrop_target *target);
-static void backdrop_begin_small(struct kwl_server *server, VkCommandBuffer command, const struct kwl_backdrop_target *target);
-static void backdrop_blur(struct kwl_server *server, VkCommandBuffer command, const struct kwl_backdrop_target *from, const struct kwl_backdrop_target *to, float step_x, float step_y);
-static void backdrop_viewport(VkCommandBuffer command, uint32_t width, uint32_t height);
+static void backdrop_begin_small(struct kwl_server *server, struct kwl_list *command, const struct kwl_backdrop_target *target);
+static void backdrop_blur(struct kwl_server *server, struct kwl_list *command, const struct kwl_backdrop_target *from, const struct kwl_backdrop_target *to, float step_x, float step_y);
+static void backdrop_viewport(struct kwl_list *command, uint32_t width, uint32_t height);
 
 /*
  * Starts drawing the scene under a window into the backdrop: the output's
@@ -58,7 +58,7 @@ static void backdrop_viewport(VkCommandBuffer command, uint32_t width, uint32_t 
 int
 kwl_backdrop_begin(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	struct kwl_compose *compose;
 	struct kwl_backdrop *backdrop;
@@ -87,7 +87,7 @@ kwl_backdrop_begin(
 
 	/* The output's pass ends, and the scene is drawn small. */
 	kwl_batch_flush(server, command);
-	vkCmdEndRenderPass(command);
+	kwl_list_end_render_pass(command);
 	backdrop_begin_small(server, command, &backdrop->targets[0]);
 
 	/* Succeeded: the caller draws the scene. */
@@ -102,7 +102,7 @@ kwl_backdrop_begin(
 void
 kwl_backdrop_end(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	struct kwl_compose *compose;
 	struct kwl_backdrop *backdrop;
@@ -113,7 +113,7 @@ kwl_backdrop_end(
 	compose = server->compose;
 	backdrop = &compose->backdrop;
 	kwl_batch_flush(server, command);
-	vkCmdEndRenderPass(command);
+	kwl_list_end_render_pass(command);
 
 	/* Blurred across into the second image, then down back into the first, a few times over. */
 	for (round = 0; round < BACKDROP_ROUNDS; round++) {
@@ -128,10 +128,10 @@ kwl_backdrop_end(
 	pass.framebuffer = compose->framebuffer_now;
 	pass.renderArea.extent.width = compose->output.width;
 	pass.renderArea.extent.height = compose->output.height;
-	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_list_begin_render_pass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 	kwl_compose_bind_forget(server->compose);
 	backdrop_viewport(command, compose->output.width, compose->output.height);
-	vkCmdSetScissor(command, 0U, 1U, &compose->scissor_now);
+	kwl_list_set_scissor(command, 0U, 1U, &compose->scissor_now);
 
 	/* Output-coordinate clipping resumes only after every small-image pass has ended. */
 	compose->backdrop_recording = 0U;
@@ -480,7 +480,7 @@ backdrop_target(
 static void
 backdrop_begin_small(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_backdrop_target *target)
 {
 	struct kwl_backdrop *backdrop;
@@ -503,7 +503,7 @@ backdrop_begin_small(
 	pass.renderArea.extent.height = backdrop->height;
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
-	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_list_begin_render_pass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 	kwl_compose_bind_forget(server->compose);
 
 	/* The scene needs all source quads, including those outside the output damage. */
@@ -514,14 +514,14 @@ backdrop_begin_small(
 	memset(&scissor, 0, sizeof(scissor));
 	scissor.extent.width = backdrop->width;
 	scissor.extent.height = backdrop->height;
-	vkCmdSetScissor(command, 0U, 1U, &scissor);
+	kwl_list_set_scissor(command, 0U, 1U, &scissor);
 }
 
 /* Blurs one small image into the other along a direction (a step of one texel across or down). */
 static void
 backdrop_blur(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_backdrop_target *from,
 	const struct kwl_backdrop_target *to,
 	float step_x,
@@ -544,13 +544,13 @@ backdrop_blur(
 	glass_shape_draw(server, command, &shape);
 	server->layer_on = layer;
 	kwl_batch_flush(server, command);
-	vkCmdEndRenderPass(command);
+	kwl_list_end_render_pass(command);
 }
 
 /* Sets a viewport of a size. */
 static void
 backdrop_viewport(
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	uint32_t width,
 	uint32_t height)
 {
@@ -561,5 +561,5 @@ backdrop_viewport(
 	viewport.width = (float)width;
 	viewport.height = (float)height;
 	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(command, 0U, 1U, &viewport);
+	kwl_list_set_viewport(command, 0U, 1U, &viewport);
 }

@@ -1,0 +1,799 @@
+scene plain
+begin pass=output-pass framebuffer=output-framebuffer-0 area=0,0,1920,1080 contents=0 clears=1
+  clear 0.12549 0.188235 0.25098 1
+viewport 0 0,0,1920,1080 depth=0,1
+scissor 0 0,0,1920,1080
+vertices 0 corners offset=0
+pipeline point=0 image-alpha
+set point=0 layout=image-layout 0 set:icon:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values -0.9 -0.9 -0.4 -0.4 0 0 1 1
+draw 6 1 0 0
+set point=0 layout=image-layout 0 set:window-a:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values -0.5 -0.5 0 0 0 0 1 1
+draw 6 1 0 0
+set point=0 layout=image-layout 0 set:window-b:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values 0 -0.2 0.5 0.3 0 0 1 1
+draw 6 1 0 0
+set point=0 layout=image-layout 0 set:window-b-sub:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values 0.1 0 0.6 0.5 0 0 1 1
+draw 6 1 0 0
+set point=0 layout=image-layout 0 set:window-b:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values 0 -0.2 0.5 0.3 0 0 1 1
+draw 6 1 0 0
+set point=0 layout=image-layout 0 set:popup:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values 0.2 0.2 0.7 0.7 0 0 1 1
+draw 6 1 0 0
+set point=0 layout=image-layout 0 set:arrow:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values 0.3 0.3 0.8 0.8 0 0 1 1
+draw 6 1 0 0
+end pass
+vertices used=0 sum=0x00000000
+scene home
+begin pass=layers-pass framebuffer=layer-home-framebuffer area=0,0,1920,1080 contents=0 clears=1
+  clear 0.12549 0.188235 0.25098 1
+viewport 0 0,0,1920,1080 depth=0,1
+scissor 0 0,0,1920,1080
+vertices 0 corners offset=0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.9 -0.5 -0.8 -0.4 0 0 0 0 -90 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.9 -0.35 -0.88 -0.33 0 0 0 0 -90 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.75 -0.5 -0.65 -0.4 0 0 0 0 -75 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.75 -0.35 -0.73 -0.33 0 0 0 0 -75 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.6 -0.5 -0.5 -0.4 0 0 0 0 -60 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.6 -0.35 -0.58 -0.33 0 0 0 0 -60 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.45 -0.5 -0.35 -0.4 0 0 0 0 -45 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.45 -0.35 -0.43 -0.33 0 0 0 0 -45 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.3 -0.5 -0.2 -0.4 0 0 0 0 -30 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.3 -0.35 -0.28 -0.33 0 0 0 0 -30 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.15 -0.5 -0.05 -0.4 0 0 0 0 -15 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.15 -0.35 -0.13 -0.33 0 0 0 0 -15 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 5.96046e-08 -0.5 0.1 -0.4 0 0 0 0 5.96046e-06 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 5.96046e-08 -0.35 0.0200001 -0.33 0 0 0 0 5.96046e-06 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.15 -0.5 0.25 -0.4 0 0 0 0 15 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.15 -0.35 0.17 -0.33 0 0 0 0 15 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.3 -0.5 0.4 -0.4 0 0 0 0 30 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.3 -0.35 0.32 -0.33 0 0 0 0 30 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.45 -0.5 0.55 -0.4 0 0 0 0 45 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.45 -0.35 0.47 -0.33 0 0 0 0 45 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.6 -0.5 0.7 -0.4 0 0 0 0 60 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.6 -0.35 0.62 -0.33 0 0 0 0 60 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.75 -0.5 0.85 -0.4 0 0 0 0 75 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.75 -0.35 0.77 -0.33 0 0 0 0 75 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 batch-pipeline
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1920 1080 0 0
+vertices 0 batch-buffer offset=0
+draw 372 1 0 0
+vertices 0 corners offset=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1920 1080 0 0
+vertices 0 batch-buffer offset=16368
+draw 108 1 0 0
+vertices 0 corners offset=0
+pipeline point=0 panel-solid
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.9 0.7 -0.5 1.1 0 0 0 0 -90 70 40 40 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 batch-pipeline
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1920 1080 0 0
+vertices 0 batch-buffer offset=21120
+draw 30 1 0 0
+vertices 0 corners offset=0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0 0.9 0.02 0.92 0 0 0 0 0 90 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+end pass
+begin pass=output-pass framebuffer=output-framebuffer-1 area=0,0,1920,1080 contents=0 clears=1
+  clear 0.12549 0.188235 0.25098 1
+viewport 0 0,0,1920,1080 depth=0,1
+scissor 0 0,0,1920,1080
+vertices 0 corners offset=0
+pipeline point=0 panel-image
+set point=0 layout=panel-layout 0 set:wallpaper:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -1 -1 1 1 0 0 0 0 -100 -100 200 200 0.86 0.9 1 0.5 3 2 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+set point=0 layout=panel-layout 0 set:layer-home:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -1 -1 1 1 0 0 0 0 -100 -100 200 200 0.86 0.9 1 0.5 3 2 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 image-alpha
+set point=0 layout=image-layout 0 set:arrow:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values 0.3 0.3 0.8 0.8 0 0 1 1
+draw 6 1 0 0
+end pass
+vertices used=22440 sum=0xd6f3ed61
+scene drag
+begin pass=output-pass-load framebuffer=output-framebuffer-2 area=400,300,640,480 contents=0 clears=1
+  clear 0.12549 0.188235 0.25098 1
+viewport 0 0,0,1920,1080 depth=0,1
+scissor 0 400,300,640,480
+vertices 0 corners offset=0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.4 -0.4 0.1 0.1 0 0 0 0 -40 -40 50 50 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+scissor 0 400,300,640,44
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.39 -0.39 -0.37 -0.37 0 0 0 0 -39 -39 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+scissor 0 400,300,640,480
+pipeline point=0 image-alpha
+set point=0 layout=image-layout 0 set:window-a:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values -0.4 -0.35 0.1 0.15 0 0 1 1
+draw 6 1 0 0
+set point=0 layout=image-layout 0 set:arrow:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values 0.3 0.3 0.8 0.8 0 0 1 1
+draw 6 1 0 0
+end pass
+vertices used=0 sum=0x00000000
+scene backdrop
+begin pass=output-pass framebuffer=output-framebuffer-0 area=0,0,1920,1080 contents=0 clears=1
+  clear 0.12549 0.188235 0.25098 1
+viewport 0 0,0,1920,1080 depth=0,1
+scissor 0 0,0,1920,1080
+vertices 0 corners offset=0
+pipeline point=0 panel-image
+set point=0 layout=panel-layout 0 set:wallpaper:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -1 -1 1 1 0 0 0 0 -100 -100 200 200 0.86 0.9 1 0.5 3 2 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+end pass
+begin pass=backdrop-pass framebuffer=backdrop-framebuffer-0 area=0,0,480,270 contents=0 clears=0
+viewport 0 0,0,480,270 depth=0,1
+scissor 0 0,0,480,270
+vertices 0 corners offset=0
+pipeline point=0 panel-image
+set point=0 layout=panel-layout 0 set:wallpaper:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -1 -1 1 1 0 0 0 0 -100 -100 200 200 0.86 0.9 1 0.5 3 2 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+end pass
+begin pass=backdrop-pass framebuffer=backdrop-framebuffer-1 area=0,0,480,270 contents=0 clears=0
+viewport 0 0,0,480,270 depth=0,1
+scissor 0 0,0,480,270
+pipeline point=0 panel-blur
+set point=0 layout=panel-layout 0 set:backdrop-0:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -1 -1 1 1 0 0 0 0 -100 -100 200 200 0.86 0.9 1 0.5 3 6 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+end pass
+begin pass=backdrop-pass framebuffer=backdrop-framebuffer-0 area=0,0,480,270 contents=0 clears=0
+viewport 0 0,0,480,270 depth=0,1
+scissor 0 0,0,480,270
+set point=0 layout=panel-layout 0 set:backdrop-1:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -1 -1 1 1 0 0 0 0 -100 -100 200 200 0.86 0.9 1 0.5 3 6 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+end pass
+begin pass=output-pass-load framebuffer=output-framebuffer-0 area=0,0,1920,1080 contents=0 clears=0
+viewport 0 0,0,1920,1080 depth=0,1
+scissor 0 0,0,1920,1080
+vertices 0 corners offset=0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:backdrop-0:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.4 -0.4 0.1 0.1 0 0 0 0 -40 -40 50 50 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+end pass
+vertices used=0 sum=0x00000000
+scene heads
+barrier 0x400->0x1000 dependency=0x0 memory=0 buffers=0 images=2
+  image output-image-0 0x100->0x800 layout 1000001002->6 queues=4294967295,4294967295 aspect=0x1 levels=1 layers=1
+  image head-0-image-1 0x0->0x1000 layout 0->7 queues=4294967295,4294967295 aspect=0x1 levels=1 layers=1
+clear head-0-image-1 7 ranges=1
+  colour 0 0 0 1
+  range aspect=0x1 levels=1 layers=1
+blit output-image-0 6 -> head-0-image-1 7 regions=1 filter=1
+  from 0,0-1920,1080 to 160,0-1120,540
+begin pass=output-pass framebuffer=head-1-framebuffer-0 area=0,0,1280,720 contents=0 clears=1
+  clear 0.12549 0.188235 0.25098 1
+viewport 0 0,0,1280,720 depth=0,1
+scissor 0 0,0,1280,720
+vertices 0 corners offset=0
+pipeline point=0 panel-image
+set point=0 layout=panel-layout 0 set:wallpaper:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -1 -1 1 1 0 0 0 0 -100 -100 200 200 0.86 0.9 1 0.5 3 2 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 image-alpha
+set point=0 layout=image-layout 0 set:window-c:1 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values -0.5 -0.5 0 0 0 0 1 1
+draw 6 1 0 0
+end pass
+barrier 0x1000->0x2000 dependency=0x0 memory=0 buffers=0 images=2
+  image output-image-0 0x800->0x0 layout 6->1000001002 queues=4294967295,4294967295 aspect=0x1 levels=1 layers=1
+  image head-0-image-1 0x1000->0x1000 layout 7->1000001002 queues=4294967295,4294967295 aspect=0x1 levels=1 layers=1
+vertices used=0 sum=0x00000000
+scene bake
+begin pass=layers-pass framebuffer=layer-home-framebuffer area=0,0,1920,1080 contents=0 clears=1
+  clear 0.12549 0.188235 0.25098 1
+viewport 0 0,0,1920,1080 depth=0,1
+scissor 0 0,0,1920,1080
+vertices 0 corners offset=0
+pipeline point=0 batch-pipeline
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1920 1080 0 0
+vertices 0 batch-buffer offset=0
+draw 18 1 0 0
+vertices 0 corners offset=0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0 0.9 0.02 0.92 0 0 0 0 0 90 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+end pass
+vertices used=792 sum=0x26831adc
+scene capture
+barrier 0x1400->0x1000 dependency=0x0 memory=0 buffers=1 images=1
+  buffer scene-buffer 0x1800->0x800 queues=4294967295,4294967295 offset=0 size=18446744073709551615
+  image output-image-1 0x100->0x1000 layout 1000001002->7 queues=4294967295,4294967295 aspect=0x1 levels=1 layers=1
+copy-buffer-image scene-buffer -> output-image-1 7 regions=1
+  offset=246016 row=1920 height=1080 at 64,32 extent 48,48
+barrier 0x1000->0x400 dependency=0x0 memory=0 buffers=0 images=1
+  image output-image-1 0x1000->0x180 layout 7->1000001002 queues=4294967295,4294967295 aspect=0x1 levels=1 layers=1
+begin pass=output-pass framebuffer=output-framebuffer-1 area=0,0,1920,1080 contents=0 clears=1
+  clear 0.12549 0.188235 0.25098 1
+viewport 0 0,0,1920,1080 depth=0,1
+scissor 0 0,0,1920,1080
+vertices 0 corners offset=0
+pipeline point=0 image-alpha
+set point=0 layout=image-layout 0 set:window-a:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values -0.5 -0.5 0 0 0 0 1 1
+draw 6 1 0 0
+end pass
+barrier 0x1400->0x1000 dependency=0x0 memory=0 buffers=1 images=1
+  buffer scene-buffer 0x1800->0x1000 queues=4294967295,4294967295 offset=0 size=18446744073709551615
+  image output-image-1 0x100->0x800 layout 1000001002->6 queues=4294967295,4294967295 aspect=0x1 levels=1 layers=1
+copy-image-buffer output-image-1 6 -> scene-buffer regions=1
+  offset=0 row=1920 height=1080 at 0,0 extent 1920,1080
+barrier 0x1000->0x400 dependency=0x0 memory=0 buffers=0 images=1
+  image output-image-1 0x800->0x180 layout 6->1000001002 queues=4294967295,4294967295 aspect=0x1 levels=1 layers=1
+begin pass=output-pass-load framebuffer=output-framebuffer-1 area=0,0,1920,1080 contents=0 clears=1
+  clear 0.12549 0.188235 0.25098 1
+pipeline point=0 image-alpha
+set point=0 layout=image-layout 0 set:arrow:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values 0.3 0.3 0.8 0.8 0 0 1 1
+draw 6 1 0 0
+end pass
+vertices used=0 sum=0x00000000
+scene shot
+barrier 0x400->0x1000 dependency=0x0 memory=0 buffers=0 images=1
+  image output-image-2 0x100->0x800 layout 1000001002->6 queues=4294967295,4294967295 aspect=0x1 levels=1 layers=1
+copy-image-buffer output-image-2 6 -> shot-buffer regions=1
+  offset=0 row=0 height=0 at 0,0 extent 1920,1080
+barrier 0x1000->0x4000 dependency=0x0 memory=1 buffers=1 images=0
+  memory 0x1000->0x2000
+  buffer shot-buffer 0x1000->0x2000 queues=4294967295,4294967295 offset=0 size=18446744073709551615
+barrier 0x1000->0x2000 dependency=0x0 memory=0 buffers=0 images=1
+  image output-image-2 0x800->0x0 layout 6->1000001002 queues=4294967295,4294967295 aspect=0x1 levels=1 layers=1
+vertices used=0 sum=0x00000000
+scene home
+begin pass=layers-pass framebuffer=layer-home-framebuffer area=0,0,1920,1080 contents=0 clears=1
+  clear 0.12549 0.188235 0.25098 1
+viewport 0 0,0,1920,1080 depth=0,1
+scissor 0 0,0,1920,1080
+vertices 0 corners offset=0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.9 -0.5 -0.8 -0.4 0 0 0 0 -90 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.9 -0.35 -0.88 -0.33 0 0 0 0 -90 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.75 -0.5 -0.65 -0.4 0 0 0 0 -75 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.75 -0.35 -0.73 -0.33 0 0 0 0 -75 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.6 -0.5 -0.5 -0.4 0 0 0 0 -60 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.6 -0.35 -0.58 -0.33 0 0 0 0 -60 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.45 -0.5 -0.35 -0.4 0 0 0 0 -45 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.45 -0.35 -0.43 -0.33 0 0 0 0 -45 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.3 -0.5 -0.2 -0.4 0 0 0 0 -30 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.3 -0.35 -0.28 -0.33 0 0 0 0 -30 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.15 -0.5 -0.05 -0.4 0 0 0 0 -15 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.15 -0.35 -0.13 -0.33 0 0 0 0 -15 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 5.96046e-08 -0.5 0.1 -0.4 0 0 0 0 5.96046e-06 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 5.96046e-08 -0.35 0.0200001 -0.33 0 0 0 0 5.96046e-06 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.15 -0.5 0.25 -0.4 0 0 0 0 15 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.15 -0.35 0.17 -0.33 0 0 0 0 15 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.3 -0.5 0.4 -0.4 0 0 0 0 30 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.3 -0.35 0.32 -0.33 0 0 0 0 30 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.45 -0.5 0.55 -0.4 0 0 0 0 45 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.45 -0.35 0.47 -0.33 0 0 0 0 45 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.6 -0.5 0.7 -0.4 0 0 0 0 60 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.6 -0.35 0.62 -0.33 0 0 0 0 60 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-glass
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.75 -0.5 0.85 -0.4 0 0 0 0 75 -50 10 10 0.86 0.9 1 0.5 3 0 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.75 -0.35 0.77 -0.33 0 0 0 0 75 -35 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-solid
+set point=0 layout=panel-layout 0 set:blurred:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.9 0.6 -0.89 0.61 0 0 0 0 -90 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.88 0.6 -0.87 0.61 0 0 0 0 -88 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.86 0.6 -0.85 0.61 0 0 0 0 -86 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.84 0.6 -0.83 0.61 0 0 0 0 -84 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.82 0.6 -0.81 0.61 0 0 0 0 -82 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.8 0.6 -0.79 0.61 0 0 0 0 -80 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.78 0.6 -0.77 0.61 0 0 0 0 -78 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.76 0.6 -0.75 0.61 0 0 0 0 -76 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.74 0.6 -0.73 0.61 0 0 0 0 -74 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.72 0.6 -0.71 0.61 0 0 0 0 -72 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.7 0.6 -0.69 0.61 0 0 0 0 -70 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.68 0.6 -0.67 0.61 0 0 0 0 -68 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.66 0.6 -0.65 0.61 0 0 0 0 -66 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.64 0.6 -0.63 0.61 0 0 0 0 -64 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.62 0.6 -0.61 0.61 0 0 0 0 -62 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.6 0.6 -0.59 0.61 0 0 0 0 -60 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.58 0.6 -0.57 0.61 0 0 0 0 -58 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.56 0.6 -0.55 0.61 0 0 0 0 -56 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.54 0.6 -0.53 0.61 0 0 0 0 -54 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.52 0.6 -0.51 0.61 0 0 0 0 -52 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.5 0.6 -0.49 0.61 0 0 0 0 -50 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.48 0.6 -0.47 0.61 0 0 0 0 -48 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.46 0.6 -0.45 0.61 0 0 0 0 -46 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.44 0.6 -0.43 0.61 0 0 0 0 -44 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.42 0.6 -0.41 0.61 0 0 0 0 -42 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.4 0.6 -0.39 0.61 0 0 0 0 -40 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.38 0.6 -0.37 0.61 0 0 0 0 -38 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.36 0.6 -0.35 0.61 0 0 0 0 -36 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.34 0.6 -0.33 0.61 0 0 0 0 -34 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.32 0.6 -0.31 0.61 0 0 0 0 -32 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.3 0.6 -0.29 0.61 0 0 0 0 -30 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.28 0.6 -0.27 0.61 0 0 0 0 -28 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.26 0.6 -0.25 0.61 0 0 0 0 -26 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.24 0.6 -0.23 0.61 0 0 0 0 -24 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.22 0.6 -0.21 0.61 0 0 0 0 -22 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.2 0.6 -0.19 0.61 0 0 0 0 -20 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.18 0.6 -0.17 0.61 0 0 0 0 -18 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.16 0.6 -0.15 0.61 0 0 0 0 -16 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.14 0.6 -0.13 0.61 0 0 0 0 -14 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.12 0.6 -0.11 0.61 0 0 0 0 -12 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.1 0.6 -0.09 0.61 0 0 0 0 -10 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.08 0.6 -0.07 0.61 0 0 0 0 -8 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.06 0.6 -0.05 0.61 0 0 0 0 -6 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.04 0.6 -0.03 0.61 0 0 0 0 -4 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.02 0.6 -0.00999998 0.61 0 0 0 0 -2 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0 0.6 0.01 0.61 0 0 0 0 0 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.02 0.6 0.03 0.61 0 0 0 0 2 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.04 0.6 0.05 0.61 0 0 0 0 4 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.06 0.6 0.07 0.61 0 0 0 0 6 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.08 0.6 0.09 0.61 0 0 0 0 8 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.1 0.6 0.11 0.61 0 0 0 0 10 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.12 0.6 0.13 0.61 0 0 0 0 12 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.14 0.6 0.15 0.61 0 0 0 0 14 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.16 0.6 0.17 0.61 0 0 0 0 16 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.18 0.6 0.19 0.61 0 0 0 0 18 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.2 0.6 0.21 0.61 0 0 0 0 20 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.22 0.6 0.23 0.61 0 0 0 0 22 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.24 0.6 0.25 0.61 0 0 0 0 24 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.26 0.6 0.27 0.61 0 0 0 0 26 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.28 0.6 0.29 0.61 0 0 0 0 28 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.3 0.6 0.31 0.61 0 0 0 0 30 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.32 0.6 0.33 0.61 0 0 0 0 32 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.34 0.6 0.35 0.61 0 0 0 0 34 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.36 0.6 0.37 0.61 0 0 0 0 36 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.38 0.6 0.39 0.61 0 0 0 0 38 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.4 0.6 0.41 0.61 0 0 0 0 40 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.42 0.6 0.43 0.61 0 0 0 0 42 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.44 0.6 0.45 0.61 0 0 0 0 44 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.46 0.6 0.47 0.61 0 0 0 0 46 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.48 0.6 0.49 0.61 0 0 0 0 48 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.5 0.6 0.51 0.61 0 0 0 0 50 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.52 0.6 0.53 0.61 0 0 0 0 52 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.54 0.6 0.55 0.61 0 0 0 0 54 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.56 0.6 0.57 0.61 0 0 0 0 56 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.58 0.6 0.59 0.61 0 0 0 0 58 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.6 0.6 0.61 0.61 0 0 0 0 60 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.62 0.6 0.63 0.61 0 0 0 0 62 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.64 0.6 0.65 0.61 0 0 0 0 64 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.66 0.6 0.67 0.61 0 0 0 0 66 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0.68 0.6 0.69 0.61 0 0 0 0 68 60 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.9 0.7 -0.5 1.1 0 0 0 0 -90 70 40 40 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.5 0.8 -0.49 0.81 0 0 0 0 -50 80 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.48 0.8 -0.47 0.81 0 0 0 0 -48 80 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.46 0.8 -0.45 0.81 0 0 0 0 -46 80 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.44 0.8 -0.43 0.81 0 0 0 0 -44 80 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -0.42 0.8 -0.41 0.81 0 0 0 0 -42 80 1 1 0.86 0.9 1 0.5 3 3 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 panel-text
+set point=0 layout=panel-layout 0 set:atlas:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values 0 0.9 0.02 0.92 0 0 0 0 0 90 2 2 0.86 0.9 1 0.5 3 5 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+end pass
+begin pass=output-pass framebuffer=output-framebuffer-1 area=0,0,1920,1080 contents=0 clears=1
+  clear 0.12549 0.188235 0.25098 1
+viewport 0 0,0,1920,1080 depth=0,1
+scissor 0 0,0,1920,1080
+vertices 0 corners offset=0
+pipeline point=0 panel-image
+set point=0 layout=panel-layout 0 set:wallpaper:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -1 -1 1 1 0 0 0 0 -100 -100 200 200 0.86 0.9 1 0.5 3 2 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+set point=0 layout=panel-layout 0 set:layer-home:0 dynamic=0
+push layout=panel-layout stages=0x11 offset=0 size=96
+  values -1 -1 1 1 0 0 0 0 -100 -100 200 200 0.86 0.9 1 0.5 3 2 0 0 1920 1080 0 0.75
+draw 6 1 0 0
+pipeline point=0 image-alpha
+set point=0 layout=image-layout 0 set:arrow:0 dynamic=0
+push layout=image-layout stages=0x1 offset=0 size=32
+  values 0.3 0.3 0.8 0.8 0 0 1 1
+draw 6 1 0 0
+end pass
+vertices used=0 sum=0x00000000

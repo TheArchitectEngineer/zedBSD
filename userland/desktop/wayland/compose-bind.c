@@ -7,7 +7,7 @@
 
 /*
  * The binds of the frame being recorded (ws211-p003 段 1): a pipeline and a
- * descriptor set are bound into compose->command only when they differ
+ * descriptor set are bound into the display list only when they differ
  * from what it has bound since its recording or its last pass began, and
  * the commands recorded are counted for KWL DRAWS (review-1 M2).  A set is
  * the same binding only with the same pipeline layout (review-1 M1).
@@ -17,13 +17,13 @@
 
 /*
  * Binds a pipeline and a descriptor set (set 0, with the pipeline layout it
- * is used with) into compose->command, each only when it differs from what
+ * is used with) into the display list, each only when it differs from what
  * is bound (ws211-p003 段 1); the commands are counted for the log.
  */
 void
 kwl_compose_bind(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	VkPipeline pipeline,
 	VkPipelineLayout layout,
 	VkDescriptorSet set)
@@ -36,7 +36,7 @@ kwl_compose_bind(
 	compose = server->compose;
 	pipelines = 0U;
 	if (pipeline != compose->bound_pipeline) {
-		vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+		kwl_list_bind_pipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 		compose->bound_pipeline = pipeline;
 		pipelines = 1U;
 	}
@@ -44,7 +44,7 @@ kwl_compose_bind(
 	/* The set, when another is bound or it was bound with another layout (review-1 M1). */
 	sets = 0U;
 	if (set != compose->bound_set || layout != compose->bound_layout) {
-		vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0U, 1U, &set, 0U, NULL);
+		kwl_list_bind_descriptor_sets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0U, 1U, &set, 0U, NULL);
 		compose->bound_set = set;
 		compose->bound_layout = layout;
 		sets = 1U;
@@ -58,7 +58,7 @@ kwl_compose_bind(
 }
 
 /*
- * Forgets what compose->command has bound (its recording or a pass began,
+ * Forgets what the display list has bound (its drawing or a pass began,
  * or a set was given back): the next draw binds its pipeline and set.
  */
 void

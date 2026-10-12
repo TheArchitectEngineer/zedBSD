@@ -834,6 +834,9 @@ vkCmdCopyImage(
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
+	/* A swapchain image this command writes stops matching its earlier presentation copy. */
+	vulkan_content_note_image(command, dstImage);
+
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
 	return;
 }
@@ -893,6 +896,9 @@ vkCmdBlitImage(
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
+	/* A swapchain image this command writes stops matching its earlier presentation copy. */
+	vulkan_content_note_image(command, dstImage);
+
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
 	return;
 }
@@ -945,6 +951,9 @@ vkCmdCopyBufferToImage(
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
+
+	/* A swapchain image this command writes stops matching its earlier presentation copy. */
+	vulkan_content_note_image(command, dstImage);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
 	return;
@@ -1142,6 +1151,9 @@ vkCmdClearColorImage(
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
 
+	/* A swapchain image this command writes stops matching its earlier presentation copy. */
+	vulkan_content_note_image(command, image);
+
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
 	return;
 }
@@ -1207,6 +1219,9 @@ vkCmdClearDepthStencilImage(
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
+
+	/* A swapchain image this command writes stops matching its earlier presentation copy. */
+	vulkan_content_note_image(command, image);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
 	return;
@@ -1330,6 +1345,9 @@ vkCmdResolveImage(
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
+
+	/* A swapchain image this command writes stops matching its earlier presentation copy. */
+	vulkan_content_note_image(command, dstImage);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
 	return;
@@ -1951,6 +1969,9 @@ vkCmdExecuteCommands(
 
 	/* Retain this complete command independently of caller pointer lifetimes. */
 	command_record_finish(command, &writer);
+
+	/* The secondaries' swapchain-image writes become this command buffer's. */
+	vulkan_content_note_secondaries(command, commandBufferCount, pCommandBuffers);
 
 	/* Succeeded: the command is recorded or its first error is retained by the command buffer. */
 	return;

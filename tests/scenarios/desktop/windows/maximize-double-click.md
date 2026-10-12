@@ -19,7 +19,7 @@ App Home から Files を開く（浮いた窓）。
 1. 操作: title bar の空いた所を double click。
    確認事項: 最大化。正解: `KWL GLASS double-click wait surface=S`（2 回目の press）の後、離した時に `KWL GLASS dock surface=S via=double-click …`。確認方法: log。
 2. 操作: 描き直しを待つ。
-   確認事項: 時間。正解: `KWL GLASS resized surface=S docked=1 … after_ms=N` の N ≤ 200。確認方法: log の after_ms、撮影。
+   確認事項: 時間。正解: 離した直後から窓の絵が拡大のアニメで広がり（ws211-p007、絵の拡大縮小）、`KWL GLASS resized surface=S docked=1 … after_ms=N` の N ≤ 200（after_ms はアニメの終わりに configure を送った時から）。確認方法: log の after_ms、撮影。
 3. 操作: 最大化を戻し（restore の button）、浮いた title bar を click し、すぐ 2 回目を押したまま 80 px 右下へ動かして離す（`aat down`・`aat rel 80 80`・`aat up`）。
    確認事項: tap and drag（BUG-265）。正解: `KWL GLASS double-click wait surface=S`、`KWL GLASS double-click moved surface=S`、`KWL GLASS dock` の行が増えず、窓が 80 px 動いた所に浮いたまま。確認方法: log、撮影。
 

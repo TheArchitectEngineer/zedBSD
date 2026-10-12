@@ -90,8 +90,8 @@ static void ask_card(struct kwl_server *server, int32_t *card);
 static void ask_button_rect(const int32_t *card, int choice, int32_t *rect);
 static int ask_hit(struct kwl_server *server, int32_t x, int32_t y);
 static const char *ask_choice_name(int choice, const char *pair, const char *cancel);
-static void ask_draw_button(struct kwl_server *server, VkCommandBuffer command, const int32_t *rect, int choice, int lit, float progress);
-static void ask_draw_middle(struct kwl_server *server, VkCommandBuffer command, enum glass_size size, int32_t middle, int32_t baseline, const char *text, const float *ink);
+static void ask_draw_button(struct kwl_server *server, struct kwl_list *command, const int32_t *rect, int choice, int lit, float progress);
+static void ask_draw_middle(struct kwl_server *server, struct kwl_list *command, enum glass_size size, int32_t middle, int32_t baseline, const char *text, const float *ink);
 static const char *ask_kind_name(unsigned kind);
 
 /*
@@ -307,7 +307,7 @@ kwl_bluetooth_ask_motion(
 void
 kwl_bluetooth_ask_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float dark_ink[4] = { 0.10f, 0.14f, 0.22f, 1.0f };
 	static const float soft_ink[4] = { 0.30f, 0.36f, 0.46f, 1.0f };
@@ -576,7 +576,7 @@ ask_choice_name(
 static void
 ask_draw_button(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const int32_t *rect,
 	int choice,
 	int lit,
@@ -622,7 +622,7 @@ ask_draw_button(
 static void
 ask_draw_middle(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	enum glass_size size,
 	int32_t middle,
 	int32_t baseline,

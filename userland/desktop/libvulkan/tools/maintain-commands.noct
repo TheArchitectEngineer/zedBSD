@@ -51,6 +51,16 @@ func encodeScalar(handles, records, type, expression, indent) {
     if (type == "VkDeviceSize" || type == "uint64_t" || type == "size_t") { primitive = "u64"; }
     return indent + "vulkan_write_" + primitive + "(&writer, " + expression + ");\n";
 }
+// The image a transfer command writes, for the swapchain-content counts (ws141-p016 (B)); "" when it writes none.
+func writtenImage(command) {
+    var written = [
+        ["vkCmdCopyImage", "dstImage"], ["vkCmdBlitImage", "dstImage"],
+        ["vkCmdCopyBufferToImage", "dstImage"], ["vkCmdResolveImage", "dstImage"],
+        ["vkCmdClearColorImage", "image"], ["vkCmdClearDepthStencilImage", "image"]
+    ];
+    for (i in 0..Array.size(written)) { if (written[i][0] == command) { return written[i][1]; } }
+    return "";
+}
 // The Kei GPU command protocol's name of a Vulkan command (uapi/gpu-op.h): vkCmdBindPipeline -> GPU_OP_CMD_BIND_PIPELINE.
 func opName(name) {
     var lower = "abcdefghijklmnopqrstuvwxyz";
@@ -78,7 +88,7 @@ func main(args) {
         if (starts(line, "typedef struct ")) { var end = String.indexOf(line, " {"); Array.push(records, String.substring(line, 15, end - 15)); }
     }
     var output = "/* -*- mode: c; c-file-style: \"linux\"; tab-width: 8; -*- */\n\n/*\n * zedBSD\n * Copyright (C) 2026 Awe Morris\n *\n * SPDX-License-Identifier: Zlib\n */\n\n/* Maintained Vulkan 1.0 recording wrappers; no scene or shader assumptions. */\n";
-    var count = 0;
+    var count = 0; var hooks = 0;
     for (i in 0..Array.size(input)) {
         var line = trim(input[i]); var begin = String.indexOf(line, "*PFN_vkCmd");
         if (begin < 0) { continue; }
@@ -130,10 +140,22 @@ func main(args) {
                 output = output + "\n\t/* Copies only complete caller elements while the command remains encodable. */\n\tfor (index = 0;\n\t     index < count && writer.error == VK_SUCCESS;\n\t     index++) {\n\t\t/* Uses declared element widths rather than native array padding. */\n" + encodeScalar(handles, records, type, member + "[index]", "\t\t") + "\t}\n";
             }
         }
-        output = output + "\n\t/* Retain this complete command independently of caller pointer lifetimes. */\n\tcommand_record_finish(command, &writer);\n\n\t/* Succeeded: the command is recorded or its first error is retained by the command buffer. */\n\treturn;\n}\n";
+        output = output + "\n\t/* Retain this complete command independently of caller pointer lifetimes. */\n\tcommand_record_finish(command, &writer);\n";
+        var written = writtenImage(name);
+        if (written != "") {
+            if (!has(names, written)) { System.error("written image parameter missing: " + name + "." + written); }
+            output = output + "\n\t/* A swapchain image this command writes stops matching its earlier presentation copy. */\n\tvulkan_content_note_image(command, " + written + ");\n";
+            hooks = hooks + 1;
+        }
+        if (name == "vkCmdExecuteCommands") {
+            output = output + "\n\t/* The secondaries' swapchain-image writes become this command buffer's. */\n\tvulkan_content_note_secondaries(command, commandBufferCount, pCommandBuffers);\n";
+            hooks = hooks + 1;
+        }
+        output = output + "\n\t/* Succeeded: the command is recorded or its first error is retained by the command buffer. */\n\treturn;\n}\n";
         count = count + 1;
     }
     if (count != 44) { System.error("expected forty-four Vulkan 1.0 recording commands, got " + count); }
+    if (hooks != 7) { System.error("expected seven swapchain-content hooks, got " + hooks); }
     FileUtil.writeText(args[1], output);
     print("maintained forty-four standard recording entry points");
 }

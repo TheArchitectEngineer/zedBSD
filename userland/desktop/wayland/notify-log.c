@@ -87,7 +87,7 @@ static void log_clear(struct kwl_server *server);
 static size_t log_count(void);
 static const struct kwl_notification *log_item(size_t place);
 static unsigned log_part(const struct kwl_server *server);
-static void log_draw_arrow(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t y, unsigned icon, float opacity);
+static void log_draw_arrow(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t y, unsigned icon, float opacity);
 
 /*
  * Takes a key for the log: Super+N opens or closes the board; while it is
@@ -173,7 +173,7 @@ kwl_notify_log_tick(
 void
 kwl_notify_log_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -488,7 +488,7 @@ log_part(
 static void
 log_draw_arrow(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t y,
 	unsigned icon,

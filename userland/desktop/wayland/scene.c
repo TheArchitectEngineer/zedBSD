@@ -107,7 +107,7 @@ kwl_scene_close(
 void
 kwl_scene_copy(
 	struct kwl_scene *scene,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	VkImage image,
 	const VkRect2D *region,
 	unsigned restore)
@@ -168,7 +168,7 @@ kwl_scene_copy(
 	}
 
 	/* Completes both the image transition and the cache's transfer dependency. */
-	vkCmdPipelineBarrier(
+	kwl_list_pipeline_barrier(
 		command,
 		source_stages,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -182,9 +182,9 @@ kwl_scene_copy(
 
 	/* Raw copies retain the output's actual channel order and alpha bits. */
 	if (restore) {
-		vkCmdCopyBufferToImage(command, scene->buffer, image, transfer_layout, 1U, &copy);
+		kwl_list_copy_buffer_to_image(command, scene->buffer, image, transfer_layout, 1U, &copy);
 	} else {
-		vkCmdCopyImageToBuffer(command, image, transfer_layout, scene->buffer, 1U, &copy);
+		kwl_list_copy_image_to_buffer(command, image, transfer_layout, scene->buffer, 1U, &copy);
 	}
 
 	/* Makes the transferred pixels available to the next cursor's LOAD pass. */
@@ -194,7 +194,7 @@ kwl_scene_copy(
 	image_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	image_barrier.oldLayout = transfer_layout;
 	image_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	vkCmdPipelineBarrier(
+	kwl_list_pipeline_barrier(
 		command,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
 		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,

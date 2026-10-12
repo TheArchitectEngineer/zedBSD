@@ -62,9 +62,9 @@
 static int panels_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
 static int panels_set(struct kwl_object *glass, struct kwl_object *surface, const unsigned char *bytes, size_t size);
 static int panels_check(const struct kwl_panel *panel);
-static void panels_shadow(struct kwl_server *server, VkCommandBuffer command, const struct kwl_panel *panel, const float *place, float opacity);
-static void panels_glass(struct kwl_server *server, VkCommandBuffer command, const struct kwl_panel *panel, const float *place, float opacity, unsigned light);
-static void panels_gaps(struct kwl_server *server, VkCommandBuffer command, const struct kwl_panels *panels, const float *place, float opacity, unsigned light);
+static void panels_shadow(struct kwl_server *server, struct kwl_list *command, const struct kwl_panel *panel, const float *place, float opacity);
+static void panels_glass(struct kwl_server *server, struct kwl_list *command, const struct kwl_panel *panel, const float *place, float opacity, unsigned light);
+static void panels_gaps(struct kwl_server *server, struct kwl_list *command, const struct kwl_panels *panels, const float *place, float opacity, unsigned light);
 static uint32_t panels_word(const unsigned char *bytes, size_t offset);
 
 /*
@@ -252,7 +252,7 @@ kwl_panels_blur(
 void
 kwl_panels_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_object *surface,
 	const float *place,
 	float opacity,
@@ -410,7 +410,7 @@ panels_check(
 static void
 panels_shadow(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_panel *panel,
 	const float *place,
 	float opacity)
@@ -453,7 +453,7 @@ panels_shadow(
 static void
 panels_glass(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_panel *panel,
 	const float *place,
 	float opacity,
@@ -500,7 +500,7 @@ panels_glass(
 static void
 panels_gaps(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_panels *panels,
 	const float *place,
 	float opacity,

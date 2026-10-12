@@ -75,7 +75,7 @@ static VkResult layers_pass(struct kwl_compose *compose);
 static VkResult layers_image(struct kwl_compose *compose, struct kwl_layer_image *target);
 static void layers_image_destroy(struct kwl_compose *compose, struct kwl_layer_image *target);
 static void layers_destroy(struct kwl_compose *compose);
-static void layers_record_pass(struct kwl_server *server, VkCommandBuffer command, unsigned which, struct kwl_object **windows, unsigned count);
+static void layers_record_pass(struct kwl_server *server, struct kwl_list *command, unsigned which, struct kwl_object **windows, unsigned count);
 static int layers_home_current(struct kwl_server *server);
 static int layers_animating(struct kwl_server *server);
 static void layers_log_use(struct kwl_layers *layers);
@@ -191,14 +191,10 @@ kwl_layers_tick(
 		return 0;
 	key = kwl_home_picture_key(server);
 
-	/* Recorded and submitted as a frame that presents nothing. */
-	result = kwl_layers_begin_quiet(server);
-	if (result == VK_SUCCESS) {
-		layers_record_pass(server, compose->command, KWL_LAYER_HOME, NULL, 0U);
-		result = vkEndCommandBuffer(compose->command);
-	}
-	if (result == VK_SUCCESS)
-		result = kwl_compose_submit_quiet(server);
+	/* Drawn into the list and submitted as a frame that presents nothing. */
+	kwl_compose_list_begin(compose);
+	layers_record_pass(server, &compose->list, KWL_LAYER_HOME, NULL, 0U);
+	result = kwl_compose_submit_quiet(server);
 	if (result != VK_SUCCESS) {
 		printf("KWL VULKAN_ERROR operation=layer result=%d\n", (int)result);
 		return -EIO;
@@ -211,22 +207,6 @@ kwl_layers_tick(
 	layers->bake_times[1] = now;
 	printf("KWL LAYER baked what=home inband=0 draws=%u us=%llu at_us=%llu\n", layers->bake_draws, (unsigned long long)layers->bake_us, (unsigned long long)kwl_microseconds());
 	return 1;
-}
-
-/* Begins a fresh recording of compose->command for a frame that presents nothing. */
-VkResult
-kwl_layers_begin_quiet(
-	struct kwl_server *server)
-{
-	VkCommandBufferBeginInfo begin;
-
-	/* Beginning the command buffer resets it. */
-	memset(&begin, 0, sizeof(begin));
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	kwl_compose_bind_forget(server->compose);
-	kwl_batch_begin(server->compose);
-	return vkBeginCommandBuffer(server->compose->command, &begin);
 }
 
 /*
@@ -243,7 +223,7 @@ kwl_layers_begin_quiet(
 void
 kwl_layers_inband(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object **windows,
 	unsigned count)
 {
@@ -409,7 +389,7 @@ kwl_layers_set(
 void
 kwl_layers_anim_inband(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object **windows,
 	unsigned count)
 {
@@ -630,7 +610,7 @@ layers_log_use(
 }
 
 /*
- * Records a picture into a command buffer, outside any pass: the layers'
+ * Writes a picture into the display list, outside any pass: the layers'
  * pass on its image, cleared to transparent black, and Home's content drawn
  * as it opens, without placing it, in its own colours, with no icon lit and
  * without the clock; or the desktop layer as Home has it, in the
@@ -641,7 +621,7 @@ layers_log_use(
 static void
 layers_record_pass(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned which,
 	struct kwl_object **windows,
 	unsigned count)
@@ -682,7 +662,7 @@ layers_record_pass(
 	pass.renderArea.extent.height = layers->height;
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
-	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_list_begin_render_pass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 	kwl_compose_bind_forget(server->compose);
 
 	/* The pass's own viewport, scissor and quad corners. */
@@ -690,13 +670,13 @@ layers_record_pass(
 	viewport.width = (float)layers->width;
 	viewport.height = (float)layers->height;
 	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(command, 0U, 1U, &viewport);
+	kwl_list_set_viewport(command, 0U, 1U, &viewport);
 	memset(&scissor, 0, sizeof(scissor));
 	scissor.extent.width = layers->width;
 	scissor.extent.height = layers->height;
-	vkCmdSetScissor(command, 0U, 1U, &scissor);
+	kwl_list_set_scissor(command, 0U, 1U, &scissor);
 	offset = 0U;
-	vkCmdBindVertexBuffers(command, 0U, 1U, &compose->corners, &offset);
+	kwl_list_bind_vertex_buffers(command, 0U, 1U, &compose->corners, &offset);
 
 	/* The state the drawing reads, kept to be given back. */
 	scissor_saved = compose->scissor_now;
@@ -758,7 +738,7 @@ layers_record_pass(
 
 	/* The pass ends with the image ready to be sampled, its joined quads drawn. */
 	kwl_batch_flush(server, command);
-	vkCmdEndRenderPass(command);
+	kwl_list_end_render_pass(command);
 
 	/*
 	 * The picture is drawn as far as the frames after it in the queue are

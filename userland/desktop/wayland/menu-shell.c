@@ -264,8 +264,8 @@ static int shell_keysym(uint32_t key, uint32_t seat_modifiers, uint32_t *keysym,
 static const struct kwl_menu_item *shell_shortcut_item(const struct kwl_menu_model *model, uint32_t keysym, uint32_t modifiers);
 static void shell_shortcut_text(const struct kwl_menu_item *item, char *text, size_t size);
 static void shell_key_name(uint32_t keysym, char *text, size_t size);
-static void shell_draw_popup(struct kwl_server *server, VkCommandBuffer command, const struct kwl_menu_model *model, unsigned level);
-static void shell_draw_row(struct kwl_server *server, VkCommandBuffer command, const struct shell_popup *popup, const struct kwl_menu_item *row, int32_t row_y);
+static void shell_draw_popup(struct kwl_server *server, struct kwl_list *command, const struct kwl_menu_model *model, unsigned level);
+static void shell_draw_row(struct kwl_server *server, struct kwl_list *command, const struct shell_popup *popup, const struct kwl_menu_item *row, int32_t row_y);
 static const struct kwl_menu_model *shell_model(struct kwl_object *surface, struct kwl_object **place);
 static const struct kwl_menu_item *shell_item(const struct kwl_menu_model *model, uint32_t id);
 static struct kwl_object *shell_place(struct kwl_object *surface);
@@ -325,7 +325,7 @@ kwl_menu_title_limit(
 void
 kwl_menu_draw_bar(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	unsigned docked,
 	const struct kwl_menu_area *area,
@@ -493,7 +493,7 @@ kwl_menu_draw_bar(
 void
 kwl_menu_draw_popups(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	const struct kwl_menu_model *model;
 	struct kwl_object *place;
@@ -2436,7 +2436,7 @@ shell_key_name(
 static void
 shell_draw_popup(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_menu_model *model,
 	unsigned level)
 {
@@ -2499,7 +2499,7 @@ shell_draw_popup(
 static void
 shell_draw_row(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct shell_popup *popup,
 	const struct kwl_menu_item *row,
 	int32_t row_y)

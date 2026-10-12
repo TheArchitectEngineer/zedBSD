@@ -65,6 +65,9 @@ kwl_import_adopt(
 	import->height = height;
 	import->draw = KWL_DRAW_OPAQUE;
 
+	/* Its own number, which tells it apart from an earlier import at the same address (ws213-p003). */
+	import->generation = kwl_compose_generation(compose);
+
 	/* The view and descriptor sets that sample it, and its move to the general layout. */
 	status = import_image(compose, format, import);
 	if (status != VK_SUCCESS) {
@@ -151,7 +154,7 @@ kwl_import_destroy_with(
 void
 kwl_import_layouts_record(
 	struct kwl_compose *compose,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	VkImageMemoryBarrier barriers[KWL_LAYOUTS_MAX];
 	unsigned index;
@@ -178,18 +181,19 @@ kwl_import_layouts_record(
 	}
 
 	/* All of them before the fragment shaders sample anything. */
-	vkCmdPipelineBarrier(command,
-			     VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-			     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			     0U,
-			     0U,
-			     NULL,
-			     0U,
-			     NULL,
-			     compose->layout_count,
-			     barriers);
+	kwl_list_pipeline_barrier(
+		command,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+		0U,
+		0U,
+		NULL,
+		0U,
+		NULL,
+		compose->layout_count,
+		barriers);
 
-	/* Succeeded: the waiting images have barriers in this command buffer. */
+	/* Succeeded: the waiting images have barriers in this frame's list. */
 	return;
 }
 

@@ -315,35 +315,53 @@ void
 kwl_host_image_written(
 	struct kwl_import *import)
 {
-	/* The next kwl_host_images_record copies this image and clears the mark; copies elsewhere see a new version. */
+	/* The next kwl_host_images_take gives this image to its frame and clears the mark; copies elsewhere see a new version. */
 	import->written = 1U;
 	import->version++;
 }
 
 /*
- * Records the copies of every written host image into its sampled image, for a command buffer that runs before the frame's; returns how many.
+ * Gives every written host image to the list a drawing has just written,
+ * whose frame copies its staging into its sampled image first; the
+ * images' marks are cleared (ws213-p003, p001 4.4).
  */
-unsigned
-kwl_host_images_record(
+void
+kwl_host_images_take(
 	struct kwl_compose *compose,
-	VkCommandBuffer command)
+	struct kwl_list *list)
 {
 	struct kwl_import *import;
-	unsigned count;
 
-	/* Each written image, once. */
-	count = 0U;
+	/* Each written image, once, in the order of the list of host images. */
 	for (import = compose->host_images; import != NULL; import = import->host_next) {
 		/* An unchanged staging has nothing new to copy. */
 		if (!import->written)
 			continue;
-		image_copy_record(command, import);
+
+		/* The frame copies it; a later write marks it for the next frame. */
+		kwl_list_add_copy(list, import);
 		import->written = 0U;
-		count++;
 	}
+}
+
+/*
+ * Records the copies of the host images a list took into their sampled
+ * images, for a command buffer that runs before the frame's; returns how
+ * many.
+ */
+unsigned
+kwl_host_images_record(
+	const struct kwl_list *list,
+	VkCommandBuffer command)
+{
+	unsigned index;
+
+	/* Each image the list took, in its order. */
+	for (index = 0U; index < list->copy_count; index++)
+		image_copy_record(command, list->copies[index]);
 
 	/* The number of copies recorded. */
-	return count;
+	return list->copy_count;
 }
 
 /*
@@ -650,7 +668,7 @@ surface_upload(
 /*
  * Creates a host-written BGRA image: a linear staging image in host-visible,
  * coherent memory, mapped for good, and an optimal sampled image that the
- * frame fills from it (kwl_host_images_record), with its view and
+ * frame fills from it (kwl_host_images_take), with its view and
  * descriptor set; both in the general layout.
  */
 static VkResult
@@ -790,6 +808,9 @@ image_create(
 	result = image_layout(compose, import->image, VK_IMAGE_LAYOUT_UNDEFINED);
 	if (result != VK_SUCCESS)
 		return result;
+
+	/* Its own number, which tells it apart from an earlier image at the same address (ws213-p003). */
+	import->generation = kwl_compose_generation(compose);
 
 	/* The first frame copies whatever the creator writes before it. */
 	import->written = 1U;

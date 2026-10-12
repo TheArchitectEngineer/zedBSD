@@ -214,7 +214,11 @@ kwl_cursor_plane_update(
 	plane->deferred = 0U;
 	if (plane->presented &&
 	    plane->source == image &&
-	    (image == NULL || (plane->version == image->version && plane->x == x && plane->y == y)))
+	    (image == NULL ||
+	     (plane->generation == image->generation &&
+	      plane->version == image->version &&
+	      plane->x == x &&
+	      plane->y == y)))
 		return;
 
 	/*
@@ -230,6 +234,7 @@ kwl_cursor_plane_update(
 	if (plane->presented &&
 	    plane->source == image &&
 	    image != NULL &&
+	    plane->generation == image->generation &&
 	    plane->version == image->version) {
 		now = kwl_microseconds();
 		period = plane_hold_us(server);
@@ -497,6 +502,7 @@ plane_present(
 	VkSemaphore wait;
 	uint32_t image;
 	uint32_t version;
+	uint64_t generation;
 	uint64_t mark;
 	uint64_t spent;
 	uint64_t started_us;
@@ -541,12 +547,16 @@ plane_present(
 	}
 	plane->next = (plane->next + 1U) % (plane->output.image_count + 1U);
 	version = source != NULL ? source->version : 0U;
+	generation = source != NULL ? source->generation : 0U;
 	server->perf.cursor_acquire_cycles += kwl_cycles() - mark;
 
 	/* The cursor image goes into the swapchain image once; later moves present it as it is. */
 	mark = kwl_cycles();
 	wait = acquired;
-	if (!plane->held_valid[image] || plane->held[image] != source || plane->held_version[image] != version) {
+	if (!plane->held_valid[image] ||
+	    plane->held[image] != source ||
+	    plane->held_generation[image] != generation ||
+	    plane->held_version[image] != version) {
 		/* The image's last copy finished before it was presented, which it was to be acquired again. */
 		result = vkWaitForFences(compose->device, 1U, &plane->fences[image], VK_TRUE, 100000000ULL);
 		if (result == VK_SUCCESS)
@@ -577,6 +587,7 @@ plane_present(
 		}
 		plane->held_valid[image] = 1U;
 		plane->held[image] = source;
+		plane->held_generation[image] = generation;
 		plane->held_version[image] = version;
 		plane->copies++;
 		plane->copied = 1U;
@@ -630,6 +641,7 @@ plane_present(
 	plane->presented_us = started_us;
 	server->perf.cursor_presents++;
 	plane->source = source;
+	plane->generation = generation;
 	plane->version = version;
 	plane->x = x;
 	plane->y = y;

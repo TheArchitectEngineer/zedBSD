@@ -554,17 +554,21 @@ main(void)
 	due = kwl_cursor_plane_due_ms(server);
 	assert(due == -1);
 
-	/* (2) A move 5 ms later is held; the loop wakes at the refresh's end (16.667 - 5 ms, rounded up). */
+	/*
+	 * (2) A move 5 ms later is held; the loop wakes a little before the
+	 * refresh's end (a refresh less the 2.5 ms slack of ws211-p006,
+	 * 14.167 - 5 ms, rounded up).
+	 */
 	move(server, 1005U, 20, 20);
 	assert(presents_taken == 1U);
 	due = kwl_cursor_plane_due_ms(server);
-	assert(due == 12);
+	assert(due == 10);
 
 	/* (3) Another within the refresh is held too. */
 	move(server, 1010U, 30, 31);
 	assert(presents_taken == 1U);
 	due = kwl_cursor_plane_due_ms(server);
-	assert(due == 7);
+	assert(due == 5);
 
 	/* (4) At the refresh's end the latest place goes (into the next swapchain image, copied there once). */
 	move(server, 1017U, 30, 31);
@@ -610,7 +614,7 @@ main(void)
 	move(server, 1085U, 60, 60);
 	assert(presents_taken == 5U);
 	due = kwl_cursor_plane_due_ms(server);
-	assert(due == 12);
+	assert(due == 10);
 
 	/* (10) The counters the KWL PERF main line reports. */
 	assert(server->perf.cursor_presents == 5U);

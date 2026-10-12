@@ -190,6 +190,42 @@ kwl_cursor_shape_object_gone(
 }
 
 /*
+ * Makes the images of every cursor shape at the start, in the start's
+ * batch of host images (ws213-p003, p001 review-3 M-6), so that no shape's
+ * image is made while the compositor runs; returns 0, or the error of the
+ * first image that could not be made (the others are still made, and a
+ * missing one is made when it is first asked for, as before).
+ */
+int
+kwl_cursor_images_create(
+	struct kwl_server *server)
+{
+	unsigned index;
+	int first_error;
+	int error;
+
+	/* Each image not made yet. */
+	first_error = 0;
+	for (index = 0U; index < KWL_CURSOR_IMAGES; index++) {
+		/* One made already. */
+		if (server->cursor_images[index] != NULL)
+			continue;
+
+		/* The image, its first failure kept. */
+		error = image_make(server, index);
+		if (error != 0 && first_error == 0)
+			first_error = error;
+	}
+
+	/* Some image could not be made. */
+	if (first_error != 0)
+		return first_error;
+
+	/* Succeeded: every shape has its image. */
+	return 0;
+}
+
+/*
  * Releases the images of the cursor shapes.
  */
 void
@@ -259,7 +295,7 @@ kwl_cursor_frame(
 	if (server->frame_edges == edges)
 		return;
 
-	/* The arrow's image is made the first time it is needed, like a client's shape's. */
+	/* The arrow's image, made at the start, is made now if that failed, like a client's shape's. */
 	if (edges != 0U) {
 		index = shape_image(frame_shape(edges));
 		if (index != IMAGE_NONE &&
@@ -377,9 +413,10 @@ device_set_shape(
 		return 0;
 
 	/*
-	 * The shape's image is made the first time it is asked for (making all
-	 * of them at start-up would delay the compositor's READY); without it the
-	 * shape is drawn as the arrow.
+	 * The shapes' images are made at the start (kwl_cursor_images_create,
+	 * in the start's batch, ws213-p003); one that could not be made then is
+	 * made the first time it is asked for, and without it the shape is drawn
+	 * as the arrow.
 	 */
 	index = shape_image(shape);
 	if (index != IMAGE_NONE &&

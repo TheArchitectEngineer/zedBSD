@@ -146,6 +146,12 @@ struct VkDevice_T {
 	uint32_t queue_count;
 	pthread_mutex_t mutex;
 	VkResult error;
+	/*
+	 * Advances (atomically) whenever an accepted submission may have written
+	 * swapchain images this library could not name, so a presentation that
+	 * compares it with the value it saw at its last copy copies again.
+	 */
+	uint64_t content_epoch;
 };
 
 /* Retains one requested queue and serializes internal submission users. */
@@ -171,6 +177,9 @@ struct vulkan_writer {
 	VkResult error;
 };
 
+/* The swapchain images one command buffer may name as written before it counts them unknown. */
+#define VULKAN_CONTENT_IMAGES 8U
+
 /* Tracks a command buffer whose storage is owned by its allocating pool. */
 struct VkCommandBuffer_T {
 	struct vulkan_object object;
@@ -179,6 +188,16 @@ struct VkCommandBuffer_T {
 	struct vulkan_writer recording;
 	uint32_t state;
 	VkResult error;
+	/*
+	 * The swapchain images the recording writes with a transfer command,
+	 * without repeats, and whether it wrote more (or executed a secondary
+	 * that did) than the table holds.  Begin and reset empty it; only an
+	 * accepted submission reads it, while valid usage keeps every named
+	 * image alive.
+	 */
+	struct vulkan_image *content_images[VULKAN_CONTENT_IMAGES];
+	uint32_t content_count;
+	VkBool32 content_unknown;
 };
 
 /* Keeps one allocation alive independently of its active mapped view. */
@@ -226,6 +245,12 @@ struct vulkan_image {
 	VkMemoryRequirements requirements;
 	VkBool32 color_layout_known;
 	VkSubresourceLayout color_layout;
+	/*
+	 * For a swapchain image, advances (atomically) with every accepted
+	 * submission that writes it with a transfer command; a presentation
+	 * whose last copy saw the same value may show that copy again.
+	 */
+	uint64_t content_serial;
 };
 
 /* Renderer external-storage declaration; never exposed as a guest fd ABI. */
@@ -525,6 +550,29 @@ vulkan_wsi_acquire_signal(
 	struct VkDevice_T *device,
 	VkSemaphore semaphore,
 	VkFence fence);
+
+/* Records which swapchain images a command buffer writes; the device mutex is not needed. */
+void
+vulkan_content_note_image(
+	struct VkCommandBuffer_T *command,
+	VkImage image);
+
+void
+vulkan_content_note_secondaries(
+	struct VkCommandBuffer_T *command,
+	uint32_t count,
+	const VkCommandBuffer *buffers);
+
+void
+vulkan_content_clear(
+	struct VkCommandBuffer_T *command);
+
+/* Counts the writes of an accepted submission; the caller holds the device mutex. */
+void
+vulkan_content_commit(
+	struct VkDevice_T *device,
+	uint32_t count,
+	const VkSubmitInfo *submits);
 
 /* WSI helpers are called outside wire locks and own only presentation state. */
 VkResult

@@ -61,9 +61,9 @@ static void flush_cached(struct kwl_object *surface);
 static void drop_cached(struct kwl_object *surface);
 static void unlink_child(struct kwl_object *surface);
 static void insert_child(struct kwl_object *parent, struct kwl_object *surface, struct kwl_object *before, unsigned above);
-static void draw_tree(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, float x, float y, float scale_x, float scale_y, unsigned depth);
-static void draw_image(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct kwl_import *image, float x, float y, float scale_x, float scale_y);
-static void draw_group(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *parent, float x, float y, float scale_x, float scale_y, unsigned above, unsigned depth);
+static void draw_tree(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, float x, float y, float scale_x, float scale_y, unsigned depth);
+static void draw_image(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct kwl_import *image, float x, float y, float scale_x, float scale_y);
+static void draw_group(struct kwl_server *server, struct kwl_list *command, struct kwl_object *parent, float x, float y, float scale_x, float scale_y, unsigned above, unsigned depth);
 static struct kwl_object *tree_at(struct kwl_object *surface, int32_t x, int32_t y, unsigned depth);
 static struct kwl_object *group_at(struct kwl_object *parent, int32_t x, int32_t y, unsigned above, unsigned depth);
 static struct kwl_object *tree_root(struct kwl_object *surface);
@@ -290,7 +290,7 @@ kwl_subsurface_object_gone(
 void
 kwl_subsurface_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *parent,
 	float x,
 	float y,
@@ -695,7 +695,7 @@ insert_child(
 static void
 draw_tree(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	float x,
 	float y,
@@ -727,7 +727,7 @@ draw_tree(
 static void
 draw_group(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *parent,
 	float x,
 	float y,
@@ -765,7 +765,7 @@ draw_group(
 static void
 draw_image(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	const struct kwl_import *image,
 	float x,

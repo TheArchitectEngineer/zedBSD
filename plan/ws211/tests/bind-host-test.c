@@ -61,6 +61,40 @@ vkCmdBindDescriptorSets(
 	last_set = sets[0];
 }
 
+/* The other commands a display list replays, which these cases do not record (ws213-p003). */
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b, VkSubpassContents s) { (void)c; (void)b; (void)s; }
+VKAPI_ATTR void VKAPI_CALL vkCmdEndRenderPass(VkCommandBuffer c) { (void)c; }
+VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(VkCommandBuffer c, uint32_t f, uint32_t n, const VkViewport *v) { (void)c; (void)f; (void)n; (void)v; }
+VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(VkCommandBuffer c, uint32_t f, uint32_t n, const VkRect2D *r) { (void)c; (void)f; (void)n; (void)r; }
+VKAPI_ATTR void VKAPI_CALL vkCmdPushConstants(VkCommandBuffer c, VkPipelineLayout l, VkShaderStageFlags s, uint32_t o, uint32_t n, const void *v) { (void)c; (void)l; (void)s; (void)o; (void)n; (void)v; }
+VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers(VkCommandBuffer c, uint32_t f, uint32_t n, const VkBuffer *b, const VkDeviceSize *o) { (void)c; (void)f; (void)n; (void)b; (void)o; }
+VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer c, uint32_t v, uint32_t i, uint32_t f, uint32_t g) { (void)c; (void)v; (void)i; (void)f; (void)g; }
+VKAPI_ATTR void VKAPI_CALL vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageFlags d, VkDependencyFlags f, uint32_t mn, const VkMemoryBarrier *m, uint32_t bn, const VkBufferMemoryBarrier *b, uint32_t in, const VkImageMemoryBarrier *i) { (void)c; (void)s; (void)d; (void)f; (void)mn; (void)m; (void)bn; (void)b; (void)in; (void)i; }
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d, VkImageLayout dl, uint32_t n, const VkImageCopy *r) { (void)c; (void)s; (void)sl; (void)d; (void)dl; (void)n; (void)r; }
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyImageToBuffer(VkCommandBuffer c, VkImage i, VkImageLayout l, VkBuffer b, uint32_t n, const VkBufferImageCopy *r) { (void)c; (void)i; (void)l; (void)b; (void)n; (void)r; }
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer b, VkImage i, VkImageLayout l, uint32_t n, const VkBufferImageCopy *r) { (void)c; (void)b; (void)i; (void)l; (void)n; (void)r; }
+VKAPI_ATTR void VKAPI_CALL vkCmdBlitImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d, VkImageLayout dl, uint32_t n, const VkImageBlit *r, VkFilter f) { (void)c; (void)s; (void)sl; (void)d; (void)dl; (void)n; (void)r; (void)f; }
+VKAPI_ATTR void VKAPI_CALL vkCmdClearColorImage(VkCommandBuffer c, VkImage i, VkImageLayout l, const VkClearColorValue *v, uint32_t n, const VkImageSubresourceRange *r) { (void)c; (void)i; (void)l; (void)v; (void)n; (void)r; }
+
+/*
+ * Binds through kwl_compose_bind into a display list and replays what it
+ * wrote into the fake command buffer (the drawing writes a list since
+ * ws213-p003).
+ */
+static void
+test_bind(
+	struct kwl_server *server,
+	struct kwl_list *list,
+	VkPipeline pipeline,
+	VkPipelineLayout layout,
+	VkDescriptorSet set)
+{
+	/* The binds written, replayed, and the list emptied for the next. */
+	kwl_compose_bind(server, list, pipeline, layout, set);
+	kwl_list_replay(list, (VkCommandBuffer)(uintptr_t)0x10U);
+	kwl_list_reset(list);
+}
+
 /* Runs the cases. */
 int
 main(
@@ -68,7 +102,7 @@ main(
 {
 	static struct kwl_server server;
 	static struct kwl_compose compose;
-	VkCommandBuffer command;
+	static struct kwl_list list;
 	VkPipeline quad_pipeline;
 	VkPipeline glass_pipeline;
 	VkPipelineLayout quad_layout;
@@ -81,7 +115,6 @@ main(
 	memset(&compose, 0, sizeof(compose));
 	server.compose = &compose;
 	server.log_frames = 1U;
-	command = (VkCommandBuffer)(uintptr_t)0x10U;
 	quad_pipeline = (VkPipeline)(uintptr_t)0x20U;
 	glass_pipeline = (VkPipeline)(uintptr_t)0x21U;
 	quad_layout = (VkPipelineLayout)(uintptr_t)0x30U;
@@ -91,24 +124,24 @@ main(
 
 	/* The first draw binds both; the same again binds nothing. */
 	kwl_compose_bind_forget(&compose);
-	kwl_compose_bind(&server, command, glass_pipeline, panel_layout, set);
+	test_bind(&server, &list, glass_pipeline, panel_layout, set);
 	assert(bound_pipelines == 1U && bound_sets == 1U);
-	kwl_compose_bind(&server, command, glass_pipeline, panel_layout, set);
+	test_bind(&server, &list, glass_pipeline, panel_layout, set);
 	assert(bound_pipelines == 1U && bound_sets == 1U);
 
 	/* Another set binds the set only. */
-	kwl_compose_bind(&server, command, glass_pipeline, panel_layout, other);
+	test_bind(&server, &list, glass_pipeline, panel_layout, other);
 	assert(bound_pipelines == 1U && bound_sets == 2U && last_set == other);
 
 	/* The same set with the quad's layout (a window's quad after its glass) binds it again with that layout. */
-	kwl_compose_bind(&server, command, quad_pipeline, quad_layout, other);
+	test_bind(&server, &list, quad_pipeline, quad_layout, other);
 	assert(bound_pipelines == 2U && bound_sets == 3U && last_layout == quad_layout);
-	kwl_compose_bind(&server, command, glass_pipeline, panel_layout, other);
+	test_bind(&server, &list, glass_pipeline, panel_layout, other);
 	assert(bound_pipelines == 3U && bound_sets == 4U && last_layout == panel_layout);
 
 	/* A pass or a recording begun: both are bound again. */
 	kwl_compose_bind_forget(&compose);
-	kwl_compose_bind(&server, command, glass_pipeline, panel_layout, other);
+	test_bind(&server, &list, glass_pipeline, panel_layout, other);
 	assert(bound_pipelines == 4U && bound_sets == 5U);
 
 	/* The counts for the log. */
@@ -118,8 +151,9 @@ main(
 
 	/* Without --log-frames nothing is counted, and the binds still are skipped. */
 	server.log_frames = 0U;
-	kwl_compose_bind(&server, command, glass_pipeline, panel_layout, other);
+	test_bind(&server, &list, glass_pipeline, panel_layout, other);
 	assert(bound_pipelines == 4U && bound_sets == 5U && server.draw_counts.cmd_pipelines == 4U);
+	kwl_list_free(&list);
 	puts("ws211 compose binds on change, layout-keyed sets, forget, counts: PASS");
 	return 0;
 }

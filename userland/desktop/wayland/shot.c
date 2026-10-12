@@ -278,7 +278,7 @@ kwl_shot_tick(
 void
 kwl_shot_record(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	VkImage image)
 {
 	VkImageMemoryBarrier barrier;
@@ -303,7 +303,7 @@ kwl_shot_record(
 	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	barrier.subresourceRange.levelCount = 1U;
 	barrier.subresourceRange.layerCount = 1U;
-	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U,
+	kwl_list_pipeline_barrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U,
 	    0U, NULL, 0U, NULL, 1U, &barrier);
 
 	/* The whole image into the buffer, rows packed. */
@@ -313,7 +313,7 @@ kwl_shot_record(
 	copy.imageExtent.width = shot.width;
 	copy.imageExtent.height = shot.height;
 	copy.imageExtent.depth = 1U;
-	vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, shot.buffer, 1U, &copy);
+	kwl_list_copy_image_to_buffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, shot.buffer, 1U, &copy);
 
 	/* The copy visible to the host after the fence. */
 	memset(&visible, 0, sizeof(visible));
@@ -324,7 +324,7 @@ kwl_shot_record(
 	visible.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	visible.buffer = shot.buffer;
 	visible.size = VK_WHOLE_SIZE;
-	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0U, 0U, NULL, 1U,
+	kwl_list_pipeline_barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0U, 0U, NULL, 1U,
 	    &visible, 0U, NULL);
 
 	/* The image back to presentation. */
@@ -332,7 +332,7 @@ kwl_shot_record(
 	barrier.dstAccessMask = 0U;
 	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0U, 0U, NULL,
+	kwl_list_pipeline_barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0U, 0U, NULL,
 	    0U, NULL, 1U, &barrier);
 
 	/* The frame carries the copy. */

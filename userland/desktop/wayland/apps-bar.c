@@ -82,8 +82,8 @@ static void slot_rect(const struct apps_view *view, unsigned slot, struct apps_r
 static int panel_build(struct kwl_server *server, const struct apps_view *view, const char *key, struct apps_panel *panel);
 static void log_bar(struct kwl_server *server, const struct apps_view *view);
 static int view_collect_on(struct kwl_server *server, unsigned slot, int every, struct apps_view *view);
-static void draw_more(struct kwl_server *server, VkCommandBuffer command, const struct apps_rect *rect, unsigned hidden, float light);
-static void draw_light(struct kwl_server *server, VkCommandBuffer command, const struct apps_rect *rect, float strength);
+static void draw_more(struct kwl_server *server, struct kwl_list *command, const struct apps_rect *rect, unsigned hidden, float light);
+static void draw_light(struct kwl_server *server, struct kwl_list *command, const struct apps_rect *rect, float strength);
 static void spring_tick(struct kwl_server *server);
 
 /*
@@ -94,7 +94,7 @@ static void spring_tick(struct kwl_server *server);
 int
 kwl_apps_bar_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned output)
 {
 	struct glass_bar_colours colours;
@@ -220,7 +220,7 @@ kwl_apps_bar_draw(
 void
 kwl_apps_bar_draw_popup(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float faint[4] = { 1.0f, 1.0f, 1.0f, 0.5f };
 	struct kwl_apps_bar *state;
@@ -1361,7 +1361,7 @@ log_bar(
 static void
 draw_more(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct apps_rect *rect,
 	unsigned hidden,
 	float light)
@@ -1386,7 +1386,7 @@ draw_more(
 static void
 draw_light(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct apps_rect *rect,
 	float strength)
 {
