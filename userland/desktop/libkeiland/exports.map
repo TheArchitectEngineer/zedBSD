@@ -335,6 +335,9 @@
 		kl_ui_pointer_leave;
 		kl_ui_pointer_cancel;
 		kl_ui_take_damage;
+		kl_ui_take_frame;
+		kl_ui_damage;
+		kl_ui_damage_whole;
 		kl_ui_pointer_button;
 		kl_ui_wheel;
 		kl_ui_axis;
@@ -363,6 +366,7 @@
 		kl_window_present_resize;
 		kl_window_present;
 		kl_window_present_part;
+		kl_window_present_parts;
 		kl_window_see_through;
 		kl_window_display;
 		kl_window_surface;

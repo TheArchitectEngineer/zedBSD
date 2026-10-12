@@ -130,7 +130,7 @@ include:
 | Appearance | The desktop's appearance, light or dark (`kl_theme_*`): the colours of the current theme, and a notice to redraw when the user changes it, carried by `kl_theme_v1` |
 | Touch | The touch motion, the scroller and the gestures (`keiland_motion_*`, `keiland_scroller_*`, `keiland_gesture_*`), so that a finger feels the same in every program |
 | Input | The keyboard inset of the on-screen keyboard, editing operations |
-| Widgets | The widgets' input (`kl_ui_*`): each frame records the parts that take input, and a change of the widget under the pointer names only the part of the window to draw again (`kl_ui_take_damage`). A part that draws the same with the pointer on it, such as a picture a press drags, is recorded with `kl_ui_hit_still` and asks for no drawing |
+| Widgets | The widgets' input (`kl_ui_*`): each frame records the parts that take input. A change of the widget under the pointer names only the widget lit when the last frame was drawn and the one lit now, however many the pointer crossed in between; with the application's own changes (`kl_ui_damage`) they are taken as a few parts of the window to draw and show (`kl_ui_take_frame`, `kl_window_present_parts`). A part that draws the same with the pointer on it, such as a picture a press drags, is recorded with `kl_ui_hit_still` and asks for no drawing |
 | System | The network, including Wi-Fi control, saved keys, links and DNS (`keiland_network_*`); the sound output's volume and mute (`keiland_audio_*`); the desktop's preferences; recent files |
 
 A call is handled in one of two places, and the application does not need to

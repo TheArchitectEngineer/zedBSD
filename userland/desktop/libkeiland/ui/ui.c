@@ -188,6 +188,17 @@ struct kl_ui {
 	double pointer_y;
 	int pointer_inside;
 	struct ui_key hot;
+
+	/*
+	 * The widget lit when the last frame that drew the lighting was drawn
+	 * (kl_ui_end, ui_settle_lighting), and whether the lit widget changed
+	 * since (ws210-p014 F1): the part a frame needs for the lighting is
+	 * that widget and the one lit now, whatever the pointer passed over in
+	 * between, so a frame late behind the pointer draws no trail of the
+	 * rows it crossed.
+	 */
+	struct ui_key drawn_hot;
+	int lit_pending;
 	struct ui_key active;
 	struct ui_key released;
 	struct ui_key clicked;
@@ -257,15 +268,17 @@ struct kl_ui {
 	struct kl_rect text_shown_caret;
 
 	/*
-	 * The part of the window a change of the lit widget alone needs drawn
-	 * again (BUG-226): the regions of the widget lit before and of the one
-	 * lit now in the frame shown, with UI_DAMAGE_MARGIN round them.
-	 * damage_pending until kl_ui_take_damage takes it or a frame begins;
-	 * damage_whole when a change could not be placed (the whole window).
+	 * The parts of the window the next frame needs drawn again (BUG-226,
+	 * ws210-p014 F3): the regions of widgets whose look changed in the
+	 * frame shown, with UI_DAMAGE_MARGIN round them, and what the
+	 * application added (kl_ui_damage), as at most KL_FRAME_PARTS_MAX
+	 * rectangles, near ones merged.  damage_whole when a change could not
+	 * be placed (the whole window).  Kept until kl_ui_take_damage or
+	 * kl_ui_take_frame takes them or a frame begins.
 	 */
-	int damage_pending;
 	int damage_whole;
-	struct kl_rect damage;
+	unsigned damage_count;
+	struct kl_rect damage[KL_FRAME_PARTS_MAX];
 
 	/*
 	 * ws177-p013: the window the input is of, with its clipboard's calls
@@ -319,6 +332,14 @@ static struct {
 
 static const struct ui_record *ui_find(const struct kl_ui *ui, double x, double y, int regions);
 static int ui_damage_key(struct kl_ui *ui, const struct ui_key *key);
+static int ui_key_lights(const struct kl_ui *ui, const struct ui_key *key);
+static int ui_take_lighting(struct kl_ui *ui);
+static void ui_settle_lighting(struct kl_ui *ui);
+static int ui_drawing_has(const struct kl_ui *ui, const struct ui_key *key);
+static void ui_damage_rect(struct kl_ui *ui, const struct kl_rect *rect);
+static int ui_rects_near(const struct kl_rect *first, const struct kl_rect *second);
+static void ui_rect_union(struct kl_rect *into, const struct kl_rect *rect);
+static long ui_rect_area(const struct kl_rect *rect);
 static int ui_scroll_shown(const struct kl_ui *ui, const struct kl_scroll *scroll);
 static int ui_inside(const struct kl_rect *rect, double x, double y);
 static int ui_same(const struct ui_key *key, uint32_t id, uint32_t index);
@@ -435,8 +456,8 @@ kl_ui_pointer_motion(
 	const struct ui_record *record;
 	struct ui_key hot;
 	int same;
-	int left_drawn;
-	int lit_drawn;
+	int left_lights;
+	int lit_lights;
 
 	/* The place; a widget held by a press (a slider's knob) follows it. */
 	ui->pointer_x = x;
@@ -463,14 +484,21 @@ kl_ui_pointer_motion(
 	if (same)
 		return 0;
 
-	/* Another widget is lit; the two widgets' regions are drawn again, unless they draw the same lit and unlit. */
-	left_drawn = ui_damage_key(ui, &ui->hot);
+	/* Another widget is lit; whether either draws differently lit or unlit. */
+	left_lights = ui_key_lights(ui, &ui->hot);
 	ui->hot = hot;
-	lit_drawn = ui_damage_key(ui, &ui->hot);
+	lit_lights = ui_key_lights(ui, &ui->hot);
 
 	/* Two still widgets: nothing to draw. */
-	if (left_drawn == 0 && lit_drawn == 0)
+	if (left_lights == 0 && lit_lights == 0)
 		return 0;
+
+	/*
+	 * The lighting changed: the next frame draws the widget lit when the
+	 * frame shown was drawn and the one lit then (kl_ui_take_damage), not
+	 * every widget lit in between.
+	 */
+	ui->lit_pending = 1;
 
 	/* Succeeded: a part of the window is to be drawn again. */
 	return 1;
@@ -483,20 +511,23 @@ int
 kl_ui_pointer_leave(
 	struct kl_ui *ui)
 {
-	int drawn;
+	int lights;
 
 	/* Nothing lit any more. */
 	ui->pointer_inside = 0;
 	if (!ui->hot.valid)
 		return 0;
 
-	/* The lit widget goes dark, its region drawn again unless it draws the same. */
-	drawn = ui_damage_key(ui, &ui->hot);
+	/* The lit widget goes dark; whether it draws differently unlit. */
+	lights = ui_key_lights(ui, &ui->hot);
 	ui->hot.valid = 0;
 
 	/* A still widget: nothing to draw. */
-	if (drawn == 0)
+	if (lights == 0)
 		return 0;
+
+	/* The lighting changed (kl_ui_take_damage draws the widget lit when the frame shown was drawn). */
+	ui->lit_pending = 1;
 
 	/* Succeeded: the region is to be drawn again. */
 	return 1;
@@ -536,22 +567,131 @@ kl_ui_take_damage(
 	struct kl_ui *ui,
 	struct kl_rect *rect)
 {
-	int pending;
+	unsigned index;
 	int whole;
+	int lit;
+
+	/* The lighting's parts join the others. */
+	lit = ui_take_lighting(ui);
 
 	/* What there is, taken. */
-	pending = ui->damage_pending;
 	whole = ui->damage_whole;
-	ui->damage_pending = 0;
 	ui->damage_whole = 0;
 
-	/* Nothing, or no part that can be told. */
-	if (!pending || whole)
+	/* No part that can be told. */
+	if (whole) {
+		ui->damage_count = 0;
+		return 0;
+	}
+
+	/*
+	 * The lighting changed and changed back before a frame: one pixel,
+	 * drawn as it was, rather than the whole window (0 would ask for it).
+	 */
+	if (ui->damage_count == 0 && lit) {
+		rect->x = 0;
+		rect->y = 0;
+		rect->width = 1;
+		rect->height = 1;
+		return 1;
+	}
+
+	/* Nothing. */
+	if (ui->damage_count == 0)
 		return 0;
 
+	/* The box round every part. */
+	*rect = ui->damage[0];
+	for (index = 1; index < ui->damage_count; index++)
+		ui_rect_union(rect, &ui->damage[index]);
+	ui->damage_count = 0;
+
 	/* Succeeded: the part. */
-	*rect = ui->damage;
 	return 1;
+}
+
+/*
+ * Takes what the next frame needs drawn again (KL_VERSION 90): the parts
+ * the lit widget's change needs (the widget lit when the frame shown was
+ * drawn and the one lit now, not those lit in between) and those
+ * kl_ui_damage added, at most capacity of them.
+ *
+ * Returns KL_FRAME_NONE with count 0 when nothing is to be drawn,
+ * KL_FRAME_PARTS with count parts, or KL_FRAME_WHOLE when the whole window
+ * is.  The parts are then forgotten.
+ */
+int
+kl_ui_take_frame(
+	struct kl_ui *ui,
+	struct kl_rect *parts,
+	unsigned capacity,
+	unsigned *count)
+{
+	unsigned index;
+	int whole;
+
+	/* The lighting's parts join the others. */
+	*count = 0;
+	(void)ui_take_lighting(ui);
+
+	/* The whole window, or nothing at all. */
+	whole = ui->damage_whole;
+	ui->damage_whole = 0;
+	if (whole) {
+		ui->damage_count = 0;
+		return KL_FRAME_WHOLE;
+	}
+	if (ui->damage_count == 0)
+		return KL_FRAME_NONE;
+
+	/* No room for a part: the whole window. */
+	if (capacity == 0U) {
+		ui->damage_count = 0;
+		return KL_FRAME_WHOLE;
+	}
+
+	/* The parts, those beyond the room merged into the last one given. */
+	for (index = 0; index < ui->damage_count; index++) {
+		if (index < capacity) {
+			parts[index] = ui->damage[index];
+			*count = index + 1U;
+		} else {
+			ui_rect_union(&parts[capacity - 1U], &ui->damage[index]);
+		}
+	}
+	ui->damage_count = 0;
+
+	/* Succeeded: the parts to draw. */
+	return KL_FRAME_PARTS;
+}
+
+/*
+ * Adds a part of the window that the next frame needs drawn again, for a
+ * change the widgets do not know of (KL_VERSION 90); an empty one adds
+ * nothing.
+ */
+void
+kl_ui_damage(
+	struct kl_ui *ui,
+	const struct kl_rect *rect)
+{
+	/* An empty part. */
+	if (rect->width <= 0 || rect->height <= 0)
+		return;
+
+	/* The part among the others. */
+	ui_damage_rect(ui, rect);
+}
+
+/*
+ * Asks for the whole window to be drawn in the next frame (KL_VERSION 90).
+ */
+void
+kl_ui_damage_whole(
+	struct kl_ui *ui)
+{
+	/* The whole window from now until a frame takes it. */
+	ui->damage_whole = 1;
 }
 
 /*
@@ -873,8 +1013,8 @@ kl_ui_begin(
 	/* The fingers' selection's field has not been drawn in it yet (ws190-p002). */
 	ui->select.drawn = 0;
 
-	/* A frame drawn covers the changes of the lit widget so far. */
-	ui->damage_pending = 0;
+	/* A frame drawn covers the changes of the lit widget so far (the lighting's own is settled by kl_ui_end). */
+	ui->damage_count = 0;
 	ui->damage_whole = 0;
 }
 
@@ -1010,6 +1150,9 @@ kl_ui_end(
 
 	/* The fingers' selection's handles and bar over the frame, or its end (ws190-p002). */
 	ui_select_overlay(ui);
+
+	/* The lighting the frame was drawn with, when it drew the widgets concerned. */
+	ui_settle_lighting(ui);
 
 	/* The frame drawn is the one on the screen now. */
 	swap = ui->shown;
@@ -2235,10 +2378,7 @@ ui_damage_key(
 	const struct ui_record *record;
 	struct kl_rect grown;
 	size_t index;
-	int first;
 	int same;
-	int right;
-	int bottom;
 
 	/* No widget. */
 	if (!key->valid)
@@ -2260,19 +2400,11 @@ ui_damage_key(
 	if (record != NULL && (record->flags & KEIUI_STILL) != 0U)
 		return 0;
 
-	/* Something to draw again from now; a widget without a region is the whole window. */
-	first = 0;
-	if (!ui->damage_pending)
-		first = 1;
-	ui->damage_pending = 1;
+	/* A widget without a region is the whole window. */
 	if (record == NULL) {
 		ui->damage_whole = 1;
 		return 1;
 	}
-
-	/* The whole window already: nothing to add. */
-	if (ui->damage_whole)
-		return 1;
 
 	/* The region and its margin. */
 	grown.x = record->rect.x - UI_DAMAGE_MARGIN;
@@ -2280,27 +2412,261 @@ ui_damage_key(
 	grown.width = record->rect.width + 2 * UI_DAMAGE_MARGIN;
 	grown.height = record->rect.height + 2 * UI_DAMAGE_MARGIN;
 
-	/* The first region is the part. */
-	if (first) {
-		ui->damage = grown;
+	/* Among the parts to draw again. */
+	ui_damage_rect(ui, &grown);
+
+	/* Succeeded: the region is in the parts to draw again. */
+	return 1;
+}
+
+/*
+ * Adds the lighting's parts: the widget lit when the frame shown was
+ * drawn and the one lit now, when they differ.  Returns whether the
+ * lighting changed at all since that frame.
+ */
+static int
+ui_take_lighting(
+	struct kl_ui *ui)
+{
+	int lit;
+	int same;
+
+	/* Whether the lit widget changed, now taken. */
+	lit = ui->lit_pending;
+	ui->lit_pending = 0;
+
+	/* The widget lit when drawn and the one lit now, when not the same. */
+	same = 0;
+	if (ui->drawn_hot.valid && ui->hot.valid)
+		same = ui_same(&ui->drawn_hot, ui->hot.id, ui->hot.index);
+	if (!ui->drawn_hot.valid && !ui->hot.valid)
+		same = 1;
+	if (lit && !same) {
+		(void)ui_damage_key(ui, &ui->drawn_hot);
+		(void)ui_damage_key(ui, &ui->hot);
+	}
+
+	/* Reports whether the lighting changed. */
+	return lit;
+}
+
+/*
+ * Records the widget lit when the frame being ended was drawn (ws210-p014
+ * F1, review-1 M1): when it recorded the widget lit now, or, with none lit
+ * now, the widget lit when the frame before was drawn, it drew the
+ * lighting as it is now.  A frame that recorded neither (a field's key
+ * worked out on a one-pixel canvas) drew no lighting and changes nothing.
+ */
+static void
+ui_settle_lighting(
+	struct kl_ui *ui)
+{
+	int drew;
+
+	/* Whether the frame drew the widgets whose lighting it is about. */
+	drew = 0;
+	if (ui->hot.valid) {
+		drew = ui_drawing_has(ui, &ui->hot);
+	} else if (ui->drawn_hot.valid) {
+		drew = ui_drawing_has(ui, &ui->drawn_hot);
+	}
+
+	/* A frame that drew no lighting leaves the lighting's record as it was. */
+	if (!drew)
+		return;
+
+	/* The lighting drawn is the one now; nothing of it is waiting. */
+	ui->drawn_hot = ui->hot;
+	ui->lit_pending = 0;
+}
+
+/* Tells whether the frame being drawn recorded a widget (1) or not (0). */
+static int
+ui_drawing_has(
+	const struct kl_ui *ui,
+	const struct ui_key *key)
+{
+	size_t index;
+	int same;
+
+	/* Each widget the frame recorded. */
+	for (index = 0; index < ui->drawing_count; index++) {
+		if (ui->drawing[index].kind != UI_KIND_HIT)
+			continue;
+		same = ui_same(key, ui->drawing[index].id, ui->drawing[index].index);
+		if (same)
+			return 1;
+	}
+
+	/* Reports that it did not. */
+	return 0;
+}
+
+/*
+ * Adds a rectangle to the parts to draw again: merged with a near part
+ * (overlapping, or whose box with it is at most half again their areas),
+ * else a part of its own, else, without room, merged with the part it
+ * widens least.
+ */
+static void
+ui_damage_rect(
+	struct kl_ui *ui,
+	const struct kl_rect *rect)
+{
+	struct kl_rect box;
+	struct kl_rect merged;
+	unsigned index;
+	unsigned other;
+	unsigned best;
+	long growth;
+	long least;
+	int near;
+	int again;
+
+	/* The whole window holds it already. */
+	if (ui->damage_whole)
+		return;
+
+	/* Merged into the first near part, if any. */
+	merged = *rect;
+	for (index = 0; index < ui->damage_count; index++) {
+		near = ui_rects_near(&ui->damage[index], &merged);
+		if (!near)
+			continue;
+		ui_rect_union(&ui->damage[index], &merged);
+		break;
+	}
+
+	/* A part of its own, or merged with the part it widens least. */
+	if (index == ui->damage_count) {
+		if (ui->damage_count < KL_FRAME_PARTS_MAX) {
+			ui->damage[ui->damage_count] = merged;
+			ui->damage_count++;
+			return;
+		}
+		best = 0;
+		least = -1;
+		for (other = 0; other < ui->damage_count; other++) {
+			box = ui->damage[other];
+			ui_rect_union(&box, &merged);
+			growth = ui_rect_area(&box) - ui_rect_area(&ui->damage[other]);
+			if (least < 0 || growth < least) {
+				least = growth;
+				best = other;
+			}
+		}
+		ui_rect_union(&ui->damage[best], &merged);
+	}
+
+	/* Parts that grew near each other become one, until none are. */
+	do {
+		again = 0;
+		for (index = 0; index < ui->damage_count && !again; index++) {
+			for (other = index + 1U; other < ui->damage_count && !again; other++) {
+				near = ui_rects_near(&ui->damage[index], &ui->damage[other]);
+				if (!near)
+					continue;
+				ui_rect_union(&ui->damage[index], &ui->damage[other]);
+				ui->damage[other] = ui->damage[ui->damage_count - 1U];
+				ui->damage_count--;
+				again = 1;
+			}
+		}
+	} while (again);
+}
+
+/*
+ * Tells whether two parts are drawn as one (1): when they overlap, or when
+ * the box round both is at most half again as large as the two together.
+ */
+static int
+ui_rects_near(
+	const struct kl_rect *first,
+	const struct kl_rect *second)
+{
+	struct kl_rect box;
+	long box_area;
+	long apart_area;
+
+	/* The box round both, and what the two cover on their own. */
+	box = *first;
+	ui_rect_union(&box, second);
+	box_area = ui_rect_area(&box);
+	apart_area = ui_rect_area(first) + ui_rect_area(second);
+
+	/* At most half again as large: one part (overlapping parts always are). */
+	if (2L * box_area <= 3L * apart_area)
+		return 1;
+
+	/* Reports that they are far apart. */
+	return 0;
+}
+
+/* Widens a rectangle to hold another as well. */
+static void
+ui_rect_union(
+	struct kl_rect *into,
+	const struct kl_rect *rect)
+{
+	int right;
+	int bottom;
+
+	/* The far edges of both. */
+	right = into->x + into->width;
+	if (rect->x + rect->width > right)
+		right = rect->x + rect->width;
+	bottom = into->y + into->height;
+	if (rect->y + rect->height > bottom)
+		bottom = rect->y + rect->height;
+
+	/* The near edges of both, and the size between them. */
+	if (rect->x < into->x)
+		into->x = rect->x;
+	if (rect->y < into->y)
+		into->y = rect->y;
+	into->width = right - into->x;
+	into->height = bottom - into->y;
+}
+
+/* Reports a rectangle's area in pixels. */
+static long
+ui_rect_area(
+	const struct kl_rect *rect)
+{
+	/* Width by height. */
+	return (long)rect->width * (long)rect->height;
+}
+
+/*
+ * Tells whether a widget of the frame shown draws differently lit and
+ * unlit (1), or is no widget or a still one (0, kl_ui_hit_still).  A
+ * widget the frame shown has no region for counts as drawing differently.
+ */
+static int
+ui_key_lights(
+	const struct kl_ui *ui,
+	const struct ui_key *key)
+{
+	size_t index;
+	int same;
+
+	/* No widget. */
+	if (!key->valid)
+		return 0;
+
+	/* Its record in the frame shown: a still one draws the same. */
+	for (index = 0; index < ui->shown_count; index++) {
+		if (ui->shown[index].kind != UI_KIND_HIT)
+			continue;
+		same = ui_same(key, ui->shown[index].id, ui->shown[index].index);
+		if (!same)
+			continue;
+		if ((ui->shown[index].flags & KEIUI_STILL) != 0U)
+			return 0;
 		return 1;
 	}
 
-	/* Another widens it to hold both. */
-	right = ui->damage.x + ui->damage.width;
-	if (grown.x + grown.width > right)
-		right = grown.x + grown.width;
-	bottom = ui->damage.y + ui->damage.height;
-	if (grown.y + grown.height > bottom)
-		bottom = grown.y + grown.height;
-	if (grown.x < ui->damage.x)
-		ui->damage.x = grown.x;
-	if (grown.y < ui->damage.y)
-		ui->damage.y = grown.y;
-	ui->damage.width = right - ui->damage.x;
-	ui->damage.height = bottom - ui->damage.y;
-
-	/* Succeeded: the region is in the part to draw again. */
+	/* Reports a widget without a region as one that draws differently. */
 	return 1;
 }
 

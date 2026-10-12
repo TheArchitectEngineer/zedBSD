@@ -561,7 +561,7 @@ uint64_t keiui_clock_ms(void);
 /* The Vulkan presenter (present.c). */
 VkResult keiui_present_open(struct keiui_present *present, struct kl_window *window);
 VkResult keiui_present_resize(struct keiui_present *present, uint32_t width, uint32_t height);
-VkResult keiui_present_frame(struct keiui_present *present, const uint32_t *pixels, size_t stride, const struct kl_rect *part);
+VkResult keiui_present_frame(struct keiui_present *present, const uint32_t *pixels, size_t stride, const struct kl_rect *parts, unsigned count);
 void keiui_present_close(struct keiui_present *present);
 
 /* The shared-memory presenter (present-shm.c). */
