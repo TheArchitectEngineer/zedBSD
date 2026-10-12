@@ -125,13 +125,14 @@ struct vulkan_swapchain {
 	uint64_t serial;
 };
 
-/* The independently ordered workers of one queue: ordinary presents, and the cursor plane's. */
+/* The independently ordered workers of one queue: ordinary presents, the cursor plane's, and the overlay planes'. */
 enum wsi_lane {
 	WSI_LANE_ORDINARY,
-	WSI_LANE_CURSOR
+	WSI_LANE_CURSOR,
+	WSI_LANE_OVERLAY
 };
 
-/* How one cursor-plane present reaches the output. */
+/* How one cursor-plane or overlay-plane present reaches the output. */
 enum wsi_route {
 	/* The worker waits for a GPU copy of the image, then shows it. */
 	WSI_ROUTE_COPY,
@@ -251,6 +252,14 @@ struct wsi_present_job {
 	 */
 	struct wsi_present_recording recording;
 	VkBool32 reused;
+	/*
+	 * Each target's overlay present (ws214-p004), allocated when a target
+	 * is an overlay plane: the swapchain fills what it asks, the output's
+	 * decision its serial and whether it is held.  NULL otherwise.
+	 */
+	struct vulkan_wsi_overlay_present *overlays;
+	/* What the last overlay commit of the job did. */
+	enum vulkan_wsi_overlay_outcome overlay_outcome;
 	/* What the cursor present did, and its log times when the log is on. */
 	enum vulkan_wsi_cursor_outcome outcome;
 	VkBool32 logged;
@@ -348,6 +357,14 @@ static VkBool32 present_waits_consume(struct wsi_present_job *job, const VkPrese
 static VkResult present_fast(struct wsi_present_job *job, const VkPresentInfoKHR *info, VkBool32 *published);
 static VkResult present_cursor_show(struct wsi_present_job *job, uint32_t index, VkBool32 retry);
 static void present_cursor_pause(struct vulkan_swapchain *chain);
+static VkResult present_overlay_prepare(struct wsi_present_job *job);
+static VkResult present_overlay_rects(const struct wsi_present_job *job, const struct vulkan_swapchain *chain);
+static VkBool32 present_overlay_hidden(const VkDisplayPresentInfoKHR *display);
+static void present_overlay_decide(struct wsi_present_job *job, VkBool32 ready);
+static VkResult present_overlay_commit(struct wsi_present_job *job, uint32_t index, VkBool32 retry);
+static void present_overlay_settle(struct wsi_present_job *job, VkResult error);
+static void present_primary_skip(struct wsi_present_job *job, uint32_t index, VkResult error);
+static VkResult swapchain_reclaim(struct vulkan_swapchain *chain, uint64_t timeout, uint64_t started);
 static void present_publish_locked(struct wsi_queue_worker *worker, struct wsi_present_job *job);
 static void present_cursor_log_start(struct wsi_cursor_log *log);
 static void present_cursor_log(const struct wsi_present_job *job, const char *path);
@@ -715,11 +732,11 @@ vkQueuePresentKHR(
 	if (logging != 0 && job->lane == WSI_LANE_CURSOR)
 		job->logged = VK_TRUE;
 
-	/* A cursor plane's present chooses between a copy, waits alone, and showing at once. */
-	if (job->lane == WSI_LANE_CURSOR)
+	/* A cursor or overlay plane's present chooses between a copy, waits alone, and showing at once. */
+	if (job->lane == WSI_LANE_CURSOR || job->lane == WSI_LANE_OVERLAY)
 		job->route = present_route(job, info);
 
-	/* Shows an unchanged cursor image at once; only a busy output hands it to the worker. */
+	/* Shows an unchanged cursor or overlay image at once; only a busy output hands it to the worker. */
 	if (job->route == WSI_ROUTE_FAST) {
 		error = present_fast(job, info, &published);
 
@@ -758,6 +775,10 @@ vkQueuePresentKHR(
 		goto cleanup;
 	}
 
+	/* Each overlay target is held for a primary present or left to its own commit, in call order. */
+	if (job->overlays != NULL)
+		present_overlay_decide(job, VK_FALSE);
+
 	/* Publish only results known at enqueue time while caller-owned result storage is still valid. */
 	combined = VK_SUCCESS;
 	for (index = 0U; index < job->count; index++) {
@@ -786,6 +807,14 @@ cleanup:
 	/* Native acceptance followed by notification failure is terminal, never an ordinary retry. */
 	if (error == VK_ERROR_DEVICE_LOST)
 		error = swapchain_device_lost(queue->device);
+
+	/* A primary ticket of a job that goes no further drops the overlay changes held for it. */
+	if (job != NULL &&
+	    job->tickets != NULL &&
+	    error != VK_SUCCESS) {
+		for (index = 0U; index < job->count; index++)
+			present_primary_skip(job, index, error);
+	}
 
 	/* Only unpublished jobs remain caller-owned; preparation failure restores acquisition. */
 	if (job != NULL) {
@@ -966,6 +995,12 @@ swapchain_create(
 		if (old->surface->active == old)
 			old->surface->active = NULL;
 		pthread_mutex_unlock(&swapchain_mutex);
+
+		/* A retired overlay chain's held change is never shown (ws214-p004). */
+		if (old->surface->overlay != VK_FALSE &&
+		    old->lease != NULL &&
+		    old->surface->platform->overlay_forget != NULL)
+			old->surface->platform->overlay_forget(old->lease, old->serial);
 	}
 
 	/* Surface capabilities and mode generation precede native resource acquisition. */
@@ -1313,6 +1348,13 @@ swapchain_free(
 
 	/* Idle slots stop holding copies of this chain's images, which their recordings keep alive. */
 	present_slots_forget(chain);
+
+	/* A destroyed overlay chain's held change is never shown; its shown image is hidden as it is destroyed. */
+	if (chain->surface != NULL &&
+	    chain->surface->overlay != VK_FALSE &&
+	    chain->lease != NULL &&
+	    chain->surface->platform->overlay_forget != NULL)
+		chain->surface->platform->overlay_forget(chain->lease, chain->serial);
 
 	vulkan_object_unpublish(&chain->object);
 	allocator = swapchain_allocator(&chain->object.allocator);
@@ -1816,6 +1858,15 @@ swapchain_current(
 	if (error != VK_SUCCESS)
 		return VK_ERROR_DEVICE_LOST;
 
+	/* An overlay chain whose held change the output refused is out of date (ws214-p004). */
+	if (chain->surface->overlay != VK_FALSE &&
+	    chain->lease != NULL &&
+	    chain->surface->platform->overlay_status != NULL) {
+		error = chain->surface->platform->overlay_status(chain->lease, chain->serial);
+		if (error != VK_SUCCESS)
+			return error;
+	}
+
 	/* Revalidates the selected native mode without altering acquisition ownership. */
 	error = chain->surface->platform->capabilities(
 		chain->surface,
@@ -1985,8 +2036,17 @@ present_prepare(
 				return VK_ERROR_INITIALIZATION_FAILED;
 		}
 
+		/* An overlay shows a part of its image anywhere inside the output, or hides (ws214-p004). */
+		if (job->has_display != VK_FALSE && chain->surface->overlay != VK_FALSE) {
+			error = present_overlay_rects(job, chain);
+			if (error != VK_SUCCESS)
+				return error;
+		}
+
 		/* Invalid rectangles cannot escape their checked source or destination image. */
-		if (job->has_display != VK_FALSE && chain->surface->cursor == VK_FALSE) {
+		if (job->has_display != VK_FALSE &&
+		    chain->surface->cursor == VK_FALSE &&
+		    chain->surface->overlay == VK_FALSE) {
 			if (job->display.srcRect.offset.x < 0 ||
 			    job->display.srcRect.offset.y < 0 ||
 			    job->display.dstRect.offset.x < 0 ||
@@ -2047,7 +2107,12 @@ present_prepare(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* A present of one cursor plane goes to the cursor's own worker. */
+	/* What each overlay target asks of its plane. */
+	error = present_overlay_prepare(job);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* A present of one cursor or overlay plane goes to that plane kind's own worker. */
 	present_lane(job);
 
 	/* Reserve all readback slots together so concurrent queue presents cannot overwrite them. */
@@ -2120,14 +2185,24 @@ present_reserve(
 		 */
 		if (chain->surface->cursor != VK_FALSE)
 			job->tickets[index] = __atomic_add_fetch(&chain->surface->cursor_ticket, 1U, __ATOMIC_ACQ_REL);
+
+		/*
+		 * A primary present of an output with overlay planes takes the
+		 * next primary ticket, in reservation order too: it shows every
+		 * overlay change held before it was called (ws214-p004).
+		 */
+		if (chain->surface->cursor == VK_FALSE &&
+		    chain->surface->overlay == VK_FALSE &&
+		    chain->surface->platform->primary_ticket != NULL)
+			job->tickets[index] = chain->surface->platform->primary_ticket(chain->lease);
 	}
 
 	/*
-	 * A cursor-lane job notes what its copy will show.  Every legal write
-	 * of the reserved image was accepted before this present was called,
-	 * and none can follow while the image is presenting.
+	 * A cursor-lane or overlay-lane job notes what its copy will show.
+	 * Every legal write of the reserved image was accepted before this
+	 * present was called, and none can follow while the image is presenting.
 	 */
-	if (job->lane == WSI_LANE_CURSOR) {
+	if (job->lane == WSI_LANE_CURSOR || job->lane == WSI_LANE_OVERLAY) {
 		chain = job->chains[0];
 		image = vulkan_image(chain->group->images[info->pImageIndices[0]].image);
 		job->content_serial = __atomic_load_n(&image->content_serial, __ATOMIC_ACQUIRE);
@@ -2226,17 +2301,19 @@ present_record(
 		if (job->route == WSI_ROUTE_EMPTY)
 			continue;
 
-		/* Optional display composition remains GPU-resident on both direct and shared-image paths; a cursor image is copied whole. */
+		/* Optional display composition remains GPU-resident on both direct and shared-image paths; a cursor or overlay image is copied whole. */
 		display = NULL;
-		if (job->has_display != VK_FALSE && job->chains[index]->surface->cursor == VK_FALSE)
+		if (job->has_display != VK_FALSE &&
+		    job->chains[index]->surface->cursor == VK_FALSE &&
+		    job->chains[index]->surface->overlay == VK_FALSE)
 			display = &job->display;
 
 		/* Copy and composition preserve the application's optimal image contents; a kept recording already holds them. */
 		if (job->reused == VK_FALSE)
 			present_copy(job->command, job->chains[index], info->pImageIndices[index], job->queue->family, display);
 
-		/* A cursor-lane copy's completion records what the native image now holds, recorded now or kept. */
-		if (job->lane == WSI_LANE_CURSOR)
+		/* A cursor-lane or overlay-lane copy's completion records what the native image now holds, recorded now or kept. */
+		if (job->lane == WSI_LANE_CURSOR || job->lane == WSI_LANE_OVERLAY)
 			job->copy_recorded = VK_TRUE;
 	}
 
@@ -2299,8 +2376,10 @@ present_recording_key(
 	if (chain->gpu_present != VK_FALSE)
 		key->presented = chain->presentation[index].shared_presented;
 
-	/* A display rectangle composes into the native image; a cursor image is copied whole. */
-	if (job->has_display != VK_FALSE && chain->surface->cursor == VK_FALSE) {
+	/* A display rectangle composes into the native image; a cursor or overlay image is copied whole. */
+	if (job->has_display != VK_FALSE &&
+	    chain->surface->cursor == VK_FALSE &&
+	    chain->surface->overlay == VK_FALSE) {
 		key->composed = VK_TRUE;
 		key->source = job->display.srcRect;
 		key->destination = job->display.dstRect;
@@ -2880,6 +2959,7 @@ present_native(
 	VkResult error;
 	VkResult combined;
 	uint32_t index;
+	VkBool32 primary;
 
 	/* Each native backend contributes to the same post-submission result handling. */
 	combined = VK_SUCCESS;
@@ -2887,6 +2967,7 @@ present_native(
 		/* Targets rejected before submission never reach their native presentation adapter. */
 		chain = job->chains[index];
 		error = job->results[index];
+		primary = VK_FALSE;
 		if (error == VK_SUCCESS) {
 			/*
 			 * A cursor plane shows the image where the present puts it,
@@ -2897,6 +2978,9 @@ present_native(
 			    chain->surface->cursor != VK_FALSE &&
 			    chain->surface->platform->present_cursor != NULL) {
 				error = present_cursor_show(job, index, VK_TRUE);
+			} else if (job->overlays != NULL && chain->surface->overlay != VK_FALSE) {
+				/* An overlay plane's present was decided at enqueue: a held one waits for its primary. */
+				error = present_overlay_commit(job, index, VK_TRUE);
 			} else if (chain->frame == UINT64_MAX) {
 				/* A frame identifier belongs to its chain and never substitutes for a fence. */
 				error = swapchain_device_lost(chain->device);
@@ -2908,7 +2992,18 @@ present_native(
 				if (job->damage != NULL && job->damage[index].known && chain->surface->platform->damage != NULL)
 					chain->surface->platform->damage(chain->lease, job->damage[index].x, job->damage[index].y, job->damage[index].width, job->damage[index].height);
 
-				if (job->fence_fd >= 0 && chain->surface->platform->present_image_sync != NULL) {
+				if (job->tickets[index] != 0U && chain->surface->platform->present_primary != NULL) {
+					/* A primary with a ticket shows the overlay changes held for it in the same commit (ws214-p004). */
+					primary = VK_TRUE;
+					error = chain->surface->platform->present_primary(
+						chain->lease,
+						chain->presentation[info->pImageIndices[index]].native_image,
+						chain->present_mode,
+						&chain->sequence,
+						job->fence_fd,
+						job->fence_generation,
+						job->tickets[index]);
+				} else if (job->fence_fd >= 0 && chain->surface->platform->present_image_sync != NULL) {
 					/* Native K repeats the exact producer dependency check before hardware access. */
 					error = chain->surface->platform->present_image_sync(
 						chain->lease,
@@ -2947,6 +3042,10 @@ present_native(
 		/* A present that failed takes back the part it named, so the next one does not commit it. */
 		if (error != VK_SUCCESS && job->damage != NULL && job->damage[index].known && chain->surface->platform->damage != NULL)
 			chain->surface->platform->damage(chain->lease, 0, 0, 0, 0);
+
+		/* A primary ticket that did not reach present_primary lets its held overlay changes go their way. */
+		if (primary == VK_FALSE)
+			present_primary_skip(job, index, error);
 
 		/* Consumed waits cannot be rolled back by allocation failure in either backend. */
 		if (error == VK_ERROR_OUT_OF_HOST_MEMORY || error == VK_ERROR_OUT_OF_DEVICE_MEMORY)
@@ -3045,6 +3144,7 @@ present_finish(
 	}
 
 	vulkan_free(&job->allocator, job->composed);
+	vulkan_free(&job->allocator, job->overlays);
 	vulkan_free(&job->allocator, job->damage);
 	vulkan_free(&job->allocator, job->stages);
 	vulkan_free(&job->allocator, job->results);
@@ -3316,6 +3416,7 @@ present_worker_main(
 	VkResult waited;
 	uint32_t index;
 	VkBool32 early;
+	VkBool32 presented;
 	const char *path;
 
 	/* The logical device joins this worker before any referenced queue can retire. */
@@ -3362,11 +3463,14 @@ present_worker_main(
 		 * whose waits were consumed without GPU work has neither.
 		 */
 		early = VK_FALSE;
+		presented = VK_FALSE;
 		error = VK_SUCCESS;
 		if (job->native_only == VK_FALSE)
 			early = present_early(job);
-		if (early)
+		if (early) {
 			error = present_native(job, &job->info);
+			presented = VK_TRUE;
+		}
 
 		/* Neither transport acceptance nor a context-zero display fence proves producer completion. */
 		if (job->native_only == VK_FALSE) {
@@ -3382,11 +3486,23 @@ present_worker_main(
 			} else if (job->copy_recorded != VK_FALSE) {
 				job->copy_done = VK_TRUE;
 			}
+
+			/* Held overlay changes may now be shown by their primary present, or are dropped. */
+			if (job->overlays != NULL)
+				present_overlay_settle(job, error);
 		}
 
 		/* The unchanged Wayland v1 contract receives commits only after GPU writes and ownership release finish. */
-		if (error == VK_SUCCESS && !early)
+		if (error == VK_SUCCESS && !early) {
 			error = present_native(job, &job->info);
+			presented = VK_TRUE;
+		}
+
+		/* A primary ticket of a job that never reached the output drops the changes held for it. */
+		if (presented == VK_FALSE) {
+			for (index = 0U; index < job->count; index++)
+				present_primary_skip(job, index, error);
+		}
 
 		/* Native failures belong to future chain operations, never a returned caller output array. */
 		for (index = 0U; index < job->count; index++) {
@@ -3503,6 +3619,9 @@ present_drain(
 	}
 
 	pthread_mutex_unlock(&swapchain_mutex);
+
+	/* Overlay changes no primary present will take are shown alone before idle returns (ws214-p004). */
+	vulkan_wsi_display_overlay_flush(device);
 
 	/* Only device loss belongs to the public queue/device idle result domain. */
 	error = __atomic_load_n(&device->error, __ATOMIC_ACQUIRE);
@@ -3702,6 +3821,23 @@ swapchain_acquire(
 		if (acquired != VK_FALSE) {
 			pthread_mutex_unlock(&swapchain_mutex);
 			break;
+		}
+
+		/*
+		 * An overlay image the output still reads comes free at an
+		 * adoption, which is waited for without any lock (ws214-p004).
+		 */
+		if (chain->surface->overlay != VK_FALSE && chain->surface->platform->reclaim != NULL) {
+			pthread_mutex_unlock(&swapchain_mutex);
+
+			/* A freed image is looked for again; nothing to wait for leaves the ordinary sleep. */
+			error = swapchain_reclaim(chain, timeout, started);
+			if (error == VK_SUCCESS)
+				continue;
+			if (error != VK_NOT_READY)
+				return error;
+
+			pthread_mutex_lock(&swapchain_mutex);
 		}
 
 		/* Timeout zero performs one observation without registering a sleep. */
@@ -3971,7 +4107,7 @@ present_regions(
 	return VK_SUCCESS;
 }
 
-/* Chooses the worker of a present: one cursor plane's alone goes to the cursor lane. */
+/* Chooses the worker of a present: one cursor or overlay plane's alone goes to that plane kind's lane. */
 static void
 present_lane(
 	struct wsi_present_job *job)
@@ -3983,17 +4119,24 @@ present_lane(
 	if (job->count != 1U)
 		return;
 
-	/* Only a cursor plane's GPU images, shown by the cursor present, take the cursor lane. */
+	/* Only GPU images of a plane with its own present take another lane. */
 	chain = job->chains[0];
-	if (chain->surface->cursor == VK_FALSE)
-		return;
 	if (chain->gpu_present == VK_FALSE)
 		return;
-	if (chain->surface->platform->present_cursor == NULL)
-		return;
 
-	/* Succeeded: the present never waits behind an ordinary present of the queue. */
-	job->lane = WSI_LANE_CURSOR;
+	/* A cursor plane's images, shown by the cursor present. */
+	if (chain->surface->cursor != VK_FALSE && chain->surface->platform->present_cursor != NULL) {
+		job->lane = WSI_LANE_CURSOR;
+		return;
+	}
+
+	/* An overlay plane's images, shown by the overlay commit (ws214-p004). */
+	if (chain->surface->overlay != VK_FALSE && chain->surface->platform->overlay_commit != NULL) {
+		job->lane = WSI_LANE_OVERLAY;
+		return;
+	}
+
+	/* Succeeded: any other present keeps the ordinary lane. */
 	return;
 }
 
@@ -4024,6 +4167,18 @@ present_route(
 	job->log.why = "result";
 	if (job->results[0] != VK_SUCCESS)
 		return WSI_ROUTE_COPY;
+
+	/* A present that hides an overlay plane shows no pixels, so only its waits matter. */
+	if (job->overlays != NULL && job->overlays[0].hide != VK_FALSE) {
+		job->log.why = "waits";
+		consumed = present_waits_consume(job, info);
+		if (consumed == VK_FALSE)
+			return WSI_ROUTE_EMPTY;
+
+		/* Succeeded: the plane is hidden at once. */
+		job->log.why = "none";
+		return WSI_ROUTE_FAST;
+	}
 
 	/* A chain the application may write by other means than transfers is always copied. */
 	job->log.why = "usage";
@@ -4159,6 +4314,7 @@ present_fast(
 {
 	struct vulkan_swapchain *chain;
 	struct wsi_queue_worker *worker;
+	VkBool32 busy;
 	VkResult error;
 
 	/* The waits are consumed: from here on the present counts as enqueued. */
@@ -4179,13 +4335,25 @@ present_fast(
 			error = VK_ERROR_DEVICE_LOST;
 	}
 
-	/* Asks the output once; a busy output is retried by the worker, not here. */
-	if (error == VK_SUCCESS)
+	/*
+	 * Asks the output once; a busy output is retried by the worker, not
+	 * here.  An overlay present is first decided: a held one is done.
+	 */
+	busy = VK_FALSE;
+	if (error == VK_SUCCESS && job->lane == WSI_LANE_OVERLAY) {
+		present_overlay_decide(job, VK_TRUE);
+		error = present_overlay_commit(job, 0U, VK_FALSE);
+		if (job->overlay_outcome == VULKAN_WSI_OVERLAY_BUSY)
+			busy = VK_TRUE;
+	} else if (error == VK_SUCCESS) {
 		error = present_cursor_show(job, 0U, VK_FALSE);
+		if (job->outcome == VULKAN_WSI_CURSOR_BUSY)
+			busy = VK_TRUE;
+	}
 
-	/* A busy output gets the present again from the cursor lane's worker. */
-	if (error == VK_SUCCESS && job->outcome == VULKAN_WSI_CURSOR_BUSY) {
-		error = present_worker_get(job->queue, WSI_LANE_CURSOR, &worker);
+	/* A busy output gets the present again from its lane's worker. */
+	if (error == VK_SUCCESS && busy != VK_FALSE) {
+		error = present_worker_get(job->queue, job->lane, &worker);
 		if (error == VK_SUCCESS) {
 			/* The caller's result storage is written before the worker may free the job. */
 			if (info->pResults != NULL)
@@ -4215,7 +4383,7 @@ present_fast(
 		__atomic_store_n(&chain->error, error, __ATOMIC_RELEASE);
 	job->results[0] = error;
 
-	/* A logged present reports itself now that every lock is released. */
+	/* A logged cursor present reports itself now that every lock is released. */
 	if (job->logged != VK_FALSE)
 		present_cursor_log(job, "fast");
 
@@ -4462,4 +4630,367 @@ present_cursor_log(
 
 	/* Succeeded: the line is written. */
 	return;
+}
+
+/*
+ * Notes what each overlay-plane target of a present asks of its plane
+ * (ws214-p004): the chain, the rectangles or that the plane hides, and the
+ * time of the call for the overlay log.  A job without such a target, or
+ * whose backend has no overlay planes, gets no requests.
+ */
+static VkResult
+present_overlay_prepare(
+	struct wsi_present_job *job)
+{
+	struct vulkan_swapchain *chain;
+	struct vulkan_wsi_overlay_present *request;
+	uint64_t now;
+	size_t bytes;
+	uint32_t index;
+	VkBool32 found;
+	VkResult error;
+
+	/* Looks for an overlay target whose backend decides its presents. */
+	found = VK_FALSE;
+	for (index = 0U; index < job->count; index++) {
+		/* An overlay plane of a backend with overlay planes. */
+		chain = job->chains[index];
+		if (chain->surface->overlay != VK_FALSE && chain->surface->platform->overlay_decide != NULL)
+			found = VK_TRUE;
+	}
+
+	/* No overlay target: nothing to note. */
+	if (found == VK_FALSE)
+		return VK_SUCCESS;
+
+	/* One request a target, zero for the targets that are not overlays. */
+	bytes = (size_t)job->count * sizeof(*job->overlays);
+	if (bytes / sizeof(*job->overlays) != job->count)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	job->overlays = vulkan_allocate(&job->allocator, bytes, sizeof(void *), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+	if (job->overlays == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	memset(job->overlays, 0, bytes);
+
+	/* The call's time pairs the overlay log with the compositor's; an unreadable clock leaves zero. */
+	error = swapchain_now(&now);
+	if (error != VK_SUCCESS)
+		now = 0U;
+
+	/* Each overlay target's chain, rectangles and hiding. */
+	for (index = 0U; index < job->count; index++) {
+		/* Only the overlay targets. */
+		chain = job->chains[index];
+		if (chain->surface->overlay == VK_FALSE)
+			continue;
+
+		/* The chain and the time; its rectangles when the present names them. */
+		request = &job->overlays[index];
+		request->owner = chain->serial;
+		request->call_ns = now;
+		request->why = "none";
+		if (job->has_display != VK_FALSE) {
+			request->has_rect = VK_TRUE;
+			request->source = job->display.srcRect;
+			request->destination = job->display.dstRect;
+			request->hide = present_overlay_hidden(&job->display);
+		}
+	}
+
+	/* Succeeded: every overlay target has its request. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Checks an overlay target's rectangles: a part of its image, shown anywhere
+ * inside the output (the kernel checks the scaling limits), never
+ * persistent.  Hiding, 1x1 at the origin for both, passes as any other.
+ */
+static VkResult
+present_overlay_rects(
+	const struct wsi_present_job *job,
+	const struct vulkan_swapchain *chain)
+{
+	const VkDisplayPresentInfoKHR *display;
+	VkExtent2D output;
+
+	/* The rectangles and the output they are shown on. */
+	display = &job->display;
+	output = chain->surface->display_mode->parameters.visibleRegion;
+
+	/* A persistent present is not offered. */
+	if (display->persistent != VK_FALSE)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* Neither rectangle starts before its image or the output. */
+	if (display->srcRect.offset.x < 0 ||
+	    display->srcRect.offset.y < 0 ||
+	    display->dstRect.offset.x < 0 ||
+	    display->dstRect.offset.y < 0)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* Both rectangles cover at least one pixel. */
+	if (display->srcRect.extent.width == 0U ||
+	    display->srcRect.extent.height == 0U ||
+	    display->dstRect.extent.width == 0U ||
+	    display->dstRect.extent.height == 0U)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* The source lies inside the image. */
+	if ((uint32_t)display->srcRect.offset.x > chain->extent.width ||
+	    display->srcRect.extent.width > chain->extent.width - (uint32_t)display->srcRect.offset.x ||
+	    (uint32_t)display->srcRect.offset.y > chain->extent.height ||
+	    display->srcRect.extent.height > chain->extent.height - (uint32_t)display->srcRect.offset.y)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* The destination lies inside the output. */
+	if ((uint32_t)display->dstRect.offset.x > output.width ||
+	    display->dstRect.extent.width > output.width - (uint32_t)display->dstRect.offset.x ||
+	    (uint32_t)display->dstRect.offset.y > output.height ||
+	    display->dstRect.extent.height > output.height - (uint32_t)display->dstRect.offset.y)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* Succeeded: the plane can be asked to show the rectangles. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Tells whether a present's rectangles hide its overlay plane: srcRect and
+ * dstRect both 1x1 at the origin, the library's convention (README).
+ */
+static VkBool32
+present_overlay_hidden(
+	const VkDisplayPresentInfoKHR *display)
+{
+	/* The source is the image's first pixel alone. */
+	if (display->srcRect.offset.x != 0 || display->srcRect.offset.y != 0)
+		return VK_FALSE;
+	if (display->srcRect.extent.width != 1U || display->srcRect.extent.height != 1U)
+		return VK_FALSE;
+
+	/* The destination is the output's first pixel alone. */
+	if (display->dstRect.offset.x != 0 || display->dstRect.offset.y != 0)
+		return VK_FALSE;
+	if (display->dstRect.extent.width != 1U || display->dstRect.extent.height != 1U)
+		return VK_FALSE;
+
+	/* Succeeded: the present hides the plane. */
+	return VK_TRUE;
+}
+
+/*
+ * Decides each overlay target of an enqueued job, in call order: held for
+ * a primary present, or left to its own commit.  ready says no GPU work of
+ * the present remains (the fast path); otherwise the worker says so later.
+ */
+static void
+present_overlay_decide(
+	struct wsi_present_job *job,
+	VkBool32 ready)
+{
+	struct vulkan_swapchain *chain;
+	struct vulkan_wsi_overlay_present *request;
+	void *image;
+	uint32_t index;
+
+	/* Every overlay target that is still to be presented. */
+	for (index = 0U; index < job->count; index++) {
+		/* A target that is not an overlay, or that failed already, has nothing to decide. */
+		chain = job->chains[index];
+		if (chain->surface->overlay == VK_FALSE || job->results[index] != VK_SUCCESS)
+			continue;
+
+		/* The route's reason, and the native image unless the plane hides. */
+		request = &job->overlays[index];
+		request->ready = ready;
+		if (job->lane == WSI_LANE_OVERLAY && job->log.why != NULL)
+			request->why = job->log.why;
+		image = NULL;
+		if (request->hide == VK_FALSE)
+			image = chain->presentation[job->indices[index]].native_image;
+
+		/* The output decides against every present decided before it. */
+		chain->surface->platform->overlay_decide(chain->lease, image, request);
+	}
+
+	/* Succeeded: every overlay target is held or waits for its commit. */
+	return;
+}
+
+/*
+ * Commits one decided overlay target that was not held.
+ *
+ * With retry (the worker), a busy output is asked again every refresh
+ * period until it records the present, or WSI_CURSOR_BUSY_LIMIT passes and
+ * the present is dropped, not failed: a later present of the plane shows.
+ */
+static VkResult
+present_overlay_commit(
+	struct wsi_present_job *job,
+	uint32_t index,
+	VkBool32 retry)
+{
+	struct vulkan_swapchain *chain;
+	struct vulkan_wsi_overlay_present *request;
+	void *image;
+	uint64_t started;
+	uint64_t now;
+	VkResult error;
+
+	/* A held present is the primary present's to show. */
+	chain = job->chains[index];
+	request = &job->overlays[index];
+	job->overlay_outcome = VULKAN_WSI_OVERLAY_DROPPED;
+	if (request->held != VK_FALSE)
+		return VK_SUCCESS;
+
+	/* The native image, unless the plane hides, and where the commit runs. */
+	image = NULL;
+	if (request->hide == VK_FALSE)
+		image = chain->presentation[job->indices[index]].native_image;
+	request->on_worker = retry;
+
+	/* Asks the output until it records the present or the present gives way. */
+	started = 0U;
+	for (;;) {
+		/* The commit, alone. */
+		error = chain->surface->platform->overlay_commit(chain->lease, image, request, &job->overlay_outcome);
+		if (error != VK_SUCCESS)
+			return error;
+
+		/* Recorded, dropped, or busy without a retry: the caller has the outcome. */
+		if (job->overlay_outcome != VULKAN_WSI_OVERLAY_BUSY)
+			return VK_SUCCESS;
+		if (retry == VK_FALSE)
+			return VK_SUCCESS;
+
+		/* The time since the first busy answer bounds the retries. */
+		error = swapchain_now(&now);
+		if (error != VK_SUCCESS)
+			return error;
+		if (started == 0U)
+			started = now;
+
+		/* An output busy for this long is not waited for further. */
+		if (now - started >= WSI_CURSOR_BUSY_LIMIT) {
+			job->overlay_outcome = VULKAN_WSI_OVERLAY_DROPPED;
+			return VK_SUCCESS;
+		}
+
+		/* One refresh later an adoption may have freed the output's places. */
+		present_cursor_pause(chain);
+	}
+}
+
+/*
+ * Tells the output that a job's held overlay changes have complete pixels,
+ * or, with an error of its GPU work, that they are never to be shown.
+ */
+static void
+present_overlay_settle(
+	struct wsi_present_job *job,
+	VkResult error)
+{
+	struct vulkan_swapchain *chain;
+	struct vulkan_wsi_overlay_present *request;
+	uint32_t index;
+
+	/* Every held overlay target of the job. */
+	for (index = 0U; index < job->count; index++) {
+		/* Only a held present of an overlay target that was decided. */
+		chain = job->chains[index];
+		request = &job->overlays[index];
+		if (chain->surface->overlay == VK_FALSE || request->held == VK_FALSE)
+			continue;
+
+		/* The change may now go with its primary present, or is dropped. */
+		chain->surface->platform->overlay_ready(chain->lease, request->serial, error);
+	}
+
+	/* Succeeded: no held change of the job waits for its pixels. */
+	return;
+}
+
+/*
+ * Lets the overlay changes held for a primary target's ticket go their way
+ * when the target does not reach present_primary: alone after a present
+ * that succeeded otherwise, dropped after a failure.  The ticket is used once.
+ */
+static void
+present_primary_skip(
+	struct wsi_present_job *job,
+	uint32_t index,
+	VkResult error)
+{
+	struct vulkan_swapchain *chain;
+	uint64_t ticket;
+
+	/* Only a resolved primary target with a ticket, of a backend with overlay planes. */
+	if (job->chains == NULL || job->tickets == NULL)
+		return;
+	chain = job->chains[index];
+	ticket = job->tickets[index];
+	if (chain == NULL || ticket == 0U)
+		return;
+	if (chain->surface->cursor != VK_FALSE || chain->surface->overlay != VK_FALSE)
+		return;
+	if (chain->surface->platform->primary_skip == NULL)
+		return;
+
+	/* The changes the ticket would have taken; the ticket takes nothing more. */
+	chain->surface->platform->primary_skip(chain->lease, ticket, error);
+	job->tickets[index] = 0U;
+
+	/* Succeeded: no change waits for the ticket. */
+	return;
+}
+
+/*
+ * Waits for an overlay image of a chain to come free from the output, at
+ * most until the acquisition's deadline and a second at a time.
+ *
+ * VK_SUCCESS asks the caller to look for an image again, VK_NOT_READY that
+ * no image waits for an adoption, VK_TIMEOUT that the deadline passed.
+ */
+static VkResult
+swapchain_reclaim(
+	struct vulkan_swapchain *chain,
+	uint64_t timeout,
+	uint64_t started)
+{
+	uint64_t wait;
+	uint64_t now;
+	VkResult error;
+
+	/* How long this look may wait: not at all for a timeout of zero, the time left otherwise. */
+	wait = 0U;
+	if (timeout != 0U) {
+		/* The time already spent. */
+		error = swapchain_now(&now);
+		if (error != VK_SUCCESS)
+			return error;
+
+		/* The caller's deadline has passed. */
+		if (timeout != UINT64_MAX && now - started >= timeout)
+			return VK_TIMEOUT;
+
+		/* A second at a time, the kernel's limit for one wait. */
+		wait = 1000000000ULL;
+		if (timeout != UINT64_MAX && timeout - (now - started) < wait)
+			wait = timeout - (now - started);
+	}
+
+	/* The output frees an image at an adoption. */
+	error = chain->surface->platform->reclaim(chain->lease, wait);
+
+	/* The wait ended without one; the deadline is checked on the next look. */
+	if (error == VK_TIMEOUT && timeout != 0U)
+		return VK_SUCCESS;
+
+	/* Nothing to wait for, a timeout of zero, or the output's failure. */
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: an image came free. */
+	return VK_SUCCESS;
 }

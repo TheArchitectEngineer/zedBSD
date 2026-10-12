@@ -133,7 +133,8 @@ static const struct vulkan_wsi_platform_ops fx_platform = {
 	fx_capabilities, fx_formats, fx_modes,
 	fx_claim, fx_release, NULL, NULL, NULL,
 	fx_import, fx_present_image, NULL, fx_available, fx_destroy_image, NULL, NULL, NULL, NULL,
-	NULL, NULL, NULL, fx_present_cursor
+	NULL, NULL, NULL, fx_present_cursor,
+	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
 static void fx_setup(void);

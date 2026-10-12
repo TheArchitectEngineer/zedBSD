@@ -116,6 +116,46 @@ instance の `VK_EXT_display_surface_counter` と device の `VK_EXT_display_con
 
 host の試験は `plan/ws113/tests/host-display-events.sh`、独立の client は `userland/tests/display-events/`。
 
+## Overlay の plane（ws214-p004）
+
+`GPU_DISPLAY_HAS_OVERLAYS` の出力では、plane を primary（0）、overlay（1〜K）、cursor（最後）の順に列挙します（stack の順も同じ）。
+overlay の plane は `VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_PREMULTIPLIED_BIT_KHR` で、`vkGetDisplayPlaneCapabilitiesKHR` の src・dst の範囲は
+kernel の `GPU_DISPLAY_OVERLAY_INFO`、置き場所は出力の中だけ（minDstPosition は (0,0)）です。overlay の surface は primary の claim を借り
+（primary の swapchain が先に要る）、swapchain の `minImageCount` は 1（2 枚を同時に acquire できる）。画像は共有の画像だけで、copy の経路は
+ありません。位置と拡大縮小は `VkDisplayPresentInfoKHR` の `srcRect`（画像の中）と `dstRect`（出力の中）で、矩形の無い present は前の矩形のまま
+です。
+
+原子性の規則（実装の定めで、仕様の外。仕様は禁じない）:
+
+1. 1 回の `vkQueuePresentKHR` には 1 つの plane の swapchain を渡します。複数を渡された時は chain ごとに順に扱い、揃えることは約束しません。
+2. **切り替えの保留**: overlay の present のうち、見える・隠れるの切り替え（隠れた plane を出す、出ている plane を隠す）は kernel に出さず
+   display ごとに保留します。保留は「保留した時までに呼ばれた primary の present の数＋1」（`min_primary`）を持ち、primary の present は
+   呼ばれた順の ticket を持ちます。ticket が `min_primary` 以上の primary の present が、保留を全部取り込んで 1 回の
+   `GPU_DISPLAY_COMMIT` にします。保留より前に呼ばれた primary（GPU を待っている前のコマ）は取り込みません。
+3. 保留がある plane への present は、切り替えかどうかに関わらず保留を置き換えます（`min_primary` と期限は最初の物のまま）。置き換えられた
+   画像はすぐ acquire できます。
+4. 保留の無い plane の切り替えでない present は単独で commit します。中身の変わらない画像（usage が TRANSFER だけの chain で、前の copy
+   から書かれていない）で待ちが済んでいれば呼んだ thread で（fast path）、そうでなければ overlay の lane の worker が GPU の copy を待って。
+5. よって compositor は「切り替えの overlay の present → primary の present」の順に、間に描画を挟まずに呼びます。逆だと切り替えは次の
+   primary まで遅れます。
+6. **primary を伴わない flush**: 保留の後 2 refresh の間に `min_primary` 以上の primary の present が呼ばれなければ、保留は単独で commit
+   されます（log `why=expired`）。`vkQueueWaitIdle`・`vkDeviceWaitIdle` は保留を単独で commit して採用を待ってから返ります（`why=flush`）。
+   退役した chain（oldSwapchain・破棄）の保留は捨て、`vkDestroySwapchainKHR` は出ている plane を隠す commit を出して採用を待ちます
+   （`why=destroy`）。単独の flush は primary と同じ refresh を約束しません。
+
+**隠す約束**: overlay の present で `srcRect` と `dstRect` がともに offset (0,0)・extent 1×1 なら、その plane を隠します（画像は読まれず、
+swapchain は壊れません）。1×1 の overlay を本当に出す用途は無いものとします。
+
+失敗: 保留を含む commit を kernel が ENOSPC・EINVAL で拒むと、取り込んだ保留を全部捨て、primary も出しません（前の画面を保つ）。primary の
+present は成功のままで、保留の chain は次の present・acquire で `VK_ERROR_OUT_OF_DATE_KHR` を返します。保留の無い commit の
+ENOSPC・EINVAL はその chain だけ OUT_OF_DATE です。overlay の画像は、それを外す記録の採用までは kernel が読むので acquire できず、
+acquire はその採用を `GPU_DISPLAY_WAIT` で display の lock を持たずに待ちます。
+
+log: `VULKAN_ZEDBSD_OVERLAY_LOG=1` で overlay の present・commit ごとに 1 行
+`WSI OVERLAY present plane= serial= ticket= min_primary= path=held|replaced|fast|lane|commit|flush why= result= sequence= adopted= call_ns=`
+を標準エラーに書きます（`why` は cursor の log と同じ語に nospace・invalid・expired・flush・destroy・busy を足した物）。
+host の試験は `plan/ws214/tests/vulkan-overlay-host.sh`。
+
 ## 宣言とprotocolの来歴
 
 [API-PROVENANCE.md](../../../include/libc/vulkan/API-PROVENANCE.md) に
