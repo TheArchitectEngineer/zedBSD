@@ -274,6 +274,13 @@ static unsigned home_pad_closing;
 static unsigned home_content_rising;
 
 /*
+ * Whether the icons are drawn as before any pointer (no icon lit, no hover
+ * test): set by kwl_home_draw_content while it draws Home's picture
+ * (ws211-p002 段 1); the event loop's thread only.
+ */
+static unsigned home_neutral;
+
+/*
  * The character each key types into the search (lower case), by evdev code; 0 for none.
  */
 static const char home_characters[HOME_KEYS] = {
@@ -295,6 +302,8 @@ static void home_layout(struct kwl_server *server);
 static unsigned home_page_of(unsigned slot);
 static unsigned home_page_first(unsigned page);
 static void home_draw_clock(struct kwl_server *server, VkCommandBuffer command, float opacity);
+static void home_clock_texts(char *time_text, size_t time_size, char *date_text, size_t date_size);
+static uint64_t home_hash(uint64_t hash, const void *bytes, size_t length);
 static int home_matches(const struct home_app *app, const char *query);
 static int home_contains(const char *text, const char *query);
 static int home_icon_at(struct kwl_server *server, int32_t x, int32_t y);
@@ -621,8 +630,6 @@ kwl_home_draw(
 	float content;
 	float width;
 	float rise;
-	unsigned order;
-	unsigned slot;
 
 	/* The applications and where they go. */
 	home_read_apps(server);
@@ -653,6 +660,47 @@ kwl_home_draw(
 	server->layer_scale = depth.scale;
 	server->layer_opacity = depth.opacity;
 
+	/* The content: the clock, the floors, the icons, the search and the dots. */
+	kwl_home_draw_content(server, command, progress, 0U);
+
+	/* The content's first frame (its first icon begun). */
+	content = home_content(server, 0U, progress, &rise);
+	if (!server->home_content_logged && server->home_to > 0.0f && content > 0.0f) {
+		server->home_content_logged = 1U;
+		printf("KWL HOME layer=content after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
+	}
+
+	/* The rest of the frame is drawn where it is, in the appearance's colours again. */
+	server->layer_on = 0;
+	server->keep_colours = 0U;
+}
+
+/*
+ * Draws Home's content without the stage and without placing it (ws211-p002
+ * 段 1): the first page's clock, the rows' floors, the icons shown, the
+ * search text and the pages' dots, faded in by progress, where the caller's
+ * layer puts them (kwl_home_draw), or as they are into Home's picture
+ * (layer-cache.c).  neutral draws no icon lit under the pointer and records
+ * no hover test, as the picture shows Home before any pointer.  The caller
+ * keeps Home's own colours (keep_colours).
+ */
+void
+kwl_home_draw_content(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	float progress,
+	unsigned neutral)
+{
+	float content;
+	float rise;
+	unsigned order;
+	unsigned slot;
+
+	/* The applications and where they go. */
+	home_read_apps(server);
+	home_layout(server);
+	home_neutral = neutral;
+
 	/* The rows' floors, under the icons, coming in with the first of them; the first page's clock over them. */
 	content = home_content(server, 0U, progress, &rise);
 	home_draw_clock(server, command, content);
@@ -668,22 +716,14 @@ kwl_home_draw(
 		order++;
 	}
 
-	/* The content's first frame (its first icon begun). */
-	content = home_content(server, 0U, progress, &rise);
-	if (!server->home_content_logged && server->home_to > 0.0f && content > 0.0f) {
-		server->home_content_logged = 1U;
-		printf("KWL HOME layer=content after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
-	}
-
 	/* The search text, while something has been typed or is being composed; the pages' dots, when there are pages. */
 	if (server->home_query_length != 0U || server->home_preedit[0] != '\0')
 		home_draw_search(server, command, progress);
 	if (home_pages > 1U)
 		home_draw_dots(server, command, progress);
 
-	/* The rest of the frame is drawn where it is, in the appearance's colours again. */
-	server->layer_on = 0;
-	server->keep_colours = 0U;
+	/* Later drawing lights icons under the pointer again. */
+	home_neutral = 0U;
 }
 
 /*
@@ -1839,9 +1879,12 @@ home_draw_icon(
 	x = home_icon_x[slot];
 	y = home_icon_y[slot];
 	over = 0;
-	if (server->pointer_x >= x && server->pointer_x < x + HOME_ICON && server->pointer_y >= y && server->pointer_y < y + HOME_ICON)
+	if (!home_neutral &&
+	    server->pointer_x >= x && server->pointer_x < x + HOME_ICON &&
+	    server->pointer_y >= y && server->pointer_y < y + HOME_ICON)
 		over = 1;
-	kwl_hover_probe(server, x, y, HOME_ICON, HOME_ICON);
+	if (!home_neutral)
+		kwl_hover_probe(server, x, y, HOME_ICON, HOME_ICON);
 	y += (int32_t)(rise + 0.5f);
 
 	/* The started application's icon grows as Home closes (about its centre). */
@@ -2875,8 +2918,7 @@ home_draw_clock(
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.96f };
 	static const float soft[4] = { 1.0f, 1.0f, 1.0f, 0.72f };
 	char text[64];
-	struct tm local;
-	time_t now;
+	char date[64];
 	float position;
 	float colour[4];
 	int32_t shift;
@@ -2902,22 +2944,120 @@ home_draw_clock(
 	grid_top = (int32_t)server->height - HOME_GRID_BOTTOM - HOME_FIRST_ROWS * HOME_CELL_HEIGHT;
 	baseline = grid_top / 2 + 16;
 
-	/* The time now. */
-	now = time(NULL);
-	memset(&local, 0, sizeof(local));
-	(void)localtime_r(&now, &local);
-
-	/* The time, large, centred. */
-	(void)strftime(text, sizeof(text), "%H:%M", &local);
+	/* The time now, large, centred. */
+	home_clock_texts(text, sizeof(text), date, sizeof(date));
 	memcpy(colour, white, sizeof(colour));
 	colour[3] *= opacity;
 	width = glass_text_width(server, SIZE_CLOCK, text);
 	glass_draw_text(server, command, SIZE_CLOCK, middle - width / 2, baseline, text, (int32_t)server->width, colour);
 
 	/* The long date under it. */
-	kwl_language_date(&local, KWL_LANGUAGE_DATE_LONG, text, sizeof(text));
+	memcpy(text, date, sizeof(text));
 	memcpy(colour, soft, sizeof(colour));
 	colour[3] *= opacity;
 	width = glass_text_width(server, SIZE_SEARCH, text);
 	glass_draw_text(server, command, SIZE_SEARCH, middle - width / 2, baseline + 46, text, (int32_t)server->width, colour);
+}
+
+/*
+ * Gives the first page's clock texts for the time now: the time (%H:%M) and
+ * the long date in the desktop's language.
+ */
+static void
+home_clock_texts(
+	char *time_text,
+	size_t time_size,
+	char *date_text,
+	size_t date_size)
+{
+	struct tm local;
+	time_t now;
+
+	/* The time now, in the local zone. */
+	now = time(NULL);
+	memset(&local, 0, sizeof(local));
+	(void)localtime_r(&now, &local);
+
+	/* The two texts. */
+	(void)strftime(time_text, time_size, "%H:%M", &local);
+	kwl_language_date(&local, KWL_LANGUAGE_DATE_LONG, date_text, date_size);
+}
+
+/* Adds bytes to a 64-bit FNV-1a hash. */
+static uint64_t
+home_hash(
+	uint64_t hash,
+	const void *bytes,
+	size_t length)
+{
+	const uint8_t *byte;
+	size_t index;
+
+	/* Each byte in turn. */
+	byte = bytes;
+	for (index = 0; index < length; index++) {
+		hash ^= byte[index];
+		hash *= 1099511628211ULL;
+	}
+
+	/* The hash with the bytes. */
+	return hash;
+}
+
+/*
+ * Gives the key of what Home's picture shows (ws211-p002 段 1): the
+ * applications' names in the desktop's language, the pages and the page
+ * shown, which applications run, the selection and the search, the dots'
+ * accent, the wallpaper seen through the pictures' holes, the output's size,
+ * whether the tiles are drawn, and the clock's texts.  A picture drawn with
+ * another key is stale.  The pointer is not in it: the picture shows no
+ * icon lit (kwl_home_draw_content's neutral).
+ */
+uint64_t
+kwl_home_picture_key(
+	struct kwl_server *server)
+{
+	char time_text[64];
+	char date_text[64];
+	const char *label;
+	uint64_t hash;
+	uint32_t values[8];
+	unsigned running;
+	unsigned slot;
+
+	/* The applications and their places, as the next drawing has them. */
+	home_read_apps(server);
+	home_layout(server);
+	hash = 14695981039346656037ULL;
+
+	/* Each shown application's name in the desktop's language, and whether it runs. */
+	for (slot = 0U; slot < home_shown_count; slot++) {
+		label = kl_tr(home_apps[home_shown[slot]].name);
+		hash = home_hash(hash, label, strlen(label) + 1U);
+		running = home_running_window(server, home_shown[slot]) != NULL ? 1U : 0U;
+		hash = home_hash(hash, &running, sizeof(running));
+	}
+
+	/* The pages, the selection, the accent, the wallpaper, the output and the tiles. */
+	values[0] = home_shown_count;
+	values[1] = home_pages;
+	values[2] = server->home_page;
+	values[3] = (uint32_t)server->home_selected;
+	values[4] = (uint32_t)server->accent;
+	values[5] = glass_wallpaper_version(server);
+	values[6] = (server->width << 16) ^ server->height;
+	values[7] = glass_tiles_ready(server);
+	hash = home_hash(hash, values, sizeof(values));
+
+	/* The search and what is being composed. */
+	hash = home_hash(hash, server->home_query, strnlen(server->home_query, sizeof(server->home_query)));
+	hash = home_hash(hash, server->home_preedit, strnlen(server->home_preedit, sizeof(server->home_preedit)));
+
+	/* The clock's texts. */
+	home_clock_texts(time_text, sizeof(time_text), date_text, sizeof(date_text));
+	hash = home_hash(hash, time_text, strlen(time_text));
+	hash = home_hash(hash, date_text, strlen(date_text));
+
+	/* Succeeded: the key. */
+	return hash;
 }

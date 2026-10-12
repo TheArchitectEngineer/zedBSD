@@ -210,6 +210,16 @@ kwl_schedule(
 	    now - server->frame_done_ms < server->frame_wait_ms)
 		return;
 
+	/* Nothing to draw: a layer's stale picture may be drawn again in the quiet (layer-cache.c, ws211-p002). */
+	if (!server->dirty && !server->damaged) {
+		error = kwl_layers_tick(server);
+		if (error < 0) {
+			printf("KWL FAILED site=layers_tick errno=%d\n", -error);
+			server->failed = 1;
+		}
+		return;
+	}
+
 	/* Window mode draws when something changed (all of it, or a part) and no frame is in flight. */
 	if (server->dirty || server->damaged) {
 		error = kwl_compose_draw(server);

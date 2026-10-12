@@ -2557,6 +2557,24 @@ glass_wallpaper_set(
 	return server->compose->glass->wallpaper.set;
 }
 
+/* Gives the version of the wallpaper's image (it grows with each new picture), for the keys of pictures that show it. */
+uint32_t
+glass_wallpaper_version(
+	struct kwl_server *server)
+{
+	/* The full-size image's version. */
+	return server->compose->glass->wallpaper.version;
+}
+
+/* Tells whether the applications' tiles are drawn (1) or not yet (0). */
+uint32_t
+glass_tiles_ready(
+	struct kwl_server *server)
+{
+	/* The tiles' image is drawn once. */
+	return server->compose->glass->tiles_ready != 0U ? 1U : 0U;
+}
+
 /*
  * Renders every titlebar icon at each of its sizes into the atlas from a
  * row on, and moves the row past them; returns 0, or ENOSPC when the atlas

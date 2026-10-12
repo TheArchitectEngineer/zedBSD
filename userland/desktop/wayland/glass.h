@@ -174,6 +174,10 @@ void kwl_bluetooth_ask_draw(struct kwl_server *server, VkCommandBuffer command);
 
 /* App Home under the desktop layer (home.c). */
 void kwl_home_draw(struct kwl_server *server, VkCommandBuffer command, float progress);
+void kwl_home_draw_content(struct kwl_server *server, VkCommandBuffer command, float progress, unsigned neutral);
+uint64_t kwl_home_picture_key(struct kwl_server *server);
+uint32_t glass_wallpaper_version(struct kwl_server *server);
+uint32_t glass_tiles_ready(struct kwl_server *server);
 void kwl_home_draw_head(struct kwl_server *server, VkCommandBuffer command);
 void kwl_corner_draw(struct kwl_server *server, VkCommandBuffer command);
 

@@ -2084,6 +2084,8 @@ void kwl_notify_popup_tick(struct kwl_server *server);
 int kwl_notify_popup_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_notify_popup_showing(void);
 float kwl_home_progress(struct kwl_server *server);
+/* Draws a layer's stale picture again in a quiet moment (layer-cache.c, ws211-p002): 1 in flight, 0 none, -errno. */
+int kwl_layers_tick(struct kwl_server *server);
 int kwl_home_settled(struct kwl_server *server);
 void kwl_home_layer(struct kwl_server *server, float progress, float *x, float *y, float *scale, float *opacity);
 void kwl_home_pad(struct kwl_server *server, uint32_t phase, int32_t travel_um, int32_t speed);

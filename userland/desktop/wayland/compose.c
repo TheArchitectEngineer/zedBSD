@@ -400,6 +400,9 @@ kwl_compose_output_open(
 	/* The cursor plane, when the output has one (it borrows the output's claim). */
 	kwl_cursor_plane_open(server);
 
+	/* The layers' pictures, made with the output (layer-cache.c, ws211-p002). */
+	kwl_layers_open(server);
+
 	/* Succeeded: window mode owns the display through the swapchain. */
 	compose->output_open = 1;
 	server->dirty = 1;
@@ -437,7 +440,8 @@ kwl_compose_output_close(
 	kwl_heads_close_all(server);
 	kwl_cursor_plane_close(server);
 
-	/* The backdrop, the targets, then the swapchain and surface. */
+	/* The layers' pictures, the backdrop, the targets, then the swapchain and surface. */
+	kwl_layers_close(compose);
 	kwl_scene_close(&compose->scene, compose->device);
 	kwl_backdrop_destroy(compose);
 	compose_targets_destroy(compose);
@@ -661,6 +665,17 @@ kwl_compose_complete(
 		compose->scene.valid = 0U;
 		printf("KWL VULKAN_ERROR operation=fence result=%d\n", (int)result);
 		return EIO;
+	}
+
+	/*
+	 * A layer's picture drawn (layer-cache.c): it presented nothing, held
+	 * nothing and told no client, so the frame's accounting stays as it was.
+	 */
+	if (compose->frame_bake) {
+		compose->frame_bake = 0U;
+		compose->in_flight = 0;
+		kwl_layers_complete(server);
+		return 0;
 	}
 
 	/* Only confirmed command completion publishes the cursor-free captured scene. */
@@ -2839,6 +2854,75 @@ compose_log_draws(
 		counts->sets,
 		server->compose->scene.written,
 		server->compose->frame_copies);
+}
+
+/*
+ * Submits the commands recorded in compose->command as a frame that
+ * presents nothing (a layer's picture, layer-cache.c): the host images
+ * written up to now are copied first, as for a frame, and the fence is
+ * exported as the fd the event loop polls.  The caller sets frame_bake.
+ */
+VkResult
+kwl_compose_submit_quiet(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+	VkSubmitInfo submit;
+	VkFenceGetFdInfoKHR fd_info;
+	VkCommandBufferBeginInfo begin;
+	VkCommandBuffer buffers[2];
+	unsigned copies;
+	VkResult result;
+	int fd;
+
+	/* The host images first, in a command buffer that runs before the drawing. */
+	compose = server->compose;
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	result = vkBeginCommandBuffer(compose->copy_command, &begin);
+	if (result != VK_SUCCESS)
+		return result;
+	copies = kwl_host_images_record(compose, compose->copy_command);
+	result = vkEndCommandBuffer(compose->copy_command);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* No image is acquired and none is presented: nothing to wait for or signal. */
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.commandBufferCount = 1U;
+	submit.pCommandBuffers = &compose->command;
+	if (copies != 0U) {
+		buffers[0] = compose->copy_command;
+		buffers[1] = compose->command;
+		submit.commandBufferCount = 2U;
+		submit.pCommandBuffers = buffers;
+	}
+	result = vkQueueSubmit(compose->queue, 1U, &submit, compose->fence);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Without an exported fence the event loop asks the fence's status each pass. */
+	if (!compose->fence_fd) {
+		compose->in_flight = 1;
+		return VK_SUCCESS;
+	}
+
+	/* The fence as an fd, as a frame's. */
+	memset(&fd_info, 0, sizeof(fd_info));
+	fd_info.sType = VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR;
+	fd_info.fence = compose->fence;
+	fd_info.handleType = kl_backend_gpu_frame_fence_type();
+	fd = -1;
+	result = compose->get_fence_fd(compose->device, &fd_info, &fd);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Succeeded: the drawing is in flight. */
+	server->frame_fd = fd;
+	compose->in_flight = 1;
+	return VK_SUCCESS;
 }
 
 /*
