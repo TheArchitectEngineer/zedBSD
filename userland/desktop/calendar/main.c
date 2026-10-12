@@ -38,6 +38,9 @@
 #define CAL_IDLE_MS		1000
 #define CAL_MOVING_MS		10
 
+/* A frame that takes longer than this is logged, in milliseconds (a lit widget's frame on the Pi 4 among them, ws210-p014). */
+#define CAL_SLOW_FRAME_MS	100U
+
 /* The most glass panels of a frame. */
 #define CAL_PANELS_MAX		4U
 
@@ -105,6 +108,7 @@ static int cal_loop(struct cal_window *calendar, unsigned timeout);
 static void cal_input(struct cal_window *calendar, const struct kl_window_event *event);
 static int cal_resize(struct cal_window *calendar);
 static void cal_draw(struct cal_window *calendar, uint64_t now_us);
+static void cal_slow_frame(const struct cal_window *calendar, uint64_t started, uint64_t drawn, const struct kl_rect *parts, unsigned count);
 static int cal_wait(const struct cal_window *calendar, uint64_t now_us);
 static void cal_store_start(void);
 static void cal_remind(struct cal_window *calendar);
@@ -176,6 +180,16 @@ main(
 		cal_view_release(&calendar.view);
 		return 1;
 	}
+
+	/*
+	 * The pointer's motions merged, and each frame drawn once the
+	 * compositor took the last one (ws210-p014 F2): the pointer crossing
+	 * the panes while a frame is on its way draws its latest place once,
+	 * not a frame queued for every widget it crossed (2026-10-12, the Pi 4:
+	 * a lit cell shown 300 ms late, after the pointer had gone).
+	 */
+	error = kl_window_set_pacing(calendar.window, KL_PACING_MOTION | KL_PACING_FRAME, 0U);
+	cal_log("PACING motion=1 frame=1 errno=%d", error);
 
 	/* The input of its frames. */
 	calendar.ui = kl_ui_create();
@@ -308,10 +322,10 @@ cal_loop(
 	struct kl_app_event event;
 	uint64_t started;
 	uint64_t now;
+	int animating;
 	int status;
 	int taken;
 	int wait;
-	int pace;
 
 	/* The first frame. */
 	status = cal_resize(calendar);
@@ -387,9 +401,9 @@ cal_loop(
 		/* The events that start now. */
 		cal_remind(calendar);
 
-		/* Something of the view moving by itself (a page turning, a cell sinking, a drag): a frame at its pace. */
-		pace = cal_view_wait(&calendar->view, now);
-		if (pace >= 0)
+		/* Something of the view moving by itself (a page turning, a cell sinking, a drag): a frame at its pace; a notice waiting to go is no motion. */
+		animating = cal_view_animating(&calendar->view);
+		if (animating)
 			calendar->animating = 1;
 
 		/* A frame. */
@@ -563,12 +577,16 @@ cal_draw(
 	struct kl_glass_panel panels[CAL_PANELS_MAX];
 	struct kl_event event;
 	struct kl_rect parts[KL_FRAME_PARTS_MAX];
+	uint64_t started;
+	uint64_t drawn;
 	unsigned part_count;
 	unsigned index;
 	size_t count;
 	int desk_only;
 	int animating_before;
+	int partial;
 	int need;
+	int pace;
 	int status;
 	int error;
 	int taken;
@@ -580,17 +598,30 @@ cal_draw(
 	    !calendar->lit_changed)
 		return;
 
-	/* Only the desk calendar moving (no input, no widget moving, no widget lit): its frame alone, cheaper than the whole view. */
+	/*
+	 * A frame once the compositor took the last one (ws210-p014 F2.2):
+	 * until then nothing is consumed, so what changes meanwhile is drawn
+	 * as one frame in its latest state.
+	 */
+	pace = kl_window_frame_wait(calendar->window, now_us);
+	if (pace != 0)
+		return;
+
+	/* Only the desk calendar moving (no input, no widget moving): its frame alone, cheaper than the whole view. */
+	started = kl_clock_us();
 	desk_only = 0;
-	if (!calendar->dirty && !calendar->moving && !calendar->lit_changed)
+	if (!calendar->dirty && !calendar->moving && calendar->animating)
 		desk_only = cal_view_desk_only(&calendar->view);
 	animating_before = calendar->animating;
 	calendar->animating = 0;
-	if (desk_only) {
+	if (desk_only && !calendar->lit_changed) {
+		/* Drawn and shown within the desk calendar's area alone (ws210-p014: the whole window was shown for each of its frames). */
 		cal_view_draw_desk(&calendar->view, &calendar->style, now_us);
-		status = kl_window_present(calendar->window, calendar->pixels, (size_t)calendar->width);
+		drawn = kl_clock_us();
+		status = kl_window_present_part(calendar->window, calendar->pixels, (size_t)calendar->width, &calendar->view.desk_area);
 		if (status == EAGAIN)
 			calendar->resized = 1;
+		cal_slow_frame(calendar, started, drawn, &calendar->view.desk_area, 1U);
 		return;
 	}
 
@@ -599,13 +630,23 @@ cal_draw(
 	 * widgets tell alone, the rest keeping its pixels (BUG-226,
 	 * ws210-p014: the widget lit when the last frame was drawn and the one
 	 * lit now; none when the pointer came back; the whole window when the
-	 * parts cannot be told, or while the desk calendar moves too).
+	 * parts cannot be told).  While the desk calendar's page turns, its
+	 * area is one more part; while anything else moves, the whole window
+	 * is drawn.
 	 */
-	part_count = 0;
+	partial = 0;
 	if (!calendar->dirty &&
 	    !calendar->moving &&
-	    !animating_before &&
 	    calendar->lit_changed) {
+		if (!animating_before)
+			partial = 1;
+		if (desk_only)
+			partial = 1;
+	}
+	if (partial && desk_only)
+		kl_ui_damage(calendar->ui, &calendar->view.desk_area);
+	part_count = 0;
+	if (partial) {
 		need = kl_ui_take_frame(calendar->ui, parts, KL_FRAME_PARTS_MAX, &part_count);
 		if (need == KL_FRAME_NONE) {
 			calendar->lit_changed = 0;
@@ -633,6 +674,12 @@ cal_draw(
 		kl_canvas_clip_pop(&calendar->canvas);
 	}
 
+	/* A click that changed what was drawn before it: the whole view again, in the next frame. */
+	if (calendar->view.again) {
+		calendar->view.again = 0;
+		calendar->dirty = 1;
+	}
+
 	/*
 	 * The text input is asked for while a field has the keyboard, and told
 	 * where its caret is, so that an input method's candidates and the
@@ -655,9 +702,11 @@ cal_draw(
 	}
 
 	/* The frame shown, by its parts alone when it was drawn so (BUG-221). */
+	drawn = kl_clock_us();
 	status = kl_window_present_parts(calendar->window, calendar->pixels, (size_t)calendar->width, parts, part_count);
 	if (status == EAGAIN)
 		calendar->resized = 1;
+	cal_slow_frame(calendar, started, drawn, parts, part_count);
 
 	/* The keys no widget took, and the input that met no widget. */
 	for (;;) {
@@ -674,29 +723,84 @@ cal_draw(
 }
 
 /*
+ * Logs a frame that took long (a diagnostic of the Pi 4, ws210-p014): its
+ * drawing's and its showing's times, the presenter's parts of them, and
+ * the parts it drew (none: the whole window) with their area in pixels.
+ */
+static void
+cal_slow_frame(
+	const struct cal_window *calendar,
+	uint64_t started,
+	uint64_t drawn,
+	const struct kl_rect *parts,
+	unsigned count)
+{
+	struct kl_present_times times;
+	unsigned long area;
+	uint64_t shown;
+	unsigned index;
+
+	/* A frame that did not take long. */
+	shown = kl_clock_us();
+	if (shown - started <= (uint64_t)CAL_SLOW_FRAME_MS * 1000U)
+		return;
+
+	/* The pixels drawn: the parts', or the whole window's. */
+	area = (unsigned long)calendar->width * calendar->height;
+	if (count != 0U)
+		area = 0UL;
+	for (index = 0; index < count; index++)
+		area += (unsigned long)parts[index].width * (unsigned long)parts[index].height;
+
+	/* One line. */
+	kl_window_present_times(calendar->window, &times);
+	cal_log("SLOW-FRAME draw=%lu present=%lu copy=%u acquire=%u queue=%u wait=%u parts=%u area=%lu", (unsigned long)((drawn - started) / 1000U), (unsigned long)((shown - drawn) / 1000U), times.copy_ms, times.acquire_ms, times.present_ms, times.wait_ms, count, area);
+}
+
+/*
  * Reports how long the loop may wait for input (ms): no time while a frame
- * is due, a frame's time while something moves, until the view's notice
- * goes, or a second.
+ * is due, a frame's time while something moves, until the compositor took
+ * the last frame (ws210-p014 F2.6: its answer wakes the wait), until the
+ * view's notice goes, or a second.
  */
 static int
 cal_wait(
 	const struct cal_window *calendar,
 	uint64_t now_us)
 {
+	int animating;
+	int pace;
+	int view;
 	int wait;
 
+	/* A frame wanted: whether it may be drawn now, or how long the compositor's answer is waited for at most (-1: until it comes). */
+	animating = cal_view_animating(&calendar->view);
+	pace = -1;
+	if (calendar->dirty ||
+	    calendar->lit_changed ||
+	    calendar->moving ||
+	    animating)
+		pace = kl_window_frame_wait(calendar->window, now_us);
+
 	/* A frame due now. */
-	if (calendar->dirty || calendar->lit_changed)
+	if (pace == 0 && (calendar->dirty || calendar->lit_changed))
 		return 0;
 
-	/* Something moving. */
-	if (calendar->moving)
+	/* Something moving: a frame at its pace. */
+	if (pace == 0 && calendar->moving)
 		return CAL_MOVING_MS;
 
-	/* The view's notice, or a second. */
-	wait = cal_view_wait(&calendar->view, now_us);
-	if (wait < 0 || wait > CAL_IDLE_MS)
-		wait = CAL_IDLE_MS;
+	/* The view's own time (its motion's next frame only when a frame may be drawn, the notice's end), or a second. */
+	wait = CAL_IDLE_MS;
+	view = -1;
+	if (pace == 0 || !animating)
+		view = cal_view_wait(&calendar->view, now_us);
+	if (view >= 0 && view < wait)
+		wait = view;
+
+	/* The compositor's answer, waited for at most so long. */
+	if (pace > 0 && pace < wait)
+		wait = pace;
 
 	/* The time to wait. */
 	return wait;

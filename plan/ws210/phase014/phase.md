@@ -3,7 +3,7 @@
 # ws210-p014: libkeiland の frame の枠組み（lit の変化の damage、motion の合流と描き直しの取り消し、ペインの部品）
 
 Parent: [WS210](../ws.md)
-Status: in-progress（P1。(a)(b) と app の移行は merge 済み。(c) F2.1 と F2.2〜F2.6（Settings だけ、KL_VERSION 92）を実装、Pi の確認待ち。(d) F4 は保留）
+Status: in-progress（P1。(a)(b) と app の移行は merge 済み。(c) F2.1 と F2.2〜F2.6（Settings、KL_VERSION 92）と F2.7 の申請（Calendar・Files・Music・Photos・Phone・Mailer）を実装、Pi の確認待ち。(d) F4 は保留）
 Phase disposition: normal
 Queue: [P1 の lane](../../agents/P1/queue.md)
 
@@ -237,6 +237,21 @@ if (due) {
     - Files・Music など他の app の申請（F2.7）はまだ。
   - 試験: `run-host-kl-ui-lit.sh` 46 PASS（新規 18: pace-waits-*・pace-urgent-*・pace-idle・pace-moves-wait・pace-wait-pure・pace-watchdog・pace-overdue・pace-answered・pace-urgent-once・pace-not-shown）。build: rpi4・amd64 の libkeiland と settings が warning 0（-Werror）。`exports.py --check`、keiland-os-boundary PASS。Linux・FreeBSD の libkeiland の build は未実施。QEMU・Pi は未実施（Q1 が P3 の place16 に入れる）。
   - Pi で見る所: Settings の左ペインと右の page の button を速く動かした時、止まった後に「通った行が順に光る」が無くなること。log の `ZSETTINGS PACING motion=1 frame=1 errno=0`、SLOW-FRAME の `parts`・`area`・acquire・wait。
+
+- 2026-10-12 F2.7 の申請（Q1、ユーザー place19「Calenderの最適化が甘いです。左ペインも遅い、右ペインは重くならないけどポイントの描画が300ms遅れて、すでにカーソルがないのに光ってる。」）。
+  - Pi の log（SSH で読んだだけ）: Calendar の行は READY・GLASS・CELL・DONE だけで、frame の時間の行が無い（Calendar に SLOW-FRAME の log が無かった）。compositor の PERF は compose frame_ms 107〜153ms、Calendar（client=6、1904x1020）は約 17 秒に 59 commit。数で直接の確かめはできない（限り）。
+  - host の計測（scratch の bench、1904x1020、glass）: 全体の frame 16.4ms に対し、左ペインの行の hover の部分の frame は 0.23〜0.31ms（10600〜18232 画素）、months の cell 0.5〜0.8ms、panel 0.5〜0.9ms。部分の描画には乗っている。よって遅れの主因は Settings と同じ WSI の FIFO に並ぶ frame（compositor 1 コマ 100〜150ms で 2 枚並ぶと約 300ms、並んだ frame が古い lit を見せる）と判断（推測、Pi の数は次の log で）。
+  - 見つけた Calendar の欠陥（直した）:
+    1. notice が出ている間、`cal_view_wait` が 0 以上を返すので `animating` が立ち、入力で起きるたびに 3D の desk を描き直して全体を present していた。`cal_view_animating`（page の turn・cell の sink・drag だけ）に替えた。
+    2. desk だけの frame が `kl_window_present`（全体）で出していた。desk の area だけの `kl_window_present_part` に。
+    3. hover の部分の frame が desk に触れなくても `desk_valid` を 0 にしていたので、hover の後の page の turn の最初の frame が全体の描画になった。desk に触れない部分の frame では保つ（`desk_seen`）。desk を一部だけ切る部分の frame では under を取らず無効にする（前は古い desk の画素を under に取り得た）。
+    4. page の turn の間の hover は全体の描画だった。desk の area を `kl_ui_damage` で部分に足して、lit の部分と desk の部分だけを描く。
+    5. 日付の click で選んだ日・editor・表示が変わると、それより前に描いた panel（と前の cell の選択）が古いまま、その後の desk だけの frame が続いて直らなかった（host の bench で click の frame の後の全体の描画と画素が違うことを確かめた）。`view->again` で次の frame を全体に。
+  - 申請（KL_PACING_MOTION | KL_PACING_FRAME、log `PACING motion=1 frame=1 errno=`）: Calendar・Files（desktop の mode は申請しない）・Music・Photos・Phone・Mailer。形は Settings と同じ: 描画の関数の最初（Files は main loop の settle の前）で `kl_window_frame_wait` が 0 の時だけ描き、0 でなければ何も消費しない。待ちの関数は、frame の理由がある時に pace が 0 なら今まで通り、正なら他の待ちと短い方、-1 なら他の待ちだけ（callback の done が poll を起こす）。request_count（Music・Phone・Mailer）は pace に関わらず 0。Calendar は page の turn の 16ms の待ちを、描いてよい時だけにした。
+  - Calendar に SLOW-FRAME（100ms 超、draw・present・copy・acquire・queue・wait・parts・area）を足した。
+  - 試験: Calendar の host 試験 13 PASS、`run-host-kl-ui-lit.sh` 46 PASS。scratch の bench（commit しない、開発用）: hover の部分の frame の後も desk を保つ、部分の画素が全体と一致、page の turn の間の desk だけの frame と「lit の行＋desk」の部分の frame が全体と一致、click の後の again。Music・Photos・Phone・Mailer の host 試験は view.c だけで main.c を含まないので、main loop の変更は build とレビューだけ。
+  - build: rpi4・amd64 の calendar・files・music・photos・phone・mailer が warning 0（-Werror）。libkeiland は不変。QEMU・Pi は未実施。
+  - Pi で見る所: Calendar の左ペイン・months の cell・panel を速く動かした後に古い lit が残らない・遅れが積み重ならないこと、日付の click の後の page の turn。他の 5 app の hover。log の `PACING ... errno=0` と Calendar の `SLOW-FRAME`。
 
 ## Phase の中の順
 
