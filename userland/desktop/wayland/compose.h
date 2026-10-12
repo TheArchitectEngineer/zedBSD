@@ -46,8 +46,15 @@
 /* The glass look's push constants: six vec4 (see shaders/panel.frag). */
 #define KWL_PANEL_CONSTANTS	24U
 
-/* The immutable glass, shadow, image, solid, ring, text and blur modes. */
-#define KWL_PANEL_MODES		7U
+/*
+ * The immutable glass, shadow, image, solid, ring, text and blur modes, and
+ * the dark glass (mode -1), which has a variant of its own so that light
+ * glass leaves out the darkening (ws211-p011).
+ */
+#define KWL_PANEL_MODES		8U
+
+/* The variant of the dark glass among the panel pipelines. */
+#define KWL_PANEL_DARK_GLASS	7U
 
 /* Bound the buffers that hold a descriptor set at once. */
 #define KWL_DESCRIPTOR_MAX	512U

@@ -42,5 +42,5 @@ Pi 4 で App Home の開閉が目で滑らか（ユーザーの確認）、1 コ
 | [p008](phase008/phase.md) | 窓の小さな更新（Calendar の hover）を client の damage の所だけ描く | in-progress（実装 db55254d4、place23 で Pi 待ち） |
 | [p009](phase009/phase.md) | damage を 1 つの外接の四角でなく複数の四角のまま描く（compositor の四角ごとの scissor、driver は触れる supertile だけを回し、present の写しも変わった箱だけ） | in-progress（実装 e6e7b1a9b・4ec9f16d1、place24 で Pi 待ち） |
 | [p010](phase010/phase.md) | 1 コマの CPU の仕事（kernel の decode の object の探索を O(1)、空の copy の往復を省く、計測） | in-progress（実装 agent/p4、place25 で Pi 待ち） |
-| [p011](phase011/phase.md) | present の copy の command buffer を slot ごとに使い回す（往復 2 回減）と、compositor の窓の tile あたりの GPU の費用（不透明な層の下を描かない、glass の shader を短く） | in-progress（2026-10-12 P3） |
+| [p011](phase011/phase.md) | present の copy の command buffer を slot ごとに使い回す（往復 2 回減）と、compositor の窓の tile あたりの GPU の費用（不透明な層の下を描かない、glass の shader を短く） | in-progress（1 は main、2 は agent/p3、host 試験 PASS。Pi・T1 待ち、2026-10-12 P3） |
 | p004 | 規約の全文の見直し | planned |

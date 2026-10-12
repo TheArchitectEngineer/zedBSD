@@ -64,6 +64,7 @@ static uint32_t machine_add(const struct v3d_qpu_instr *instruction, struct shad
 static void machine_write(struct shader_machine *machine, uint32_t address, uint32_t magic, uint32_t bits);
 static void machine_program(const struct v3d_device_info *device, const struct bcm2711_shader_binary *binary, struct shader_machine *machine);
 static void verify_panel_mode(const struct drv_gpu_shader_ir *generic, const struct drv_gpu_shader_ir *specialized, uint32_t mode);
+static void glass_constants(uint32_t *push);
 static void pipeline_key(const struct drv_gpu_shader_ir *ir, struct bcm2711_shader_key *key);
 static void initialize_machine(struct shader_machine *machine, uint32_t fragment, uint32_t trial);
 static void compare_number(uint32_t native, uint32_t expected);
@@ -228,8 +229,8 @@ main(
 		&diagnostic);
 	assert(error == 0);
 
-	/* Native varying interfaces may shrink when a mode needs only texture or position. */
-	for (mode = 0; mode < 7; mode++) {
+	/* Native varying interfaces may shrink when a mode needs only texture or position (mode 7 is the dark glass, ws211-p011). */
+	for (mode = 0; mode < 8; mode++) {
 		/* Parses each immutable variant and the matching shared vertex shader. */
 		error = drv_gpu_shader_parse(kwl_panel_vert, sizeof(kwl_panel_vert) / 4, DRV_GPU_STAGE_VERTEX, &vertex, &diagnostic);
 		assert(error == 0);
@@ -876,12 +877,24 @@ verify_panel_mode(
 
 	/* Glass includes both light and dark appearances; other modes have one exact selector. */
 	for (trial = 0; trial < 32; trial++) {
-		/* All source inputs agree, including nontrivial position, texture and opacity. */
+		/*
+		 * All source inputs agree, including nontrivial position, texture
+		 * and opacity.  Light glass is mode 0, dark glass (mode -1) its own
+		 * variant 7, white or not; both take the values glass.c works out
+		 * once for the shape (ws211-p011).
+		 */
 		initialize_machine(&original, 1, trial);
 		original.push[17] = float_bits((float)mode);
-		if (mode == 0) {
-			if ((trial & 1) != 0)
-				original.push[17] = float_bits(-1.0f);
+		if (mode == 7)
+			original.push[17] = float_bits(-1.0f);
+		if (mode == 0 || mode == 7) {
+			if ((trial & 2) != 0) {
+				original.push[12] = float_bits(1.0f);
+				original.push[13] = float_bits(0.95f);
+				original.push[14] = float_bits(0.92f);
+			}
+			original.push[18] = float_bits((float)(trial % 3) * 0.5f);
+			glass_constants(original.push);
 		}
 
 		/* These evaluations share no native instruction or register representation. */
@@ -902,6 +915,34 @@ verify_panel_mode(
 
 	/* Succeeded: all independent ownership or scalar comparisons passed. */
 	return;
+}
+
+/* Fills a glass shape's per-shape values as glass.c's glass_shape_glass_constants does (ws211-p011). */
+static void
+glass_constants(
+	uint32_t *push)
+{
+	float least;
+	float flat;
+	float height;
+
+	least = bits_float(push[12]);
+	if (bits_float(push[13]) < least)
+		least = bits_float(push[13]);
+	if (bits_float(push[14]) < least)
+		least = bits_float(push[14]);
+	push[4] = float_bits(least >= 0.9f ? 1.0f : 0.0f);
+	push[5] = float_bits(bits_float(push[17]) <= -0.5f ? 1.0f : 0.0f);
+	flat = bits_float(push[18]);
+	if (flat < 0.0f)
+		flat = 0.0f;
+	if (flat > 1.0f)
+		flat = 1.0f;
+	push[6] = float_bits(0.05f * (1.0f - flat));
+	height = bits_float(push[11]);
+	if (height < 1.0f)
+		height = 1.0f;
+	push[7] = float_bits(1.0f / height);
 }
 
 /* Checks source meaning, native metadata, implicit FIFO use, output formats and all native program words. */

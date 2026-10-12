@@ -408,6 +408,7 @@ static void draw_backdrop(struct kwl_server *server, struct kwl_list *command, s
 static void draw_window_blurred(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface);
 static void draw_body(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct shell_rect *body, unsigned focused);
 static void draw_body_part(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct shell_rect *body, unsigned focused, unsigned part);
+static unsigned body_shadow_hole(struct kwl_server *server, const struct kwl_import *image, const struct shell_rect *body, int32_t shown_width, int32_t shown_height, float raise, float radius, unsigned part, float (*hole)[4]);
 static void draw_title_bar(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
 static void draw_title(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
 static int draw_picture_mark(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, int32_t x, int32_t middle, const float *ink);
@@ -3864,6 +3865,8 @@ draw_body_part(
 	int unscaled;
 	int waits;
 	VkDescriptorSet picture;
+	float hole[1][4];
+	unsigned hole_count;
 
 	/* The window's size (its viewport's, else its image's), whose scale to the rectangle stretches it while it changes size. */
 	image = kwl_compose_surface_image(surface);
@@ -3963,8 +3966,9 @@ draw_body_part(
 	shape.color[1] = 0.18f;
 	shape.color[2] = 0.35f;
 	shape.color[3] = 0.20f;
+	hole_count = body_shadow_hole(server, image, body, shown_width, shown_height, raise, radius, part, hole);
 	if (panels == 0U && !whole && part != BODY_INTO_PICTURE)
-		glass_shape_draw(server, command, &shape);
+		glass_shape_draw_except(server, command, &shape, (const float (*)[4])hole, hole_count);
 
 	/*
 	 * In an animation's frame, the rest is the picture of it drawn at the
@@ -4023,6 +4027,54 @@ draw_body_part(
 
 	/* The sub-surfaces above the image. */
 	kwl_subsurface_draw(server, command, surface, (float)body->x, (float)body->y, scale_x, scale_y, 1U);
+}
+
+/*
+ * Works out the hole a window's opaque body makes in its own shadow
+ * (ws211-p011): the inside of the frosted glass under a see-through body,
+ * or else of an opaque image drawn fully opaque.  Only a whole body's
+ * drawing has one (an animation's picture may be see-through).  Returns the
+ * number of holes, 0 or 1.
+ */
+static unsigned
+body_shadow_hole(
+	struct kwl_server *server,
+	const struct kwl_import *image,
+	const struct shell_rect *body,
+	int32_t shown_width,
+	int32_t shown_height,
+	float raise,
+	float radius,
+	unsigned part,
+	float (*hole)[4])
+{
+	float box[4];
+
+	/* An animation's picture of the body may show what is under it. */
+	if (part != BODY_WHOLE)
+		return 0U;
+
+	/* A see-through body lies on frosted glass, which is opaque over the body's rectangle. */
+	if (server->window_opacity < 1.0f) {
+		box[0] = (float)body->x;
+		box[1] = (float)body->y - raise;
+		box[2] = (float)body->width;
+		box[3] = (float)body->height + raise;
+		glass_opaque_inside(box, radius, hole[0]);
+		return 1U;
+	}
+
+	/* An image with alpha shows the shadow through it. */
+	if (image->draw != KWL_DRAW_OPAQUE)
+		return 0U;
+
+	/* Succeeded: the opaque image, drawn fully opaque, over its own rectangle. */
+	box[0] = (float)body->x;
+	box[1] = (float)body->y - raise;
+	box[2] = (float)shown_width;
+	box[3] = (float)shown_height + raise;
+	glass_opaque_inside(box, radius, hole[0]);
+	return 1U;
 }
 
 /*

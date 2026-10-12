@@ -360,6 +360,7 @@ static void *prefetch_run(void *argument);
 static int prefetch_take(const char *path, struct wallpaper_picture *picture);
 static void prefetch_drop(void);
 static void glass_dark_color(const float *color, float *dark);
+static void glass_shape_glass_constants(float *constants);
 
 /* The wallpaper read ahead, when kwl_glass_prefetch started it (only the main thread starts and takes it). */
 static struct glass_prefetch glass_prefetch;
@@ -1984,6 +1985,10 @@ glass_shape_draw(
 	if (shape->dark_glass != 0U && shape->mode == MODE_GLASS)
 		constants[17] = -1.0f;
 
+	/* The glass's values that are the same over the whole shape, worked out once here (ws211-p011). */
+	if (shape->mode == MODE_GLASS)
+		glass_shape_glass_constants(constants);
+
 	/*
 	 * A shape without an image of its own is given the blurred scene under
 	 * the window being drawn when there is one (backdrop.c), else the
@@ -1997,7 +2002,9 @@ glass_shape_draw(
 
 	/* Known modes omit unused branches; other values keep the original shader. */
 	pipeline = compose->panel_pipeline;
-	if (shape->mode == MODE_GLASS)
+	if (shape->mode == MODE_GLASS && constants[17] < 0.0f)
+		pipeline = compose->panel_pipelines[KWL_PANEL_DARK_GLASS];
+	else if (shape->mode == MODE_GLASS)
 		pipeline = compose->panel_pipelines[0];
 	else if (shape->mode == MODE_SHADOW)
 		pipeline = compose->panel_pipelines[1];
@@ -2034,6 +2041,82 @@ glass_shape_draw(
 	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
 	kwl_compose_clip_draw(server, command, quad[0], quad[1], quad[2], quad[3], KWL_QUAD_VERTICES);
 	kwl_compose_count_commands(server, 1U, 1U);
+}
+
+/*
+ * Records one shape except where opaque shapes drawn after it hide it
+ * (ws211-p011): holes are the insides of those shapes (glass_opaque_inside), and the
+ * shape is drawn as the pieces of its quad around them (kwl_damage_rects_cut),
+ * each with the part of the image it covers.  The GPU then shades nothing
+ * that is drawn over anyway.  In a layer seen through (the desktop going
+ * back behind App Home) the shapes over it are not opaque, so it is drawn
+ * whole.
+ */
+void
+glass_shape_draw_except(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	const struct glass_shape *shape,
+	const float (*holes)[4],
+	unsigned hole_count)
+{
+	struct glass_shape piece;
+	float pieces[KWL_CUT_PIECES][4];
+	float across;
+	float down;
+	unsigned count;
+	unsigned index;
+
+	/* No hole: the whole shape. */
+	if (hole_count == 0U) {
+		glass_shape_draw(server, command, shape);
+		return;
+	}
+
+	/* The shapes over it are seen through in a fading layer: the whole shape. */
+	if (server->layer_on && server->layer_opacity < 1.0f) {
+		glass_shape_draw(server, command, shape);
+		return;
+	}
+
+	/* The quad less the holes worth cutting; an empty quad has nothing to cut. */
+	if (shape->quad[2] <= 0.0f || shape->quad[3] <= 0.0f)
+		return;
+	count = kwl_damage_rects_cut(shape->quad, holes, hole_count, pieces);
+
+	/* Each piece is the shape over a part of its quad, showing that part of the image. */
+	across = shape->uv[2] - shape->uv[0];
+	down = shape->uv[3] - shape->uv[1];
+	for (index = 0U; index < count; index++) {
+		piece = *shape;
+		memcpy(piece.quad, pieces[index], sizeof(piece.quad));
+		piece.uv[0] = shape->uv[0] + (pieces[index][0] - shape->quad[0]) / shape->quad[2] * across;
+		piece.uv[1] = shape->uv[1] + (pieces[index][1] - shape->quad[1]) / shape->quad[3] * down;
+		piece.uv[2] = shape->uv[0] + (pieces[index][0] + pieces[index][2] - shape->quad[0]) / shape->quad[2] * across;
+		piece.uv[3] = shape->uv[1] + (pieces[index][1] + pieces[index][3] - shape->quad[1]) / shape->quad[3] * down;
+		glass_shape_draw(server, command, &piece);
+	}
+}
+
+/*
+ * Works out the hole an opaque rounded rectangle (box: x, y, width, height)
+ * makes in the shapes under it: the box less its corner radius and one more
+ * pixel on every side, where the shader covers every pixel fully (cover 1).
+ */
+void
+glass_opaque_inside(
+	const float *box,
+	float radius,
+	float *hole)
+{
+	float inset;
+
+	/* The box shrunk by the radius and the pixel of its smoothed edge. */
+	inset = radius + 1.0f;
+	hole[0] = box[0] + inset;
+	hole[1] = box[1] + inset;
+	hole[2] = box[2] - 2.0f * inset;
+	hole[3] = box[3] - 2.0f * inset;
 }
 
 /* Draws a rounded rectangle in a solid color. */
@@ -3940,6 +4023,53 @@ glass_draw_glyph_at(
 	memcpy(shape.color, color, sizeof(shape.color));
 	shape.set = glass->atlas.set;
 	glass_shape_draw(server, command, &shape);
+}
+
+/*
+ * Works out a glass shape's values that are the same over the whole shape
+ * (ws211-p011), from its constants as pushed (its final colour and mode),
+ * into the texture slot the glass does not sample by: whether it is white
+ * (step(0.9, the least of its colour's channels)), whether it is dark glass
+ * (step(mode, -0.5)), its sheen from the top (0.05 less as it is flatter,
+ * none at shape.z 1) and one over its box's height (at least 1).  The
+ * shader once worked each of them out for every pixel.
+ */
+static void
+glass_shape_glass_constants(
+	float *constants)
+{
+	float least;
+	float flat;
+	float height;
+
+	/* Glass whose colour is white in every channel is lifted over a dark wallpaper. */
+	least = constants[12];
+	if (constants[13] < least)
+		least = constants[13];
+	if (constants[14] < least)
+		least = constants[14];
+	constants[4] = 0.0f;
+	if (least >= 0.9f)
+		constants[4] = 1.0f;
+
+	/* Dark glass (mode -1) is darkened over a bright wallpaper. */
+	constants[5] = 0.0f;
+	if (constants[17] <= -0.5f)
+		constants[5] = 1.0f;
+
+	/* The sheen from the top, less on flatter glass (shape.z clamped to 0 to 1). */
+	flat = constants[18];
+	if (flat < 0.0f)
+		flat = 0.0f;
+	if (flat > 1.0f)
+		flat = 1.0f;
+	constants[6] = 0.05f * (1.0f - flat);
+
+	/* How far down the box a pixel is, as a share of its height. */
+	height = constants[11];
+	if (height < 1.0f)
+		height = 1.0f;
+	constants[7] = 1.0f / height;
 }
 
 /*

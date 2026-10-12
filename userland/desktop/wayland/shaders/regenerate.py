@@ -40,7 +40,7 @@ def main():
              "\tuint32_t bytes;", "};", ""]
     variants = [(source, name, ()) for source, name in SHADERS]
     variants.extend(("panel.frag", "kwl_panel_frag_%d" % mode,
-                     ("-DKWL_PANEL_MODE=%d" % mode,)) for mode in range(7))
+                     ("-DKWL_PANEL_MODE=%d" % mode,)) for mode in range(8))
     for source, name, definitions in variants:
         words = compile_shader(HERE / source, definitions)
         lines.append("/* Validated immutable %s SPIR-V, used while creating graphics pipelines. */" % name)
@@ -50,9 +50,9 @@ def main():
             lines.append("\t%s," % chunk)
         lines.append("};")
         lines.append("")
-    lines.extend(["/* Glass, shadow, image, solid, ring, text and blur avoid unused branch work. */",
-                  "static const struct kwl_panel_shader kwl_panel_variants[7] = {"])
-    for mode in range(7):
+    lines.extend(["/* Glass, shadow, image, solid, ring, text, blur and dark glass avoid unused branch work. */",
+                  "static const struct kwl_panel_shader kwl_panel_variants[8] = {"])
+    for mode in range(8):
         lines.append("\t{kwl_panel_frag_%d, sizeof(kwl_panel_frag_%d)}," % (mode, mode))
     lines.extend(["};", "", "#endif"])
     (HERE.parent / "shaders.h").write_text("\n".join(lines) + "\n")
