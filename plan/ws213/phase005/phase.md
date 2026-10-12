@@ -16,10 +16,10 @@ Phase disposition: normal
 
 1. host: p001 の 9 節 (j) の試験 PASS。
 2. build warning 0（下のコマンド）。
-3. Pi: 日本語の UI で初出の字の多い画面（Settings・App Home の検索）で walk の最長が p004 より下がる。壁紙の変更の間も cursor の present が止まらない。
+3. Pi（1 boot、ユーザーか Q1 の手で）: 日本語の UI で初出の字の多い画面（Settings・App Home の検索、各 10 秒）で `walk_max_us` が p004 より下がる。壁紙の変更（3 回、pointer を動かしながら）の間も `KWL PERF cursor` の `box_gap_p99_us`・`box_gap_max_us` ≤ 16700、`KWL PERF main` の `pass_max_us` ≤ 33300（review-4 L-d）。
 4. T1（i915・Venus）で回帰なし、30 分まで。
 
 ## コマンドと上限
 
-- build（warning 0）: `make -j16 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/bin/wayland`、`make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/amd64/bin/wayland`、`make -j16 keiland-linux`（各 900 秒まで）。FreeBSD は T1 の guest（`plan/tools/keiland-freebsd/backend-test.sh`）。
+- build（warning 0、出力は自分の `build/ws213-p005/` に、review-4 L-b）: `make -j16 ZEDBSD_CONFIG=config/ci/config-rpi4.mk BUILD=build/ws213-p005/arm64 build/ws213-p005/arm64/bin/wayland`、`make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws213-p005/amd64 build/ws213-p005/amd64/bin/wayland`、`make -j16 KEILAND_ASK=n KEILAND_LINUX_BUILD=build/ws213-p005/linux keiland-linux`（`KEILAND_ASK=n` で package の導入と install を聞かない、`Makefile:476-482`）（各 900 秒まで）。FreeBSD は T1 の guest（`plan/tools/keiland-freebsd/backend-test.sh`）。
 - host 試験は各 120 秒まで。同じ条件で変更なしの再試行は 3 回まで。QEMU・実機は T1 と Q1 経由（担当は QEMU を起動しない）。
