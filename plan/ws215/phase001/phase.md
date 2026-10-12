@@ -227,3 +227,8 @@ QEMU は BT を emulate しないので QEMU の BT の試験は無い。QEMU �
 - **WS206 の W6**: linux-firmware の WHENCE は `brcm/brcmfmac43455-sdio.raspberrypi,3-model-b-plus.txt`（`...raspberrypi,4-model-b.txt` はその link）を GPLv2 と書いている（第 1 版からの知らせの再掲）。
 - **WS206 と `emulated_board()`**: WS215 p003 が rpi4-audio.c の static から共有の関数に移す。WS206 も QEMU の raspi4b を見分けるなら同じ関数を使う（先に要る方が移す、Q1 が調整）。
 - **WS197（p007b）**: WS215 p008（UART の SCO）が依存する。UAPI の SCO の comment（36 ms の queue）は USB の拍が前提で、UART の場合の書き方を p008 で足す。
+
+## Q1 の補足（2026-10-13）
+
+- `emulated_board()` の共有は既に main で済んだ: `src/drivers/platform/rpi4/rpi4-board.c` の `drv_rpi4_board_emulated(const struct drv_fdt *)`（747210faa、QEMU は pcie と genet-v5 の node を NOP で消す、両方が無い BCM2711 の tree を QEMU とみなす）。B20 の「emulated_board() の共有」はこれを使う。
+- `drv_rpi4_firmware_init` は何度呼んでも安全になった（8155669d4、ABSENT→PREPARING→READY）。
