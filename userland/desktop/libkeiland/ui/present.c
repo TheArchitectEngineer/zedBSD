@@ -8,15 +8,23 @@
 /*
  * The Vulkan presenter of the library's windows (ws090-p004, Text
  * Editor's present.c moved here, itself PDF Viewer's): each frame
- * drawn on the CPU is written into a linear, host-visible image the size
- * of the window, and one quad copies it texel for pixel onto a swapchain
- * image of the window, with standard Vulkan and Wayland WSI.
+ * drawn on the CPU is written into host-visible memory the size of the
+ * window and put onto a swapchain image of the window, with standard
+ * Vulkan and Wayland WSI.
+ *
+ * When the surface's images take a transfer (ws210-p013), the memory is a
+ * staging buffer and a frame copies into the image it is given only what
+ * that image lacks: the parts that changed since the image was last
+ * written (present-damage.c), so that the device, the window system's
+ * copy and the compositor touch those parts alone.  Otherwise it is a
+ * linear image, and one quad samples it texel for pixel over the whole
+ * swapchain image.
  *
  * The canvas is drawn in ordinary memory and copied row by row into the
- * image's mapping, because blending reads the pixels it writes and a
- * device mapping may be slow to read.  Each frame is waited for before the
- * next one, so the host may write the image between frames without
- * further synchronization.
+ * mapping, because blending reads the pixels it writes and a device
+ * mapping may be slow to read.  Each frame is waited for before the next
+ * one, so the host may write the mapping between frames without further
+ * synchronization.
  */
 
 #include "window.h"
@@ -26,6 +34,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The bytes a row of the staging buffer is rounded up to (its regions' offsets then fall on 64 bytes too, ws210-p013 E2). */
+#define PRESENT_PITCH_ALIGN	64U
 
 /* How long a frame may take on the GPU, in nanoseconds. */
 #define PRESENT_TIMEOUT		10000000000ULL
@@ -49,7 +60,13 @@ static void present_canvas_free(struct keiui_present *present);
 static VkResult present_vertices(struct keiui_present *present);
 static VkResult present_pipeline(struct keiui_present *present);
 static VkResult present_module(struct keiui_present *present, const uint32_t *code, size_t size, VkShaderModule *module);
+static VkResult present_staging(struct keiui_present *present);
+static VkResult present_buffer(struct keiui_present *present, VkDeviceSize size, VkBufferUsageFlags usage, VkBuffer *buffer, VkDeviceMemory *memory, void **map);
 static void present_record(struct keiui_present *present, uint32_t image);
+static void present_record_copy(struct keiui_present *present, uint32_t image);
+static void present_stale_all(struct keiui_present *present);
+static void present_check(struct keiui_present *present, uint32_t image);
+static int present_diagnostic(const char *name);
 static int present_has_extension(VkPhysicalDevice physical, const char *name);
 
 /*
@@ -102,17 +119,23 @@ keiui_present_open(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The swapchain at the window's size. */
+	/* The diagnostics asked for (ws210-p013 E3): every frame copied whole, and each image written checked. */
+	present->force_whole = present_diagnostic("KL_PRESENT_WHOLE");
+	present->check = present_diagnostic("KL_PRESENT_CHECK");
+
+	/* The swapchain at the window's size (which decides whether frames are copied). */
 	error = present_swapchain(present, window->width, window->height);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The pass that draws into the swapchain's images. */
-	error = present_pass(present);
-	if (error != VK_SUCCESS)
-		return error;
+	/* The pass that draws into the swapchain's images, for the quad. */
+	if (!present->copying) {
+		error = present_pass(present);
+		if (error != VK_SUCCESS)
+			return error;
+	}
 
-	/* A framebuffer for each swapchain image. */
+	/* What each swapchain image needs. */
 	error = present_targets(present);
 	if (error != VK_SUCCESS)
 		return error;
@@ -122,15 +145,21 @@ keiui_present_open(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The sampler and the descriptor set the canvas is bound through. */
-	error = present_descriptors(present);
-	if (error != VK_SUCCESS)
-		return error;
+	/* The sampler and the descriptor set the canvas is bound through, for the quad. */
+	if (!present->copying) {
+		error = present_descriptors(present);
+		if (error != VK_SUCCESS)
+			return error;
+	}
 
-	/* The canvas image at the swapchain's size. */
+	/* The staging buffer, or the canvas image, at the swapchain's size. */
 	error = present_canvas(present);
 	if (error != VK_SUCCESS)
 		return error;
+
+	/* A frame copied needs nothing more. */
+	if (present->copying)
+		return VK_SUCCESS;
 
 	/* The quad. */
 	error = present_vertices(present);
@@ -181,12 +210,12 @@ keiui_present_resize(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Framebuffers for the new images. */
+	/* What the new images need. */
 	error = present_targets(present);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* A canvas image of the new size. */
+	/* A staging buffer or a canvas image of the new size. */
 	error = present_canvas(present);
 	if (error != VK_SUCCESS)
 		return error;
@@ -204,6 +233,9 @@ keiui_present_resize(
  * only their rows are copied into the canvas, which keeps the rest, and
  * the window system is told those parts alone (VK_KHR_incremental_present).
  * A new canvas, or parts all outside the frame, take the whole frame.
+ * When frames are copied, every swapchain image adds the parts to what it
+ * lacks, and the image given this frame takes what it lacks alone
+ * (ws210-p013).
  *
  * Returns VK_ERROR_OUT_OF_DATE_KHR when the swapchain no longer matches
  * the window; the caller resizes and draws again.
@@ -224,8 +256,10 @@ keiui_present_frame(
 	VkPipelineStageFlags stage;
 	struct kl_rect areas[KL_FRAME_PARTS_MAX];
 	unsigned area_count;
+	unsigned copies;
 	unsigned index;
 	uint64_t started;
+	uint32_t target;
 	uint32_t image;
 	int clipped;
 	VkResult error;
@@ -247,20 +281,31 @@ keiui_present_frame(
 	}
 
 	/* Without a part inside the frame, the whole frame is the one part, told as no region. */
+	copies = area_count;
 	if (area_count == 0) {
 		areas[0].x = 0;
 		areas[0].y = 0;
 		areas[0].width = (int)present->extent.width;
 		areas[0].height = (int)present->extent.height;
+		copies = 1U;
 	}
 
-	/* The parts' rows into the canvas image; the canvas keeps the rest of the last frame. */
+	/* The parts' rows into the canvas (red and blue swapped for an image of R, G, B, A); the canvas keeps the rest of the last frame. */
 	started = keiui_clock_ms();
-	keiui_present_copy(present->canvas_map, present->canvas_pitch, pixels, stride, &areas[0]);
-	for (index = 1; index < area_count; index++)
-		keiui_present_copy(present->canvas_map, present->canvas_pitch, pixels, stride, &areas[index]);
+	for (index = 0; index < copies; index++) {
+		if (present->copying && present->format == VK_FORMAT_R8G8B8A8_UNORM)
+			keiui_present_copy_swap(present->canvas_map, present->canvas_pitch, pixels, stride, &areas[index]);
+		else
+			keiui_present_copy(present->canvas_map, present->canvas_pitch, pixels, stride, &areas[index]);
+	}
 	present->canvas_whole = 1;
 	present->copy_ms = (unsigned)(keiui_clock_ms() - started);
+
+	/* What every swapchain image lacks now, the parts written (before anything may fail, ws210-p013 H4). */
+	for (target = 0U; present->copying && target < present->count; target++) {
+		for (index = 0; index < copies; index++)
+			keiui_stale_add(&present->targets[target].stale, present->extent.width, present->extent.height, &areas[index]);
+	}
 
 	/* The image to draw into, once the compositor has given one back. */
 	started = keiui_clock_ms();
@@ -289,8 +334,10 @@ keiui_present_frame(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Submits the frame after the acquire, signalling the image's present semaphore. */
+	/* Submits the frame after the acquire (its copy, or its quad, waits for it), signalling the image's present semaphore. */
 	stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	if (present->copying)
+		stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 	memset(&submit, 0, sizeof(submit));
 	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submit.waitSemaphoreCount = 1U;
@@ -302,8 +349,14 @@ keiui_present_frame(
 	submit.pSignalSemaphores = &present->targets[image].rendered;
 	present->operation = "vkQueueSubmit";
 	error = vkQueueSubmit(present->queue, 1U, &submit, present->fence);
-	if (error != VK_SUCCESS)
+	if (error != VK_SUCCESS) {
+		present_stale_all(present);
 		return error;
+	}
+
+	/* The image holds the frame once the copy runs. */
+	if (present->copying)
+		keiui_stale_clear(&present->targets[image].stale);
 
 	/* Presents the image to the window. */
 	memset(&info, 0, sizeof(info));
@@ -335,16 +388,24 @@ keiui_present_frame(
 	present->operation = "vkQueuePresentKHR";
 	error = vkQueuePresentKHR(present->queue, &info);
 	present->present_ms = (unsigned)(keiui_clock_ms() - started);
-	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
+	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR) {
+		present_stale_all(present);
 		return error;
+	}
 
 	/* The frame is finished before the host writes the canvas again. */
 	started = keiui_clock_ms();
 	present->operation = "vkWaitForFences";
 	error = vkWaitForFences(present->device, 1U, &present->fence, VK_TRUE, PRESENT_TIMEOUT);
 	present->wait_ms = (unsigned)(keiui_clock_ms() - started);
-	if (error != VK_SUCCESS)
+	if (error != VK_SUCCESS) {
+		present_stale_all(present);
 		return error;
+	}
+
+	/* The image written, compared with the staging buffer when asked. */
+	if (present->copying && present->check)
+		present_check(present, image);
 
 	/* Succeeded: the frame is in the window. */
 	return VK_SUCCESS;
@@ -494,7 +555,11 @@ present_device(
 	return VK_SUCCESS;
 }
 
-/* Makes the swapchain at a size, in an 8-bit UNORM format, presenting in FIFO order. */
+/*
+ * Makes the swapchain at a size, in an 8-bit UNORM format, presenting in
+ * FIFO order.  The first one decides whether frames are copied into the
+ * images (their surface takes a transfer into them, ws210-p013 E1).
+ */
 static VkResult
 present_swapchain(
 	struct keiui_present *present,
@@ -507,6 +572,22 @@ present_swapchain(
 	uint32_t count;
 	uint32_t index;
 	VkResult error;
+
+	/* The surface's capabilities. */
+	present->operation = "vkGetPhysicalDeviceSurfaceCapabilitiesKHR";
+	error = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(present->physical, present->surface, &capabilities);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Frames copied into the images when the first chain's surface takes it (the images read back too, for the check). */
+	if (!present->path_chosen) {
+		present->path_chosen = 1;
+		present->copying = 0;
+		if ((capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) != 0U)
+			present->copying = 1;
+		if ((capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) == 0U)
+			present->check = 0;
+	}
 
 	/* The formats the surface offers. */
 	count = 16U;
@@ -524,15 +605,17 @@ present_swapchain(
 		}
 	}
 
+	/* A copy prefers the canvas's own B, G, R, A, which needs no swap of red and blue. */
+	for (index = 0U; present->copying && index < count; index++) {
+		if (formats[index].format == VK_FORMAT_B8G8R8A8_UNORM) {
+			present->format = VK_FORMAT_B8G8R8A8_UNORM;
+			break;
+		}
+	}
+
 	/* A surface without one cannot show the colors as they are. */
 	if (present->format == VK_FORMAT_UNDEFINED)
 		return VK_ERROR_FORMAT_NOT_SUPPORTED;
-
-	/* The size, kept inside what the surface takes. */
-	present->operation = "vkGetPhysicalDeviceSurfaceCapabilitiesKHR";
-	error = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(present->physical, present->surface, &capabilities);
-	if (error != VK_SUCCESS)
-		return error;
 
 	/* The window's size, clamped to the surface's range. */
 	if (width < capabilities.minImageExtent.width)
@@ -575,6 +658,18 @@ present_swapchain(
 		create.compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
 	create.presentMode = VK_PRESENT_MODE_FIFO_KHR;
 	create.clipped = VK_TRUE;
+
+	/*
+	 * A copied frame writes into the images (and reads one back for the
+	 * check), and keeps every pixel of them, hidden or not, since the next
+	 * frame writes only what changed (ws210-p013 E1, M2).
+	 */
+	if (present->copying) {
+		create.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		if (present->check)
+			create.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		create.clipped = VK_FALSE;
+	}
 	present->operation = "vkCreateSwapchainKHR";
 	error = vkCreateSwapchainKHR(present->device, &create, NULL, &present->swapchain);
 	if (error != VK_SUCCESS)
@@ -630,34 +725,65 @@ present_pass(
 	return VK_SUCCESS;
 }
 
-/* Makes a view, a framebuffer and a present semaphore for each swapchain image. */
+/*
+ * Makes a present semaphore for each swapchain image, with a view and a
+ * framebuffer for the quad, and marks each image's contents not known.
+ */
 static VkResult
 present_targets(
 	struct keiui_present *present)
 {
-	VkImage images[8];
+	VkImage *images;
 	VkImageViewCreateInfo view;
 	VkFramebufferCreateInfo framebuffer;
 	VkSemaphoreCreateInfo semaphore;
+	uint32_t count;
 	uint32_t index;
 	VkResult error;
 
-	/* The swapchain's images (at most eight). */
-	present->count = 8U;
+	/* How many images the swapchain has (ws210-p013 L1: no fixed bound). */
+	count = 0U;
 	present->operation = "vkGetSwapchainImagesKHR";
-	error = vkGetSwapchainImagesKHR(present->device, present->swapchain, &present->count, images);
-	if (error != VK_SUCCESS && error != VK_INCOMPLETE)
+	error = vkGetSwapchainImagesKHR(present->device, present->swapchain, &count, NULL);
+	if (error != VK_SUCCESS)
 		return error;
+	if (count == 0U)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* Their handles. */
+	images = calloc(count, sizeof(images[0]));
+	if (images == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	error = vkGetSwapchainImagesKHR(present->device, present->swapchain, &count, images);
+	if (error != VK_SUCCESS && error != VK_INCOMPLETE) {
+		free(images);
+		return error;
+	}
 
 	/* A zeroed table, so that a failure part-way leaves only made objects to release. */
-	present->targets = calloc(present->count, sizeof(present->targets[0]));
-	if (present->targets == NULL)
+	present->targets = calloc(count, sizeof(present->targets[0]));
+	if (present->targets == NULL) {
+		free(images);
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
+	present->count = count;
 
 	/* Each image's objects. */
 	for (index = 0U; index < present->count; index++) {
-		/* The view of the image. */
+		/* The image, its contents not known yet; a copied frame needs nothing more of it than the semaphore. */
 		present->targets[index].image = images[index];
+		keiui_stale_unknown(&present->targets[index].stale);
+		if (present->copying) {
+			memset(&semaphore, 0, sizeof(semaphore));
+			semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+			present->operation = "vkCreateSemaphore";
+			error = vkCreateSemaphore(present->device, &semaphore, NULL, &present->targets[index].rendered);
+			if (error != VK_SUCCESS)
+				break;
+			continue;
+		}
+
+		/* The view of the image. */
 		memset(&view, 0, sizeof(view));
 		view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		view.image = images[index];
@@ -669,7 +795,7 @@ present_targets(
 		present->operation = "vkCreateImageView";
 		error = vkCreateImageView(present->device, &view, NULL, &present->targets[index].view);
 		if (error != VK_SUCCESS)
-			return error;
+			break;
 
 		/* The framebuffer over it. */
 		memset(&framebuffer, 0, sizeof(framebuffer));
@@ -683,7 +809,7 @@ present_targets(
 		present->operation = "vkCreateFramebuffer";
 		error = vkCreateFramebuffer(present->device, &framebuffer, NULL, &present->targets[index].framebuffer);
 		if (error != VK_SUCCESS)
-			return error;
+			break;
 
 		/* The semaphore its present waits for. */
 		memset(&semaphore, 0, sizeof(semaphore));
@@ -691,8 +817,13 @@ present_targets(
 		present->operation = "vkCreateSemaphore";
 		error = vkCreateSemaphore(present->device, &semaphore, NULL, &present->targets[index].rendered);
 		if (error != VK_SUCCESS)
-			return error;
+			break;
 	}
+
+	/* The handles are in the table; an object not made fails the chain. */
+	free(images);
+	if (error != VK_SUCCESS)
+		return error;
 
 	/* Succeeded: every image can be drawn into. */
 	return VK_SUCCESS;
@@ -898,6 +1029,12 @@ present_canvas(
 	void *map;
 	VkResult error;
 
+	/* A frame copied: the staging buffer in place of the image. */
+	if (present->copying) {
+		error = present_staging(present);
+		return error;
+	}
+
 	/* The image: linear so that the host writes its rows, sampled by the fragment shader. */
 	memset(&image, 0, sizeof(image));
 	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -977,11 +1114,26 @@ present_canvas(
 	return VK_SUCCESS;
 }
 
-/* Releases the canvas image, its view and its memory. */
+/* Releases the canvas image, its view and its memory, or the staging and read-back buffers and their memory. */
 static void
 present_canvas_free(
 	struct keiui_present *present)
 {
+	/* The buffers and their memory, where made. */
+	if (present->staging != VK_NULL_HANDLE)
+		vkDestroyBuffer(present->device, present->staging, NULL);
+	if (present->staging_memory != VK_NULL_HANDLE)
+		vkFreeMemory(present->device, present->staging_memory, NULL);
+	if (present->readback != VK_NULL_HANDLE)
+		vkDestroyBuffer(present->device, present->readback, NULL);
+	if (present->readback_memory != VK_NULL_HANDLE)
+		vkFreeMemory(present->device, present->readback_memory, NULL);
+	present->staging = VK_NULL_HANDLE;
+	present->staging_memory = VK_NULL_HANDLE;
+	present->readback = VK_NULL_HANDLE;
+	present->readback_memory = VK_NULL_HANDLE;
+	present->readback_map = NULL;
+
 	/* The view, the image and the memory, where made. */
 	if (present->canvas_view != VK_NULL_HANDLE)
 		vkDestroyImageView(present->device, present->canvas_view, NULL);
@@ -997,6 +1149,89 @@ present_canvas_free(
 	present->canvas_map = NULL;
 	present->canvas_ready = 0;
 	present->canvas_whole = 0;
+}
+
+/*
+ * Makes the staging buffer at the swapchain's size (host-written, mapped
+ * for good, its rows PRESENT_PITCH_ALIGN bytes apart), and the read-back
+ * buffer of the check.
+ */
+static VkResult
+present_staging(
+	struct keiui_present *present)
+{
+	VkDeviceSize size;
+	void *map;
+	VkResult error;
+
+	/* The rows' pitch and the buffer's size. */
+	present->canvas_pitch = ((size_t)present->extent.width * 4U + PRESENT_PITCH_ALIGN - 1U) / PRESENT_PITCH_ALIGN * PRESENT_PITCH_ALIGN;
+	size = (VkDeviceSize)present->canvas_pitch * present->extent.height;
+
+	/* The staging buffer the copy reads. */
+	error = present_buffer(present, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &present->staging, &present->staging_memory, &map);
+	if (error != VK_SUCCESS)
+		return error;
+	present->canvas_map = map;
+	present->canvas_whole = 0;
+
+	/* The read-back buffer, when the images are checked. */
+	if (present->check) {
+		error = present_buffer(present, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &present->readback, &present->readback_memory, &map);
+		if (error != VK_SUCCESS)
+			return error;
+		present->readback_map = map;
+	}
+
+	/* Succeeded: frames can be written into the staging buffer. */
+	return VK_SUCCESS;
+}
+
+/* Makes a buffer of a size and use in host-visible, coherent memory, mapped for good. */
+static VkResult
+present_buffer(
+	struct keiui_present *present,
+	VkDeviceSize size,
+	VkBufferUsageFlags usage,
+	VkBuffer *buffer,
+	VkDeviceMemory *memory,
+	void **map)
+{
+	VkBufferCreateInfo create;
+	VkMemoryRequirements requirements;
+	VkResult error;
+
+	/* The buffer. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	create.size = size;
+	create.usage = usage;
+	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	present->operation = "vkCreateBuffer";
+	error = vkCreateBuffer(present->device, &create, NULL, buffer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Its memory. */
+	vkGetBufferMemoryRequirements(present->device, *buffer, &requirements);
+	error = present_memory(present, &requirements, memory);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Binds the memory to the buffer. */
+	present->operation = "vkBindBufferMemory";
+	error = vkBindBufferMemory(present->device, *buffer, *memory, 0U);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Maps it for good. */
+	present->operation = "vkMapMemory";
+	error = vkMapMemory(present->device, *memory, 0U, VK_WHOLE_SIZE, 0U, map);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the buffer, mapped. */
+	return VK_SUCCESS;
 }
 
 /* Makes the vertex buffer of the quad: the unit square, which the push constant stretches over the window. */
@@ -1220,7 +1455,7 @@ present_module(
 	return VK_SUCCESS;
 }
 
-/* Records the frame: the canvas made visible to the shader, then the quad over the whole image. */
+/* Records the frame: its copy into the image (present_record_copy), or the canvas made visible to the shader, then the quad over the whole image. */
 static void
 present_record(
 	struct keiui_present *present,
@@ -1239,6 +1474,12 @@ present_record(
 	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	(void)vkBeginCommandBuffer(present->command, &begin);
+
+	/* A frame copied. */
+	if (present->copying) {
+		present_record_copy(present, image);
+		return;
+	}
 
 	/* The host's writes to the canvas before the shader reads it (the first frame also leaves the preinitialized layout). */
 	memset(&barrier, 0, sizeof(barrier));
@@ -1290,6 +1531,165 @@ present_record(
 
 	/* The pass ends with the image ready to present. */
 	vkCmdEndRenderPass(present->command);
+}
+
+/*
+ * Records a frame copied (ws210-p013 E1): the image made ready for the
+ * transfer (from an undefined layout when its contents are not known),
+ * the parts of the staging buffer it lacks copied into it, read back into
+ * the read-back buffer for the check, and the image left for presenting.
+ */
+static void
+present_record_copy(
+	struct keiui_present *present,
+	uint32_t image)
+{
+	VkBufferImageCopy copies[KEIUI_STALE_RECTS];
+	VkBufferImageCopy whole;
+	VkImageMemoryBarrier barrier;
+	VkBufferMemoryBarrier host;
+	struct kl_rect regions[KEIUI_STALE_RECTS];
+	struct keiui_stale *stale;
+	unsigned count;
+	unsigned index;
+
+	/* What the image lacks: every part of it when asked so. */
+	stale = &present->targets[image].stale;
+	if (present->force_whole)
+		keiui_stale_unknown(stale);
+	count = keiui_stale_regions(stale, present->extent.width, present->extent.height, regions);
+
+	/* The image for the transfer: its old contents kept, unless they are not known. */
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcAccessMask = 0U;
+	barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	if (stale->whole)
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = present->targets[image].image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.levelCount = 1U;
+	barrier.subresourceRange.layerCount = 1U;
+	vkCmdPipelineBarrier(present->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+
+	/* Each region, from its place in the staging buffer to the same place in the image. */
+	memset(copies, 0, sizeof(copies));
+	for (index = 0U; index < count; index++) {
+		copies[index].bufferOffset = (VkDeviceSize)regions[index].y * present->canvas_pitch + (VkDeviceSize)regions[index].x * 4U;
+		copies[index].bufferRowLength = (uint32_t)(present->canvas_pitch / 4U);
+		copies[index].bufferImageHeight = present->extent.height;
+		copies[index].imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copies[index].imageSubresource.layerCount = 1U;
+		copies[index].imageOffset.x = regions[index].x;
+		copies[index].imageOffset.y = regions[index].y;
+		copies[index].imageExtent.width = (uint32_t)regions[index].width;
+		copies[index].imageExtent.height = (uint32_t)regions[index].height;
+		copies[index].imageExtent.depth = 1U;
+	}
+	if (count != 0U)
+		vkCmdCopyBufferToImage(present->command, present->staging, present->targets[image].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, count, copies);
+
+	/* The check: the whole image read back after the copy, for the host. */
+	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	if (present->check) {
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		vkCmdPipelineBarrier(present->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+		memset(&whole, 0, sizeof(whole));
+		whole.bufferRowLength = (uint32_t)(present->canvas_pitch / 4U);
+		whole.bufferImageHeight = present->extent.height;
+		whole.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		whole.imageSubresource.layerCount = 1U;
+		whole.imageExtent.width = present->extent.width;
+		whole.imageExtent.height = present->extent.height;
+		whole.imageExtent.depth = 1U;
+		vkCmdCopyImageToBuffer(present->command, present->targets[image].image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, present->readback, 1U, &whole);
+		memset(&host, 0, sizeof(host));
+		host.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+		host.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+		host.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		host.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		host.buffer = present->readback;
+		host.size = VK_WHOLE_SIZE;
+		vkCmdPipelineBarrier(present->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0U, 0U, NULL, 1U, &host, 0U, NULL);
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	}
+
+	/* The image left for presenting once the transfer is done. */
+	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.dstAccessMask = 0U;
+	barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	vkCmdPipelineBarrier(present->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+}
+
+/* Marks every swapchain image's contents as not known (a frame failed after it may have written one, ws210-p013 H4). */
+static void
+present_stale_all(
+	struct keiui_present *present)
+{
+	uint32_t index;
+
+	/* Each image. */
+	for (index = 0U; present->copying && present->targets != NULL && index < present->count; index++)
+		keiui_stale_unknown(&present->targets[index].stale);
+}
+
+/*
+ * Compares the image written, read back, with the staging buffer, and
+ * tells the first difference once (the diagnostic KL_PRESENT_CHECK,
+ * ws210-p013 E3): an image that lacks a part the frame changed.
+ */
+static void
+present_check(
+	struct keiui_present *present,
+	uint32_t image)
+{
+	size_t offset;
+	size_t row_bytes;
+	uint32_t row;
+	int differ;
+
+	/* Told already, or nothing read back. */
+	if (present->stale_told || present->readback_map == NULL)
+		return;
+
+	/* Each row's pixels. */
+	row_bytes = (size_t)present->extent.width * 4U;
+	for (row = 0U; row < present->extent.height; row++) {
+		offset = (size_t)row * present->canvas_pitch;
+		differ = memcmp(present->readback_map + offset, present->canvas_map + offset, row_bytes);
+		if (differ != 0) {
+			present->stale_told = 1;
+			(void)fprintf(stderr, "KEILAND PRESENT_STALE image=%u row=%u width=%u height=%u\n", image, row, present->extent.width, present->extent.height);
+			return;
+		}
+	}
+}
+
+/* Tells whether a diagnostic is asked for in the environment (its variable is "1"). */
+static int
+present_diagnostic(
+	const char *name)
+{
+	const char *value;
+	int same;
+
+	/* The variable. */
+	value = getenv(name);
+	if (value == NULL)
+		return 0;
+
+	/* Asked for by "1". */
+	same = strcmp(value, "1");
+	if (same == 0)
+		return 1;
+	return 0;
 }
 
 /* Tells whether a physical device offers a device extension (1) or not (0). */

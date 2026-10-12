@@ -3,7 +3,7 @@
 # ws210-p013: app の present を変わった所の copy に（GPU の canvas の前の中間）
 
 Parent: [WS210](../ws.md)
-Status: planning（P1 の設計 1.1、2026-10-12。[review-1](review-1.md) を反映、Q1 の確認待ち。実装の前に Pi の baseline）
+Status: in-progress（P1、設計 1.1 を実装、2026-10-12。T1・Pi の確認待ち。E5 の方式の比べは未実施）
 Phase disposition: normal
 Queue: [P1 の lane](../../agents/P1/queue.md)
 
@@ -132,6 +132,16 @@ kernel の部分の変換（write ring、`BCM2711_BUFFER_WRITES` 8）と TLB cop
   - Music の検索中の一覧の cache（推測で未計測）。
   - Calendar の卓上カレンダーの 3D の cache（重なる部分の hover の時だけ、host で約 3ms）。
 - pointer の motion の合流と、描き直しの予約の取り消しは [p014](../phase014/phase.md)。
+
+## 実施の記録
+
+- 2026-10-12 実装（Q1「present_record は毎コマ窓全体に quad を描く（Pi の GPU で約 6〜7ms、260 tile）。parts と、この swapchain image が最後に描かれてからの parts の和に絞って、client の render と driver の copy を部分に。設計 1.1 に沿って」。compositor 側は P3 が commit の damage を使う形に直した、main db55254d4）。
+  - E1: surface の image が TRANSFER_DST を取る時（最初の swapchain で決める）、quad の pass・pipeline・descriptor・頂点・canvas の image を作らず、staging の buffer（host-visible・coherent・常に map、pitch は 64 byte に切り上げ、TRANSFER_SRC）から `vkCmdCopyBufferToImage` で写す。acquire は TRANSFER で待ち、barrier は TRANSFER→TRANSFER（oldLayout は whole なら UNDEFINED、でなければ PRESENT_SRC）、写した後 TRANSFER→BOTTOM_OF_PIPE で PRESENT_SRC。形式は B8G8R8A8 を優先し、R8G8B8A8 だけなら staging へ写す時に R と B を入れ替える（`keiui_present_copy_swap`）。usage に TRANSFER_DST、`clipped` は VK_FALSE。image の枚数は先に問い合わせる（8 枚の上限を外した）。TRANSFER_DST の無い surface は今の quad の全体の経路のまま。
+  - E2: `ui/present-damage.c`（純関数）。image ごとの stale（最大 4 矩形、x と右端を 16 px に揃え、重なる・外接の箱が和の 1.5 倍以下ならまとめ、5 つ目は箱の増えの一番少ない組をまとめる）。staging に写した時点で全部の image に足し、submit の成功の後で渡した image を空にする。submit・present・fence の失敗で全部を whole。和が窓の 30% を超えたら全体を 1 region。
+  - E3 の診断: `KL_PRESENT_WHOLE=1`（毎コマ全体）、`KL_PRESENT_CHECK=1`（写した image を読み戻して staging と比べ、違えば `KEILAND PRESENT_STALE image= row=` を 1 回）。設計の名前 `KEILAND_PRESENT_*` は keiland-os-boundary の B5（`KEILAND_` の接頭辞の禁止）に掛かるので `KL_` に替えた。
+  - 試験: host `plan/ws210/tests/run-host-present-damage.sh`（新規、ASan・UBSan）: image 2〜4 枚、任意の順の acquire（同じ image の連続を含む）、acquire・submit・present の失敗と大きさの変化を注入して、各 image が submit の後に staging と画素で一致すること、region の数・範囲・重ならない・揃いを 200000 コマで確かめた（1943388 checks、0 failures）。R/B の入れ替えの写しも。host の Linux の Vulkan header で present.c・present-damage.c・present-copy.c を -Werror で構文の確かめ。
+  - build: rpi4・amd64 の libkeiland.so が warning 0。`exports.py --check` PASS。keiland-os-boundary PASS（環境変数の名前を替えた後）。
+  - 未実施: T1（QEMU、Venus と llvmpipe の PNG を `KL_PRESENT_WHOLE=1` と比べる、`KL_PRESENT_CHECK=1` で PRESENT_STALE が 0）。Pi の実測（E5、しきい値・TFU の比べ）。
 
 ## 完了の条件（M6）
 

@@ -46,6 +46,7 @@ LIBKEILAND_SOURCES += \
 	userland/desktop/libkeiland/ui/window-declare.c \
 	userland/desktop/libkeiland/ui/present.c \
 	userland/desktop/libkeiland/ui/present-copy.c \
+	userland/desktop/libkeiland/ui/present-damage.c \
 	userland/desktop/libkeiland/ui/present-shm.c \
 	userland/desktop/libkeiland/ui/clipboard.c \
 	userland/desktop/libkeiland/ui/primary.c \
