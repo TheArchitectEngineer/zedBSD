@@ -47,8 +47,8 @@ extern char **environ;
 /* How many frames in a row may find the swapchain out of date before the program gives up. */
 #define MAIN_STALE_LIMIT	8U
 
-/* A frame that takes longer than this is logged, in milliseconds. */
-#define MAIN_SLOW_FRAME_MS	250U
+/* A frame that takes longer than this is logged, in milliseconds (a lit row's frame on the Pi 4 among them, ws210-p014). */
+#define MAIN_SLOW_FRAME_MS	100U
 
 /*
  * The longest single wait for a moment far ahead (the end of a long
@@ -127,6 +127,7 @@ static const char *main_value(const char *argument, const char *name);
 static int main_number(const char *text, unsigned maximum, unsigned *value);
 static int main_loop(const struct main_options *options);
 static int main_frame(void);
+static void main_slow_frame(uint64_t draw, uint64_t present);
 static void main_text_input(void);
 static int main_canvas_make(void);
 static int main_timeout(uint64_t now, uint64_t deadline);
@@ -204,6 +205,15 @@ main(
 		kl_instance_close(main_instance);
 		return 1;
 	}
+
+	/*
+	 * The pointer's motions merged, and each frame drawn once the
+	 * compositor took the last one (ws210-p014 F2): the pointer crossing
+	 * the panes while a frame is on its way draws its latest place once,
+	 * not a frame queued for every row it crossed (2026-10-12, the Pi 4).
+	 */
+	error = kl_window_set_pacing(main_window.kui, KL_PACING_MOTION | KL_PACING_FRAME, 0U);
+	se_log("PACING motion=1 frame=1 errno=%d", error);
 
 	/* The interface, and what About shows of the window: the graphics device and the screen (the machine's names come from the desktop, ws188-p002). */
 	main_app.now = se_clock();
@@ -434,6 +444,7 @@ main_loop(
 	int inputs;
 	int taken;
 	int status;
+	int pace;
 	int timeout;
 
 	/* The first frame's canvas. */
@@ -545,7 +556,22 @@ main_loop(
 			main_app.dirty = 1;
 		}
 
-		/* The region under the pointer: what changed since the last frame (ws210-p014). */
+		/* Nothing changed: no frame. */
+		if (main_app.dirty == 0 &&
+		    main_app.hover_moved == 0 &&
+		    main_app.hover_pending == 0)
+			continue;
+
+		/*
+		 * A frame once the compositor took the last one (ws210-p014 F2.2):
+		 * until then nothing is consumed, so what changes meanwhile is
+		 * drawn as one frame in its latest state.
+		 */
+		pace = kl_window_frame_wait(main_window.kui, kl_clock_us());
+		if (pace != 0)
+			continue;
+
+		/* The region under the pointer: what changed since the last frame drawn (ws210-p014). */
 		se_ui_hover_settle(&main_app);
 
 		/* A frame when something changed, or the lit region alone (BUG-226). */
@@ -582,9 +608,9 @@ main_frame(void)
 		result = se_present_frame(&main_present, main_pixels, (size_t)main_present.extent.width, main_app.frame_parts, main_app.frame_part_count);
 		shown = se_clock();
 
-		/* A slow frame is logged (a diagnostic: where the time of a frame goes). */
+		/* A slow frame is logged (a diagnostic: where the time of a frame goes, and how much of the window it drew). */
 		if (shown - started > MAIN_SLOW_FRAME_MS)
-			se_log("SLOW-FRAME draw=%lu present=%lu copy=%u acquire=%u queue=%u wait=%u", (unsigned long)(drawn - started), (unsigned long)(shown - drawn), main_present.copy_ms, main_present.acquire_ms, main_present.present_ms, main_present.wait_ms);
+			main_slow_frame(drawn - started, shown - drawn);
 
 		/* Succeeded: the frame is shown (the retries below are for a stale swapchain only); the text input follows it. */
 		if (result == VK_SUCCESS) {
@@ -614,6 +640,29 @@ main_frame(void)
 	/* The swapchain stayed out of date. */
 	fprintf(stderr, "ZSETTINGS FAILED operation=stale-swapchain\n");
 	return -1;
+}
+
+/* Logs a slow frame: its drawing's and its showing's times, and the parts it drew (none: the whole window) with their area in pixels. */
+static void
+main_slow_frame(
+	uint64_t draw,
+	uint64_t present)
+{
+	const struct kl_rect *part;
+	unsigned long area;
+	unsigned index;
+
+	/* The pixels drawn: the parts', or the whole window's. */
+	area = (unsigned long)main_present.extent.width * main_present.extent.height;
+	if (main_app.frame_part_count != 0U)
+		area = 0UL;
+	for (index = 0; index < main_app.frame_part_count; index++) {
+		part = &main_app.frame_parts[index];
+		area += (unsigned long)part->width * (unsigned long)part->height;
+	}
+
+	/* One line. */
+	se_log("SLOW-FRAME draw=%lu present=%lu copy=%u acquire=%u queue=%u wait=%u parts=%u area=%lu", (unsigned long)draw, (unsigned long)present, main_present.copy_ms, main_present.acquire_ms, main_present.present_ms, main_present.wait_ms, main_app.frame_part_count, area);
 }
 
 /*
@@ -684,19 +733,32 @@ main_timeout(
 	int bluetooth;
 	int dialog;
 	int limit;
+	int pace;
 
-	/* A frame the last one asked for (a scroll it corrected), or the lit region's, is drawn at once. */
-	if (main_app.dirty != 0 || main_app.hover_pending != 0)
-		return 0;
+	/*
+	 * A frame the last one asked for (a scroll it corrected), or the lit
+	 * region's, is drawn at once, or once the compositor took the last
+	 * one (ws210-p014 F2: its answer wakes the wait; a positive pace is
+	 * how long it is waited for at most).
+	 */
+	pace = -1;
+	if (main_app.dirty != 0 ||
+	    main_app.hover_moved != 0 ||
+	    main_app.hover_pending != 0) {
+		pace = kl_window_frame_wait(main_window.kui, kl_clock_us());
+		if (pace == 0)
+			return 0;
+	}
 
 	/* A touch pad's scrolling that flies on moves every frame (BUG-211). */
 	if (main_app.kinetic.flying != 0)
 		return MAIN_KINETIC_MS;
 
-	/* Nothing due yet: the wait has no end, except the end of the run when a timeout was given. */
+	/* Nothing due yet: the wait has no end, except the end of the run when a timeout was given, and the frame's pace. */
 	limit = -1;
 	if (deadline != 0U)
 		limit = main_until(now, deadline);
+	limit = main_shorter(limit, pace);
 
 	/* The minute About shows. */
 	interface = se_ui_wait(&main_app, now);

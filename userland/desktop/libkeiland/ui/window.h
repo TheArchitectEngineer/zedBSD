@@ -18,6 +18,7 @@
 #include <keiland/keiland.h>
 
 #include "declare.h"
+#include "internal.h"
 
 /* The window's surface is a Wayland one, for Vulkan's surface. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
@@ -514,8 +515,13 @@ struct kl_window {
 	 * (KL_PACING_*, kl_window_set_pacing, ws210-p014 F2.1): with
 	 * KL_PACING_MOTION a pointer's motion takes the place of the newest
 	 * input queued when that is a motion of the window too.  0 by default.
+	 * With KL_PACING_FRAME (KL_VERSION 92) the next frame waits for the
+	 * compositor to take the last one: the pace, and the frame callback
+	 * asked for with it (pace_callback, NULL when none is awaited).
 	 */
 	unsigned pacing;
+	struct keiui_pace pace;
+	struct wl_callback *pace_callback;
 
 	/*
 	 * The declarative menus, controls and glass (window-declare.c): the

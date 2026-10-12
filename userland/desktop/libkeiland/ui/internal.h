@@ -107,6 +107,158 @@ keiui_motion_merges(
 	return 1;
 }
 
+/*
+ * KL_VERSION 92 (ws210-p014 F2.3): whether an input of a window that asked
+ * for KL_PACING_FRAME may wait for the compositor's next frame (1), or asks
+ * for a frame at once (0).  Only the pointer's, a finger's, a pen's and a
+ * drop's moves and the wheel wait; every other kind (a button, a key, the
+ * focus, a resize, a post and those added later) does not.
+ */
+static __inline int
+keiui_pacing_waits(
+	unsigned kind)
+{
+	/* The moves and the wheel, whose latest state stands for them all. */
+	switch (kind) {
+	case KL_WINDOW_MOTION:
+	case KL_WINDOW_LEAVE:
+	case KL_WINDOW_AXIS:
+	case KL_WINDOW_TOUCH_MOTION:
+	case KL_WINDOW_DROP_MOTION:
+	case KL_WINDOW_DROP_ACTION:
+	case KL_WINDOW_TABLET_MOTION:
+	case KL_WINDOW_TABLET_HOVER:
+		return 1;
+	default:
+		break;
+	}
+
+	/* Reports an input that asks for its frame at once. */
+	return 0;
+}
+
+/* How long a frame callback is waited for before a frame is drawn anyway (KL_PACING_FRAME), in microseconds. */
+#define KEIUI_PACE_WATCHDOG_US	1000000U
+
+/*
+ * The pacing of a window's frames (KL_PACING_FRAME, ws210-p014 F2.4): a
+ * frame callback asked for with the frame last shown and not yet answered
+ * (asked, at asked_us), a frame shown again while it was (overdue: the
+ * next waits for the answer), and an input since the last frame that does
+ * not wait (urgent).
+ */
+struct keiui_pace {
+	int asked;
+	int overdue;
+	int urgent;
+	uint64_t asked_us;
+};
+
+/*
+ * Tells when a window that paces its frames may draw the next one
+ * (ws210-p014 F2.4), without changing anything: 0 now, a positive number
+ * of milliseconds (rounded up) until the callback is waited for no
+ * longer, or -1 to wait for the callback alone (the compositor's answer
+ * wakes the wait).
+ */
+static __inline int
+keiui_pace_wait(
+	const struct keiui_pace *pace,
+	uint64_t now_us)
+{
+	uint64_t elapsed;
+	uint64_t left;
+
+	/* The compositor took the last frame: the next may be drawn. */
+	if (!pace->asked)
+		return 0;
+
+	/* A frame was shown while the answer was awaited: the next waits for it, whatever came. */
+	if (pace->overdue)
+		return -1;
+
+	/* An input that does not wait is drawn at once, once. */
+	if (pace->urgent)
+		return 0;
+
+	/* A compositor that has not answered for long is drawn for anyway, once. */
+	elapsed = 0U;
+	if (now_us > pace->asked_us)
+		elapsed = now_us - pace->asked_us;
+	if (elapsed >= KEIUI_PACE_WATCHDOG_US)
+		return 0;
+
+	/* Reports the milliseconds until then. */
+	left = KEIUI_PACE_WATCHDOG_US - elapsed;
+	return (int)((left + 999U) / 1000U);
+}
+
+/* Notes an input of a window that paces its frames: one that does not wait has the next frame drawn at once. */
+static __inline void
+keiui_pace_input(
+	struct keiui_pace *pace,
+	unsigned kind)
+{
+	int waits;
+
+	/* The moves and the wheel wait for the compositor. */
+	waits = keiui_pacing_waits(kind);
+	if (!waits)
+		pace->urgent = 1;
+}
+
+/* Notes the frame callback asked for at now_us with the frame about to be shown. */
+static __inline void
+keiui_pace_ask(
+	struct keiui_pace *pace,
+	uint64_t now_us)
+{
+	/* Awaited from now, nothing shown ahead of it yet. */
+	pace->asked = 1;
+	pace->overdue = 0;
+	pace->asked_us = now_us;
+}
+
+/*
+ * Follows a frame's showing: asked says whether its callback was asked for
+ * with it (keiui_pace_ask), error whether it was shown (0).  Returns 1 when
+ * that callback is to be forgotten (the frame was not shown, so it would
+ * wait for a later commit), else 0.  A frame shown while an earlier one's
+ * callback is awaited makes the next frame wait for that callback, so
+ * that one frame at most goes ahead of the compositor.
+ */
+static __inline int
+keiui_pace_shown(
+	struct keiui_pace *pace,
+	int asked,
+	int error)
+{
+	/* Not shown: the input that asked for the frame still does. */
+	if (error != 0) {
+		if (asked)
+			return 1;
+		return 0;
+	}
+
+	/* Shown: what did not wait has its frame. */
+	pace->urgent = 0;
+
+	/* Shown ahead of the frame awaited. */
+	if (!asked && pace->asked)
+		pace->overdue = 1;
+	return 0;
+}
+
+/* Notes that no frame callback is awaited any more (answered, or forgotten): the next frame may be drawn at once. */
+static __inline void
+keiui_pace_clear(
+	struct keiui_pace *pace)
+{
+	/* Nothing awaited. */
+	pace->asked = 0;
+	pace->overdue = 0;
+}
+
 /* The ids of the library's own records (ws190-p002): the bar of a field's selection and its handles; programs use none from 0xfffffff0 up. */
 #define KEIUI_TEXT_BAR_ID	0xfffffffdU
 #define KEIUI_TEXT_HANDLE_ID	0xfffffffcU
