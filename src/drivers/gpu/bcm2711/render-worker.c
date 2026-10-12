@@ -212,10 +212,16 @@ bcm2711_render_worker_submit(
 	/* The tail always names the final fully owned queued request. */
 	worker->tail = request;
 
-	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
-
-	/* The permanent worker observes publication before its condition sequence changes. */
+	/*
+	 * The permanent worker observes publication before its condition
+	 * sequence changes.  The wakeup stays under the guard the worker
+	 * sleeps under: an unlocked wakeup could take the worker's token off
+	 * the queue between its check and its sleep, and the worker would
+	 * sleep past it for good (ws208-p007, a race only with several CPUs).
+	 */
 	waitq_wake_one(&worker->available);
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 	/* Succeeded: exactly one queued slot owns this payload and common completion. */
 	return 0;
@@ -366,11 +372,11 @@ bcm2711_render_worker_stop(
 			request->canceled = error;
 	}
 
-	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
-
 	/* Queued canceled payloads still require disposal and exactly one common completion; queued executions are canceled by the executor. */
 	waitq_wake_one(&controller->worker.available);
 	waitq_wake_all(&controller->worker.executable);
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 	/* Succeeded: the selected session no longer admits new worker requests. */
 	return;
@@ -446,10 +452,11 @@ bcm2711_render_worker_drain(
 			queue_marker(controller, request, ECANCELED);
 	}
 
-	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
-
 	/* Published close markers wake the permanent worker before drain observes its final condition. */
 	waitq_wake_one(&controller->worker.available);
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
 	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
 	/* Worker completion and the wait condition share this guard, preventing a lost final wake. */
@@ -493,12 +500,12 @@ bcm2711_render_worker_fault(
 			request->canceled = error;
 	}
 
-	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
-
 	/* The permanent worker disposes canceled payloads without claiming that native DMA stopped; the executor cancels queued executions. */
 	waitq_wake_one(&controller->worker.available);
 	waitq_wake_all(&controller->worker.executable);
 	waitq_wake_all(&controller->worker.window_queue);
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 	/* Succeeded: the worker fault is visible to subsequent admission. */
 	return;
@@ -688,10 +695,10 @@ job_commit(
 	/* The one native worker proves preceding command retirement before completing this marker. */
 	queue_marker(controller, request, 0);
 
-	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
-
 	/* Commit publishes using only reserved slot storage, with no allocation or native MMIO. */
 	waitq_wake_one(&controller->worker.available);
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 	/* Succeeded: the original callback now belongs to an ordered completion marker. */
 	return 0;
@@ -732,8 +739,9 @@ job_cancel(
 				queue_marker(controller, request, EIO);
 		}
 
-		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 		waitq_wake_one(&controller->worker.available);
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
 		return 0;
 	}
 
@@ -746,10 +754,12 @@ job_cancel(
 	/* The common core discards this completion after success; the backend must never call it again. */
 	retire_entry(controller, request);
 
-	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
-
 	/* Cancel may release the final close hold and actual reservation capacity independently of a callback. */
 	waitq_wake_all(&controller->worker.retired);
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* Capacity observers see the withdrawn reservation. */
 	drv_gpu_capacity_changed(controller->gpu);
 
 	/* Succeeded: definite nonacceptance withdrew the original callback without signaling completion. */
@@ -1113,10 +1123,12 @@ finish_request(
 		__builtin_trap();
 	retire_entry(controller, request);
 
-	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
-
 	/* Capacity and final close observers see the fully retired slot and callback count. */
 	waitq_wake_all(&controller->worker.retired);
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+	/* Capacity observers see the freed slot. */
 	drv_gpu_capacity_changed(controller->gpu);
 
 	/* Succeeded: the callback outcome is delivered and its pending hold is retired. */
@@ -1167,10 +1179,10 @@ bcm2711_render_execution_submit(
 		controller->worker.ready_tail = session;
 	}
 
-	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
-
-	/* The executor sees the new work. */
+	/* The executor sees the new work; the wakeup stays under the guard the executor sleeps under. */
 	waitq_wake_all(&controller->worker.executable);
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 	/* Succeeded: the execution is queued. */
 	return;
@@ -1378,9 +1390,12 @@ bcm2711_render_executor_step(
 			__builtin_trap();
 		session->pending--;
 
+		/* A drain waiting for the session sees the hold given back. */
+		waitq_wake_all(&controller->worker.retired);
+
 		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
-		waitq_wake_all(&controller->worker.retired);
+		/* Capacity observers see the finished execution. */
 		drv_gpu_capacity_changed(controller->gpu);
 	}
 
@@ -1691,10 +1706,10 @@ bcm2711_render_window_close(
 		__builtin_trap();
 	controller->space.native->hardware.window = false;
 
-	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
-
 	/* Waiting mappers may proceed once the executor gives up the mutex. */
 	waitq_wake_all(&controller->worker.window_queue);
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 	/* The views whose last reference ended inside the window. */
 	error = bcm2711_v3d_memory_release_delayed(&controller->space);
@@ -1770,8 +1785,15 @@ bcm2711_render_map_unlock(
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
+	/* Gives the mutex back before the executor and mappers look again. */
 	mutex_unlock(&controller->mutex);
+
+	/* Wakes them under the guard they sleep under, so the wakeup cannot fall between a check and a sleep. */
+	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
 	waitq_wake_all(&controller->worker.window_queue);
+
+	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 	/* Succeeded: the mutex is free. */
 	return;

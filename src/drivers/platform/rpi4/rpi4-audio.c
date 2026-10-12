@@ -164,6 +164,7 @@ struct rpi4_audio {
 
 static struct rpi4_audio board_audio;
 
+static bool emulated_board(const struct drv_fdt *fdt);
 static int describe(const struct drv_fdt *fdt, struct rpi4_audio_config *config);
 static int describe_dma(const struct drv_fdt *fdt, struct rpi4_audio_config *config);
 static int describe_pwm(const struct drv_fdt *fdt, struct rpi4_audio_config *config);
@@ -192,6 +193,7 @@ drv_rpi4_audio_init(
 	struct rpi4_audio_config config;
 	struct drv_fdt fdt;
 	const void *blob;
+	bool emulated;
 	int error;
 
 	/* Maps the firmware blob through managed physical RAM. */
@@ -203,6 +205,13 @@ drv_rpi4_audio_init(
 	error = drv_fdt_open(&fdt, blob, RPI4_AUDIO_FDT_LIMIT);
 	if (error != 0)
 		return error;
+
+	/* QEMU's raspi4b has no PWM1: the first write to it faults (T1-553, ws208-p007). */
+	emulated = emulated_board(&fdt);
+	if (emulated) {
+		kern_logf("rpi4-audio: emulated board without PWM1; no headphone jack\n");
+		return ENODEV;
+	}
 
 	/* Finds the four blocks the jack needs. */
 	error = describe(&fdt, &config);
@@ -220,6 +229,35 @@ drv_rpi4_audio_init(
 
 	/* Succeeded: audiod can open the jack. */
 	return 0;
+}
+
+/*
+ * Reports whether the tree comes from QEMU's raspi4b rather than a board.
+ *
+ * QEMU marks the PCIe controller disabled in the tree it passes, because
+ * it does not emulate it (rpi4-pcie.c relies on the same mark); a Pi 4's
+ * firmware never does.  QEMU does not emulate PWM1 either.
+ */
+static bool
+emulated_board(
+	const struct drv_fdt *fdt)
+{
+	uint32_t node;
+	bool enabled;
+	int error;
+
+	/* A tree without the controller is not QEMU's raspi4b. */
+	error = drv_fdt_find_compatible(fdt, "brcm,bcm2711-pcie", DRV_FDT_NO_NODE, &node);
+	if (error != 0)
+		return false;
+
+	/* A disabled controller is QEMU's mark. */
+	enabled = drv_fdt_node_enabled(fdt, node);
+	if (!enabled)
+		return true;
+
+	/* Succeeded: a real board. */
+	return false;
 }
 
 /*

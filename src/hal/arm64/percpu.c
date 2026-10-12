@@ -51,6 +51,18 @@ arm64_percpu_bootstrap(
 	record->timer_ticks = 0;
 	record->debug_points_loaded = 0;
 
+	/* Starts the stall watch's view empty: no tick yet, interrupts as the caller has them. */
+	record->watch_beat_time = 0;
+	record->watch_irq_off_time = 0;
+	record->watch_irq_off_pc = 0;
+	record->watch_irq_off_caller = 0;
+	record->watch_irq_id = 0;
+	record->watch_irq_time = 0;
+	record->watch_irq_elr = 0;
+	record->watch_switches = 0;
+	record->watch_countdown = 1;
+	record->watch_reporting = 0;
+
 	/* Publishes the record to this CPU's own register. */
 	__asm__ volatile("msr tpidr_el1, %0\n\tisb"
 			 :

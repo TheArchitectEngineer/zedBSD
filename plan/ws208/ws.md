@@ -3,12 +3,12 @@
 # WS208: arm64 の HAL の SMP（Raspberry Pi 4 の 4 core）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-13 P6: main を統合、p002〜p004 実装済み。T1 の QEMU と Pi の実機 p005 待ち）
+Status: incomplete（2026-10-13 P6: p007 で Pi の 4 core の固まりの検出（stall watch）と SMP の 2 つの直し。Pi の再現待ち）
 Primary Milestone: MG008
 Related Milestones: MG006
 Parent: [Master](../master.md)
 Queue: [P2 の lane](../agents/P2/queue.md)
-Resume point: T1 の QEMU raspi4b（4 core・`cpus=1`）と Pi の実機 p005 の結果、main への merge（[p004](phase004/phase.md) の「main の統合」）。
+Resume point: [p007](phase007/phase.md) の vmunix（全部入り・watch だけ）で Pi の arrange の再現、その後 p005。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -46,6 +46,7 @@ Pi 4 の起動の log が `CPUs ready: 4`、desktop・network・SSH が動き、
 | [p004](phase004/phase.md) | 負荷と driver の競合（QEMU）、main の統合 | in-progress（main を統合 b44b2420d、T1 待ち） |
 | p005 | Pi 4 の実機（4 core・reboot 10 回） | planning |
 | p006 | 規約の全文の見直し | planning |
+| [p007](phase007/phase.md) | Pi の 4 core の固まり（stall watch・候補・直し） | in-progress（実装済み、Pi の再現待ち） |
 
 ## 2026-10-11 ユーザー「全部承認です。」（Q1 が示した推しを全て承認）
 

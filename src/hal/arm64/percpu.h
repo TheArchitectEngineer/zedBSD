@@ -67,6 +67,36 @@ struct arm64_percpu {
 
 	/* Whether this CPU's breakpoint and watchpoint registers hold a task's points. */
 	int debug_points_loaded;
+
+	/*
+	 * The stall watch's view of this CPU (watch.c).  The CPU writes these
+	 * fields with relaxed stores; another CPU reads them only to describe
+	 * a stall, where a stale value costs no more than a wrong digit.
+	 */
+
+	/* The counter when this CPU's scheduling tick last began; 0 before the first. */
+	uint64_t watch_beat_time;
+
+	/* The counter when this CPU last turned its interrupts off; 0 while they are on. */
+	uint64_t watch_irq_off_time;
+
+	/* Where interrupts went off: the code that did it, and its caller. */
+	uint64_t watch_irq_off_pc;
+	uint64_t watch_irq_off_caller;
+
+	/* The interrupt this CPU is handling plus one (0 for none), since when, and what it interrupted. */
+	uint64_t watch_irq_id;
+	uint64_t watch_irq_time;
+	uint64_t watch_irq_elr;
+
+	/* How many task switches this CPU has made, which shows its scheduler moving. */
+	uint64_t watch_switches;
+
+	/* Calls of hal_cpu_current() left before the CPU looks at its own tick again. */
+	unsigned watch_countdown;
+
+	/* Nonzero while this CPU writes a stall report, so a fault inside it does not start another. */
+	unsigned watch_reporting;
 };
 
 void arm64_percpu_bootstrap(hal_cpu_id_t cpu, uint64_t mpidr);

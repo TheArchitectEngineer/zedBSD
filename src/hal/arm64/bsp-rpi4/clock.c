@@ -12,6 +12,7 @@
 #include <hal/hal.h>
 #include "../asm.h"
 #include "../percpu.h"
+#include "../watch.h"
 #include "gic.h"
 
 /* The private interrupt of each CPU's physical timer (CNTP). */
@@ -77,6 +78,9 @@ rpi4_timer_interrupt(
 	cpu = arm64_percpu_current();
 	now = counter();
 	cpu->timer_ticks++;
+
+	/* The heartbeat the stall watch reads, and now and then its look at the other CPUs. */
+	arm64_watch_beat(cpu, now);
 
 	/* Moves the deadline past now in whole intervals. */
 	do {

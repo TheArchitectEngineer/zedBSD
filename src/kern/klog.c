@@ -283,6 +283,7 @@ kern_log_record_fatal(
 	unsigned spins;
 	unsigned cpu;
 	unsigned held;
+	unsigned owner_valid;
 	size_t length;
 	int locked;
 
@@ -305,7 +306,8 @@ kern_log_record_fatal(
 	for (spins = 0; spins < KLOG_MIRROR_SPIN_MAX; spins++) {
 		/* This CPU stopped inside a record: writing without the lock is all that is left. */
 		held = atomic_load_acquire(&klog_lock.held);
-		if (held != 0 && klog_lock.owner_valid && klog_lock.owner_cpu == cpu)
+		owner_valid = atomic_raw_load_acquire(&klog_lock.owner_valid);
+		if (held != 0 && owner_valid && klog_lock.owner_cpu == cpu)
 			break;
 
 		/* Takes the lock when it is free. */

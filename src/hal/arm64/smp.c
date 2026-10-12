@@ -24,6 +24,7 @@
 #include "percpu.h"
 #include "space.h"
 #include "task.h"
+#include "watch.h"
 #include "bsp-rpi4/gic.h"
 
 /* The bytes of a secondary CPU's boot stack, which becomes its initial task's. */
@@ -173,6 +174,17 @@ hal_cpu_current(
 
 	/* The record TPIDR_EL1 names carries the CPU's number. */
 	record = arm64_percpu_current();
+
+	/*
+	 * Every kernel spin lock asks for its CPU on each try, so a CPU that
+	 * spins here with its interrupts off looks at its own tick now and
+	 * then, and reports itself when the tick stopped.
+	 */
+	record->watch_countdown--;
+	if (record->watch_countdown == 0) {
+		record->watch_countdown = ARM64_WATCH_SELF_INTERVAL;
+		arm64_watch_self_check();
+	}
 
 	/* Succeeded: the caller's CPU. */
 	return record->logical_id;
