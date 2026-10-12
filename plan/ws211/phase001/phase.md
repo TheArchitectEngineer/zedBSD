@@ -3,7 +3,7 @@
 # ws211-p001: 調査と設計（draw の数え、クロスフェードの絵の持ち方と描き直し、draw の束ね、Pi の見積もり、試験）
 
 Parent: [WS211](../ws.md)
-Status: planning（設計の第 3 版。[review-2](review-2.md) の N1〜N16 を反映。段 0・段 0b は実装済み（agent/p3 5a65be827・e08c7d519、Q1 の N3 の直しは main 844b3e2a1）。段 1（Home の絵）は review-2 の可否どおり N5・N8 の直しで先に進める。クロスフェード（段 2）は第 3 版の re-review の後）
+Status: planning（設計の第 4 版。[review-3](review-3.md) の A1〜A3・B1〜B6・C1〜C8 と、Q1 の判断（2026-10-12、ユーザーの「少しでも引っかかりは不可」に沿う）を反映。段 1・段 2 の実装（agent/p3、未 merge・Pi に置かない）を第 4 版に合わせて直した。review-4 の前）
 Phase disposition: normal
 Queue: P3（Q1 が割り当て、2026-10-12）
 
@@ -39,6 +39,30 @@ Queue: P3（Q1 が割り当て、2026-10-12）
 | M10 Makefile | 段: `Makefile.linux`・`Makefile.freebsd` にも足し、その build も確かめる。 |
 | L1〜L8 | 各所（L1 点はページが 2 つ以上の時だけ、L2 時計の帯は閉じている間は描かず開く時に、L3 WAR の依存、L4 拡大した tile の角、L5 影は縁の帯、L6 log の意味、L7 cached で組んでから写す、L8 アニメのコマは比べない） |
 | 実測値の log が plan に無い | [pi-20261012-place2-session.log](pi-20261012-place2-session.log)（Home の開閉の前後の `KWL LAT`・`KWL HOME`・`KWL PERF`）と [pi-20261012-place2-dmesg.log](pi-20261012-place2-dmesg.log)（`v3d: perf`・`requests`・`gpu`・`tfu`・`memory`、`bcm2711: flip perf`）を置いた。 |
+
+## 第 4 版の差分（review-3 と Q1 の判断、2026-10-12 P3）
+
+この節は、第 3 版・第 2 版と食い違う所を置き換える。
+
+- **Q1 の判断（引っかかりを避ける側）**: desktop の絵は後ろで焼かない。開閉のアニメの最初のコマの中で、主の pass の前に **in-band** で焼く（今の最初のコマも desktop を全部描いているので、重さは今と同じ）。Home の絵が古い時も、次の主のコマの中で in-band で焼く。閉じている間に後ろで焼くのは Home の絵だけで、次の 3 つがそろった時だけにする。
+  - 事象の印が立っている。
+  - 入力（`server->input_ms`）が 500ms 以上無い。
+  - 窓の commit（`server->commit_ms`、cursor を除く）が 500ms 以上無い。
+- **A1 glyph の追い出し**: glass.c に、使用中の cell を上書きした回数の counter（`glass_glyph_evictions`）を置く。絵を焼いた時の値を控え、そのコマ（または present しないコマ）が完了した時の値と比べる。違えば絵を `valid = 0` にする（記録の外の `glass_text_width` が staging を上書きした可能性がある）。
+- **A3 世代の番号**: 出力を開くたびに `layers->generation` を進める。present しないコマは、記録した時の世代を控える。完了の時に世代が違えば、何も valid にしない。
+- **B1 アニメの時計**: 記録の始めに、そのコマの progress を 1 つの値に固定する（`server->home_progress_frozen`）。そのコマの中の `kwl_home_progress` は、全部その値を返す。`home_start_pending` の間は、progress を「from から 0.02 だけ to の側」に止め、`kwl_home_tick` は整定しない。
+- **B2 新しい窓**: desktop の絵は、焼いた時の窓の集合（client の番号と surface の id）を覚える。絵に無い窓（例: Home からの起動で、閉じの途中に map した窓）は、絵の上に layer の変換付きで直に描くだけにする。今の経路に戻すのは、絵に入っている窓に `server->anim` が始まった時だけ。
+- **B3**: 上の in-band で、アニメの途中に present しないコマを出さない。Home の絵は、開いた時の値で描く（閉じている間に焼く時は、選択を `home_page_first(page)` に、query を空にしたつもりで描く）。
+- **B4**: in-band で焼くので、hold はそのコマの `compose_hold`（窓・popup・subsurface・desktop の surface・drag の icon）に乗る。present しないコマ（Home の絵だけ）は client の画像を sample しない。
+- **B5 desktop の鍵**: desktop の絵はアニメ 1 回ごとに最初のコマで焼くので、鍵は要らない（絵が有効なのは、その回のアニメ `home_start_ms` の間だけ）。アニメの間の変化のうち、新しい窓は B2 で直に描く。絵に入っている窓の anim は今の経路に戻す。それ以外（窓の中身・title・飾りの hover・dock の hint など）は、アニメの間は止まる（ユーザーが受け入れた変化）。
+- **B6 Home の鍵**: 鍵から時計を外す。時計は絵の外で、絵の上に content の変換付きで直に描く（約 23 draw、p003 の束ねの後は数 draw）。鍵は、事象の印が立った時だけ作り直す。印を立てる所は、窓の map・unmap・surface の消滅（動作中の印）、accent の変更（settings.c）、壁紙の書き終わり（glass.c）、tile の ready、出力を開いた時、Home のページ・選択・検索の変化。
+- **C1・C2**: N3 の免除に `home_page_moving` と Home の drag（`home_dragging`）を足す。入力の空きは、evdev の読み込みごとに進める専用の時刻 `server->input_ms` で判定する（touchpad の gesture を含む）。
+- **C3**: timer は要らない（event loop の poll の timeout は 10ms）。3.1 の記述は取り消す。
+- **C4**: 1.2 の表の「hover の icon」は第 4 版では絵に入れない（neutral の絵）。開いて止まった Home は今の経路で描くので、hover は今どおり効く。
+- **C5**: 頂点の buffer は 1 つにする（present しないコマは Home の絵だけで、主のコマと同時には飛ばない）。
+- **C6**: `pi-20261012-place2-session.log` の末尾の `KWL SCENE` の塊は、同じ boot の session.log から後で足したもの（行の順は元のままではない）。
+- **C7**: 試験の場面に足す物。焼いている間の出力の切り替え（A3）、日本語の名前と通知の連発（A1）、閉じの途中で起動した窓の map（B2）、キーボードで選択した後に開き直す（B3）、点滅する client がある時の cursor の at（A2 の後ろの焼き直しが無いこと）。
+- **計測**: `KWL LAYER use home= desktop=`（アニメ 1 回ごとに、絵を使ったコマの数と、今の経路のコマの数）、`KWL LAYER baked what= inband= us=`。
 
 ## 第 3 版の差分（review-2 への対応、2026-10-12 P3）
 
