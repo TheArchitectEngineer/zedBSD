@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: P2（p001 の調べと設計から）
-Resume point: p001 の設計の第 3 版（[phase001/phase.md](phase001/phase.md)、2026-10-12 P2、[review-2](phase001/review-2.md)（判定「条件付きで p003 に進める。致命なし」）の N1〜N11・軽微・9 節の文を反映）を Q1 が確かめる。ユーザーに聞く点（UAPI の承認、glass の blur、drag の間の中身の停止、前後の入れ替えを外すか、undock の形）は p001 の 9 節に説明付き。kernel の段は p003a（承認不要、WS141 p016 B-k2 を含む）と p003b（UAPI の承認の後）に分けた（Q1 の判断、N9）。担当は 1 人。
+Resume point: p003a は実装・host 試験・build 済み（main 4438fc682、[phase003a/phase.md](phase003a/phase.md)）、clear は Pi（焼き直しの後、受け入れ 3）と T1（i915・Venus）の後。p003b（UAPI の承認済み 2026-10-12、4.2 のとおり）を P2 が実装中。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -36,7 +36,7 @@ Pi 4 で窓の drag と dock・undock のアニメが 60fps（窓の前後の入
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 調べと設計（HVS の plane の能力と制約、口、compositor の載せ方、fallback、試験）→ design-reviewer | planning（第 3 版、review-2 を反映、Q1 の確かめの前） | — |
-| p003a | kernel（core と bcm2711、担当 1 人、WS141 p016 B-k2 を含む、**承認不要**）: display の op の gate 外し（table_lock・pin・`adoption_wait`）、状態から作る list と 3 slot の差し替え、primary も coalesce（settle・EBUSY をやめる）、IRQ の採用の記録と waitq、既存の op（PRESENT・PRESENT_SYNC・CURSOR_*）を状態の変更に、借りの thread の文脈の解放、lease の失効、copy の経路、console の省略、underrun の計数。UAPI と WAIT は今のまま | 案（p001 の 7 節、未投入） | —（UAPI の承認に依らない）。WS141 p016 の受け入れ B が B-k2 を要る時はこの Phase に依る（Q1 が WS141 に記録） |
+| p003a | kernel（core と bcm2711、担当 1 人、WS141 p016 B-k2 を含む、**承認不要**）: display の op の gate 外し（table_lock・pin・`adoption_wait`）、状態から作る list と 3 slot の差し替え、primary も coalesce（settle・EBUSY をやめる）、IRQ の採用の記録と waitq、既存の op（PRESENT・PRESENT_SYNC・CURSOR_*）を状態の変更に、借りの thread の文脈の解放、lease の失効、copy の経路、console の省略、underrun の計数。UAPI と WAIT は今のまま | 案（p001 の 7 節、未投入） | 実装と host・build 済み（4438fc682）、Pi・T1 待ち |
 | p003b | kernel（p003a と同じ担当、**UAPI の承認の後**）: UAPI（COMMIT・OVERLAY_INFO・HAS_OVERLAYS、WAIT を眠る形に、番号を controller の 1 本に）、overlay（unscaled・scaled・LBM）、帯域の予算と ENOSPC、値の出典の表と GPL の監査、Pi の帯域の実測（`hvs-load`） | 案（未投入） | p003a、UAPI の承認（ユーザー、p001 の 9 の 1） |
 | p004 | libvulkan: overlay の plane、plane ごとの present、切り替えの保留（`min_primary`、置き換え、期限と単独の flush）と primary との 1 commit、隠す約束、位置だけの fast path、借りと acquire、失敗した保留は primary ごと捨てる | 案（未投入） | p003b、WS141 p016 B-u の Pi の受け入れ |
 | p005 | compositor: drag の間の窓の plane と上の帯（bar）の plane（焼き、入る・戻る、C への持ち主の移し、fallback） | 案（未投入） | p004、WS213 p004 の clear、ユーザーの判断（glass の blur・中身の停止） |
