@@ -133,6 +133,7 @@ kwl_list_add_vertices(
 		return;
 	}
 
+	/* The grown array is the list's. */
 	list->vertices = memory;
 	list->vertex_capacity = (uint32_t)capacity;
 
@@ -160,6 +161,7 @@ kwl_list_add_copy(
 		return;
 	}
 
+	/* The grown array is the list's. */
 	list->copies = memory;
 	list->copy_capacity = (unsigned)(capacity / sizeof(*list->copies));
 
@@ -212,11 +214,12 @@ kwl_list_set_viewport(
 {
 	struct kwl_list_op *op;
 
-	/* The operation and the first viewport's place. */
+	/* The operation. */
 	op = list_op(list, KWL_LIST_VIEWPORT);
 	if (op == NULL)
 		return;
 
+	/* The first viewport's place. */
 	op->args.range.first = first;
 	op->args.range.count = count;
 
@@ -234,11 +237,12 @@ kwl_list_set_scissor(
 {
 	struct kwl_list_op *op;
 
-	/* The operation and the first scissor's place. */
+	/* The operation. */
 	op = list_op(list, KWL_LIST_SCISSOR);
 	if (op == NULL)
 		return;
 
+	/* The first scissor's place. */
 	op->args.range.first = first;
 	op->args.range.count = count;
 
@@ -280,11 +284,12 @@ kwl_list_bind_descriptor_sets(
 	struct kwl_list_op *op;
 	int error;
 
-	/* The operation, the bind point, the layout and the first set's place. */
+	/* The operation. */
 	op = list_op(list, KWL_LIST_SETS);
 	if (op == NULL)
 		return;
 
+	/* The bind point, the layout and the first set's place. */
 	op->args.sets.point = point;
 	op->args.sets.layout = layout;
 	op->args.sets.first = first;
@@ -312,11 +317,12 @@ kwl_list_push_constants(
 {
 	struct kwl_list_op *op;
 
-	/* The operation and the range of the constants. */
+	/* The operation. */
 	op = list_op(list, KWL_LIST_PUSH);
 	if (op == NULL)
 		return;
 
+	/* The range of the constants. */
 	op->args.push.layout = layout;
 	op->args.push.stages = stages;
 	op->args.push.offset = offset;
@@ -338,11 +344,12 @@ kwl_list_bind_vertex_buffers(
 	struct kwl_list_op *op;
 	int error;
 
-	/* The operation and the first binding's place. */
+	/* The operation. */
 	op = list_op(list, KWL_LIST_VERTEX_BUFFERS);
 	if (op == NULL)
 		return;
 
+	/* The first binding's place. */
 	op->args.vertex_buffers.first = first;
 	op->args.vertex_buffers.count = count;
 
@@ -398,11 +405,12 @@ kwl_list_pipeline_barrier(
 	struct kwl_list_op *op;
 	int error;
 
-	/* The operation, its stages and its counts. */
+	/* The operation. */
 	op = list_op(list, KWL_LIST_BARRIER);
 	if (op == NULL)
 		return;
 
+	/* Its stages and its counts. */
 	op->args.barrier.source = source;
 	op->args.barrier.destination = destination;
 	op->args.barrier.dependency = dependency;
@@ -437,11 +445,12 @@ kwl_list_copy_image(
 {
 	struct kwl_list_op *op;
 
-	/* The operation and the two images. */
+	/* The operation. */
 	op = list_op(list, KWL_LIST_COPY_IMAGE);
 	if (op == NULL)
 		return;
 
+	/* The two images. */
 	op->args.images.source = source;
 	op->args.images.source_layout = source_layout;
 	op->args.images.destination = destination;
@@ -464,11 +473,12 @@ kwl_list_copy_buffer_to_image(
 {
 	struct kwl_list_op *op;
 
-	/* The operation, the buffer and the image. */
+	/* The operation. */
 	op = list_op(list, KWL_LIST_COPY_BUFFER_TO_IMAGE);
 	if (op == NULL)
 		return;
 
+	/* The buffer and the image. */
 	op->args.buffer_image.buffer = buffer;
 	op->args.buffer_image.image = image;
 	op->args.buffer_image.layout = layout;
@@ -490,11 +500,12 @@ kwl_list_copy_image_to_buffer(
 {
 	struct kwl_list_op *op;
 
-	/* The operation, the image and the buffer. */
+	/* The operation. */
 	op = list_op(list, KWL_LIST_COPY_IMAGE_TO_BUFFER);
 	if (op == NULL)
 		return;
 
+	/* The image and the buffer. */
 	op->args.buffer_image.buffer = buffer;
 	op->args.buffer_image.image = image;
 	op->args.buffer_image.layout = layout;
@@ -518,11 +529,12 @@ kwl_list_blit_image(
 {
 	struct kwl_list_op *op;
 
-	/* The operation, the two images and the filter. */
+	/* The operation. */
 	op = list_op(list, KWL_LIST_BLIT);
 	if (op == NULL)
 		return;
 
+	/* The two images and the filter. */
 	op->args.images.source = source;
 	op->args.images.source_layout = source_layout;
 	op->args.images.destination = destination;
@@ -546,11 +558,12 @@ kwl_list_clear_color_image(
 {
 	struct kwl_list_op *op;
 
-	/* The operation, the image and the colour. */
+	/* The operation. */
 	op = list_op(list, KWL_LIST_CLEAR);
 	if (op == NULL)
 		return;
 
+	/* The image and the colour. */
 	op->args.clear.image = image;
 	op->args.clear.layout = layout;
 	op->args.clear.color = *color;
@@ -587,6 +600,7 @@ list_op(
 		return NULL;
 	}
 
+	/* The grown array is the list's. */
 	list->ops = memory;
 	list->op_capacity = capacity / sizeof(*list->ops);
 
@@ -632,6 +646,7 @@ list_data(
 		return -1;
 	}
 
+	/* The grown array is the list's. */
 	list->data = memory;
 	list->data_capacity = capacity;
 

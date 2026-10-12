@@ -31,6 +31,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Marks a parameter a fake command does not look at. */
+#define UNUSED_PARAMETER(name)	((void)(name))
+
 /* How many handles the test names. */
 #define TEST_NAMES		64U
 
@@ -94,7 +97,7 @@ vkCmdBeginRenderPass(
 {
 	uint32_t index;
 
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* The pass, its framebuffer, its area and its clear colours. */
 	test_line(
@@ -118,7 +121,7 @@ VKAPI_ATTR void VKAPI_CALL
 vkCmdEndRenderPass(
 	VkCommandBuffer command)
 {
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* The pass ends. */
 	test_line("end pass");
@@ -134,7 +137,7 @@ vkCmdSetViewport(
 {
 	uint32_t index;
 
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* Each viewport. */
 	for (index = 0U; index < count; index++) {
@@ -160,7 +163,7 @@ vkCmdSetScissor(
 {
 	uint32_t index;
 
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* Each scissor. */
 	for (index = 0U; index < count; index++) {
@@ -181,7 +184,7 @@ vkCmdBindPipeline(
 	VkPipelineBindPoint point,
 	VkPipeline pipeline)
 {
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* The pipeline. */
 	test_line("pipeline point=%d %s", (int)point, test_handle_name((uint64_t)(uintptr_t)pipeline));
@@ -201,8 +204,8 @@ vkCmdBindDescriptorSets(
 {
 	uint32_t index;
 
-	(void)command;
-	(void)dynamic_offsets;
+	UNUSED_PARAMETER(command);
+	UNUSED_PARAMETER(dynamic_offsets);
 
 	/* Each set. */
 	for (index = 0U; index < count; index++) {
@@ -226,7 +229,7 @@ vkCmdPushConstants(
 	uint32_t size,
 	const void *values)
 {
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* The range, then the floats. */
 	test_line("push layout=%s stages=0x%x offset=%u size=%u", test_handle_name((uint64_t)(uintptr_t)layout), (unsigned)stages, offset, size);
@@ -244,7 +247,7 @@ vkCmdBindVertexBuffers(
 {
 	uint32_t index;
 
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* Each buffer and offset. */
 	for (index = 0U; index < count; index++)
@@ -260,7 +263,7 @@ vkCmdDraw(
 	uint32_t first_vertex,
 	uint32_t first_instance)
 {
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* The counts. */
 	test_line("draw %u %u %u %u", vertices, instances, first_vertex, first_instance);
@@ -282,7 +285,7 @@ vkCmdPipelineBarrier(
 {
 	uint32_t index;
 
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* The stages and the counts. */
 	test_line("barrier 0x%x->0x%x dependency=0x%x memory=%u buffers=%u images=%u", (unsigned)source, (unsigned)destination, (unsigned)dependency, memory_count, buffer_count, image_count);
@@ -321,7 +324,7 @@ vkCmdCopyImage(
 {
 	uint32_t index;
 
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* The images and each region. */
 	test_line("copy-image %s %d -> %s %d regions=%u", test_handle_name((uint64_t)(uintptr_t)source), (int)source_layout, test_handle_name((uint64_t)(uintptr_t)destination), (int)destination_layout, count);
@@ -341,7 +344,7 @@ vkCmdCopyBufferToImage(
 {
 	uint32_t index;
 
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* The buffer, the image and each region. */
 	test_line("copy-buffer-image %s -> %s %d regions=%u", test_handle_name((uint64_t)(uintptr_t)buffer), test_handle_name((uint64_t)(uintptr_t)image), (int)layout, count);
@@ -370,7 +373,7 @@ vkCmdCopyImageToBuffer(
 {
 	uint32_t index;
 
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* The image, the buffer and each region. */
 	test_line("copy-image-buffer %s %d -> %s regions=%u", test_handle_name((uint64_t)(uintptr_t)image), (int)layout, test_handle_name((uint64_t)(uintptr_t)buffer), count);
@@ -401,7 +404,7 @@ vkCmdBlitImage(
 {
 	uint32_t index;
 
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* The images, the filter and each region's corners. */
 	test_line("blit %s %d -> %s %d regions=%u filter=%d", test_handle_name((uint64_t)(uintptr_t)source), (int)source_layout, test_handle_name((uint64_t)(uintptr_t)destination), (int)destination_layout, count, (int)filter);
@@ -431,7 +434,7 @@ vkCmdClearColorImage(
 {
 	uint32_t index;
 
-	(void)command;
+	UNUSED_PARAMETER(command);
 
 	/* The image, the colour and each range. */
 	test_line("clear %s %d ranges=%u", test_handle_name((uint64_t)(uintptr_t)image), (int)layout, count);
@@ -571,11 +574,13 @@ test_handle(
 	const char *name)
 {
 	unsigned index;
+	int order;
 
 	/* An existing name keeps its handle. */
 	for (index = 0U; index < test_name_count; index++) {
 		/* The handle of this name. */
-		if (strcmp(test_names[index].name, name) == 0)
+		order = strcmp(test_names[index].name, name);
+		if (order == 0)
 			return test_names[index].handle;
 	}
 
@@ -867,13 +872,15 @@ scene_home(
 	test_view(target, TEST_WIDTH, TEST_HEIGHT, &whole);
 	test_corners(server, target);
 
-	/* The tiles' glass, eighty floor lines (one draw of 62 and one of 18 with the batch), labels. */
+	/* The tiles' glass and their labels. */
 	for (index = 0U; index < 12U; index++) {
 		/* One tile and its label. */
 		place = -0.9f + 0.15f * (float)index;
 		test_shape(server, target, "set:blurred:0", 0U, place, -0.5f, 0.1f);
 		test_shape(server, target, "set:atlas:0", 5U, place, -0.35f, 0.02f);
 	}
+
+	/* The floor lines, a large quad between them and five more lines, a label. */
 	for (index = 0U; index < 80U; index++)
 		test_shape(server, target, "set:blurred:0", 3U, -0.9f + 0.02f * (float)index, 0.6f, 0.01f);
 	test_shape(server, target, "set:blurred:0", 3U, -0.9f, 0.7f, 0.4f);
@@ -1191,6 +1198,7 @@ test_growth(
 	static struct kwl_list list;
 	float constants[KWL_PANEL_CONSTANTS];
 	char line[256];
+	char *read;
 	FILE *saved;
 	FILE *lines;
 	size_t operations;
@@ -1205,7 +1213,7 @@ test_growth(
 	assert(lines != NULL);
 	test_out = lines;
 
-	/* 3000 pushes and draws of distinct values, and 600 joined quads (100 KiB of vertices). */
+	/* 3000 pushes and draws of distinct values (more than 1024 operations and 64 KiB of values). */
 	kwl_list_reset(&list);
 	kwl_compose_bind_forget(server->compose);
 	kwl_batch_begin(server->compose);
@@ -1218,13 +1226,19 @@ test_growth(
 		kwl_list_push_constants(&list, server->compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
 		kwl_list_draw(&list, KWL_QUAD_VERTICES, 1U, 0U, 0U);
 	}
+
+	/* The joined quads, drawn by the flush. */
 	for (index = 0U; index < 600U; index++) {
 		/* One quad joined, its corner its number. */
 		constants[0] = (float)index;
 		joined = kwl_batch_add(server, &list, constants, (VkDescriptorSet)(uintptr_t)test_handle("set:blurred:0"));
 		assert(joined == 1);
 	}
+
+	/* The quads waiting, drawn. */
 	kwl_batch_flush(server, &list);
+
+	/* The list grew past its first room and kept every operation, array and vertex. */
 	assert(!list.failed);
 	assert(list.op_count > 1024U);
 	assert(list.data_used > 64U * 1024U);
@@ -1237,14 +1251,23 @@ test_growth(
 	rewind(lines);
 	checked = 0U;
 	count = 0U;
-	while (fgets(line, sizeof(line), lines) != NULL) {
+	for (;;) {
+		/* The next line, until the end. */
+		read = fgets(line, sizeof(line), lines);
+		if (read == NULL)
+			break;
+
 		/* The 3000th push's values start with its number. */
 		if (count == 3U * 2999U + 1U) {
 			assert(strncmp(line, "  values 2999 ", 14U) == 0);
 			checked = 1U;
 		}
+
+		/* One line more. */
 		count++;
 	}
+
+	/* The 3000th push was found where it belongs, after the rest. */
 	assert(checked);
 	assert(count >= 3U * 3000U);
 
