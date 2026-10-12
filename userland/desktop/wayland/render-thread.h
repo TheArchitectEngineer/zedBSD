@@ -17,7 +17,8 @@
  * the want lists that it does not hold yet) and answers ready, with every
  * image it holds; from then until the main thread answers it calls no
  * Vulkan, so the main thread may walk its drawing (and use Vulkan as it
- * always has) and write the display list.  The answer is the list, or a
+ * always has) and write the display list.  The answer is the list, which
+ * takes the want down at once (a want raised after it is a new one), or a
  * cancel (the want changed meanwhile): the images stay held for a later
  * frame.  With the list the render thread records it into the command
  * buffers, submits, presents the output's and the heads' images, waits for
@@ -177,6 +178,28 @@ struct kwl_render_message {
 };
 
 /*
+ * What the render thread shares with the main thread now, for the line the
+ * main thread writes when a want goes unanswered (KWL RENDER stalled): the
+ * thread's want, the answer it has not taken yet (answer NONE when it took
+ * it), the park, whether a job is in flight, whether it holds the output's
+ * image, the messages not taken, and the numbers of the last ready and the
+ * last completion it posted.
+ */
+struct kwl_render_status {
+	enum kwl_render_kind want_kind;
+	uint64_t want_number;
+	enum kwl_render_answer answer;
+	uint64_t answer_number;
+	unsigned park;
+	unsigned parked;
+	unsigned busy;
+	unsigned held_output;
+	unsigned messages;
+	uint64_t last_ready;
+	uint64_t last_completed;
+};
+
+/*
  * The Vulkan work the thread does through its owner: acquire the output's
  * next image (waiting at most timeout_ns; it gives how long it took in
  * cycles and when it ended, for the main thread's lines), acquire a head's
@@ -199,7 +222,9 @@ struct kwl_render_ops {
  * the thread is parked (it answers on answered); whether a frame is in
  * flight; the message queue and whether the main thread was woken for it;
  * the held images (the thread's, written by the main thread only while
- * parked); and sequence, which counts every change the thread waits for.
+ * parked); the numbers of the last ready and the last completion posted
+ * (for kwl_render_status); and sequence, which counts every change the
+ * thread waits for.
  * The thread's own: the operations and their context, where it is in the
  * pull (state), the number of the ready it waits to have answered, the
  * completion message of the job in flight (made before the job is taken,
@@ -223,6 +248,8 @@ struct kwl_render_thread {
 	unsigned main_woken;
 	unsigned dropped;
 	struct kwl_render_held held;
+	uint64_t last_ready;
+	uint64_t last_completed;
 	struct kwl_render_ops ops;
 	void *context;
 	enum kwl_render_state state;
@@ -247,5 +274,6 @@ int kwl_render_park(struct kwl_render_thread *render, unsigned wait_ms);
 void kwl_render_unpark(struct kwl_render_thread *render);
 void kwl_render_forget(struct kwl_render_thread *render, unsigned output, unsigned heads_mask);
 void kwl_render_wait_idle(struct kwl_render_thread *render);
+void kwl_render_status(struct kwl_render_thread *render, struct kwl_render_status *status);
 
 #endif

@@ -478,7 +478,10 @@ struct kwl_compose {
 	 * counts the parks the main thread is inside (the thread is parked
 	 * while it is not 0).  walk_cycles is the walk of the drawing in
 	 * flight, kept for its KWL PERF walk sample at its completion;
-	 * frame_number the frame number it was given.
+	 * frame_number the frame number it was given.  want_ms is when the
+	 * want's number last moved, flight_ms when the drawing in flight was
+	 * given, done_ms when the last one completed; stall_ms and stall_lines
+	 * pace the KWL RENDER stalled lines of a wait for the thread that lasts.
 	 */
 	struct kwl_render_thread render;
 	unsigned render_started;
@@ -491,6 +494,11 @@ struct kwl_compose {
 	unsigned park_depth;
 	uint64_t walk_cycles;
 	uint64_t frame_number;
+	uint64_t want_ms;
+	uint64_t flight_ms;
+	uint64_t done_ms;
+	uint64_t stall_ms;
+	unsigned stall_lines;
 	/*
 	 * The backdrop (backdrop.c); the framebuffer of the frame being
 	 * recorded, which its pass is taken up again on; and the blurred scene

@@ -57,6 +57,7 @@ static int compose_region(struct kwl_server *server, uint32_t image, VkRect2D *r
 static void compose_walk_timed(struct kwl_server *server, uint64_t walk, uint64_t replay, unsigned quiet);
 static int compose_output_open_parked(struct kwl_server *server);
 static void compose_want(struct kwl_server *server, enum kwl_render_kind kind);
+static void compose_stalled(struct kwl_server *server);
 static void compose_message(struct kwl_server *server, const struct kwl_render_message *message);
 static void compose_completed(struct kwl_server *server, const struct kwl_render_message *message);
 static void compose_frame_presented(struct kwl_server *server, const struct kwl_render_outcome *outcome);
@@ -70,6 +71,16 @@ static void compose_log_draws(struct kwl_server *server);
 
 /* How far into its way App Home's animation shows in its first frame, in milliseconds (review-2 N4). */
 #define COMPOSE_HOME_FIRST_MS	8U
+
+/*
+ * How long the main thread waits for the render thread (a want with no
+ * ready, a drawing with no completion) before it tells a stall, in
+ * milliseconds; how many lines it writes a second apart, and then how far
+ * apart the later ones are.
+ */
+#define COMPOSE_STALL_MS	1000U
+#define COMPOSE_STALL_LINES	5U
+#define COMPOSE_STALL_LATER_MS	60000U
 
 /*
  * Creates the Vulkan device, the pipelines' fixed objects and the frame's
@@ -679,6 +690,7 @@ kwl_compose_draw(
 	compose->walk_cycles = kwl_cycles() - compose->walk_start_cycles;
 	compose->frame_bake = 0U;
 	compose->in_flight = 1;
+	compose->flight_ms = kwl_milliseconds();
 	compose->ready_valid = 0U;
 	compose->want_kind = KWL_RENDER_NONE;
 	kwl_render_answer(&compose->render, job.number, KWL_RENDER_ANSWER_LIST, &job);
@@ -784,6 +796,9 @@ kwl_compose_poll(
 		compose_message(server, message);
 		free(message);
 	}
+
+	/* A wait for the thread that lasts is told. */
+	compose_stalled(server);
 }
 
 /*
@@ -3092,6 +3107,7 @@ kwl_compose_submit_quiet(
 	/* In flight until it completes; the want went down. */
 	compose->walk_cycles = kwl_cycles() - compose->walk_start_cycles;
 	compose->in_flight = 1;
+	compose->flight_ms = kwl_milliseconds();
 	compose->ready_valid = 0U;
 	compose->want_kind = KWL_RENDER_NONE;
 	kwl_render_answer(&compose->render, job.number, KWL_RENDER_ANSWER_LIST, &job);
@@ -3222,8 +3238,10 @@ compose_want(
 	if (same)
 		return;
 
-	/* The want, and its number. */
+	/* The want, its number, and since when a new number waits. */
 	kwl_render_set_want(&compose->render, kind, heads, count, &number);
+	if (number != compose->want_number)
+		compose->want_ms = kwl_milliseconds();
 	compose->want_kind = kind;
 	compose->want_number = number;
 	compose->want_head_count = count;
@@ -3235,6 +3253,79 @@ compose_want(
 		kwl_render_answer(&compose->render, compose->ready.number, KWL_RENDER_ANSWER_CANCEL, NULL);
 		compose->ready_valid = 0U;
 	}
+}
+
+/*
+ * Tells a wait for the render thread that lasts a second (KWL RENDER
+ * stalled): a drawing in flight with no completion, or a want with no
+ * ready since it was given (or since the drawing before it completed).
+ * The line gives the main thread's view and the thread's, which tells a
+ * want lost between them from images or a fence that do not come.  A
+ * line a second at first, then one a minute.
+ */
+static void
+compose_stalled(
+	struct kwl_server *server)
+{
+	struct kwl_render_status status;
+	struct kwl_compose *compose;
+	uint64_t since;
+	uint64_t gap;
+	uint64_t now;
+
+	/* Since when the main thread waits: the drawing in flight, or the want unanswered. */
+	compose = server->compose;
+	now = kwl_milliseconds();
+	if (compose->in_flight) {
+		since = compose->flight_ms;
+	} else if (compose->want_kind != KWL_RENDER_NONE && !compose->ready_valid) {
+		since = compose->want_ms;
+		if (compose->done_ms > since)
+			since = compose->done_ms;
+	} else {
+		compose->stall_lines = 0U;
+		return;
+	}
+
+	/* A wait shorter than a second is no stall; the next is told from its start. */
+	if (now - since < COMPOSE_STALL_MS) {
+		compose->stall_lines = 0U;
+		return;
+	}
+
+	/* A line a second at first, then a line a minute. */
+	gap = COMPOSE_STALL_MS;
+	if (compose->stall_lines >= COMPOSE_STALL_LINES)
+		gap = COMPOSE_STALL_LATER_MS;
+	if (compose->stall_lines > 0U && now - compose->stall_ms < gap)
+		return;
+	compose->stall_ms = now;
+	compose->stall_lines++;
+
+	/* Both sides of the pull. */
+	kwl_render_status(&compose->render, &status);
+	printf(
+		"KWL RENDER stalled waited_ms=%llu want=%u number=%llu ready=%u ready_number=%llu in_flight=%u park_depth=%u"
+		" | thread want=%u number=%llu answer=%u answer_number=%llu park=%u parked=%u busy=%u held_output=%u"
+		" messages=%u last_ready=%llu last_completed=%llu\n",
+		(unsigned long long)(now - since),
+		(unsigned)compose->want_kind,
+		(unsigned long long)compose->want_number,
+		compose->ready_valid,
+		(unsigned long long)compose->ready.number,
+		(unsigned)compose->in_flight,
+		compose->park_depth,
+		(unsigned)status.want_kind,
+		(unsigned long long)status.want_number,
+		(unsigned)status.answer,
+		(unsigned long long)status.answer_number,
+		status.park,
+		status.parked,
+		status.busy,
+		status.held_output,
+		status.messages,
+		(unsigned long long)status.last_ready,
+		(unsigned long long)status.last_completed);
 }
 
 /* Applies one message of the render thread. */
@@ -3289,6 +3380,7 @@ compose_message(
 		server->failed = 1;
 		break;
 	case KWL_RENDER_COMPLETED:
+		compose->done_ms = kwl_milliseconds();
 		compose_completed(server, message);
 		break;
 	default:

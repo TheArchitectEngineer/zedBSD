@@ -466,6 +466,44 @@ stepwise(void)
 	check(message != NULL && message->kind == KWL_RENDER_COMPLETED, "the layer's picture completed");
 	free(message);
 
+	/*
+	 * (b) The same kind wanted again right after its list was given, before
+	 * the thread took the list (place20's stall: the main thread's next pass
+	 * wanted the next frame while the thread had not yet woken): a new
+	 * number, and the want stays up after the list is taken, so the thread
+	 * acquires for it after the completion.
+	 */
+	kwl_render_set_want(&render, KWL_RENDER_FRAME, NULL, 0U, &number);
+	(void)kwl_render_step(&render);
+	message = take_one();
+	check(message != NULL && message->kind == KWL_RENDER_READY && message->number == number, "ready for a frame");
+	job_from(message, &job);
+	free(message);
+	kwl_render_answer(&render, job.number, KWL_RENDER_ANSWER_LIST, &job);
+	kwl_render_set_want(&render, KWL_RENDER_FRAME, NULL, 0U, &number);
+	check(number == job.number + 1U, "a frame wanted again after its list is a new want");
+	(void)kwl_render_step(&render);
+	(void)kwl_render_step(&render);
+	check(render.want.kind == KWL_RENDER_FRAME && render.want.number == number, "the want raised again stays after the list is taken");
+	(void)kwl_render_step(&render);
+	count = drain(list, 8U);
+	check(count == 2U && list[0]->kind == KWL_RENDER_COMPLETED && list[1]->kind == KWL_RENDER_READY && list[1]->number == number, "then ready for the new want");
+	if (count == 2U) {
+		job_from(list[1], &job);
+		free(list[0]);
+		free(list[1]);
+	} else if (count == 1U) {
+		free(list[0]);
+	}
+
+	/* The new want's list completes; the want goes down with it. */
+	kwl_render_answer(&render, number, KWL_RENDER_ANSWER_LIST, &job);
+	(void)kwl_render_step(&render);
+	(void)kwl_render_step(&render);
+	message = take_one();
+	check(message != NULL && message->kind == KWL_RENDER_COMPLETED && render.want.kind == KWL_RENDER_NONE, "its list completed and the want went down");
+	free(message);
+
 	/* (b) A failed acquire takes the want down and is told; nothing is tried again until it is raised. */
 	kwl_render_set_want(&render, KWL_RENDER_FRAME, NULL, 0U, &number);
 	atomic_store(&output_answer, VK_ERROR_OUT_OF_DATE_KHR);
@@ -585,9 +623,12 @@ threaded(void)
 	struct kwl_render_message ready;
 	struct kwl_render_job job;
 	unsigned heads[2];
+	enum kwl_render_kind want_kind;
+	enum kwl_render_kind kind;
 	unsigned have_ready;
 	unsigned in_flight;
 	unsigned completed;
+	unsigned lost;
 	unsigned step;
 	unsigned seed;
 	uint64_t number;
@@ -614,9 +655,11 @@ threaded(void)
 
 	/* The main thread's side, at random. */
 	seed = 12345U;
+	want_kind = KWL_RENDER_NONE;
 	have_ready = 0U;
 	in_flight = 0U;
 	completed = 0U;
+	lost = 0U;
 	number = 0U;
 	for (step = 0; step < THREAD_STEPS; step++) {
 		seed = seed * 1103515245U + 12345U;
@@ -632,7 +675,7 @@ threaded(void)
 				in_flight = 0U;
 				completed++;
 			} else if (message->kind == KWL_RENDER_READY) {
-				if (message->number == number && !in_flight) {
+				if (message->number == number && message->want_kind == want_kind && !in_flight) {
 					ready = *message;
 					have_ready = 1U;
 				} else {
@@ -642,17 +685,28 @@ threaded(void)
 			free(message);
 		}
 
-		/* A want now and then: a frame with a head or two, or a layer. */
+		/*
+		 * A want now and then, a frame with a head or two or a layer, told
+		 * only when its kind changed (compose.c tells a want it gave once,
+		 * and a frame wanted again just after its list is given).
+		 */
+		kind = KWL_RENDER_NONE;
 		if (((seed >> 8) % 7U) == 0U) {
+			kind = KWL_RENDER_FRAME;
+			if (((seed >> 20) % 3U) == 0U)
+				kind = KWL_RENDER_LAYER;
+		}
+		if (kind != KWL_RENDER_NONE && kind != want_kind) {
 			heads[0] = (seed >> 12) % KWL_RENDER_HEADS;
 			heads[1] = (seed >> 16) % KWL_RENDER_HEADS;
 			if (heads[1] == heads[0])
 				heads[1] = (heads[0] + 1U) % KWL_RENDER_HEADS;
-			if (((seed >> 20) % 3U) == 0U) {
+			if (kind == KWL_RENDER_LAYER) {
 				kwl_render_set_want(&render, KWL_RENDER_LAYER, NULL, 0U, &number);
 			} else {
 				kwl_render_set_want(&render, KWL_RENDER_FRAME, heads, 1U + ((seed >> 24) % 2U), &number);
 			}
+			want_kind = kind;
 
 			/* A ready for another want is cancelled. */
 			if (have_ready && ready.number != number) {
@@ -660,6 +714,14 @@ threaded(void)
 				have_ready = 0U;
 			}
 		}
+
+		/* The want the main thread gave is still the thread's (no acquire fails here): one lost stops the frames. */
+		pthread_mutex_lock(&render.lock);
+
+		if (want_kind != KWL_RENDER_NONE && (render.want.kind != want_kind || render.want.number != number))
+			lost++;
+
+		pthread_mutex_unlock(&render.lock);
 
 		/* A walk and its list, the operations watched for calls meanwhile. */
 		if (have_ready && !in_flight && ((seed >> 10) % 3U) == 0U) {
@@ -669,6 +731,7 @@ threaded(void)
 			job_from(&ready, &job);
 			have_ready = 0U;
 			in_flight = 1U;
+			want_kind = KWL_RENDER_NONE;
 			kwl_render_answer(&render, job.number, KWL_RENDER_ANSWER_LIST, &job);
 		}
 
@@ -682,7 +745,7 @@ threaded(void)
 				if (message->kind == KWL_RENDER_COMPLETED) {
 					in_flight = 0U;
 					completed++;
-				} else if (message->kind == KWL_RENDER_READY && message->number == number) {
+				} else if (message->kind == KWL_RENDER_READY && message->number == number && message->want_kind == want_kind) {
 					ready = *message;
 					have_ready = 1U;
 				} else if (message->kind == KWL_RENDER_READY) {
@@ -718,6 +781,7 @@ threaded(void)
 	close(wake[0]);
 	close(wake[1]);
 	check(completed > 100U, "many jobs completed (threads)");
+	check(lost == 0U, "no want lost, also one raised again before its list was taken (threads)");
 	check(atomic_load(&walk_calls) == 0U, "no operation during a walk (threads)");
 	check(atomic_load(&locked_calls) == 0U, "no operation with the lock held (threads)");
 	check(atomic_load(&bad_presents) == 0U, "no image presented that was not acquired (threads)");

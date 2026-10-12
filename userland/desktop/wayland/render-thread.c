@@ -264,8 +264,12 @@ kwl_render_set_want(
 }
 
 /*
- * Answers a ready: the list for the job given (the want goes down when the
- * thread takes it), or a cancel (the images stay held).
+ * Answers a ready: the list for the job given, or a cancel (the images
+ * stay held).  A list takes the want down now, if it is still the job's
+ * (compare and clear), together with the main thread's own view of it: a
+ * want raised again after this is a new want with a new number, even
+ * before the thread has taken the list (place20's stall, where the thread
+ * took the want raised again down with the list).
  */
 void
 kwl_render_answer(
@@ -281,6 +285,8 @@ kwl_render_answer(
 	render->answer_number = number;
 	if (job != NULL)
 		render->job = *job;
+	if (answer == KWL_RENDER_ANSWER_LIST && render->want.number == number)
+		render->want.kind = KWL_RENDER_NONE;
 	render->sequence++;
 	pthread_cond_broadcast(&render->changed);
 
@@ -440,6 +446,39 @@ kwl_render_wait_idle(
 
 	while (render->busy)
 		(void)pthread_cond_wait(&render->answered, &render->lock);
+
+	pthread_mutex_unlock(&render->lock);
+}
+
+/*
+ * Gives what the render thread shares with the main thread now, for the
+ * main thread's line when a want goes unanswered.
+ */
+void
+kwl_render_status(
+	struct kwl_render_thread *render,
+	struct kwl_render_status *status)
+{
+	struct kwl_render_message *message;
+
+	/* The shared state, at one moment. */
+	memset(status, 0, sizeof(*status));
+	pthread_mutex_lock(&render->lock);
+
+	status->want_kind = render->want.kind;
+	status->want_number = render->want.number;
+	status->answer = render->answer;
+	status->answer_number = render->answer_number;
+	status->park = render->park;
+	status->parked = render->parked;
+	status->busy = render->busy;
+	status->held_output = render->held.output;
+	status->last_ready = render->last_ready;
+	status->last_completed = render->last_completed;
+
+	/* The messages the main thread has not taken yet. */
+	for (message = render->messages; message != NULL; message = message->next)
+		status->messages++;
 
 	pthread_mutex_unlock(&render->lock);
 }
@@ -610,8 +649,8 @@ render_idle(
 /*
  * Takes the main thread's answer to the ready: a cancel goes back to the
  * wants with the images still held; a list is recorded, submitted and
- * presented, and the want goes down if it is still the same one (compare
- * and clear).  The images it presents are no longer held.
+ * presented (its want went down with the answer).  The images it presents
+ * are no longer held.
  */
 static enum kwl_render_step
 render_answer(
@@ -651,9 +690,7 @@ render_answer(
 		return KWL_RENDER_STEP_WORKED;
 	}
 
-	/* The list: the want goes down if it is still this one, and the images the job presents are let go. */
-	if (render->want.number == job.number)
-		render->want.kind = KWL_RENDER_NONE;
+	/* The list: the images the job presents are let go. */
 	if (job.kind == KWL_RENDER_FRAME)
 		render->held.output = 0U;
 	for (slot = 0; slot < KWL_RENDER_HEADS; slot++) {
@@ -741,6 +778,14 @@ render_post(
 	} else {
 		render->messages_tail->next = message;
 	}
+
+	/* The number of the last ready, for kwl_render_status. */
+	if (message->kind == KWL_RENDER_READY)
+		render->last_ready = message->number;
+
+	/* The number of the last completion, for kwl_render_status. */
+	if (message->kind == KWL_RENDER_COMPLETED)
+		render->last_completed = message->number;
 
 	/* The main thread is woken once for a queue it has not taken yet. */
 	render->messages_tail = message;
