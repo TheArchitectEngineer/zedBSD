@@ -3,6 +3,8 @@
 #include "bsp.h"
 #include "defs.h"
 #include "space.h"
+#include "percpu.h"
+#include "spin.h"
 
 #define ARM64_USER_LIMIT 0x0001000000000000ULL
 _Static_assert(ARM64_USER_LIMIT - 1U <= (uintptr_t)INTPTR_MAX,
@@ -29,10 +31,31 @@ static uint64_t system_kernel_l2_low[512] __attribute__((aligned(ARM64_PAGE_SIZE
 static uint64_t system_kernel_l3_low[512] __attribute__((aligned(ARM64_PAGE_SIZE)));
 static uint64_t system_kernel_l2_high[512] __attribute__((aligned(ARM64_PAGE_SIZE)));
 static uintptr_t system_ttbr0;
-static hal_space_t current_space;
-static int next_space_id=1;
-static uint32_t space_count, page_table_count;
+
+/*
+ * Every user space that exists, the number the next one gets, and how many
+ * there are.  Kept under space_registry_lock; a space is looked up here
+ * before its own lock is taken, so a destroyed space is never locked.
+ */
+static int next_space_id = 1;
+static uint32_t space_count;
 static struct arm64_space *space_registry;
+
+/* Guards space_registry, next_space_id and space_count; zero when free. */
+static volatile unsigned space_registry_lock;
+
+/*
+ * How many page-table pages the user spaces and the kernel's extra tables
+ * hold, for the memory statistics.  Changed with atomic adds, since each
+ * space's tables are changed under that space's own lock.
+ */
+static uint32_t page_table_count;
+
+/*
+ * Guards the kernel's own tables after boot: the device blocks of the
+ * direct map and the uncached window.  Zero when free.
+ */
+static volatile unsigned kernel_table_lock;
 
 /* The size of one level-2 block of the kernel's direct map. */
 #define ARM64_DEVICE_BLOCK_SIZE 0x200000ULL
@@ -59,7 +82,7 @@ static struct arm64_space *space_registry;
  * Views are handed out upward and their addresses are not reused: DMA
  * buffers are taken at attach and returned at detach, which never comes near
  * the window's 512 GiB.  Zero means the window is not yet in use.  Changed
- * only with interrupts disabled; this HAL runs on one CPU.
+ * only under kernel_table_lock.
  */
 static uint64_t uncached_next;
 
@@ -69,6 +92,7 @@ static int uncached_table(uint64_t *table, unsigned index, bool create, uint64_t
 static bool range_is_ram(uint64_t physical, uint64_t size);
 static int device_block_table(unsigned l1_index, uint64_t **table);
 static void map_one_device_block(uint64_t *table, unsigned l2_index, uint64_t physical);
+static bool space_active_anywhere(hal_space_t handle);
 
 /* Allocates one zero-owner physical page for page-table use. */
 static int alloc_page(hal_physaddr_t *memory)
@@ -97,162 +121,609 @@ map_device_block(uint64_t physical)
 	    PTE_PXN | PTE_UXN;
 }
 
+/*
+ * Builds the kernel's final tables and switches the boot CPU to them.
+ *
+ * TTBR1 maps all RAM through the direct map, the first 2 MiB of RAM page
+ * by page with W^X for the kernel's sections there, and the firmware's
+ * peripheral blocks as device memory; TTBR0 gets an empty user table.  The secondary CPUs load
+ * the same TTBR1 when they come up (smp.c).
+ */
 void
-arm64_space_init(void)
+arm64_space_init(
+	void)
 {
-	uint64_t total=hal_pmem_get_total_size(); unsigned i;
-	uintptr_t text_start=arm64_direct_to_phys(__kernel_text_start);
-	uintptr_t text_end=arm64_direct_to_phys(__kernel_text_end);
-	uintptr_t rodata_start=arm64_direct_to_phys(__kernel_rodata_start);
-	uintptr_t rodata_end=arm64_direct_to_phys(__kernel_rodata_end);
-	uintptr_t data_start=arm64_direct_to_phys(__kernel_data_start);
-	if(hal_cpu_count()!=1)HAL_FATAL("arm64 space implementation is UP-only");
-	space_registry=NULL;
-	hal_memset(system_user_l0,0,sizeof(system_user_l0));
-	hal_memset(system_kernel_l0,0,sizeof(system_kernel_l0));
-	hal_memset(system_kernel_l1,0,sizeof(system_kernel_l1));
-	hal_memset(system_kernel_l2_low,0,sizeof(system_kernel_l2_low));
-	hal_memset(system_kernel_l3_low,0,sizeof(system_kernel_l3_low));
-	hal_memset(system_kernel_l2_high,0,sizeof(system_kernel_l2_high));
-	system_kernel_l0[0]=table_desc(system_kernel_l1);
-	for(i=0;i<512;i++) {
-		uint64_t physical=(uint64_t)i<<30;
-		if(physical>=total) break;
-		system_kernel_l1[i]=physical|BLOCK_FLAGS|PTE_PXN|PTE_UXN;
+	const struct rpi4_fdt_info *info;
+	uint64_t total;
+	uint64_t physical;
+	uint64_t flags;
+	uintptr_t text_start;
+	uintptr_t text_end;
+	uintptr_t rodata_start;
+	uintptr_t rodata_end;
+	uintptr_t data_start;
+	unsigned index;
+	int text_executable;
+	int rodata_protected;
+	int data_protected;
+
+	/* Locates the kernel image's sections physically. */
+	total = hal_pmem_get_total_size();
+	text_start = arm64_direct_to_phys(__kernel_text_start);
+	text_end = arm64_direct_to_phys(__kernel_text_end);
+	rodata_start = arm64_direct_to_phys(__kernel_rodata_start);
+	rodata_end = arm64_direct_to_phys(__kernel_rodata_end);
+	data_start = arm64_direct_to_phys(__kernel_data_start);
+
+	/* Starts from no user space and empty tables. */
+	space_registry = NULL;
+	hal_memset(system_user_l0, 0, sizeof(system_user_l0));
+	hal_memset(system_kernel_l0, 0, sizeof(system_kernel_l0));
+	hal_memset(system_kernel_l1, 0, sizeof(system_kernel_l1));
+	hal_memset(system_kernel_l2_low, 0, sizeof(system_kernel_l2_low));
+	hal_memset(system_kernel_l3_low, 0, sizeof(system_kernel_l3_low));
+	hal_memset(system_kernel_l2_high, 0, sizeof(system_kernel_l2_high));
+
+	/* Maps RAM in 1 GiB blocks, never executable. */
+	system_kernel_l0[0] = table_desc(system_kernel_l1);
+	for (index = 0; index < 512U; index++) {
+		physical = (uint64_t)index << 30;
+		if (physical >= total)
+			break;
+		system_kernel_l1[index] = physical | BLOCK_FLAGS | PTE_PXN | PTE_UXN;
 	}
+
 	/*
-	 * Do not turn the complete 3--4 GiB aperture into Device memory: a
-	 * 4 GiB Pi has ordinary RAM there.  Split that L1 entry and replace only
-	 * the FDT-discovered peripheral blocks with Device-nGnRE mappings.
+	 * Does not turn the complete 3--4 GiB aperture into Device memory: a
+	 * 4 GiB Pi has ordinary RAM there.  Splits that L1 entry and replaces
+	 * only the FDT-discovered peripheral blocks with Device-nGnRE mappings.
 	 */
-	system_kernel_l1[3]=table_desc(system_kernel_l2_high);
-	for(i=0;i<512;i++) {
-		uint64_t physical=0xc0000000ULL+((uint64_t)i<<21);
-		if(physical<total)
-			system_kernel_l2_high[i]=physical|BLOCK_FLAGS|PTE_PXN|PTE_UXN;
+	system_kernel_l1[3] = table_desc(system_kernel_l2_high);
+	for (index = 0; index < 512U; index++) {
+		physical = 0xc0000000ULL + ((uint64_t)index << 21);
+		if (physical < total)
+			system_kernel_l2_high[index] = physical | BLOCK_FLAGS | PTE_PXN | PTE_UXN;
 	}
-	{
-		const struct rpi4_fdt_info *info=rpi4_boot_info();
-		map_device_block(info->uart_base);
-		map_device_block(info->mailbox_base);
-		map_device_block(info->gic_dist_base);
-		map_device_block(info->gic_cpu_base);
-		map_device_block(info->sdhci_base);
+
+	/* Maps the peripherals the HAL itself uses. */
+	info = rpi4_boot_info();
+	map_device_block(info->uart_base);
+	map_device_block(info->mailbox_base);
+	map_device_block(info->gic_dist_base);
+	map_device_block(info->gic_cpu_base);
+	map_device_block(info->sdhci_base);
+
+	/* Splits the first GiB into 2 MiB blocks. */
+	system_kernel_l1[0] = table_desc(system_kernel_l2_low);
+	for (index = 0; index < 512U; index++)
+		system_kernel_l2_low[index] = ((uint64_t)index << 21) | BLOCK_FLAGS | PTE_PXN | PTE_UXN;
+
+	/* Maps the first 2 MiB of RAM page by page: text read-only and executable, rodata read-only. */
+	system_kernel_l2_low[0] = table_desc(system_kernel_l3_low);
+	for (index = 0; index < 512U; index++) {
+		physical = (uint64_t)index * ARM64_PAGE_SIZE;
+		flags = PAGE_FLAGS | PTE_PXN | PTE_UXN;
+		if (physical >= text_start && physical < text_end) {
+			flags = (flags | PTE_RO) & ~PTE_PXN;
+		} else if (physical >= rodata_start && physical < rodata_end) {
+			flags |= PTE_RO;
+		}
+		system_kernel_l3_low[index] = physical | flags;
 	}
-	system_kernel_l1[0]=table_desc(system_kernel_l2_low);
-	for(i=0;i<512;i++)
-		system_kernel_l2_low[i]=((uint64_t)i<<21)|BLOCK_FLAGS|PTE_PXN|PTE_UXN;
-	system_kernel_l2_low[0]=table_desc(system_kernel_l3_low);
-	for(i=0;i<512;i++) {
-		uint64_t p=(uint64_t)i*ARM64_PAGE_SIZE;
-		uint64_t flags=PAGE_FLAGS|PTE_PXN|PTE_UXN;
-		if(p>=text_start && p<text_end)
-			flags=(flags|PTE_RO)&~PTE_PXN;
-		else if(p>=rodata_start && p<rodata_end)
-			flags|=PTE_RO;
-		system_kernel_l3_low[i]=p|flags;
-	}
-	system_ttbr0=arm64_direct_to_phys(system_user_l0);
+
+	/* Switches the boot CPU to the final tables, with the kernel alone selected. */
+	system_ttbr0 = arm64_direct_to_phys(system_user_l0);
 	arm64_write_ttbr1(arm64_direct_to_phys(system_kernel_l0));
 	arm64_write_ttbr0(system_ttbr0);
 	arm64_flush_tlb();
-	current_space=HAL_SPACE_SYS;
-	if ((system_kernel_l3_low[(text_start>>12)&511] & PTE_PXN) ||
-	    !(system_kernel_l3_low[(rodata_start>>12)&511] & PTE_PXN) ||
-	    !(system_kernel_l3_low[(data_start>>12)&511] & PTE_PXN))
+	arm64_percpu_current()->current_space = HAL_SPACE_SYS;
+
+	/* Checks W^X on the three sections the kernel runs from. */
+	text_executable = (system_kernel_l3_low[(text_start >> 12) & 511U] & PTE_PXN) == 0;
+	rodata_protected = (system_kernel_l3_low[(rodata_start >> 12) & 511U] & PTE_PXN) != 0;
+	data_protected = (system_kernel_l3_low[(data_start >> 12) & 511U] & PTE_PXN) != 0;
+	if (!text_executable || !rodata_protected || !data_protected)
 		HAL_FATAL("arm64 kernel W^X table validation failed");
 	hal_puts("ARM64 PAGING PASS\nARM64 W^X PASS\n");
 }
 
+/*
+ * Finds a live user space by its handle and takes its lock.
+ *
+ * The space is looked up under the registry lock, so a space being
+ * destroyed is never locked.  Interrupts stay off until space_unlock();
+ * *irq_enabled tells it whether to turn them back on.  Reports 0 for a
+ * handle that names no live space.
+ */
 static int
-space_lock_handle(hal_space_t handle, struct arm64_space **result,
-    bool *irq_enabled)
+space_lock_handle(
+	hal_space_t handle,
+	struct arm64_space **result,
+	bool *irq_enabled)
 {
 	struct arm64_space *space;
-	bool enabled=hal_irq_disable();
+	unsigned me;
+	bool enabled;
+	bool acquired;
 
-	for(space=space_registry;space!=NULL;space=space->registry_next)
-		if((hal_space_t)space==handle)break;
-	if(space==NULL||space->destroying){if(enabled)hal_irq_enable();return 0;}
-	if(space->lock!=0)HAL_FATAL("recursive arm64 space operation");
-	space->lock=1U;*result=space;*irq_enabled=enabled;return 1;
-}
-static void
-space_unlock(struct arm64_space *space,bool enabled)
-{
-	if(space->lock!=1U)HAL_FATAL("invalid arm64 space unlock");
-	space->lock=0;if(enabled)hal_irq_enable();
-}
-static void
-flush_locked(hal_space_t handle)
-{
-	if(handle==HAL_SPACE_SYS||handle==current_space)arm64_flush_tlb();
-}
-static int valid_user(uintptr_t a,size_t n)
-{ return n&&(a&4095)==0&&(n&4095)==0&&a>=4096&&a<ARM64_USER_LIMIT&&n<=ARM64_USER_LIMIT-a; }
+	/* Looks the handle up among the live spaces. */
+	enabled = arm64_spin_lock(&space_registry_lock);
+	for (space = space_registry; space != NULL; space = space->registry_next) {
+		if ((hal_space_t)space == handle)
+			break;
+	}
 
-static struct arm64_table_page *allocate_table(struct arm64_space *s,uint64_t *parent,unsigned index)
-{
-	struct arm64_table_page *p=kernel_alloc(sizeof(*p));
-	if(!p)return NULL;
-	if(alloc_page(&p->memory)!=HAL_OK){kernel_free(p);return NULL;}
-	hal_memset(hal_pmem_to_kernel(p->memory),0,ARM64_PAGE_SIZE);p->parent=parent;p->parent_index=index;
-	p->next=s->tables;s->tables=p;page_table_count++;return p;
+	/* A handle that names no live space is refused. */
+	if (space == NULL || space->destroying) {
+		arm64_spin_unlock(&space_registry_lock, enabled);
+		return 0;
+	}
+
+	/* A second operation on the same space from the same CPU is a fault. */
+	me = hal_cpu_current() + 1U;
+	if (space->lock_owner == me)
+		HAL_FATAL("recursive arm64 space operation");
+
+	/* Waits for another CPU's operation on the space to end. */
+	for (;;) {
+		acquired = hal_atomic_uint_try_acquire(&space->lock);
+		if (acquired)
+			break;
+		hal_atomic_relax();
+	}
+	space->lock_owner = me;
+
+	/* Leaves the registry with interrupts still off for the space's operation. */
+	__atomic_store_n(&space_registry_lock, 0U, __ATOMIC_RELEASE);
+
+	/* Succeeded: the caller holds the space. */
+	*result = space;
+	*irq_enabled = enabled;
+	return 1;
 }
-static uint64_t *walk_leaf(struct arm64_space *s,uintptr_t a,int create)
+
+/*
+ * Releases a space taken by space_lock_handle() and restores interrupts.
+ */
+static void
+space_unlock(
+	struct arm64_space *space,
+	bool enabled)
 {
-	static const unsigned shifts[3]={39,30,21};uint64_t *table=s->l0;unsigned level;
-	for(level=0;level<3;level++){
-		unsigned index=(unsigned)(a>>shifts[level])&511;uint64_t e=table[index];
-		if(!(e&PTE_VALID)){struct arm64_table_page *p;if(!create)return NULL;
-			p=allocate_table(s,table,index);if(!p)return NULL;e=(uintptr_t)p->memory|PTE_VALID|PTE_TABLE;table[index]=e;}
-		if((e&(PTE_VALID|PTE_TABLE))!=(PTE_VALID|PTE_TABLE))return NULL;
-		table=arm64_phys_to_direct((uintptr_t)(e&PTE_ADDR));
-	}return &table[(a>>12)&511];
+	unsigned me;
+
+	/* Only the CPU that holds the space may release it. */
+	me = hal_cpu_current() + 1U;
+	if (space->lock == 0 || space->lock_owner != me)
+		HAL_FATAL("invalid arm64 space unlock");
+
+	/* Releases the space, publishing every change made under it. */
+	space->lock_owner = 0;
+	arm64_spin_unlock(&space->lock, enabled);
 }
-static int table_empty(const uint64_t *p){unsigned i;for(i=0;i<512;i++)if(p[i]&PTE_VALID)return 0;return 1;}
-static struct arm64_table_page *detach_empty_tables(struct arm64_space *s)
+
+/*
+ * Drops the stale translations of a space after its tables changed.
+ *
+ * The kernel's tables are used by every CPU, and a user space's by every
+ * CPU that has it selected; both are flushed on every CPU at once.  A
+ * user space selected nowhere has nothing cached to drop, since a CPU
+ * flushes its TLB whenever it selects a space.
+ */
+static void
+flush_locked(
+	hal_space_t handle)
 {
-	struct arm64_table_page *detached=NULL;int again;
-	do{struct arm64_table_page **link=&s->tables;again=0;while(*link){struct arm64_table_page *p=*link;
-			if(!table_empty(hal_pmem_to_kernel(p->memory))){link=&p->next;continue;}
-			if(!(p->parent[p->parent_index]&PTE_VALID)||
-			   (p->parent[p->parent_index]&PTE_ADDR)!=(uintptr_t)p->memory)
+	bool active;
+
+	/* The kernel's tables are cached on every CPU. */
+	if (handle == HAL_SPACE_SYS) {
+		arm64_flush_tlb();
+		return;
+	}
+
+	/* A user space is flushed where it is selected. */
+	active = space_active_anywhere(handle);
+	if (active)
+		arm64_flush_tlb();
+}
+
+/*
+ * Reports whether any CPU has a space selected.
+ *
+ * The caller has just changed the space's tables; the full barrier
+ * orders those stores before the reads, so a CPU that selects the space
+ * after the reads walks the new tables.
+ */
+static bool
+space_active_anywhere(
+	hal_space_t handle)
+{
+	struct arm64_percpu *cpu;
+	hal_space_t selected;
+	hal_cpu_id_t index;
+
+	/* Orders the table stores before the reads of the selections. */
+	hal_mb();
+
+	/* Looks at every CPU's selection. */
+	for (index = 0; index < ARM64_CPU_MAX; index++) {
+		cpu = arm64_percpu_get(index);
+		selected = __atomic_load_n(&cpu->current_space, __ATOMIC_ACQUIRE);
+		if (selected == handle)
+			return true;
+	}
+
+	/* No CPU has the space selected. */
+	return false;
+}
+
+/* Reports whether a range is page-aligned, non-empty and inside the user half. */
+static int
+valid_user(
+	uintptr_t address,
+	size_t size)
+{
+	/* An empty or unaligned range is refused. */
+	if (size == 0)
+		return 0;
+	if ((address & 4095U) != 0)
+		return 0;
+	if ((size & 4095U) != 0)
+		return 0;
+
+	/* The first page is never mapped, and the range must end inside the user half. */
+	if (address < 4096U)
+		return 0;
+	if (address >= ARM64_USER_LIMIT)
+		return 0;
+	if (size > ARM64_USER_LIMIT - address)
+		return 0;
+
+	/* Succeeded: the range can be mapped. */
+	return 1;
+}
+
+/* Allocates a zeroed page-table page and records it as the space's. */
+static struct arm64_table_page *
+allocate_table(
+	struct arm64_space *space,
+	uint64_t *parent,
+	unsigned index)
+{
+	struct arm64_table_page *page;
+	int error;
+
+	/* Allocates the record of the table. */
+	page = kernel_alloc(sizeof(*page));
+	if (page == NULL)
+		return NULL;
+
+	/* Allocates the table itself. */
+	error = alloc_page(&page->memory);
+	if (error != HAL_OK) {
+		kernel_free(page);
+		return NULL;
+	}
+
+	/* Clears the table and remembers the entry that will point at it. */
+	hal_memset(hal_pmem_to_kernel(page->memory), 0, ARM64_PAGE_SIZE);
+	page->parent = parent;
+	page->parent_index = index;
+
+	/* Lists the table with the space's and counts it. */
+	page->next = space->tables;
+	space->tables = page;
+	(void)__atomic_fetch_add(&page_table_count, 1U, __ATOMIC_RELAXED);
+
+	/* Succeeded: the table, not yet linked into the tree. */
+	return page;
+}
+
+/*
+ * Finds the level-3 entry of a user address, making the tables on the way
+ * when asked to.  Reports NULL when a table is missing and not to be made,
+ * cannot be made, or a block sits where a table should be.
+ */
+static uint64_t *
+walk_leaf(
+	struct arm64_space *space,
+	uintptr_t address,
+	int create)
+{
+	static const unsigned shifts[3] = {39, 30, 21};
+	struct arm64_table_page *page;
+	uint64_t *table;
+	uint64_t entry;
+	unsigned level;
+	unsigned index;
+
+	/* Descends from level 0 to the level-3 table. */
+	table = space->l0;
+	for (level = 0; level < 3; level++) {
+		index = (unsigned)(address >> shifts[level]) & 511U;
+		entry = table[index];
+
+		/* A missing table is made only when asked to. */
+		if ((entry & PTE_VALID) == 0) {
+			if (!create)
+				return NULL;
+			page = allocate_table(space, table, index);
+			if (page == NULL)
+				return NULL;
+			entry = (uintptr_t)page->memory | PTE_VALID | PTE_TABLE;
+			table[index] = entry;
+		}
+
+		/* Anything but a table entry ends the walk. */
+		if ((entry & (PTE_VALID | PTE_TABLE)) != (PTE_VALID | PTE_TABLE))
+			return NULL;
+		table = arm64_phys_to_direct((uintptr_t)(entry & PTE_ADDR));
+	}
+
+	/* Succeeded: the entry of the page. */
+	return &table[(address >> 12) & 511U];
+}
+
+/* Reports whether a table has no valid entry. */
+static int
+table_empty(
+	const uint64_t *table)
+{
+	unsigned index;
+
+	/* Looks for any valid entry. */
+	for (index = 0; index < 512U; index++) {
+		if ((table[index] & PTE_VALID) != 0)
+			return 0;
+	}
+
+	/* The table is empty. */
+	return 1;
+}
+
+/*
+ * Unlinks every empty table of a space, repeating until none is left
+ * whose children all went, and reports them for freeing after the flush.
+ */
+static struct arm64_table_page *
+detach_empty_tables(
+	struct arm64_space *space)
+{
+	struct arm64_table_page *detached;
+	struct arm64_table_page **link;
+	struct arm64_table_page *page;
+	uint64_t parent_entry;
+	int again;
+	int empty;
+
+	/* Passes over the tables until a pass detaches nothing. */
+	detached = NULL;
+	do {
+		again = 0;
+		link = &space->tables;
+		while (*link != NULL) {
+			page = *link;
+
+			/* A table that still maps something stays. */
+			empty = table_empty(hal_pmem_to_kernel(page->memory));
+			if (!empty) {
+				link = &page->next;
+				continue;
+			}
+
+			/* The parent entry must point at this very table. */
+			parent_entry = page->parent[page->parent_index];
+			if ((parent_entry & PTE_VALID) == 0 ||
+			    (parent_entry & PTE_ADDR) != (uintptr_t)page->memory)
 				HAL_FATAL("detaching an unlinked arm64 page table");
-			p->parent[p->parent_index]=0;*link=p->next;p->next=detached;
-			detached=p;again=1;}}while(again);
+
+			/* Unlinks the table from its parent and from the space's list. */
+			page->parent[page->parent_index] = 0;
+			*link = page->next;
+			page->next = detached;
+			detached = page;
+			again = 1;
+		}
+	} while (again);
+
+	/* Succeeded: the tables to free once no walker can reach them. */
 	return detached;
 }
-static void free_detached_tables(struct arm64_table_page *p)
+
+/* Frees tables detached by detach_empty_tables(). */
+static void
+free_detached_tables(
+	struct arm64_table_page *page)
 {
-	while(p){struct arm64_table_page *next=p->next;(void)hal_pmem_free(&p->memory,ARM64_PAGE_SIZE);
-		kernel_free(p);if(page_table_count)page_table_count--;p=next;}
+	struct arm64_table_page *next;
+
+	/* Frees each table and its record, and stops counting it. */
+	while (page != NULL) {
+		next = page->next;
+		(void)hal_pmem_free(&page->memory, ARM64_PAGE_SIZE);
+		kernel_free(page);
+		(void)__atomic_fetch_sub(&page_table_count, 1U, __ATOMIC_RELAXED);
+		page = next;
+	}
 }
-hal_space_t hal_space_create(void)
+
+/*
+ * Creates an empty user space.
+ */
+hal_space_t
+hal_space_create(
+	void)
 {
-	struct arm64_space *s=kernel_alloc(sizeof(*s));bool enabled;if(!s)return NULL;hal_memset(s,0,sizeof(*s));
-	if(alloc_page(&s->l0_memory)!=HAL_OK){kernel_free(s);return NULL;}
-	s->l0=hal_pmem_to_kernel(s->l0_memory);hal_memset(s->l0,0,ARM64_PAGE_SIZE);s->magic=ARM64_SPACE_MAGIC;
-	enabled=hal_irq_disable();s->space_id=next_space_id++;s->registry_next=space_registry;space_registry=s;space_count++;if(enabled)hal_irq_enable();return s;
+	struct arm64_space *space;
+	bool enabled;
+	int error;
+
+	/* Allocates the record. */
+	space = kernel_alloc(sizeof(*space));
+	if (space == NULL)
+		return NULL;
+	hal_memset(space, 0, sizeof(*space));
+
+	/* Allocates and clears the level-0 table. */
+	error = alloc_page(&space->l0_memory);
+	if (error != HAL_OK) {
+		kernel_free(space);
+		return NULL;
+	}
+	space->l0 = hal_pmem_to_kernel(space->l0_memory);
+	hal_memset(space->l0, 0, ARM64_PAGE_SIZE);
+	space->magic = ARM64_SPACE_MAGIC;
+
+	/* Numbers the space and makes it live. */
+	enabled = arm64_spin_lock(&space_registry_lock);
+
+	space->space_id = next_space_id++;
+	space->registry_next = space_registry;
+	space_registry = space;
+	space_count++;
+
+	arm64_spin_unlock(&space_registry_lock, enabled);
+
+	/* Succeeded: the space, with nothing mapped. */
+	return space;
 }
-void hal_space_destroy(hal_space_t h)
+
+/*
+ * Destroys a user space that no CPU has selected and no operation holds.
+ */
+void
+hal_space_destroy(
+	hal_space_t handle)
 {
-	struct arm64_space *s=h,**link;struct arm64_table_page *p;bool enabled;if(!s)return;
-	enabled=hal_irq_disable();for(link=&space_registry;*link&&*link!=s;link=&(*link)->registry_next);
-	if(*link==NULL||s->destroying)HAL_FATAL("invalid arm64 space destroy");
-	if(current_space==s)HAL_FATAL("destroying an active arm64 space");
-	if(s->lock!=0)HAL_FATAL("destroying a busy arm64 space");
-	s->destroying=1U;*link=s->registry_next;
-	while((p=s->tables)){s->tables=p->next;(void)hal_pmem_free(&p->memory,ARM64_PAGE_SIZE);kernel_free(p);if(page_table_count)page_table_count--;}
-	s->magic=0;(void)hal_pmem_free(&s->l0_memory,ARM64_PAGE_SIZE);kernel_free(s);if(space_count)space_count--;if(enabled)hal_irq_enable();
+	struct arm64_space *space;
+	struct arm64_space **link;
+	struct arm64_table_page *page;
+	bool enabled;
+	bool active;
+
+	/* A missing space is nothing to destroy. */
+	space = handle;
+	if (space == NULL)
+		return;
+
+	/* Takes the space out of the registry, so nothing can lock it any more. */
+	enabled = arm64_spin_lock(&space_registry_lock);
+
+	link = &space_registry;
+	while (*link != NULL && *link != space)
+		link = &(*link)->registry_next;
+	if (*link == NULL || space->destroying)
+		HAL_FATAL("invalid arm64 space destroy");
+	active = space_active_anywhere(space);
+	if (active)
+		HAL_FATAL("destroying an active arm64 space");
+	if (space->lock != 0)
+		HAL_FATAL("destroying a busy arm64 space");
+	space->destroying = 1U;
+	*link = space->registry_next;
+	if (space_count != 0)
+		space_count--;
+
+	arm64_spin_unlock(&space_registry_lock, enabled);
+
+	/* Frees every table, then the level-0 table and the record. */
+	while (space->tables != NULL) {
+		page = space->tables;
+		space->tables = page->next;
+		(void)hal_pmem_free(&page->memory, ARM64_PAGE_SIZE);
+		kernel_free(page);
+		(void)__atomic_fetch_sub(&page_table_count, 1U, __ATOMIC_RELAXED);
+	}
+	space->magic = 0;
+	(void)hal_pmem_free(&space->l0_memory, ARM64_PAGE_SIZE);
+	kernel_free(space);
 }
-void hal_space_switch(hal_space_t h)
+
+/*
+ * Selects a user space, or the kernel alone, on the calling CPU.
+ *
+ * The selection is published before TTBR0 changes, so a CPU that changes
+ * the space's tables afterwards sees it and flushes this CPU too.  Only
+ * this CPU's TLB is emptied: without ASIDs, what it cached of the space
+ * it leaves must go, and no other CPU holds entries for its selection.
+ */
+void
+hal_space_switch(
+	hal_space_t handle)
 {
-	struct arm64_space *s;uintptr_t ttbr;bool enabled;if(h==current_space)return;
-	if(h==HAL_SPACE_SYS){enabled=hal_irq_disable();arm64_write_ttbr0(system_ttbr0);arm64_flush_tlb();current_space=h;if(enabled)hal_irq_enable();return;}
-	if(!space_lock_handle(h,&s,&enabled))HAL_FATAL("invalid arm64 space switch");
-	ttbr=(uintptr_t)s->l0_memory;arm64_write_ttbr0(ttbr);arm64_flush_tlb();current_space=h;space_unlock(s,enabled);
+	struct arm64_percpu *cpu;
+	struct arm64_space *space;
+	uintptr_t ttbr;
+	bool enabled;
+	int locked;
+
+	/* The space already selected here needs nothing. */
+	cpu = arm64_percpu_current();
+	if (handle == cpu->current_space)
+		return;
+
+	/* The kernel alone: the empty user table. */
+	if (handle == HAL_SPACE_SYS) {
+		enabled = hal_irq_disable();
+		__atomic_store_n(&cpu->current_space, handle, __ATOMIC_RELEASE);
+		hal_mb();
+		arm64_write_ttbr0(system_ttbr0);
+		arm64_flush_tlb_local();
+		if (enabled)
+			hal_irq_enable();
+		return;
+	}
+
+	/* A user space is held while its table is installed. */
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
+		HAL_FATAL("invalid arm64 space switch");
+
+	__atomic_store_n(&cpu->current_space, handle, __ATOMIC_RELEASE);
+	hal_mb();
+	ttbr = (uintptr_t)space->l0_memory;
+	arm64_write_ttbr0(ttbr);
+	arm64_flush_tlb_local();
+
+	space_unlock(space, enabled);
 }
+
+/*
+ * Reports the physical address of the kernel's level-0 table, which every
+ * CPU loads into TTBR1 once arm64_space_init() has built it.
+ */
+uintptr_t
+arm64_space_kernel_ttbr1(
+	void)
+{
+	uintptr_t physical;
+
+	/* The table lives in the kernel image, inside the direct map. */
+	physical = arm64_direct_to_phys(system_kernel_l0);
+
+	/* Succeeded: the table's physical address. */
+	return physical;
+}
+
+/*
+ * Makes a secondary CPU select the kernel alone, as the boot CPU does
+ * after arm64_space_init(); it arrives with the boot identity map.
+ */
+void
+arm64_space_select_system(
+	void)
+{
+	struct arm64_percpu *cpu;
+
+	/* Publishes the selection, then installs the empty user table. */
+	cpu = arm64_percpu_current();
+	__atomic_store_n(&cpu->current_space, HAL_SPACE_SYS, __ATOMIC_RELEASE);
+	hal_mb();
+	arm64_write_ttbr0(system_ttbr0);
+	arm64_flush_tlb_local();
+}
+
 /*
  * Makes code written through the data side visible to instruction fetch
  * before a user page becomes executable.  The Cortex-A72's instruction
@@ -351,11 +822,58 @@ int hal_space_clear_flags(hal_space_t h,void *v,uint32_t flags)
 	if((flags&HAL_SPACE_PAGE_DIRTY)&&(*l&PTE_RO))*l&=~PTE_SW_DIRTY;
 	hal_wmb();flush_locked(s);space_unlock(s,enabled);return HAL_OK;
 }
-void hal_space_flush_tlb(hal_space_t h){struct arm64_space *s;bool enabled;if(h==HAL_SPACE_SYS){enabled=hal_irq_disable();flush_locked(h);if(enabled)hal_irq_enable();return;}if(!space_lock_handle(h,&s,&enabled))HAL_FATAL("invalid arm64 space flush");flush_locked(s);space_unlock(s,enabled);}
+/*
+ * Drops the stale translations of a space on every CPU that may hold them.
+ */
+void
+hal_space_flush_tlb(
+	hal_space_t handle)
+{
+	struct arm64_space *space;
+	bool enabled;
+	int locked;
+
+	/* The kernel's tables need no space lock. */
+	if (handle == HAL_SPACE_SYS) {
+		enabled = hal_irq_disable();
+		flush_locked(handle);
+		if (enabled)
+			hal_irq_enable();
+		return;
+	}
+
+	/* A user space is flushed under its lock. */
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
+		HAL_FATAL("invalid arm64 space flush");
+	flush_locked(space);
+	space_unlock(space, enabled);
+}
 void hal_space_flush_tlb_range(hal_space_t h,void*v,size_t n){(void)v;if(n)hal_space_flush_tlb(h);}
 size_t hal_space_get_page_size(int level){if(level==1)return 4096;if(level==2)return 0x200000;if(level==3)return 0x40000000;return 0;}
 void hal_space_get_user_range(uintptr_t *minimum,uintptr_t *limit){if(minimum)*minimum=4096;if(limit)*limit=ARM64_USER_LIMIT;}
-void hal_arm64_space_memory_stats(uint32_t *s,uint32_t *t){bool enabled=hal_irq_disable();if(s)*s=space_count;if(t)*t=page_table_count;if(enabled)hal_irq_enable();}
+/*
+ * Reports how many user spaces and page-table pages exist.
+ */
+void
+hal_arm64_space_memory_stats(
+	uint32_t *spaces,
+	uint32_t *tables)
+{
+	bool enabled;
+
+	/* Samples the space count under the registry lock. */
+	enabled = arm64_spin_lock(&space_registry_lock);
+
+	if (spaces != NULL)
+		*spaces = space_count;
+
+	arm64_spin_unlock(&space_registry_lock, enabled);
+
+	/* The table count moves atomically. */
+	if (tables != NULL)
+		*tables = __atomic_load_n(&page_table_count, __ATOMIC_RELAXED);
+}
 
 /*
  * Maps one device range into the kernel's direct map.
@@ -413,13 +931,12 @@ hal_space_map_device(
 	/* Maps every 2 MiB block the range touches, with interrupts held off. */
 	first = (uint64_t)paddr & ~(ARM64_DEVICE_BLOCK_SIZE - 1U);
 	end = (uint64_t)paddr + (uint64_t)size;
-	enabled = hal_irq_disable();
+	enabled = arm64_spin_lock(&kernel_table_lock);
 	for (block = first; block < end; block += ARM64_DEVICE_BLOCK_SIZE) {
 		/* Finds or creates the level-2 table that holds the block. */
 		error = device_block_table((unsigned)(block / ARM64_DIRECT_L1_SPAN), &table);
 		if (error != HAL_OK) {
-			if (enabled)
-				hal_irq_enable();
+			arm64_spin_unlock(&kernel_table_lock, enabled);
 
 			/* Reports why the block's table could not be made. */
 			return error;
@@ -431,8 +948,7 @@ hal_space_map_device(
 
 	/* Makes the new entries visible to the table walker and drops stale ones. */
 	arm64_flush_tlb();
-	if (enabled)
-		hal_irq_enable();
+	arm64_spin_unlock(&kernel_table_lock, enabled);
 
 	/* Succeeded: the device is reachable at its direct-map alias. */
 	*vaddr = arm64_phys_to_direct((uintptr_t)paddr);
@@ -477,12 +993,11 @@ hal_pmem_map_uncached(
 	hal_dcache_invalidate_range((uintptr_t)arm64_phys_to_direct((uintptr_t)paddr), size);
 
 	/* Takes addresses for the view from the window. */
-	enabled = hal_irq_disable();
+	enabled = arm64_spin_lock(&kernel_table_lock);
 	if (uncached_next == 0)
 		uncached_next = ARM64_UNCACHED_BASE;
 	if ((uint64_t)size > ARM64_UNCACHED_BASE + ARM64_UNCACHED_SIZE - uncached_next) {
-		if (enabled)
-			hal_irq_enable();
+		arm64_spin_unlock(&kernel_table_lock, enabled);
 
 		/* Reports a window that is used up. */
 		return HAL_ERR_NOMEM;
@@ -501,8 +1016,7 @@ hal_pmem_map_uncached(
 
 			/* Drops the translations of the pages already mapped. */
 			arm64_flush_tlb();
-			if (enabled)
-				hal_irq_enable();
+			arm64_spin_unlock(&kernel_table_lock, enabled);
 
 			/* Reports why the view could not be made. */
 			return error;
@@ -515,8 +1029,7 @@ hal_pmem_map_uncached(
 	/* Publishes the entries to the walker and takes the addresses. */
 	arm64_flush_tlb();
 	uncached_next = start + (uint64_t)size;
-	if (enabled)
-		hal_irq_enable();
+	arm64_spin_unlock(&kernel_table_lock, enabled);
 
 	/* Succeeded: the RAM is reachable uncached at the view. */
 	*vaddr = (void *)(uintptr_t)start;
@@ -555,12 +1068,11 @@ hal_pmem_unmap_uncached(
 		return HAL_ERR_INVALID;
 
 	/* Refuses a hole in the view before any page is unmapped. */
-	enabled = hal_irq_disable();
+	enabled = arm64_spin_lock(&kernel_table_lock);
 	for (offset = 0; offset < (uint64_t)size; offset += ARM64_PAGE_SIZE) {
 		error = uncached_leaf(start + offset, false, &leaf);
 		if (error != HAL_OK || (*leaf & PTE_VALID) == 0) {
-			if (enabled)
-				hal_irq_enable();
+			arm64_spin_unlock(&kernel_table_lock, enabled);
 
 			/* Reports the hole in the view. */
 			return HAL_ERR_INVALID;
@@ -594,8 +1106,7 @@ hal_pmem_unmap_uncached(
 	arm64_flush_tlb();
 
 	/* Lets interrupts in again. */
-	if (enabled)
-		hal_irq_enable();
+	arm64_spin_unlock(&kernel_table_lock, enabled);
 
 	/* Succeeded: the RAM is reachable through the direct map only. */
 	return HAL_OK;
@@ -734,7 +1245,7 @@ device_block_table(
 	/* Clears the table so every block of the gigabyte starts unmapped. */
 	fresh = arm64_phys_to_direct((uintptr_t)memory);
 	hal_memset(fresh, 0, ARM64_PAGE_SIZE);
-	page_table_count++;
+	(void)__atomic_fetch_add(&page_table_count, 1U, __ATOMIC_RELAXED);
 
 	/*
 	 * Links the table.  The entry was invalid, so no stale translation of it
@@ -849,7 +1360,7 @@ uncached_table(
 	/* Clears it so every entry starts invalid. */
 	fresh = arm64_phys_to_direct((uintptr_t)memory);
 	hal_memset(fresh, 0, ARM64_PAGE_SIZE);
-	page_table_count++;
+	(void)__atomic_fetch_add(&page_table_count, 1U, __ATOMIC_RELAXED);
 
 	/* Links it; the entry was invalid, so nothing stale can be cached. */
 	table[index] = (uint64_t)memory | PTE_VALID | PTE_TABLE;

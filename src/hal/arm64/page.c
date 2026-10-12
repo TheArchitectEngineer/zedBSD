@@ -3,6 +3,7 @@
 #include "bsp.h"
 #include "defs.h"
 #include "space.h"
+#include "spin.h"
 
 #define ARM64_MAX_PHYS (8ULL * 1024ULL * 1024ULL * 1024ULL)
 #define MAX_PHYS_PAGES (ARM64_MAX_PHYS / ARM64_PAGE_SIZE)
@@ -20,10 +21,16 @@ static uint32_t allocated_pages;
 
 /*
  * All pages below this candidate are occupied.  Allocation advances it only
- * across occupied bits; freeing an earlier run rewinds it before IRQ restore.
- * The existing single-CPU allocator's IRQ exclusion protects this cursor too.
+ * across occupied bits; freeing an earlier run rewinds it.  Kept under
+ * pmem_lock with the bitmaps and counters.
  */
 static uint32_t first_free_candidate;
+
+/*
+ * Guards the bitmaps, the counters and the cursor after boot, when any CPU
+ * may allocate or free.  Zero when free.
+ */
+static volatile unsigned pmem_lock;
 
 static uint32_t next_free(uint32_t page, uint32_t end);
 static uint32_t next_occupied(uint32_t page, uint32_t end);
@@ -359,10 +366,28 @@ hal_pmem_alloc(
 	size_t req_align,
 	hal_physaddr_t *block)
 {
+	size_t alignment;
+	bool enabled;
+	int error;
+
+	/* No alignment asked means page alignment. */
+	alignment = req_align;
+	if (alignment == 0)
+		alignment = ARM64_PAGE_SIZE;
+
 	/* Allocates with no reachability or boundary constraint. */
-	return alloc_ram(req_size,
-			 req_align == 0 ? ARM64_PAGE_SIZE : req_align,
-			 UINT64_MAX, 0, block);
+	enabled = arm64_spin_lock(&pmem_lock);
+
+	error = alloc_ram(req_size, alignment, UINT64_MAX, 0, block);
+
+	arm64_spin_unlock(&pmem_lock, enabled);
+
+	/* Reports why the block could not be allocated. */
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the block is the caller's. */
+	return HAL_OK;
 }
 
 /*
@@ -376,10 +401,28 @@ hal_pmem_alloc_limited(
 	size_t boundary,
 	hal_physaddr_t *block)
 {
+	size_t alignment;
+	bool enabled;
+	int error;
+
+	/* No alignment asked means page alignment. */
+	alignment = req_align;
+	if (alignment == 0)
+		alignment = ARM64_PAGE_SIZE;
+
 	/* Applies the caller's reachability and boundary constraints. */
-	return alloc_ram(req_size,
-			 req_align == 0 ? ARM64_PAGE_SIZE : req_align,
-			 max_paddr, boundary, block);
+	enabled = arm64_spin_lock(&pmem_lock);
+
+	error = alloc_ram(req_size, alignment, max_paddr, boundary, block);
+
+	arm64_spin_unlock(&pmem_lock, enabled);
+
+	/* Reports why the block could not be allocated. */
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the block is the caller's. */
+	return HAL_OK;
 }
 
 /*
@@ -390,8 +433,22 @@ hal_pmem_free(
 	hal_physaddr_t *block,
 	size_t size)
 {
+	bool enabled;
+	int error;
+
 	/* Releases the pages the matching allocation claimed. */
-	return free_ram(block, size);
+	enabled = arm64_spin_lock(&pmem_lock);
+
+	error = free_ram(block, size);
+
+	arm64_spin_unlock(&pmem_lock, enabled);
+
+	/* Reports a block that was not the caller's to free. */
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the pages are free again. */
+	return HAL_OK;
 }
 
 /*
@@ -430,15 +487,22 @@ void
 hal_get_memstat(
 	struct hal_memstat *s)
 {
+	bool enabled;
+
 	/* Ignores requests without result storage. */
 	if (!s)
 		return;
 
-	/* Samples the physical-page counters. */
+	/* Samples the physical-page counters together. */
 	hal_memset(s, 0, sizeof(*s));
+	enabled = arm64_spin_lock(&pmem_lock);
+
 	s->physical_total = (size_t)phys_pages * ARM64_PAGE_SIZE;
 	s->physical_reserved = (size_t)reserved_pages * ARM64_PAGE_SIZE;
 	s->physical_allocated = (size_t)allocated_pages * ARM64_PAGE_SIZE;
+
+	arm64_spin_unlock(&pmem_lock, enabled);
+
 	s->physical_free = s->physical_total - s->physical_reserved -
 	    s->physical_allocated;
 

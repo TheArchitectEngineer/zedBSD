@@ -32,6 +32,15 @@ arm64_boot:
 	b arm64_secondary_park
 
 arm64_from_el2:
+	/*
+	 * EL1 reads MIDR and MPIDR through VPIDR_EL2 and VMPIDR_EL2, whose
+	 * reset values are unknown; they are given the real ones, so the CPU
+	 * finds its own affinity at EL1 (ws208).
+	 */
+	mrs x1, midr_el1
+	msr vpidr_el2, x1
+	mrs x1, mpidr_el1
+	msr vmpidr_el2, x1
 	mov x1, #(1 << 31)
 	msr hcr_el2, x1
 	msr cptr_el2, xzr
@@ -165,6 +174,114 @@ arm64_secondary_park:
 2:	wfe
 	b 2b
 	.size _start, . - _start
+
+	/*
+	 * The entry of a secondary CPU released from the firmware's spin
+	 * table (smp.c writes this address's physical form there).  It runs
+	 * with the MMU off, at EL2 or EL1, and finds its own boot block by
+	 * its MPIDR affinity: arm64_secondary_boot[Aff0], 32 bytes each, as
+	 * TTBR1 (the kernel's final tables), the stack top and the CPU number.
+	 */
+	.global arm64_secondary_entry
+	.type arm64_secondary_entry, %function
+arm64_secondary_entry:
+	msr daifset, #0xf
+	mrs x1, CurrentEL
+	cmp x1, #(2 << 2)
+	b.eq arm64_secondary_from_el2
+	cmp x1, #(1 << 2)
+	b.eq arm64_secondary_el1
+	b arm64_secondary_park
+
+arm64_secondary_from_el2:
+	/* The same EL2 hand-off as the boot CPU's, identity registers first. */
+	mrs x1, midr_el1
+	msr vpidr_el2, x1
+	mrs x1, mpidr_el1
+	msr vmpidr_el2, x1
+	mov x1, #(1 << 31)
+	msr hcr_el2, x1
+	msr cptr_el2, xzr
+	mrs x1, cnthctl_el2
+	orr x1, x1, #3
+	msr cnthctl_el2, x1
+	msr cntvoff_el2, xzr
+	ldr x1, =0x30d00800
+	msr sctlr_el1, x1
+	mov x1, #0x3c5
+	msr spsr_el2, x1
+	adr x1, arm64_secondary_el1
+	msr elr_el2, x1
+	eret
+
+arm64_secondary_el1:
+	ldr x1, =0x30d00800
+	msr sctlr_el1, x1
+	isb
+	ic iallu
+	dsb nsh
+	isb
+	msr spsel, #1
+	mrs x1, cpacr_el1
+	orr x1, x1, #(3 << 20)
+	msr cpacr_el1, x1
+	mov x1, #2
+	msr cntkctl_el1, x1
+	isb
+
+	/* Finds this CPU's boot block by its affinity, at its physical address. */
+	mrs x2, mpidr_el1
+	and x2, x2, #0xff
+	cmp x2, #4
+	b.hs arm64_secondary_park
+	adrp x3, arm64_secondary_boot
+	add x3, x3, :lo12:arm64_secondary_boot
+	add x3, x3, x2, lsl #5
+	ldr x4, [x3, #0]
+	ldr x19, [x3, #8]
+	ldr x20, [x3, #16]
+	cbz x4, arm64_secondary_park
+
+	/*
+	 * Turns the MMU on with the boot identity map in TTBR0, so the next
+	 * instruction is still fetched at its physical address, and the
+	 * kernel's final tables in TTBR1.
+	 */
+	mov x1, #0x04ff
+	movk x1, #0x4400, lsl #16
+	msr mair_el1, x1
+	ldr x1, =0x00000002b5103510
+	msr tcr_el1, x1
+	adrp x1, arm64_l0_low
+	add x1, x1, :lo12:arm64_l0_low
+	msr ttbr0_el1, x1
+	msr ttbr1_el1, x4
+	dsb sy
+	isb
+	tlbi vmalle1
+	dsb sy
+	isb
+	mrs x1, sctlr_el1
+	orr x1, x1, #(1 << 0)
+	orr x1, x1, #(1 << 2)
+	orr x1, x1, #(1 << 12)
+	orr x1, x1, #(1 << 14)
+	orr x1, x1, #(1 << 15)
+	orr x1, x1, #(1 << 16)
+	orr x1, x1, #(1 << 18)
+	orr x1, x1, #(1 << 26)
+	msr sctlr_el1, x1
+	isb
+	ldr x1, =arm64_secondary_high
+	br x1
+
+arm64_secondary_high:
+	/* Runs on its own stack in the kernel half, then enters C. */
+	mov sp, x19
+	mov x0, x20
+	bl arm64_secondary_main
+	b arm64_secondary_park
+	.size arm64_secondary_entry, . - arm64_secondary_entry
 
 	.section .bss.boot, "aw", %nobits
 	.balign 4096

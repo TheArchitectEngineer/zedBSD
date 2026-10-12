@@ -15,5 +15,6 @@ void arm64_irq_restore(uint64_t state);
 void arm64_write_ttbr0(uintptr_t physical);
 void arm64_write_ttbr1(uintptr_t physical);
 void arm64_flush_tlb(void);
+void arm64_flush_tlb_local(void);
 
 #endif

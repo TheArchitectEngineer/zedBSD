@@ -1,6 +1,8 @@
 #include <hal/hal.h>
 #include "asm.h"
 #include "irq.h"
+#include "percpu.h"
+#include "spin.h"
 #include "bsp-rpi4/gic.h"
 
 #define IRQ_MAX 1020
@@ -13,7 +15,12 @@ struct irq_slot {
 };
 
 static struct irq_slot slots[IRQ_MAX];
-static hal_irq_ack_t active_ack;
+
+/*
+ * Guards each slot's handler and argument as a pair, so a CPU that
+ * dispatches never sees a new handler with an old argument.  Zero when free.
+ */
+static volatile unsigned slots_lock;
 
 void rpi4_timer_interrupt(hal_irq_ack_t acknowledge);
 
@@ -46,27 +53,56 @@ hal_irq_unmask(int irq)
 	rpi4_gic_unmask((uint32_t)irq);
 }
 
+/*
+ * Ends the interrupt this CPU is handling at the interrupt controller.
+ *
+ * The acknowledgement must be the one this CPU took last: the GIC's CPU
+ * interface ends interrupts in the order they were taken, per CPU.
+ */
 void
-hal_irq_send_eoi(hal_irq_ack_t acknowledge)
+hal_irq_send_eoi(
+	hal_irq_ack_t acknowledge)
 {
-	if (acknowledge == HAL_IRQ_ACK_NONE || acknowledge != active_ack)
+	struct arm64_percpu *cpu;
+
+	/* Refuses an acknowledgement this CPU is not holding. */
+	cpu = arm64_percpu_current();
+	if (acknowledge == HAL_IRQ_ACK_NONE)
 		HAL_FATAL("invalid AArch64 IRQ acknowledgement");
+	if (acknowledge != cpu->active_ack)
+		HAL_FATAL("invalid AArch64 IRQ acknowledgement");
+
+	/* Ends the interrupt; the acknowledgement carries the IAR value plus one. */
 	rpi4_gic_eoi((uint32_t)(acknowledge - 1U));
-	active_ack = HAL_IRQ_ACK_NONE;
+	cpu->active_ack = HAL_IRQ_ACK_NONE;
 }
 
+/*
+ * Installs or removes the handler of one numbered line.
+ */
 int
-hal_irq_set_handler(int irq, hal_irq_handler_t handler, void *argument)
+hal_irq_set_handler(
+	int irq,
+	hal_irq_handler_t handler,
+	void *argument)
 {
 	bool enabled;
 
+	/* Refuses a line the table does not have. */
 	if (irq < 0 || irq >= IRQ_MAX)
 		return HAL_ERR_INVALID;
-	enabled = hal_irq_disable();
+
+	/* Replaces the pair under the lock the dispatch reads it under. */
+	enabled = arm64_spin_lock(&slots_lock);
+
 	slots[irq].handler = handler;
-	slots[irq].argument = handler != NULL ? argument : NULL;
-	if (enabled)
-		hal_irq_enable();
+	slots[irq].argument = NULL;
+	if (handler != NULL)
+		slots[irq].argument = argument;
+
+	arm64_spin_unlock(&slots_lock, enabled);
+
+	/* Succeeded: the next interrupt of the line goes to the handler. */
 	return HAL_OK;
 }
 
@@ -184,20 +220,65 @@ hal_irq_unregister(int irq_num, hal_irq_handler_t func, void *arg)
 	return hal_irq_set_handler(irq_num, NULL, NULL);
 }
 
+/*
+ * Hands an acknowledged interrupt to the code that serves it.
+ *
+ * The scheduling tick goes to the timer; a numbered line goes to its
+ * registered handler, which ends it; anything else is ended here.
+ */
 void
-arm64_irq_dispatch(uint32_t id, hal_irq_ack_t acknowledge)
+arm64_irq_dispatch(
+	uint32_t id,
+	hal_irq_ack_t acknowledge)
 {
-	if (active_ack != HAL_IRQ_ACK_NONE)
+	struct arm64_percpu *cpu;
+	hal_irq_handler_t handler;
+	void *argument;
+	bool enabled;
+
+	/* Refuses a second interrupt while this CPU still holds one. */
+	cpu = arm64_percpu_current();
+	if (cpu->active_ack != HAL_IRQ_ACK_NONE)
 		HAL_FATAL("nested AArch64 IRQ acknowledgement");
-	active_ack = acknowledge;
+	cpu->active_ack = acknowledge;
+
+	/* The scheduling tick of this CPU. */
 	if (id == TIMER_INTID) {
 		rpi4_timer_interrupt(acknowledge);
 		return;
 	}
-	if (id < IRQ_MAX && slots[id].handler != NULL) {
-		slots[id].handler((int)id, acknowledge, slots[id].argument);
+
+	/* Another CPU asks this one to look for work. */
+	if (id == RPI4_SGI_NOTIFY) {
+		kernel_cpu_notify_handler(cpu->logical_id, acknowledge);
 		return;
 	}
+
+	/* Another CPU panicked: this one stops where it is. */
+	if (id == RPI4_SGI_STOP) {
+		hal_irq_send_eoi(acknowledge);
+		hal_cpu_park();
+	}
+
+	/* Takes the line's handler and argument as one pair. */
+	handler = NULL;
+	argument = NULL;
+	if (id < IRQ_MAX) {
+		enabled = arm64_spin_lock(&slots_lock);
+
+		handler = slots[id].handler;
+		argument = slots[id].argument;
+
+		arm64_spin_unlock(&slots_lock, enabled);
+	}
+
+	/* A line with a handler is that handler's to end. */
+	if (handler != NULL) {
+		handler((int)id, acknowledge, argument);
+		return;
+	}
+
+	/* A line nobody serves is ended and reported. */
 	hal_irq_send_eoi(acknowledge);
 	hal_printf("unexpected IRQ %u\n", id);
 }

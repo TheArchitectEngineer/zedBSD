@@ -2,6 +2,7 @@
 #include "../bsp.h"
 #include "../defs.h"
 #include "gic.h"
+#include "../spin.h"
 
 #define GICD_CTLR 0x000
 #define GICD_TYPER 0x004
@@ -12,6 +13,7 @@
 #define GICD_IPRIORITYR 0x400
 #define GICD_ITARGETSR 0x800
 #define GICD_ICFGR 0xc00
+#define GICD_SGIR 0xf00
 #define GICC_CTLR 0x000
 #define GICC_PMR 0x004
 #define GICC_IAR 0x00c
@@ -21,35 +23,132 @@ static volatile uint32_t *dist;
 static volatile uint32_t *cpuif;
 static uint32_t irq_count;
 
+/*
+ * Guards the read-modify-write of the distributor's shared group and
+ * configuration words, which CPUs may change at once.  Zero when free.
+ */
+static volatile unsigned distributor_lock;
+
 static void write8(volatile uint32_t *base, unsigned offset, uint8_t value)
 {
 	volatile uint8_t *p=(volatile uint8_t *)base;p[offset]=value;
 }
 
+/*
+ * Sets up the GIC-400's distributor and the boot CPU's part of it.
+ *
+ * Every shared line starts disabled, not pending, at one priority, level
+ * triggered and routed to CPU interface 0, the boot CPU (ws208 D1: the
+ * device interrupts stay on the boot CPU).
+ */
 void
-rpi4_gic_init(void)
+rpi4_gic_init(
+	void)
 {
-	const struct rpi4_fdt_info *info=rpi4_boot_info();
-	uint32_t lines,i;
-	if(!info->gic_dist_base||!info->gic_cpu_base)HAL_FATAL("GIC missing from FDT");
-	dist=(volatile uint32_t *)(ARM64_DIRECT_BASE+(uintptr_t)info->gic_dist_base);
-	cpuif=(volatile uint32_t *)(ARM64_DIRECT_BASE+(uintptr_t)info->gic_cpu_base);
-	dist[GICD_CTLR/4]=0;
-	lines=((dist[GICD_TYPER/4]&0x1f)+1)*32;if(lines>1020)lines=1020;irq_count=lines;
-	for(i=0;i<(lines+31)/32;i++){
-		dist[GICD_ICENABLER/4+i]=0xffffffffU;
-		dist[GICD_ICPENDR/4+i]=0xffffffffU;
-		dist[GICD_IGROUPR/4+i]=0xffffffffU;
+	const struct rpi4_fdt_info *info;
+	uint32_t lines;
+	uint32_t index;
+
+	/* Finds the distributor and the CPU interface in the device tree. */
+	info = rpi4_boot_info();
+	if (info->gic_dist_base == 0 || info->gic_cpu_base == 0)
+		HAL_FATAL("GIC missing from FDT");
+	dist = (volatile uint32_t *)(ARM64_DIRECT_BASE + (uintptr_t)info->gic_dist_base);
+	cpuif = (volatile uint32_t *)(ARM64_DIRECT_BASE + (uintptr_t)info->gic_cpu_base);
+
+	/* Stops the distributor and reads how many lines it has, up to 1020. */
+	dist[GICD_CTLR / 4] = 0;
+	lines = ((dist[GICD_TYPER / 4] & 0x1fU) + 1U) * 32U;
+	if (lines > 1020U)
+		lines = 1020U;
+	irq_count = lines;
+
+	/* Disables every line, drops what is pending, and puts it in Group 1. */
+	for (index = 0; index < (lines + 31U) / 32U; index++) {
+		dist[GICD_ICENABLER / 4 + index] = 0xffffffffU;
+		dist[GICD_ICPENDR / 4 + index] = 0xffffffffU;
+		dist[GICD_IGROUPR / 4 + index] = 0xffffffffU;
 	}
-	for(i=0;i<lines;i++)write8(dist,GICD_IPRIORITYR+i,0xa0);
-	/* CNTP PPI is Group 0, acknowledged through the primary IAR. */
-	dist[GICD_IGROUPR/4]&=~(1U<<30);
-	for(i=32;i<lines;i++)write8(dist,GICD_ITARGETSR+i,1);
-	for(i=2;i<(lines+15)/16;i++)dist[GICD_ICFGR/4+i]=0;
-	cpuif[GICC_PMR/4]=0xff;
-	/* Enable both views; on a non-secure CPU bit 0 aliases Group 1. */
-	cpuif[GICC_CTLR/4]=3;
-	dist[GICD_CTLR/4]=3;
+
+	/* Gives every line the same priority. */
+	for (index = 0; index < lines; index++)
+		write8(dist, GICD_IPRIORITYR + index, 0xa0);
+
+	/* Routes every shared line to the boot CPU's interface. */
+	for (index = 32U; index < lines; index++)
+		write8(dist, GICD_ITARGETSR + index, 1);
+
+	/* Makes every shared line level triggered. */
+	for (index = 2U; index < (lines + 15U) / 16U; index++)
+		dist[GICD_ICFGR / 4 + index] = 0;
+
+	/* The boot CPU's private lines and CPU interface, as every other CPU's. */
+	rpi4_gic_init_cpu();
+
+	/* Starts the distributor for both groups. */
+	dist[GICD_CTLR / 4] = 3;
+	hal_io_mb();
+}
+
+/*
+ * Sets up the calling CPU's banked part of the GIC: its private lines
+ * (SGI 0-15, PPI 16-31) and its CPU interface.
+ *
+ * The timer's PPI and the HAL's two SGIs are put in Group 0, which the
+ * primary IAR serves when the CPU runs in the secure state (QEMU's direct
+ * boot).  Under the firmware the CPU is non-secure, the group writes are
+ * ignored and the primary IAR serves Group 1, where the firmware put them.
+ */
+void
+rpi4_gic_init_cpu(
+	void)
+{
+	uint32_t groups;
+	uint32_t line;
+
+	/* Starts with every private line disabled and nothing pending. */
+	dist[GICD_ICENABLER / 4] = 0xffffffffU;
+	dist[GICD_ICPENDR / 4] = 0xffffffffU;
+
+	/* Groups the private lines, the HAL's SGIs and the timer in Group 0. */
+	groups = 0xffffffffU;
+	groups &= ~(1U << 30);
+	groups &= ~(1U << RPI4_SGI_STOP);
+	groups &= ~(1U << RPI4_SGI_NOTIFY);
+	dist[GICD_IGROUPR / 4] = groups;
+
+	/* Gives the private lines the same priority as the shared ones. */
+	for (line = 0; line < 32U; line++)
+		write8(dist, GICD_IPRIORITYR + line, 0xa0);
+
+	/* Enables the HAL's SGIs; the GIC-400 keeps SGIs enabled in any case. */
+	dist[GICD_ISENABLER / 4] = (1U << RPI4_SGI_STOP) | (1U << RPI4_SGI_NOTIFY);
+
+	/* Lets every priority through and enables both groups at the interface. */
+	cpuif[GICC_PMR / 4] = 0xff;
+	cpuif[GICC_CTLR / 4] = 3;
+	hal_io_mb();
+}
+
+/*
+ * Sends a software-generated interrupt to the CPU interfaces of a mask.
+ *
+ * The barrier first makes the sender's writes visible to the targets
+ * before they take the interrupt.
+ */
+void
+rpi4_gic_send_sgi(
+	uint32_t sgi,
+	uint32_t target_interfaces)
+{
+	uint32_t request;
+
+	/* Publishes the sender's memory writes to the targets. */
+	__asm__ volatile("dsb ish" : : : "memory");
+
+	/* Names the targets by CPU interface (bits 16-23) and the SGI (bits 0-3). */
+	request = ((target_interfaces & 0xffU) << 16) | (sgi & 0xfU);
+	dist[GICD_SGIR / 4] = request;
 	hal_io_mb();
 }
 
@@ -63,15 +162,32 @@ void rpi4_gic_eoi(uint32_t value)
 	hal_io_mb();
 }
 void rpi4_gic_mask(uint32_t id){if(id<irq_count)dist[GICD_ICENABLER/4+id/32]=1U<<(id&31);}
-void rpi4_gic_unmask(uint32_t id)
+/*
+ * Enables one interrupt line, in the group the primary IAR serves.
+ *
+ * Direct QEMU boot enters secure EL1, where the primary IAR serves Group 0.
+ * Firmware normally enters non-secure EL1; there the group write is
+ * ignored and the primary IAR aliases Group 1.
+ */
+void
+rpi4_gic_unmask(
+	uint32_t id)
 {
-	if(id<irq_count){
-		/* Direct QEMU boot enters secure EL1, where the primary IAR serves
-		 * Group 0.  Firmware normally enters non-secure EL1; there this
-		 * group write is ignored and the primary IAR aliases Group 1. */
-		dist[GICD_IGROUPR/4+id/32]&=~(1U<<(id&31));
-		dist[GICD_ISENABLER/4+id/32]=1U<<(id&31);
-	}
+	bool enabled;
+
+	/* A line the distributor does not have is ignored. */
+	if (id >= irq_count)
+		return;
+
+	/* Moves the line to Group 0 without losing another CPU's change to the word. */
+	enabled = arm64_spin_lock(&distributor_lock);
+
+	dist[GICD_IGROUPR / 4 + id / 32] &= ~(1U << (id & 31));
+
+	arm64_spin_unlock(&distributor_lock, enabled);
+
+	/* Enables the line; the set-enable register needs no lock. */
+	dist[GICD_ISENABLER / 4 + id / 32] = 1U << (id & 31);
 }
 
 /*
@@ -105,18 +221,16 @@ rpi4_gic_set_trigger(
 		requested = mask;
 
 	/* Serializes distributor updates while the requested line stays disabled. */
-	enabled = hal_irq_disable();
+	enabled = arm64_spin_lock(&distributor_lock);
 	configuration = dist[offset];
 	if ((dist[GICD_ISENABLER / 4U + id / 32U] & (1U << (id % 32U))) != 0) {
-		if (enabled)
-			hal_irq_enable();
+		arm64_spin_unlock(&distributor_lock, enabled);
 		return HAL_ERR_BUSY;
 	}
 
 	/* Preserves fixed SGI/PPI configuration unless it already matches. */
 	if (id < 32U) {
-		if (enabled)
-			hal_irq_enable();
+		arm64_spin_unlock(&distributor_lock, enabled);
 
 		/* Refuses a private line that would need reprogramming. */
 		if ((configuration & mask) != requested)
@@ -130,8 +244,7 @@ rpi4_gic_set_trigger(
 	dist[offset] = (configuration & ~mask) | requested;
 	hal_io_mb();
 	observed = dist[offset] & mask;
-	if (enabled)
-		hal_irq_enable();
+	arm64_spin_unlock(&distributor_lock, enabled);
 
 	/* Refuses a controller that did not accept the requested trigger. */
 	if (observed != requested)

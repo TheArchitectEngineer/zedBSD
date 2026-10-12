@@ -3,12 +3,12 @@
 # WS208: arm64 の HAL の SMP（Raspberry Pi 4 の 4 core）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-11 Q1 作成、P2 の予約の Queue q939）
+Status: incomplete（2026-10-13 P6: main を統合、p002〜p004 実装済み。T1 の QEMU と Pi の実機 p005 待ち）
 Primary Milestone: MG008
 Related Milestones: MG006
 Parent: [Master](../master.md)
 Queue: [P2 の lane](../agents/P2/queue.md)
-Resume point: p001（調査と設計）から。
+Resume point: T1 の QEMU raspi4b（4 core・`cpus=1`）と Pi の実機 p005 の結果、main への merge（[p004](phase004/phase.md) の「main の統合」）。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -40,7 +40,12 @@ Pi 4 の起動の log が `CPUs ready: 4`、desktop・network・SSH が動き、
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 調査と設計 | planned |
+| [p001](phase001/phase.md) | 調査と設計 | in-progress（設計、D1〜D6 は 2026-10-11 全部承認） |
+| [p002](phase002/phase.md) | 下地（percpu・TPIDR_EL1・lock・task の切り替えの手順、まだ 1 CPU） | in-progress（実装済み、T1 待ち） |
+| [p003](phase003/phase.md) | secondary の起動（spin-table・GIC・timer・TLB・`cpus=N`）、QEMU raspi4b（4 core 固定） | in-progress（実装済み、T1-537 一部 FAIL の判定は Q1） |
+| [p004](phase004/phase.md) | 負荷と driver の競合（QEMU）、main の統合 | in-progress（main を統合 b44b2420d、T1 待ち） |
+| p005 | Pi 4 の実機（4 core・reboot 10 回） | planning |
+| p006 | 規約の全文の見直し | planning |
 
 ## 2026-10-11 ユーザー「全部承認です。」（Q1 が示した推しを全て承認）
 
@@ -49,3 +54,7 @@ p001 の推しを全て採用: D1 外の割り込み（SPI）は全部 CPU 0 の
 ## 2026-10-12 ユーザーの方針: SMP は最後
 
 ユーザー「もたつきはSMPを入れたら少し改善するかもしれないとも思いますが、それは最後にして、できるところまで最適化するのがよさそうですね。」→ WS208（arm64 の SMP、agent/p2 の ea8ecb4cf まで、main に未統合）の merge と Pi の実機の確かめ（p005）は、WS141 の描画の最適化（P3）と WS210（P1）の後に回す。単一の CPU のまま最適化の効果を測る。
+
+## 2026-10-13 ユーザー「これ以上詰めなくていいです。SMPに進みます。」
+
+P6 が main を agent/p2 に統合（b44b2420d）、build と host 試験が通過。merge の判断・T1 と Pi の手順は [p004](phase004/phase.md) の「main の統合」。

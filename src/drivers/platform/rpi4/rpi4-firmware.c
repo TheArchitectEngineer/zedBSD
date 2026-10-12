@@ -21,6 +21,7 @@
  */
 
 #include "drivers/platform/rpi4/rpi4-firmware.h"
+#include <kern/atomic.h>
 #include <kern/clock.h>
 #include <kern/dcache.h>
 #include <kern/device-io.h>
@@ -93,12 +94,14 @@ static uint32_t *message;
 static uint64_t message_physical;
 
 /*
- * Whether a request is in flight.
+ * Whether a request is in flight: zero when the buffer is free.
  *
- * It is set and cleared with interrupts disabled, so a second caller gets
- * EBUSY instead of overwriting the buffer the firmware is reading.
+ * It is taken with an atomic test-and-set, so a second caller on another
+ * CPU waits instead of overwriting the buffer the firmware is reading
+ * (ws208-p004: with interrupts held off it excluded only callers on the
+ * same CPU).
  */
-static bool busy;
+static volatile unsigned busy;
 
 static int claim_buffer(void);
 static void release_buffer(void);
@@ -245,39 +248,38 @@ drv_rpi4_firmware_notify_xhci_reset(
 	return 0;
 }
 
-/* Marks the buffer as used by one request, or reports another in flight. */
+/*
+ * Takes the buffer for one request, waiting while another CPU's request
+ * is in flight.
+ *
+ * A request ends within the mailbox's own polling limit, so the wait is
+ * bounded by twice that; a buffer still taken then is reported as EBUSY.
+ */
 static int
 claim_buffer(void)
 {
-	bool enabled;
-	bool taken;
+	unsigned polls;
+	int taken;
 
-	/* Tests and sets the flag with interrupts held off. */
-	enabled = kern_irq_disable();
-	taken = busy;
-	busy = true;
-	if (enabled)
-		kern_irq_enable();
+	/* Tries to take the buffer, sleeping a polling interval between tries. */
+	for (polls = 0; polls < 2U * MAILBOX_POLL_LIMIT; polls++) {
+		taken = atomic_raw_try_acquire_zero(&busy);
+		if (taken)
+			return 0;
+		kern_usleep_range(MAILBOX_POLL_US, MAILBOX_POLL_MAX_US);
+	}
 
-	/* Refuses a second request while one is in flight. */
-	if (taken)
-		return EBUSY;
-
-	/* Succeeded: the buffer belongs to this request. */
-	return 0;
+	/* Failed: another request held the buffer for too long. */
+	kern_logf("rpi4-firmware: the request buffer stayed taken\n");
+	return EBUSY;
 }
 
 /* Gives the buffer back after a request. */
 static void
 release_buffer(void)
 {
-	bool enabled;
-
-	/* Clears the flag with interrupts held off. */
-	enabled = kern_irq_disable();
-	busy = false;
-	if (enabled)
-		kern_irq_enable();
+	/* Publishes the answer's reads before the next request may write. */
+	atomic_raw_store_release(&busy, 0U);
 }
 
 /*

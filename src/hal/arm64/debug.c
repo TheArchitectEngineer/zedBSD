@@ -20,6 +20,7 @@
 #include <hal/hal.h>
 #include "int.h"
 #include "task.h"
+#include "percpu.h"
 
 /*
  * The debug control register (MDSCR_EL1): software step, and the enable
@@ -73,11 +74,11 @@ static unsigned debug_breakpoint_count;
 static unsigned debug_watchpoint_count;
 
 /*
- * Whether the breakpoint and watchpoint registers hold the enabled points
- * of the running task.  A switch to a task with no points clears them only
- * when this says there is something to clear.
+ * Whether a CPU's breakpoint and watchpoint registers hold the enabled
+ * points of its running task is kept in that CPU's record
+ * (debug_points_loaded): a switch to a task with no points clears them only
+ * when there is something to clear.
  */
-static int debug_points_loaded;
 
 static struct arm64_exception_frame *task_user_frame(struct arm64_task *task);
 static int user_address_valid(uint64_t value);
@@ -134,6 +135,7 @@ void
 arm64_debug_switch(
 	struct arm64_task *to)
 {
+	struct arm64_percpu *cpu;
 	uint64_t control;
 	uint64_t wanted;
 
@@ -152,9 +154,10 @@ arm64_debug_switch(
 		write_mdscr(wanted);
 
 	/* Loads the task's points, or clears the previous task's. */
+	cpu = arm64_percpu_current();
 	if (to->debug_point_count != 0U) {
 		load_debug_points(to);
-	} else if (debug_points_loaded) {
+	} else if (cpu->debug_points_loaded) {
 		clear_debug_points();
 	}
 }
@@ -722,7 +725,7 @@ load_debug_points(
 
 	/* Makes the new points take effect before the task runs. */
 	__asm__ volatile("isb" : : : "memory");
-	debug_points_loaded = 1;
+	arm64_percpu_current()->debug_points_loaded = 1;
 }
 
 /*
@@ -743,7 +746,7 @@ clear_debug_points(void)
 
 	/* Makes the change take effect before the next task runs. */
 	__asm__ volatile("isb" : : : "memory");
-	debug_points_loaded = 0;
+	arm64_percpu_current()->debug_points_loaded = 0;
 }
 
 /*

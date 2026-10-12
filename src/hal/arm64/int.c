@@ -17,6 +17,23 @@ void arm64_int_init(void)
 	hal_puts("ARM64 EXCEPTION PASS\nARM64 IRQ READY\n");
 }
 
+/*
+ * Prepares a secondary CPU's exception vectors and its part of the GIC.
+ *
+ * The distributor's shared lines were set up by the boot CPU; the
+ * secondary's scheduling tick is started separately, once it has a task.
+ */
+void
+arm64_int_init_secondary(
+	void)
+{
+	/* Points this CPU's exceptions at the shared vector table. */
+	__asm__ volatile("msr vbar_el1, %0\n\tisb" : : "r"(arm64_vectors) : "memory");
+
+	/* Sets up this CPU's private lines and CPU interface. */
+	rpi4_gic_init_cpu();
+}
+
 /* Maps an exception class onto the generic cause, mode and address. */
 static void
 arm64_classify(const struct arm64_exception_frame *f, uint32_t ec,

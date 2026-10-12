@@ -15,7 +15,13 @@ struct arm64_table_page {
 struct arm64_space {
 	uint32_t magic;
 	int space_id;
-	unsigned lock;
+
+	/* Held while an operation changes or installs the space; zero when free. */
+	volatile unsigned lock;
+
+	/* The holding CPU's number plus one, or zero; catches a nested operation. */
+	unsigned lock_owner;
+
 	unsigned destroying;
 	struct arm64_space *registry_next;
 	hal_physaddr_t l0_memory;
@@ -27,5 +33,7 @@ void arm64_page_init(void);
 void arm64_space_init(void);
 uintptr_t arm64_direct_to_phys(const void *address);
 void *arm64_phys_to_direct(uintptr_t address);
+uintptr_t arm64_space_kernel_ttbr1(void);
+void arm64_space_select_system(void);
 
 #endif
