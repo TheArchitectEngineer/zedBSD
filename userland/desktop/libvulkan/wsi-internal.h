@@ -29,6 +29,27 @@
 struct vulkan_wsi_platform_ops;
 struct vulkan_swapchain;
 
+/* What one cursor-plane present did on the output (ws141-p016 (B)). */
+enum vulkan_wsi_cursor_outcome {
+	/* The image and position are shown from a coming refresh boundary. */
+	VULKAN_WSI_CURSOR_SHOWN,
+	/* A newer present was shown already, so this one changed nothing. */
+	VULKAN_WSI_CURSOR_DROPPED,
+	/* The output had no free cursor image for now; nothing changed. */
+	VULKAN_WSI_CURSOR_BUSY
+};
+
+/*
+ * The counter times (vulkan_wsi_cursor_clock) inside one cursor-plane
+ * present, taken only while the cursor log is on: when its lock was held,
+ * just before the image was set, and after the move returned.
+ */
+struct vulkan_wsi_cursor_times {
+	uint64_t locked;
+	uint64_t set;
+	uint64_t done;
+};
+
 /*
  * One native output snapshot, independent of a particular kernel ABI.
  * Stable display identities outlive changes to this generation's geometry.
@@ -91,6 +112,13 @@ struct vulkan_surface {
 	uint32_t native_plane;
 	/* The surface is the output's cursor plane: its presents set the cursor image and position. */
 	VkBool32 cursor;
+	/*
+	 * The last ticket given to a present of this cursor surface.  It only
+	 * grows (atomically, under the swapchain mutex), and the old and
+	 * replacement swapchains share it with the surface's lease, so a larger
+	 * ticket is always the later present.
+	 */
+	uint64_t cursor_ticket;
 };
 
 /*
@@ -143,18 +171,26 @@ struct vulkan_wsi_platform_ops {
 	 */
 	void (*damage)(void *, int32_t, int32_t, int32_t, int32_t);
 	/*
-	 * Places the next presented image of a cursor-plane lease with its
-	 * top-left corner at x, y on the output (VkDisplayPresentInfoKHR's
-	 * dstRect); later presents without a position keep it.  NULL when the
-	 * backend has no cursor plane.
+	 * Shows a cursor-plane lease's image with its top-left corner at x, y
+	 * (VkDisplayPresentInfoKHR's dstRect; without a position, where the last
+	 * one was), unless a present with a larger ticket was shown already.
+	 * The completed image may be reused when it returns.  It takes only the
+	 * cursor's own lock, never the lock primary presents hold while the
+	 * output adopts a frame; it advances the chain's frame and sequence it
+	 * is given only when it shows the image, and reports what it did.  The
+	 * times are written when not NULL.  NULL when the backend has no cursor
+	 * plane.
 	 */
-	void (*position)(void *, int32_t, int32_t);
+	VkResult (*present_cursor)(void *, void *, VkBool32, int32_t, int32_t, uint64_t, uint64_t *, uint64_t *, enum vulkan_wsi_cursor_outcome *, struct vulkan_wsi_cursor_times *);
 };
 
 VkResult vulkan_wsi_display_node_query(struct VkPhysicalDevice_T *physical, uint32_t index, uint32_t *count, struct gpu_display_info *request, uint64_t *device_id, char *path);
 int vulkan_wsi_display_node_ioctl(struct VkPhysicalDevice_T *physical, const struct vulkan_wsi_output *output, unsigned long command, void *argument);
 void vulkan_wsi_display_nodes_finish(struct VkInstance_T *instance);
 VkResult vulkan_wsi_display_node_topology(struct VkPhysicalDevice_T *physical, uint64_t *sequence);
+
+/* Reads a monotonic nanosecond clock fine enough for the cursor log's lengths. */
+uint64_t vulkan_wsi_cursor_clock(void);
 
 /* The direct adapter supplies these after its kernel contract is finalized. */
 /* Native ownership changes wake image acquisition without dispatching application events. */

@@ -72,10 +72,17 @@ struct wsi_display_lease {
 	uint64_t storage_bytes;
 	struct gpu_scanout_constraints constraints;
 	uint32_t references;
-	/* A cursor-plane lease borrows its output's primary claim; x and y place its next image. */
+	/* A cursor-plane lease borrows its output's primary claim. */
 	VkBool32 cursor;
+	/*
+	 * Where the cursor was last shown, and the ticket of the present that
+	 * showed it last (zero before the first); display_cursor_mutex protects
+	 * all three.  A present whose ticket is not above it is older than what
+	 * is shown, and is dropped.
+	 */
 	int32_t x;
 	int32_t y;
+	uint64_t applied_ticket;
 };
 
 /* Live planes are linked under display_mutex until their last surface lease retires. */
@@ -89,6 +96,16 @@ static pthread_mutex_t display_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* Event observation never waits behind native presentation or renderer admission. */
 static pthread_mutex_t display_event_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/*
+ * Serializes the cursor presents of every cursor-plane lease: their
+ * position, applied ticket, and the frame and sequence of their chains.
+ * It is never held together with display_mutex, so a cursor is set and
+ * moved while a primary present holds display_mutex for its synchronized
+ * selection (ws141-p016 (B) review-B5).  A lease's other fields do not
+ * change while a swapchain holds it.
+ */
+static pthread_mutex_t display_cursor_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static VkResult display_progress(void *private_lease);
 static int display_wait_descriptor(void *private_lease);
@@ -111,8 +128,7 @@ static VkResult display_wait_native(void *private_lease, uint64_t sequence, uint
 static VkResult display_error(int error);
 static VkResult display_placement(void *private_lease, struct gpu_placement *placement);
 static VkResult display_validate_surface(struct vulkan_surface *surface, struct VkPhysicalDevice_T *physical);
-static VkResult display_present_cursor(struct wsi_display_lease *lease, struct wsi_display_image *image, uint64_t *sequence);
-static void display_position(void *private_lease, int32_t x, int32_t y);
+static VkResult display_present_cursor(void *private_lease, void *private_image, VkBool32 has_position, int32_t x, int32_t y, uint64_t ticket, uint64_t *frame, uint64_t *sequence, enum vulkan_wsi_cursor_outcome *outcome, struct vulkan_wsi_cursor_times *times);
 
 /* Future window-system adapters implement this same private presentation boundary. */
 const struct vulkan_wsi_platform_ops vulkan_wsi_display_platform = {
@@ -120,7 +136,7 @@ const struct vulkan_wsi_platform_ops vulkan_wsi_display_platform = {
 	display_claim_native, display_release_native, display_present_native,
 	display_wait_native, NULL, display_import_image, display_present_image,
 	display_progress, display_image_available, display_destroy_image, display_prepare_copy, display_present_image_sync, display_placement, display_wait_descriptor,
-	NULL, NULL, NULL, display_position
+	NULL, NULL, NULL, display_present_cursor
 };
 
 /*
@@ -1053,13 +1069,9 @@ display_present_image_sync(
 	if (image->connection != lease->plane->connection)
 		return VK_ERROR_INITIALIZATION_FAILED;
 
-	/* A cursor plane takes a copy of the image and a position, after the producer completed (the worker waited). */
-	if (lease->cursor != VK_FALSE) {
-		(void)wait_fd;
-		(void)wait_generation;
-		error = display_present_cursor(lease, image, sequence);
-		return error;
-	}
+	/* A cursor plane is shown only through its own present, which knows the position and ticket. */
+	if (lease->cursor != VK_FALSE)
+		return VK_ERROR_INITIALIZATION_FAILED;
 
 	/* No caller pixel pointer or transfer ioctl participates in normal presentation. */
 	descriptor = &image->imported.image;
@@ -1132,8 +1144,11 @@ display_present_image_sync(
 		return error;
 	}
 
-	/* Only successful selection advances the native frame ordinal. */
-	lease->plane->frame = request.frame;
+	/*
+	 * Only successful selection advances the native frame ordinal.  A
+	 * cursor present reads it without display_mutex, so it is stored whole.
+	 */
+	__atomic_store_n(&lease->plane->frame, request.frame, __ATOMIC_RELEASE);
 
 	/* Current blob ownership survives sequence completion until replacement or release. */
 	previous = lease->plane->front;
@@ -1740,22 +1755,41 @@ display_progress(
 }
 
 /*
- * Shows a completed image on the output's cursor plane at the lease's position.
+ * Shows a completed image on the output's cursor plane, unless a later
+ * present was shown already.
  *
  * The kernel copies the image at once, so the plane keeps no hold on it and
- * the swapchain may reuse it as soon as this returns.
+ * the swapchain may reuse it as soon as this returns.  Only
+ * display_cursor_mutex is held, never display_mutex.
  */
 static VkResult
 display_present_cursor(
-	struct wsi_display_lease *lease,
-	struct wsi_display_image *image,
-	uint64_t *sequence)
+	void *private_lease,
+	void *private_image,
+	VkBool32 has_position,
+	int32_t x,
+	int32_t y,
+	uint64_t ticket,
+	uint64_t *frame,
+	uint64_t *sequence,
+	enum vulkan_wsi_cursor_outcome *outcome,
+	struct vulkan_wsi_cursor_times *times)
 {
+	struct wsi_display_lease *lease;
+	struct wsi_display_image *image;
 	struct gpu_display_cursor_image request;
 	struct gpu_display_cursor_move move;
 	const struct gpu_image_descriptor *descriptor;
 	VkResult error;
 	int status;
+	int native_error;
+
+	/* Only a cursor plane's image, from the lease's own display open. */
+	lease = private_lease;
+	image = private_image;
+	*outcome = VULKAN_WSI_CURSOR_DROPPED;
+	if (lease->cursor == VK_FALSE || image->connection != lease->plane->connection)
+		return VK_ERROR_INITIALIZATION_FAILED;
 
 	/* The image, as the display open imported it. */
 	descriptor = &image->imported.image;
@@ -1771,55 +1805,96 @@ display_present_cursor(
 	request.format = descriptor->format;
 	request.generation = lease->generation;
 
-	/* Its position, taken under the same serialization as the image. */
+	/* The move that shows it; its position is chosen under the cursor's lock. */
 	memset(&move, 0, sizeof(move));
 	move.version = GPU_ABI_VERSION;
 	move.size = sizeof(move);
 	move.lease = lease->identifier;
 	move.generation = lease->generation;
-	pthread_mutex_lock(&display_mutex);
 
+	/* Decides, sets and moves as one step against every other cursor present. */
+	pthread_mutex_lock(&display_cursor_mutex);
+
+	/* The time the lock was held, for the cursor log. */
+	if (times != NULL)
+		times->locked = vulkan_wsi_cursor_clock();
+
+	/* A present at or below the applied ticket is older than what is shown. */
+	if (ticket <= lease->applied_ticket) {
+		pthread_mutex_unlock(&display_cursor_mutex);
+		return VK_SUCCESS;
+	}
+
+	/* A chain's frame ordinal cannot advance past its last value. */
+	if (*frame == UINT64_MAX) {
+		pthread_mutex_unlock(&display_cursor_mutex);
+		return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* The present's position, or where the cursor was last shown. */
 	move.x = lease->x;
 	move.y = lease->y;
+	if (has_position != VK_FALSE) {
+		move.x = x;
+		move.y = y;
+	}
 
-	/* The image first, then the position that shows it. */
+	/* The time just before the image is set, for the cursor log. */
+	if (times != NULL)
+		times->set = vulkan_wsi_cursor_clock();
+
+	/* The image first. */
 	status = ioctl(lease->plane->connection->fd, GPU_DISPLAY_CURSOR_SET, &request);
-	if (status == 0)
-		status = ioctl(lease->plane->connection->fd, GPU_DISPLAY_CURSOR_MOVE, &move);
+	native_error = errno;
 	if (status != 0) {
-		error = display_error(errno);
-		pthread_mutex_unlock(&display_mutex);
+		/*
+		 * EBUSY while this open holds the lease means every cursor image
+		 * is named by a list the hardware has not yet left; nothing
+		 * changed, and the caller may try again a refresh later.
+		 */
+		if (native_error == EBUSY) {
+			*outcome = VULKAN_WSI_CURSOR_BUSY;
+			pthread_mutex_unlock(&display_cursor_mutex);
+			return VK_SUCCESS;
+		}
+
+		/* The kernel keeps showing the earlier image where it was. */
+		error = display_error(native_error);
+		pthread_mutex_unlock(&display_cursor_mutex);
 		return error;
 	}
 
-	/* The plane's frames are counted by its primary presents; the cursor adds none. */
-	*sequence = lease->plane->frame;
+	/* The new image is shown, so no older present may replace it, even if the move fails. */
+	lease->applied_ticket = ticket;
 
-	pthread_mutex_unlock(&display_mutex);
+	/* Then the position that shows it. */
+	status = ioctl(lease->plane->connection->fd, GPU_DISPLAY_CURSOR_MOVE, &move);
+	native_error = errno;
+
+	/* The time the move returned, for the cursor log. */
+	if (times != NULL)
+		times->done = vulkan_wsi_cursor_clock();
+
+	/* The cursor stays where it was when the move fails. */
+	if (status != 0) {
+		error = display_error(native_error);
+		pthread_mutex_unlock(&display_cursor_mutex);
+		return error;
+	}
+
+	/*
+	 * The cursor is where this present put it.  The chain names one more
+	 * frame, and its sequence is the plane's frame, which only primary
+	 * presents advance.
+	 */
+	lease->x = move.x;
+	lease->y = move.y;
+	(*frame)++;
+	*sequence = __atomic_load_n(&lease->plane->frame, __ATOMIC_ACQUIRE);
+	*outcome = VULKAN_WSI_CURSOR_SHOWN;
+
+	pthread_mutex_unlock(&display_cursor_mutex);
 
 	/* Succeeded: the cursor shows from a coming refresh boundary. */
 	return VK_SUCCESS;
-}
-
-/* Records where a cursor-plane lease places its next image (the present's dstRect). */
-static void
-display_position(
-	void *private_lease,
-	int32_t x,
-	int32_t y)
-{
-	struct wsi_display_lease *lease;
-
-	/* Only a cursor plane is placed; a full-output plane ignores it. */
-	lease = private_lease;
-	if (lease->cursor == VK_FALSE)
-		return;
-
-	/* Read by the next present under the same lock. */
-	pthread_mutex_lock(&display_mutex);
-
-	lease->x = x;
-	lease->y = y;
-
-	pthread_mutex_unlock(&display_mutex);
 }
