@@ -40,6 +40,8 @@ struct snapshot {
 static volatile sig_atomic_t timed_out;
 
 static void report_event(const char *format, ...);
+static void report_failure(const char *format, ...);
+static void report_message(int to_stderr, const char *format, va_list arguments);
 static int usage(void);
 static int select_interface(int descriptor, char name[IFNAMSIZ]);
 static int if_request(int descriptor, const char *name, unsigned long command, struct ifreq *request);
@@ -186,7 +188,7 @@ main(
 
 	/* Handles the control condition. */
 	if (control < 0) {
-		report_event("dhcpc: socket: %s\n", strerror(errno));
+		report_failure("dhcpc: socket: %s\n", strerror(errno));
 
 		/* Reports operation failure. */
 		return 1;
@@ -194,7 +196,7 @@ main(
 
 	/* Handles a failed select interface operation. */
 	if (interface[0] == '\0' && select_interface(control, interface) != 0) {
-		report_event("dhcpc: select interface: %s\n", strerror(errno));
+		report_failure("dhcpc: select interface: %s\n", strerror(errno));
 		close(control);
 
 		/* Reports operation failure. */
@@ -444,7 +446,14 @@ main(
 			inet_ntop(AF_INET, &value_local, text, sizeof(text));
 			report_event("dhcpc: %s: dns %s\n", interface, text);
 		}
-		failure_stage = "resolver";
+
+		/*
+		 * A resolver file that cannot be written is not a DHCP
+		 * failure: the server answered.  The stage says so, so that a
+		 * root that refuses writes (BUG-294) is not read as a network
+		 * that does not answer (BUG-293).
+		 */
+		failure_stage = "lease obtained, but /etc/resolv.conf could not be written";
 
 		/* Handles a failed write resolver operation. */
 		if (write_resolver(interface, &lease) != 0)
@@ -492,13 +501,19 @@ fail:
 	    restore_interface(control, interface, &saved) != 0 &&
 	    rollback_error == 0)
 		rollback_error = errno;
-	report_event("dhcpc: %s: %s: %s\n", interface, failure_stage,
+
+	/*
+	 * The stage the transaction failed at goes to the standard error too,
+	 * so that whoever ran it (networkd, for `net dhcp' and its own
+	 * configuring) can say why, not only that it failed (BUG-293).
+	 */
+	report_failure("dhcpc: %s: %s: %s\n", interface, failure_stage,
 	       strerror(saved_errno));
 
 	/* Handles an operation failure. */
 	if (rollback_error != 0) {
 		error = rollback_error;
-		report_event("dhcpc: %s: rollback: %s\n", interface,
+		report_failure("dhcpc: %s: rollback: %s\n", interface,
 		       strerror(error));
 	}
 	close(control);
@@ -514,21 +529,58 @@ report_event(
 	const char *format,
 	...)
 {
-	char message[256];
 	va_list arguments;
+
+	/* Writes the progress to the console only. */
+	va_start(arguments, format);
+	report_message(0, format, arguments);
+	va_end(arguments);
+}
+
+/*
+ * Publishes why a DHCP transaction failed.
+ *
+ * The console shows it as it shows the progress, and the standard error
+ * carries it to whoever ran dhcpc: networkd keeps what its child printed as
+ * the diagnostic it answers and logs with.  Only failures go there, so
+ * that the stage is not crowded out of networkd's bounded diagnostic by the
+ * progress lines before it (BUG-293).
+ */
+static void
+report_failure(
+	const char *format,
+	...)
+{
+	va_list arguments;
+
+	/* Writes the failure to the console and to the standard error. */
+	va_start(arguments, format);
+	report_message(1, format, arguments);
+	va_end(arguments);
+}
+
+/* Formats one diagnostic line and writes it where it is to be read. */
+static void
+report_message(
+	int to_stderr,
+	const char *format,
+	va_list arguments)
+{
+	char message[256];
 	int length;
 	int descriptor;
 	int saved;
 
 	/* Diagnostics cannot change a DHCP transaction's outcome or errno. */
 	saved = errno;
-	va_start(arguments, format);
 	length = vsnprintf(message, sizeof(message), format, arguments);
-	va_end(arguments);
+
+	/* A line that did not fit is dropped rather than written cut short. */
 	if (length < 0 || (size_t)length >= sizeof(message)) {
 		errno = saved;
 		return;
 	}
+
 	/* One bounded, best-effort write cannot hold up the transaction. */
 	descriptor = open("/dev/console",
 	    O_WRONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC);
@@ -536,6 +588,10 @@ report_event(
 		(void)write(descriptor, message, (size_t)length);
 		(void)close(descriptor);
 	}
+
+	/* The same line for the program that ran dhcpc, when it is a failure. */
+	if (to_stderr)
+		(void)write(STDERR_FILENO, message, (size_t)length);
 	errno = saved;
 }
 
