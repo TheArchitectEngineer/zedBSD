@@ -45,10 +45,8 @@
 #define SE_TITLEBAR_TEXT	1024
 #define SE_TITLEBAR_PART	65
 
-/* What se_fields_input tells of a pointer's move or leaving: nothing to draw, a part, or the whole frame. */
-#define SE_FIELDS_NOTHING	0
-#define SE_FIELDS_PART		1
-#define SE_FIELDS_WHOLE		2
+/* How many separate parts of the window a frame drawn by parts draws at most (ui_damage_add). */
+#define SE_DAMAGE_PARTS		2
 
 /* How many parts the breadcrumb has at most: Settings and the page. */
 #define SE_CRUMBS		2
@@ -1288,13 +1286,24 @@ struct se_app {
 	struct se_kinetic kinetic;
 
 	/*
-	 * A change of the lit region alone (BUG-226): the frame needs drawing
-	 * only within hover_damage (the region lit before and the one lit now),
-	 * which se_ui_draw draws clipped to it rather than the whole window.
-	 * Any other change (dirty) draws everything.
+	 * A change of the lit regions alone (BUG-226): the frame needs drawing
+	 * only within the hover_pending parts of hover_damage (at most
+	 * SE_DAMAGE_PARTS; regions far apart stay apart), which se_ui_draw
+	 * draws clipped to each in turn rather than the whole window.  Any
+	 * other change (dirty) draws everything.
 	 */
 	int hover_pending;
-	struct kl_rect hover_damage;
+	struct kl_rect hover_damage[SE_DAMAGE_PARTS];
+
+	/*
+	 * The region lit when the last frame was drawn, and whether the region
+	 * under the pointer changed since (ws210-p014 (a)): a frame draws the
+	 * region lit then and the one lit now (se_ui_hover_settle), not the
+	 * rows the pointer crossed while the frame before was being drawn.
+	 */
+	unsigned drawn_hover_kind;
+	int drawn_hover_index;
+	int hover_moved;
 
 	/*
 	 * What the last frame drawn changed (BUG-226): frame_partial when it
@@ -1422,6 +1431,7 @@ const struct se_page *se_page_find(const char *word);
 /* The interface (ui.c). */
 void se_ui_init(struct se_app *app, struct kl_text *text, unsigned page);
 void se_ui_close(struct se_app *app);
+void se_ui_hover_settle(struct se_app *app);
 void se_ui_event(struct se_app *app, const struct se_event *event);
 void se_ui_action(struct se_app *app, uint32_t action);
 void se_ui_tick(struct se_app *app, uint64_t now);
@@ -1533,7 +1543,7 @@ int se_fields_open(struct kl_text *text);
 void se_fields_close(void);
 void se_fields_begin(uint64_t now_us);
 int se_fields_end(uint64_t now_us);
-int se_fields_input(const struct se_event *event, struct kl_rect *part);
+void se_fields_input(const struct se_event *event);
 struct kl_ui *se_fields_ui(void);
 int se_field_key(struct kl_field *field, const struct se_event *event);
 unsigned se_field_draw(struct se_app *app, struct kl_canvas *canvas, struct kl_field *field, const struct kl_rect *rect, const char *placeholder, unsigned kind, int focused);
