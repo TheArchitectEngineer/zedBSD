@@ -1912,6 +1912,9 @@ check_resources(
 	assert(error == 0);
 	second = object;
 	assert(second->vulkan != NULL && second->vulkan != first->vulkan);
+
+	/* Each open gets its own nonzero owner mark for the storage its work leaves (ws141-p016 (b)). */
+	assert(first->owner != 0 && second->owner != 0 && first->owner != second->owner);
 	error = test_operations->get_info(test_controller, first, &info);
 	assert(error == 0 && info.max_resources == 128 && (info.capabilities & GPU_CAP_ALLOCATION_SHARE) != 0);
 	error = test_operations->scanout->query_device(test_controller, first, &device);

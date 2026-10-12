@@ -29,6 +29,8 @@ struct bcm2711_v3d_view {
 	bool delayed;
 	/* Links an idle, still mapped private upload view in the space's reuse cache. */
 	struct bcm2711_v3d_view *cache_next;
+	/* An idle cached view's last owning session mark, or zero when any session's bytes may be in it. */
+	uint64_t owner;
 };
 
 /* The controller mutex serializes every edit with all submitted native jobs. */
@@ -58,6 +60,12 @@ struct bcm2711_v3d_space {
 	/* Whole and in-place partial conversions made by snapshot lookups, which diagnostics tell apart from reuses. */
 	uint64_t snapshot_fills;
 	uint64_t snapshot_updates;
+	/*
+	 * The owner mark of the session whose job step is building native
+	 * work, set by that step around the creation only (zero otherwise).
+	 * Only the executor builds draws, so no other storage user sees it.
+	 */
+	uint64_t builder;
 };
 
 /* No DMA or overlapping edits may occur between begin and checked end. */

@@ -321,6 +321,38 @@ executor の pass ごとの 3 区分:
   - pass の pool の chunk の経路（pool の draw）は、この fixture では通らない（独立の draw だけ）。
 - **(2) の残り**: 変換先と snapshot の H1 (a)。draw は session を持たないので、印の元（job の session の番号）を draw の作成まで渡す必要がある。次の段で設計して入れる。
 
+## (b) 第 2 版 (2): 変換先と snapshot の session の印（review-b2 H1 (a)、2026-10-12 P3）
+
+- **印**: render の session ごとに、controller の中で再利用しない 0 以外の番号（`bcm2711_render_session.owner`、open の時に `controller->owners` を進めて付ける）。
+- **作る側**: job の step は、pass・clear・image の copy を組み立てる間だけ `space->builder` にその session の番号を置き、組み立ての直後に 0 に戻す。draw は executor だけが組み立てるので、他の storage の利用者がこの値を見ることはない。この値の持ち方は暗黙の状態だが、5 つの作成の入口（pass・clear・image・meta の draw・draw）と host 試験の引数を変えずに済ませるための選択である。
+- **storage**: 新しい種類 `BCM2711_NATIVE_STORAGE_OWNED` を足した。cached view を 0 で埋めずに渡すのは、view に付いた前の使用者の印が `space->builder`（0 以外）と同じ時だけで、それ以外は埋める。storage は `owner`（OWNED なら builder、他の種類は 0）と `stale`（埋めずに渡したか）を持つ。release で view の印を storage の owner にしてから cache に戻すので、ZEROED と WRITTEN の storage を戻すと印は 0 になる。大きな run は、同じ大きさの中で同じ印の物を先に取る（owner が 0 の時は今どおり最初の一致で止める）。1 page の list は検索しない。
+- **変換先**（private な変換）: OWNED にした。その draw と、同じ pass の後の draw（同じ session）だけが読む。この経路を通るのは、次の場合（L5）。
+  - source が host-mapped の時。
+  - snapshot の上限が 0 の時。
+  - snapshot の cache が使用中の物で一杯の時。
+  - 他の session が使用中の snapshot に当たった時。
+  - meta の draw（blit）。
+- **snapshot**: pixels を OWNED で作り、stale なら `snapshot->owner` に session を残す。snapshot は buffer を鍵に session をまたいで共有されるので、owner が 0 でなく今の builder と違う時は次のように扱う。
+  - 使用中なら ENOTSUP（private な変換に回す）。
+  - 使っていなければ、pixels の全体を 0 にして clean し、owner を 0、valid を false にして、全体を変換し直す（TFU なら TFU、そうでなければ CPU）。
+  - CPU の全体の変換は texture の bytes の全部を書く（padding も 0）が、page の残りは書かないので、印は消さない。
+  - snapshot の画素は、作った session の後に、他の session の変換や部分の更新でも書かれる（L5）。そのため evict・drain で pixels を cache に戻す時は、印を 0 にしてから戻す（`snapshot_release`、review の M1）。scrub でも pixels の印を 0 にする。
+  - 使用中の snapshot が他の session に当たった時の ENOTSUP（L4）が起きるのは、他の session の draw が使っている間、つまり失敗して retire していない pass が users を持ったままの時（quarantine）だけである。後の private な変換は draw の予算（`available`）を使うので、大きな canvas では ENOMEM で job が失敗し得る（安全の問題ではない）。
+- **信頼の単位**: 印は render の fd の open ごとに付く。fork や SCM_RIGHTS で fd を共有した process は同じ session になる。これは Linux の DRM の file と同じ信頼の単位である（libvulkan は O_CLOEXEC で開く）。別の open は、同じ process の中でも別の印になる。
+- **安全の試験**（vulkan-device の fixture、`WS141 session marks ... PASS`）:
+  - session 7 が 0xA5 で残した page は、session 8 と builder 0 には 0 で渡る。印の無い view は session にも 0 で渡る。同じ session（9）には 0xA5 のまま渡り、kept に数えられる。
+  - 同じ大きさの run が 2 つあれば、自分の印の付いた物を先に取る。ZEROED で戻すと印が消える。
+  - session 9 が TFU で作る snapshot は印 9 を持ち、page の末尾に 0xA5 が残る。session 9 はそのまま使う。session 10 は、9 が使っている間は ENOTSUP。使い終わった後は全体が 0 になり、全体の変換が数えられ（fills +1）、印は 0 になる。
+  - CPU の変換の後も印は残り、session 10 が使うと 0 にしてから変換し直す（先頭の画素は変換した値、page の末尾は 0）。
+- **review（6bd0ddf2f）への対応**:
+  - M1: 上の `snapshot_release` と scrub の修正。試験を足した。session 9 が作った snapshot を、session 10 が generation を進めた後に変換し直す。evict で cache に戻した page を session 9 の次の OWNED が取ると、0 で渡る。修正を外すとこの試験が落ちることを確かめた。
+  - L1: 試験の `job_execute` が、step の後に毎回 `space.builder == 0` を確かめる（成功と失敗の両方の経路）。v3d-hardware の試験で、2 つの render session の印が 0 でなく互いに違うことを確かめる。
+  - L2: 試験を足した。host-mapped の source の変換先は、同じ session（9）なら 0xA5 のまま stale で渡り、別の session（10）なら全体が 0 で渡る。WRITTEN は印 9 の view をそのまま取り（kept）、release した後は印が 0 になる。
+- **確認**: kernel の rpi4 の build は warning 0。host 試験は vulkan-device・v3d-hardware・vulkan-stream・display・stage・native-state・native-pass が PASS。実機の計測（`v3d: alloc ... kept=` の変化と zero_us の減り）は未実施。
+- **明記した残件**:
+  - L3: H1 (b)。TFU が UIF の padding を書くか、TMU が padding を読むか（線形 filter と REPEAT・CLAMP）を実機で確かめる（T1）。読む場合は、同じ session の古い byte が端の画素に出得る。これは他の session への漏れではない。この確かめは cleared の条件ではなく、残件とする。
+  - overflow の reserve を controller に 1 つ持つ案は、M2 の代案として残す。
+
 ## HAL arm64 の物理 page の allocator: 呼び出し元の監査（2026-10-12 P3、変更はしない、Q1 に相談）
 
 - 実装（`src/hal/arm64/page.c` `alloc_ram`）: 8GiB 分の bitmap の first fit。`first_free_candidate`（そこより下は全部使用中）から上へ、**1 page ずつ** 候補を進め、候補ごとに alignment・boundary・空きの長さを測る。全部 **IRQ を止めたまま**（CPU は 1 つ）。zone・上からの配置は無い。

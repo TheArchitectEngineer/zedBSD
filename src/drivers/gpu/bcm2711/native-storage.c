@@ -25,13 +25,14 @@
 /* Next to the texture formatting unit, the CPU converts a changed box of at most 256 KiB of pixels in place. */
 #define NATIVE_SNAPSHOT_UPDATE_BYTES (256U * 1024U)
 
-static struct bcm2711_v3d_view *cache_take(struct bcm2711_v3d_space *space, uint64_t bytes);
+static struct bcm2711_v3d_view *cache_take(struct bcm2711_v3d_space *space, uint64_t bytes, uint64_t owner);
 static bool cache_put(struct bcm2711_v3d_space *space, struct bcm2711_v3d_view *view);
 static int storage_cleanable(const struct bcm2711_native_storage *storage);
 static int snapshot_fill(struct bcm2711_native_snapshot *snapshot, const void *raster, size_t raster_bytes);
 static int snapshot_update(struct bcm2711_v3d_space *space, struct bcm2711_native_snapshot *snapshot, const void *raster, size_t raster_bytes, bool unit, bool *updated);
 static int snapshot_evict(struct bcm2711_v3d_space *space, uint64_t bytes, bool all);
 static int snapshot_release(struct bcm2711_v3d_space *space, struct bcm2711_native_snapshot *snapshot);
+static int snapshot_scrub(struct bcm2711_native_snapshot *snapshot);
 
 /*
  * Allocates and maps one complete native upload interval before giving it to a prepared job owner.
@@ -52,7 +53,8 @@ bcm2711_native_storage_create(
 
 /*
  * Allocates and maps one complete native upload interval, a reused view
- * zeroed or (BCM2711_NATIVE_STORAGE_WRITTEN) as it is (ws141-p016 (b)).
+ * zeroed, or as it is for BCM2711_NATIVE_STORAGE_WRITTEN and for
+ * BCM2711_NATIVE_STORAGE_OWNED when the building session left it (ws141-p016 (b)).
  */
 int
 bcm2711_native_storage_create_as(
@@ -67,6 +69,7 @@ bcm2711_native_storage_create_as(
 	uint64_t limit;
 	uint64_t started;
 	uint32_t physical_bits;
+	bool keep;
 	int error;
 
 	/* Every failure leaves the caller without a partially initialized upload owner. */
@@ -81,7 +84,9 @@ bcm2711_native_storage_create_as(
 	/* Per-allocation bounds also keep complete clean/copy operations representable on this architecture. */
 	if (bytes == 0 || bytes > NATIVE_STORAGE_BYTES)
 		return EINVAL;
-	if (fill != BCM2711_NATIVE_STORAGE_ZEROED && fill != BCM2711_NATIVE_STORAGE_WRITTEN)
+	if (fill != BCM2711_NATIVE_STORAGE_ZEROED &&
+	    fill != BCM2711_NATIVE_STORAGE_WRITTEN &&
+	    fill != BCM2711_NATIVE_STORAGE_OWNED)
 		return EINVAL;
 
 	/* Placement uses actual physical addressing capacity, without a guessed bus alias or framebuffer limit. */
@@ -95,22 +100,31 @@ bcm2711_native_storage_create_as(
 	if (created == NULL)
 		return ENOMEM;
 
+	/* An owned storage carries the building session's mark into the cache when it is released. */
+	if (fill == BCM2711_NATIVE_STORAGE_OWNED)
+		created->owner = space->builder;
+
 	/*
 	 * An idle cached view of the same size is reused with its mapping:
 	 * zeroed again, or as it is for a caller that writes every byte the
-	 * device may read (counted apart, review-b2 M2).
+	 * device may read, or for an owned use when the same session left it
+	 * (counted apart, review-b2 M2).
 	 */
 	started = clock_ticks();
-	view = cache_take(space, bytes);
+	view = cache_take(space, bytes, created->owner);
 	if (view != NULL) {
-		if (fill == BCM2711_NATIVE_STORAGE_ZEROED)
+		keep = fill == BCM2711_NATIVE_STORAGE_WRITTEN ||
+		    (fill == BCM2711_NATIVE_STORAGE_OWNED && created->owner != 0 && view->owner == created->owner);
+		if (!keep)
 			kern_memset(view->buffer->address, 0, (size_t)view->bytes);
+		view->owner = 0;
 		view->buffer->bytes = bytes;
 		created->allocation_ticks = clock_ticks() - started;
-		if (fill == BCM2711_NATIVE_STORAGE_ZEROED)
-			bcm2711_buffer_zeroed(view->bytes, created->allocation_ticks);
-		else
+		if (keep)
 			bcm2711_buffer_kept(view->bytes);
+		else
+			bcm2711_buffer_zeroed(view->bytes, created->allocation_ticks);
+		created->stale = keep;
 		created->space = space;
 		created->view = view;
 		created->bytes = bytes;
@@ -308,8 +322,9 @@ bcm2711_native_storage_release(
 	if (owned->space != space)
 		return EINVAL;
 
-	/* An idle view of a reusable size stays mapped for the next pass instead of being unmapped. */
+	/* An idle view of a reusable size stays mapped for the next pass, marked with the session its bytes may belong to. */
 	*storage = NULL;
+	owned->view->owner = owned->owner;
 	cached = cache_put(space, owned->view);
 	if (cached) {
 		space->native->hardware.perf.views_cached++;
@@ -401,6 +416,7 @@ bcm2711_native_snapshot_get(
 	const void *whole;
 	uint32_t bytes;
 	bool updated;
+	bool foreign;
 	int error;
 
 	/* A source a process can write through a CPU mapping has no generation to trust. */
@@ -428,11 +444,22 @@ bcm2711_native_snapshot_get(
 			break;
 	}
 
-	/* A known snapshot is converted again only when its source changed and no draw samples it. */
+	/*
+	 * A known snapshot is converted again only when its source changed and
+	 * no draw samples it.  One whose pixels may hold another session's
+	 * earlier bytes is zeroed and converted whole before this session
+	 * samples it (review-b2 H1 (a)).
+	 */
 	if (snapshot != NULL) {
-		if (!snapshot->valid || snapshot->generation != buffer->generation) {
+		foreign = snapshot->owner != 0 && snapshot->owner != space->builder;
+		if (foreign || !snapshot->valid || snapshot->generation != buffer->generation) {
 			if (snapshot->users != 0)
 				return ENOTSUP;
+			if (foreign) {
+				error = snapshot_scrub(snapshot);
+				if (error != 0)
+					return error;
+			}
 
 			/* Converted pixels with a known small change are brought up to date in place. */
 			updated = false;
@@ -461,15 +488,22 @@ bcm2711_native_snapshot_get(
 	if (error != 0)
 		return error;
 
-	/* Creates the new entry with its own pixels before converting. */
+	/*
+	 * Creates the new entry with its own pixels before converting; pixels
+	 * the building session left are given again unzeroed, and the snapshot
+	 * remembers that session until it is scrubbed (a CPU conversion
+	 * rewrites the texture's bytes but not the rest of the page).
+	 */
 	snapshot = kern_calloc(1, sizeof(*snapshot));
 	if (snapshot == NULL)
 		return ENOMEM;
-	error = bcm2711_native_storage_create(space, bytes, &snapshot->pixels);
+	error = bcm2711_native_storage_create_as(space, bytes, BCM2711_NATIVE_STORAGE_OWNED, &snapshot->pixels);
 	if (error != 0) {
 		kern_free(snapshot);
 		return error;
 	}
+	if (snapshot->pixels->stale)
+		snapshot->owner = snapshot->pixels->owner;
 	snapshot->offset = offset;
 	snapshot->width = width;
 	snapshot->height = height;
@@ -562,13 +596,19 @@ storage_cleanable(
 	return 0;
 }
 
-/* Takes one idle cached view of exactly the page-rounded size, or NULL. */
+/*
+ * Takes one idle cached view of exactly the page-rounded size, or NULL; a
+ * larger run the given nonzero owner left is preferred to another of the
+ * same size.
+ */
 static struct bcm2711_v3d_view *
 cache_take(
 	struct bcm2711_v3d_space *space,
-	uint64_t bytes)
+	uint64_t bytes,
+	uint64_t owner)
 {
 	struct bcm2711_v3d_view **position;
+	struct bcm2711_v3d_view **first;
 	struct bcm2711_v3d_view *view;
 	uint64_t rounded;
 
@@ -584,15 +624,22 @@ cache_take(
 		return view;
 	}
 
-	/* Larger runs are matched by exact size. */
+	/* Larger runs are matched by exact size, the owner's own first. */
+	first = NULL;
 	for (position = &space->cache_runs; *position != NULL; position = &(*position)->cache_next) {
-		/* The first run of the same page count is taken. */
-		if ((*position)->bytes == rounded)
+		/* Remembers the first run of the same page count, and stops there without an owner or at one the owner left. */
+		if ((*position)->bytes != rounded)
+			continue;
+		if (first == NULL)
+			first = position;
+		if (owner == 0 || (*position)->owner == owner)
 			break;
 	}
-	view = *position;
-	if (view == NULL)
+	if (*position == NULL)
+		position = first;
+	if (position == NULL)
 		return NULL;
+	view = *position;
 	*position = view->cache_next;
 	view->cache_next = NULL;
 	space->cache_bytes -= view->bytes;
@@ -683,6 +730,24 @@ snapshot_fill(
 	/* Succeeded: the snapshot matches its source until the source's generation moves. */
 	snapshot->valid = true;
 	return 0;
+}
+
+/*
+ * Zeroes an unused snapshot's whole pixels, which may hold another
+ * session's earlier bytes, and leaves it to be converted whole.
+ */
+static int
+snapshot_scrub(
+	struct bcm2711_native_snapshot *snapshot)
+{
+	/* Nothing of the earlier session remains, and the pixels match no generation. */
+	kern_memset(snapshot->pixels->view->buffer->address, 0, (size_t)snapshot->pixels->view->bytes);
+	snapshot->pixels->owner = 0;
+	snapshot->owner = 0;
+	snapshot->valid = false;
+
+	/* The zeroes reach memory before the device or a later unit job writes the pixels. */
+	return bcm2711_native_storage_clean(snapshot->pixels);
 }
 
 /*
@@ -860,8 +925,13 @@ snapshot_release(
 {
 	int error;
 
-	/* Every pass that sampled the pixels has retired, so they can join the idle views. */
+	/*
+	 * Every pass that sampled the pixels has retired, so they can join the
+	 * idle views, unmarked: other sessions may have converted or updated
+	 * them since the session that made them (review M1).
+	 */
 	space->snapshot_bytes -= snapshot->pixels->view->bytes;
+	snapshot->pixels->owner = 0;
 	error = bcm2711_native_storage_release(space, &snapshot->pixels, true);
 	bcm2711_buffer_release(snapshot->buffer);
 	kern_free(snapshot);

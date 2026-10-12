@@ -48,7 +48,7 @@ struct bcm2711_vulkan_native_draw_chunk {
 	struct bcm2711_vulkan_native_draw draws[BCM2711_VULKAN_DRAW_CHUNK];
 };
 
-static int allocate_storage(struct bcm2711_vulkan_native_draw *draw, uint64_t bytes, uint64_t available, const struct bcm2711_shader_binary *program, struct bcm2711_native_storage **storage);
+static int allocate_storage(struct bcm2711_vulkan_native_draw *draw, uint64_t bytes, uint64_t available, const struct bcm2711_shader_binary *program, unsigned fill, struct bcm2711_native_storage **storage);
 static struct bcm2711_vulkan_native_draw *pool_take(struct bcm2711_vulkan_native_draw_pool *pool);
 static int upload_take(struct bcm2711_vulkan_native_draw *draw, uint64_t bytes, uint64_t available, uint8_t **cpu, uint32_t *gpu);
 static struct bcm2711_native_storage *find_texture(const struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_resource *image);
@@ -273,6 +273,7 @@ allocate_storage(
 	uint64_t bytes,
 	uint64_t available,
 	const struct bcm2711_shader_binary *program,
+	unsigned fill,
 	struct bcm2711_native_storage **storage)
 {
 	uint64_t padded;
@@ -293,7 +294,7 @@ allocate_storage(
 	if (program != NULL)
 		error = bcm2711_native_program_upload(draw->space, program, storage);
 	else
-		error = bcm2711_native_storage_create(draw->space, bytes, storage);
+		error = bcm2711_native_storage_create_as(draw->space, bytes, fill, storage);
 	if (error != 0)
 		return error;
 
@@ -492,7 +493,8 @@ prepare_texture_image(
 
 	/* A private conversion serves a source that may change behind the device's back. */
 	if (pixels == NULL) {
-		error = allocate_storage(draw, bytes, available, NULL, &pixels);
+		/* The conversion writes the image; its padding may keep only this session's earlier bytes (review-b2 H1 (a)). */
+		error = allocate_storage(draw, bytes, available, NULL, BCM2711_NATIVE_STORAGE_OWNED, &pixels);
 		if (error != 0)
 			return error;
 
@@ -635,7 +637,7 @@ prepare_programs(
 		code = find_program(draw, program, stage);
 		if (code == NULL) {
 			bytes = (uint64_t)program->code_count * 8U;
-			error = allocate_storage(draw, bytes, available, program, &code);
+			error = allocate_storage(draw, bytes, available, program, BCM2711_NATIVE_STORAGE_WRITTEN, &code);
 			if (error != 0)
 				return error;
 		}
@@ -678,7 +680,7 @@ prepare_programs(
 
 	/* Only the first draw allocates defaults; later draws borrow its whole-pass lifetime. */
 	if (defaults == NULL) {
-		error = allocate_storage(draw, 256, available, NULL, &defaults);
+		error = allocate_storage(draw, 256, available, NULL, BCM2711_NATIVE_STORAGE_ZEROED, &defaults);
 		if (error != 0)
 			return error;
 		destination = defaults->view->buffer->address;
@@ -1235,7 +1237,7 @@ upload_take(
 
 	/* An independent draw or a large upload keeps the per-allocation path. */
 	if (draw->pool == NULL || bytes == 0 || bytes > NATIVE_UPLOAD_LARGEST) {
-		error = allocate_storage(draw, bytes, available, NULL, &storage);
+		error = allocate_storage(draw, bytes, available, NULL, BCM2711_NATIVE_STORAGE_ZEROED, &storage);
 		if (error != 0)
 			return error;
 		*cpu = storage->view->buffer->address;
