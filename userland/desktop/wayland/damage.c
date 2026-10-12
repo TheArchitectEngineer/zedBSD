@@ -16,6 +16,11 @@
  * glass (the part of its body the client damaged).  They gather in server->damage until a frame is drawn;
  * compose.c widens it by the frames each swapchain image missed (its
  * buffer age) and draws the frame inside it alone.
+ *
+ * The damage is a short list of rectangles that do not overlap (ws211-p009,
+ * plan/ws211/phase009/phase.md D1): changes far apart, the clock and a
+ * hovered button, stay apart, and a frame draws each of them instead of
+ * the box around both.
  */
 
 #include "kwl.h"
@@ -24,13 +29,34 @@
 #include "notify-view.h"
 #include "popup.h"
 
+#include <stdint.h>
+#include <string.h>
+
 /* How far around the pointer a cursor may draw (the compositor's shapes and arrow are smaller). */
 #define DAMAGE_CURSOR		64
 
 /* How far a hovered thing's light and the glass's blur over it reach beyond its probe. */
 #define DAMAGE_HOVER		96
 
+/*
+ * How much more area two rectangles are joined for: drawn apart, every
+ * draw crossing both is made twice (the Pi's kernel prepares one in about
+ * 40 us), which costs about as much as drawing a 64x64 square more.
+ */
+#define DAMAGE_JOIN_AREA	((int64_t)64 * 64)
+
+/* How far from the output's origin a rectangle's edges are kept, so that areas fit in 64 bits. */
+#define DAMAGE_LIMIT		((int32_t)1 << 20)
+
 static void damage_add(struct kwl_server *server, int32_t left, int32_t top, int32_t right, int32_t bottom);
+static void rects_settle(int32_t (*rects)[4], unsigned *count);
+static int rects_joined(const int32_t *first, const int32_t *second);
+static int64_t rects_join_cost(const int32_t *first, const int32_t *second);
+static void rects_bound(int32_t *into, const int32_t *other);
+static void rects_remove(int32_t (*rects)[4], unsigned *count, unsigned index);
+static int32_t damage_limit(int32_t value);
+static int32_t edge_min(int32_t first, int32_t second);
+static int32_t edge_max(int32_t first, int32_t second);
 static void damage_client_part(const struct kwl_object *surface, uint32_t width, uint32_t height, int32_t *rect);
 static int cursor_unseen(struct kwl_server *server, int32_t x, int32_t y);
 static int probes_changed(struct kwl_server *server);
@@ -176,6 +202,73 @@ kwl_damage_commit(
 	rect[3] = surface->y + (int32_t)height;
 	damage_client_part(surface, width, height, rect);
 	damage_add(server, rect[0], rect[1], rect[2], rect[3]);
+}
+
+
+/*
+ * Adds a rectangle (left, top, right, bottom) to a list of at most
+ * KWL_DAMAGE_RECTS rectangles that do not overlap (ws211-p009 D1).
+ *
+ * Rectangles that overlap are joined into the box around them, for a
+ * frame draws each rectangle's part of every quad and an overlap would be
+ * drawn twice; so are two whose box is hardly larger than they are.  A
+ * list past its room joins the two whose box grows least.  The list only
+ * grows: every rectangle once added lies inside one of the list's.
+ */
+void
+kwl_damage_rects_add(
+	int32_t (*rects)[4],
+	unsigned *count,
+	const int32_t *rect)
+{
+	int32_t list[KWL_DAMAGE_RECTS + 1U][4];
+	int64_t cost;
+	int64_t best;
+	unsigned length;
+	unsigned first;
+	unsigned second;
+	unsigned best_first;
+	unsigned best_second;
+
+	/* An empty rectangle changes nothing. */
+	if (rect[2] <= rect[0] || rect[3] <= rect[1])
+		return;
+
+	/* The list and the new rectangle, its edges kept near the output. */
+	memcpy(list, rects, (size_t)*count * sizeof(list[0]));
+	length = *count;
+	list[length][0] = damage_limit(rect[0]);
+	list[length][1] = damage_limit(rect[1]);
+	list[length][2] = damage_limit(rect[2]);
+	list[length][3] = damage_limit(rect[3]);
+	length++;
+
+	/* Overlapping and nearly touching rectangles joined. */
+	rects_settle(list, &length);
+
+	/* Past the room, the pair whose box grows least is joined, until it fits. */
+	while (length > KWL_DAMAGE_RECTS) {
+		best = INT64_MAX;
+		best_first = 0U;
+		best_second = 1U;
+		for (first = 0U; first < length; first++) {
+			for (second = first + 1U; second < length; second++) {
+				cost = rects_join_cost(list[first], list[second]);
+				if (cost >= best)
+					continue;
+				best = cost;
+				best_first = first;
+				best_second = second;
+			}
+		}
+		rects_bound(list[best_first], list[best_second]);
+		rects_remove(list, &length, best_second);
+		rects_settle(list, &length);
+	}
+
+	/* The list given back, holding the rectangle. */
+	memcpy(rects, list, (size_t)length * sizeof(list[0]));
+	*count = length;
 }
 
 
@@ -379,24 +472,36 @@ probes_damaged(
 {
 	const struct kwl_hover_probe *probe;
 	unsigned index;
+	unsigned rect;
 	int before;
 	int after;
+	int inside;
 
 	/* No damage holds nothing. */
 	if (!server->damaged)
 		return 0;
 
-	/* Each changed probe, with its reach, inside the damage's box. */
+	/*
+	 * Each changed probe, with its reach, inside one of the damage's
+	 * rectangles: a rectangle kwl_hover_damage added only grows when it
+	 * is joined with another, so it stays inside one.
+	 */
 	for (index = 0; index < server->hover_count; index++) {
 		probe = &server->hover_probes[index];
 		before = probe_contains(probe, server->hover_x, server->hover_y);
 		after = probe_contains(probe, server->pointer_x, server->pointer_y);
 		if (before == after)
 			continue;
-		if (probe->x - DAMAGE_HOVER < server->damage[0] ||
-		    probe->y - DAMAGE_HOVER < server->damage[1] ||
-		    probe->x + probe->width + DAMAGE_HOVER > server->damage[2] ||
-		    probe->y + probe->height + DAMAGE_HOVER > server->damage[3])
+		inside = 0;
+		for (rect = 0; rect < server->damage_count; rect++) {
+			if (probe->x - DAMAGE_HOVER < server->damage[rect][0] ||
+			    probe->y - DAMAGE_HOVER < server->damage[rect][1] ||
+			    probe->x + probe->width + DAMAGE_HOVER > server->damage[rect][2] ||
+			    probe->y + probe->height + DAMAGE_HOVER > server->damage[rect][3])
+				continue;
+			inside = 1;
+		}
+		if (!inside)
 			return 0;
 	}
 
@@ -413,25 +518,22 @@ damage_add(
 	int32_t right,
 	int32_t bottom)
 {
-	/* The first rectangle is the damage. */
-	if (!server->damaged) {
-		server->damage[0] = left;
-		server->damage[1] = top;
-		server->damage[2] = right;
-		server->damage[3] = bottom;
-		server->damaged = 1;
-		return;
-	}
+	int32_t rect[4];
 
-	/* Later ones widen it to the box around both. */
-	if (left < server->damage[0])
-		server->damage[0] = left;
-	if (top < server->damage[1])
-		server->damage[1] = top;
-	if (right > server->damage[2])
-		server->damage[2] = right;
-	if (bottom > server->damage[3])
-		server->damage[3] = bottom;
+	/* A frame's first rectangle starts the list again, whatever the last frame left in it. */
+	if (!server->damaged)
+		server->damage_count = 0U;
+
+	/* Joined with the rectangles already there, as few as the list holds. */
+	rect[0] = left;
+	rect[1] = top;
+	rect[2] = right;
+	rect[3] = bottom;
+	kwl_damage_rects_add(server->damage, &server->damage_count, rect);
+
+	/* An empty rectangle adds nothing; the frame has damage once the list holds one. */
+	if (server->damage_count != 0U)
+		server->damaged = 1;
 }
 
 /*
@@ -585,4 +687,166 @@ kwl_damage_rect(
 
 	/* Gathered with the rest of the frame's damage. */
 	damage_add(server, left, top, right, bottom);
+}
+
+/* Joins rectangles of a list until no two overlap and no two are worth drawing as one. */
+static void
+rects_settle(
+	int32_t (*rects)[4],
+	unsigned *count)
+{
+	unsigned first;
+	unsigned second;
+	int joined;
+
+	/* Every pair again after each join, for the joined box may meet another. */
+	joined = 1;
+	while (joined) {
+		joined = 0;
+		for (first = 0U; first < *count && !joined; first++) {
+			for (second = first + 1U; second < *count; second++) {
+				/* A pair drawn apart. */
+				if (!rects_joined(rects[first], rects[second]))
+					continue;
+
+				/* The pair as one, the second taken out of the list. */
+				rects_bound(rects[first], rects[second]);
+				rects_remove(rects, count, second);
+				joined = 1;
+				break;
+			}
+		}
+	}
+}
+
+/* Tells whether two rectangles are to be drawn as one: they overlap, or their box is hardly larger. */
+static int
+rects_joined(
+	const int32_t *first,
+	const int32_t *second)
+{
+	int64_t cost;
+
+	/* Overlapping rectangles would draw their overlap twice. */
+	if (first[0] < second[2] &&
+	    second[0] < first[2] &&
+	    first[1] < second[3] &&
+	    second[1] < first[3])
+		return 1;
+
+	/* A box hardly larger than the two costs less than drawing them apart. */
+	cost = rects_join_cost(first, second);
+	if (cost <= DAMAGE_JOIN_AREA)
+		return 1;
+
+	/* Apart. */
+	return 0;
+}
+
+/* Reports how much more area the box around two rectangles has than the two together. */
+static int64_t
+rects_join_cost(
+	const int32_t *first,
+	const int32_t *second)
+{
+	int64_t box_width;
+	int64_t box_height;
+	int64_t first_area;
+	int64_t second_area;
+	int64_t overlap_width;
+	int64_t overlap_height;
+	int64_t overlap;
+
+	/* The box around both. */
+	box_width = (int64_t)edge_max(first[2], second[2]) - edge_min(first[0], second[0]);
+	box_height = (int64_t)edge_max(first[3], second[3]) - edge_min(first[1], second[1]);
+
+	/* Each one's area. */
+	first_area = ((int64_t)first[2] - first[0]) * ((int64_t)first[3] - first[1]);
+	second_area = ((int64_t)second[2] - second[0]) * ((int64_t)second[3] - second[1]);
+
+	/* Their overlap, counted once. */
+	overlap_width = (int64_t)edge_min(first[2], second[2]) - edge_max(first[0], second[0]);
+	overlap_height = (int64_t)edge_min(first[3], second[3]) - edge_max(first[1], second[1]);
+	overlap = 0;
+	if (overlap_width > 0 && overlap_height > 0)
+		overlap = overlap_width * overlap_height;
+
+	/* The area the box adds. */
+	return box_width * box_height - (first_area + second_area - overlap);
+}
+
+/* Widens a rectangle to the box around it and another. */
+static void
+rects_bound(
+	int32_t *into,
+	const int32_t *other)
+{
+	/* Each edge out to the farther one. */
+	if (other[0] < into[0])
+		into[0] = other[0];
+	if (other[1] < into[1])
+		into[1] = other[1];
+	if (other[2] > into[2])
+		into[2] = other[2];
+	if (other[3] > into[3])
+		into[3] = other[3];
+}
+
+/* Takes a rectangle out of a list, the last one moved into its place. */
+static void
+rects_remove(
+	int32_t (*rects)[4],
+	unsigned *count,
+	unsigned index)
+{
+	/* The last one fills the gap; the order of the list means nothing. */
+	*count -= 1U;
+	if (index != *count)
+		memcpy(rects[index], rects[*count], sizeof(rects[index]));
+}
+
+/* Keeps a rectangle's edge within DAMAGE_LIMIT of the output's origin. */
+static int32_t
+damage_limit(
+	int32_t value)
+{
+	/* Far left or above. */
+	if (value < -DAMAGE_LIMIT)
+		return -DAMAGE_LIMIT;
+
+	/* Far right or below. */
+	if (value > DAMAGE_LIMIT)
+		return DAMAGE_LIMIT;
+
+	/* Near enough. */
+	return value;
+}
+
+/* Reports the smaller of two edges. */
+static int32_t
+edge_min(
+	int32_t first,
+	int32_t second)
+{
+	/* The second is nearer the origin. */
+	if (second < first)
+		return second;
+
+	/* The first is. */
+	return first;
+}
+
+/* Reports the larger of two edges. */
+static int32_t
+edge_max(
+	int32_t first,
+	int32_t second)
+{
+	/* The second is farther from the origin. */
+	if (second > first)
+		return second;
+
+	/* The first is. */
+	return first;
 }

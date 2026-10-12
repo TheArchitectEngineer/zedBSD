@@ -58,6 +58,9 @@ kwl_list_reset(
 	list->joined = 0U;
 	list->joined_draws = 0U;
 	list->failed = 0U;
+
+	/* A new list has no scissor set yet: whatever was known of the last one's is not of this one (ws211-p009). */
+	list->scissor_serial++;
 }
 
 /* Frees a list's memory; the list is empty and may be written again. */
@@ -179,6 +182,9 @@ kwl_list_begin_render_pass(
 {
 	struct kwl_list_op *op;
 
+	/* A pass begun leaves the scissor to be set again (ws211-p009). */
+	list->scissor_serial++;
+
 	/* The operation. */
 	op = list_op(list, KWL_LIST_BEGIN_PASS);
 	if (op == NULL)
@@ -236,6 +242,9 @@ kwl_list_set_scissor(
 	const VkRect2D *scissors)
 {
 	struct kwl_list_op *op;
+
+	/* Another scissor set: one known before is not the list's any more (ws211-p009). */
+	list->scissor_serial++;
 
 	/* The operation. */
 	op = list_op(list, KWL_LIST_SCISSOR);

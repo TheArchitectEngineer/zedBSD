@@ -47,6 +47,7 @@
 
 static VkResult batch_buffer(struct kwl_compose *compose);
 static VkResult batch_pipeline(struct kwl_compose *compose);
+static void batch_quad_box(const float *constants, float *box);
 
 /*
  * Makes the pipeline and the vertex buffer of the joined quads, after the
@@ -131,6 +132,7 @@ kwl_batch_add(
 	};
 	struct kwl_compose *compose;
 	float vertex[BATCH_FLOATS];
+	float box[4];
 	uint32_t bytes;
 	unsigned index;
 
@@ -155,13 +157,27 @@ kwl_batch_add(
 	     compose->batch.screen[1] != constants[21]))
 		kwl_batch_flush(server, command);
 
-	/* The first quad of a draw names its set and screen and where its vertices start. */
+	/* The quad's box in the pass's pixels, from its corners in normalized device coordinates (ws211-p009). */
+	batch_quad_box(constants, box);
+
+	/* The first quad of a draw names its set and screen and where its vertices start, and its box is the draw's. */
 	if (compose->batch.count == 0U) {
 		compose->batch.first = compose->batch.used;
 		compose->batch.set = set;
 		compose->batch.screen[0] = constants[20];
 		compose->batch.screen[1] = constants[21];
+		memcpy(compose->batch.bounds, box, sizeof(box));
 	}
+
+	/* A later one widens the draw's box. */
+	if (box[0] < compose->batch.bounds[0])
+		compose->batch.bounds[0] = box[0];
+	if (box[1] < compose->batch.bounds[1])
+		compose->batch.bounds[1] = box[1];
+	if (box[2] > compose->batch.bounds[2])
+		compose->batch.bounds[2] = box[2];
+	if (box[3] > compose->batch.bounds[3])
+		compose->batch.bounds[3] = box[3];
 
 	/* The quad's values: its box, its colour with its opacity, its radius. */
 	memcpy(&vertex[2], &constants[8], 4U * sizeof(float));
@@ -220,7 +236,14 @@ kwl_batch_flush(
 	/* The quads' vertices, then the corners again. */
 	offset = compose->batch.first;
 	kwl_list_bind_vertex_buffers(command, 0U, 1U, &compose->batch.buffer, &offset);
-	kwl_list_draw(command, 6U * count, 1U, 0U, 0U);
+	kwl_compose_clip_draw(
+		server,
+		command,
+		compose->batch.bounds[0],
+		compose->batch.bounds[1],
+		compose->batch.bounds[2] - compose->batch.bounds[0],
+		compose->batch.bounds[3] - compose->batch.bounds[1],
+		6U * count);
 	offset = 0U;
 	kwl_list_bind_vertex_buffers(command, 0U, 1U, &compose->corners, &offset);
 	kwl_compose_count_commands(server, 1U, 1U);
@@ -345,4 +368,38 @@ batch_buffer(
 	compose->batch.map = map;
 	compose->batch.capacity = BATCH_BYTES;
 	return VK_SUCCESS;
+}
+
+/*
+ * Works out a quad's box (left, top, right, bottom) in the pass's pixels
+ * from glass.c's constants: its corners in normalized device coordinates
+ * and the screen they were made for.
+ */
+static void
+batch_quad_box(
+	const float *constants,
+	float *box)
+{
+	float first;
+	float second;
+
+	/* Across: the two corners, the smaller on the left. */
+	first = (constants[0] + 1.0f) * 0.5f * constants[20];
+	second = (constants[2] + 1.0f) * 0.5f * constants[20];
+	box[0] = first;
+	box[2] = second;
+	if (second < first) {
+		box[0] = second;
+		box[2] = first;
+	}
+
+	/* Down: the two corners, the smaller on top. */
+	first = (constants[1] + 1.0f) * 0.5f * constants[21];
+	second = (constants[3] + 1.0f) * 0.5f * constants[21];
+	box[1] = first;
+	box[3] = second;
+	if (second < first) {
+		box[1] = second;
+		box[3] = first;
+	}
 }

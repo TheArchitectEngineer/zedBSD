@@ -1677,6 +1677,7 @@ glass_shape_draw(
 	VkDescriptorSet set;
 	VkPipeline pipeline;
 	int joined;
+	int visible;
 
 	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home, ws181-p008). */
 	if (server->layer_on && server->layer_opacity <= 0.0f)
@@ -1717,16 +1718,10 @@ glass_shape_draw(
 		height = (float)server->view_height;
 	}
 
-	/* Completely clipped quads cannot affect a pixel; retain a pixel of slack for viewport rounding. */
-	if (compose->backdrop_recording == 0U &&
-	    quad[2] >= 0.0f &&
-	    quad[3] >= 0.0f) {
-		if (quad[0] + quad[2] < (float)compose->scissor_now.offset.x - 1.0f ||
-		    quad[1] + quad[3] < (float)compose->scissor_now.offset.y - 1.0f ||
-		    quad[0] > (float)compose->scissor_now.offset.x + (float)compose->scissor_now.extent.width + 1.0f ||
-		    quad[1] > (float)compose->scissor_now.offset.y + (float)compose->scissor_now.extent.height + 1.0f)
-			return;
-	}
+	/* Completely clipped quads cannot affect a pixel: outside the scissor, or between the damage's rectangles (ws211-p009). */
+	visible = kwl_compose_clip_visible(compose, quad[0], quad[1], quad[2], quad[3]);
+	if (!visible)
+		return;
 
 	/* The quad in normalized device coordinates. */
 	constants[0] = 2.0f * quad[0] / width - 1.0f;
@@ -1819,7 +1814,7 @@ glass_shape_draw(
 	/* The chosen pipeline keeps the same constants, image and triangle pair. */
 	kwl_compose_bind(server, command, pipeline, compose->panel_layout, set);
 	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
-	kwl_list_draw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
+	kwl_compose_clip_draw(server, command, quad[0], quad[1], quad[2], quad[3], KWL_QUAD_VERTICES);
 	kwl_compose_count_commands(server, 1U, 1U);
 }
 

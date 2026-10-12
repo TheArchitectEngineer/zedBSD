@@ -386,7 +386,9 @@ struct kwl_compose {
 	 * compositor runs; the replay writes the list's vertices to it), how
 	 * much of it the frame being recorded used, and
 	 * the quads waiting for one draw: their first vertex's byte offset,
-	 * their number, the set and the screen they were drawn with.  ready
+	 * their number, the set and the screen they were drawn with, and the
+	 * box around them in the pass's pixels (left, top, right, bottom;
+	 * ws211-p009, for the damage's rectangles they are drawn in).  ready
 	 * once made; off with KWL_BATCH=0 or when it could not be made.
 	 */
 	struct {
@@ -401,6 +403,7 @@ struct kwl_compose {
 		uint32_t count;
 		VkDescriptorSet set;
 		float screen[2];
+		float bounds[4];
 		unsigned overflowed;
 	} batch;
 	/* Nonzero while the frame in flight draws a layer's picture and presents nothing (layer-cache.c). */
@@ -516,10 +519,32 @@ struct kwl_compose {
 	 * is needed); and the scissor the frame being recorded draws within.
 	 */
 	uint64_t image_frames[KWL_SWAPCHAIN_MAX];
-	int32_t history[KWL_DAMAGE_HISTORY][4];
+	int32_t history[KWL_DAMAGE_HISTORY][KWL_DAMAGE_RECTS][4];
+	unsigned history_count[KWL_DAMAGE_HISTORY];
 	unsigned history_whole[KWL_DAMAGE_HISTORY];
 	VkRenderPass pass_load;
 	VkRect2D scissor_now;
+	/*
+	 * The anchor's pass of the frame being recorded (ws211-p009): its
+	 * render area (the box around the damage, or the whole output), which
+	 * the glass's backdrop takes the pass up again with.
+	 */
+	VkRect2D pass_area;
+	/*
+	 * The damage's rectangles the frame draws apart (ws211-p009 D3,
+	 * compose-bind.c): clip_count of them, disjoint, set only while the
+	 * anchor's pass on clip_framebuffer is recorded and the damage has two
+	 * or more (0 otherwise: a draw is kept to scissor_now alone).  A draw
+	 * there is made once for each rectangle it meets, with the scissor cut
+	 * to it.  clip_scissor is the scissor the last of them set, valid while
+	 * the list's scissor_serial is still clip_serial (no one else set one).
+	 */
+	VkRect2D clips[KWL_DAMAGE_RECTS];
+	unsigned clip_count;
+	VkFramebuffer clip_framebuffer;
+	VkRect2D clip_scissor;
+	uint64_t clip_serial;
+	unsigned clip_scissor_valid;
 	/* Offscreen backdrop passes use scaled coordinates and must retain the complete scene. */
 	unsigned backdrop_recording;
 	/*
@@ -579,6 +604,8 @@ void kwl_compose_cursor(struct kwl_server *server, struct kwl_list *command);
 void kwl_compose_count_draw(struct kwl_server *server, VkPipeline pipeline, VkDescriptorSet set, unsigned shape);
 void kwl_compose_bind(struct kwl_server *server, struct kwl_list *command, VkPipeline pipeline, VkPipelineLayout layout, VkDescriptorSet set);
 void kwl_compose_bind_forget(struct kwl_compose *compose);
+int kwl_compose_clip_visible(struct kwl_compose *compose, float x, float y, float width, float height);
+void kwl_compose_clip_draw(struct kwl_server *server, struct kwl_list *command, float x, float y, float width, float height, uint32_t vertices);
 VkResult kwl_compose_pipeline_input(struct kwl_compose *compose, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, const VkPipelineVertexInputStateCreateInfo *input, VkPipeline *pipeline);
 void kwl_batch_open(struct kwl_server *server);
 void kwl_batch_close(struct kwl_compose *compose);

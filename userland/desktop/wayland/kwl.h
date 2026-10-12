@@ -1069,6 +1069,12 @@ struct kwl_apps_bar {
 /* The most hover probes one whole scene records (damage.c). */
 #define KWL_HOVER_PROBES 256
 
+/*
+ * The most rectangles a frame's damage is kept as (damage.c, ws211-p009):
+ * changes far apart are drawn apart instead of with everything between.
+ */
+#define KWL_DAMAGE_RECTS 4U
+
 struct kwl_server {
 	struct kwl_perf perf;
 	int listener;
@@ -1280,11 +1286,15 @@ struct kwl_server {
 	unsigned dirty;
 	/*
 	 * The damage (damage.c, ws035-p055): whether only a part of the output
-	 * changed since the last frame, and that part (left, top, right,
-	 * bottom).  dirty, set by any other change, draws the whole output.
+	 * changed since the last frame, and that part as rectangles (left,
+	 * top, right, bottom) that do not overlap (ws211-p009), damage_count of
+	 * them.  The list is empty whenever damaged is 0, whatever the count
+	 * says: the next rectangle starts it again.  dirty, set by any other
+	 * change, draws the whole output.
 	 */
 	unsigned damaged;
-	int32_t damage[4];
+	unsigned damage_count;
+	int32_t damage[KWL_DAMAGE_RECTS][4];
 	int frame_fd;
 	uint64_t map_order;
 	uint32_t windows;
@@ -2044,6 +2054,7 @@ int kwl_hover_unchanged(struct kwl_server *server);
 int kwl_hover_damage(struct kwl_server *server);
 void kwl_damage_rect(struct kwl_server *server, int32_t left, int32_t top, int32_t right, int32_t bottom);
 void kwl_damage_commit(struct kwl_server *server, struct kwl_object *surface, struct kwl_object *previous);
+void kwl_damage_rects_add(int32_t (*rects)[4], unsigned *count, const int32_t *rect);
 void kwl_window_bounds_refresh(struct kwl_server *server);
 int kwl_window_send_configure(struct kwl_object *surface);
 int kwl_window_enter_fullscreen(struct kwl_object *surface);
