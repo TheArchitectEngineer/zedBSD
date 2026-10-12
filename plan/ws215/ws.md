@@ -3,12 +3,12 @@
 # WS215: Raspberry Pi 4 の Bluetooth（内蔵の BCM43455 の Bluetooth）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-12 Q1 作成、ユーザーの指示）
+Status: planning（2026-10-12 Q1 作成。2026-10-13 P3 が p001 の設計の第 1 版を書いた、design-reviewer 待ち）
 Primary Milestone: MG005
 Related Milestones: MG006
 Parent: [Master](../master.md)
-Queue: 未割当（Pi 4 の順: 描画の最適化 → 計測 → SMP（WS208）→ 計測 → 最適化の終了 → WiFi（WS206）と Bluetooth（この WS））
-Resume point: 未着手。p001（調べと設計）から。
+Queue: P3 の lane（2026-10-13 Q1 の割当、p001）
+Resume point: p001 の設計（[phase001/phase.md](phase001/phase.md)）の review と判断 D1〜D4 の後、p002（arm64 で Bluetooth の userland を build）から。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -28,7 +28,14 @@ Pi 4 の内蔵の Bluetooth（BCM43455 の Bluetooth の部分）で、zedBSD �
 
 ## Phase
 
+設計の第 1 版（[p001](phase001/phase.md) の 7 節）の段の分け。計 約 15 LW。
+
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 調べと設計 → design-reviewer | planning |
-| p002 | 規約の全文の見直し | planned |
+| [p001](phase001/phase.md) | 調べと設計 → design-reviewer | in-progress（第 1 版、review と D1〜D4 待ち） |
+| p002 | arm64 で Bluetooth の userland（bluetoothd・bt・bt-probe・input bridge）を build | planned |
+| p003 | kernel: PL011 の UART の HCI の transport（`rpi4-bt.c`）、H4 の assembler、GPIO・mailbox の GPIO の共通の helper（WS206 と共有）、UAPI（`BT_IOC_SET_SPEED`・`bt_info` の拡張）、config.txt の生成。実機の smoke | planned |
+| p004 | firmware の package（`userland/firmware/brcmbt/`、BCM4345C0.hcd）と license の監査 | planned |
+| p005 | bluetoothd の Broadcom の始動（速さの切り替え、patchram、BD_ADDR、SCO の routing）、host の試験、実機で firmware・scan | planned |
+| p006 | 実機の統合（keyboard・mouse・audio・phone・WiFi との共存） | planned |
+| p007 | 規約の全文の見直し | planned |
