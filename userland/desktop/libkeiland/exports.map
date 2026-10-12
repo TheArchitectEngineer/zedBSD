@@ -344,6 +344,7 @@
 		kl_ui_touch_cancel;
 		kl_ui_begin;
 		kl_ui_hit;
+		kl_ui_hit_still;
 		kl_ui_scroll_region;
 		kl_ui_text_region;
 		kl_ui_set_text_bar;

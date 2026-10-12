@@ -109,6 +109,15 @@ struct ph_window {
 	int resized;
 	int moving;
 	int glass_decided;
+
+	/*
+	 * Only the lit widget changed since the last frame (a motion or the
+	 * pointer leaving, BUG-226): the next frame is drawn and shown within
+	 * the part the widgets tell (kl_ui_take_damage) alone.  buttons_held
+	 * counts the buttons held, while which a motion draws the whole window.
+	 */
+	int lit_changed;
+	unsigned buttons_held;
 };
 
 /* The window's menu. */
@@ -823,12 +832,34 @@ ph_input(
 	if (event->kind == KL_WINDOW_BUTTON && !event->pressed)
 		photos->view.drag_armed = 0;
 
-	/* A motion of the pointer draws again only when it lights another widget or moves a held one (as Music, 2026-10-12). */
+	/*
+	 * A motion of the pointer draws again only when it lights another
+	 * widget or moves a held one (as Music, 2026-10-12): the lit widgets'
+	 * part alone, or the whole window while a button is held.
+	 */
 	if (event->kind == KL_WINDOW_MOTION) {
 		taken = kl_ui_pointer_motion(photos->ui, event->x, event->y);
-		if (taken)
+		if (taken && photos->buttons_held != 0U)
 			photos->dirty = 1;
+		else if (taken)
+			photos->lit_changed = 1;
 		return;
+	}
+
+	/* The pointer leaving darkens the lit widget: its part alone is drawn again. */
+	if (event->kind == KL_WINDOW_LEAVE) {
+		taken = kl_ui_pointer_leave(photos->ui);
+		if (taken)
+			photos->lit_changed = 1;
+		return;
+	}
+
+	/* The buttons held, for the motions while one is. */
+	if (event->kind == KL_WINDOW_BUTTON) {
+		if (event->pressed)
+			photos->buttons_held++;
+		else if (photos->buttons_held != 0U)
+			photos->buttons_held--;
 	}
 
 	/* The widgets' other input draws again. */
@@ -1453,7 +1484,9 @@ ph_draw(
 	uint64_t now_us)
 {
 	struct kl_glass_panel panels[PH_PANELS_MAX];
+	const struct kl_rect *present_part;
 	struct kl_event event;
+	struct kl_rect part;
 	size_t count;
 	size_t album;
 	long open;
@@ -1463,18 +1496,31 @@ ph_draw(
 	int taken;
 	int list;
 	int adding;
+	int partial;
 
 	/* Nothing changed and nothing moves: no frame. */
-	if (!photos->dirty && !photos->moving)
+	if (!photos->dirty && !photos->moving && !photos->lit_changed)
 		return;
 
-	/* The view, and the pictures it wants; what its widgets changed while it drew is drawn in the next frame. */
+	/*
+	 * Only another widget lit: the frame is drawn and shown within the
+	 * widgets' part alone (BUG-226, as Music); a whole window for each
+	 * hover was a CPU frame on the Pi 4 (2026-10-12).
+	 */
+	partial = 0;
+	if (!photos->dirty && !photos->moving && photos->lit_changed)
+		partial = kl_ui_take_damage(photos->ui, &part);
+	photos->lit_changed = 0;
+
+	/* The view, within the part when there is one, and the pictures it wants; what its widgets changed while it drew is drawn in the next frame. */
 	photos->dirty = 0;
 	open = photos->view.open;
 	chosen = photos->view.chosen;
 	list = photos->view.list;
 	album = photos->view.album;
 	adding = photos->view.adding;
+	if (partial)
+		kl_canvas_clip_push(&photos->canvas, &part);
 	kl_ui_begin(photos->ui, now_us);
 	ph_view_draw(&photos->view, photos->ui, &photos->style, (int)photos->width, (int)photos->height, now_us);
 	if (open != photos->view.open || chosen != photos->view.chosen || list != photos->view.list || album != photos->view.album ||
@@ -1485,6 +1531,8 @@ ph_draw(
 	if (photos->removing[0] != '\0')
 		ph_delete_dialog(photos, now_us);
 	photos->moving = kl_ui_end(photos->ui, now_us);
+	if (partial)
+		kl_canvas_clip_pop(&photos->canvas);
 	kl_ui_window_text(photos->ui, photos->window);
 	ph_jobs(photos);
 
@@ -1500,8 +1548,11 @@ ph_draw(
 		}
 	}
 
-	/* The frame shown. */
-	status = kl_window_present(photos->window, photos->pixels, (size_t)photos->width);
+	/* The frame shown, by the part alone when it was drawn so. */
+	present_part = NULL;
+	if (partial)
+		present_part = &part;
+	status = kl_window_present_part(photos->window, photos->pixels, (size_t)photos->width, present_part);
 	if (status == EAGAIN)
 		photos->resized = 1;
 
@@ -1608,6 +1659,8 @@ ph_wait(
 
 	/* A frame due now. */
 	if (photos->dirty)
+		return 0;
+	if (photos->lit_changed)
 		return 0;
 
 	/* A widget moving. */

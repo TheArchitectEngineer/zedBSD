@@ -70,6 +70,13 @@ struct wl_registry *keiui_app_global(struct wl_display *display, const char *int
 #define KEIUI_KEEP_FOCUS	8U
 #define KEIUI_NO_DRAG		16U
 
+/*
+ * KL_VERSION 89: a widget that draws the same lit, held or neither
+ * (kl_ui_hit_still): the pointer coming onto it, leaving it or pressing
+ * it asks for no part of the window to be drawn again.
+ */
+#define KEIUI_STILL		32U
+
 /* The ids of the library's own records (ws190-p002): the bar of a field's selection and its handles; programs use none from 0xfffffff0 up. */
 #define KEIUI_TEXT_BAR_ID	0xfffffffdU
 #define KEIUI_TEXT_HANDLE_ID	0xfffffffcU

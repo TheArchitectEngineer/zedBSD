@@ -1608,12 +1608,18 @@ view_whole(
 		kl_canvas_image(style->canvas, image, (float)((width - draw_width) / 2), (float)(VIEW_TOP + (area_height - draw_height) / 2), (float)draw_width,
 		    (float)draw_height, 0.0f, 1.0f);
 
-		/* A press held on the picture may become a drag of the photo out of the window (ws189-p003). */
+		/*
+		 * A press held on the picture may become a drag of the photo out of
+		 * the window (ws189-p003).  The picture draws the same with the
+		 * pointer on it, so the pointer coming and going draws nothing
+		 * again (a whole picture scaled again for each pass between it and
+		 * a button was slow on the Pi 4, 2026-10-12).
+		 */
 		picture_rect.x = (width - draw_width) / 2;
 		picture_rect.y = VIEW_TOP + (area_height - draw_height) / 2;
 		picture_rect.width = draw_width;
 		picture_rect.height = draw_height;
-		hit = kl_ui_hit(ui, VIEW_ID_PICTURE, (uint32_t)photo, &picture_rect);
+		hit = kl_ui_hit_still(ui, VIEW_ID_PICTURE, (uint32_t)photo, &picture_rect);
 		if ((hit & KL_HIT_ACTIVE) != 0U)
 			view_drag_arm(view, ui, photo);
 	} else if (view->picture_failed) {
