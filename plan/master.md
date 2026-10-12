@@ -32,7 +32,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-293、WS214、q940、T1-550。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-293、WS215、q940、T1-550。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -510,6 +510,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS211](ws211/ws.md) | MG006 | Pi 4 の compositor の描画の削減（App Home の遷移のクロスフェード、draw の束ね）（2026-10-12 ユーザー） | planning | P3 |
 | [WS212](ws212/ws.md) | MG006 | Wiseview の作り直し: 仮想デスクトップ 3 枚の矩形と窓の一覧、drag で仮想デスクトップ・display をまたいで移動、multi display の縦の積み重ね、display のローテーション（タグ・Shift+Super+←/→、比率の保持）（2026-10-12 ユーザー） | planning | 未割当 |
 | [WS213](ws213/ws.md) | MG006 | compositor の thread 化（入力・cursor と描画の分離、重いコマの間も入力と cursor が止まらない）（2026-10-12 ユーザー） | planning | P4（p001 設計） |
+| [WS214](ws214/ws.md) | MG006 | 窓をディスプレイの重ね合わせ（HVS の plane）に載せる（Pi 4、drag・dock の間 GPU が窓を描き直さない）（2026-10-12 ユーザー「ぜんぶやりましょう。」） | planning | P2（p001 設計） |
 | [WS198](ws198/ws.md) | MG002 | zedBSD の上で zedBSD を self-build（host の clang、2026-10-09 ユーザー、優先度低、ベータ2 の見込み） | planning | p001 前提の調べ |
 | [WS199](ws199/ws.md) | MG006 | Settings のセキュリティキーの独立の頁とウィザード（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
 | [WS200](ws200/ws.md) | MG006 | Settings の Users のパスワード変更のウィザードと認証方式の選択（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
@@ -542,6 +543,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
+- 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
 - 2026-10-12 ユーザー（Pi の試し）: 1280x720 で「めちゃくちゃ速くなりました」、1024x600 で「めちゃくちゃ快適です」、place23（WS213 p004 の I・C・R＋WS211 p008 の client の damage）で「非常に快適です」。数字（compositor の draw→shown の p50/p90）: 1920x1080 92/125ms、1280x720 60/87ms、1024x600 59/102ms、1024x600+place23 58/90ms（submit→shown p50 26ms）。place23 で KWL RENDER stalled 0、FAILED 0。WS213 p004 の box_lag の p99 は 5 秒窓の一部で 19〜30ms（必達 16.7ms 未達の窓あり、最長 36ms）、pass_max 1 回 401ms → p004 は未 clear、原因の切り分け（kernel の長い transaction・SMP 依存か）が残り。ユーザーの次の希望: 1280x720 で試した後、ディスプレイ本来の解像度（1920x1200、今は config.txt の hdmi_mode=82 で 1920x1080 に固定）で出す。Pi は今 config.txt を 1024x600（hdmi_cvt、元は config.txt.res1080）。
 - 2026-10-12 ユーザー（クリック）: WS213 の設計（第 6 版、thread の分け方 M・R・C・I・W、必達は box_lag の p99 ≤ 16.7ms、p003 の閾値に届かなければ WS211 の削減を先に）は「この設計でよい」。要約は Q1 が plan/ws213/phase001/summary.md に置く（P4 の Write はツールの決まりで拒否されたため、ユーザーの許可で Q1 が置いた）。Q1: WS213 p003 は P4 で着手、WS141 p016 (B) は第 6 版で B-u を P2 が実装（kernel 側は段 B-k2）。
