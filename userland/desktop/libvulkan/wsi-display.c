@@ -916,6 +916,7 @@ display_claim_native(
 
 		pthread_mutex_unlock(&display_overlay_mutex);
 
+		/* Refuses a plane another surface presents on. */
 		if (taken != VK_FALSE) {
 			pthread_mutex_unlock(&display_mutex);
 			vulkan_free(&device->object.allocator, new_plane);
@@ -1022,11 +1023,13 @@ display_claim_native(
 		plane->display = output.identifier;
 		plane->plane = surface->native_plane;
 		plane->generation = request.generation;
+		plane->next = display_planes;
+		display_planes = plane;
+
+		/* The output's overlay planes, as many as one commit can name. */
 		plane->overlay_count = output.overlay_count;
 		if (plane->overlay_count > GPU_DISPLAY_OVERLAY_MAX)
 			plane->overlay_count = GPU_DISPLAY_OVERLAY_MAX;
-		plane->next = display_planes;
-		display_planes = plane;
 
 		/* One refresh of the claimed mode, or of 60 Hz when it names no rate, times a held change's deadline. */
 		plane->refresh_ns = 16666667U;
@@ -1141,8 +1144,12 @@ display_release_native(
 		pthread_mutex_lock(&display_overlay_mutex);
 
 		display_overlay_drop_locked(overlay, VK_SUCCESS);
+
+		/* A plane still shown is hidden while the claim stays; a final release hides it anyway. */
 		if (overlay->front != NULL && final_plane == VK_FALSE)
 			display_overlay_hide_locked(plane, overlay, "release", &sequence);
+
+		/* The plane may be presented by another surface from now on. */
 		if (overlay->lease == lease)
 			overlay->lease = NULL;
 		pthread_cond_broadcast(&display_overlay_condition);
@@ -1200,6 +1207,8 @@ display_release_native(
 			/* Drops the plane's held change, and the hold of the image it showed. */
 			overlay = &plane->overlays[index];
 			display_overlay_drop_locked(overlay, VK_SUCCESS);
+
+			/* The shown image is no longer read. */
 			if (overlay->front != NULL) {
 				overlay->front->holds--;
 				overlay->front = NULL;
@@ -2390,6 +2399,8 @@ display_primary_commit(
 	display_overlay_request(&request, plane);
 	request.generation = lease->generation;
 	display_overlay_state(&request.planes[0], GPU_DISPLAY_PLANE_PRIMARY, ticket, VK_TRUE, image, &whole, &whole);
+
+	/* The kernel checks the producer's fence again before the record, as for a synchronized selection. */
 	if (wait_fd >= 0) {
 		request.planes[0].wait_fd = wait_fd;
 		request.planes[0].wait_generation = wait_generation;
@@ -3217,7 +3228,9 @@ display_overlay_ready_wait_locked(
 		for (index = 0U; index < plane->overlay_count; index++) {
 			/* A held change of the ticket whose pixels are not complete. */
 			hold = &plane->overlays[index].hold;
-			if (hold->held != VK_FALSE && hold->min_primary <= ticket && hold->ready == VK_FALSE)
+			if (hold->held != VK_FALSE &&
+			    hold->min_primary <= ticket &&
+			    hold->ready == VK_FALSE)
 				waiting = VK_TRUE;
 		}
 
@@ -3234,7 +3247,9 @@ display_overlay_ready_wait_locked(
 		deadline.tv_sec = (time_t)(limit / 1000000000ULL);
 		deadline.tv_nsec = (long)(limit % 1000000000ULL);
 		status = pthread_cond_clockwait(&display_overlay_condition, &display_overlay_mutex, CLOCK_MONOTONIC, &deadline);
-		if (status != 0 && status != ETIMEDOUT && status != EINTR)
+		if (status != 0 &&
+		    status != ETIMEDOUT &&
+		    status != EINTR)
 			break;
 	}
 
@@ -3242,7 +3257,9 @@ display_overlay_ready_wait_locked(
 	for (index = 0U; index < plane->overlay_count; index++) {
 		/* A held change of the ticket whose pixels never completed. */
 		hold = &plane->overlays[index].hold;
-		if (hold->held == VK_FALSE || hold->min_primary > ticket || hold->ready != VK_FALSE)
+		if (hold->held == VK_FALSE ||
+		    hold->min_primary > ticket ||
+		    hold->ready != VK_FALSE)
 			continue;
 		display_overlay_log(index + 1U, hold->serial, ticket, hold->min_primary, "commit", "ready", (int)VK_ERROR_OUT_OF_DATE_KHR, 0U, plane->adopted, hold->call_ns);
 		display_overlay_drop_locked(&plane->overlays[index], VK_ERROR_OUT_OF_DATE_KHR);
@@ -3404,6 +3421,9 @@ display_overlay_adopted_locked(
 	/* The number only grows: every lower record is adopted too. */
 	if (adopted > plane->adopted)
 		plane->adopted = adopted;
+
+	/* Succeeded: the claim knows the adoption. */
+	return;
 }
 
 /*
@@ -3604,6 +3624,9 @@ display_overlay_state(
 	state->dst_y = (uint32_t)destination->offset.y;
 	state->dst_width = destination->extent.width;
 	state->dst_height = destination->extent.height;
+
+	/* Succeeded: the state names the image and its rectangles. */
+	return;
 }
 
 /* Starts a commit of a claim with no planes named yet: every entry without a fence. */
@@ -3625,6 +3648,9 @@ display_overlay_request(
 	/* An unused entry has no fence either. */
 	for (index = 0U; index < 1U + GPU_DISPLAY_OVERLAY_MAX; index++)
 		request->planes[index].wait_fd = -1;
+
+	/* Succeeded: the caller names the planes. */
+	return;
 }
 
 /* Reads the monotonic clock in nanoseconds, or zero when it cannot be read. */
@@ -3700,4 +3726,7 @@ display_overlay_log(
 
 	/* A diagnostic line that cannot be written is not retried. */
 	(void)write(2, line, (size_t)length);
+
+	/* Succeeded: the line is written. */
+	return;
 }

@@ -809,7 +809,9 @@ cleanup:
 		error = swapchain_device_lost(queue->device);
 
 	/* A primary ticket of a job that goes no further drops the overlay changes held for it. */
-	if (job != NULL && job->tickets != NULL && error != VK_SUCCESS) {
+	if (job != NULL &&
+	    job->tickets != NULL &&
+	    error != VK_SUCCESS) {
 		for (index = 0U; index < job->count; index++)
 			present_primary_skip(job, index, error);
 	}
@@ -995,7 +997,9 @@ swapchain_create(
 		pthread_mutex_unlock(&swapchain_mutex);
 
 		/* A retired overlay chain's held change is never shown (ws214-p004). */
-		if (old->surface->overlay != VK_FALSE && old->lease != NULL && old->surface->platform->overlay_forget != NULL)
+		if (old->surface->overlay != VK_FALSE &&
+		    old->lease != NULL &&
+		    old->surface->platform->overlay_forget != NULL)
 			old->surface->platform->overlay_forget(old->lease, old->serial);
 	}
 
@@ -1855,7 +1859,9 @@ swapchain_current(
 		return VK_ERROR_DEVICE_LOST;
 
 	/* An overlay chain whose held change the output refused is out of date (ws214-p004). */
-	if (chain->surface->overlay != VK_FALSE && chain->lease != NULL && chain->surface->platform->overlay_status != NULL) {
+	if (chain->surface->overlay != VK_FALSE &&
+	    chain->lease != NULL &&
+	    chain->surface->platform->overlay_status != NULL) {
 		error = chain->surface->platform->overlay_status(chain->lease, chain->serial);
 		if (error != VK_SUCCESS)
 			return error;
@@ -2038,7 +2044,9 @@ present_prepare(
 		}
 
 		/* Invalid rectangles cannot escape their checked source or destination image. */
-		if (job->has_display != VK_FALSE && chain->surface->cursor == VK_FALSE && chain->surface->overlay == VK_FALSE) {
+		if (job->has_display != VK_FALSE &&
+		    chain->surface->cursor == VK_FALSE &&
+		    chain->surface->overlay == VK_FALSE) {
 			if (job->display.srcRect.offset.x < 0 ||
 			    job->display.srcRect.offset.y < 0 ||
 			    job->display.dstRect.offset.x < 0 ||
@@ -2369,7 +2377,9 @@ present_recording_key(
 		key->presented = chain->presentation[index].shared_presented;
 
 	/* A display rectangle composes into the native image; a cursor or overlay image is copied whole. */
-	if (job->has_display != VK_FALSE && chain->surface->cursor == VK_FALSE && chain->surface->overlay == VK_FALSE) {
+	if (job->has_display != VK_FALSE &&
+	    chain->surface->cursor == VK_FALSE &&
+	    chain->surface->overlay == VK_FALSE) {
 		key->composed = VK_TRUE;
 		key->source = job->display.srcRect;
 		key->destination = job->display.dstRect;
@@ -4802,6 +4812,9 @@ present_overlay_decide(
 		/* The output decides against every present decided before it. */
 		chain->surface->platform->overlay_decide(chain->lease, image, request);
 	}
+
+	/* Succeeded: every overlay target is held or waits for its commit. */
+	return;
 }
 
 /*
@@ -4893,6 +4906,9 @@ present_overlay_settle(
 		/* The change may now go with its primary present, or is dropped. */
 		chain->surface->platform->overlay_ready(chain->lease, request->serial, error);
 	}
+
+	/* Succeeded: no held change of the job waits for its pixels. */
+	return;
 }
 
 /*
@@ -4921,11 +4937,12 @@ present_primary_skip(
 	if (chain->surface->platform->primary_skip == NULL)
 		return;
 
-	/* The changes the ticket would have taken. */
+	/* The changes the ticket would have taken; the ticket takes nothing more. */
 	chain->surface->platform->primary_skip(chain->lease, ticket, error);
-
-	/* Succeeded: the ticket takes nothing more. */
 	job->tickets[index] = 0U;
+
+	/* Succeeded: no change waits for the ticket. */
+	return;
 }
 
 /*
