@@ -31,6 +31,7 @@ jobs:
 
       - name: Build amd64
         run: |
+          git submodule update --init --depth 1 vendor/raspberrypi-firmware
           cp config/ci/config-amd64.mk config.mk
           make -j4
           mkdir -p artifacts
