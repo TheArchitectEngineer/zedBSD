@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: [P1 の lane](../agents/P1/queue.md)
-Resume point: p001 の設計 1.1（review-1 を反映、phase001/phase.md）を Q1 が確かめた後、p002 の spike（host の shader の数え、Pi の draw・頂点の費用）。
+Resume point: p001 の設計 1.1（review-1 を反映、phase001/phase.md）を Q1 が確かめた後、p002 の spike（host の shader の数え、Pi の draw・頂点の費用）。中間の直し: p013（present の部分の copy、設計 1.1、Pi の baseline 待ち）と p014（frame の枠組み、設計 第 1 版、review 待ち）。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -43,7 +43,8 @@ Pi 4 で標準 app（Files・Settings・Phone など）の再描画が CPU の�
 | p010 | Video Player の色の変換を GPU に | planned |
 | p011 | T1 の QEMU の回帰と Pi の実機の確認 | planned |
 | p012 | 規約の全文の見直し | planned |
-| [p013](phase013/phase.md) | 中間: app の present を変わった所の copy に（staging から swapchain の image へ直接、image ごとの古い所、予備は quad の部分化） | planning（設計 第 1 版、review 待ち） |
+| [p013](phase013/phase.md) | 中間: app の present を変わった所の copy に（staging から swapchain の image へ直接、image ごとの古い所の list、方式は Pi の実測で選ぶ） | planning（設計 1.1、review-1 を反映、Pi の baseline 待ち） |
+| [p014](phase014/phase.md) | libkeiland の frame の枠組み（lit の変化は描いた時と今だけ、window ごとの motion の合流と frame の速さ、共通の口、ペインの部品） | planning（設計 第 1 版、review 待ち） |
 
 見積 計 約 32 LW（p001 の設計 1.1 の Phase の表）。
 
