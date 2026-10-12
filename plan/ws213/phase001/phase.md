@@ -3,7 +3,7 @@
 # ws213-p001: compositor の thread 化の調査と設計
 
 Parent: [WS213](../ws.md)
-Status: planning（設計の第 5 版。[review-1](review-1.md)〜[review-4](review-4.md)、2026-10-12 のユーザーの判断（描く物の一覧＋pull）と Q1 の判断（2 段の pull、cursor の thread を p004 に、pointer の経路を入力の thread へ）を反映、S2 の部分の差分の確認の前。S1（p003）は review-3・review-4 で条件付きで可）
+Status: planning（設計の第 6 版。[review-1](review-1.md)〜[review-5](review-5.md)、2026-10-12 のユーザーの判断（描く物の一覧＋pull）と Q1 の判断（2 段の pull、cursor の thread を p004 に、pointer の経路を入力の thread へ、review-5 の未決への答え）を反映。S1（p003）は review-3・review-4 で条件付きで可、S2（p004）は review-5 で条件付きで可（N-1〜N-4 を設計の文に反映、再 review は不要で Q1 の確認）。ユーザー向けの要約は [summary.md](summary.md)）
 Phase disposition: normal
 Queue: P4（2026-10-12 Q1 が割り当て）
 
@@ -11,9 +11,9 @@ Queue: P4（2026-10-12 Q1 が割り当て）
 
 - **今の問題**: compositor は 1 本の thread で、1 コマを描く間（命令の記録・GPU への送り・表示の依頼）は入力も cursor も止まります。Pi 4 の記録では、普通のコマで 10〜20ms、App Home のような重いコマで 60〜120ms 止まっています。cursor の表示の依頼も、画面の書き換え（60 回/秒）より多い約 125 回/秒行っていて、main の時間をかなり使っている見込みです（測定を足しました、M0）。
 - **形（2026-10-12 ユーザーの判断「描く物の一覧＋pull」）**: main thread は Wayland の protocol・入力・cursor と、今の描画の処理で「描く物の一覧」を作る所までを受け持ちます。main は「描く見込みがある」と知らせ、描画 thread は画面の画像を取り出してから「描いてよい」と返します。main は今どおり client の絵を少し待つなどの判断をしてから、一覧を 1 回作ります。描画 thread はそれを Vulkan の命令にして GPU に送り、表示を頼み、終わるのを待ちます。画像を取り出せた後にしか一覧を作らないので、作った一覧は必ず描かれ、作った時に決まった事（焼いた絵・画面の写し・client の画像の扱い）が無駄になったり食い違ったりしません。描画 thread は main が一覧を作っている間は何もしないので、その間 main は今のコードのまま GPU の物を作れます。
-- **cursor が画面で 60fps になるには、WS141 の cursor の速い経路（B-u、GPU を通らない位置だけの表示）が要ります**（review-1 C1）。今の表示の仕組みは、cursor の表示の依頼を画面のコマの依頼と同じ 1 本の列に並べて GPU の完了を待つので、main を軽くしても、重いコマの間は cursor の表示が後ろに並びます。この WS は main の止まりを無くし、B-u と合わせて 60fps にします。
+- **cursor が画面で 60fps になるには、WS141 の cursor の速い経路（B-u、GPU を通らない位置だけの表示）が要ります**（review-1 C1）。今の表示の仕組みは、cursor の表示の依頼を画面のコマの依頼と同じ 1 本の列に並べて GPU の完了を待つので、main を軽くしても、重いコマの間は cursor の表示が後ろに並びます。この WS は main の止まりを無くし、B-u と合わせて 60fps にします。受け入れの分担（review-B4、Q1）: WS141 p016 (B) は「main loop が止まらない時の入力→表示の ioctl」、この WS は端から端（マウスの入力→画面の cursor）の 60fps を受け持ちます。
 - **入力の thread と cursor の thread**（p004、review-4 H-B）: マウス・touchpad の読み取りと加速と cursor の位置の計算は、小さな入力の thread に移します。入力の thread は位置を cursor の thread の受け箱に直に書き、cursor の thread がそれを表示します。main が一覧を作っている間も cursor の位置は止まりません。main は入力の thread から順番どおりに届く event を受けて、窓への通知（wl_pointer の motion・enter など）と hover・cursor の形を決めるだけです（ユーザーの指示「ウィンドウへの通知の転送以外の処理はほとんどすべてスレッドに」）。
-- **この WS で必ず達すること**: pointer が動いている間、cursor の受け箱の更新の間隔が 1 refresh（16.7ms）以内（App Home の開閉・drag の間も）。画面に映る cursor の 60fps は、これと WS141 の B-u で決まります。
+- **この WS で必ず達すること**: pointer が動いている間、マウスが動いた時刻（evdev の時刻）から cursor の受け箱に位置が書かれるまでの遅れ（box_lag）の p99 が 1 refresh（16.7ms）以内（App Home の開閉・drag の間も）。最長も 16.7ms 以内で判定し、超えた原因が kernel の中の長い処理なら WS208（SMP）・kernel への依存として返す（review-5 N-4、Q1 の判断）。画面に映る cursor の 60fps は、これと WS141 の B-u で決まります。
 - **段**: p002 測る＋cursor の依頼の間引き（実装済み、Pi の確認待ち）→ p003 描く物の一覧（thread はまだ使わない、見た目が同じことを確かめる）→ p004 描画 thread・cursor の thread・入力の thread（pull）→ p005 作業 thread（文字の形・壁紙のぼかし）→ p006 規約の見直し。
 - **SMP（4 core）が無い今の効果**: CPU の総量は減りませんが、入力が来ると入力の thread が描画 thread や main を割り込んで先に動き、cursor の位置を書くので、cursor の遅れは減る見込みです（kernel の中の長い処理の間は待つ、11 節）。コマの速さ（fps）は SMP（WS208）か WS211 の描画の削減で上がります。
 
@@ -24,6 +24,7 @@ Queue: P4（2026-10-12 Q1 が割り当て）
 - 2026-10-12 ユーザーの判断（review-1 H6、Q1 経由）:「描く物の一覧＋pull」— main が今の描画の walk で display list を作り、描画 thread が「次をくれ」と言った時だけ 1 回作る。記録・submit・present・GPU の待ちは描画 thread。第 1 版の「受け箱の置き換え」はやめる。
 - 2026-10-12 Q1 の判断（review-2）: K1 は「2 段の pull」、H-a は「R は待ちの間 Vulkan を呼ばない、walk の中の M の作成・破棄は許す」の不変条件で同期の依頼をやめる、H-c は shm の memcpy を M の walk の中に残し release は写した直後、H-d は cursor の shm を M が同期で作成・書き込み、退役は plane の fence も待つ。
 - 2026-10-12 Q1 の判断（review-4 H-B）: ユーザーの目標は「すべて 60fps」、cursor の 60fps は必達。pointer の経路（evdev の読み取り→加速→C の受け箱）を M から外す形を本案に、client への pointer の通知は M が受けて送る。walk の分割は代替として 11 節に。p004 の受け入れに M の 1 pass の最長と、動いている間の C の受け箱の更新の間隔の p99・最長 ≤ 1 refresh、p003 の閾値は p90 か最長。
+- 2026-10-12 Q1 の判断（review-5、S2 条件付き可）: N-1〜N-4 を設計の文に反映し再 review は不要（Q1 の確認）。未決への答え: p003 の重いコマ（300 draw 以上）の閾値は walk の p90 ≤ 16.7ms・最長 ≤ 25ms。p004 の `pass_max` ≤ 33.3ms は場面 (1)〜(3) で判定し、(4) の app の起動は p99 を記録。box_lag の p99 は必達、最長は kernel の長い transaction が原因と分かれば uncleared として WS208（SMP）・kernel への依存で返す条件付き。box_lag の最長と `hold_us` の時刻の対応を記録の項目に。make が sysroot を作り直そうとしたら止まって main に報告、を p003〜p006 の build の注記に。
 - この Phase は設計だけ（p002 の M0・C0 は Q1 の指示で先に実装、記録は [p002](../phase002/phase.md)）。
 
 ## review-1 への対応
@@ -102,6 +103,31 @@ Queue: P4（2026-10-12 Q1 が割り当て）
 | L-d p004 の受け入れ 5・p005 の数値 | 場面・時間・log の行を書いた。p005 は受け箱の更新の間隔と M の 1 pass の最長の数値（8 節・p004・p005） |
 | L-e lock の順 | 4.6 に: 3 つの mutex を同時に持たない、mutex を持ったまま Vulkan と止まる system call を呼ばない |
 | L-f p003 の閾値を満たせない時の WS211 への依存 | p004 の依存・再開条件に（8 節・p004） |
+
+## review-5 への対応
+
+判定は S2（p004）条件付き可。N-1〜N-4 を設計の文に反映（再 review は不要、Q1 の確認）。N-5〜N-7 も書き込んだ（N-5 の持ち物の表は 6.1）。
+
+| 指摘 | 対応（節） |
+| --- | --- |
+| N-1 High: I の evdev の fd と backend の pause・resume・gone の競合（閉じた fd の番号の再利用で I が client の socket を読む） | device の付け外しを I への依頼に: 付ける（新しい fd、初期化は I）と同期の外す（上限付きの ack、ack はその device の最後の event の後）。backend の 3 つの callback と session の pause で外し、resume は付ける。logind の resume の close の順は保険で入れ替える（6.1「device の付け外し」・9 (k1)） |
+| N-2 Medium: 絶対の pointer（virtio-tablet）の経路が無い | I が出力の矩形の写しの anchor に写して受け箱に書く。warp の番号は進めない（6.1「絶対の pointer」・9 (k2)） |
+| N-3 Medium: warp の一覧の誤り、M の遅れた位置からの計算 | `band_replay`（`shell.c:7827,7839`）を warp から外し一時の書き換えの側へ。M の warp は受け箱の位置と `pointer_output` を `cursor_lock` の下で読み、出力の矩形の写しの更新と同じ区間で書く。I は読み・`kwl_plane_move`・書きを 1 回の lock の中で、printf と dirty は外か M へ（6.1「位置の持ち主」・9 (k3)） |
+| N-4 Medium: box_gap の最長は遅い pointer で満たせない | 判定を box_lag（`event_us` → 受け箱の書き込み）の p99・最長 ≤ 16.7ms に。時計の確かめ（11 節 3）が前提、確かめられなければ「書き込みの間隔 − `event_us` の間隔」の超過分を代替に。最長は Q1 の条件付き（6.4・8・11 節 9） |
+| N-5 Low/Medium: device と server の欄の持ち主 | 持ち物の表（6.1）。report は FIFO に写す、設定の変更は I への依頼、touchpad の `release_all` と外しの ack はその device の最後の event の後（9 (k4)） |
+| N-6 Low: p003・p004 の閾値に余裕が無い | Q1 の判断: p003 の重いコマは walk の p90 ≤ 16.7ms・最長 ≤ 25ms。`pass_max` ≤ 33.3ms は場面 (1)〜(3) で判定、(4) は p99 を記録（6.4・8） |
+| N-7 Low: `set_cursor` の時の写し元が古い | 未処理の commit があればその commit の client の pool から写す（4.7・9 (f)） |
+| 未決への答え (1)〜(4) | (1) 33.3ms は妥当（6.4・11 節 1）。(2) p99 は必達、最長は条件付き、`hold_us` との時刻の対応を記録（6.4・11 節 9）、pthread の優先度は p004 の始めに。(3) sched の見込みは 10 節。(4) build の注記は p003〜p006 の phase.md |
+
+## WS141 p016 review-B4 の WS213 に関わる点への対応（2026-10-12 Q1 の依頼）
+
+| 点 | 対応（節） |
+| --- | --- |
+| F1 (b) 像の変化の後に swapchain の全部の画像が copy の順番待ちになる | C の copied の gate をやめ、待つのは acquire した画像の前の copy の fence だけ。C は copy の fence を待ち続けず、pin は飛んでいる copy の数で下ろす（4.7 の 3・6.2・9 (i)） |
+| 「WS213 との関係」受け入れの期待の循環 | 分担: p016 (B) は「main loop が止まらない時の入力→ioctl」、WS213 は端から端の 60fps（6.3・ws.md） |
+| M-d・H-b zedBSD に queue_lock が無く C と R が同じ VkQueue を同時に使う | libvulkan の安全は p016 B-u が明記し fixture で確かめる前提として引用（3.3・6.3・7） |
+| M-f L1 の位置付け | L1 は前提ではなく「p016 の計測の後の次の版」に揃えた（6.3・ws.md） |
+| M-e import・shm の `vkQueueWaitIdle` が present_drain で worker を待つ | p004 で import の layout の溢れと shm の画像の layout を一覧の barrier にして M から外す（3.2） |
 
 ## 1. 今の main loop の仕事の内訳
 
@@ -212,9 +238,9 @@ CPU の重い所（main）: glyph の raster（glass.c:3052、`KWL GLASS glyph` 
 | 大きな字（`glass.c:2147-2152`、greeter `1633`） | 大きさが変わる時、`vkDeviceWaitIdle` | walk の中（`vkDeviceWaitIdle` は R の前のコマが終わっているので不要。WSI の worker の drain は残る、review-3 L-1）。p005 で W へ |
 | 壁紙の描き直し（`glass.c:648`→821・1091）・landscape（451）・resize（493） | `vkDeviceWaitIdle` の後に CPU で書く | p004 では park の中。p005 で画素は W、staging への写しは walk の中 |
 | client の import（backend の作成、`kwl_import_adopt` の view） | protocol の request の中 | M のまま（device 単位）。descriptor set（`import.c:258,276`）は walk の中で初めて使う時に。R へは F-094 |
-| import の layout の list と溢れ（`import.c:186-197,248-252,348,353`） | 次のコマ、溢れは即時 | list は写しの中身。walk の外では溢れさせない（list を伸ばす） |
+| import の layout の list と溢れ（`import.c:186-197,248-252,348,353`） | 次のコマ、溢れは即時 | list は写しの中身。walk の外では溢れさせない（list を伸ばす）。溢れの即時の `vkQueueSubmit`＋`vkQueueWaitIdle`（`import.c:353`）もやめ、溢れた分は一覧の barrier として R の command buffer に載せる（review-B4 M-e） |
 | import・shm の画像の破棄（`objects.c:830`、`shm.c` の `image_release`） | 破棄の時 | 参照する写しが全部完了してから、M が M→R の FIFO で頼み、**R が step 1 で壊す**（review-4 M-C。R は want が無くても FIFO の依頼で起きるので、静かな間にも溜まらない）。park の中は M が直に壊してよい |
-| wl_shm の画像の作成と memcpy（`shm.c:555-631`） | frame の外 | 作成は walk の中。memcpy と release は walk の中、または飛んでいる写しの copy の list にその画像が無ければ walk の外でも（review-3 L-2: output_lost の間も client を待たせない） |
+| wl_shm の画像の作成と memcpy（`shm.c:555-631`） | frame の外 | 作成は walk の中。作成の時の layout の移し（`image_layout` の `vkQueueSubmit`＋`vkQueueWaitIdle` `shm.c:882`）は一覧の barrier として R の command buffer の copy の前に載せ、M は待たない（review-B4 M-e）。memcpy と release は walk の中、または飛んでいる写しの copy の list にその画像が無ければ walk の外でも（review-3 L-2: output_lost の間も client を待たせない） |
 | cursor の surface の wl_shm（plane の大きさ以下） | 他の shm と同じ | 4.7（前もって用意した 2 枚に memcpy だけ、review-3 H-3） |
 | shot（試験の image だけ: buffer の作成 `shot.c:445,472`、`vkMapMemory` 359、解放 414-415） | tick と完了 | buffer の作成・解放は walk の中か park の中。map した画素の読み出しは完了の記録の処理の時（R が次の ready の前で、その buffer を触らない時） |
 | host image の起動時の batch（`shm.c:354-392`） | 起動 | R・C の起動の前 |
@@ -225,10 +251,12 @@ CPU の重い所（main）: glyph の raster（glass.c:3052、`KWL GLASS glyph` 
 | 出力の close・終了・session の pause・sleep・game mode の切り替え | M（`vkDeviceWaitIdle`・quiesce） | park（4.8） |
 | `kwl_compose_quiesce` | frame の完了を待つ | R が ready で待っている時と park の中は即座に返る。飛んでいる写しがある時は 11 節の割り当て |
 
+- **M の `vkQueueWaitIdle` と WSI の worker**（review-B4 M-e）: libvulkan の `vkQueueWaitIdle` は present_drain で WSI の present の worker を待つ（`wsi-swapchain.c:617-629,2853-2900`）。今は import の layout の溢れと shm の画像の layout の待ちの間、main loop も cursor も止まる。p004 ではこの 2 つを一覧の barrier にして M から外す（上の表）。残る M の `vkQueueWaitIdle`（起動時の host image の batch、park の中）は cursor の位置を止めない（位置は I→C）。
+
 ### 3.3 queue の lock（review-1 H3、review-2 M-d）
 
 - 出力の queue は 1 本（bcm2711 の queueCount は 1、`vulkan-query.c:182`、i915 も 1）。C の cursor の plane と R の出力のコマと M の walk・park の中の即時の submit が同じ queue を使う。
-- zedBSD の libvulkan の build では compositor の queue_lock を使わない（libvulkan が `queue->mutex`・`device->mutex`・`context->mutex` で中で直列にする）。
+- zedBSD の libvulkan の build では compositor の queue_lock を使わない（libvulkan が `queue->mutex`・`device->mutex`・`context->mutex` で中で直列にする）。C と R が同じ VkQueue に同時に submit・present する（B-u の fast path を含む）ことの安全は WS141 p016 B-u が明記して確かめる前提で、WS213 はそれを引用する（6.3、review-B4 M-d）。
 - Linux・FreeBSD の host の Vulkan（Mesa）の build には、compositor の `queue_lock` を**新しく足す**（今は無い、review-4 M-D）。queue を引数に取る全部の呼び出し（R・C・M の `vkQueueSubmit`・`vkQueuePresentKHR`・`vkQueueWaitIdle`）の間だけ持つ。build の印で切り替え、置き場は p004 で決める。
 - 事実（review-4 M-D）: compositor は plane を platform で分けずに開こうとする（`cursor-plane.c:43-100`）が、Linux・FreeBSD の `libvulkan-compat` の display は plane 0（不透明）しか作らない（`libvulkan-compat/wsi-display.c:142,400-401,412-413`）ので、今は Linux・FreeBSD で cursor の plane は開かず C は何もしない。R と M の queue の呼び出しは 3.2 の不変条件で重ならないので、`queue_lock` が今守るのは将来 plane が開く時の C と R。C の同時使用の確かめは host の試験（9 (m)）で行う。
 
@@ -278,7 +306,7 @@ CPU の重い所（main）: glyph の raster（glass.c:3052、`KWL GLASS glyph` 
 
 - damage は今の `compose_region`（画像 k の buffer age）。R は region を狭めない。
 - 受け渡しは pointer の交換だけ。一覧は App Home の 460 draw で約 70KB＋束の頂点（最大 1MiB）。buffer は 2 つ。R との共有は want・ready・写し・2 本の FIFO・park の印だけで、`render_lock` と condvar の下。C・I との共有は 6 節。
-- **lock の規則**（review-4 L-e）: mutex は 3 つ — `render_lock`（M↔R）、`cursor_lock`（C の受け箱、M・I↔C、I の入力の写し M→I）、`input_lock`（I→M の event の FIFO）。(1) どの thread も 2 つを同時に持たない（順序を決める必要を作らない）。(2) mutex を持ったまま Vulkan・`poll`・`read`・`write`（pipe の起こしも）・log の `printf` を呼ばない: 中身を写して放してから呼ぶ。(3) condvar の待ちは自分の mutex 1 つだけで。(4) 「pin」「failed」などの印は mutex の下で立て下ろすが、mutex は印の間ずっとは持たない。9 (m) の試験は lock を持ったまま stub の Vulkan が呼ばれたら失敗にする。
+- **lock の規則**（review-4 L-e）: mutex は 3 つ — `render_lock`（M↔R）、`cursor_lock`（C の受け箱、M・I↔C、M→I の写しと device の付け外しの依頼）、`input_lock`（I→M の event の FIFO）。(1) どの thread も 2 つを同時に持たない（順序を決める必要を作らない）。(2) mutex を持ったまま Vulkan・`poll`・`read`・`write`（pipe の起こしも）・log の `printf` を呼ばない: 中身を写して放してから呼ぶ。(3) condvar の待ちは自分の mutex 1 つだけで。(4) 「pin」「failed」などの印は mutex の下で立て下ろすが、mutex は印の間ずっとは持たない。9 (m) の試験は lock を持ったまま stub の Vulkan が呼ばれたら失敗にする。
 
 ### 4.7 object の寿命
 
@@ -294,8 +322,8 @@ CPU の重い所（main）: glyph の raster（glass.c:3052、`KWL GLASS glyph` 
 - **cursor の画像 2 枚の規則**（review-4 M-A）:
   1. **大きさ**: 画像の extent は plane の extent（64×64）に固定し、cursor の中身の大きさ（`content_width`・`content_height`）を別に持つ（今は大きさが変わると作り直す `shm.c:578`、plane の copy は `source->width` を使う `cursor-plane.c:668-669`）。M は書く時に中身の外側を透明（0）で埋め、plane の copy と composite はどちらも中身の大きさで読む（plane は今も外側を clear する）。cursor の surface が extent より大きい時は 2 枚を使わず、普通の shm の画像で composite（作成は次の walk の中）。
   2. **常に全体**: 2 枚には commit ごとに中身の全体を写す（傷んだ行だけを写すと `shm.c:582-590`、2 枚が交互なので 2 つ前の行が残る）。64×64 で 16KiB なので費用は小さい。
-  3. **pin と書いてよい画像**: C は受け箱から画像を取って copy する時に `cursor_lock` の下でその画像に pin を立て、その copy の fence の完了を見た時（C は copy の submit の後にその fence を上限付きで待つ）に `cursor_lock` の下で下ろす。M が書いてよいのは、**今の受け箱の画像でなく、pin が無く、出力の飛んでいるコマの copy の list にも無い画像**だけ。書いたら受け箱をその画像に替え version を進める。2 枚とも書けなければ、その commit は M が持っておき次の pass に延ばす（最新の commit だけを残し、buffer は今どおり写した直後に release）。
-  4. **plane の元**: plane に出す元は cursor の形（起動時に作り不変）と 2 枚だけに限る（今の `plane_state` は大きさの合う host の画像なら何でも出す、review-3 L-2 の経路で C の読み中に書かれる恐れ）。client の cursor の surface は commit の時に client の pool から 2 枚へ、`set_cursor` で既に commit 済みの surface を選んだ時はその surface の staging の map から 2 枚へ写す。それ以外の画像の cursor（dmabuf、大きい物、dnd の icon）は composite。
+  3. **pin と書いてよい画像**: C は受け箱から画像を取って copy する時に `cursor_lock` の下でその画像の pin の数を 1 増やし、その copy の fence の完了を見た時に `cursor_lock` の下で 1 減らす（0 で pin が無い）。C は copy の submit の後にその fence を待ち続けない（review-B4 F1 (b)、6.2）: 完了は次の pass の始めの `vkGetFenceStatus`（timeout 0）か、同じ swapchain の画像を次に acquire した時の待ちで見る。M が書いてよいのは、**今の受け箱の画像でなく、pin が無く、出力の飛んでいるコマの copy の list にも無い画像**だけ。書いたら受け箱をその画像に替え version を進める。2 枚とも書けなければ、その commit は M が持っておき次の pass に延ばす（最新の commit だけを残し、buffer は今どおり写した直後に release）。
+  4. **plane の元**: plane に出す元は cursor の形（起動時に作り不変）と 2 枚だけに限る（今の `plane_state` は大きさの合う host の画像なら何でも出す、review-3 L-2 の経路で C の読み中に書かれる恐れ）。client の cursor の surface は commit の時に client の pool から 2 枚へ写す。`set_cursor` で surface を選んだ時は、その surface に M がまだ採用していない commit（acquire fence や pacing で延びている物）があれば、その commit の buffer の client の pool から写す。無ければ surface の staging の map（採用済みの最新の中身）から写す（review-5 N-7: staging は採用前の commit を反映しないので古い）。それ以外の画像の cursor（dmabuf、大きい物、dnd の icon）は composite。
 - `struct kwl_import` に作成ごとに増える世代の番号を足し（p003）、C の `held[]` と bind の鍵はそれで比べる（同じ address の新しい import で古い像を出さない、ABA）。
 
 ### 4.8 park（review-1 H4、review-2 M-a、review-3 M-2、review-4 M-E・H-C）
@@ -332,19 +360,43 @@ CPU の重い所（main）: glyph の raster（glass.c:3052、`KWL GLASS glyph` 
 - **目的**: walk（App Home で数十 ms）と M の他の仕事の間も cursor の位置が 1 refresh 以内に受け箱へ届くこと。ユーザーの目標は「すべて 60fps」、指示は「ウィンドウへの通知の転送以外の処理はほとんどすべてスレッドに」。C に読ませない理由: C は plane の fence（最大 100ms `cursor-plane.c:534`）と present で止まるので、その間の入力が受け箱に届かない。I は Vulkan を呼ばず、止まるのは `poll` だけ。
 - **I が行うこと**: M から渡された device の fd を `poll` し、今の `kwl_input_read_devices`（`input.c:312`）の読み取りと device の間の時刻の順（BUG-142）をそのまま行う。
   - 相対の pointer（マウス）: `kwl_pointer_accel_move`（`input.c:764`）、出力をまたぐ位置（`kwl_pointer_relative` の計算 `heads.c:1786`、`kwl_plane_move` を出力の矩形の写しに対して）。
+  - 絶対の pointer（QEMU の virtio-tablet など、`apply_frame` の absolute）: 下の「絶対の pointer」（review-5 N-2）。
   - touchpad: 状態機械（`touchpad.c`、actions を返す純粋な module、`kwl_touchpad_tick` の tap の期限は I の `poll` の timeout）と、motion の action の位置（`input.c:1040-1080` の `pointer_move`、`touchpad_speed` の端数）。
-  - 位置が変わったら `cursor_lock` の下で受け箱の（x、y、pointer_output、event_us、I の時刻、warp の番号）を書き、C の condvar を起こす。
+  - 位置が変わったら、受け箱の読み・位置の計算・書き（x、y、pointer_output、event_us、I の時刻）を `cursor_lock` の 1 回の区間で行い（下の「位置の持ち主」）、C の condvar を起こす。
   - 全部の event（位置の変わった motion は動いた後の位置と warp の番号付き、ボタン・key・軸・touchpad の action・絶対の device の report・touch・tablet・device の消失）を、device の報告の順に `input_lock` の FIFO へ積み、pipe で M を起こす。
 - **M が行うこと**（今の処理のまま、元が I の FIFO になる）: motion を順に処理して `server->pointer_x/y`・`pointer_output`（M の見る位置）を event の位置にし、`kwl_seat_motion`（grab・画面・hover・client への wl_pointer の motion・enter・leave、`seat.c:484`）、`pointer_unmoved`・`kwl_damage_pointer`・`KWL POINTER output=` の log。ボタン・key 以下も今どおり。motion はまとめない（今と同じく 1 つずつ配る）。
-- **I と M の共有**（`cursor_lock` の下、M→I の写し）: 設定（`mouse_speed`・`mouse_acceleration`・`touchpad_speed` と touchpad の設定）、出力の矩形（`kwl_outputs`。変わるのは park の中か output の tick だけ、その時に M が写す）、device の組（M が scan・hotplug で開いた fd の追加と、消す fd。I が「外した」と答えてから M が close する、fd の番号の再利用を避ける）。session の pause（`backend-host.c:46`）の前に M は I に全部の device を外させる。
-- **位置の持ち主**: 位置（x、y、pointer_output）の正本は受け箱で、I が足していく。M が位置を動かす所（warp: 出力の消失 `heads.c:1879,1949`、`output-switch.c:676`、`shell.c:7827,7839`、絶対の device の tablet `tablet.c:1021`・touch `touch.c:2417`）は、`cursor_lock` の下で受け箱の位置を書き warp の番号を進める。I の次の相対の動きはその位置から足す。M は warp の番号が古い motion の event の位置を使わない（ボタン・key は配る）。`keyboard.c:835-838,917-923` の一時の書き換えは M の見る位置だけで、受け箱に書かない。
-- **絶対の device**（tablet・touch screen）: I は report を組み立てて M に渡すだけで、位置は M が今の処理で決め warp で受け箱に書く（60fps の cursor の対象は相対の pointer と touchpad）。
+- **I と M の共有**（`cursor_lock` の下、M→I の写しと依頼の列）: 設定の写し（`mouse_speed`・`mouse_acceleration`・`touchpad_speed` と touchpad の feel）、出力の矩形の写し（`kwl_outputs` と anchor の大きさ。変わるのは park の中か output の tick だけ、M の warp と同じ区間で写す）、device の付け外しの依頼（下）。M は依頼を列に積み、lock を放してから pipe で I を起こす。I は `poll` から戻るたびに列を処理する。
+- **device の付け外し**（review-5 N-1）: I が `poll`・`read` する fd は I の device の表にある物だけで、表を書くのは I だけ。M は evdev の fd を読まない。
+  - **付ける**: M が device を開いた時（scan・hotplug）と backend の resume で新しい fd を受けた時、M は「付ける」（slot、fd、種類と abs の範囲の写し）を頼む。`frame_count`・`discarding`・touchpad の状態の初期化は I が付ける時に行う（今 M が `backend-host.c:108-110` で書く物）。M は付けの ack を待たない。
+  - **外す（同期）**: fd が閉じられる前に、M は「外す」を頼み、I の ack を `input_lock` の condvar で上限付き（100ms。I は列を見るたびにすぐ答える）で待つ。I は外した fd を以後 `poll` にも `read` にも使わず、その device の最後の event（touchpad の `release_all` の action、tablet・touch の消失の印）を FIFO に積んでから ack を積む（N-5）。上限を超えたら `KWL FAILED site=input-detach` を出して `_exit`（閉じた番号を I が読み続けて client の socket を読むより止まる方が安全）。M は ack を受けてから close する（zedBSD は `kl_backend_input_close`）か、backend の callback から戻る。
+  - **backend の callback**（M の上で backend が呼ぶ）: `kwl_backend_input_paused`（`backend-host.c:79`、今は `input->fd = -1`）は同期の外す。`kwl_backend_input_gone`（:118、logind は戻った直後に `seat_release` で close `seat-logind-linux.c:683-685`）は同期の外す → `kwl_input_forget`。`kwl_backend_input_resumed`（:97）は新しい fd の付ける。`kwl_backend_session_paused`（:34）は今の quiesce の前に全部の device を同期で外す（resume の後は今どおり scan で開き直して付ける）。
+  - logind の resume は古い fd を close してから callback を呼ぶ（`seat-logind-linux.c:727-741`）。logind は pause の後にしか resume を送らず、pause の callback で I は外し済みなので、閉じた番号を I が持つことは無い。pause を経ない resume への保険として、p004 で backend の実装の順を「callback の後に古い fd を close」に入れ替える（`libkeiland-backend` の API は変えない）。FreeBSD は session_paused、各 input_gone、その後に lease を close の順と comment（`seat-freebsd.c:17-18`、呼び出し `:516-524`）にあり同じ規則で足りる（source の順は p004 の始めに確かめる、review-5 の未確認）。
+  - EOF・ENODEV（今の `input.c:404-408` の `kwl_input_close`）は I の読み取りで見つかるので、I が自分で外して「消失」の event（その device の最後）を積み、M がそれを処理する時に close する。
+- **持ち物の表**（review-5 N-5）:
+
+| 欄 | 持ち主 | 他の thread の扱い |
+| --- | --- | --- |
+| `struct kwl_input_device` の `fd`（付けてから外すまで）・`frame`・`frame_count`・`frame_time_us`・`discarding`・`abs_x`・`abs_y`・`accel`・`pad` | I | M は読まない。tablet・touch の処理（`tablet.c`・`touch.c`）が読む `device->frame` は、I が report を FIFO の event に写して渡す |
+| 同じ struct の `live`・`pointer`・`keyboard`・`absolute`・`tablet`・`touch`・`touchpad`・`abs_*_minimum`・`abs_*_maximum`・`path` | M（開いた時に決める） | 付ける依頼に写して I へ。I は自分の写しを使う |
+| `server->input_ms`（`input.c:398`）・`input_events`（`input.c:657`） | M | I は event の時刻を FIFO の event に載せ、M が処理する時に今どおり更新する |
+| `server->pointer_event_us`・`pointer_remainder_x`・`pointer_remainder_y`（`input.c:1063-1066`） | I | `event_us` は受け箱と motion の event に写す。M は event の値を使う |
+| 設定（`mouse_speed`・`mouse_acceleration`・`touchpad_speed`・`touchpad_acceleration`・`touchpad_natural`） | M が正本 | 変更は I への依頼。`kwl_input_touchpads_changed`（`input.c:992-1010`）の `kwl_touchpad_set_feel` は I が依頼を受けて自分の `pad` に行う |
+| 受け箱の位置（x、y、`pointer_output`、`event_us`、warp の番号） | I と M の warp（`cursor_lock` の下） | 下の「位置の持ち主」 |
+
+- **位置の持ち主**（review-5 N-3）: 位置（x、y、`pointer_output`）の正本は受け箱で、I が足していく。
+  - **I の動き**: `cursor_lock` の下で受け箱の位置と出力の矩形の写しを読み、`kwl_plane_move`（`kwl_pointer_relative` の計算）を行い、受け箱に書くまでを 1 回の区間で行う（計算は純粋な関数）。`KWL POINTER output=` の printf と dirty は lock を放してから、FIFO の event で M へ（4.6 の規則）。
+  - **M の warp**: 出力の消失と退避（`heads_evacuate` `heads.c:1876-1881`）、head と一緒の移動（`heads_windows_follow` `heads.c:1940-1954`）、出力の大きさの clamp（`output-switch.c:675-678`）、絶対の device の pen tablet（`tablet.c:1021`）・touch screen（`touch.c:2417`）。M の見る位置（I の FIFO を処理した所までで遅れている）からは計算しない。`cursor_lock` の下で受け箱の位置と `pointer_output` を読み、pointer の部分の計算（`kwl_plane_carry` など純粋な関数）をして、出力の矩形の写しの更新と同じ区間で受け箱に書き warp の番号を進める。M の見る位置も同じ値にする。窓の移動と printf・dirty は lock の外。
+  - I の次の相対の動きはその位置から足す。M は warp の番号が古い motion の event の位置を使わない（ボタン・key は配る）。
+  - **一時の書き換え**（M の見る位置だけ、受け箱に書かない。warp ではない）: `keyboard.c:835-838,917-923`、`band_replay`（`shell.c:7811-7841`、上端の帯の押下をその点で glass に渡して位置を戻す。前の版の warp の一覧の `shell.c:7827,7839` は誤り）。
+- **絶対の pointer**（review-5 N-2。QEMU の virtio-tablet など `apply_frame` の absolute `input.c:735-783`、試験の `guest.py:99` もこれ）: I が `scale_absolute` で anchor の大きさ（出力の矩形の写し）に写し、`pointer_output` を anchor にし（`kwl_pointer_absolute` `heads.c:1814-1824` の計算）、同じ report の相対の差分を足して clamp し、受け箱に書く。**warp の番号は進めない**（相対の動きと同じく I の書いた順に motion の event が M に届くので、M の位置は古くならない）。`KWL POINTER output=0 absolute` の printf・dirty と `pointer_unmoved` の解除（`input.c:740-747`）は FIFO の event で M。
+- **絶対の device**（pen tablet・touch screen、`tablet.c`・`touch.c`）: I は report を写して M に渡すだけで、位置は M が今の処理で決め warp で受け箱に書く（60fps の cursor の対象は相対の pointer、touchpad、絶対の pointer）。
 - 1 core の間: I は evdev で起き、同じ優先度の起きた thread として M・R を次の安全な点で横取りする（10 節）。R・C が kernel の中の長い transaction（End の decode `hold_us` 最大 11〜19ms）にいる間は待つ（11 節）。
 
 ### 6.2 cursor の thread C と受け箱（review-3 M-3、review-4 H-C）
 
 - **受け箱**（`cursor_lock` の下の 1 組）: I が書く（x、y、pointer_output、event_us、時刻、warp の番号）、M が書く（像: cursor の形か 2 枚のどれか、その世代と version、中身の大きさ、hotspot、出すか）、C が書く（2 枚の pin、failed、copy の済んだ version、計数）。C は最新を読み、plane の左上＝位置−hotspot。`pointer_output` が anchor でない時と「出すか」が 0 の時は空を出す（M は I の FIFO の motion を受けて composite に切り替える。切り替えのコマまで cursor が見えない間は今の出力をまたぐ時と同じ）。
 - C は C0 の規則（1 refresh に 1 回、最初の動きと像の変化はすぐ）で present し、plane の fence も C だけが待つ（今の `vkWaitForFences` 100ms `cursor-plane.c:534` も C の中）。
+- **copied の gate**（review-B4 F1 (b)）: 今は最後の copy が終わるまで次の acquire をしない（`cursor-plane.c:499-509` の `plane->copied`）ので、像が変わった後は swapchain の画像が 1 枚ずつ順番に copy を待ち、各 copy が primary のコマの後ろに並ぶ間 cursor が止まる。C ではこの gate をやめ、**待つのは acquire した画像の前の copy の fence だけ**にする（その画像の command buffer を書き直す前、今の `:532-536` の待ち）。別の画像への copy が飛んでいても、像の変わっていない画像の acquire と位置だけの present は止めない。pin の下ろしは 4.7 の 3。
 - **持ち物の分け方**（review-4 H-C）: 今の `struct kwl_cursor_plane` を 2 つに分ける。
   - M の持ち物: `open`、`shown`（plane か composite か、`cursor-plane.c:184-187` の切り替え）、plane の extent の写し（`plane_state` の大きさの判定 `cursor-plane.c:296-300` と、`output.width` の読み `:150-162` の代わり）、failed の写し。
   - C の持ち物: present の状態の全部（`output` の swapchain と画像、**plane 専用の VkCommandPool**（今の `compose->pool` `cursor-plane.c:128,410-412` をやめる。M の walk の確保 `import.c:308` と同じ pool を使わない。zedBSD の libvulkan は `objects.c:254` の registry の lock で通るが Mesa では外部同期の違反）、command buffer、fence、semaphore、`next`、`held[]`・`held_version[]`、`copied`・`last_copy`、計数）。
@@ -355,16 +407,23 @@ CPU の重い所（main）: glyph の raster（glass.c:3052、`KWL GLASS glyph` 
 
 ### 6.3 画面に映る cursor と WS141
 
-- 画面に映る cursor の速さは WS141 p016 (B) に依存する: libvulkan の present の worker は queue ごとに 1 本で後の job は前を追い越さず、各 job の GPU の fence を待つ（`wsi-swapchain.c:2664-2710,2745,2776-2782`）。cursor の plane と出力のコマは同じ queue。前提は (a) B-u（位置だけの present が worker も GPU も通らない、ticket で追い越す）、(b) B-u の L1（display_mutex の待ち）、(c) p016 の受け入れ B の前提（(b)・A3）。C があっても、C の present はこれらで待つ。
+- 画面に映る cursor の速さは WS141 p016 (B) に依存する: libvulkan の present の worker は queue ごとに 1 本で後の job は前を追い越さず、各 job の GPU の fence を待つ（`wsi-swapchain.c:2664-2710,2745,2776-2782`）。cursor の plane と出力のコマは同じ queue。前提は (a) B-u（位置だけの present が worker も GPU も通らない、ticket で追い越す）、(b) p016 の受け入れ B の前提（(b)・A3）。B-u の L1（display_mutex の待ち、acquire の `display_image_available` の待ちも）は前提ではなく、p016 の計測の後の次の版で扱う（review-B4 M-f、p016 第 4 版に揃えた）。C があっても、C の present はこれらで待つ。
+- **受け入れの分担**（review-B4「WS213 との関係」、Q1）: p016 (B) が受け持つのは「main loop が止まらない時の入力→ioctl」。WS213 が受け持つのは端から端（evdev の入力 → 画面に映る cursor）の 60fps で、その判定は B-u が入った後に WS の完了の条件で行う（ws.md）。p004 の必達（box_lag、6.4）は WS213 の中の段の量で、端から端の判定を置き換えない。
+- **C と R の同じ queue の同時使用**（review-B4 M-d・H-b）: zedBSD の libvulkan の build には `queue_lock` が無く（3.3）、C の copy の submit・present と R の submit・present が同じ VkQueue に同時に来る。B-u の fast path を含め、libvulkan がこれを安全に扱うことは p016 B-u が明記し、libvulkan の fixture（C の fast path・R の submit・worker の同時）で確かめる。WS213 はそれを前提として引用し、自分では確かめない（9 (m) の stub は compositor の側の規則だけ）。fast path の `device->mutex` の待ち（上限が無い）は p016 の測定の項目。
 
-### 6.4 この WS の必達と判定（review-2 H-e、review-3 M-3、review-4 H-B・L-d）
+### 6.4 この WS の必達と判定（review-2 H-e、review-3 M-3、review-4 H-B・L-d、review-5 N-4・N-6）
 
-- **必達**（Q1 の方針）: pointer が動いている間、受け箱の更新の間隔の p99 と最長 ≤ 1 refresh（16.7ms）。App Home の開閉と窓の drag の間も。
-- **記録して上限を持つ**: M の 1 pass の最長（walk を含む）。client への motion・hover・cursor の形の遅れを決める。上限は 2 refresh（33.3ms、8 節の p003 の閾値と同じ値。11 節の未決）。walk の外の M の Vulkan の最長 ≤ 1 refresh（review-3 M-3 の判定）。
+- **必達**（Q1 の方針。量は review-5 N-4 で変えた）: pointer が動いている間の **box_lag**（evdev の report の時刻 `event_us` → I が受け箱に書いた時刻）の **p99 ≤ 1 refresh（16.7ms）**。App Home の開閉と窓の drag の間も。
+  - **最長 ≤ 16.7ms**も判定に入れるが条件付き（Q1 の判断）: 超えた原因が kernel の中の長い transaction（R の End の decode・C の present の `hold_us`）と分かれば、p004 を uncleared にして WS208（SMP）・kernel への依存として Q1 に返す。原因の切り分けのため、box_lag が 16.7ms を超えた書き込みごとに `KWL CURSOR_LAG` の行を出し、kernel の `hold_us` の行の時刻と対応させて p004 の結果に記録する（下の log、11 節 9）。
+  - **前提**: `event_us` の時計と I の書き込みの時刻（`kwl_microseconds`、CLOCK_MONOTONIC）が同じ基準であること（11 節 3）。p004 の始めに Pi で確かめる。
+  - **代替**（時計が確かめられない時だけ）: 動いている間の「受け箱の書き込みの間隔 − 続く 2 つの `event_us` の間隔」の超過分の p99・最長 ≤ 16.7ms。入力そのものの間隔は数えない。
+  - 前の版の box_gap（書き込みの間隔）の最長は、遅い pointer（evdev が 20〜50ms おき）で入力の間隔そのものが 16.7ms を超えるので満たせない（review-5 N-4）。box_gap は記録だけにする。
+- **記録して上限を持つ**: M の 1 pass の最長（walk を含む）。client への motion・hover・cursor の形の遅れを決める。上限は 2 refresh（33.3ms、Q1 が確かめた）。場面 (1)〜(3) で判定し、(4) の app の起動（client の起動の大きな commit・import が重なる）は `pass_p99_us` を記録する（review-5 N-6、Q1 の判断）。walk の外の M の Vulkan の最長 ≤ 1 refresh（review-3 M-3 の判定）。
 - **log**（p004 で足す）:
-  - `KWL PERF main` に `pass_max_us=`（M の 1 pass の最長、walk を含む）、`walk_max_us=`、`vk_outside_max_us=`（walk の外の M の Vulkan の最長）。
-  - `KWL PERF cursor`（5 秒の窓ごと、I と C の計数）: `box_writes=`、`box_gap_p99_us=`・`box_gap_max_us=`（動いている間の受け箱の書き込みの間隔。「動いている間」は、続く 2 つの書き込みの event_us の差が 50ms 以下の組だけ。止まっていた間の空きを数えない）、`box_lag_p99_us=`・`box_lag_max_us=`（event_us → 受け箱の書き込みの時刻。11 節 3 の時計の確かめの後）、C の `presents=`・`present_gap_max_us=`・`present_max_us=` と内訳（M0 の `fence`・`acquire`・`copy`・`present` を C に移す）。
-- **場面と時間**（Pi、1 boot、ユーザーか Q1 の手で、Pi には入力の自動化が無い）: (1) pointer だけを 10 秒動かす、(2) pointer を動かしながら App Home を 5 回開閉、(3) 窓を 10 秒 drag、(4) Music・Settings の起動を 1 回ずつ。各場面の `KWL PERF main`・`KWL PERF cursor`・`KWL LAT` の行で判定する。
+  - `KWL PERF main` に `pass_max_us=`・`pass_p99_us=`（M の 1 pass の最長と p99、walk を含む）、`walk_max_us=`、`vk_outside_max_us=`（walk の外の M の Vulkan の最長）。
+  - `KWL PERF cursor`（5 秒の窓ごと、I と C の計数）: `box_writes=`、`box_lag_p99_us=`・`box_lag_max_us=`・`box_lag_over=`（`event_us` → 受け箱の書き込みの時刻、必達の量。over は 16.7ms を超えた書き込みの数）、`box_excess_p99_us=`・`box_excess_max_us=`（代替の超過分）、`box_gap_p99_us=`・`box_gap_max_us=`（記録だけ。動いている間の書き込みの間隔。「動いている間」は、続く 2 つの書き込みの `event_us` の差が 50ms 以下の組だけ）、C の `presents=`・`present_gap_max_us=`・`present_max_us=` と内訳（M0 の `fence`・`acquire`・`copy`・`present` を C に移す）。
+- **場面と時間**（Pi、1 boot、ユーザーか Q1 の手で、Pi には入力の自動化が無い）: (1) pointer だけを 10 秒動かす、(2) pointer を動かしながら App Home を 5 回開閉、(3) 窓を 10 秒 drag、(4) Music・Settings の起動を 1 回ずつ。各場面の `KWL PERF main`・`KWL PERF cursor`・`KWL LAT` の行で判定する（(4) は `pass_max_us` で判定せず `pass_p99_us` を記録）。
+  - `KWL CURSOR_LAG event_us= write_us= lag_us=`: box_lag が 16.7ms を超えた書き込みごとに 1 行（5 秒の窓に最大 20 行）。kernel の `hold_us` の行の時刻と並べ、最長の原因が kernel の長い transaction かを見る。
 - **測り方**: `KWL CURSOR_PLANE present` の `at_us` は C が呼んだ時刻。`event_us`（evdev の kernel の時刻、マウスと touchpad）、`present_cycles`。表示の側の時刻（kernel の `CURSOR_SET`・`MOVE`）は Q1 が WS141（P3）に依頼済み。
 
 ### 6.5 plane が無い出力
@@ -373,7 +432,7 @@ CPU の重い所（main）: glyph の raster（glass.c:3052、`KWL GLASS glyph` 
 
 ## 7. libvulkan の thread の安全、Linux・FreeBSD
 
-- zedBSD の libvulkan: session ごとの `context->mutex` が kernel との transaction を直列にする。command buffer の vkCmd* は貯めるだけで lock を取らない。同時に呼ぶのは (a) M の backend の import と R・C の transaction、(b) C の present と R の submit（3.3）、(c) M 専用の fence の問い合わせ、(d) R の step 1 の破棄と M の backend の import（device 単位、別の object）。I は Vulkan を呼ばない。正しさは保たれ、問題は待ち時間。walk・park の中の `vkQueueWaitIdle`・`vkDeviceWaitIdle` は WSI の worker の present の drain（`queue.c:108-155` → `wsi-swapchain.c:617-647,2715-2790`）を待つので、M の止まりの見積もりに入れる（review-3 L-1）。
+- zedBSD の libvulkan: session ごとの `context->mutex` が kernel との transaction を直列にする。command buffer の vkCmd* は貯めるだけで lock を取らない。同時に呼ぶのは (a) M の backend の import と R・C の transaction、(b) C の present と R の submit（3.3。安全は p016 B-u の前提、6.3）、(c) M 専用の fence の問い合わせ、(d) R の step 1 の破棄と M の backend の import（device 単位、別の object）。I は Vulkan を呼ばない。正しさは保たれ、問題は待ち時間。walk・park の中の `vkQueueWaitIdle`・`vkDeviceWaitIdle` は WSI の worker の present の drain（`queue.c:108-155` → `wsi-swapchain.c:617-647,2715-2790`）を待つので、M の止まりの見積もりに入れる（review-3 L-1）。
 - Vulkan の規則（Mesa など）: 外部同期の要る object（command pool・descriptor pool・command buffer・queue・swapchain）は、R が使う時と M が walk・park の中で使う時が重ならない（3.2 の不変条件）。C は自分専用の command pool と swapchain（review-4 H-C）。queue は Mesa の build だけ `queue_lock`（新しく足す）。zedBSD の libvulkan が command pool の同時使用を registry の lock（`objects.c:254`）で通すことに頼らない。
 - Linux・FreeBSD の backend: 変わるのは compositor の中だけで、`libkeiland-backend` の API は変えない。pthread は既に使っている。I の読む device の fd は backend（`libkeiland-backend/evdev/input-evdev.c`、Linux の logind `seat-logind-linux.c`、zedBSD の `input-zedbsd.c`）が開いた物で、開け閉めは今どおり M。新しい file は `Makefile`・`Makefile.linux`・`Makefile.freebsd` に足す。
 
@@ -381,11 +440,11 @@ CPU の重い所（main）: glyph の raster（glass.c:3052、`KWL GLASS glyph` 
 
 | Phase | 内容 | 受け入れ（各 phase.md に同じ物） | 状態・順 |
 | --- | --- | --- | --- |
-| p001 | 調査と設計（この文書） | design-reviewer の review を通る（S2 の部分は第 5 版の差分の確認） | 第 5 版、差分の確認 |
+| p001 | 調査と設計（この文書） | design-reviewer の review を通る（S2 の部分は第 5 版の差分の確認） | 第 6 版（review-5 で S2 条件付き可、N-1〜N-4 の反映は Q1 が確認） |
 | [p002](../phase002/phase.md) | M0 と C0 | host 試験 PASS、build warning 0、Pi で `cursor presents=` が約 60/s 以下、present の間隔が約 16.7ms | 実装済み、Pi・T1 の確認待ち |
-| [p003](../phase003/phase.md) | S1: display list（同じ thread で再生）、cursor の形の起動時の batch の作成、`kwl_import` の世代 | 9 節 (a) の再生の等価が全場面で一致、build warning 0、T1 で shot の画が前と同じ、Pi で `KWL STARTUP step=cursor-shapes` の ms（batch の作成だけを独立に出す、review-4 L-c）が 50ms 以下、walk と再生の時間を分けて測る。**p004 に進む閾値**（review-4 H-B: 中央値でなく p90 と最長）: Pi で walk（M の時間）が普通のコマ（100 draw 未満）の p90 8ms 以下かつ最長 16.7ms 以下、App Home のコマ（300 draw 以上）の p90 16.7ms 以下かつ最長 33.3ms 以下（今の記録＋End は 48 / 62 / 93）。満たさなければ WS211 の削減を先にする（p004 の依存、review-4 L-f） | 着手は Q1 の指示（P3 との順） |
-| [p004](../phase004/phase.md) | S2: R・C・I の thread（2 段の pull、want の規則と R の持つ画像、不変条件、park、FIFO、host image の書き込みの規則、cursor の 2 枚、C の持ち物の分け方、pointer の経路の I への移動、client の破棄の延ばし） | 9 節 (b)〜(i)・(k)・(l) の決定的な host 試験と (m) の thread と TSan の host 試験が PASS、Linux の build を ThreadSanitizer 付きで動かして WS213 の thread と lock の報告 0（WS131 の Debian の QEMU+KVM guest、T1、9 節の方針）、T1（i915・Venus）で回帰なし、Pi で 6.4 の場面: **受け箱の更新の間隔の p99・最長 ≤ 16.7ms（必達）**、M の 1 pass の最長 ≤ 33.3ms、walk の外の M の Vulkan の最長 ≤ 16.7ms、`KWL LAT` の入力→walk の中央値が p003 より改善、C の present の全段の最長を記録 | p003 の閾値を満たした後（満たさなければ WS211 の削減の後）、p001 の S2 の確認の後 |
-| [p005](../phase005/phase.md) | S3: W（glyph・壁紙・大きな字） | 9 節 (j) PASS、日本語の UI で初出の字の多い画面で walk の最長が p004 より下がる、壁紙の変更の間も受け箱の更新の間隔の p99・最長 ≤ 16.7ms と M の 1 pass の最長 ≤ 33.3ms、T1 で回帰なし | p004 の後 |
+| [p003](../phase003/phase.md) | S1: display list（同じ thread で再生）、cursor の形の起動時の batch の作成、`kwl_import` の世代 | 9 節 (a) の再生の等価が全場面で一致、build warning 0、T1 で shot の画が前と同じ、Pi で `KWL STARTUP step=cursor-shapes` の ms（batch の作成だけを独立に出す、review-4 L-c）が 50ms 以下、walk と再生の時間を分けて測る。**p004 に進む閾値**（review-4 H-B: 中央値でなく p90 と最長）: Pi で walk（M の時間）が普通のコマ（100 draw 未満）の p90 8ms 以下かつ最長 16.7ms 以下、App Home のコマ（300 draw 以上）の p90 16.7ms 以下かつ最長 25ms 以下（review-5 N-6 の Q1 の判断。33.3ms では p004 の `pass_max` ≤ 33.3ms に余裕が無い。今の記録＋End は 48 / 62 / 93）。満たさなければ WS211 の削減を先にする（p004 の依存、review-4 L-f） | 着手は Q1 の指示（P3 との順） |
+| [p004](../phase004/phase.md) | S2: R・C・I の thread（2 段の pull、want の規則と R の持つ画像、不変条件、park、FIFO、host image の書き込みの規則、cursor の 2 枚、C の持ち物の分け方、pointer の経路の I への移動、client の破棄の延ばし） | 9 節 (b)〜(i)・(k)・(l) の決定的な host 試験と (m) の thread と TSan の host 試験が PASS、Linux の build を ThreadSanitizer 付きで動かして WS213 の thread と lock の報告 0（WS131 の Debian の QEMU+KVM guest、T1、9 節の方針）、T1（i915・Venus）で回帰なし、Pi で 6.4 の場面: **box_lag の p99 ≤ 16.7ms（必達）と最長 ≤ 16.7ms（原因が kernel の長い transaction なら uncleared で WS208・kernel への依存、6.4）**、M の 1 pass の最長 ≤ 33.3ms（場面 (1)〜(3)、(4) は p99 を記録）、walk の外の M の Vulkan の最長 ≤ 16.7ms、`KWL LAT` の入力→walk の中央値が p003 より改善、C の present の全段の最長を記録 | p003 の閾値を満たした後（満たさなければ WS211 の削減の後）、p001 の S2 の確認の後 |
+| [p005](../phase005/phase.md) | S3: W（glyph・壁紙・大きな字） | 9 節 (j) PASS、日本語の UI で初出の字の多い画面で walk の最長が p004 より下がる、壁紙の変更の間も box_lag の p99・最長 ≤ 16.7ms（6.4 と同じ条件）と M の 1 pass の最長 ≤ 33.3ms、T1 で回帰なし | p004 の後 |
 | [p006](../phase006/phase.md) | 規約の全文の見直し | WS213 の C の全部を plan/coding-style.md の全文と照らして直す、build warning 0、host 試験 PASS | 最後 |
 
 Future Work（2026-10-12 Q1 が記入）: F-094 client の画像の import を R へ、F-095 GPU と walk を重ねる・2 コマ飛ばす、F-096 cursor の plane に別の VkDevice。kernel の CURSOR_SET・MOVE の時刻の log は Q1 が WS141（P3）に依頼。
@@ -398,12 +457,16 @@ Future Work（2026-10-12 Q1 が記入）: F-094 client の画像の import を R
   - (c) **heads**（H-2、review-4 H-A）: want の slot のうち持っていない物だけを取り、R が head の状態を書かない。**取り消しの後に同じ head を二度 acquire しない**（stub の swapchain が present されていない画像の 2 度目の acquire を失敗にする）、取り消しを越えて持った head を次の walk が描き present する、want から外れた head も present される、pointer の動きで `heads_needs_frame` が変わっても漏れない。park で slot が再利用された時に古い世代の画像を捨て semaphore を作り直す。作り直さない park を越えて head の画像を持ち越す。
   - (d) **不変条件**（H-a）: walk の中の遅延作成・descriptor set・shm の作成で R・C が Vulkan を呼ばない、I は一度も呼ばない（stub の Vulkan が呼んだ thread の役を記録）。破棄は R の step 1 だけで、want が無くても FIFO の依頼で進む（review-4 M-C）。
   - (e) **通り道の順**（M-b）: 完了の記録 → ready の順で、walk が前のコマの結果を見ている。
-  - (f) **shm と cursor の 2 枚**（H-c・H-3、review-4 M-A）: memcpy と release が walk の中か、copy の list に無い時は walk の外。cursor の 2 枚: 今の受け箱の画像・pin の立った画像・飛んでいる写しの画像には書かない、両方書けない時は次の pass（最新の commit だけ）、commit で作成も submit もしない、常に全体を写し外側は透明（大きさが 24×24 → 48×48 → 24×24 と変わる場面、傷んだ行だけの commit が続く場面）、plane の元が形と 2 枚だけ（大きさの合う普通の shm の画像を plane に出さない）、`set_cursor` で commit 済みの surface を選んだ時に staging から写す。C の `held[]` が世代で比べる。
+  - (f) **shm と cursor の 2 枚**（H-c・H-3、review-4 M-A）: memcpy と release が walk の中か、copy の list に無い時は walk の外。cursor の 2 枚: 今の受け箱の画像・pin の立った画像・飛んでいる写しの画像には書かない、両方書けない時は次の pass（最新の commit だけ）、commit で作成も submit もしない、常に全体を写し外側は透明（大きさが 24×24 → 48×48 → 24×24 と変わる場面、傷んだ行だけの commit が続く場面）、plane の元が形と 2 枚だけ（大きさの合う普通の shm の画像を plane に出さない）、`set_cursor` で surface を選んだ時に、未処理の commit があればその client の pool から、無ければ staging から写す（review-5 N-7）。C の `held[]` が世代で比べる。
   - (g) **host image**（H-b・L-4）: walk の外の `glass_text_width` が staging を書かず、未着の list を次の walk の始めに cell の割り当ての順に書く。R の copy の list は walk で取り込んだ物だけ。
   - (h) **park**（M-2・M-5、review-4 M-E）: 非同期の park の間 M が進む、parked は R と C の両方の ack の後、park の間と os_paused・sleep_hold・game mode の間 C が present しない、同期の park（session の pause・終了）、上限を超えた時の `_exit`（後始末を呼ばない）、park で swapchain を作り直した後に acquire の semaphore も作り直す、画像を持ったままの park と unpark。
-  - (i) **C**（review-4 H-C）: M・I の受け箱の書き換えが C を待たない、C0 の規則（今の cursor-due-host-test を C に移す）、C が `compose->pool` を使わない（stub が pool ごとの使用者を記録）、C の失敗で C が failed を立てて止まり M の持ち物を書かない、M が composite に切り替え次の park で C が壊す、計数が `cursor_lock` の下の写しから読める。
+  - (i) **C**（review-4 H-C）: M・I の受け箱の書き換えが C を待たない、C0 の規則（今の cursor-due-host-test を C に移す）、C が `compose->pool` を使わない（stub が pool ごとの使用者を記録）、C の失敗で C が failed を立てて止まり M の持ち物を書かない、M が composite に切り替え次の park で C が壊す、計数が `cursor_lock` の下の写しから読める。copied の gate（review-B4 F1 (b)）: 像が変わった後、ある swapchain の画像への copy が飛んでいても、別の画像の acquire と位置だけの present が止まらず、待つのは acquire した画像の前の copy の fence だけ。pin が飛んでいる copy の数で下ろされる。
   - (j) glyph（p005）: 未着の job の字は描かずに印、layer は無効、次の walk で描く。
-  - (k) **I**（review-4 H-B）: M が止まっている間（walk の途中で M の手順を止める）も I の motion が受け箱に届き C が present する、FIFO の順（motion → ボタン → motion）が M で保たれる、M の warp の後に I の相対の動きがその位置から足され、warp の番号の古い motion の位置を M が使わない、touchpad の tap の期限が I の tick で進む、device の外しの ack の前に M が fd を閉じない、設定と出力の矩形の写しの変更が次の motion から効く。
+  - (k) **I**（review-4 H-B）: M が止まっている間（walk の途中で M の手順を止める）も I の motion が受け箱に届き C が present する、FIFO の順（motion → ボタン → motion）が M で保たれる、M の warp の後に I の相対の動きがその位置から足され、warp の番号の古い motion の位置を M が使わない、touchpad の tap の期限が I の tick で進む、device の外しの ack の前に M が fd を閉じない、設定と出力の矩形の写しの変更が次の motion から効く。review-5 で足す場面:
+    - (k1) **fd の番号の再利用**（N-1）: stub の backend が pause・gone・resume の callback の中で fd を閉じ、同じ番号で別の file（client の socket の代わりの pipe）を開く。I が外しの ack の後にその番号を `poll`・`read` しない、ack の上限切れで `_exit`、resume の新しい fd から読む、session の pause で全部を外す、EOF で I が自分で外し M が close する。
+    - (k2) **絶対の pointer**（N-2）: virtio-tablet の report で I が anchor に写して受け箱に書き、warp の番号が進まず、相対の motion と交互でも M の位置が古くならない。
+    - (k3) **hotplug の退避と I の動きの交差**（N-3）: M の `heads_evacuate`・`heads_windows_follow`・clamp の計算の途中で I が出力をまたぐ motion を書いても、M は受け箱の位置から計算し、出力の矩形の写しと位置が同じ区間で替わる（I が古い矩形で新しい位置を、新しい矩形で古い位置を読まない）。`band_replay` の一時の書き換えが受け箱に書かない。
+    - (k4) **持ち物**（N-5）: touchpad の設定の変更が I への依頼で効く、`release_all` の action と外しの ack がその device の最後の event の後に FIFO に並ぶ、tablet・touch の処理が FIFO の写しの report を読む（I の `frame` を読まない）、M が I の持ち物を触ったら stub が失敗にする（(m) でも）。
   - (l) **client の破棄**（review-4 M-B）: 4.9 の 4 つの場面で、protocol の object はすぐ消え、GPU の object・buffer の後始末は参照する写しの完了の記録の後、死んだ client に event・release・frame callback を送らない。
   - (m) **thread と TSan**（review-4 M-D）: 本物の pthread で M・R・C・I を動かし、stub の Vulkan が外部同期の object（command pool・descriptor pool・command buffer・queue・swapchain）ごとに入口と出口で使用中の thread を atomic で記録し、2 つの thread が重なったら失敗、mutex を持ったままの呼び出しも失敗（4.6 の規則）。場面は (b)〜(l) を乱数の種で混ぜて 10 万歩。`-fsanitize=thread` で build し、TSan の報告 0、重なり 0。C の present の経路を通るのはこの試験だけ（Linux では plane が開かない、3.3）。
   - C0（p002）: `plan/ws213/tests/cursor-due-host-test.sh`（PASS）。
@@ -418,28 +481,30 @@ Future Work（2026-10-12 Q1 が記入）: F-094 client の画像の import を R
 ## 10. SMP が無い間の効果の見込み
 
 - Pi の kernel は 1 core（WS208 まで）。thread にしても CPU の総量は同じで fps は上がらない。
-- 効くのは入力と cursor の遅れ: kernel は起きた thread が同じ優先度なら走っている thread を次の安全な点で横取りする（`src/kern/sched.c` の `wake_enqueue_locked` 1800-1834、未確かめ）。evdev が読めると I が起き、M の walk や R の encode を横取りして受け箱を書き、C を起こす。I の仕事は 1 event で数十 µs の見込み。R・C が kernel の中にいる時は安全な点まで待つ（11 節 9）。
+- 効くのは入力と cursor の遅れ: kernel は起きた thread が同じ優先度なら走っている thread を次の安全な点で横取りする（review-5 が読んだ: `src/kern/sched.c` の `wake_enqueue_locked` 1800-1834 は同じか高い優先度の起きた thread で `cpu->preempt` を立て、user に戻る時 763-773 か tick 945-962（`preempt_count==0`）で切り替える。遅れは 1 tick 程度の見込み。decode が preempt を止めるかと tick の周期は未確認で p004 の始めに確かめる）。evdev が読めると I が起き、M の walk や R の encode を横取りして受け箱を書き、C を起こす。I の仕事は 1 event で数十 µs の見込み。R・C が kernel の中にいる時は安全な点まで待つ（11 節 9）。
 - 見込み（p002・p003 の実測で直す）: 1 コマで M が止まる時間は今 10〜20ms（App Home 60〜120ms）→ p004 の後は walk だけ＋walk の外の M の Vulkan（import の時）。cursor の位置は M の止まりと無関係になり（I）、cursor の plane の待ちは C に移る。画面の cursor の 60fps は WS141 p016 (B) の後。
 
 ## 11. 未決と危険
 
 1. walk の費用（p003 で測る、閾値は 8 節）。
    - **代替: walk の分割**（review-4 H-B、Q1 の方針で本案ではなく代替）: 重い walk（App Home の 300 draw 以上）を途中で区切り、区切りごとに M が I の FIFO と client の request を処理する形。walk の途中の server の状態の変更が一覧の前半と後半で食い違わないこと（区切りの間は状態を変える request を溜める）が要り、複雑なので、p004 の後に M の 1 pass の最長が 33.3ms を超え client の入力の遅れが問題になった時にだけ考える（plane の無い出力の composite の cursor にも効く、6.5）。
-   - M の 1 pass の最長の上限 33.3ms（2 refresh）は P4 の提案。Q1 の確かめが要る（6.4）。
+   - M の 1 pass の最長の上限 33.3ms（2 refresh）は Q1 が確かめた（review-5 の答え (1)）。判定は場面 (1)〜(3)、(4) は p99 を記録（6.4）。
 2. C の present の待ち（R の submit・End・WSI の worker）。画面の速さは WS141 に依存。
-3. `event_us` の時計（kernel の `clock_milliseconds`）と `kwl_microseconds`（CLOCK_MONOTONIC）が同じ基準かを Pi で確かめる。
+3. `event_us` の時計（kernel の `clock_milliseconds`）と `kwl_microseconds`（CLOCK_MONOTONIC）が同じ基準かを Pi で確かめる。box_lag（6.4 の必達）の前提なので p004 の始めに確かめ、違えば代替の超過分で判定する（review-5 N-4）。Linux は logind の resume で `EVIOCSCLOCKID` を CLOCK_MONOTONIC にしている（`seat-logind-linux.c` の `seat_resume`）。
 4. `KWL LAT`・`KWL FIRST_FRAME` の定義し直し（p004）: want＝M が立てた時、ready＝R の acquire の後、draw＝M の walk の始め、recorded＝R の End、queued・submit＝R、shown＝M が完了の記録を受けた時（output_lost・switch_proving もこの時に知る）。
 5. retire（`objects.c:739`）は完了の記録の処理の後に 1 つずつ（in_flight を見ない）。
 6. `kwl_compose_quiesce` の 4 か所（`objects.c:554` は 4.9 で決めた、`backend-host.c:46` は同期の park、残る `main.c:1120`、`shm.c:187`）と `->in_flight` の 16 か所は、p004 の実装の前に 1 つずつ park・retire・写しの帳簿のどれかに当てる。R が ready で待っている時と park の中の quiesce は即座に返る。
 7. compose->command を直に使う所（`compose.c:2365〜`、`layer-cache.c:184`）は p003 の型の変更で見つからないので、grep で全部を挙げて一覧へ移す。
 8. 動きの時刻: walk の時に animation の時刻を読むので、表示されるのは R の記録と GPU の時間だけ後（今も同じ）。
-9. **1 core の間の I の起きる遅れ**: R の End の decode や C の present が kernel の中で長い transaction（`hold_us decode` 最大 11〜19ms）にいると、I は安全な点まで待つ。受け箱の間隔の必達（16.7ms）を 1 core で満たせない原因がこれなら、kernel の横取りの点（WS141・WS208 の SMP）への依存として Q1 に返す（p004 の再開条件）。I の優先度を上げる手段が kernel にあるかは p004 の始めに調べる。
+9. **1 core の間の I の起きる遅れ**: R の End の decode や C の present が kernel の中で長い transaction（`hold_us decode` 最大 11〜19ms）にいると、I は安全な点まで待つ。box_lag の最長（16.7ms）を 1 core で満たせない原因がこれなら（`KWL CURSOR_LAG` と `hold_us` の時刻の対応で確かめる）、p004 を uncleared にして WS208（SMP）・kernel への依存として Q1 に返す（Q1 の判断、p004 の再開条件）。p99 は必達のまま。pthread の優先度（I を上げる手段が kernel にあるか）は p004 の始めに調べる。
 10. cursor の形（hover で決まる resize の矢印など）と client の `set_cursor` は M の 1 pass ごとに変わる。位置は 60fps でも、形の変化は M の 1 pass の最長だけ遅れ得る（6.4 の上限で抑える）。
 11. Pi の入力の自動化は無い（6.4 の場面は人の手）。WS131 の guest は uinput（9 節）。
+12. 未確認（review-5）: `seat-freebsd.c` の fd を閉じる順（6.1、comment では callback が先）、zedBSD の evdev の fd を別の thread から `poll` してよいか、decode が preempt を止めるか（10 節）、Pi の数値。p004 の始めに確かめる。
 
 ## 12. 結果の記録（この Phase）
 
 - 調べたこと: 1 節（source の地図、Pi の既存の log の集計。P3 の boot の b4・b6・b10）。
-- 変えた file: この phase.md、[review-1](review-1.md)〜[review-4](review-4.md)（design-reviewer の要点の写し）、ws.md、p002〜p006 の phase.md。p002 の source は [p002](../phase002/phase.md)。
+- 変えた file: この phase.md、[summary.md](summary.md)（ユーザー向けの要約）、[review-1](review-1.md)〜[review-5](review-5.md)（design-reviewer の要点の写し）、ws.md、p002〜p006 の phase.md。p002 の source は [p002](../phase002/phase.md)。
 - 第 5 版（2026-10-12）: review-4 の H-A〜H-C、M-A〜M-E、L-a〜L-f を反映。Q1 の方針で pointer の経路を入力の thread I へ（6.1）。
-- 次: 第 5 版の S2 の部分の差分の確認（review-4 の判定どおり短い確認）。p003 の着手は Q1 が WS211 と順を決めてから。
+- 第 6 版（2026-10-12）: review-5 の N-1〜N-7 と Q1 の答え（p003 の重いコマの閾値、`pass_max` の場面、box_lag の最長の条件、`hold_us` の対応、build の注記）、WS141 p016 review-B4 の WS213 に関わる点（C の copied の gate、受け入れの分担、C と R の queue の同時使用は B-u の前提、L1 の位置付け、M の `vkQueueWaitIdle` を外す）を反映。ユーザー向けの要約 [summary.md](summary.md) を足した。
+- 次: Q1 が N-1〜N-4 の反映を確かめる（再 review は不要）。ユーザーの設計の review。p003 の着手は Q1 の指示（WS211 との順）。
