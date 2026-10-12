@@ -45,3 +45,4 @@ Pi 4 で App Home の開閉・drag・app の起動の間も、cursor が 60fps �
 | [p004](phase004/phase.md) | S2: 描画 thread・cursor の thread・入力の thread（2 段の pull、park、R→M の通り道） | in-progress（段 I・C・R 実装済み。place23 の box_lag の超過は kernel 側（1 core の順番か user の写しの global な lock）と切り分け、kernel の設計 K-D・K-1・K-2 を Q1 の判断待ち。T1・Pi の確かめ待ち） |
 | [p005](phase005/phase.md) | S3: 作業 thread（glyph・壁紙・大きな字） | in-progress（実装済み agent/p4 09e429a9a、host 試験 PASS、T1・Pi の確かめ待ち） |
 | [p006](phase006/phase.md) | 規約の全文の見直し | planned |
+| [p007](phase007/phase.md) | kernel の入力の遅れ: K-D（起床・横取りの後の待ちと metadata lock の待ち・持ちの診断、`kern.perf=1`）と K-1（sched の起床の持ち分）・K-2（metadata lock の入りの削減と受け渡し）の設計 | in-progress（K-D 実装済み agent/p9 45ae288d7、K-1・K-2 は設計だけで design-reviewer 待ち、Pi は BUG-294 の焼き直しの後） |
