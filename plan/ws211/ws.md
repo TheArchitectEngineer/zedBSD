@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: P3（WS141 の Pi の直しの次）
-Resume point: p002（クロスフェード）は main に merge（4c3a56cf9）、Pi で試し中。p003 は設計の第 2 版（[phase003/phase.md](phase003/phase.md)）、段 1（変わった時だけ bind）を agent/p3 で実装、段 2 は床だけの試しから（2026-10-12 P3）。
+Resume point: p002（クロスフェード）・p003 段 1・p005 は main（Pi で確認中）。p006 はマウス移動の cursor の間隔の直し（main 1d9c9749e）。p007（dock・undock を窓の絵の拡大縮小に、configure はアニメの後）を実装（agent/p3 902a5feb2）、place16 で Pi の確認待ち（2026-10-12 P3）。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -37,5 +37,6 @@ Pi 4 で App Home の開閉が目で滑らか（ユーザーの確認）、1 コ
 | p002 | クロスフェードの実装と Pi の確かめ | planned |
 | [p003](phase003/phase.md) | draw の束ね（文字・tile・影）と Pi の確かめ | 段 1 実装（未 merge）、段 2 は床の試しから |
 | [p005](phase005/phase.md) | 時計の 1 分ごとの更新を時計の所だけに | in-progress（実装済み、Pi 未確認） |
-| [p006](phase006/phase.md) | 窓の drag の移動を 60fps に近づける | planning（調べと案、計測待ち） |
+| [p006](phase006/phase.md) | 窓の drag の移動とマウス移動を 60fps に近づける | in-progress（cursor の present の間隔の直しは main、drag は計測待ち） |
+| [p007](phase007/phase.md) | dock・undock のアニメを窓の絵の拡大縮小にし、終わってから client に描き直させる | in-progress（実装、place16 で Pi 待ち） |
 | p004 | 規約の全文の見直し | planned |
