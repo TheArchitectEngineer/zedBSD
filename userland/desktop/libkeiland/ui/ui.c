@@ -188,6 +188,16 @@ struct kl_ui {
 	double pointer_y;
 	int pointer_inside;
 	struct ui_key hot;
+
+	/*
+	 * The widget lit when the frame shown was drawn (kl_ui_begin), and
+	 * whether the lit widget changed since (ws210-p014 F1): the part a
+	 * frame needs for the lighting is that widget and the one lit now,
+	 * whatever the pointer passed over in between, so a frame late behind
+	 * the pointer draws no trail of the rows it crossed.
+	 */
+	struct ui_key drawn_hot;
+	int lit_pending;
 	struct ui_key active;
 	struct ui_key released;
 	struct ui_key clicked;
@@ -319,6 +329,7 @@ static struct {
 
 static const struct ui_record *ui_find(const struct kl_ui *ui, double x, double y, int regions);
 static int ui_damage_key(struct kl_ui *ui, const struct ui_key *key);
+static int ui_key_lights(const struct kl_ui *ui, const struct ui_key *key);
 static int ui_scroll_shown(const struct kl_ui *ui, const struct kl_scroll *scroll);
 static int ui_inside(const struct kl_rect *rect, double x, double y);
 static int ui_same(const struct ui_key *key, uint32_t id, uint32_t index);
@@ -435,8 +446,8 @@ kl_ui_pointer_motion(
 	const struct ui_record *record;
 	struct ui_key hot;
 	int same;
-	int left_drawn;
-	int lit_drawn;
+	int left_lights;
+	int lit_lights;
 
 	/* The place; a widget held by a press (a slider's knob) follows it. */
 	ui->pointer_x = x;
@@ -463,14 +474,21 @@ kl_ui_pointer_motion(
 	if (same)
 		return 0;
 
-	/* Another widget is lit; the two widgets' regions are drawn again, unless they draw the same lit and unlit. */
-	left_drawn = ui_damage_key(ui, &ui->hot);
+	/* Another widget is lit; whether either draws differently lit or unlit. */
+	left_lights = ui_key_lights(ui, &ui->hot);
 	ui->hot = hot;
-	lit_drawn = ui_damage_key(ui, &ui->hot);
+	lit_lights = ui_key_lights(ui, &ui->hot);
 
 	/* Two still widgets: nothing to draw. */
-	if (left_drawn == 0 && lit_drawn == 0)
+	if (left_lights == 0 && lit_lights == 0)
 		return 0;
+
+	/*
+	 * The lighting changed: the next frame draws the widget lit when the
+	 * frame shown was drawn and the one lit then (kl_ui_take_damage), not
+	 * every widget lit in between.
+	 */
+	ui->lit_pending = 1;
 
 	/* Succeeded: a part of the window is to be drawn again. */
 	return 1;
@@ -483,20 +501,23 @@ int
 kl_ui_pointer_leave(
 	struct kl_ui *ui)
 {
-	int drawn;
+	int lights;
 
 	/* Nothing lit any more. */
 	ui->pointer_inside = 0;
 	if (!ui->hot.valid)
 		return 0;
 
-	/* The lit widget goes dark, its region drawn again unless it draws the same. */
-	drawn = ui_damage_key(ui, &ui->hot);
+	/* The lit widget goes dark; whether it draws differently unlit. */
+	lights = ui_key_lights(ui, &ui->hot);
 	ui->hot.valid = 0;
 
 	/* A still widget: nothing to draw. */
-	if (drawn == 0)
+	if (lights == 0)
 		return 0;
+
+	/* The lighting changed (kl_ui_take_damage draws the widget lit when the frame shown was drawn). */
+	ui->lit_pending = 1;
 
 	/* Succeeded: the region is to be drawn again. */
 	return 1;
@@ -538,6 +559,25 @@ kl_ui_take_damage(
 {
 	int pending;
 	int whole;
+	int lit;
+	int same;
+
+	/*
+	 * The lighting: the widget lit when the frame shown was drawn and the
+	 * one lit now, when they differ (the widgets lit in between are not
+	 * drawn, ws210-p014 F1).
+	 */
+	lit = ui->lit_pending;
+	ui->lit_pending = 0;
+	same = 0;
+	if (ui->drawn_hot.valid && ui->hot.valid)
+		same = ui_same(&ui->drawn_hot, ui->hot.id, ui->hot.index);
+	if (!ui->drawn_hot.valid && !ui->hot.valid)
+		same = 1;
+	if (lit && !same) {
+		(void)ui_damage_key(ui, &ui->drawn_hot);
+		(void)ui_damage_key(ui, &ui->hot);
+	}
 
 	/* What there is, taken. */
 	pending = ui->damage_pending;
@@ -545,8 +585,24 @@ kl_ui_take_damage(
 	ui->damage_pending = 0;
 	ui->damage_whole = 0;
 
-	/* Nothing, or no part that can be told. */
-	if (!pending || whole)
+	/* No part that can be told. */
+	if (whole)
+		return 0;
+
+	/*
+	 * The lighting changed and changed back before a frame: one pixel,
+	 * drawn as it was, rather than the whole window (0 would ask for it).
+	 */
+	if (!pending && lit) {
+		rect->x = 0;
+		rect->y = 0;
+		rect->width = 1;
+		rect->height = 1;
+		return 1;
+	}
+
+	/* Nothing. */
+	if (!pending)
 		return 0;
 
 	/* Succeeded: the part. */
@@ -873,9 +929,11 @@ kl_ui_begin(
 	/* The fingers' selection's field has not been drawn in it yet (ws190-p002). */
 	ui->select.drawn = 0;
 
-	/* A frame drawn covers the changes of the lit widget so far. */
+	/* A frame drawn covers the changes of the lit widget so far, and is drawn with the widget lit now. */
 	ui->damage_pending = 0;
 	ui->damage_whole = 0;
+	ui->drawn_hot = ui->hot;
+	ui->lit_pending = 0;
 }
 
 /*
@@ -2301,6 +2359,39 @@ ui_damage_key(
 	ui->damage.height = bottom - ui->damage.y;
 
 	/* Succeeded: the region is in the part to draw again. */
+	return 1;
+}
+
+/*
+ * Tells whether a widget of the frame shown draws differently lit and
+ * unlit (1), or is no widget or a still one (0, kl_ui_hit_still).  A
+ * widget the frame shown has no region for counts as drawing differently.
+ */
+static int
+ui_key_lights(
+	const struct kl_ui *ui,
+	const struct ui_key *key)
+{
+	size_t index;
+	int same;
+
+	/* No widget. */
+	if (!key->valid)
+		return 0;
+
+	/* Its record in the frame shown: a still one draws the same. */
+	for (index = 0; index < ui->shown_count; index++) {
+		if (ui->shown[index].kind != UI_KIND_HIT)
+			continue;
+		same = ui_same(key, ui->shown[index].id, ui->shown[index].index);
+		if (!same)
+			continue;
+		if ((ui->shown[index].flags & KEIUI_STILL) != 0U)
+			return 0;
+		return 1;
+	}
+
+	/* Reports a widget without a region as one that draws differently. */
 	return 1;
 }
 

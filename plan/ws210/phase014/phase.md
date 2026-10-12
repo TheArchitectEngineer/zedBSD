@@ -13,11 +13,12 @@ Queue: [P1 の lane](../../agents/P1/queue.md)
 - 同日の補足:
   - 「一律にFPSでマウス移動イベントをマージするのではなく、ウィンドウごとに申請されたらそうする感じがいいですね。」
   - 「書き直しが完了する前の書き直しイベントが来たら前の分をキャンセルするのでもいいです。ペインの実現方法がlibkeilandにあるなら、それがいい。」
+  - 訂正:「前の描き直しが始まる前に次の描き直しが来たら、ですね。訂正します。レンダリングの途中キャンセルは意図してません。」→ 取り消すのは、まだ描き始めていない予約だけ（積んだ damage・未着手の frame）。描いている途中の frame（CPU の描画・present）は止めずに最後まで描き、その後に最新の状態で次を描く。
 - Q1 の依頼:
   - (1) motion の合流（間の lit の変化の damage を積まない）。
   - (2) frame の速さの上限（compositor の frame callback まで描かない）。
   - (3) app ごとの hover_pending・lit_changed・damage の仕組みを libkeiland の共通の口に寄せ、6 つの app を順に載せ替える。
-  - (4) 描き直しの途中に来た新しい描き直しは、前の予約を取り消す。
+  - (4) 前の描き直しが始まる前に新しい描き直しが来たら、前の予約を取り消す（描いている途中の frame は止めない）。
   - (5) list・sidebar のペインは libkeiland の部品で hover と合流を持つ。
 - [p013](../phase013/phase.md)（present の部分の copy）とは別の Phase。p013 は 1 frame の present を軽くする。この Phase は、描く frame の数と、1 frame に描く面積を減らす。
 
@@ -39,7 +40,7 @@ Queue: [P1 の lane](../../agents/P1/queue.md)
 - kl_ui は `drawn_hot`（最後に描いた frame の `kl_ui_begin` の時の hot）を持つ。
 - `kl_ui_pointer_motion`・`kl_ui_pointer_leave` は hot を更新するだけにする。motion ごとに damage を積まない。戻り値は「hot が drawn_hot と違う、または前から描き直しが要る」。
 - damage は frame を描く時（下の F3 の `kl_ui_take_frame`）に作る。`drawn_hot` の矩形と `hot` の矩形の 2 つだけで、どちらも前の frame の記録（shown）から引く。`kl_ui_hit_still` の region は入れない。
-  - 間で通った行は描かない。描き直しが終わる前に lit が何度変わっても、前の予約は取り消され、最新の状態だけが描かれる（ユーザーの (4)）。
+  - 間で通った行は描かない。次の frame を描き始める前に lit が何度変わっても、まだ描いていない予約は取り消され、最新の状態だけが描かれる（ユーザーの (4)）。描いている途中の frame は止めない。その frame が終わった後の次の frame で、最新の状態を描く。
   - hot が drawn_hot に戻った（行き来した）時は、何も描かない。
 - 入力の配達は変えない。全部の motion が今と同じに app に届く。描き込み・drag の app にも安全。
 - 押した widget（active）・click・`kl_ui_pointer_cancel` も、同じく「描いた時」と「今」の比べで damage にする。
@@ -56,7 +57,7 @@ Queue: [P1 の lane](../../agents/P1/queue.md)
   - libkeiland は `kl_window_present*` の中で、`vkQueuePresentKHR` の直前に window の surface に `wl_surface.frame` を要求する（WSI の commit が運ぶ）。SHM の present は自分の commit の前に要求する。
   - `int kl_window_frame_due(struct kl_window *window, uint64_t now_us, int *wait_ms)`: 描いてよい時に 1 を返す。それは「前の frame の callback が戻っている」かつ「max_fps が 0 でなければ前の frame の開始から 1000/max_fps ms たった」時。描いてはいけない時は 0 を返し、`wait_ms` に loop の待ちの上限を入れる（callback 待ちなら -1）。
   - 申請しない window は常に 1（今と同じ）。
-  - 入力は frame を待つ間も受けて、状態（hot・scroll・選択）だけ進める。描くのは due の時に最新の状態で 1 回。これで「描き直しの途中に来た描き直しは前の分を取り消す」が frame の単位で成り立つ。
+  - 入力は frame を待つ間も受けて、状態（hot・scroll・選択）だけ進める。描くのは due の時に最新の状態で 1 回。まだ描き始めていない frame の予約は、この形で最新の 1 つにまとまる。描き始めた frame（CPU の描画と present）は途中で止めない。
   - `max_fps` の既定（0）は display の refresh（callback の速さ）。System Monitor の 2 fps の graph のような app の都合の上限は、app が渡す。
 - 申請する app（この Phase）: Settings・Files・Music・Calendar・Photos・Phone の UI の window。申請しない app: Notes の pen、Paint、Image Viewer の drag など、描き込み・drag の精度が要る物。
 
@@ -113,6 +114,16 @@ if (due) {
 1. host の試験が PASS。6 つの app の rpi4・amd64 の build が warning 0。`exports.py --check` と OS 境界の check が通る。
 2. 6 つの app が `kl_ui_take_frame`（と申請した pacing）で動く。Settings・Files・Music の左ペインが部品で描かれる。
 3. Pi でユーザーが、遅れの積み重なりが無いことを確かめる。
+
+## 実施の記録
+
+- 2026-10-12 F1 を実装した（Q1「review と並行して実装してよい、merge は review の結果を見てから」）。
+  - 中身: libkeiland/ui/ui.c の `drawn_hot`・`lit_pending`・`ui_key_lights`。`kl_ui_take_damage` は「描いた時の lit」と「今の lit」の 2 つの外接の矩形を返す。lit が行き来して元に戻った時は 1x1 を返す（0 は全体を意味するので）。公開の API と KL_VERSION は変えない。
+  - host の試験: `plan/ws210/tests/run-host-kl-ui-lit.sh` が 13 PASS。軌跡の端・行き来・still を越える・回り道・leave・still だけ。各部分の描画の後の画素は全体の描画と一致した。
+    - 前の ui.c（main）で同じ試験を流すと back-to-drawn と detour が FAIL になる（陰性対照）。
+  - 既存の host の試験: Phone 19 PASS・Calendar 13 PASS・Music 16 PASS。Files の files-render の部分と全体の画素は 3 場面で一致した。
+  - build: rpi4・amd64 の libkeiland と 6 つの app が warning 0。
+  - 限り: 公開の口が 1 つの矩形なので、縦の list を上から下へ通った時は、上下の端の外接の箱が通った行を全部含む（軌跡と同じ大きさ）。効くのは、行き来・回り道・still を越える場合。端の 2 つを別々に描くには F3 の `kl_ui_take_frame`（矩形の list）が要る。
 
 ## Phase の中の順
 
