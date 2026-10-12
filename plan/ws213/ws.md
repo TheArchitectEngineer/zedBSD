@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: P4（2026-10-12 ユーザー「コンポジタのマルチスレッド化も入れてください。」、p001 の設計から）
-Resume point: p001 の調査と設計（今の main loop の仕事の内訳、thread の分け方、状態の写しと lock、Vulkan の queue と command buffer の持ち方、cursor の plane（WS141 p016 の段 B）との関係、Pi の計測）。
+Resume point: p001 の設計の第 1 版（[phase001/phase.md](phase001/phase.md)、2026-10-12 P4）が design-reviewer の review 待ち。review の後にユーザーの確認、その後 Q1 が段の順（M0 計測・C0 cursor の間引きを先に、S1 display list は WS211 p003 の後）を決める。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -35,6 +35,6 @@ Pi 4 で App Home の開閉・drag・app の起動の間も、cursor が 60fps �
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 調査と設計 | planned |
+| [p001](phase001/phase.md) | 調査と設計（main loop の内訳と Pi の実測、display list の写し、描画 thread・作業 thread・Vulkan の持ち主、cursor、段と試験） | planning（第 1 版、review 待ち） |
 | p002 | 実装 | planned |
 | p003 | 規約の全文の見直し | planned |
