@@ -211,6 +211,40 @@ executor の pass ごとの 3 区分:
 - 次: snapshot_fill の部分変換（write ring の box、UIF block 単位）→ (B) の設計（review へ）→ HAL arm64 の allocator（呼び出し元の監査が先）。
 - **snapshot の部分変換**（2026-10-12 P3 第 2 世代）: 有効な snapshot の source の generation が進み、write ring（`bcm2711_v3d_memory_changes`）が snapshot の generation 以降の全部の write の box を名指せる時は、CPU がその box だけを utile（4×4、64 byte＝cache line 1 本）単位に広げて書き直す（`bcm2711_native_texture_copy_box`）。utile 単位なので CPU が書く cache line は全部 CPU の内容で、TFU が書いた後の古い line を書き戻さない。clean は触れた 32 pixel の column ごとの block 行の範囲だけ（`bcm2711_native_storage_clean_range`）。TFU が使える時は広げた box が 256KiB 以下の時だけ CPU、それより大きいか ring が名指せない（unknown・別の offset・8 個より前・display の記録の無い書き込み）時は従来どおり全体（TFU または CPU）。box が image の外だけなら generation だけ進めて reuse。generation は ring より先に読む（後の write は box を広げるだけ）。失敗は snapshot を invalid にして次に全体を変換。`snapshot_get` は raster を常に受け、`unit` で全体の変換を TFU に任せるかを選ぶ。perf の行に `upd=`（部分変換の数）。GPU の L2T は render の前に invalidate 済み（`bcm2711_v3d_hardware_invalidate`）。host 試験: native-state（4 つの box、column の境・右と下の padding・整列・全体を全 padded word で旧/新と照合、拒否 5 種）、vulkan-device（TFU ready で 1 pixel の write は utile だけ CPU、unknown は TFU、image の外は reuse）、v3d-hardware PASS。kernel の build は warning 0。実機は未確認（client が render area を絞るかに依る）。
 
+## (B) 第 3 版の設計（2026-10-12 P3 第 2 世代、review の前、実装しない）
+
+**目的**: 位置だけの cursor の present（compositor の `plane_present` が copy を記録しない回、`copy=0`）が GPU の列（executor の順番と WSI の worker の fence の待ち）を通らず、呼び出しの thread で `CURSOR_SET`（kernel は写さない）＋`MOVE` になること。像が変わった回（`copy=1`）は今どおり GPU を通る（Q1: 像が変わった時だけ kernel が 16KB を写すのは可）。
+
+**第 2 版の F8（swapchain の image を display に import）をやめる**: import の代わりに、libvulkan が「cursor の swapchain の image の中身が、前に native の image へ写した時から変わったか」を自分で知る（下の 1）。swapchain の image の作り方・export・placement・oldSwapchain の共有は変えない。
+
+1. **libvulkan: swapchain の image への書き込みの記録**（cursor の chain のためだけに使うが、記録は全部の command buffer で行う）
+   - 生成の command（`commands-generated.inc`、generator の表 `api-commands.tsv`）のうち `dstImage` を取るもの（CopyImage・BlitImage・ClearColorImage・ClearDepthStencilImage・CopyBufferToImage・ResolveImage と各 `2` 版）で、`dstImage` が `swapchain_owned` の image なら command buffer の小さな表（8 個、重複なし）に記す。表が溢れたら「どれか分からない」の印。`vkCmdExecuteCommands` は secondary の表を primary に足す（溢れは印）。`vkBeginCommandBuffer`・reset で表を空に。
+   - `vkQueueSubmit`・`vkQueueSubmit2` の受理の時に、記された image の `content_serial` を 1 進める。「分からない」の印があれば、その device の全部の swapchain の image を進める。
+   - **対象の限定**: fast path を使う chain は usage が TRANSFER_DST・TRANSFER_SRC だけのもの（compositor の cursor の chain は TRANSFER_DST だけ、`cursor-plane.c:84`）。COLOR_ATTACHMENT・STORAGE・INPUT_ATTACHMENT を持つ chain は render pass や descriptor で書かれ得るので fast path を使わない（記録の漏れで古い像が残る危険を、使い道の限定で消す）。
+2. **libvulkan: present の fast path**（`wsi-swapchain.c`、cursor の plane の chain だけ）
+   - 条件（全部）: (a) chain が cursor の plane で上の usage、(b) image の `content_serial` が、その image の native の image へ最後に写した時の値（`copied_serial`）と同じ、(c) wait の semaphore が全部、software の payload で既に signal 済みの binary semaphore（acquire のもの）、(d) その chain（同じ lease）の present の job が worker に 1 つも無い（F6: 先の present を追い越さない）、(e) present の fence・present id など GPU の完了を要る拡張の struct が無い。
+   - 動作: device の mutex の下で wait の semaphore の payload を消費し（`queue.c` の QueueSubmit の消費と同じ所）、`platform->position`（dstRect）と native の present（`display_present_cursor`: SET＋MOVE）を呼び、image を acquire に返し、sequence・frame を進める。worker も GPU の job も使わない。
+   - 条件を満たさない present は今の経路（GPU の copy → worker が fence を待つ → SET＋MOVE）。その copy の submit の時に `content_serial` を控え、worker の present の後に `copied_serial` にする。
+3. **kernel: CURSOR_SET の写しの省略**（`display-device.c` `output_cursor_set`、F7）
+   - 4 枚の cursor の image（`cursors[]`）ごとに、写した元の鍵を持つ: `buffer->identity`（run ごとに一意）・offset・幅・高さ・stride・format・`generation`（run の guard の下で読む）。
+   - SET の元が host_mapped でなく、鍵が一致する image があれば、写さずにその image を見せる（list が名指していても、中身は変えないので可）。無ければ今どおり名指されていない image に写して鍵を記す。`cursor_reset`（lease の解放・新しい lease・close）で鍵を全部消す。display の CPU の書き込み（`resource_write`）は generation を進めるので写し直しになる。
+   - 3 枚の swapchain の image が回っても、各 image の native の image は最初の 1 回だけ写され、以後の位置だけの present は MOVE だけ。
+4. **他の platform**: cursor の plane は `GPU_DISPLAY_HAS_CURSOR` の bcm2711 だけ。i915・Venus・Linux・FreeBSD では fast path の条件 (a) が成り立たず、変わるのは command buffer の小さな表と submit の時の serial の加算だけ（費用は command あたり数命令）。UAPI は変えない。HAL は触れない。
+5. **確かめ**: host: libvulkan の WSI の fixture（cursor の chain で位置だけの present が QueueSubmit も worker も通らず SET・MOVE の ioctl だけ、copy の後の present は worker、未完了の present がある間は fast path を使わない、`dstImage` の記録・ExecuteCommands・溢れ）、display の host 試験（同じ鍵の SET は写さない、generation・host_mapped・cursor_reset で写す）。実機: App Home・drag・Music の起動の間の `KWL CURSOR_PLANE present` の input→at の差（今は通常数 ms、最大 195ms）。
+6. **未決**: (i) generator の変更（`dstImage` の hook）の形（表の列か、生成の規則か）、(ii) ExecuteCommands の secondary の表を primary に足す時の溢れの扱い、(iii) present の fence（VK_EXT_swapchain_maintenance1）を compositor は使っていないが、来たら通常の経路へ。
+
+## (b) decoder の request が executor の準備を待つ件（2026-10-12 P3、計測の後に設計）
+
+- 観察（1803317345 の kernel、App Home 中）: compositor の frame の record（vkBegin/EndCommandBuffer の同期の request）が 85〜149ms、`submit_lock_us` の最大 113〜168ms。controller の mutex は decoder（request ごと）と executor（1 歩の窓の外: pass の準備・finish・解放）が持つ。
+- 計測を足した（a80ce65fa）: `hold_us decode=<最大>/op<opcode> step=<executor の 1 歩の窓の外の最大>`。次の配置の実機の数で、長く持つのが decoder の特定の op（resource の作成・map の memset など）か executor の準備（CPU の変換・upload）かを分け、そこを mutex の外に出す設計を書く（候補: 準備の draw ごとの区切りで待ち手に譲る、session の object の状態を session ごとの lock に分ける、重い CPU 作業（memset・変換）を mutex の外の所有物に対して行う）。
+
+## HAL arm64 の物理 page の allocator: 呼び出し元の監査（2026-10-12 P3、変更はしない、Q1 に相談）
+
+- 実装（`src/hal/arm64/page.c` `alloc_ram`）: 8GiB 分の bitmap の first fit。`first_free_candidate`（そこより下は全部使用中）から上へ、**1 page ずつ** 候補を進め、候補ごとに alignment・boundary・空きの長さを測る。全部 **IRQ を止めたまま**（CPU は 1 つ）。zone・上からの配置は無い。
+- 呼び出し元（arm64 で動くもの）: 1 page: `vm_private_page_alloc`（`vm.c:6374`、user の page・fault ごと）、`space.c:76`（page table）、`tmpfs-pages.c:295`。連続の大きな run: bcm2711 の `buffer.c:62`（GPU の storage・snapshot・import の run、`kern_pmem_alloc_limited`、上限は V3D の PA 35 bit＝実質なし、display の cursor 等は 0x3fffffff）、`buf.c:1745`（buffer cache の slab・line）、`disk.c:2695`（async I/O の領域、起動時）、`io.c:352`（I/O pool、起動時）、`ufs.c:3064`（journal image）、`audio.c:2048`（ring）。上限付きの DMA: `drivers/generic/dma.c:384`（xHCI は brcmstb の PCIe で 31 bit かつ inbound 3GiB→2GiB 未満、GENET・audio は 32 bit）、`rpi4-firmware.c:147`（firmware の buffer、上限付き）。
+- 問題: (1) 大きな連続の要求は、使用中の page を 1 つずつ越えて走査するので、使用量に比例した時間 IRQ が止まる。perf の `alloc` は submission あたり平均 0.4〜2.2ms（実機 1803317345）で、GPU の storage の確保（`native_storage_create`→`buffer_create`）の費用がほぼこれ。(2) 1 page の確保も GPU の大きな run も DMA の上限付きの run も、全部下から first fit なので、GPU の大きな run が DMA の上限の下（2GiB 未満）を占め、user の page と混ざって断片化する。長く動かすと上限付きの確保や大きな run が ENOMEM になり得る。
+- 案（どれも `hal.h` の API は変えない実装の変更、Q1 の判断待ち）: **P1** 走査を 32 page（bitmap の 1 word）単位に: 全部使用中の word は 1 回で飛ばし、空きの長さも word 単位で数える（IRQ の停止と `alloc` を 1/10 以下に）。**P2** 配置の方針: 上限の無い大きな run（例 64KiB 以上）は上から first fit（上の cursor を別に持つ）、1 page と上限付きは今どおり下から。**P3** 走査を区切って IRQ を開ける（世代の数で途中の変更を検出してやり直す）。P1 が最小で効果が明確、P2 は断片化の実測（`hal_get_memstat` の free と最大の連続の空き）の後。
+
 ## 段（第 4 版）
 
 | 段 | 内容 | 確かめ |
