@@ -1191,7 +1191,7 @@ render_pipelines(
 	return VK_SUCCESS;
 }
 
-/* Makes one pipeline: four vec4 attributes, triangles, straight-alpha blending, no depth. */
+/* Makes one pipeline: four vec4 attributes, triangles, premultiplied-alpha blending, no depth. */
 static VkResult
 render_pipeline(
 	struct sm_renderer *renderer,
@@ -1211,7 +1211,6 @@ render_pipeline(
 	VkPipelineViewportStateCreateInfo viewport;
 	VkPipelineRasterizationStateCreateInfo raster;
 	VkPipelineMultisampleStateCreateInfo multisample;
-	VkPipelineDepthStencilStateCreateInfo depth;
 	VkPipelineColorBlendAttachmentState blend_attachment;
 	VkPipelineColorBlendStateCreateInfo blend;
 	VkPipelineDynamicStateCreateInfo dynamic_state;
@@ -1269,14 +1268,15 @@ render_pipeline(
 	multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 	multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-	/* No depth or stencil: the scene is drawn back to front. */
-	memset(&depth, 0, sizeof(depth));
-	depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-
-	/* Straight-alpha blending. */
+	/*
+	 * Premultiplied-alpha blending: the shaders give the colour already
+	 * multiplied by its alpha, so the source is added at one.  This is the
+	 * only blend the Raspberry Pi 4's driver takes, and it draws the same
+	 * pixels as straight alpha did.
+	 */
 	memset(&blend_attachment, 0, sizeof(blend_attachment));
 	blend_attachment.blendEnable = VK_TRUE;
-	blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+	blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
 	blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 	blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
 	blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
@@ -1293,7 +1293,11 @@ render_pipeline(
 	dynamic_state.dynamicStateCount = 2U;
 	dynamic_state.pDynamicStates = dynamic;
 
-	/* The pipeline. */
+	/*
+	 * The pipeline.  It names no depth or stencil state: the render pass has
+	 * no depth attachment, the scene is drawn back to front, and the
+	 * Raspberry Pi 4's driver refuses a pipeline that names one.
+	 */
 	memset(&pipeline, 0, sizeof(pipeline));
 	pipeline.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 	pipeline.stageCount = 2U;
@@ -1303,7 +1307,7 @@ render_pipeline(
 	pipeline.pViewportState = &viewport;
 	pipeline.pRasterizationState = &raster;
 	pipeline.pMultisampleState = &multisample;
-	pipeline.pDepthStencilState = &depth;
+	pipeline.pDepthStencilState = NULL;
 	pipeline.pColorBlendState = &blend;
 	pipeline.pDynamicState = &dynamic_state;
 	pipeline.layout = renderer->layout;

@@ -121,14 +121,18 @@ sm_motion_update(
 	float read;
 	float write;
 
-	/* The time since the last frame (at most a tenth of a second, so a pause does not jump). */
+	/*
+	 * The time since the last frame, at most half a second: the animation
+	 * draws twice a second, and a longer pause (a hidden window) does not
+	 * jump.
+	 */
 	motion = &app->motion;
 	frame = &app->frame;
 	seconds = 0.0f;
 	if (now_ms > motion->last_ms && motion->last_ms != 0U)
 		seconds = (float)(now_ms - motion->last_ms) / 1000.0f;
-	if (seconds > 0.1f)
-		seconds = 0.1f;
+	if (seconds > 0.5f)
+		seconds = 0.5f;
 	motion->last_ms = now_ms;
 
 	/* The measures the core shows, from 0 to 1. */
