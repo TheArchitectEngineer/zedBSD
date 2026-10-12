@@ -28,3 +28,10 @@ Queue: q939（P2、2026-10-11）
 
 - Cortex-A72 の CPUECTLR_EL1.SMPEN は firmware（armstub8）が立てる前提。QEMU では関係ない。実機で coherency が壊れたらここを疑う。
 - 非 secure（firmware）では SGI・PPI の group は firmware の設定（Group 1）に任せる。実機の notify は p005 で確かめる。
+
+## T1-537 の結果（2026-10-11 T1、agent/p2 ea8ecb4cf、QEMU raspi4b。判定は Q1）
+
+- (a) 既定で login まで起動、dmesg に `boot: HAL initialized successfully. [cpu 4 …]`・`boot: CPUs ready: 4`。`ARM64 SMP 4 CPUs`・`ARM64 SMP cpu N online` の行は dmesg に無い: これらは HAL の `hal_printf`（HAL の console、kernel の log には入らない）なので期待どおり。main の cons.c（2026-10-12、serial は既定で off、display が画面を持った後は捨てる）以降は、display が画面を取る前の画面にだけ出る。今後の確かめは dmesg の `CPUs ready: N` と `[cpu N` で見る。
+- (b) 4 本の busy loop が同時に走った（5 秒で各 TIME 00:00:05）、`top -b -n 1` は動く。
+- (d) `cpus=1` で login まで、`CPUs ready: 1`。
+- (c) BUG-288 の reboot と cksum は通過。(e) は未実施。
