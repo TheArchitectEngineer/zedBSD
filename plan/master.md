@@ -543,6 +543,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ## 判断の記録（新しい順）
 
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
+- 2026-10-12 ユーザー（クリック）: WS141 の GPL の参照の扱い（2026-10-04、値はハードウェアの事実として使う、名前は独自、配置・comment・構造は写さない、最後に類似の監査）を「WS214 にも広げる」→ guardrail を更新、HVS5 の scaled の plane（PPF・TPZ・LBM）を WS214 p003b に入れる。
 - 2026-10-12 ユーザー:「描画の最適化の後、計測を取ったら、SMPを入れます。さらに計測をとって、最適化を終了したいです。そのあと、RPi4のWiFiとBluetoothを実装し、RPi4は完了です。」→ Pi 4 の順: (1) 描画の最適化（WS211・WS213・WS214・WS141 の残り）→ (2) 計測 → (3) SMP（WS208）→ (4) 計測 → 最適化の終了 → (5) WiFi（WS206）と Bluetooth（新しい WS215）→ Pi 4 の完了。
 
 - 2026-10-12 ユーザー（クリック、WS214 p001 第 3 版の 9 節）: UAPI の追加（GPU_DISPLAY_COMMIT・GPU_DISPLAY_OVERLAY_INFO・HAS_OVERLAYS、GPU_DISPLAY_WAIT を眠る形に、bcm2711 の表示の命令が EBUSY で失敗しなくなる）を「承認する」（p003b、差分は plan/ws214/phase001/phase.md の 4.2）。drag の間の glass の blur は始めの場所のまま「よい」。drag の間の窓の中身は「止めてよい」（動画は離すと飛ぶ、音は続く）。窓の前後の入れ替えは WS214 の目標から「外してよい」（Q1 が ws.md を直した）。undock の形は p003b の帯域の実測の後に問う。WS214 p003a を P2 で着手（承認不要の kernel の段、WS141 p016 B-k2 を含む）。
@@ -901,6 +902,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 注意（2026-10-09 P1 の所見）: BUG-274 の直しで `ps -o args` が command line の全体を出すようになった。guest の試験で `ps -A -o pid,args | grep <語>` で選んで kill する形は、その語が試験自身を走らせる shell の行にも出ると自分を kill する（ws172 の passkey の FAIL の原因）。新しく書く試験は `ps -A -o pid,comm` で選ぶ。既存の約 380 箇所は一斉に直さず、FAIL した時に追従する（試験の整理の基準を当てる）。
 
 | tool | 用途 | 使い方 |
+| [ws213/tests/kd-host-test.sh](ws213/tests/kd-host-test.sh)（WS213 p007、2026-10-12） | kernel の K-D の計数（sched の起床・横取りの遅れ、metadata_lock の待ち・持ち、kern.perf=1 の行）の回帰、ASan・UBSan | host で `sh plan/ws213/tests/kd-host-test.sh`、PASS で終わる |
 | --- | --- | --- |
 | [q1-clean.sh](tools/q1-clean.sh)・[fresh-out.sh](tools/fresh-out.sh)・[files/host-clean.sh](tools/files/host-clean.sh)（2026-10-06） | 削除は Q1 の pipeline（ユーザーの規則）。host の試験の script は rm を持たず、`fresh_out NAME`（新しい `NAME.run.*` を作り NAME を symlink で向ける）か `build/tmp/` の mktemp を使う。Q1 が `q1-clean.sh WORKTREE` で古い run・tmp・old を消す | `. plan/tools/fresh-out.sh; fresh_out "$out"`、Q1: `sh plan/tools/q1-clean.sh /home/awe/zedBSD-worktrees/p1` |
 | [gtk4-linux/](tools/gtk4-linux/README.md)（WS114 から移した、2026-10-06） | Linux の Keiland の上の標準 GTK4 の装飾（CSD・SSD）の試験と session の起動 | `decoration-wire.py`・`start-session.sh` など、README を参照 |
