@@ -3,24 +3,48 @@
 # ws213-p001: compositor の thread 化の調査と設計
 
 Parent: [WS213](../ws.md)
-Status: planning（設計の第 1 版、design-reviewer の review の前。source は変えていない）
+Status: planning（設計の第 2 版。[review-1](review-1.md) と 2026-10-12 のユーザーの判断（描く物の一覧＋pull）を反映、再 review の前）
 Phase disposition: normal
 Queue: P4（2026-10-12 Q1 が割り当て）
 
 ## ユーザー向けの要約
 
-- **今の問題**: compositor は 1 本の thread で、1 コマを描く間（命令の記録・GPU への送り・表示の依頼）は入力も cursor も止まります。Pi 4 の記録では、普通のコマで 10〜20ms、App Home のような重いコマで 60〜120ms 止まっています。もう 1 つ、**cursor の plane の表示の依頼そのものが 1 回約 3ms かかり、それを 1 秒に 125〜200 回（画面の書き換え 60 回より多く）行っていて**、cursor を動かすだけで main loop の時間の約 6 割を使っています。
-- **形（Q1 の推す形、ユーザー了承済み）**: main thread は Wayland の protocol・入力・cursor だけを受け持ちます。描画の thread を 1 本置き、Vulkan の命令の記録・送り・表示の依頼はこの thread だけが行います。文字の形を作る・壁紙をぼかすなどの CPU の重い仕事は作業 thread に出します。
-- **受け箱の中身**: main は「画面の状態」そのものを写すのではなく、今の描画の処理で「描く物の一覧」（命令の列、display list）を作り、それを受け箱に 1 つだけ置きます。今の描画のコード（26 個の file）をそのまま使えるので、作り直しが小さく、見た目が変わりません。描画 thread はそれを Vulkan の命令にして GPU に送ります。受け箱がまだ取られていない時に新しい一覧ができたら、古い方は捨てて置き換えます（描き始める前の予約だけを取り消す方針と同じ）。
-- **cursor**: cursor は main に残し、表示の依頼を「1 回の書き換えに 1 回、最新の位置」に減らします。WS141 の cursor の速い経路（GPU を通らない位置だけの表示）と合わせて、重いコマの間も 60fps を目指します。
-- **段**: (0) 測る → (1) cursor の依頼の間引き → (2) 描く物の一覧を作る（thread はまだ使わない、見た目が同じことを確かめる）→ (3) 描画 thread → (4) 作業 thread → (5) client の画像の取り込みも main の外へ。各段で Pi の入力→表示と cursor の間隔を測ります。
-- **SMP（4 core）が無い今の効果**: CPU の総量は減りませんが、入力が来ると main が描画 thread を割り込んで先に動けるので、cursor と入力の遅れは大きく減る見込みです。コマの速さそのもの（fps）は SMP（WS208）か WS211 の描画の削減で上がります。
+- **今の問題**: compositor は 1 本の thread で、1 コマを描く間（命令の記録・GPU への送り・表示の依頼）は入力も cursor も止まります。Pi 4 の記録では、普通のコマで 10〜20ms、App Home のような重いコマで 60〜120ms 止まっています。cursor の表示の依頼も、画面の書き換え（60 回/秒）より多い約 125 回/秒行っていて、main の時間をかなり使っている見込みです（測定を足しました、M0）。
+- **形（2026-10-12 ユーザーの判断「描く物の一覧＋pull」）**: main thread は Wayland の protocol・入力・cursor と、今の描画の処理で「描く物の一覧」を作る所までを受け持ちます。描画 thread は「次をくれ」と言った時だけ main に一覧を 1 回作らせ、それを Vulkan の命令にして GPU に送り、表示を頼み、終わるのを待ちます。作った一覧は必ず描くので、作った時に決まった事（焼いた絵・画面の写し・client の画像の扱い）が無駄になったり食い違ったりしません。
+- **cursor が画面で 60fps になるには、WS141 の cursor の速い経路（B-u、GPU を通らない位置だけの表示）が要ります**（review-1 C1）。今の表示の仕組みは、cursor の表示の依頼を画面のコマの依頼と同じ 1 本の列に並べて GPU の完了を待つので、main を軽くしても、重いコマの間は cursor の表示が後ろに並びます。この WS は main の止まりを無くし、B-u と合わせて 60fps にします。
+- **段**: p002 測る＋cursor の依頼の間引き（実装済み、Pi の確認待ち）→ p003 描く物の一覧（thread はまだ使わない、見た目が同じことを確かめる）→ p004 描画 thread（pull）→ p005 作業 thread（文字の形・壁紙のぼかし）→ p006 規約の見直し。
+- **SMP（4 core）が無い今の効果**: CPU の総量は減りませんが、入力が来ると main が描画 thread を割り込んで先に動けるので、入力の処理の遅れは減る見込みです。コマの速さ（fps）は SMP（WS208）か WS211 の描画の削減で上がります。
 
 ## 由来
 
 - 2026-10-12 ユーザー:「コンポジタのマルチスレッド化も入れてください。ウィンドウへの通知の転送以外の処理はほとんどすべてスレッドにして、スレッドに通知を出して処理を委譲しましょう。ただ、描画のシリアライズはいるかも？と思いました。描画スレッドが別途あって、コマンドキューがシリアライズされるのかなあ。それとも描画はイベントキューに積むのか？」
-- Q1 の推す形（ユーザーに提示、2026-10-12 ユーザー「了解です。おすすめがいいと思います。あとでできたらレビューさせてください。」）: main thread＝Wayland の protocol・入力の受けと配達・cursor の位置。描画 thread 1 本（Vulkan の queue・command buffer はこの thread だけ）。作業 thread 数本（glyph・画像の展開・縮小画像・blur の準備）。描画は event の queue に積まず、main が作る写しを受け箱に最新の 1 つだけ置く。client の buffer は描画 thread が frame の完了を知らせるまで main が保持する。
-- この Phase は設計だけ。source（`userland/desktop/wayland/`）は変えない。実装は review の後、P3（WS211）との順を Q1 が決めてから。
+- Q1 の推す形（main＝protocol・入力・cursor、描画 thread 1 本、作業 thread、最新の写しを受け箱に）にユーザー「了解です。おすすめがいいと思います。あとでできたらレビューさせてください。」
+- 2026-10-12 ユーザーの判断（review-1 H6、Q1 経由）:「描く物の一覧＋pull」— main が今の描画の walk で display list を作り、描画 thread が「次をくれ」と言った時だけ 1 回作る。記録・submit・present・GPU の待ちは描画 thread。第 1 版の「受け箱の置き換え」はやめる。
+- この Phase は設計だけ（p002 の M0・C0 は Q1 の指示で先に実装）。
+
+## review-1 への対応
+
+| 指摘 | 対応（節） |
+| --- | --- |
+| C1 cursor の画面の 60fps は C0・S2 では上がらない（WSI の present の worker は queue ごとに 1 本、cursor と出力のコマが同じ queue、`KWL CURSOR_PLANE present` の時刻は呼んだ時刻） | 受け入れの cursor の 60fps は WS141 p016 (B) の B-u への依存と明記（6 節）。M0 に present の内訳・最長、evdev の時刻 `event_us` を足した（p002）。表示の側の時刻（kernel の CURSOR_SET・MOVE）は WS141 に頼む（11 節） |
+| C2 写しの置き換え・捨てで walk の副作用が巻き戻らない | pull に変えた。作った写しは必ず描く。出力の世代の変更は park の後にだけ起き、R が写しを捨てる経路は無い（4.2・4.8） |
+| H1 shm の画像の寿命と walk が読む値 | import の記録と metadata は M が commit の時に同期で作り、R は Vulkan の object だけ。古い画像は参照する全部の写しの完了で退役（4.7） |
+| H2 M が呼ぶ Vulkan の列挙の不足 | 全部を表にし、作成は open・park の時か R への同期の依頼。非同期の作成の結果で walk を分けない（3.2） |
+| H3 cursor の present は queue_lock があっても R を待つ | zedBSD の libvulkan の build では compositor の queue_lock を使わない（Mesa の build だけ）。待ちは M0 の `present_max` で測る。本当の解決は B-u（6 節） |
+| H4 park の deadlock と上限の無い待ち | R の acquire・fence・W の待ちは上限付きの繰り返しで park・停止の印を見る。session の pause・sleep は先に park（4.8） |
+| H5 置き換えの回数・1 core・damage の履歴 | pull で walk は R の 1 コマに 1 回。frame の番号は M が答える時に付ける（4.2・4.5） |
+| H6 ユーザーの合意からのずれ | ユーザーが「描く物の一覧＋pull」を判断（由来） |
+| M1 heads | head ごとの条件付きの区間、R が結果を返し M が完了で確定（4.3・4.4） |
+| M2 submit の結果が server の状態を書く | 完了の記録の欄にし、M が完了で適用（4.4） |
+| M3 glyph の細部 | 色の emoji と予備の font の open は M に残す、W の job の番号の規則（5 節） |
+| M4 game mode | park の一覧に（4.8） |
+| M5 R が region を狭める | p004 ではしない（4.5） |
+| M6 「1 回約 3ms・6 割」は推定 | 推定と明記、M0 で確かめる（1.4・p002） |
+| M7 Phase の分け方 | p002〜p006 に分けた。S5・S6 は Future Work へ（Q1 に依頼、8 節） |
+| M8 試験の不足 | 9 節に足した |
+| M9 bind の鍵が VkDescriptorSet の値 | 一覧の bind は（import の pointer、種類、世代）を鍵に、golden の比較で handle を正規化（4.3・9 節） |
+| Low: C0 の shown の切り替え・最初と最後 | 確かめた（p002 の節） |
+| Low: compose->command を直に使う所、LAT の意味、retire と shm の飢え | 11 節 |
 
 ## 1. 今の main loop の仕事の内訳
 
@@ -88,183 +112,195 @@ CPU の重い所（main）: glyph の raster（glass.c:3052、`KWL GLASS glyph` 
 分かったこと:
 
 1. 1 コマで main が止まる時間は、記録＋submit＋present の合計で、普通のコマ 10〜20ms、App Home のコマ 60〜120ms（b6 の最大 176ms の cursor の遅れはこれに当たる）。
-2. **cursor の plane の present は pointer の event ごと（約 125Hz、画面の 60Hz の 2 倍）に行われ、1 回約 3ms**（今の libvulkan の WSI は位置だけの present でも GPU の copy の job を送る。WS141 p016 (B) の B-u で速い経路になる予定）。cursor を動かすだけで main の 6 割を使う。
+2. **cursor の plane の present は pointer の event ごと（約 125Hz、画面の 60Hz の 2 倍）に行われる**。「1 回約 3ms、cursor を動かすだけで main の 6 割」は、work から compose を引いた残りを present の数で割った**推定**で、他の仕事も混ざる（review-1 M6）。M0 の `KWL PERF main` の `cursor=`・`present=` で確かめる。今の libvulkan の WSI は位置だけの present でも GPU の copy の job を送り、present の worker は queue ごとに 1 本で各 job の fence を待つ（`wsi-swapchain.c:2664-2710,2776-2782`）。
 3. 残りの内訳は測らないと分からない（段 M0）。
 
-## 2. 写しの形の選び方
+
+## 2. 形: 描く物の一覧（display list）＋ pull
 
 | 案 | 内容 | 判断 |
 | --- | --- | --- |
-| 案 A 状態の写し | server の状態（窓・位置・glass・Home・menu・通知…）を写し、描画 thread が今の描画のコードを写しに対して動かす | **採らない**。描画のコードは 26 file が server・client の object・glass・home の状態を直に読む。全部を写しの型に書き換える必要があり、hover の probe（描画が記録し入力が使う）も分かれる。危険が大きすぎる |
-| 案 B 描く物の一覧（display list） | main が今の描画の walk を行い、一番下（vkCmd* を呼んでいる 13 file・約 60 か所）だけを「一覧に op を足す」に変える。描画 thread が一覧を Vulkan の命令にして送る | **採る**。描画の論理は変えない。main に残るのは walk（形の位置・push constant の計算・間引き・hover の記録）だけで、libvulkan の encode・kernel の transaction・submit・present・fence の待ちは全部描画 thread へ |
-| 案 C secondary command buffer | main が自分の command pool で secondary を記録し、描画 thread が vkCmdExecuteCommands | 採らない。Vulkan の正統な多 thread の形だが、Pi では高い所（libvulkan の encode と End の transaction）が main に残る |
+| 案 A 状態の写し | server の状態を写し、描画 thread が今の描画のコードを写しに対して動かす | 採らない。描画のコードは 26 file が server・client の object・glass・home の状態を直に読み、hover の probe も描画が記録する |
+| **案 B 描く物の一覧** | M が今の描画の walk を行い、一番下（vkCmd* を呼ぶ約 60 か所）だけを「一覧に op を足す」に変える。R が一覧を Vulkan の命令にして送る | **採る**（ユーザーの判断）。描画の論理は変えない。M に残るのは walk（形の位置・push constant・間引き・hover の記録）だけ |
+| 案 C secondary command buffer | M が secondary を記録、R が vkCmdExecuteCommands | 採らない。Pi で高い所（libvulkan の encode と End の transaction）が M に残る |
 
-案 B の前提（段 S1 で測って確かめる）: walk の費用は記録全体の一部。根拠: 記録の費用は draw の数にほぼ比例し（0〜100 draw で 3〜8ms、300 以上で 48ms、1 draw 約 0.1ms）、その中身は libvulkan の encode（WS211 p003 の見積もり 1 draw 約 0.05ms）と End の decode の transaction（kernel の `hold_us decode` 最大 11〜19ms）が大半。walk の 1 形は数 µs の計算。**これが外れて walk が重いなら、案 B の効果は小さくなる**（段 S1 の結果で次の段に進むかを決める）。
+- **pull**: R が「次をくれ」と知らせた時だけ、M は描く物があれば walk を 1 回して一覧を渡す。M が勝手に写しを作って置くことは無い。写しは作ったら必ず R が描く（置き換え・捨ては無い）。
+- 案 B の前提（p003 で測る）: walk の費用は記録全体の一部。根拠: 記録の費用は draw の数にほぼ比例し（0〜100 draw で 3〜8ms、300 以上で 48ms）、中身は libvulkan の encode と End の decode の transaction（kernel の `hold_us decode` 最大 11〜19ms）が大半。外れて walk が重いなら効果は小さく、p004 に進む前に WS211 の削減を先にする。
 
 ## 3. thread の分担と Vulkan の持ち主
 
+### 3.1 分担
+
 | thread | 受け持つ物 | 持たない物 |
 | --- | --- | --- |
-| **M（main）** | poll、Wayland の protocol（読み・書き・flush）、入力（evdev、pointer の加速、hover の判定、focus、event の配達）、cursor の plane（位置と像、下の 6 節）、server の状態の全部、描画の walk（一覧を作る）、frame pacing、client の buffer の参照の数、frame callback、log | Vulkan の command buffer・descriptor pool・出力の swapchain・queue の submit（cursor の plane を除く） |
-| **R（描画、1 本）** | 出力と heads の swapchain の acquire・present、一覧の再生（vkCmd*）、host image の staging への書き込みと copy の記録、`vkQueueSubmit`、fence の待ち、descriptor set の割り当てと返却、R が作る object（layer の絵・backdrop・scene・batch の buffer・shm の画像・framebuffer）の作成と破棄 | server の状態（読まない・書かない） |
-| **W（作業、まず 1 本、SMP 後は core−1）** | glyph の raster、壁紙の描画とぼかし、大きな字、tile、（後で）icon の展開 | Vulkan、server の状態 |
+| **M（main）** | poll、Wayland の protocol、入力（evdev、pointer の加速、hover の判定、focus、event の配達）、cursor の plane、server の状態の全部、R に頼まれた時の walk、frame pacing、client の buffer の参照の数、frame callback、log | 出力の command buffer・descriptor pool・出力の swapchain・出力の queue の submit |
+| **R（描画、1 本）** | 出力と heads の acquire・present、一覧の再生（vkCmd*）、host image の staging への書き込みと copy の記録、`vkQueueSubmit`、fence の待ち、descriptor set、R が作る object の作成と破棄、M からの同期の依頼 | server の状態（読まない・書かない） |
+| **W（作業、まず 1 本、SMP 後は core−1）** | glyph の raster、壁紙の描画とぼかし、大きな字 | Vulkan、server の状態 |
 
-規則:
+### 3.2 M が今呼んでいる Vulkan の全部と行き先（review-1 H2）
 
-- **Vulkan の object は R が持つ**。R が動いている間に M が呼んでよい Vulkan は (a) cursor の plane（自分の command pool・fence・semaphore、下の 6 節）、(b) backend の client の画像の import（`vkCreateImage`・memory の import・bind。device 単位の作成で Vulkan の規則では他の thread と並行してよい。段 S5 で R へ移す）だけ。`kwl_import_adopt` の view も device 単位の作成で M に残せるが、descriptor set は R が初めて使う時に割り当てる（pool は外部同期が要る）。
-- **queue の lock**: 出力の queue は 1 本（bcm2711 の queueCount は 1、`vulkan-query.c:182`、i915 も 1）。`vkQueueSubmit`・`vkQueuePresentKHR`・`vkQueueWaitIdle` は Vulkan の規則で queue の外部同期が要る。compositor に 1 つの mutex（`queue_lock`）を置き、R の submit・present と M の cursor の plane の submit・present の呼び出しの間だけ持つ（記録の間は持たない）。zedBSD の libvulkan は中でも `queue->mutex`・`device->mutex` で直列にするが、Linux・FreeBSD の host の Vulkan（Mesa）のためにこの lock が要る。
-- **command pool は thread ごと**: R は今の `compose->pool`、M（cursor の plane）は新しい自分の pool。今 plane は `compose->pool` から確保している（`cursor-plane.c` の `plane_objects`）ので分ける。
-- **まれな全体の変更は R の park で**: 出力の open・close・移動（output-switch.c・displays）、heads の hotplug、glass の大きさ、session の pause（`backend-host.c:46`）、sleep、終了。M は R に park を頼み、R は今のコマを最後まで描いて fence を待ち、止まって知らせる。M はその間 Vulkan を自分で扱い（今のコードのまま）、終わったら unpark。今の `vkDeviceWaitIdle`・`kwl_compose_quiesce` の所はこれに置き換える。park の待ちは 1 コマ分で、まれなので許す。
+規則: **非同期の作成の結果で walk を分けない**。walk が「あるか」を見る object は、open・park の時か、R への同期の依頼（M が R の返事を待つ、R の 1 コマ以内）で作る。
 
-## 4. 描画 thread の受け箱（写し）
-
-### 4.1 写しの中身
-
-| 物 | 内容 | 持ち主 |
+| 所 | 今（M） | p004 の後 |
 | --- | --- | --- |
-| 番号・種類 | frame の番号（M が付ける）、種類（出力のコマ / present しない絵、今の `frame_bake`）、出力の世代（出力が変わった後の古い写しは R が捨てる） | R が読む |
-| 一覧（op の列） | 固定の頭＋中身の byte 列: render pass の開始（相手は記号: 出力の画像・head k の画像・layer の絵・backdrop の target・scene）と終わり、viewport、scissor、pipeline と descriptor set の bind、push constant（中身を inline）、vertex buffer の bind、draw、barrier・copy・clear（scene・shot・backdrop）。pipeline・layout・sampler は起動時に作り R が動く間は変わらない handle の値をそのまま入れる。client の画像は `struct kwl_import *` と set の種類（普通・linear）で指し、R が再生の時に set を引く | R が読む |
-| 頂点の配列 | WS211 p003 の束（batch.c）の頂点。今も cached の配列で組んで flush で buffer に写すので、写しに配列のまま入れ、R が再生の時に HOST_COHERENT の buffer に写す（前のコマの fence の後なので GPU と競らない） | R |
-| damage | M が計算した region（下の 4.3）、全体かどうか、scene の再利用の判断（capture・reuse） | R |
-| host image の更新 | 写しの前に R が staging に書く物の一覧: shm の写し（buffer の参照、行の範囲）、glyph の cell（W の bitmap の番号）、大きな字・壁紙・ぼかし（W の結果）、import の layout の移動（今の `kwl_import_layouts_record` の list） | R が適用 |
-| layer・shot・heads | layer の世代（`frame_layers_generation`）、shot の依頼、heads の一覧 | R |
-| M だけの帳簿 | 保持した buffer の参照の list、frame callback の list、pacing の印（awaited） | **M が持ち、R は触らない**。写しは帳簿への不透明な pointer を運ぶだけ |
+| 出力の swapchain・framebuffer・scene・layer の画像・batch の buffer・load pass（`compose.c:383,2331`、`backdrop.c:216`） | 出力の open | park の中で M が作る（今のまま） |
+| backdrop の target（`backdrop.c:69-79,395,459`、walk の中で最初の時に作る） | walk の中 | 出力の open で作るか、walk が R に同期の依頼。最初の 1 回だけ M が待つ |
+| cursor の形の画像（`cursor.c:262-270,388`、`image_make` 722 → `shm.c` の作成・`vkQueueSubmit`＋`vkQueueWaitIdle` 877-882・`compose->pool` 842・`set_get` 801・`host_images` 796-797） | 最初に使う時 | R の起動の前に全部作る（形は十数個、64×64） |
+| 大きな字の画像（`glass.c:2147-2152`、greeter `1633`、`vkDeviceWaitIdle`） | 大きさが変わる時 | 画像は glass の open で作る。新しい大きさの digits は W が描き R が写す（5 節） |
+| 壁紙の描き直し（`glass.c:648` の `vkDeviceWaitIdle`）・glass の大きさ（451・493） | M | 壁紙は W＋R（5 節）。大きさの変更は park |
+| client の import（backend の `vkCreateImage`・memory・bind、`kwl_import_adopt` の view） | protocol の request の中 | M のまま（device 単位の作成、Vulkan の規則で並行してよい）。R へ移すのは Future Work（8 節） |
+| import の descriptor set（`import.c:258,276`、`compose.c:2005-2083`） | import の時 | R が初めて再生する時に割り当てる。一覧は（import の pointer、種類（普通・linear）、import の世代）で指す（M9） |
+| import の layout の移動（list、`import.c:229-242`、溢れた時は `import.c:248-252,348,353` の即時の submit＋WaitIdle） | 次のコマ、溢れは即時 | list を写しの中身にし、上限を無くす（伸ばす）。溢れの即時の経路は無くなる |
+| import の破棄（`objects.c:830`） | buffer の破棄 | M が参照 0 を確かめて R に破棄の依頼（4.7） |
+| wl_shm の画像（`shm.c` の `image_create`・`image_release`、`kwl_shm_image_destroy` の quiesce 187） | commit の後・frame の外 | 記録と metadata は M、Vulkan の object は R（4.7、H1） |
+| shot の buffer（`shot.c:445,472`、試験の image だけ） | shot の open | R への同期の依頼 |
+| heads の swapchain・view（`heads.c`） | heads の sync・hotplug | park |
+| cursor の plane（`cursor-plane.c`） | pass ごと | M に残す。command pool を M 専用に分ける（今は `compose->pool`） |
+| frame の fence の待ち（`kwl_compose_complete`・`kwl_compose_poll`） | M | R |
+| 出力の close・終了・session の pause・sleep・game mode の切り替え | M（`vkDeviceWaitIdle`・quiesce） | park（4.8） |
 
-server の状態・client の object・hover の probe・animation の時刻・cursor の位置は**写しに入らない**（walk の時に M が読み、結果の op だけが入る）。composite の cursor（plane が無い出力）は walk が op にする。
+### 3.3 queue の lock
 
-### 4.2 作り方と置き換え
+- 出力の queue は 1 本（bcm2711 の queueCount は 1、`vulkan-query.c:182`、i915 も 1）。cursor の plane の submit・present（M）と出力の submit・present（R）が同じ queue を使う。
+- **zedBSD の libvulkan の build では compositor の queue_lock を使わない**（review-1 H3）。libvulkan が `queue->mutex`（`queue.c:333`、`wsi-swapchain.c:557`）・`device->mutex`（`queue.c:422-460`）・`context->mutex`（`context.c:496`）で中で直列にするので、compositor の lock を足しても待ちは減らず、trylock で避けることもできない（M の present は R の vkQueueSubmit・End の decode・capacity の待ち（`queue.c:362-366`）を待ち得る）。Linux・FreeBSD の host の Vulkan（Mesa）の build だけ、Vulkan の外部同期の規則のために compositor の `queue_lock` を submit・present の呼び出しの間だけ持つ（zedBSD の libvulkan の build か host の Vulkan の build かで切り替える。印の置き場は p004 の実装で決める）。
+- 待ちの長さは M0 の `present=`・`present_max=` で測る。本当の解決は B-u（6 節）。
 
-- M は今の `kwl_compose_draw` の判断（dirty・damaged・pacing・`kwl_layers_tick`）で「描く時」を決め、walk で一覧を作る。保持（`compose_hold`）は写しの帳簿に入れる。
-- 受け箱は 1 つ（mutex＋R の condvar）。**空なら置く。埋まっている（R がまだ取っていない）なら、M は古い写しを取り戻して新しい写しに置き換える**: 古い写しの frame callback を新しい写しの帳簿の先頭に移し（順序を保つ）、古い保持は新しい保持を取った後に外す（両方にある buffer は生きたまま）。古い写しの damage は履歴に残る（4.3 で新しい region に入る）。描き始めた写し（R が取った物）は取り消さない。
-- 置き換えは walk を 1 回無駄にする。walk の費用と置き換えの回数を PERF に出し、費用が大きければ「受け箱が空になってから作る」に変える（段 S3 の計測で決める）。
-- M が新しい写しを作るのは、受け箱が空か置き換えが要る時だけで、R が描いている写しの完了は待たない（walk と R の記録・GPU が重なる）。
+## 4. pull の 1 周と写し
 
-### 4.3 damage と buffer age
+### 4.1 R の 1 周
 
-- 今は取った画像の番号で、その画像が最後に描かれた frame からの damage を合わせる（`compose_region`）。walk は scissor で形を間引く（glass.c:1721、compose.c:2234）ので、M は walk の前に region を知る必要があるが、画像の番号は R の acquire まで分からない。
-- 規則: R は完了の知らせで各画像の「最後に描いた frame の番号」と画像の数を M に返す。M は**全部の画像のうち一番古い物**からの damage の和を region にする（どの画像を取っても足りる）。描いたことの無い画像があれば全体。置き換えられて描かれなかった写しの damage も履歴にあるので和に入る。
-- M の知る番号は 1 コマ古いことがある（飛んでいるコマの画像が分からない）が、古い情報は region を大きくする方向にしか働かない。FIFO で画像が順に回る普段は、今と同じ region か 1 コマ分大きい。R は acquire の後に正しい region を計算し、render area と scissor をそれに狭める（GPU の仕事は今と同じ、draw の数だけ少し増え得る）。
+1. FIFO の依頼（同期の依頼、R の object の作成・破棄、park）を順に処理。
+2. 「次をくれ」を M に知らせる（R→M の pipe、M の poll に入る）。M の答え（写し）か park を待つ。待ちは上限付きの繰り返し（100ms ごとに停止・park の印を見る）。
+3. 出力（と heads）の `vkAcquireNextImageKHR` を上限付き（例 50ms）で繰り返す。間に park・停止の印を見る（H4）。heads は取れなければその head の区間を飛ばす（M1）。
+4. host image の更新を適用（W の結果を待つ物は上限付き、5 節）、copy を記録。
+5. 一覧を再生して記録、`vkEndCommandBuffer`、`vkQueueSubmit`・`vkQueuePresentKHR`・heads の present。
+6. fence を上限付きで繰り返し待つ → 完了の記録を M に渡す（4.4）。
+7. 1 へ。飛んでいるコマは 1 つ（今と同じ）。「次をくれ」を知らせるのは前のコマの fence の後なので、M が walk する時には前のコマが終わっていて、walk は今と同じく最新の状態を読む。GPU と walk を重ねる（fence の前に知らせる、2 コマ飛ばす）は Future Work。
 
-### 4.4 費用と lock
+### 4.2 M の答え方
 
-- 写しは M の walk が自分の buffer に書く。受け渡しは pointer の交換だけ（受け箱の mutex の下で O(1)）。server の状態は写さない。
-- 一覧の大きさの見積もり: App Home の 460 draw で push 96B＋draw 16B＋bind ほか → 約 70KB、束の頂点が最大 1MiB（WS211 p003 の上限）。buffer は 3 つ（M が作る・受け箱・R が再生）を回し、大きさは最大に合わせて伸ばすだけ（op ごとの malloc は無し）。
-- 共有の変数は受け箱・完了の list・park の印・R の状態（数）だけで、全部 1 つの mutex（`render_lock`）の下。R の handle（pipeline など）は R の起動前に作り、R が動く間は不変。
+- M は R の「次をくれ」を印にして持つ。印がある pass で、今の `kwl_schedule` の判断（dirty・damaged・pacing・sleep_hold・os_paused・game mode）が「描く」なら walk を 1 回して写しを渡し、印を下ろす。描く物が無ければ印を持ったまま（R は待つ）。layer の静かな時の焼き（`kwl_layers_tick`）も同じ印で 1 回の写し（present しない種類）にする。
+- frame の番号は M が答える時に付ける（H5）。写しは必ず描かれるので、walk の時に確定する副作用（review-1 C2 の列挙: layer の `decided_anim`・`keys`・`valid`・`inflight`、shot の `SHOT_RECORDED`、import の layout の list、shm の行と release、壁紙・glyph の staging の依頼、heads の印、scene の `written`）はそのまま正しい。ただし「完了で確定する物」（layer の `valid`・scene の `valid`・shot の完了・shm の release・heads の lost）は今どおり完了の記録で確定する（4.4）。
+- M は R が描いている間に新しい写しを作らない。だから M の walk は R の 1 コマに 1 回（H5、約 125Hz の walk は起きない）。
 
-### 4.5 完了の知らせ
+### 4.3 写しの中身
 
-- R → M は完了の list（`render_lock` の下）＋ pipe（M の poll に入れる、今の frame の fence fd の代わり）。中身: frame の番号、結果（描いた・捨てた（出力の世代が古い）・失敗）、画像ごとの最後の frame、heads の missed、scene・layer の結果、計測（acquire・再生・End・submit・present・GPU の各時間）。
-- M の処理は今の `kwl_compose_complete` の M の部分: 帳簿の buffer を `kwl_buffer_put`（wl_buffer.release）、frame callback の送信、`kwl_layers_complete`、scene の valid、pacing の時刻、shot の完了。shm の写しの完了もここで buffer を release する（今は M の写しの直後）。
-- fence の fd の poll（`frame_fd`・`kwl_compose_waiting`・`kwl_compose_poll`）は M から無くなる。R が `vkWaitForFences` を上限付き（例 100ms ごとに停止と park の印を見る）で待つ。
+| 物 | 内容 |
+| --- | --- |
+| 番号・種類 | frame の番号、種類（出力のコマ / present しない layer の絵） |
+| 一覧（op の列） | render pass の開始（相手は記号: 出力の画像・head k の画像・layer の絵・backdrop の target・scene）と終わり、viewport、scissor、pipeline・descriptor set の bind、push constant（inline）、vertex buffer の bind、draw、barrier・copy・clear（scene・shot・backdrop）。pipeline・layout・sampler は open で作り R の間は不変の handle。client の画像は（import の pointer、種類、世代）、host image は pointer で指し、R が再生の時に set を引く。heads の区間は「head k が取れた時だけ」の印で囲む（M1） |
+| 頂点の配列 | WS211 p003 の束の頂点（R が再生の時に HOST_COHERENT の buffer に写す） |
+| damage | M が計算した region（4.5）、全体かどうか、scene の capture・reuse |
+| host image の更新 | shm の写し（import、行の範囲、buffer の参照）、glyph の cell（W の job の番号）、大きな字・壁紙・ぼかし（W の結果）、import の layout の移動の list |
+| layer・shot | layer の世代、shot の依頼 |
+| M だけの帳簿 | 保持した buffer の参照、frame callback、pacing の印。R は触らず、不透明な pointer を運ぶだけ |
 
-### 4.6 R の 1 周
+### 4.4 完了の記録（R→M、M2）
 
-1. FIFO の依頼（object の作成・破棄、host image の作成、park）を順に処理。
-2. 受け箱から写しを取る（無ければ condvar で待つ）。出力の世代が古ければ捨てて知らせる。
-3. 出力（と heads）の `vkAcquireNextImageKHR`（待ってよい、M は止まらない）。
-4. host image の更新を適用（W の結果を待つ物は 5 節）、copy を記録。
-5. 一覧を再生して記録、`vkEndCommandBuffer`。
-6. `queue_lock` を取って `vkQueueSubmit`・`vkQueuePresentKHR`・heads の present、外す。
-7. fence を待つ → 完了を知らせる。
-8. 1 へ。飛んでいるコマは 1 つ（今と同じ）。2 つにするのは段 S6（WS211 p006 の案 3）。
+frame の番号、結果（描いた・失敗）、画像ごとの最後の frame と画像の数、heads ごとの結果（取れた・missed・lost）、出力の present の結果（`compose.c:2829-2853` の `switch_proving` の成否 → `kwl_displays_move_settled`、`output_lost`）、scene の written、layer の焼きの結果、shot、shm の写しの済み、計測（acquire・再生・End・submit・present・GPU の時間）。M は今の `kwl_compose_complete` と `compose_submit` の後ろ半分の server の状態の書き換えを、この記録で行う。
 
-### 4.7 Vulkan の object の寿命
+### 4.5 damage と buffer age
+
+- R は完了の記録で各画像の最後の frame の番号を返す。M は全部の画像のうち一番古い物からの damage の和を region にする（どの画像を取っても足りる）。描いたことの無い画像があれば全体。pull で walk は R の 1 コマに 1 回なので、`KWL_DAMAGE_HISTORY`（8、`compose.h:270`）を超えることは今と変わらない。
+- R が acquire の後に region を狭めることは p004 ではしない（M5: walk が `SetScissor` を直に記録する所 shell.c 2 か所・backdrop.c:136、backdrop の end の全体の renderArea backdrop.c:128-131 がある）。
+
+### 4.6 費用と lock
+
+受け渡しは pointer の交換だけ。一覧は App Home の 460 draw で約 70KB＋束の頂点（最大 1MiB）。buffer は 2 つ（M が作る・R が再生）を回す。共有は「次をくれ」の印・写し・完了の list・依頼の FIFO・park の印だけで、1 つの mutex（`render_lock`）の下。
+
+### 4.7 object の寿命（H1）
 
 | object | 作る | 壊す | 守り |
 | --- | --- | --- | --- |
-| client の import（image・memory・view） | M（backend、S5 で R） | M が参照 0 で R に破棄の依頼 → R が次の周の始めに破棄 | 写しの帳簿の保持。参照 0 は完了の後にしか来ない |
-| import の descriptor set | R（初めて再生する時） | R（import の破棄と一緒） | 同上 |
-| shm の画像（staging・sampled） | R（大きさが変わった最初の写し） | R | surface の参照 |
-| glass の host image（atlas・大きな字・壁紙・ぼかし・tile） | R の起動前（今どおり `kwl_compose_open`） | park の中 | 起動から終了まで |
-| cursor の形の画像 | M（起動時に全部作る、plane が staging から写す） | 終了 | M だけが使う。composite の cursor の時は R も読む（書き換えないので安全） |
-| layer の絵・backdrop・scene・heads の view と framebuffer・batch の buffer | R（依頼、または park の中） | R | 世代の番号（layer は今の `layers.generation`） |
-| WS211 の束の buffer | R | R | 頂点は写しの配列から R が写す |
+| client の import（image・memory・view） | M（backend） | M が参照 0 で R に依頼、R が次の周の始めに | 写しの帳簿の保持。参照 0 は完了の後にしか来ない |
+| import の descriptor set | R（初めて再生する時） | R（import と一緒） | 同上 |
+| wl_shm の画像 | `struct kwl_import` の記録と metadata（大きさ・`draw`（`shm.c:599-601`）・version）は M が commit の時に同期で作る（walk が読む `compose.c:2124-2128,2165,2257`）。Vulkan の object は R がその記録を初めて写す時に作る | 大きさが変わったら M が新しい記録を作り、古い記録は参照する全部の写しの完了の後に R に破棄の依頼（今の `kwl_shm_image_destroy` の quiesce は無くなる） | surface と写しの帳簿の参照 |
+| glass の host image・cursor の形 | R の起動の前 | park の中 | 起動から終了まで |
+| backdrop・shot の buffer | 3.2 の表 | R | 世代 |
 
-## 5. 作業 thread と glyph・host image
+### 4.8 park と、pause・sleep・game mode・出力の変更（H4・M4）
 
-- **原則**: staging（host image の CPU 側）に書くのは R だけで、書くのは R の周の 4（前のコマの fence の後、copy の記録の前）だけ。今は「frame が飛んでいない時に M が書く」（shm、shm.c:146）と「記録の途中に M が書く」（glyph の `atlas_put`）が混ざっているが、これで GPU の copy と CPU の書き込みが競わない。
-- **glyph**: M の `glass_cache_glyph` は cell の選び（LRU）と metrics（`truetype_glyph_metrics`、文字の幅の計算に要る）だけを同期で行い、raster の job（face の番号・glyph id・大きさ・cell・job の番号）を W に出し、glyph を「未着」の印付きで返す。walk は普段どおり op を作る。写しは「この写しが要る job の最大の番号」を持ち、R は周の 4 でその番号まで W が終えるのを待ってから bitmap を staging の cell に書く（`atlas_put` は R へ）。
-  - W は自分の truetype の face を持つ（同じ font の bytes から `truetype_open`。face は大きさの設定などの可変の状態を持つので M と共有しない。libtruetype に file 単位の可変の状態が無いことは確かめた）。raster の buffer も W のもの（今の関数内 static の `bitmap` は使わない）。
-  - **追い出し**（WS211 review-2 N8・review-3 A1・review-4 H2 の問題）: cell の上書きは R が周の 4 で行い、その時には前の写しのコマは完了している（飛んでいるコマは 1 つ）。だから「飛んでいるコマが使う cell を書き換える」は起きない。焼いた layer の絵は焼いた時に sample 済みなので、後の上書きの影響を受けない。残るのは今と同じ「1 つの写しの中で cache（約 200〜300 cell）より多い種類の字」だけで、guard（`glass_glyph_guard_*`）の扱いは今のまま。記録の外の `glass_text_width`（home_prepare・menu・notify・IME など、review-3 A1 の列挙）も metrics だけになり staging を触らなくなる。
-  - 2 つ飛ぶようにする段（S6）では、R は「飛んでいるコマの使う cell の job」を周の 4 で遅らせる必要がある。S6 の設計で扱う。
-- **壁紙**: 読みと展開は今の loader の thread。`wallpaper_draw`（拡大・配置）とぼかし（`blur_*`）を W に移し、結果の画素を R が周の 4 で staging に写す。今の `vkDeviceWaitIdle`（glass.c:648）は要らなくなる。
-- **大きな字**（`glass_large_prepare`、glass.c:2125、`vkDeviceWaitIdle` 2152）: 新しい大きさの digits を W が描き、R が写す。届くまでは古い大きさで描く（今は「全部できるまで使わない」）。
-- **shm**: `surface_upload` の memcpy を R の周の 4 に移す。M は buffer の参照を持ったまま依頼を写しに入れ、R の完了で release する。pool の map は buffer の参照が生かす（実装の時に pool の破棄の順を確かめる）。
-- W の結果の受け渡しは W→R の完了の list（job の番号の順）。W は Vulkan も server の状態も触らない。
+- park: M が依頼すると、R は今のコマを最後まで描いて fence を待ち、止まって知らせる。M はその間 Vulkan を今のコードのまま扱い、unpark。R の待ちはどれも上限付きの繰り返しで park の印を見るので、R が acquire や fence で止まっていても park は届く。
+- park を使う所: 出力の open・close・移動（output-switch.c・displays）、heads の hotplug、glass の大きさ、**session の pause（`backend-host.c:46`、今の quiesce＋output close の前に park）**、**sleep の依頼（`display.c:160-166` の sleep_hold の前に park）**、**game mode の入りと出（`scanout.c:90,284`、`display.c:174-186`）**、終了。os_paused・sleep_hold の間、M は R の「次をくれ」に答えない。
+- 出力の世代が変わるのは park の中だけなので、古い世代の写しは存在しない（R が捨てる経路は無い、C2）。
 
-## 6. cursor と入力
+## 5. 作業 thread と glyph・host image（M3）
 
-- **M に残す**: evdev の読み、pointer の加速と出力の境、pointer の制約、hover の判定（`damage.c` の probe、walk が記録）、focus、wl_pointer・wl_keyboard の配達、cursor の形の決定（`kwl_compose_cursor_source`）、**cursor の plane の present**。
-- **present の間引き（段 C0）**: 今は pointer が動いた pass ごとに present（約 125Hz、1 回 約 3ms）。出力の refresh の周期（mode の refresh から）に 1 回までにし、周期の間に来た動きは最後の位置だけを次の機会に出す。M の poll の timeout を「次の present の時刻」までにする。遅れは最大 1 refresh 増えるが、今の main の 6 割の仕事が 1/2 以下になり、その分 main が早く次の入力を読む。
-- **速い経路**: WS141 p016 (B) の B-u（libvulkan の位置だけの present が GPU を通らない、ticket で追い越し）が入ると、M の present は device の mutex の短い区間＋ioctl になる。ただし libvulkan の `queue_attempt` は QueueSubmit の transaction の間 `device->mutex` を持つ（queue.c:422-479）ので、M の位置だけの present は R の vkQueueSubmit（Pi で 3〜9ms、最大 24ms）を待ち得る。B-u の後の実機で測り、1 refresh を超えるなら B-u の L1（cursor を display_mutex から分ける）と合わせて、WSI の cursor の状態を `device->mutex` の外に出す設計を WS141 に頼む。
-- **queue の lock**: M の present は `queue_lock` を取る。R が持つのは submit と present の呼び出しの間だけ。M は `pthread_mutex_trylock` で取れなければ今回は出さず、次の pass（poll の上限 2ms）で再試行する（最新の位置だけを出す）。
-- **像が変わった時の copy**（`plane_record`、形が変わる・client の cursor）: M の自分の command pool で記録して submit（今どおり）。この時は libvulkan の context の mutex を取る transaction になり、R の End の transaction（最大十数 ms）を待ち得るが、形の変化はまれなので許す。client の wl_shm の cursor は、plane 用の staging を M が持ち M が写す（64×64×4＝16KB の memcpy）。composite 用の画像は R が持つ（R の shm の写しと M の plane の copy が同じ staging を競わないように分ける）。
-- **plane が無い出力**（i915・Venus・Linux・FreeBSD）: cursor は composite。pointer の動きは今どおり damage（cursor の所）→ 写し → R。scene の再利用（cursor の無い絵、compose.c の `scene`）の判断は M が完了の知らせの scene の状態で行う。遅れは M の walk＋R の 1 コマ。
-- **入力の遅れの目標**: Pi で、重いコマ（App Home の開閉・drag・app の起動）の間も、cursor の present の間隔が refresh に従い（16.7ms）、入力→present が 1 refresh 以下。M の 1 pass が 16ms を超えないことが条件で、それは walk の費用（段 S1 で測る）と protocol の処理（M0 で測る）に依る。
+- staging に書くのは R だけ、書くのは R の周の 4（前のコマの fence の後）だけ。
+- **glyph**: M の `glass_cache_glyph` は cell の選び（LRU）と metrics だけを同期で行い、raster の job（face・glyph id・大きさ・cell・job の番号）を W に出す。写しは「この写しが要る job の最大の番号」を持ち、R は周の 4 でその番号まで W が終えるのを（上限付きで）待ち、bitmap を staging の cell に書く。W は自分の truetype の face を持つ（libtruetype に file 単位の可変の状態は無い）。
+  - **色の emoji**（`glass_cache_color`、`glass.c:3199-3240`）は metrics が画像から決まるので、p005 では M に残す（まれ）。
+  - **予備の font・emoji の font の open**（`glass.c:3105-3125`、初めての字の時に file を読む）は M に残す（1 回だけ）。p005 で起動の時に先に開く案を測る。
+  - 追い出し: cell の上書きは R が前のコマの後に行うので、飛んでいるコマの cell は書き換わらない。焼いた layer の絵は焼いた時に sample 済み。残るのは今と同じ「1 つの写しの中で cache より多い種類の字」で、guard の扱いは今のまま。記録の外の `glass_text_width` は metrics だけになる。
+- **壁紙**: `wallpaper_draw` とぼかしを W に、結果を R が周の 4 で写す。
+- **大きな字**: 新しい大きさの digits を W が描き、R が写す。届くまでは古い大きさで描く。
+- **shm**: memcpy を R の周の 4 に。M は buffer の参照を持ったまま、R の完了の記録で release する。
+
+## 6. cursor と入力（C1・H3）
+
+- **M に残す**: evdev、pointer の加速、hover、focus、event の配達、cursor の形の決定、cursor の plane の present（p002 の C0 で 1 refresh に 1 回、最新の位置）。
+- **画面に映る cursor の速さは B-u に依存する**（C1）: libvulkan の present の worker は queue ごとに 1 本で後の job は前を追い越さず、各 job の GPU の fence を待つ（`wsi-swapchain.c:2664-2710,2745,2776-2782`）。cursor の plane と出力のコマは同じ `compose->queue`（`cursor-plane.c:468,500`、`compose.c:2813,2831`）。だから M を軽くしても、重いコマの present の後ろに cursor の present が並ぶ。WS141 p016 (B) の B-u（位置だけの present が worker も GPU も通らず ticket で追い越す）が入って初めて、重いコマの間の cursor が 60fps になる。この WS の受け入れ（cursor の 60fps）は B-u を前提にする。
+- **測り方**: `KWL CURSOR_PLANE present` の `at_us` は M が呼んだ時刻で、画面に出た時刻ではない。M0 で `event_us`（evdev の kernel の時刻、`input.c` のマウスの report）と `present_cycles`（present の呼び出しの中の時間）を足した。表示の側の時刻（kernel の `CURSOR_SET`・`MOVE` の時刻）は WS141 に log を頼む。B-u の後は event_us→ioctl の差と present の間隔で判定する。
+- **M の present の待ち**: zedBSD の libvulkan では M の present は R の vkQueueSubmit・End の transaction・capacity の待ちを待ち得る（3.3）。B-u の後も `device->mutex` の区間が残るので、M0 の `present_max` が 1 refresh を超えるなら、WS141 に WSI の cursor の状態を `device->mutex` の外に出す設計を頼む（B-u の L1 と合わせて）。
+- **plane が無い出力**（i915・Venus・Linux・FreeBSD）: cursor は composite。pointer の動きは damage → R の次の「次をくれ」で walk。遅れは M の walk＋R の 1 コマ。
 
 ## 7. libvulkan の thread の安全、Linux・FreeBSD
 
-- zedBSD の libvulkan（`userland/desktop/libvulkan/`）: session（VkDevice）ごとの `context->mutex` が kernel との transaction を直列にする（context.c:496-505）。`vkQueueSubmit` は `queue->mutex`（queue.c:333）の下で `device->mutex`（422）を取り transaction。command buffer の vkCmd* は command buffer の中に貯めるだけ（commands.c:600-650、1MiB で flush）で lock を取らない（command buffer は外部同期、R だけが使う）。sync・WSI・display は自分の mutex を持つ。M と R が同時に呼ぶのは (a) M の backend の import と R の transaction → `context->mutex` で直列（M は R の 1 transaction の長さだけ待ち得る。End の decode は最大 11〜19ms、b10 の hold_us）、(b) M の cursor の present と R の submit → 上の 6 節。どちらも正しさは保たれ、問題は待ち時間だけ。待ちは段 S3 の計測で見る。
-- Vulkan の規則（Mesa など他の実装）: command pool・descriptor pool・command buffer は thread ごとか外部同期 → 3 節の分担で守る。queue は `queue_lock`。device 単位の作成・破棄（import）は並行してよい。fence の待ちは R だけ。
-- **Linux・FreeBSD の backend への影響**: 変わるのは compositor の中（`userland/desktop/wayland/`）だけで、`libkeiland-backend` の API は段 S5 まで変えない。backend の dmabuf の import（`gpu-dmabuf.c`）は M のまま、device 単位の作成なので Mesa でも並行の規則に合う。pthread は Linux（glibc）・FreeBSD（`-pthread`、Makefile.freebsd:96）とも既に使っている（glass.c の loader）。新しい file は `Makefile`・`Makefile.linux`・`Makefile.freebsd`（keiland-linux-sync）の 3 つに足す。i915・Venus は zedBSD の libvulkan で、bcm2711 と同じ lock の構造。
-- 段 S5（import を R へ）は `keiland-backend-gpu.h` の API を「fd と記述を受け取る」と「Vulkan の object を作る」に分ける変更になり、zedBSD・Linux・FreeBSD の 3 つの backend に及ぶ。S5 の前に別の設計（review）にする。
+- zedBSD の libvulkan: session ごとの `context->mutex` が kernel との transaction を直列にする。command buffer の vkCmd* は貯めるだけで lock を取らない（command buffer は R だけが使う）。M と R が同時に呼ぶのは (a) M の backend の import と R の transaction（`context->mutex`、R の 1 transaction の長さだけ待ち得る）、(b) M の cursor の present と R の submit（3.3）。正しさは保たれ、問題は待ち時間。
+- Vulkan の規則（Mesa など）: command pool・descriptor pool・command buffer は thread ごと（R と M の cursor の plane で分ける）、queue は Mesa の build だけ `queue_lock`、device 単位の作成は並行してよい。
+- Linux・FreeBSD の backend: 変わるのは compositor の中だけで、`libkeiland-backend` の API は変えない。pthread は既に使っている（Linux の glibc、FreeBSD の `-pthread` `Makefile.freebsd:96`）。新しい file は `Makefile`・`Makefile.linux`・`Makefile.freebsd` に足す。
 
-## 8. 段（小さく安全な順）
+## 8. Phase の分け方（M7）
 
-| 段 | 内容 | 確かめ |
+| Phase | 内容 | 状態・順 |
 | --- | --- | --- |
-| **M0** | 計測だけ: `KWL PERF` に main の pass の区間ごとの時間（入力の読み、client の request、commit の採用、shm の写し、cursor の plane の present（回数と時間）、layer の tick、compose の walk・encode・End・submit・present、frame の完了、flush）。動作は変えない | host build（warning 0）。Pi の 1 boot（P3 か Q1 経由、App Home の開閉・drag・app の起動・pointer だけ） |
-| **C0** | cursor の plane の present を 1 refresh に 1 回（最新の位置）にする。cursor-plane.c と main.c の poll の timeout だけ | host（間引きの判断の決定的な試験）、Pi（present の間隔と main の work%） |
-| **S1** | display list: `struct kwl_list` と op、描画の関数の `VkCommandBuffer command` の引数（37 file）を `struct kwl_list *` に変える（型の違いで vkCmd の取り残しを compiler が見つける）、batch の頂点を一覧に。**再生は同じ thread の同じ場所**（`compose_record` の最後で一覧を command buffer に再生）。thread はまだ無い | host: 再生の等価試験（下の 9 節 (a)）、T1（i915・Venus の見た目と `KWL VULKAN_ERROR` なし）、Pi（walk と再生の時間を分けて測る → S2 の効果の見込みを確かめる） |
-| **S2** | R の thread: 受け箱・置き換え・完了の list と pipe・park・R の 1 周・`queue_lock`・cursor の plane の command pool の分離・descriptor set の R への移動・object の作成と破棄の依頼・damage の region の規則（4.3）・host image の staging は R だけが書く（CPU の仕事はまだ M で行い、結果を写しに入れる）・shm の写しを R へ。`vkDeviceWaitIdle`・`kwl_compose_quiesce` の所を park か retire に | host（9 節 (b)〜(d)）、T1、Pi（入力→shown、cursor の間隔、M の pass の時間） |
-| **S3** | W: glyph の raster、壁紙の描画とぼかし、大きな字。置き換えの費用の計測で「受け箱が空になってから作る」への変更を決める | host（9 節 (e)）、Pi（日本語の UI で初出の字の多い画面、壁紙の変更） |
-| **S4** | 規約の全文の見直し（p003） | — |
-| S5（別の設計） | client の画像の import を R へ（backend の API の変更） | S3 の計測で M の import の待ちが問題なら |
-| S6（別の設計） | 飛んでいるコマを 2 つに（WS211 p006 の案 3） | WS211 p006 の計測の後 |
+| p001 | 調査と設計（この文書） | 第 2 版、再 review |
+| p002 | M0（main loop の区間・cursor の present の内訳・event_us の計測）と C0（cursor の present を 1 refresh に 1 回） | 実装済み（M0・C0 は main 33cdc3042、review-1 の追加は agent/p4）。Pi の確認待ち |
+| p003 | S1: display list。`struct kwl_list` と op、描画の関数の `VkCommandBuffer command` の引数（37 file）を `struct kwl_list *` に、compose->command を直に使う所（`compose.c:2365〜`、`layer-cache.c:184`）も一覧へ、batch の頂点を一覧に、bind の鍵を（import、種類、世代）に（M9）。再生は同じ thread の同じ場所。先に 3.2 の遅延作成を open に移す | WS211 の P3 の作業（p003 段 2・p005・p006）と衝突するので、順は Q1 が決める |
+| p004 | S2: R の thread（pull、依頼の FIFO、park、完了の記録、Vulkan の持ち主の移動、shm・descriptor set の R への移動、上限付きの待ち） | p003 の Pi の walk の計測の後 |
+| p005 | S3: W（glyph の raster、壁紙、大きな字） | p004 の後 |
+| p006 | 規約の全文の見直し | 最後 |
 
-- M0 と C0 は小さく、WS211（P3）の変更と当たりにくいので先に入れられる。S1 は描画の 37 file の引数の型を変えるので、**WS211 p003（束ね）の段 2 が main に入った後に始める**（Q1 が順を決める）。S1 の中の batch.c の頂点の扱いは p003 の形に合わせる。
-- WS141 p016 (B) の B-u（libvulkan の cursor の速い経路）は P3 が担当。C0 と S2 はそれを前提にしない（入ればさらに速くなる）。
+Future Work（Q1 に記入を頼む）: client の画像の import を R へ（backend の API の変更、zedBSD・Linux・FreeBSD の 3 つの backend、別の設計）、GPU と walk を重ねる・2 コマ飛ばす（WS211 p006 の案 3 と合わせて）、cursor の plane に別の VkDevice（別の session・queue）。
 
 ## 9. 試験
 
-- host（決定的、thread を使わずに手順を外から 1 歩ずつ呼ぶ）:
-  - (a) **再生の等価**: 描画の場面（デスクトップ、窓 2 つと popup、App Home、drag の途中の部分の描き直し、backdrop、heads 2 つ、layer の焼き、batch の on と off）を、S1 の前の直の記録と S1 の一覧の再生のそれぞれで、vkCmd* を記録する stub の dispatch に流し、命令の列（引数と push constant の bytes まで）が同じことを比べる。S1 の前の列は S1 の最初の commit で golden に取る。
-  - (b) 受け箱: 置く・取る・置き換え（callback の順、保持の付け外し、両方にある buffer が release されない）、取った写しは置き換えない、出力の世代の古い写しを R が捨てる。
-  - (c) damage: 画像 3 つと 2 つ、置き換えで描かれなかった写しの damage が後の region に入る、描いたことの無い画像で全体、M の知る番号が 1 コマ古い時に足りる（R の正しい region ⊆ M の region）。
-  - (d) park: R が描いている途中の park の依頼、park の間に M が出力を作り直し、unpark の後の最初の写しが全体。R の fence の待ちの上限と停止。
-  - (e) glyph: 未着の glyph の写しで R が job を待ってから staging に書く、cell の上書きは飛んでいるコマの後、記録の外の `glass_text_width` が staging を触らない。
-  - (f) C0 の間引き: 同じ refresh の中の 3 回の動きで present 1 回・最後の位置、次の周期の始めに出る、trylock の失敗で次の pass。
-  - 置き場: `plan/ws213/tests/`（compositor の file を stub と一緒に host で compile、WS211 の `bind-host-test.sh` と同じ形）。
-- Linux の host build（Makefile.linux）と FreeBSD の build で warning 0。可能なら Linux の build を ThreadSanitizer 付きで WS131 の Debian の QEMU+KVM guest で動かす（T1 に頼むかを S2 の時に Q1 と決める）。
-- T1（S1・S2・S3 の終わりに 1 回ずつ、まとめて）: i915（5330）と Venus の QEMU で、shot.c の画面の写しを変更の前と比べる（静止した絵が同じ）、`KWL VULKAN_ERROR`・`KWL FAILED` が無い、App Home の開閉・drag・終了の流れ。
-- Pi（実機、P3 かユーザーの手で配置）: `KWL LAT`（入力→shown）、`KWL CURSOR_PLANE present` の間隔と入力→present（B-u の `event_us` が入ればそれで）、M0 の区間の時間、`KWL PERF` の work%。場面: App Home の開閉、窓の drag、Music・Settings の起動、pointer だけ。完了の条件の確認はユーザー。
+- host（決定的、thread を使わずに手順を 1 歩ずつ呼ぶ）:
+  - (a) **再生の等価**（p003）: デスクトップ・窓 2 つと popup・App Home・drag の部分の描き直し・backdrop・heads 2 つ・layer の焼き・batch の on と off を、直の記録と一覧の再生で vkCmd* の stub に流し、命令の列（引数と push constant の bytes）が同じこと。**descriptor set の handle は（import、種類）に正規化して比べる**（M9）。golden は p003 の最初の commit で取る。
+  - (b) pull（p004）: 「次をくれ」が無い間は walk しない、描く物が無ければ印を持ったまま、1 回の印に 1 回の walk、frame の番号。
+  - (c) **副作用の確定**（M8）: layer の焼き（`decided_anim`・`keys`・`valid`）、shot の依頼と完了、import の layout の list、shm の行の写しと release の順、heads の missed と lost、`switch_proving` の結果が、完了の記録の時に今と同じ状態になる。
+  - (d) damage: 画像 3 つと 2 つ、描いたことの無い画像で全体、M の知る番号が 1 コマ古い時に足りる。
+  - (e) park: R が acquire・fence の待ちの途中の park、park の間に M が出力を作り直し、unpark の後の最初の写しが全体。session の pause・sleep・game mode の入りの前の park。
+  - (f) 寿命: shm の大きさの変更で古い記録が参照する全部の写しの完了まで生きる、import の破棄の依頼は完了の後。
+  - (g) 遅延作成の移動（p003）: backdrop・cursor の形・load pass・大きな字が open で作られ、walk が作成を呼ばない。
+  - (h) glyph（p005）: 未着の glyph の写しで R が job を待ってから staging に書く、cell の上書きは飛んでいるコマの後。
+  - C0（p002）: `plan/ws213/tests/cursor-due-host-test.sh`（PASS）。
+- build: rpi4・amd64・`make keiland-linux`・FreeBSD で warning 0。p004 の時に Linux の build を ThreadSanitizer 付きで WS131 の Debian の QEMU+KVM guest で動かすかを Q1 と決める。
+- T1（p003・p004・p005 の終わりにまとめて）: i915（5330）と Venus の QEMU で shot.c の画面の写しを前と比べる、`KWL VULKAN_ERROR`・`KWL FAILED` が無い、App Home の開閉・drag・終了。
+- Pi: `KWL PERF main`（区間、`cursor presents=`・`present_max=`）、`KWL CURSOR_PLANE present` の `event_us`→`at_us` と間隔、`KWL LAT`（入力→shown）、`SCHED_WAKE_LATENCY`（必要なら）。場面: pointer だけ・App Home の開閉・drag・Music・Settings の起動。
 
 ## 10. SMP が無い間の効果の見込み
 
-- Pi の kernel は 1 core（WS208 まで）。thread にしても CPU の総量は同じで、fps（コマの速さ）は上がらない。context switch の分だけわずかに下がり得る。
-- 効くのは **M の遅れ**: kernel は起きた thread が同じ優先度なら走っている thread を次の安全な点で横取りする（`src/kern/sched.c` の `wake_enqueue_locked`、1800-1834）。evdev が読めて M が起きると、R の CPU の仕事（encode）を横取りして先に入力と cursor を処理する。R が kernel の中（transaction の decode）にいる時は、kernel の安全な点まで待つ（kernel の GPU の thread（decoder・executor）も同じ既定の優先度、`render-worker.c:115,121`）。この待ちは `SCHED_WAKE_LATENCY` の計測で確かめられる。
-- 見込み（M0・S1 の実測で直す）:
-  - 1 コマで M が止まる時間: 今 10〜20ms（App Home 60〜120ms）→ S2 の後は walk だけ（数 ms と見込む、S1 で測る）。
-  - cursor: C0 で present の仕事が半分以下。B-u が入れば present 1 回が ioctl 程度。重いコマの間の cursor の間隔の最大（今 76〜178ms）は、M の walk と R の submit の device の mutex の待ち（最大約 24ms）の大きい方まで下がる見込み。
-  - App Home の開閉の fps（WS211 の領分）は変わらない。SMP の後は R・W・kernel の GPU の thread が別の core で動き、fps も上がる。
+- Pi の kernel は 1 core（WS208 まで）。thread にしても CPU の総量は同じで fps は上がらない。
+- 効くのは M の遅れ: kernel は起きた thread が同じ優先度なら走っている thread を次の安全な点で横取りする（`src/kern/sched.c` の `wake_enqueue_locked` 1800-1834）。evdev が読めて M が起きると、R の CPU の仕事（encode）を横取りして先に入力を処理する。R が kernel の中（transaction の decode）にいる時は安全な点まで待つ（kernel の GPU の thread も同じ既定の優先度 `render-worker.c:115,121`）。
+- 見込み（p002・p003 の実測で直す）: 1 コマで M が止まる時間は今 10〜20ms（App Home 60〜120ms）→ p004 の後は walk だけ（数 ms と見込む）。M の present の待ち（3.3）は残る。画面の cursor の 60fps は B-u の後（6 節）。
 
 ## 11. 未決と危険
 
-1. walk の費用（S1 で測る）。重ければ S2 の効果は小さく、walk を軽くする（WS211 の束ね、Home の絵の再利用）のが先になる。
-2. 置き換えの方針（いつも置き換える / 受け箱が空になってから作る）。S3 の計測で決める。
-3. M が R の transaction を待つ時間（import の `context->mutex`、cursor の `device->mutex`）。S2 の後の実機で測り、大きければ S5（import を R へ）や WS141 への依頼（WSI の cursor の状態の lock の分離）。
-4. 1 本の queue を cursor の plane と共有する。別案は cursor の plane に別の VkDevice（別の session・別の queue。WS141 p016 の session ごとの列と表示の優先が効く）を使うこと。cursor の画像を 2 つの device で持つ必要があり、VK_KHR_display の plane を別の device から出せるかを確かめる必要がある。S2 の計測で queue の待ちが問題になった時の候補として残す。
-5. 動きの時刻: walk の時に animation の時刻を読むので、表示されるのは R と GPU の時間だけ後。今も同じ（記録の後に submit と GPU）で、差は R の待ちの分。目で分かるかは Pi で見る。必要なら表示の予定時刻で animation を進める。
-6. client の buffer の解放の遅れ: shm の release が R の写しの後になる（今は M の写しの直後）。FIFO の client の待ちが 1 周分増え得る。Pi の Settings などで見る。
-7. `kwl_compose_quiesce` の 4 か所（objects.c:554 の client の破棄、backend-host.c:46、main.c:1097、shm.c:187）と `->in_flight` の 16 か所の意味を、S2 の実装の前に 1 つずつ「park」「retire（BUG-239）」「写しの未完了」のどれに当てるか決める。client の破棄で M が 1 コマ待つのは避け、retire に寄せる。
+1. walk の費用（p003 で測る）。重ければ p004 の効果は小さく、WS211 の削減が先。
+2. M の present の待ち（R の submit・End・capacity）。M0 の `present_max` で測り、大きければ WS141 へ（6 節）。
+3. 表示の側の時刻（kernel の CURSOR_SET・MOVE）の log を WS141 に頼む。`event_us` の時計（kernel の `clock_milliseconds`、`src/drivers/generic/input.c`）と M の `kwl_microseconds`（CLOCK_MONOTONIC）が同じ基準かを Pi で確かめる。
+4. `KWL LAT`・`KWL FIRST_FRAME` の意味の定義し直し（p004）: draw＝M の walk の始め、recorded＝R の End、queued・submit＝R、shown＝R の fence の後に M が完了を受けた時。
+5. retire（`objects.c:739`）と shm の写し（`shm.c:146`）は今「frame が飛んでいない時」に止まる。p004 では in_flight の意味が「R が描いている」になり、R が続けて描くと飢え得る。retire は R の完了の記録の後に 1 つずつ、shm の写しは写しの中身（R の周の 4）にして、in_flight を見ない形にする。
+6. `kwl_compose_quiesce` の 4 か所（`objects.c:554`、`backend-host.c:46`、`main.c:1097`、`shm.c:187`）と `->in_flight` の 16 か所は、p004 の実装の前に 1 つずつ park・retire・写しの帳簿のどれかに当てる。client の破棄で M が 1 コマ待つのは避け、retire に寄せる。
+7. 動きの時刻: walk の時に animation の時刻を読むので、表示されるのは R と GPU の時間だけ後（今も同じ）。
 
 ## 12. 結果の記録（この Phase）
 
-- 調べたこと: 上の 1 節（source の地図、Pi の既存の log の集計）。Pi の今の `/run/user/1000/session.log` は ssh の host key が変わっていて読めなかった（`known_hosts` の書き換えは security の判定の回避になり得るので行っていない）。代わりに P3 の boot の log（b4・b6・b10、2026-10-12）を読んだ。
-- 変えた file: この phase.md と ws.md の Phase の表だけ。source・試験は無し。
-- 次: design-reviewer の review → 直し → ユーザーの確認 → Q1 が段の順（M0・C0 の先行、S1 は WS211 p003 の後）を決める。
+- 調べたこと: 1 節（source の地図、Pi の既存の log の集計。P3 の boot の b4・b6・b10）。
+- 変えた file: この phase.md、[review-1](review-1.md)（design-reviewer の要点の写し）、ws.md。p002 の分は下の節。
+- 次: 第 2 版の再 review → Q1 が p003 の順を WS211 と調整。
 
-## M0・C0 の実装（2026-10-12 P4、Q1 の「review を待たずに M0・C0 を実装してよい」）
+## p002（M0・C0）の実装（2026-10-12 P4、Q1 の「review を待たずに M0・C0 を実装してよい」、main 33cdc3042）
 
 - **M0**（計測だけ、動作は変えない）: `struct kwl_perf`（kwl.h）に pass の区間の cycle を足し、`main.c` の event loop と `display.c` の `kwl_schedule` で測る。5 秒ごとの `KWL PERF` に 1 行 `KWL PERF main ticks= input= clients= frame_done= schedule= flush= other= | schedule ticks= adopt= shm= cursor= layers= draw= | cursor presents= held=` を足した（値は窓の中の ms の合計。ticks は poll の前の tick で work の外、other は work のうち区間に入らない分（descriptor の作成・accept・OS・clipboard ほか）、held は refresh を待った pass の数）。
 - **C0**（cursor-plane.c）: 同じ像（source と version が同じ）の位置だけの present は、前の present から 1 refresh（`server->refresh`、無ければ 60Hz）の間は出さずに `deferred` にし、refresh の終わりに最新の位置を出す。最初の動き（静かな refresh の後）と像の変化はすぐ出す（plane と frame の cursor が 1 refresh 食い違わないように）。`kwl_cursor_plane_due_ms` が event loop の poll の timeout を次の present の時刻まで縮める（最小 1ms、さらに 1 refresh 過ぎても誰も出さなければ -1 に戻して 1ms ごとに起きない。pause・sleep・game mode で scheduler が plane まで来ない時のため）。`plane_present` の早い return（copy の fence が未完了・空き画像が無い）は今どおり次の pass で再試行（`deferred` は立てない）。WS141 p016 (B) の B-u（libvulkan の速い経路）とは独立で、B-u が入れば 1 回の present がさらに軽くなる。
@@ -274,3 +310,9 @@ server の状態・client の object・hover の probe・animation の時刻・c
   - build: rpi4（`make -j16 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/bin/wayland`）rc 0・warning 0、amd64（`config/ci/config-amd64.mk`、`build/amd64/bin/wayland`）rc 0・warning 0、`make keiland-linux` rc 0・warning 0。`git diff --check` 空。
   - 注: 自分の worktree の `build/arm64/sysroot` は、この make が初めて作った（共有の build・toolchain の tree には触れていない）。最初の make は -j の順で sysroot より先に libc の math を compile して失敗し、2 回目で通った。
 - 未実施: Pi・T1。Pi で見ること: `KWL PERF main` の区間（pointer だけ・App Home の開閉・drag・app の起動）、`cursor presents=` が 60/s 程度に減ること、`KWL CURSOR_PLANE present` の間隔（約 16.7ms）と入力→present、work% の減り。T1: i915・Venus は plane が無いので C0 は動かない（M0 の行が出て、`KWL FAILED` が無いことだけ）。
+
+### review-1 の後の追加（2026-10-12 P4、agent/p4）
+
+- **M0 の追加**（C1・H3）: `plane_present` の内訳を `struct kwl_perf` に（copy の fence の問い合わせ・acquire・copy の記録と submit・`vkQueuePresentKHR` の呼び出しの中の時間と、その最長）。`KWL PERF main` の行の末に `fence= acquire= copy= present= present_max=`（ms、早い return の pass は数えない）。`present` は libvulkan の `queue->mutex`・`device->mutex`・`context->mutex` の待ちを含む。`KWL CURSOR_PLANE present` の行に `event_us=`（そのマウスの report の kernel の時刻、`input.c` の `device->frame_time_us` を `server->pointer_event_us` に）と `present_cycles=` を足した。表示の側の時刻（kernel の CURSOR_SET・MOVE）は compositor からは取れないので WS141 に頼む（11 節）。
+- **C0 の Low の確かめ**: (1) plane と composite の切り替え（`kwl_cursor_plane_update` の `shown` の変化）は間引きの前にあり、切り替わる時は像（`source`）が変わる（NULL ⇔ cursor の像）ので間引かれない。(2) 最初の動きは即時、周期の間の動きは保留して周期の終わりに最新の位置（host 試験の (1)・(4)・(6)）。直す所は無い。
+- 確かめ: host `sh plan/ws213/tests/cursor-due-host-test.sh` PASS（`kwl_cycles` の stub を足した）。build: rpi4・amd64 の `bin/wayland` rc 0・warning 0、`make keiland-linux` rc 0・warning 0、`git diff --check` 空。

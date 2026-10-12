@@ -47,6 +47,15 @@ kwl_microseconds(
 	return clock_now_us;
 }
 
+/* Gives the fake cycle counter, one cycle a microsecond of the fake clock. */
+uint64_t
+kwl_cycles(
+	void)
+{
+	/* The same fake time. */
+	return clock_now_us;
+}
+
 /* Gives the cursor image, with its hotspot at its corner. */
 int
 kwl_compose_cursor_source(

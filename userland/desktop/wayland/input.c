@@ -766,6 +766,10 @@ apply_frame(
 		delta_y = moved_y;
 	}
 
+	/* The report's kernel time, for the cursor plane's log line (ws213-p001 review-1 C1). */
+	if (absolute_seen || delta_x != 0 || delta_y != 0)
+		server->pointer_event_us = device->frame_time_us;
+
 	/*
 	 * An absolute device maps onto the anchor; relative movement goes over
 	 * the outputs shown, across their shared edges (ws113-p007).
