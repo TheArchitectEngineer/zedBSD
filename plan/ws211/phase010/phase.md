@@ -3,7 +3,7 @@
 # ws211-p010: compositor の 1 コマの CPU の仕事（replay・libvulkan・kernel の decode）を縮める
 
 Parent: [WS211](../ws.md)
-Status: in-progress（2026-10-12 P4、内訳を測り、設計と実装中）
+Status: in-progress（実装 agent/p4 f7873c64f・af2dd3887、host 試験 PASS・build warning 0。place25 で Pi 待ち）
 Phase disposition: normal
 Queue: P4（2026-10-12 ユーザー「ぜんぶやりましょう。」、Q1 の割り当て）
 
@@ -102,3 +102,29 @@ Queue: P4（2026-10-12 ユーザー「ぜんぶやりましょう。」、Q1 の
 - libvulkan の `vkBeginCommandBuffer` を End の stream に入れて往復を減らす: kernel が Begin を requested=0 で受けない（`vulkan-command-buffer.c` が EINVAL）。wire の約束の変更なので、place25 の往復の時間を見てから Q1 に提案する。
 - WSI の present の copy の command buffer を slot ごとに使い回す（往復 2 回減る）: libvulkan の WSI（WS141 の範囲）の content の記録や cursor の lane との関係があり、往復の時間を見てから。
 - render worker の kthread の優先度を user の thread より上げる（decode の途中で CPU を譲らない）: kernel の scheduling の方針の変更。place25 の 1 命令の最長が counter で数 ms 以上なら Q1 に提案する。
+
+## 3. 実装（2026-10-12 P4、agent/p4）
+
+- **f7873c64f（driver）**: `vulkan-private.h` の session に `buckets[1024]`（構造体の中、確保は増えない）、object に `link`（自分を指す pointer の場所）と `bucket_next`。`vulkan-object.c` の publish は list の先頭と bucket に入れ、find は identity の bucket だけを見る（Fibonacci hash の上位 10 bit、kind と identity で比べる）、remove は bucket から探して list からも O(1) で外す、close は bucket も空にする。list を歩く既存の 4 か所（`vulkan-device.c`・`vulkan-descriptor-pool.c`）は、次を取ってから外す今の形のまま正しい。
+  - 計測: `render-runtime.c` が decode の前後で `kern_rtc_read_counter`（generic timer）を読み、`v3d-hardware.h` の perf に request の数・命令の数・counter の和・最長の request とその命令の数・session の object の数の最大を足す。`vulkan-native-job.c` が `v3d: decode requests= cmds= us= ns/cmd= max_us=/cmdsN objects=` を出す（v3d.perf=1 の時、2 秒の窓）。1 命令ごとの counter の計測は、`vulkan-stream.c` を link する WS141 の試験に counter の stub が無いので入れなかった（1 命令の最長は今の `v3d: requests` の `command=` の tick で見る）。
+- **f3c506c85（WS141 の試験、Q1 の許可）**: `plan/ws141/tests/vulkan-device-host-test.sh` は main で既に link できなかった（`vulkan_content_note_image`）。今回 `kern_rtc_read_counter` も要るので、stub を `plan/ws141/tests/vulkan-device-link-stubs.c` に置き、script の cc の行に足した。
+- **af2dd3887（compositor）**: `compose.c` の `compose_replay_commands` は、host image の copy が 0 個のコマで copy_command の Begin・End をしない（往復 2 回減る。`compose_op_run` は前から frame_copies が 0 なら command だけを送っている）。render thread の各段の時間を `kwl_render_outcome`（`render-thread.h`、5 つの値と copied）に入れ、main が `KWL PERF rec frames= copied= begin= encode= end= submit= present= | max end= submit= present=`（ms、5 秒の窓）を出す（`kwl.h`・`main.c`）。
+  - あわせて `plan/ws211/tests/anim-host-test.c` の link の壊れ（ws213-p004 の `kwl_compose_want_layer` の stub が無い、main で既に FAIL）を直した。
+- **c8fbd678a（ws213 の試験）**: P3 の p009 で `kwl_scene_copy` に `restore` が増えたので、`plan/ws213/tests/list-replay-host-test.c` の 2 か所を直した（golden は同じ）。
+
+## 4. 確かめ（2026-10-12 P4、host）
+
+- `sh plan/ws211/tests/object-index-host-test.sh`（新規）→ PASS。本物の `vulkan-object.c` で、kind の違う同じ identity、重複の EEXIST、上限 4096 の ENOSPC、list の先頭・末尾・中ほどの取り外し、list を歩きながらの取り外し（descriptor pool の形）、参照が残る取り外し、取り外した identity の再公開、close を見る。各段で list の link と index が同じ集合であることを確かめる。続けて WS141 の `vulkan-device-host-test.sh` を流す（全部 PASS）。
+  - 最古の object（compositor の command buffer の位置）の探索（Xeon 6130）: n=300 で index 7ns・list 1.1µs、n=1000 で 3.8ns・3.8µs、n=4000 で 5ns・15µs。
+- WS141 の `v3d-hardware`・`vulkan-object`・`vulkan-stream` の host 試験 → PASS。
+- ws213 の `cursor-due`・`input-thread`・`list-replay`（799 行）・`render-thread`、ws211 の `anim`・`batch`・`bind`・`damage` → PASS（main f1be68774 の merge の後に再度）。
+- build（warning 0）: `make -j16 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix -o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete`（rc 0、arm64 vmunix check PASS）、同じく `build/arm64/bin/wayland`、amd64 の `build/amd64/bin/wayland`、`make KEILAND_ASK=n KEILAND_LINUX_BUILD=build/keiland-linux keiland-linux`（rc 0）。FreeBSD の build は未実施。`git diff --check` 空。`plan/tools/style-check.py` で新しい file の指摘 0、変えた file は base より増えていない。
+- 未実施: Pi（place25）、T1（i915・Venus、compositor の変更は全 backend で動く。driver の変更は bcm2711 だけ）。
+
+## 5. Pi で見ること（place25、scratchpad/place25）
+
+- 中身: `p25-vmunix`（cksum 1437434276、`/boot/boot0/vmunix` へ、元は `.bak`）、`p25-wayland`（cksum 1594188947、`/bin/wayland` へ）、`place25.sh`。agent/p4 f1be68774（main ＋ p010、P3 の p009 の compositor 側を含み driver 側は含まない）。解像度に依らない。
+- `v3d: decode ... ns/cmd= objects=`: 1 命令あたりの decode が数 µs 以下になること、objects の数（前の 46〜52µs/命令の原因の大きさ）。
+- `KWL PERF rec`: copied が 0 のコマが多いこと、end（decode を含む End の往復）・begin・submit・present の平均と最長。往復 1 回の時間は begin（中身の無い往復）で見る。
+- KWL LAT: draw→recorded・draw→submit の p50 と p90 を place23 の表（1.1、1.3）と比べる。目安は draw→submit の p50 が 24〜30ms から 10ms 前後へ。
+- `v3d: requests` の `command=`（1 命令の最長の tick）が 10ms を超え続けるなら、render worker の優先度の提案（2.3）へ。
