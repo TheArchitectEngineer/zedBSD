@@ -103,6 +103,7 @@ Future Work は実行を許可しない。
 | F-094 | WS213: client の buffer の import を描画 thread（R）へ移す（libkeiland-backend の API の変更） | WS213 p001 第 2 版（P4、2026-10-12）の S5 | WS213 の S2 が入った後に import の待ちが Pi で残る時 |
 | F-095 | WS213: GPU の実行と次のコマの walk を重ねる・2 コマ先まで出す（in flight を 2 に） | WS213 p001 第 2 版の S6 | S2 の後、Pi で GPU の待ちが律速の時 |
 | F-096 | WS213: cursor の plane に別の VkDevice（queue）を持たせ、描画の queue と独立に present する | WS213 p001 第 2 版 | WS141 p016 B-u の後も cursor が描画の列に引きずられる時 |
+| F-097 | Pi 4 の kernel: 何もしていない時も context switch が 2 秒に 60 万〜440 万回（kern: perf の switches、2026-10-13 の Pi の計測）。woken・preempted の数では説明できず、sched_yield の回り（src/drivers/usb/ ほか）の疑い。CPU の無駄で SMP（WS208）の後に効き方が変わる | 電力・CPU の余裕、SMP での他の core の取り合い | WS213 p007（P5 の Pi の K-D の読み、plan/ws213/phase007/phase.md） | 未着手 | WS208 の Pi の計測の後、または電池・発熱の問題が出た時 | [phase007](ws213/phase007/phase.md) |
 
 | fw-docs-ids | docs/ の本文に残る Plan の ID（WS・BUG・q の番号、2026-10-05 で 58 箇所、docs/agent は対象外）を消し、必要なら中身を言葉で書く | docs は目標の設計で plan に依らない規則 | 2026-10-05 ユーザー「消します。ただし後回しでいいです。」 | 決定済み・後回し | 空いた枠、または ws129-p005（RC）の文書の見直し | — |
 | fw-audiod-client | video player（ws122-p002）に内蔵した audiod の client（48 kHz S16 stereo）を共有の library に移し、音楽の app（WS120）や通知の音でも使う | 同じ client の重複を避ける | 2026-10-05 ws122-p002（P2） | 後回し | WS120 の着手、または 2 つ目の audiod の client が要る時 | ws122-p002 の phase.md（git の履歴、2026-10-08 の WS の完了で削除） |
