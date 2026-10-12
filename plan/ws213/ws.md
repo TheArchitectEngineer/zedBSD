@@ -7,7 +7,7 @@ Status: planning（2026-10-12 Q1 作成、ユーザーの承認）
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
-Queue: 未割当（WS211 の描画の削減と、WS208 の SMP の後を推す）
+Queue: P4（2026-10-12 ユーザー「コンポジタのマルチスレッド化も入れてください。」、p001 の設計から）
 Resume point: p001 の調査と設計（今の main loop の仕事の内訳、thread の分け方、状態の写しと lock、Vulkan の queue と command buffer の持ち方、cursor の plane（WS141 p016 の段 B）との関係、Pi の計測）。
 <!-- awesome-plan-current:end -->
 
