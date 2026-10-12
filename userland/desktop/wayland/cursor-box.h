@@ -30,6 +30,33 @@
 #include <pthread.h>
 #include <stdint.h>
 
+/* The cursor plane's images of a client's cursor (design 4.7), which the main thread writes and the cursor thread reads. */
+#define KWL_CURSOR_COPIES	2U
+
+struct kwl_import;
+
+/*
+ * The cursor thread's counts of the KWL PERF lines (ws213-p001 M0, p004):
+ * presents, moves held for the next refresh, images copied, a present's
+ * parts in cycles (the copies' fences asked, the acquire, the copy's
+ * recording and submission, the present itself and its longest), the
+ * longest present from its start to its end and the longest time between
+ * two presents while the pointer moved, in microseconds.  The cursor thread
+ * adds to the box's copy; the main thread takes it at each window.
+ */
+struct kwl_cursor_stats {
+	uint32_t presents;
+	uint32_t held;
+	uint32_t copies;
+	uint64_t fence_cycles;
+	uint64_t acquire_cycles;
+	uint64_t copy_cycles;
+	uint64_t present_cycles;
+	uint64_t present_max_cycles;
+	uint64_t present_max_us;
+	uint64_t present_gap_max_us;
+};
+
 /*
  * The pointer's place after one write of the box, as the writer reports it
  * to the main thread: whether the place changed, whether it crossed to
@@ -59,13 +86,41 @@ typedef void kwl_cursor_box_move_fn(const void *context, const struct kwl_plane_
 
 /*
  * The box shared by the input thread (motions), the main thread (warps,
- * the outputs' rectangles) and the cursor thread (reads).  writes counts
- * every write, so a reader tells a new place from one it has seen; warp
- * counts the main thread's warps only.
+ * the outputs' rectangles, the cursor's image) and the cursor thread
+ * (reads, and its answers).  writes counts every write of the place, so a
+ * reader tells a new place from one it has seen; warp counts the main
+ * thread's warps only.
+ *
+ * The main thread also writes what the plane shows (design 6.2): the image
+ * (a cursor shape, the arrow, or one of the two copies of a client's
+ * cursor), its generation and version, its hotspot, and whether the plane
+ * shows the cursor at all (show 0: the cursor is composed, the plane is
+ * empty); and asks the cursor thread to park (it answers parked and calls
+ * no Vulkan until the park ends) or to stop.  The cursor thread writes
+ * whether it failed (it then calls no Vulkan again), how many of its copies
+ * read each of the two copies (pins: the main thread writes only a copy
+ * with none that the box does not show), and its counts.  sequence counts
+ * every change the cursor thread waits for; answered signals the main
+ * thread.
  */
 struct kwl_cursor_box {
 	pthread_mutex_t lock;
 	pthread_cond_t changed;
+	pthread_cond_t answered;
+	uint64_t sequence;
+	const struct kwl_import *image;
+	uint64_t image_generation;
+	uint32_t image_version;
+	int32_t hotspot_x;
+	int32_t hotspot_y;
+	unsigned show;
+	unsigned park;
+	unsigned stop;
+	unsigned parked;
+	unsigned failed;
+	const struct kwl_import *copies[KWL_CURSOR_COPIES];
+	unsigned pins[KWL_CURSOR_COPIES];
+	struct kwl_cursor_stats stats;
 	int32_t x;
 	int32_t y;
 	unsigned output;
@@ -84,6 +139,7 @@ void kwl_cursor_box_place(struct kwl_cursor_box *box, int32_t value_x, int32_t m
 void kwl_cursor_box_warp(struct kwl_cursor_box *box, const struct kwl_plane_rect *outputs, unsigned count, kwl_cursor_box_move_fn *move, const void *context, struct kwl_cursor_motion *motion);
 void kwl_cursor_box_outputs(struct kwl_cursor_box *box, const struct kwl_plane_rect *outputs, unsigned count);
 void kwl_cursor_box_read(struct kwl_cursor_box *box, int32_t *x, int32_t *y, unsigned *output);
+void kwl_cursor_box_take_stats(struct kwl_cursor_box *box, struct kwl_cursor_stats *stats);
 int32_t kwl_cursor_scale_absolute(int32_t value, int32_t minimum, int32_t maximum, uint32_t size);
 int32_t kwl_cursor_clamp(int64_t position, uint32_t size);
 

@@ -316,16 +316,20 @@ kwl_input_forget(
 }
 
 /*
- * Starts the input thread and the cursor's box, and makes the pipe the
- * compositor's threads wake the main thread with (ws213-p004).
+ * Makes the pipe the compositor's threads wake the main thread with and
+ * the cursor's box (ws213-p004), before the output and its cursor plane
+ * open: the cursor thread reads the box from the plane's opening on.
  */
 int
-kwl_input_threads_start(
+kwl_threads_prepare(
 	struct kwl_server *server)
 {
-	struct kwl_input_settings settings;
 	unsigned index;
 	int error;
+
+	/* Made once. */
+	if (server->threads_prepared)
+		return 0;
 
 	/* The wake pipe; neither end blocks or goes to a program the compositor starts. */
 	error = pipe(server->wake);
@@ -336,18 +340,53 @@ kwl_input_threads_start(
 		(void)fcntl(server->wake[index], F_SETFD, FD_CLOEXEC);
 	}
 
-	/* The box with the pointer where it starts. */
+	/* The box, its place given when the input thread starts. */
 	error = kwl_cursor_box_init(&server->cursor_box, server->pointer_x, server->pointer_y, server->width, server->height);
+	if (error != 0) {
+		for (index = 0; index < 2U; index++) {
+			close(server->wake[index]);
+			server->wake[index] = -1;
+		}
+
+		/* No box, no pipe. */
+		return error;
+	}
+
+	/* Succeeded: the threads can share the box. */
+	server->threads_prepared = 1U;
+	return 0;
+}
+
+/*
+ * Starts the input thread with the pointer where it starts in the
+ * cursor's box (ws213-p004).
+ */
+int
+kwl_input_threads_start(
+	struct kwl_server *server)
+{
+	struct kwl_input_settings settings;
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	struct kwl_cursor_motion place;
+	int error;
+
+	/* The wake pipe and the box, unless made before the output. */
+	error = kwl_threads_prepare(server);
 	if (error != 0)
 		return error;
+
+	/* The pointer's first place, and the outputs, in the box. */
+	(void)kwl_outputs(server, outputs);
+	place.x = server->pointer_x;
+	place.y = server->pointer_y;
+	place.output = server->pointer_output;
+	kwl_pointer_warp(server, outputs, pointer_warp_place, &place);
 
 	/* The input thread with the user's settings, reading through the backend. */
 	input_settings(server, &settings);
 	error = kwl_input_thread_init(&server->input_thread, &server->cursor_box, server->wake[1], kl_backend_input_read, &settings);
-	if (error != 0) {
-		kwl_cursor_box_destroy(&server->cursor_box);
+	if (error != 0)
 		return error;
-	}
 
 	/* The settings the input thread has, compared at each pass. */
 	server->input_settings_given = settings;
@@ -356,7 +395,6 @@ kwl_input_threads_start(
 	error = kwl_input_thread_start(&server->input_thread);
 	if (error != 0) {
 		kwl_input_thread_destroy(&server->input_thread);
-		kwl_cursor_box_destroy(&server->cursor_box);
 		return error;
 	}
 
@@ -367,7 +405,8 @@ kwl_input_threads_start(
 
 /*
  * Stops the input thread, which then uses no descriptor, and frees what it
- * leaves (the devices stay open for kwl_input_cleanup).
+ * leaves, the box and the wake pipe (the devices stay open for
+ * kwl_input_cleanup).  The cursor thread has stopped with the output.
  */
 void
 kwl_input_threads_stop(
@@ -375,23 +414,28 @@ kwl_input_threads_stop(
 {
 	unsigned index;
 
-	/* Nothing started. */
-	if (!server->input_thread_ready)
+	/* The thread ends, and no device is attached any more. */
+	if (server->input_thread_ready) {
+		kwl_input_thread_stop(&server->input_thread);
+		kwl_input_thread_destroy(&server->input_thread);
+		for (index = 0; index < KWL_INPUT_MAX; index++)
+			server->inputs[index].attached = 0U;
+		server->input_thread_ready = 0U;
+	}
+
+	/* Nothing else was made. */
+	if (!server->threads_prepared)
 		return;
 
-	/* The thread ends, and no device is attached any more. */
-	kwl_input_thread_stop(&server->input_thread);
-	kwl_input_thread_destroy(&server->input_thread);
+	/* The box and the wake pipe. */
 	kwl_cursor_box_destroy(&server->cursor_box);
-	for (index = 0; index < KWL_INPUT_MAX; index++)
-		server->inputs[index].attached = 0U;
-	server->input_thread_ready = 0U;
-
-	/* The wake pipe. */
 	for (index = 0; index < 2U; index++) {
 		close(server->wake[index]);
 		server->wake[index] = -1;
 	}
+
+	/* Nothing is left to share. */
+	server->threads_prepared = 0U;
 }
 
 /*
@@ -573,8 +617,8 @@ kwl_pointer_warp(
 	int32_t y;
 	unsigned output;
 
-	/* Without the thread the main thread's view is the place itself. */
-	if (!server->input_thread_ready) {
+	/* Without the box the main thread's view is the place itself. */
+	if (!server->threads_prepared) {
 		x = server->pointer_x;
 		y = server->pointer_y;
 		output = server->pointer_output;

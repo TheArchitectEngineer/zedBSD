@@ -50,7 +50,7 @@ static void perf_walk_report(const struct kwl_perf *perf, double per_ms);
 static void perf_walk_class(const struct kwl_perf *perf, double per_ms, const char *name, uint32_t lowest, uint32_t highest, unsigned quiet, unsigned replay);
 static int perf_cycles_order(const void *left, const void *right);
 static void perf_pass_report(struct kwl_perf *perf, double per_ms);
-static void perf_box_report(struct kwl_perf *perf);
+static void perf_box_report(struct kwl_perf *perf, const struct kwl_cursor_stats *stats);
 static uint32_t perf_percentile(uint32_t *values, uint32_t count, unsigned percent, uint32_t *largest);
 static int perf_value_order(const void *left, const void *right);
 static int event_loop(struct kwl_server *server);
@@ -220,6 +220,13 @@ main(
 	/* Reads the wallpaper while Vulkan starts, only after OS startup succeeded. */
 	if (error == 0)
 		kwl_glass_prefetch(&server);
+
+	/* The threads' wake pipe and the cursor's box, which the cursor plane's thread reads from the output's opening on (ws213-p004). */
+	if (error == 0) {
+		error = kwl_threads_prepare(&server);
+		if (error != 0)
+			printf("KWL FAILED site=threads errno=%d\n", error);
+	}
 
 	/* The start is timed from the Vulkan device on (KWL STARTUP); the compositor opens no GPU node of its own (ws103-p006). */
 	step_start = kwl_milliseconds();
@@ -760,7 +767,6 @@ event_loop(
 	uint64_t mark;
 	uint64_t part;
 	int timeout;
-	int due;
 	int ready;
 	int flushed;
 	int error;
@@ -927,11 +933,6 @@ event_loop(
 				}
 			}
 		}
-
-		/* A cursor move held for the next refresh wakes the loop when it is due (cursor-plane.c, ws213-p001 C0). */
-		due = kwl_cursor_plane_due_ms(server);
-		if (due >= 0 && due < timeout)
-			timeout = due;
 
 		/* Lets the OS populate its entries in this descriptor snapshot. */
 		kwl_os_poll_fill(server, descriptors + first_os);
@@ -1203,6 +1204,7 @@ kwl_perf_report(
 	struct kwl_server *server,
 	uint64_t now)
 {
+	struct kwl_cursor_stats stats;
 	struct kwl_perf *perf;
 	uint64_t cycles;
 	uint64_t main_parts;
@@ -1220,6 +1222,18 @@ kwl_perf_report(
 	/* A window shorter than five seconds is not reported yet. */
 	if (now - perf->window_start_ms < 5000U)
 		return;
+
+	/* The cursor thread's counts of the window (ws213-p004). */
+	memset(&stats, 0, sizeof(stats));
+	if (server->threads_prepared)
+		kwl_cursor_box_take_stats(&server->cursor_box, &stats);
+	perf->cursor_presents = stats.presents;
+	perf->cursor_deferred = stats.held;
+	perf->cursor_fence_cycles = stats.fence_cycles;
+	perf->cursor_acquire_cycles = stats.acquire_cycles;
+	perf->cursor_copy_cycles = stats.copy_cycles;
+	perf->cursor_queue_present_cycles = stats.present_cycles;
+	perf->cursor_queue_present_max_cycles = stats.present_max_cycles;
 
 	/* The window's length in cycles scales the counters to milliseconds. */
 	cycles = kwl_cycles() - perf->window_start_cycles;
@@ -1277,7 +1291,7 @@ kwl_perf_report(
 
 	/* The passes' longest work, and the cursor's box (ws213-p004). */
 	perf_pass_report(perf, per_ms);
-	perf_box_report(perf);
+	perf_box_report(perf, &stats);
 
 	/* The drawings' walks and replays (ws213-p003). */
 	perf_walk_report(perf, per_ms);
@@ -1506,12 +1520,15 @@ perf_pass_report(
  * how many writes the main thread applied, their lag from the report's
  * evdev time (the 99th percentile, the longest and how many over a
  * refresh), the lag beyond the reports' spacing, and the gap between the
- * writes while the pointer moved, in microseconds.  The arrays are sorted
- * in place.
+ * writes while the pointer moved, in microseconds; then the cursor
+ * thread's presents, the moves it held, its copies, the longest time
+ * between two presents while the pointer moved and the longest present.
+ * The arrays are sorted in place.
  */
 static void
 perf_box_report(
-	struct kwl_perf *perf)
+	struct kwl_perf *perf,
+	const struct kwl_cursor_stats *stats)
 {
 	uint32_t lag_p99;
 	uint32_t lag_max;
@@ -1520,8 +1537,8 @@ perf_box_report(
 	uint32_t gap_p99;
 	uint32_t gap_max;
 
-	/* No write in the window. */
-	if (perf->box_count == 0U && perf->box_dropped == 0U)
+	/* No write and no present in the window. */
+	if (perf->box_count == 0U && perf->box_dropped == 0U && stats->presents == 0U)
 		return;
 
 	/* Each measure's 99th percentile and longest. */
@@ -1530,7 +1547,7 @@ perf_box_report(
 	gap_p99 = perf_percentile(perf->box_gap_us, perf->box_gap_count, 99U, &gap_max);
 
 	/* One line. */
-	printf("KWL PERF cursor box_writes=%u dropped=%u box_lag_p99_us=%u box_lag_max_us=%u box_lag_over=%u box_excess_p99_us=%u box_excess_max_us=%u box_gap_p99_us=%u box_gap_max_us=%u\n",
+	printf("KWL PERF cursor box_writes=%u dropped=%u box_lag_p99_us=%u box_lag_max_us=%u box_lag_over=%u box_excess_p99_us=%u box_excess_max_us=%u box_gap_p99_us=%u box_gap_max_us=%u presents=%u held=%u copies=%u present_gap_max_us=%llu present_max_us=%llu\n",
 	    perf->box_count,
 	    perf->box_dropped,
 	    lag_p99,
@@ -1539,7 +1556,12 @@ perf_box_report(
 	    excess_p99,
 	    excess_max,
 	    gap_p99,
-	    gap_max);
+	    gap_max,
+	    stats->presents,
+	    stats->held,
+	    stats->copies,
+	    (unsigned long long)stats->present_gap_max_us,
+	    (unsigned long long)stats->present_max_us);
 }
 
 /* Sorts values in place and gives a percentile of them and their largest (0 for none). */

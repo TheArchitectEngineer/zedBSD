@@ -247,48 +247,45 @@ struct kwl_head {
 	uint32_t global;
 };
 
-/* How many images and acquisitions the cursor plane's swapchain uses at most. */
-#define KWL_CURSOR_PLANE_IMAGES	4U
+struct kwl_cursor_thread;
 
 /*
  * The output's cursor plane (cursor-plane.c, ws141-p014): a small
  * VK_KHR_display plane above the output's, with per-pixel premultiplied
- * alpha, that shows the cursor without composing a frame.  shown says the
- * plane shows the cursor (the frames draw none); held says which cursor
- * image (its generation, which tells a new image at a reused address
- * apart, ws213-p003, and its version) each swapchain image holds; source,
- * generation, version, x and y are what was presented last.  last_copy is the image whose copy was
- * submitted last (copied says one was): copies complete in submission order
- * on the one queue, so its fence tells whether every copy is done.
- * presented_us is when the plane's last present started (kwl_microseconds),
- * and deferred says a move of the same image waits for the next refresh: one
- * present per refresh, at the latest place (ws213-p001 C0, ws211-p006).
+ * alpha, that shows the cursor without composing a frame.  Since
+ * ws213-p004 the cursor thread (cursor-thread.c) presents it from the
+ * cursor's box; this is the main thread's side of it (design 6.2).
+ *
+ * open says the plane and its thread run; shown that the plane shows the
+ * cursor (the frames draw none).  width and height are the plane's extent.
+ * copies are the plane's two images of a client's cursor, which the main
+ * thread writes and the cursor thread copies from (design 4.7); copy_source,
+ * copy_generation and copy_version say which client image and which of its
+ * versions copy_index holds.  published_* is what the box was last given
+ * (the image, its generation, version and hotspot, and whether the plane
+ * shows the cursor), parked whether the main thread parked the thread
+ * (the game mode, a sleep's request), and thread the cursor thread.
  */
 struct kwl_cursor_plane {
 	unsigned open;
 	unsigned shown;
-	unsigned presented;
-	struct vkdemo_display output;
-	VkCommandBuffer commands[KWL_CURSOR_PLANE_IMAGES];
-	VkFence fences[KWL_CURSOR_PLANE_IMAGES];
-	VkSemaphore acquired[KWL_CURSOR_PLANE_IMAGES + 1U];
-	VkSemaphore ready[KWL_CURSOR_PLANE_IMAGES];
-	unsigned next;
-	unsigned held_valid[KWL_CURSOR_PLANE_IMAGES];
-	const struct kwl_import *held[KWL_CURSOR_PLANE_IMAGES];
-	uint64_t held_generation[KWL_CURSOR_PLANE_IMAGES];
-	uint32_t held_version[KWL_CURSOR_PLANE_IMAGES];
-	const struct kwl_import *source;
-	uint64_t generation;
-	uint32_t version;
-	int32_t x;
-	int32_t y;
-	uint64_t presents;
-	uint64_t copies;
-	unsigned copied;
-	unsigned last_copy;
-	uint64_t presented_us;
-	unsigned deferred;
+	uint32_t width;
+	uint32_t height;
+	struct kwl_import *copies[KWL_CURSOR_COPIES];
+	unsigned copy_valid;
+	const struct kwl_import *copy_source;
+	uint64_t copy_generation;
+	uint32_t copy_version;
+	unsigned copy_index;
+	unsigned published;
+	const struct kwl_import *published_image;
+	uint64_t published_generation;
+	uint32_t published_version;
+	int32_t published_hotspot_x;
+	int32_t published_hotspot_y;
+	unsigned published_show;
+	unsigned parked;
+	struct kwl_cursor_thread *thread;
 };
 
 /* How many frames' damage is kept, for images that missed that many frames. */
