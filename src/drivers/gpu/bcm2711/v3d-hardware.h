@@ -98,6 +98,14 @@ struct bcm2711_v3d_perf {
 	uint64_t submit_lock_max;
 	uint64_t submit_locks;
 	/*
+	 * Who held the controller mutex longest: the decoder for one request
+	 * (and the opcode of the last command it decoded) and the executor for
+	 * one step outside its window.
+	 */
+	uint64_t decode_hold_max;
+	uint32_t decode_hold_opcode;
+	uint64_t step_hold_max;
+	/*
 	 * The Vulkan allocation budget in use now (kept across windows), the
 	 * most in the window, and the window's refused allocations and the
 	 * size of the last one.

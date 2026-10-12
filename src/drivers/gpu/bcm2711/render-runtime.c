@@ -294,6 +294,9 @@ execute_command(
 	bool *retired)
 {
 	struct runtime_command *command;
+	struct bcm2711_v3d_perf *perf;
+	uint64_t started;
+	uint64_t held;
 	uint32_t opcode;
 	bool uncertain;
 	bool allowed;
@@ -306,8 +309,17 @@ execute_command(
 	opcode = 0;
 	if (error == 0 && command->bytes != 0) {
 		session->vulkan->failed_opcode = 0;
+		started = clock_ticks();
 		error = bcm2711_vulkan_stream_execute(session->vulkan, command->wire, command->bytes, bcm2711_vulkan_dispatch);
+		held = clock_ticks() - started;
 		opcode = session->vulkan->failed_opcode;
+
+		/* Diagnostic: the longest decode under the controller mutex, and the command it ended with. */
+		perf = &controller->space.native->hardware.perf;
+		if (held > perf->decode_hold_max) {
+			perf->decode_hold_max = held;
+			perf->decode_hold_opcode = session->vulkan->last_opcode;
+		}
 	}
 
 	/* Names the refused command (a busy command buffer at Begin or End, a malformed stream) in the bounded log. */

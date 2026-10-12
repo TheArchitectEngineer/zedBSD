@@ -1196,7 +1196,10 @@ bcm2711_render_executor_step(
 	struct bcm2711_render_session *previous;
 	unsigned long enabled;
 	uint64_t bytes;
+	struct bcm2711_v3d_perf *perf;
 	const char *stage;
+	uint64_t held;
+	uint64_t released;
 	bool display;
 	bool allowed;
 	bool failed;
@@ -1221,6 +1224,8 @@ bcm2711_render_executor_step(
 	if (session == NULL || execution == NULL)
 		return EAGAIN;
 	mutex_lock(&controller->mutex);
+	held = clock_ticks();
+	released = controller->worker.released_ticks;
 
 	/* A stopped session or a faulted engine ends the execution without running it. */
 	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
@@ -1294,6 +1299,12 @@ bcm2711_render_executor_step(
 	/* A failure closes native admission before the mutex lets anyone observe it. */
 	if (failed)
 		bcm2711_render_worker_fault(controller, error);
+
+	/* Diagnostic: the step's hold of the mutex, without the window. */
+	held = clock_ticks() - held - (controller->worker.released_ticks - released);
+	perf = &controller->space.native->hardware.perf;
+	if (held > perf->step_hold_max)
+		perf->step_hold_max = held;
 
 	mutex_unlock(&controller->mutex);
 
@@ -1627,6 +1638,7 @@ bcm2711_render_window_open(
 		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 		mutex_unlock(&controller->mutex);
+		controller->worker.released_at = clock_ticks();
 		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
 		/* A fault ends the wait; the launch then refuses. */
@@ -1640,6 +1652,7 @@ bcm2711_render_window_open(
 		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 		mutex_lock(&controller->mutex);
+		controller->worker.released_ticks += clock_ticks() - controller->worker.released_at;
 		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 	}
 
@@ -1651,6 +1664,7 @@ bcm2711_render_window_open(
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 	mutex_unlock(&controller->mutex);
+	controller->worker.released_at = clock_ticks();
 
 	/* Succeeded: the window is open and the mutex is free. */
 	return;
@@ -1664,8 +1678,9 @@ bcm2711_render_window_close(
 	unsigned long enabled;
 	int error;
 
-	/* The mutex first, so no mapper slips in between. */
+	/* The mutex first, so no mapper slips in between; the time without it leaves the step's hold. */
 	mutex_lock(&controller->mutex);
+	controller->worker.released_ticks += clock_ticks() - controller->worker.released_at;
 	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
 	if (!controller->space.native->hardware.window)
