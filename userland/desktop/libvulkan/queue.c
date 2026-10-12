@@ -470,6 +470,10 @@ queue_attempt(
 
 		/* The new native job replaces any synchronous acquisition completion on this fence. */
 		completion->software_signaled = VK_FALSE;
+
+		/* Swapchain images the accepted command buffers write stop matching their earlier copies. */
+		if (sparse == VK_FALSE)
+			vulkan_content_commit(device, count, submits);
 	}
 
 	/* Committed work retains K supervision; definite native refusal releases only its unused reservation. */

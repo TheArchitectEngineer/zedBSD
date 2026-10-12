@@ -382,10 +382,15 @@ vkBeginCommandBuffer(
 	struct vulkan_reader reader;
 	VkResult status;
 
-	/* Primary buffers never dereference their ignored inheritance pointer. */
+	/* Begin discards the earlier recording's bytes and failure. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
 	command->recording.bytes = 0;
 	command->recording.error = VK_SUCCESS;
+
+	/* The discarded recording's swapchain-image writes are never submitted. */
+	vulkan_content_clear(command);
+
+	/* Primary buffers never dereference their ignored inheritance pointer. */
 	begin = *pBeginInfo;
 	begin.pNext = NULL;
 	begin.pInheritanceInfo = NULL;
@@ -930,6 +935,9 @@ command_buffer_initial(
 	command->recording.error = VK_SUCCESS;
 	command->error = VK_SUCCESS;
 	command->state = VULKAN_COMMAND_INITIAL;
+
+	/* The discarded recording's swapchain-image writes are never submitted. */
+	vulkan_content_clear(command);
 
 	/* Succeeded: this command buffer is ready for a fresh standard Begin operation. */
 	return;

@@ -15,11 +15,14 @@
 #endif
 
 #include "wsi-internal.h"
+#include "sync-internal.h"
 
 #include <errno.h>
 #include <poll.h>
 #include <uapi/gpu-fence.h>
 #include <sys/ioctl.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
@@ -29,6 +32,15 @@
 #define WSI_IMAGE_PRESENTING	2U
 #define WSI_COMPLETION_TIMEOUT	10000000000ULL
 #define WSI_PROGRESS_INTERVAL	10000000ULL
+
+/* How long a cursor present keeps trying while the output has no free cursor image. */
+#define WSI_CURSOR_BUSY_LIMIT	1000000000ULL
+
+/* The refresh period a cursor retry waits when the mode names no rate (60 Hz). */
+#define WSI_CURSOR_DEFAULT_PERIOD	16666667ULL
+
+/* The environment variable that turns on one log line for every cursor present. */
+#define WSI_CURSOR_LOG_VARIABLE	"VULKAN_ZEDBSD_CURSOR_LOG"
 
 /* Shared presentation allocations transfer ownership to another Vulkan instance. */
 #define WSI_QUEUE_FAMILY_EXTERNAL 0xfffffffeU
@@ -45,6 +57,16 @@ struct wsi_present_image {
 	VkDeviceMemory shared_memory;
 	void *native_image;
 	VkBool32 shared_presented;
+	/*
+	 * What the native image holds, for a cursor chain: copied_valid once a
+	 * completed copy of the application image put its pixels there, with
+	 * the image's content serial and the device's content epoch that copy
+	 * saw.  While both still match, a present may show the native image
+	 * without copying again.  The swapchain mutex protects all three.
+	 */
+	uint64_t copied_serial;
+	uint64_t copied_epoch;
+	VkBool32 copied_valid;
 };
 
 /* Images may be shared by multiple display swapchains until the final release. */
@@ -83,6 +105,41 @@ struct vulkan_swapchain {
 	VkBool32 retired;
 	uint32_t pending_jobs;
 	VkResult error;
+	/*
+	 * The application's image use is transfer only, so every write of an
+	 * image is a transfer command the content serial counts; only such a
+	 * cursor chain shows an earlier copy without copying again.
+	 */
+	VkBool32 transfer_only;
+};
+
+/* The independently ordered workers of one queue: ordinary presents, and the cursor plane's. */
+enum wsi_lane {
+	WSI_LANE_ORDINARY,
+	WSI_LANE_CURSOR
+};
+
+/* How one cursor-plane present reaches the output. */
+enum wsi_route {
+	/* The worker waits for a GPU copy of the image, then shows it. */
+	WSI_ROUTE_COPY,
+	/* The worker waits for the present's GPU waits, then shows the unchanged earlier copy. */
+	WSI_ROUTE_EMPTY,
+	/* The caller shows the unchanged earlier copy at once, with no GPU work. */
+	WSI_ROUTE_FAST
+};
+
+/* The counter times of one cursor present for its log line; zero where the present had no such step. */
+struct wsi_cursor_log {
+	uint64_t call_ns;
+	uint64_t call;
+	uint64_t mutex_wait;
+	uint64_t queue_wait;
+	uint64_t publish;
+	uint64_t fence;
+	struct vulkan_wsi_cursor_times times;
+	uint32_t depth;
+	uint32_t retries;
 };
 
 /* A job borrows its queue worker until the ordered completion path retires it. */
@@ -131,6 +188,26 @@ struct wsi_present_job {
 	uint32_t count;
 	VkBool32 submitted;
 	VkBool32 reserved;
+	/* The worker the job goes to: cursor-plane presents never wait behind ordinary ones. */
+	enum wsi_lane lane;
+	enum wsi_route route;
+	/* Each target's cursor ticket, taken at reservation; zero for a target that is not a cursor plane. */
+	uint64_t *tickets;
+	/*
+	 * For a cursor-lane job: the image's content serial and the device's
+	 * content epoch at reservation, which its copy shows; copy_done once
+	 * the worker saw the copy complete, so completion records them.
+	 */
+	uint64_t content_serial;
+	uint64_t content_epoch;
+	VkBool32 copy_recorded;
+	VkBool32 copy_done;
+	/* The job carries no GPU work: its waits were consumed and only the native present remains. */
+	VkBool32 native_only;
+	/* What the cursor present did, and its log times when the log is on. */
+	enum vulkan_wsi_cursor_outcome outcome;
+	VkBool32 logged;
+	struct wsi_cursor_log log;
 };
 
 /* The part of one target's image that changed (VK_KHR_incremental_present): known, and the box around its rectangles. */
@@ -142,10 +219,11 @@ struct wsi_present_damage {
 	int32_t height;
 };
 
-/* One logical queue owns an ordered worker whose waits never retain queue or WSI locks. */
+/* One logical queue owns an ordered worker per lane whose waits never retain queue or WSI locks. */
 struct wsi_queue_worker {
 	struct wsi_queue_worker *next;
 	struct VkQueue_T *queue;
+	enum wsi_lane lane;
 	struct wsi_present_job *head;
 	struct wsi_present_job *tail;
 	struct wsi_present_job *current;
@@ -164,6 +242,13 @@ static struct wsi_queue_worker *workers;
 
 /* Ownership transitions wake workers, idle waiters and swapchain destruction under swapchain_mutex. */
 static pthread_cond_t swapchain_condition = PTHREAD_COND_INITIALIZER;
+
+/*
+ * Nonzero once a cursor swapchain was created while the cursor log's
+ * environment variable was set; it never returns to zero.  A present reads
+ * the clocks only while it is set.
+ */
+static int present_cursor_log_on;
 
 static struct vulkan_swapchain *swapchain_get(VkSwapchainKHR handle);
 static VkResult swapchain_create(struct VkDevice_T *device, const VkSwapchainCreateInfoKHR *info, const VkAllocationCallbacks *allocator, struct wsi_image_group *shared, struct vulkan_swapchain **result);
@@ -198,7 +283,16 @@ static VkBool32 present_early(const struct wsi_present_job *job);
 static void present_finish(struct wsi_present_job *job, const VkPresentInfoKHR *info, VkResult error);
 static VkResult present_combine(VkResult first, VkResult second);
 static VkResult swapchain_device_lost(struct VkDevice_T *device);
-static VkResult present_worker_get(struct VkQueue_T *queue, struct wsi_queue_worker **result);
+static VkResult present_worker_get(struct VkQueue_T *queue, enum wsi_lane lane, struct wsi_queue_worker **result);
+static void present_lane(struct wsi_present_job *job);
+static enum wsi_route present_route(struct wsi_present_job *job, const VkPresentInfoKHR *info);
+static VkBool32 present_waits_consume(struct wsi_present_job *job, const VkPresentInfoKHR *info);
+static VkResult present_fast(struct wsi_present_job *job, const VkPresentInfoKHR *info, VkBool32 *published);
+static VkResult present_cursor_show(struct wsi_present_job *job, uint32_t index, VkBool32 retry);
+static void present_cursor_pause(struct vulkan_swapchain *chain);
+static void present_publish_locked(struct wsi_queue_worker *worker, struct wsi_present_job *job);
+static void present_cursor_log_start(struct wsi_cursor_log *log);
+static void present_cursor_log(const struct wsi_present_job *job, const char *path);
 static void *present_worker_main(void *argument);
 static void present_workers_stop(struct VkDevice_T *device);
 static VkResult present_drain(struct VkDevice_T *device, struct VkQueue_T *queue);
@@ -491,6 +585,10 @@ vkAcquireNextImageKHR(
 
 /*
  * Enqueues all waits once and presents completed pixels without modifying images.
+ *
+ * A cursor plane's present whose image is unchanged since its last copy,
+ * and whose waits are already complete, is shown at once without GPU work
+ * or the worker (ws141-p016 (B)).
  */
 VKAPI_ATTR VkResult VKAPI_CALL
 vkQueuePresentKHR(
@@ -503,8 +601,11 @@ vkQueuePresentKHR(
 	struct vulkan_allocator allocator;
 	VkResult error;
 	VkResult combined;
+	VkBool32 published;
+	uint64_t waited;
 	size_t bytes;
 	uint32_t index;
+	int logging;
 
 	/* The library owns every object which may remain live after this API call returns. */
 	queue = vulkan_queue(queue_handle);
@@ -520,6 +621,14 @@ vkQueuePresentKHR(
 	/* Partial preparation remains safe for the common unsubmitted cleanup path. */
 	memset(job, 0, sizeof(*job));
 	job->fence_fd = -1;
+	job->outcome = VULKAN_WSI_CURSOR_DROPPED;
+
+	/* The cursor log's start times, read only while the log is on. */
+	logging = __atomic_load_n(&present_cursor_log_on, __ATOMIC_RELAXED);
+	if (logging != 0)
+		present_cursor_log_start(&job->log);
+
+	/* Validates the targets and reserves their images. */
 	error = present_prepare(job, queue, info);
 	if (error != VK_SUCCESS)
 		goto cleanup;
@@ -543,7 +652,27 @@ vkQueuePresentKHR(
 	job->info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	job->info.swapchainCount = job->count;
 	job->info.pImageIndices = job->indices;
-	error = present_worker_get(queue, &worker);
+
+	/* A cursor plane's present is logged when the log is on. */
+	if (logging != 0 && job->lane == WSI_LANE_CURSOR)
+		job->logged = VK_TRUE;
+
+	/* A cursor plane's present chooses between a copy, waits alone, and showing at once. */
+	if (job->lane == WSI_LANE_CURSOR)
+		job->route = present_route(job, info);
+
+	/* Shows an unchanged cursor image at once; only a busy output hands it to the worker. */
+	if (job->route == WSI_ROUTE_FAST) {
+		error = present_fast(job, info, &published);
+
+		/* A published job belongs to its worker, which reports nothing more to this caller. */
+		if (published != VK_FALSE)
+			job = NULL;
+		goto cleanup;
+	}
+
+	/* The job's ordered worker: the cursor plane's never waits behind ordinary presents. */
+	error = present_worker_get(queue, job->lane, &worker);
 	if (error != VK_SUCCESS)
 		goto cleanup;
 
@@ -554,8 +683,17 @@ vkQueuePresentKHR(
 		goto cleanup;
 
 	/* Queue submission and worker publication retain one issue order with other queue operations. */
+	waited = 0U;
+	if (job->logged != VK_FALSE)
+		waited = vulkan_wsi_cursor_clock();
+
 	pthread_mutex_lock(&queue->mutex);
 
+	/* The time the queue lock took, for the cursor log. */
+	if (job->logged != VK_FALSE)
+		job->log.queue_wait = vulkan_wsi_cursor_clock() - waited;
+
+	/* Consumes every wait in the one submission that also carries the copy. */
 	error = present_submit(job, info);
 	if (error != VK_SUCCESS) {
 		pthread_mutex_unlock(&queue->mutex);
@@ -576,12 +714,7 @@ vkQueuePresentKHR(
 	/* From this publication onward only the worker may release the owned job. */
 	pthread_mutex_lock(&swapchain_mutex);
 
-	if (worker->tail != NULL)
-		worker->tail->next = job;
-	else
-		worker->head = job;
-	worker->tail = job;
-	swapchain_notify_locked();
+	present_publish_locked(worker, job);
 
 	pthread_mutex_unlock(&swapchain_mutex);
 
@@ -608,6 +741,45 @@ cleanup:
 
 	/* Succeeded: the library owns the accepted GPU work and ordered native presentation job. */
 	return error;
+}
+
+/*
+ * Reads a monotonic nanosecond clock fine enough for the cursor log's lengths.
+ *
+ * The system's monotonic clock advances once a millisecond on the Pi 4, so
+ * on arm64 the generic timer's virtual counter is read instead (the kernel
+ * lets user code read it); elsewhere the monotonic clock is fine enough.
+ */
+uint64_t
+vulkan_wsi_cursor_clock(
+	void)
+{
+#if defined(__aarch64__)
+	uint64_t count;
+	uint64_t frequency;
+
+	/* The counter and its rate. */
+	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(count));
+	__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(frequency));
+
+	/* A timer without a rate cannot be converted. */
+	if (frequency == 0U)
+		return 0U;
+
+	/* Succeeded: whole seconds and the remainder, each scaled without overflow. */
+	return (count / frequency) * 1000000000ULL + (count % frequency) * 1000000000ULL / frequency;
+#else
+	uint64_t nanoseconds;
+	VkResult error;
+
+	/* The monotonic clock. */
+	error = swapchain_now(&nanoseconds);
+	if (error != VK_SUCCESS)
+		return 0U;
+
+	/* Succeeded: the monotonic time. */
+	return nanoseconds;
+#endif
 }
 
 /*
@@ -712,8 +884,10 @@ swapchain_create(
 	struct vulkan_swapchain *old;
 	struct vulkan_surface *surface;
 	struct vulkan_object *object;
+	const char *log_variable;
 	VkResult error;
 	size_t bytes;
+	int log_compare;
 
 	/* Retirement is required even when a later allocation or validation fails. */
 	*result = NULL;
@@ -757,6 +931,22 @@ swapchain_create(
 	chain->format = info->imageFormat;
 	chain->extent = info->imageExtent;
 	chain->present_mode = info->presentMode;
+
+	/* Only transfer commands, which the content serial counts, can write a transfer-only chain's images. */
+	if ((info->imageUsage & ~(VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)) == 0U)
+		chain->transfer_only = VK_TRUE;
+
+	/* A cursor swapchain asks once whether its presents are to be logged. */
+	log_variable = NULL;
+	if (surface->cursor != VK_FALSE)
+		log_variable = getenv(WSI_CURSOR_LOG_VARIABLE);
+
+	/* Only the value 1 turns the log on, for every later present. */
+	if (log_variable != NULL) {
+		log_compare = strcmp(log_variable, "1");
+		if (log_compare == 0)
+			__atomic_store_n(&present_cursor_log_on, 1, __ATOMIC_RELAXED);
+	}
 
 	/* Retains the instance surface before any native lease can borrow its allocator. */
 	error = vulkan_wsi_surface_retain(surface);
@@ -1644,6 +1834,19 @@ present_prepare(
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	memset(job->results, 0, bytes);
 
+	/* Every target's cursor ticket, zero for a target that is not a cursor plane. */
+	bytes = (size_t)job->count * sizeof(*job->tickets);
+	if (bytes / sizeof(*job->tickets) != job->count)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	job->tickets = vulkan_allocate(
+		&job->allocator,
+		bytes,
+		sizeof(void *),
+		VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+	if (job->tickets == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	memset(job->tickets, 0, bytes);
+
 	/* Every semaphore wait uses the transfer stage of the one readback submission. */
 	if (info->waitSemaphoreCount != 0U) {
 		bytes = (size_t)info->waitSemaphoreCount * sizeof(*job->stages);
@@ -1780,6 +1983,9 @@ present_prepare(
 	if (error != VK_SUCCESS)
 		return error;
 
+	/* A present of one cursor plane goes to the cursor's own worker. */
+	present_lane(job);
+
 	/* Reserve all readback slots together so concurrent queue presents cannot overwrite them. */
 	error = present_reserve(job, info);
 	if (error != VK_SUCCESS)
@@ -1799,6 +2005,7 @@ present_reserve(
 	const VkPresentInfoKHR *info)
 {
 	struct vulkan_swapchain *chain;
+	struct vulkan_image *image;
 	uint32_t index;
 	VkBool32 copied_busy;
 
@@ -1841,6 +2048,26 @@ present_reserve(
 		/* This hold keeps the chain, lease and allocation policy alive until native work retires. */
 		chain->pending_jobs++;
 		chain->states[info->pImageIndices[index]] = WSI_IMAGE_PRESENTING;
+
+		/*
+		 * A cursor plane's present takes the next ticket in reservation
+		 * order: a present with a larger ticket replaces it on the output,
+		 * whichever reaches the output first.
+		 */
+		if (chain->surface->cursor != VK_FALSE)
+			job->tickets[index] = __atomic_add_fetch(&chain->surface->cursor_ticket, 1U, __ATOMIC_ACQ_REL);
+	}
+
+	/*
+	 * A cursor-lane job notes what its copy will show.  Every legal write
+	 * of the reserved image was accepted before this present was called,
+	 * and none can follow while the image is presenting.
+	 */
+	if (job->lane == WSI_LANE_CURSOR) {
+		chain = job->chains[0];
+		image = vulkan_image(chain->group->images[info->pImageIndices[0]].image);
+		job->content_serial = __atomic_load_n(&image->content_serial, __ATOMIC_ACQUIRE);
+		job->content_epoch = __atomic_load_n(&chain->device->content_epoch, __ATOMIC_ACQUIRE);
 	}
 
 	/* Reservation makes cleanup responsible for returning every image and dropping every chain hold. */
@@ -1914,6 +2141,10 @@ present_record(
 		if (job->results[index] != VK_SUCCESS)
 			continue;
 
+		/* A cursor image unchanged since its last copy needs only the present's waits. */
+		if (job->route == WSI_ROUTE_EMPTY)
+			continue;
+
 		/* Optional display composition remains GPU-resident on both direct and shared-image paths; a cursor image is copied whole. */
 		display = NULL;
 		if (job->has_display != VK_FALSE && job->chains[index]->surface->cursor == VK_FALSE)
@@ -1921,6 +2152,10 @@ present_record(
 
 		/* Copy and composition preserve the application's optimal image contents. */
 		present_copy(job->command, job->chains[index], info->pImageIndices[index], job->queue->family, display);
+
+		/* A cursor-lane copy's completion records what the native image now holds. */
+		if (job->lane == WSI_LANE_CURSOR)
+			job->copy_recorded = VK_TRUE;
 	}
 
 
@@ -2318,16 +2553,21 @@ present_native(
 		chain = job->chains[index];
 		error = job->results[index];
 		if (error == VK_SUCCESS) {
-			/* A frame identifier belongs to its chain and never substitutes for a fence. */
-			if (chain->frame == UINT64_MAX) {
+			/*
+			 * A cursor plane shows the image where the present puts it,
+			 * unless a later present was shown; its frame is counted under
+			 * the cursor's own lock.
+			 */
+			if (chain->gpu_present != VK_FALSE &&
+			    chain->surface->cursor != VK_FALSE &&
+			    chain->surface->platform->present_cursor != NULL) {
+				error = present_cursor_show(job, index, VK_TRUE);
+			} else if (chain->frame == UINT64_MAX) {
+				/* A frame identifier belongs to its chain and never substitutes for a fence. */
 				error = swapchain_device_lost(chain->device);
 			} else if (chain->gpu_present != VK_FALSE) {
 				/* Names this GPU image commit without creating a CPU pixel staging view. */
 				chain->frame++;
-
-				/* A cursor plane's image goes where the present's destination puts it. */
-				if (job->has_display != VK_FALSE && chain->surface->cursor != VK_FALSE && chain->surface->platform->position != NULL)
-					chain->surface->platform->position(chain->lease, job->display.dstRect.offset.x, job->display.dstRect.offset.y);
 
 				/* The part that changed, when the application named it and the backend damages parts. */
 				if (job->damage != NULL && job->damage[index].known && chain->surface->platform->damage != NULL)
@@ -2429,6 +2669,17 @@ present_finish(
 			/* Releases a submitted image to acquisition after its presentation transaction finishes. */
 			if (job->submitted != VK_FALSE)
 				chain->states[image] = WSI_IMAGE_AVAILABLE;
+
+			/*
+			 * A completed cursor copy put the image's pixels of the noted
+			 * serial and epoch into the native image, so a later present
+			 * of the unchanged image may show them without copying.
+			 */
+			if (job->copy_done != VK_FALSE && index == 0U) {
+				chain->presentation[image].copied_serial = job->content_serial;
+				chain->presentation[image].copied_epoch = job->content_epoch;
+				chain->presentation[image].copied_valid = VK_TRUE;
+			}
 		}
 
 		/* Publishes per-target completion only when the application supplied result storage. */
@@ -2462,6 +2713,7 @@ present_finish(
 	vulkan_free(&job->allocator, job->damage);
 	vulkan_free(&job->allocator, job->stages);
 	vulkan_free(&job->allocator, job->results);
+	vulkan_free(&job->allocator, job->tickets);
 	vulkan_free(&job->allocator, job->chains);
 	vulkan_free(&job->allocator, job->indices);
 
@@ -2663,6 +2915,7 @@ present_copy_shared(
 static VkResult
 present_worker_get(
 	struct VkQueue_T *queue,
+	enum wsi_lane lane,
 	struct wsi_queue_worker **result)
 {
 	struct wsi_queue_worker *worker;
@@ -2677,12 +2930,13 @@ present_worker_get(
 	/* A candidate owns no queue jobs until thread creation and list publication both succeed. */
 	memset(candidate, 0, sizeof(*candidate));
 	candidate->queue = queue;
+	candidate->lane = lane;
 	pthread_mutex_lock(&swapchain_mutex);
 
-	/* Concurrent work on other queues cannot replace this queue's existing ordering domain. */
+	/* Concurrent work on other queues or lanes cannot replace this ordering domain. */
 	for (worker = workers; worker != NULL; worker = worker->next) {
 		/* Queue identity remains stable until the device has joined every worker. */
-		if (worker->queue == queue)
+		if (worker->queue == queue && worker->lane == lane)
 			break;
 	}
 
@@ -2727,6 +2981,7 @@ present_worker_main(
 	VkResult waited;
 	uint32_t index;
 	VkBool32 early;
+	const char *path;
 
 	/* The logical device joins this worker before any referenced queue can retire. */
 	worker = argument;
@@ -2768,17 +3023,31 @@ present_worker_main(
 
 		/*
 		 * A compositor that takes acquire fences gets the commit now, with the
-		 * fence; the wait below then only retires the job.
+		 * fence; the wait below then only retires the job.  A cursor present
+		 * whose waits were consumed without GPU work has neither.
 		 */
-		early = present_early(job);
+		early = VK_FALSE;
 		error = VK_SUCCESS;
+		if (job->native_only == VK_FALSE)
+			early = present_early(job);
 		if (early)
 			error = present_native(job, &job->info);
 
 		/* Neither transport acceptance nor a context-zero display fence proves producer completion. */
-		waited = vulkan_fences_wait(job->queue->device, 1U, &job->fence, VK_TRUE, UINT64_MAX);
-		if (waited != VK_SUCCESS)
-			error = swapchain_device_lost(job->queue->device);
+		if (job->native_only == VK_FALSE) {
+			waited = vulkan_fences_wait(job->queue->device, 1U, &job->fence, VK_TRUE, UINT64_MAX);
+
+			/* The time the GPU work completed, for the cursor log. */
+			if (job->logged != VK_FALSE)
+				job->log.fence = vulkan_wsi_cursor_clock();
+
+			/* A failed wait loses the device; a completed copy is what the native image now holds. */
+			if (waited != VK_SUCCESS) {
+				error = swapchain_device_lost(job->queue->device);
+			} else if (job->copy_recorded != VK_FALSE) {
+				job->copy_done = VK_TRUE;
+			}
+		}
 
 		/* The unchanged Wayland v1 contract receives commits only after GPU writes and ownership release finish. */
 		if (error == VK_SUCCESS && !early)
@@ -2795,6 +3064,16 @@ present_worker_main(
 			/* Success does not clear an earlier terminal asynchronous error. */
 			if (native_error < VK_SUCCESS)
 				__atomic_store_n(&chain->error, native_error, __ATOMIC_RELEASE);
+		}
+
+		/* A logged cursor present reports its route and times before the job retires. */
+		if (job->logged != VK_FALSE) {
+			path = "worker";
+			if (job->route == WSI_ROUTE_EMPTY)
+				path = "empty";
+			if (job->native_only != VK_FALSE)
+				path = "busy";
+			present_cursor_log(job, path);
 		}
 
 		/* Completion retires command storage and releases every job-owned image and chain hold. */
@@ -3055,9 +3334,15 @@ swapchain_acquire(
 		acquired = VK_FALSE;
 		index = chain->cursor;
 		for (offset = 0U; offset < chain->group->count; offset++) {
-			/* Compositor retention is independent of the producer's image-state entry. */
+			/*
+			 * Compositor retention is independent of the producer's image-state
+			 * entry.  A cursor plane's output copies the image at once and
+			 * holds none, so its acquisition never waits for the display lock.
+			 */
 			available = VK_TRUE;
-			if (chain->gpu_present != VK_FALSE && chain->surface->platform->image_available != NULL)
+			if (chain->gpu_present != VK_FALSE &&
+			    chain->surface->cursor == VK_FALSE &&
+			    chain->surface->platform->image_available != NULL)
 				available = chain->surface->platform->image_available(chain->presentation[index].native_image);
 
 			/* Skips images still borrowed by application rendering or native presentation. */
@@ -3349,4 +3634,483 @@ present_regions(
 
 	/* Succeeded: the parts are the job's. */
 	return VK_SUCCESS;
+}
+
+/* Chooses the worker of a present: one cursor plane's alone goes to the cursor lane. */
+static void
+present_lane(
+	struct wsi_present_job *job)
+{
+	struct vulkan_swapchain *chain;
+
+	/* A present of several targets keeps the ordinary order among them. */
+	job->lane = WSI_LANE_ORDINARY;
+	if (job->count != 1U)
+		return;
+
+	/* Only a cursor plane's GPU images, shown by the cursor present, take the cursor lane. */
+	chain = job->chains[0];
+	if (chain->surface->cursor == VK_FALSE)
+		return;
+	if (chain->gpu_present == VK_FALSE)
+		return;
+	if (chain->surface->platform->present_cursor == NULL)
+		return;
+
+	/* Succeeded: the present never waits behind an ordinary present of the queue. */
+	job->lane = WSI_LANE_CURSOR;
+	return;
+}
+
+/*
+ * Chooses how a cursor-lane present reaches the output.
+ *
+ * The image must be unchanged since the copy its native image holds; then
+ * complete waits are consumed here and the present is shown at once, and
+ * waits still on the GPU need a submission without a copy.  Anything else
+ * copies as before.
+ */
+static enum wsi_route
+present_route(
+	struct wsi_present_job *job,
+	const VkPresentInfoKHR *info)
+{
+	struct vulkan_swapchain *chain;
+	struct wsi_present_image *presentation;
+	struct vulkan_image *image;
+	const VkBaseInStructure *extension;
+	uint64_t serial;
+	uint64_t epoch;
+	VkBool32 unchanged;
+	VkBool32 consumed;
+
+	/* A rejected target records nothing and shows nothing. */
+	chain = job->chains[0];
+	if (job->results[0] != VK_SUCCESS)
+		return WSI_ROUTE_COPY;
+
+	/* A chain the application may write by other means than transfers is always copied. */
+	if (chain->transfer_only == VK_FALSE)
+		return WSI_ROUTE_COPY;
+
+	/* A record that asks for GPU completion (a present fence, an identifier) needs the worker. */
+	for (extension = info->pNext; extension != NULL; extension = extension->pNext) {
+		if (extension->sType != VK_STRUCTURE_TYPE_DISPLAY_PRESENT_INFO_KHR &&
+		    extension->sType != VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR)
+			return WSI_ROUTE_COPY;
+	}
+
+	/* Compares the image's writes with those its last completed copy saw. */
+	presentation = &chain->presentation[job->indices[0]];
+	image = vulkan_image(chain->group->images[job->indices[0]].image);
+	unchanged = VK_FALSE;
+	pthread_mutex_lock(&swapchain_mutex);
+
+	serial = __atomic_load_n(&image->content_serial, __ATOMIC_ACQUIRE);
+	epoch = __atomic_load_n(&chain->device->content_epoch, __ATOMIC_ACQUIRE);
+	if (presentation->copied_valid != VK_FALSE &&
+	    presentation->copied_serial == serial &&
+	    presentation->copied_epoch == epoch)
+		unchanged = VK_TRUE;
+
+	pthread_mutex_unlock(&swapchain_mutex);
+
+	/* A changed image, or one never copied, is copied. */
+	if (unchanged == VK_FALSE)
+		return WSI_ROUTE_COPY;
+
+	/* Complete waits are consumed now; waits on GPU work are left to a submission. */
+	consumed = present_waits_consume(job, info);
+	if (consumed == VK_FALSE)
+		return WSI_ROUTE_EMPTY;
+
+	/* Succeeded: the unchanged image is shown at once. */
+	return WSI_ROUTE_FAST;
+}
+
+/*
+ * Consumes a present's waits when every one is a distinct, already complete
+ * acquisition, as a queue submission would leave out of its native waits;
+ * otherwise consumes none of them.
+ */
+static VkBool32
+present_waits_consume(
+	struct wsi_present_job *job,
+	const VkPresentInfoKHR *info)
+{
+	struct VkDevice_T *device;
+	struct vulkan_sync *sync;
+	struct vulkan_sync *earlier;
+	uint64_t waited;
+	uint32_t index;
+	uint32_t previous;
+	VkBool32 complete;
+	VkResult status;
+
+	/* The device mutex protects every software payload, as the queue's classification does. */
+	device = job->queue->device;
+	waited = 0U;
+	if (job->logged != VK_FALSE)
+		waited = vulkan_wsi_cursor_clock();
+	pthread_mutex_lock(&device->mutex);
+
+	/* The time the device lock took, for the cursor log. */
+	if (job->logged != VK_FALSE)
+		job->log.mutex_wait = vulkan_wsi_cursor_clock() - waited;
+
+	/* A lost device consumes nothing here; the submission reports it. */
+	complete = VK_FALSE;
+	status = vulkan_sync_device_status_locked(device);
+	if (status == VK_SUCCESS)
+		complete = VK_TRUE;
+
+	/* Every wait must be a distinct semaphore whose acquisition already completed. */
+	for (index = 0U; index < info->waitSemaphoreCount && complete != VK_FALSE; index++) {
+		/* A semaphore waiting for GPU work keeps the present on the GPU queue. */
+		sync = vulkan_sync_object((uint64_t)(uintptr_t)info->pWaitSemaphores[index]);
+		if (sync == NULL || sync->software_signaled == VK_FALSE) {
+			complete = VK_FALSE;
+			break;
+		}
+
+		/* A repeated semaphore's second wait would be a native one. */
+		for (previous = 0U; previous < index; previous++) {
+			earlier = vulkan_sync_object((uint64_t)(uintptr_t)info->pWaitSemaphores[previous]);
+			if (earlier == sync)
+				complete = VK_FALSE;
+		}
+	}
+
+	/* Each complete acquisition stops representing completion, exactly once. */
+	if (complete != VK_FALSE) {
+		for (index = 0U; index < info->waitSemaphoreCount; index++) {
+			sync = vulkan_sync_object((uint64_t)(uintptr_t)info->pWaitSemaphores[index]);
+			sync->software_signaled = VK_FALSE;
+		}
+	}
+
+	pthread_mutex_unlock(&device->mutex);
+
+	/* A present that consumed nothing still owns all of its waits. */
+	if (complete == VK_FALSE)
+		return VK_FALSE;
+
+	/* Succeeded: the waits are consumed and the present needs no queue operation. */
+	return VK_TRUE;
+}
+
+/*
+ * Shows an unchanged cursor image at once, after its waits were consumed.
+ *
+ * No queue, device or swapchain lock is held while the output is asked.
+ * When the output has no free cursor image, the job goes to the cursor
+ * lane's worker, which tries again; published then reports that the worker
+ * owns the job.
+ */
+static VkResult
+present_fast(
+	struct wsi_present_job *job,
+	const VkPresentInfoKHR *info,
+	VkBool32 *published)
+{
+	struct vulkan_swapchain *chain;
+	struct wsi_queue_worker *worker;
+	VkResult error;
+
+	/* The waits are consumed: from here on the present counts as enqueued. */
+	chain = job->chains[0];
+	*published = VK_FALSE;
+	job->submitted = VK_TRUE;
+
+	/* A loss published since validation stops the present before the output is asked. */
+	error = __atomic_load_n(&chain->error, __ATOMIC_ACQUIRE);
+	if (error == VK_SUCCESS) {
+		error = __atomic_load_n(&chain->device->error, __ATOMIC_ACQUIRE);
+		if (error != VK_SUCCESS)
+			error = VK_ERROR_DEVICE_LOST;
+	}
+	if (error == VK_SUCCESS) {
+		error = __atomic_load_n(&chain->device->object.context->error, __ATOMIC_ACQUIRE);
+		if (error != VK_SUCCESS)
+			error = VK_ERROR_DEVICE_LOST;
+	}
+
+	/* Asks the output once; a busy output is retried by the worker, not here. */
+	if (error == VK_SUCCESS)
+		error = present_cursor_show(job, 0U, VK_FALSE);
+
+	/* A busy output gets the present again from the cursor lane's worker. */
+	if (error == VK_SUCCESS && job->outcome == VULKAN_WSI_CURSOR_BUSY) {
+		error = present_worker_get(job->queue, WSI_LANE_CURSOR, &worker);
+		if (error == VK_SUCCESS) {
+			/* The caller's result storage is written before the worker may free the job. */
+			if (info->pResults != NULL)
+				info->pResults[0] = VK_SUCCESS;
+
+			/* The job carries no GPU work; only its native present remains. */
+			job->native_only = VK_TRUE;
+			job->worker = worker;
+			pthread_mutex_lock(&swapchain_mutex);
+
+			present_publish_locked(worker, job);
+
+			pthread_mutex_unlock(&swapchain_mutex);
+
+			/* Succeeded: the worker shows the present, or drops it for a later one. */
+			*published = VK_TRUE;
+			return VK_SUCCESS;
+		}
+	}
+
+	/* Consumed waits cannot be returned, so a failed allocation loses the device. */
+	if (error == VK_ERROR_OUT_OF_HOST_MEMORY || error == VK_ERROR_OUT_OF_DEVICE_MEMORY)
+		error = swapchain_device_lost(chain->device);
+
+	/* A failure stays on the chain for its later operations, as a worker's would. */
+	if (error < VK_SUCCESS)
+		__atomic_store_n(&chain->error, error, __ATOMIC_RELEASE);
+	job->results[0] = error;
+
+	/* A logged present reports itself now that every lock is released. */
+	if (job->logged != VK_FALSE)
+		present_cursor_log(job, "fast");
+
+	/* Reports why the output did not show the present. */
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the present is shown, or a later one was. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Shows one cursor-plane target of a job, with its ticket.
+ *
+ * With retry (the worker), a busy output is asked again every refresh
+ * period until it takes the image, a later present takes the ticket's
+ * place, or WSI_CURSOR_BUSY_LIMIT passes; the present is then dropped, not
+ * failed, because a cursor shows only its latest present.
+ */
+static VkResult
+present_cursor_show(
+	struct wsi_present_job *job,
+	uint32_t index,
+	VkBool32 retry)
+{
+	struct vulkan_swapchain *chain;
+	struct vulkan_wsi_cursor_times *times;
+	uint64_t ticket;
+	uint64_t newest;
+	uint64_t started;
+	uint64_t now;
+	uint32_t image;
+	VkResult error;
+
+	/* The target, its image and ticket, and where the log keeps its times. */
+	chain = job->chains[index];
+	image = job->indices[index];
+	ticket = job->tickets[index];
+	times = NULL;
+	if (job->logged != VK_FALSE)
+		times = &job->log.times;
+
+	/* Asks the output until it takes the image or the present gives way. */
+	started = 0U;
+	for (;;) {
+		/* The present's position, when it named one, and its ticket. */
+		error = chain->surface->platform->present_cursor(
+			chain->lease,
+			chain->presentation[image].native_image,
+			job->has_display,
+			job->display.dstRect.offset.x,
+			job->display.dstRect.offset.y,
+			ticket,
+			&chain->frame,
+			&chain->sequence,
+			&job->outcome,
+			times);
+		if (error != VK_SUCCESS)
+			return error;
+
+		/* Shown, dropped, or busy without a retry: the caller has the outcome. */
+		if (job->outcome != VULKAN_WSI_CURSOR_BUSY)
+			return VK_SUCCESS;
+		if (retry == VK_FALSE)
+			return VK_SUCCESS;
+
+		/* A later present of the surface will show itself; this one gives way. */
+		newest = __atomic_load_n(&chain->surface->cursor_ticket, __ATOMIC_ACQUIRE);
+		if (newest > ticket) {
+			job->outcome = VULKAN_WSI_CURSOR_DROPPED;
+			return VK_SUCCESS;
+		}
+
+		/* The time since the first busy answer bounds the retries. */
+		error = swapchain_now(&now);
+		if (error != VK_SUCCESS)
+			return error;
+		if (started == 0U)
+			started = now;
+
+		/* An output busy for this long is not waited for further. */
+		if (now - started >= WSI_CURSOR_BUSY_LIMIT) {
+			job->outcome = VULKAN_WSI_CURSOR_DROPPED;
+			return VK_SUCCESS;
+		}
+
+		/* One refresh later a list may have left a cursor image. */
+		present_cursor_pause(chain);
+		job->log.retries++;
+	}
+}
+
+/* Sleeps one refresh period of a cursor chain's display mode. */
+static void
+present_cursor_pause(
+	struct vulkan_swapchain *chain)
+{
+	struct timespec period;
+	uint64_t nanoseconds;
+	uint32_t millihertz;
+
+	/* The mode's refresh rate, or 60 Hz when it names none. */
+	nanoseconds = WSI_CURSOR_DEFAULT_PERIOD;
+	millihertz = 0U;
+	if (chain->surface->display_mode != NULL)
+		millihertz = chain->surface->display_mode->parameters.refreshRate;
+	if (millihertz != 0U)
+		nanoseconds = 1000000000000ULL / millihertz;
+
+	/* An interrupted sleep only makes the next try earlier. */
+	period.tv_sec = (time_t)(nanoseconds / 1000000000ULL);
+	period.tv_nsec = (long)(nanoseconds % 1000000000ULL);
+	(void)nanosleep(&period, NULL);
+
+	/* Succeeded: about one refresh has passed. */
+	return;
+}
+
+/* Appends a job to its worker's queue; the caller holds the swapchain mutex. */
+static void
+present_publish_locked(
+	struct wsi_queue_worker *worker,
+	struct wsi_present_job *job)
+{
+	struct wsi_present_job *queued;
+
+	/* The jobs ahead of this one, and its publication time, for the cursor log. */
+	if (job->logged != VK_FALSE) {
+		job->log.publish = vulkan_wsi_cursor_clock();
+		job->log.depth = 0U;
+		if (worker->current != NULL)
+			job->log.depth++;
+		for (queued = worker->head; queued != NULL; queued = queued->next)
+			job->log.depth++;
+	}
+
+	/* The job goes last; the worker takes jobs in publication order. */
+	if (worker->tail != NULL)
+		worker->tail->next = job;
+	else
+		worker->head = job;
+	worker->tail = job;
+	swapchain_notify_locked();
+
+	/* Succeeded: only the worker may release the job from now on. */
+	return;
+}
+
+/* Takes the start times of a present while the cursor log is on. */
+static void
+present_cursor_log_start(
+	struct wsi_cursor_log *log)
+{
+	VkResult error;
+
+	/* The counter, from which the line's lengths are measured. */
+	log->call = vulkan_wsi_cursor_clock();
+
+	/* The monotonic time, which pairs the line with the compositor's log. */
+	error = swapchain_now(&log->call_ns);
+	if (error != VK_SUCCESS)
+		log->call_ns = 0U;
+
+	/* Succeeded: the present's start is noted. */
+	return;
+}
+
+/*
+ * Writes one cursor present's log line to standard error.
+ *
+ * call_ns is the monotonic time the present was called; every later time is
+ * its length from the call, by the counter (0 where the present had no such
+ * step), and mutex and queue are the waits for those locks.
+ */
+static void
+present_cursor_log(
+	const struct wsi_present_job *job,
+	const char *path)
+{
+	const struct wsi_cursor_log *log;
+	const char *outcome;
+	char line[512];
+	uint64_t stamps[5];
+	uint64_t lengths[5];
+	unsigned index;
+	int length;
+
+	/* The outcome's name. */
+	outcome = "dropped";
+	if (job->outcome == VULKAN_WSI_CURSOR_SHOWN)
+		outcome = "shown";
+	if (job->outcome == VULKAN_WSI_CURSOR_BUSY)
+		outcome = "busy";
+
+	/* Each step's time as a length from the call, or zero when it did not happen. */
+	log = &job->log;
+	stamps[0] = log->publish;
+	stamps[1] = log->fence;
+	stamps[2] = log->times.locked;
+	stamps[3] = log->times.set;
+	stamps[4] = log->times.done;
+	for (index = 0U; index < 5U; index++) {
+		lengths[index] = 0U;
+		if (stamps[index] > log->call)
+			lengths[index] = stamps[index] - log->call;
+	}
+
+	/* One line, written whole by one call. */
+	length = snprintf(
+		line,
+		sizeof(line),
+		"VK CURSOR ticket=%llu path=%s result=%d outcome=%s image=%u x=%d y=%d depth=%u call_ns=%llu mutex=%llu queue=%llu publish=%llu fence=%llu lock=%llu set=%llu done=%llu retries=%u\n",
+		(unsigned long long)job->tickets[0],
+		path,
+		(int)job->results[0],
+		outcome,
+		job->indices[0],
+		(int)job->display.dstRect.offset.x,
+		(int)job->display.dstRect.offset.y,
+		log->depth,
+		(unsigned long long)log->call_ns,
+		(unsigned long long)log->mutex_wait,
+		(unsigned long long)log->queue_wait,
+		(unsigned long long)lengths[0],
+		(unsigned long long)lengths[1],
+		(unsigned long long)lengths[2],
+		(unsigned long long)lengths[3],
+		(unsigned long long)lengths[4],
+		log->retries);
+
+	/* A line that could not be formatted is not written; a long one is cut to the buffer. */
+	if (length <= 0)
+		return;
+	if ((size_t)length >= sizeof(line))
+		length = (int)sizeof(line) - 1;
+
+	/* A diagnostic line that cannot be written is not retried. */
+	(void)write(2, line, (size_t)length);
+
+	/* Succeeded: the line is written. */
+	return;
 }
