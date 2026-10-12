@@ -197,13 +197,11 @@ vulkan_wsi_display_query(
 	if ((request.flags & GPU_DISPLAY_ACTIVE) != 0U)
 		output->flags |= VULKAN_WSI_OUTPUT_ACTIVE;
 
-	/*
-	 * Overlay planes (GPU_DISPLAY_HAS_OVERLAYS, planes 1 and up) are not
-	 * presented through yet (ws214-p004): only the primary is enumerated,
-	 * so the cursor plane keeps its place right after it.
-	 */
-	if ((request.flags & GPU_DISPLAY_HAS_OVERLAYS) != 0U && output->plane_count > 1U)
-		output->plane_count = 1;
+	/* Overlay planes (GPU_DISPLAY_HAS_OVERLAYS) follow the primary, below the cursor plane. */
+	if ((request.flags & GPU_DISPLAY_HAS_OVERLAYS) != 0U && output->plane_count > 1U) {
+		output->flags |= VULKAN_WSI_OUTPUT_OVERLAYS;
+		output->overlay_count = output->plane_count - 1U;
+	}
 
 	/* A cursor plane follows the output's ordinary planes, on top of them. */
 	if ((request.flags & GPU_DISPLAY_HAS_CURSOR) != 0U && output->plane_count != 0U && output->plane_count < UINT32_MAX) {
@@ -380,6 +378,36 @@ vulkan_wsi_display_power(
 	}
 
 	/* Succeeded: the display is in the requested power state. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Reads one overlay plane's limits on the output's current mode (GPU_DISPLAY_OVERLAY_INFO).
+ */
+VkResult
+vulkan_wsi_display_overlay_info(
+	struct VkPhysicalDevice_T *physical,
+	const struct vulkan_wsi_output *output,
+	uint32_t plane,
+	struct gpu_display_overlay_info *info)
+{
+	int status;
+	VkResult error;
+
+	/* The output of its generation and one of its overlays; every output field starts zero. */
+	memset(info, 0, sizeof(*info));
+	info->version = GPU_ABI_VERSION;
+	info->size = sizeof(*info);
+	info->display_id = (uint32_t)output->identifier;
+	info->generation = output->generation;
+	info->plane = plane;
+	status = vulkan_wsi_display_node_ioctl(physical, output, GPU_DISPLAY_OVERLAY_INFO, info);
+	if (status != 0) {
+		error = display_error(errno);
+		return error;
+	}
+
+	/* Succeeded: the overlay's limits until the mode changes. */
 	return VK_SUCCESS;
 }
 
@@ -593,8 +621,12 @@ display_claim_native(
 	int status;
 	int native_error;
 
-	/* Native identity is captured under the common WSI snapshot lock. */
+	/* Presenting to an overlay plane needs its own present path (ws214-p004), which is not here yet. */
 	*result = NULL;
+	if (surface->overlay != VK_FALSE)
+		return VK_ERROR_INITIALIZATION_FAILED;
+
+	/* Native identity is captured under the common WSI snapshot lock. */
 	new_connection = NULL;
 	error = display_validate_surface(surface, device->physical);
 	if (error != VK_SUCCESS)

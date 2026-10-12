@@ -23,6 +23,8 @@
 #define VULKAN_WSI_OUTPUT_BLOB		8U
 /* The output's last plane is a cursor plane (GPU_DISPLAY_HAS_CURSOR): small, premultiplied, on top. */
 #define VULKAN_WSI_OUTPUT_CURSOR	16U
+/* Planes 1 to overlay_count are overlay planes (GPU_DISPLAY_HAS_OVERLAYS): premultiplied, placed and maybe scaled. */
+#define VULKAN_WSI_OUTPUT_OVERLAYS	32U
 #define VULKAN_WSI_FORMAT_RGBA		1U
 #define VULKAN_WSI_FORMAT_BGRA		2U
 
@@ -63,6 +65,7 @@ struct vulkan_wsi_output {
 	uint32_t flags;
 	uint32_t formats;
 	uint32_t plane_count;
+	uint32_t overlay_count;
 	VkExtent2D physical_dimensions;
 	VkExtent2D preferred_extent;
 	VkExtent2D maximum_extent;
@@ -112,6 +115,8 @@ struct vulkan_surface {
 	uint32_t native_plane;
 	/* The surface is the output's cursor plane: its presents set the cursor image and position. */
 	VkBool32 cursor;
+	/* The surface is one of the output's overlay planes (ws214-p004): it borrows the primary's claim. */
+	VkBool32 overlay;
 	/*
 	 * The last ticket given to a present of this cursor surface.  It only
 	 * grows (atomically, under the swapchain mutex), and the old and
@@ -186,6 +191,7 @@ struct vulkan_wsi_platform_ops {
 
 VkResult vulkan_wsi_display_node_query(struct VkPhysicalDevice_T *physical, uint32_t index, uint32_t *count, struct gpu_display_info *request, uint64_t *device_id, char *path);
 int vulkan_wsi_display_node_ioctl(struct VkPhysicalDevice_T *physical, const struct vulkan_wsi_output *output, unsigned long command, void *argument);
+VkResult vulkan_wsi_display_overlay_info(struct VkPhysicalDevice_T *physical, const struct vulkan_wsi_output *output, uint32_t plane, struct gpu_display_overlay_info *info);
 void vulkan_wsi_display_nodes_finish(struct VkInstance_T *instance);
 VkResult vulkan_wsi_display_node_topology(struct VkPhysicalDevice_T *physical, uint64_t *sequence);
 
