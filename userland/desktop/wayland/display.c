@@ -442,8 +442,16 @@ adopt_commit(
 	kwl_damage_commit(server, surface, previous);
 	surface->ready = 0;
 	surface->fresh = 1;
+
+	/*
+	 * A wl_shm image copies its damaged rows before the next frame, which
+	 * then forgets the damage (shm.c); any other image's damage has served
+	 * once it marked the output, and the next commit's starts anew.
+	 */
 	if (surface->current != NULL && surface->current->shm != NULL)
 		surface->shm_upload = 1;
+	else
+		surface->committed_damaged = 0;
 
 	/* The time the image was taken, when the per-frame lines were asked for (ws099-p015's pen latency). */
 	if (server->log_frames)

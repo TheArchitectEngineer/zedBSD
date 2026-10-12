@@ -13,7 +13,7 @@
  * output (server->dirty, as before).  Two frequent changes are measured
  * instead: the pointer moving over the windows' own areas (the cursor's
  * old and new places) and a window's new image when nothing near it is
- * glass (its body).  They gather in server->damage until a frame is drawn;
+ * glass (the part of its body the client damaged).  They gather in server->damage until a frame is drawn;
  * compose.c widens it by the frames each swapchain image missed (its
  * buffer age) and draws the frame inside it alone.
  */
@@ -31,6 +31,7 @@
 #define DAMAGE_HOVER		96
 
 static void damage_add(struct kwl_server *server, int32_t left, int32_t top, int32_t right, int32_t bottom);
+static void damage_client_part(const struct kwl_object *surface, uint32_t width, uint32_t height, int32_t *rect);
 static int cursor_unseen(struct kwl_server *server, int32_t x, int32_t y);
 static int probes_changed(struct kwl_server *server);
 static int hover_record_usable(struct kwl_server *server);
@@ -108,7 +109,8 @@ kwl_damage_pointer(
 
 /*
  * Marks the damage of a surface's new image (its commit, adopted with the
- * image it replaced): the window's body when a toplevel's image of the
+ * image it replaced): the part of the window's body the client damaged
+ * (all of it when the commit named none) when a toplevel's image of the
  * same size replaced another and nothing near is glass; otherwise the
  * whole output.
  */
@@ -161,13 +163,19 @@ kwl_damage_commit(
 			return;
 		}
 
-		/* The body is all. */
+		/* The part of the body the client drew again (ws211-p008). */
+		damage_client_part(surface, width, height, rect);
 		damage_add(server, rect[0], rect[1], rect[2], rect[3]);
 		return;
 	}
 
-	/* The plain look: the window at its place, as large as its image. */
-	damage_add(server, surface->x, surface->y, surface->x + (int32_t)width, surface->y + (int32_t)height);
+	/* The plain look: the window at its place, as large as its image, narrowed to the part the client drew again. */
+	rect[0] = surface->x;
+	rect[1] = surface->y;
+	rect[2] = surface->x + (int32_t)width;
+	rect[3] = surface->y + (int32_t)height;
+	damage_client_part(surface, width, height, rect);
+	damage_add(server, rect[0], rect[1], rect[2], rect[3]);
 }
 
 
@@ -424,6 +432,63 @@ damage_add(
 		server->damage[2] = right;
 	if (bottom > server->damage[3])
 		server->damage[3] = bottom;
+}
+
+/*
+ * Narrows a window's rectangle on the output (left, top, right, bottom) to
+ * the part of its image the client damaged (ws211-p008).
+ *
+ * The committed damage is in the image's pixels; it is moved to the
+ * rectangle's corner and kept inside the rectangle.  Only an image drawn
+ * at its own size can be narrowed so: a scaled one (a viewport, a buffer
+ * scale), a commit that named no damage, or damage that lies outside the
+ * image leaves the rectangle whole, as before.
+ */
+static void
+damage_client_part(
+	const struct kwl_object *surface,
+	uint32_t width,
+	uint32_t height,
+	int32_t *rect)
+{
+	int64_t left;
+	int64_t top;
+	int64_t right;
+	int64_t bottom;
+
+	/* A commit that named no damage changed the whole image. */
+	if (!surface->committed_damaged)
+		return;
+
+	/* An image drawn at another size than its own maps its pixels to other places. */
+	if ((int64_t)rect[2] - rect[0] != (int64_t)width)
+		return;
+	if ((int64_t)rect[3] - rect[1] != (int64_t)height)
+		return;
+
+	/* The damage, kept inside the image. */
+	left = surface->committed_damage[0];
+	top = surface->committed_damage[1];
+	right = surface->committed_damage[2];
+	bottom = surface->committed_damage[3];
+	if (left < 0)
+		left = 0;
+	if (top < 0)
+		top = 0;
+	if (right > (int64_t)width)
+		right = (int64_t)width;
+	if (bottom > (int64_t)height)
+		bottom = (int64_t)height;
+
+	/* Damage wholly outside the image tells nothing usable; the whole window is drawn. */
+	if (right <= left || bottom <= top)
+		return;
+
+	/* Succeeded: the part, at the window's place on the output. */
+	rect[2] = rect[0] + (int32_t)right;
+	rect[3] = rect[1] + (int32_t)bottom;
+	rect[0] = rect[0] + (int32_t)left;
+	rect[1] = rect[1] + (int32_t)top;
 }
 
 /*
