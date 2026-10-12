@@ -66,6 +66,28 @@
 /* The first wl_output global name of a head, past every name of the fixed globals (protocol.c). */
 #define HEADS_GLOBAL_FIRST	1000U
 
+/*
+ * A warp of the pointer off an output going away (heads_evacuate): the
+ * output and its rectangle before it went, and where the warp says whether
+ * the pointer was on it and carried.
+ */
+struct heads_pointer_carry {
+	unsigned slot;
+	struct kwl_plane_rect from;
+	unsigned *carried;
+};
+
+/*
+ * A warp of the pointer along with the heads that moved
+ * (heads_windows_follow): the outputs' rectangles before and after, and
+ * whether everything goes to the anchor (the mirror chosen).
+ */
+struct heads_pointer_shift {
+	const struct kwl_plane_rect *before;
+	const struct kwl_plane_rect *after;
+	unsigned leave;
+};
+
 static int heads_open(struct kwl_server *server, struct kwl_head *head, VkDisplayKHR display, const char *name);
 static void heads_close(struct kwl_server *server, struct kwl_head *head);
 static VkResult heads_targets(struct kwl_compose *compose, struct kwl_head *head);
@@ -86,6 +108,8 @@ static void heads_mkdir(char *folder);
 static void heads_changed(struct kwl_server *server);
 static void heads_evacuate(struct kwl_server *server, unsigned slot);
 static void heads_windows_follow(struct kwl_server *server, const struct kwl_plane_rect *before, unsigned leave);
+static void heads_pointer_evacuate(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
+static void heads_pointer_follow(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
 static void heads_window_place(struct kwl_server *server, struct kwl_object *window, const struct kwl_plane_rect *from, const struct kwl_plane_rect *to, unsigned slot, const char *why);
 static int heads_is_window(const struct kwl_object *object);
 static void heads_redraw(struct kwl_server *server);
@@ -1777,37 +1801,6 @@ kwl_window_set_output(
 	       window->y, why);
 }
 
-/*
- * Moves the pointer by a relative motion over the outputs (plane.h): into
- * the output the motion reaches, or stopped at an edge no output shares.
- * Gives the new place; the output it is on is kept.
- */
-void
-kwl_pointer_relative(
-	struct kwl_server *server,
-	int32_t dx,
-	int32_t dy,
-	int32_t *x,
-	int32_t *y)
-{
-	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
-	unsigned count;
-	unsigned slot;
-
-	/* Over the outputs shown. */
-	count = kwl_outputs(server, outputs);
-	slot = kwl_plane_move(outputs, count, server->pointer_output, server->pointer_x, server->pointer_y, dx, dy, x, y);
-
-	/* A crossing is logged once. */
-	if (slot != server->pointer_output) {
-		printf("KWL POINTER output=%u x=%d y=%d\n", slot, *x, *y);
-		server->dirty = 1;
-	}
-
-	/* Succeeded: the output it is on. */
-	server->pointer_output = slot;
-}
-
 /* Puts the pointer of an absolute device (a tablet, a touch screen) on the anchor, where it maps. */
 void
 kwl_pointer_absolute(
@@ -1834,12 +1827,13 @@ heads_evacuate(
 	unsigned slot)
 {
 	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	struct kwl_plane_rect now[KWL_PLANE_SLOTS];
+	struct heads_pointer_carry carry;
 	struct kwl_client *client;
 	struct kwl_object *object;
 	const struct kwl_head *head;
+	unsigned carried;
 	unsigned count;
-	int32_t x;
-	int32_t y;
 	int window;
 
 	/* The outputs, and the one going where it was (also when its display is already lost, so not shown). */
@@ -1872,15 +1866,22 @@ heads_evacuate(
 		}
 	}
 
-	/* The pointer on it comes to the same share of the anchor. */
-	if (server->pointer_output != slot)
+	/*
+	 * The pointer on it comes to the same share of the anchor.  Where it is
+	 * is the cursor's box's place, which the input thread may have moved
+	 * past the main thread's view; the outputs as they are now go to the
+	 * box in the same warp (ws213-p004, the design's 6.1 N-3).
+	 */
+	carry.slot = slot;
+	carry.from = outputs[slot];
+	carry.carried = &carried;
+	carried = 0U;
+	(void)kwl_outputs(server, now);
+	kwl_pointer_warp(server, now, heads_pointer_evacuate, &carry);
+	if (!carried)
 		return;
-	kwl_plane_carry(&outputs[slot], &outputs[KWL_PLANE_ANCHOR], server->pointer_x, server->pointer_y, 1U, 1U, 0, &x, &y);
-	server->pointer_x = x;
-	server->pointer_y = y;
-	server->pointer_output = KWL_PLANE_ANCHOR;
 	server->dirty = 1;
-	printf("KWL POINTER output=0 x=%d y=%d why=retreat\n", x, y);
+	printf("KWL POINTER output=0 x=%d y=%d why=retreat\n", server->pointer_x, server->pointer_y);
 }
 
 /*
@@ -1895,6 +1896,7 @@ heads_windows_follow(
 	unsigned leave)
 {
 	struct kwl_plane_rect after[KWL_PLANE_SLOTS];
+	struct heads_pointer_shift follow;
 	struct kwl_client *client;
 	struct kwl_object *object;
 	unsigned slot;
@@ -1935,19 +1937,15 @@ heads_windows_follow(
 		}
 	}
 
-	/* The pointer on a head: along with it, or to the anchor. */
-	slot = server->pointer_output;
-	if (slot == KWL_PLANE_ANCHOR || slot >= KWL_PLANE_SLOTS)
-		return;
-	if (leave || after[slot].width == 0U || before[slot].width == 0U) {
-		kwl_plane_carry(&before[slot], &after[KWL_PLANE_ANCHOR], server->pointer_x, server->pointer_y, 1U, 1U, 0, &server->pointer_x, &server->pointer_y);
-		server->pointer_output = KWL_PLANE_ANCHOR;
-		return;
-	}
-
-	/* Along with its head. */
-	server->pointer_x += after[slot].x - before[slot].x;
-	server->pointer_y += after[slot].y - before[slot].y;
+	/*
+	 * The pointer on a head: along with it, or to the anchor, from where the
+	 * cursor's box has it, with the outputs as they are now given to the box
+	 * in the same warp (ws213-p004, the design's 6.1 N-3).
+	 */
+	follow.before = before;
+	follow.after = after;
+	follow.leave = leave;
+	kwl_pointer_warp(server, after, heads_pointer_follow, &follow);
 }
 
 /* Carries a window (and its sheet) from one output's rectangle to another's, makes it that output's, and logs why. */
@@ -2231,4 +2229,57 @@ heads_off(
 
 	/* None: it shows. */
 	return 0;
+}
+
+/* Carries the pointer from an output going away to the same share of the anchor, when the box has it there (a warp's move). */
+static void
+heads_pointer_evacuate(
+	const void *context,
+	const struct kwl_plane_rect *outputs,
+	int32_t *x,
+	int32_t *y,
+	unsigned *output)
+{
+	const struct heads_pointer_carry *carry;
+
+	/* Only a pointer on that output. */
+	carry = context;
+	if (*output != carry->slot)
+		return;
+
+	/* The same share of the anchor. */
+	kwl_plane_carry(&carry->from, &outputs[KWL_PLANE_ANCHOR], *x, *y, 1U, 1U, 0, x, y);
+	*output = KWL_PLANE_ANCHOR;
+	*carry->carried = 1U;
+}
+
+/* Moves the pointer on a head along with it, or to the anchor when the head is not shown now (a warp's move). */
+static void
+heads_pointer_follow(
+	const void *context,
+	const struct kwl_plane_rect *outputs,
+	int32_t *x,
+	int32_t *y,
+	unsigned *output)
+{
+	const struct heads_pointer_shift *follow;
+	unsigned slot;
+
+	/* Only a pointer on a head. */
+	(void)outputs;
+	follow = context;
+	slot = *output;
+	if (slot == KWL_PLANE_ANCHOR || slot >= KWL_PLANE_SLOTS)
+		return;
+
+	/* To the anchor when the head is not shown now (or the mirror is chosen). */
+	if (follow->leave || follow->after[slot].width == 0U || follow->before[slot].width == 0U) {
+		kwl_plane_carry(&follow->before[slot], &follow->after[KWL_PLANE_ANCHOR], *x, *y, 1U, 1U, 0, x, y);
+		*output = KWL_PLANE_ANCHOR;
+		return;
+	}
+
+	/* Along with its head. */
+	*x += follow->after[slot].x - follow->before[slot].x;
+	*y += follow->after[slot].y - follow->before[slot].y;
 }

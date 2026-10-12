@@ -3,7 +3,7 @@
 # ws213-p004: S2: 描画 thread・cursor の thread・入力の thread（2 段の pull）
 
 Parent: [WS213](../ws.md)
-Status: planned（p003 の閾値を満たした後。p001 の S2 は review-5 で条件付き可、第 6 版の N-1〜N-4 の反映を Q1 が確かめてから）
+Status: in-progress（2026-10-12 Q1「p004 に進む」。段 I（入力の thread）を実装、C・R は次）
 
 ## 依存と再開の条件（review-4 L-f）
 
@@ -37,7 +37,7 @@ Phase disposition: normal
 
 ## 実行（2026-10-12 P4、agent/p4）
 
-Status: in-progress（Q1「p004 に進む」、p003 の閾値は実質満たす）
+段に分ける: I（入力の thread と受け箱）→ C（cursor の thread）→ R（描画の thread、2 段の pull・park）。各段で host 試験と WIP commit、区切りで Q1 に merge を頼む。
 
 ### p003 の small の 1 回の超過（17.29ms）の場面（Q1 の依頼、Pi place17 の session.log）
 
@@ -51,3 +51,19 @@ Status: in-progress（Q1「p004 に進む」、p003 の閾値は実質満たす�
 4. **evdev の fd を別の thread から poll**: 可。fd は process の表（`process->fd`）で全 thread が共有、`input_poll`（`src/drivers/generic/input.c:2041-2077`）は待ち手の制限が無く、poll の待ちは全体の waitq（`src/kern/poll.c:31-127`）。別の thread の close と並んでも poll は object の参照を持ち、閉じた fd は `POLLNVAL`（`poll.c:319-337`）。
 5. **時計**: 同じ基準。evdev の時刻は `clock_milliseconds`（`kernel_ticks`、`src/drivers/generic/input.c:1725-1731`）、`kwl_microseconds` の `CLOCK_MONOTONIC` も `clock_ticks()`（`src/kern/clock.c:507-548`）。どちらも boot からで分解能は 1ms。→ box_lag（`event_us` → 書き込み）で判定できる（代替の超過分は使わない）。値は 1ms 刻み。
 6. **fd を閉じる順**: FreeBSD の `seat_disable`（`seat-freebsd.c:496-535`）は `session_paused` → 各 lease の `input_gone` → `lease_close` の順で、callback が close の前（設計どおり）。Linux logind の gone（`seat-logind-linux.c:676-686`）も callback が先。logind の `seat_resume` は古い fd を close してから `input_resumed`（`seat-logind-linux.c:730-741`）なので、設計の保険（callback の後に close）を p004 で入れる。
+
+### 段 I: 入力の thread と cursor の受け箱（2026-10-12 P4）
+
+- **新しい file**: `userland/desktop/wayland/cursor-box.{c,h}`（受け箱: 位置・出力・`event_us`・書いた時刻・warp の番号・書いた回数・出力の矩形の写し、`cursor_lock`＝box の mutex と C を起こす condvar。I の相対の動き `kwl_cursor_box_move`、絶対の pointer `kwl_cursor_box_place`（warp の番号を進めない、N-2）、M の warp `kwl_cursor_box_warp`（受け箱の位置から純粋な関数で計算し、出力の矩形の写しと同じ区間で書いて warp を進める、N-3）、矩形だけの更新、読み）、`input-thread.{c,h}`（I: device の表（I だけが触る）、M→I の命令の列（付ける・外す、`cursor_lock` の下）と設定の世代、I→M の順序付きの FIFO（`input_lock` の下の list＋M の wake pipe）、外しの ack（FIFO の device の最後の event と同じ区間で `acked_sequence`、condvar、M は 100ms まで待つ）。I は Vulkan・printf・backend の seat・server に触れない。evdev の読み取りと device の間の時刻の順（BUG-142）、SYN_DROPPED、加速、touchpad の層と tap の tick（touchpad がある間 poll は 10ms まで）、touchpad の速さの端数、絶対の pointer は I。device の EOF・失敗は I が自分で外して ENDED、ENODEV は REVOKED を最後の event に）。
+- **M の側**（input.c）: `kwl_input_drain`（FIFO を順に当てる: mouse・keyboard の frame、touchpad の action、tablet・touch の report（M の record の `frame` に写して tablet.c・touch.c）、DETACHED）。位置は event の motion を M の見る位置に当て、warp の番号が今の物でなければ使わない（ボタン・key は配る）。`KWL POINTER output=` の log と dirty、`pointer_unmoved`、`pointer_event_us`、`input_ms`・`input_events` は M。device の record は M の物だけ（I の持ち物の `accel`・`pad`・`abs_x/y`・`discarding` を record から外し、I に渡す `reading` を足した）、`attached`・`closing`（最後の event まで record と path を残す）。`kwl_input_forget`・`kwl_input_pause`・`kwl_input_resume`・`kwl_input_detach_all`（session の pause）・`kwl_input_attach_all`（session の resume、seat が fd を残した device）。外しが上限を超えたら `KWL FAILED site=input-detach` で `_exit`。`kwl_input_sync`（毎 pass、poll の前に設定と出力の矩形）、`kwl_pointer_warp`・`kwl_pointer_warp_to`。
+- **warp**: `heads_evacuate`・`heads_windows_follow`（heads.c）、出力の大きさの clamp（output-switch.c）、pen tablet・touch screen の位置（tablet.c・touch.c）を受け箱の warp に。`kwl_pointer_relative` は無くした。`band_replay`・keyboard.c の一時の書き換えは M の見る位置だけ（変えていない）。
+- **main loop**: evdev の fd を poll しない。代わりに threads の wake pipe（`server->wake`）を poll し、空にしてから FIFO を取る。`kwl_input_tick` は I へ。終了は `kwl_input_threads_stop`（join）の後に `kwl_input_cleanup`。
+- **backend**: `backend-host.c` の pause・resume・gone・session の callback を上の関数に。`seat-logind-linux.c` の `seat_resume` は古い fd を callback の後に close（6.1 N-1 の保険）。
+- **計数**: `KWL PERF pass passes= pass_p99_us= pass_max_us=`（M の 1 pass の work）、`KWL PERF cursor box_writes= dropped= box_lag_p99_us= box_lag_max_us= box_lag_over= box_excess_p99_us= box_excess_max_us= box_gap_p99_us= box_gap_max_us=`（M が当てた motion ごと）、`KWL CURSOR_LAG event_us= write_us= lag_us=`（16.7ms 超え、5 秒の窓に 20 行まで）。C の present の計数は段 C で `KWL PERF cursor` に足す。`walk_max_us`・`vk_outside_max_us` は段 R。
+- 段 I の時点で cursor の plane の present は今どおり M（`server->pointer_x`）。受け箱を読む C は段 C。
+
+確かめ（host、2026-10-12）:
+- `sh plan/ws213/tests/input-thread-host-test.sh` → PASS（120 checks、plain と ThreadSanitizer）。1 歩ずつ: motion が M の取る前に受け箱に入る、motion→ボタン→motion の順、warp の後の相対の動きは warp の位置から・warp の前の motion は古い番号、設定と出力の矩形は次の report から、絶対の pointer は anchor に写し warp を進めない、外しの ack は I の pass の後で device の最後の event の後（ack の前の待ちは ETIMEDOUT）、外した番号を別の pipe に使い回しても読まない、EOF で ENDED、touchpad の tap の click が I から、押したままのボタンの release が DETACHED の前、touch screen の report の写し。thread: 本物の I と書き手の thread、3 つの device の 20000 report が全部 1 回ずつ順に届く、M の warp・設定・出力の変更と 40 回の外し・付け直し（外した番号を毒の pipe にして読まれないこと）、TSan の報告 0。
+- `cursor-due-host-test.sh` PASS（main の 2ef0688a8 で cursor-plane.c が `vkdemo_display_create_swapchain_exact` に変わったので stub の名前を直した）、`list-replay-host-test.sh` PASS。
+- build（warning 0）: rpi4・amd64（自分の worktree の `build/arm64`・`build/amd64`、`-o .../sysroot/.zedbsd-sysroot-complete`）、`make keiland-linux`。`style-check.py` で新しい file と触った input.c・main.c の指摘 0（試験の .c は p006 で）。
+- 未実施: Pi・T1。段 I だけでも Pi で `KWL PERF cursor` の box_lag を測れる（C が無いので画面の cursor は M の present のまま）。

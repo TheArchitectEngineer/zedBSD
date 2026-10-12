@@ -470,18 +470,18 @@ vkGetPhysicalDeviceDisplayPlanePropertiesKHR(
 }
 
 VkResult
-vkdemo_display_create_swapchain_usage(
+vkdemo_display_create_swapchain_exact(
 	VkPhysicalDevice physical,
 	VkDevice device,
 	uint32_t family,
 	struct vkdemo_display *display,
-	VkImageUsageFlags extra)
+	VkImageUsageFlags usage)
 {
 	(void)physical;
 	(void)device;
 	(void)family;
 	(void)display;
-	(void)extra;
+	(void)usage;
 
 	/* The scenes never reach it. */
 	abort();
