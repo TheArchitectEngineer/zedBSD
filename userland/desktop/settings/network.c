@@ -76,6 +76,8 @@ static void network_send(struct se_app *app, unsigned request, const char *ssid)
 static void network_message(struct se_app *app, int bad, const char *format, const char *ssid);
 static int network_page_shown(const struct se_app *app);
 static int network_page_lists(const struct se_app *app);
+static int network_seen(const struct se_app *app);
+static int network_state_same(const struct kl_network_state *old_state, const struct kl_network_state *new_state);
 static void network_scanning(struct se_app *app, int on);
 
 /*
@@ -139,11 +141,14 @@ se_network_poll(
 	uint64_t now)
 {
 	struct se_network *network;
+	struct kl_network_state state;
 	size_t count;
 	int addresses;
 	int agrees;
 	int shown;
+	int seen;
 	int lists;
+	int same;
 	int error;
 
 	/* Nothing to follow without the desktop's network. */
@@ -151,12 +156,16 @@ se_network_poll(
 	if (network->live == 0)
 		return;
 	shown = network_page_shown(app);
+	seen = network_seen(app);
 
-	/* A new state. */
+	/* A new state, drawn when it differs from the last and something on the screen shows it. */
 	if ((app->system_changed & KL_SYSTEM_CHANGED_NETWORK) != 0U) {
-		kl_system_network_get_state(app->system, &network->state);
+		kl_system_network_get_state(app->system, &state);
+		same = network_state_same(&network->state, &state);
+		network->state = state;
 		se_log("NETWORK state reachable=%u connected=%u kind=%u interface=%s wifi=%u ssid=%s", network->state.reachable, network->state.connected, network->state.kind, network->state.interface, network->state.wifi, network->state.ssid);
-		app->dirty = 1;
+		if (same == 0 && seen != 0)
+			app->dirty = 1;
 	}
 
 	/* The switch shows the state again once it agrees with what was asked, or a while after the answer (BUG-183). */
@@ -174,7 +183,8 @@ se_network_poll(
 		}
 	}
 
-	/* A new scan. */
+	/* A new scan (the compositor's own Wi-Fi menu may ask for them), drawn while a page lists the networks around. */
+	lists = network_page_lists(app);
 	if ((app->system_changed & KL_SYSTEM_CHANGED_SCAN) != 0U) {
 		count = kl_system_network_get_scan(app->system, network->scan, SE_NETWORK_SCAN);
 		if (count > SE_NETWORK_SCAN)
@@ -182,20 +192,21 @@ se_network_poll(
 		network->scan_count = count;
 		network->scan_received = 1;
 		se_log("NETWORK scan count=%lu", (unsigned long)network->scan_count);
-		app->dirty = 1;
+		if (lists != 0)
+			app->dirty = 1;
 	}
 
-	/* New details: a shown page is drawn again, and Home when an address changed. */
+	/* New details: a network page is drawn again (its activity moves), the other views only when an address changed. */
 	if ((app->system_changed & KL_SYSTEM_CHANGED_DETAILS) != 0U) {
 		addresses = network_take_details(app, now);
 		if (shown != 0)
 			app->dirty = 1;
-		if (addresses != 0 && app->page == SE_PAGE_HOME)
+		if (addresses != 0 && seen != 0)
 			app->dirty = 1;
 	}
 
-	/* The details again, once a second. */
-	if (network->details_id == 0U && now - network->details_at >= NETWORK_DETAILS_MS) {
+	/* The details again, once a second, while something on the screen shows them. */
+	if (seen != 0 && network->details_id == 0U && now - network->details_at >= NETWORK_DETAILS_MS) {
 		network->details_at = now;
 		error = kl_system_network_query_details(app->system, &network->details_id);
 		if (error != 0)
@@ -207,7 +218,6 @@ se_network_poll(
 		network_send_waiting(app);
 
 	/* Scans asked for while a page lists the networks around, and no longer when none does. */
-	lists = network_page_lists(app);
 	network_scanning(app, lists);
 }
 
@@ -254,25 +264,40 @@ se_network_result(
 /*
  * Reports how long the main loop may sleep before the network wants a
  * poll: a short while while a network page is shown, a request is
- * outstanding or one waits, else -1 (the idle limit).
+ * outstanding or one waits; until the details are asked again while
+ * another view shows an address (Home); else -1 (nothing is due).
  */
 int
 se_network_wait(
 	struct se_app *app)
 {
+	struct se_network *network;
+	uint64_t due;
 	int shown;
+	int seen;
 
 	/* Without the desktop's network nothing is due. */
-	if (app->network.live == 0)
+	network = &app->network;
+	if (network->live == 0)
 		return -1;
 
 	/* An answer awaited, a request waiting, or a page that shows the network. */
 	shown = network_page_shown(app);
-	if (shown != 0 || app->network.request != SE_NETWORK_NONE || app->network.pending_request != SE_NETWORK_NONE)
+	if (shown != 0 || network->request != SE_NETWORK_NONE || network->pending_request != SE_NETWORK_NONE)
 		return NETWORK_POLL_MS;
 
-	/* Nothing due. */
-	return -1;
+	/* Nothing on the screen shows the network, or the details' answer, which wakes the loop, is awaited. */
+	seen = network_seen(app);
+	if (seen == 0 || network->details_id != 0U)
+		return -1;
+
+	/* The details are asked again a second after the last asking. */
+	due = network->details_at + NETWORK_DETAILS_MS;
+	if (due <= app->now)
+		return 0;
+
+	/* Reports the wait until then. */
+	return (int)(due - app->now);
 }
 
 /*
@@ -831,6 +856,72 @@ network_page_shown(
 
 	/* No other page does. */
 	return 0;
+}
+
+/*
+ * Tells whether anything on the screen shows the network's state or
+ * addresses: a network page, Home's tiles, the Sharing page's address,
+ * or the Welcome.
+ */
+static int
+network_seen(
+	const struct se_app *app)
+{
+	int shown;
+
+	/* The network's own pages. */
+	shown = network_page_shown(app);
+	if (shown != 0)
+		return 1;
+
+	/* Home and Sharing show an address, and the Welcome the connection. */
+	if (app->page == SE_PAGE_HOME)
+		return 1;
+	if (app->page == SE_PAGE_SHARING)
+		return 1;
+	if (app->welcome != 0)
+		return 1;
+
+	/* No other view does. */
+	return 0;
+}
+
+/* Tells whether two states of the network say the same (a report that changes nothing needs no frame). */
+static int
+network_state_same(
+	const struct kl_network_state *old_state,
+	const struct kl_network_state *new_state)
+{
+	int differs;
+
+	/* The numbers. */
+	if (old_state->reachable != new_state->reachable)
+		return 0;
+	if (old_state->connected != new_state->connected)
+		return 0;
+	if (old_state->kind != new_state->kind)
+		return 0;
+	if (old_state->wifi != new_state->wifi)
+		return 0;
+
+	/* The interfaces' names. */
+	differs = strncmp(old_state->interface, new_state->interface, sizeof(old_state->interface));
+	if (differs != 0)
+		return 0;
+	differs = strncmp(old_state->wired, new_state->wired, sizeof(old_state->wired));
+	if (differs != 0)
+		return 0;
+	differs = strncmp(old_state->wifi_interface, new_state->wifi_interface, sizeof(old_state->wifi_interface));
+	if (differs != 0)
+		return 0;
+
+	/* The network the Wi-Fi is on or joining. */
+	differs = strncmp(old_state->ssid, new_state->ssid, sizeof(old_state->ssid));
+	if (differs != 0)
+		return 0;
+
+	/* Succeeded: nothing differs. */
+	return 1;
 }
 
 /* Tells whether a page that lists the networks around is shown (Network and Wi-Fi; Ethernet lists none). */

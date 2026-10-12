@@ -1609,6 +1609,7 @@ void fm_ui_forward(struct fm_app *app);
 void fm_ui_open(struct fm_app *app, int index);
 void fm_ui_message(struct fm_app *app, const char *message);
 int fm_ui_wait(struct fm_app *app);
+int fm_ui_due(struct fm_app *app, uint64_t now);
 
 /* The pointer and the keyboard (ui-input.c). */
 void fm_input_motion(struct fm_app *app, const struct fm_event *event);
@@ -1764,6 +1765,7 @@ int fm_image_thumbnail(const char *path, int side, struct kl_image *thumbnail);
 const struct kl_image *fm_thumb_get(struct fm_app *app, const char *path, time_t modified);
 int fm_thumb_tick(struct fm_app *app);
 int fm_thumb_busy(void);
+int fm_thumb_maker_free(void);
 void fm_thumb_release(struct fm_app *app);
 int fm_picture_begin(unsigned which, const char *path, int width, int height);
 int fm_picture_follow(unsigned which, struct kl_image *image, int *error);

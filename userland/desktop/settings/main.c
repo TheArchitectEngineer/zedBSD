@@ -50,8 +50,12 @@ extern char **environ;
 /* A frame that takes longer than this is logged, in milliseconds. */
 #define MAIN_SLOW_FRAME_MS	250U
 
-/* The longest the loop sleeps when nothing is due, in milliseconds (the minute About shows moves on). */
-#define MAIN_IDLE_MS		1000
+/*
+ * The longest single wait for a moment far ahead (the end of a long
+ * timeout), in milliseconds; the loop works the rest out again when it
+ * wakes.  With nothing due the loop waits without an end.
+ */
+#define MAIN_LONGEST_WAIT_MS	60000U
 
 /* How often a flight of the touch pad's scrolling moves, at the least (milliseconds, BUG-211). */
 #define MAIN_KINETIC_MS	8
@@ -125,7 +129,9 @@ static int main_loop(const struct main_options *options);
 static int main_frame(void);
 static void main_text_input(void);
 static int main_canvas_make(void);
-static int main_timeout(uint64_t now);
+static int main_timeout(uint64_t now, uint64_t deadline);
+static int main_until(uint64_t now, uint64_t moment);
+static int main_shorter(int limit, int wait);
 static void main_request(void);
 static int main_open_files(void);
 static void main_state_update(void);
@@ -423,6 +429,7 @@ main_loop(
 {
 	struct se_event event;
 	uint64_t started;
+	uint64_t deadline;
 	uint64_t now;
 	int inputs;
 	int taken;
@@ -447,12 +454,17 @@ main_loop(
 	/* The log line the tests wait for. */
 	se_log("READY width=%u height=%u glass=%d page=%s", main_present.extent.width, main_present.extent.height, main_app.glass, se_pages[main_app.page].word);
 
-	/* Each round: input, time, and a frame when something changed. */
+	/* The moment the run ends when a timeout was given (0: none). */
 	started = se_clock();
+	deadline = 0U;
+	if (options->timeout != 0U)
+		deadline = started + (uint64_t)options->timeout * 1000U;
+
+	/* Each round: input, time, and a frame when something changed. */
 	for (;;) {
 		/* Waits for the compositor, or until something is due. */
 		now = se_clock();
-		timeout = main_timeout(now);
+		timeout = main_timeout(now, deadline);
 		status = se_window_dispatch(&main_window, timeout);
 		if (status != 0) {
 			se_log("DONE reason=disconnected");
@@ -647,11 +659,20 @@ main_canvas_make(void)
 	return 0;
 }
 
-/* Reports how long the loop may sleep: not at all while a frame is due, else the idle limit. */
+/*
+ * Reports how long the loop may sleep: not at all while a frame is due,
+ * else until the first moment something is due (the end of the run among
+ * them), and for ever (-1) when nothing is.  The compositor's events (the
+ * desktop's reports among them) and a later start of Settings wake the
+ * wait whenever they come, and a held key's repeat shortens it within the
+ * application's library.
+ */
 static int
 main_timeout(
-	uint64_t now)
+	uint64_t now,
+	uint64_t deadline)
 {
+	int interface;
 	int network;
 	int sound;
 	int look;
@@ -669,44 +690,85 @@ main_timeout(
 	if (main_app.kinetic.flying != 0)
 		return MAIN_KINETIC_MS;
 
-	/* The idle limit, shortened while the network wants polls. */
-	limit = MAIN_IDLE_MS;
+	/* Nothing due yet: the wait has no end, except the end of the run when a timeout was given. */
+	limit = -1;
+	if (deadline != 0U)
+		limit = main_until(now, deadline);
+
+	/* The minute About shows. */
+	interface = se_ui_wait(&main_app, now);
+	limit = main_shorter(limit, interface);
+
+	/* While the network wants polls. */
 	network = se_network_wait(&main_app);
-	if (network >= 0 && network < limit)
-		limit = network;
+	limit = main_shorter(limit, network);
 
-	/* And while the sound holds something back, or its page follows audiod. */
+	/* While the sound holds something back, or its page follows audiod. */
 	sound = se_sound_wait(&main_app);
-	if (sound >= 0 && sound < limit)
-		limit = sound;
+	limit = main_shorter(limit, sound);
 
-	/* And while the Wallpaper page's small copies are being read, so each tile fills soon after its copy. */
+	/* While the Wallpaper page's small copies are being read, so each tile fills soon after its copy. */
 	look = se_look_wait(&main_app);
-	if (look >= 0 && look < limit)
-		limit = look;
+	limit = main_shorter(limit, look);
 
-	/* And while a folder or the Trash is counted or emptied (ws089-p023). */
+	/* While a folder or the Trash is counted or emptied (ws089-p023). */
 	storage = se_storage_wait(&main_app);
-	if (storage >= 0 && storage < limit)
-		limit = storage;
+	limit = main_shorter(limit, storage);
 
-	/* And while a reading of the computer is due or waited for (ws188-p002). */
+	/* While a reading of the computer is due or waited for (ws188-p002). */
 	machine = se_machine_wait(&main_app);
-	if (machine >= 0 && machine < limit)
-		limit = machine;
+	limit = main_shorter(limit, machine);
 
-	/* And while the Bluetooth page's scan is to be asked again (ws143-p006). */
+	/* While the Bluetooth page's scan is to be asked again (ws143-p006). */
 	bluetooth = se_bluetooth_wait(&main_app);
-	if (bluetooth >= 0 && bluetooth < limit)
-		limit = bluetooth;
+	limit = main_shorter(limit, bluetooth);
 
-	/* And while the popup's ring turns, or until it has been left alone too long (ws199-p001). */
+	/* While the popup's ring turns, or until it has been left alone too long (ws199-p001). */
 	dialog = se_dialog_wait(&main_app);
-	if (dialog >= 0 && dialog < limit)
-		limit = dialog;
+	limit = main_shorter(limit, dialog);
 
-	/* The limit (a held key's repeat shortens the wait within the application's). */
-	(void)now;
+	/* Reports the wait, -1 for one without an end. */
+	return limit;
+}
+
+/* Reports the milliseconds from now until a moment, at most MAIN_LONGEST_WAIT_MS; 0 for a moment already passed. */
+static int
+main_until(
+	uint64_t now,
+	uint64_t moment)
+{
+	uint64_t rest;
+
+	/* A moment passed is due at once. */
+	if (moment <= now)
+		return 0;
+
+	/* A long wait is cut short; the loop asks again when it wakes. */
+	rest = moment - now;
+	if (rest > MAIN_LONGEST_WAIT_MS)
+		rest = MAIN_LONGEST_WAIT_MS;
+
+	/* Reports the wait. */
+	return (int)rest;
+}
+
+/* Reports the shorter of two waits in milliseconds, where -1 is a wait without an end. */
+static int
+main_shorter(
+	int limit,
+	int wait)
+{
+	/* A wait without an end shortens nothing. */
+	if (wait < 0)
+		return limit;
+
+	/* Any wait shortens one without an end. */
+	if (limit < 0)
+		return wait;
+
+	/* Reports the shorter one. */
+	if (wait < limit)
+		return wait;
 	return limit;
 }
 

@@ -91,6 +91,8 @@ static int ui_kinetic_place(struct se_app *app, double position);
 static int ui_pane_scroll(const struct se_app *app, int pane, int *limit, int *height);
 static int ui_hit_rect(const struct se_app *app, unsigned kind, int index, struct kl_rect *rect);
 static void ui_damage_add(struct se_app *app, const struct kl_rect *rect);
+static void ui_redraw_region(struct se_app *app, unsigned kind, int index);
+static void ui_focus(struct se_app *app, int focused);
 static void ui_clear_rect(struct kl_canvas *canvas, const struct kl_rect *rect);
 static void ui_key(struct se_app *app, const struct se_event *event);
 static void ui_step_page(struct se_app *app, int direction);
@@ -185,10 +187,11 @@ se_ui_event(
 		ui_scroll_stop(app, event);
 		break;
 	case SE_EVENT_LEAVE:
-		/* Nothing is lit once the pointer is gone. */
+		/* Nothing is lit once the pointer is gone: only the region lit until now is drawn again. */
+		if (app->hover_kind != SE_HIT_NONE)
+			ui_redraw_region(app, app->hover_kind, app->hover_index);
 		app->hover_kind = SE_HIT_NONE;
 		app->hover_index = -1;
-		app->dirty = 1;
 		break;
 	case SE_EVENT_KEY:
 		ui_key(app, event);
@@ -202,8 +205,7 @@ se_ui_event(
 		break;
 	case SE_EVENT_FOCUS:
 		/* The chosen page's row is drawn in the accent only while the window has the focus. */
-		app->focused = event->focused;
-		app->dirty = 1;
+		ui_focus(app, event->focused);
 		break;
 	case SE_EVENT_ACTION:
 		se_ui_action(app, event->action);
@@ -292,6 +294,27 @@ se_ui_tick(
 	app->minute = minute;
 	if (app->page == SE_PAGE_ABOUT)
 		app->dirty = 1;
+}
+
+/*
+ * Reports how long the main loop may sleep for the interface's time, in
+ * milliseconds: until the next minute while About shows the time since
+ * the machine started, else -1 (nothing of the interface is due).
+ */
+int
+se_ui_wait(
+	const struct se_app *app,
+	uint64_t now)
+{
+	uint64_t into_minute;
+
+	/* Only About shows the time. */
+	if (app->page != SE_PAGE_ABOUT)
+		return -1;
+
+	/* Reports the rest of the minute now, when About is drawn again. */
+	into_minute = now % 60000U;
+	return (int)(60000U - into_minute);
 }
 
 /*
@@ -1841,6 +1864,68 @@ ui_damage_add(
 		app->hover_damage.y = grown.y;
 	app->hover_damage.width = right - app->hover_damage.x;
 	app->hover_damage.height = bottom - app->hover_damage.y;
+}
+
+/*
+ * Asks for one region of the last frame to be drawn again alone
+ * (BUG-226), or for the whole frame when the region is not in it.  A
+ * frame drawn whole anyway needs nothing more.
+ */
+static void
+ui_redraw_region(
+	struct se_app *app,
+	unsigned kind,
+	int index)
+{
+	struct kl_rect rect;
+	int found;
+
+	/* The whole frame is drawn anyway. */
+	if (app->dirty != 0)
+		return;
+
+	/* The region's place in the last frame. */
+	memset(&rect, 0, sizeof(rect));
+	found = ui_hit_rect(app, kind, index, &rect);
+
+	/* A region the last frame did not draw: the whole frame is drawn again. */
+	if (found == 0) {
+		app->dirty = 1;
+		return;
+	}
+
+	/* Only the region is drawn again. */
+	ui_damage_add(app, &rect);
+}
+
+/*
+ * Follows the window's keyboard focus.  The chosen page's row in the list
+ * is the only thing drawn differently with and without it (the accent, or
+ * grey), so only that row is drawn again, and nothing when the focus did
+ * not change or no row of the list shows the page.
+ */
+static void
+ui_focus(
+	struct se_app *app,
+	int focused)
+{
+	/* A focus the window already had changes nothing. */
+	if (focused == app->focused)
+		return;
+
+	/* The focus from now on, which the list's drawing reads. */
+	app->focused = focused;
+
+	/* Without the list of pages nothing shows the focus. */
+	if (app->show_sidebar == 0)
+		return;
+
+	/* Home has no row in the list. */
+	if (app->page == SE_PAGE_HOME)
+		return;
+
+	/* The chosen page's row is drawn again in its new colours. */
+	ui_redraw_region(app, SE_HIT_PAGE_ROW, (int)app->page);
 }
 
 /* Makes a rectangle of the canvas transparent (the glass shows through), within the canvas. */

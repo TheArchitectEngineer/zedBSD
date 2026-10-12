@@ -237,6 +237,26 @@ fm_thumb_busy(void)
 }
 
 /*
+ * Tells whether a maker is free to take a thumbnail asked for (the main
+ * loop then gives it one at once; with none free it waits for a child to
+ * end).
+ */
+int
+fm_thumb_maker_free(void)
+{
+	unsigned index;
+
+	/* Looks for a maker without a child. */
+	for (index = 0U; index < FM_THUMB_MAKERS; index++) {
+		if (!thumb_makers[index].running)
+			return 1;
+	}
+
+	/* Every maker is at work. */
+	return 0;
+}
+
+/*
  * Frees the kept thumbnails (the children still running are ended, and
  * what they wrote goes).
  */

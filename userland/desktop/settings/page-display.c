@@ -731,19 +731,47 @@ display_take(
 	struct kl_display displays[KL_DISPLAYS_MAX];
 	size_t count;
 	size_t slot;
+	unsigned mode;
 	int32_t x;
 	int32_t y;
 	int same;
+	int changed;
+	int differs;
 	int index;
 
-	/* The snapshot. */
+	/* The snapshot (cleared first, so that an unchanged one compares equal byte for byte). */
 	display = &app->display;
+	memset(displays, 0, sizeof(displays));
 	count = kl_system_displays_get(app->system, displays, KL_DISPLAYS_MAX);
+	if (count > KL_DISPLAYS_MAX)
+		count = KL_DISPLAYS_MAX;
+	mode = kl_system_displays_mode(app->system);
 	same = display_same_set(display, displays, count);
+
+	/*
+	 * The page is drawn again while it is shown, when the snapshot differs
+	 * from the last or the page itself asked for it (keep_draft 0: a
+	 * choice applied or put back).
+	 */
+	changed = 0;
+	if (count != display->count) {
+		changed = 1;
+	} else if (mode != display->mode) {
+		changed = 1;
+	} else {
+		differs = memcmp(display->displays, displays, count * sizeof(displays[0]));
+		if (differs != 0)
+			changed = 1;
+	}
+	if (keep_draft == 0)
+		changed = 1;
+	if (changed != 0 && app->page == SE_PAGE_DISPLAY)
+		app->dirty = 1;
+
+	/* The snapshot becomes the page's. */
 	memcpy(display->displays, displays, count * sizeof(displays[0]));
 	display->count = count;
-	display->mode = kl_system_displays_mode(app->system);
-	app->dirty = 1;
+	display->mode = mode;
 
 	/* The light shown, unless the user holds the slider. */
 	index = display_light_index(display);

@@ -280,9 +280,10 @@ void
 se_printers_poll(
 	struct se_app *app)
 {
-	/* A change. */
+	/* A change, drawn while the page shows the printers (the page reads them from the desktop as it draws). */
 	if ((app->system_changed & KL_SYSTEM_CHANGED_PRINTERS) != 0U) {
-		app->dirty = 1;
+		if (app->page == SE_PAGE_PRINTERS)
+			app->dirty = 1;
 		se_log("PRINTERS changed");
 	}
 }

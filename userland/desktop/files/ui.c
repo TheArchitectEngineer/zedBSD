@@ -76,6 +76,8 @@ static const char *ui_location_kind_name(unsigned kind);
 static void ui_leave(struct fm_tab *tab);
 static void ui_mark_cut(struct fm_tab *tab);
 static void ui_select_paths(struct fm_app *app, struct fm_tab *tab);
+static uint64_t ui_listing_digest(const struct fm_tab *tab);
+static uint64_t ui_digest_bytes(uint64_t digest, const void *bytes, size_t length);
 
 /*
  * Sets up the file manager: the home folder, the sidebar, one tab showing
@@ -287,6 +289,8 @@ fm_ui_tick(
 	struct fm_tab *tab;
 	struct fm_visit *visit;
 	struct stat status;
+	uint64_t before;
+	uint64_t after;
 	int made;
 	int error;
 
@@ -342,9 +346,17 @@ fm_ui_tick(
 	if (error != 0 || status.st_mtime == tab->listing.modified)
 		return;
 
-	/* Reads it again. */
+	/*
+	 * Reads it again, and draws it again only when its items or the cursor
+	 * differ from before: a file made and removed again (a hidden one, or
+	 * one the list does not show) moves the folder's time but nothing
+	 * shown.
+	 */
+	before = ui_listing_digest(tab);
 	fm_ui_reload(app, tab);
-	app->dirty = 1;
+	after = ui_listing_digest(tab);
+	if (after != before)
+		app->dirty = 1;
 }
 
 /*
@@ -674,18 +686,25 @@ fm_ui_message(
 
 /*
  * Reports how long the main loop may sleep before the file manager has
- * work again: 0 while a thumbnail, an operation or a search is waiting to
- * move on, a short while when a search is about to start, and -1 when
- * nothing waits (only input wakes it).
+ * work again: 0 while a thumbnail a free maker can take, an operation or
+ * a search is waiting to move on, a short while when a search is about to
+ * start or a child makes a picture, and -1 when nothing waits (only input
+ * wakes it).
  */
 int
 fm_ui_wait(
 	struct fm_app *app)
 {
 	int busy;
+	int free_maker;
 
-	/* A thumbnail asked for, an operation, a search walking or a checksum: no sleep. */
-	if (app->thumb_wanted[0][0] != '\0')
+	/*
+	 * A thumbnail asked for that a free maker can take: no sleep.  With
+	 * every maker at work the children are looked at below, every little
+	 * while, until one ends and takes the next.
+	 */
+	free_maker = fm_thumb_maker_free();
+	if (app->thumb_wanted[0][0] != '\0' && free_maker != 0)
 		return 0;
 
 	/* A thumbnail's child running (ws168-p004), or a picture's (ws177-p010): looked at again soon. */
@@ -730,6 +749,52 @@ fm_ui_wait(
 
 	/* Nothing waits. */
 	return -1;
+}
+
+/*
+ * Reports how long the main loop may sleep before fm_ui_tick has timed
+ * work, in milliseconds: the message shown runs out, or the folder shown
+ * is checked for changes (every two seconds).  Returns -1 when neither is
+ * due (only input and the file manager's work wake the loop).
+ */
+int
+fm_ui_due(
+	struct fm_app *app,
+	uint64_t now)
+{
+	const struct fm_visit *visit;
+	struct fm_tab *tab;
+	uint64_t earliest;
+	uint64_t check;
+
+	/* Nothing timed yet. */
+	earliest = UINT64_MAX;
+
+	/* The message shown, until it runs out. */
+	if (app->message[0] != '\0')
+		earliest = app->message_until;
+
+	/* The folder shown, checked two seconds after the last check. */
+	tab = fm_ui_tab(app);
+	visit = &tab->history[tab->history_index];
+	if (visit->location.kind == FM_LOCATION_FOLDER) {
+		check = tab->checked_at + 2000U;
+		if (check < earliest)
+			earliest = check;
+	}
+
+	/* Nothing timed. */
+	if (earliest == UINT64_MAX)
+		return -1;
+
+	/* Due already. */
+	if (earliest <= now)
+		return 0;
+
+	/* Reports the wait, at most a minute (the loop works it out again when it wakes). */
+	if (earliest - now > 60000U)
+		return 60000;
+	return (int)(earliest - now);
 }
 
 /*
@@ -1411,4 +1476,65 @@ ui_clear_rect(
 		row = canvas->pixels + (size_t)y * canvas->stride;
 		memset(row + left, 0, sizeof(row[0]) * (size_t)(right - left));
 	}
+}
+
+/*
+ * Works out a digest of what a tab's list shows: each item's name, kind,
+ * size and times, whether it is selected or cut, and the cursor.  Two
+ * readings of a folder with the same digest draw the same.
+ */
+static uint64_t
+ui_listing_digest(
+	const struct fm_tab *tab)
+{
+	const struct fm_entry *entry;
+	uint64_t digest;
+	size_t index;
+
+	/* FNV-1a's starting value, then the reading's outcome and the cursor. */
+	digest = ((uint64_t)0xcbf29ce4U << 32) | 0x84222325U;
+	digest = ui_digest_bytes(digest, &tab->listing.count, sizeof(tab->listing.count));
+	digest = ui_digest_bytes(digest, &tab->listing.error, sizeof(tab->listing.error));
+	digest = ui_digest_bytes(digest, &tab->cursor, sizeof(tab->cursor));
+
+	/* Each item as the list draws it. */
+	for (index = 0; index < tab->listing.count; index++) {
+		entry = &tab->listing.entries[index];
+		if (entry->name != NULL)
+			digest = ui_digest_bytes(digest, entry->name, strlen(entry->name) + 1U);
+		digest = ui_digest_bytes(digest, &entry->size, sizeof(entry->size));
+		digest = ui_digest_bytes(digest, &entry->mode, sizeof(entry->mode));
+		digest = ui_digest_bytes(digest, &entry->modified, sizeof(entry->modified));
+		digest = ui_digest_bytes(digest, &entry->changed, sizeof(entry->changed));
+		digest = ui_digest_bytes(digest, &entry->extra_time, sizeof(entry->extra_time));
+		digest = ui_digest_bytes(digest, &entry->folder, sizeof(entry->folder));
+		digest = ui_digest_bytes(digest, &entry->link, sizeof(entry->link));
+		digest = ui_digest_bytes(digest, &entry->child_count, sizeof(entry->child_count));
+		digest = ui_digest_bytes(digest, &entry->selected, sizeof(entry->selected));
+		digest = ui_digest_bytes(digest, &entry->cut, sizeof(entry->cut));
+	}
+
+	/* Reports the digest. */
+	return digest;
+}
+
+/* Folds bytes into an FNV-1a digest. */
+static uint64_t
+ui_digest_bytes(
+	uint64_t digest,
+	const void *bytes,
+	size_t length)
+{
+	const unsigned char *byte;
+	size_t index;
+
+	/* Each byte, then the FNV prime's multiplication. */
+	byte = bytes;
+	for (index = 0; index < length; index++) {
+		digest ^= (uint64_t)byte[index];
+		digest *= ((uint64_t)0x100U << 32) | 0x1b3U;
+	}
+
+	/* Reports the digest. */
+	return digest;
 }
