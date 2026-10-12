@@ -156,6 +156,7 @@ kwl_layers_tick(
 	VkResult result;
 	uint64_t now;
 	uint64_t key;
+	int ready;
 
 	/* Only with the pictures, the output, no frame in flight, in the glass look, with nothing else on the screen. */
 	compose = server->compose;
@@ -189,9 +190,14 @@ kwl_layers_tick(
 	/* The key made again: a picture that shows it already is kept. */
 	if (layers_home_current(server))
 		return 0;
+
+	/* The render thread is told a picture may be drawn; the walk waits for its ready (ws213-p004). */
+	ready = kwl_compose_want_layer(server);
+	if (!ready)
+		return 0;
 	key = kwl_home_picture_key(server);
 
-	/* Drawn into the list and submitted as a frame that presents nothing. */
+	/* Drawn into the list and given as a frame that presents nothing. */
 	kwl_compose_list_begin(compose);
 	layers_record_pass(server, &compose->list, KWL_LAYER_HOME, NULL, 0U);
 	result = kwl_compose_submit_quiet(server);

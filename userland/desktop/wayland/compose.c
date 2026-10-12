@@ -54,9 +54,17 @@ static const struct kwl_import *surface_image(const struct kwl_object *surface);
 static void compose_cursor(struct kwl_server *server, struct kwl_list *command);
 static VkResult compose_record(struct kwl_server *server, uint32_t image, struct kwl_object **windows, unsigned count, const VkRect2D *region);
 static int compose_region(struct kwl_server *server, uint32_t image, VkRect2D *region);
-static VkResult compose_replay(struct kwl_server *server, unsigned quiet);
 static void compose_walk_timed(struct kwl_server *server, uint64_t walk, uint64_t replay, unsigned quiet);
-static VkResult compose_submit(struct kwl_server *server, uint32_t image);
+static int compose_output_open_parked(struct kwl_server *server);
+static void compose_want(struct kwl_server *server, enum kwl_render_kind kind);
+static void compose_message(struct kwl_server *server, const struct kwl_render_message *message);
+static void compose_completed(struct kwl_server *server, const struct kwl_render_message *message);
+static void compose_frame_presented(struct kwl_server *server, const struct kwl_render_outcome *outcome);
+static VkResult compose_op_acquire_output(void *context, uint64_t timeout_ns, uint32_t *image, uint64_t *cycles, uint64_t *at_us);
+static VkResult compose_op_acquire_head(void *context, unsigned slot, uint32_t *image);
+static void compose_op_run(void *context, const struct kwl_render_job *job, struct kwl_render_outcome *outcome);
+static VkResult compose_op_wait(void *context, uint64_t timeout_ns);
+static VkResult compose_replay_commands(struct kwl_compose *compose);
 static void compose_hold(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 static void compose_log_draws(struct kwl_server *server);
 
@@ -148,6 +156,19 @@ kwl_compose_open(
 	result = kwl_host_image_batch_end(compose);
 	if (result != VK_SUCCESS) {
 		printf("KWL VULKAN_ERROR operation=setup-layout result=%d\n", (int)result);
+		return EIO;
+	}
+
+	/* The render thread, which draws the frames from now on (ws213-p004); it needs the threads' wake pipe. */
+	if (!server->threads_prepared) {
+		printf("KWL FAILED site=render-thread errno=%d\n", EINVAL);
+		return EIO;
+	}
+
+	/* The thread started. */
+	error = kwl_compose_render_start(server);
+	if (error != 0) {
+		printf("KWL FAILED site=render-thread errno=%d\n", error);
 		return EIO;
 	}
 
@@ -317,10 +338,6 @@ kwl_compose_output_open(
 	struct kwl_server *server)
 {
 	struct kwl_compose *compose;
-	uint64_t started;
-	VkResult result;
-	int readback;
-	unsigned scene_supported;
 	int error;
 
 	/* An open output needs nothing. */
@@ -328,7 +345,31 @@ kwl_compose_output_open(
 	if (compose->output_open)
 		return 0;
 
+	/* The render thread parked while the output's swapchain is made (ws213-p004). */
+	kwl_compose_park(server);
+	error = compose_output_open_parked(server);
+	kwl_compose_unpark(server);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: window mode owns the display through the swapchain. */
+	return 0;
+}
+
+/* Opens the output, the render thread parked (kwl_compose_output_open). */
+static int
+compose_output_open_parked(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+	uint64_t started;
+	VkResult result;
+	int readback;
+	unsigned scene_supported;
+	int error;
+
 	/* The surface, and the pass and pipelines for its format. */
+	compose = server->compose;
 	error = kwl_compose_output_prepare(server);
 	if (error != 0)
 		return error;
@@ -455,7 +496,13 @@ kwl_compose_output_close(
 		return;
 	}
 
-	/* The cursor thread stops before anything waits on the device, and its plane goes (ws213-p004). */
+	/*
+	 * The render thread parks after the frame in flight and forgets the
+	 * images it holds; the cursor thread stops; both before anything waits
+	 * on the device, and the cursor's plane goes (ws213-p004).
+	 */
+	kwl_compose_park(server);
+	kwl_compose_forget(server, 1U, (1U << KWL_HEADS) - 1U);
 	kwl_cursor_plane_close(server);
 
 	/* No frame may still use the swapchain's images. */
@@ -479,23 +526,30 @@ kwl_compose_output_close(
 	compose->output_open = 0;
 	printf("KWL OUTPUT closed\n");
 
+	/* Nothing is wanted without an output, and the render thread goes on. */
+	compose_want(server, KWL_RENDER_NONE);
+	kwl_compose_unpark(server);
+
 	/* Succeeded: the swapchain and OS display ownership are released. */
 	return;
 }
 
 /*
- * Draws one frame of window mode and presents it.  Returns 0 without
- * drawing while a frame is in flight or the output is closed.
+ * Draws one frame of window mode: the walk that writes its display list,
+ * given to the render thread, which records, submits and presents it
+ * (ws213-p004).  The render thread acquires the images first: until it is
+ * ready the frame is only wanted, and 0 is returned without drawing; so
+ * too while a frame is in flight or the output is closed.
  */
 int
 kwl_compose_draw(
 	struct kwl_server *server)
 {
 	struct kwl_object *windows[KWL_FRAME_WINDOWS];
+	struct kwl_render_job job;
 	struct kwl_compose *compose;
 	const VkRect2D *region_drawn;
 	VkRect2D region;
-	uint64_t mark;
 	uint64_t now;
 	uint32_t image;
 	unsigned count;
@@ -503,6 +557,7 @@ kwl_compose_draw(
 	unsigned missed;
 	unsigned popups;
 	unsigned subsurfaces;
+	unsigned index;
 	int partial;
 	unsigned cursor_id;
 	VkResult result;
@@ -510,6 +565,13 @@ kwl_compose_draw(
 	/* One frame at a time, and only with an output. */
 	compose = server->compose;
 	if (compose->in_flight || !compose->output_open || compose->output_lost)
+		return 0;
+
+	/* The frame is wanted; it is drawn once the render thread holds its images. */
+	kwl_compose_want_frame(server);
+	if (!compose->ready_valid ||
+	    compose->ready.want_kind != KWL_RENDER_FRAME ||
+	    compose->ready.number != compose->want_number)
 		return 0;
 
 	/* How long the frame pacing waited for the windows since the last frame was shown (ws211-p002 段 0). */
@@ -574,43 +636,14 @@ kwl_compose_draw(
 		server->pointer_accepted_us = 0U;
 	}
 
-	/* The next swapchain image (the wait for it is measured apart). */
-	mark = kwl_cycles();
-	result = vkAcquireNextImageKHR(compose->device, compose->output.swapchain, UINT64_MAX, compose->acquired, VK_NULL_HANDLE, &image);
-	server->perf.compose_acquire_cycles += kwl_cycles() - mark;
-
-	/* No image: the heads' windows are not drawn either. */
-	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-		compose->frame_heads = NULL;
-		compose->frame_head_count = 0U;
-	}
-
-	/* The display went (unplugged, or another generation): no frame until the output moves (ws113-p004a). */
-	if (result == VK_ERROR_SURFACE_LOST_KHR || result == VK_ERROR_OUT_OF_DATE_KHR) {
-		if (!compose->output_lost) {
-			printf("KWL OUTPUT lost operation=acquire result=%d\n", (int)result);
-			compose->output_lost = 1U;
-		}
-
-		/* No frame, and no failure. */
-		return 0;
-	}
-
-	/* Any other failure ends the compositor. */
-	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-		printf("KWL VULKAN_ERROR operation=acquire result=%d\n", (int)result);
-		return EIO;
-	}
-	if (server->log_frames)
-		printf("KWL LAT acquired frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
-
-	/* The heads' images the frame draws too (ws113-p004b); one that is not ready asks for another frame. */
-	missed = kwl_heads_acquire(server);
+	/* The output's image the render thread holds, and the heads' it holds (ws113-p004b); one that is not ready asks for another frame. */
+	image = compose->ready.held.output_image;
+	missed = kwl_heads_take(server, &compose->ready.held);
 
 	/* The part of the image to draw: all of it, or the damage it has missed (its buffer age). */
 	partial = compose_region(server, image, &region);
 
-	/* The frame's commands. */
+	/* The frame's display list. */
 	region_drawn = NULL;
 	if (partial)
 		region_drawn = &region;
@@ -620,35 +653,43 @@ kwl_compose_draw(
 	result = compose_record(server, image, windows, count, region_drawn);
 	server->home_progress_frozen = 0U;
 
-	/* The list into the frame's command buffers (ws213-p003). */
-	if (result == VK_SUCCESS)
-		result = compose_replay(server, 0U);
+	/* A list that could not grow is not given (the compositor's failure). */
+	if (result == VK_SUCCESS && compose->list.failed)
+		result = VK_ERROR_OUT_OF_HOST_MEMORY;
 	if (result != VK_SUCCESS) {
 		compose->scene.valid = 0U;
 		printf("KWL VULKAN_ERROR operation=record result=%d\n", (int)result);
 		kwl_heads_frame_skipped(server);
 		return EIO;
 	}
-	if (server->log_frames)
-		printf("KWL LAT recorded frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
 
-	/* Submitted and presented; the fence fd tells the event loop when it is done. */
-	mark = kwl_cycles();
-	result = compose_submit(server, image);
-	server->perf.compose_present_cycles += kwl_cycles() - mark;
-	if (result != VK_SUCCESS) {
-		compose->scene.valid = 0U;
-		printf("KWL VULKAN_ERROR operation=submit result=%d\n", (int)result);
-		return EIO;
+	/* The job: the output's image and every head's image held, all presented. */
+	memset(&job, 0, sizeof(job));
+	job.number = compose->ready.number;
+	job.kind = KWL_RENDER_FRAME;
+	job.output_image = image;
+	for (index = 0U; index < KWL_HEADS; index++) {
+		if (!compose->heads[index].in_frame)
+			continue;
+		job.heads[index] = 1U;
+		job.head_images[index] = compose->heads[index].image;
 	}
+
+	/* The list goes to the render thread: the frame is in flight until it completes; the want went down. */
+	compose->walk_cycles = kwl_cycles() - compose->walk_start_cycles;
+	compose->frame_bake = 0U;
+	compose->in_flight = 1;
+	compose->ready_valid = 0U;
+	compose->want_kind = KWL_RENDER_NONE;
+	kwl_render_answer(&compose->render, job.number, KWL_RENDER_ANSWER_LIST, &job);
 
 	/* The new images' layouts went with the frame. */
 	kwl_import_layouts_done(compose);
 
-	/* The CPU time of recording and submitting the frame. */
+	/* The CPU time of the main thread's part of the frame. */
 	server->perf.compose_draw_cycles += kwl_cycles() - compose->frame_start_cycles;
 
-	/* The frame holds what it sampled until its fence signals, the popups and sub-surfaces too. */
+	/* The frame holds what it sampled until it completes, the popups and sub-surfaces too. */
 	compose_hold(server, windows, all + popups + subsurfaces);
 	compose->frame_heads = NULL;
 	compose->frame_head_count = 0U;
@@ -658,6 +699,8 @@ kwl_compose_draw(
 	server->damaged = 0;
 	compose->scene.changed = 0U;
 	server->frame++;
+	compose->frame_number = server->frame;
+
 	/* The first frame after App Home or Wiseview was asked to open or close, logged once (C5, also without --log-frames). */
 	if (server->transition != NULL) {
 		now = kwl_milliseconds();
@@ -665,152 +708,104 @@ kwl_compose_draw(
 		       (unsigned long long)server->transition_ms, (unsigned long long)(now - server->transition_ms));
 		server->transition = NULL;
 	}
-	if (server->log_frames) {
+
+	/* The frame given. */
+	if (server->log_frames)
 		printf("KWL COMPOSE frame=%llu image=%u windows=%u at_ms=%llu\n", (unsigned long long)server->frame, image, count, (unsigned long long)kwl_milliseconds());
-		printf("KWL LAT submit frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)kwl_microseconds());
-		compose_log_draws(server);
-	}
 
 	/* Succeeded: one frame is in flight. */
 	return 0;
 }
 
 /*
- * Ends the frame in flight after its fence signaled: the buffers it
- * sampled are released (when nothing else holds them) and the frame
- * callbacks of the surfaces it showed are sent.
+ * Waits for the frame (or the layer's picture) in flight to complete and
+ * applies its completion (ws213-p004): the render thread waits for its
+ * fence; the main thread then releases the buffers it sampled and sends
+ * the frame callbacks.  Returns 0, or EIO when the frame failed.
  */
 int
 kwl_compose_complete(
 	struct kwl_server *server)
 {
 	struct kwl_compose *compose;
-	uint64_t elapsed;
-	unsigned index;
-	VkResult result;
 
-	/* Only a frame in flight completes. */
+	/* The render thread's messages until nothing is in flight. */
 	compose = server->compose;
-	if (!compose->in_flight)
-		return 0;
-
-	/* The fence fd has done its work. */
-	if (server->frame_fd >= 0) {
-		close(server->frame_fd);
-		server->frame_fd = -1;
+	while (compose->in_flight && compose->render_started) {
+		(void)kwl_render_wait_message(&compose->render, 1000U);
+		kwl_compose_poll(server);
 	}
 
-	/* The fence is signaled (the fd was readable, or the caller waits for it); it is reset for the next frame. */
-	result = vkWaitForFences(compose->device, 1U, &compose->fence, VK_TRUE, UINT64_MAX);
-	if (result == VK_SUCCESS)
-		result = vkResetFences(compose->device, 1U, &compose->fence);
-	if (result != VK_SUCCESS) {
-		compose->scene.valid = 0U;
-		printf("KWL VULKAN_ERROR operation=fence result=%d\n", (int)result);
+	/* A failed frame ended the compositor. */
+	if (server->failed)
 		return EIO;
-	}
 
-	/*
-	 * A layer's picture drawn (layer-cache.c): it presented nothing, held
-	 * nothing and told no client, so the frame's accounting stays as it was.
-	 */
-	if (compose->frame_bake) {
-		compose->frame_bake = 0U;
-		compose->in_flight = 0;
-		kwl_layers_complete(server, compose->frame_layers_generation);
-		return 0;
-	}
-
-	/* The pictures the frame drew in its own commands are taken (layer-cache.c). */
-	kwl_layers_complete(server, compose->frame_layers_generation);
-
-	/* Only confirmed command completion publishes the cursor-free captured scene. */
-	if (compose->scene.written)
-		compose->scene.valid = 1U;
-	compose->scene.written = 0U;
-
-	/* The sampled buffers, and the frame callbacks. */
-	for (index = 0; index < compose->held_count; index++)
-		kwl_buffer_put(compose->held[index]);
-	compose->held_count = 0;
-	kwl_callbacks_done(&compose->callbacks);
-	compose->in_flight = 0;
-
-	/* A test image's capture sends the frame it copied (shot.c, ws173-p002). */
-	kwl_shot_complete(server);
-	if (server->log_frames)
-		printf("KWL LAT shown frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)kwl_microseconds());
-
-	/* The time from the start of the frame to its completion (reported by KWL PERF). */
-	elapsed = kwl_cycles() - compose->frame_start_cycles;
-	server->perf.compose_frames++;
-	server->perf.compose_cycles += elapsed;
-
-	/* The next frame waits a moment for the windows this one told (half its time, 4 to 50 ms). */
-	server->frame_done_ms = kwl_milliseconds();
-	server->frame_wait_ms = (server->frame_done_ms - compose->frame_start_ms) / 2U;
-	if (server->frame_wait_ms < 4U)
-		server->frame_wait_ms = 4U;
-	if (server->frame_wait_ms > 50U)
-		server->frame_wait_ms = 50U;
-
-	/* Succeeded: the next frame may be drawn. */
+	/* Succeeded: no frame is in flight. */
 	return 0;
 }
 
 /*
- * Tells whether a frame is in flight whose fence has no fd, so the event
- * loop must ask its status (kwl_compose_poll) rather than poll an fd.
+ * Tells whether the event loop must ask a fence's status each pass: never
+ * since ws213-p004, as the render thread waits for the frames' fences and
+ * wakes the loop with their completions.
  */
 int
 kwl_compose_waiting(
 	struct kwl_server *server)
 {
-	/* Only window mode's frame without an exported fence. */
-	if (server->compose == NULL || !server->compose->in_flight || server->compose->fence_fd)
-		return 0;
-
-	/* Succeeded. */
-	return 1;
+	/* The render thread waits. */
+	(void)server;
+	return 0;
 }
 
 /*
- * Ends the frame in flight when its fence (without an fd) has signaled.
+ * Applies the render thread's messages in their order (ws213-p004): a
+ * ready is kept for the next walk (or cancelled when the want changed), a
+ * failed acquire is the output's loss or the compositor's failure, and a
+ * completion ends the frame in flight.  The event loop calls it each pass,
+ * after it emptied its wake pipe.
  */
 void
 kwl_compose_poll(
 	struct kwl_server *server)
 {
-	VkResult result;
-	int waiting;
+	struct kwl_render_message *messages;
+	struct kwl_render_message *message;
 
-	/* Nothing to ask. */
-	waiting = kwl_compose_waiting(server);
-	if (!waiting)
+	/* Nothing runs without the thread. */
+	if (server->compose == NULL || !server->compose->render_started)
 		return;
 
-	/* A signaled fence ends the frame; otherwise a later pass asks again. */
-	result = vkGetFenceStatus(server->compose->device, server->compose->fence);
-	if (result == VK_SUCCESS)
-		kwl_frame_done(server);
+	/* Each message, freed once applied. */
+	messages = kwl_render_take(&server->compose->render);
+	while (messages != NULL) {
+		message = messages;
+		messages = message->next;
+		compose_message(server, message);
+		free(message);
+	}
 }
 
 /*
  * Finishes the frame in flight now, waiting for it: before a client whose
- * buffers and callbacks it may hold is destroyed, and at exit.
+ * buffers and callbacks it may hold is destroyed, before the main thread
+ * uses the queue or waits for the device, and at exit.
  */
 void
 kwl_compose_quiesce(
 	struct kwl_server *server)
 {
+	uint64_t mark;
 	int error;
 
 	/* Without window mode, or without a frame in flight, nothing waits. */
 	if (server->compose == NULL || !server->compose->in_flight)
 		return;
 
-	/* The frame completes; a failure is the compositor's. */
+	/* The frame completes; a failure is the compositor's.  The wait counts as the main thread's Vulkan outside a walk. */
+	mark = kwl_cycles();
 	error = kwl_compose_complete(server);
+	kwl_perf_vk_outside(server, kwl_cycles() - mark);
 	if (error != 0) {
 		printf("KWL FAILED site=compose_poll errno=%d\n", error);
 		server->failed = 1;
@@ -832,10 +827,18 @@ kwl_compose_close(
 	if (compose == NULL)
 		return;
 
-	/* The frame in flight and the output first, then the arrow. */
+	/* The frame in flight completes, the render thread stops, then the output goes, then the arrow. */
+	(void)kwl_compose_complete(server);
+	if (compose->render_started) {
+		kwl_render_stop(&compose->render);
+		kwl_compose_poll(server);
+		kwl_render_destroy(&compose->render);
+		compose->render_started = 0U;
+	}
+
+	/* The device idle, then the output's objects. */
 	if (compose->device != VK_NULL_HANDLE)
 		(void)vkDeviceWaitIdle(compose->device);
-	(void)kwl_compose_complete(server);
 	kwl_compose_output_close(server);
 	kwl_arrow_destroy(server);
 	kwl_glass_close(server);
@@ -887,6 +890,196 @@ kwl_compose_close(
 	kwl_list_free(&compose->list);
 	free(compose);
 	server->compose = NULL;
+}
+
+/*
+ * Starts the render thread (ws213-p004), once the device and its objects
+ * are made: it waits for a want.
+ */
+int
+kwl_compose_render_start(
+	struct kwl_server *server)
+{
+	struct kwl_render_ops ops;
+	struct kwl_compose *compose;
+	int error;
+
+	/* Its Vulkan work, done by this file's operations on the compositor's objects. */
+	compose = server->compose;
+	memset(&ops, 0, sizeof(ops));
+	ops.acquire_output = compose_op_acquire_output;
+	ops.acquire_head = compose_op_acquire_head;
+	ops.run = compose_op_run;
+	ops.wait = compose_op_wait;
+	error = kwl_render_init(&compose->render, &ops, compose, server->wake[1]);
+	if (error != 0)
+		return error;
+
+	/* The thread. */
+	error = kwl_render_start(&compose->render);
+	if (error != 0) {
+		kwl_render_destroy(&compose->render);
+		return error;
+	}
+
+	/* Succeeded: frames are drawn through it. */
+	compose->render_started = 1U;
+	return 0;
+}
+
+/*
+ * Says a frame may be drawn (design 4.1): the render thread acquires its
+ * images (the output's, and the heads' the frame needs) ahead of the walk.
+ * Nothing is wanted while a frame is in flight is fine: the thread looks
+ * after the completion.
+ */
+void
+kwl_compose_want_frame(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+
+	/* Only with an output to draw. */
+	compose = server->compose;
+	if (compose == NULL || !compose->render_started || !compose->output_open || compose->output_lost)
+		return;
+
+	/* The frame. */
+	compose_want(server, KWL_RENDER_FRAME);
+}
+
+/*
+ * Says a layer's picture may be drawn (layer-cache.c), and tells whether
+ * the render thread is ready for it, so that its walk may begin now.
+ */
+int
+kwl_compose_want_layer(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+
+	/* Only with the thread. */
+	compose = server->compose;
+	if (compose == NULL || !compose->render_started)
+		return 0;
+
+	/* The picture wanted. */
+	compose_want(server, KWL_RENDER_LAYER);
+
+	/* Ready for it, or not yet. */
+	if (compose->ready_valid &&
+	    compose->ready.want_kind == KWL_RENDER_LAYER &&
+	    compose->ready.number == compose->want_number)
+		return 1;
+	return 0;
+}
+
+/*
+ * Parks the render thread while the main thread changes what it uses
+ * (the output's or a head's swapchain, design 4.8): it parks after the
+ * frame in flight, whose completion is applied here.  Parks nest; the
+ * thread goes on when the outermost ends.  A thread that does not park in
+ * time ends the compositor, as no Vulkan call is safe under it.
+ */
+void
+kwl_compose_park(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+	int error;
+
+	/* Only the outermost park waits. */
+	compose = server->compose;
+	if (compose == NULL || !compose->render_started)
+		return;
+	compose->park_depth++;
+	if (compose->park_depth > 1U)
+		return;
+
+	/* The thread's answer, or the end. */
+	error = kwl_render_park(&compose->render, 2000U);
+	if (error != 0) {
+		printf("KWL FAILED site=park errno=%d\n", error);
+		fflush(stdout);
+		_exit(1);
+	}
+
+	/* The frame completed before the park is applied now. */
+	kwl_compose_poll(server);
+}
+
+/*
+ * Ends a park: the render thread goes on when the outermost ends.
+ */
+void
+kwl_compose_unpark(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+
+	/* Only the outermost park ends the thread's. */
+	compose = server->compose;
+	if (compose == NULL || !compose->render_started || compose->park_depth == 0U)
+		return;
+	compose->park_depth--;
+	if (compose->park_depth != 0U)
+		return;
+
+	/* The thread steps again. */
+	kwl_render_unpark(&compose->render);
+}
+
+/*
+ * Forgets the images the parked render thread holds of swapchains about
+ * to be destroyed (the output's, and the heads' set in heads_mask): a
+ * ready held for them is cancelled, and the output's acquisition
+ * semaphore, which may be signalled for an image never used, is made
+ * again (design 4.2, review-3 M-5).
+ */
+void
+kwl_compose_forget(
+	struct kwl_server *server,
+	unsigned output,
+	unsigned heads_mask)
+{
+	struct kwl_compose *compose;
+	VkSemaphoreCreateInfo semaphore;
+	unsigned held_output;
+	VkResult result;
+
+	/* Only with the thread parked. */
+	compose = server->compose;
+	if (compose == NULL || !compose->render_started || compose->park_depth == 0U)
+		return;
+
+	/* Whether it held the output's image. */
+	pthread_mutex_lock(&compose->render.lock);
+
+	held_output = compose->render.held.output;
+
+	pthread_mutex_unlock(&compose->render.lock);
+
+	/* Forgotten. */
+	kwl_render_forget(&compose->render, output, heads_mask);
+
+	/* A ready for the images is answered with a cancel: the thread acquires again after the park. */
+	if (compose->ready_valid) {
+		kwl_render_answer(&compose->render, compose->ready.number, KWL_RENDER_ANSWER_CANCEL, NULL);
+		compose->ready_valid = 0U;
+	}
+
+	/* The output's acquisition semaphore made again when an image was acquired with it. */
+	if (!output || !held_output)
+		return;
+	vkDestroySemaphore(compose->device, compose->acquired, NULL);
+	compose->acquired = VK_NULL_HANDLE;
+	memset(&semaphore, 0, sizeof(semaphore));
+	semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	result = vkCreateSemaphore(compose->device, &semaphore, NULL, &compose->acquired);
+	if (result != VK_SUCCESS) {
+		printf("KWL VULKAN_ERROR operation=acquire-semaphore result=%d\n", (int)result);
+		server->failed = 1;
+	}
 }
 
 /* Creates the instance, picks the first device with a graphics queue, and creates the device. */
@@ -2802,73 +2995,6 @@ kwl_compose_cursor_source(
 }
 
 /*
- * Records the list a drawing wrote into the frame's command buffers
- * (ws213-p003): the copies of the host images it took into copy_command,
- * its vertices of the joined quads into the batch's vertex buffer, and its
- * operations into command.  The walk that wrote the list and this replay
- * are timed apart (KWL PERF walk; quiet says the drawing presents nothing).
- */
-static VkResult
-compose_replay(
-	struct kwl_server *server,
-	unsigned quiet)
-{
-	struct kwl_compose *compose;
-	VkCommandBufferBeginInfo begin;
-	uint64_t replay_start;
-	uint64_t walk;
-	VkResult result;
-
-	/* The walk ends where the replay starts. */
-	compose = server->compose;
-	replay_start = kwl_cycles();
-	walk = replay_start - compose->walk_start_cycles;
-
-	/* A list that could not grow is not replayed. */
-	if (compose->list.failed)
-		return VK_ERROR_OUT_OF_HOST_MEMORY;
-
-	/*
-	 * Beginning a command buffer resets it (its pool has
-	 * VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT), without a call of
-	 * its own (a round trip less under Venus, ws099-p002).
-	 */
-	memset(&begin, 0, sizeof(begin));
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	result = vkBeginCommandBuffer(compose->copy_command, &begin);
-	if (result != VK_SUCCESS)
-		return result;
-
-	/* The host images' copies, which run before the drawing in the same submission. */
-	compose->frame_copies = kwl_host_images_record(&compose->list, compose->copy_command);
-	result = vkEndCommandBuffer(compose->copy_command);
-	if (result != VK_SUCCESS)
-		return result;
-
-	/* The joined quads' vertices where the batch's draws read them: no frame is in flight. */
-	if (compose->list.vertex_used != 0U)
-		memcpy(compose->batch.map, compose->list.vertices, compose->list.vertex_used);
-
-	/* The drawing's command buffer begun afresh. */
-	result = vkBeginCommandBuffer(compose->command, &begin);
-	if (result != VK_SUCCESS)
-		return result;
-
-	/* The drawing's operations, in the order it wrote them. */
-	kwl_list_replay(&compose->list, compose->command);
-	result = vkEndCommandBuffer(compose->command);
-	if (result != VK_SUCCESS)
-		return result;
-
-	/* The walk and the replay, kept for the next KWL PERF walk. */
-	compose_walk_timed(server, walk, kwl_cycles() - replay_start, quiet);
-
-	/* Succeeded: the command buffers are ready to submit. */
-	return VK_SUCCESS;
-}
-
-/*
  * Keeps one drawing's walk and replay times and how many things it drew,
  * for the five seconds' KWL PERF walk (ws213-p003); a drawing past the
  * window's room is only counted.
@@ -2897,138 +3023,6 @@ compose_walk_timed(
 	perf->walk_things[slot] = kwl_list_things(&server->compose->list);
 	perf->walk_quiet[slot] = (uint8_t)quiet;
 	perf->walk_count++;
-}
-
-/* Submits the frame, presents it, and exports its fence as the fd the event loop polls. */
-static VkResult
-compose_submit(
-	struct kwl_server *server,
-	uint32_t image)
-{
-	struct kwl_compose *compose;
-	VkSemaphore waits[1U + KWL_HEADS];
-	VkPipelineStageFlags stages[1U + KWL_HEADS];
-	VkSemaphore signals[1U + KWL_HEADS];
-	VkSubmitInfo submit;
-	VkPresentInfoKHR present;
-	VkFenceGetFdInfoKHR fd_info;
-	VkCommandBuffer buffers[2];
-	unsigned wait_count;
-	unsigned signal_count;
-	VkResult result;
-	int fd;
-
-	/*
-	 * The commands wait for the acquired images (the output's, then the
-	 * heads', ws113-p004b) and signal their present semaphores.
-	 */
-	compose = server->compose;
-	waits[0] = compose->acquired;
-	stages[0] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
-	wait_count = 1U + kwl_heads_waits(server, waits + 1, stages + 1, KWL_HEADS);
-	signals[0] = compose->rendered[image];
-	signal_count = 1U + kwl_heads_signals(server, signals + 1, KWL_HEADS);
-	memset(&submit, 0, sizeof(submit));
-	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submit.waitSemaphoreCount = wait_count;
-	submit.pWaitSemaphores = waits;
-	submit.pWaitDstStageMask = stages;
-	submit.commandBufferCount = 1U;
-	submit.pCommandBuffers = &compose->command;
-
-	/*
-	 * Host images written up to now, the frame's own drawing included (a
-	 * glyph first drawn, a cursor shape first shown), reach their sampled
-	 * images in a command buffer that runs first in the same submission
-	 * (compose_replay recorded it).
-	 */
-	if (compose->frame_copies != 0U) {
-		buffers[0] = compose->copy_command;
-		buffers[1] = compose->command;
-		submit.commandBufferCount = 2U;
-		submit.pCommandBuffers = buffers;
-	}
-	submit.signalSemaphoreCount = signal_count;
-	submit.pSignalSemaphores = signals;
-	result = vkQueueSubmit(compose->queue, 1U, &submit, compose->fence);
-	if (result != VK_SUCCESS) {
-		kwl_heads_frame_skipped(server);
-		return result;
-	}
-
-	/* Separates the queue submission from the presentation in the per-frame lines. */
-	if (server->log_frames)
-		printf("KWL LAT queued frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
-
-	/* The image goes to the display after the commands. */
-	memset(&present, 0, sizeof(present));
-	present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	present.waitSemaphoreCount = 1U;
-	present.pWaitSemaphores = &compose->rendered[image];
-	present.swapchainCount = 1U;
-	present.pSwapchains = &compose->output.swapchain;
-	present.pImageIndices = &image;
-	result = vkQueuePresentKHR(compose->queue, &present);
-
-	/*
-	 * A move's first frame that the display refused (BUG-266: the display
-	 * could not be lit): the frame still completes, and the output goes
-	 * back to the display it left (output-switch.c) instead of the
-	 * compositor ending.
-	 */
-	if (compose->switch_proving &&
-	    (result == VK_ERROR_SURFACE_LOST_KHR ||
-	     result == VK_ERROR_OUT_OF_DATE_KHR ||
-	     result == VK_ERROR_DEVICE_LOST)) {
-		printf("KWL OUTPUT switch unshown name=%s result=%d\n", compose->display_name, (int)result);
-		compose->switch_proving = 0U;
-		compose->switch_failed = 1U;
-		if (!compose->output_lost)
-			compose->output_lost = 1U;
-		result = VK_SUCCESS;
-	}
-
-	/* A move's first frame presented: the move holds, and a result held back for it is answered. */
-	if (compose->switch_proving && (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR)) {
-		compose->switch_proving = 0U;
-		kwl_displays_move_settled(server, 0);
-	}
-
-	/* The display went: the frame still completes, and the output moves (ws113-p004a). */
-	if (result == VK_ERROR_SURFACE_LOST_KHR || result == VK_ERROR_OUT_OF_DATE_KHR) {
-		printf("KWL OUTPUT lost operation=present result=%d\n", (int)result);
-		if (!compose->output_lost)
-			compose->output_lost = 1U;
-		result = VK_SUCCESS;
-	}
-
-	/* The heads' images to their displays (ws113-p004b). */
-	kwl_heads_present(server);
-
-	/* Any other failure is the frame's. */
-	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-		return result;
-
-	/* Without an exported fence the event loop asks the fence's status each pass. */
-	if (!compose->fence_fd) {
-		compose->in_flight = 1;
-		return VK_SUCCESS;
-	}
-
-	/* The fence as an fd: the event loop learns of completion without waiting (design D3). */
-	memset(&fd_info, 0, sizeof(fd_info));
-	fd_info.sType = VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR;
-	fd_info.fence = compose->fence;
-	fd_info.handleType = kl_backend_gpu_frame_fence_type();
-	fd = -1;
-	result = compose->get_fence_fd(compose->device, &fd_info, &fd);
-	if (result != VK_SUCCESS)
-		return result;
-
-	/* Succeeded: the frame is in flight. */
-	server->frame_fd = fd;
-	compose->in_flight = 1;
-	return VK_SUCCESS;
 }
 
 /*
@@ -3066,69 +3060,43 @@ compose_log_draws(
 }
 
 /*
- * Submits the drawing written into the list since kwl_compose_list_begin
- * as a frame that presents nothing (a layer's picture, layer-cache.c): the
- * list is replayed, the host images written up to now are copied first, as
- * for a frame, and the fence is exported as the fd the event loop polls.
- * The caller sets frame_bake.
+ * Gives the drawing written into the list since kwl_compose_list_begin to
+ * the render thread as a layer's picture that presents nothing
+ * (layer-cache.c, ws213-p004): the host images written up to now are
+ * copied first, as for a frame.  The render thread must be ready for the
+ * layer (kwl_compose_want_layer).  The caller sets frame_bake.
  */
 VkResult
 kwl_compose_submit_quiet(
 	struct kwl_server *server)
 {
+	struct kwl_render_job job;
 	struct kwl_compose *compose;
-	VkSubmitInfo submit;
-	VkFenceGetFdInfoKHR fd_info;
-	VkCommandBuffer buffers[2];
-	VkResult result;
-	int fd;
 
 	/* The host images the drawing wrote, given to the list. */
 	compose = server->compose;
 	kwl_host_images_take(compose, &compose->list);
 
-	/* The list into the command buffers: the host images' copies, then the drawing. */
-	result = compose_replay(server, 1U);
-	if (result != VK_SUCCESS)
-		return result;
+	/* A list that could not grow is not given. */
+	if (compose->list.failed)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
 
 	/* The pictures it draws belong to this output's generation (layer-cache.c). */
 	compose->frame_layers_generation = compose->layers.generation;
 
-	/* No image is acquired and none is presented: nothing to wait for or signal. */
-	memset(&submit, 0, sizeof(submit));
-	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submit.commandBufferCount = 1U;
-	submit.pCommandBuffers = &compose->command;
-	if (compose->frame_copies != 0U) {
-		buffers[0] = compose->copy_command;
-		buffers[1] = compose->command;
-		submit.commandBufferCount = 2U;
-		submit.pCommandBuffers = buffers;
-	}
-	result = vkQueueSubmit(compose->queue, 1U, &submit, compose->fence);
-	if (result != VK_SUCCESS)
-		return result;
+	/* The job: no image is acquired and none is presented. */
+	memset(&job, 0, sizeof(job));
+	job.number = compose->ready.number;
+	job.kind = KWL_RENDER_LAYER;
 
-	/* Without an exported fence the event loop asks the fence's status each pass. */
-	if (!compose->fence_fd) {
-		compose->in_flight = 1;
-		return VK_SUCCESS;
-	}
-
-	/* The fence as an fd, as a frame's. */
-	memset(&fd_info, 0, sizeof(fd_info));
-	fd_info.sType = VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR;
-	fd_info.fence = compose->fence;
-	fd_info.handleType = kl_backend_gpu_frame_fence_type();
-	fd = -1;
-	result = compose->get_fence_fd(compose->device, &fd_info, &fd);
-	if (result != VK_SUCCESS)
-		return result;
+	/* In flight until it completes; the want went down. */
+	compose->walk_cycles = kwl_cycles() - compose->walk_start_cycles;
+	compose->in_flight = 1;
+	compose->ready_valid = 0U;
+	compose->want_kind = KWL_RENDER_NONE;
+	kwl_render_answer(&compose->render, job.number, KWL_RENDER_ANSWER_LIST, &job);
 
 	/* Succeeded: the drawing is in flight. */
-	server->frame_fd = fd;
-	compose->in_flight = 1;
 	return VK_SUCCESS;
 }
 
@@ -3209,4 +3177,537 @@ compose_hold(
 		*tail = surface->committed_callbacks;
 		surface->committed_callbacks = NULL;
 	}
+}
+
+/*
+ * Gives the render thread the want (design 4.1) when it changed: its kind,
+ * and for a frame the heads it needs now.  A ready held for an older want
+ * is answered with a cancel, so that the thread looks at the new one; the
+ * images it holds stay held.
+ */
+static void
+compose_want(
+	struct kwl_server *server,
+	enum kwl_render_kind kind)
+{
+	struct kwl_compose *compose;
+	unsigned heads[KWL_RENDER_HEADS];
+	unsigned count;
+	unsigned index;
+	unsigned same;
+	uint64_t number;
+
+	/* Nothing to tell without the thread. */
+	compose = server->compose;
+	if (!compose->render_started)
+		return;
+
+	/* The heads a frame needs now. */
+	memset(heads, 0, sizeof(heads));
+	count = 0U;
+	if (kind == KWL_RENDER_FRAME)
+		count = kwl_heads_wanted(server, heads, KWL_RENDER_HEADS);
+
+	/* Whether it is the want given last. */
+	same = 0U;
+	if (kind == compose->want_kind && count == compose->want_head_count) {
+		same = 1U;
+		for (index = 0U; index < count; index++) {
+			if (heads[index] != compose->want_heads[index])
+				same = 0U;
+		}
+	}
+
+	/* The same want as given: nothing to tell. */
+	if (same)
+		return;
+
+	/* The want, and its number. */
+	kwl_render_set_want(&compose->render, kind, heads, count, &number);
+	compose->want_kind = kind;
+	compose->want_number = number;
+	compose->want_head_count = count;
+	for (index = 0U; index < count; index++)
+		compose->want_heads[index] = heads[index];
+
+	/* A ready for another want is cancelled; one for this want (a new list of heads) is kept. */
+	if (compose->ready_valid && compose->ready.number != number) {
+		kwl_render_answer(&compose->render, compose->ready.number, KWL_RENDER_ANSWER_CANCEL, NULL);
+		compose->ready_valid = 0U;
+	}
+}
+
+/* Applies one message of the render thread. */
+static void
+compose_message(
+	struct kwl_server *server,
+	const struct kwl_render_message *message)
+{
+	struct kwl_compose *compose;
+	VkResult result;
+
+	/* By what it says. */
+	compose = server->compose;
+	switch (message->kind) {
+	case KWL_RENDER_READY:
+		/* A ready for a want no longer given is cancelled at once. */
+		if (message->number != compose->want_number || message->want_kind != compose->want_kind) {
+			kwl_render_answer(&compose->render, message->number, KWL_RENDER_ANSWER_CANCEL, NULL);
+			break;
+		}
+
+		/* Kept for the walk; the time of the acquire (KWL PERF compose, KWL LAT). */
+		compose->ready = *message;
+		compose->ready.next = NULL;
+		compose->ready_valid = 1U;
+		server->perf.compose_acquire_cycles += message->acquire_cycles;
+		if (server->log_frames && message->want_kind == KWL_RENDER_FRAME)
+			printf("KWL LAT acquired frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)message->acquired_us);
+
+		/* The loop draws at its next look. */
+		break;
+	case KWL_RENDER_ACQUIRE_FAILED:
+		/* The want went down with it. */
+		if (message->number == compose->want_number)
+			compose->want_kind = KWL_RENDER_NONE;
+
+		/* The display went (unplugged, or another generation): no frame until the output moves (ws113-p004a). */
+		result = message->result;
+		if (result == VK_ERROR_SURFACE_LOST_KHR || result == VK_ERROR_OUT_OF_DATE_KHR) {
+			if (!compose->output_lost) {
+				printf("KWL OUTPUT lost operation=acquire result=%d\n", (int)result);
+				compose->output_lost = 1U;
+			}
+
+			/* No failure. */
+			break;
+		}
+
+		/* Any other failure ends the compositor. */
+		printf("KWL VULKAN_ERROR operation=acquire result=%d\n", (int)result);
+		printf("KWL FAILED site=compose_draw errno=%d\n", EIO);
+		server->failed = 1;
+		break;
+	case KWL_RENDER_COMPLETED:
+		compose_completed(server, message);
+		break;
+	default:
+		break;
+	}
+}
+
+/*
+ * Ends the frame (or the layer's picture) in flight after the render
+ * thread completed it: the outcome of its presents, then the buffers it
+ * sampled are released (when nothing else holds them) and the frame
+ * callbacks of the surfaces it showed are sent.
+ */
+static void
+compose_completed(
+	struct kwl_server *server,
+	const struct kwl_render_message *message)
+{
+	const struct kwl_render_outcome *outcome;
+	struct kwl_compose *compose;
+	uint64_t elapsed;
+	unsigned index;
+	unsigned quiet;
+
+	/* The walk and the replay of the drawing (KWL PERF walk). */
+	compose = server->compose;
+	outcome = &message->outcome;
+	quiet = 0U;
+	if (message->want_kind == KWL_RENDER_LAYER)
+		quiet = 1U;
+	compose_walk_timed(server, compose->walk_cycles, outcome->replay_cycles, quiet);
+
+	/* A drawing that could not be recorded, submitted or waited for ends the compositor. */
+	if (outcome->result != VK_SUCCESS) {
+		compose->scene.valid = 0U;
+		compose->in_flight = 0;
+		compose->frame_bake = 0U;
+		kwl_heads_frame_skipped(server);
+		printf("KWL VULKAN_ERROR operation=submit result=%d\n", (int)outcome->result);
+		printf("KWL FAILED site=compose_draw errno=%d\n", EIO);
+		server->failed = 1;
+		return;
+	}
+
+	/* A frame's presents, its lines, and its part of the render thread's time. */
+	if (message->want_kind == KWL_RENDER_FRAME) {
+		compose_frame_presented(server, outcome);
+		server->perf.compose_present_cycles += outcome->run_cycles;
+	}
+
+	/*
+	 * A layer's picture drawn (layer-cache.c): it presented nothing, held
+	 * nothing and told no client, so the frame's accounting stays as it was.
+	 */
+	if (compose->frame_bake) {
+		compose->frame_bake = 0U;
+		compose->in_flight = 0;
+		kwl_layers_complete(server, compose->frame_layers_generation);
+		return;
+	}
+
+	/* The pictures the frame drew in its own commands are taken (layer-cache.c). */
+	kwl_layers_complete(server, compose->frame_layers_generation);
+
+	/* Only confirmed command completion publishes the cursor-free captured scene. */
+	if (compose->scene.written)
+		compose->scene.valid = 1U;
+	compose->scene.written = 0U;
+
+	/* The sampled buffers, and the frame callbacks. */
+	for (index = 0; index < compose->held_count; index++)
+		kwl_buffer_put(compose->held[index]);
+	compose->held_count = 0;
+	kwl_callbacks_done(&compose->callbacks);
+	compose->in_flight = 0;
+
+	/* A test image's capture sends the frame it copied (shot.c, ws173-p002). */
+	kwl_shot_complete(server);
+	if (server->log_frames)
+		printf("KWL LAT shown frame=%llu at_us=%llu\n", (unsigned long long)compose->frame_number, (unsigned long long)kwl_microseconds());
+
+	/* The time from the start of the frame to its completion (reported by KWL PERF). */
+	elapsed = kwl_cycles() - compose->frame_start_cycles;
+	server->perf.compose_frames++;
+	server->perf.compose_cycles += elapsed;
+
+	/* The next frame waits a moment for the windows this one told (half its time, 4 to 50 ms). */
+	server->frame_done_ms = kwl_milliseconds();
+	server->frame_wait_ms = (server->frame_done_ms - compose->frame_start_ms) / 2U;
+	if (server->frame_wait_ms < 4U)
+		server->frame_wait_ms = 4U;
+	if (server->frame_wait_ms > 50U)
+		server->frame_wait_ms = 50U;
+}
+
+/*
+ * Applies a completed frame's presents: a move's first frame proves the
+ * move or sends the output back (BUG-266), a display gone is lost, the
+ * heads' presents are applied, and the frame's lines go out.
+ */
+static void
+compose_frame_presented(
+	struct kwl_server *server,
+	const struct kwl_render_outcome *outcome)
+{
+	struct kwl_compose *compose;
+	VkResult result;
+
+	/* The render thread's times of the frame (KWL LAT, ws213-p001 11 節 4). */
+	compose = server->compose;
+	if (server->log_frames) {
+		printf("KWL LAT recorded frame=%llu at_us=%llu\n", (unsigned long long)compose->frame_number, (unsigned long long)outcome->recorded_us);
+		printf("KWL LAT queued frame=%llu at_us=%llu\n", (unsigned long long)compose->frame_number, (unsigned long long)outcome->queued_us);
+		printf("KWL LAT submit frame=%llu at_us=%llu\n", (unsigned long long)compose->frame_number, (unsigned long long)outcome->presented_us);
+		compose_log_draws(server);
+	}
+
+	/*
+	 * A move's first frame that the display refused (BUG-266: the display
+	 * could not be lit): the frame still completed, and the output goes
+	 * back to the display it left (output-switch.c) instead of the
+	 * compositor ending.
+	 */
+	result = outcome->present_result;
+	if (compose->switch_proving &&
+	    (result == VK_ERROR_SURFACE_LOST_KHR ||
+	     result == VK_ERROR_OUT_OF_DATE_KHR ||
+	     result == VK_ERROR_DEVICE_LOST)) {
+		printf("KWL OUTPUT switch unshown name=%s result=%d\n", compose->display_name, (int)result);
+		compose->switch_proving = 0U;
+		compose->switch_failed = 1U;
+		if (!compose->output_lost)
+			compose->output_lost = 1U;
+		result = VK_SUCCESS;
+	}
+
+	/* A move's first frame presented: the move holds, and a result held back for it is answered. */
+	if (compose->switch_proving && (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR)) {
+		compose->switch_proving = 0U;
+		kwl_displays_move_settled(server, 0);
+	}
+
+	/* The display went: the output moves (ws113-p004a). */
+	if (result == VK_ERROR_SURFACE_LOST_KHR || result == VK_ERROR_OUT_OF_DATE_KHR) {
+		printf("KWL OUTPUT lost operation=present result=%d\n", (int)result);
+		if (!compose->output_lost)
+			compose->output_lost = 1U;
+		result = VK_SUCCESS;
+	}
+
+	/* The heads' presents (ws113-p004b). */
+	kwl_heads_presented(server, outcome);
+
+	/* Any other failure of the present is the compositor's. */
+	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+		printf("KWL VULKAN_ERROR operation=present result=%d\n", (int)result);
+		printf("KWL FAILED site=compose_draw errno=%d\n", EIO);
+		server->failed = 1;
+	}
+}
+
+/*
+ * Acquires the output's next image for the render thread, waiting at most
+ * timeout_ns, with the acquire's time.  The output's swapchain and its
+ * acquisition semaphore change only while the thread is parked.
+ */
+static VkResult
+compose_op_acquire_output(
+	void *context,
+	uint64_t timeout_ns,
+	uint32_t *image,
+	uint64_t *cycles,
+	uint64_t *at_us)
+{
+	struct kwl_compose *compose;
+	uint64_t mark;
+	VkResult result;
+
+	/* The next image, and how long that took. */
+	compose = context;
+	mark = kwl_cycles();
+	result = vkAcquireNextImageKHR(compose->device, compose->output.swapchain, timeout_ns, compose->acquired, VK_NULL_HANDLE, image);
+	*cycles = kwl_cycles() - mark;
+	*at_us = kwl_microseconds();
+
+	/* Reports the acquire's result. */
+	return result;
+}
+
+/*
+ * Acquires a head's next image for the render thread, without waiting: the
+ * output's frame does not wait for another display.  A head closed since
+ * it was wanted is out of date.
+ */
+static VkResult
+compose_op_acquire_head(
+	void *context,
+	unsigned slot,
+	uint32_t *image)
+{
+	struct kwl_compose *compose;
+	struct kwl_head *head;
+	VkResult result;
+
+	/* The head, if it is still open (it changes only while the thread is parked). */
+	compose = context;
+	if (slot >= KWL_HEADS)
+		return VK_ERROR_OUT_OF_DATE_KHR;
+	head = &compose->heads[slot];
+	if (!head->open)
+		return VK_ERROR_OUT_OF_DATE_KHR;
+
+	/* Its next image now, or not ready. */
+	result = vkAcquireNextImageKHR(compose->device, head->output.swapchain, 0U, head->acquired, VK_NULL_HANDLE, image);
+
+	/* Reports the acquire's result. */
+	return result;
+}
+
+/*
+ * Records the list into the command buffers, submits it and presents the
+ * job's images, for the render thread (ws213-p004): the host images'
+ * copies first in the same submission; a frame waits for the acquired
+ * images (the output's, then the heads') and signals their present
+ * semaphores.  The outcome says what each step came to and when.
+ */
+static void
+compose_op_run(
+	void *context,
+	const struct kwl_render_job *job,
+	struct kwl_render_outcome *outcome)
+{
+	struct kwl_compose *compose;
+	struct kwl_head *head;
+	VkSemaphore waits[1U + KWL_HEADS];
+	VkPipelineStageFlags stages[1U + KWL_HEADS];
+	VkSemaphore signals[1U + KWL_HEADS];
+	VkSubmitInfo submit;
+	VkPresentInfoKHR present;
+	VkCommandBuffer buffers[2];
+	unsigned wait_count;
+	unsigned signal_count;
+	unsigned index;
+	uint64_t start;
+	VkResult result;
+
+	/* The list into the command buffers. */
+	compose = context;
+	memset(outcome, 0, sizeof(*outcome));
+	start = kwl_cycles();
+	result = compose_replay_commands(compose);
+	outcome->replay_cycles = kwl_cycles() - start;
+	outcome->recorded_us = kwl_microseconds();
+	outcome->present_result = VK_SUCCESS;
+	if (result != VK_SUCCESS) {
+		outcome->result = result;
+		return;
+	}
+
+	/* A frame waits for its acquired images and signals their present semaphores; a layer's picture for nothing. */
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	wait_count = 0U;
+	signal_count = 0U;
+	if (job->kind == KWL_RENDER_FRAME) {
+		waits[0] = compose->acquired;
+		stages[0] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
+		signals[0] = compose->rendered[job->output_image];
+		wait_count = 1U;
+		signal_count = 1U;
+		for (index = 0U; index < KWL_HEADS; index++) {
+			if (!job->heads[index])
+				continue;
+			head = &compose->heads[index];
+			waits[wait_count] = head->acquired;
+			stages[wait_count] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
+			wait_count++;
+			signals[signal_count] = head->rendered[job->head_images[index]];
+			signal_count++;
+		}
+	}
+
+	/* The waits and the signals. */
+	submit.waitSemaphoreCount = wait_count;
+	submit.pWaitSemaphores = waits;
+	submit.pWaitDstStageMask = stages;
+	submit.signalSemaphoreCount = signal_count;
+	submit.pSignalSemaphores = signals;
+
+	/*
+	 * Host images written up to now, the drawing's own included (a glyph
+	 * first drawn, a cursor shape first shown), reach their sampled images
+	 * in a command buffer that runs first in the same submission.
+	 */
+	submit.commandBufferCount = 1U;
+	submit.pCommandBuffers = &compose->command;
+	if (compose->frame_copies != 0U) {
+		buffers[0] = compose->copy_command;
+		buffers[1] = compose->command;
+		submit.commandBufferCount = 2U;
+		submit.pCommandBuffers = buffers;
+	}
+	result = vkQueueSubmit(compose->queue, 1U, &submit, compose->fence);
+	outcome->queued_us = kwl_microseconds();
+	if (result != VK_SUCCESS) {
+		outcome->result = result;
+		return;
+	}
+
+	/* A layer's picture presents nothing. */
+	if (job->kind != KWL_RENDER_FRAME) {
+		outcome->run_cycles = kwl_cycles() - start;
+		return;
+	}
+
+	/* The output's image goes to the display after the commands. */
+	memset(&present, 0, sizeof(present));
+	present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	present.waitSemaphoreCount = 1U;
+	present.pWaitSemaphores = &compose->rendered[job->output_image];
+	present.swapchainCount = 1U;
+	present.pSwapchains = &compose->output.swapchain;
+	present.pImageIndices = &job->output_image;
+	outcome->present_result = vkQueuePresentKHR(compose->queue, &present);
+
+	/* Each head's image to its display after the commands (ws113-p004b). */
+	for (index = 0U; index < KWL_HEADS; index++) {
+		if (!job->heads[index])
+			continue;
+		head = &compose->heads[index];
+		memset(&present, 0, sizeof(present));
+		present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+		present.waitSemaphoreCount = 1U;
+		present.pWaitSemaphores = &head->rendered[job->head_images[index]];
+		present.swapchainCount = 1U;
+		present.pSwapchains = &head->output.swapchain;
+		present.pImageIndices = &job->head_images[index];
+		outcome->heads[index] = 1U;
+		outcome->head_results[index] = vkQueuePresentKHR(compose->queue, &present);
+	}
+
+	/* The present's end, and the render thread's time of the job. */
+	outcome->presented_us = kwl_microseconds();
+	outcome->run_cycles = kwl_cycles() - start;
+}
+
+/*
+ * Waits at most timeout_ns for the job's fence, for the render thread; a
+ * signalled fence is reset for the next job.
+ */
+static VkResult
+compose_op_wait(
+	void *context,
+	uint64_t timeout_ns)
+{
+	struct kwl_compose *compose;
+	VkResult result;
+
+	/* The fence. */
+	compose = context;
+	result = vkWaitForFences(compose->device, 1U, &compose->fence, VK_TRUE, timeout_ns);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Reset for the next job. */
+	result = vkResetFences(compose->device, 1U, &compose->fence);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Succeeded: the job completed. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Records the list into the frame's command buffers, for the render thread
+ * (ws213-p003, p004): the copies of the host images it took into
+ * copy_command, its vertices of the joined quads into the batch's vertex
+ * buffer (no drawing is in flight), and its operations into command.
+ */
+static VkResult
+compose_replay_commands(
+	struct kwl_compose *compose)
+{
+	VkCommandBufferBeginInfo begin;
+	VkResult result;
+
+	/*
+	 * Beginning a command buffer resets it (its pool has
+	 * VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT), without a call of
+	 * its own (a round trip less under Venus, ws099-p002).
+	 */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	result = vkBeginCommandBuffer(compose->copy_command, &begin);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* The host images' copies, which run before the drawing in the same submission. */
+	compose->frame_copies = kwl_host_images_record(&compose->list, compose->copy_command);
+	result = vkEndCommandBuffer(compose->copy_command);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* The joined quads' vertices where the batch's draws read them. */
+	if (compose->list.vertex_used != 0U)
+		memcpy(compose->batch.map, compose->list.vertices, compose->list.vertex_used);
+
+	/* The drawing's command buffer begun afresh. */
+	result = vkBeginCommandBuffer(compose->command, &begin);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* The drawing's operations, in the order it wrote them. */
+	kwl_list_replay(&compose->list, compose->command);
+	result = vkEndCommandBuffer(compose->command);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Succeeded: the command buffers are ready to submit. */
+	return VK_SUCCESS;
 }

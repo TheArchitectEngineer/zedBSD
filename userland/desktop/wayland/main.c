@@ -961,6 +961,14 @@ event_loop(
 			return error;
 		}
 
+		/*
+		 * The threads' wake pipe is emptied before any of their queues is
+		 * taken this pass (the render thread's below, the input thread's
+		 * after), so a message queued later wakes the next poll (ws213-p004).
+		 */
+		if (descriptors[wake_slot].revents != 0)
+			wake_drain(server);
+
 		/* Accept at most one client per pass so existing streams retain service opportunity. */
 		error = 0;
 		if ((descriptors[0].revents & POLLIN) != 0)
@@ -983,12 +991,9 @@ event_loop(
 		/*
 		 * The input thread's reports are applied before clients are flushed,
 		 * so they leave in this pass, in the order the devices made them
-		 * (BUG-142, ws213-p004).  The wake pipe is emptied first, so a report
-		 * queued after the drain wakes the next poll.
+		 * (BUG-142, ws213-p004).
 		 */
 		part = kwl_cycles();
-		if (descriptors[wake_slot].revents != 0)
-			wake_drain(server);
 		kwl_input_drain(server);
 		server->perf.input_cycles += kwl_cycles() - part;
 
@@ -1196,6 +1201,20 @@ kwl_cycles(
 	/* Succeeded: the counter as one value. */
 	return ((uint64_t)high << 32) | low;
 #endif
+}
+
+/*
+ * Counts one piece of the main thread's Vulkan work outside a walk for
+ * KWL PERF pass's vk_outside_max_us (ws213-p004, the design's 6.4).
+ */
+void
+kwl_perf_vk_outside(
+	struct kwl_server *server,
+	uint64_t cycles)
+{
+	/* The longest of the window. */
+	if (cycles > server->perf.vk_outside_max_cycles)
+		server->perf.vk_outside_max_cycles = cycles;
 }
 
 /* Prints the loop's timing every five seconds and starts a new window. */
@@ -1486,7 +1505,9 @@ wake_drain(
 
 /*
  * Prints the window's passes (KWL PERF pass, ws213-p004): the longest
- * pass's work and the 99th percentile, in microseconds.  The passes' array
+ * pass's work and the 99th percentile, the longest walk of a drawing, and
+ * the longest Vulkan work of the main thread outside a walk, in
+ * microseconds.  The passes' array
  * is sorted in place; the window ends after the report.
  */
 static void
@@ -1495,6 +1516,7 @@ perf_pass_report(
 	double per_ms)
 {
 	uint64_t p99;
+	uint64_t walk_max;
 	uint32_t index;
 
 	/* No pass was counted. */
@@ -1508,11 +1530,20 @@ perf_pass_report(
 		index = perf->pass_count - 1U;
 	p99 = perf->pass_cycles[index];
 
+	/* The longest walk of the window's drawings. */
+	walk_max = 0U;
+	for (index = 0U; index < perf->walk_count; index++) {
+		if (perf->walk_cycles[index] > walk_max)
+			walk_max = perf->walk_cycles[index];
+	}
+
 	/* In microseconds. */
-	printf("KWL PERF pass passes=%u pass_p99_us=%.0f pass_max_us=%.0f\n",
+	printf("KWL PERF pass passes=%u pass_p99_us=%.0f pass_max_us=%.0f walk_max_us=%.0f vk_outside_max_us=%.0f\n",
 	    perf->pass_count,
 	    (double)p99 / per_ms * 1000.0,
-	    (double)perf->pass_max_cycles / per_ms * 1000.0);
+	    (double)perf->pass_max_cycles / per_ms * 1000.0,
+	    (double)walk_max / per_ms * 1000.0,
+	    (double)perf->vk_outside_max_cycles / per_ms * 1000.0);
 }
 
 /*

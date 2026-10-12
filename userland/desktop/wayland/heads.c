@@ -107,6 +107,7 @@ static int heads_save(const struct kwl_display_config *config);
 static void heads_mkdir(char *folder);
 static void heads_changed(struct kwl_server *server);
 static void heads_evacuate(struct kwl_server *server, unsigned slot);
+static void heads_sync_parked(struct kwl_server *server);
 static void heads_windows_follow(struct kwl_server *server, const struct kwl_plane_rect *before, unsigned leave);
 static void heads_pointer_evacuate(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
 static void heads_pointer_follow(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
@@ -174,6 +175,19 @@ kwl_heads_config_load(
  */
 void
 kwl_heads_sync(
+	struct kwl_server *server)
+{
+	/* The render thread parked, as the heads' swapchains change (ws213-p004). */
+	if (server->compose == NULL)
+		return;
+	kwl_compose_park(server);
+	heads_sync_parked(server);
+	kwl_compose_unpark(server);
+}
+
+/* Brings the heads in line with the displays, the render thread parked (kwl_heads_sync). */
+static void
+heads_sync_parked(
 	struct kwl_server *server)
 {
 	struct kwl_compose *compose;
@@ -330,22 +344,61 @@ kwl_heads_lost(
 }
 
 /*
- * Acquires an image of each head the frame draws: every head in the
- * mirror mode, an extended head that is to be drawn again.  An image not
- * ready now leaves the head to the next frame; a display gone marks the
- * head lost.  Returns how many extended heads missed the frame (another
- * frame is then wanted, ws113-p007).
+ * Lists the heads a frame needs now (open, shown, and changed or showing
+ * windows or the pointer), for the render thread's want (ws213-p004).
+ * Returns how many, at most room.
  */
 unsigned
-kwl_heads_acquire(
-	struct kwl_server *server)
+kwl_heads_wanted(
+	struct kwl_server *server,
+	unsigned *slots,
+	unsigned room)
+{
+	struct kwl_compose *compose;
+	struct kwl_head *head;
+	unsigned count;
+	unsigned index;
+	int needs;
+
+	/* Each open head the frame changes. */
+	compose = server->compose;
+	count = 0U;
+	for (index = 0U; index < KWL_HEADS && count < room; index++) {
+		head = &compose->heads[index];
+		if (!head->open || head->lost)
+			continue;
+		needs = heads_needs_frame(server, head);
+		if (!needs)
+			continue;
+
+		/* Wanted. */
+		slots[count] = index;
+		count++;
+	}
+
+	/* Succeeded: how many. */
+	return count;
+}
+
+/*
+ * Takes the heads' images the render thread holds into the frame being
+ * walked (ws213-p004, design 4.1): every held image is drawn and presented,
+ * also of a head that no longer needs a frame.  A head that needs one but
+ * has no image is drawn at a later frame (one is asked for in the extended
+ * mode); one whose acquire failed otherwise is lost.  Returns how many
+ * missed the frame.
+ */
+unsigned
+kwl_heads_take(
+	struct kwl_server *server,
+	const struct kwl_render_held *held)
 {
 	struct kwl_compose *compose;
 	struct kwl_head *head;
 	unsigned missed;
 	unsigned index;
-	int needs;
 	VkResult result;
+	int needs;
 
 	/* Each open head. */
 	compose = server->compose;
@@ -356,20 +409,21 @@ kwl_heads_acquire(
 		if (!head->open || head->lost)
 			continue;
 
-		/* Only a head the frame changes. */
+		/* An image held: drawn and presented in this frame. */
+		if (held->heads[index]) {
+			head->in_frame = 1U;
+			head->image = held->head_images[index];
+			continue;
+		}
+
+		/* Only a head the frame changes is missed. */
 		needs = heads_needs_frame(server, head);
 		if (!needs)
 			continue;
 
-		/* Its next image, without waiting: the output's frame does not wait for another display. */
-		result = vkAcquireNextImageKHR(compose->device, head->output.swapchain, 0U, head->acquired, VK_NULL_HANDLE, &head->image);
-		if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
-			head->in_frame = 1U;
-			continue;
-		}
-
-		/* Not ready: the next frame draws it (one is asked for, ws113-p007). */
-		if (result == VK_NOT_READY || result == VK_TIMEOUT) {
+		/* Not ready (or not asked yet): the next frame draws it (one is asked for, ws113-p007). */
+		result = held->head_results[index];
+		if (result == VK_SUCCESS || result == VK_NOT_READY || result == VK_TIMEOUT) {
 			head->dirty = 1U;
 			if (compose->display_mode == KWL_DISPLAYS_EXTENDED)
 				missed++;
@@ -417,97 +471,30 @@ kwl_heads_record(
 }
 
 /*
- * Lists the semaphores the frame's submission also waits for (each head's
- * acquire) with their stages.  Returns how many, at most `room`.
- */
-unsigned
-kwl_heads_waits(
-	struct kwl_server *server,
-	VkSemaphore *semaphores,
-	VkPipelineStageFlags *stages,
-	unsigned room)
-{
-	struct kwl_compose *compose;
-	unsigned index;
-	unsigned count;
-
-	/* Each head in the frame, while there is room. */
-	compose = server->compose;
-	count = 0U;
-	for (index = 0U; index < KWL_HEADS && count < room; index++) {
-		if (!compose->heads[index].in_frame)
-			continue;
-		semaphores[count] = compose->heads[index].acquired;
-		stages[count] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
-		count++;
-	}
-
-	/* Succeeded: the waits. */
-	return count;
-}
-
-/*
- * Lists the semaphores the frame's submission also signals (each head's
- * image's present semaphore).  Returns how many, at most `room`.
- */
-unsigned
-kwl_heads_signals(
-	struct kwl_server *server,
-	VkSemaphore *semaphores,
-	unsigned room)
-{
-	struct kwl_compose *compose;
-	unsigned index;
-	unsigned count;
-
-	/* Each head in the frame, while there is room. */
-	compose = server->compose;
-	count = 0U;
-	for (index = 0U; index < KWL_HEADS && count < room; index++) {
-		if (!compose->heads[index].in_frame)
-			continue;
-		semaphores[count] = compose->heads[index].rendered[compose->heads[index].image];
-		count++;
-	}
-
-	/* Succeeded: the signals. */
-	return count;
-}
-
-/*
- * Presents each head's image after the output's.  A display gone marks
- * the head lost; an extended head drawn is not drawn again until it
- * changes.
+ * Applies the presents of the heads' images the render thread made for a
+ * completed frame: an extended head shown is not drawn again until it
+ * changes; a display gone marks the head lost.
  */
 void
-kwl_heads_present(
-	struct kwl_server *server)
+kwl_heads_presented(
+	struct kwl_server *server,
+	const struct kwl_render_outcome *outcome)
 {
 	struct kwl_compose *compose;
 	struct kwl_head *head;
-	VkPresentInfoKHR present;
 	unsigned index;
 	VkResult result;
 
-	/* Each head in the frame. */
+	/* Each head the frame presented. */
 	compose = server->compose;
 	for (index = 0U; index < KWL_HEADS; index++) {
 		head = &compose->heads[index];
-		if (!head->in_frame)
-			continue;
 		head->in_frame = 0U;
-
-		/* Its image to its display after the commands. */
-		memset(&present, 0, sizeof(present));
-		present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-		present.waitSemaphoreCount = 1U;
-		present.pWaitSemaphores = &head->rendered[head->image];
-		present.swapchainCount = 1U;
-		present.pSwapchains = &head->output.swapchain;
-		present.pImageIndices = &head->image;
-		result = vkQueuePresentKHR(compose->queue, &present);
+		if (!outcome->heads[index] || !head->open)
+			continue;
 
 		/* Shown: an extended head waits for a change. */
+		result = outcome->head_results[index];
 		if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
 			head->dirty = 0U;
 			continue;
@@ -928,7 +915,12 @@ heads_close(
 	if (head->global != 0U)
 		kwl_output_global_remove(server, head->global);
 
-	/* No frame may still use its images. */
+	/*
+	 * No frame may still use its images: the render thread parks after the
+	 * frame in flight and forgets the image it holds of it (ws213-p004).
+	 */
+	kwl_compose_park(server);
+	kwl_compose_forget(server, 0U, 1U << (unsigned)(head - compose->heads));
 	(void)vkDeviceWaitIdle(compose->device);
 
 	/* Its objects, then the display given back once its swapchain is gone. */
@@ -938,9 +930,10 @@ heads_close(
 	vkdemo_display_close(compose->instance, compose->device, &head->output);
 	kwl_os_display_release(server, compose->physical, head->display);
 
-	/* Forgotten. */
+	/* Forgotten, and the render thread goes on. */
 	memcpy(name, head->name, sizeof(name));
 	memset(head, 0, sizeof(*head));
+	kwl_compose_unpark(server);
 	printf("KWL OUTPUT head closed name=%s\n", name);
 }
 
