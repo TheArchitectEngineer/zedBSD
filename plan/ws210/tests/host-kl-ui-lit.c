@@ -392,6 +392,29 @@ test_take_frame(
 	test_frame_parts(scene, parts, count);
 	test_same_as_whole(scene, "frame-capacity-pixels");
 
+	/*
+	 * A frame that draws no lighting in between (a field's key worked out
+	 * on a one-pixel canvas, review-1 M1) leaves the change to draw: the
+	 * row lit before must not stay lit.
+	 */
+	test_frame(scene, NULL);
+	(void)kl_ui_take_frame(scene->ui, parts, KL_FRAME_PARTS_MAX, &count);
+	(void)kl_ui_pointer_motion(scene->ui, TEST_ROW_X + 20, TEST_ROW_Y + 2 * TEST_ROW_HEIGHT + 15);
+	added.x = 0;
+	added.y = 0;
+	added.width = 1;
+	added.height = 1;
+	kl_ui_begin(scene->ui, scene->now);
+	(void)kl_ui_hit(scene->ui, 99U, 0U, &added);
+	(void)kl_ui_end(scene->ui, scene->now);
+	need = kl_ui_take_frame(scene->ui, parts, KL_FRAME_PARTS_MAX, &count);
+	passed = 0;
+	if (need != KL_FRAME_NONE)
+		passed = 1;
+	test_check(passed, "frame-after-key-frame", NULL);
+	test_frame(scene, NULL);
+	(void)kl_ui_take_frame(scene->ui, parts, KL_FRAME_PARTS_MAX, &count);
+
 	/* The whole window asked for. */
 	kl_ui_damage_whole(scene->ui);
 	need = kl_ui_take_frame(scene->ui, parts, KL_FRAME_PARTS_MAX, &count);

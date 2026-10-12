@@ -190,11 +190,12 @@ struct kl_ui {
 	struct ui_key hot;
 
 	/*
-	 * The widget lit when the frame shown was drawn (kl_ui_begin), and
-	 * whether the lit widget changed since (ws210-p014 F1): the part a
-	 * frame needs for the lighting is that widget and the one lit now,
-	 * whatever the pointer passed over in between, so a frame late behind
-	 * the pointer draws no trail of the rows it crossed.
+	 * The widget lit when the last frame that drew the lighting was drawn
+	 * (kl_ui_end, ui_settle_lighting), and whether the lit widget changed
+	 * since (ws210-p014 F1): the part a frame needs for the lighting is
+	 * that widget and the one lit now, whatever the pointer passed over in
+	 * between, so a frame late behind the pointer draws no trail of the
+	 * rows it crossed.
 	 */
 	struct ui_key drawn_hot;
 	int lit_pending;
@@ -333,6 +334,8 @@ static const struct ui_record *ui_find(const struct kl_ui *ui, double x, double 
 static int ui_damage_key(struct kl_ui *ui, const struct ui_key *key);
 static int ui_key_lights(const struct kl_ui *ui, const struct ui_key *key);
 static int ui_take_lighting(struct kl_ui *ui);
+static void ui_settle_lighting(struct kl_ui *ui);
+static int ui_drawing_has(const struct kl_ui *ui, const struct ui_key *key);
 static void ui_damage_rect(struct kl_ui *ui, const struct kl_rect *rect);
 static int ui_rects_near(const struct kl_rect *first, const struct kl_rect *second);
 static void ui_rect_union(struct kl_rect *into, const struct kl_rect *rect);
@@ -1010,11 +1013,9 @@ kl_ui_begin(
 	/* The fingers' selection's field has not been drawn in it yet (ws190-p002). */
 	ui->select.drawn = 0;
 
-	/* A frame drawn covers the changes of the lit widget so far, and is drawn with the widget lit now. */
+	/* A frame drawn covers the changes of the lit widget so far (the lighting's own is settled by kl_ui_end). */
 	ui->damage_count = 0;
 	ui->damage_whole = 0;
-	ui->drawn_hot = ui->hot;
-	ui->lit_pending = 0;
 }
 
 /*
@@ -1149,6 +1150,9 @@ kl_ui_end(
 
 	/* The fingers' selection's handles and bar over the frame, or its end (ws190-p002). */
 	ui_select_overlay(ui);
+
+	/* The lighting the frame was drawn with, when it drew the widgets concerned. */
+	ui_settle_lighting(ui);
 
 	/* The frame drawn is the one on the screen now. */
 	swap = ui->shown;
@@ -2444,6 +2448,58 @@ ui_take_lighting(
 
 	/* Reports whether the lighting changed. */
 	return lit;
+}
+
+/*
+ * Records the widget lit when the frame being ended was drawn (ws210-p014
+ * F1, review-1 M1): when it recorded the widget lit now, or, with none lit
+ * now, the widget lit when the frame before was drawn, it drew the
+ * lighting as it is now.  A frame that recorded neither (a field's key
+ * worked out on a one-pixel canvas) drew no lighting and changes nothing.
+ */
+static void
+ui_settle_lighting(
+	struct kl_ui *ui)
+{
+	int drew;
+
+	/* Whether the frame drew the widgets whose lighting it is about. */
+	drew = 0;
+	if (ui->hot.valid) {
+		drew = ui_drawing_has(ui, &ui->hot);
+	} else if (ui->drawn_hot.valid) {
+		drew = ui_drawing_has(ui, &ui->drawn_hot);
+	}
+
+	/* A frame that drew no lighting leaves the lighting's record as it was. */
+	if (!drew)
+		return;
+
+	/* The lighting drawn is the one now; nothing of it is waiting. */
+	ui->drawn_hot = ui->hot;
+	ui->lit_pending = 0;
+}
+
+/* Tells whether the frame being drawn recorded a widget (1) or not (0). */
+static int
+ui_drawing_has(
+	const struct kl_ui *ui,
+	const struct ui_key *key)
+{
+	size_t index;
+	int same;
+
+	/* Each widget the frame recorded. */
+	for (index = 0; index < ui->drawing_count; index++) {
+		if (ui->drawing[index].kind != UI_KIND_HIT)
+			continue;
+		same = ui_same(key, ui->drawing[index].id, ui->drawing[index].index);
+		if (same)
+			return 1;
+	}
+
+	/* Reports that it did not. */
+	return 0;
 }
 
 /*
