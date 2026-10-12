@@ -3,12 +3,12 @@
 # WS206: Raspberry Pi 4 の WiFi（BCM43455、SDIO）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p001 in-progress、設計の第 2 版、review 待ち）（2026-10-11 Q1 作成、P1 の予約の Queue。2026-10-13 p001 の設計の第 2 版、design-reviewer 待ち）
+Status: incomplete（p001 in-progress、設計の第 3 版、design-reviewer 待ち）（2026-10-11 Q1 作成、P1 の予約の Queue。2026-10-13 p001 の設計の第 2 版 → review → 第 3 版）
 Primary Milestone: MG005
 Related Milestones: —
 Parent: [Master](../master.md)
 Queue: [P1 の lane](../agents/P1/queue.md)
-Resume point: p001 の design-reviewer と E2・E4・E6 の回答の後、p002（SDIO）・p003（firmware の package）・p008（core の FullMAC）から。
+Resume point: p001 の第 3 版の design-reviewer と E2・E4・E6 の回答の後、p002a（GPIO・mailbox の GPIO の helper、ws215-p003 が依存）・p003（firmware の package）・p008（core の FullMAC の engine）から。p002b は BUG-295 の `rpi4-sdhci.c` の変更が main に入った後。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -27,16 +27,19 @@ Pi 4（10.0.30.2）の実機で、内蔵の BCM43455 の wlan0 が現れ（chip 
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 調査と設計（W1〜W14、E2・E4・E6 をユーザーへ） | in-progress（第 2 版、design-reviewer 待ち） | — |
-| p002 | SDHCI の register の層（SD card を移す、振る舞いは不変）、SDIO の層、GPIO・mailbox の GPIO の helper（WS215 と共有）、電源・clock・IRQ・claim。Pi で CMD5・CCCR・CIS、起動の回帰 | planned | p001 |
+| [p001](phase001/phase.md) | 調査と設計（W1〜W14、E2・E4・E6 をユーザーへ） | in-progress（第 3 版、design-reviewer 待ち） | — |
+| p002a | GPIO の helper（`rpi4-gpio.c`）と mailbox の GPIO の helper（`rpi4-firmware.c` に追記）、platform の初期化から GPIO の init、host の試験。**ws215-p003 がこれに依存**（名前と引数は p001 の W3） | planned | p001 |
+| p002b | SDIO の host（`rpi4-sdio-host.c`、独立の file）、SPI 126 の dispatcher（`rpi4-mmc-irq.c`）、`drv_rpi4_sdhci_base()` の追記、SDIO の card の層と probe、pin と電源。Pi で CMD5・CCCR・CIS、Pi と QEMU の起動の回帰 | planned | p002a、BUG-295 の `rpi4-sdhci.c` の変更が main に入った後 |
 | p003 | firmware の package `bcm43455-firmware` と license の監査 | planned | p001、E4 |
-| p004 | Broadcom の bring-up、SDPCM・BCDC・event、bus の thread、wlan0 の公開、値の出典の表 | planned | p002、p003 |
-| p005 | driver の radio の op（scan・connect・firmware の supplicant・data・link loss・restart） | planned | p004、p008 |
+| p004 | Broadcom の bring-up、SDPCM・BCDC・event、bus の thread と lock、wlan0 の公開と shutdown、値の出典の表 | planned | p002b、p003 |
+| p005 | driver の radio の op（scan の順、非同期の connect と firmware の supplicant、errno の表、data、link loss、restart） | planned | p004、p008 |
 | p006 | 実機の受け入れ（T1）: scan・WPA2・DHCP・ping・Settings、可能なら Bluetooth と同時 | planned | p005、E2 |
 | p007 | 規約の全文の見直しと値の出典の監査 | planned | p006 |
-| p008 | WLAN の core の FullMAC の形（kernel の内部の API）と host の試験（p004 と並べて進められる） | planned | p001 |
+| p008 | WLAN の core の FullMAC の engine（`wlan-fullmac.c`）と station の分岐（kernel の内部の API）と host の試験（p004 と並べて進められる、6〜8 LW） | planned | p001 |
 
-2026-10-13 P1: p001 の第 2 版で p004・p005 の中身を分け直し、core の FullMAC の部分を p008 として足した（番号は付け直さない）。
+2026-10-13 P1: p001 の第 2 版で p004・p005 の中身を分け直し、core の FullMAC の部分を p008 として足した（番号は付け直さない）。第 3 版で p002 を p002a（helper、WS215 と共有）と p002b（SDIO の host）に分けた（review-2 と Q1 の判断）。計 約 31〜33 LW。
+
+依頼（Q1 へ）: [WS215](../ws215/ws.md) の p003 の依存に ws206-p002a を足す。`plan/master-design-policy.md` の「WLAN protocol-state ownership」に FullMAC の方針（p001 の W6.3 の末尾）を記録する。
 
 ## 2026-10-11 ユーザー「推し通りです。」
 
