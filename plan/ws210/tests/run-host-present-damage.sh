@@ -11,3 +11,7 @@ mkdir -p "$(dirname "$out")"
 cc -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all -I. -Iuserland/desktop/include \
 	userland/desktop/libkeiland/ui/present-damage.c userland/desktop/libkeiland/ui/present-copy.c plan/ws210/tests/host-present-damage.c -o "$out"
 "$out"
+# ws210-p014: the trace of a window's frames (host-trace.c over userland/desktop/libkeiland/ui/trace.c, KL_TRACE_FRAMES=1).
+cc -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all -I. -Iuserland/desktop/include \
+	userland/desktop/libkeiland/ui/trace.c plan/ws210/tests/host-trace.c -o "$out-trace"
+"$out-trace"
