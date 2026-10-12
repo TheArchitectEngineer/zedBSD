@@ -85,6 +85,8 @@ struct mu_window {
 	int dirty;
 	int resized;
 	int moving;
+	int lit_changed;
+	unsigned buttons_held;
 	int glass_decided;
 	long quarter;
 	long logged;
@@ -548,9 +550,19 @@ mu_input(
 	 */
 	if (event->kind == KL_WINDOW_MOTION) {
 		taken = kl_ui_pointer_motion(music->ui, event->x, event->y);
-		if (taken)
+		if (taken && music->buttons_held != 0U)
 			music->dirty = 1;
+		else if (taken)
+			music->lit_changed = 1;
 		return;
+	}
+
+	/* The buttons held: a motion while one is held draws the whole window (a slider follows it). */
+	if (event->kind == KL_WINDOW_BUTTON) {
+		if (event->pressed)
+			music->buttons_held++;
+		else if (music->buttons_held != 0U)
+			music->buttons_held--;
 	}
 
 	/* The widgets' other input draws again. */
@@ -1205,21 +1217,38 @@ mu_draw(
 	uint64_t now_us)
 {
 	struct kl_glass_panel panels[MU_PANELS_MAX];
+	const struct kl_rect *present_part;
 	struct kl_event event;
+	struct kl_rect part;
 	size_t count;
+	int partial;
 	int status;
 	int error;
 	int taken;
 
 	/* Nothing changed and nothing moves: no frame. */
-	if (!music->dirty && !music->moving && !music->view.seek_pending)
+	if (!music->dirty && !music->moving && !music->view.seek_pending && !music->lit_changed)
 		return;
 
-	/* The view. */
+	/*
+	 * Only another widget lit: the frame is drawn and shown within the two
+	 * widgets' part alone, as Calendar does (BUG-226); a whole window for
+	 * each hover was a CPU frame on the Pi 4 (2026-10-12).
+	 */
+	partial = 0;
+	if (!music->dirty && !music->moving && !music->view.seek_pending && music->lit_changed)
+		partial = kl_ui_take_damage(music->ui, &part);
+	music->lit_changed = 0;
+
+	/* The view, within the part when there is one. */
 	music->dirty = 0;
+	if (partial)
+		kl_canvas_clip_push(&music->canvas, &part);
 	kl_ui_begin(music->ui, now_us);
 	mu_view_draw(&music->view, music->ui, &music->style, (int)music->width, (int)music->height, now_us);
 	music->moving = kl_ui_end(music->ui, now_us);
+	if (partial)
+		kl_canvas_clip_pop(&music->canvas);
 	kl_ui_window_text(music->ui, music->window);
 
 	/* The glass's panels for the frame; a compositor without glass leaves the window opaque from the next one. */
@@ -1234,8 +1263,11 @@ mu_draw(
 		}
 	}
 
-	/* The frame shown. */
-	status = kl_window_present(music->window, music->pixels, (size_t)music->width);
+	/* The frame shown, by the part alone when it was drawn so. */
+	present_part = NULL;
+	if (partial)
+		present_part = &part;
+	status = kl_window_present_part(music->window, music->pixels, (size_t)music->width, present_part);
 	if (status == EAGAIN)
 		music->resized = 1;
 
@@ -1264,7 +1296,7 @@ mu_wait(
 	int wait;
 
 	/* A frame due now, or a request waiting. */
-	if (music->dirty || music->view.request_count != 0U)
+	if (music->dirty || music->lit_changed || music->view.request_count != 0U)
 		return 0;
 
 	/* A widget moving. */
