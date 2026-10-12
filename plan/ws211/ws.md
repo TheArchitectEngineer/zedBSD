@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: P3（WS141 の Pi の直しの次）
-Resume point: p002（クロスフェード）・p003 段 1・p005 は main（Pi で確認中）。p006 はマウス移動の cursor の間隔の直し（main 1d9c9749e）。p007（dock・undock を窓の絵の拡大縮小に、configure はアニメの後）を実装（agent/p3 902a5feb2）、place16 で Pi の確認待ち（2026-10-12 P3）。
+Resume point: p002（クロスフェード）・p003（束ね）・p005（時計）の実装は main（Pi で確認中）。p006 はマウス移動の cursor の間隔の直し（main 1d9c9749e）。p007（dock・undock を窓の絵の拡大縮小に、configure はアニメの後）を実装（agent/p3 902a5feb2）、place16 で Pi の確認待ち（2026-10-12 P3）。
 <!-- awesome-plan-current:end -->
 
 ## 由来
