@@ -3,7 +3,7 @@
 # ws210-p014: libkeiland の frame の枠組み（lit の変化の damage、motion の合流と描き直しの取り消し、ペインの部品）
 
 Parent: [WS210](../ws.md)
-Status: in-progress（P1。[review-1](review-1.md) の後 Q1 の分け方（M7）で (a) merge 済み、(b) F1・F3 を直した。(c) F2 は設計の書き直し待ち、(d) F4 は保留）
+Status: in-progress（P1。(a)(b) と app の移行は merge 済み。(c) F2.1 と F2.2〜F2.6（Settings だけ、KL_VERSION 92）を実装、Pi の確認待ち。(d) F4 は保留）
 Phase disposition: normal
 Queue: [P1 の lane](../../agents/P1/queue.md)
 
@@ -213,6 +213,30 @@ if (due) {
   - 2026-10-12 7 つの app を `kl_ui_take_frame`・`kl_window_present_parts` に移した（music 3e2726cc2〜files 597dd899a → main c6348fba6）。
   - **(d)** F4 は保留。Music は不要（L1）。
   - **H5（受け入れの範囲）**: p014 の受け入れは「app の描く面積と frame の数」に限る。compositor の側の効果（wl_surface.damage と VkPresentRegionsKHR が外接の 1 つにまとめられる、wsi-swapchain.c:3304-3349・wsi-wayland.c:833-842）は、p013 と WSI の複数矩形の damage（別 WS、Q1 が判断）に回す。
+
+- 2026-10-12 Pi 4（place15）の log と F2.2〜F2.6 の着手（Q1、ユーザー「Settingsのサイドバー、改善なし」「右ペインのボタンも遅れます」「スクロールはうまく動いているので、マウスイベントと描画の蓄積の問題」）。
+  - log（Pi の `/tmp/kwl.log` と `/run/user/1000/session.log` を SSH で読んだだけ）:
+    - Settings の SLOW-FRAME（250ms 超だけが出る、14 行）: draw 112〜293ms、present 21〜184ms。present の内訳 acquire 0〜61ms（中央 約 6）、wait（GPU の copy の fence）0〜141ms（中央 約 22）、copy 0〜51ms。
+    - compositor（P3 の kwl-latency.py、387 frame）: fence 中央 65ms・p90 125ms、draw→shown 中央 85ms・p90 149ms、input→shown 中央 101ms・p90 268ms。compositor の 1 frame は 85〜150ms。
+    - 250ms 以下の frame（hover の部分の frame の多く）は log に出ないので、hover の 1 コマの時間・面積は直接は見えない（限り）。
+  - 判断（M5）: acquire・wait は 0 に近くない（acquire 最大 61ms は swapchain の image が全部 compositor 側にある印）。zedBSD の WSI は FIFO で、worker が前の commit の callback を待ってから commit する（wsi-wayland.c:774-845）。app は compositor（85〜150ms/frame）より速く hover の frame を出せるので、2〜3 枚が WSI に並び、並んだ frame の 1 枚ずつが古い lit を見せる。これが「描画の蓄積」と「軌跡が後から順に描かれる」。scroll は連続の変化なので古い frame が見えても目立たない。→ F2.2〜F2.6 に着手した（Settings だけ）。
+  - 実装（KL_VERSION 92）:
+    - `KL_PACING_FRAME`・`kl_window_frame_wait(window, now_us)`。`kl_window_present_parts`（SHM と Vulkan）が、present の前に `wl_surface_frame` を要求する（callback が無い時だけ）。状態の変化は ui/internal.h の純関数（`keiui_pacing_waits`・`keiui_pace_wait`・`keiui_pace_input`・`keiui_pace_ask`・`keiui_pace_shown`・`keiui_pace_clear`）、window.c はそれを呼ぶだけ。
+    - urgent（F2.3）: window_push で、待たせてよい物（MOTION・LEAVE・AXIS・TOUCH_MOTION・DROP_MOTION・DROP_ACTION・TABLET_MOTION・TABLET_HOVER）以外の kind は urgent。urgent は次の present で解ける。
+    - 待ち（F2.4）: callback が無い→0。callback を待つ間に 1 枚出した（overdue）→ -1（callback だけを待つ、何が来ても）。urgent → 0（1 回）。watchdog 1 秒 → 0（1 回）。他は watchdog までの ms（切り上げ）。副作用なし。
+    - 失敗: present が失敗（EAGAIN・EIO）したら、その present で要求した callback を destroy する（urgent は残す）。
+    - Settings（F2.2・F2.6）: `KL_PACING_MOTION | KL_PACING_FRAME` を申請（log `PACING motion=1 frame=1 errno=`）。main loop は「何か変わった」→ `kl_window_frame_wait` が 0 の時だけ settle と frame。0 でなければ何も消費しない（settle も dirty も残す）。main_timeout は frame の理由がある時、wait が 0 なら 0、正なら他の待ちと短い方、-1 なら他の待ちだけ（callback の done が poll を起こす）。
+    - 右の page の button・tile・control の hover も同じ settle と部分の frame に乗っているので、同じ pacing が効く（ユーザーの追加の報告）。
+    - SLOW-FRAME の閾値を 100ms に下げ、`parts=`（0 は全体）と `area=`（描いた画素数）を足した。次の Pi で hover の 1 コマを見るため。
+  - 設計からの違い（自分で review）:
+    - 第 3 版は「-1 は callback を待つ」だったが、overdue でない時は watchdog までの ms を返す（callback が来ない compositor でも 1 秒で 1 枚描ける。poll は done で起きる）。-1 は overdue の時だけ。
+    - callback の要求は `kl_window_present_parts` の中（p013 の commit の hook は未 merge）。p013 が入ったら hook に移す（M7）。
+    - SHM の EAGAIN（M4(a)）は callback を destroy するだけ。FRAME を申請する SHM の window は今は無い。
+    - max_fps は 0 のまま（F5 の後の版）。
+    - 保留が 10 秒続くと WSI が surface を失う問題（F2.5 (c)）は前からのまま。pacing は保留中の present を 1 枚に減らすだけ。
+    - Files・Music など他の app の申請（F2.7）はまだ。
+  - 試験: `run-host-kl-ui-lit.sh` 46 PASS（新規 18: pace-waits-*・pace-urgent-*・pace-idle・pace-moves-wait・pace-wait-pure・pace-watchdog・pace-overdue・pace-answered・pace-urgent-once・pace-not-shown）。build: rpi4・amd64 の libkeiland と settings が warning 0（-Werror）。`exports.py --check`、keiland-os-boundary PASS。Linux・FreeBSD の libkeiland の build は未実施。QEMU・Pi は未実施（Q1 が P3 の place16 に入れる）。
+  - Pi で見る所: Settings の左ペインと右の page の button を速く動かした時、止まった後に「通った行が順に光る」が無くなること。log の `ZSETTINGS PACING motion=1 frame=1 errno=0`、SLOW-FRAME の `parts`・`area`・acquire・wait。
 
 ## Phase の中の順
 

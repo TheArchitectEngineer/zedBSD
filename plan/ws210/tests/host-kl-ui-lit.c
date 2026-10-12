@@ -23,6 +23,11 @@
  * F2.1: a window's motion merges into the newest queued input only when
  * that is a motion of the same window (keiui_motion_merges).
  *
+ * F2.2-F2.4: a window that paces its frames (KL_PACING_FRAME) draws once
+ * the compositor took the last frame: the moves wait, anything else is
+ * drawn at once, once; the watchdog; a frame shown ahead makes the next
+ * wait for the callback; the question changes nothing (keiui_pace_*).
+ *
  * Prints "PASS name" or "FAIL name ..." for each check; exits with 1 when
  * one failed.
  */
@@ -31,6 +36,7 @@
 
 #include "internal.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,6 +79,7 @@ static void test_frame(struct test_scene *scene, const struct kl_rect *part);
 static void test_frame_parts(struct test_scene *scene, const struct kl_rect *parts, unsigned count);
 static void test_take_frame(struct test_scene *scene);
 static void test_motion_merges(void);
+static void test_pace(void);
 static int test_take(struct test_scene *scene, struct kl_rect *part);
 static void test_row(int index, struct kl_rect *row);
 static int test_contains(const struct kl_rect *outer, const struct kl_rect *inner);
@@ -233,6 +240,9 @@ main(
 
 	/* The motions merged (F2.1). */
 	test_motion_merges();
+
+	/* The frames paced (F2.2-F2.4). */
+	test_pace();
 
 	/* The result. */
 	kl_ui_destroy(scene.ui);
@@ -465,6 +475,87 @@ test_motion_merges(void)
 	test_check(merges == 0, "merge-not-other-window", NULL);
 	merges = keiui_motion_merges(KL_APP_THEME, window, KL_WINDOW_MOTION, window);
 	test_check(merges == 0, "merge-not-app-event", NULL);
+}
+
+/*
+ * Checks the pace of a window's frames (keiui_pacing_waits,
+ * keiui_pace_wait and the changes of keiui_pace): what waits, the wait
+ * while a frame is awaited, the watchdog, an input that does not wait,
+ * a frame shown ahead and a frame not shown.
+ */
+static void
+test_pace(void)
+{
+	struct keiui_pace pace;
+	int forget;
+	int first;
+	int second;
+	int wait;
+
+	/* The moves and the wheel wait; a button, a key, the focus, a resize, a post, a pen's touch and a wheel's stop do not. */
+	test_check(keiui_pacing_waits(KL_WINDOW_MOTION) == 1, "pace-waits-motion", NULL);
+	test_check(keiui_pacing_waits(KL_WINDOW_LEAVE) == 1, "pace-waits-leave", NULL);
+	test_check(keiui_pacing_waits(KL_WINDOW_AXIS) == 1, "pace-waits-axis", NULL);
+	test_check(keiui_pacing_waits(KL_WINDOW_BUTTON) == 0, "pace-urgent-button", NULL);
+	test_check(keiui_pacing_waits(KL_WINDOW_KEY) == 0, "pace-urgent-key", NULL);
+	test_check(keiui_pacing_waits(KL_WINDOW_FOCUS) == 0, "pace-urgent-focus", NULL);
+	test_check(keiui_pacing_waits(KL_WINDOW_RESIZE) == 0, "pace-urgent-resize", NULL);
+	test_check(keiui_pacing_waits(KL_WINDOW_POST) == 0, "pace-urgent-post", NULL);
+	test_check(keiui_pacing_waits(KL_WINDOW_TABLET_DOWN) == 0, "pace-urgent-tablet-down", NULL);
+	test_check(keiui_pacing_waits(KL_WINDOW_AXIS_STOP) == 0, "pace-urgent-axis-stop", NULL);
+
+	/* Nothing awaited: a frame now. */
+	memset(&pace, 0, sizeof(pace));
+	wait = keiui_pace_wait(&pace, 5000000U);
+	test_check(wait == 0, "pace-idle", NULL);
+
+	/* A frame shown with its callback at 1 s: the pointer's moves after it wait (merged into the next frame). */
+	keiui_pace_ask(&pace, 1000000U);
+	forget = keiui_pace_shown(&pace, 1, 0);
+	keiui_pace_input(&pace, KL_WINDOW_MOTION);
+	keiui_pace_input(&pace, KL_WINDOW_MOTION);
+	keiui_pace_input(&pace, KL_WINDOW_LEAVE);
+	wait = keiui_pace_wait(&pace, 1100000U);
+	test_check(forget == 0 && wait == 900, "pace-moves-wait", NULL);
+
+	/* The question changes nothing: the same answer twice, rounded up to a millisecond. */
+	first = keiui_pace_wait(&pace, 1999500U);
+	second = keiui_pace_wait(&pace, 1999500U);
+	test_check(first == 1 && second == 1, "pace-wait-pure", NULL);
+
+	/* The watchdog: a second without an answer, a frame anyway. */
+	wait = keiui_pace_wait(&pace, 2000000U);
+	test_check(wait == 0, "pace-watchdog", NULL);
+
+	/* That frame shown ahead of the awaited one: the next waits for the callback alone, whatever came. */
+	forget = keiui_pace_shown(&pace, 0, 0);
+	keiui_pace_input(&pace, KL_WINDOW_BUTTON);
+	wait = keiui_pace_wait(&pace, 9000000U);
+	test_check(forget == 0 && wait == -1, "pace-overdue", NULL);
+
+	/* The answer: a frame now. */
+	keiui_pace_clear(&pace);
+	wait = keiui_pace_wait(&pace, 9000000U);
+	test_check(wait == 0, "pace-answered", NULL);
+
+	/* A button while a frame is awaited: a frame at once, once (the next frame shown clears it). */
+	keiui_pace_ask(&pace, 10000000U);
+	forget = keiui_pace_shown(&pace, 1, 0);
+	keiui_pace_input(&pace, KL_WINDOW_BUTTON);
+	first = keiui_pace_wait(&pace, 10010000U);
+	forget = keiui_pace_shown(&pace, 0, 0);
+	second = keiui_pace_wait(&pace, 10020000U);
+	test_check(first == 0 && second == -1, "pace-urgent-once", NULL);
+
+	/* A frame not shown: the callback asked for with it is forgotten, and the input still asks. */
+	keiui_pace_clear(&pace);
+	keiui_pace_input(&pace, KL_WINDOW_KEY);
+	keiui_pace_ask(&pace, 20000000U);
+	forget = keiui_pace_shown(&pace, 1, EAGAIN);
+	if (forget)
+		keiui_pace_clear(&pace);
+	wait = keiui_pace_wait(&pace, 20000000U);
+	test_check(forget == 1 && wait == 0 && pace.urgent == 1, "pace-not-shown", NULL);
 }
 
 /* Takes the part the lighting needs drawn again; 0 when there is none (or the whole window). */
