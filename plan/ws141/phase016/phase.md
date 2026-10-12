@@ -3,7 +3,7 @@
 # ws141-p016: GPU の実行中に ioctl と cursor を止めない（worker の mutex、cursor の plane の GPU 無しの更新）
 
 Parent: [WS141](../ws.md)
-Status: planning（設計の第 4 版。[review-1](review-1.md)〜[review-3](review-3.md) と 2026-10-12 のユーザーの判断（列を app ごとに）を反映、review-4 の前）。(B) は第 5 版（[review-B4](review-B4.md) を反映、再 review の前）
+Status: planning（設計の第 4 版。[review-1](review-1.md)〜[review-3](review-3.md) と 2026-10-12 のユーザーの判断（列を app ごとに）を反映、review-4 の前）。(B) は第 6 版（[review-B5](review-B5.md) を反映、B-u を P2 が実装中）
 Phase disposition: normal
 Queue: P3（Q1 が割り当て、2026-10-12）
 
@@ -407,6 +407,109 @@ executor の pass ごとの 3 区分:
 3. animated の cursor を出す app が実機にあるか（無ければ S3 は host と試験の client だけ）。
 4. 未確認のまま: kernel が submit の外で group の image に書く経路（無いと見ているが source で網羅していない）、decoder が session ごとか全体か（G に効く）、hover・drag で client が cursor を変えるか（S2 の起き方）。
 
+## (B) 第 6 版（2026-10-12 P2、[review-B5](review-B5.md) と Q1 の判断を反映。B-u を実装する版）
+
+第 5 版の 1〜13 は、この節と食い違う所をこの節で置き換える。行番号は main 255efde24。
+
+### review-B5 への対応
+
+| 指摘 | 対応 | 節 |
+| --- | --- | --- |
+| 重大 1 (a) S1 は display_mutex の待ちで閾値を外す | Q1 の判断で B-u に入れる: `present_cursor_at` は lease 専用の cursor の lock（`lease->cursor_mutex`）だけを取り、display_mutex を取らない。`applied_ticket`・x・y と chain の frame・sequence はこの lock の下、`plane->frame` は atomic（primary の present は display_mutex の下で atomic に書く） | 3 |
+| 重大 1 (b) kernel の controller->mutex | 段 **B-k2**（kernel、「おそらく必要」）として設計だけ置く。今回は実装しない（kernel は P3 の範囲と重なるので Q1 が後で割り当てる） | 11 |
+| 重大 2 S2 は止まりを検出できない、S3 の depth は常に満たす | S2 は「形が変わった present の `call_ns` から、次に位置を反映した ioctl の `done_ns` まで」と「入力が続く間の `done_ns` の間隔」、S3 は ioctl の間隔と DROPPED の数。WS213 の copied の gate の変更の前後どちらで測ったかを書く。上限は Q1 の判断で直接（G の p99 ≤ 16.7ms、S2・S3 の呼び出し→ioctl の p99 ≤ 33.4ms） | 8 |
+| 中 3 EBUSY の再試行が動かない | `display_wait_native` を使わない。待ちは refresh_millihz からの nanosleep、回数で latch しない。新しい ticket が出る（`surface->cursor_ticket` が自分より大きい）か上限の 1 秒で DROPPED（error にしない）。fast path から渡す job は「native だけ」の印で、worker は `vulkan_fences_wait` を飛ばす。fast path の判断は `job->info`・indices の写し（`wsi-swapchain.c:534-545`）の後 | 3、4 |
+| 中 4 H-b の payload_mutex 案の穴 | 文だけ直す: 分類の時に「消費予約」の印を付け、受理で確定、拒否で戻す。B-u には入れない | 4 |
+| 中 5 時刻の分解能 1ms | 長さは counter（arm64 は `cntvct_el0`÷`cntfrq_el0`、EL0VCTEN は `locore.S:66-69` で有効。他の arch は CLOCK_MONOTONIC）。CLOCK_MONOTONIC は compositor の log と対にする絶対時刻 `call_ns` だけ | 7 |
+| 軽微 (u1) 「SET・MOVE の ioctl だけ」は不成立 | fast path でも `present_prepare`→`swapchain_current`→`display_capabilities`→`vulkan_wsi_display_refresh` の `GPU_DISPLAY_QUERY` が 2 回以上ある（kernel の `output_query` は mutex を取らない、`wsi.c` の `wsi_mutex` は短い）。fixture の期待値は「QueueSubmit も worker も通らない、SET・MOVE が 1 回ずつ」に直す | 9、10 |
+| 軽微 §9 と §3 の EBUSY の受け渡しの矛盾 | EBUSY の job の lane への公開は swapchain_mutex だけで、queue->mutex は要らない（GPU の仕事が無く、queue の submit との順序が無い。drain は worker の list で見える） | 9 |
+| 軽微 command buffer の表が `struct vulkan_image *` を直に持つ | valid usage に頼る: 記録した image が破棄された command buffer は invalid で、submit は VUID-vkQueueSubmit-pCommandBuffers-00070 違反。handle も pointer の bit（`objects.c:345`）なので handle で持っても同じ。表は Begin・reset で空にし、受理の時にだけ辿る | 5 |
+| 軽微 条件 5 に binary semaphore の temporary import | zedBSD の libvulkan に semaphore の import は無い（`vkImportSemaphoreFdKHR` 無し、external は fence だけ）。判定は `queue_write_waits` と同じ規則（`software_signaled`、同じ semaphore の 2 回目は native）で、重複は fast path にしない | 4 |
+
+### 1. cursor の lane（第 5 版の 1 のまま）
+
+- 第 5 版の 1 のとおり。lane の判定は `job->count == 1`、`surface->cursor`、`gpu_present`。
+
+### 2. ticket（第 5 版の 2 を置き換え）
+
+- 番号の出所は **surface**（`struct vulkan_surface` の `cursor_ticket`、atomic）。surface は oldSwapchain の旧と新の chain で共有され、lease と 1 対 1（`surface->platform_private`）なので、第 5 版の lease の `next_ticket` と同じ順になる。WSI が platform を呼ばずに「新しい ticket が出たか」を読めるので、EBUSY の再試行の打ち切り（3）に使える。
+- 取る所は 1 か所: `present_reserve` の swapchain_mutex の区間、cursor の lane の job を PRESENTING にした直後。`applied_ticket` は lease（cursor_mutex の下）。
+- 予約の後の失敗で番号に穴が空くのは害が無い（大小だけを比べる）。FIFO の例外（cursor の plane だけ古い present を捨てる）は第 5 版の 2 のまま。
+
+### 3. display の op（第 5 版の 3 を置き換え）
+
+- platform の op `present_cursor(lease, image, has_position, x, y, ticket, &frame, &sequence, &outcome, times)`（第 5 版の `present_cursor_at`）。旧来の `position` の op は無くす（cursor の chain だけが使っていた）。
+- lock: **lease の `cursor_mutex`** の 1 区間（display_mutex は取らない）。区間の中で読む物: `lease->identifier`・`generation`・`plane->connection->fd`・`image->imported`（どれも lease と image が生きている間は変わらない。lease は chain の `pending_jobs` が、image は chain が持つ）、`plane->frame`（atomic の load）。書く物: `applied_ticket`、lease の x・y、chain の frame・sequence（cursor の chain ではこの op だけが書く）。
+  1. `ticket <= applied_ticket` → `DROPPED`、何も書かない。
+  2. `*frame == UINT64_MAX` → device lost。
+  3. 位置: `has_position` なら (x, y)、無ければ lease の前の位置。
+  4. `CURSOR_SET`、成功なら `CURSOR_MOVE`。
+  5. SET が EBUSY → `BUSY`（error にしない、何も書かない）。SET の他の失敗 → error、何も書かない。SET の成功の後の MOVE の失敗 → `applied_ticket = ticket`、位置は変えず error。両方の成功 → `applied_ticket = ticket`、位置を更新、`(*frame)++`、`*sequence = plane->frame`、`SHOWN`。
+- `times` が NULL でなければ（log が有効）、cursor_mutex を取れた時・SET の直前・MOVE の後の counter を書く。
+- primary の present（`display_present_image_sync`）は `plane->frame` を display_mutex の下で `__atomic_store_n` で書く（読みは今どおり display_mutex の下）。`display_release_native` の `CURSOR_HIDE` は lease の参照が 0 の時だけで、その時に op を呼ぶ chain は無い。
+- **EBUSY の再試行**（中 3）: op を呼ぶ関数（WSI の `present_cursor_show`）は、worker の中でだけ再試行する。BUSY なら refresh_millihz（surface の mode、0 なら 60Hz）の 1 周期を `nanosleep` で待ち、同じ ticket で op をやり直す。打ち切り: `surface->cursor_ticket > ticket`（新しい present が出た、それが見せる）か、最初の BUSY から 1 秒 → DROPPED（成功、error を latch しない）。kernel の `cursor_owner` の EBUSY（lease がこの open の物でない、永続）も同じく 1 秒で DROPPED になるが、その時は primary の present も失敗して chain が閉じる。
+- fast path で BUSY なら、同じ job（予約と wait の消費は済み、GPU の仕事は無い）に `native_only` の印を付けて cursor の lane に公開する（swapchain_mutex の下だけ、9）。worker は `native_only` の job では `present_early`・`vulkan_fences_wait` を飛ばし、上の再試行で op を出す。lane の worker が作れなければ chain の error に latch する（OOM は device lost）。
+- fast path は op を呼ぶ直前に `chain->error`・`device->error`・`context->error` を atomic で読み直す（第 5 版のまま）。op の失敗は chain の error に latch し、その present の結果としても返す（同期なので）。OOM は device lost。
+
+### 4. fast path（第 5 版の 4 を置き換え）
+
+- 位置: `present_prepare` と indices の写しの後、`present_worker_get` の前。
+- 条件（全部）: (1) cursor の lane で `results[0] == VK_SUCCESS`、platform に `present_cursor` がある (2) application の usage（`imageUsage`）が TRANSFER_DST・TRANSFER_SRC だけ（作成の時に chain に印） (3) pNext が `VkDisplayPresentInfoKHR`・`VkPresentRegionsKHR` だけ (4) swapchain_mutex の下で `presentation[i].copied_valid`、`copied_serial == content_serial`、`copied_epoch == content_epoch` (5) device->mutex の下で wait の semaphore が重複なしで全部 `software_signaled`、device の status も成功 → 全部を消費（`software_signaled = VK_FALSE`）。1 つでも満たさなければ何も消費しない。
+- (1)〜(4) が成り立ち (5) が成り立たない → 通常経路で copy を記録しない（空の command buffer、path=empty）。(1)〜(3) のどれかか (4) が成り立たない → 通常経路で copy（path=worker）。
+- 成り立てば: error の見直し → op（何の mutex も持たない）→ `job->submitted = VK_TRUE` で `present_finish` → log。BUSY は 3 のとおり lane へ。
+- 4 と 5 の間で中身が変わらない理由と lock の順は第 5 版の 4 のまま。
+- **H-b**（文だけ、B-u には入れない、中 4）: payload 専用の lock にする時は、`queue_attempt` の分類（`queue_write_waits`）で payload に「消費予約」の印を付け（他の分類はそれを software と見ない）、受理で `software_signaled = VK_FALSE` と印の解除、拒否・再試行で印だけ戻す。分類から消費までの round trip の間 device->mutex を持たなくても、同じ payload を 2 つの submit（または submit と fast path）が消費しない。
+
+### 5. 中身の記録（第 5 版の 5 に足す）
+
+- 置き場は新しい file `content.c`（command buffer の表への記録・secondary の合算・空にする・受理の時の加算）。generator（`tools/maintain-commands.noct`）は固定の表の 6 command の記録の終わりに `vulkan_content_note_image(command, <dstImage か image>)`、`vkCmdExecuteCommands` に `vulkan_content_note_secondaries(command, commandBufferCount, pCommandBuffers)` を出し、6 つが全部見つかったことを確かめる（見つからなければ生成を止める）。
+- 表は Begin と `command_buffer_initial`（reset・pool の reset）で空。記すのは `swapchain_owned` の image だけ。表の pointer は受理の時にだけ辿る（valid usage、上の表）。
+- 加算は `queue_attempt` の受理の分岐（device->mutex の下）で、sparse でない時に submit の全 command buffer の表を辿る。
+
+### 6. 追い越しが安全な理由（第 5 版の 6 に足す）
+
+- (vi) cursor_mutex は lease ごとで、display_mutex と入れ子にしない（op は display_mutex を取らず、display_mutex を持つ所は cursor_mutex を取らない）。新しい lock の辺は無い。
+
+### 7. log（第 5 版の 7 を置き換え）
+
+- 環境変数 `VULKAN_ZEDBSD_CURSOR_LOG=1` を cursor の swapchain の作成の時に 1 回読み、chain に印を持つ（device ではなく chain。device.c を変えない）。
+- 書式: `VK CURSOR ticket=<n> path=fast|worker|empty|busy result=<VkResult> outcome=shown|dropped|busy image=<i> x=<x> y=<y> depth=<lane の待ちの数> call_ns=<CLOCK_MONOTONIC の絶対> mutex=<ns> queue=<ns> publish=<ns> fence=<ns> lock=<ns> set=<ns> done=<ns> retries=<n>`。`call_ns` の後は全部 counter の長さで、`mutex`・`queue` は lock の待ちの長さ、`publish`〜`done` は呼び出しからの経過（無い所は 0）。`lock` は cursor_mutex を取れた時（第 5 版の `display_ns`）。
+- 時刻は log が有効な時だけ取る（無効なら counter も clock も読まない）。
+
+### 8. 受け入れ B（第 5 版の 8 を置き換え）
+
+- 分担・場面（App Home 5 回、drag 10 秒、Music・Settings の起動）は第 5 版のまま。閾値は 16.7ms（1 refresh）。
+- **S1 位置だけ**: (1) path=fast の割合（像の変化の後の各 image の最初と epoch の変化の後を除いて全部） (2) 呼び出し→ioctl（`done`）の p99 と最長 ≤ 16.7ms (3) 入力が続く間の `done` の間隔（compositor の呼び出しの間隔が 16.7ms 以下の組）の p99 ≤ 16.7ms。
+- **S2 像の変化**（形が交互に変わる）: (1) 形が変わった present の `call_ns` から、次に位置を反映した ioctl（どの path でも、DROPPED でない行）の `done` まで（compositor が copy の fence の NOT_READY で present の前に戻る止まりもここに入る）の p99 ≤ 33.4ms (2) 入力が続く間の `done` の間隔の p99 ≤ 33.4ms (3) G（path=worker の `fence − publish`）の p99 ≤ 16.7ms (4) 像が安定すれば image の数以内の通常経路の後に fast に戻る。
+- **S3 animated**（毎コマ形が変わる）: (1) 続く 2 つの SHOWN の ioctl の `done` の間隔の p99 ≤ 33.4ms (2) DROPPED の数（全 present に対する割合）を記録 (3) G の p99 ≤ 16.7ms。
+- 実機の S2・S3 は試験の client（`plan/ws141/tests/` の cursor の client: 毎コマ cursor の buffer を commit し、形を交互に変える）で起こす。どの判定も、WS213 の thread C の copied の gate（F1 (b)）の変更の前か後かを書く。
+- 判定は Pi の log で Q1 が行う。外した時は内訳（`mutex`・`queue`・`lock`・`set→done`・G）で分け、`done − set` の p99 > 4ms なら B-k2、`mutex` の p99 > 2ms なら H-b。
+
+### 9. WS213 との契約（第 5 版の 9 に足す）
+
+- fast path は queue->mutex を取らない。EBUSY の lane への公開も swapchain_mutex だけ（queue->mutex は要らない、3）。
+- fast path は `GPU_DISPLAY_QUERY` を出す（u1 の訂正）が、kernel の `output_query` は mutex を取らない。
+- R の vkQueueSubmit は round trip の間 device->mutex を持つ（`queue.c` の `queue_attempt`）ので、fast path の (5) はその間待つ（H-b、`mutex` で測る）。fixture の u9 は「R が queue->mutex を持って止まっている間に fast path が終わる」を確かめ、device->mutex の待ちは H-b の計測に回す。
+
+### 10. 試験（第 5 版の 10 の訂正）
+
+- (u1) 位置だけの present は QueueSubmit も worker も通らず、SET・MOVE が 1 回ずつ（display の query は数えない）。
+- (u5) EBUSY: worker で refresh の 1 周期ごとに再試行、新しい ticket が出たら DROPPED、上限で DROPPED（error にならない）。fast path の BUSY は native だけの job で lane へ、fence を待たない。
+- (u8) op の間、device->mutex・swapchain_mutex・queue->mutex・display_mutex を持たない（偽の ioctl・偽の op の中から try-lock）。
+- (u15) primary の PRESENT_SYNC が display_mutex を持っている間も cursor の op が進む（重大 1 (a)）。
+- fixture は 2 つ: WSI（`wsi-swapchain.c` を取り込み、core の関数と platform を偽物にする）と display の op（`wsi-display.c` を取り込み、`ioctl` を `--wrap` で偽物にする）。中身の記録は `content.c` の単体。generator（u14）は作り直して生成物と比べる。
+
+### 11. 段 B-k2（kernel、おそらく必要。今回は実装しない）
+
+- 目的: kernel の `CURSOR_SET`・`MOVE` が、primary の `output_present` の settle・adoption の待ち（`display-flip.c:322-360`、`display-device.c:862-940`）の間 controller->mutex を待たない。
+- 案: cursor の状態（`controller->cursor`、`cursors[]`、`keys[]`）を controller->mutex から cursor 専用の lock に移す。flip の state への公開（`bcm2711_display_flip_cursor`）は既に flip の spinlock の guard なので、mutex の外で呼べる。`cursor_owner` の判定（`controller->owner`・`session->lease`）は claim・release と競るので、lease の世代を cursor の lock の下に写すか、owner の参照を cursor の lock でも読めるようにする。`cursor_reset`（claim・release）は両方の lock を controller->mutex → cursor の lock の順で取る。
+- 起動の条件: 受け入れ B の S1 で `done − set` の p99 > 4ms（ほぼ確実に起きる見込み、review-B5 重大 1）。担当と時期は Q1 が決める。
+
+### 12. 未決（Q1 に）
+
+- 上限の 1 秒（EBUSY の再試行の打ち切り）でよいか。
+- 未確認のまま: kernel が submit の外で group の image に書く経路、decoder が session ごとか全体か（G に効く）、hover・drag で client が cursor を変えるか、実機の時間。
+
 ## (b) decoder の request が executor の準備を待つ件（2026-10-12 P3、計測の後に設計）
 
 - 観察（1803317345 の kernel、App Home 中）: compositor の frame の record（vkBegin/EndCommandBuffer の同期の request）が 85〜149ms、`submit_lock_us` の最大 113〜168ms。controller の mutex は decoder（request ごと）と executor（1 歩の窓の外: pass の準備・finish・解放）が持つ。
@@ -539,8 +642,8 @@ executor の pass ごとの 3 区分:
 | A2 | 窓（3 区分、window の判定、遅延解放の list と fault の quarantine、map の待ち、pte_waiters の世代、mutex の順番渡し、display の generation の guard） | host |
 | A3 | lazy map（GPU の VA の map を executor の窓の前へ、import・blob の作成が窓を待たない）。最初に V3D の MMU が無効な PTE を TLB に持つかを確かめる | host、実機（受け入れ A） |
 | B-k | kernel の CURSOR_SET の鍵（中身が同じなら写さない）。済み（ef5e651bc） | display の host 試験 |
-| B-u | libvulkan: cursor の lane、ticket と display の op、位置だけの fast path、中身の記録（hook・serial・epoch）、acquire の `image_available` の省略、log（「(B) 第 5 版」、再 review の後に実装） | host（WSI の fixture）、T1、実機（受け入れ B） |
-| B-l | 計測の後の次の版（前提ではない）: cursor の op を display_mutex から分ける、kernel の CURSOR_SET・MOVE を adoption の待ちから外す。受け入れ B の内訳で必要と分かった時だけ | 実機（受け入れ B） |
+| B-u | libvulkan: cursor の lane、ticket と display の op（lease の cursor_mutex、display_mutex を取らない＝旧 B-l の libvulkan の半分）、位置だけの fast path、EBUSY の再試行、中身の記録（hook・serial・epoch）、acquire の `image_available` の省略、log（「(B) 第 6 版」） | host（WSI・display の op の fixture）、T1、実機（受け入れ B） |
+| B-k2 | kernel: CURSOR_SET・MOVE を `output_present` の adoption の待ちの controller->mutex から外す（「(B) 第 6 版」の 11、おそらく必要、Q1 が割り当てる） | display の host 試験、実機（受け入れ B） |
 
 ## 試験（M5）
 
