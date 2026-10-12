@@ -90,6 +90,7 @@ main(
 	struct rtm_ifinfo record;
 	char address[NETWORKD_LAN_ADDRESS_MAX];
 	unsigned char hardware[6] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
+	unsigned char padded[8] = { 0xdc, 0xa6, 0x32, 0x0a, 0x7b, 0x3c, 0x00, 0x00 };
 
 	table[0] = policy("eth0", NETWORKD_LAN_MODE_DHCP);
 	table[1] = policy("eth1", NETWORKD_LAN_MODE_STATIC);
@@ -308,6 +309,89 @@ main(
 	check("an unnamed wireless interface is left alone",
 	      networkd_lan_next(&lan, &work) == 0 &&
 	      work.action == NETWORKD_LAN_ACTION_NONE);
+
+	/*
+	 * BUG-293: SIOCGIFHWADDR answers in an eight-byte field whose last two
+	 * bytes are zero.  Taken whole, every machine gets 169.254.1.0; the
+	 * six bytes of the address give the machine its own.
+	 */
+	check("the padded field taken whole gives 169.254.1.0 (the bug)",
+	      networkd_lan_link_local(padded, sizeof(padded), address,
+				      sizeof(address)) == 0 &&
+	      strcmp(address, "169.254.1.0") == 0);
+	check("the six bytes of the address give the machine's own",
+	      networkd_lan_link_local(padded, 6U, address,
+				      sizeof(address)) == 0 &&
+	      strcmp(address, "169.254.123.60") == 0);
+
+	/* BUG-293: an interface the administrator took down stays down. */
+	networkd_lan_init(&lan);
+	(void)networkd_lan_set_policy(&lan, table, 0U);
+	(void)networkd_lan_enable(&lan);
+	networkd_lan_snapshot_begin(&lan);
+	(void)networkd_lan_observe(&lan, "en0", 1U, 1U, 1);
+	networkd_lan_snapshot_end(&lan);
+	check("a cabled interface is configured by dhcp",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_CONFIGURE &&
+	      strcmp(work.interface, "en0") == 0);
+	(void)networkd_lan_configured(&lan, "en0", 0);
+	check("dhcp that was not answered leaves it unconfigured",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_NONE);
+	check("holding an unknown interface is refused",
+	      networkd_lan_hold_down(&lan, "en9") == -1);
+	check("holding it down is recorded",
+	      networkd_lan_hold_down(&lan, "en0") == 0);
+	record = event(1U, RTM_IFINFO_CARRIER_DOWN, 0U);
+	check("the cable the down drops decides nothing",
+	      networkd_lan_event(&lan, &record) == NETWORKD_LAN_ACTION_NONE);
+	check("an interface held down is not raised again",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_NONE);
+	record = event(1U, RTM_IFINFO_CARRIER_UP, 0U);
+	check("a cable in an interface held down decides nothing",
+	      networkd_lan_event(&lan, &record) == NETWORKD_LAN_ACTION_NONE);
+	check("an interface held down with a cable is not configured",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_NONE);
+	networkd_lan_snapshot_begin(&lan);
+	(void)networkd_lan_observe(&lan, "en0", 1U, 1U, 1);
+	networkd_lan_snapshot_end(&lan);
+	check("a snapshot does not configure an interface held down",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_NONE);
+	check("releasing it is recorded", networkd_lan_release(&lan, "en0") == 0);
+	check("a released interface with a cable is configured again",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_CONFIGURE &&
+	      strcmp(work.interface, "en0") == 0);
+
+	/* BUG-293: `net up' on an unconfigured interface tries DHCP again. */
+	(void)networkd_lan_configured(&lan, "en0", 0);
+	check("an unconfigured interface waits for its cable",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_NONE);
+	(void)networkd_lan_release(&lan, "en0");
+	check("up on an unconfigured interface configures it again",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_CONFIGURE &&
+	      strcmp(work.interface, "en0") == 0);
+	(void)networkd_lan_configured(&lan, "en0", 1);
+	(void)networkd_lan_release(&lan, "en0");
+	check("up on a configured interface keeps what it has",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_NONE);
+
+	/* BUG-293: released without a cable, it is raised to see its next one. */
+	(void)networkd_lan_hold_down(&lan, "en0");
+	record = event(1U, RTM_IFINFO_CARRIER_DOWN, 0U);
+	(void)networkd_lan_event(&lan, &record);
+	(void)networkd_lan_release(&lan, "en0");
+	check("a released interface without a cable is raised",
+	      networkd_lan_next(&lan, &work) == 0 &&
+	      work.action == NETWORKD_LAN_ACTION_RAISE &&
+	      strcmp(work.interface, "en0") == 0);
 
 	/* Reports the outcome. */
 	if (failures != 0) {
