@@ -234,7 +234,7 @@ kwl_buffer_put(
 
 	/* An unbalanced owner is an internal defect rather than a client-controlled refcount. */
 	if (buffer->holds == 0) {
-		printf("KWL FAILED site=buffer_put client=%llu buffer=%u\n", (unsigned long long)buffer->client->number, buffer->id);
+		kwl_fatal("KWL FAILED site=buffer_put client=%llu buffer=%u", (unsigned long long)buffer->client->number, buffer->id);
 		buffer->client->server->failed = 1;
 		return;
 	}

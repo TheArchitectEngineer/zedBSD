@@ -1890,6 +1890,7 @@ struct kwl_server {
 uint64_t kwl_milliseconds(void);
 uint64_t kwl_microseconds(void);
 void kwl_request_stop(void);
+void kwl_fatal(const char *format, ...) __attribute__((format(printf, 1, 2)));
 int kwl_greeter_open(struct kwl_server *server);
 int kwl_greeter_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_greeter_key(struct kwl_server *server, uint32_t key, uint32_t state);

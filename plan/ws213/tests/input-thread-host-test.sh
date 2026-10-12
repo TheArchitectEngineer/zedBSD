@@ -2,7 +2,8 @@
 # Host test of the input thread and the cursor's box (ws213-p004, the design's
 # 9 (k), (k1) to (k4), and 9 (m) for the input thread): the passes one at a
 # time, then the real thread against a writer, once plainly and once under
-# ThreadSanitizer (which must report nothing).
+# ThreadSanitizer (which must report nothing); and a touch screen and a pen
+# plugged into the running thread (the Pi's USB touch monitor, 2026-10-12).
 # Usage: plan/ws213/tests/input-thread-host-test.sh [build-dir]  (from the tree root)
 set -eu
 out=${1:-build/ws213-host}

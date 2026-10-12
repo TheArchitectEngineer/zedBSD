@@ -195,6 +195,7 @@ kwl_schedule(
 
 			/* Any other failure ends the compositor. */
 			printf("KWL MODE_ERROR errno=%d\n", error);
+			kwl_fatal("KWL FAILED site=window_mode errno=%d", error);
 			server->failed = 1;
 			return;
 		}
@@ -247,7 +248,7 @@ kwl_schedule(
 		part = kwl_cycles();
 		error = kwl_layers_tick(server);
 		if (error < 0) {
-			printf("KWL FAILED site=layers_tick errno=%d\n", -error);
+			kwl_fatal("KWL FAILED site=layers_tick errno=%d", -error);
 			server->failed = 1;
 		}
 
@@ -261,7 +262,7 @@ kwl_schedule(
 		part = kwl_cycles();
 		error = kwl_compose_draw(server);
 		if (error != 0) {
-			printf("KWL FAILED site=compose_draw errno=%d\n", error);
+			kwl_fatal("KWL FAILED site=compose_draw errno=%d", error);
 			server->failed = 1;
 		}
 
@@ -298,7 +299,7 @@ kwl_frame_done(
 	/* The frame's held buffers and callbacks are released. */
 	error = kwl_compose_complete(server);
 	if (error != 0) {
-		printf("KWL FAILED site=frame_done errno=%d\n", error);
+		kwl_fatal("KWL FAILED site=frame_done errno=%d", error);
 		server->failed = 1;
 	}
 }

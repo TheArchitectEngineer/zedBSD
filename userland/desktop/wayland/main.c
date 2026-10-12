@@ -30,10 +30,12 @@
 /* How long a login session goes without input before it locks, unless --lock-idle says (ws035-p102). */
 #define MAIN_LOCK_IDLE_MS	(10U * 60U * 1000U)
 #include <errno.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 
 /* Signal handlers only request ordinary event-loop cleanup, they own no GPU state. */
 static volatile sig_atomic_t stop_requested;
@@ -298,9 +300,15 @@ main(
 	/* No exit path leaves a lease, imported image or owned socket generation behind. */
 	service_cleanup(&server);
 	cleanup_failed = server.failed;
-	printf("KWL EXIT frames=%llu error=%d cleanup_failed=%d pid=%ld input_events=%llu seat_events=%llu at_ms=%llu\n", (unsigned long long)server.frame, error, cleanup_failed, (long)getpid(), (unsigned long long)server.input_events, (unsigned long long)server.seat_events, (unsigned long long)kwl_milliseconds());
-	if (error != 0 || cleanup_failed)
+
+	/* A failed run ends with its line in the system log too, which the next session does not truncate. */
+	if (error != 0 || cleanup_failed) {
+		kwl_fatal("KWL EXIT frames=%llu error=%d cleanup_failed=%d pid=%ld input_events=%llu seat_events=%llu at_ms=%llu", (unsigned long long)server.frame, error, cleanup_failed, (long)getpid(), (unsigned long long)server.input_events, (unsigned long long)server.seat_events, (unsigned long long)kwl_milliseconds());
 		return 1;
+	}
+
+	/* An ordinary end's line, in the session's output only. */
+	printf("KWL EXIT frames=%llu error=%d cleanup_failed=%d pid=%ld input_events=%llu seat_events=%llu at_ms=%llu\n", (unsigned long long)server.frame, error, cleanup_failed, (long)getpid(), (unsigned long long)server.input_events, (unsigned long long)server.seat_events, (unsigned long long)kwl_milliseconds());
 
 	/* Succeeded: the finite service run completed and every owned resource was retired. */
 	return 0;
@@ -316,6 +324,34 @@ kwl_request_stop(
 {
 	/* The loop sees this at its next pass. */
 	stop_requested = 1;
+}
+
+/*
+ * Reports why the compositor ends, as one KWL line: to its output like
+ * every line, flushed (an _exit after it flushes nothing), and to the
+ * system log, where it outlives the session (the next login truncates the
+ * session's output: a crash on the Pi 2026-10-12 left no line).
+ */
+void
+kwl_fatal(
+	const char *format,
+	...)
+{
+	va_list arguments;
+	char line[256];
+
+	/* The line, cut to what one system log record takes. */
+	va_start(arguments, format);
+	(void)vsnprintf(line, sizeof(line), format, arguments);
+	va_end(arguments);
+
+	/* The session's output. */
+	printf("%s\n", line);
+	fflush(stdout);
+
+	/* The system log, under the compositor's name. */
+	openlog("wayland", LOG_PID, LOG_USER);
+	syslog(LOG_ERR, "%s", line);
 }
 
 /* Requests cleanup from the main loop without touching non-signal-safe state. */
@@ -701,6 +737,7 @@ accept_client(
 	struct kwl_client *client;
 	struct kwl_object *display;
 	int descriptor;
+	int error;
 
 	/* Nonblocking acceptance cannot stall already connected clients. */
 	descriptor = accept4(server->listener, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
@@ -712,13 +749,16 @@ accept_client(
 			return 0;
 
 		/* Per-process descriptor exhaustion is explicit and terminates this finite run. */
-		return errno;
+		error = errno;
+		kwl_fatal("KWL FAILED site=accept errno=%d", error);
+		return error;
 	}
 
 	/* Client state owns every subsequently received byte, fd and object. */
 	client = calloc(1, sizeof(*client));
 	if (client == NULL) {
 		close(descriptor);
+		kwl_fatal("KWL FAILED site=accept-client errno=%d", ENOMEM);
 		return ENOMEM;
 	}
 
@@ -732,6 +772,7 @@ accept_client(
 	display = kwl_create(client, 1, KWL_DISPLAY, 1);
 	if (display == NULL) {
 		kwl_client_destroy(client);
+		kwl_fatal("KWL FAILED site=accept-display errno=%d", ENOMEM);
 		return ENOMEM;
 	}
 
@@ -782,8 +823,10 @@ event_loop(
 	while (!stop_requested && !server->failed) {
 		/* Clock failure must not turn the configured service deadline into an endless run. */
 		now = kwl_milliseconds();
-		if (now == UINT64_MAX)
+		if (now == UINT64_MAX) {
+			kwl_fatal("KWL FAILED site=clock errno=%d", EIO);
 			return EIO;
+		}
 
 		/* The optional frame bound counts only completed hardware selections. */
 		if (now - started >= server->timeout_ms ||
@@ -863,13 +906,16 @@ event_loop(
 
 		/* Allocation failure leaves all live clients owned by service cleanup. */
 		descriptors = calloc(count, sizeof(*descriptors));
-		if (descriptors == NULL)
+		if (descriptors == NULL) {
+			kwl_fatal("KWL FAILED site=poll-set count=%zu errno=%d", count, ENOMEM);
 			return ENOMEM;
+		}
 
 		/* The parallel pointer array resolves readiness to this snapshot's generation. */
 		clients = calloc(count, sizeof(*clients));
 		if (clients == NULL) {
 			free(descriptors);
+			kwl_fatal("KWL FAILED site=poll-set count=%zu errno=%d", count, ENOMEM);
 			return ENOMEM;
 		}
 
@@ -958,6 +1004,7 @@ event_loop(
 				continue;
 
 			/* Other poll failures stop the service through ordinary cleanup. */
+			kwl_fatal("KWL FAILED site=poll count=%zu errno=%d", count, error);
 			return error;
 		}
 
@@ -975,8 +1022,10 @@ event_loop(
 			error = accept_client(server);
 
 		/* A failed listener cannot serve this generation any further. */
-		if ((descriptors[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+		if ((descriptors[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+			kwl_fatal("KWL FAILED site=listener revents=0x%x errno=%d", (unsigned)descriptors[0].revents, EIO);
 			error = EIO;
+		}
 
 		/* Device authority changes before the old snapshot can read revoked input or complete a frame. */
 		kwl_os_poll_done(server, descriptors + first_os);
