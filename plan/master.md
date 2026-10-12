@@ -901,6 +901,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [gtk4-linux/](tools/gtk4-linux/README.md)（WS114 から移した、2026-10-06） | Linux の Keiland の上の標準 GTK4 の装飾（CSD・SSD）の試験と session の起動 | `decoration-wire.py`・`start-session.sh` など、README を参照 |
 | [ws125/tests/subtree-host-test.sh](ws125/tests/subtree-host-test.sh)（2026-10-09、WS125 の完了時に plan/tools/ へ移す） | package の staged tree を image に入れる `--subtree DEST=DIR` の回帰（Makefile の tree の規則・UFS・FAT の道具と検査、一覧と中身の一致） | host で `plan/ws125/tests/subtree-host-test.sh`、PASS で終わる |
 | [compositor/](tools/compositor/README.md)（WS110） | compositor の起動の role（--testing・--session・--greeter）の試験 | `run-host-role.sh`、`roles-guest.sh` |
+| [ws210/tests/run-host-present-damage.sh](ws210/tests/run-host-present-damage.sh)（WS210 p013、2026-10-12、WS210 の完了時に plan/tools/ へ移す） | libkeiland の present の部分の copy（image ごとの古い矩形、失敗の注入、R/B の入れ替え）の回帰、ASan・UBSan | host で `sh plan/ws210/tests/run-host-present-damage.sh`、PASS で終わる |
 | [rtld/](tools/rtld/README.md)（WS140） | ld.so の多数の object・依存・handle・TLS の試験 | `rtld-many.sh BUILD`（`config-amd64-rtld.mk` の SSH の image、BUILD/sysroot の symlink） |
 | [wallpaper/](tools/wallpaper/README.md)（WS138） | 背景の PNG・JPEG の復号と読み込みの時間・greeter の背景 | host `run-host-wallpaper-decode.sh`、guest `wallpaper-time.sh`（Settings の image）・`greeter-wallpaper.sh`（criteria の image） |
 | [libc-string-host-test.sh](tools/libc-string-host-test.sh)（BUG-291、2026-10-12） | libc の memcpy・memmove・memset の正しさ（全 alignment・重なり・境界、ASan・UBSan、clang/gcc × -Os/-O2）と速さ | `sh plan/tools/libc-string-host-test.sh`（arm64（qemu-aarch64 の user mode）の pass を含む、約 9 秒） |
