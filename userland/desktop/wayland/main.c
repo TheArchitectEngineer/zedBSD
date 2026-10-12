@@ -1042,6 +1042,7 @@ event_loop(
 		if (frame_slot != 0 && descriptors[frame_slot].revents != 0)
 			kwl_frame_done(server);
 		kwl_compose_poll(server);
+		kwl_glass_glyphs_poll(server);
 		server->perf.frame_done_cycles += kwl_cycles() - part;
 
 		/*

@@ -621,6 +621,7 @@ void kwl_compose_unpark(struct kwl_server *server);
 void kwl_compose_forget(struct kwl_server *server, unsigned output, unsigned heads_mask);
 uint64_t kwl_compose_generation(struct kwl_compose *compose);
 void kwl_compose_list_begin(struct kwl_compose *compose);
+void kwl_glass_glyphs_take(struct kwl_compose *compose);
 void kwl_layers_open(struct kwl_server *server);
 void kwl_layers_close(struct kwl_compose *compose);
 void kwl_layers_complete(struct kwl_server *server, uint64_t generation);

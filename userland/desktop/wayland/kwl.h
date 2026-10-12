@@ -2113,6 +2113,7 @@ int kwl_fence_ready(struct kwl_server *server, struct kwl_object *surface);
 int kwl_compose_waiting(struct kwl_server *server);
 void kwl_compose_want_frame(struct kwl_server *server);
 void kwl_compose_poll(struct kwl_server *server);
+void kwl_glass_glyphs_poll(struct kwl_server *server);
 int kwl_glass_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_glass_motion(struct kwl_server *server);
 void kwl_glass_gesture(struct kwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);

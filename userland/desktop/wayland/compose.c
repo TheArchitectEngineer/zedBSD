@@ -2236,8 +2236,9 @@ surface_image(
 /*
  * Begins a drawing into the list (a frame's, or a layer's picture that
  * presents nothing): the list is emptied, nothing is known as bound, the
- * joined quads start from their buffer's beginning, and the walk's time
- * starts (ws213-p003).
+ * joined quads start from their buffer's beginning, the walk's time
+ * starts (ws213-p003), and the glyphs the glyph worker rendered since the
+ * last walk go into their cells (ws213-p005).
  */
 void
 kwl_compose_list_begin(
@@ -2250,6 +2251,9 @@ kwl_compose_list_begin(
 	kwl_list_reset(&compose->list);
 	kwl_compose_bind_forget(compose);
 	kwl_batch_begin(compose);
+
+	/* The glyphs rendered meanwhile, written into the atlas inside the walk (its copy goes with this drawing). */
+	kwl_glass_glyphs_take(compose);
 }
 
 /*
