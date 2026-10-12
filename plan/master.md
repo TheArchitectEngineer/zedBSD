@@ -32,7 +32,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-293、WS214、q940、T1-547。次の KL_VERSION は 92（WS210 p014 F2.2 の予定）、WS210 の GPU canvas は 93 以降（91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-293、WS214、q940、T1-547。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -543,6 +543,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-12 ユーザー（クリック）: System Monitor の 3D のアニメは「2fpsに揃える」（hover の camera の傾きは 60fps、core の measures と phase はアニメの 1 歩ずつ。Q1 が space.c で実装）。WS141 p016 (B) の review は「再開する」（design-reviewer）。SMP（WS208）は「予定どおり最後」。ユーザー:「Settingsの右ペインのボタンも遅れます。」「ただスクロールはうまく動いているので、マウスイベントと描画の蓄積の問題ですね」→ P1（WS210 p014）で motion の合流を最優先。
+- 2026-10-12 ユーザー（place15 の評価）:「かなりよくなってる！…デスクトップでのマウス移動が、60fpsにわずかに届いていない…」「ウィンドウのドック・アンドックのアニメ。2フレームくらいしか描かれない。…ウィンドウの内容を維持したまま拡大縮小でアニメーションしてしまって、拡大縮小が終わってからゆっくり再描画を書けるのがいい」「App アイコンのプレビュー。完璧。ひっかかりがない。」→ P3 に WS211 p007（dock・undock は窓の絵の拡大縮小、終わってから configure）とマウス移動の詰め（place16）。WS213 review-4 の H-B は Q1 の判断で cursor 60fps を必達とし、pointer の経路を M から C へ移す形を第 5 版の本案に（ユーザーの「ほとんどすべてスレッドに」に従う）。
 - 2026-10-12 ユーザー（クリック、WS213 review-1 H6）: 描画 thread への渡し方は「描く物の一覧＋pull」（main が今の描画の walk で display list を作り、描画 thread が求めた時だけ 1 回作る。記録・submit・present・GPU の待ちは描画 thread）。前の「最新の画面の状態の写し」の合意を置き換える。重いコマの間の cursor の 60fps は WS141 p016 (B) の B-u に依存。
 - 2026-10-12 ユーザー:「コンポジタのマルチスレッド化も入れてください。ウィンドウへの通知の転送以外の処理はほとんどすべてスレッドにして…」→ Q1 の推し（main thread＝protocol・入力・cursor、描画 thread 1 本が Vulkan の queue を持つ、作業 thread、描画は event の queue に積まず最新の画面の状態の写しを受け箱に 1 つ）にユーザー「了解です。おすすめがいいと思います。あとでできたらレビューさせてください。」→ WS213（P4）、設計は design-reviewer の後にユーザーの review。
 - 2026-10-12 ユーザー:「libkeilandのウィジェットのイベントと描画の最適化 / コンポジタの時計などの描画最適化と、スレッド化 / ウィンドウドラッグの60fps化（方法は未知） 必要な分はWSを立て、現在のWSで取り組む分はこのままお願いします。」→ libkeiland の widget のイベントと描画は WS210（p013・p014、P1）、compositor の時計などの描画の最適化と drag の 60fps は WS211（p005・p006、P3）、thread 化は新しい WS213（未割当）。

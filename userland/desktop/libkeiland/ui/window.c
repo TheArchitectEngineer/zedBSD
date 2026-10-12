@@ -120,6 +120,10 @@ static void window_search(void *data, struct wl_registry *registry, uint32_t nam
 static void window_woken(void *data, struct wl_callback *callback, uint32_t time);
 static void window_inset(void *data, int32_t right, int32_t bottom, uint32_t reason);
 static void window_present_tell(struct kl_window *window, const char *call, VkResult result, int error);
+static int window_pace_ask(struct kl_window *window);
+static void window_pace_shown(struct kl_window *window, int asked, int error);
+static void window_pace_forget(struct kl_window *window);
+static void window_paced(void *data, struct wl_callback *callback, uint32_t time);
 
 /*
  * The globals a window on another's connection finds through a registry of
@@ -144,6 +148,11 @@ static const struct wl_registry_listener search_listener = {
 /* The wake-up's sync. */
 static const struct wl_callback_listener woken_listener = {
 	window_woken
+};
+
+/* The frame callback of a window that paces its frames (KL_PACING_FRAME). */
+static const struct wl_callback_listener paced_listener = {
+	window_paced
 };
 
 /* The registry's callbacks, for as long as the registry lives. */
@@ -264,7 +273,8 @@ kl_window_close(
 	kl_keyboard_inset_destroy(window->inset);
 	keiui_edit_close(window);
 
-	/* The presenter before the surface it shows on. */
+	/* The frame callback awaited, then the presenter, before the surface they show on. */
+	window_pace_forget(window);
 	if (window->present == KL_PRESENT_VULKAN)
 		keiui_present_close(&window->vulkan);
 	keiui_shm_close(window);
@@ -649,8 +659,11 @@ kl_window_present(
 /*
  * Asks for how a window's input and frames are paced (KL_VERSION 91,
  * ws210-p014 F2.1): KL_PACING_MOTION merges a pointer's motions queued one
- * after another into the last.  max_fps is for a later version and must
- * be 0.  Returns 0, or EINVAL for a flag or a rate not known.
+ * after another into the last; KL_PACING_FRAME (KL_VERSION 92) has each
+ * frame wait for the compositor to take the last one (kl_window_frame_wait).
+ * max_fps is for a later version and must be 0.  Returns 0, EINVAL for a
+ * flag or a rate not known, or ENOTSUP for KL_PACING_FRAME on a window
+ * whose frames the application shows itself (KL_PRESENT_NONE).
  */
 int
 kl_window_set_pacing(
@@ -659,14 +672,46 @@ kl_window_set_pacing(
 	unsigned max_fps)
 {
 	/* Only what this version knows. */
-	if ((flags & ~KL_PACING_MOTION) != 0U)
+	if ((flags & ~(KL_PACING_MOTION | KL_PACING_FRAME)) != 0U)
 		return EINVAL;
 	if (max_fps != 0U)
 		return EINVAL;
 
-	/* Succeeded: the window's input is paced so from now on. */
+	/* The frames of a window the library does not show cannot be paced by it. */
+	if ((flags & KL_PACING_FRAME) != 0U &&
+	    window->present != KL_PRESENT_VULKAN &&
+	    window->present != KL_PRESENT_SHM)
+		return ENOTSUP;
+
+	/* Frames no longer paced wait for nothing. */
+	if ((flags & KL_PACING_FRAME) == 0U)
+		window_pace_forget(window);
+
+	/* Succeeded: the window's input and frames are paced so from now on. */
 	window->pacing = flags;
 	return 0;
+}
+
+/*
+ * Tells when the next frame of a window may be drawn (KL_VERSION 92,
+ * ws210-p014 F2.4), changing nothing: 0 now, a number of milliseconds to
+ * wait at most, or -1 to wait until the compositor takes the last frame
+ * (its answer wakes the wait).  Always 0 without KL_PACING_FRAME.
+ */
+int
+kl_window_frame_wait(
+	const struct kl_window *window,
+	uint64_t now_us)
+{
+	int wait;
+
+	/* A window that does not pace its frames draws whenever it likes. */
+	if ((window->pacing & KL_PACING_FRAME) == 0U)
+		return 0;
+
+	/* As the pace stands now. */
+	wait = keiui_pace_wait(&window->pace, now_us);
+	return wait;
 }
 
 /*
@@ -714,31 +759,40 @@ kl_window_present_parts(
 	unsigned count)
 {
 	VkResult result;
+	int asked;
 	int error;
+
+	/* The application draws its own frames. */
+	if (window->present != KL_PRESENT_SHM && window->present != KL_PRESENT_VULKAN)
+		return EINVAL;
+
+	/* A window that paces its frames hears when the compositor takes this one (before it is committed). */
+	asked = window_pace_ask(window);
 
 	/* Shared memory. */
 	if (window->present == KL_PRESENT_SHM) {
 		error = keiui_shm_present(window, pixels, stride);
+		window_pace_shown(window, asked, error);
 		if (error != 0)
 			return error;
 		return 0;
 	}
 
-	/* The application draws its own frames. */
-	if (window->present != KL_PRESENT_VULKAN)
-		return EINVAL;
-
 	/* Vulkan: out of date asks for a resize and another frame. */
 	result = keiui_present_frame(&window->vulkan, pixels, stride, parts, count);
 	error = errno;
-	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+		window_pace_shown(window, asked, EAGAIN);
 		return EAGAIN;
+	}
 	if (result != VK_SUCCESS) {
+		window_pace_shown(window, asked, EIO);
 		window_present_tell(window, "kl_window_present", result, error);
 		return EIO;
 	}
 
 	/* Succeeded: the frame is shown. */
+	window_pace_shown(window, asked, 0);
 	return 0;
 }
 
@@ -1718,6 +1772,9 @@ window_push(
 		window->event_count++;
 		event = &window->events[slot];
 	}
+
+	/* An input that does not wait has the next frame drawn at once (KL_PACING_FRAME). */
+	keiui_pace_input(&window->pace, kind);
 
 	/* The input, with what every input carries. */
 	memset(event, 0, sizeof(*event));
@@ -2863,4 +2920,96 @@ window_present_tell(
 
 	/* One line, for the application's log. */
 	(void)fprintf(stderr, "KEILAND PRESENT_FAILED call=%s operation=%s result=%d errno=%d width=%u height=%u extent=%ux%u maximized=%d connection=%d protocol=%u interface=%s object=%u\n", call, operation, (int)result, error, window->width, window->height, window->vulkan.extent.width, window->vulkan.extent.height, window->maximized, connection, code, name, object);
+}
+
+/*
+ * Asks for the frame callback of the frame about to be shown, for a window
+ * that paces its frames and awaits none; 1 when it was asked for now.
+ */
+static int
+window_pace_ask(
+	struct kl_window *window)
+{
+	struct wl_callback *callback;
+	int status;
+
+	/* Frames not paced, or a callback still awaited (the frame is shown while it is). */
+	if ((window->pacing & KL_PACING_FRAME) == 0U)
+		return 0;
+	if (window->pace_callback != NULL)
+		return 0;
+
+	/* The callback, on the surface's next commit: this frame's, made after this call. */
+	callback = wl_surface_frame(window->surface);
+	if (callback == NULL)
+		return 0;
+	status = wl_callback_add_listener(callback, &paced_listener, window);
+	if (status != 0) {
+		wl_callback_destroy(callback);
+		return 0;
+	}
+
+	/* Succeeded: the frame is awaited from now. */
+	window->pace_callback = callback;
+	keiui_pace_ask(&window->pace, kl_clock_us());
+	return 1;
+}
+
+/*
+ * Follows a frame's showing for a window that paces its frames: asked
+ * says whether its callback was asked for with it (window_pace_ask), error
+ * whether it was shown (0).  A frame not shown awaits nothing it asked
+ * for; one shown while an earlier frame's callback was awaited makes the
+ * next frame wait for that callback.
+ */
+static void
+window_pace_shown(
+	struct kl_window *window,
+	int asked,
+	int error)
+{
+	int forget;
+
+	/* Frames not paced. */
+	if ((window->pacing & KL_PACING_FRAME) == 0U)
+		return;
+
+	/* The pace after the frame; a frame not shown awaits no callback asked for with it. */
+	forget = keiui_pace_shown(&window->pace, asked, error);
+	if (forget)
+		window_pace_forget(window);
+}
+
+/* Stops awaiting a frame callback: the next frame may be drawn at once. */
+static void
+window_pace_forget(
+	struct kl_window *window)
+{
+	/* The callback, when one is awaited. */
+	if (window->pace_callback != NULL)
+		wl_callback_destroy(window->pace_callback);
+	window->pace_callback = NULL;
+
+	/* Nothing awaited. */
+	keiui_pace_clear(&window->pace);
+}
+
+/* The compositor took the frame shown with the callback: the next may be drawn. */
+static void
+window_paced(
+	void *data,
+	struct wl_callback *callback,
+	uint32_t time)
+{
+	struct kl_window *window;
+
+	/* The callback is used up. */
+	(void)time;
+	window = data;
+	wl_callback_destroy(callback);
+	window->pace_callback = NULL;
+	keiui_pace_clear(&window->pace);
+
+	/* The owner of a window on another's connection hears of it after the events being run. */
+	keiui_window_wake(window);
 }
