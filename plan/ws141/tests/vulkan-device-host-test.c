@@ -330,6 +330,33 @@ bcm2711_buffer_release_stats(
 }
 
 /*
+ * Takes a reused run's zeroing; the fixture keeps no allocation timing.
+ */
+void
+bcm2711_buffer_zeroed(
+	uint64_t bytes,
+	uint64_t ticks)
+{
+	/* Nothing is kept. */
+	(void)bytes;
+	(void)ticks;
+}
+
+/*
+ * Reports no diagnostic creations; the fixture's buffers are host memory.
+ */
+void
+bcm2711_buffer_create_stats(
+	uint64_t stats[7])
+{
+	unsigned index;
+
+	/* The fixture keeps no creation timing. */
+	for (index = 0; index < 7U; index++)
+		stats[index] = 0;
+}
+
+/*
  * Supplies a bounded coherent fixture run while observing the actual late placement requirements.
  */
 int

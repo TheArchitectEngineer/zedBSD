@@ -598,6 +598,7 @@ report_perf(
 	uint64_t released;
 	uint64_t released_bytes;
 	uint64_t released_ticks;
+	uint64_t created[7];
 	uint64_t in_use;
 
 	/* The first submission opens the window that later reports measure. */
@@ -698,6 +699,20 @@ report_perf(
 			(unsigned long long)kern_ticks_to_rate(perf->decode_hold_max, 1000000U),
 			perf->decode_hold_opcode,
 			(unsigned long long)kern_ticks_to_rate(perf->step_hold_max, 1000000U));
+	}
+
+	/* Where the alloc time goes: the runs made (the allocator and their zeroing) and the reused runs zeroed again. */
+	bcm2711_buffer_create_stats(created);
+	if (created[0] != 0U || created[4] != 0U) {
+		perf_append(
+			"v3d: alloc made=%llu kib=%llu pmem_us=%llu zero_us=%llu reused=%llu kib=%llu zero_us=%llu\n",
+			(unsigned long long)created[0],
+			(unsigned long long)(created[1] / 1024U),
+			(unsigned long long)kern_ticks_to_rate(created[2], 1000000U),
+			(unsigned long long)kern_ticks_to_rate(created[3], 1000000U),
+			(unsigned long long)created[4],
+			(unsigned long long)(created[5] / 1024U),
+			(unsigned long long)kern_ticks_to_rate(created[6], 1000000U));
 	}
 
 	/* Where the release time goes: draw teardown, the batch end's flush and frees, and the views' fate. */
