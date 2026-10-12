@@ -246,7 +246,10 @@ struct gpu_display_refresh {
  * GPU_DISPLAY_CURSOR_MOVE.  Every field is an input; reserved fields are zero.
  * It needs a writable open: EBUSY when the lease is not this open's, ESTALE
  * for an old generation, ENXIO when disconnected, EOPNOTSUPP without
- * GPU_DISPLAY_HAS_CURSOR.
+ * GPU_DISPLAY_HAS_CURSOR.  EBUSY also comes, for a moment, when every
+ * cursor image is named by a display list the hardware has not yet left and
+ * none holds the same rows; nothing changed, and the call may succeed a
+ * refresh later.
  */
 struct gpu_display_cursor_image {
 	uint32_t version;
