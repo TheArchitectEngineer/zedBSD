@@ -29,6 +29,7 @@
 #include "notify-view.h"
 #include "popup.h"
 
+#include <math.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -48,6 +49,17 @@
 /* How far from the output's origin a rectangle's edges are kept, so that areas fit in 64 bits. */
 #define DAMAGE_LIMIT		((int32_t)1 << 20)
 
+/*
+ * The least part of a quad a hole is cut out of it for (ws211-p011): a hole
+ * makes up to three more draws (the Pi's kernel prepares one in 10 to 50 us),
+ * and a 96x96 square of a shadow (92 instructions) costs about 26k GPU
+ * cycles, of the glass between cards (178) about 51k.
+ */
+#define DAMAGE_CUT_AREA		(96.0f * 96.0f)
+
+/* The most holes a quad is cut by; the largest are tried first. */
+#define DAMAGE_CUT_HOLES	32U
+
 static void damage_add(struct kwl_server *server, int32_t left, int32_t top, int32_t right, int32_t bottom);
 static void rects_settle(int32_t (*rects)[4], unsigned *count);
 static int rects_joined(const int32_t *first, const int32_t *second);
@@ -55,6 +67,8 @@ static int64_t rects_join_cost(const int32_t *first, const int32_t *second);
 static void rects_bound(int32_t *into, const int32_t *other);
 static void rects_remove(int32_t (*rects)[4], unsigned *count, unsigned index);
 static int32_t damage_limit(int32_t value);
+static float cut_overlap(const float *quad, const float *hole);
+static unsigned cut_piece(const float *piece, const float *hole, float (*into)[4]);
 static int32_t edge_min(int32_t first, int32_t second);
 static int32_t edge_max(int32_t first, int32_t second);
 static void damage_client_part(const struct kwl_object *surface, uint32_t width, uint32_t height, int32_t *rect);
@@ -269,6 +283,112 @@ kwl_damage_rects_add(
 	/* The list given back, holding the rectangle. */
 	memcpy(rects, list, (size_t)length * sizeof(list[0]));
 	*count = length;
+}
+
+/*
+ * Cuts holes out of a quad (x, y, width, height) into at most KWL_CUT_PIECES
+ * pieces that do not overlap and together cover the quad less the holes
+ * (ws211-p011).  Returns the number of pieces: 0 when the holes cover the
+ * whole quad, 1 (the quad itself) when no hole is cut out of it.
+ *
+ * A hole is the inside of an opaque shape drawn later, so what is under it
+ * is never seen.  Each hole is first shrunk to whole pixels (so pieces meet
+ * on pixel edges, where no pixel centre lies) and is cut only when it covers
+ * at least DAMAGE_CUT_AREA of the quad; the holes covering most are cut
+ * first, and a hole that would leave more than KWL_CUT_PIECES pieces is not
+ * cut.  A quad no hole is cut out of is its own one piece.
+ */
+unsigned
+kwl_damage_rects_cut(
+	const float *quad,
+	const float (*holes)[4],
+	unsigned hole_count,
+	float (*pieces)[4])
+{
+	float shrunk[DAMAGE_CUT_HOLES][4];
+	float covered[DAMAGE_CUT_HOLES];
+	float list[KWL_CUT_PIECES][4];
+	float next[KWL_CUT_PIECES * 4U][4];
+	float best_area;
+	unsigned order[DAMAGE_CUT_HOLES];
+	unsigned count;
+	unsigned length;
+	unsigned added;
+	unsigned index;
+	unsigned piece;
+	unsigned best;
+	unsigned taken;
+	unsigned swap;
+
+	/* The quad, as left, top, right and bottom, is the first and only piece. */
+	list[0][0] = quad[0];
+	list[0][1] = quad[1];
+	list[0][2] = quad[0] + quad[2];
+	list[0][3] = quad[1] + quad[3];
+	length = 1U;
+
+	/* Each hole shrunk to whole pixels, and how much of the quad it covers. */
+	count = hole_count;
+	if (count > DAMAGE_CUT_HOLES)
+		count = DAMAGE_CUT_HOLES;
+	for (index = 0U; index < count; index++) {
+		shrunk[index][0] = ceilf(holes[index][0]);
+		shrunk[index][1] = ceilf(holes[index][1]);
+		shrunk[index][2] = floorf(holes[index][0] + holes[index][2]);
+		shrunk[index][3] = floorf(holes[index][1] + holes[index][3]);
+		covered[index] = cut_overlap(list[0], shrunk[index]);
+		order[index] = index;
+	}
+
+	/* The holes in the order of how much they cover, the most first. */
+	for (taken = 0U; taken < count; taken++) {
+		best = taken;
+		best_area = covered[order[taken]];
+		for (index = taken + 1U; index < count; index++) {
+			/* A hole covering more goes first. */
+			if (covered[order[index]] > best_area) {
+				best = index;
+				best_area = covered[order[index]];
+			}
+		}
+
+		/* The hole covering most of the rest takes this place. */
+		swap = order[taken];
+		order[taken] = order[best];
+		order[best] = swap;
+	}
+
+	/* Cuts each hole worth its draws out of every piece, while the pieces stay few. */
+	for (taken = 0U; taken < count; taken++) {
+		/* The rest cover too little to be worth their draws. */
+		index = order[taken];
+		if (covered[index] < DAMAGE_CUT_AREA)
+			break;
+
+		/* Every piece less the hole. */
+		added = 0U;
+		for (piece = 0U; piece < length; piece++)
+			added += cut_piece(list[piece], shrunk[index], &next[added]);
+
+		/* A hole that would leave too many pieces is left uncut. */
+		if (added > KWL_CUT_PIECES)
+			continue;
+
+		/* The pieces less this hole replace the pieces. */
+		memcpy(list, next, (size_t)added * sizeof(list[0]));
+		length = added;
+	}
+
+	/* The pieces given back as x, y, width and height. */
+	for (piece = 0U; piece < length; piece++) {
+		pieces[piece][0] = list[piece][0];
+		pieces[piece][1] = list[piece][1];
+		pieces[piece][2] = list[piece][2] - list[piece][0];
+		pieces[piece][3] = list[piece][3] - list[piece][1];
+	}
+
+	/* Succeeded: the quad less the holes worth cutting. */
+	return length;
 }
 
 
@@ -849,4 +969,106 @@ edge_max(
 
 	/* The first is. */
 	return first;
+}
+
+/* Reports the area of a quad (left, top, right, bottom) a hole (likewise) covers; 0 when they do not meet. */
+static float
+cut_overlap(
+	const float *quad,
+	const float *hole)
+{
+	float left;
+	float top;
+	float right;
+	float bottom;
+
+	/* The rectangle both cover. */
+	left = quad[0];
+	if (hole[0] > left)
+		left = hole[0];
+	top = quad[1];
+	if (hole[1] > top)
+		top = hole[1];
+	right = quad[2];
+	if (hole[2] < right)
+		right = hole[2];
+	bottom = quad[3];
+	if (hole[3] < bottom)
+		bottom = hole[3];
+
+	/* They do not meet. */
+	if (right <= left || bottom <= top)
+		return 0.0f;
+
+	/* Succeeded: the area both cover. */
+	return (right - left) * (bottom - top);
+}
+
+/*
+ * Writes a piece (left, top, right, bottom) less a hole (likewise) as up to
+ * four pieces: the bands above and below the hole across the whole piece,
+ * and the parts left and right of it between them.  Returns how many.
+ */
+static unsigned
+cut_piece(
+	const float *piece,
+	const float *hole,
+	float (*into)[4])
+{
+	float top;
+	float bottom;
+	unsigned count;
+
+	/* A piece the hole does not meet stays whole. */
+	if (hole[2] <= piece[0] ||
+	    hole[0] >= piece[2] ||
+	    hole[3] <= piece[1] ||
+	    hole[1] >= piece[3]) {
+		memcpy(into[0], piece, sizeof(into[0]));
+		return 1U;
+	}
+
+	/* The band above the hole. */
+	count = 0U;
+	top = piece[1];
+	if (hole[1] > piece[1]) {
+		into[count][0] = piece[0];
+		into[count][1] = piece[1];
+		into[count][2] = piece[2];
+		into[count][3] = hole[1];
+		count++;
+		top = hole[1];
+	}
+
+	/* The band below the hole. */
+	bottom = piece[3];
+	if (hole[3] < piece[3]) {
+		into[count][0] = piece[0];
+		into[count][1] = hole[3];
+		into[count][2] = piece[2];
+		into[count][3] = piece[3];
+		count++;
+		bottom = hole[3];
+	}
+
+	/* The part left of the hole, between the bands. */
+	if (hole[0] > piece[0]) {
+		into[count][0] = piece[0];
+		into[count][1] = top;
+		into[count][2] = hole[0];
+		into[count][3] = bottom;
+		count++;
+	}
+
+	/* The part right of the hole, between the bands. */
+	if (hole[2] < piece[2]) {
+		into[count][0] = hole[2];
+		into[count][1] = top;
+		into[count][2] = piece[2];
+		into[count][3] = bottom;
+		count++;
+	}
+
+	/* Succeeded: the piece less the hole. */
+	return count;
 }

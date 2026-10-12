@@ -16,6 +16,11 @@
  * The damage's rectangles (ws211-p009): overlapping ones are joined,
  * nearly touching ones too, far ones stay apart, a full list joins the
  * pair that grows least, and the list never holds two that overlap.
+ *
+ * The cut of a quad around opaque shapes drawn over it (ws211-p011): pixel
+ * by pixel, no pixel is drawn twice, every pixel of the quad is drawn
+ * unless an opaque rounded rectangle fully covers it (cover 1, as
+ * panel.frag works it out), and the pieces stay few.
  */
 
 #include "userland/desktop/wayland/compose.h"
@@ -24,6 +29,7 @@
 #include "userland/desktop/wayland/popup.h"
 
 #include <assert.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -359,6 +365,165 @@ test_rects(void)
 	}
 }
 
+/* Signed distance from a point to a rounded rectangle (x, y, width, height), negative inside, as panel.frag's rounded(). */
+static float
+cut_rounded(
+	float x,
+	float y,
+	const float *box,
+	float radius)
+{
+	float qx;
+	float qy;
+	float outside_x;
+	float outside_y;
+	float inside;
+
+	qx = fabsf(x - (box[0] + box[2] * 0.5f)) - box[2] * 0.5f + radius;
+	qy = fabsf(y - (box[1] + box[3] * 0.5f)) - box[3] * 0.5f + radius;
+	outside_x = qx > 0.0f ? qx : 0.0f;
+	outside_y = qy > 0.0f ? qy : 0.0f;
+	inside = qx > qy ? qx : qy;
+	if (inside > 0.0f)
+		inside = 0.0f;
+	return sqrtf(outside_x * outside_x + outside_y * outside_y) + inside - radius;
+}
+
+/*
+ * Cuts a quad around opaque rounded rectangles (boxes with one radius) as
+ * panels.c and shell.c do (each box less its radius and one pixel), then
+ * checks every pixel centre: drawn at most once, and left out only under a
+ * box that covers it fully.  Returns the pieces.
+ */
+static unsigned
+cut_check(
+	const float *quad,
+	const float (*boxes)[4],
+	unsigned box_count,
+	float radius)
+{
+	float holes[8][4];
+	float pieces[KWL_CUT_PIECES][4];
+	float cx;
+	float cy;
+	float distance;
+	unsigned count;
+	unsigned index;
+	unsigned covering;
+	unsigned box;
+	int x;
+	int y;
+	int hidden;
+
+	for (index = 0U; index < box_count; index++) {
+		holes[index][0] = boxes[index][0] + radius + 1.0f;
+		holes[index][1] = boxes[index][1] + radius + 1.0f;
+		holes[index][2] = boxes[index][2] - 2.0f * (radius + 1.0f);
+		holes[index][3] = boxes[index][3] - 2.0f * (radius + 1.0f);
+	}
+	count = kwl_damage_rects_cut(quad, (const float (*)[4])holes, box_count, pieces);
+	assert(count <= KWL_CUT_PIECES);
+	for (y = (int)floorf(quad[1]) - 2; y < (int)ceilf(quad[1] + quad[3]) + 2; y++) {
+		for (x = (int)floorf(quad[0]) - 2; x < (int)ceilf(quad[0] + quad[2]) + 2; x++) {
+			cx = (float)x + 0.5f;
+			cy = (float)y + 0.5f;
+			covering = 0U;
+			for (index = 0U; index < count; index++) {
+				if (cx >= pieces[index][0] && cx < pieces[index][0] + pieces[index][2] &&
+				    cy >= pieces[index][1] && cy < pieces[index][1] + pieces[index][3])
+					covering++;
+			}
+			assert(covering <= 1U);
+
+			/* Outside the quad nothing is drawn; inside, only a fully covered pixel may be left out. */
+			if (cx < quad[0] || cx >= quad[0] + quad[2] || cy < quad[1] || cy >= quad[1] + quad[3]) {
+				assert(covering == 0U);
+				continue;
+			}
+			if (covering == 1U)
+				continue;
+			hidden = 0;
+			for (box = 0U; box < box_count; box++) {
+				distance = cut_rounded(cx, cy, boxes[box], radius);
+				if (0.5f - distance >= 1.0f)
+					hidden = 1;
+			}
+			if (!hidden)
+				printf("pixel %d,%d left out but not covered\n", x, y);
+			assert(hidden);
+		}
+	}
+	return count;
+}
+
+/* The cut of shadows and the glass between cards around the opaque glass over them (ws211-p011). */
+static void
+test_cut(void)
+{
+	static const float window[1][4] = { { 100.0f, 80.0f, 776.0f, 360.0f } };
+	static const float small[1][4] = { { 300.0f, 200.0f, 90.0f, 60.0f } };
+	static const float covering[1][4] = { { 0.0f, 0.0f, 400.0f, 300.0f } };
+	static const float cards[8][4] = {
+		{ 20.0f, 20.0f, 240.0f, 180.0f }, { 280.0f, 20.0f, 240.0f, 180.0f },
+		{ 540.0f, 20.0f, 240.0f, 180.0f }, { 20.0f, 220.0f, 240.0f, 180.0f },
+		{ 280.0f, 220.0f, 240.0f, 180.0f }, { 540.0f, 220.0f, 240.0f, 180.0f },
+		{ 20.0f, 420.0f, 760.0f, 120.0f }, { 20.0f, 560.0f, 120.0f, 40.0f }
+	};
+	float shadow[4];
+	float gaps[4] = { 20.0f, 20.0f, 760.0f, 580.0f };
+	float card_shadow[4];
+	unsigned count;
+
+	/* A window's shadow (22 soft, 8 down) around its opaque body (radius 14): four bands. */
+	shadow[0] = 100.0f - 44.0f;
+	shadow[1] = 88.0f - 44.0f;
+	shadow[2] = 776.0f + 88.0f;
+	shadow[3] = 360.0f + 88.0f;
+	count = cut_check(shadow, window, 1U, 14.0f);
+	assert(count == 4U);
+
+	/* No hole: the quad itself. */
+	count = cut_check(shadow, window, 0U, 14.0f);
+	assert(count == 1U);
+
+	/* A hole too small to be worth its draws is not cut. */
+	shadow[0] = 250.0f;
+	shadow[1] = 150.0f;
+	shadow[2] = 200.0f;
+	shadow[3] = 160.0f;
+	count = cut_check(shadow, small, 1U, 14.0f);
+	assert(count == 1U);
+
+	/* A quad with fractional edges (a layer scaled) inside a hole: nothing is left. */
+	shadow[0] = 50.25f;
+	shadow[1] = 60.75f;
+	shadow[2] = 150.5f;
+	shadow[3] = 120.125f;
+	count = cut_check(shadow, covering, 1U, 14.0f);
+	assert(count == 0U);
+
+	/* A hole across the quad's edge, fractional edges: the quad less it. */
+	shadow[0] = 330.25f;
+	shadow[1] = 10.5f;
+	shadow[2] = 200.0f;
+	shadow[3] = 400.0f;
+	count = cut_check(shadow, covering, 1U, 14.0f);
+	assert(count >= 1U);
+
+	/* The glass between eight cards: cut while the pieces stay at most eight. */
+	count = cut_check(gaps, cards, 8U, 12.0f);
+	assert(count >= 2U && count <= KWL_CUT_PIECES);
+
+	/* One card's shadow (16 soft, 6 down) over its own card and its neighbours. */
+	card_shadow[0] = 280.0f - 32.0f;
+	card_shadow[1] = 26.0f - 32.0f;
+	card_shadow[2] = 240.0f + 64.0f;
+	card_shadow[3] = 180.0f + 64.0f;
+	count = cut_check(card_shadow, cards, 8U, 12.0f);
+	assert(count >= 4U && count <= KWL_CUT_PIECES);
+	printf("cut: ok\n");
+}
+
 int
 main(void)
 {
@@ -441,6 +606,9 @@ main(void)
 
 	/* The rectangle list. */
 	test_rects();
+
+	/* The cut around opaque shapes. */
+	test_cut();
 
 	printf("damage-host-test: PASS\n");
 	return 0;

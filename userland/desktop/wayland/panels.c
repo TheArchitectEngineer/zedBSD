@@ -62,9 +62,9 @@
 static int panels_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
 static int panels_set(struct kwl_object *glass, struct kwl_object *surface, const unsigned char *bytes, size_t size);
 static int panels_check(const struct kwl_panel *panel);
-static void panels_shadow(struct kwl_server *server, struct kwl_list *command, const struct kwl_panel *panel, const float *place, float opacity);
+static void panels_shadow(struct kwl_server *server, struct kwl_list *command, const struct kwl_panel *panel, const float *place, float opacity, const float (*holes)[4], unsigned hole_count);
 static void panels_glass(struct kwl_server *server, struct kwl_list *command, const struct kwl_panel *panel, const float *place, float opacity, unsigned light);
-static void panels_gaps(struct kwl_server *server, struct kwl_list *command, const struct kwl_panels *panels, const float *place, float opacity, unsigned light);
+static void panels_gaps(struct kwl_server *server, struct kwl_list *command, const struct kwl_panels *panels, const float *place, float opacity, unsigned light, const float (*holes)[4], unsigned hole_count);
 static uint32_t panels_word(const unsigned char *bytes, size_t offset);
 
 /*
@@ -259,6 +259,9 @@ kwl_panels_draw(
 	unsigned shadows)
 {
 	const struct kwl_panels *panels;
+	float holes[KWL_PANELS_MAX][4];
+	float box[4];
+	unsigned hole_count;
 	unsigned index;
 	unsigned light;
 
@@ -267,16 +270,33 @@ kwl_panels_draw(
 	if (panels == NULL || panels->count == 0U)
 		return;
 
+	/*
+	 * Fully opaque, the cards' glass hides the inside of every card from the
+	 * gaps' glass and the shadows drawn before it (ws211-p011), which are
+	 * then drawn around the cards alone.
+	 */
+	hole_count = 0U;
+	if (opacity >= 1.0f) {
+		for (index = 0; index < panels->count; index++) {
+			box[0] = place[0] + (float)panels->current[index].x * place[2];
+			box[1] = place[1] + (float)panels->current[index].y * place[3];
+			box[2] = (float)panels->current[index].width * place[2];
+			box[3] = (float)panels->current[index].height * place[3];
+			glass_opaque_inside(box, (float)panels->current[index].radius * place[2], holes[hole_count]);
+			hole_count++;
+		}
+	}
+
 	/* The gaps between the panels, blurred, under the shadows and the panels. */
 	light = 0U;
 	if (surface->client->theme_bound == 0U)
 		light = 1U;
-	panels_gaps(server, command, panels, place, opacity, light);
+	panels_gaps(server, command, panels, place, opacity, light, (const float (*)[4])holes, hole_count);
 
 	/* The cards' shadows, under every panel, when asked for. */
 	for (index = 0; index < panels->count; index++) {
 		if (shadows != 0U)
-			panels_shadow(server, command, &panels->current[index], place, opacity);
+			panels_shadow(server, command, &panels->current[index], place, opacity, (const float (*)[4])holes, hole_count);
 	}
 
 	/*
@@ -413,7 +433,9 @@ panels_shadow(
 	struct kwl_list *command,
 	const struct kwl_panel *panel,
 	const float *place,
-	float opacity)
+	float opacity,
+	const float (*holes)[4],
+	unsigned hole_count)
 {
 	struct glass_shape shape;
 	float x;
@@ -441,7 +463,9 @@ panels_shadow(
 	shape.color[2] = 0.35f;
 	shape.color[3] = GLASS_SHADOW_ALPHA;
 	shape.opacity = opacity;
-	glass_shape_draw(server, command, &shape);
+
+	/* Drawn around the cards' opaque glass, which covers the rest of it. */
+	glass_shape_draw_except(server, command, &shape, holes, hole_count);
 }
 
 /*
@@ -504,7 +528,9 @@ panels_gaps(
 	const struct kwl_panels *panels,
 	const float *place,
 	float opacity,
-	unsigned light)
+	unsigned light,
+	const float (*holes)[4],
+	unsigned hole_count)
 {
 	struct glass_shape shape;
 	const struct kwl_panel *panel;
@@ -563,8 +589,8 @@ panels_gaps(
 		shape.color[3] = 1.0f;
 	}
 
-	/* Drawn. */
-	glass_shape_draw(server, command, &shape);
+	/* Drawn around the cards' opaque glass, which covers the rest of it. */
+	glass_shape_draw_except(server, command, &shape, holes, hole_count);
 }
 
 /* Reads one native-endian word of a request. */

@@ -3,7 +3,7 @@
 # ws211-p011: present の copy の command buffer の使い回しと、compositor の窓の tile あたりの GPU の費用
 
 Parent: [WS211](../ws.md)
-Status: in-progress（設計の第 1 版、2026-10-12 P3）
+Status: in-progress（実装 agent/p3 fa6102245（1、main へ merge 済み）と 2 の commit、host 試験 PASS・build warning 0。Pi・T1 の確かめ待ち。2026-10-12 P3）
 Phase disposition: normal
 Queue: P3（2026-10-12 ユーザー「進め方はおすすめでいいです」、Q1 の割り当て。[p010](../phase010/phase.md) §2.3 の P4 の残りの提案の 1 つと、p008 の残り）
 
@@ -121,7 +121,7 @@ counter の意味は `src/drivers/gpu/bcm2711/v3d-job.c` の `counters_prepare`�
 #### D2 不透明な層の下を描かない（`damage.c` の切り、`glass.c`・`panels.c`・`shell.c`）
 
 - `kwl_damage_rects_cut`（damage.c、純粋な関数、host 試験あり）: 四角 quad から穴の四角の list を引き、互いに素な四角（最大 `KWL_CUT_PIECES` = 8）を返す。穴は重なりの面積が `KWL_CUT_AREA`（96×96 画素）以上の物だけ、面積の大きい順に引き、引くと 8 を超える穴は引かない。穴は内側へ整数の画素に丸める（隣の piece と縁を共有し、隙間も重なりもない）。
-  - 閾値の根拠: 穴 1 つで draw が最大 3 つ増える（kernel の準備は draw あたり約 10〜50µs、CPU 側）。96×96 の影（92 命令）で 26k cycles（約 53µs の GPU）、gap glass（178 命令）で 51k cycles。
+    - 閾値の根拠: 穴 1 つで draw が最大 3 つ増える（kernel の準備は draw あたり約 10〜50µs、CPU 側）。96×96 の影（92 命令）で 26k cycles（約 53µs の GPU）、gap glass（178 命令）で 51k cycles。
 - `glass_shape_draw_except(server, command, shape, holes, count)`（glass.c）: 切った piece ごとに shape の quad を piece にし、uv を quad の中の位置で比例させて（image でも正しい）`glass_shape_draw` を呼ぶ。layer の不透明度が 1 未満の時（App Home の後ろの desktop）は穴を使わない（上の層が半透明になるため）。
 - 穴 = 不透明な上の層の rounded rect の内側（box を radius ＋ 1 だけ内へ）:
   - `kwl_panels_draw`: opacity が 1 以上の時、各 card の glass の内側を穴にし、gap glass と全部の card の影をその穴を除いて描く（card の glass は影と gap の後に描かれる）。
@@ -136,6 +136,29 @@ counter の意味は `src/drivers/gpu/bcm2711/v3d-job.c` の `counters_prepare`�
 - build: rpi4 の wayland・libvulkan、amd64 の wayland。既存の ws211・ws213 の host 試験。
 - Pi・T1: 見た目（glass の色、影、card の窓、dark の外観）が今と同じこと、`v3d: gpu tiles` の draw の cycles/tile と quads/tile が下がること。
 
-## 確かめ
+## 3. 実装（2026-10-12 P3、agent/p3）
 
-（実装の後に書く）
+- **1（fa6102245、Q1 が main へ merge 済み）**: `wsi-swapchain.c` に `struct wsi_present_recording`（鍵）、slot と job の `recording`、chain の `serial`。`present_recording_key`・`present_recording_same`・`present_recording_image`（同じ image の古い記録の slot を先に使い、slot が image ごとに落ち着く）、`present_fence_prepare` の slot の選び方、`present_record` の使い回し（Begin の flag は 0）、`present_submit` の失敗で鍵を消す、`swapchain_free` の `present_slots_forget`（その chain の記録を持つ空き slot を `vkResetCommandBuffer`）。
+- **2（この commit）**:
+  - D1: `shaders/panel.frag`（glass の block、mode 7＝dark glass の variant）、`shaders/regenerate.py`（variant 8 つ）、`shaders.h`（作り直し。glass 以外の SPIR-V は byte 単位で同じ）、`compose.h`（`KWL_PANEL_MODES` 8、`KWL_PANEL_DARK_GLASS`）、`glass.c`（`glass_shape_glass_constants`、dark glass は variant 7 の pipeline）。compose.c は変えていない（pipeline の loop が `KWL_PANEL_MODES` で回る）。
+  - D2: `damage.c` の `kwl_damage_rects_cut`（kwl.h に `KWL_CUT_PIECES`）、`glass.c` の `glass_shape_draw_except`・`glass_opaque_inside`、`panels.c`（gap glass と card の影を card の glass の内側を除いて描く、opacity が 1 以上の時）、`shell.c` の `body_shadow_hole`（BODY_WHOLE で、glass の body か不透明な絵の内側を窓の影から除く）。
+
+## 4. 確かめ（2026-10-12 P3、host）
+
+- **見た目が変わらないこと**（Q1 の条件）:
+  - glass の shader: `plan/ws211/tests/glass-shader-host-test.sh`（新規）。本物の SPIR-V（light の variant 0、dark の variant 7、generic）を source の段で解釈し、p011 の前の panel.frag の glass を C で書いた物と比べる。31 の壁紙（平らな 27 色と滑らかな絵 4 つ）× glass の色 9（白 0.30・0.34・0.54・0.64・1.0、透明の黒、dark の色 2、白に近い色）× box 4 × 平らさ 4 × rim 3 × 不透明度 2 × 外観 2 × shader 2 × 36 画素 = 3,856,896 fragment で、**色の channel の差は最大 1.19e-7（8 bit の 1 段の 0.00003）**。同じ比較を p011 の前の SPIR-V（`shaders.h` の前の版）でも行い、同じ最大 1.19e-7（前の SPIR-V と C の参照も一致、前後の差は最大 2.4e-7）。差は浮動小数の丸め（sheen の積の順、割り算と逆数の掛け算）だけ。
+  - native の compiler の出力: WS141 の `shader-host-test.sh`（native と source の比較）を mode 7 と、glass の per-shape の値に合わせて直し、PASS。
+  - 影・gap glass の切り: `plan/ws211/tests/damage-host-test.sh` の `test_cut`。窓の影、穴なし、小さな穴、層の拡大縮小の端数の座標、quad の縁をまたぐ穴、8 枚の card の gap glass と 1 つの card の影で、画素の中心ごとに「2 度描かれない」「描かれない画素は不透明な rounded rect が完全に覆う（panel.frag の cover が 1）」を確かめた。覆われた画素は、上の層の alpha が 1（cover 1 × opacity 1）なので、premultiplied の source-over（ONE・ONE_MINUS_SRC_ALPHA）で下の色に依らず上の層の色そのもの。よって画素は変わらない。穴は opacity が 1 未満の時（window.opacity、App Home の後ろの desktop の layer）は使わない。
+- 命令の数（host の probe、build/p3-p011/shader-size、commit しない）: light glass 241 → **178**、dark glass → **202**。他の shader は同じ。
+- 既存の回帰: `vulkan-cursor-host.sh`（WS141、u17・u18 を追加）、`shader-host-test.sh`（WS141）、ws211 の `anim`・`batch`・`bind`・`damage`・`native-pass-boxes`・`object-index`、ws213 の `cursor-due`・`input-thread`・`list-replay`（799 行、golden 一致）・`render-thread` → 全部 PASS。
+- build（warning 0、-Werror）: `make -j16 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/dynamic/libvulkan.so build/arm64/bin/wayland -o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete`、amd64 の `build/amd64/dynamic/libvulkan.so` と、変えた compositor の object（glass・panels・shell・damage・compose・batch）。amd64 の `build/amd64/bin/wayland` の link は worktree の amd64 の sysroot の `keiland.h` が古く libkeiland の compile で止まる（p011 と無関係、未実施）。Linux・FreeBSD の build は未実施。
+- `git diff --check` 空。`plan/tools/style-check.py` で、変えた file の指摘は base より増えていない。
+
+## 5. Pi・T1 で見ること
+
+- Pi（焼き直しの後、BUG-294）: `build/arm64/dynamic/libvulkan.so`（`/lib/libvulkan.so`）と `build/arm64/bin/wayland`（`/bin/wayland`）。
+  - 見た目: glass（title bar・system bar・card・窓の body）の色、白 glass の lift、dark の外観の glass、影の形（窓・card）、card の窓の gap が前と同じ。
+  - `v3d: gpu tiles` の draw の cycles/tile と quads/tile（`v3d: gpu` の quads・qvalid）が下がること。card の窓（Settings・Calendar）で quads/tile と cycles/tile、App Home を開く時。
+  - KWL LAT の queued→submit（present の往復が 3→1）。`v3d: decode` の requests の数が present ごとに 2 減る。
+  - cursor の lane（`VULKAN_ZEDBSD_CURSOR_LOG=1` の時の VK CURSOR の path・時刻）が前と同じ。
+- T1（i915・Venus）: compositor の見た目（glass・影・card の窓・dark の外観）、Wayland の client の present（client の libvulkan も slot の記録を使い回す）、窓の大きさを変えて swapchain を作り直す場面（古い chain の slot の reset）。
