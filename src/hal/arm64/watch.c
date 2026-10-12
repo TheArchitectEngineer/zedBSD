@@ -498,6 +498,7 @@ check_others(
 	unsigned count;
 	unsigned ready;
 	uint64_t beat;
+	uint64_t started;
 	int entered;
 
 	/* Finds the first CPU, other than this one, that is up but has not ticked. */
@@ -522,9 +523,10 @@ check_others(
 		}
 	}
 
-	/* Nothing stopped: a stop that was reported is over. */
+	/* Nothing stopped: a stop that was reported is over, and the next one starts afresh. */
 	if (stopped == HAL_CPU_MAX) {
-		if (__atomic_load_n(&watch_stall_start, __ATOMIC_RELAXED) == 0)
+		started = __atomic_load_n(&watch_stall_start, __ATOMIC_RELAXED);
+		if (started == 0)
 			return;
 		entered = report_try_enter(self);
 		if (!entered)
