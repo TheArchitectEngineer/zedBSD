@@ -432,6 +432,8 @@ bcm2711_display_flip_record(
 			display->flip.retiring[display->flip.retiring_count].serial = display->flip.state_serial;
 			display->flip.retiring_count++;
 		}
+
+		/* The new primary is the recorded one, with the caller's reference. */
 		display->flip.primary = *primary;
 		display->flip.primary.shown = true;
 		display->flip.perf.primary_records++;
@@ -468,6 +470,7 @@ bcm2711_display_flip_wait(
 	unsigned long enabled;
 	uint64_t deadline;
 	uint64_t observed;
+	uint64_t now;
 	int error;
 
 	/* Nothing was recorded before the guard exists. */
@@ -497,7 +500,8 @@ bcm2711_display_flip_wait(
 		}
 
 		/* The deadline passed: the hardware did not take the list. */
-		if (sched_ticks() >= deadline) {
+		now = sched_ticks();
+		if (now >= deadline) {
 			display->flip.uncertain = true;
 			waitq_wake_all(&display->flip.adoption_waitq);
 			error = ETIMEDOUT;
@@ -640,6 +644,8 @@ bcm2711_display_flip_cursor(
 		display->flip.state_serial++;
 		display->flip.perf.cursor_records++;
 	}
+
+	/* The newest cursor is the recorded one, shown or not. */
 	display->flip.cursor = *cursor;
 
 	/* A pipeline that is no longer ours keeps the change recorded and is left to recovery. */
@@ -703,6 +709,7 @@ bcm2711_display_flip_frame_use(
 	unsigned long enabled;
 	uint32_t slot;
 	unsigned use;
+	bool overlaps;
 
 	/* Nothing names storage before the guard exists. */
 	if (!display->flip.initialized)
@@ -716,11 +723,17 @@ bcm2711_display_flip_frame_use(
 		/* A list the hardware may read keeps its frame until a later adoption. */
 		if (!display->flip.slots[slot].used || !display->flip.slots[slot].has_frame)
 			continue;
-		if (range_overlaps(&display->flip.slots[slot].frame, physical, bytes))
+		overlaps = range_overlaps(&display->flip.slots[slot].frame, physical, bytes);
+		if (overlaps)
 			use = BCM2711_FLIP_FRAME_LISTED;
 	}
-	if (display->flip.primary.shown && range_overlaps(&display->flip.primary.frame, physical, bytes))
-		use = BCM2711_FLIP_FRAME_RECORDED;
+
+	/* The recorded primary keeps its frame until a later record replaces it. */
+	if (display->flip.primary.shown) {
+		overlaps = range_overlaps(&display->flip.primary.frame, physical, bytes);
+		if (overlaps)
+			use = BCM2711_FLIP_FRAME_RECORDED;
+	}
 
 	spin_unlock_irqrestore(&display->flip.guard, enabled);
 
@@ -744,8 +757,10 @@ bcm2711_display_flip_wait_unlisted(
 	unsigned long enabled;
 	uint64_t deadline;
 	uint64_t observed;
+	uint64_t now;
 	uint32_t slot;
 	bool listed;
+	bool overlaps;
 	int error;
 
 	/* Nothing names storage before the guard exists. */
@@ -763,7 +778,8 @@ bcm2711_display_flip_wait_unlisted(
 			/* Only a used list with a frame can name it. */
 			if (!display->flip.slots[slot].used || !display->flip.slots[slot].has_frame)
 				continue;
-			if (range_overlaps(&display->flip.slots[slot].frame, physical, bytes))
+			overlaps = range_overlaps(&display->flip.slots[slot].frame, physical, bytes);
+			if (overlaps)
 				listed = true;
 		}
 
@@ -781,7 +797,8 @@ bcm2711_display_flip_wait_unlisted(
 			break;
 
 		/* The hardware did not take a later list in time. */
-		if (sched_ticks() >= deadline) {
+		now = sched_ticks();
+		if (now >= deadline) {
 			error = ETIMEDOUT;
 			break;
 		}
@@ -833,9 +850,13 @@ bcm2711_display_flip_reap(
 			kept++;
 			continue;
 		}
+
+		/* The replacing record is shown: the image goes. */
 		released[count] = display->flip.retiring[index].hold;
 		count++;
 	}
+
+	/* The entries still waiting are the first kept ones. */
 	display->flip.retiring_count = kept;
 
 	spin_unlock_irqrestore(&display->flip.guard, enabled);
@@ -938,11 +959,17 @@ bcm2711_display_flip_restore(
 		released[count] = display->flip.primary.hold;
 		count++;
 	}
+
+	/* The primary was hidden by the restore and borrows nothing more. */
 	kern_memset(&display->flip.primary, 0, sizeof(display->flip.primary));
+
+	/* Every image waiting for an adoption goes too. */
 	for (index = 0; index < display->flip.retiring_count; index++) {
 		released[count] = display->flip.retiring[index].hold;
 		count++;
 	}
+
+	/* Nothing waits any more. */
 	display->flip.retiring_count = 0;
 
 	spin_unlock_irqrestore(&display->flip.guard, enabled);
@@ -1026,6 +1053,7 @@ bcm2711_display_flip_vblank_locked(
 {
 	uint32_t index;
 	uint32_t found;
+	uint32_t list;
 
 	/* Counts real selected-PV frames independently of submissions and old lists. */
 	display->flip.frame_sequence++;
@@ -1058,9 +1086,12 @@ bcm2711_display_flip_vblank_locked(
 	found = display->flip.pending_count;
 	for (index = 0; index < display->flip.pending_count; index++) {
 		/* The register holds one complete list's address. */
-		if (slot_list(display->flip.pending[index]) == current)
+		list = slot_list(display->flip.pending[index]);
+		if (list == current)
 			found = index;
 	}
+
+	/* The hardware still shows the adopted list. */
 	if (found == display->flip.pending_count)
 		return;
 
@@ -1168,6 +1199,7 @@ bcm2711_display_flip_report(
 {
 	struct bcm2711_flip_perf window;
 	unsigned long enabled;
+	uint64_t elapsed;
 	uint64_t now;
 	uint64_t underruns;
 	uint64_t sets;
@@ -1190,11 +1222,14 @@ bcm2711_display_flip_report(
 	display->flip.perf.clean += clean;
 	display->flip.perf.raise += raise;
 	display->flip.perf.wait += wait;
+	elapsed = 0;
+	if (display->flip.perf.start != 0)
+		elapsed = kern_ticks_to_ms(now - display->flip.perf.start);
 	if (display->flip.perf.start == 0) {
 		/* The first flip opens the window; underruns are counted from the total at its start. */
 		display->flip.perf.start = now;
 		display->flip.perf.underruns = display->underruns;
-	} else if (kern_ticks_to_ms(now - display->flip.perf.start) >= 2000U && !display->flip.perf_reporting) {
+	} else if (elapsed >= 2000U && !display->flip.perf_reporting) {
 		/* The window is copied and starts again empty at this report. */
 		window = display->flip.perf;
 		kern_memset(&display->flip.perf, 0, sizeof(display->flip.perf));
@@ -1252,6 +1287,7 @@ check_primary(
 	struct drv_bcm2711_boot_screen extent;
 	uint32_t words[FLIP_PLANE_WORDS];
 	const struct drv_bcm2711_boot_screen *frame;
+	bool overlap;
 	int error;
 
 	/* Refuses any crop, scaling or overflow of the established output. */
@@ -1270,7 +1306,8 @@ check_primary(
 		return error;
 
 	/* The console is never scanned out from storage that also holds a frame. */
-	if (frames_overlap(frame, &display->screen))
+	overlap = frames_overlap(frame, &display->screen);
+	if (overlap)
 		return EINVAL;
 
 	/* Succeeded: the plane can be encoded into any later list. */
@@ -1517,6 +1554,7 @@ check_pipeline(
 	uint32_t port;
 	uint32_t slot;
 	uint32_t index;
+	uint32_t list;
 	bool known;
 
 	/* Requires the exact active geometry and no enabled competing HVS channel. */
@@ -1566,19 +1604,27 @@ check_pipeline(
 			known = true;
 		for (slot = 0; slot < BCM2711_FLIP_SLOTS; slot++) {
 			/* A slot's list address. */
-			if (current == slot_list(slot))
+			list = slot_list(slot);
+			if (current == list)
 				known = true;
 		}
+
+		/* A foreign current list is never overwritten. */
 		if (!known)
 			return EBUSY;
+
+		/* The next list is ours too. */
 		known = false;
 		if (next == FLIP_CONSOLE_LIST)
 			known = true;
 		for (slot = 0; slot < BCM2711_FLIP_SLOTS; slot++) {
 			/* A slot's list address. */
-			if (next == slot_list(slot))
+			list = slot_list(slot);
+			if (next == list)
 				known = true;
 		}
+
+		/* A foreign next list is never replaced. */
 		if (!known)
 			return EBUSY;
 	} else {
@@ -1588,9 +1634,12 @@ check_pipeline(
 			known = true;
 		for (index = 0; index < display->flip.pending_count; index++) {
 			/* A published list the hardware may have taken already. */
-			if (current == slot_list(display->flip.pending[index]))
+			list = slot_list(display->flip.pending[index]);
+			if (current == list)
 				known = true;
 		}
+
+		/* Any other current list means another owner wrote the pointers. */
 		if (!known)
 			return EBUSY;
 
@@ -1706,6 +1755,8 @@ publish_locked(
 		if (!display->flip.slots[slot].used)
 			break;
 	}
+
+	/* A fourth list cannot be out: the count above makes this impossible. */
 	if (slot == BCM2711_FLIP_SLOTS)
 		__builtin_trap();
 
@@ -1717,6 +1768,8 @@ publish_locked(
 		fresh = false;
 		display->flip.perf.replaced++;
 	}
+
+	/* The hardware follows the pointer at a coming frame start. */
 	publish_list(display, list, fresh);
 
 	/* The list is out, the newest, and shows every record so far. */
@@ -1982,6 +2035,7 @@ wait_console(
 	unsigned long enabled;
 	uint64_t deadline;
 	uint64_t observed;
+	uint64_t now;
 	int error;
 
 	/* Sleeps until the IRQ sees the console adopted, or the deadline. */
@@ -1996,7 +2050,8 @@ wait_console(
 		}
 
 		/* The deadline passed: every image stays until a later restore succeeds. */
-		if (sched_ticks() >= deadline) {
+		now = sched_ticks();
+		if (now >= deadline) {
 			display->flip.uncertain = true;
 			display->flip.restoring = false;
 			waitq_wake_all(&display->flip.adoption_waitq);

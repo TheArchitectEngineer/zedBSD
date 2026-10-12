@@ -1166,6 +1166,8 @@ copy_frame(
 			return error;
 		target = listed;
 	}
+
+	/* Both targets are named by recorded frames: the copy cannot go anywhere now. */
 	if (target == NULL)
 		return EBUSY;
 	native_format = GPU_PIXEL_BGRA8888;
@@ -1292,6 +1294,8 @@ output_adoption_wait(
 		spin_unlock_irqrestore(&controller->sequence_guard, enabled);
 		return EOVERFLOW;
 	}
+
+	/* The lease's count of completed presents and the time of this one. */
 	controller->completed++;
 	controller->present_time = sched_ticks() * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
 	session->completed = controller->completed;
