@@ -441,7 +441,7 @@ MSAA は使わない（Notes と同じく sample 1）。縁は SDF の shader �
 | 状態 | frame の率 | 理由 |
 | --- | --- | --- |
 | 操作中・展開・警告の遷移 | 60 fps（FIFO） | 手に付いてくる |
-| 呼吸（触れていない、見えている） | 既定 30 fps、`--fps` で変える。QEMU の Venus（lavapipe）では 20 fps を推奨 | 常時のわずかな動きと連続の graph。compositor の負荷を抑える |
+| 呼吸（触れていない、見えている） | 既定 2 fps（2026-10-12 ユーザー「System Monitorは重いので、2fpsで更新できることが目標です。逆にそれ以上の頻度で更新しないようにしましょう。」「UIレスポンスは60fpsです。」）、`--fps` で変える。操作への応答は 60 fps | 常時のわずかな動きと連続の graph。compositor の負荷を抑える |
 | 静止（`--calm`、または 30 秒操作が無く値の変化が小さい） | sample ごと（1 fps）＋値の変化の 180 ms の遷移だけ | 電池・発熱 |
 | 隠れている（最小化・他の desktop） | 0（描かない、sample の受け取りだけ続ける） | 下の「frame の許可」 |
 
@@ -494,7 +494,7 @@ ID は Q1 が割り当て済み（2026-10-03）。QEMU の試験は T1/T2 に依
 | D2 | stub の印 | **決定（2026-10-03 user）: 付けない**。stub の項目は §1.5 の表で管理し、各 Phase の報告に添える |
 | D3 | HAL の MSR の API（CPU の周波数・温度・RAPL の電力）と割り込みの時間 | この WS では求めない。必要なら別に差分を出して user の承認 |
 | D4 | 名前（System Monitor、`/bin/monitor`） | 案のまま（user「確認しなくていい」） |
-| D5 | 呼吸の既定の frame の率 | 30 fps（QEMU では 20） |
+| D5 | 呼吸の既定の frame の率 | 2 fps（2026-10-12 ユーザー、操作の応答は 60 fps） |
 | D6 | process の一覧（top の代わり） | 範囲の外（参考の画像とコンセプトに無い） |
 | D7 | GPU の telemetry の出し方 | sysctl（Guardrail「compositor は GPU の UAPI を ioctl で呼ばない」に合わせる、review 3） |
 | Q1 への依頼 | manager の version・opcode の予約（monitor は 3 の案）、WS131 の app の移行の一覧と p023 の前提に monitor を足す、p008 の分割の ID、`apps.conf` 等の path の順 | §1.3・§1.4 |
