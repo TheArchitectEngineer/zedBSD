@@ -211,7 +211,9 @@ kern_mmio_write32(
 			/* One of the three slots, with an END after at most three planes. */
 			check(word == SLOT0 || word == SLOT1 || word == SLOT2, "dedicated SRAM slot");
 			list = &test_hvs[0x4000 / 4 + word];
-			check(list[8] == 0x80000000U || list[16] == 0x80000000U || list[24] == 0x80000000U, "END after the planes");
+			for (index = 0; index < 64U && list[index] != 0x80000000U; index++)
+				continue;
+			check(index < 64U, "END after the planes");
 			expected_order = 0x4800d807U;
 			if (test_display.screen.format == 1)
 				expected_order = 0x4800f807U;
@@ -940,7 +942,9 @@ overlay_flips(
 	struct bcm2711_flip_owner owner;
 	struct drv_bcm2711_boot_screen window;
 	struct drv_bcm2711_boot_screen band;
+	struct drv_bcm2711_boot_screen wide;
 	struct bcm2711_flip_cursor cursor;
+	unsigned cleaned;
 	uint64_t serial;
 	uint64_t adopted;
 	uint64_t ticks;
@@ -1006,25 +1010,63 @@ overlay_flips(
 	before = test_display.flip.state_serial;
 	window.uncached = false;
 	overlay_change(&changes[0], 1, 3, &window);
+	changes[0].dst_x = 1800;
+	cleaned = test_cleaned;
 	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
-	check(error == EINVAL, "a cached overlay image refused");
-	window.uncached = true;
+	check(error == EINVAL && test_cleaned == cleaned, "a refused commit cleans nothing");
 	overlay_change(&changes[0], 1, 3, &window);
-	changes[0].dst_width = 400;
 	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
-	check(error == ENOSPC, "no scaling: outside the overlay's limits");
-	overlay_change(&changes[0], 1, 3, NULL);
+	check(error == 0 && test_cleaned == cleaned + 1U, "a cached overlay image is cleaned once at its commit");
+	overlay_change(&changes[0], 1, 4, NULL);
+	changes[0].dst_x = 30;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == 0 && test_cleaned == cleaned + 1U, "a move keeping the image cleans nothing");
+	window.uncached = true;
+	overlay_change(&changes[0], 1, 5, &window);
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == 0 && test_cleaned == cleaned + 1U, "an uncached image is not cleaned");
+	before = test_display.flip.state_serial;
+	wide = window;
+	wide.width = 2100;
+	wide.height = 100;
+	wide.pitch = 8400;
+	wide.size = 840000;
+	overlay_change(&changes[0], 1, 13, &wide);
+	changes[0].src_x = 0;
+	changes[0].src_y = 0;
+	changes[0].src_width = 2049;
+	changes[0].dst_width = 1900;
+	changes[0].dst_x = 0;
+	changes[0].dst_height = 50;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == ENOSPC, "a vertically scaled line wider than the line buffer: outside the limits");
+	overlay_change(&changes[0], 1, 13, &window);
+	changes[0].dst_width = 6;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == ENOSPC, "a reduction of 32 or more: outside the limits");
+	overlay_change(&changes[0], 1, 13, &window);
+	changes[0].src_x = 0;
+	changes[0].src_y = 0;
+	changes[0].dst_x = 0;
+	changes[0].dst_y = 0;
+	changes[0].src_width = 1920;
+	changes[0].src_height = 1080;
+	changes[0].dst_width = 1920;
+	changes[0].dst_height = 360;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == ENOSPC, "a vertical reduction reads its rows that many times: over the budget");
+	overlay_change(&changes[0], 1, 13, NULL);
 	changes[0].dst_x = 1800;
 	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
 	check(error == EINVAL, "a place outside the output refused");
-	overlay_change(&changes[0], 1, 3, NULL);
+	overlay_change(&changes[0], 1, 13, NULL);
 	changes[0].shown = false;
 	changes[0].image = true;
 	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
 	check(error == EINVAL && test_display.flip.state_serial == before, "an image for a hidden plane refused; nothing changed");
 
 	/* The budget: three full planes fit 60 Hz, not 61 Hz; nothing changes when refused. */
-	overlay_change(&changes[0], 1, 3, &window);
+	overlay_change(&changes[0], 1, 13, &window);
 	changes[0].src_x = 0;
 	changes[0].src_y = 0;
 	changes[0].dst_x = 0;
@@ -1056,8 +1098,35 @@ overlay_flips(
 	error = bcm2711_display_flip_wait(&test_display, &owner, serial);
 	check(error == 0 && test_released > before && test_released_last == (struct bcm2711_buffer *)&test_frames[2], "the band's image goes after the adoption");
 
+	/* Enlarged by the polyphase filter on both axes: the scaled words, the line buffer and the filter. */
+	overlay_change(&changes[0], 1, 14, NULL);
+	changes[0].dst_width = 300;
+	changes[0].dst_height = 150;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	list = &test_hvs[0x4000 / 4 + test_hvs[0x20 / 4] + 8];
+	check(error == 0 && list[0] == (0x40000000U | (17U << 24) | (2U << 13) | 0x1800U | 7U), "polyphase control word: 17 words, both channels PPF");
+	check(list[1] == ((400U << 16) | 300U) && list[2] == 0x2000fff0U, "scaled place and alpha");
+	check(list[3] == ((150U << 16) | 300U) && list[4] == ((100U << 16) | 200U), "scaled and source sizes");
+	check(list[6] == (0xc0000000U | ((uint32_t)window.physical + 50U * 7680U + 100U * 4U)) && list[8] == 7680U, "scaled source start and pitch");
+	check(list[9] == 0U, "the first overlay's line buffer part");
+	check(list[10] == 0x40aaaa60U && list[11] == 0x40aaaa60U && list[12] == 0xc0c0c0c0U, "horizontal and vertical polyphase steps");
+	check(list[13] == 32U && list[16] == 32U && list[17] == 0x80000000U, "the resident filter four times, then END");
+
+	/* Reduced by the trapezoidal filter on both axes: ratio and reciprocal, no filter places. */
+	overlay_change(&changes[0], 1, 15, NULL);
+	changes[0].dst_width = 50;
+	changes[0].dst_height = 25;
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	list = &test_hvs[0x4000 / 4 + test_hvs[0x20 / 4] + 8];
+	check(error == 0 && list[0] == (0x40000000U | (15U << 24) | (2U << 13) | 0x1800U | (3U << 8) | (3U << 5) | 7U), "trapezoidal control word: 15 words");
+	check(list[10] == 0x04000000U && list[11] == 0x3fffU && list[12] == 0x04000000U && list[13] == 0x3fffU, "trapezoidal steps");
+	check(list[14] == 0xc0c0c0c0U && list[15] == 0x80000000U, "vertical context, then END");
+	overlay_change(&changes[0], 1, 16, NULL);
+	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
+	check(error == 0, "back to unscaled");
+
 	/* The number wait: EAGAIN without time, the adoption, and EBUSY for another lease. */
-	overlay_change(&changes[0], 1, 4, NULL);
+	overlay_change(&changes[0], 1, 17, NULL);
 	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
 	check(error == 0, "a move to wait for");
 	error = bcm2711_display_flip_wait_number(&test_display, &owner, serial, 0, &adopted, &ticks);
@@ -1080,10 +1149,10 @@ overlay_flips(
 	cursor.x = 50;
 	error = bcm2711_display_flip_cursor(&test_display, &owner, &cursor);
 	check(error == 0, "cursor shown");
-	overlay_change(&changes[0], 1, 5, NULL);
+	overlay_change(&changes[0], 1, 18, NULL);
 	changes[0].dst_x = 20;
 	error = bcm2711_display_flip_commit(&test_display, &owner, changes, 1, &serial, &adopted);
-	check(error == 0 && test_display.flip.times[0].plane == 1 && test_display.flip.times[0].plane_serial == 5, "the record's time joins the ring");
+	check(error == 0 && test_display.flip.times[0].plane == 1 && test_display.flip.times[0].plane_serial == 18, "the record's time joins the ring");
 	deliver(0, test_hvs[0x20 / 4]);
 	check(test_display.flip.perf.pair_window == 1 && test_display.flip.perf.pair_both == 1, "a list moving window and cursor together counts as a pair");
 	check(test_display.flip.times[0].adopted != 0, "the record's adoption time");

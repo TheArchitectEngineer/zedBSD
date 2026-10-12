@@ -3,7 +3,7 @@
 # The platform provides DYNAMIC_SYSROOT, DYNAMIC_LINK_CFLAGS,
 # DYNAMIC_LINK_LDFLAGS and DYNAMIC_ELF_MACHINE. Source and link dependencies
 # stay identical on amd64 and arm64; libc, rtld and assembly stay platform-owned.
-DYNAMIC_PORTABLE_PROGRAMS := vkdemo vkvideo-probe media-probe display-events wayland wltest acquire-fence-test gpu-forge-test menu-probe keiland-settings keiland-system printtest keiland-notify mediastorage fidoctl passkey-fido2 titlebar-probe popup-probe subsurface-probe seat-probe tablet-probe data-probe extras-probe wlshm keiland-ime ime-probe mview terminal files settings monitor notes pdfviewer imageview videoplayer music photos phone calendar mailer textedit kuidemo browser browser-probe glxtest zgears egltest glescompute xserver gpu-fence-test gpu-share-test
+DYNAMIC_PORTABLE_PROGRAMS := vkdemo vkvideo-probe media-probe display-events wayland wltest acquire-fence-test gpu-forge-test menu-probe keiland-settings keiland-system printtest keiland-notify mediastorage fidoctl passkey-fido2 titlebar-probe popup-probe subsurface-probe seat-probe tablet-probe data-probe extras-probe wlshm keiland-ime ime-probe mview terminal files settings monitor notes pdfviewer imageview videoplayer music photos phone calendar mailer textedit kuidemo browser browser-probe glxtest zgears egltest glescompute xserver gpu-fence-test gpu-share-test hvs-load
 
 $(eval $(call ZEDBSD_LIBUTIL_RULE,$(DYNAMIC_DIR),$(LD),$(DYNAMIC_LINK_LDFLAGS),$(DYNAMIC_ELF_MACHINE)))
 
@@ -1162,3 +1162,19 @@ $(BUILD)/bin/gpu-share-test: $(DYNAMIC_SYSROOT)/usr/lib/crt1.o \
  -l:libwayland-client.so -l:libc.so -o $@
 	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine $(DYNAMIC_ELF_MACHINE) --role application \
  --needed libwayland-client.so --needed libc.so $@
+
+# The HVS overlay load probe (ws214-p003b) talks to the display node's commit ioctl with the C library alone.
+DYNAMIC_HVS_LOAD_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,hvs-load)
+
+$(BUILD)/bin/hvs-load: $(DYNAMIC_SYSROOT)/usr/lib/crt1.o \
+	$(DYNAMIC_HVS_LOAD_OBJS) $(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so
+	@mkdir -p $(dir $@)
+	$(CC) $(DYNAMIC_LINK_CFLAGS) -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(DYNAMIC_SYSROOT)/usr/lib/crt1.o $(DYNAMIC_HVS_LOAD_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine $(DYNAMIC_ELF_MACHINE) --role application \
+ --needed libc.so $@
