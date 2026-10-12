@@ -69,6 +69,10 @@ struct machine {
 };
 
 static void fail(const struct machine *machine, const char *reason);
+static void decode_word(struct machine *machine, uint32_t index, struct v3d_qpu_instr *instruction);
+static void run_alus(struct machine *machine, const struct v3d_qpu_instr *instruction);
+static void run_signals(struct machine *machine, const struct v3d_qpu_instr *instruction);
+static void run_switch(struct machine *machine, const struct v3d_qpu_instr *instruction);
 static uint32_t float_bits(float number);
 static float bits_float(uint32_t bits);
 static uint32_t half_bits(float number);
@@ -99,21 +103,8 @@ qpu_machine_run(
 	const struct bcm2711_shader_binary *binary;
 	struct machine machine;
 	struct v3d_qpu_instr instruction;
-	uint64_t repacked;
-	uint32_t add_left;
-	uint32_t add_right;
-	uint32_t mul_left;
-	uint32_t mul_right;
-	uint32_t add_bits;
-	uint32_t mul_bits;
-	uint32_t flag;
 	uint32_t index;
 	uint32_t seed;
-	uint32_t delay;
-	bool flags_set;
-	bool accepted;
-	bool add_write;
-	bool mul_write;
 
 	/* The lane starts with the payload and garbage elsewhere, nothing in flight and nothing lost. */
 	binary = setup->binary;
@@ -128,6 +119,8 @@ qpu_machine_run(
 		machine.value[index] = seed;
 		machine.pending_land[index] = MACHINE_NONE;
 	}
+
+	/* The payload registers and cleared flags; no switch, thread end or special function yet. */
 	machine.value[0] = setup->payload[0];
 	machine.value[1] = setup->payload[1];
 	machine.value[2] = setup->payload[2];
@@ -146,153 +139,12 @@ qpu_machine_run(
 		if (machine.switch_effect == index)
 			switch_effect(&machine);
 
-		/* The independent decoder reads the word and must rebuild it exactly, unless it was decoded once already. */
-		if (setup->decoded != NULL) {
-			instruction = setup->decoded[index];
-		} else {
-			accepted = v3d_qpu_instr_unpack(device, binary->code[index], &instruction);
-			if (!accepted || instruction.type != V3D_QPU_INSTR_TYPE_ALU)
-				fail(&machine, "word does not decode as an ALU instruction");
-			accepted = v3d_qpu_instr_pack(device, &instruction, &repacked);
-			if (!accepted || repacked != binary->code[index])
-				fail(&machine, "word does not repack to itself");
-		}
-		if (instruction.flags.auf != V3D_QPU_UF_NONE || instruction.flags.muf != V3D_QPU_UF_NONE)
-			fail(&machine, "flag update operations are not modeled");
-		if (instruction.alu.add.output_pack != V3D_QPU_PACK_NONE || instruction.alu.mul.output_pack != V3D_QPU_PACK_NONE)
-			fail(&machine, "output packing is not modeled");
+		/* The word runs: its rules, both ALUs, its signals and a switch. */
+		decode_word(&machine, index, &instruction);
 		check_word_rules(&machine, &instruction);
-
-		/* Both ALUs read their sources when the word starts. */
-		add_left = 0;
-		add_right = 0;
-		mul_left = 0;
-		mul_right = 0;
-		if (instruction.alu.add.op != V3D_QPU_A_NOP) {
-			if (v3d_qpu_add_op_num_src(instruction.alu.add.op) > 0)
-				add_left = read_mux(&machine, &instruction, instruction.alu.add.a.mux);
-			if (v3d_qpu_add_op_num_src(instruction.alu.add.op) > 1)
-				add_right = read_mux(&machine, &instruction, instruction.alu.add.b.mux);
-		}
-		if (instruction.alu.mul.op != V3D_QPU_M_NOP) {
-			if (v3d_qpu_mul_op_num_src(instruction.alu.mul.op) > 0)
-				mul_left = read_mux(&machine, &instruction, instruction.alu.mul.a.mux);
-			if (v3d_qpu_mul_op_num_src(instruction.alu.mul.op) > 1)
-				mul_right = read_mux(&machine, &instruction, instruction.alu.mul.b.mux);
-		}
-
-		/* Predicates read the flags as they were when the word started. */
-		add_write = instruction.alu.add.op != V3D_QPU_A_NOP && v3d_qpu_add_op_has_dst(instruction.alu.add.op);
-		mul_write = instruction.alu.mul.op != V3D_QPU_M_NOP && v3d_qpu_mul_op_has_dst(instruction.alu.mul.op);
-		if (instruction.flags.ac != V3D_QPU_COND_NONE && !condition_holds(&machine, instruction.flags.ac))
-			add_write = false;
-		if (instruction.flags.mc != V3D_QPU_COND_NONE && !condition_holds(&machine, instruction.flags.mc))
-			mul_write = false;
-
-		/* A texture configuration applies to a lookup launched by the same word. */
-		if (instruction.sig.wrtmuc) {
-			flag = next_uniform(&machine);
-			if (machine.configurations == 0) {
-				if ((flag >> 28) != 1U)
-					fail(&machine, "first texture configuration is not a texture");
-				machine.texture_set = (flag >> 8) & 0xffU;
-				machine.texture_binding = flag & 0xffU;
-			} else if (machine.configurations == 1) {
-				if ((flag >> 28) != 2U || ((flag >> 8) & 0xffU) != machine.texture_set || (flag & 0xffU) != machine.texture_binding)
-					fail(&machine, "second texture configuration does not match its texture");
-			} else {
-				fail(&machine, "too many texture configurations");
-			}
-			machine.configurations++;
-		}
-		/* Each ALU computes; a special function's result lands two words later. */
-		flags_set = false;
-		flag = 0;
-		add_bits = 0;
-		mul_bits = 0;
-		if (instruction.alu.add.op != V3D_QPU_A_NOP)
-			add_bits = add_result(&machine, &instruction, add_left, add_right, &flags_set, &flag);
-		if (instruction.alu.mul.op != V3D_QPU_M_NOP)
-			mul_bits = mul_result(&machine, &instruction, mul_left, mul_right);
-		if (add_write) {
-			delay = 0;
-			if (v3d_qpu_instr_is_sfu(&instruction))
-				delay = 2;
-			write_destination(&machine, instruction.alu.add.waddr, instruction.alu.add.magic_write, add_bits, delay);
-		}
-		if (mul_write)
-			write_destination(&machine, instruction.alu.mul.waddr, instruction.alu.mul.magic_write, mul_bits, 0);
-
-		/* A multiply ALU flag push follows its own result. */
-		if (instruction.flags.mpf != V3D_QPU_PF_NONE) {
-			if (instruction.flags.mpf != V3D_QPU_PF_PUSHZ)
-				fail(&machine, "multiply flag push other than zero is not modeled");
-			flags_set = true;
-			flag = truth(mul_bits == 0);
-		}
-		if (flags_set) {
-			if (machine.lost[MACHINE_FLAGS])
-				machine.lost[MACHINE_FLAGS] = false;
-			machine.pending_flag_b = machine.value[MACHINE_FLAGS];
-			write_resource(&machine, MACHINE_FLAGS, flag, 0);
-		}
-
-		/*
-		 * Signals: uniform, varying and texture loads write when the word ends.
-		 * A varying's interpolated term carries the whole value and its
-		 * constant term is minus zero, so the sum keeps every value exactly,
-		 * signed zeros included; a flat varying is all constant term.
-		 */
-		if (instruction.sig.ldunifrf) {
-			if (instruction.sig_magic)
-				fail(&machine, "uniform load to a magic address is not modeled");
-			write_resource(&machine, instruction.sig_addr, next_uniform(&machine), 0);
-		}
-		if (instruction.sig.ldvary) {
-			if (instruction.sig_magic || setup->varyings == NULL || setup->key == NULL)
-				fail(&machine, "varying load is not modeled here");
-			if (machine.varying_read >= binary->input_count)
-				fail(&machine, "more varying loads than inputs");
-			if (setup->key->varyings[machine.varying_read].flat != 0) {
-				write_resource(&machine, instruction.sig_addr, 0x7fc00000U, 0);
-				write_resource(&machine, MACHINE_ACCUMULATOR + 5, setup->varyings[machine.varying_read], 1);
-			} else if (setup->key->varyings[machine.varying_read].noperspective != 0) {
-				write_resource(&machine, instruction.sig_addr, setup->varyings[machine.varying_read], 0);
-				write_resource(&machine, MACHINE_ACCUMULATOR + 5, 0x80000000U, 1);
-			} else {
-				write_resource(&machine, instruction.sig_addr, float_bits(bits_float(setup->varyings[machine.varying_read]) / bits_float(setup->payload[0])), 0);
-				write_resource(&machine, MACHINE_ACCUMULATOR + 5, 0x80000000U, 1);
-			}
-			machine.varying_read++;
-		}
-		if (instruction.sig.ldtmu) {
-			if (instruction.sig_magic)
-				fail(&machine, "texture load to a magic address is not modeled");
-			if (machine.lookup_waiting)
-				fail(&machine, "texture result read before a thread switch waited for it");
-			if (machine.texel_read >= machine.texel_count)
-				fail(&machine, "texture result read beyond the lookup");
-			write_resource(&machine, instruction.sig_addr, machine.texels[machine.texel_read], 0);
-			machine.texel_read++;
-		}
-
-		/* A switch takes effect after its two delay words; two consecutive switches mark the last one. */
-		if (instruction.sig.thrsw) {
-			if (machine.last_switch != MACHINE_NONE && machine.last_switch + 1 == index && !machine.last_marked) {
-				machine.last_marked = true;
-				machine.last_marked_switch = machine.last_switch;
-			} else {
-				if (machine.last_switch != MACHINE_NONE && index < machine.last_switch + 3)
-					fail(&machine, "thread switch inside another switch's delay words");
-				if (machine.last_marked || binary->starts_final != 0) {
-					if (machine.thread_end != MACHINE_NONE)
-						fail(&machine, "second thread end");
-					machine.thread_end = index;
-				}
-				machine.last_switch = index;
-				machine.switch_effect = index + 3;
-			}
-		}
+		run_alus(&machine, &instruction);
+		run_signals(&machine, &instruction);
+		run_switch(&machine, &instruction);
 	}
 
 	/* The program ends with the thread end's second delay word, its transactions all complete. */
@@ -328,12 +180,261 @@ qpu_machine_decode(
 			fprintf(stderr, "qpu machine: word %u does not decode as an ALU instruction\n", index);
 			abort();
 		}
+
+		/* The oracle rebuilds the same word. */
 		accepted = v3d_qpu_instr_pack(device, &decoded[index], &repacked);
 		if (!accepted || repacked != binary->code[index]) {
 			fprintf(stderr, "qpu machine: word %u does not repack to itself\n", index);
 			abort();
 		}
 	}
+}
+
+/* Reads one word, from the run's decoded copy or with the independent decoder. */
+static void
+decode_word(
+	struct machine *machine,
+	uint32_t index,
+	struct v3d_qpu_instr *instruction)
+{
+	const struct bcm2711_shader_binary *binary;
+	uint64_t repacked;
+	bool accepted;
+
+	/* A word decoded once already needs no second check. */
+	binary = machine->setup->binary;
+	if (machine->setup->decoded != NULL) {
+		*instruction = machine->setup->decoded[index];
+	} else {
+		accepted = v3d_qpu_instr_unpack(machine->device, binary->code[index], instruction);
+		if (!accepted || instruction->type != V3D_QPU_INSTR_TYPE_ALU)
+			fail(machine, "word does not decode as an ALU instruction");
+		accepted = v3d_qpu_instr_pack(machine->device, instruction, &repacked);
+		if (!accepted || repacked != binary->code[index])
+			fail(machine, "word does not repack to itself");
+	}
+
+	/* Flag updates and output packing are outside the compiler's vocabulary. */
+	if (instruction->flags.auf != V3D_QPU_UF_NONE || instruction->flags.muf != V3D_QPU_UF_NONE)
+		fail(machine, "flag update operations are not modeled");
+	if (instruction->alu.add.output_pack != V3D_QPU_PACK_NONE || instruction->alu.mul.output_pack != V3D_QPU_PACK_NONE)
+		fail(machine, "output packing is not modeled");
+}
+
+/* Runs both ALUs of one word: sources read at the start, predicates from the old flags, results landing later. */
+static void
+run_alus(
+	struct machine *machine,
+	const struct v3d_qpu_instr *instruction)
+{
+	uint32_t add_left;
+	uint32_t add_right;
+	uint32_t mul_left;
+	uint32_t mul_right;
+	uint32_t add_bits;
+	uint32_t mul_bits;
+	uint32_t flag;
+	uint32_t delay;
+	int add_sources;
+	int mul_sources;
+	bool add_write;
+	bool mul_write;
+	bool holds;
+	bool special;
+	bool flags_set;
+
+	/* Both ALUs read their sources when the word starts. */
+	add_left = 0;
+	add_right = 0;
+	mul_left = 0;
+	mul_right = 0;
+	add_sources = 0;
+	mul_sources = 0;
+	if (instruction->alu.add.op != V3D_QPU_A_NOP)
+		add_sources = v3d_qpu_add_op_num_src(instruction->alu.add.op);
+	if (instruction->alu.mul.op != V3D_QPU_M_NOP)
+		mul_sources = v3d_qpu_mul_op_num_src(instruction->alu.mul.op);
+	if (add_sources > 0)
+		add_left = read_mux(machine, instruction, instruction->alu.add.a.mux);
+	if (add_sources > 1)
+		add_right = read_mux(machine, instruction, instruction->alu.add.b.mux);
+	if (mul_sources > 0)
+		mul_left = read_mux(machine, instruction, instruction->alu.mul.a.mux);
+	if (mul_sources > 1)
+		mul_right = read_mux(machine, instruction, instruction->alu.mul.b.mux);
+
+	/* Predicates read the flags as they were when the word started. */
+	add_write = false;
+	mul_write = false;
+	if (instruction->alu.add.op != V3D_QPU_A_NOP)
+		add_write = v3d_qpu_add_op_has_dst(instruction->alu.add.op);
+	if (instruction->alu.mul.op != V3D_QPU_M_NOP)
+		mul_write = v3d_qpu_mul_op_has_dst(instruction->alu.mul.op);
+	if (instruction->flags.ac != V3D_QPU_COND_NONE) {
+		holds = condition_holds(machine, instruction->flags.ac);
+		if (!holds)
+			add_write = false;
+	}
+
+	/* The multiply ALU's predicate likewise. */
+	if (instruction->flags.mc != V3D_QPU_COND_NONE) {
+		holds = condition_holds(machine, instruction->flags.mc);
+		if (!holds)
+			mul_write = false;
+	}
+
+	/* Each ALU computes; a special function's result lands two words later. */
+	flags_set = false;
+	flag = 0;
+	add_bits = 0;
+	mul_bits = 0;
+	if (instruction->alu.add.op != V3D_QPU_A_NOP)
+		add_bits = add_result(machine, instruction, add_left, add_right, &flags_set, &flag);
+	if (instruction->alu.mul.op != V3D_QPU_M_NOP)
+		mul_bits = mul_result(machine, instruction, mul_left, mul_right);
+	special = v3d_qpu_instr_is_sfu(instruction);
+	delay = 0;
+	if (special)
+		delay = 2;
+	if (add_write)
+		write_destination(machine, instruction->alu.add.waddr, instruction->alu.add.magic_write, add_bits, delay);
+	if (mul_write)
+		write_destination(machine, instruction->alu.mul.waddr, instruction->alu.mul.magic_write, mul_bits, 0);
+
+	/* A multiply ALU flag push follows its own result. */
+	if (instruction->flags.mpf != V3D_QPU_PF_NONE) {
+		if (instruction->flags.mpf != V3D_QPU_PF_PUSHZ)
+			fail(machine, "multiply flag push other than zero is not modeled");
+		flags_set = true;
+		flag = truth(mul_bits == 0);
+	}
+
+	/* A push moves flag A to B and sets the new A when the word ends. */
+	if (flags_set) {
+		machine->lost[MACHINE_FLAGS] = false;
+		machine->pending_flag_b = machine->value[MACHINE_FLAGS];
+		write_resource(machine, MACHINE_FLAGS, flag, 0);
+	}
+}
+
+/*
+ * Runs one word's signal: a texture configuration first, so it applies to a
+ * lookup the same word launches, then uniform, varying and texture loads,
+ * which write when the word ends.
+ */
+static void
+run_signals(
+	struct machine *machine,
+	const struct v3d_qpu_instr *instruction)
+{
+	const struct qpu_machine_setup *setup;
+	uint32_t word;
+
+	/* The texture configuration's two uniforms name the texture and its sampler. */
+	setup = machine->setup;
+	if (instruction->sig.wrtmuc) {
+		word = next_uniform(machine);
+		if (machine->configurations == 0) {
+			if ((word >> 28) != 1U)
+				fail(machine, "first texture configuration is not a texture");
+			machine->texture_set = (word >> 8) & 0xffU;
+			machine->texture_binding = word & 0xffU;
+		} else if (machine->configurations == 1) {
+			if ((word >> 28) != 2U ||
+			    ((word >> 8) & 0xffU) != machine->texture_set ||
+			    (word & 0xffU) != machine->texture_binding)
+				fail(machine, "second texture configuration does not match its texture");
+		} else {
+			fail(machine, "too many texture configurations");
+		}
+
+		/* One more configuration belongs to the next lookup. */
+		machine->configurations++;
+	}
+
+
+	/* A uniform load to a register. */
+	if (instruction->sig.ldunifrf) {
+		if (instruction->sig_magic)
+			fail(machine, "uniform load to a magic address is not modeled");
+		word = next_uniform(machine);
+		write_resource(machine, instruction->sig_addr, word, 0);
+	}
+
+	/*
+	 * A varying's interpolated term carries the whole value and its
+	 * constant term, in accumulator five a word later, is minus zero, so the
+	 * sum keeps every value exactly, signed zeros included; a flat varying
+	 * is all constant term.
+	 */
+	if (instruction->sig.ldvary) {
+		if (instruction->sig_magic || setup->varyings == NULL || setup->key == NULL)
+			fail(machine, "varying load is not modeled here");
+		if (machine->varying_read >= setup->binary->input_count)
+			fail(machine, "more varying loads than inputs");
+		word = setup->varyings[machine->varying_read];
+		if (setup->key->varyings[machine->varying_read].flat != 0) {
+			write_resource(machine, instruction->sig_addr, 0x7fc00000U, 0);
+			write_resource(machine, MACHINE_ACCUMULATOR + 5, word, 1);
+		} else if (setup->key->varyings[machine->varying_read].noperspective != 0) {
+			write_resource(machine, instruction->sig_addr, word, 0);
+			write_resource(machine, MACHINE_ACCUMULATOR + 5, 0x80000000U, 1);
+		} else {
+			word = float_bits(bits_float(word) / bits_float(setup->payload[0]));
+			write_resource(machine, instruction->sig_addr, word, 0);
+			write_resource(machine, MACHINE_ACCUMULATOR + 5, 0x80000000U, 1);
+		}
+
+		/* The FIFO advances. */
+		machine->varying_read++;
+	}
+
+
+	/* A texture result, available only after a switch waited for its lookup. */
+	if (instruction->sig.ldtmu) {
+		if (instruction->sig_magic)
+			fail(machine, "texture load to a magic address is not modeled");
+		if (machine->lookup_waiting)
+			fail(machine, "texture result read before a thread switch waited for it");
+		if (machine->texel_read >= machine->texel_count)
+			fail(machine, "texture result read beyond the lookup");
+		write_resource(machine, instruction->sig_addr, machine->texels[machine->texel_read], 0);
+		machine->texel_read++;
+	}
+}
+
+/* Notes one word's switch: it takes effect after its two delay words, and two consecutive switches mark the last one. */
+static void
+run_switch(
+	struct machine *machine,
+	const struct v3d_qpu_instr *instruction)
+{
+	uint32_t index;
+
+	/* A word without a switch changes nothing here. */
+	if (!instruction->sig.thrsw)
+		return;
+
+	/* A switch right after an unmarked one marks it as the last; it is not a switch of its own. */
+	index = machine->word;
+	if (machine->last_switch != MACHINE_NONE && machine->last_switch + 1 == index && !machine->last_marked) {
+		machine->last_marked = true;
+		machine->last_marked_switch = machine->last_switch;
+		return;
+	}
+
+	/* Any other switch is outside the previous one's delay words; after the last one, it ends the thread. */
+	if (machine->last_switch != MACHINE_NONE && index < machine->last_switch + 3)
+		fail(machine, "thread switch inside another switch's delay words");
+	if (machine->last_marked || machine->setup->binary->starts_final != 0) {
+		if (machine->thread_end != MACHINE_NONE)
+			fail(machine, "second thread end");
+		machine->thread_end = index;
+	}
+
+	/* The switch takes effect after its two delay words. */
+	machine->last_switch = index;
+	machine->switch_effect = index + 3;
 }
 
 /* Reports a broken rule with the word it happened at and stops. */
@@ -577,16 +678,24 @@ add_result(
 		bits = left - right;
 		break;
 	case V3D_QPU_A_MIN:
-		bits = (int32_t)left < (int32_t)right ? left : right;
+		bits = right;
+		if ((int32_t)left < (int32_t)right)
+			bits = left;
 		break;
 	case V3D_QPU_A_MAX:
-		bits = (int32_t)left > (int32_t)right ? left : right;
+		bits = right;
+		if ((int32_t)left > (int32_t)right)
+			bits = left;
 		break;
 	case V3D_QPU_A_UMIN:
-		bits = left < right ? left : right;
+		bits = right;
+		if (left < right)
+			bits = left;
 		break;
 	case V3D_QPU_A_UMAX:
-		bits = left > right ? left : right;
+		bits = right;
+		if (left > right)
+			bits = left;
 		break;
 	case V3D_QPU_A_SHL:
 		bits = left << (right & 31U);
@@ -701,6 +810,8 @@ mul_result(
 	uint32_t left,
 	uint32_t right)
 {
+	_Float16 value;
+	uint16_t half_bits16;
 	uint32_t half;
 
 	/* Multiplication, bit moves and half unpacking are the multiply operations used. */
@@ -718,14 +829,9 @@ mul_result(
 			half = left >> 16;
 		else if (instruction->alu.mul.a.unpack != V3D_QPU_UNPACK_L)
 			fail(machine, "float move without a half unpack is not modeled");
-		{
-			_Float16 value;
-			uint16_t bits;
-
-			bits = (uint16_t)half;
-			memcpy(&value, &bits, sizeof(value));
-			return float_bits((float)value);
-		}
+		half_bits16 = (uint16_t)half;
+		memcpy(&value, &half_bits16, sizeof(value));
+		return float_bits((float)value);
 	default:
 		break;
 	}
@@ -811,21 +917,32 @@ check_word_rules(
 	bool in_end_window;
 	bool add_register;
 	bool mul_register;
+	bool tmu_write;
+	bool coordinate_write;
+	bool tile;
+	bool vpm;
+	bool signal_register;
+	bool port_a;
+	bool port_b;
 
 	/* One of the TMU, special function, tile, VPM and synchronization units per word; a texture configuration may join a TMU coordinate write. */
 	special = v3d_qpu_instr_is_sfu(instruction);
+	tmu_write = v3d_qpu_writes_tmu(machine->device, instruction);
+	coordinate_write = v3d_qpu_writes_tmu_not_tmuc(machine->device, instruction);
+	tile = v3d_qpu_uses_tlb(instruction);
+	vpm = v3d_qpu_uses_vpm(instruction);
 	units = 0;
-	if (v3d_qpu_writes_tmu(machine->device, instruction))
+	if (tmu_write)
 		units++;
 	if (instruction->sig.ldtmu)
 		units++;
-	if (instruction->sig.wrtmuc && !v3d_qpu_writes_tmu_not_tmuc(machine->device, instruction))
+	if (instruction->sig.wrtmuc && !coordinate_write)
 		units++;
 	if (special)
 		units++;
-	if (v3d_qpu_uses_tlb(instruction))
+	if (tile)
 		units++;
-	if (v3d_qpu_uses_vpm(instruction))
+	if (vpm)
 		units++;
 	if (units > 1)
 		fail(machine, "more than one peripheral unit in one word");
@@ -866,17 +983,24 @@ check_word_rules(
 	if (instruction->sig.thrsw && (machine->last_marked || machine->setup->binary->starts_final != 0))
 		in_end_window = true;
 	if (in_end_window) {
-		add_register = instruction->alu.add.op != V3D_QPU_A_NOP && v3d_qpu_add_op_has_dst(instruction->alu.add.op) && !instruction->alu.add.magic_write;
-		mul_register = instruction->alu.mul.op != V3D_QPU_M_NOP && v3d_qpu_mul_op_has_dst(instruction->alu.mul.op) && !instruction->alu.mul.magic_write;
+		add_register = false;
+		mul_register = false;
+		if (instruction->alu.add.op != V3D_QPU_A_NOP && !instruction->alu.add.magic_write)
+			add_register = v3d_qpu_add_op_has_dst(instruction->alu.add.op);
+		if (instruction->alu.mul.op != V3D_QPU_M_NOP && !instruction->alu.mul.magic_write)
+			mul_register = v3d_qpu_mul_op_has_dst(instruction->alu.mul.op);
 		if (add_register || mul_register)
 			fail(machine, "register write in the thread end's words");
-		if (v3d_qpu_sig_writes_address(machine->device, &instruction->sig) && !instruction->sig_magic)
+		signal_register = v3d_qpu_sig_writes_address(machine->device, &instruction->sig);
+		if (signal_register && !instruction->sig_magic)
 			fail(machine, "signal register write in the thread end's words");
 		if (instruction->sig.ldvary || special)
 			fail(machine, "varying load or special function in the thread end's words");
-		if (v3d_qpu_uses_mux(instruction, V3D_QPU_MUX_A) && instruction->raddr_a < 3)
+		port_a = v3d_qpu_uses_mux(instruction, V3D_QPU_MUX_A);
+		port_b = v3d_qpu_uses_mux(instruction, V3D_QPU_MUX_B);
+		if (port_a && instruction->raddr_a < 3)
 			fail(machine, "payload register read in the thread end's words");
-		if (v3d_qpu_uses_mux(instruction, V3D_QPU_MUX_B) && !instruction->sig.small_imm_b && instruction->raddr_b < 3)
+		if (port_b && !instruction->sig.small_imm_b && instruction->raddr_b < 3)
 			fail(machine, "payload register read in the thread end's words");
 		if (uniforms != 0 && !instruction->sig.thrsw)
 			fail(machine, "uniform read in the thread end's delay words");
@@ -905,8 +1029,8 @@ static int32_t
 float_to_signed(
 	float number)
 {
-	/* Out-of-range values saturate rather than reaching undefined host conversion. */
-	if (isnan(number))
+	/* Out-of-range values saturate rather than reaching undefined host conversion; NaN compares unequal to itself. */
+	if (number != number)
 		return 0;
 	if (number >= 2147483648.0f)
 		return 2147483647;
@@ -922,8 +1046,8 @@ static uint32_t
 float_to_unsigned(
 	float number)
 {
-	/* Out-of-range values saturate rather than reaching undefined host conversion. */
-	if (isnan(number) || number <= 0.0f)
+	/* Out-of-range values saturate rather than reaching undefined host conversion; NaN compares unequal to itself. */
+	if (number != number || number <= 0.0f)
 		return 0;
 	if (number >= 4294967296.0f)
 		return 0xffffffffU;

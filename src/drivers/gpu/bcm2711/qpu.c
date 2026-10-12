@@ -81,7 +81,7 @@ bcm2711_qpu_encode(
 	    (instruction->predicate != 0 || instruction->push_flags != 0))
 		return EINVAL;
 
-	/* The operation takes its own ALU; the instruction's signal becomes the word's signal. */
+	/* The operation takes its own ALU. */
 	kern_memset(&bundle, 0, sizeof(bundle));
 	if (unit == BCM2711_QPU_UNIT_MULTIPLY || unit == BCM2711_QPU_UNIT_EITHER) {
 		bundle.multiply = *instruction;
@@ -90,6 +90,8 @@ bcm2711_qpu_encode(
 		bundle.add = *instruction;
 		bundle.add.signal = BCM2711_QPU_SIGNAL_NONE;
 	}
+
+	/* The instruction's signal becomes the word's signal. */
 	bundle.signal = instruction->signal;
 	bundle.signal_destination = instruction->signal_destination;
 
@@ -397,6 +399,8 @@ operation_fields(
 			alu->operation = 182;
 			alu->duplicate = 1;
 		}
+
+		/* The move's opcode is chosen. */
 		break;
 	case BCM2711_QPU_HALF_LOW:
 		alu->operation = 14;
@@ -605,6 +609,8 @@ alu_sources(
 		if (error != 0)
 			return error;
 	}
+
+	/* A second source takes its port after the first. */
 	if (alu->sources >= 2) {
 		error = source_fields(&instruction->right, encoding, &right);
 		if (error != 0)
@@ -679,7 +685,11 @@ source_fields(
 		*mux = 6;
 		return 0;
 	}
-	if (encoding->read_b_used != 0 && encoding->constant == 0 && encoding->read_b == source->number) {
+
+	/* Port B is shared only while it holds a register rather than the small constant. */
+	if (encoding->read_b_used != 0 &&
+	    encoding->constant == 0 &&
+	    encoding->read_b == source->number) {
 		*mux = 7;
 		return 0;
 	}

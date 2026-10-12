@@ -342,6 +342,7 @@ check_bundles(
 	uint32_t mul_predicate;
 	uint32_t push;
 	uint32_t index;
+	bool addressed;
 	int error;
 
 	/* An add and a multiply sharing one register: two ports at most, the shared register on one. */
@@ -457,7 +458,8 @@ check_bundles(
 		assert(decoded.sig.ldvary == (combined[index] == BCM2711_QPU_SIGNAL_VARYING));
 		assert(decoded.sig.ldunifrf == (combined[index] == BCM2711_QPU_SIGNAL_UNIFORM_REGISTER));
 		assert(decoded.sig.wrtmuc == (combined[index] == BCM2711_QPU_SIGNAL_TEXTURE_CONFIG));
-		if (v3d_qpu_sig_writes_address(device, &decoded.sig))
+		addressed = v3d_qpu_sig_writes_address(device, &decoded.sig);
+		if (addressed)
 			assert(decoded.sig_addr == 13 && !decoded.sig_magic);
 	}
 

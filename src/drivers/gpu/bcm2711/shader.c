@@ -322,6 +322,8 @@ bcm2711_shader_register(
 			if (chosen == BCM2711_SHADER_ABSENT || compiler->constant_clock[index] < compiler->constant_clock[chosen])
 				chosen = index;
 		}
+
+		/* The given-up register is free again. */
 		if (chosen != BCM2711_SHADER_ABSENT) {
 			compiler->constant_held[chosen] = 0;
 			bcm2711_shader_release(compiler, chosen);
@@ -442,6 +444,8 @@ bcm2711_shader_constant(
 		if (error != 0)
 			chosen = BCM2711_SHADER_ABSENT;
 	}
+
+	/* Without a kept register the constant takes a scratch one. */
 	if (chosen == BCM2711_SHADER_ABSENT)
 		chosen = bcm2711_shader_scratch(compiler, preferred);
 
@@ -464,6 +468,8 @@ bcm2711_shader_constant(
 		compiler->constant_clock[chosen] = compiler->release_clock;
 		compiler->constant_touched[chosen] = 1;
 	}
+
+	/* The caller reads the constant from here. */
 	*number = chosen;
 
 	/* Succeeded: the register holds the constant's exact bits. */
@@ -485,6 +491,8 @@ bcm2711_shader_release_scratch(
 			compiler->borrowed[index] = 0;
 			bcm2711_shader_release(compiler, index);
 		}
+
+		/* A finished instruction no longer protects the constants it read. */
 		compiler->constant_touched[index] = 0;
 	}
 
@@ -1090,6 +1098,7 @@ record_op(
 	struct bcm2711_shader_op *op;
 	struct bcm2711_qpu_instruction encoded;
 	uint64_t word;
+	uint32_t consumes;
 	int error;
 
 	/* Capacity refusal cannot expose a truncated successful program. */
@@ -1103,16 +1112,22 @@ record_op(
 		if (error != 0)
 			return error;
 	}
+
+	/* The left source register takes the window too. */
 	if (encoded.left.kind == BCM2711_QPU_REGISTER) {
 		error = encode_register(compiler, &encoded.left.number);
 		if (error != 0)
 			return error;
 	}
+
+	/* The right source register takes the window too. */
 	if (encoded.right.kind == BCM2711_QPU_REGISTER) {
 		error = encode_register(compiler, &encoded.right.number);
 		if (error != 0)
 			return error;
 	}
+
+	/* An addressed signal's register takes the window too. */
 	if (encoded.signal != BCM2711_QPU_SIGNAL_NONE && encoded.signal_destination.peripheral == 0) {
 		error = encode_register(compiler, &encoded.signal_destination.number);
 		if (error != 0)
@@ -1133,7 +1148,8 @@ record_op(
 	kern_memset(op, 0, sizeof(*op));
 	op->instruction = encoded;
 	op->role = role;
-	if (consumes_uniform(&encoded) != 0) {
+	consumes = consumes_uniform(&encoded);
+	if (consumes != 0) {
 		if (compiler->has_pending_uniform == 0)
 			return EINVAL;
 		if (compiler->binary->uniform_count == compiler->uniform_capacity)
@@ -1143,6 +1159,8 @@ record_op(
 		compiler->has_pending_uniform = 0;
 		compiler->binary->uniform_count++;
 	}
+
+	/* The record list ends with this operation. */
 	compiler->op_count++;
 
 	/* Succeeded: the record list ends with this operation. */

@@ -272,6 +272,8 @@ bcm2711_shader_schedule(
 		kern_memcpy(binary->uniforms, best_uniforms, binary->uniform_count * sizeof(*best_uniforms));
 		binary->code_count = best_count;
 	}
+
+	/* The kept copies and saved records retire. */
 	kern_free(best_uniforms);
 	kern_free(best_code);
 	kern_free(saved);
@@ -318,6 +320,8 @@ schedule_attempt(
 		set_priorities(&state);
 		error = schedule_body(&state);
 	}
+
+	/* The tail follows the placed body. */
 	if (error == 0)
 		error = schedule_tail(&state);
 
@@ -377,6 +381,8 @@ promote_accumulators(
 		kern_free(values);
 		return ENOMEM;
 	}
+
+	/* No register has a current value yet. */
 	for (number = 0; number < 64; number++)
 		open[number].op = BCM2711_SHADER_ABSENT;
 
@@ -504,6 +510,8 @@ promote_close(
 		values[*value_count] = *open;
 		(*value_count)++;
 	}
+
+	/* The register's value is closed either way. */
 	open->op = BCM2711_SHADER_ABSENT;
 
 	/* Succeeded: the value is closed. */
@@ -535,6 +543,8 @@ promote_assign(
 			values[later] = values[later - 1];
 			later--;
 		}
+
+		/* The moved value takes the gap. */
 		values[later] = moved;
 	}
 
@@ -549,6 +559,8 @@ promote_assign(
 			if (chosen == SCHEDULE_ACCUMULATORS || free_from[accumulator] < free_from[chosen])
 				chosen = accumulator;
 		}
+
+		/* A value with no free accumulator stays in its register. */
 		if (chosen == SCHEDULE_ACCUMULATORS)
 			continue;
 		free_from[chosen] = values[index].last;
@@ -567,6 +579,8 @@ promote_assign(
 				instruction->right.kind = BCM2711_QPU_ACCUMULATOR;
 				instruction->right.number = chosen;
 			}
+
+			/* Follows the value's next read. */
 			entry = uses[entry].next;
 		}
 	}
@@ -587,12 +601,15 @@ peripherals_clash(
 	const struct schedule_node *first,
 	const struct schedule_node *second)
 {
+	uint32_t pair;
+
 	/* Two nodes clash only when both start a transaction. */
 	if (first->peripheral == 0 || second->peripheral == 0)
 		return 0;
 
 	/* The one permitted pair. */
-	if (texture_pair(first, second) != 0)
+	pair = texture_pair(first, second);
+	if (pair != 0)
 		return 0;
 
 	/* Any other pair of transactions needs two words. */
@@ -671,10 +688,14 @@ classify(
 			if (state->last_second == BCM2711_SHADER_ABSENT)
 				return ENOTSUP;
 			node->tail = 1;
-		} else if (after_pair != 0 && (node->sensitive != 0 || node->ordered != 0)) {
+		} else if (after_pair != 0 &&
+			   (node->sensitive != 0 ||
+			    node->ordered != 0)) {
 			/* After the last pair, only plain operations may join the body. */
 			return ENOTSUP;
 		}
+
+		/* The node joins the schedule. */
 		state->node_count++;
 	}
 
@@ -738,7 +759,7 @@ classify_node(
 			return ENOTSUP;
 		}
 
-		/* An addressed load writes its register when its word ends; a varying also fills accumulator five a word later. */
+		/* An addressed load writes its register when its word ends. */
 		if (instruction->signal == BCM2711_QPU_SIGNAL_UNIFORM_REGISTER ||
 		    instruction->signal == BCM2711_QPU_SIGNAL_TEXTURE ||
 		    instruction->signal == BCM2711_QPU_SIGNAL_VARYING) {
@@ -748,6 +769,8 @@ classify_node(
 			node->landing[node->write_count] = 0;
 			node->write_count++;
 		}
+
+		/* A varying also fills accumulator five a word later. */
 		if (instruction->signal == BCM2711_QPU_SIGNAL_VARYING) {
 			node->writes[node->write_count] = SCHEDULE_R5;
 			node->landing[node->write_count] = 1;
@@ -777,6 +800,8 @@ classify_node(
 	default:
 		break;
 	}
+
+	/* The operation's ALU decides its slot. */
 	node->unit = bcm2711_qpu_operation_unit(instruction->operation);
 	if (node->unit == BCM2711_QPU_UNIT_NONE)
 		return ENOTSUP;
@@ -890,6 +915,8 @@ build_edges(
 			state->reader_head[index] = BCM2711_SHADER_ABSENT;
 			state->last_writer[index] = BCM2711_SHADER_ABSENT;
 		}
+
+		/* No reader is listed and nothing is pending yet. */
 		state->reader_count = 0;
 		state->pending_count = 0;
 		last_special = BCM2711_SHADER_ABSENT;
@@ -970,6 +997,8 @@ resource_edges(
 				if (writer->writes[other] == resource)
 					written_at = writer->landing[other];
 			}
+
+			/* The read waits for the write to land. */
 			error = add_edge(state, state->last_writer[resource], index, written_at + 1);
 			if (error != 0)
 				return error;
@@ -1023,6 +1052,8 @@ resource_edges(
 				if (error != 0)
 					return error;
 			}
+
+			/* Follows the old value's next reader. */
 			entry = reader->next;
 		}
 
@@ -1048,6 +1079,7 @@ order_edges(
 	struct schedule_node *previous;
 	uint32_t distance;
 	uint32_t pending;
+	uint32_t pair;
 	int error;
 
 	/* Special functions start no sooner than three words apart, so a result is never overtaken. */
@@ -1058,6 +1090,8 @@ order_edges(
 			if (error != 0)
 				return error;
 		}
+
+		/* This special function starts the next one's wait. */
 		*last_special = index;
 	}
 
@@ -1076,12 +1110,15 @@ order_edges(
 				distance = SCHEDULE_SWITCH_DISTANCE;
 			if (previous->role == BCM2711_SHADER_SWITCH_LAST_SECOND)
 				distance = SCHEDULE_SWITCH_DISTANCE - 1;
-			if (texture_pair(previous, node) != 0)
+			pair = texture_pair(previous, node);
+			if (pair != 0)
 				distance = 0;
 			error = add_edge(state, *last_ordered, index, distance);
 			if (error != 0)
 				return error;
 		}
+
+		/* This transaction is the next one's predecessor. */
 		*last_ordered = index;
 	}
 
@@ -1092,6 +1129,8 @@ order_edges(
 			if (error != 0)
 				return error;
 		}
+
+		/* The node waits for the next switch's edges. */
 		state->pending_sensitive[state->pending_count] = index;
 		state->pending_count++;
 	}
@@ -1103,6 +1142,8 @@ order_edges(
 			if (error != 0)
 				return error;
 		}
+
+		/* The switch starts a new run of sensitive work. */
 		state->pending_count = 0;
 		*after_switch = index;
 	}
@@ -1145,6 +1186,8 @@ link_successors(
 		position += state->nodes[index].successor_count;
 		state->nodes[index].successor_count = 0;
 	}
+
+	/* Each edge takes the next place in its earlier node's run. */
 	for (index = 0; index < state->edge_count; index++) {
 		edge = &state->edges[index];
 		position = state->nodes[edge->from].first_successor + state->nodes[edge->from].successor_count;
@@ -1226,7 +1269,9 @@ schedule_body(
 			best_slot = 0;
 			for (index = 0; index < state->node_count; index++) {
 				node = &state->nodes[index];
-				if (node->tail != 0 || index == state->end || node->word != BCM2711_SHADER_ABSENT)
+				if (node->tail != 0 ||
+				    index == state->end ||
+				    node->word != BCM2711_SHADER_ABSENT)
 					continue;
 				if (node->waiting != 0 || node->earliest > word)
 					continue;
@@ -1249,6 +1294,8 @@ schedule_body(
 			if (state->nodes[best].texture_write != 0)
 				placed += place_sample_switch(state, best, word);
 		}
+
+		/* The next word. */
 		word++;
 	}
 
@@ -1325,6 +1372,7 @@ place_sample_switch(
 	uint32_t lowest;
 	uint32_t candidate;
 	uint32_t later;
+	uint32_t finishes;
 	uint64_t encoded;
 	int error;
 	int usable;
@@ -1337,6 +1385,8 @@ place_sample_switch(
 		if (state->nodes[edge->to].role == BCM2711_SHADER_SWITCH_SAMPLE)
 			target = edge->to;
 	}
+
+	/* A launch without a sample switch has none to place. */
 	if (target == BCM2711_SHADER_ABSENT)
 		return 0;
 	if (state->nodes[target].waiting != 0 || state->nodes[target].word != BCM2711_SHADER_ABSENT)
@@ -1361,12 +1411,17 @@ place_sample_switch(
 			present_count = word_node_count(&state->words[later], present);
 			for (entry = 0; entry < present_count; entry++) {
 				other = &state->nodes[present[entry]];
-				if (other->sensitive != 0 && finishes_in_window(other) == 0)
+				finishes = finishes_in_window(other);
+				if (other->sensitive != 0 && finishes == 0)
 					usable = 0;
-				if (other->ordered != 0 && other->texture_write == 0 && other->texture_config == 0)
+				if (other->ordered != 0 &&
+				    other->texture_write == 0 &&
+				    other->texture_config == 0)
 					usable = 0;
 			}
 		}
+
+		/* A word with other work keeps the switch away. */
 		if (usable == 0)
 			continue;
 
@@ -1399,6 +1454,7 @@ switch_lowest(
 	uint32_t position;
 	uint32_t lowest;
 	uint32_t bound;
+	uint32_t finishes;
 
 	/* Every predecessor is placed. */
 	lowest = 0;
@@ -1408,11 +1464,14 @@ switch_lowest(
 			continue;
 		from = &state->nodes[edge->from];
 		bound = from->word + edge->distance;
-		if (finishes_in_window(from) != 0) {
+		finishes = finishes_in_window(from);
+		if (finishes != 0) {
 			bound = 0;
 			if (from->word >= 2)
 				bound = from->word - 2;
 		}
+
+		/* The latest bound wins. */
 		if (lowest < bound)
 			lowest = bound;
 	}
@@ -1458,6 +1517,7 @@ fits(
 	uint32_t present[4];
 	uint32_t present_count;
 	uint32_t entry;
+	uint32_t clash;
 	uint64_t encoded;
 	int error;
 
@@ -1465,7 +1525,8 @@ fits(
 	node = &state->nodes[index];
 	present_count = word_node_count(word, present);
 	for (entry = 0; entry < present_count; entry++) {
-		if (peripherals_clash(node, &state->nodes[present[entry]]) != 0)
+		clash = peripherals_clash(node, &state->nodes[present[entry]]);
+		if (clash != 0)
 			return ENOTSUP;
 		if (node->uniform != 0 && state->nodes[present[entry]].uniform != 0)
 			return ENOTSUP;
@@ -1535,6 +1596,8 @@ word_encode(
 		bundle.signal = op->instruction.signal;
 		bundle.signal_destination = op->instruction.signal_destination;
 	}
+
+	/* A switch rides on the word's signal. */
 	if (word->thread_switch != BCM2711_SHADER_ABSENT)
 		bundle.thread_switch = 1;
 
@@ -1561,14 +1624,20 @@ word_node_count(
 		nodes[count] = word->add;
 		count++;
 	}
+
+	/* The multiply ALU's node. */
 	if (word->multiply != BCM2711_SHADER_ABSENT) {
 		nodes[count] = word->multiply;
 		count++;
 	}
+
+	/* The signal's node. */
 	if (word->signal != BCM2711_SHADER_ABSENT) {
 		nodes[count] = word->signal;
 		count++;
 	}
+
+	/* The switch's node. */
 	if (word->thread_switch != BCM2711_SHADER_ABSENT) {
 		nodes[count] = word->thread_switch;
 		count++;
@@ -1614,6 +1683,8 @@ schedule_tail(
 			tile_count++;
 		}
 	}
+
+	/* Exactly two were found. */
 	if (tile_count != 2)
 		return ENOTSUP;
 
@@ -1640,6 +1711,8 @@ schedule_tail(
 			best_tiles[1] = tiles[1];
 		}
 	}
+
+	/* No word takes the tail. */
 	if (best_first == BCM2711_SHADER_ABSENT)
 		return ENOTSUP;
 
@@ -1699,10 +1772,14 @@ tail_trial(
 				break;
 			word++;
 		}
+
+		/* The tile write takes the word. */
 		tiles[tile] = word;
 		if (word + 1 > used)
 			used = word + 1;
 	}
+
+	/* The program is at least as long as its body. */
 	if (used < state->word_count)
 		used = state->word_count;
 
@@ -1869,6 +1946,8 @@ node_allows_end(
 		if (node->writes[access] < SCHEDULE_ACCUMULATOR)
 			return ENOTSUP;
 	}
+
+	/* Sensitive work does not run while the thread ends. */
 	if (node->sensitive != 0)
 		return ENOTSUP;
 	if (node->uniform != 0 && slot > 0)
@@ -1903,6 +1982,8 @@ grow_words(
 		state->words[index].signal = BCM2711_SHADER_ABSENT;
 		state->words[index].thread_switch = BCM2711_SHADER_ABSENT;
 	}
+
+	/* The used words grow to the requested count. */
 	if (count > state->word_count)
 		state->word_count = count;
 
@@ -2010,6 +2091,8 @@ verify_values(
 			visible[resource] = pending[resource];
 			pending[resource] = BCM2711_SHADER_ABSENT;
 		}
+
+		/* The step after the last word only lands writes. */
 		if (word == state->word_count || error != 0)
 			break;
 
@@ -2039,6 +2122,8 @@ verify_values(
 			}
 		}
 	}
+
+	/* The expected versions retire. */
 	kern_free(expected);
 
 	/* A stale read, a write overtaken in flight or a write landing out of order refuses the schedule. */
@@ -2067,6 +2152,8 @@ verify_rules(
 	uint32_t word;
 	uint32_t previous;
 	uint32_t window;
+	uint32_t pair;
+	uint32_t finishes;
 	uint64_t encoded;
 	int error;
 
@@ -2084,6 +2171,8 @@ verify_rules(
 			for (later = entry + 1; later < present_count; later++)
 				peripherals += peripherals_clash(&state->nodes[present[entry]], &state->nodes[present[later]]);
 		}
+
+		/* A clash or a second uniform refuses the schedule. */
 		if (peripherals != 0 || uniforms > 1)
 			return EINVAL;
 	}
@@ -2102,12 +2191,19 @@ verify_rules(
 					return EINVAL;
 			} else if (node->word < other->word) {
 				return EINVAL;
-			} else if (node->word == other->word && texture_pair(other, node) == 0) {
-				return EINVAL;
+			} else if (node->word == other->word) {
+				/* Only a texture configuration and a TMU coordinate write share a word. */
+				pair = texture_pair(other, node);
+				if (pair == 0)
+					return EINVAL;
 			}
+
+			/* A texture result waits for its switch. */
 			if (other->role == BCM2711_SHADER_SWITCH_SAMPLE && node->word < other->word + SCHEDULE_SWITCH_DISTANCE)
 				return EINVAL;
 		}
+
+		/* This transaction is the next one's predecessor. */
 		previous = index;
 	}
 
@@ -2143,9 +2239,12 @@ verify_rules(
 				return EINVAL;
 			if (later < index && other->word > node->word + 2)
 				return EINVAL;
+			finishes = finishes_in_window(other);
+			if (node->role == BCM2711_SHADER_SWITCH_END)
+				finishes = 0;
 			if (later < index &&
 			    other->word >= node->word &&
-			    (finishes_in_window(other) == 0 || node->role == BCM2711_SHADER_SWITCH_END))
+			    finishes == 0)
 				return EINVAL;
 		}
 
