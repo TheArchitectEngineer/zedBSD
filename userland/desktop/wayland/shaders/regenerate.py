@@ -13,7 +13,8 @@ import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 SHADERS = [("quad.vert", "kwl_quad_vert"), ("quad.frag", "kwl_quad_frag"),
-           ("panel.vert", "kwl_panel_vert"), ("panel.frag", "kwl_panel_frag")]
+           ("panel.vert", "kwl_panel_vert"), ("panel.frag", "kwl_panel_frag"),
+           ("panel-batch.vert", "kwl_batch_vert"), ("panel-batch.frag", "kwl_batch_frag")]
 
 
 def compile_shader(source, definitions=()):

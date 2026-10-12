@@ -74,7 +74,7 @@ static void verify_program(const struct v3d_device_info *device, const uint32_t 
 static void verify_hazards(const struct v3d_device_info *device, const struct bcm2711_shader_binary *binary);
 static bool reads_register(const struct v3d_qpu_instr *instruction, uint32_t number);
 static uint32_t unit_count(const struct v3d_device_info *device, const struct v3d_qpu_instr *instruction);
-static void verify_allocation_refusal(const struct bcm2711_shader_key *key);
+static void verify_allocation_refusal(const struct bcm2711_shader_key *key, const uint32_t *words, size_t word_count);
 static void verify_graphics_profile(const struct bcm2711_shader_key *key);
 
 /*
@@ -173,8 +173,8 @@ int
 main(
 	void)
 {
-	const uint32_t *modules[4] = {kwl_quad_vert, kwl_quad_frag, kwl_panel_vert, kwl_panel_frag};
-	const size_t bytes[4] = {sizeof(kwl_quad_vert), sizeof(kwl_quad_frag), sizeof(kwl_panel_vert), sizeof(kwl_panel_frag)};
+	const uint32_t *modules[6] = {kwl_quad_vert, kwl_quad_frag, kwl_panel_vert, kwl_panel_frag, kwl_batch_vert, kwl_batch_frag};
+	const size_t bytes[6] = {sizeof(kwl_quad_vert), sizeof(kwl_quad_frag), sizeof(kwl_panel_vert), sizeof(kwl_panel_frag), sizeof(kwl_batch_vert), sizeof(kwl_batch_frag)};
 	struct drv_gpu_shader_ir *vertex;
 	struct drv_gpu_shader_ir *fragment;
 	struct drv_gpu_shader_ir *generic;
@@ -191,8 +191,8 @@ main(
 	device.ver = 42;
 	device.has_accumulators = true;
 
-	/* Both production shader pairs use their real immutable SPIR-V arrays. */
-	for (pair = 0; pair < 2; pair++) {
+	/* The production shader pairs use their real immutable SPIR-V arrays (the joined solid quads' too, ws211-p003). */
+	for (pair = 0; pair < 3; pair++) {
 		error = drv_gpu_shader_parse(modules[pair * 2], bytes[pair * 2] / 4, DRV_GPU_STAGE_VERTEX, &vertex, &diagnostic);
 		assert(error == 0);
 		error = drv_gpu_shader_parse(modules[pair * 2 + 1], bytes[pair * 2 + 1] / 4, DRV_GPU_STAGE_FRAGMENT, &fragment, &diagnostic);
@@ -204,7 +204,7 @@ main(
 			verify_graphics_profile(&key);
 
 		/* Ordinary actual modules retain the existing native-allocation and scalar differential checks. */
-		verify_allocation_refusal(&key);
+		verify_allocation_refusal(&key, modules[pair * 2 + 1], bytes[pair * 2 + 1] / 4);
 		verify_program(&device, modules[pair * 2], bytes[pair * 2] / 4, vertex, BCM2711_SHADER_COORDINATE, &key);
 		verify_program(&device, modules[pair * 2], bytes[pair * 2] / 4, vertex, BCM2711_SHADER_VERTEX, &key);
 
@@ -1159,24 +1159,16 @@ verify_graphics_profile(
 /* Verifies each native program allocation refusal leaves no leaked frontend or partial native ownership. */
 static void
 verify_allocation_refusal(
-	const struct bcm2711_shader_key *key)
+	const struct bcm2711_shader_key *key,
+	const uint32_t *words,
+	size_t word_count)
 {
-	const uint32_t *words;
-	size_t word_count;
 	struct bcm2711_shader_binary *binary;
 	struct bcm2711_shader_diagnostic diagnostic;
 	size_t baseline;
 	size_t attempts;
 	size_t refusal;
 	int error;
-
-	/* The key identifies which actual immutable fragment module has matching input declarations. */
-	words = kwl_quad_frag;
-	word_count = sizeof(kwl_quad_frag) / 4;
-	if (key->varying_count == 4) {
-		words = kwl_panel_frag;
-		word_count = sizeof(kwl_panel_frag) / 4;
-	}
 
 	/* A successful real compile locates the final native-owner, liveness, code and uniform allocations. */
 	baseline = allocations_live;

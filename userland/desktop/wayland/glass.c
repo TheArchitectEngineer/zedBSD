@@ -98,6 +98,9 @@
 /* The bands an application tile's reflection on App Home's floor fades out in (ws099-p035b). */
 #define GLASS_REFLECTION_SLICES	8U
 
+/* The largest side, in output pixels, of a quad joined to others into one draw (batch.c, ws211-p003 review-1 M3). */
+#define GLASS_BATCH_SIDE	128.0f
+
 /*
  * The large digits of the lock screen's clock (ws187-p001), in an image of
  * their own at the one size the clock asks for: the image's size, its
@@ -1670,6 +1673,7 @@ glass_shape_draw(
 	float height;
 	VkDescriptorSet set;
 	VkPipeline pipeline;
+	int joined;
 
 	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home, ws181-p008). */
 	if (server->layer_on && server->layer_opacity <= 0.0f)
@@ -1792,8 +1796,24 @@ glass_shape_draw(
 	else if (shape->mode == MODE_BLUR)
 		pipeline = compose->panel_pipelines[6];
 
-	/* The chosen pipeline keeps the same constants, image and triangle pair. */
+	/*
+	 * App Home's floor lines (small solid quads) are joined into one draw
+	 * (batch.c, ws211-p003 段 2, the floors first); anything else draws
+	 * the quads waiting first, then itself alone.
+	 */
 	kwl_compose_count_draw(server, pipeline, set, 1U);
+	if (server->batch_floors &&
+	    shape->mode == MODE_SOLID &&
+	    constants[17] == (float)MODE_SOLID &&
+	    quad[2] <= GLASS_BATCH_SIDE &&
+	    quad[3] <= GLASS_BATCH_SIDE) {
+		joined = kwl_batch_add(server, command, constants, set);
+		if (joined)
+			return;
+	}
+	kwl_batch_flush(server, command);
+
+	/* The chosen pipeline keeps the same constants, image and triangle pair. */
 	kwl_compose_bind(server, command, pipeline, compose->panel_layout, set);
 	vkCmdPushConstants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
 	vkCmdDraw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);

@@ -6079,6 +6079,7 @@ draw_sheet(
 	if (bottom < cut.offset.y)
 		bottom = cut.offset.y;
 	cut.extent.height = (uint32_t)(bottom - cut.offset.y);
+	kwl_batch_flush(server, command);
 	server->compose->scissor_now = cut;
 	vkCmdSetScissor(command, 0U, 1U, &cut);
 
@@ -6087,6 +6088,7 @@ draw_sheet(
 	glass_draw_solid(server, command, (float)body.x, (float)top, (float)body.width, 1.0f, 0.0f, seam);
 
 	/* The frame's scissor back. */
+	kwl_batch_flush(server, command);
 	server->compose->scissor_now = saved;
 	vkCmdSetScissor(command, 0U, 1U, &saved);
 }

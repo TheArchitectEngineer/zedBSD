@@ -346,6 +346,28 @@ struct kwl_compose {
 	VkPipeline bound_pipeline;
 	VkPipelineLayout bound_layout;
 	VkDescriptorSet bound_set;
+	/*
+	 * The solid quads drawn together (batch.c, ws211-p003 段 2): the
+	 * pipeline and the vertex buffer (host-visible, mapped while the
+	 * compositor runs), how much of it the frame being recorded used, and
+	 * the quads waiting for one draw: their first vertex's byte offset,
+	 * their number, the set and the screen they were drawn with.  ready
+	 * once made; off with KWL_BATCH=0 or when it could not be made.
+	 */
+	struct {
+		unsigned ready;
+		VkPipeline pipeline;
+		VkBuffer buffer;
+		VkDeviceMemory memory;
+		uint8_t *map;
+		uint32_t capacity;
+		uint32_t used;
+		uint32_t first;
+		uint32_t count;
+		VkDescriptorSet set;
+		float screen[2];
+		unsigned overflowed;
+	} batch;
 	/* Nonzero while the frame in flight draws a layer's picture and presents nothing (layer-cache.c). */
 	unsigned frame_bake;
 	/* The layers' generation when the submission in flight was recorded (layer-cache.c). */
@@ -491,6 +513,12 @@ void kwl_compose_cursor(struct kwl_server *server, VkCommandBuffer command);
 void kwl_compose_count_draw(struct kwl_server *server, VkPipeline pipeline, VkDescriptorSet set, unsigned shape);
 void kwl_compose_bind(struct kwl_server *server, VkCommandBuffer command, VkPipeline pipeline, VkPipelineLayout layout, VkDescriptorSet set);
 void kwl_compose_bind_forget(struct kwl_compose *compose);
+VkResult kwl_compose_pipeline_input(struct kwl_compose *compose, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, const VkPipelineVertexInputStateCreateInfo *input, VkPipeline *pipeline);
+void kwl_batch_open(struct kwl_server *server);
+void kwl_batch_close(struct kwl_compose *compose);
+void kwl_batch_begin(struct kwl_compose *compose);
+int kwl_batch_add(struct kwl_server *server, VkCommandBuffer command, const float *constants, VkDescriptorSet set);
+void kwl_batch_flush(struct kwl_server *server, VkCommandBuffer command);
 void kwl_compose_count_commands(struct kwl_server *server, unsigned pushes, unsigned draws);
 VkResult kwl_compose_submit_quiet(struct kwl_server *server);
 void kwl_layers_open(struct kwl_server *server);

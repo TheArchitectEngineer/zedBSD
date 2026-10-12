@@ -216,6 +216,7 @@ kwl_layers_begin_quiet(
 	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	kwl_compose_bind_forget(server->compose);
+	kwl_batch_begin(server->compose);
 	return vkBeginCommandBuffer(server->compose->command, &begin);
 }
 
@@ -613,7 +614,8 @@ layers_record_pass(
 	server->view_height = view_height_saved;
 	server->draw_counts = counts;
 
-	/* The pass ends with the image ready to be sampled. */
+	/* The pass ends with the image ready to be sampled, its joined quads drawn. */
+	kwl_batch_flush(server, command);
 	vkCmdEndRenderPass(command);
 
 	/*

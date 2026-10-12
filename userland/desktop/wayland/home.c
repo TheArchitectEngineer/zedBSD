@@ -2229,9 +2229,11 @@ home_draw_floors(
 			rights[row] = x + HOME_ICON;
 	}
 
-	/* Each row's floor, a little wider than its icons. */
+	/* Each row's floor, a little wider than its icons, its pieces joined into few draws (batch.c, ws211-p003). */
+	server->batch_floors = 1U;
 	for (row = 0U; row < count; row++)
 		home_draw_floor(server, command, (float)(lefts[row] - 36), (float)(rights[row] + 36), (float)(rows[row] + HOME_ICON + HOME_FLOOR_GAP), opacity);
+	server->batch_floors = 0U;
 }
 
 /*

@@ -86,6 +86,7 @@ kwl_backdrop_begin(
 	compose->backdrop_set = VK_NULL_HANDLE;
 
 	/* The output's pass ends, and the scene is drawn small. */
+	kwl_batch_flush(server, command);
 	vkCmdEndRenderPass(command);
 	backdrop_begin_small(server, command, &backdrop->targets[0]);
 
@@ -111,6 +112,7 @@ kwl_backdrop_end(
 	/* The scene's pass ends. */
 	compose = server->compose;
 	backdrop = &compose->backdrop;
+	kwl_batch_flush(server, command);
 	vkCmdEndRenderPass(command);
 
 	/* Blurred across into the second image, then down back into the first, a few times over. */
@@ -541,6 +543,7 @@ backdrop_blur(
 	shape.color[1] = step_y;
 	glass_shape_draw(server, command, &shape);
 	server->layer_on = layer;
+	kwl_batch_flush(server, command);
 	vkCmdEndRenderPass(command);
 }
 

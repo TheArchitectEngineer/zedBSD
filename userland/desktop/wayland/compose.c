@@ -39,7 +39,7 @@ static void compose_limits(struct kwl_server *server);
 static VkResult compose_refresh(struct kwl_server *server, VkDisplayKHR display, uint32_t width, uint32_t height, uint32_t *refresh);
 static VkResult compose_objects(struct kwl_compose *compose);
 static VkResult compose_pass(struct kwl_compose *compose);
-static VkResult compose_pipeline(struct kwl_compose *compose, enum kwl_draw draw, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, VkPipeline *pipeline);
+static VkResult compose_pipeline(struct kwl_compose *compose, enum kwl_draw draw, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, const VkPipelineVertexInputStateCreateInfo *custom, VkPipeline *pipeline);
 static VkResult compose_panel_pipeline(struct kwl_compose *compose);
 static VkResult compose_corners(struct kwl_compose *compose);
 static VkResult compose_targets(struct kwl_compose *compose);
@@ -281,6 +281,9 @@ kwl_compose_output_prepare(
 			vkdemo_display_close(compose->instance, compose->device, &compose->output);
 			return EIO;
 		}
+
+		/* The small solid quads drawn together, when the device can (batch.c, ws211-p003). */
+		kwl_batch_open(server);
 	}
 
 	/* Succeeded: only the swapchain is left, which claims the display. */
@@ -836,7 +839,8 @@ kwl_compose_close(
 		vkDestroyPipelineLayout(compose->device, compose->panel_layout, NULL);
 		vkDestroySampler(compose->device, compose->linear_sampler, NULL);
 
-		/* The corners. */
+		/* The joined quads' pipeline and buffer, then the corners. */
+		kwl_batch_close(compose);
 		vkDestroyBuffer(compose->device, compose->corners, NULL);
 		vkFreeMemory(compose->device, compose->corners_memory, NULL);
 
@@ -1526,9 +1530,9 @@ compose_pass(
 	}
 
 	/* The opaque and the alpha pipelines. */
-	result = compose_pipeline(compose, KWL_DRAW_OPAQUE, vertex, fragment, compose->layout, &compose->pipelines[KWL_DRAW_OPAQUE]);
+	result = compose_pipeline(compose, KWL_DRAW_OPAQUE, vertex, fragment, compose->layout, NULL, &compose->pipelines[KWL_DRAW_OPAQUE]);
 	if (result == VK_SUCCESS)
-		result = compose_pipeline(compose, KWL_DRAW_ALPHA, vertex, fragment, compose->layout, &compose->pipelines[KWL_DRAW_ALPHA]);
+		result = compose_pipeline(compose, KWL_DRAW_ALPHA, vertex, fragment, compose->layout, NULL, &compose->pipelines[KWL_DRAW_ALPHA]);
 	vkDestroyShaderModule(compose->device, vertex, NULL);
 	vkDestroyShaderModule(compose->device, fragment, NULL);
 	if (result != VK_SUCCESS)
@@ -1587,6 +1591,7 @@ compose_panel_pipeline(
 			vertex,
 			fragment,
 			compose->panel_layout,
+			NULL,
 			pipeline);
 		vkDestroyShaderModule(compose->device, fragment, NULL);
 		if (error != VK_SUCCESS) {
@@ -1600,7 +1605,28 @@ compose_panel_pipeline(
 	return VK_SUCCESS;
 }
 
-/* Creates a pipeline that draws a quad the given way, with the given layout. */
+/*
+ * Creates a pipeline of the glass look's blending (premultiplied source
+ * over) with its own vertex input (the solid quads drawn together,
+ * batch.c), in the output's pass and the given layout.
+ */
+VkResult
+kwl_compose_pipeline_input(
+	struct kwl_compose *compose,
+	VkShaderModule vertex,
+	VkShaderModule fragment,
+	VkPipelineLayout layout,
+	const VkPipelineVertexInputStateCreateInfo *input,
+	VkPipeline *result)
+{
+	/* The quads' pipeline with the vertices it is given. */
+	return compose_pipeline(compose, KWL_DRAW_ALPHA, vertex, fragment, layout, input, result);
+}
+
+/*
+ * Creates a pipeline that draws a quad the given way, with the given
+ * layout; with custom, the vertices it describes instead of the corners.
+ */
 static VkResult
 compose_pipeline(
 	struct kwl_compose *compose,
@@ -1608,6 +1634,7 @@ compose_pipeline(
 	VkShaderModule vertex,
 	VkShaderModule fragment,
 	VkPipelineLayout layout,
+	const VkPipelineVertexInputStateCreateInfo *custom,
 	VkPipeline *result)
 {
 	static const VkDynamicState dynamic[] = {
@@ -1706,6 +1733,8 @@ compose_pipeline(
 	pipeline.stageCount = 2U;
 	pipeline.pStages = stages;
 	pipeline.pVertexInputState = &input;
+	if (custom != NULL)
+		pipeline.pVertexInputState = custom;
 	pipeline.pInputAssemblyState = &assembly;
 	pipeline.pViewportState = &viewport;
 	pipeline.pRasterizationState = &raster;
@@ -2217,6 +2246,7 @@ compose_quad_part(
 
 	/* The pipeline for the window's way of drawing, its image, and the strip. */
 	kwl_compose_count_draw(server, server->compose->pipelines[import->draw], import->set, 0U);
+	kwl_batch_flush(server, command);
 	kwl_compose_bind(server, command, server->compose->pipelines[import->draw], server->compose->layout, import->set);
 	vkCmdPushConstants(command, server->compose->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
 	vkCmdDraw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
@@ -2346,6 +2376,7 @@ compose_record(
 	if (result != VK_SUCCESS)
 		return result;
 	kwl_compose_bind_forget(compose);
+	kwl_batch_begin(compose);
 
 	/*
 	 * The scene is kept only while the cursor is drawn into the frames: with
@@ -2498,6 +2529,7 @@ compose_record(
 
 	/* Captures scene pixels before the cursor can contaminate the reusable background. */
 	if (!reuse && capture) {
+		kwl_batch_flush(server, compose->command);
 		vkCmdEndRenderPass(compose->command);
 		kwl_scene_copy(&compose->scene, compose->command, compose->output.images[image], region, 0U);
 		compose->scene.written = 1U;
@@ -2510,6 +2542,7 @@ compose_record(
 
 	/* The cursor over everything. */
 	compose_cursor(server, compose->command);
+	kwl_batch_flush(server, compose->command);
 	vkCmdEndRenderPass(compose->command);
 
 	/* A test image's capture copies the finished image (shot.c; nothing elsewhere, ws173-p002). */
