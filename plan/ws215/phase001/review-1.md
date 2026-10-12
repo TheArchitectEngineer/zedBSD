@@ -1,0 +1,22 @@
+<!-- awesome-plan project=zedbsd record=ws215-p001-review-1 -->
+
+# WS215 p001 review-1（design-reviewer）— 要点
+判定: p002 は進めてよい（範囲を中-7 で直す条件）。p003・p005 は第 2 版で重大 1〜3 と中-1 を直すまで始めない。D1 は p003 の前、D2 は p004 の前。致命なし。
+重大1 kernel の自己 reset（B9）が意図した遷移の途中（電源投入、BT_IOC_RESET、SET_SPEED、Launch_RAM の後の 115200 への戻り）の framing・break・ゴミで動き firmware の読み込みを壊す、60 秒 3 回と daemon の BTD_FAILURES_MAX=3（main.c:76）で永久に止まりうる、6 節の「速さの切り替えの間は FIFO を読み捨てない」（:140）と矛盾（phase.md:102,140,121,98）→ RESET・SET_SPEED・電源投入のたびに RX の FIFO と ring を捨て assembler を restart し ICR で clear し一定 ms は数えるだけの「静かな窓」、自己 reset は「同期している状態」からだけ、上限で止まった後は BT_IOC_RESET で再び動かせる。
+重大2 daemon の始動が「controller は 115200 で ROM」を前提（:116）、host の速さと controller の 3M・patch 済みは close・reopen を越えて残る（session.c:846、main.c:804,816、daemon の再起動）→ BT_BUS_UART の始動は必ず BT_IOC_RESET から、session_command が RESET の notice を ECONNRESET とする（session.c:936-938）ので自分が求めた reset の notice を読み捨てる、代案は class に close の op を足し最後の close で電源を落として 115200 に戻す。
+重大3 send() が packet の途中で終わる時（CTS が長く下りたままの 1s・2s の timeout、signal）（:103）→ packet を途中で切らない（裏で最後まで送り呼び手には誤り）か controller を reset して notice、どちらかを明記。
+中1 class（WS143）の変更の列挙不足: drv_bt_hci_ops に set_speed（bt-hci.h:140-157）、ioctl の switch（bt-hci.c:700-747）と bt_hci_operate（:906-958）、drv_bt_hci_description に speed_max と address（bt-hci.h:160-168）、flags が登録の時に BT_INFO_SCO だけに切られる（bt-hci.c:227-228）、set_bootloader は NULL 不可（:170）→ ENOTSUP の stub、arm64 で bt-hci.c・bt-hci-proto.c が CONFIG_DRIVER_USB_BT=y の時だけ build（platform/arm64/vmunix.mk:130-132、amd64 の :359-361 の形の分岐）、新しい CONFIG の menu（config/drivers/architecture/arm64.drivers、menu.list）と config/ci/config-rpi4.mk。
+中2 pull の符号の逆（B5・B12、:98,:105）: dtb の brcm,pull は 0 なし・1 down・2 up、BCM2711 の PUP_PDN_CNTRL は 00 なし・01 up・10 down → helper は列挙型で受けて変換、host 試験で確かめる。helper の持ち主と API の署名を今決める。
+中3 attach は sleep しない（B3）が B4・B6 は mailbox（sleep、rpi4-firmware.c:264-269,386-390、EBUSY も）→ 判定を worker に移すか attach で sleep してよいと明記、GET_CLOCK_RATE の clock ID は mailbox の UART（2）で DT の cprman の 0x13 ではない、clock が 0 なら SET_CLOCK_STATE と SET_CLOCK_RATE。
+中4 PL011（ARM の PL011 TRM）: IBRD・FBRD の後に LCR_H を書かないと反映されない、TX の割り込みは FIFO を先に詰めないと上がらない、ring が満ちた時は RXIM と RTIM の両方を mask（level の SPI）、DR の bit 8〜11 の誤りを ISR から worker へ渡す（byte だけの ring では B9 ができない）、arm,pl011-axi は 32bit の access だけの可能性（推測）。
+中5 H4 の同期の喪失の検出: ACL の上限 4096（usb-bt.c:602）で 1 byte の喪失が最大 4KB を飲む → class の acl_data_max を transport に、event code の妥当性、packet の途中で一定時間 byte が来なければ喪失。
+中6 値の出典の表（0xFC18・FC2E・FC4C・FC4E・FC01・FC1C と引数、plan/ws214/phase003/hvs-values.md の形）を p003 の条件に、cts-event-workaround の手順は GPL の code か commit message にしか無い可能性 →「公開の patch の説明」（:86）は B19 と矛盾、GPL でない資料かユーザーの判断。
+中7 段の分け: CONFIG_INPUT_BRIDGE は kernel の driver（Makefile:245、amd64 の vmunix.mk:349-355、arm64 に規則なし）、p002 に kernel の作業、p003 の p002 への依存（:149 と :155 の矛盾、smoke に arm64 の bt-probe）、p003 の WS206（B12 の helper）への依存を表に。
+中8 config.txt の変更が計測の時期と重なる（master.md:550,553）→ config.txt の生成を CONFIG_DRIVER_BCM2711_BT=y かつ serial=n の時だけにし計測が終わるまで既定 n（またはユーザーに）、clock は mailbox で core・v3d・arm を前後で読む。config.txt の利用者 5 か所（bootloader.mk:4、disk-image.mk:10、vmunix.mk:595・602、check-rpi4-hdd-image.py:87）、実機へ config.txt を届ける手順。
+中9 SCO（B10・B16）: UART に isochronous の拍が無い、bluetooth.h:24-29 の「36ms を queue、満ちたら EAGAIN」→ controller の SCO の buffer と Synchronous Flow Control か transport の拍、ws197-p007b への依存。
+中10 電源の投入の順（推測）: BT_REG_ON を上げる時に host の RTS が上がっていないと autobaud → PL011 の RX を有効にし RTS を出してから電源、固定 100ms でなく CTS を見て待つ。
+中11 firmware の license（B18）: linux-firmware 20260410 の LICENCE.cypress と bluez-firmware の HTML 版の本文の一致を確かめる。
+軽微: _Static_assert(sizeof(struct bt_info)==160)、board_address の byte の順（DT は little endian）、BT_IOC_RESET の UAPI の comment（bluetooth.h:150-155）。B9 の「無ければ足す」は既にある（session.c:815-819→main.c:804・816）。physical_path "uart0" で btd_key が空（main.c:3014）→ UART では毎回読むと明記。BTD_FIRMWARE_FOLDER は 1 つ（protocol.h:73）→ /lib/firmware/brcm。bt-probe に Read Local Name が無い、node は一度に 1 つ（bluetoothd を止めて）。worker は driver の spinlock を放してから drv_bt_hci_input・drv_bt_hci_notice（LOCK_RANK_DEVICE、IRQ から不可 bt-hci.c:278）、driver の reset の context と lock の順。emulated_board() は rpi4-audio.c の static → 共有。mailbox の GPIO の向き（推測）。HAL の変更は不要。
+D1 賛成（mini UART の console は core の clock を固定、Future Work）。D2 条件つき賛成（既定 off、Pi 4 の config だけ、license の本文の一致）。D3「実機で読んでから」、代案は mailbox の board MAC から決まった規則で（推測）。D4 賛成（A2DP は WS205 の arm64 に依存）。
+
+（2026-10-13 Q1 から P3 へ渡された要点を写した。対応は [phase.md](phase.md) の冒頭の表。）
