@@ -810,13 +810,18 @@ kwl_home_draw_clock_over(
 	float progress)
 {
 	struct kwl_edge_depth depth;
+	float saved[4];
 	unsigned layer;
 	unsigned keep;
 
-	/* The content's place for this far open. */
+	/* The content's place for this far open; the layer's as it was is given back after. */
 	kwl_edge_home_content(progress, (int32_t)server->width, (int32_t)server->height, &depth);
 	layer = server->layer_on;
 	keep = server->keep_colours;
+	saved[0] = server->layer_x;
+	saved[1] = server->layer_y;
+	saved[2] = server->layer_scale;
+	saved[3] = server->layer_opacity;
 	server->layer_on = 1U;
 	server->layer_x = depth.x;
 	server->layer_y = depth.y;
@@ -830,6 +835,10 @@ kwl_home_draw_clock_over(
 	/* The drawing's state as it was. */
 	server->layer_on = layer;
 	server->keep_colours = keep;
+	server->layer_x = saved[0];
+	server->layer_y = saved[1];
+	server->layer_scale = saved[2];
+	server->layer_opacity = saved[3];
 }
 
 /*

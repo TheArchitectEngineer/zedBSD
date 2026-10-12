@@ -3,7 +3,7 @@
 # ws211-p001: 調査と設計（draw の数え、クロスフェードの絵の持ち方と描き直し、draw の束ね、Pi の見積もり、試験）
 
 Parent: [WS211](../ws.md)
-Status: planning（設計の第 4 版。[review-3](review-3.md) の A1〜A3・B1〜B6・C1〜C8 と、Q1 の判断（2026-10-12、ユーザーの「少しでも引っかかりは不可」に沿う）を反映。段 1・段 2 の実装（agent/p3、未 merge・Pi に置かない）を第 4 版に合わせて直した。review-4 の前）
+Status: planning（設計の第 4 版と、[review-4](review-4.md) の H1・H2・H3(2)・M2・M3・M4・L1・L4・L6 の直し。Q1 の判断で、直した段 1・2 は計測用として main への merge と Pi での試しに進む。受け入れの数値と H3(1)・M1 は Pi の実測の後）
 Phase disposition: normal
 Queue: P3（Q1 が割り当て、2026-10-12）
 
@@ -39,6 +39,18 @@ Queue: P3（Q1 が割り当て、2026-10-12）
 | M10 Makefile | 段: `Makefile.linux`・`Makefile.freebsd` にも足し、その build も確かめる。 |
 | L1〜L8 | 各所（L1 点はページが 2 つ以上の時だけ、L2 時計の帯は閉じている間は描かず開く時に、L3 WAR の依存、L4 拡大した tile の角、L5 影は縁の帯、L6 log の意味、L7 cached で組んでから写す、L8 アニメのコマは比べない） |
 | 実測値の log が plan に無い | [pi-20261012-place2-session.log](pi-20261012-place2-session.log)（Home の開閉の前後の `KWL LAT`・`KWL HOME`・`KWL PERF`）と [pi-20261012-place2-dmesg.log](pi-20261012-place2-dmesg.log)（`v3d: perf`・`requests`・`gpu`・`tfu`・`memory`、`bcm2711: flip perf`）を置いた。 |
+
+## review-4 への対応（2026-10-12 P3、第 4 版への加筆）
+
+- **H1**: 絵を使うか、どの絵を焼くかは、アニメの最初のコマで 1 回だけ決める（`layers->decided_anim = home_start_ms`、`using`）。途中では焼き直さない。アニメの間に変わった動作中の印は、アニメの後に今の経路で正しく出る。
+- **H2**: glyph の追い出しは、glass.c の guard（`glass_glyph_guard_begin`・`_end`）が数える。絵の記録の始めの `clock + 1` を guard にし、追い出す cell の `used` が guard 以上の時だけ数える。数がある時だけ、完了の時に絵を捨てる。
+- **H3**: (2) を入れた。開く時に Home の絵が古ければ、最初のコマでは舞台と desktop の絵だけを描く（progress 約 0.03 で content は見えない）。Home の絵は 2 コマ目で in-band で焼く（`home_later`）。閉じる時は、最初のコマで焼く（content が見えているため）。(1) の Pi の比較（開く時 Home 有効・古い、閉じる時 同じページ・別ページ、`--no-layer-cache` と比べる `KWL FIRST_FRAME` と最初のコマの shown）は、Pi の試しで行う。(3)（Home が開いて止まっている間に今のページで焼く）と (4)（kernel が UIF に直接描く、WS141）は、計測の後に決める。
+- **M1**: 静かな間の Home の焼き直しの間の `CURSOR_PLANE present` の input→at を、Pi の試しで測る。矩形だけ描き直すのは、その結果を見てから決める。
+- **M2**: `layers_animating` で `home_page_moving` を除く。安い要素（ページ・accent・出力の大きさ・壁紙・tile）は、毎回焼いた時の値と比べる。言語の変更（`kwl_language_set`）・app_id・親の窓（`kwl_sheet_set_parent`）でも印を立てる。client の fatal は、その surface の消滅（objects.c）で印が立つ。
+- **M3**: desktop の絵は、`draw_desktop_layer` が実際に描いた窓だけを、map の順（`map_order`。後の map で再利用されない）で覚える（`kwl_layers_note`）。絵に無い窓と anim の窓は、絵の上に直に描く。一度今の経路に戻ったら、そのアニメの残りは今の経路のままにする（`using = 0`）。
+- **M4**: `--no-layer-cache`（`KWL LAYER unavailable reason=off`、今の描き方の参照）を足した。`KWL LAYER baked ... us=`（記録の CPU の時間）も出す。
+- **L1**: `KWL LAYER use` は、アニメが止まった後（Home が開いていても閉じていても）に出す。**L4**: pass の外の依存の srcAccessMask を COLOR_ATTACHMENT_WRITE だけにした（WAR は stage だけで足りる）。**L6**: `kwl_home_draw_clock_over` は layer の x・y・scale・opacity も戻す。
+- 残る Low: L2（閉じ始めの絵は neutral なので hover の光が消え、選択の ring がページの先頭に移る。ユーザーに確かめる）、L3（試験の計画の本文の更新）、L5（記憶: Pi は device 16MiB と UIF の snapshot 約 16MiB、i915 の 4K は約 66MiB）、L7（in-band は `kwl_titlebar_frame`・`kwl_menu_frame` より前なので、desktop の絵の title bar の配置は前のコマの値になる。開く最初のコマの 1 コマ分のずれ）。
 
 ## 第 4 版の差分（review-3 と Q1 の判断、2026-10-12 P3）
 

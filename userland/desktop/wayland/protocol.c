@@ -1446,6 +1446,9 @@ shell_request(
 			strncpy(surface->app_id, text, sizeof(surface->app_id) - 1U);
 			surface->app_id[sizeof(surface->app_id) - 1U] = '\0';
 			object->client->server->dirty = 1;
+
+			/* App Home's running marks follow the applications' IDs (layer-cache.c). */
+			object->client->server->home_picture_stale = 1U;
 		}
 
 		break;

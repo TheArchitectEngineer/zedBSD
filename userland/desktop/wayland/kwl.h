@@ -1023,6 +1023,8 @@ struct kwl_server {
 	uint64_t input_ms;
 	uint64_t commit_ms;
 	unsigned home_picture_stale;
+	/* Nonzero with --no-layer-cache: no layer's picture, every frame drawn whole (the reference, review-4 M4). */
+	unsigned layer_cache_off;
 	unsigned home_progress_frozen;
 	float home_progress_value;
 	/* The event loop records the latest traced motion; recording a frame consumes this timestamp. */

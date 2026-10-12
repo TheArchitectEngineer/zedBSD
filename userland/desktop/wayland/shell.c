@@ -10185,8 +10185,9 @@ draw_desktop_layer(
 			kwl_backdrop_reset(server);
 		}
 
-		/* One more window drawn. */
+		/* One more window drawn; the desktop's picture being drawn notes it (layer-cache.c). */
 		drawn++;
+		kwl_layers_note(server, windows[index]);
 
 		/* Shifted with the layer, when Home does not have it. */
 		window_layer(server, windows[index], home, position);
@@ -10239,8 +10240,12 @@ draw_home_picture(
 	float y;
 	int launched;
 
-	/* The stage, in Home's own colours. */
+	/* The stage, in Home's own colours; an opening's first frame shows only it (Home's picture comes next, review-4 H3). */
 	kwl_home_draw_stage(server, command);
+	if (kwl_layers_home_hidden(server)) {
+		server->keep_colours = 0U;
+		return;
+	}
 
 	/* The first frame of the stage and of the content since Home was asked to open. */
 	if (!server->home_cover_logged && server->home_to > 0.0f) {
