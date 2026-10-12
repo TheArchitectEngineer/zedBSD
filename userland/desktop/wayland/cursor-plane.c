@@ -24,12 +24,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* The refresh assumed when the display told none, in millihertz. */
+#define PLANE_REFRESH_DEFAULT_MHZ	60000U
+
 static int plane_state(struct kwl_server *server, const struct kwl_import **image, int32_t *x, int32_t *y);
 static VkResult plane_find(struct kwl_compose *compose, VkDisplayModeKHR *mode, uint32_t *index, uint32_t *stack, VkExtent2D *extent);
 static VkResult plane_mode(struct kwl_compose *compose, VkDisplayModeKHR *mode);
 static VkResult plane_objects(struct kwl_compose *compose, struct kwl_cursor_plane *plane);
 static void plane_present(struct kwl_server *server, struct kwl_cursor_plane *plane, const struct kwl_import *source, int32_t x, int32_t y);
 static void plane_record(struct kwl_cursor_plane *plane, VkCommandBuffer command, VkImage target, const struct kwl_import *source);
+static uint64_t plane_period_us(const struct kwl_server *server);
 
 /*
  * Makes the cursor plane's surface and swapchain after the output's, when the display has such a plane.
@@ -170,6 +174,8 @@ kwl_cursor_plane_update(
 {
 	struct kwl_cursor_plane *plane;
 	const struct kwl_import *image;
+	uint64_t now;
+	uint64_t period;
 	int32_t x;
 	int32_t y;
 	int state;
@@ -194,13 +200,84 @@ kwl_cursor_plane_update(
 	}
 
 	/* Nothing changed since the last present. */
+	plane->deferred = 0U;
 	if (plane->presented &&
 	    plane->source == image &&
 	    (image == NULL || (plane->version == image->version && plane->x == x && plane->y == y)))
 		return;
 
+	/*
+	 * A move of the image shown is presented once a refresh, at the latest
+	 * place: the pointer reports more often than the display shows, and
+	 * each present cost the event loop about 3 ms on the Pi 4 (ws213-p001
+	 * C0).  The first move after a still refresh goes at once; a held one
+	 * goes when kwl_cursor_plane_due_ms lets the loop wake.  A new image is
+	 * not held, so the plane and the frames never disagree for a refresh.
+	 */
+	if (plane->presented &&
+	    plane->source == image &&
+	    image != NULL &&
+	    plane->version == image->version) {
+		now = kwl_microseconds();
+		period = plane_period_us(server);
+		if (now - plane->presented_us < period) {
+			plane->deferred = 1U;
+			server->perf.cursor_deferred++;
+			return;
+		}
+	}
+
 	/* The image at its place. */
 	plane_present(server, plane, image, x, y);
+}
+
+/*
+ * Gives how many milliseconds the event loop may sleep before a move held
+ * for the next refresh is presented, or -1 when none is held.
+ *
+ * It is at least 1, so that a loop woken a little early sleeps again
+ * rather than turning without sleeping, and -1 again once a held move is
+ * overdue by a refresh, so that a pass that does not reach the plane does
+ * not keep the loop awake.
+ */
+int
+kwl_cursor_plane_due_ms(
+	struct kwl_server *server)
+{
+	struct kwl_cursor_plane *plane;
+	uint64_t elapsed;
+	uint64_t period;
+	uint64_t remaining;
+
+	/* Only an open plane has a time. */
+	if (server->compose == NULL || !server->compose->cursor_plane.open)
+		return -1;
+
+	/* Nothing is held: the loop sleeps as long as it would. */
+	plane = &server->compose->cursor_plane;
+	if (!plane->deferred)
+		return -1;
+
+	/*
+	 * A move held past a whole further refresh was not taken by the
+	 * scheduler (a pass that ends before the cursor plane: a paused or
+	 * sleeping output, the game mode).  The loop does not wake for it each
+	 * millisecond; the plane's next update presents it, as it differs.
+	 */
+	elapsed = kwl_microseconds() - plane->presented_us;
+	period = plane_period_us(server);
+	if (elapsed >= 2U * period)
+		return -1;
+
+	/* Due now: the loop sleeps the least it can. */
+	if (elapsed >= period)
+		return 1;
+
+	/* The time left of the refresh since the last present. */
+	remaining = period - elapsed;
+
+	/* Succeeded: the rest, rounded up to whole milliseconds. */
+	return (int)((remaining + 999U) / 1000U);
 }
 
 /*
@@ -504,8 +581,10 @@ plane_present(
 		return;
 	}
 
-	/* What the plane shows now; the log ties it to the input it shows. */
+	/* What the plane shows now, and when; the log ties it to the input it shows. */
 	plane->presented = 1U;
+	plane->presented_us = kwl_microseconds();
+	server->perf.cursor_presents++;
 	plane->source = source;
 	plane->version = version;
 	plane->x = x;
@@ -588,4 +667,20 @@ plane_record(
 	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 	barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+}
+
+/* Gives the output's refresh period in microseconds: the display's mode, or 60 Hz when it told none. */
+static uint64_t
+plane_period_us(
+	const struct kwl_server *server)
+{
+	uint64_t refresh;
+
+	/* The mode's refresh in millihertz, which wl_output tells the clients too. */
+	refresh = server->refresh;
+	if (refresh == 0U)
+		refresh = PLANE_REFRESH_DEFAULT_MHZ;
+
+	/* Succeeded: one refresh, in microseconds. */
+	return 1000000000ULL / refresh;
 }
