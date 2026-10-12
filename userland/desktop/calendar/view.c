@@ -461,6 +461,19 @@ cal_view_draw(
 {
 	struct view_layout layout;
 	struct kl_rect whole;
+	struct cal_date selected;
+	unsigned hidden;
+	long edit_index;
+	int editing;
+	int mode;
+	int same;
+
+	/* What a click in the frame may change of what was drawn before it (the panel is drawn before the months). */
+	selected = view->selected;
+	hidden = view->hidden;
+	edit_index = view->edit_index;
+	editing = view->editing;
+	mode = view->mode;
 
 	/* A page that has turned shows its new day. */
 	if (view->flipping && now_us - view->flip_us >= CAL_FLIP_US) {
@@ -493,12 +506,16 @@ cal_view_draw(
 	/*
 	 * The panel, when there is room for it, before the months: a drop it
 	 * takes (on the cells of the frame shown) is in the months drawn next.
+	 * What the last frame kept under the desk calendar stays kept only
+	 * while the desk calendar is in the frame (view_desk).
 	 */
-	view->desk_valid = 0;
+	view->desk_seen = 0;
 	if (layout.panel.width > 0) {
 		view_card(view, style, &layout.panel, style->theme->glass_content);
 		view_panel(view, ui, style, &layout.panel, now_us);
 	}
+	if (!view->desk_seen)
+		view->desk_valid = 0;
 
 	/* The months' card: its bar, the days of the week, the months. */
 	view_card(view, style, &layout.main, style->theme->glass_content);
@@ -517,6 +534,20 @@ cal_view_draw(
 	/* The notice over the bottom of the months while it shows. */
 	if (view->notice[0] != '\0' && now_us < view->notice_until)
 		kl_chip(style, layout.main.x + layout.main.width / 2, layout.main.y + layout.main.height - 16, view->notice);
+
+	/*
+	 * A click that chose another day, opened or closed the editor, or
+	 * changed what the months show asks for the whole view again: what was
+	 * drawn before it (the panel) shows the old, and the frames of the
+	 * desk calendar alone that follow would keep it (ws210-p014).
+	 */
+	same = cal_same_day(&selected, &view->selected);
+	if (!same)
+		view->again = 1;
+	if (hidden != view->hidden || edit_index != view->edit_index)
+		view->again = 1;
+	if (editing != view->editing || mode != view->mode)
+		view->again = 1;
 }
 
 /*
@@ -585,6 +616,23 @@ cal_view_wait(
 
 	/* Nothing moves. */
 	return -1;
+}
+
+/*
+ * Reports whether something of the view moves by itself (a page turning,
+ * a cell sinking, a card dragged), so that it wants frames while it does;
+ * a notice that shows until a time does not (ws210-p014).
+ */
+int
+cal_view_animating(
+	const struct cal_view *view)
+{
+	/* A page turning, a cell sinking or a drag. */
+	if (view->flipping || view->sinking || view->dragging >= 0)
+		return 1;
+
+	/* Nothing moves. */
+	return 0;
 }
 
 /*
@@ -1442,18 +1490,45 @@ view_desk(
 	float progress;
 	const struct kl_rect *clip;
 	int error;
+	int whole;
+	int same;
 	int i;
 
 	/*
 	 * A frame drawn only in a part away from the desk calendar (a lit
 	 * widget, BUG-226) leaves it as it is: its 3D picture is not made
 	 * again, which was most of a hover's frame (2026-10-12, the Pi 4).
+	 * What was kept under it stays kept, as nothing was drawn there
+	 * (ws210-p014), when it was kept for this area.
 	 */
+	view->desk_seen = 1;
 	clip = &style->canvas->clip;
+	same = 0;
+	if (view->desk_area.x == area->x &&
+	    view->desk_area.y == area->y &&
+	    view->desk_area.width == area->width &&
+	    view->desk_area.height == area->height)
+		same = 1;
+	if (!same)
+		view->desk_valid = 0;
 	if (area->x >= clip->x + clip->width || area->x + area->width <= clip->x)
 		return;
 	if (area->y >= clip->y + clip->height || area->y + area->height <= clip->y)
 		return;
+
+	/*
+	 * Drawn again: what is under it is kept again below, but only when the
+	 * frame draws all of its area; one drawn in a part that cuts it keeps
+	 * nothing (the rest of the area still holds the last frame's desk
+	 * calendar), and the next frame of the desk alone draws the whole view.
+	 */
+	view->desk_valid = 0;
+	whole = 0;
+	if (area->x >= clip->x &&
+	    area->y >= clip->y &&
+	    area->x + area->width <= clip->x + clip->width &&
+	    area->y + area->height <= clip->y + clip->height)
+		whole = 1;
 
 	/* The target and the picture at the area's size (made again when it changes). */
 	if (view->picture.width != area->width || view->picture.height != area->height) {
@@ -1508,8 +1583,9 @@ view_desk(
 	sc_desk_calendar(view->mesh, flip, opacity);
 	sc_draw(&view->target, view->mesh, &turn, textures);
 
-	/* What is under it, kept for the frames of the desk alone, and the shadow on the desk. */
-	view_keep_under(view, style, area);
+	/* What is under it, kept for the frames of the desk alone (when the frame draws all of it), and the shadow on the desk. */
+	if (whole)
+		view_keep_under(view, style, area);
 	kl_canvas_shadow(style->canvas, (float)area->x + (float)area->width * 0.2f, (float)area->y + (float)area->height * 0.8f, (float)area->width * 0.6f, 5.0f, 3.0f, 6.0f, KL_RGBA(0x1f3a66, 40));
 
 	/* The picture over it. */

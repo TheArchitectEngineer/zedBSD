@@ -220,6 +220,15 @@ main(
 		return 1;
 	}
 
+	/*
+	 * The pointer's motions merged, and each frame drawn once the
+	 * compositor took the last one (ws210-p014 F2): the pointer crossing
+	 * the view while a frame is on its way draws its latest place once,
+	 * not a frame queued for every widget it crossed (2026-10-12, the Pi 4).
+	 */
+	error = kl_window_set_pacing(music.window, KL_PACING_MOTION | KL_PACING_FRAME, 0U);
+	mu_log("PACING motion=1 frame=1 errno=%d", error);
+
 	/* The input of its frames. */
 	music.ui = kl_ui_create();
 	if (music.ui == NULL) {
@@ -1231,12 +1240,22 @@ mu_draw(
 	unsigned index;
 	size_t count;
 	int need;
+	int pace;
 	int status;
 	int error;
 	int taken;
 
 	/* Nothing changed and nothing moves: no frame. */
 	if (!music->dirty && !music->moving && !music->view.seek_pending && !music->lit_changed)
+		return;
+
+	/*
+	 * A frame once the compositor took the last one (ws210-p014 F2.2):
+	 * until then nothing is consumed, so what changes meanwhile is drawn
+	 * as one frame in its latest state.
+	 */
+	pace = kl_window_frame_wait(music->window, now_us);
+	if (pace != 0)
 		return;
 
 	/*
@@ -1306,27 +1325,40 @@ mu_draw(
 
 /*
  * Reports how long the loop may wait for input (ms): no time while a frame
- * is due, a frame's time while a widget moves, the view's own time, or a
- * second.
+ * is due or a request waits, a frame's time while a widget moves, until
+ * the compositor took the last frame (ws210-p014 F2.6: its answer wakes
+ * the wait), the view's own time, or a second.
  */
 static int
 mu_wait(
 	const struct mu_window *music,
 	uint64_t now_us)
 {
+	int pace;
 	int wait;
 
-	/* A frame due now, or a request waiting. */
-	if (music->dirty || music->lit_changed || music->view.request_count != 0U)
+	/* A frame wanted: whether it may be drawn now, or how long the compositor's answer is waited for at most (-1: until it comes). */
+	pace = -1;
+	if (music->dirty || music->lit_changed || music->moving)
+		pace = kl_window_frame_wait(music->window, now_us);
+
+	/* A frame due now, or a request waiting (which does not wait for the compositor). */
+	if (pace == 0 && (music->dirty || music->lit_changed))
+		return 0;
+	if (music->view.request_count != 0U)
 		return 0;
 
 	/* A widget moving. */
-	if (music->moving)
+	if (pace == 0 && music->moving)
 		return MU_MOVING_MS;
 
 	/* The view's time, or a second. */
 	wait = mu_view_wait(&music->view, now_us);
 	if (wait < 0 || wait > MU_IDLE_MS)
 		wait = MU_IDLE_MS;
+
+	/* The compositor's answer, waited for at most so long. */
+	if (pace > 0 && pace < wait)
+		wait = pace;
 	return wait;
 }
