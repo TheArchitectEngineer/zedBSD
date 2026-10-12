@@ -8,6 +8,7 @@
 /* Bounded trusted jobs share one worker; callback retirement never substitutes for DMA stop. */
 #include <kern/clock.h>
 #include <kern/kcrt.h>
+#include <kern/klog.h>
 #include <kern/sched.h>
 #include <kern/thread.h>
 #include <uapi/errno.h>
@@ -28,6 +29,9 @@
 
 /* The command slots followed by the marker pool. */
 #define WORKER_ENTRIES (BCM2711_RENDER_REQUESTS + BCM2711_RENDER_MARKERS)
+
+/* The kernel log takes at most this many failure lines from one controller. */
+#define WORKER_FAILURE_LINES 64U
 
 /* Constant operation-table entries need declarations before ANSI C initialization. */
 static int job_reserve(void *opaque, void *private_session, uint32_t timeline, struct drv_gpu_completion *completion, void **token);
@@ -497,6 +501,24 @@ bcm2711_render_worker_fault(
 
 	/* Succeeded: the worker fault is visible to subsequent admission. */
 	return;
+}
+
+/*
+ * Tells whether one more failure line fits the kernel log's bound.
+ *
+ * The caller holds the controller mutex.
+ */
+bool
+bcm2711_render_failure_line(
+	struct bcm2711_render_device *controller)
+{
+	/* The bound keeps a client that fails every submission from flooding the log. */
+	if (controller->worker.failure_lines >= WORKER_FAILURE_LINES)
+		return false;
+	controller->worker.failure_lines++;
+
+	/* Succeeded: the caller may write the line. */
+	return true;
 }
 
 /*
@@ -1174,7 +1196,9 @@ bcm2711_render_executor_step(
 	struct bcm2711_render_session *previous;
 	unsigned long enabled;
 	uint64_t bytes;
+	const char *stage;
 	bool display;
+	bool allowed;
 	bool failed;
 	bool done;
 	int ended;
@@ -1209,14 +1233,23 @@ bcm2711_render_executor_step(
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
-	/* One step, or the end of an execution that cannot run; a step's failure is the engine's. */
+	/*
+	 * One step, or the end of an execution that cannot run.  A step that
+	 * failed while preparing ends only its execution; any other failure is
+	 * the engine's.
+	 */
 	done = true;
 	failed = false;
+	stage = "cancel";
 	if (error == 0) {
+		execution->engine = true;
 		error = execution->step(controller, execution, &done);
+		stage = "step";
 		if (error != 0) {
 			done = true;
-			failed = true;
+			failed = execution->engine;
+			if (!failed)
+				stage = "prepare";
 		}
 	}
 	bytes = execution->bytes;
@@ -1233,8 +1266,28 @@ bcm2711_render_executor_step(
 		ended = execution->end(controller, execution, error);
 		if (ended != 0) {
 			failed = true;
+			stage = "end";
 			if (error == 0)
 				error = ended;
+		}
+	}
+
+	/*
+	 * Says which execution failed and whether the engine went with it; a
+	 * stopped session's cancel is ordinary.  The session's counts are read
+	 * without their guard, for the log only.
+	 */
+	if (error != 0 && error != ECANCELED) {
+		allowed = bcm2711_render_failure_line(controller);
+		if (allowed) {
+			kern_logf(
+				"v3d: execution failed stage=%s error=%d engine=%u display=%u session=%llu/%llu\n",
+				stage,
+				error,
+				(unsigned)failed,
+				(unsigned)display,
+				(unsigned long long)session->executed + 1U,
+				(unsigned long long)session->submitted);
 		}
 	}
 

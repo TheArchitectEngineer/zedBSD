@@ -750,6 +750,9 @@ execution_step(
 		if (action->job->executed && (command->flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) != 0)
 			command->state = BCM2711_VULKAN_COMMAND_INVALID;
 		if (error != 0) {
+			/* A pass that failed while preparing launched nothing, so only this execution fails. */
+			if (action->job->prepare_failed && retired)
+				base->engine = false;
 			bcm2711_stage_mark(BCM2711_FAMILY_V3D, "submit failed error=%d", error);
 			return error;
 		}

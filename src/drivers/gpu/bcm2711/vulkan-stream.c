@@ -162,9 +162,11 @@ execute_command(
 		break;
 	}
 
-	/* Any failure stops decoding before a later trailer could falsely publish success. */
-	if (error != 0)
+	/* Any failure stops decoding before a later trailer could falsely publish success; the log names the command. */
+	if (error != 0) {
+		stream->session->failed_opcode = opcode;
 		return error;
+	}
 
 	/* This command's complete body and requested output have been processed. */
 	return 0;

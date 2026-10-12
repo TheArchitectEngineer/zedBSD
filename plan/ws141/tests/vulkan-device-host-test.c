@@ -4148,6 +4148,41 @@ order_failed_end(
 	return 0;
 }
 
+/* A fixture step that fails while preparing a pass, before anything launched. */
+static int
+order_prepare_fail(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	bool *done)
+{
+	/* Only this execution fails; the engine stays ready. */
+	(void)controller;
+	base->engine = false;
+	*done = false;
+
+	/* Failed: the pass found no memory. */
+	return ENOMEM;
+}
+
+/* Records the end of the execution that failed in preparation. */
+static int
+order_prepare_end(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	int error)
+{
+	struct order_execution *execution;
+
+	/* The end receives the preparation's error. */
+	(void)controller;
+	execution = (struct order_execution *)base;
+	assert(error == ENOMEM && !execution->ended);
+	execution->ended = true;
+
+	/* Succeeded: nothing to release. */
+	return 0;
+}
+
 /* Records the fixture execution's end. */
 static int
 order_end(
@@ -4226,6 +4261,31 @@ executor_order_test(
 	assert(order_log[0] == 4 && order_log[2] == 5);
 	controller->worker.display_last = false;
 
+	/* (t) A step that failed in preparation ends only its execution: no fault, the marker behind it completes, another session runs. */
+	memset(&executions[0], 0, sizeof(executions[0]) * 2U);
+	executions[0].base.step = order_prepare_fail;
+	executions[0].base.end = order_prepare_end;
+	bcm2711_render_execution_submit(runtime_session, &executions[0].base);
+	error = controller->operations.jobs->reserve(controller, runtime_session, 7, (struct drv_gpu_completion *)(uintptr_t)(runtime_callbacks + 1U), &token);
+	assert(error == 0);
+	error = controller->operations.jobs->commit(controller, runtime_session, token, (struct drv_gpu_completion *)(uintptr_t)(runtime_callbacks + 1U));
+	assert(error == 0);
+	executions[1].tag = 1;
+	executions[1].steps = 1;
+	executions[1].base.step = order_step;
+	executions[1].base.end = order_end;
+	bcm2711_render_execution_submit(&sessions[0], &executions[1].base);
+	callbacks = runtime_callbacks;
+	faults = runtime_faults;
+	order_count = 0;
+	error = bcm2711_render_worker_step(controller);
+	assert(error == 0 && runtime_callbacks == callbacks && controller->worker.parked != NULL);
+	assert(executor_drain(controller) == 2 && executions[0].ended && executions[1].ended && order_count == 1);
+	assert(runtime_callbacks == callbacks + 1U && runtime_errors[callbacks] == 0 && runtime_faults == faults);
+	assert(controller->worker.parked == NULL && runtime_session->pending == 0 && sessions[0].pending == 0);
+	assert(!controller->worker.uncertain && !controller->space.native->hardware.faulted);
+	controller->worker.display_last = false;
+
 	/* (g) A failed step faults the engine; the parked marker behind it reports EIO after the loss is published. */
 	memset(&executions[0], 0, sizeof(executions[0]));
 	executions[0].base.step = order_fail;
@@ -4244,7 +4304,7 @@ executor_order_test(
 	assert(controller->worker.parked == NULL && runtime_session->pending == 0 && controller->worker.uncertain);
 	controller->space.native->hardware.faulted = false;
 	controller->worker.uncertain = false;
-	puts("WS141 executor round robin, in-session order, display turn and failed step: PASS");
+	puts("WS141 executor round robin, in-session order, display turn, preparation failure and failed step: PASS");
 
 	/* Succeeded: the executor's choice of session was verified with fixture executions. */
 	return;

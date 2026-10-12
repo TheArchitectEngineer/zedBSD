@@ -35,6 +35,8 @@ struct bcm2711_vulkan_native_job {
 	uint64_t execute_ticks;
 	uint64_t release_ticks;
 	uint64_t copy_ticks;
+	/* The last step failed while preparing, before it launched anything or left a translation unpublished. */
+	bool prepare_failed;
 };
 
 /* The renderer must own the same Vulkan session before a primary can become independently pending native work. */

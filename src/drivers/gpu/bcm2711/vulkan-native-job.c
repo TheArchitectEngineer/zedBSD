@@ -131,6 +131,9 @@ bcm2711_vulkan_native_job_step(
 	    controller->space.native == NULL)
 		return EINVAL;
 
+	/* Only this step's failure can be preparation's. */
+	job->prepare_failed = false;
+
 	/* A completed or uncertain payload never replays coherent source reads, clear or native work. */
 	if (job->quarantined || (job->executed && !job->stepping)) {
 		*retired = job->retired;
@@ -180,8 +183,13 @@ bcm2711_vulkan_native_job_step(
 			prepare_ticks += clock_ticks() - step;
 			if (tiled == 0 && synchronized != 0)
 				tiled = synchronized;
-			if (tiled != 0 && tiled != ENOTSUP)
+
+			/* A refused tile copy with its edits published failed only in preparation. */
+			if (tiled != 0 && tiled != ENOTSUP) {
+				if (synchronized == 0)
+					job->prepare_failed = true;
 				return tiled;
+			}
 		}
 
 		/* Exact coherent buffer transfers execute only after every preceding native pass has retired and published its output. */
@@ -192,8 +200,10 @@ bcm2711_vulkan_native_job_step(
 			step = clock_ticks();
 			error = bcm2711_vulkan_buffer_copy_run(event->record);
 			copy_ticks += clock_ticks() - step;
-			if (error != 0)
+			if (error != 0) {
+				job->prepare_failed = true;
 				return error;
+			}
 			event = event->next;
 			continue;
 		}
@@ -201,8 +211,10 @@ bcm2711_vulkan_native_job_step(
 		/* Every earlier native pass completed before this explicit dependency can publish FIFO-visible layout state. */
 		if (event->opcode == GPU_OP_CMD_PIPELINE_BARRIER) {
 			error = bcm2711_vulkan_barrier_run(event->record);
-			if (error != 0)
+			if (error != 0) {
+				job->prepare_failed = true;
 				return error;
+			}
 			event = event->next;
 			continue;
 		}
@@ -238,6 +250,10 @@ bcm2711_vulkan_native_job_step(
 		synchronized = bcm2711_v3d_memory_end(&controller->space);
 		if (synchronized != 0)
 			error = synchronized;
+
+		/* A refusal whose edits were flushed failed only in preparation. */
+		if (error != 0 && synchronized == 0)
+			job->prepare_failed = true;
 
 		/* Accumulate preparation separately from device execution and retirement. */
 		prepare_ticks += clock_ticks() - step;
@@ -283,7 +299,10 @@ bcm2711_vulkan_native_job_step(
 		 */
 		step = clock_ticks();
 		error = bcm2711_vulkan_native_pass_start(job->pass, &completion);
-		if (error == 0) {
+		if (error != 0) {
+			/* Nothing launched: the pass failed only in preparation. */
+			job->prepare_failed = true;
+		} else {
 			bcm2711_render_window_open(controller);
 			error = bcm2711_vulkan_native_pass_launch(job->pass, &completion);
 			closed = bcm2711_render_window_close(controller);
