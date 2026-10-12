@@ -6,29 +6,40 @@
  */
 
 /*
- * The layers' pictures (ws211-p002, plan/ws211/phase001/phase.md): App
- * Home's content and the desktop layer, each drawn once into an image of
- * the output's size, so that App Home's opening and closing can show them
- * as two pictures instead of drawing every shape of both in each frame (on
- * the Raspberry Pi 4 a frame of both is 460 to 900 draws).
+ * The layers' pictures (ws211-p002, plan/ws211/phase001/phase.md, design
+ * version 4): App Home's content and the desktop layer, each drawn into an
+ * image of the output's size, so that App Home's opening and closing show
+ * them as two pictures instead of drawing every shape of both in each frame
+ * (on the Raspberry Pi 4 a frame of both is 460 to 900 draws).
  *
  * Both images are made with the output, in its format, so that the glass
  * look's pipelines draw into them as into the output; a device that cannot
  * make both keeps neither (KWL LAYER unavailable) and the compositor draws
- * as before.  Home's picture holds its content without the stage, on
- * transparent black, and without an icon lit under the pointer; its key
- * (kwl_home_picture_key) says what it shows.  While Home is closed, a
- * picture whose key changed is drawn again as a frame of its own that
- * presents nothing (compose->frame_bake): it is submitted and completed as
- * a frame, so that the host images it samples are copied first, in the
- * same submission.  It waits for a quiet moment (no frame and no
- * input for LAYER_QUIET_MS) and for its turn (two a second at most), so
- * that it does not hold up a frame the user waits for.
+ * as before.
  *
- * App Home's opening and closing show the pictures (shell.c,
- * kwl_layers_showing) once both show what is there; the logs say when a
- * picture was drawn (KWL LAYER baked) and when an animation shows them
- * (KWL LAYER shown).
+ * The desktop's picture is drawn in the first frame of each opening and
+ * closing, in the frame's own commands before its pass (in-band): that
+ * frame draws the desktop once, as every frame did before, and the frames
+ * after it show the picture.  It shows the windows as they were then (the
+ * change the user accepted on 2026-10-12); a window mapped later is drawn
+ * over it, and a window in it that an animation starts to move takes the
+ * frames back to drawing everything.
+ *
+ * Home's picture holds its content without the stage and without the clock
+ * (drawn over it each frame), on transparent black, as Home opens (its
+ * page's first application selected, no icon lit); its key
+ * (kwl_home_picture_key) says what it shows, and is made again only when
+ * something it shows may have changed (home_picture_stale).  A stale
+ * picture is drawn again in-band in an animation's frame, or, while Home is
+ * closed, as a frame of its own that presents nothing (compose->frame_bake)
+ * when there has been no input and no window commit for LAYER_QUIET_MS, at
+ * most twice a second.
+ *
+ * A glyph the atlas evicted after a picture was recorded (a text measured
+ * outside a frame) may have reached the picture: a picture whose drawing
+ * saw an eviction before it completed is drawn again (review-3 A1).  A
+ * drawing that completes after the output was opened again is not taken
+ * (the generation, review-3 A3).
  */
 
 #include "compose.h"
@@ -39,20 +50,27 @@
 #include <stdio.h>
 #include <string.h>
 
-/* How long the compositor has been without a frame and without input before a picture is drawn again. */
-#define LAYER_QUIET_MS		100U
+/* How long the compositor has been without input and without a window commit before Home's picture is drawn on its own. */
+#define LAYER_QUIET_MS		500U
 
-/* The fewest milliseconds between the first and the third drawing of the pictures: two a second at most. */
+/* How long since the last frame completed before it is. */
+#define LAYER_FRAME_QUIET_MS	100U
+
+/* The fewest milliseconds between the first and the third drawing on its own: two a second at most. */
 #define LAYER_TURN_MS		1000U
+
+/* The generations of the outputs' pictures (one each time an output opens). */
+static uint64_t layers_generations;
 
 static VkResult layers_pass(struct kwl_compose *compose);
 static VkResult layers_image(struct kwl_compose *compose, struct kwl_layer_image *target);
 static void layers_image_destroy(struct kwl_compose *compose, struct kwl_layer_image *target);
 static void layers_destroy(struct kwl_compose *compose);
-static VkResult layers_record(struct kwl_server *server, unsigned which, struct kwl_object **windows, unsigned count);
-static int layers_bake(struct kwl_server *server, unsigned which, uint64_t key, struct kwl_object **windows, unsigned count);
-static uint64_t layers_desktop_key(struct kwl_server *server, struct kwl_object **windows, unsigned count);
-static uint64_t layers_hash(uint64_t hash, const void *bytes, size_t length);
+static void layers_record_pass(struct kwl_server *server, VkCommandBuffer command, unsigned which, struct kwl_object **windows, unsigned count);
+static int layers_home_current(struct kwl_server *server);
+static int layers_animating(struct kwl_server *server);
+static void layers_remember(struct kwl_server *server, struct kwl_object **windows, unsigned count);
+static void layers_log_use(struct kwl_layers *layers);
 
 /*
  * Makes the layers' pictures for the output just opened: the pass and both
@@ -67,12 +85,15 @@ kwl_layers_open(
 	VkResult result;
 	unsigned index;
 
-	/* Nothing is drawn yet; the size is the output's. */
+	/* Nothing is drawn yet; the size is the output's, the generation a new one. */
 	compose = server->compose;
 	layers = &compose->layers;
 	memset(layers, 0, sizeof(*layers));
 	layers->width = compose->output.width;
 	layers->height = compose->output.height;
+	layers_generations++;
+	layers->generation = layers_generations;
+	server->home_picture_stale = 1U;
 
 	/* The pass, then each image. */
 	result = layers_pass(compose);
@@ -92,7 +113,7 @@ kwl_layers_open(
 	printf("KWL LAYER ready width=%u height=%u images=%u\n", layers->width, layers->height, KWL_LAYERS);
 }
 
-/* Destroys the layers' pictures with the output (the device is idle). */
+/* Destroys the layers' pictures with the output (the device is idle); a drawing still to complete is not taken. */
 void
 kwl_layers_close(
 	struct kwl_compose *compose)
@@ -103,28 +124,21 @@ kwl_layers_close(
 }
 
 /*
- * Draws a layer's picture again when it is stale and the moment is right.
- * The event loop calls it before each frame it would draw and when it has
- * nothing to draw.  While App Home is closed a stale picture is drawn in a
- * quiet moment; while Home's own animation runs, a picture stale at its
- * start is drawn once, after the animation's first frame (review-2 N9), and
- * the frames after it show the pictures.  Returns 1 when a drawing went in
- * flight (the frame waits for it), 0 when none was due, and an errno
- * value's negation when the drawing could not be submitted.
+ * Draws Home's stale picture as a frame of its own that presents nothing,
+ * when App Home is closed and the compositor has been quiet (the event
+ * loop calls it when it has nothing to draw).  Returns 1 when the drawing
+ * went in flight, 0 when none was due, and an errno value's negation when
+ * it could not be submitted.
  */
 int
 kwl_layers_tick(
 	struct kwl_server *server)
 {
-	struct kwl_object *windows[KWL_FRAME_WINDOWS];
 	struct kwl_compose *compose;
 	struct kwl_layers *layers;
+	VkResult result;
 	uint64_t now;
-	uint64_t keys[KWL_LAYERS];
-	unsigned stale[KWL_LAYERS];
-	unsigned count;
-	unsigned which;
-	float home;
+	uint64_t key;
 
 	/* Only with the pictures, the output, no frame in flight, in the glass look, with nothing else on the screen. */
 	compose = server->compose;
@@ -136,83 +150,173 @@ kwl_layers_tick(
 	if (!server->glass || server->greeter || server->locked || server->screen_off)
 		return 0;
 
-	/* Home opening or closing on its own decides only after its first frame; otherwise only in a quiet moment, twice a second at most. */
-	home = kwl_home_progress(server);
-	now = kwl_milliseconds();
-	if (home > 0.0f) {
-		if (!server->home_moving || server->home_dragging || server->home_start_pending)
-			return 0;
-	} else if (server->home_dragging ||
-	    server->dirty ||
-	    server->damaged ||
-	    now - server->frame_done_ms < LAYER_QUIET_MS ||
-	    now - server->lock_input_ms < LAYER_QUIET_MS ||
-	    (layers->bake_times[0] != 0U && now - layers->bake_times[0] < LAYER_TURN_MS)) {
+	/* Only with Home closed and still; an animation ended says how it was drawn. */
+	if (kwl_home_progress(server) > 0.0f || server->home_moving || server->home_dragging)
 		return 0;
+	layers_log_use(layers);
+
+	/* Only when what Home shows may have changed, or what it is drawn from did. */
+	if (!server->home_picture_stale &&
+	    layers->valid[KWL_LAYER_HOME] &&
+	    layers->home_wallpaper == glass_wallpaper_version(server) &&
+	    layers->home_tiles == glass_tiles_ready(server))
+		return 0;
+
+	/* Only in the quiet: no input and no window commit for a while, no frame just done, two drawings a second at most. */
+	now = kwl_milliseconds();
+	if (server->dirty || server->damaged ||
+	    now - server->input_ms < LAYER_QUIET_MS ||
+	    now - server->commit_ms < LAYER_QUIET_MS ||
+	    now - server->frame_done_ms < LAYER_FRAME_QUIET_MS ||
+	    (layers->bake_times[0] != 0U && now - layers->bake_times[0] < LAYER_TURN_MS))
+		return 0;
+
+	/* The key made again: a picture that shows it already is kept. */
+	server->home_picture_stale = 0U;
+	key = kwl_home_picture_key(server);
+	if (layers->valid[KWL_LAYER_HOME] && layers->keys[KWL_LAYER_HOME] == key &&
+	    layers->home_wallpaper == glass_wallpaper_version(server) &&
+	    layers->home_tiles == glass_tiles_ready(server))
+		return 0;
+
+	/* Recorded and submitted as a frame that presents nothing. */
+	result = kwl_layers_begin_quiet(server);
+	if (result == VK_SUCCESS) {
+		layers_record_pass(server, compose->command, KWL_LAYER_HOME, NULL, 0U);
+		result = vkEndCommandBuffer(compose->command);
+	}
+	if (result == VK_SUCCESS)
+		result = kwl_compose_submit_quiet(server);
+	if (result != VK_SUCCESS) {
+		printf("KWL VULKAN_ERROR operation=layer result=%d\n", (int)result);
+		return -EIO;
 	}
 
-	/* What the pictures would show now, and which are stale. */
-	count = kwl_compose_layer_windows(server, windows, KWL_FRAME_WINDOWS);
-	keys[KWL_LAYER_HOME] = kwl_home_picture_key(server);
-	keys[KWL_LAYER_DESKTOP] = layers_desktop_key(server, windows, count);
-	stale[KWL_LAYER_HOME] = !layers->valid[KWL_LAYER_HOME] || layers->keys[KWL_LAYER_HOME] != keys[KWL_LAYER_HOME];
-	stale[KWL_LAYER_DESKTOP] = !layers->valid[KWL_LAYER_DESKTOP] ||
-	    layers->keys[KWL_LAYER_DESKTOP] != keys[KWL_LAYER_DESKTOP] ||
-	    layers->commits != server->commit_count;
+	/* In flight: the picture is taken when it completes, if nothing changed under it. */
+	compose->frame_bake = 1U;
+	layers->keys[KWL_LAYER_HOME] = key;
+	layers->bake_times[0] = layers->bake_times[1];
+	layers->bake_times[1] = now;
+	printf("KWL LAYER baked what=home inband=0 draws=%u at_us=%llu\n", layers->bake_draws, (unsigned long long)kwl_microseconds());
+	return 1;
+}
 
-	/* Home's animation draws each stale picture once (the windows' contents then stay as drawn); Home closed draws Home's first. */
-	for (which = 0U; which < KWL_LAYERS; which++) {
-		if (!stale[which])
-			continue;
-		if (home > 0.0f && layers->anim_baked[which] == server->home_start_ms)
-			continue;
-		if (home > 0.0f)
-			layers->anim_baked[which] = server->home_start_ms;
-		return layers_bake(server, which, keys[which], windows, count);
+/* Begins a fresh recording of compose->command for a frame that presents nothing. */
+VkResult
+kwl_layers_begin_quiet(
+	struct kwl_server *server)
+{
+	VkCommandBufferBeginInfo begin;
+
+	/* Beginning the command buffer resets it. */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	return vkBeginCommandBuffer(server->compose->command, &begin);
+}
+
+/*
+ * Draws, in the frame being recorded and before its pass, the pictures an
+ * animation of App Home needs and lacks (review-3, Q1's choice): the
+ * desktop's picture in the first frame of each opening and closing, and
+ * Home's picture when what it shows changed.  The frame's hold covers the
+ * windows' images the desktop's picture samples.
+ */
+void
+kwl_layers_inband(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	struct kwl_object **windows,
+	unsigned count)
+{
+	struct kwl_layers *layers;
+	uint64_t key;
+
+	/* Only Home's own animation, with the pictures. */
+	layers = &server->compose->layers;
+	if (!layers->ready || !layers_animating(server))
+		return;
+
+	/* The desktop's picture once an animation, with the windows it shows. */
+	if (layers->desktop_anim != server->home_start_ms || !layers->valid[KWL_LAYER_DESKTOP]) {
+		layers_record_pass(server, command, KWL_LAYER_DESKTOP, windows, count);
+		layers_remember(server, windows, count);
+		layers->desktop_anim = server->home_start_ms;
+		printf("KWL LAYER baked what=desktop inband=1 draws=%u at_us=%llu\n", layers->bake_draws, (unsigned long long)kwl_microseconds());
 	}
 
-	/* Nothing stale. */
-	return 0;
+	/* Home's picture when it does not show what is there. */
+	if (!layers_home_current(server)) {
+		key = kwl_home_picture_key(server);
+		layers_record_pass(server, command, KWL_LAYER_HOME, NULL, 0U);
+		layers->keys[KWL_LAYER_HOME] = key;
+		printf("KWL LAYER baked what=home inband=1 draws=%u at_us=%llu\n", layers->bake_draws, (unsigned long long)kwl_microseconds());
+	}
 }
 
 /*
  * Tells whether this frame of App Home's animation shows the pictures
  * (shell.c): Home opening or closing on its own, not followed by a finger,
- * without a search, both pictures drawn and showing what is there now (the
- * desktop's windows as they are placed, the window an animation moves left
- * out of it; their contents as at the picture's drawing, the change the
- * user accepted on 2026-10-12).
+ * without a search, both pictures drawn for it, and no window of the
+ * desktop's picture moved by an animation since.  The frames are counted
+ * for the log (KWL LAYER use).
  */
 int
 kwl_layers_showing(
 	struct kwl_server *server)
 {
-	struct kwl_object *windows[KWL_FRAME_WINDOWS];
 	struct kwl_layers *layers;
-	unsigned count;
+	unsigned index;
+	int shown;
 
-	/* Only Home's own animation, with both pictures. */
+	/* Only Home's own animation, with both pictures drawn for it. */
 	layers = &server->compose->layers;
-	if (!layers->ready || !server->home_moving || server->home_dragging)
-		return 0;
-	if (server->home_query_length != 0U || server->home_preedit[0] != '\0')
-		return 0;
-	if (!layers->valid[KWL_LAYER_HOME] || !layers->valid[KWL_LAYER_DESKTOP])
-		return 0;
+	shown = 0;
+	if (layers->ready && layers_animating(server) &&
+	    layers->valid[KWL_LAYER_DESKTOP] && layers->desktop_anim == server->home_start_ms &&
+	    layers->valid[KWL_LAYER_HOME] && layers_home_current(server))
+		shown = 1;
 
-	/* Both show what is there now. */
-	if (layers->keys[KWL_LAYER_HOME] != kwl_home_picture_key(server))
-		return 0;
-	count = kwl_compose_layer_windows(server, windows, KWL_FRAME_WINDOWS);
-	if (layers->keys[KWL_LAYER_DESKTOP] != layers_desktop_key(server, windows, count))
-		return 0;
-
-	/* Succeeded: the frame shows the pictures; the log says so once an animation. */
-	if (layers->shown_start != server->home_start_ms) {
-		layers->shown_start = server->home_start_ms;
-		printf("KWL LAYER shown frame=%llu at_us=%llu\n", (unsigned long long)server->frame + 1U, (unsigned long long)kwl_microseconds());
+	/* A window of the picture an animation moves is drawn as it moves: everything is drawn. */
+	if (shown && server->anim != NULL && server->anim->client != NULL) {
+		for (index = 0U; index < layers->window_count; index++) {
+			if (layers->window_clients[index] == server->anim->client->number && layers->window_ids[index] == server->anim->id)
+				shown = 0;
+		}
 	}
-	return 1;
+
+	/* The frames of an animation, counted. */
+	if (layers_animating(server)) {
+		if (shown)
+			layers->use_pictures++;
+		else
+			layers->use_drawn++;
+	}
+
+	/* Succeeded: whether the frame shows the pictures. */
+	return shown;
+}
+
+/* Tells whether a window is in the desktop's picture (the windows mapped since are drawn over it). */
+int
+kwl_layers_pictured(
+	struct kwl_server *server,
+	const struct kwl_object *surface)
+{
+	struct kwl_layers *layers;
+	unsigned index;
+
+	/* By its client's number and its id, not by where it is in memory (review-3 B5). */
+	layers = &server->compose->layers;
+	if (surface->client == NULL)
+		return 0;
+	for (index = 0U; index < layers->window_count; index++) {
+		if (layers->window_clients[index] == surface->client->number && layers->window_ids[index] == surface->id)
+			return 1;
+	}
+
+	/* Not in it. */
+	return 0;
 }
 
 /* Gives a picture's descriptor set, to sample it (KWL_LAYER_HOME or KWL_LAYER_DESKTOP). */
@@ -225,160 +329,133 @@ kwl_layers_set(
 	return server->compose->layers.images[which].set;
 }
 
-/* Ends a picture's drawing whose fence signaled: the picture shows its key from now on. */
+/*
+ * Ends a submission that drew pictures (a frame, or one that presents
+ * nothing): they are taken unless the output was opened again since, or a
+ * glyph was evicted from the atlas while they waited (review-3 A1, A3).
+ */
 void
 kwl_layers_complete(
-	struct kwl_server *server)
+	struct kwl_server *server,
+	uint64_t generation)
 {
 	struct kwl_layers *layers;
+	uint32_t evictions;
+	unsigned which;
 
-	/* The picture drawn, its key, and the windows' commits it shows. */
+	/* Nothing of another output's pictures. */
 	layers = &server->compose->layers;
-	layers->keys[layers->baking] = layers->baking_key;
-	layers->valid[layers->baking] = 1U;
-	if (layers->baking == KWL_LAYER_DESKTOP)
-		layers->commits = layers->baking_commits;
+	if (!layers->ready || generation != layers->generation)
+		return;
 
-	/* The log says what was drawn, its draws, and how long from its recording to its completion. */
-	printf(
-		"KWL LAYER baked what=%s draws=%u us=%llu at_us=%llu\n",
-		layers->baking == KWL_LAYER_HOME ? "home" : "desktop",
-		layers->bake_draws,
-		(unsigned long long)(kwl_microseconds() - layers->bake_started_us),
-		(unsigned long long)kwl_microseconds());
+	/* Each picture this submission drew, taken or drawn again later. */
+	evictions = glass_glyph_evictions(server);
+	for (which = 0U; which < KWL_LAYERS; which++) {
+		if ((layers->inflight & (1U << which)) == 0U)
+			continue;
+		layers->valid[which] = evictions == layers->evictions[which] ? 1U : 0U;
+		if (!layers->valid[which]) {
+			server->home_picture_stale = 1U;
+			printf("KWL LAYER dropped what=%s reason=eviction\n", which == KWL_LAYER_HOME ? "home" : "desktop");
+		}
+	}
+	layers->inflight = 0U;
 }
 
-/*
- * Draws one picture again: records it, holds what it samples, and submits
- * it as a frame that presents nothing.  Returns 1 in flight, or -EIO.
- */
+/* Tells whether App Home's own animation runs: opening or closing, not followed by a finger, without a search. */
 static int
-layers_bake(
-	struct kwl_server *server,
-	unsigned which,
-	uint64_t key,
-	struct kwl_object **windows,
-	unsigned count)
+layers_animating(
+	struct kwl_server *server)
 {
-	struct kwl_compose *compose;
-	struct kwl_layers *layers;
-	VkResult result;
-	uint64_t now;
+	/* Moving on its own, its first frame recorded. */
+	if (!server->home_moving || server->home_dragging || server->home_start_pending)
+		return 0;
 
-	/* Recorded, its windows' buffers held, then submitted as a frame that presents nothing. */
-	compose = server->compose;
-	layers = &compose->layers;
-	now = kwl_milliseconds();
-	layers->bake_started_us = kwl_microseconds();
-	result = layers_record(server, which, windows, count);
-	if (result == VK_SUCCESS && which == KWL_LAYER_DESKTOP)
-		kwl_compose_bake_hold(server, windows, count);
-	if (result == VK_SUCCESS)
-		result = kwl_compose_submit_quiet(server);
-	if (result != VK_SUCCESS) {
-		printf("KWL VULKAN_ERROR operation=layer result=%d\n", (int)result);
-		return -EIO;
-	}
+	/* No search typed or being composed. */
+	if (server->home_query_length != 0U || server->home_preedit[0] != '\0')
+		return 0;
 
-	/* The new images' layouts went with it. */
-	if (which == KWL_LAYER_DESKTOP)
-		kwl_import_layouts_done(compose);
-
-	/* In flight: its turn is counted, and its key is the picture's once it completes. */
-	compose->frame_bake = 1U;
-	layers->baking = which;
-	layers->baking_key = key;
-	layers->baking_commits = server->commit_count;
-	layers->valid[which] = 0U;
-	layers->bake_times[0] = layers->bake_times[1];
-	layers->bake_times[1] = now;
+	/* Succeeded. */
 	return 1;
 }
 
 /*
- * Gives the key of what the desktop's picture shows (review-2 N6): the
- * desktop shown, the windows drawn in it in their order, with their places,
- * sizes, states and titles, the window an animation moves (left
- * out of the picture), and the wallpaper, the appearance, the accent and
- * the output's size.  The windows' contents are not in it: the windows'
- * commits are counted apart (kwl_server's commit_count), so that a picture
- * drawn before them is drawn again while Home is closed but still shown
- * during Home's animation.
+ * Tells whether Home's picture shows what Home would show: drawn, from the
+ * wallpaper and the tiles as they are, and with the key made again when
+ * something it shows may have changed.
  */
-static uint64_t
-layers_desktop_key(
+static int
+layers_home_current(
+	struct kwl_server *server)
+{
+	struct kwl_layers *layers;
+	uint64_t key;
+
+	/* Drawn, from the wallpaper and the tiles as they are. */
+	layers = &server->compose->layers;
+	if (!layers->valid[KWL_LAYER_HOME])
+		return 0;
+	if (layers->home_wallpaper != glass_wallpaper_version(server) || layers->home_tiles != glass_tiles_ready(server))
+		return 0;
+
+	/* Nothing it shows changed since its key was made. */
+	if (!server->home_picture_stale)
+		return 1;
+
+	/* The key made again. */
+	server->home_picture_stale = 0U;
+	key = kwl_home_picture_key(server);
+	return key == layers->keys[KWL_LAYER_HOME];
+}
+
+/* Remembers the windows the desktop's picture shows, by their clients' numbers and ids (the one an animation moves left out). */
+static void
+layers_remember(
 	struct kwl_server *server,
 	struct kwl_object **windows,
 	unsigned count)
 {
-	struct kwl_object *surface;
-	uint64_t hash;
-	uint64_t values[8];
+	struct kwl_layers *layers;
 	unsigned index;
 
-	/* The state of the whole layer. */
-	hash = 14695981039346656037ULL;
-	values[0] = server->desktop;
-	values[1] = (uint64_t)(uintptr_t)server->anim;
-	values[2] = glass_wallpaper_version(server);
-	values[3] = (uint64_t)(int64_t)server->dark;
-	values[4] = (uint64_t)(int64_t)server->accent;
-	values[5] = ((uint64_t)server->width << 32) | server->height;
-	values[6] = count;
-	values[7] = 0U;
-	hash = layers_hash(hash, values, sizeof(values));
-
-	/* Each window, bottom to top. */
-	for (index = 0U; index < count; index++) {
-		surface = windows[index];
-		values[0] = (uint64_t)(uintptr_t)surface;
-		values[1] = ((uint64_t)(uint32_t)surface->x << 32) | (uint32_t)surface->y;
-		values[2] = ((uint64_t)surface->window_width << 32) | surface->window_height;
-		values[3] = surface->desktop;
-		values[4] = ((uint64_t)surface->minimized << 2) | ((uint64_t)surface->maximized << 1) | surface->fullscreen;
-		values[5] = 0U;
-		values[6] = surface->map_order;
-		values[7] = 0U;
-		hash = layers_hash(hash, values, sizeof(values));
-		hash = layers_hash(hash, surface->title, strnlen(surface->title, sizeof(surface->title)));
+	/* Each window but the animated one, while there is room. */
+	layers = &server->compose->layers;
+	layers->window_count = 0U;
+	for (index = 0U; index < count && layers->window_count < KWL_FRAME_WINDOWS; index++) {
+		if (windows[index] == server->anim || windows[index]->client == NULL)
+			continue;
+		layers->window_clients[layers->window_count] = windows[index]->client->number;
+		layers->window_ids[layers->window_count] = windows[index]->id;
+		layers->window_count++;
 	}
-
-	/* Succeeded: the key. */
-	return hash;
 }
 
-/* Adds bytes to a 64-bit FNV-1a hash. */
-static uint64_t
-layers_hash(
-	uint64_t hash,
-	const void *bytes,
-	size_t length)
+/* Logs how the frames of the animation that ended were drawn, once (KWL LAYER use). */
+static void
+layers_log_use(
+	struct kwl_layers *layers)
 {
-	const uint8_t *byte;
-	size_t index;
-
-	/* Each byte in turn. */
-	byte = bytes;
-	for (index = 0; index < length; index++) {
-		hash ^= byte[index];
-		hash *= 1099511628211ULL;
-	}
-
-	/* The hash with the bytes. */
-	return hash;
+	/* Nothing counted since the last. */
+	if (layers->use_pictures == 0U && layers->use_drawn == 0U)
+		return;
+	printf("KWL LAYER use pictures=%u drawn=%u\n", layers->use_pictures, layers->use_drawn);
+	layers->use_pictures = 0U;
+	layers->use_drawn = 0U;
 }
 
 /*
- * Records a picture into compose->command: the layers' pass on its image,
- * cleared to transparent black, and Home's content drawn as it is open,
- * without placing it, in its own colours, with no icon lit; or the desktop
- * layer as Home has it, in the appearance's colours (the new client images'
- * layouts first, as a frame's).  Every state the glass look's drawing reads
- * is set for the pass and given back (review-2 N5).
+ * Records a picture into a command buffer, outside any pass: the layers'
+ * pass on its image, cleared to transparent black, and Home's content drawn
+ * as it opens, without placing it, in its own colours, with no icon lit and
+ * without the clock; or the desktop layer as Home has it, in the
+ * appearance's colours.  Every state the glass look's drawing reads is set
+ * for the pass and given back (review-2 N5).  The submission that carries
+ * it takes the picture when it completes (kwl_layers_complete).
  */
-static VkResult
-layers_record(
+static void
+layers_record_pass(
 	struct kwl_server *server,
+	VkCommandBuffer command,
 	unsigned which,
 	struct kwl_object **windows,
 	unsigned count)
@@ -386,7 +463,6 @@ layers_record(
 	struct kwl_compose *compose;
 	struct kwl_layers *layers;
 	struct kwl_draw_counts counts;
-	VkCommandBufferBeginInfo begin;
 	VkRenderPassBeginInfo pass;
 	VkClearValue clear;
 	VkViewport viewport;
@@ -395,7 +471,6 @@ layers_record(
 	VkFramebuffer framebuffer_saved;
 	VkDescriptorSet backdrop_saved;
 	VkDeviceSize offset;
-	VkResult result;
 	unsigned recording_saved;
 	unsigned keep_saved;
 	unsigned section_saved;
@@ -406,21 +481,9 @@ layers_record(
 	uint32_t view_width_saved;
 	uint32_t view_height_saved;
 
-	/* A fresh recording. */
+	/* The pass on the picture's image, cleared to transparent black. */
 	compose = server->compose;
 	layers = &compose->layers;
-	memset(&begin, 0, sizeof(begin));
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	result = vkBeginCommandBuffer(compose->command, &begin);
-	if (result != VK_SUCCESS)
-		return result;
-
-	/* The clients' images imported since the last frame go to the layout they are sampled in. */
-	if (which == KWL_LAYER_DESKTOP)
-		kwl_import_layouts_record(compose, compose->command);
-
-	/* The pass on the picture's image, cleared to transparent black. */
 	memset(&clear, 0, sizeof(clear));
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -430,20 +493,20 @@ layers_record(
 	pass.renderArea.extent.height = layers->height;
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
-	vkCmdBeginRenderPass(compose->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 
 	/* The pass's own viewport, scissor and quad corners. */
 	memset(&viewport, 0, sizeof(viewport));
 	viewport.width = (float)layers->width;
 	viewport.height = (float)layers->height;
 	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(compose->command, 0U, 1U, &viewport);
+	vkCmdSetViewport(command, 0U, 1U, &viewport);
 	memset(&scissor, 0, sizeof(scissor));
 	scissor.extent.width = layers->width;
 	scissor.extent.height = layers->height;
-	vkCmdSetScissor(compose->command, 0U, 1U, &scissor);
+	vkCmdSetScissor(command, 0U, 1U, &scissor);
 	offset = 0U;
-	vkCmdBindVertexBuffers(compose->command, 0U, 1U, &compose->corners, &offset);
+	vkCmdBindVertexBuffers(command, 0U, 1U, &compose->corners, &offset);
 
 	/* The state the drawing reads, kept to be given back. */
 	scissor_saved = compose->scissor_now;
@@ -475,11 +538,11 @@ layers_record(
 	server->view_height = 0U;
 	memset(&server->draw_counts, 0, sizeof(server->draw_counts));
 
-	/* Home's content as it is open, no icon lit; or the desktop layer. */
+	/* Home's content as it opens, no icon lit, no clock; or the desktop layer. */
 	if (which == KWL_LAYER_HOME)
-		kwl_home_draw_content(server, compose->command, 1.0f, 1U);
+		kwl_home_draw_content(server, command, 1.0f, 1U);
 	else
-		kwl_glass_draw_desktop_picture(server, compose->command, windows, count);
+		kwl_glass_draw_desktop_picture(server, command, windows, count);
 	layers->bake_draws = server->draw_counts.shapes + server->draw_counts.quads;
 
 	/* The state given back. */
@@ -498,10 +561,20 @@ layers_record(
 	server->draw_counts = counts;
 
 	/* The pass ends with the image ready to be sampled. */
-	vkCmdEndRenderPass(compose->command);
+	vkCmdEndRenderPass(command);
 
-	/* Succeeded: the recording is complete. */
-	return vkEndCommandBuffer(compose->command);
+	/*
+	 * The picture is drawn as far as the frames after it in the queue are
+	 * concerned (the pass's dependency); it is taken when the submission
+	 * completes without an eviction (kwl_layers_complete).
+	 */
+	layers->valid[which] = 1U;
+	layers->inflight |= 1U << which;
+	layers->evictions[which] = glass_glyph_evictions(server);
+	if (which == KWL_LAYER_HOME) {
+		layers->home_wallpaper = glass_wallpaper_version(server);
+		layers->home_tiles = glass_tiles_ready(server);
+	}
 }
 
 /*

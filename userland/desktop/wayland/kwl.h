@@ -1006,16 +1006,25 @@ struct kwl_server {
 	struct kwl_draw_counts draw_counts;
 	unsigned draw_section;
 	/*
-	 * The layers' pictures (layer-cache.c, ws211-p002): the windows' commits
-	 * so far (a cursor's not counted), which the desktop's picture's key
-	 * holds; the window the desktop's picture leaves out (the one an
-	 * animation moves, drawn over the picture); and whether App Home's
-	 * animation starts at its first frame's recording (home_start_ms is set
-	 * then, review-2 N4).
+	 * The layers' pictures (layer-cache.c, ws211-p002): the window the
+	 * desktop's picture leaves out (the one an animation moves, drawn over
+	 * the picture); and whether App Home's animation starts at its first
+	 * frame's recording (home_start_ms is set then, review-2 N4).
 	 */
-	uint64_t commit_count;
 	struct kwl_object *layer_skip;
 	unsigned home_start_pending;
+	/*
+	 * The last evdev input (any device, a touch pad's gestures too) and the
+	 * last window commit (a cursor's not counted), which a picture drawn in
+	 * the quiet waits on; whether something App Home's picture shows may
+	 * have changed (the picture's key is made again only then); and App
+	 * Home's progress fixed for the frame being recorded (review-3 B1).
+	 */
+	uint64_t input_ms;
+	uint64_t commit_ms;
+	unsigned home_picture_stale;
+	unsigned home_progress_frozen;
+	float home_progress_value;
 	/* The event loop records the latest traced motion; recording a frame consumes this timestamp. */
 	uint64_t pointer_accepted_us;
 	/*

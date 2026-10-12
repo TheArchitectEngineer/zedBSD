@@ -593,7 +593,11 @@ kwl_compose_draw(
 	region_drawn = NULL;
 	if (partial)
 		region_drawn = &region;
+	server->home_progress_frozen = 0U;
+	server->home_progress_value = kwl_home_progress(server);
+	server->home_progress_frozen = 1U;
 	result = compose_record(server, image, windows, count, region_drawn);
+	server->home_progress_frozen = 0U;
 	if (result != VK_SUCCESS) {
 		compose->scene.valid = 0U;
 		printf("KWL VULKAN_ERROR operation=record result=%d\n", (int)result);
@@ -686,14 +690,14 @@ kwl_compose_complete(
 	 * nothing and told no client, so the frame's accounting stays as it was.
 	 */
 	if (compose->frame_bake) {
-		for (index = 0; index < compose->held_count; index++)
-			kwl_buffer_put(compose->held[index]);
-		compose->held_count = 0;
 		compose->frame_bake = 0U;
 		compose->in_flight = 0;
-		kwl_layers_complete(server);
+		kwl_layers_complete(server, compose->frame_layers_generation);
 		return 0;
 	}
+
+	/* The pictures the frame drew in its own commands are taken (layer-cache.c). */
+	kwl_layers_complete(server, compose->frame_layers_generation);
 
 	/* Only confirmed command completion publishes the cursor-free captured scene. */
 	if (compose->scene.written)
@@ -2398,6 +2402,10 @@ compose_record(
 	/* The clients' images imported since the last frame go to the layout they are sampled in (ws099-p016). */
 	kwl_import_layouts_record(compose, compose->command);
 
+	/* The pictures App Home's animation lacks, drawn before the frame's pass (layer-cache.c, ws211-p002). */
+	compose->frame_layers_generation = compose->layers.generation;
+	kwl_layers_inband(server, compose->command, windows, count);
+
 	/* The anchor's pass: its own part of the plane (ws113-p007). */
 	server->view_output = KWL_PLANE_ANCHOR;
 	server->view_x = 0;
@@ -2874,55 +2882,6 @@ compose_log_draws(
 }
 
 /*
- * Gives the windows a layer's picture draws (layer-cache.c): the anchor's,
- * bottom to top, as a frame has them; returns how many.
- */
-unsigned
-kwl_compose_layer_windows(
-	struct kwl_server *server,
-	struct kwl_object **windows,
-	unsigned capacity)
-{
-	unsigned all;
-
-	/* Every drawable window, then the anchor's first. */
-	all = compose_windows(server, windows, capacity);
-	return compose_split(server, windows, all);
-}
-
-/*
- * Holds the buffers a layer's picture samples (the windows' and their
- * sub-surfaces'), until the drawing completes (kwl_compose_complete).  The
- * windows are not told and are not awaited: the picture is no frame they
- * were shown in.
- */
-void
-kwl_compose_bake_hold(
-	struct kwl_server *server,
-	struct kwl_object **windows,
-	unsigned count)
-{
-	struct kwl_object *subsurfaces[KWL_FRAME_WINDOWS];
-	struct kwl_compose *compose;
-	unsigned held;
-	unsigned index;
-
-	/* Each window's current buffer, while there is room. */
-	compose = server->compose;
-	for (index = 0; index < count && compose->held_count < KWL_FRAME_WINDOWS; index++) {
-		kwl_buffer_get(windows[index]->current);
-		compose->held[compose->held_count++] = windows[index]->current;
-	}
-
-	/* The sub-surfaces drawn with them. */
-	held = kwl_subsurface_collect(server, subsurfaces, KWL_FRAME_WINDOWS);
-	for (index = 0; index < held && compose->held_count < KWL_FRAME_WINDOWS; index++) {
-		kwl_buffer_get(subsurfaces[index]->current);
-		compose->held[compose->held_count++] = subsurfaces[index]->current;
-	}
-}
-
-/*
  * Submits the commands recorded in compose->command as a frame that
  * presents nothing (a layer's picture, layer-cache.c): the host images
  * written up to now are copied first, as for a frame, and the fence is
@@ -2953,6 +2912,9 @@ kwl_compose_submit_quiet(
 	result = vkEndCommandBuffer(compose->copy_command);
 	if (result != VK_SUCCESS)
 		return result;
+
+	/* The pictures it draws belong to this output's generation (layer-cache.c). */
+	compose->frame_layers_generation = compose->layers.generation;
 
 	/* No image is acquired and none is presented: nothing to wait for or signal. */
 	memset(&submit, 0, sizeof(submit));

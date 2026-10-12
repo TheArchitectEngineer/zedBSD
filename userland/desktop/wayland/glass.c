@@ -238,6 +238,8 @@ struct kwl_glass {
 	int emoji_face;
 	struct glass_cached cache[GLASS_CELLS];
 	uint32_t cache_top;
+	/* How often a cell holding a glyph was given to another (a picture drawn before may show the wrong glyph, layer-cache.c). */
+	uint32_t evictions;
 	unsigned cache_count;
 	uint64_t clock;
 	struct kwl_import large;
@@ -2566,6 +2568,15 @@ glass_wallpaper_version(
 	return server->compose->glass->wallpaper.version;
 }
 
+/* Gives how often a glyph cell was given to another glyph (layer-cache.c, review-3 A1). */
+uint32_t
+glass_glyph_evictions(
+	struct kwl_server *server)
+{
+	/* The atlas's count. */
+	return server->compose->glass->evictions;
+}
+
 /* Tells whether the applications' tiles are drawn (1) or not yet (0). */
 uint32_t
 glass_tiles_ready(
@@ -3070,6 +3081,8 @@ glass_cache_glyph(
 	if (id == 0U && glass->emoji_tried != 0U && glass->emoji_face >= 0) {
 		id = truetype_glyph_index(glass->faces[glass->emoji_face], codepoint);
 		if (id != 0U) {
+			if (glass->cache[oldest].codepoint != 0U)
+				glass->evictions++;
 			glyph = glass_cache_color(glass, size, codepoint, id, oldest);
 			return glyph;
 		}
@@ -3089,8 +3102,10 @@ glass_cache_glyph(
 	if (metrics.width > GLASS_CELL || metrics.height > GLASS_CELL)
 		return NULL;
 
-	/* The cell's place in the atlas. */
+	/* The cell's place in the atlas; a glyph it held is evicted. */
 	cell = &glass->cache[oldest];
+	if (cell->codepoint != 0U)
+		glass->evictions++;
 	per_row = GLASS_ATLAS_WIDTH / GLASS_CELL;
 	cell->glyph.x = (oldest % per_row) * GLASS_CELL;
 	cell->glyph.y = glass->cache_top + (oldest / per_row) * GLASS_CELL;

@@ -141,29 +141,37 @@ struct kwl_layer_image {
 
 /*
  * The layers' pictures (layer-cache.c, ws211-p002): made with the output
- * (ready, or unavailable for the output's life), the pass that clears and
- * draws one, and for each the key it was drawn with (valid once a drawing
- * completed).  A drawing is a frame of its own that presents nothing
- * (compose->frame_bake): baking names the picture it draws, bake_started_us
- * when it was recorded and bake_draws its draws; bake_times holds the
- * starts of the last two drawings, which are kept to two a second.
+ * (ready, or unavailable for the output's life) in a generation of their
+ * own, the pass that clears and draws one, and for each the key it was
+ * drawn with, whether it is drawn (valid), and the atlas's evictions when
+ * it was recorded.  inflight names the pictures the submission in flight
+ * draws.  Home's picture remembers the wallpaper's version and whether the
+ * tiles were drawn; the desktop's, the animation it was drawn for
+ * (home_start_ms) and its windows (their clients' numbers and ids).
+ * use_pictures and use_drawn count an animation's frames by how they were
+ * drawn; bake_draws is the last drawing's draws, and bake_times the starts
+ * of the last two drawings on their own (two a second at most).
  */
 struct kwl_layers {
 	unsigned ready;
 	unsigned failed;
+	uint64_t generation;
 	uint32_t width;
 	uint32_t height;
 	VkRenderPass pass;
 	struct kwl_layer_image images[KWL_LAYERS];
 	uint64_t keys[KWL_LAYERS];
 	unsigned valid[KWL_LAYERS];
-	unsigned baking;
-	uint64_t baking_key;
-	uint64_t baking_commits;
-	uint64_t commits;
-	uint64_t anim_baked[KWL_LAYERS];
-	uint64_t shown_start;
-	uint64_t bake_started_us;
+	uint32_t evictions[KWL_LAYERS];
+	unsigned inflight;
+	uint32_t home_wallpaper;
+	uint32_t home_tiles;
+	uint64_t desktop_anim;
+	unsigned window_count;
+	uint64_t window_clients[KWL_FRAME_WINDOWS];
+	uint32_t window_ids[KWL_FRAME_WINDOWS];
+	unsigned use_pictures;
+	unsigned use_drawn;
 	unsigned bake_draws;
 	uint64_t bake_times[2];
 };
@@ -321,6 +329,8 @@ struct kwl_compose {
 	unsigned frame_copies;
 	/* Nonzero while the frame in flight draws a layer's picture and presents nothing (layer-cache.c). */
 	unsigned frame_bake;
+	/* The layers' generation when the submission in flight was recorded (layer-cache.c). */
+	uint64_t frame_layers_generation;
 	/* The layers' pictures (layer-cache.c, ws211-p002). */
 	struct kwl_layers layers;
 	/* Descriptor sets images gave back, for the next images (kwl_compose_set_get). */
@@ -461,11 +471,12 @@ void kwl_glass_draw_head(struct kwl_server *server, VkCommandBuffer command, str
 void kwl_compose_cursor(struct kwl_server *server, VkCommandBuffer command);
 void kwl_compose_count_draw(struct kwl_server *server, VkPipeline pipeline, VkDescriptorSet set, unsigned shape);
 VkResult kwl_compose_submit_quiet(struct kwl_server *server);
-unsigned kwl_compose_layer_windows(struct kwl_server *server, struct kwl_object **windows, unsigned capacity);
-void kwl_compose_bake_hold(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 void kwl_layers_open(struct kwl_server *server);
 void kwl_layers_close(struct kwl_compose *compose);
-void kwl_layers_complete(struct kwl_server *server);
+void kwl_layers_complete(struct kwl_server *server, uint64_t generation);
+VkResult kwl_layers_begin_quiet(struct kwl_server *server);
+void kwl_layers_inband(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count);
+int kwl_layers_pictured(struct kwl_server *server, const struct kwl_object *surface);
 int kwl_layers_showing(struct kwl_server *server);
 VkDescriptorSet kwl_layers_set(struct kwl_server *server, unsigned which);
 

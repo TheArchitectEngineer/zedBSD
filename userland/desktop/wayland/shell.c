@@ -10260,6 +10260,9 @@ draw_home_picture(
 	shape.opacity = home;
 	glass_shape_draw(server, command, &shape);
 
+	/* The clock over the picture, placed and faded as the content (it is not in the picture, review-3 B6). */
+	kwl_home_draw_clock_over(server, command, home);
+
 	/* The started application's tile grows about its centre as Home closes after the launch, its corners cut. */
 	launched = kwl_home_launch_tile(server, &x, &y, &size, &radius);
 	if (launched) {
@@ -10285,9 +10288,10 @@ draw_home_picture(
 }
 
 /*
- * Draws, over the desktop's picture, the window it leaves out: the one an
- * animation moves (a launch from Home growing out of its icon), placed with
- * the layer as the picture is (layer-cache.c, ws211-p002).
+ * Draws, over the desktop's picture, the windows it does not show: the one
+ * an animation moves (a launch from Home growing out of its icon) and any
+ * mapped since the picture was drawn, bottom to top, placed with the layer
+ * as the picture is (layer-cache.c, ws211-p002, review-3 B2).
  */
 static void
 draw_layer_animated(
@@ -10300,24 +10304,22 @@ draw_layer_animated(
 {
 	struct kwl_object *top;
 	unsigned index;
+	int pictured;
 	int shown;
 
-	/* Only a window an animation moves, drawn in the frame. */
-	if (server->anim == NULL)
-		return;
-	for (index = 0U; index < count; index++) {
-		if (windows[index] == server->anim)
-			break;
-	}
-	if (index == count)
-		return;
-	shown = window_shown(server, windows[index], home, desktop_position(server));
-	if (!shown)
-		return;
-
-	/* The window with its title bar, focused when it is on top. */
+	/* Each window drawn in the frame that the picture does not have. */
 	top = kwl_top_window(server);
-	draw_window(server, command, windows[index], windows[index] == top ? 1U : 0U, bar);
+	for (index = 0U; index < count; index++) {
+		shown = window_shown(server, windows[index], home, desktop_position(server));
+		if (!shown)
+			continue;
+		pictured = kwl_layers_pictured(server, windows[index]);
+		if (pictured && windows[index] != server->anim)
+			continue;
+
+		/* The window with its title bar, focused when it is on top. */
+		draw_window(server, command, windows[index], windows[index] == top ? 1U : 0U, bar);
+	}
 }
 
 /*
