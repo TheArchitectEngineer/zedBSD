@@ -95,8 +95,12 @@ kwl_cursor_plane_open(
 		return;
 	}
 
-	/* Its swapchain, its images filled by copies. */
-	result = vkdemo_display_create_swapchain_usage(compose->physical, compose->device, compose->family, &plane->output, VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+	/*
+	 * Its swapchain, its images filled by copies only: with no other use
+	 * declared, the driver shows an unchanged image at a new place without
+	 * copying it again (ws141-p016 (B)).
+	 */
+	result = vkdemo_display_create_swapchain_exact(compose->physical, compose->device, compose->family, &plane->output, VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 	if (result == VK_SUCCESS && plane->output.image_count > KWL_CURSOR_PLANE_IMAGES)
 		result = VK_ERROR_INITIALIZATION_FAILED;
 	if (result == VK_SUCCESS)
