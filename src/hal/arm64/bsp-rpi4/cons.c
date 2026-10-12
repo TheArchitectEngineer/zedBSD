@@ -21,6 +21,13 @@
  * Input is not handled here. The UART's receive side belongs to a
  * driver, which turns its bytes into input events like any other
  * keyboard.
+ *
+ * The serial line is used only when the build asks for it
+ * (CONFIG_RPI4_SERIAL_CONSOLE, off by default: the board's serial port is
+ * not used, 2026-10-12 user); otherwise the UART is never set up or
+ * written.  While a display driver owns the screen the console does
+ * nothing at all: characters are dropped, not kept for later (the same
+ * day's user decision), and only the kernel's log keeps them.
  */
 
 #include <hal/hal.h>
@@ -32,6 +39,13 @@
 
 #define CONS_COLUMNS	80U
 #define CONS_ROWS	25U
+
+/* Whether the serial line carries the console (CONFIG_RPI4_SERIAL_CONSOLE). */
+#ifdef RPI4_SERIAL_CONSOLE
+#define CONS_SERIAL	1
+#else
+#define CONS_SERIAL	0
+#endif
 
 /* Light grey on black, the default text attribute. */
 #define CONS_ATTRIBUTE	0x07U
@@ -75,6 +89,10 @@ hal_putc(
 		return;
 	}
 
+	/* A screen another driver owns, without the serial line, has nowhere to put it: dropped without the lock. */
+	if (!CONS_SERIAL && __atomic_load_n(&output_suspended, __ATOMIC_ACQUIRE) != 0)
+		return;
+
 	/* Serializes character rendering with all console output. */
 	interrupts_enabled = output_enter();
 	putc_locked(character);
@@ -110,8 +128,10 @@ rpi4_cons_output_end(
  * Stops and resumes writes to the framebuffer.
  *
  * A display driver that takes the hardware calls this so late HAL
- * diagnostics do not corrupt the screen. The UART keeps working, since
- * nothing else owns it.
+ * diagnostics do not corrupt the screen.  From then on the console keeps
+ * nothing: a character is dropped (the serial line, when the build has it,
+ * still carries it), and the screen it gives back shows the text from
+ * before.
  */
 void
 rpi4_cons_suspend_output(
@@ -121,7 +141,7 @@ rpi4_cons_suspend_output(
 
 	/* Publishes the suspension under the output lock. */
 	interrupts_enabled = output_enter();
-	output_suspended = 1;
+	__atomic_store_n(&output_suspended, 1, __ATOMIC_RELEASE);
 	output_leave(interrupts_enabled);
 }
 
@@ -145,8 +165,8 @@ rpi4_cons_resume_output(
 		return;
 	}
 
-	/* Keeps the log accumulated during graphics ownership and repaints it once. */
-	output_suspended = 0;
+	/* Repaints the text from before the graphics once; what came meanwhile was dropped. */
+	__atomic_store_n(&output_suspended, 0, __ATOMIC_RELEASE);
 	for (row = 0; row < CONS_ROWS; row++) {
 		for (column = 0; column < CONS_COLUMNS; column++)
 			draw_locked(row, column);
@@ -171,8 +191,9 @@ void
 prekern_bsp_cons_init(
 	void)
 {
-	/* Brings up the serial line the HAL prints to. */
-	rpi4_uart_init();
+	/* Brings up the serial line the HAL prints to, when the build uses it. */
+	if (CONS_SERIAL)
+		rpi4_uart_init();
 
 	/* Starts from a known screen and cursor position. */
 	output_lock = 0;
@@ -339,8 +360,13 @@ static void
 putc_locked(
 	int character)
 {
-	/* The serial line carries every byte, control characters too. */
-	rpi4_uart_putc(character);
+	/* The serial line, when the build uses it, carries every byte, control characters too. */
+	if (CONS_SERIAL)
+		rpi4_uart_putc(character);
+
+	/* A screen another driver owns: the character is dropped, not kept for later. */
+	if (output_suspended)
+		return;
 
 	/* Removes the cursor before the cell under it changes. */
 	draw_locked(cursor_row, cursor_column);
