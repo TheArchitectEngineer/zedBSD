@@ -439,6 +439,10 @@ kwl_object_destroy(
 	 */
 	server = object->client->server;
 	object->dead = 1;
+
+	/* A window gone may end an application's running mark on App Home's picture (layer-cache.c). */
+	if (object->kind == KWL_SURFACE)
+		server->home_picture_stale = 1U;
 	if (object->id < KWL_SERVER_ID_FIRST)
 		kwl_delete_id(object->client, object->id);
 

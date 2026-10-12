@@ -57,6 +57,9 @@ static VkResult compose_submit(struct kwl_server *server, uint32_t image);
 static void compose_hold(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 static void compose_log_draws(struct kwl_server *server);
 
+/* How far into its way App Home's animation shows in its first frame, in milliseconds (review-2 N4). */
+#define COMPOSE_HOME_FIRST_MS	8U
+
 /*
  * Creates the Vulkan device, the pipelines' fixed objects and the frame's
  * synchronization; the output is opened separately.
@@ -400,6 +403,9 @@ kwl_compose_output_open(
 	/* The cursor plane, when the output has one (it borrows the output's claim). */
 	kwl_cursor_plane_open(server);
 
+	/* The layers' pictures, made with the output (layer-cache.c, ws211-p002). */
+	kwl_layers_open(server);
+
 	/* Succeeded: window mode owns the display through the swapchain. */
 	compose->output_open = 1;
 	server->dirty = 1;
@@ -437,7 +443,8 @@ kwl_compose_output_close(
 	kwl_heads_close_all(server);
 	kwl_cursor_plane_close(server);
 
-	/* The backdrop, the targets, then the swapchain and surface. */
+	/* The layers' pictures, the backdrop, the targets, then the swapchain and surface. */
+	kwl_layers_close(compose);
 	kwl_scene_close(&compose->scene, compose->device);
 	kwl_backdrop_destroy(compose);
 	compose_targets_destroy(compose);
@@ -496,6 +503,17 @@ kwl_compose_draw(
 
 	/* The frame shows the pointer where it is now. */
 	server->pointer_moved = 0U;
+
+	/*
+	 * App Home's animation starts with its first frame's recording, so that
+	 * the time before it (a frame or a picture in flight) is not taken from
+	 * its way; the first frame shows it a little on, never at its start,
+	 * where Home is not drawn (review-2 N4).
+	 */
+	if (server->home_start_pending) {
+		server->home_start_pending = 0U;
+		server->home_start_ms = kwl_milliseconds() - COMPOSE_HOME_FIRST_MS;
+	}
 
 	/* The windows to draw, bottom to top. */
 	compose->frame_start_cycles = kwl_cycles();
@@ -575,7 +593,11 @@ kwl_compose_draw(
 	region_drawn = NULL;
 	if (partial)
 		region_drawn = &region;
+	server->home_progress_frozen = 0U;
+	server->home_progress_value = kwl_home_progress(server);
+	server->home_progress_frozen = 1U;
 	result = compose_record(server, image, windows, count, region_drawn);
+	server->home_progress_frozen = 0U;
 	if (result != VK_SUCCESS) {
 		compose->scene.valid = 0U;
 		printf("KWL VULKAN_ERROR operation=record result=%d\n", (int)result);
@@ -662,6 +684,20 @@ kwl_compose_complete(
 		printf("KWL VULKAN_ERROR operation=fence result=%d\n", (int)result);
 		return EIO;
 	}
+
+	/*
+	 * A layer's picture drawn (layer-cache.c): it presented nothing, held
+	 * nothing and told no client, so the frame's accounting stays as it was.
+	 */
+	if (compose->frame_bake) {
+		compose->frame_bake = 0U;
+		compose->in_flight = 0;
+		kwl_layers_complete(server, compose->frame_layers_generation);
+		return 0;
+	}
+
+	/* The pictures the frame drew in its own commands are taken (layer-cache.c). */
+	kwl_layers_complete(server, compose->frame_layers_generation);
 
 	/* Only confirmed command completion publishes the cursor-free captured scene. */
 	if (compose->scene.written)
@@ -2366,6 +2402,10 @@ compose_record(
 	/* The clients' images imported since the last frame go to the layout they are sampled in (ws099-p016). */
 	kwl_import_layouts_record(compose, compose->command);
 
+	/* The pictures App Home's animation lacks, drawn before the frame's pass (layer-cache.c, ws211-p002). */
+	compose->frame_layers_generation = compose->layers.generation;
+	kwl_layers_inband(server, compose->command, windows, count);
+
 	/* The anchor's pass: its own part of the plane (ws113-p007). */
 	server->view_output = KWL_PLANE_ANCHOR;
 	server->view_x = 0;
@@ -2839,6 +2879,78 @@ compose_log_draws(
 		counts->sets,
 		server->compose->scene.written,
 		server->compose->frame_copies);
+}
+
+/*
+ * Submits the commands recorded in compose->command as a frame that
+ * presents nothing (a layer's picture, layer-cache.c): the host images
+ * written up to now are copied first, as for a frame, and the fence is
+ * exported as the fd the event loop polls.  The caller sets frame_bake.
+ */
+VkResult
+kwl_compose_submit_quiet(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+	VkSubmitInfo submit;
+	VkFenceGetFdInfoKHR fd_info;
+	VkCommandBufferBeginInfo begin;
+	VkCommandBuffer buffers[2];
+	unsigned copies;
+	VkResult result;
+	int fd;
+
+	/* The host images first, in a command buffer that runs before the drawing. */
+	compose = server->compose;
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	result = vkBeginCommandBuffer(compose->copy_command, &begin);
+	if (result != VK_SUCCESS)
+		return result;
+	copies = kwl_host_images_record(compose, compose->copy_command);
+	result = vkEndCommandBuffer(compose->copy_command);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* The pictures it draws belong to this output's generation (layer-cache.c). */
+	compose->frame_layers_generation = compose->layers.generation;
+
+	/* No image is acquired and none is presented: nothing to wait for or signal. */
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.commandBufferCount = 1U;
+	submit.pCommandBuffers = &compose->command;
+	if (copies != 0U) {
+		buffers[0] = compose->copy_command;
+		buffers[1] = compose->command;
+		submit.commandBufferCount = 2U;
+		submit.pCommandBuffers = buffers;
+	}
+	result = vkQueueSubmit(compose->queue, 1U, &submit, compose->fence);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Without an exported fence the event loop asks the fence's status each pass. */
+	if (!compose->fence_fd) {
+		compose->in_flight = 1;
+		return VK_SUCCESS;
+	}
+
+	/* The fence as an fd, as a frame's. */
+	memset(&fd_info, 0, sizeof(fd_info));
+	fd_info.sType = VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR;
+	fd_info.fence = compose->fence;
+	fd_info.handleType = kl_backend_gpu_frame_fence_type();
+	fd = -1;
+	result = compose->get_fence_fd(compose->device, &fd_info, &fd);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Succeeded: the drawing is in flight. */
+	server->frame_fd = fd;
+	compose->in_flight = 1;
+	return VK_SUCCESS;
 }
 
 /*

@@ -205,10 +205,22 @@ kwl_schedule(
 	    server->transition == NULL &&
 	    server->anim == NULL &&
 	    !server->home_moving &&
+	    !server->home_page_moving &&
+	    !server->home_dragging &&
 	    !server->wiseview_moving &&
 	    !server->desktop_moving &&
 	    now - server->frame_done_ms < server->frame_wait_ms)
 		return;
+
+	/* Nothing to draw: a layer's stale picture may be drawn again in the quiet (layer-cache.c, ws211-p002). */
+	if (!server->dirty && !server->damaged) {
+		error = kwl_layers_tick(server);
+		if (error < 0) {
+			printf("KWL FAILED site=layers_tick errno=%d\n", -error);
+			server->failed = 1;
+		}
+		return;
+	}
 
 	/* Window mode draws when something changed (all of it, or a part) and no frame is in flight. */
 	if (server->dirty || server->damaged) {
@@ -405,6 +417,10 @@ adopt_commit(
 		server->awaiting--;
 	}
 
+	/* A commit of anything but a cursor: its time, which Home's picture drawn in the quiet waits on (layer-cache.c). */
+	if (!surface->cursor_role)
+		server->commit_ms = kwl_milliseconds();
+
 	/* A cursor, or a surface with no role, is not a window. */
 	if (surface->cursor_role || surface->role == NULL) {
 		kwl_buffer_put(previous);
@@ -431,8 +447,10 @@ adopt_commit(
 		place_window(server, surface);
 		printf("KWL MAP client=%llu surface=%u x=%d y=%d\n", (unsigned long long)surface->client->number, surface->id, surface->x, surface->y);
 		kwl_glass_mapped(server, surface);
+		server->home_picture_stale = 1U;
 	} else if (surface->current == NULL && surface->mapped) {
 		surface->mapped = 0;
+		server->home_picture_stale = 1U;
 		kwl_callbacks_done(&surface->committed_callbacks);
 		printf("KWL UNMAP client=%llu surface=%u\n", (unsigned long long)surface->client->number, surface->id);
 	}

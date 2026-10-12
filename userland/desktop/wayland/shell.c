@@ -572,6 +572,8 @@ static float desktop_position(struct kwl_server *server);
 static void desktop_turn(struct kwl_server *server, int target, const char *via);
 static void desktop_release(struct kwl_server *server);
 static unsigned desktop_windows(struct kwl_server *server, unsigned desktop);
+static void draw_home_picture(struct kwl_server *server, VkCommandBuffer command, float home);
+static void draw_layer_animated(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count, float home, const struct shell_bar *bar);
 
 /*
  * Draws the wallpaper, the windows from the bottom with their shadows and
@@ -594,6 +596,7 @@ kwl_glass_draw(
 	float progress;
 	int showing;
 	int menu;
+	int pictures;
 	float home;
 	float position;
 
@@ -630,9 +633,15 @@ kwl_glass_draw(
 	 */
 	home = kwl_home_progress(server);
 	hidden = 0U;
+	pictures = 0;
+	if (home > 0.0f)
+		pictures = kwl_layers_showing(server);
 	if (home > 0.0f) {
 		server->draw_section = KWL_SECTION_HOME;
-		kwl_home_draw(server, command, home);
+		if (pictures)
+			draw_home_picture(server, command, home);
+		else
+			kwl_home_draw(server, command, home);
 		server->draw_section = KWL_SECTION_LAYER;
 		kwl_home_layer(server, home, &server->layer_x, &server->layer_y, &server->layer_scale, &server->layer_opacity);
 
@@ -694,6 +703,8 @@ kwl_glass_draw(
 		shape.mode = MODE_IMAGE;
 		shape.opaque = 1.0f;
 		shape.set = glass_wallpaper_set(server);
+		if (pictures)
+			shape.set = kwl_layers_set(server, KWL_LAYER_DESKTOP);
 		if (home > 0.0f)
 			shape.radius = 18.0f;
 		glass_shape_draw(server, command, &shape);
@@ -717,7 +728,9 @@ kwl_glass_draw(
 	/* The desktop's icons and the windows, unless Home hides the layer. */
 	position = desktop_position(server);
 	server->draw_section = KWL_SECTION_LAYER;
-	if (!hidden)
+	if (!hidden && pictures)
+		draw_layer_animated(server, command, windows, count, home, &bar);
+	else if (!hidden)
 		draw_desktop_layer(server, command, windows, count, home, &bar);
 	server->draw_section = KWL_SECTION_OTHER;
 
@@ -10146,7 +10159,7 @@ draw_desktop_layer(
 	drawn = 0;
 	for (index = 0; index < count; index++) {
 		shown = window_shown(server, windows[index], home, position);
-		if (!shown)
+		if (!shown || windows[index] == server->layer_skip)
 			continue;
 
 		/*
@@ -10172,8 +10185,9 @@ draw_desktop_layer(
 			kwl_backdrop_reset(server);
 		}
 
-		/* One more window drawn. */
+		/* One more window drawn; the desktop's picture being drawn notes it (layer-cache.c). */
 		drawn++;
+		kwl_layers_note(server, windows[index]);
 
 		/* Shifted with the layer, when Home does not have it. */
 		window_layer(server, windows[index], home, position);
@@ -10203,4 +10217,153 @@ home_layer_log(
 	/* The new state, logged once. */
 	shell_home_layer_hidden = hidden;
 	printf("KWL HOME layer hidden=%u\n", hidden);
+}
+
+/*
+ * Draws App Home from the pictures (layer-cache.c, ws211-p002): the stage,
+ * then Home's picture coming forward from the distance as far as Home is
+ * open (kwl_edge_home_content), faded in by it.  The first frames of the
+ * stage and the content are logged as kwl_home_draw logs them.
+ */
+static void
+draw_home_picture(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	float home)
+{
+	struct kwl_edge_depth depth;
+	struct glass_shape shape;
+	float radius;
+	float grown;
+	float size;
+	float x;
+	float y;
+	int launched;
+
+	/* The stage, in Home's own colours; an opening's first frame shows only it (Home's picture comes next, review-4 H3). */
+	kwl_home_draw_stage(server, command);
+	if (kwl_layers_home_hidden(server)) {
+		server->keep_colours = 0U;
+		return;
+	}
+
+	/* The first frame of the stage and of the content since Home was asked to open. */
+	if (!server->home_cover_logged && server->home_to > 0.0f) {
+		server->home_cover_logged = 1U;
+		printf("KWL HOME layer=cover after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
+	}
+	if (!server->home_content_logged && server->home_to > 0.0f) {
+		server->home_content_logged = 1U;
+		printf("KWL HOME layer=content after_ms=%llu picture=1\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
+	}
+
+	/* Home's picture, placed and scaled as the content is, faded in by how far Home is open. */
+	kwl_edge_home_content(home, (int32_t)server->width, (int32_t)server->height, &depth);
+	glass_shape_init(&shape, depth.x, depth.y, (float)server->width * depth.scale, (float)server->height * depth.scale);
+	shape.mode = MODE_IMAGE;
+	shape.set = kwl_layers_set(server, KWL_LAYER_HOME);
+	shape.opacity = home;
+	glass_shape_draw(server, command, &shape);
+
+	/* The clock over the picture, placed and faded as the content (it is not in the picture, review-3 B6). */
+	kwl_home_draw_clock_over(server, command, home);
+
+	/* The started application's tile grows about its centre as Home closes after the launch, its corners cut. */
+	launched = kwl_home_launch_tile(server, &x, &y, &size, &radius);
+	if (launched) {
+		grown = size * (1.0f + 0.3f * (1.0f - home));
+		glass_shape_init(&shape,
+		    depth.x + (x - (grown - size) * 0.5f) * depth.scale,
+		    depth.y + (y - (grown - size) * 0.5f) * depth.scale,
+		    grown * depth.scale,
+		    grown * depth.scale);
+		shape.mode = MODE_IMAGE;
+		shape.set = kwl_layers_set(server, KWL_LAYER_HOME);
+		shape.uv[0] = x / (float)server->width;
+		shape.uv[1] = y / (float)server->height;
+		shape.uv[2] = (x + size) / (float)server->width;
+		shape.uv[3] = (y + size) / (float)server->height;
+		shape.radius = radius * grown / size * depth.scale;
+		shape.opacity = home;
+		glass_shape_draw(server, command, &shape);
+	}
+
+	/* The rest of the frame in the appearance's colours. */
+	server->keep_colours = 0U;
+}
+
+/*
+ * Draws, over the desktop's picture, the windows it does not show: the one
+ * an animation moves (a launch from Home growing out of its icon) and any
+ * mapped since the picture was drawn, bottom to top, placed with the layer
+ * as the picture is (layer-cache.c, ws211-p002, review-3 B2).
+ */
+static void
+draw_layer_animated(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	struct kwl_object **windows,
+	unsigned count,
+	float home,
+	const struct shell_bar *bar)
+{
+	struct kwl_object *top;
+	unsigned index;
+	int pictured;
+	int shown;
+
+	/* Each window drawn in the frame that the picture does not have. */
+	top = kwl_top_window(server);
+	for (index = 0U; index < count; index++) {
+		shown = window_shown(server, windows[index], home, desktop_position(server));
+		if (!shown)
+			continue;
+		pictured = kwl_layers_pictured(server, windows[index]);
+		if (pictured && windows[index] != server->anim)
+			continue;
+
+		/* The window with its title bar, focused when it is on top. */
+		draw_window(server, command, windows[index], windows[index] == top ? 1U : 0U, bar);
+	}
+}
+
+/*
+ * Draws the desktop layer into its picture (layer-cache.c, ws211-p002): the
+ * wallpaper without round corners, the desktop's icons and the windows of
+ * the desktop shown, as App Home has them, unplaced and in the appearance's
+ * colours, without the window an animation moves (drawn over the picture,
+ * draw_layer_animated).  The caller set up the pass and the drawing's state.
+ */
+void
+kwl_glass_draw_desktop_picture(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	struct kwl_object **windows,
+	unsigned count)
+{
+	struct glass_shape shape;
+	struct shell_bar bar;
+
+	/* The bar's layout, which a docking title bar moves to. */
+	bar_layout(server, &bar);
+
+	/* The layer as it is, whole. */
+	server->layer_on = 1U;
+	server->layer_x = 0.0f;
+	server->layer_y = 0.0f;
+	server->layer_scale = 1.0f;
+	server->layer_opacity = 1.0f;
+
+	/* The wallpaper over the whole picture. */
+	glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
+	shape.mode = MODE_IMAGE;
+	shape.opaque = 1.0f;
+	shape.set = glass_wallpaper_set(server);
+	glass_shape_draw(server, command, &shape);
+
+	/* The desktop's icons and the windows, as with Home open, the animated one left out. */
+	server->layer_skip = server->anim;
+	draw_desktop_layer(server, command, windows, count, 1.0f, &bar);
+	server->layer_skip = NULL;
+	server->layer_on = 0U;
 }

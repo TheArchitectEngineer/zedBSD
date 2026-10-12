@@ -394,6 +394,8 @@ source_fill(
 		source->reads++;
 		count = input_read(server, source->device, source->events, INPUT_READ_EVENTS);
 		if (count > 0) {
+			/* The last input, which a layer's picture drawn in the quiet waits on (layer-cache.c). */
+			server->input_ms = kwl_milliseconds();
 			source->count = (size_t)count;
 			source->next = 0;
 			return 1;

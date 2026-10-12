@@ -121,6 +121,70 @@ struct kwl_backdrop {
 	struct kwl_backdrop_target targets[2];
 };
 
+/*
+ * The pictures of the layers (layer-cache.c, ws211-p002): App Home's content
+ * and the desktop layer, each an image of the output's size drawn into
+ * offscreen and sampled linearly.  KWL_LAYER_* name them.
+ */
+#define KWL_LAYER_HOME		0U
+#define KWL_LAYER_DESKTOP	1U
+#define KWL_LAYERS		2U
+
+/* One layer's picture: its image and memory, view, framebuffer of the layers' pass, and descriptor set. */
+struct kwl_layer_image {
+	VkImage image;
+	VkDeviceMemory memory;
+	VkImageView view;
+	VkFramebuffer framebuffer;
+	VkDescriptorSet set;
+};
+
+/*
+ * The layers' pictures (layer-cache.c, ws211-p002): made with the output
+ * (ready, or unavailable for the output's life) in a generation of their
+ * own, the pass that clears and draws one, and for each the key it was
+ * drawn with and whether it is drawn (valid).  inflight names the pictures
+ * the submission in flight draws.  Home's picture remembers what it was
+ * drawn from (the wallpaper's version, the tiles, the page, the accent and
+ * the output's size).  decided_anim is the animation (home_start_ms) whose
+ * first frame decided to use the pictures (using, until a frame could not)
+ * and drew the desktop's, noting the windows it drew by their map order;
+ * home_later says Home's picture is drawn in the opening's second frame.
+ * use_pictures and use_drawn count an animation's frames by how they were
+ * drawn; bake_draws and bake_us are the last drawing's draws and recording
+ * time, and bake_times the starts of the last two drawings on their own
+ * (two a second at most).
+ */
+struct kwl_layers {
+	unsigned ready;
+	unsigned failed;
+	uint64_t generation;
+	uint32_t width;
+	uint32_t height;
+	VkRenderPass pass;
+	struct kwl_layer_image images[KWL_LAYERS];
+	uint64_t keys[KWL_LAYERS];
+	unsigned valid[KWL_LAYERS];
+	unsigned inflight;
+	uint32_t home_wallpaper;
+	uint32_t home_tiles;
+	unsigned home_page;
+	int32_t home_accent;
+	uint32_t home_width;
+	uint32_t home_height;
+	uint64_t decided_anim;
+	unsigned using;
+	unsigned home_later;
+	unsigned noting;
+	unsigned window_count;
+	uint64_t window_orders[KWL_FRAME_WINDOWS];
+	unsigned use_pictures;
+	unsigned use_drawn;
+	unsigned bake_draws;
+	uint64_t bake_us;
+	uint64_t bake_times[2];
+};
+
 /* How many new client images wait at most for their move to the general layout in the next frame (ws099-p016). */
 #define KWL_LAYOUTS_MAX		32U
 
@@ -272,6 +336,12 @@ struct kwl_compose {
 	unsigned in_flight;
 	/* The host images the last submitted frame copied first (KWL DRAWS, ws211-p002). */
 	unsigned frame_copies;
+	/* Nonzero while the frame in flight draws a layer's picture and presents nothing (layer-cache.c). */
+	unsigned frame_bake;
+	/* The layers' generation when the submission in flight was recorded (layer-cache.c). */
+	uint64_t frame_layers_generation;
+	/* The layers' pictures (layer-cache.c, ws211-p002). */
+	struct kwl_layers layers;
 	/* Descriptor sets images gave back, for the next images (kwl_compose_set_get). */
 	VkDescriptorSet spare_sets[KWL_DESCRIPTOR_MAX];
 	unsigned spare_count;
@@ -409,6 +479,17 @@ void kwl_glass_draw_drag_mark(struct kwl_server *server, VkCommandBuffer command
 void kwl_glass_draw_head(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count);
 void kwl_compose_cursor(struct kwl_server *server, VkCommandBuffer command);
 void kwl_compose_count_draw(struct kwl_server *server, VkPipeline pipeline, VkDescriptorSet set, unsigned shape);
+VkResult kwl_compose_submit_quiet(struct kwl_server *server);
+void kwl_layers_open(struct kwl_server *server);
+void kwl_layers_close(struct kwl_compose *compose);
+void kwl_layers_complete(struct kwl_server *server, uint64_t generation);
+VkResult kwl_layers_begin_quiet(struct kwl_server *server);
+void kwl_layers_inband(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count);
+int kwl_layers_pictured(struct kwl_server *server, const struct kwl_object *surface);
+int kwl_layers_home_hidden(struct kwl_server *server);
+void kwl_layers_note(struct kwl_server *server, const struct kwl_object *surface);
+int kwl_layers_showing(struct kwl_server *server);
+VkDescriptorSet kwl_layers_set(struct kwl_server *server, unsigned which);
 
 /* Descriptor sets of the image layout, reused rather than freed (compose.c). */
 VkResult kwl_compose_set_get(struct kwl_compose *compose, VkDescriptorSet *result);

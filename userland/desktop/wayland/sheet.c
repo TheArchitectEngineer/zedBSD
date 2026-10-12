@@ -91,6 +91,10 @@ kwl_sheet_set_parent(
 	if (surface->parent_window != parent)
 		surface->sheet_ms = 0;
 	surface->parent_window = parent;
+
+	/* App Home's running marks count a window with a parent differently (layer-cache.c). */
+	if (surface->client != NULL)
+		surface->client->server->home_picture_stale = 1U;
 }
 
 /* Forgets a surface that goes as any window's parent. */

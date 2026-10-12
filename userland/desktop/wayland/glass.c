@@ -238,6 +238,14 @@ struct kwl_glass {
 	int emoji_face;
 	struct glass_cached cache[GLASS_CELLS];
 	uint32_t cache_top;
+	/*
+	 * The guard of the glyphs a layer's picture in flight uses (layer-cache.c,
+	 * review-4 H2): a cell used at guard_clock or later holds one, and
+	 * guarded_evictions counts those given to another glyph before the
+	 * picture completed (0: no guard).
+	 */
+	uint64_t guard_clock;
+	uint32_t guarded_evictions;
 	unsigned cache_count;
 	uint64_t clock;
 	struct kwl_import large;
@@ -2557,6 +2565,58 @@ glass_wallpaper_set(
 	return server->compose->glass->wallpaper.set;
 }
 
+/* Gives the version of the wallpaper's image (it grows with each new picture), for the keys of pictures that show it. */
+uint32_t
+glass_wallpaper_version(
+	struct kwl_server *server)
+{
+	/* The full-size image's version. */
+	return server->compose->glass->wallpaper.version;
+}
+
+/*
+ * Guards the glyphs a layer's picture being recorded uses (layer-cache.c,
+ * review-4 H2): every glyph looked up from now on is used later than the
+ * guard's start, and its eviction before glass_glyph_guard_end is counted.
+ * A guard already up (another picture of the same submission) stays.
+ */
+void
+glass_glyph_guard_begin(
+	struct kwl_server *server)
+{
+	struct kwl_glass *glass;
+
+	/* The first picture of a submission starts the guard. */
+	glass = server->compose->glass;
+	if (glass->guard_clock == 0U)
+		glass->guard_clock = glass->clock + 1U;
+}
+
+/* Ends the guard when the pictures completed; gives how many guarded glyphs were evicted meanwhile. */
+uint32_t
+glass_glyph_guard_end(
+	struct kwl_server *server)
+{
+	struct kwl_glass *glass;
+	uint32_t evictions;
+
+	/* The count, and no guard. */
+	glass = server->compose->glass;
+	evictions = glass->guarded_evictions;
+	glass->guard_clock = 0U;
+	glass->guarded_evictions = 0U;
+	return evictions;
+}
+
+/* Tells whether the applications' tiles are drawn (1) or not yet (0). */
+uint32_t
+glass_tiles_ready(
+	struct kwl_server *server)
+{
+	/* The tiles' image is drawn once. */
+	return server->compose->glass->tiles_ready != 0U ? 1U : 0U;
+}
+
 /*
  * Renders every titlebar icon at each of its sizes into the atlas from a
  * row on, and moves the row past them; returns 0, or ENOSPC when the atlas
@@ -3052,6 +3112,8 @@ glass_cache_glyph(
 	if (id == 0U && glass->emoji_tried != 0U && glass->emoji_face >= 0) {
 		id = truetype_glyph_index(glass->faces[glass->emoji_face], codepoint);
 		if (id != 0U) {
+			if (glass->guard_clock != 0U && glass->cache[oldest].codepoint != 0U && glass->cache[oldest].used >= glass->guard_clock)
+				glass->guarded_evictions++;
 			glyph = glass_cache_color(glass, size, codepoint, id, oldest);
 			return glyph;
 		}
@@ -3071,8 +3133,10 @@ glass_cache_glyph(
 	if (metrics.width > GLASS_CELL || metrics.height > GLASS_CELL)
 		return NULL;
 
-	/* The cell's place in the atlas. */
+	/* The cell's place in the atlas; a glyph a picture in flight uses that it held is counted. */
 	cell = &glass->cache[oldest];
+	if (glass->guard_clock != 0U && cell->codepoint != 0U && cell->used >= glass->guard_clock)
+		glass->guarded_evictions++;
 	per_row = GLASS_ATLAS_WIDTH / GLASS_CELL;
 	cell->glyph.x = (oldest % per_row) * GLASS_CELL;
 	cell->glyph.y = glass->cache_top + (oldest / per_row) * GLASS_CELL;

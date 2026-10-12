@@ -719,6 +719,7 @@ settings_apply_accent(
 
 	/* Draws everything again in the new accent. */
 	server->accent = accent;
+	server->home_picture_stale = 1U;
 	server->dirty = 1;
 
 	/* Tells the clients, once anything can be bound. */

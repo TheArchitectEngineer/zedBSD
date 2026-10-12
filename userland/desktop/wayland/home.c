@@ -119,6 +119,9 @@
  * then opens nothing, the corner's drag being WS184's).
  */
 #define HOME_OPEN_MS		280U
+
+/* How far an animation shows before its first frame, and in it when Home is not drawn at its start (review-3 B1). */
+#define HOME_FIRST_STEP		0.02f
 #define HOME_CLOSE_MS		240U
 #define HOME_DRAG_START		14
 #define HOME_THRESHOLD		0.30f
@@ -274,6 +277,13 @@ static unsigned home_pad_closing;
 static unsigned home_content_rising;
 
 /*
+ * Whether the icons are drawn as before any pointer (no icon lit, no hover
+ * test): set by kwl_home_draw_content while it draws Home's picture
+ * (ws211-p002 段 1); the event loop's thread only.
+ */
+static unsigned home_neutral;
+
+/*
  * The character each key types into the search (lower case), by evdev code; 0 for none.
  */
 static const char home_characters[HOME_KEYS] = {
@@ -295,6 +305,8 @@ static void home_layout(struct kwl_server *server);
 static unsigned home_page_of(unsigned slot);
 static unsigned home_page_first(unsigned page);
 static void home_draw_clock(struct kwl_server *server, VkCommandBuffer command, float opacity);
+static void home_clock_texts(char *time_text, size_t time_size, char *date_text, size_t date_size);
+static uint64_t home_hash(uint64_t hash, const void *bytes, size_t length);
 static int home_matches(const struct home_app *app, const char *query);
 static int home_contains(const char *text, const char *query);
 static int home_icon_at(struct kwl_server *server, int32_t x, int32_t y);
@@ -336,9 +348,17 @@ kwl_home_progress(
 	uint64_t length;
 	float t;
 
+	/* The frame being recorded shows one progress all through (compose.c, review-3 B1). */
+	if (server->home_progress_frozen)
+		return server->home_progress_value;
+
 	/* The drag, once it is one, is followed as it is. */
 	if (server->home_dragging)
 		return server->home_drag;
+
+	/* An animation before its first frame stays a little on from where it starts (review-3 B1). */
+	if (server->home_moving && server->home_start_pending)
+		return server->home_from + (server->home_to - server->home_from) * HOME_FIRST_STEP;
 
 	/* Settled: where it went. */
 	if (!server->home_moving)
@@ -621,8 +641,6 @@ kwl_home_draw(
 	float content;
 	float width;
 	float rise;
-	unsigned order;
-	unsigned slot;
 
 	/* The applications and where they go. */
 	home_read_apps(server);
@@ -653,9 +671,110 @@ kwl_home_draw(
 	server->layer_scale = depth.scale;
 	server->layer_opacity = depth.opacity;
 
-	/* The rows' floors, under the icons, coming in with the first of them; the first page's clock over them. */
+	/* The content: the clock, the floors, the icons, the search and the dots. */
+	kwl_home_draw_content(server, command, progress, 0U);
+
+	/* The content's first frame (its first icon begun). */
 	content = home_content(server, 0U, progress, &rise);
-	home_draw_clock(server, command, content);
+	if (!server->home_content_logged && server->home_to > 0.0f && content > 0.0f) {
+		server->home_content_logged = 1U;
+		printf("KWL HOME layer=content after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
+	}
+
+	/* The rest of the frame is drawn where it is, in the appearance's colours again. */
+	server->layer_on = 0;
+	server->keep_colours = 0U;
+}
+
+/*
+ * Gives the tile of the application a launch from Home started, while Home
+ * closes after it (the pictures' frames grow it as kwl_home_draw does,
+ * layer-cache.c): its square's place and size on the output, unplaced, and
+ * its corner's radius.  Returns 0 when there is none.
+ */
+int
+kwl_home_launch_tile(
+	struct kwl_server *server,
+	float *x,
+	float *y,
+	float *size,
+	float *radius)
+{
+	unsigned slot;
+
+	/* Only while Home closes after a launch. */
+	if (server->home_launch_app < 0 || server->home_to > 0.0f)
+		return 0;
+
+	/* The started application's icon among those shown. */
+	for (slot = 0U; slot < home_shown_count; slot++) {
+		if ((int)home_shown[slot] != server->home_launch_app)
+			continue;
+		*x = (float)home_icon_x[slot];
+		*y = (float)home_icon_y[slot];
+		*size = (float)HOME_ICON;
+		*radius = HOME_ICON_RADIUS;
+		return 1;
+	}
+
+	/* Not shown. */
+	return 0;
+}
+
+/*
+ * Draws App Home's stage over the whole output in its own colours (the
+ * pictures' frames, layer-cache.c): the caller gives the appearance's
+ * colours back (keep_colours).
+ */
+void
+kwl_home_draw_stage(
+	struct kwl_server *server,
+	VkCommandBuffer command)
+{
+	/* The dark stage, whole. */
+	home_stage(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height);
+}
+
+/*
+ * Draws Home's content without the stage and without placing it (ws211-p002
+ * 段 1): the first page's clock, the rows' floors, the icons shown, the
+ * search text and the pages' dots, faded in by progress, where the caller's
+ * layer puts them (kwl_home_draw), or as they are into Home's picture
+ * (layer-cache.c).  neutral draws no icon lit under the pointer and records
+ * no hover test, as the picture shows Home before any pointer.  The caller
+ * keeps Home's own colours (keep_colours).
+ */
+void
+kwl_home_draw_content(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	float progress,
+	unsigned neutral)
+{
+	float content;
+	float rise;
+	unsigned order;
+	unsigned slot;
+	int selected;
+
+	/* The applications and where they go. */
+	home_read_apps(server);
+	home_layout(server);
+	home_neutral = neutral;
+
+	/*
+	 * The rows' floors, under the icons, coming in with the first of them;
+	 * the first page's clock over them, except in the picture (drawn over
+	 * it each frame, kwl_home_draw_clock_over).  The picture shows Home as
+	 * it opens: the page's first application selected, no search
+	 * (review-3 B3).
+	 */
+	selected = server->home_selected;
+	if (neutral)
+		server->home_selected = (int)home_page_first(server->home_page);
+	content = home_content(server, 0U, progress, &rise);
+	if (!neutral)
+		home_draw_clock(server, command, content);
 	home_draw_floors(server, command, content);
 
 	/* Each icon shown on the output, coming in after the one before it (fading out with Home as it closes). */
@@ -668,22 +787,58 @@ kwl_home_draw(
 		order++;
 	}
 
-	/* The content's first frame (its first icon begun). */
-	content = home_content(server, 0U, progress, &rise);
-	if (!server->home_content_logged && server->home_to > 0.0f && content > 0.0f) {
-		server->home_content_logged = 1U;
-		printf("KWL HOME layer=content after_ms=%llu\n", (unsigned long long)(kwl_milliseconds() - server->home_asked_ms));
-	}
-
 	/* The search text, while something has been typed or is being composed; the pages' dots, when there are pages. */
 	if (server->home_query_length != 0U || server->home_preedit[0] != '\0')
 		home_draw_search(server, command, progress);
 	if (home_pages > 1U)
 		home_draw_dots(server, command, progress);
 
-	/* The rest of the frame is drawn where it is, in the appearance's colours again. */
-	server->layer_on = 0;
-	server->keep_colours = 0U;
+	/* Later drawing lights icons under the pointer again, with the selection as it is. */
+	server->home_selected = selected;
+	home_neutral = 0U;
+}
+
+/*
+ * Draws the first page's clock over Home's picture (layer-cache.c): placed
+ * as the content is for how far Home is open, faded in by it, in Home's
+ * own colours.
+ */
+void
+kwl_home_draw_clock_over(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	float progress)
+{
+	struct kwl_edge_depth depth;
+	float saved[4];
+	unsigned layer;
+	unsigned keep;
+
+	/* The content's place for this far open; the layer's as it was is given back after. */
+	kwl_edge_home_content(progress, (int32_t)server->width, (int32_t)server->height, &depth);
+	layer = server->layer_on;
+	keep = server->keep_colours;
+	saved[0] = server->layer_x;
+	saved[1] = server->layer_y;
+	saved[2] = server->layer_scale;
+	saved[3] = server->layer_opacity;
+	server->layer_on = 1U;
+	server->layer_x = depth.x;
+	server->layer_y = depth.y;
+	server->layer_scale = depth.scale;
+	server->layer_opacity = depth.opacity;
+	server->keep_colours = 1U;
+
+	/* The clock, faded in with Home. */
+	home_draw_clock(server, command, progress);
+
+	/* The drawing's state as it was. */
+	server->layer_on = layer;
+	server->keep_colours = keep;
+	server->layer_x = saved[0];
+	server->layer_y = saved[1];
+	server->layer_scale = saved[2];
+	server->layer_opacity = saved[3];
 }
 
 /*
@@ -1241,6 +1396,8 @@ kwl_home_tick(
 	length = HOME_CLOSE_MS;
 	if (server->home_to > server->home_from)
 		length = HOME_OPEN_MS;
+	if (server->home_start_pending)
+		return;
 	elapsed = kwl_milliseconds() - server->home_start_ms;
 	if (elapsed < length)
 		return;
@@ -1839,9 +1996,12 @@ home_draw_icon(
 	x = home_icon_x[slot];
 	y = home_icon_y[slot];
 	over = 0;
-	if (server->pointer_x >= x && server->pointer_x < x + HOME_ICON && server->pointer_y >= y && server->pointer_y < y + HOME_ICON)
+	if (!home_neutral &&
+	    server->pointer_x >= x && server->pointer_x < x + HOME_ICON &&
+	    server->pointer_y >= y && server->pointer_y < y + HOME_ICON)
 		over = 1;
-	kwl_hover_probe(server, x, y, HOME_ICON, HOME_ICON);
+	if (!home_neutral)
+		kwl_hover_probe(server, x, y, HOME_ICON, HOME_ICON);
 	y += (int32_t)(rise + 0.5f);
 
 	/* The started application's icon grows as Home closes (about its centre). */
@@ -2322,17 +2482,14 @@ home_open(
 	server->drag = NULL;
 
 	/*
-	 * The content comes in after the stage (BUG-225), from now; Home already
-	 * partly open (a drag let go) shows it whole at once.  The first frames
-	 * of both are logged (the time from the request).
+	 * The content comes forward with Home itself, as one picture (the icons
+	 * no longer come in one after another: ws211-p002, the 2026-10-12 user
+	 * decision).  The first frames of the stage and the content are logged
+	 * (the time from the request).
 	 */
 	server->home_asked_ms = kwl_milliseconds();
-	server->home_content_ms = server->home_asked_ms;
-	home_content_rising = 1U;
-	if (from > 0.0f) {
-		server->home_content_ms = 0U;
-		home_content_rising = 0U;
-	}
+	server->home_content_ms = 0U;
+	home_content_rising = 0U;
 	server->home_cover_logged = 0U;
 	server->home_content_logged = 0U;
 	printf("KWL HOME open via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
@@ -2353,6 +2510,9 @@ home_close(
 	server->home_preedit[0] = '\0';
 	printf("KWL HOME close via=%s at_ms=%llu\n", via, (unsigned long long)kwl_milliseconds());
 	kwl_transition_request(server, "home-close");
+
+	/* What Home shows may have changed while it was open (its page): its picture's key is made again (layer-cache.c). */
+	server->home_picture_stale = 1U;
 	home_settle(server, from, 0.0f);
 }
 
@@ -2367,6 +2527,7 @@ home_settle(
 	server->home_from = from;
 	server->home_to = to;
 	server->home_start_ms = kwl_milliseconds();
+	server->home_start_pending = 1U;
 	server->home_moving = 1;
 	server->dirty = 1;
 
@@ -2875,8 +3036,7 @@ home_draw_clock(
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.96f };
 	static const float soft[4] = { 1.0f, 1.0f, 1.0f, 0.72f };
 	char text[64];
-	struct tm local;
-	time_t now;
+	char date[64];
 	float position;
 	float colour[4];
 	int32_t shift;
@@ -2902,22 +3062,111 @@ home_draw_clock(
 	grid_top = (int32_t)server->height - HOME_GRID_BOTTOM - HOME_FIRST_ROWS * HOME_CELL_HEIGHT;
 	baseline = grid_top / 2 + 16;
 
-	/* The time now. */
-	now = time(NULL);
-	memset(&local, 0, sizeof(local));
-	(void)localtime_r(&now, &local);
-
-	/* The time, large, centred. */
-	(void)strftime(text, sizeof(text), "%H:%M", &local);
+	/* The time now, large, centred. */
+	home_clock_texts(text, sizeof(text), date, sizeof(date));
 	memcpy(colour, white, sizeof(colour));
 	colour[3] *= opacity;
 	width = glass_text_width(server, SIZE_CLOCK, text);
 	glass_draw_text(server, command, SIZE_CLOCK, middle - width / 2, baseline, text, (int32_t)server->width, colour);
 
 	/* The long date under it. */
-	kwl_language_date(&local, KWL_LANGUAGE_DATE_LONG, text, sizeof(text));
+	memcpy(text, date, sizeof(text));
 	memcpy(colour, soft, sizeof(colour));
 	colour[3] *= opacity;
 	width = glass_text_width(server, SIZE_SEARCH, text);
 	glass_draw_text(server, command, SIZE_SEARCH, middle - width / 2, baseline + 46, text, (int32_t)server->width, colour);
+}
+
+/*
+ * Gives the first page's clock texts for the time now: the time (%H:%M) and
+ * the long date in the desktop's language.
+ */
+static void
+home_clock_texts(
+	char *time_text,
+	size_t time_size,
+	char *date_text,
+	size_t date_size)
+{
+	struct tm local;
+	time_t now;
+
+	/* The time now, in the local zone. */
+	now = time(NULL);
+	memset(&local, 0, sizeof(local));
+	(void)localtime_r(&now, &local);
+
+	/* The two texts. */
+	(void)strftime(time_text, time_size, "%H:%M", &local);
+	kwl_language_date(&local, KWL_LANGUAGE_DATE_LONG, date_text, date_size);
+}
+
+/* Adds bytes to a 64-bit FNV-1a hash. */
+static uint64_t
+home_hash(
+	uint64_t hash,
+	const void *bytes,
+	size_t length)
+{
+	const uint8_t *byte;
+	size_t index;
+
+	/* Each byte in turn. */
+	byte = bytes;
+	for (index = 0; index < length; index++) {
+		hash ^= byte[index];
+		hash *= 1099511628211ULL;
+	}
+
+	/* The hash with the bytes. */
+	return hash;
+}
+
+/*
+ * Gives the key of what Home's picture shows (ws211-p002, design version
+ * 4): the applications' names in the desktop's language, the pages and the
+ * page shown, which applications run, the selection Home opens with (the
+ * page's first application), the dots' accent, the wallpaper seen through
+ * the pictures' holes, the output's size and whether the tiles are drawn.
+ * A picture drawn with another key is stale.  Neither the pointer (no icon
+ * is lit in it), the search (empty as Home opens) nor the clock (drawn over
+ * it) is in it.  It is made only when something it shows may have changed
+ * (home_picture_stale, layer-cache.c), as it reads every client's windows.
+ */
+uint64_t
+kwl_home_picture_key(
+	struct kwl_server *server)
+{
+	const char *label;
+	uint64_t hash;
+	uint32_t values[8];
+	unsigned running;
+	unsigned slot;
+
+	/* The applications and their places, as the next drawing has them. */
+	home_read_apps(server);
+	home_layout(server);
+	hash = 14695981039346656037ULL;
+
+	/* Each shown application's name in the desktop's language, and whether it runs. */
+	for (slot = 0U; slot < home_shown_count; slot++) {
+		label = kl_tr(home_apps[home_shown[slot]].name);
+		hash = home_hash(hash, label, strlen(label) + 1U);
+		running = home_running_window(server, home_shown[slot]) != NULL ? 1U : 0U;
+		hash = home_hash(hash, &running, sizeof(running));
+	}
+
+	/* The pages, the selection, the accent, the wallpaper, the output and the tiles. */
+	values[0] = home_shown_count;
+	values[1] = home_pages;
+	values[2] = server->home_page;
+	values[3] = home_page_first(server->home_page);
+	values[4] = (uint32_t)server->accent;
+	values[5] = glass_wallpaper_version(server);
+	values[6] = (server->width << 16) ^ server->height;
+	values[7] = glass_tiles_ready(server);
+	hash = home_hash(hash, values, sizeof(values));
+
+	/* Succeeded: the key. */
+	return hash;
 }

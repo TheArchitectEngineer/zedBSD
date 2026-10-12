@@ -1005,6 +1005,28 @@ struct kwl_server {
 	 */
 	struct kwl_draw_counts draw_counts;
 	unsigned draw_section;
+	/*
+	 * The layers' pictures (layer-cache.c, ws211-p002): the window the
+	 * desktop's picture leaves out (the one an animation moves, drawn over
+	 * the picture); and whether App Home's animation starts at its first
+	 * frame's recording (home_start_ms is set then, review-2 N4).
+	 */
+	struct kwl_object *layer_skip;
+	unsigned home_start_pending;
+	/*
+	 * The last evdev input (any device, a touch pad's gestures too) and the
+	 * last window commit (a cursor's not counted), which a picture drawn in
+	 * the quiet waits on; whether something App Home's picture shows may
+	 * have changed (the picture's key is made again only then); and App
+	 * Home's progress fixed for the frame being recorded (review-3 B1).
+	 */
+	uint64_t input_ms;
+	uint64_t commit_ms;
+	unsigned home_picture_stale;
+	/* Nonzero with --no-layer-cache: no layer's picture, every frame drawn whole (the reference, review-4 M4). */
+	unsigned layer_cache_off;
+	unsigned home_progress_frozen;
+	float home_progress_value;
 	/* The event loop records the latest traced motion; recording a frame consumes this timestamp. */
 	uint64_t pointer_accepted_us;
 	/*
@@ -2084,6 +2106,8 @@ void kwl_notify_popup_tick(struct kwl_server *server);
 int kwl_notify_popup_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_notify_popup_showing(void);
 float kwl_home_progress(struct kwl_server *server);
+/* Draws a layer's stale picture again in a quiet moment (layer-cache.c, ws211-p002): 1 in flight, 0 none, -errno. */
+int kwl_layers_tick(struct kwl_server *server);
 int kwl_home_settled(struct kwl_server *server);
 void kwl_home_layer(struct kwl_server *server, float progress, float *x, float *y, float *scale, float *opacity);
 void kwl_home_pad(struct kwl_server *server, uint32_t phase, int32_t travel_um, int32_t speed);

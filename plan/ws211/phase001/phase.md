@@ -3,7 +3,7 @@
 # ws211-p001: 調査と設計（draw の数え、クロスフェードの絵の持ち方と描き直し、draw の束ね、Pi の見積もり、試験）
 
 Parent: [WS211](../ws.md)
-Status: planning（設計の第 2 版。[review-1](review-1.md) の H1〜H6・M1〜M10・L1〜L8 と 2026-10-12 のユーザーと Q1 の判断を反映。再 review の前で、実装はしない。ただし p002 段 0 の計測は review-1 の許可で先に始めてよい）
+Status: planning（設計の第 4 版と、[review-4](review-4.md) の H1・H2・H3(2)・M2・M3・M4・L1・L4・L6 の直し。Q1 の判断で、直した段 1・2 は計測用として main への merge と Pi での試しに進む。受け入れの数値と H3(1)・M1 は Pi の実測の後）
 Phase disposition: normal
 Queue: P3（Q1 が割り当て、2026-10-12）
 
@@ -39,6 +39,118 @@ Queue: P3（Q1 が割り当て、2026-10-12）
 | M10 Makefile | 段: `Makefile.linux`・`Makefile.freebsd` にも足し、その build も確かめる。 |
 | L1〜L8 | 各所（L1 点はページが 2 つ以上の時だけ、L2 時計の帯は閉じている間は描かず開く時に、L3 WAR の依存、L4 拡大した tile の角、L5 影は縁の帯、L6 log の意味、L7 cached で組んでから写す、L8 アニメのコマは比べない） |
 | 実測値の log が plan に無い | [pi-20261012-place2-session.log](pi-20261012-place2-session.log)（Home の開閉の前後の `KWL LAT`・`KWL HOME`・`KWL PERF`）と [pi-20261012-place2-dmesg.log](pi-20261012-place2-dmesg.log)（`v3d: perf`・`requests`・`gpu`・`tfu`・`memory`、`bcm2711: flip perf`）を置いた。 |
+
+## review-4 への対応（2026-10-12 P3、第 4 版への加筆）
+
+- **H1**: 絵を使うか、どの絵を焼くかは、アニメの最初のコマで 1 回だけ決める（`layers->decided_anim = home_start_ms`、`using`）。途中では焼き直さない。アニメの間に変わった動作中の印は、アニメの後に今の経路で正しく出る。
+- **H2**: glyph の追い出しは、glass.c の guard（`glass_glyph_guard_begin`・`_end`）が数える。絵の記録の始めの `clock + 1` を guard にし、追い出す cell の `used` が guard 以上の時だけ数える。数がある時だけ、完了の時に絵を捨てる。
+- **H3**: (2) を入れた。開く時に Home の絵が古ければ、最初のコマでは舞台と desktop の絵だけを描く（progress 約 0.03 で content は見えない）。Home の絵は 2 コマ目で in-band で焼く（`home_later`）。閉じる時は、最初のコマで焼く（content が見えているため）。(1) の Pi の比較（開く時 Home 有効・古い、閉じる時 同じページ・別ページ、`--no-layer-cache` と比べる `KWL FIRST_FRAME` と最初のコマの shown）は、Pi の試しで行う。(3)（Home が開いて止まっている間に今のページで焼く）と (4)（kernel が UIF に直接描く、WS141）は、計測の後に決める。
+- **M1**: 静かな間の Home の焼き直しの間の `CURSOR_PLANE present` の input→at を、Pi の試しで測る。矩形だけ描き直すのは、その結果を見てから決める。
+- **M2**: `layers_animating` で `home_page_moving` を除く。安い要素（ページ・accent・出力の大きさ・壁紙・tile）は、毎回焼いた時の値と比べる。言語の変更（`kwl_language_set`）・app_id・親の窓（`kwl_sheet_set_parent`）でも印を立てる。client の fatal は、その surface の消滅（objects.c）で印が立つ。
+- **M3**: desktop の絵は、`draw_desktop_layer` が実際に描いた窓だけを、map の順（`map_order`。後の map で再利用されない）で覚える（`kwl_layers_note`）。絵に無い窓と anim の窓は、絵の上に直に描く。一度今の経路に戻ったら、そのアニメの残りは今の経路のままにする（`using = 0`）。
+- **M4**: `--no-layer-cache`（`KWL LAYER unavailable reason=off`、今の描き方の参照）を足した。`KWL LAYER baked ... us=`（記録の CPU の時間）も出す。
+- **L1**: `KWL LAYER use` は、アニメが止まった後（Home が開いていても閉じていても）に出す。**L4**: pass の外の依存の srcAccessMask を COLOR_ATTACHMENT_WRITE だけにした（WAR は stage だけで足りる）。**L6**: `kwl_home_draw_clock_over` は layer の x・y・scale・opacity も戻す。
+- 残る Low: L2（閉じ始めの絵は neutral なので hover の光が消え、選択の ring がページの先頭に移る。ユーザーに確かめる）、L3（試験の計画の本文の更新）、L5（記憶: Pi は device 16MiB と UIF の snapshot 約 16MiB、i915 の 4K は約 66MiB）、L7（in-band は `kwl_titlebar_frame`・`kwl_menu_frame` より前なので、desktop の絵の title bar の配置は前のコマの値になる。開く最初のコマの 1 コマ分のずれ）。
+
+## 第 4 版の差分（review-3 と Q1 の判断、2026-10-12 P3）
+
+この節は、第 3 版・第 2 版と食い違う所を置き換える。
+
+- **Q1 の判断（引っかかりを避ける側）**: desktop の絵は後ろで焼かない。開閉のアニメの最初のコマの中で、主の pass の前に **in-band** で焼く（今の最初のコマも desktop を全部描いているので、重さは今と同じ）。Home の絵が古い時も、次の主のコマの中で in-band で焼く。閉じている間に後ろで焼くのは Home の絵だけで、次の 3 つがそろった時だけにする。
+  - 事象の印が立っている。
+  - 入力（`server->input_ms`）が 500ms 以上無い。
+  - 窓の commit（`server->commit_ms`、cursor を除く）が 500ms 以上無い。
+- **A1 glyph の追い出し**: glass.c に、使用中の cell を上書きした回数の counter（`glass_glyph_evictions`）を置く。絵を焼いた時の値を控え、そのコマ（または present しないコマ）が完了した時の値と比べる。違えば絵を `valid = 0` にする（記録の外の `glass_text_width` が staging を上書きした可能性がある）。
+- **A3 世代の番号**: 出力を開くたびに `layers->generation` を進める。present しないコマは、記録した時の世代を控える。完了の時に世代が違えば、何も valid にしない。
+- **B1 アニメの時計**: 記録の始めに、そのコマの progress を 1 つの値に固定する（`server->home_progress_frozen`）。そのコマの中の `kwl_home_progress` は、全部その値を返す。`home_start_pending` の間は、progress を「from から 0.02 だけ to の側」に止め、`kwl_home_tick` は整定しない。
+- **B2 新しい窓**: desktop の絵は、焼いた時の窓の集合（client の番号と surface の id）を覚える。絵に無い窓（例: Home からの起動で、閉じの途中に map した窓）は、絵の上に layer の変換付きで直に描くだけにする。今の経路に戻すのは、絵に入っている窓に `server->anim` が始まった時だけ。
+- **B3**: 上の in-band で、アニメの途中に present しないコマを出さない。Home の絵は、開いた時の値で描く（閉じている間に焼く時は、選択を `home_page_first(page)` に、query を空にしたつもりで描く）。
+- **B4**: in-band で焼くので、hold はそのコマの `compose_hold`（窓・popup・subsurface・desktop の surface・drag の icon）に乗る。present しないコマ（Home の絵だけ）は client の画像を sample しない。
+- **B5 desktop の鍵**: desktop の絵はアニメ 1 回ごとに最初のコマで焼くので、鍵は要らない（絵が有効なのは、その回のアニメ `home_start_ms` の間だけ）。アニメの間の変化のうち、新しい窓は B2 で直に描く。絵に入っている窓の anim は今の経路に戻す。それ以外（窓の中身・title・飾りの hover・dock の hint など）は、アニメの間は止まる（ユーザーが受け入れた変化）。
+- **B6 Home の鍵**: 鍵から時計を外す。時計は絵の外で、絵の上に content の変換付きで直に描く（約 23 draw、p003 の束ねの後は数 draw）。鍵は、事象の印が立った時だけ作り直す。印を立てる所は、窓の map・unmap・surface の消滅（動作中の印）、accent の変更（settings.c）、壁紙の書き終わり（glass.c）、tile の ready、出力を開いた時、Home のページ・選択・検索の変化。
+- **C1・C2**: N3 の免除に `home_page_moving` と Home の drag（`home_dragging`）を足す。入力の空きは、evdev の読み込みごとに進める専用の時刻 `server->input_ms` で判定する（touchpad の gesture を含む）。
+- **C3**: timer は要らない（event loop の poll の timeout は 10ms）。3.1 の記述は取り消す。
+- **C4**: 1.2 の表の「hover の icon」は第 4 版では絵に入れない（neutral の絵）。開いて止まった Home は今の経路で描くので、hover は今どおり効く。
+- **C5**: 頂点の buffer は 1 つにする（present しないコマは Home の絵だけで、主のコマと同時には飛ばない）。
+- **C6**: `pi-20261012-place2-session.log` の末尾の `KWL SCENE` の塊は、同じ boot の session.log から後で足したもの（行の順は元のままではない）。
+- **C7**: 試験の場面に足す物。焼いている間の出力の切り替え（A3）、日本語の名前と通知の連発（A1）、閉じの途中で起動した窓の map（B2）、キーボードで選択した後に開き直す（B3）、点滅する client がある時の cursor の at（A2 の後ろの焼き直しが無いこと）。
+- **計測**: `KWL LAYER use home= desktop=`（アニメ 1 回ごとに、絵を使ったコマの数と、今の経路のコマの数）、`KWL LAYER baked what= inband= us=`。
+
+## 第 3 版の差分（review-2 への対応、2026-10-12 P3）
+
+この節は、下の第 2 版の本文と食い違う所を置き換える。
+
+| 指摘 | 第 3 版 |
+| --- | --- |
+| N1 段 0b のままだと全部のコマが全画面 | 実装済み（e08c7d519）。`capture = scene.buffer && !cursor_plane.shown` を 1 つ求め、region を NULL にする所・reuse・取り込みの 3 か所をこの値で決める。capture が 0 のコマは `scene.valid = 0` にする（plane が閉じた最初のコマは全体を描く）。`KWL SCENE` に `capture=` を出す。試験: Pi で段 0b の前後に `KWL DAMAGE` の部分のコマが残ること。 |
+| N2 後ろの submit が client の buffer・host の画像の寿命と競合を守らない | 下の 3.1: 焼き直しは「present しない主のコマ」として出す。 |
+| N3 アニメの各コマの後の最大 50ms の frame pacing の待ち | Q1 が main で直した（844b3e2a1: 自動のアニメの間は待たない）。段 0 の `KWL LAT pace frame= awaiting= waited_ms= wait_ms=` で効果を確かめる。 |
+| N4 時計の起点を submit にすると進みが戻る | 3.4 |
+| N5 cache の pass の状態 | 3.2 |
+| N6 `layer_desktop_changed` の漏れ | 3.3: 事象の印をやめ、毎コマ CPU で desktop の層の署名を作って比べる。 |
+| N7 後ろの焼き直しが引っかかる可能性 | 3.1 の条件（空き 100ms、回数の上限）と、段 1・2 の計測の項目（焼き直しの間の入力のコマの input→shown、cursor の at、焼き直しの回数と GPU の時間）。 |
+| N8 字が欠けた印の無限ループ | 3.1: 焼き直しを主のコマにするので、glyph の cell を守る特別な期間をやめる。「字が欠けた」印も鍵から外す。 |
+| N9 開く最初のコマの待ちが延びる | 3.4 |
+| N10 焼いた後に始まった anim の窓が二重 | 3.3 |
+| N11 head の pass の screen.xy | 2.2 に足す: pass ごとと、大きさが変わるたびに `screen.xy` を押し直す。 |
+| N12 kernel は 16KiB を超える頂点の詰め直しを別に確保する | 2.2 に足す: 1 つの束の頂点の詰め直し（kernel 側で shader の入力 × 頂点 × 4 byte）が 16KiB を超えないように束を切る（solid 系 1 形 288B なら 56 形まで）。 |
+| N13 影を縁の帯だけにすると見た目が変わる | 1.7 の L5 をやめ、全面の影 1 つを残す（今どおり）。 |
+| N14 2 枚を起動の時に作る失敗の扱い | 3.2 |
+| N15 reuse=0 と prep の数を plan の log で確かめられない | `pi-20261012-place2-session.log` に `KWL SCENE` を足し直した（下の 3.5）。prep は `pi-20261012-place2-dmesg.log` の `v3d: perf` の行。 |
+| N16 試験の場面 | 3.5 |
+
+### 3.1 焼き直しは present しない主のコマ（N2・N7・N8）
+
+- Home の絵・desktop の絵の焼き直しは、主のコマと同じ command buffer（`compose->command`）・fence・`copy_command` で出す。swapchain の image は acquire せず、present もしない。印 `compose->frame_bake = 1` を立てる。
+- 記録の中身は次の順にする。
+  1. `kwl_import_layouts_record`（新しい client の画像の layout の移行。今の主のコマと同じ所）。
+  2. 焼く pass（3.2）。
+- submit の時の扱いは、普通のコマと次の点だけ違う。
+  - 主のコマと同じく、`copy_command` を先に積み（`kwl_host_images_record`）、`in_flight = 1` にする。fence の fd を出し、event loop が完了を知る。
+  - `compose_hold` は buffer の hold だけを行う（desktop の絵が sample する窓の buffer と popup の buffer）。frame callback は取らない（client には新しいコマを見せていない）。
+  - 完了（`kwl_compose_complete`）では、`frame_bake` の時は `KWL LAT shown` を出さない。`server->frame` は進めず、`frame_done_ms`・`frame_wait_ms`（frame pacing）も変えない。shot の完了も呼ばない。代わりに `KWL LAYER baked what=home|desktop draws= ms=` を出す。
+  これで client の buffer の寿命、shm の staging の上書き、host の画像の写し、layout の移行は、全部いまの主のコマの仕組みに乗る。glyph の cell の競合も、普通のコマと同じ扱いになる（新しい競合は無い）。そのため第 2 版の「cell を守る期間」と「字が欠けた」印はやめる（N8）。
+- 出す条件（N7）: Home が閉じている、主のコマが in_flight でない、絵が無効、最後のコマの完了から 100ms 以上空いた、入力（pointer・key・touch）が最後に来てから 100ms 以上空いた、焼き直しは 1 秒に 2 回まで。条件を待つ間は timer（event loop の poll の timeout）で次を見る。
+- 焼き直しのコマが in_flight の間に入力が来たら、次の主のコマは焼き直しの完了を待つ。その待ちは段 1・2 で測る（`KWL LAYER baked ms=`、入力のコマの input→shown、cursor の present の at）。引っかかりが出たら焼き直しを細切れにする（矩形ごと、Home の全体は行ごとに分ける）。
+
+### 3.2 焼く pass の状態（N5・N14）
+
+- 焼く pass の中で設定する物（主の pass の外なので、全部を自分で設定する）:
+  - viewport（焼く画像の大きさ）。
+  - scissor と `compose->scissor_now`。
+  - binding 0 の `corners` の bind（compose.c:2351 と同じ）。
+  - `view_x`・`view_y`・`view_width`・`view_height` を 0。
+  - `backdrop_set = VK_NULL_HANDLE`、`backdrop_recording = 0`。`framebuffer_now = VK_NULL_HANDLE`（backdrop.c:82 で backdrop を作らない防御）。
+  - `hover_recording` を保存して 0 にする。`draw_section` は `KWL_SECTION_OTHER`。
+- `keep_colours`: Home の絵は 1（自分の色）、desktop の絵は 0（外観の色）。
+- Home の絵の中身は、`kwl_home_draw` から舞台と layer の変換を外した、content だけを描く関数 `kwl_home_draw_content(server, command)` に分ける。`kwl_home_draw` は今どおり（舞台、layer の変換、`kwl_home_draw_content`）で、絵を使わない場面で使う。`kwl_home_draw_content` は `layer_on` を触らない。
+- desktop の絵は、`home > 0` の時の規則で描く（`draw_desktop_layer(..., home, ...)` に Home の値を渡す）。こうすると `draw_backdrop`（shell.c:10149、10158）を通らず、backdrop の pass が主の pass を閉じて開き直すこと（backdrop.c:89・126）が起きない。layer の変数は恒等にする。
+- 起動の時の作成の失敗（N14）:
+  - 2 枚の片方だけ作れた時は、両方を捨てて `KWL LAYER unavailable` にし、今の描き方に戻る（片方だけの経路は作らない）。
+  - 出力を開き直した時に作り直す。
+  - descriptor の set は `KWL_DESCRIPTOR_MAX`（512）の pool から 2 つ取る。取れなければ unavailable。
+  - Pi では scene の buffer（8MiB）を段 0b の後も持ち続ける。plane がある間はそれを解放して、絵の 2 枚の記憶にあてる案は、段 1 の計測の後に決める。
+
+### 3.3 desktop の絵の署名（N6・N10）
+
+- 事象ごとの印をやめる。毎コマ、CPU で desktop の層の署名（64 bit の hash）を作り、焼いた時の署名と比べる。違えば絵は古い。
+- 署名に入れる物:
+  - 表示中の desktop の窓の並び。窓ごとに id、位置、大きさ、`current` の buffer の版（commit ごとに進む数）、title、最小化と dock の状態、飾りの hover と押下の状態、`server->anim` の窓かどうか。
+  - desktop の icon の世代、壁紙の `version`、暗い外観、accent、出力の大きさ、言語。
+- 署名は CPU の数え上げだけで、窓の数に比例する（数十）。
+- N10: desktop の絵を焼いた後に `server->anim` が始まった窓は、署名が変わるので焼き直しの対象になる。ただし自動のアニメ（280ms・240ms）の間は焼き直さない（1.6）。そのため、アニメの間に anim が始まった時は、そのコマから今の経路（絵を使わない）に戻る。二重に描かない。
+
+### 3.4 アニメの時計と最初のコマ（N4・N9）
+
+- 時計の起点（N4）: `home_start_ms` を submit の時刻に置き直すのはやめる。代わりに、開閉が言われた後の最初のコマの記録の開始の時刻に置く。その最初のコマ自身は、progress を「小さな正の値」（開く時 0.02、閉じる時 0.98）で描く。0 で描くと Home を描かないので、そうしない。progress は単調にする（前のコマの値より戻らない）。
+- 最初のコマ（N9）: 開く最初のコマで 2 枚とも焼き直しが要る時は、そのコマは今の経路で描く（絵を使わない）。焼き直しは次の submit（present しない主のコマ、3.1）で行い、それ以後のアニメのコマが絵を使う。`KWL FIRST_FRAME ms` を前後で比べる。
+
+### 3.5 試験の追加（N15・N16）
+
+- 段 0b の前後: Pi の `--log-frames` で、`KWL DAMAGE`（部分のコマ）が段 0b の後も出ること、`KWL SCENE capture=0` の間に `region` が NULL にならないこと（部分のコマの `KWL DRAWS draws=` が全体より小さい）。
+- 焼き直しの最中の競合（N2）: 焼き直しが in_flight の間に、窓の大きさを変える、窓を閉じる、shm の client が描き続ける。いずれも VULKAN_ERROR・壊れた画像・落ちが無いこと。Venus（T1）では検証の layer を有効にして validation error が無いこと。
+- 段 0 の pace: アニメのコマの `waited_ms` が 0 に近いこと（N3 の直しの効果）。
+- plan の log: `pi-20261012-place2-session.log` に `KWL SCENE` の行を足して置き直した（266 コマ全部 reuse=0）。
 
 ## 今の描き方（source と Pi の log で確かめた事実）
 
