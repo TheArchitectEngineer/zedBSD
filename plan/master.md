@@ -543,6 +543,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ## 判断の記録（新しい順）
 
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
+- 2026-10-13 ユーザー: SMP の image で「ウィンドウを3つ出して、アレンジメントをする」と全体が固まる（SSH・ping も不可、deadlock の見え方）。cpus=1 では 10 回試して再現せず → 4 core に特有（WS208 p007、P6 が固まりの検出の仕組みと候補を調べ中）。Pi は今 cmdline.txt に cpus=1（元は cmdline.txt.cpus-bak）。
 - 2026-10-13 ユーザー（クリック）: SMP（WS208、agent/p2 43195c4f9）を「今 main に入れる」→ main 50e792ce1。既定は 4 core（D3）、cmdline.txt に cpus=1 で 1 core。Pi の実機（p005）と T1-553（QEMU raspi4b）はこの後。
 - 2026-10-13 ユーザー:「いや、これ以上詰めなくていいです。SMPに進みます。また、Frosted Glassを無効にすると、さらに高速になることに気づきました。サイドペインの遅さは、Frosted Glassの無効化でかなり改善することにも気づきました。」→ 描画の最適化はここで終える（place27・hvs-load の計測と K-1・(d) は行わない、P5 の分析は止めて記録だけ）。WS208（SMP、agent/p2 ea8ecb4cf の p002〜p004、main に未統合）を新しい worktree /home/awe/zedBSD-worktrees/p6（agent/p2）で main に追いつかせて統合し、QEMU raspi4b -smp 4（T1）と Pi の実機（p005）へ。Frosted Glass（glass の blur）を切ると速い点は記録（既定を変えるかはユーザーの判断、今は変えない）。
 - 2026-10-13 ユーザー（Pi 4、main 1392d52、1024x680）:「コンポジタ、アプリ、CSE/DCE、すべてが効いて、これまでに見たこともないようななめらかなデスクトップです。M1 Macよりすばらしいです。」→ 描画の最適化の段は体感で達成。次は Pi の計測（measure-setup.sh、場面 A〜E、hvs-load）→ SMP（WS208）→ 計測 → 最適化の終了 → WiFi（WS206）・Bluetooth（WS215）。
