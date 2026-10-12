@@ -47,7 +47,7 @@ static int operation_fields(const struct bcm2711_qpu_instruction *instruction, e
 static int alu_sources(const struct bcm2711_qpu_instruction *instruction, struct qpu_alu *alu, struct qpu_encoding *encoding);
 static int source_fields(const struct bcm2711_qpu_source *source, struct qpu_encoding *encoding, uint32_t *mux);
 static int condition_fields(const struct bcm2711_qpu_instruction *add, const struct bcm2711_qpu_instruction *multiply, struct qpu_encoding *encoding);
-static int signal_fields(enum bcm2711_qpu_signal signal, const struct bcm2711_qpu_destination *destination, struct qpu_encoding *encoding);
+static int signal_fields(enum bcm2711_qpu_signal signal, const struct bcm2711_qpu_destination *destination, uint32_t thread_switch, struct qpu_encoding *encoding);
 
 /*
  * Encodes one native instruction after validating every operand, signal and flag interaction.
@@ -81,7 +81,7 @@ bcm2711_qpu_encode(
 	    (instruction->predicate != 0 || instruction->push_flags != 0))
 		return EINVAL;
 
-	/* The operation takes its own ALU; the instruction's signal becomes the word's signal. */
+	/* The operation takes its own ALU. */
 	kern_memset(&bundle, 0, sizeof(bundle));
 	if (unit == BCM2711_QPU_UNIT_MULTIPLY || unit == BCM2711_QPU_UNIT_EITHER) {
 		bundle.multiply = *instruction;
@@ -90,6 +90,8 @@ bcm2711_qpu_encode(
 		bundle.add = *instruction;
 		bundle.add.signal = BCM2711_QPU_SIGNAL_NONE;
 	}
+
+	/* The instruction's signal becomes the word's signal. */
 	bundle.signal = instruction->signal;
 	bundle.signal_destination = instruction->signal_destination;
 
@@ -162,7 +164,9 @@ bcm2711_qpu_encode_bundle(
 		return error;
 
 	/* Address-producing signals replace the conditions field and cannot silently discard lane flags. */
-	error = signal_fields(bundle->signal, &bundle->signal_destination, &encoding);
+	if (bundle->thread_switch > 1)
+		return EINVAL;
+	error = signal_fields(bundle->signal, &bundle->signal_destination, bundle->thread_switch, &encoding);
 	if (error != 0)
 		return error;
 
@@ -395,6 +399,8 @@ operation_fields(
 			alu->operation = 182;
 			alu->duplicate = 1;
 		}
+
+		/* The move's opcode is chosen. */
 		break;
 	case BCM2711_QPU_HALF_LOW:
 		alu->operation = 14;
@@ -603,6 +609,8 @@ alu_sources(
 		if (error != 0)
 			return error;
 	}
+
+	/* A second source takes its port after the first. */
 	if (alu->sources >= 2) {
 		error = source_fields(&instruction->right, encoding, &right);
 		if (error != 0)
@@ -677,7 +685,11 @@ source_fields(
 		*mux = 6;
 		return 0;
 	}
-	if (encoding->read_b_used != 0 && encoding->constant == 0 && encoding->read_b == source->number) {
+
+	/* Port B is shared only while it holds a register rather than the small constant. */
+	if (encoding->read_b_used != 0 &&
+	    encoding->constant == 0 &&
+	    encoding->read_b == source->number) {
 		*mux = 7;
 		return 0;
 	}
@@ -740,6 +752,7 @@ static int
 signal_fields(
 	enum bcm2711_qpu_signal signal,
 	const struct bcm2711_qpu_destination *destination,
+	uint32_t thread_switch,
 	struct qpu_encoding *encoding)
 {
 	uint32_t addressed;
@@ -799,6 +812,35 @@ signal_fields(
 		encoding->conditions = destination->number;
 		if (destination->peripheral != 0)
 			encoding->conditions |= 64;
+	}
+
+	/* A thread switch combines with no signal, a uniform load, a texture result read, a varying load or a texture configuration. */
+	if (thread_switch != 0) {
+		if (encoding->constant != 0)
+			return ENOTSUP;
+		switch (signal) {
+		case BCM2711_QPU_SIGNAL_NONE:
+			encoding->signal = 1;
+			break;
+		case BCM2711_QPU_SIGNAL_UNIFORM:
+			encoding->signal = 3;
+			break;
+		case BCM2711_QPU_SIGNAL_TEXTURE:
+			encoding->signal = 5;
+			break;
+		case BCM2711_QPU_SIGNAL_VARYING:
+			encoding->signal = 9;
+			break;
+		case BCM2711_QPU_SIGNAL_UNIFORM_REGISTER:
+			encoding->signal = 13;
+			break;
+		case BCM2711_QPU_SIGNAL_TEXTURE_CONFIG:
+			encoding->signal = 19;
+			break;
+		default:
+			/* No other signal, nor a second switch, combines with a switch. */
+			return ENOTSUP;
+		}
 	}
 
 	/* Small constants use their exact signal encoding; only native varying or TMU reads can combine with it. */

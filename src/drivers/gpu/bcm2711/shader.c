@@ -314,6 +314,22 @@ bcm2711_shader_register(
 			chosen = index;
 	}
 
+	/* A register holding a cached constant no current instruction reads is given up, the one read longest ago. */
+	if (chosen == BCM2711_SHADER_ABSENT) {
+		for (index = BCM2711_SHADER_FIRST_REGISTER; index < compiler->register_end; index++) {
+			if (compiler->constant_held[index] == 0 || compiler->constant_touched[index] != 0)
+				continue;
+			if (chosen == BCM2711_SHADER_ABSENT || compiler->constant_clock[index] < compiler->constant_clock[chosen])
+				chosen = index;
+		}
+
+		/* The given-up register is free again. */
+		if (chosen != BCM2711_SHADER_ABSENT) {
+			compiler->constant_held[chosen] = 0;
+			bcm2711_shader_release(compiler, chosen);
+		}
+	}
+
 	/* Register spilling has no implementation and must never silently replace a live scalar. */
 	if (chosen == BCM2711_SHADER_ABSENT)
 		return E2BIG;
@@ -384,6 +400,83 @@ bcm2711_shader_scratch(
 }
 
 /*
+ * Places a full-width constant in a register, loading it from the uniform stream only when no register holds it.
+ *
+ * While enough registers are free, a loaded constant stays in its register
+ * for later reads; the register is given up when a value needs it.
+ * Otherwise the constant goes to a scratch register for this read only.
+ */
+int
+bcm2711_shader_constant(
+	struct bcm2711_shader_compiler *compiler,
+	uint32_t bits,
+	uint32_t preferred,
+	uint32_t *number)
+{
+	struct bcm2711_shader_uniform uniform;
+	uint32_t index;
+	uint32_t free_count;
+	uint32_t chosen;
+	int error;
+
+	/* A register already holding the bits serves this read too. */
+	for (index = BCM2711_SHADER_FIRST_REGISTER; index < compiler->register_end; index++) {
+		if (compiler->constant_held[index] != 0 && compiler->constant_bits[index] == bits) {
+			compiler->release_clock++;
+			compiler->constant_clock[index] = compiler->release_clock;
+			compiler->constant_touched[index] = 1;
+			*number = index;
+			return 0;
+		}
+	}
+
+	/* Counts the free expression registers. */
+	free_count = 0;
+	for (index = BCM2711_SHADER_FIRST_REGISTER; index < compiler->register_end; index++) {
+		if (compiler->registers[index] == 0)
+			free_count++;
+	}
+
+	/* A program with registers to spare keeps the constant; otherwise it takes a scratch register. */
+	chosen = BCM2711_SHADER_ABSENT;
+	if (free_count > BCM2711_SHADER_CONSTANT_RESERVE) {
+		error = bcm2711_shader_register(compiler, &chosen);
+		if (error != 0)
+			chosen = BCM2711_SHADER_ABSENT;
+	}
+
+	/* Without a kept register the constant takes a scratch one. */
+	if (chosen == BCM2711_SHADER_ABSENT)
+		chosen = bcm2711_shader_scratch(compiler, preferred);
+
+	/* The constant's exact bits come from the uniform stream. */
+	kern_memset(&uniform, 0, sizeof(uniform));
+	uniform.kind = BCM2711_SHADER_CONSTANT;
+	uniform.bits = bits;
+	error = bcm2711_shader_uniform_load(compiler, &uniform, chosen);
+	if (error != 0)
+		return error;
+
+	/* A kept constant is marked for later reads and protected for this instruction. */
+	if (chosen >= BCM2711_SHADER_FIRST_REGISTER &&
+	    chosen < compiler->register_end &&
+	    compiler->borrowed[chosen] == 0 &&
+	    compiler->registers[chosen] != 0) {
+		compiler->release_clock++;
+		compiler->constant_held[chosen] = 1;
+		compiler->constant_bits[chosen] = bits;
+		compiler->constant_clock[chosen] = compiler->release_clock;
+		compiler->constant_touched[chosen] = 1;
+	}
+
+	/* The caller reads the constant from here. */
+	*number = chosen;
+
+	/* Succeeded: the register holds the constant's exact bits. */
+	return 0;
+}
+
+/*
  * Releases every expression register borrowed as a scratch register.
  */
 void
@@ -392,12 +485,15 @@ bcm2711_shader_release_scratch(
 {
 	uint32_t index;
 
-	/* Each borrowed register returns to the allocation order. */
+	/* Each borrowed register returns to the allocation order; cached constants may be given up again. */
 	for (index = 0; index < 64; index++) {
 		if (compiler->borrowed[index] != 0) {
 			compiler->borrowed[index] = 0;
 			bcm2711_shader_release(compiler, index);
 		}
+
+		/* A finished instruction no longer protects the constants it read. */
+		compiler->constant_touched[index] = 0;
 	}
 
 	/* Succeeded: no scratch value outlives the instruction that needed it. */
@@ -529,7 +625,6 @@ bcm2711_shader_operand(
 	struct bcm2711_qpu_source *source)
 {
 	struct bcm2711_shader_value *scalar;
-	struct bcm2711_shader_uniform uniform;
 	uint32_t encoded;
 	uint32_t register_number;
 	int error;
@@ -558,12 +653,8 @@ bcm2711_shader_operand(
 	if (error != ENOTSUP)
 		return error;
 
-	/* Full-width constants use a borrowed or caller-selected scratch register that cannot overwrite an expression value. */
-	register_number = bcm2711_shader_scratch(compiler, scratch);
-	kern_memset(&uniform, 0, sizeof(uniform));
-	uniform.kind = BCM2711_SHADER_CONSTANT;
-	uniform.bits = scalar->number;
-	error = bcm2711_shader_uniform_load(compiler, &uniform, register_number);
+	/* Full-width constants use a cached, borrowed or caller-selected scratch register that cannot overwrite an expression value. */
+	error = bcm2711_shader_constant(compiler, scalar->number, scratch, &register_number);
 	if (error != 0)
 		return error;
 	*source = bcm2711_shader_rf(register_number);
@@ -1007,6 +1098,7 @@ record_op(
 	struct bcm2711_shader_op *op;
 	struct bcm2711_qpu_instruction encoded;
 	uint64_t word;
+	uint32_t consumes;
 	int error;
 
 	/* Capacity refusal cannot expose a truncated successful program. */
@@ -1020,16 +1112,22 @@ record_op(
 		if (error != 0)
 			return error;
 	}
+
+	/* The left source register takes the window too. */
 	if (encoded.left.kind == BCM2711_QPU_REGISTER) {
 		error = encode_register(compiler, &encoded.left.number);
 		if (error != 0)
 			return error;
 	}
+
+	/* The right source register takes the window too. */
 	if (encoded.right.kind == BCM2711_QPU_REGISTER) {
 		error = encode_register(compiler, &encoded.right.number);
 		if (error != 0)
 			return error;
 	}
+
+	/* An addressed signal's register takes the window too. */
 	if (encoded.signal != BCM2711_QPU_SIGNAL_NONE && encoded.signal_destination.peripheral == 0) {
 		error = encode_register(compiler, &encoded.signal_destination.number);
 		if (error != 0)
@@ -1050,7 +1148,8 @@ record_op(
 	kern_memset(op, 0, sizeof(*op));
 	op->instruction = encoded;
 	op->role = role;
-	if (consumes_uniform(&encoded) != 0) {
+	consumes = consumes_uniform(&encoded);
+	if (consumes != 0) {
 		if (compiler->has_pending_uniform == 0)
 			return EINVAL;
 		if (compiler->binary->uniform_count == compiler->uniform_capacity)
@@ -1060,6 +1159,8 @@ record_op(
 		compiler->has_pending_uniform = 0;
 		compiler->binary->uniform_count++;
 	}
+
+	/* The record list ends with this operation. */
 	compiler->op_count++;
 
 	/* Succeeded: the record list ends with this operation. */

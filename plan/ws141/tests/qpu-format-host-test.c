@@ -77,6 +77,8 @@ static const struct expected_operation expected_operations[] = {
 static void check_word(const struct v3d_device_info *device, struct bcm2711_qpu_instruction *instruction, enum v3d_qpu_add_op add, enum v3d_qpu_mul_op multiply);
 static void check_signals(const struct v3d_device_info *device);
 static void check_constants(const struct v3d_device_info *device);
+static void check_bundles(const struct v3d_device_info *device);
+static void decode_bundle(const struct v3d_device_info *device, const struct bcm2711_qpu_bundle *bundle, struct v3d_qpu_instr *decoded);
 
 /*
  * Verifies semantic operation identity, byte-for-byte roundtrip and meaningful refused combinations.
@@ -122,6 +124,7 @@ main(
 	/* Signals and small constants carry independent, hardware-defined register and immediate interpretation. */
 	check_signals(&device);
 	check_constants(&device);
+	check_bundles(&device);
 
 	/* Invalid physical registers and unrepresentable opcodes must preserve the caller's original word. */
 	word = UINT64_C(0x1122334455667788);
@@ -296,4 +299,191 @@ check_constants(
 	word = UINT64_C(0x1122334455667788);
 	error = bcm2711_qpu_encode(&instruction, &word);
 	assert(error == ENOTSUP && word == UINT64_C(0x1122334455667788));
+}
+
+/* Encodes one paired word, decodes it with the oracle and checks the oracle rebuilds the same word. */
+static void
+decode_bundle(
+	const struct v3d_device_info *device,
+	const struct bcm2711_qpu_bundle *bundle,
+	struct v3d_qpu_instr *decoded)
+{
+	uint64_t word;
+	uint64_t repacked;
+	bool accepted;
+	int error;
+
+	/* The word must encode, decode as an ALU word and repack exactly. */
+	error = bcm2711_qpu_encode_bundle(bundle, &word);
+	assert(error == 0);
+	memset(decoded, 0, sizeof(*decoded));
+	accepted = v3d_qpu_instr_unpack(device, word, decoded);
+	assert(accepted && decoded->type == V3D_QPU_INSTR_TYPE_ALU);
+	accepted = v3d_qpu_instr_pack(device, decoded, &repacked);
+	assert(accepted && repacked == word);
+}
+
+/* Checks paired ALU operations, shared read ports, combined conditions and switch signals (WS141 p013). */
+static void
+check_bundles(
+	const struct v3d_device_info *device)
+{
+	static const enum bcm2711_qpu_signal combined[6] = {
+		BCM2711_QPU_SIGNAL_NONE,
+		BCM2711_QPU_SIGNAL_UNIFORM,
+		BCM2711_QPU_SIGNAL_TEXTURE,
+		BCM2711_QPU_SIGNAL_VARYING,
+		BCM2711_QPU_SIGNAL_UNIFORM_REGISTER,
+		BCM2711_QPU_SIGNAL_TEXTURE_CONFIG};
+	struct bcm2711_qpu_bundle bundle;
+	struct v3d_qpu_instr decoded;
+	uint64_t word;
+	uint32_t add_predicate;
+	uint32_t mul_predicate;
+	uint32_t push;
+	uint32_t index;
+	bool addressed;
+	int error;
+
+	/* An add and a multiply sharing one register: two ports at most, the shared register on one. */
+	memset(&bundle, 0, sizeof(bundle));
+	bundle.add.operation = BCM2711_QPU_FLOAT_ADD;
+	bundle.add.destination.number = 10;
+	bundle.add.left.kind = BCM2711_QPU_REGISTER;
+	bundle.add.left.number = 20;
+	bundle.add.right.kind = BCM2711_QPU_REGISTER;
+	bundle.add.right.number = 21;
+	bundle.multiply.operation = BCM2711_QPU_FLOAT_MULTIPLY;
+	bundle.multiply.destination.number = 11;
+	bundle.multiply.left.kind = BCM2711_QPU_REGISTER;
+	bundle.multiply.left.number = 21;
+	bundle.multiply.right.kind = BCM2711_QPU_ACCUMULATOR;
+	bundle.multiply.right.number = 2;
+	decode_bundle(device, &bundle, &decoded);
+	assert(decoded.alu.add.op == V3D_QPU_A_FADD && decoded.alu.mul.op == V3D_QPU_M_FMUL);
+	assert(decoded.alu.add.waddr == 10 && decoded.alu.mul.waddr == 11);
+	assert(decoded.raddr_a == 20 && decoded.raddr_b == 21);
+	assert(decoded.alu.mul.a.mux == V3D_QPU_MUX_B && decoded.alu.mul.b.mux == V3D_QPU_MUX_R2);
+
+	/* A third register is refused without touching the caller's word. */
+	bundle.multiply.right.kind = BCM2711_QPU_REGISTER;
+	bundle.multiply.right.number = 22;
+	word = UINT64_C(0x1122334455667788);
+	error = bcm2711_qpu_encode_bundle(&bundle, &word);
+	assert(error == ENOTSUP && word == UINT64_C(0x1122334455667788));
+
+	/* A move on the add ALU is a bit OR of its source with itself; a small constant takes port B for both. */
+	memset(&bundle, 0, sizeof(bundle));
+	bundle.add.operation = BCM2711_QPU_MOVE;
+	bundle.add.destination.number = 2;
+	bundle.add.destination.peripheral = 1;
+	bundle.add.left.kind = BCM2711_QPU_CONSTANT;
+	bundle.add.left.number = 0x3f800000U;
+	bundle.multiply.operation = BCM2711_QPU_FLOAT_MULTIPLY;
+	bundle.multiply.destination.number = 12;
+	bundle.multiply.left.kind = BCM2711_QPU_REGISTER;
+	bundle.multiply.left.number = 5;
+	bundle.multiply.right.kind = BCM2711_QPU_CONSTANT;
+	bundle.multiply.right.number = 0x3f800000U;
+	decode_bundle(device, &bundle, &decoded);
+	assert(decoded.alu.add.op == V3D_QPU_A_OR && decoded.alu.add.magic_write && decoded.alu.add.waddr == 2);
+	assert(decoded.alu.add.a.mux == V3D_QPU_MUX_B && decoded.alu.add.b.mux == V3D_QPU_MUX_B);
+	assert(decoded.sig.small_imm_b && decoded.raddr_a == 5);
+
+	/* A different second constant cannot share the one constant port. */
+	bundle.multiply.right.number = 0x40000000U;
+	word = UINT64_C(0x1122334455667788);
+	error = bcm2711_qpu_encode_bundle(&bundle, &word);
+	assert(error == ENOTSUP && word == UINT64_C(0x1122334455667788));
+
+	/* Every combination of the two ALUs' predicates and one ALU's flag push reaches the oracle's fields. */
+	memset(&bundle, 0, sizeof(bundle));
+	bundle.add.operation = BCM2711_QPU_BITS_AND;
+	bundle.add.destination.number = 6;
+	bundle.add.destination.peripheral = 1;
+	bundle.add.left.kind = BCM2711_QPU_REGISTER;
+	bundle.add.left.number = 3;
+	bundle.add.right.kind = BCM2711_QPU_REGISTER;
+	bundle.add.right.number = 4;
+	bundle.multiply.operation = BCM2711_QPU_MOVE;
+	bundle.multiply.destination.number = 9;
+	bundle.multiply.left.kind = BCM2711_QPU_REGISTER;
+	bundle.multiply.left.number = 4;
+	for (add_predicate = 0; add_predicate <= 4; add_predicate++) {
+		for (mul_predicate = 0; mul_predicate <= 4; mul_predicate++) {
+			for (push = 0; push <= 3; push++) {
+				bundle.add.predicate = add_predicate;
+				bundle.multiply.predicate = mul_predicate;
+				bundle.add.push_flags = 0;
+				bundle.multiply.push_flags = 0;
+				if (add_predicate == 0)
+					bundle.add.push_flags = push;
+				else if (mul_predicate == 0)
+					bundle.multiply.push_flags = push;
+				else if (push != 0)
+					continue;
+				decode_bundle(device, &bundle, &decoded);
+				assert(decoded.flags.ac == (enum v3d_qpu_cond)add_predicate);
+				assert(decoded.flags.mc == (enum v3d_qpu_cond)mul_predicate);
+				assert(decoded.flags.apf == (enum v3d_qpu_pf)bundle.add.push_flags);
+				assert(decoded.flags.mpf == (enum v3d_qpu_pf)bundle.multiply.push_flags);
+			}
+		}
+	}
+
+	/* Both ALUs pushing flags is refused. */
+	bundle.add.predicate = 0;
+	bundle.multiply.predicate = 0;
+	bundle.add.push_flags = 1;
+	bundle.multiply.push_flags = 1;
+	error = bcm2711_qpu_encode_bundle(&bundle, &word);
+	assert(error == ENOTSUP);
+
+	/* A thread switch combines with each signal of the native table; the signal keeps its destination. */
+	memset(&bundle, 0, sizeof(bundle));
+	bundle.add.operation = BCM2711_QPU_FLOAT_ADD;
+	bundle.add.destination.number = 10;
+	bundle.add.left.kind = BCM2711_QPU_REGISTER;
+	bundle.add.left.number = 20;
+	bundle.add.right.kind = BCM2711_QPU_REGISTER;
+	bundle.add.right.number = 21;
+	bundle.thread_switch = 1;
+	bundle.signal_destination.number = 13;
+	for (index = 0; index < 6; index++) {
+		bundle.signal = combined[index];
+		decode_bundle(device, &bundle, &decoded);
+		assert(decoded.sig.thrsw);
+		assert(decoded.sig.ldunif == (combined[index] == BCM2711_QPU_SIGNAL_UNIFORM));
+		assert(decoded.sig.ldtmu == (combined[index] == BCM2711_QPU_SIGNAL_TEXTURE));
+		assert(decoded.sig.ldvary == (combined[index] == BCM2711_QPU_SIGNAL_VARYING));
+		assert(decoded.sig.ldunifrf == (combined[index] == BCM2711_QPU_SIGNAL_UNIFORM_REGISTER));
+		assert(decoded.sig.wrtmuc == (combined[index] == BCM2711_QPU_SIGNAL_TEXTURE_CONFIG));
+		addressed = v3d_qpu_sig_writes_address(device, &decoded.sig);
+		if (addressed)
+			assert(decoded.sig_addr == 13 && !decoded.sig_magic);
+	}
+
+	/* A switch does not combine with a small constant or with an unlisted signal. */
+	bundle.signal = BCM2711_QPU_SIGNAL_NONE;
+	bundle.add.right.kind = BCM2711_QPU_CONSTANT;
+	bundle.add.right.number = 1;
+	error = bcm2711_qpu_encode_bundle(&bundle, &word);
+	assert(error == ENOTSUP);
+	bundle.add.right.kind = BCM2711_QPU_REGISTER;
+	bundle.signal = BCM2711_QPU_SIGNAL_TILE;
+	error = bcm2711_qpu_encode_bundle(&bundle, &word);
+	assert(error == ENOTSUP);
+
+	/* An operation in the other ALU's slot is refused. */
+	memset(&bundle, 0, sizeof(bundle));
+	bundle.add.operation = BCM2711_QPU_FLOAT_MULTIPLY;
+	error = bcm2711_qpu_encode_bundle(&bundle, &word);
+	assert(error == EINVAL);
+	memset(&bundle, 0, sizeof(bundle));
+	bundle.multiply.operation = BCM2711_QPU_FLOAT_ADD;
+	error = bcm2711_qpu_encode_bundle(&bundle, &word);
+	assert(error == EINVAL);
+
+	/* Succeeded: paired words agree with the oracle. */
+	puts("qpu-format-host-test paired words, conditions and switch signals: PASS");
 }

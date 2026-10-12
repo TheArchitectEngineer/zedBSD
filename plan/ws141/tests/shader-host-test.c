@@ -469,8 +469,8 @@ static int32_t
 float_to_signed(
 	float number)
 {
-	/* Out-of-range values saturate rather than reaching undefined host conversion. */
-	if (isnan(number))
+	/* Out-of-range values saturate rather than reaching undefined host conversion; NaN compares unequal to itself. */
+	if (number != number)
 		return 0;
 	if (number >= 2147483648.0f)
 		return 2147483647;
@@ -486,8 +486,8 @@ static uint32_t
 float_to_unsigned(
 	float number)
 {
-	/* Out-of-range values saturate rather than reaching undefined host conversion. */
-	if (isnan(number) || number <= 0.0f)
+	/* Out-of-range values saturate rather than reaching undefined host conversion; NaN compares unequal to itself. */
+	if (number != number || number <= 0.0f)
 		return 0;
 	if (number >= 4294967296.0f)
 		return 0xffffffffU;
@@ -821,6 +821,8 @@ keiland_inputs(
 		inputs->input[4] = float_bits(96.0f + 17.0f * (float)(trial / 8));
 		inputs->input[5] = float_bits(84.0f + 11.0f * (float)(trial / 8));
 	}
+
+	/* Uniform block words vary with the trial. */
 	inputs->block_seed = trial;
 }
 
@@ -859,10 +861,10 @@ compare_number(
 	if (native == expected)
 		return;
 
-	/* NaNs of both sides agree. */
+	/* NaNs of both sides agree; a NaN compares unequal to itself. */
 	a = bits_float(native);
 	b = bits_float(expected);
-	if (isnan(a) && isnan(b))
+	if (a != a && b != b)
 		return;
 	distance = fabsf(a - b);
 	limit = 0.00002f * (1.0f + fabsf(b));
@@ -902,6 +904,8 @@ verify_panel_mode(
 				original.push[13] = float_bits(0.95f);
 				original.push[14] = float_bits(0.92f);
 			}
+
+			/* Flatness varies across trials, then the per-shape values follow. */
 			original.push[18] = float_bits((float)(trial % 3) * 0.5f);
 			glass_constants(original.push);
 		}
@@ -932,17 +936,27 @@ glass_constants(
 	uint32_t *push)
 {
 	float least;
+	float second;
+	float third;
+	float appearance;
 	float flat;
 	float height;
 
 	/* The same per-shape values as the compositor works out once for each shape. */
 	least = bits_float(push[12]);
-	if (bits_float(push[13]) < least)
-		least = bits_float(push[13]);
-	if (bits_float(push[14]) < least)
-		least = bits_float(push[14]);
-	push[4] = float_bits(least >= 0.9f ? 1.0f : 0.0f);
-	push[5] = float_bits(bits_float(push[17]) <= -0.5f ? 1.0f : 0.0f);
+	second = bits_float(push[13]);
+	third = bits_float(push[14]);
+	if (second < least)
+		least = second;
+	if (third < least)
+		least = third;
+	push[4] = float_bits(0.0f);
+	if (least >= 0.9f)
+		push[4] = float_bits(1.0f);
+	appearance = bits_float(push[17]);
+	push[5] = float_bits(0.0f);
+	if (appearance <= -0.5f)
+		push[5] = float_bits(1.0f);
 	flat = bits_float(push[18]);
 	if (flat < 0.0f)
 		flat = 0.0f;
@@ -967,6 +981,7 @@ verify_pair(
 	struct bcm2711_shader_binary *binary;
 	struct bcm2711_shader_diagnostic refusal;
 	struct bcm2711_shader_key key;
+	const char *reason;
 	uint32_t keiland;
 	int error;
 
@@ -980,7 +995,10 @@ verify_pair(
 	if (pair->fragment_refused != 0) {
 		error = bcm2711_shader_compile(pair->fragment, pair->fragment_bytes / 4, BCM2711_SHADER_FRAGMENT, &key, &binary, &refusal);
 		assert(error == ENOTSUP && binary == NULL);
-		printf("%-24s %-6s refused: %s\n", pair->name, "frag", refusal.reason != NULL ? refusal.reason : "?");
+		reason = "?";
+		if (refusal.reason != NULL)
+			reason = refusal.reason;
+		printf("%-24s %-6s refused: %s\n", pair->name, "frag", reason);
 	} else {
 		verify_program(device, pair->name, pair->fragment, pair->fragment_bytes / 4, fragment, BCM2711_SHADER_FRAGMENT, &key, keiland);
 		key.swap_red_blue = 1;
@@ -994,7 +1012,10 @@ verify_pair(
 	if (pair->vertex_refused != 0) {
 		error = bcm2711_shader_compile(pair->vertex, pair->vertex_bytes / 4, BCM2711_SHADER_VERTEX, &key, &binary, &refusal);
 		assert(error == ENOTSUP && binary == NULL);
-		printf("%-24s %-6s refused: %s\n", pair->name, "vert", refusal.reason != NULL ? refusal.reason : "?");
+		reason = "?";
+		if (refusal.reason != NULL)
+			reason = refusal.reason;
+		printf("%-24s %-6s refused: %s\n", pair->name, "vert", reason);
 	} else {
 		verify_program(device, pair->name, pair->vertex, pair->vertex_bytes / 4, vertex, BCM2711_SHADER_COORDINATE, &key, keiland);
 		verify_program(device, pair->name, pair->vertex, pair->vertex_bytes / 4, vertex, BCM2711_SHADER_VERTEX, &key, keiland);
@@ -1036,6 +1057,8 @@ verify_program(
 	} else {
 		assert(binary->threads == 2 && binary->registers_used == 64);
 	}
+
+	/* Fragment programs are scheduled; vertex programs keep their source order. */
 	if (stage == BCM2711_SHADER_FRAGMENT)
 		assert(binary->scheduled == 1);
 	else
@@ -1053,6 +1076,8 @@ verify_program(
 			run_trial(device, binary, ir, key, &inputs, 1);
 		}
 	}
+
+	/* Random inputs reach every source path. */
 	for (trial = 0; trial < RANDOM_TRIALS; trial++) {
 		random_inputs(&inputs, trial * 7919U + (uint32_t)word_count * 31U + stage);
 		current_trial = 1000 + trial;
@@ -1094,6 +1119,8 @@ run_trial(
 		varyings[index] = inputs->input[component];
 		attributes[index] = inputs->input[component];
 	}
+
+	/* The lane runs the program with the same inputs. */
 	memset(&setup, 0, sizeof(setup));
 	setup.binary = binary;
 	setup.varyings = varyings;
@@ -1147,6 +1174,8 @@ run_trial(
 			compare_number(result.vpm[2], source.output[66]);
 			compare_number(result.vpm[3], float_bits(1.0f));
 		}
+
+		/* The viewport XY follow the floor-to-fixed conversion. */
 		number = floorf(bits_float(source.output[64]) * 640.0f * 256.0f);
 		assert(result.vpm[component] == (uint32_t)(int32_t)number);
 		number = floorf(bits_float(source.output[65]) * 400.0f * 256.0f);
@@ -1163,6 +1192,9 @@ verify_window(
 	struct v3d_qpu_instr instruction;
 	uint32_t index;
 	bool accepted;
+	bool port_a;
+	bool port_b;
+	bool signal_register;
 
 	/* A two-thread program sees all sixty-four registers. */
 	if (binary->threads != 4)
@@ -1172,15 +1204,18 @@ verify_window(
 	for (index = 0; index < binary->code_count; index++) {
 		accepted = v3d_qpu_instr_unpack(device, binary->code[index], &instruction);
 		assert(accepted);
-		if (v3d_qpu_uses_mux(&instruction, V3D_QPU_MUX_A))
+		port_a = v3d_qpu_uses_mux(&instruction, V3D_QPU_MUX_A);
+		port_b = v3d_qpu_uses_mux(&instruction, V3D_QPU_MUX_B);
+		signal_register = v3d_qpu_sig_writes_address(device, &instruction.sig);
+		if (port_a)
 			assert(instruction.raddr_a < 32);
-		if (v3d_qpu_uses_mux(&instruction, V3D_QPU_MUX_B) && !instruction.sig.small_imm_b)
+		if (port_b && !instruction.sig.small_imm_b)
 			assert(instruction.raddr_b < 32);
 		if (instruction.alu.add.op != V3D_QPU_A_NOP && !instruction.alu.add.magic_write)
 			assert(instruction.alu.add.waddr < 32);
 		if (instruction.alu.mul.op != V3D_QPU_M_NOP && !instruction.alu.mul.magic_write)
 			assert(instruction.alu.mul.waddr < 32);
-		if (v3d_qpu_sig_writes_address(device, &instruction.sig) && !instruction.sig_magic)
+		if (signal_register && !instruction.sig_magic)
 			assert(instruction.sig_addr < 32);
 	}
 }

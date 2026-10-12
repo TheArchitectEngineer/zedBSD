@@ -23,6 +23,7 @@
 #include <stdint.h>
 
 #include "broadcom/common/v3d_device_info.h"
+#include "broadcom/qpu/qpu_instr.h"
 #include "drivers/gpu/bcm2711/shader.h"
 
 /* What the program's environment supplies; the callbacks receive the context. */
@@ -37,6 +38,8 @@ struct qpu_machine_setup {
 	uint32_t payload[3];
 	/* Fills rf3 to rf63 before the program runs, so a read of an unwritten register is visible. */
 	uint32_t garbage_seed;
+	/* The program's words decoded once by qpu_machine_decode, or null to decode each word as it runs. */
+	const struct v3d_qpu_instr *decoded;
 	void *context;
 	uint32_t (*uniform)(void *context, const struct bcm2711_shader_uniform *uniform);
 	void (*sample)(void *context, uint32_t set, uint32_t binding, uint32_t s, uint32_t t, uint32_t *texel);
@@ -52,6 +55,9 @@ struct qpu_machine_result {
 	uint32_t paired;
 	uint32_t idle;
 };
+
+/* Decodes and checks every word of a program once, for runs that share it. */
+void qpu_machine_decode(const struct v3d_device_info *device, const struct bcm2711_shader_binary *binary, struct v3d_qpu_instr *decoded);
 
 /* Runs one lane; a broken rule prints the word and stops the test. */
 void qpu_machine_run(const struct v3d_device_info *device, const struct qpu_machine_setup *setup, struct qpu_machine_result *result);
