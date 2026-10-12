@@ -878,6 +878,9 @@ struct kwl_client {
 	uint64_t connected_ms;
 };
 
+/* The drawings one KWL PERF window keeps the times of (five seconds at 60 frames and the quiet pictures, with room). */
+#define KWL_PERF_WALKS		1024U
+
 /* Cycle counts of the event loop, reported every few seconds (KWL PERF). */
 struct kwl_perf {
 	uint64_t window_start_ms;
@@ -927,6 +930,19 @@ struct kwl_perf {
 	uint64_t cursor_copy_cycles;
 	uint64_t cursor_queue_present_cycles;
 	uint64_t cursor_queue_present_max_cycles;
+	/*
+	 * The drawings of the window (ws213-p003, KWL PERF walk): for each, the
+	 * walk that wrote its display list and the replay that recorded the
+	 * list, in cycles, how many things it drew, and whether it presented
+	 * nothing (a layer's quiet picture).  A drawing past KWL_PERF_WALKS
+	 * is only counted in walk_dropped.
+	 */
+	uint32_t walk_count;
+	uint32_t walk_dropped;
+	uint64_t walk_cycles[KWL_PERF_WALKS];
+	uint64_t replay_cycles[KWL_PERF_WALKS];
+	uint32_t walk_things[KWL_PERF_WALKS];
+	uint8_t walk_quiet[KWL_PERF_WALKS];
 };
 
 uint64_t kwl_cycles(void);

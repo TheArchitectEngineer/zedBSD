@@ -195,7 +195,7 @@ static int ime_status_request(struct kwl_object *status, uint32_t opcode, const 
 static int ime_grab_keyboard(struct kwl_object *method, uint32_t id);
 static int ime_popup(struct kwl_object *method, uint32_t id, uint32_t surface_id);
 static int ime_popup_place(struct kwl_server *server, struct kwl_object *surface, int32_t *x, int32_t *y);
-static void ime_popup_draw_one(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface);
+static void ime_popup_draw_one(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface);
 static void ime_apply(struct kwl_server *server);
 static void ime_activate(struct kwl_server *server, struct kwl_text_input *input);
 static void ime_state(struct kwl_server *server, struct kwl_text_input *input);
@@ -904,7 +904,7 @@ kwl_ime_surface_commit(
 void
 kwl_ime_popup_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	struct kwl_ime *ime;
 	unsigned i;
@@ -959,7 +959,7 @@ kwl_ime_indicator_width(
 void
 kwl_ime_indicator_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t top,
 	const float *ink)
@@ -1875,7 +1875,7 @@ ime_rectangles(
 static void
 ime_popup_draw_one(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface)
 {
 	const struct kwl_import *image;

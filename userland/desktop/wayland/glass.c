@@ -291,7 +291,7 @@ static const struct glass_glyph *glass_glyph_of(struct kwl_glass *glass, enum gl
 static const struct glass_glyph *glass_cache_glyph(struct kwl_glass *glass, enum glass_size size, uint32_t codepoint);
 static const struct glass_glyph *glass_cache_color(struct kwl_glass *glass, enum glass_size size, uint32_t codepoint, unsigned id, unsigned slot);
 static uint32_t glass_utf8_next(const char **text);
-static void glass_draw_glyph_at(struct kwl_server *server, VkCommandBuffer command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
+static void glass_draw_glyph_at(struct kwl_server *server, struct kwl_list *command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
 static void *file_read(const char *path, size_t *size);
 static int wallpaper_load(const char *path, struct wallpaper_picture *picture);
 static int wallpaper_read(const char *path, struct wallpaper_picture *picture);
@@ -1660,7 +1660,7 @@ glass_shape_init(
 void
 glass_shape_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct glass_shape *shape)
 {
 	struct kwl_compose *compose;
@@ -1815,8 +1815,8 @@ glass_shape_draw(
 
 	/* The chosen pipeline keeps the same constants, image and triangle pair. */
 	kwl_compose_bind(server, command, pipeline, compose->panel_layout, set);
-	vkCmdPushConstants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
-	vkCmdDraw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
+	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
+	kwl_list_draw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
 	kwl_compose_count_commands(server, 1U, 1U);
 }
 
@@ -1824,7 +1824,7 @@ glass_shape_draw(
 void
 glass_draw_solid(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float x,
 	float y,
 	float width,
@@ -1879,7 +1879,7 @@ glass_text_width(
 void
 glass_draw_text(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	enum glass_size size,
 	int32_t x,
 	int32_t baseline,
@@ -1941,7 +1941,7 @@ glass_draw_text(
 void
 glass_draw_text_centred(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	enum glass_size size,
 	int32_t centre,
 	int32_t baseline,
@@ -1969,7 +1969,7 @@ glass_draw_text_centred(
 void
 glass_draw_text_middle(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	enum glass_size size,
 	int32_t x,
 	int32_t baseline,
@@ -2082,7 +2082,7 @@ glass_draw_text_middle(
 void
 glass_draw_glyph(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	enum glass_size size,
 	unsigned index,
 	int32_t x,
@@ -2206,7 +2206,7 @@ glass_large_text_width(
 void
 glass_draw_large_text(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t baseline,
 	const char *text,
@@ -2255,7 +2255,7 @@ glass_draw_large_text(
 void
 glass_draw_icon(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned icon,
 	int32_t x,
 	int32_t y,
@@ -2299,7 +2299,7 @@ glass_draw_icon(
 void
 glass_draw_app_tile_reflection(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned icon,
 	float x,
 	float y,
@@ -2372,7 +2372,7 @@ glass_draw_app_tile_reflection(
 void
 glass_draw_app_tile(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned icon,
 	float x,
 	float y,
@@ -2478,7 +2478,7 @@ glass_draw_app_tile(
 void
 glass_draw_mark(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t y,
 	unsigned pixels,
@@ -3300,7 +3300,7 @@ glass_utf8_next(
 static void
 glass_draw_glyph_at(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct glass_glyph *glyph,
 	int32_t x,
 	int32_t baseline,

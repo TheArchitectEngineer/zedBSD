@@ -71,6 +71,18 @@ vkCmdDraw(VkCommandBuffer c, uint32_t vertices, uint32_t instances, uint32_t fir
 	last_vertices = vertices;
 }
 
+/* The other commands a display list replays, which these cases do not record (ws213-p003). */
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b, VkSubpassContents s) { (void)c; (void)b; (void)s; }
+VKAPI_ATTR void VKAPI_CALL vkCmdEndRenderPass(VkCommandBuffer c) { (void)c; }
+VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(VkCommandBuffer c, uint32_t f, uint32_t n, const VkViewport *v) { (void)c; (void)f; (void)n; (void)v; }
+VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(VkCommandBuffer c, uint32_t f, uint32_t n, const VkRect2D *r) { (void)c; (void)f; (void)n; (void)r; }
+VKAPI_ATTR void VKAPI_CALL vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageFlags d, VkDependencyFlags f, uint32_t mn, const VkMemoryBarrier *m, uint32_t bn, const VkBufferMemoryBarrier *b, uint32_t in, const VkImageMemoryBarrier *i) { (void)c; (void)s; (void)d; (void)f; (void)mn; (void)m; (void)bn; (void)b; (void)in; (void)i; }
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d, VkImageLayout dl, uint32_t n, const VkImageCopy *r) { (void)c; (void)s; (void)sl; (void)d; (void)dl; (void)n; (void)r; }
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyImageToBuffer(VkCommandBuffer c, VkImage i, VkImageLayout l, VkBuffer b, uint32_t n, const VkBufferImageCopy *r) { (void)c; (void)i; (void)l; (void)b; (void)n; (void)r; }
+VKAPI_ATTR void VKAPI_CALL vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer b, VkImage i, VkImageLayout l, uint32_t n, const VkBufferImageCopy *r) { (void)c; (void)b; (void)i; (void)l; (void)n; (void)r; }
+VKAPI_ATTR void VKAPI_CALL vkCmdBlitImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d, VkImageLayout dl, uint32_t n, const VkImageBlit *r, VkFilter f) { (void)c; (void)s; (void)sl; (void)d; (void)dl; (void)n; (void)r; (void)f; }
+VKAPI_ATTR void VKAPI_CALL vkCmdClearColorImage(VkCommandBuffer c, VkImage i, VkImageLayout l, const VkClearColorValue *v, uint32_t n, const VkImageSubresourceRange *r) { (void)c; (void)i; (void)l; (void)v; (void)n; (void)r; }
+
 /* The making of the pipeline and buffer is not exercised here. */
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(VkDevice d, const VkShaderModuleCreateInfo *i, const VkAllocationCallbacks *a, VkShaderModule *m) { (void)d; (void)i; (void)a; (void)m; return VK_ERROR_INITIALIZATION_FAILED; }
 VKAPI_ATTR void VKAPI_CALL vkDestroyShaderModule(VkDevice d, VkShaderModule m, const VkAllocationCallbacks *a) { (void)d; (void)m; (void)a; }
@@ -119,6 +131,57 @@ quad(
 	constants[23] = opacity;
 }
 
+/* How many of the list's operations were replayed into the fake command buffer. */
+static size_t replayed;
+
+/*
+ * Replays the operations the list took since the last replay into the
+ * fake command buffer (the drawing writes a display list since
+ * ws213-p003), so that each case sees the commands it caused.
+ */
+static void
+replay_new(
+	const struct kwl_list *list)
+{
+	struct kwl_list part;
+
+	/* The same list from its first operation not replayed yet. */
+	part = *list;
+	part.ops = list->ops + replayed;
+	part.op_count = list->op_count - replayed;
+	kwl_list_replay(&part, (VkCommandBuffer)(uintptr_t)0x10U);
+	replayed = list->op_count;
+}
+
+/* Joins a quad through kwl_batch_add and replays what it recorded. */
+static int
+test_add(
+	struct kwl_server *server,
+	struct kwl_list *list,
+	const float *constants,
+	VkDescriptorSet set)
+{
+	int joined;
+
+	/* The quad, then its commands. */
+	joined = kwl_batch_add(server, list, constants, set);
+	replay_new(list);
+
+	/* Whether it was joined. */
+	return joined;
+}
+
+/* Draws the quads waiting through kwl_batch_flush and replays what it recorded. */
+static void
+test_flush(
+	struct kwl_server *server,
+	struct kwl_list *list)
+{
+	/* The draw, then its commands. */
+	kwl_batch_flush(server, list);
+	replay_new(list);
+}
+
 /* Runs the cases. */
 int
 main(
@@ -128,7 +191,7 @@ main(
 	static struct kwl_compose compose;
 	float constants[KWL_PANEL_CONSTANTS];
 	const float *vertex;
-	VkCommandBuffer command;
+	static struct kwl_list list;
 	VkDescriptorSet set;
 	VkDescriptorSet other;
 	unsigned index;
@@ -143,16 +206,15 @@ main(
 	assert(compose.batch.map != NULL);
 	compose.batch.buffer = (VkBuffer)(uintptr_t)0x50U;
 	compose.corners = (VkBuffer)(uintptr_t)0x51U;
-	command = (VkCommandBuffer)(uintptr_t)0x10U;
 	set = (VkDescriptorSet)(uintptr_t)0x40U;
 	other = (VkDescriptorSet)(uintptr_t)0x41U;
 	kwl_batch_begin(&compose);
 
 	/* One quad: six vertices at its corners, its values in each, its opacity in its colour's alpha. */
 	quad(constants, -1.0f, -0.5f, 0.0f, 0.5f, 0.5f);
-	joined = kwl_batch_add(&server, command, constants, set);
+	joined = test_add(&server, &list, constants, set);
 	assert(joined == 1 && draws == 0U && compose.batch.count == 1U);
-	vertex = (const float *)compose.batch.map;
+	vertex = (const float *)list.vertices;
 	assert(vertex[0] == -1.0f && vertex[1] == -0.5f);
 	assert(vertex[11 * 1 + 0] == 0.0f && vertex[11 * 1 + 1] == -0.5f);
 	assert(vertex[11 * 5 + 0] == 0.0f && vertex[11 * 5 + 1] == 0.5f);
@@ -162,36 +224,37 @@ main(
 	}
 
 	/* The flush: one draw of six vertices from the start, the screen pushed, the corners bound again. */
-	kwl_batch_flush(&server, command);
+	test_flush(&server, &list);
 	assert(draws == 1U && last_vertices == 6U && pushes == 1U && last_screen[0] == 1920.0f && last_screen[1] == 1080.0f);
 	assert(vertex_binds == 2U && last_buffer == compose.corners && last_offset == 0U);
 
 	/* 62 quads fill a draw; the 63rd draws them first. */
 	for (index = 0U; index < 63U; index++)
-		(void)kwl_batch_add(&server, command, constants, set);
+		(void)test_add(&server, &list, constants, set);
 	assert(draws == 2U && last_vertices == 6U * 62U && compose.batch.count == 1U);
 	assert(62U * 6U * 11U * 4U <= 16384U);
 
 	/* Another set draws those waiting first, from where they start. */
-	(void)kwl_batch_add(&server, command, constants, other);
+	(void)test_add(&server, &list, constants, other);
 	assert(draws == 3U && last_vertices == 6U && compose.batch.count == 1U);
 
 	/* Another screen too. */
 	constants[20] = 1280.0f;
-	(void)kwl_batch_add(&server, command, constants, other);
+	(void)test_add(&server, &list, constants, other);
 	assert(draws == 4U && compose.batch.count == 1U);
-	kwl_batch_flush(&server, command);
+	test_flush(&server, &list);
 	assert(draws == 5U && last_screen[0] == 1280.0f);
 
 	/* A full buffer leaves the quad to be drawn alone. */
 	compose.batch.used = 1024U * 1024U - 10U;
-	joined = kwl_batch_add(&server, command, constants, other);
+	joined = test_add(&server, &list, constants, other);
 	assert(joined == 0 && compose.batch.overflowed == 1U);
 
 	/* Nothing waiting draws nothing. */
-	kwl_batch_flush(&server, command);
+	test_flush(&server, &list);
 	assert(draws == 5U);
 	free(compose.batch.map);
+	kwl_list_free(&list);
 	puts("ws211 joined solid quads: corners, values, 62 a draw, set and screen breaks, overflow: PASS");
 	return 0;
 }

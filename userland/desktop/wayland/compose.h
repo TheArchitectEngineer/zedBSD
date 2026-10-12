@@ -25,6 +25,7 @@
 
 #include "../../tests/vkdemo/display.h"
 #include "displays.h"
+#include "draw-list.h"
 #include "scene.h"
 
 /* Bound the swapchain images and the buffers one frame may sample. */
@@ -92,6 +93,13 @@ struct kwl_import {
 	struct kwl_import *host_next;
 	/* A client's image waiting for its move to the general layout in the next frame (ws099-p016). */
 	unsigned layout_pending;
+	/*
+	 * The import's own number among every image the compositor made
+	 * (ws213-p003, p001 4.7): no two imports share it, so a record that
+	 * reuses the address of one released earlier is told apart from it
+	 * (the cursor plane's held images).  0 for an import not made yet.
+	 */
+	uint64_t generation;
 };
 
 /* The glass look's images and glyphs (glass.c). */
@@ -247,8 +255,9 @@ struct kwl_head {
  * VK_KHR_display plane above the output's, with per-pixel premultiplied
  * alpha, that shows the cursor without composing a frame.  shown says the
  * plane shows the cursor (the frames draw none); held says which cursor
- * image (and its version) each swapchain image holds; source, version, x
- * and y are what was presented last.  last_copy is the image whose copy was
+ * image (its generation, which tells a new image at a reused address
+ * apart, ws213-p003, and its version) each swapchain image holds; source,
+ * generation, version, x and y are what was presented last.  last_copy is the image whose copy was
  * submitted last (copied says one was): copies complete in submission order
  * on the one queue, so its fence tells whether every copy is done.
  * presented_us is when the plane's last present started (kwl_microseconds),
@@ -267,8 +276,10 @@ struct kwl_cursor_plane {
 	unsigned next;
 	unsigned held_valid[KWL_CURSOR_PLANE_IMAGES];
 	const struct kwl_import *held[KWL_CURSOR_PLANE_IMAGES];
+	uint64_t held_generation[KWL_CURSOR_PLANE_IMAGES];
 	uint32_t held_version[KWL_CURSOR_PLANE_IMAGES];
 	const struct kwl_import *source;
+	uint64_t generation;
 	uint32_t version;
 	int32_t x;
 	int32_t y;
@@ -315,8 +326,19 @@ struct kwl_compose {
 	VkDescriptorPool descriptors;
 	VkCommandPool pool;
 	VkCommandBuffer command;
-	/* Recorded at submission, after the frame's drawing wrote its host images, and run before command. */
+	/* Recorded from the list's copies when it is replayed, and run before command. */
 	VkCommandBuffer copy_command;
+	/*
+	 * The display list the drawing writes (draw-list.c, ws213-p003): reset
+	 * when a frame's or a layer's drawing begins, and replayed into command
+	 * (its copies into copy_command) when the drawing ends, before the
+	 * submission.  It keeps its memory from one drawing to the next.
+	 */
+	struct kwl_list list;
+	/* When the drawing into the list began (kwl_cycles), for KWL PERF walk. */
+	uint64_t walk_start_cycles;
+	/* The generation the next image made gets (import.c, shm.c); it starts at 1, so 0 is no image. */
+	uint64_t next_generation;
 	/*
 	 * The start's images (ws035-p131): while setup_batching is set, a new
 	 * host image's move to the general layout is recorded into
@@ -351,8 +373,8 @@ struct kwl_compose {
 	/* The host images the last submitted frame copied first (KWL DRAWS, ws211-p002). */
 	unsigned frame_copies;
 	/*
-	 * What compose->command has bound since its recording began or its
-	 * last pass began (ws211-p003 段 1): the pipeline, and the descriptor
+	 * What the list has bound since its drawing began or its last pass
+	 * began (ws211-p003 段 1): the pipeline, and the descriptor
 	 * set with the layout it was bound with (a set bound with another
 	 * layout is not the same binding, review-1 M1).  VK_NULL_HANDLE: not
 	 * known, the next draw binds.
@@ -363,7 +385,8 @@ struct kwl_compose {
 	/*
 	 * The solid quads drawn together (batch.c, ws211-p003 段 2): the
 	 * pipeline and the vertex buffer (host-visible, mapped while the
-	 * compositor runs), how much of it the frame being recorded used, and
+	 * compositor runs; the replay writes the list's vertices to it), how
+	 * much of it the frame being recorded used, and
 	 * the quads waiting for one draw: their first vertex's byte offset,
 	 * their number, the set and the screen they were drawn with.  ready
 	 * once made; off with KWL_BATCH=0 or when it could not be made.
@@ -512,40 +535,42 @@ struct kwl_compose {
 VkResult kwl_host_image_create(struct kwl_compose *compose, uint32_t width, uint32_t height, VkSampler sampler, struct kwl_import *import);
 void kwl_host_image_release(struct kwl_compose *compose, struct kwl_import *import);
 void kwl_host_image_written(struct kwl_import *import);
-unsigned kwl_host_images_record(struct kwl_compose *compose, VkCommandBuffer command);
+void kwl_host_images_take(struct kwl_compose *compose, struct kwl_list *list);
+unsigned kwl_host_images_record(const struct kwl_list *list, VkCommandBuffer command);
 void kwl_host_image_batch_begin(struct kwl_compose *compose);
 VkResult kwl_host_image_batch_end(struct kwl_compose *compose);
 
 /* The glass look (glass.c). */
 int kwl_glass_open(struct kwl_server *server);
 void kwl_glass_close(struct kwl_server *server);
-void kwl_glass_draw(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count);
-void kwl_glass_draw_drag_badge(struct kwl_server *server, VkCommandBuffer command);
-void kwl_glass_draw_drag_mark(struct kwl_server *server, VkCommandBuffer command, unsigned state);
-void kwl_glass_draw_head(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count);
-void kwl_compose_cursor(struct kwl_server *server, VkCommandBuffer command);
+void kwl_glass_draw(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count);
+void kwl_glass_draw_drag_badge(struct kwl_server *server, struct kwl_list *command);
+void kwl_glass_draw_drag_mark(struct kwl_server *server, struct kwl_list *command, unsigned state);
+void kwl_glass_draw_head(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count);
+void kwl_compose_cursor(struct kwl_server *server, struct kwl_list *command);
 void kwl_compose_count_draw(struct kwl_server *server, VkPipeline pipeline, VkDescriptorSet set, unsigned shape);
-void kwl_compose_bind(struct kwl_server *server, VkCommandBuffer command, VkPipeline pipeline, VkPipelineLayout layout, VkDescriptorSet set);
+void kwl_compose_bind(struct kwl_server *server, struct kwl_list *command, VkPipeline pipeline, VkPipelineLayout layout, VkDescriptorSet set);
 void kwl_compose_bind_forget(struct kwl_compose *compose);
 VkResult kwl_compose_pipeline_input(struct kwl_compose *compose, VkShaderModule vertex, VkShaderModule fragment, VkPipelineLayout layout, const VkPipelineVertexInputStateCreateInfo *input, VkPipeline *pipeline);
 void kwl_batch_open(struct kwl_server *server);
 void kwl_batch_close(struct kwl_compose *compose);
 void kwl_batch_begin(struct kwl_compose *compose);
-int kwl_batch_add(struct kwl_server *server, VkCommandBuffer command, const float *constants, VkDescriptorSet set);
-void kwl_batch_flush(struct kwl_server *server, VkCommandBuffer command);
+int kwl_batch_add(struct kwl_server *server, struct kwl_list *command, const float *constants, VkDescriptorSet set);
+void kwl_batch_flush(struct kwl_server *server, struct kwl_list *command);
 void kwl_compose_count_commands(struct kwl_server *server, unsigned pushes, unsigned draws);
 VkResult kwl_compose_submit_quiet(struct kwl_server *server);
+uint64_t kwl_compose_generation(struct kwl_compose *compose);
+void kwl_compose_list_begin(struct kwl_compose *compose);
 void kwl_layers_open(struct kwl_server *server);
 void kwl_layers_close(struct kwl_compose *compose);
 void kwl_layers_complete(struct kwl_server *server, uint64_t generation);
-VkResult kwl_layers_begin_quiet(struct kwl_server *server);
-void kwl_layers_inband(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count);
+void kwl_layers_inband(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count);
 int kwl_layers_pictured(struct kwl_server *server, const struct kwl_object *surface);
 int kwl_layers_home_hidden(struct kwl_server *server);
 void kwl_layers_note(struct kwl_server *server, const struct kwl_object *surface);
 int kwl_layers_showing(struct kwl_server *server);
 VkDescriptorSet kwl_layers_set(struct kwl_server *server, unsigned which);
-void kwl_layers_anim_inband(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count);
+void kwl_layers_anim_inband(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count);
 int kwl_layers_anim_showing(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 VkDescriptorSet kwl_layers_anim_picture(struct kwl_server *server, float uv[4]);
 
@@ -562,13 +587,13 @@ VkResult kwl_compose_linear_set(struct kwl_compose *compose, struct kwl_import *
 VkResult kwl_compose_load_pass(struct kwl_compose *compose);
 
 /* The backdrop of the glass (backdrop.c). */
-int kwl_backdrop_begin(struct kwl_server *server, VkCommandBuffer command);
-void kwl_backdrop_end(struct kwl_server *server, VkCommandBuffer command);
+int kwl_backdrop_begin(struct kwl_server *server, struct kwl_list *command);
+void kwl_backdrop_end(struct kwl_server *server, struct kwl_list *command);
 void kwl_backdrop_reset(struct kwl_server *server);
 void kwl_backdrop_destroy(struct kwl_compose *compose);
 
 /* The clients' new images' move to the general layout, in the next frame (import.c). */
-void kwl_import_layouts_record(struct kwl_compose *compose, VkCommandBuffer command);
+void kwl_import_layouts_record(struct kwl_compose *compose, struct kwl_list *command);
 void kwl_import_layouts_done(struct kwl_compose *compose);
 
 /* The image window mode samples for a surface (compose.c). */
@@ -586,10 +611,10 @@ VkResult kwl_os_display_acquire(struct kwl_server *server, VkPhysicalDevice phys
 void kwl_os_display_release(struct kwl_server *server, VkPhysicalDevice physical, VkDisplayKHR display);
 
 /* The capture's copy of a frame's swapchain image (shot.c, ws173-p002). */
-void kwl_shot_record(struct kwl_server *server, VkCommandBuffer command, VkImage image);
+void kwl_shot_record(struct kwl_server *server, struct kwl_list *command, VkImage image);
 
 /* A part of an image drawn as a quad (uv: left, top, right, bottom) at a place and size of the desktop (compose.c). */
-void kwl_compose_image_quad(struct kwl_server *server, VkCommandBuffer command, const struct kwl_import *import, int32_t x, int32_t y, uint32_t width, uint32_t height, const float *uv);
+void kwl_compose_image_quad(struct kwl_server *server, struct kwl_list *command, const struct kwl_import *import, int32_t x, int32_t y, uint32_t width, uint32_t height, const float *uv);
 
 /* The glass look's wallpaper at the desktop's size, or NULL (glass.c). */
 const struct kwl_import *kwl_glass_wallpaper(struct kwl_server *server);
@@ -601,7 +626,7 @@ void kwl_heads_close_display(struct kwl_server *server, VkDisplayKHR display);
 void kwl_heads_close_all(struct kwl_server *server);
 int kwl_heads_lost(struct kwl_server *server);
 unsigned kwl_heads_acquire(struct kwl_server *server);
-void kwl_heads_record(struct kwl_server *server, VkCommandBuffer command, VkImage source);
+void kwl_heads_record(struct kwl_server *server, struct kwl_list *command, VkImage source);
 unsigned kwl_heads_waits(struct kwl_server *server, VkSemaphore *semaphores, VkPipelineStageFlags *stages, unsigned room);
 unsigned kwl_heads_signals(struct kwl_server *server, VkSemaphore *semaphores, unsigned room);
 void kwl_heads_present(struct kwl_server *server);

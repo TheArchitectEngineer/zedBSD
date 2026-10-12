@@ -104,8 +104,8 @@ int kwl_menu_is_open(void);
 /* The menus the compositor draws and operates (menu-shell.c). */
 void kwl_menu_frame(struct kwl_server *server);
 int32_t kwl_menu_title_limit(struct kwl_server *server, struct kwl_object *surface, int32_t available);
-void kwl_menu_draw_bar(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct kwl_menu_area *area, const float *ink, float fade);
-void kwl_menu_draw_popups(struct kwl_server *server, VkCommandBuffer command);
+void kwl_menu_draw_bar(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, unsigned docked, const struct kwl_menu_area *area, const float *ink, float fade);
+void kwl_menu_draw_popups(struct kwl_server *server, struct kwl_list *command);
 int kwl_menu_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_menu_motion(struct kwl_server *server);
 int kwl_menu_grab_key(struct kwl_server *server, uint32_t key, uint32_t state);

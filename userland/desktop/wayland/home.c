@@ -296,28 +296,28 @@ static const char home_characters[HOME_KEYS] = {
 static void home_read_apps(struct kwl_server *server);
 static int home_present(const char *name, const char *command);
 static void home_add_app(const char *name, const char *command, const char *keywords, uint32_t rgb, const char *picture);
-static void home_draw_letter(struct kwl_server *server, VkCommandBuffer command, const struct home_app *app, int32_t x, int32_t y, float left, float top, float size, int over, float opacity);
-static void home_stage(struct kwl_server *server, VkCommandBuffer command, float x, float y, float width, float height);
-static void home_draw_tile(struct kwl_server *server, VkCommandBuffer command, float left, float top, float size, const float *color);
+static void home_draw_letter(struct kwl_server *server, struct kwl_list *command, const struct home_app *app, int32_t x, int32_t y, float left, float top, float size, int over, float opacity);
+static void home_stage(struct kwl_server *server, struct kwl_list *command, float x, float y, float width, float height);
+static void home_draw_tile(struct kwl_server *server, struct kwl_list *command, float left, float top, float size, const float *color);
 static void home_parse_line(char *line);
 static uint32_t home_hex(const char *text);
 static void home_layout(struct kwl_server *server);
 static unsigned home_page_of(unsigned slot);
 static unsigned home_page_first(unsigned page);
-static void home_draw_clock(struct kwl_server *server, VkCommandBuffer command, float opacity);
+static void home_draw_clock(struct kwl_server *server, struct kwl_list *command, float opacity);
 static void home_clock_texts(char *time_text, size_t time_size, char *date_text, size_t date_size);
 static uint64_t home_hash(uint64_t hash, const void *bytes, size_t length);
 static int home_matches(const struct home_app *app, const char *query);
 static int home_contains(const char *text, const char *query);
 static int home_icon_at(struct kwl_server *server, int32_t x, int32_t y);
-static void home_draw_icon(struct kwl_server *server, VkCommandBuffer command, unsigned slot, float opacity, float rise);
+static void home_draw_icon(struct kwl_server *server, struct kwl_list *command, unsigned slot, float opacity, float rise);
 static float home_content(struct kwl_server *server, unsigned order, float progress, float *rise);
 static int home_content_coming(struct kwl_server *server, uint64_t now);
 static void home_prepare(struct kwl_server *server);
-static void home_draw_floors(struct kwl_server *server, VkCommandBuffer command, float opacity);
-static void home_draw_floor(struct kwl_server *server, VkCommandBuffer command, float left, float right, float y, float opacity);
-static void home_draw_spotlight(struct kwl_server *server, VkCommandBuffer command, float middle, float floor, float strength);
-static void home_draw_search(struct kwl_server *server, VkCommandBuffer command, float opacity);
+static void home_draw_floors(struct kwl_server *server, struct kwl_list *command, float opacity);
+static void home_draw_floor(struct kwl_server *server, struct kwl_list *command, float left, float right, float y, float opacity);
+static void home_draw_spotlight(struct kwl_server *server, struct kwl_list *command, float middle, float floor, float strength);
+static void home_draw_search(struct kwl_server *server, struct kwl_list *command, float opacity);
 static void home_open(struct kwl_server *server, float from, const char *via);
 static void home_close(struct kwl_server *server, float from, const char *via);
 static void home_settle(struct kwl_server *server, float from, float to);
@@ -331,7 +331,7 @@ static float home_ease(float t);
 static float home_page_position(struct kwl_server *server);
 static void home_page_turn(struct kwl_server *server, int target, const char *via);
 static void home_page_release(struct kwl_server *server, float progress);
-static void home_draw_dots(struct kwl_server *server, VkCommandBuffer command, float opacity);
+static void home_draw_dots(struct kwl_server *server, struct kwl_list *command, float opacity);
 static void home_select(struct kwl_server *server, int selected);
 static void home_rise_release(struct kwl_server *server);
 static void home_page_follow(struct kwl_server *server, int32_t dx, int32_t dy);
@@ -578,7 +578,7 @@ kwl_home_pad(
 void
 kwl_home_draw_head(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	/* The stage over the head, then the appearance's colours again. */
 	home_stage(server, command, (float)server->view_x, (float)server->view_y, (float)server->view_width, (float)server->view_height);
@@ -593,7 +593,7 @@ kwl_home_draw_head(
 static void
 home_stage(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float x,
 	float y,
 	float width,
@@ -634,7 +634,7 @@ home_stage(
 void
 kwl_home_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float progress)
 {
 	struct kwl_edge_depth depth;
@@ -748,7 +748,7 @@ kwl_home_clock_damage(
 void
 kwl_home_draw_stage(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	/* The dark stage, whole. */
 	home_stage(server, command, 0.0f, 0.0f, (float)server->width, (float)server->height);
@@ -766,7 +766,7 @@ kwl_home_draw_stage(
 void
 kwl_home_draw_content(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float progress,
 	unsigned neutral)
 {
@@ -825,7 +825,7 @@ kwl_home_draw_content(
 void
 kwl_home_draw_clock_over(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float progress)
 {
 	struct kwl_edge_depth depth;
@@ -1989,7 +1989,7 @@ home_icon_at(
 static void
 home_draw_icon(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned slot,
 	float opacity,
 	float rise)
@@ -2208,7 +2208,7 @@ home_prepare(
 static void
 home_draw_floors(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float opacity)
 {
 	int32_t rows[HOME_APPS_MAX];
@@ -2263,7 +2263,7 @@ home_draw_floors(
 static void
 home_draw_floor(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float left,
 	float right,
 	float y,
@@ -2298,7 +2298,7 @@ home_draw_floor(
 static void
 home_draw_spotlight(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float middle,
 	float floor,
 	float strength)
@@ -2332,7 +2332,7 @@ home_draw_spotlight(
 static void
 home_draw_letter(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct home_app *app,
 	int32_t x,
 	int32_t y,
@@ -2394,7 +2394,7 @@ home_draw_letter(
 static void
 home_draw_tile(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float left,
 	float top,
 	float size,
@@ -2454,7 +2454,7 @@ home_draw_tile(
 static void
 home_draw_search(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float opacity)
 {
 	static const float pill[4] = { 1.0f, 1.0f, 1.0f, 0.55f };
@@ -2966,7 +2966,7 @@ home_page_follow(
 static void
 home_draw_dots(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float opacity)
 {
 	static const float other[4] = { 1.0f, 1.0f, 1.0f, 0.32f };
@@ -3051,7 +3051,7 @@ home_page_first(
 static void
 home_draw_clock(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float opacity)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.96f };

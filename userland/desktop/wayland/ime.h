@@ -18,6 +18,7 @@
 #ifndef KWL_IME_H
 #define KWL_IME_H
 
+#include "draw-list.h"
 #include "kwl.h"
 
 #include <vulkan/vulkan.h>
@@ -190,9 +191,9 @@ int kwl_ime_field_key(struct kwl_server *server, uint32_t time, uint32_t key, ui
 int kwl_ime_home_key(struct kwl_server *server, uint32_t time, uint32_t key, uint32_t state);
 void kwl_ime_text_input_gone(struct kwl_server *server, struct kwl_text_input *input);
 void kwl_ime_surface_commit(struct kwl_object *surface);
-void kwl_ime_popup_draw(struct kwl_server *server, VkCommandBuffer command);
+void kwl_ime_popup_draw(struct kwl_server *server, struct kwl_list *command);
 int32_t kwl_ime_indicator_width(struct kwl_server *server);
-void kwl_ime_indicator_draw(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t top, const float *ink);
+void kwl_ime_indicator_draw(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t top, const float *ink);
 int kwl_ime_indicator_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_ime_panel_label(struct kwl_server *server, char *label, size_t size);
 void kwl_ime_panel_next(struct kwl_server *server);

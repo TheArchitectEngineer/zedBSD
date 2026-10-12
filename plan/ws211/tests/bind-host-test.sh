@@ -5,6 +5,6 @@ set -eu
 out=${1:-build/ws211-host}
 mkdir -p "$out"
 cc -std=c11 -D_GNU_SOURCE -Wall -Wextra -Werror -I. -Iinclude -Iuserland/desktop/wayland \
-	plan/ws211/tests/bind-host-test.c userland/desktop/wayland/compose-bind.c \
+	plan/ws211/tests/bind-host-test.c userland/desktop/wayland/compose-bind.c userland/desktop/wayland/draw-list.c \
 	-o "$out/bind-host-test"
 "$out/bind-host-test"

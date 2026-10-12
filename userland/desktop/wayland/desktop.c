@@ -318,7 +318,7 @@ kwl_desktop_tick(
 void
 kwl_desktop_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	const struct kwl_import *image;
 	struct kwl_import alpha;

@@ -357,24 +357,24 @@ static void greeter_add_user(const char *name, const char *gecos);
 static void greeter_layout(struct kwl_server *server, struct greeter_layout *layout);
 static enum greeter_hit greeter_hit(struct kwl_server *server, const struct greeter_layout *layout, unsigned *user);
 static int greeter_inside(const int32_t *rect, int32_t x, int32_t y);
-static void greeter_draw_card(struct kwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
-static void greeter_draw_field(struct kwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
-static void greeter_draw_button(struct kwl_server *server, VkCommandBuffer command, const int32_t *rect, const char *label, int strong);
-static void greeter_draw_clock(struct kwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
-static void greeter_draw_brand(struct kwl_server *server, VkCommandBuffer command);
-static void greeter_draw_hint(struct kwl_server *server, VkCommandBuffer command);
+static void greeter_draw_card(struct kwl_server *server, struct kwl_list *command, const struct greeter_layout *layout);
+static void greeter_draw_field(struct kwl_server *server, struct kwl_list *command, const struct greeter_layout *layout);
+static void greeter_draw_button(struct kwl_server *server, struct kwl_list *command, const int32_t *rect, const char *label, int strong);
+static void greeter_draw_clock(struct kwl_server *server, struct kwl_list *command, const struct greeter_layout *layout);
+static void greeter_draw_brand(struct kwl_server *server, struct kwl_list *command);
+static void greeter_draw_hint(struct kwl_server *server, struct kwl_list *command);
 static void greeter_lock_swiped(struct kwl_server *server, const char *via);
 static void greeter_layout_styles(struct kwl_server *server, struct greeter_layout *layout);
-static void greeter_draw_styles(struct kwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
+static void greeter_draw_styles(struct kwl_server *server, struct kwl_list *command, const struct greeter_layout *layout);
 static void greeter_style_choose(struct kwl_server *server, unsigned style);
 static int greeter_key_modifies(uint32_t key);
-static void greeter_draw_centered(struct kwl_server *server, VkCommandBuffer command, enum glass_size size, int32_t middle, int32_t baseline, const char *text, int32_t limit, const float *color);
+static void greeter_draw_centered(struct kwl_server *server, struct kwl_list *command, enum glass_size size, int32_t middle, int32_t baseline, const char *text, int32_t limit, const float *color);
 static void greeter_select(struct kwl_server *server, unsigned user);
 static void greeter_type(struct kwl_server *server, uint32_t key);
 static void greeter_submit(struct kwl_server *server);
 static void greeter_power(struct kwl_server *server, const char *what);
 static void greeter_power_send(struct kwl_server *server);
-static void greeter_draw_power(struct kwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
+static void greeter_draw_power(struct kwl_server *server, struct kwl_list *command, const struct greeter_layout *layout);
 static void greeter_answered(struct kwl_server *server, int error);
 static void greeter_unlock(struct kwl_server *server);
 static void greeter_refused(struct kwl_server *server);
@@ -388,7 +388,7 @@ static void greeter_style_switch(struct kwl_server *server);
 static void greeter_erase(void);
 static int greeter_keypad_wanted(void);
 static int greeter_field_wanted(void);
-static void greeter_draw_keypad(struct kwl_server *server, VkCommandBuffer command, const struct greeter_layout *layout);
+static void greeter_draw_keypad(struct kwl_server *server, struct kwl_list *command, const struct greeter_layout *layout);
 static void greeter_keypad_press(struct kwl_server *server, const struct greeter_layout *layout, unsigned index);
 static void greeter_type_character(struct kwl_server *server, char character);
 static int greeter_key_listening(struct kwl_server *server);
@@ -601,7 +601,7 @@ kwl_greeter_answer(
 void
 kwl_greeter_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	struct greeter_layout layout;
 	struct glass_shape shape;
@@ -1321,7 +1321,7 @@ greeter_inside(
 static void
 greeter_draw_card(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct greeter_layout *layout)
 {
 	static const float ink[4] = { 0.10f, 0.14f, 0.22f, 1.0f };
@@ -1441,7 +1441,7 @@ greeter_draw_card(
 static void
 greeter_draw_field(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct greeter_layout *layout)
 {
 	static const float field[4] = { 1.0f, 1.0f, 1.0f, 0.86f };
@@ -1528,7 +1528,7 @@ greeter_draw_field(
 static void
 greeter_draw_button(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const int32_t *rect,
 	const char *label,
 	int strong)
@@ -1579,7 +1579,7 @@ greeter_draw_button(
 static void
 greeter_draw_brand(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float slate[4] = { 0.17f, 0.23f, 0.31f, 0.95f };
 	int32_t x;
@@ -1601,7 +1601,7 @@ greeter_draw_brand(
 static void
 greeter_draw_clock(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct greeter_layout *layout)
 {
 	static const float slate[4] = { 0.15f, 0.21f, 0.29f, 1.0f };
@@ -1684,7 +1684,7 @@ greeter_draw_clock(
 static void
 greeter_draw_hint(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	float color[4] = { 0.15f, 0.21f, 0.29f, GREETER_HINT_OPACITY };
 	const char *hint;
@@ -1767,7 +1767,7 @@ greeter_key_modifies(
 static void
 greeter_draw_centered(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	enum glass_size size,
 	int32_t middle,
 	int32_t baseline,
@@ -2008,7 +2008,7 @@ greeter_power_send(
 static void
 greeter_draw_power(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct greeter_layout *layout)
 {
 	static const float ink[4] = { 0.10f, 0.14f, 0.22f, 1.0f };
@@ -2383,7 +2383,7 @@ greeter_layout_styles(
 static void
 greeter_draw_styles(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct greeter_layout *layout)
 {
 	static const float ink[4] = { 0.10f, 0.14f, 0.22f, 1.0f };
@@ -2610,7 +2610,7 @@ greeter_field_wanted(void)
 static void
 greeter_draw_keypad(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct greeter_layout *layout)
 {
 	static const float key_color[4] = { 1.0f, 1.0f, 1.0f, 0.62f };

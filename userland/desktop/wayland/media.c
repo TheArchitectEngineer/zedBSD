@@ -197,7 +197,7 @@ kwl_media_width(
 void
 kwl_media_draw_icon(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	const float *ink)
 {

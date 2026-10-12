@@ -99,7 +99,7 @@ kwl_batch_close(
 	memset(&compose->batch, 0, sizeof(compose->batch));
 }
 
-/* Starts a recording of compose->command: its joined quads' vertices from the buffer's start. */
+/* Starts a drawing into the list: its joined quads' vertices from the buffer's start. */
 void
 kwl_batch_begin(
 	struct kwl_compose *compose)
@@ -121,7 +121,7 @@ kwl_batch_begin(
 int
 kwl_batch_add(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const float *constants,
 	VkDescriptorSet set)
 {
@@ -169,14 +169,21 @@ kwl_batch_add(
 	vertex[9] = constants[15] * constants[23];
 	vertex[10] = constants[16];
 
-	/* Six vertices at the quad's corners, written in order to the mapped buffer. */
+	/*
+	 * Six vertices at the quad's corners, written in order to the list (its
+	 * replay writes them to the mapped buffer at the same offsets,
+	 * ws213-p003).
+	 */
 	for (index = 0U; index < 6U; index++) {
 		vertex[0] = constants[0] + (constants[2] - constants[0]) * corners[index][0];
 		vertex[1] = constants[1] + (constants[3] - constants[1]) * corners[index][1];
-		memcpy(compose->batch.map + compose->batch.used, vertex, BATCH_STRIDE);
+		kwl_list_add_vertices(command, vertex, BATCH_STRIDE);
 		compose->batch.used += BATCH_STRIDE;
 	}
 	compose->batch.count++;
+
+	/* One quad more drawn together (KWL PERF walk counts the things drawn). */
+	command->joined++;
 
 	/* Succeeded: the quad waits for the draw. */
 	return 1;
@@ -190,7 +197,7 @@ kwl_batch_add(
 void
 kwl_batch_flush(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	struct kwl_compose *compose;
 	float constants[KWL_PANEL_CONSTANTS];
@@ -208,15 +215,18 @@ kwl_batch_flush(
 	kwl_compose_bind(server, command, compose->batch.pipeline, compose->panel_layout, compose->batch.set);
 	memset(constants, 0, sizeof(constants));
 	memcpy(&constants[BATCH_SCREEN_OFFSET / sizeof(float)], compose->batch.screen, sizeof(compose->batch.screen));
-	vkCmdPushConstants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
+	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
 
 	/* The quads' vertices, then the corners again. */
 	offset = compose->batch.first;
-	vkCmdBindVertexBuffers(command, 0U, 1U, &compose->batch.buffer, &offset);
-	vkCmdDraw(command, 6U * count, 1U, 0U, 0U);
+	kwl_list_bind_vertex_buffers(command, 0U, 1U, &compose->batch.buffer, &offset);
+	kwl_list_draw(command, 6U * count, 1U, 0U, 0U);
 	offset = 0U;
-	vkCmdBindVertexBuffers(command, 0U, 1U, &compose->corners, &offset);
+	kwl_list_bind_vertex_buffers(command, 0U, 1U, &compose->corners, &offset);
 	kwl_compose_count_commands(server, 1U, 1U);
+
+	/* The draw drew quads together: it is not one thing more (KWL PERF walk). */
+	command->joined_draws++;
 }
 
 /* Makes the joined quads' pipeline: the glass look's layout and blending, the vertices batch.c writes. */

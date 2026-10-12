@@ -77,9 +77,9 @@ static unsigned heads_rects(struct kwl_server *server, const struct kwl_head *sk
 static int heads_needs_frame(struct kwl_server *server, const struct kwl_head *head);
 static unsigned heads_shows(struct kwl_server *server, const struct kwl_head *head);
 static unsigned heads_windows(struct kwl_server *server, unsigned slot, struct kwl_object **windows, unsigned capacity);
-static void heads_record_mirror(struct kwl_server *server, VkCommandBuffer command, VkImage source, struct kwl_head *head);
-static void heads_record_extended(struct kwl_server *server, VkCommandBuffer command, struct kwl_head *head);
-static void heads_barrier(VkCommandBuffer command, VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags source_access, VkAccessFlags destination_access, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
+static void heads_record_mirror(struct kwl_server *server, struct kwl_list *command, VkImage source, struct kwl_head *head);
+static void heads_record_extended(struct kwl_server *server, struct kwl_list *command, struct kwl_head *head);
+static void heads_barrier(struct kwl_list *command, VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags source_access, VkAccessFlags destination_access, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
 static int heads_path(char *path, size_t size, int folder);
 static int heads_save(const struct kwl_display_config *config);
 static void heads_mkdir(char *folder);
@@ -369,7 +369,7 @@ kwl_heads_acquire(
 void
 kwl_heads_record(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	VkImage source)
 {
 	struct kwl_compose *compose;
@@ -1145,7 +1145,7 @@ heads_needs_frame(
 static void
 heads_record_mirror(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	VkImage source,
 	struct kwl_head *head)
 {
@@ -1169,7 +1169,7 @@ heads_record_mirror(
 	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	range.levelCount = 1U;
 	range.layerCount = 1U;
-	vkCmdClearColorImage(command, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1U, &range);
+	kwl_list_clear_color_image(command, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1U, &range);
 
 	/* The desktop fitted whole, when the output's image can be copied. */
 	if (compose->readback) {
@@ -1194,7 +1194,7 @@ heads_record_mirror(
 		blit.dstOffsets[1].x = fitted.x + (int32_t)fitted.width;
 		blit.dstOffsets[1].y = fitted.y + (int32_t)fitted.height;
 		blit.dstOffsets[1].z = 1;
-		vkCmdBlitImage(command, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &blit, VK_FILTER_LINEAR);
+		kwl_list_blit_image(command, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &blit, VK_FILTER_LINEAR);
 
 		/* The output's image back to presentation. */
 		heads_barrier(command, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_READ_BIT, 0U,
@@ -1217,7 +1217,7 @@ heads_record_mirror(
 static void
 heads_record_extended(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_head *head)
 {
 	struct kwl_compose *compose;
@@ -1248,7 +1248,7 @@ heads_record_extended(
 	pass.renderArea.extent.height = head->output.height;
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
-	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_list_begin_render_pass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 	kwl_compose_bind_forget(server->compose);
 
 	/* The whole head. */
@@ -1256,14 +1256,14 @@ heads_record_extended(
 	viewport.width = (float)head->output.width;
 	viewport.height = (float)head->output.height;
 	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(command, 0U, 1U, &viewport);
+	kwl_list_set_viewport(command, 0U, 1U, &viewport);
 	memset(&scissor, 0, sizeof(scissor));
 	scissor.extent.width = head->output.width;
 	scissor.extent.height = head->output.height;
-	vkCmdSetScissor(command, 0U, 1U, &scissor);
+	kwl_list_set_scissor(command, 0U, 1U, &scissor);
 	compose->scissor_now = scissor;
 	offset = 0U;
-	vkCmdBindVertexBuffers(command, 0U, 1U, &compose->corners, &offset);
+	kwl_list_bind_vertex_buffers(command, 0U, 1U, &compose->corners, &offset);
 
 	/* The wallpaper over the whole head (a quad over the desktop's size covers the viewport). */
 	wallpaper = kwl_glass_wallpaper(server);
@@ -1311,7 +1311,7 @@ heads_record_extended(
 
 	/* Done; the pass leaves the image for presentation. */
 	kwl_batch_flush(server, command);
-	vkCmdEndRenderPass(command);
+	kwl_list_end_render_pass(command);
 }
 
 /*
@@ -1412,7 +1412,7 @@ heads_windows(
 /* Records one image layout change with its access and stages. */
 static void
 heads_barrier(
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	VkImage image,
 	VkImageLayout from,
 	VkImageLayout to,
@@ -1436,7 +1436,7 @@ heads_barrier(
 	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	barrier.subresourceRange.levelCount = 1U;
 	barrier.subresourceRange.layerCount = 1U;
-	vkCmdPipelineBarrier(command, source_stage, destination_stage, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+	kwl_list_pipeline_barrier(command, source_stage, destination_stage, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 }
 
 /* Writes displays.conf's path (folder nonzero: its folder's) from $HOME; returns 0, or ENOENT without a home. */

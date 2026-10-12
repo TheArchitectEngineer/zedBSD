@@ -47,12 +47,14 @@ static void compose_targets_destroy(struct kwl_compose *compose);
 static unsigned compose_windows(struct kwl_server *server, struct kwl_object **windows, unsigned capacity);
 static unsigned compose_split(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 static void compose_lists_log(struct kwl_server *server, struct kwl_object **windows, unsigned count);
-static void compose_quad(struct kwl_server *server, VkCommandBuffer command, const struct kwl_import *import, int32_t x, int32_t y);
-static void compose_quad_part(struct kwl_server *server, VkCommandBuffer command, const struct kwl_import *import, int32_t x, int32_t y, uint32_t quad_width, uint32_t quad_height, const float *uv);
+static void compose_quad(struct kwl_server *server, struct kwl_list *command, const struct kwl_import *import, int32_t x, int32_t y);
+static void compose_quad_part(struct kwl_server *server, struct kwl_list *command, const struct kwl_import *import, int32_t x, int32_t y, uint32_t quad_width, uint32_t quad_height, const float *uv);
 static const struct kwl_import *surface_image(const struct kwl_object *surface);
-static void compose_cursor(struct kwl_server *server, VkCommandBuffer command);
+static void compose_cursor(struct kwl_server *server, struct kwl_list *command);
 static VkResult compose_record(struct kwl_server *server, uint32_t image, struct kwl_object **windows, unsigned count, const VkRect2D *region);
 static int compose_region(struct kwl_server *server, uint32_t image, VkRect2D *region);
+static VkResult compose_replay(struct kwl_server *server, unsigned quiet);
+static void compose_walk_timed(struct kwl_server *server, uint64_t walk, uint64_t replay, unsigned quiet);
 static VkResult compose_submit(struct kwl_server *server, uint32_t image);
 static void compose_hold(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 static void compose_log_draws(struct kwl_server *server);
@@ -118,8 +120,21 @@ kwl_compose_open(
 		return EIO;
 	}
 
-	/* The glass look's wallpaper and glyphs; without them the plain look is drawn. */
+	/* How long the objects and the arrow took (KWL STARTUP). */
 	printf("KWL STARTUP step=vulkan-objects-arrow ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+
+	/*
+	 * The cursor shapes' images, in the same batch (ws213-p003, review-3
+	 * M-6): none is made while the compositor runs.  A failure leaves the
+	 * shape to be made when first asked for; their making is timed alone.
+	 */
+	started = kwl_milliseconds();
+	error = kwl_cursor_images_create(server);
+	if (error != 0)
+		printf("KWL CURSOR images errno=%d\n", error);
+	printf("KWL STARTUP step=cursor-shapes ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+
+	/* The glass look's wallpaper and glyphs; without them the plain look is drawn. */
 	if (server->glass) {
 		error = kwl_glass_open(server);
 		if (error != 0) {
@@ -601,6 +616,10 @@ kwl_compose_draw(
 	server->home_progress_frozen = 1U;
 	result = compose_record(server, image, windows, count, region_drawn);
 	server->home_progress_frozen = 0U;
+
+	/* The list into the frame's command buffers (ws213-p003). */
+	if (result == VK_SUCCESS)
+		result = compose_replay(server, 0U);
 	if (result != VK_SUCCESS) {
 		compose->scene.valid = 0U;
 		printf("KWL VULKAN_ERROR operation=record result=%d\n", (int)result);
@@ -860,6 +879,9 @@ kwl_compose_close(
 	/* The instance last. */
 	if (compose->instance != VK_NULL_HANDLE)
 		vkDestroyInstance(compose->instance, NULL);
+
+	/* The display list's memory, then the state. */
+	kwl_list_free(&compose->list);
 	free(compose);
 	server->compose = NULL;
 }
@@ -1365,7 +1387,7 @@ compose_objects(
 	if (result != VK_SUCCESS)
 		return result;
 
-	/* The host images' copies, recorded when the frame is submitted. */
+	/* The host images' copies, recorded when the list is replayed. */
 	result = vkAllocateCommandBuffers(compose->device, &command, &compose->copy_command);
 	if (result != VK_SUCCESS)
 		return result;
@@ -1973,7 +1995,7 @@ compose_lists_log(
 void
 kwl_compose_cursor(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	/* The same cursor; the pass's part of the plane places it. */
 	compose_cursor(server, command);
@@ -1995,6 +2017,40 @@ surface_image(
 
 	/* A GPU buffer from its own import. */
 	return surface->current->import;
+}
+
+/*
+ * Begins a drawing into the list (a frame's, or a layer's picture that
+ * presents nothing): the list is emptied, nothing is known as bound, the
+ * joined quads start from their buffer's beginning, and the walk's time
+ * starts (ws213-p003).
+ */
+void
+kwl_compose_list_begin(
+	struct kwl_compose *compose)
+{
+	/* The walk is timed from here to the replay (KWL PERF walk). */
+	compose->walk_start_cycles = kwl_cycles();
+
+	/* An empty list, with nothing bound and no quad waiting. */
+	kwl_list_reset(&compose->list);
+	kwl_compose_bind_forget(compose);
+	kwl_batch_begin(compose);
+}
+
+/*
+ * Gives the next image made its own number (ws213-p003): numbers only
+ * increase from 1, so none is given twice and 0 stays "no image".
+ */
+uint64_t
+kwl_compose_generation(
+	struct kwl_compose *compose)
+{
+	/* One past the last number given. */
+	compose->next_generation++;
+
+	/* The new image's number. */
+	return compose->next_generation;
 }
 
 /*
@@ -2108,7 +2164,7 @@ kwl_compose_surface_image(
 void
 kwl_compose_surface_quad(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_object *surface,
 	const struct kwl_import *import,
 	int32_t x,
@@ -2139,7 +2195,7 @@ kwl_compose_surface_quad(
 void
 kwl_compose_image_quad(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_import *import,
 	int32_t x,
 	int32_t y,
@@ -2155,7 +2211,7 @@ kwl_compose_image_quad(
 static void
 compose_quad(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_import *import,
 	int32_t x,
 	int32_t y)
@@ -2207,7 +2263,7 @@ kwl_compose_count_draw(
 static void
 compose_quad_part(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_import *import,
 	int32_t x,
 	int32_t y,
@@ -2248,8 +2304,8 @@ compose_quad_part(
 	kwl_compose_count_draw(server, server->compose->pipelines[import->draw], import->set, 0U);
 	kwl_batch_flush(server, command);
 	kwl_compose_bind(server, command, server->compose->pipelines[import->draw], server->compose->layout, import->set);
-	vkCmdPushConstants(command, server->compose->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
-	vkCmdDraw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
+	kwl_list_push_constants(command, server->compose->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
+	kwl_list_draw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
 	kwl_compose_count_commands(server, 1U, 1U);
 }
 
@@ -2352,7 +2408,7 @@ compose_record(
 	const VkRect2D *region)
 {
 	struct kwl_compose *compose;
-	VkCommandBufferBeginInfo begin;
+	struct kwl_list *command;
 	VkRenderPassBeginInfo pass;
 	VkClearValue clear;
 	VkViewport viewport;
@@ -2361,22 +2417,11 @@ compose_record(
 	unsigned index;
 	unsigned reuse;
 	unsigned capture;
-	VkResult result;
 
-	/*
-	 * A fresh recording: beginning the command buffer resets it (its pool
-	 * has VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT), without a call
-	 * of its own (a round trip less under Venus, ws099-p002).
-	 */
+	/* A fresh list for the frame's drawing, which compose_replay records (ws213-p003). */
 	compose = server->compose;
-	memset(&begin, 0, sizeof(begin));
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	result = vkBeginCommandBuffer(compose->command, &begin);
-	if (result != VK_SUCCESS)
-		return result;
-	kwl_compose_bind_forget(compose);
-	kwl_batch_begin(compose);
+	command = &compose->list;
+	kwl_compose_list_begin(compose);
 
 	/*
 	 * The scene is kept only while the cursor is drawn into the frames: with
@@ -2436,14 +2481,14 @@ compose_record(
 		kwl_hover_begin(server, region == NULL);
 
 	/* The clients' images imported since the last frame go to the layout they are sampled in (ws099-p016). */
-	kwl_import_layouts_record(compose, compose->command);
+	kwl_import_layouts_record(compose, command);
 
 	/* The pictures App Home's animation lacks, drawn before the frame's pass (layer-cache.c, ws211-p002). */
 	compose->frame_layers_generation = compose->layers.generation;
-	kwl_layers_inband(server, compose->command, windows, count);
+	kwl_layers_inband(server, command, windows, count);
 
 	/* The pictures a window's dock or undock animation shows, drawn in its first frame (layer-cache.c, ws211-p007). */
-	kwl_layers_anim_inband(server, compose->command, windows, count);
+	kwl_layers_anim_inband(server, command, windows, count);
 
 	/* The anchor's pass: its own part of the plane (ws113-p007). */
 	server->view_output = KWL_PLANE_ANCHOR;
@@ -2454,7 +2499,7 @@ compose_record(
 
 	/* Removes every older cursor covered by buffer-age damage before drawing its new place. */
 	if (reuse)
-		kwl_scene_copy(&compose->scene, compose->command, compose->output.images[image], region, 1U);
+		kwl_scene_copy(&compose->scene, command, compose->output.images[image], region, 1U);
 
 	/* The pass clears the image to the background. */
 	memset(&clear, 0, sizeof(clear));
@@ -2481,7 +2526,7 @@ compose_record(
 	/* The clear value belongs to a whole frame; the partial pass and a restored scene retain old pixels. */
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
-	vkCmdBeginRenderPass(compose->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_list_begin_render_pass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 	kwl_compose_bind_forget(compose);
 
 	/* The whole output is placed; the drawing is kept to the damage when there is one (design D4). */
@@ -2489,18 +2534,18 @@ compose_record(
 	viewport.width = (float)compose->output.width;
 	viewport.height = (float)compose->output.height;
 	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(compose->command, 0U, 1U, &viewport);
+	kwl_list_set_viewport(command, 0U, 1U, &viewport);
 	memset(&scissor, 0, sizeof(scissor));
 	scissor.extent.width = compose->output.width;
 	scissor.extent.height = compose->output.height;
 	if (region != NULL)
 		scissor = *region;
 	compose->scissor_now = scissor;
-	vkCmdSetScissor(compose->command, 0U, 1U, &scissor);
+	kwl_list_set_scissor(command, 0U, 1U, &scissor);
 
 	/* Every quad's corners. */
 	offset = 0U;
-	vkCmdBindVertexBuffers(compose->command, 0U, 1U, &compose->corners, &offset);
+	kwl_list_bind_vertex_buffers(command, 0U, 1U, &compose->corners, &offset);
 
 	/*
 	 * The windows, bottom to top (painter's order): plainly, or in the glass
@@ -2509,57 +2554,64 @@ compose_record(
 	 */
 	if (!reuse) {
 		if (server->glass) {
-			kwl_glass_draw(server, compose->command, windows, count);
+			kwl_glass_draw(server, command, windows, count);
 		} else {
 			/* The desktop's icons under the windows (desktop.c). */
-			kwl_desktop_draw(server, compose->command);
+			kwl_desktop_draw(server, command);
 
 			/* Each window. */
 			for (index = 0; index < count; index++) {
 				/* A window between its sub-surfaces below and above it (subsurface.c). */
-				kwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 0U);
-				kwl_compose_surface_quad(server, compose->command, windows[index], surface_image(windows[index]), windows[index]->x, windows[index]->y);
-				kwl_subsurface_draw(server, compose->command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 1U);
+				kwl_subsurface_draw(server, command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 0U);
+				kwl_compose_surface_quad(server, command, windows[index], surface_image(windows[index]), windows[index]->x, windows[index]->y);
+				kwl_subsurface_draw(server, command, windows[index], (float)windows[index]->x, (float)windows[index]->y, 1.0f, 1.0f, 1U);
 			}
 
 			/* The popups over the windows. */
-			kwl_popup_draw(server, compose->command);
+			kwl_popup_draw(server, command);
 		}
 
 		/* The input method's candidate window over the windows and their popups, in both looks (input-method.c). */
-		kwl_ime_popup_draw(server, compose->command);
+		kwl_ime_popup_draw(server, command);
 	}
 
 	/* Captures scene pixels before the cursor can contaminate the reusable background. */
 	if (!reuse && capture) {
-		kwl_batch_flush(server, compose->command);
-		vkCmdEndRenderPass(compose->command);
-		kwl_scene_copy(&compose->scene, compose->command, compose->output.images[image], region, 0U);
+		kwl_batch_flush(server, command);
+		kwl_list_end_render_pass(command);
+		kwl_scene_copy(&compose->scene, command, compose->output.images[image], region, 0U);
 		compose->scene.written = 1U;
 
 		/* The compatible LOAD pass retains scene pixels and adds only the cursor. */
 		pass.renderPass = compose->pass_load;
-		vkCmdBeginRenderPass(compose->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+		kwl_list_begin_render_pass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 		kwl_compose_bind_forget(compose);
 	}
 
 	/* The cursor over everything. */
-	compose_cursor(server, compose->command);
-	kwl_batch_flush(server, compose->command);
-	vkCmdEndRenderPass(compose->command);
+	compose_cursor(server, command);
+	kwl_batch_flush(server, command);
+	kwl_list_end_render_pass(command);
 
 	/* A test image's capture copies the finished image (shot.c; nothing elsewhere, ws173-p002). */
-	kwl_shot_record(server, compose->command, compose->output.images[image]);
+	kwl_shot_record(server, command, compose->output.images[image]);
 
 	/* The heads' pictures: the finished image copied (mirror), or the wallpaper (extended, ws113-p004b). */
-	kwl_heads_record(server, compose->command, compose->output.images[image]);
+	kwl_heads_record(server, command, compose->output.images[image]);
 
 	/* The scene's hover tests, including the heads' bars, are all recorded. */
 	if (!reuse)
 		kwl_hover_end(server);
 
-	/* The recording is complete. */
-	return vkEndCommandBuffer(compose->command);
+	/* The host images written up to now, the drawing's own included (a glyph first drawn), are copied first. */
+	kwl_host_images_take(compose, command);
+
+	/* A list that could not grow is not replayed. */
+	if (command->failed)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* Succeeded: the list holds the frame. */
+	return VK_SUCCESS;
 }
 
 /*
@@ -2570,7 +2622,7 @@ compose_record(
 static void
 compose_cursor(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	const struct kwl_import *image;
 	struct kwl_object *surface;
@@ -2746,6 +2798,103 @@ kwl_compose_cursor_source(
 	return server->arrow != NULL ? 1 : 0;
 }
 
+/*
+ * Records the list a drawing wrote into the frame's command buffers
+ * (ws213-p003): the copies of the host images it took into copy_command,
+ * its vertices of the joined quads into the batch's vertex buffer, and its
+ * operations into command.  The walk that wrote the list and this replay
+ * are timed apart (KWL PERF walk; quiet says the drawing presents nothing).
+ */
+static VkResult
+compose_replay(
+	struct kwl_server *server,
+	unsigned quiet)
+{
+	struct kwl_compose *compose;
+	VkCommandBufferBeginInfo begin;
+	uint64_t replay_start;
+	uint64_t walk;
+	VkResult result;
+
+	/* The walk ends where the replay starts. */
+	compose = server->compose;
+	replay_start = kwl_cycles();
+	walk = replay_start - compose->walk_start_cycles;
+
+	/* A list that could not grow is not replayed. */
+	if (compose->list.failed)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/*
+	 * Beginning a command buffer resets it (its pool has
+	 * VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT), without a call of
+	 * its own (a round trip less under Venus, ws099-p002).
+	 */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	result = vkBeginCommandBuffer(compose->copy_command, &begin);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* The host images' copies, which run before the drawing in the same submission. */
+	compose->frame_copies = kwl_host_images_record(&compose->list, compose->copy_command);
+	result = vkEndCommandBuffer(compose->copy_command);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* The joined quads' vertices where the batch's draws read them: no frame is in flight. */
+	if (compose->list.vertex_used != 0U)
+		memcpy(compose->batch.map, compose->list.vertices, compose->list.vertex_used);
+
+	/* The drawing's operations, in the order it wrote them. */
+	result = vkBeginCommandBuffer(compose->command, &begin);
+	if (result != VK_SUCCESS)
+		return result;
+
+	kwl_list_replay(&compose->list, compose->command);
+	result = vkEndCommandBuffer(compose->command);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* The walk and the replay, kept for the next KWL PERF walk. */
+	compose_walk_timed(server, walk, kwl_cycles() - replay_start, quiet);
+
+	/* Succeeded: the command buffers are ready to submit. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Keeps one drawing's walk and replay times and how many things it drew,
+ * for the five seconds' KWL PERF walk (ws213-p003); a drawing past the
+ * window's room is only counted.
+ */
+static void
+compose_walk_timed(
+	struct kwl_server *server,
+	uint64_t walk,
+	uint64_t replay,
+	unsigned quiet)
+{
+	struct kwl_perf *perf;
+	uint32_t slot;
+
+	/* No room left in the window. */
+	perf = &server->perf;
+	if (perf->walk_count == KWL_PERF_WALKS) {
+		perf->walk_dropped++;
+		return;
+	}
+
+	/* The drawing's sample. */
+	slot = perf->walk_count;
+	perf->walk_cycles[slot] = walk;
+	perf->replay_cycles[slot] = replay;
+	perf->walk_things[slot] = kwl_list_things(&server->compose->list);
+	perf->walk_quiet[slot] = (uint8_t)quiet;
+	perf->walk_count++;
+}
+
 /* Submits the frame, presents it, and exports its fence as the fd the event loop polls. */
 static VkResult
 compose_submit(
@@ -2759,9 +2908,7 @@ compose_submit(
 	VkSubmitInfo submit;
 	VkPresentInfoKHR present;
 	VkFenceGetFdInfoKHR fd_info;
-	VkCommandBufferBeginInfo begin;
 	VkCommandBuffer buffers[2];
-	unsigned copies;
 	unsigned wait_count;
 	unsigned signal_count;
 	VkResult result;
@@ -2788,24 +2935,10 @@ compose_submit(
 	/*
 	 * Host images written up to now, the frame's own drawing included (a
 	 * glyph first drawn, a cursor shape first shown), reach their sampled
-	 * images in a command buffer that runs first in the same submission.
+	 * images in a command buffer that runs first in the same submission
+	 * (compose_replay recorded it).
 	 */
-	memset(&begin, 0, sizeof(begin));
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	result = vkBeginCommandBuffer(compose->copy_command, &begin);
-	if (result != VK_SUCCESS) {
-		kwl_heads_frame_skipped(server);
-		return result;
-	}
-	copies = kwl_host_images_record(compose, compose->copy_command);
-	compose->frame_copies = copies;
-	result = vkEndCommandBuffer(compose->copy_command);
-	if (result != VK_SUCCESS) {
-		kwl_heads_frame_skipped(server);
-		return result;
-	}
-	if (copies != 0U) {
+	if (compose->frame_copies != 0U) {
 		buffers[0] = compose->copy_command;
 		buffers[1] = compose->command;
 		submit.commandBufferCount = 2U;
@@ -2929,10 +3062,11 @@ compose_log_draws(
 }
 
 /*
- * Submits the commands recorded in compose->command as a frame that
- * presents nothing (a layer's picture, layer-cache.c): the host images
- * written up to now are copied first, as for a frame, and the fence is
- * exported as the fd the event loop polls.  The caller sets frame_bake.
+ * Submits the drawing written into the list since kwl_compose_list_begin
+ * as a frame that presents nothing (a layer's picture, layer-cache.c): the
+ * list is replayed, the host images written up to now are copied first, as
+ * for a frame, and the fence is exported as the fd the event loop polls.
+ * The caller sets frame_bake.
  */
 VkResult
 kwl_compose_submit_quiet(
@@ -2941,22 +3075,16 @@ kwl_compose_submit_quiet(
 	struct kwl_compose *compose;
 	VkSubmitInfo submit;
 	VkFenceGetFdInfoKHR fd_info;
-	VkCommandBufferBeginInfo begin;
 	VkCommandBuffer buffers[2];
-	unsigned copies;
 	VkResult result;
 	int fd;
 
-	/* The host images first, in a command buffer that runs before the drawing. */
+	/* The host images the drawing wrote, given to the list. */
 	compose = server->compose;
-	memset(&begin, 0, sizeof(begin));
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	result = vkBeginCommandBuffer(compose->copy_command, &begin);
-	if (result != VK_SUCCESS)
-		return result;
-	copies = kwl_host_images_record(compose, compose->copy_command);
-	result = vkEndCommandBuffer(compose->copy_command);
+	kwl_host_images_take(compose, &compose->list);
+
+	/* The list into the command buffers: the host images' copies, then the drawing. */
+	result = compose_replay(server, 1U);
 	if (result != VK_SUCCESS)
 		return result;
 
@@ -2968,7 +3096,7 @@ kwl_compose_submit_quiet(
 	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submit.commandBufferCount = 1U;
 	submit.pCommandBuffers = &compose->command;
-	if (copies != 0U) {
+	if (compose->frame_copies != 0U) {
 		buffers[0] = compose->copy_command;
 		buffers[1] = compose->command;
 		submit.commandBufferCount = 2U;
