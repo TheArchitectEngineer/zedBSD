@@ -69,7 +69,7 @@ struct cal_window {
 
 	/*
 	 * Only the lit widget changed since the last frame (BUG-226): the next
-	 * frame is drawn within the part kl_ui_take_damage gives, when nothing
+	 * frame is drawn within the parts kl_ui_take_frame gives, when nothing
 	 * else changed (dirty draws the whole window).
 	 */
 	int lit_changed;
@@ -562,12 +562,13 @@ cal_draw(
 {
 	struct kl_glass_panel panels[CAL_PANELS_MAX];
 	struct kl_event event;
-	const struct kl_rect *present_part;
-	struct kl_rect part;
+	struct kl_rect parts[KL_FRAME_PARTS_MAX];
+	unsigned part_count;
+	unsigned index;
 	size_t count;
 	int desk_only;
 	int animating_before;
-	int partial;
+	int need;
 	int status;
 	int error;
 	int taken;
@@ -594,27 +595,43 @@ cal_draw(
 	}
 
 	/*
-	 * Only another widget lit: the frame is drawn within the two widgets'
-	 * part alone, the rest keeping its pixels (BUG-226; the whole window
-	 * when the part cannot be told, or while the desk calendar moves too).
+	 * Only another widget lit: the frame is drawn within the parts the
+	 * widgets tell alone, the rest keeping its pixels (BUG-226,
+	 * ws210-p014: the widget lit when the last frame was drawn and the one
+	 * lit now; none when the pointer came back; the whole window when the
+	 * parts cannot be told, or while the desk calendar moves too).
 	 */
-	partial = 0;
+	part_count = 0;
 	if (!calendar->dirty &&
 	    !calendar->moving &&
 	    !animating_before &&
-	    calendar->lit_changed)
-		partial = kl_ui_take_damage(calendar->ui, &part);
+	    calendar->lit_changed) {
+		need = kl_ui_take_frame(calendar->ui, parts, KL_FRAME_PARTS_MAX, &part_count);
+		if (need == KL_FRAME_NONE) {
+			calendar->lit_changed = 0;
+			return;
+		}
+		if (need == KL_FRAME_WHOLE)
+			part_count = 0;
+	}
 	calendar->lit_changed = 0;
 
-	/* The view, within the part when there is one. */
+	/* The view, all of it. */
 	calendar->dirty = 0;
-	if (partial)
-		kl_canvas_clip_push(&calendar->canvas, &part);
-	kl_ui_begin(calendar->ui, now_us);
-	cal_view_draw(&calendar->view, calendar->ui, &calendar->style, (int)calendar->width, (int)calendar->height, now_us);
-	calendar->moving = kl_ui_end(calendar->ui, now_us);
-	if (partial)
+	if (part_count == 0U) {
+		kl_ui_begin(calendar->ui, now_us);
+		cal_view_draw(&calendar->view, calendar->ui, &calendar->style, (int)calendar->width, (int)calendar->height, now_us);
+		calendar->moving = kl_ui_end(calendar->ui, now_us);
+	}
+
+	/* Or within each part in turn, the rest keeping the last frame's pixels. */
+	for (index = 0; index < part_count; index++) {
+		kl_canvas_clip_push(&calendar->canvas, &parts[index]);
+		kl_ui_begin(calendar->ui, now_us);
+		cal_view_draw(&calendar->view, calendar->ui, &calendar->style, (int)calendar->width, (int)calendar->height, now_us);
+		calendar->moving = kl_ui_end(calendar->ui, now_us);
 		kl_canvas_clip_pop(&calendar->canvas);
+	}
 
 	/*
 	 * The text input is asked for while a field has the keyboard, and told
@@ -637,11 +654,8 @@ cal_draw(
 		}
 	}
 
-	/* The frame shown, by the part alone when it was drawn so (BUG-221). */
-	present_part = NULL;
-	if (partial)
-		present_part = &part;
-	status = kl_window_present_part(calendar->window, calendar->pixels, (size_t)calendar->width, present_part);
+	/* The frame shown, by its parts alone when it was drawn so (BUG-221). */
+	status = kl_window_present_parts(calendar->window, calendar->pixels, (size_t)calendar->width, parts, part_count);
 	if (status == EAGAIN)
 		calendar->resized = 1;
 
