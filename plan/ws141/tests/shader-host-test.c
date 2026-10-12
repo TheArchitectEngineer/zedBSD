@@ -140,7 +140,7 @@ static void source_program(const struct drv_gpu_shader_ir *ir, struct shader_inp
 static uint32_t machine_uniform(void *context, const struct bcm2711_shader_uniform *uniform);
 static void machine_sample(void *context, uint32_t set, uint32_t binding, uint32_t s, uint32_t t, uint32_t *texel);
 static void pipeline_key(const struct drv_gpu_shader_ir *ir, struct bcm2711_shader_key *key);
-static void keiland_inputs(struct shader_inputs *inputs, uint32_t fragment, uint32_t trial);
+static void desktop_inputs(struct shader_inputs *inputs, uint32_t fragment, uint32_t trial);
 static void random_inputs(struct shader_inputs *inputs, uint32_t seed);
 static void verify_panel_mode(const struct drv_gpu_shader_ir *generic, const struct drv_gpu_shader_ir *specialized, uint32_t mode);
 static void glass_constants(uint32_t *push);
@@ -803,7 +803,7 @@ pipeline_key(
 
 /* Creates concrete finite Keiland draw inputs that exercise each panel shape branch and several fragment locations. */
 static void
-keiland_inputs(
+desktop_inputs(
 	struct shader_inputs *inputs,
 	uint32_t fragment,
 	uint32_t trial)
@@ -918,7 +918,7 @@ verify_panel_mode(
 		 * variant 7, white or not; both take the values glass.c works out
 		 * once for the shape (ws211-p011).
 		 */
-		keiland_inputs(&original, 1, trial);
+		desktop_inputs(&original, 1, trial);
 		original.push[17] = float_bits((float)mode);
 		if (mode == 7)
 			original.push[17] = float_bits(-1.0f);
@@ -1098,7 +1098,7 @@ verify_program(
 	/* The Keiland modules' realistic inputs, then random ones. */
 	if (keiland != 0) {
 		for (trial = 0; trial < 32; trial++) {
-			keiland_inputs(&inputs, stage == BCM2711_SHADER_FRAGMENT, trial);
+			desktop_inputs(&inputs, stage == BCM2711_SHADER_FRAGMENT, trial);
 			current_trial = trial;
 			run_trial(device, binary, ir, key, &inputs, 1);
 		}
