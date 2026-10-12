@@ -146,13 +146,17 @@ qpu_machine_run(
 		if (machine.switch_effect == index)
 			switch_effect(&machine);
 
-		/* The independent decoder reads the word and must rebuild it exactly. */
-		accepted = v3d_qpu_instr_unpack(device, binary->code[index], &instruction);
-		if (!accepted || instruction.type != V3D_QPU_INSTR_TYPE_ALU)
-			fail(&machine, "word does not decode as an ALU instruction");
-		accepted = v3d_qpu_instr_pack(device, &instruction, &repacked);
-		if (!accepted || repacked != binary->code[index])
-			fail(&machine, "word does not repack to itself");
+		/* The independent decoder reads the word and must rebuild it exactly, unless it was decoded once already. */
+		if (setup->decoded != NULL) {
+			instruction = setup->decoded[index];
+		} else {
+			accepted = v3d_qpu_instr_unpack(device, binary->code[index], &instruction);
+			if (!accepted || instruction.type != V3D_QPU_INSTR_TYPE_ALU)
+				fail(&machine, "word does not decode as an ALU instruction");
+			accepted = v3d_qpu_instr_pack(device, &instruction, &repacked);
+			if (!accepted || repacked != binary->code[index])
+				fail(&machine, "word does not repack to itself");
+		}
 		if (instruction.flags.auf != V3D_QPU_UF_NONE || instruction.flags.muf != V3D_QPU_UF_NONE)
 			fail(&machine, "flag update operations are not modeled");
 		if (instruction.alu.add.output_pack != V3D_QPU_PACK_NONE || instruction.alu.mul.output_pack != V3D_QPU_PACK_NONE)
@@ -302,6 +306,34 @@ qpu_machine_run(
 		fail(&machine, "varyings not consumed exactly");
 	if (machine.configurations != 0 || machine.texel_read != machine.texel_count || machine.lookup_waiting)
 		fail(&machine, "texture transaction left incomplete");
+}
+
+/*
+ * Decodes and checks every word of a program once, for runs that share it.
+ */
+void
+qpu_machine_decode(
+	const struct v3d_device_info *device,
+	const struct bcm2711_shader_binary *binary,
+	struct v3d_qpu_instr *decoded)
+{
+	uint64_t repacked;
+	uint32_t index;
+	bool accepted;
+
+	/* Each word decodes as an ALU instruction and rebuilds exactly. */
+	for (index = 0; index < binary->code_count; index++) {
+		accepted = v3d_qpu_instr_unpack(device, binary->code[index], &decoded[index]);
+		if (!accepted || decoded[index].type != V3D_QPU_INSTR_TYPE_ALU) {
+			fprintf(stderr, "qpu machine: word %u does not decode as an ALU instruction\n", index);
+			abort();
+		}
+		accepted = v3d_qpu_instr_pack(device, &decoded[index], &repacked);
+		if (!accepted || repacked != binary->code[index]) {
+			fprintf(stderr, "qpu machine: word %u does not repack to itself\n", index);
+			abort();
+		}
+	}
 }
 
 /* Reports a broken rule with the word it happened at and stops. */
