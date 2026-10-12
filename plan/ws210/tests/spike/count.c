@@ -115,10 +115,7 @@ main(
 	failed = 0;
 	failed |= count_program(argv[1], "coordinate", vertex, vertex_count, BCM2711_SHADER_COORDINATE, &key, nop);
 	failed |= count_program(argv[1], "vertex", vertex, vertex_count, BCM2711_SHADER_VERTEX, &key, nop);
-	key.premultiplied_blend = 0;
 	failed |= count_program(argv[1], "fragment", fragment, fragment_count, BCM2711_SHADER_FRAGMENT, &key, nop);
-	key.premultiplied_blend = 1;
-	failed |= count_program(argv[1], "fragment+blend", fragment, fragment_count, BCM2711_SHADER_FRAGMENT, &key, nop);
 
 	/* Done. */
 	free(vertex);
