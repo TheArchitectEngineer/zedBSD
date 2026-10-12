@@ -423,11 +423,30 @@ main(
 	assert(words[19] == ((8U << 16) | 16U) && words[21] == (0xc0000000U | test_display.flip.cursor.physical));
 	assert(words[23] == 256 && words[24] == 0x80000000);
 
-	/* A new image while that list is pending goes to another image at once; the pending list keeps its own. */
+	/* The same unchanged rows show the image that holds them again, without a copy, even while the pending list names it. */
 	identifier = test_display.flip.cursor.physical;
+	native[1] = 0x11;
+	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
+	assert(error == 0 && test_display.flip.pending_list == 160 && test_display.flip.cursor.physical == identifier && native[1] == 0x11);
+	native[1] = 0x7f;
+
+	/* Changed rows (the write advances the run's generation) go to another image at once; the pending list keeps its own. */
+	memset(arrow, 0x6e, sizeof(arrow));
+	error = test_operations->resource_write(test_device, first, resource, 0, arrow, sizeof(arrow));
+	assert(error == 0);
 	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
 	assert(error == 0 && test_display.flip.pending_list == 160 && test_display.flip.cursor_dirty);
 	assert(test_display.flip.cursor.physical != identifier && words[21] == (0xc0000000U | identifier));
+	assert(((uint8_t *)kern_pmem_to_kernel(test_display.flip.cursor.physical))[0] == 0x6e && native[0] == 0x7f);
+
+	/* Other rows of the same run are another source, and copy again. */
+	identifier = test_display.flip.cursor.physical;
+	cursor_image.offset = 64;
+	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
+	assert(error == 0 && test_display.flip.cursor.physical != identifier);
+	cursor_image.offset = 0;
+	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
+	assert(error == 0 && test_display.flip.cursor.physical == identifier);
 
 	/* The next frame waits for that list and carries the cursor itself. */
 	present.sequence = 0;
@@ -674,6 +693,18 @@ kern_dcache_clean_range(
 	size_t bytes)
 {
 	/* Production copy and native flip always clean a nonempty persistent run. */
+	assert(address != NULL && bytes != 0);
+}
+
+/*
+ * Checks that a cursor copy discards a cacheable source's lines before reading it.
+ */
+void
+kern_dcache_invalidate_range(
+	const void *address,
+	size_t bytes)
+{
+	/* The source rows are a nonempty interval of a live run. */
 	assert(address != NULL && bytes != 0);
 }
 

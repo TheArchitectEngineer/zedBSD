@@ -280,14 +280,20 @@ bcm2711_vulkan_buffer_copy_run(
 	kern_io_write_barrier();
 	kern_free(spans);
 
-	/* The destination's snapshots and incremental copies learn the written box of an image, or an unknown extent. */
+	/*
+	 * The destination's snapshots, incremental copies and cursor images learn
+	 * the written box of an image, or an unknown extent.  The backing resolved
+	 * above; if it no longer does, the copy fails rather than leave changed
+	 * bytes under an unchanged generation.
+	 */
 	error = bcm2711_vulkan_resource_backing(resources[1], 0, resources[1]->bytes, &view, &address, &destination);
-	if (error == 0) {
-		known = written_box(copy, box);
-		if (known)
-			bcm2711_v3d_memory_written(view->buffer, address - view->address, box);
-		else
-			bcm2711_v3d_memory_written(view->buffer, address - view->address, NULL);
+	if (error != 0)
+		return error;
+	known = written_box(copy, box);
+	if (known) {
+		bcm2711_v3d_memory_written(view->buffer, address - view->address, box);
+	} else {
+		bcm2711_v3d_memory_written(view->buffer, address - view->address, NULL);
 	}
 
 	/* Succeeded: selected raw bytes changed with no channel conversion, native launch or false DMA completion. */

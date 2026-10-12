@@ -52,6 +52,18 @@ struct display_resource {
 /* The cursor plane keeps four images: shown, pending, recorded and one to write. */
 #define DISPLAY_CURSOR_IMAGES 4U
 
+/* The source of one cursor image's rows; valid is false when the image holds nothing reusable. */
+struct display_cursor_key {
+	bool valid;
+	uint64_t identity;
+	uint64_t offset;
+	uint64_t generation;
+	uint32_t width;
+	uint32_t height;
+	uint32_t stride;
+	uint32_t format;
+};
+
 /* One boot output owns persistent operation tables and private scanout buffers. */
 struct display_device {
 	struct mutex mutex;
@@ -69,6 +81,13 @@ struct display_device {
 	 */
 	struct bcm2711_buffer *cursors[DISPLAY_CURSOR_IMAGES];
 	struct bcm2711_flip_cursor cursor;
+	/*
+	 * What each cursor image holds: the source run's identity, the rows'
+	 * place and format, and the run's generation read before the copy.  A
+	 * SET of the same unchanged rows shows that image without copying.  The
+	 * controller mutex protects them; a lease change forgets them.
+	 */
+	struct display_cursor_key keys[DISPLAY_CURSOR_IMAGES];
 	struct display_session *owner;
 	uint64_t next_lease;
 	uint64_t completed;
@@ -1624,11 +1643,14 @@ output_cursor_set(
 	struct display_device *controller;
 	struct display_resource *resource;
 	struct bcm2711_flip_cursor cursor;
+	struct display_cursor_key key;
 	struct bcm2711_buffer *target;
 	const uint8_t *source;
+	unsigned long enabled;
 	uint64_t span;
 	uint32_t index;
 	uint32_t row;
+	int same;
 	int error;
 
 	/* Only the lease's own open changes its cursor, from storage it owns. */
@@ -1662,22 +1684,62 @@ output_cursor_set(
 		}
 	}
 
-	/* An image no list or recorded cursor names takes the rows, packed at the plane's pitch, without waiting. */
+	/*
+	 * The rows' source.  Every writer writes the run first and advances its
+	 * generation after, so the generation read before the copy is one the
+	 * copied rows are at least as new as.  A run a process maps can change
+	 * without a generation step and is never reused.
+	 */
+	kern_memset(&key, 0, sizeof(key));
+	key.identity = resource->buffer->identity;
+	key.offset = request->offset;
+	key.width = request->width;
+	key.height = request->height;
+	key.stride = request->stride;
+	key.format = request->format;
+	enabled = spin_lock_irqsave(&resource->buffer->guard);
+
+	key.generation = resource->buffer->generation;
+
+	spin_unlock_irqrestore(&resource->buffer->guard, enabled);
+
+	/* Reuse is possible only for an identified run no process maps. */
+	if (key.identity != 0 && !resource->buffer->host_mapped)
+		key.valid = true;
+
+	/* An image that holds the same unchanged rows is shown again without a copy, even while a list names it. */
 	target = NULL;
-	for (index = 0; index < DISPLAY_CURSOR_IMAGES && target == NULL; index++) {
-		if (!bcm2711_display_flip_cursor_named(controller->native, (uint32_t)controller->cursors[index]->memory.paddr))
+	for (index = 0; index < DISPLAY_CURSOR_IMAGES && key.valid && target == NULL; index++) {
+		same = kern_memcmp(&controller->keys[index], &key, sizeof(key));
+		if (same == 0)
 			target = controller->cursors[index];
 	}
-	if (target == NULL) {
+
+	/* Otherwise an image no list or recorded cursor names takes the rows, packed at the plane's pitch, without waiting. */
+	for (index = 0; index < DISPLAY_CURSOR_IMAGES && target == NULL; index++) {
+		if (!bcm2711_display_flip_cursor_named(controller->native, (uint32_t)controller->cursors[index]->memory.paddr))
+			break;
+	}
+	if (target == NULL && index == DISPLAY_CURSOR_IMAGES) {
 		mutex_unlock(&controller->mutex);
 		return EBUSY;
 	}
-	for (row = 0; row < request->height; row++) {
-		source = (const uint8_t *)resource->buffer->address + request->offset + (uint64_t)row * request->stride;
-		kern_memcpy((uint8_t *)target->address + (uint64_t)row * GPU_DISPLAY_CURSOR_MAX * 4U, source, request->width * 4U);
+	if (target == NULL) {
+		target = controller->cursors[index];
+
+		/* A cacheable source may hold lines older than the device's writes; they go before the rows are read. */
+		if (!resource->buffer->uncached)
+			kern_dcache_invalidate_range((const uint8_t *)resource->buffer->address + request->offset, (size_t)span);
+
+		/* The rows, then the image's new key whatever the flip below reports. */
+		for (row = 0; row < request->height; row++) {
+			source = (const uint8_t *)resource->buffer->address + request->offset + (uint64_t)row * request->stride;
+			kern_memcpy((uint8_t *)target->address + (uint64_t)row * GPU_DISPLAY_CURSOR_MAX * 4U, source, request->width * 4U);
+		}
+		kern_dcache_clean_range(target->address, (size_t)GPU_DISPLAY_CURSOR_MAX * 4U * request->height);
+		kern_io_write_barrier();
+		kern_memcpy(&controller->keys[index], &key, sizeof(key));
 	}
-	kern_dcache_clean_range(target->address, (size_t)GPU_DISPLAY_CURSOR_MAX * 4U * request->height);
-	kern_io_write_barrier();
 
 	/* The plane names the new image from now on, shown or not. */
 	cursor = controller->cursor;
@@ -1799,6 +1861,9 @@ cursor_reset(
 	kern_memset(&cursor, 0, sizeof(cursor));
 	if (bcm2711_display_flip_cursor(controller->native, &cursor) == 0)
 		kern_memset(&controller->cursor, 0, sizeof(controller->cursor));
+
+	/* The next lease's images are copied afresh. */
+	kern_memset(controller->keys, 0, sizeof(controller->keys));
 }
 
 /* Counts one display resource more or less on a run; the render executor favours executions that use a displayed run. */

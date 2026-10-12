@@ -239,7 +239,9 @@ struct gpu_display_refresh {
  * lease), copied at once from session storage: width and height 1 to
  * GPU_DISPLAY_CURSOR_MAX, stride at least width * 4 and a multiple of 4,
  * format GPU_PIXEL_BGRA8888 or GPU_PIXEL_RGBA8888 with premultiplied alpha.
- * The storage is not borrowed after the call.  A shown cursor shows the new
+ * The storage is not borrowed after the call; rows set before from storage
+ * that has not changed since may be shown again without a copy, and storage
+ * a process maps is always copied.  A shown cursor shows the new
  * image from the next refresh boundary; a hidden one stays hidden until
  * GPU_DISPLAY_CURSOR_MOVE.  Every field is an input; reserved fields are zero.
  * It needs a writable open: EBUSY when the lease is not this open's, ESTALE
