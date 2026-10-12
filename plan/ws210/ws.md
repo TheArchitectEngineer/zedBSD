@@ -43,6 +43,7 @@ Pi 4 で標準 app（Files・Settings・Phone など）の再描画が CPU の�
 | p010 | Video Player の色の変換を GPU に | planned |
 | p011 | T1 の QEMU の回帰と Pi の実機の確認 | planned |
 | p012 | 規約の全文の見直し | planned |
+| [p013](phase013/phase.md) | 中間: app の present を変わった所の copy に（staging から swapchain の image へ直接、image ごとの古い所、予備は quad の部分化） | planning（設計 第 1 版、review 待ち） |
 
 見積 計 約 32 LW（p001 の設計 1.1 の Phase の表）。
 
