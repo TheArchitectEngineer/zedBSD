@@ -53,6 +53,28 @@ struct sched {
 	unsigned queue_kind;
 	/* The scheduler tick at which the thread last joined a run queue. */
 	uint64_t queued_tick;
+
+	/*
+	 * The latency diagnostic (kern.perf=1, ws213-p007).  When a wakeup or
+	 * a preemption made the thread runnable, the counter then (zero while
+	 * no wait is being measured), why (SCHED_PERF_*), the CPU it waits on
+	 * and that CPU's switch count then, which together say how long it
+	 * waited and how many threads ran before it.  The CPU lock of the
+	 * thread's CPU guards them.
+	 */
+	uint64_t perf_runnable_at;
+	uint64_t perf_runnable_switches;
+	unsigned perf_runnable_kind;
+	hal_cpu_id_t perf_runnable_cpu;
+
+	/*
+	 * How many times the thread has been switched away from its CPU, with
+	 * the diagnostic on.  Only the thread's own CPU adds to it, while the
+	 * thread is the one running there, so the thread reads it without a
+	 * lock: the metadata lock's hold reports how often its holder lost the
+	 * CPU while holding it.
+	 */
+	uint64_t perf_switch_outs;
 	hal_cpu_id_t cpu;
 	hal_cpu_id_t last_cpu;
 	unsigned need_migrate;
@@ -64,6 +86,57 @@ struct sched {
 /* Diagnostic: logs the distribution of wake-to-run latencies since the last report. */
 void sched_wake_latency_report(void);
 #endif
+
+/*
+ * Which thread a sample of the latency diagnostic belongs to: its process
+ * and thread ids, and the start of its process's command (a kernel thread
+ * shows pid 0).
+ */
+struct sched_perf_thread {
+	int pid;
+	int tid;
+	char name[16];
+};
+
+/*
+ * Whether the boot line turned the latency diagnostic on (kern.perf=1).
+ *
+ * It is set once by sched_init(), before any other thread runs, and never
+ * changes; zero leaves every measured path exactly as it is without it.
+ */
+extern int sched_perf_active;
+
+/*
+ * Reports whether the latency diagnostic is on.
+ */
+static __inline int
+sched_perf_enabled(
+	void)
+{
+	/* Reports the switch the boot line set. */
+	return sched_perf_active;
+}
+
+/*
+ * Reads the counter the latency diagnostic measures with.
+ */
+uint64_t
+sched_perf_counter(void);
+
+/*
+ * Converts a difference of sched_perf_counter() readings to microseconds.
+ */
+uint64_t
+sched_perf_counts_to_us(
+	uint64_t counts);
+
+/*
+ * Names a thread for a sample of the latency diagnostic.
+ */
+void
+sched_perf_identify(
+	const struct thread *thread,
+	struct sched_perf_thread *who);
 
 struct sched_queue {
 	struct thread *head;
