@@ -1564,6 +1564,8 @@ struct kwl_server {
 	 * It is cleared before that surface is freed.
 	 */
 	struct kwl_object *pointer_surface;
+	/* The compositor's own screen took the pointer: the focus passes do not give it back to a window (seat.c). */
+	unsigned pointer_taken;
 	/*
 	 * Popups (popup.c): the topmost popup holding the seat's grab (NULL for
 	 * none); whether the grab has the pointer (from its first popup shown

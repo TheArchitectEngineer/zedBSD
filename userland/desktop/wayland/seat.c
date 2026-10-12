@@ -298,8 +298,15 @@ kwl_seat_focus(
 		kwl_ime_focus(server, previous);
 	}
 
-	/* Succeeded: the pointer follows (the focused window, or the surface of it under the pointer). */
-	kwl_seat_pointer_update(server);
+	/*
+	 * Succeeded: the pointer follows (the focused window, or the surface of
+	 * it under the pointer), unless the compositor's own screen took it
+	 * (motion_taken_leave): entering the window under App Home again on
+	 * every pass, to leave it at the next motion, made that window draw
+	 * itself for each frame (2026-10-12, the Pi 4).
+	 */
+	if (!server->pointer_taken)
+		kwl_seat_pointer_update(server);
 }
 
 /*
@@ -575,6 +582,7 @@ kwl_seat_motion_deliver(
 	uint32_t words[3];
 
 	/* The surface under the pointer hears it (enter and leave as it changes); nobody without one. */
+	server->pointer_taken = 0U;
 	kwl_seat_pointer_update(server);
 	target = server->pointer_surface;
 	if (target == NULL)
@@ -752,6 +760,7 @@ kwl_seat_button_deliver(
 	uint32_t serial;
 
 	/* The ordinary event goes to the current pointer surface. */
+	server->pointer_taken = 0U;
 	kwl_seat_pointer_update(server);
 	target = server->pointer_surface;
 	if (target == NULL)
@@ -1423,10 +1432,6 @@ static void
 motion_taken_leave(
 	struct kwl_server *server)
 {
-	/* Nothing to leave. */
-	if (server->pointer_surface == NULL)
-		return;
-
 	/* A window operation or a drag and drop keeps the pointer where it is. */
 	if (server->drag != NULL ||
 	    server->resize != NULL ||
@@ -1436,7 +1441,14 @@ motion_taken_leave(
 	    server->dnd_active)
 		return;
 
-	/* The surface hears leave; none has the pointer until a motion is a client's again. */
+	/* No surface has the pointer until a motion or a button is a client's again (kwl_seat_focus does not give it back). */
+	server->pointer_taken = 1U;
+
+	/* Nothing to leave. */
+	if (server->pointer_surface == NULL)
+		return;
+
+	/* The surface hears leave. */
 	kwl_seat_pointer_move(server, server->pointer_surface, NULL);
 	server->pointer_surface = NULL;
 }
