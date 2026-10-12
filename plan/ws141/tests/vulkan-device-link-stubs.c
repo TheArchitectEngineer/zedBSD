@@ -6,7 +6,7 @@
  */
 
 /*
- * The two symbols the WS141 driver host test's link lacks (ws211-p010).
+ * The two symbols vulkan-device-host-test's link needs from outside its sources.
  *
  * libvulkan's swapchain-content notes live in content.c, which the test
  * does not build; the driver's decoder reads the fine counter only for its
