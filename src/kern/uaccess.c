@@ -400,6 +400,10 @@ copyout_pinned(
 
 /*
  * Copies bytes from user memory into kernel memory.
+ *
+ * An unreadable source range fails with EFAULT before any page of it is
+ * faulted in: the copy checks the range under the same hold of the VM
+ * locks that pins its pages.
  */
 int
 copyin(
@@ -414,15 +418,12 @@ copyin(
 	if (size == 0)
 		return 0;
 
-	/* Rejects a missing destination or an unreadable source range. */
-	if (destination == NULL ||
-	    user_range_check(source, size, HAL_SPACE_READ) != 0)
+	/* Rejects a missing destination. */
+	if (destination == NULL)
 		return EFAULT;
 
-	/* Copies through the current vmspace. */
+	/* Copies through the current vmspace, which checks the source range first. */
 	vm = current_vmspace();
-
-	/* Reports why the copy failed. */
 	error = vmspace_copy_from(vm, destination, source, size);
 	if (error != 0)
 		return error;
@@ -433,6 +434,11 @@ copyin(
 
 /*
  * Copies bytes from kernel memory into user memory.
+ *
+ * An unwritable destination range fails with EFAULT before any page of it
+ * is faulted in or written: the copy checks the range under the same hold
+ * of the VM locks that pins its pages, and writes only once every page is
+ * pinned.
  */
 int
 copyout(
@@ -447,15 +453,12 @@ copyout(
 	if (size == 0)
 		return 0;
 
-	/* Rejects a missing source or an unwritable destination range. */
-	if (source == NULL ||
-	    user_range_check(destination, size, HAL_SPACE_WRITE) != 0)
+	/* Rejects a missing source. */
+	if (source == NULL)
 		return EFAULT;
 
-	/* Copies through the current vmspace. */
+	/* Copies through the current vmspace, which checks the destination range first. */
 	vm = current_vmspace();
-
-	/* Reports why the copy failed. */
 	error = vmspace_copy_to(vm, destination, source, size);
 	if (error != 0)
 		return error;

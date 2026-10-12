@@ -47,6 +47,13 @@
 /* How many private pages a fork shares under one hold of the VM locks. */
 #define VM_FORK_BATCH			32U
 
+/*
+ * The most pages a copy between kernel and user memory pins into an array
+ * on the stack.  Such a copy takes the VM locks once when its pages are
+ * ready; a longer one checks its range first and allocates the array.
+ */
+#define VM_COPY_STACK_PAGES		4U
+
 /* The page count at which a region indexes its pages instead of walking them. */
 #define VM_REGION_INDEX_MINIMUM		32U
 
@@ -258,6 +265,9 @@ static int private_page_pinned_resident(struct vm_private_page *backing);
 static void vmspace_fault_wake_locked(struct vmspace *vm);
 static int vmspace_check_locked(struct vmspace *vm, uintptr_t address, size_t size, uint32_t required);
 static int vmspace_pin_mapping_ready(struct vmspace *vm, uintptr_t address, uint32_t required);
+static int vmspace_pin_mapping_ready_locked(struct vmspace *vm, uintptr_t address, uint32_t required);
+static size_t vmspace_pin_first_unready_locked(struct vmspace *vm, uintptr_t first, size_t page_count, uint32_t required);
+static int vmspace_pin_fault_from(struct vmspace *vm, uintptr_t start, uintptr_t last, uint32_t required, uint32_t fault_access);
 static void vmspace_unwire_range_locked(struct vmspace *vm, uintptr_t address, size_t size);
 static int copy_backing(struct vmspace *vm, uintptr_t user_address, void *kernel, size_t size, uint32_t required, int to_user);
 static int vmspace_copy_to_locked(struct vmspace *vm, uintptr_t destination, const void *source, size_t size);
@@ -1841,10 +1851,13 @@ vmspace_unpin_user_pages(
 /*
  * Pins every page of a user range for kernel access.
  *
- * Each page is faulted in first with no VM lock held, then the whole
- * range is validated and pinned under both metadata locks so that no
- * unmap, remap, or fork can change page identity in between.  A page
- * that changed underneath is faulted again.
+ * Under one hold of both metadata locks the range is checked, its pages
+ * are looked at, and when every page is ready the whole range is validated
+ * and pinned, so that no unmap, remap, or fork can change page identity in
+ * between.  A range that is not mapped with the access fails with EFAULT
+ * before any page is faulted.  Pages that are not ready are faulted in with
+ * no VM lock held, and the range is then validated and pinned under the
+ * locks again; a page that changed underneath is faulted again.
  */
 int
 vmspace_pin_user_pages(
@@ -1870,6 +1883,8 @@ vmspace_pin_user_pages(
 	struct vm_region *region;
 	struct vm_page *entry;
 	int wait_error;
+	size_t unready;
+	int faulted;
 
 	/* Rejects a call that names no address space. */
 	if (vm == NULL)
@@ -1916,19 +1931,14 @@ vmspace_pin_user_pages(
 	else
 		fault_access = HAL_SPACE_EXEC;
 
+	/*
+	 * The first pass looks at the pages before pinning; a pass right after
+	 * the fault path validates and pins whatever the faults left, as a page
+	 * that the fault could not make ready is reported by the pin itself.
+	 */
+	faulted = 0;
+
 retry_faults:
-	/* Faulting may sleep and may break COW, so it is never done under a VM lock. */
-	for (current = first;; current += PAGE_SIZE) {
-		if (!vmspace_pin_mapping_ready(vm, current, required)) {
-			error = vmspace_fault(vm, current, fault_access);
-			if (error != 0)
-				return error;
-		}
-
-		if (current == last)
-			break;
-	}
-
 	/*
 	 * Validate the complete range before taking the first backing pin.
 	 * Holding both metadata locks until the final pin closes the old
@@ -1940,10 +1950,23 @@ retry_faults:
 	refault = 0;
 	wait_fault = 0;
 	fault_sequence = 0;
+	unready = page_count;
 	vm_metadata_enter();
 	mutex_lock(&vm->lock);
 
 	error = vmspace_check_locked(vm, address, size, required);
+
+	/*
+	 * Finds the first page that needs the fault path, which leaves the
+	 * locks to fault it in; EAGAIN keeps the walks below from running.
+	 */
+	if (error == 0 && !faulted) {
+		unready = vmspace_pin_first_unready_locked(vm, first, page_count, required);
+		if (unready != page_count)
+			error = EAGAIN;
+	}
+
+	faulted = 0;
 	for (index = 0, current = first; error == 0 && index < page_count;
 	     index++, current += PAGE_SIZE) {
 
@@ -2054,6 +2077,20 @@ retry_faults:
 
 	if (error == 0)
 		return 0;
+
+	/*
+	 * Faults in every page from the first one that was not ready, then
+	 * pins under the locks again.  Faulting may sleep and may break COW,
+	 * so it is never done under a VM lock.
+	 */
+	if (unready != page_count) {
+		error = vmspace_pin_fault_from(vm, first + unready * PAGE_SIZE, last, required, fault_access);
+		if (error != 0)
+			return error;
+
+		faulted = 1;
+		goto retry_faults;
+	}
 
 	/* Backing unpin may finish object teardown, so rollback outside VM locks. */
 	vmspace_unpin_user_pages(pages, acquired);
@@ -5383,6 +5420,31 @@ vmspace_pin_mapping_ready(
 	uintptr_t address,
 	uint32_t required)
 {
+	int ready;
+
+	/* Looks at the page under the metadata and space locks. */
+	vm_metadata_enter();
+	mutex_lock(&vm->lock);
+
+	ready = vmspace_pin_mapping_ready_locked(vm, address, required);
+
+	mutex_unlock(&vm->lock);
+	vm_metadata_leave();
+
+	/* Reports whether the page is ready. */
+	return ready;
+}
+
+/*
+ * Tests whether a page can be pinned without entering the fault path; the
+ * caller holds the metadata and space locks.
+ */
+static int
+vmspace_pin_mapping_ready_locked(
+	struct vmspace *vm,
+	uintptr_t address,
+	uint32_t required)
+{
 	struct vm_region *region;
 	struct vm_page *entry;
 	int ready;
@@ -5399,9 +5461,6 @@ vmspace_pin_mapping_ready(
 	 * path takes exclusive backing I/O ownership and would otherwise
 	 * wait for the syscall's first pin.
 	 */
-	vm_metadata_enter();
-	mutex_lock(&vm->lock);
-
 	region = find_region_locked(vm, address, 1);
 	if (region != NULL)
 		entry = find_page(region, address);
@@ -5439,10 +5498,75 @@ vmspace_pin_mapping_ready(
 		}
 	}
 
-	mutex_unlock(&vm->lock);
-	vm_metadata_leave();
-
+	/* Reports whether the page is ready. */
 	return ready;
+}
+
+/*
+ * Finds the first page of a range that cannot be pinned without the fault
+ * path, or page_count when every page can; the caller holds the metadata
+ * and space locks.
+ */
+static size_t
+vmspace_pin_first_unready_locked(
+	struct vmspace *vm,
+	uintptr_t first,
+	size_t page_count,
+	uint32_t required)
+{
+	uintptr_t current;
+	size_t index;
+	int ready;
+
+	/* Looks at each page in address order until one is not ready. */
+	current = first;
+	for (index = 0; index < page_count; index++) {
+		ready = vmspace_pin_mapping_ready_locked(vm, current, required);
+		if (!ready)
+			return index;
+
+		current += PAGE_SIZE;
+	}
+
+	/* Every page is ready. */
+	return page_count;
+}
+
+/*
+ * Faults in every page from start to last that is not ready to be pinned.
+ *
+ * Faulting may sleep and may break COW, so the caller holds no VM lock.
+ * Each page is looked at again first, as an earlier fault (or another
+ * thread) may have made it ready.
+ */
+static int
+vmspace_pin_fault_from(
+	struct vmspace *vm,
+	uintptr_t start,
+	uintptr_t last,
+	uint32_t required,
+	uint32_t fault_access)
+{
+	uintptr_t current;
+	int ready;
+	int error;
+
+	/* Faults in each page that is still not ready. */
+	for (current = start;; current += PAGE_SIZE) {
+		ready = vmspace_pin_mapping_ready(vm, current, required);
+		if (!ready) {
+			error = vmspace_fault(vm, current, fault_access);
+			if (error != 0)
+				return error;
+		}
+
+		/* Stops after the last page of the range. */
+		if (current == last)
+			break;
+	}
+
+	/* Succeeded: every page went through the fault path or was ready. */
+	return 0;
 }
 
 /* Unwires every page of a range; the caller holds the VM lock. */
@@ -5487,6 +5611,7 @@ copy_backing(
 	uint32_t required,
 	int to_user)
 {
+	struct vmspace_pinned_page stack_pages[VM_COPY_STACK_PAGES];
 	struct vmspace_pinned_page *pages;
 	uint8_t *bytes;
 	uintptr_t first;
@@ -5514,17 +5639,33 @@ copy_backing(
 	first = user_address & ~(uintptr_t)(PAGE_SIZE - 1U);
 	last = (user_address + size - 1U) & ~(uintptr_t)(PAGE_SIZE - 1U);
 	page_count = (size_t)((last - first) / PAGE_SIZE) + 1U;
-	if (page_count > SIZE_MAX / sizeof(*pages))
-		return ENOMEM;
 
-	pages = kern_calloc(page_count, sizeof(*pages));
-	if (pages == NULL)
-		return ENOMEM;
+	/*
+	 * A short range pins into an array on the stack, and the pin checks
+	 * the range under the same hold of the locks it pins with.  A longer
+	 * range is checked first, so that a range that cannot be copied
+	 * reports EFAULT and does not allocate an array for its pages.
+	 */
+	if (page_count <= VM_COPY_STACK_PAGES) {
+		pages = stack_pages;
+	} else {
+		error = vmspace_check(vm, user_address, size, required);
+		if (error != 0)
+			return EFAULT;
+
+		/* Allocates one record per page of the range. */
+		if (page_count > SIZE_MAX / sizeof(*pages))
+			return ENOMEM;
+		pages = kern_calloc(page_count, sizeof(*pages));
+		if (pages == NULL)
+			return ENOMEM;
+	}
 
 	/* Pins every page of the range before any byte moves. */
 	error = vmspace_pin_user_pages(vm, user_address, size, required, pages, page_count);
 	if (error != 0) {
-		kern_free(pages);
+		if (pages != stack_pages)
+			kern_free(pages);
 		if (error == ENOMEM)
 			return ENOMEM;
 		return EFAULT;
@@ -5585,8 +5726,10 @@ copy_backing(
 		size -= chunk;
 	}
 
+	/* Releases the pins, and the array when it was allocated. */
 	vmspace_unpin_user_pages(pages, page_count);
-	kern_free(pages);
+	if (pages != stack_pages)
+		kern_free(pages);
 
 	/* Reports the failure. */
 	if (error != 0)
