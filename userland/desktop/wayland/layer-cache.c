@@ -215,6 +215,7 @@ kwl_layers_begin_quiet(
 	memset(&begin, 0, sizeof(begin));
 	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	kwl_compose_bind_forget(server->compose);
 	return vkBeginCommandBuffer(server->compose->command, &begin);
 }
 
@@ -541,6 +542,7 @@ layers_record_pass(
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
 	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_compose_bind_forget(server->compose);
 
 	/* The pass's own viewport, scissor and quad corners. */
 	memset(&viewport, 0, sizeof(viewport));

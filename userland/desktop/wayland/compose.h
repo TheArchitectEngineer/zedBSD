@@ -336,6 +336,16 @@ struct kwl_compose {
 	unsigned in_flight;
 	/* The host images the last submitted frame copied first (KWL DRAWS, ws211-p002). */
 	unsigned frame_copies;
+	/*
+	 * What compose->command has bound since its recording began or its
+	 * last pass began (ws211-p003 段 1): the pipeline, and the descriptor
+	 * set with the layout it was bound with (a set bound with another
+	 * layout is not the same binding, review-1 M1).  VK_NULL_HANDLE: not
+	 * known, the next draw binds.
+	 */
+	VkPipeline bound_pipeline;
+	VkPipelineLayout bound_layout;
+	VkDescriptorSet bound_set;
 	/* Nonzero while the frame in flight draws a layer's picture and presents nothing (layer-cache.c). */
 	unsigned frame_bake;
 	/* The layers' generation when the submission in flight was recorded (layer-cache.c). */
@@ -479,6 +489,9 @@ void kwl_glass_draw_drag_mark(struct kwl_server *server, VkCommandBuffer command
 void kwl_glass_draw_head(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count);
 void kwl_compose_cursor(struct kwl_server *server, VkCommandBuffer command);
 void kwl_compose_count_draw(struct kwl_server *server, VkPipeline pipeline, VkDescriptorSet set, unsigned shape);
+void kwl_compose_bind(struct kwl_server *server, VkCommandBuffer command, VkPipeline pipeline, VkPipelineLayout layout, VkDescriptorSet set);
+void kwl_compose_bind_forget(struct kwl_compose *compose);
+void kwl_compose_count_commands(struct kwl_server *server, unsigned pushes, unsigned draws);
 VkResult kwl_compose_submit_quiet(struct kwl_server *server);
 void kwl_layers_open(struct kwl_server *server);
 void kwl_layers_close(struct kwl_compose *compose);

@@ -1249,6 +1249,7 @@ heads_record_extended(
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
 	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_compose_bind_forget(server->compose);
 
 	/* The whole head. */
 	memset(&viewport, 0, sizeof(viewport));

@@ -1794,10 +1794,10 @@ glass_shape_draw(
 
 	/* The chosen pipeline keeps the same constants, image and triangle pair. */
 	kwl_compose_count_draw(server, pipeline, set, 1U);
-	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-	vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, compose->panel_layout, 0U, 1U, &set, 0U, NULL);
+	kwl_compose_bind(server, command, pipeline, compose->panel_layout, set);
 	vkCmdPushConstants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
 	vkCmdDraw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
+	kwl_compose_count_commands(server, 1U, 1U);
 }
 
 /* Draws a rounded rectangle in a solid color. */

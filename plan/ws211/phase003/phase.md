@@ -3,7 +3,7 @@
 # ws211-p003: draw の束ね（App Home・デスクトップ・bar の 1 コマの draw を減らす）
 
 Parent: [WS211](../ws.md)
-Status: planning（設計の第 1 版、2026-10-12 P3。review の前で、実装はしない）
+Status: planning（設計の第 2 版。[review-1](review-1.md) を反映。段 1 は実装済み（agent/p3、未 merge）。段 2 は床だけの試しから）
 Phase disposition: normal
 Queue: P3（2026-10-12 ユーザー「WS211 p003, WS141 (b)、さらに上記アプリの改善をやりましょう。」、Q1 の割り当て）
 
@@ -29,6 +29,28 @@ Queue: P3（2026-10-12 ユーザー「WS211 p003, WS141 (b)、さらに上記ア
 
 - pipeline が前の draw と違う割合は 0.28、descriptor set が違う割合は 0.23 です。今は毎 draw で両方を bind しています。
 - Pi の kernel の費用は、draw ごとの準備（shader の record、uniform の upload、texture の状態、頂点の詰め直し）です。今までの perf では prep が 1 draw 約 5〜20µs、compositor の記録（libvulkan の encode）が 1 draw 約 0.05ms でした。
+
+## 第 2 版の差分（[review-1](review-1.md) への対応、2026-10-12 P3）
+
+この節は、下の第 1 版の本文と食い違う所を置き換える。
+
+- **H2 段 1 の目的**: 段 1 は、compositor の記録の時間（`KWL LAT acquired→recorded`）と libvulkan の encode・submit の時の bind の走査だけを減らす。Pi の kernel の draw ごとの準備（prep・rec・tex）は減らない（kernel は draw ごとに今の状態から作り直すため）。段 1 の数で段 2 を決めない（未決の 3 つ目は取り消す）。1 draw の command の総数は約 37% 減る見込み。
+- **M1 段 1 の鍵と消す所**（実装済み、新しい file `compose-bind.c`）:
+  - 鍵は pipeline と、(set, pipeline layout) の組。同じ set が quad（`compose->layout`）と glass（`panel_layout`）で bind されるので、set だけで省くと Pi で EINVAL になるため。
+  - 消す所は 4 種類。compose->command の記録の始め 2 か所（compose.c の `compose_record`、layer-cache.c の `kwl_layers_begin_quiet`）、全部の `vkCmdBeginRenderPass`（compose.c 2、backdrop.c 2、heads.c 1、layer-cache.c 1）、`kwl_compose_set_put`（返された set が bind されている時）。
+  - bind しているのは `kwl_compose_bind` の 1 か所だけ（glass と quad の 2 つの描く関数から呼ぶ）。backdrop・heads・cursor-plane・shot は bind しない。
+  - layer-cache の焼く pass は、draw_counts のような保存と復元をしない。pass の始めに消すだけにする。
+- **M2 実際の command の数**: `KWL DRAWS` に `cmds draw= pipeline= set= push=` を足した。bind・push・draw の所で数える。
+- **H1 種類ごとの順の参照**: `KWL_BATCH=0` は、束ねだけでなく Home の並べ替えも旧の順（icon ごと）に戻す。2.3 の証明は被覆の基準で作り直す。対象は、全部の形（letter icon の影 ±60・縦 y−18〜y+102、24 本の帯・rim・字、選択の ring、hover の白（MODE_TEXT、tile と映り込みの間）、名前と印）、行どうし（縦 152）、ページの drag の途中。幅の狭い出力（W 約 870 未満）の drag の途中は、隣のページの icon が重なり得る。その時は並べ替えずに旧の順で描く（drag の間は束ねも並べ替えもしない）。名前と印は「全部の名前 → 全部の印」と書く。hover の probe（`kwl_hover_probe`）の順は保つ（L4）。比べる場面は、letter icon・hover・選択の ring・動作中の印・検索・2 ページの drag の途中・暗い外観。
+- **M3 閾値**: 「幅も高さも 128 以下（layer の変換の後）」に決める。光（147×68）は束に入らない（表の 12→12 のとおり）。
+- **M4 束の pipeline layout**: 束の pipeline も `panel_layout`（push 96 byte）を使う。shader は push constant の `panel.screen.xy`（byte 80）を読む。screen の押し直しは、flush の時に「最後に押した screen」と今の値を比べて行う（head の pass は、pass の後で view_width を置くため）。
+- **M5 binding 0**: binding 0 の状態（corners か束の buffer か）を 1 つの helper で覚え、glass と quad の両方の描く関数の前で保証する。記録の始めと pass の始めで corners に戻す。
+- **M6 flush の一覧**: 今の source で作り直す（layer-cache.c の 543・550・554・556・615 の vkCmd、glass.c は 1 組だけ）。
+- **M7 Pi の絵の比較**: Pi でも shot.c で `KWL_BATCH=0` と比べる。T1 の 1 回は `KWL_BATCH_CHECK` の build で流す。
+- **M8 16KiB**: vert も mode ごとの variant にし、宣言する入力を mode ごとの物だけにする（coordinate と vertex の入力数を揃える）。host 試験で input_count×4×6×n ≤ 16384 を確かめる。
+- **段 2 の進め方**: まず床（solid の 192 片）だけを束ね、Pi で前後の rec・prep・記録の時間と頂点の詰め直しの増え（uncached から 4 byte ずつ、床は読み 2.3k → 13.8k）を測る。減る draw（188 × 5〜20µs）と比べて、続けるか決める。
+- **L1**: ws.md の Resume point を直す。**L2**: 実測の元の log の要約を plan/ws211 に置く。**L3**: 頂点の buffer は 1MiB 固定の HOST_COHERENT で常に map する（compose.c の corners と同じ選び方）。Pi で 8MiB の連続確保の危険を避けるため。**L5**: 色を R32 に詰める案は採らない。shader の unpack の対応が bcm2711・i915 の compiler で確かでないため。**L6**: shader の host 試験は plan/ws141/tests/shader-host-test.sh に依る。Tools への登録は Q1 に頼む。**L7**: i915 の native compiler が flat を扱うかは、host の compiler の試験で確かめる。
+- 段 1 の試験: `plan/ws211/tests/bind-host-test.sh`（新規）。確かめること: 同じ鍵で bind しない、別の set、quad の layout の後の同じ set の bind し直し、消した後の bind、command の数、log が無い時。結果は PASS。
 
 ## 段
 

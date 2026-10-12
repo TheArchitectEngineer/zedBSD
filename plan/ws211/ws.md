@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: P3（WS141 の Pi の直しの次）
-Resume point: p001 の設計の第 4 版（[phase001/phase.md](phase001/phase.md)、review-3 と Q1 の判断を反映、2026-10-12 P3）。段 0・0b は main に merge 済み（place4）。段 1・2 は agent/p3 で第 4 版に合わせて直した（未 merge・Pi に置かない）。review-4 の待ち。
+Resume point: p002（クロスフェード）は main に merge（4c3a56cf9）、Pi で試し中。p003 は設計の第 2 版（[phase003/phase.md](phase003/phase.md)）、段 1（変わった時だけ bind）を agent/p3 で実装、段 2 は床だけの試しから（2026-10-12 P3）。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -35,5 +35,5 @@ Pi 4 で App Home の開閉が目で滑らか（ユーザーの確認）、1 コ
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 調査と設計（draw の数え、クロスフェードの絵の持ち方と無効化、束ねの形、Pi の見積もり、試験） | planning（第 4 版、review-4 待ち） |
 | p002 | クロスフェードの実装と Pi の確かめ | planned |
-| [p003](phase003/phase.md) | draw の束ね（文字・tile・影）と Pi の確かめ | planning（設計の第 1 版、review 待ち） |
+| [p003](phase003/phase.md) | draw の束ね（文字・tile・影）と Pi の確かめ | 段 1 実装（未 merge）、段 2 は床の試しから |
 | p004 | 規約の全文の見直し | planned |

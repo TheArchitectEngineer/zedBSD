@@ -127,6 +127,7 @@ kwl_backdrop_end(
 	pass.renderArea.extent.width = compose->output.width;
 	pass.renderArea.extent.height = compose->output.height;
 	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_compose_bind_forget(server->compose);
 	backdrop_viewport(command, compose->output.width, compose->output.height);
 	vkCmdSetScissor(command, 0U, 1U, &compose->scissor_now);
 
@@ -501,6 +502,7 @@ backdrop_begin_small(
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
 	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_compose_bind_forget(server->compose);
 
 	/* The scene needs all source quads, including those outside the output damage. */
 	server->compose->backdrop_recording = 1U;
