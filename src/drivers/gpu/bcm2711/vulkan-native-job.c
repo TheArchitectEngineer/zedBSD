@@ -684,7 +684,7 @@ report_perf(
 	bcm2711_buffer_release_stats(&released, &released_bytes, &released_ticks);
 	if (perf->requests != 0U) {
 		perf_append(
-			"v3d: requests=%llu wait_us avg=%llu max=%llu run_us avg=%llu max=%llu freed=%llu kib=%llu free_us=%llu markers_max=%u submit_lock_us avg=%llu max=%llu hold_us decode=%llu/op%u step=%llu\n",
+			"v3d: requests=%llu wait_us avg=%llu max=%llu run_us avg=%llu max=%llu freed=%llu kib=%llu free_us=%llu markers_max=%u submit_lock_us avg=%llu max=%llu hold_us decode=%llu/op%u cmd=%llu step=%llu\n",
 			(unsigned long long)perf->requests,
 			(unsigned long long)(kern_ticks_to_rate(perf->request_wait_ticks, 1000000U) / perf->requests),
 			(unsigned long long)kern_ticks_to_rate(perf->request_wait_max, 1000000U),
@@ -698,6 +698,7 @@ report_perf(
 			(unsigned long long)kern_ticks_to_rate(perf->submit_lock_max, 1000000U),
 			(unsigned long long)kern_ticks_to_rate(perf->decode_hold_max, 1000000U),
 			perf->decode_hold_opcode,
+			(unsigned long long)kern_ticks_to_rate(perf->decode_hold_command, 1000000U),
 			(unsigned long long)kern_ticks_to_rate(perf->step_hold_max, 1000000U));
 	}
 
