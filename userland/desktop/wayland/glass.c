@@ -1785,6 +1785,7 @@ glass_shape_draw(
 		pipeline = compose->panel_pipelines[6];
 
 	/* The chosen pipeline keeps the same constants, image and triangle pair. */
+	kwl_compose_count_draw(server, pipeline, set, 1U);
 	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 	vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, compose->panel_layout, 0U, 1U, &set, 0U, NULL);
 	vkCmdPushConstants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);

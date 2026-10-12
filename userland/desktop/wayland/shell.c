@@ -631,7 +631,9 @@ kwl_glass_draw(
 	home = kwl_home_progress(server);
 	hidden = 0U;
 	if (home > 0.0f) {
+		server->draw_section = KWL_SECTION_HOME;
 		kwl_home_draw(server, command, home);
+		server->draw_section = KWL_SECTION_LAYER;
 		kwl_home_layer(server, home, &server->layer_x, &server->layer_y, &server->layer_scale, &server->layer_opacity);
 
 		/*
@@ -677,6 +679,7 @@ kwl_glass_draw(
 		window_layer(server, top, home, (float)server->desktop);
 		draw_window(server, command, top, 1U, NULL);
 		server->layer_on = 0;
+		server->draw_section = KWL_SECTION_OTHER;
 		kwl_backdrop_reset(server);
 		kwl_popup_draw(server, command);
 		kwl_power_dialog_draw(server, command);
@@ -685,6 +688,7 @@ kwl_glass_draw(
 	}
 
 	/* The wallpaper over the whole output (with round corners while it is pushed aside), unless Home hides the layer. */
+	server->draw_section = KWL_SECTION_LAYER;
 	if (!hidden) {
 		glass_shape_init(&shape, 0.0f, 0.0f, (float)server->width, (float)server->height);
 		shape.mode = MODE_IMAGE;
@@ -696,6 +700,7 @@ kwl_glass_draw(
 	}
 
 	/* The system bar's layout, which a docking title bar moves to. */
+	server->draw_section = KWL_SECTION_OTHER;
 	bar_layout(server, &bar);
 
 	/* Wiseview, opening, open or closing, takes the windows' place. */
@@ -703,14 +708,18 @@ kwl_glass_draw(
 	if (progress > 0.0f) {
 		draw_wiseview(server, command, windows, count, progress);
 		server->layer_on = 0;
+		server->draw_section = KWL_SECTION_BAR;
 		draw_system_bar(server, command, &bar);
+		server->draw_section = KWL_SECTION_OTHER;
 		return;
 	}
 
 	/* The desktop's icons and the windows, unless Home hides the layer. */
 	position = desktop_position(server);
+	server->draw_section = KWL_SECTION_LAYER;
 	if (!hidden)
 		draw_desktop_layer(server, command, windows, count, home, &bar);
+	server->draw_section = KWL_SECTION_OTHER;
 
 	/* The windows' popups over all the windows (popup.c); the glass from here is on the blurred wallpaper. */
 	server->layer_on = 0;
@@ -722,8 +731,10 @@ kwl_glass_draw(
 	 * unless a fullscreen window is to be kept whole (ws035-p119).
 	 */
 	server->layer_on = 0;
+	server->draw_section = KWL_SECTION_BAR;
 	if (cover == NULL)
 		draw_system_bar(server, command, &bar);
+	server->draw_section = KWL_SECTION_OTHER;
 
 	/* The previews of an application's icon in the bar, over the windows (apps-bar.c), or the switcher in the middle (switcher-shell.c). */
 	kwl_apps_bar_draw_popup(server, command);

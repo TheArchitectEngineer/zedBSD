@@ -270,6 +270,8 @@ struct kwl_compose {
 	struct kwl_object *callbacks;
 	unsigned held_count;
 	unsigned in_flight;
+	/* The host images the last submitted frame copied first (KWL DRAWS, ws211-p002). */
+	unsigned frame_copies;
 	/* Descriptor sets images gave back, for the next images (kwl_compose_set_get). */
 	VkDescriptorSet spare_sets[KWL_DESCRIPTOR_MAX];
 	unsigned spare_count;
@@ -406,6 +408,7 @@ void kwl_glass_draw_drag_badge(struct kwl_server *server, VkCommandBuffer comman
 void kwl_glass_draw_drag_mark(struct kwl_server *server, VkCommandBuffer command, unsigned state);
 void kwl_glass_draw_head(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count);
 void kwl_compose_cursor(struct kwl_server *server, VkCommandBuffer command);
+void kwl_compose_count_draw(struct kwl_server *server, VkPipeline pipeline, VkDescriptorSet set, unsigned shape);
 
 /* Descriptor sets of the image layout, reused rather than freed (compose.c). */
 VkResult kwl_compose_set_get(struct kwl_compose *compose, VkDescriptorSet *result);
