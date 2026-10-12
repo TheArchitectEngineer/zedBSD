@@ -1260,6 +1260,16 @@ struct fm_app {
 	int pointer_inside;
 	unsigned hover_kind;
 	int hover_index;
+
+	/*
+	 * The region lit when the last frame was drawn, and whether the region
+	 * under the pointer changed since (ws210-p014 (a)): a frame draws the
+	 * region lit then and the one lit now (fm_input_hover_settle), not the
+	 * regions the pointer crossed while the frame before was being drawn.
+	 */
+	unsigned drawn_hover_kind;
+	int drawn_hover_index;
+	int hover_moved;
 	unsigned press_kind;
 	int press_index;
 	int pressing;
@@ -1619,6 +1629,7 @@ int fm_ui_due(struct fm_app *app, uint64_t now);
 /* The pointer and the keyboard (ui-input.c). */
 void fm_input_motion(struct fm_app *app, const struct fm_event *event);
 void fm_input_leave(struct fm_app *app);
+void fm_input_hover_settle(struct fm_app *app);
 void fm_input_button(struct fm_app *app, const struct fm_event *event);
 void fm_input_scroll(struct fm_app *app, int amount);
 

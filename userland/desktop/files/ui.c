@@ -114,6 +114,7 @@ fm_app_init(
 	app->focused = 1;
 	app->dirty = 1;
 	app->hover_index = -1;
+	app->drawn_hover_index = -1;
 	app->press_index = -1;
 	app->drag_hit_index = -1;
 	app->drag_place = -1;
@@ -390,6 +391,11 @@ fm_ui_draw(
 		app->frame_partial = 1;
 	for (index = 0; index < part_count; index++)
 		fm_ui_frame_part(app, &parts[index], 0);
+
+	/* The frame is drawn with the region under the pointer now lit (fm_input_hover_settle). */
+	app->drawn_hover_kind = app->hover_kind;
+	app->drawn_hover_index = app->hover_index;
+	app->hover_moved = 0;
 
 	/* The panels' places at this size. */
 	app->width = canvas->width;

@@ -19,7 +19,6 @@
 #include <errno.h>
 #include <string.h>
 
-static void widgets_damage(struct fm_app *app, int whole_unknown);
 
 /*
  * Begins a frame of the widgets' input (made the first time); 0, or
@@ -72,27 +71,23 @@ fm_widgets_input(
 	struct fm_app *app,
 	const struct fm_event *event)
 {
-	int changed;
-
 	/* Nothing without the input. */
 	if (app->ui == NULL)
 		return;
 
 	/*
 	 * The pointer's moves, its leaving, and the main button where it is.
-	 * A widget lit or gone dark by a move or the leaving is drawn again
-	 * alone (BUG-226), as files' own regions are (ui-input.c).
+	 * Every widget the widgets light (a place, a button) is also one of
+	 * files' own regions, whose change the next frame draws
+	 * (fm_input_hover_settle), so the widgets' own parts are not taken:
+	 * they would hold every widget crossed since the last frame.
 	 */
 	switch (event->type) {
 	case FM_EVENT_MOTION:
-		changed = kl_ui_pointer_motion(app->ui, (double)event->x, (double)event->y);
-		if (changed != 0)
-			widgets_damage(app, 0);
+		(void)kl_ui_pointer_motion(app->ui, (double)event->x, (double)event->y);
 		break;
 	case FM_EVENT_LEAVE:
-		changed = kl_ui_pointer_leave(app->ui);
-		if (changed != 0)
-			widgets_damage(app, 1);
+		(void)kl_ui_pointer_leave(app->ui);
 		break;
 	case FM_EVENT_BUTTON:
 		(void)kl_ui_pointer_motion(app->ui, (double)event->x, (double)event->y);
@@ -198,30 +193,4 @@ fm_icon_button(
 	/* The button in the frame's widgets' input. */
 	fm_style(app, canvas, &style);
 	(void)kl_icon_button(app->ui, &style, id, (uint32_t)index, rect, icon, pixels, flags);
-}
-
-/*
- * Has the part of the window that the widgets' lit widget changed drawn
- * again alone; when the widgets cannot tell the part, the whole frame is
- * drawn if whole_unknown is set (a held slider's move tells none and needs
- * none).
- */
-static void
-widgets_damage(
-	struct fm_app *app,
-	int whole_unknown)
-{
-	struct kl_rect part;
-	int known;
-
-	/* The part the change needs drawn again. */
-	known = kl_ui_take_damage(app->ui, &part);
-	if (known != 0) {
-		fm_ui_damage(app, &part);
-		return;
-	}
-
-	/* No part that can be told: the whole frame, when asked. */
-	if (whole_unknown != 0)
-		app->dirty = 1;
 }
