@@ -249,6 +249,15 @@ static volatile uint64_t sched_perf_report_tick;
  */
 static uint64_t sched_perf_report_counter;
 
+/*
+ * How long the last report took to write, in counter units, from gathering
+ * the windows to the end of its lines; the next report prints it.  The
+ * report is written synchronously by whichever thread is returning to user
+ * mode, so this is the time that thread lost to the diagnostic, including
+ * any time it was preempted meanwhile.  Zero before the first report.
+ */
+static volatile uint64_t sched_perf_report_cost;
+
 static void send_itimer_signal(struct process *process, int signo);
 static struct sched_cpu *sched_cpu_state(hal_cpu_id_t cpu);
 static void queue_append(struct sched_queue *queue, struct thread *thread, unsigned kind);
@@ -2810,6 +2819,7 @@ perf_report_if_due(
  * threads ran first), the dropped preemption marks, and the metadata
  * lock's part: its entries, the waits for it and the longest one, and its
  * longest hold, each with the address vm_metadata_enter() was called from.
+ * report_us is what the previous report cost the thread that wrote it.
  * The caller is on its way back to user mode and holds nothing.
  */
 static void
@@ -2821,6 +2831,9 @@ perf_report(
 	struct vm_metadata_perf meta;
 	struct sched_cpu *cpu;
 	char meta_text[256];
+	uint64_t started;
+	uint64_t finished;
+	uint64_t previous_cost;
 	uint64_t counter;
 	uint64_t elapsed_ms;
 	unsigned long irq;
@@ -2828,6 +2841,10 @@ perf_report(
 	hal_cpu_id_t id;
 	int online_cpu;
 	int taken;
+
+	/* Starts measuring what this report costs the thread that writes it. */
+	started = sched_perf_counter();
+	previous_cost = atomic_u64_load_acquire(&sched_perf_report_cost);
 
 	/* Gathers every online CPU's window and starts a new one there. */
 	kern_memset(&total, 0, sizeof(total));
@@ -2886,8 +2903,8 @@ perf_report(
 		kern_snprintf(meta_text, sizeof(meta_text), "meta held (left to the next report)");
 	}
 
-	/* Writes the line. */
-	kern_logf("kern: perf at_ms=%llu ms=%llu cpus=%u switches=%llu"
+	/* Writes the line, with what the previous report cost its writer. */
+	kern_logf("kern: perf at_ms=%llu ms=%llu cpus=%u switches=%llu report_us=%llu"
 	    " | woken=%llu max_us=%llu end_ms=%llu who=%d/%d/%s ahead=%d"
 	    " | preempted=%llu max_us=%llu end_ms=%llu who=%d/%d/%s ahead=%d dropped=%llu"
 	    " | %s\n",
@@ -2895,6 +2912,7 @@ perf_report(
 	    (unsigned long long)elapsed_ms,
 	    online,
 	    (unsigned long long)total.switches,
+	    (unsigned long long)sched_perf_counts_to_us(previous_cost),
 	    (unsigned long long)total.woken,
 	    (unsigned long long)sched_perf_counts_to_us(total.woken_longest.counts),
 	    (unsigned long long)total.woken_longest.end_ms,
@@ -2916,4 +2934,8 @@ perf_report(
 	/* The build with the wake histogram writes it with the same window. */
 	sched_wake_latency_report();
 #endif
+
+	/* Keeps this report's cost for the next line. */
+	finished = sched_perf_counter();
+	atomic_u64_store_release(&sched_perf_report_cost, finished - started);
 }
