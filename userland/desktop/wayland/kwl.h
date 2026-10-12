@@ -111,6 +111,33 @@
 #define KWL_CASCADE_STEP	32
 
 /*
+ * The parts of a frame its draws are counted in (--log-frames, KWL DRAWS,
+ * ws211-p002): App Home, the desktop layer (the wallpaper, the desktop's
+ * icons and the windows), the system bar, and everything else.
+ */
+#define KWL_SECTION_OTHER	0U
+#define KWL_SECTION_HOME	1U
+#define KWL_SECTION_LAYER	2U
+#define KWL_SECTION_BAR		3U
+#define KWL_SECTIONS		4U
+
+/*
+ * A frame's draws (--log-frames, ws211-p002): the glass look's shapes and
+ * the windows' quads, those in each section, and how often the pipeline and
+ * the descriptor set differed from the draw before (what binding only on a
+ * change would leave).  last_pipeline and last_set are the draw before's.
+ */
+struct kwl_draw_counts {
+	uint32_t shapes;
+	uint32_t quads;
+	uint32_t sections[KWL_SECTIONS];
+	uint32_t pipelines;
+	uint32_t sets;
+	uint64_t last_pipeline;
+	uint64_t last_set;
+};
+
+/*
  * The glass look (glass.c): a title bar's height, the system bar's height,
  * the gap between a title bar and its body, the margin at the output's edges,
  * and so the highest a body may be.  BTN_LEFT is the left mouse button.
@@ -970,6 +997,14 @@ struct kwl_server {
 	uint64_t max_frames;
 	/* Nonzero with --log-frames: every presentation and buffer release is printed (for the tests that read them). */
 	unsigned log_frames;
+	/*
+	 * The frame's draws (KWL DRAWS with --log-frames, ws211-p002), counted
+	 * while it is recorded, and the section the drawing is in now
+	 * (KWL_SECTION_*, set around App Home, the desktop layer and the bar by
+	 * kwl_glass_draw).  The event loop's thread only.
+	 */
+	struct kwl_draw_counts draw_counts;
+	unsigned draw_section;
 	/* The event loop records the latest traced motion; recording a frame consumes this timestamp. */
 	uint64_t pointer_accepted_us;
 	/*

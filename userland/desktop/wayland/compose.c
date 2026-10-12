@@ -55,6 +55,7 @@ static VkResult compose_record(struct kwl_server *server, uint32_t image, struct
 static int compose_region(struct kwl_server *server, uint32_t image, VkRect2D *region);
 static VkResult compose_submit(struct kwl_server *server, uint32_t image);
 static void compose_hold(struct kwl_server *server, struct kwl_object **windows, unsigned count);
+static void compose_log_draws(struct kwl_server *server);
 
 /*
  * Creates the Vulkan device, the pipelines' fixed objects and the frame's
@@ -610,6 +611,7 @@ kwl_compose_draw(
 	if (server->log_frames) {
 		printf("KWL COMPOSE frame=%llu image=%u windows=%u at_ms=%llu\n", (unsigned long long)server->frame, image, count, (unsigned long long)kwl_milliseconds());
 		printf("KWL LAT submit frame=%llu at_us=%llu\n", (unsigned long long)server->frame, (unsigned long long)kwl_microseconds());
+		compose_log_draws(server);
 	}
 
 	/* Succeeded: one frame is in flight. */
@@ -2085,6 +2087,43 @@ compose_quad(
 	compose_quad_part(server, command, import, x, y, import->width, import->height, whole);
 }
 
+/*
+ * Counts one draw of the frame being recorded (KWL DRAWS, ws211-p002): a
+ * glass shape (shape nonzero) or a window's quad, in the section drawn now,
+ * and whether its pipeline and descriptor set differ from the draw before.
+ * Only with --log-frames.
+ */
+void
+kwl_compose_count_draw(
+	struct kwl_server *server,
+	VkPipeline pipeline,
+	VkDescriptorSet set,
+	unsigned shape)
+{
+	struct kwl_draw_counts *counts;
+
+	/* Counted only for the log. */
+	if (!server->log_frames)
+		return;
+
+	/* The draw, and its section. */
+	counts = &server->draw_counts;
+	if (shape)
+		counts->shapes++;
+	else
+		counts->quads++;
+	if (server->draw_section < KWL_SECTIONS)
+		counts->sections[server->draw_section]++;
+
+	/* A pipeline or a set other than the draw before's. */
+	if ((uint64_t)(uintptr_t)pipeline != counts->last_pipeline)
+		counts->pipelines++;
+	if ((uint64_t)(uintptr_t)set != counts->last_set)
+		counts->sets++;
+	counts->last_pipeline = (uint64_t)(uintptr_t)pipeline;
+	counts->last_set = (uint64_t)(uintptr_t)set;
+}
+
 /* Draws a part of an image (uv: left, top, right, bottom as fractions) as a quad at a place and size on the output. */
 static void
 compose_quad_part(
@@ -2127,6 +2166,7 @@ compose_quad_part(
 	memcpy(&constants[4], uv, 4U * sizeof(float));
 
 	/* The pipeline for the window's way of drawing, its image, and the strip. */
+	kwl_compose_count_draw(server, server->compose->pipelines[import->draw], import->set, 0U);
 	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, server->compose->pipelines[import->draw]);
 	vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, server->compose->layout, 0U, 1U, &import->set, 0U, NULL);
 	vkCmdPushConstants(command, server->compose->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
@@ -2286,6 +2326,10 @@ compose_record(
 			compose->scene.changed,
 			compose->scene.valid);
 	}
+
+	/* The frame's draws are counted from nothing (KWL DRAWS, ws211-p002). */
+	memset(&server->draw_counts, 0, sizeof(server->draw_counts));
+	server->draw_section = KWL_SECTION_OTHER;
 
 	/* A redrawn scene records the hover tests its drawing makes; a whole one can vouch for later cursor-only moves. */
 	if (!reuse)
@@ -2644,6 +2688,7 @@ compose_submit(
 		return result;
 	}
 	copies = kwl_host_images_record(compose, compose->copy_command);
+	compose->frame_copies = copies;
 	result = vkEndCommandBuffer(compose->copy_command);
 	if (result != VK_SUCCESS) {
 		kwl_heads_frame_skipped(server);
@@ -2736,6 +2781,36 @@ compose_submit(
 	server->frame_fd = fd;
 	compose->in_flight = 1;
 	return VK_SUCCESS;
+}
+
+/*
+ * Logs the submitted frame's draws (KWL DRAWS, --log-frames, ws211-p002):
+ * the shapes and the windows' quads, those of App Home, the desktop layer,
+ * the system bar and the rest, the pipeline and descriptor set changes,
+ * whether the frame captured the scene, and the host images copied first.
+ */
+static void
+compose_log_draws(
+	struct kwl_server *server)
+{
+	const struct kwl_draw_counts *counts;
+
+	/* The counts compose_record and the drawing made. */
+	counts = &server->draw_counts;
+	printf(
+		"KWL DRAWS frame=%llu draws=%u shapes=%u quads=%u home=%u layer=%u bar=%u other=%u pipelines=%u sets=%u capture=%u copies=%u\n",
+		(unsigned long long)server->frame,
+		counts->shapes + counts->quads,
+		counts->shapes,
+		counts->quads,
+		counts->sections[KWL_SECTION_HOME],
+		counts->sections[KWL_SECTION_LAYER],
+		counts->sections[KWL_SECTION_BAR],
+		counts->sections[KWL_SECTION_OTHER],
+		counts->pipelines,
+		counts->sets,
+		server->compose->scene.written,
+		server->compose->frame_copies);
 }
 
 /*
