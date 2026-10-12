@@ -1233,11 +1233,9 @@ memory_export(
 {
 	struct vulkan_context *context;
 	struct gpu_blob_create_placed placed;
-	struct gpu_resource_map request;
 	uint32_t flags;
 	uint32_t resource;
 	VkResult status;
-	VkResult cleanup;
 	int error;
 
 	/* A physical device must not advertise host visibility without shared mapping. */
@@ -1257,7 +1255,7 @@ memory_export(
 			flags |= GPU_BLOB_MAPPABLE;
 	}
 
-	/* Create the persistent export and any mmap token as one serialized session transaction. */
+	/* Create the persistent export as one serialized session transaction. */
 	vulkan_context_lock(context);
 
 	if (placement != NULL) {
@@ -1308,52 +1306,14 @@ memory_export(
 		return status;
 	}
 
-	/* GPU-only exports never allocate a user MMIO mapping or read pixels through it. */
-	if (shared != VK_FALSE) {
-		allocation->view_bytes = (size_t)bytes;
-		vulkan_context_unlock(context);
-
-		/* Succeeded: shared GPU storage remains allocation-owned without a CPU view. */
-		return VK_SUCCESS;
-	}
-
-	/* Obtain an opaque session offset; physical and kernel virtual addresses stay private. */
-	memset(&request, 0, sizeof(request));
-	request.version = GPU_ABI_VERSION;
-	request.size = sizeof(request);
-	request.handle = allocation->blob;
-	error = ioctl(context->fd, GPU_RESOURCE_MAP, &request);
-	if (error != 0) {
-		cleanup = vulkan_resource_destroy(context, allocation->blob);
-		allocation->blob = 0;
-		vulkan_context_unlock(context);
-
-		/* An uncertain live blob must remain context-owned instead of losing its native memory underneath. */
-		if (cleanup != VK_SUCCESS) {
-			memory_lost(device);
-			return VK_ERROR_DEVICE_LOST;
-		}
-
-		/* Only a completely retired export permits ordinary native-allocation rollback. */
-		return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-	}
-
-	/* The kernel token must describe one complete page-aligned export. */
-	if (request.offset == 0 ||
-	    request.offset > INT64_MAX ||
-	    request.bytes != bytes ||
-	    (request.offset & (VULKAN_MEMORY_PAGE - 1U)) != 0) {
-		(void)vulkan_resource_destroy(context, allocation->blob);
-		allocation->blob = 0;
-		vulkan_context_unlock(context);
-		memory_lost(device);
-		return VK_ERROR_DEVICE_LOST;
-	}
-
-	/* Keep the opaque token for later maps without retaining physical addresses. */
-	allocation->token = request.offset;
-	allocation->view_bytes = (size_t)request.bytes;
-
+	/*
+	 * No export maps a CPU view here: vkMapMemory asks for the mmap token
+	 * when the application maps the memory.  The kernel then knows which
+	 * allocations a process can write behind the GPU's back, so that one
+	 * never mapped (an optimal image, say) can keep its converted texture
+	 * (ws141-p013).
+	 */
+	allocation->view_bytes = (size_t)bytes;
 	vulkan_context_unlock(context);
 
 	/* Succeeded: the allocation owns one persistent, reusable renderer export. */

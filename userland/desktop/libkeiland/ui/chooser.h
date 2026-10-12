@@ -100,6 +100,10 @@ struct keiui_chooser {
 	int recent;
 	int list_error;
 
+	/* A media chooser's list being read (ws157-p014: the window shows "Loading…"), or that could not be read. */
+	int media_loading;
+	int media_unavailable;
+
 	/* Its items, the list (the selection and the scroll), and whether hidden items show. */
 	struct keiui_chooser_entry *entries;
 	size_t count;

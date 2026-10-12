@@ -52,6 +52,14 @@
 /* How often, and how far apart, an up of a wired interface is tried (BUG-168: an adapter still attaching refuses it). */
 #define LAN_RAISE_ATTEMPTS	5U
 #define LAN_RAISE_RETRY_NS	200000000L
+
+/*
+ * The length of a wired interface's hardware (Ethernet) address.  The
+ * kernel answers SIOCGIFHWADDR in an eight-byte field padded with zeros, so
+ * the address is the first six bytes of it, not the whole field (BUG-293).
+ */
+#define LAN_HARDWARE_ADDRESS_LENGTH	6U
+
 #define NETWORKD_AUTH_LOG_MAX 512U
 #define NETWORKD_GROUP_DATABASE_MAX 8192U
 #define NETWORKD_GROUP_BUFFER_MAX 2048U
@@ -400,10 +408,14 @@ static int prefer_route(int, const struct networkd_managed_route *);
 static int withdraw_route(int, const struct networkd_managed_route *);
 static int route_present_exact(int, const struct networkd_managed_route *);
 static int prefer_resolver(const unsigned char *, size_t);
+static void resolver_write_failed(const char *);
 static void lan_assign_link_local(const char *, uint64_t);
 static void lan_configure(const struct networkd_lan_work *);
 static void lan_take_down(const char *);
 static void lan_clear_address(const char *);
+static void lan_hold_down(const char *);
+static void lan_release(const char *);
+static const char *lan_mode_name(enum networkd_lan_mode);
 static void lan_raise(const char *);
 static void run_lan_work(void);
 static void lan_note_configured(const char *);
@@ -1609,6 +1621,8 @@ lan_assign_link_local(
 	struct ifreq request;
 	char *arguments[7];
 	int descriptor;
+	int derived;
+	int assigned;
 
 	descriptor = socket(AF_INET, SOCK_DGRAM, 0);
 
@@ -1625,11 +1639,19 @@ lan_assign_link_local(
 	}
 	(void)close(descriptor);
 
-	/* Handles an address that could not be derived. */
-	if (networkd_lan_link_local(request.ifr_hwaddr,
-				    sizeof(request.ifr_hwaddr), address,
-				    sizeof(address)) != 0)
+	/*
+	 * Derives the address from the six bytes of the hardware address.
+	 * The field's two bytes of padding are zero on every machine, and
+	 * taking the host part from them gave every machine 169.254.1.0
+	 * (BUG-293).
+	 */
+	derived = networkd_lan_link_local(request.ifr_hwaddr,
+					  LAN_HARDWARE_ADDRESS_LENGTH, address,
+					  sizeof(address));
+	if (derived != 0)
 		return;
+
+	/* Gives the interface the link-local address. */
 	diagnostic[0] = '\0';
 	arguments[0] = (char *)"/sbin/ifconfig";
 	arguments[1] = (char *)name;
@@ -1638,7 +1660,16 @@ lan_assign_link_local(
 	arguments[4] = (char *)"netmask";
 	arguments[5] = (char *)"255.255.0.0";
 	arguments[6] = NULL;
-	(void)run_command_until(arguments, 10U, deadline, diagnostic);
+	assigned = run_command_until(arguments, 10U, deadline, diagnostic);
+
+	/* Says in the system log which address the interface fell back to. */
+	if (assigned != 0) {
+		syslog(LOG_WARNING, "networkd: %s: link-local %s not assigned: %s",
+		       name, address, diagnostic);
+	} else {
+		syslog(LOG_NOTICE, "networkd: %s: link-local %s assigned",
+		       name, address);
+	}
 }
 
 /*
@@ -1698,6 +1729,17 @@ lan_configure(
 		    work->policy.dhcp_timeout + 5U, deadline, diagnostic);
 	}
 	obtained = lan_address_usable(work->interface);
+
+	/*
+	 * Says in the system log why an interface obtained nothing.  What
+	 * dhcpc printed names the stage its transaction failed at; nothing
+	 * else keeps it once the interface has fallen back (BUG-293).
+	 */
+	if (!obtained) {
+		syslog(LOG_WARNING, "networkd: %s: %s obtained no address: %s",
+		       work->interface, lan_mode_name(work->policy.mode),
+		       diagnostic);
+	}
 
 	/* An interface that obtained nothing is told to say so. */
 	if (!obtained)
@@ -1793,6 +1835,97 @@ lan_clear_address(
 	if (error != 0)
 		fprintf(stderr, "networkd: %s: address not cleared: %s\n", name, strerror(errno));
 	(void)close(descriptor);
+}
+
+/*
+ * Takes a wired interface the administrator brought down out of the policy.
+ *
+ * `net down' used to leave the IPv4 address on the interface, and the
+ * policy then raised the interface again and configured it, falling back to
+ * a link-local address when DHCP did not answer: the address could not be
+ * got rid of (BUG-293).  The interface is held down until `net up', and its
+ * address and its lease's route are given up.  A radio or the loopback is
+ * not the wired policy's and is left as it is.
+ */
+static void
+lan_hold_down(
+	const char *name)
+{
+	int held;
+
+	/* Holds the interface down, reading the interfaces again for one just arrived. */
+	held = networkd_lan_hold_down(&managed_lan, name);
+	if (held != 0) {
+		lan_snapshot();
+		held = networkd_lan_hold_down(&managed_lan, name);
+	}
+
+	/* An interface the wired policy does not hold is not its to clear. */
+	if (held != 0)
+		return;
+
+	/* Gives up the address the interface held, and its subnet's route. */
+	lan_clear_address(name);
+
+	/* Withdraws the lease's route and lets another interface carry the default. */
+	lan_l3_forget(name, 1);
+	apply_network_preference();
+	notify_state_changed();
+
+	/* Says in the system log that the address was withdrawn on request. */
+	syslog(LOG_NOTICE, "networkd: %s: taken down by request; address withdrawn",
+	       name);
+}
+
+/*
+ * Hands a wired interface the administrator brought up back to the policy.
+ *
+ * An interface that was held down, or whose configuration did not succeed,
+ * is configured again; bringing it up is how the administrator asks DHCP to
+ * be tried again without moving the cable (BUG-293).
+ */
+static void
+lan_release(
+	const char *name)
+{
+	int released;
+
+	/* Releases the interface, reading the interfaces again for one just arrived. */
+	released = networkd_lan_release(&managed_lan, name);
+	if (released != 0) {
+		lan_snapshot();
+		released = networkd_lan_release(&managed_lan, name);
+	}
+
+	/* An interface the wired policy does not hold is not its to configure. */
+	if (released != 0)
+		return;
+
+	/* The policy configures it, or raises it to see its cable, at the next turn. */
+	lan_work_due = 1;
+
+	/* Says in the system log that the interface is managed again. */
+	syslog(LOG_NOTICE, "networkd: %s: brought up by request; managed again",
+	       name);
+}
+
+/* Names a wired configuration mode in the words net.conf uses. */
+static const char *
+lan_mode_name(
+	enum networkd_lan_mode mode)
+{
+	/* Chooses the configuration file's word for the mode. */
+	switch (mode) {
+	case NETWORKD_LAN_MODE_DHCP:
+		return "dhcp";
+	case NETWORKD_LAN_MODE_STATIC:
+		return "static";
+	default:
+		break;
+	}
+
+	/* A disabled interface is not configured at all. */
+	return "disabled";
 }
 
 /*
@@ -2157,6 +2290,25 @@ route_present_exact(
 	return 0;
 }
 
+/*
+ * Says in the system log that the resolver file could not be written.
+ *
+ * A root file system that refuses writes (BUG-294) fails here while the
+ * network itself works, so the log tells the two apart (BUG-293).
+ */
+static void
+resolver_write_failed(
+	const char *path)
+{
+	int saved;
+
+	/* Keeps the cause for the caller, which may still report it. */
+	saved = errno;
+	syslog(LOG_WARNING, "networkd: %s could not be written: %s", path,
+	       strerror(saved));
+	errno = saved;
+}
+
 /* Writes the preferred interface's resolver unless it is already in effect. */
 static int
 prefer_resolver(
@@ -2190,11 +2342,14 @@ prefer_resolver(
 	/* Writes the bytes to a file beside it. */
 	temporary = "/etc/resolv.conf.networkd";
 	descriptor = open(temporary, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
-	if (descriptor < 0)
+	if (descriptor < 0) {
+		resolver_write_failed(temporary);
 		return -1;
+	}
 	written = write(descriptor, resolver, length);
 	error = close(descriptor);
 	if (written < 0 || (size_t)written != length || error != 0) {
+		resolver_write_failed(temporary);
 		(void)unlink(temporary);
 		return -1;
 	}
@@ -2202,6 +2357,7 @@ prefer_resolver(
 	/* Puts it in place in one step, so a reader sees one file or the other. */
 	error = rename(temporary, "/etc/resolv.conf");
 	if (error != 0) {
+		resolver_write_failed("/etc/resolv.conf");
 		(void)unlink(temporary);
 		return -1;
 	}
@@ -3794,6 +3950,18 @@ execute_wired_request(
 		if (interface_exists(request->interface) == 0)
 			result = run_command_until(arguments, 10, deadline, diagnostic);
 		*error = errno;
+
+		/*
+		 * The administrator's down holds a wired interface down and
+		 * takes its address away, so that the policy does not raise it
+		 * again and give it a link-local address (BUG-293).
+		 */
+		if (result == 0 && request->header.opcode == NETWORKD_OP_DOWN)
+			lan_hold_down(request->interface);
+
+		/* The administrator's up hands it back to the policy, which configures it again. */
+		if (result == 0 && request->header.opcode == NETWORKD_OP_UP)
+			lan_release(request->interface);
 	} else if (request->header.opcode == NETWORKD_OP_STATIC) {
 		if (interface_exists(request->interface) == 0 &&
 		    netutil_parse_ipv4(request->address, &address) == 0 &&
@@ -3820,6 +3988,15 @@ execute_wired_request(
 			result = run_command_until(arguments, request->timeout + 5U,
 			    deadline, diagnostic);
 		*error = errno;
+
+		/*
+		 * A lease that was not obtained is logged with the stage dhcpc
+		 * printed, which the answer carries too (BUG-293).
+		 */
+		if (result != 0) {
+			syslog(LOG_WARNING, "networkd: %s: dhcp by request failed: %s",
+			       request->interface, diagnostic);
+		}
 	} else if (request->header.opcode == NETWORKD_OP_DEFAULT_ROUTE) {
 		if (netutil_parse_ipv4(request->gateway, &gateway) == 0 &&
 		    (present = default_route_exists()) >= 0) {
@@ -6297,6 +6474,8 @@ append_interface_status(
 	size_t *used)
 {
 	struct ifreq flags, address;
+	const char *configuration;
+	uint32_t value;
 	int count, has_address;
 
 	/* Handles a failed netutil ifreq operation. */
@@ -6309,9 +6488,22 @@ append_interface_status(
 	    netutil_ifreq(&address, name) == 0 &&
 	    ioctl(descriptor, SIOCGIFADDR, &address) == 0 &&
 	    ((struct sockaddr_in *)&address.ifr_addr)->sin_addr.s_addr != 0;
+
+	/*
+	 * Names what the interface holds.  A 169.254.0.0/16 address is the
+	 * fallback of a configuration that did not succeed, not an address
+	 * of its own, and is shown as such (BUG-293).
+	 */
+	configuration = "unconfigured";
+	if (has_address) {
+		value = ntohl(((struct sockaddr_in *)&address.ifr_addr)->sin_addr.s_addr);
+		configuration = "static";
+		if ((value >> 16) == 0xa9feU)
+			configuration = "link-local";
+	}
 	count =
 	    snprintf(output + *used, capacity - *used, "%s %s %s\n", name,
-		     has_address ? "static" : "unconfigured",
+		     configuration,
 		     (flags.ifr_flags & IFF_RUNNING) != 0 ? "online" : "offline");
 
 	/* Checks the remaining item count. */

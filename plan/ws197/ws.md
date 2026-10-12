@@ -52,8 +52,8 @@ Resume point: main の d5296c23e（2026-10-11）。p001〜p005・p011〜p013 cle
 | p004b | Phone の app の保存と同期（目印・merge・E.164 の key・送信の状態） | 3.5 | cleared（2026-10-11 Q1 照合: main に merge 778c1e377、host 試験 PASS。国番号は既定 81（P8）） |
 | p004c | Settings の「Use as phone」と通知（WS156 の lock_text の変更は P1 が同じ Phase で行う、Q1） | 1.5 | cleared（2026-10-11 Q1 照合: e7a478d33 は main に統合済み、host 試験 PASS。実機は p008） |
 | [p005](phase005/phase.md) | PBAP・Phoneの電話帳/名前/通話履歴・直列同期・Settings。第3.1版i01〜i07 | 11.5 | cleared（2026-10-10 Codex、host・全文規約・named build warning0。実機PBAPはp008） |
-| p006 | HFP の制御（AT の SLC、indicator、応答・終話・発信、発信者、割り込み、codec の交渉） | 12 | planned |
-| p007 | HFP の音: p007a xHCI の isochronous・usb-bt の interface 1・SCO の口、p007b SCO・audiod・CVSD の後に mSBC（Q9 の SCO の UAPI は p007a の設計の後にユーザーに聞く） | 25 | planned |
+| [p006](phase006/phase.md) | HFP の制御（AT の SLC、indicator、応答・終話・発信、発信者、割り込み、codec の交渉） | 12 | in-progress（実装・main 統合済み 60a50fdbf、UAT beta2 #13 待ち。BRSF の bit 9 は p007b1 で足す） |
+| [p007](phase007/phase.md) | HFP の音: p007a xHCI の isochronous・usb-bt の interface 1・SCO の口、p007b SCO・audiod・CVSD の後に mSBC（Q9 の SCO の UAPI は p007a の設計の後にユーザーに聞く） | 47 | planning（設計 2.1a 2026-10-11: review-3 の blocker 1・major を反映、X 節の短い確かめ待ち。Q12〜Q14 承認済み、R は WS209） |
 | p008 | 実機（Android が先、iPhone は HFP の後、Q13）。PHONE PROBE は p003 で消すので MAP の操作で確かめる | 20 | planned |
 | p009 | 規約の全文の見直し（2026-10-08 ユーザー: 規約の Phase はベータ3） | 2 | planned（ベータ3） |
 | [p010](phase010/phase.md) | MMS写真/動画送受信（受信統合済み、送信は未完。p012がviewer起動を補完） | 3（送信の残り） | in-progress（受信の部分 cleared） |
@@ -164,3 +164,10 @@ p013を追加。実機ではprocessが残りbt showが無応答、既存service 
 ## 2026-10-10 Codex p013 clearance
 
 [p013](phase013/phase.md) / bt-recovery-i01 cleared。main 7fa0a0e9cへ統合しread-back済み。root親が15秒の処理進捗停止を検知→子TERM/3秒後KILL/reap→parent exit1、initが既存on-failureで再起動。実機でCLI5.11秒timeoutと約20秒でHCI readyへの復旧、bt reopen/reset各exit0を確認。sessiond/compositorへの新root API無し。build warning0、6source全文規約/manual/host PASS。[詳細証拠](tests/bluetooth-recovery-verification-20261010.md)。初回native CLI timeout未達を記録し、deadline pollへ修正して追加1回検証。既存init上限5failure restarts、元hang根因未確定を保持。スマホ再pair無し。今回のQueueはfinished、WS全体incompleteを維持しshared/remote投影はQ1。
+
+## 2026-10-11 ユーザーの決定: p007 の Q9〜Q11 と音の経路の model
+
+- Q10・Q11: ユーザー「Q10,Q11 おすすめでいいです。」→ PC で応答・発信した通話は PC で鳴らし、スマホで応答した通話はスマホのまま、通話の card の button で切り替える。mSBC は WS205 の SBC の後（それまで CVSD）。
+- Q9: 別の node（`/dev/bluetoothN.sco`）の案をやめる（ユーザー「デバイスを追加するのはad-hocでよくないと感じますが。」）。Q1 の新しい案 ── 今の `/dev/bluetoothN` で `BT_PACKET_SCO` を有効にし、kernel は SCO だけ専用の小さな ring（あふれたら古い物から捨てる、ACL・event を塞がない）、interface 1 の alternate の ioctl を 1 つ、bluetoothd は fd の読み手の thread を 1 つ置いて session と SCO の thread へ振り分ける ── をユーザーが承認（「Q9は承認します。それがいいです。」）。
+- 音の経路の model（ユーザー「今後モデムを実装するときも、音声はPCM取得ではなく、デバイスに直接出力なので、そういう出力先指定のモデルがあったほうがいいと思いました。」）: 通話の音は app が PCM を中継せず、出力先（と入力元）を指定して device の間で直に流す model にする。audiod に音の endpoint（HDA の speaker・mic、Bluetooth の headset、phone の SCO、将来の modem）と route を持たせ、app（Phone・Settings）は route を選ぶだけ。HFP（p007b1）・WS205 の A1・H3 はこの model の上に作る。設計は P1 が p007 と WS205 の p001 を直して出す。
+

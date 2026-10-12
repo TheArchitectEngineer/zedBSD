@@ -37,6 +37,26 @@ struct bcm2711_render_session {
 
 	/* The native IRQ guard protects namespace stop publication against ioctl admission. */
 	bool stopping;
+
+	/*
+	 * The native IRQ guard protects the session's execution queue: its
+	 * executions in submission order, the link and flag of the executor's
+	 * round robin, how many executions were submitted and executed (a
+	 * parked domain completion waits for executed to reach its count), and the staging
+	 * bytes the queued executions may hold.
+	 */
+	struct bcm2711_render_execution *execution_head;
+	struct bcm2711_render_execution *execution_tail;
+	struct bcm2711_render_session *ready_next;
+	bool ready;
+	uint64_t submitted;
+	uint64_t executed;
+	uint64_t execution_bytes;
+	/* Producer markers the session holds in the marker pool, in any state. */
+	uint32_t markers;
+
+	/* Nonzero and never given to another session of the controller; it marks the storage this session's work may leave bytes in. */
+	uint64_t owner;
 };
 
 /* One descriptor owns a native VA view; jobs hold independent mapped references. */
@@ -67,6 +87,8 @@ struct bcm2711_render_device {
 	/* Internally held closed descriptors do not count as live external sessions or prevent checked reset. */
 	struct bcm2711_render_session *closed;
 	uint32_t sessions;
+	/* The last session owner mark given; marks only grow. */
+	uint64_t owners;
 	bool registered;
 };
 

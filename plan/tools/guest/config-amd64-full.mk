@@ -6,3 +6,5 @@
 # own worktree's build/, 2026-10-03 main's permission; an implementing agent asks them for the image).
 include config/ci/config-amd64.mk
 ZEDBSD_GRAPHICAL_BOOT := n
+# The CI configuration no longer lists the clang package, so the full image names it itself (T1-552, 2026-10-12).
+ZEDBSD_USER_PROGRAMS += libcxx clang

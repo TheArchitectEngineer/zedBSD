@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <string.h>
 
+
 /*
  * Begins a frame of the widgets' input (made the first time); 0, or
  * ENOMEM when it cannot be made (the widgets are then not drawn lit).
@@ -74,7 +75,13 @@ fm_widgets_input(
 	if (app->ui == NULL)
 		return;
 
-	/* The pointer's moves, its leaving, and the main button where it is. */
+	/*
+	 * The pointer's moves, its leaving, and the main button where it is.
+	 * Every widget the widgets light (a place, a button) is also one of
+	 * files' own regions, whose change the next frame draws
+	 * (fm_input_hover_settle), so the widgets' own parts are not taken:
+	 * they would hold every widget crossed since the last frame.
+	 */
 	switch (event->type) {
 	case FM_EVENT_MOTION:
 		(void)kl_ui_pointer_motion(app->ui, (double)event->x, (double)event->y);

@@ -16,8 +16,12 @@
 #include "drivers/gpu/bcm2711/native-colour.h"
 #include "drivers/gpu/bcm2711/vulkan-native-pass.h"
 
+/* The most tile boxes a pass records as writes of their own; more, and its area is recorded (ws211-p009). */
+#define NATIVE_EXECUTE_WRITTEN_BOXES 4U
+
 static int validate_pass(struct bcm2711_vulkan_native_pass *pass);
 static int clear_target(struct bcm2711_vulkan_native_pass *pass);
+static int convert_textures(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result, uint64_t *ticks, uint32_t *jobs, uint64_t *longest);
 
 /*
  * Executes one completely prepared native pass while its enclosing submission retains all pending owners.
@@ -31,6 +35,31 @@ static int clear_target(struct bcm2711_vulkan_native_pass *pass);
  */
 int
 bcm2711_vulkan_native_pass_run(
+	struct bcm2711_vulkan_native_pass *pass,
+	struct bcm2711_v3d_job_result *result)
+{
+	int error;
+
+	/* The three parts in order under the caller's mutex. */
+	error = bcm2711_vulkan_native_pass_start(pass, result);
+	if (error != 0)
+		return error;
+	error = bcm2711_vulkan_native_pass_launch(pass, result);
+	error = bcm2711_vulkan_native_pass_finish(pass, result, error);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the pass ran and its output is published. */
+	return 0;
+}
+
+/*
+ * Validates the pass and performs its CPU clear before launch.
+ *
+ * Nothing has launched when it fails, so result->retired stays true.
+ */
+int
+bcm2711_vulkan_native_pass_start(
 	struct bcm2711_vulkan_native_pass *pass,
 	struct bcm2711_v3d_job_result *result)
 {
@@ -81,11 +110,131 @@ bcm2711_vulkan_native_pass_run(
 	/* The single-use root and every coherent CPU write precede the native runner's supervised launch. */
 	pass->executed = true;
 	pass->retired = false;
+	pass->converted = false;
 	kern_io_write_barrier();
-	error = bcm2711_v3d_job_run(pass->space->native, &pass->job, result);
+
+	/* Succeeded: the pass may launch. */
+	return 0;
+}
+
+/*
+ * Runs the pass's texture conversions and its bin/render job.
+ *
+ * Inside the executor's window this runs without the controller mutex, so
+ * it writes only the pass and the result; the finish publishes the rest.
+ */
+int
+bcm2711_vulkan_native_pass_launch(
+	struct bcm2711_vulkan_native_pass *pass,
+	struct bcm2711_v3d_job_result *result)
+{
+	uint64_t converted;
+	uint64_t longest;
+	uint32_t jobs;
+	int error;
+
+	/* The texture formatting unit fills every converted texture before any draw samples it. */
+	error = convert_textures(pass, result, &converted, &jobs, &longest);
 	pass->retired = result->retired;
 	if (error != 0)
 		return error;
+	pass->converted = true;
+
+	/* The draws run once all their textures are in place. */
+	error = bcm2711_v3d_job_run(pass->space->native, &pass->job, result);
+	pass->retired = result->retired;
+	result->tfu_ticks = converted;
+	result->tfu_jobs = jobs;
+	result->tfu_max_ticks = longest;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the jobs ran; the finish checks retirement. */
+	return 0;
+}
+
+/*
+ * Publishes a launched pass's output under the controller mutex.
+ *
+ * error is the launch's.  The output may have changed even when it failed.
+ */
+int
+bcm2711_vulkan_native_pass_finish(
+	struct bcm2711_vulkan_native_pass *pass,
+	struct bcm2711_v3d_job_result *result,
+	int error)
+{
+	struct bcm2711_vulkan_native_draw *draw;
+	struct bcm2711_buffer *output;
+	uint64_t offset;
+	uint32_t box[4];
+	uint32_t tiles[4];
+	uint32_t index;
+	bool written;
+
+	/* Snapshots the unit filled are valid for later passes from now on. */
+	if (pass->converted) {
+		for (draw = pass->first; draw != NULL; draw = draw->next) {
+			for (index = 0; index < draw->texture_count; index++) {
+				if (draw->textures[index].convert && draw->textures[index].snapshot != NULL)
+					bcm2711_native_snapshot_filled(draw->textures[index].snapshot);
+			}
+		}
+	}
+
+	/* Launched or not, the render area of the output may have changed, so snapshots and copies of it are stale. */
+	output = pass->output->buffer;
+	offset = (uint64_t)pass->state.output - pass->output->address;
+	box[0] = (uint32_t)pass->area.offset.x;
+	box[1] = (uint32_t)pass->area.offset.y;
+	box[2] = box[0] + pass->area.extent.width;
+	box[3] = box[1] + pass->area.extent.height;
+
+	/*
+	 * A completed pass narrowed to a few tile boxes changed only them
+	 * (ws211-p009): each is recorded alone, so that a later copy takes the
+	 * boxes and not the area around them.  A failed one, a copy, or one of
+	 * more boxes records its area.
+	 */
+	written = false;
+	if (error == 0 &&
+	    pass->state.source == 0 &&
+	    pass->state.box_count != 0 &&
+	    pass->state.box_count <= NATIVE_EXECUTE_WRITTEN_BOXES)
+		written = true;
+	if (written) {
+		for (index = 0; index < pass->state.box_count; index++) {
+			/* The box's tiles in pixels, inside the render area. */
+			tiles[0] = pass->state.boxes[index][0] * 64U;
+			tiles[1] = pass->state.boxes[index][1] * 64U;
+			tiles[2] = (pass->state.boxes[index][2] + 1U) * 64U;
+			tiles[3] = (pass->state.boxes[index][3] + 1U) * 64U;
+			if (tiles[0] < box[0])
+				tiles[0] = box[0];
+			if (tiles[1] < box[1])
+				tiles[1] = box[1];
+			if (tiles[2] > box[2])
+				tiles[2] = box[2];
+			if (tiles[3] > box[3])
+				tiles[3] = box[3];
+			bcm2711_v3d_memory_written(output, offset, tiles);
+		}
+	}
+
+	/* Any other pass: its whole area. */
+	if (!written)
+		bcm2711_v3d_memory_written(output, offset, box);
+	if (error != 0)
+		return error;
+
+	/* A completed whole-image copy leaves its output equal to the source at the copied generation. */
+	if (pass->sync && result->retired) {
+		output->synced_identity = pass->sync_identity;
+		output->synced_offset = pass->sync_offset;
+		output->synced_target_offset = offset;
+		output->synced_source_generation = pass->sync_generation;
+		output->synced_generation = output->generation;
+	}
 
 	/* A successful callback without actual retired DMA cannot permit source reuse or native owner release. */
 	if (!result->retired)
@@ -180,6 +329,18 @@ validate_pass(
 	if ((uint64_t)pass->area.offset.x + pass->area.extent.width > pass->state.width || (uint64_t)pass->area.offset.y + pass->area.extent.height > pass->state.height)
 		return EINVAL;
 
+	/* A TLB copy's source stays mapped and covers every row its tile loads read. */
+	if (pass->source != NULL) {
+		if (pass->source->quarantined || pass->source->references == 0)
+			return EIO;
+		offset = (uint64_t)pass->state.source - pass->source->address;
+		bytes = (uint64_t)pass->state.source_pitch * pass->state.height;
+		if (offset > pass->source->bytes ||
+		    pass->state.source_bytes > pass->source->bytes - offset ||
+		    bytes > pass->state.source_bytes)
+			return EINVAL;
+	}
+
 	/* Every command/pool/state/overflow allocation remains live before the native runner's final mapping checks. */
 	if (pass->count != BCM2711_VULKAN_PASS_STORAGE || pass->job.kind != BCM2711_V3D_JOB_CL)
 		return EINVAL;
@@ -204,6 +365,19 @@ validate_pass(
 			/* Input mappings remain independently held even when their public resource or pipeline identity was withdrawn. */
 			if (storage == NULL ||
 			    storage->space != pass->space ||
+			    storage->view == NULL ||
+			    storage->view->quarantined ||
+			    storage->view->references == 0)
+				return EIO;
+		}
+
+		/* Lent snapshot pixels stay mapped while this draw holds its use. */
+		for (index = 0; index < draw->texture_count; index++) {
+			/* Private pixels were checked among the owned storage above. */
+			if (draw->textures[index].snapshot == NULL)
+				continue;
+			storage = draw->textures[index].pixels;
+			if (storage == NULL ||
 			    storage->view == NULL ||
 			    storage->view->quarantined ||
 			    storage->view->references == 0)
@@ -268,5 +442,62 @@ clear_target(
 	}
 
 	/* Succeeded: exact coherent target writes await the native publication barrier and never change surrounding samples. */
+	return 0;
+}
+
+/*
+ * Runs the texture formatting unit for each texture the pass's draws convert.
+ *
+ * A conversion that fails after launch leaves result->retired false, so the
+ * caller keeps the whole pass for checked recovery like a failed CL job.
+ */
+static int
+convert_textures(
+	struct bcm2711_vulkan_native_pass *pass,
+	struct bcm2711_v3d_job_result *result,
+	uint64_t *ticks,
+	uint32_t *jobs,
+	uint64_t *longest)
+{
+	struct bcm2711_vulkan_native_draw *draw;
+	struct bcm2711_v3d_job job;
+	uint64_t started;
+	uint64_t step;
+	uint32_t index;
+	int error;
+
+	/* Nothing has launched yet, so a pass without conversions retires as before. */
+	*ticks = 0;
+	*jobs = 0;
+	*longest = 0;
+	result->retired = true;
+	kern_memset(&job, 0, sizeof(job));
+	job.kind = BCM2711_V3D_JOB_TFU;
+
+	/* Converts the textures in draw order; shared textures belong to the first draw only. */
+	started = clock_ticks();
+	for (draw = pass->first; draw != NULL; draw = draw->next) {
+		for (index = 0; index < draw->texture_count; index++) {
+			/* A texture the CPU already converted needs no unit job. */
+			if (!draw->textures[index].convert)
+				continue;
+
+			/* Each conversion completes before the next starts; one queue holds one job. */
+			job.command.tfu = draw->textures[index].tfu;
+			step = clock_ticks();
+			error = bcm2711_v3d_job_run(pass->space->native, &job, result);
+			if (error != 0)
+				return error;
+
+			/* The diagnostic count and the longest conversion. */
+			step = clock_ticks() - step;
+			(*jobs)++;
+			if (step > *longest)
+				*longest = step;
+		}
+	}
+	*ticks = clock_ticks() - started;
+
+	/* Succeeded: every converted texture is in memory for the following CL job. */
 	return 0;
 }

@@ -13,8 +13,16 @@
 #include "drivers/gpu/bcm2711/vulkan-record.h"
 #include "drivers/gpu/bcm2711/vulkan-descriptor.h"
 
+/* One chunk of a recording's events, in recording order, the first used of them. */
+struct bcm2711_vulkan_record_chunk {
+	struct bcm2711_vulkan_record_chunk *next;
+	uint32_t used;
+	struct bcm2711_vulkan_record records[BCM2711_VULKAN_RECORD_CHUNK];
+};
+
 static int append_record(struct bcm2711_vulkan_command_buffer *command, const struct bcm2711_vulkan_record *decoded);
 static int release_record(struct bcm2711_vulkan_command_node *node);
+static struct bcm2711_vulkan_record *record_take(struct bcm2711_vulkan_command_buffer *command);
 
 /*
  * Records one complete reply-free graphics event while preserving exact ordering and independent input ownership.
@@ -154,8 +162,8 @@ append_record(
 	if (command->recorded_bytes > BCM2711_VULKAN_RECORD_BYTES - sizeof(*record))
 		return ENOMEM;
 
-	/* Allocate one event without changing the primary list on ordinary OOM. */
-	record = kern_calloc(1, sizeof(*record));
+	/* Takes one event from the recording's chunks without changing the primary list on ordinary OOM. */
+	record = record_take(command);
 	if (record == NULL)
 		return ENOMEM;
 
@@ -219,11 +227,50 @@ release_record(
 			error = retired;
 	}
 
-	/* Metadata retires completely even when a referenced native allocation remains in independent quarantine. */
-	kern_free(record);
+	/* The event's storage belongs to its recording's chunk, freed when the recording is cleared. */
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the event owns no typed input or recording storage. */
 	return 0;
+}
+
+/*
+ * Frees a cleared recording's event chunks.
+ */
+void
+bcm2711_vulkan_record_chunks_free(
+	struct bcm2711_vulkan_command_buffer *command)
+{
+	struct bcm2711_vulkan_record_chunk *chunk;
+	struct bcm2711_vulkan_record_chunk *next;
+
+	/* Every event of every chunk has released its typed edges. */
+	for (chunk = command->record_chunks; chunk != NULL; chunk = next) {
+		next = chunk->next;
+		kern_free(chunk);
+	}
+	command->record_chunks = NULL;
+}
+
+/* Takes the next zeroed event from the recording's newest chunk, adding a chunk when it is full. */
+static struct bcm2711_vulkan_record *
+record_take(
+	struct bcm2711_vulkan_command_buffer *command)
+{
+	struct bcm2711_vulkan_record_chunk *chunk;
+
+	/* A new chunk goes to the head of the recording's list; its events are zeroed. */
+	chunk = command->record_chunks;
+	if (chunk == NULL || chunk->used == BCM2711_VULKAN_RECORD_CHUNK) {
+		chunk = kern_calloc(1, sizeof(*chunk));
+		if (chunk == NULL)
+			return NULL;
+		chunk->next = command->record_chunks;
+		command->record_chunks = chunk;
+	}
+
+	/* Reports the next unused event of the newest chunk. */
+	chunk->used++;
+	return &chunk->records[chunk->used - 1U];
 }

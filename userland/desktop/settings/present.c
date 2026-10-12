@@ -73,7 +73,8 @@ se_present_resize(
 }
 
 /*
- * Shows a frame of the presenter's size.  Returns VK_SUCCESS,
+ * Shows a frame of the presenter's size, all of it (count 0), or only the
+ * parts that changed since the last frame.  Returns VK_SUCCESS,
  * VK_ERROR_OUT_OF_DATE_KHR when the frames need the window's new size, or
  * another error with the call that failed.
  */
@@ -81,14 +82,16 @@ VkResult
 se_present_frame(
 	struct se_present *present,
 	const uint32_t *pixels,
-	size_t stride)
+	size_t stride,
+	const struct kl_rect *parts,
+	unsigned count)
 {
 	struct kl_present_times times;
 	int error;
 
-	/* The frame, and its times. */
-	present->operation = "kl_window_present";
-	error = kl_window_present(present->window->kui, pixels, stride);
+	/* The frame (its changed parts alone, when it has them), and its times. */
+	present->operation = "kl_window_present_parts";
+	error = kl_window_present_parts(present->window->kui, pixels, stride, parts, count);
 	kl_window_present_times(present->window->kui, &times);
 	present->copy_ms = times.copy_ms;
 	present->acquire_ms = times.acquire_ms;

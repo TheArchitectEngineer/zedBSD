@@ -24,7 +24,18 @@
 #include <stdint.h>
 
 #define AUDIOD_SOCKET_PATH	"/run/audiod.sock"
-#define AUDIOD_VERSION		1U
+
+/*
+ * The protocol's version and the shared memory ring's, apart (ws209-p002,
+ * design 1.1 P1').  A client says its protocol version in HELLO; audiod
+ * answers the lower of its own and the client's in WELCOME, and gives a
+ * version 1 client none of version 2's events and refuses it version 2's
+ * requests.  The ring's layout has not changed and keeps version 1.
+ */
+#define AUDIOD_PROTOCOL_VERSION_1	1U
+#define AUDIOD_PROTOCOL_VERSION_2	2U
+#define AUDIOD_PROTOCOL_VERSION		AUDIOD_PROTOCOL_VERSION_2
+#define AUDIOD_SHM_VERSION		1U
 
 /* Sample encodings; 1 and 2 are the kernel's numbers. */
 #define AUDIOD_FORMAT_S16_LE	1U
@@ -56,6 +67,26 @@
  */
 #define AUDIOD_FEEDBACK		11U
 
+/*
+ * Version 2 (ws209-p002): the sound's endpoints and routes
+ * (plan/ws209/phase001/phase.md).  A daemon (bluetoothd, a modem's)
+ * registers its endpoints, each with a ring in shared memory as a stream
+ * has; the seat's compositor chooses the routes; the daemon that holds a
+ * call's far side sets the call.
+ */
+#define AUDIOD_ENDPOINT_ADD		12U
+#define AUDIOD_ENDPOINT_REMOVE		13U
+#define AUDIOD_ENDPOINT_STATE		14U
+#define AUDIOD_ENDPOINT_LIST		15U
+#define AUDIOD_ROUTE_SET		16U
+#define AUDIOD_ROUTE_LIST		17U
+#define AUDIOD_CALL_SET			18U
+#define AUDIOD_CALL_CLEAR		19U
+#define AUDIOD_ENDPOINT_FAILED		20U
+#define AUDIOD_CALL_STATE		21U
+#define AUDIOD_ENDPOINT_VOLUME_REPORT	22U
+#define AUDIOD_MEDIA_RELEASE		23U
+
 /* Replies and events. */
 #define AUDIOD_WELCOME		64U
 #define AUDIOD_STREAM_CREATED	65U
@@ -66,6 +97,65 @@
 #define AUDIOD_UNDERRUN		70U
 #define AUDIOD_OVERRUN		71U
 #define AUDIOD_VOLUME_CHANGED	72U
+#define AUDIOD_ENDPOINT_ADDED	73U
+#define AUDIOD_ENDPOINT_INFO	74U
+#define AUDIOD_ROUTE_INFO	75U
+#define AUDIOD_ENDPOINT_WANTED	76U
+#define AUDIOD_MEDIA_HELD	77U
+#define AUDIOD_ENDPOINT_REMOVED	78U
+#define AUDIOD_ENDPOINT_VOLUME	79U
+
+/* SUBSCRIBE's bits: the device volume (every version), the endpoints and the routes (version 2). */
+#define AUDIOD_SUBSCRIBE_VOLUME		0x1U
+#define AUDIOD_SUBSCRIBE_ENDPOINTS	0x2U
+#define AUDIOD_SUBSCRIBE_ROUTES		0x4U
+
+/* An endpoint's kind: audiod writes a sink and reads a source. */
+#define AUDIOD_KIND_SINK		0U
+#define AUDIOD_KIND_SOURCE		1U
+
+/* An endpoint's class. */
+#define AUDIOD_CLASS_SPEAKER		1U
+#define AUDIOD_CLASS_MIC		2U
+#define AUDIOD_CLASS_HEADSET_MEDIA	3U
+#define AUDIOD_CLASS_HEADSET_VOICE	4U
+#define AUDIOD_CLASS_PHONE_CALL		5U
+#define AUDIOD_CLASS_MODEM_CALL		6U
+
+/* An endpoint's state: it streams, it paused for a while, or it opens when wanted. */
+#define AUDIOD_ENDPOINT_ACTIVE		1U
+#define AUDIOD_ENDPOINT_SUSPENDED	2U
+#define AUDIOD_ENDPOINT_DORMANT		3U
+
+/* ENDPOINT_ADD's flags: the daemon takes the endpoint's volume (ENDPOINT_VOLUME). */
+#define AUDIOD_ENDPOINT_FLAG_VOLUME	0x1U
+
+/* The routes, and an endpoint id of 0 for a route's default. */
+#define AUDIOD_ROUTE_MEDIA		1U
+#define AUDIOD_ROUTE_CALL		2U
+#define AUDIOD_ENDPOINT_DEFAULT		0U
+
+/* The internal endpoints' ids (kernel's /dev/dsp0); a daemon's start at 16 and are never given twice. */
+#define AUDIOD_ENDPOINT_DEVICE_OUT	1U
+#define AUDIOD_ENDPOINT_DEVICE_IN	2U
+#define AUDIOD_ENDPOINT_FIRST		16U
+
+/* Why a route or an endpoint changed. */
+#define AUDIOD_REASON_NONE		0U
+#define AUDIOD_REASON_TIMEOUT		1U
+#define AUDIOD_REASON_FAILED		2U
+#define AUDIOD_REASON_OUTPUT_LOST	3U
+#define AUDIOD_REASON_REMOVED		4U
+#define AUDIOD_REASON_BROKEN		5U
+#define AUDIOD_REASON_CALL		6U
+
+/* A stream's role (version 2's STREAM_CREATE): media, or an alert (notifications, ringing) that a call does not stop. */
+#define AUDIOD_ROLE_MEDIA		0U
+#define AUDIOD_ROLE_ALERT		1U
+
+/* An endpoint's key and name, NUL-ended. */
+#define AUDIOD_KEY_MAX			32U
+#define AUDIOD_NAME_MAX			32U
 
 /* Every message starts with this; length counts the whole message. */
 struct audiod_header {
@@ -99,6 +189,152 @@ struct audiod_stream_create {
 	uint32_t rate;
 	uint32_t buffer_frames;
 	uint32_t period_frames;
+};
+
+/* Version 2's STREAM_CREATE: the same with the stream's role (version 1's length means media). */
+struct audiod_stream_create2 {
+	struct audiod_header header;
+	uint32_t direction;
+	uint32_t format;
+	uint32_t channels;
+	uint32_t rate;
+	uint32_t buffer_frames;
+	uint32_t period_frames;
+	uint32_t role;
+	uint32_t reserved;
+};
+
+/*
+ * ENDPOINT_ADD: what the endpoint is, its ring's size and the fill the
+ * daemon wants it kept at (frames), its state and flags, its latency
+ * beyond the ring (us), a key that stays across reconnections
+ * ("bt:001122334455:a2dp") and a name to show.  Answered with
+ * ENDPOINT_ADDED and the ring's memory (SCM_RIGHTS).
+ */
+struct audiod_endpoint_add {
+	struct audiod_header header;
+	uint32_t kind;
+	uint32_t endpoint_class;
+	uint32_t group;
+	uint32_t format;
+	uint32_t channels;
+	uint32_t rate;
+	uint32_t buffer_frames;
+	uint32_t target_frames;
+	uint32_t state;
+	uint32_t flags;
+	uint32_t latency_us;
+	uint32_t reserved;
+	char key[AUDIOD_KEY_MAX];
+	char name[AUDIOD_NAME_MAX];
+};
+
+/* ENDPOINT_ADDED: the endpoint's id and its ring's memory. */
+struct audiod_endpoint_added {
+	struct audiod_header header;
+	uint32_t id;
+	uint32_t shm_bytes;
+	uint32_t capacity_frames;
+	uint32_t reserved;
+};
+
+/*
+ * ENDPOINT_REMOVE, ENDPOINT_STATE (with the WANTED ticket it answers and
+ * its latency now), ENDPOINT_FAILED (the error the daemon met opening it,
+ * for that ticket): a daemon's word on its endpoint.
+ */
+struct audiod_endpoint_state {
+	struct audiod_header header;
+	uint32_t id;
+	uint32_t state;
+	uint32_t ticket;
+	uint32_t latency_us;
+};
+
+/* ENDPOINT_INFO (events and ENDPOINT_LIST's answers): an endpoint as audiod knows it. */
+struct audiod_endpoint_info {
+	struct audiod_header header;
+	uint32_t id;
+	uint32_t kind;
+	uint32_t endpoint_class;
+	uint32_t group;
+	uint32_t state;
+	uint32_t rate;
+	uint32_t channels;
+	uint32_t flags;
+	uint32_t latency_us;
+	uint32_t volume_left;
+	uint32_t volume_right;
+	uint32_t muted;
+	char key[AUDIOD_KEY_MAX];
+	char name[AUDIOD_NAME_MAX];
+};
+
+/* ROUTE_SET: a route's output and input endpoints (0: the default; for CALL the user's side). */
+struct audiod_route_set {
+	struct audiod_header header;
+	uint32_t route;
+	uint32_t output;
+	uint32_t input;
+	uint32_t reserved;
+};
+
+/*
+ * ROUTE_INFO (events and ROUTE_LIST's answers): a route, whether it runs,
+ * why it last changed, whether its media is held (MEDIA), its call's far
+ * group and whether the call's sound is here (CALL).
+ */
+struct audiod_route_info {
+	struct audiod_header header;
+	uint32_t route;
+	uint32_t output;
+	uint32_t input;
+	uint32_t active;
+	uint32_t reason;
+	uint32_t held;
+	uint32_t far_group;
+	uint32_t audio_here;
+};
+
+/* CALL_SET (far_group), CALL_STATE (active, audio_here): a call's far side and its state. */
+struct audiod_call {
+	struct audiod_header header;
+	uint32_t far_group;
+	uint32_t active;
+	uint32_t audio_here;
+	uint32_t reserved;
+};
+
+/* ENDPOINT_WANTED: open (1) or close (0) an endpoint, the ticket its ACTIVE answers with. */
+struct audiod_endpoint_wanted {
+	struct audiod_header header;
+	uint32_t id;
+	uint32_t wanted;
+	uint32_t ticket;
+	uint32_t reserved;
+};
+
+/* MEDIA_HELD: the media streams are held (not read) or not, and why. */
+struct audiod_media_held {
+	struct audiod_header header;
+	uint32_t held;
+	uint32_t reason;
+};
+
+/* ENDPOINT_REMOVED (the endpoint audiod took away, and why). */
+struct audiod_endpoint_removed {
+	struct audiod_header header;
+	uint32_t id;
+	uint32_t reason;
+};
+
+/* ENDPOINT_VOLUME (audiod to a daemon) and ENDPOINT_VOLUME_REPORT (a daemon to audiod): 0..100 a channel. */
+struct audiod_endpoint_volume {
+	struct audiod_header header;
+	uint32_t id;
+	uint32_t left;
+	uint32_t right;
+	uint32_t muted;
 };
 
 /* Carries the shared memory descriptor with SCM_RIGHTS. */
@@ -137,7 +373,8 @@ struct audiod_event {
 	uint32_t reserved;
 };
 
-#define AUDIOD_MESSAGE_MAX	64U
+/* The longest message (ENDPOINT_ADD and ENDPOINT_INFO are 128 bytes; room to grow, N18). */
+#define AUDIOD_MESSAGE_MAX	256U
 
 /* The page at the start of every stream's shared memory. */
 #define AUDIOD_SHM_MAGIC	0x44445541U	/* "AUDD" */
@@ -238,5 +475,10 @@ audiod_position_store(
 	__atomic_store_n(sequence, current + 2U, __ATOMIC_RELEASE);
 #endif
 }
+
+_Static_assert(sizeof(struct audiod_endpoint_add) == 128, "ENDPOINT_ADD is 128 bytes");
+_Static_assert(sizeof(struct audiod_endpoint_info) == 128, "ENDPOINT_INFO is 128 bytes");
+_Static_assert(sizeof(struct audiod_stream_create) == 40, "version 1's STREAM_CREATE is 40 bytes");
+_Static_assert(sizeof(struct audiod_stream_create2) == 48, "version 2's STREAM_CREATE is 48 bytes");
 
 #endif

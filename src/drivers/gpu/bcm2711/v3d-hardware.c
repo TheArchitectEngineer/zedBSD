@@ -11,6 +11,7 @@
 #include <kern/device-io.h>
 #include <kern/irq.h>
 #include <kern/kcrt.h>
+#include <kern/sched.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
@@ -69,6 +70,7 @@ bcm2711_v3d_hardware_start(
 
 	/* Establishes the guard before publishing any IRQ-side argument. */
 	spin_init(&hardware->guard, LOCK_RANK_DEVICE, "bcm2711-v3d");
+	waitq_init(&hardware->events_queue, "bcm2711-v3d-events");
 	hardware->initialized = true;
 	engine->irq.owner = engine;
 	engine->irq.service = service_sources;
@@ -124,6 +126,52 @@ bcm2711_v3d_hardware_start(
 
 	/* Succeeded: the worker can now map resources and publish its first job. */
 	return 0;
+}
+
+/*
+ * Reads the sequence the IRQ handler advances after latching events.
+ */
+uint64_t
+bcm2711_v3d_hardware_event_sequence(
+	struct bcm2711_v3d *engine)
+{
+	unsigned long enabled;
+	uint64_t sequence;
+
+	/* The handler advances it under the same guard. */
+	enabled = spin_lock_irqsave(&engine->hardware.guard);
+
+	sequence = waitq_sequence(&engine->hardware.events_queue);
+
+	spin_unlock_irqrestore(&engine->hardware.guard, enabled);
+
+	/* Succeeded: the caller checks the events after this observation. */
+	return sequence;
+}
+
+/*
+ * Sleeps until an IRQ comes after the observed sequence, or until the next scheduler tick.
+ *
+ * An IRQ that came between the observation and the sleep ends it at once.
+ * The tick bound keeps the caller's progress windows and timeouts unchanged.
+ */
+void
+bcm2711_v3d_hardware_event_wait(
+	struct bcm2711_v3d *engine,
+	uint64_t observed)
+{
+	unsigned long enabled;
+	uint64_t deadline;
+
+	/* At most until the next tick, as the former short sleep did. */
+	deadline = sched_ticks() + 1U;
+
+	/* Sleeps on the queue unless an IRQ came since the observation. */
+	enabled = spin_lock_irqsave(&engine->hardware.guard);
+
+	(void)waitq_sleep(&engine->hardware.events_queue, &engine->hardware.guard, observed, deadline, 0U);
+
+	spin_unlock_irqrestore(&engine->hardware.guard, enabled);
 }
 
 /*
@@ -208,6 +256,9 @@ bcm2711_v3d_hardware_reset(
 		record_failure(engine, error);
 		return error;
 	}
+
+	/* The reset cleared the performance counters' sources. */
+	hardware->counters_ready = false;
 
 	/* Reads the now-powered identifiers again before restoring translation storage. */
 	error = identify(engine);
@@ -756,6 +807,9 @@ service_sources(
 
 	/* Timestamp the protected IRQ snapshot for worker-latency diagnostics. */
 	hardware->events.arrival_tick = clock_ticks();
+
+	/* A worker sleeping for these events wakes now instead of at its next tick. */
+	waitq_wake_all(&hardware->events_queue);
 
 	/* Faults take precedence over simultaneous queue completion in the worker. */
 	if ((core & ENGINE_CORE_FAULT) != 0 || (hub & ENGINE_HUB_FAULTS) != 0) {

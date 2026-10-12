@@ -273,6 +273,9 @@ networkd_lan_observe(
 		item->state = NETWORKD_LAN_IDLE;
 		item->raised = 0;
 		item->carrier = 0;
+
+		/* The administrator took the old device down, not this one. */
+		item->held_down = 0;
 	}
 	item->ifindex = ifindex;
 	item->generation = generation;
@@ -347,6 +350,16 @@ networkd_lan_event(
 	/* Handles a cable that arrived. */
 	if (event->rtm_transition == RTM_IFINFO_CARRIER_UP) {
 		item->carrier = 1;
+
+		/*
+		 * An interface the administrator took down stays down: the
+		 * cable is remembered, and asks for it only once it is
+		 * brought up again (BUG-293).
+		 */
+		if (item->held_down)
+			return NETWORKD_LAN_ACTION_NONE;
+
+		/* A cable in an interface nothing was decided for asks for it. */
 		if (lan->enabled && item->state == NETWORKD_LAN_IDLE)
 			item->state = NETWORKD_LAN_PENDING;
 
@@ -408,6 +421,10 @@ networkd_lan_next(
 		/* Only an interface with a cable and no configuration. */
 		if (item->state != NETWORKD_LAN_PENDING || !item->carrier)
 			continue;
+
+		/* One the administrator took down is not configured (BUG-293). */
+		if (item->held_down)
+			continue;
 		policy = policy_for(lan, item->name);
 
 		/* An interface the configuration disables is left alone. */
@@ -434,6 +451,10 @@ networkd_lan_next(
 
 		/* Only a present interface without a cable, not raised yet. */
 		if (item->carrier || item->raised)
+			continue;
+
+		/* One the administrator took down is not raised (BUG-293). */
+		if (item->held_down)
 			continue;
 		policy = policy_for(lan, item->name);
 
@@ -535,6 +556,102 @@ networkd_lan_down(
 	item->raised = 0;
 
 	/* Reports successful completion. */
+	return 0;
+}
+
+/*
+ * Records that the administrator took an interface down.
+ *
+ * The interface is not raised again to see its next cable, and a cable
+ * does not configure it.  A down that the daemon undid at once, by raising
+ * the interface and falling back to a link-local address when DHCP did not
+ * answer, is what left that address on an interface the administrator had
+ * taken down (BUG-293).
+ */
+int
+networkd_lan_hold_down(
+	struct networkd_lan *lan,
+	const char *name)
+{
+	struct networkd_lan_interface *item;
+	int valid;
+
+	/* Rejects a missing state. */
+	if (lan == NULL)
+		return -1;
+
+	/* Rejects a name that could not be an interface. */
+	valid = name_valid(name);
+	if (!valid)
+		return -1;
+
+	/* Finds the interface the administrator named. */
+	item = find_interface(lan, name);
+	if (item == NULL)
+		return -1;
+
+	/*
+	 * HELD_DOWN keeps the policy from raising or configuring the
+	 * interface until the administrator brings it up again.  It holds
+	 * nothing it was given any more, and it is no longer up to watch its
+	 * link.
+	 */
+	item->held_down = 1;
+	item->state = NETWORKD_LAN_IDLE;
+	item->raised = 0;
+
+	/* Succeeded: the interface stays down until it is released. */
+	return 0;
+}
+
+/*
+ * Records that the administrator brought an interface up again.
+ *
+ * The policy decides for the interface again.  One with a cable is
+ * configured again, and so is one whose configuration had not succeeded:
+ * bringing it up is how the administrator asks for another try without
+ * moving the cable (BUG-293).  A configured interface keeps what it has,
+ * and one without a cable is raised to see its next cable as before.
+ */
+int
+networkd_lan_release(
+	struct networkd_lan *lan,
+	const char *name)
+{
+	struct networkd_lan_interface *item;
+	int valid;
+
+	/* Rejects a missing state. */
+	if (lan == NULL)
+		return -1;
+
+	/* Rejects a name that could not be an interface. */
+	valid = name_valid(name);
+	if (!valid)
+		return -1;
+
+	/* Finds the interface the administrator named. */
+	item = find_interface(lan, name);
+	if (item == NULL)
+		return -1;
+
+	/* HELD_DOWN cleared: the policy raises and configures it again. */
+	item->held_down = 0;
+
+	/* A configured interface keeps the address it has. */
+	if (item->state == NETWORKD_LAN_CONFIGURED)
+		return 0;
+
+	/* One without a cable waits for its next cable. */
+	if (!item->carrier) {
+		item->state = NETWORKD_LAN_IDLE;
+		return 0;
+	}
+
+	/* A cable in it asks for it to be configured again. */
+	item->state = NETWORKD_LAN_PENDING;
+
+	/* Succeeded: the interface is managed again. */
 	return 0;
 }
 

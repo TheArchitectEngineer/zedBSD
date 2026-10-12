@@ -147,7 +147,7 @@ int kwl_titlebar_drop_at(struct kwl_server *server, int32_t x, int32_t y, struct
 /* The presentation (titlebar-shell.c). */
 void kwl_titlebar_frame(struct kwl_server *server);
 int32_t kwl_titlebar_title_limit(struct kwl_server *server, struct kwl_object *surface, int32_t available);
-void kwl_titlebar_draw(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct kwl_menu_area *area, const float *ink, float fade);
+void kwl_titlebar_draw(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, unsigned docked, const struct kwl_menu_area *area, const float *ink, float fade);
 int kwl_titlebar_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_titlebar_motion(struct kwl_server *server);
 int kwl_titlebar_key(struct kwl_server *server, uint32_t key, uint32_t state);
@@ -157,7 +157,7 @@ void kwl_titlebar_overflow_chosen(struct kwl_server *server, struct kwl_object *
 void kwl_titlebar_overflow_opened(struct kwl_object *surface);
 void kwl_titlebar_forget(struct kwl_server *server, struct kwl_object *object);
 void kwl_titlebar_suggestions(struct kwl_server *server, struct kwl_object *titlebar, uint32_t id, const char *const *strings, size_t count);
-void kwl_titlebar_draw_suggestions(struct kwl_server *server, VkCommandBuffer command);
+void kwl_titlebar_draw_suggestions(struct kwl_server *server, struct kwl_list *command);
 struct kwl_object *kwl_titlebar_field_surface(struct kwl_server *server);
 int kwl_titlebar_field_state(struct kwl_server *server, char *text, size_t size, int32_t *cursor, int32_t *anchor, int32_t *rectangle);
 void kwl_titlebar_field_input(struct kwl_server *server, const char *preedit, const char *commit, uint32_t before, uint32_t after);

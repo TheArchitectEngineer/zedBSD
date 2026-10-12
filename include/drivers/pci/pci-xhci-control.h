@@ -153,6 +153,32 @@ drv_xhci_endpoint_context_encode(enum drv_usb_speed speed, unsigned type,
 		*context = encoded;
 		return 1;
 	}
+	/*
+	 * Isochronous (ws197-p007a1, design 2.1a X7): full speed and high
+	 * speed with one transaction an interval only.  No error retries
+	 * (CErr 0); the interval is 2^(bInterval - 1) frames at full speed
+	 * (bInterval + 2 as microframes' exponent) and 2^(bInterval - 1)
+	 * microframes at high speed; the most an interval carries is one
+	 * packet.  SuperSpeed and high-bandwidth endpoints are refused.
+	 */
+	if (type == 1U || type == 5U) {
+		if (speed >= DRV_USB_SPEED_SUPER || speed < DRV_USB_SPEED_FULL)
+			return 0;
+		if ((maximum_packet_size & 0xf800U) != 0 || packet == 0)
+			return 0;
+		if (descriptor_interval == 0 || descriptor_interval > 16U)
+			return 0;
+		interval = descriptor_interval - 1U;
+		if (speed == DRV_USB_SPEED_FULL)
+			interval = descriptor_interval + 2U;
+		if (interval > 15U)
+			return 0;
+		encoded.word0 = (uint32_t)interval << 16;
+		encoded.word1 = ((type & 7U) << 3) | ((packet & 0xffffU) << 16);
+		encoded.word4 = ((uint32_t)packet << 16) | packet;
+		*context = encoded;
+		return 1;
+	}
 	if (periodic) {
 		if (speed >= DRV_USB_SPEED_HIGH) {
 			interval = descriptor_interval != 0 ?

@@ -118,8 +118,8 @@ static unsigned bar_switch_on(void);
 static int bar_acts(const struct bar_row *row);
 static const char *bar_state_text(void);
 static void bar_log_layout(void);
-static void bar_draw_row(struct kwl_server *server, VkCommandBuffer command, const struct bar_row *row, int32_t top, unsigned over);
-static void bar_draw_switch(struct kwl_server *server, VkCommandBuffer command, int32_t right, int32_t middle, unsigned on);
+static void bar_draw_row(struct kwl_server *server, struct kwl_list *command, const struct bar_row *row, int32_t top, unsigned over);
+static void bar_draw_switch(struct kwl_server *server, struct kwl_list *command, int32_t right, int32_t middle, unsigned on);
 
 /*
  * Tells whether the bar has the Bluetooth icon now (1) or not (0): the
@@ -141,7 +141,7 @@ kwl_bluetooth_bar_width(
 void
 kwl_bluetooth_draw_icon(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t top,
 	const float *ink)
@@ -198,7 +198,7 @@ kwl_bluetooth_draw_icon(
 void
 kwl_bluetooth_draw_menu(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	struct glass_shape shape;
 	const struct bar_row *over;
@@ -820,7 +820,7 @@ bar_log_layout(
 static void
 bar_draw_row(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct bar_row *row,
 	int32_t top,
 	unsigned over)
@@ -904,7 +904,7 @@ bar_draw_row(
 static void
 bar_draw_switch(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t right,
 	int32_t middle,
 	unsigned on)

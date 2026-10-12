@@ -34,6 +34,8 @@ struct bcm2711_vulkan_command_node {
 	int (*release)(struct bcm2711_vulkan_command_node *node);
 };
 
+struct bcm2711_vulkan_record_chunk;
+
 /* One primary recording owns its pool and nodes while pending counts prohibit mutation through any public identity. */
 struct bcm2711_vulkan_command_buffer {
 	struct bcm2711_vulkan_input_owner owner;
@@ -46,6 +48,8 @@ struct bcm2711_vulkan_command_buffer {
 	VkCommandBufferUsageFlags flags;
 	uint32_t pending;
 	uint32_t recorded_bytes;
+	/* The chunks the recording's events come from, freed when the recording is cleared. */
+	struct bcm2711_vulkan_record_chunk *record_chunks;
 	int recording_error;
 	bool render_open;
 };

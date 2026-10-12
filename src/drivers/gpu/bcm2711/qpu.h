@@ -30,12 +30,13 @@ struct bcm2711_qpu_destination {
 	uint32_t peripheral;
 };
 
-/* Single-operation instructions deliberately leave the other ALU idle for conservative scheduling. */
+/* One semantic operation; the compiler's scheduler may pair an add ALU operation with a multiply ALU operation in one word. */
 enum bcm2711_qpu_operation {
 	BCM2711_QPU_IDLE,
 	BCM2711_QPU_MOVE,
 	BCM2711_QPU_HALF_LOW,
 	BCM2711_QPU_HALF_HIGH,
+	BCM2711_QPU_PACK_HALVES,
 	BCM2711_QPU_FLOAT_ADD,
 	BCM2711_QPU_FLOAT_SUBTRACT,
 	BCM2711_QPU_FLOAT_MULTIPLY,
@@ -112,7 +113,33 @@ struct bcm2711_qpu_instruction {
 	struct bcm2711_qpu_destination signal_destination;
 };
 
+/* The ALU an operation runs on; a bit-preserving move runs on either (on the add ALU as a bit OR of the value with itself). */
+enum bcm2711_qpu_unit {
+	BCM2711_QPU_UNIT_NONE,
+	BCM2711_QPU_UNIT_ADD,
+	BCM2711_QPU_UNIT_MULTIPLY,
+	BCM2711_QPU_UNIT_EITHER
+};
+
+/*
+ * One native word: an add ALU operation, a multiply ALU operation and one signal, issued together.
+ *
+ * Both operations read their sources at the start of the word and write at its end, so neither sees
+ * the other's result.  The operations' own signal fields are unused; the word's signal is separate.
+ */
+struct bcm2711_qpu_bundle {
+	struct bcm2711_qpu_instruction add;
+	struct bcm2711_qpu_instruction multiply;
+	enum bcm2711_qpu_signal signal;
+	struct bcm2711_qpu_destination signal_destination;
+	/* Set to add a thread switch to the word's signal, where the native signal table combines them. */
+	uint32_t thread_switch;
+};
+
 int bcm2711_qpu_encode(const struct bcm2711_qpu_instruction *instruction, uint64_t *word);
+int bcm2711_qpu_encode_bundle(const struct bcm2711_qpu_bundle *bundle, uint64_t *word);
 int bcm2711_qpu_small_constant(uint32_t bits, uint32_t *encoded);
+enum bcm2711_qpu_unit bcm2711_qpu_operation_unit(enum bcm2711_qpu_operation operation);
+uint32_t bcm2711_qpu_operation_sources(enum bcm2711_qpu_operation operation);
 
 #endif

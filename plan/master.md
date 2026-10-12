@@ -8,20 +8,19 @@
   Q1 の操作盤。先頭（awesome-plan-current）は「今」だけを書き、各 block は「master:<名前>:start」〜「master:<名前>:end」で丸ごと置き換えてよい。
   block: updated・agents・merge・next・open-decisions・focus・blocked（先頭）、priority・outlook（本体）、decisions-log・history-log（末尾の付録、新しい物を block の先頭に足す）。
   置き換え: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
--->
-
-<!-- master:agents:start -->
-- **2026-10-11（Q1）: N=3＋T1**（ユーザー）。[Queue](queue.md) の 2026-10-11 の節、[台帳](agents/registry.md)。
-  - P1（agent/p1、新規の実装）: q924 WS157 Photos の削除の統合 → q925 Vulkan Video i915 の完了（WS202・WS083 p007）→ q926 ws197-p014 media picker の popup → q927 MMS の送信（p010）→ q928 HFP の制御 → q929 [WS204](ws204/ws.md) HDA の録音 → q930 HFP の音 → q931 [WS205](ws205/ws.md) Bluetooth audio → q932 [WS206](ws206/ws.md) Pi 4 WiFi → q933 [WS207](ws207/ws.md) Pi 4 audio。
-  - P2: q934 BUG-263（c695cc34d、test-wait T1-530）・q935 BUG-274（048dc8c4b、guest の script の実行はユーザーの判断待ち）を終えて終了。
-  - P1 の q924（WS157 Photos の削除）を merge（787c1904c）。GUI の確かめは T1 に後でまとめる。既存の keiland-os-boundary A4 の FAIL（phone/main.c の posix_spawn）は P1 が q926 で直す。
-  - P3（agent/p3、起点 d27925686）: q936 [ws141-p013](ws141/phase013/phase.md) VC6 の描画（mouse の移動 300 ms → 33 ms → 16 ms、Pi 4 は 10.0.30.2）。WS141 は Codex のセッションから P3 へ引き継いだ。**Codex は全て終了（2026-10-11 ユーザー「Codexはもう動かしません。終了しました。」）**。Pi 4 は image を焼き直した（ユーザー）: P3 が SSH で kernel を入れて reboot。
-  - T1（agent/t1）: T1-529 WS202 の再生（QEMU と 5330 の scp）。
+- **2026-10-12 夜（Q1）: P3 だけ**（P1・P2・T1 は停止）。Settings/Files の無操作の描画・CPU の直しは bug-fixer（別 worktree）が作業中。
+  - P3（agent/p3、最新 60583b336）: [WS141](ws141/ws.md) と [WS211](ws211/ws.md)。Pi 4（10.0.30.2）への書き込みは auto mode の判定で止まるので、P3 が /tmp に束と place*.sh を置き、ユーザーが Pi で sudo sh を実行して電源を入れ直す。
+    - Pi の今: place3（vmunix 3188273747）。place4（main 47ec30eea: serial 無効・console 停止・perf は v3d.perf=1 の時だけ・frame pacing の免除・段 0/0b）は /tmp に置いてあり、ユーザーの実行待ち。(B) の perf-on.sh は reboot で消えるので P3 が置き直す（原本 scratchpad/p3g3/bundle4/）。
+    - WS211: 段 0・0b は main。段 1・2（60583b336）は review-4 中、未 merge。決定（時間差をやめる、見た目の変化を受け入れる、最速で引っかかり無し）は decisions-log。
+    - WS141: p016 の A1・A2・予算 512MiB・TFU・部分変換・準備の失敗の局所化・CURSOR_SET の鍵・HAL の allocator の word 走査は main。(B) の libvulkan の fast path は第 4 版の review 待ち（review-B3 の後、904bdfe0d）。(b) は v3d.perf=1 の計測の後。
+  - 結果（2026-10-12 ユーザー）: App Home の開閉で落ちない、Music は起動する、Settings を開くと App Home 4fps（直し中）、デスクトップは CPU の負荷で引っかかる（SMP は WS208、最後の予定でユーザーに再確認中）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
 
 <!-- master:merge:start -->
+- 2026-10-11 夜: ユーザー「5330はほかの用途に使いませんし私はタッチしません。自由に使ってください。」→ 5330（10.0.30.3、UAT image b67a6d7）は T1・P が自由に使ってよい（元を退避）。ESP への書き込みは安全の判定の経緯があるので Q1 が扱う。Pi 4（10.0.30.2）は main 82f2dfc の image、reboot は手動（ユーザーの電源の入れ直し）。
+- 2026-10-11 夕: ユーザー「らちがあかないので、vc6の作業内容をmainにマージしてください。最新のイメージをビルドして焼きます。バグが修正されるまで再起動は手動にします。」→ P3 の VC6（agent/p3 c2e17c674、TLB copy・scene cache の全面の経路・計測の行・TFU は自己試験なしでは無効）を merge（a7ac0e4aa）。P1 の q937 review の直しと WS204 p003 audio-loop（641f5b894）、P2 の BUG-288（d25384091）も merge（f39fd61c5）。rpi4 vmunix・amd64 vmunix/wayland の build warning 0、boundary PASS。Pi 4 は BUG-288 の確認まで reboot は手動。5330 の UAT image は merge の前の b67a6d7e1 で build（SHA256 f617cff3…df21）。
 - 2026-10-11 Q1: P1 の WS197 i06 の書きかけを照合し、main に無かった直し（満杯の時に連絡先の file を書かない）と、同じ秒の item の順を決める直しを merge（d5296c23e、Phone の host 試験 PASS、Phone の named build warning 0）。残りは破棄（写しは build/q1-p1-ws197-i06-discarded.diff）。
 - 2026-10-11: Vulkan Video を既定で ON（c7aeea0c7、ユーザー）。BUG-287 の直し全部（usb-bt の Transaction Error の後の回復、同じ人の bond での phone=1、settings の store 24→64、Settings の Connect・案内、Phone app の案内、phone link の log）を merge 済み（7bfc667e7）。
 - 2026-10-10 Codex: WS197 p005 i06・i07（bee41dded）、MMS の受信（89d487814）、媒体の UAT の直し（e654733f1）、Bluetooth の自動復旧 p013（7fa0a0e9c）を main に統合済み。
@@ -33,7 +32,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-289、WS209、q940、T1-535。次の KL_VERSION は 84、manager は 31（main は 83・30。未統合の codex/ws197-media-uat も keiland.h・manager を変えるので、統合の時に衝突を見る）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-295、WS216、q940、T1-553。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -506,6 +505,13 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS206](ws206/ws.md) | MG005 | Raspberry Pi 4 の WiFi（2026-10-11 ユーザー） | planning | P1 q932 |
 | [WS207](ws207/ws.md) | MG006 | Raspberry Pi 4 のオーディオ（再生・録音）（2026-10-11 ユーザー） | planning | P1 q933 |
 | [WS208](ws208/ws.md) | MG008 | arm64 の HAL の SMP（Pi 4 の 4 core）（2026-10-11 ユーザー） | planning | P2 q939（q938 BUG-288 の後） |
+| [WS209](ws209/ws.md) | MG006 | audiod の音の endpoint と route（通話・Bluetooth・modem）（2026-10-11 ユーザー Q12） | planning | P1 |
+| [WS210](ws210/ws.md) | MG006 | Keiland の app の描画を GPU へ（libkeiland の canvas・文字・画像を Vulkan で）（2026-10-12 ユーザー） | planning | P1 |
+| [WS211](ws211/ws.md) | MG006 | Pi 4 の compositor の描画の削減（App Home の遷移のクロスフェード、draw の束ね）（2026-10-12 ユーザー） | planning | P3 |
+| [WS212](ws212/ws.md) | MG006 | Wiseview の作り直し: 仮想デスクトップ 3 枚の矩形と窓の一覧、drag で仮想デスクトップ・display をまたいで移動、multi display の縦の積み重ね、display のローテーション（タグ・Shift+Super+←/→、比率の保持）（2026-10-12 ユーザー） | planning | 未割当 |
+| [WS213](ws213/ws.md) | MG006 | compositor の thread 化（入力・cursor と描画の分離、重いコマの間も入力と cursor が止まらない）（2026-10-12 ユーザー） | planning | P4（p001 設計） |
+| [WS214](ws214/ws.md) | MG006 | 窓をディスプレイの重ね合わせ（HVS の plane）に載せる（Pi 4、drag・dock の間 GPU が窓を描き直さない）（2026-10-12 ユーザー「ぜんぶやりましょう。」） | planning | P2（p001 設計） |
+| [WS215](ws215/ws.md) | MG005 | Raspberry Pi 4 の Bluetooth（内蔵の BCM43455、UART の HCI）（2026-10-12 ユーザー） | planning | 未割当（SMP・最適化の終了の後） |
 | [WS198](ws198/ws.md) | MG002 | zedBSD の上で zedBSD を self-build（host の clang、2026-10-09 ユーザー、優先度低、ベータ2 の見込み） | planning | p001 前提の調べ |
 | [WS199](ws199/ws.md) | MG006 | Settings のセキュリティキーの独立の頁とウィザード（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
 | [WS200](ws200/ws.md) | MG006 | Settings の Users のパスワード変更のウィザードと認証方式の選択（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
@@ -537,8 +543,30 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ## 判断の記録（新しい順）
 
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
+- 2026-10-13 ユーザー:「いや、これ以上詰めなくていいです。SMPに進みます。また、Frosted Glassを無効にすると、さらに高速になることに気づきました。サイドペインの遅さは、Frosted Glassの無効化でかなり改善することにも気づきました。」→ 描画の最適化はここで終える（place27・hvs-load の計測と K-1・(d) は行わない、P5 の分析は止めて記録だけ）。WS208（SMP、agent/p2 ea8ecb4cf の p002〜p004、main に未統合）を新しい worktree /home/awe/zedBSD-worktrees/p6（agent/p2）で main に追いつかせて統合し、QEMU raspi4b -smp 4（T1）と Pi の実機（p005）へ。Frosted Glass（glass の blur）を切ると速い点は記録（既定を変えるかはユーザーの判断、今は変えない）。
+- 2026-10-13 ユーザー（Pi 4、main 1392d52、1024x680）:「コンポジタ、アプリ、CSE/DCE、すべてが効いて、これまでに見たこともないようななめらかなデスクトップです。M1 Macよりすばらしいです。」→ 描画の最適化の段は体感で達成。次は Pi の計測（measure-setup.sh、場面 A〜E、hvs-load）→ SMP（WS208）→ 計測 → 最適化の終了 → WiFi（WS206）・Bluetooth（WS215）。
+- 2026-10-13 ユーザー: Pi 4 に main 1392d52 の image を焼き「動作OKです」、5330（i915）でも「動作確認できました」（同じ main の image）。i915 の回帰（WS213・WS214 p003a/b・WS211・WS141 の共通の変更）はユーザーの目視で確認、T1 の 5330 の自動の確認は鍵がまだ通らない（5330 の host key は焼き直しで変わっていたので Q1 が消して受け直し、BatchMode の鍵は Permission denied）。
+- 2026-10-12 ユーザー（クリック）: WS141 の GPL の参照の扱い（2026-10-04、値はハードウェアの事実として使う、名前は独自、配置・comment・構造は写さない、最後に類似の監査）を「WS214 にも広げる」→ guardrail を更新、HVS5 の scaled の plane（PPF・TPZ・LBM）を WS214 p003b に入れる。
+- 2026-10-12 ユーザー:「描画の最適化の後、計測を取ったら、SMPを入れます。さらに計測をとって、最適化を終了したいです。そのあと、RPi4のWiFiとBluetoothを実装し、RPi4は完了です。」→ Pi 4 の順: (1) 描画の最適化（WS211・WS213・WS214・WS141 の残り）→ (2) 計測 → (3) SMP（WS208）→ (4) 計測 → 最適化の終了 → (5) WiFi（WS206）と Bluetooth（新しい WS215）→ Pi 4 の完了。
 
+- 2026-10-12 ユーザー（クリック、WS214 p001 第 3 版の 9 節）: UAPI の追加（GPU_DISPLAY_COMMIT・GPU_DISPLAY_OVERLAY_INFO・HAS_OVERLAYS、GPU_DISPLAY_WAIT を眠る形に、bcm2711 の表示の命令が EBUSY で失敗しなくなる）を「承認する」（p003b、差分は plan/ws214/phase001/phase.md の 4.2）。drag の間の glass の blur は始めの場所のまま「よい」。drag の間の窓の中身は「止めてよい」（動画は離すと飛ぶ、音は続く）。窓の前後の入れ替えは WS214 の目標から「外してよい」（Q1 が ws.md を直した）。undock の形は p003b の帯域の実測の後に問う。WS214 p003a を P2 で着手（承認不要の kernel の段、WS141 p016 B-k2 を含む）。
+- 2026-10-12 ユーザー:「進め方はおすすめでいいです。」→ 残りの描画の最適化の順（Q1 の推し）: WS214 は第 3 版の後に p003a（承認不要の kernel の段、B-k2 を含む）、WS213 の残り（box_lag の超過と 401ms の止まりの切り分け、p005 の作業 thread）を P4、WS141 の WSI の present の copy の command buffer の使い回し（往復 2 回減）と compositor の窓の tile の費用（約 13 万 cycle/tile）の調べを P3。libvulkan の Begin を End に入れる案（内部の約束の変更）と render worker の優先度（方針）はその後に改めて問う。
+- 2026-10-12 ユーザー:「前言撤回になりますが、OSCデモはこの解像度でいきます。」（1024x680 を試した後）→ platform/arm64/config.txt の既定を 1024x680 60Hz（hdmi_cvt 1024 680 60 3）に（Q1、「この解像度」は 1024x680 と解した）。
+- 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
+- 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-12 ユーザー（Pi の試し）: 1280x720 で「めちゃくちゃ速くなりました」、1024x600 で「めちゃくちゃ快適です」、place23（WS213 p004 の I・C・R＋WS211 p008 の client の damage）で「非常に快適です」。数字（compositor の draw→shown の p50/p90）: 1920x1080 92/125ms、1280x720 60/87ms、1024x600 59/102ms、1024x600+place23 58/90ms（submit→shown p50 26ms）。place23 で KWL RENDER stalled 0、FAILED 0。WS213 p004 の box_lag の p99 は 5 秒窓の一部で 19〜30ms（必達 16.7ms 未達の窓あり、最長 36ms）、pass_max 1 回 401ms → p004 は未 clear、原因の切り分け（kernel の長い transaction・SMP 依存か）が残り。ユーザーの次の希望: 1280x720 で試した後、ディスプレイ本来の解像度（1920x1200、今は config.txt の hdmi_mode=82 で 1920x1080 に固定）で出す。Pi は今 config.txt を 1024x600（hdmi_cvt、元は config.txt.res1080）。
+- 2026-10-12 ユーザー（クリック）: WS213 の設計（第 6 版、thread の分け方 M・R・C・I・W、必達は box_lag の p99 ≤ 16.7ms、p003 の閾値に届かなければ WS211 の削減を先に）は「この設計でよい」。要約は Q1 が plan/ws213/phase001/summary.md に置く（P4 の Write はツールの決まりで拒否されたため、ユーザーの許可で Q1 が置いた）。Q1: WS213 p003 は P4 で着手、WS141 p016 (B) は第 6 版で B-u を P2 が実装（kernel 側は段 B-k2）。
+- 2026-10-12 ユーザー（クリック）: System Monitor の 3D のアニメは「2fpsに揃える」（hover の camera の傾きは 60fps、core の measures と phase はアニメの 1 歩ずつ。Q1 が space.c で実装）。WS141 p016 (B) の review は「再開する」（design-reviewer）。SMP（WS208）は「予定どおり最後」。ユーザー:「Settingsの右ペインのボタンも遅れます。」「ただスクロールはうまく動いているので、マウスイベントと描画の蓄積の問題ですね」→ P1（WS210 p014）で motion の合流を最優先。
+- 2026-10-12 ユーザー（place15 の評価）:「かなりよくなってる！…デスクトップでのマウス移動が、60fpsにわずかに届いていない…」「ウィンドウのドック・アンドックのアニメ。2フレームくらいしか描かれない。…ウィンドウの内容を維持したまま拡大縮小でアニメーションしてしまって、拡大縮小が終わってからゆっくり再描画を書けるのがいい」「App アイコンのプレビュー。完璧。ひっかかりがない。」→ P3 に WS211 p007（dock・undock は窓の絵の拡大縮小、終わってから configure）とマウス移動の詰め（place16）。WS213 review-4 の H-B は Q1 の判断で cursor 60fps を必達とし、pointer の経路を M から C へ移す形を第 5 版の本案に（ユーザーの「ほとんどすべてスレッドに」に従う）。
+- 2026-10-12 ユーザー（クリック、WS213 review-1 H6）: 描画 thread への渡し方は「描く物の一覧＋pull」（main が今の描画の walk で display list を作り、描画 thread が求めた時だけ 1 回作る。記録・submit・present・GPU の待ちは描画 thread）。前の「最新の画面の状態の写し」の合意を置き換える。重いコマの間の cursor の 60fps は WS141 p016 (B) の B-u に依存。
+- 2026-10-12 ユーザー:「コンポジタのマルチスレッド化も入れてください。ウィンドウへの通知の転送以外の処理はほとんどすべてスレッドにして…」→ Q1 の推し（main thread＝protocol・入力・cursor、描画 thread 1 本が Vulkan の queue を持つ、作業 thread、描画は event の queue に積まず最新の画面の状態の写しを受け箱に 1 つ）にユーザー「了解です。おすすめがいいと思います。あとでできたらレビューさせてください。」→ WS213（P4）、設計は design-reviewer の後にユーザーの review。
+- 2026-10-12 ユーザー:「libkeilandのウィジェットのイベントと描画の最適化 / コンポジタの時計などの描画最適化と、スレッド化 / ウィンドウドラッグの60fps化（方法は未知） 必要な分はWSを立て、現在のWSで取り組む分はこのままお願いします。」→ libkeiland の widget のイベントと描画は WS210（p013・p014、P1）、compositor の時計などの描画の最適化と drag の 60fps は WS211（p005・p006、P3）、thread 化は新しい WS213（未割当）。
+- 2026-10-12 ユーザー:「マウス移動イベントを受け取ったとしても、一定のFPS以上には処理しない工夫や、イベントをpeekして次もマウスイベントなら、一定のFPS以上ならマージするような統一的な枠組みが必要かも。」（Settings の左ペインで軌跡の全部の lit の変化に描画が積み重なる）→ libkeiland の統一の枠組み（motion の合流、frame callback までの描画の上限、hover の damage の共通の口）を P1 が WS210 の新しい Phase として設計する。補足「一律にFPSでマウス移動イベントをマージするのではなく、ウィンドウごとに申請されたらそうする感じがいいですね。」→ 既定は今のまま、window ごとの申請（opt-in）で効く。補足「書き直しが完了する前の書き直しイベントが来たら前の分をキャンセルするのでもいいです。ペインの実現方法がlibkeilandにあるなら、それがいい。」→ 訂正「前の描き直しが始まる前に次の描き直しが来たら、ですね。訂正します。レンダリングの途中キャンセルは意図してません。」→ 取り消すのは描き始める前の予約だけ、描いている途中の frame は最後まで描く。ペインは libkeiland の部品で。
+- 2026-10-12 ユーザー:「System Monitorは重いので、2fpsで更新できることが目標です。逆にそれ以上の頻度で更新しないようにしましょう。」→ System Monitor の更新（標本と描き直し）は 500ms ごとが上限で目標。補足「System Monitorのアニメですね。UIレスポンスは60fpsです。」→ 2fps は graph・数値の更新（アニメ）だけ、hover・click・scroll の応答は 60fps。同日「WS211 p003, WS141 (b)、さらに上記アプリの改善をやりましょう。libkeilandのウィジェットも。」→ P3: WS211 p003・WS141 (b)、P1（新しく起動）: app の hover の引っかかりと libkeiland（present の host-mapped の canvas、widget）・WS210。
+- 2026-10-12 ユーザー:「RPIのシリアルポートは使っていません。コンフィグで無効化してください。それから、GPU使用中は、コンソールの描画も裏側で行わずに完全に止めるのがいいです。取りこぼす結果になってOKです。」→ rpi4 の serial の console は config で既定無効、display の driver が画面を引き取った後は framebuffer の console の描画を止める（溜めない）。kernel の log は dmesg の ring と bootlog に残す（P3、WS141）。原因: kernel の log の 1 字ずつを IRQ を止めて UART に polling で送り early fb にも描き、v3d の perf の報告（約 1000 字、2 秒ごと、controller の mutex の下）で 50〜100ms 止まっていた。
+- 2026-10-12 ユーザー（WS211）: icon の時間差の演出は「やめる」、クロスフェードの間の見た目の変化（消える desktop が 1 枚の絵で薄くなる・窓の中身が止まる・拡大縮小中の柔らかさ・Home の content が 1 枚で薄くなる・画面外の窓と影が端で切れる・glass の blur の拡大縮小）は「受け入れる」。部分の描き直しの kernel の小さな CPU の変換・消去は「一番高速な方法で。PIで少しでも動作にひっかかりがあるなら許容しない。ただしSMPで問題なくなれば許容する。それを総合的に評価し、実装は何回か作り替えていいので、最適化する。」→ 方式は Pi の実測で選ぶ（CPU の小さな変換・全面の TFU・WS141 での GPU の部分変換を比べる）、引っかかりがあれば採らない、SMP の後に再評価。Guardrail「画像の処理は GPU で」の例外はこの評価の結果で決める。
+- 2026-10-12 ユーザー（クリック）: ws141-p016 の非同期化は「列を app ごとに」— GPU の実行の列を session ごとに分け、pass の単位で round-robin するところまで p016 に含める（review-3 N4: 全体 1 本の列では cursor・drag が重い client の後ろに並ぶ）。2026-10-12 ユーザー「描画が終わらなくても制御が戻るのがコマンドバッファ形式のメリットで、Vulkan移行の目的」→ i915 の非同期の submit は F-093。Q1: arm64 の HAL の uncached の unmap の TLB の flush を 1 回に（b17a753d4）、kern_free の large の allocation を O(1) に（4d3d7eddf）。
 - 2026-10-08 午後 ユーザー:「サウンドはlibkeiland-backendに入れてください。libkeilandのAPIはkl_audio_がいいです。」→ WS191 の音の出力は libkeiland-backend の中、公開の API は `kl_audio_*`。
 - 2026-10-08 午後 ユーザー（クリック）: WS191 の Linux の再生の経路は「alsa-lib を dlopen」（ALSA の default、普通は pipewire-alsa で PipeWire）。Q1: D4 は stream ごとの接続のまま限りは pid ごと、p004 は Linux・FreeBSD の正弦波の試験の client を入れる（plan/ws191/phase001/phase.md）。
 - 2026-10-08 夜 ユーザー:「SSHのホストキーは無視するか登録を削除していいです。」「N=2で再開します。」→ P1（BUG-267 の 2 本指の gesture → WS143 p005 i02b）、P2（WS177 M の T1 依頼 → WS191 の Linux の uid → BUG-269）を新しい世代で起動。
@@ -877,13 +905,19 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 注意（2026-10-09 P1 の所見）: BUG-274 の直しで `ps -o args` が command line の全体を出すようになった。guest の試験で `ps -A -o pid,args | grep <語>` で選んで kill する形は、その語が試験自身を走らせる shell の行にも出ると自分を kill する（ws172 の passkey の FAIL の原因）。新しく書く試験は `ps -A -o pid,comm` で選ぶ。既存の約 380 箇所は一斉に直さず、FAIL した時に追従する（試験の整理の基準を当てる）。
 
 | tool | 用途 | 使い方 |
+| [ws213/tests/kd-host-test.sh](ws213/tests/kd-host-test.sh)（WS213 p007、2026-10-12） | kernel の K-D の計数（sched の起床・横取りの遅れ、metadata_lock の待ち・持ち、kern.perf=1 の行）の回帰、ASan・UBSan | host で `sh plan/ws213/tests/kd-host-test.sh`、PASS で終わる |
+| [ws213/tests/lock-host-test.sh](ws213/tests/lock-host-test.sh)・[pin-host-test.sh](ws213/tests/pin-host-test.sh)（WS213 p007、2026-10-12） | kernel の mutex（signal の保留・terminate の間の眠り、1 CPU で spin しない、起床の受け渡し）と copyin・copyout の pin（範囲の確かめ・準備の確かめ・EFAULT の副作用の無さ）の回帰、ASan・UBSan | host で `sh plan/ws213/tests/lock-host-test.sh`・`pin-host-test.sh`、PASS で終わる |
+| [ws141/tests/shader-host-test.sh](ws141/tests/shader-host-test.sh)（qpu-machine.c の 1 lane の模擬、WS141 p013 修正 14、2026-10-12） | bcm2711 の shader compiler の回帰: tree の全部の shader・variant・R/B を QPU の模擬で実行し SPIR-V の解釈と bit 一致（dual issue・着地時刻・thread switch・thrend の規則） | host で `sh plan/ws141/tests/shader-host-test.sh`、PASS で終わる |
 | --- | --- | --- |
 | [q1-clean.sh](tools/q1-clean.sh)・[fresh-out.sh](tools/fresh-out.sh)・[files/host-clean.sh](tools/files/host-clean.sh)（2026-10-06） | 削除は Q1 の pipeline（ユーザーの規則）。host の試験の script は rm を持たず、`fresh_out NAME`（新しい `NAME.run.*` を作り NAME を symlink で向ける）か `build/tmp/` の mktemp を使う。Q1 が `q1-clean.sh WORKTREE` で古い run・tmp・old を消す | `. plan/tools/fresh-out.sh; fresh_out "$out"`、Q1: `sh plan/tools/q1-clean.sh /home/awe/zedBSD-worktrees/p1` |
 | [gtk4-linux/](tools/gtk4-linux/README.md)（WS114 から移した、2026-10-06） | Linux の Keiland の上の標準 GTK4 の装飾（CSD・SSD）の試験と session の起動 | `decoration-wire.py`・`start-session.sh` など、README を参照 |
 | [ws125/tests/subtree-host-test.sh](ws125/tests/subtree-host-test.sh)（2026-10-09、WS125 の完了時に plan/tools/ へ移す） | package の staged tree を image に入れる `--subtree DEST=DIR` の回帰（Makefile の tree の規則・UFS・FAT の道具と検査、一覧と中身の一致） | host で `plan/ws125/tests/subtree-host-test.sh`、PASS で終わる |
 | [compositor/](tools/compositor/README.md)（WS110） | compositor の起動の role（--testing・--session・--greeter）の試験 | `run-host-role.sh`、`roles-guest.sh` |
+| [ws210/tests/run-host-present-damage.sh](ws210/tests/run-host-present-damage.sh)（WS210 p013、2026-10-12、WS210 の完了時に plan/tools/ へ移す） | libkeiland の present の部分の copy（image ごとの古い矩形、失敗の注入、R/B の入れ替え）の回帰、ASan・UBSan | host で `sh plan/ws210/tests/run-host-present-damage.sh`、PASS で終わる |
 | [rtld/](tools/rtld/README.md)（WS140） | ld.so の多数の object・依存・handle・TLS の試験 | `rtld-many.sh BUILD`（`config-amd64-rtld.mk` の SSH の image、BUILD/sysroot の symlink） |
 | [wallpaper/](tools/wallpaper/README.md)（WS138） | 背景の PNG・JPEG の復号と読み込みの時間・greeter の背景 | host `run-host-wallpaper-decode.sh`、guest `wallpaper-time.sh`（Settings の image）・`greeter-wallpaper.sh`（criteria の image） |
+| [libc-string-host-test.sh](tools/libc-string-host-test.sh)（BUG-291、2026-10-12） | libc の memcpy・memmove・memset の正しさ（全 alignment・重なり・境界、ASan・UBSan、clang/gcc × -Os/-O2）と速さ | `sh plan/tools/libc-string-host-test.sh`（arm64（qemu-aarch64 の user mode）の pass を含む、約 9 秒） |
+| [ws213/tests/list-replay-host-test.sh](ws213/tests/list-replay-host-test.sh)（WS213 p003、2026-10-12、WS213 の完了時に plan/tools/ へ移す） | compositor の描く物の一覧（draw-list）の再生が直の記録と同じ命令になるかの回帰（golden と比べる、一覧の伸び、draw-list の外で vkCmd を呼ばない） | host で `sh plan/ws213/tests/list-replay-host-test.sh`、PASS で終わる |
 | [media/](tools/media/)（WS122 から移した、2026-10-08） | 動画・音の読みと decode の host 試験: `run-host-mediafile.sh`（mediafile の MP4 などの reader、`make-media.py` の試料と `sample.mp4`）、`run-host-codec.sh`（libmedia の decoder と libavcodec の add-in、`host-layout.c` で libavcodec の構造体の配置を確かめる）。`sample.mp4` は WS191 の音の image・WS121 の試験も使う | `sh plan/tools/media/run-host-mediafile.sh`、`sh plan/tools/media/run-host-codec.sh` |
 | [files/run-host-files-recents.sh](tools/files/run-host-files-recents.sh)（WS148 から移した、2026-10-08） | Files の Recents（止めた一覧・Clear Recents）と Storage の Keep recent items の host 試験（WS177 の recents-p008.sh が呼ぶ） | `sh plan/tools/files/run-host-files-recents.sh [OUTPUT]` |
 | [mail/fake-mail-server.py](tools/mail/fake-mail-server.py)（WS169） | 偽の IMAP4・SMTP の server（自己署名の TLS・STARTTLS、--bind・--arrivals） | Mail の host 試験（plan/ws169/tests の run-host-mail-backend.sh ほか）と AAT の apps.mailer.read-compose・sign-in-code（helpers_mailer.py） |

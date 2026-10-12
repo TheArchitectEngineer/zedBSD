@@ -27,4 +27,12 @@ Pi 4 で Music の再生の音が出る、録音した音が取れる（実機�
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 調査と設計（既存の code・hardware・規格、判断が要る点をユーザーへ） | planned |
+| [p001](phase001/phase.md) | 調査と設計（既存の code・hardware・規格、判断が要る点をユーザーへ） | in-progress（設計の第 1 版、F1〜F3 待ち） |
+| [p002](phase002/phase.md) | BCM2711 の DMA と PWM の音（3.5 mm の jack） | in-progress（実装・host の試験・build 済み、Pi 4 の実機は T1 待ち） |
+| p003 | USB の audio class（UAC1）の録音（ws197-p007a1 の後） | planned |
+| p004 | HDMI の音（VCHIQ の音の service） | planned |
+| p005 | 実機の UAT と規約の全文 | planned |
+
+## 2026-10-11 ユーザー「推し通りです。」
+
+F1: 3.5 mm の jack を先に。F3: HDMI の音は後の Phase。F2（録音の USB のマイク・headset の機種）は未回答。

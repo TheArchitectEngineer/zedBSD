@@ -279,6 +279,131 @@ bcm2711_native_texture_copy(
 	return 0;
 }
 
+/*
+ * Copies the pixels of one box of a raster image into an earlier complete UIF conversion.
+ *
+ * box is x0, y0, x1, y1 with exclusive ends inside the image.  It is widened to
+ * whole four-by-four utiles, so every 64-byte cache line the CPU writes is
+ * written completely and no stale line of a device-written conversion goes back
+ * to memory; utile parts outside the image become zero padding as in a whole
+ * copy.  Pixels outside the widened box keep their earlier conversion.
+ */
+int
+bcm2711_native_texture_copy_box(
+	uint32_t width,
+	uint32_t height,
+	const void *raster,
+	uint32_t pitch,
+	size_t raster_bytes,
+	void *tiled,
+	size_t tiled_bytes,
+	const uint32_t *box)
+{
+	const uint8_t *source;
+	uint8_t *destination;
+	uint32_t storage_bytes;
+	uint32_t block_rows;
+	uint32_t first_x;
+	uint32_t first_y;
+	uint32_t end_x;
+	uint32_t end_y;
+	uint32_t x;
+	uint32_t y;
+	uint32_t run;
+	uint32_t block;
+	uint32_t offset;
+	uint64_t source_bytes;
+	uintptr_t source_first;
+	uintptr_t destination_first;
+	int error;
+
+	/* A partial conversion never invents storage or a box. */
+	if (raster == NULL || tiled == NULL || box == NULL)
+		return EINVAL;
+
+	/* Extent checks establish finite, overflow-free native row/column arithmetic. */
+	error = bcm2711_native_texture_size(width, height, &storage_bytes);
+	if (error != 0)
+		return error;
+
+	/* The box is non-empty and inside the image. */
+	if (box[0] >= box[2] || box[1] >= box[3])
+		return EINVAL;
+	if (box[2] > width || box[3] > height)
+		return EINVAL;
+
+	/* Each raster row includes every visible four-byte pixel, and the source holds the whole image. */
+	if (pitch < width * 4U)
+		return EINVAL;
+	source_bytes = (uint64_t)(height - 1U) * pitch + width * 4U;
+	if (source_bytes > raster_bytes)
+		return EINVAL;
+
+	/* The destination is a whole conversion of this image. */
+	if (tiled_bytes < storage_bytes)
+		return ENOSPC;
+
+	/* Integer address checks precede every CPU pointer offset or overlap decision. */
+	source_first = (uintptr_t)raster;
+	destination_first = (uintptr_t)tiled;
+	if (source_bytes > UINTPTR_MAX - source_first)
+		return EINVAL;
+	if (storage_bytes > UINTPTR_MAX - destination_first)
+		return EINVAL;
+
+	/* The two representations must not alias. */
+	if (source_first < destination_first + storage_bytes && destination_first < source_first + source_bytes)
+		return EINVAL;
+
+	/* Widens the box to whole utiles, which the padded storage always holds. */
+	source = raster;
+	destination = tiled;
+	block_rows = (height + 7U) / 8U;
+	first_x = box[0] & ~3U;
+	first_y = box[1] & ~3U;
+	end_x = (box[2] + 3U) & ~3U;
+	end_y = (box[3] + 3U) & ~3U;
+
+	/* Writes every utile row of the widened box, with zero padding past the image's edges. */
+	for (y = first_y; y < end_y; y++) {
+		/* One utile row is sixteen contiguous bytes at its column-major block's address. */
+		for (x = first_x; x < end_x; x += 4U) {
+			block = (x / 32U) * block_rows * 4U + (y / 8U) * 4U + (x / 8U) % 4U;
+			offset = block * 256U;
+			offset += ((x / 4U) % 2U) * 64U;
+			offset += ((y / 4U) % 2U) * 128U;
+			offset += (y % 4U) * 16U;
+
+			/* A row below the image is all padding; a row inside has up to four visible pixels. */
+			run = 0;
+			if (y < height) {
+				run = width - x;
+				if (run > 4U)
+					run = 4U;
+			}
+
+			/* A whole visible row is one inline copy; a shorter one is padded with zeros. */
+			if (run == 4U) {
+				__builtin_memcpy(
+					destination + offset,
+					source + (size_t)y * pitch + (size_t)x * 4U,
+					16U);
+			} else {
+				kern_memset(destination + offset, 0, 16U);
+				if (run != 0) {
+					kern_memcpy(
+						destination + offset,
+						source + (size_t)y * pitch + (size_t)x * 4U,
+						run * 4U);
+				}
+			}
+		}
+	}
+
+	/* Succeeded: the widened box now holds the raster's current pixels in its exact UIF places. */
+	return 0;
+}
+
 /* Writes one already checked native field into a zeroed little-endian bit image. */
 static void
 write_bits(

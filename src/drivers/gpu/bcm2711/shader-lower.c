@@ -60,8 +60,10 @@ bcm2711_shader_lower(
 	if (error != 0)
 		return error;
 
-	/* Two-thread shaders have sixty-four physical registers, including the four reserved scratch registers. */
+	/* Two-thread programs use the sixty-four physical registers and four-thread programs rf0 to rf31, scratch included. */
 	compiler->binary->registers_used = 64;
+	if (compiler->threads == 4)
+		compiler->binary->registers_used = 32;
 	compiler->binary->starts_final = 0;
 	if (compiler->binary->stage != BCM2711_SHADER_FRAGMENT && compiler->samples == 0)
 		compiler->binary->starts_final = 1;
@@ -82,6 +84,9 @@ preload_inputs(
 	struct bcm2711_shader_uniform uniform;
 	uint32_t index;
 	uint32_t destination;
+	uint32_t gaps;
+	uint32_t varying;
+	uint32_t work;
 	int error;
 
 	/* The varying coefficient accumulator survives all explicit idle slots and addressed uniform loads. */
@@ -111,11 +116,20 @@ preload_inputs(
 			continue;
 		}
 
-		/* A varying transaction provides its interpolated term and places the constant term in accumulator five. */
-		error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_VARYING, BCM2711_SHADER_SCRATCH_LEFT, 2);
+		/*
+		 * A varying transaction provides its interpolated term and places the
+		 * constant term in accumulator five one instruction later, so nothing
+		 * reads the accumulator in the instruction right after the load.  A
+		 * smooth varying's multiply fills that instruction; the others idle.
+		 */
+		component = &compiler->binary->inputs[index];
+		gaps = 1;
+		if (component->flat == 0 && component->noperspective == 0)
+			gaps = 0;
+		varying = bcm2711_shader_scratch(compiler, BCM2711_SHADER_SCRATCH_LEFT);
+		error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_VARYING, varying, gaps);
 		if (error != 0)
 			return error;
-		component = &compiler->binary->inputs[index];
 
 		/* Flat interpolation takes the provoking vertex's constant term while still advancing the FIFO. */
 		if (component->flat != 0) {
@@ -123,23 +137,26 @@ preload_inputs(
 			error = bcm2711_shader_operation(compiler, BCM2711_QPU_MOVE, destination, 0, coefficient, right, 0, 0);
 			if (error != 0)
 				return error;
-			continue;
-		}
+		} else {
+			/* Smooth varyings multiply the interpolated term by fragment payload W; linear varyings preserve it directly. */
+			left = bcm2711_shader_rf(varying);
+			if (component->noperspective == 0) {
+				right = bcm2711_shader_rf(0);
+				work = bcm2711_shader_scratch(compiler, BCM2711_SHADER_SCRATCH_WORK);
+				error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_MULTIPLY, work, 0, left, right, 0, 0);
+				if (error != 0)
+					return error;
+				left = bcm2711_shader_rf(work);
+			}
 
-		/* Smooth varyings multiply the interpolated term by fragment payload W; linear varyings preserve it directly. */
-		left = bcm2711_shader_rf(BCM2711_SHADER_SCRATCH_LEFT);
-		if (component->noperspective == 0) {
-			right = bcm2711_shader_rf(0);
-			error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_MULTIPLY, BCM2711_SHADER_SCRATCH_WORK, 0, left, right, 0, 0);
+			/* The native constant coefficient is added before a later varying can overwrite accumulator five. */
+			error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_ADD, destination, 0, left, coefficient, 0, 0);
 			if (error != 0)
 				return error;
-			left = bcm2711_shader_rf(BCM2711_SHADER_SCRATCH_WORK);
 		}
 
-		/* The native constant coefficient is added before a later varying can overwrite accumulator five. */
-		error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_ADD, destination, 0, left, coefficient, 0, 0);
-		if (error != 0)
-			return error;
+		/* The interpolated term's scratch registers have no later reader. */
+		bcm2711_shader_release_scratch(compiler);
 	}
 
 	/* All source input aliases now name stable, once-only hardware results. */
@@ -382,11 +399,12 @@ lower_arithmetic(
 	struct bcm2711_qpu_source left;
 	struct bcm2711_qpu_source right;
 	struct bcm2711_qpu_source temporary;
-	struct bcm2711_shader_uniform uniform;
 	enum bcm2711_qpu_operation native;
 	uint32_t sources;
 	uint32_t flags;
 	uint32_t predicate;
+	uint32_t scratch;
+	uint32_t mask;
 	int error;
 
 	/* Simple native operations use exactly their classified source arity. */
@@ -421,20 +439,18 @@ lower_arithmetic(
 		error = bcm2711_shader_operand(compiler, instruction->src[0], BCM2711_SHADER_SCRATCH_LEFT, &left);
 		if (error != 0)
 			return error;
-		kern_memset(&uniform, 0, sizeof(uniform));
-		uniform.kind = BCM2711_SHADER_CONSTANT;
-		uniform.bits = 0x80000000U;
+		mask = 0x80000000U;
 		native = BCM2711_QPU_BITS_XOR;
 		if (instruction->op == DRV_GPU_IR_FABS) {
-			uniform.bits = 0x7fffffffU;
+			mask = 0x7fffffffU;
 			native = BCM2711_QPU_BITS_AND;
 		}
 
-		/* Full-width sign masks are preserved through the independent second scratch register. */
-		error = bcm2711_shader_uniform_load(compiler, &uniform, BCM2711_SHADER_SCRATCH_RIGHT);
+		/* Full-width sign masks are preserved through a cached or independent second scratch register. */
+		error = bcm2711_shader_constant(compiler, mask, BCM2711_SHADER_SCRATCH_RIGHT, &scratch);
 		if (error != 0)
 			return error;
-		right = bcm2711_shader_rf(BCM2711_SHADER_SCRATCH_RIGHT);
+		right = bcm2711_shader_rf(scratch);
 		error = bcm2711_shader_operation(compiler, native, destination, 0, left, right, 0, 0);
 		if (error != 0)
 			return error;
@@ -449,10 +465,11 @@ lower_arithmetic(
 		if (error != 0)
 			return error;
 		right = bcm2711_shader_bits(0);
-		error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_FLOOR, BCM2711_SHADER_SCRATCH_WORK, 0, left, right, 0, 0);
+		scratch = bcm2711_shader_scratch(compiler, BCM2711_SHADER_SCRATCH_WORK);
+		error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_FLOOR, scratch, 0, left, right, 0, 0);
 		if (error != 0)
 			return error;
-		right = bcm2711_shader_rf(BCM2711_SHADER_SCRATCH_WORK);
+		right = bcm2711_shader_rf(scratch);
 		error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_SUBTRACT, destination, 0, left, right, 0, 0);
 		if (error != 0)
 			return error;
@@ -509,22 +526,20 @@ lower_arithmetic(
 		if (error != 0)
 			return error;
 		right = bcm2711_shader_bits(0);
-		error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_INVERSE_ROOT, BCM2711_SHADER_SCRATCH_WORK, 0, left, right, 0, 0);
+		scratch = bcm2711_shader_scratch(compiler, BCM2711_SHADER_SCRATCH_WORK);
+		error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_INVERSE_ROOT, scratch, 0, left, right, 0, 0);
 		if (error != 0)
 			return error;
-		right = bcm2711_shader_rf(BCM2711_SHADER_SCRATCH_WORK);
+		right = bcm2711_shader_rf(scratch);
 		error = bcm2711_shader_operation(compiler, BCM2711_QPU_FLOAT_MULTIPLY, destination, 0, left, right, 0, 0);
 		if (error != 0)
 			return error;
 
 		/* Both signs of zero retain their original exact bits. */
-		kern_memset(&uniform, 0, sizeof(uniform));
-		uniform.kind = BCM2711_SHADER_CONSTANT;
-		uniform.bits = 0x7fffffffU;
-		error = bcm2711_shader_uniform_load(compiler, &uniform, BCM2711_SHADER_SCRATCH_RIGHT);
+		error = bcm2711_shader_constant(compiler, 0x7fffffffU, BCM2711_SHADER_SCRATCH_RIGHT, &scratch);
 		if (error != 0)
 			return error;
-		right = bcm2711_shader_rf(BCM2711_SHADER_SCRATCH_RIGHT);
+		right = bcm2711_shader_rf(scratch);
 		error = bcm2711_shader_operation(compiler, BCM2711_QPU_BITS_AND, 6, 1, left, right, 0, 1);
 		if (error != 0)
 			return error;
@@ -533,10 +548,10 @@ lower_arithmetic(
 			return error;
 
 		/* Positive infinity must also survive the otherwise indeterminate multiply by its zero reciprocal root. */
-		uniform.bits = 0x7f800000U;
-		error = bcm2711_shader_uniform_load(compiler, &uniform, BCM2711_SHADER_SCRATCH_RIGHT);
+		error = bcm2711_shader_constant(compiler, 0x7f800000U, BCM2711_SHADER_SCRATCH_RIGHT, &scratch);
 		if (error != 0)
 			return error;
+		right = bcm2711_shader_rf(scratch);
 		error = bcm2711_shader_operation(compiler, BCM2711_QPU_BITS_XOR, 6, 1, left, right, 0, 1);
 		if (error != 0)
 			return error;
@@ -624,7 +639,7 @@ lower_sample(
 	error = bcm2711_shader_uniform_append(compiler, &uniform);
 	if (error != 0)
 		return error;
-	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TEXTURE_CONFIG, 0, 2);
+	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TEXTURE_CONFIG, 0, 0);
 	if (error != 0)
 		return error;
 
@@ -634,7 +649,7 @@ lower_sample(
 	error = bcm2711_shader_uniform_append(compiler, &uniform);
 	if (error != 0)
 		return error;
-	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TEXTURE_CONFIG, 0, 2);
+	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TEXTURE_CONFIG, 0, 0);
 	if (error != 0)
 		return error;
 
@@ -647,18 +662,18 @@ lower_sample(
 		return error;
 
 	/* A regular switch plus its two delay slots permits the other thread to run while the lookup completes. */
-	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_SWITCH, 0, 2);
+	error = bcm2711_shader_switch(compiler, BCM2711_SHADER_SWITCH_SAMPLE);
 	if (error != 0)
 		return error;
 
-	/* Every requested FIFO result word gets its own independently live physical register. */
+	/* Every requested FIFO result word gets its own independently live physical register, readable by the next instruction. */
 	for (index = 0; index < 4; index++) {
 		error = bcm2711_shader_register(compiler, &destination);
 		if (error != 0)
 			return error;
 		compiler->values[instruction->dst + index].number = destination;
 		compiler->values[instruction->dst + index].register_live = 1;
-		error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TEXTURE, destination, 2);
+		error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_TEXTURE, destination, 0);
 		if (error != 0)
 			return error;
 	}
@@ -707,6 +722,7 @@ force_register(
 	uint32_t scratch)
 {
 	struct bcm2711_qpu_source ignored;
+	uint32_t number;
 	int error;
 
 	/* An existing physical source already satisfies the requested register contract. */
@@ -715,10 +731,11 @@ force_register(
 
 	/* A bit-preserving move introduces no floating-point rounding or flag change. */
 	ignored = bcm2711_shader_bits(0);
-	error = bcm2711_shader_operation(compiler, BCM2711_QPU_MOVE, scratch, 0, *source, ignored, 0, 0);
+	number = bcm2711_shader_scratch(compiler, scratch);
+	error = bcm2711_shader_operation(compiler, BCM2711_QPU_MOVE, number, 0, *source, ignored, 0, 0);
 	if (error != 0)
 		return error;
-	*source = bcm2711_shader_rf(scratch);
+	*source = bcm2711_shader_rf(number);
 
 	/* The caller may now address both native read ports independently. */
 	return 0;
@@ -738,10 +755,13 @@ retire_values(
 		if (scalar->register_live != 0 &&
 		    scalar->pinned == 0 &&
 		    scalar->last_read == compiler->instruction) {
-			compiler->registers[scalar->number] = 0;
+			bcm2711_shader_release(compiler, scalar->number);
 			scalar->register_live = 0;
 		}
 	}
+
+	/* Scratch values borrowed for this source instruction have no later reader. */
+	bcm2711_shader_release_scratch(compiler);
 
 	/* Succeeded: the consumed scalar values no longer occupy compiler registers. */
 	return;

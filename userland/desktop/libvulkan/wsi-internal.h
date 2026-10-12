@@ -21,11 +21,72 @@
 #define VULKAN_WSI_OUTPUT_FIFO		2U
 #define VULKAN_WSI_OUTPUT_ACTIVE	4U
 #define VULKAN_WSI_OUTPUT_BLOB		8U
+/* The output's last plane is a cursor plane (GPU_DISPLAY_HAS_CURSOR): small, premultiplied, on top. */
+#define VULKAN_WSI_OUTPUT_CURSOR	16U
+/* Planes 1 to overlay_count are overlay planes (GPU_DISPLAY_HAS_OVERLAYS): premultiplied, placed and maybe scaled. */
+#define VULKAN_WSI_OUTPUT_OVERLAYS	32U
 #define VULKAN_WSI_FORMAT_RGBA		1U
 #define VULKAN_WSI_FORMAT_BGRA		2U
 
 struct vulkan_wsi_platform_ops;
 struct vulkan_swapchain;
+
+/* What one cursor-plane present did on the output (ws141-p016 (B)). */
+enum vulkan_wsi_cursor_outcome {
+	/* The image and position are shown from a coming refresh boundary. */
+	VULKAN_WSI_CURSOR_SHOWN,
+	/* A newer present was shown already, so this one changed nothing. */
+	VULKAN_WSI_CURSOR_DROPPED,
+	/* The output had no free cursor image for now; nothing changed. */
+	VULKAN_WSI_CURSOR_BUSY
+};
+
+/* What the output did with one overlay-plane commit (ws214-p004). */
+enum vulkan_wsi_overlay_outcome {
+	/* The plane shows the present from a coming refresh boundary. */
+	VULKAN_WSI_OVERLAY_APPLIED,
+	/* A later present of the plane was recorded already, so this one changed nothing. */
+	VULKAN_WSI_OVERLAY_DROPPED,
+	/* The output could not record it for now; nothing changed and it may be asked again. */
+	VULKAN_WSI_OVERLAY_BUSY
+};
+
+/*
+ * One overlay-plane present as the swapchain hands it to the output
+ * (ws214-p004).  The swapchain fills the inputs; the decision fills serial
+ * and held, and the commit reads them back.
+ */
+struct vulkan_wsi_overlay_present {
+	/* The serial of the presenting chain: a held change is the chain's until it retires. */
+	uint64_t owner;
+	/* The plane shows nothing: srcRect and dstRect are both 1x1 at the origin. */
+	VkBool32 hide;
+	/* The present named its rectangles; without them the plane keeps its last ones. */
+	VkBool32 has_rect;
+	VkRect2D source;
+	VkRect2D destination;
+	/* No GPU work of the present remains, so the image may be shown now. */
+	VkBool32 ready;
+	/* The commit runs on the overlay lane's worker rather than the caller's thread. */
+	VkBool32 on_worker;
+	/* Why the present took its route, and the monotonic time it was called, for the overlay log. */
+	const char *why;
+	uint64_t call_ns;
+	/* The plane's serial of this present, and whether it is held for a primary present. */
+	uint64_t serial;
+	VkBool32 held;
+};
+
+/*
+ * The counter times (vulkan_wsi_cursor_clock) inside one cursor-plane
+ * present, taken only while the cursor log is on: when its lock was held,
+ * just before the image was set, and after the move returned.
+ */
+struct vulkan_wsi_cursor_times {
+	uint64_t locked;
+	uint64_t set;
+	uint64_t done;
+};
 
 /*
  * One native output snapshot, independent of a particular kernel ABI.
@@ -40,6 +101,7 @@ struct vulkan_wsi_output {
 	uint32_t flags;
 	uint32_t formats;
 	uint32_t plane_count;
+	uint32_t overlay_count;
 	VkExtent2D physical_dimensions;
 	VkExtent2D preferred_extent;
 	VkExtent2D maximum_extent;
@@ -87,6 +149,17 @@ struct vulkan_surface {
 	VkDisplaySurfaceCreateInfoKHR display_info;
 	uint32_t swapchain_references;
 	uint32_t native_plane;
+	/* The surface is the output's cursor plane: its presents set the cursor image and position. */
+	VkBool32 cursor;
+	/* The surface is one of the output's overlay planes (ws214-p004): it borrows the primary's claim. */
+	VkBool32 overlay;
+	/*
+	 * The last ticket given to a present of this cursor surface.  It only
+	 * grows (atomically, under the swapchain mutex), and the old and
+	 * replacement swapchains share it with the surface's lease, so a larger
+	 * ticket is always the later present.
+	 */
+	uint64_t cursor_ticket;
 };
 
 /*
@@ -138,12 +211,73 @@ struct vulkan_wsi_platform_ops {
 	 * it back.  NULL when the backend damages every present whole.
 	 */
 	void (*damage)(void *, int32_t, int32_t, int32_t, int32_t);
+	/*
+	 * Shows a cursor-plane lease's image with its top-left corner at x, y
+	 * (VkDisplayPresentInfoKHR's dstRect; without a position, where the last
+	 * one was), unless a present with a larger ticket was shown already.
+	 * The completed image may be reused when it returns.  It takes only the
+	 * cursor's own lock, never the lock primary presents hold while the
+	 * output adopts a frame; it advances the chain's frame and sequence it
+	 * is given only when it shows the image, and reports what it did.  The
+	 * times are written when not NULL.  NULL when the backend has no cursor
+	 * plane.
+	 */
+	VkResult (*present_cursor)(void *, void *, VkBool32, int32_t, int32_t, uint64_t, uint64_t *, uint64_t *, enum vulkan_wsi_cursor_outcome *, struct vulkan_wsi_cursor_times *);
+	/*
+	 * Gives a primary-plane present its ticket, in the order presents are
+	 * called (under the swapchain mutex); a held overlay change is shown by
+	 * the first primary present whose ticket is at least the change's
+	 * min_primary.  Zero for a lease whose output has no overlay planes.
+	 * NULL when the backend has no overlay planes.
+	 */
+	uint64_t (*primary_ticket)(void *);
+	/*
+	 * Presents a primary image like present_image_sync, and with it every
+	 * held overlay change its ticket takes, in one commit.  NULL when the
+	 * backend has no overlay planes.
+	 */
+	VkResult (*present_primary)(void *, void *, VkPresentModeKHR, uint64_t *, int, uint64_t, uint64_t);
+	/*
+	 * Tells the lease that the primary present of a ticket did not reach
+	 * the output by present_primary: with VK_SUCCESS the held changes it
+	 * would have taken are committed alone, with an error they are dropped
+	 * and their chains are out of date.  NULL when the backend has no
+	 * overlay planes.
+	 */
+	void (*primary_skip)(void *, uint64_t, VkResult);
+	/*
+	 * Decides how an overlay-plane present reaches the output: held for a
+	 * primary present (a change between shown and hidden, or any present to
+	 * a plane with a held change), or committed alone by overlay_commit.
+	 * It fills the request's serial and held.  NULL when the backend has no
+	 * overlay planes.
+	 */
+	void (*overlay_decide)(void *, void *, struct vulkan_wsi_overlay_present *);
+	/* Commits a decided overlay present that was not held, and reports what the output did. */
+	VkResult (*overlay_commit)(void *, void *, struct vulkan_wsi_overlay_present *, enum vulkan_wsi_overlay_outcome *);
+	/* Marks a held overlay present's pixels complete, or drops it with the error of its GPU work. */
+	void (*overlay_ready)(void *, uint64_t, VkResult);
+	/* Reports the error a dropped held change left for the chain of a serial, or VK_SUCCESS. */
+	VkResult (*overlay_status)(void *, uint64_t);
+	/* Drops the held change of a retiring chain, which no primary present then shows. */
+	void (*overlay_forget)(void *, uint64_t);
+	/*
+	 * Waits at most timeout nanoseconds for the output to stop reading an
+	 * overlay image a later commit replaced; VK_SUCCESS when an image came
+	 * free, VK_NOT_READY when none is waiting for that, VK_TIMEOUT.
+	 */
+	VkResult (*reclaim)(void *, uint64_t);
 };
 
 VkResult vulkan_wsi_display_node_query(struct VkPhysicalDevice_T *physical, uint32_t index, uint32_t *count, struct gpu_display_info *request, uint64_t *device_id, char *path);
 int vulkan_wsi_display_node_ioctl(struct VkPhysicalDevice_T *physical, const struct vulkan_wsi_output *output, unsigned long command, void *argument);
+void vulkan_wsi_display_overlay_flush(struct VkDevice_T *device);
+VkResult vulkan_wsi_display_overlay_info(struct VkPhysicalDevice_T *physical, const struct vulkan_wsi_output *output, uint32_t plane, struct gpu_display_overlay_info *info);
 void vulkan_wsi_display_nodes_finish(struct VkInstance_T *instance);
 VkResult vulkan_wsi_display_node_topology(struct VkPhysicalDevice_T *physical, uint64_t *sequence);
+
+/* Reads a monotonic nanosecond clock fine enough for the cursor log's lengths. */
+uint64_t vulkan_wsi_cursor_clock(void);
 
 /* The direct adapter supplies these after its kernel contract is finalized. */
 /* Native ownership changes wake image acquisition without dispatching application events. */

@@ -15,10 +15,14 @@
 
 #define BCM2711_VULKAN_PASS_STORAGE 9U
 
+struct bcm2711_v3d_perf;
+
 /* The enclosing submission keeps its prepared primary pending; this root retains independent GPU owners and copied numerical target/clear state. */
 struct bcm2711_vulkan_native_pass {
 	struct bcm2711_v3d_space *space;
 	struct bcm2711_v3d_view *output;
+	/* A TLB copy's source view is retained like the output through native retirement. */
+	struct bcm2711_v3d_view *source;
 	void *cpu;
 	/* The enclosing pending primary retains this logical image through implicit pass layout transitions. */
 	struct bcm2711_vulkan_resource *target;
@@ -26,6 +30,8 @@ struct bcm2711_vulkan_native_pass {
 	VkImageLayout final_layout;
 	struct bcm2711_vulkan_native_draw *first;
 	struct bcm2711_vulkan_native_draw *last;
+	/* The chunks the pass's draws come from, freed after every draw is released. */
+	struct bcm2711_vulkan_native_draw_pool draw_pool;
 	struct bcm2711_native_storage *storage[BCM2711_VULKAN_PASS_STORAGE];
 	uint64_t bytes;
 	uint32_t count;
@@ -40,6 +46,13 @@ struct bcm2711_vulkan_native_pass {
 	/* Single-use execution refuses replay and preserves the last native DMA-retirement result. */
 	bool executed;
 	bool retired;
+	/* Every texture conversion of the launch completed; the finish marks their snapshots filled. */
+	bool converted;
+	/* A whole-image copy records which source state its output now equals, for later incremental copies. */
+	bool sync;
+	uint64_t sync_identity;
+	uint64_t sync_offset;
+	uint64_t sync_generation;
 };
 
 /* Earlier queue writes must have completed and become CPU-visible; next borrows the event after this pass's END from the enclosing prepared primary. */
@@ -53,6 +66,19 @@ int bcm2711_vulkan_native_pass_build_lists(struct bcm2711_vulkan_native_pass *pa
 
 /* Run once under the controller mutex, then retain the whole parent payload when the returned native retirement proof is false. */
 int bcm2711_vulkan_native_pass_run(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result);
+
+/*
+ * The same run in three parts, for the render executor's window: start
+ * (validation and CPU clear) and finish (publishing the output) under the
+ * controller mutex, launch (the native jobs) inside the window without it.
+ * Launch touches only the pass and the engine; finish takes launch's result.
+ */
+int bcm2711_vulkan_native_pass_start(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result);
+int bcm2711_vulkan_native_pass_launch(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result);
+int bcm2711_vulkan_native_pass_finish(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result, int error);
+
+/* Adds the draws' and lists' diagnostic preparation times, draw count and staged bytes to a report under the controller mutex. */
+void bcm2711_vulkan_native_pass_costs(const struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_perf *perf);
 
 /* false preserves the complete root, including output and every draw; a controller quarantine transfer is still required before worker payload disposal. */
 int bcm2711_vulkan_native_pass_release(struct bcm2711_vulkan_native_pass **pass, bool retired);

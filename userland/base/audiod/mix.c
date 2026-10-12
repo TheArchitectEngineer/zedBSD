@@ -57,7 +57,7 @@ static const uint32_t volume_factors[SOFT_PERCENTS] = {
 static void fetch(const struct audiod_stream *stream, uint64_t position, int64_t sample[2]);
 static void store(struct audiod_stream *stream, uint64_t position, const int64_t sample[2]);
 static int32_t clamp32(int64_t value);
-static void audiod_played_store(struct audiod_shm_header *shm, uint64_t position, int64_t time_ns);
+static void audiod_played_store(struct audiod_stream *stream, uint64_t position, int64_t time_ns);
 static void device_to_stereo(const struct audiod_device *device, const uint8_t *in, uint32_t frames, int32_t *out);
 static void feedback_mix(struct audiod_device *device, int64_t *mix, uint32_t frames);
 static void soft_volume(const struct audiod_device *device, int64_t *mix, uint32_t frames);
@@ -192,7 +192,9 @@ audiod_mix_period(
 	uint32_t volume[2];
 	int16_t sample16;
 	int32_t sample32;
+	uint32_t gain;
 	int missing;
+	int plays;
 
 	/* The period, started from silence. */
 	frames = device->period_frames;
@@ -205,6 +207,16 @@ audiod_mix_period(
 			if (stream->direction != AUDIOD_PLAYBACK ||
 			    !stream->running || stream->broken)
 				continue;
+
+			/*
+			 * Held since its output went away, its output not open yet,
+			 * or media while a call is on the speaker (ws209-p003): the
+			 * stream waits.
+			 */
+			plays = audiod_route_stream_plays(stream);
+			if (stream->held || !plays)
+				continue;
+			gain = audiod_route_stream_gain(stream);
 			shm = stream->shm;
 
 			/*
@@ -234,9 +246,9 @@ audiod_mix_period(
 				continue;
 			}
 
-			/* The stream's volume; muted is silence. */
-			volume[0] = stream->volume_left;
-			volume[1] = stream->volume_right;
+			/* The stream's volume, under a call's gain (Q13); muted is silence. */
+			volume[0] = (uint32_t)(((uint64_t)stream->volume_left * gain) >> 16);
+			volume[1] = (uint32_t)(((uint64_t)stream->volume_right * gain) >> 16);
 			if (stream->muted) {
 				volume[0] = 0U;
 				volume[1] = 0U;
@@ -290,7 +302,7 @@ audiod_mix_period(
 			read_position += consumed;
 			audiod_position_store(&shm->read_position, &shm->read_sequence,
 			    read_position);
-			audiod_played_store(shm, read_position, audiod_now_ns());
+			audiod_played_store(stream, read_position, audiod_now_ns());
 
 			/* A stream that ran dry while playing has underrun; a drain expects to. */
 			if (missing && !stream->draining && read_position == write_position) {
@@ -319,8 +331,13 @@ audiod_mix_period(
 		}
 	}
 
-	/* The feedback sound over the streams, then the volume audiod applies itself (ws100-p002). */
+	/*
+	 * The feedback sound over the streams, the period taken where the
+	 * routes say (ws209-p003: a daemon's sink, a call's legs), then the
+	 * volume audiod applies itself to the device (ws100-p002).
+	 */
 	feedback_mix(device, mix, frames);
+	audiod_flow_playback(device, mix, frames);
 	soft_volume(device, mix, frames);
 
 	/* Writes the mix in the device's format, saturating. */
@@ -369,6 +386,14 @@ audiod_capture_period(
 
 	count = device->period_frames;
 	device_to_stereo(device, in, count, device->capture_frames);
+
+	/*
+	 * Over a call the device's period is the user's voice to the far side;
+	 * the streams record the media input, a daemon's source in place of
+	 * the device's when the route says (ws209-p003).
+	 */
+	audiod_flow_capture(device, device->capture_frames, count);
+	audiod_flow_input(device, device->capture_frames, count);
 	frames = device->capture_frames;
 
 	for (client = audiod_clients; client != NULL; client = client->next) {
@@ -444,16 +469,32 @@ audiod_capture_period(
 
 /*
  * Publishes where playback has got to and when, as one pair: a reader
- * retries while the sequence is odd or changed.
+ * retries while the sequence is odd or changed.  The position is what is
+ * heard now (ws209-p003, N4): what was read less the output's delay,
+ * never going back (an output that changed holds it until it catches up).
  */
 static void
 audiod_played_store(
-	struct audiod_shm_header *shm,
+	struct audiod_stream *stream,
 	uint64_t position,
 	int64_t time_ns)
 {
+	struct audiod_shm_header *shm;
+	uint64_t delay;
 	uint32_t current;
 
+	/* Heard now, monotonic. */
+	shm = stream->shm;
+	delay = (uint64_t)(audiod_route_output_delay() * (double)audiod_device.rate * (double)stream->step / 4294967296.0);
+	if (position > delay)
+		position -= delay;
+	else
+		position = 0U;
+	if (position < stream->played_last)
+		position = stream->played_last;
+	stream->played_last = position;
+
+	/* The pair. */
 	current = shm->played_sequence;
 	__atomic_store_n(&shm->played_sequence, current + 1U, __ATOMIC_RELAXED);
 	__atomic_thread_fence(__ATOMIC_RELEASE);
@@ -625,6 +666,20 @@ soft_volume(
 		mix[index * 2U] = (mix[index * 2U] * (int64_t)gain[0]) >> 16;
 		mix[index * 2U + 1U] = (mix[index * 2U + 1U] * (int64_t)gain[1]) >> 16;
 	}
+}
+
+/* Gives the factor (in 1/65536) of a volume in percent on audiod's curve, for an endpoint's soft volume (ws209-p003). */
+uint32_t
+audiod_soft_factor(
+	uint32_t percent)
+{
+	uint32_t factor;
+
+	/* The device's curve. */
+	factor = soft_gain(percent);
+
+	/* Succeeded. */
+	return factor;
 }
 
 /* Gives the factor (in 1/65536) of a volume in percent from the curve's table, full from 100 up. */

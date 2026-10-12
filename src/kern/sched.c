@@ -27,7 +27,11 @@
 #include "kern/lock.h"
 #include "kern/kmem.h"
 #include "kern/klog.h"
+#include "kern/clock.h"
+#include "kern/vm-lock.h"
+#include <kern/boot.h>
 #include <kern/kcrt.h>
+#include <kern/platform.h>
 
 #include <uapi/errno.h>
 #include <hal/hal.h>
@@ -119,6 +123,54 @@ sched_wake_latency_report(void)
 #define SCHED_TIME_OTHER	3U
 #define SCHED_TIMES		4U
 
+/*
+ * The latency diagnostic (ws213-p007): the boot token that turns it on,
+ * how often it reports, and why a thread's wait to run is being measured
+ * (struct sched's perf_runnable_kind).  A preempted thread is one a wakeup
+ * took the CPU from (sched_preempt()); a quantum that ran out is not
+ * measured.
+ */
+#define SCHED_PERF_TOKEN		"kern.perf=1"
+#define SCHED_PERF_COMMAND_LINE		"boot.command-line"
+#define SCHED_PERF_REPORT_MS		2000U
+#define SCHED_PERF_NONE			0U
+#define SCHED_PERF_WOKEN		1U
+#define SCHED_PERF_PREEMPTED		2U
+
+/*
+ * The longest wait to run of one kind in a window of the latency
+ * diagnostic.
+ *
+ * It holds how long the thread waited in counter counts, the uptime in
+ * milliseconds when it ran, which thread it was, and how many other
+ * threads its CPU switched to first (-1 when another CPU took it).  An
+ * empty one has zero counts.
+ */
+struct sched_perf_longest {
+	uint64_t counts;
+	uint64_t end_ms;
+	struct sched_perf_thread who;
+	int ahead;
+};
+
+/*
+ * One CPU's part of a window of the latency diagnostic.
+ *
+ * It counts the switches to another thread, the woken and the preempted
+ * threads that ran, and the switches that left a woken thread of at least
+ * the new thread's priority waiting after the mark asking for its turn was
+ * cleared; and keeps the longest wait of each kind.  The CPU lock guards
+ * it, and the report empties it.
+ */
+struct sched_perf_window {
+	uint64_t switches;
+	uint64_t woken;
+	uint64_t preempted;
+	uint64_t dropped;
+	struct sched_perf_longest woken_longest;
+	struct sched_perf_longest preempted_longest;
+};
+
 struct sched_cpu {
 	struct spinlock lock;
 	struct sched_queue run[SCHED_PRIOR_LEVELS];
@@ -145,6 +197,14 @@ struct sched_cpu {
 	 * them atomically (a u64 is not one access on i386).
 	 */
 	volatile uint64_t times[SCHED_TIMES];
+
+	/*
+	 * The latency diagnostic's window, and the CPU's switches to another
+	 * thread since boot, which a waiting thread's stamp is compared with
+	 * to tell how many ran before it.  Both only with the diagnostic on.
+	 */
+	struct sched_perf_window perf;
+	uint64_t perf_switch_count;
 };
 
 static struct sched_cpu *scheduler_cpus;
@@ -163,6 +223,40 @@ static volatile unsigned scheduler_round_robin;
  * a stale bit costs one notification that finds nothing to take.
  */
 static struct hal_cpu_mask scheduler_idle_mask;
+
+/*
+ * Whether the latency diagnostic is on (kern.perf=1), set once by
+ * sched_init() before another thread runs and read without a lock.
+ */
+int sched_perf_active;
+
+/*
+ * The frequency of the counter the latency diagnostic measures with, read
+ * once when it is turned on.  Zero keeps the diagnostic off.
+ */
+static uint64_t sched_perf_frequency;
+
+/*
+ * The global tick of the last report of the latency diagnostic.  The
+ * thread that moves it forward with a compare-and-swap writes the report,
+ * so two CPUs never write the same window.
+ */
+static volatile uint64_t sched_perf_report_tick;
+
+/*
+ * The counter at the last report, which measures the window's length.
+ * Only the thread that won the report writes it.
+ */
+static uint64_t sched_perf_report_counter;
+
+/*
+ * How long the last report took to write, in counter units, from gathering
+ * the windows to the end of its lines; the next report prints it.  The
+ * report is written synchronously by whichever thread is returning to user
+ * mode, so this is the time that thread lost to the diagnostic, including
+ * any time it was preempted meanwhile.  Zero before the first report.
+ */
+static volatile uint64_t sched_perf_report_cost;
 
 static void send_itimer_signal(struct process *process, int signo);
 static struct sched_cpu *sched_cpu_state(hal_cpu_id_t cpu);
@@ -190,6 +284,13 @@ static struct thread *take_stealable_locked(struct sched_cpu *victim);
 static int steal_runnable(hal_cpu_id_t self);
 static void retarget_migrating(struct thread *thread, struct sched_cpu *old_cpu, hal_cpu_id_t target);
 static void charge_cpu_time(struct sched_cpu *cpu, const struct thread *thread);
+static void perf_init(void);
+static void perf_mark_runnable_locked(struct sched_cpu *cpu, struct thread *thread, unsigned kind);
+static void perf_switch_locked(struct sched_cpu *cpu, struct thread *current, struct thread *next);
+static void perf_note_longest(struct sched_perf_longest *longest, uint64_t counts, const struct thread *thread, int ahead);
+static void perf_merge_longest(struct sched_perf_longest *total, const struct sched_perf_longest *longest);
+static void perf_report_if_due(void);
+static void perf_report(void);
 
 /*
  * Marks the current user thread as executing in the kernel for accounting.
@@ -278,6 +379,9 @@ sched_init(
 	thread0.sched.last_cpu = 0;
 	thread0.sched.quantum = SCHED_QUANTUM_TICKS;
 	atomic_u64_store_release(&scheduler_ticks, 0);
+
+	/* Turns the latency diagnostic on when the boot line asks for it. */
+	perf_init();
 }
 
 /*
@@ -357,6 +461,9 @@ sched_add(
 	queue_append(&cpu->run[thread->sched.priority], thread,
 	    SCHED_QUEUE_RUN);
 	cpu->need_resched = 1;
+
+	/* A new or added thread's first run is not a measured wait. */
+	perf_mark_runnable_locked(cpu, thread, SCHED_PERF_NONE);
 
 	spin_unlock_irqrestore(&cpu->lock, irq);
 
@@ -648,6 +755,7 @@ sched_yield(
 #if SCHED_WAKE_LATENCY
 	wake_latency_account(next);
 #endif
+	perf_switch_locked(cpu, current, next);
 	next->sched.last_cpu = id;
 	if (next->sched.quantum == 0)
 		next->sched.quantum = SCHED_QUANTUM_TICKS;
@@ -731,11 +839,13 @@ sched_preempt(
 	current->state = THREAD_RUNNABLE;
 	queue_prepend(&cpu->run[current->sched.priority], current,
 	    SCHED_QUEUE_RUN);
+	perf_mark_runnable_locked(cpu, current, SCHED_PERF_PREEMPTED);
 
 	next->state = THREAD_RUNNING;
 #if SCHED_WAKE_LATENCY
 	wake_latency_account(next);
 #endif
+	perf_switch_locked(cpu, current, next);
 	next->sched.last_cpu = id;
 	if (next->sched.quantum == 0)
 		next->sched.quantum = SCHED_QUANTUM_TICKS;
@@ -764,6 +874,14 @@ sched_preempt_point(
 	void)
 {
 	struct sched_cpu *cpu;
+
+	/*
+	 * Writes the latency diagnostic's report when one is due.  The way
+	 * back to user mode is where a busy CPU's threads come with nothing
+	 * held and may sleep.
+	 */
+	if (sched_perf_active)
+		perf_report_if_due();
 
 	cpu = sched_cpu_state(hal_cpu_current());
 	if (cpu == NULL ||
@@ -825,6 +943,7 @@ sched_exit_current(
 #if SCHED_WAKE_LATENCY
 	wake_latency_account(next);
 #endif
+	perf_switch_locked(cpu, current, next);
 	next->sched.last_cpu = id;
 	if (next->sched.quantum == 0)
 		next->sched.quantum = SCHED_QUANTUM_TICKS;
@@ -1663,6 +1782,88 @@ sched_cpu_notify(
 		sched_yield();
 }
 
+/*
+ * Reads the counter the latency diagnostic measures with.
+ *
+ * Reports zero without a counter; the diagnostic is then never on, so no
+ * caller compares a zero reading.
+ */
+uint64_t
+sched_perf_counter(
+	void)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	bool available;
+
+	/* Asks the platform for the monotonic counter. */
+	available = kern_rtc_read_counter(&counter, &frequency);
+	if (!available)
+		return 0;
+
+	/* Reports the reading. */
+	return counter;
+}
+
+/*
+ * Converts a difference of sched_perf_counter() readings to microseconds.
+ *
+ * Whole seconds and the remainder are scaled apart, so a long difference
+ * does not overflow on a counter of several gigahertz.
+ */
+uint64_t
+sched_perf_counts_to_us(
+	uint64_t counts)
+{
+	uint64_t frequency;
+	uint64_t seconds;
+	uint64_t remainder;
+
+	/* Without a frequency there is nothing to convert. */
+	frequency = sched_perf_frequency;
+	if (frequency == 0)
+		return 0;
+
+	/* Scales the whole seconds and the part of a second separately. */
+	seconds = counts / frequency;
+	remainder = counts % frequency;
+
+	/* Reports the microseconds. */
+	return seconds * 1000000ULL + (remainder * 1000000ULL) / frequency;
+}
+
+/*
+ * Names a thread for a sample of the latency diagnostic.
+ *
+ * The command is read without the process lock: a title changed at the
+ * same moment can only garble the diagnostic's own line.
+ */
+void
+sched_perf_identify(
+	const struct thread *thread,
+	struct sched_perf_thread *who)
+{
+	const struct process *process;
+
+	/* Starts as nobody. */
+	kern_memset(who, 0, sizeof(*who));
+	who->pid = -1;
+	who->tid = -1;
+	if (thread == NULL)
+		return;
+
+	/* The thread id, and the process id; a kernel thread belongs to process 0. */
+	who->tid = (int)thread->tid;
+	process = thread->proc;
+	if (process == NULL)
+		return;
+	who->pid = (int)process->pid;
+
+	/* The start of the command, always terminated. */
+	kern_memcpy(who->name, process->command, sizeof(who->name) - 1U);
+	who->name[sizeof(who->name) - 1U] = '\0';
+}
+
 #ifdef KERN_SCHED_TEST
 /*
  * Brings a CPU online under test with a fake idle thread.
@@ -1819,6 +2020,9 @@ wake_enqueue_locked(
 	/* A quantum used up while preemption was held off starts afresh. */
 	if (thread->sched.quantum == 0)
 		thread->sched.quantum = SCHED_QUANTUM_TICKS;
+
+	/* The latency diagnostic measures the wait from here to the thread's run. */
+	perf_mark_runnable_locked(cpu, thread, SCHED_PERF_WOKEN);
 
 	/* Places the thread by its priority against the running one. */
 	running = cpu->current;
@@ -2102,6 +2306,7 @@ switch_without_enqueue(
 #if SCHED_WAKE_LATENCY
 	wake_latency_account(next);
 #endif
+	perf_switch_locked(cpu, current, next);
 	next->sched.last_cpu = id;
 	if (next->sched.quantum == 0)
 		next->sched.quantum = SCHED_QUANTUM_TICKS;
@@ -2380,4 +2585,357 @@ steal_runnable(
 
 	/* Succeeded: this CPU has work to run. */
 	return 1;
+}
+
+/*
+ * Turns the latency diagnostic on when the boot line holds kern.perf=1.
+ *
+ * Off by default: it adds a counter reading to every switch and to every
+ * entry of the VM metadata lock, and a line to the kernel log every two
+ * seconds that would push the boot messages out of the ring.
+ */
+static void
+perf_init(
+	void)
+{
+	const char *line;
+	uint64_t counter;
+	uint64_t frequency;
+	bool available;
+	int asked;
+
+	/* Looks for kern.perf=1 among the boot parameters. */
+	line = kern_boot_handoff(SCHED_PERF_COMMAND_LINE);
+	asked = kern_boot_parameters_token_present(line, SCHED_PERF_TOKEN);
+	if (!asked)
+		return;
+
+	/* The diagnostic measures with the platform's monotonic counter. */
+	available = kern_rtc_read_counter(&counter, &frequency);
+	if (!available) {
+		kern_logf("sched: kern.perf=1 asked, but the platform has no counter\n");
+		return;
+	}
+	if (frequency == 0) {
+		kern_logf("sched: kern.perf=1 asked, but the counter has no frequency\n");
+		return;
+	}
+
+	/* Starts the first window now, then lets every path measure. */
+	sched_perf_frequency = frequency;
+	sched_perf_report_counter = counter;
+	atomic_u64_store_release(&sched_perf_report_tick, clock_ticks());
+	sched_perf_active = 1;
+	kern_logf("sched: latency diagnostic on (kern.perf=1), one report every %u ms\n", SCHED_PERF_REPORT_MS);
+}
+
+/*
+ * Stamps a thread that a wakeup or a preemption made runnable, so that the
+ * latency diagnostic measures its wait to run.  SCHED_PERF_NONE clears the
+ * stamp.  The CPU lock is held.
+ */
+static void
+perf_mark_runnable_locked(
+	struct sched_cpu *cpu,
+	struct thread *thread,
+	unsigned kind)
+{
+	/* Nothing is measured with the diagnostic off. */
+	if (!sched_perf_active)
+		return;
+
+	/* Clears a stamp a reused thread may still carry. */
+	if (kind == SCHED_PERF_NONE) {
+		thread->sched.perf_runnable_at = 0;
+		thread->sched.perf_runnable_kind = SCHED_PERF_NONE;
+		return;
+	}
+
+	/* Records when, why and on which CPU the wait began, with that CPU's switch count. */
+	thread->sched.perf_runnable_at = sched_perf_counter();
+	thread->sched.perf_runnable_kind = kind;
+	thread->sched.perf_runnable_cpu = (hal_cpu_id_t)(cpu - scheduler_cpus);
+	thread->sched.perf_runnable_switches = cpu->perf_switch_count;
+}
+
+/*
+ * Accounts a switch for the latency diagnostic.
+ *
+ * A stamped thread that now runs ends its wait, the switch is counted for
+ * the CPU and against the thread switched away from, and a woken thread of
+ * at least the new thread's priority that is still waiting is counted as
+ * dropped: every caller clears the CPU's preemption mark with this switch,
+ * so that thread now waits for the new one to sleep, go back to user mode
+ * after another wakeup, or use up its quantum.  The CPU lock is held.
+ */
+static void
+perf_switch_locked(
+	struct sched_cpu *cpu,
+	struct thread *current,
+	struct thread *next)
+{
+	hal_cpu_id_t id;
+	uint64_t counts;
+	int ahead;
+	int priority;
+	int last_priority;
+	int waiting;
+
+	/* Nothing is measured with the diagnostic off. */
+	if (!sched_perf_active)
+		return;
+
+	/* Keeping the same thread is not a switch. */
+	if (next == current)
+		return;
+
+	/* Ends the measured wait of a thread a wakeup or a preemption made runnable. */
+	id = (hal_cpu_id_t)(cpu - scheduler_cpus);
+	if (next->sched.perf_runnable_at != 0) {
+		counts = sched_perf_counter() - next->sched.perf_runnable_at;
+
+		/* The threads its CPU ran first; unknown when another CPU took it. */
+		ahead = -1;
+		if (next->sched.perf_runnable_cpu == id)
+			ahead = (int)(cpu->perf_switch_count - next->sched.perf_runnable_switches);
+
+		/* Counts the wait as a preempted or a woken one. */
+		if (next->sched.perf_runnable_kind == SCHED_PERF_PREEMPTED) {
+			cpu->perf.preempted++;
+			perf_note_longest(&cpu->perf.preempted_longest, counts, next, ahead);
+		} else {
+			cpu->perf.woken++;
+			perf_note_longest(&cpu->perf.woken_longest, counts, next, ahead);
+		}
+
+		next->sched.perf_runnable_at = 0;
+		next->sched.perf_runnable_kind = SCHED_PERF_NONE;
+	}
+
+	/*
+	 * Counts the switch.  The CPU's count since boot is what a waiting
+	 * thread's stamp is compared with; the thread's own count tells the
+	 * metadata lock how often its holder lost the CPU.
+	 */
+	cpu->perf.switches++;
+	cpu->perf_switch_count++;
+	if (current != NULL)
+		current->sched.perf_switch_outs++;
+
+	/* The idle thread runs only when nothing is queued. */
+	if ((next->flags & THREAD_FLAG_IDLE) != 0)
+		return;
+
+	/* Looks for a woken thread of at least the new thread's priority. */
+	last_priority = next->sched.priority;
+	if (last_priority > SCHED_PRIOR_LOW)
+		last_priority = SCHED_PRIOR_LOW;
+	waiting = 0;
+	for (priority = SCHED_PRIOR_HIGH; priority <= last_priority; priority++) {
+		if (cpu->woken[priority].head != NULL)
+			waiting = 1;
+	}
+
+	/* Counts the switch that left it waiting without the mark. */
+	if (waiting)
+		cpu->perf.dropped++;
+}
+
+/*
+ * Keeps a wait as the longest of its kind when it is longer than the one
+ * kept: how long, when it ended, which thread, and how many ran first.
+ */
+static void
+perf_note_longest(
+	struct sched_perf_longest *longest,
+	uint64_t counts,
+	const struct thread *thread,
+	int ahead)
+{
+	/* A wait no longer than the kept one changes nothing. */
+	if (counts <= longest->counts)
+		return;
+
+	/* Replaces the kept wait. */
+	longest->counts = counts;
+	longest->end_ms = kern_ticks_to_ms(clock_ticks());
+	sched_perf_identify(thread, &longest->who);
+	longest->ahead = ahead;
+}
+
+/*
+ * Keeps one CPU's longest wait of a kind when it is longer than the total's.
+ */
+static void
+perf_merge_longest(
+	struct sched_perf_longest *total,
+	const struct sched_perf_longest *longest)
+{
+	/* A wait no longer than the kept one changes nothing. */
+	if (longest->counts <= total->counts)
+		return;
+
+	/* Takes the CPU's wait. */
+	*total = *longest;
+}
+
+/*
+ * Writes the latency diagnostic's report when its interval has passed.
+ *
+ * The thread that moves the report tick forward writes it; one that loses
+ * the race to another CPU goes on.
+ */
+static void
+perf_report_if_due(
+	void)
+{
+	uint64_t now;
+	uint64_t last;
+	uint64_t interval;
+	int claimed;
+
+	/* Waits for the interval to pass since the last report. */
+	now = clock_ticks();
+	last = atomic_u64_load_acquire(&sched_perf_report_tick);
+	interval = KERN_MS_TO_TICKS(SCHED_PERF_REPORT_MS);
+	if (now - last < interval)
+		return;
+
+	/* Claims the report. */
+	claimed = atomic_u64_compare_exchange(&sched_perf_report_tick, &last, now);
+	if (!claimed)
+		return;
+
+	/* Writes it. */
+	perf_report();
+}
+
+/*
+ * Writes one line of the latency diagnostic and starts a new window.
+ *
+ * The line gives the uptime and the window's length, the switches, the
+ * woken and the preempted threads that ran with the longest wait of each
+ * (microseconds, the uptime when it ended, pid/tid/command, and how many
+ * threads ran first), the dropped preemption marks, and the metadata
+ * lock's part: its entries, the waits for it and the longest one, and its
+ * longest hold, each with the address vm_metadata_enter() was called from.
+ * report_us is what the previous report cost the thread that wrote it.
+ * The caller is on its way back to user mode and holds nothing.
+ */
+static void
+perf_report(
+	void)
+{
+	struct sched_perf_window total;
+	struct sched_perf_window window;
+	struct vm_metadata_perf meta;
+	struct sched_cpu *cpu;
+	char meta_text[256];
+	uint64_t started;
+	uint64_t finished;
+	uint64_t previous_cost;
+	uint64_t counter;
+	uint64_t elapsed_ms;
+	unsigned long irq;
+	unsigned online;
+	hal_cpu_id_t id;
+	int online_cpu;
+	int taken;
+
+	/* Starts measuring what this report costs the thread that writes it. */
+	started = sched_perf_counter();
+	previous_cost = atomic_u64_load_acquire(&sched_perf_report_cost);
+
+	/* Gathers every online CPU's window and starts a new one there. */
+	kern_memset(&total, 0, sizeof(total));
+	online = 0;
+	for (id = 0; id < scheduler_cpu_count; id++) {
+		online_cpu = cpu_online(id);
+		if (!online_cpu)
+			continue;
+
+		/* Takes the CPU's window and empties it. */
+		cpu = sched_cpu_state(id);
+		irq = spin_lock_irqsave(&cpu->lock);
+
+		window = cpu->perf;
+		kern_memset(&cpu->perf, 0, sizeof(cpu->perf));
+
+		spin_unlock_irqrestore(&cpu->lock, irq);
+
+		/* Adds the CPU's counts and keeps the longest waits. */
+		online++;
+		total.switches += window.switches;
+		total.woken += window.woken;
+		total.preempted += window.preempted;
+		total.dropped += window.dropped;
+		perf_merge_longest(&total.woken_longest, &window.woken_longest);
+		perf_merge_longest(&total.preempted_longest, &window.preempted_longest);
+	}
+
+	/* Measures the window. */
+	counter = sched_perf_counter();
+	elapsed_ms = sched_perf_counts_to_us(counter - sched_perf_report_counter) / 1000U;
+	sched_perf_report_counter = counter;
+
+	/* Writes the metadata lock's part, which a held lock leaves to the next report. */
+	taken = vm_metadata_perf_take(&meta);
+	if (taken) {
+		kern_snprintf(meta_text, sizeof(meta_text),
+		    "meta takes=%llu waits=%llu max_us=%llu end_ms=%llu who=%d/%d/%s at=%p"
+		    " | hold max_us=%llu end_ms=%llu who=%d/%d/%s at=%p switched=%llu",
+		    (unsigned long long)meta.takes,
+		    (unsigned long long)meta.waits,
+		    (unsigned long long)sched_perf_counts_to_us(meta.wait_counts),
+		    (unsigned long long)meta.wait_end_ms,
+		    meta.waiter.pid,
+		    meta.waiter.tid,
+		    meta.waiter.name,
+		    meta.wait_from,
+		    (unsigned long long)sched_perf_counts_to_us(meta.hold_counts),
+		    (unsigned long long)meta.hold_end_ms,
+		    meta.holder.pid,
+		    meta.holder.tid,
+		    meta.holder.name,
+		    meta.hold_from,
+		    (unsigned long long)meta.hold_switched);
+	} else {
+		kern_snprintf(meta_text, sizeof(meta_text), "meta held (left to the next report)");
+	}
+
+	/* Writes the line, with what the previous report cost its writer. */
+	kern_logf("kern: perf at_ms=%llu ms=%llu cpus=%u switches=%llu report_us=%llu"
+	    " | woken=%llu max_us=%llu end_ms=%llu who=%d/%d/%s ahead=%d"
+	    " | preempted=%llu max_us=%llu end_ms=%llu who=%d/%d/%s ahead=%d dropped=%llu"
+	    " | %s\n",
+	    (unsigned long long)kern_ticks_to_ms(clock_ticks()),
+	    (unsigned long long)elapsed_ms,
+	    online,
+	    (unsigned long long)total.switches,
+	    (unsigned long long)sched_perf_counts_to_us(previous_cost),
+	    (unsigned long long)total.woken,
+	    (unsigned long long)sched_perf_counts_to_us(total.woken_longest.counts),
+	    (unsigned long long)total.woken_longest.end_ms,
+	    total.woken_longest.who.pid,
+	    total.woken_longest.who.tid,
+	    total.woken_longest.who.name,
+	    total.woken_longest.ahead,
+	    (unsigned long long)total.preempted,
+	    (unsigned long long)sched_perf_counts_to_us(total.preempted_longest.counts),
+	    (unsigned long long)total.preempted_longest.end_ms,
+	    total.preempted_longest.who.pid,
+	    total.preempted_longest.who.tid,
+	    total.preempted_longest.who.name,
+	    total.preempted_longest.ahead,
+	    (unsigned long long)total.dropped,
+	    meta_text);
+
+#if SCHED_WAKE_LATENCY
+	/* The build with the wake histogram writes it with the same window. */
+	sched_wake_latency_report();
+#endif
+
+	/* Keeps this report's cost for the next line. */
+	finished = sched_perf_counter();
+	atomic_u64_store_release(&sched_perf_report_cost, finished - started);
 }

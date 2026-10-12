@@ -220,11 +220,28 @@ struct drv_usb_control_request {
 	uint16_t length;
 } __attribute__((packed));
 
+/*
+ * One packet of an isochronous transfer: where it is in the URB's buffer,
+ * its length, and, when the transfer ends, how many bytes moved and how
+ * it went (ws197-p007a1, design 2.1a X8).  A packet the controller could
+ * not serve in its interval is MISSED; the URB's own status is COMPLETE
+ * unless the whole transfer was cancelled, disconnected or ended by a
+ * halt's recovery (IO_ERROR), and its actual length is the packets' sum.
+ */
+enum drv_usb_iso_status {
+	DRV_USB_ISO_PENDING,
+	DRV_USB_ISO_OK,
+	DRV_USB_ISO_SHORT,
+	DRV_USB_ISO_MISSED,
+	DRV_USB_ISO_ERROR,
+	DRV_USB_ISO_CANCELLED
+};
+
 struct drv_usb_iso_packet {
 	size_t offset;
 	size_t length;
 	size_t actual_length;
-	enum drv_usb_urb_status status;
+	enum drv_usb_iso_status status;
 };
 
 struct drv_usb_id {
@@ -954,11 +971,51 @@ drv_usb_urb_setup_control_flags(
 	drv_usb_urb_callback_t cb,
 	void *a);
 
+/*
+ * Describes the packets of an isochronous transfer whose buffer
+ * drv_usb_urb_setup gave: each within the buffer and not empty.
+ *
+ * The isochronous contract (design 2.1a X5 and X9): the URB's callback
+ * may run while the host controller's command gate is held, so it only
+ * wakes a thread (it never submits, cancels or calls into the HCD).
+ * Cancelling one URB of an isochronous endpoint ends every URB queued on
+ * it: the others' callbacks come before the cancel returns, each
+ * CANCELLED; EALREADY from a cancel still means the endpoint was emptied.
+ * Their order is not to be relied on; count the URBs in flight.
+ */
 int
 drv_usb_urb_setup_isochronous(
 	struct drv_usb_urb *u,
 	struct drv_usb_iso_packet *p,
 	unsigned n);
+
+/* The packets of an isochronous URB, for its host controller driver. */
+unsigned
+drv_usb_urb_iso_count(
+	const struct drv_usb_urb *u);
+
+int
+drv_usb_urb_iso_packet(
+	const struct drv_usb_urb *u,
+	unsigned index,
+	size_t *offset,
+	size_t *length);
+
+/* The host controller driver gives a packet its result before it completes the URB. */
+void
+drv_usb_urb_iso_result_set(
+	struct drv_usb_urb *u,
+	unsigned index,
+	size_t actual,
+	enum drv_usb_iso_status status);
+
+/* A finished packet's result, for the class driver. */
+int
+drv_usb_urb_iso_result(
+	const struct drv_usb_urb *u,
+	unsigned index,
+	size_t *actual,
+	enum drv_usb_iso_status *status);
 
 int
 drv_usb_urb_submit(
@@ -982,6 +1039,16 @@ int
 drv_usb_urb_drain(
 	struct drv_usb_urb *u,
 	unsigned timeout_ms);
+
+/*
+ * Tells, without waiting, whether drv_usb_urb_drain would return 0 now:
+ * the URB is terminal and the HCD has dropped it.  A thread above the
+ * default priority waits on it asleep instead of draining, which yields
+ * in a loop (ws197-p007a2, design 2.1b B-P1).
+ */
+int
+drv_usb_urb_retired(
+	const struct drv_usb_urb *u);
 
 /*
  * Synchronous URBs have no callback. Success includes HCD retirement.

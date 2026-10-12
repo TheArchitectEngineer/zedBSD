@@ -47,8 +47,12 @@
 /* How often the menus' state is checked at most while no input arrives, in milliseconds. */
 #define MAIN_MENU_CHECK_MS	250U
 
-/* The longest the loop sleeps when nothing is due, in milliseconds (folders are checked for changes). */
-#define MAIN_IDLE_MS		500
+/*
+ * The longest single wait for a moment far ahead (the end of a long
+ * timeout), in milliseconds; the loop works the rest out again when it
+ * wakes.  With nothing due the loop waits without an end.
+ */
+#define MAIN_LONGEST_WAIT_MS	60000U
 
 /*
  * What the command line asked for.
@@ -215,7 +219,8 @@ static int main_loop(const struct main_options *options);
 static int main_frame(void);
 static void main_band_frame(uint64_t started, uint64_t drawn, uint64_t shown);
 static int main_canvas_make(void);
-static int main_timeout(uint64_t now);
+static int main_timeout(uint64_t now, uint64_t deadline);
+static int main_shorter(int limit, int wait);
 static void main_request(const struct main_options *options);
 static void main_new_window(const struct main_options *options);
 static void main_drag_out(void);
@@ -365,6 +370,18 @@ main(
 			kl_text_close(&main_text);
 			return 1;
 		}
+	}
+
+	/*
+	 * A window's pointer motions merged, and each frame drawn once the
+	 * compositor took the last one (ws210-p014 F2): the pointer crossing
+	 * the sidebar and the items while a frame is on its way draws its
+	 * latest place once, not a frame queued for every row it crossed
+	 * (2026-10-12, the Pi 4).  The desktop's icons are not paced.
+	 */
+	if (!options.desktop) {
+		error = kl_window_set_pacing(main_window.kui, KL_PACING_MOTION | KL_PACING_FRAME, 0U);
+		fm_log("PACING motion=1 frame=1 errno=%d", error);
 	}
 
 	/* The desktop's removable devices, for the window (not the desktop's icons). */
@@ -601,9 +618,11 @@ main_loop(
 	uint64_t started;
 	uint64_t now;
 	uint64_t menu_checked_at;
+	uint64_t deadline;
 	int inputs;
 	int taken;
 	int status;
+	int pace;
 	int timeout;
 
 	/* The first frame's canvas. */
@@ -649,7 +668,10 @@ main_loop(
 	for (;;) {
 		/* Waits for the compositor, or until something is due. */
 		now = fm_clock();
-		timeout = main_timeout(now);
+		deadline = 0U;
+		if (options->timeout != 0U)
+			deadline = started + (uint64_t)options->timeout * 1000U;
+		timeout = main_timeout(now, deadline);
 		status = fm_window_dispatch(&main_window, timeout);
 		if (status != 0) {
 			fm_log("DONE reason=disconnected");
@@ -751,6 +773,24 @@ main_loop(
 			main_app.dirty = 1;
 		}
 
+		/* Nothing changed: no frame. */
+		if (main_app.dirty == 0 &&
+		    main_app.hover_moved == 0 &&
+		    main_app.damage_pending == 0)
+			continue;
+
+		/*
+		 * A frame once the compositor took the last one (ws210-p014 F2.2):
+		 * until then nothing is consumed, so what changes meanwhile is
+		 * drawn as one frame in its latest state.
+		 */
+		pace = kl_window_frame_wait(main_window.kui, kl_clock_us());
+		if (pace != 0)
+			continue;
+
+		/* The region under the pointer: what changed since the last frame drawn (ws210-p014). */
+		fm_input_hover_settle(&main_app);
+
 		/* A frame when something changed, or a part of the window alone (BUG-221, BUG-226). */
 		if (main_app.dirty != 0 || main_app.damage_pending != 0) {
 			status = main_frame();
@@ -764,8 +804,9 @@ main_loop(
 static int
 main_frame(void)
 {
-	const struct kl_rect *part;
+	const struct kl_rect *parts;
 	struct kl_rect shown_part;
+	unsigned part_count;
 	VkResult result;
 	uint64_t started;
 	uint64_t drawn;
@@ -795,9 +836,17 @@ main_frame(void)
 		if (!main_app.desktop)
 			fm_glass_refresh(&main_glass, &main_app);
 
-		/* Shown in the window, by what it changed when it was drawn by parts (BUG-221; nothing changed: one pixel). */
-		part = NULL;
-		if (main_app.frame_partial) {
+		/*
+		 * Shown in the window, by what it changed when it was drawn by
+		 * parts (BUG-221): a window's parts themselves, or the desktop's
+		 * box (nothing changed: one pixel).
+		 */
+		parts = NULL;
+		part_count = 0;
+		if (main_app.frame_partial && main_app.frame_part_count > 0U) {
+			parts = main_app.frame_parts;
+			part_count = main_app.frame_part_count;
+		} else if (main_app.frame_partial) {
 			shown_part = main_app.frame_part;
 			if (shown_part.width <= 0 || shown_part.height <= 0) {
 				shown_part.x = 0;
@@ -805,9 +854,10 @@ main_frame(void)
 				shown_part.width = 1;
 				shown_part.height = 1;
 			}
-			part = &shown_part;
+			parts = &shown_part;
+			part_count = 1;
 		}
-		result = fm_present_frame(&main_present, main_pixels, (size_t)main_present.extent.width, part);
+		result = fm_present_frame(&main_present, main_pixels, (size_t)main_present.extent.width, parts, part_count);
 		shown = fm_clock();
 
 		/* The desktop's selection shown: the time from the press that selected (ws094-p008). */
@@ -932,28 +982,86 @@ main_canvas_make(void)
 	return 0;
 }
 
-/* Reports how long the loop may sleep: until a key repeats, the file manager's work moves on, or the idle limit. */
+/*
+ * Reports how long the loop may sleep: not at all while a frame is due,
+ * else until the file manager's work moves on, its timed work is due (a
+ * message runs out, the folder shown is checked), the fingers want their
+ * next round or the run ends, and for ever (-1) when nothing is.  The
+ * compositor's events (the desktop's news among them) and a held key's
+ * repeat (within the application's library) wake the wait whenever they
+ * come.
+ */
 static int
 main_timeout(
-	uint64_t now)
+	uint64_t now,
+	uint64_t deadline)
 {
+	uint64_t rest;
 	int limit;
 	int busy;
+	int pace;
+	int due;
 
-	/* A part of the window to draw again is drawn at once (BUG-221, BUG-226). */
-	if (main_app.damage_pending != 0)
-		return 0;
+	/*
+	 * A frame asked for after the last one (a name's edit ended), or a
+	 * part of the window to draw again, is drawn at once (BUG-221,
+	 * BUG-226), or once the compositor took the last one (ws210-p014 F2:
+	 * its answer wakes the wait; a positive pace is how long it is waited
+	 * for at most).
+	 */
+	pace = -1;
+	if (main_app.dirty != 0 ||
+	    main_app.hover_moved != 0 ||
+	    main_app.damage_pending != 0) {
+		pace = kl_window_frame_wait(main_window.kui, kl_clock_us());
+		if (pace == 0)
+			return 0;
+	}
 
-	/* The idle limit, shortened while the file manager has work waiting, or the fingers want their next round. */
-	limit = MAIN_IDLE_MS;
+	/* Nothing due yet: the wait has no end, except the end of the run when a timeout was given, and the frame's pace. */
+	limit = -1;
+	if (deadline != 0U) {
+		rest = 0U;
+		if (deadline > now)
+			rest = deadline - now;
+		if (rest > MAIN_LONGEST_WAIT_MS)
+			rest = MAIN_LONGEST_WAIT_MS;
+		limit = (int)rest;
+	}
+	limit = main_shorter(limit, pace);
+
+	/* The file manager's work waiting. */
 	busy = fm_ui_wait(&main_app);
-	if (busy >= 0 && busy < limit)
-		limit = busy;
-	if (main_touch_due >= 0 && main_touch_due < limit)
-		limit = main_touch_due;
+	limit = main_shorter(limit, busy);
 
-	/* The limit (a held key's repeat shortens the wait within the application's). */
-	(void)now;
+	/* Its timed work: the message's end, the folder's next check. */
+	due = fm_ui_due(&main_app, now);
+	limit = main_shorter(limit, due);
+
+	/* The fingers' next round. */
+	limit = main_shorter(limit, main_touch_due);
+
+	/* Reports the wait, -1 for one without an end. */
+	return limit;
+}
+
+/* Reports the shorter of two waits in milliseconds, where -1 (or any negative) is a wait without an end. */
+static int
+main_shorter(
+	int limit,
+	int wait)
+{
+	/* A wait without an end shortens nothing. */
+	if (wait < 0)
+		return limit;
+
+	/* Any wait shortens one without an end. */
+	if (limit < 0)
+		return wait;
+
+	/* Reports the shorter one. */
+	if (wait < limit)
+		return wait;
 	return limit;
 }
 

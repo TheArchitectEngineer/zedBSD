@@ -170,12 +170,12 @@ struct ph_window {
 
 	/*
 	 * Only the lit widget changed since the last frame (BUG-226): the next
-	 * frame is drawn within the part kl_ui_take_damage gives, when nothing
+	 * frame is drawn within the parts kl_ui_take_frame gives, when nothing
 	 * else changed (dirty draws the whole window).
 	 */
 	int lit_changed;
 
-	/* The pointer's buttons held now: while one is, every motion is drawn (a drag); otherwise only one that lights another widget (BUG-226). */
+	/* The pointer's buttons held now: while one is, a motion that moves a held widget draws the whole window (a drag); otherwise only one that lights another widget draws its part (BUG-226). */
 	unsigned buttons_held;
 	int resized;
 	int moving;
@@ -198,6 +198,8 @@ struct ph_window {
 	struct kl_media_picker *picker;
 	char *chooser_contact;
 	struct kl_system *system;
+	/* The imports of media into the library under way or waiting to begin, in their order (ws157-p014). */
+	struct ph_import *imports;
 	struct ph_pending {
 		uint32_t request;
 		unsigned long serial;
@@ -260,6 +262,11 @@ static void ph_file_chosen(void *data, struct kl_file_chooser *chooser, unsigned
 static void ph_media_drop(struct ph_window *phone);
 static int ph_media_image(struct ph_view *view, const char *bytes, size_t length, const char *contact);
 static void ph_requests(struct ph_window *phone);
+static void ph_imports_add(struct ph_window *phone, struct ph_import *import);
+static void ph_imports_pump(struct ph_window *phone);
+static void ph_imports_taken(struct ph_window *phone);
+static void ph_imports_failed(struct ph_window *phone, const struct ph_import *import, int error);
+static void ph_imports_free(struct ph_window *phone);
 static void ph_open_media(struct ph_window *phone, const struct ph_request *request);
 static void ph_reap_viewers(struct ph_window *phone);
 static void ph_send(struct ph_window *phone, long contact);
@@ -358,6 +365,15 @@ main(
 		return 1;
 	}
 
+	/*
+	 * The pointer's motions merged, and each frame drawn once the
+	 * compositor took the last one (ws210-p014 F2): the pointer crossing
+	 * the view while a frame is on its way draws its latest place once,
+	 * not a frame queued for every widget it crossed (2026-10-12, the Pi 4).
+	 */
+	error = kl_window_set_pacing(phone.window, KL_PACING_MOTION | KL_PACING_FRAME, 0U);
+	ph_log("PACING motion=1 frame=1 errno=%d", error);
+
 	/* The draft accepts media files, PNG images and plain text without sending. */
 	(void)kl_window_accept_drops(phone.window, KL_DROP_URIS | KL_DROP_IMAGE | KL_DROP_TEXT);
 
@@ -392,7 +408,8 @@ main(
 	kl_media_picker_destroy(phone.picker);
 	free(phone.chooser_contact);
 
-	/* Everything goes. */
+	/* Everything goes; imports not answered leave no temporary originals. */
+	ph_imports_free(&phone);
 	kl_ui_destroy(phone.ui);
 	if (phone.canvas_made)
 		kl_canvas_release(&phone.canvas);
@@ -505,6 +522,7 @@ ph_loop(
 	uint64_t started;
 	uint64_t now;
 	uint64_t second;
+	int changed;
 	int status;
 	int taken;
 	int wait;
@@ -556,6 +574,11 @@ ph_loop(
 		/* The phone's events, and what the view asked. */
 		ph_phone_round(phone);
 		ph_requests(phone);
+
+		/* The previews keiland-preview has made meanwhile (ws157-p015). */
+		changed = ph_view_media_follow();
+		if (changed)
+			phone->dirty = 1;
 
 		/* The end: the window closed or Quit. */
 		now = kl_clock_us();
@@ -613,10 +636,11 @@ ph_input(
 
 	/*
 	 * Any input may change the view, but a motion of the pointer only when
-	 * it lights another widget or drags (BUG-226: a frame for every motion
-	 * left the pointer behind).
+	 * it lights another widget or drags, and the pointer leaving only the
+	 * widget it lit (BUG-226: a frame for every motion left the pointer
+	 * behind).
 	 */
-	if (event->kind != KL_WINDOW_MOTION)
+	if (event->kind != KL_WINDOW_MOTION && event->kind != KL_WINDOW_LEAVE)
 		phone->dirty = 1;
 
 	/* Each kind of input. */
@@ -633,15 +657,24 @@ ph_input(
 		ph_media_drop(phone);
 		break;
 	case KL_WINDOW_MOTION:
-		/* A drag draws the whole window; another lit widget only its part (BUG-226). */
+		/*
+		 * A drag of a held widget (a field's selection) draws the whole
+		 * window; another lit widget only its part (BUG-226); a button held
+		 * over the same widget draws nothing.
+		 */
 		redraw = kl_ui_pointer_motion(phone->ui, event->x, event->y);
-		if (phone->buttons_held != 0U)
+		if (redraw && phone->buttons_held != 0U)
 			phone->dirty = 1;
 		else if (redraw)
 			phone->lit_changed = 1;
 		break;
 	case KL_WINDOW_LEAVE:
-		(void)kl_ui_pointer_leave(phone->ui);
+		/* The lit widget goes dark: its part alone, or the whole window while a button is held. */
+		redraw = kl_ui_pointer_leave(phone->ui);
+		if (phone->buttons_held != 0U)
+			phone->dirty = 1;
+		else if (redraw)
+			phone->lit_changed = 1;
 		break;
 	case KL_WINDOW_BUTTON:
 		/* The buttons held, for the motions of a drag. */
@@ -765,37 +798,64 @@ ph_draw(
 {
 	struct kl_glass_panel panels[PH_PANELS_MAX];
 	struct kl_event event;
-	const struct kl_rect *present_part;
-	struct kl_rect part;
+	struct kl_rect parts[KL_FRAME_PARTS_MAX];
+	unsigned part_count;
+	unsigned index;
 	size_t count;
 	int status;
 	int error;
 	int taken;
-	int partial;
+	int need;
+	int pace;
 
 	/* Nothing changed and nothing moves: no frame. */
 	if (!phone->dirty && !phone->moving && !phone->lit_changed)
 		return;
 
 	/*
-	 * Only another widget lit: the frame is drawn within the two widgets'
-	 * part alone, the rest keeping its pixels (BUG-226; the whole window
-	 * when the part cannot be told).
+	 * A frame once the compositor took the last one (ws210-p014 F2.2):
+	 * until then nothing is consumed, so what changes meanwhile is drawn
+	 * as one frame in its latest state.
 	 */
-	partial = 0;
-	if (!phone->dirty && !phone->moving && phone->lit_changed)
-		partial = kl_ui_take_damage(phone->ui, &part);
+	pace = kl_window_frame_wait(phone->window, now_us);
+	if (pace != 0)
+		return;
+
+	/*
+	 * Only another widget lit: the frame is drawn within the parts the
+	 * widgets tell alone, the rest keeping its pixels (BUG-226,
+	 * ws210-p014: the widget lit when the last frame was drawn and the one
+	 * lit now; none when the pointer came back; the whole window when the
+	 * parts cannot be told).
+	 */
+	part_count = 0;
+	if (!phone->dirty && !phone->moving && phone->lit_changed) {
+		need = kl_ui_take_frame(phone->ui, parts, KL_FRAME_PARTS_MAX, &part_count);
+		if (need == KL_FRAME_NONE) {
+			phone->lit_changed = 0;
+			return;
+		}
+		if (need == KL_FRAME_WHOLE)
+			part_count = 0;
+	}
 	phone->lit_changed = 0;
 
-	/* The view, within the part when there is one. */
+	/* The view, all of it. */
 	phone->dirty = 0;
-	if (partial)
-		kl_canvas_clip_push(&phone->canvas, &part);
-	kl_ui_begin(phone->ui, now_us);
-	ph_view_draw(&phone->view, phone->ui, &phone->style, (int)phone->width, (int)phone->height, now_us);
-	phone->moving = kl_ui_end(phone->ui, now_us);
-	if (partial)
+	if (part_count == 0U) {
+		kl_ui_begin(phone->ui, now_us);
+		ph_view_draw(&phone->view, phone->ui, &phone->style, (int)phone->width, (int)phone->height, now_us);
+		phone->moving = kl_ui_end(phone->ui, now_us);
+	}
+
+	/* Or within each part in turn, the rest keeping the last frame's pixels. */
+	for (index = 0; index < part_count; index++) {
+		kl_canvas_clip_push(&phone->canvas, &parts[index]);
+		kl_ui_begin(phone->ui, now_us);
+		ph_view_draw(&phone->view, phone->ui, &phone->style, (int)phone->width, (int)phone->height, now_us);
+		phone->moving = kl_ui_end(phone->ui, now_us);
 		kl_canvas_clip_pop(&phone->canvas);
+	}
 
 	/*
 	 * The text input is asked for while a field has the keyboard, and told
@@ -818,11 +878,8 @@ ph_draw(
 		}
 	}
 
-	/* The frame shown, by the part alone when it was drawn so (BUG-221). */
-	present_part = NULL;
-	if (partial)
-		present_part = &part;
-	status = kl_window_present_part(phone->window, phone->pixels, (size_t)phone->width, present_part);
+	/* The frame shown, by its parts alone when it was drawn so (BUG-221). */
+	status = kl_window_present_parts(phone->window, phone->pixels, (size_t)phone->width, parts, part_count);
 	if (status == EAGAIN)
 		phone->resized = 1;
 
@@ -850,22 +907,38 @@ ph_wait(
 	const struct ph_window *phone,
 	uint64_t now_us)
 {
+	int busy;
+	int pace;
 	int wait;
 
-	/* A frame due now (or its lit part), or requests to carry out. */
-	if (phone->dirty || phone->lit_changed)
+	/* A frame wanted: whether it may be drawn now, or how long the compositor's answer is waited for at most (-1: until it comes, ws210-p014 F2.6). */
+	pace = -1;
+	if (phone->dirty || phone->lit_changed || phone->moving)
+		pace = kl_window_frame_wait(phone->window, now_us);
+
+	/* A frame due now (or its lit part), or requests to carry out (which do not wait for the compositor). */
+	if (pace == 0 && (phone->dirty || phone->lit_changed))
 		return 0;
 	if (phone->view.request_count != 0U)
 		return 0;
 
 	/* Something moving. */
-	if (phone->moving)
+	if (pace == 0 && phone->moving)
+		return PH_MOVING_MS;
+
+	/* Previews being made are looked at again soon. */
+	busy = ph_view_media_busy();
+	if (busy)
 		return PH_MOVING_MS;
 
 	/* The view's notice, or a second. */
 	wait = ph_view_wait(&phone->view, now_us);
 	if (wait < 0 || wait > PH_IDLE_MS)
 		wait = PH_IDLE_MS;
+
+	/* The compositor's answer, waited for at most so long. */
+	if (pace > 0 && pace < wait)
+		wait = pace;
 
 	/* The time to wait. */
 	return wait;
@@ -917,8 +990,13 @@ ph_phone_round(
 	status = kl_system_dispatch(phone->system, &changed);
 	if (status != 0) {
 		phone->system = NULL;
+		ph_imports_free(phone);
 		return;
 	}
+
+	/* The library's answers to the imports of media. */
+	if ((changed & KL_SYSTEM_CHANGED_MEDIA_DONE) != 0U)
+		ph_imports_taken(phone);
 
 	/* The paired phone's messages that came. */
 	ph_items(phone);
@@ -1089,8 +1167,10 @@ ph_media_choose(
 
 	/* One open sheet answers for the conversation chosen when it opened. */
 	error = ph_attach_contact(phone, contact);
-	if (error != 0)
+	if (error != 0) {
+		ph_log("FAILED operation=media-picker-contact error=%d", error);
 		return;
+	}
 
 	/* As many as the draft still takes, and at least one so that a full draft says why. */
 	room = PH_DRAFT_MAX - ph_draft_count(&phone->view, phone->chooser_contact);
@@ -1106,6 +1186,7 @@ ph_media_choose(
 	options.thumbnail_data = NULL;
 	phone->picker = kl_media_picker_open(kl_app_display(phone->app), kl_window_toplevel(phone->window), &options, &listener, phone);
 	if (phone->picker == NULL) {
+		ph_log("FAILED operation=media-picker error=%d", errno);
 		free(phone->chooser_contact);
 		phone->chooser_contact = NULL;
 		ph_view_notice(&phone->view, "The media library is unavailable.", kl_clock_us());
@@ -1151,8 +1232,8 @@ ph_media_picked(
 
 /*
  * Makes a photo's square thumbnail for the media picker, on the picker's
- * thread: the photo decoded (the same decoder as the drafts' previews) and
- * the middle square scaled to the side.
+ * thread: the middle square at the side, made by keiland-preview in its
+ * sandbox (photos/decode.c, ws157-p015).
  */
 static int
 ph_media_thumbnail(
@@ -1161,20 +1242,13 @@ ph_media_thumbnail(
 	int side,
 	struct kl_image *image)
 {
-	struct kl_image decoded;
 	int error;
 
-	/* No context: the decoder keeps no state between photos. */
+	/* No context: nothing is kept between photos. */
 	(void)data;
 
-	/* The photo. */
-	error = ph_decode(path, &decoded);
-	if (error != 0)
-		return error;
-
-	/* Its middle square at the side, and the decoded photo released. */
-	error = ph_thumbnail(&decoded, side, image);
-	kl_image_release(&decoded);
+	/* The photo's middle square at the side. */
+	error = ph_preview(path, side, 1, image);
 	if (error != 0)
 		return error;
 
@@ -1636,7 +1710,7 @@ ph_send_media(
 	int paired)
 {
 	const struct ph_contact *contacts;
-	struct ph_received received;
+	struct ph_import *import;
 	unsigned long serial;
 	uint32_t request;
 	size_t count;
@@ -1665,28 +1739,29 @@ ph_send_media(
 		return;
 	}
 
-	/* The media copied into the library (one already there is found by its hash), for the item to show. */
-	imported = ph_receive_media(phone->system, descriptor, &received);
-	if (imported != 0)
-		memset(&received, 0, sizeof(received));
+	/* The media written apart for the library (copied without waiting: the item shows them once they are, ws157-p014). */
+	import = NULL;
+	imported = ph_import_prepare(descriptor, &import);
 
-	/* Kept as sending, with its media, the timeline at its end. */
+	/* Kept as sending, the timeline at its end. */
 	error = ph_store_add_item(contact, PH_TEXT, PH_MMS, 1, time(NULL), PH_STATE_SENDING, phone->view.message.text, NULL, &item);
 	if (error != 0) {
-		ph_received_release(&received);
+		ph_import_free(import);
 		(void)close(descriptor);
 		ph_view_notice(&phone->view, "The message could not be kept.", kl_clock_us());
 		return;
 	}
 
-	/* Its media, as the library keeps them. */
-	if (received.count != 0U)
-		(void)ph_store_media(contact, item, &received);
-	ph_received_release(&received);
-
 	/* Its name for this run, and the new item shown. */
 	serial = contacts[contact].items[item].serial;
 	phone->view.to_end = 1;
+
+	/* Its media into the library; their answer gives the item its media. */
+	if (import != NULL) {
+		import->serial = serial;
+		import->sending = 1;
+		ph_imports_add(phone, import);
+	}
 
 	/* Sent through the compositor's phone, which reads the body from the file. */
 	request = 0U;
@@ -1986,7 +2061,7 @@ ph_item(
 	const struct kl_phone_item *item)
 {
 	struct ph_phone_message message;
-	struct ph_received received;
+	struct ph_import *import;
 	const struct ph_contact *contacts;
 	const struct ph_item *kept;
 	char title[160];
@@ -2059,12 +2134,18 @@ ph_item(
 		return;
 	}
 
-	/* Imports originals through the compositor and persists their permanent paths. */
+	/* Imports originals through the compositor without waiting; their answer persists their permanent paths (ws157-p014). */
 	if (item->has_mime) {
-		error = ph_receive_media(phone->system, item->mime_descriptor, &received);
-		if (error == 0 && received.count > 0U)
-			error = ph_store_media(contact, at, &received);
-		ph_received_release(&received);
+		import = NULL;
+		error = ph_import_prepare(item->mime_descriptor, &import);
+		if (error == 0 && import != NULL) {
+			contacts = ph_contacts(&count);
+			import->serial = contacts[contact].items[at].serial;
+			import->sync_request = item->request;
+			ph_imports_add(phone, import);
+		}
+
+		/* The log the tests read, and a failure told. */
 		ph_log("MEDIA request=%u error=%d", item->request, error);
 		if (error != 0) {
 			phone->sync.store_failed = 1;
@@ -2758,4 +2839,164 @@ ph_read_conversation(
 
 	/* Read here. */
 	(void)ph_store_mark_read(contact);
+}
+
+/*
+ * Puts an import of media at the end of the window's list and begins
+ * what can begin (ws157-p014).
+ */
+static void
+ph_imports_add(
+	struct ph_window *phone,
+	struct ph_import *import)
+{
+	struct ph_import **last;
+
+	/* At the end. */
+	import->next = NULL;
+	for (last = &phone->imports; *last != NULL; last = &(*last)->next)
+		;
+	*last = import;
+
+	/* Begun when a request is free. */
+	ph_imports_pump(phone);
+}
+
+/*
+ * Begins the imports waiting, in order, until the compositor's requests
+ * are all taken (EBUSY: the rest wait for an answer); one that cannot
+ * begin fails.
+ */
+static void
+ph_imports_pump(
+	struct ph_window *phone)
+{
+	struct ph_import **link;
+	struct ph_import *import;
+	int error;
+
+	/* Each import not begun. */
+	link = &phone->imports;
+	while (*link != NULL) {
+		import = *link;
+		if (import->request != 0U) {
+			link = &import->next;
+			continue;
+		}
+
+		/* No system: it cannot begin. */
+		error = ENOTSUP;
+		if (phone->system != NULL)
+			error = ph_import_begin(phone->system, import);
+		if (error == EBUSY)
+			return;
+		if (error == 0) {
+			link = &import->next;
+			continue;
+		}
+
+		/* Failed: out of the list. */
+		*link = import->next;
+		ph_imports_failed(phone, import, error);
+		ph_import_free(import);
+	}
+}
+
+/*
+ * Takes the library's answers: each import's media paths stored in its
+ * item, or its failure told; then the imports waiting begin.
+ */
+static void
+ph_imports_taken(
+	struct ph_window *phone)
+{
+	struct ph_received received;
+	struct ph_import **link;
+	struct ph_import *import;
+	uint32_t request;
+	size_t item;
+	long contact;
+	int descriptor;
+	int error;
+	int taken;
+
+	/* Each answer. */
+	for (;;) {
+		taken = kl_system_media_take(phone->system, &request, &error, &descriptor);
+		if (!taken)
+			break;
+
+		/* Its import, out of the list; an answer of none is dropped. */
+		for (link = &phone->imports; *link != NULL && (*link)->request != request; link = &(*link)->next)
+			;
+		import = *link;
+		if (import == NULL) {
+			if (descriptor >= 0)
+				(void)close(descriptor);
+			continue;
+		}
+
+		/* Out of the list. */
+		*link = import->next;
+
+		/* The paths the library keeps, stored in the item (still there). */
+		error = ph_import_finish(import, error, descriptor, &received);
+		if (error == 0)
+			error = ph_store_find_serial(import->serial, &contact, &item);
+		if (error == 0 && received.count > 0U)
+			error = ph_store_media(contact, item, &received);
+		ph_received_release(&received);
+		ph_log("MEDIA serial=%lu sending=%d error=%d", import->serial, import->sending, error);
+		if (error != 0)
+			ph_imports_failed(phone, import, error);
+		ph_import_free(import);
+		phone->dirty = 1;
+	}
+
+	/* The imports waiting. */
+	ph_imports_pump(phone);
+}
+
+/*
+ * Tells an import's failure: a received message's media are fetched
+ * again by the next synchronisation (its pass is marked failed while it
+ * runs); a sent message's are not shown.
+ */
+static void
+ph_imports_failed(
+	struct ph_window *phone,
+	const struct ph_import *import,
+	int error)
+{
+	/* The log the tests read. */
+	ph_log("MEDIA failed serial=%lu error=%d", import->serial, error);
+
+	/* A sent message: its media stay with the phone's copy. */
+	if (import->sending) {
+		ph_view_notice(&phone->view, "The photos and videos could not be kept in the library.", kl_clock_us());
+		return;
+	}
+
+	/* A received one: its synchronisation, while it runs, tries again. */
+	if (phone->sync.running && import->sync_request == phone->sync.request)
+		phone->sync.store_failed = 1;
+	ph_view_notice(&phone->view, "Media could not be saved; sync to retry", kl_clock_us());
+}
+
+/*
+ * Frees every import (the window goes, or the compositor went): their
+ * temporary originals go; requests under way are dropped with the system.
+ */
+static void
+ph_imports_free(
+	struct ph_window *phone)
+{
+	struct ph_import *import;
+
+	/* Each one. */
+	while (phone->imports != NULL) {
+		import = phone->imports;
+		phone->imports = import->next;
+		ph_import_free(import);
+	}
 }

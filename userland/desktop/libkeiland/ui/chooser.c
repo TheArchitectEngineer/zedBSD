@@ -88,9 +88,16 @@ struct kl_file_chooser {
 	struct wl_callback *telling;
 	const struct kl_file_chooser_listener *listener;
 	void *data;
+
+	/* A media chooser's system object until its list comes (NULL after), and the request (ws157-p014). */
+	struct kl_system *media;
+	uint32_t media_request;
 };
 
 static void chooser_woken(void *data);
+static void chooser_media_begin(struct kl_file_chooser *chooser);
+static void chooser_media_poll(struct kl_file_chooser *chooser);
+static void chooser_media_end(struct kl_file_chooser *chooser);
 static void chooser_sheet(struct kl_file_chooser *chooser);
 static void chooser_glass(struct kl_file_chooser *chooser);
 static void chooser_glass_panels(struct kl_file_chooser *chooser);
@@ -124,8 +131,6 @@ kl_file_chooser_open(
 	void *data)
 {
 	struct kl_window_options window_options;
-	struct kl_system *media;
-	int descriptor;
 	struct kl_file_chooser *chooser;
 	const char *font;
 	const char *fallback;
@@ -157,28 +162,9 @@ kl_file_chooser_open(
 		return NULL;
 	}
 
-	/* A media selector obtains only metadata through the compositor. */
-	if (options->mode == KL_FILE_CHOOSER_MEDIA) {
-		media = kl_system_open(display);
-		error = ENOTSUP;
-		if (media != NULL) {
-			error = kl_system_media_list(media, &descriptor);
-			if (error == 0) {
-				error = keiui_chooser_media(&chooser->model, descriptor);
-				close(descriptor);
-			}
-
-			/* The snapshot no longer needs its temporary system connection. */
-			kl_system_close(media);
-		}
-
-		/* An unavailable library cannot fall back to unrelated filesystem entries. */
-		if (error != 0) {
-			kl_file_chooser_destroy(chooser);
-			errno = error;
-			return NULL;
-		}
-	}
+	/* A media selector asks for only metadata through the compositor; the window shows "Loading…" until it comes. */
+	if (options->mode == KL_FILE_CHOOSER_MEDIA)
+		chooser_media_begin(chooser);
 
 	/* The fonts, the application's or the system's. */
 	font = CHOOSER_FONT;
@@ -248,7 +234,8 @@ kl_file_chooser_destroy(
 	if (chooser == NULL)
 		return;
 
-	/* The window, and the answer not told any more. */
+	/* The media list not waited for any more, the window, and the answer not told any more. */
+	chooser_media_end(chooser);
 	chooser_window_gone(chooser);
 	if (chooser->telling != NULL)
 		wl_callback_destroy(chooser->telling);
@@ -339,7 +326,10 @@ chooser_draw(
 	}
 
 	/* The frame and its input. */
+	chooser_media_poll(chooser);
 	again = keiui_chooser_frame(&chooser->model, chooser->ui, &chooser->style, (int)chooser->width, (int)chooser->height, kl_clock_us());
+	if (chooser->model.media_loading)
+		again = 1;
 	chooser->dirty = again;
 
 	/* The text input while a field (the place, Save As's name) has the keyboard. */
@@ -596,4 +586,105 @@ chooser_glass_panels(
 	/* Remembered, to send again only what changes. */
 	memcpy(chooser->panels, panels, sizeof(panels[0]) * count);
 	chooser->panel_count = count;
+}
+
+/*
+ * Asks for the media library's metadata through a system object of its
+ * own on the application's connection, without waiting (ws157-p014); a
+ * library that cannot be asked shows as unavailable (never other files).
+ */
+static void
+chooser_media_begin(
+	struct kl_file_chooser *chooser)
+{
+	int error;
+
+	/* Loading until the answer comes. */
+	chooser->model.media_loading = 1;
+
+	/* The compositor's system extension. */
+	chooser->media = kl_system_open(chooser->display);
+	if (chooser->media == NULL) {
+		chooser->model.media_loading = 0;
+		chooser->model.media_unavailable = 1;
+		return;
+	}
+
+	/* The snapshot asked for. */
+	error = kl_system_media_list_begin(chooser->media, &chooser->media_request);
+	if (error != 0) {
+		chooser_media_end(chooser);
+		chooser->model.media_loading = 0;
+		chooser->model.media_unavailable = 1;
+	}
+}
+
+/* Takes the media list's answer when it came: the entries listed, or the library shown unavailable. */
+static void
+chooser_media_poll(
+	struct kl_file_chooser *chooser)
+{
+	uint32_t request;
+	unsigned changed;
+	int descriptor;
+	int status;
+	int error;
+	int taken;
+
+	/* Nothing asked for any more. */
+	if (chooser->media == NULL)
+		return;
+
+	/* The compositor's answers; a compositor gone sends none. */
+	changed = 0U;
+	status = kl_system_dispatch(chooser->media, &changed);
+	if (status != 0) {
+		chooser_media_end(chooser);
+		chooser->model.media_loading = 0;
+		chooser->model.media_unavailable = 1;
+		return;
+	}
+
+	/* The list's answer, any other dropped. */
+	for (;;) {
+		taken = kl_system_media_take(chooser->media, &request, &error, &descriptor);
+		if (!taken)
+			return;
+		if (request != chooser->media_request) {
+			if (descriptor >= 0)
+				(void)close(descriptor);
+			continue;
+		}
+
+		/* The entries. */
+		if (error == 0) {
+			error = keiui_chooser_media(&chooser->model, descriptor);
+			(void)close(descriptor);
+		}
+
+		/* Listed, or unavailable; the system object is no longer needed. */
+		chooser->media_request = 0U;
+		chooser_media_end(chooser);
+		chooser->model.media_loading = 0;
+		if (error != 0)
+			chooser->model.media_unavailable = 1;
+		return;
+	}
+}
+
+/* Gives up the media list's request (its answer is dropped) and closes the system object. */
+static void
+chooser_media_end(
+	struct kl_file_chooser *chooser)
+{
+	/* Nothing open. */
+	if (chooser->media == NULL)
+		return;
+
+	/* The request, then the object. */
+	if (chooser->media_request != 0U)
+		kl_system_media_cancel(chooser->media, chooser->media_request);
+	kl_system_close(chooser->media);
+	chooser->media = NULL;
+	chooser->media_request = 0U;
 }

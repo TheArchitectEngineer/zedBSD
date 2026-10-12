@@ -33,6 +33,7 @@
 #define SHARING_TEXT_SMALL	13U
 
 static void sharing_address(const struct se_app *app, char *text, size_t size);
+static int sharing_state_same(const struct kl_sharing_state *old_state, const struct kl_sharing_state *new_state);
 
 /*
  * Draws the Sharing page's cards from a top edge; returns the edge below
@@ -161,6 +162,8 @@ se_sharing_poll(
 	struct se_app *app)
 {
 	struct se_sharing *sharing;
+	struct kl_sharing_state state;
+	int same;
 	int error;
 
 	/* Nothing without the desktop's system. */
@@ -175,12 +178,15 @@ se_sharing_poll(
 		se_log("SHARING query error=%d", error);
 	}
 
-	/* A new state. */
+	/* A new state, drawn when it differs from the last while the page shows it. */
 	if ((app->system_changed & KL_SYSTEM_CHANGED_SHARING) != 0U) {
-		kl_system_sharing_get_state(app->system, &sharing->state);
+		kl_system_sharing_get_state(app->system, &state);
+		same = sharing_state_same(&sharing->state, &state);
+		sharing->state = state;
 		se_log("SHARING state available=%u enabled=%u running=%u port=%u allowed=%u fingerprint=%s", sharing->state.available,
 		    sharing->state.enabled, sharing->state.running, sharing->state.port, sharing->state.allowed, sharing->state.fingerprint);
-		app->dirty = 1;
+		if (same == 0 && app->page == SE_PAGE_SHARING)
+			app->dirty = 1;
 	}
 }
 
@@ -271,4 +277,33 @@ sharing_address(
 
 	/* ssh user@address. */
 	(void)snprintf(text, size, "ssh %s@%s", user, address);
+}
+
+/* Tells whether two states of Remote Login say the same (a report that changes nothing needs no frame). */
+static int
+sharing_state_same(
+	const struct kl_sharing_state *old_state,
+	const struct kl_sharing_state *new_state)
+{
+	int differs;
+
+	/* The switch, the server and who may turn it. */
+	if (old_state->available != new_state->available)
+		return 0;
+	if (old_state->enabled != new_state->enabled)
+		return 0;
+	if (old_state->running != new_state->running)
+		return 0;
+	if (old_state->port != new_state->port)
+		return 0;
+	if (old_state->allowed != new_state->allowed)
+		return 0;
+
+	/* The host key's fingerprint. */
+	differs = strncmp(old_state->fingerprint, new_state->fingerprint, sizeof(old_state->fingerprint));
+	if (differs != 0)
+		return 0;
+
+	/* Succeeded: nothing differs. */
+	return 1;
 }

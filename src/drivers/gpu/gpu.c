@@ -117,6 +117,11 @@ struct drv_gpu_device {
 	unsigned monitor_stopping;
 };
 
+/* The display commit ABI's sizes are the same for every userspace word size. */
+_Static_assert(sizeof(struct gpu_display_plane_state) == 96U, "display plane state size");
+_Static_assert(sizeof(struct gpu_display_commit) == 552U, "display commit size");
+_Static_assert(sizeof(struct gpu_display_overlay_info) == 56U, "display overlay info size");
+
 /*
  * One kernel snapshot of a selected display request; it retains no user pointers.
  */
@@ -132,6 +137,10 @@ union gpu_display_request {
 	struct gpu_display_present present;
 	struct gpu_display_wait wait;
 	struct gpu_display_power power;
+	struct gpu_display_cursor_image cursor_image;
+	struct gpu_display_cursor_move cursor_move;
+	struct gpu_display_cursor_hide cursor_hide;
+	struct gpu_display_overlay_info overlay_info;
 };
 
 /*
@@ -147,6 +156,13 @@ struct gpu_resource {
 	uint64_t mapping_offset;
 	struct drv_gpu_mapping mapping;
 	struct kernel_handle *scanout_source;
+
+	/*
+	 * The ungated display operations using the resource now (the session's
+	 * table_lock protects it); destruction waits until it is zero, so the
+	 * backend object they pass stays alive through their callback.
+	 */
+	unsigned pins;
 };
 
 /*
@@ -235,6 +251,15 @@ struct gpu_session {
 	 * Changed only by this open's ioctls and its final close.
 	 */
 	unsigned display_claims;
+
+	/*
+	 * Protects the resource list and every resource's pins: ungated display
+	 * operations walk the list without the admission, so every walk and
+	 * every change of it takes this lock.  pin_waitq wakes a destruction
+	 * waiting for the last pin to go.
+	 */
+	struct spinlock table_lock;
+	struct wait_queue pin_waitq;
 };
 
 /*
@@ -291,6 +316,17 @@ static int gpu_create_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_destroy_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_handle_allocate(uint64_t *handle);
 static int gpu_resource_lookup(struct gpu_session *session, uint64_t handle, struct gpu_resource **result);
+static void gpu_resource_publish(struct gpu_session *session, struct gpu_resource *resource);
+static int gpu_resource_pin(struct gpu_session *session, uint64_t handle, struct gpu_resource **result);
+static void gpu_resource_unpin(struct gpu_session *session, struct gpu_resource *resource);
+static int gpu_display_admit(struct gpu_session *session);
+static int gpu_display_present_resource(const struct drv_gpu_display_ops *ops, struct drv_gpu_device *device, struct gpu_session *session, struct gpu_resource *resource, struct gpu_display_present *request);
+static int gpu_display_cursor_resource(const struct drv_gpu_display_ops *ops, struct drv_gpu_device *device, struct gpu_session *session, struct gpu_resource *resource, const struct gpu_display_cursor_image *request);
+static unsigned gpu_display_ungated(struct gpu_session *session, unsigned long command);
+static int gpu_commit_ioctl(struct gpu_session *session, uintptr_t argument);
+static int gpu_commit_check(const struct gpu_display_commit *request);
+static int gpu_commit_plane_check(const struct gpu_display_plane_state *state);
+static int gpu_commit_record(struct gpu_session *session, struct gpu_display_commit *request);
 static int gpu_resource_reserve(struct gpu_session *session, uint64_t bytes, struct gpu_resource **result);
 static int gpu_user_range(uint64_t address, uint32_t bytes, uintptr_t *pointer);
 static int gpu_capset_ioctl(struct gpu_session *session, uintptr_t argument);
@@ -338,7 +374,7 @@ static int gpu_present_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_map_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_mmap(struct file *file, off_t offset, size_t bytes, uint32_t prot, struct vm_device_mapping **result);
 static void gpu_mapping_release(void *owner);
-static int gpu_display_ioctl(struct gpu_session *session, unsigned long command, uintptr_t argument);
+static int gpu_display_ioctl(struct gpu_session *session, unsigned long command, uintptr_t argument, unsigned ungated);
 static int gpu_export_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_import_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_allocation_export_ioctl(struct gpu_session *session, uintptr_t argument);
@@ -1044,6 +1080,39 @@ gpu_ops_validate(
 			return EINVAL;
 	}
 
+	/* A cursor plane has all three operations or none. */
+	if (ops->display != NULL &&
+	    (ops->display->cursor_set != NULL ||
+	     ops->display->cursor_move != NULL ||
+	     ops->display->cursor_hide != NULL) &&
+	    (ops->display->cursor_set == NULL ||
+	     ops->display->cursor_move == NULL ||
+	     ops->display->cursor_hide == NULL))
+		return EINVAL;
+
+	/* Ungated presentation is the only defined flag, and it comes with its adoption wait. */
+	if (ops->display != NULL) {
+		/* An unknown flag cannot be honored by this core. */
+		if ((ops->display->flags & ~DRV_GPU_DISPLAY_UNGATED) != 0U)
+			return EINVAL;
+
+		/* A present that does not wait needs the separate wait. */
+		if ((ops->display->flags & DRV_GPU_DISPLAY_UNGATED) != 0U && ops->display->adoption_wait == NULL)
+			return EINVAL;
+
+		/* A gated present waits by itself, so a separate wait would never run. */
+		if ((ops->display->flags & DRV_GPU_DISPLAY_UNGATED) == 0U && ops->display->adoption_wait != NULL)
+			return EINVAL;
+
+		/* Overlays have a commit and their limits together. */
+		if ((ops->display->commit == NULL) != (ops->display->overlay_info == NULL))
+			return EINVAL;
+
+		/* A commit records without waiting, so it needs the ungated adoption wait. */
+		if (ops->display->commit != NULL && (ops->display->flags & DRV_GPU_DISPLAY_UNGATED) == 0U)
+			return EINVAL;
+	}
+
 	/* Exported allocations need independent release and receiver-context import together. */
 	if ((ops->capabilities & (GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE)) != 0) {
 		/* Shared resources must originate in a supported blob namespace. */
@@ -1182,6 +1251,8 @@ gpu_open(
 	/* Initializes both independent wait channels before publishing the open. */
 	waitq_init(&session->admission_waitq, "GPU session admission");
 	waitq_init(&session->completion_waitq, "GPU command completion");
+	spin_init(&session->table_lock, LOCK_RANK_DEVICE, "GPU resource table");
+	waitq_init(&session->pin_waitq, "GPU resource pins");
 
 	/* Captures write authority from the original open mode. */
 	flags = file_status_flags_get(file);
@@ -1333,8 +1404,14 @@ gpu_close(
 
 	/* Destroys all owned objects while their backend session remains valid. */
 	while (session->resources != NULL) {
+		/* No ioctl runs at the final close, so no pin remains; the lock keeps the walk's rule. */
+		irq = spin_lock_irqsave(&session->table_lock);
+
 		resource = session->resources;
 		session->resources = resource->next;
+
+		spin_unlock_irqrestore(&session->table_lock, irq);
+
 		device->ops->resource_destroy(
 			device->private_data,
 			session->backend,
@@ -1516,6 +1593,7 @@ gpu_ioctl_body(
 	uintptr_t argument)
 {
 	struct gpu_session *session;
+	unsigned ungated;
 	int error;
 
 	/* A failed open cannot supply backend authority. */
@@ -1618,6 +1696,32 @@ gpu_ioctl_body(
 		return 0;
 	}
 
+	/* A commit of display planes waits for its fences and records outside admission. */
+	if (command == GPU_DISPLAY_COMMIT) {
+		error = gpu_commit_ioctl(session, argument);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the planes are recorded, and adopted when the caller asked to wait. */
+		return 0;
+	}
+
+	/* A display that records frames without waiting presents, observes and moves its cursor outside admission. */
+	ungated = gpu_display_ungated(session, command);
+	if (ungated != 0U) {
+		error = gpu_display_admit(session);
+		if (error != 0)
+			return error;
+
+		/* The operation pins only the resource it names, and only during its callback. */
+		error = gpu_display_ioctl(session, command, argument, 1U);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: no admission was held, so this open's other operations went on meanwhile. */
+		return 0;
+	}
+
 	/* Holds the session table across validation, callbacks, and copyout. */
 	error = gpu_session_enter(session);
 	if (error != 0)
@@ -1692,8 +1796,11 @@ gpu_ioctl_body(
 	case GPU_DISPLAY_PRESENT:
 	case GPU_DISPLAY_WAIT:
 	case GPU_DISPLAY_POWER:
+	case GPU_DISPLAY_CURSOR_SET:
+	case GPU_DISPLAY_CURSOR_MOVE:
+	case GPU_DISPLAY_CURSOR_HIDE:
 		/* Native display requests share validation and access admission. */
-		error = gpu_display_ioctl(session, command, argument);
+		error = gpu_display_ioctl(session, command, argument, 0U);
 		break;
 	case GPU_DEVICE_QUERY:
 		/* Resolves stable node roles without requiring a renderer capset. */
@@ -2121,8 +2228,7 @@ gpu_create_ioctl(
 	/* Session admission excludes other lookups while ownership is published. */
 	resource->object = object;
 	resource->kind = GPU_RESOURCE_STORAGE;
-	resource->next = session->resources;
-	session->resources = resource;
+	gpu_resource_publish(session, resource);
 
 	/* Published ownership now counts against the backend's per-session capacity. */
 	session->resource_count++;
@@ -2141,6 +2247,8 @@ gpu_destroy_ioctl(
 	struct drv_gpu_device *device;
 	struct gpu_resource *resource;
 	struct gpu_resource **link;
+	uint64_t observed;
+	unsigned long irq;
 	int error;
 	unsigned mapping_count;
 
@@ -2177,10 +2285,37 @@ gpu_destroy_ioctl(
 	if (mapping_count != 0)
 		return EBUSY;
 
-	/* Session admission preserves the resolved resource and its list link. */
+	/*
+	 * Unlinks the resource once no ungated display callback pins it, so
+	 * none can find it afterwards.  Admission keeps every other operation of
+	 * this open away; a pinned callback holds no admission, so waiting here
+	 * cannot deadlock with it.
+	 */
+	irq = spin_lock_irqsave(&session->table_lock);
+
+	while (resource->pins != 0U) {
+		/* Sleeps until a pin ends, or until a signal interrupts the destruction. */
+		observed = waitq_sequence(&session->pin_waitq);
+		error = waitq_sleep(&session->pin_waitq, &session->table_lock, observed, 0U, WAITQ_INTERRUPTIBLE);
+		if (error == EAGAIN)
+			error = 0;
+		if (error != 0)
+			break;
+	}
+
+	/* An interrupted wait leaves the resource as it was. */
+	if (error != 0) {
+		spin_unlock_irqrestore(&session->table_lock, irq);
+		return error;
+	}
+
+	/* The resource leaves the list: no lookup finds it from now on. */
 	link = &session->resources;
 	while (*link != resource)
 		link = &(*link)->next;
+	*link = resource->next;
+
+	spin_unlock_irqrestore(&session->table_lock, irq);
 
 	/* Completes backend cleanup before relinquishing session ownership. */
 	device->ops->resource_destroy(
@@ -2189,7 +2324,6 @@ gpu_destroy_ioctl(
 		resource->object);
 	if (resource->scanout_source != NULL)
 		handle_put(resource->scanout_source);
-	*link = resource->next;
 
 	/* The destroyed object no longer consumes the backend's per-session capacity. */
 	session->resource_count--;
@@ -2238,11 +2372,15 @@ gpu_resource_lookup(
 {
 	struct gpu_resource *resource;
 
+	unsigned long irq;
+
 	/* Zero never identifies a successfully allocated resource. */
 	if (handle == 0)
 		return EINVAL;
 
 	/* Searches only this open's ownership list for the globally unique handle. */
+	irq = spin_lock_irqsave(&session->table_lock);
+
 	resource = session->resources;
 	for (;
 	     resource != NULL;
@@ -2251,6 +2389,8 @@ gpu_resource_lookup(
 		if (resource->handle == handle)
 			break;
 	}
+
+	spin_unlock_irqrestore(&session->table_lock, irq);
 
 	/* A stale or foreign identity cannot reach any backend callback. */
 	if (resource == NULL)
@@ -2261,6 +2401,96 @@ gpu_resource_lookup(
 
 	/* Succeeded: only this open can use the resolved backend resource. */
 	return 0;
+}
+
+/* Links a complete new resource into its open's list, where lookups find it. */
+static void
+gpu_resource_publish(
+	struct gpu_session *session,
+	struct gpu_resource *resource)
+{
+	unsigned long irq;
+
+	/* An ungated display operation may be walking the list at this moment. */
+	irq = spin_lock_irqsave(&session->table_lock);
+
+	resource->pins = 0;
+	resource->next = session->resources;
+	session->resources = resource;
+
+	spin_unlock_irqrestore(&session->table_lock, irq);
+}
+
+/*
+ * Resolves a handle of this open and pins the resource for an ungated display callback.
+ *
+ * The pin keeps the resource and its backend object from destruction until
+ * gpu_resource_unpin; nothing else of the open's admission is held.
+ */
+static int
+gpu_resource_pin(
+	struct gpu_session *session,
+	uint64_t handle,
+	struct gpu_resource **result)
+{
+	struct gpu_resource *resource;
+	unsigned long irq;
+
+	/* Zero never identifies a successfully allocated resource. */
+	if (handle == 0)
+		return EINVAL;
+
+	/* Finds and pins the resource in one walk, so a destruction cannot come between. */
+	irq = spin_lock_irqsave(&session->table_lock);
+
+	resource = session->resources;
+	for (;
+	     resource != NULL;
+	     resource = resource->next) {
+		/* The handle is unique for the kernel's lifetime. */
+		if (resource->handle == handle)
+			break;
+	}
+
+	/* The pin count cannot wrap into a value that lets destruction proceed. */
+	if (resource != NULL && resource->pins == UINT_MAX) {
+		spin_unlock_irqrestore(&session->table_lock, irq);
+		return EBUSY;
+	}
+
+	/* One more callback now uses the resource; destruction waits for it. */
+	if (resource != NULL)
+		resource->pins++;
+
+	spin_unlock_irqrestore(&session->table_lock, irq);
+
+	/* A stale or foreign identity cannot reach any backend callback. */
+	if (resource == NULL)
+		return EINVAL;
+	*result = resource;
+
+	/* Succeeded: the resource stays alive until the caller unpins it. */
+	return 0;
+}
+
+/* Ends one ungated callback's use of a pinned resource and wakes a waiting destruction. */
+static void
+gpu_resource_unpin(
+	struct gpu_session *session,
+	struct gpu_resource *resource)
+{
+	unsigned long irq;
+
+	/* The last pin's end lets a waiting destruction take the resource. */
+	irq = spin_lock_irqsave(&session->table_lock);
+
+	if (resource->pins == 0U)
+		__builtin_trap();
+	resource->pins--;
+	if (resource->pins == 0U)
+		waitq_wake_all(&session->pin_waitq);
+
+	spin_unlock_irqrestore(&session->table_lock, irq);
 }
 
 /* Reserves dynamic ownership after checking this backend's reported limits. */
@@ -2555,8 +2785,7 @@ gpu_blob_ioctl(
 	/* Publishes the type and extent while session admission excludes lookups. */
 	resource->object = object;
 	resource->kind = GPU_RESOURCE_BLOB;
-	resource->next = session->resources;
-	session->resources = resource;
+	gpu_resource_publish(session, resource);
 
 	/* Published ownership now counts against the backend's per-session capacity. */
 	session->resource_count++;
@@ -3080,19 +3309,25 @@ gpu_mapping_release(
 	return;
 }
 
-/* Validates native display requests before invoking the backend's lease owner. */
+/*
+ * Validates native display requests before invoking the backend's lease owner.
+ *
+ * ungated says the caller holds no admission (gpu_display_ungated): the
+ * resource a request names is then pinned for its callback only, and a
+ * present's adoption is waited for after the pin ends.
+ */
 static int
 gpu_display_ioctl(
 	struct gpu_session *session,
 	unsigned long command,
-	uintptr_t argument)
+	uintptr_t argument,
+	unsigned ungated)
 {
 	union gpu_display_request request;
 	struct drv_gpu_device *device;
 	const struct drv_gpu_display_ops *ops;
 	struct gpu_display_release rollback;
 	struct gpu_resource *resource;
-	uint64_t image_bytes;
 	size_t bytes;
 	uint32_t index;
 	int error;
@@ -3108,7 +3343,10 @@ gpu_display_ioctl(
 	if (command == GPU_DISPLAY_CLAIM ||
 	    command == GPU_DISPLAY_RELEASE ||
 	    command == GPU_DISPLAY_PRESENT ||
-	    command == GPU_DISPLAY_POWER)
+	    command == GPU_DISPLAY_POWER ||
+	    command == GPU_DISPLAY_CURSOR_SET ||
+	    command == GPU_DISPLAY_CURSOR_MOVE ||
+	    command == GPU_DISPLAY_CURSOR_HIDE)
 		writing = 1;
 
 	/* Read-only opens can enumerate displays and observe owned completion state. */
@@ -3141,6 +3379,18 @@ gpu_display_ioctl(
 		break;
 	case GPU_DISPLAY_POWER:
 		bytes = sizeof(request.power);
+		break;
+	case GPU_DISPLAY_CURSOR_SET:
+		bytes = sizeof(request.cursor_image);
+		break;
+	case GPU_DISPLAY_CURSOR_MOVE:
+		bytes = sizeof(request.cursor_move);
+		break;
+	case GPU_DISPLAY_CURSOR_HIDE:
+		bytes = sizeof(request.cursor_hide);
+		break;
+	case GPU_DISPLAY_OVERLAY_INFO:
+		bytes = sizeof(request.overlay_info);
 		break;
 	default:
 		return EOPNOTSUPP;
@@ -3299,38 +3549,29 @@ gpu_display_ioctl(
 			return EINVAL;
 
 		/* Resolves source storage within the same open that owns the presentation request. */
-		error = gpu_resource_lookup(session, request.present.handle, &resource);
-		if (error != 0)
-			return error;
-
-		/* Blob presentation consumes only imported or exported allocation resources. */
-		if ((request.present.flags & GPU_DISPLAY_PRESENT_BLOB) != 0) {
-			/* Shared scanout requires allocation ownership in the blob namespace. */
-			if (resource->kind != GPU_RESOURCE_BLOB && resource->kind != GPU_RESOURCE_SCANOUT)
-				return EINVAL;
+		if (ungated != 0U) {
+			error = gpu_resource_pin(session, request.present.handle, &resource);
 		} else {
-			/* Legacy copied presentation keeps its ordinary storage contract. */
-			if (resource->kind != GPU_RESOURCE_STORAGE)
-				return EINVAL;
+			error = gpu_resource_lookup(session, request.present.handle, &resource);
 		}
-
-		/* An offset is validated before subtracting it from the retained extent. */
-		if (request.present.offset > resource->bytes)
-			return EINVAL;
-
-		/* Bounds the whole image before the backend can read even its first pixel. */
-		image_bytes = (uint64_t)request.present.stride * request.present.height;
-		if (image_bytes > resource->bytes - request.present.offset)
-			return EINVAL;
-
-		/* Transfers only the resolved kernel resource and a validated immutable request snapshot. */
-		error = ops->present(
-			device->private_data,
-			session->backend,
-			resource->object,
-			&request.present);
 		if (error != 0)
 			return error;
+
+		/* Checks the storage kind and extent, then lets the backend record the frame. */
+		error = gpu_display_present_resource(ops, device, session, resource, &request.present);
+
+		/* The backend holds its own reference to anything it keeps, so the pin ends here. */
+		if (ungated != 0U)
+			gpu_resource_unpin(session, resource);
+		if (error != 0)
+			return error;
+
+		/* An ungated present waits for its adoption without a pin, an admission or a lock. */
+		if (ungated != 0U) {
+			error = ops->adoption_wait(device->private_data, session->backend, request.present.lease, &request.present.sequence, NULL);
+			if (error != 0)
+				return error;
+		}
 
 		/* Successful completion must identify a frame in this native lease's sequence. */
 		if (request.present.sequence == 0)
@@ -3370,6 +3611,107 @@ gpu_display_ioctl(
 
 		/* Succeeded: the request has no reply to copy out. */
 		return 0;
+	case GPU_DISPLAY_CURSOR_SET:
+		/* A backend without a cursor plane has none of its operations. */
+		if (ops->cursor_set == NULL)
+			return EOPNOTSUPP;
+
+		/* A lease of a generation, a small image of a packed format, and nothing else. */
+		if (request.cursor_image.lease == 0U ||
+		    request.cursor_image.generation == 0U ||
+		    request.cursor_image.reserved != 0U ||
+		    request.cursor_image.width == 0U ||
+		    request.cursor_image.width > GPU_DISPLAY_CURSOR_MAX ||
+		    request.cursor_image.height == 0U ||
+		    request.cursor_image.height > GPU_DISPLAY_CURSOR_MAX)
+			return EINVAL;
+		if (request.cursor_image.format != GPU_PIXEL_BGRA8888 &&
+		    request.cursor_image.format != GPU_PIXEL_RGBA8888)
+			return EINVAL;
+		if (request.cursor_image.stride < request.cursor_image.width * 4U ||
+		    (request.cursor_image.stride & 3U) != 0U)
+			return EINVAL;
+
+		/* The image is in storage this open owns, as a presented frame is. */
+		if (ungated != 0U) {
+			error = gpu_resource_pin(session, request.cursor_image.handle, &resource);
+		} else {
+			error = gpu_resource_lookup(session, request.cursor_image.handle, &resource);
+		}
+		if (error != 0)
+			return error;
+
+		/* Checks the storage, then the backend checks this open's lease and copies the image before it returns. */
+		error = gpu_display_cursor_resource(ops, device, session, resource, &request.cursor_image);
+
+		/* The rows were copied, so the pin ends here. */
+		if (ungated != 0U)
+			gpu_resource_unpin(session, resource);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the request has no reply to copy out. */
+		return 0;
+	case GPU_DISPLAY_CURSOR_MOVE:
+		/* A backend without a cursor plane has none of its operations. */
+		if (ops->cursor_move == NULL)
+			return EOPNOTSUPP;
+
+		/* A lease of a generation and a position; the backend clips it to the output. */
+		if (request.cursor_move.lease == 0U ||
+		    request.cursor_move.generation == 0U ||
+		    request.cursor_move.reserved != 0U)
+			return EINVAL;
+
+		/* The backend checks this open's lease before any side effect. */
+		error = ops->cursor_move(device->private_data, session->backend, &request.cursor_move);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the request has no reply to copy out. */
+		return 0;
+	case GPU_DISPLAY_CURSOR_HIDE:
+		/* A backend without a cursor plane has none of its operations. */
+		if (ops->cursor_hide == NULL)
+			return EOPNOTSUPP;
+
+		/* A lease of a generation and nothing else. */
+		if (request.cursor_hide.lease == 0U ||
+		    request.cursor_hide.generation == 0U ||
+		    request.cursor_hide.reserved != 0U)
+			return EINVAL;
+
+		/* The backend checks this open's lease before any side effect. */
+		error = ops->cursor_hide(device->private_data, session->backend, &request.cursor_hide);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the request has no reply to copy out. */
+		return 0;
+	case GPU_DISPLAY_OVERLAY_INFO:
+		/* A display without overlays has no limits to report. */
+		if (ops->overlay_info == NULL)
+			return EOPNOTSUPP;
+
+		/* An overlay of a display of a generation; every output is zero on input. */
+		if (request.overlay_info.display_id == 0U ||
+		    request.overlay_info.generation == 0U ||
+		    request.overlay_info.plane == GPU_DISPLAY_PLANE_PRIMARY ||
+		    request.overlay_info.plane > GPU_DISPLAY_OVERLAY_MAX ||
+		    request.overlay_info.max_src_width != 0U ||
+		    request.overlay_info.max_src_height != 0U ||
+		    request.overlay_info.max_dst_width != 0U ||
+		    request.overlay_info.max_dst_height != 0U ||
+		    request.overlay_info.flags != 0U ||
+		    request.overlay_info.formats != 0U ||
+		    request.overlay_info.reserved != 0U)
+			return EINVAL;
+
+		/* The backend reports the overlay's limits on the output's current mode. */
+		error = ops->overlay_info(device->private_data, session->backend, &request.overlay_info);
+		if (error != 0)
+			return error;
+		break;
 	default:
 		return EOPNOTSUPP;
 	}
@@ -3382,6 +3724,459 @@ gpu_display_ioctl(
 		return error;
 
 	/* Succeeded: the caller received a complete initialized response for its owned object. */
+	return 0;
+}
+
+/* Checks a present's storage and passes the frame to the backend. */
+static int
+gpu_display_present_resource(
+	const struct drv_gpu_display_ops *ops,
+	struct drv_gpu_device *device,
+	struct gpu_session *session,
+	struct gpu_resource *resource,
+	struct gpu_display_present *request)
+{
+	uint64_t image_bytes;
+	int error;
+
+	/* Blob presentation consumes only imported or exported allocation resources. */
+	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0) {
+		/* Shared scanout requires allocation ownership in the blob namespace. */
+		if (resource->kind != GPU_RESOURCE_BLOB && resource->kind != GPU_RESOURCE_SCANOUT)
+			return EINVAL;
+	} else {
+		/* Legacy copied presentation keeps its ordinary storage contract. */
+		if (resource->kind != GPU_RESOURCE_STORAGE)
+			return EINVAL;
+	}
+
+	/* An offset is validated before subtracting it from the retained extent. */
+	if (request->offset > resource->bytes)
+		return EINVAL;
+
+	/* Bounds the whole image before the backend can read even its first pixel. */
+	image_bytes = (uint64_t)request->stride * request->height;
+	if (image_bytes > resource->bytes - request->offset)
+		return EINVAL;
+
+	/* Transfers only the resolved kernel resource and a validated immutable request snapshot. */
+	error = ops->present(
+		device->private_data,
+		session->backend,
+		resource->object,
+		request);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the backend presented, or for an ungated display recorded, the frame. */
+	return 0;
+}
+
+/* Checks a cursor image's storage and passes it to the backend, which copies the rows. */
+static int
+gpu_display_cursor_resource(
+	const struct drv_gpu_display_ops *ops,
+	struct drv_gpu_device *device,
+	struct gpu_session *session,
+	struct gpu_resource *resource,
+	const struct gpu_display_cursor_image *request)
+{
+	uint64_t image_bytes;
+	int error;
+
+	/* The image is in storage of a kind a presented frame may use. */
+	if (resource->kind != GPU_RESOURCE_STORAGE &&
+	    resource->kind != GPU_RESOURCE_BLOB &&
+	    resource->kind != GPU_RESOURCE_SCANOUT)
+		return EINVAL;
+
+	/* Every row lies inside the storage before the backend reads a pixel. */
+	if (request->offset > resource->bytes)
+		return EINVAL;
+	image_bytes = (uint64_t)request->stride * (request->height - 1U) +
+	    (uint64_t)request->width * 4U;
+	if (image_bytes > resource->bytes - request->offset)
+		return EINVAL;
+
+	/* The backend checks this open's lease and copies the image before it returns. */
+	error = ops->cursor_set(device->private_data, session->backend, resource->object, request);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the backend took the image. */
+	return 0;
+}
+
+/*
+ * Tells whether a display request bypasses the open's admission.
+ *
+ * Only a backend that declares DRV_GPU_DISPLAY_UNGATED does, and only for
+ * presentation, its observation and the cursor: the requests that must not
+ * wait behind one another on a shared open.
+ */
+static unsigned
+gpu_display_ungated(
+	struct gpu_session *session,
+	unsigned long command)
+{
+	const struct drv_gpu_ops *ops;
+
+	/* A backend without the flag keeps every request under admission. */
+	ops = session->device->ops;
+	if (ops->display == NULL)
+		return 0U;
+	if ((ops->display->flags & DRV_GPU_DISPLAY_UNGATED) == 0U)
+		return 0U;
+
+	/* The requests that record a change without waiting under admission. */
+	if (command == GPU_DISPLAY_PRESENT)
+		return 1U;
+	if (command == GPU_DISPLAY_WAIT)
+		return 1U;
+	if (command == GPU_DISPLAY_CURSOR_SET)
+		return 1U;
+	if (command == GPU_DISPLAY_CURSOR_MOVE)
+		return 1U;
+	if (command == GPU_DISPLAY_CURSOR_HIDE)
+		return 1U;
+	if (command == GPU_DISPLAY_OVERLAY_INFO)
+		return 1U;
+
+	/* Succeeded: every other request takes admission as before. */
+	return 0U;
+}
+
+/* Applies admission's checks of the device and the open to an ungated display request, without taking admission. */
+static int
+gpu_display_admit(
+	struct gpu_session *session)
+{
+	unsigned long irq;
+	int error;
+
+	/* Withdrawal and device or local loss refuse new work, as at admission. */
+	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	error = gpu_session_error_locked(session);
+
+	spin_unlock_irqrestore(&gpu_registry_lock, irq);
+
+	/* Reports the device's or the open's loss. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the request may reach the backend. */
+	return 0;
+}
+
+/*
+ * Changes some planes of a leased output at once (GPU_DISPLAY_COMMIT).
+ *
+ * The plane fences are waited for before anything is looked up, holding no
+ * admission; the named images are pinned only while the backend records the
+ * planes; COMMIT_WAIT then waits for the adoption without a pin and signals
+ * the commit's fence.
+ */
+static int
+gpu_commit_ioctl(
+	struct gpu_session *session,
+	uintptr_t argument)
+{
+	struct gpu_display_commit request;
+	struct drv_gpu_device *device;
+	const struct drv_gpu_display_ops *ops;
+	struct kernel_handle *signal;
+	uint32_t index;
+	unsigned fenced;
+	int error;
+	int finish;
+
+	/* Only a display with overlays commits, and only from a writable open. */
+	device = session->device;
+	if ((device->ops->capabilities & GPU_CAP_DISPLAY) == 0U)
+		return EOPNOTSUPP;
+	ops = device->ops->display;
+	if (ops->commit == NULL)
+		return EOPNOTSUPP;
+	if (session->writable == 0U)
+		return EACCES;
+
+	/* Copies the whole fixed request and checks everything the backend need not. */
+	error = copyin(argument, &request, sizeof(request));
+	if (error != 0)
+		return error;
+	error = gpu_commit_check(&request);
+	if (error != 0)
+		return error;
+
+	/* Fences need the shared completion capability of this node. */
+	fenced = 0U;
+	if (request.signal_fd >= 0)
+		fenced = 1U;
+	for (index = 0; index < request.count; index++) {
+		/* A plane that waits for its image's writes. */
+		if (request.planes[index].wait_fd >= 0)
+			fenced = 1U;
+	}
+	if (fenced != 0U && (device->ops->capabilities & GPU_CAP_FENCE) == 0U)
+		return EOPNOTSUPP;
+
+	/* Pins the signal capability before waiting, so a reused descriptor number cannot change it. */
+	signal = NULL;
+	if (request.signal_fd >= 0) {
+		error = gpu_fence_get(session, request.signal_fd, 0U, &signal);
+		if (error != 0)
+			return error;
+	}
+
+	/* Waits for every plane's image, holding no admission or table lock. */
+	for (index = 0; index < request.count; index++) {
+		/* A renderer's fence of the companion GPU is accepted, as for PRESENT_SYNC. */
+		error = gpu_dependency_wait(session, request.planes[index].wait_fd, request.planes[index].wait_generation, 1U);
+		if (error != 0) {
+			handle_put(signal);
+			return error;
+		}
+	}
+
+	/* Reserves the signal's binding before the record, so close can always end it. */
+	if (signal != NULL) {
+		error = gpu_fence_binding_add(session, signal, request.signal_generation, 0U);
+		if (error != 0) {
+			handle_put(signal);
+			return error;
+		}
+	}
+
+	/* Records the planes, then waits for their adoption when asked. */
+	error = gpu_commit_record(session, &request);
+	if (error == 0 && (request.flags & GPU_DISPLAY_COMMIT_WAIT) != 0U)
+		error = ops->adoption_wait(device->private_data, session->backend, request.lease, &request.sequence, &request.adopted);
+
+	/* The adoption (or the failure) signals the commit's fence. */
+	if (signal != NULL) {
+		finish = gpu_fence_binding_end(session, signal, request.signal_generation, 0U, error);
+		if (error == 0)
+			error = finish;
+	}
+	handle_put(signal);
+	if (error != 0)
+		return error;
+
+	/* Returns every plane's result, the record's number and the adopted number. */
+	request.version = GPU_ABI_VERSION;
+	request.size = sizeof(request);
+	error = copyout(&request, argument, sizeof(request));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller sees what was recorded. */
+	return 0;
+}
+
+/* Checks a commit's framing and fields that do not depend on the backend. */
+static int
+gpu_commit_check(
+	const struct gpu_display_commit *request)
+{
+	uint32_t index;
+	uint32_t other;
+	unsigned primary;
+	int error;
+
+	/* The exact record of this ABI, a lease of a generation, and outputs zero on input. */
+	if (request->version != GPU_ABI_VERSION || request->size != sizeof(*request))
+		return EINVAL;
+	if (request->lease == 0U || request->generation == 0U)
+		return EINVAL;
+	if (request->reserved0 != 0U || request->reserved != 0U)
+		return EINVAL;
+	if (request->sequence != 0U || request->adopted != 0U)
+		return EINVAL;
+
+	/* COMMIT_WAIT is the only flag; one to five planes. */
+	if ((request->flags & ~GPU_DISPLAY_COMMIT_WAIT) != 0U)
+		return EINVAL;
+	if (request->count == 0U || request->count > 1U + GPU_DISPLAY_OVERLAY_MAX)
+		return EINVAL;
+
+	/* A signal fence exists only for a commit that waits, with an exact generation. */
+	if (request->signal_fd < -1)
+		return EINVAL;
+	if (request->signal_fd == -1 && request->signal_generation != 0U)
+		return EINVAL;
+	if (request->signal_fd >= 0 && request->signal_generation == 0U)
+		return EINVAL;
+	if (request->signal_fd >= 0 && (request->flags & GPU_DISPLAY_COMMIT_WAIT) == 0U)
+		return EINVAL;
+
+	/* Every plane is well formed and named once. */
+	primary = 0U;
+	for (index = 0; index < request->count; index++) {
+		/* The plane's own fields. */
+		error = gpu_commit_plane_check(&request->planes[index]);
+		if (error != 0)
+			return error;
+		if (request->planes[index].plane == GPU_DISPLAY_PLANE_PRIMARY)
+			primary = 1U;
+
+		/* A plane named twice has no single new state. */
+		for (other = 0; other < index; other++) {
+			if (request->planes[other].plane == request->planes[index].plane)
+				return EINVAL;
+		}
+	}
+
+	/* Waiting for the adoption is defined for a commit that changes the primary. */
+	if ((request->flags & GPU_DISPLAY_COMMIT_WAIT) != 0U && primary == 0U)
+		return EINVAL;
+
+	/* The planes after count are not part of the request. */
+	for (index = request->count; index < 1U + GPU_DISPLAY_OVERLAY_MAX; index++) {
+		/* An unused entry is zero, except its fence, which is none. */
+		if (request->planes[index].plane != 0U ||
+		    request->planes[index].flags != 0U ||
+		    request->planes[index].handle != 0U ||
+		    request->planes[index].wait_fd != -1 ||
+		    request->planes[index].result != 0U)
+			return EINVAL;
+	}
+
+	/* Succeeded: the backend checks the planes against the output and its images. */
+	return 0;
+}
+
+/* Checks one plane's state in a commit. */
+static int
+gpu_commit_plane_check(
+	const struct gpu_display_plane_state *state)
+{
+	/* An existing plane, the defined flags, and the result zero on input. */
+	if (state->plane > GPU_DISPLAY_OVERLAY_MAX)
+		return EINVAL;
+	if ((state->flags & ~(GPU_DISPLAY_PLANE_SHOWN | GPU_DISPLAY_PLANE_IMAGE)) != 0U)
+		return EINVAL;
+	if (state->result != 0U || state->serial == 0U)
+		return EINVAL;
+
+	/* A wait fence has an exact generation, and none has none. */
+	if (state->wait_fd < -1)
+		return EINVAL;
+	if (state->wait_fd == -1 && state->wait_generation != 0U)
+		return EINVAL;
+	if (state->wait_fd >= 0 && state->wait_generation == 0U)
+		return EINVAL;
+
+	/* A shown plane covers at least one pixel of the output. */
+	if ((state->flags & GPU_DISPLAY_PLANE_SHOWN) != 0U) {
+		if (state->src_width == 0U || state->src_height == 0U)
+			return EINVAL;
+		if (state->dst_width == 0U || state->dst_height == 0U)
+			return EINVAL;
+		if (state->dst_x > UINT32_MAX - state->dst_width || state->dst_y > UINT32_MAX - state->dst_height)
+			return EINVAL;
+	}
+
+	/* A plane keeping its image names none. */
+	if ((state->flags & GPU_DISPLAY_PLANE_IMAGE) == 0U) {
+		if (state->handle != 0U || state->wait_fd != -1)
+			return EINVAL;
+
+		/* Succeeded: the backend checks the rectangles against the kept image. */
+		return 0;
+	}
+
+	/* A new image is a packed RGB32 image in a known byte order, with its source rectangle inside it. */
+	if (state->handle == 0U || state->width == 0U || state->height == 0U)
+		return EINVAL;
+	if (state->format != GPU_PIXEL_BGRA8888 && state->format != GPU_PIXEL_RGBA8888)
+		return EINVAL;
+	if (state->width > UINT32_MAX / 4U || state->stride < state->width * 4U || (state->stride & 3U) != 0U)
+		return EINVAL;
+	if (state->src_x > state->width || state->src_width > state->width - state->src_x)
+		return EINVAL;
+	if (state->src_y > state->height || state->src_height > state->height - state->src_y)
+		return EINVAL;
+
+	/* Succeeded: the image is checked against its storage once the handle is resolved. */
+	return 0;
+}
+
+/*
+ * Pins the images a commit names and lets the backend record the planes.
+ *
+ * The pins end before the caller waits for the adoption: the backend keeps
+ * its own reference to every image it records.
+ */
+static int
+gpu_commit_record(
+	struct gpu_session *session,
+	struct gpu_display_commit *request)
+{
+	struct drv_gpu_device *device;
+	struct gpu_resource *resources[1 + GPU_DISPLAY_OVERLAY_MAX];
+	void *objects[1 + GPU_DISPLAY_OVERLAY_MAX];
+	const struct gpu_display_plane_state *state;
+	uint64_t image_bytes;
+	uint32_t index;
+	uint32_t pinned;
+	int error;
+
+	/* The device and the open may still take new work. */
+	device = session->device;
+	error = gpu_display_admit(session);
+	if (error != 0)
+		return error;
+
+	/* Pins each named image and checks it lies inside native shared storage. */
+	kern_memset(resources, 0, sizeof(resources));
+	kern_memset(objects, 0, sizeof(objects));
+	pinned = 0;
+	for (index = 0; index < request->count; index++) {
+		/* A plane keeping its image names no storage. */
+		state = &request->planes[index];
+		resources[index] = NULL;
+		objects[index] = NULL;
+		if ((state->flags & GPU_DISPLAY_PLANE_IMAGE) == 0U)
+			continue;
+		error = gpu_resource_pin(session, state->handle, &resources[index]);
+		if (error != 0)
+			break;
+		pinned++;
+		objects[index] = resources[index]->object;
+
+		/* Planes show native shared allocations, never ordinary copied storage. */
+		if (resources[index]->kind != GPU_RESOURCE_BLOB && resources[index]->kind != GPU_RESOURCE_SCANOUT) {
+			error = EINVAL;
+			break;
+		}
+
+		/* Every row of the image lies inside the storage. */
+		image_bytes = (uint64_t)state->stride * state->height;
+		if (state->offset > resources[index]->bytes || image_bytes > resources[index]->bytes - state->offset) {
+			error = EINVAL;
+			break;
+		}
+	}
+
+	/* The backend records every plane at once, or none. */
+	if (error == 0)
+		error = device->ops->display->commit(device->private_data, session->backend, (void *const *)objects, request);
+
+	/* The backend holds its own references now; every pin ends. */
+	for (index = 0; index < request->count && pinned != 0U; index++) {
+		/* Only the planes that pinned an image. */
+		if (resources[index] == NULL)
+			continue;
+		gpu_resource_unpin(session, resources[index]);
+		pinned--;
+	}
+
+	/* Reports a refused image or the backend's refusal. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the planes are recorded. */
 	return 0;
 }
 
@@ -3652,8 +4447,7 @@ gpu_allocation_import_ioctl(
 	/* Publish the alias only after the caller has a complete immutable import result. */
 	resource->object = object;
 	resource->kind = GPU_RESOURCE_BLOB;
-	resource->next = session->resources;
-	session->resources = resource;
+	gpu_resource_publish(session, resource);
 
 	/* The session retains each imported allocation until explicit destruction or final close. */
 	session->resource_count++;
@@ -4281,8 +5075,7 @@ gpu_import_ioctl(
 	/* Publication makes the new handle reachable only through this destination session. */
 	resource->object = object;
 	resource->kind = foreign != 0 ? GPU_RESOURCE_SCANOUT : GPU_RESOURCE_BLOB;
-	resource->next = session->resources;
-	session->resources = resource;
+	gpu_resource_publish(session, resource);
 
 	/* This session's resource count includes each independently owned import. */
 	session->resource_count++;
@@ -5747,6 +6540,7 @@ gpu_dependency_ioctl(
 	int wait_fd;
 	int signal_fd;
 	unsigned display;
+	unsigned ungated;
 	unsigned index;
 	unsigned long irq;
 	int error;
@@ -5827,8 +6621,19 @@ gpu_dependency_ioctl(
 		}
 	}
 
-	/* Ordinary operations retain the same validated resource-table ownership as their unsynchronized ABI. */
-	error = gpu_session_enter(session);
+	/*
+	 * Ordinary operations retain the same validated resource-table ownership
+	 * as their unsynchronized ABI; an ungated display's present takes only
+	 * the checks of admission, as its unsynchronized ABI does.
+	 */
+	ungated = 0U;
+	if (display != 0U)
+		ungated = gpu_display_ungated(session, GPU_DISPLAY_PRESENT);
+	if (ungated != 0U) {
+		error = gpu_display_admit(session);
+	} else {
+		error = gpu_session_enter(session);
+	}
 	if (error != 0) {
 		if (signal != NULL)
 			(void)gpu_fence_binding_end(session, signal, signal_generation, 1U, 0);
@@ -5841,14 +6646,15 @@ gpu_dependency_ioctl(
 	/* Each original operation still owns its framing, resource and backend validation. */
 	sequence = 0U;
 	if (display != 0U)
-		error = gpu_display_ioctl(session, GPU_DISPLAY_PRESENT, argument);
+		error = gpu_display_ioctl(session, GPU_DISPLAY_PRESENT, argument, ungated);
 	else if (signal != NULL)
 		error = gpu_submit_ioctl(session, argument, &sequence);
 	else
 		error = gpu_submit_ioctl(session, argument, NULL);
 
 	/* Other operations may resume after the backend has finished using this session resource table. */
-	gpu_session_leave(session);
+	if (ungated == 0U)
+		gpu_session_leave(session);
 
 	/* Display success is the existing scanout-selection boundary, not physical panel vblank. */
 	if (signal != NULL && display != 0U) {

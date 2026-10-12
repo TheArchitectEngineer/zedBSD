@@ -86,7 +86,7 @@ bcm2711_shader_analyze(
 	compiler->code_capacity = ir->instruction_count * 64U + 2048U;
 	compiler->uniform_capacity = ir->instruction_count * 8U + 256U;
 	compiler->binary->push_bytes = ir->push_bytes;
-	compiler->binary->threads = 2;
+	compiler->binary->threads = compiler->threads;
 
 	/* The source interface and all scalar lifetimes are now safe for native lowering. */
 	return 0;

@@ -66,6 +66,7 @@ def shader_fields():
         fields[f"{stage} Shader Uniforms Address"] = 0x56789000 + index * 4096
         fields[f"{stage} Shader Propagate NaNs"] = 1
         fields[f"{stage} Shader start in final thread section"] = int(index != 2)
+    fields["Fragment Shader 4-way threadable"] = 1
     return fields
 
 
@@ -170,9 +171,9 @@ def main():
                              "Coarse Y": 1023, "Fine Y": 4 * 256}),
         ("Cfg Bits", {"Direct3D Provoking Vertex": 1, "Depth-Test Function": 7,
                       "Line Rasterization": 1, "Enable Reverse Facing Primitive": 1,
-                      "Clockwise Primitives": 1}),
+                      "Clockwise Primitives": 1, "Blend enable": 1}),
         ("Color Write Masks", {"Mask": 0xfff0}),
-        ("Blend Enables", {}),
+        ("Blend Enables", {"Mask": 1}),
         ("Transform Feedback Specs", {}),
         ("Occlusion Query Counter", {}),
     ]
@@ -188,6 +189,9 @@ def main():
         ("VCM Cache Size", {"Number of 16-vertex batches for rendering": 2,
                             "Number of 16-vertex batches for binning": 2}),
         ("GL Shader State", {"address": 0x12345000, "number of attribute arrays": 3}),
+        ("Blend Cfg", {"Render Target Mask": 1,
+                       "Color blend dst factor": 7, "Color blend src factor": 1, "Color blend mode": 0,
+                       "Alpha blend dst factor": 7, "Alpha blend src factor": 1, "Alpha blend mode": 0}),
         ("Vertex Array Prims", {"mode": 4, "Length": 9}),
     ])
     bin_image = b"".join(oracle["packet_image"](root, name, fields) for name, fields in packets)

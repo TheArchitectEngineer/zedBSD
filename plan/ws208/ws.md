@@ -46,3 +46,11 @@ Pi 4 の起動の log が `CPUs ready: 4`、desktop・network・SSH が動き、
 | p004 | 負荷と driver の競合（QEMU） | planning |
 | p005 | Pi 4 の実機（4 core・reboot 10 回） | planning |
 | p006 | 規約の全文の見直し | planning |
+
+## 2026-10-11 ユーザー「全部承認です。」（Q1 が示した推しを全て承認）
+
+p001 の推しを全て採用: D1 外の割り込み（SPI）は全部 CPU 0 のまま（分散は Future Work）D2 ASID は使わない（space の切り替えは自分の CPU だけ flush、page table の変更は broadcast、ASID は Future Work）D3 cmdline.txt の `cpus=N`（既定は全部）D4 規約は触る関数だけ全文で D5 WS141 の GPU driver の SMP の競合は P2 が再現と log を Q1 へ、直しは WS141 D6 secondary が来なければ FATAL で止め、画面に cpus=1 で起動できると出す。
+
+## 2026-10-12 ユーザーの方針: SMP は最後
+
+ユーザー「もたつきはSMPを入れたら少し改善するかもしれないとも思いますが、それは最後にして、できるところまで最適化するのがよさそうですね。」→ WS208（arm64 の SMP、agent/p2 の ea8ecb4cf まで、main に未統合）の merge と Pi の実機の確かめ（p005）は、WS141 の描画の最適化（P3）と WS210（P1）の後に回す。単一の CPU のまま最適化の効果を測る。

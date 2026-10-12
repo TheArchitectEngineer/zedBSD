@@ -181,6 +181,9 @@ static const char *const view_segments[] = { "Month", "Week", "Day" };
 
 static void view_layout(const struct cal_view *view, int width, int height, struct view_layout *layout);
 static void view_card(const struct cal_view *view, const struct kl_style *style, const struct kl_rect *rect, kl_color veil);
+static void view_ground(struct cal_view *view, const struct kl_style *style, const struct view_layout *layout, int width, int height);
+static void view_ground_draw(const struct cal_view *view, const struct kl_style *style, const struct view_layout *layout, int width, int height);
+static void view_redraw_day(struct cal_view *view, const struct cal_date *before);
 static void view_sidebar(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static void view_topbar(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static void view_weekdays(const struct kl_style *style, const struct kl_rect *area);
@@ -188,7 +191,7 @@ static void view_grid(struct cal_view *view, struct kl_ui *ui, const struct kl_s
 static void view_cell(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *cell, const struct kl_rect *band, const struct cal_date *date, int inside, uint64_t now_us);
 static void view_panel(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
 static void view_desk(struct cal_view *view, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
-static void view_page(struct cal_view *view, const struct kl_style *style, int index, const struct cal_date *date);
+static int view_page(struct cal_view *view, const struct kl_style *style, int index, const struct cal_date *date);
 static void view_keep_under(struct cal_view *view, const struct kl_style *style, const struct kl_rect *area);
 static void view_let_go(struct cal_view *view, int kind, double x, double y, uint64_t now_us);
 static unsigned view_drag_source(struct cal_view *view, struct kl_ui *ui, uint32_t id, int kind, const struct kl_rect *rect, uint64_t now_us);
@@ -216,6 +219,7 @@ static void view_notice(struct cal_view *view, const char *message, uint64_t now
 static int view_month_top(const struct cal_view *view, int index, int cell_height);
 static int view_month_rows(const struct cal_view *view, int index, struct cal_date *first);
 static int view_cell_height(const struct kl_rect *grid);
+static int view_in_clip(const struct kl_canvas *canvas, const struct kl_rect *rect);
 static void view_centred(const struct kl_style *style, int cx, int baseline, const char *text, unsigned pixels, int bold, kl_color color);
 static float view_ease(float t);
 
@@ -319,6 +323,7 @@ cal_view_release(
 		kl_image_release(&view->pages[i]);
 	kl_image_release(&view->picture);
 	kl_image_release(&view->under);
+	kl_image_release(&view->ground);
 
 	/* The 3D target, the mesh and the scroll. */
 	r3_target_release(&view->target);
@@ -460,7 +465,19 @@ cal_view_draw(
 	uint64_t now_us)
 {
 	struct view_layout layout;
-	struct kl_rect whole;
+	struct cal_date selected;
+	unsigned hidden;
+	long edit_index;
+	int editing;
+	int mode;
+	int same;
+
+	/* What a click in the frame may change of what was drawn before it (the panel is drawn before the months). */
+	selected = view->selected;
+	hidden = view->hidden;
+	edit_index = view->edit_index;
+	editing = view->editing;
+	mode = view->mode;
 
 	/* A page that has turned shows its new day. */
 	if (view->flipping && now_us - view->flip_us >= CAL_FLIP_US) {
@@ -472,36 +489,29 @@ cal_view_draw(
 	if (view->sinking && now_us - view->sink_us >= CAL_SINK_US)
 		view->sinking = 0;
 
-	/* The ground: clear on glass, else a quiet blue. */
-	whole.x = 0;
-	whole.y = 0;
-	whole.width = width;
-	whole.height = height;
-	if (view->glass) {
-		kl_canvas_clear(style->canvas);
-	} else {
-		kl_canvas_gradient(style->canvas, &whole, CAL_COLOR_GROUND_TOP, CAL_COLOR_GROUND_BOTTOM);
-	}
-
-	/* The sidebar's card and what is on it, when there is room for it. */
+	/* The ground and the cards, from their picture. */
 	view_layout(view, width, height, &layout);
-	if (layout.sidebar.width > 0) {
-		view_card(view, style, &layout.sidebar, style->theme->glass_sidebar);
+	view_ground(view, style, &layout, width, height);
+
+	/* What is on the sidebar's card, when there is room for it. */
+	if (layout.sidebar.width > 0)
 		view_sidebar(view, ui, style, &layout.sidebar, now_us);
-	}
 
 	/*
 	 * The panel, when there is room for it, before the months: a drop it
 	 * takes (on the cells of the frame shown) is in the months drawn next.
+	 * What the last frame kept under the desk calendar stays kept only
+	 * while the desk calendar is in the frame (view_desk), and the card of
+	 * the day chosen is known only while it is drawn.
 	 */
-	view->desk_valid = 0;
-	if (layout.panel.width > 0) {
-		view_card(view, style, &layout.panel, style->theme->glass_content);
+	view->desk_seen = 0;
+	memset(&view->day_card, 0, sizeof(view->day_card));
+	if (layout.panel.width > 0)
 		view_panel(view, ui, style, &layout.panel, now_us);
-	}
+	if (!view->desk_seen)
+		view->desk_valid = 0;
 
-	/* The months' card: its bar, the days of the week, the months. */
-	view_card(view, style, &layout.main, style->theme->glass_content);
+	/* On the months' card: its bar, the days of the week, the months. */
 	view_topbar(view, ui, style, &layout.topbar, now_us);
 	if (view->mode == CAL_MODE_MONTH) {
 		view_weekdays(style, &layout.weekdays);
@@ -517,6 +527,34 @@ cal_view_draw(
 	/* The notice over the bottom of the months while it shows. */
 	if (view->notice[0] != '\0' && now_us < view->notice_until)
 		kl_chip(style, layout.main.x + layout.main.width / 2, layout.main.y + layout.main.height - 16, view->notice);
+
+	/*
+	 * A click that opened or closed the editor, or changed what the months
+	 * show asks for the whole view again: what was drawn before it (the
+	 * panel) shows the old, and the frames of the desk calendar alone that
+	 * follow would keep it (ws210-p014).
+	 */
+	view->redraw_count = 0;
+	if (hidden != view->hidden || edit_index != view->edit_index)
+		view->again = 1;
+	if (editing != view->editing || mode != view->mode)
+		view->again = 1;
+
+	/*
+	 * A click that chose another day in the months, and nothing else: the
+	 * parts it changed are drawn again in the same frame (ws210-p014,
+	 * 2026-10-12: the whole view drawn again in the next one made a click
+	 * show on the Pi 4 some 800 ms late); with something else, the whole
+	 * view again.
+	 */
+	same = cal_same_day(&selected, &view->selected);
+	if (!same) {
+		if (view->again || view->mode != CAL_MODE_MONTH) {
+			view->again = 1;
+		} else {
+			view_redraw_day(view, &selected);
+		}
+	}
 }
 
 /*
@@ -588,6 +626,23 @@ cal_view_wait(
 }
 
 /*
+ * Reports whether something of the view moves by itself (a page turning,
+ * a cell sinking, a card dragged), so that it wants frames while it does;
+ * a notice that shows until a time does not (ws210-p014).
+ */
+int
+cal_view_animating(
+	const struct cal_view *view)
+{
+	/* A page turning, a cell sinking or a drag. */
+	if (view->flipping || view->sinking || view->dragging >= 0)
+		return 1;
+
+	/* Nothing moves. */
+	return 0;
+}
+
+/*
  * Reports whether the next frame may be the desk calendar's alone: only it
  * moves (it turns a page), and the last full frame kept what is under it.
  */
@@ -605,6 +660,38 @@ cal_view_desk_only(
 
 	/* Only the desk calendar moves. */
 	return 1;
+}
+
+/*
+ * Finds the cell of a day of the months the last frame drew at a point:
+ * 1 with its part in the window, 0 when there is none there.
+ */
+int
+cal_view_cell_at(
+	const struct cal_view *view,
+	double x,
+	double y,
+	struct kl_rect *rect)
+{
+	const struct kl_rect *cell;
+	size_t index;
+
+	/* Each cell of the last frame. */
+	for (index = 0; index < view->cell_count; index++) {
+		/* A cell away from the point. */
+		cell = &view->cells[index].rect;
+		if (x < (double)cell->x || x >= (double)(cell->x + cell->width))
+			continue;
+		if (y < (double)cell->y || y >= (double)(cell->y + cell->height))
+			continue;
+
+		/* Found. */
+		*rect = *cell;
+		return 1;
+	}
+
+	/* No cell there. */
+	return 0;
 }
 
 /*
@@ -721,6 +808,143 @@ view_card(
 	kl_canvas_shadow(style->canvas, (float)rect->x, (float)rect->y + 2.0f, (float)rect->width, (float)rect->height, CAL_CARD_RADIUS, 10.0f, style->theme->shadow);
 	kl_canvas_round(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CAL_CARD_RADIUS, CAL_COLOR_CARD);
 	kl_canvas_round_border(style->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, CAL_CARD_RADIUS, 1.0f, style->theme->panel_edge);
+}
+
+/*
+ * Draws the ground and the cards of a frame within the canvas's clip from
+ * a picture of them made once for the window's size, the glass, the cards
+ * and the colours (ws210-p014, 2026-10-12: drawn anew for each frame, they
+ * were 75 ms of a whole frame's 200 on the Pi 4).  Without the picture,
+ * they are drawn on the canvas.
+ */
+static void
+view_ground(
+	struct cal_view *view,
+	const struct kl_style *style,
+	const struct view_layout *layout,
+	int width,
+	int height)
+{
+	struct kl_style picture_style;
+	struct kl_canvas canvas;
+	struct kl_rect cards[3];
+	struct kl_rect clip;
+	kl_color colors[CAL_GROUND_COLORS];
+	const uint32_t *from;
+	uint32_t *to;
+	size_t row;
+	int differ;
+	int same;
+	int error;
+
+	/* The colours and the cards of the picture now. */
+	colors[0] = CAL_COLOR_GROUND_TOP;
+	colors[1] = CAL_COLOR_GROUND_BOTTOM;
+	colors[2] = style->theme->glass_sidebar;
+	colors[3] = style->theme->glass_content;
+	colors[4] = style->theme->shadow;
+	colors[5] = CAL_COLOR_CARD;
+	colors[6] = style->theme->panel_edge;
+	cards[0] = layout->sidebar;
+	cards[1] = layout->panel;
+	cards[2] = layout->main;
+
+	/* The picture kept, when it was made for the same. */
+	same = 0;
+	if (view->ground_valid &&
+	    view->ground.width == width &&
+	    view->ground.height == height &&
+	    view->ground_glass == view->glass)
+		same = 1;
+	if (same) {
+		differ = memcmp(view->ground_colors, colors, sizeof(colors));
+		if (differ != 0)
+			same = 0;
+	}
+	if (same) {
+		differ = memcmp(view->ground_cards, cards, sizeof(cards));
+		if (differ != 0)
+			same = 0;
+	}
+
+	/* Made again otherwise: its pixels at the size, a canvas on them, the ground and the cards drawn on it. */
+	if (!same) {
+		view->ground_valid = 0;
+		if (view->ground.width != width || view->ground.height != height) {
+			kl_image_release(&view->ground);
+			error = kl_image_create(&view->ground, width, height);
+			if (error != 0) {
+				view_ground_draw(view, style, layout, width, height);
+				return;
+			}
+		}
+
+		/* The canvas on the picture. */
+		error = kl_canvas_init(&canvas, view->ground.pixels, view->ground.stride, width, height);
+		if (error != 0) {
+			view_ground_draw(view, style, layout, width, height);
+			return;
+		}
+
+		/* Drawn, and kept for these. */
+		picture_style = *style;
+		picture_style.canvas = &canvas;
+		view_ground_draw(view, &picture_style, layout, width, height);
+		kl_canvas_release(&canvas);
+		view->ground_valid = 1;
+		view->ground_glass = view->glass;
+		memcpy(view->ground_colors, colors, sizeof(colors));
+		memcpy(view->ground_cards, cards, sizeof(cards));
+	}
+
+	/* The part of the picture within the clip and the window. */
+	clip = style->canvas->clip;
+	if (clip.x + clip.width > width)
+		clip.width = width - clip.x;
+	if (clip.y + clip.height > height)
+		clip.height = height - clip.y;
+	if (clip.width <= 0 || clip.height <= 0)
+		return;
+
+	/* Copied onto the canvas, row by row. */
+	for (row = 0; row < (size_t)clip.height; row++) {
+		from = view->ground.pixels + ((size_t)clip.y + row) * view->ground.stride + (size_t)clip.x;
+		to = style->canvas->pixels + ((size_t)clip.y + row) * style->canvas->stride + (size_t)clip.x;
+		memcpy(to, from, (size_t)clip.width * sizeof(to[0]));
+	}
+}
+
+/*
+ * Draws the ground (clear on glass, else a quiet blue) and the cards of
+ * the sidebar, the panel and the months, where there is room for them.
+ */
+static void
+view_ground_draw(
+	const struct cal_view *view,
+	const struct kl_style *style,
+	const struct view_layout *layout,
+	int width,
+	int height)
+{
+	struct kl_rect whole;
+
+	/* The ground. */
+	whole.x = 0;
+	whole.y = 0;
+	whole.width = width;
+	whole.height = height;
+	if (view->glass) {
+		kl_canvas_clear(style->canvas);
+	} else {
+		kl_canvas_gradient(style->canvas, &whole, CAL_COLOR_GROUND_TOP, CAL_COLOR_GROUND_BOTTOM);
+	}
+
+	/* The sidebar's card, then the panel's, then the months'. */
+	if (layout->sidebar.width > 0)
+		view_card(view, style, &layout->sidebar, style->theme->glass_sidebar);
+	if (layout->panel.width > 0)
+		view_card(view, style, &layout->panel, style->theme->glass_content);
+	view_card(view, style, &layout->main, style->theme->glass_content);
 }
 
 /*
@@ -1139,6 +1363,7 @@ view_cell(
 	kl_color tint;
 	int sinking;
 	int chosen;
+	int shown;
 	double px;
 	double py;
 	float depth;
@@ -1200,6 +1425,16 @@ view_cell(
 		view->today_y = seen.y;
 		cal_log("CELL today x=%d y=%d width=%d height=%d", seen.x, seen.y, seen.width, seen.height);
 	}
+
+	/*
+	 * A cell outside the part of the frame being drawn shows nothing of
+	 * what follows, which is drawn within the cell: its events are not
+	 * looked up nor its words set (ws210-p014: a frame of the lit row of
+	 * the sidebar spent half its time on the months' cells, the Pi 4).
+	 */
+	shown = view_in_clip(style->canvas, cell);
+	if (!shown)
+		return;
 
 	/* Sinking after a drop: pressed in a little, and shaded, for a moment. */
 	sinking = 0;
@@ -1295,6 +1530,27 @@ view_cell(
 	}
 }
 
+/* Tells whether a rectangle has a pixel within a canvas's clip (the part of the frame being drawn). */
+static int
+view_in_clip(
+	const struct kl_canvas *canvas,
+	const struct kl_rect *rect)
+{
+	const struct kl_rect *clip;
+
+	/* Left or right of the clip. */
+	clip = &canvas->clip;
+	if (rect->x + rect->width <= clip->x || rect->x >= clip->x + clip->width)
+		return 0;
+
+	/* Above or below it. */
+	if (rect->y + rect->height <= clip->y || rect->y >= clip->y + clip->height)
+		return 0;
+
+	/* Some of it is within. */
+	return 1;
+}
+
 /*
  * Draws the panel to add an event: its title and what to do, a card for
  * each kind (dragged onto a date, it adds an event), Custom, and the desk
@@ -1344,8 +1600,10 @@ view_panel(
 	day.y = top + 12;
 	day.width = area->width - 28;
 	day.height = area->y + area->height - 14 - day.y;
-	if (day.height >= CAL_DAY_DESK_HEIGHT + 8)
+	if (day.height >= CAL_DAY_DESK_HEIGHT + 8) {
+		view->day_card = day;
 		view_chosen_day(view, ui, style, &day, now_us);
+	}
 }
 
 /* Draws the title, the kinds of event to drag onto a date and Custom; returns the bottom of what it drew. */
@@ -1440,8 +1698,50 @@ view_desk(
 	float flip;
 	float opacity;
 	float progress;
+	const struct kl_rect *clip;
+	int drew_page;
+	int drew_next;
 	int error;
+	int still;
+	int whole;
+	int same;
 	int i;
+
+	/*
+	 * A frame drawn only in a part away from the desk calendar (a lit
+	 * widget, BUG-226) leaves it as it is: its 3D picture is not made
+	 * again, which was most of a hover's frame (2026-10-12, the Pi 4).
+	 * What was kept under it stays kept, as nothing was drawn there
+	 * (ws210-p014), when it was kept for this area.
+	 */
+	view->desk_seen = 1;
+	clip = &style->canvas->clip;
+	same = 0;
+	if (view->desk_area.x == area->x &&
+	    view->desk_area.y == area->y &&
+	    view->desk_area.width == area->width &&
+	    view->desk_area.height == area->height)
+		same = 1;
+	if (!same)
+		view->desk_valid = 0;
+	if (area->x >= clip->x + clip->width || area->x + area->width <= clip->x)
+		return;
+	if (area->y >= clip->y + clip->height || area->y + area->height <= clip->y)
+		return;
+
+	/*
+	 * Drawn again: what is under it is kept again below, but only when the
+	 * frame draws all of its area; one drawn in a part that cuts it keeps
+	 * nothing (the rest of the area still holds the last frame's desk
+	 * calendar), and the next frame of the desk alone draws the whole view.
+	 */
+	view->desk_valid = 0;
+	whole = 0;
+	if (area->x >= clip->x &&
+	    area->y >= clip->y &&
+	    area->x + area->width <= clip->x + clip->width &&
+	    area->y + area->height <= clip->y + clip->height)
+		whole = 1;
 
 	/* The target and the picture at the area's size (made again when it changes). */
 	if (view->picture.width != area->width || view->picture.height != area->height) {
@@ -1455,53 +1755,79 @@ view_desk(
 			kl_image_release(&view->picture);
 			return;
 		}
+		view->picture_still = 0;
 	}
 
 	/* The pages' pictures: the day shown, and under it the day it turns to. */
 	next = view->shown;
 	if (view->flipping)
 		next = view->flip_to;
-	view_page(view, style, SC_TEXTURE_PAGE, &view->shown);
-	view_page(view, style, SC_TEXTURE_NEXT, &next);
-	for (i = 0; i < SC_TEXTURES; i++) {
-		textures[i].pixels = view->pages[i].pixels;
-		textures[i].width = view->pages[i].width;
-		textures[i].height = view->pages[i].height;
-		textures[i].stride = view->pages[i].stride;
+	drew_page = view_page(view, style, SC_TEXTURE_PAGE, &view->shown);
+	drew_next = view_page(view, style, SC_TEXTURE_NEXT, &next);
+
+	/*
+	 * Still, with the pages the picture was made of: the picture as it is
+	 * (ws210-p014, 2026-10-12: the desk calendar made again in 3D for each
+	 * frame was a quarter of a whole frame's time on the Pi 4).  A page
+	 * that starts to turn in this frame has not moved yet and hides the
+	 * page under it, so the still picture is its first frame too (the
+	 * frame of the click that chose the day).
+	 */
+	still = 0;
+	if (view->picture_still && !drew_page) {
+		if (!view->flipping && !drew_next)
+			still = 1;
+		else if (view->flipping && now_us <= view->flip_us)
+			still = 1;
 	}
 
-	/* The page turning: over the top, eased, fading out from a third of the way. */
-	flip = 0.0f;
-	opacity = 1.0f;
-	if (view->flipping) {
-		progress = (float)(now_us - view->flip_us) / (float)CAL_FLIP_US;
-		flip = 0.85f * CAL_PI * view_ease(progress);
-		if (progress > 0.3f)
-			opacity = 1.0f - view_ease((progress - 0.3f) / 0.6f);
+	/* Otherwise the desk calendar made in 3D into the picture. */
+	if (!still) {
+		/* The pages as its textures. */
+		for (i = 0; i < SC_TEXTURES; i++) {
+			textures[i].pixels = view->pages[i].pixels;
+			textures[i].width = view->pages[i].width;
+			textures[i].height = view->pages[i].height;
+			textures[i].stride = view->pages[i].stride;
+		}
+
+		/* The page turning: over the top, eased, fading out from a third of the way. */
+		flip = 0.0f;
+		opacity = 1.0f;
+		if (view->flipping) {
+			progress = (float)(now_us - view->flip_us) / (float)CAL_FLIP_US;
+			flip = 0.85f * CAL_PI * view_ease(progress);
+			if (progress > 0.3f)
+				opacity = 1.0f - view_ease((progress - 0.3f) / 0.6f);
+		}
+
+		/* The camera: the desk calendar a little turned and tilted, before it. */
+		view->target.focal = (float)view->target.height * 2.3f;
+		view->target.cx = (float)view->target.width * 0.5f;
+		view->target.cy = (float)view->target.height * 0.5f;
+		r3_rotate_y(&turn, -0.3f);
+		r3_rotate_x(&tilt, 0.18f);
+		r3_translate(&place, 0.0f, 0.0f, CAL_DESK_DISTANCE);
+		r3_combine(&tilt, &turn, &turn);
+		r3_combine(&place, &turn, &turn);
+
+		/* The desk calendar, into the picture; a still one is kept. */
+		r3_target_clear(&view->target);
+		sc_mesh_clear(view->mesh);
+		sc_desk_calendar(view->mesh, flip, opacity);
+		sc_draw(&view->target, view->mesh, &turn, textures);
+		r3_resolve(&view->target, CAL_SUPERSAMPLE, &view->picture);
+		view->picture_still = 0;
+		if (!view->flipping)
+			view->picture_still = 1;
 	}
 
-	/* The camera: the desk calendar a little turned and tilted, before it. */
-	view->target.focal = (float)view->target.height * 2.3f;
-	view->target.cx = (float)view->target.width * 0.5f;
-	view->target.cy = (float)view->target.height * 0.5f;
-	r3_rotate_y(&turn, -0.3f);
-	r3_rotate_x(&tilt, 0.18f);
-	r3_translate(&place, 0.0f, 0.0f, CAL_DESK_DISTANCE);
-	r3_combine(&tilt, &turn, &turn);
-	r3_combine(&place, &turn, &turn);
-
-	/* The desk calendar. */
-	r3_target_clear(&view->target);
-	sc_mesh_clear(view->mesh);
-	sc_desk_calendar(view->mesh, flip, opacity);
-	sc_draw(&view->target, view->mesh, &turn, textures);
-
-	/* What is under it, kept for the frames of the desk alone, and the shadow on the desk. */
-	view_keep_under(view, style, area);
+	/* What is under it, kept for the frames of the desk alone (when the frame draws all of it), and the shadow on the desk. */
+	if (whole)
+		view_keep_under(view, style, area);
 	kl_canvas_shadow(style->canvas, (float)area->x + (float)area->width * 0.2f, (float)area->y + (float)area->height * 0.8f, (float)area->width * 0.6f, 5.0f, 3.0f, 6.0f, KL_RGBA(0x1f3a66, 40));
 
 	/* The picture over it. */
-	r3_resolve(&view->target, CAL_SUPERSAMPLE, &view->picture);
 	kl_canvas_image(style->canvas, &view->picture, (float)area->x, (float)area->y, (float)area->width, (float)area->height, 0.0f, 1.0f);
 }
 
@@ -1548,9 +1874,9 @@ view_keep_under(
 /*
  * Draws a page's picture for a day, unless it shows that day already: a
  * band with the month (red on a Sunday), the day's number large, and the
- * day of the week.
+ * day of the week.  Returns 1 when it drew the page, 0 when not.
  */
-static void
+static int
 view_page(
 	struct cal_view *view,
 	const struct kl_style *style,
@@ -1575,19 +1901,19 @@ view_page(
 	if (image->pixels == NULL) {
 		error = kl_image_create(image, CAL_PAGE_WIDTH, CAL_PAGE_HEIGHT);
 		if (error != 0)
-			return;
+			return 0;
 		view->page_dates[index].year = 0;
 	}
 
 	/* Showing the day already, in the accent the user chose now (ws179-p002). */
 	same = cal_same_day(&view->page_dates[index], date);
 	if (same && view->page_accents[index] == style->theme->accent)
-		return;
+		return 0;
 
 	/* A canvas on it. */
 	error = kl_canvas_init(&canvas, image->pixels, image->stride, image->width, image->height);
 	if (error != 0)
-		return;
+		return 0;
 
 	/* The colors: the band in the accent the user chose with its ink (red with white on a Sunday), the number red on a Sunday and blue on a Saturday. */
 	weekday = cal_weekday(date);
@@ -1636,6 +1962,7 @@ view_page(
 	kl_canvas_release(&canvas);
 	view->page_dates[index] = *date;
 	view->page_accents[index] = style->theme->accent;
+	return 1;
 }
 
 /*
@@ -2195,6 +2522,38 @@ view_select(
 	view->selected = *date;
 	cal_log("SELECT date=%04d-%02d-%02d", date->year, date->month, date->day);
 	view_show(view, date, now_us);
+}
+
+/*
+ * Lists the parts a click that chose another day changed, to be drawn
+ * again in the same frame: the cell of the day chosen before (its ring),
+ * when the frame drew it, and the card of the day chosen (its date, its
+ * items and the desk calendar), when the frame drew it.
+ */
+static void
+view_redraw_day(
+	struct cal_view *view,
+	const struct cal_date *before)
+{
+	size_t index;
+	int same;
+
+	/* The cell of the day chosen before. */
+	view->redraw_count = 0;
+	for (index = 0; index < view->cell_count; index++) {
+		same = cal_same_day(&view->cells[index].date, before);
+		if (same) {
+			view->redraw[view->redraw_count] = view->cells[index].rect;
+			view->redraw_count++;
+			break;
+		}
+	}
+
+	/* The card of the day chosen. */
+	if (view->day_card.width > 0 && view->day_card.height > 0) {
+		view->redraw[view->redraw_count] = view->day_card;
+		view->redraw_count++;
+	}
 }
 
 /*

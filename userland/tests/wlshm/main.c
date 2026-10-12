@@ -12,10 +12,15 @@
  * it one step per frame and only the rows that changed are damaged.  Two
  * buffers alternate: a frame is drawn only into a buffer the compositor has
  * released.  With --cursor the window sets an 8x8 cursor of its own when
- * the pointer enters it; with --hide-cursor it hides the cursor.
+ * the pointer enters it; with --hide-cursor it hides the cursor.  With
+ * --cursor-every=N as well, the cursor changes between a filled and a
+ * hollow square every N frames of the window while the pointer is in it
+ * (1: every frame), to measure the cursor plane's image changes
+ * (ws141-p016 (B) S2, S3).
  *
  *   wlshm [--size=WxH] [--color=AARRGGBB] [--xrgb] [--band=AARRGGBB]
- *         [--frames=N] [--cursor=AARRGGBB] [--hide-cursor] [--hold]
+ *         [--frames=N] [--cursor=AARRGGBB] [--cursor-every=N]
+ *         [--hide-cursor] [--hold]
  *         [--delay-ms=N] [--token=NAME] [--display=NAME] [--csd]
  *
  * The window asks for the compositor's titlebar (kl_titlebar, an explicit
@@ -60,6 +65,12 @@ struct window {
 	struct xdg_toplevel *toplevel;
 	struct wl_surface *cursor_surface;
 	struct wl_buffer *cursor_buffer;
+	/* The hollow square --cursor-every alternates with, and which of the two is shown. */
+	struct wl_buffer *cursor_hollow;
+	int cursor_shape;
+	/* Frames between cursor changes (0: never), and whether the pointer is in the window. */
+	uint32_t cursor_every;
+	int cursor_inside;
 	struct shm_buffer buffers[2];
 	uint32_t width;
 	uint32_t height;
@@ -141,7 +152,7 @@ main(
 	memset(&window, 0, sizeof(window));
 	error = options(count, arguments, &window, &frames);
 	if (error != 0) {
-		fprintf(stderr, "usage: wlshm [--size=WxH] [--color=AARRGGBB] [--xrgb] [--band=AARRGGBB] [--frames=N] [--cursor=AARRGGBB] [--hide-cursor] [--hold] [--delay-ms=N] [--token=NAME] [--display=NAME] [--csd]\n");
+		fprintf(stderr, "usage: wlshm [--size=WxH] [--color=AARRGGBB] [--xrgb] [--band=AARRGGBB] [--frames=N] [--cursor=AARRGGBB] [--cursor-every=N] [--hide-cursor] [--hold] [--delay-ms=N] [--token=NAME] [--display=NAME] [--csd]\n");
 		return 2;
 	}
 
@@ -203,7 +214,8 @@ options(
 {
 	static const char *const names[] = {
 		"--size=", "--color=", "--xrgb", "--band=", "--frames=", "--cursor=",
-		"--delay-ms=", "--hold", "--hide-cursor", "--token=", "--display=", "--csd"
+		"--delay-ms=", "--hold", "--hide-cursor", "--token=", "--display=", "--csd",
+		"--cursor-every="
 	};
 	const char *argument;
 	const char *value;
@@ -284,6 +296,11 @@ options(
 			window->csd = 1;
 			error = 0;
 			break;
+		case 12:
+			error = option_number(value, 10, 1000UL, &window->cursor_every);
+			if (error == 0 && window->cursor_every == 0U)
+				error = -1;
+			break;
 		default:
 			break;
 		}
@@ -295,6 +312,10 @@ options(
 
 	/* A frame count of zero is no run. */
 	if (*frames == 0U)
+		return -1;
+
+	/* A changing cursor needs a cursor of the window's own. */
+	if (window->cursor_every != 0U && !window->cursor)
 		return -1;
 
 	/* Succeeded. */
@@ -441,18 +462,28 @@ make_cursor(
 	int fd;
 	int index;
 
-	/* Its pixels. */
-	fd = shared_memory(8U * 8U * 4U, &map);
+	/* Its pixels: the filled square, then the hollow one --cursor-every alternates with. */
+	fd = shared_memory(2U * 8U * 8U * 4U, &map);
 	if (fd < 0)
 		return errno;
 	pixels = map;
 	for (index = 0; index < 64; index++)
 		pixels[index] = window->cursor_color;
+	for (index = 0; index < 64; index++) {
+		/* The border rows and columns keep the color; the inside is clear. */
+		pixels[64 + index] = 0U;
+		if (index < 8 ||
+		    index >= 56 ||
+		    index % 8 == 0 ||
+		    index % 8 == 7)
+			pixels[64 + index] = window->cursor_color;
+	}
 
-	/* Its buffer and surface. */
-	pool = wl_shm_create_pool(window->shm, fd, 8 * 8 * 4);
+	/* Its buffers and surface. */
+	pool = wl_shm_create_pool(window->shm, fd, 2 * 8 * 8 * 4);
 	close(fd);
 	window->cursor_buffer = wl_shm_pool_create_buffer(pool, 0, 8, 8, 32, WL_SHM_FORMAT_ARGB8888);
+	window->cursor_hollow = wl_shm_pool_create_buffer(pool, 8 * 8 * 4, 8, 8, 32, WL_SHM_FORMAT_ARGB8888);
 	wl_shm_pool_destroy(pool);
 	window->cursor_surface = wl_compositor_create_surface(window->compositor);
 
@@ -532,6 +563,7 @@ commit_frame(
 	uint32_t frame)
 {
 	struct wl_callback *callback;
+	struct wl_buffer *cursor;
 	int32_t band;
 
 	/* The band moves one step. */
@@ -551,6 +583,17 @@ commit_frame(
 
 	/* The band the compositor will show. */
 	window->shown_band = band;
+
+	/* With --cursor-every, the cursor changes its shape every N frames while the pointer is in. */
+	if (window->cursor_every != 0U && window->cursor_inside && frame % window->cursor_every == 0U) {
+		window->cursor_shape = !window->cursor_shape;
+		cursor = window->cursor_buffer;
+		if (window->cursor_shape)
+			cursor = window->cursor_hollow;
+		wl_surface_attach(window->cursor_surface, cursor, 0, 0);
+		wl_surface_damage_buffer(window->cursor_surface, 0, 0, 8, 8);
+		wl_surface_commit(window->cursor_surface);
+	}
 
 	/* The frame callback, and the commit. */
 	callback = wl_surface_frame(window->surface);
@@ -774,6 +817,8 @@ pointer_enter(
 	if (window->hide_cursor) {
 		wl_pointer_set_cursor(pointer, serial, NULL, 0, 0);
 	} else if (window->cursor) {
+		window->cursor_inside = 1;
+		window->cursor_shape = 0;
 		wl_surface_attach(window->cursor_surface, window->cursor_buffer, 0, 0);
 		wl_surface_damage_buffer(window->cursor_surface, 0, 0, 8, 8);
 		wl_surface_commit(window->cursor_surface);
@@ -791,11 +836,14 @@ pointer_leave(
 	uint32_t serial,
 	struct wl_surface *surface)
 {
-	/* Not used. */
-	(void)data;
+	struct window *window;
+
+	/* The cursor stops changing once the pointer is out. */
+	window = data;
 	(void)pointer;
 	(void)serial;
 	(void)surface;
+	window->cursor_inside = 0;
 }
 
 static void

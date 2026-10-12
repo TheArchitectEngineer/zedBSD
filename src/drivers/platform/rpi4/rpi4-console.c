@@ -16,6 +16,9 @@
  *
  * Input is read from the PL011 receive FIFO by a kernel thread that looks
  * at it every few milliseconds, so the console needs no interrupt routing.
+ * Without the serial console in the build (CONFIG_RPI4_SERIAL_CONSOLE, off
+ * by default) the port is left alone: no reader, and output goes only to
+ * the framebuffer until a display driver takes it.
  */
 
 #include <stdint.h>
@@ -44,6 +47,13 @@
 /* The grid a serial terminal is assumed to have. */
 #define RPI4_CONSOLE_COLUMNS	80U
 #define RPI4_CONSOLE_ROWS	24U
+
+/* Whether the serial line is the console (CONFIG_RPI4_SERIAL_CONSOLE). */
+#ifdef RPI4_SERIAL_CONSOLE
+#define RPI4_CONSOLE_SERIAL	1
+#else
+#define RPI4_CONSOLE_SERIAL	0
+#endif
 
 /* How often the receive FIFO is read, and how much of it at a time. */
 #define RPI4_CONSOLE_POLL_MS	10U
@@ -107,8 +117,8 @@ drv_rpi4_console_start_input(
 {
 	int error;
 
-	/* A second start finds the reader already running. */
-	if (input_worker != NULL)
+	/* No reader without the serial console, nor a second one. */
+	if (!RPI4_CONSOLE_SERIAL || input_worker != NULL)
 		return 0;
 
 	/* Creates the reader; without it the console stays output only. */

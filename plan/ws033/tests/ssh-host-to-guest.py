@@ -183,13 +183,14 @@ def main(argv):
         if re.search(r'1 /root/\.ssh/authorized_keys', console) is None:
             raise RuntimeError('the key did not arrive in the guest whole')
         match = re.search(options.interface +
-                          r' +(unconfigured|static|dhcp)[^\r\n]*',
+                          r' +(unconfigured|link-local|static|dhcp)[^\r\n]*',
                           console)
         print('guest interface: %s' % (match.group(0) if match else '?'))
         if match is None:
             raise RuntimeError('the guest never reported %s at all'
                                % options.interface)
-        if 'unconfigured' in match.group(0) or '169.254.' in match.group(0):
+        if ('unconfigured' in match.group(0) or 'link-local' in match.group(0)
+                or '169.254.' in match.group(0)):
             raise RuntimeError('the guest was given no usable address: %s'
                                % match.group(0).strip())
 

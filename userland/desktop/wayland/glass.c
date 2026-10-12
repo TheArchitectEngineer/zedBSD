@@ -37,6 +37,7 @@
  */
 
 #include "glass.h"
+#include "glyph-worker.h"
 #include "../artwork/mark.h"
 #include "../picture/color-glyph.h"
 #include "../picture/wallpaper.h"
@@ -98,6 +99,9 @@
 /* The bands an application tile's reflection on App Home's floor fades out in (ws099-p035b). */
 #define GLASS_REFLECTION_SLICES	8U
 
+/* The largest side, in output pixels, of a quad joined to others into one draw (batch.c, ws211-p003 review-1 M3). */
+#define GLASS_BATCH_SIDE	128.0f
+
 /*
  * The large digits of the lock screen's clock (ws187-p001), in an image of
  * their own at the one size the clock asks for: the image's size, its
@@ -129,6 +133,13 @@
 
 /* The largest glyph rendered, in pixels a side. */
 #define GLASS_BITMAP		64U
+
+/*
+ * What a glyph worker's job is for (ws213-p005): a cell of the atlas's
+ * cache, or one of the lock screen clock's large digits.
+ */
+#define GLASS_JOB_CELL		0U
+#define GLASS_JOB_LARGE		1U
 
 /* The blurred wallpaper is this many times smaller than the output. */
 #define GLASS_BLUR_SCALE	4U
@@ -165,21 +176,42 @@ struct glass_prefetch {
 /*
  * A wallpaper chosen during the session, read and decoded on a thread of
  * its own (WS135, plan/ws135/design.md section 4.4) so that the event loop
- * never waits on the disk: the path, the picture or the error once the
- * thread is done, and whether it runs or has not been joined yet.  lock
- * guards done; only the event loop starts it (kwl_glass_wallpaper_begin)
- * and joins it (kwl_glass_wallpaper_poll, kwl_glass_close).
+ * never waits on the disk: the path ("-" and landscape set for the
+ * landscape, ws213-p005), the picture or the error once the thread is
+ * done, and whether it runs or has not been joined yet.  lock guards done;
+ * only the event loop starts it (kwl_glass_wallpaper_begin,
+ * kwl_glass_landscape) and joins it (kwl_glass_wallpaper_poll,
+ * kwl_glass_close).
+ *
+ * The thread also draws the picture at the output's size (width and
+ * height, taken at the start) into rows and the frosted glass into blurred
+ * (ws213-p005, the work thread W: the pixels and the blur are not the
+ * event loop's work), both packed at their widths; the event loop only
+ * copies them into the look's images.  rows is NULL when they could not be
+ * made, and the event loop then draws the picture itself.
  */
 struct glass_loader {
 	pthread_t thread;
 	pthread_mutex_t lock;
 	char path[256];
+	unsigned landscape;
+	uint32_t width;
+	uint32_t height;
 	struct wallpaper_picture picture;
+	uint32_t *rows;
+	uint32_t *blurred;
 	int error;
 	int done;
 	int started;
 };
 
+/*
+ * One glyph as the look draws it: its place in its image, its box and
+ * advance, whether it is a colour glyph drawn as an image, and whether its
+ * coverage is still being rendered by the glyph worker (ws213-p005): a
+ * pending glyph is measured with its advance but not drawn, and its cell
+ * gets the coverage at the start of a later walk.
+ */
 struct glass_glyph {
 	uint32_t x;
 	uint32_t y;
@@ -189,18 +221,21 @@ struct glass_glyph {
 	int32_t top;
 	int32_t advance;
 	uint32_t color;
+	uint32_t pending;
 };
 
 /*
  * One cell of the atlas's cache: the character and size whose glyph it
  * holds (a codepoint of 0 is a free cell), the glyph's place and metrics,
- * and when it was last drawn.
+ * when it was last drawn, and the number of its last assignment (a glyph
+ * worker's result for an earlier one is not written, ws213-p005).
  */
 struct glass_cached {
 	uint32_t codepoint;
 	unsigned size;
 	struct glass_glyph glyph;
 	uint64_t used;
+	uint64_t generation;
 };
 
 /*
@@ -216,6 +251,14 @@ struct glass_cached {
  * lock screen's clock (ws187-p001) have their image, made when the clock
  * first asks, and are drawn again only when it asks for another size
  * (large_pixels, 0 while none is drawn).
+ *
+ * The glyph worker (ws213-p005) renders the cache's glyphs and the large
+ * digits away from the event loop once it runs (worker_running): it opens
+ * its own faces over the bytes kept here (font_size their lengths), a
+ * cell's assignments are numbered by cell_generation, and the large
+ * digits asked for are large_wanted at large_generation, of which
+ * large_expected glyphs are being rendered and large_received are written
+ * (large_failed is a size the worker could not draw, not asked again).
  */
 struct kwl_glass {
 	struct kwl_import wallpaper;
@@ -238,11 +281,29 @@ struct kwl_glass {
 	int emoji_face;
 	struct glass_cached cache[GLASS_CELLS];
 	uint32_t cache_top;
+	/*
+	 * The guard of the glyphs a layer's picture in flight uses (layer-cache.c,
+	 * review-4 H2): a cell used at guard_clock or later holds one, and
+	 * guarded_evictions counts those given to another glyph before the
+	 * picture completed, and the glyphs the picture could not draw because
+	 * they were still being rendered (ws213-p005; 0: no guard).
+	 */
+	uint64_t guard_clock;
+	uint32_t guarded_evictions;
 	unsigned cache_count;
 	uint64_t clock;
 	struct kwl_import large;
 	struct glass_glyph large_glyphs[GLASS_LARGE_GLYPHS];
 	unsigned large_pixels;
+	size_t font_size[GLASS_FACES];
+	struct kwl_glyph_worker worker;
+	unsigned worker_running;
+	uint64_t cell_generation;
+	unsigned large_wanted;
+	uint64_t large_generation;
+	unsigned large_expected;
+	unsigned large_received;
+	unsigned large_failed;
 };
 
 static const unsigned glass_pixels[GLASS_SIZES] = { 14U, 15U, 20U, 36U, 24U, 64U };
@@ -263,7 +324,10 @@ static void wallpaper_row(const struct wallpaper_picture *picture, const uint32_
 static void landscape_row(uint32_t y, uint32_t width, uint32_t height, uint32_t *line);
 static void blur_add(const uint32_t *line, uint32_t *sums, uint32_t small_width);
 static void blur_average(uint32_t *sums, float *small, uint32_t small_width);
-static int blur_fill(struct kwl_server *server, struct kwl_glass *glass, float *small);
+static void blur_fill(float *small, float *scratch, uint32_t width, uint32_t height, unsigned char *blurred, size_t blurred_pitch);
+static int wallpaper_render(const struct wallpaper_picture *picture, uint32_t width, uint32_t height, unsigned char *rows, size_t pitch, unsigned char *blurred, size_t blurred_pitch);
+static int loader_start(struct kwl_server *server, const char *path);
+static void loader_copy(struct kwl_glass *glass);
 static void blur_pass(float *pixels, float *scratch, uint32_t width, uint32_t height, int horizontal);
 static uint32_t pack_pixel(const float *rgb);
 static int atlas_create(struct kwl_server *server, struct kwl_glass *glass);
@@ -276,11 +340,17 @@ static void large_put(struct kwl_glass *glass, const uint8_t *bitmap, uint32_t p
 static const struct glass_glyph *large_glyph_of(struct kwl_glass *glass, uint32_t character);
 static void atlas_put(struct kwl_glass *glass, const uint8_t *bitmap, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 static int glass_open_face(struct kwl_glass *glass, const char *path);
+static void glass_worker_start(struct kwl_server *server, struct kwl_glass *glass);
+static void glass_worker_font(struct kwl_glass *glass, unsigned slot);
+static void glass_take_cell(struct kwl_glass *glass, const struct kwl_glyph_job *job);
+static void glass_take_large(struct kwl_glass *glass, const struct kwl_glyph_job *job);
+static int large_ask(struct kwl_glass *glass, unsigned pixels);
+static int glass_ask_cell(struct kwl_glass *glass, unsigned font, unsigned glyph, enum glass_size size, unsigned slot, const struct truetype_glyph *metrics);
 static const struct glass_glyph *glass_glyph_of(struct kwl_glass *glass, enum glass_size size, uint32_t codepoint);
 static const struct glass_glyph *glass_cache_glyph(struct kwl_glass *glass, enum glass_size size, uint32_t codepoint);
 static const struct glass_glyph *glass_cache_color(struct kwl_glass *glass, enum glass_size size, uint32_t codepoint, unsigned id, unsigned slot);
 static uint32_t glass_utf8_next(const char **text);
-static void glass_draw_glyph_at(struct kwl_server *server, VkCommandBuffer command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
+static void glass_draw_glyph_at(struct kwl_server *server, struct kwl_list *command, const struct glass_glyph *glyph, int32_t x, int32_t baseline, const float *color);
 static void *file_read(const char *path, size_t *size);
 static int wallpaper_load(const char *path, struct wallpaper_picture *picture);
 static int wallpaper_read(const char *path, struct wallpaper_picture *picture);
@@ -290,6 +360,7 @@ static void *prefetch_run(void *argument);
 static int prefetch_take(const char *path, struct wallpaper_picture *picture);
 static void prefetch_drop(void);
 static void glass_dark_color(const float *color, float *dark);
+static void glass_shape_glass_constants(float *constants);
 
 /* The wallpaper read ahead, when kwl_glass_prefetch started it (only the main thread starts and takes it). */
 static struct glass_prefetch glass_prefetch;
@@ -360,6 +431,10 @@ kwl_glass_open(
 	error = atlas_create(server, glass);
 	if (error != 0)
 		printf("KWL GLASS no text: font=%s errno=%d\n", server->font_path, error);
+
+	/* The glyph worker renders the glyphs drawn from now on (ws213-p005); without it the event loop renders them. */
+	if (glass->text)
+		glass_worker_start(server, glass);
 	printf("KWL STARTUP step=glyphs ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The applications' tiles; without them the marks are drawn without pictures. */
@@ -388,6 +463,10 @@ kwl_glass_close(
 	loader_join();
 	free(glass_loader.picture.data);
 	glass_loader.picture.data = NULL;
+	free(glass_loader.rows);
+	free(glass_loader.blurred);
+	glass_loader.rows = NULL;
+	glass_loader.blurred = NULL;
 
 	/* A picture read ahead that the look never took is let go too. */
 	prefetch_drop();
@@ -396,8 +475,14 @@ kwl_glass_close(
 	if (server->compose == NULL || server->compose->glass == NULL)
 		return;
 
-	/* The fonts kept open for the cache. */
+	/* The glyph worker stops before the font bytes its faces read go. */
 	glass = server->compose->glass;
+	if (glass->worker_running) {
+		kwl_glyph_worker_stop(&glass->worker);
+		glass->worker_running = 0U;
+	}
+
+	/* The fonts kept open for the cache. */
 	for (face = 0; face < glass->face_count; face++) {
 		truetype_close(glass->faces[face]);
 		free(glass->font_data[face]);
@@ -415,9 +500,9 @@ kwl_glass_close(
 
 /*
  * Draws the landscape into the look again (ws089-p007, the desktop's
- * preferences going back to no picture).  No file is read, so the event
- * loop does it at once; a picture is read on a thread instead
- * (kwl_glass_wallpaper_begin, ws138-p001 U7).
+ * preferences going back to no picture).  The wallpaper's thread draws it
+ * like a picture (ws213-p005) and kwl_glass_wallpaper_poll shows it; while
+ * the thread reads another picture the event loop draws it at once.
  *
  * The images keep their size and their descriptors, so only their pixels
  * change; the device finishes what it is drawing from them first.  The
@@ -435,8 +520,20 @@ kwl_glass_landscape(
 	if (server->compose == NULL || server->compose->glass == NULL)
 		return ENODEV;
 
+	/*
+	 * The wallpaper's thread draws it when it is free (ws213-p005), and
+	 * kwl_glass_wallpaper_poll shows it; while it reads a picture the
+	 * event loop draws the landscape itself, as before.
+	 */
+	if (!glass_loader.started) {
+		error = loader_start(server, NULL);
+		if (error == 0)
+			return 0;
+	}
+
 	/* The frames in flight read the images; they end first. */
 	started = kwl_milliseconds();
+	kwl_compose_quiesce(server);
 	(void)vkDeviceWaitIdle(server->compose->device);
 
 	/* The landscape is a picture without pixels. */
@@ -479,6 +576,7 @@ kwl_glass_resize(
 
 	/* The frames in flight read the images; they end first. */
 	started = kwl_milliseconds();
+	kwl_compose_quiesce(server);
 	(void)vkDeviceWaitIdle(server->compose->device);
 
 	/* The images of the old size go. */
@@ -548,32 +646,10 @@ kwl_glass_wallpaper_begin(
 	if (!regular)
 		return EINVAL;
 
-	/* Makes the lock with the first picture. */
-	if (!glass_loader_ready) {
-		error = pthread_mutex_init(&glass_loader.lock, NULL);
-		if (error != 0)
-			return error;
-
-		/* Later begins reuse the lock made here. */
-		glass_loader_ready = 1;
-	}
-
-	/* Gives the thread the path and an empty result to fill. */
-	memcpy(glass_loader.path, path, length + 1U);
-	memset(&glass_loader.picture, 0, sizeof(glass_loader.picture));
-	glass_loader.error = 0;
-	glass_loader.done = 0;
-
-	/* Starts the thread that reads and decodes the picture. */
-	error = pthread_create(&glass_loader.thread, NULL, loader_run, NULL);
+	/* The thread that reads, decodes and draws the picture. */
+	error = loader_start(server, path);
 	if (error != 0)
 		return error;
-
-	/*
-	 * started tells poll and close that a thread runs or waits to be
-	 * joined, and refuses another begin until then.
-	 */
-	glass_loader.started = 1;
 
 	/* Succeeded: the picture is being read. */
 	return 0;
@@ -622,20 +698,48 @@ kwl_glass_wallpaper_poll(
 	*error = glass_loader.error;
 	if (*error != 0) {
 		printf("KWL GLASS no wallpaper: path=%s errno=%d\n", glass_loader.path, *error);
+		free(glass_loader.rows);
+		free(glass_loader.blurred);
+		glass_loader.rows = NULL;
+		glass_loader.blurred = NULL;
 		return 1;
 	}
 
 	/* The look went meanwhile. */
 	if (server->compose == NULL || server->compose->glass == NULL) {
 		free(picture.data);
+		free(glass_loader.rows);
+		free(glass_loader.blurred);
+		glass_loader.rows = NULL;
+		glass_loader.blurred = NULL;
 		*error = ENODEV;
 		return 1;
 	}
 
-	/* The frames in flight read the images; they end first, then the picture is drawn. */
+	/* The frames in flight read the images; they end first. */
 	started = kwl_milliseconds();
+	kwl_compose_quiesce(server);
 	(void)vkDeviceWaitIdle(server->compose->device);
-	*error = wallpaper_draw(server, server->compose->glass, &picture);
+
+	/*
+	 * The rows the thread drew at the output's size are copied in
+	 * (ws213-p005); for an output of another size by now, or rows that
+	 * could not be made, the event loop draws the picture itself.
+	 */
+	if (glass_loader.rows != NULL &&
+	    glass_loader.width == server->width &&
+	    glass_loader.height == server->height) {
+		loader_copy(server->compose->glass);
+		free(picture.data);
+	} else {
+		*error = wallpaper_draw(server, server->compose->glass, &picture);
+	}
+
+	/* The thread's rows are let go either way. */
+	free(glass_loader.rows);
+	free(glass_loader.blurred);
+	glass_loader.rows = NULL;
+	glass_loader.blurred = NULL;
 	if (*error != 0)
 		return 1;
 
@@ -727,19 +831,6 @@ wallpaper_draw(
 	struct wallpaper_picture *given)
 {
 	struct wallpaper_picture picture;
-	uint32_t *columns;
-	uint32_t *line;
-	uint32_t *sums;
-	uint32_t *row;
-	float *small;
-	uint32_t width;
-	uint32_t height;
-	uint32_t small_width;
-	uint32_t small_height;
-	uint32_t x;
-	uint32_t y;
-	uint32_t source_y;
-	uint32_t made_y;
 	uint64_t started;
 	int error;
 
@@ -747,54 +838,98 @@ wallpaper_draw(
 	picture = *given;
 	given->data = NULL;
 
-	/* The sizes: the output's, and the frosted glass's. */
+	/* The picture into both images at the output's size; then its bytes go. */
 	started = kwl_milliseconds();
-	width = server->width;
-	height = server->height;
+	error = wallpaper_render(&picture, server->width, server->height, glass->wallpaper.map, glass->wallpaper.row_pitch, glass->blurred.map, glass->blurred.row_pitch);
+	free(picture.data);
+	if (error != 0)
+		return error;
+
+	/* The next frame copies both into their sampled images. */
+	kwl_host_image_written(&glass->wallpaper);
+	kwl_host_image_written(&glass->blurred);
+	printf("KWL STARTUP step=wallpaper-picture ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+
+	/* Succeeded: both images hold the picture. */
+	return 0;
+}
+
+/*
+ * Draws a picture (data NULL: the landscape) at an output's size into the
+ * wallpaper's rows and the frosted glass's (the output's size divided by
+ * GLASS_BLUR_SCALE), each row at its pitch in bytes.  The picture is made
+ * one output row at a time (ws035-p133): each row is packed, copied out,
+ * and added to the frosted glass's block averages, so no output-sized copy
+ * of the picture is kept.  It touches nothing but what it is given, so the
+ * wallpaper's thread runs it too (ws213-p005).  Returns 0 or ENOMEM.
+ */
+static int
+wallpaper_render(
+	const struct wallpaper_picture *picture,
+	uint32_t width,
+	uint32_t height,
+	unsigned char *rows,
+	size_t pitch,
+	unsigned char *blurred,
+	size_t blurred_pitch)
+{
+	uint32_t *columns;
+	uint32_t *line;
+	uint32_t *sums;
+	float *small;
+	float *scratch;
+	uint32_t small_width;
+	uint32_t small_height;
+	uint32_t x;
+	uint32_t y;
+	uint32_t source_y;
+	uint32_t made_y;
+
+	/* The frosted glass's size. */
 	small_width = width / GLASS_BLUR_SCALE;
 	small_height = height / GLASS_BLUR_SCALE;
 
-	/* One output row, each output column's source column, a block row's sums, and the small image. */
+	/* One output row, each output column's source column, a block row's sums, the small image and its passes' copy. */
 	line = malloc((size_t)width * sizeof(*line));
 	columns = malloc((size_t)width * sizeof(*columns));
-	sums = calloc((size_t)small_width * 3U, sizeof(*sums));
-	small = calloc((size_t)small_width * small_height * 3U, sizeof(*small));
-	if (line == NULL || columns == NULL || sums == NULL || small == NULL) {
+	sums = calloc((size_t)small_width * 3U + 1U, sizeof(*sums));
+	small = calloc((size_t)small_width * small_height * 3U + 1U, sizeof(*small));
+	scratch = calloc((size_t)small_width * small_height * 3U + 1U, sizeof(*scratch));
+	if (line == NULL || columns == NULL || sums == NULL || small == NULL || scratch == NULL) {
 		free(line);
 		free(columns);
 		free(sums);
 		free(small);
-		free(picture.data);
+		free(scratch);
 		return ENOMEM;
 	}
 
 	/* Each output column takes the source column it falls on (the nearest pixel), as a byte offset. */
-	if (picture.data != NULL) {
+	if (picture->data != NULL) {
 		for (x = 0; x < width; x++)
-			columns[x] = (uint32_t)((uint64_t)x * picture.width / width) * 3U;
+			columns[x] = (uint32_t)((uint64_t)x * picture->width / width) * 3U;
 	}
 
 	/*
 	 * Each output row: made (a row that falls on the same source row as
-	 * the one above is that row again), copied into the image, and added to
-	 * the block of the frosted glass it lies in.
+	 * the one above is that row again), copied out, and added to the block
+	 * of the frosted glass it lies in.
 	 */
 	made_y = UINT32_MAX;
 	for (y = 0; y < height; y++) {
-		if (picture.data != NULL) {
+		if (picture->data != NULL) {
 			/* The picture's row, unless the line already holds it. */
-			source_y = (uint32_t)((uint64_t)y * picture.height / height);
+			source_y = (uint32_t)((uint64_t)y * picture->height / height);
 			if (source_y != made_y)
-				wallpaper_row(&picture, columns, source_y, line, width);
+				wallpaper_row(picture, columns, source_y, line, width);
 			made_y = source_y;
 		} else {
 			/* The landscape's row. */
 			landscape_row(y, width, height, line);
 		}
 
-		/* Into the image. */
-		row = (uint32_t *)((unsigned char *)glass->wallpaper.map + (size_t)y * glass->wallpaper.row_pitch);
-		memcpy(row, line, (size_t)width * sizeof(*line));
+		/* Into the wallpaper's row. */
+		memcpy(rows + (size_t)y * pitch, line, (size_t)width * sizeof(*line));
 
 		/* Rows below the last whole block are not in the frosted glass. */
 		if (y >= small_height * GLASS_BLUR_SCALE)
@@ -806,20 +941,17 @@ wallpaper_draw(
 			blur_average(sums, &small[(size_t)(y / GLASS_BLUR_SCALE) * small_width * 3U], small_width);
 	}
 
-	/* The rows are made; the picture and the working rows are no longer needed. */
+	/* The frosted glass from the block averages. */
+	blur_fill(small, scratch, small_width, small_height, blurred, blurred_pitch);
+
+	/* The working rows are no longer needed. */
 	free(line);
 	free(columns);
 	free(sums);
-	free(picture.data);
-	printf("KWL STARTUP step=wallpaper-picture ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
-
-	/* The frosted glass. */
-	error = blur_fill(server, glass, small);
 	free(small);
-	if (error != 0)
-		return error;
+	free(scratch);
 
-	/* Succeeded: both images hold the picture. */
+	/* Succeeded: both hold the picture. */
 	return 0;
 }
 
@@ -1035,30 +1167,22 @@ blur_create(
 /*
  * Draws the frosted glass from its small image (the wallpaper averaged down
  * by GLASS_BLUR_SCALE, blur_average): blurred by repeated box passes (close
- * to a Gaussian) in place, then packed into the image.
+ * to a Gaussian) in place, with scratch as the passes' copy, then packed
+ * into its rows at their pitch.
  */
-static int
+static void
 blur_fill(
-	struct kwl_server *server,
-	struct kwl_glass *glass,
-	float *small)
+	float *small,
+	float *scratch,
+	uint32_t width,
+	uint32_t height,
+	unsigned char *blurred,
+	size_t blurred_pitch)
 {
 	uint32_t *row;
-	float *scratch;
-	uint32_t width;
-	uint32_t height;
 	uint32_t x;
 	uint32_t y;
 	unsigned pass;
-
-	/* The small image's size. */
-	width = server->width / GLASS_BLUR_SCALE;
-	height = server->height / GLASS_BLUR_SCALE;
-
-	/* The passes' working copy. */
-	scratch = calloc((size_t)width * height * 3U, sizeof(float));
-	if (scratch == NULL)
-		return ENOMEM;
 
 	/* Box passes across and down. */
 	for (pass = 0; pass < GLASS_BLUR_PASSES; pass++) {
@@ -1066,16 +1190,12 @@ blur_fill(
 		blur_pass(small, scratch, width, height, 0);
 	}
 
-	/* Into the image. */
+	/* Into the rows. */
 	for (y = 0; y < height; y++) {
-		row = (uint32_t *)((unsigned char *)glass->blurred.map + y * glass->blurred.row_pitch);
+		row = (uint32_t *)(blurred + (size_t)y * blurred_pitch);
 		for (x = 0; x < width; x++)
 			row[x] = pack_pixel(&small[((size_t)y * width + x) * 3U]);
 	}
-
-	/* Succeeded. */
-	free(scratch);
-	return 0;
 }
 
 /* Adds a packed output row to the sums of the blocks it crosses (three channels a block, red first). */
@@ -1316,6 +1436,9 @@ atlas_fill(
 						row[pen_x + x] = (value << 24) | (value << 16) | (value << 8) | value;
 					}
 				}
+
+				/* The next frame copies the new glyph into the sampled atlas. */
+				kwl_host_image_written(&glass->atlas);
 			}
 
 			/* The pen moves past it. */
@@ -1492,25 +1615,64 @@ wallpaper_read(
 	return 0;
 }
 
-/* Reads and decodes the wallpaper glass_loader names, away from the event loop. */
+/*
+ * Reads and decodes the wallpaper glass_loader names (or takes the
+ * landscape), and draws it at the output's size into rows of its own,
+ * away from the event loop (ws213-p005).
+ */
 static void *
 loader_run(
 	void *argument)
 {
 	struct wallpaper_picture picture;
+	uint32_t *rows;
+	uint32_t *blurred;
+	uint32_t small_width;
+	uint32_t small_height;
+	int drawn;
 	int error;
 
-	/* The thread needs nothing passed: glass_loader names the file. */
+	/* The thread needs nothing passed: glass_loader names the file and the size. */
 	(void)argument;
 
-	/* Reads the file and decodes the picture. */
+	/* Reads the file and decodes the picture; the landscape is a picture without pixels. */
 	memset(&picture, 0, sizeof(picture));
-	error = wallpaper_read(glass_loader.path, &picture);
+	error = 0;
+	if (!glass_loader.landscape)
+		error = wallpaper_read(glass_loader.path, &picture);
+
+	/* The rows of the wallpaper and of the frosted glass, packed at their widths. */
+	rows = NULL;
+	blurred = NULL;
+	small_width = glass_loader.width / GLASS_BLUR_SCALE;
+	small_height = glass_loader.height / GLASS_BLUR_SCALE;
+	if (error == 0) {
+		rows = malloc((size_t)glass_loader.width * glass_loader.height * sizeof(*rows) + 1U);
+		blurred = malloc((size_t)small_width * small_height * sizeof(*blurred) + 1U);
+	}
+
+	/* The picture drawn into them; without them the event loop draws it. */
+	if (rows != NULL && blurred != NULL) {
+		drawn = wallpaper_render(&picture, glass_loader.width, glass_loader.height, (unsigned char *)rows, (size_t)glass_loader.width * sizeof(*rows), (unsigned char *)blurred, (size_t)small_width * sizeof(*blurred));
+		if (drawn != 0) {
+			free(rows);
+			free(blurred);
+			rows = NULL;
+			blurred = NULL;
+		}
+	} else {
+		free(rows);
+		free(blurred);
+		rows = NULL;
+		blurred = NULL;
+	}
 
 	/* Publishes the result; done tells poll that the thread can be joined. */
 	(void)pthread_mutex_lock(&glass_loader.lock);
 
 	glass_loader.picture = picture;
+	glass_loader.rows = rows;
+	glass_loader.blurred = blurred;
 	glass_loader.error = error;
 	glass_loader.done = 1;
 
@@ -1518,6 +1680,86 @@ loader_run(
 
 	/* Succeeded: the thread ends. */
 	return NULL;
+}
+
+/*
+ * Starts the wallpaper's thread for a picture's path, or for the landscape
+ * (path NULL), at the output's size now.  Returns 0, or the errno value of
+ * making its lock or its thread.
+ */
+static int
+loader_start(
+	struct kwl_server *server,
+	const char *path)
+{
+	int error;
+
+	/* Makes the lock with the first picture. */
+	if (!glass_loader_ready) {
+		error = pthread_mutex_init(&glass_loader.lock, NULL);
+		if (error != 0)
+			return error;
+
+		/* Later starts reuse the lock made here. */
+		glass_loader_ready = 1;
+	}
+
+	/* Gives the thread the path ("-" for the landscape), the size and an empty result to fill. */
+	glass_loader.landscape = 0U;
+	if (path == NULL) {
+		glass_loader.landscape = 1U;
+		path = "-";
+	}
+
+	/* The path, the output's size now, and nothing read yet. */
+	(void)snprintf(glass_loader.path, sizeof(glass_loader.path), "%s", path);
+	glass_loader.width = server->width;
+	glass_loader.height = server->height;
+	memset(&glass_loader.picture, 0, sizeof(glass_loader.picture));
+	glass_loader.rows = NULL;
+	glass_loader.blurred = NULL;
+	glass_loader.error = 0;
+	glass_loader.done = 0;
+
+	/* Starts the thread that reads, decodes and draws the picture. */
+	error = pthread_create(&glass_loader.thread, NULL, loader_run, NULL);
+	if (error != 0)
+		return error;
+
+	/*
+	 * started tells poll and close that a thread runs or waits to be
+	 * joined, and refuses another begin until then.
+	 */
+	glass_loader.started = 1;
+
+	/* Succeeded: the picture is being read. */
+	return 0;
+}
+
+/* Copies the rows the wallpaper's thread drew into the look's images, which the next frame copies again. */
+static void
+loader_copy(
+	struct kwl_glass *glass)
+{
+	uint32_t small_width;
+	uint32_t small_height;
+	uint32_t y;
+
+	/* The frosted glass's size. */
+	small_width = glass_loader.width / GLASS_BLUR_SCALE;
+	small_height = glass_loader.height / GLASS_BLUR_SCALE;
+
+	/* The wallpaper's rows, at the image's pitch. */
+	for (y = 0; y < glass_loader.height; y++)
+		memcpy((unsigned char *)glass->wallpaper.map + (size_t)y * glass->wallpaper.row_pitch, glass_loader.rows + (size_t)y * glass_loader.width, (size_t)glass_loader.width * sizeof(uint32_t));
+
+	/* The frosted glass's rows. */
+	for (y = 0; y < small_height; y++)
+		memcpy((unsigned char *)glass->blurred.map + (size_t)y * glass->blurred.row_pitch, glass_loader.blurred + (size_t)y * small_width, (size_t)small_width * sizeof(uint32_t));
+
+	/* The next frame copies both into their sampled images. */
+	kwl_host_image_written(&glass->wallpaper);
+	kwl_host_image_written(&glass->blurred);
 }
 
 /* Waits for a wallpaper still being read (at the look's end). */
@@ -1640,7 +1882,7 @@ glass_shape_init(
 void
 glass_shape_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct glass_shape *shape)
 {
 	struct kwl_compose *compose;
@@ -1653,6 +1895,8 @@ glass_shape_draw(
 	float height;
 	VkDescriptorSet set;
 	VkPipeline pipeline;
+	int joined;
+	int visible;
 
 	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home, ws181-p008). */
 	if (server->layer_on && server->layer_opacity <= 0.0f)
@@ -1693,16 +1937,10 @@ glass_shape_draw(
 		height = (float)server->view_height;
 	}
 
-	/* Completely clipped quads cannot affect a pixel; retain a pixel of slack for viewport rounding. */
-	if (compose->backdrop_recording == 0U &&
-	    quad[2] >= 0.0f &&
-	    quad[3] >= 0.0f) {
-		if (quad[0] + quad[2] < (float)compose->scissor_now.offset.x - 1.0f ||
-		    quad[1] + quad[3] < (float)compose->scissor_now.offset.y - 1.0f ||
-		    quad[0] > (float)compose->scissor_now.offset.x + (float)compose->scissor_now.extent.width + 1.0f ||
-		    quad[1] > (float)compose->scissor_now.offset.y + (float)compose->scissor_now.extent.height + 1.0f)
-			return;
-	}
+	/* Completely clipped quads cannot affect a pixel: outside the scissor, or between the damage's rectangles (ws211-p009). */
+	visible = kwl_compose_clip_visible(compose, quad[0], quad[1], quad[2], quad[3]);
+	if (!visible)
+		return;
 
 	/* The quad in normalized device coordinates. */
 	constants[0] = 2.0f * quad[0] / width - 1.0f;
@@ -1747,6 +1985,10 @@ glass_shape_draw(
 	if (shape->dark_glass != 0U && shape->mode == MODE_GLASS)
 		constants[17] = -1.0f;
 
+	/* The glass's values that are the same over the whole shape, worked out once here (ws211-p011). */
+	if (shape->mode == MODE_GLASS)
+		glass_shape_glass_constants(constants);
+
 	/*
 	 * A shape without an image of its own is given the blurred scene under
 	 * the window being drawn when there is one (backdrop.c), else the
@@ -1760,7 +2002,9 @@ glass_shape_draw(
 
 	/* Known modes omit unused branches; other values keep the original shader. */
 	pipeline = compose->panel_pipeline;
-	if (shape->mode == MODE_GLASS)
+	if (shape->mode == MODE_GLASS && constants[17] < 0.0f)
+		pipeline = compose->panel_pipelines[KWL_PANEL_DARK_GLASS];
+	else if (shape->mode == MODE_GLASS)
 		pipeline = compose->panel_pipelines[0];
 	else if (shape->mode == MODE_SHADOW)
 		pipeline = compose->panel_pipelines[1];
@@ -1775,18 +2019,111 @@ glass_shape_draw(
 	else if (shape->mode == MODE_BLUR)
 		pipeline = compose->panel_pipelines[6];
 
+	/*
+	 * App Home's floor lines (small solid quads) are joined into one draw
+	 * (batch.c, ws211-p003 段 2, the floors first); anything else draws
+	 * the quads waiting first, then itself alone.
+	 */
+	kwl_compose_count_draw(server, pipeline, set, 1U);
+	if (server->batch_floors &&
+	    shape->mode == MODE_SOLID &&
+	    constants[17] == (float)MODE_SOLID &&
+	    quad[2] <= GLASS_BATCH_SIDE &&
+	    quad[3] <= GLASS_BATCH_SIDE) {
+		joined = kwl_batch_add(server, command, constants, set);
+		if (joined)
+			return;
+	}
+	kwl_batch_flush(server, command);
+
 	/* The chosen pipeline keeps the same constants, image and triangle pair. */
-	vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-	vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, compose->panel_layout, 0U, 1U, &set, 0U, NULL);
-	vkCmdPushConstants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
-	vkCmdDraw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
+	kwl_compose_bind(server, command, pipeline, compose->panel_layout, set);
+	kwl_list_push_constants(command, compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
+	kwl_compose_clip_draw(server, command, quad[0], quad[1], quad[2], quad[3], KWL_QUAD_VERTICES);
+	kwl_compose_count_commands(server, 1U, 1U);
+}
+
+/*
+ * Records one shape except where opaque shapes drawn after it hide it
+ * (ws211-p011): holes are the insides of those shapes (glass_opaque_inside), and the
+ * shape is drawn as the pieces of its quad around them (kwl_damage_rects_cut),
+ * each with the part of the image it covers.  The GPU then shades nothing
+ * that is drawn over anyway.  In a layer seen through (the desktop going
+ * back behind App Home) the shapes over it are not opaque, so it is drawn
+ * whole.
+ */
+void
+glass_shape_draw_except(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	const struct glass_shape *shape,
+	const float (*holes)[4],
+	unsigned hole_count)
+{
+	struct glass_shape piece;
+	float pieces[KWL_CUT_PIECES][4];
+	float across;
+	float down;
+	unsigned count;
+	unsigned index;
+
+	/* No hole: the whole shape. */
+	if (hole_count == 0U) {
+		glass_shape_draw(server, command, shape);
+		return;
+	}
+
+	/* The shapes over it are seen through in a fading layer: the whole shape. */
+	if (server->layer_on && server->layer_opacity < 1.0f) {
+		glass_shape_draw(server, command, shape);
+		return;
+	}
+
+	/* The quad less the holes worth cutting; an empty quad has nothing to cut. */
+	if (shape->quad[2] <= 0.0f || shape->quad[3] <= 0.0f)
+		return;
+	count = kwl_damage_rects_cut(shape->quad, holes, hole_count, pieces);
+
+	/* Each piece is the shape over a part of its quad, showing that part of the image. */
+	across = shape->uv[2] - shape->uv[0];
+	down = shape->uv[3] - shape->uv[1];
+	for (index = 0U; index < count; index++) {
+		piece = *shape;
+		memcpy(piece.quad, pieces[index], sizeof(piece.quad));
+		piece.uv[0] = shape->uv[0] + (pieces[index][0] - shape->quad[0]) / shape->quad[2] * across;
+		piece.uv[1] = shape->uv[1] + (pieces[index][1] - shape->quad[1]) / shape->quad[3] * down;
+		piece.uv[2] = shape->uv[0] + (pieces[index][0] + pieces[index][2] - shape->quad[0]) / shape->quad[2] * across;
+		piece.uv[3] = shape->uv[1] + (pieces[index][1] + pieces[index][3] - shape->quad[1]) / shape->quad[3] * down;
+		glass_shape_draw(server, command, &piece);
+	}
+}
+
+/*
+ * Works out the hole an opaque rounded rectangle (box: x, y, width, height)
+ * makes in the shapes under it: the box less its corner radius and one more
+ * pixel on every side, where the shader covers every pixel fully (cover 1).
+ */
+void
+glass_opaque_inside(
+	const float *box,
+	float radius,
+	float *hole)
+{
+	float inset;
+
+	/* The box shrunk by the radius and the pixel of its smoothed edge. */
+	inset = radius + 1.0f;
+	hole[0] = box[0] + inset;
+	hole[1] = box[1] + inset;
+	hole[2] = box[2] - 2.0f * inset;
+	hole[3] = box[3] - 2.0f * inset;
 }
 
 /* Draws a rounded rectangle in a solid color. */
 void
 glass_draw_solid(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float x,
 	float y,
 	float width,
@@ -1841,7 +2178,7 @@ glass_text_width(
 void
 glass_draw_text(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	enum glass_size size,
 	int32_t x,
 	int32_t baseline,
@@ -1903,7 +2240,7 @@ glass_draw_text(
 void
 glass_draw_text_centred(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	enum glass_size size,
 	int32_t centre,
 	int32_t baseline,
@@ -1931,7 +2268,7 @@ glass_draw_text_centred(
 void
 glass_draw_text_middle(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	enum glass_size size,
 	int32_t x,
 	int32_t baseline,
@@ -2044,7 +2381,7 @@ glass_draw_text_middle(
 void
 glass_draw_glyph(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	enum glass_size size,
 	unsigned index,
 	int32_t x,
@@ -2105,13 +2442,41 @@ glass_large_prepare(
 	if (glass->large_pixels == pixels)
 		return 0;
 
-	/* The image the first time; later the frames in flight that read it end before it is drawn again. */
+	/* A size the glyph worker is rendering, or could not render (ws213-p005). */
+	if (glass->large_wanted == pixels)
+		return EAGAIN;
+	if (glass->large_failed == pixels)
+		return EINVAL;
+
+	/*
+	 * The image the first time; later the frames in flight that read it end
+	 * before the event loop draws it again (the glyph worker's digits are
+	 * written at the start of a walk, when no frame is in flight).
+	 */
 	if (glass->large.image == VK_NULL_HANDLE) {
 		result = kwl_host_image_create(server->compose, GLASS_LARGE_WIDTH, GLASS_LARGE_HEIGHT, server->compose->sampler, &glass->large);
 		if (result != VK_SUCCESS)
 			return EIO;
-	} else {
+	} else if (!glass->worker_running) {
+		kwl_compose_quiesce(server);
 		(void)vkDeviceWaitIdle(server->compose->device);
+	}
+
+	/*
+	 * With the glyph worker the digits are rendered there and written at
+	 * the start of a later walk (ws213-p005); the caller draws an atlas
+	 * size until then.
+	 */
+	if (glass->worker_running) {
+		error = large_ask(glass, pixels);
+		if (error != 0 && error != EAGAIN) {
+			printf("KWL GLASS large pixels=%u errno=%d\n", pixels, error);
+			glass->large_failed = pixels;
+			glass->large_wanted = 0U;
+		}
+
+		/* EAGAIN while the worker renders them, or why they cannot be. */
+		return error;
 	}
 
 	/* The digits drawn at the size; none is usable until they all are. */
@@ -2168,7 +2533,7 @@ glass_large_text_width(
 void
 glass_draw_large_text(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t baseline,
 	const char *text,
@@ -2217,7 +2582,7 @@ glass_draw_large_text(
 void
 glass_draw_icon(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned icon,
 	int32_t x,
 	int32_t y,
@@ -2261,7 +2626,7 @@ glass_draw_icon(
 void
 glass_draw_app_tile_reflection(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned icon,
 	float x,
 	float y,
@@ -2334,7 +2699,7 @@ glass_draw_app_tile_reflection(
 void
 glass_draw_app_tile(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned icon,
 	float x,
 	float y,
@@ -2440,7 +2805,7 @@ glass_draw_app_tile(
 void
 glass_draw_mark(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t y,
 	unsigned pixels,
@@ -2545,6 +2910,122 @@ glass_wallpaper_set(
 {
 	/* The full-size image. */
 	return server->compose->glass->wallpaper.set;
+}
+
+/* Gives the version of the wallpaper's image (it grows with each new picture), for the keys of pictures that show it. */
+uint32_t
+glass_wallpaper_version(
+	struct kwl_server *server)
+{
+	/* The full-size image's version. */
+	return server->compose->glass->wallpaper.version;
+}
+
+/*
+ * Guards the glyphs a layer's picture being recorded uses (layer-cache.c,
+ * review-4 H2): every glyph looked up from now on is used later than the
+ * guard's start, and its eviction before glass_glyph_guard_end is counted.
+ * A guard already up (another picture of the same submission) stays.
+ */
+void
+glass_glyph_guard_begin(
+	struct kwl_server *server)
+{
+	struct kwl_glass *glass;
+
+	/* The first picture of a submission starts the guard. */
+	glass = server->compose->glass;
+	if (glass->guard_clock == 0U)
+		glass->guard_clock = glass->clock + 1U;
+}
+
+/* Ends the guard when the pictures completed; gives how many guarded glyphs were evicted meanwhile. */
+uint32_t
+glass_glyph_guard_end(
+	struct kwl_server *server)
+{
+	struct kwl_glass *glass;
+	uint32_t evictions;
+
+	/* The count, and no guard. */
+	glass = server->compose->glass;
+	evictions = glass->guarded_evictions;
+	glass->guard_clock = 0U;
+	glass->guarded_evictions = 0U;
+	return evictions;
+}
+
+/*
+ * Redraws the output when the glyph worker has rendered glyphs (ws213-p005):
+ * the next walk writes them into their cells and draws the text that
+ * waited for them.  The event loop calls it every pass.
+ */
+void
+kwl_glass_glyphs_poll(
+	struct kwl_server *server)
+{
+	struct kwl_glass *glass;
+	int ready;
+
+	/* Without the look or its worker nothing is rendered elsewhere. */
+	if (server->compose == NULL || server->compose->glass == NULL)
+		return;
+	glass = server->compose->glass;
+	if (!glass->worker_running)
+		return;
+
+	/* Whether rendered glyphs wait to be taken. */
+	ready = kwl_glyph_worker_ready(&glass->worker);
+	if (!ready)
+		return;
+
+	/* The whole output again, for the text drawn without them. */
+	server->dirty = 1;
+}
+
+/*
+ * Writes the glyphs the glyph worker rendered into their cells and the
+ * large digits' image, in the order they were asked for, so that a cell
+ * given twice keeps the later glyph (ws213-p005).  It runs at the start of
+ * a walk, the only time the look's images are written while the frames
+ * read them.
+ */
+void
+kwl_glass_glyphs_take(
+	struct kwl_compose *compose)
+{
+	struct kwl_glass *glass;
+	struct kwl_glyph_job *job;
+	struct kwl_glyph_job *next;
+
+	/* Without the look or its worker there is nothing to take. */
+	glass = compose->glass;
+	if (glass == NULL || !glass->worker_running)
+		return;
+
+	/* Each rendered glyph, oldest first, into what asked for it. */
+	job = kwl_glyph_worker_take(&glass->worker);
+	while (job != NULL) {
+		next = job->next;
+		if (job->kind == GLASS_JOB_CELL) {
+			glass_take_cell(glass, job);
+		} else {
+			glass_take_large(glass, job);
+		}
+
+		/* The job is done with. */
+		kwl_glyph_job_free(job);
+		job = next;
+	}
+}
+
+/* Tells whether the applications' tiles are drawn (1) or not yet (0). */
+uint32_t
+glass_tiles_ready(
+	struct kwl_server *server)
+{
+	/* The tiles' image is drawn once. */
+	return server->compose->glass->tiles_ready != 0U ? 1U : 0U;
 }
 
 /*
@@ -2668,7 +3149,8 @@ tiles_create(
 		pen_y += pixels + GLASS_TILE_GAP;
 	}
 
-	/* Succeeded: the tiles are drawn. */
+	/* Succeeded: the tiles are drawn, and the next frame copies them into the sampled image. */
+	kwl_host_image_written(&glass->tiles);
 	glass->tiles_ready = 1U;
 	return 0;
 }
@@ -2776,6 +3258,9 @@ large_put(
 			row[pen_x + x] = (value << 24) | (value << 16) | (value << 8) | value;
 		}
 	}
+
+	/* The next frame copies the new glyph into the sampled image. */
+	kwl_host_image_written(&glass->large);
 }
 
 /* Gives the large glyph of a character: a digit or the colon (NULL for any other). */
@@ -2884,6 +3369,9 @@ atlas_put(
 			row[x + column] = (value << 24) | (value << 16) | (value << 8) | value;
 		}
 	}
+
+	/* The next frame copies the new coverage into the sampled atlas. */
+	kwl_host_image_written(&glass->atlas);
 }
 
 /*
@@ -2919,10 +3407,70 @@ glass_open_face(
 	/* Kept until the look closes. */
 	glass->faces[glass->face_count] = face;
 	glass->font_data[glass->face_count] = data;
+	glass->font_size[glass->face_count] = size;
 	glass->face_count++;
+
+	/* The glyph worker opens its own face of it when a glyph first needs it. */
+	glass_worker_font(glass, glass->face_count - 1U);
 
 	/* Succeeded: the font can render glyphs. */
 	return 0;
+}
+
+/*
+ * Starts the glyph worker (ws213-p005) and gives it the fonts open now;
+ * the main thread's wake pipe tells the event loop of rendered glyphs.
+ * Without it the cache's glyphs are rendered by the event loop as before.
+ */
+static void
+glass_worker_start(
+	struct kwl_server *server,
+	struct kwl_glass *glass)
+{
+	unsigned slot;
+	int error;
+
+	/* The thread. */
+	error = kwl_glyph_worker_start(&glass->worker, server->wake[1]);
+	if (error != 0) {
+		printf("KWL GLASS worker unavailable errno=%d\n", error);
+		return;
+	}
+
+	/* The cache asks it from now on. */
+	glass->worker_running = 1U;
+
+	/* The fonts opened so far; a later one is given when it opens. */
+	for (slot = 0U; slot < glass->face_count; slot++)
+		glass_worker_font(glass, slot);
+	printf("KWL GLASS worker started faces=%u\n", glass->face_count);
+}
+
+/* Gives the glyph worker a font the look opened: its bytes, and the first font's companions. */
+static void
+glass_worker_font(
+	struct kwl_glass *glass,
+	unsigned slot)
+{
+	struct kwl_glyph_font font;
+
+	/* Without the worker the event loop renders on its own faces. */
+	if (!glass->worker_running)
+		return;
+
+	/* The bytes, kept unchanged until the look closes (after the worker stops). */
+	memset(&font, 0, sizeof(font));
+	font.data = glass->font_data[slot];
+	font.size = glass->font_size[slot];
+
+	/* The first font with the companions atlas_create opened it with (ws090-p020). */
+	if (slot == 0U) {
+		font.bold_path = KEILAND_FONT_BOLD;
+		font.next_path = KEILAND_FONT_FALLBACK_MONO;
+	}
+
+	/* The worker reads it under its lock. */
+	kwl_glyph_worker_font(&glass->worker, slot, &font);
 }
 
 /* Finds the glyph of a character at a size: the atlas's for ASCII, the cache's for any other; NULL for none. */
@@ -2967,6 +3515,7 @@ glass_cache_glyph(
 	unsigned index;
 	unsigned which;
 	unsigned id;
+	unsigned pending;
 	int error;
 
 	/* No cache without room or fonts. */
@@ -3035,6 +3584,8 @@ glass_cache_glyph(
 	if (id == 0U && glass->emoji_tried != 0U && glass->emoji_face >= 0) {
 		id = truetype_glyph_index(glass->faces[glass->emoji_face], codepoint);
 		if (id != 0U) {
+			if (glass->guard_clock != 0U && glass->cache[oldest].codepoint != 0U && glass->cache[oldest].used >= glass->guard_clock)
+				glass->guarded_evictions++;
 			glyph = glass_cache_color(glass, size, codepoint, id, oldest);
 			return glyph;
 		}
@@ -3054,27 +3605,52 @@ glass_cache_glyph(
 	if (metrics.width > GLASS_CELL || metrics.height > GLASS_CELL)
 		return NULL;
 
-	/* The cell's place in the atlas. */
+	/* The cell's place in the atlas; a glyph a picture in flight uses that it held is counted. */
 	cell = &glass->cache[oldest];
+	if (glass->guard_clock != 0U && cell->codepoint != 0U && cell->used >= glass->guard_clock)
+		glass->guarded_evictions++;
 	per_row = GLASS_ATLAS_WIDTH / GLASS_CELL;
 	cell->glyph.x = (oldest % per_row) * GLASS_CELL;
 	cell->glyph.y = glass->cache_top + (oldest / per_row) * GLASS_CELL;
 
-	/* The glyph's coverage, into the cell. */
-	memset(bitmap, 0, sizeof(bitmap));
-	if (metrics.width != 0U && metrics.height != 0U) {
-		error = truetype_render_glyph(face, id, &metrics, bitmap, metrics.width, sizeof(bitmap));
-		if (error != 0)
-			return NULL;
+	/*
+	 * The cell's new assignment: a glyph worker's result for an earlier one
+	 * is not written into it (ws213-p005).
+	 */
+	glass->cell_generation++;
+	cell->generation = glass->cell_generation;
+
+	/*
+	 * A glyph with a box is rendered by the glyph worker when it runs: the
+	 * cell waits for its coverage, written at the start of a later walk
+	 * (ws213-p005).  Otherwise (no worker, or the job could not be made)
+	 * the event loop renders it now.
+	 */
+	pending = 0U;
+	if (glass->worker_running && metrics.width != 0U && metrics.height != 0U) {
+		error = glass_ask_cell(glass, which, id, size, oldest, &metrics);
+		if (error == 0)
+			pending = 1U;
 	}
 
-	/* Into the cell. */
-	atlas_put(glass, bitmap, cell->glyph.x, cell->glyph.y, metrics.width, metrics.height);
+	/* The glyph's coverage, into the cell, when the event loop renders it. */
+	if (!pending) {
+		memset(bitmap, 0, sizeof(bitmap));
+		if (metrics.width != 0U && metrics.height != 0U) {
+			error = truetype_render_glyph(face, id, &metrics, bitmap, metrics.width, sizeof(bitmap));
+			if (error != 0)
+				return NULL;
+		}
 
-	/* The cell now holds this character's glyph. */
+		/* Into the cell. */
+		atlas_put(glass, bitmap, cell->glyph.x, cell->glyph.y, metrics.width, metrics.height);
+	}
+
+	/* The cell now holds this character's glyph, or waits for it. */
 	cell->codepoint = codepoint;
 	cell->size = (unsigned)size;
 	cell->glyph.color = 0;
+	cell->glyph.pending = pending;
 	cell->glyph.width = metrics.width;
 	cell->glyph.height = metrics.height;
 	cell->glyph.left = metrics.left;
@@ -3082,7 +3658,7 @@ glass_cache_glyph(
 	cell->glyph.advance = metrics.advance;
 	glass->clock++;
 	cell->used = glass->clock;
-	printf("KWL GLASS glyph codepoint=U+%04X size=%u face=%u cell=%u\n", codepoint, (unsigned)size, which, oldest);
+	printf("KWL GLASS glyph codepoint=U+%04X size=%u face=%u cell=%u pending=%u\n", codepoint, (unsigned)size, which, oldest, pending);
 
 	/* Succeeded: the glyph. */
 	return &cell->glyph;
@@ -3128,10 +3704,14 @@ glass_cache_color(
 		memcpy(row + cell->glyph.x, image.pixels + (size_t)line * (size_t)image.width, (size_t)image.width * sizeof(uint32_t));
 	}
 
-	/* The colours are in the atlas now. */
+	/* The colours are in the atlas now, and the next frame copies them into the sampled atlas. */
 	free(image.pixels);
+	kwl_host_image_written(&glass->atlas);
 
-	/* Succeeded: the cell holds the character's colour glyph. */
+	/* Succeeded: the cell holds the character's colour glyph, a new assignment (a worker's result for an earlier one is not written). */
+	glass->cell_generation++;
+	cell->generation = glass->cell_generation;
+	cell->glyph.pending = 0U;
 	cell->codepoint = codepoint;
 	cell->size = (unsigned)size;
 	cell->glyph.width = (uint32_t)image.width;
@@ -3144,6 +3724,213 @@ glass_cache_color(
 	cell->used = glass->clock;
 	printf("KWL GLASS glyph codepoint=U+%04X size=%u face=emoji cell=%u color=1\n", codepoint, (unsigned)size, slot);
 	return &cell->glyph;
+}
+
+/*
+ * Asks the glyph worker for a cell's glyph (ws213-p005): the font, the
+ * glyph and the size, the box measured here and the cell's assignment.
+ * Returns 0, or ENOMEM with nothing asked (the caller renders it itself).
+ */
+static int
+glass_ask_cell(
+	struct kwl_glass *glass,
+	unsigned font,
+	unsigned glyph,
+	enum glass_size size,
+	unsigned slot,
+	const struct truetype_glyph *metrics)
+{
+	struct kwl_glyph_job *job;
+
+	/* The job, the worker's from its submission. */
+	job = calloc(1, sizeof(*job));
+	if (job == NULL)
+		return ENOMEM;
+
+	/* What to render, and the cell's assignment it is for. */
+	job->font = font;
+	job->pixels = glass_pixels[size];
+	job->glyph = glyph;
+	job->width = metrics->width;
+	job->height = metrics->height;
+	job->kind = GLASS_JOB_CELL;
+	job->slot = slot;
+	job->generation = glass->cache[slot].generation;
+
+	/* After every glyph asked for before it. */
+	kwl_glyph_worker_submit(&glass->worker, job);
+
+	/* Succeeded: the cell waits for the worker. */
+	return 0;
+}
+
+/*
+ * Writes a rendered glyph into its cell, unless the cell was given to
+ * another glyph since it was asked for; a glyph the worker could not
+ * render leaves the cell drawing nothing.
+ */
+static void
+glass_take_cell(
+	struct kwl_glass *glass,
+	const struct kwl_glyph_job *job)
+{
+	struct glass_cached *cell;
+
+	/* The cell holds another glyph now, or no longer waits. */
+	cell = &glass->cache[job->slot];
+	if (cell->generation != job->generation || !cell->glyph.pending)
+		return;
+
+	/* A glyph that could not be rendered is drawn as nothing. */
+	if (job->error != 0) {
+		cell->glyph.pending = 0U;
+		cell->glyph.width = 0U;
+		cell->glyph.height = 0U;
+		printf("KWL GLASS glyph codepoint=U+%04X cell=%u errno=%d\n", cell->codepoint, job->slot, job->error);
+		return;
+	}
+
+	/* The coverage into the cell; the walk's copy takes the atlas. */
+	atlas_put(glass, job->bitmap, cell->glyph.x, cell->glyph.y, job->metrics.width, job->metrics.height);
+	cell->glyph.pending = 0U;
+}
+
+/*
+ * Asks the glyph worker for the large digits at a size (ws213-p005): their
+ * boxes are measured here and placed side by side as large_fill places
+ * them, and every glyph with a box is asked for.  Returns EAGAIN while
+ * they are being rendered (the caller draws an atlas size meanwhile), or
+ * the errno value of measuring them.
+ */
+static int
+large_ask(
+	struct kwl_glass *glass,
+	unsigned pixels)
+{
+	struct truetype_glyph metrics;
+	struct truetype_face *face;
+	struct glass_glyph *glyph;
+	struct kwl_glyph_job *job;
+	uint32_t codepoint;
+	uint32_t pen_x;
+	unsigned index;
+	unsigned id;
+	int error;
+
+	/* None usable until all are written; a request of another size makes the earlier one's results stale. */
+	glass->large_pixels = 0U;
+	glass->large_generation++;
+	glass->large_wanted = pixels;
+	glass->large_expected = 0U;
+	glass->large_received = 0U;
+	memset(glass->large_glyphs, 0, sizeof(glass->large_glyphs));
+
+	/* The first font at the size (the cache sets its own size again). */
+	face = glass->faces[0];
+	error = truetype_set_pixel_size(face, pixels);
+	if (error != 0)
+		return EINVAL;
+
+	/* Each glyph's box and place from the left, as large_fill makes them. */
+	pen_x = 0;
+	for (index = 0; index < GLASS_LARGE_GLYPHS; index++) {
+		/* Its character: a digit, or the colon last. */
+		codepoint = (uint32_t)'0' + index;
+		if (index == GLASS_LARGE_COLON)
+			codepoint = ':';
+		id = truetype_glyph_index(face, codepoint);
+
+		/* Its box, which the bitmap and the image must hold. */
+		error = truetype_glyph_metrics(face, id, &metrics);
+		if (error != 0)
+			return error;
+		if (metrics.width > GLASS_LARGE_SIDE || metrics.height > GLASS_LARGE_SIDE)
+			return ENOSPC;
+		if (metrics.height > GLASS_LARGE_HEIGHT || pen_x + metrics.width > GLASS_LARGE_WIDTH)
+			return ENOSPC;
+
+		/* Its place and metrics, drawn once all are written. */
+		glyph = &glass->large_glyphs[index];
+		glyph->x = pen_x;
+		glyph->y = 0;
+		glyph->width = metrics.width;
+		glyph->height = metrics.height;
+		glyph->left = metrics.left;
+		glyph->top = metrics.top;
+		glyph->advance = metrics.advance;
+		pen_x += metrics.width + 1U;
+
+		/* A glyph without a box needs nothing rendered. */
+		if (metrics.width == 0U || metrics.height == 0U)
+			continue;
+
+		/* The job, the worker's from its submission. */
+		job = calloc(1, sizeof(*job));
+		if (job == NULL)
+			return ENOMEM;
+		job->font = 0U;
+		job->pixels = pixels;
+		job->glyph = id;
+		job->width = metrics.width;
+		job->height = metrics.height;
+		job->kind = GLASS_JOB_LARGE;
+		job->slot = index;
+		job->generation = glass->large_generation;
+		kwl_glyph_worker_submit(&glass->worker, job);
+		glass->large_expected++;
+	}
+
+	/* Digits without a box are drawn at once (as nothing). */
+	if (glass->large_expected == 0U) {
+		glass->large_pixels = pixels;
+		glass->large_wanted = 0U;
+		return 0;
+	}
+
+	/* The digits are being rendered. */
+	return EAGAIN;
+}
+
+/*
+ * Writes a rendered large digit into the large image; the first of a size
+ * clears the image, and the last makes the digits usable at their size.
+ * A digit the worker could not render fails the size, which is not asked
+ * for again.
+ */
+static void
+glass_take_large(
+	struct kwl_glass *glass,
+	const struct kwl_glyph_job *job)
+{
+	const struct glass_glyph *glyph;
+
+	/* A request of another size since, or one that failed. */
+	if (job->generation != glass->large_generation || glass->large_wanted == 0U)
+		return;
+
+	/* A digit that could not be rendered fails the size. */
+	if (job->error != 0) {
+		printf("KWL GLASS large pixels=%u errno=%d\n", glass->large_wanted, job->error);
+		glass->large_failed = glass->large_wanted;
+		glass->large_wanted = 0U;
+		return;
+	}
+
+	/* The first digit of the size starts from a transparent image. */
+	if (glass->large_received == 0U)
+		memset(glass->large.map, 0, glass->large.row_pitch * GLASS_LARGE_HEIGHT);
+
+	/* The digit at its place. */
+	glyph = &glass->large_glyphs[job->slot];
+	large_put(glass, job->bitmap, glyph->x, job->metrics.width, job->metrics.height);
+	glass->large_received++;
+
+	/* The last digit makes them usable. */
+	if (glass->large_received < glass->large_expected)
+		return;
+	glass->large_pixels = glass->large_wanted;
+	glass->large_wanted = 0U;
+	printf("KWL GLASS large pixels=%u\n", glass->large_pixels);
 }
 
 /* Reads one UTF-8 character and moves past it; a malformed byte reads as U+FFFD and is passed alone. */
@@ -3198,7 +3985,7 @@ glass_utf8_next(
 static void
 glass_draw_glyph_at(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct glass_glyph *glyph,
 	int32_t x,
 	int32_t baseline,
@@ -3212,6 +3999,18 @@ glass_draw_glyph_at(
 	if (glyph->width == 0U || glyph->height == 0U)
 		return;
 
+	/*
+	 * A glyph the worker is still rendering is not drawn this time
+	 * (ws213-p005): the output is drawn again when it is rendered, and a
+	 * layer's picture recorded without it is counted with the guard's
+	 * evictions, so that it is drawn again too.
+	 */
+	if (glyph->pending) {
+		if (glass->guard_clock != 0U)
+			glass->guarded_evictions++;
+		return;
+	}
+
 	/* The glyph's pixels: coverage in the colour, or a colour glyph as an image (ws102-p019). */
 	glass_shape_init(&shape, (float)(x + glyph->left), (float)(baseline - glyph->top), (float)glyph->width, (float)glyph->height);
 	shape.mode = MODE_TEXT;
@@ -3224,6 +4023,53 @@ glass_draw_glyph_at(
 	memcpy(shape.color, color, sizeof(shape.color));
 	shape.set = glass->atlas.set;
 	glass_shape_draw(server, command, &shape);
+}
+
+/*
+ * Works out a glass shape's values that are the same over the whole shape
+ * (ws211-p011), from its constants as pushed (its final colour and mode),
+ * into the texture slot the glass does not sample by: whether it is white
+ * (step(0.9, the least of its colour's channels)), whether it is dark glass
+ * (step(mode, -0.5)), its sheen from the top (0.05 less as it is flatter,
+ * none at shape.z 1) and one over its box's height (at least 1).  The
+ * shader once worked each of them out for every pixel.
+ */
+static void
+glass_shape_glass_constants(
+	float *constants)
+{
+	float least;
+	float flat;
+	float height;
+
+	/* Glass whose colour is white in every channel is lifted over a dark wallpaper. */
+	least = constants[12];
+	if (constants[13] < least)
+		least = constants[13];
+	if (constants[14] < least)
+		least = constants[14];
+	constants[4] = 0.0f;
+	if (least >= 0.9f)
+		constants[4] = 1.0f;
+
+	/* Dark glass (mode -1) is darkened over a bright wallpaper. */
+	constants[5] = 0.0f;
+	if (constants[17] <= -0.5f)
+		constants[5] = 1.0f;
+
+	/* The sheen from the top, less on flatter glass (shape.z clamped to 0 to 1). */
+	flat = constants[18];
+	if (flat < 0.0f)
+		flat = 0.0f;
+	if (flat > 1.0f)
+		flat = 1.0f;
+	constants[6] = 0.05f * (1.0f - flat);
+
+	/* How far down the box a pixel is, as a share of its height. */
+	height = constants[11];
+	if (height < 1.0f)
+		height = 1.0f;
+	constants[7] = 1.0f / height;
 }
 
 /*

@@ -93,7 +93,7 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 
 ## WS141（Raspberry Pi 4 の GPU）の GPL の参照の扱い（2026-10-04 ユーザー）
 
-Linux の vc4・v3d（GPL-2.0）から作る作業の文書は `plan/ws141/temp/` に置き commit しない（書き写し可）。zedBSD の code を書く前に定数を全て一括で独自の名前に変え、WS の最後に license と字面・設計の類似を監査する。BLOB は `userland/firmware/` へ移して file から load。register の定義と packet の形は MIT の Mesa（`src/broadcom/`）・Broadcom の公開の文書・device tree の binding から取り、file ごとに license を監査する。**改訂（2026-10-04 ユーザー、クリックの回答「事実として使う」）**: V3D・HVS・pixelvalve・HDMI の register の offset と bit は GPL の header にしか無いので、値はハードウェアの事実として使ってよい。名前は一括で独自に改名し、配置・comment・構造は写さず自分で書き、WS の最後の類似の監査で確かめる。zedBSD の code は Zlib。詳細は [WS141](ws141/ws.md) の「ライセンスの扱い」。範囲は WS141 と [WS037](ws037/ws.md)（nvrtx、2026-10-04 ユーザー「やりかたはVC4と同じです」。GSP の firmware は `userland/firmware/`）だけ（他の WS の GPL の参照には適用しない）。
+Linux の vc4・v3d（GPL-2.0）から作る作業の文書は `plan/ws141/temp/` に置き commit しない（書き写し可）。zedBSD の code を書く前に定数を全て一括で独自の名前に変え、WS の最後に license と字面・設計の類似を監査する。BLOB は `userland/firmware/` へ移して file から load。register の定義と packet の形は MIT の Mesa（`src/broadcom/`）・Broadcom の公開の文書・device tree の binding から取り、file ごとに license を監査する。**改訂（2026-10-04 ユーザー、クリックの回答「事実として使う」）**: V3D・HVS・pixelvalve・HDMI の register の offset と bit は GPL の header にしか無いので、値はハードウェアの事実として使ってよい。名前は一括で独自に改名し、配置・comment・構造は写さず自分で書き、WS の最後の類似の監査で確かめる。zedBSD の code は Zlib。詳細は [WS141](ws141/ws.md) の「ライセンスの扱い」。範囲は WS141 と [WS037](ws037/ws.md)（nvrtx、2026-10-04 ユーザー「やりかたはVC4と同じです」。GSP の firmware は `userland/firmware/`）と [WS214](ws214/ws.md)（Pi 4 の HVS の plane、2026-10-12 ユーザー（クリック）「WS214 にも広げる」: 公開の文書の無い HVS5 の scaled の plane の値も同じ規則で使う、値ごとの出典は `plan/ws214/phase003/hvs-values.md`）だけ（他の WS の GPL の参照には適用しない）。
 
 ## 決定の出典
 
@@ -226,3 +226,9 @@ user「AX211のpassthruは、きちんとLinuxドライバをblacklistして再�
 ## 寸法の単位（2026-10-06 ユーザー）
 
 「Pixel単位で話していますが、あとでDPIスケーリングを導入したいので、デフォルトDPIでの論理Pixelだと理解してください。」→ ユーザーと計画が言う px は既定の DPI での論理 px。compositor・libkeiland・app は寸法を論理 px の定数で持ち、将来の DPI scaling の倍率を掛ける所を散らさない。
+
+## 画像の処理は GPU で（2026-10-12 ユーザー）
+
+ユーザー:「PI4のような低消費電力のモバイルSoCでは、画像をCPUで触ると、体験を損ないます。すべてGPUで処理する必要があります。5330のCPUは強力なので、CPUでも問題なかったんだと思います。スマホのゲーム移植ではよくあることです。」→ compositor・libkeiland・desktop の app・GPU の driver（kernel）は、描画の毎 frame の経路で画素を CPU で触らない（縮小・合成・blur・色の変換・tiling の並べ替え（raster→UIF など）・写し）。GPU の command（描画の pass・vkCmdBlitImage・vkCmdCopyImage・TLB copy・TFU など）で行う。CPU で画素を触るのは、file の decode（jail の中）と、起動の時・内容が変わった時の一度だけの用意に限り、その時も結果を GPU の側で使い回す。5330 で速くても Pi 4 で確かめる。既存の CPU の経路は WS141 p013 と以後の Phase で順に GPU へ移す。
+
+補い（2026-10-12 ユーザー）:「GPUでglassをやってほしかったのですが、以前あなたがCPUでやりたいと言ってそういう実装にしたのです。GPUでできるならそれがいいです。」→ glass（backdrop の blur・合成）は GPU だけで行う（画面外の texture に描く → fragment shader で縮小と blur の段 → blur した texture を sample して板を合成）。CPU への書き戻しはしない。Pi 4 では WS141 の案 (A)（GPU の描画の出力を UIF で持つ）がその前提。

@@ -109,21 +109,23 @@ struct glass_shape {
 };
 
 void glass_shape_init(struct glass_shape *shape, float x, float y, float width, float height);
-void glass_shape_draw(struct kwl_server *server, VkCommandBuffer command, const struct glass_shape *shape);
-void glass_draw_solid(struct kwl_server *server, VkCommandBuffer command, float x, float y, float width, float height, float radius, const float *color);
+void glass_shape_draw(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape);
+void glass_shape_draw_except(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape, const float (*holes)[4], unsigned hole_count);
+void glass_opaque_inside(const float *box, float radius, float *hole);
+void glass_draw_solid(struct kwl_server *server, struct kwl_list *command, float x, float y, float width, float height, float radius, const float *color);
 int32_t glass_text_width(struct kwl_server *server, enum glass_size size, const char *text);
-void glass_draw_text(struct kwl_server *server, VkCommandBuffer command, enum glass_size size, int32_t x, int32_t baseline, const char *text, int32_t limit, const float *color);
-void glass_draw_text_middle(struct kwl_server *server, VkCommandBuffer command, enum glass_size size, int32_t x, int32_t baseline, const char *text, int32_t limit, const float *color);
-void glass_draw_text_centred(struct kwl_server *server, VkCommandBuffer command, enum glass_size size, int32_t centre, int32_t baseline, const char *text, int32_t limit, const float *color);
-void glass_draw_glyph(struct kwl_server *server, VkCommandBuffer command, enum glass_size size, unsigned index, int32_t x, int32_t baseline, const float *color);
+void glass_draw_text(struct kwl_server *server, struct kwl_list *command, enum glass_size size, int32_t x, int32_t baseline, const char *text, int32_t limit, const float *color);
+void glass_draw_text_middle(struct kwl_server *server, struct kwl_list *command, enum glass_size size, int32_t x, int32_t baseline, const char *text, int32_t limit, const float *color);
+void glass_draw_text_centred(struct kwl_server *server, struct kwl_list *command, enum glass_size size, int32_t centre, int32_t baseline, const char *text, int32_t limit, const float *color);
+void glass_draw_glyph(struct kwl_server *server, struct kwl_list *command, enum glass_size size, unsigned index, int32_t x, int32_t baseline, const float *color);
 int32_t glass_glyph_advance(struct kwl_server *server, enum glass_size size, unsigned index);
 int glass_large_prepare(struct kwl_server *server, unsigned pixels);
 int32_t glass_large_text_width(struct kwl_server *server, const char *text);
-void glass_draw_large_text(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t baseline, const char *text, const float *color);
-void glass_draw_icon(struct kwl_server *server, VkCommandBuffer command, unsigned icon, int32_t x, int32_t y, unsigned pixels, const float *color);
-void glass_draw_app_tile(struct kwl_server *server, VkCommandBuffer command, unsigned icon, float x, float y, float pixels, float opacity, float lighten, enum glass_hole hole);
-void glass_draw_app_tile_reflection(struct kwl_server *server, VkCommandBuffer command, unsigned icon, float x, float y, float pixels, float height, float opacity);
-void glass_draw_mark(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t y, unsigned pixels, enum glass_mark_look look, float opacity);
+void glass_draw_large_text(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t baseline, const char *text, const float *color);
+void glass_draw_icon(struct kwl_server *server, struct kwl_list *command, unsigned icon, int32_t x, int32_t y, unsigned pixels, const float *color);
+void glass_draw_app_tile(struct kwl_server *server, struct kwl_list *command, unsigned icon, float x, float y, float pixels, float opacity, float lighten, enum glass_hole hole);
+void glass_draw_app_tile_reflection(struct kwl_server *server, struct kwl_list *command, unsigned icon, float x, float y, float pixels, float height, float opacity);
+void glass_draw_mark(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t y, unsigned pixels, enum glass_mark_look look, float opacity);
 VkDescriptorSet glass_wallpaper_set(struct kwl_server *server);
 
 /*
@@ -146,41 +148,54 @@ struct glass_bar_colours {
 void kwl_glass_bar_colours(struct kwl_server *server, struct glass_bar_colours *colours);
 
 /* The applications' icons in the system bar and their previews (apps-bar.c), drawn with the shell's marks and Wiseview's tiles (shell.c). */
-int kwl_apps_bar_draw(struct kwl_server *server, VkCommandBuffer command, unsigned slot);
-void kwl_apps_bar_draw_popup(struct kwl_server *server, VkCommandBuffer command);
-void kwl_glass_draw_app_mark(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, int32_t x, int32_t middle, int32_t size, float alpha);
-void kwl_switch_draw(struct kwl_server *server, VkCommandBuffer command);
+int kwl_apps_bar_draw(struct kwl_server *server, struct kwl_list *command, unsigned slot);
+void kwl_apps_bar_draw_popup(struct kwl_server *server, struct kwl_list *command);
+void kwl_glass_draw_app_mark(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, int32_t x, int32_t middle, int32_t size, float alpha);
+void kwl_switch_draw(struct kwl_server *server, struct kwl_list *command);
 
 /* The power dialog over everything but the cursor (power-dialog.c, ws099-p037). */
-void kwl_power_dialog_draw(struct kwl_server *server, VkCommandBuffer command);
-void kwl_glass_draw_preview(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height, int over);
+void kwl_power_dialog_draw(struct kwl_server *server, struct kwl_list *command);
+void kwl_glass_draw_preview(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, int32_t x, int32_t y, int32_t width, int32_t height, int over);
 
 /* The login screen in place of the desktop (greeter.c). */
-void kwl_greeter_draw(struct kwl_server *server, VkCommandBuffer command);
+void kwl_greeter_draw(struct kwl_server *server, struct kwl_list *command);
 
 /* The network's icon in the system bar and its menu (network.c). */
-void kwl_network_draw_icon(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t top, const float *ink);
-void kwl_network_draw_menu(struct kwl_server *server, VkCommandBuffer command);
-void kwl_arrange_draw(struct kwl_server *server, VkCommandBuffer command);
+void kwl_network_draw_icon(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t top, const float *ink);
+void kwl_network_draw_menu(struct kwl_server *server, struct kwl_list *command);
+void kwl_arrange_draw(struct kwl_server *server, struct kwl_list *command);
 int kwl_arrange_showing(struct kwl_server *server);
-void kwl_volume_draw_icon(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t top, const float *ink);
-void kwl_volume_draw_popup(struct kwl_server *server, VkCommandBuffer command);
-void kwl_status_panel_draw(struct kwl_server *server, VkCommandBuffer command);
+void kwl_volume_draw_icon(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t top, const float *ink);
+void kwl_volume_draw_popup(struct kwl_server *server, struct kwl_list *command);
+void kwl_status_panel_draw(struct kwl_server *server, struct kwl_list *command);
 
 /* Bluetooth's icon in the system bar and its menu, and the pairing's window over everything (bluetooth-bar.c, bluetooth-ask.c, ws143-p006). */
-void kwl_bluetooth_draw_icon(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t top, const float *ink);
-void kwl_bluetooth_draw_menu(struct kwl_server *server, VkCommandBuffer command);
-void kwl_bluetooth_ask_draw(struct kwl_server *server, VkCommandBuffer command);
+void kwl_bluetooth_draw_icon(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t top, const float *ink);
+void kwl_bluetooth_draw_menu(struct kwl_server *server, struct kwl_list *command);
+void kwl_bluetooth_ask_draw(struct kwl_server *server, struct kwl_list *command);
 
 /* App Home under the desktop layer (home.c). */
-void kwl_home_draw(struct kwl_server *server, VkCommandBuffer command, float progress);
-void kwl_home_draw_head(struct kwl_server *server, VkCommandBuffer command);
-void kwl_corner_draw(struct kwl_server *server, VkCommandBuffer command);
+void kwl_home_draw(struct kwl_server *server, struct kwl_list *command, float progress);
+void kwl_glass_draw_desktop_picture(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count);
+void kwl_glass_draw_anim_picture(struct kwl_server *server, struct kwl_list *command);
+int kwl_glass_anim_picturable(struct kwl_server *server, struct kwl_object **windows, unsigned count);
+int kwl_home_launch_tile(struct kwl_server *server, float *x, float *y, float *size, float *radius);
+void kwl_home_draw_clock_over(struct kwl_server *server, struct kwl_list *command, float progress);
+void kwl_home_clock_damage(struct kwl_server *server);
+void kwl_home_draw_stage(struct kwl_server *server, struct kwl_list *command);
+void kwl_home_draw_content(struct kwl_server *server, struct kwl_list *command, float progress, unsigned neutral);
+uint64_t kwl_home_picture_key(struct kwl_server *server);
+uint32_t glass_wallpaper_version(struct kwl_server *server);
+uint32_t glass_tiles_ready(struct kwl_server *server);
+void glass_glyph_guard_begin(struct kwl_server *server);
+uint32_t glass_glyph_guard_end(struct kwl_server *server);
+void kwl_home_draw_head(struct kwl_server *server, struct kwl_list *command);
+void kwl_corner_draw(struct kwl_server *server, struct kwl_list *command);
 
 /* The notifications' popup over the windows and the bar (notify-popup.c, ws156-p003). */
-void kwl_notify_popup_draw(struct kwl_server *server, VkCommandBuffer command);
+void kwl_notify_popup_draw(struct kwl_server *server, struct kwl_list *command);
 
 /* The on-screen keyboard over everything (keyboard.c). */
-void kwl_keyboard_draw(struct kwl_server *server, VkCommandBuffer command);
+void kwl_keyboard_draw(struct kwl_server *server, struct kwl_list *command);
 
 #endif

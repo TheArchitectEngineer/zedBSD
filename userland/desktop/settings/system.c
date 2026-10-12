@@ -70,9 +70,10 @@ se_system_poll(
 	if (status != 0)
 		se_log("SYSTEM dispatch errno=%d", status);
 
-	/* What the user has enrolled shows on the Users page (ws172-p002). */
+	/* What the user has enrolled shows on the Users and Security Keys pages (ws172-p002), drawn again while one of them is shown. */
 	if ((app->system_changed & KL_SYSTEM_CHANGED_ENROLLED) != 0U) {
-		app->dirty = 1;
+		if (app->page == SE_PAGE_USERS || app->page == SE_PAGE_SECURITY_KEYS)
+			app->dirty = 1;
 		se_log("USERS enrolled changed");
 	}
 

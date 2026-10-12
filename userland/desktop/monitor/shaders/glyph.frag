@@ -1,4 +1,5 @@
-// zedBSD System Monitor: a glyph from the atlas (white, its coverage as alpha) in the vertex's colour.
+// zedBSD System Monitor: a glyph from the atlas (white, its coverage as alpha) in the vertex's colour,
+// premultiplied by its alpha.
 // Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #version 450
 
@@ -12,5 +13,6 @@ layout(location = 0) out vec4 result;
 
 void main()
 {
-	result = vec4(color.rgb, color.a * texture(atlas, local).a);
+	float a = color.a * texture(atlas, local).a;
+	result = vec4(color.rgb * a, a);
 }

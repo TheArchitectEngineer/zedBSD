@@ -2414,8 +2414,7 @@ place_pointer(
 	kwl_pointer_absolute(server);
 	old_x = server->pointer_x;
 	old_y = server->pointer_y;
-	server->pointer_x = x;
-	server->pointer_y = y;
+	kwl_pointer_warp_to(server, x, y);
 	kwl_damage_pointer(server, old_x, old_y);
 }
 

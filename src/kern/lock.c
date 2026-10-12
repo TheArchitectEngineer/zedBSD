@@ -41,6 +41,7 @@
 static int mutex_take_free(struct mutex *mutex);
 static int mutex_spin_take(struct mutex *mutex);
 static void mutex_sleep_take(struct mutex *mutex, unsigned flags, int *error);
+static void mutex_sleep_give_up(struct mutex *mutex);
 static void mutex_check_owner(struct mutex *mutex, struct thread *thread);
 
 /*
@@ -339,17 +340,53 @@ mutex_lock_interruptible(
 
 /*
  * Acquires a mutex, sleeping uninterruptibly while it is held.
+ *
+ * It takes the mutex the way mutex_lock_interruptible() does, but nothing
+ * ends the sleep except the release.  Retrying the interruptible form
+ * instead would never sleep while a signal, stop, or termination request
+ * is pending, and would spin on the CPU the holder needs to let go.
  */
 void
 mutex_lock(
 	struct mutex *mutex)
 {
+	struct thread *thread;
+	struct thread *owner;
+	unsigned long irq;
+	int acquired;
 	int error;
 
-	/* Retries the interruptible acquisition until it is not interrupted. */
-	do {
-		error = mutex_lock_interruptible(mutex);
-	} while (error == EINTR);
+	/* Gives up without a mutex or a current thread, which has no owner to record. */
+	thread = thread_current();
+	if (mutex == NULL || thread == NULL)
+		return;
+
+	/* Traps on a recursive acquisition. */
+	owner = __atomic_load_n(&mutex->owner, __ATOMIC_RELAXED);
+	if (owner == thread)
+		__builtin_trap();
+
+	/* Takes a free mutex, or one that its holder lets go of soon. */
+	acquired = mutex_spin_take(mutex);
+	if (acquired) {
+		__atomic_store_n(&mutex->owner, thread, __ATOMIC_RELAXED);
+		return;
+	}
+
+	/*
+	 * Marks the mutex contended, which makes the holder's release wake
+	 * a sleeper, and sleeps until the release lets this thread take it.
+	 */
+	irq = spin_lock_irqsave(&mutex->guard);
+
+	/* Sleeps until the mutex is taken; no request ends this sleep. */
+	mutex_sleep_take(mutex, 0, &error);
+
+	/* Leaves the guard, holding the mutex. */
+	spin_unlock_irqrestore(&mutex->guard, irq);
+
+	/* Takes ownership. */
+	__atomic_store_n(&mutex->owner, thread, __ATOMIC_RELAXED);
 }
 
 /*
@@ -474,18 +511,31 @@ mutex_take_free(
 /*
  * Looks at a held mutex up to MUTEX_SPIN_LIMIT more times, relaxing the
  * CPU between looks, and takes it when it is free.  Reports whether it
- * did.
+ * did.  With one CPU the holder cannot run while this thread looks, so
+ * one look decides.
  */
 static int
 mutex_spin_take(
 	struct mutex *mutex)
 {
 	unsigned spins;
+	unsigned limit;
+	unsigned cpus;
 	unsigned locked;
 	int acquired;
 
+	/*
+	 * Looks again only when another CPU may be running the holder; on
+	 * a single CPU the holder is off the CPU until this thread sleeps.
+	 */
+	limit = MUTEX_SPIN_LIMIT;
+	cpus = hal_cpu_count();
+	if (cpus <= 1)
+		limit = 0;
+
 	/* Takes the mutex as soon as a look finds it free. */
-	for (spins = 0; spins <= MUTEX_SPIN_LIMIT; spins++) {
+	spins = 0;
+	for (;;) {
 		locked = __atomic_load_n(&mutex->locked, __ATOMIC_RELAXED);
 		if (locked == MUTEX_FREE) {
 			acquired = mutex_take_free(mutex);
@@ -493,8 +543,13 @@ mutex_spin_take(
 				return 1;
 		}
 
+		/* Stops looking once the looks are used up. */
+		if (spins == limit)
+			break;
+
 		/* Lets the holder's CPU have the line before the next look. */
 		hal_atomic_relax();
+		spins++;
 	}
 
 	/* The mutex stayed held. */
@@ -527,13 +582,39 @@ mutex_sleep_take(
 		if (previous == MUTEX_FREE)
 			break;
 
-		/* Gives up the wait on an interruption, when it may be interrupted. */
+		/* Sleeps until a release wakes this thread, or an interruption ends the wait. */
 		slept = waitq_sleep(&mutex->waiters, &mutex->guard, sequence, 0, flags);
+
+		/* Gives up the wait on an interruption, when it may be interrupted. */
 		if (slept == EINTR && (flags & WAITQ_INTERRUPTIBLE) != 0) {
+			mutex_sleep_give_up(mutex);
 			*error = EINTR;
 			return;
 		}
 	}
+}
+
+/*
+ * Passes the wakeup on when an interrupted thread leaves a mutex's
+ * waiters, so that a waiter left asleep is not stranded.
+ *
+ * A release wakes the waiter at the head, and that waiter can still end its
+ * wait with EINTR (a termination or stop request is checked after the
+ * wakeup), taking the release's wakeup with it.  The mutex may then be free,
+ * or held by a thread that took it free and whose release wakes nobody, with
+ * other threads still asleep.  Waking one of them lets it take the mutex or
+ * mark it contended again.  The caller holds the guard.
+ */
+static void
+mutex_sleep_give_up(
+	struct mutex *mutex)
+{
+	/* Leaves the mutex alone when nobody else is asleep for it. */
+	if (mutex->waiters.head == NULL)
+		return;
+
+	/* Wakes the next sleeper, which looks at the mutex again. */
+	waitq_wake_one(&mutex->waiters);
 }
 
 /*

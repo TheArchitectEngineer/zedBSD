@@ -35,6 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <wayland-client.h>
 
 /* The fonts, the window's first size, and the longest wait for input. */
 #define PH_FONT			KEILAND_DATADIR "/fonts/keiland.ttf"
@@ -84,6 +85,18 @@ struct ph_window {
 	int root_known;
 	int marks_failed;
 
+	/*
+	 * The marks' update under way (0: none, ws157-p014) and the photos
+	 * and albums it carries, marked changed again when it fails; and the
+	 * identity a deletion waits on it for.
+	 */
+	uint32_t marks_request;
+	char (*marks_photos)[PH_ID_SIZE];
+	size_t marks_photo_count;
+	char (*marks_albums)[PH_ID_SIZE];
+	size_t marks_album_count;
+	char remove_after[PH_ID_SIZE];
+
 	/* Coalesces media notifications while a background import or refresh is running. */
 	int media_again;
 	/* A confirmation retains its identity independently of library refreshes. */
@@ -96,6 +109,15 @@ struct ph_window {
 	int resized;
 	int moving;
 	int glass_decided;
+
+	/*
+	 * Only the lit widget changed since the last frame (a motion or the
+	 * pointer leaving, BUG-226): the next frame is drawn and shown within
+	 * the parts the widgets tell (kl_ui_take_frame) alone.  buttons_held
+	 * counts the buttons held, while which a motion draws the whole window.
+	 */
+	int lit_changed;
+	unsigned buttons_held;
 };
 
 /* The window's menu. */
@@ -134,8 +156,15 @@ static int ph_uri(const char *path, char *uri, size_t size);
 static void ph_results(struct ph_window *photos);
 static void ph_jobs(struct ph_window *photos);
 static void ph_marks(struct ph_window *photos);
+static int ph_marks_record(struct ph_window *photos);
+static void ph_marks_forget(struct ph_window *photos);
+static void ph_marks_taken(struct ph_window *photos);
+static void ph_marks_answer(struct ph_window *photos, int error);
+static void ph_marks_finish(struct ph_window *photos);
+static void ph_remove_start(struct ph_window *photos, const char *id, uint64_t now_us);
 static int ph_resize(struct ph_window *photos);
 static void ph_draw(struct ph_window *photos, uint64_t now_us);
+static void ph_draw_view(struct ph_window *photos, uint64_t now_us);
 static int ph_wait(const struct ph_window *photos, uint64_t now_us);
 
 /*
@@ -229,6 +258,15 @@ main(
 		return 1;
 	}
 
+	/*
+	 * The pointer's motions merged, and each frame drawn once the
+	 * compositor took the last one (ws210-p014 F2): the pointer crossing
+	 * the view while a frame is on its way draws its latest place once,
+	 * not a frame queued for every widget it crossed (2026-10-12, the Pi 4).
+	 */
+	error = kl_window_set_pacing(photos.window, KL_PACING_MOTION | KL_PACING_FRAME, 0U);
+	ph_log("PACING motion=1 frame=1 errno=%d", error);
+
 	/* The input of its frames. */
 	photos.ui = kl_ui_create();
 	if (photos.ui == NULL) {
@@ -255,10 +293,8 @@ main(
 	kl_file_chooser_destroy(photos.chooser);
 	ph_media_worker_stop();
 
-	/* Commit edits deferred during import before releasing the UI-owned library. */
-	if (photos.marks_failed)
-		photos.view.save = 1;
-	ph_marks(&photos);
+	/* Commit edits deferred during import (waiting for an update under way) before releasing the UI-owned library. */
+	ph_marks_finish(&photos);
 
 	/* Thumbnail jobs no longer refer to the library after this join. */
 	ph_worker_stop();
@@ -409,12 +445,15 @@ static void
 ph_refresh(
 	struct ph_window *photos)
 {
-	/* A failed metadata update must not be discarded by a library notification. */
+	/* A failed or unanswered metadata update must not be discarded: the refresh follows its answer. */
 	if (photos->marks_failed) {
-		photos->view.save = 1;
+		if (photos->marks_request == 0U)
+			photos->view.save = 1;
 		ph_marks(photos);
-		if (photos->marks_failed)
+		if (photos->marks_failed) {
+			photos->media_again = 1;
 			return;
+		}
 	}
 
 	/* The view and its thumbnail cache remain usable while the request runs. */
@@ -439,7 +478,7 @@ ph_media_results(
 
 	/* Unsaved marks are retained; a later snapshot will include their committed values. */
 	if (photos->view.save || photos->marks_failed) {
-		if (photos->marks_failed)
+		if (photos->marks_failed && photos->marks_request == 0U)
 			photos->view.save = 1;
 		ph_marks(photos);
 		if (result.descriptor >= 0)
@@ -687,6 +726,8 @@ ph_loop(
 		changed = 0U;
 		if (photos->system != NULL)
 			(void)kl_system_dispatch(photos->system, &changed);
+		if ((changed & KL_SYSTEM_CHANGED_MEDIA_DONE) != 0U)
+			ph_marks_taken(photos);
 		if ((changed & KL_SYSTEM_CHANGED_MEDIA) != 0U) {
 			ph_marks(photos);
 			ph_refresh(photos);
@@ -801,7 +842,37 @@ ph_input(
 	if (event->kind == KL_WINDOW_BUTTON && !event->pressed)
 		photos->view.drag_armed = 0;
 
-	/* The widgets' input draws again. */
+	/*
+	 * A motion of the pointer draws again only when it lights another
+	 * widget or moves a held one (as Music, 2026-10-12): the lit widgets'
+	 * part alone, or the whole window while a button is held.
+	 */
+	if (event->kind == KL_WINDOW_MOTION) {
+		taken = kl_ui_pointer_motion(photos->ui, event->x, event->y);
+		if (taken && photos->buttons_held != 0U)
+			photos->dirty = 1;
+		else if (taken)
+			photos->lit_changed = 1;
+		return;
+	}
+
+	/* The pointer leaving darkens the lit widget: its part alone is drawn again. */
+	if (event->kind == KL_WINDOW_LEAVE) {
+		taken = kl_ui_pointer_leave(photos->ui);
+		if (taken)
+			photos->lit_changed = 1;
+		return;
+	}
+
+	/* The buttons held, for the motions while one is. */
+	if (event->kind == KL_WINDOW_BUTTON) {
+		if (event->pressed)
+			photos->buttons_held++;
+		else if (photos->buttons_held != 0U)
+			photos->buttons_held--;
+	}
+
+	/* The widgets' other input draws again. */
 	taken = kl_ui_window_input(photos->ui, event);
 	if (taken) {
 		photos->dirty = 1;
@@ -911,7 +982,8 @@ ph_drag_start(
 
 /*
  * Makes the PNG of a photo for a drag: the picture shown whole when it is
- * the one, else its file decoded, fitted to PH_DRAG_SIDE and turned as the
+ * the one, else its file's picture fitted to PH_DRAG_SIDE (made by
+ * keiland-preview in its sandbox) and turned as the
  * library says.  Returns 0 with the PNG (the caller frees it), or an errno
  * value.
  */
@@ -923,7 +995,6 @@ ph_drag_picture(
 	size_t *size)
 {
 	struct ph_photo *list;
-	struct kl_image decoded;
 	struct kl_image fitted;
 	struct kl_image turned;
 	const struct kl_image *source;
@@ -941,17 +1012,9 @@ ph_drag_picture(
 		return 0;
 	}
 
-	/* Otherwise the file, decoded. */
+	/* Otherwise the file's picture, fitted. */
 	list = ph_photos(&count);
-	memset(&decoded, 0, sizeof(decoded));
-	error = ph_decode(list[photo].path, &decoded);
-	if (error != 0)
-		return error;
-
-	/* Fitted. */
-	memset(&fitted, 0, sizeof(fitted));
-	error = ph_fit(&decoded, PH_DRAG_SIDE, &fitted);
-	kl_image_release(&decoded);
+	error = ph_preview(list[photo].path, PH_DRAG_SIDE, 0, &fitted);
 	if (error != 0)
 		return error;
 
@@ -1079,19 +1142,22 @@ ph_jobs(
 	}
 }
 
-/* Writes the database when the view changed the marks or the albums. */
+/*
+ * Starts the update of the marks and albums changed (ws157-p014: without
+ * waiting; its answer comes to ph_marks_answer).  One at a time: edits
+ * made meanwhile wait for its answer.
+ */
 static void
 ph_marks(
 	struct ph_window *photos)
 {
 	FILE *changes;
-	int descriptor;
 	int error;
 	int closed;
-	struct ph_photo *list;
-	struct ph_album *albums;
-	size_t count;
-	size_t index;
+
+	/* One update under way at a time. */
+	if (photos->marks_request != 0U)
+		return;
 
 	/* Metadata edits remain local while import IO owns the helper; the UI stays usable. */
 	error = ph_media_worker_busy();
@@ -1124,11 +1190,13 @@ ph_marks(
 			error = EIO;
 	}
 
-	/* The CLI returns metadata after the update, not image/video contents. */
+	/* What it carries, then the request (its descriptor is copied as it is sent). */
+	if (error == 0)
+		error = ph_marks_record(photos);
 	if (error == 0) {
-		error = kl_system_media_apply(photos->system, fileno(changes), &descriptor);
-		if (error == 0)
-			close(descriptor);
+		error = kl_system_media_apply_begin(photos->system, fileno(changes), &photos->marks_request);
+		if (error != 0)
+			ph_marks_forget(photos);
 	}
 
 	/* Keeps dirty rows after a failed update so an explicit retry can preserve them. */
@@ -1137,15 +1205,229 @@ ph_marks(
 		ph_view_notice(&photos->view, "The media changes could not be saved.", kl_clock_us());
 		return;
 	}
+}
 
-	/* Clears only the local dirty marks after the CLI accepted them. */
-	photos->marks_failed = 0;
+/*
+ * Keeps the identities of the photos and albums changed (the update
+ * carries them) and clears their marks: edits made while it is under way
+ * mark them again.  Returns 0 or ENOMEM.
+ */
+static int
+ph_marks_record(
+	struct ph_window *photos)
+{
+	struct ph_photo *list;
+	struct ph_album *albums;
+	size_t count;
+	size_t album_count;
+	size_t index;
+
+	/* Room for every photo and album at most. */
 	list = ph_photos(&count);
-	for (index = 0U; index < count; index++)
+	albums = ph_albums(&album_count);
+	photos->marks_photos = calloc(count + 1U, sizeof(photos->marks_photos[0]));
+	if (photos->marks_photos == NULL)
+		return ENOMEM;
+	photos->marks_albums = calloc(album_count + 1U, sizeof(photos->marks_albums[0]));
+	if (photos->marks_albums == NULL) {
+		free(photos->marks_photos);
+		photos->marks_photos = NULL;
+		return ENOMEM;
+	}
+
+	/* The changed photos, their marks cleared. */
+	photos->marks_photo_count = 0U;
+	for (index = 0U; index < count; index++) {
+		if (!list[index].changed)
+			continue;
+		memcpy(photos->marks_photos[photos->marks_photo_count], list[index].id, PH_ID_SIZE);
+		photos->marks_photo_count++;
 		list[index].changed = 0;
-	albums = ph_albums(&count);
-	for (index = 0U; index < count; index++)
+	}
+
+	/* The changed albums, their marks cleared. */
+	photos->marks_album_count = 0U;
+	for (index = 0U; index < album_count; index++) {
+		if (!albums[index].changed)
+			continue;
+		memcpy(photos->marks_albums[photos->marks_album_count], albums[index].id, PH_ID_SIZE);
+		photos->marks_album_count++;
 		albums[index].changed = 0;
+	}
+
+	/* Succeeded: recorded. */
+	return 0;
+}
+
+/* Marks again what an update carried (it failed, or was not sent), and forgets it. */
+static void
+ph_marks_forget(
+	struct ph_window *photos)
+{
+	struct ph_photo *list;
+	struct ph_album *albums;
+	size_t count;
+	size_t album_count;
+	size_t index;
+	size_t kept;
+	int same;
+
+	/* Each photo carried, still in the library. */
+	list = ph_photos(&count);
+	for (kept = 0U; kept < photos->marks_photo_count; kept++) {
+		for (index = 0U; index < count; index++) {
+			same = memcmp(list[index].id, photos->marks_photos[kept], PH_ID_SIZE);
+			if (same == 0)
+				list[index].changed = 1;
+		}
+	}
+
+	/* Each album carried, still there. */
+	albums = ph_albums(&album_count);
+	for (kept = 0U; kept < photos->marks_album_count; kept++) {
+		for (index = 0U; index < album_count; index++) {
+			same = memcmp(albums[index].id, photos->marks_albums[kept], PH_ID_SIZE);
+			if (same == 0)
+				albums[index].changed = 1;
+		}
+	}
+
+	/* The record goes. */
+	free(photos->marks_photos);
+	free(photos->marks_albums);
+	photos->marks_photos = NULL;
+	photos->marks_albums = NULL;
+	photos->marks_photo_count = 0U;
+	photos->marks_album_count = 0U;
+}
+
+/* Takes the media library's answers: the marks' update's is handled, any other dropped. */
+static void
+ph_marks_taken(
+	struct ph_window *photos)
+{
+	uint32_t request;
+	int descriptor;
+	int error;
+	int taken;
+
+	/* Each answer. */
+	for (;;) {
+		taken = kl_system_media_take(photos->system, &request, &error, &descriptor);
+		if (!taken)
+			break;
+		if (descriptor >= 0)
+			close(descriptor);
+		if (request == photos->marks_request && request != 0U)
+			ph_marks_answer(photos, error);
+	}
+}
+
+/*
+ * Handles the marks' update's answer: a failure marks its rows again
+ * (saved at the next change or refresh); a success lets the work that
+ * waited for it go on (a deletion, a refresh).
+ */
+static void
+ph_marks_answer(
+	struct ph_window *photos,
+	int error)
+{
+	char id[PH_ID_SIZE];
+
+	/* No update under way any more. */
+	photos->marks_request = 0U;
+	photos->dirty = 1;
+
+	/* A failure keeps the marks for the next try. */
+	if (error != 0) {
+		ph_marks_forget(photos);
+		photos->marks_failed = 1;
+		photos->remove_after[0] = '\0';
+		ph_view_notice(&photos->view, "The media changes could not be saved.", kl_clock_us());
+		return;
+	}
+
+	/* Saved: the record goes (without marking anything again). */
+	photos->marks_photo_count = 0U;
+	photos->marks_album_count = 0U;
+	ph_marks_forget(photos);
+	photos->marks_failed = 0;
+
+	/* A deletion that waited for it. */
+	if (photos->remove_after[0] != '\0') {
+		memcpy(id, photos->remove_after, PH_ID_SIZE);
+		photos->remove_after[0] = '\0';
+		ph_remove_start(photos, id, kl_clock_us());
+	}
+
+	/* A refresh that waited for it. */
+	if (photos->media_again) {
+		photos->media_again = 0;
+		ph_library_start(photos);
+	}
+}
+
+/*
+ * Before the window goes: waits (a few seconds at most) for an update
+ * under way, then saves what is still changed, waiting for it.
+ */
+static void
+ph_marks_finish(
+	struct ph_window *photos)
+{
+	FILE *changes;
+	unsigned tries;
+	unsigned changed;
+	int descriptor;
+	int error;
+	int status;
+
+	/* An update under way: its answer, dispatched by hand. */
+	for (tries = 0U; photos->marks_request != 0U && tries < 500U; tries++) {
+		status = wl_display_roundtrip(kl_app_display(photos->app));
+		if (status < 0)
+			break;
+		changed = 0U;
+		(void)kl_system_dispatch(photos->system, &changed);
+		ph_marks_taken(photos);
+	}
+
+	/* Nothing left to save. */
+	if (photos->system == NULL)
+		return;
+	if (photos->marks_failed && photos->marks_request == 0U)
+		photos->view.save = 1;
+	if (!photos->view.save || photos->marks_request != 0U)
+		return;
+
+	/* The rest, written down and rewound. */
+	changes = tmpfile();
+	if (changes == NULL)
+		return;
+	error = ph_snapshot_changes(changes);
+	if (error == 0) {
+		status = fflush(changes);
+		if (status != 0)
+			error = EIO;
+	}
+
+	/* Rewound for the request. */
+	if (error == 0) {
+		status = fseek(changes, 0L, SEEK_SET);
+		if (status != 0)
+			error = EIO;
+	}
+
+	/* Saved, waiting for it (the window is closing). */
+	if (error == 0) {
+		error = kl_system_media_apply(photos->system, fileno(changes), &descriptor);
+		if (error == 0)
+			close(descriptor);
+	}
+
+	/* The file goes. */
+	fclose(changes);
 }
 
 /*
@@ -1212,38 +1494,60 @@ ph_draw(
 	uint64_t now_us)
 {
 	struct kl_glass_panel panels[PH_PANELS_MAX];
+	struct kl_rect parts[KL_FRAME_PARTS_MAX];
 	struct kl_event event;
+	unsigned part_count;
+	unsigned index;
 	size_t count;
-	size_t album;
-	long open;
-	long chosen;
 	int status;
 	int error;
 	int taken;
-	int list;
-	int adding;
+	int need;
+	int pace;
 
 	/* Nothing changed and nothing moves: no frame. */
-	if (!photos->dirty && !photos->moving)
+	if (!photos->dirty && !photos->moving && !photos->lit_changed)
 		return;
 
-	/* The view, and the pictures it wants; what its widgets changed while it drew is drawn in the next frame. */
-	photos->dirty = 0;
-	open = photos->view.open;
-	chosen = photos->view.chosen;
-	list = photos->view.list;
-	album = photos->view.album;
-	adding = photos->view.adding;
-	kl_ui_begin(photos->ui, now_us);
-	ph_view_draw(&photos->view, photos->ui, &photos->style, (int)photos->width, (int)photos->height, now_us);
-	if (open != photos->view.open || chosen != photos->view.chosen || list != photos->view.list || album != photos->view.album ||
-	    adding != photos->view.adding)
-		photos->dirty = 1;
+	/*
+	 * A frame once the compositor took the last one (ws210-p014 F2.2):
+	 * until then nothing is consumed, so what changes meanwhile is drawn
+	 * as one frame in its latest state.
+	 */
+	pace = kl_window_frame_wait(photos->window, now_us);
+	if (pace != 0)
+		return;
 
-	/* The dialog consumes input after the view, using the common modal widget. */
-	if (photos->removing[0] != '\0')
-		ph_delete_dialog(photos, now_us);
-	photos->moving = kl_ui_end(photos->ui, now_us);
+	/*
+	 * Only another widget lit: the frame is drawn and shown within the
+	 * parts the widgets tell alone (BUG-226, ws210-p014: the widget lit
+	 * when the last frame was drawn and the one lit now; none when the
+	 * pointer came back); a whole window for each hover was a CPU frame on
+	 * the Pi 4 (2026-10-12).
+	 */
+	part_count = 0;
+	if (!photos->dirty && !photos->moving && photos->lit_changed) {
+		need = kl_ui_take_frame(photos->ui, parts, KL_FRAME_PARTS_MAX, &part_count);
+		if (need == KL_FRAME_NONE) {
+			photos->lit_changed = 0;
+			return;
+		}
+		if (need == KL_FRAME_WHOLE)
+			part_count = 0;
+	}
+	photos->lit_changed = 0;
+
+	/* The view, all of it; what its widgets changed while it drew is drawn in the next frame. */
+	photos->dirty = 0;
+	if (part_count == 0U)
+		ph_draw_view(photos, now_us);
+
+	/* Or within each part in turn, the rest keeping the last frame's pixels. */
+	for (index = 0; index < part_count; index++) {
+		kl_canvas_clip_push(&photos->canvas, &parts[index]);
+		ph_draw_view(photos, now_us);
+		kl_canvas_clip_pop(&photos->canvas);
+	}
 	kl_ui_window_text(photos->ui, photos->window);
 	ph_jobs(photos);
 
@@ -1259,8 +1563,8 @@ ph_draw(
 		}
 	}
 
-	/* The frame shown. */
-	status = kl_window_present(photos->window, photos->pixels, (size_t)photos->width);
+	/* The frame shown, by its parts alone when it was drawn so. */
+	status = kl_window_present_parts(photos->window, photos->pixels, (size_t)photos->width, parts, part_count);
 	if (status == EAGAIN)
 		photos->resized = 1;
 
@@ -1277,6 +1581,42 @@ ph_draw(
 	}
 }
 
+/*
+ * Draws the view and the dialog over it in one frame of the widgets, and
+ * the pictures the view wants; a change of what the view shows asks for
+ * another frame of the whole window.
+ */
+static void
+ph_draw_view(
+	struct ph_window *photos,
+	uint64_t now_us)
+{
+	size_t album;
+	long open;
+	long chosen;
+	int list;
+	int adding;
+
+	/* What the view shows before it draws. */
+	open = photos->view.open;
+	chosen = photos->view.chosen;
+	list = photos->view.list;
+	album = photos->view.album;
+	adding = photos->view.adding;
+
+	/* The view; what it changed while it drew is drawn in the next frame. */
+	kl_ui_begin(photos->ui, now_us);
+	ph_view_draw(&photos->view, photos->ui, &photos->style, (int)photos->width, (int)photos->height, now_us);
+	if (open != photos->view.open || chosen != photos->view.chosen || list != photos->view.list || album != photos->view.album ||
+	    adding != photos->view.adding)
+		photos->dirty = 1;
+
+	/* The dialog consumes input after the view, using the common modal widget. */
+	if (photos->removing[0] != '\0')
+		ph_delete_dialog(photos, now_us);
+	photos->moving = kl_ui_end(photos->ui, now_us);
+}
+
 /* Confirms one selected identity before admitting a background deletion job. */
 static void
 ph_delete_dialog(
@@ -1286,7 +1626,6 @@ ph_delete_dialog(
 	static const char *const labels[] = {"Delete", "Cancel"};
 	struct kl_rect area;
 	int answer;
-	int error;
 
 	/* The confirmation covers both the managed file and its library entry. */
 	area.x = 0;
@@ -1304,13 +1643,40 @@ ph_delete_dialog(
 		return;
 	}
 
-	/* Preserve local metadata changes before the worker requests the latest database. */
+	/* Preserve local metadata changes before the worker requests the latest database: an update under way is waited for. */
 	ph_marks(photos);
-	error = EIO;
-	if (!photos->marks_failed)
-		error = ph_media_worker_remove(photos->removing);
+	if (photos->marks_request != 0U) {
+		memcpy(photos->remove_after, photos->removing, PH_ID_SIZE);
+		photos->removing[0] = '\0';
+		photos->dirty = 1;
+		return;
+	}
+
+	/* The deletion, unless the marks could not be saved. */
+	if (photos->marks_failed) {
+		photos->removing[0] = '\0';
+		photos->dirty = 1;
+		ph_view_notice(&photos->view, "The media deletion could not be started.", now_us);
+		return;
+	}
+
+	/* The deletion now. */
+	ph_remove_start(photos, photos->removing, now_us);
 	photos->removing[0] = '\0';
 	photos->dirty = 1;
+}
+
+/* Starts the worker's deletion of one identity and says so. */
+static void
+ph_remove_start(
+	struct ph_window *photos,
+	const char *id,
+	uint64_t now_us)
+{
+	int error;
+
+	/* The worker's job. */
+	error = ph_media_worker_remove(id);
 	if (error == EBUSY) {
 		ph_view_notice(&photos->view, "A media operation is already running. Try again when it finishes.", now_us);
 		return;
@@ -1324,28 +1690,36 @@ ph_delete_dialog(
 
 	/* Succeeded: the UI remains usable while the worker waits for the CLI. */
 	ph_view_notice(&photos->view, "Deleting media in the background...", now_us);
-	return;
 }
 
 /*
  * Reports how long the loop may wait for input (ms): no time while a frame
- * is due, a frame's time while a widget moves, a little while the thread
- * makes pictures, the view's own time, or a second.
+ * is due, a frame's time while a widget moves, until the compositor took
+ * the last frame (ws210-p014 F2.6: its answer wakes the wait), a little
+ * while the thread makes pictures, the view's own time, or a second.
  */
 static int
 ph_wait(
 	const struct ph_window *photos,
 	uint64_t now_us)
 {
+	int pace;
 	int wait;
 	int busy;
 
+	/* A frame wanted: whether it may be drawn now, or how long the compositor's answer is waited for at most (-1: until it comes). */
+	pace = -1;
+	if (photos->dirty || photos->lit_changed || photos->moving)
+		pace = kl_window_frame_wait(photos->window, now_us);
+
 	/* A frame due now. */
-	if (photos->dirty)
+	if (pace == 0 && photos->dirty)
+		return 0;
+	if (pace == 0 && photos->lit_changed)
 		return 0;
 
 	/* A widget moving. */
-	if (photos->moving)
+	if (pace == 0 && photos->moving)
 		return PH_MOVING_MS;
 
 	/* The thread at work: its results are looked for soon. */
@@ -1359,5 +1733,9 @@ ph_wait(
 	wait = ph_view_wait(&photos->view, now_us);
 	if (wait < 0 || wait > PH_IDLE_MS)
 		wait = PH_IDLE_MS;
+
+	/* The compositor's answer, waited for at most so long. */
+	if (pace > 0 && pace < wait)
+		wait = pace;
 	return wait;
 }

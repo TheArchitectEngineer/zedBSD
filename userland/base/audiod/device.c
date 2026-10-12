@@ -31,9 +31,6 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-/* How far ahead of the device audiod keeps sound, in fragments. */
-#define AUDIOD_FILL_FRAGMENTS	2U
-
 static void fill_mapped(struct audiod_device *device);
 static void fill_written(struct audiod_device *device);
 static void read_capture(struct audiod_device *device);
@@ -159,6 +156,8 @@ audiod_device_fd(
 	const struct audiod_device *device,
 	short *events)
 {
+	uint64_t ahead;
+
 	if (device->dsp < 0)
 		return -1;
 
@@ -168,9 +167,8 @@ audiod_device_fd(
 	 * fewer periods queued than it wants; otherwise the timeout wakes it.
 	 */
 	*events = 0;
-	if (device->map != NULL ||
-	    device->written - device->consumed <
-	    AUDIOD_FILL_FRAGMENTS * device->fragment_bytes)
+	ahead = (uint64_t)audiod_route_fill_fragments() * device->fragment_bytes;
+	if (device->map != NULL || device->written - device->consumed < ahead)
 		*events = POLLOUT;
 	if (device->capture_started)
 		*events |= POLLIN;
@@ -435,7 +433,7 @@ fill_mapped(
 	if (device->written < position.bytes)
 		device->written = position.bytes;
 	feedback_played(device);
-	target = position.bytes + AUDIOD_FILL_FRAGMENTS * device->fragment_bytes;
+	target = position.bytes + audiod_route_fill_fragments() * device->fragment_bytes;
 	while (device->written < target) {
 		audiod_mix_period(device,
 		    device->map + device->written % device->map_bytes);
@@ -451,15 +449,15 @@ fill_written(
 {
 	struct audio_space space;
 	ssize_t count;
+	uint64_t ahead;
 
 	for (;;) {
 		if (ioctl(device->dsp, KERN_AUDIO_GET_OSPACE, &space) != 0)
 			return;
 		device->consumed = space.transferred;
 		feedback_played(device);
-		if (space.bytes < device->fragment_bytes ||
-		    device->written - space.transferred >=
-		    AUDIOD_FILL_FRAGMENTS * device->fragment_bytes)
+		ahead = (uint64_t)audiod_route_fill_fragments() * device->fragment_bytes;
+		if (space.bytes < device->fragment_bytes || device->written - space.transferred >= ahead)
 			return;
 		audiod_mix_period(device, device->scratch);
 		feedback_track(device, device->written);

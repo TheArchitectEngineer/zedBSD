@@ -17,9 +17,14 @@
  * unless it says it is a pointer (INPUT_PROP_POINTER): then it is a touch
  * pad, whose reports touchpad.c turns into the pointer's motion, buttons
  * and scrolling (ws159-p004).
- * Nodes are read without blocking.  Events are gathered until
- * SYN_REPORT and applied as one group: motion first, then buttons and keys in
- * the order they arrived, then wheel scrolling, then a pointer frame.
+ * Nodes are read without blocking by the input thread (input-thread.c,
+ * ws213-p004), which gathers the events until SYN_REPORT, moves the
+ * pointer in the cursor's box, and passes each report here in the order
+ * the reports were made.  The main thread applies a report as one group:
+ * motion first, then buttons and keys in the order they arrived, then
+ * wheel scrolling, then a pointer frame.  The main thread opens and closes
+ * the devices, attaching each to the input thread and detaching it before
+ * its descriptor is closed.
  */
 
 #include "kwl.h"
@@ -29,27 +34,11 @@
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-
-/* Bound the reads one device gets per event-loop pass, so others still run. */
-#define INPUT_READS_PER_PASS	16U
-
-/* The events one read of a device takes at most. */
-#define INPUT_READ_EVENTS	32U
-
-/*
- * One ready device's events while the devices are read together: those read
- * and not yet applied, and how many reads it has had this pass.
- */
-struct input_source {
-	struct kwl_input_device *device;
-	struct input_event events[INPUT_READ_EVENTS];
-	size_t count;
-	size_t next;
-	unsigned reads;
-	unsigned done;
-};
+#include <unistd.h>
 
 /* The mouse buttons, BTN_LEFT through BTN_TASK, delivered as wl_pointer buttons. */
 #define INPUT_BUTTON_FIRST	0x110U
@@ -90,25 +79,29 @@ struct input_source {
 
 static int read_ranges(int descriptor, struct input_absinfo *x, struct input_absinfo *y);
 static int bit_is_set(const unsigned long *bits, unsigned code);
-static void consume_event(struct kwl_server *server, struct kwl_input_device *device, const struct input_event *event);
-static int source_fill(struct kwl_server *server, struct input_source *source);
-static int event_earlier(const struct input_event *event, const struct input_event *other);
-static void apply_frame(struct kwl_server *server, struct kwl_input_device *device, uint32_t time);
+static void apply_event(struct kwl_server *server, const struct kwl_input_event *event);
+static void apply_frame(struct kwl_server *server, struct kwl_input_device *device, const struct kwl_input_event *event);
+static void apply_report(struct kwl_server *server, struct kwl_input_device *device, const struct kwl_input_event *event);
+static void apply_detached(struct kwl_server *server, struct kwl_input_device *device, const struct kwl_input_detached *detached);
+static int apply_motion(struct kwl_server *server, const struct kwl_cursor_motion *motion, unsigned absolute, uint32_t time);
+static void box_measure(struct kwl_server *server, const struct kwl_cursor_motion *motion);
 static void apply_key(struct kwl_server *server, uint32_t time, uint32_t key, int32_t value);
-static int32_t scale_absolute(int32_t value, int32_t minimum, int32_t maximum, uint32_t size);
-static int32_t clamp_position(int64_t position, uint32_t size);
-static uint32_t event_time(const struct input_event *event);
 static void update_capabilities(struct kwl_server *server);
 static int attach_tablet(struct kwl_server *server, int descriptor, const char *path);
 static int attach_touch(struct kwl_server *server, int descriptor, const char *path);
 static int multitouch(const struct kl_backend_input_caps *capabilities);
 static int touchpad_node(const struct kl_backend_input_caps *capabilities);
 static int attach_touchpad(struct kwl_server *server, int descriptor, const char *path);
-static void apply_touchpad(struct kwl_server *server, struct kwl_input_device *device, uint32_t time);
-static void apply_touchpad_actions(struct kwl_server *server, const struct kwl_touchpad *pad, const struct kwl_touchpad_actions *actions, uint32_t time);
+static void apply_touchpad_actions(struct kwl_server *server, const struct kwl_input_pad *pad, uint32_t time);
 static void lock_pad_gesture(struct kwl_server *server, const struct kwl_touchpad_action *action);
-static int pointer_move(struct kwl_server *server, int64_t delta_x, int64_t delta_y, uint32_t time);
-static ssize_t input_read(struct kwl_server *server, struct kwl_input_device *device, struct input_event *events, size_t capacity);
+static void input_attach(struct kwl_server *server, struct kwl_input_device *device);
+static void input_detach(struct kwl_server *server, struct kwl_input_device *device);
+static void input_detach_failed(const char *site, const struct kwl_server *server, const struct kwl_input_device *device, unsigned count, uint64_t sequence, uint64_t asked_ms, int error);
+static const char *input_kind_name(const struct kwl_input_device *device);
+static const char *input_reason_name(enum kwl_input_detach_reason reason);
+static void input_retire(struct kwl_server *server, struct kwl_input_device *device);
+static void input_settings(const struct kwl_server *server, struct kwl_input_settings *settings);
+static void pointer_warp_place(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
 
 /*
  * Opens the input devices not read yet (libkeiland-backend's scan, which
@@ -267,22 +260,22 @@ kwl_input_attach(
 	device->fd = descriptor;
 	device->pointer = pointer;
 	device->keyboard = keyboard;
-	kwl_pointer_accel_init(&device->accel);
 	snprintf(device->path, sizeof(device->path), "%s", path);
 
-	/* An absolute pointer maps its axis ranges onto the surface. */
+	/* An absolute pointer maps its axis ranges onto the surface, from the place it reports now. */
 	if (pointer && x != NULL && y != NULL) {
 		device->absolute = 1;
 		device->abs_x_minimum = x->minimum;
 		device->abs_x_maximum = x->maximum;
 		device->abs_y_minimum = y->minimum;
 		device->abs_y_maximum = y->maximum;
-		device->abs_x = x->value;
-		device->abs_y = y->value;
+		device->reading.abs_x = x->value;
+		device->reading.abs_y = y->value;
 	}
 
-	/* The slot is published only when it is completely filled in. */
+	/* The slot is published only when it is completely filled in, and the input thread reads it. */
 	device->live = 1;
+	input_attach(server, device);
 
 	/* One line per role lets a test see which devices the seat uses. */
 	if (pointer)
@@ -298,228 +291,378 @@ kwl_input_attach(
 }
 
 /*
- * Drains the events the ready devices have and applies them in the order
- * they were made (BUG-142).
- *
- * Each device's reports are gathered in the device until its SYN_REPORT, so
- * the order between devices is the order of their events' times: a key
- * pressed before a click is applied before it even when both waited while
- * the compositor was busy.  Events of one time keep the devices' order, and
- * one device's events keep their own.  A read error other than "nothing
- * ready" means the device went away, and it is closed.
- */
-void
-kwl_input_read_devices(
-	struct kwl_server *server,
-	struct kwl_input_device **devices,
-	size_t count)
-{
-	static struct input_source sources[KWL_INPUT_MAX];
-	struct input_source *earliest;
-	size_t used;
-	size_t index;
-	int ready;
-	int before;
-
-	/* One source for each device given, up to the seat's devices. */
-	used = count;
-	if (used > KWL_INPUT_MAX)
-		used = KWL_INPUT_MAX;
-	for (index = 0; index < used; index++) {
-		sources[index].device = devices[index];
-		sources[index].count = 0;
-		sources[index].next = 0;
-		sources[index].reads = 0;
-		sources[index].done = 0;
-	}
-
-	/* Applies the earliest waiting event until no device has one this pass. */
-	for (;;) {
-		earliest = NULL;
-		for (index = 0; index < used; index++) {
-			/* A source that ran out reads again, within its reads for the pass. */
-			ready = source_fill(server, &sources[index]);
-			if (!ready)
-				continue;
-
-			/* The first source with the earliest event wins a tie. */
-			if (earliest == NULL) {
-				earliest = &sources[index];
-				continue;
-			}
-
-			/* A later source wins only with an earlier event. */
-			before = event_earlier(&sources[index].events[sources[index].next],
-					       &earliest->events[earliest->next]);
-			if (before)
-				earliest = &sources[index];
-		}
-
-		/* Nothing is left to apply. */
-		if (earliest == NULL)
-			return;
-
-		/* Applies the event and moves its source on. */
-		consume_event(server, earliest->device, &earliest->events[earliest->next]);
-		earliest->next++;
-	}
-}
-
-/*
- * Makes sure a source has an event to apply, reading its device when the
- * events read before are used up.  Reports 1 when it has one, 0 when the
- * device has nothing more this pass (nothing ready, its reads used, or gone).
- */
-static int
-source_fill(
-	struct kwl_server *server,
-	struct input_source *source)
-{
-	ssize_t count;
-	int error;
-
-	/* Events read before are still waiting. */
-	if (source->next < source->count)
-		return 1;
-
-	/* Reads until the device gives events, has none, or the pass's reads are used. */
-	while (!source->done) {
-		/* A closed slot, or one that had its reads, has nothing more this pass. */
-		if (!source->device->live || source->reads >= INPUT_READS_PER_PASS) {
-			source->done = 1;
-			break;
-		}
-
-		/* Reads as many whole events as the buffer holds. */
-		source->reads++;
-		count = input_read(server, source->device, source->events, INPUT_READ_EVENTS);
-		if (count > 0) {
-			source->count = (size_t)count;
-			source->next = 0;
-			return 1;
-		}
-
-		/* End of file means the node is gone. */
-		if (count == 0) {
-			printf("KWL INPUT_CLOSED device=%s errno=%d\n", source->device->path, EIO);
-			kwl_input_close(server, source->device);
-			source->done = 1;
-			break;
-		}
-
-		/* Nothing more is ready; the next poll will say when there is. */
-		error = errno;
-		if (error == EAGAIN || error == EWOULDBLOCK) {
-			source->done = 1;
-			break;
-		}
-
-		/* Any other failure but an interruption means the device is gone. */
-		if (error != EINTR) {
-			printf("KWL INPUT_CLOSED device=%s errno=%d\n", source->device->path, error);
-			kwl_input_close(server, source->device);
-			source->done = 1;
-		}
-	}
-
-	/* Nothing to apply from this device this pass. */
-	return 0;
-}
-
-/* Reports whether an event was made before another (by its evdev time). */
-static int
-event_earlier(
-	const struct input_event *event,
-	const struct input_event *other)
-{
-	/* The seconds decide first. */
-	if (event->time.tv_sec < other->time.tv_sec)
-		return 1;
-	if (event->time.tv_sec > other->time.tv_sec)
-		return 0;
-
-	/* Then the microseconds. */
-	if (event->time.tv_usec < other->time.tv_usec)
-		return 1;
-
-	/* Made at the same time or later. */
-	return 0;
-}
-
-/*
- * Closes one device and tells bound seats when a device class disappears.
- */
-void
-kwl_input_close(
-	struct kwl_server *server,
-	struct kwl_input_device *device)
-{
-	struct kwl_touchpad_actions actions;
-
-	/* A slot that is not in use has no descriptor. */
-	if (!device->live)
-		return;
-
-	/* A pen tablet's clients hear that it and its tools are gone (tablet.c). */
-	if (device->tablet)
-		kwl_tablet_remove(server, device, 1);
-
-	/* A touch screen's fingers end (touch.c). */
-	if (device->touch)
-		kwl_touch_remove(server, device, 1);
-
-	/* A touch pad lets go of every button it holds. */
-	if (device->touchpad) {
-		kwl_touchpad_release_all(&device->pad, &actions);
-		apply_touchpad_actions(server, &device->pad, &actions, (uint32_t)kwl_milliseconds());
-	}
-
-	/* The slot is free once its descriptor is closed. */
-	kl_backend_input_close(server->backend, device->fd);
-	device->fd = -1;
-	device->live = 0;
-
-	/* Bound seats learn that a class of device may be gone. */
-	update_capabilities(server);
-
-	/* Succeeded: the device is no longer read. */
-	return;
-}
-
-/*
- * Forgets one device whose descriptor the seat has already closed
- * (libkeiland-backend's input_gone, ws131-p006): the same as
- * kwl_input_close without returning the descriptor.
+ * Forgets one device whose descriptor the seat closes after this returns
+ * (libkeiland-backend's input_gone, ws131-p006): the input thread lets go
+ * of the descriptor first, and the record goes once the device's last
+ * event is applied (a touch pad's release of its buttons among them).
  */
 void
 kwl_input_forget(
 	struct kwl_server *server,
 	struct kwl_input_device *device)
 {
-	struct kwl_touchpad_actions actions;
-
-	/* A slot that is not in use has nothing to forget. */
-	if (!device->live)
+	/* A slot not in use, or one already going, has nothing to forget. */
+	if (!device->live || device->closing)
 		return;
 
-	/* A pen tablet's clients and a touch screen's fingers hear that it is gone. */
-	if (device->tablet)
-		kwl_tablet_remove(server, device, 1);
-	if (device->touch)
-		kwl_touch_remove(server, device, 1);
-
-	/* A touch pad lets go of every button it holds. */
-	if (device->touchpad) {
-		kwl_touchpad_release_all(&device->pad, &actions);
-		apply_touchpad_actions(server, &device->pad, &actions, (uint32_t)kwl_milliseconds());
+	/* A device the input thread does not read goes now. */
+	if (!device->attached) {
+		input_retire(server, device);
+		return;
 	}
 
-	/* The slot is free; its descriptor was the seat's. */
+	/* The input thread lets go; its last event of the device retires the record. */
+	input_detach(server, device);
+	device->closing = 1U;
 	device->fd = -1;
-	device->live = 0;
+}
 
-	/* Bound seats learn that a class of device may be gone. */
-	update_capabilities(server);
+/*
+ * Makes the pipe the compositor's threads wake the main thread with and
+ * the cursor's box (ws213-p004), before the output and its cursor plane
+ * open: the cursor thread reads the box from the plane's opening on.
+ */
+int
+kwl_threads_prepare(
+	struct kwl_server *server)
+{
+	unsigned index;
+	int error;
+
+	/* Made once. */
+	if (server->threads_prepared)
+		return 0;
+
+	/* The wake pipe; neither end blocks or goes to a program the compositor starts. */
+	error = pipe(server->wake);
+	if (error != 0)
+		return errno;
+	for (index = 0; index < 2U; index++) {
+		(void)fcntl(server->wake[index], F_SETFL, O_NONBLOCK);
+		(void)fcntl(server->wake[index], F_SETFD, FD_CLOEXEC);
+	}
+
+	/* The box, its place given when the input thread starts. */
+	error = kwl_cursor_box_init(&server->cursor_box, server->pointer_x, server->pointer_y, server->width, server->height);
+	if (error != 0) {
+		for (index = 0; index < 2U; index++) {
+			close(server->wake[index]);
+			server->wake[index] = -1;
+		}
+
+		/* No box, no pipe. */
+		return error;
+	}
+
+	/* Succeeded: the threads can share the box. */
+	server->threads_prepared = 1U;
+	return 0;
+}
+
+/*
+ * Starts the input thread with the pointer where it starts in the
+ * cursor's box (ws213-p004).
+ */
+int
+kwl_input_threads_start(
+	struct kwl_server *server)
+{
+	struct kwl_input_settings settings;
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	struct kwl_cursor_motion place;
+	int error;
+
+	/* The wake pipe and the box, unless made before the output. */
+	error = kwl_threads_prepare(server);
+	if (error != 0)
+		return error;
+
+	/* The pointer's first place, and the outputs, in the box. */
+	(void)kwl_outputs(server, outputs);
+	place.x = server->pointer_x;
+	place.y = server->pointer_y;
+	place.output = server->pointer_output;
+	kwl_pointer_warp(server, outputs, pointer_warp_place, &place);
+
+	/* The input thread with the user's settings, reading through the backend. */
+	input_settings(server, &settings);
+	error = kwl_input_thread_init(&server->input_thread, &server->cursor_box, server->wake[1], kl_backend_input_read, &settings);
+	if (error != 0)
+		return error;
+
+	/* The settings the input thread has, compared at each pass. */
+	server->input_settings_given = settings;
+
+	/* The thread runs. */
+	error = kwl_input_thread_start(&server->input_thread);
+	if (error != 0) {
+		kwl_input_thread_destroy(&server->input_thread);
+		return error;
+	}
+
+	/* Succeeded: the devices opened from now on are read by the input thread. */
+	server->input_thread_ready = 1U;
+	return 0;
+}
+
+/*
+ * Stops the input thread, which then uses no descriptor, and frees what it
+ * leaves, the box and the wake pipe (the devices stay open for
+ * kwl_input_cleanup).  The cursor thread has stopped with the output.
+ */
+void
+kwl_input_threads_stop(
+	struct kwl_server *server)
+{
+	unsigned index;
+
+	/* The thread ends, and no device is attached any more. */
+	if (server->input_thread_ready) {
+		kwl_input_thread_stop(&server->input_thread);
+		kwl_input_thread_destroy(&server->input_thread);
+		for (index = 0; index < KWL_INPUT_MAX; index++)
+			server->inputs[index].attached = 0U;
+		server->input_thread_ready = 0U;
+	}
+
+	/* Nothing else was made. */
+	if (!server->threads_prepared)
+		return;
+
+	/* The box and the wake pipe. */
+	kwl_cursor_box_destroy(&server->cursor_box);
+	for (index = 0; index < 2U; index++) {
+		close(server->wake[index]);
+		server->wake[index] = -1;
+	}
+
+	/* Nothing is left to share. */
+	server->threads_prepared = 0U;
+}
+
+/*
+ * Applies the input thread's events in the order it made them: the
+ * clients' pointer and keyboard events, the hover, the shell's gestures,
+ * the devices that ended.  The main thread empties its wake pipe before.
+ */
+void
+kwl_input_drain(
+	struct kwl_server *server)
+{
+	struct kwl_input_event *events;
+	struct kwl_input_event *event;
+	unsigned dropped;
+	int failed;
+
+	/* Nothing runs before the thread starts. */
+	if (!server->input_thread_ready)
+		return;
+
+	/* Events lost for want of memory, and a thread that stopped. */
+	failed = kwl_input_thread_failure(&server->input_thread, &dropped);
+	if (dropped != 0U)
+		printf("KWL INPUT dropped=%u\n", dropped);
+	if (failed != 0) {
+		kwl_fatal("KWL FAILED site=input-thread errno=%d", failed);
+		server->failed = 1U;
+	}
+
+	/* Each event in order, freed once applied. */
+	events = kwl_input_thread_take(&server->input_thread);
+	while (events != NULL) {
+		event = events;
+		events = event->next;
+		apply_event(server, event);
+		free(event);
+	}
+}
+
+/*
+ * Gives the input thread the settings and the outputs' rectangles when
+ * they changed since it was last given them (once a pass, before the poll).
+ */
+void
+kwl_input_sync(
+	struct kwl_server *server)
+{
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	struct kwl_input_settings settings;
+	unsigned count;
+	int same;
+
+	/* Nothing runs before the thread starts. */
+	if (!server->input_thread_ready)
+		return;
+
+	/* The settings, when the user changed them. */
+	input_settings(server, &settings);
+	same = memcmp(&settings, &server->input_settings_given, sizeof(settings));
+	if (same != 0) {
+		kwl_input_thread_settings(&server->input_thread, &settings);
+		server->input_settings_given = settings;
+	}
+
+	/* The outputs' rectangles the motions are computed over. */
+	count = kwl_outputs(server, outputs);
+	kwl_cursor_box_outputs(&server->cursor_box, outputs, count);
+}
+
+/*
+ * Stops reading one input the seat paused (libkeiland-backend's
+ * input_paused); its descriptor stays the seat's, and its record stays for
+ * the resume.
+ */
+void
+kwl_input_pause(
+	struct kwl_server *server,
+	struct kwl_input_device *device)
+{
+	/* The input thread lets go before the seat revokes the descriptor. */
+	input_detach(server, device);
+	device->fd = -1;
+}
+
+/*
+ * Reads one input again on the new descriptor the seat gave
+ * (libkeiland-backend's input_resumed); a report of the old one does not
+ * enter it.
+ */
+void
+kwl_input_resume(
+	struct kwl_server *server,
+	struct kwl_input_device *device,
+	int descriptor)
+{
+	/* The old descriptor, should the input thread still read it, is let go first. */
+	input_detach(server, device);
+
+	/* The new one, read afresh. */
+	device->fd = descriptor;
+	input_attach(server, device);
+}
+
+/*
+ * Stops reading every input (the seat paused the session): the detaches
+ * are all asked first, then the last one's acknowledgement is waited for,
+ * which comes after every earlier one.
+ */
+void
+kwl_input_detach_all(
+	struct kwl_server *server)
+{
+	uint64_t sequence;
+	uint64_t last;
+	uint64_t asked_ms;
+	unsigned index;
+	unsigned count;
+	int error;
+
+	/* Nothing runs before the thread starts. */
+	if (!server->input_thread_ready)
+		return;
+
+	/* Each attached device's detach, from when they were asked (the failure's line says how long it waited). */
+	last = 0U;
+	count = 0U;
+	asked_ms = kwl_milliseconds();
+	for (index = 0; index < KWL_INPUT_MAX; index++) {
+		if (!server->inputs[index].attached)
+			continue;
+		error = kwl_input_thread_detach(&server->input_thread, index, &sequence);
+		if (error != 0)
+			input_detach_failed("input-detach-all", server, &server->inputs[index], 1U, 0U, asked_ms, error);
+		last = sequence;
+		count++;
+	}
+
+	/* The last acknowledgement covers them all. */
+	if (last == 0U)
+		return;
+	error = kwl_input_thread_detach_wait(&server->input_thread, last, KWL_INPUT_DETACH_WAIT_MS);
+	if (error != 0)
+		input_detach_failed("input-detach-all", server, NULL, count, last, asked_ms, error);
+	for (index = 0; index < KWL_INPUT_MAX; index++)
+		server->inputs[index].attached = 0U;
+}
+
+/*
+ * Attaches again every input the session's pause detached whose
+ * descriptor is still open (the seat gave no input of its own back).
+ */
+void
+kwl_input_attach_all(
+	struct kwl_server *server)
+{
+	struct kwl_input_device *device;
+	unsigned index;
+
+	/* Each live device that has a descriptor and is not read. */
+	for (index = 0; index < KWL_INPUT_MAX; index++) {
+		device = &server->inputs[index];
+		if (!device->live || device->closing || device->attached || device->fd < 0)
+			continue;
+		input_attach(server, device);
+	}
+}
+
+/*
+ * Moves the pointer for the main thread (a warp, design 6.1): the move
+ * computes the new place from the cursor's box under its lock, the
+ * outputs' rectangles (when given) change in the same section, and the
+ * main thread's view becomes the new place.  The input thread's motions
+ * computed before are not taken as the pointer's place after it.
+ */
+void
+kwl_pointer_warp(
+	struct kwl_server *server,
+	const struct kwl_plane_rect *outputs,
+	kwl_cursor_box_move_fn *move,
+	const void *context)
+{
+	struct kwl_cursor_motion motion;
+	int32_t x;
+	int32_t y;
+	unsigned output;
+
+	/* Without the box the main thread's view is the place itself. */
+	if (!server->threads_prepared) {
+		x = server->pointer_x;
+		y = server->pointer_y;
+		output = server->pointer_output;
+		move(context, outputs, &x, &y, &output);
+		server->pointer_x = x;
+		server->pointer_y = y;
+		server->pointer_output = output;
+		return;
+	}
+
+	/* The box moves; the main thread's view and warp count follow it. */
+	kwl_cursor_box_warp(&server->cursor_box, outputs, KWL_PLANE_SLOTS, move, context, &motion);
+	server->pointer_x = motion.x;
+	server->pointer_y = motion.y;
+	server->pointer_output = motion.output;
+	server->pointer_warp = motion.warp;
+}
+
+/*
+ * Places the pointer on the anchor where an absolute device (a pen tablet,
+ * a touch screen) put it, as a warp.
+ */
+void
+kwl_pointer_warp_to(
+	struct kwl_server *server,
+	int32_t x,
+	int32_t y)
+{
+	struct kwl_cursor_motion place;
+
+	/* The place, on the anchor. */
+	place.x = x;
+	place.y = y;
+	place.output = KWL_PLANE_ANCHOR;
+
+	/* Written as a warp. */
+	kwl_pointer_warp(server, NULL, pointer_warp_place, &place);
 }
 
 /*
@@ -604,271 +747,6 @@ bit_is_set(
 	return 0;
 }
 
-/* Adds one event to the device's pending report, or completes the report. */
-static void
-consume_event(
-	struct kwl_server *server,
-	struct kwl_input_device *device,
-	const struct input_event *event)
-{
-	uint32_t time;
-
-	/* The kernel dropped events: forget the partial report and skip to the next one. */
-	if (event->type == EV_SYN && event->code == SYN_DROPPED) {
-		device->frame_count = 0;
-		device->discarding = 1;
-		return;
-	}
-
-	/* SYN_REPORT completes a report, unless the report was damaged by a drop. */
-	if (event->type == EV_SYN && event->code == SYN_REPORT) {
-		/* A damaged report is thrown away; the next one is applied again. */
-		if (device->discarding) {
-			device->discarding = 0;
-			device->frame_count = 0;
-			return;
-		}
-
-		/* An intact report is applied as one group: a pen tablet's by the tablet (tablet.c), a touch screen's by touch.c. */
-		time = event_time(event);
-		device->frame_time_us = (uint64_t)event->time.tv_sec * 1000000U + (uint64_t)event->time.tv_usec;
-		if (device->tablet) {
-			kwl_tablet_frame(server, device, time);
-		} else if (device->touch) {
-			kwl_touch_frame(server, device, time);
-		} else if (device->touchpad) {
-			apply_touchpad(server, device, time);
-		} else {
-			apply_frame(server, device, time);
-		}
-
-		/* The next report starts empty. */
-		device->frame_count = 0;
-		return;
-	}
-
-	/* Other synchronization events and a damaged report carry nothing to keep. */
-	if (event->type == EV_SYN || device->discarding)
-		return;
-
-	/* The exit summary counts every evdev event that was not a synchronization. */
-	server->input_events++;
-
-	/* A report too large to hold is thrown away like a dropped one. */
-	if (device->frame_count == KWL_INPUT_FRAME_MAX) {
-		device->frame_count = 0;
-		device->discarding = 1;
-		return;
-	}
-
-	/* Keep the event until its report completes. */
-	device->frame[device->frame_count] = *event;
-	device->frame_count++;
-
-	/* Succeeded: the event waits for SYN_REPORT. */
-	return;
-}
-
-/* Applies one completed report: motion, buttons and keys, scrolling, frame. */
-static void
-apply_frame(
-	struct kwl_server *server,
-	struct kwl_input_device *device,
-	uint32_t time)
-{
-	const struct input_event *event;
-	int64_t delta_x;
-	int64_t delta_y;
-	int64_t moved_x;
-	int64_t moved_y;
-	int32_t wheel;
-	int32_t horizontal_wheel;
-	int32_t x;
-	int32_t y;
-	int32_t old_x;
-	int32_t old_y;
-	unsigned absolute_seen;
-	unsigned pointer_activity;
-	unsigned index;
-
-	/* Collect relative movement, wheel steps and the latest absolute position. */
-	delta_x = 0;
-	delta_y = 0;
-	wheel = 0;
-	horizontal_wheel = 0;
-	absolute_seen = 0;
-	for (index = 0; index < device->frame_count; index++) {
-		event = &device->frame[index];
-
-		/* Only a pointer's axes move the pointer. */
-		if (!device->pointer)
-			break;
-
-		/* Relative axes add up over the report. */
-		if (event->type == EV_REL) {
-			/* Each relative code feeds its own sum. */
-			if (event->code == REL_X) {
-				delta_x += event->value;
-			} else if (event->code == REL_Y) {
-				delta_y += event->value;
-			} else if (event->code == REL_WHEEL) {
-				wheel += event->value;
-			} else if (event->code == REL_HWHEEL) {
-				horizontal_wheel += event->value;
-			}
-		}
-
-		/* Absolute axes replace the device's remembered position. */
-		if (event->type == EV_ABS && device->absolute) {
-			/* Each axis is remembered separately, as a report may carry only one. */
-			if (event->code == ABS_X) {
-				device->abs_x = event->value;
-				absolute_seen = 1;
-			} else if (event->code == ABS_Y) {
-				device->abs_y = event->value;
-				absolute_seen = 1;
-			}
-		}
-	}
-
-	/*
-	 * The device placed or moved the pointer, even onto the place it
-	 * already had: its arrow is shown from now on, drawn where it is
-	 * (ws035-p116).
-	 */
-	if (server->pointer_unmoved &&
-	    (absolute_seen ||
-	     delta_x != 0 ||
-	     delta_y != 0)) {
-		server->pointer_unmoved = 0U;
-		kwl_damage_pointer(server, server->pointer_x, server->pointer_y);
-		printf("KWL CURSOR shown by=pointer device=%s\n", device->path);
-	}
-
-	/* An absolute report places the pointer; relative movement is added and clamped. */
-	x = server->pointer_x;
-	y = server->pointer_y;
-	if (absolute_seen) {
-		x = scale_absolute(device->abs_x, device->abs_x_minimum, device->abs_x_maximum, server->width);
-		y = scale_absolute(device->abs_y, device->abs_y_minimum, device->abs_y_maximum, server->height);
-	}
-
-	/*
-	 * The relative movement at the mouse's speed and acceleration
-	 * (ws089-p024), the fractions of a pixel carried to the next report so
-	 * that a slow pointer still moves.
-	 */
-	if (delta_x != 0 || delta_y != 0) {
-		kwl_pointer_accel_move(&device->accel, delta_x, delta_y, device->frame_time_us, server->mouse_speed, server->mouse_acceleration, &moved_x, &moved_y);
-		delta_x = moved_x;
-		delta_y = moved_y;
-	}
-
-	/*
-	 * An absolute device maps onto the anchor; relative movement goes over
-	 * the outputs shown, across their shared edges (ws113-p007).
-	 */
-	if (absolute_seen) {
-		kwl_pointer_absolute(server);
-		x = clamp_position((int64_t)x + delta_x, server->width);
-		y = clamp_position((int64_t)y + delta_y, server->height);
-	} else {
-		kwl_pointer_relative(server, delta_x, delta_y, &x, &y);
-	}
-
-	/* A changed position is reported as motion before any button of the same report. */
-	pointer_activity = 0;
-	if (x != server->pointer_x || y != server->pointer_y) {
-		old_x = server->pointer_x;
-		old_y = server->pointer_y;
-		server->pointer_x = x;
-		server->pointer_y = y;
-		kwl_seat_motion(server, time);
-
-		/* Window mode draws the cursor at its new place (and where it was, damage.c). */
-		kwl_damage_pointer(server, old_x, old_y);
-		pointer_activity = 1;
-	}
-
-	/* Buttons and keys follow in the order the device reported them. */
-	for (index = 0; index < device->frame_count; index++) {
-		event = &device->frame[index];
-
-		/* Only key-type events are buttons or keys. */
-		if (event->type != EV_KEY)
-			continue;
-
-		/* Autorepeat (value 2) is not forwarded; the client is told not to repeat either. */
-		if (event->value != 0 && event->value != 1)
-			continue;
-
-		/* A pointer's mouse buttons become wl_pointer buttons with their BTN_ code. */
-		if (device->pointer &&
-		    event->code >= INPUT_BUTTON_FIRST &&
-		    event->code <= INPUT_BUTTON_LAST) {
-			kwl_seat_button(server, time, event->code, (uint32_t)event->value);
-			pointer_activity = 1;
-			continue;
-		}
-
-		/* The rest of the button block is neither a mouse button nor a key. */
-		if (event->code >= INPUT_BUTTON_BLOCK_FIRST && event->code < INPUT_BUTTON_BLOCK_END)
-			continue;
-
-		/* A keyboard's keys become wl_keyboard keys with their evdev code. */
-		if (device->keyboard)
-			apply_key(server, time, event->code, event->value);
-	}
-
-	/* The user's natural scrolling for a mouse (ws089-p007, p024) turns the wheel round. */
-	if (server->mouse_natural != 0) {
-		wheel = -wheel;
-		horizontal_wheel = -horizontal_wheel;
-	}
-
-	/* Wheel notches scroll; evdev counts up as positive, Wayland counts down as positive. */
-	if (wheel != 0 || horizontal_wheel != 0) {
-		kwl_seat_axis(server, time, -wheel, horizontal_wheel);
-		pointer_activity = 1;
-	}
-
-	/* Version 5 pointers are told where this report's events end. */
-	if (pointer_activity)
-		kwl_seat_frame(server);
-
-	/* Succeeded: the report has been delivered. */
-	return;
-}
-
-/*
- * Applies one report of a touch pad: its events go to the touch pad layer,
- * and the layer's actions move the pointer, press its buttons and scroll
- * (ws159-p004).
- */
-static void
-apply_touchpad(
-	struct kwl_server *server,
-	struct kwl_input_device *device,
-	uint32_t time)
-{
-	struct kwl_touchpad_actions actions;
-	const struct input_event *event;
-	unsigned index;
-
-	/* The report's events, in order. */
-	for (index = 0; index < device->frame_count; index++) {
-		event = &device->frame[index];
-		kwl_touchpad_event(&device->pad, event->type, event->code, event->value);
-	}
-
-	/* The report's end: what the fingers did. */
-	kwl_touchpad_frame(&device->pad, kwl_milliseconds(), &actions);
-	apply_touchpad_actions(server, &device->pad, &actions, time);
-
-	/* Succeeded: the report has been applied. */
-	return;
-}
-
 /*
  * Passes the end of a touch pad's touch on the lock screen to it (ws187-p002):
  * with the travel of a gesture up that ended (two fingers from the bottom
@@ -900,14 +778,18 @@ lock_pad_gesture(
 	kwl_greeter_pad_end(server, gesture_up_um);
 }
 
-/* Carries out the actions of the touch pad layer on the seat, as a mouse's report would. */
+/*
+ * Carries out the actions of the touch pad layer on the seat, as a mouse's
+ * report would; its motions are already in the cursor's box, and the main
+ * thread's view of the pointer follows them.
+ */
 static void
 apply_touchpad_actions(
 	struct kwl_server *server,
-	const struct kwl_touchpad *pad,
-	const struct kwl_touchpad_actions *actions,
+	const struct kwl_input_pad *pad,
 	uint32_t time)
 {
+	const struct kwl_touchpad_actions *actions;
 	const struct kwl_touchpad_action *action;
 	int64_t down_um;
 	unsigned activity;
@@ -916,6 +798,7 @@ apply_touchpad_actions(
 	int taken;
 
 	/* Each action in order. */
+	actions = &pad->actions;
 	activity = 0;
 	for (index = 0; index < actions->count; index++) {
 		action = &actions->actions[index];
@@ -923,8 +806,16 @@ apply_touchpad_actions(
 		/* Its kind. */
 		switch (action->kind) {
 		case KWL_TOUCHPAD_MOTION:
-			/* The pointer moves, at the user's speed. */
-			moved = pointer_move(server, action->dx, action->dy, time);
+			/* The fingers moved the pointer: its arrow is shown from now on (ws035-p116). */
+			if (server->pointer_unmoved && pad->nonzero[index]) {
+				server->pointer_unmoved = 0U;
+				kwl_damage_pointer(server, server->pointer_x, server->pointer_y);
+				printf("KWL CURSOR shown by=touchpad\n");
+			}
+
+			/* The pointer is where the input thread moved it, at the user's speed. */
+			box_measure(server, &pad->motions[index]);
+			moved = apply_motion(server, &pad->motions[index], 0U, time);
 			if (moved)
 				activity = 1;
 			break;
@@ -976,101 +867,15 @@ apply_touchpad_actions(
 }
 
 /*
- * Gives every touch pad attached the touch pads' acceleration and
- * scrolling direction again, after the settings changed them (ws089-p024).
+ * Gives the input thread the touch pads' acceleration and scrolling
+ * direction again, after the settings changed them (ws089-p024).
  */
 void
 kwl_input_touchpads_changed(
 	struct kwl_server *server)
 {
-	unsigned index;
-
-	/* Every touch pad in use. */
-	for (index = 0; index < KWL_INPUT_MAX; index++) {
-		/* A free slot, or a device that is no touch pad. */
-		if (!server->inputs[index].live || !server->inputs[index].touchpad)
-			continue;
-
-		/* The new feel, from the next report on. */
-		kwl_touchpad_set_feel(&server->inputs[index].pad, server->touchpad_acceleration, server->touchpad_natural);
-	}
-}
-
-/*
- * Lets time pass for the touch pads: a tap whose drag did not come
- * completes its click (touchpad.c).
- */
-void
-kwl_input_tick(
-	struct kwl_server *server,
-	uint64_t now)
-{
-	struct kwl_touchpad_actions actions;
-	unsigned index;
-
-	/* Every touch pad in use. */
-	for (index = 0; index < KWL_INPUT_MAX; index++) {
-		/* A free slot, or a device that is no touch pad, has no time to keep. */
-		if (!server->inputs[index].live || !server->inputs[index].touchpad)
-			continue;
-
-		/* Its layer's timers, and what they give. */
-		kwl_touchpad_tick(&server->inputs[index].pad, now, &actions);
-		apply_touchpad_actions(server, &server->inputs[index].pad, &actions, (uint32_t)now);
-	}
-
-	/* Succeeded: the timers have run. */
-	return;
-}
-
-/*
- * Moves the pointer by a relative motion at the user's speed, kept on the
- * output, as a mouse's motion does (apply_frame).  Reports whether it moved.
- */
-static int
-pointer_move(
-	struct kwl_server *server,
-	int64_t delta_x,
-	int64_t delta_y,
-	uint32_t time)
-{
-	int32_t x;
-	int32_t y;
-	int32_t old_x;
-	int32_t old_y;
-
-	/* The device moved the pointer: its arrow is shown from now on (ws035-p116). */
-	if (server->pointer_unmoved && (delta_x != 0 || delta_y != 0)) {
-		server->pointer_unmoved = 0U;
-		kwl_damage_pointer(server, server->pointer_x, server->pointer_y);
-		printf("KWL CURSOR shown by=touchpad\n");
-	}
-
-	/* The motion at the touch pads' speed (ws089-p007, p024, a percentage), the hundredths carried. */
-	if (server->touchpad_speed != 100 && (delta_x != 0 || delta_y != 0)) {
-		delta_x = delta_x * server->touchpad_speed + server->pointer_remainder_x;
-		delta_y = delta_y * server->touchpad_speed + server->pointer_remainder_y;
-		server->pointer_remainder_x = delta_x % 100;
-		server->pointer_remainder_y = delta_y % 100;
-		delta_x /= 100;
-		delta_y /= 100;
-	}
-
-	/* The new place, over the outputs shown (ws113-p007). */
-	kwl_pointer_relative(server, delta_x, delta_y, &x, &y);
-	if (x == server->pointer_x && y == server->pointer_y)
-		return 0;
-
-	/* The pointer moves; the seat hears it, and the cursor is drawn at its new place. */
-	old_x = server->pointer_x;
-	old_y = server->pointer_y;
-	server->pointer_x = x;
-	server->pointer_y = y;
-	kwl_seat_motion(server, time);
-	kwl_damage_pointer(server, old_x, old_y);
-
-	/* Succeeded: the pointer moved. */
-	return 1;
+	/* The settings go with the rest. */
+	kwl_input_sync(server);
 }
 
 /* Tells whether a node is a touch pad: multitouch protocol B, and a pointer by its properties. */
@@ -1140,12 +945,18 @@ attach_touchpad(
 	device->pointer = 1;
 	device->touchpad = 1;
 	snprintf(device->path, sizeof(device->path), "%s", path);
-	kwl_touchpad_init(&device->pad, x.resolution, y.resolution);
-	kwl_touchpad_set_range(&device->pad, x.minimum, x.maximum, y.minimum, y.maximum);
-	kwl_touchpad_set_feel(&device->pad, server->touchpad_acceleration, server->touchpad_natural);
 
-	/* The slot is published only when it is completely filled in. */
+	/* The input thread starts the layer with the fingers' resolution and range. */
+	device->reading.resolution_x = x.resolution;
+	device->reading.resolution_y = y.resolution;
+	device->reading.pad_x_minimum = x.minimum;
+	device->reading.pad_x_maximum = x.maximum;
+	device->reading.pad_y_minimum = y.minimum;
+	device->reading.pad_y_maximum = y.maximum;
+
+	/* The slot is published only when it is completely filled in, and the input thread reads it. */
 	device->live = 1;
+	input_attach(server, device);
 
 	/* One line lets a test see the touch pad and its resolution. */
 	printf("KWL INPUT device=%s kind=touchpad abs=0 resolution=%d,%d size=%d,%d\n", device->path, x.resolution, y.resolution, x.maximum, y.maximum);
@@ -1242,66 +1053,6 @@ apply_key(
 	return;
 }
 
-/* Maps one absolute axis value onto 0 .. size - 1 surface pixels. */
-static int32_t
-scale_absolute(
-	int32_t value,
-	int32_t minimum,
-	int32_t maximum,
-	uint32_t size)
-{
-	int64_t offset;
-	int64_t range;
-
-	/* The low end of the range, and anything below it, is the first pixel. */
-	if (size <= 1U || value <= minimum)
-		return 0;
-
-	/* The high end of the range, and anything above it, is the last pixel. */
-	if (value >= maximum)
-		return (int32_t)size - 1;
-
-	/* Everything between scales linearly, rounding down. */
-	offset = (int64_t)value - minimum;
-	range = (int64_t)maximum - minimum;
-
-	/* Succeeded: the pixel the value falls on. */
-	return (int32_t)((offset * ((int64_t)size - 1)) / range);
-}
-
-/* Keeps a pointer coordinate inside 0 .. size - 1. */
-static int32_t
-clamp_position(
-	int64_t position,
-	uint32_t size)
-{
-	/* Nothing lies left of or above the surface. */
-	if (position < 0)
-		return 0;
-
-	/* Nothing lies right of or below the surface. */
-	if (position >= (int64_t)size)
-		return (int32_t)size - 1;
-
-	/* Succeeded: the position is already on the surface. */
-	return (int32_t)position;
-}
-
-/* Converts an evdev timestamp to the wrapping millisecond count Wayland uses. */
-static uint32_t
-event_time(
-	const struct input_event *event)
-{
-	uint64_t milliseconds;
-
-	/* Seconds and microseconds become milliseconds, keeping the low 32 bits. */
-	milliseconds = (uint64_t)event->time.tv_sec * 1000U;
-	milliseconds += (uint64_t)event->time.tv_usec / 1000U;
-
-	/* Succeeded: the event time with an undefined base, as the protocol allows. */
-	return (uint32_t)milliseconds;
-}
-
 /* Recomputes the seat's capability bits and tells bound seats when they change. */
 static void
 update_capabilities(
@@ -1388,8 +1139,9 @@ attach_tablet(
 		return error;
 	}
 
-	/* The slot is published only when it is completely filled in. */
+	/* The slot is published only when it is completely filled in, and the input thread reads it. */
 	device->live = 1;
+	input_attach(server, device);
 
 	/* One line lets a test see which devices the seat uses. */
 	printf("KWL INPUT device=%s kind=tablet abs=1\n", device->path);
@@ -1446,8 +1198,9 @@ attach_touch(
 		return error;
 	}
 
-	/* The slot is published only when it is completely filled in. */
+	/* The slot is published only when it is completely filled in, and the input thread reads it. */
 	device->live = 1;
+	input_attach(server, device);
 
 	/* One line lets a test see which devices the seat uses. */
 	printf("KWL INPUT device=%s kind=touch abs=1\n", device->path);
@@ -1457,41 +1210,6 @@ attach_touch(
 
 	/* Succeeded: the event loop now reads this device. */
 	return 0;
-}
-
-/*
- * Reads whole events from a device through the backend.  A device the seat
- * revoked (ENODEV) that logind keeps for its later resume is set aside (its
- * record's descriptor -1) and reads as nothing ready (EAGAIN): the seat's
- * input_resumed or input_gone comes later (ws105-p009, ws131-p007).
- */
-static ssize_t
-input_read(
-	struct kwl_server *server,
-	struct kwl_input_device *device,
-	struct input_event *events,
-	size_t capacity)
-{
-	ssize_t count;
-	int retained;
-
-	/* The events, or the reason there are none. */
-	count = kl_backend_input_read(device->fd, events, capacity);
-	if (count >= 0 || errno != ENODEV)
-		return count;
-
-	/* A revoked device the seat keeps waits for the seat; another closes as usual. */
-	retained = kl_backend_seat_device_revoked(server->backend, device->fd);
-	if (retained == 0) {
-		errno = ENODEV;
-		return -1;
-	}
-
-	/* Retained: the descriptor is forgotten until the seat gives the device back. */
-	printf("KWL SEAT input_revoked path=%s lease=retained\n", device->path);
-	device->fd = -1;
-	errno = EAGAIN;
-	return -1;
 }
 
 /* Reports whether a node speaks multitouch protocol B: slots, tracking numbers and both places. */
@@ -1540,4 +1258,544 @@ kwl_input_alt_held(
 
 	/* Neither. */
 	return 0;
+}
+
+/* Applies one event of the input thread to its device. */
+static void
+apply_event(
+	struct kwl_server *server,
+	const struct kwl_input_event *event)
+{
+	struct kwl_input_device *device;
+
+	/* A device no longer in the table has nothing to apply to. */
+	if (event->slot >= KWL_INPUT_MAX)
+		return;
+	device = &server->inputs[event->slot];
+	if (!device->live)
+		return;
+
+	/*
+	 * The last input, which a layer's picture drawn in the quiet waits on
+	 * (layer-cache.c), and the exit summary's count of evdev events.
+	 */
+	if (event->read_ms > server->input_ms)
+		server->input_ms = event->read_ms;
+	server->input_events += event->counted;
+
+	/* By what the event carries. */
+	switch (event->kind) {
+	case KWL_INPUT_EVENT_FRAME:
+		apply_frame(server, device, event);
+		break;
+	case KWL_INPUT_EVENT_TOUCHPAD:
+		/* The latest report's kernel time, for the cursor plane's log line of a move the fingers make (ws213-p001 review-2). */
+		if (event->frame_time_us != 0U)
+			server->pointer_event_us = event->frame_time_us;
+		apply_touchpad_actions(server, &event->u.pad, event->time);
+		break;
+	case KWL_INPUT_EVENT_REPORT:
+		apply_report(server, device, event);
+		break;
+	case KWL_INPUT_EVENT_DETACHED:
+		apply_detached(server, device, &event->u.detached);
+		break;
+	default:
+		break;
+	}
+}
+
+/*
+ * Applies a mouse's or keyboard's report: the pointer's motion (already in
+ * the box), then buttons and keys in the order the device reported them,
+ * then scrolling, then a pointer frame.
+ */
+static void
+apply_frame(
+	struct kwl_server *server,
+	struct kwl_input_device *device,
+	const struct kwl_input_event *event)
+{
+	const struct kwl_input_frame *frame;
+	const struct kwl_input_key *key;
+	int32_t wheel;
+	int32_t horizontal_wheel;
+	unsigned pointer_activity;
+	unsigned index;
+	int moved;
+
+	/*
+	 * The device placed or moved the pointer, even onto the place it
+	 * already had: its arrow is shown from now on, drawn where it is
+	 * (ws035-p116).
+	 */
+	frame = &event->u.frame;
+	if (server->pointer_unmoved && frame->placed) {
+		server->pointer_unmoved = 0U;
+		kwl_damage_pointer(server, server->pointer_x, server->pointer_y);
+		printf("KWL CURSOR shown by=pointer device=%s\n", device->path);
+	}
+
+	/* The report's kernel time, for the cursor plane's log line (ws213-p001 review-1 C1), and the box's lag. */
+	if (frame->placed) {
+		server->pointer_event_us = event->frame_time_us;
+		box_measure(server, &frame->motion);
+	}
+
+	/* A changed position is reported as motion before any button of the same report. */
+	pointer_activity = 0;
+	moved = apply_motion(server, &frame->motion, frame->absolute, event->time);
+	if (moved)
+		pointer_activity = 1;
+
+	/* Buttons and keys follow in the order the device reported them. */
+	for (index = 0; index < frame->key_count; index++) {
+		key = &frame->keys[index];
+
+		/* A pointer's mouse buttons become wl_pointer buttons with their BTN_ code. */
+		if (device->pointer &&
+		    key->code >= INPUT_BUTTON_FIRST &&
+		    key->code <= INPUT_BUTTON_LAST) {
+			kwl_seat_button(server, event->time, key->code, (uint32_t)key->value);
+			pointer_activity = 1;
+			continue;
+		}
+
+		/* The rest of the button block is neither a mouse button nor a key. */
+		if (key->code >= INPUT_BUTTON_BLOCK_FIRST && key->code < INPUT_BUTTON_BLOCK_END)
+			continue;
+
+		/* A keyboard's keys become wl_keyboard keys with their evdev code. */
+		if (device->keyboard)
+			apply_key(server, event->time, key->code, key->value);
+	}
+
+	/* The user's natural scrolling for a mouse (ws089-p007, p024) turns the wheel round. */
+	wheel = frame->wheel;
+	horizontal_wheel = frame->horizontal_wheel;
+	if (server->mouse_natural != 0) {
+		wheel = -wheel;
+		horizontal_wheel = -horizontal_wheel;
+	}
+
+	/* Wheel notches scroll; evdev counts up as positive, Wayland counts down as positive. */
+	if (wheel != 0 || horizontal_wheel != 0) {
+		kwl_seat_axis(server, event->time, -wheel, horizontal_wheel);
+		pointer_activity = 1;
+	}
+
+	/* Version 5 pointers are told where this report's events end. */
+	if (pointer_activity)
+		kwl_seat_frame(server);
+}
+
+/* Applies a pen tablet's or touch screen's report through its own module (tablet.c, touch.c). */
+static void
+apply_report(
+	struct kwl_server *server,
+	struct kwl_input_device *device,
+	const struct kwl_input_event *event)
+{
+	/* The report as the module reads it from the device's record. */
+	device->frame_count = event->u.report.count;
+	memcpy(device->frame, event->u.report.events, event->u.report.count * sizeof(device->frame[0]));
+	device->frame_time_us = event->frame_time_us;
+
+	/* Applied as one group by its module. */
+	if (device->tablet) {
+		kwl_tablet_frame(server, device, event->time);
+	} else if (device->touch) {
+		kwl_touch_frame(server, device, event->time);
+	}
+
+	/* The next report starts empty. */
+	device->frame_count = 0;
+}
+
+/*
+ * Applies a device's last event: a device the main thread let go of goes
+ * now if it was closing; one that ended is closed; one the seat revoked
+ * waits for the seat when logind keeps it, and is closed otherwise.
+ */
+static void
+apply_detached(
+	struct kwl_server *server,
+	struct kwl_input_device *device,
+	const struct kwl_input_detached *detached)
+{
+	int retained;
+
+	/* The main thread asked: a forgotten device's record goes, a paused one stays. */
+	if (detached->reason == KWL_INPUT_DETACH_ASKED) {
+		if (device->closing)
+			input_retire(server, device);
+		return;
+	}
+
+	/* The input thread let go by itself; a newer attach of the same device is not read either. */
+	device->attached = 0U;
+
+	/* A revoked device the seat keeps waits for the seat (ws105-p009, ws131-p007). */
+	if (detached->reason == KWL_INPUT_DETACH_REVOKED && device->fd >= 0) {
+		retained = kl_backend_seat_device_revoked(server->backend, device->fd);
+		if (retained != 0) {
+			printf("KWL SEAT input_revoked path=%s lease=retained\n", device->path);
+			device->fd = -1;
+			return;
+		}
+	}
+
+	/* Any other end closes the device. */
+	printf("KWL INPUT_CLOSED device=%s kind=%s reason=%s errno=%d\n", device->path, input_kind_name(device), input_reason_name(detached->reason), detached->error);
+	if (device->fd >= 0)
+		kl_backend_input_close(server->backend, device->fd);
+	input_retire(server, device);
+}
+
+/*
+ * Moves the main thread's view of the pointer to where a motion of the
+ * input thread left it, and tells the seat: unless the motion was computed
+ * before a later warp, or left the pointer where the view has it.  Reports
+ * whether the view moved.
+ */
+static int
+apply_motion(
+	struct kwl_server *server,
+	const struct kwl_cursor_motion *motion,
+	unsigned absolute,
+	uint32_t time)
+{
+	int32_t old_x;
+	int32_t old_y;
+
+	/* No write of the box (a report that did not move the pointer). */
+	if (motion->write_us == 0U)
+		return 0;
+
+	/* A motion computed before the main thread's last warp is not the pointer's place. */
+	if (motion->warp != server->pointer_warp)
+		return 0;
+
+	/* The view already has this place. */
+	if (motion->x == server->pointer_x &&
+	    motion->y == server->pointer_y &&
+	    motion->output == server->pointer_output)
+		return 0;
+
+	/* A crossing to another output is logged once, and the outputs are drawn again (ws113-p007). */
+	if (motion->output != server->pointer_output) {
+		if (absolute) {
+			printf("KWL POINTER output=%u absolute\n", motion->output);
+		} else {
+			printf("KWL POINTER output=%u x=%d y=%d\n", motion->output, motion->x, motion->y);
+		}
+
+		/* Every output is drawn with the cursor where it is now. */
+		server->dirty = 1;
+	}
+
+	/* The view moves; the seat hears it, and window mode draws the cursor at its new place (and where it was, damage.c). */
+	old_x = server->pointer_x;
+	old_y = server->pointer_y;
+	server->pointer_x = motion->x;
+	server->pointer_y = motion->y;
+	server->pointer_output = motion->output;
+	kwl_seat_motion(server, time);
+	kwl_damage_pointer(server, old_x, old_y);
+
+	/* Succeeded: the view moved. */
+	return 1;
+}
+
+/*
+ * Counts one write of the cursor's box for KWL PERF cursor (design 6.4):
+ * its lag from the report's evdev time to the write, the lag beyond the
+ * reports' own spacing, and the time since the previous write while the
+ * pointer moves.  A lag over a refresh is logged (at most 20 lines a
+ * window) with where the input thread spent it (when its poll began and
+ * returned, when the read returned), for comparison with the kernel's
+ * hold_us lines.
+ */
+static void
+box_measure(
+	struct kwl_server *server,
+	const struct kwl_cursor_motion *motion)
+{
+	struct kwl_perf *perf;
+	uint64_t lag;
+	uint64_t write_gap;
+	uint64_t event_gap;
+	uint64_t excess;
+
+	/* Only a write that came from a report has both ends. */
+	if (motion->write_us == 0U || motion->event_us == 0U)
+		return;
+
+	/* The lag, never negative. */
+	lag = 0U;
+	if (motion->write_us > motion->event_us)
+		lag = motion->write_us - motion->event_us;
+
+	/* The write and the report since the previous write; the excess is the first beyond the second. */
+	excess = 0U;
+	write_gap = 0U;
+	event_gap = UINT64_MAX;
+	if (server->box_last_write_us != 0U && motion->write_us >= server->box_last_write_us && motion->event_us >= server->box_last_event_us) {
+		write_gap = motion->write_us - server->box_last_write_us;
+		event_gap = motion->event_us - server->box_last_event_us;
+		if (write_gap > event_gap)
+			excess = write_gap - event_gap;
+	}
+
+	/* This write is the previous one for the next. */
+	server->box_last_write_us = motion->write_us;
+	server->box_last_event_us = motion->event_us;
+
+	/* The window keeps it while it has room. */
+	perf = &server->perf;
+	if (perf->box_count >= KWL_PERF_BOX) {
+		perf->box_dropped++;
+		return;
+	}
+
+	/* The lag and the excess, kept in 32 bits (over an hour is kept as the most). */
+	if (lag > 0xffffffffU)
+		lag = 0xffffffffU;
+	if (excess > 0xffffffffU)
+		excess = 0xffffffffU;
+	perf->box_lag_us[perf->box_count] = (uint32_t)lag;
+	perf->box_excess_us[perf->box_count] = (uint32_t)excess;
+	perf->box_count++;
+
+	/* The gap only between reports at most 50 ms apart: the pointer moves. */
+	if (event_gap <= 50000U && write_gap <= 0xffffffffU) {
+		perf->box_gap_us[perf->box_gap_count] = (uint32_t)write_gap;
+		perf->box_gap_count++;
+	}
+
+	/* A lag over a refresh, logged for its cause. */
+	if (lag <= 16700U)
+		return;
+	perf->box_over++;
+	if (perf->box_lag_lines >= 20U)
+		return;
+	perf->box_lag_lines++;
+	printf("KWL CURSOR_LAG event_us=%llu write_us=%llu lag_us=%llu poll_entered_us=%llu poll_returned_us=%llu read_us=%llu\n",
+	       (unsigned long long)motion->event_us,
+	       (unsigned long long)motion->write_us,
+	       (unsigned long long)lag,
+	       (unsigned long long)motion->poll_entered_us,
+	       (unsigned long long)motion->poll_returned_us,
+	       (unsigned long long)motion->read_us);
+}
+
+/* Hands a live device's descriptor to the input thread, with what it needs to read it. */
+static void
+input_attach(
+	struct kwl_server *server,
+	struct kwl_input_device *device)
+{
+	struct kwl_input_attach *reading;
+	int error;
+
+	/* Nothing runs before the thread starts (the seat's first scan comes after). */
+	if (!server->input_thread_ready || device->fd < 0)
+		return;
+
+	/* The device's kind and ranges, in its slot. */
+	reading = &device->reading;
+	reading->slot = (unsigned)(device - server->inputs);
+	reading->fd = device->fd;
+	reading->pointer = device->pointer;
+	reading->keyboard = device->keyboard;
+	reading->absolute = device->absolute;
+	reading->tablet = device->tablet;
+	reading->touch = device->touch;
+	reading->touchpad = device->touchpad;
+	reading->abs_x_minimum = device->abs_x_minimum;
+	reading->abs_x_maximum = device->abs_x_maximum;
+	reading->abs_y_minimum = device->abs_y_minimum;
+	reading->abs_y_maximum = device->abs_y_maximum;
+
+	/* The input thread reads it from its next pass. */
+	error = kwl_input_thread_attach(&server->input_thread, reading);
+	if (error != 0) {
+		printf("KWL INPUT attach device=%s errno=%d\n", device->path, error);
+		return;
+	}
+
+	/* Succeeded: the descriptor is the input thread's to read until a detach. */
+	device->attached = 1U;
+}
+
+/*
+ * Takes a device's descriptor back from the input thread: returns once the
+ * input thread no longer polls or reads it.  The compositor ends if the
+ * input thread does not answer in time, as a descriptor number it might
+ * still read could be another file's after a close (design 6.1 N-1).
+ */
+static void
+input_detach(
+	struct kwl_server *server,
+	struct kwl_input_device *device)
+{
+	uint64_t sequence;
+	uint64_t asked_ms;
+	int error;
+
+	/* A device not read by the thread needs nothing. */
+	if (!device->attached)
+		return;
+	device->attached = 0U;
+	if (!server->input_thread_ready)
+		return;
+
+	/* The detach, and its acknowledgement after the device's last event (the failure's line says how long it waited). */
+	asked_ms = kwl_milliseconds();
+	error = kwl_input_thread_detach(&server->input_thread, (unsigned)(device - server->inputs), &sequence);
+	if (error != 0)
+		input_detach_failed("input-detach", server, device, 1U, 0U, asked_ms, error);
+	error = kwl_input_thread_detach_wait(&server->input_thread, sequence, KWL_INPUT_DETACH_WAIT_MS);
+	if (error != 0)
+		input_detach_failed("input-detach", server, device, 1U, sequence, asked_ms, error);
+}
+
+/*
+ * Ends the compositor at once when a device cannot be taken back from the
+ * input thread (design 6.1 N-1), saying which device (NULL: every attached
+ * one, count of them), the detach's number and how long it was waited for.
+ */
+static void
+input_detach_failed(
+	const char *site,
+	const struct kwl_server *server,
+	const struct kwl_input_device *device,
+	unsigned count,
+	uint64_t sequence,
+	uint64_t asked_ms,
+	int error)
+{
+	const char *path;
+	const char *kind;
+	unsigned slot;
+
+	/* The device, or all of them. */
+	path = "all";
+	kind = "all";
+	slot = KWL_INPUT_MAX;
+	if (device != NULL) {
+		path = device->path;
+		kind = input_kind_name(device);
+		slot = (unsigned)(device - server->inputs);
+	}
+
+	/* No cleanup: another thread may be anywhere, and the descriptor must not be closed under it. */
+	kwl_fatal("KWL FAILED site=%s device=%s kind=%s slot=%u devices=%u sequence=%llu waited_ms=%llu errno=%d", site, path, kind, slot, count, (unsigned long long)sequence, (unsigned long long)(kwl_milliseconds() - asked_ms), error);
+	_exit(1);
+}
+
+/* Takes a device out of the seat: its tablet's tools or touch screen's fingers end, and the slot is free. */
+static void
+input_retire(
+	struct kwl_server *server,
+	struct kwl_input_device *device)
+{
+	/* A pen tablet's clients hear that it and its tools are gone (tablet.c). */
+	if (device->tablet)
+		kwl_tablet_remove(server, device, 1);
+
+	/* A touch screen's fingers end (touch.c). */
+	if (device->touch)
+		kwl_touch_remove(server, device, 1);
+
+	/* The slot is free. */
+	device->fd = -1;
+	device->live = 0;
+	device->closing = 0U;
+	device->attached = 0U;
+
+	/* Bound seats learn that a class of device may be gone. */
+	update_capabilities(server);
+}
+
+/* Gives the settings the input thread applies, as the user has them now. */
+static void
+input_settings(
+	const struct kwl_server *server,
+	struct kwl_input_settings *settings)
+{
+	/* Every field, so that two copies compare whole. */
+	memset(settings, 0, sizeof(*settings));
+	settings->mouse_speed = server->mouse_speed;
+	settings->mouse_acceleration = server->mouse_acceleration;
+	settings->touchpad_speed = server->touchpad_speed;
+	settings->touchpad_acceleration = server->touchpad_acceleration;
+	settings->touchpad_natural = server->touchpad_natural;
+}
+
+/* Gives the place an absolute device put the pointer at (a warp's move). */
+static void
+pointer_warp_place(
+	const void *context,
+	const struct kwl_plane_rect *outputs,
+	int32_t *x,
+	int32_t *y,
+	unsigned *output)
+{
+	const struct kwl_cursor_motion *place;
+
+	/* The place given, whatever the box had. */
+	(void)outputs;
+	place = context;
+	*x = place->x;
+	*y = place->y;
+	*output = place->output;
+}
+
+/* Names a device's kind for a log line. */
+static const char *
+input_kind_name(
+	const struct kwl_input_device *device)
+{
+	/* The kinds read by their own module first. */
+	if (device->tablet)
+		return "tablet";
+	if (device->touch)
+		return "touch";
+	if (device->touchpad)
+		return "touchpad";
+
+	/* A pointer, a keyboard, or both in one node. */
+	if (device->pointer && device->keyboard)
+		return "pointer+keyboard";
+	if (device->pointer && device->absolute)
+		return "absolute";
+	if (device->pointer)
+		return "pointer";
+	if (device->keyboard)
+		return "keyboard";
+
+	/* A record without a kind (not expected of a live one). */
+	return "none";
+}
+
+/* Names why the input thread let a device go, for a log line. */
+static const char *
+input_reason_name(
+	enum kwl_input_detach_reason reason)
+{
+	/* By the reason the device's last event carries. */
+	switch (reason) {
+	case KWL_INPUT_DETACH_ASKED:
+		return "asked";
+	case KWL_INPUT_DETACH_ENDED:
+		return "ended";
+	case KWL_INPUT_DETACH_REVOKED:
+		return "revoked";
+	default:
+		break;
+	}
+
+	/* A reason this file does not know. */
+	return "other";
 }

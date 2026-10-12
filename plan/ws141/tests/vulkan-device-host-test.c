@@ -37,6 +37,7 @@
 #include "drivers/gpu/bcm2711/vulkan-native-pass.h"
 #include "drivers/gpu/bcm2711/vulkan-native-job.h"
 #include "drivers/gpu/bcm2711/vulkan-barrier.h"
+#include "drivers/gpu/bcm2711/native-state.h"
 #include "drivers/gpu/bcm2711/vulkan-native-image.h"
 #include "drivers/gpu/bcm2711/vulkan-buffer-copy.h"
 #include "userland/desktop/wayland/shaders.h"
@@ -74,6 +75,10 @@ static unsigned allocations;
 /* A selected ordinary heap failure must unwind parent/domain ownership acquired by native publication. */
 static unsigned fail_after;
 
+/* The cost reports the executor logged after the mutex, and those whose record ended its line. */
+static unsigned host_perf_records;
+static unsigned host_perf_lines_ended;
+
 /* The explicit callback fixture records actual worker delivery and checks both native ownership locks. */
 static struct bcm2711_render_session *runtime_session;
 
@@ -85,6 +90,14 @@ static int runtime_errors[32];
 
 /* A native global error is counted only after the worker releases its ownership mutex. */
 static unsigned runtime_faults;
+/* A2 window fixture: the storage a simulated decoder releases inside the window, and what the window saw. */
+static struct bcm2711_native_storage *window_storage;
+static struct bcm2711_native_storage *window_scratch;
+static struct bcm2711_render_device *window_controller;
+static unsigned window_runs;
+static unsigned window_mapper_runs;
+static unsigned window_delayed;
+static int window_map_error;
 
 /* Unique numerical physical pages model independent cached upload allocation placement, without physical cache or GPU execution. */
 static uint64_t next_native_physical = 0x200000U;
@@ -100,6 +113,8 @@ static bool native_execute_retired;
 
 /* Only expected executor handoffs increment this fixture counter; refused replay or preflight must leave it unchanged. */
 static unsigned native_execute_calls;
+/* Counts texture conversions the real executor hands to the formatting unit. */
+static unsigned native_convert_calls;
 
 /* Device publication barriers are observed independently of the mocked native runner in this single-thread host fixture. */
 static unsigned native_write_barriers;
@@ -136,6 +151,7 @@ static void native_job_test(struct bcm2711_vulkan_session *session, struct bcm27
 static void native_execute_test(struct bcm2711_vulkan_session *session, const struct bcm2711_vulkan_prepared_event *begin);
 static void native_pass_test(struct bcm2711_vulkan_session *session, const struct bcm2711_vulkan_prepared_event *begin);
 static void native_draw_test(struct bcm2711_vulkan_session *session, const struct bcm2711_vulkan_prepared_event *event);
+static void write_log_test(void);
 static void uniform_test(struct bcm2711_vulkan_session *session, const struct bcm2711_vulkan_prepared_event *event);
 static void prepared_test(struct bcm2711_vulkan_session *session, struct bcm2711_vulkan_object *command);
 static void draw_test(struct bcm2711_vulkan_command_buffer *command);
@@ -163,6 +179,7 @@ static int input_created(struct bcm2711_vulkan_session *session, struct vulkan_w
 static void resource_test(struct bcm2711_vulkan_session *session);
 static void sync_test(struct bcm2711_vulkan_session *session);
 static void runtime_test(struct bcm2711_vulkan_session *session);
+static void executor_order_test(struct bcm2711_render_device *controller);
 static void runtime_trailer(struct vulkan_writer *writer);
 static void memory_test(struct bcm2711_vulkan_session *session, struct bcm2711_render_session *render);
 static void external_barrier_test(struct bcm2711_vulkan_object *memory_object);
@@ -171,6 +188,9 @@ static void memory_free(struct bcm2711_vulkan_session *session, uint64_t identit
 static int dispatch(struct bcm2711_vulkan_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static void begin(struct vulkan_writer *writer, void *storage, size_t capacity, uint32_t opcode, uint32_t requested);
 static int execute(struct bcm2711_vulkan_session *session, struct vulkan_writer *writer, struct vulkan_reader *reader);
+static unsigned executor_drain(struct bcm2711_render_device *controller);
+static int job_execute(struct bcm2711_render_device *controller, struct bcm2711_render_session *session, struct bcm2711_vulkan_native_job *job, bool *retired);
+static int execute_queued(struct bcm2711_vulkan_session *session, struct vulkan_writer *writer, struct vulkan_reader *reader);
 static void encode_instance(struct vulkan_writer *writer, uint64_t identity, uint32_t version);
 static void encode_device(struct vulkan_writer *writer, uint64_t physical, uint64_t identity, uint32_t family, VkPhysicalDeviceFeatures *features);
 static void encode_queue(struct vulkan_writer *writer, uint64_t device, uint64_t identity, uint32_t timeline);
@@ -296,6 +316,63 @@ bcm2711_buffer_release(
 }
 
 /*
+ * Reports no diagnostic releases; the fixture's buffers are host memory.
+ */
+void
+bcm2711_buffer_release_stats(
+	uint64_t *count,
+	uint64_t *bytes,
+	uint64_t *ticks)
+{
+	/* The fixture keeps no release timing. */
+	*count = 0;
+	*bytes = 0;
+	*ticks = 0;
+}
+
+/* The reused runs given again without zeroing (bcm2711_buffer_kept). */
+static unsigned host_kept_runs;
+
+/*
+ * Takes a reused run's zeroing; the fixture keeps no allocation timing.
+ */
+void
+bcm2711_buffer_zeroed(
+	uint64_t bytes,
+	uint64_t ticks)
+{
+	/* Nothing is kept. */
+	(void)bytes;
+	(void)ticks;
+}
+
+/*
+ * Reports no diagnostic creations; the fixture's buffers are host memory.
+ */
+void
+bcm2711_buffer_create_stats(
+	uint64_t stats[9])
+{
+	unsigned index;
+
+	/* The fixture keeps no creation timing. */
+	for (index = 0; index < 9U; index++)
+		stats[index] = 0;
+}
+
+/*
+ * Counts a reused run given again without zeroing (ws141-p016 (b)).
+ */
+void
+bcm2711_buffer_kept(
+	uint64_t bytes)
+{
+	/* The fixture counts them for its checks. */
+	(void)bytes;
+	host_kept_runs++;
+}
+
+/*
  * Supplies a bounded coherent fixture run while observing the actual late placement requirements.
  */
 int
@@ -363,7 +440,10 @@ bcm2711_buffer_create(
 }
 
 /*
- * Observes complete padded cache-clean requests without claiming real host or device cache maintenance.
+ * Observes cache-clean requests without claiming real host or device cache maintenance.
+ *
+ * Whole allocations clean padded pages; uploads carved from a pass's shared
+ * chunk clean just their bytes, as the kernel's line-granular clean allows.
  */
 void
 kern_dcache_clean_range(
@@ -371,7 +451,7 @@ kern_dcache_clean_range(
 	size_t bytes)
 {
 	/* No coherent fixture alias is treated as cached upload storage. */
-	assert(address != NULL && address != backing_storage && bytes != 0 && (bytes & 4095U) == 0);
+	assert(address != NULL && address != backing_storage && bytes != 0);
 	native_cleans++;
 
 	/* Succeeded: the complete cache-maintenance request has been observed. */
@@ -414,8 +494,41 @@ bcm2711_v3d_job_run(
 	const struct bcm2711_v3d_job *job,
 	struct bcm2711_v3d_job_result *result)
 {
+	struct bcm2711_v3d_view *view;
+
+	/* A texture conversion carries a complete raster-to-UIF description and always completes in the fixture. */
+	if (job->kind == BCM2711_V3D_JOB_TFU) {
+		assert(engine != NULL && engine->hardware.ready);
+		assert(job->command.tfu.output_format == 6U && job->command.tfu.configuration == (4U << 9));
+		assert(job->command.tfu.input >= 4096U && job->command.tfu.output >= 4096U);
+		assert((job->command.tfu.size & 0xffffU) != 0 && (job->command.tfu.size >> 16) != 0);
+		/* (b) The window covers the conversions as well as the following CL job. */
+		if (window_controller != NULL)
+			assert(engine->hardware.window && window_controller->mutex.locked == 0);
+		native_convert_calls++;
+		memset(result, 0, sizeof(*result));
+		result->retired = true;
+		return 0;
+	}
+
 	/* Only a real independently prepared native CL job may reach this explicit host completion source. */
 	assert(engine != NULL && engine->hardware.ready && job->kind == BCM2711_V3D_JOB_CL);
+
+	/* (a)(l) Inside the executor's window a simulated decoder takes the free mutex: a map is refused, a release is delayed. */
+	if (window_controller != NULL) {
+		assert(engine->hardware.window && window_controller->mutex.locked == 0);
+		mutex_lock(&window_controller->mutex);
+		window_map_error = bcm2711_native_storage_create(&window_controller->space, 4096, &window_scratch);
+		if (window_storage != NULL) {
+			assert(bcm2711_native_storage_release(&window_controller->space, &window_storage, true) == 0);
+			for (view = window_controller->space.views; view != NULL; view = view->next) {
+				if (view->delayed && view->references == 0 && !view->quarantined)
+					window_delayed++;
+			}
+		}
+		mutex_unlock(&window_controller->mutex);
+		window_runs++;
+	}
 	assert(job->command.cl.bin_end > job->command.cl.bin_start && job->command.cl.render_end > job->command.cl.render_start);
 	assert(job->command.cl.overflow_count == 4 && job->command.cl.clean_output);
 	native_execute_calls++;
@@ -523,11 +636,27 @@ waitq_sleep(
 	unsigned long enabled;
 	int error;
 
+	/*
+	 * (p) The executor waits for the mappers that were waiting before it opens
+	 * its window.  The fixture plays them: with the mutex free, a later mapper
+	 * arrives and the earlier one finishes, which ends the executor's wait.
+	 */
+	if (queue == &runtime_session->device->worker.window_queue) {
+		assert(runtime_session->device->mutex.locked == 0 && guard->held.value == 1);
+		runtime_session->device->worker.pte_waiters++;
+		runtime_session->device->worker.pte_waiters--;
+		runtime_session->device->worker.pte_done++;
+		window_mapper_runs++;
+		return 0;
+	}
+
 	/* The fixture may wait only for its known retained session's final callback barrier. */
 	assert(queue == &runtime_session->device->worker.retired && observed == queue->sequence);
 	assert(deadline == 0 && flags == 0 && guard->held.value == 1);
 	spin_unlock_irqrestore(guard, 1);
 	error = bcm2711_render_worker_step(runtime_session->device);
+	if (error == EAGAIN)
+		error = bcm2711_render_executor_step(runtime_session->device);
 	assert(error == 0);
 	enabled = spin_lock_irqsave(guard);
 	assert(enabled == 1);
@@ -640,6 +769,33 @@ kern_logf(
 	...)
 {
 	(void)format;
+}
+
+/*
+ * Takes the cost report the executor logs after the mutex (v3d.perf=1); every record ends its line.
+ */
+void
+kern_log_write(
+	const char *bytes,
+	size_t length)
+{
+	/* A record is never empty and the report's last record ends with its newline. */
+	if (bytes == NULL || length == 0U)
+		abort();
+	host_perf_records++;
+	if (bytes[length - 1U] == '\n')
+		host_perf_lines_ended++;
+}
+
+/*
+ * Turns the cost report on, so that the fixture formats it under the mutex and logs it after.
+ */
+bool
+bcm2711_stage_perf_on(
+	void)
+{
+	/* The report is on in this fixture. */
+	return true;
 }
 
 /*
@@ -771,7 +927,7 @@ main(
 	vulkan_decode_VkPhysicalDeviceMemoryProperties(&reader, &memory);
 	assert(reader.error == VK_SUCCESS && memory.memoryTypeCount == 1 && memory.memoryHeapCount == 1);
 	assert(memory.memoryTypes[0].propertyFlags == (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
-	assert(memory.memoryHeaps[0].size == (256U << 20));
+	assert(memory.memoryHeaps[0].size == BCM2711_VULKAN_MEMORY_BUDGET);
 
 	/* Count-only and array family queries describe exactly one graphics/transfer queue and no timestamps. */
 	begin(&writer, wire, sizeof(wire), GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_PROPERTIES, 1);
@@ -836,6 +992,7 @@ main(
 	queue = bcm2711_vulkan_object_find(session, I915_VK_OBJ_QUEUE, 40);
 	assert(queue != NULL);
 	runtime_test(session);
+	executor_order_test(&controller);
 	sync_test(session);
 	memory_test(session, &render);
 	resource_test(session);
@@ -856,17 +1013,15 @@ main(
 	error = execute(session, &writer, &reader);
 	assert(error == EEXIST && allocations == baseline && render.timelines == (UINT64_C(1) << 7));
 
-	/* Native busy/fault state cannot be hidden by an unconditional idle reply. */
+	/* Queue and device idle are refused: libvulkan waits on an empty submit's fence, and the executor has no immediate answer. */
 	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_WAIT_IDLE, 1);
 	vulkan_write_u64(&writer, 40);
 	error = execute(session, &writer, &reader);
-	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
-	engine.hardware.job_busy = true;
-	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_WAIT_IDLE, 1);
-	vulkan_write_u64(&writer, 40);
+	assert(error == EOPNOTSUPP);
+	begin(&writer, wire, sizeof(wire), GPU_OP_DEVICE_WAIT_IDLE, 1);
+	vulkan_write_u64(&writer, 30);
 	error = execute(session, &writer, &reader);
-	assert(error == 0 && vulkan_read_u32(&reader) == (uint32_t)VK_ERROR_DEVICE_LOST);
-	engine.hardware.job_busy = false;
+	assert(error == EOPNOTSUPP);
 
 	/* Removing a device's wire identity preserves a prepared queue reference and its original domain. */
 	error = bcm2711_vulkan_object_retain(queue);
@@ -924,6 +1079,12 @@ main(
 	count = reply_buffer.references;
 	assert(count == 1);
 	puts("WS141 Vulkan actual client records/native discovery/device/domain ownership: PASS");
+
+	/* Every cost report the executor logged after the mutex ended its line; a flush with nothing pending logs nothing. */
+	count = host_perf_records;
+	bcm2711_vulkan_native_perf_flush();
+	assert(host_perf_records == count && host_perf_lines_ended == host_perf_records);
+	printf("WS141 cost report logged after the mutex records=%u: PASS\n", host_perf_records);
 
 	/* Succeeded: actual native software semantics are verified without claiming physical GPU or scheduler execution. */
 	return 0;
@@ -1111,6 +1272,13 @@ native_draw_test(
 	unsigned used;
 	uint64_t available;
 	uint64_t owned;
+	uint64_t updates;
+	unsigned kept;
+	uint32_t box[4];
+	uint32_t texture_bytes;
+	uint64_t fills;
+	struct bcm2711_native_snapshot *snapshot;
+	struct bcm2711_native_storage *unmarked;
 	int error;
 
 	/* Known six-vertex vec2 data and a distinct sampled raster use actual coherent resource interval resolution. */
@@ -1128,7 +1296,7 @@ native_draw_test(
 	memset(cpu, 0x75, 512);
 	cleans = native_cleans;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw != NULL && draw->vertices == 6 && draw->attributes == 1 && draw->count == 11);
 	owned = draw->bytes;
 	assert(owned == 11U * 4096U && available == 1024U * 1024U - owned && native_cleans == cleans + 11);
@@ -1167,6 +1335,9 @@ native_draw_test(
 	assert(source[0] == 1 && source[47] == 48);
 	error = bcm2711_vulkan_resource_backing(image, 0, image->bytes, &view, &address, &cpu);
 	assert(error == 0);
+
+	/* Without a passed unit self-test the CPU snapshot is taken at preparation and later raster writes do not reach it. */
+	assert(draw->texture_count == 1 && !draw->textures[0].convert);
 	memset(cpu, 0x24, 512);
 	assert(((uint8_t *)draw->storage[0]->view->buffer->address)[0] == 0x75);
 	used = allocations;
@@ -1175,18 +1346,467 @@ native_draw_test(
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
 	assert(error == 0 && draw == NULL && allocations == baseline);
 
+	/* After the unit's self-test the raster is described for conversion when the pass runs, from the image into the draw's scratch. */
+	space->native->hardware.tfu_uif_ready = true;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw != NULL);
+	assert(draw->texture_count == 1 && draw->textures[0].convert && draw->textures[0].pixels == draw->storage[0]);
+	assert(draw->textures[0].tfu.input == address && draw->textures[0].tfu.output == draw->storage[0]->view->address);
+	assert(draw->textures[0].tfu.stride == image->pitch / 4U);
+	assert(draw->textures[0].tfu.size == ((image->height << 16) | image->width));
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && draw == NULL && allocations == baseline);
+	space->native->hardware.tfu_uif_ready = false;
+
+	/* With a cache capacity a retired draw's uploads stay mapped, and the next draw of the same sizes reuses them zeroed. */
+	space->cache_limit = BCM2711_NATIVE_CACHE_BYTES;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw != NULL && draw->bytes == owned);
+	memset(draw->storage[9]->view->buffer->address, 0x5a, 4096);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && draw == NULL && space->cache_bytes == owned && allocations > baseline);
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw != NULL && draw->bytes == owned && space->cache_bytes == 0);
+	source = draw->storage[9]->view->buffer->address;
+	for (index = 48; index < 4096; index++)
+		assert(source[index] == 0);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && draw == NULL && space->cache_bytes == owned);
+
+	/*
+	 * Every reused view seeded with a marker (ws141-p016 (b), review-b2):
+	 * the defaults come back as (0, 0, 0, 1) each, the zeroed kinds come
+	 * back zero, and the code (written whole) is given again as it is.
+	 */
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw != NULL);
+	for (index = 0; index < draw->count; index++)
+		memset(draw->storage[index]->view->buffer->address, 0xa5, (size_t)draw->storage[index]->view->bytes);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && draw == NULL);
+	kept = host_kept_runs;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw != NULL && draw->defaults != NULL && host_kept_runs > kept);
+	source = draw->defaults->view->buffer->address;
+	for (index = 0; index < 256U; index++) {
+		/* Each default is x, y, z zero and w one (little-endian 0x3f800000). */
+		if (index % 16U == 14U)
+			assert(source[index] == 0x80);
+		else if (index % 16U == 15U)
+			assert(source[index] == 0x3f);
+		else
+			assert(source[index] == 0);
+	}
+	for (index = 0; index < draw->count; index++) {
+		/* A storage given again as it was is code: its words are the program's, not the marker. */
+		if (draw->storage[index] == draw->code[0] || draw->storage[index] == draw->code[1] || draw->storage[index] == draw->code[2])
+			continue;
+		if (draw->storage[index] == draw->defaults)
+			continue;
+		source = draw->storage[index]->view->buffer->address;
+		for (byte = 0; byte < 64U; byte++)
+			assert(source[byte] != 0xa5);
+	}
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && draw == NULL);
+
+	/* A storage given as written keeps its bytes; a zeroed one does not. */
+	error = bcm2711_native_storage_create(space, 4096, &storage);
+	assert(error == 0);
+	memset(storage->view->buffer->address, 0xa5, 4096);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && storage == NULL);
+	kept = host_kept_runs;
+	error = bcm2711_native_storage_create_as(space, 4096, BCM2711_NATIVE_STORAGE_WRITTEN, &storage);
+	assert(error == 0 && host_kept_runs == kept + 1U);
+	source = storage->view->buffer->address;
+	assert(source[0] == 0xa5 && source[4095] == 0xa5);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && storage == NULL);
+	error = bcm2711_native_storage_create(space, 4096, &storage);
+	assert(error == 0);
+	source = storage->view->buffer->address;
+	assert(source[0] == 0 && source[4095] == 0);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && storage == NULL);
+	error = bcm2711_native_storage_create_as(space, 4096, 3U, &storage);
+	assert(error == EINVAL && storage == NULL);
+	puts("WS141 reused native storage: zeroed kinds and defaults cleared, written kinds kept and counted: PASS");
+
+	/* Draining unmaps every cached view and returns all storage. */
+	error = bcm2711_native_storage_drain(space);
+	assert(error == 0 && space->cache_bytes == 0 && space->cache_pages == NULL && space->cache_runs == NULL);
+	assert(allocations == baseline);
+	space->cache_limit = 0;
+
+	/* A never-mapped source lends one converted snapshot to later draws until its generation moves. */
+	space->snapshot_limit = BCM2711_NATIVE_SNAPSHOT_BYTES;
+	memset(cpu, 0x75, 512);
+	view->buffer->host_mapped = false;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw != NULL && draw->count == 10 && draw->textures[0].snapshot != NULL);
+	assert(draw->textures[0].snapshot->users == 1 && ((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x75);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && space->snapshots != NULL && space->snapshots->users == 0);
+	memset(cpu, 0x24, 512);
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x75);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A device or kernel write moves the generation, and the unused snapshot is converted again in place. */
+	view->buffer->generation++;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x24);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A host-mapped source gets a private conversion every time. */
+	view->buffer->host_mapped = true;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->count == 11 && draw->textures[0].snapshot == NULL);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+	view->buffer->host_mapped = false;
+
+	/* After the unit's self-test a changed snapshot is filled by the unit, and stays invalid until its job completes. */
+	space->native->hardware.tfu_uif_ready = true;
+	view->buffer->generation++;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && draw->textures[0].convert);
+	assert(draw->textures[0].tfu.output == draw->textures[0].pixels->view->address && !space->snapshots->valid);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A pass that never ran leaves the snapshot to be filled again. */
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && draw->textures[0].convert);
+	bcm2711_native_snapshot_filled(draw->textures[0].snapshot);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && space->snapshots->valid);
+
+	/* A completed fill is reused without another job. */
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && !draw->textures[0].convert);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A recorded one-pixel write is converted in place by the CPU: only its utile changes, and no unit job runs. */
+	assert(image->width > 4U && image->height > 4U);
+	memset(cpu, 0x5c, 512);
+	box[0] = 1;
+	box[1] = 2;
+	box[2] = 2;
+	box[3] = 3;
+	bcm2711_v3d_memory_written(view->buffer, address - view->address, box);
+	updates = space->snapshot_updates;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && !draw->textures[0].convert);
+	assert(space->snapshots->valid && space->snapshots->generation == view->buffer->generation);
+	assert(space->snapshot_updates == updates + 1U && draw->snapshot_updates == 1U && draw->snapshot_hits == 0U);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[0] == 0x5c);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[63] == 0x5c);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[64] == 0x24);
+	assert(((uint8_t *)draw->textures[0].pixels->view->buffer->address)[128] == 0x24);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A write of unknown extent leaves the whole conversion to the unit again. */
+	bcm2711_v3d_memory_written(view->buffer, address - view->address, NULL);
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && draw->textures[0].convert);
+	assert(space->snapshot_updates == updates + 1U && !space->snapshots->valid);
+	bcm2711_native_snapshot_filled(draw->textures[0].snapshot);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A recorded write outside the image leaves the converted pixels valid for the new generation, as a reuse. */
+	box[0] = image->width;
+	box[1] = 0;
+	box[2] = image->width + 4U;
+	box[3] = 4;
+	bcm2711_v3d_memory_written(view->buffer, address - view->address, box);
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && !draw->textures[0].convert && space->snapshots->generation == view->buffer->generation);
+	assert(space->snapshot_updates == updates + 1U && draw->snapshot_updates == 0U && draw->snapshot_hits == 1U);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/*
+	 * Session marks (ws141-p016 (b), review-b2 H1 (a)): an owned storage is
+	 * given again unzeroed only to the session that left it, and a snapshot
+	 * whose pixels may hold one session's earlier bytes is zeroed and
+	 * converted whole before another session samples it.
+	 */
+	error = bcm2711_native_storage_drain(space);
+	assert(error == 0 && space->snapshots == NULL && space->cache_bytes == 0);
+	error = bcm2711_native_texture_size(image->width, image->height, &texture_bytes);
+	assert(error == 0 && texture_bytes <= 4096U);
+	space->cache_limit = BCM2711_NATIVE_CACHE_BYTES;
+	space->builder = 7;
+	error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+	assert(error == 0 && storage->owner == 7 && !storage->stale);
+	memset(storage->view->buffer->address, 0xa5, 4096);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && space->cache_pages != NULL && space->cache_pages->owner == 7);
+
+	/* Another session, and work built by no session, get the view zeroed. */
+	space->builder = 8;
+	kept = host_kept_runs;
+	error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+	assert(error == 0 && storage->owner == 8 && !storage->stale && host_kept_runs == kept);
+	source = storage->view->buffer->address;
+	for (index = 0; index < 4096U; index++)
+		assert(source[index] == 0);
+	memset(source, 0xa5, 4096);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && space->cache_pages->owner == 8);
+	space->builder = 0;
+	error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+	assert(error == 0 && storage->owner == 0 && !storage->stale);
+	source = storage->view->buffer->address;
+	assert(source[0] == 0 && source[4095] == 0);
+	memset(source, 0xa5, 4096);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && space->cache_pages->owner == 0);
+
+	/* A view no session marked is zeroed even for a session; only the marking session keeps its bytes. */
+	space->builder = 9;
+	error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+	assert(error == 0 && !storage->stale);
+	source = storage->view->buffer->address;
+	assert(source[0] == 0 && source[4095] == 0);
+	memset(source, 0xa5, 4096);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && space->cache_pages->owner == 9);
+	kept = host_kept_runs;
+	error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+	assert(error == 0 && storage->owner == 9 && storage->stale && host_kept_runs == kept + 1U);
+	source = storage->view->buffer->address;
+	assert(source[0] == 0xa5 && source[4095] == 0xa5);
+
+	/* Among larger runs of one size, the session's own is taken before a newer unmarked one. */
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0);
+	error = bcm2711_native_storage_create(space, 8192, &unmarked);
+	assert(error == 0 && unmarked->owner == 0);
+	error = bcm2711_native_storage_create_as(space, 8192, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+	assert(error == 0 && !storage->stale);
+	memset(storage->view->buffer->address, 0xa5, 8192);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && space->cache_runs != NULL && space->cache_runs->owner == 9);
+	error = bcm2711_native_storage_release(space, &unmarked, true);
+	assert(error == 0 && space->cache_runs->owner == 0);
+	error = bcm2711_native_storage_create_as(space, 8192, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+	assert(error == 0 && storage->stale && ((uint8_t *)storage->view->buffer->address)[8191] == 0xa5);
+	assert(space->cache_runs != NULL && space->cache_runs->owner == 0);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0);
+	error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+	assert(error == 0 && storage->stale);
+
+	/* A zeroed kind released by the same session drops the mark. */
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0);
+	error = bcm2711_native_storage_create(space, texture_bytes, &storage);
+	assert(error == 0 && storage->owner == 0);
+	memset(storage->view->buffer->address, 0xa5, 4096);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && space->cache_pages->owner == 0);
+	error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+	assert(error == 0 && !storage->stale);
+	source = storage->view->buffer->address;
+	assert(source[0] == 0 && source[4095] == 0);
+	memset(source, 0xa5, 4096);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && space->cache_pages->owner == 9);
+
+	/* A written kind takes a marked view as it is, and its release drops the mark. */
+	kept = host_kept_runs;
+	error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_WRITTEN, &storage);
+	assert(error == 0 && storage->owner == 0 && storage->stale && host_kept_runs == kept + 1U);
+	assert(((uint8_t *)storage->view->buffer->address)[4095] == 0xa5);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && space->cache_pages->owner == 0);
+
+	/* A host-mapped source's private conversion target is given unzeroed only to the session that left it. */
+	view->buffer->host_mapped = true;
+	for (index = 0; index < 2U; index++) {
+		/* The marked page is the only cached view, so the target, allocated first, takes it. */
+		error = bcm2711_native_storage_drain(space);
+		assert(error == 0 && space->cache_bytes == 0);
+		space->builder = 9;
+		error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+		assert(error == 0);
+		memset(storage->view->buffer->address, 0xa5, 4096);
+		error = bcm2711_native_storage_release(space, &storage, true);
+		assert(error == 0 && space->cache_pages->owner == 9);
+		space->builder = 9U + index;
+		kept = host_kept_runs;
+		available = 1024U * 1024U;
+		error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+		assert(error == 0 && draw->textures[0].snapshot == NULL && draw->textures[0].convert);
+		source = draw->textures[0].pixels->view->buffer->address;
+		if (index == 0) {
+			assert(draw->textures[0].pixels->stale && draw->textures[0].pixels->owner == 9 && host_kept_runs > kept);
+			assert(source[4095] == 0xa5);
+		} else {
+			assert(!draw->textures[0].pixels->stale && draw->textures[0].pixels->owner == 10);
+			for (byte = 0; byte < 4096U; byte++)
+				assert(source[byte] == 0);
+		}
+		error = bcm2711_vulkan_native_draw_release(&draw, true);
+		assert(error == 0);
+	}
+	view->buffer->host_mapped = false;
+
+	/* The snapshot below starts from the session's own marked page again. */
+	error = bcm2711_native_storage_drain(space);
+	assert(error == 0 && space->cache_bytes == 0);
+	space->builder = 9;
+	error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+	assert(error == 0);
+	memset(storage->view->buffer->address, 0xa5, 4096);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && space->cache_pages->owner == 9);
+
+	/* A snapshot the unit fills over the session's own unzeroed pixels remembers the session. */
+	view->buffer->generation++;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].convert && draw->textures[0].snapshot == space->snapshots);
+	snapshot = space->snapshots;
+	assert(snapshot->owner == 9 && snapshot->pixels->stale && !snapshot->valid);
+	assert(((uint8_t *)snapshot->pixels->view->buffer->address)[4095] == 0xa5);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* The same session samples it as it is. */
+	fills = space->snapshot_fills;
+	bcm2711_native_snapshot_filled(snapshot);
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == snapshot && !draw->textures[0].convert);
+	assert(space->snapshot_fills == fills && snapshot->owner == 9 && snapshot->valid);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* While a draw samples it, another session gets a private conversion instead. */
+	error = bcm2711_native_snapshot_get(space, view->buffer, address - view->address, image->width, image->height, image->pitch, cpu, (size_t)image->bytes, true, &snapshot);
+	assert(error == 0 && snapshot == space->snapshots && snapshot->users == 1);
+	space->builder = 10;
+	error = bcm2711_native_snapshot_get(space, view->buffer, address - view->address, image->width, image->height, image->pitch, cpu, (size_t)image->bytes, true, &snapshot);
+	assert(error == ENOTSUP && snapshot == NULL);
+	snapshot = space->snapshots;
+	bcm2711_native_snapshot_put(snapshot);
+	assert(snapshot->owner == 9 && snapshot->valid);
+
+	/* Another session finds it zeroed whole and converted again, with no earlier byte left. */
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == snapshot && draw->textures[0].convert);
+	assert(space->snapshot_fills == fills + 1U && snapshot->owner == 0 && !snapshot->valid);
+	source = snapshot->pixels->view->buffer->address;
+	for (index = 0; index < 4096U; index++)
+		assert(source[index] == 0);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/* A CPU conversion rewrites the texture but not the page's tail, so the mark stays until another session scrubs it. */
+	space->builder = 9;
+	error = bcm2711_native_storage_drain(space);
+	assert(error == 0 && space->snapshots == NULL);
+	error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+	assert(error == 0);
+	memset(storage->view->buffer->address, 0xa5, 4096);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && space->cache_pages->owner == 9);
+	space->native->hardware.tfu_uif_ready = false;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && !draw->textures[0].convert);
+	assert(space->snapshots->pixels->stale && space->snapshots->owner == 9 && space->snapshots->valid);
+	assert(((uint8_t *)space->snapshots->pixels->view->buffer->address)[0] == 0x5c);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+	space->builder = 10;
+	fills = space->snapshot_fills;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && space->snapshot_fills == fills + 1U);
+	assert(space->snapshots->owner == 0 && space->snapshots->valid);
+	assert(((uint8_t *)space->snapshots->pixels->view->buffer->address)[0] == 0x5c);
+	assert(((uint8_t *)space->snapshots->pixels->view->buffer->address)[4095] == 0);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+
+	/*
+	 * Pixels session 9 made and session 10 brought up to date go back to
+	 * the cache unmarked when the snapshot is evicted (review M1): session
+	 * 9's next owned page of that size is zeroed.
+	 */
+	error = bcm2711_native_storage_drain(space);
+	assert(error == 0 && space->snapshots == NULL && space->cache_bytes == 0);
+	space->builder = 9;
+	view->buffer->generation++;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && space->snapshots != NULL && space->snapshots->pixels->owner == 9 && space->snapshots->owner == 0);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+	space->builder = 10;
+	view->buffer->generation++;
+	fills = space->snapshot_fills;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && space->snapshot_fills == fills + 1U);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+	space->builder = 9;
+	space->snapshot_limit = space->snapshot_bytes;
+	error = bcm2711_native_snapshot_get(space, view->buffer, address - view->address, image->width, image->height - 1U, image->pitch, cpu, (size_t)image->bytes, false, &snapshot);
+	assert(error == 0 && snapshot != NULL && snapshot->next == NULL);
+	assert(!snapshot->pixels->stale && snapshot->owner == 0);
+	bcm2711_native_snapshot_put(snapshot);
+	space->snapshot_limit = BCM2711_NATIVE_SNAPSHOT_BYTES;
+	space->builder = 0;
+	space->cache_limit = 0;
+	puts("WS141 session marks: owned storage kept only for its session, foreign snapshots zeroed before sampling: PASS");
+
+	/* Draining releases the unused snapshot and its source hold. */
+	error = bcm2711_native_storage_drain(space);
+	assert(error == 0 && space->snapshots == NULL && space->snapshot_bytes == 0 && allocations == baseline);
+	space->snapshot_limit = 0;
+
 	/* Early and late ordinary OOM retire complete mapped prefixes, including an independently copied scalar stream. */
 	for (index = 1; index <= 4; index++) {
 		fail_after = index * 10U;
 		available = 1024U * 1024U;
-		error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+		error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 		assert(error == ENOMEM && draw == NULL && allocations == baseline && available == 1024U * 1024U);
 		assert(fail_after == 0);
 	}
 
 	/* An insufficient whole-job budget refuses after a valid allocation prefix and preserves the caller's exact budget. */
 	available = 4096;
-	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
 	assert(error == ENOMEM && draw == NULL && available == 4096 && allocations == baseline);
 
 	/* Complete synthetic prepared copies exercise firstVertex rebasing and late logical fetch refusal without changing the real primary. */
@@ -1204,7 +1824,7 @@ native_draw_test(
 	for (index = 0; index < 48; index++)
 		((uint8_t *)cpu)[index] = (uint8_t)(index + 1);
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->vertices == 3 && draw->storage[9]->bytes == 24);
 	assert(draw->bin[16] == 2 && draw->bin[18] == 1 && draw->bin[20] == 4 && draw->bin[22] == 3);
 	source = draw->storage[9]->view->buffer->address;
@@ -1226,7 +1846,7 @@ native_draw_test(
 	pipeline->attributes[0].format = VK_FORMAT_R32_SFLOAT;
 	changed->pipeline = pipeline;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->attributes == 1 && draw->storage[9]->bytes == 24);
 	source = draw->storage[9]->view->buffer->address;
 	for (index = 0; index < 3; index++) {
@@ -1252,7 +1872,7 @@ native_draw_test(
 	/* Defaults already belong to the native root, so the dummy needs no extra fetch mapping. */
 	pipeline->attribute_count = 0;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, NULL, &draw);
 	assert(error == 0 && draw->attributes == 1 && draw->count == 10);
 	record = draw->storage[9]->view->buffer->address;
 	assert(record[40] == 9U && record[41] == 0x11U && record[44] == 0);
@@ -1266,7 +1886,7 @@ native_draw_test(
 	changed->pipeline = event->pipeline;
 	changed->draw[0] = 4;
 	available = 1024U * 1024U;
-	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, &draw);
+	error = bcm2711_vulkan_native_draw_create(space, changed, &available, NULL, NULL, &draw);
 	assert(error == EINVAL && draw == NULL && allocations == baseline + 1 && available == 1024U * 1024U);
 	kern_free(changed);
 	puts("WS141 real compiled/native mapped draw/TMU-fetch snapshots/budget/uncertain retirement: PASS");
@@ -1319,10 +1939,15 @@ native_pass_test(
 	assert(error == 0 && pass != NULL && following == NULL);
 	assert(pass->output == view && view->references == references + 1U);
 	assert(pass->count == 9U && pass->draws == 1U && pass->first == pass->last && pass->last->next == NULL);
+	/*
+	 * The draw's six small uploads (three uniform streams, texture records,
+	 * shader record and fetch) share one 64 KiB upload chunk instead of six
+	 * pages, cleaned once whole and then over each written range.
+	 */
 	bytes = pass->bytes;
-	assert(bytes == 1646592U && available == 8U * 1024U * 1024U - bytes);
-	assert(native_cleans == cleans + 20U && pass->job.kind == BCM2711_V3D_JOB_CL);
-	assert(pass->job.command.cl.bin_end - pass->job.command.cl.bin_start == 130U);
+	assert(bytes == 1687552U && available == 8U * 1024U * 1024U - bytes);
+	assert(native_cleans == cleans + 21U && pass->job.kind == BCM2711_V3D_JOB_CL);
+	assert(pass->job.command.cl.bin_end - pass->job.command.cl.bin_start == 135U);
 	assert(pass->job.command.cl.render_end - pass->job.command.cl.render_start == 106U);
 	assert(pass->job.command.cl.pool_bytes == 0x83000U && pass->job.command.cl.state_bytes == 4096U);
 	assert(pass->job.command.cl.overflow_count == 4U && pass->job.command.cl.clean_output);
@@ -1345,7 +1970,11 @@ native_pass_test(
 	error = bcm2711_vulkan_native_pass_release(&pass, true);
 	assert(error == 0 && pass == NULL && allocations == baseline && view->references == references);
 
-	/* Two draws share immutable texels, exact code and defaults; scalar/fetch/shader records remain independent. */
+	/*
+	 * Two draws share immutable texels, exact code and defaults; scalar/fetch/shader records
+	 * remain independent but are carved from the first draw's upload chunk, so the second
+	 * draw owns no allocation of its own.
+	 */
 	events = kern_calloc(4, sizeof(*events));
 	assert(events != NULL);
 	events[0] = *begin_event;
@@ -1359,7 +1988,7 @@ native_pass_test(
 	assert(error == 0 && pass->draws == 2 && pass->first != pass->last);
 	assert(pass->first->texture_count == 1 && pass->last->texture_count == 0);
 	assert(pass->last->count == pass->first->count - 5U);
-	assert(pass->last->bytes == pass->first->bytes - 5U * 4096U);
+	assert(pass->last->count == 0U && pass->last->bytes == 0U);
 	assert(pass->last->defaults == pass->first->defaults);
 	for (index = 0; index < 3; index++)
 		assert(pass->last->code[index] == pass->first->code[index]);
@@ -1657,9 +2286,9 @@ native_job_test(
 	assert(error == 0 && job != NULL && job->pass == NULL && command->pending == 1);
 	native_execute_error = 0;
 	native_execute_retired = true;
-	error = bcm2711_vulkan_native_job_execute(controller, render, job, &retired);
+	error = job_execute(controller, render, job, &retired);
 	assert(error == 0 && retired && job->pass == NULL && job->executed && command->pending == 1);
-	error = bcm2711_vulkan_native_job_execute(controller, render, job, &retired);
+	error = job_execute(controller, render, job, &retired);
 	assert(error == EBUSY && retired);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, true);
 	assert(error == 0 && allocations == baseline && command->pending == 0 && controller->quarantine == NULL);
@@ -1669,7 +2298,7 @@ native_job_test(
 	assert(error == 0);
 	native_execute_error = ETIMEDOUT;
 	native_execute_retired = false;
-	error = bcm2711_vulkan_native_job_execute(controller, render, job, &retired);
+	error = job_execute(controller, render, job, &retired);
 	assert(error == ETIMEDOUT && !retired && job->pass != NULL && command->pending == 1);
 	held = allocations;
 	error = bcm2711_vulkan_native_job_dispose(controller, job, false);
@@ -1902,7 +2531,8 @@ prepared_test(
 	sampler = set->bindings[0].sampler;
 	view_references = view->references;
 	sampler_references = sampler->references;
-	for (index = 1; index <= 6; index++) {
+	/* The root, one event chunk for all events, and the set record are the three allocations. */
+	for (index = 1; index <= 3; index++) {
 		fail_after = index;
 		error = bcm2711_vulkan_prepared_create(command_object, &prepared);
 		assert(error == ENOMEM && prepared == NULL && allocations == baseline);
@@ -1949,6 +2579,7 @@ prepared_test(
 	assert(event->push[0][0] == 0x3f000000U && event->vertices[0]->bytes == 48);
 	assert(event->next->opcode == GPU_OP_CMD_END_RENDER_PASS && event->next->next == NULL);
 	native_draw_test(session, event);
+	write_log_test();
 	native_pass_test(session, prepared->first);
 	native_execute_test(session, prepared->first);
 	uniform_test(session, event);
@@ -2267,7 +2898,7 @@ barrier_test(
 	error = bcm2711_vulkan_native_job_create(object, &job);
 	assert(error == 0 && command->pending == 1);
 	images[1]->layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	error = bcm2711_vulkan_native_job_execute(session->render->device, session->render, job, &retired);
+	error = job_execute(session->render->device, session->render, job, &retired);
 	assert(error == EINVAL && retired && images[0]->layout == layouts[0]);
 	assert(native_write_barriers == writes && native_execute_calls == calls);
 	images[1]->layout = layouts[1];
@@ -2277,7 +2908,7 @@ barrier_test(
 	/* Complete successful serial execution changes both exact layouts once while retaining the primary until disposal. */
 	error = bcm2711_vulkan_native_job_create(object, &job);
 	assert(error == 0);
-	error = bcm2711_vulkan_native_job_execute(session->render->device, session->render, job, &retired);
+	error = job_execute(session->render->device, session->render, job, &retired);
 	assert(error == 0 && retired && command->pending == 1);
 	assert(images[0]->layout == VK_IMAGE_LAYOUT_GENERAL && images[1]->layout == VK_IMAGE_LAYOUT_GENERAL);
 	assert(native_write_barriers == writes + 1 && native_execute_calls == calls);
@@ -2475,7 +3106,7 @@ transfer_test(
 	error = bcm2711_vulkan_native_pass_release(&pass, true);
 	assert(error == 0 && pass == NULL);
 	calls = native_execute_calls;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == 0 && retired && native_execute_calls == calls + 2 && command->pending == 1 && job->pass == NULL);
 	assert(memcmp(cpu, saved, image->bytes) == 0);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, true);
@@ -2528,7 +3159,7 @@ transfer_test(
 	assert(error == 0);
 	native_execute_error = ETIMEDOUT;
 	native_execute_retired = false;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == ETIMEDOUT && !retired && command->pending == 1 && job->pass != NULL && job->pass->first != NULL);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, false);
 	assert(error == 0 && controller->quarantine == job);
@@ -2813,7 +3444,7 @@ raster_copy_test(
 	assert(error == 0);
 	image->layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	calls = native_execute_calls;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == EINVAL && retired && native_execute_calls == calls && memcmp(image_cpu, expected_image, sizeof(expected_image)) == 0);
 	assert(memcmp(buffer_cpu, expected_buffer, sizeof(expected_buffer)) == 0);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, true);
@@ -2836,7 +3467,7 @@ raster_copy_test(
 	}
 
 	/* Complete upload followed by both readbacks changes exactly selected row bytes and performs no native GPU launch. */
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == 0 && retired && native_execute_calls == calls && job->pass == NULL);
 	assert(memcmp(image_cpu, expected_image, sizeof(expected_image)) == 0 && memcmp(buffer_cpu, expected_buffer, sizeof(expected_buffer)) == 0);
 	assert(image->layout == VK_IMAGE_LAYOUT_GENERAL && command->pending == 1);
@@ -3021,10 +3652,10 @@ buffer_copy_test(
 	memcpy(expected + 7, (uint8_t *)cpu[0] + 1, 13);
 	memcpy(expected + 100, (uint8_t *)cpu[0] + 80, 17);
 	calls = native_execute_calls;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == 0 && retired && job->pass == NULL && native_execute_calls == calls);
 	assert(memcmp(cpu[1], expected, sizeof(expected)) == 0 && command->pending == 1);
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == EBUSY && memcmp(cpu[1], expected, sizeof(expected)) == 0);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, true);
 	assert(error == 0 && allocations == baseline && command->pending == 0);
@@ -3191,7 +3822,7 @@ clear_test(
 	/* FIFO layout mismatch refuses before launch or CPU framebuffer mutation and the whole pending graph remains disposable. */
 	calls = native_execute_calls;
 	image->layout = VK_IMAGE_LAYOUT_GENERAL;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == EINVAL && retired && native_execute_calls == calls && memcmp(cpu, saved, image->bytes) == 0);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, true);
 	assert(error == 0 && command->pending == 0 && allocations == baseline);
@@ -3202,7 +3833,7 @@ clear_test(
 	assert(error == 0);
 	native_execute_error = 0;
 	native_execute_retired = true;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == 0 && retired && job->pass == NULL && command->pending == 1 && native_execute_calls == calls + 1);
 	assert(image->layout == record->layout && memcmp(cpu, saved, image->bytes) == 0);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, true);
@@ -3213,7 +3844,7 @@ clear_test(
 	assert(error == 0);
 	native_execute_error = ETIMEDOUT;
 	native_execute_retired = false;
-	error = bcm2711_vulkan_native_job_execute(controller, session->render, job, &retired);
+	error = job_execute(controller, session->render, job, &retired);
 	assert(error == ETIMEDOUT && !retired && job->pass != NULL && job->pass->first == NULL && job->pass->count == 9);
 	assert(job->pass->output == view && command->pending == 1 && memcmp(cpu, saved, image->bytes) == 0);
 	error = bcm2711_vulkan_native_job_dispose(controller, job, false);
@@ -3426,7 +4057,7 @@ record_test(
 	memset(&recording, 0, sizeof(recording));
 	recording.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-	/* A fifth native event allocation refusal must consume the rest of the real stream, report End OOM, and permit clean re-recording. */
+	/* A refused event-chunk allocation must consume the rest of the real stream, report End OOM, and permit clean re-recording. */
 	for (index = 0; index < 2; index++) {
 		begin(&writer, wire, sizeof(wire), GPU_OP_BEGIN_COMMAND_BUFFER, 1);
 		vulkan_write_u64(&writer, 151);
@@ -3441,7 +4072,7 @@ record_test(
 		vulkan_write_u32(&writer, 1);
 		vulkan_write_u64(&writer, 151);
 		if (index == 0)
-			fail_after = 5;
+			fail_after = 1;
 		error = execute(session, &writer, &reader);
 		assert(error == 0);
 		if (index == 0) {
@@ -3451,6 +4082,38 @@ record_test(
 			assert(vulkan_read_u32(&reader) == VK_SUCCESS && command->state == BCM2711_VULKAN_COMMAND_EXECUTABLE && !command->render_open);
 		}
 	}
+
+	/*
+	 * The recording budget admits events up to BCM2711_VULKAN_RECORD_BYTES and
+	 * refuses the next one: the nine-event recording fits exactly behind nine
+	 * events' worth of budget, is refused behind eight, and an ordinary
+	 * recording follows.
+	 */
+	for (index = 0; index < 3; index++) {
+		begin(&writer, wire, sizeof(wire), GPU_OP_BEGIN_COMMAND_BUFFER, 1);
+		vulkan_write_u64(&writer, 151);
+		vulkan_write_u64(&writer, 1);
+		vulkan_encode_VkCommandBufferBeginInfo(&writer, &recording);
+		error = execute(session, &writer, &reader);
+		assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
+		if (index < 2)
+			command->recorded_bytes = BCM2711_VULKAN_RECORD_BYTES - (9U - index) * (uint32_t)sizeof(struct bcm2711_vulkan_record);
+		begin(&writer, wire, sizeof(wire), GPU_OP_END_COMMAND_BUFFER, 1);
+		writer.bytes -= 8;
+		ws141_client_encode_recording(&writer, 151);
+		vulkan_write_u32(&writer, GPU_OP_END_COMMAND_BUFFER);
+		vulkan_write_u32(&writer, 1);
+		vulkan_write_u64(&writer, 151);
+		error = execute(session, &writer, &reader);
+		assert(error == 0);
+		if (index == 1) {
+			assert(vulkan_read_u32(&reader) == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY);
+			assert(command->recording_error == ENOMEM && command->state == BCM2711_VULKAN_COMMAND_INVALID);
+		} else {
+			assert(vulkan_read_u32(&reader) == VK_SUCCESS && command->state == BCM2711_VULKAN_COMMAND_EXECUTABLE);
+		}
+	}
+	assert(BCM2711_VULKAN_RECORD_BYTES / sizeof(struct bcm2711_vulkan_record) > 16000U);
 
 	/* Exact nine-event ordering, selected clear union and raw push words come from real public client encoding. */
 	nodes = 0;
@@ -3563,6 +4226,9 @@ runtime_test(
 	struct vulkan_reader reader;
 	struct gpu_capset capset;
 	VkFenceCreateInfo create;
+	uint64_t submitted;
+	unsigned available;
+	void *token;
 	uint8_t wire[512];
 	uint32_t protocol;
 	uint32_t xml;
@@ -3639,7 +4305,9 @@ runtime_test(
 	assert(error == EAGAIN && !fence->signaled);
 	error = bcm2711_render_worker_step(controller);
 	assert(error == 0 && runtime_callbacks == 1 && runtime_errors[0] == 0);
-	assert(fence->signaled && runtime_session->pending == 0 && reply_storage[2047] == 0x00401000);
+	assert(!fence->signaled && fence->pending == 1 && runtime_session->pending == 1 && reply_storage[2047] == 0x00401000);
+	assert(executor_drain(controller) == 1);
+	assert(fence->signaled && fence->pending == 0 && runtime_session->pending == 0);
 
 	/* Snapshot OOM and a non-owned completion domain leave neither a callback nor a queued prefix. */
 	baseline = allocations;
@@ -3701,11 +4369,331 @@ runtime_test(
 	/* The explicit fixture restores synthetic admission for independent checks; no checked physical reset is asserted. */
 	controller->space.native->hardware.faulted = false;
 	controller->worker.uncertain = false;
+
+	/* A legacy synchronous frame has no callback to complete after an execution, so its QueueSubmit is refused. */
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 0, 0, 0, 0);
+	runtime_trailer(&writer);
+	error = controller->operations.command(controller, runtime_session, wire, (uint32_t)writer.bytes);
+	assert(error == EOPNOTSUPP && runtime_session->pending == 0 && runtime_session->submitted == runtime_session->executed);
+	assert(!session->synchronous && runtime_faults == 1);
+
+	/* The decoder notification comes at once; the queue domain's marker waits parked for the accepted execution. */
+	submitted = runtime_session->submitted;
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 0, 0, 0, 0);
+	runtime_trailer(&writer);
+	error = controller->operations.commands->submit(controller, runtime_session, wire, (uint32_t)writer.bytes, GPU_COMMAND_CONTEXT_FENCE, 0, (struct drv_gpu_completion *)(uintptr_t)21);
+	assert(error == 0);
+	error = bcm2711_render_worker_step(controller);
+	assert(error == 0 && runtime_callbacks == 21 && runtime_errors[20] == 0);
+	assert(runtime_session->submitted == submitted + 1U && runtime_session->pending == 1);
+	error = controller->operations.jobs->reserve(controller, runtime_session, 7, (struct drv_gpu_completion *)(uintptr_t)22, &token);
+	assert(error == 0 && runtime_session->pending == 2);
+	error = controller->operations.jobs->commit(controller, runtime_session, token, (struct drv_gpu_completion *)(uintptr_t)22);
+	assert(error == 0);
+	error = bcm2711_render_worker_step(controller);
+	assert(error == 0 && runtime_callbacks == 21 && controller->worker.parked != NULL && runtime_session->pending == 2);
+	error = bcm2711_render_worker_step(controller);
+	assert(error == EAGAIN);
+	assert(executor_drain(controller) == 1);
+	assert(runtime_callbacks == 22 && runtime_errors[21] == 0 && controller->worker.parked == NULL);
+	assert(runtime_session->pending == 0 && runtime_session->executed == submitted + 1U);
+
+	/* A stopped session's queued execution is canceled without a global fault; its fence is lost and its parked marker reports the stop. */
+	begin(&writer, wire, sizeof(wire), GPU_OP_RESET_FENCES, 1);
+	vulkan_write_u64(&writer, 30);
+	vulkan_write_u32(&writer, 1);
+	vulkan_write_u64(&writer, 1);
+	vulkan_write_u64(&writer, 910);
+	error = execute(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS && !fence->signaled);
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 0, 0, 910, 0);
+	runtime_trailer(&writer);
+	error = controller->operations.commands->submit(controller, runtime_session, wire, (uint32_t)writer.bytes, GPU_COMMAND_CONTEXT_FENCE, 0, (struct drv_gpu_completion *)(uintptr_t)23);
+	assert(error == 0);
+	error = bcm2711_render_worker_step(controller);
+	assert(error == 0 && runtime_callbacks == 23 && fence->pending == 1);
+	error = controller->operations.jobs->reserve(controller, runtime_session, 7, (struct drv_gpu_completion *)(uintptr_t)24, &token);
+	assert(error == 0);
+	error = controller->operations.jobs->commit(controller, runtime_session, token, (struct drv_gpu_completion *)(uintptr_t)24);
+	assert(error == 0);
+	error = bcm2711_render_worker_step(controller);
+	assert(error == 0 && runtime_callbacks == 23 && controller->worker.parked != NULL);
+	bcm2711_render_worker_stop(runtime_session, ECANCELED);
+	assert(executor_drain(controller) == 1);
+	assert(runtime_callbacks == 24 && runtime_errors[23] == ECANCELED && runtime_session->pending == 0);
+	assert(!fence->signaled && fence->pending == 0 && fence->status == VK_ERROR_DEVICE_LOST);
+	assert(runtime_faults == 1 && !controller->worker.uncertain && !controller->space.native->hardware.faulted);
+	runtime_session->stopping = false;
+
+	/* Unfinished executions hold back marker reservations: the producer waits (EAGAIN) instead of failing. */
+	error = controller->operations.jobs->capacity(controller, runtime_session, 7, &available);
+	assert(error == 0 && available == BCM2711_RENDER_SESSION_EXECUTIONS);
+	for (index = 0; index < BCM2711_RENDER_SESSION_EXECUTIONS; index++) {
+		begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+		ws141_client_encode_submit(&writer, 0, 0, 0, 0);
+		error = execute_queued(session, &writer, &reader);
+		assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
+		error = controller->operations.jobs->capacity(controller, runtime_session, 7, &available);
+		assert(error == 0 && available == BCM2711_RENDER_SESSION_EXECUTIONS - index - 1U);
+	}
+	error = controller->operations.jobs->reserve(controller, runtime_session, 7, (struct drv_gpu_completion *)(uintptr_t)25, &token);
+	assert(error == EAGAIN && controller->worker.executions == BCM2711_RENDER_SESSION_EXECUTIONS);
+
+	/* A stream that keeps submitting without markers is refused at the hard limit with an ordinary allocation failure. */
+	for (index = BCM2711_RENDER_SESSION_EXECUTIONS; index < BCM2711_RENDER_HARD_EXECUTIONS; index++) {
+		begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+		ws141_client_encode_submit(&writer, 0, 0, 0, 0);
+		error = execute_queued(session, &writer, &reader);
+		assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
+	}
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 0, 0, 0, 0);
+	error = execute_queued(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY);
+	assert(runtime_session->submitted - runtime_session->executed == BCM2711_RENDER_HARD_EXECUTIONS);
+
+	/* Finished executions give the room back. */
+	assert(executor_drain(controller) == BCM2711_RENDER_HARD_EXECUTIONS);
+	assert(controller->worker.executions == 0 && controller->worker.execution_bytes == 0 && runtime_session->pending == 0);
+	error = controller->operations.jobs->capacity(controller, runtime_session, 7, &available);
+	assert(error == 0 && available == BCM2711_RENDER_SESSION_EXECUTIONS);
 	destroy(session, GPU_OP_DESTROY_FENCE, 910);
 	session->render->vulkan = old_namespace;
 	puts("WS141 actual public runtime capset/snapshot/FIFO/fence/callback/domain/OOM/capacity/close drain: PASS");
 
 	/* Succeeded: public callback software was verified separately from common ioctl integration, scheduler and physical GPU behavior. */
+	return;
+}
+
+/* A fixture execution: a tag for the log and the steps it still needs. */
+struct order_execution {
+	struct bcm2711_render_execution base;
+	unsigned tag;
+	unsigned steps;
+	bool ended;
+};
+
+static unsigned order_log[64];
+static unsigned order_count;
+
+/* Logs one fixture step; the execution is done after its last. */
+static int
+order_step(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	bool *done)
+{
+	struct order_execution *execution;
+
+	/* Steps run under the controller mutex, one at a time. */
+	(void)controller;
+	execution = (struct order_execution *)base;
+	assert(controller->mutex.locked == 1 && execution->steps != 0 && order_count < 64);
+	order_log[order_count++] = execution->tag;
+	execution->steps--;
+	*done = execution->steps == 0;
+
+	/* Succeeded: one step ran. */
+	return 0;
+}
+
+/* A fixture step that fails, as a native pass without retirement would. */
+static int
+order_fail(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	bool *done)
+{
+	/* The executor turns the error into a global fault. */
+	(void)controller;
+	(void)base;
+	*done = false;
+
+	/* Failed: the pass did not retire. */
+	return EIO;
+}
+
+/* Records the fixture execution's end, failed or not. */
+static int
+order_failed_end(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	int error)
+{
+	struct order_execution *execution;
+
+	/* The end receives the step's error. */
+	(void)controller;
+	execution = (struct order_execution *)base;
+	assert(error == EIO && !execution->ended);
+	execution->ended = true;
+
+	/* Succeeded: nothing to release. */
+	return 0;
+}
+
+/* A fixture step that fails while preparing a pass, before anything launched. */
+static int
+order_prepare_fail(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	bool *done)
+{
+	/* Only this execution fails; the engine stays ready. */
+	(void)controller;
+	base->engine = false;
+	*done = false;
+
+	/* Failed: the pass found no memory. */
+	return ENOMEM;
+}
+
+/* Records the end of the execution that failed in preparation. */
+static int
+order_prepare_end(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	int error)
+{
+	struct order_execution *execution;
+
+	/* The end receives the preparation's error. */
+	(void)controller;
+	execution = (struct order_execution *)base;
+	assert(error == ENOMEM && !execution->ended);
+	execution->ended = true;
+
+	/* Succeeded: nothing to release. */
+	return 0;
+}
+
+/* Records the fixture execution's end. */
+static int
+order_end(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	int error)
+{
+	struct order_execution *execution;
+
+	/* The end follows the last step. */
+	(void)controller;
+	execution = (struct order_execution *)base;
+	assert(error == 0 && execution->steps == 0 && !execution->ended);
+	execution->ended = true;
+
+	/* Succeeded: nothing to release. */
+	return 0;
+}
+
+/* Exercises the executor's round robin and the display executions' turn (q). */
+static void
+executor_order_test(
+	struct bcm2711_render_device *controller)
+{
+	struct bcm2711_render_session sessions[3];
+	struct order_execution executions[6];
+	static const unsigned owners[6] = { 0, 0, 1, 1, 2, 2 };
+	static const unsigned steps[6] = { 3, 2, 2, 1, 1, 1 };
+	unsigned last[3];
+	unsigned waited;
+	unsigned index;
+	unsigned tag;
+	unsigned callbacks;
+	unsigned faults;
+	void *token;
+	int error;
+
+	/* Two ordinary sessions with two-pass executions; a third whose executions use a displayed run. */
+	memset(sessions, 0, sizeof(sessions));
+	for (index = 0; index < 3; index++)
+		sessions[index].device = controller;
+	memset(executions, 0, sizeof(executions));
+	order_count = 0;
+	for (index = 0; index < 6; index++) {
+		executions[index].tag = index;
+		executions[index].steps = steps[index];
+		executions[index].base.step = order_step;
+		executions[index].base.end = order_end;
+		executions[index].base.display = owners[index] == 2;
+		bcm2711_render_execution_submit(&sessions[owners[index]], &executions[index].base);
+	}
+	assert(sessions[0].pending == 2 && sessions[2].pending == 2 && controller->worker.executions == 6);
+
+	/* Every step runs; then nothing waits. */
+	assert(executor_drain(controller) == 10 && order_count == 10);
+	for (index = 0; index < 6; index++)
+		assert(executions[index].ended);
+	for (index = 0; index < 3; index++)
+		assert(sessions[index].pending == 0 && sessions[index].executed == 2 && !sessions[index].ready);
+	assert(controller->worker.ready_head == NULL && controller->worker.ready_tail == NULL && controller->worker.executions == 0);
+
+	/* Within a session executions run in order; a display execution goes first and waits at most one other step. */
+	memset(last, 0, sizeof(last));
+	waited = 0;
+	for (index = 0; index < order_count; index++) {
+		tag = order_log[index];
+		assert(tag + 1U >= last[owners[tag]]);
+		last[owners[tag]] = tag + 1U;
+		if (owners[tag] == 2) {
+			assert(waited <= 1);
+			waited = 0;
+		} else if (last[2] < 6) {
+			waited++;
+		}
+	}
+	assert(order_log[0] == 4 && order_log[2] == 5);
+	controller->worker.display_last = false;
+
+	/* (t) A step that failed in preparation ends only its execution: no fault, the marker behind it completes, another session runs. */
+	memset(&executions[0], 0, sizeof(executions[0]) * 2U);
+	executions[0].base.step = order_prepare_fail;
+	executions[0].base.end = order_prepare_end;
+	bcm2711_render_execution_submit(runtime_session, &executions[0].base);
+	error = controller->operations.jobs->reserve(controller, runtime_session, 7, (struct drv_gpu_completion *)(uintptr_t)(runtime_callbacks + 1U), &token);
+	assert(error == 0);
+	error = controller->operations.jobs->commit(controller, runtime_session, token, (struct drv_gpu_completion *)(uintptr_t)(runtime_callbacks + 1U));
+	assert(error == 0);
+	executions[1].tag = 1;
+	executions[1].steps = 1;
+	executions[1].base.step = order_step;
+	executions[1].base.end = order_end;
+	bcm2711_render_execution_submit(&sessions[0], &executions[1].base);
+	callbacks = runtime_callbacks;
+	faults = runtime_faults;
+	order_count = 0;
+	error = bcm2711_render_worker_step(controller);
+	assert(error == 0 && runtime_callbacks == callbacks && controller->worker.parked != NULL);
+	assert(executor_drain(controller) == 2 && executions[0].ended && executions[1].ended && order_count == 1);
+	assert(runtime_callbacks == callbacks + 1U && runtime_errors[callbacks] == 0 && runtime_faults == faults);
+	assert(controller->worker.parked == NULL && runtime_session->pending == 0 && sessions[0].pending == 0);
+	assert(!controller->worker.uncertain && !controller->space.native->hardware.faulted);
+	controller->worker.display_last = false;
+
+	/* (g) A failed step faults the engine; the parked marker behind it reports EIO after the loss is published. */
+	memset(&executions[0], 0, sizeof(executions[0]));
+	executions[0].base.step = order_fail;
+	executions[0].base.end = order_failed_end;
+	bcm2711_render_execution_submit(runtime_session, &executions[0].base);
+	error = controller->operations.jobs->reserve(controller, runtime_session, 7, (struct drv_gpu_completion *)(uintptr_t)(runtime_callbacks + 1U), &token);
+	assert(error == 0);
+	error = controller->operations.jobs->commit(controller, runtime_session, token, (struct drv_gpu_completion *)(uintptr_t)(runtime_callbacks + 1U));
+	assert(error == 0);
+	callbacks = runtime_callbacks;
+	faults = runtime_faults;
+	error = bcm2711_render_worker_step(controller);
+	assert(error == 0 && runtime_callbacks == callbacks && controller->worker.parked != NULL);
+	assert(executor_drain(controller) == 1 && executions[0].ended);
+	assert(runtime_callbacks == callbacks + 1U && runtime_errors[callbacks] == EIO && runtime_faults == faults + 1U);
+	assert(controller->worker.parked == NULL && runtime_session->pending == 0 && controller->worker.uncertain);
+	controller->space.native->hardware.faulted = false;
+	controller->worker.uncertain = false;
+	puts("WS141 executor round robin, in-session order, display turn, preparation failure and failed step: PASS");
+
+	/* Succeeded: the executor's choice of session was verified with fixture executions. */
 	return;
 }
 
@@ -3737,6 +4725,9 @@ queue_test(
 	struct bcm2711_vulkan_session *old_namespace;
 	struct bcm2711_vulkan_object *fence_object;
 	struct bcm2711_vulkan_object *sem_object;
+	struct bcm2711_v3d_view *window_view;
+	struct bcm2711_v3d_view *found_view;
+	uint64_t done;
 	struct bcm2711_vulkan_object *once_object;
 	struct bcm2711_vulkan_command_buffer *command;
 	struct bcm2711_vulkan_command_buffer *once;
@@ -3843,7 +4834,7 @@ queue_test(
 		if (index == 0) {
 			fail_after = 1;
 		} else {
-			fail_after = 5;
+			fail_after = 1;
 		}
 
 		/* Both refusal points occur before live semaphore/fence publication or the explicit mock native runner. */
@@ -3863,6 +4854,57 @@ queue_test(
 	assert(semaphore->signals_reserved == 2 && semaphore->signals_completed == 2);
 	assert(semaphore->waits_reserved == 2 && semaphore->waits_completed == 2 && !semaphore->signaled && !semaphore->pending);
 	assert(fence->signaled && !fence->pending && allocations == prepared_baseline);
+
+	/* A later submission may wait for a signal that an earlier queued one only reserved; nothing completes before the executor runs. */
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 151, 901, 0, 1);
+	error = execute_queued(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS && semaphore->pending == 1 && !semaphore->signaled);
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 151, 901, 0, 1);
+	error = execute_queued(session, &writer, &reader);
+	assert(error == EINVAL && semaphore->pending == 1 && semaphore->signals_reserved == 3);
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 151, 901, 0, 3);
+	error = execute_queued(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS && semaphore->pending == 2 && command->pending == 1);
+	assert(semaphore->signals_reserved == 4 && semaphore->waits_reserved == 4);
+	assert(semaphore->signals_completed == 2 && semaphore->waits_completed == 2 && native_execute_calls == calls + 1U);
+	assert(session->render->submitted == session->render->executed + 2U && session->render->pending == 2);
+	assert(executor_drain(controller) >= 2);
+	assert(semaphore->signals_completed == 4 && semaphore->waits_completed == 4 && !semaphore->signaled && semaphore->pending == 0);
+	assert(command->pending == 0 && native_execute_calls == calls + 2U && session->render->pending == 0);
+	assert(allocations == prepared_baseline);
+	calls++;
+
+	/*
+	 * A2 window: an earlier mapper goes first once, then the pass's native job
+	 * runs without the mutex; a release inside is delayed and done at close,
+	 * and a map inside is refused (ioctls wait in bcm2711_render_map_lock).
+	 */
+	error = bcm2711_native_storage_create(&controller->space, 4096, &window_storage);
+	assert(error == 0);
+	window_view = window_storage->view;
+	controller->worker.pte_waiters = 1;
+	done = controller->worker.pte_done;
+	window_controller = controller;
+	window_runs = 0;
+	window_mapper_runs = 0;
+	window_delayed = 0;
+	window_scratch = NULL;
+	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
+	ws141_client_encode_submit(&writer, 151, 0, 0, 4);
+	error = execute(session, &writer, &reader);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS && native_execute_calls == calls + 2U);
+	assert(window_runs == 1 && window_mapper_runs == 1 && controller->worker.pte_done == done + 1U);
+	assert(controller->worker.pte_waiters == 1 && !controller->space.native->hardware.window);
+	assert(window_map_error == EIO && window_scratch == NULL && window_storage == NULL && window_delayed == 1);
+	for (found_view = controller->space.views; found_view != NULL; found_view = found_view->next)
+		assert(found_view != window_view && !found_view->delayed);
+	assert(command->pending == 0 && controller->mutex.locked == 0);
+	window_controller = NULL;
+	controller->worker.pte_waiters = 0;
+	calls++;
 
 	/* A real independently recorded empty one-time primary becomes invalid only after actual accepted execution, with no GPU launch. */
 	memset(&pool, 0, sizeof(pool));
@@ -3908,7 +4950,7 @@ queue_test(
 	error = bcm2711_vulkan_object_remove(session, I915_VK_OBJ_COMMAND_BUFFER, 157);
 	assert(error == 0 && allocations == prepared_baseline);
 
-	/* An uncertain real native-job handoff reports DEVICE_LOST and keeps the whole pending primary instead of signaling its fence. */
+	/* An uncertain real native-job handoff is accepted, then loses the device and keeps the whole pending primary instead of signaling its fence. */
 	begin(&writer, wire, sizeof(wire), GPU_OP_RESET_FENCES, 1);
 	vulkan_write_u64(&writer, 30);
 	vulkan_write_u32(&writer, 1);
@@ -3921,7 +4963,7 @@ queue_test(
 	begin(&writer, wire, sizeof(wire), GPU_OP_QUEUE_SUBMIT, 1);
 	ws141_client_encode_submit(&writer, 151, 901, 900, 4);
 	error = execute(session, &writer, &reader);
-	assert(error == 0 && vulkan_read_u32(&reader) == (uint32_t)VK_ERROR_DEVICE_LOST);
+	assert(error == 0 && vulkan_read_u32(&reader) == VK_SUCCESS);
 	assert(controller->worker.uncertain && controller->space.native->hardware.faulted && controller->quarantine != NULL);
 	assert(command->pending == 1 && !fence->signaled && !fence->pending && fence->status == VK_ERROR_DEVICE_LOST);
 
@@ -4165,9 +5207,81 @@ begin(
 	writer->bytes += sizeof(header);
 }
 
-/* Executes through actual native transport and makes a genuine client decoder cursor over the returned payload. */
+/* Runs every step of a job under the controller mutex, as the executor does. */
+static int
+job_execute(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_session *session,
+	struct bcm2711_vulkan_native_job *job,
+	bool *retired)
+{
+	bool done;
+	int error;
+
+	/* The steps open and close the window around each pass. */
+	mutex_lock(&controller->mutex);
+
+	done = false;
+	error = 0;
+	while (!done) {
+		error = bcm2711_vulkan_native_job_step(controller, session, job, &done, retired);
+
+		/* A step marks owned storage with its session only while it builds, on success or failure. */
+		assert(controller->space.builder == 0);
+		if (error != 0)
+			break;
+	}
+
+	mutex_unlock(&controller->mutex);
+
+	/* Reports the first step's failure, or zero. */
+	return error;
+}
+
+/* Runs the executor until no execution waits; returns the number of steps. */
+static unsigned
+executor_drain(
+	struct bcm2711_render_device *controller)
+{
+	unsigned steps;
+	int error;
+
+	/* Each step runs one pass or ends one execution. */
+	steps = 0;
+	while (true) {
+		error = bcm2711_render_executor_step(controller);
+		if (error == EAGAIN)
+			break;
+		assert(error == 0);
+		steps++;
+	}
+
+	/* Succeeded: every queued execution ended. */
+	return steps;
+}
+
+/* Executes through actual native transport and waits for the accepted executions, like a fence wait. */
 static int
 execute(
+	struct bcm2711_vulkan_session *session,
+	struct vulkan_writer *writer,
+	struct vulkan_reader *reader)
+{
+	int error;
+
+	/* The decoder replies first; the executor then runs what it accepted. */
+	error = execute_queued(session, writer, reader);
+	executor_drain(session->render->device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the reply is decoded and every accepted execution ended. */
+	return 0;
+}
+
+/* Executes through actual native transport and makes a genuine client decoder cursor over the returned payload; accepted executions stay queued. */
+static int
+execute_queued(
 	struct bcm2711_vulkan_session *session,
 	struct vulkan_writer *writer,
 	struct vulkan_reader *reader)
@@ -4317,6 +5431,7 @@ memory_test(
 	struct bcm2711_vulkan_memory *memory;
 	struct bcm2711_v3d_view *view;
 	unsigned baseline;
+	uint32_t refusals;
 	int error;
 
 	/* A declared allocation reserves its budget and device edge without allocating physical backing yet. */
@@ -4365,9 +5480,15 @@ memory_test(
 	imported_resource.shareable = true;
 	imported_resource.view = view;
 	error = memory_allocate(session, 51, 8192, 1000384002U, 2);
-	assert(error == VK_SUCCESS && view->references == 2 && render->device->vulkan_memory_bytes == 16384);
+	assert(error == VK_SUCCESS && view->references == 2);
+
+	/* The export and its import hold one run, charged once. */
+	assert(render->device->vulkan_memory_bytes == 8192 && first->vulkan_holders == 2 && first->vulkan_charge == 8192);
+	assert(render->device->space.native->hardware.perf.memory_bytes == 8192);
+
+	/* The export freed first: the import still holds the run, and its charge stays. */
 	memory_free(session, 50);
-	assert(first->references == 2 && render->device->vulkan_memory_bytes == 8192);
+	assert(first->references == 2 && render->device->vulkan_memory_bytes == 8192 && first->vulkan_holders == 1);
 	bcm2711_buffer_release(first);
 
 	/* The imported allocation independently owns its view after the original resource descriptor retires. */
@@ -4377,9 +5498,10 @@ memory_test(
 	memory_free(session, 51);
 	assert(render->device->space.views == NULL && render->device->vulkan_memory_bytes == 0 && allocations == baseline);
 
-	/* Aggregate declared heap exhaustion has an explicit Vulkan failure and no new backing allocation. */
-	error = memory_allocate(session, 52, 256ULL << 20, 0, 0);
-	assert(error == VK_SUCCESS);
+	/* Aggregate declared heap exhaustion has an explicit Vulkan failure and no new backing allocation; the whole budget fits. */
+	refusals = render->device->space.native->hardware.perf.memory_refusals;
+	error = memory_allocate(session, 52, BCM2711_VULKAN_MEMORY_BUDGET, 0, 0);
+	assert(error == VK_SUCCESS && render->device->vulkan_memory_bytes == BCM2711_VULKAN_MEMORY_BUDGET);
 
 	/* An actual private declaration cannot acquire external queue ownership merely by selecting a special family number. */
 	object = bcm2711_vulkan_object_find(session, I915_VK_OBJ_MEMORY, 52);
@@ -4387,7 +5509,21 @@ memory_test(
 	external_barrier_test(object);
 	error = memory_allocate(session, 53, 4096, 0, 0);
 	assert(error == (int)VK_ERROR_OUT_OF_DEVICE_MEMORY && backing_allocations == 1);
+	assert(render->device->space.native->hardware.perf.memory_refusals == refusals + 1);
+	assert(render->device->space.native->hardware.perf.memory_refused_bytes == 4096);
 	memory_free(session, 52);
+	assert(render->device->vulkan_memory_bytes == 0);
+
+	/* The budget less a page leaves room for exactly one more page. */
+	error = memory_allocate(session, 52, BCM2711_VULKAN_MEMORY_BUDGET - 4096U, 0, 0);
+	assert(error == VK_SUCCESS);
+	error = memory_allocate(session, 53, 4096, 0, 0);
+	assert(error == VK_SUCCESS && render->device->vulkan_memory_bytes == BCM2711_VULKAN_MEMORY_BUDGET);
+	error = memory_allocate(session, 56, 1, 0, 0);
+	assert(error == (int)VK_ERROR_OUT_OF_DEVICE_MEMORY);
+	memory_free(session, 53);
+	memory_free(session, 52);
+	assert(render->device->vulkan_memory_bytes == 0);
 
 	/* Both ordinary payload and registry allocation refusal retire every budget charge and acquired device dependency. */
 	fail_after = 1;
@@ -5950,4 +7086,50 @@ pipeline_test(
 	error = bcm2711_vulkan_pipeline_release(session, pipeline);
 	assert(error == 0 && allocations == baseline);
 	puts("WS141 Vulkan actual quad compiler/push visibility/attribute interface/OOM/compiled pipeline ownership: PASS");
+}
+
+/*
+ * Checks the run's write log: unions of recent boxes, and refusal for forgotten, unknown or other-image writes.
+ */
+static void
+write_log_test(
+	void)
+{
+	struct bcm2711_buffer buffer;
+	uint32_t first[4] = {10, 20, 30, 40};
+	uint32_t second[4] = {5, 25, 15, 60};
+	uint32_t box[4];
+	uint32_t index;
+	bool known;
+
+	/* Two writes of one image give the union of their boxes; none gives an empty box. */
+	memset(&buffer, 0, sizeof(buffer));
+	bcm2711_v3d_memory_written(&buffer, 4096, first);
+	bcm2711_v3d_memory_written(&buffer, 4096, second);
+	assert(buffer.generation == 2);
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, 0, box);
+	assert(known && box[0] == 5 && box[1] == 20 && box[2] == 30 && box[3] == 60);
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, 1, box);
+	assert(known && box[0] == 5 && box[1] == 25 && box[2] == 15 && box[3] == 60);
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, 2, box);
+	assert(known && box[2] <= box[0]);
+
+	/* Another image's write, an unknown write and an unrecorded step each force a whole copy. */
+	known = bcm2711_v3d_memory_changes(&buffer, 0, 0, box);
+	assert(!known);
+	bcm2711_v3d_memory_written(&buffer, 4096, NULL);
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, 2, box);
+	assert(!known);
+	buffer.generation++;
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, 3, box);
+	assert(!known);
+
+	/* More writes than the ring holds forget the oldest. */
+	for (index = 0; index < BCM2711_BUFFER_WRITES; index++)
+		bcm2711_v3d_memory_written(&buffer, 4096, first);
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, buffer.generation - BCM2711_BUFFER_WRITES, box);
+	assert(known && box[0] == 10 && box[3] == 40);
+	known = bcm2711_v3d_memory_changes(&buffer, 4096, buffer.generation - BCM2711_BUFFER_WRITES - 1U, box);
+	assert(!known);
+	puts("WS141 run write log unions/forgotten/unknown/other-image refusal: PASS");
 }

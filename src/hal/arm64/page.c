@@ -32,6 +32,10 @@ static uint32_t first_free_candidate;
  */
 static volatile unsigned pmem_lock;
 
+static uint32_t next_free(uint32_t page, uint32_t end);
+static uint32_t next_occupied(uint32_t page, uint32_t end);
+static void claim_run(uint32_t first, uint32_t count);
+
 static void
 release_range(uint64_t base, uint64_t size)
 {
@@ -122,8 +126,7 @@ alloc_ram(
 	size_t boundary,
 	hal_physaddr_t *block)
 {
-	uint32_t need, end, start, index, align_pages;
-	uint32_t occupied;
+	uint32_t need, end, start, align_pages, boundary_pages, occupied;
 	uint64_t state, first_byte, last_byte;
 	uintptr_t limit = (uintptr_t)phys_pages * ARM64_PAGE_SIZE;
 
@@ -148,56 +151,160 @@ alloc_ram(
 	if (need == 0 || need >= end)
 		return HAL_ERR_NOMEM;
 
+	/* A run longer than the boundary block crosses it wherever it starts. */
+	boundary_pages = 0;
+	if (boundary != 0) {
+		if ((uint64_t)need * ARM64_PAGE_SIZE > boundary)
+			return HAL_ERR_NOMEM;
+		boundary_pages = (uint32_t)(boundary / ARM64_PAGE_SIZE);
+	}
+
 	state = arm64_irq_save();
 
 	/* Reuses the known occupied prefix rather than rescanning it for every small allocation. */
-	while (first_free_candidate < phys_pages) {
-		occupied = BIT_GET(page_bitmap, first_free_candidate);
-		if (occupied == 0)
+	first_free_candidate = next_free(first_free_candidate, phys_pages);
+
+	/*
+	 * Finds the lowest fitting run, skipping only candidates that cannot
+	 * fit: occupied pages a word at a time, unaligned starts, starts whose
+	 * run crosses a boundary (every later start in the same block does
+	 * too), and every start whose run holds the occupied page found.
+	 */
+	start = first_free_candidate;
+	for (;;) {
+		/* The lowest free page at or above the candidate, then the alignment (a power of two rounds up at once). */
+		start = next_free(start, end);
+		if (align_pages != 0 && (align_pages & (align_pages - 1U)) == 0) {
+			start = (start + align_pages - 1U) & ~(align_pages - 1U);
+		} else {
+			while (start < end && (start & (align_pages - 1U)) != 0)
+				start++;
+		}
+		if (start >= end || need > end - start)
 			break;
-		first_free_candidate++;
-	}
 
-	/* Alignment and size constraints cannot skip a lower free hole in the shared cursor. */
-	for (start = first_free_candidate; start + need <= end; start++) {
-		/* Skips candidates which do not meet the alignment. */
-		if ((start & (align_pages - 1U)) != 0)
-			continue;
-
-		/* Skips a run which would cross a forbidden boundary. */
-		if (boundary != 0) {
+		/* A run crossing a boundary moves to the next boundary block. */
+		if (boundary_pages != 0) {
 			first_byte = (uint64_t)start * ARM64_PAGE_SIZE;
-			last_byte = first_byte +
-			    (uint64_t)need * ARM64_PAGE_SIZE - 1U;
-			if (first_byte / boundary != last_byte / boundary)
+			last_byte = first_byte + (uint64_t)need * ARM64_PAGE_SIZE - 1U;
+			if (first_byte / boundary != last_byte / boundary) {
+				start = (start / boundary_pages + 1U) * boundary_pages;
 				continue;
+			}
 		}
 
-		/* Measures the free run beginning at this candidate. */
-		for (index = 0;
-		     index < need && !BIT_GET(page_bitmap, start + index);
-		     index++)
-			;
-		if (index == need)
+		/* The run fits when it holds no occupied page; otherwise the next candidate follows that page. */
+		occupied = next_occupied(start, start + need);
+		if (occupied == start + need)
 			break;
-		start += index;
+		start = occupied + 1U;
 	}
 
 	/* Reports exhaustion when no candidate run remains. */
-	if (start + need > end) {
+	if (start >= end || need > end - start) {
 		arm64_irq_restore(state);
 		return HAL_ERR_NOMEM;
 	}
 
 	/* Claims and accounts for every page in the selected run. */
-	for (index = 0; index < need; index++)
-		BIT_SET(page_bitmap, start + index);
+	claim_run(start, need);
 	allocated_pages += need;
 	arm64_irq_restore(state);
 
 	/* Publishes the allocated physical address. */
 	*block = (hal_physaddr_t)start * ARM64_PAGE_SIZE;
 	return HAL_OK;
+}
+
+/* Finds the lowest free page in [page, end), or end; whole occupied words are skipped at once. */
+static uint32_t
+next_free(
+	uint32_t page,
+	uint32_t end)
+{
+	uint32_t word;
+	uint32_t found;
+
+	/* Bits below the page in its first word count as occupied. */
+	if (page >= end)
+		return end;
+	word = page_bitmap[page >> 5] | ((1U << (page & 31U)) - 1U);
+	page &= ~31U;
+
+	/* Skips whole occupied words up to the end. */
+	while (word == UINT32_MAX) {
+		page += 32U;
+		if (page >= end)
+			return end;
+		word = page_bitmap[page >> 5];
+	}
+
+	/* The lowest clear bit, unless it lies at or past the end. */
+	found = page + (uint32_t)__builtin_ctz(~word);
+	if (found >= end)
+		return end;
+
+	/* Succeeded: found is free. */
+	return found;
+}
+
+/* Finds the lowest occupied page in [page, end), or end; whole free words are skipped at once. */
+static uint32_t
+next_occupied(
+	uint32_t page,
+	uint32_t end)
+{
+	uint32_t word;
+	uint32_t found;
+
+	/* Bits below the page in its first word count as free. */
+	if (page >= end)
+		return end;
+	word = page_bitmap[page >> 5] & ~((1U << (page & 31U)) - 1U);
+	page &= ~31U;
+
+	/* Skips whole free words up to the end. */
+	while (word == 0) {
+		page += 32U;
+		if (page >= end)
+			return end;
+		word = page_bitmap[page >> 5];
+	}
+
+	/* The lowest set bit, unless it lies at or past the end. */
+	found = page + (uint32_t)__builtin_ctz(word);
+	if (found >= end)
+		return end;
+
+	/* Succeeded: found is occupied. */
+	return found;
+}
+
+/* Marks a free run occupied, whole words at a time; the caller holds the IRQ exclusion. */
+static void
+claim_run(
+	uint32_t first,
+	uint32_t count)
+{
+	uint32_t end;
+
+	/* Single pages up to the first word boundary, whole words, then the tail's pages. */
+	end = first + count;
+	while (first < end && (first & 31U) != 0) {
+		BIT_SET(page_bitmap, first);
+		first++;
+	}
+	while (end - first >= 32U) {
+		page_bitmap[first >> 5] = UINT32_MAX;
+		first += 32U;
+	}
+	while (first < end) {
+		BIT_SET(page_bitmap, first);
+		first++;
+	}
+
+	/* Succeeded: every page of the run is occupied. */
+	return;
 }
 
 /*

@@ -614,6 +614,9 @@ struct fm_hit {
 	int index;
 };
 
+/* How many separate parts of the window a frame drawn by parts draws at most (fm_ui_damage). */
+#define FM_DAMAGE_PARTS		2
+
 /* How many glass panels a frame has at most: the sidebar, the content (with its tabs) and the preview. */
 #define FM_PANELS		3
 
@@ -1155,12 +1158,14 @@ struct fm_app {
 
 	/*
 	 * A change of the lit region or of a rubber band alone (BUG-221,
-	 * BUG-226): the next frame is drawn only within damage, clipped to it
-	 * (fm_ui_damage adds to it), the rest keeping the last frame's pixels.
-	 * Any other change (dirty) draws everything.
+	 * BUG-226): the next frame is drawn only within the damage parts,
+	 * clipped to each in turn (fm_ui_damage adds to them), the rest keeping
+	 * the last frame's pixels.  damage_pending is how many parts there are
+	 * (0 for none); two regions far apart stay two parts, so the space
+	 * between them is not drawn.  Any other change (dirty) draws everything.
 	 */
 	int damage_pending;
-	struct kl_rect damage;
+	struct kl_rect damage[FM_DAMAGE_PARTS];
 
 	/*
 	 * What the last frame drawn changed (BUG-221): frame_partial when it
@@ -1170,6 +1175,14 @@ struct fm_app {
 	 */
 	int frame_partial;
 	struct kl_rect frame_part;
+
+	/*
+	 * The parts themselves of a window's frame drawn by parts (ws210-p014),
+	 * which it is shown by (kl_window_present_parts); 0 when the frame is
+	 * shown by frame_part (the desktop's frames, which keep only the box).
+	 */
+	unsigned frame_part_count;
+	struct kl_rect frame_parts[FM_DAMAGE_PARTS];
 
 	/*
 	 * Whether the window is glass: the compositor draws frosted glass under the
@@ -1255,6 +1268,16 @@ struct fm_app {
 	int pointer_inside;
 	unsigned hover_kind;
 	int hover_index;
+
+	/*
+	 * The region lit when the last frame was drawn, and whether the region
+	 * under the pointer changed since (ws210-p014 (a)): a frame draws the
+	 * region lit then and the one lit now (fm_input_hover_settle), not the
+	 * regions the pointer crossed while the frame before was being drawn.
+	 */
+	unsigned drawn_hover_kind;
+	int drawn_hover_index;
+	int hover_moved;
 	unsigned press_kind;
 	int press_index;
 	int pressing;
@@ -1609,9 +1632,12 @@ void fm_ui_forward(struct fm_app *app);
 void fm_ui_open(struct fm_app *app, int index);
 void fm_ui_message(struct fm_app *app, const char *message);
 int fm_ui_wait(struct fm_app *app);
+int fm_ui_due(struct fm_app *app, uint64_t now);
 
 /* The pointer and the keyboard (ui-input.c). */
 void fm_input_motion(struct fm_app *app, const struct fm_event *event);
+void fm_input_leave(struct fm_app *app);
+void fm_input_hover_settle(struct fm_app *app);
 void fm_input_button(struct fm_app *app, const struct fm_event *event);
 void fm_input_scroll(struct fm_app *app, int amount);
 
@@ -1764,6 +1790,7 @@ int fm_image_thumbnail(const char *path, int side, struct kl_image *thumbnail);
 const struct kl_image *fm_thumb_get(struct fm_app *app, const char *path, time_t modified);
 int fm_thumb_tick(struct fm_app *app);
 int fm_thumb_busy(void);
+int fm_thumb_maker_free(void);
 void fm_thumb_release(struct fm_app *app);
 int fm_picture_begin(unsigned which, const char *path, int width, int height);
 int fm_picture_follow(unsigned which, struct kl_image *image, int *error);

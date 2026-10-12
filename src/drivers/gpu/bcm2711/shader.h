@@ -48,7 +48,6 @@ struct bcm2711_shader_key {
 	struct bcm2711_shader_component varyings[BCM2711_SHADER_INTERFACE_WORDS];
 	uint32_t varying_count;
 	uint32_t swap_red_blue;
-	uint32_t premultiplied_blend;
 };
 
 /* One uniform belongs to one emitted hardware consumption, including implicit tile writes. */
@@ -76,6 +75,10 @@ struct bcm2711_shader_binary {
 	uint32_t registers_used;
 	uint32_t threads;
 	uint32_t starts_final;
+	/* Set when the words pair operations and fill delays; clear when they follow the source one operation per word. */
+	uint32_t scheduled;
+	/* Set when the program was lowered from the optimizer's rewritten source; clear when from the source as parsed. */
+	uint32_t optimized;
 };
 
 /* One refusal names the source instruction; its reason points to immutable implementation text. */

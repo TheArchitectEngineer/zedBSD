@@ -44,6 +44,9 @@ ph_draft_add(
 	/* A finite draft cannot consume unbounded files or attach to an unknown recipient. */
 	if (path == NULL || path[0] != '/' || contact == NULL || contact[0] == '\0')
 		return EINVAL;
+
+	/* The file's kind: a video or a picture (a picture until the kind is known). */
+	video = 0;
 	error = draft_kind(path, &video);
 	if (error != 0)
 		return error;

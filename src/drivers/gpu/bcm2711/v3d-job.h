@@ -78,6 +78,15 @@ struct bcm2711_v3d_job {
 };
 
 /* Retirement is true only for no launch or confirmed completion plus required clean. */
+/*
+ * The performance counters each render run reports, in this order: cycles,
+ * QPU idle, fragment-shading, valid-instruction, TMU-wait, scoreboard-wait,
+ * varyings-wait and fragment-stall cycles, TMU accesses and misses, TMU
+ * stall cycles, render-thread cycles, valid quads, quads written, and TLB
+ * words read and written.
+ */
+#define BCM2711_V3D_COUNTERS 16U
+
 struct bcm2711_v3d_job_result {
 	bool retired;
 	uint32_t core_events;
@@ -87,6 +96,16 @@ struct bcm2711_v3d_job_result {
 	uint32_t render_counter;
 	uint32_t fault_client;
 	uint32_t fault_address;
+	/* Diagnostic wall times of the bin and render queues and the output cache clean. */
+	uint64_t bin_ticks;
+	uint64_t render_ticks;
+	uint64_t clean_ticks;
+	/* Diagnostic wall time of the texture formatting jobs that preceded a CL job, their number and the longest one. */
+	uint64_t tfu_ticks;
+	uint32_t tfu_jobs;
+	uint64_t tfu_max_ticks;
+	/* The performance counters' increase over the render queue's run (BCM2711_V3D_COUNTER_* order). */
+	uint32_t counters[BCM2711_V3D_COUNTERS];
 };
 
 int bcm2711_v3d_job_run(struct bcm2711_v3d *engine, const struct bcm2711_v3d_job *job, struct bcm2711_v3d_job_result *result);

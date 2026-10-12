@@ -698,6 +698,7 @@ seat_resume(
 	uint32_t index)
 {
 	int descriptor;
+	int old_descriptor;
 	int flags;
 	int error;
 	int clock_id;
@@ -727,8 +728,7 @@ seat_resume(
 	descriptor = dbus_take_fd(message, index);
 	if (descriptor < 0)
 		return EPROTO;
-	if (device->fd >= 0)
-		(void)close(device->fd);
+	old_descriptor = device->fd;
 	device->fd = descriptor;
 	device->paused = 0;
 
@@ -740,6 +740,15 @@ seat_resume(
 	} else if (backend->host.input_resumed != NULL) {
 		backend->host.input_resumed(backend->host.data, device->path, descriptor);
 	}
+
+	/*
+	 * The old file closes only after the compositor has let go of it: its
+	 * input thread may still read the old descriptor until the callback
+	 * returns, and a number closed earlier could already be another file's
+	 * (ws213-p004, the design's 6.1 N-1).
+	 */
+	if (old_descriptor >= 0)
+		(void)close(old_descriptor);
 
 	/* Succeeded: input and display use only the newly supplied file. */
 	printf("KWL SEAT resume device=%u:%u display=%u\n", device->major, device->minor, device->display);

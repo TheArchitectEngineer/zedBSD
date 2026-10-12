@@ -522,7 +522,11 @@ view_list(
 
 	/* An empty list says why. */
 	if (chooser->count == 0U) {
-		if (chooser->list_error != 0)
+		if (chooser->media_loading)
+			snprintf(line, sizeof(line), "Loading\xe2\x80\xa6");
+		else if (chooser->media_unavailable)
+			snprintf(line, sizeof(line), "The media library is unavailable");
+		else if (chooser->list_error != 0)
 			snprintf(line, sizeof(line), "Can't open this folder: %s", strerror(chooser->list_error));
 		else if (chooser->recent)
 			snprintf(line, sizeof(line), "No recent files");

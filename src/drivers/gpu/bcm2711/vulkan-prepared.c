@@ -15,10 +15,21 @@
 /* Finite CPU snapshots are bounded independently of the primary's one-MiB recording storage and future GPU backing. */
 #define VULKAN_PREPARED_BYTES (8U * 1024U * 1024U)
 
+/* Events one chunk of a prepared graph holds. */
+#define PREPARED_EVENT_CHUNK 64U
+
+/* One chunk of a prepared graph's events, in preparation order, the first used of them. */
+struct bcm2711_vulkan_prepared_chunk {
+	struct bcm2711_vulkan_prepared_chunk *next;
+	uint32_t used;
+	struct bcm2711_vulkan_prepared_event events[PREPARED_EVENT_CHUNK];
+};
+
 static int prepare_event(void *payload, const struct bcm2711_vulkan_draw_state *state, const struct bcm2711_vulkan_record *record);
 static int build_prepared(struct bcm2711_vulkan_prepared *prepared);
 static int snapshot_descriptors(struct bcm2711_vulkan_prepared_event *event, const struct bcm2711_vulkan_draw_state *state);
 static int release_event(struct bcm2711_vulkan_prepared_event *event);
+static struct bcm2711_vulkan_prepared_event *event_take(struct bcm2711_vulkan_prepared *prepared);
 static int prepare_sets(struct bcm2711_vulkan_prepared *prepared);
 static int charge_pending(struct bcm2711_vulkan_prepared *prepared);
 
@@ -81,6 +92,8 @@ bcm2711_vulkan_prepared_release(
 	struct bcm2711_vulkan_prepared_event *next;
 	struct bcm2711_vulkan_prepared_set *use;
 	struct bcm2711_vulkan_prepared_set *next_use;
+	struct bcm2711_vulkan_prepared_chunk *chunk;
+	struct bcm2711_vulkan_prepared_chunk *next_chunk;
 	struct bcm2711_vulkan_command_buffer *command;
 	int error;
 	int released;
@@ -124,6 +137,12 @@ bcm2711_vulkan_prepared_release(
 		if (released != 0 && error == 0)
 			error = released;
 		event = next;
+	}
+
+	/* The released events' storage goes with their chunks. */
+	for (chunk = prepared->chunks; chunk != NULL; chunk = next_chunk) {
+		next_chunk = chunk->next;
+		kern_free(chunk);
 	}
 
 	/* The primary graph retires last, after all borrowed snapshot pointers have ceased to be used. */
@@ -184,8 +203,8 @@ prepare_event(
 	if (sizeof(*event) > VULKAN_PREPARED_BYTES - prepared->bytes)
 		return ENOSPC;
 
-	/* Allocate one zeroed event whose partial descriptor clones can be retired individually. */
-	event = kern_calloc(1, sizeof(*event));
+	/* Takes one zeroed event from the graph's chunks; its partial descriptor clones can be retired individually. */
+	event = event_take(prepared);
 	if (event == NULL)
 		return ENOMEM;
 
@@ -301,8 +320,7 @@ release_event(
 		}
 	}
 
-	/* Immutable pipeline, pass and vertex pointers are borrowed from the primary root and own no separate edge here. */
-	kern_free(event);
+	/* Immutable pipeline, pass and vertex pointers are borrowed from the primary root; the event's storage is its graph's chunk. */
 	if (error != 0)
 		return error;
 
@@ -387,4 +405,26 @@ charge_pending(
 
 	/* Succeeded: all pending mutations are prohibited without a partial counter transaction. */
 	return 0;
+}
+
+/* Takes the next zeroed event from the prepared graph's newest chunk, adding a chunk when it is full. */
+static struct bcm2711_vulkan_prepared_event *
+event_take(
+	struct bcm2711_vulkan_prepared *prepared)
+{
+	struct bcm2711_vulkan_prepared_chunk *chunk;
+
+	/* A new chunk goes to the head of the graph's list; its events are zeroed. */
+	chunk = prepared->chunks;
+	if (chunk == NULL || chunk->used == PREPARED_EVENT_CHUNK) {
+		chunk = kern_calloc(1, sizeof(*chunk));
+		if (chunk == NULL)
+			return NULL;
+		chunk->next = prepared->chunks;
+		prepared->chunks = chunk;
+	}
+
+	/* Reports the next unused event of the newest chunk. */
+	chunk->used++;
+	return &chunk->events[chunk->used - 1U];
 }

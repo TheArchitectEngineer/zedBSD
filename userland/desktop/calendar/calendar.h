@@ -91,6 +91,12 @@ struct cal_item {
 #define CAL_CELLS_MAX		512U
 #define CAL_MONTHS		13
 
+/* The most parts a click that chose another day draws again in its frame: the old day's cell and the card of the day chosen. */
+#define CAL_REDRAW_MAX		2U
+
+/* The colours the picture of the ground and the cards is made of (the window's ground, the cards' veils, shadow, ground and edge). */
+#define CAL_GROUND_COLORS	7U
+
 /* A cell of the frame drawn: where it is and its day (the drop of a drag finds it). */
 struct cal_cell {
 	struct kl_rect rect;
@@ -121,11 +127,22 @@ struct cal_cell {
  * all day; a memo is only deleted), and the fields of its title and times.
  *
  * The cells of the last frame, where today's cell was last logged, the notice shown at the
- * bottom until a time (empty for none), whether the window stands on glass, and whether
- * the program is to end.
+ * bottom until a time (empty for none), whether the window stands on glass, whether
+ * the program is to end, and whether a click in the last frame changed what was drawn
+ * before it, so that the whole view is drawn again (the window clears it).
+ *
+ * A click that chose another day in the months: the parts to draw again in the
+ * same frame (the window draws them and empties the list, ws210-p014), and the
+ * card of the day chosen in the last frame (none: no width).
+ *
+ * The picture of the ground and the cards (made once for a size, the glass,
+ * the cards and the colours, and copied into each frame), and whether it is
+ * made for these.
  *
  * The 3D: the desk calendar's target and picture, what the last full frame
- * had under it (its area, and whether it is kept), its mesh, the icons of
+ * had under it (its area, whether it is kept, and whether the frame being
+ * drawn met the desk calendar), whether the picture shows the desk calendar
+ * still with the pages it has now (drawn again as it is), its mesh, the icons of
  * the kinds of event, and the pictures of the two pages with their days
  * and the accent they were drawn in (ws179-p002).
  */
@@ -171,12 +188,25 @@ struct cal_view {
 	uint64_t notice_until;
 	int glass;
 	int quit;
+	int again;
+
+	struct kl_rect redraw[CAL_REDRAW_MAX];
+	size_t redraw_count;
+	struct kl_rect day_card;
+
+	struct kl_image ground;
+	int ground_valid;
+	int ground_glass;
+	struct kl_rect ground_cards[3];
+	kl_color ground_colors[CAL_GROUND_COLORS];
 
 	struct r3_target target;
 	struct kl_image picture;
 	struct kl_image under;
 	struct kl_rect desk_area;
 	int desk_valid;
+	int desk_seen;
+	int picture_still;
 	struct sc_mesh *mesh;
 	struct kl_image icons[SC_ICONS];
 	struct kl_image pages[SC_TEXTURES];
@@ -214,7 +244,9 @@ void cal_view_key(struct cal_view *view, uint32_t key, unsigned modifiers, uint6
 void cal_view_draw(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, int width, int height, uint64_t now_us);
 size_t cal_view_panels(const struct cal_view *view, int width, int height, struct kl_glass_panel *panels, size_t capacity);
 int cal_view_wait(const struct cal_view *view, uint64_t now_us);
+int cal_view_animating(const struct cal_view *view);
 int cal_view_desk_only(const struct cal_view *view);
+int cal_view_cell_at(const struct cal_view *view, double x, double y, struct kl_rect *rect);
 void cal_view_draw_desk(struct cal_view *view, const struct kl_style *style, uint64_t now_us);
 
 /* The log for the tests (main.c, and the host tests' own). */

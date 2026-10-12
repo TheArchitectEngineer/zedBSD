@@ -85,6 +85,8 @@ struct mu_window {
 	int dirty;
 	int resized;
 	int moving;
+	int lit_changed;
+	unsigned buttons_held;
 	int glass_decided;
 	long quarter;
 	long logged;
@@ -217,6 +219,15 @@ main(
 		mu_view_release(&music.view);
 		return 1;
 	}
+
+	/*
+	 * The pointer's motions merged, and each frame drawn once the
+	 * compositor took the last one (ws210-p014 F2): the pointer crossing
+	 * the view while a frame is on its way draws its latest place once,
+	 * not a frame queued for every widget it crossed (2026-10-12, the Pi 4).
+	 */
+	error = kl_window_set_pacing(music.window, KL_PACING_MOTION | KL_PACING_FRAME, 0U);
+	mu_log("PACING motion=1 frame=1 errno=%d", error);
 
 	/* The input of its frames. */
 	music.ui = kl_ui_create();
@@ -540,7 +551,38 @@ mu_input(
 		return;
 	}
 
-	/* The widgets' input draws again. */
+	/*
+	 * A motion of the pointer draws again only when it lights another
+	 * widget or moves a held one: a frame of the whole window for every
+	 * motion over Music slowed the cursor everywhere on the Pi 4
+	 * (2026-10-12 user).
+	 */
+	if (event->kind == KL_WINDOW_MOTION) {
+		taken = kl_ui_pointer_motion(music->ui, event->x, event->y);
+		if (taken && music->buttons_held != 0U)
+			music->dirty = 1;
+		else if (taken)
+			music->lit_changed = 1;
+		return;
+	}
+
+	/* The pointer leaving darkens the lit widget: its part alone is drawn again (BUG-226). */
+	if (event->kind == KL_WINDOW_LEAVE) {
+		taken = kl_ui_pointer_leave(music->ui);
+		if (taken)
+			music->lit_changed = 1;
+		return;
+	}
+
+	/* The buttons held: a motion while one is held draws the whole window (a slider follows it). */
+	if (event->kind == KL_WINDOW_BUTTON) {
+		if (event->pressed)
+			music->buttons_held++;
+		else if (music->buttons_held != 0U)
+			music->buttons_held--;
+	}
+
+	/* The widgets' other input draws again. */
 	taken = kl_ui_window_input(music->ui, event);
 	if (taken) {
 		music->dirty = 1;
@@ -1192,21 +1234,64 @@ mu_draw(
 	uint64_t now_us)
 {
 	struct kl_glass_panel panels[MU_PANELS_MAX];
+	struct kl_rect parts[KL_FRAME_PARTS_MAX];
 	struct kl_event event;
+	unsigned part_count;
+	unsigned index;
 	size_t count;
+	int need;
+	int pace;
 	int status;
 	int error;
 	int taken;
 
 	/* Nothing changed and nothing moves: no frame. */
-	if (!music->dirty && !music->moving && !music->view.seek_pending)
+	if (!music->dirty && !music->moving && !music->view.seek_pending && !music->lit_changed)
 		return;
 
-	/* The view. */
+	/*
+	 * A frame once the compositor took the last one (ws210-p014 F2.2):
+	 * until then nothing is consumed, so what changes meanwhile is drawn
+	 * as one frame in its latest state.
+	 */
+	pace = kl_window_frame_wait(music->window, now_us);
+	if (pace != 0)
+		return;
+
+	/*
+	 * Only another widget lit: the frame is drawn and shown within the
+	 * parts the widgets tell alone (BUG-226, ws210-p014): the widget lit
+	 * when the last frame was drawn and the one lit now; none when the
+	 * pointer came back to the widget lit then.
+	 */
+	part_count = 0;
+	if (!music->dirty && !music->moving && !music->view.seek_pending && music->lit_changed) {
+		need = kl_ui_take_frame(music->ui, parts, KL_FRAME_PARTS_MAX, &part_count);
+		if (need == KL_FRAME_NONE) {
+			music->lit_changed = 0;
+			return;
+		}
+		if (need == KL_FRAME_WHOLE)
+			part_count = 0;
+	}
+	music->lit_changed = 0;
+
+	/* The view, all of it. */
 	music->dirty = 0;
-	kl_ui_begin(music->ui, now_us);
-	mu_view_draw(&music->view, music->ui, &music->style, (int)music->width, (int)music->height, now_us);
-	music->moving = kl_ui_end(music->ui, now_us);
+	if (part_count == 0U) {
+		kl_ui_begin(music->ui, now_us);
+		mu_view_draw(&music->view, music->ui, &music->style, (int)music->width, (int)music->height, now_us);
+		music->moving = kl_ui_end(music->ui, now_us);
+	}
+
+	/* Or within each part in turn, the rest keeping the last frame's pixels. */
+	for (index = 0; index < part_count; index++) {
+		kl_canvas_clip_push(&music->canvas, &parts[index]);
+		kl_ui_begin(music->ui, now_us);
+		mu_view_draw(&music->view, music->ui, &music->style, (int)music->width, (int)music->height, now_us);
+		music->moving = kl_ui_end(music->ui, now_us);
+		kl_canvas_clip_pop(&music->canvas);
+	}
 	kl_ui_window_text(music->ui, music->window);
 
 	/* The glass's panels for the frame; a compositor without glass leaves the window opaque from the next one. */
@@ -1221,8 +1306,8 @@ mu_draw(
 		}
 	}
 
-	/* The frame shown. */
-	status = kl_window_present(music->window, music->pixels, (size_t)music->width);
+	/* The frame shown, by its parts alone when it was drawn so. */
+	status = kl_window_present_parts(music->window, music->pixels, (size_t)music->width, parts, part_count);
 	if (status == EAGAIN)
 		music->resized = 1;
 
@@ -1240,27 +1325,40 @@ mu_draw(
 
 /*
  * Reports how long the loop may wait for input (ms): no time while a frame
- * is due, a frame's time while a widget moves, the view's own time, or a
- * second.
+ * is due or a request waits, a frame's time while a widget moves, until
+ * the compositor took the last frame (ws210-p014 F2.6: its answer wakes
+ * the wait), the view's own time, or a second.
  */
 static int
 mu_wait(
 	const struct mu_window *music,
 	uint64_t now_us)
 {
+	int pace;
 	int wait;
 
-	/* A frame due now, or a request waiting. */
-	if (music->dirty || music->view.request_count != 0U)
+	/* A frame wanted: whether it may be drawn now, or how long the compositor's answer is waited for at most (-1: until it comes). */
+	pace = -1;
+	if (music->dirty || music->lit_changed || music->moving)
+		pace = kl_window_frame_wait(music->window, now_us);
+
+	/* A frame due now, or a request waiting (which does not wait for the compositor). */
+	if (pace == 0 && (music->dirty || music->lit_changed))
+		return 0;
+	if (music->view.request_count != 0U)
 		return 0;
 
 	/* A widget moving. */
-	if (music->moving)
+	if (pace == 0 && music->moving)
 		return MU_MOVING_MS;
 
 	/* The view's time, or a second. */
 	wait = mu_view_wait(&music->view, now_us);
 	if (wait < 0 || wait > MU_IDLE_MS)
 		wait = MU_IDLE_MS;
+
+	/* The compositor's answer, waited for at most so long. */
+	if (pace > 0 && pace < wait)
+		wait = pace;
 	return wait;
 }

@@ -71,3 +71,11 @@ Event: `ws202-main-integration-20261010-p011`。ユーザー「mainへの統合�
 - (b) libavcodec 有りの AAT `apps.videoplayer.play` の「frames did not advance: [1], None」: 22f1d6480（WS202）で一時停止の log が `PAUSE shown=` から `FRAMES shown=` に変わり、AAT が `VIDEOPLAYER PAUSE shown=` を 5 秒待って得られなかった（一時停止は効いていた: T1 の app log に `ACTION action=4` と停止）。`PAUSE shown=%u time_ms=%lld late=%u` に戻した（late は残す）。QEMU で late が多い（153）のは合否の外。
 - 確認: `run-host-app-fallback.sh`・`run-host-native-playback.sh` PASS（ASan/UBSan）。named build（current-uat.mk の videoplayer・music・libmedia.so、plan/ws202/tests/config-media.mk の media-probe・videoplayer）warning 0。style 新規 0。
 - 再試験（T1）: T1-529 の (a)(b) と同じ。
+
+## 2026-10-11 T1-529 の 5330 の動画の FAIL（admission problem=1004）の直し（q925 の続き、P1）
+
+- 切り分け（5330 で直に、kei、T1 の file は触らず `/tmp/p1` に置いて `LD_LIBRARY_PATH=/tmp/p1/lib`）: media-probe に libmedia の log を stderr へ出す口（`media_set_log`）を足し、`vkvideo-runtime.c` の黙った拒否（library 無し・entry point 無し・queue family・拡張・profile・synchronization2・vkCreateDevice）にも log を足した → `Vulkan Video: no vkGetPhysicalDeviceVideoCapabilitiesKHR`・`no vkGetPhysicalDeviceVideoFormatPropertiesKHR`。
+- 原因: **libvulkan の `vkGetInstanceProcAddr`** が、device の拡張（VK_KHR_video_queue）の physical-device の command（`dispatch-table.inc`・`api-commands.tsv` で scope が INSTANCE、拡張の bit が `VULKAN_DEVICE_VIDEO_QUEUE`）を **instance の拡張として**調べ（`vulkan_instance_extension`）、有効でないので NULL を返していた。
+- 直し: `internal.h` に scope `VULKAN_ENTRY_PHYSICAL`（device の拡張の physical-device の command、どれかの physical device が拡張を持てば見える）、その 2 つの command を PHYSICAL に（`dispatch-table.inc`・`api-commands.tsv`）、`dispatch.c` は PHYSICAL を device の拡張の調べに回す（`vkGetDeviceProcAddr` は今までどおり DEVICE だけ）。
+- 確かめ（5330 の実機、image は beta2 b67a6d7 のまま、`/tmp/p1/lib` の libvulkan・libmedia と media-probe）: T1-529 の 6 command 全部 **rc 0**（high-b: --time 50 frames・--twice 50×2・--seek=1 25、nocts 50、uat 300、uat --seek=2.5 240、--expect の hash 一致）。log: queue family 1 が decode（flags 0x20、H.264）、extent 640x368、level 7/14、slots 5/17。zedBSD の build（libvulkan・libmedia・media-probe・videoplayer）rc 0、warning 0。style-check の新しい指摘 0。
+- 未実施: Video Player の画面での再生（T1）、QEMU の Venus での回帰（T1、PHYSICAL の scope は Venus の libvulkan にも同じ）。

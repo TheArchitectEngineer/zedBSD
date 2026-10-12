@@ -315,22 +315,22 @@ static unsigned shell_layout(struct kwl_server *server, const struct kwl_titleba
 static int32_t shell_item_width(struct kwl_server *server, const struct kwl_titlebar_control *control, int32_t size, unsigned compact_search);
 static unsigned shell_side(const struct kwl_titlebar_control *control);
 static int32_t shell_crumb_full(struct kwl_server *server, const struct kwl_titlebar_control *control);
-static void shell_draw_controls(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct kwl_menu_area *area, const float *ink, float fade);
-static void shell_draw_button(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, unsigned kind, const float *ink, float fade, unsigned recording);
-static void shell_draw_search(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, const float *ink, float fade, unsigned recording);
-static void shell_draw_crumbs(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, const float *ink, float fade, unsigned recording);
-static void shell_draw_field_text(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t baseline, int32_t width, const float *ink, float fade);
-static void shell_draw_progress(struct kwl_server *server, VkCommandBuffer command, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t size, float fade);
+static void shell_draw_controls(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, unsigned docked, const struct kwl_menu_area *area, const float *ink, float fade);
+static void shell_draw_button(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, unsigned docked, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, unsigned kind, const float *ink, float fade, unsigned recording);
+static void shell_draw_search(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, unsigned docked, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, const float *ink, float fade, unsigned recording);
+static void shell_draw_crumbs(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, unsigned docked, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, const float *ink, float fade, unsigned recording);
+static void shell_draw_field_text(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t baseline, int32_t width, const float *ink, float fade);
+static void shell_draw_progress(struct kwl_server *server, struct kwl_list *command, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t size, float fade);
 static int32_t shell_tab_natural(struct kwl_server *server, const struct kwl_titlebar_tab *tab);
 static int32_t shell_tabs_need(struct kwl_server *server, struct kwl_object *surface, const struct kwl_titlebar_model *model);
 static unsigned shell_tabs_layout(struct kwl_server *server, struct kwl_titlebar_model *model, const struct kwl_menu_area *area, int32_t size, unsigned has_menu, struct shell_tab *tabs, struct shell_strip *strip);
-static void shell_draw_tabs(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct kwl_menu_area *area, const float *ink, float fade);
-static void shell_draw_tab(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned docked, const struct shell_tab *tab, int32_t y, int32_t size, const float *ink, float fade, unsigned recording, int32_t *close_x);
+static void shell_draw_tabs(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, unsigned docked, const struct kwl_menu_area *area, const float *ink, float fade);
+static void shell_draw_tab(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, unsigned docked, const struct shell_tab *tab, int32_t y, int32_t size, const float *ink, float fade, unsigned recording, int32_t *close_x);
 static void shell_act_tabs(struct kwl_server *server, const struct shell_hit *hit, struct kwl_titlebar_model *model, struct kwl_object *titlebar);
 static void shell_log_strip(struct kwl_object *surface, unsigned docked, const struct shell_tab *tabs, unsigned count, const int32_t *closes, int32_t y, int32_t size, const int32_t *buttons, uint32_t checksum);
 static unsigned shell_icon(uint32_t role);
 static int shell_hovered(struct kwl_server *server, int32_t x, int32_t y, int32_t width, int32_t height);
-static void shell_draw_drop_part(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, uint32_t id, uint32_t detail, int32_t x, int32_t y, int32_t width, int32_t size, float fade);
+static void shell_draw_drop_part(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, uint32_t id, uint32_t detail, int32_t x, int32_t y, int32_t width, int32_t size, float fade);
 static void shell_add_hit(struct kwl_object *surface, unsigned docked, unsigned kind, uint32_t id, uint32_t detail, int32_t x, int32_t y, int32_t width, int32_t height);
 static void shell_add_field(struct kwl_object *surface, unsigned docked, uint32_t id, int32_t x, int32_t y, int32_t width, int32_t height, int32_t text_x);
 static void shell_release(struct kwl_server *server);
@@ -417,7 +417,7 @@ kwl_titlebar_title_limit(
 void
 kwl_titlebar_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	unsigned docked,
 	const struct kwl_menu_area *area,
@@ -1283,7 +1283,7 @@ kwl_titlebar_suggestions(
 void
 kwl_titlebar_draw_suggestions(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float ink[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	struct shell_suggestions *suggestions;
@@ -1343,6 +1343,7 @@ kwl_titlebar_draw_suggestions(
 	under = shell_suggest_at(server->pointer_x, server->pointer_y);
 	for (index = 0; index < suggestions->count; index++) {
 		row_y = suggestions->y + SUGGEST_PADDING + (int32_t)index * SUGGEST_ROW;
+		kwl_hover_probe(server, suggestions->x, row_y, suggestions->width, SUGGEST_ROW);
 		lit = 0;
 		if ((int)index == suggestions->lit || (suggestions->lit < 0 && (int)index == under))
 			lit = 1;
@@ -1605,7 +1606,7 @@ shell_crumb_full(
 static void
 shell_draw_controls(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	unsigned docked,
 	const struct kwl_menu_area *area,
@@ -1765,7 +1766,7 @@ shell_draw_controls(
 static void
 shell_draw_button(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	unsigned docked,
 	const struct kwl_titlebar_control *control,
@@ -1850,7 +1851,7 @@ shell_draw_button(
 static void
 shell_draw_search(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	unsigned docked,
 	const struct kwl_titlebar_control *control,
@@ -1937,7 +1938,7 @@ shell_draw_search(
 static void
 shell_draw_crumbs(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	unsigned docked,
 	const struct kwl_titlebar_control *control,
@@ -2045,7 +2046,7 @@ shell_draw_crumbs(
 static void
 shell_draw_field_text(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t baseline,
 	int32_t width,
@@ -2122,7 +2123,7 @@ shell_draw_field_text(
 static void
 shell_draw_progress(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_titlebar_control *control,
 	int32_t x,
 	int32_t y,
@@ -2347,7 +2348,7 @@ shell_tabs_need(
 static void
 shell_draw_tabs(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	unsigned docked,
 	const struct kwl_menu_area *area,
@@ -2503,7 +2504,7 @@ shell_draw_tabs(
 static void
 shell_draw_tab(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	unsigned docked,
 	const struct shell_tab *tab,
@@ -2687,6 +2688,9 @@ shell_hovered(
 	int32_t width,
 	int32_t height)
 {
+	/* The drawing's answer depends on this rectangle (a hover probe, damage.c). */
+	kwl_hover_probe(server, x, y, width, height);
+
 	/* Outside it. */
 	if (server->pointer_x < x || server->pointer_x >= x + width)
 		return 0;
@@ -2704,7 +2708,7 @@ shell_hovered(
 static void
 shell_draw_drop_part(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	uint32_t id,
 	uint32_t detail,

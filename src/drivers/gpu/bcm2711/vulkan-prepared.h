@@ -44,11 +44,15 @@ struct bcm2711_vulkan_prepared_set {
 };
 
 /* One prepared submission owns its primary reference, descriptor copies and pending charges through queue wait, DMA and uncertainty. */
+struct bcm2711_vulkan_prepared_chunk;
+
 struct bcm2711_vulkan_prepared {
 	struct bcm2711_vulkan_object *command;
 	struct bcm2711_vulkan_prepared_event *first;
 	struct bcm2711_vulkan_prepared_event *last;
 	struct bcm2711_vulkan_prepared_set *sets;
+	/* The chunks the events come from, freed when the prepared graph is released. */
+	struct bcm2711_vulkan_prepared_chunk *chunks;
 	uint32_t bytes;
 	bool pending;
 };

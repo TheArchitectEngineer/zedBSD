@@ -577,7 +577,7 @@ kwl_popup_collect(
 void
 kwl_popup_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	struct kwl_object *popups[POPUP_MAX];
 	const struct kwl_import *image;

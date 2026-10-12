@@ -613,8 +613,13 @@ se_fields_end(
 
 /*
  * Gives the fields the pointer and an input method's text: the pointer's
- * moves and the main button (a click puts a field's caret), and the
- * text an input method sends for the field with the keyboard.
+ * moves, its leaving and the main button (a click puts a field's caret),
+ * and the text an input method sends for the field with the keyboard.
+ *
+ * A widget the widgets light (a button) is also one of Settings' own
+ * regions, whose change the next frame draws (se_ui_hover_settle), so the
+ * widgets' own parts are not taken: they would hold every widget crossed
+ * since the last frame.
  */
 void
 se_fields_input(
@@ -630,6 +635,10 @@ se_fields_input(
 	switch (event->type) {
 	case SE_EVENT_MOTION:
 		(void)kl_ui_pointer_motion(widgets_ui, (double)event->x, (double)event->y);
+		return;
+	case SE_EVENT_LEAVE:
+		/* The lit widget goes dark with the pointer gone. */
+		(void)kl_ui_pointer_leave(widgets_ui);
 		return;
 	case SE_EVENT_BUTTON:
 		(void)kl_ui_pointer_motion(widgets_ui, (double)event->x, (double)event->y);

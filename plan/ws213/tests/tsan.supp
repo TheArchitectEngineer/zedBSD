@@ -1,0 +1,19 @@
+# ThreadSanitizer suppressions of the Linux guest run (ws213-p004, the design's
+# 9 節 "Linux の TSan"). Only the Vulkan driver and LLVM inside it are
+# suppressed here; a report between the compositor's existing threads goes
+# below with its reason and a Bug ticket (asked of Q1); nothing of WS213's own
+# threads (input, cursor, render) or locks is ever suppressed.
+# race: and deadlock: lines name the module (matched against each frame), not
+# called_from_lib:, which aborts the run when the loader unloads the driver
+# (T1-549: "library ... matched against called_from_lib suppression ... is
+# unloaded").
+race:libvulkan_lvp.so
+race:libvulkan_virtio.so
+race:libvulkan_intel.so
+race:libvulkan_radeon.so
+race:libLLVM
+deadlock:libvulkan_lvp.so
+deadlock:libvulkan_virtio.so
+deadlock:libvulkan_intel.so
+deadlock:libvulkan_radeon.so
+deadlock:libLLVM

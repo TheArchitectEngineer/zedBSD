@@ -6,7 +6,10 @@
  */
 
 /* Logical callbacks, whole pending graph ownership and checked native DMA retirement are separate boundaries. */
+#include <stdarg.h>
+
 #include <kern/clock.h>
+#include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <kern/klog.h>
 #include <uapi/errno.h>
@@ -16,12 +19,34 @@
 #include "drivers/gpu/bcm2711/vulkan-barrier.h"
 #include "drivers/gpu/bcm2711/vulkan-native-image.h"
 #include "drivers/gpu/bcm2711/vulkan-buffer-copy.h"
+#include "drivers/gpu/bcm2711/vulkan-memory.h"
 
 /* All concurrently resident native pass/draw uploads share this submission-wide padded budget. */
 #define NATIVE_JOB_BYTES (256ULL * 1024U * 1024U)
 
+/* The room of one window's cost report, formatted under the controller mutex and logged after it. */
+#define NATIVE_PERF_TEXT_BYTES 2048U
+
+/* Whether the boot asked for the cost report (v3d.perf=1): not read yet, on, or off. */
+#define NATIVE_PERF_UNREAD 0
+#define NATIVE_PERF_ON 1
+#define NATIVE_PERF_OFF 2
+
+/*
+ * The cost report a step formatted and the executor has yet to log
+ * (bcm2711_vulkan_native_perf_flush), and whether the report is on.  The
+ * executor's thread alone reads and writes them.
+ */
+static char native_perf_text[NATIVE_PERF_TEXT_BYTES];
+static size_t native_perf_used;
+static int native_perf_state;
+
 static int release_job(struct bcm2711_vulkan_native_job *job);
 static int retire_closed_sessions(struct bcm2711_render_device *controller);
+static void report_perf(struct bcm2711_v3d_perf *perf);
+static bool perf_enabled(void);
+static void perf_append(const char *format, ...) __attribute__((format(printf, 1, 2)));
+static uint64_t average_us(uint64_t ticks, uint64_t count);
 
 /*
  * Prepares an independently pending primary graph before any native allocation or worker acceptance.
@@ -75,19 +100,17 @@ bcm2711_vulkan_native_job_create(
 }
 
 /*
- * Executes one pending primary through complete sequential native passes under the controller mutex.
+ * Runs one step of a job: the CPU-only events up to the next native pass, that pass, and its release.
  *
- * Each following pass stages its coherent source bytes only after the
- * previous pass's actual native completion/output visibility.  A failed
- * launched pass keeps all native inputs and the whole pending primary in
- * this root.  Later callback disposal transfers it to controller quarantine
- * rather than dropping a last CPU pointer to still referenced DMA storage.
+ * The first step starts the job; the step that reaches the end of the
+ * prepared events adds the job to the cost report and reports done.
  */
 int
-bcm2711_vulkan_native_job_execute(
+bcm2711_vulkan_native_job_step(
 	struct bcm2711_render_device *controller,
 	struct bcm2711_render_session *session,
 	void *payload,
+	bool *done,
 	bool *retired)
 {
 	struct bcm2711_vulkan_native_job *job;
@@ -98,21 +121,26 @@ bcm2711_vulkan_native_job_execute(
 	uint64_t bytes;
 	uint64_t started;
 	uint64_t step;
+	uint64_t end_step;
 	uint64_t prepare_ticks;
+	uint32_t tiles;
 	uint64_t execute_ticks;
 	uint64_t release_ticks;
 	uint64_t copy_ticks;
 	uint64_t elapsed;
-	uint64_t maintenance_yields;
-	uint32_t passes;
+	struct bcm2711_v3d_perf *perf;
 	uint32_t region;
+	uint32_t index;
+	int tiled;
 	int error;
+	int closed;
 	int synchronized;
 
 	/* Initial refusals launch no work and therefore retain no device borrow. */
-	if (retired == NULL)
+	if (retired == NULL || done == NULL)
 		return EINVAL;
 	*retired = true;
+	*done = false;
 	job = payload;
 
 	/* The accepted payload must belong to the same exact renderer namespace and native controller. */
@@ -125,8 +153,11 @@ bcm2711_vulkan_native_job_execute(
 	    controller->space.native == NULL)
 		return EINVAL;
 
+	/* Only this step's failure can be preparation's. */
+	job->prepare_failed = false;
+
 	/* A completed or uncertain payload never replays coherent source reads, clear or native work. */
-	if (job->executed || job->quarantined) {
+	if (job->quarantined || (job->executed && !job->stepping)) {
 		*retired = job->retired;
 		return EBUSY;
 	}
@@ -137,28 +168,64 @@ bcm2711_vulkan_native_job_execute(
 	    !controller->space.native->power.ready)
 		return EIO;
 
-	/* One finite resident upload budget covers every pass and its complete independent draw input prefix. */
-	job->executed = true;
-	started = clock_ticks();
-	maintenance_yields = controller->space.native->hardware.maintenance_yields;
-	prepare_ticks = 0;
-	execute_ticks = 0;
-	release_ticks = 0;
-	copy_ticks = 0;
-	passes = 0;
-	remaining = NATIVE_JOB_BYTES;
-	region = 0;
-	event = job->prepared->first;
+	/* The first step starts the job: one finite resident upload budget covers every pass and its complete independent draw input prefix. */
+	if (!job->executed) {
+		job->executed = true;
+		job->stepping = true;
+		job->started = clock_ticks();
+		job->prepare_ticks = 0;
+		job->execute_ticks = 0;
+		job->release_ticks = 0;
+		job->copy_ticks = 0;
+		job->remaining = NATIVE_JOB_BYTES;
+		job->region = 0;
+		job->cursor = job->prepared->first;
+	}
+
+	/* This step continues where the last one stopped. */
+	perf = &controller->space.native->hardware.perf;
+	started = job->started;
+	prepare_ticks = job->prepare_ticks;
+	execute_ticks = job->execute_ticks;
+	release_ticks = job->release_ticks;
+	copy_ticks = job->copy_ticks;
+	remaining = job->remaining;
+	region = job->region;
+	event = job->cursor;
 	while (event != NULL) {
+		/* A whole-image upload or readback becomes a tile copy pass; ENOTSUP leaves it to the CPU. */
+		tiled = ENOTSUP;
+		if (event->opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE || event->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER) {
+			step = clock_ticks();
+			error = bcm2711_v3d_memory_begin(&controller->space);
+			if (error != 0)
+				return error;
+			tiled = bcm2711_vulkan_native_buffer_image_create(&controller->space, event->record, &remaining, &job->pass);
+			synchronized = bcm2711_v3d_memory_end(&controller->space);
+			prepare_ticks += clock_ticks() - step;
+			if (tiled == 0 && synchronized != 0)
+				tiled = synchronized;
+
+			/* A refused tile copy with its edits published failed only in preparation. */
+			if (tiled != 0 && tiled != ENOTSUP) {
+				if (synchronized == 0)
+					job->prepare_failed = true;
+				return tiled;
+			}
+		}
+
 		/* Exact coherent buffer transfers execute only after every preceding native pass has retired and published its output. */
-		if (event->opcode == GPU_OP_CMD_COPY_BUFFER ||
-		    event->opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE ||
-		    event->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER) {
+		if (tiled == ENOTSUP &&
+		    (event->opcode == GPU_OP_CMD_COPY_BUFFER ||
+		     event->opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE ||
+		     event->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER)) {
 			step = clock_ticks();
 			error = bcm2711_vulkan_buffer_copy_run(event->record);
 			copy_ticks += clock_ticks() - step;
-			if (error != 0)
+			if (error != 0) {
+				job->prepare_failed = true;
 				return error;
+			}
 			event = event->next;
 			continue;
 		}
@@ -166,8 +233,10 @@ bcm2711_vulkan_native_job_execute(
 		/* Every earlier native pass completed before this explicit dependency can publish FIFO-visible layout state. */
 		if (event->opcode == GPU_OP_CMD_PIPELINE_BARRIER) {
 			error = bcm2711_vulkan_barrier_run(event->record);
-			if (error != 0)
+			if (error != 0) {
+				job->prepare_failed = true;
 				return error;
+			}
 			event = event->next;
 			continue;
 		}
@@ -178,8 +247,16 @@ bcm2711_vulkan_native_job_execute(
 		if (error != 0)
 			return error;
 
-		/* Graphics, clears and copied image regions acquire complete independent native owners. */
-		if (event->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
+		/*
+		 * Graphics, clears and copied image regions acquire complete
+		 * independent native owners; their owned storage carries this
+		 * session's mark only while they are built.
+		 */
+		controller->space.builder = session->owner;
+		if (tiled == 0) {
+			error = 0;
+			next = event->next;
+		} else if (event->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
 			error = bcm2711_vulkan_native_pass_create(&controller->space, event, &remaining, &job->pass, &next);
 		} else if (event->opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
 			error = bcm2711_vulkan_native_clear_create(&controller->space, event, &remaining, &job->pass);
@@ -195,15 +272,41 @@ bcm2711_vulkan_native_job_execute(
 		} else {
 			error = ENOTSUP;
 		}
+		controller->space.builder = 0;
 
 		/* Even a rolled-back preparation must flush its edits before any retired VA or RAM is reused. */
 		synchronized = bcm2711_v3d_memory_end(&controller->space);
 		if (synchronized != 0)
 			error = synchronized;
 
+		/* A refusal whose edits were flushed failed only in preparation. */
+		if (error != 0 && synchronized == 0)
+			job->prepare_failed = true;
+
 		/* Accumulate preparation separately from device execution and retirement. */
 		prepare_ticks += clock_ticks() - step;
-		passes++;
+
+		/* A copy whose destination already holds its source's bytes prepared no pass. */
+		if (error == 0 && job->pass == NULL) {
+			perf->skipped_copies++;
+			event = next;
+			continue;
+		}
+
+		/* The cost report separates graphics passes, image clears and image transfers. */
+		if (error == 0) {
+			bcm2711_vulkan_native_pass_costs(job->pass, perf);
+			tiles = bcm2711_native_pass_tiles(&job->pass->state);
+			if (event->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
+				perf->render_passes++;
+				perf->render_tiles += tiles;
+			} else if (event->opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
+				perf->clear_passes++;
+			} else {
+				perf->image_passes++;
+				perf->image_tiles += tiles;
+			}
+		}
 
 		/* A refused whole-pass preparation owns no launched DMA and leaves the primary pending until disposal. */
 		if (error != 0) {
@@ -215,10 +318,47 @@ bcm2711_vulkan_native_job_execute(
 			return error;
 		}
 
-		/* Exact clear, supervised bin/render and GPU cache visibility execute while every independent owner is held. */
+		/*
+		 * Exact clear, supervised bin/render and GPU cache visibility execute
+		 * while every independent owner is held.  The native jobs run inside
+		 * the window, without the controller mutex: the decoder and ioctls
+		 * proceed meanwhile, and no translation changes.
+		 */
 		step = clock_ticks();
-		error = bcm2711_vulkan_native_pass_run(job->pass, &completion);
+		error = bcm2711_vulkan_native_pass_start(job->pass, &completion);
+		if (error != 0) {
+			/* Nothing launched: the pass failed only in preparation. */
+			job->prepare_failed = true;
+		} else {
+			bcm2711_render_window_open(controller);
+			error = bcm2711_vulkan_native_pass_launch(job->pass, &completion);
+			closed = bcm2711_render_window_close(controller);
+			error = bcm2711_vulkan_native_pass_finish(job->pass, &completion, error);
+			if (error == 0 && closed != 0)
+				error = closed;
+		}
 		execute_ticks += clock_ticks() - step;
+		perf->tfu_ticks += completion.tfu_ticks;
+		perf->tfu_jobs += completion.tfu_jobs;
+		if (completion.tfu_max_ticks > perf->tfu_max_ticks)
+			perf->tfu_max_ticks = completion.tfu_max_ticks;
+		perf->bin_ticks += completion.bin_ticks;
+		perf->render_ticks += completion.render_ticks;
+		perf->output_clean_ticks += completion.clean_ticks;
+		if (completion.counters[0] != 0U) {
+			for (index = 0; index < BCM2711_V3D_COUNTERS; index++)
+				perf->counters[index] += completion.counters[index];
+			perf->counter_runs++;
+
+			/* Tile copies and clears only load and store tiles; drawing passes also shade. */
+			if (job->pass->draws == 0) {
+				perf->copy_cycles += completion.counters[0];
+				perf->copy_tiles += tiles;
+			} else {
+				perf->draw_cycles += completion.counters[0];
+				perf->draw_tiles += tiles;
+			}
+		}
 		job->retired = completion.retired;
 		*retired = completion.retired;
 		if (error != 0) {
@@ -245,29 +385,45 @@ bcm2711_vulkan_native_job_execute(
 		error = bcm2711_vulkan_native_pass_release(&job->pass, true);
 
 		/* Physical backing stays owned until the complete batch of PTE withdrawals is flushed. */
+		end_step = clock_ticks();
 		synchronized = bcm2711_v3d_memory_end(&controller->space);
+		perf->release_end_ticks += clock_ticks() - end_step;
 		if (synchronized != 0)
 			error = synchronized;
 		release_ticks += clock_ticks() - step;
 		if (error != 0)
 			return error;
 		remaining += bytes;
+
+		/* One pass ends the step; the next step starts at the following event. */
+		job->cursor = next;
+		job->region = region;
+		job->remaining = remaining;
+		job->prepare_ticks = prepare_ticks;
+		job->execute_ticks = execute_ticks;
+		job->release_ticks = release_ticks;
+		job->copy_ticks = copy_ticks;
+		if (next != NULL)
+			return 0;
 		event = next;
 	}
 
-	/* Report slow submissions once, including time preempted by other runnable threads. */
-	elapsed = kern_ticks_to_ms(clock_ticks() - started);
-	if (elapsed >= 250U) {
-		kern_logf(
-			"v3d: submit timing passes=%u ms=%llu prepare=%llu execute=%llu release=%llu copy=%llu maintenance-yields=%llu\n",
-			passes,
-			(unsigned long long)elapsed,
-			(unsigned long long)kern_ticks_to_ms(prepare_ticks),
-			(unsigned long long)kern_ticks_to_ms(execute_ticks),
-			(unsigned long long)kern_ticks_to_ms(release_ticks),
-			(unsigned long long)kern_ticks_to_ms(copy_ticks),
-			(unsigned long long)(controller->space.native->hardware.maintenance_yields - maintenance_yields));
-	}
+	/* The last step: the job ran every pass. */
+	job->cursor = NULL;
+	job->stepping = false;
+	*done = true;
+
+	/* Adds this completed submission to the periodic cost report. */
+	elapsed = clock_ticks() - started;
+	perf->submissions++;
+	perf->total_ticks += elapsed;
+	if (elapsed > perf->max_ticks)
+		perf->max_ticks = elapsed;
+	perf->prepare_ticks += prepare_ticks;
+	perf->execute_ticks += execute_ticks;
+	perf->release_ticks += release_ticks;
+	perf->transfer_ticks += copy_ticks;
+	report_perf(perf);
 
 	/* Succeeded: the pending primary remains owned until worker disposal, after actual native completion of every pass. */
 	return 0;
@@ -429,4 +585,301 @@ retire_closed_sessions(
 
 	/* Succeeded: every closed namespace and its internally retained renderer descriptor has retired. */
 	return 0;
+}
+
+/*
+ * Prints one line of submission cost totals every two seconds and starts a new window.
+ *
+ * Averages are per submission in microseconds, so one line summarizes many
+ * frames without adding console output to each submission.
+ */
+static void
+report_perf(
+	struct bcm2711_v3d_perf *perf)
+{
+	uint64_t now;
+	uint64_t count;
+	uint64_t busy;
+	uint64_t released;
+	uint64_t released_bytes;
+	uint64_t released_ticks;
+	uint64_t created[9];
+	uint64_t in_use;
+
+	/* The first submission opens the window that later reports measure. */
+	now = clock_ticks();
+	if (perf->window_start == 0) {
+		perf->window_start = now;
+		return;
+	}
+
+	/* A window shorter than two seconds keeps accumulating. */
+	if (kern_ticks_to_ms(now - perf->window_start) < 2000U)
+		return;
+
+	/* The share of the window the submissions held the worker shows how much CPU and GPU time frames took. */
+	count = perf->submissions;
+	busy = perf->total_ticks * 100U / (now - perf->window_start);
+
+	/* Prints the window's per-submission averages and its worst submission. */
+	perf_append(
+		"v3d: perf ms=%llu busy=%llu%% subs=%llu passes=%u/%u/%u skipped=%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu snap=%u/%u/%u/%u upd=%u mapped_kib=%llu largest=%ux%u%c tiles=%u/%u\n",
+		(unsigned long long)kern_ticks_to_ms(now - perf->window_start),
+		(unsigned long long)busy,
+		(unsigned long long)count,
+		perf->render_passes,
+		perf->clear_passes,
+		perf->image_passes,
+		perf->skipped_copies,
+		perf->draws,
+		(unsigned long long)(perf->staged_bytes / 1024U),
+		(unsigned long long)average_us(perf->total_ticks, count),
+		(unsigned long long)average_us(perf->prepare_ticks, count),
+		(unsigned long long)average_us(perf->texture_ticks, count),
+		(unsigned long long)average_us(perf->texel_copy_ticks, count),
+		(unsigned long long)average_us(perf->program_ticks, count),
+		(unsigned long long)average_us(perf->record_ticks, count),
+		(unsigned long long)average_us(perf->allocation_ticks, count),
+		(unsigned long long)average_us(perf->mapping_ticks, count),
+		(unsigned long long)average_us(perf->clean_ticks, count),
+		(unsigned long long)average_us(perf->execute_ticks, count),
+		(unsigned long long)average_us(perf->tfu_ticks, count),
+		(unsigned long long)average_us(perf->bin_ticks, count),
+		(unsigned long long)average_us(perf->render_ticks, count),
+		(unsigned long long)average_us(perf->output_clean_ticks, count),
+		(unsigned long long)average_us(perf->release_ticks, count),
+		(unsigned long long)average_us(perf->transfer_ticks, count),
+		(unsigned long long)average_us(perf->max_ticks, 1U),
+		perf->snapshot_hits,
+		perf->snapshot_fills,
+		perf->mapped_textures,
+		perf->private_textures,
+		perf->snapshot_updates,
+		(unsigned long long)(perf->mapped_bytes / 1024U),
+		perf->largest_size >> 16,
+		perf->largest_size & 0xffffU,
+		perf->largest_kind != 0 ? perf->largest_kind : '-',
+		perf->render_tiles,
+		perf->image_tiles);
+
+	/* The render runs' performance counters, in thousands per run. */
+	if (perf->counter_runs != 0U) {
+		perf_append(
+			"v3d: gpu runs=%u k/run cycles=%llu qidle=%llu qfrag=%llu qvalid=%llu qtmu=%llu qsb=%llu qvary=%llu qstall=%llu tmu=%llu tmumiss=%llu tmustall=%llu cle=%llu quads=%llu written=%llu tlbrd=%llu tlbwr=%llu\n",
+			perf->counter_runs,
+			(unsigned long long)(perf->counters[0] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[1] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[2] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[3] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[4] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[5] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[6] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[7] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[8] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[9] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[10] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[11] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[12] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[13] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[14] / perf->counter_runs / 1000U),
+			(unsigned long long)(perf->counters[15] / perf->counter_runs / 1000U));
+	}
+
+	/* Worker requests' FIFO waits and worker time, and the final buffer releases, in the window. */
+	bcm2711_buffer_release_stats(&released, &released_bytes, &released_ticks);
+	if (perf->requests != 0U) {
+		perf_append(
+			"v3d: requests=%llu wait_us avg=%llu max=%llu run_us avg=%llu max=%llu freed=%llu kib=%llu free_us=%llu markers_max=%u submit_lock_us avg=%llu max=%llu hold_us decode=%llu/cmds%u/op%u command=%llu/op%u step=%llu\n",
+			(unsigned long long)perf->requests,
+			(unsigned long long)(kern_ticks_to_rate(perf->request_wait_ticks, 1000000U) / perf->requests),
+			(unsigned long long)kern_ticks_to_rate(perf->request_wait_max, 1000000U),
+			(unsigned long long)(kern_ticks_to_rate(perf->request_run_ticks, 1000000U) / perf->requests),
+			(unsigned long long)kern_ticks_to_rate(perf->request_run_max, 1000000U),
+			(unsigned long long)released,
+			(unsigned long long)(released_bytes / 1024U),
+			(unsigned long long)kern_ticks_to_rate(released_ticks, 1000000U),
+			perf->markers_max,
+			(unsigned long long)(perf->submit_locks != 0U ? kern_ticks_to_rate(perf->submit_lock_ticks, 1000000U) / perf->submit_locks : 0U),
+			(unsigned long long)kern_ticks_to_rate(perf->submit_lock_max, 1000000U),
+			(unsigned long long)kern_ticks_to_rate(perf->decode_hold_max, 1000000U),
+			perf->decode_hold_commands,
+			perf->decode_hold_opcode,
+			(unsigned long long)kern_ticks_to_rate(perf->decode_command_max, 1000000U),
+			perf->decode_command_opcode,
+			(unsigned long long)kern_ticks_to_rate(perf->step_hold_max, 1000000U));
+	}
+
+	/*
+	 * The decoder on the fine counter (ws211-p010): the average cost of one
+	 * command, the longest request and its commands, and the most
+	 * identities a session held (the tick-based command= of the requests
+	 * line names the longest single command).
+	 */
+	if (perf->decode_requests != 0U &&
+	    perf->decode_commands != 0U &&
+	    perf->decode_frequency != 0U) {
+		perf_append(
+			"v3d: decode requests=%llu cmds=%llu us=%llu ns/cmd=%llu max_us=%llu/cmds%u objects=%u\n",
+			(unsigned long long)perf->decode_requests,
+			(unsigned long long)perf->decode_commands,
+			(unsigned long long)(perf->decode_counts * 1000000U / perf->decode_frequency),
+			(unsigned long long)(perf->decode_counts * 1000000000U / perf->decode_frequency / perf->decode_commands),
+			(unsigned long long)(perf->decode_counts_max * 1000000U / perf->decode_frequency),
+			perf->decode_counts_max_commands,
+			perf->decode_objects_max);
+	}
+
+	/* Where the alloc time goes: the runs made (the allocator and their zeroing) and the reused runs zeroed again. */
+	bcm2711_buffer_create_stats(created);
+	if (created[0] != 0U || created[4] != 0U || created[7] != 0U) {
+		perf_append(
+			"v3d: alloc made=%llu kib=%llu pmem_us=%llu zero_us=%llu reused=%llu kib=%llu zero_us=%llu kept=%llu kib=%llu\n",
+			(unsigned long long)created[0],
+			(unsigned long long)(created[1] / 1024U),
+			(unsigned long long)kern_ticks_to_rate(created[2], 1000000U),
+			(unsigned long long)kern_ticks_to_rate(created[3], 1000000U),
+			(unsigned long long)created[4],
+			(unsigned long long)(created[5] / 1024U),
+			(unsigned long long)kern_ticks_to_rate(created[6], 1000000U),
+			(unsigned long long)created[7],
+			(unsigned long long)(created[8] / 1024U));
+	}
+
+	/* Where the release time goes: draw teardown, the batch end's flush and frees, and the views' fate. */
+	if (perf->submissions != 0U) {
+		perf_append(
+			"v3d: release draws=%llu draw_us=%llu end_us=%llu views cached=%llu unmapped=%llu\n",
+			(unsigned long long)perf->released_draws,
+			(unsigned long long)kern_ticks_to_rate(perf->release_draw_ticks, 1000000U),
+			(unsigned long long)kern_ticks_to_rate(perf->release_end_ticks, 1000000U),
+			(unsigned long long)perf->views_cached,
+			(unsigned long long)perf->views_unmapped);
+	}
+
+	/* Cycles a tile takes when it is only loaded and stored, and when it is also drawn. */
+	if (perf->copy_tiles != 0U || perf->draw_tiles != 0U) {
+		perf_append(
+			"v3d: gpu tiles copy=%u cycles/tile=%llu draw=%u cycles/tile=%llu\n",
+			perf->copy_tiles,
+			(unsigned long long)(perf->copy_tiles != 0U ? perf->copy_cycles / perf->copy_tiles : 0U),
+			perf->draw_tiles,
+			(unsigned long long)(perf->draw_tiles != 0U ? perf->draw_cycles / perf->draw_tiles : 0U));
+	}
+
+	/* The texture formatting unit's conversions: how many, and their average and longest wall time. */
+	if (perf->tfu_jobs != 0U) {
+		perf_append(
+			"v3d: tfu jobs=%u avg_us=%llu max_us=%llu\n",
+			perf->tfu_jobs,
+			(unsigned long long)average_us(perf->tfu_ticks, perf->tfu_jobs),
+			(unsigned long long)kern_ticks_to_rate(perf->tfu_max_ticks, 1000000U));
+	}
+
+	/* The Vulkan allocation budget: in use now, the window's most, and what it refused. */
+	perf_append(
+		"v3d: memory kib=%llu max_kib=%llu budget_kib=%llu refused=%u last_kib=%llu\n",
+		(unsigned long long)(perf->memory_bytes / 1024U),
+		(unsigned long long)(perf->memory_max / 1024U),
+		(unsigned long long)(BCM2711_VULKAN_MEMORY_BUDGET / 1024U),
+		perf->memory_refusals,
+		(unsigned long long)(perf->memory_refused_bytes / 1024U));
+
+	/* The next window starts empty at this report; the budget in use carries over. */
+	in_use = perf->memory_bytes;
+	kern_memset(perf, 0, sizeof(*perf));
+	perf->window_start = now;
+	perf->memory_bytes = in_use;
+	perf->memory_max = in_use;
+}
+
+/* Tells whether the boot asked for the cost report, reading the boot line once. */
+static bool
+perf_enabled(
+	void)
+{
+	/* The boot line is read at the first report. */
+	if (native_perf_state == NATIVE_PERF_UNREAD) {
+		native_perf_state = NATIVE_PERF_OFF;
+		if (bcm2711_stage_perf_on())
+			native_perf_state = NATIVE_PERF_ON;
+	}
+
+	/* On only when asked for. */
+	return native_perf_state == NATIVE_PERF_ON;
+}
+
+/*
+ * Formats one line of the cost report into the text the executor logs once
+ * it has given up the controller mutex; nothing without v3d.perf=1, and a
+ * line that does not fit is cut.
+ */
+static void
+perf_append(
+	const char *format,
+	...)
+{
+	va_list args;
+	size_t room;
+	int rendered;
+
+	/* Nothing to format without the report, or without room. */
+	if (!perf_enabled())
+		return;
+	room = sizeof(native_perf_text) - native_perf_used;
+	if (room <= 1U)
+		return;
+
+	/* The line after the ones before. */
+	va_start(args, format);
+	rendered = kern_vsnprintf(native_perf_text + native_perf_used, room, format, args);
+	va_end(args);
+	if (rendered <= 0)
+		return;
+
+	/* A cut line keeps what fitted. */
+	if ((size_t)rendered >= room)
+		rendered = (int)(room - 1U);
+	native_perf_used += (size_t)rendered;
+}
+
+/*
+ * Writes the cost report a step formatted to the log, after the executor
+ * gave up the controller mutex (the console's output then holds up no
+ * ioctl), and empties it.
+ */
+void
+bcm2711_vulkan_native_perf_flush(
+	void)
+{
+	/* Nothing waits. */
+	if (native_perf_used == 0U)
+		return;
+
+	/* The report as one record; a cut last line still ends its record. */
+	kern_log_write(native_perf_text, native_perf_used);
+	if (native_perf_text[native_perf_used - 1U] != '\n')
+		kern_log_write("\n", 1U);
+	native_perf_used = 0U;
+}
+
+/* Converts a tick total into microseconds per item, rounding down. */
+static uint64_t
+average_us(
+	uint64_t ticks,
+	uint64_t count)
+{
+	uint64_t microseconds;
+
+	/* An empty window reports zero rather than dividing by zero. */
+	if (count == 0)
+		return 0;
+
+	/*
+	 * Scheduler ticks are coarse, but a total of many independently
+	 * phased intervals still estimates the mean without bias.
+	 */
+	microseconds = kern_ticks_to_rate(ticks, 1000000U);
+
+	/* Reports the average microseconds of one item. */
+	return microseconds / count;
 }

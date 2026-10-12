@@ -109,6 +109,7 @@ kwl_schedule(
 	struct kwl_object *surface;
 	struct kwl_object *top;
 	uint64_t now;
+	uint64_t part;
 	int direct;
 	int ready;
 	int error;
@@ -116,6 +117,9 @@ kwl_schedule(
 	/* An OS-paused display cannot compose or present until authority returns. */
 	if (server->os_paused != 0)
 		return;
+
+	/* The scheduler's parts are timed (KWL PERF main, ws213-p001 M0), its ticks first. */
+	part = kwl_cycles();
 
 	/* The sleep's causes and its course (sleep.c, ws052-p012), before the lock screen's own tick. */
 	kwl_sleep_tick(server);
@@ -132,8 +136,10 @@ kwl_schedule(
 
 	/* The desktop surface's program and place (desktop.c). */
 	kwl_desktop_tick(server);
+	server->perf.schedule_tick_cycles += kwl_cycles() - part;
 
 	/* Every committed surface takes its new image. */
+	part = kwl_cycles();
 	for (client = server->clients; client != NULL; client = client->next) {
 		if (client->fatal)
 			continue;
@@ -153,29 +159,43 @@ kwl_schedule(
 
 	/* Each client hears which outputs its surfaces came onto and left (surface-outputs.c, ws177-p001). */
 	kwl_surface_outputs_sync(server);
+	server->perf.adopt_cycles += kwl_cycles() - part;
 
 	/*
 	 * While a sleep's request waits for its answer no frame is presented:
 	 * the GPU driver parks the display, and a presentation in progress
 	 * would hold it (ws052-p007 section 0.3).  The answer draws again.
 	 */
-	if (server->sleep_hold)
+	if (server->sleep_hold) {
+		kwl_cursor_plane_hold(server);
 		return;
+	}
 
-	/* A fullscreen video or game alone on the output is shown straight (the game mode, scanout.c); then nothing is composed. */
+	/*
+	 * A fullscreen video or game alone on the output is shown straight (the
+	 * game mode, scanout.c); then nothing is composed, and the cursor plane
+	 * is not presented (its thread parks, ws213-p004).
+	 */
 	top = kwl_top_window(server);
 	direct = kwl_scanout_pass(server, top);
-	if (direct)
+	if (direct) {
+		kwl_cursor_plane_hold(server);
 		return;
+	}
 
 	/* The first pass enters window mode, which the compositor stays in (and comes back to from the game mode). */
 	if (!server->windowed) {
 		error = enter_window_mode(server);
 		if (error != 0) {
-			/* A switch waiting for the frame in flight is tried again on a later pass. */
-			if (error == EAGAIN)
+			/* A switch waiting for the frame in flight is tried again on a later pass; the cursor plane waits too. */
+			if (error == EAGAIN) {
+				kwl_cursor_plane_hold(server);
 				return;
+			}
+
+			/* Any other failure ends the compositor. */
 			printf("KWL MODE_ERROR errno=%d\n", error);
+			kwl_fatal("KWL FAILED site=window_mode errno=%d", error);
 			server->failed = 1;
 			return;
 		}
@@ -186,27 +206,68 @@ kwl_schedule(
 	kwl_seat_focus(server);
 
 	/* wl_shm images are copied, and their buffers released, while no frame is in flight. */
+	part = kwl_cycles();
 	(void)kwl_shm_upload(server);
+	server->perf.shm_cycles += kwl_cycles() - part;
+
+	/* The cursor plane shows the cursor's image at its place (cursor-plane.c). */
+	part = kwl_cycles();
+	kwl_cursor_plane_update(server);
+	server->perf.cursor_cycles += kwl_cycles() - part;
+
+	/*
+	 * A frame to draw is wanted now, before the frame pacing's wait: the
+	 * render thread acquires its images meanwhile (ws213-p004, design 4.1).
+	 */
+	if (server->dirty || server->damaged)
+		kwl_compose_want_frame(server);
 
 	/*
 	 * The windows the last frame told get a moment to commit (frame
 	 * pacing), unless the pointer moved and waits to be shown, or App Home
-	 * or Wiseview was asked to open or close (ws099-p002).
+	 * or Wiseview was asked to open or close (ws099-p002), or the
+	 * compositor's own animation moves: up to 50 ms after each of its
+	 * frames on the Pi 4 was a third of App Home's opening (WS211 p001
+	 * review-2 N3).
 	 */
 	now = kwl_milliseconds();
 	if (server->awaiting != 0 &&
 	    !server->pointer_moved &&
 	    server->transition == NULL &&
+	    server->anim == NULL &&
+	    !server->home_moving &&
+	    !server->home_page_moving &&
+	    !server->home_dragging &&
+	    !server->wiseview_moving &&
+	    !server->desktop_moving &&
 	    now - server->frame_done_ms < server->frame_wait_ms)
 		return;
 
-	/* Window mode draws when something changed (all of it, or a part) and no frame is in flight. */
-	if (server->dirty || server->damaged) {
-		error = kwl_compose_draw(server);
-		if (error != 0) {
-			printf("KWL FAILED site=compose_draw errno=%d\n", error);
+	/* Nothing to draw: a layer's stale picture may be drawn again in the quiet (layer-cache.c, ws211-p002). */
+	if (!server->dirty && !server->damaged) {
+		part = kwl_cycles();
+		error = kwl_layers_tick(server);
+		if (error < 0) {
+			kwl_fatal("KWL FAILED site=layers_tick errno=%d", -error);
 			server->failed = 1;
 		}
+
+		/* The quiet picture's time, a failed one too. */
+		server->perf.layers_cycles += kwl_cycles() - part;
+		return;
+	}
+
+	/* Window mode draws when something changed (all of it, or a part) and no frame is in flight. */
+	if (server->dirty || server->damaged) {
+		part = kwl_cycles();
+		error = kwl_compose_draw(server);
+		if (error != 0) {
+			kwl_fatal("KWL FAILED site=compose_draw errno=%d", error);
+			server->failed = 1;
+		}
+
+		/* The frame's time, a failed one too. */
+		server->perf.draw_cycles += kwl_cycles() - part;
 	}
 }
 
@@ -238,7 +299,7 @@ kwl_frame_done(
 	/* The frame's held buffers and callbacks are released. */
 	error = kwl_compose_complete(server);
 	if (error != 0) {
-		printf("KWL FAILED site=frame_done errno=%d\n", error);
+		kwl_fatal("KWL FAILED site=frame_done errno=%d", error);
 		server->failed = 1;
 	}
 }
@@ -382,8 +443,16 @@ adopt_commit(
 	kwl_damage_commit(server, surface, previous);
 	surface->ready = 0;
 	surface->fresh = 1;
+
+	/*
+	 * A wl_shm image copies its damaged rows before the next frame, which
+	 * then forgets the damage (shm.c); any other image's damage has served
+	 * once it marked the output, and the next commit's starts anew.
+	 */
 	if (surface->current != NULL && surface->current->shm != NULL)
 		surface->shm_upload = 1;
+	else
+		surface->committed_damaged = 0;
 
 	/* The time the image was taken, when the per-frame lines were asked for (ws099-p015's pen latency). */
 	if (server->log_frames)
@@ -394,6 +463,10 @@ adopt_commit(
 		surface->awaited = 0;
 		server->awaiting--;
 	}
+
+	/* A commit of anything but a cursor: its time, which Home's picture drawn in the quiet waits on (layer-cache.c). */
+	if (!surface->cursor_role)
+		server->commit_ms = kwl_milliseconds();
 
 	/* A cursor, or a surface with no role, is not a window. */
 	if (surface->cursor_role || surface->role == NULL) {
@@ -421,8 +494,10 @@ adopt_commit(
 		place_window(server, surface);
 		printf("KWL MAP client=%llu surface=%u x=%d y=%d\n", (unsigned long long)surface->client->number, surface->id, surface->x, surface->y);
 		kwl_glass_mapped(server, surface);
+		server->home_picture_stale = 1U;
 	} else if (surface->current == NULL && surface->mapped) {
 		surface->mapped = 0;
+		server->home_picture_stale = 1U;
 		kwl_callbacks_done(&surface->committed_callbacks);
 		printf("KWL UNMAP client=%llu surface=%u\n", (unsigned long long)surface->client->number, surface->id);
 	}

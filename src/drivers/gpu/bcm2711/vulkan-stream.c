@@ -6,6 +6,7 @@
  */
 
 /* Native command transport owns reply backing, copied external streams and atomic decoder-completion publication. */
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
@@ -112,15 +113,18 @@ execute_command(
 	struct vulkan_stream *stream,
 	struct i915_wire_reader *reader)
 {
+	uint64_t started;
+	uint64_t held;
 	uint32_t opcode;
 	uint32_t requested;
 	int error;
 
-	/* All commands have exactly one opcode word and one Boolean reply-request word. */
+	/* All commands have exactly one opcode word and one Boolean reply-request word; diagnostics remember the opcode. */
 	opcode = drv_i915_wire_read_u32(reader);
 	requested = drv_i915_wire_read_u32(reader);
 	if (reader->error != 0 || requested > 1)
 		return EINVAL;
+	stream->session->last_opcode = opcode;
 
 	/* Selector, seek and external-stream wrappers never produce a Vulkan result reply themselves. */
 	if (opcode == GPU_OP_SET_REPLY_STREAM ||
@@ -143,7 +147,8 @@ execute_command(
 	if (opcode == GPU_OP_ENUMERATE_INSTANCE_VERSION && requested == 0)
 		return EINVAL;
 
-	/* Typed runtime commands receive no transport-specific resource address or mutable input blob. */
+	/* Typed runtime commands receive no transport-specific resource address or mutable input blob; each is timed for the perf report. */
+	started = clock_ticks();
 	switch (opcode) {
 	case GPU_OP_SET_REPLY_STREAM:
 		error = select_reply(stream, reader);
@@ -162,9 +167,20 @@ execute_command(
 		break;
 	}
 
-	/* Any failure stops decoding before a later trailer could falsely publish success. */
-	if (error != 0)
+	/* The request's longest command (ws141-p016 (b): which command holds the controller mutex); a wrapper's time is its commands'. */
+	held = clock_ticks() - started;
+	if (opcode != GPU_OP_EXECUTE_STREAMS)
+		stream->session->command_count++;
+	if (opcode != GPU_OP_EXECUTE_STREAMS && held > stream->session->longest_ticks) {
+		stream->session->longest_ticks = held;
+		stream->session->longest_opcode = opcode;
+	}
+
+	/* Any failure stops decoding before a later trailer could falsely publish success; the log names the command. */
+	if (error != 0) {
+		stream->session->failed_opcode = opcode;
 		return error;
+	}
 
 	/* This command's complete body and requested output have been processed. */
 	return 0;

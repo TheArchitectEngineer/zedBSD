@@ -25,7 +25,10 @@
 
 #include "phone.h"
 
+#include "userland/desktop/preview/client.h"
+
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* The width under which the window shows the contacts or the timeline, not both. */
@@ -113,10 +116,26 @@
 #define PH_COLOR_WHITE		KL_RGB(0xffffff)
 #define PH_COLOR_SURFACE	kl_theme_choose(KL_RGB(0xffffff), KL_RGB(0x23272f))
 
-/* Small decoded previews are bounded independently of the saved original files. */
+/*
+ * Small previews are bounded independently of the saved original files.
+ * Each is made by keiland-preview in its sandbox without waiting
+ * (ws157-p015): waiting for a free maker, being made, or done (made, or
+ * refused: the image is then empty).
+ */
+#define VIEW_MEDIA_DONE		0
+#define VIEW_MEDIA_WAITING	1
+#define VIEW_MEDIA_MAKING	2
+
+/* The previews kept, the most made at once, and the side they are fitted to. */
+#define VIEW_MEDIA_KEPT		16U
+#define VIEW_MEDIA_MAKERS	2U
+#define VIEW_MEDIA_SIDE		480
+
 struct view_media_picture {
 	char path[4096];
 	struct kl_image image;
+	int state;
+	struct preview_pending pending;
 };
 
 /* The handset's outline in an 18-pixel box (Material's "call"). */
@@ -134,12 +153,14 @@ static const float ph_view_handset[] = {
 };
 
 /* Phone's single UI thread owns previews until eviction or view release. */
-static struct view_media_picture view_media_pictures[16];
+static struct view_media_picture view_media_pictures[VIEW_MEDIA_KEPT];
 
 /* The next bounded preview slot to replace; advanced only on a cache miss. */
 static size_t view_media_next;
 
-static const struct kl_image *view_media_picture(const char *path);
+static const struct kl_image *view_media_picture(const char *path, int *loading);
+static void view_media_start(void);
+static void view_media_forget(struct view_media_picture *kept);
 static int view_media(const struct kl_style *style, const struct ph_item *item, int x, int y, int width, int draw, struct ph_view *view, struct kl_ui *ui, size_t slot, const struct kl_rect *viewport);
 
 static void view_layout(const struct ph_view *view, int width, int height, struct kl_rect *sidebar, struct kl_rect *conversation);
@@ -211,11 +232,9 @@ ph_view_release(
 {
 	size_t index;
 
-	/* Cached previews belong to this Phone view, not the media library. */
-	for (index = 0U; index < 16U; index++) {
-		kl_image_release(&view_media_pictures[index].image);
-		view_media_pictures[index].path[0] = '\0';
-	}
+	/* Cached previews belong to this Phone view, not the media library; those being made are given up. */
+	for (index = 0U; index < VIEW_MEDIA_KEPT; index++)
+		view_media_forget(&view_media_pictures[index]);
 
 	/* Unsent temporary pictures and retained paths belong to the view. */
 	ph_draft_release(view);
@@ -223,6 +242,11 @@ ph_view_release(
 	/* The scrolls. */
 	kl_scroll_release(&view->timeline_scroll);
 	kl_scroll_release(&view->contacts_scroll);
+
+	/* The timeline's measured heights. */
+	free(view->item_heights);
+	view->item_heights = NULL;
+	view->item_heights_room = 0U;
 }
 
 /*
@@ -295,6 +319,7 @@ ph_view_action(
 		view->attach_choices = 0;
 		if (view->selected >= 0)
 			view_request(view, action, view->selected);
+		ph_log("REQUEST action=attach media=%d contact=%ld", action == PH_ACTION_ATTACH_MEDIA, view->selected);
 		break;
 	case PH_ACTION_CALL_ANSWER:
 	case PH_ACTION_CALL_HANGUP:
@@ -1167,10 +1192,12 @@ view_timeline(
 	uint64_t now_us)
 {
 	const struct ph_item *previous;
+	int *grown;
 	double limit;
 	size_t i;
 	int content;
 	int height;
+	int kept;
 	int y;
 
 	/* A timeline with nothing in it. */
@@ -1179,22 +1206,37 @@ view_timeline(
 		return;
 	}
 
+	/* Room to keep each item's height, so that it is measured once in the frame (without it, measured twice). */
+	if (view->item_heights_room < contact->item_count) {
+		grown = realloc(view->item_heights, contact->item_count * sizeof(*grown));
+		if (grown != NULL) {
+			view->item_heights = grown;
+			view->item_heights_room = contact->item_count;
+		}
+	}
+	kept = 0;
+	if (view->item_heights_room >= contact->item_count)
+		kept = 1;
+
 	/* The items' height, measured without drawing. */
 	content = 0;
 	previous = NULL;
 	for (i = 0; i < contact->item_count; i++) {
 		/* One item, below the one before. */
-		content += view_item(style,
-				     &contact->items[i],
-				     previous,
-				     area->x,
-				     0,
-				     area->width,
-				     0,
-				     view,
-				     ui,
-				     i,
-				     area);
+		height = view_item(style,
+				   &contact->items[i],
+				   previous,
+				   area->x,
+				   0,
+				   area->width,
+				   0,
+				   view,
+				   ui,
+				   i,
+				   area);
+		if (kept)
+			view->item_heights[i] = height;
+		content += height;
 		previous = &contact->items[i];
 	}
 
@@ -1215,18 +1257,22 @@ view_timeline(
 	y = area->y - (int)view->timeline_scroll.y;
 	previous = NULL;
 	for (i = 0; i < contact->item_count; i++) {
-		/* One item; those out of the band are only measured. */
-		height = view_item(style,
-				   &contact->items[i],
-				   previous,
-				   area->x,
-				   y,
-				   area->width,
-				   0,
-				   view,
-				   ui,
-				   i,
-				   area);
+		/* One item; those out of the band are only placed by the height measured above. */
+		if (kept) {
+			height = view->item_heights[i];
+		} else {
+			height = view_item(style,
+					   &contact->items[i],
+					   previous,
+					   area->x,
+					   y,
+					   area->width,
+					   0,
+					   view,
+					   ui,
+					   i,
+					   area);
+		}
 		if (y + height >= area->y && y <= area->y + area->height) {
 			(void)view_item(style,
 					&contact->items[i],
@@ -1641,37 +1687,155 @@ view_photo(
 	return height;
 }
 
-/* Decodes each visible original once and retains only a fitted preview. */
+/*
+ * Gives a visible original's fitted preview: the one kept, or, the first
+ * time, an empty image while keiland-preview makes it (*loading set when
+ * loading is not NULL; the
+ * window follows it with ph_view_media_follow).  A preview that could not
+ * be made stays empty until its slot is reused.
+ */
 static const struct kl_image *
 view_media_picture(
-	const char *path)
+	const char *path,
+	int *loading)
 {
 	struct view_media_picture *kept;
-	struct kl_image decoded;
 	size_t index;
 	int same;
+
+	/* Already kept, being made, or refused. */
+	for (index = 0U; index < VIEW_MEDIA_KEPT; index++) {
+		same = strcmp(path, view_media_pictures[index].path);
+		if (same == 0) {
+			if (loading != NULL)
+				*loading = view_media_pictures[index].state != VIEW_MEDIA_DONE;
+			return &view_media_pictures[index].image;
+		}
+	}
+
+	/* Replaces the next bounded slot, giving up what it was making. */
+	kept = &view_media_pictures[view_media_next];
+	view_media_next = (view_media_next + 1U) % VIEW_MEDIA_KEPT;
+	view_media_forget(kept);
+	(void)snprintf(kept->path, sizeof(kept->path), "%s", path);
+	kept->state = VIEW_MEDIA_WAITING;
+
+	/* Started when a maker is free. */
+	view_media_start();
+	if (loading != NULL)
+		*loading = 1;
+	return &kept->image;
+}
+
+/* Starts the waiting previews while fewer than VIEW_MEDIA_MAKERS are being made. */
+static void
+view_media_start(
+	void)
+{
+	struct preview_request request;
+	struct view_media_picture *kept;
+	size_t making;
+	size_t index;
 	int error;
 
-	/* Already decoded or previously refused. */
-	for (index = 0U; index < 16U; index++) {
-		same = strcmp(path, view_media_pictures[index].path);
-		if (same == 0)
-			return &view_media_pictures[index].image;
+	/* The ones being made. */
+	making = 0U;
+	for (index = 0U; index < VIEW_MEDIA_KEPT; index++) {
+		if (view_media_pictures[index].state == VIEW_MEDIA_MAKING)
+			making++;
 	}
 
-	/* Replaces the next bounded cache entry. */
-	kept = &view_media_pictures[view_media_next];
-	view_media_next = (view_media_next + 1U) % 16U;
+	/* The waiting ones, in the slots' order, while there is room. */
+	memset(&request, 0, sizeof(request));
+	request.width = VIEW_MEDIA_SIDE;
+	request.height = VIEW_MEDIA_SIDE;
+	for (index = 0U; index < VIEW_MEDIA_KEPT && making < VIEW_MEDIA_MAKERS; index++) {
+		kept = &view_media_pictures[index];
+		if (kept->state != VIEW_MEDIA_WAITING)
+			continue;
+
+		/* One that cannot be started is done, empty. */
+		error = preview_picture_begin(kept->path, &request, &kept->pending);
+		if (error != 0) {
+			kept->state = VIEW_MEDIA_DONE;
+			continue;
+		}
+
+		/* Being made. */
+		kept->state = VIEW_MEDIA_MAKING;
+		making++;
+	}
+}
+
+/* Empties a slot: its preview released, one being made given up. */
+static void
+view_media_forget(
+	struct view_media_picture *kept)
+{
+	/* The child, still at work, ended. */
+	if (kept->state == VIEW_MEDIA_MAKING)
+		preview_picture_cancel(&kept->pending);
+
+	/* The slot, empty. */
 	kl_image_release(&kept->image);
-	(void)snprintf(kept->path, sizeof(kept->path), "%s", path);
-	error = ph_decode(path, &decoded);
-	if (error == 0) {
-		error = ph_fit(&decoded, 480U, &kept->image);
-		kl_image_release(&decoded);
+	kept->path[0] = '\0';
+	kept->state = VIEW_MEDIA_DONE;
+}
+
+/*
+ * Follows the previews being made without waiting, and starts the waiting
+ * ones.  Returns nonzero when one was finished (the window is drawn again).
+ */
+int
+ph_view_media_follow(
+	void)
+{
+	struct preview_picture picture;
+	struct view_media_picture *kept;
+	size_t index;
+	int finished;
+	int changed;
+	int error;
+
+	/* Each one being made. */
+	changed = 0;
+	for (index = 0U; index < VIEW_MEDIA_KEPT; index++) {
+		kept = &view_media_pictures[index];
+		if (kept->state != VIEW_MEDIA_MAKING)
+			continue;
+		finished = preview_picture_follow(&kept->pending, &picture, &error);
+		if (!finished)
+			continue;
+
+		/* Made (already fitted), or refused: done either way. */
+		if (error == 0)
+			ph_preview_adopt(&picture, &kept->image);
+		kept->state = VIEW_MEDIA_DONE;
+		changed = 1;
 	}
 
-	/* The cache entry records success or a failed decoder until it is replaced. */
-	return &kept->image;
+	/* The next ones. */
+	view_media_start();
+
+	/* Whether the window has new pictures to draw. */
+	return changed;
+}
+
+/* Tells whether any preview is waiting or being made (the window looks again soon). */
+int
+ph_view_media_busy(
+	void)
+{
+	size_t index;
+
+	/* Any slot not done. */
+	for (index = 0U; index < VIEW_MEDIA_KEPT; index++) {
+		if (view_media_pictures[index].state != VIEW_MEDIA_DONE)
+			return 1;
+	}
+
+	/* Succeeded: none. */
+	return 0;
 }
 
 /* Draws real photos and explicit video entries from completed Media imports. */
@@ -1692,6 +1856,7 @@ view_media(
 	const char *label;
 	const char *name;
 	size_t index;
+	int loading;
 	float scale;
 	float fitted_width;
 	float fitted_height;
@@ -1765,7 +1930,9 @@ view_media(
 		if (item->media_video[index]) {
 			label = "Video saved in Photos";
 		} else {
-			image = view_media_picture(item->media[index]);
+			image = view_media_picture(item->media[index], &loading);
+			if (loading)
+				label = "Loading photo";
 			if (image->pixels != NULL && image->width > 0 && image->height > 0) {
 				scale = (float)box_width / (float)image->width;
 				if ((float)image->height * scale > 160.0f)
@@ -1921,8 +2088,7 @@ view_composer(
 			kl_icon_draw(style->canvas, KL_ICON_MOVIES, (float)button.x + 6.0f, (float)button.y + 10.0f, 20.0f, style->theme->icon);
 		} else {
 			/* The same bounded cache serves received cards and unsent photo drafts. */
-			preview =
-			    view_media_picture(view->attachments[index].path);
+			preview = view_media_picture(view->attachments[index].path, NULL);
 			if (preview->pixels != NULL && preview->width > 0 &&
 			    preview->height > 0) {
 				scale = 32.0f / (float)preview->width;

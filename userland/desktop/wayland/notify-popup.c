@@ -103,9 +103,9 @@ static void popup_open(void);
 static int popup_route(struct kwl_server *server, const struct kwl_notification *item);
 static void popup_show_next(struct kwl_server *server, uint64_t now);
 static unsigned popup_part(const struct kwl_server *server, uint32_t *id);
-static void popup_draw_board(struct kwl_server *server, VkCommandBuffer command, const struct kwl_notify_board *board, uint64_t now, unsigned slot);
+static void popup_draw_board(struct kwl_server *server, struct kwl_list *command, const struct kwl_notify_board *board, uint64_t now, unsigned slot);
 static int popup_board_part(const struct popup_place *place, int32_t x, int32_t y);
-static void popup_draw_icon(struct kwl_server *server, VkCommandBuffer command, const struct kwl_notification *item, int32_t x, int32_t y, float opacity);
+static void popup_draw_icon(struct kwl_server *server, struct kwl_list *command, const struct kwl_notification *item, int32_t x, int32_t y, float opacity);
 static size_t popup_line_break(struct kwl_server *server, const struct kwl_notification *item, int32_t width);
 
 /*
@@ -188,7 +188,7 @@ kwl_notify_popup_tick(
 void
 kwl_notify_popup_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	uint64_t now;
 
@@ -460,7 +460,7 @@ popup_part(
 static void
 popup_draw_board(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_notify_board *board,
 	uint64_t now,
 	unsigned slot)
@@ -552,7 +552,7 @@ kwl_notify_card_close_at(
 void
 kwl_notify_draw_card(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_notification *item,
 	int32_t left,
 	int32_t top,
@@ -626,7 +626,7 @@ kwl_notify_draw_card(
 void
 kwl_notify_draw_glass(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t left,
 	int32_t top,
 	int32_t width,
@@ -671,7 +671,7 @@ kwl_notify_draw_glass(
 static void
 popup_draw_icon(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct kwl_notification *item,
 	int32_t x,
 	int32_t y,

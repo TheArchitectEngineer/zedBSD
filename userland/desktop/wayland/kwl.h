@@ -56,6 +56,8 @@
 #include "super-tap.h"
 #include "plane.h"
 #include "title-tap.h"
+#include "cursor-box.h"
+#include "input-thread.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
@@ -109,6 +111,38 @@
 
 /* A window's place when the client chooses its size: cascaded from the centre by this step. */
 #define KWL_CASCADE_STEP	32
+
+/*
+ * The parts of a frame its draws are counted in (--log-frames, KWL DRAWS,
+ * ws211-p002): App Home, the desktop layer (the wallpaper, the desktop's
+ * icons and the windows), the system bar, and everything else.
+ */
+#define KWL_SECTION_OTHER	0U
+#define KWL_SECTION_HOME	1U
+#define KWL_SECTION_LAYER	2U
+#define KWL_SECTION_BAR		3U
+#define KWL_SECTIONS		4U
+
+/*
+ * A frame's draws (--log-frames, ws211-p002): the glass look's shapes and
+ * the windows' quads, those in each section, and how often the pipeline and
+ * the descriptor set differed from the draw before (what binding only on a
+ * change would leave).  last_pipeline and last_set are the draw before's.
+ */
+struct kwl_draw_counts {
+	uint32_t shapes;
+	uint32_t quads;
+	uint32_t sections[KWL_SECTIONS];
+	uint32_t pipelines;
+	uint32_t sets;
+	/* The commands actually recorded (ws211-p003 review-1 M2): draws, pipeline and set binds, push constants. */
+	uint32_t cmd_draws;
+	uint32_t cmd_pipelines;
+	uint32_t cmd_sets;
+	uint32_t cmd_pushes;
+	uint64_t last_pipeline;
+	uint64_t last_set;
+};
 
 /*
  * The glass look (glass.c): a title bar's height, the system bar's height,
@@ -348,6 +382,15 @@ struct kwl_packet {
 struct kwl_input_device {
 	int fd;
 	unsigned live;
+	/*
+	 * The input thread reads the descriptor (ws213-p004): set by the
+	 * attach command, cleared once a detach is acknowledged.  closing says
+	 * the device is going: its record stays until the input thread's last
+	 * event of it is applied, so the events before that one still find it,
+	 * and no new device takes its slot or its path meanwhile.
+	 */
+	unsigned attached;
+	unsigned closing;
 	unsigned pointer;
 	unsigned keyboard;
 	unsigned absolute;
@@ -358,22 +401,27 @@ struct kwl_input_device {
 	/*
 	 * A touch pad (touchpad.c, ws159-p004): its reports go to its touch
 	 * pad layer, whose actions move the pointer, press its buttons and
-	 * scroll; pad is that layer's state while the device is attached.
+	 * scroll; the layer is the input thread's while the device is attached.
 	 */
 	unsigned touchpad;
-	struct kwl_touchpad pad;
-	/* A relative mouse's acceleration (pointer-accel.c, ws089-p024): its fractions and its last report's time. */
-	struct kwl_pointer_accel accel;
-	unsigned discarding;
+	/*
+	 * What the input thread is given when the device is attached (its
+	 * kind, an absolute pointer's ranges and first place, a touch pad's
+	 * resolution and range; ws213-p004): a mouse's acceleration, the touch
+	 * pad's layer and the report being gathered are the input thread's.
+	 */
+	struct kwl_input_attach reading;
 	int32_t abs_x_minimum;
 	int32_t abs_x_maximum;
 	int32_t abs_y_minimum;
 	int32_t abs_y_maximum;
-	int32_t abs_x;
-	int32_t abs_y;
+	/*
+	 * The report being applied, as the input thread passed it (a pen
+	 * tablet's or touch screen's, which tablet.c and touch.c read), and
+	 * its evdev time (its SYN_REPORT), in microseconds (WS081).
+	 */
 	unsigned frame_count;
 	struct input_event frame[KWL_INPUT_FRAME_MAX];
-	/* The evdev time of the report being applied (its SYN_REPORT), in microseconds (WS081). */
 	uint64_t frame_time_us;
 	char path[KWL_INPUT_PATH_MAX];
 };
@@ -846,6 +894,34 @@ struct kwl_client {
 	uint64_t connected_ms;
 };
 
+/* The drawings one KWL PERF window keeps the times of (five seconds at 60 frames and the quiet pictures, with room). */
+#define KWL_PERF_WALKS		1024U
+
+/* The box's writes one KWL PERF window keeps (five seconds of a 1000 Hz mouse, with room), and the passes. */
+#define KWL_PERF_BOX		8192U
+#define KWL_PERF_PASSES		8192U
+
+/* The slow passes one KWL PERF window logs (KWL SLOW_PASS, ws213-p004). */
+#define KWL_PERF_SLOW_PASSES	10U
+
+/*
+ * The sums of the event loop's parts as one pass begins (ws213-p004), so
+ * the pass's own share of each is the difference at its end; it lives in
+ * the window's counters and is taken afresh by every pass.
+ */
+struct kwl_perf_parts {
+	uint64_t input_cycles;
+	uint64_t client_cycles;
+	uint64_t frame_done_cycles;
+	uint64_t schedule_cycles;
+	uint64_t flush_cycles;
+	uint64_t adopt_cycles;
+	uint64_t shm_cycles;
+	uint64_t cursor_cycles;
+	uint64_t layers_cycles;
+	uint64_t draw_cycles;
+};
+
 /* Cycle counts of the event loop, reported every few seconds (KWL PERF). */
 struct kwl_perf {
 	uint64_t window_start_ms;
@@ -860,12 +936,117 @@ struct kwl_perf {
 	uint64_t compose_draw_cycles;
 	uint64_t compose_acquire_cycles;
 	uint64_t compose_present_cycles;
+	/*
+	 * The render thread's steps of a frame (ws211-p010): frames, those that
+	 * copied host images, and the sums and longest of the Begins, the
+	 * encoding of the list, the drawing's End (the kernel's decode), the
+	 * submit and the presents.
+	 */
+	uint32_t rec_frames;
+	uint32_t rec_copied;
+	uint64_t rec_begin_cycles;
+	uint64_t rec_encode_cycles;
+	uint64_t rec_end_cycles;
+	uint64_t rec_submit_cycles;
+	uint64_t rec_present_cycles;
+	uint64_t rec_end_max_cycles;
+	uint64_t rec_submit_max_cycles;
+	uint64_t rec_present_max_cycles;
 	/* wl_shm: images copied, and the CPU time of the copies. */
 	uint32_t shm_copies;
 	uint64_t shm_copy_cycles;
+	/*
+	 * The event loop's parts (ws213-p001 M0): the ticks before the poll,
+	 * then, of the work after it, the input devices, the clients' requests,
+	 * the finished frame, the scheduler and the last flush.  The scheduler's
+	 * own parts follow: its ticks, the commits taken, the wl_shm copies, the
+	 * cursor plane, the layers' quiet pictures and the frame drawn.
+	 */
+	uint64_t tick_cycles;
+	uint64_t input_cycles;
+	uint64_t client_cycles;
+	uint64_t frame_done_cycles;
+	uint64_t schedule_cycles;
+	uint64_t flush_cycles;
+	uint64_t schedule_tick_cycles;
+	uint64_t adopt_cycles;
+	uint64_t shm_cycles;
+	uint64_t cursor_cycles;
+	uint64_t layers_cycles;
+	uint64_t draw_cycles;
+	/* The cursor plane's presents, and the passes that held a move for the next refresh (cursor-plane.c, ws213-p001 C0). */
+	uint32_t cursor_presents;
+	uint32_t cursor_deferred;
+	/*
+	 * A present's parts (ws213-p001 review-1 M0): the copy's fence asked,
+	 * the image acquired, the copy recorded and submitted, and the present
+	 * itself with its longest; each counts the presents that reached it.
+	 */
+	uint64_t cursor_fence_cycles;
+	uint64_t cursor_acquire_cycles;
+	uint64_t cursor_copy_cycles;
+	uint64_t cursor_queue_present_cycles;
+	uint64_t cursor_queue_present_max_cycles;
+	/*
+	 * The drawings of the window (ws213-p003, KWL PERF walk): for each, the
+	 * walk that wrote its display list and the replay that recorded the
+	 * list, in cycles, how many things it drew, and whether it presented
+	 * nothing (a layer's quiet picture).  A drawing past KWL_PERF_WALKS
+	 * is only counted in walk_dropped.
+	 */
+	uint32_t walk_count;
+	uint32_t walk_dropped;
+	uint64_t walk_cycles[KWL_PERF_WALKS];
+	uint64_t replay_cycles[KWL_PERF_WALKS];
+	uint32_t walk_things[KWL_PERF_WALKS];
+	uint8_t walk_quiet[KWL_PERF_WALKS];
+	/*
+	 * The cursor's box (ws213-p004, KWL PERF cursor): for each write of a
+	 * motion the main thread applied in the window, its lag from the
+	 * report's evdev time to the write, the lag beyond the reports' own
+	 * spacing (excess), and the time since the write before it while the
+	 * pointer moved (gap), in microseconds; how many lags went over a
+	 * refresh, and how many KWL CURSOR_LAG lines were printed.  A write
+	 * past KWL_PERF_BOX is only counted in box_dropped.
+	 */
+	uint32_t box_count;
+	uint32_t box_dropped;
+	uint32_t box_over;
+	uint32_t box_gap_count;
+	uint32_t box_lag_lines;
+	uint32_t box_lag_us[KWL_PERF_BOX];
+	uint32_t box_excess_us[KWL_PERF_BOX];
+	uint32_t box_gap_us[KWL_PERF_BOX];
+	/*
+	 * Each pass's work in cycles, for KWL PERF main's pass_max_us and
+	 * pass_p99_us (ws213-p004); a pass past KWL_PERF_PASSES only raises the
+	 * longest.
+	 */
+	uint32_t pass_count;
+	uint64_t pass_cycles[KWL_PERF_PASSES];
+	uint64_t pass_max_cycles;
+	/*
+	 * The longest of the main thread's Vulkan work outside a walk (a GPU
+	 * buffer's import or release, the wl_shm copies and their images, a
+	 * wait for the frame in flight), in cycles (KWL PERF pass
+	 * vk_outside_max_us, ws213-p004 6.4).
+	 */
+	uint64_t vk_outside_max_cycles;
+	/*
+	 * The pass in progress, for the KWL SLOW_PASS line of a pass over two
+	 * refreshes (ws213-p004): the parts' sums and the clock when it began,
+	 * and its own Vulkan work outside a walk and its walks; then how many
+	 * such lines the window has printed.
+	 */
+	struct kwl_perf_parts pass_start;
+	uint64_t pass_start_us;
+	uint64_t pass_vk_outside_cycles;
+	uint64_t pass_walk_cycles;
+	uint32_t slow_pass_lines;
 };
 
 uint64_t kwl_cycles(void);
+void kwl_perf_vk_outside(struct kwl_server *server, uint64_t cycles);
 
 /*
  * The compositor: one per process, alive from start to exit.
@@ -933,6 +1114,21 @@ struct kwl_apps_bar {
 	uint64_t spring_tile_since_ms;
 };
 
+/* The most hover probes one whole scene records (damage.c). */
+#define KWL_HOVER_PROBES 256
+
+/*
+ * The most rectangles a frame's damage is kept as (damage.c, ws211-p009):
+ * changes far apart are drawn apart instead of with everything between.
+ */
+#define KWL_DAMAGE_RECTS 4U
+
+/*
+ * The most pieces a quad is cut into around the opaque shapes drawn over it
+ * (kwl_damage_rects_cut, ws211-p011).
+ */
+#define KWL_CUT_PIECES 8U
+
 struct kwl_server {
 	struct kwl_perf perf;
 	int listener;
@@ -967,8 +1163,65 @@ struct kwl_server {
 	uint64_t max_frames;
 	/* Nonzero with --log-frames: every presentation and buffer release is printed (for the tests that read them). */
 	unsigned log_frames;
+	/*
+	 * The frame's draws (KWL DRAWS with --log-frames, ws211-p002), counted
+	 * while it is recorded, and the section the drawing is in now
+	 * (KWL_SECTION_*, set around App Home, the desktop layer and the bar by
+	 * kwl_glass_draw).  The event loop's thread only.
+	 */
+	struct kwl_draw_counts draw_counts;
+	unsigned draw_section;
+	/*
+	 * The layers' pictures (layer-cache.c, ws211-p002): the window the
+	 * desktop's picture leaves out (the one an animation moves, drawn over
+	 * the picture); and whether App Home's animation starts at its first
+	 * frame's recording (home_start_ms is set then, review-2 N4).
+	 */
+	struct kwl_object *layer_skip;
+	unsigned home_start_pending;
+	/*
+	 * The last evdev input (any device, a touch pad's gestures too) and the
+	 * last window commit (a cursor's not counted), which a picture drawn in
+	 * the quiet waits on; whether something App Home's picture shows may
+	 * have changed (the picture's key is made again only then); and App
+	 * Home's progress fixed for the frame being recorded (review-3 B1).
+	 */
+	uint64_t input_ms;
+	uint64_t commit_ms;
+	unsigned home_picture_stale;
+	/* Nonzero while App Home's floor lines are drawn: their small solid quads are joined into one draw (batch.c, ws211-p003). */
+	unsigned batch_floors;
+	/* Nonzero with --no-layer-cache: no layer's picture, every frame drawn whole (the reference, review-4 M4). */
+	unsigned layer_cache_off;
+	unsigned home_progress_frozen;
+	float home_progress_value;
 	/* The event loop records the latest traced motion; recording a frame consumes this timestamp. */
 	uint64_t pointer_accepted_us;
+	/*
+	 * The kernel's time of the latest mouse report that moved the pointer
+	 * (its evdev stamp, microseconds), logged with the cursor plane's
+	 * present when frames are logged (ws213-p001 review-1 C1).
+	 */
+	uint64_t pointer_event_us;
+	/*
+	 * Hover probes (damage.c): the rectangles the last whole scene's drawing
+	 * tested the pointer against, and where the pointer was then.  A later
+	 * move that leaves every probe's answer unchanged changes only the
+	 * cursor.  complete is set only after a whole scene recorded every
+	 * probe; a partial redraw or an overflow clears it.
+	 */
+	struct kwl_hover_probe {
+		int32_t x;
+		int32_t y;
+		int32_t width;
+		int32_t height;
+	} hover_probes[KWL_HOVER_PROBES];
+	unsigned hover_count;
+	unsigned hover_recording;
+	unsigned hover_complete;
+	unsigned hover_overflow;
+	int32_t hover_x;
+	int32_t hover_y;
 	/*
 	 * The graphical login (ws035-p095): with --greeter the compositor draws the
 	 * login screen (greeter.c), opens no socket and asks sessiond on
@@ -1015,6 +1268,25 @@ struct kwl_server {
 	 * are placed in (no width: the anchor's).
 	 */
 	unsigned pointer_output;
+	/*
+	 * The input thread and the cursor's box (ws213-p004): the pointer's
+	 * place the input thread writes (pointer_x and pointer_y are the main
+	 * thread's view, which follows it through the input thread's events),
+	 * the warp count the main thread's view was last set under, the
+	 * settings and outputs last given to the input thread, and the pipe the
+	 * threads wake the main thread with (wake[0] polled, wake[1] written).
+	 * box_last_* are the last applied write's times, for the box's gap and
+	 * excess (KWL PERF cursor).
+	 */
+	struct kwl_cursor_box cursor_box;
+	struct kwl_input_thread input_thread;
+	unsigned threads_prepared;
+	unsigned input_thread_ready;
+	uint64_t pointer_warp;
+	struct kwl_input_settings input_settings_given;
+	int wake[2];
+	uint64_t box_last_event_us;
+	uint64_t box_last_write_us;
 	unsigned view_output;
 	int32_t view_x;
 	int32_t view_y;
@@ -1068,11 +1340,15 @@ struct kwl_server {
 	unsigned dirty;
 	/*
 	 * The damage (damage.c, ws035-p055): whether only a part of the output
-	 * changed since the last frame, and that part (left, top, right,
-	 * bottom).  dirty, set by any other change, draws the whole output.
+	 * changed since the last frame, and that part as rectangles (left,
+	 * top, right, bottom) that do not overlap (ws211-p009), damage_count of
+	 * them.  The list is empty whenever damaged is 0, whatever the count
+	 * says: the next rectangle starts it again.  dirty, set by any other
+	 * change, draws the whole output.
 	 */
 	unsigned damaged;
-	int32_t damage[4];
+	unsigned damage_count;
+	int32_t damage[KWL_DAMAGE_RECTS][4];
 	int frame_fd;
 	uint64_t map_order;
 	uint32_t windows;
@@ -1222,6 +1498,15 @@ struct kwl_server {
 	unsigned anim_docking;
 	int32_t anim_from[4];
 	int32_t anim_to[4];
+	/*
+	 * anim_serial names each animation started (it counts from 1, so that
+	 * the layers' pictures, which start at 0, decide on the first one too,
+	 * layer-cache.c); anim_configure says the window is told its size when
+	 * its animation ends, not when it starts (a dock and an undock scale
+	 * its image meanwhile, ws211-p007).
+	 */
+	uint64_t anim_serial;
+	unsigned anim_configure;
 	/*
 	 * Whether the last frame left the system bar out to keep a fullscreen
 	 * window whole (ws035-p119, shell.c); only the change is logged.
@@ -1485,6 +1770,8 @@ struct kwl_server {
 	 * It is cleared before that surface is freed.
 	 */
 	struct kwl_object *pointer_surface;
+	/* The compositor's own screen took the pointer: the focus passes do not give it back to a window (seat.c). */
+	unsigned pointer_taken;
 	/*
 	 * Popups (popup.c): the topmost popup holding the seat's grab (NULL for
 	 * none); whether the grab has the pointer (from its first popup shown
@@ -1667,6 +1954,7 @@ struct kwl_server {
 uint64_t kwl_milliseconds(void);
 uint64_t kwl_microseconds(void);
 void kwl_request_stop(void);
+void kwl_fatal(const char *format, ...) __attribute__((format(printf, 1, 2)));
 int kwl_greeter_open(struct kwl_server *server);
 int kwl_greeter_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_greeter_key(struct kwl_server *server, uint32_t key, uint32_t state);
@@ -1796,15 +2084,33 @@ int kwl_shm_request(struct kwl_object *object, uint32_t opcode, const unsigned c
 int kwl_shm_bind(struct kwl_object *shm);
 void kwl_cursor_default(struct kwl_server *server);
 int kwl_cursor_client_shown(struct kwl_server *server);
+
+/*
+ * The cursor plane (cursor-plane.c, ws141-p014): whether it shows the
+ * cursor now, its update at each pass, and how long the event loop may
+ * sleep before a move held for the next refresh is presented (ws213-p001 C0).
+ */
+int kwl_cursor_plane_takes(struct kwl_server *server);
+void kwl_cursor_plane_update(struct kwl_server *server);
+void kwl_cursor_plane_hold(struct kwl_server *server);
 int kwl_arrow_create(struct kwl_server *server);
 void kwl_arrow_destroy(struct kwl_server *server);
 struct kwl_object *kwl_top_window(struct kwl_server *server);
 struct kwl_object *kwl_output_top_window(struct kwl_server *server, unsigned slot);
 int kwl_glass_still(struct kwl_server *server);
+int kwl_glass_hover_still(struct kwl_server *server);
 int kwl_glass_body_damage(struct kwl_server *server, struct kwl_object *surface, int32_t *rect);
 int kwl_glass_pointer_calm(struct kwl_server *server, int32_t x, int32_t y);
 void kwl_damage_pointer(struct kwl_server *server, int32_t old_x, int32_t old_y);
+void kwl_hover_probe(struct kwl_server *server, int32_t x, int32_t y, int32_t width, int32_t height);
+void kwl_hover_begin(struct kwl_server *server, int whole);
+void kwl_hover_end(struct kwl_server *server);
+int kwl_hover_unchanged(struct kwl_server *server);
+int kwl_hover_damage(struct kwl_server *server);
+void kwl_damage_rect(struct kwl_server *server, int32_t left, int32_t top, int32_t right, int32_t bottom);
 void kwl_damage_commit(struct kwl_server *server, struct kwl_object *surface, struct kwl_object *previous);
+void kwl_damage_rects_add(int32_t (*rects)[4], unsigned *count, const int32_t *rect);
+unsigned kwl_damage_rects_cut(const float *quad, const float (*holes)[4], unsigned hole_count, float (*pieces)[4]);
 void kwl_window_bounds_refresh(struct kwl_server *server);
 int kwl_window_send_configure(struct kwl_object *surface);
 int kwl_window_enter_fullscreen(struct kwl_object *surface);
@@ -1812,7 +2118,9 @@ int kwl_window_leave_fullscreen(struct kwl_object *surface);
 void kwl_window_centre(struct kwl_server *server, struct kwl_object *surface);
 int kwl_fence_ready(struct kwl_server *server, struct kwl_object *surface);
 int kwl_compose_waiting(struct kwl_server *server);
+void kwl_compose_want_frame(struct kwl_server *server);
 void kwl_compose_poll(struct kwl_server *server);
+void kwl_glass_glyphs_poll(struct kwl_server *server);
 int kwl_glass_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_glass_motion(struct kwl_server *server);
 void kwl_glass_gesture(struct kwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
@@ -1989,7 +2297,6 @@ int32_t kwl_output_top(struct kwl_server *server, unsigned slot);
 unsigned kwl_window_output(struct kwl_object *surface);
 void kwl_window_to_output(struct kwl_server *server, struct kwl_object *window, unsigned slot, const char *why);
 void kwl_window_set_output(struct kwl_server *server, struct kwl_object *window, unsigned slot, const char *why);
-void kwl_pointer_relative(struct kwl_server *server, int32_t dx, int32_t dy, int32_t *x, int32_t *y);
 void kwl_pointer_absolute(struct kwl_server *server);
 
 /* The outputs each surface's client was told it is on, wl_surface.enter and leave (surface-outputs.c, ws177-p001). */
@@ -2016,6 +2323,9 @@ void kwl_notify_popup_tick(struct kwl_server *server);
 int kwl_notify_popup_button(struct kwl_server *server, uint32_t button, uint32_t state);
 int kwl_notify_popup_showing(void);
 float kwl_home_progress(struct kwl_server *server);
+/* Draws a layer's stale picture again in a quiet moment (layer-cache.c, ws211-p002): 1 in flight, 0 none, -errno. */
+int kwl_layers_tick(struct kwl_server *server);
+int kwl_home_settled(struct kwl_server *server);
 void kwl_home_layer(struct kwl_server *server, float progress, float *x, float *y, float *scale, float *opacity);
 void kwl_home_pad(struct kwl_server *server, uint32_t phase, int32_t travel_um, int32_t speed);
 int kwl_home_edge_press(struct kwl_server *server);
@@ -2202,11 +2512,19 @@ void kwl_input_scan(struct kwl_server *server);
 int kwl_input_probe(struct kwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);
 int kwl_input_alt_held(const struct kwl_server *server);
 int kwl_input_attach(struct kwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, const struct input_absinfo *x, const struct input_absinfo *y);
-void kwl_input_read_devices(struct kwl_server *server, struct kwl_input_device **devices, size_t count);
-void kwl_input_tick(struct kwl_server *server, uint64_t now);
+int kwl_threads_prepare(struct kwl_server *server);
+int kwl_input_threads_start(struct kwl_server *server);
+void kwl_input_threads_stop(struct kwl_server *server);
+void kwl_input_drain(struct kwl_server *server);
+void kwl_input_sync(struct kwl_server *server);
 void kwl_input_touchpads_changed(struct kwl_server *server);
-void kwl_input_close(struct kwl_server *server, struct kwl_input_device *device);
+void kwl_input_pause(struct kwl_server *server, struct kwl_input_device *device);
+void kwl_input_resume(struct kwl_server *server, struct kwl_input_device *device, int descriptor);
+void kwl_input_detach_all(struct kwl_server *server);
+void kwl_input_attach_all(struct kwl_server *server);
 void kwl_input_forget(struct kwl_server *server, struct kwl_input_device *device);
+void kwl_pointer_warp(struct kwl_server *server, const struct kwl_plane_rect *outputs, kwl_cursor_box_move_fn *move, const void *context);
+void kwl_pointer_warp_to(struct kwl_server *server, int32_t x, int32_t y);
 void kwl_input_cleanup(struct kwl_server *server);
 
 /* The metadata library delegates persistence to the mediastorage CLI. */

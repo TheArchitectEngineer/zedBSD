@@ -196,6 +196,8 @@ sm_scene_build(
 	uint64_t now_ms)
 {
 	const struct sm_layout *layout;
+	uint64_t slid_ms;
+	uint64_t step_ms;
 	float shift;
 	float step;
 	float offset;
@@ -210,13 +212,25 @@ sm_scene_build(
 	sm_scene_clear(&app->scene);
 	layout = &app->layout;
 
-	/* How far the graphs have slid towards the next sample (none with the clock stopped). */
+	/*
+	 * How far the graphs have slid towards the next sample (none with the
+	 * clock stopped).  The slide goes in whole steps of the animation's
+	 * frame time from the sample (half a second at 2 fps), so the animation's
+	 * frames move the graphs by even steps and an input's frame between two
+	 * of them leaves the graphs where the last one put them.
+	 */
 	shift = 0.0f;
 	if (!app->fixed_clock &&
 	    app->have_frame &&
 	    app->source.period_ms != 0U &&
 	    now_ms > app->frame_at_ms) {
-		shift = (float)(now_ms - app->frame_at_ms) / (float)app->source.period_ms;
+		/* The time since the sample, down to a whole step of the animation. */
+		slid_ms = now_ms - app->frame_at_ms;
+		if (app->fps != 0U) {
+			step_ms = 1000U / app->fps;
+			slid_ms -= slid_ms % step_ms;
+		}
+		shift = (float)slid_ms / (float)app->source.period_ms;
 		if (shift > 1.0f)
 			shift = 1.0f;
 	}
@@ -1134,10 +1148,16 @@ value_text(
 			slide->direction = -1;
 	}
 
-	/* How far the slide has come (done at once with the clock stopped or no old value). */
+	/*
+	 * How far the slide has come: done at once with the clock stopped, no
+	 * old value, or frames further apart than the slide (2 fps), where the
+	 * first frame of a new value would show its changed characters faint
+	 * until the next one, half a second later (2026-10-12 user).
+	 */
 	progress = 1.0f;
 	if (!app->fixed_clock &&
 	    slide->old[0] != '\0' &&
+	    app->fps != 0U && 1000U / app->fps < SCENE_SLIDE_MS &&
 	    now_ms < slide->changed_ms + SCENE_SLIDE_MS)
 		progress = (float)(now_ms - slide->changed_ms) / (float)SCENE_SLIDE_MS;
 	progress = 1.0f - (1.0f - progress) * (1.0f - progress);

@@ -115,21 +115,46 @@ sm_motion_update(
 	struct sm_motion *motion;
 	const struct sm_frame *frame;
 	float seconds;
+	float stepped;
+	uint64_t step;
+	uint64_t whole;
 	float memory;
 	float rx;
 	float tx;
 	float read;
 	float write;
 
-	/* The time since the last frame (at most a tenth of a second, so a pause does not jump). */
+	/*
+	 * The time since the last frame, at most half a second: the animation
+	 * draws twice a second, and a longer pause (a hidden window) does not
+	 * jump.
+	 */
 	motion = &app->motion;
 	frame = &app->frame;
 	seconds = 0.0f;
 	if (now_ms > motion->last_ms && motion->last_ms != 0U)
 		seconds = (float)(now_ms - motion->last_ms) / 1000.0f;
-	if (seconds > 0.1f)
-		seconds = 0.1f;
+	if (seconds > 0.5f)
+		seconds = 0.5f;
 	motion->last_ms = now_ms;
+
+	/*
+	 * The measures' and the phases' time: whole steps of the animation's
+	 * frame time (half a second at 2 fps), at most half a second, so the
+	 * hover's frames turn the camera without moving the core faster than
+	 * the animation.
+	 */
+	if (motion->step_ms == 0U || now_ms < motion->step_ms)
+		motion->step_ms = now_ms;
+	whole = now_ms - motion->step_ms;
+	if (app->fps != 0U) {
+		step = 1000U / app->fps;
+		whole -= whole % step;
+	}
+	motion->step_ms += whole;
+	stepped = (float)whole / 1000.0f;
+	if (stepped > 0.5f)
+		stepped = 0.5f;
 
 	/* The measures the core shows, from 0 to 1. */
 	memory = 0.0f;
@@ -153,23 +178,23 @@ sm_motion_update(
 		return;
 	}
 
-	/* The camera follows the pointer on a spring, the measures on a short lag. */
+	/* The camera follows the pointer on a spring, the measures on a short lag (by the animation's steps). */
 	(void)spring(&motion->tilt_x, &motion->tilt_speed_x, motion->pointer_x, seconds);
 	(void)spring(&motion->tilt_y, &motion->tilt_speed_y, motion->pointer_y, seconds);
-	motion->cpu = follow(motion->cpu, (float)frame->cpu, seconds, 0.35f);
-	motion->gpu = follow(motion->gpu, (float)frame->gpu_busy[0], seconds, 0.35f);
-	motion->memory = follow(motion->memory, memory, seconds, 0.6f);
-	motion->network = follow(motion->network, fmaxf(rx, tx), seconds, 0.35f);
-	motion->disk = follow(motion->disk, fmaxf(read, write), seconds, 0.35f);
-	motion->level = follow(motion->level, (float)app->level, seconds, 0.45f);
+	motion->cpu = follow(motion->cpu, (float)frame->cpu, stepped, 0.35f);
+	motion->gpu = follow(motion->gpu, (float)frame->gpu_busy[0], stepped, 0.35f);
+	motion->memory = follow(motion->memory, memory, stepped, 0.6f);
+	motion->network = follow(motion->network, fmaxf(rx, tx), stepped, 0.35f);
+	motion->disk = follow(motion->disk, fmaxf(read, write), stepped, 0.35f);
+	motion->level = follow(motion->level, (float)app->level, stepped, 0.45f);
 
 	/* The phases: the rings with the disks, the orbits and the flows with their rates. */
-	motion->ring_phase += seconds * (0.01f + 0.15f * motion->disk);
-	motion->orbit_phase += seconds * (0.03f + 0.4f * motion->network);
-	motion->rx_phase += seconds * (0.05f + 0.6f * rx);
-	motion->tx_phase += seconds * (0.05f + 0.6f * tx);
-	motion->read_phase += seconds * (0.05f + 0.6f * read);
-	motion->write_phase += seconds * (0.05f + 0.6f * write);
+	motion->ring_phase += stepped * (0.01f + 0.15f * motion->disk);
+	motion->orbit_phase += stepped * (0.03f + 0.4f * motion->network);
+	motion->rx_phase += stepped * (0.05f + 0.6f * rx);
+	motion->tx_phase += stepped * (0.05f + 0.6f * tx);
+	motion->read_phase += stepped * (0.05f + 0.6f * read);
+	motion->write_phase += stepped * (0.05f + 0.6f * write);
 	motion->ring_phase -= floorf(motion->ring_phase);
 	motion->orbit_phase -= floorf(motion->orbit_phase);
 	motion->rx_phase -= floorf(motion->rx_phase);

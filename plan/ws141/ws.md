@@ -74,6 +74,12 @@ Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver �
 | [p005](phase005/phase.md) | `drv_gpu_interface` への統合と desktop の表示（Keiland の compositor） | in-progress | p003・p004のsoftware出力、desktopはp006 | 4h〜 |
 | [p006](phase006/phase.md) | kernel Vulkan実行器・SPIR-V compilerとKeiland描画経路（2026-10-09 scope拡張） | in-progress（compiler/native prepared job/public runtime/Keiland software経路とhost/build/stack監査PASS、実機待ち） | p004・p005 | 未見積 |
 | [p007](phase007/phase.md) | 規約の全文の確認と最終の確認。**license と GPL の code との類似の監査**（字面・設計、道具と目視）、BLOB の移動の確認 | cleared（p010差分監査/組合せbuild/main統合済み） | 全て | 3〜4h |
+| [p013](phase013/phase.md) | VC6 の Keiland の描画の速さ（frame 33 ms → 16 ms） | in-progress（hardware blend・compiler の NOP 削減は実機で見た目 OK・速い、tile buffer の f16 は実機待ち） | p006 | 未見積 |
+| [p014](phase014/phase.md) | HVS の cursor plane | in-progress（実機で 60fps、ユーザー確認） | p013 | — |
+| [p015](phase015/phase.md) | GPU が書いて GPU が読む画像を UIF で持つ（設計） | planning（第 3 版） | p013 | 未見積 |
+| [p016](phase016/phase.md) | GPU の実行中に ioctl と cursor を止めない（worker の mutex、cursor の GPU 無しの更新） | planning（設計の第 1 版、review 前） | p014 | 未見積 |
+| [p018](phase018/phase.md) | 部分の CopyBufferToImage の費用（CPU の 64B の写しか GPU の部分の tile pass） | planning（候補の記録、計測で方式を決める） | p016 の (b)、WS211 p003、Pi の計測 | 未投入 |
+| [p017](phase017/phase.md) | bcm2711 の Vulkan の stencil（Notes） | planning（調べと見積もり、(b) の後の候補） | p016 の (b) | 未投入 |
 | [p012](phase012/phase.md) | KeilandのEL0 counter例外 | cleared（実機でcounter trap消失・描画送信到達） | p011実機成功、p005/p006起動経路 | 今回有限scope |
 | [p011](phase011/phase.md) | R0拒否とブラックアウトの修正 | cleared（実機R0/list43採用成功） | N0/preflight実機成功 | 今回部分scope |
 | [p010](phase010/phase.md) | core clock/実時間job期限 | cleared（software/実機表示未確認） | main211be00dcと実機ログ | 今回有限scope |
@@ -345,6 +351,29 @@ R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなく
 
 2026-10-11 graphics lease/console補完: user再作成imageにはinline kernel666078535とcull compositor1980286597が導入済み。UFS51%/tmp8KB/FAT84%で容量不足なし、greeter停止後SSH0.25秒。RPi text suspend/resume未接続を修正し、claim成功でpixel描画停止、confirmed release/closeだけ復帰。failed restore/recovery時のholdは維持、HALはboard-private cons header/retained resumeだけでhal.h/API不変。実callback host PASS（failed release/closeではsuspended維持、recovery claimも維持、successful release/closeはresume）。C全文manual/formatter19範囲比較/diff-check、production style変更範囲0（cons既存6件は未変更）を確認。arm64 make exit0/warning0/error0/checker3PASS、kernel959624230/8077312。実機更新/効果はこれから、33ms未達・submit-i01 in-progress。Q1共有projection/公開は保留のまま。
 
+
+2026-10-11 cursor-only scene cache: private scene.c/h、three-OS source list、compose/damage/shellへ標準Vulkan transfer bufferを追加。cursor前scene capture→fence後valid→unchanged cursor-only region復元→cursor LOAD。client commit/unknown dirtyは再合成、optional failureは旧経路、multiheadは普通の再合成。acquireのTRANSFER wait/partial full-width stride/retained lifetime/old cursor消去をproduction recorder hostとactual device transfer hostでPASS、C全文manual/formatter19範囲/diff-check、arm64 app warning0/error0/checker0、wayland886953165/953832。newコンソール版の36 input software samplesはmin288/median919.5/max1300ms（user窓内約300ms）、33ms未達でcache実機を比較する。p006/submit-i01 in-progress、shared projection/publication保留。
+
 ## 2026-10-11 Q1: P3 への引き継ぎ
 
 ユーザーの指示で、WS141 の描画の速さの改善を Codex のセッションから P3（Claude Code のサブエージェント、worktree `/home/awe/zedBSD-worktrees/p3`、branch agent/p3、起点 d27925686）へ引き継ぐ。新しい Phase [ws141-p013](phase013/phase.md)（frame 33 ms → 16 ms）。以後 ws141/ は P3 が書き、Q1 が merge する。
+
+## 2026-10-11 ユーザー「推し通りです。」: Pi 4 の image は案 A
+
+版 B で Wayland が起動直後に落ちた（ユーザー）。amd64 の Venus では同じ compositor が PASS（T1-539）なので、Pi だけの経路（kernel の snapshot の cache 523b18345 と変化した tile の写し 60e18a09f）を main から外した: `src/drivers/gpu/bcm2711/` と `plan/ws141/tests/vulkan-device-host-test.c` を feac3891d（実機で確かめた storage cache まで）に戻した。compositor の変更（staging の 2 枚・hover の記録）は main に残す。2 つの kernel の変更は P3 が Pi で 1 つずつ確かめてから戻す。
+
+## 2026-10-11 ユーザーの決定: cursor の plane
+
+ユーザー「displayなのにplaneのx,yですか。…cursorと明示されたplaneならいいと思います。」「その案でOKです。」→ present に plane の x,y を足さない。cursor 専用の UAPI（`include/uapi/gpu-display.h` に `GPU_DISPLAY_CURSOR_SET`（画像・小さな固定の大きさ・hotspot）・`GPU_DISPLAY_CURSOR_MOVE`（x,y、vblank で）・`GPU_DISPLAY_CURSOR_HIDE`、無い driver は ENOTSUP）と、libvulkan が VK_KHR_display の plane の 1 つを cursor の plane として見せ、その swapchain の present・dstRect を cursor の ioctl に変える。compositor は libvulkan だけのまま。bcm2711 は HVS の display list に cursor の plane を 1 枚。UAPI の差分の設計は P3 が書き、実装の前にユーザーに見せる。HAL は不変。i915 の hardware cursor は後で別の WS（ユーザー）。
+
+## 2026-10-12 ユーザーの承認: cursor の plane は標準の VK_KHR_display＋cursor 専用の UAPI
+
+ユーザー「待って、ベンダ拡張はおかしいのでは？display の hardware plane を列挙して使う拡張を、標準として使うべきでは？」「VK_KHR_display＋cursor 専用の UAPIでOKです。承認します。」→ vendor の Vulkan 拡張は作らない。libvulkan は cursor の plane を VK_KHR_display の plane（能力: 小さな最大の大きさ（64x64）・per-pixel premultiplied の α・一番上の stack）として列挙し、その plane の swapchain の present と VkDisplayPresentInfoKHR の dstRect を kernel の cursor 専用の ioctl（`GPU_DISPLAY_CURSOR_SET`・`MOVE`・`HIDE`、KMS の legacy cursor に相当）に変える。compositor は標準の VK_KHR_display・VK_KHR_display_swapchain だけを使い、能力で cursor の plane を選ぶ（無ければ合成の fallback）。hotspot は compositor が dstRect に含める。phase014 の設計を P3 がこの形に直して実装する。
+
+## 2026-10-12 cursor の plane の実機の結果
+
+main 8eb7c81 の image の Pi 4 で cursor の plane が開き（`KWL CURSOR_PLANE open plane=1 64x64 images=3`）、ユーザー「おお、カーソルは60fpsです！」。窓の中身の frame は約 15 fps のまま（CPU の texture 変換が主因、libvulkan の map の token の直し 3b0d9db5c を試験中）。
+
+## 2026-10-12 hardware blend の実機の結果
+
+P3 の ad7ebb2cb（bcm2711 の draw で hardware blend を使い、shader は tile buffer を読まない）の kernel の Pi 4 で、ユーザー「見た目は大丈夫です。描画は2.5倍くらい速くなりました。」次は shader の compiler の NOP の削減と add/mul の組（P3）。

@@ -56,6 +56,14 @@
 #define MAIN_INPUT_MS		16
 
 /*
+ * The frame rate of the animation (the graphs' slide, the values, the
+ * core's motion) when nothing else asks for a frame, and --fps's default.
+ * The monitor is heavy to draw, so the animation is drawn at most twice a
+ * second (2026-10-12 user); the input still draws at the compositor's rate.
+ */
+#define MAIN_ANIMATION_FPS	2U
+
+/*
  * The titlebar's controls: the time ranges, as text pills (a segmented
  * group's faces are icons in the compositor, and a text control in one shows as
  * "...").
@@ -211,10 +219,10 @@ main_options(
 	int index;
 	int status;
 
-	/* The defaults (design.md section 4.3). */
+	/* The defaults (design.md section 4.3; the animation's rate is MAIN_ANIMATION_FPS). */
 	app->seed = 1;
 	app->period_ms = 1000;
-	app->fps = 30;
+	app->fps = MAIN_ANIMATION_FPS;
 	app->width = 1200;
 	app->height = 760;
 	app->cpus = 0;
@@ -235,7 +243,7 @@ main_options(
 	if (app->period_ms < 100U)
 		app->period_ms = 100U;
 	if (app->fps == 0U || app->fps > 60U)
-		app->fps = 30U;
+		app->fps = MAIN_ANIMATION_FPS;
 
 	/* Succeeded: the options are read. */
 	return 0;
@@ -750,7 +758,11 @@ main_draw(
 	if (!app->frame_allowed)
 		return 0;
 
-	/* The graphs slide between samples (not with the clock stopped): a frame every 1/fps while nothing else changed. */
+	/*
+	 * The animation (not with the clock stopped): a frame every 1/fps
+	 * (MAIN_ANIMATION_FPS, half a second) while nothing else changed.  The
+	 * input's frames come through dirty and are not held to it.
+	 */
 	moving = 0;
 	if (!app->fixed_clock &&
 	    app->have_frame &&

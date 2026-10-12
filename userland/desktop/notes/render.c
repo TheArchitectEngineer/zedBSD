@@ -1797,7 +1797,7 @@ render_pipelines(
 	return VK_SUCCESS;
 }
 
-/* Makes one pipeline: two vec4 attributes, triangles, straight-alpha blending, and its stencil use. */
+/* Makes one pipeline: two vec4 attributes, triangles, premultiplied-alpha blending, and its stencil use. */
 static VkResult
 render_pipeline(
 	struct notes_renderer *renderer,
@@ -1904,10 +1904,15 @@ render_pipeline(
 		stencil.back = stencil.front;
 	}
 
-	/* Straight-alpha blending, and no colour at all while counting the winding. */
+	/*
+	 * Premultiplied-alpha blending, and no colour at all while counting the
+	 * winding.  The shaders give the colour already multiplied by its alpha,
+	 * so the source is added at one; this is the only blend the Raspberry
+	 * Pi 4's driver takes, and it draws the same pixels as straight alpha did.
+	 */
 	memset(&blend_attachment, 0, sizeof(blend_attachment));
 	blend_attachment.blendEnable = VK_TRUE;
-	blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+	blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
 	blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 	blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
 	blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;

@@ -88,6 +88,11 @@ se_sound_poll(
 	uint64_t now)
 {
 	struct se_sound *sound;
+	unsigned reachable;
+	unsigned device;
+	int value;
+	int muted;
+	int changed;
 
 	/* Nothing to follow. */
 	sound = &app->sound;
@@ -96,8 +101,11 @@ se_sound_poll(
 
 	/* A new report. */
 	if ((app->system_changed & KL_SYSTEM_CHANGED_AUDIO) != 0U) {
+		reachable = sound->state.reachable;
+		device = sound->state.device;
+		value = sound->value;
+		muted = sound->muted;
 		kl_system_audio_get_state(app->system, &sound->state);
-		app->dirty = 1;
 		se_log("SOUND report reachable=%u device=%u value=%u muted=%u", sound->state.reachable, sound->state.device, sound->state.left, sound->state.muted);
 
 		/* A report shows the volume (set here or in the system bar), unless a drag or a held volume leads. */
@@ -105,6 +113,21 @@ se_sound_poll(
 			sound->value = (int)sound->state.left;
 			sound->muted = (int)sound->state.muted;
 		}
+
+		/* Drawn again only when what the Sound page and Home's tile show changed, and one of them is shown. */
+		changed = 0;
+		if (reachable != sound->state.reachable)
+			changed = 1;
+		else if (device != sound->state.device)
+			changed = 1;
+		else if (value != sound->value)
+			changed = 1;
+		else if (muted != sound->muted)
+			changed = 1;
+		if (changed != 0 &&
+		    (app->page == SE_PAGE_SOUND ||
+		     app->page == SE_PAGE_HOME))
+			app->dirty = 1;
 	}
 
 	/* A volume held back. */

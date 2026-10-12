@@ -116,6 +116,8 @@ static size_t input_reported_count;
 static int input_reported_cursor = -1;
 
 static int input_contains(const struct kl_rect *rect, int x, int y);
+static int input_hover_lit(unsigned kind);
+static void input_hover_damage(struct fm_app *app, unsigned kind, int index);
 static void input_suggest(struct fm_app *app);
 static int input_suggest_folder(const char *folder, const struct dirent *item);
 static void input_suggest_add(struct fm_app *app, const char *typed_folder, const char *name);
@@ -152,13 +154,9 @@ fm_input_motion(
 	struct fm_app *app,
 	const struct fm_event *event)
 {
-	struct kl_rect before;
-	struct kl_rect now;
 	unsigned kind;
 	int index;
 	int dragging;
-	int found_before;
-	int found_now;
 
 	/* The pointer's place. */
 	app->pointer_x = event->x;
@@ -193,31 +191,52 @@ fm_input_motion(
 	if (kind == app->hover_kind && index == app->hover_index)
 		return;
 
-	/*
-	 * A new region under it needs only it and the one before drawn again
-	 * (BUG-226), unless the whole frame is due anyway or either is not
-	 * known.
-	 */
-	if (app->dirty == 0) {
-		memset(&before, 0, sizeof(before));
-		memset(&now, 0, sizeof(now));
-		found_before = 1;
-		if (app->hover_kind != FM_HIT_NONE)
-			found_before = fm_ui_hit_rect(app, app->hover_kind, app->hover_index, &before);
-		found_now = 1;
-		if (kind != FM_HIT_NONE)
-			found_now = fm_ui_hit_rect(app, kind, index, &now);
-		if (found_before == 0 || found_now == 0) {
-			app->dirty = 1;
-		} else {
-			if (app->hover_kind != FM_HIT_NONE)
-				fm_ui_damage(app, &before);
-			if (kind != FM_HIT_NONE)
-				fm_ui_damage(app, &now);
-		}
-	}
+	/* A new region under it: the next frame draws what changed (fm_input_hover_settle). */
 	app->hover_kind = kind;
 	app->hover_index = index;
+	app->hover_moved = 1;
+}
+
+/*
+ * The pointer leaves the window: the region under it goes dark, and only
+ * it is drawn again (BUG-226).
+ */
+void
+fm_input_leave(
+	struct fm_app *app)
+{
+	/* Nothing is under the pointer: the next frame draws the lit region unlit (fm_input_hover_settle). */
+	app->pointer_inside = 0;
+	app->hover_kind = FM_HIT_NONE;
+	app->hover_index = -1;
+	app->hover_moved = 1;
+}
+
+/*
+ * Turns the change of the region under the pointer since the last frame
+ * into the parts the next frame draws: the region lit when that frame was
+ * drawn and the one lit now, and only those of them that light under the
+ * pointer (BUG-226).  The regions crossed in between are not drawn: the
+ * pointer crossing a pane while a slow frame was drawn made the next one
+ * draw every row it crossed (2026-10-12, the Pi 4).  Called once before
+ * each frame is decided.
+ */
+void
+fm_input_hover_settle(
+	struct fm_app *app)
+{
+	/* No change since the last frame. */
+	if (app->hover_moved == 0)
+		return;
+	app->hover_moved = 0;
+
+	/* Back on the region lit when drawn: nothing to draw. */
+	if (app->hover_kind == app->drawn_hover_kind && app->hover_index == app->drawn_hover_index)
+		return;
+
+	/* The region lit then goes dark, the one under the pointer now lights. */
+	input_hover_damage(app, app->drawn_hover_kind, app->drawn_hover_index);
+	input_hover_damage(app, app->hover_kind, app->hover_index);
 }
 
 /*
@@ -579,6 +598,66 @@ fm_input_location(
 	app->control_focus = FM_CONTROL_PATH;
 	app->control_focus_serial++;
 	app->dirty = 1;
+}
+
+/*
+ * Tells whether a kind of region draws differently under the pointer (1)
+ * or the same (0): the content's ground, a section's title in the
+ * sidebar, an overlay's ground and a column's edge do not light.
+ */
+static int
+input_hover_lit(
+	unsigned kind)
+{
+	/* The kinds that do not light; every other kind does. */
+	switch (kind) {
+	case FM_HIT_NONE:
+	case FM_HIT_CONTENT:
+	case FM_HIT_SECTION:
+	case FM_HIT_OVERLAY:
+	case FM_HIT_COLUMN_EDGE:
+		return 0;
+	default:
+		break;
+	}
+
+	/* Reports that it lights. */
+	return 1;
+}
+
+/*
+ * Has a region of the last frame that lit or goes dark under the pointer
+ * drawn again alone, unless the whole frame is due anyway; a region the
+ * last frame does not know has the whole frame drawn.
+ */
+static void
+input_hover_damage(
+	struct fm_app *app,
+	unsigned kind,
+	int index)
+{
+	struct kl_rect rect;
+	int lit;
+	int found;
+
+	/* The whole frame covers it already. */
+	if (app->dirty != 0)
+		return;
+
+	/* A region that draws the same under the pointer needs nothing. */
+	lit = input_hover_lit(kind);
+	if (lit == 0)
+		return;
+
+	/* Where the last frame drew it; without it, the whole frame. */
+	found = fm_ui_hit_rect(app, kind, index, &rect);
+	if (found == 0) {
+		app->dirty = 1;
+		return;
+	}
+
+	/* Only it is drawn again. */
+	fm_ui_damage(app, &rect);
 }
 
 /* Tells whether a rectangle holds a point. */

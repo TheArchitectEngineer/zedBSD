@@ -70,12 +70,17 @@
 
 static void ui_layout(struct fm_app *app);
 static void ui_clear_rect(struct kl_canvas *canvas, const struct kl_rect *rect);
+static void ui_draw_frame(struct fm_app *app, struct kl_canvas *canvas, const struct kl_rect *part);
+static int ui_damage_near(const struct kl_rect *first, const struct kl_rect *second);
+static void ui_rect_union(struct kl_rect *into, const struct kl_rect *rect);
 static void ui_draw_sidebar(struct fm_app *app, struct kl_canvas *canvas);
 static int ui_place_current(struct fm_app *app, const struct fm_place *place);
 static const char *ui_location_kind_name(unsigned kind);
 static void ui_leave(struct fm_tab *tab);
 static void ui_mark_cut(struct fm_tab *tab);
 static void ui_select_paths(struct fm_app *app, struct fm_tab *tab);
+static uint64_t ui_listing_digest(const struct fm_tab *tab);
+static uint64_t ui_digest_bytes(uint64_t digest, const void *bytes, size_t length);
 
 /*
  * Sets up the file manager: the home folder, the sidebar, one tab showing
@@ -109,6 +114,7 @@ fm_app_init(
 	app->focused = 1;
 	app->dirty = 1;
 	app->hover_index = -1;
+	app->drawn_hover_index = -1;
 	app->press_index = -1;
 	app->drag_hit_index = -1;
 	app->drag_place = -1;
@@ -238,10 +244,7 @@ fm_ui_event(
 		break;
 	case FM_EVENT_LEAVE:
 		fm_widgets_input(app, event);
-		app->pointer_inside = 0;
-		app->hover_kind = FM_HIT_NONE;
-		app->hover_index = -1;
-		app->dirty = 1;
+		fm_input_leave(app);
 		fm_scrollbar_leave(app);
 		break;
 	case FM_EVENT_KEY:
@@ -287,6 +290,8 @@ fm_ui_tick(
 	struct fm_tab *tab;
 	struct fm_visit *visit;
 	struct stat status;
+	uint64_t before;
+	uint64_t after;
 	int made;
 	int error;
 
@@ -342,9 +347,17 @@ fm_ui_tick(
 	if (error != 0 || status.st_mtime == tab->listing.modified)
 		return;
 
-	/* Reads it again. */
+	/*
+	 * Reads it again, and draws it again only when its items or the cursor
+	 * differ from before: a file made and removed again (a hidden one, or
+	 * one the list does not show) moves the folder's time but nothing
+	 * shown.
+	 */
+	before = ui_listing_digest(tab);
 	fm_ui_reload(app, tab);
-	app->dirty = 1;
+	after = ui_listing_digest(tab);
+	if (after != before)
+		app->dirty = 1;
 }
 
 /*
@@ -355,73 +368,52 @@ fm_ui_draw(
 	struct fm_app *app,
 	struct kl_canvas *canvas)
 {
-	struct kl_rect whole;
-	int partial;
+	struct kl_rect parts[FM_DAMAGE_PARTS];
+	int part_count;
+	int index;
 
 	/*
 	 * Only the damage is drawn when nothing else changed (BUG-221,
-	 * BUG-226): every call draws, clipped to it, and the rest of the frame
-	 * keeps the pixels of the last one.
+	 * BUG-226): every call draws, clipped to each part in turn, and the
+	 * rest of the frame keeps the pixels of the last one.
 	 */
-	partial = 0;
-	if (app->dirty == 0 && app->damage_pending != 0)
-		partial = 1;
+	part_count = 0;
+	if (app->dirty == 0)
+		part_count = app->damage_pending;
+	for (index = 0; index < part_count; index++)
+		parts[index] = app->damage[index];
 	app->damage_pending = 0;
 
-	/* What the frame changes, for its showing (BUG-221): the damage, or all of it. */
-	app->frame_partial = partial;
+	/* What the frame changes, for its showing (BUG-221): the box round the parts, or all of it. */
+	app->frame_partial = 0;
 	memset(&app->frame_part, 0, sizeof(app->frame_part));
-	if (partial != 0)
-		app->frame_part = app->damage;
+	if (part_count > 0)
+		app->frame_partial = 1;
+	for (index = 0; index < part_count; index++)
+		fm_ui_frame_part(app, &parts[index], 0);
 
-	/* The panels' places at this size, and no clickable region yet. */
+	/* The parts themselves, which the frame is shown by. */
+	app->frame_part_count = (unsigned)part_count;
+	for (index = 0; index < part_count; index++)
+		app->frame_parts[index] = parts[index];
+
+	/* The frame is drawn with the region under the pointer now lit (fm_input_hover_settle). */
+	app->drawn_hover_kind = app->hover_kind;
+	app->drawn_hover_index = app->hover_index;
+	app->hover_moved = 0;
+
+	/* The panels' places at this size. */
 	app->width = canvas->width;
 	app->height = canvas->height;
 	ui_layout(app);
-	app->hit_count = 0;
 
-	/* The window's ground: clear on glass (the desktop shows between the panels), else a quiet light gradient. */
-	whole.x = 0;
-	whole.y = 0;
-	whole.width = canvas->width;
-	whole.height = canvas->height;
-	if (partial != 0)
-		kl_canvas_clip_push(canvas, &app->damage);
-	if (app->glass != 0 && partial != 0) {
-		ui_clear_rect(canvas, &app->damage);
-	} else if (app->glass != 0) {
-		kl_canvas_clear(canvas);
+	/* The whole frame, or each part of it clipped to that part. */
+	if (part_count == 0) {
+		ui_draw_frame(app, canvas, NULL);
 	} else {
-		kl_canvas_gradient(canvas, &whole, FM_COLOR_BACKGROUND_TOP, FM_COLOR_BACKGROUND_BOTTOM);
+		for (index = 0; index < part_count; index++)
+			ui_draw_frame(app, canvas, &parts[index]);
 	}
-
-	/* libkeiland's widgets' frame (ui-widgets.c), then the sidebar, when shown. */
-	(void)fm_widgets_begin(app);
-	if (app->show_sidebar != 0)
-		ui_draw_sidebar(app, canvas);
-
-	/* The content's card, drawn by the view of the place, the row of tabs at its top, and the preview beside it when shown. */
-	fm_grid_draw(app, canvas, &app->layout.content);
-	fm_scrollbar_draw(app, canvas);
-	fm_tabs_draw(app, canvas);
-	if (app->show_preview != 0)
-		fm_preview_draw(app, canvas, &app->layout.preview);
-
-	/* The tasks' list at the top right when open (the titlebar's progress control opens it). */
-	if (app->show_tasks != 0 && app->task_count > 0)
-		fm_tasks_draw(app, canvas, app->width - UI_MARGIN - 8, UI_MARGIN + 6);
-
-	/* Quick Look, the information or Help over all of it, and a question over that. */
-	fm_look_draw(app, canvas);
-	fm_info_draw(app, canvas);
-	fm_help_draw(app, canvas);
-	fm_overlay_draw(app, canvas);
-
-	/* Items being dragged, over everything; the widgets' frame ends. */
-	fm_drag_draw(app, canvas);
-	fm_widgets_end(app);
-	if (partial != 0)
-		kl_canvas_clip_pop(canvas);
 
 	/* The frame is up to date. */
 	app->dirty = 0;
@@ -438,8 +430,7 @@ fm_ui_damage(
 	const struct kl_rect *rect)
 {
 	struct kl_rect grown;
-	int right;
-	int bottom;
+	int near;
 
 	/* The region and its margin. */
 	grown.x = rect->x - UI_DAMAGE_MARGIN;
@@ -447,26 +438,36 @@ fm_ui_damage(
 	grown.width = rect->width + 2 * UI_DAMAGE_MARGIN;
 	grown.height = rect->height + 2 * UI_DAMAGE_MARGIN;
 
-	/* The first region is the part. */
+	/* The first region is the first part. */
 	if (app->damage_pending == 0) {
-		app->damage = grown;
+		app->damage[0] = grown;
 		app->damage_pending = 1;
 		return;
 	}
 
-	/* Another widens it to hold both. */
-	right = app->damage.x + app->damage.width;
-	if (grown.x + grown.width > right)
-		right = grown.x + grown.width;
-	bottom = app->damage.y + app->damage.height;
-	if (grown.y + grown.height > bottom)
-		bottom = grown.y + grown.height;
-	if (grown.x < app->damage.x)
-		app->damage.x = grown.x;
-	if (grown.y < app->damage.y)
-		app->damage.y = grown.y;
-	app->damage.width = right - app->damage.x;
-	app->damage.height = bottom - app->damage.y;
+	/* Whether the region is near the first part. */
+	near = ui_damage_near(&app->damage[0], &grown);
+
+	/* A region near the first part widens it; one far from it is a part of its own, or widens the last part without room. */
+	if (near != 0) {
+		ui_rect_union(&app->damage[0], &grown);
+	} else if (app->damage_pending < FM_DAMAGE_PARTS) {
+		app->damage[app->damage_pending] = grown;
+		app->damage_pending++;
+	} else {
+		ui_rect_union(&app->damage[FM_DAMAGE_PARTS - 1], &grown);
+	}
+
+	/* A single part is all there is. */
+	if (app->damage_pending < 2)
+		return;
+
+	/* Two parts that have grown near each other become one. */
+	near = ui_damage_near(&app->damage[0], &app->damage[1]);
+	if (near != 0) {
+		ui_rect_union(&app->damage[0], &app->damage[1]);
+		app->damage_pending = 1;
+	}
 }
 
 /*
@@ -674,18 +675,25 @@ fm_ui_message(
 
 /*
  * Reports how long the main loop may sleep before the file manager has
- * work again: 0 while a thumbnail, an operation or a search is waiting to
- * move on, a short while when a search is about to start, and -1 when
- * nothing waits (only input wakes it).
+ * work again: 0 while a thumbnail a free maker can take, an operation or
+ * a search is waiting to move on, a short while when a search is about to
+ * start or a child makes a picture, and -1 when nothing waits (only input
+ * wakes it).
  */
 int
 fm_ui_wait(
 	struct fm_app *app)
 {
 	int busy;
+	int free_maker;
 
-	/* A thumbnail asked for, an operation, a search walking or a checksum: no sleep. */
-	if (app->thumb_wanted[0][0] != '\0')
+	/*
+	 * A thumbnail asked for that a free maker can take: no sleep.  With
+	 * every maker at work the children are looked at below, every little
+	 * while, until one ends and takes the next.
+	 */
+	free_maker = fm_thumb_maker_free();
+	if (app->thumb_wanted[0][0] != '\0' && free_maker != 0)
 		return 0;
 
 	/* A thumbnail's child running (ws168-p004), or a picture's (ws177-p010): looked at again soon. */
@@ -730,6 +738,52 @@ fm_ui_wait(
 
 	/* Nothing waits. */
 	return -1;
+}
+
+/*
+ * Reports how long the main loop may sleep before fm_ui_tick has timed
+ * work, in milliseconds: the message shown runs out, or the folder shown
+ * is checked for changes (every two seconds).  Returns -1 when neither is
+ * due (only input and the file manager's work wake the loop).
+ */
+int
+fm_ui_due(
+	struct fm_app *app,
+	uint64_t now)
+{
+	const struct fm_visit *visit;
+	struct fm_tab *tab;
+	uint64_t earliest;
+	uint64_t check;
+
+	/* Nothing timed yet. */
+	earliest = UINT64_MAX;
+
+	/* The message shown, until it runs out. */
+	if (app->message[0] != '\0')
+		earliest = app->message_until;
+
+	/* The folder shown, checked two seconds after the last check. */
+	tab = fm_ui_tab(app);
+	visit = &tab->history[tab->history_index];
+	if (visit->location.kind == FM_LOCATION_FOLDER) {
+		check = tab->checked_at + 2000U;
+		if (check < earliest)
+			earliest = check;
+	}
+
+	/* Nothing timed. */
+	if (earliest == UINT64_MAX)
+		return -1;
+
+	/* Due already. */
+	if (earliest <= now)
+		return 0;
+
+	/* Reports the wait, at most a minute (the loop works it out again when it wakes). */
+	if (earliest - now > 60000U)
+		return 60000;
+	return (int)(earliest - now);
 }
 
 /*
@@ -1411,4 +1465,178 @@ ui_clear_rect(
 		row = canvas->pixels + (size_t)y * canvas->stride;
 		memset(row + left, 0, sizeof(row[0]) * (size_t)(right - left));
 	}
+}
+
+/*
+ * Draws the window's frame, all of it (part NULL) or clipped to one part
+ * of the window, the rest keeping the last frame's pixels.
+ */
+static void
+ui_draw_frame(
+	struct fm_app *app,
+	struct kl_canvas *canvas,
+	const struct kl_rect *part)
+{
+	struct kl_rect whole;
+
+	/* The clickable regions are recorded again by this drawing. */
+	app->hit_count = 0;
+
+	/* The window's ground: clear on glass (the desktop shows between the panels), else a quiet light gradient. */
+	whole.x = 0;
+	whole.y = 0;
+	whole.width = canvas->width;
+	whole.height = canvas->height;
+	if (part != NULL)
+		kl_canvas_clip_push(canvas, part);
+	if (app->glass != 0 && part != NULL) {
+		ui_clear_rect(canvas, part);
+	} else if (app->glass != 0) {
+		kl_canvas_clear(canvas);
+	} else {
+		kl_canvas_gradient(canvas, &whole, FM_COLOR_BACKGROUND_TOP, FM_COLOR_BACKGROUND_BOTTOM);
+	}
+
+	/* libkeiland's widgets' frame (ui-widgets.c), then the sidebar, when shown. */
+	(void)fm_widgets_begin(app);
+	if (app->show_sidebar != 0)
+		ui_draw_sidebar(app, canvas);
+
+	/* The content's card, drawn by the view of the place, the row of tabs at its top, and the preview beside it when shown. */
+	fm_grid_draw(app, canvas, &app->layout.content);
+	fm_scrollbar_draw(app, canvas);
+	fm_tabs_draw(app, canvas);
+	if (app->show_preview != 0)
+		fm_preview_draw(app, canvas, &app->layout.preview);
+
+	/* The tasks' list at the top right when open (the titlebar's progress control opens it). */
+	if (app->show_tasks != 0 && app->task_count > 0)
+		fm_tasks_draw(app, canvas, app->width - UI_MARGIN - 8, UI_MARGIN + 6);
+
+	/* Quick Look, the information or Help over all of it, and a question over that. */
+	fm_look_draw(app, canvas);
+	fm_info_draw(app, canvas);
+	fm_help_draw(app, canvas);
+	fm_overlay_draw(app, canvas);
+
+	/* Items being dragged, over everything; the widgets' frame ends. */
+	fm_drag_draw(app, canvas);
+	fm_widgets_end(app);
+	if (part != NULL)
+		kl_canvas_clip_pop(canvas);
+}
+
+/*
+ * Tells whether two damage regions are drawn as one part (1): when they
+ * overlap, or when the box round both is not much larger than the two
+ * together, so one pass over the frame costs less than two.
+ */
+static int
+ui_damage_near(
+	const struct kl_rect *first,
+	const struct kl_rect *second)
+{
+	struct kl_rect box;
+	long box_area;
+	long apart_area;
+
+	/* The box round both, and what the two cover on their own. */
+	box = *first;
+	ui_rect_union(&box, second);
+	box_area = (long)box.width * (long)box.height;
+	apart_area = (long)first->width * (long)first->height + (long)second->width * (long)second->height;
+
+	/* A box at most half again as large as the two is drawn as one. */
+	if (2L * box_area <= 3L * apart_area)
+		return 1;
+
+	/* Reports that they are far apart. */
+	return 0;
+}
+
+/* Widens a rectangle to hold another as well. */
+static void
+ui_rect_union(
+	struct kl_rect *into,
+	const struct kl_rect *rect)
+{
+	int right;
+	int bottom;
+
+	/* The far edges of both. */
+	right = into->x + into->width;
+	if (rect->x + rect->width > right)
+		right = rect->x + rect->width;
+	bottom = into->y + into->height;
+	if (rect->y + rect->height > bottom)
+		bottom = rect->y + rect->height;
+
+	/* The near edges of both, and the size between them. */
+	if (rect->x < into->x)
+		into->x = rect->x;
+	if (rect->y < into->y)
+		into->y = rect->y;
+	into->width = right - into->x;
+	into->height = bottom - into->y;
+}
+
+/*
+ * Works out a digest of what a tab's list shows: each item's name, kind,
+ * size and times, whether it is selected or cut, and the cursor.  Two
+ * readings of a folder with the same digest draw the same.
+ */
+static uint64_t
+ui_listing_digest(
+	const struct fm_tab *tab)
+{
+	const struct fm_entry *entry;
+	uint64_t digest;
+	size_t index;
+
+	/* FNV-1a's starting value, then the reading's outcome and the cursor. */
+	digest = ((uint64_t)0xcbf29ce4U << 32) | 0x84222325U;
+	digest = ui_digest_bytes(digest, &tab->listing.count, sizeof(tab->listing.count));
+	digest = ui_digest_bytes(digest, &tab->listing.error, sizeof(tab->listing.error));
+	digest = ui_digest_bytes(digest, &tab->cursor, sizeof(tab->cursor));
+
+	/* Each item as the list draws it. */
+	for (index = 0; index < tab->listing.count; index++) {
+		entry = &tab->listing.entries[index];
+		if (entry->name != NULL)
+			digest = ui_digest_bytes(digest, entry->name, strlen(entry->name) + 1U);
+		digest = ui_digest_bytes(digest, &entry->size, sizeof(entry->size));
+		digest = ui_digest_bytes(digest, &entry->mode, sizeof(entry->mode));
+		digest = ui_digest_bytes(digest, &entry->modified, sizeof(entry->modified));
+		digest = ui_digest_bytes(digest, &entry->changed, sizeof(entry->changed));
+		digest = ui_digest_bytes(digest, &entry->extra_time, sizeof(entry->extra_time));
+		digest = ui_digest_bytes(digest, &entry->folder, sizeof(entry->folder));
+		digest = ui_digest_bytes(digest, &entry->link, sizeof(entry->link));
+		digest = ui_digest_bytes(digest, &entry->child_count, sizeof(entry->child_count));
+		digest = ui_digest_bytes(digest, &entry->selected, sizeof(entry->selected));
+		digest = ui_digest_bytes(digest, &entry->cut, sizeof(entry->cut));
+	}
+
+	/* Reports the digest. */
+	return digest;
+}
+
+/* Folds bytes into an FNV-1a digest. */
+static uint64_t
+ui_digest_bytes(
+	uint64_t digest,
+	const void *bytes,
+	size_t length)
+{
+	const unsigned char *byte;
+	size_t index;
+
+	/* Each byte, then the FNV prime's multiplication. */
+	byte = bytes;
+	for (index = 0; index < length; index++) {
+		digest ^= (uint64_t)byte[index];
+		digest *= ((uint64_t)0x100U << 32) | 0x1b3U;
+	}
+
+	/* Reports the digest. */
+	return digest;
 }

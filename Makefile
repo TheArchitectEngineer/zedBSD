@@ -214,6 +214,8 @@ CONFIG_DRIVER_BCM2711_GENET ?= $(if $(filter rpi4,$(ZEDBSD_PLATFORM)),y,n)
 # The BCM2711 graphics driver (ws141) is on by default on the Raspberry Pi 4,
 # where it builds; it changes nothing until its later stages exist.
 CONFIG_DRIVER_BCM2711_GPU ?= $(if $(filter rpi4,$(ZEDBSD_PLATFORM)),y,n)
+# The Pi 4's headphone jack (ws207-p002): PWM1 fed by a legacy DMA channel.
+CONFIG_DRIVER_BCM2711_AUDIO ?= $(if $(filter rpi4,$(ZEDBSD_PLATFORM)),y,n)
 # The ACPI driver (WS049) builds on amd64; it stays off at run time when
 # the platform gives no RSDP (hal_get_arch_handoff("acpi.rsdp")).
 CONFIG_DRIVER_ACPI ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
@@ -235,6 +237,8 @@ CONFIG_DRIVER_USB_BT ?= y
 CONFIG_DRIVER_USB_RTL8822BU ?= n
 CONFIG_KERNEL_TEST_CHECKPOINTS ?= n
 CONFIG_PCAT_SERIAL_MIRROR ?= n
+# The Raspberry Pi 4's serial console (the PL011 on GPIO 14 and 15): off by default, the UART then left alone (2026-10-12 user).
+CONFIG_RPI4_SERIAL_CONSOLE ?= n
 CONFIG_INPUT_TEST_INJECT ?= n
 CONFIG_SECURITY_KEY_TEST_LOOPBACK ?= n
 CONFIG_BT_TEST_LOOPBACK ?= n
@@ -585,6 +589,7 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_DRIVER_PCI_INTEL_AX211=$(if $(filter y,$(CONFIG_DRIVER_PCI_INTEL_AX211)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_GENET=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_GENET)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_GPU=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_GPU)),1,0) \
+	-DCONFIG_DRIVER_BCM2711_AUDIO=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_AUDIO)),1,0) \
 	-DCONFIG_DRIVER_ACPI=$(if $(filter y,$(CONFIG_DRIVER_ACPI)),1,0) \
 	-DCONFIG_DRIVER_TYPEC=$(if $(filter y,$(CONFIG_DRIVER_TYPEC)),1,0) \
 	-DCONFIG_DRIVER_PCI_LPSS_I2C=$(if $(filter y,$(CONFIG_DRIVER_PCI_LPSS_I2C)),1,0) \
@@ -607,6 +612,9 @@ ZEDBSD_CONFIG_CPPFLAGS += -DKERN_TEST_CHECKPOINTS
 endif
 ifeq ($(CONFIG_PCAT_SERIAL_MIRROR),y)
 ZEDBSD_CONFIG_CPPFLAGS += -DPCAT_SERIAL_MIRROR
+endif
+ifeq ($(CONFIG_RPI4_SERIAL_CONSOLE),y)
+ZEDBSD_CONFIG_CPPFLAGS += -DRPI4_SERIAL_CONSOLE
 endif
 ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
 ZEDBSD_CONFIG_CPPFLAGS += -DINPUT_TEST_INJECT
@@ -761,7 +769,7 @@ KERN_GPU_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(KERN_GPU_SOURCES))
 
 # The audio framework is built only when an audio hardware backend selects it.
 # Add audio backends to this list.
-KERN_AUDIO_BACKENDS ?= $(CONFIG_DRIVER_PCI_HDA)
+KERN_AUDIO_BACKENDS ?= $(CONFIG_DRIVER_PCI_HDA) $(CONFIG_DRIVER_BCM2711_AUDIO)
 KERN_AUDIO_SOURCES :=
 ifneq ($(filter y,$(KERN_AUDIO_BACKENDS)),)
 KERN_AUDIO_SOURCES := src/drivers/audio/audio.c

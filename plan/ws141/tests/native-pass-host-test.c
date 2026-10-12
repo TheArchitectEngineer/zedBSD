@@ -16,6 +16,7 @@
 
 static void print_image(const char *name, const struct bcm2711_native_pass_image *image);
 static void verify_refusal(struct bcm2711_native_pass *state, struct bcm2711_native_pass_image *images, int expected);
+static uint32_t read_word(const uint8_t *bytes);
 
 /*
  * Exercises complete pass lists, tile geometry and atomic refusal with synthetic independently owned CPU storage.
@@ -69,7 +70,7 @@ main(
 	state.store = 1;
 	state.clear_colour = 0x12345678U;
 	error = bcm2711_native_pass_measure(&state, 2, &sizes);
-	assert(error == 0 && sizes.bin == 246U && sizes.render == 121U && sizes.tile == 41U);
+	assert(error == 0 && sizes.bin == 256U && sizes.render == 121U && sizes.tile == 41U);
 	assert(sizes.pool == state.pool_bytes && sizes.state == 2304U);
 	for (index = 0; index < 2U * BCM2711_NATIVE_BIN_BYTES; index++)
 		images[0].bytes[BCM2711_NATIVE_PASS_BIN_PREFIX + index] = (uint8_t)(index * 17U + 3U);
@@ -84,6 +85,30 @@ main(
 		assert(images[0].bytes[BCM2711_NATIVE_PASS_BIN_PREFIX + index] == (uint8_t)(index * 17U + 3U));
 	for (index = 0; index < 3U; index++)
 		assert(images[index].bytes[images[index].used] == 0xa5);
+
+	/* A TLB copy loads each tile from its source image and stores it to the output at the same coordinates. */
+	state.source = 0x600000U;
+	state.source_pitch = 640U;
+	state.source_bytes = 0x20000U;
+	error = bcm2711_native_pass_encode(&state, 0, &images[0], &images[1], &images[2]);
+	assert(error == 0 && images[2].used == 41U);
+	assert(images[2].bytes[1] == 30 && read_word(images[2].bytes + 10) == state.source);
+	assert(read_word(images[2].bytes + 2) == ((27U << 12) | (640U << 28)) && read_word(images[2].bytes + 6) == 640U >> 4);
+	assert(images[2].bytes[24] == 29 && read_word(images[2].bytes + 33) == state.output);
+	assert(read_word(images[2].bytes + 25) == ((27U << 12) | (576U << 28)));
+
+	/* A short, unaligned or aliased copy source refuses before any list byte changes. */
+	state.source_bytes = 640U * 129U - 1U;
+	verify_refusal(&state, images, ENOSPC);
+	state.source_bytes = 0x20000U;
+	state.source_pitch = 600U;
+	verify_refusal(&state, images, EINVAL);
+	state.source_pitch = 640U;
+	state.source = state.output;
+	verify_refusal(&state, images, EINVAL);
+	state.source = 0;
+	state.source_pitch = 0;
+	state.source_bytes = 0;
 
 	/* No-load clear uses the configured tile colour and complete store/clear sequencing. */
 	state.load = 0;
@@ -252,4 +277,13 @@ verify_refusal(
 
 	/* Succeeded: every active count is zero and every previously owned byte survives the failed attempt. */
 	return;
+}
+
+/* Reads one little-endian native word from a list image. */
+static uint32_t
+read_word(
+	const uint8_t *bytes)
+{
+	/* Reports the word the encoder stored without assuming CPU alignment. */
+	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) | ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }

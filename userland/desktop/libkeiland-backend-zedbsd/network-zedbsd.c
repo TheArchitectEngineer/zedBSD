@@ -11,7 +11,7 @@
  * A watch is one connection to networkd that asked SUBSCRIBE and stays
  * open: networkd writes the state on it at once and again whenever it
  * changes.  The state is the text "net show" prints -- a line an interface,
- * "NAME static|unconfigured online|offline" -- and a last line on the
+ * "NAME static|link-local|unconfigured online|offline" -- and a last line on the
  * Wi-Fi, "wifi state=NAME interface=IF ssid=HEX radios=N scan=N radio=IF".
  *
  * A request (a scan, a join, a disconnect, the Wi-Fi switch) is one more
@@ -1200,7 +1200,7 @@ network_parse_interface(
 	int differs;
 
 	/*
-	 * Reads an interface's line, "NAME static|unconfigured online|offline":
+	 * Reads an interface's line, "NAME static|link-local|unconfigured online|offline":
 	 * the radio's being online, or the first other interface (not the
 	 * loopback) online with an address.
 	 */

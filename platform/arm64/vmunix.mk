@@ -89,13 +89,19 @@ ARM64_KERNEL_SOURCES += src/drivers/ethernet/bcm54213pe.c \
 	src/drivers/platform/rpi4/rpi4-ethernet.c
 endif
 
+# The headphone jack: PWM1 and a legacy DMA channel (ws207-p002).
+ifeq ($(CONFIG_DRIVER_BCM2711_AUDIO),y)
+ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-audio.c \
+	src/drivers/platform/rpi4/rpi4-audio-ring.c
+endif
+
 # USB behind the Pi 4's PCIe (ws048): the core comes with any USB driver.
 ARM64_USB_SOURCES :=
 ifneq ($(filter y,$(CONFIG_DRIVER_PCI_XHCI) $(CONFIG_DRIVER_USB_HID) $(CONFIG_DRIVER_USB_HUB) $(CONFIG_DRIVER_USB_STORAGE) $(CONFIG_DRIVER_USB_CDC_NCM) $(CONFIG_DRIVER_USB_CDC_ECM) $(CONFIG_DRIVER_USB_CCID) $(CONFIG_DRIVER_USB_BT) $(CONFIG_DRIVER_USB_RTL8822BU)),)
 ARM64_USB_SOURCES += src/drivers/usb/usb.c
 endif
 ifeq ($(CONFIG_DRIVER_PCI_XHCI),y)
-ARM64_USB_SOURCES += src/drivers/pci/pci-xhci.c
+ARM64_USB_SOURCES += src/drivers/pci/pci-xhci.c src/drivers/pci/pci-xhci-isoch.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_HID),y)
 ARM64_USB_SOURCES += src/drivers/usb/usb-hid.c src/drivers/generic/hidraw.c src/drivers/generic/hidraw-describe.c src/drivers/generic/hid-report.c src/drivers/generic/hid-digitizer.c src/drivers/generic/hid-touch.c \
@@ -135,7 +141,7 @@ ifeq ($(CONFIG_DRIVER_BCM2711_GPU),y)
 # Native BCM2711 nodes need the common GPU core even without a PCI GPU.
 ARM64_KERNEL_SOURCES += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/gpu.c src/drivers/gpu/gpu-fence.c)
 # The shared Zlib scalar parser has no device or Gen12 code-generation dependencies.
-ARM64_KERNEL_SOURCES += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/i915/render/codec.c)
+ARM64_KERNEL_SOURCES += $(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c src/drivers/gpu/i915/render/codec.c)
 ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/attach.c \
 	src/drivers/gpu/bcm2711/stage.c src/drivers/gpu/bcm2711/fdt-util.c \
 	src/drivers/gpu/bcm2711/firmware.c src/drivers/gpu/bcm2711/display.c \
@@ -145,7 +151,7 @@ ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/attach.c \
 	src/drivers/gpu/bcm2711/v3d-job.c src/drivers/gpu/bcm2711/v3d-diagnostic.c \
 	src/drivers/gpu/bcm2711/cl.c src/drivers/gpu/bcm2711/qpu.c src/drivers/gpu/bcm2711/buffer.c \
 	src/drivers/gpu/bcm2711/shader.c src/drivers/gpu/bcm2711/shader-analyze.c \
-	src/drivers/gpu/bcm2711/shader-lower.c src/drivers/gpu/bcm2711/shader-output.c \
+	src/drivers/gpu/bcm2711/shader-lower.c src/drivers/gpu/bcm2711/shader-output.c src/drivers/gpu/bcm2711/shader-schedule.c \
 	src/drivers/gpu/bcm2711/native-bin.c src/drivers/gpu/bcm2711/native-pass.c src/drivers/gpu/bcm2711/native-colour.c src/drivers/gpu/bcm2711/native-shader.c src/drivers/gpu/bcm2711/native-texture.c src/drivers/gpu/bcm2711/native-storage.c src/drivers/gpu/bcm2711/native-viewport.c \
 	src/drivers/gpu/bcm2711/vulkan-object.c src/drivers/gpu/bcm2711/vulkan-session.c \
 	src/drivers/gpu/bcm2711/vulkan-stream.c src/drivers/gpu/bcm2711/vulkan-dispatch.c src/drivers/gpu/bcm2711/vulkan-device.c src/drivers/gpu/bcm2711/vulkan-sync.c src/drivers/gpu/bcm2711/vulkan-queue.c src/drivers/gpu/bcm2711/vulkan-query.c src/drivers/gpu/bcm2711/vulkan-memory.c src/drivers/gpu/bcm2711/vulkan-resource.c src/drivers/gpu/bcm2711/vulkan-input.c src/drivers/gpu/bcm2711/vulkan-layout.c src/drivers/gpu/bcm2711/vulkan-layout-compat.c src/drivers/gpu/bcm2711/vulkan-descriptor-pool.c src/drivers/gpu/bcm2711/vulkan-descriptor-sets.c src/drivers/gpu/bcm2711/vulkan-descriptor-update.c src/drivers/gpu/bcm2711/vulkan-target.c \

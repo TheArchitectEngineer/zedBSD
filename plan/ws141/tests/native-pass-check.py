@@ -35,7 +35,7 @@ def main():
         "Number of Render Targets": 1})
     bin_prefix += packet("Flush VCD cache") + packet("Start Tile Binning")
     expected = {
-        "load-bin": bin_prefix + bytes((index * 17 + 3) & 255 for index in range(232)) + packet("Flush"),
+        "load-bin": bin_prefix + bytes((index * 17 + 3) & 255 for index in range(242)) + packet("Flush"),
         "clear-bin": bin_prefix + packet("Flush"),
     }
     for load, store, name in ((True, True, "load"), (False, True, "clear"), (False, False, "discard")):

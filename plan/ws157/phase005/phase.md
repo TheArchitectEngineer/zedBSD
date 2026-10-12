@@ -20,7 +20,7 @@ Queue: q835（2026-10-07、P2）
 
 ## 確認（2026-10-07）
 
-- host: `sh plan/ws157/tests/run-host-photos.sh` → PASS 32（取り込んだ library と album 2 つで、p003 の grid・全面・回転・お気に入り・slideshow の確認に加え、
+- host: `sh plan/ws157/tests/run-host-photos.sh`（2026-10-11 削除: 古い期待で FAIL、開発中の試験） → PASS 32（取り込んだ library と album 2 つで、p003 の grid・全面・回転・お気に入り・slideshow の確認に加え、
   album の card（New Album で Waves を作り写真を足す、save の印、card が閉じる）、Import の依頼、新しい view が縮小画像を cache から読む（8 枚））。PNG: `build/review/ws157/host-photos-*.png`（card を含む）。
 - `sh plan/ws157/tests/run-host-photos-db.sh` → PASS。
 - zedBSD: `make ZEDBSD_CONFIG=plan/ws157/tests/config-amd64-photos.mk BUILD=build/ws157-zed build/ws157-zed/bin/photos` warning 0。style-check 0。check-scenarios PASS。
@@ -34,7 +34,7 @@ Queue: q835（2026-10-07、P2）
 
 `apps.photos.browse` の fail（2026-08.tsv の sea.jpg の行に favourite と turn が無い）: `view_turn`・`view_favorite` が `view->save` を立てるが写真の
 `changed` を立てず、`ph_db_save` は changed の写真の月しか書かないので、SAVE error=0 で何も書かれていなかった（helper の待ちの問題ではない）。
-直し: 両方で `photos[photo].changed = 1`。host の試験（`run-host-photos.sh`）に、取り込みの後に保存して changed を消し、R・F の後に changed を確かめる
+直し: 両方で `photos[photo].changed = 1`。host の試験（`run-host-photos.sh`、2026-10-11 削除）に、取り込みの後に保存して changed を消し、R・F の後に changed を確かめる
 check を足した（直しを外すと `FAIL save`、直しで 33 PASS）。zedBSD の build（`build/p2-ci/bin/photos`）warning 0。再試験は T1。
 
 ## q872（2026-10-08 P2）: T1-314 の apps.photos.browse の「no window mapped within 20 s」の切り分け
@@ -42,7 +42,7 @@ check を足した（直しを外すと `FAIL save`、直しで 33 PASS）。zed
 - **原因は試験の image が古かったこと（code の不具合ではない）**。T1-314 の log（`t1/build/t1-305/logs/apps.photos.browse.log`、T1-305 と同じ起動）に `usage: photos [--width=N] [--height=N] [--timeout-s=N] [FILE]` がある。これは p004・p005 の前の Photos の使い方で、`--import` を知らない。だから使い方を出して窓を作らずに終わり、IMPORT の行も出なかった。今の Photos の使い方は `[--import=PATH]`（main.c）。
   - T1-314 の image（`build/aat-t1202`）の photos は、T1 の記録の tree（main b4746472）より前に build された物だった見込み。
 - その後の T1-324（main 1bda8a9f）は同じ scenario で import と窓まで進み、step 5（db の行）で fail した。T1-331（main f3d55d1c）で fail が消えた（needs-person）。p005 は 2026-10-07 に cleared。
-- host: `plan/ws157/tests/run-host-photos.sh` は 2026-10-08 の main で PASS（import-saved・albums・thumb-broken・columns・favorites・broken-whole・import-request）。9 枚の import は host で 1 秒もかからない。
+- host: `plan/ws157/tests/run-host-photos.sh`（2026-10-11 削除: 古い期待で FAIL、開発中の試験） は 2026-10-08 の main で PASS（import-saved・albums・thumb-broken・columns・favorites・broken-whole・import-request）。9 枚の import は host で 1 秒もかからない。
 - helper の窓の待ちは、その後 40 s に延びている（5fda97c5a）。
 - 直す code は無い。**再発の防止の案**: T1 は AAT の image を作る時に、使う tree で全ての package を build し直す（`build/aat-t1202` を使い回すと古い app が残る）。依頼の時、image の tree の SHA と、`/bin/photos --help` のような使い方の行を確かめる。
 

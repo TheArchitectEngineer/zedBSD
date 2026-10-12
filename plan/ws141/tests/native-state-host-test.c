@@ -28,11 +28,18 @@ static struct bcm2711_shader_uniform fixture_uniform;
 static uint8_t raster_bytes[160U * 131U];
 static uint8_t tiled_bytes[34816U + 16U];
 
+/* Two labelings of the same raster, their whole conversions and a partly updated conversion. */
+static uint8_t box_raster[2][160U * 131U];
+static uint8_t box_whole[2][34816U];
+static uint8_t box_tiled[34816U + 16U];
+
 static void print_bytes(const char *name, const uint8_t *bytes, size_t count);
 static void verify_shader(void);
 static void verify_attributes(void);
 static void verify_textures(void);
 static void verify_copy(void);
+static void verify_copy_box(void);
+static void verify_box_case(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 static void unchanged_record(void);
 static void verify_bins(void);
 static void verify_clippers(void);
@@ -52,6 +59,7 @@ main(
 	verify_attributes();
 	verify_textures();
 	verify_copy();
+	verify_copy_box();
 	verify_viewports();
 	verify_clippers();
 	verify_bins();
@@ -112,6 +120,7 @@ verify_shader(
 	programs[1].vpm_output_words = 36;
 	programs[1].starts_final = 1;
 	programs[2].input_count = 32;
+	programs[2].threads = 4;
 	shader.defaults = 0xabcde000U;
 	shader.vpm_bytes = 16384;
 	memset(record_bytes, 0xa5, sizeof(record_bytes));
@@ -319,6 +328,112 @@ verify_copy(
 
 	/* Raster output remains byte-for-byte visible to the independent oracle, including its untouched row padding. */
 	print_bytes("raster", raster_bytes, sizeof(raster_bytes));
+}
+
+/* Checks that a box conversion rewrites exactly the box's whole utiles of an earlier whole conversion. */
+static void
+verify_copy_box(
+	void)
+{
+	uint32_t box[4];
+	uint32_t x;
+	uint32_t y;
+	uint32_t offset;
+	uint32_t index;
+	int error;
+
+	/* Two labelings differ in every visible word; row padding differs too and must never be read. */
+	for (index = 0; index < 2U; index++) {
+		/* Each word names its source x and y and the labeling. */
+		memset(box_raster[index], 0x30 + (int)index, sizeof(box_raster[index]));
+		for (y = 0; y < 131U; y++) {
+			/* One word per visible pixel. */
+			for (x = 0; x < 37U; x++) {
+				offset = y * 160U + x * 4U;
+				box_raster[index][offset] = (uint8_t)x;
+				box_raster[index][offset + 1] = (uint8_t)(index + 1U);
+				box_raster[index][offset + 2] = (uint8_t)y;
+				box_raster[index][offset + 3] = (uint8_t)(0x40U + index);
+			}
+		}
+
+		/* The whole conversions are the oracle's two states. */
+		error = bcm2711_native_texture_copy(37, 131, box_raster[index], 160, sizeof(box_raster[index]), box_whole[index], sizeof(box_whole[index]));
+		assert(error == 0);
+	}
+
+	/* Refused boxes and outputs leave the earlier conversion untouched. */
+	memcpy(box_tiled, box_whole[0], sizeof(box_whole[0]));
+	memset(box_tiled + 34816U, 0xa5, 16U);
+	box[0] = 3;
+	box[1] = 3;
+	box[2] = 3;
+	box[3] = 9;
+	error = bcm2711_native_texture_copy_box(37, 131, box_raster[1], 160, sizeof(box_raster[1]), box_tiled, 34816U, box);
+	assert(error == EINVAL);
+	box[2] = 38;
+	error = bcm2711_native_texture_copy_box(37, 131, box_raster[1], 160, sizeof(box_raster[1]), box_tiled, 34816U, box);
+	assert(error == EINVAL);
+	box[2] = 37;
+	box[3] = 132;
+	error = bcm2711_native_texture_copy_box(37, 131, box_raster[1], 160, sizeof(box_raster[1]), box_tiled, 34816U, box);
+	assert(error == EINVAL);
+	box[3] = 131;
+	error = bcm2711_native_texture_copy_box(37, 131, box_raster[1], 160, sizeof(box_raster[1]), box_tiled, 34815U, box);
+	assert(error == ENOSPC);
+	error = bcm2711_native_texture_copy_box(37, 131, box_raster[1], 160, sizeof(box_raster[1]), box_tiled, 34816U, NULL);
+	assert(error == EINVAL);
+	assert(memcmp(box_tiled, box_whole[0], sizeof(box_whole[0])) == 0);
+
+	/* One pixel, a box across the column boundary and both padded edges, an aligned block, and the whole image. */
+	verify_box_case(5, 9, 6, 10);
+	verify_box_case(30, 120, 37, 131);
+	verify_box_case(8, 16, 16, 24);
+	verify_box_case(0, 0, 37, 131);
+}
+
+/* Updates the first conversion by one box of the second labeling and compares every padded word. */
+static void
+verify_box_case(
+	uint32_t x0,
+	uint32_t y0,
+	uint32_t x1,
+	uint32_t y1)
+{
+	uint32_t box[4];
+	uint32_t x;
+	uint32_t y;
+	uint32_t block;
+	uint32_t offset;
+	uint32_t index;
+	int error;
+
+	/* Starts from the first whole conversion with a canary after it. */
+	memcpy(box_tiled, box_whole[0], sizeof(box_whole[0]));
+	memset(box_tiled + 34816U, 0xa5, 16U);
+	box[0] = x0;
+	box[1] = y0;
+	box[2] = x1;
+	box[3] = y1;
+	error = bcm2711_native_texture_copy_box(37, 131, box_raster[1], 160, sizeof(box_raster[1]), box_tiled, 34816U, box);
+	assert(error == 0);
+
+	/* Every word of the 64-by-136 padded image comes from the second state inside the widened box and the first outside. */
+	for (y = 0; y < 136U; y++) {
+		/* The inverse walker's address of each padded word. */
+		for (x = 0; x < 64U; x++) {
+			block = (x / 32U) * 17U * 4U + (y / 8U) * 4U + (x / 8U) % 4U;
+			offset = block * 256U + ((x / 4U) % 2U) * 64U + ((y / 4U) % 2U) * 128U + (y % 4U) * 16U + (x % 4U) * 4U;
+			index = 0;
+			if (x >= (x0 & ~3U) && x < ((x1 + 3U) & ~3U) && y >= (y0 & ~3U) && y < ((y1 + 3U) & ~3U))
+				index = 1;
+			assert(memcmp(box_tiled + offset, box_whole[index] + offset, 4U) == 0);
+		}
+	}
+
+	/* The bytes after the conversion are never written. */
+	for (index = 34816U; index < sizeof(box_tiled); index++)
+		assert(box_tiled[index] == 0xa5);
 }
 
 /* Confirms complete reservation canaries after every deliberately refused record. */
@@ -649,6 +764,7 @@ verify_bins(
 	state.vertices = 9;
 	state.reverse = 1;
 	state.clockwise = 1;
+	state.blend = 1;
 	state.flat = 0x81000001U;
 	state.noperspective = 0x40000002U;
 	memset(bytes, 0xa5, sizeof(bytes));

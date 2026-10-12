@@ -39,6 +39,7 @@ phone_media_regression(
 	struct kl_image decoded;
 	struct ph_received received;
 	struct ph_received repeated;
+	struct ph_import *import;
 	struct ph_phone_message message;
 	const struct ph_contact *contacts;
 	FILE *mime;
@@ -53,6 +54,10 @@ phone_media_regression(
 	size_t item;
 	size_t got;
 	long contact;
+	uint32_t request;
+	unsigned tries;
+	int listing;
+	int taken;
 	int merged;
 	int error;
 	int same;
@@ -95,8 +100,8 @@ phone_media_regression(
 	assert(same == 0);
 	fclose(saved);
 
-	/* The exact saved original is accepted by the production photo decoder. */
-	error = ph_decode(received.paths[0], &decoded);
+	/* The exact saved original is made a picture by the production path (keiland-preview in its sandbox, ws157-p015). */
+	error = ph_preview(received.paths[0], 480, 0, &decoded);
 	assert(error == 0 && decoded.width == 2 && decoded.height == 3 && decoded.pixels != NULL);
 	kl_image_release(&decoded);
 
@@ -106,6 +111,26 @@ phone_media_regression(
 	same = strcmp(received.paths[0], repeated.paths[0]);
 	assert(same == 0);
 	ph_received_release(&repeated);
+
+	/* ws157-p014: the same import without waiting (a window's way); waiting lists read its answer meanwhile. */
+	error = ph_import_prepare(fileno(mime), &import);
+	assert(error == 0 && import != NULL && import->count == 1U);
+	error = ph_import_begin(system, import);
+	assert(error == 0 && import->request != 0U);
+	taken = 0;
+	for (tries = 0U; tries < 50U && !taken; tries++) {
+		error = kl_system_media_list(system, &listing);
+		assert(error == 0);
+		close(listing);
+		taken = kl_system_media_take(system, &request, &error, &listing);
+	}
+	assert(taken && request == import->request);
+	error = ph_import_finish(import, error, listing, &repeated);
+	assert(error == 0 && repeated.count == 1U);
+	same = strcmp(received.paths[0], repeated.paths[0]);
+	assert(same == 0);
+	ph_received_release(&repeated);
+	ph_import_free(import);
 	fclose(mime);
 
 	/* One message retains the caption and attachment across close/reopen and repeated sync. */
@@ -138,5 +163,5 @@ phone_media_regression(
 	assert(same == 0);
 	ph_store_close();
 	ph_received_release(&received);
-	puts("host-media-receive: PASS (binary, canonical paths, dedup, message reopen)");
+	puts("host-media-receive: PASS (binary, canonical paths, dedup, import without waiting, message reopen)");
 }

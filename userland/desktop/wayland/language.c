@@ -70,8 +70,9 @@ kwl_language_set(
 	if (differs == 0 && server->language_set)
 		return;
 
-	/* Succeeded: the catalogs of the language. */
+	/* Succeeded: the catalogs of the language; App Home's picture shows its names (layer-cache.c). */
 	language_open(server, language, "setting");
+	server->home_picture_stale = 1U;
 }
 
 /*

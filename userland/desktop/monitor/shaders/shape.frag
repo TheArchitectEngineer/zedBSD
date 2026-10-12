@@ -1,5 +1,7 @@
 // zedBSD System Monitor: the shapes -- a solid fill, a plate (a rounded rectangle with its edge and its lit top),
 // a line, a vertical gradient, the area under a graph and a disc (plan/ws134/design.md sections 2.4 and 4.2).
+// The result is premultiplied: each shape works out its straight colour and alpha, and the colour is multiplied by
+// the alpha last, so the pixels are the same as straight-alpha blending gave.
 // Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #version 450
 
@@ -21,7 +23,7 @@ void main()
 	float kind = shape.w;
 	if (kind < 0.5) {
 		// A solid fill.
-		result = color;
+		result = vec4(color.rgb * color.a, color.a);
 	} else if (kind < 1.5) {
 		// A plate: the fill lighter at the top, the edge in the second colour, the top's inner edge lit, the corners smooth.
 		float d = rounded(local, shape.xy, shape.z);
@@ -32,22 +34,27 @@ void main()
 		float lit = clamp(1.0 - abs(local.y + shape.y - 1.5), 0.0, 1.0) * step(abs(local.x), shape.x - shape.z);
 		fill = mix(fill, second.rgb, edge * second.a);
 		fill = fill + vec3(0.06) * lit;
-		result = vec4(fill, color.a * inside);
+		float a = color.a * inside;
+		result = vec4(fill * a, a);
 	} else if (kind < 2.5) {
 		// A line: full within its half width (shape.y less a pixel), fading over the last pixel.
 		float cover = clamp(shape.y - abs(local.y), 0.0, 1.0);
-		result = vec4(color.rgb, color.a * cover);
+		float a = color.a * cover;
+		result = vec4(color.rgb * a, a);
 	} else if (kind < 3.5) {
 		// A vertical gradient from the colour at the top to the second at the bottom.
 		float t = clamp(local.y / (2.0 * shape.y) + 0.5, 0.0, 1.0);
-		result = mix(color, second, t);
+		vec4 straight = mix(color, second, t);
+		result = vec4(straight.rgb * straight.a, straight.a);
 	} else if (kind < 4.5) {
 		// The area under a graph: the colour at the line, fading to the second colour at the bottom.
 		float t = clamp(local.y / (2.0 * shape.y) + 0.5, 0.0, 1.0);
-		result = mix(color, second, t);
+		vec4 straight = mix(color, second, t);
+		result = vec4(straight.rgb * straight.a, straight.a);
 	} else {
 		// A disc of radius shape.x with a soft rim.
 		float d = length(local) - shape.x;
-		result = vec4(color.rgb, color.a * clamp(0.5 - d, 0.0, 1.0));
+		float a = color.a * clamp(0.5 - d, 0.0, 1.0);
+		result = vec4(color.rgb * a, a);
 	}
 }

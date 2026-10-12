@@ -178,7 +178,7 @@ void se_glass_close(struct se_glass *glass);
 /* The presenter (present.c). */
 VkResult se_present_open(struct se_present *present, struct se_window *window);
 VkResult se_present_resize(struct se_present *present, uint32_t width, uint32_t height);
-VkResult se_present_frame(struct se_present *present, const uint32_t *pixels, size_t stride);
+VkResult se_present_frame(struct se_present *present, const uint32_t *pixels, size_t stride, const struct kl_rect *parts, unsigned count);
 void se_present_close(struct se_present *present);
 
 #endif

@@ -23,8 +23,10 @@ static int prepare_clear(struct bcm2711_vulkan_native_pass *pass, const struct b
 static int prepare_target(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_prepared_event *begin);
 static int prepare_target_clear(struct bcm2711_vulkan_native_pass *pass);
 static int collect_draws(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_prepared_event *begin, uint64_t *remaining, const struct bcm2711_vulkan_prepared_event **next);
-static int allocate_storage(struct bcm2711_vulkan_native_pass *pass, uint64_t bytes, uint64_t *remaining, struct bcm2711_native_storage **storage);
+static int allocate_storage(struct bcm2711_vulkan_native_pass *pass, uint64_t bytes, unsigned fill, uint64_t *remaining, struct bcm2711_native_storage **storage);
 static int prepare_lists(struct bcm2711_vulkan_native_pass *pass, uint64_t *remaining);
+static void select_boxes(struct bcm2711_vulkan_native_pass *pass);
+static bool box_add(struct bcm2711_native_pass *state, const uint32_t *box);
 static void prepare_image(struct bcm2711_native_storage *storage, struct bcm2711_native_pass_image *image);
 
 /*
@@ -46,19 +48,9 @@ bcm2711_vulkan_native_pass_create(
 	const struct bcm2711_vulkan_prepared_event **next)
 {
 	struct bcm2711_vulkan_native_pass *created;
-	struct bcm2711_vulkan_native_draw *draw;
 	const struct bcm2711_vulkan_prepared_event *following;
+	struct bcm2711_v3d_perf costs;
 	uint64_t started;
-	uint64_t elapsed;
-	uint64_t since_log;
-	uint64_t texture_ticks;
-	uint64_t copy_ticks;
-	uint64_t program_ticks;
-	uint64_t record_ticks;
-	uint64_t allocation_ticks;
-	uint64_t mapping_ticks;
-	uint64_t clean_ticks;
-	uint32_t index;
 	const char *stage;
 	uint64_t remaining;
 	int error;
@@ -100,58 +92,31 @@ bcm2711_vulkan_native_pass_create(
 		error = collect_draws(created, begin, &remaining, &following);
 	}
 
+	/* The tiles the draws can change, when the pass may leave the others unrendered (ws211-p009). */
+	if (error == 0)
+		select_boxes(created);
+
 	/* Native command storage follows the complete independent draw prefix. */
 	if (error == 0) {
 		stage = "lists";
 		error = prepare_lists(created, &remaining);
 	}
 
-	/* Reports slow preparation before teardown can replace its original failure. */
-	elapsed = clock_ticks() - started;
-	elapsed = kern_ticks_to_ms(elapsed);
-	since_log = kern_ticks_to_ms(started - space->native->hardware.prepare_logged_ticks);
-
-	/* Rate-limit successful slow-pass diagnostics while retaining every preparation failure. */
-	if (error != 0 || (elapsed >= 33U && since_log >= 1000U)) {
-		space->native->hardware.prepare_logged_ticks = started;
-
-		/* Totals completed draws without adding per-draw console output. */
-		texture_ticks = 0;
-		copy_ticks = 0;
-		program_ticks = 0;
-		record_ticks = 0;
-		allocation_ticks = 0;
-		mapping_ticks = 0;
-		clean_ticks = 0;
-		for (draw = created->first; draw != NULL; draw = draw->next) {
-			texture_ticks += draw->texture_ticks;
-			copy_ticks += draw->copy_ticks;
-			program_ticks += draw->program_ticks;
-			record_ticks += draw->record_ticks;
-
-			/* Only original owners count a shared texture's storage costs. */
-			for (index = 0; index < draw->count; index++) {
-				allocation_ticks += draw->storage[index]->allocation_ticks;
-				mapping_ticks += draw->storage[index]->mapping_ticks;
-				clean_ticks += draw->storage[index]->clean_ticks;
-			}
-		}
-
-		/* Slow-pass durations include time preempted by other runnable threads. */
+	/* Reports a refused preparation before teardown can replace its original failure. */
+	if (error != 0) {
+		kern_memset(&costs, 0, sizeof(costs));
+		bcm2711_vulkan_native_pass_costs(created, &costs);
 		kern_logf(
-			"v3d: pass prepare stage=%s error=%d draws=%u bytes=%llu ms=%llu tex=%llu copy=%llu program=%llu record=%llu alloc=%llu map=%llu clean=%llu\n",
+			"v3d: pass prepare stage=%s error=%d draws=%u bytes=%llu ms=%llu tex=%llu copy=%llu alloc=%llu map=%llu\n",
 			stage,
 			error,
 			created->draws,
 			(unsigned long long)created->bytes,
-			(unsigned long long)elapsed,
-			(unsigned long long)kern_ticks_to_ms(texture_ticks),
-			(unsigned long long)kern_ticks_to_ms(copy_ticks),
-			(unsigned long long)kern_ticks_to_ms(program_ticks),
-			(unsigned long long)kern_ticks_to_ms(record_ticks),
-			(unsigned long long)kern_ticks_to_ms(allocation_ticks),
-			(unsigned long long)kern_ticks_to_ms(mapping_ticks),
-			(unsigned long long)kern_ticks_to_ms(clean_ticks));
+			(unsigned long long)kern_ticks_to_ms(clock_ticks() - started),
+			(unsigned long long)kern_ticks_to_ms(costs.texture_ticks),
+			(unsigned long long)kern_ticks_to_ms(costs.texel_copy_ticks),
+			(unsigned long long)kern_ticks_to_ms(costs.allocation_ticks),
+			(unsigned long long)kern_ticks_to_ms(costs.mapping_ticks));
 	}
 
 	/* Preparation never launched DMA; each owner retires once even when a late translation teardown fails. */
@@ -278,6 +243,8 @@ bcm2711_vulkan_native_pass_release(
 	struct bcm2711_vulkan_native_pass *owned;
 	struct bcm2711_vulkan_native_draw *draw;
 	struct bcm2711_vulkan_native_draw *next;
+	struct bcm2711_v3d_perf *perf;
+	uint64_t started;
 	uint32_t index;
 	int first;
 	int error;
@@ -296,6 +263,8 @@ bcm2711_vulkan_native_pass_release(
 	/* The whole root is consumed once; failed mapping teardown is held independently by the native address space. */
 	*pass = NULL;
 	first = 0;
+	started = clock_ticks();
+	perf = &owned->space->native->hardware.perf;
 	draw = owned->first;
 	while (draw != NULL) {
 		/* Preserve the linked successor before consuming each complete independent draw. */
@@ -303,8 +272,13 @@ bcm2711_vulkan_native_pass_release(
 		error = bcm2711_vulkan_native_draw_release(&draw, true);
 		if (first == 0 && error != 0)
 			first = error;
+		perf->released_draws++;
 		draw = next;
 	}
+	error = bcm2711_vulkan_native_draw_pool_release(&owned->draw_pool);
+	if (first == 0 && error != 0)
+		first = error;
+	perf->release_draw_ticks += clock_ticks() - started;
 
 	/* Every command/tile/overflow owner retires even if an earlier draw teardown failed. */
 	for (index = 0; index < owned->count; index++) {
@@ -320,6 +294,13 @@ bcm2711_vulkan_native_pass_release(
 			first = error;
 	}
 
+	/* A TLB copy's source hold retires with the output, after the copy's DMA stopped. */
+	if (owned->source != NULL) {
+		error = bcm2711_v3d_memory_release(owned->space, owned->source);
+		if (first == 0 && error != 0)
+			first = error;
+	}
+
 	/* Only the consumed CPU root disappears; uncertain failed-unmap storage remains native-space owned. */
 	kern_free(owned);
 	if (first != 0)
@@ -327,6 +308,58 @@ bcm2711_vulkan_native_pass_release(
 
 	/* Succeeded: all independent references of the complete pass have retired. */
 	return 0;
+}
+
+/*
+ * Adds the diagnostic preparation costs of every draw of one pass to a report.
+ *
+ * Only original owners count a shared texture's storage costs, so borrowed
+ * uploads are not counted twice.  The caller holds the controller mutex.
+ */
+void
+bcm2711_vulkan_native_pass_costs(
+	const struct bcm2711_vulkan_native_pass *pass,
+	struct bcm2711_v3d_perf *perf)
+{
+	const struct bcm2711_vulkan_native_draw *draw;
+	uint32_t index;
+
+	/* Totals the draws in their linked order without adding per-draw console output. */
+	for (draw = pass->first; draw != NULL; draw = draw->next) {
+		perf->texture_ticks += draw->texture_ticks;
+		perf->texel_copy_ticks += draw->copy_ticks;
+		perf->program_ticks += draw->program_ticks;
+		perf->record_ticks += draw->record_ticks;
+		perf->snapshot_hits += draw->snapshot_hits;
+		perf->snapshot_fills += draw->snapshot_fills;
+		perf->snapshot_updates += draw->snapshot_updates;
+		perf->mapped_textures += draw->mapped_textures;
+		perf->private_textures += draw->private_textures;
+		perf->mapped_bytes += draw->mapped_bytes;
+		if ((uint64_t)(draw->largest_size >> 16) * (draw->largest_size & 0xffffU) >
+		    (uint64_t)(perf->largest_size >> 16) * (perf->largest_size & 0xffffU)) {
+			perf->largest_size = draw->largest_size;
+			perf->largest_kind = draw->largest_kind;
+		}
+
+		/* Each storage owner reports its own allocation, translation and cache clean. */
+		for (index = 0; index < draw->count; index++) {
+			perf->allocation_ticks += draw->storage[index]->allocation_ticks;
+			perf->mapping_ticks += draw->storage[index]->mapping_ticks;
+			perf->clean_ticks += draw->storage[index]->clean_ticks;
+		}
+	}
+
+	/* Counts the pass's command, tile and overflow storage with the draws' inputs. */
+	for (index = 0; index < pass->count; index++) {
+		perf->allocation_ticks += pass->storage[index]->allocation_ticks;
+		perf->mapping_ticks += pass->storage[index]->mapping_ticks;
+		perf->clean_ticks += pass->storage[index]->clean_ticks;
+	}
+
+	/* Records the pass's draws and staged bytes. */
+	perf->draws += pass->draws;
+	perf->staged_bytes += pass->bytes;
 }
 
 /* Retains the actual coherent output view and copies immutable numerical area/lifecycle state without modifying any target sample. */
@@ -517,7 +550,7 @@ collect_draws(
 		}
 
 		/* Complete native draw preparation occurs at FIFO execution after preceding GPU output becomes CPU-visible. */
-		error = bcm2711_vulkan_native_draw_create(pass->space, event, remaining, pass->first, &draw);
+		error = bcm2711_vulkan_native_draw_create(pass->space, event, remaining, pass->first, &pass->draw_pool, &draw);
 		if (error != 0)
 			return error;
 
@@ -548,6 +581,7 @@ static int
 allocate_storage(
 	struct bcm2711_vulkan_native_pass *pass,
 	uint64_t bytes,
+	unsigned fill,
 	uint64_t *remaining,
 	struct bcm2711_native_storage **storage)
 {
@@ -563,7 +597,7 @@ allocate_storage(
 	/* Every physical page, including command padding and overflow reserves, consumes the shared job budget. */
 	if (pass->count == BCM2711_VULKAN_PASS_STORAGE || padded > *remaining)
 		return ENOMEM;
-	error = bcm2711_native_storage_create(pass->space, bytes, storage);
+	error = bcm2711_native_storage_create_as(pass->space, bytes, fill, storage);
 	if (error != 0)
 		return error;
 	pass->storage[pass->count] = *storage;
@@ -573,6 +607,104 @@ allocate_storage(
 
 	/* Succeeded: every complete physical/mapped owner is reachable from the whole pass before bytes are published. */
 	return 0;
+}
+
+/*
+ * Narrows a pass that loads its own output to the tiles its draws' clip
+ * windows meet (ws211-p009).
+ *
+ * Every other tile would be loaded and stored back unchanged: no draw
+ * writes a pixel outside its window, and a partial clear was written to
+ * the image before the launch.  A pass that clears natively, or whose
+ * windows need more boxes than the pass holds, renders every tile of its
+ * rectangle as before.
+ */
+static void
+select_boxes(
+	struct bcm2711_vulkan_native_pass *pass)
+{
+	const struct bcm2711_vulkan_native_draw *draw;
+	uint32_t box[4];
+	bool added;
+
+	/* Only a pass whose tiles start from its own output can leave a tile as it is. */
+	pass->state.box_count = 0;
+	if (pass->state.load == 0 || pass->state.source != 0)
+		return;
+
+	/* Each draw's window, as the tiles it covers inside the pass's rectangle. */
+	for (draw = pass->first; draw != NULL; draw = draw->next) {
+		/* A window with no pixel draws nothing. */
+		if (draw->window[2] == 0 || draw->window[3] == 0)
+			continue;
+
+		/* The window's first and last tiles, kept inside the rectangle. */
+		box[0] = draw->window[0] / 64U;
+		box[1] = draw->window[1] / 64U;
+		box[2] = (draw->window[0] + draw->window[2] - 1U) / 64U;
+		box[3] = (draw->window[1] + draw->window[3] - 1U) / 64U;
+		if (box[0] < pass->state.first_x)
+			box[0] = pass->state.first_x;
+		if (box[1] < pass->state.first_y)
+			box[1] = pass->state.first_y;
+		if (box[2] > pass->state.last_x)
+			box[2] = pass->state.last_x;
+		if (box[3] > pass->state.last_y)
+			box[3] = pass->state.last_y;
+		if (box[0] > box[2] || box[1] > box[3])
+			continue;
+
+		/* Too many different boxes: every tile, as before. */
+		added = box_add(&pass->state, box);
+		if (!added) {
+			pass->state.box_count = 0;
+			return;
+		}
+	}
+}
+
+/*
+ * Adds a tile box to a pass's boxes: nothing when one holds it already,
+ * the boxes it holds replaced by it.  Returns false when no room is left.
+ */
+static bool
+box_add(
+	struct bcm2711_native_pass *state,
+	const uint32_t *box)
+{
+	uint32_t index;
+
+	/* A box that holds it already. */
+	for (index = 0; index < state->box_count; index++) {
+		if (state->boxes[index][0] <= box[0] &&
+		    state->boxes[index][1] <= box[1] &&
+		    state->boxes[index][2] >= box[2] &&
+		    state->boxes[index][3] >= box[3])
+			return true;
+	}
+
+	/* The boxes it holds are taken out, the last moved into each one's place. */
+	index = 0;
+	while (index < state->box_count) {
+		if (box[0] <= state->boxes[index][0] &&
+		    box[1] <= state->boxes[index][1] &&
+		    box[2] >= state->boxes[index][2] &&
+		    box[3] >= state->boxes[index][3]) {
+			state->box_count--;
+			kern_memcpy(state->boxes[index], state->boxes[state->box_count], sizeof(state->boxes[index]));
+			continue;
+		}
+		index++;
+	}
+
+	/* No room for another box. */
+	if (state->box_count == BCM2711_NATIVE_PASS_BOXES)
+		return false;
+
+	/* Succeeded: the box is the pass's. */
+	kern_memcpy(state->boxes[state->box_count], box, sizeof(state->boxes[0]));
+	state->box_count++;
+	return true;
 }
 
 /* Allocates, assembles and cleans every native list/binning/overflow input before publishing the complete CL job. */
@@ -598,24 +730,25 @@ prepare_lists(
 		return error;
 
 	/* Three independent list images precede the pool and tile state in the fixed whole-pass owner vector. */
-	error = allocate_storage(pass, sizes.bin, remaining, &storage);
+	error = allocate_storage(pass, sizes.bin, BCM2711_NATIVE_STORAGE_ZEROED, remaining, &storage);
 	if (error != 0)
 		return error;
 	prepare_image(storage, &bin);
-	error = allocate_storage(pass, sizes.render, remaining, &storage);
+	error = allocate_storage(pass, sizes.render, BCM2711_NATIVE_STORAGE_ZEROED, remaining, &storage);
 	if (error != 0)
 		return error;
 	prepare_image(storage, &render);
-	error = allocate_storage(pass, sizes.tile, remaining, &storage);
+	error = allocate_storage(pass, sizes.tile, BCM2711_NATIVE_STORAGE_ZEROED, remaining, &storage);
 	if (error != 0)
 		return error;
 	prepare_image(storage, &tile);
-	error = allocate_storage(pass, sizes.pool, remaining, &storage);
+	/* The binner writes the tile lists it later reads into the pool; a reused pool is not zeroed (ws141-p016 (b)). */
+	error = allocate_storage(pass, sizes.pool, BCM2711_NATIVE_STORAGE_WRITTEN, remaining, &storage);
 	if (error != 0)
 		return error;
 	pass->state.pool = storage->view->address;
 	pass->state.pool_bytes = (uint32_t)storage->view->bytes;
-	error = allocate_storage(pass, sizes.state, remaining, &storage);
+	error = allocate_storage(pass, sizes.state, BCM2711_NATIVE_STORAGE_ZEROED, remaining, &storage);
 	if (error != 0)
 		return error;
 	pass->state.state = storage->view->address;
@@ -641,7 +774,8 @@ prepare_lists(
 	/* Four independently mapped overflow reserves support supervised native binning without allocation in IRQ service. */
 	job = &pass->job.command.cl;
 	for (index = 0; index < 4U; index++) {
-		error = allocate_storage(pass, 256U * 1024U, remaining, &storage);
+		/* The binner reads only what it wrote into an overflow reserve; a reused one is not zeroed (ws141-p016 (b)). */
+		error = allocate_storage(pass, 256U * 1024U, BCM2711_NATIVE_STORAGE_WRITTEN, remaining, &storage);
 		if (error != 0)
 			return error;
 		job->overflow[index].address = storage->view->address;

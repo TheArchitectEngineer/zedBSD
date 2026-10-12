@@ -136,7 +136,7 @@ static int volume_in_popup(int32_t x, int32_t y);
 static unsigned volume_slider_value(int32_t x);
 static int32_t volume_slider_top(void);
 static int32_t volume_mute_top(void);
-static void volume_draw_switch(struct kwl_server *server, VkCommandBuffer command, int32_t right, int32_t middle, unsigned on, float fade);
+static void volume_draw_switch(struct kwl_server *server, struct kwl_list *command, int32_t right, int32_t middle, unsigned on, float fade);
 
 /*
  * Reads what audiod has reported since the last tick, and sends a volume a
@@ -391,7 +391,7 @@ kwl_volume_audio_state(
 void
 kwl_volume_draw_icon(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t top,
 	const float *ink)
@@ -450,7 +450,7 @@ kwl_volume_draw_icon(
 void
 kwl_volume_draw_popup(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
@@ -1057,7 +1057,7 @@ volume_mute_top(
 static void
 volume_draw_switch(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t right,
 	int32_t middle,
 	unsigned on,

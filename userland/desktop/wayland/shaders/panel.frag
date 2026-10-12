@@ -24,7 +24,9 @@ layout(location = 0) out vec4 result;
 // The modes are whole numbers in a float, compared in ranges (an integer
 // chain of comparisons becomes an OpSwitch, which i915's native compiler
 // does not take): 0 glass, 1 shadow, 2 image, 3 solid, 4 ring, 5 text, 6 blur.
-// Glass in the dark appearance is mode -1 (ws089-p017, glass.c).
+// Glass in the dark appearance is mode -1 (ws089-p017, glass.c); its own
+// variant is KWL_PANEL_MODE 7 (ws211-p011), as light glass leaves out its
+// darkening.
 
 // The least brightness (Rec. 709 luma of the stored colour) of white glass
 // (ws099-p005, the criterion C7): over a dark wallpaper the glass is
@@ -57,25 +59,31 @@ void main()
 	vec4 colour;
 
 	// One exit, with no early return (an early return becomes an OpSwitch).
-#if !defined(KWL_PANEL_MODE) || KWL_PANEL_MODE == 0
+#if !defined(KWL_PANEL_MODE) || KWL_PANEL_MODE == 0 || KWL_PANEL_MODE == 7
 #if !defined(KWL_PANEL_MODE)
 	if (mode < 0.5) {
 #endif
 		// Frosted glass: the blurred wallpaper under the panel, whitened, with a bright edge.
+		// The values that are the same for the whole shape come in texture
+		// (glass.c, ws211-p011), as glass samples by position, not texcoord:
+		// x whether the glass is white (its colour 0.9 or more in every
+		// channel), y whether it is dark glass (mode -1), z the sheen from the
+		// top (none on flat glass, shape.z 1), w one over the box's height.
 		vec3 under = texture(image, point / panel.screen.xy).rgb;
 		vec3 glass = mix(under, panel.color.rgb, panel.color.a);
 		float luma = dot(glass, vec3(0.2126, 0.7152, 0.0722));
-		float white = step(0.9, min(panel.color.r, min(panel.color.g, panel.color.b)));
-		float lift = white * clamp((GLASS_LEAST_LUMA - luma) / max(1.0 - luma, 0.001), 0.0, 1.0);
+		float lift = panel.texture.x * clamp((GLASS_LEAST_LUMA - luma) / max(1.0 - luma, 0.001), 0.0, 1.0);
 		glass = mix(glass, vec3(1.0), lift);
-		float dark = step(mode, -0.5);
-		float shade = dark * clamp((luma - GLASS_MOST_LUMA) / max(luma, 0.001), 0.0, 1.0);
+#if !defined(KWL_PANEL_MODE) || KWL_PANEL_MODE == 7
+		// Only dark glass is darkened (mode 7 is the dark glass of mode 0).
+		float shade = panel.texture.y * clamp((luma - GLASS_MOST_LUMA) / max(luma, 0.001), 0.0, 1.0);
 		glass = mix(glass, vec3(0.0), shade);
-		float depth = clamp((point.y - panel.box.y) / max(panel.box.w, 1.0), 0.0, 1.0);
+#endif
+		float depth = clamp((point.y - panel.box.y) * panel.texture.w, 0.0, 1.0);
 		float edge = clamp(1.0 - abs(distance + 1.0), 0.0, 1.0);
 
-		// A sheen from the top, except on flat glass (shape.z 1: a window's panels).
-		glass += vec3(0.05) * (1.0 - depth) * (1.0 - clamp(panel.shape.z, 0.0, 1.0));
+		// A sheen from the top, except on flat glass (a window's panels).
+		glass += vec3(panel.texture.z) * (1.0 - depth);
 		glass = mix(glass, vec3(1.0), edge * panel.screen.z);
 		colour = vec4(glass * cover, cover);
 #endif

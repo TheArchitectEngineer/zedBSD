@@ -132,10 +132,10 @@ static void status_slider_place(const struct status_row *row, int32_t *left, int
 static unsigned status_slider_value(const struct status_row *row, int32_t x);
 static const struct status_row *status_sound_row(void);
 static void status_log_layout(void);
-static void status_draw_row(struct kwl_server *server, VkCommandBuffer command, const struct status_row *row);
-static void status_draw_switch_row(struct kwl_server *server, VkCommandBuffer command, const struct status_row *row, const char *name, const char *state, unsigned on, unsigned usable);
-static void status_draw_sound(struct kwl_server *server, VkCommandBuffer command, const struct status_row *row);
-static void status_draw_switch(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t y, unsigned on, float fade);
+static void status_draw_row(struct kwl_server *server, struct kwl_list *command, const struct status_row *row);
+static void status_draw_switch_row(struct kwl_server *server, struct kwl_list *command, const struct status_row *row, const char *name, const char *state, unsigned on, unsigned usable);
+static void status_draw_sound(struct kwl_server *server, struct kwl_list *command, const struct status_row *row);
+static void status_draw_switch(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t y, unsigned on, float fade);
 
 /*
  * Records where a bar's status pill is, as the bar draws it: its left, its
@@ -171,7 +171,7 @@ kwl_status_panel_place(
 void
 kwl_status_panel_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	struct glass_shape shape;
 	unsigned index;
@@ -798,7 +798,7 @@ status_log_layout(
 static void
 status_draw_row(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct status_row *row)
 {
 	static const float card[4] = { 1.0f, 1.0f, 1.0f, 0.55f };
@@ -860,7 +860,7 @@ status_draw_row(
 static void
 status_draw_switch_row(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct status_row *row,
 	const char *name,
 	const char *state,
@@ -894,7 +894,7 @@ status_draw_switch_row(
 static void
 status_draw_sound(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct status_row *row)
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
@@ -962,7 +962,7 @@ status_draw_sound(
 static void
 status_draw_switch(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t y,
 	unsigned on,

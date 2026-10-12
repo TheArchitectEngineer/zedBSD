@@ -66,6 +66,28 @@
 /* The first wl_output global name of a head, past every name of the fixed globals (protocol.c). */
 #define HEADS_GLOBAL_FIRST	1000U
 
+/*
+ * A warp of the pointer off an output going away (heads_evacuate): the
+ * output and its rectangle before it went, and where the warp says whether
+ * the pointer was on it and carried.
+ */
+struct heads_pointer_carry {
+	unsigned slot;
+	struct kwl_plane_rect from;
+	unsigned *carried;
+};
+
+/*
+ * A warp of the pointer along with the heads that moved
+ * (heads_windows_follow): the outputs' rectangles before and after, and
+ * whether everything goes to the anchor (the mirror chosen).
+ */
+struct heads_pointer_shift {
+	const struct kwl_plane_rect *before;
+	const struct kwl_plane_rect *after;
+	unsigned leave;
+};
+
 static int heads_open(struct kwl_server *server, struct kwl_head *head, VkDisplayKHR display, const char *name);
 static void heads_close(struct kwl_server *server, struct kwl_head *head);
 static VkResult heads_targets(struct kwl_compose *compose, struct kwl_head *head);
@@ -77,15 +99,18 @@ static unsigned heads_rects(struct kwl_server *server, const struct kwl_head *sk
 static int heads_needs_frame(struct kwl_server *server, const struct kwl_head *head);
 static unsigned heads_shows(struct kwl_server *server, const struct kwl_head *head);
 static unsigned heads_windows(struct kwl_server *server, unsigned slot, struct kwl_object **windows, unsigned capacity);
-static void heads_record_mirror(struct kwl_server *server, VkCommandBuffer command, VkImage source, struct kwl_head *head);
-static void heads_record_extended(struct kwl_server *server, VkCommandBuffer command, struct kwl_head *head);
-static void heads_barrier(VkCommandBuffer command, VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags source_access, VkAccessFlags destination_access, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
+static void heads_record_mirror(struct kwl_server *server, struct kwl_list *command, VkImage source, struct kwl_head *head);
+static void heads_record_extended(struct kwl_server *server, struct kwl_list *command, struct kwl_head *head);
+static void heads_barrier(struct kwl_list *command, VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags source_access, VkAccessFlags destination_access, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
 static int heads_path(char *path, size_t size, int folder);
 static int heads_save(const struct kwl_display_config *config);
 static void heads_mkdir(char *folder);
 static void heads_changed(struct kwl_server *server);
 static void heads_evacuate(struct kwl_server *server, unsigned slot);
+static void heads_sync_parked(struct kwl_server *server);
 static void heads_windows_follow(struct kwl_server *server, const struct kwl_plane_rect *before, unsigned leave);
+static void heads_pointer_evacuate(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
+static void heads_pointer_follow(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
 static void heads_window_place(struct kwl_server *server, struct kwl_object *window, const struct kwl_plane_rect *from, const struct kwl_plane_rect *to, unsigned slot, const char *why);
 static int heads_is_window(const struct kwl_object *object);
 static void heads_redraw(struct kwl_server *server);
@@ -150,6 +175,19 @@ kwl_heads_config_load(
  */
 void
 kwl_heads_sync(
+	struct kwl_server *server)
+{
+	/* The render thread parked, as the heads' swapchains change (ws213-p004). */
+	if (server->compose == NULL)
+		return;
+	kwl_compose_park(server);
+	heads_sync_parked(server);
+	kwl_compose_unpark(server);
+}
+
+/* Brings the heads in line with the displays, the render thread parked (kwl_heads_sync). */
+static void
+heads_sync_parked(
 	struct kwl_server *server)
 {
 	struct kwl_compose *compose;
@@ -306,22 +344,61 @@ kwl_heads_lost(
 }
 
 /*
- * Acquires an image of each head the frame draws: every head in the
- * mirror mode, an extended head that is to be drawn again.  An image not
- * ready now leaves the head to the next frame; a display gone marks the
- * head lost.  Returns how many extended heads missed the frame (another
- * frame is then wanted, ws113-p007).
+ * Lists the heads a frame needs now (open, shown, and changed or showing
+ * windows or the pointer), for the render thread's want (ws213-p004).
+ * Returns how many, at most room.
  */
 unsigned
-kwl_heads_acquire(
-	struct kwl_server *server)
+kwl_heads_wanted(
+	struct kwl_server *server,
+	unsigned *slots,
+	unsigned room)
+{
+	struct kwl_compose *compose;
+	struct kwl_head *head;
+	unsigned count;
+	unsigned index;
+	int needs;
+
+	/* Each open head the frame changes. */
+	compose = server->compose;
+	count = 0U;
+	for (index = 0U; index < KWL_HEADS && count < room; index++) {
+		head = &compose->heads[index];
+		if (!head->open || head->lost)
+			continue;
+		needs = heads_needs_frame(server, head);
+		if (!needs)
+			continue;
+
+		/* Wanted. */
+		slots[count] = index;
+		count++;
+	}
+
+	/* Succeeded: how many. */
+	return count;
+}
+
+/*
+ * Takes the heads' images the render thread holds into the frame being
+ * walked (ws213-p004, design 4.1): every held image is drawn and presented,
+ * also of a head that no longer needs a frame.  A head that needs one but
+ * has no image is drawn at a later frame (one is asked for in the extended
+ * mode); one whose acquire failed otherwise is lost.  Returns how many
+ * missed the frame.
+ */
+unsigned
+kwl_heads_take(
+	struct kwl_server *server,
+	const struct kwl_render_held *held)
 {
 	struct kwl_compose *compose;
 	struct kwl_head *head;
 	unsigned missed;
 	unsigned index;
-	int needs;
 	VkResult result;
+	int needs;
 
 	/* Each open head. */
 	compose = server->compose;
@@ -332,20 +409,21 @@ kwl_heads_acquire(
 		if (!head->open || head->lost)
 			continue;
 
-		/* Only a head the frame changes. */
+		/* An image held: drawn and presented in this frame. */
+		if (held->heads[index]) {
+			head->in_frame = 1U;
+			head->image = held->head_images[index];
+			continue;
+		}
+
+		/* Only a head the frame changes is missed. */
 		needs = heads_needs_frame(server, head);
 		if (!needs)
 			continue;
 
-		/* Its next image, without waiting: the output's frame does not wait for another display. */
-		result = vkAcquireNextImageKHR(compose->device, head->output.swapchain, 0U, head->acquired, VK_NULL_HANDLE, &head->image);
-		if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
-			head->in_frame = 1U;
-			continue;
-		}
-
-		/* Not ready: the next frame draws it (one is asked for, ws113-p007). */
-		if (result == VK_NOT_READY || result == VK_TIMEOUT) {
+		/* Not ready (or not asked yet): the next frame draws it (one is asked for, ws113-p007). */
+		result = held->head_results[index];
+		if (result == VK_SUCCESS || result == VK_NOT_READY || result == VK_TIMEOUT) {
 			head->dirty = 1U;
 			if (compose->display_mode == KWL_DISPLAYS_EXTENDED)
 				missed++;
@@ -369,7 +447,7 @@ kwl_heads_acquire(
 void
 kwl_heads_record(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	VkImage source)
 {
 	struct kwl_compose *compose;
@@ -393,97 +471,30 @@ kwl_heads_record(
 }
 
 /*
- * Lists the semaphores the frame's submission also waits for (each head's
- * acquire) with their stages.  Returns how many, at most `room`.
- */
-unsigned
-kwl_heads_waits(
-	struct kwl_server *server,
-	VkSemaphore *semaphores,
-	VkPipelineStageFlags *stages,
-	unsigned room)
-{
-	struct kwl_compose *compose;
-	unsigned index;
-	unsigned count;
-
-	/* Each head in the frame, while there is room. */
-	compose = server->compose;
-	count = 0U;
-	for (index = 0U; index < KWL_HEADS && count < room; index++) {
-		if (!compose->heads[index].in_frame)
-			continue;
-		semaphores[count] = compose->heads[index].acquired;
-		stages[count] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
-		count++;
-	}
-
-	/* Succeeded: the waits. */
-	return count;
-}
-
-/*
- * Lists the semaphores the frame's submission also signals (each head's
- * image's present semaphore).  Returns how many, at most `room`.
- */
-unsigned
-kwl_heads_signals(
-	struct kwl_server *server,
-	VkSemaphore *semaphores,
-	unsigned room)
-{
-	struct kwl_compose *compose;
-	unsigned index;
-	unsigned count;
-
-	/* Each head in the frame, while there is room. */
-	compose = server->compose;
-	count = 0U;
-	for (index = 0U; index < KWL_HEADS && count < room; index++) {
-		if (!compose->heads[index].in_frame)
-			continue;
-		semaphores[count] = compose->heads[index].rendered[compose->heads[index].image];
-		count++;
-	}
-
-	/* Succeeded: the signals. */
-	return count;
-}
-
-/*
- * Presents each head's image after the output's.  A display gone marks
- * the head lost; an extended head drawn is not drawn again until it
- * changes.
+ * Applies the presents of the heads' images the render thread made for a
+ * completed frame: an extended head shown is not drawn again until it
+ * changes; a display gone marks the head lost.
  */
 void
-kwl_heads_present(
-	struct kwl_server *server)
+kwl_heads_presented(
+	struct kwl_server *server,
+	const struct kwl_render_outcome *outcome)
 {
 	struct kwl_compose *compose;
 	struct kwl_head *head;
-	VkPresentInfoKHR present;
 	unsigned index;
 	VkResult result;
 
-	/* Each head in the frame. */
+	/* Each head the frame presented. */
 	compose = server->compose;
 	for (index = 0U; index < KWL_HEADS; index++) {
 		head = &compose->heads[index];
-		if (!head->in_frame)
-			continue;
 		head->in_frame = 0U;
-
-		/* Its image to its display after the commands. */
-		memset(&present, 0, sizeof(present));
-		present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-		present.waitSemaphoreCount = 1U;
-		present.pWaitSemaphores = &head->rendered[head->image];
-		present.swapchainCount = 1U;
-		present.pSwapchains = &head->output.swapchain;
-		present.pImageIndices = &head->image;
-		result = vkQueuePresentKHR(compose->queue, &present);
+		if (!outcome->heads[index] || !head->open)
+			continue;
 
 		/* Shown: an extended head waits for a change. */
+		result = outcome->head_results[index];
 		if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
 			head->dirty = 0U;
 			continue;
@@ -904,7 +915,12 @@ heads_close(
 	if (head->global != 0U)
 		kwl_output_global_remove(server, head->global);
 
-	/* No frame may still use its images. */
+	/*
+	 * No frame may still use its images: the render thread parks after the
+	 * frame in flight and forgets the image it holds of it (ws213-p004).
+	 */
+	kwl_compose_park(server);
+	kwl_compose_forget(server, 0U, 1U << (unsigned)(head - compose->heads));
 	(void)vkDeviceWaitIdle(compose->device);
 
 	/* Its objects, then the display given back once its swapchain is gone. */
@@ -914,9 +930,10 @@ heads_close(
 	vkdemo_display_close(compose->instance, compose->device, &head->output);
 	kwl_os_display_release(server, compose->physical, head->display);
 
-	/* Forgotten. */
+	/* Forgotten, and the render thread goes on. */
 	memcpy(name, head->name, sizeof(name));
 	memset(head, 0, sizeof(*head));
+	kwl_compose_unpark(server);
 	printf("KWL OUTPUT head closed name=%s\n", name);
 }
 
@@ -1145,7 +1162,7 @@ heads_needs_frame(
 static void
 heads_record_mirror(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	VkImage source,
 	struct kwl_head *head)
 {
@@ -1169,7 +1186,7 @@ heads_record_mirror(
 	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	range.levelCount = 1U;
 	range.layerCount = 1U;
-	vkCmdClearColorImage(command, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1U, &range);
+	kwl_list_clear_color_image(command, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1U, &range);
 
 	/* The desktop fitted whole, when the output's image can be copied. */
 	if (compose->readback) {
@@ -1194,7 +1211,7 @@ heads_record_mirror(
 		blit.dstOffsets[1].x = fitted.x + (int32_t)fitted.width;
 		blit.dstOffsets[1].y = fitted.y + (int32_t)fitted.height;
 		blit.dstOffsets[1].z = 1;
-		vkCmdBlitImage(command, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &blit, VK_FILTER_LINEAR);
+		kwl_list_blit_image(command, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &blit, VK_FILTER_LINEAR);
 
 		/* The output's image back to presentation. */
 		heads_barrier(command, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_READ_BIT, 0U,
@@ -1217,7 +1234,7 @@ heads_record_mirror(
 static void
 heads_record_extended(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_head *head)
 {
 	struct kwl_compose *compose;
@@ -1248,21 +1265,22 @@ heads_record_extended(
 	pass.renderArea.extent.height = head->output.height;
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
-	vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_list_begin_render_pass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_compose_bind_forget(server->compose);
 
 	/* The whole head. */
 	memset(&viewport, 0, sizeof(viewport));
 	viewport.width = (float)head->output.width;
 	viewport.height = (float)head->output.height;
 	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(command, 0U, 1U, &viewport);
+	kwl_list_set_viewport(command, 0U, 1U, &viewport);
 	memset(&scissor, 0, sizeof(scissor));
 	scissor.extent.width = head->output.width;
 	scissor.extent.height = head->output.height;
-	vkCmdSetScissor(command, 0U, 1U, &scissor);
+	kwl_list_set_scissor(command, 0U, 1U, &scissor);
 	compose->scissor_now = scissor;
 	offset = 0U;
-	vkCmdBindVertexBuffers(command, 0U, 1U, &compose->corners, &offset);
+	kwl_list_bind_vertex_buffers(command, 0U, 1U, &compose->corners, &offset);
 
 	/* The wallpaper over the whole head (a quad over the desktop's size covers the viewport). */
 	wallpaper = kwl_glass_wallpaper(server);
@@ -1309,7 +1327,8 @@ heads_record_extended(
 	server->view_height = 0U;
 
 	/* Done; the pass leaves the image for presentation. */
-	vkCmdEndRenderPass(command);
+	kwl_batch_flush(server, command);
+	kwl_list_end_render_pass(command);
 }
 
 /*
@@ -1410,7 +1429,7 @@ heads_windows(
 /* Records one image layout change with its access and stages. */
 static void
 heads_barrier(
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	VkImage image,
 	VkImageLayout from,
 	VkImageLayout to,
@@ -1434,7 +1453,7 @@ heads_barrier(
 	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	barrier.subresourceRange.levelCount = 1U;
 	barrier.subresourceRange.layerCount = 1U;
-	vkCmdPipelineBarrier(command, source_stage, destination_stage, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+	kwl_list_pipeline_barrier(command, source_stage, destination_stage, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 }
 
 /* Writes displays.conf's path (folder nonzero: its folder's) from $HOME; returns 0, or ENOENT without a home. */
@@ -1775,37 +1794,6 @@ kwl_window_set_output(
 	       window->y, why);
 }
 
-/*
- * Moves the pointer by a relative motion over the outputs (plane.h): into
- * the output the motion reaches, or stopped at an edge no output shares.
- * Gives the new place; the output it is on is kept.
- */
-void
-kwl_pointer_relative(
-	struct kwl_server *server,
-	int32_t dx,
-	int32_t dy,
-	int32_t *x,
-	int32_t *y)
-{
-	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
-	unsigned count;
-	unsigned slot;
-
-	/* Over the outputs shown. */
-	count = kwl_outputs(server, outputs);
-	slot = kwl_plane_move(outputs, count, server->pointer_output, server->pointer_x, server->pointer_y, dx, dy, x, y);
-
-	/* A crossing is logged once. */
-	if (slot != server->pointer_output) {
-		printf("KWL POINTER output=%u x=%d y=%d\n", slot, *x, *y);
-		server->dirty = 1;
-	}
-
-	/* Succeeded: the output it is on. */
-	server->pointer_output = slot;
-}
-
 /* Puts the pointer of an absolute device (a tablet, a touch screen) on the anchor, where it maps. */
 void
 kwl_pointer_absolute(
@@ -1832,12 +1820,13 @@ heads_evacuate(
 	unsigned slot)
 {
 	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	struct kwl_plane_rect now[KWL_PLANE_SLOTS];
+	struct heads_pointer_carry carry;
 	struct kwl_client *client;
 	struct kwl_object *object;
 	const struct kwl_head *head;
+	unsigned carried;
 	unsigned count;
-	int32_t x;
-	int32_t y;
 	int window;
 
 	/* The outputs, and the one going where it was (also when its display is already lost, so not shown). */
@@ -1870,15 +1859,22 @@ heads_evacuate(
 		}
 	}
 
-	/* The pointer on it comes to the same share of the anchor. */
-	if (server->pointer_output != slot)
+	/*
+	 * The pointer on it comes to the same share of the anchor.  Where it is
+	 * is the cursor's box's place, which the input thread may have moved
+	 * past the main thread's view; the outputs as they are now go to the
+	 * box in the same warp (ws213-p004, the design's 6.1 N-3).
+	 */
+	carry.slot = slot;
+	carry.from = outputs[slot];
+	carry.carried = &carried;
+	carried = 0U;
+	(void)kwl_outputs(server, now);
+	kwl_pointer_warp(server, now, heads_pointer_evacuate, &carry);
+	if (!carried)
 		return;
-	kwl_plane_carry(&outputs[slot], &outputs[KWL_PLANE_ANCHOR], server->pointer_x, server->pointer_y, 1U, 1U, 0, &x, &y);
-	server->pointer_x = x;
-	server->pointer_y = y;
-	server->pointer_output = KWL_PLANE_ANCHOR;
 	server->dirty = 1;
-	printf("KWL POINTER output=0 x=%d y=%d why=retreat\n", x, y);
+	printf("KWL POINTER output=0 x=%d y=%d why=retreat\n", server->pointer_x, server->pointer_y);
 }
 
 /*
@@ -1893,6 +1889,7 @@ heads_windows_follow(
 	unsigned leave)
 {
 	struct kwl_plane_rect after[KWL_PLANE_SLOTS];
+	struct heads_pointer_shift follow;
 	struct kwl_client *client;
 	struct kwl_object *object;
 	unsigned slot;
@@ -1933,19 +1930,15 @@ heads_windows_follow(
 		}
 	}
 
-	/* The pointer on a head: along with it, or to the anchor. */
-	slot = server->pointer_output;
-	if (slot == KWL_PLANE_ANCHOR || slot >= KWL_PLANE_SLOTS)
-		return;
-	if (leave || after[slot].width == 0U || before[slot].width == 0U) {
-		kwl_plane_carry(&before[slot], &after[KWL_PLANE_ANCHOR], server->pointer_x, server->pointer_y, 1U, 1U, 0, &server->pointer_x, &server->pointer_y);
-		server->pointer_output = KWL_PLANE_ANCHOR;
-		return;
-	}
-
-	/* Along with its head. */
-	server->pointer_x += after[slot].x - before[slot].x;
-	server->pointer_y += after[slot].y - before[slot].y;
+	/*
+	 * The pointer on a head: along with it, or to the anchor, from where the
+	 * cursor's box has it, with the outputs as they are now given to the box
+	 * in the same warp (ws213-p004, the design's 6.1 N-3).
+	 */
+	follow.before = before;
+	follow.after = after;
+	follow.leave = leave;
+	kwl_pointer_warp(server, after, heads_pointer_follow, &follow);
 }
 
 /* Carries a window (and its sheet) from one output's rectangle to another's, makes it that output's, and logs why. */
@@ -2229,4 +2222,57 @@ heads_off(
 
 	/* None: it shows. */
 	return 0;
+}
+
+/* Carries the pointer from an output going away to the same share of the anchor, when the box has it there (a warp's move). */
+static void
+heads_pointer_evacuate(
+	const void *context,
+	const struct kwl_plane_rect *outputs,
+	int32_t *x,
+	int32_t *y,
+	unsigned *output)
+{
+	const struct heads_pointer_carry *carry;
+
+	/* Only a pointer on that output. */
+	carry = context;
+	if (*output != carry->slot)
+		return;
+
+	/* The same share of the anchor. */
+	kwl_plane_carry(&carry->from, &outputs[KWL_PLANE_ANCHOR], *x, *y, 1U, 1U, 0, x, y);
+	*output = KWL_PLANE_ANCHOR;
+	*carry->carried = 1U;
+}
+
+/* Moves the pointer on a head along with it, or to the anchor when the head is not shown now (a warp's move). */
+static void
+heads_pointer_follow(
+	const void *context,
+	const struct kwl_plane_rect *outputs,
+	int32_t *x,
+	int32_t *y,
+	unsigned *output)
+{
+	const struct heads_pointer_shift *follow;
+	unsigned slot;
+
+	/* Only a pointer on a head. */
+	(void)outputs;
+	follow = context;
+	slot = *output;
+	if (slot == KWL_PLANE_ANCHOR || slot >= KWL_PLANE_SLOTS)
+		return;
+
+	/* To the anchor when the head is not shown now (or the mirror is chosen). */
+	if (follow->leave || follow->after[slot].width == 0U || follow->before[slot].width == 0U) {
+		kwl_plane_carry(&follow->before[slot], &follow->after[KWL_PLANE_ANCHOR], *x, *y, 1U, 1U, 0, x, y);
+		*output = KWL_PLANE_ANCHOR;
+		return;
+	}
+
+	/* Along with its head. */
+	*x += follow->after[slot].x - follow->before[slot].x;
+	*y += follow->after[slot].y - follow->before[slot].y;
 }

@@ -83,6 +83,9 @@ bcm2711_vulkan_command_clear(
 		node = next;
 	}
 
+	/* The released events' storage goes with their chunks. */
+	bcm2711_vulkan_record_chunks_free(command);
+
 	/* Native retirement failure leaves an invalid recording and remains visible to its lifecycle caller. */
 	command->flags = 0;
 	command->recorded_bytes = 0;

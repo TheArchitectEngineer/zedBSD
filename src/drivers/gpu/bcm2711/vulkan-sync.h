@@ -23,7 +23,8 @@ struct bcm2711_vulkan_sync {
 	uint64_t waits_completed;
 	VkResult status;
 	bool signaled;
-	bool pending;
+	/* The accepted executions with operations on this payload that have not ended. */
+	uint32_t pending;
 };
 
 int bcm2711_vulkan_sync_dispatch(struct bcm2711_vulkan_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);

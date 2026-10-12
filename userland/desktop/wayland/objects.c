@@ -234,7 +234,7 @@ kwl_buffer_put(
 
 	/* An unbalanced owner is an internal defect rather than a client-controlled refcount. */
 	if (buffer->holds == 0) {
-		printf("KWL FAILED site=buffer_put client=%llu buffer=%u\n", (unsigned long long)buffer->client->number, buffer->id);
+		kwl_fatal("KWL FAILED site=buffer_put client=%llu buffer=%u", (unsigned long long)buffer->client->number, buffer->id);
 		buffer->client->server->failed = 1;
 		return;
 	}
@@ -439,6 +439,10 @@ kwl_object_destroy(
 	 */
 	server = object->client->server;
 	object->dead = 1;
+
+	/* A window gone may end an application's running mark on App Home's picture (layer-cache.c). */
+	if (object->kind == KWL_SURFACE)
+		server->home_picture_stale = 1U;
 	if (object->id < KWL_SERVER_ID_FIRST)
 		kwl_delete_id(object->client, object->id);
 
@@ -820,8 +824,10 @@ object_release(
 {
 	uint64_t before;
 	uint64_t between;
+	uint64_t mark;
 
-	/* Window mode's Vulkan image goes with the buffer. */
+	/* Window mode's Vulkan image goes with the buffer, outside a walk (KWL PERF pass vk_outside_max_us, ws213-p004). */
+	mark = kwl_cycles();
 	before = kwl_microseconds();
 	kwl_import_destroy_with(server->compose, object);
 	between = kwl_microseconds();
@@ -830,6 +836,7 @@ object_release(
 	/* OS buffer descriptors (libkeiland-backend's) remain alive until the final Vulkan image use has retired. */
 	kl_backend_gpu_resource_free(kwl_gpu_host(), kwl_gpu_resource(object));
 	cleanup_backend_us += kwl_microseconds() - between;
+	kwl_perf_vk_outside(server, kwl_cycles() - mark);
 
 	/* Shared-memory buffer storage returns its separate pool reference. */
 	if (object->shm != NULL) {

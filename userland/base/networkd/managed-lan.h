@@ -100,6 +100,13 @@ struct networkd_lan_interface {
 	 */
 	int raised;
 
+	/*
+	 * Taken down by the administrator (`net down').  While it is set the
+	 * daemon neither raises the interface nor configures it, whatever its
+	 * cable does; `net up' clears it (BUG-293).
+	 */
+	int held_down;
+
 	/* Cleared before a snapshot and set again by it, to find removals. */
 	int present;
 };
@@ -175,6 +182,21 @@ int networkd_lan_configured(struct networkd_lan *, const char *, int obtained);
 /* Records that an interface was taken down. */
 int networkd_lan_down(struct networkd_lan *, const char *);
 int networkd_lan_raised(struct networkd_lan *, const char *);
+
+/*
+ * Records that the administrator took an interface down.  The daemon
+ * leaves it down until it is released, rather than raising it again to see
+ * its next cable (BUG-293).  Returns -1 for an interface that is not held.
+ */
+int networkd_lan_hold_down(struct networkd_lan *, const char *);
+
+/*
+ * Records that the administrator brought an interface up again.  An
+ * interface held down, or one whose configuration did not succeed, is
+ * configured again when a cable is in it (BUG-293).  Returns -1 for an
+ * interface that is not held.
+ */
+int networkd_lan_release(struct networkd_lan *, const char *);
 
 /*
  * Derives the link-local address an interface falls back to, from its

@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <kern/clock.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/render-device.h"
@@ -114,6 +115,21 @@ bcm2711_buffer_release(
 	/* The production buffer API requires a nonnull live owner even during selector and failure cleanup. */
 	assert(buffer != NULL && buffer->references != 0);
 	buffer->references--;
+}
+
+/*
+ * Supplies a clock that advances a tick a reading, so that the decoder's
+ * longest command (the perf report's, ws141-p016 (b)) is measured.
+ */
+uint64_t
+clock_ticks(
+	void)
+{
+	static uint64_t now;
+
+	/* One tick later each time. */
+	now++;
+	return now;
 }
 
 /*

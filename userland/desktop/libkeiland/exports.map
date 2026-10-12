@@ -335,6 +335,9 @@
 		kl_ui_pointer_leave;
 		kl_ui_pointer_cancel;
 		kl_ui_take_damage;
+		kl_ui_take_frame;
+		kl_ui_damage;
+		kl_ui_damage_whole;
 		kl_ui_pointer_button;
 		kl_ui_wheel;
 		kl_ui_axis;
@@ -344,6 +347,7 @@
 		kl_ui_touch_cancel;
 		kl_ui_begin;
 		kl_ui_hit;
+		kl_ui_hit_still;
 		kl_ui_scroll_region;
 		kl_ui_text_region;
 		kl_ui_set_text_bar;
@@ -362,6 +366,9 @@
 		kl_window_present_resize;
 		kl_window_present;
 		kl_window_present_part;
+		kl_window_present_parts;
+		kl_window_set_pacing;
+		kl_window_frame_wait;
 		kl_window_see_through;
 		kl_window_display;
 		kl_window_surface;
@@ -497,6 +504,12 @@
 		kl_system_media_add_paths;
 		kl_system_media_apply;
 		kl_system_media_remove_ids;
+		kl_system_media_list_begin;
+		kl_system_media_add_paths_begin;
+		kl_system_media_remove_ids_begin;
+		kl_system_media_apply_begin;
+		kl_system_media_take;
+		kl_system_media_cancel;
 		kl_system_media_watch;
 		kl_system_media_notify;
 	local:

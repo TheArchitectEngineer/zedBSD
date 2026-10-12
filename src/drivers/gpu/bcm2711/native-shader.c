@@ -168,8 +168,10 @@ validate_program(
 	if (binary == NULL)
 		return EINVAL;
 
-	/* Each record slot uses the matching two-thread scalar stage. */
-	if ((uint32_t)binary->stage != stage || binary->threads != 2U)
+	/* Each record slot uses the matching stage; only fragment programs may run four threads per QPU. */
+	if ((uint32_t)binary->stage != stage)
+		return EINVAL;
+	if (binary->threads != 2U && (binary->threads != 4U || stage != BCM2711_SHADER_FRAGMENT))
 		return EINVAL;
 
 	/* Exact compiler arrays, rather than counts alone, establish actual uploaded input. */
@@ -273,10 +275,12 @@ write_program(
 {
 	uint32_t code;
 
-	/* Two-thread code leaves the four-way bit clear and propagates NaNs through native arithmetic. */
+	/* Code propagates NaNs through native arithmetic; four-thread code also sets the four-way bit. */
 	code = program->code | 4U;
 	if (program->binary->starts_final != 0)
 		code |= 2U;
+	if (program->binary->threads == 4U)
+		code |= 1U;
 
 	/* The adjacent word points to this exact program's independently prepared uniform stream. */
 	write_word(bytes, code);

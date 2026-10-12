@@ -7,13 +7,15 @@ WAYLAND_FREEBSD_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/display.c \
 	userland/desktop/wayland/seat.c \
 	userland/desktop/wayland/input.c \
+	userland/desktop/wayland/input-thread.c \
+	userland/desktop/wayland/cursor-box.c \
 	userland/desktop/wayland/tablet.c \
 	userland/desktop/wayland/touch.c \
 	userland/desktop/wayland/touchpad.c \
 	userland/desktop/wayland/pointer-accel.c \
 	userland/desktop/wayland/network-info.c \
 	userland/desktop/wayland/super-tap.c userland/desktop/wayland/apps.c userland/desktop/wayland/apps-bar.c userland/desktop/wayland/switcher.c userland/desktop/wayland/switcher-shell.c userland/desktop/wayland/layout.c userland/desktop/wayland/swipe.c userland/desktop/wayland/edge.c userland/desktop/wayland/arrange.c userland/desktop/wayland/arrange-shell.c userland/desktop/wayland/power-layout.c userland/desktop/wayland/lock-clock.c userland/desktop/wayland/dnd-state.c userland/desktop/wayland/lock-swipe.c userland/desktop/wayland/lock-key.c userland/desktop/wayland/lock-keypad.c userland/desktop/wayland/power-dialog.c userland/desktop/wayland/title-tap.c userland/desktop/wayland/lid.c userland/desktop/wayland/sleep-rules.c userland/desktop/wayland/sleep.c userland/desktop/wayland/output-switch.c userland/desktop/wayland/heads.c userland/desktop/wayland/plane.c userland/desktop/wayland/surface-outputs.c userland/desktop/wayland/displays.c userland/desktop/wayland/displays-shell.c \
-	userland/desktop/wayland/compose.c \
+	userland/desktop/wayland/compose.c userland/desktop/wayland/scene.c \
 	userland/desktop/wayland/import.c \
 	userland/desktop/wayland/shm.c \
 	userland/desktop/wayland/glass.c \
@@ -36,6 +38,8 @@ WAYLAND_FREEBSD_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/titlebar-shell.c \
 	userland/desktop/wayland/decoration.c \
 	userland/desktop/wayland/cursor.c \
+	userland/desktop/wayland/cursor-plane.c \
+	userland/desktop/wayland/cursor-thread.c \
 	userland/desktop/wayland/viewport.c \
 	userland/desktop/wayland/content-type.c \
 	userland/desktop/wayland/scanout.c \
@@ -44,6 +48,12 @@ WAYLAND_FREEBSD_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/theme.c \
 	userland/desktop/wayland/panels.c \
 	userland/desktop/wayland/backdrop.c \
+	userland/desktop/wayland/layer-cache.c \
+	userland/desktop/wayland/compose-bind.c \
+	userland/desktop/wayland/draw-list.c \
+	userland/desktop/wayland/render-thread.c \
+	userland/desktop/wayland/glyph-worker.c \
+	userland/desktop/wayland/batch.c \
 	userland/desktop/wayland/damage.c \
 	userland/desktop/wayland/greeter.c \
 	userland/desktop/wayland/primary.c \

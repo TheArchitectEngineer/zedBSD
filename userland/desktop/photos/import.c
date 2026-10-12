@@ -14,10 +14,19 @@
  * Files/YYYY/MM/dd/<its name> (name-1.ext, name-2.ext... when another
  * content has the name), a copy there (the file given stays where it is)
  * and its line in the library, to be written by ph_db_save.
+ *
+ * The file's contents are read here only to copy and hash them, and its
+ * first bytes to tell its kind.  What it says of itself (a picture's
+ * size, a JPEG's date) is read by keiland-preview in its sandbox
+ * (preview/client.h preview_info_read, ws157-p013, the user's decision of
+ * 2026-10-11).  A copy is made under the library's .incoming folder and
+ * renamed into its place once whole, so that a copy cut short (the
+ * process killed) is never taken for a kept file; ph_import_clean empties
+ * the folder.
  */
 
 #include "photos.h"
-#include "userland/desktop/mediastorage/dimensions.h"
+#include "userland/desktop/preview/client.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -35,13 +44,17 @@
 #define IMPORT_CHUNK		(256U * 1024U)
 #define IMPORT_TRIES		1000
 
+/* The folder of copies being made, under the library's folder. */
+#define IMPORT_INCOMING		".incoming"
+
 static void import_walk(const char *root, const char *folder, int depth, struct ph_import_result *result);
 static void import_file(const char *root, const char *path, struct ph_import_result *result);
 static int import_descriptor(const char *root, int fd, const char *name, const struct stat *status);
 static int import_one(const char *root, const char *path, const struct stat *status);
 static int import_hash(int fd, char *hash, unsigned char *head, size_t head_size, size_t *head_length);
 static int import_place(const char *root, const char *name, ph_time taken, char *relative, size_t size);
-static int import_copy(int from, const char *to, uint64_t size);
+static int import_copy(const char *root, int from, const char *to, uint64_t size);
+static int import_copy_data(int from, int out, uint64_t size);
 static ph_time import_local(time_t when);
 
 /*
@@ -199,6 +212,7 @@ import_descriptor(
 	const struct stat *status)
 {
 	unsigned char head[16];
+	struct preview_info info;
 	struct ph_photo photo;
 	char relative[PH_PATH_MAX];
 	char destination[PH_PATH_MAX];
@@ -240,11 +254,28 @@ import_descriptor(
 	photo.size = (uint64_t)status->st_size;
 	photo.imported = import_local(now);
 	photo.taken = photo.imported;
-	if (kind == PH_KIND_JPEG)
-		(void)ph_exif_descriptor_date(fd, &photo.taken);
+	photo.width = 0;
+	photo.height = 0;
 
-	/* Dimensions are read from headers without decoding the retained original. */
-	media_dimensions(fd, kind, &photo.width, &photo.height);
+	/*
+	 * What the file says of itself, read in keiland-preview's sandbox: a
+	 * picture's or a video's size and a JPEG's or an MP4's date.  A file the reader cannot read,
+	 * or reads as another kind than its first bytes say, is kept without
+	 * them (dated the day it was imported).
+	 */
+	error = preview_info_read(fd, &info);
+	if (error == 0 && info.kind == kind) {
+		photo.width = (int)info.width;
+		photo.height = (int)info.height;
+		if (info.dated)
+			photo.taken = (ph_time)info.taken;
+
+		/* A video's UTC date, on the local calendar as a camera's would be. */
+		if (info.dated && info.utc)
+			photo.taken = import_local((time_t)info.taken);
+	}
+
+	/* No marks yet, and the paths set when it joins the library. */
 	photo.favorite = 0;
 	photo.turns = 0;
 	photo.changed = 1;
@@ -259,7 +290,7 @@ import_descriptor(
 		length = snprintf(destination, sizeof(destination), "%s/%s", root, relative);
 		error = ENAMETOOLONG;
 		if (length >= 0 && (size_t)length < sizeof(destination))
-			error = import_copy(fd, destination, photo.size);
+			error = import_copy(root, fd, destination, photo.size);
 	}
 
 	/* Reports a failed copy without publishing a database row. */
@@ -375,35 +406,80 @@ import_place(
 	return EEXIST;
 }
 
-/* Copies a file from its start to a new file (its folders made); 0, or an errno value (nothing is left). */
+/*
+ * Copies a file from its start to a new file (its folders made): first
+ * into the library's .incoming folder, then renamed into its place once
+ * whole.  Returns 0, or an errno value (nothing is left).
+ */
 static int
 import_copy(
+	const char *root,
 	int from,
 	const char *to,
+	uint64_t size)
+{
+	char temporary[PH_PATH_MAX];
+	int length;
+	int error;
+	int status;
+	int out;
+
+	/* The copy's temporary name, its folder made. */
+	length = snprintf(temporary, sizeof(temporary), "%s/%s/import-XXXXXX", root, IMPORT_INCOMING);
+	if (length < 0 || (size_t)length >= sizeof(temporary))
+		return ENAMETOOLONG;
+	error = ph_db_folders(temporary);
+	if (error != 0)
+		return error;
+	out = mkstemp(temporary);
+	if (out < 0)
+		return errno;
+
+	/* The bytes. */
+	error = import_copy_data(from, out, size);
+	status = close(out);
+	if (status != 0 && error == 0)
+		error = EIO;
+
+	/* Its place's folders. */
+	if (error == 0)
+		error = ph_db_folders(to);
+
+	/* Into its place (under the library's lock, so no other copy takes the name meanwhile). */
+	if (error == 0) {
+		status = rename(temporary, to);
+		if (status != 0)
+			error = errno;
+	}
+
+	/* A copy cut short leaves nothing. */
+	if (error != 0) {
+		(void)unlink(temporary);
+		return error;
+	}
+
+	/* Succeeded: the complete original was copied. */
+	return 0;
+}
+
+/* Copies size bytes from a file's start to another; 0, or EIO. */
+static int
+import_copy_data(
+	int from,
+	int out,
 	uint64_t size)
 {
 	unsigned char *chunk;
 	uint64_t done;
 	ssize_t got;
 	ssize_t wrote;
-	int error;
-	int closed;
-	int out;
 	size_t copied;
+	int error;
 
-	/* The folders and the new file. */
-	error = ph_db_folders(to);
-	if (error != 0)
-		return error;
-	out = open(to, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0644);
-	if (out < 0)
-		return errno;
+	/* The piece. */
 	chunk = malloc(IMPORT_CHUNK);
-	if (chunk == NULL) {
-		(void)close(out);
-		(void)unlink(to);
+	if (chunk == NULL)
 		return ENOMEM;
-	}
 
 	/* Piece by piece from the start. */
 	done = 0;
@@ -416,6 +492,7 @@ import_copy(
 			error = EIO;
 		if (got <= 0)
 			break;
+
 		/* Writes each complete chunk even when the filesystem accepts only part of it. */
 		copied = 0U;
 		while (copied < (size_t)got) {
@@ -436,19 +513,14 @@ import_copy(
 			done += (uint64_t)got;
 	}
 
-	/* Closed; a short or failed copy leaves nothing. */
+	/* The piece goes; a short copy is a failure. */
 	free(chunk);
-	closed = close(out);
-	if (closed != 0 && error == 0)
-		error = EIO;
 	if (error == 0 && done != size)
 		error = EIO;
-	if (error != 0) {
-		(void)unlink(to);
+	if (error != 0)
 		return error;
-	}
 
-	/* Succeeded: the complete original was copied. */
+	/* Succeeded: copied. */
 	return 0;
 }
 
@@ -463,4 +535,46 @@ import_local(
 	memset(&local, 0, sizeof(local));
 	(void)localtime_r(&when, &local);
 	return ph_time_make(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min, local.tm_sec);
+}
+
+/*
+ * Empties the library's .incoming folder of copies cut short (a process
+ * killed while it copied).  Called under the library's lock, before an
+ * import, when no copy of another process can be in it.
+ */
+void
+ph_import_clean(
+	const char *root)
+{
+	char folder[PH_PATH_MAX];
+	char path[PH_PATH_MAX];
+	struct dirent *entry;
+	DIR *directory;
+	int length;
+	int same;
+
+	/* The folder; none, nothing to empty. */
+	length = snprintf(folder, sizeof(folder), "%s/%s", root, IMPORT_INCOMING);
+	if (length < 0 || (size_t)length >= sizeof(folder))
+		return;
+	directory = opendir(folder);
+	if (directory == NULL)
+		return;
+
+	/* Each copy of ours (import-XXXXXX), removed. */
+	for (;;) {
+		entry = readdir(directory);
+		if (entry == NULL)
+			break;
+		same = strncmp(entry->d_name, "import-", 7U);
+		if (same != 0)
+			continue;
+		length = snprintf(path, sizeof(path), "%s/%s", folder, entry->d_name);
+		if (length < 0 || (size_t)length >= sizeof(path))
+			continue;
+		(void)unlink(path);
+	}
+
+	/* Done. */
+	(void)closedir(directory);
 }

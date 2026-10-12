@@ -42,7 +42,8 @@ static const unsigned machine_bits[SE_MACHINE_PARTS] = { KL_MACHINE_ABOUT, KL_MA
 static unsigned machine_due(const struct se_app *app, uint64_t now);
 static uint32_t machine_query(struct se_app *app, unsigned parts, uint64_t now);
 static void machine_copy_about(struct se_app *app);
-static void machine_copy_filesystems(struct se_app *app);
+static int machine_copy_filesystems(struct se_app *app);
+static int machine_volume_same(const struct se_volume *volume, const struct kl_machine_filesystem *filesystem);
 
 /*
  * Asks for what Settings shows from its start: About's names, the users
@@ -158,6 +159,8 @@ se_machine_follow(
 {
 	uint32_t serial;
 	unsigned slot;
+	int first;
+	int moved;
 
 	/* Nothing without the system. */
 	if (app->system == NULL)
@@ -169,24 +172,40 @@ se_machine_follow(
 		if (serial == app->machine.serials[slot])
 			continue;
 
-		/* Copied now. */
+		/* Copied now; the first copy of a part changes what its page says even when the part is empty. */
+		first = 0;
+		if (app->machine.serials[slot] == 0U)
+			first = 1;
 		app->machine.serials[slot] = serial;
 		app->machine.copied_ms[slot] = app->now;
-		app->dirty = 1;
 
-		/* The part to the page that shows it. */
+		/*
+		 * The part to the page that shows it, which is drawn again.  The
+		 * file systems are read again every two seconds while Home or
+		 * Storage shows them: they are drawn again only when they moved
+		 * (or came for the first time) and one of those pages is shown.
+		 */
 		switch (machine_bits[slot]) {
 		case KL_MACHINE_ABOUT:
 			machine_copy_about(app);
+			app->dirty = 1;
 			break;
 		case KL_MACHINE_FILESYSTEMS:
-			machine_copy_filesystems(app);
+			moved = machine_copy_filesystems(app);
+			if (first != 0)
+				moved = 1;
+			if (moved != 0 &&
+			    (app->page == SE_PAGE_HOME ||
+			     app->page == SE_PAGE_STORAGE))
+				app->dirty = 1;
 			break;
 		case KL_MACHINE_USERS:
 			se_users_copy(app);
+			app->dirty = 1;
 			break;
 		default:
 			se_languages_copy(app);
+			app->dirty = 1;
 			break;
 		}
 	}
@@ -468,8 +487,8 @@ machine_copy_about(
 	       about->cores, about->host);
 }
 
-/* Copies the file systems for Home's and Storage's tiles. */
-static void
+/* Copies the file systems for Home's and Storage's tiles; returns 1 when they differ from the last copy. */
+static int
 machine_copy_filesystems(
 	struct se_app *app)
 {
@@ -477,15 +496,25 @@ machine_copy_filesystems(
 	struct se_volume *volume;
 	size_t count;
 	size_t index;
+	int moved;
+	int same;
 
 	/* The file systems of the last answer. */
 	count = kl_system_machine_filesystems(app->system, list, KL_MACHINE_FILESYSTEMS_MAX);
 	if (count > SE_VOLUMES)
 		count = SE_VOLUMES;
 
-	/* Each one, as the pages show it. */
+	/* File systems that came or went count as moved. */
+	moved = 0;
+	if ((unsigned)count != app->look.volume_count)
+		moved = 1;
+
+	/* Each one, as the pages show it; one whose name or sizes changed counts as moved too. */
 	for (index = 0; index < count; index++) {
 		volume = &app->look.volumes[index];
+		same = machine_volume_same(volume, &list[index]);
+		if (same == 0)
+			moved = 1;
 		memcpy(volume->path, list[index].path, sizeof(volume->path));
 		volume->path[sizeof(volume->path) - 1U] = '\0';
 		volume->total = list[index].total;
@@ -495,4 +524,51 @@ machine_copy_filesystems(
 
 	/* The list's length, now known. */
 	app->look.volume_count = (unsigned)count;
+
+	/* Reports whether anything shown moved. */
+	return moved;
+}
+
+/*
+ * Tells whether a file system kept for the pages says the same as one of
+ * an answer: the same name, and its sizes in the words the pages write
+ * them (a few bytes written somewhere change no page).
+ */
+static int
+machine_volume_same(
+	const struct se_volume *volume,
+	const struct kl_machine_filesystem *filesystem)
+{
+	char kept[32];
+	char answered[32];
+	int differs;
+
+	/* The name (the kept one is cut to its array, and ends there). */
+	differs = strncmp(volume->path, filesystem->path, sizeof(volume->path) - 1U);
+	if (differs != 0)
+		return 0;
+
+	/* The whole size as the pages write it. */
+	se_bytes_text(volume->total, kept, sizeof(kept));
+	se_bytes_text(filesystem->total, answered, sizeof(answered));
+	differs = strcmp(kept, answered);
+	if (differs != 0)
+		return 0;
+
+	/* The size used as the pages write it. */
+	se_bytes_text(volume->used, kept, sizeof(kept));
+	se_bytes_text(filesystem->used, answered, sizeof(answered));
+	differs = strcmp(kept, answered);
+	if (differs != 0)
+		return 0;
+
+	/* The size left as the pages write it. */
+	se_bytes_text(volume->available, kept, sizeof(kept));
+	se_bytes_text(filesystem->available, answered, sizeof(answered));
+	differs = strcmp(kept, answered);
+	if (differs != 0)
+		return 0;
+
+	/* Succeeded: nothing the pages show differs. */
+	return 1;
 }

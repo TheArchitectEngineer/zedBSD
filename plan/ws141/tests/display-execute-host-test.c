@@ -16,6 +16,7 @@
 #include <kern/device-io.h>
 #include <kern/pmem.h>
 #include <kern/irq.h>
+#include <kern/waitq.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
@@ -350,6 +351,32 @@ kern_usleep_range(
 }
 
 /*
+ * Refuses a display-list wait: the executor's scenarios never record a plane.
+ */
+void
+display_test_sleep(
+	struct wait_queue *queue,
+	uint64_t deadline)
+{
+	/* No flip record exists here, so no flip wait may sleep. */
+	(void)queue;
+	(void)deadline;
+	check(false, "no flip wait in the executor scenarios");
+}
+
+/*
+ * Refuses a borrowed-image release: the executor's scenarios borrow none.
+ */
+void
+bcm2711_buffer_release(
+	struct bcm2711_buffer *buffer)
+{
+	/* No flip record borrows an allocation here. */
+	(void)buffer;
+	check(false, "no borrowed image in the executor scenarios");
+}
+
+/*
  * Supplies the model's framebuffer mapping without dereferencing physical RAM.
  */
 void *
@@ -431,6 +458,15 @@ kern_irq_enable(
 	void)
 {
 	/* No asynchronous host thread delivers interrupts in this model. */
+}
+
+/* Reports the cost report as off in this model, which has no boot line. */
+bool
+bcm2711_stage_perf_on(
+	void)
+{
+	/* No cadence is kept. */
+	return false;
 }
 
 /*
@@ -598,4 +634,26 @@ deliver_timing(
 	handled = line->service(line->owner);
 	if (handled)
 		line->count++;
+}
+
+/*
+ * Supplies a stationary clock for this fixture, which does not measure runtime.
+ */
+uint64_t
+clock_ticks(
+	void)
+{
+	/* No time elapses in the host's synchronous fake display. */
+	return 0;
+}
+
+/*
+ * Discards production diagnostics while retaining real error returns in the fixture.
+ */
+void
+kern_logf(
+	const char *format,
+	...)
+{
+	(void)format;
 }

@@ -336,7 +336,7 @@ audio_connect(
 	hello.header.type = AUDIOD_HELLO;
 	hello.header.length = sizeof(hello);
 	hello.header.serial = audio->serial++;
-	hello.version = AUDIOD_VERSION;
+	hello.version = AUDIOD_PROTOCOL_VERSION_1;
 	error = audio_send(audio, &hello, sizeof(hello));
 	if (error != 0)
 		return error;

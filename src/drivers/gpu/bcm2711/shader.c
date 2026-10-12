@@ -11,6 +11,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/shader-private.h"
+#include "drivers/gpu/compiler/optimize.h"
 #include "drivers/gpu/compiler/spirv.h"
 
 /* Nine constant levels match the shared frontend's eight aggregate edges followed by one scalar leaf. */
@@ -21,6 +22,13 @@
 
 static int preflight_declaration(const uint32_t *instruction, uint32_t count, uint8_t *levels, uint32_t bound, uint32_t model, const char **reason);
 static int compile_program(struct bcm2711_shader_compiler *compiler);
+static void optimize_options(enum bcm2711_shader_stage stage, const struct bcm2711_shader_key *key, struct drv_gpu_shader_optimize_options *options);
+static int compile_stage(const struct drv_gpu_shader_ir *ir, const struct bcm2711_shader_key *key, enum bcm2711_shader_stage stage, struct bcm2711_shader_diagnostic *diagnostic, struct bcm2711_shader_binary **binary);
+static int compile_threads(const struct drv_gpu_shader_ir *ir, const struct bcm2711_shader_key *key, enum bcm2711_shader_stage stage, uint32_t threads, struct bcm2711_shader_diagnostic *diagnostic, struct bcm2711_shader_binary **binary);
+static int encode_register(const struct bcm2711_shader_compiler *compiler, uint32_t *number);
+static uint32_t operation_gaps(enum bcm2711_qpu_operation operation, uint32_t destination, uint32_t peripheral);
+static int record_op(struct bcm2711_shader_compiler *compiler, const struct bcm2711_qpu_instruction *instruction, enum bcm2711_shader_switch role);
+static uint32_t consumes_uniform(const struct bcm2711_qpu_instruction *instruction);
 
 /*
  * Compiles one SPIR-V entry point into a fully owned native graphics program.
@@ -34,9 +42,10 @@ bcm2711_shader_compile(
 	struct bcm2711_shader_binary **binary,
 	struct bcm2711_shader_diagnostic *diagnostic)
 {
-	struct bcm2711_shader_compiler *compiler;
 	struct bcm2711_shader_binary *created;
 	struct drv_gpu_shader_ir *ir;
+	struct drv_gpu_shader_ir optimized;
+	struct drv_gpu_shader_optimize_options options;
 	struct drv_gpu_compile_diagnostic parse_diagnostic;
 	enum drv_gpu_shader_stage parse_stage;
 	int error;
@@ -53,7 +62,7 @@ bcm2711_shader_compile(
 	    stage > BCM2711_SHADER_FRAGMENT ||
 	    word_count > 1048576U)
 		return EINVAL;
-	if (key->swap_red_blue > 1 || key->premultiplied_blend > 1)
+	if (key->swap_red_blue > 1)
 		return EINVAL;
 
 	/* Bounds declaration recursion and fixes the graphics execution model before the shared parser allocates or expands constants. */
@@ -78,43 +87,42 @@ bcm2711_shader_compile(
 		return error;
 	}
 
-	/* Large register/output tables live in unpublished CPU storage while the parser and lowering use the finite kernel stack. */
-	compiler = kern_calloc(1, sizeof(*compiler));
-	if (compiler == NULL) {
-		drv_gpu_shader_ir_free(ir);
-		return ENOMEM;
-	}
-
-	/* Compiler state owns no device reference and retires before any complete native program is published. */
-	compiler->ir = ir;
-	compiler->key = key;
-	compiler->diagnostic = diagnostic;
-
-	/* Allocates the public program independently so every later failure has a single complete unwind. */
-	compiler->binary = kern_calloc(1, sizeof(*compiler->binary));
-	if (compiler->binary == NULL) {
-		drv_gpu_shader_ir_free(ir);
-		kern_free(compiler);
-		return ENOMEM;
-	}
-
-	/* The stage remains immutable throughout both interface validation and native output construction. */
-	compiler->binary->stage = stage;
-
-	/* One builder owns the complete unpublished prefix and supplies one checked outcome for common cleanup. */
-	error = compile_program(compiler);
-
-	/* Source IR and allocator metadata retire before the immutable native program becomes visible. */
-	created = compiler->binary;
-	kern_free(compiler->values);
-	drv_gpu_shader_ir_free(ir);
-	kern_free(compiler);
-
-	/* A failed native prefix can never escape as a usable shader binary. */
+	/* Removes repeated and unread work from a private copy of the source program. */
+	optimize_options(stage, key, &options);
+	error = drv_gpu_shader_optimize(ir, &options, &optimized);
 	if (error != 0) {
-		bcm2711_shader_binary_free(created);
+		drv_gpu_shader_ir_free(ir);
 		return error;
 	}
+
+	/* Lowers the rewritten program, or the source program when the optimizer left it alone. */
+	created = NULL;
+	if (optimized.instructions != NULL) {
+		error = compile_stage(&optimized, key, stage, diagnostic, &created);
+		if (error == 0)
+			created->optimized = 1;
+	} else {
+		error = compile_stage(ir, key, stage, diagnostic, &created);
+	}
+
+	/*
+	 * A rewritten program the native compiler refuses for any reason but
+	 * memory is lowered from its source, which keeps the source program's
+	 * own outcome and diagnostic.
+	 */
+	if (optimized.instructions != NULL && error != 0 && error != ENOMEM) {
+		if (diagnostic != NULL)
+			kern_memset(diagnostic, 0, sizeof(*diagnostic));
+		error = compile_stage(ir, key, stage, diagnostic, &created);
+	}
+
+	/* Source IR and its rewritten instructions retire before the immutable native program becomes visible. */
+	kern_free(optimized.instructions);
+	drv_gpu_shader_ir_free(ir);
+
+	/* A failed native prefix can never escape as a usable shader binary. */
+	if (error != 0)
+		return error;
 
 	/* Publication transfers all completed code and uniform storage to the caller at once. */
 	*binary = created;
@@ -144,28 +152,25 @@ bcm2711_shader_binary_free(
 }
 
 /*
- * Appends one completely checked native word within the prevalidated program capacity.
+ * Records one checked operation or signal within the prevalidated program capacity.
+ *
+ * Native words are chosen after the whole program is recorded, so the
+ * scheduler can pair operations and fill delays; an encoding refusal is
+ * still reported here, at the source instruction that caused it.
  */
 int
 bcm2711_shader_append(
 	struct bcm2711_shader_compiler *compiler,
 	const struct bcm2711_qpu_instruction *instruction)
 {
-	uint64_t word;
 	int error;
 
-	/* Capacity refusal cannot expose a truncated successful program. */
-	if (compiler->binary->code_count == compiler->code_capacity)
-		return E2BIG;
-
-	/* The encoder validates shared port, signal and flag fields before returning an atomic word. */
-	error = bcm2711_qpu_encode(instruction, &word);
+	/* An ordinary record has no thread switch role. */
+	error = record_op(compiler, instruction, BCM2711_SHADER_SWITCH_NONE);
 	if (error != 0)
 		return error;
-	compiler->binary->code[compiler->binary->code_count] = word;
-	compiler->binary->code_count++;
 
-	/* This program prefix contains only fully encoded native instructions. */
+	/* Succeeded: the program's record list ends with this operation. */
 	return 0;
 }
 
@@ -196,7 +201,7 @@ bcm2711_shader_nops(
 }
 
 /*
- * Emits one semantic operation followed by conservative register and SFU dependency spacing.
+ * Emits one semantic operation followed by the idle words its result needs before a consumer.
  */
 int
 bcm2711_shader_operation(
@@ -225,30 +230,30 @@ bcm2711_shader_operation(
 	if (error != 0)
 		return error;
 
-	/* Two explicit idle words avoid immediate register and three-cycle SFU reuse hazards. */
-	error = bcm2711_shader_nops(compiler, 2);
+	/* Special-function, VPM, wait and peripheral transactions keep two idle words; a plain result needs none. */
+	error = bcm2711_shader_nops(compiler, operation_gaps(operation, destination, peripheral));
 	if (error != 0)
 		return error;
 
-	/* The destination is ready for the following source operation under the conservative schedule. */
+	/* The destination is ready for the following source operation. */
 	return 0;
 }
 
 /*
- * Records one actual uniform FIFO consumption in the immutable program interface.
+ * Describes the uniform the next consuming transaction reads from the stage's FIFO stream.
  */
 int
 bcm2711_shader_uniform_append(
 	struct bcm2711_shader_compiler *compiler,
 	const struct bcm2711_shader_uniform *uniform)
 {
-	/* Every hardware consumption must fit the validated descriptor capacity. */
-	if (compiler->binary->uniform_count == compiler->uniform_capacity)
-		return E2BIG;
-	compiler->binary->uniforms[compiler->binary->uniform_count] = *uniform;
-	compiler->binary->uniform_count++;
+	/* One description waits for its transaction; a second one would lose the first's position. */
+	if (compiler->has_pending_uniform != 0)
+		return EINVAL;
+	compiler->pending_uniform = *uniform;
+	compiler->has_pending_uniform = 1;
 
-	/* The runtime must supply this word at exactly this position in the stage's FIFO stream. */
+	/* The next consuming record takes the word; its FIFO position follows that record's native word. */
 	return 0;
 }
 
@@ -268,8 +273,8 @@ bcm2711_shader_uniform_load(
 	if (error != 0)
 		return error;
 
-	/* Addressed uniform loads use the 4.2 direct register signal and explicit latency slots. */
-	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_UNIFORM_REGISTER, destination, 2);
+	/* Addressed uniform loads use the 4.2 direct register signal; the next instruction can read the word. */
+	error = bcm2711_shader_signal(compiler, BCM2711_QPU_SIGNAL_UNIFORM_REGISTER, destination, 0);
 	if (error != 0)
 		return error;
 
@@ -308,7 +313,7 @@ bcm2711_shader_signal(
 }
 
 /*
- * Allocates one free two-thread physical expression register.
+ * Allocates one free physical expression register.
  */
 int
 bcm2711_shader_register(
@@ -316,20 +321,315 @@ bcm2711_shader_register(
 	uint32_t *number)
 {
 	uint32_t index;
+	uint32_t chosen;
 
-	/* Payload and materialization scratch registers are permanently excluded from expression allocation. */
-	for (index = BCM2711_SHADER_FIRST_REGISTER; index < BCM2711_SHADER_REGISTER_END; index++) {
-		if (compiler->registers[index] == 0) {
-			compiler->registers[index] = 1;
-			*number = index;
-			if (compiler->binary->registers_used <= index)
-				compiler->binary->registers_used = index + 1;
-			return 0;
+	/* Payload and materialization scratch registers are permanently excluded; the longest-released free register wins. */
+	chosen = BCM2711_SHADER_ABSENT;
+	for (index = BCM2711_SHADER_FIRST_REGISTER; index < compiler->register_end; index++) {
+		if (compiler->registers[index] != 0)
+			continue;
+		if (chosen == BCM2711_SHADER_ABSENT || compiler->released[index] < compiler->released[chosen])
+			chosen = index;
+	}
+
+	/* A register holding a cached constant no current instruction reads is given up, the one read longest ago. */
+	if (chosen == BCM2711_SHADER_ABSENT) {
+		for (index = BCM2711_SHADER_FIRST_REGISTER; index < compiler->register_end; index++) {
+			if (compiler->constant_held[index] == 0 || compiler->constant_touched[index] != 0)
+				continue;
+			if (chosen == BCM2711_SHADER_ABSENT || compiler->constant_clock[index] < compiler->constant_clock[chosen])
+				chosen = index;
+		}
+
+		/* The given-up register is free again. */
+		if (chosen != BCM2711_SHADER_ABSENT) {
+			compiler->constant_held[chosen] = 0;
+			bcm2711_shader_release(compiler, chosen);
 		}
 	}
 
 	/* Register spilling has no implementation and must never silently replace a live scalar. */
-	return E2BIG;
+	if (chosen == BCM2711_SHADER_ABSENT)
+		return E2BIG;
+
+	/* The register now holds one live value. */
+	compiler->registers[chosen] = 1;
+	*number = chosen;
+	if (compiler->binary->registers_used <= chosen)
+		compiler->binary->registers_used = chosen + 1;
+
+	/* Succeeded: the caller owns the register until it releases the value. */
+	return 0;
+}
+
+/*
+ * Releases one expression register whose value has no later reader.
+ */
+void
+bcm2711_shader_release(
+	struct bcm2711_shader_compiler *compiler,
+	uint32_t number)
+{
+	/* The release time sends the register to the back of the allocation order. */
+	compiler->release_clock++;
+	compiler->registers[number] = 0;
+	compiler->released[number] = compiler->release_clock;
+
+	/* Succeeded: a later value may take the register. */
+	return;
+}
+
+/*
+ * Chooses a register for a short-lived scratch value.
+ *
+ * A free expression register is borrowed while enough others stay free, so
+ * consecutive materializations do not chain through one fixed scratch
+ * register; otherwise the caller's preferred fixed scratch register is used.
+ */
+uint32_t
+bcm2711_shader_scratch(
+	struct bcm2711_shader_compiler *compiler,
+	uint32_t preferred)
+{
+	uint32_t index;
+	uint32_t free_count;
+	uint32_t number;
+	int error;
+
+	/* Counts the free expression registers. */
+	free_count = 0;
+	for (index = BCM2711_SHADER_FIRST_REGISTER; index < compiler->register_end; index++) {
+		if (compiler->registers[index] == 0)
+			free_count++;
+	}
+
+	/* A program short of registers keeps them for its values and uses the fixed scratch register. */
+	if (free_count <= BCM2711_SHADER_SCRATCH_RESERVE)
+		return preferred;
+
+	/* Borrows the longest-released free register until the current source instruction is lowered. */
+	error = bcm2711_shader_register(compiler, &number);
+	if (error != 0)
+		return preferred;
+	compiler->borrowed[number] = 1;
+
+	/* Succeeded: the register holds the scratch value until the borrowed registers are released. */
+	return number;
+}
+
+/*
+ * Places a full-width constant in a register, loading it from the uniform stream only when no register holds it.
+ *
+ * While enough registers are free, a loaded constant stays in its register
+ * for later reads; the register is given up when a value needs it.
+ * Otherwise the constant goes to a scratch register for this read only.
+ */
+int
+bcm2711_shader_constant(
+	struct bcm2711_shader_compiler *compiler,
+	uint32_t bits,
+	uint32_t preferred,
+	uint32_t *number)
+{
+	struct bcm2711_shader_uniform uniform;
+	uint32_t index;
+	uint32_t free_count;
+	uint32_t chosen;
+	int error;
+
+	/* A register already holding the bits serves this read too. */
+	for (index = BCM2711_SHADER_FIRST_REGISTER; index < compiler->register_end; index++) {
+		if (compiler->constant_held[index] != 0 && compiler->constant_bits[index] == bits) {
+			compiler->release_clock++;
+			compiler->constant_clock[index] = compiler->release_clock;
+			compiler->constant_touched[index] = 1;
+			*number = index;
+			return 0;
+		}
+	}
+
+	/* Counts the free expression registers. */
+	free_count = 0;
+	for (index = BCM2711_SHADER_FIRST_REGISTER; index < compiler->register_end; index++) {
+		if (compiler->registers[index] == 0)
+			free_count++;
+	}
+
+	/* A program with registers to spare keeps the constant; otherwise it takes a scratch register. */
+	chosen = BCM2711_SHADER_ABSENT;
+	if (free_count > BCM2711_SHADER_CONSTANT_RESERVE) {
+		error = bcm2711_shader_register(compiler, &chosen);
+		if (error != 0)
+			chosen = BCM2711_SHADER_ABSENT;
+	}
+
+	/* Without a kept register the constant takes a scratch one. */
+	if (chosen == BCM2711_SHADER_ABSENT)
+		chosen = bcm2711_shader_scratch(compiler, preferred);
+
+	/* The constant's exact bits come from the uniform stream. */
+	kern_memset(&uniform, 0, sizeof(uniform));
+	uniform.kind = BCM2711_SHADER_CONSTANT;
+	uniform.bits = bits;
+	error = bcm2711_shader_uniform_load(compiler, &uniform, chosen);
+	if (error != 0)
+		return error;
+
+	/* A kept constant is marked for later reads and protected for this instruction. */
+	if (chosen >= BCM2711_SHADER_FIRST_REGISTER &&
+	    chosen < compiler->register_end &&
+	    compiler->borrowed[chosen] == 0 &&
+	    compiler->registers[chosen] != 0) {
+		compiler->release_clock++;
+		compiler->constant_held[chosen] = 1;
+		compiler->constant_bits[chosen] = bits;
+		compiler->constant_clock[chosen] = compiler->release_clock;
+		compiler->constant_touched[chosen] = 1;
+	}
+
+	/* The caller reads the constant from here. */
+	*number = chosen;
+
+	/* Succeeded: the register holds the constant's exact bits. */
+	return 0;
+}
+
+/*
+ * Releases every expression register borrowed as a scratch register.
+ */
+void
+bcm2711_shader_release_scratch(
+	struct bcm2711_shader_compiler *compiler)
+{
+	uint32_t index;
+
+	/* Each borrowed register returns to the allocation order; cached constants may be given up again. */
+	for (index = 0; index < 64; index++) {
+		if (compiler->borrowed[index] != 0) {
+			compiler->borrowed[index] = 0;
+			bcm2711_shader_release(compiler, index);
+		}
+
+		/* A finished instruction no longer protects the constants it read. */
+		compiler->constant_touched[index] = 0;
+	}
+
+	/* Succeeded: no scratch value outlives the instruction that needed it. */
+	return;
+}
+
+/*
+ * Records one thread switch with the delay words its role needs when the program is not scheduled.
+ */
+int
+bcm2711_shader_switch(
+	struct bcm2711_shader_compiler *compiler,
+	enum bcm2711_shader_switch role)
+{
+	struct bcm2711_qpu_instruction instruction;
+	uint32_t gaps;
+	int error;
+
+	/* The switch is a signal on an otherwise idle word. */
+	kern_memset(&instruction, 0, sizeof(instruction));
+	instruction.signal = BCM2711_QPU_SIGNAL_SWITCH;
+	error = record_op(compiler, &instruction, role);
+	if (error != 0)
+		return error;
+
+	/*
+	 * A switch's two delay words follow it; the last switch is marked by a
+	 * second switch in the first delay word, and tile writes start after the
+	 * second switch's own delay words.
+	 */
+	gaps = 2;
+	if (role == BCM2711_SHADER_SWITCH_LAST_FIRST)
+		gaps = 0;
+	error = bcm2711_shader_nops(compiler, gaps);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the switch and its delay words are recorded. */
+	return 0;
+}
+
+/*
+ * Turns the recorded program into native words and its uniform stream.
+ *
+ * A fragment program is scheduled: operations are paired and delays filled.
+ * A program the scheduler refuses, and every vertex program, keeps one
+ * recorded operation per word in source order.  Running out of memory while
+ * scheduling fails the compile like any other allocation failure.
+ */
+int
+bcm2711_shader_emit(
+	struct bcm2711_shader_compiler *compiler)
+{
+	int error;
+
+	/* Every described uniform must have been consumed by its transaction. */
+	if (compiler->has_pending_uniform != 0)
+		return EINVAL;
+
+	/* Fragment programs run once per pixel and are worth scheduling; running out of memory fails the compile. */
+	if (compiler->binary->stage == BCM2711_SHADER_FRAGMENT) {
+		error = bcm2711_shader_schedule(compiler);
+		if (error == ENOMEM)
+			return error;
+		if (error == 0) {
+			compiler->binary->scheduled = 1;
+			return 0;
+		}
+	}
+
+	/* The source-order words keep every conservative delay. */
+	compiler->binary->scheduled = 0;
+	error = bcm2711_shader_emit_in_order(compiler);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the program's words and uniform stream are complete. */
+	return 0;
+}
+
+/*
+ * Encodes one recorded operation per native word, in source order.
+ */
+int
+bcm2711_shader_emit_in_order(
+	struct bcm2711_shader_compiler *compiler)
+{
+	struct bcm2711_shader_op *op;
+	uint64_t word;
+	uint32_t index;
+	int error;
+
+	/* A scheduling attempt may have written words and uniforms; they are replaced. */
+	compiler->binary->code_count = 0;
+	compiler->binary->uniform_count = 0;
+
+	/* Each record becomes one word, and its uniform takes the next stream position. */
+	for (index = 0; index < compiler->op_count; index++) {
+		op = &compiler->ops[index];
+		error = bcm2711_qpu_encode(&op->instruction, &word);
+		if (error != 0)
+			return error;
+		if (compiler->binary->code_count == compiler->code_capacity)
+			return E2BIG;
+		compiler->binary->code[compiler->binary->code_count] = word;
+		compiler->binary->code_count++;
+
+		/* The runtime supplies the uniform at exactly this position in the stage's FIFO stream. */
+		if (op->has_uniform != 0) {
+			if (compiler->binary->uniform_count == compiler->uniform_capacity)
+				return E2BIG;
+			compiler->binary->uniforms[compiler->binary->uniform_count] = op->uniform;
+			compiler->binary->uniform_count++;
+		}
+	}
+
+	/* Succeeded: the words follow the source order with every conservative delay. */
+	return 0;
 }
 
 /*
@@ -343,8 +643,8 @@ bcm2711_shader_operand(
 	struct bcm2711_qpu_source *source)
 {
 	struct bcm2711_shader_value *scalar;
-	struct bcm2711_shader_uniform uniform;
 	uint32_t encoded;
+	uint32_t register_number;
 	int error;
 
 	/* Liveness validation must have established the source before the emitter addresses it. */
@@ -371,14 +671,11 @@ bcm2711_shader_operand(
 	if (error != ENOTSUP)
 		return error;
 
-	/* Full-width constants use caller-selected scratch registers that cannot overwrite an expression value. */
-	kern_memset(&uniform, 0, sizeof(uniform));
-	uniform.kind = BCM2711_SHADER_CONSTANT;
-	uniform.bits = scalar->number;
-	error = bcm2711_shader_uniform_load(compiler, &uniform, scratch);
+	/* Full-width constants use a cached, borrowed or caller-selected scratch register that cannot overwrite an expression value. */
+	error = bcm2711_shader_constant(compiler, scalar->number, scratch, &register_number);
 	if (error != 0)
 		return error;
-	*source = bcm2711_shader_rf(scratch);
+	*source = bcm2711_shader_rf(register_number);
 
 	/* Every bit of the source is preserved, including signed zero and NaN payloads. */
 	return 0;
@@ -644,6 +941,11 @@ compile_program(
 	if (compiler->binary->code == NULL)
 		return ENOMEM;
 
+	/* Recorded operations wait here until the whole program is known. */
+	compiler->ops = kern_calloc(compiler->code_capacity, sizeof(*compiler->ops));
+	if (compiler->ops == NULL)
+		return ENOMEM;
+
 	/* Uniform descriptors follow actual hardware consumption order, rather than source declaration order. */
 	compiler->binary->uniforms = kern_calloc(compiler->uniform_capacity, sizeof(*compiler->binary->uniforms));
 	if (compiler->binary->uniforms == NULL)
@@ -654,6 +956,336 @@ compile_program(
 	if (error != 0)
 		return error;
 
+	/* The recorded program becomes native words and its uniform stream. */
+	error = bcm2711_shader_emit(compiler);
+	if (error != 0)
+		return error;
+
 	/* All native instructions and stage epilogues fit their validated owned storage. */
+	return 0;
+}
+
+/*
+ * Tells how many idle words follow one operation before an instruction may consume its result.
+ *
+ * A 4.2 ALU result in the physical register file is readable by the very next
+ * instruction, and colour writes to the tile buffer and texture coordinate
+ * writes to the TMU follow each other directly.  Special-function results
+ * arrive later, and VPM and wait operations and VPM writes talk to the vertex
+ * pipeline, so those keep two idle words.
+ */
+static uint32_t
+operation_gaps(
+	enum bcm2711_qpu_operation operation,
+	uint32_t destination,
+	uint32_t peripheral)
+{
+	/* The tile buffer's colour write addresses (with and without a configuration uniform) take consecutive words. */
+	if (peripheral != 0 && (destination == 7 || destination == 8))
+		return 0;
+
+	/* The TMU's coordinate and parameter addresses take consecutive words; its results come after a thread switch. */
+	if (peripheral != 0 && destination >= 32 && destination <= 44)
+		return 0;
+
+	/* Any other peripheral write starts a VPM transaction. */
+	if (peripheral != 0)
+		return 2;
+
+	/* Operations whose results or effects come from another unit. */
+	switch (operation) {
+	case BCM2711_QPU_FLOAT_RECIPROCAL:
+	case BCM2711_QPU_FLOAT_INVERSE_ROOT:
+	case BCM2711_QPU_FLOAT_EXPONENT:
+	case BCM2711_QPU_FLOAT_LOGARITHM:
+	case BCM2711_QPU_FLOAT_SINE:
+	case BCM2711_QPU_VPM_LOAD:
+	case BCM2711_QPU_VPM_STORE:
+	case BCM2711_QPU_TEXTURE_WAIT:
+	case BCM2711_QPU_VPM_WAIT:
+		return 2;
+	default:
+		break;
+	}
+
+	/* A plain ALU result is ready for the next instruction. */
+	return 0;
+}
+
+/*
+ * Describes the native stage to the shared optimization.
+ *
+ * Every program runs every skippable block and samples for every channel.
+ * A fragment program writes its colour (every slot is kept, so a store the
+ * analysis refuses still reaches it); a coordinate program passes on its
+ * position alone, a vertex program its position and the key's varyings.
+ * Only fragment programs, which run once per pixel, are folded and
+ * simplified; vertex programs are only cleared of repeated and unread work.
+ */
+static void
+optimize_options(
+	enum bcm2711_shader_stage stage,
+	const struct bcm2711_shader_key *key,
+	struct drv_gpu_shader_optimize_options *options)
+{
+	const struct bcm2711_shader_component *varying;
+	uint32_t index;
+
+	/* Starts with no slot needed. */
+	kern_memset(options, 0, sizeof(*options));
+	options->runs_every_block = 1;
+
+	/* A fragment program keeps every output and is simplified. */
+	if (stage == BCM2711_SHADER_FRAGMENT) {
+		kern_memset(options->needed, 1, sizeof(options->needed));
+		options->simplify = 1;
+		return;
+	}
+
+	/* Both vertex programs pass on the position. */
+	for (index = 0; index < 4; index++)
+		options->needed[DRV_GPU_IR_OPTIMIZE_POSITION + index] = 1;
+
+	/* A vertex program also passes on the key's varyings, which the analysis checks later. */
+	if (stage != BCM2711_SHADER_VERTEX)
+		return;
+	for (index = 0; index < key->varying_count && index < BCM2711_SHADER_INTERFACE_WORDS; index++) {
+		varying = &key->varyings[index];
+		if (varying->location < 16 && varying->component < 4)
+			options->needed[varying->location * 4U + varying->component] = 1;
+	}
+}
+
+/*
+ * Compiles one source program for the threads it fits.
+ *
+ * A fragment program first tries four threads per QPU, which hide texture
+ * latency better but leave each thread only rf0 to rf31; a program whose
+ * values do not fit is compiled again for two threads.  Vertex programs
+ * use two threads.
+ */
+static int
+compile_stage(
+	const struct drv_gpu_shader_ir *ir,
+	const struct bcm2711_shader_key *key,
+	enum bcm2711_shader_stage stage,
+	struct bcm2711_shader_diagnostic *diagnostic,
+	struct bcm2711_shader_binary **binary)
+{
+	int error;
+
+	/* Tries four threads for a fragment program. */
+	error = E2BIG;
+	if (stage == BCM2711_SHADER_FRAGMENT)
+		error = compile_threads(ir, key, stage, 4, diagnostic, binary);
+
+	/* Falls back to two threads; the four-thread attempt's refusal is not this program's outcome. */
+	if (error == E2BIG) {
+		if (diagnostic != NULL)
+			kern_memset(diagnostic, 0, sizeof(*diagnostic));
+		error = compile_threads(ir, key, stage, 2, diagnostic, binary);
+	}
+
+	/* Reports why neither thread count compiled. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: *binary is the compiled program. */
+	return 0;
+}
+
+/*
+ * Compiles one parsed program for a number of threads per QPU.
+ *
+ * E2BIG reports that the program's values do not fit the thread's registers
+ * (or its code does not fit), so the caller may try fewer threads.
+ */
+static int
+compile_threads(
+	const struct drv_gpu_shader_ir *ir,
+	const struct bcm2711_shader_key *key,
+	enum bcm2711_shader_stage stage,
+	uint32_t threads,
+	struct bcm2711_shader_diagnostic *diagnostic,
+	struct bcm2711_shader_binary **binary)
+{
+	struct bcm2711_shader_compiler *compiler;
+	struct bcm2711_shader_binary *created;
+	int error;
+
+	/* Large register/output tables live in unpublished CPU storage while lowering uses the finite kernel stack. */
+	*binary = NULL;
+	compiler = kern_calloc(1, sizeof(*compiler));
+	if (compiler == NULL)
+		return ENOMEM;
+
+	/* Compiler state owns no device reference and retires before any complete native program is published. */
+	compiler->ir = ir;
+	compiler->key = key;
+	compiler->diagnostic = diagnostic;
+	compiler->threads = threads;
+	compiler->register_end = BCM2711_SHADER_REGISTER_END;
+	if (threads == 4)
+		compiler->register_end = BCM2711_SHADER_QUAD_REGISTER_END;
+
+	/* Allocates the public program independently so every later failure has a single complete unwind. */
+	compiler->binary = kern_calloc(1, sizeof(*compiler->binary));
+	if (compiler->binary == NULL) {
+		kern_free(compiler);
+		return ENOMEM;
+	}
+
+	/* The stage remains immutable throughout both interface validation and native output construction. */
+	compiler->binary->stage = stage;
+
+	/* One builder owns the complete unpublished prefix and supplies one checked outcome for common cleanup. */
+	error = compile_program(compiler);
+
+	/* Allocator metadata retires before the immutable native program becomes visible. */
+	created = compiler->binary;
+	kern_free(compiler->values);
+	kern_free(compiler->ops);
+	kern_free(compiler);
+
+	/* A failed native prefix can never escape as a usable shader binary. */
+	if (error != 0) {
+		bcm2711_shader_binary_free(created);
+		return error;
+	}
+
+	/* Succeeded: the caller owns the complete program. */
+	*binary = created;
+	return 0;
+}
+
+/*
+ * Places one physical register number in the program's thread window.
+ *
+ * Expression and payload registers keep their numbers; the scratch registers
+ * rf60 to rf63 become rf28 to rf31 in a four-thread program.  E2BIG reports
+ * a register a four-thread program cannot reach.
+ */
+static int
+encode_register(
+	const struct bcm2711_shader_compiler *compiler,
+	uint32_t *number)
+{
+	/* Two-thread programs see all sixty-four registers. */
+	if (compiler->threads != 4)
+		return 0;
+
+	/* The scratch registers move to the top of the four-thread window. */
+	if (*number >= BCM2711_SHADER_SCRATCH_LEFT && *number < 64U) {
+		*number -= BCM2711_SHADER_SCRATCH_LEFT - BCM2711_SHADER_QUAD_REGISTER_END;
+		return 0;
+	}
+
+	/* A register between the window and the scratch registers cannot be reached. */
+	if (*number >= BCM2711_SHADER_QUAD_REGISTER_END)
+		return E2BIG;
+
+	/* Succeeded: the register is inside the four-thread window. */
+	return 0;
+}
+
+/* Records one operation with its consumed uniform and the program's thread-window register numbers. */
+static int
+record_op(
+	struct bcm2711_shader_compiler *compiler,
+	const struct bcm2711_qpu_instruction *instruction,
+	enum bcm2711_shader_switch role)
+{
+	struct bcm2711_shader_op *op;
+	struct bcm2711_qpu_instruction encoded;
+	uint64_t word;
+	uint32_t consumes;
+	int error;
+
+	/* Capacity refusal cannot expose a truncated successful program. */
+	if (compiler->op_count == compiler->code_capacity)
+		return E2BIG;
+
+	/* Physical registers take this program's thread window before the encoder sees them. */
+	encoded = *instruction;
+	if (encoded.destination.peripheral == 0) {
+		error = encode_register(compiler, &encoded.destination.number);
+		if (error != 0)
+			return error;
+	}
+
+	/* The left source register takes the window too. */
+	if (encoded.left.kind == BCM2711_QPU_REGISTER) {
+		error = encode_register(compiler, &encoded.left.number);
+		if (error != 0)
+			return error;
+	}
+
+	/* The right source register takes the window too. */
+	if (encoded.right.kind == BCM2711_QPU_REGISTER) {
+		error = encode_register(compiler, &encoded.right.number);
+		if (error != 0)
+			return error;
+	}
+
+	/* An addressed signal's register takes the window too. */
+	if (encoded.signal != BCM2711_QPU_SIGNAL_NONE && encoded.signal_destination.peripheral == 0) {
+		error = encode_register(compiler, &encoded.signal_destination.number);
+		if (error != 0)
+			return error;
+	}
+
+	/* The encoder validates the record alone now, so a refusal names the source instruction that caused it. */
+	error = bcm2711_qpu_encode(&encoded, &word);
+	if (error != 0)
+		return error;
+
+	/*
+	 * A uniform-consuming transaction takes the described word; one without
+	 * a description is refused.  The stream's count bounds the recorded
+	 * consumptions here; emission writes the stream in native word order.
+	 */
+	op = &compiler->ops[compiler->op_count];
+	kern_memset(op, 0, sizeof(*op));
+	op->instruction = encoded;
+	op->role = role;
+	consumes = consumes_uniform(&encoded);
+	if (consumes != 0) {
+		if (compiler->has_pending_uniform == 0)
+			return EINVAL;
+		if (compiler->binary->uniform_count == compiler->uniform_capacity)
+			return E2BIG;
+		op->uniform = compiler->pending_uniform;
+		op->has_uniform = 1;
+		compiler->has_pending_uniform = 0;
+		compiler->binary->uniform_count++;
+	}
+
+	/* The record list ends with this operation. */
+	compiler->op_count++;
+
+	/* Succeeded: the record list ends with this operation. */
+	return 0;
+}
+
+/* Tells whether one recorded transaction reads the next word of the stage's uniform stream. */
+static uint32_t
+consumes_uniform(
+	const struct bcm2711_qpu_instruction *instruction)
+{
+	/* Uniform loads and texture configuration signals read the stream. */
+	if (instruction->signal == BCM2711_QPU_SIGNAL_UNIFORM)
+		return 1;
+	if (instruction->signal == BCM2711_QPU_SIGNAL_UNIFORM_REGISTER)
+		return 1;
+	if (instruction->signal == BCM2711_QPU_SIGNAL_TEXTURE_CONFIG)
+		return 1;
+
+	/* A tile write with a configuration uniform reads one too. */
+	if (instruction->operation != BCM2711_QPU_IDLE &&
+	    instruction->destination.peripheral != 0 &&
+	    instruction->destination.number == 8)
+		return 1;
+
+	/* No other transaction touches the uniform stream. */
 	return 0;
 }

@@ -6,7 +6,12 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 media_host=$(realpath "${1:-build/ws197-media-library-host}")
 media_linux=$(realpath "${2:-build/ws197-media-library-linux}")
-mkdir -p "$media_host/bin" "$media_host/inc/keiland"
+mkdir -p "$media_host/bin" "$media_host/inc/keiland" "$media_host/libexec"
+# ws157-p013: mediastorage asks keiland-preview --info (the Linux build's, confined with seccomp); the child starts
+# without an environment, so a wrapper gives it the Linux build's libraries (installed it finds them in /opt/keiland).
+printf '#!/bin/sh\nLD_LIBRARY_PATH=%s exec %s "$@"\n' "$media_linux/lib" "$media_linux/libexec/keiland-preview" \
+	>"$media_host/libexec/keiland-preview"
+chmod 0755 "$media_host/libexec/keiland-preview"
 cp include/libc/sha2.h "$media_host/inc/sha2.h"
 cp userland/desktop/include/keiland/keiland.h "$media_host/inc/keiland/keiland.h"
 ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -w -I"$media_host/inc" \
@@ -16,7 +21,8 @@ ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror \
 	-I. -Iuserland/desktop/include -I"$media_host/inc" \
 	userland/desktop/mediastorage/main.c userland/desktop/mediastorage/notify.c \
 	userland/desktop/mediastorage/database.c userland/desktop/mediastorage/json.c \
-	userland/desktop/mediastorage/dimensions.c userland/desktop/photos/cache-folders.c \
+	userland/desktop/photos/cache-folders.c \
+	userland/desktop/preview/client.c userland/desktop/preview/linux/spawn.c "-DKEILAND_LIBEXECDIR=\"$media_host/libexec\"" \
 	userland/desktop/photos/import.c userland/desktop/photos/exif.c \
 	userland/desktop/photos/library.c userland/desktop/photos/snapshot.c "$media_host/sha2.o" \
 	-L"$media_linux/lib" -Wl,-rpath-link,"$media_linux/lib" -lkeiland -lwayland-client \
@@ -32,12 +38,13 @@ ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror \
 	plan/ws157/tests/host-media-wire.c plan/ws197/tests/host-media-receive.c \
 	userland/desktop/phone/receive.c userland/desktop/phone/store.c userland/desktop/phone/phonebook.c \
 	userland/desktop/libmms/mms.c userland/desktop/photos/library.c userland/desktop/photos/snapshot.c \
-	userland/desktop/photos/decode.c userland/desktop/picture/picture.c \
+	userland/desktop/photos/decode.c \
+	userland/desktop/preview/client.c userland/desktop/preview/linux/spawn.c "-DKEILAND_LIBEXECDIR=\"$media_host/libexec\"" \
 	userland/desktop/photos/cache-folders.c "$media_host/sha2.o" userland/desktop/wayland/media-library.c \
 	userland/desktop/libkeiland-backend/media/media.c \
 	userland/desktop/libkeiland/system/system-protocol.c \
 	-L"$media_linux/lib" -Wl,-rpath-link,"$media_linux/lib" \
-	-lkeiland -lwayland-server -lwayland-client -l:libpng-compat.so -l:libjpeg-compat.so -l:libgif-compat.so -lpthread -o "$media_host/host-media-wire"
+	-lkeiland -lwayland-server -lwayland-client -lpthread -o "$media_host/host-media-wire"
 ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror \
 	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
 	-I. -Iuserland/desktop/include plan/ws197/tests/host-media-select.c \

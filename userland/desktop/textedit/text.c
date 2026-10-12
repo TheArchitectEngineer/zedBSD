@@ -616,9 +616,22 @@ text_slot(
 	uint32_t key)
 {
 	unsigned slot;
+	uint32_t hash;
+
+	/*
+	 * The key's hash, every bit of the key mixed into the low ones (as
+	 * libkeiland's text.c, ws210-p014): a multiply alone left the glyphs
+	 * of one size and face on a few home slots in long runs.
+	 */
+	hash = key;
+	hash ^= hash >> 16;
+	hash *= 0x7feb352dU;
+	hash ^= hash >> 15;
+	hash *= 0x846ca68bU;
+	hash ^= hash >> 16;
 
 	/* Open addressing from the key's hash. */
-	slot = (key * 2654435761U) % text->cache_size;
+	slot = hash % text->cache_size;
 	while (text->cache[slot].key != 0U && text->cache[slot].key != key)
 		slot = (slot + 1U) % text->cache_size;
 

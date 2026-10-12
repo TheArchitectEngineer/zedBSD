@@ -20,6 +20,11 @@
  *   rpi4gpu.off=1         the driver does not attach at all
  *   rpi4gpu.stop=<stage>  the display path stops before that stage
  *   v3d.stop=<stage>      the V3D engine stops before that stage
+ *   v3d.tfu=0             textures are converted by the CPU, never the
+ *                         texture formatting unit, even when its self-test
+ *                         passed
+ *   v3d.perf=1            the engine logs its cost report every two seconds
+ *                         of work (none by default, ws141-p016)
  */
 
 #include <stdarg.h>
@@ -39,6 +44,12 @@
 
 /* The whole token that keeps the driver from attaching. */
 #define STAGE_OFF_TOKEN			"rpi4gpu.off=1"
+
+/* The whole token that keeps texture conversion off the texture formatting unit. */
+#define STAGE_TFU_OFF_TOKEN		"v3d.tfu=0"
+
+/* The whole token that turns the engine's periodic cost report on. */
+#define STAGE_PERF_ON_TOKEN		"v3d.perf=1"
 
 /* The longest stop token: a family, ".stop=" and a stage name. */
 #define STAGE_TOKEN_CAPACITY		48U
@@ -65,6 +76,46 @@ bcm2711_stage_driver_off(
 		return true;
 
 	/* The driver attaches by default. */
+	return false;
+}
+
+/*
+ * Reports whether the boot asked that textures never be converted by the texture formatting unit.
+ */
+bool
+bcm2711_stage_tfu_off(
+	void)
+{
+	const char *line;
+	int present;
+
+	/* Looks for v3d.tfu=0 among the boot parameters. */
+	line = stage_command_line();
+	present = kern_boot_parameters_token_present(line, STAGE_TFU_OFF_TOKEN);
+	if (present)
+		return true;
+
+	/* The unit converts once its self-test passed. */
+	return false;
+}
+
+/*
+ * Reports whether the boot asked for the engine's periodic cost report.
+ */
+bool
+bcm2711_stage_perf_on(
+	void)
+{
+	const char *line;
+	int present;
+
+	/* Looks for v3d.perf=1 among the boot parameters. */
+	line = stage_command_line();
+	present = kern_boot_parameters_token_present(line, STAGE_PERF_ON_TOKEN);
+	if (present)
+		return true;
+
+	/* No report by default. */
 	return false;
 }
 

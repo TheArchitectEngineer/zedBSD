@@ -572,6 +572,9 @@ vulkan_kernel_error(
 	if (error == ENOSPC)
 		return VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
+	/* Says which kernel error lost the session; nothing else names it to the user. */
+	fprintf(stderr, "VULKAN kernel error errno=%d device lost\n", error);
+
 	/* Marks uncertain transport ownership as lost for every device sharing this context. */
 	vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 
@@ -875,6 +878,7 @@ vulkan_context_transaction(
 	if (error == VK_SUCCESS)
 		error = vulkan_context_poll(context);
 	if (error != VK_SUCCESS) {
+		fprintf(stderr, "VULKAN reply failed result=%d sequence=%llu device lost\n", (int)error, (unsigned long long)sequence);
 		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
 	}

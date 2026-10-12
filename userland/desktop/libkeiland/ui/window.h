@@ -18,6 +18,9 @@
 #include <keiland/keiland.h>
 
 #include "declare.h"
+#include "internal.h"
+#include "present-damage.h"
+#include "trace.h"
 
 /* The window's surface is a Wayland one, for Vulkan's surface. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
@@ -146,18 +149,25 @@ struct kl_app {
 	struct kl_app *next;
 };
 
-/* One swapchain image and what draws into it. */
+/*
+ * One swapchain image and what draws into it: its view and framebuffer
+ * (the quad's), the semaphore its present waits for, and what of the
+ * frame changed since it was last written (the copy's, ws210-p013).
+ */
 struct keiui_present_target {
 	VkImage image;
 	VkImageView view;
 	VkFramebuffer framebuffer;
 	VkSemaphore rendered;
+	struct keiui_stale stale;
 };
 
 /*
  * The Vulkan presenter (Text Editor's present.c): the swapchain over the
- * window's surface, and the quad that copies the CPU's frame onto an
- * image of it.  It lives from the window's opening to its closing.
+ * window's surface, and the CPU's frame copied onto an image of it, by
+ * the parts the image lacks from a staging buffer (ws210-p013), or, on a
+ * surface whose images take no copy, whole by a quad that samples the
+ * canvas image.  It lives from the window's opening to its closing.
  */
 struct keiui_present {
 	/* The instance, the surface of the window, the device and its queue. */
@@ -185,7 +195,37 @@ struct keiui_present {
 	VkDescriptorSet set;
 	VkSampler sampler;
 
-	/* The canvas image (linear, host-written), its memory, view and map, and whether it was made ready. */
+	/*
+	 * Whether the frames are copied into the images (the surface's images
+	 * take a transfer; else the quad draws them), decided with the first
+	 * swapchain, and whether each frame is copied whole all the same (the
+	 * diagnostic KL_PRESENT_WHOLE=1, the reference of the copy by
+	 * parts).
+	 */
+	int copying;
+	int path_chosen;
+	int force_whole;
+
+	/*
+	 * The staging buffer the copy reads (host-written, mapped for good at
+	 * canvas_map, canvas_pitch bytes a row) and its memory.
+	 */
+	VkBuffer staging;
+	VkDeviceMemory staging_memory;
+
+	/*
+	 * The diagnostic KL_PRESENT_CHECK=1: each image written is read
+	 * back into a buffer and compared with the staging buffer, and the
+	 * first difference is told once (KEILAND PRESENT_STALE).  The buffer,
+	 * its memory and map, and whether a difference was told.
+	 */
+	int check;
+	VkBuffer readback;
+	VkDeviceMemory readback_memory;
+	unsigned char *readback_map;
+	int stale_told;
+
+	/* The canvas image (linear, host-written; the quad's), its memory, view and map, and whether it was made ready. */
 	VkImage canvas;
 	VkDeviceMemory canvas_memory;
 	VkImageView canvas_view;
@@ -221,6 +261,9 @@ struct keiui_present {
 	unsigned acquire_ms;
 	unsigned present_ms;
 	unsigned wait_ms;
+
+	/* The times of the last frame's steps, for the trace of the frames (KL_TRACE_FRAMES=1, trace.h). */
+	struct keiui_present_stamps stamps;
 };
 
 /* One wl_shm buffer: its window, the pixels mapped, their size, and whether the compositor still reads it. */
@@ -322,9 +365,13 @@ struct kl_window {
 	unsigned event_first;
 	unsigned event_count;
 
-	/* How the frames are shown, and the presenters. */
+	/*
+	 * How the frames are shown, the presenters, and whether a failure of
+	 * the Vulkan presenter was told on stderr (once, BUG-290).
+	 */
 	unsigned present;
 	struct keiui_present vulkan;
+	int present_told;
 	struct keiui_shm_buffer buffers[KEIUI_SHM_BUFFERS];
 	uint32_t shm_width;
 	uint32_t shm_height;
@@ -506,6 +553,28 @@ struct kl_window {
 	int app_quiet;
 
 	/*
+	 * What the application asked of the window's input and frames
+	 * (KL_PACING_*, kl_window_set_pacing, ws210-p014 F2.1): with
+	 * KL_PACING_MOTION a pointer's motion takes the place of the newest
+	 * input queued when that is a motion of the window too.  0 by default.
+	 * With KL_PACING_FRAME (KL_VERSION 92) the next frame waits for the
+	 * compositor to take the last one: the pace, and the frame callback
+	 * asked for with it (pace_callback, NULL when none is awaited).
+	 */
+	unsigned pacing;
+	struct keiui_pace pace;
+	struct wl_callback *pace_callback;
+
+	/*
+	 * The trace of the window's frames (the diagnostic KL_TRACE_FRAMES=1,
+	 * trace.h): made with the first frame shown when it is asked for
+	 * (trace_checked: the environment was read), NULL otherwise; each
+	 * frame traced awaits a frame callback of its own.
+	 */
+	struct keiui_trace *trace;
+	int trace_checked;
+
+	/*
 	 * The declarative menus, controls and glass (window-declare.c): the
 	 * action states, the menu's, the controls' and the popup's models and
 	 * the objects that show them (a menu service of the window's own when
@@ -557,7 +626,7 @@ uint64_t keiui_clock_ms(void);
 /* The Vulkan presenter (present.c). */
 VkResult keiui_present_open(struct keiui_present *present, struct kl_window *window);
 VkResult keiui_present_resize(struct keiui_present *present, uint32_t width, uint32_t height);
-VkResult keiui_present_frame(struct keiui_present *present, const uint32_t *pixels, size_t stride, const struct kl_rect *part);
+VkResult keiui_present_frame(struct keiui_present *present, const uint32_t *pixels, size_t stride, const struct kl_rect *parts, unsigned count);
 void keiui_present_close(struct keiui_present *present);
 
 /* The shared-memory presenter (present-shm.c). */

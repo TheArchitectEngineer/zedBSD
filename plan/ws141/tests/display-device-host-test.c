@@ -21,6 +21,7 @@
 #include <kern/pmem.h>
 #include <kern/sched.h>
 #include <kern/text-display.h>
+#include <kern/waitq.h>
 #include <drivers/gpu/gpu.h>
 #include <uapi/errno.h>
 #include <uapi/gpu-allocation.h>
@@ -35,7 +36,7 @@ struct test_allocation {
 };
 
 /* The model retains both private scanout targets and ordinary session resources. */
-static struct test_allocation test_allocations[16];
+static struct test_allocation test_allocations[24];
 static uint32_t test_hvs[8192];
 static uint32_t test_pv[2][32];
 static struct bcm2711_display test_display;
@@ -55,6 +56,21 @@ static bool test_misplaced;
 /* The clock provider can refuse a transition without permitting any list publication. */
 static bool test_clock_refused;
 static uint32_t test_core_hz;
+
+/* A cursor move made while a present waits for its adoption (B-k2): who moves it, and the answer. */
+static bool test_move_during_wait;
+static int test_move_error;
+static void *test_move_session;
+static uint64_t test_move_lease;
+
+/* The model's scheduler clock (display-lock-host.c). */
+extern uint64_t display_test_ticks;
+
+static int present_frame(void *session, void *resource, struct gpu_display_present *present);
+static int drain_lists(void);
+static void deliver_frame(void);
+static void cursor_rows(void *session, void *resource, struct gpu_display_cursor_image *request, uint8_t value);
+static unsigned named_cursor_images(void);
 
 /*
  * Verifies the real node callbacks, byte conversion, lease isolation and DMA holds.
@@ -78,6 +94,11 @@ main(
 	struct gpu_image_descriptor image;
 	struct drv_gpu_scanout_backing backing;
 	struct gpu_scanout_constraints constraints;
+	struct gpu_display_cursor_image cursor_image;
+	struct gpu_display_cursor_move cursor_move;
+	struct gpu_display_cursor_hide cursor_hide;
+	struct gpu_display_overlay_info overlay_info;
+	uint8_t arrow[16 * 4 * 8];
 	void *capability;
 	void *imported;
 	void *alias;
@@ -126,6 +147,7 @@ main(
 	error = bcm2711_display_register(&test_display);
 	assert(error == 0 && test_operations != NULL);
 	assert(test_run_count == 2 && test_freed == 0);
+	assert(test_operations->display->flags == DRV_GPU_DISPLAY_UNGATED && test_operations->display->adoption_wait != NULL);
 
 	/* Opens two independent sessions through the actual published operation table. */
 	error = test_operations->open(test_device, &first);
@@ -161,7 +183,7 @@ main(
 	error = test_operations->resource_map(test_device, first, resource, &mapping);
 	assert(error == 0 && mapping.bytes == 8294400 && mapping.attributes == 0);
 
-	/* Presentation converts into private native BGRA storage and confirms actual adoption. */
+	/* A refused clock publishes nothing; then the copy is converted to native BGRA and adopted. */
 	memset(&present, 0, sizeof(present));
 	present.lease = lease;
 	present.width = 1920;
@@ -171,23 +193,26 @@ main(
 	present.flags = GPU_DISPLAY_PRESENT_FIFO;
 	present.generation = 1;
 	test_clock_refused = true;
-	error = test_operations->display->present(test_device, first, resource, &present);
-	assert(error == EIO && test_hvs[0x20 / 4] == 43 && !test_display.flip.busy);
+	error = present_frame(first, resource, &present);
+	assert(error == EIO && test_hvs[0x20 / 4] == 43 && !test_display.flip.restoring);
 	test_clock_refused = false;
-	error = test_operations->display->present(test_device, first, resource, &present);
-	assert(error == 0 && present.sequence == 1);
+	error = present_frame(first, resource, &present);
+	assert(error == 0 && present.sequence == test_display.flip.state_serial && present.sequence != 0);
 	sequence = present.sequence;
 	bcm2711_display_flip_snapshot(&test_display, &status);
-	native = kern_pmem_to_kernel(status.frames[0].physical);
+	native = kern_pmem_to_kernel(status.primary.frame.physical);
 	assert(native[0] == 0x33 && native[1] == 0x22 && native[2] == 0x11 && native[3] == 0xff);
-	assert(status.retained_mask == 1 && status.active_list == 128);
-	words = &test_hvs[0x4000 / 4 + 128];
-	assert(words[0] == 0x4800d807 && words[5] == 0xc1000000);
-	assert(words[8] == 0x4800d807 && words[9] == 0 && words[10] == 0x4000fff0);
-	assert(words[11] == 0x04380780 && words[13] == (0xc0000000U | (uint32_t)status.frames[0].physical));
-	assert(words[12] == 0xc0c0c0c0 && words[14] == 0xc0c0c0c0);
-	assert(words[15] == 7680 && words[16] == 0x80000000);
-	assert(test_core_hz == 137600000 && status.clock_error == 0);
+	assert(status.primary.hold == NULL && status.active_list == 256 && status.pending_count == 0);
+
+	/* An opaque full-screen frame hides the console, which leaves the list. */
+	words = &test_hvs[0x4000 / 4 + 256];
+	assert(words[0] == 0x4800d807 && words[1] == 0 && words[2] == 0x4000fff0);
+	assert(words[3] == 0x04380780 && words[5] == (0xc0000000U | (uint32_t)status.primary.frame.physical));
+	assert(words[4] == 0xc0c0c0c0 && words[6] == 0xc0c0c0c0);
+	assert(words[7] == 7680 && words[8] == 0x80000000);
+
+	/* A composed frame keeps the transition floor; only the return to the console lowers it. */
+	assert(test_core_hz == 500000000 && status.clock_error == 0);
 
 	/* The source may be destroyed immediately; HVS still references its private copy. */
 	freed_before = test_freed;
@@ -198,6 +223,16 @@ main(
 	wait.sequence = sequence;
 	error = test_operations->display->wait(test_device, first, &wait);
 	assert(error == 0 && wait.completed_sequence == sequence);
+
+	/* A number not yet recorded: EAGAIN at once without time, ETIMEDOUT after some frames. */
+	wait.sequence = sequence + 100U;
+	error = test_operations->display->wait(test_device, first, &wait);
+	assert(error == EAGAIN);
+	wait.timeout_ns = 5000000U;
+	error = test_operations->display->wait(test_device, first, &wait);
+	assert(error == ETIMEDOUT);
+	wait.timeout_ns = 0;
+	wait.sequence = sequence;
 
 	/* A failed restoration retains both the private storage and the retryable lease. */
 	memset(&release, 0, sizeof(release));
@@ -212,22 +247,25 @@ main(
 	error = test_operations->display->release(test_device, first, &release);
 	assert(error == 0);
 	bcm2711_display_flip_snapshot(&test_display, &status);
-	assert(status.retained_mask == 0 && status.active_list == 43);
+	assert(status.used_mask == 0 && status.active_list == 43);
 	assert(!test_text_suspended);
 
-	/* A fresh lease cannot observe an earlier owner's completed presentation. */
+	/* The output's numbers go on across leases: an earlier lease's number is adopted for the next. */
 	error = test_operations->display->claim(test_device, second, &claim);
 	assert(error == 0 && claim.lease != lease);
 	wait.lease = claim.lease;
 	wait.sequence = sequence;
 	error = test_operations->display->wait(test_device, second, &wait);
-	assert(error == ETIMEDOUT);
+	assert(error == 0 && wait.completed_sequence > sequence);
+	wait.lease = lease;
+	error = test_operations->display->wait(test_device, first, &wait);
+	assert(error == EBUSY);
 	test_operations->close(test_device, second);
 	assert(!test_text_suspended);
 	test_operations->close(test_device, first);
 	assert(test_freed == 1);
 
-	/* Exercises positioned premultiplied composition independently of the full copy API. */
+	/* Exercises positioned premultiplied composition over the console. */
 	overlay = test_display.screen;
 	overlay.physical = test_allocations[0].physical;
 	overlay.width = 32;
@@ -236,7 +274,8 @@ main(
 	overlay.size = 2048;
 	error = bcm2711_display_flip_compose(&test_display, &overlay, 123, 456, true);
 	assert(error == 0);
-	words = &test_hvs[0x4000 / 4 + 128];
+	words = &test_hvs[0x4000 / 4 + test_display.flip.active_list];
+	assert(words[0] == 0x4800d807 && words[5] == 0xc1000000);
 	assert(words[8] == 0x4800d807 && words[9] == 0x01c8007b);
 	assert(words[10] == 0x2000fff0 && words[11] == 0x00100020);
 	assert(words[13] == 0xc2000000 && words[15] == 128 && words[16] == 0x80000000);
@@ -307,7 +346,7 @@ main(
 	test_operations->resource_destroy(test_device, second, alias);
 	assert(test_freed == freed_before);
 
-	/* Direct RGBA scanout encodes its own channel order while the lower console stays BGRA. */
+	/* Direct RGBA scanout encodes its own channel order; the recorded plane borrows the allocation. */
 	memset(&claim, 0, sizeof(claim));
 	claim.display_id = 1;
 	claim.generation = 1;
@@ -317,19 +356,19 @@ main(
 	present.flags = GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB;
 	present.refresh_millihz = 60000;
 	present.sequence = 0;
-	error = test_operations->display->present(test_device, second, imported, &present);
+	error = present_frame(second, imported, &present);
 	assert(error == 0);
 	bcm2711_display_flip_snapshot(&test_display, &status);
-	assert(status.frames[0].format == 1 && status.retained_mask == 1);
-	words = &test_hvs[0x4000 / 4 + 128];
-	assert(words[0] == 0x4800d807 && words[8] == 0x4800f807);
+	assert(status.primary.frame.format == 1 && status.primary.hold != NULL);
+	words = &test_hvs[0x4000 / 4 + status.active_list];
+	assert(words[0] == 0x4800f807 && words[8] == 0x80000000);
 	test_operations->resource_destroy(test_device, second, imported);
 	assert(test_freed == freed_before);
 	release.lease = claim.lease;
 	error = test_operations->display->release(test_device, second, &release);
 	assert(error == 0 && test_freed == freed_before + 1);
 
-	/* Two uncertain native blob slots survive both descriptors and a failed close restore. */
+	/* Two uncertain native blob frames survive both descriptors and a failed close restore. */
 	error = test_operations->blob_create(test_device, second, &blob.blob, &resource, &identifier);
 	assert(error == 0);
 	error = test_operations->blob_create(test_device, second, &blob.blob, &other, &identifier);
@@ -338,14 +377,14 @@ main(
 	assert(error == 0);
 	present.lease = claim.lease;
 	present.sequence = 0;
-	error = test_operations->display->present(test_device, second, resource, &present);
+	error = present_frame(second, resource, &present);
 	assert(error == 0);
 	test_stall = true;
 	present.sequence = 0;
-	error = test_operations->display->present(test_device, second, other, &present);
+	error = present_frame(second, other, &present);
 	assert(error == ETIMEDOUT);
 	bcm2711_display_flip_snapshot(&test_display, &status);
-	assert(status.uncertain && status.retained_mask == 3);
+	assert(status.uncertain && status.used_mask != 0 && status.retiring_count == 1 && status.primary.hold != NULL);
 	freed_before = test_freed;
 	test_operations->resource_destroy(test_device, second, resource);
 	test_operations->resource_destroy(test_device, second, other);
@@ -361,9 +400,234 @@ main(
 	test_operations->close(test_device, first);
 	assert(!test_text_suspended);
 
+	/* The output has a cursor plane, and only the lease's open uses it. */
+	error = test_operations->open(test_device, &first);
+	assert(error == 0);
+	memset(&output, 0, sizeof(output));
+	error = test_operations->display->query(test_device, first, &output);
+	assert(error == 0 && (output.flags & GPU_DISPLAY_HAS_CURSOR) != 0 && (output.flags & GPU_DISPLAY_HAS_OVERLAYS) != 0);
+	assert(output.plane_count == 3);
+	memset(&overlay_info, 0, sizeof(overlay_info));
+	overlay_info.display_id = 1;
+	overlay_info.generation = 1;
+	overlay_info.plane = 3;
+	error = test_operations->display->overlay_info(test_device, first, &overlay_info);
+	assert(error == EINVAL);
+	overlay_info.plane = 2;
+	error = test_operations->display->overlay_info(test_device, first, &overlay_info);
+	assert(error == 0 && overlay_info.max_src_width == 1920 && overlay_info.max_dst_height == 1080);
+	assert(overlay_info.flags == (GPU_DISPLAY_OVERLAY_SCALE_UP | GPU_DISPLAY_OVERLAY_SCALE_DOWN_X | GPU_DISPLAY_OVERLAY_SCALE_DOWN_Y));
+	memset(&claim, 0, sizeof(claim));
+	claim.display_id = 1;
+	claim.generation = 1;
+	error = test_operations->display->claim(test_device, first, &claim);
+	assert(error == 0);
+	memset(&create, 0, sizeof(create));
+	create.bytes = 8294400;
+	create.usage = GPU_RESOURCE_USAGE_STORAGE;
+	error = test_operations->resource_create(test_device, first, &create, &resource);
+	assert(error == 0);
+	present.lease = claim.lease;
+	present.flags = GPU_DISPLAY_PRESENT_FIFO;
+	present.format = GPU_PIXEL_RGBA8888;
+	present.sequence = 0;
+	error = present_frame(first, resource, &present);
+	assert(error == 0 && test_display.flip.pending_count == 0);
+
+	/* A 16x8 image from the open's storage; a wrong lease or an imageless move is refused. */
+	memset(arrow, 0x7f, sizeof(arrow));
+	error = test_operations->resource_write(test_device, first, resource, 0, arrow, sizeof(arrow));
+	assert(error == 0);
+	memset(&cursor_image, 0, sizeof(cursor_image));
+	cursor_image.lease = claim.lease + 1U;
+	cursor_image.width = 16;
+	cursor_image.height = 8;
+	cursor_image.stride = 64;
+	cursor_image.format = GPU_PIXEL_BGRA8888;
+	cursor_image.generation = 1;
+	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
+	assert(error == EBUSY);
+	memset(&cursor_move, 0, sizeof(cursor_move));
+	cursor_move.lease = claim.lease;
+	cursor_move.generation = 1;
+	cursor_move.x = 10;
+	cursor_move.y = 20;
+	error = test_operations->display->cursor_move(test_device, first, &cursor_move);
+	assert(error == EINVAL);
+
+	/* Setting a hidden cursor's image publishes nothing; a move shows it without waiting. */
+	cursor_image.lease = claim.lease;
+	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
+	assert(error == 0 && test_display.flip.pending_count == 0 && test_display.flip.cursor.physical != 0);
+	native = kern_pmem_to_kernel(test_display.flip.cursor.physical);
+	assert(native != NULL && native[0] == 0x7f && native[63] == 0x7f && native[64] == 0 && native[256] == 0x7f);
+	error = test_operations->display->cursor_move(test_device, first, &cursor_move);
+	words = &test_hvs[0x4000 / 4 + test_hvs[0x20 / 4]];
+	assert(error == 0 && test_display.flip.pending_count == 1);
+	assert(words[8] == 0x4800d807 && words[9] == ((20U << 16) | 10U) && words[10] == 0x2000fff0);
+	assert(words[11] == ((8U << 16) | 16U) && words[13] == (0xc0000000U | test_display.flip.cursor.physical));
+	assert(words[15] == 256 && words[16] == 0x80000000);
+
+	/* The same unchanged rows show the image that holds them again, without a copy, even while a list names it. */
+	identifier = test_display.flip.cursor.physical;
+	native[1] = 0x11;
+	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
+	assert(error == 0 && test_display.flip.cursor.physical == identifier && native[1] == 0x11);
+	native[1] = 0x7f;
+
+	/* Changed rows (the write advances the run's generation) go to another image at once; the lists keep their own. */
+	memset(arrow, 0x6e, sizeof(arrow));
+	error = test_operations->resource_write(test_device, first, resource, 0, arrow, sizeof(arrow));
+	assert(error == 0);
+	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
+	assert(error == 0 && test_display.flip.pending_count == 2 && test_display.flip.list_serial < test_display.flip.state_serial);
+	assert(test_display.flip.cursor.physical != identifier && bcm2711_display_flip_cursor_named(&test_display, identifier));
+	assert(((uint8_t *)kern_pmem_to_kernel(test_display.flip.cursor.physical))[0] == 0x6e && native[0] == 0x7f);
+
+	/* Other rows of the same run are another source, and copy again. */
+	identifier = test_display.flip.cursor.physical;
+	cursor_image.offset = 64;
+	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
+	assert(error == 0 && test_display.flip.cursor.physical != identifier);
+	cursor_image.offset = 0;
+	error = test_operations->display->cursor_set(test_device, first, resource, &cursor_image);
+	assert(error == 0 && test_display.flip.cursor.physical == identifier);
+
+	/* The next frame is recorded at once and carries the cursor; a move during its adoption wait goes through. */
+	present.sequence = 0;
+	test_move_during_wait = true;
+	test_move_error = -1;
+	test_move_session = first;
+	test_move_lease = claim.lease;
+	error = present_frame(first, resource, &present);
+	assert(error == 0 && test_move_error == 0 && !test_move_during_wait);
+	error = drain_lists();
+	assert(error == 0 && test_display.flip.pending_count == 0);
+	words = &test_hvs[0x4000 / 4 + test_display.flip.active_list];
+	assert(words[8] == 0x4800d807 && words[9] == ((21U << 16) | 11U) && words[16] == 0x80000000);
+	assert(words[13] == (0xc0000000U | test_display.flip.cursor.physical));
+
+	/* Five images: three lists and the recorded cursor each name one, and a fifth is still free. */
+	cursor_rows(first, resource, &cursor_image, 0x21);
+	error = drain_lists();
+	assert(error == 0);
+	test_stall = true;
+	cursor_rows(first, resource, &cursor_image, 0x22);
+	cursor_rows(first, resource, &cursor_image, 0x23);
+	cursor_rows(first, resource, &cursor_image, 0x24);
+	assert(test_display.flip.pending_count == 2 && test_display.flip.list_serial < test_display.flip.state_serial);
+	assert(named_cursor_images() == 4);
+	cursor_rows(first, resource, &cursor_image, 0x25);
+	assert(named_cursor_images() == 4);
+	test_stall = false;
+	error = drain_lists();
+	assert(error == 0 && named_cursor_images() == 1);
+
+	/* Hiding publishes the frame alone; the release takes the cursor and its image away. */
+	memset(&cursor_hide, 0, sizeof(cursor_hide));
+	cursor_hide.lease = claim.lease;
+	cursor_hide.generation = 1;
+	error = test_operations->display->cursor_hide(test_device, first, &cursor_hide);
+	assert(error == 0 && test_hvs[0x4000 / 4 + test_hvs[0x20 / 4] + 8] == 0x80000000);
+	release.lease = claim.lease;
+	error = test_operations->display->release(test_device, first, &release);
+	assert(error == 0 && test_display.flip.active_list == 43);
+	assert(!test_display.flip.cursor.shown && test_display.flip.cursor.physical == 0);
+	error = test_operations->display->cursor_move(test_device, first, &cursor_move);
+	assert(error == EBUSY);
+	test_operations->resource_destroy(test_device, first, resource);
+	test_operations->close(test_device, first);
+
 	/* Succeeded: private scanout storage survives every ordinary open and resource. */
 	puts("display-device-host-test PASS");
 	return 0;
+}
+
+/* Records a present and waits for its adoption, as the GPU core does for an ungated display. */
+static int
+present_frame(
+	void *session,
+	void *resource,
+	struct gpu_display_present *present)
+{
+	int error;
+
+	/* The record, which pins nothing past its return. */
+	present->sequence = 0;
+	error = test_operations->display->present(test_device, session, resource, present);
+	if (error != 0)
+		return error;
+
+	/* The adoption wait, which numbers the present. */
+	error = test_operations->display->adoption_wait(test_device, session, present->lease, &present->sequence, NULL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the frame is shown. */
+	return 0;
+}
+
+/* Lets the hardware take lists until none is out and the newest shows every record. */
+static int
+drain_lists(
+	void)
+{
+	unsigned frames;
+
+	/* At most a few frames: each adoption may publish the coalesced rest. */
+	for (frames = 0; frames < 8U; frames++) {
+		/* Nothing is out and nothing is left to publish. */
+		if (test_display.flip.pending_count == 0 && test_display.flip.list_serial == test_display.flip.state_serial)
+			return 0;
+		deliver_frame();
+	}
+
+	/* The lists did not settle. */
+	return ETIMEDOUT;
+}
+
+/* Writes new cursor rows of one byte into the resource and sets them (a copy into a free image). */
+static void
+cursor_rows(
+	void *session,
+	void *resource,
+	struct gpu_display_cursor_image *request,
+	uint8_t value)
+{
+	uint8_t rows[16 * 4 * 8];
+	int error;
+
+	/* The write advances the run's generation, so the rows are copied. */
+	memset(rows, value, sizeof(rows));
+	error = test_operations->resource_write(test_device, session, resource, 0, rows, sizeof(rows));
+	assert(error == 0);
+	error = test_operations->display->cursor_set(test_device, session, resource, request);
+	assert(error == 0);
+	assert(((uint8_t *)kern_pmem_to_kernel(test_display.flip.cursor.physical))[0] == value);
+}
+
+/* Counts the cursor images a list the hardware may read, or the recorded cursor, names. */
+static unsigned
+named_cursor_images(
+	void)
+{
+	unsigned count;
+	unsigned index;
+	bool named;
+
+	/* The cursor images are the allocations made after the two copy targets and the first resources. */
+	count = 0;
+	for (index = 0; index < test_run_count; index++) {
+		/* Only live allocations of cursor size are cursor images. */
+		if (test_allocations[index].address == NULL || test_allocations[index].bytes != 64U * 64U * 4U)
+			continue;
+		named = bcm2711_display_flip_cursor_named(&test_display, (uint32_t)test_allocations[index].physical);
+		if (named)
+			count++;
+	}
+
+	/* Succeeded: the number of named images. */
+	return count;
 }
 
 /*
@@ -390,8 +654,8 @@ drv_rpi4_firmware_property(
 	unsigned capacity,
 	uint32_t *answered)
 {
-	/* Firmware operations are serialized with publication, while actual IRQs can run. */
-	assert(test_display.flip.busy && test_display.flip.guard.held.value == 0);
+	/* Firmware requests sleep: under the clock mutex, never under the spinlock. */
+	assert(test_display.flip.clock_mutex.locked == 1 && test_display.flip.guard.held.value == 0);
 	assert(tag == 0x00038002U && request_count == 3 && capacity == 3);
 	assert(values[0] == 4 && values[2] == 0);
 	if (test_clock_refused)
@@ -439,7 +703,7 @@ kern_pmem_alloc_limited(
 	struct test_allocation *allocation;
 
 	/* Sequential physical slots are disjoint and satisfy the actual one-GiB request. */
-	assert(test_run_count < 16 && alignment == 4096 && boundary == 0);
+	assert(test_run_count < 24 && alignment == 4096 && boundary == 0);
 	allocation = &test_allocations[test_run_count];
 	allocation->physical = 0x02000000ULL + test_run_count * 0x02000000ULL;
 	if (test_misplaced) {
@@ -556,20 +820,64 @@ kern_mmio_read32(
 }
 
 /*
- * Delivers one native selected-PV interrupt after deferred list adoption.
+ * Delivers one native selected-PV interrupt during the boot observation's short sleeps.
  */
 void
 kern_usleep_range(
 	unsigned minimum,
 	unsigned maximum)
 {
-	bool handled;
-
-	/* A stalled model makes the production flip or restore reach its bounded timeout. */
+	/* A stalled model delivers nothing. */
 	(void)minimum;
 	(void)maximum;
 	if (test_stall)
 		return;
+	deliver_frame();
+}
+
+/*
+ * Lets a flip wait progress: a cursor move from the waiting present's open
+ * when the scenario asks, then a frame that takes the newest list, or with
+ * a stalled model the deadline.
+ */
+void
+display_test_sleep(
+	struct wait_queue *queue,
+	uint64_t deadline)
+{
+	struct gpu_display_cursor_move move;
+
+	/* The wait released the guard; a move now takes no mutex a present holds. */
+	(void)queue;
+	assert(test_display.flip.guard.held.value == 0);
+	if (test_move_during_wait) {
+		test_move_during_wait = false;
+		memset(&move, 0, sizeof(move));
+		move.lease = test_move_lease;
+		move.generation = 1;
+		move.x = 11;
+		move.y = 21;
+		test_move_error = test_operations->display->cursor_move(test_device, test_move_session, &move);
+	}
+
+	/* A stalled model lets the time run out. */
+	display_test_ticks++;
+	if (test_stall) {
+		if (deadline != 0)
+			display_test_ticks = deadline;
+		return;
+	}
+	deliver_frame();
+}
+
+/* Delivers the selected PV's frame, at which the hardware takes the newest list. */
+static void
+deliver_frame(
+	void)
+{
+	bool handled;
+
+	/* The current list becomes the next one, and the selected source interrupts. */
 	test_hvs[0x30 / 4] = test_hvs[0x20 / 4];
 	test_pv[0][0x28 / 4] = 0x80;
 	handled = test_display.timing_irq[0].service(test_display.timing_irq[0].owner);
@@ -585,6 +893,18 @@ kern_dcache_clean_range(
 	size_t bytes)
 {
 	/* Production copy and native flip always clean a nonempty persistent run. */
+	assert(address != NULL && bytes != 0);
+}
+
+/*
+ * Checks that a cursor copy discards a cacheable source's lines before reading it.
+ */
+void
+kern_dcache_invalidate_range(
+	const void *address,
+	size_t bytes)
+{
+	/* The source rows are a nonempty interval of a live run. */
 	assert(address != NULL && bytes != 0);
 }
 
@@ -627,59 +947,6 @@ kern_free(
 }
 
 /*
- * Supplies an initialized single-thread controller mutex for callback serialization.
- */
-int
-mutex_init(
-	struct mutex *mutex,
-	enum lock_rank rank,
-	const char *name)
-{
-	/* The separate IRQ guard continues using the strict spin stubs. */
-	(void)rank;
-	(void)name;
-	mutex->locked = 0;
-
-	/* Succeeded: no callback owns the new controller mutex. */
-	return 0;
-}
-
-/*
- * Detects reentrant controller access in this single-thread callback fixture.
- */
-void
-mutex_lock(
-	struct mutex *mutex)
-{
-	/* IRQ service takes only the independent display spin guard. */
-	assert(mutex->locked == 0);
-	mutex->locked = 1;
-}
-
-/*
- * Balances one real controller callback's ordinary mutex ownership.
- */
-void
-mutex_unlock(
-	struct mutex *mutex)
-{
-	/* An unbalanced release is a fixture or production ownership error. */
-	assert(mutex->locked == 1);
-	mutex->locked = 0;
-}
-
-/*
- * Supplies a nonzero completion timestamp for successful native presentation.
- */
-uint64_t
-sched_ticks(
-	void)
-{
-	/* One stable tick suffices to distinguish timing from a submission counter. */
-	return 1;
-}
-
-/*
  * Allows each explicitly implemented diagnostic stage in this host fixture.
  */
 bool
@@ -693,6 +960,15 @@ bcm2711_stage_allowed(
 
 	/* Succeeded: the stage can proceed. */
 	return true;
+}
+
+/* Reports the cost report as off in this model, which has no boot line. */
+bool
+bcm2711_stage_perf_on(
+	void)
+{
+	/* No cadence is kept. */
+	return false;
 }
 
 /*
@@ -769,4 +1045,15 @@ kern_text_resume(
 
 	/* Succeeded: the text backend is active. */
 	return;
+}
+
+/*
+ * Supplies a stationary clock for this fixture, which does not measure runtime.
+ */
+uint64_t
+clock_ticks(
+	void)
+{
+	/* No time elapses in the host's synchronous fake display. */
+	return 0;
 }

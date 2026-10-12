@@ -46,6 +46,54 @@ struct drv_gpu_display_ops {
 	 */
 	int (*power)(void *, void *, const struct gpu_display_power *);
 	int (*refresh)(void *, void *, struct gpu_display_refresh *);
+
+	/*
+	 * Optional cursor plane (GPU_DISPLAY_HAS_CURSOR on an output): all three,
+	 * or none.  Each gets a checked request from a writable open, inside the
+	 * ordinary admission, and checks this open's lease before any side effect.
+	 * cursor_set also gets the resolved storage object, whose bounds the core
+	 * checked, and copies the image before it returns; none of them waits for
+	 * the refresh boundary that shows the change.
+	 */
+	int (*cursor_set)(void *, void *, void *, const struct gpu_display_cursor_image *);
+	int (*cursor_move)(void *, void *, const struct gpu_display_cursor_move *);
+	int (*cursor_hide)(void *, void *, const struct gpu_display_cursor_hide *);
+
+	/*
+	 * Optional ungated presentation (DRV_GPU_DISPLAY_UNGATED in flags):
+	 * adoption_wait and the flag come together.  Then present, wait, the
+	 * three cursor operations, commit and overlay_info run outside the
+	 * open's ordinary admission, at the same time as each other and as
+	 * admitted operations on the same open.  A resource the core passes
+	 * stays pinned (its destruction waits) only while the callback runs, so
+	 * the backend takes its own reference to anything it keeps.  present
+	 * records the frame without waiting for the refresh boundary and leaves
+	 * the record's number in sequence; the core then calls adoption_wait
+	 * with the lease and that number, holding neither a pin nor a lock, and
+	 * it waits for the adoption and puts the number the caller sees in
+	 * *sequence and, when adopted is not NULL, the highest adopted number in
+	 * *adopted.  PRESENT_SYNC and COMMIT wait for their dependencies before
+	 * any resource is looked up.
+	 */
+	int (*adoption_wait)(void *, void *, uint64_t, uint64_t *, uint64_t *);
+	uint32_t flags;
+
+	/*
+	 * Optional overlay planes (GPU_DISPLAY_HAS_OVERLAYS on an output): both
+	 * or neither, and commit needs DRV_GPU_DISPLAY_UNGATED.  commit gets a
+	 * checked request from a writable open (defined flags, distinct planes,
+	 * the primary named for COMMIT_WAIT, every named image inside its
+	 * storage) with objects[i] the pinned storage of planes[i] when it names
+	 * an IMAGE (NULL otherwise); it records without waiting, fills each
+	 * plane's result, sequence and adopted, and the core waits through
+	 * adoption_wait for COMMIT_WAIT.  overlay_info gets a checked request from
+	 * a readable open.
+	 */
+	int (*commit)(void *, void *, void *const *, struct gpu_display_commit *);
+	int (*overlay_info)(void *, void *, struct gpu_display_overlay_info *);
 };
+
+/* drv_gpu_display_ops.flags: presentation and the cursor bypass the open's admission. */
+#define DRV_GPU_DISPLAY_UNGATED	1U
 
 #endif

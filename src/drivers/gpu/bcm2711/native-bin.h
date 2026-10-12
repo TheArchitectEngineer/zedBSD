@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include "drivers/gpu/bcm2711/native-viewport.h"
 
-#define BCM2711_NATIVE_BIN_BYTES 116U
+#define BCM2711_NATIVE_BIN_BYTES 121U
 
 /* All addresses borrow complete cleaned storage from the enclosing native draw owner; numerical state owns no DMA lifetime. */
 struct bcm2711_native_bin {
@@ -25,6 +25,8 @@ struct bcm2711_native_bin {
 	uint32_t forward;
 	uint32_t reverse;
 	uint32_t clockwise;
+	/* One: the tile buffer blends premultiplied source-over; zero: the fragment replaces the target. */
+	uint32_t blend;
 	uint32_t flat;
 	uint32_t noperspective;
 };

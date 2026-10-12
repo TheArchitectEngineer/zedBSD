@@ -753,7 +753,12 @@ static uint64_t leaf_flags(uint32_t attr)
 	uint64_t f=PAGE_FLAGS|PTE_USER|PTE_PXN;
 	if(!(attr&HAL_SPACE_WRITE))f|=PTE_RO;else f|=PTE_SW_DIRTY;
 	if(!(attr&HAL_SPACE_EXEC))f|=PTE_UXN;
-	if(attr&HAL_SPACE_DEVICE)f|=PTE_ATTR(1);else if(attr&HAL_SPACE_NOCACHE)f|=PTE_ATTR(2);
+	/*
+	 * Uncached user pages are managed RAM a device reads without snooping: they are
+	 * Normal non-cacheable, as the kernel's view of the same RAM is, so that user code
+	 * may access them at any alignment; Device memory would fault those accesses.
+	 */
+	if(attr&HAL_SPACE_DEVICE)f|=PTE_ATTR(1);else if(attr&HAL_SPACE_NOCACHE)f|=PTE_ATTR(ARM64_ATTR_NORMAL_NC);
 	return f;
 }
 int hal_space_map(hal_space_t h,void *v,hal_physaddr_t p,size_t n,uint32_t attr)
@@ -1046,6 +1051,8 @@ hal_pmem_unmap_uncached(
 	uint64_t start;
 	uint64_t offset;
 	uint64_t physical;
+	uint64_t run_start;
+	uint64_t run_size;
 	bool enabled;
 	int error;
 
@@ -1060,25 +1067,43 @@ hal_pmem_unmap_uncached(
 	if (start >= uncached_next || (uint64_t)size > uncached_next - start)
 		return HAL_ERR_INVALID;
 
-	/* Removes every page's entry and drops the translations. */
+	/* Refuses a hole in the view before any page is unmapped. */
 	enabled = arm64_spin_lock(&kernel_table_lock);
 	for (offset = 0; offset < (uint64_t)size; offset += ARM64_PAGE_SIZE) {
-		/* Refuses a page that is not mapped. */
 		error = uncached_leaf(start + offset, false, &leaf);
 		if (error != HAL_OK || (*leaf & PTE_VALID) == 0) {
-			arm64_flush_tlb();
 			arm64_spin_unlock(&kernel_table_lock, enabled);
 
 			/* Reports the hole in the view. */
 			return HAL_ERR_INVALID;
 		}
+	}
 
-		/* Unmaps the page and drops the direct map's lines of it. */
+	/*
+	 * Unmaps every page and drops the direct map's lines of it, one
+	 * physically contiguous run at a time, then drops the translations
+	 * once: a whole TLB flush per page made freeing a large GPU buffer
+	 * take tens of milliseconds (ws141-p013, 2026-10-12).  The view is
+	 * Normal non-cacheable, so its stale translations until the flush
+	 * allocate no line that the invalidation could miss.
+	 */
+	run_start = 0;
+	run_size = 0;
+	for (offset = 0; offset < (uint64_t)size; offset += ARM64_PAGE_SIZE) {
+		(void)uncached_leaf(start + offset, false, &leaf);
 		physical = *leaf & PTE_ADDR;
 		*leaf = 0;
-		arm64_flush_tlb();
-		hal_dcache_invalidate_range((uintptr_t)arm64_phys_to_direct((uintptr_t)physical), ARM64_PAGE_SIZE);
+		if (run_size != 0 && physical == run_start + run_size) {
+			run_size += ARM64_PAGE_SIZE;
+			continue;
+		}
+		if (run_size != 0)
+			hal_dcache_invalidate_range((uintptr_t)arm64_phys_to_direct((uintptr_t)run_start), (size_t)run_size);
+		run_start = physical;
+		run_size = ARM64_PAGE_SIZE;
 	}
+	hal_dcache_invalidate_range((uintptr_t)arm64_phys_to_direct((uintptr_t)run_start), (size_t)run_size);
+	arm64_flush_tlb();
 
 	/* Lets interrupts in again. */
 	arm64_spin_unlock(&kernel_table_lock, enabled);

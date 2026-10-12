@@ -82,8 +82,8 @@ static void slot_rect(const struct apps_view *view, unsigned slot, struct apps_r
 static int panel_build(struct kwl_server *server, const struct apps_view *view, const char *key, struct apps_panel *panel);
 static void log_bar(struct kwl_server *server, const struct apps_view *view);
 static int view_collect_on(struct kwl_server *server, unsigned slot, int every, struct apps_view *view);
-static void draw_more(struct kwl_server *server, VkCommandBuffer command, const struct apps_rect *rect, unsigned hidden, float light);
-static void draw_light(struct kwl_server *server, VkCommandBuffer command, const struct apps_rect *rect, float strength);
+static void draw_more(struct kwl_server *server, struct kwl_list *command, const struct apps_rect *rect, unsigned hidden, float light);
+static void draw_light(struct kwl_server *server, struct kwl_list *command, const struct apps_rect *rect, float strength);
 static void spring_tick(struct kwl_server *server);
 
 /*
@@ -94,7 +94,7 @@ static void spring_tick(struct kwl_server *server);
 int
 kwl_apps_bar_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned output)
 {
 	struct glass_bar_colours colours;
@@ -220,7 +220,7 @@ kwl_apps_bar_draw(
 void
 kwl_apps_bar_draw_popup(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float faint[4] = { 1.0f, 1.0f, 1.0f, 0.5f };
 	struct kwl_apps_bar *state;
@@ -267,9 +267,10 @@ kwl_apps_bar_draw_popup(
 	shape.edge = 0.8f;
 	glass_shape_draw(server, command, &shape);
 
-	/* Each window's preview, the one under the pointer lit, a minimized one faint (D11). */
+	/* Each window's preview, the one under the pointer lit (a hover probe, damage.c), a minimized one faint (D11). */
 	over = kwl_apps_tile_at(panel.tiles, panel.count, server->pointer_x, server->pointer_y);
 	for (index = 0; index < panel.count; index++) {
+		kwl_hover_probe(server, panel.tiles[index].x, panel.tiles[index].y, panel.tiles[index].width, panel.tiles[index].height);
 		kwl_glass_draw_preview(server, command, panel.surfaces[index], panel.tiles[index].x, panel.tiles[index].y, panel.tiles[index].width, panel.tiles[index].height, over == (int)index);
 		if (panel.surfaces[index]->minimized)
 			glass_draw_solid(server, command, (float)panel.tiles[index].x, (float)panel.tiles[index].y, (float)panel.tiles[index].width, (float)panel.tiles[index].height, 10.0f, faint);
@@ -298,6 +299,7 @@ kwl_apps_bar_motion(
 	int same;
 	int built;
 	int in_panel;
+	int lit;
 
 	/*
 	 * The bar followed: the one whose wait, previews or press there is, or
@@ -332,8 +334,10 @@ kwl_apps_bar_motion(
 		if (!in_panel)
 			return 0;
 
-		/* Over the previews the motion lights them. */
-		server->dirty = 1;
+		/* Over the previews the motion lights them: only a preview whose light changed is drawn again. */
+		lit = kwl_hover_damage(server);
+		if (!lit)
+			server->dirty = 1;
 		return 1;
 	}
 
@@ -431,10 +435,17 @@ kwl_apps_bar_motion(
 		return 0;
 	}
 
-	/* Over the panel: it stays, and the motion lights its previews. */
+	/*
+	 * Over the panel: it stays, and the motion lights its previews.  The
+	 * previews' hover probes (kwl_apps_bar_draw) mark only a preview whose
+	 * light changed; a move within one preview redraws nothing but the
+	 * cursor, where the whole output was drawn again for each motion.
+	 */
 	if (in_panel) {
 		state->left = 0;
-		server->dirty = 1;
+		lit = kwl_hover_damage(server);
+		if (!lit)
+			server->dirty = 1;
 		return 1;
 	}
 
@@ -1350,7 +1361,7 @@ log_bar(
 static void
 draw_more(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct apps_rect *rect,
 	unsigned hidden,
 	float light)
@@ -1375,7 +1386,7 @@ draw_more(
 static void
 draw_light(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct apps_rect *rect,
 	float strength)
 {
