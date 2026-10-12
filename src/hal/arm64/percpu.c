@@ -62,6 +62,7 @@ arm64_percpu_bootstrap(
 	record->watch_switches = 0;
 	record->watch_countdown = 1;
 	record->watch_reporting = 0;
+	record->watch_parked = 0;
 
 	/* Publishes the record to this CPU's own register. */
 	__asm__ volatile("msr tpidr_el1, %0\n\tisb"

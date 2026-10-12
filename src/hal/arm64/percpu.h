@@ -101,6 +101,13 @@ struct arm64_percpu {
 
 	/* Nonzero while this CPU writes a stall report, so a fault inside it does not start another. */
 	unsigned watch_reporting;
+
+	/*
+	 * Nonzero once this CPU stopped on purpose (parked after a panic, or
+	 * halted for power-off): its silence is not a stall, and the other
+	 * CPUs leave it out of their look at the heartbeats.
+	 */
+	unsigned watch_parked;
 };
 
 void arm64_percpu_bootstrap(hal_cpu_id_t cpu, uint64_t mpidr);
