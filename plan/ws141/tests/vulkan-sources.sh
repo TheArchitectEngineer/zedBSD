@@ -56,6 +56,7 @@ src/drivers/gpu/bcm2711/shader-analyze.c
 src/drivers/gpu/bcm2711/shader-lower.c
 src/drivers/gpu/bcm2711/shader-output.c
 src/drivers/gpu/bcm2711/shader-schedule.c
+src/drivers/gpu/compiler/optimize.c
 src/drivers/gpu/bcm2711/qpu.c
 src/drivers/gpu/compiler/spirv.c
 src/drivers/gpu/i915/render/codec.c

@@ -423,7 +423,8 @@ native_check(const struct v3d_device_info *device, const struct native_glass *na
 	setup.uniform = native_uniform;
 	setup.sample = native_sample;
 	qpu_machine_run(device, &setup, &result);
-	assert(result.tile_writes == 2U && result.lookups == fragment->lookups);
+	/* The compiler may share a repeated lookup and drop one whose texel nothing reads, never add one (WS141 p013). */
+	assert(result.tile_writes == 2U && result.lookups <= fragment->lookups);
 	for (index = 0U; index < 4U; index++) {
 		expected = half_bits(bits_float(fragment->output[index]));
 		got = (result.tile[index / 2U] >> (16U * (index % 2U))) & 0xffffU;

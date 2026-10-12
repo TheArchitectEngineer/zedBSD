@@ -6,7 +6,7 @@ out=${1:-build/ws210-spike}
 here=plan/ws210/tests/spike
 mkdir -p "$out"
 cc -std=c99 -O1 -Wall -Wextra -Werror -Iinclude -Isrc -I. \
-    "$here/count.c" src/drivers/gpu/compiler/spirv.c \
+    "$here/count.c" src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c \
     src/drivers/gpu/bcm2711/shader.c src/drivers/gpu/bcm2711/shader-analyze.c \
     src/drivers/gpu/bcm2711/shader-lower.c src/drivers/gpu/bcm2711/shader-output.c \
     src/drivers/gpu/bcm2711/shader-schedule.c \

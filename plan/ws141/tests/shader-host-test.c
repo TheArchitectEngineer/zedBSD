@@ -25,6 +25,7 @@
 #include "broadcom/common/v3d_device_info.h"
 #include "broadcom/qpu/qpu_instr.h"
 #include "drivers/gpu/bcm2711/shader.h"
+#include "drivers/gpu/compiler/optimize.h"
 #include "drivers/gpu/compiler/spirv.h"
 #include <uapi/errno.h>
 #include "plan/ws141/tests/qpu-machine.h"
@@ -110,6 +111,16 @@ static size_t allocation_refusal;
 /* The random generator's state, reseeded for each program and trial. */
 static uint32_t random_state;
 
+/*
+ * The hand-built source program of the optimizer test (WS141 p013).
+ *
+ * optimizer_program() fills it from the start for each stage; it lives in
+ * static storage because the source program description only points at it.
+ */
+static struct drv_gpu_shader_ir_inst optimizer_code[192];
+static uint32_t optimizer_count;
+static uint32_t optimizer_values;
+
 /* The program and trial under test, named by a failure. */
 static const char *current_program;
 static uint32_t current_trial;
@@ -141,6 +152,16 @@ static void report_size(const struct v3d_device_info *device, const char *name, 
 static void verify_pair(const struct v3d_device_info *device, const struct shader_pair *pair);
 static void verify_allocation_refusal(const struct bcm2711_shader_key *key, const uint32_t *words, size_t word_count);
 static void verify_graphics_profile(const struct bcm2711_shader_key *key);
+static uint32_t optimizer_emit(enum drv_gpu_shader_ir_op operation, uint32_t first, uint32_t second, uint32_t third);
+static uint32_t optimizer_constant(enum drv_gpu_shader_ir_op operation, uint32_t bits);
+static uint32_t optimizer_load(uint32_t offset);
+static void optimizer_store(uint32_t location, uint32_t component, uint32_t value);
+static void optimizer_program(struct drv_gpu_shader_ir *ir, enum drv_gpu_shader_stage stage);
+static uint32_t optimizer_count_operation(const struct drv_gpu_shader_ir *ir, enum drv_gpu_shader_ir_op operation, uint32_t constant);
+static void optimizer_options(enum bcm2711_shader_stage stage, struct drv_gpu_shader_optimize_options *options);
+static void verify_optimizer_blocks(void);
+static uint32_t optimizer_push_word(void);
+static void verify_optimizer(void);
 
 /*
  * Supplies the ordinary kernel allocation API through the host allocator.
@@ -303,6 +324,9 @@ main(
 
 	/* The comparison baseline lives until every specialized mode has been checked. */
 	drv_gpu_shader_ir_free(generic);
+
+	/* The optimizer's rules, including those no shader of the tree meets, keep every output bit. */
+	verify_optimizer();
 
 	/* All compiler and parser objects must retire after the final completed program owner releases them. */
 	assert(allocations_live == 0);
@@ -1058,6 +1082,9 @@ verify_program(
 		assert(binary->threads == 2 && binary->registers_used == 64);
 	}
 
+	/* Every program of the tree is lowered from the optimizer's rewritten source, never from the fallback. */
+	assert(binary->optimized == 1);
+
 	/* Fragment programs are scheduled; vertex programs keep their source order. */
 	if (stage == BCM2711_SHADER_FRAGMENT)
 		assert(binary->scheduled == 1);
@@ -1134,7 +1161,10 @@ run_trial(
 	setup.uniform = machine_uniform;
 	setup.sample = machine_sample;
 	qpu_machine_run(device, &setup, &result);
-	assert(result.lookups == source.lookups);
+	/* The compiler may share a repeated lookup and drop one whose texel nothing reads, never add one. */
+	if (result.lookups != source.lookups && current_trial == 0)
+		printf("%-24s stage %u: %u of the source's %u lookups\n", current_program, binary->stage, result.lookups, source.lookups);
+	assert(result.lookups <= source.lookups);
 
 	/* Fragment colour: each physical channel carries its source colour, rounded to a half float, exactly. */
 	if (binary->stage == BCM2711_SHADER_FRAGMENT) {
@@ -1425,4 +1455,536 @@ verify_allocation_refusal(
 
 	/* All following host comparisons use the ordinary allocation path. */
 	allocation_refusal = 0;
+}
+
+/* Appends one operation reading up to three values to the optimizer test program and reports its result. */
+static uint32_t
+optimizer_emit(
+	enum drv_gpu_shader_ir_op operation,
+	uint32_t first,
+	uint32_t second,
+	uint32_t third)
+{
+	struct drv_gpu_shader_ir_inst *instruction;
+	uint32_t results;
+
+	/* A sample defines four values, every other operation one. */
+	assert(optimizer_count < sizeof(optimizer_code) / sizeof(optimizer_code[0]));
+	results = 1;
+	if (operation == DRV_GPU_IR_SAMPLE)
+		results = 4;
+
+	/* Fills the operation with fresh results. */
+	instruction = &optimizer_code[optimizer_count];
+	memset(instruction, 0, sizeof(*instruction));
+	instruction->op = operation;
+	instruction->dst = optimizer_values;
+	instruction->src[0] = first;
+	instruction->src[1] = second;
+	instruction->src[2] = third;
+	optimizer_count++;
+	optimizer_values += results;
+
+	/* Reports the first result. */
+	return instruction->dst;
+}
+
+/* Appends one constant to the optimizer test program. */
+static uint32_t
+optimizer_constant(
+	enum drv_gpu_shader_ir_op operation,
+	uint32_t bits)
+{
+	uint32_t value;
+
+	/* The constant's bits are its immediate. */
+	value = optimizer_emit(operation, 0, 0, 0);
+	optimizer_code[optimizer_count - 1].immediate = bits;
+
+	/* Reports the constant's value. */
+	return value;
+}
+
+/* Appends one push-constant load to the optimizer test program. */
+static uint32_t
+optimizer_load(
+	uint32_t offset)
+{
+	uint32_t value;
+
+	/* The word's byte offset is the immediate. */
+	value = optimizer_emit(DRV_GPU_IR_LOAD_PUSH, 0, 0, 0);
+	optimizer_code[optimizer_count - 1].immediate = offset;
+
+	/* Reports the loaded value. */
+	return value;
+}
+
+/* Appends one output store to the optimizer test program. */
+static void
+optimizer_store(
+	uint32_t location,
+	uint32_t component,
+	uint32_t value)
+{
+	/* A store reads its value and defines nothing. */
+	optimizer_emit(DRV_GPU_IR_STORE_OUTPUT, value, 0, 0);
+	optimizer_values--;
+	optimizer_code[optimizer_count - 1].dst = 0;
+	optimizer_code[optimizer_count - 1].location = location;
+	optimizer_code[optimizer_count - 1].component = component;
+}
+
+/*
+ * Builds the optimizer test program: each output holds one rule's case.
+ *
+ * The cases a rule must rewrite stand next to the near misses it must leave
+ * alone, so a rule applied too widely changes an output or a count.
+ */
+static void
+optimizer_program(
+	struct drv_gpu_shader_ir *ir,
+	enum drv_gpu_shader_stage stage)
+{
+	uint32_t x;
+	uint32_t y;
+	uint32_t z;
+	uint32_t w;
+	uint32_t condition;
+	uint32_t integer;
+	uint32_t shift;
+	uint32_t one;
+	uint32_t half;
+	uint32_t positive_zero;
+	uint32_t negative_zero;
+	uint32_t nan;
+	uint32_t ones;
+	uint32_t yes;
+	uint32_t no;
+	uint32_t three;
+	uint32_t minus_seven;
+	uint32_t thirty_two;
+	uint32_t inexact;
+	uint32_t smallest;
+	uint32_t texel;
+	uint32_t repeated;
+	uint32_t value;
+
+	/* Starts an empty program. */
+	optimizer_count = 0;
+	optimizer_values = 0;
+
+	/* Loads the varying operands and makes the constants the rules name. */
+	x = optimizer_load(0);
+	y = optimizer_load(4);
+	z = optimizer_load(8);
+	w = optimizer_load(12);
+	condition = optimizer_load(16);
+	integer = optimizer_load(20);
+	shift = optimizer_load(24);
+	one = optimizer_constant(DRV_GPU_IR_CONST, 0x3f800000U);
+	half = optimizer_constant(DRV_GPU_IR_CONST, 0x3f000000U);
+	positive_zero = optimizer_constant(DRV_GPU_IR_CONST, 0);
+	negative_zero = optimizer_constant(DRV_GPU_IR_CONST, 0x80000000U);
+	nan = optimizer_constant(DRV_GPU_IR_CONST, 0x7fc00000U);
+	ones = optimizer_constant(DRV_GPU_IR_ICONST, 0xffffffffU);
+	yes = optimizer_constant(DRV_GPU_IR_BOOL, 0xffffffffU);
+	no = optimizer_constant(DRV_GPU_IR_BOOL, 0);
+	three = optimizer_constant(DRV_GPU_IR_ICONST, 3);
+	minus_seven = optimizer_constant(DRV_GPU_IR_ICONST, 0xfffffff9U);
+	thirty_two = optimizer_constant(DRV_GPU_IR_ICONST, 32);
+	inexact = optimizer_constant(DRV_GPU_IR_ICONST, 16777219);
+	smallest = optimizer_constant(DRV_GPU_IR_ICONST, 0x80000000U);
+
+	/* Floating point identities read by arithmetic go; read by an output, or with the wrong zero, stay. */
+	value = optimizer_emit(DRV_GPU_IR_FMUL, x, one, 0);
+	optimizer_store(0, 0, optimizer_emit(DRV_GPU_IR_FADD, value, y, 0));
+	optimizer_store(0, 1, optimizer_emit(DRV_GPU_IR_FMUL, one, z, 0));
+	value = optimizer_emit(DRV_GPU_IR_FADD, y, negative_zero, 0);
+	optimizer_store(0, 2, optimizer_emit(DRV_GPU_IR_FADD, value, w, 0));
+	value = optimizer_emit(DRV_GPU_IR_FADD, positive_zero, y, 0);
+	optimizer_store(0, 3, optimizer_emit(DRV_GPU_IR_FADD, value, w, 0));
+	value = optimizer_emit(DRV_GPU_IR_FSUB, w, positive_zero, 0);
+	optimizer_store(1, 0, optimizer_emit(DRV_GPU_IR_FSUB, value, x, 0));
+	value = optimizer_emit(DRV_GPU_IR_FSUB, w, negative_zero, 0);
+	optimizer_store(1, 1, optimizer_emit(DRV_GPU_IR_FADD, value, x, 0));
+
+	/* Only commutative operations share results with their operands exchanged; a product's NaN operands keep their order. */
+	optimizer_store(1, 2, optimizer_emit(DRV_GPU_IR_FSUB, x, y, 0));
+	optimizer_store(1, 3, optimizer_emit(DRV_GPU_IR_FSUB, y, x, 0));
+	optimizer_store(2, 0, optimizer_emit(DRV_GPU_IR_FMIN, x, y, 0));
+	optimizer_store(2, 1, optimizer_emit(DRV_GPU_IR_FMIN, y, x, 0));
+	optimizer_store(2, 2, optimizer_emit(DRV_GPU_IR_FMUL, x, y, 0));
+	optimizer_store(2, 3, optimizer_emit(DRV_GPU_IR_FMUL, y, x, 0));
+
+	/* Sign-bit operations. */
+	value = optimizer_emit(DRV_GPU_IR_FNEG, x, 0, 0);
+	optimizer_store(3, 0, optimizer_emit(DRV_GPU_IR_FABS, value, 0, 0));
+	value = optimizer_emit(DRV_GPU_IR_FNEG, y, 0, 0);
+	optimizer_store(3, 1, optimizer_emit(DRV_GPU_IR_FNEG, value, 0, 0));
+	value = optimizer_emit(DRV_GPU_IR_FABS, z, 0, 0);
+	optimizer_store(3, 2, optimizer_emit(DRV_GPU_IR_FABS, value, 0, 0));
+	optimizer_store(3, 3, optimizer_emit(DRV_GPU_IR_FNEG, nan, 0, 0));
+
+	/* Selections. */
+	optimizer_store(4, 0, optimizer_emit(DRV_GPU_IR_SELECT, yes, x, y));
+	optimizer_store(4, 1, optimizer_emit(DRV_GPU_IR_SELECT, no, x, y));
+	optimizer_store(4, 2, optimizer_emit(DRV_GPU_IR_SELECT, condition, w, w));
+	optimizer_store(4, 3, optimizer_emit(DRV_GPU_IR_SELECT, condition, x, y));
+
+	/* Bitwise and Boolean logic. */
+	value = optimizer_emit(DRV_GPU_IR_INOT, integer, 0, 0);
+	optimizer_store(5, 0, optimizer_emit(DRV_GPU_IR_INOT, value, 0, 0));
+	optimizer_store(5, 1, optimizer_emit(DRV_GPU_IR_IAND, integer, ones, 0));
+	optimizer_store(5, 2, optimizer_emit(DRV_GPU_IR_AND, no, condition, 0));
+	optimizer_store(5, 3, optimizer_emit(DRV_GPU_IR_IOR, integer, positive_zero, 0));
+	optimizer_store(6, 0, optimizer_emit(DRV_GPU_IR_OR, condition, yes, 0));
+	optimizer_store(6, 1, optimizer_emit(DRV_GPU_IR_IXOR, positive_zero, integer, 0));
+	optimizer_store(6, 2, optimizer_emit(DRV_GPU_IR_IXOR, integer, integer, 0));
+	optimizer_store(6, 3, optimizer_emit(DRV_GPU_IR_IAND, condition, condition, 0));
+	optimizer_store(7, 0, optimizer_emit(DRV_GPU_IR_NOT, yes, 0, 0));
+	optimizer_store(7, 1, optimizer_emit(DRV_GPU_IR_IXOR, three, minus_seven, 0));
+
+	/* Integer arithmetic and shifts. */
+	optimizer_store(7, 2, optimizer_emit(DRV_GPU_IR_IADD, integer, positive_zero, 0));
+	optimizer_store(7, 3, optimizer_emit(DRV_GPU_IR_ISUB, integer, positive_zero, 0));
+	optimizer_store(8, 0, optimizer_emit(DRV_GPU_IR_ISUB, integer, integer, 0));
+	optimizer_store(8, 1, optimizer_emit(DRV_GPU_IR_IADD, three, minus_seven, 0));
+	optimizer_store(8, 2, optimizer_emit(DRV_GPU_IR_ISUB, three, minus_seven, 0));
+	optimizer_store(8, 3, optimizer_emit(DRV_GPU_IR_INEG, minus_seven, 0, 0));
+	optimizer_store(9, 0, optimizer_emit(DRV_GPU_IR_SHL, integer, thirty_two, 0));
+	optimizer_store(9, 1, optimizer_emit(DRV_GPU_IR_SHR, minus_seven, three, 0));
+	optimizer_store(9, 2, optimizer_emit(DRV_GPU_IR_ASR, minus_seven, three, 0));
+	optimizer_store(9, 3, optimizer_emit(DRV_GPU_IR_SHL, minus_seven, three, 0));
+	optimizer_store(10, 0, optimizer_emit(DRV_GPU_IR_ASR, integer, shift, 0));
+
+	/* Integer conversions fold only when exact. */
+	optimizer_store(10, 1, optimizer_emit(DRV_GPU_IR_I2F, inexact, 0, 0));
+	optimizer_store(10, 2, optimizer_emit(DRV_GPU_IR_I2F, minus_seven, 0, 0));
+	optimizer_store(10, 3, optimizer_emit(DRV_GPU_IR_U2F, three, 0, 0));
+	optimizer_store(11, 0, optimizer_emit(DRV_GPU_IR_I2F, smallest, 0, 0));
+	optimizer_store(11, 1, optimizer_emit(DRV_GPU_IR_U2F, smallest, 0, 0));
+
+	/* Minimum, maximum and comparisons of constants; a NaN and two zeros are not folded. */
+	optimizer_store(11, 2, optimizer_emit(DRV_GPU_IR_FMIN, one, half, 0));
+	optimizer_store(11, 3, optimizer_emit(DRV_GPU_IR_FMAX, negative_zero, positive_zero, 0));
+	optimizer_store(12, 0, optimizer_emit(DRV_GPU_IR_FLT, half, one, 0));
+	optimizer_store(12, 1, optimizer_emit(DRV_GPU_IR_FGE, negative_zero, one, 0));
+	optimizer_store(12, 2, optimizer_emit(DRV_GPU_IR_FEQ, positive_zero, negative_zero, 0));
+	optimizer_store(12, 3, optimizer_emit(DRV_GPU_IR_FLT, nan, one, 0));
+	optimizer_store(14, 0, optimizer_emit(DRV_GPU_IR_FGE, one, one, 0));
+	optimizer_store(14, 1, optimizer_emit(DRV_GPU_IR_ISUB, integer, shift, 0));
+	optimizer_store(14, 2, optimizer_emit(DRV_GPU_IR_ISUB, shift, integer, 0));
+	optimizer_store(14, 3, optimizer_emit(DRV_GPU_IR_SHR, minus_seven, optimizer_constant(DRV_GPU_IR_ICONST, 35), 0));
+
+	/* A maximum of a value with itself quiets a signalling NaN, so it stays. */
+	optimizer_store(13, 0, optimizer_emit(DRV_GPU_IR_FMAX, z, z, 0));
+
+	/* A repeated load and lookup are shared; an unread lookup and an unread chain go. */
+	repeated = optimizer_load(0);
+	optimizer_store(13, 1, optimizer_emit(DRV_GPU_IR_FADD, repeated, x, 0));
+	texel = optimizer_emit(DRV_GPU_IR_SAMPLE, x, y, 0);
+	value = optimizer_emit(DRV_GPU_IR_SAMPLE, x, y, 0);
+	optimizer_store(13, 2, optimizer_emit(DRV_GPU_IR_FADD, texel + 1U, value + 2U, 0));
+	optimizer_emit(DRV_GPU_IR_SAMPLE, y, x, 0);
+	value = optimizer_emit(DRV_GPU_IR_FMUL, z, w, 0);
+	optimizer_emit(DRV_GPU_IR_FADD, value, x, 0);
+
+	/* A store replaced by a later one is not needed. */
+	optimizer_store(13, 3, x);
+	optimizer_store(13, 3, optimizer_emit(DRV_GPU_IR_FMUL, x, half, 0));
+
+	/* A vertex program also stores its position, the first with an identity a vertex program keeps. */
+	if (stage == DRV_GPU_STAGE_VERTEX) {
+		value = optimizer_emit(DRV_GPU_IR_FMUL, x, one, 0);
+		optimizer_store(DRV_GPU_IR_LOCATION_POSITION, 0, optimizer_emit(DRV_GPU_IR_FADD, value, y, 0));
+		optimizer_store(DRV_GPU_IR_LOCATION_POSITION, 1, y);
+		optimizer_store(DRV_GPU_IR_LOCATION_POSITION, 2, z);
+		optimizer_store(DRV_GPU_IR_LOCATION_POSITION, 3, one);
+	}
+
+	/* Describes the program. */
+	memset(ir, 0, sizeof(*ir));
+	ir->stage = stage;
+	ir->instructions = optimizer_code;
+	ir->instruction_count = optimizer_count;
+	ir->value_count = optimizer_values;
+	ir->push_bytes = 28;
+}
+
+/* Counts the operations of one kind, reading the constant bits given when they are not 0xffffffff. */
+static uint32_t
+optimizer_count_operation(
+	const struct drv_gpu_shader_ir *ir,
+	enum drv_gpu_shader_ir_op operation,
+	uint32_t constant)
+{
+	const struct drv_gpu_shader_ir_inst *instruction;
+	const struct drv_gpu_shader_ir_inst *definition;
+	uint32_t index;
+	uint32_t source;
+	uint32_t count;
+	uint32_t found;
+
+	/* Visits every operation of the kind. */
+	count = 0;
+	for (index = 0; index < ir->instruction_count; index++) {
+		instruction = &ir->instructions[index];
+		if (instruction->op != operation)
+			continue;
+		if (constant == 0xffffffffU) {
+			count++;
+			continue;
+		}
+
+		/* Looks for an operand defined as the constant. */
+		found = 0;
+		for (source = 0; source < 2; source++) {
+			for (definition = ir->instructions; definition < instruction; definition++) {
+				if (definition->dst == instruction->src[source] &&
+				    (definition->op == DRV_GPU_IR_CONST || definition->op == DRV_GPU_IR_ICONST || definition->op == DRV_GPU_IR_BOOL) &&
+				    definition->immediate == constant)
+					found = 1;
+			}
+		}
+
+		/* Counts the operation when an operand is the constant. */
+		count += found;
+	}
+
+	/* Reports the count. */
+	return count;
+}
+
+/* Draws one push word for the optimizer test: edges, a quiet NaN, a denormal, ordinary floats and integers. */
+static uint32_t
+optimizer_push_word(void)
+{
+	static const uint32_t edges[12] = {
+		0x00000000U, 0x80000000U, 0x3f800000U, 0xbf800000U, 0x3f000000U, 0x40000000U,
+		0x7fc00001U, 0x7f800000U, 0xff800000U, 0x00000003U, 0xffffffffU, 0x0000001fU
+	};
+	uint32_t choice;
+
+	/* Chooses an edge half the time. */
+	choice = next_random() % 4U;
+	if (choice < 2U)
+		return edges[next_random() % 12U];
+
+	/* Otherwise an ordinary float or arbitrary bits. */
+	if (choice == 2U)
+		return random_float();
+
+	/* Reports arbitrary bits. */
+	return next_random();
+}
+
+/*
+ * Checks the optimizer's rewritten programs against the programs as written.
+ *
+ * Both are run on the source interpreter with the same random inputs and
+ * every stored output must agree bit for bit; counts of what remains check
+ * the rules the interpreter cannot see (a floating point identity kept for
+ * an output reader, operands of a minimum kept in order) and that a vertex
+ * program is only cleared of repeated and unread work.
+ */
+static void
+verify_optimizer(void)
+{
+	static const enum bcm2711_shader_stage stages[3] = {
+		BCM2711_SHADER_FRAGMENT, BCM2711_SHADER_COORDINATE, BCM2711_SHADER_VERTEX
+	};
+	struct drv_gpu_shader_ir ir;
+	struct drv_gpu_shader_ir optimized;
+	struct drv_gpu_shader_optimize_options options;
+	struct shader_inputs original;
+	struct shader_inputs rewritten;
+	uint32_t stage;
+	uint32_t trial;
+	uint32_t slot;
+	uint32_t word;
+	int error;
+
+	/* Each native stage's options, as the bcm2711 compiler gives them. */
+	for (stage = 0; stage < 3; stage++) {
+		/* Builds and optimizes the program for the stage. */
+		if (stages[stage] == BCM2711_SHADER_FRAGMENT) {
+			optimizer_program(&ir, DRV_GPU_STAGE_FRAGMENT);
+		} else {
+			optimizer_program(&ir, DRV_GPU_STAGE_VERTEX);
+		}
+
+		/* Optimizes it as the bcm2711 compiler would. */
+		optimizer_options(stages[stage], &options);
+		error = drv_gpu_shader_optimize(&ir, &options, &optimized);
+		assert(error == 0 && optimized.instructions != NULL);
+		assert(optimized.instruction_count < ir.instruction_count);
+
+		/* Runs both programs on the same inputs. */
+		random_state = 0x2545f491U + stage;
+		for (trial = 0; trial < 4096U; trial++) {
+			memset(&original, 0, sizeof(original));
+			for (word = 0; word < 7; word++)
+				original.push[word] = optimizer_push_word();
+			original.push[6] = next_random() % 48U;
+			rewritten = original;
+			source_program(&ir, &original);
+			source_program(&optimized, &rewritten);
+			assert(rewritten.lookups <= original.lookups);
+
+			/* A fragment program keeps every output; a vertex program its position and the key's varying. */
+			for (slot = 0; slot < 68; slot++) {
+				if (stages[stage] == BCM2711_SHADER_COORDINATE && slot < 64)
+					continue;
+				if (stages[stage] == BCM2711_SHADER_VERTEX && slot < 64 && slot != 13 * 4 + 2)
+					continue;
+				if (rewritten.output[slot] != original.output[slot]) {
+					fprintf(stderr, "optimizer stage %u trial %u: output %u is %08x, written %08x\n", stages[stage], trial, slot, rewritten.output[slot], original.output[slot]);
+					assert(0);
+				}
+			}
+		}
+
+		/* Repeated loads and lookups are shared and unread ones dropped in every stage. */
+		if (stages[stage] == BCM2711_SHADER_FRAGMENT) {
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_SAMPLE, 0xffffffffU) == 1);
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_LOAD_PUSH, 0xffffffffU) == 7);
+		}
+
+		/* A fragment program keeps the identities its readers could tell, and both orders of a minimum. */
+		if (stages[stage] == BCM2711_SHADER_FRAGMENT) {
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_FMUL, 0x3f800000U) == 1);
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_FADD, 0) == 1);
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_FADD, 0x80000000U) == 0);
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_FSUB, 0x80000000U) == 1);
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_FSUB, 0) == 0);
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_FMIN, 0xffffffffU) == 2);
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_FMAX, 0xffffffffU) == 2);
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_FMUL, 0xffffffffU) == 4);
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_I2F, 0xffffffffU) == 1);
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_FLT, 0xffffffffU) == 1);
+		}
+
+		/* A vertex program is not simplified: its identities stay, and only its position and passed varying are computed. */
+		if (stages[stage] != BCM2711_SHADER_FRAGMENT) {
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_FMUL, 0x3f800000U) == 1);
+			assert(optimizer_count_operation(&optimized, DRV_GPU_IR_STORE_OUTPUT, 0xffffffffU) == 4 + (stages[stage] == BCM2711_SHADER_VERTEX));
+		}
+
+		/* The rewritten instructions are the caller's to release. */
+		kern_free(optimized.instructions);
+	}
+
+	/* Skippable blocks and texture guards. */
+	verify_optimizer_blocks();
+
+	/* Reports the rules checked. */
+	puts("WS141 shader optimizer: PASS (sharing, dead code, folding and identities, against the program as written)");
+}
+
+/*
+ * Gives the options the bcm2711 compiler gives for one native stage.
+ *
+ * A fragment program keeps every output and is simplified; a coordinate
+ * program needs its position, a vertex program also varying 13.2 (the test
+ * key's one varying); neither is simplified.
+ */
+static void
+optimizer_options(
+	enum bcm2711_shader_stage stage,
+	struct drv_gpu_shader_optimize_options *options)
+{
+	uint32_t index;
+
+	/* The native programs run every block. */
+	memset(options, 0, sizeof(*options));
+	options->runs_every_block = 1;
+
+	/* A fragment program needs every slot and is simplified. */
+	if (stage == BCM2711_SHADER_FRAGMENT) {
+		memset(options->needed, 1, sizeof(options->needed));
+		options->simplify = 1;
+		return;
+	}
+
+	/* A vertex program needs its position and, for the render stage, the varying. */
+	for (index = 0; index < 4; index++)
+		options->needed[DRV_GPU_IR_OPTIMIZE_POSITION + index] = 1;
+	if (stage == BCM2711_SHADER_VERTEX)
+		options->needed[13 * 4 + 2] = 1;
+}
+
+/*
+ * Checks how the optimization treats skippable blocks and texture guards.
+ *
+ * A backend that may skip a block (the i915 one) gets such a program back
+ * unchanged; one that runs every block gets it without markers or guards.
+ */
+static void
+verify_optimizer_blocks(void)
+{
+	struct drv_gpu_shader_ir ir;
+	struct drv_gpu_shader_ir optimized;
+	struct drv_gpu_shader_optimize_options options;
+	uint32_t x;
+	uint32_t y;
+	uint32_t predicate;
+	uint32_t texel;
+	uint32_t pass;
+	int error;
+
+	/* Runs the two programs, with a block and with a guard, for both kinds of backend. */
+	for (pass = 0; pass < 4; pass++) {
+		/* A repeated product inside and after a block, or a guarded repeated lookup. */
+		optimizer_count = 0;
+		optimizer_values = 0;
+		x = optimizer_load(0);
+		y = optimizer_load(4);
+		predicate = optimizer_emit(DRV_GPU_IR_FLT, x, y, 0);
+		if (pass % 2U == 0) {
+			optimizer_emit(DRV_GPU_IR_SKIP_BEGIN, predicate, 0, 0);
+			optimizer_values--;
+			optimizer_code[optimizer_count - 1].dst = 0;
+			optimizer_store(0, 0, optimizer_emit(DRV_GPU_IR_FMUL, x, y, 0));
+			optimizer_emit(DRV_GPU_IR_SKIP_END, 0, 0, 0);
+			optimizer_values--;
+			optimizer_code[optimizer_count - 1].dst = 0;
+			optimizer_store(0, 1, optimizer_emit(DRV_GPU_IR_FMUL, x, y, 0));
+		} else {
+			texel = optimizer_emit(DRV_GPU_IR_SAMPLE, x, y, 0);
+			optimizer_code[optimizer_count - 1].guard = predicate + 1U;
+			optimizer_store(0, 0, texel);
+			texel = optimizer_emit(DRV_GPU_IR_SAMPLE, x, y, 0);
+			optimizer_store(0, 1, texel);
+		}
+
+		/* Describes the program. */
+		memset(&ir, 0, sizeof(ir));
+		ir.stage = DRV_GPU_STAGE_FRAGMENT;
+		ir.instructions = optimizer_code;
+		ir.instruction_count = optimizer_count;
+		ir.value_count = optimizer_values;
+		ir.push_bytes = 8;
+
+		/* Optimizes for a backend that may skip blocks, then for one that runs them all. */
+		memset(&options, 0, sizeof(options));
+		memset(options.needed, 1, sizeof(options.needed));
+		options.simplify = 1;
+		options.runs_every_block = pass / 2U;
+		error = drv_gpu_shader_optimize(&ir, &options, &optimized);
+		assert(error == 0);
+		if (options.runs_every_block == 0) {
+			assert(optimized.instructions == NULL);
+			continue;
+		}
+
+		/* The markers, the guard, the predicate and the repeated work are gone. */
+		assert(optimized.instructions != NULL);
+		assert(optimizer_count_operation(&optimized, DRV_GPU_IR_SKIP_BEGIN, 0xffffffffU) == 0);
+		assert(optimizer_count_operation(&optimized, DRV_GPU_IR_SKIP_END, 0xffffffffU) == 0);
+		assert(optimizer_count_operation(&optimized, DRV_GPU_IR_FLT, 0xffffffffU) == 0);
+		assert(optimizer_count_operation(&optimized, DRV_GPU_IR_FMUL, 0xffffffffU) + optimizer_count_operation(&optimized, DRV_GPU_IR_SAMPLE, 0xffffffffU) == 1);
+		assert(optimized.instructions[2].guard == 0);
+		kern_free(optimized.instructions);
+	}
 }
