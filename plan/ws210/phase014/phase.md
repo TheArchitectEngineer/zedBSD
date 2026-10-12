@@ -253,6 +253,19 @@ if (due) {
   - build: rpi4・amd64 の calendar・files・music・photos・phone・mailer が warning 0（-Werror）。libkeiland は不変。QEMU・Pi は未実施。
   - Pi で見る所: Calendar の左ペイン・months の cell・panel を速く動かした後に古い lit が残らない・遅れが積み重ならないこと、日付の click の後の page の turn。他の 5 app の hover。log の `PACING ... errno=0` と Calendar の `SLOW-FRAME`。
 
+- 2026-10-12 Calendar の日付の click の遅れ（Q1、ユーザー place22「Calendarですが、150msくらい遅れてポイントされますね。日付クリックはパネルが更新されるものの、800ms遅れます。」。hover の 150ms は compositor の 1 コマで P3 の担当、P1 は click）。
+  - Pi の log（Q1 が写した kwl.log、SSH は読むだけ）: 日付の click の前後に `SLOW-FRAME draw=181〜258 present=15〜25 parts=0 area=1024000`（窓全体）が 2〜3 コマ続く。1 回の click は press のコマ（BUTTON の入力は全部 dirty で全体）、click のコマ（全体、SELECT と FLIP）、`view->again` の次のコマ（全体）の 3 コマ ≒ 660ms と present。同じ日の SELECT が続くのは利用者の重ねての click（kl_ui の click は 1 コマで消える）。
+  - host の計測（scratch の bench、1280x800、glass、Xeon。Pi は約 18 倍）: 全体のコマ 11.0ms の内訳は、背景と 3 枚の card の veil 4.5ms（1,024,000 画素の blend）、卓上カレンダーの 3D 2.8ms（720 三角形、2 倍の supersample）、残りが文字・cell・panel。
+  - 直し（userland/desktop/calendar）:
+    1. 日付の cell の上の左 button は、press では何も描かず、release（click）ではその cell だけを部分のコマで描く（`cal_view_cell_at`、`kl_ui_damage`）。focus を持つ field・key で光った widget・drag・他で押した press の release は今まで通り全体。
+    2. click で選んだ日が変わったら、`again`（次のコマで全体）の代わりに、前に選んだ日の cell と「選んだ日」の card（日付・予定・卓上カレンダー）を同じコマの中で部分として描き直す（`view->redraw`、main.c がそのコマの parts に足して present）。editor・表示の変化は今まで通り `again`。
+    3. 背景と card の veil を窓の大きさ・glass・card・色ごとに一度だけ絵にし、各コマは clip の中を写す（`view_ground`）。
+    4. 卓上カレンダーの 3D は、止まっている間と、めくり始めのコマ（まだ動かず、下の page は隠れている。host で画素一致を確かめた）は前の絵を使う（`picture_still`）。
+    5. SLOW-FRAME に `why=`（parts・desk・day・input・button・key・again・moving・animating・lit…）、日付を選んだコマに `DAY-FRAME draw= present= parts=` を足した。
+  - host の結果: click のコマ 1.7ms（前は press・click・again の全体 3 コマで約 33ms）。全体のコマ 11.0→3.9ms（glass）、3.65ms（不透明）。部分で描いた click の後の画素は、同じ時刻の全体の描画と glass・不透明とも一致（0 画素の差、reduce motion と motion の両方）。直しの前と後の全体のコマも画素一致。
+  - 試験: `run-host-calendar.sh` 13 PASS、`run-host-kl-ui-lit.sh` 46 PASS。build: rpi4・amd64 の calendar が warning 0。QEMU・Pi は未実施。commit b9cec0fe9。
+  - Pi で見る所: 日付の click からパネルの更新まで（log の `DAY-FRAME`、`SLOW-FRAME ... why=`）、ページめくり、months の scroll。
+
 ## Phase の中の順
 
 1. F1（kl_ui の内側だけ、公開の口は変えない）。これだけで Music・Calendar・Photos・Phone の「軌跡」が消える。KL_VERSION は変えない。

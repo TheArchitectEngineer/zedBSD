@@ -71,3 +71,35 @@ keiui_present_copy(
 	for (row = area->y; row < area->y + area->height; row++)
 		memcpy(canvas + (size_t)row * pitch + (size_t)area->x * 4U, pixels + (size_t)row * stride + (size_t)area->x, (size_t)area->width * 4U);
 }
+
+/*
+ * Copies an area of a frame (stride words a row, B, G, R, A in memory)
+ * into the canvas (pitch bytes a row) with red and blue swapped, for an
+ * image of R, G, B, A (ws210-p013); the canvas keeps the rest.  The area
+ * lies inside both.
+ */
+void
+keiui_present_copy_swap(
+	unsigned char *canvas,
+	size_t pitch,
+	const uint32_t *pixels,
+	size_t stride,
+	const struct kl_rect *area)
+{
+	const uint32_t *from;
+	uint32_t *to;
+	uint32_t pixel;
+	int row;
+	int column;
+
+	/* The area's rows. */
+	for (row = area->y; row < area->y + area->height; row++) {
+		/* Each pixel of the row, its first and third bytes swapped. */
+		from = pixels + (size_t)row * stride + (size_t)area->x;
+		to = (uint32_t *)(void *)(canvas + (size_t)row * pitch + (size_t)area->x * 4U);
+		for (column = 0; column < area->width; column++) {
+			pixel = from[column];
+			to[column] = (pixel & 0xff00ff00U) | ((pixel & 0xffU) << 16) | ((pixel >> 16) & 0xffU);
+		}
+	}
+}

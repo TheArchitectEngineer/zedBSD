@@ -19,6 +19,7 @@
 
 #include "declare.h"
 #include "internal.h"
+#include "present-damage.h"
 
 /* The window's surface is a Wayland one, for Vulkan's surface. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
@@ -147,18 +148,25 @@ struct kl_app {
 	struct kl_app *next;
 };
 
-/* One swapchain image and what draws into it. */
+/*
+ * One swapchain image and what draws into it: its view and framebuffer
+ * (the quad's), the semaphore its present waits for, and what of the
+ * frame changed since it was last written (the copy's, ws210-p013).
+ */
 struct keiui_present_target {
 	VkImage image;
 	VkImageView view;
 	VkFramebuffer framebuffer;
 	VkSemaphore rendered;
+	struct keiui_stale stale;
 };
 
 /*
  * The Vulkan presenter (Text Editor's present.c): the swapchain over the
- * window's surface, and the quad that copies the CPU's frame onto an
- * image of it.  It lives from the window's opening to its closing.
+ * window's surface, and the CPU's frame copied onto an image of it, by
+ * the parts the image lacks from a staging buffer (ws210-p013), or, on a
+ * surface whose images take no copy, whole by a quad that samples the
+ * canvas image.  It lives from the window's opening to its closing.
  */
 struct keiui_present {
 	/* The instance, the surface of the window, the device and its queue. */
@@ -186,7 +194,37 @@ struct keiui_present {
 	VkDescriptorSet set;
 	VkSampler sampler;
 
-	/* The canvas image (linear, host-written), its memory, view and map, and whether it was made ready. */
+	/*
+	 * Whether the frames are copied into the images (the surface's images
+	 * take a transfer; else the quad draws them), decided with the first
+	 * swapchain, and whether each frame is copied whole all the same (the
+	 * diagnostic KL_PRESENT_WHOLE=1, the reference of the copy by
+	 * parts).
+	 */
+	int copying;
+	int path_chosen;
+	int force_whole;
+
+	/*
+	 * The staging buffer the copy reads (host-written, mapped for good at
+	 * canvas_map, canvas_pitch bytes a row) and its memory.
+	 */
+	VkBuffer staging;
+	VkDeviceMemory staging_memory;
+
+	/*
+	 * The diagnostic KL_PRESENT_CHECK=1: each image written is read
+	 * back into a buffer and compared with the staging buffer, and the
+	 * first difference is told once (KEILAND PRESENT_STALE).  The buffer,
+	 * its memory and map, and whether a difference was told.
+	 */
+	int check;
+	VkBuffer readback;
+	VkDeviceMemory readback_memory;
+	unsigned char *readback_map;
+	int stale_told;
+
+	/* The canvas image (linear, host-written; the quad's), its memory, view and map, and whether it was made ready. */
 	VkImage canvas;
 	VkDeviceMemory canvas_memory;
 	VkImageView canvas_view;

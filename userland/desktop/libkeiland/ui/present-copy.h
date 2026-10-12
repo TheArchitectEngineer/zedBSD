@@ -20,5 +20,6 @@
 
 int keiui_present_part_clip(uint32_t width, uint32_t height, const struct kl_rect *part, struct kl_rect *clipped);
 void keiui_present_copy(unsigned char *canvas, size_t pitch, const uint32_t *pixels, size_t stride, const struct kl_rect *area);
+void keiui_present_copy_swap(unsigned char *canvas, size_t pitch, const uint32_t *pixels, size_t stride, const struct kl_rect *area);
 
 #endif
