@@ -185,6 +185,22 @@ qpu_machine_run(
 		if (instruction.flags.mc != V3D_QPU_COND_NONE && !condition_holds(&machine, instruction.flags.mc))
 			mul_write = false;
 
+		/* A texture configuration applies to a lookup launched by the same word. */
+		if (instruction.sig.wrtmuc) {
+			flag = next_uniform(&machine);
+			if (machine.configurations == 0) {
+				if ((flag >> 28) != 1U)
+					fail(&machine, "first texture configuration is not a texture");
+				machine.texture_set = (flag >> 8) & 0xffU;
+				machine.texture_binding = flag & 0xffU;
+			} else if (machine.configurations == 1) {
+				if ((flag >> 28) != 2U || ((flag >> 8) & 0xffU) != machine.texture_set || (flag & 0xffU) != machine.texture_binding)
+					fail(&machine, "second texture configuration does not match its texture");
+			} else {
+				fail(&machine, "too many texture configurations");
+			}
+			machine.configurations++;
+		}
 		/* Each ALU computes; a special function's result lands two words later. */
 		flags_set = false;
 		flag = 0;
@@ -244,21 +260,6 @@ qpu_machine_run(
 				write_resource(&machine, MACHINE_ACCUMULATOR + 5, 0x80000000U, 1);
 			}
 			machine.varying_read++;
-		}
-		if (instruction.sig.wrtmuc) {
-			flag = next_uniform(&machine);
-			if (machine.configurations == 0) {
-				if ((flag >> 28) != 1U)
-					fail(&machine, "first texture configuration is not a texture");
-				machine.texture_set = (flag >> 8) & 0xffU;
-				machine.texture_binding = flag & 0xffU;
-			} else if (machine.configurations == 1) {
-				if ((flag >> 28) != 2U || ((flag >> 8) & 0xffU) != machine.texture_set || (flag & 0xffU) != machine.texture_binding)
-					fail(&machine, "second texture configuration does not match its texture");
-			} else {
-				fail(&machine, "too many texture configurations");
-			}
-			machine.configurations++;
 		}
 		if (instruction.sig.ldtmu) {
 			if (instruction.sig_magic)
@@ -775,14 +776,14 @@ check_word_rules(
 	bool add_register;
 	bool mul_register;
 
-	/* One of the TMU, special function, tile, VPM and synchronization units per word. */
+	/* One of the TMU, special function, tile, VPM and synchronization units per word; a texture configuration may join a TMU coordinate write. */
 	special = v3d_qpu_instr_is_sfu(instruction);
 	units = 0;
 	if (v3d_qpu_writes_tmu(machine->device, instruction))
 		units++;
 	if (instruction->sig.ldtmu)
 		units++;
-	if (instruction->sig.wrtmuc)
+	if (instruction->sig.wrtmuc && !v3d_qpu_writes_tmu_not_tmuc(machine->device, instruction))
 		units++;
 	if (special)
 		units++;

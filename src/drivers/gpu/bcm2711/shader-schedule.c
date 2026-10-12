@@ -25,10 +25,11 @@
 
 #include "drivers/gpu/bcm2711/shader-private.h"
 
-/* Register-file entries keep their numbers; accumulator five and the lane flags follow them. */
-#define SCHEDULE_R5 64U
-#define SCHEDULE_FLAGS 65U
-#define SCHEDULE_RESOURCES 66U
+/* Register-file entries keep their numbers; accumulators zero to five and the lane flags follow them. */
+#define SCHEDULE_ACCUMULATOR 64U
+#define SCHEDULE_R5 69U
+#define SCHEDULE_FLAGS 70U
+#define SCHEDULE_RESOURCES 71U
 
 /* A record reads at most two sources and the lane flags; it writes at most a register, accumulator five and the flags. */
 #define SCHEDULE_ACCESSES 3U
@@ -38,6 +39,10 @@
 
 /* A thread switch takes effect after its two delay words; what must follow it waits three words. */
 #define SCHEDULE_SWITCH_DISTANCE 3U
+
+/* Accumulators zero to three take short-lived values; a value qualifies when its last read is this close. */
+#define SCHEDULE_ACCUMULATORS 4U
+#define SCHEDULE_ACCUMULATOR_SPAN 8U
 
 /* The words a schedule may use for each record before it is refused, besides a fixed tail. */
 #define SCHEDULE_WORDS_PER_NODE 4U
@@ -61,6 +66,8 @@ struct schedule_node {
 	uint32_t sensitive;
 	uint32_t uniform;
 	uint32_t texture_read;
+	uint32_t texture_write;
+	uint32_t texture_config;
 	uint32_t tile_write;
 	enum bcm2711_shader_switch role;
 	/* The last switch pair and the tile writes are placed after the body of the program. */
@@ -102,6 +109,27 @@ struct schedule_reader {
 	uint32_t next;
 };
 
+/* One read of a register value that may move to an accumulator: the record and which source. */
+struct promote_use {
+	uint32_t op;
+	uint32_t source;
+	uint32_t next;
+};
+
+/*
+ * One register value from its write to its last read, a candidate for an accumulator.
+ *
+ * Positions count non-idle records in source order.
+ */
+struct promote_value {
+	uint32_t op;
+	uint32_t first;
+	uint32_t last;
+	uint32_t segment;
+	uint32_t eligible;
+	uint32_t uses;
+};
+
 /*
  * One scheduling attempt's storage.
  *
@@ -133,6 +161,12 @@ struct schedule_state {
 	uint32_t tile_nodes[2];
 };
 
+static int schedule_attempt(struct bcm2711_shader_compiler *compiler, uint32_t accumulators);
+static int promote_accumulators(struct bcm2711_shader_compiler *compiler);
+static int promote_close(struct promote_value *open, struct promote_value *values, uint32_t *value_count, uint32_t capacity);
+static void promote_assign(struct bcm2711_shader_compiler *compiler, struct promote_value *values, uint32_t value_count, const struct promote_use *uses);
+static uint32_t peripherals_clash(const struct schedule_node *first, const struct schedule_node *second);
+static uint32_t texture_pair(const struct schedule_node *first, const struct schedule_node *second);
 static int classify(struct schedule_state *state);
 static int classify_node(struct schedule_state *state, struct schedule_node *node);
 static int build_edges(struct schedule_state *state);
@@ -163,13 +197,84 @@ static void release_state(struct schedule_state *state);
 /*
  * Schedules a recorded fragment program into paired native words.
  *
- * A nonzero result means the program keeps its source-order words: either
- * the program uses a transaction these rules do not describe, or storage ran
- * out, or the finished schedule failed its independent check.
+ * The program is scheduled twice, with values in registers only and with
+ * short-lived values in accumulators, and the shorter program is kept: an
+ * accumulator takes no read port, so more operations pair, but it cannot
+ * cross a thread switch, which can hold a short program back.  A nonzero
+ * result means the program keeps its source-order words: the program uses a
+ * transaction these rules do not describe, or storage ran out, or both
+ * finished schedules failed their independent check.
  */
 int
 bcm2711_shader_schedule(
 	struct bcm2711_shader_compiler *compiler)
+{
+	struct bcm2711_shader_binary *binary;
+	struct bcm2711_qpu_instruction *saved;
+	uint64_t *plain_code;
+	struct bcm2711_shader_uniform *plain_uniforms;
+	uint32_t plain_count;
+	uint32_t index;
+	int plain;
+	int promoted;
+
+	/* The records are kept so each attempt, and a refusal, start from the source-order program. */
+	binary = compiler->binary;
+	saved = kern_calloc(compiler->op_count, sizeof(*saved));
+	if (saved == NULL)
+		return ENOMEM;
+	for (index = 0; index < compiler->op_count; index++)
+		saved[index] = compiler->ops[index].instruction;
+
+	/* The registers-only schedule is kept aside while the accumulator schedule is tried. */
+	plain_code = NULL;
+	plain_uniforms = NULL;
+	plain_count = 0;
+	plain = schedule_attempt(compiler, 0);
+	if (plain == 0) {
+		plain_count = binary->code_count;
+		plain_code = kern_calloc(plain_count, sizeof(*plain_code));
+		plain_uniforms = kern_calloc(binary->uniform_count + 1, sizeof(*plain_uniforms));
+		if (plain_code == NULL || plain_uniforms == NULL) {
+			plain = ENOMEM;
+		} else {
+			kern_memcpy(plain_code, binary->code, plain_count * sizeof(*plain_code));
+			kern_memcpy(plain_uniforms, binary->uniforms, binary->uniform_count * sizeof(*plain_uniforms));
+		}
+	}
+	for (index = 0; index < compiler->op_count; index++)
+		compiler->ops[index].instruction = saved[index];
+	promoted = ENOTSUP;
+	if (plain != ENOMEM)
+		promoted = schedule_attempt(compiler, 1);
+	for (index = 0; index < compiler->op_count; index++)
+		compiler->ops[index].instruction = saved[index];
+
+	/* The accumulator schedule stays in the program when it is shorter; otherwise the registers-only one returns. */
+	if (plain == 0 && (promoted != 0 || binary->code_count >= plain_count)) {
+		kern_memcpy(binary->code, plain_code, plain_count * sizeof(*plain_code));
+		kern_memcpy(binary->uniforms, plain_uniforms, binary->uniform_count * sizeof(*plain_uniforms));
+		binary->code_count = plain_count;
+	}
+	kern_free(plain_uniforms);
+	kern_free(plain_code);
+	kern_free(saved);
+
+	/* Running out of memory fails the compile; two refused attempts leave the source-order words to the caller. */
+	if (plain == ENOMEM || promoted == ENOMEM)
+		return ENOMEM;
+	if (plain != 0 && promoted != 0)
+		return promoted;
+
+	/* Succeeded: the program's words and uniform stream are scheduled. */
+	return 0;
+}
+
+/* Runs one scheduling attempt, writing the program's words and uniforms when it succeeds. */
+static int
+schedule_attempt(
+	struct bcm2711_shader_compiler *compiler,
+	uint32_t accumulators)
 {
 	struct schedule_state state;
 	int error;
@@ -181,8 +286,12 @@ bcm2711_shader_schedule(
 	state.last_second = BCM2711_SHADER_ABSENT;
 	state.end = BCM2711_SHADER_ABSENT;
 
-	/* Classifies every record, refusing a program outside the described rules. */
-	error = classify(&state);
+	/* Short-lived values may move to accumulators, which take no read port; then every record is classified. */
+	error = 0;
+	if (accumulators != 0)
+		error = promote_accumulators(compiler);
+	if (error == 0)
+		error = classify(&state);
 	if (error == 0)
 		error = build_edges(&state);
 	if (error == 0)
@@ -205,11 +314,286 @@ bcm2711_shader_schedule(
 	/* The attempt's storage retires whatever the outcome. */
 	release_state(&state);
 
-	/* A refused schedule leaves the caller to emit the source-order words. */
+	/* A refused attempt reports why. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the program's words and uniform stream are scheduled. */
+	/* Succeeded: the program's words and uniform stream follow this attempt. */
+	return 0;
+}
+
+/*
+ * Moves short-lived register values to accumulators zero to three.
+ *
+ * A value qualifies when an unpredicated ALU operation other than a special
+ * function writes it, plain ALU operations read it, its last read is close
+ * in source order, and no thread switch lies between: accumulators are lost
+ * at a switch.  The schedule's edges treat accumulators like registers, so
+ * the rewritten program keeps its meaning however the words are ordered.
+ */
+static int
+promote_accumulators(
+	struct bcm2711_shader_compiler *compiler)
+{
+	struct bcm2711_shader_op *op;
+	const struct bcm2711_qpu_instruction *instruction;
+	const struct bcm2711_qpu_source *sources[2];
+	struct promote_value open[64];
+	struct promote_value *values;
+	struct promote_use *uses;
+	uint32_t value_count;
+	uint32_t use_count;
+	uint32_t index;
+	uint32_t source;
+	uint32_t source_count;
+	uint32_t number;
+	uint32_t position;
+	uint32_t segment;
+	int error;
+
+	/* At most one value per record and two reads per record. */
+	values = kern_calloc(compiler->op_count, sizeof(*values));
+	if (values == NULL)
+		return ENOMEM;
+	uses = kern_calloc((size_t)compiler->op_count * 2U, sizeof(*uses));
+	if (uses == NULL) {
+		kern_free(values);
+		return ENOMEM;
+	}
+	for (number = 0; number < 64; number++)
+		open[number].op = BCM2711_SHADER_ABSENT;
+
+	/* Walks the records, following each register's current value. */
+	value_count = 0;
+	use_count = 0;
+	position = 0;
+	segment = 0;
+	error = 0;
+	for (index = 0; index < compiler->op_count && error == 0; index++) {
+		op = &compiler->ops[index];
+		instruction = &op->instruction;
+		if (instruction->operation == BCM2711_QPU_IDLE && instruction->signal == BCM2711_QPU_SIGNAL_NONE)
+			continue;
+		position++;
+
+		/* A switch ends the segment in which a value may live in an accumulator. */
+		if (instruction->signal == BCM2711_QPU_SIGNAL_SWITCH)
+			segment++;
+
+		/* Each register read joins its value; a value read across a switch or by a peripheral write stays in its register. */
+		if (instruction->operation != BCM2711_QPU_IDLE) {
+			sources[0] = &instruction->left;
+			sources[1] = &instruction->right;
+			source_count = bcm2711_qpu_operation_sources(instruction->operation);
+			for (source = 0; source < source_count; source++) {
+				if (sources[source]->kind != BCM2711_QPU_REGISTER || sources[source]->number >= 64)
+					continue;
+				number = sources[source]->number;
+				if (open[number].op == BCM2711_SHADER_ABSENT)
+					continue;
+				if (open[number].segment != segment || instruction->destination.peripheral != 0)
+					open[number].eligible = 0;
+				uses[use_count].op = index;
+				uses[use_count].source = source;
+				uses[use_count].next = open[number].uses;
+				open[number].uses = use_count;
+				use_count++;
+				open[number].last = position;
+			}
+		}
+
+		/* A predicated write merges with the old value, which therefore stays in its register. */
+		if (instruction->operation != BCM2711_QPU_IDLE &&
+		    instruction->destination.peripheral == 0 &&
+		    instruction->predicate != 0) {
+			number = instruction->destination.number;
+			if (number < 64 && open[number].op != BCM2711_SHADER_ABSENT)
+				open[number].eligible = 0;
+			continue;
+		}
+
+		/* A write starts a new value; only a plain ALU result may move to an accumulator. */
+		number = 64;
+		if (instruction->operation != BCM2711_QPU_IDLE && instruction->destination.peripheral == 0)
+			number = instruction->destination.number;
+		if (instruction->operation == BCM2711_QPU_IDLE &&
+		    instruction->signal != BCM2711_QPU_SIGNAL_NONE &&
+		    instruction->signal_destination.peripheral == 0 &&
+		    (instruction->signal == BCM2711_QPU_SIGNAL_UNIFORM_REGISTER ||
+		     instruction->signal == BCM2711_QPU_SIGNAL_TEXTURE ||
+		     instruction->signal == BCM2711_QPU_SIGNAL_VARYING))
+			number = instruction->signal_destination.number;
+		if (number >= 64)
+			continue;
+		error = promote_close(&open[number], values, &value_count, compiler->op_count);
+		open[number].op = index;
+		open[number].first = position;
+		open[number].last = position;
+		open[number].segment = segment;
+		open[number].uses = BCM2711_SHADER_ABSENT;
+		open[number].eligible = 1;
+		if (instruction->operation == BCM2711_QPU_IDLE)
+			open[number].eligible = 0;
+		switch (instruction->operation) {
+		case BCM2711_QPU_FLOAT_RECIPROCAL:
+		case BCM2711_QPU_FLOAT_INVERSE_ROOT:
+		case BCM2711_QPU_FLOAT_EXPONENT:
+		case BCM2711_QPU_FLOAT_LOGARITHM:
+		case BCM2711_QPU_FLOAT_SINE:
+			open[number].eligible = 0;
+			break;
+		default:
+			break;
+		}
+	}
+
+	/* The values still open at the end of the program close too. */
+	for (number = 0; number < 64 && error == 0; number++)
+		error = promote_close(&open[number], values, &value_count, compiler->op_count);
+
+	/* Qualifying values take accumulators in source order. */
+	if (error == 0)
+		promote_assign(compiler, values, value_count, uses);
+	kern_free(uses);
+	kern_free(values);
+
+	/* A full value table refuses the schedule. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: short-lived values read accumulators. */
+	return 0;
+}
+
+/* Keeps one closed register value when it qualifies for an accumulator. */
+static int
+promote_close(
+	struct promote_value *open,
+	struct promote_value *values,
+	uint32_t *value_count,
+	uint32_t capacity)
+{
+	/* An unwritten register has no value to close. */
+	if (open->op == BCM2711_SHADER_ABSENT)
+		return 0;
+
+	/* A value with a read, all of it close and inside one segment, qualifies. */
+	if (open->eligible != 0 &&
+	    open->uses != BCM2711_SHADER_ABSENT &&
+	    open->last - open->first <= SCHEDULE_ACCUMULATOR_SPAN) {
+		if (*value_count == capacity)
+			return E2BIG;
+		values[*value_count] = *open;
+		(*value_count)++;
+	}
+	open->op = BCM2711_SHADER_ABSENT;
+
+	/* Succeeded: the value is closed. */
+	return 0;
+}
+
+/* Gives qualifying values free accumulators in source order and rewrites their writes and reads. */
+static void
+promote_assign(
+	struct bcm2711_shader_compiler *compiler,
+	struct promote_value *values,
+	uint32_t value_count,
+	const struct promote_use *uses)
+{
+	struct promote_value moved;
+	struct bcm2711_qpu_instruction *instruction;
+	uint32_t free_from[SCHEDULE_ACCUMULATORS];
+	uint32_t index;
+	uint32_t later;
+	uint32_t accumulator;
+	uint32_t chosen;
+	uint32_t entry;
+
+	/* Values close in an arbitrary order; assignment walks them by their write. */
+	for (index = 1; index < value_count; index++) {
+		moved = values[index];
+		later = index;
+		while (later > 0 && values[later - 1].first > moved.first) {
+			values[later] = values[later - 1];
+			later--;
+		}
+		values[later] = moved;
+	}
+
+	/* Each accumulator is free from its last value's last read; the one free longest is chosen. */
+	for (accumulator = 0; accumulator < SCHEDULE_ACCUMULATORS; accumulator++)
+		free_from[accumulator] = 0;
+	for (index = 0; index < value_count; index++) {
+		chosen = SCHEDULE_ACCUMULATORS;
+		for (accumulator = 0; accumulator < SCHEDULE_ACCUMULATORS; accumulator++) {
+			if (free_from[accumulator] > values[index].first)
+				continue;
+			if (chosen == SCHEDULE_ACCUMULATORS || free_from[accumulator] < free_from[chosen])
+				chosen = accumulator;
+		}
+		if (chosen == SCHEDULE_ACCUMULATORS)
+			continue;
+		free_from[chosen] = values[index].last;
+
+		/* The write goes to the accumulator and every read of the value reads it. */
+		instruction = &compiler->ops[values[index].op].instruction;
+		instruction->destination.number = chosen;
+		instruction->destination.peripheral = 1;
+		entry = values[index].uses;
+		while (entry != BCM2711_SHADER_ABSENT) {
+			instruction = &compiler->ops[uses[entry].op].instruction;
+			if (uses[entry].source == 0) {
+				instruction->left.kind = BCM2711_QPU_ACCUMULATOR;
+				instruction->left.number = chosen;
+			} else {
+				instruction->right.kind = BCM2711_QPU_ACCUMULATOR;
+				instruction->right.number = chosen;
+			}
+			entry = uses[entry].next;
+		}
+	}
+
+	/* Succeeded: qualifying values live in accumulators. */
+	return;
+}
+
+/*
+ * Tells whether two nodes' peripheral transactions cannot share a word.
+ *
+ * A word starts one transaction of the TMU, special functions or the tile
+ * buffer, except that a texture configuration may accompany a TMU coordinate
+ * write other than the configuration register's.
+ */
+static uint32_t
+peripherals_clash(
+	const struct schedule_node *first,
+	const struct schedule_node *second)
+{
+	/* Two nodes clash only when both start a transaction. */
+	if (first->peripheral == 0 || second->peripheral == 0)
+		return 0;
+
+	/* The one permitted pair. */
+	if (texture_pair(first, second) != 0)
+		return 0;
+
+	/* Any other pair of transactions needs two words. */
+	return 1;
+}
+
+/* Tells whether two nodes are a texture configuration and a TMU coordinate write, which may share a word. */
+static uint32_t
+texture_pair(
+	const struct schedule_node *first,
+	const struct schedule_node *second)
+{
+	/* Either order of the two transactions. */
+	if (first->texture_config != 0 && second->texture_write != 0)
+		return 1;
+	if (first->texture_write != 0 && second->texture_config != 0)
+		return 1;
+
+	/* Any other two nodes are not that pair. */
 	return 0;
 }
 
@@ -322,6 +706,7 @@ classify_node(
 		case BCM2711_QPU_SIGNAL_TEXTURE_CONFIG:
 			node->peripheral = 1;
 			node->ordered = 1;
+			node->texture_config = 1;
 			break;
 		case BCM2711_QPU_SIGNAL_TEXTURE:
 			node->peripheral = 1;
@@ -389,10 +774,10 @@ classify_node(
 			node->reads[node->read_count] = sources[index]->number;
 			node->read_count++;
 		} else if (sources[index]->kind == BCM2711_QPU_ACCUMULATOR) {
-			/* Only accumulator five, the varying coefficient, is used by the lowering. */
-			if (sources[index]->number != 5)
+			/* Accumulators zero to three hold short-lived values; five holds the varying coefficient. */
+			if (sources[index]->number == 4 || sources[index]->number > 5)
 				return ENOTSUP;
-			node->reads[node->read_count] = SCHEDULE_R5;
+			node->reads[node->read_count] = SCHEDULE_ACCUMULATOR + sources[index]->number;
 			node->read_count++;
 			node->sensitive = 1;
 		}
@@ -413,15 +798,25 @@ classify_node(
 			node->landing[node->write_count] = SCHEDULE_SPECIAL_DISTANCE - 1;
 		node->write_count++;
 	} else {
-		/* Peripheral destinations: the null address, the tile buffer and the TMU are described. */
+		/* Peripheral destinations: accumulators, the null address, the tile buffer and the TMU are described. */
 		number = instruction->destination.number;
-		if (number == 7 || number == 8) {
+		if (number <= 3) {
+			/* An accumulator is written when the word ends and is lost at a thread switch. */
+			if (node->special != 0)
+				return ENOTSUP;
+			node->writes[node->write_count] = SCHEDULE_ACCUMULATOR + number;
+			node->landing[node->write_count] = 0;
+			node->write_count++;
+			node->sensitive = 1;
+		} else if (number == 7 || number == 8) {
 			node->peripheral = 1;
 			node->ordered = 1;
 			node->tile_write = 1;
 		} else if (number >= 32 && number <= 44) {
 			node->peripheral = 1;
 			node->ordered = 1;
+			if (number != 32)
+				node->texture_write = 1;
 		} else if (number != 6) {
 			return ENOTSUP;
 		}
@@ -594,11 +989,13 @@ resource_edges(
 
 		/*
 		 * An ALU write may share the word of a read of the old value, which
-		 * reads before the word writes; a signal's load and the lane flags
-		 * wait one word.
+		 * reads before the word writes, and so may a write that lands a word
+		 * later; another signal's load and the lane flags wait one word.
 		 */
 		distance = 1;
-		if (node->is_signal == 0 && resource < 64)
+		if (node->is_signal == 0 && resource != SCHEDULE_FLAGS)
+			distance = 0;
+		if (node->landing[access] != 0)
 			distance = 0;
 		entry = state->reader_head[resource];
 		while (entry != BCM2711_SHADER_ABSENT) {
@@ -648,17 +1045,21 @@ order_edges(
 
 	/*
 	 * TMU, switch and tile transactions keep their source order in separate
-	 * words; a load after a switch waits for the switch, and so does a tile
-	 * write after the last pair, while the pair's second switch follows the
-	 * first directly.
+	 * words, except a texture configuration and a TMU coordinate write, which
+	 * may share one; a load after a switch waits for the switch, and so does
+	 * a tile write for the first switch of the last pair, while the pair's
+	 * second switch follows the first directly.
 	 */
 	if (node->ordered != 0) {
 		if (*last_ordered != BCM2711_SHADER_ABSENT) {
 			previous = &state->nodes[*last_ordered];
 			distance = 1;
-			if (previous->role == BCM2711_SHADER_SWITCH_SAMPLE ||
-			    previous->role == BCM2711_SHADER_SWITCH_LAST_SECOND)
+			if (previous->role == BCM2711_SHADER_SWITCH_SAMPLE)
 				distance = SCHEDULE_SWITCH_DISTANCE;
+			if (previous->role == BCM2711_SHADER_SWITCH_LAST_SECOND)
+				distance = SCHEDULE_SWITCH_DISTANCE - 1;
+			if (texture_pair(previous, node) != 0)
+				distance = 0;
 			error = add_edge(state, *last_ordered, index, distance);
 			if (error != 0)
 				return error;
@@ -897,7 +1298,7 @@ fits(
 	node = &state->nodes[index];
 	present_count = word_node_count(word, present);
 	for (entry = 0; entry < present_count; entry++) {
-		if (node->peripheral != 0 && state->nodes[present[entry]].peripheral != 0)
+		if (peripherals_clash(node, &state->nodes[present[entry]]) != 0)
 			return ENOTSUP;
 		if (node->uniform != 0 && state->nodes[present[entry]].uniform != 0)
 			return ENOTSUP;
@@ -1104,13 +1505,13 @@ tail_trial(
 	if (error != 0)
 		return error;
 
-	/* Each tile write takes the first word it fits once the scoreboard is held and its colour is ready. */
+	/* Each tile write takes the first word it fits once the first switch holds the scoreboard and its colour is ready. */
 	used = first + 2;
 	for (tile = 0; tile < 2; tile++) {
 		node = state->tile_nodes[tile];
 		word = ready_word(state, node);
-		if (word < first + 1 + SCHEDULE_SWITCH_DISTANCE)
-			word = first + 1 + SCHEDULE_SWITCH_DISTANCE;
+		if (word < first + SCHEDULE_SWITCH_DISTANCE)
+			word = first + SCHEDULE_SWITCH_DISTANCE;
 		if (tile != 0 && word < tiles[tile - 1] + 1)
 			word = tiles[tile - 1] + 1;
 		for (;;) {
@@ -1127,8 +1528,8 @@ tail_trial(
 	if (used < state->word_count)
 		used = state->word_count;
 
-	/* The thread end follows the second switch's delay words and keeps every used word inside its window. */
-	*end = first + 1 + SCHEDULE_SWITCH_DISTANCE;
+	/* The thread end follows the first switch's delay words and keeps every used word inside its window. */
+	*end = first + SCHEDULE_SWITCH_DISTANCE;
 	if (used > 3 && *end < used - 3)
 		*end = used - 3;
 
@@ -1286,7 +1687,7 @@ node_allows_end(
 	/* No register write, varying, special function or late uniform near the end. */
 	node = &state->nodes[index];
 	for (access = 0; access < node->write_count; access++) {
-		if (node->writes[access] < 64)
+		if (node->writes[access] < SCHEDULE_ACCUMULATOR)
 			return ENOTSUP;
 	}
 	if (node->sensitive != 0)
@@ -1498,10 +1899,11 @@ verify_rules(
 		peripherals = 0;
 		uniforms = 0;
 		for (entry = 0; entry < present_count; entry++) {
-			peripherals += state->nodes[present[entry]].peripheral;
 			uniforms += state->nodes[present[entry]].uniform;
+			for (later = entry + 1; later < present_count; later++)
+				peripherals += peripherals_clash(&state->nodes[present[entry]], &state->nodes[present[later]]);
 		}
-		if (peripherals > 1 || uniforms > 1)
+		if (peripherals != 0 || uniforms > 1)
 			return EINVAL;
 	}
 
@@ -1513,7 +1915,9 @@ verify_rules(
 			continue;
 		if (previous != BCM2711_SHADER_ABSENT) {
 			other = &state->nodes[previous];
-			if (node->word <= other->word)
+			if (node->word < other->word)
+				return EINVAL;
+			if (node->word == other->word && texture_pair(other, node) == 0)
 				return EINVAL;
 			if (other->role == BCM2711_SHADER_SWITCH_SAMPLE && node->word < other->word + SCHEDULE_SWITCH_DISTANCE)
 				return EINVAL;
@@ -1521,13 +1925,13 @@ verify_rules(
 		previous = index;
 	}
 
-	/* The last pair's switches are adjacent; the tile writes and thread end wait for the second one. */
+	/* The last pair's switches are adjacent; the tile writes and thread end wait for the first one to take effect. */
 	word = state->nodes[state->last_second].word;
 	if (word != state->nodes[state->last_first].word + 1)
 		return EINVAL;
-	if (state->nodes[state->tile_nodes[0]].word < word + SCHEDULE_SWITCH_DISTANCE)
+	if (state->nodes[state->tile_nodes[0]].word + 1 < word + SCHEDULE_SWITCH_DISTANCE)
 		return EINVAL;
-	if (state->nodes[state->end].word < word + SCHEDULE_SWITCH_DISTANCE)
+	if (state->nodes[state->end].word + 1 < word + SCHEDULE_SWITCH_DISTANCE)
 		return EINVAL;
 
 	/* The program ends with the thread end's second delay word. */
