@@ -49,8 +49,13 @@ struct display_resource {
 	bool has_image;
 };
 
-/* The cursor plane keeps four images: shown, pending, recorded and one to write. */
-#define DISPLAY_CURSOR_IMAGES 4U
+/*
+ * The cursor plane keeps five images: the three lists the hardware may read
+ * (the adopted one, one published and one replacing it) may each show a
+ * different image, the recorded cursor may name a fourth not yet in a list,
+ * and a fifth is always free to write.
+ */
+#define DISPLAY_CURSOR_IMAGES 5U
 
 /* The source of one cursor image's rows; valid is false when the image holds nothing reusable. */
 struct display_cursor_key {
@@ -64,9 +69,19 @@ struct display_cursor_key {
 	uint32_t format;
 };
 
-/* One boot output owns persistent operation tables and private scanout buffers. */
+/*
+ * One boot output owns persistent operation tables and private scanout buffers.
+ *
+ * mutex orders lease changes, the copy path and resource bookkeeping;
+ * presentation of shared images and the cursor do not take it (the flip
+ * state checks the lease under its own guard).  plane_mutex serializes the
+ * cursor's images and is taken after mutex.  sequence_guard protects the
+ * count of completed presents and their time.
+ */
 struct display_device {
 	struct mutex mutex;
+	struct mutex plane_mutex;
+	struct spinlock sequence_guard;
 	struct bcm2711_display *native;
 	struct drv_gpu_device *gpu;
 	struct drv_gpu_ops operations;
@@ -74,18 +89,16 @@ struct display_device {
 	struct drv_gpu_scanout_ops scanout_operations;
 	struct drv_gpu_share_ops share_operations;
 	struct bcm2711_buffer *copies[2];
-	struct bcm2711_buffer *holds[2];
-	/*
-	 * The cursor plane's images, made at the first cursor image: the shown,
-	 * the pending and the recorded one may differ, so a fourth is always free.
-	 */
+
+	/* The cursor plane's images, made at the first cursor image (plane_mutex). */
 	struct bcm2711_buffer *cursors[DISPLAY_CURSOR_IMAGES];
 	struct bcm2711_flip_cursor cursor;
+
 	/*
 	 * What each cursor image holds: the source run's identity, the rows'
 	 * place and format, and the run's generation read before the copy.  A
 	 * SET of the same unchanged rows shows that image without copying.  The
-	 * controller mutex protects them; a lease change forgets them.
+	 * plane mutex protects them; a lease change forgets them.
 	 */
 	struct display_cursor_key keys[DISPLAY_CURSOR_IMAGES];
 	struct display_session *owner;
@@ -116,11 +129,14 @@ static int export_backing(void *opaque, void *private_shared, struct drv_gpu_sca
 static int import_image(void *opaque, void *private_session, const struct gpu_image_descriptor *image, const struct drv_gpu_scanout_backing *backing, void **result);
 static int retain_resource(struct display_device *controller, struct display_session *session, struct bcm2711_buffer *buffer, const struct gpu_image_descriptor *image, void **result);
 static int shared_frame(struct display_device *controller, const struct display_resource *resource, const struct gpu_display_present *request, struct drv_bcm2711_boot_screen *frame);
-static void retire_holds(struct display_device *controller);
+static int copy_present(struct display_device *controller, struct display_session *session, const struct display_resource *resource, struct gpu_display_present *request);
+static int output_adoption_wait(void *opaque, void *private_session, struct gpu_display_present *request);
+static void lease_owner(struct display_session *session, uint64_t lease, struct bcm2711_flip_owner *owner);
 static int output_cursor_set(void *opaque, void *private_session, void *private_resource, const struct gpu_display_cursor_image *request);
 static int output_cursor_move(void *opaque, void *private_session, const struct gpu_display_cursor_move *request);
 static int output_cursor_hide(void *opaque, void *private_session, const struct gpu_display_cursor_hide *request);
 static int cursor_owner(struct display_device *controller, struct display_session *session, uint64_t lease, uint64_t generation);
+static int cursor_record(struct display_device *controller, struct display_session *session, uint64_t lease, const struct bcm2711_flip_cursor *cursor);
 static void cursor_reset(struct display_device *controller);
 static int resource_map(void *opaque, void *private_session, void *private_resource, struct drv_gpu_mapping *mapping);
 static int output_query(void *opaque, void *private_session, struct gpu_display_info *request);
@@ -134,7 +150,7 @@ static int output_device(void *opaque, void *private_session, struct gpu_device_
 static int output_constraints(void *opaque, void *private_session, struct gpu_scanout_constraints *request);
 static int find_output(const struct display_device *controller, uint32_t identifier, uint64_t generation);
 static int restore_console(struct display_device *controller);
-static int copy_frame(struct display_device *controller, const struct display_resource *resource, const struct gpu_display_present *request, struct drv_bcm2711_boot_screen *frame);
+static int copy_frame(struct display_device *controller, struct display_session *session, const struct display_resource *resource, const struct gpu_display_present *request, struct drv_bcm2711_boot_screen *frame);
 static int observe_frames(struct bcm2711_display *display);
 static int exercise_display(struct display_device *controller);
 static void bind_operations(struct display_device *controller);
@@ -177,6 +193,10 @@ bcm2711_display_register(
 	error = mutex_init(&controller->mutex, LOCK_RANK_DEVICE, "bcm2711-display-owner");
 	if (error != 0)
 		return error;
+	error = mutex_init(&controller->plane_mutex, LOCK_RANK_DEVICE, "bcm2711-display-cursor");
+	if (error != 0)
+		return error;
+	spin_init(&controller->sequence_guard, LOCK_RANK_DEVICE, "bcm2711-display-sequence");
 	controller->native = display;
 	controller->next_lease = 1;
 	controller->completed = 0;
@@ -408,14 +428,20 @@ device_close(
 {
 	struct display_device *controller;
 	struct display_session *session;
+	struct bcm2711_flip_owner owner;
+	int revoked;
 	int error;
 
-	/* Stops referring to the closing session even if DMA retirement cannot be proved. */
+	/* Ends the lease first, so a present waiting for its adoption returns instead of delaying the restore. */
 	controller = opaque;
 	session = private_session;
+	lease_owner(session, session->lease, &owner);
+	revoked = bcm2711_display_flip_revoke(controller->native, &owner);
+
+	/* Stops referring to the closing session even if DMA retirement cannot be proved. */
 	mutex_lock(&controller->mutex);
 
-	if (controller->owner == session) {
+	if (revoked == 0 && controller->owner == session) {
 		/* The lease's cursor goes with it; copy targets belong to the permanent controller, never to this session. */
 		cursor_reset(controller);
 		error = restore_console(controller);
@@ -423,6 +449,7 @@ device_close(
 			bcm2711_stage_mark(BCM2711_FAMILY_DISPLAY, "lease close retains uncertain copy buffers (%d)", error);
 		controller->owner = NULL;
 		session->lease = 0;
+		bcm2711_display_flip_disown(controller->native);
 
 		/* An uncertain native restore cannot safely return framebuffer writes to text. */
 		if (error == 0)
@@ -742,6 +769,7 @@ output_claim(
 {
 	struct display_device *controller;
 	struct display_session *session;
+	struct bcm2711_flip_owner owner;
 	int error;
 
 	/* Serializes output arbitration across independent open descriptions. */
@@ -784,6 +812,10 @@ output_claim(
 	controller->next_lease++;
 	controller->owner = session;
 
+	/* The flip state checks the lease from now on, without this mutex. */
+	lease_owner(session, session->lease, &owner);
+	bcm2711_display_flip_own(controller->native, &owner);
+
 	/* Stops console pixel writes before this lease may publish a graphics frame. */
 	kern_text_suspend();
 	request->lease = session->lease;
@@ -803,11 +835,21 @@ output_release(
 {
 	struct display_device *controller;
 	struct display_session *session;
+	struct bcm2711_flip_owner owner;
 	int error;
 
-	/* Keeps a failed release retryable while both native targets remain device-owned. */
+	/*
+	 * Ends the lease first: its records fail from now on and a present
+	 * waiting for an adoption returns, before this takes the mutex.
+	 */
 	controller = opaque;
 	session = private_session;
+	lease_owner(session, request->lease, &owner);
+	error = bcm2711_display_flip_revoke(controller->native, &owner);
+	if (error != 0)
+		return EINVAL;
+
+	/* Keeps a failed release retryable while both native targets remain device-owned. */
 	mutex_lock(&controller->mutex);
 
 	if (controller->owner != session || request->lease != session->lease) {
@@ -815,7 +857,7 @@ output_release(
 		return EINVAL;
 	}
 
-	/* The lease's cursor goes with it. */
+	/* The lease's cursor goes with it, after any cursor change in progress. */
 	cursor_reset(controller);
 
 	/* Restores console adoption before changing output ownership. */
@@ -828,6 +870,7 @@ output_release(
 	/* Only confirmed restoration gives the plane back to another open. */
 	controller->owner = NULL;
 	session->lease = 0;
+	bcm2711_display_flip_disown(controller->native);
 
 	/* Repaints retained text only after actual console scanout is confirmed. */
 	kern_text_resume();
@@ -838,7 +881,12 @@ output_release(
 	return 0;
 }
 
-/* Presents copied storage or an independently retained blob at actual native adoption. */
+/*
+ * Records a frame of copied storage or of an independently retained blob, without waiting.
+ *
+ * The core then calls output_adoption_wait with the same request, after it
+ * has unpinned the resource: sequence carries the record's number until then.
+ */
 static int
 output_present(
 	void *opaque,
@@ -850,100 +898,59 @@ output_present(
 	struct display_session *session;
 	struct display_resource *resource;
 	struct drv_bcm2711_boot_screen frame;
-	struct bcm2711_flip_status status;
-	uint32_t slot;
-	bool shared;
+	struct bcm2711_flip_primary primary;
+	struct bcm2711_flip_owner owner;
+	uint64_t serial;
 	int error;
 
-	/* Gives one caller exclusive access to copy-buffer selection and publication. */
+	/* Only the lease's own open presents, on the output it leases. */
 	controller = opaque;
 	session = private_session;
 	resource = private_resource;
-	mutex_lock(&controller->mutex);
-
-	if (controller->owner != session || request->lease != session->lease) {
-		mutex_unlock(&controller->mutex);
+	lease_owner(session, request->lease, &owner);
+	error = bcm2711_display_flip_owned(controller->native, &owner);
+	if (error != 0)
 		return EBUSY;
-	}
 
 	/* A lease may name only its own storage and the unchanged output generation. */
-	if (resource->owner != session || request->generation != 1) {
-		mutex_unlock(&controller->mutex);
+	if (resource->owner != session || request->generation != 1)
 		return ESTALE;
+
+	/* Ordinary storage is copied into a private target under the controller mutex. */
+	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) == 0) {
+		error = copy_present(controller, session, resource, request);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the copied frame is recorded; its adoption is waited for next. */
+		return 0;
 	}
 
-	/* A completed presentation identity must never wrap into an earlier frame. */
-	if (controller->completed == UINT64_MAX) {
-		mutex_unlock(&controller->mutex);
-		return EOVERFLOW;
-	}
+	/* A native blob is shown directly from its allocation. */
+	error = shared_frame(controller, resource, request, &frame);
+	if (error != 0)
+		return error;
 
-	/* A pending cursor list is adopted first, so both slots' frames are known. */
-	error = bcm2711_display_flip_settle(controller->native);
+	/* The recorded plane borrows the allocation with its own reference. */
+	kern_memset(&primary, 0, sizeof(primary));
+	primary.shown = true;
+	primary.frame = frame;
+	primary.hold = resource->buffer;
+	bcm2711_buffer_retain(resource->buffer);
+	error = bcm2711_display_flip_record(controller->native, &owner, &primary, &serial);
 	if (error != 0) {
-		mutex_unlock(&controller->mutex);
+		bcm2711_buffer_release(resource->buffer);
 		return error;
 	}
 
-	/* Reclaims only references that actual selected-PV adoption no longer retains. */
-	retire_holds(controller);
-	shared = false;
-	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0)
-		shared = true;
+	/* The core passes the record's number to the adoption wait. */
+	request->sequence = serial;
 
-	/* Ordinary storage copies; native blobs retain a direct scanout allocation. */
-	if (shared) {
-		error = shared_frame(controller, resource, request, &frame);
-	} else {
-		error = copy_frame(controller, resource, request, &frame);
-	}
-
-	/* A refused candidate has acquired no native publication or storage hold. */
-	if (error != 0) {
-		mutex_unlock(&controller->mutex);
-		return error;
-	}
-
-	/* A candidate's independent storage hold precedes every possible native publication. */
-	if (shared) {
-		bcm2711_display_flip_snapshot(controller->native, &status);
-		if (status.busy || status.uncertain) {
-			mutex_unlock(&controller->mutex);
-			return EBUSY;
-		}
-
-		/* Native flip selects the same unheld list slot while this mutex excludes peers. */
-		slot = 0;
-		if ((status.retained_mask & 1U) != 0)
-			slot = 1;
-		if (controller->holds[slot] != NULL)
-			__builtin_trap();
-		bcm2711_buffer_retain(resource->buffer);
-		controller->holds[slot] = resource->buffer;
-	}
-
-	/* Publishes the complete frame and waits for its actual current-list adoption. */
-	error = bcm2711_display_flip_compose(controller->native, &frame, 0, 0, false);
-	retire_holds(controller);
-	if (error != 0) {
-		mutex_unlock(&controller->mutex);
-		return error;
-	}
-
-	/* Completion counts successful presents, independently of raw refresh interrupts. */
-	controller->completed++;
-	controller->present_time = sched_ticks() * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
-	session->completed = controller->completed;
-	session->present_time = controller->present_time;
-	request->sequence = session->completed;
-
-	mutex_unlock(&controller->mutex);
-
-	/* Succeeded: shared DMA keeps an independent hold; ordinary source storage is retired. */
+	/* Succeeded: the frame is recorded and its list published or carried by the next one. */
 	return 0;
 }
 
-/* Observes already completed synchronous presents belonging to this lease. */
+/* Observes already completed presents belonging to this lease, without waiting. */
 static int
 output_wait(
 	void *opaque,
@@ -952,29 +959,36 @@ output_wait(
 {
 	struct display_device *controller;
 	struct display_session *session;
+	struct bcm2711_flip_owner owner;
+	unsigned long enabled;
+	uint64_t completed;
+	uint64_t present_time;
+	int error;
 
-	/* Synchronous present leaves no pending successful sequence to wait for. */
+	/* Only the lease's own open observes its presents. */
 	controller = opaque;
 	session = private_session;
-	mutex_lock(&controller->mutex);
-
-	if (controller->owner != session || request->lease != session->lease) {
-		mutex_unlock(&controller->mutex);
+	lease_owner(session, request->lease, &owner);
+	error = bcm2711_display_flip_owned(controller->native, &owner);
+	if (error != 0)
 		return EBUSY;
-	}
+
+	/* The completed count and time are read together. */
+	enabled = spin_lock_irqsave(&controller->sequence_guard);
+
+	completed = session->completed;
+	present_time = session->present_time;
+
+	spin_unlock_irqrestore(&controller->sequence_guard, enabled);
 
 	/* An earlier lease cannot supply the completion requested by this new owner. */
-	if (request->sequence > session->completed) {
-		mutex_unlock(&controller->mutex);
+	if (request->sequence > completed)
 		return ETIMEDOUT;
-	}
 
 	/* Returns the latest confirmed frame rather than the submission cursor. */
-	request->completed_sequence = session->completed;
-	request->present_time_ns = session->present_time;
+	request->completed_sequence = completed;
+	request->present_time_ns = present_time;
 	request->generation = 1;
-
-	mutex_unlock(&controller->mutex);
 
 	/* Succeeded: the queried sequence was adopted on this actual output. */
 	return 0;
@@ -1058,7 +1072,7 @@ find_output(
 	return 0;
 }
 
-/* Restores retained console bytes only when private DMA or uncertainty requires it. */
+/* Restores retained console bytes only when lists, borrowed images or uncertainty require it. */
 static int
 restore_console(
 	struct display_device *controller)
@@ -1066,47 +1080,51 @@ restore_console(
 	struct bcm2711_flip_status status;
 	int error;
 
-	/* A pending cursor list is adopted first; an uncertain one is left to the restore. */
-	(void)bcm2711_display_flip_settle(controller->native);
-
-	/* A confirmed unheld console needs no redundant hardware transaction. */
+	/* A confirmed console that names nothing needs no hardware transaction. */
 	bcm2711_display_flip_snapshot(controller->native, &status);
-	if (!status.uncertain && status.retained_mask == 0) {
-		/* Console adoption already retired every independent shared DMA hold. */
-		retire_holds(controller);
+	if (!status.uncertain &&
+	    status.active_list == 43U &&
+	    status.pending_count == 0 &&
+	    status.primary.hold == NULL &&
+	    status.retiring_count == 0)
 		return 0;
-	}
 
-	/* An uncertain restore keeps private targets and shared allocations alive in the controller. */
+	/* An uncertain restore keeps private targets and shared allocations alive in the flip state. */
 	error = bcm2711_display_flip_restore(controller->native);
 	if (error != 0)
 		return error;
-
-	/* Confirmed console adoption retires both shared and copied native frames. */
-	retire_holds(controller);
 
 	/* Succeeded: another lease may reuse the private copy buffers. */
 	return 0;
 }
 
-/* Converts one packed frame into an inactive device-owned target without scaling. */
+/*
+ * Converts one packed frame into a private target no list the hardware may read names.
+ *
+ * The caller holds the controller mutex, so no other copy names a target
+ * meanwhile.  A target only a list names becomes free at the next adoption,
+ * which this waits for (at most one refresh, bounded at 100 ms).
+ */
 static int
 copy_frame(
 	struct display_device *controller,
+	struct display_session *session,
 	const struct display_resource *resource,
 	const struct gpu_display_present *request,
 	struct drv_bcm2711_boot_screen *frame)
 {
-	struct bcm2711_flip_status status;
+	struct bcm2711_flip_owner owner;
 	struct bcm2711_buffer *target;
+	struct bcm2711_buffer *listed;
 	const uint8_t *source;
 	uint8_t *destination;
 	uint64_t span;
 	uint32_t native_format;
 	uint32_t index;
-	uint32_t slot;
 	uint32_t row;
 	uint32_t column;
+	unsigned use;
+	int error;
 
 	/* Supports complete frames in either defined byte order, without BLOB borrowing. */
 	if (request->flags != GPU_DISPLAY_PRESENT_FIFO)
@@ -1126,25 +1144,27 @@ copy_frame(
 		return EINVAL;
 
 	/*
-	 * DMA holds select the target no retained list names, rather than a
-	 * CPU-only alternation counter or the slot (a cursor list shows the
-	 * same frame from both slots).
+	 * Picks a target nothing names; failing that, one only lists name (the
+	 * recorded frame stays named until this very present replaces it).
 	 */
-	bcm2711_display_flip_snapshot(controller->native, &status);
-	if (status.uncertain || status.busy)
-		return EBUSY;
 	target = NULL;
-	for (index = 0; index < 2U && target == NULL; index++) {
-		target = controller->copies[index];
-		for (slot = 0; slot < 2U; slot++) {
-			/* A retained frame inside this copy keeps it from being written. */
-			if ((status.retained_mask & (1U << slot)) != 0 &&
-			    status.frames[slot].physical >= target->memory.paddr &&
-			    status.frames[slot].physical < target->memory.paddr + target->bytes)
-				target = NULL;
-			if (target == NULL)
-				break;
-		}
+	listed = NULL;
+	for (index = 0; index < 2U; index++) {
+		/* What names this target now. */
+		use = bcm2711_display_flip_frame_use(controller->native, controller->copies[index]->memory.paddr, controller->copies[index]->bytes);
+		if (use == BCM2711_FLIP_FRAME_FREE && target == NULL)
+			target = controller->copies[index];
+		if (use == BCM2711_FLIP_FRAME_LISTED && listed == NULL)
+			listed = controller->copies[index];
+	}
+
+	/* A target only lists name is free once a later list is adopted. */
+	if (target == NULL && listed != NULL) {
+		lease_owner(session, request->lease, &owner);
+		error = bcm2711_display_flip_wait_unlisted(controller->native, &owner, listed->memory.paddr, listed->bytes);
+		if (error != 0)
+			return error;
+		target = listed;
 	}
 	if (target == NULL)
 		return EBUSY;
@@ -1176,8 +1196,124 @@ copy_frame(
 	*frame = controller->native->screen;
 	frame->physical = target->memory.paddr;
 
-	/* Succeeded: only a confirmed inactive private target contains the candidate frame. */
+	/* Succeeded: only a target no readable list names contains the candidate frame. */
 	return 0;
+}
+
+/*
+ * Copies ordinary storage into a private target and records it, under the controller mutex.
+ *
+ * The mutex keeps two copies from choosing the same target; the record does
+ * not wait for its adoption, which the core waits for after this returns.
+ */
+static int
+copy_present(
+	struct display_device *controller,
+	struct display_session *session,
+	const struct display_resource *resource,
+	struct gpu_display_present *request)
+{
+	struct bcm2711_flip_primary primary;
+	struct bcm2711_flip_owner owner;
+	uint64_t serial;
+	int error;
+
+	/* One copy at a time chooses and fills a target. */
+	mutex_lock(&controller->mutex);
+
+	kern_memset(&primary, 0, sizeof(primary));
+	error = copy_frame(controller, session, resource, request, &primary.frame);
+	if (error != 0) {
+		mutex_unlock(&controller->mutex);
+		return error;
+	}
+
+	/* The private target belongs to the controller, so the record borrows nothing. */
+	primary.shown = true;
+	lease_owner(session, request->lease, &owner);
+	error = bcm2711_display_flip_record(controller->native, &owner, &primary, &serial);
+
+	mutex_unlock(&controller->mutex);
+
+	/* A refused record leaves the target unnamed. */
+	if (error != 0)
+		return error;
+
+	/* The core passes the record's number to the adoption wait. */
+	request->sequence = serial;
+
+	/* Succeeded: the copied frame is recorded. */
+	return 0;
+}
+
+/*
+ * Waits for the adoption of a recorded present and numbers it (the ungated core's second step).
+ *
+ * sequence holds the record's number on entry and the lease's count of
+ * completed presents on success, as the synchronous present reported it.
+ */
+static int
+output_adoption_wait(
+	void *opaque,
+	void *private_session,
+	struct gpu_display_present *request)
+{
+	struct display_device *controller;
+	struct display_session *session;
+	struct bcm2711_flip_owner owner;
+	unsigned long enabled;
+	uint64_t serial;
+	uint64_t mark;
+	uint64_t wait_ticks;
+	int error;
+
+	/* The record's number is consumed here; sequence answers only on success. */
+	controller = opaque;
+	session = private_session;
+	serial = request->sequence;
+	request->sequence = 0;
+
+	/* Waits for a list showing the record, holding no lock or pin. */
+	lease_owner(session, request->lease, &owner);
+	mark = clock_ticks();
+	error = bcm2711_display_flip_wait(controller->native, &owner, serial);
+	wait_ticks = clock_ticks() - mark;
+	if (error != 0)
+		return error;
+
+	/* The adoption is a cadence event and a flip of the report. */
+	bcm2711_display_flip_note(controller->native, BCM2711_FLIP_CADENCE_FLIP);
+	bcm2711_display_flip_report(controller->native, 0, 0, wait_ticks);
+
+	/* Completion counts successful presents, independently of raw refresh interrupts. */
+	enabled = spin_lock_irqsave(&controller->sequence_guard);
+
+	if (controller->completed == UINT64_MAX) {
+		spin_unlock_irqrestore(&controller->sequence_guard, enabled);
+		return EOVERFLOW;
+	}
+	controller->completed++;
+	controller->present_time = sched_ticks() * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
+	session->completed = controller->completed;
+	session->present_time = controller->present_time;
+	request->sequence = session->completed;
+
+	spin_unlock_irqrestore(&controller->sequence_guard, enabled);
+
+	/* Succeeded: the frame is shown and numbered. */
+	return 0;
+}
+
+/* Describes an open's lease as the flip state's owner. */
+static void
+lease_owner(
+	struct display_session *session,
+	uint64_t lease,
+	struct bcm2711_flip_owner *owner)
+{
+	/* The open and the lease it names together. */
+	owner->session = session;
+	owner->lease = lease;
 }
 
 /* Binds complete operations before the common GPU core publishes any open. */
@@ -1196,6 +1332,8 @@ bind_operations(
 	controller->display_operations.cursor_set = output_cursor_set;
 	controller->display_operations.cursor_move = output_cursor_move;
 	controller->display_operations.cursor_hide = output_cursor_hide;
+	controller->display_operations.adoption_wait = output_adoption_wait;
+	controller->display_operations.flags = DRV_GPU_DISPLAY_UNGATED;
 
 	/* Publishes checked foreign native imports with actual physical constraints. */
 	controller->scanout_operations.query_device = output_device;
@@ -1587,45 +1725,6 @@ shared_frame(
 	return 0;
 }
 
-/* Retires only those shared allocations that no current or uncertain SRAM list retains. */
-static void
-retire_holds(
-	struct display_device *controller)
-{
-	struct bcm2711_flip_status status;
-	uint32_t slot;
-	uint32_t other;
-
-	/* Actual adoption is the retirement boundary; a late uncertain IRQ cannot resolve it. */
-	bcm2711_display_flip_snapshot(controller->native, &status);
-
-	/* Each slot owns at most one independent shared storage reference. */
-	for (slot = 0; slot < 2; slot++) {
-		if ((status.retained_mask & (1U << slot)) != 0 || controller->holds[slot] == NULL)
-			continue;
-
-		/*
-		 * A cursor list shows the same frame from the other slot: its hold
-		 * moves there instead of ending while the HVS still reads it.
-		 */
-		other = 1U - slot;
-		if ((status.retained_mask & (1U << other)) != 0 &&
-		    controller->holds[other] == NULL &&
-		    status.frames[other].physical >= controller->holds[slot]->memory.paddr &&
-		    status.frames[other].physical < controller->holds[slot]->memory.paddr + controller->holds[slot]->bytes) {
-			controller->holds[other] = controller->holds[slot];
-			controller->holds[slot] = NULL;
-			continue;
-		}
-
-		/* Native HVS has proved this slot retired, including a rejected unpublished candidate. */
-		bcm2711_buffer_release(controller->holds[slot]);
-		controller->holds[slot] = NULL;
-	}
-
-	/* Succeeded: every independent scanout hold has been retired. */
-	return;
-}
 
 /*
  * Copies a cursor image into the cursor plane's free image (GPU_DISPLAY_CURSOR_SET).
@@ -1657,20 +1756,20 @@ output_cursor_set(
 	/* Only the lease's own open changes its cursor, from storage it owns. */
 	controller = opaque;
 	resource = private_resource;
-	mutex_lock(&controller->mutex);
+	mutex_lock(&controller->plane_mutex);
 
 	error = cursor_owner(controller, private_session, request->lease, request->generation);
 	if (error == 0 && resource->owner != private_session)
 		error = ESTALE;
 	if (error != 0) {
-		mutex_unlock(&controller->mutex);
+		mutex_unlock(&controller->plane_mutex);
 		return error;
 	}
 
 	/* The rows lie inside the buffer the resource names (the core checked its size). */
 	span = (uint64_t)request->stride * (request->height - 1U) + (uint64_t)request->width * 4U;
 	if (request->offset > resource->buffer->bytes || span > resource->buffer->bytes - request->offset) {
-		mutex_unlock(&controller->mutex);
+		mutex_unlock(&controller->plane_mutex);
 		return EINVAL;
 	}
 
@@ -1680,7 +1779,7 @@ output_cursor_set(
 			continue;
 		error = bcm2711_buffer_create(GPU_DISPLAY_CURSOR_MAX * GPU_DISPLAY_CURSOR_MAX * 4U, 0x3fffffffU, 4096, &controller->cursors[index]);
 		if (error != 0) {
-			mutex_unlock(&controller->mutex);
+			mutex_unlock(&controller->plane_mutex);
 			return error;
 		}
 	}
@@ -1722,7 +1821,7 @@ output_cursor_set(
 			break;
 	}
 	if (target == NULL && index == DISPLAY_CURSOR_IMAGES) {
-		mutex_unlock(&controller->mutex);
+		mutex_unlock(&controller->plane_mutex);
 		return EBUSY;
 	}
 	copied = false;
@@ -1756,17 +1855,19 @@ output_cursor_set(
 	cursor.format = 0;
 	if (request->format == GPU_PIXEL_RGBA8888)
 		cursor.format = 1;
-	error = bcm2711_display_flip_cursor(controller->native, &cursor);
-	if (error == 0)
-		controller->cursor = cursor;
+	error = cursor_record(controller, private_session, request->lease, &cursor);
 
-	mutex_unlock(&controller->mutex);
+	mutex_unlock(&controller->plane_mutex);
 
 	/* The cadence notes the set's time outside the mutex, as its report may log. */
 	bcm2711_display_flip_note(controller->native, BCM2711_FLIP_CADENCE_SET);
 
-	/* Succeeded or not, the previous image stays whole while a list may name it. */
-	return error;
+	/* A refused record leaves the previous image whole while a list may name it. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the new image shows from a coming refresh boundary when the cursor is shown. */
+	return 0;
 }
 
 /* Shows the cursor with its top-left corner at a point (GPU_DISPLAY_CURSOR_MOVE). */
@@ -1782,13 +1883,13 @@ output_cursor_move(
 
 	/* Only the lease's own open moves its cursor, once it has an image. */
 	controller = opaque;
-	mutex_lock(&controller->mutex);
+	mutex_lock(&controller->plane_mutex);
 
 	error = cursor_owner(controller, private_session, request->lease, request->generation);
 	if (error == 0 && controller->cursor.physical == 0)
 		error = EINVAL;
 	if (error != 0) {
-		mutex_unlock(&controller->mutex);
+		mutex_unlock(&controller->plane_mutex);
 		return error;
 	}
 
@@ -1797,17 +1898,19 @@ output_cursor_move(
 	cursor.shown = true;
 	cursor.x = request->x;
 	cursor.y = request->y;
-	error = bcm2711_display_flip_cursor(controller->native, &cursor);
-	if (error == 0)
-		controller->cursor = cursor;
+	error = cursor_record(controller, private_session, request->lease, &cursor);
 
-	mutex_unlock(&controller->mutex);
+	mutex_unlock(&controller->plane_mutex);
 
 	/* The cadence notes the move's time outside the mutex, as its report may log. */
 	bcm2711_display_flip_note(controller->native, BCM2711_FLIP_CADENCE_MOVE);
 
+	/* Reports a refused record. */
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the cursor shows there from a coming refresh boundary. */
-	return error;
+	return 0;
 }
 
 /* Hides the cursor, keeping its image (GPU_DISPLAY_CURSOR_HIDE). */
@@ -1823,28 +1926,30 @@ output_cursor_hide(
 
 	/* Only the lease's own open hides its cursor. */
 	controller = opaque;
-	mutex_lock(&controller->mutex);
+	mutex_lock(&controller->plane_mutex);
 
 	error = cursor_owner(controller, private_session, request->lease, request->generation);
 	if (error != 0) {
-		mutex_unlock(&controller->mutex);
+		mutex_unlock(&controller->plane_mutex);
 		return error;
 	}
 
 	/* The flip state publishes a list without it. */
 	cursor = controller->cursor;
 	cursor.shown = false;
-	error = bcm2711_display_flip_cursor(controller->native, &cursor);
-	if (error == 0)
-		controller->cursor = cursor;
+	error = cursor_record(controller, private_session, request->lease, &cursor);
 
-	mutex_unlock(&controller->mutex);
+	mutex_unlock(&controller->plane_mutex);
+
+	/* Reports a refused record. */
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the cursor is gone from a coming refresh boundary. */
-	return error;
+	return 0;
 }
 
-/* Checks that an open holds the output's lease of the current generation; the caller holds the mutex. */
+/* Checks that an open holds the output's lease of the current generation, against the flip state's copy. */
 static int
 cursor_owner(
 	struct display_device *controller,
@@ -1852,8 +1957,13 @@ cursor_owner(
 	uint64_t lease,
 	uint64_t generation)
 {
-	/* Another open's lease, or none, cannot change the cursor. */
-	if (controller->owner != session || lease != session->lease)
+	struct bcm2711_flip_owner owner;
+	int error;
+
+	/* Another open's lease, an ending one, or none, cannot change the cursor. */
+	lease_owner(session, lease, &owner);
+	error = bcm2711_display_flip_owned(controller->native, &owner);
+	if (error != 0)
 		return EBUSY;
 	if (generation != 1)
 		return ESTALE;
@@ -1862,20 +1972,47 @@ cursor_owner(
 	return 0;
 }
 
-/* Hides the cursor and forgets its image when a lease begins or ends; the caller holds the mutex. */
+/* Records the cursor in the flip state for an open's lease; the caller holds the plane mutex. */
+static int
+cursor_record(
+	struct display_device *controller,
+	struct display_session *session,
+	uint64_t lease,
+	const struct bcm2711_flip_cursor *cursor)
+{
+	struct bcm2711_flip_owner owner;
+	int error;
+
+	/* The flip state checks the lease again where it records. */
+	lease_owner(session, lease, &owner);
+	error = bcm2711_display_flip_cursor(controller->native, &owner, cursor);
+	if (error != 0)
+		return error;
+
+	/* The plane's own copy follows the recorded cursor. */
+	controller->cursor = *cursor;
+
+	/* Succeeded: the cursor shows from a coming refresh boundary. */
+	return 0;
+}
+
+/*
+ * Forgets the cursor's image when a lease begins or ends; the caller holds the controller mutex.
+ *
+ * The plane mutex waits out a cursor change in progress.  The flip state
+ * hides its own cursor when the console comes back and when a lease begins.
+ */
 static void
 cursor_reset(
 	struct display_device *controller)
 {
-	struct bcm2711_flip_cursor cursor;
+	/* A hidden, imageless cursor, and the next lease's images copied afresh. */
+	mutex_lock(&controller->plane_mutex);
 
-	/* A hidden, imageless cursor adds no plane to any later list. */
-	kern_memset(&cursor, 0, sizeof(cursor));
-	if (bcm2711_display_flip_cursor(controller->native, &cursor) == 0)
-		kern_memset(&controller->cursor, 0, sizeof(controller->cursor));
-
-	/* The next lease's images are copied afresh. */
+	kern_memset(&controller->cursor, 0, sizeof(controller->cursor));
 	kern_memset(controller->keys, 0, sizeof(controller->keys));
+
+	mutex_unlock(&controller->plane_mutex);
 }
 
 /* Counts one display resource more or less on a run; the render executor favours executions that use a displayed run. */

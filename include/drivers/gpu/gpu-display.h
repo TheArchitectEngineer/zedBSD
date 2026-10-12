@@ -58,6 +58,26 @@ struct drv_gpu_display_ops {
 	int (*cursor_set)(void *, void *, void *, const struct gpu_display_cursor_image *);
 	int (*cursor_move)(void *, void *, const struct gpu_display_cursor_move *);
 	int (*cursor_hide)(void *, void *, const struct gpu_display_cursor_hide *);
+
+	/*
+	 * Optional ungated presentation (DRV_GPU_DISPLAY_UNGATED in flags):
+	 * adoption_wait and the flag come together.  Then present, wait and the
+	 * three cursor operations run outside the open's ordinary admission, at
+	 * the same time as each other and as admitted operations on the same
+	 * open.  The resource the core passes stays pinned (its destruction
+	 * waits) only while the callback runs, so the backend takes its own
+	 * reference to anything it keeps.  present records the frame without
+	 * waiting for the refresh boundary and leaves the record's number in
+	 * sequence; the core then calls adoption_wait with the same request,
+	 * holding neither a pin nor a lock, and it waits for the adoption and
+	 * puts the presented frame's number in sequence.  PRESENT_SYNC waits for
+	 * its dependency before the resource is looked up.
+	 */
+	int (*adoption_wait)(void *, void *, struct gpu_display_present *);
+	uint32_t flags;
 };
+
+/* drv_gpu_display_ops.flags: presentation and the cursor bypass the open's admission. */
+#define DRV_GPU_DISPLAY_UNGATED	1U
 
 #endif

@@ -16,6 +16,7 @@
 #include <kern/device-io.h>
 #include <kern/pmem.h>
 #include <kern/irq.h>
+#include <kern/waitq.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
@@ -347,6 +348,32 @@ kern_usleep_range(
 	/* The executor requests bounded, exact waits in this path. */
 	check(min_us == max_us, "bounded delay request");
 	test_delays += min_us;
+}
+
+/*
+ * Refuses a display-list wait: the executor's scenarios never record a plane.
+ */
+void
+display_test_sleep(
+	struct wait_queue *queue,
+	uint64_t deadline)
+{
+	/* No flip record exists here, so no flip wait may sleep. */
+	(void)queue;
+	(void)deadline;
+	check(false, "no flip wait in the executor scenarios");
+}
+
+/*
+ * Refuses a borrowed-image release: the executor's scenarios borrow none.
+ */
+void
+bcm2711_buffer_release(
+	struct bcm2711_buffer *buffer)
+{
+	/* No flip record borrows an allocation here. */
+	(void)buffer;
+	check(false, "no borrowed image in the executor scenarios");
 }
 
 /*
