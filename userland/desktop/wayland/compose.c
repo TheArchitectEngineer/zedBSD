@@ -2848,11 +2848,12 @@ compose_replay(
 	if (compose->list.vertex_used != 0U)
 		memcpy(compose->batch.map, compose->list.vertices, compose->list.vertex_used);
 
-	/* The drawing's operations, in the order it wrote them. */
+	/* The drawing's command buffer begun afresh. */
 	result = vkBeginCommandBuffer(compose->command, &begin);
 	if (result != VK_SUCCESS)
 		return result;
 
+	/* The drawing's operations, in the order it wrote them. */
 	kwl_list_replay(&compose->list, compose->command);
 	result = vkEndCommandBuffer(compose->command);
 	if (result != VK_SUCCESS)
