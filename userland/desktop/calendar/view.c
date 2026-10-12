@@ -1440,8 +1440,20 @@ view_desk(
 	float flip;
 	float opacity;
 	float progress;
+	const struct kl_rect *clip;
 	int error;
 	int i;
+
+	/*
+	 * A frame drawn only in a part away from the desk calendar (a lit
+	 * widget, BUG-226) leaves it as it is: its 3D picture is not made
+	 * again, which was most of a hover's frame (2026-10-12, the Pi 4).
+	 */
+	clip = &style->canvas->clip;
+	if (area->x >= clip->x + clip->width || area->x + area->width <= clip->x)
+		return;
+	if (area->y >= clip->y + clip->height || area->y + area->height <= clip->y)
+		return;
 
 	/* The target and the picture at the area's size (made again when it changes). */
 	if (view->picture.width != area->width || view->picture.height != area->height) {

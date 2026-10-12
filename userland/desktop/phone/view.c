@@ -28,6 +28,7 @@
 #include "userland/desktop/preview/client.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* The width under which the window shows the contacts or the timeline, not both. */
@@ -241,6 +242,11 @@ ph_view_release(
 	/* The scrolls. */
 	kl_scroll_release(&view->timeline_scroll);
 	kl_scroll_release(&view->contacts_scroll);
+
+	/* The timeline's measured heights. */
+	free(view->item_heights);
+	view->item_heights = NULL;
+	view->item_heights_room = 0U;
 }
 
 /*
@@ -1186,10 +1192,12 @@ view_timeline(
 	uint64_t now_us)
 {
 	const struct ph_item *previous;
+	int *grown;
 	double limit;
 	size_t i;
 	int content;
 	int height;
+	int kept;
 	int y;
 
 	/* A timeline with nothing in it. */
@@ -1198,22 +1206,37 @@ view_timeline(
 		return;
 	}
 
+	/* Room to keep each item's height, so that it is measured once in the frame (without it, measured twice). */
+	if (view->item_heights_room < contact->item_count) {
+		grown = realloc(view->item_heights, contact->item_count * sizeof(*grown));
+		if (grown != NULL) {
+			view->item_heights = grown;
+			view->item_heights_room = contact->item_count;
+		}
+	}
+	kept = 0;
+	if (view->item_heights_room >= contact->item_count)
+		kept = 1;
+
 	/* The items' height, measured without drawing. */
 	content = 0;
 	previous = NULL;
 	for (i = 0; i < contact->item_count; i++) {
 		/* One item, below the one before. */
-		content += view_item(style,
-				     &contact->items[i],
-				     previous,
-				     area->x,
-				     0,
-				     area->width,
-				     0,
-				     view,
-				     ui,
-				     i,
-				     area);
+		height = view_item(style,
+				   &contact->items[i],
+				   previous,
+				   area->x,
+				   0,
+				   area->width,
+				   0,
+				   view,
+				   ui,
+				   i,
+				   area);
+		if (kept)
+			view->item_heights[i] = height;
+		content += height;
 		previous = &contact->items[i];
 	}
 
@@ -1234,18 +1257,22 @@ view_timeline(
 	y = area->y - (int)view->timeline_scroll.y;
 	previous = NULL;
 	for (i = 0; i < contact->item_count; i++) {
-		/* One item; those out of the band are only measured. */
-		height = view_item(style,
-				   &contact->items[i],
-				   previous,
-				   area->x,
-				   y,
-				   area->width,
-				   0,
-				   view,
-				   ui,
-				   i,
-				   area);
+		/* One item; those out of the band are only placed by the height measured above. */
+		if (kept) {
+			height = view->item_heights[i];
+		} else {
+			height = view_item(style,
+					   &contact->items[i],
+					   previous,
+					   area->x,
+					   y,
+					   area->width,
+					   0,
+					   view,
+					   ui,
+					   i,
+					   area);
+		}
 		if (y + height >= area->y && y <= area->y + area->height) {
 			(void)view_item(style,
 					&contact->items[i],
