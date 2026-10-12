@@ -213,6 +213,8 @@ static void report_leave(struct arm64_percpu *cpu);
 static void report_compose(struct arm64_percpu *self, const char *headline, uint64_t now);
 static void report_show(uint64_t now);
 static void check_others(struct arm64_percpu *self, uint64_t now);
+static uint64_t time_since(uint64_t now, uint64_t then);
+static int cpu_is_stopped(struct arm64_percpu *cpu, uint64_t now, uint64_t threshold);
 static void record_chain(struct arm64_percpu *self, uint64_t now);
 static void compose_cpu(unsigned *line, hal_cpu_id_t index, uint64_t now);
 static void compose_log(unsigned *line);
@@ -304,6 +306,8 @@ arm64_watch_self_check(
 	uint64_t frequency;
 	uint64_t beat;
 	uint64_t now;
+	uint64_t age;
+	uint64_t since_report;
 	int masked;
 	int entered;
 
@@ -328,7 +332,8 @@ arm64_watch_self_check(
 
 	/* A recent tick means this CPU takes interrupts: nothing is wrong here. */
 	now = arm64_watch_counter();
-	if (now - beat < watch_stall_ticks)
+	age = time_since(now, beat);
+	if (age < watch_stall_ticks)
 		return;
 
 	/* Writes the report unless another CPU is writing one. */
@@ -337,7 +342,8 @@ arm64_watch_self_check(
 		return;
 
 	/* Reports at most once a second during one stop. */
-	if (watch_last_report != 0 && now - watch_last_report < watch_frequency) {
+	since_report = time_since(now, watch_last_report);
+	if (watch_last_report != 0 && since_report < watch_frequency) {
 		report_leave(cpu);
 		return;
 	}
@@ -517,9 +523,9 @@ check_others(
 	hal_cpu_id_t index;
 	hal_cpu_id_t stopped;
 	unsigned count;
-	unsigned ready;
-	uint64_t beat;
 	uint64_t started;
+	uint64_t since_report;
+	int silent;
 	int entered;
 
 	/* Finds the first CPU, other than this one, that is up but has not ticked. */
@@ -530,15 +536,10 @@ check_others(
 		if (index == self->logical_id)
 			continue;
 
-		/* A CPU that is not up yet has no heartbeat. */
-		other = arm64_percpu_get(index);
-		ready = __atomic_load_n(&other->ready, __ATOMIC_ACQUIRE);
-		if (ready == 0)
-			continue;
-
 		/* A heartbeat older than the threshold is a stop. */
-		beat = __atomic_load_n(&other->watch_beat_time, __ATOMIC_RELAXED);
-		if (beat != 0 && now - beat >= watch_stall_ticks) {
+		other = arm64_percpu_get(index);
+		silent = cpu_is_stopped(other, now, watch_stall_ticks);
+		if (silent) {
 			stopped = index;
 			break;
 		}
@@ -564,7 +565,8 @@ check_others(
 		return;
 
 	/* Reports at most once a second during one stop. */
-	if (watch_last_report != 0 && now - watch_last_report < watch_frequency) {
+	since_report = time_since(now, watch_last_report);
+	if (watch_last_report != 0 && since_report < watch_frequency) {
 		report_leave(self);
 		return;
 	}
@@ -576,6 +578,69 @@ check_others(
 	report_show(now);
 
 	report_leave(self);
+}
+
+/*
+ * Reports how long ago a time was, or 0 for a time not before now.
+ *
+ * The counter is the same on every CPU, but a CPU reads it at its tick's
+ * start and then reads what the others stamped: another CPU that took its
+ * tick in between stamped a time after this one's now.  Such a time is no
+ * time ago; the plain difference would wrap to a huge age and report a
+ * CPU that ticks every millisecond as stopped.
+ */
+static uint64_t
+time_since(
+	uint64_t now,
+	uint64_t then)
+{
+	/* A time stamped after now is as fresh as now. */
+	if (then >= now)
+		return 0;
+
+	/* Succeeded: the counter ticks since then. */
+	return now - then;
+}
+
+/*
+ * Reports whether a CPU is up but has not taken its tick for the threshold.
+ *
+ * A CPU that is not up, that stopped on purpose, or that has not taken its
+ * first tick has no heartbeat to judge, and is not stopped.
+ */
+static int
+cpu_is_stopped(
+	struct arm64_percpu *cpu,
+	uint64_t now,
+	uint64_t threshold)
+{
+	unsigned ready;
+	unsigned parked;
+	uint64_t beat;
+	uint64_t age;
+
+	/* A CPU that is not up yet has no heartbeat. */
+	ready = __atomic_load_n(&cpu->ready, __ATOMIC_ACQUIRE);
+	if (ready == 0)
+		return 0;
+
+	/* A CPU parked after a panic or for power-off is silent on purpose. */
+	parked = __atomic_load_n(&cpu->watch_parked, __ATOMIC_ACQUIRE);
+	if (parked != 0)
+		return 0;
+
+	/* A CPU that has not taken its first tick yet has nothing to be late with. */
+	beat = __atomic_load_n(&cpu->watch_beat_time, __ATOMIC_RELAXED);
+	if (beat == 0)
+		return 0;
+
+	/* A heartbeat within the threshold, or after now, is a CPU that ticks. */
+	age = time_since(now, beat);
+	if (age < threshold)
+		return 0;
+
+	/* Succeeded: the CPU stopped taking its tick. */
+	return 1;
 }
 
 /* Records the calling CPU's call chain from its frame records. */
@@ -658,7 +723,7 @@ report_compose(
 	line_text(line, &column, "  report ");
 	line_decimal(line, &column, watch_report_count);
 	line_text(line, &column, "  stop for ");
-	line_seconds(line, &column, now - watch_stall_start);
+	line_seconds(line, &column, time_since(now, watch_stall_start));
 	line_text(line, &column, "  addresses: ffff0000 + shown");
 	line++;
 
@@ -695,6 +760,8 @@ compose_cpu(
 	uint64_t off_time;
 	uint64_t irq_id;
 	uint64_t irq_time;
+	unsigned parked;
+	int silent;
 
 	/* Leaves room for the log's heading. */
 	if (*line + 3U >= WATCH_LINES)
@@ -706,27 +773,35 @@ compose_cpu(
 	off_time = __atomic_load_n(&cpu->watch_irq_off_time, __ATOMIC_RELAXED);
 	irq_id = __atomic_load_n(&cpu->watch_irq_id, __ATOMIC_RELAXED);
 	irq_time = __atomic_load_n(&cpu->watch_irq_time, __ATOMIC_RELAXED);
+	parked = __atomic_load_n(&cpu->watch_parked, __ATOMIC_RELAXED);
+
+	/* Judges the CPU as the look at the heartbeats does. */
+	silent = cpu_is_stopped(cpu, now, watch_stall_ticks);
 
 	/* The first line: the tick, and where interrupts went off. */
 	column = 0;
 	line_text(*line, &column, "cpu");
 	line_decimal(*line, &column, index);
-	if (beat != 0 && now - beat >= watch_stall_ticks) {
+	if (silent) {
+		/* The CPU stopped taking its tick without meaning to. */
 		line_text(*line, &column, " STOPPED");
+	} else if (parked != 0) {
+		/* The CPU halted on purpose, after a panic or for power-off. */
+		line_text(*line, &column, " parked");
 	}
 	line_text(*line, &column, " tick ");
 	if (beat == 0) {
 		line_text(*line, &column, "never");
 	} else {
 		line_text(*line, &column, "-");
-		line_seconds(*line, &column, now - beat);
+		line_seconds(*line, &column, time_since(now, beat));
 	}
 	line_text(*line, &column, " irq-off ");
-	if (off_time == 0 || off_time > now) {
+	if (off_time == 0) {
 		line_text(*line, &column, "no");
 	} else {
 		line_text(*line, &column, "-");
-		line_seconds(*line, &column, now - off_time);
+		line_seconds(*line, &column, time_since(now, off_time));
 		line_text(*line, &column, " at ");
 		line_address(*line, &column, __atomic_load_n(&cpu->watch_irq_off_pc, __ATOMIC_RELAXED));
 		line_text(*line, &column, " < ");
@@ -742,7 +817,7 @@ compose_cpu(
 	} else {
 		line_decimal(*line, &column, irq_id - 1U);
 		line_text(*line, &column, " -");
-		line_seconds(*line, &column, now - irq_time);
+		line_seconds(*line, &column, time_since(now, irq_time));
 		line_text(*line, &column, " from ");
 		line_address(*line, &column, __atomic_load_n(&cpu->watch_irq_elr, __ATOMIC_RELAXED));
 	}
@@ -759,7 +834,7 @@ compose_cpu(
 		return;
 	column = 0;
 	line_text(*line, &column, "     chain -");
-	line_seconds(*line, &column, now - watch_chain_time[index]);
+	line_seconds(*line, &column, time_since(now, watch_chain_time[index]));
 	line_text(*line, &column, ":");
 	for (depth = 0; depth < WATCH_CHAIN_DEPTH; depth++) {
 		if (watch_chain[index][depth] == 0)
@@ -1012,6 +1087,7 @@ report_show(
 	struct watch_plane planes[WATCH_PLANES_MAX];
 	unsigned count;
 	unsigned index;
+	uint64_t stop_length;
 	int suspended;
 
 	/* The report is as recent as now. */
@@ -1036,7 +1112,8 @@ report_show(
 		draw_plane(&planes[index]);
 
 	/* A long stop gets the screen to itself. */
-	if (!watch_taken_over && now - watch_stall_start >= watch_takeover_ticks) {
+	stop_length = time_since(now, watch_stall_start);
+	if (!watch_taken_over && stop_length >= watch_takeover_ticks) {
 		take_over(planes, count);
 		watch_taken_over = 1;
 	}

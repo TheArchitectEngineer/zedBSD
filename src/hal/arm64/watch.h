@@ -122,4 +122,25 @@ arm64_watch_note_irq_on(
 	__atomic_store_n(&cpu->watch_irq_off_time, 0U, __ATOMIC_RELAXED);
 }
 
+/*
+ * Notes that the calling CPU stops for good on purpose.
+ *
+ * Called with interrupts off, just before the CPU halts for ever, so the
+ * other CPUs do not report its silence as a stall.
+ */
+static __inline void
+arm64_watch_park(
+	void)
+{
+	struct arm64_percpu *cpu;
+
+	/* A CPU without a record yet is not looked at by the others. */
+	cpu = arm64_watch_record();
+	if (cpu == NULL)
+		return;
+
+	/* The others leave a parked CPU out of their look at the heartbeats. */
+	__atomic_store_n(&cpu->watch_parked, 1U, __ATOMIC_RELEASE);
+}
+
 #endif

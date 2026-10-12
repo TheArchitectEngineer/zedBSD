@@ -378,6 +378,11 @@ hal_cpu_park(
 {
 	/* Waits with interrupts off, so nothing wakes the CPU into the kernel again. */
 	(void)hal_irq_disable();
+
+	/* The stall watch is told that this CPU's silence is meant. */
+	arm64_watch_park();
+
+	/* Halts for ever. */
 	for (;;)
 		hal_halt();
 }

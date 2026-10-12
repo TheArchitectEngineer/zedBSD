@@ -54,7 +54,7 @@ kernel log (last lines):
 - address は下位 32 bit（kernel は ffff0000_xxxxxxxx）。関数名は `build/llvm/bin/llvm-objdump -d --no-show-raw-insn --start-address=0xffff0000<8桁> --stop-address=0xffff0000<8桁+4> <その vmunix と組の kernel.elf>` の `<関数名>:` の行（kernel.elf は DWARF 無し、symbol は有り。vmunix と同じ build の kernel.elf を使う）。
 - `irq-off ... at X < Y`: X は IRQ を止めたコード（`spin_lock_irqsave` など、LTO で inline された先）、Y はその呼び出し元（lock を取った所）。
 - `in-irq N`: GIC の INTID（30 = timer、0/1 = SGI、32 以上 = device）。
-- `STOPPED`: tick が 2 秒以上来ていない CPU。`chain`: その CPU が IRQ を止めて spin している時に自分で記録した return address の列。
+- `STOPPED`: tick が 2 秒以上来ていない CPU（up で、最初の tick を取り、park していない CPU だけ）。`parked`: panic の後・power-off で意図して止めた CPU（判定しない）。`chain`: その CPU が IRQ を止めて spin している時に自分で記録した return address の列。
 - `unhandled exception ... esr=f2000001`: `brk #1`（`__builtin_trap()`）。elr が trap の場所。
 
 ## 2. 固まりの候補（source を読んで、2026-10-13）
@@ -77,6 +77,14 @@ kernel log (last lines):
 
 - QEMU raspi4b の audio の fault（T1-553、`audio_start+0xe4`、far=0xffff0000fe20c800 = PWM1）: QEMU は PWM1 を emulate しない。`rpi4-audio.c` で、device tree の PCIe の controller が disabled（QEMU の raspi4b の印、`rpi4-pcie.c` も同じ印を使う。実機の firmware は付けない）なら jack を attach しない（`rpi4-audio: emulated board without PWM1; no headphone jack`）。
 - QEMU の「ignored 1 unknown parameter; first=cpus」: MI の kernel の boot parameter の表（`src/kern/boot.c`）に `cpus` が無いので出る表示だけ。HAL の `cpus=N` は `/chosen/bootargs` を読み、QEMU でも T1-537 (d) で `CPUs ready: 1` になっている。消すなら boot.c の表に `cpus` を足す（MI、WS208 の外。今回はしていない）。
+
+## 4. 偽の停止の報告（T1-555、2026-10-13 P6）
+
+- 症状: QEMU raspi4b TCG 4 core で、起動の直後・reboot の後に `cpu1 has not taken its tick`、`cpu1 STOPPED tick -295147905179.352s`（reboot の後は cpu1〜3 と cpu2 の in-irq の時刻も同じ値）。guest は動き続ける。
+- 原因: 値は 2^64 / 62.5 MHz（QEMU の CNTFRQ）= 295147905179.35 秒、つまり `now - beat` の符号なしの差が負に回った物。見る側の CPU は tick の始め（`rpi4_timer_interrupt()` の counter）の `now` で他の CPU の heartbeat を読むが、その間に他の CPU が tick を取ると heartbeat が `now` より新しくなる。QEMU は全 CPU の timer の期限がほぼ揃うので起きやすい（実機でも窓はある）。閾値の誤り・単位の誤りではない（counter はどこも CNTPCT、周波数は CNTFRQ）。2 秒の閾値・TCG の遅さの証拠は無い（画面の値は全部この回り込み）。
+- 直し（`src/hal/arm64/watch.c`）: `time_since(now, then)` は then が now 以後なら 0（新しい）。停止の判定は `cpu_is_stopped()` に一本化（up でない・最初の tick の前・park した CPU は判定しない、年齢が閾値以上だけ停止）。画面の年齢（tick・irq-off・in-irq・chain・stop for）、1 秒の間隔、10 秒の takeover の判定も `time_since()`。意図した停止: `hal_cpu_park()`（panic の後の stop の SGI・panic した CPU）、`hal_poweroff()`、`hal_panic()` が `arm64_watch_park()` で per-CPU の `watch_parked` を立てる。起動の初めの猶予は入れていない（原因が回り込みで、起動中の真の停止を隠すため）。
+- 真の停止の経路（2 秒以上古い heartbeat、self check、fatal・fault の報告）は同じ。
+- 試験: `plan/ws208/tests/watch-judge-host-test.sh`（`time_since`・`cpu_is_stopped` を watch.c から切り出す）PASS。guard を外すと FAIL（`beat after now is not a stop`）を確かめた。rpi4 の vmunix rc 0・warning 0・`arm64 vmunix check: PASS`。QEMU は T1 に依頼（未実施）。
 
 ## commit（agent/p2、全部 WIP）
 

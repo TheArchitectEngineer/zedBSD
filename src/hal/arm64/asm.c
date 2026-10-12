@@ -1,5 +1,6 @@
 #include <hal/hal.h>
 #include "asm.h"
+#include "watch.h"
 
 void arm64_irq_mask(void) { __asm__ volatile("msr daifset, #2" ::: "memory"); }
 void arm64_irq_unmask(void) { __asm__ volatile("msr daifclr, #2" ::: "memory"); }
@@ -107,5 +108,45 @@ void hal_reset(void)
 	arm64_irq_mask();hal_mmio_write32(pm+0x24,0x5a00000aU);
 	hal_mmio_write32(pm+0x1c,0x5a000020U);for(;;)arm64_wfi();
 }
-void hal_poweroff(void){arm64_irq_mask();for(;;)arm64_wfi();}
-void hal_panic(void){arm64_irq_mask();for(;;)arm64_wfi();}
+
+/*
+ * Stops the calling CPU for good when the board is to be powered off.
+ *
+ * The board has no power switch the kernel can reach, so the CPU halts
+ * with interrupts off; the stall watch is told that its silence is meant.
+ */
+void
+hal_poweroff(
+	void)
+{
+	/* Nothing wakes the CPU into the kernel again. */
+	arm64_irq_mask();
+
+	/* The other CPUs do not report this one as stalled. */
+	arm64_watch_park();
+
+	/* Halts for ever. */
+	for (;;)
+		arm64_wfi();
+}
+
+/*
+ * Stops the calling CPU for good after a kernel panic.
+ *
+ * The panic was already reported; the stall watch is told that this
+ * CPU's silence is meant.
+ */
+void
+hal_panic(
+	void)
+{
+	/* Nothing wakes the CPU into the kernel again. */
+	arm64_irq_mask();
+
+	/* The other CPUs do not report this one as stalled. */
+	arm64_watch_park();
+
+	/* Halts for ever. */
+	for (;;)
+		arm64_wfi();
+}
