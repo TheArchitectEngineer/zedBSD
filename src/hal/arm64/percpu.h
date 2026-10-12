@@ -92,7 +92,11 @@ struct arm64_percpu {
 	/* How many task switches this CPU has made, which shows its scheduler moving. */
 	uint64_t watch_switches;
 
-	/* Calls of hal_cpu_current() left before the CPU looks at its own tick again. */
+	/*
+	 * Calls of hal_cpu_current() with interrupts off left before the CPU
+	 * looks at its own tick again; only such calls, which cannot move to
+	 * another CPU, touch it.
+	 */
 	unsigned watch_countdown;
 
 	/* Nonzero while this CPU writes a stall report, so a fault inside it does not start another. */

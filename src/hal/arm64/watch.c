@@ -304,7 +304,16 @@ arm64_watch_self_check(
 	uint64_t frequency;
 	uint64_t beat;
 	uint64_t now;
+	int masked;
 	int entered;
+
+	/*
+	 * A caller with interrupts on takes its tick, and could be moved to
+	 * another CPU after reading its record and describe that CPU as itself.
+	 */
+	masked = arm64_irq_masked();
+	if (!masked)
+		return;
 
 	/* Nothing is looked at before the watch, the CPU's record and its first tick exist. */
 	frequency = __atomic_load_n(&watch_frequency, __ATOMIC_ACQUIRE);
@@ -358,6 +367,12 @@ arm64_watch_fatal(
 	uint64_t now;
 	int entered;
 
+	/*
+	 * The CPU halts with interrupts off after this; turning them off now
+	 * keeps the caller on the CPU whose record describes the stop.
+	 */
+	arm64_irq_mask();
+
 	/* Nothing is drawn before the watch and the CPU's record exist. */
 	frequency = __atomic_load_n(&watch_frequency, __ATOMIC_ACQUIRE);
 	if (frequency == 0)
@@ -403,6 +418,12 @@ arm64_watch_fault(
 	unsigned row;
 	unsigned column;
 	int entered;
+
+	/*
+	 * HAL_FATAL() follows and halts with interrupts off; turning them off
+	 * now keeps the caller on the CPU whose record keeps the fault.
+	 */
+	arm64_irq_mask();
 
 	/* Nothing is kept before the watch and the CPU's record exist. */
 	frequency = __atomic_load_n(&watch_frequency, __ATOMIC_ACQUIRE);
