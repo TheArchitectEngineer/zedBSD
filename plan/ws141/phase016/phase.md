@@ -259,6 +259,47 @@ executor の pass ごとの 3 区分:
 - 観察（1803317345 の kernel、App Home 中）: compositor の frame の record（vkBegin/EndCommandBuffer の同期の request）が 85〜149ms、`submit_lock_us` の最大 113〜168ms。controller の mutex は decoder（request ごと）と executor（1 歩の窓の外: pass の準備・finish・解放）が持つ。
 - 計測を足した（a80ce65fa）: `hold_us decode=<最大>/op<opcode> step=<executor の 1 歩の窓の外の最大>`。次の配置の実機の数で、長く持つのが decoder の特定の op（resource の作成・map の memset など）か executor の準備（CPU の変換・upload）かを分け、そこを mutex の外に出す設計を書く（候補: 準備の draw ごとの区切りで待ち手に譲る、session の object の状態を session ごとの lock に分ける、重い CPU 作業（memset・変換）を mutex の外の所有物に対して行う）。
 
+## (b) 第 2 版の設計（2026-10-12 P3、v3d.perf=1 の計測の後、review の前）
+
+### 計測（place9・10 の boot、v3d.perf=1、log は scratchpad/p3g3/b10）
+
+- perf の報告を mutex の外に出し（ffacaf9b2）、rpi4 の UART の console を止めた（51776cf11）後の数:
+  - step の hold の最大は 1〜6ms（前は 48〜103ms）。
+  - decode の hold の最大は 1〜19ms。
+  - submit_lock の最大は 0〜9ms（前は 60〜90ms）。
+- **(b) の元の症状（decoder の request が executor の準備を 60〜90ms 待つ）は、ほとんどが perf の報告そのもの（mutex の下で UART に約 1000 字を polling で出していた）だった。**
+- 残るのは次の 2 つ。
+  1. decode の 1 request が最大 11〜19ms、mutex を持つ。どの command かは分かっていない。perf の op は、request の最後の command（op137 = EnumerateInstanceVersion、stream の終わりの印）を出していたため。
+  2. alloc の費用は、ほぼ全部が 0 埋め。allocator（pmem_us）は全部 0 だった。使い回す storage の view を毎回 0 で埋め直していて、2 秒の窓で reused 135〜735 個、23〜134MB、zero_us 12〜67ms だった。これは executor の step（mutex の下）で走る。
+- compositor だけの小さな damage のコマ（窓の右上のボタンの hover など）は、submit→shown の中央値 14ms、入力→shown の中央値 35ms で、前の 28〜88ms・65〜112ms から改善した。
+
+### 計測の追加（実装済み、agent/p3）
+
+- decode の 1 request の中の command を 1 つずつ時間を測り、request の中で一番長い command の opcode と時間を、perf の `hold_us decode=<request の最大>/op<一番長い command> cmd=<その command の時間> step=` に出す（`vulkan-stream.c` の `execute_command`、`render-runtime.c`）。wrapper の `EXECUTE_STREAMS` は中の command の合計なので、数えない。
+- 次の v3d.perf=1 の boot で、11〜19ms の command を特定する。それが資源の作成（vkCreateImage・AllocateMemory の map・memset）や map の ioctl 系なら、その command だけを mutex の外に出す設計を、次の版で書く。
+
+### 0 埋めの見直し（設計、review の後に実装）
+
+- `bcm2711_native_storage_create` は、空いた view を使い回す時にも、view の全部を `kern_memset` で 0 にしている（`native-storage.c` の `cache_take` の後）。
+- 0 埋めが要らない種類（GPU か CPU が、読まれる前に読む範囲の全部を書く物）を、呼び出し元が「埋めない」と指定できる形にする（`bcm2711_native_storage_create_unzeroed`、または引数）。
+
+| 種類（呼び出し元） | 読まれる前に全部書かれるか | 案 |
+| --- | --- | --- |
+| private の texture の変換先（`vulkan-native-draw.c` の host-mapped の canvas。1180×800 で 3.7MB） | はい（TFU か CPU が全体を書く） | 埋めない |
+| snapshot の pixels（`native-storage.c:443`） | はい（fill が全体を書く。部分の更新はその後） | 埋めない |
+| shader の code（`vulkan-native-draw.c:638`） | はい（program の大きさだけ書いて、その範囲だけ使う） | 埋めない |
+| upload の chunk（`vulkan-native-draw.c:1256`） | 切り出した範囲は使う側が全部書く。残りは読まない | 埋めない |
+| overflow の reserve（`vulkan-native-pass.c:671`、pass ごとに 256KiB × 4 = 1MiB） | PTB が書いた所だけを RCL が読む | 埋めない（Mesa の v3d も、BO の cache から再利用する時に埋めない） |
+| tile の pool と tile state（`vulkan-native-pass.c:640・645`） | pool は PTB が書く。tile state は初期化が要るかを正本で確かめる | pool は埋めない。state は正本で確かめるまで埋める |
+| bin・render・tile の list の image（`vulkan-native-pass.c:628-636`） | encoder が 0 の image を前提にしている（`native-bin.c:82`） | 埋める（今どおり） |
+
+- 新しく確保する時（`bcm2711_buffer_create`）は、今どおり全部を埋める。allocator の page には、別の process の中身が残り得るため。埋めないのは、同じ space の中で使い回す時だけにする。
+- 安全の議論: 埋めない view の前の中身は、同じ controller の別の pass か別の session の、GPU の内部の物（texture の変換・overflow など）。表の種類は、読まれる前に全部書かれるか、書かれた所だけが読まれる。そのため、前の中身は user にも GPU の出力にも出ない。
+- 見積もり: 0 埋めの 23〜134MB/2s のうち、大きいのは canvas の変換先（1 回 3.7MB）と overflow（pass ごとに 1MiB）で、この 2 つで大半が消える見込み。
+- 試験:
+  - host（vulkan-device の fixture）: 埋めない種類が使い回しで 0 にされないこと、埋める種類は今どおり 0 になること、新しい確保は 0 になること。
+  - Pi: `v3d: alloc` の reused の zero_us、prep、Settings の hover の submit→shown。
+
 ## HAL arm64 の物理 page の allocator: 呼び出し元の監査（2026-10-12 P3、変更はしない、Q1 に相談）
 
 - 実装（`src/hal/arm64/page.c` `alloc_ram`）: 8GiB 分の bitmap の first fit。`first_free_candidate`（そこより下は全部使用中）から上へ、**1 page ずつ** 候補を進め、候補ごとに alignment・boundary・空きの長さを測る。全部 **IRQ を止めたまま**（CPU は 1 つ）。zone・上からの配置は無い。
