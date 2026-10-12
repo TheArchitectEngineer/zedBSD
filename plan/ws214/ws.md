@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
 Queue: P2（p001 の調べと設計から）
-Resume point: p001 の設計の第 1 版（[phase001/phase.md](phase001/phase.md)、2026-10-12 P2）を design-reviewer に掛ける。未決（UAPI の追加の承認、glass の blur・中身を操作の間止める見た目、undock の拡大、前後の入れ替えを範囲から外す件、kernel の段の担当と WS141 p016 B-k2 との順序）は p001 の 9 節。
+Resume point: p001 の設計の第 2 版（[phase001/phase.md](phase001/phase.md)、2026-10-12 P2、[review-1](phase001/review-1.md) の F1・H1〜H6・M1〜M7・軽微を反映）を design-reviewer に掛ける。ユーザーに聞く点（UAPI の承認、glass の blur、drag の間の中身の停止、前後の入れ替えを外すか、undock の形）は p001 の 9 節に説明付き。kernel の段は p003 にまとめ担当 1 人（WS141 p016 B-k2 を含む、Q1 の判断）。
 <!-- awesome-plan-current:end -->
 
 ## 由来
@@ -33,11 +33,11 @@ Pi 4 で窓の drag と dock・undock のアニメが 60fps（実機の log と�
 
 ## Phase
 
-| Phase | 内容 | Status |
-| --- | --- | --- |
-| [p001](phase001/phase.md) | 調べと設計（HVS の plane の能力と制約、口、compositor の載せ方、fallback、試験）→ design-reviewer | planning（第 1 版、review の前） |
-| p003 | kernel（bcm2711）: 状態から作る display list、overlay（unscaled・scaled・LBM）、hold、帯域・clock の予算、console の省略、overlay の commit の lock、UAPI（承認の後） | 案（p001 の 7 節、未投入） |
-| p004 | libvulkan: VK_KHR_display の overlay の plane、複数の swapchain の 1 回の present を 1 つの commit に、位置だけの fast path | 案（未投入） |
-| p005 | compositor: drag の間の窓の plane（焼き、入る・戻る、C の follow、fallback） | 案（未投入） |
-| p006 | compositor: 上の帯の plane と dock・undock・pull back の HVS の拡大 | 案（未投入） |
-| p002 | 規約の全文の見直し（最後に行う）と、新しい HVS の code の GPL との類似の監査 | planned |
+| Phase | 内容 | Status | 依存 |
+| --- | --- | --- | --- |
+| [p001](phase001/phase.md) | 調べと設計（HVS の plane の能力と制約、口、compositor の載せ方、fallback、試験）→ design-reviewer | planning（第 2 版、review-1 を反映、再 review の前） | — |
+| p003 | kernel（core と bcm2711、担当 1 人、WS141 p016 B-k2 を含む）: display の op の gate 外し、状態から作る list と差し替え、primary も coalesce（settle・EBUSY をやめる）、IRQ の採用の記録と眠る WAIT、借りの thread の文脈の解放、overlay（unscaled・scaled・LBM）、帯域・clock の予算、console の省略、UAPI（承認の後）、値の出典の表と GPL の監査、Pi の帯域の実測 | 案（p001 の 7 節、未投入） | UAPI の承認（ユーザー） |
+| p004 | libvulkan: overlay の plane、plane ごとの present、切り替えの保留と primary との 1 commit、隠す約束、位置だけの fast path、借りと acquire | 案（未投入） | p003、WS141 p016 B-u の Pi の受け入れ |
+| p005 | compositor: drag の間の窓の plane と上の帯（bar）の plane（焼き、入る・戻る、C への持ち主の移し、fallback） | 案（未投入） | p004、WS213 p004 の clear、ユーザーの判断（glass の blur・中身の停止） |
+| p006 | compositor: dock・undock・pull back の HVS の拡大縮小 | 案（未投入） | p005、p003 の帯域の実測 |
+| p002 | 規約の全文の見直し（最後に行う）と、新しい HVS の code の GPL との類似の監査 | planned | p003〜p006 |
