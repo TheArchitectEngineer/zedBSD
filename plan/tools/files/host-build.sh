@@ -41,14 +41,16 @@ done
 objects="$objects $out/obj/libc-sha2.o"
 # The thumbnails (ws168-p004): keiland-preview's callers' side with the making in this process (freebsd/spawn.c: no
 # child and no installed program on the host), its decoding and scaling, and what they decode with: libz-compat,
-# libpng-compat, libjpeg-compat, libgif-compat, the decoding shared with Image Viewer, libpdf and the C library's MD5.
+# libpng-compat, libjpeg-compat, libgif-compat, the decoding shared with Image Viewer, libpdf and the C library's MD5;
+# the pictures' facts the thumbnails keep (preview/info.c, with Photos' EXIF reader).
 for file in userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libz-compat/deflate.c \
     userland/base/libpng-compat/read.c \
     userland/base/libjpeg-compat/decompress.c userland/base/libjpeg-compat/error.c userland/base/libjpeg-compat/huffman.c \
     userland/base/libjpeg-compat/idct.c userland/base/libjpeg-compat/marker.c userland/base/libjpeg-compat/memory.c \
     userland/base/libjpeg-compat/source.c userland/base/libgif-compat/decode.c userland/base/libgif-compat/lzw.c \
     userland/desktop/picture/picture.c userland/desktop/preview/client.c userland/desktop/preview/freebsd/spawn.c \
-    userland/desktop/preview/make.c userland/desktop/preview/decode.c userland/desktop/preview/scale.c; do
+    userland/desktop/preview/make.c userland/desktop/preview/decode.c userland/desktop/preview/scale.c \
+    userland/desktop/preview/info.c userland/desktop/photos/exif.c; do
 	object="$out/obj/compat-$(basename "$(dirname "$file")")-$(basename "$file" .c).o"
 	"$cc" $flags -c "$file" -o "$object"
 	objects="$objects $object"
