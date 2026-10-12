@@ -31,6 +31,9 @@ struct bcm2711_vulkan_session {
 	/* The opcodes of the last command the decoder refused and the last it decoded, for diagnostics. */
 	uint32_t failed_opcode;
 	uint32_t last_opcode;
+	/* The request's longest command and its ticks, for the perf report (ws141-p016 (b)). */
+	uint32_t longest_opcode;
+	uint64_t longest_ticks;
 	struct i915_wire_arena arena;
 };
 
