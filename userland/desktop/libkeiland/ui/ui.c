@@ -318,7 +318,7 @@ static struct {
 } ui_inset;
 
 static const struct ui_record *ui_find(const struct kl_ui *ui, double x, double y, int regions);
-static void ui_damage_key(struct kl_ui *ui, const struct ui_key *key);
+static int ui_damage_key(struct kl_ui *ui, const struct ui_key *key);
 static int ui_scroll_shown(const struct kl_ui *ui, const struct kl_scroll *scroll);
 static int ui_inside(const struct kl_rect *rect, double x, double y);
 static int ui_same(const struct ui_key *key, uint32_t id, uint32_t index);
@@ -435,6 +435,8 @@ kl_ui_pointer_motion(
 	const struct ui_record *record;
 	struct ui_key hot;
 	int same;
+	int left_drawn;
+	int lit_drawn;
 
 	/* The place; a widget held by a press (a slider's knob) follows it. */
 	ui->pointer_x = x;
@@ -461,10 +463,16 @@ kl_ui_pointer_motion(
 	if (same)
 		return 0;
 
-	/* Succeeded: another widget is lit; the two widgets' regions are drawn again. */
-	ui_damage_key(ui, &ui->hot);
+	/* Another widget is lit; the two widgets' regions are drawn again, unless they draw the same lit and unlit. */
+	left_drawn = ui_damage_key(ui, &ui->hot);
 	ui->hot = hot;
-	ui_damage_key(ui, &ui->hot);
+	lit_drawn = ui_damage_key(ui, &ui->hot);
+
+	/* Two still widgets: nothing to draw. */
+	if (left_drawn == 0 && lit_drawn == 0)
+		return 0;
+
+	/* Succeeded: a part of the window is to be drawn again. */
 	return 1;
 }
 
@@ -475,14 +483,22 @@ int
 kl_ui_pointer_leave(
 	struct kl_ui *ui)
 {
+	int drawn;
+
 	/* Nothing lit any more. */
 	ui->pointer_inside = 0;
 	if (!ui->hot.valid)
 		return 0;
 
-	/* Succeeded: the lit widget goes dark, its region drawn again. */
-	ui_damage_key(ui, &ui->hot);
+	/* The lit widget goes dark, its region drawn again unless it draws the same. */
+	drawn = ui_damage_key(ui, &ui->hot);
 	ui->hot.valid = 0;
+
+	/* A still widget: nothing to draw. */
+	if (drawn == 0)
+		return 0;
+
+	/* Succeeded: the region is to be drawn again. */
 	return 1;
 }
 
@@ -500,7 +516,7 @@ kl_ui_pointer_cancel(
 		return 0;
 
 	/* Succeeded: the widget is let go unclicked, its region drawn again. */
-	ui_damage_key(ui, &ui->active);
+	(void)ui_damage_key(ui, &ui->active);
 	ui->active.valid = 0;
 	ui->released.valid = 0;
 	return 1;
@@ -907,6 +923,34 @@ kl_ui_hit(
 		if (ui->clicked_touch)
 			state |= KL_HIT_TOUCHED;
 	}
+
+	/* Reports the state. */
+	return state;
+}
+
+/*
+ * Records a widget of the frame being drawn that draws the same lit, held
+ * or neither (a picture a press drags), and reports what the input did to
+ * it (KL_HIT_* bits) as kl_ui_hit does.
+ *
+ * The pointer coming onto it, leaving it or pressing it asks for no part
+ * of the window to be drawn again (KL_VERSION 89).
+ */
+unsigned
+kl_ui_hit_still(
+	struct kl_ui *ui,
+	uint32_t id,
+	uint32_t index,
+	const struct kl_rect *rect)
+{
+	unsigned state;
+	size_t before;
+
+	/* The record and what the input did to it; the record is marked still when it was made (a full frame makes none). */
+	before = ui->drawing_count;
+	state = kl_ui_hit(ui, id, index, rect);
+	if (ui->drawing_count > before)
+		ui->drawing[before].flags |= KEIUI_STILL;
 
 	/* Reports the state. */
 	return state;
@@ -2180,9 +2224,10 @@ ui_find(
  * Adds the region of a widget of the frame shown, with UI_DAMAGE_MARGIN
  * round it, to the part a change of the lit widget needs drawn again
  * (BUG-226); a widget the frame shown has no region for asks for the whole
- * window.  No widget adds nothing.
+ * window.  No widget and a still widget (kl_ui_hit_still) add nothing.
+ * Returns 1 when something is to be drawn again, 0 when nothing is.
  */
-static void
+static int
 ui_damage_key(
 	struct kl_ui *ui,
 	const struct ui_key *key)
@@ -2197,7 +2242,7 @@ ui_damage_key(
 
 	/* No widget. */
 	if (!key->valid)
-		return;
+		return 0;
 
 	/* Its region in the frame shown. */
 	record = NULL;
@@ -2211,6 +2256,10 @@ ui_damage_key(
 		}
 	}
 
+	/* A still widget draws the same lit or not. */
+	if (record != NULL && (record->flags & KEIUI_STILL) != 0U)
+		return 0;
+
 	/* Something to draw again from now; a widget without a region is the whole window. */
 	first = 0;
 	if (!ui->damage_pending)
@@ -2218,12 +2267,12 @@ ui_damage_key(
 	ui->damage_pending = 1;
 	if (record == NULL) {
 		ui->damage_whole = 1;
-		return;
+		return 1;
 	}
 
 	/* The whole window already: nothing to add. */
 	if (ui->damage_whole)
-		return;
+		return 1;
 
 	/* The region and its margin. */
 	grown.x = record->rect.x - UI_DAMAGE_MARGIN;
@@ -2234,7 +2283,7 @@ ui_damage_key(
 	/* The first region is the part. */
 	if (first) {
 		ui->damage = grown;
-		return;
+		return 1;
 	}
 
 	/* Another widens it to hold both. */
@@ -2250,6 +2299,9 @@ ui_damage_key(
 		ui->damage.y = grown.y;
 	ui->damage.width = right - ui->damage.x;
 	ui->damage.height = bottom - ui->damage.y;
+
+	/* Succeeded: the region is in the part to draw again. */
+	return 1;
 }
 
 /* Tells whether a point is in a rectangle. */
