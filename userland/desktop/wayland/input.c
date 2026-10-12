@@ -96,7 +96,9 @@ static void apply_touchpad_actions(struct kwl_server *server, const struct kwl_i
 static void lock_pad_gesture(struct kwl_server *server, const struct kwl_touchpad_action *action);
 static void input_attach(struct kwl_server *server, struct kwl_input_device *device);
 static void input_detach(struct kwl_server *server, struct kwl_input_device *device);
-static void input_detach_failed(int error);
+static void input_detach_failed(const char *site, const struct kwl_server *server, const struct kwl_input_device *device, unsigned count, uint64_t sequence, uint64_t asked_ms, int error);
+static const char *input_kind_name(const struct kwl_input_device *device);
+static const char *input_reason_name(enum kwl_input_detach_reason reason);
 static void input_retire(struct kwl_server *server, struct kwl_input_device *device);
 static void input_settings(const struct kwl_server *server, struct kwl_input_settings *settings);
 static void pointer_warp_place(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
@@ -461,7 +463,7 @@ kwl_input_drain(
 	if (dropped != 0U)
 		printf("KWL INPUT dropped=%u\n", dropped);
 	if (failed != 0) {
-		printf("KWL FAILED site=input-thread errno=%d\n", failed);
+		kwl_fatal("KWL FAILED site=input-thread errno=%d", failed);
 		server->failed = 1U;
 	}
 
@@ -550,22 +552,27 @@ kwl_input_detach_all(
 {
 	uint64_t sequence;
 	uint64_t last;
+	uint64_t asked_ms;
 	unsigned index;
+	unsigned count;
 	int error;
 
 	/* Nothing runs before the thread starts. */
 	if (!server->input_thread_ready)
 		return;
 
-	/* Each attached device's detach. */
+	/* Each attached device's detach, from when they were asked (the failure's line says how long it waited). */
 	last = 0U;
+	count = 0U;
+	asked_ms = kwl_milliseconds();
 	for (index = 0; index < KWL_INPUT_MAX; index++) {
 		if (!server->inputs[index].attached)
 			continue;
 		error = kwl_input_thread_detach(&server->input_thread, index, &sequence);
 		if (error != 0)
-			input_detach_failed(error);
+			input_detach_failed("input-detach-all", server, &server->inputs[index], 1U, 0U, asked_ms, error);
 		last = sequence;
+		count++;
 	}
 
 	/* The last acknowledgement covers them all. */
@@ -573,7 +580,7 @@ kwl_input_detach_all(
 		return;
 	error = kwl_input_thread_detach_wait(&server->input_thread, last, KWL_INPUT_DETACH_WAIT_MS);
 	if (error != 0)
-		input_detach_failed(error);
+		input_detach_failed("input-detach-all", server, NULL, count, last, asked_ms, error);
 	for (index = 0; index < KWL_INPUT_MAX; index++)
 		server->inputs[index].attached = 0U;
 }
@@ -1439,7 +1446,7 @@ apply_detached(
 	}
 
 	/* Any other end closes the device. */
-	printf("KWL INPUT_CLOSED device=%s errno=%d\n", device->path, detached->error);
+	printf("KWL INPUT_CLOSED device=%s kind=%s reason=%s errno=%d\n", device->path, input_kind_name(device), input_reason_name(detached->reason), detached->error);
 	if (device->fd >= 0)
 		kl_backend_input_close(server->backend, device->fd);
 	input_retire(server, device);
@@ -1628,6 +1635,7 @@ input_detach(
 	struct kwl_input_device *device)
 {
 	uint64_t sequence;
+	uint64_t asked_ms;
 	int error;
 
 	/* A device not read by the thread needs nothing. */
@@ -1637,23 +1645,47 @@ input_detach(
 	if (!server->input_thread_ready)
 		return;
 
-	/* The detach, and its acknowledgement after the device's last event. */
+	/* The detach, and its acknowledgement after the device's last event (the failure's line says how long it waited). */
+	asked_ms = kwl_milliseconds();
 	error = kwl_input_thread_detach(&server->input_thread, (unsigned)(device - server->inputs), &sequence);
 	if (error != 0)
-		input_detach_failed(error);
+		input_detach_failed("input-detach", server, device, 1U, 0U, asked_ms, error);
 	error = kwl_input_thread_detach_wait(&server->input_thread, sequence, KWL_INPUT_DETACH_WAIT_MS);
 	if (error != 0)
-		input_detach_failed(error);
+		input_detach_failed("input-detach", server, device, 1U, sequence, asked_ms, error);
 }
 
-/* Ends the compositor at once when a device cannot be taken back from the input thread (design 6.1 N-1). */
+/*
+ * Ends the compositor at once when a device cannot be taken back from the
+ * input thread (design 6.1 N-1), saying which device (NULL: every attached
+ * one, count of them), the detach's number and how long it was waited for.
+ */
 static void
 input_detach_failed(
+	const char *site,
+	const struct kwl_server *server,
+	const struct kwl_input_device *device,
+	unsigned count,
+	uint64_t sequence,
+	uint64_t asked_ms,
 	int error)
 {
+	const char *path;
+	const char *kind;
+	unsigned slot;
+
+	/* The device, or all of them. */
+	path = "all";
+	kind = "all";
+	slot = KWL_INPUT_MAX;
+	if (device != NULL) {
+		path = device->path;
+		kind = input_kind_name(device);
+		slot = (unsigned)(device - server->inputs);
+	}
+
 	/* No cleanup: another thread may be anywhere, and the descriptor must not be closed under it. */
-	printf("KWL FAILED site=input-detach errno=%d\n", error);
-	fflush(stdout);
+	kwl_fatal("KWL FAILED site=%s device=%s kind=%s slot=%u devices=%u sequence=%llu waited_ms=%llu errno=%d", site, path, kind, slot, count, (unsigned long long)sequence, (unsigned long long)(kwl_milliseconds() - asked_ms), error);
 	_exit(1);
 }
 
@@ -1713,4 +1745,52 @@ pointer_warp_place(
 	*x = place->x;
 	*y = place->y;
 	*output = place->output;
+}
+
+/* Names a device's kind for a log line. */
+static const char *
+input_kind_name(
+	const struct kwl_input_device *device)
+{
+	/* The kinds read by their own module first. */
+	if (device->tablet)
+		return "tablet";
+	if (device->touch)
+		return "touch";
+	if (device->touchpad)
+		return "touchpad";
+
+	/* A pointer, a keyboard, or both in one node. */
+	if (device->pointer && device->keyboard)
+		return "pointer+keyboard";
+	if (device->pointer && device->absolute)
+		return "absolute";
+	if (device->pointer)
+		return "pointer";
+	if (device->keyboard)
+		return "keyboard";
+
+	/* A record without a kind (not expected of a live one). */
+	return "none";
+}
+
+/* Names why the input thread let a device go, for a log line. */
+static const char *
+input_reason_name(
+	enum kwl_input_detach_reason reason)
+{
+	/* By the reason the device's last event carries. */
+	switch (reason) {
+	case KWL_INPUT_DETACH_ASKED:
+		return "asked";
+	case KWL_INPUT_DETACH_ENDED:
+		return "ended";
+	case KWL_INPUT_DETACH_REVOKED:
+		return "revoked";
+	default:
+		break;
+	}
+
+	/* A reason this file does not know. */
+	return "other";
 }

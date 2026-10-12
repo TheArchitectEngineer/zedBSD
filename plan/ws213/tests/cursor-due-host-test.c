@@ -33,6 +33,7 @@
 #include "userland/desktop/wayland/cursor-thread.h"
 
 #include <pthread.h>
+#include <stdarg.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -127,6 +128,21 @@ kwl_cycles(
 {
 	/* The same clock. */
 	return kwl_microseconds();
+}
+
+/* Reports why the compositor ends: the test prints the line (no path of the test ends it). */
+void
+kwl_fatal(
+	const char *format,
+	...)
+{
+	va_list arguments;
+
+	/* The line, as the compositor's output has it. */
+	va_start(arguments, format);
+	vprintf(format, arguments);
+	va_end(arguments);
+	printf("\n");
 }
 
 /* Gives the cursor the test chose, with its hotspot at (2, 3). */

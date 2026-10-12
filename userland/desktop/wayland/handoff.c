@@ -123,6 +123,7 @@ kwl_handoff_stop(
 	/* The seat's authority failed: the ordinary cleanup ends the compositor. */
 	if (reason == KL_BACKEND_SESSION_LOST) {
 		printf("KWL SEAT lost\n");
+		kwl_fatal("KWL FAILED site=seat-lost errno=%d", EIO);
 		server->failed = 1;
 		return;
 	}

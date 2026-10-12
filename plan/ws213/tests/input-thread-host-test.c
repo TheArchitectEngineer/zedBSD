@@ -27,6 +27,12 @@
  * -fsanitize=thread it is the design's 9 (m) for the input thread.  It
  * checks every report of every device arrives once and in order, and that
  * no detached descriptor number is read.
+ *
+ * The third part plugs a touch screen and a pen tablet into the running
+ * thread, as the Pi's USB touch monitor was on 2026-10-12, and checks
+ * that both are read, their reports come whole and in order (a report too
+ * large or cut by the kernel is the only one left out), and that both end
+ * at the unplug and are read again when plugged in again.
  */
 
 #include "userland/desktop/wayland/input-thread.h"
@@ -78,6 +84,11 @@ static void attach(struct kwl_input_thread *input, unsigned slot, int descriptor
 static void stepwise(void);
 static void threaded(void);
 static void *writer_main(void *argument);
+static void hotplug(void);
+static void *panel_main(void *argument);
+static void panel_report(int descriptor, unsigned number, unsigned fingers, unsigned oversize);
+static void pen_report(int descriptor, unsigned number);
+static int take_until(struct kwl_input_thread *input, int wake, unsigned slot, enum kwl_input_event_kind kind, unsigned wait_ms);
 static void warp_set(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
 
 /* The device kinds the test attaches. */
@@ -85,7 +96,8 @@ enum {
 	KIND_MOUSE = 1,
 	KIND_ABSOLUTE,
 	KIND_TOUCHPAD,
-	KIND_TOUCH
+	KIND_TOUCH,
+	KIND_TABLET
 };
 
 /* Gives the clock in milliseconds: the fake one in the first part. */
@@ -130,6 +142,7 @@ main(
 	/* The passes one at a time, then the threads. */
 	stepwise();
 	threaded();
+	hotplug();
 
 	/* The verdict. */
 	if (failures != 0) {
@@ -273,6 +286,8 @@ attach(
 		device.resolution_y = 12;
 		device.pad_x_maximum = 1200;
 		device.pad_y_maximum = 800;
+	} else if (kind == KIND_TABLET) {
+		device.tablet = 1U;
 	} else {
 		device.touch = 1U;
 	}
@@ -769,4 +784,413 @@ threaded(void)
 	close(mouse_write);
 	close(wake[0]);
 	close(wake[1]);
+}
+
+/*
+ * The writer of the hot-plug part: a touch screen's and a pen's reports,
+ * each numbered (the touch screen's in its MSC_TIMESTAMP, the pen's in its
+ * ABS_X), one after the other.
+ */
+struct panel {
+	int touch;
+	int pen;
+};
+
+/*
+ * Runs the input thread while a touch screen and a pen tablet are plugged
+ * in (2026-10-12 on the Pi: a USB touch monitor's two nodes, event4 and
+ * event5, attached while the compositor ran): the attach reaches a thread
+ * waiting in its poll without a time limit, the panel's multitouch reports
+ * (two fingers at times, a report too large to hold now and then, a
+ * dropped one once) and the pen's come whole, once and in order beside a
+ * mouse, the unplug ends both with their last event, and a node plugged in
+ * again on the same slot is read afresh.
+ */
+static void
+hotplug(void)
+{
+	struct kwl_input_thread input;
+	struct kwl_cursor_box box;
+	struct kwl_input_settings settings;
+	struct kwl_input_event *events;
+	struct kwl_input_event *event;
+	struct panel panel;
+	pthread_t panel_thread;
+	struct pollfd ready;
+	unsigned touch_last;
+	unsigned pen_last;
+	unsigned touch_expected;
+	unsigned touch_wrong;
+	unsigned pen_wrong;
+	unsigned count_wrong;
+	unsigned after_end;
+	unsigned ended;
+	unsigned number;
+	unsigned fingers;
+	unsigned round;
+	uint64_t deadline;
+	int touch_read;
+	int pen_read;
+	int mouse_read;
+	int mouse_write;
+	int wake[2];
+	int seen;
+	unsigned char drained[64];
+
+	/* The box, the wake pipe, and the thread with only a mouse, waiting in its poll without a limit. */
+	if (pipe(wake) != 0)
+		exit(2);
+	(void)fcntl(wake[0], F_SETFL, O_NONBLOCK);
+	(void)fcntl(wake[1], F_SETFL, O_NONBLOCK);
+	check(kwl_cursor_box_init(&box, 400, 240, 800, 480) == 0, "the box starts (hot plug)");
+	memset(&settings, 0, sizeof(settings));
+	settings.mouse_speed = 150;
+	settings.mouse_acceleration = KWL_ACCEL_STRONG;
+	settings.touchpad_speed = 100;
+	check(kwl_input_thread_init(&input, &box, wake[1], test_read, &settings) == 0, "the thread's state starts (hot plug)");
+	device_pipe(&mouse_read, &mouse_write);
+	attach(&input, 0U, mouse_read, KIND_MOUSE);
+	check(kwl_input_thread_start(&input) == 0, "the thread starts (hot plug)");
+	usleep(20000);
+
+	/* The monitor plugged in: its touch screen and its pen, attached while the thread waits. */
+	device_pipe(&touch_read, &panel.touch);
+	device_pipe(&pen_read, &panel.pen);
+	attach(&input, 4U, touch_read, KIND_TOUCH);
+	attach(&input, 5U, pen_read, KIND_TABLET);
+	panel_report(panel.touch, 0U, 1U, 0U);
+	seen = take_until(&input, wake[0], 4U, KWL_INPUT_EVENT_REPORT, 1000U);
+	check(seen, "the touch screen attached while the thread waited is read");
+	pen_report(panel.pen, 0U);
+	seen = take_until(&input, wake[0], 5U, KWL_INPUT_EVENT_REPORT, 1000U);
+	check(seen, "the pen attached while the thread waited is read");
+
+	/* The panel's and the pen's reports from their own thread, the mouse's from this one. */
+	if (pthread_create(&panel_thread, NULL, panel_main, &panel) != 0)
+		exit(2);
+	touch_last = 0U;
+	pen_last = 0U;
+	touch_wrong = 0U;
+	pen_wrong = 0U;
+	count_wrong = 0U;
+	round = 0U;
+	deadline = kwl_milliseconds() + 60000U;
+	while ((touch_last != TEST_REPORTS || pen_last != TEST_REPORTS) && kwl_milliseconds() < deadline) {
+		/* Woken by the input thread, or after a while for the mouse. */
+		ready.fd = wake[0];
+		ready.events = POLLIN;
+		(void)poll(&ready, 1, 2);
+		while (read(wake[0], drained, sizeof(drained)) > 0)
+			;
+
+		/* Each report against the one before it of its device. */
+		events = kwl_input_thread_take(&input);
+		while (events != NULL) {
+			event = events;
+			events = event->next;
+			if (event->kind == KWL_INPUT_EVENT_REPORT && event->slot == 4U) {
+				/* The next number the panel sent that fits a report (a too large one is not passed on). */
+				number = (unsigned)event->u.report.events[0].value;
+				touch_expected = touch_last + 1U;
+				while ((touch_expected % 97U) == 0U || touch_expected == 1234U)
+					touch_expected++;
+				if (number != touch_expected)
+					touch_wrong++;
+				touch_last = number;
+
+				/* The whole report: its time, each finger's four axes, the button and the first finger's place. */
+				fingers = 1U;
+				if ((number % 13U) == 0U)
+					fingers = 2U;
+				if (event->u.report.count != 1U + 4U * fingers + 3U)
+					count_wrong++;
+			} else if (event->kind == KWL_INPUT_EVENT_REPORT && event->slot == 5U) {
+				/* The pen's reports, none lost. */
+				number = (unsigned)event->u.report.events[0].value;
+				if (number != pen_last + 1U)
+					pen_wrong++;
+				pen_last = number;
+			}
+			free(event);
+		}
+
+		/* The mouse moves meanwhile. */
+		round++;
+		if ((round % 3U) == 0U) {
+			send_event(mouse_write, EV_REL, REL_X, 1);
+			send_event(mouse_write, EV_SYN, SYN_REPORT, 0);
+		}
+	}
+	(void)pthread_join(panel_thread, NULL);
+	check(touch_last == TEST_REPORTS && touch_wrong == 0U, "every touch report that fits came once and in order");
+	check(count_wrong == 0U, "every touch report came whole");
+	check(pen_last == TEST_REPORTS && pen_wrong == 0U, "every pen report came once and in order");
+
+	/* The monitor unplugged: both nodes end, each with its last event after its reports. */
+	close(panel.touch);
+	close(panel.pen);
+	ended = 0U;
+	after_end = 0U;
+	deadline = kwl_milliseconds() + 2000U;
+	while (ended != 3U && kwl_milliseconds() < deadline) {
+		/* Woken by the input thread. */
+		ready.fd = wake[0];
+		ready.events = POLLIN;
+		(void)poll(&ready, 1, 10);
+		while (read(wake[0], drained, sizeof(drained)) > 0)
+			;
+
+		/* The ends, and nothing of a node after its end. */
+		events = kwl_input_thread_take(&input);
+		while (events != NULL) {
+			event = events;
+			events = event->next;
+			if (event->slot == 4U || event->slot == 5U) {
+				if ((ended & (1U << (event->slot - 4U))) != 0U)
+					after_end++;
+				if (event->kind == KWL_INPUT_EVENT_DETACHED &&
+				    event->u.detached.reason == KWL_INPUT_DETACH_ENDED &&
+				    event->u.detached.sequence == 0U)
+					ended |= 1U << (event->slot - 4U);
+			}
+			free(event);
+		}
+	}
+	check(ended == 3U, "the unplugged touch screen and pen each end");
+	check(after_end == 0U, "nothing of an ended node comes after its end");
+	close(touch_read);
+	close(pen_read);
+
+	/* Plugged in again: the touch screen's new node in the same slot is read afresh. */
+	device_pipe(&touch_read, &panel.touch);
+	attach(&input, 4U, touch_read, KIND_TOUCH);
+	panel_report(panel.touch, 1U, 1U, 0U);
+	seen = take_until(&input, wake[0], 4U, KWL_INPUT_EVENT_REPORT, 1000U);
+	check(seen, "the touch screen plugged in again is read");
+
+	/* The thread ends. */
+	kwl_input_thread_stop(&input);
+	kwl_input_thread_destroy(&input);
+	kwl_cursor_box_destroy(&box);
+	close(touch_read);
+	close(panel.touch);
+	close(mouse_read);
+	close(mouse_write);
+	close(wake[0]);
+	close(wake[1]);
+}
+
+/* Writes the panel's and the pen's numbered reports, a dropped report once among them. */
+static void *
+panel_main(
+	void *argument)
+{
+	struct panel *panel;
+	struct input_event dropped[2];
+	unsigned number;
+	unsigned fingers;
+	unsigned oversize;
+
+	/* Each number on both nodes; a too large touch report every 97th, two fingers every 13th. */
+	panel = argument;
+	for (number = 1U; number <= TEST_REPORTS; number++) {
+		fingers = 1U;
+		if ((number % 13U) == 0U)
+			fingers = 2U;
+		oversize = 0U;
+		if ((number % 97U) == 0U)
+			oversize = 1U;
+
+		/* The kernel drops events once: the report it cut is not passed on. */
+		if (number == 1234U) {
+			memset(dropped, 0, sizeof(dropped));
+			dropped[0].type = EV_MSC;
+			dropped[0].code = MSC_TIMESTAMP;
+			dropped[0].value = (int32_t)number;
+			dropped[1].type = EV_SYN;
+			dropped[1].code = SYN_DROPPED;
+			if (write(panel->touch, dropped, sizeof(dropped)) != (ssize_t)sizeof(dropped))
+				exit(2);
+			panel_report(panel->touch, 0U, 0U, 2U);
+		} else {
+			panel_report(panel->touch, number, fingers, oversize);
+		}
+		pen_report(panel->pen, number);
+	}
+
+	/* Every report is written. */
+	return NULL;
+}
+
+/*
+ * Writes one touch screen report numbered in its MSC_TIMESTAMP: each
+ * finger's slot, number and place, then BTN_TOUCH and the first finger's
+ * ABS_X and ABS_Y.  Oversize 1 makes it too large to hold (17 fingers);
+ * oversize 2 writes only the end of a report the kernel cut.
+ */
+static void
+panel_report(
+	int descriptor,
+	unsigned number,
+	unsigned fingers,
+	unsigned oversize)
+{
+	struct input_event events[80];
+	struct pollfd room;
+	unsigned count;
+	unsigned finger;
+	uint64_t now;
+
+	/* A too large report has 17 fingers. */
+	if (oversize == 1U)
+		fingers = 17U;
+
+	/* Its time, then each finger. */
+	memset(events, 0, sizeof(events));
+	count = 0U;
+	if (oversize != 2U) {
+		events[count].type = EV_MSC;
+		events[count].code = MSC_TIMESTAMP;
+		events[count].value = (int32_t)number;
+		count++;
+	}
+	for (finger = 0U; finger < fingers; finger++) {
+		events[count].type = EV_ABS;
+		events[count].code = ABS_MT_SLOT;
+		events[count].value = (int32_t)finger;
+		count++;
+		events[count].type = EV_ABS;
+		events[count].code = ABS_MT_TRACKING_ID;
+		events[count].value = (int32_t)(finger + 1U);
+		count++;
+		events[count].type = EV_ABS;
+		events[count].code = ABS_MT_POSITION_X;
+		events[count].value = (int32_t)(number % 10368U);
+		count++;
+		events[count].type = EV_ABS;
+		events[count].code = ABS_MT_POSITION_Y;
+		events[count].value = (int32_t)(number % 6912U);
+		count++;
+	}
+
+	/* The button and the first finger's place, then the report's end. */
+	if (oversize != 2U) {
+		events[count].type = EV_KEY;
+		events[count].code = BTN_TOUCH;
+		events[count].value = 1;
+		count++;
+		events[count].type = EV_ABS;
+		events[count].code = ABS_X;
+		events[count].value = (int32_t)(number % 10368U);
+		count++;
+		events[count].type = EV_ABS;
+		events[count].code = ABS_Y;
+		events[count].value = (int32_t)(number % 6912U);
+		count++;
+	}
+	events[count].type = EV_SYN;
+	events[count].code = SYN_REPORT;
+	count++;
+
+	/* Stamped now, written in one piece when the pipe has room. */
+	now = kwl_microseconds();
+	for (finger = 0U; finger < count; finger++) {
+		events[finger].time.tv_sec = (time_t)(now / 1000000U);
+		events[finger].time.tv_usec = (suseconds_t)(now % 1000000U);
+	}
+	room.fd = descriptor;
+	room.events = POLLOUT;
+	(void)poll(&room, 1, -1);
+	if (write(descriptor, events, count * sizeof(events[0])) != (ssize_t)(count * sizeof(events[0]))) {
+		perror("write");
+		exit(2);
+	}
+}
+
+/* Writes one pen report numbered in its ABS_X: the place, the pressure and the pen near. */
+static void
+pen_report(
+	int descriptor,
+	unsigned number)
+{
+	struct input_event events[5];
+	struct pollfd room;
+	unsigned index;
+	uint64_t now;
+
+	/* The report. */
+	memset(events, 0, sizeof(events));
+	events[0].type = EV_ABS;
+	events[0].code = ABS_X;
+	events[0].value = (int32_t)number;
+	events[1].type = EV_ABS;
+	events[1].code = ABS_Y;
+	events[1].value = (int32_t)(number % 17280U);
+	events[2].type = EV_ABS;
+	events[2].code = ABS_PRESSURE;
+	events[2].value = (int32_t)(number % 4096U);
+	events[3].type = EV_KEY;
+	events[3].code = BTN_TOOL_PEN;
+	events[3].value = 1;
+	events[4].type = EV_SYN;
+	events[4].code = SYN_REPORT;
+
+	/* Stamped now, written in one piece when the pipe has room. */
+	now = kwl_microseconds();
+	for (index = 0U; index < 5U; index++) {
+		events[index].time.tv_sec = (time_t)(now / 1000000U);
+		events[index].time.tv_usec = (suseconds_t)(now % 1000000U);
+	}
+	room.fd = descriptor;
+	room.events = POLLOUT;
+	(void)poll(&room, 1, -1);
+	if (write(descriptor, events, sizeof(events)) != (ssize_t)sizeof(events)) {
+		perror("write");
+		exit(2);
+	}
+}
+
+/*
+ * Takes the queue as the main thread does until an event of a kind of a
+ * device comes, waiting at most wait_ms; the events are freed.  Reports
+ * whether it came.
+ */
+static int
+take_until(
+	struct kwl_input_thread *input,
+	int wake,
+	unsigned slot,
+	enum kwl_input_event_kind kind,
+	unsigned wait_ms)
+{
+	struct kwl_input_event *events;
+	struct kwl_input_event *event;
+	struct pollfd ready;
+	uint64_t deadline;
+	unsigned char drained[64];
+	int seen;
+
+	/* Woken by the input thread until the event or the deadline. */
+	seen = 0;
+	deadline = kwl_milliseconds() + wait_ms;
+	while (!seen && kwl_milliseconds() < deadline) {
+		ready.fd = wake;
+		ready.events = POLLIN;
+		(void)poll(&ready, 1, 10);
+		while (read(wake, drained, sizeof(drained)) > 0)
+			;
+
+		/* The events taken, the one looked for noted. */
+		events = kwl_input_thread_take(input);
+		while (events != NULL) {
+			event = events;
+			events = event->next;
+			if (event->slot == slot && event->kind == kind)
+				seen = 1;
+			free(event);
+		}
+	}
+
+	/* Succeeded: whether the event came in time. */
+	return seen;
 }

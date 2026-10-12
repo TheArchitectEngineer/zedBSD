@@ -825,7 +825,7 @@ kwl_compose_quiesce(
 	error = kwl_compose_complete(server);
 	kwl_perf_vk_outside(server, kwl_cycles() - mark);
 	if (error != 0) {
-		printf("KWL FAILED site=compose_poll errno=%d\n", error);
+		kwl_fatal("KWL FAILED site=compose_poll errno=%d", error);
 		server->failed = 1;
 	}
 }
@@ -1017,8 +1017,7 @@ kwl_compose_park(
 	/* The thread's answer, or the end. */
 	error = kwl_render_park(&compose->render, 2000U);
 	if (error != 0) {
-		printf("KWL FAILED site=park errno=%d\n", error);
-		fflush(stdout);
+		kwl_fatal("KWL FAILED site=park errno=%d thread=render depth=%u", error, compose->park_depth);
 		_exit(1);
 	}
 
@@ -1096,6 +1095,7 @@ kwl_compose_forget(
 	result = vkCreateSemaphore(compose->device, &semaphore, NULL, &compose->acquired);
 	if (result != VK_SUCCESS) {
 		printf("KWL VULKAN_ERROR operation=acquire-semaphore result=%d\n", (int)result);
+		kwl_fatal("KWL FAILED site=acquire-semaphore errno=%d result=%d", EIO, (int)result);
 		server->failed = 1;
 	}
 }
@@ -3455,7 +3455,7 @@ compose_message(
 
 		/* Any other failure ends the compositor. */
 		printf("KWL VULKAN_ERROR operation=acquire result=%d\n", (int)result);
-		printf("KWL FAILED site=compose_draw errno=%d\n", EIO);
+		kwl_fatal("KWL FAILED site=compose_draw errno=%d operation=acquire result=%d", EIO, (int)result);
 		server->failed = 1;
 		break;
 	case KWL_RENDER_COMPLETED:
@@ -3499,7 +3499,7 @@ compose_completed(
 		compose->frame_bake = 0U;
 		kwl_heads_frame_skipped(server);
 		printf("KWL VULKAN_ERROR operation=submit result=%d\n", (int)outcome->result);
-		printf("KWL FAILED site=compose_draw errno=%d\n", EIO);
+		kwl_fatal("KWL FAILED site=compose_draw errno=%d operation=submit result=%d", EIO, (int)outcome->result);
 		server->failed = 1;
 		return;
 	}
@@ -3617,7 +3617,7 @@ compose_frame_presented(
 	/* Any other failure of the present is the compositor's. */
 	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
 		printf("KWL VULKAN_ERROR operation=present result=%d\n", (int)result);
-		printf("KWL FAILED site=compose_draw errno=%d\n", EIO);
+		kwl_fatal("KWL FAILED site=compose_draw errno=%d operation=present result=%d", EIO, (int)result);
 		server->failed = 1;
 	}
 }

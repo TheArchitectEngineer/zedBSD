@@ -209,8 +209,7 @@ kwl_cursor_plane_close(
 	/* The thread ends after its copies. */
 	error = kwl_cursor_thread_stop(cursor);
 	if (error != 0) {
-		printf("KWL FAILED site=park errno=%d\n", error);
-		fflush(stdout);
+		kwl_fatal("KWL FAILED site=park errno=%d thread=cursor step=stop", error);
 		_exit(1);
 	}
 
@@ -378,8 +377,7 @@ kwl_cursor_plane_hold(
 	/* The thread's answer, or the end. */
 	error = kwl_cursor_thread_park(&server->cursor_box, 1U, PLANE_PARK_WAIT_MS);
 	if (error != 0) {
-		printf("KWL FAILED site=park errno=%d\n", error);
-		fflush(stdout);
+		kwl_fatal("KWL FAILED site=park errno=%d thread=cursor step=hold", error);
 		_exit(1);
 	}
 
