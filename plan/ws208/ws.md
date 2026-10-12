@@ -3,12 +3,12 @@
 # WS208: arm64 の HAL の SMP（Raspberry Pi 4 の 4 core）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-13 P6: main を統合、p002〜p004 実装済み。T1 の QEMU と Pi の実機 p005 待ち）
+Status: incomplete（2026-10-13 P6: p007 で Pi の 4 core の固まりの検出（stall watch）と SMP の 2 つの直し。Pi の再現待ち）
 Primary Milestone: MG008
 Related Milestones: MG006
 Parent: [Master](../master.md)
 Queue: [P2 の lane](../agents/P2/queue.md)
-Resume point: T1 の QEMU raspi4b（4 core・`cpus=1`）と Pi の実機 p005 の結果、main への merge（[p004](phase004/phase.md) の「main の統合」）。
+Resume point: [p007](phase007/phase.md) の vmunix（全部入り・watch だけ）で Pi の arrange の再現、その後 p005。
 <!-- awesome-plan-current:end -->
 
 ## 由来
