@@ -1512,7 +1512,9 @@ apply_motion(
  * its lag from the report's evdev time to the write, the lag beyond the
  * reports' own spacing, and the time since the previous write while the
  * pointer moves.  A lag over a refresh is logged (at most 20 lines a
- * window) for comparison with the kernel's hold_us lines.
+ * window) with where the input thread spent it (when its poll began and
+ * returned, when the read returned), for comparison with the kernel's
+ * hold_us lines.
  */
 static void
 box_measure(
@@ -1578,10 +1580,13 @@ box_measure(
 	if (perf->box_lag_lines >= 20U)
 		return;
 	perf->box_lag_lines++;
-	printf("KWL CURSOR_LAG event_us=%llu write_us=%llu lag_us=%llu\n",
+	printf("KWL CURSOR_LAG event_us=%llu write_us=%llu lag_us=%llu poll_entered_us=%llu poll_returned_us=%llu read_us=%llu\n",
 	       (unsigned long long)motion->event_us,
 	       (unsigned long long)motion->write_us,
-	       (unsigned long long)lag);
+	       (unsigned long long)lag,
+	       (unsigned long long)motion->poll_entered_us,
+	       (unsigned long long)motion->poll_returned_us,
+	       (unsigned long long)motion->read_us);
 }
 
 /* Hands a live device's descriptor to the input thread, with what it needs to read it. */

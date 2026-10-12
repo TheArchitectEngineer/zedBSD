@@ -142,3 +142,48 @@ Phase disposition: normal
 ## WS214 からの伝達（2026-10-12 Q1）
 
 - WS214（窓を HVS の plane に載せる）p001 第 3 版の 5.8 で、この WS の不変条件「C は自分専用の swapchain だけを使う」（p001 3.2）を変える: drag の間、窓の plane の swapchain の持ち主を R と C の間で entered・took・given の message で移す（C だけを止めて ack、park は使わない）。WS214 p005 の実装の時に WS213 の 3.2 の文と試験を合わせる。文案は [plan/ws214/phase001/phase.md](../../ws214/phase001/phase.md) の 5.8。
+
+### place23 の box_lag と pass_max の切り分け（2026-10-12 P4、Pi の log を読んだ。Pi での新しい実測ではない）
+
+読んだ物: Q1 が写した place23 の 2 回（`p23b`: 1024×600、`res480`: 解像度を変えた回）の session.log・kernel.log・kwl.log。
+
+**数字**（5 秒の窓、pointer が動いた窓だけ）:
+
+| 回 | 窓 | box_lag_p99_us（ms） | box_lag_max（ms） | p99 ≤ 16.7 | max ≤ 16.7 | pass_max（ms、起動の窓を除く） | vk_outside_max（ms） |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| p23b | 8 | 21, 11, 16, 19, 20, 17, 30, 21 | 36, 11, 18, 27, 31, 18, 30, 26 | 2/8 | 1/8 | 21.6, 18.2, 20.9, 33.7, 36.5, 36.2, 36.1, 39.3 | 0.1〜14.6 |
+| res480 | 13 | 1, 13, 21, 9, 23, 17, 11, 10, 9, 13, 16, 9, 15 | 2, 18, 25, 9, 50, 23, 13, 16, 16, 20, 17, 10, 15 | 10/13 | 7/13 | 12.3〜83.6（70.0・51.5・83.6 は zterm と client 5 の起動の窓） | 0.1〜69.7 |
+
+- `KWL CURSOR_LAG`（16.7ms 超え）は 38 行（p23b 23、res480 15）、17〜50ms。**同じ `write_us` に 2〜3 個の報告がまとまる**（例 p23b: event 66605・66613・66620 が全部 write 66641）。I がその間 1 度も受け箱を書かず、戻った時にまとめて処理した。
+- **その間も kernel の HID の worker（kernel thread）は動いていた**: 報告の時刻（`usb-hid.c` の完了の時刻）は 7〜8ms おきに並び、HID の worker は報告ごとに URB を出し直す（`usb-hid.c:1200`）ので、worker は各報告の後に走っている。CPU も割り込みも止まっていない。
+- 同じ時に C も止まっている（p23b: present 66609 の次が 66655、kwl.log の `VK CURSOR ticket=305` は set の後 done まで 34ms）。compositor の user の thread（I と C）がそろって進まず、kernel thread は進む。
+- R と M の印との重なり（38 行のうち）: R の長い `vkQueueSubmit`（recorded→queued 26〜90ms）の間 4、長い `vkQueuePresentKHR`（queued→submit 29〜51ms）の間 4、直前 40 行に新しい client の buffer の `VULKAN_IMPORT` 9。残りの約 23 は M・R の印が無く、コマの shown（client への frame callback、client の描画）の直後。kernel の v3d の 2 秒の窓（時刻が無いので位置は ±2 秒）の `hold_us decode` は lag のある窓で 24〜48ms、無い窓でも 19〜62ms で、対応ははっきりしない。
+
+**kernel の source から（読んだ。測ってはいない）**:
+
+1. **1 core の同じ優先度の順番**（`src/kern/sched.c`）: user の thread も v3d の worker・executor も HID の worker も `SCHED_PRIORITY_DEFAULT`、quantum 10 tick。起きた thread は `woken` の列（`run` より先）に入り `cpu->preempt` を立て、次の tick で列の頭が走る。ただし (a) `sched_yield`・`sched_preempt` は切り替えるたびに `cpu->preempt = 0` にする（`sched.c:656` など）ので、`woken` に残った thread は走っている thread が眠るか quantum（最大 10ms）を使い切るまで待つ。(b) 起床で横取りされた thread は `run` の頭に戻り、`woken` が空になるまで走らない。`poll_notify`（`src/kern/poll.c`）は system 全体の 1 本の待ち行列を全部起こす（入力・pipe・socket の変化ごとに全部の `poll` が起きる）ので、`woken` は絶えず埋まる。CPU を使い続ける起きた thread（M の pass 14〜21ms、R の記録、v3d の worker の decode 20〜60ms、client の描画: kwl.log の `ZSETTINGS SLOW-FRAME draw=94〜219`）がそれぞれ最大 1 quantum ずつ I の前に走り得る。
+2. **user の写しの global な lock**: copyin・copyout（I の `poll` の pollfd、`read` の event）は毎回 `vm_metadata_enter()`（system 全体の 1 つの mutex）と process の `vm->lock` を取る（`vmspace_check`、`src/kern/vmspace.c:3021-3041`）。fault・mmap・munmap・pin・fork・exec もこの mutex を取る（`vmspace.c` の 49 か所）。`mutex_unlock` は待ち手を 1 つ起こすだけで持ち主を渡さない（`src/kern/lock.c:361-394`）ので、mutex を繰り返し取る thread（新しい 2MB の buffer に描く client の fault、import の pin）がいると、起きた I が取り損ね続け得る。HID の worker は user の memory を写さないので影響を受けない（観察と合う）。
+
+**結論**:
+
+- box_lag の 17〜50ms は **kernel の側**（1 core の同じ優先度の thread の順番と、user の写しの global な lock のどちらか、または両方）。I は自分の thread で M を待たない（受け箱の lock の区間は数 µs）ので **M の止まりではない**。app の起動の窓に限らず場面 (2)(3) にも出るので **app の起動だけでもない**。4 つの分類では「1 core の preempt の遅れ」と「kernel の長い transaction（lock）」で、今の log ではこの 2 つを分けられない。
+- p99 ≤ 16.7ms（必達）は p23b で 2/8、res480 で 10/13 の窓。最長 ≤ 16.7ms は 1/8 と 7/13。**今の kernel のまま userland で直せる所は見つからなかった**（優先度を使わずに I の待ちを短くする手は、下の K-1 のような kernel の順番の変更か、I の読みを global な poll から外す設計の変更（device ごとの blocking read の thread、外しの ack の設計を変える）で、どちらも p001 の設計の外）。
+- **WS211 p010 の object の hash の効果の見込み**: v3d の worker の decode の CPU 時間（`hold_us decode`）が減るので、上の 1 の「CPU を使い続ける起きた thread」の 1 つが短くなる。原因が 1 なら最長の一部（decode と重なった 8 行程度）が縮む見込み。2 が原因の分と、client の描画・M の pass が前に並ぶ分には効かない。
+- **`pass_max_us=401327`**（p23b）と `436631`（res480）は**どちらも最初の窓の 1 回で、起動の出力の open**（`HANDOFF go=1 at_ms=17159` から最初のコマの walk `at_us=17469000` まで: `output-pipelines` 74ms、`output-swapchain` 14ms、`output-targets` 17ms、`MODE window switch_ms=221`）。場面 (1)〜(4) の外。場面の窓の pass_max は p23b で 18〜39ms（33.3ms 超えが 4 窓）、res480 で 12〜84ms（app の起動の窓の 51・70・84ms は新しい client の buffer の import の `vk_outside` 69〜70ms と重なる）。**pass の時間は壁の時計**（`kwl_cycles` の差）なので、M が 1 core で他の thread に横取りされた時間も入る。
+- 直した物（userland、診断だけ。動作は変えない）:
+  1. `KWL SLOW_PASS us= at_ms= input_us= clients_us= frame_done_us= schedule_us= flush_us= other_us= | adopt_us= shm_us= cursor_us= layers_us= draw_us= | walk_us= vk_outside_us= frame=`: M の 1 pass が 33.3ms 以上の時に部分ごとの時間（窓に 10 行まで、main.c の `perf_pass_end`）。次の Pi で場面の pass_max の原因が読める（部分の和が pass より短ければ、残りは M が横取りされた時間）。
+  2. `KWL CURSOR_LAG` に I の時刻 `poll_entered_us= poll_returned_us= read_us=`（I の pass の poll の始め・戻り、報告を読んだ read の戻り）。`poll_returned − event` が大きければ I の起きる遅れ（上の 1、または poll の中の copyin・copyout の lock）、`read − poll_returned` が大きければ read の中（copyout の lock か横取り）、`write − read` が大きければ受け箱の lock（userland）、`poll_entered > event` なら I は前の pass の途中だった。
+- 確かめ（host）: 4 本の host 試験 PASS（plain と TSan）。build warning 0（rpi4・amd64・keiland-linux）。SHA は agent/p4 の 6d998f0bc（SLOW_PASS）・635f74272（I の時刻）。
+
+**kernel の変更の設計（実装は Q1 の指示の後。kernel は P4 の範囲の外）**:
+
+- **K-D（診断、動作は変えない）**: (1) `SCHED_WAKE_LATENCY=1` の build（今ある同じ CPU の起床の遅れの histogram、`sched.c:35-110`）。(2) 横取りされた thread が `run` に戻ってから再び走るまでの時間の最長と、その thread の pid・tid（`sched_preempt` の requeue の時刻を thread に残し、`pick_next_locked` で差を取る）。(3) `metadata_lock` の持った時間の最長と持ち主の呼び出し元（`__builtin_return_address`）、待った時間の最長。(2)(3) を v3d の perf の行と同じ 2 秒ごとに 1 行。次の Pi の 1 boot で、`KWL CURSOR_LAG` の新しい欄と合わせて 1 と 2 を分ける。
+- **K-1（sched、1 が原因なら）**: (a) 切り替えの後も、走る thread の優先度以上の `woken` が残っていれば `cpu->preempt` を立てたままにする（次の tick で次の起きた thread が走る）。(b) 起きてから 1 tick を使う前に横取りされた thread は `run` の頭ではなく `woken` の頭に戻す（起床の順を保つ。1 tick 以上走った thread は今どおり `run`）。効果: 起きた thread は前に並ぶ起きた thread 1 つにつき最大 1 tick で走る。危険: 起き続ける thread どうしの順の公平さ（quantum の扱いは今のまま）。
+- **K-2（lock、2 が原因なら）**: copyin・copyout の範囲の確かめを `metadata_lock` なしで（process の `vm->lock` だけ、またはその読み側で）行う。小さい一歩として `mutex_unlock` の持ち主の受け渡し（待ち手がいれば owner を渡す）。どちらも VM の不変条件の review が要る。
+- 代わりの userland の設計（p001 の外、Q1 とユーザーの判断）: I の device の読みを global な poll から外す（device ごとの blocking read の thread。device の waitq（`input.c` の `waitq_wake_all(&device->waitq)`）は `poll_notify` の前に起きるので、herd より先に並ぶ）。外しの ack（blocking read を止める手段）を設計し直す必要がある。
+- p004 の判定に要る Q1 の判断: 最長（と p99 の未達の窓）の原因は kernel への依存（p004 の「依存と再開の条件」の 2 項目）として uncleared にするか、K-D の 1 boot の後に決めるか。
+
+### T1 と Pi で見る事（追加、2026-10-12 P4）
+
+- Pi: `KWL SLOW_PASS` の行（場面ごとに、どの部分が長いか、部分の和と `us` の差）、`KWL CURSOR_LAG` の `poll_entered_us`・`poll_returned_us`・`read_us`（上の読み方）。kernel の K-D が入っていればその行と並べる。
+- T1: 行が増えただけ（動作は同じ）。`KWL SLOW_PASS` が i915・Venus で出ても判定には使わない。

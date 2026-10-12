@@ -52,6 +52,10 @@ static void perf_walk_report(const struct kwl_perf *perf, double per_ms);
 static void perf_walk_class(const struct kwl_perf *perf, double per_ms, const char *name, uint32_t lowest, uint32_t highest, unsigned quiet, unsigned replay);
 static int perf_cycles_order(const void *left, const void *right);
 static void perf_pass_report(struct kwl_perf *perf, double per_ms);
+static void perf_pass_begin(struct kwl_server *server);
+static void perf_pass_end(struct kwl_server *server, uint64_t cycles);
+static void perf_parts_take(const struct kwl_perf *perf, struct kwl_perf_parts *parts);
+static uint64_t perf_part_us(uint64_t cycles, uint64_t pass_cycles, uint64_t pass_us);
 static void perf_box_report(struct kwl_perf *perf, const struct kwl_cursor_stats *stats);
 static uint32_t perf_percentile(uint32_t *values, uint32_t count, unsigned percent, uint32_t *largest);
 static int perf_value_order(const void *left, const void *right);
@@ -991,6 +995,9 @@ event_loop(
 		ready = poll(descriptors, count, timeout);
 		server->perf.poll_cycles += kwl_cycles() - mark;
 		mark = kwl_cycles();
+
+		/* The pass's work starts now; its parts are told apart at its end if it runs long (ws213-p004). */
+		perf_pass_begin(server);
 		server->perf.passes++;
 		if (ready == 0)
 			server->perf.timeouts++;
@@ -1148,15 +1155,10 @@ event_loop(
 		/* The last flush's part (KWL PERF main). */
 		server->perf.flush_cycles += kwl_cycles() - part;
 
-		/* The pass's work, and the pass alone for its longest and 99th percentile (ws213-p004). */
+		/* The pass's work, kept for its longest and 99th percentile, and told part by part when it ran long (ws213-p004). */
 		part = kwl_cycles() - mark;
 		server->perf.work_cycles += part;
-		if (part > server->perf.pass_max_cycles)
-			server->perf.pass_max_cycles = part;
-		if (server->perf.pass_count < KWL_PERF_PASSES) {
-			server->perf.pass_cycles[server->perf.pass_count] = part;
-			server->perf.pass_count++;
-		}
+		perf_pass_end(server, part);
 
 		/* The window's lines every five seconds. */
 		kwl_perf_report(server, now);
@@ -1261,6 +1263,9 @@ kwl_perf_vk_outside(
 	struct kwl_server *server,
 	uint64_t cycles)
 {
+	/* The pass's share, for its KWL SLOW_PASS line. */
+	server->perf.pass_vk_outside_cycles += cycles;
+
 	/* The longest of the window. */
 	if (cycles > server->perf.vk_outside_max_cycles)
 		server->perf.vk_outside_max_cycles = cycles;
@@ -1608,6 +1613,126 @@ perf_pass_report(
 	    (double)perf->pass_max_cycles / per_ms * 1000.0,
 	    (double)walk_max / per_ms * 1000.0,
 	    (double)perf->vk_outside_max_cycles / per_ms * 1000.0);
+}
+
+/* Notes the parts' sums and the clock as a pass's work begins. */
+static void
+perf_pass_begin(
+	struct kwl_server *server)
+{
+	/* The sums the pass's own parts are measured from. */
+	perf_parts_take(&server->perf, &server->perf.pass_start);
+	server->perf.pass_start_us = kwl_microseconds();
+
+	/* The pass has done no Vulkan work outside a walk and no walk yet. */
+	server->perf.pass_vk_outside_cycles = 0U;
+	server->perf.pass_walk_cycles = 0U;
+}
+
+/*
+ * Keeps one pass's work for the window's longest and 99th percentile, and
+ * prints a KWL SLOW_PASS line, at most KWL_PERF_SLOW_PASSES a window, for a
+ * pass over two refreshes: its time and when it ended, and its parts in
+ * microseconds (the parts of KWL PERF main, the scheduler's own, and its
+ * walks and Vulkan work outside a walk), so a long pass names its cause.
+ */
+static void
+perf_pass_end(
+	struct kwl_server *server,
+	uint64_t cycles)
+{
+	struct kwl_perf *perf;
+	struct kwl_perf_parts now;
+	struct kwl_perf_parts *start;
+	uint64_t ended_us;
+	uint64_t pass_us;
+	uint64_t parts;
+	uint64_t other;
+
+	/* The pass's work for the window. */
+	perf = &server->perf;
+	if (cycles > perf->pass_max_cycles)
+		perf->pass_max_cycles = cycles;
+	if (perf->pass_count < KWL_PERF_PASSES) {
+		perf->pass_cycles[perf->pass_count] = cycles;
+		perf->pass_count++;
+	}
+
+	/* A pass within two refreshes, or one past the window's lines, is not told apart. */
+	ended_us = kwl_microseconds();
+	pass_us = 0U;
+	if (ended_us > perf->pass_start_us)
+		pass_us = ended_us - perf->pass_start_us;
+	if (pass_us < 33300U || perf->slow_pass_lines >= KWL_PERF_SLOW_PASSES)
+		return;
+	perf->slow_pass_lines++;
+
+	/* The pass's own share of each part, and the rest of its work. */
+	perf_parts_take(perf, &now);
+	start = &perf->pass_start;
+	parts = now.input_cycles - start->input_cycles;
+	parts += now.client_cycles - start->client_cycles;
+	parts += now.frame_done_cycles - start->frame_done_cycles;
+	parts += now.schedule_cycles - start->schedule_cycles;
+	parts += now.flush_cycles - start->flush_cycles;
+	other = 0U;
+	if (cycles > parts)
+		other = cycles - parts;
+
+	/* The line, in microseconds of the pass's clock. */
+	printf("KWL SLOW_PASS us=%llu at_ms=%llu input_us=%llu clients_us=%llu frame_done_us=%llu schedule_us=%llu flush_us=%llu other_us=%llu | adopt_us=%llu shm_us=%llu cursor_us=%llu layers_us=%llu draw_us=%llu | walk_us=%llu vk_outside_us=%llu frame=%llu\n",
+	    (unsigned long long)pass_us,
+	    (unsigned long long)(ended_us / 1000U),
+	    (unsigned long long)perf_part_us(now.input_cycles - start->input_cycles, cycles, pass_us),
+	    (unsigned long long)perf_part_us(now.client_cycles - start->client_cycles, cycles, pass_us),
+	    (unsigned long long)perf_part_us(now.frame_done_cycles - start->frame_done_cycles, cycles, pass_us),
+	    (unsigned long long)perf_part_us(now.schedule_cycles - start->schedule_cycles, cycles, pass_us),
+	    (unsigned long long)perf_part_us(now.flush_cycles - start->flush_cycles, cycles, pass_us),
+	    (unsigned long long)perf_part_us(other, cycles, pass_us),
+	    (unsigned long long)perf_part_us(now.adopt_cycles - start->adopt_cycles, cycles, pass_us),
+	    (unsigned long long)perf_part_us(now.shm_cycles - start->shm_cycles, cycles, pass_us),
+	    (unsigned long long)perf_part_us(now.cursor_cycles - start->cursor_cycles, cycles, pass_us),
+	    (unsigned long long)perf_part_us(now.layers_cycles - start->layers_cycles, cycles, pass_us),
+	    (unsigned long long)perf_part_us(now.draw_cycles - start->draw_cycles, cycles, pass_us),
+	    (unsigned long long)perf_part_us(perf->pass_walk_cycles, cycles, pass_us),
+	    (unsigned long long)perf_part_us(perf->pass_vk_outside_cycles, cycles, pass_us),
+	    (unsigned long long)server->frame);
+}
+
+/* Copies the window's sums of the event loop's parts. */
+static void
+perf_parts_take(
+	const struct kwl_perf *perf,
+	struct kwl_perf_parts *parts)
+{
+	/* The parts of the work after the poll. */
+	parts->input_cycles = perf->input_cycles;
+	parts->client_cycles = perf->client_cycles;
+	parts->frame_done_cycles = perf->frame_done_cycles;
+	parts->schedule_cycles = perf->schedule_cycles;
+	parts->flush_cycles = perf->flush_cycles;
+
+	/* The scheduler's own parts. */
+	parts->adopt_cycles = perf->adopt_cycles;
+	parts->shm_cycles = perf->shm_cycles;
+	parts->cursor_cycles = perf->cursor_cycles;
+	parts->layers_cycles = perf->layers_cycles;
+	parts->draw_cycles = perf->draw_cycles;
+}
+
+/* Scales a part of a pass from cycles to microseconds by the pass's own length on both clocks. */
+static uint64_t
+perf_part_us(
+	uint64_t cycles,
+	uint64_t pass_cycles,
+	uint64_t pass_us)
+{
+	/* A pass of no cycles has no parts. */
+	if (pass_cycles == 0U)
+		return 0U;
+
+	/* The part's share of the pass's microseconds. */
+	return (uint64_t)((double)cycles * (double)pass_us / (double)pass_cycles);
 }
 
 /*

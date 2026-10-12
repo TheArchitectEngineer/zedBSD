@@ -901,6 +901,27 @@ struct kwl_client {
 #define KWL_PERF_BOX		8192U
 #define KWL_PERF_PASSES		8192U
 
+/* The slow passes one KWL PERF window logs (KWL SLOW_PASS, ws213-p004). */
+#define KWL_PERF_SLOW_PASSES	10U
+
+/*
+ * The sums of the event loop's parts as one pass begins (ws213-p004), so
+ * the pass's own share of each is the difference at its end; it lives in
+ * the window's counters and is taken afresh by every pass.
+ */
+struct kwl_perf_parts {
+	uint64_t input_cycles;
+	uint64_t client_cycles;
+	uint64_t frame_done_cycles;
+	uint64_t schedule_cycles;
+	uint64_t flush_cycles;
+	uint64_t adopt_cycles;
+	uint64_t shm_cycles;
+	uint64_t cursor_cycles;
+	uint64_t layers_cycles;
+	uint64_t draw_cycles;
+};
+
 /* Cycle counts of the event loop, reported every few seconds (KWL PERF). */
 struct kwl_perf {
 	uint64_t window_start_ms;
@@ -1011,6 +1032,17 @@ struct kwl_perf {
 	 * vk_outside_max_us, ws213-p004 6.4).
 	 */
 	uint64_t vk_outside_max_cycles;
+	/*
+	 * The pass in progress, for the KWL SLOW_PASS line of a pass over two
+	 * refreshes (ws213-p004): the parts' sums and the clock when it began,
+	 * and its own Vulkan work outside a walk and its walks; then how many
+	 * such lines the window has printed.
+	 */
+	struct kwl_perf_parts pass_start;
+	uint64_t pass_start_us;
+	uint64_t pass_vk_outside_cycles;
+	uint64_t pass_walk_cycles;
+	uint32_t slow_pass_lines;
 };
 
 uint64_t kwl_cycles(void);

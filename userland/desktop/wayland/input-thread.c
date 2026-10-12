@@ -67,6 +67,7 @@ static void input_queue(struct kwl_input_thread *input, struct kwl_input_event *
 static void input_fail(struct kwl_input_thread *input, int error);
 static uint32_t input_event_time(const struct input_event *event);
 static void input_wake(int descriptor);
+static void input_motion_times(const struct kwl_input_thread *input, const struct kwl_input_reader *reader, struct kwl_cursor_motion *motion);
 
 /*
  * Makes the input thread's state: its locks, its wake pipe and its copy of
@@ -261,8 +262,10 @@ kwl_input_thread_step(
 	if (pads && (timeout_ms < 0 || timeout_ms > INPUT_PAD_TICK_MS))
 		timeout_ms = INPUT_PAD_TICK_MS;
 
-	/* The devices' events or the main thread's wake. */
+	/* The devices' events or the main thread's wake, and when the wait began and ended (the box's lag, ws213-p004). */
+	input->poll_entered_us = kwl_microseconds();
 	answered = poll(descriptors, count + 1U, timeout_ms);
+	input->poll_returned_us = kwl_microseconds();
 	if (answered < 0) {
 		error = errno;
 
@@ -785,8 +788,9 @@ input_source_fill(
 		source->reads++;
 		count = input->read(reader->device.fd, source->events, INPUT_READ_EVENTS);
 		if (count > 0) {
-			/* The last input, which a layer's picture drawn in the quiet waits on (layer-cache.c). */
+			/* The last input, which a layer's picture drawn in the quiet waits on (layer-cache.c), and the read's end for the box's lag. */
 			reader->read_ms = kwl_milliseconds();
+			reader->read_us = kwl_microseconds();
 			source->count = (size_t)count;
 			source->next = 0;
 			return 1;
@@ -1001,10 +1005,13 @@ input_frame(
 			frame->placed = 1U;
 			frame->absolute = 1U;
 			kwl_cursor_box_place(input->box, reader->abs_x, reader->device.abs_x_minimum, reader->device.abs_x_maximum, reader->abs_y, reader->device.abs_y_minimum, reader->device.abs_y_maximum, delta_x, delta_y, reader->frame_time_us, &frame->motion);
+			input_motion_times(input, reader, &frame->motion);
 		}
 	} else if (delta_x != 0 || delta_y != 0) {
-		if (frame != NULL)
+		if (frame != NULL) {
 			kwl_cursor_box_move(input->box, delta_x, delta_y, reader->frame_time_us, &frame->motion);
+			input_motion_times(input, reader, &frame->motion);
+		}
 	}
 
 	/* The report goes to the main thread in its order. */
@@ -1090,6 +1097,7 @@ input_pad_actions(
 
 		/* The new place, over the outputs shown (ws113-p007). */
 		kwl_cursor_box_move(input->box, delta_x, delta_y, reader->frame_time_us, &pad->motions[index]);
+		input_motion_times(input, reader, &pad->motions[index]);
 	}
 
 	/* The actions go to the main thread in their order. */
@@ -1266,4 +1274,21 @@ input_wake(
 	do {
 		written = write(descriptor, &byte, 1U);
 	} while (written < 0 && errno == EINTR);
+}
+
+/*
+ * Adds to a motion where its lag went (the KWL CURSOR_LAG line, ws213-p004):
+ * when the pass that read its report began to poll, when the poll returned,
+ * and when the read returned.
+ */
+static void
+input_motion_times(
+	const struct kwl_input_thread *input,
+	const struct kwl_input_reader *reader,
+	struct kwl_cursor_motion *motion)
+{
+	/* The pass's wait and the device's read. */
+	motion->poll_entered_us = input->poll_entered_us;
+	motion->poll_returned_us = input->poll_returned_us;
+	motion->read_us = reader->read_us;
 }
