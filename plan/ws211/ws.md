@@ -40,5 +40,6 @@ Pi 4 で App Home の開閉が目で滑らか（ユーザーの確認）、1 コ
 | [p006](phase006/phase.md) | 窓の drag の移動とマウス移動を 60fps に近づける | in-progress（cursor の present の間隔の直しは main、drag は計測待ち） |
 | [p007](phase007/phase.md) | dock・undock のアニメを窓の絵の拡大縮小にし、終わってから client に描き直させる | in-progress（実装、place16 で Pi 待ち） |
 | [p008](phase008/phase.md) | 窓の小さな更新（Calendar の hover）を client の damage の所だけ描く | in-progress（実装 db55254d4、place23 で Pi 待ち） |
+| [p009](phase009/phase.md) | damage を 1 つの外接の四角でなく複数の四角のまま描く（compositor の四角ごとの scissor、driver は触れる supertile だけを回し、present の写しも変わった箱だけ） | in-progress（実装 e6e7b1a9b・4ec9f16d1、place24 で Pi 待ち） |
 | [p010](phase010/phase.md) | 1 コマの CPU の仕事（kernel の decode の object の探索を O(1)、空の copy の往復を省く、計測） | in-progress（実装 agent/p4、place25 で Pi 待ち） |
 | p004 | 規約の全文の見直し | planned |

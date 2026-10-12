@@ -3,7 +3,7 @@
 # ws211-p009: compositor の damage を、1 つの外接の四角でなく複数の四角のまま描く
 
 Parent: [WS211](../ws.md)
-Status: in-progress（設計・実装、2026-10-12 P3）
+Status: in-progress（実装 agent/p3 e6e7b1a9b（compositor）・4ec9f16d1（driver）、place24 で Pi の確かめ待ち。2026-10-12 P3）
 Phase disposition: normal
 Queue: P3（2026-10-12 Q1 の割り当て）
 
@@ -85,6 +85,26 @@ Queue: P3（2026-10-12 Q1 の割り当て）
 - Pi（Q1 が転送、ユーザーの操作）: 時計の分と Calendar の hover が同時の時の `KWL DAMAGE rects=2`、`v3d: perf` の `tiles` と render・copy の時間、見た目（四角の境目に跡が無いこと、半透明の物が濃くならないこと）。
 - T1（i915・Venus）: WS の最後にまとめて依頼する。
 
-## 結果
+## 結果（2026-10-12 P3）
 
-（実装の後に書く）
+### 実装
+
+- compositor（agent/p3 e6e7b1a9b、main に merge 済み）: D1〜D5 のとおり。`kwl.h`（`KWL_DAMAGE_RECTS`、server の四角の list）、`damage.c`（`kwl_damage_rects_add` と合わせる規則、`probes_damaged` は四角ごと）、`compose.c`（`compose_region` の list、`compose_record` の clip、場面の写しを四角ごと）、`compose-bind.c`（`kwl_compose_clip_visible`・`kwl_compose_clip_draw`）、`glass.c`・`batch.c`（draw の出口、batch の箱）、`backdrop.c`（再開の area）、`scene.c/h`（写しの四角の list）、`draw-list.c/h`（`scissor_serial`）。
+- driver（agent/p3 4ec9f16d1）: D6 のとおり。`native-pass.c/h`（tile の箱、supertile の選び、measure と encode が同じ判定、`bcm2711_native_pass_tiles`）、`vulkan-native-bin.c`・`vulkan-native-draw.h`（draw の clip window を残す）、`vulkan-native-pass.c`（`select_boxes`）、`vulkan-native-execute.c`（書いた箱を箱ごとに、4 つまで）、`v3d-memory.c/h`・`buffer.h`（ring 16、`bcm2711_v3d_memory_changes_boxes`）、`vulkan-native-image.c`（`copy_narrow`、present の写しを変わった箱の tile だけ）、`vulkan-native-job.c`（`v3d: perf` の `tiles=` を実際に回した tile の数に）。HAL・UAPI・libvulkan は変えていない。
+
+### 確かめた事（host と build だけ、Pi は未実施）
+
+- `plan/ws211/tests/damage-host-test.sh`: PASS（p008 の 9 件、2 窓の commit が 2 つの四角、四角の規則 8 件、乱数の 2000 組で「4 つ以内・重ならない・足した四角はどれか 1 つに入る」）。
+- `plan/ws211/tests/native-pass-boxes-host-test.sh`: PASS（800x480 で箱なし 104、時計とセルで 6 supertile、含まれる箱・共有する tile は 1 度、狭い長方形、範囲外・逆・多すぎる箱の拒否、1920x1080 の 2×2 の group で 135 と 5、copy の pass、`bcm2711_native_pass_tiles` 6・20・510）。
+- 既存: `plan/ws141/tests/native-pass-host-test.sh` PASS（XML の oracle）、`plan/ws141/tests/vulkan-device-host-test.sh` PASS（v3d-memory.c を含む）、`plan/ws213/tests/list-replay-host-test.sh` PASS、`plan/ws211/tests/batch-host-test.sh`・`bind-host-test.sh` PASS。
+- build（main 0ebd1eef3 を merge した agent/p3 dbb54a207）: rpi4 の `build/arm64/bin/wayland` と `build/arm64/vmunix`（`-o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete`）で warning 0。amd64・Linux・FreeBSD の build は未実施。
+
+### Pi（place24、未実施）
+
+- scratchpad/place24: `p24-vmunix`（cksum 3193998460）、`p24-wayland`（cksum 1594188947）、`place24.sh`。place25（P4）の内容（WS211 p010 の kernel と compositor）を含み、p009 の driver を足したもの。
+- 見ること: 時計の分と Calendar の hover が同じコマの時の `KWL DAMAGE ... rects=2`、`v3d: perf` の `tiles=`（render と image）と render・copy の時間、見た目（四角の境目の跡、半透明の物の濃さ、cursor の跡が無いこと）。
+
+### 残り
+
+- T1（i915・Venus）の見た目の確かめは WS の最後にまとめて依頼する（scissor を四角ごとに変える draw は i915・Venus でも同じ list の命令）。
+- p010（P4）の命令の使い回しは、部分のコマの命令が四角の scissor を含むことに注意（Q1・P4 に伝達済み）。
