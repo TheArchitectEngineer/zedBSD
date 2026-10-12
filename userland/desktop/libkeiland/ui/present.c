@@ -264,6 +264,10 @@ keiui_present_frame(
 	int clipped;
 	VkResult error;
 
+	/* The frame's steps are timed from now (the trace of the frames); a step not reached stays 0. */
+	memset(&present->stamps, 0, sizeof(present->stamps));
+	present->stamps.started_us = kl_clock_us();
+
 	/* A failed resize left no swapchain or canvas: nothing is shown until one succeeds. */
 	if (present->swapchain == VK_NULL_HANDLE || present->canvas_map == NULL) {
 		present->operation = "keiui_present_frame";
@@ -300,6 +304,7 @@ keiui_present_frame(
 	}
 	present->canvas_whole = 1;
 	present->copy_ms = (unsigned)(keiui_clock_ms() - started);
+	present->stamps.copied_us = kl_clock_us();
 
 	/* What every swapchain image lacks now, the parts written (before anything may fail, ws210-p013 H4). */
 	for (target = 0U; present->copying && target < present->count; target++) {
@@ -312,6 +317,7 @@ keiui_present_frame(
 	present->operation = "vkAcquireNextImageKHR";
 	error = vkAcquireNextImageKHR(present->device, present->swapchain, PRESENT_TIMEOUT, present->acquired, VK_NULL_HANDLE, &image);
 	present->acquire_ms = (unsigned)(keiui_clock_ms() - started);
+	present->stamps.acquired_us = kl_clock_us();
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
 
@@ -349,6 +355,7 @@ keiui_present_frame(
 	submit.pSignalSemaphores = &present->targets[image].rendered;
 	present->operation = "vkQueueSubmit";
 	error = vkQueueSubmit(present->queue, 1U, &submit, present->fence);
+	present->stamps.submitted_us = kl_clock_us();
 	if (error != VK_SUCCESS) {
 		present_stale_all(present);
 		return error;
@@ -388,6 +395,7 @@ keiui_present_frame(
 	present->operation = "vkQueuePresentKHR";
 	error = vkQueuePresentKHR(present->queue, &info);
 	present->present_ms = (unsigned)(keiui_clock_ms() - started);
+	present->stamps.queued_us = kl_clock_us();
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR) {
 		present_stale_all(present);
 		return error;
@@ -398,6 +406,7 @@ keiui_present_frame(
 	present->operation = "vkWaitForFences";
 	error = vkWaitForFences(present->device, 1U, &present->fence, VK_TRUE, PRESENT_TIMEOUT);
 	present->wait_ms = (unsigned)(keiui_clock_ms() - started);
+	present->stamps.finished_us = kl_clock_us();
 	if (error != VK_SUCCESS) {
 		present_stale_all(present);
 		return error;

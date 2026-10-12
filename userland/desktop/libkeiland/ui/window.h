@@ -20,6 +20,7 @@
 #include "declare.h"
 #include "internal.h"
 #include "present-damage.h"
+#include "trace.h"
 
 /* The window's surface is a Wayland one, for Vulkan's surface. */
 #define VK_USE_PLATFORM_WAYLAND_KHR 1
@@ -260,6 +261,9 @@ struct keiui_present {
 	unsigned acquire_ms;
 	unsigned present_ms;
 	unsigned wait_ms;
+
+	/* The times of the last frame's steps, for the trace of the frames (KL_TRACE_FRAMES=1, trace.h). */
+	struct keiui_present_stamps stamps;
 };
 
 /* One wl_shm buffer: its window, the pixels mapped, their size, and whether the compositor still reads it. */
@@ -560,6 +564,15 @@ struct kl_window {
 	unsigned pacing;
 	struct keiui_pace pace;
 	struct wl_callback *pace_callback;
+
+	/*
+	 * The trace of the window's frames (the diagnostic KL_TRACE_FRAMES=1,
+	 * trace.h): made with the first frame shown when it is asked for
+	 * (trace_checked: the environment was read), NULL otherwise; each
+	 * frame traced awaits a frame callback of its own.
+	 */
+	struct keiui_trace *trace;
+	int trace_checked;
 
 	/*
 	 * The declarative menus, controls and glass (window-declare.c): the

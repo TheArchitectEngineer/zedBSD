@@ -124,6 +124,10 @@ static int window_pace_ask(struct kl_window *window);
 static void window_pace_shown(struct kl_window *window, int asked, int error);
 static void window_pace_forget(struct kl_window *window);
 static void window_paced(void *data, struct wl_callback *callback, uint32_t time);
+static struct keiui_trace_frame *window_trace_begin(struct kl_window *window);
+static void window_trace_end(struct kl_window *window, struct keiui_trace_frame *frame, const struct kl_rect *parts, unsigned count, int error);
+static void window_trace_close(struct kl_window *window);
+static void window_traced(void *data, struct wl_callback *callback, uint32_t time);
 
 /*
  * The globals a window on another's connection finds through a registry of
@@ -153,6 +157,11 @@ static const struct wl_callback_listener woken_listener = {
 /* The frame callback of a window that paces its frames (KL_PACING_FRAME). */
 static const struct wl_callback_listener paced_listener = {
 	window_paced
+};
+
+/* The frame callback of a frame traced (KL_TRACE_FRAMES=1). */
+static const struct wl_callback_listener traced_listener = {
+	window_traced
 };
 
 /* The registry's callbacks, for as long as the registry lives. */
@@ -273,8 +282,9 @@ kl_window_close(
 	kl_keyboard_inset_destroy(window->inset);
 	keiui_edit_close(window);
 
-	/* The frame callback awaited, then the presenter, before the surface they show on. */
+	/* The frame callbacks awaited, then the presenter, before the surface they show on. */
 	window_pace_forget(window);
+	window_trace_close(window);
 	if (window->present == KL_PRESENT_VULKAN)
 		keiui_present_close(&window->vulkan);
 	keiui_shm_close(window);
@@ -705,12 +715,16 @@ kl_window_frame_wait(
 {
 	int wait;
 
-	/* A window that does not pace its frames draws whenever it likes. */
-	if ((window->pacing & KL_PACING_FRAME) == 0U)
-		return 0;
+	/* A window that does not pace its frames draws whenever it likes; else as the pace stands now. */
+	wait = 0;
+	if ((window->pacing & KL_PACING_FRAME) != 0U)
+		wait = keiui_pace_wait(&window->pace, now_us);
 
-	/* As the pace stands now. */
-	wait = keiui_pace_wait(&window->pace, now_us);
+	/* The answer, for the trace of the frames: a wait begins, or the frame is drawn from now. */
+	if (window->trace != NULL)
+		keiui_trace_answer(window->trace, wait, now_us, window->pointer_x, window->pointer_y);
+
+	/* Reports when the frame may be drawn. */
 	return wait;
 }
 
@@ -758,6 +772,7 @@ kl_window_present_parts(
 	const struct kl_rect *parts,
 	unsigned count)
 {
+	struct keiui_trace_frame *traced;
 	VkResult result;
 	int asked;
 	int error;
@@ -766,13 +781,15 @@ kl_window_present_parts(
 	if (window->present != KL_PRESENT_SHM && window->present != KL_PRESENT_VULKAN)
 		return EINVAL;
 
-	/* A window that paces its frames hears when the compositor takes this one (before it is committed). */
+	/* A window that paces its frames hears when the compositor takes this one (before it is committed); so does one traced. */
 	asked = window_pace_ask(window);
+	traced = window_trace_begin(window);
 
 	/* Shared memory. */
 	if (window->present == KL_PRESENT_SHM) {
 		error = keiui_shm_present(window, pixels, stride);
 		window_pace_shown(window, asked, error);
+		window_trace_end(window, traced, parts, count, error);
 		if (error != 0)
 			return error;
 		return 0;
@@ -783,16 +800,19 @@ kl_window_present_parts(
 	error = errno;
 	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
 		window_pace_shown(window, asked, EAGAIN);
+		window_trace_end(window, traced, parts, count, EAGAIN);
 		return EAGAIN;
 	}
 	if (result != VK_SUCCESS) {
 		window_pace_shown(window, asked, EIO);
+		window_trace_end(window, traced, parts, count, EIO);
 		window_present_tell(window, "kl_window_present", result, error);
 		return EIO;
 	}
 
 	/* Succeeded: the frame is shown. */
 	window_pace_shown(window, asked, 0);
+	window_trace_end(window, traced, parts, count, 0);
 	return 0;
 }
 
@@ -1786,6 +1806,10 @@ window_push(
 	event->arrival_us = kl_clock_us();
 	event->time_us = event->arrival_us;
 
+	/* One input more for the trace of the frames. */
+	if (window->trace != NULL)
+		keiui_trace_input(window->trace, event->arrival_us, 0);
+
 	/* The owner of a window on another's connection hears of it after the events being run. */
 	keiui_window_wake(window);
 
@@ -2164,14 +2188,23 @@ window_pointer_motion(
 		event->arrival_us = kl_clock_us();
 		event->time_us = event->arrival_us;
 		keiui_window_stamp(event, time);
+		if (window->trace != NULL) {
+			keiui_trace_input(window->trace, event->arrival_us, 1);
+			keiui_trace_stamp(window->trace, event->time_us);
+		}
 		keiui_window_wake(window);
 		return;
 	}
 
 	/* The new place, as a motion at the compositor's time (libkeiui's version 11: a stroke's samples keep their times). */
 	event = window_push(window, KL_WINDOW_MOTION);
-	if (event != NULL)
-		keiui_window_stamp(event, time);
+	if (event == NULL)
+		return;
+	keiui_window_stamp(event, time);
+
+	/* The compositor's time of the motion, for the trace of the frames. */
+	if (window->trace != NULL)
+		keiui_trace_stamp(window->trace, event->time_us);
 }
 
 /* A pointer button is pressed or let go. */
@@ -3012,4 +3045,132 @@ window_paced(
 
 	/* The owner of a window on another's connection hears of it after the events being run. */
 	keiui_window_wake(window);
+}
+
+/*
+ * Begins the trace of a frame about to be shown (the diagnostic
+ * KL_TRACE_FRAMES=1, read with the first frame): its slot, with a frame
+ * callback asked for on the surface's next commit.  NULL when the frames
+ * are not traced.
+ */
+static struct keiui_trace_frame *
+window_trace_begin(
+	struct kl_window *window)
+{
+	struct keiui_trace_frame *frame;
+	struct wl_callback *callback;
+	const char *value;
+	int status;
+	int same;
+
+	/* The environment, read once: the trace is made when it is asked for by "1". */
+	if (!window->trace_checked) {
+		window->trace_checked = 1;
+		value = getenv("KL_TRACE_FRAMES");
+		same = 1;
+		if (value != NULL)
+			same = strcmp(value, "1");
+		if (same == 0)
+			window->trace = calloc(1, sizeof(*window->trace));
+	}
+
+	/* Frames not traced. */
+	if (window->trace == NULL)
+		return NULL;
+
+	/* The frame's slot; the callback of an older frame told without its answer goes. */
+	frame = keiui_trace_open(window->trace, kl_clock_us());
+	if (frame->callback != NULL)
+		wl_callback_destroy(frame->callback);
+	frame->callback = NULL;
+
+	/* The callback, on the surface's next commit (the frame's, unless the window system commits an older one first). */
+	callback = wl_surface_frame(window->surface);
+	if (callback == NULL)
+		return frame;
+	status = wl_callback_add_listener(callback, &traced_listener, frame);
+	if (status != 0) {
+		wl_callback_destroy(callback);
+		return frame;
+	}
+
+	/* Succeeded: the frame awaits its answer. */
+	frame->callback = callback;
+	return frame;
+}
+
+/*
+ * Ends the trace of a frame's showing (error 0 when shown): a frame not
+ * shown awaits no answer.
+ */
+static void
+window_trace_end(
+	struct kl_window *window,
+	struct keiui_trace_frame *frame,
+	const struct kl_rect *parts,
+	unsigned count,
+	int error)
+{
+	const struct keiui_present_stamps *stamps;
+	uint64_t area;
+
+	/* Frames not traced. */
+	if (frame == NULL)
+		return;
+
+	/* A frame not shown: its callback would wait for a later commit. */
+	if (error != 0 && frame->callback != NULL) {
+		wl_callback_destroy(frame->callback);
+		frame->callback = NULL;
+	}
+
+	/* The presenter's times (Vulkan's), and the whole frame's pixels. */
+	stamps = NULL;
+	area = (uint64_t)window->width * (uint64_t)window->height;
+	if (window->present == KL_PRESENT_VULKAN) {
+		stamps = &window->vulkan.stamps;
+		area = (uint64_t)window->vulkan.extent.width * (uint64_t)window->vulkan.extent.height;
+	}
+
+	/* The frame's showing, told now when it awaits no answer. */
+	keiui_trace_shown(window->trace, frame, stamps, parts, count, area, error, kl_clock_us());
+}
+
+/* Stops the trace of the frames (the window closes): the frames awaiting their answers are told without them. */
+static void
+window_trace_close(
+	struct kl_window *window)
+{
+	unsigned index;
+
+	/* Frames not traced. */
+	if (window->trace == NULL)
+		return;
+
+	/* The callbacks awaited. */
+	for (index = 0U; index < KEIUI_TRACE_FRAMES; index++) {
+		if (window->trace->slots[index].callback != NULL)
+			wl_callback_destroy(window->trace->slots[index].callback);
+		window->trace->slots[index].callback = NULL;
+	}
+
+	/* The frames told, then the trace. */
+	keiui_trace_flush(window->trace);
+	free(window->trace);
+	window->trace = NULL;
+}
+
+/* The compositor took a traced frame: its line is told. */
+static void
+window_traced(
+	void *data,
+	struct wl_callback *callback,
+	uint32_t time)
+{
+	struct keiui_trace_frame *frame;
+
+	/* The callback is used up; the frame is told with the answer. */
+	frame = data;
+	wl_callback_destroy(callback);
+	keiui_trace_done(frame, kl_clock_us(), time);
 }
