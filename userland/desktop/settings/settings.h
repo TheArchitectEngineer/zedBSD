@@ -45,6 +45,11 @@
 #define SE_TITLEBAR_TEXT	1024
 #define SE_TITLEBAR_PART	65
 
+/* What se_fields_input tells of a pointer's move or leaving: nothing to draw, a part, or the whole frame. */
+#define SE_FIELDS_NOTHING	0
+#define SE_FIELDS_PART		1
+#define SE_FIELDS_WHOLE		2
+
 /* How many parts the breadcrumb has at most: Settings and the page. */
 #define SE_CRUMBS		2
 
@@ -1291,6 +1296,15 @@ struct se_app {
 	int hover_pending;
 	struct kl_rect hover_damage;
 
+	/*
+	 * What the last frame drawn changed (BUG-226): frame_partial when it
+	 * was drawn only within frame_part (the lit regions), and the window
+	 * is then shown by that part alone (kl_window_present_part); 0 for a
+	 * frame drawn whole.
+	 */
+	int frame_partial;
+	struct kl_rect frame_part;
+
 	/* The panes of the last frame and its clickable regions. */
 	struct se_layout layout;
 	struct se_hit hits[SE_HITS];
@@ -1519,7 +1533,7 @@ int se_fields_open(struct kl_text *text);
 void se_fields_close(void);
 void se_fields_begin(uint64_t now_us);
 int se_fields_end(uint64_t now_us);
-void se_fields_input(const struct se_event *event);
+int se_fields_input(const struct se_event *event, struct kl_rect *part);
 struct kl_ui *se_fields_ui(void);
 int se_field_key(struct kl_field *field, const struct se_event *event);
 unsigned se_field_draw(struct se_app *app, struct kl_canvas *canvas, struct kl_field *field, const struct kl_rect *rect, const char *placeholder, unsigned kind, int focused);

@@ -92,6 +92,7 @@ static int ui_pane_scroll(const struct se_app *app, int pane, int *limit, int *h
 static int ui_hit_rect(const struct se_app *app, unsigned kind, int index, struct kl_rect *rect);
 static void ui_damage_add(struct se_app *app, const struct kl_rect *rect);
 static void ui_redraw_region(struct se_app *app, unsigned kind, int index);
+static void ui_fields_input(struct se_app *app, const struct se_event *event);
 static void ui_focus(struct se_app *app, int focused);
 static void ui_clear_rect(struct kl_canvas *canvas, const struct kl_rect *rect);
 static void ui_key(struct se_app *app, const struct se_event *event);
@@ -172,12 +173,12 @@ se_ui_event(
 	/* Each kind of input. */
 	switch (event->type) {
 	case SE_EVENT_MOTION:
-		se_fields_input(event);
+		ui_fields_input(app, event);
 		ui_motion(app, event);
 		break;
 	case SE_EVENT_BUTTON:
 		/* The text fields see the press too (a click puts a field's caret). */
-		se_fields_input(event);
+		ui_fields_input(app, event);
 		ui_button(app, event);
 		break;
 	case SE_EVENT_AXIS:
@@ -187,7 +188,8 @@ se_ui_event(
 		ui_scroll_stop(app, event);
 		break;
 	case SE_EVENT_LEAVE:
-		/* Nothing is lit once the pointer is gone: only the region lit until now is drawn again. */
+		/* Nothing is lit once the pointer is gone, in the widgets either: only the region lit until now is drawn again. */
+		ui_fields_input(app, event);
 		if (app->hover_kind != SE_HIT_NONE)
 			ui_redraw_region(app, app->hover_kind, app->hover_index);
 		app->hover_kind = SE_HIT_NONE;
@@ -200,7 +202,7 @@ se_ui_event(
 	case SE_EVENT_TEXT_DELETE:
 	case SE_EVENT_PREEDIT:
 		/* An input method's text, for the field with the keyboard (widgets.c). */
-		se_fields_input(event);
+		ui_fields_input(app, event);
 		app->dirty = 1;
 		break;
 	case SE_EVENT_FOCUS:
@@ -403,6 +405,12 @@ se_ui_draw(
 	if (app->dirty == 0 && app->hover_pending != 0 && app->dialog.open == 0)
 		partial = 1;
 	app->hover_pending = 0;
+
+	/* What the frame changes, for its showing: the lit regions, or all of it. */
+	app->frame_partial = partial;
+	memset(&app->frame_part, 0, sizeof(app->frame_part));
+	if (partial != 0)
+		app->frame_part = app->hover_damage;
 
 	/*
 	 * The frame is being brought up to date; drawing may ask for another
@@ -1864,6 +1872,30 @@ ui_damage_add(
 		app->hover_damage.y = grown.y;
 	app->hover_damage.width = right - app->hover_damage.x;
 	app->hover_damage.height = bottom - app->hover_damage.y;
+}
+
+/*
+ * Gives the text fields' widgets an input, and draws again the part of
+ * the window that a widget lit or gone dark by it needs (BUG-226).
+ */
+static void
+ui_fields_input(
+	struct se_app *app,
+	const struct se_event *event)
+{
+	struct kl_rect part;
+	int drawn;
+
+	/* The widgets take the input and tell what it changed. */
+	memset(&part, 0, sizeof(part));
+	drawn = se_fields_input(event, &part);
+
+	/* Their part alone, or the whole frame when the part is not known. */
+	if (drawn == SE_FIELDS_PART) {
+		ui_damage_add(app, &part);
+	} else if (drawn == SE_FIELDS_WHOLE) {
+		app->dirty = 1;
+	}
 }
 
 /*
