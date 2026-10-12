@@ -665,10 +665,13 @@ bcm2711_display_flip_commit(
 		if (error != 0)
 			return error;
 
-		/* A new cached primary image is cleaned from this thread; overlays are uncached. */
+		/*
+		 * A new cached image is cleaned from this thread, once: a commit that
+		 * keeps the image, and the IRQ's later lists, show the same bytes.
+		 */
 		for (index = 0; index < count; index++) {
-			/* Only a recorded new image of the primary. */
-			if (!changes[index].recorded || !changes[index].image || changes[index].plane != 0)
+			/* Only a recorded new image. */
+			if (!changes[index].recorded || !changes[index].image)
 				continue;
 			if (changes[index].frame.uncached)
 				continue;
@@ -2625,7 +2628,7 @@ view_changes_locked(
 	return 0;
 }
 
-/* Checks that an overlay shows an unscaled part of an uncached image, inside the output. */
+/* Checks that an overlay shows a part of an encodable image, inside the output and within the scaling limits. */
 static int
 check_overlay(
 	const struct bcm2711_display *display,
@@ -2649,10 +2652,6 @@ check_overlay(
 	if (frame->pitch < frame->width * 4U || frame->pitch > 65535U || (frame->pitch & 3U) != 0)
 		return EINVAL;
 	if ((uint64_t)frame->pitch * frame->height > frame->size)
-		return EINVAL;
-
-	/* The HVS reads it while the CPU may not hold newer lines in a cache. */
-	if (!frame->uncached)
 		return EINVAL;
 
 	/* The console is never scanned out from storage that also holds a frame. */

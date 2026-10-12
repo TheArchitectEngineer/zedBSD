@@ -23,3 +23,27 @@ p003a は新しい register・bit・plane の word を使わない。変えた�
 - 結果: literal 24 は 0、正規化 48 は 0。正規化 32 は display-device.c と vc4_hdmi.c の 8 窓で、既存の `bind_operations` の「構造体の op の欄へ関数を順に代入する」C の共通の構文（p003a で変えていない並び）。GPL の演算・構造・名前・comment の取り込みとして残す候補は無い。
 - 設計: 状態から list を作り、採られていない次の list を差し替え、2 つ出ている間は採用の IRQ で coalesce する作りは、p001 の設計（zedBSD の flip の state・slot・serial）から書いた。Linux の DRM の atomic・vblank event・dlist の allocator（drm_mm）の構造は使っていない。HVS の値は上の表のとおり既存の zedBSD の code の値だけ。
 - 限界: 有限の窓の比較は短い一致や設計の類似の自動的な証明ではない。WS の最後の p002 でもう一度行う。
+
+## p003b（2026-10-12 P2）
+
+出典の (d) は Linux 6.19 vc4（`05f7e89ab9731565d8a62e3b5d1ec206485eeb0b`）の `vc4_plane.c`・`vc4_regs.h`・`vc4_hvs.c` の読み（理解だけ）。2026-10-12 ユーザーが WS141 の 2026-10-04 の決定（値は事実として使い、名前は独自、配置・comment・構造は写さない、最後に類似の監査）を WS214 に広げた（guardrail、Q1 の連絡）。作業の文書は `plan/ws214/temp/`（commit しない）。
+
+| 値 | zedBSD の名前（file） | 出典 | 確かめ |
+| --- | --- | --- | --- |
+| overlay の unscaled の 8 word（cursor と同じ並び、位置 word 1、src の大きさ word 3、pointer は image の先頭＋src_y×pitch＋src_x×4） | `overlay_words`（display-flip.c） | (a) 既存の `cursor_words`・`prepare_frame` | host: display-flip-host-test（overlay の list の word） |
+| 制御の word の valid bit30・word 数 bit29:24・byte の順 bit14:13・alpha の展開 bit12・RGB の展開 bit11・unity bit15・pixel の形 7 | `overlay_words`（`0x40000000`、`count << 24`、`order << 13`、`0x1000`、`0x800`、`7U`） | (a) 既存の `0x48009807` の分解、(d) で bit の意味を確認 | host: 同上（scaled の制御の word） |
+| 拡大縮小の方式の 2 つの field（bit10:8・bit7:5、RGB は同じ値）と組の値 0〜7（横 PPF 縦 PPF=0 … 横 TPZ 縦なし=7） | `overlay_words` の `method` | (d) | host: PPF の組（0）と TPZ の組（3）の word |
+| 方式の選び方（同じ大きさ→なし、3×dst ≥ 2×src→PPF、他→TPZ） | `scale_mode` | (d) | host: 拡大（PPF）と 1/4 の縮小（TPZ） |
+| scaled の並び（制御、位置、制御 2、拡大縮小後の大きさ（高さ bit28:16・幅 bit12:0）、元の大きさ、context、pointer、pointer の context、pitch、［LBM］、横 PPF、縦 PPF＋context、横 TPZ 2 word、縦 TPZ 2 word＋context、［filter の位置 ×4］） | `overlay_words` | (d) | host: 17 word（PPF）・15 word（TPZ）の並び |
+| PPF の word: AGC bit30、比 bit24:8（16.16、最下位 bit を 0 に）、位相 bit6:0（−32＋比の誤差の半分、64 以上は 63） | `polyphase_word` | (d) | host: 200→300 で `0x40aaaa60` |
+| TPZ の word: 比 bit28:8、2 つ目は 0xffffffff/比 の下 16 bit | `trapezoid_words` | (d) | host: 200→50 で `0x04000000`・`0x3fff` |
+| filter の位置の field bit13:0、PPF のある plane は 4 つ | `FLIP_FILTER_WORD`（32） | 位置は (a) display-program.c の `PROGRAM_FILTER_START`（filter は WS141 の独自計算）、field と 4 つは (d) | host: filter の word が 32 |
+| LBM: 縦の拡大縮小の時だけ、始まりの word を置く。HVS5 の LBM は 60K word、1 行の pixel 数（横 TPZ なら dst の幅、他は src の幅）×16（縦 PPF）か ×8（縦 TPZ）を 128 に切り上げて 4 で割る | `FLIP_LINE_BUFFER_WORDS`（8192）・`FLIP_LINE_BUFFER_PIXELS`（2048）、overlay k の区画は k×8192 | (d) | host: 縦の拡大縮小で 2049 pixel の行は ENOSPC。Pi: 未（hvs-load） |
+| 処理量: scaled の plane は 1 clock に 2 pixel（他は 4） | `required_clock` | (d) | Pi: 未 |
+| 帯域: src の面積 × 縦の縮小の比の切り上げ × 4 byte × refresh、予算 1.5 GB/s（仮） | `read_bandwidth`・`FLIP_BANDWIDTH_BUDGET` | (d)（予算は BCM2835 の頃の値、review-1 M1） | host: 縦 1/3 で予算を超えて ENOSPC。Pi: hvs-load の実測で置き換える |
+
+## p003b の終わりの GPL との類似の監査（2026-10-12 P2）
+
+- 対象: p003b で変えた `display-flip.c`・`display-flip.h`・`display-device.c`。相手と方法は p003a と同じ（vc4 の `*.c`・`*.h`、literal 24 token、正規化 48・32 token）。
+- 結果: literal 24 は 0。正規化 48 は display-flip.c と vc4_plane.c の 3 窓、display-device.c と vc4_plane.c の 3 窓で、どちらも「src_x・src_y・src_width・src_height・dst_x・dst_y を同じ名の欄へ写す」代入の列（矩形の 6 つの欄を構造体の間で写す C の共通の形）。正規化 32 は加えて vc4_hdmi.c との既存の `bind_operations` の代入列。PPF・TPZ の値の計算は (d) の式の事実（比、位相の補正、逆数）を独自の関数（`polyphase_word`・`trapezoid_words`）に書いた。Linux の関数の分け方（plane の状態の複製、drm_mm の LBM の割り当て、dlist の counter）は使わず、LBM は overlay ごとの固定の区画にした。取り込みとして残す候補は無い。
+- 限界は p003a と同じ。WS の最後の p002 でもう一度行う。

@@ -333,8 +333,9 @@ struct gpu_display_cursor_hide {
 /*
  * One plane's new state in a commit.  plane is 0 (the primary) or an
  * overlay.  The image is storage of this open, GPU_PIXEL_BGRA8888 or
- * RGBA8888; an overlay's has premultiplied alpha and must be uncached
- * native storage.  src (inside the image) is shown at dst (inside the
+ * RGBA8888; an overlay's has premultiplied alpha.  Cached storage is
+ * cleaned when a commit names it as a new image, so the caller writes no
+ * image while it is borrowed.  src (inside the image) is shown at dst (inside the
  * output); an overlay may scale within its GPU_DISPLAY_OVERLAY_INFO limits,
  * the primary is the whole output, unscaled.  SHOWN without IMAGE keeps the
  * plane's image (EINVAL when it has none).  serial increases for each
