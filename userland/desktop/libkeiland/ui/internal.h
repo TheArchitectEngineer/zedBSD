@@ -77,6 +77,36 @@ struct wl_registry *keiui_app_global(struct wl_display *display, const char *int
  */
 #define KEIUI_STILL		32U
 
+/*
+ * KL_VERSION 91 (ws210-p014 F2.1): whether a pointer's motion of a window
+ * that asked for KL_PACING_MOTION takes the place of the newest input
+ * queued (1) rather than a slot of its own (0).  It does when that input
+ * is a motion of the same window: nothing came between them, so the
+ * pointer's later place stands for both.  queued_kind is the queue's
+ * entry's kind (KL_APP_WINDOW for a window's input on an application's
+ * queue), queued_window the window it is for, input_kind the input's.
+ */
+static __inline int
+keiui_motion_merges(
+	unsigned queued_kind,
+	const struct kl_window *queued_window,
+	unsigned input_kind,
+	const struct kl_window *window)
+{
+	/* Another kind of entry, or another window's. */
+	if (queued_kind != KL_APP_WINDOW)
+		return 0;
+	if (queued_window != window)
+		return 0;
+
+	/* Anything but a motion keeps its own place. */
+	if (input_kind != KL_WINDOW_MOTION)
+		return 0;
+
+	/* Reports that the motion is taken over. */
+	return 1;
+}
+
 /* The ids of the library's own records (ws190-p002): the bar of a field's selection and its handles; programs use none from 0xfffffff0 up. */
 #define KEIUI_TEXT_BAR_ID	0xfffffffdU
 #define KEIUI_TEXT_HANDLE_ID	0xfffffffcU

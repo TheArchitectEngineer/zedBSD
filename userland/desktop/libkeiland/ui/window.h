@@ -510,6 +510,14 @@ struct kl_window {
 	int app_quiet;
 
 	/*
+	 * What the application asked of the window's input and frames
+	 * (KL_PACING_*, kl_window_set_pacing, ws210-p014 F2.1): with
+	 * KL_PACING_MOTION a pointer's motion takes the place of the newest
+	 * input queued when that is a motion of the window too.  0 by default.
+	 */
+	unsigned pacing;
+
+	/*
 	 * The declarative menus, controls and glass (window-declare.c): the
 	 * action states, the menu's, the controls' and the popup's models and
 	 * the objects that show them (a menu service of the window's own when

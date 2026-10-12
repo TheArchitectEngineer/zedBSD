@@ -20,11 +20,16 @@
  * between, and parts the application adds (kl_ui_damage); each part is
  * drawn clipped to it in turn and the frame must again equal the whole.
  *
+ * F2.1: a window's motion merges into the newest queued input only when
+ * that is a motion of the same window (keiui_motion_merges).
+ *
  * Prints "PASS name" or "FAIL name ..." for each check; exits with 1 when
  * one failed.
  */
 
 #include <keiland/keiland.h>
+
+#include "internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,6 +72,7 @@ static void test_draw(struct test_scene *scene);
 static void test_frame(struct test_scene *scene, const struct kl_rect *part);
 static void test_frame_parts(struct test_scene *scene, const struct kl_rect *parts, unsigned count);
 static void test_take_frame(struct test_scene *scene);
+static void test_motion_merges(void);
 static int test_take(struct test_scene *scene, struct kl_rect *part);
 static void test_row(int index, struct kl_rect *row);
 static int test_contains(const struct kl_rect *outer, const struct kl_rect *inner);
@@ -224,6 +230,9 @@ main(
 
 	/* The parts of a frame (F3). */
 	test_take_frame(&scene);
+
+	/* The motions merged (F2.1). */
+	test_motion_merges();
 
 	/* The result. */
 	kl_ui_destroy(scene.ui);
@@ -422,6 +431,40 @@ test_take_frame(
 	if (need == KL_FRAME_WHOLE && count == 0U)
 		passed = 1;
 	test_check(passed, "frame-whole", NULL);
+}
+
+/*
+ * Checks keiui_motion_merges: a motion takes the place of the newest
+ * queued input only when that is a motion of the same window.
+ */
+static void
+test_motion_merges(void)
+{
+	struct kl_window *window;
+	struct kl_window *other;
+	int merges;
+
+	/* Two windows, told apart by their addresses alone. */
+	window = (struct kl_window *)&test_failures;
+	other = (struct kl_window *)&window;
+
+	/* After a motion of the window: merged. */
+	merges = keiui_motion_merges(KL_APP_WINDOW, window, KL_WINDOW_MOTION, window);
+	test_check(merges == 1, "merge-after-motion", NULL);
+
+	/* After a button, a leave or a key of the window: a motion of its own. */
+	merges = keiui_motion_merges(KL_APP_WINDOW, window, KL_WINDOW_BUTTON, window);
+	test_check(merges == 0, "merge-not-after-button", NULL);
+	merges = keiui_motion_merges(KL_APP_WINDOW, window, KL_WINDOW_LEAVE, window);
+	test_check(merges == 0, "merge-not-after-leave", NULL);
+	merges = keiui_motion_merges(KL_APP_WINDOW, window, KL_WINDOW_KEY, window);
+	test_check(merges == 0, "merge-not-after-key", NULL);
+
+	/* After another window's motion, or an application's own event: a motion of its own. */
+	merges = keiui_motion_merges(KL_APP_WINDOW, other, KL_WINDOW_MOTION, window);
+	test_check(merges == 0, "merge-not-other-window", NULL);
+	merges = keiui_motion_merges(KL_APP_THEME, window, KL_WINDOW_MOTION, window);
+	test_check(merges == 0, "merge-not-app-event", NULL);
 }
 
 /* Takes the part the lighting needs drawn again; 0 when there is none (or the whole window). */
