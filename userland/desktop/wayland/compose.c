@@ -9,7 +9,8 @@
  * Window mode: draws the background and every window, bottom to top, into
  * a VK_KHR_display swapchain (WS035 compositing design, D1).
  *
- * A frame is one command buffer. Scene changes render the windows and
+ * A frame is one command buffer, recorded from the display list the
+ * drawing writes (draw-list.c, ws213-p003). Scene changes render the windows and
  * optionally capture cursor-free pixels; cursor-only damage can restore
  * those pixels before its LOAD pass. Only one frame is in flight: its fence is exported as an fd
  * that the event loop polls, and the buffers the frame sampled and the frame
@@ -1370,7 +1371,7 @@ compose_objects(
 	if (result != VK_SUCCESS)
 		return result;
 
-	/* One command buffer, re-recorded every frame. */
+	/* One command buffer, re-recorded from the display list every frame. */
 	memset(&command_pool, 0, sizeof(command_pool));
 	command_pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	command_pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;

@@ -295,7 +295,7 @@ kwl_cursor_frame(
 	if (server->frame_edges == edges)
 		return;
 
-	/* The arrow's image is made the first time it is needed, like a client's shape's. */
+	/* The arrow's image, made at the start, is made now if that failed, like a client's shape's. */
 	if (edges != 0U) {
 		index = shape_image(frame_shape(edges));
 		if (index != IMAGE_NONE &&
@@ -413,9 +413,10 @@ device_set_shape(
 		return 0;
 
 	/*
-	 * The shape's image is made the first time it is asked for (making all
-	 * of them at start-up would delay the compositor's READY); without it the
-	 * shape is drawn as the arrow.
+	 * The shapes' images are made at the start (kwl_cursor_images_create,
+	 * in the start's batch, ws213-p003); one that could not be made then is
+	 * made the first time it is asked for, and without it the shape is drawn
+	 * as the arrow.
 	 */
 	index = shape_image(shape);
 	if (index != IMAGE_NONE &&
