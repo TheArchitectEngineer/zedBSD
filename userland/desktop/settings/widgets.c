@@ -613,35 +613,58 @@ se_fields_end(
 
 /*
  * Gives the fields the pointer and an input method's text: the pointer's
- * moves and the main button (a click puts a field's caret), and the
- * text an input method sends for the field with the keyboard.
+ * moves, its leaving and the main button (a click puts a field's caret),
+ * and the text an input method sends for the field with the keyboard.
+ *
+ * Returns SE_FIELDS_PART with part set when a move or the leaving lit a
+ * widget or left one dark and only part of the window needs drawing again
+ * (BUG-226), SE_FIELDS_WHOLE when the leaving needs the whole frame, and
+ * SE_FIELDS_NOTHING otherwise.
  */
-void
+int
 se_fields_input(
-	const struct se_event *event)
+	const struct se_event *event,
+	struct kl_rect *part)
 {
 	struct kl_window_event text;
+	int changed;
+	int known;
 
 	/* Nothing without the input. */
 	if (widgets_ui == NULL)
-		return;
+		return SE_FIELDS_NOTHING;
 
 	/* Each kind of input the fields take. */
 	switch (event->type) {
 	case SE_EVENT_MOTION:
-		(void)kl_ui_pointer_motion(widgets_ui, (double)event->x, (double)event->y);
-		return;
+		/* A move that lights another widget needs its part drawn again; one that tells no part (a held slider) needs none. */
+		changed = kl_ui_pointer_motion(widgets_ui, (double)event->x, (double)event->y);
+		if (changed == 0)
+			return SE_FIELDS_NOTHING;
+		known = kl_ui_take_damage(widgets_ui, part);
+		if (known == 0)
+			return SE_FIELDS_NOTHING;
+		return SE_FIELDS_PART;
+	case SE_EVENT_LEAVE:
+		/* The lit widget goes dark: its part, or the whole frame when the part is not known. */
+		changed = kl_ui_pointer_leave(widgets_ui);
+		if (changed == 0)
+			return SE_FIELDS_NOTHING;
+		known = kl_ui_take_damage(widgets_ui, part);
+		if (known == 0)
+			return SE_FIELDS_WHOLE;
+		return SE_FIELDS_PART;
 	case SE_EVENT_BUTTON:
 		(void)kl_ui_pointer_motion(widgets_ui, (double)event->x, (double)event->y);
 		if (event->button == SE_BUTTON_LEFT)
 			(void)kl_ui_pointer_button(widgets_ui, event->pressed, event->time * 1000U);
-		return;
+		return SE_FIELDS_NOTHING;
 	case SE_EVENT_TEXT:
 	case SE_EVENT_TEXT_DELETE:
 	case SE_EVENT_PREEDIT:
 		break;
 	default:
-		return;
+		return SE_FIELDS_NOTHING;
 	}
 
 	/* An input method's text, as the window gave it. */
@@ -657,6 +680,9 @@ se_fields_input(
 	text.begin = -1;
 	text.end = -1;
 	(void)kl_ui_text(widgets_ui, &text);
+
+	/* The caller draws the field again for the text. */
+	return SE_FIELDS_NOTHING;
 }
 
 /*
