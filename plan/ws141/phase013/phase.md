@@ -155,3 +155,53 @@ lowering は今のまま 1 演算ずつ出すが、語に encode せず「演算
   - `glass-shader-host-test.sh`: glass（light・dark・generic）の SPIR-V の解釈と、compile した native の模擬の結果の一致を、同じ格子（3,856,896 fragment）で。
   - `qpu-format-host-test.sh`: 組んだ語（両 ALU・cond の組み合わせ・port の共有・signal と small immediate）を Mesa の oracle で decode し、意味と repack の一致。
 - Pi（焼き直しの後、BUG-294）: 見た目が同じこと、`v3d: gpu` の cycles/quad・qvalid/quad が下がること。
+
+### 実装（2026-10-12 P3、agent/p3 eaad6484e〜f7cabf7c9）
+
+- `qpu.c/h`: `bcm2711_qpu_encode_bundle`（add・mul・signal・thread switch を 1 語に、read port の共有、small immediate、cond の組み合わせ、switch と ldunif/ldunifrf/ldtmu/ldvary/wrtmuc の合成 signal）。1 演算の `bcm2711_qpu_encode` はこれを使う。`bcm2711_qpu_operation_unit`・`_sources`。
+- `shader.c`・`shader-private.h`: 演算を記録（register は thread の窓へ写し済み、消費する uniform を記録に付ける）し、`bcm2711_shader_emit` で fragment は schedule、通らなければ・vertex は逐次（従来どおりの語）。register の LRU、一時の scratch の借用（空きが 4 より多い時）、全幅の定数を register に残して再利用（空きが 12 より多い時、要る時に手放す）。`binary->scheduled`。
+- `shader-lower.c`・`shader-output.c`: 一時の register の借用、thread switch の役割（sample・last の組・end）、出力の色の mov を廃止（vfpack が出力を直接読む）。
+- `shader-schedule.c`（新規）: 記録の分類、依存の辺（RAW・WAW・WAR、SFU の鎖、TMU/switch/TLB の順序の鎖、switch をまたげない演算）、優先度（sink までの最長距離）の list scheduling、sample の switch を launch の 2 語前まで前へ（launch が delay slot に入る）、last-thrsw の組・TLB・thread end の最短の配置、短命の値の accumulator r0〜r3 への移動（registers のみと、寿命 4・12・24・1024 記録の 5 通りを試し最短を採る）、値の版の模擬による検証器、語と uniform の列の出力。
+- 事実の確かめで規則を変えた所（設計の節からの変更）: TLB の書き込みと thread end は last の組の **1 つ目**の switch の 3 語後から（Mesa の scoreboard の規則、2 つ目は印にすぎない）。r5 は 1 語遅れて着地するので、次の ldvary は前の r5 の読み手と同じ語でよい。wrtmuc と TMU の座標の書き込み（TMUC 以外）は 1 語に組める（4.2 の peripheral の例外）。switch の前の accumulator・flag の作業は switch の語と delay slot に置いてよい（switch が効くのは delay slot の後。SFU と ldvary は前の語のまま）。
+- `platform/arm64/vmunix.mk` に `shader-schedule.c` を 1 行追加。`plan/ws210/tests/spike/count.sh`（P1 の WS210）は link の source の列に `shader-schedule.c` が要る（Q1 へ連絡済み）。
+
+### 命令数（fragment、host、語/純粋な NOP の語/両 ALU を組んだ語）
+
+| shader | 前（40caa547d） | 後（f7cabf7c9） | 減 |
+| --- | --- | --- | --- |
+| glass（panel 0） | 178 / 17 / 0 | 93 / 2 / 25 | −48% |
+| dark glass（panel 7） | 202 / 19 / 0 | 106 / 2 / 32 | −48% |
+| blur（panel 6、5 tap） | 154 / 13 / 0 | 70 / 1 / 5 | −55% |
+| shadow（panel 1） | 92 / 11 / 0 | 51 / 1 / 5 | −45% |
+| image（panel 2、窓の絵） | 91 / 11 / 0 | 51 / 3 / 6 | −44% |
+| solid（panel 3） | 81 / 9 / 0 | 46 / 1 / 4 | −43% |
+| ring（panel 4） | 87 / 9 / 0 | 50 / 1 / 5 | −43% |
+| text（panel 5） | 47 / 5 / 0 | 23 / 1 / 0 | −51% |
+| quad（壁紙・client の絵） | 29 / 5 / 0 | 17 / 2 / 0 | −41% |
+| batch | 93 / 18 / 0 | 51 / 4 / 8 | −45% |
+| generic panel（2 thread） | 611 / 95 / 0 | 293 / 5 / 84 | −52% |
+| app: keiland ui・files・imageview・vkdemo | 29 | 17 | −41% |
+| app: monitor shape（2 thread） | 411 | 203 | −51% |
+| app: monitor glyph | 45 | 27 | −40% |
+| app: notes fill / texture | 51 / 48 | 28 / 27 | −45% / −44% |
+| app: terminal | 65 | 41 | −37% |
+| app: egltest | 62 | 33 | −47% |
+| app: mview | 43 | 19 | −56% |
+
+- uniform（ldunifrf）の数も減る（glass 32→29、blur 39→34、monitor shape 21→10）: 定数の再利用。thread 数（4/2）はどれも変わらない。vertex の program は逐次のまま（語数は前と同じ）。
+- 見込み: ws211-p011 §2.1 の「費用 ≒ 層の画素 × 命令数 / 32」（QPU の演算で詰まる）なら、窓の中の draw の cycles/tile が約 4〜5 割減る。実機の値は未測定。
+
+### 確かめ（host、2026-10-12 P3）
+
+- `plan/ws141/tests/shader-host-test.sh`（書き直し）: tree の全 shader（Keiland の quad・panel の generic と 8 variant・batch、app の 13 組、R/B の入れ替えの両方、coordinate・vertex も）を compile し、新規の `plan/ws141/tests/qpu-machine.c`（Mesa の decoder で語を読み、両 ALU を語の始めに読んで着地の時刻に書く、SFU は 2 語後・r5 は 1 語後に着地、着地前の読み・飛行中の書き込みの重なり・switch をまたぐ accumulator と flag・switch の窓の SFU/ldvary/ldtmu・lookup の無い switch・scoreboard 前の TLB・thrend の窓の rf の書き込みと rf0〜2 の読み・peripheral の数・SFU の間隔を失敗にする 1 lane の模擬）で走らせ、SPIR-V の解釈（sqrt は native と同じ x×rsqrt(x)）と tile の half の **bit の一致**。Keiland は決定的な入力 32 試行＋乱数 96 試行、app は乱数 96 試行（ゴミで埋めた register、varying は値をそのまま運ぶ形）。PASS。命令数の表もここで出る。
+- `plan/ws211/tests/glass-shader-host-test.sh`: 3,856,896 fragment の格子で、glass（light・dark・generic）の native の program を模擬し、SPIR-V の解釈と全 channel が bit 一致。PASS（2 分半）。
+- `plan/ws141/tests/qpu-format-host-test.sh`: 組んだ語（port の共有、3 つ目の register・異なる small immediate の拒否、add の mov の OR、add/mul の predicate と push の全組み合わせ、両方の push の拒否、switch と 6 種の signal の合成、small immediate や TILE との合成の拒否、ALU の取り違えの拒否）を Mesa の oracle で decode・repack。PASS。
+- 故意の誤り（scheduler の内部の検証器を外して）: SFU の待ち・ldtmu の待ち・r5 の待ち・switch をまたぐ演算・WAR・WAW・scoreboard 前の TLB・thrend の窓・SFU の間隔・accumulator の segment・sample の switch の 3 語前の置き・TLB を 1 つ目の switch の 2 語後・accumulator の WAR、を 1 つずつ入れて模擬が全部検出。「SFU を switch の窓に」「switch の前の作業の下限を 1 語緩める」の 2 つは今の shader では起きず未検出（検証器の規則とは別に模擬の規則はある）。内部の検証器も WAR・switch・TLB・SFU の鎖の誤りで逐次へ戻すことを確認（着地の時刻の表は scheduler と共有なので、その誤りは host の模擬だけが見つける）。
+- `vulkan-device-host-test.sh`・`v3d-hardware-host-test.sh` PASS。rpi4 の vmunix（`make -j16 -o …/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix`）warning 0、`build/arm64/vmunix` cksum 1265685035 8163328。
+- `plan/tools/style-check.py`: 変えた kernel の file と試験の file で指摘 0。
+
+### 未実施・Pi で見ること
+
+- 実機（Pi 4）は未確認（焼き直し待ち、BUG-294）。host の模擬は hardware の事実（Mesa の validator・scheduler に記された規則と公開の命令の形式）に基づくが、実機の timing の未知の規則があれば画面の崩れ・GPU の hang として出る。
+- Pi で見る点: (1) 起動して Keiland の描画が前と同じ（glass の色・blur・影・窓の絵・文字・cursor・dark の外観、app の canvas）。(2) GPU の hang・`v3d:` の error の行が無い。(3) `v3d: gpu` の draw の cycles/tile、cycles/quad、qvalid/quad が下がる（見込み 4〜5 割）。(4) KWL LAT の input→shown。
+- 崩れた時の切り分け: 変える所は fragment の compiler だけなので、vmunix を前の版に戻せば元に戻る。
