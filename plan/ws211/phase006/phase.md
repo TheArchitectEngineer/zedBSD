@@ -39,3 +39,19 @@ Queue: P3（2026-10-12 ユーザー「ウィンドウのドラッグ移動が60f
 3. **2 コマを飛ばす（in flight を 2 つにする）**: GPU が 1 refresh を少し超えても、次のコマの記録を前のコマの vblank の待ちと重ねる。buffer の hold・frame callback・scene の扱いが変わるので大きい。
 4. **HVS の plane に窓を載せる**: 動かしている窓を overlay の plane に出せば、合成は要らない。kernel の display の変更（WS141）で大きい。最後の候補。
 - 計測で、GPU の render が 16ms を超えるかどうかで決める。超えるなら 1 か 2。記録か kernel の準備が大きいなら、p003 の束ね（影と panel）を先にする。
+
+## デスクトップでのマウス移動（place15 の log、2026-10-12 P3）
+
+- ユーザー（place15 の評価）:「デスクトップでのマウス移動が、60fpsにわずかに届いていないようです。」
+- log: Pi の今の boot（place15、`/run/user/1000/session.log` と `/var/log/kernel.log`、scratchpad/p3g3/b15）。
+- 事実:
+  - `KWL CURSOR_PLANE present` の間隔は、中央値 21ms（20〜22ms が 1927 回中 1927 の大半、16ms 以下は 21 回）。kernel の `bcm2711: cadence` の `set`・`move` の中央値も 21000us。約 47/s で、毎 refresh には届いていない。
+  - マウスだけを動かした窓（frame_done=0、draw=0）でも `cursor presents=204/5s`。main の work は 36%、poll 58% で、CPU は余っている。
+  - present 1 回は約 3.4ms（`present_cycles` 約 18 万、54MHz）。
+- 原因（source で確かめた）: C0 の間引き（`cursor-plane.c`）は、前の present から 1 refresh（16.7ms）経つまで動きを保留する。その時刻（`presented_us`）を present の**後**に取っていたため、間隔が 16.7 + 3.4 ms になる。さらに Pi の時計は 1ms 単位で、loop の眠りも ms に切り上げるので、pointer の次の report（8ms ごと）まで遅れて 20〜22ms になる。
+- 直し（実装、place16 に入れる）:
+  - `presented_us` を present の始めの時刻にする。
+  - 保留を 1 refresh から 2.5ms 引いた長さにする（`PLANE_HOLD_SLACK_US`、`plane_hold_us`）。時計と眠りの丸めがあっても、どの refresh にも 1 回は動きが届く。present は最大でも約 13ms に 1 回（約 66/s 程度）で、C0 の前（125/s）より少ない。
+  - kernel の cursor の present は即時（`wsi-display.c` の `display_present_cursor` は CURSOR_SET・MOVE をすぐ呼ぶ、FIFO の待ちは無い）ので、間隔を詰めても遅れは積もらない。
+- 期待（Pi で確かめること）: `KWL CURSOR_PLANE present` の間隔の中央値が 15〜16ms、kernel の `cadence` の `move` の中央値が 16000 前後、`cursor presents=` が 5 秒で約 300。main の `cursor=` の時間は約 1.4 倍に増える（present 1 回 3.4ms のまま）。
+- 残り（範囲外）: present 1 回 3.4ms は WS213（cursor を別 thread へ）の範囲。マウス移動中の `clients=` が 5 秒で 400〜530ms あり、pointer の event への client の応答（set_cursor など）の処理の内訳は未調査。
