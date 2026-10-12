@@ -48,7 +48,7 @@ kwl_glass_anim_picturable(
 void
 kwl_glass_draw_anim_picture(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	(void)server;
 	(void)command;
@@ -59,7 +59,7 @@ kwl_glass_draw_anim_picture(
 void
 kwl_glass_draw_desktop_picture(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object **windows,
 	unsigned count)
 {
@@ -74,7 +74,7 @@ kwl_glass_draw_desktop_picture(
 void
 kwl_home_draw_content(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float progress,
 	unsigned neutral)
 {
@@ -144,11 +144,19 @@ kwl_batch_begin(
 	(void)compose;
 }
 
+/* Begins no list (layer-cache.c's quiet picture, ws213-p003). */
+void
+kwl_compose_list_begin(
+	struct kwl_compose *compose)
+{
+	(void)compose;
+}
+
 /* Flushes no batch. */
 void
 kwl_batch_flush(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	(void)server;
 	(void)command;
@@ -423,9 +431,9 @@ vkEndCommandBuffer(
 }
 
 /* Counts a pass begun. */
-VKAPI_ATTR void VKAPI_CALL
-vkCmdBeginRenderPass(
-	VkCommandBuffer command,
+void
+kwl_list_begin_render_pass(
+	struct kwl_list *command,
 	const VkRenderPassBeginInfo *info,
 	VkSubpassContents contents)
 {
@@ -436,17 +444,17 @@ vkCmdBeginRenderPass(
 }
 
 /* Ends a pass. */
-VKAPI_ATTR void VKAPI_CALL
-vkCmdEndRenderPass(
-	VkCommandBuffer command)
+void
+kwl_list_end_render_pass(
+	struct kwl_list *command)
 {
 	(void)command;
 }
 
 /* Takes a viewport. */
-VKAPI_ATTR void VKAPI_CALL
-vkCmdSetViewport(
-	VkCommandBuffer command,
+void
+kwl_list_set_viewport(
+	struct kwl_list *command,
 	uint32_t first,
 	uint32_t count,
 	const VkViewport *viewports)
@@ -458,9 +466,9 @@ vkCmdSetViewport(
 }
 
 /* Takes a scissor. */
-VKAPI_ATTR void VKAPI_CALL
-vkCmdSetScissor(
-	VkCommandBuffer command,
+void
+kwl_list_set_scissor(
+	struct kwl_list *command,
 	uint32_t first,
 	uint32_t count,
 	const VkRect2D *scissors)
@@ -472,9 +480,9 @@ vkCmdSetScissor(
 }
 
 /* Takes vertex buffers. */
-VKAPI_ATTR void VKAPI_CALL
-vkCmdBindVertexBuffers(
-	VkCommandBuffer command,
+void
+kwl_list_bind_vertex_buffers(
+	struct kwl_list *command,
 	uint32_t first,
 	uint32_t count,
 	const VkBuffer *buffers,
@@ -523,11 +531,11 @@ main(
 	server->anim_from[1] = 50;
 	server->anim_from[2] = 400;
 	server->anim_from[3] = 250;
-	kwl_layers_anim_inband(server, compose->command, NULL, 0U);
+	kwl_layers_anim_inband(server, &compose->list, NULL, 0U);
 	assert(passes == 2U);
 	assert(desktop_pictures == 1U);
 	assert(window_pictures == 1U);
-	kwl_layers_anim_inband(server, compose->command, NULL, 0U);
+	kwl_layers_anim_inband(server, &compose->list, NULL, 0U);
 	assert(passes == 2U);
 
 	/* Its frames show them, and the window's is sampled where its body was drawn. */
@@ -555,7 +563,7 @@ main(
 	/* A new animation decides again; one shell.c does not allow draws nothing. */
 	picturable = 0;
 	server->anim_serial = 2U;
-	kwl_layers_anim_inband(server, compose->command, NULL, 0U);
+	kwl_layers_anim_inband(server, &compose->list, NULL, 0U);
 	assert(passes == 2U);
 	shown = kwl_layers_anim_showing(server, NULL, 0U);
 	assert(shown == 0);
@@ -563,7 +571,7 @@ main(
 	/* A third that it allows, but whose window's picture was dropped, draws everything. */
 	picturable = 1;
 	server->anim_serial = 3U;
-	kwl_layers_anim_inband(server, compose->command, NULL, 0U);
+	kwl_layers_anim_inband(server, &compose->list, NULL, 0U);
 	assert(passes == 4U);
 	compose->layers.valid[KWL_LAYER_WINDOW] = 0U;
 	shown = kwl_layers_anim_showing(server, NULL, 0U);
@@ -572,7 +580,7 @@ main(
 	/* No animation: nothing drawn, nothing shown. */
 	server->anim = NULL;
 	server->anim_serial = 4U;
-	kwl_layers_anim_inband(server, compose->command, NULL, 0U);
+	kwl_layers_anim_inband(server, &compose->list, NULL, 0U);
 	assert(passes == 4U);
 	shown = kwl_layers_anim_showing(server, NULL, 0U);
 	assert(shown == 0);
@@ -581,7 +589,7 @@ main(
 	server->anim = &window;
 	server->anim_serial = 5U;
 	server->width = 800U;
-	kwl_layers_anim_inband(server, compose->command, NULL, 0U);
+	kwl_layers_anim_inband(server, &compose->list, NULL, 0U);
 	assert(passes == 4U);
 
 	/* Succeeded. */
