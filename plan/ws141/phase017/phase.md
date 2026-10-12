@@ -3,7 +3,7 @@
 # ws141-p017: bcm2711 の Vulkan の stencil（Notes の winding の stencil で塗る線）
 
 Parent: [WS141](../ws.md)
-Status: planning（調べと見積もり。2026-10-12 P3。ws141-p016 の (b) の後の候補で、Queue には入れていない）
+Status: planning（調べと見積もり。2026-10-12 P3。Q1 の判断で driver の stencil の対応で直す。順は ws141-p016 の (b) の後。入る時は設計を先に Q1 に出し、review に回す）
 Phase disposition: normal
 Queue: なし（候補。Q1 の判断の後）
 
@@ -66,6 +66,7 @@ Queue: なし（候補。Q1 の判断の後）
 
 - Notes の側で stencil を使わずに塗る。winding を R8 か R16 の offscreen の colour に加算の blend で数え、cover の pass でそれを sample する。Pi が受ける blend は今は ONE / ONE_MINUS_SRC_ALPHA だけなので、加算の blend（ONE / ONE）を Pi の driver が受けるかを先に確かめる。受けるなら、kernel の変更なしで Notes が動く。Notes の WS の担当と Q1 の判断になる。
 
-## 次
+## 判断（2026-10-12 Q1）
 
-- (b) の後に、Q1 が Queue に入れるか決める。入れる時は、正本の調べと設計を書いて design-reviewer の review に出す。
+- Notes は driver の stencil の対応（この Phase）で直す。stencil は Vulkan の標準の機能で、他の app も使い得るため。Notes の側の回避（上の代わりの案）はしない。
+- 順は (b) の後。この Phase に入る時は、正本の調べと設計を先に Q1 に出し、design-reviewer の review に回す。
