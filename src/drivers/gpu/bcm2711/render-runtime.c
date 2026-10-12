@@ -311,17 +311,22 @@ execute_command(
 		session->vulkan->failed_opcode = 0;
 		session->vulkan->longest_opcode = 0;
 		session->vulkan->longest_ticks = 0;
+		session->vulkan->command_count = 0;
 		started = clock_ticks();
 		error = bcm2711_vulkan_stream_execute(session->vulkan, command->wire, command->bytes, bcm2711_vulkan_dispatch);
 		held = clock_ticks() - started;
 		opcode = session->vulkan->failed_opcode;
 
-		/* Diagnostic: the longest decode under the controller mutex, and its longest command. */
+		/* Diagnostic: the longest decode under the controller mutex and its command count; apart, the longest single command. */
 		perf = &controller->space.native->hardware.perf;
 		if (held > perf->decode_hold_max) {
 			perf->decode_hold_max = held;
 			perf->decode_hold_opcode = session->vulkan->longest_opcode;
-			perf->decode_hold_command = session->vulkan->longest_ticks;
+			perf->decode_hold_commands = session->vulkan->command_count;
+		}
+		if (session->vulkan->longest_ticks > perf->decode_command_max) {
+			perf->decode_command_max = session->vulkan->longest_ticks;
+			perf->decode_command_opcode = session->vulkan->longest_opcode;
 		}
 	}
 

@@ -1034,6 +1034,9 @@ bcm2711_buffer_release_stats(
 	*ticks = 0;
 }
 
+/* The reused runs given again without zeroing (bcm2711_buffer_kept). */
+static unsigned host_kept_runs;
+
 /*
  * Takes a reused run's zeroing; the fixture keeps no allocation timing.
  */
@@ -1052,13 +1055,25 @@ bcm2711_buffer_zeroed(
  */
 void
 bcm2711_buffer_create_stats(
-	uint64_t stats[7])
+	uint64_t stats[9])
 {
 	unsigned index;
 
 	/* The fixture keeps no creation timing. */
-	for (index = 0; index < 7U; index++)
+	for (index = 0; index < 9U; index++)
 		stats[index] = 0;
+}
+
+/*
+ * Counts a reused run given again without zeroing (ws141-p016 (b)).
+ */
+void
+bcm2711_buffer_kept(
+	uint64_t bytes)
+{
+	/* The fixture counts them for its checks. */
+	(void)bytes;
+	host_kept_runs++;
 }
 
 /*

@@ -46,6 +46,21 @@ bcm2711_native_storage_create(
 	uint64_t bytes,
 	struct bcm2711_native_storage **storage)
 {
+	/* Zeroed, as every storage was. */
+	return bcm2711_native_storage_create_as(space, bytes, BCM2711_NATIVE_STORAGE_ZEROED, storage);
+}
+
+/*
+ * Allocates and maps one complete native upload interval, a reused view
+ * zeroed or (BCM2711_NATIVE_STORAGE_WRITTEN) as it is (ws141-p016 (b)).
+ */
+int
+bcm2711_native_storage_create_as(
+	struct bcm2711_v3d_space *space,
+	uint64_t bytes,
+	unsigned fill,
+	struct bcm2711_native_storage **storage)
+{
 	struct bcm2711_native_storage *created;
 	struct bcm2711_buffer *buffer;
 	struct bcm2711_v3d_view *view;
@@ -66,6 +81,8 @@ bcm2711_native_storage_create(
 	/* Per-allocation bounds also keep complete clean/copy operations representable on this architecture. */
 	if (bytes == 0 || bytes > NATIVE_STORAGE_BYTES)
 		return EINVAL;
+	if (fill != BCM2711_NATIVE_STORAGE_ZEROED && fill != BCM2711_NATIVE_STORAGE_WRITTEN)
+		return EINVAL;
 
 	/* Placement uses actual physical addressing capacity, without a guessed bus alias or framebuffer limit. */
 	physical_bits = space->native->hardware.physical_bits;
@@ -78,14 +95,22 @@ bcm2711_native_storage_create(
 	if (created == NULL)
 		return ENOMEM;
 
-	/* An idle cached view of the same size is zeroed again and reused with its mapping. */
+	/*
+	 * An idle cached view of the same size is reused with its mapping:
+	 * zeroed again, or as it is for a caller that writes every byte the
+	 * device may read (counted apart, review-b2 M2).
+	 */
 	started = clock_ticks();
 	view = cache_take(space, bytes);
 	if (view != NULL) {
-		kern_memset(view->buffer->address, 0, (size_t)view->bytes);
+		if (fill == BCM2711_NATIVE_STORAGE_ZEROED)
+			kern_memset(view->buffer->address, 0, (size_t)view->bytes);
 		view->buffer->bytes = bytes;
 		created->allocation_ticks = clock_ticks() - started;
-		bcm2711_buffer_zeroed(view->bytes, created->allocation_ticks);
+		if (fill == BCM2711_NATIVE_STORAGE_ZEROED)
+			bcm2711_buffer_zeroed(view->bytes, created->allocation_ticks);
+		else
+			bcm2711_buffer_kept(view->bytes);
 		created->space = space;
 		created->view = view;
 		created->bytes = bytes;
@@ -216,8 +241,8 @@ bcm2711_native_program_upload(
 	if (bytes > NATIVE_STORAGE_BYTES)
 		return ENOTSUP;
 
-	/* One native mapping owns the complete code stream through later execution or checked retirement. */
-	error = bcm2711_native_storage_create(space, bytes, &created);
+	/* One native mapping owns the complete code stream; every code byte is written below, and the rest is never fetched as code. */
+	error = bcm2711_native_storage_create_as(space, bytes, BCM2711_NATIVE_STORAGE_WRITTEN, &created);
 	if (error != 0)
 		return error;
 
@@ -230,7 +255,7 @@ bcm2711_native_program_upload(
 			destination[(size_t)index * 8U + byte] = (uint8_t)(instruction >> (byte * 8U));
 	}
 
-	/* All compiled bytes and zero allocation padding become visible before code addresses can enter a native record. */
+	/* All compiled bytes become visible before code addresses can enter a native record; the padding after them is never fetched as code. */
 	error = bcm2711_native_storage_clean(created);
 	if (error != 0) {
 		released = bcm2711_native_storage_release(space, &created, true);
@@ -595,6 +620,13 @@ cache_put(
 	/* A faulted engine retires views through recovery instead of keeping them. */
 	if (!space->native->hardware.ready || space->native->hardware.faulted)
 		return false;
+
+	/*
+	 * The cache keeps no dirty line (review-b2 M1): a view given again
+	 * without zeroing must not later write back the bytes of a user that
+	 * failed before cleaning over what the device wrote since.
+	 */
+	kern_dcache_clean_range(view->buffer->address, (size_t)view->buffer->memory.size);
 
 	/* Pushes the view on the list of its size class. */
 	if (view->bytes == 4096U) {
