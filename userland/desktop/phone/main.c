@@ -175,7 +175,7 @@ struct ph_window {
 	 */
 	int lit_changed;
 
-	/* The pointer's buttons held now: while one is, every motion is drawn (a drag); otherwise only one that lights another widget (BUG-226). */
+	/* The pointer's buttons held now: while one is, a motion that moves a held widget draws the whole window (a drag); otherwise only one that lights another widget draws its part (BUG-226). */
 	unsigned buttons_held;
 	int resized;
 	int moving;
@@ -627,10 +627,11 @@ ph_input(
 
 	/*
 	 * Any input may change the view, but a motion of the pointer only when
-	 * it lights another widget or drags (BUG-226: a frame for every motion
-	 * left the pointer behind).
+	 * it lights another widget or drags, and the pointer leaving only the
+	 * widget it lit (BUG-226: a frame for every motion left the pointer
+	 * behind).
 	 */
-	if (event->kind != KL_WINDOW_MOTION)
+	if (event->kind != KL_WINDOW_MOTION && event->kind != KL_WINDOW_LEAVE)
 		phone->dirty = 1;
 
 	/* Each kind of input. */
@@ -647,15 +648,24 @@ ph_input(
 		ph_media_drop(phone);
 		break;
 	case KL_WINDOW_MOTION:
-		/* A drag draws the whole window; another lit widget only its part (BUG-226). */
+		/*
+		 * A drag of a held widget (a field's selection) draws the whole
+		 * window; another lit widget only its part (BUG-226); a button held
+		 * over the same widget draws nothing.
+		 */
 		redraw = kl_ui_pointer_motion(phone->ui, event->x, event->y);
-		if (phone->buttons_held != 0U)
+		if (redraw && phone->buttons_held != 0U)
 			phone->dirty = 1;
 		else if (redraw)
 			phone->lit_changed = 1;
 		break;
 	case KL_WINDOW_LEAVE:
-		(void)kl_ui_pointer_leave(phone->ui);
+		/* The lit widget goes dark: its part alone, or the whole window while a button is held. */
+		redraw = kl_ui_pointer_leave(phone->ui);
+		if (phone->buttons_held != 0U)
+			phone->dirty = 1;
+		else if (redraw)
+			phone->lit_changed = 1;
 		break;
 	case KL_WINDOW_BUTTON:
 		/* The buttons held, for the motions of a drag. */

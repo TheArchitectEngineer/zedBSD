@@ -235,6 +235,14 @@ struct ph_view {
 	struct kl_field message;
 	struct kl_scroll contacts_scroll;
 	struct kl_scroll timeline_scroll;
+
+	/*
+	 * The heights of the shown timeline's items, measured once in a frame
+	 * and used again to place them (item_heights_room entries allocated;
+	 * NULL until the first timeline, freed with the view).
+	 */
+	int *item_heights;
+	size_t item_heights_room;
 	long selected;
 	int opened;
 	int narrow;

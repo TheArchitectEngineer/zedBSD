@@ -557,6 +557,14 @@ mu_input(
 		return;
 	}
 
+	/* The pointer leaving darkens the lit widget: its part alone is drawn again (BUG-226). */
+	if (event->kind == KL_WINDOW_LEAVE) {
+		taken = kl_ui_pointer_leave(music->ui);
+		if (taken)
+			music->lit_changed = 1;
+		return;
+	}
+
 	/* The buttons held: a motion while one is held draws the whole window (a slider follows it). */
 	if (event->kind == KL_WINDOW_BUTTON) {
 		if (event->pressed)
