@@ -543,6 +543,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ## 判断の記録（新しい順）
 
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
+- 2026-10-12 ユーザー（クリック）: WS141 の GPL の参照の扱い（2026-10-04、値はハードウェアの事実として使う、名前は独自、配置・comment・構造は写さない、最後に類似の監査）を「WS214 にも広げる」→ guardrail を更新、HVS5 の scaled の plane（PPF・TPZ・LBM）を WS214 p003b に入れる。
 - 2026-10-12 ユーザー:「描画の最適化の後、計測を取ったら、SMPを入れます。さらに計測をとって、最適化を終了したいです。そのあと、RPi4のWiFiとBluetoothを実装し、RPi4は完了です。」→ Pi 4 の順: (1) 描画の最適化（WS211・WS213・WS214・WS141 の残り）→ (2) 計測 → (3) SMP（WS208）→ (4) 計測 → 最適化の終了 → (5) WiFi（WS206）と Bluetooth（新しい WS215）→ Pi 4 の完了。
 
 - 2026-10-12 ユーザー（クリック、WS214 p001 第 3 版の 9 節）: UAPI の追加（GPU_DISPLAY_COMMIT・GPU_DISPLAY_OVERLAY_INFO・HAS_OVERLAYS、GPU_DISPLAY_WAIT を眠る形に、bcm2711 の表示の命令が EBUSY で失敗しなくなる）を「承認する」（p003b、差分は plan/ws214/phase001/phase.md の 4.2）。drag の間の glass の blur は始めの場所のまま「よい」。drag の間の窓の中身は「止めてよい」（動画は離すと飛ぶ、音は続く）。窓の前後の入れ替えは WS214 の目標から「外してよい」（Q1 が ws.md を直した）。undock の形は p003b の帯域の実測の後に問う。WS214 p003a を P2 で着手（承認不要の kernel の段、WS141 p016 B-k2 を含む）。
