@@ -64,3 +64,14 @@ Queue: P3（2026-10-12 Q1 の割り当て）
 ## 未決
 
 - `DOCK_MS`（120ms、BUG-179 のユーザーの「0.1 秒、長くても 0.2 秒」）は変えない。コマが増えても足りなければ、ユーザーに長さを相談する。
+
+## 実装と確かめ（2026-10-12 P3）
+
+- commit: agent/p3 902a5feb2（main へ 75d9bc901 で merge 済み）。
+  - `shell.c`: `anim_begin`・`anim_finish`（configure をアニメの終わりに）、`window_waits_size`、`draw_body_part`（`BODY_WHOLE`・`BODY_INTO_PICTURE`・`BODY_FROM_PICTURE`）、`kwl_glass_draw_anim_picture`、`kwl_glass_anim_picturable`（設計 3 の条件。アニメの窓が見えている窓の最前面であることも足した）。
+  - `layer-cache.c`: `KWL_LAYER_WINDOW`、`kwl_layers_anim_inband`・`kwl_layers_anim_showing`・`kwl_layers_anim_picture`。`compose.c` の in-band の所から呼ぶ。
+  - log: `KWL LAYER baked what=anim ...`、`KWL LAYER anim pictures=0 surface=N`（条件を外れた時）、`KWL GLASS anim configured surface=N docked=D w= h=`、アニメの後の `KWL LAYER use pictures= drawn=`。
+- build: rpi4 の wayland・libkeiland・settings・monitor、warning 0。amd64・Linux・FreeBSD の build は未実施。
+- host 試験: `plan/ws211/tests/anim-host-test.sh` PASS（絵 3 枚の作成、決定はアニメごとに 1 回、条件を外れたら残りは全部を描く、新しいアニメで決め直す、窓の絵の uv は描いた矩形）。shell.c の条件と描き方は host 試験なし（review だけ）。
+- 自分で見送った物: 窓の絵の pass の renderArea を始めの矩形に絞る案（Pi の driver の CLEAR と部分の renderArea の組は未使用の経路なので、今回は全面のまま）。
+- Pi: place16（scratchpad/place16）で確かめる。T1（i915・Venus）は WS の最後にまとめて依頼する。
