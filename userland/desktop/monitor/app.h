@@ -223,10 +223,14 @@ struct sm_slide {
  * The motion's state (design.md sections 3.1 and 3.2): the pointer's
  * place (from -1 to 1 across the window), the camera's tilt following it
  * on a spring, the core's measures following the values, and the phases
- * of what turns and flows, advanced by the time between frames.
+ * of what turns and flows.  The tilt is advanced by the time between
+ * frames; the measures and the phases by whole steps of the animation's
+ * frame time from step_ms, so an input's frame between two of the
+ * animation's leaves them where the last one put them.
  */
 struct sm_motion {
 	uint64_t last_ms;
+	uint64_t step_ms;
 	float pointer_x;
 	float pointer_y;
 	float tilt_x;
