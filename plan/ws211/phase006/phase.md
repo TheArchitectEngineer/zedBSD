@@ -45,7 +45,7 @@ Queue: P3（2026-10-12 ユーザー「ウィンドウのドラッグ移動が60f
 - ユーザー（place15 の評価）:「デスクトップでのマウス移動が、60fpsにわずかに届いていないようです。」
 - log: Pi の今の boot（place15、`/run/user/1000/session.log` と `/var/log/kernel.log`、scratchpad/p3g3/b15）。
 - 事実:
-  - `KWL CURSOR_PLANE present` の間隔は、中央値 21ms（20〜22ms が 1927 回中 1927 の大半、16ms 以下は 21 回）。kernel の `bcm2711: cadence` の `set`・`move` の中央値も 21000us。約 47/s で、毎 refresh には届いていない。
+  - `KWL CURSOR_PLANE present` の間隔は、中央値 21ms（60ms 未満の間隔 2455 回のうち 19〜23ms が 2009 回、16ms 以下は 21 回）。kernel の `bcm2711: cadence` の `set`・`move` の中央値も 21000us。約 47/s で、毎 refresh には届いていない。
   - マウスだけを動かした窓（frame_done=0、draw=0）でも `cursor presents=204/5s`。main の work は 36%、poll 58% で、CPU は余っている。
   - present 1 回は約 3.4ms（`present_cycles` 約 18 万、54MHz）。
 - 原因（source で確かめた）: C0 の間引き（`cursor-plane.c`）は、前の present から 1 refresh（16.7ms）経つまで動きを保留する。その時刻（`presented_us`）を present の**後**に取っていたため、間隔が 16.7 + 3.4 ms になる。さらに Pi の時計は 1ms 単位で、loop の眠りも ms に切り上げるので、pointer の次の report（8ms ごと）まで遅れて 20〜22ms になる。
