@@ -32,7 +32,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-292、WS212、q940、T1-547。次の KL_VERSION は 84、manager は 31（main は 83・30。未統合の codex/ws197-media-uat も keiland.h・manager を変えるので、統合の時に衝突を見る）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-292、WS213、q940、T1-547。次の KL_VERSION は 84、manager は 31（main は 83・30。未統合の codex/ws197-media-uat も keiland.h・manager を変えるので、統合の時に衝突を見る）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -508,6 +508,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS209](ws209/ws.md) | MG006 | audiod の音の endpoint と route（通話・Bluetooth・modem）（2026-10-11 ユーザー Q12） | planning | P1 |
 | [WS210](ws210/ws.md) | MG006 | Keiland の app の描画を GPU へ（libkeiland の canvas・文字・画像を Vulkan で）（2026-10-12 ユーザー） | planning | P1 |
 | [WS211](ws211/ws.md) | MG006 | Pi 4 の compositor の描画の削減（App Home の遷移のクロスフェード、draw の束ね）（2026-10-12 ユーザー） | planning | P3 |
+| [WS212](ws212/ws.md) | MG006 | Wiseview の作り直し: 仮想デスクトップ 3 枚の矩形と窓の一覧、drag で仮想デスクトップ・display をまたいで移動、multi display の縦の積み重ね、display のローテーション（タグ・Shift+Super+←/→、比率の保持）（2026-10-12 ユーザー） | planning | 未割当 |
 | [WS198](ws198/ws.md) | MG002 | zedBSD の上で zedBSD を self-build（host の clang、2026-10-09 ユーザー、優先度低、ベータ2 の見込み） | planning | p001 前提の調べ |
 | [WS199](ws199/ws.md) | MG006 | Settings のセキュリティキーの独立の頁とウィザード（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
 | [WS200](ws200/ws.md) | MG006 | Settings の Users のパスワード変更のウィザードと認証方式の選択（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |
@@ -541,6 +542,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-12 ユーザー:「System Monitorは重いので、2fpsで更新できることが目標です。逆にそれ以上の頻度で更新しないようにしましょう。」→ System Monitor の更新（標本と描き直し）は 500ms ごとが上限で目標。補足「System Monitorのアニメですね。UIレスポンスは60fpsです。」→ 2fps は graph・数値の更新（アニメ）だけ、hover・click・scroll の応答は 60fps。同日「WS211 p003, WS141 (b)、さらに上記アプリの改善をやりましょう。libkeilandのウィジェットも。」→ P3: WS211 p003・WS141 (b)、P1（新しく起動）: app の hover の引っかかりと libkeiland（present の host-mapped の canvas、widget）・WS210。
 - 2026-10-12 ユーザー:「RPIのシリアルポートは使っていません。コンフィグで無効化してください。それから、GPU使用中は、コンソールの描画も裏側で行わずに完全に止めるのがいいです。取りこぼす結果になってOKです。」→ rpi4 の serial の console は config で既定無効、display の driver が画面を引き取った後は framebuffer の console の描画を止める（溜めない）。kernel の log は dmesg の ring と bootlog に残す（P3、WS141）。原因: kernel の log の 1 字ずつを IRQ を止めて UART に polling で送り early fb にも描き、v3d の perf の報告（約 1000 字、2 秒ごと、controller の mutex の下）で 50〜100ms 止まっていた。
 - 2026-10-12 ユーザー（WS211）: icon の時間差の演出は「やめる」、クロスフェードの間の見た目の変化（消える desktop が 1 枚の絵で薄くなる・窓の中身が止まる・拡大縮小中の柔らかさ・Home の content が 1 枚で薄くなる・画面外の窓と影が端で切れる・glass の blur の拡大縮小）は「受け入れる」。部分の描き直しの kernel の小さな CPU の変換・消去は「一番高速な方法で。PIで少しでも動作にひっかかりがあるなら許容しない。ただしSMPで問題なくなれば許容する。それを総合的に評価し、実装は何回か作り替えていいので、最適化する。」→ 方式は Pi の実測で選ぶ（CPU の小さな変換・全面の TFU・WS141 での GPU の部分変換を比べる）、引っかかりがあれば採らない、SMP の後に再評価。Guardrail「画像の処理は GPU で」の例外はこの評価の結果で決める。
 - 2026-10-12 ユーザー（クリック）: ws141-p016 の非同期化は「列を app ごとに」— GPU の実行の列を session ごとに分け、pass の単位で round-robin するところまで p016 に含める（review-3 N4: 全体 1 本の列では cursor・drag が重い client の後ろに並ぶ）。2026-10-12 ユーザー「描画が終わらなくても制御が戻るのがコマンドバッファ形式のメリットで、Vulkan移行の目的」→ i915 の非同期の submit は F-093。Q1: arm64 の HAL の uncached の unmap の TLB の flush を 1 回に（b17a753d4）、kern_free の large の allocation を O(1) に（4d3d7eddf）。

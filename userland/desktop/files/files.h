@@ -614,6 +614,9 @@ struct fm_hit {
 	int index;
 };
 
+/* How many separate parts of the window a frame drawn by parts draws at most (fm_ui_damage). */
+#define FM_DAMAGE_PARTS		2
+
 /* How many glass panels a frame has at most: the sidebar, the content (with its tabs) and the preview. */
 #define FM_PANELS		3
 
@@ -1155,12 +1158,14 @@ struct fm_app {
 
 	/*
 	 * A change of the lit region or of a rubber band alone (BUG-221,
-	 * BUG-226): the next frame is drawn only within damage, clipped to it
-	 * (fm_ui_damage adds to it), the rest keeping the last frame's pixels.
-	 * Any other change (dirty) draws everything.
+	 * BUG-226): the next frame is drawn only within the damage parts,
+	 * clipped to each in turn (fm_ui_damage adds to them), the rest keeping
+	 * the last frame's pixels.  damage_pending is how many parts there are
+	 * (0 for none); two regions far apart stay two parts, so the space
+	 * between them is not drawn.  Any other change (dirty) draws everything.
 	 */
 	int damage_pending;
-	struct kl_rect damage;
+	struct kl_rect damage[FM_DAMAGE_PARTS];
 
 	/*
 	 * What the last frame drawn changed (BUG-221): frame_partial when it
@@ -1613,6 +1618,7 @@ int fm_ui_due(struct fm_app *app, uint64_t now);
 
 /* The pointer and the keyboard (ui-input.c). */
 void fm_input_motion(struct fm_app *app, const struct fm_event *event);
+void fm_input_leave(struct fm_app *app);
 void fm_input_button(struct fm_app *app, const struct fm_event *event);
 void fm_input_scroll(struct fm_app *app, int amount);
 
