@@ -722,6 +722,25 @@ kwl_home_launch_tile(
 }
 
 /*
+ * Marks the first page's clock (the time and the date under it) as damage
+ * for a new minute (shell.c, ws211): the band across the output between
+ * the top and the first page's icons, which holds both texts whatever
+ * their width and the page shown.
+ */
+void
+kwl_home_clock_damage(
+	struct kwl_server *server)
+{
+	int32_t grid_top;
+
+	/* The space above the first page's icons, where home_draw_clock centres the clock. */
+	grid_top = (int32_t)server->height - HOME_GRID_BOTTOM - HOME_FIRST_ROWS * HOME_CELL_HEIGHT;
+	if (grid_top < 0)
+		grid_top = 0;
+	kwl_damage_rect(server, 0, 0, (int32_t)server->width, grid_top);
+}
+
+/*
  * Draws App Home's stage over the whole output in its own colours (the
  * pictures' frames, layer-cache.c): the caller gives the appearance's
  * colours back (keep_colours).

@@ -36,4 +36,6 @@ Pi 4 で App Home の開閉が目で滑らか（ユーザーの確認）、1 コ
 | [p001](phase001/phase.md) | 調査と設計（draw の数え、クロスフェードの絵の持ち方と無効化、束ねの形、Pi の見積もり、試験） | planning（第 4 版、review-4 待ち） |
 | p002 | クロスフェードの実装と Pi の確かめ | planned |
 | [p003](phase003/phase.md) | draw の束ね（文字・tile・影）と Pi の確かめ | 段 1 実装（未 merge）、段 2 は床の試しから |
+| [p005](phase005/phase.md) | 時計の 1 分ごとの更新を時計の所だけに | in-progress（実装済み、Pi 未確認） |
+| [p006](phase006/phase.md) | 窓の drag の移動を 60fps に近づける | planning（調べと案、計測待ち） |
 | p004 | 規約の全文の見直し | planned |
