@@ -79,6 +79,19 @@ struct cal_window {
 
 	/* The pointer's buttons held now: while one is, a motion during a card's drag draws the whole window; otherwise only one that lights another widget draws its part (BUG-226). */
 	unsigned buttons_held;
+
+	/*
+	 * A key or text came since the last press: a widget the keys lit may
+	 * show its ring until a press takes the focus away, so that press draws
+	 * the whole window (ws210-p014).
+	 */
+	int keyed;
+
+	/* The left button was last pressed over a day's cell alone: its release there draws the cell alone (a widget pressed elsewhere is drawn again with the whole window). */
+	int pressed_cell;
+
+	/* Why the whole window is to be drawn, for the log of a slow frame (NULL: nothing told). */
+	const char *why;
 	int resized;
 	int moving;
 	int animating;
@@ -106,9 +119,12 @@ static void cal_today(struct cal_date *today);
 static void cal_states(struct cal_window *calendar);
 static int cal_loop(struct cal_window *calendar, unsigned timeout);
 static void cal_input(struct cal_window *calendar, const struct kl_window_event *event);
+static int cal_button_cell(struct cal_window *calendar, const struct kl_window_event *event, struct kl_rect *rect);
+static void cal_dirty(struct cal_window *calendar, const char *why);
+static unsigned cal_add_part(struct kl_rect *parts, unsigned count, const struct kl_rect *rect);
 static int cal_resize(struct cal_window *calendar);
 static void cal_draw(struct cal_window *calendar, uint64_t now_us);
-static void cal_slow_frame(const struct cal_window *calendar, uint64_t started, uint64_t drawn, const struct kl_rect *parts, unsigned count);
+static void cal_slow_frame(const struct cal_window *calendar, uint64_t started, uint64_t drawn, const struct kl_rect *parts, unsigned count, const char *why);
 static int cal_wait(const struct cal_window *calendar, uint64_t now_us);
 static void cal_store_start(void);
 static void cal_remind(struct cal_window *calendar);
@@ -353,7 +369,7 @@ cal_loop(
 
 			/* The desktop's appearance changed: the theme's colours are new, the window is drawn again (ws089-p017). */
 			if (event.kind == KL_APP_THEME) {
-				calendar->dirty = 1;
+				cal_dirty(calendar, "theme");
 				continue;
 			}
 
@@ -365,7 +381,7 @@ cal_loop(
 			if (event.input.kind == KL_WINDOW_ACTION) {
 				cal_view_action(&calendar->view, event.input.code, kl_clock_us());
 				cal_states(calendar);
-				calendar->dirty = 1;
+				cal_dirty(calendar, "action");
 			} else {
 				cal_input(calendar, &event.input);
 			}
@@ -395,7 +411,7 @@ cal_loop(
 		/* The view's notice gone: drawn without it. */
 		if (calendar->view.notice[0] != '\0' && now >= calendar->view.notice_until) {
 			calendar->view.notice[0] = '\0';
-			calendar->dirty = 1;
+			cal_dirty(calendar, "notice");
 		}
 
 		/* The events that start now. */
@@ -420,6 +436,8 @@ cal_input(
 	struct cal_window *calendar,
 	const struct kl_window_event *event)
 {
+	struct kl_rect cell;
+	int on_cell;
 	int redraw;
 	int taken;
 
@@ -427,10 +445,13 @@ cal_input(
 	 * Any input may change the view, but a motion of the pointer only when
 	 * it lights another widget or drags, and the pointer leaving only the
 	 * widget it lit (BUG-226: a frame for every motion left the pointer
-	 * behind).
+	 * behind), and the left button over a day of the months only that
+	 * day's cell (ws210-p014).
 	 */
-	if (event->kind != KL_WINDOW_MOTION && event->kind != KL_WINDOW_LEAVE)
-		calendar->dirty = 1;
+	if (event->kind != KL_WINDOW_MOTION &&
+	    event->kind != KL_WINDOW_LEAVE &&
+	    event->kind != KL_WINDOW_BUTTON)
+		cal_dirty(calendar, "input");
 
 	/* Each kind of input. */
 	switch (event->kind) {
@@ -442,7 +463,7 @@ cal_input(
 		 */
 		redraw = kl_ui_pointer_motion(calendar->ui, event->x, event->y);
 		if (calendar->buttons_held != 0U && calendar->view.dragging >= 0)
-			calendar->dirty = 1;
+			cal_dirty(calendar, "drag");
 		else if (redraw)
 			calendar->lit_changed = 1;
 		break;
@@ -450,7 +471,7 @@ cal_input(
 		/* The lit widget goes dark: its part alone, or the whole window while a button is held. */
 		redraw = kl_ui_pointer_leave(calendar->ui);
 		if (calendar->buttons_held != 0U)
-			calendar->dirty = 1;
+			cal_dirty(calendar, "leave");
 		else if (redraw)
 			calendar->lit_changed = 1;
 		break;
@@ -461,10 +482,38 @@ cal_input(
 		else if (calendar->buttons_held != 0U)
 			calendar->buttons_held--;
 
+		/* Whether it is the left button over a day's cell alone, found before a press takes the focus away. */
+		on_cell = cal_button_cell(calendar, event, &cell);
+		if (event->code == KL_BUTTON_LEFT && event->pressed) {
+			calendar->pressed_cell = on_cell;
+		} else if (event->code == KL_BUTTON_LEFT && !calendar->pressed_cell) {
+			/* The release of a press made elsewhere: what it held is drawn again. */
+			on_cell = 0;
+		}
+		if (event->pressed)
+			calendar->keyed = 0;
+
 		/* The left button presses the widgets. */
-		(void)kl_ui_pointer_motion(calendar->ui, event->x, event->y);
+		redraw = kl_ui_pointer_motion(calendar->ui, event->x, event->y);
 		if (event->code == KL_BUTTON_LEFT)
 			(void)kl_ui_pointer_button(calendar->ui, event->pressed, event->arrival_us);
+
+		/*
+		 * Over a day's cell, a press changes nothing drawn and a release
+		 * (a click, which may choose the day) draws the cell alone; the
+		 * view draws again what choosing the day changes in the same
+		 * frame (ws210-p014, 2026-10-12: the whole window drawn for the
+		 * press, the click and the frame after it made a click show on
+		 * the Pi 4 some 800 ms late).  Any other button, the whole window.
+		 */
+		if (!on_cell) {
+			cal_dirty(calendar, "button");
+		} else if (!event->pressed) {
+			kl_ui_damage(calendar->ui, &cell);
+			calendar->lit_changed = 1;
+		} else if (redraw) {
+			calendar->lit_changed = 1;
+		}
 		break;
 	case KL_WINDOW_AXIS:
 	case KL_WINDOW_AXIS_STOP:
@@ -487,6 +536,7 @@ cal_input(
 		break;
 	case KL_WINDOW_KEY:
 		/* Ctrl+Q quits; the other keys go to the widgets, and those no widget takes to the view. */
+		calendar->keyed = 1;
 		if (event->pressed &&
 		    (event->modifiers & KL_MOD_CTRL) != 0U &&
 		    event->code == CAL_KEY_Q)
@@ -498,6 +548,7 @@ cal_input(
 	case KL_WINDOW_TEXT_PREEDIT:
 	case KL_WINDOW_TEXT_DELETE:
 		/* Text from an input method or the on-screen keyboard, for the field with the keyboard (BUG-203, BUG-204). */
+		calendar->keyed = 1;
 		(void)kl_ui_text(calendar->ui, event);
 		break;
 	case KL_WINDOW_RESIZE:
@@ -509,6 +560,93 @@ cal_input(
 	default:
 		break;
 	}
+}
+
+/*
+ * Finds whether a button's press or release is the left button's over a
+ * day's cell of the last frame, which changes nothing else (no card or
+ * memo dragged, no field with the keyboard, no widget the keys lit): 1
+ * with the cell's part, 0 otherwise.
+ */
+static int
+cal_button_cell(
+	struct cal_window *calendar,
+	const struct kl_window_event *event,
+	struct kl_rect *rect)
+{
+	int wanted;
+	int found;
+
+	/* Only the left button, with nothing dragged. */
+	if (event->code != KL_BUTTON_LEFT)
+		return 0;
+	if (calendar->view.dragging >= 0)
+		return 0;
+
+	/* A field with the keyboard, or a widget the keys may have lit, loses the focus to a press. */
+	wanted = kl_ui_text_wanted(calendar->ui, NULL);
+	if (wanted)
+		return 0;
+	if (calendar->keyed)
+		return 0;
+
+	/* The cell under the pointer. */
+	found = cal_view_cell_at(&calendar->view, event->x, event->y, rect);
+	return found;
+}
+
+/*
+ * Asks for the whole window in the next frame, and tells why for the log
+ * of a slow frame (the first reason since the last frame).
+ */
+static void
+cal_dirty(
+	struct cal_window *calendar,
+	const char *why)
+{
+	/* The first reason is kept. */
+	if (calendar->why == NULL)
+		calendar->why = why;
+
+	/* The whole window. */
+	calendar->dirty = 1;
+}
+
+/*
+ * Adds a part to a frame's parts (KL_FRAME_PARTS_MAX at most; beyond them
+ * merged into the last one) and returns how many there are.
+ */
+static unsigned
+cal_add_part(
+	struct kl_rect *parts,
+	unsigned count,
+	const struct kl_rect *rect)
+{
+	struct kl_rect *last;
+	int right;
+	int bottom;
+
+	/* A part of its own, while there is room. */
+	if (count < KL_FRAME_PARTS_MAX) {
+		parts[count] = *rect;
+		return count + 1U;
+	}
+
+	/* Otherwise the last part grows to hold it. */
+	last = &parts[count - 1U];
+	right = last->x + last->width;
+	if (rect->x + rect->width > right)
+		right = rect->x + rect->width;
+	bottom = last->y + last->height;
+	if (rect->y + rect->height > bottom)
+		bottom = rect->y + rect->height;
+	if (rect->x < last->x)
+		last->x = rect->x;
+	if (rect->y < last->y)
+		last->y = rect->y;
+	last->width = right - last->x;
+	last->height = bottom - last->y;
+	return count;
 }
 
 /*
@@ -561,7 +699,7 @@ cal_resize(
 	/* Succeeded: drawn again at the new size. */
 	calendar->canvas_made = 1;
 	calendar->style.canvas = &calendar->canvas;
-	calendar->dirty = 1;
+	cal_dirty(calendar, "resize");
 	return 0;
 }
 
@@ -577,10 +715,13 @@ cal_draw(
 	struct kl_glass_panel panels[CAL_PANELS_MAX];
 	struct kl_event event;
 	struct kl_rect parts[KL_FRAME_PARTS_MAX];
+	struct kl_rect redraw[CAL_REDRAW_MAX];
+	const char *why;
 	uint64_t started;
 	uint64_t drawn;
 	unsigned part_count;
 	unsigned index;
+	size_t redraw_count;
 	size_t count;
 	int desk_only;
 	int animating_before;
@@ -621,7 +762,7 @@ cal_draw(
 		status = kl_window_present_part(calendar->window, calendar->pixels, (size_t)calendar->width, &calendar->view.desk_area);
 		if (status == EAGAIN)
 			calendar->resized = 1;
-		cal_slow_frame(calendar, started, drawn, &calendar->view.desk_area, 1U);
+		cal_slow_frame(calendar, started, drawn, &calendar->view.desk_area, 1U, "desk");
 		return;
 	}
 
@@ -657,6 +798,22 @@ cal_draw(
 	}
 	calendar->lit_changed = 0;
 
+	/* Why the frame is drawn, for the log of a slow one: in parts, or the whole window for its first reason. */
+	why = "parts";
+	if (part_count == 0U) {
+		why = calendar->why;
+		if (why == NULL) {
+			/* No input asked for it: something moving, the view's motion, or a lit widget without a part. */
+			if (calendar->moving)
+				why = "moving";
+			else if (animating_before)
+				why = "animating";
+			else
+				why = "lit";
+		}
+	}
+	calendar->why = NULL;
+
 	/* The view, all of it. */
 	calendar->dirty = 0;
 	if (part_count == 0U) {
@@ -674,10 +831,29 @@ cal_draw(
 		kl_canvas_clip_pop(&calendar->canvas);
 	}
 
-	/* A click that changed what was drawn before it: the whole view again, in the next frame. */
+	/*
+	 * A click that chose another day: what it changed of what was drawn
+	 * before it (the old day's cell, the card of the day chosen) drawn
+	 * again now within those parts, which a frame of parts shows too
+	 * (ws210-p014).
+	 */
+	redraw_count = calendar->view.redraw_count;
+	memcpy(redraw, calendar->view.redraw, redraw_count * sizeof(redraw[0]));
+	calendar->view.redraw_count = 0;
+	for (index = 0; index < (unsigned)redraw_count; index++) {
+		kl_canvas_clip_push(&calendar->canvas, &redraw[index]);
+		kl_ui_begin(calendar->ui, now_us);
+		cal_view_draw(&calendar->view, calendar->ui, &calendar->style, (int)calendar->width, (int)calendar->height, now_us);
+		calendar->moving = kl_ui_end(calendar->ui, now_us);
+		kl_canvas_clip_pop(&calendar->canvas);
+		if (part_count != 0U)
+			part_count = cal_add_part(parts, part_count, &redraw[index]);
+	}
+
+	/* A click that changed something else of what was drawn before it: the whole view again, in the next frame. */
 	if (calendar->view.again) {
 		calendar->view.again = 0;
-		calendar->dirty = 1;
+		cal_dirty(calendar, "again");
 	}
 
 	/*
@@ -697,7 +873,7 @@ cal_draw(
 			cal_log("GLASS failed error=%d", error);
 			calendar->view.glass = 0;
 			calendar->style.glass = 0;
-			calendar->dirty = 1;
+			cal_dirty(calendar, "glass");
 		}
 	}
 
@@ -706,7 +882,13 @@ cal_draw(
 	status = kl_window_present_parts(calendar->window, calendar->pixels, (size_t)calendar->width, parts, part_count);
 	if (status == EAGAIN)
 		calendar->resized = 1;
-	cal_slow_frame(calendar, started, drawn, parts, part_count);
+	if (redraw_count != 0U && part_count != 0U)
+		why = "day";
+	cal_slow_frame(calendar, started, drawn, parts, part_count, why);
+
+	/* The frame of a click that chose another day, logged with its times however long it took (the Pi 4's measure of ws210-p014). */
+	if (redraw_count != 0U)
+		cal_log("DAY-FRAME draw=%lu present=%lu parts=%u", (unsigned long)((drawn - started) / 1000U), (unsigned long)((kl_clock_us() - drawn) / 1000U), part_count);
 
 	/* The keys no widget took, and the input that met no widget. */
 	for (;;) {
@@ -717,15 +899,17 @@ cal_draw(
 		/* A key is the view's; it draws again. */
 		if (event.kind == KL_EVENT_KEY) {
 			cal_view_key(&calendar->view, event.code, event.modifiers, now_us);
-			calendar->dirty = 1;
+			cal_dirty(calendar, "key");
 		}
 	}
 }
 
 /*
  * Logs a frame that took long (a diagnostic of the Pi 4, ws210-p014): its
- * drawing's and its showing's times, the presenter's parts of them, and
- * the parts it drew (none: the whole window) with their area in pixels.
+ * drawing's and its showing's times, the presenter's parts of them, the
+ * parts it drew (none: the whole window) with their area in pixels, and why
+ * it was drawn (parts, the desk calendar, a day chosen, or the first reason
+ * for the whole window: input, button, key, again, moving, animating...).
  */
 static void
 cal_slow_frame(
@@ -733,7 +917,8 @@ cal_slow_frame(
 	uint64_t started,
 	uint64_t drawn,
 	const struct kl_rect *parts,
-	unsigned count)
+	unsigned count,
+	const char *why)
 {
 	struct kl_present_times times;
 	unsigned long area;
@@ -754,7 +939,7 @@ cal_slow_frame(
 
 	/* One line. */
 	kl_window_present_times(calendar->window, &times);
-	cal_log("SLOW-FRAME draw=%lu present=%lu copy=%u acquire=%u queue=%u wait=%u parts=%u area=%lu", (unsigned long)((drawn - started) / 1000U), (unsigned long)((shown - drawn) / 1000U), times.copy_ms, times.acquire_ms, times.present_ms, times.wait_ms, count, area);
+	cal_log("SLOW-FRAME draw=%lu present=%lu copy=%u acquire=%u queue=%u wait=%u parts=%u area=%lu why=%s", (unsigned long)((drawn - started) / 1000U), (unsigned long)((shown - drawn) / 1000U), times.copy_ms, times.acquire_ms, times.present_ms, times.wait_ms, count, area, why);
 }
 
 /*
