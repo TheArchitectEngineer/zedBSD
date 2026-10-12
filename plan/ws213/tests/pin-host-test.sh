@@ -13,7 +13,14 @@
 #    when ready, EFAULT with no allocation and no fault when not mapped;
 #  - a copy-on-write page is faulted before a write pin;
 #  - a page the fault leaves not ready is still pinned on the next pass
-#    (no fault loop), and a fault's ENOMEM is reported as ENOMEM.
+#    (no fault loop), and a fault's ENOMEM is reported as ENOMEM;
+#  - with real pthreads (the Pi 4's four CPUs), three threads copy in and out
+#    of one address space while a fourth unmaps pages, makes them
+#    copy-on-write and takes a region away and back under the locks: every
+#    vm->lock release is by its holder, the metadata lock is taken before
+#    vm->lock and both are let go after each copy, the fault runs with no VM
+#    lock held, the bytes of each successful copy read back, and every pin is
+#    released.  The locks are real pthread mutexes that record their holder.
 # Usage: plan/ws213/tests/pin-host-test.sh [build-dir]  (from the tree root)
 # Last line: pin-host-test: PASS.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -67,16 +74,91 @@ static unsigned faults;
 static unsigned callocs;
 static int fault_enomem;
 static int fault_stubborn;
+static int concurrent;
+static unsigned lock_violations;
 static void (*vmspace_pin_page_checkpoint)(struct vmspace *vm, size_t index, size_t page_count);
 
-void vm_metadata_enter(void) { metadata_entries++; }
-void vm_metadata_leave(void) { }
-void mutex_lock(struct mutex *mutex) { (void)mutex; }
-void mutex_unlock(struct mutex *mutex) { (void)mutex; }
+/*
+ * The metadata lock and vm->lock: real mutexes that know their holder.  A
+ * release by a thread that does not hold the lock, a vm->lock taken twice or
+ * before the metadata lock, or a lock other than vm->lock is a violation.
+ */
+#define METADATA_MUTEX 0
+#define VM_MUTEX 1
+
+/* pthreads, from pin-threads.c (the kernel's headers name sched_yield too). */
+void host_mutex_lock(int which);
+void host_mutex_unlock(int which);
+void host_yield(void);
+void *host_thread_start(void *(*start)(void *), void *argument);
+void host_thread_join(void *thread);
+
+static __thread unsigned metadata_depth_mine;
+static __thread int vm_lock_mine;
+
+static void
+violation(const char *what)
+{
+	printf("FAIL lock: %s\n", what);
+	__atomic_fetch_add(&lock_violations, 1U, __ATOMIC_RELAXED);
+}
+
+static void
+metadata_take(void)
+{
+	if (metadata_depth_mine == 0) {
+		if (vm_lock_mine)
+			violation("metadata lock taken while holding vm->lock");
+		host_mutex_lock(METADATA_MUTEX);
+	}
+	metadata_depth_mine++;
+}
+
+static void
+metadata_let_go(void)
+{
+	if (metadata_depth_mine == 0) {
+		violation("metadata lock released by a thread that does not hold it");
+		return;
+	}
+	metadata_depth_mine--;
+	if (metadata_depth_mine == 0)
+		host_mutex_unlock(METADATA_MUTEX);
+}
+
+void vm_metadata_enter(void) { __atomic_fetch_add(&metadata_entries, 1U, __ATOMIC_RELAXED); metadata_take(); }
+void vm_metadata_leave(void) { metadata_let_go(); }
+
+void
+mutex_lock(struct mutex *mutex)
+{
+	if (mutex != &test_vm.lock)
+		violation("a lock other than vm->lock");
+	if (vm_lock_mine)
+		violation("vm->lock taken twice");
+	if (metadata_depth_mine == 0)
+		violation("vm->lock taken without the metadata lock");
+	host_mutex_lock(VM_MUTEX);
+	vm_lock_mine = 1;
+}
+
+void
+mutex_unlock(struct mutex *mutex)
+{
+	if (mutex != &test_vm.lock)
+		violation("a lock other than vm->lock");
+	if (!vm_lock_mine) {
+		violation("vm->lock released by a thread that does not hold it");
+		return;
+	}
+	vm_lock_mine = 0;
+	host_mutex_unlock(VM_MUTEX);
+}
+
 unsigned long spin_lock_irqsave(struct spinlock *lock) { (void)lock; return 0; }
 void spin_unlock_irqrestore(struct spinlock *lock, unsigned long enabled) { (void)lock; (void)enabled; }
 uint64_t waitq_sequence(const struct wait_queue *queue) { return queue->sequence; }
-void *kern_calloc(size_t count, size_t size) { callocs++; return calloc(count, size); }
+void *kern_calloc(size_t count, size_t size) { __atomic_fetch_add(&callocs, 1U, __ATOMIC_RELAXED); return calloc(count, size); }
 void kern_free(void *pointer) { free(pointer); }
 void *hal_pmem_to_kernel(hal_physaddr_t paddr) { return (void *)(uintptr_t)paddr; }
 
@@ -99,12 +181,12 @@ vm_private_page_is_resident(const struct vm_page *page)
 int
 vm_private_page_pin(struct vm_private_page *backing, struct kern_pmem *memory)
 {
-	backing->pin_count++;
+	__atomic_fetch_add(&backing->pin_count, 1U, __ATOMIC_RELAXED);
 	*memory = backing->pmem;
 	return 0;
 }
 
-void vm_private_page_unpin(struct vm_private_page *backing) { backing->pin_count--; }
+void vm_private_page_unpin(struct vm_private_page *backing) { __atomic_fetch_sub(&backing->pin_count, 1U, __ATOMIC_RELAXED); }
 void vm_private_page_mark_dirty(struct vm_private_page *backing) { backing->generation++; }
 void vm_private_page_ref(struct vm_private_page *backing) { (void)backing; }
 void vm_private_page_put(struct vm_private_page *backing) { (void)backing; }
@@ -135,36 +217,50 @@ current_vmspace(void)
 	return &test_vm;
 }
 
-/* The fake fault: maps the page, makes its backing resident and breaks copy-on-write. */
+/*
+ * The fake fault: maps the page, makes its backing resident and breaks
+ * copy-on-write, under the locks it takes itself; it is called with no VM
+ * lock held.
+ */
 int
 vmspace_fault(struct vmspace *vm, uintptr_t address, uint32_t required)
 {
 	struct vm_region *region;
 	struct vm_page *page;
+	unsigned count;
+	int error;
 
 	(void)required;
-	faults++;
-	if (faults > 100U) {
+	if (metadata_depth_mine != 0 || vm_lock_mine)
+		violation("fault with a VM lock held");
+	count = __atomic_add_fetch(&faults, 1U, __ATOMIC_RELAXED);
+	if (!concurrent && count > 100U) {
 		printf("FAIL the pin faults the same page forever\n");
 		exit(1);
 	}
 	if (fault_enomem)
 		return ENOMEM;
-	for (region = vm->regions; region != NULL; region = region->next) {
+	metadata_take();
+	host_mutex_lock(VM_MUTEX);
+	error = EFAULT;
+	for (region = vm->regions; region != NULL && error == EFAULT; region = region->next) {
 		if (address < region->start || address >= region->start + region->size)
 			continue;
 		for (page = region->pages; page != NULL; page = page->next) {
 			if (page->address != (address & ~(uintptr_t)(PAGE_SIZE - 1U)))
 				continue;
+			error = 0;
 			if (fault_stubborn)
-				return 0;
+				break;
 			page->flags |= VM_MAPPING_MAPPED;
 			page->flags &= ~VM_MAPPING_COW;
 			page->private_page->flags |= VM_PAGE_RESIDENT;
-			return 0;
+			break;
 		}
 	}
-	return EFAULT;
+	host_mutex_unlock(VM_MUTEX);
+	metadata_let_go();
+	return error;
 }
 
 #include "pin-functions.inc"
@@ -239,6 +335,161 @@ make_space(unsigned count)
 	callocs = 0;
 	fault_enomem = 0;
 	fault_stubborn = 0;
+}
+
+/* One copying thread of the concurrent part: its range and what it saw. */
+struct copier {
+	void *thread;
+	uintptr_t address;
+	size_t size;
+	int may_vanish;
+	unsigned seed;
+	unsigned rounds;
+	unsigned copies;
+	unsigned efaults;
+	unsigned wrong;
+};
+
+static int unmapper_done;
+
+/* Copies out and back in again and again until the unmapper is done. */
+static void *
+copy_loop(void *argument)
+{
+	struct copier *copier = argument;
+	unsigned char *out = malloc(copier->size);
+	unsigned char *in = malloc(copier->size);
+	size_t index;
+	int error;
+
+	while (!__atomic_load_n(&unmapper_done, __ATOMIC_ACQUIRE) || copier->rounds < 200U) {
+		copier->rounds++;
+		for (index = 0; index < copier->size; index++)
+			out[index] = (unsigned char)(copier->seed + copier->rounds + index * 3U);
+		error = copyout(out, copier->address, copier->size);
+		if (metadata_depth_mine != 0 || vm_lock_mine)
+			violation("a lock still held after copyout");
+		if (error == EFAULT && copier->may_vanish) {
+			copier->efaults++;
+			continue;
+		}
+		if (error != 0) {
+			copier->wrong++;
+			continue;
+		}
+		memset(in, 0, copier->size);
+		error = copyin(copier->address, in, copier->size);
+		if (metadata_depth_mine != 0 || vm_lock_mine)
+			violation("a lock still held after copyin");
+		if (error == EFAULT && copier->may_vanish) {
+			copier->efaults++;
+			continue;
+		}
+		if (error != 0 || memcmp(in, out, copier->size) != 0) {
+			copier->wrong++;
+			continue;
+		}
+		copier->copies++;
+	}
+	free(out);
+	free(in);
+	return NULL;
+}
+
+/*
+ * Changes the address space under the copies, under the locks: unmaps a page
+ * (not mapped, not resident), makes one copy-on-write, or takes the second
+ * region away and puts it back.
+ */
+static void *
+unmap_loop(void *argument)
+{
+	unsigned seed = 12345U;
+	unsigned round;
+	unsigned slot;
+	unsigned index;
+	int removed = 0;
+
+	(void)argument;
+	for (round = 0; round < 20000U; round++) {
+		seed = seed * 1103515245U + 12345U;
+		slot = (seed >> 8) & 1U;
+		index = (seed >> 12) % (slot == 0 ? 4U : 8U);
+		metadata_take();
+		host_mutex_lock(VM_MUTEX);
+		switch ((seed >> 20) % 8U) {
+		case 0:
+		case 1:
+		case 2:
+			pages[slot][index].flags &= ~VM_MAPPING_MAPPED;
+			backings[slot][index].flags &= ~VM_PAGE_RESIDENT;
+			break;
+		case 3:
+		case 4:
+		case 5:
+			pages[slot][index].flags |= VM_MAPPING_COW;
+			break;
+		default:
+			if (removed)
+				regions[0].next = &regions[1];
+			else
+				regions[0].next = NULL;
+			removed = !removed;
+			break;
+		}
+		host_mutex_unlock(VM_MUTEX);
+		metadata_let_go();
+		host_yield();
+	}
+	metadata_take();
+	host_mutex_lock(VM_MUTEX);
+	regions[0].next = &regions[1];
+	host_mutex_unlock(VM_MUTEX);
+	metadata_let_go();
+	__atomic_store_n(&unmapper_done, 1, __ATOMIC_RELEASE);
+	return NULL;
+}
+
+/* Runs three copies and the unmapper at once on one address space. */
+static void
+run_concurrent(void)
+{
+	struct copier copiers[3];
+	void *unmapper;
+	unsigned index;
+
+	const uint32_t rw = HAL_SPACE_READ | HAL_SPACE_WRITE;
+
+	make_region(0, 0x10000U, 4, rw, 1);
+	make_region(1, 0x20000U, 8, rw, 1);
+	make_space(2);
+	concurrent = 1;
+	memset(copiers, 0, sizeof(copiers));
+	copiers[0].address = 0x10000U + 50U;
+	copiers[0].size = 4096U;
+	copiers[1].address = 0x12000U + 50U;
+	copiers[1].size = 4096U;
+	copiers[2].address = 0x20000U + 50U;
+	copiers[2].size = 6U * 4096U;
+	copiers[2].may_vanish = 1;
+	for (index = 0; index < 3U; index++) {
+		copiers[index].seed = index * 77U;
+		copiers[index].thread = host_thread_start(copy_loop, &copiers[index]);
+	}
+	unmapper = host_thread_start(unmap_loop, NULL);
+	host_thread_join(unmapper);
+	for (index = 0; index < 3U; index++)
+		host_thread_join(copiers[index].thread);
+	concurrent = 0;
+
+	printf("pin-host-test: concurrent: %u faults, copies %u/%u/%u, vanished %u\n",
+	       faults, copiers[0].copies, copiers[1].copies, copiers[2].copies, copiers[2].efaults);
+	for (index = 0; index < 3U; index++)
+		check(copiers[index].wrong == 0, "concurrent: every copy succeeds and reads back");
+	check(copiers[0].copies != 0 && copiers[1].copies != 0 && copiers[2].copies != 0,
+	      "concurrent: every thread copied");
+	check(faults != 0, "concurrent: the copies faulted pages back in");
+	check(lock_violations == 0, "concurrent: every lock released by its holder, in order");
 }
 
 static unsigned
@@ -354,6 +605,11 @@ main(void)
 	error = copyin(0x10000U, readback, 16U);
 	check(error == ENOMEM, "enomem: reported");
 
+	/* Real threads on one address space, as on four CPUs. */
+	run_concurrent();
+	check(pins_held() == 0, "concurrent: pins released");
+	check(lock_violations == 0, "every lock released by its holder, in order");
+
 	if (failures != 0) {
 		printf("pin-host-test: FAIL (%d)\n", failures);
 		return 1;
@@ -363,14 +619,51 @@ main(void)
 }
 EOT
 
-# The kernel's own ABI headers (KERN_UAPI_NATIVE), plainly and with ASan and UBSan.
-for mode in plain sanitize; do
+cat > "$out/pin-threads.c" <<'EOT'
+#include <pthread.h>
+#include <sched.h>
+#include <stdlib.h>
+
+static pthread_mutex_t mutexes[2] = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER };
+
+void host_mutex_lock(int which) { pthread_mutex_lock(&mutexes[which]); }
+void host_mutex_unlock(int which) { pthread_mutex_unlock(&mutexes[which]); }
+void host_yield(void) { sched_yield(); }
+
+void *
+host_thread_start(void *(*start)(void *), void *argument)
+{
+	pthread_t *thread = malloc(sizeof(*thread));
+
+	if (thread == NULL || pthread_create(thread, NULL, start, argument) != 0)
+		abort();
+	return thread;
+}
+
+void
+host_thread_join(void *thread)
+{
+	pthread_join(*(pthread_t *)thread, NULL);
+	free(thread);
+}
+EOT
+
+# The kernel's own ABI headers (KERN_UAPI_NATIVE), plainly, with ASan and UBSan,
+# and with ThreadSanitizer for the concurrent part.
+for mode in plain sanitize thread; do
 	extra=
 	if [ "$mode" = sanitize ]; then
 		extra='-fsanitize=address,undefined -fno-omit-frame-pointer'
 	fi
+	if [ "$mode" = thread ]; then
+		extra='-fsanitize=thread'
+	fi
 	# shellcheck disable=SC2086
 	cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wno-unused-function -DKERN_USER_ABI_LP64 -DKERN_UAPI_NATIVE \
-		-I. -Iinclude -Iinclude/libc -Iinclude/uapi -Isrc -I"$out" $extra "$out/pin-main.c" -o "$out/pin-host-test-$mode"
+		-I. -Iinclude -Iinclude/libc -Iinclude/uapi -Isrc -I"$out" $extra -c "$out/pin-main.c" -o "$out/pin-main-$mode.o"
+	# shellcheck disable=SC2086
+	cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -pthread $extra -c "$out/pin-threads.c" -o "$out/pin-threads-$mode.o"
+	# shellcheck disable=SC2086
+	cc -pthread $extra "$out/pin-main-$mode.o" "$out/pin-threads-$mode.o" -o "$out/pin-host-test-$mode"
 	UBSAN_OPTIONS=halt_on_error=1 timeout 60 "$out/pin-host-test-$mode"
 done

@@ -910,18 +910,30 @@ build_stack(
 	task->resume_sp = (uintptr_t)stack_pointer;
 }
 
-/* Reports the task the current CPU runs. */
+/* Reports the task the current CPU runs, which is the caller's. */
 static struct arm64_task *
 running_task(
 	void)
 {
 	struct arm64_percpu *cpu;
+	struct arm64_task *task;
+	uint64_t irq;
 
-	/* The CPU's record names its running task. */
+	/*
+	 * Reads the CPU's record and its running task with interrupts off.
+	 * TPIDR_EL1 names the CPU, not the task, so the two reads are two
+	 * instructions; a caller preempted between them and resumed on another
+	 * CPU would read the old CPU's task, another thread's (as BUG-082 did
+	 * on amd64), and a mutex released by it would trap as not its owner.
+	 * With interrupts off the caller stays where it read the record.
+	 */
+	irq = arm64_irq_save();
 	cpu = arm64_percpu_current();
+	task = cpu->running_task;
+	arm64_irq_restore(irq);
 
 	/* Succeeded: the running task, or NULL before the CPU's initial task. */
-	return cpu->running_task;
+	return task;
 }
 
 /* Reports the running task's user frame, or NULL outside a user entry. */

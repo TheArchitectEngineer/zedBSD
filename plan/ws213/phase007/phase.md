@@ -169,6 +169,36 @@ commit: 874b5f935（K2-1・K2-8、`lock-host-test.sh`、review-1.md）、a30ce8e
 - **pass_max**: 707 ms は起動（14.26 s、出力を開く pass、`schedule_us=613901`、`KWL MODE switch_ms=425`）で場面の外。135 ms は 296.2 s の wlshm の接続（`shm_us=121719`、最初の shm の写し）。
 
 
+## Pi 4（4 core）の stall watch の trap（2026-10-13 P5）
+
+### 起きた事（Q1 から）
+
+WS208 p007 の全部入りの kernel（`p29-kernel.elf`）で、使っている途中に `cpu2 unhandled exception esr=f2000001 elr=ffff0000000d0890`（brk）。chain は `mutex_unlock` ← `vmspace_pin_user_pages`（`db9b0`）← `copy_backing`（`de41c`）。1 core では起きていない。
+
+### 原因（K-2 (b) ではなく arm64 の HAL）
+
+- `db9ac` の `bl mutex_unlock` は `vmspace_pin_user_pages` の唯一の `mutex_unlock(&vm->lock)`（locks の下の walk と pin の後、`add x0, x24, #0x18`）。`d0890` の brk は `mutex_check_owner` の trap（持たれていない、または持ち主が `thread_current()` と違う）。
+- `thread_current()` → `hal_task_get_current()` → `running_task()`（`src/hal/arm64/task.c`）は `mrs x8, TPIDR_EL1` と `ldr x8, [x8, #0x20]`（`cpu->running_task`）の **2 命令**。TPIDR_EL1 は task でなく CPU を指す。kernel は割り込みの中で横取りする（tick の quantum の終わり、起床の横取り）ので、2 命令の間で横取りされ、別の CPU で再開した thread は、元の CPU の今の task（他の thread）を自分と読む。`mutex_lock` で読み違えれば持ち主に他の thread を書き、`mutex_unlock` で読み違えれば持ち主の確かめが他の thread と比べる。どちらも unlock の trap になる。amd64 は同じ欠陥を BUG-082 で直していた（`%gs` の 1 命令の読み、`src/hal/amd64/task.c` の注記）が、arm64 は 2 命令のままだった。
+- 1 core では移る先が無いので起きない。`vmspace_pin_user_pages` に出たのは、copyin・copyout ごとに通る最も頻繁な sleeping mutex の lock・unlock だから（K-2 (b) の locks の扱いは正しい。下の pthread の試験）。
+
+### 直し（`src/hal/arm64/task.c`・`src/hal/arm64/space.c`、HAL の API は変えない）
+
+- `running_task()`: CPU の record とその `running_task` を割り込みを止めて読む（`arm64_irq_save` → 読み → `arm64_irq_restore`）。`hal_task_get_current`・`arm64_task_running` と HAL の中の全部の利用がこれを通る。rpi4 の `mutex_unlock` の逆アセンブルで `msr DAIFSet` の後に `mrs TPIDR_EL1`・`ldr [x8,#0x20]`、その後に `msr DAIFClr` を確かめた。
+- 同じ種類の欠陥（読んで見つけた、同じ commit）: `hal_space_switch()` は割り込みを止める前に `arm64_percpu_current()` を読んでいた。task の切り替え（割り込みは止まっている）の他に exec（`hal_task_exec_current`、横取りされ得る）から呼ばれ、間で別の CPU に移ると、選んだ space を元の CPU の record（`current_space`）に書き、その CPU の TLB の shootdown の判定を狂わせ得る。CPU を割り込みを止めてから読むようにした。
+
+### 試験
+
+- `plan/ws213/tests/current-host-test.sh`（新）: `running_task`・`hal_task_get_current` を切り出し、本物の pthread の 2 task を 2 つの模擬 CPU に置き、scheduler の thread が両方の割り込みが開いている時だけ 2 task の CPU を入れ替える。`hal_task_get_current()` が常に自分を返すこと。旧 `task.c` では `121913 moves, 266999 wrong answers` で FAIL、直した後は PASS（plain と TSan）。
+- `plan/ws213/tests/pin-host-test.sh`（足した）: 偽の metadata lock・`vm->lock` を持ち主を覚える本物の pthread の mutex にし、持ち主でない release・二重の取り・順序（metadata が先）・lock を持ったままの fault を違反として数える。pthread の 3 つの copy（4 page 以下 2 つ、6 page 1 つ）と、locks の下で page を外す・COW にする・2 つ目の region を外して戻す thread を同時に走らせる。違反 0・copy の byte が読み戻せる・pin が全部戻ることを確かめる（plain、ASan+UBSan、TSan で PASS）。`vmspace_pin_user_pages` の `mutex_lock(&vm->lock)` を消す変異で FAIL（`vm->lock released by a thread that does not hold it`）。この試験は直す前の kernel の source でも PASS する（K-2 (b) の locks は正しく、原因は HAL）。
+- `lock-host-test.sh`・`kd-host-test.sh` PASS。
+- build（warning 0）: rpi4 `make -o /home/awe/zedBSD-worktrees/p9/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix`（`arm64 vmunix check: PASS`）、amd64 同じく `config-amd64.mk`（`amd64 vmunix check: PASS`）。
+- 未実施: Pi 4（4 core）での確かめ（Q1 が vmunix を置く）、T1 の amd64 の boot。
+
+### 残り（Q1 へ、この直しの外）
+
+- `hal_cpu_current()`（`src/hal/arm64/smp.c`）は `record->watch_countdown--` を割り込みを止めずに行う。横取りされて移った thread は他の CPU の record を書き、その CPU の自分の tick の確かめの間隔がずれ得る（WS208 の stall watch）。
+- `hal_task_exec_current()`（arm64）は `task->fpregs` に初期値を写してから `arm64_fp_restore` するまでの間に横取りされると、切り替えの保存が古い program の FP の register で上書きし、新しい program が古い値で始まる。
+
 ## K-1 の設計（sched、候補 1 への直し）
 
 ### 今の順番（読んだ物、`src/kern/sched.c`）

@@ -656,16 +656,27 @@ hal_space_switch(
 	struct arm64_space *space;
 	uintptr_t ttbr;
 	bool enabled;
+	bool space_enabled;
 	int locked;
 
-	/* The space already selected here needs nothing. */
+	/*
+	 * Names the CPU with interrupts off, so that a caller outside a task
+	 * switch (an exec) cannot move to another CPU between reading the
+	 * record and installing the table, which would publish the selection
+	 * in the old CPU's record.
+	 */
+	enabled = hal_irq_disable();
 	cpu = arm64_percpu_current();
-	if (handle == cpu->current_space)
+
+	/* The space already selected here needs nothing. */
+	if (handle == cpu->current_space) {
+		if (enabled)
+			hal_irq_enable();
 		return;
+	}
 
 	/* The kernel alone: the empty user table. */
 	if (handle == HAL_SPACE_SYS) {
-		enabled = hal_irq_disable();
 		__atomic_store_n(&cpu->current_space, handle, __ATOMIC_RELEASE);
 		hal_mb();
 		arm64_write_ttbr0(system_ttbr0);
@@ -676,7 +687,7 @@ hal_space_switch(
 	}
 
 	/* A user space is held while its table is installed. */
-	locked = space_lock_handle(handle, &space, &enabled);
+	locked = space_lock_handle(handle, &space, &space_enabled);
 	if (!locked)
 		HAL_FATAL("invalid arm64 space switch");
 
@@ -686,7 +697,11 @@ hal_space_switch(
 	arm64_write_ttbr0(ttbr);
 	arm64_flush_tlb_local();
 
-	space_unlock(space, enabled);
+	space_unlock(space, space_enabled);
+
+	/* Restores the caller's interrupt state. */
+	if (enabled)
+		hal_irq_enable();
 }
 
 /*
