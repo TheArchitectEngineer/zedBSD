@@ -16,6 +16,10 @@ p003a は新しい register・bit・plane の word を使わない。変えた�
 | 背景の fill の要求 `0x44` の bit 24 | `publish_list`（display-flip.c） | 立っていない時だけ書く（前は publish ごと） | (a) display-program.c・既存の flip | host: 全部の flip の試験が通る |
 | plane の word（unscaled の 8 word、固定 alpha `0x4000fff0`、per-pixel premultiplied `0x2000fff0`、位置の word 1、終わり `0x80000000`） | `encode_plane`・`cursor_words`（display-flip.c） | 変わらない。不透明な全画面の primary の下では console の plane を list に入れない | (a) 既存の flip（prepare_frame・cursor_words） | host: display-flip-host-test・display-device-host-test（list の word） |
 
-## p003a の終わりの GPL との類似の監査
+## p003a の終わりの GPL との類似の監査（2026-10-12 P2）
 
-（p003a の終わりに記録する）
+- 対象: p003a で変えた `src/drivers/gpu/bcm2711/display-flip.c`・`display-flip.h`・`display-device.c`。比べた相手: Linux 6.19（`05f7e89ab9731565d8a62e3b5d1ec206485eeb0b`、`plan/ws141/temp/linux`、ignored）の `drivers/gpu/drm/vc4/*.c`・`*.h`。
+- 方法: WS141 p007 と同じ形の字面の比較（comment と include を除いた token 列の、literal の 24 token の窓と、識別子を正規化した 48 token・32 token の窓の一致）を scratchpad の使い捨ての script で行った（script と GPL の作業資料は commit しない）。
+- 結果: literal 24 は 0、正規化 48 は 0。正規化 32 は display-device.c と vc4_hdmi.c の 8 窓で、既存の `bind_operations` の「構造体の op の欄へ関数を順に代入する」C の共通の構文（p003a で変えていない並び）。GPL の演算・構造・名前・comment の取り込みとして残す候補は無い。
+- 設計: 状態から list を作り、採られていない次の list を差し替え、2 つ出ている間は採用の IRQ で coalesce する作りは、p001 の設計（zedBSD の flip の state・slot・serial）から書いた。Linux の DRM の atomic・vblank event・dlist の allocator（drm_mm）の構造は使っていない。HVS の値は上の表のとおり既存の zedBSD の code の値だけ。
+- 限界: 有限の窓の比較は短い一致や設計の類似の自動的な証明ではない。WS の最後の p002 でもう一度行う。
