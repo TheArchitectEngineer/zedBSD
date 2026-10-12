@@ -216,6 +216,16 @@ static uint32_t desktop_key_eaten;
 #define DOUBLE_CLICK_MS		400U
 #define PULL_DISTANCE		48
 
+/*
+ * The parts of a body draw_body_part draws (ws211-p007): all of it; all but
+ * its shadow, into the animation's picture of the window (layer-cache.c);
+ * or its shadow and that picture, scaled to the body, in an animation's
+ * frame.
+ */
+#define BODY_WHOLE		0U
+#define BODY_INTO_PICTURE	1U
+#define BODY_FROM_PICTURE	2U
+
 /* How far from a double click's second press its third may be and still take the dock back (ws079-p013). */
 #define TRIPLE_CLICK_SLOP	8
 
@@ -397,6 +407,7 @@ static void window_layer(struct kwl_server *server, struct kwl_object *surface, 
 static void draw_backdrop(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned below, float position);
 static void draw_window_blurred(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface);
 static void draw_body(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *body, unsigned focused);
+static void draw_body_part(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *body, unsigned focused, unsigned part);
 static void draw_title_bar(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
 static void draw_title(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
 static int draw_picture_mark(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, int32_t x, int32_t middle, const float *ink);
@@ -486,6 +497,9 @@ static unsigned title_clicks(struct kwl_server *server, struct kwl_object *surfa
 static int click_quick(struct kwl_server *server, struct kwl_object *surface, uint64_t now);
 static int click_docked_third(struct kwl_server *server);
 static void window_resized(struct kwl_object *surface);
+static int window_waits_size(const struct kwl_object *surface);
+static void anim_begin(struct kwl_server *server, struct kwl_object *surface, unsigned kind, const struct shell_rect *from, const struct shell_rect *to, unsigned configure);
+static void anim_finish(struct kwl_server *server);
 static void window_lower(struct kwl_server *server, struct kwl_object *surface, const char *via);
 static int bar_press(struct kwl_server *server, uint32_t button);
 static struct kwl_object *bar_cover(struct kwl_server *server);
@@ -550,6 +564,14 @@ static struct kwl_plane_places shell_head_bars_logged;
 static unsigned shell_home_layer_hidden;
 
 /*
+ * Whether the window an animation docks or brings back is drawn from its
+ * picture (layer-cache.c, ws211-p007): set by kwl_glass_draw around the
+ * desktop layer's drawing in the anchor's pass only, so that a head's pass
+ * draws it as before.  Only the event loop touches it.
+ */
+static unsigned shell_anim_picture;
+
+/*
  * Where the system bar's status pill and clock pill were last logged (the
  * tests press between the status's icons, ws177-p038): logged again when
  * either moves or changes width.  All 0 before the first.
@@ -600,6 +622,7 @@ kwl_glass_draw(
 	int showing;
 	int menu;
 	int pictures;
+	int anim_pictures;
 	float home;
 	float position;
 
@@ -659,6 +682,15 @@ kwl_glass_draw(
 	/* The log says when the layer is left out or drawn again. */
 	home_layer_log(hidden);
 
+	/*
+	 * A window docking or coming back, with App Home closed, is drawn from
+	 * its picture over the desktop's (layer-cache.c, ws211-p007): the
+	 * frames of the animation draw two pictures instead of every window.
+	 */
+	anim_pictures = 0;
+	if (home <= 0.0f && server->anim != NULL)
+		anim_pictures = kwl_layers_anim_showing(server, windows, count);
+
 	/* The layer's shadow over Home, while the layer shows. */
 	if (home > 0.0f && !hidden) {
 		glass_shape_init(&shape, server->layer_x, server->layer_y, (float)server->width * server->layer_scale, (float)server->height * server->layer_scale);
@@ -706,7 +738,7 @@ kwl_glass_draw(
 		shape.mode = MODE_IMAGE;
 		shape.opaque = 1.0f;
 		shape.set = glass_wallpaper_set(server);
-		if (pictures)
+		if (pictures || anim_pictures)
 			shape.set = kwl_layers_set(server, KWL_LAYER_DESKTOP);
 		if (home > 0.0f)
 			shape.radius = 18.0f;
@@ -731,13 +763,20 @@ kwl_glass_draw(
 	/* The desktop's icons and the windows, unless Home hides the layer. */
 	position = desktop_position(server);
 	server->draw_section = KWL_SECTION_LAYER;
-	if (!hidden && pictures)
+	if (!hidden && anim_pictures) {
+		/* The animated window from its picture, unshifted (the desktops do not slide). */
+		server->layer_on = 0;
+		shell_anim_picture = 1U;
 		draw_layer_animated(server, command, windows, count, home, &bar);
-	else if (!hidden)
+		shell_anim_picture = 0U;
+	} else if (!hidden && pictures) {
+		draw_layer_animated(server, command, windows, count, home, &bar);
+	} else if (!hidden) {
 		draw_desktop_layer(server, command, windows, count, home, &bar);
-	server->draw_section = KWL_SECTION_OTHER;
+	}
 
-	/* The windows' popups over all the windows (popup.c); the glass from here is on the blurred wallpaper. */
+	/* The windows' popups over all the windows (popup.c), out of the layer; the glass from here is on the blurred wallpaper. */
+	server->draw_section = KWL_SECTION_OTHER;
 	server->layer_on = 0;
 	kwl_backdrop_reset(server);
 	kwl_popup_draw(server, command);
@@ -2782,6 +2821,7 @@ kwl_glass_mapped(
 	struct kwl_object *surface)
 {
 	struct shell_rect to;
+	struct shell_rect icon;
 	int32_t from[4];
 	int launched;
 
@@ -2804,14 +2844,13 @@ kwl_glass_mapped(
 		return;
 	}
 
-	/* From the icon's rectangle to the window's own. */
+	/* From the icon's rectangle to the window's own; the window has its size already. */
 	body_rect(server, surface, &to);
-	memcpy(server->anim_from, from, sizeof(server->anim_from));
-	memcpy(server->anim_to, &to, sizeof(server->anim_to));
-	server->anim = surface;
-	server->anim_docking = ANIM_LAUNCH;
-	server->anim_start_ms = kwl_milliseconds();
-	server->dirty = 1;
+	icon.x = from[0];
+	icon.y = from[1];
+	icon.width = from[2];
+	icon.height = from[3];
+	anim_begin(server, surface, ANIM_LAUNCH, &icon, &to, 0U);
 	printf("KWL GLASS launch surface=%u from=%d,%d to=%d,%d size=%dx%d client=%llu\n", surface->id, from[0], from[1], to.x, to.y, to.width, to.height, (unsigned long long)surface->client->number);
 }
 
@@ -3320,12 +3359,12 @@ kwl_glass_tick(
 		}
 	}
 
-	/* The animation draws every frame until it is done. */
+	/* The animation draws every frame until it is done; a docked or brought back window is told its size then. */
 	if (server->anim != NULL) {
 		progress = animation_progress(server);
 		server->dirty = 1;
 		if (progress >= 1.0f)
-			server->anim = NULL;
+			anim_finish(server);
 	}
 
 	/* Wiseview draws every frame while it settles; at the end its value is where it went. */
@@ -3708,10 +3747,19 @@ draw_window(
 		return;
 	}
 
-	/* While docking or coming back, the title bar slides between its two places and its glass fades. */
+	/*
+	 * While docking or coming back, the body is drawn scaled (from the
+	 * picture of it the animation's first frame drew, in the anchor's pass,
+	 * ws211-p007), the title bar slides between its two places and its
+	 * glass fades.
+	 */
 	if (server->anim == surface) {
 		t = animation_progress(server);
-		draw_body(server, command, surface, &body, focused);
+		if (shell_anim_picture) {
+			draw_body_part(server, command, surface, &body, focused, BODY_FROM_PICTURE);
+		} else {
+			draw_body(server, command, surface, &body, focused);
+		}
 		bar_title_slot(server, bar, &slot);
 		memcpy(&from, server->anim_from, sizeof(from));
 		memcpy(&to, server->anim_to, sizeof(to));
@@ -3777,6 +3825,25 @@ draw_body(
 	const struct shell_rect *body,
 	unsigned focused)
 {
+	/* All of it. */
+	draw_body_part(server, command, surface, body, focused, BODY_WHOLE);
+}
+
+/*
+ * Draws a part of a window's body in a rectangle (draw_body): all of it;
+ * all but its shadow, into the animation's picture of it; or, in a frame of
+ * the animation, its shadow and that picture scaled to the rectangle
+ * (BODY_*, ws211-p007).
+ */
+static void
+draw_body_part(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	struct kwl_object *surface,
+	const struct shell_rect *body,
+	unsigned focused,
+	unsigned part)
+{
 	const struct kwl_import *image;
 	struct kwl_object *parent;
 	struct glass_shape shape;
@@ -3795,6 +3862,8 @@ draw_body(
 	int32_t shown_width;
 	int32_t shown_height;
 	int unscaled;
+	int waits;
+	VkDescriptorSet picture;
 
 	/* The window's size (its viewport's, else its image's), whose scale to the rectangle stretches it while it changes size. */
 	image = kwl_compose_surface_image(surface);
@@ -3815,12 +3884,19 @@ draw_body(
 	 * is drawn at its own size from the space's top-left corner and cut at
 	 * the space's edges (BUG-243: a full keyboard squeezed the window's
 	 * picture).  Its input is already taken at that scale (from the body's
-	 * origin).  Docking and pulling animations still stretch.
+	 * origin).  Docking and pulling animations still stretch, and so does a
+	 * window just docked whose client has not drawn the docked size yet:
+	 * the animation's last frame goes on until it has (ws211-p007).
 	 */
 	shown_width = body->width;
 	shown_height = body->height;
 	unscaled = 0;
-	if (surface->maximized && server->anim != surface && server->pull != surface && (width != body->width || height != body->height))
+	waits = window_waits_size(surface);
+	if (surface->maximized &&
+	    server->anim != surface &&
+	    server->pull != surface &&
+	    !waits &&
+	    (width != body->width || height != body->height))
 		unscaled = 1;
 	if (unscaled) {
 		scale_x = 1.0f;
@@ -3887,8 +3963,23 @@ draw_body(
 	shape.color[1] = 0.18f;
 	shape.color[2] = 0.35f;
 	shape.color[3] = 0.20f;
-	if (panels == 0U && !whole)
+	if (panels == 0U && !whole && part != BODY_INTO_PICTURE)
 		glass_shape_draw(server, command, &shape);
+
+	/*
+	 * In an animation's frame, the rest is the picture of it drawn at the
+	 * animation's start (all but the shadow, as it was then), scaled from
+	 * that rectangle of the picture to this one.
+	 */
+	if (part == BODY_FROM_PICTURE) {
+		glass_shape_init(&shape, (float)body->x, (float)body->y, (float)body->width, (float)body->height);
+		picture = kwl_layers_anim_picture(server, shape.uv);
+		shape.mode = MODE_IMAGE;
+		shape.radius = radius;
+		shape.set = picture;
+		glass_shape_draw(server, command, &shape);
+		return;
+	}
 
 	/* A see-through body lies on frosted glass (a window with panels has its own). */
 	if (server->window_opacity < 1.0f && panels == 0U && !whole) {
@@ -5198,9 +5289,9 @@ body_rect(
 	struct shell_rect from;
 	struct shell_rect to;
 	int32_t glide[4];
-	uint64_t held;
 	float t;
 	int gliding;
+	int waits;
 
 	/* Between the two while animated. */
 	if (server->anim == surface) {
@@ -5238,15 +5329,13 @@ body_rect(
 	 * docked image is drawn at the size it was sent, so the window never
 	 * shows the docked size again on its way back (BUG-180).
 	 */
-	if (surface->resized_ms != 0U) {
-		held = kwl_milliseconds() - surface->resized_ms;
-		if (held < RESIZED_HOLD_MS) {
-			body->x = surface->x;
-			body->y = surface->y;
-			body->width = (int32_t)surface->window_width;
-			body->height = (int32_t)surface->window_height;
-			return;
-		}
+	waits = window_waits_size(surface);
+	if (waits) {
+		body->x = surface->x;
+		body->y = surface->y;
+		body->width = (int32_t)surface->window_width;
+		body->height = (int32_t)surface->window_height;
+		return;
 	}
 
 	/* Its place, its image's size. */
@@ -6153,23 +6242,19 @@ window_dock(
 	surface->window_height = (uint32_t)to.height;
 	docked_body(server, surface, &to);
 
-	/* The animation from the floating body to the docked space. */
-	memcpy(server->anim_from, &from, sizeof(server->anim_from));
-	memcpy(server->anim_to, &to, sizeof(server->anim_to));
-	server->anim = surface;
-	server->anim_docking = 1;
-	server->anim_start_ms = kwl_milliseconds();
-	server->dirty = 1;
+	/*
+	 * The animation from the floating body to the docked space: its image
+	 * is scaled on the way, and the client is told the docked size at the
+	 * end (anim_finish, ws211-p007), so that it does not draw while the
+	 * window moves.
+	 */
+	anim_begin(server, surface, 1U, &from, &to, 1U);
 
-	/* The client draws the new size; the log gives where the bar's buttons are (close, restore, minimize) and the docked body. */
+	/* The log gives where the bar's buttons are (close, restore, minimize) and the docked body. */
 	bar_layout(server, &bar);
 	printf("KWL GLASS dock surface=%u via=%s buttons=%d,%d,%d title=%d x=%d y=%d w=%d h=%d client=%llu\n", surface->id, via,
 	       bar.buttons[BUTTON_CLOSE], bar.buttons[BUTTON_MAXIMIZE], bar.buttons[BUTTON_MINIMIZE], bar.title_x,
 	       (int)to.x, (int)to.y, (int)to.width, (int)to.height, (unsigned long long)surface->client->number);
-	window_configure(surface);
-
-	/* Until the client draws the docked size, the log waits for its image (BUG-179). */
-	window_resized(surface);
 
 	/*
 	 * A shown window docked owns its desktop at once (WS181), so that it
@@ -6224,20 +6309,14 @@ window_undock(
 	to.width = (int32_t)surface->restore_width;
 	to.height = (int32_t)surface->restore_height;
 
-	/* The animation back. */
-	memcpy(server->anim_from, &from, sizeof(server->anim_from));
-	memcpy(server->anim_to, &to, sizeof(server->anim_to));
-	server->anim = surface;
-	server->anim_docking = 0;
-	server->anim_start_ms = kwl_milliseconds();
-	server->dirty = 1;
-
-	/* The client draws the size it had. */
+	/*
+	 * The animation back, its image scaled on the way; the client is told
+	 * the size it had at the end (anim_finish, ws211-p007), and until it
+	 * draws that size its docked image is drawn at it, never at the docked
+	 * size (BUG-180).  The caller sets the mode (layout_leave).
+	 */
+	anim_begin(server, surface, 0U, &from, &to, 1U);
 	printf("KWL GLASS undock surface=%u via=%s x=%d y=%d client=%llu\n", surface->id, via, x, y, (unsigned long long)surface->client->number);
-	window_configure(surface);
-
-	/* Until the client draws that size, its docked image is drawn at it, never at the docked size (BUG-180); the caller sets the mode (layout_leave). */
-	window_resized(surface);
 }
 
 /* Tells a window its new size. */
@@ -6275,6 +6354,98 @@ window_resized(
 
 	/* Succeeded: the window waits for its image of the new size. */
 	return;
+}
+
+/* Tells whether a window docked or brought back still waits, for a while, for its client's image of the size it was sent. */
+static int
+window_waits_size(
+	const struct kwl_object *surface)
+{
+	uint64_t held;
+
+	/* Not sent a new size, or its image of it came. */
+	if (surface->resized_ms == 0U)
+		return 0;
+
+	/* A client that never draws it is shown as it draws after RESIZED_HOLD_MS. */
+	held = kwl_milliseconds() - surface->resized_ms;
+	if (held >= RESIZED_HOLD_MS)
+		return 0;
+
+	/* Succeeded: it waits. */
+	return 1;
+}
+
+/*
+ * Starts a window's animation from one rectangle of its body to another:
+ * a dock, an undock, a pull springing back, or a launch.  A window another
+ * animation was moving is told its size first, as at that animation's end;
+ * the same window's animation hands on its size still to be told
+ * (configure, ws211-p007), as the size told is the one it has at the end.
+ */
+static void
+anim_begin(
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	unsigned kind,
+	const struct shell_rect *from,
+	const struct shell_rect *to,
+	unsigned configure)
+{
+	/* Another window's animation ends now; this window's hands on its configure. */
+	if (server->anim != NULL && server->anim != surface)
+		anim_finish(server);
+	if (server->anim == surface && server->anim_configure)
+		configure = 1U;
+
+	/*
+	 * The animation, a new one for the layers' pictures (a picture of the
+	 * window and of the desktop under it is drawn in its first frame,
+	 * layer-cache.c); its window is told its size when it ends.
+	 */
+	memcpy(server->anim_from, from, sizeof(server->anim_from));
+	memcpy(server->anim_to, to, sizeof(server->anim_to));
+	server->anim = surface;
+	server->anim_docking = kind;
+	server->anim_configure = configure;
+	server->anim_serial++;
+	server->anim_start_ms = kwl_milliseconds();
+	server->dirty = 1;
+}
+
+/*
+ * Ends the window's animation: a dock or an undock tells the window its
+ * size now (ws211-p007, the 2026-10-12 user's request: its image is scaled
+ * while it moves, and the client draws the new size after), and its image
+ * is drawn at that size until the client's comes (window_resized).
+ */
+static void
+anim_finish(
+	struct kwl_server *server)
+{
+	struct kwl_object *surface;
+	unsigned configure;
+
+	/* No animation runs from now. */
+	surface = server->anim;
+	configure = server->anim_configure;
+	server->anim = NULL;
+	server->anim_configure = 0U;
+	server->dirty = 1;
+
+	/* Only a window still there, with its toplevel, that waits to be told its size. */
+	if (surface == NULL || !configure)
+		return;
+	if (surface->dead ||
+	    surface->role == NULL ||
+	    surface->role->top == NULL)
+		return;
+
+	/* The client draws the size it has now; until it does, its image is drawn at it (BUG-179, BUG-180). */
+	window_configure(surface);
+	window_resized(surface);
+	printf("KWL GLASS anim configured surface=%u docked=%u w=%u h=%u client=%llu\n", surface->id, surface->maximized,
+	       surface->window_width, surface->window_height, (unsigned long long)surface->client->number);
 }
 
 /* Describes a window to the layout's rules (layout.c): docked, fullscreen, with a parent, of one size. */
@@ -9687,12 +9858,7 @@ pull_back(
 	server->pull = NULL;
 	server->pull_distance = 0;
 	docked_rect(server, window_slot(surface), &to);
-	memcpy(server->anim_from, &from, sizeof(server->anim_from));
-	memcpy(server->anim_to, &to, sizeof(server->anim_to));
-	server->anim = surface;
-	server->anim_docking = 1;
-	server->anim_start_ms = kwl_milliseconds();
-	server->dirty = 1;
+	anim_begin(server, surface, 1U, &from, &to, 0U);
 	printf("KWL GLASS pull back surface=%u\n", surface->id);
 }
 
@@ -10383,4 +10549,129 @@ kwl_glass_draw_desktop_picture(
 	draw_desktop_layer(server, command, windows, count, 1.0f, &bar);
 	server->layer_skip = NULL;
 	server->layer_on = 0U;
+}
+
+/*
+ * Draws the window an animation docks or brings back into its picture
+ * (layer-cache.c, ws211-p007): its body without the shadow, where it is at
+ * the animation's start, in the output's coordinates, so that its glass
+ * takes the blurred wallpaper from there.  The caller set up the pass and
+ * the drawing's state.
+ */
+void
+kwl_glass_draw_anim_picture(
+	struct kwl_server *server,
+	VkCommandBuffer command)
+{
+	struct shell_rect from;
+
+	/* Only a window being animated. */
+	if (server->anim == NULL)
+		return;
+
+	/* Its body as it starts, unshadowed (the frames draw the shadow at each place). */
+	memcpy(&from, server->anim_from, sizeof(from));
+	draw_body_part(server, command, server->anim, &from, 0U, BODY_INTO_PICTURE);
+}
+
+/*
+ * Tells whether a frame of the running animation may be drawn from the
+ * layers' pictures (layer-cache.c, ws211-p007): a dock, an undock or a pull
+ * springing back of a window with the shell's frame on the anchor, on top
+ * of the windows shown (the frames draw it over the desktop's picture), its
+ * starting body inside the output, with App Home closed and nothing else
+ * moving, and no window shown that draws the scene under it each frame
+ * (one in the middle of the docked space, one whose glass blurs the
+ * windows under it, one gliding into an arrangement).  Returns 1 when it
+ * may.
+ */
+int
+kwl_glass_anim_picturable(
+	struct kwl_server *server,
+	struct kwl_object **windows,
+	unsigned count)
+{
+	struct kwl_object *surface;
+	struct kwl_object *parent;
+	struct kwl_object *top;
+	struct shell_rect from;
+	int32_t glide[4];
+	unsigned index;
+	unsigned slot;
+	unsigned blur;
+	float home;
+	float wiseview;
+	int decorated;
+	int shown;
+	int centred;
+	int gliding;
+
+	/* A dock, an undock or a pull springing back, not a launch from Home. */
+	surface = server->anim;
+	if (surface == NULL || server->anim_docking == ANIM_LAUNCH)
+		return 0;
+
+	/* App Home closed and still, nothing else moving or covering the screen. */
+	home = kwl_home_progress(server);
+	if (home > 0.0f ||
+	    server->home_moving ||
+	    server->home_dragging)
+		return 0;
+	wiseview = wiseview_progress(server);
+	if (wiseview > 0.0f || server->wiseview_moving)
+		return 0;
+	if (server->desktop_moving ||
+	    server->drag != NULL ||
+	    server->pull != NULL ||
+	    server->dnd_active)
+		return 0;
+	if (server->greeter ||
+	    server->locked ||
+	    server->screen_off)
+		return 0;
+
+	/* A window with the shell's frame, not a sheet, not fullscreen, on the anchor. */
+	decorated = kwl_decoration_server(surface);
+	slot = window_slot(surface);
+	if (!decorated ||
+	    surface->fullscreen ||
+	    slot != KWL_PLANE_ANCHOR)
+		return 0;
+	parent = kwl_sheet_parent(surface);
+	if (parent != NULL)
+		return 0;
+
+	/* Its starting body inside the output, as the picture is the output's size. */
+	memcpy(&from, server->anim_from, sizeof(from));
+	if (from.width <= 0 ||
+	    from.height <= 0 ||
+	    from.x < 0 ||
+	    from.y < 0)
+		return 0;
+	if (from.x + from.width > (int32_t)server->width ||
+	    from.y + from.height > (int32_t)server->height)
+		return 0;
+
+	/* No window shown that draws the scene under it, or moves, in each frame; the top one shown (bottom to top). */
+	top = NULL;
+	for (index = 0U; index < count; index++) {
+		shown = window_shown(server, windows[index], 0.0f, (float)server->desktop);
+		if (!shown)
+			continue;
+		centred = window_centred_over(server, windows[index]);
+		blur = kwl_panels_blur(windows[index]);
+		gliding = kwl_arrange_glide(server, windows[index], glide);
+		if (centred ||
+		    blur ||
+		    gliding)
+			return 0;
+		top = windows[index];
+	}
+
+	/* The animated window over every other shown, as the frames draw it. */
+	if (top != surface)
+		return 0;
+
+	/* Succeeded: the frame may show the pictures. */
+	return 1;
 }

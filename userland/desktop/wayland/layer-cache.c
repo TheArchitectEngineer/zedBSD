@@ -41,6 +41,14 @@
  * drawn again (review-3 A1, review-4 H2).  A
  * drawing that completes after the output was opened again is not taken
  * (the generation, review-3 A3).
+ *
+ * A window docking or coming back (shell.c's dock animation, ws211-p007,
+ * the 2026-10-12 user's request) is drawn the same way: the first frame of
+ * its animation draws the desktop's picture without it and the window's
+ * own picture (its body, unshadowed, where it starts), and the frames show
+ * the desktop's picture and the window's scaled to where it is, instead of
+ * every window and every glass panel.  Its client is told its new size only
+ * when the animation ends (shell.c), so that it does not draw meanwhile.
  */
 
 #include "compose.h"
@@ -71,10 +79,11 @@ static void layers_record_pass(struct kwl_server *server, VkCommandBuffer comman
 static int layers_home_current(struct kwl_server *server);
 static int layers_animating(struct kwl_server *server);
 static void layers_log_use(struct kwl_layers *layers);
+static const char *layers_name(unsigned which);
 
 /*
- * Makes the layers' pictures for the output just opened: the pass and both
- * images.  Without both the pictures are unavailable for the output's life.
+ * Makes the layers' pictures for the output just opened: the pass and every
+ * image.  Without all of them the pictures are unavailable for the output's life.
  */
 void
 kwl_layers_open(
@@ -107,7 +116,7 @@ kwl_layers_open(
 	for (index = 0U; index < KWL_LAYERS && result == VK_SUCCESS; index++)
 		result = layers_image(compose, &layers->images[index]);
 
-	/* Both or neither. */
+	/* All or none. */
 	if (result != VK_SUCCESS) {
 		layers_destroy(compose);
 		layers->failed = 1U;
@@ -389,6 +398,137 @@ kwl_layers_set(
 }
 
 /*
+ * Draws, in the frame being recorded and before its pass, the pictures the
+ * animation of a docking or returning window shows (ws211-p007): decided
+ * once, at its first frame, when shell.c says its frames may show them.
+ * The desktop's picture is drawn without the window, and the window's
+ * picture with its body where it starts.  The frame's hold covers the
+ * windows' images both sample; the window's picture shows them as they were
+ * at the start for the rest of the animation.
+ */
+void
+kwl_layers_anim_inband(
+	struct kwl_server *server,
+	VkCommandBuffer command,
+	struct kwl_object **windows,
+	unsigned count)
+{
+	struct kwl_layers *layers;
+	uint64_t desktop_us;
+	unsigned desktop_draws;
+	int allowed;
+
+	/* Only a window's animation, with the pictures of the output's present size. */
+	layers = &server->compose->layers;
+	if (!layers->ready || server->anim == NULL)
+		return;
+	if (layers->width != server->width || layers->height != server->height)
+		return;
+
+	/* Decided once, at its first frame; not used unless drawn now. */
+	if (layers->anim_decided == server->anim_serial)
+		return;
+	layers->anim_decided = server->anim_serial;
+	layers->anim_using = 0U;
+
+	/* Only an animation whose frames may show them (shell.c). */
+	allowed = kwl_glass_anim_picturable(server, windows, count);
+	if (!allowed) {
+		printf("KWL LAYER anim pictures=0 surface=%u\n", server->anim->id);
+		return;
+	}
+
+	/* The desktop without the window, then the window where it starts. */
+	layers_record_pass(server, command, KWL_LAYER_DESKTOP, windows, count);
+	desktop_draws = layers->bake_draws;
+	desktop_us = layers->bake_us;
+	layers_record_pass(server, command, KWL_LAYER_WINDOW, NULL, 0U);
+	memcpy(layers->anim_rect, server->anim_from, sizeof(layers->anim_rect));
+	layers->anim_using = 1U;
+	printf("KWL LAYER baked what=anim inband=1 surface=%u desktop_draws=%u windows=%u window_draws=%u us=%llu at_us=%llu\n",
+	       server->anim->id,
+	       desktop_draws,
+	       layers->window_count,
+	       layers->bake_draws,
+	       (unsigned long long)(desktop_us + layers->bake_us),
+	       (unsigned long long)kwl_microseconds());
+}
+
+/*
+ * Tells whether this frame of a window's dock animation shows the pictures
+ * its first frame drew (shell.c): both still drawn, and the frame still
+ * one that may show them (Home opening, a slide, a drag and the like take
+ * the rest of the animation back to drawing everything).  The frames are
+ * counted for the log (KWL LAYER use).
+ */
+int
+kwl_layers_anim_showing(
+	struct kwl_server *server,
+	struct kwl_object **windows,
+	unsigned count)
+{
+	struct kwl_layers *layers;
+	int allowed;
+	int decided;
+	int shown;
+
+	/* Only the animation its first frame decided on, with the pictures. */
+	layers = &server->compose->layers;
+	decided = 0;
+	if (layers->ready &&
+	    server->anim != NULL &&
+	    layers->anim_decided == server->anim_serial)
+		decided = 1;
+	shown = 0;
+	if (decided && layers->anim_using)
+		shown = 1;
+
+	/* Both pictures still drawn, and the frame still one that may show them. */
+	if (shown &&
+	    (!layers->valid[KWL_LAYER_DESKTOP] ||
+	     !layers->valid[KWL_LAYER_WINDOW]))
+		shown = 0;
+	if (shown) {
+		allowed = kwl_glass_anim_picturable(server, windows, count);
+		if (!allowed)
+			shown = 0;
+	}
+
+	/* Once back to drawing everything, the animation stays so; its frames are counted. */
+	if (decided && !shown)
+		layers->anim_using = 0U;
+	if (decided && shown)
+		layers->use_pictures++;
+	else if (decided)
+		layers->use_drawn++;
+
+	/* Succeeded: whether the frame shows the pictures. */
+	return shown;
+}
+
+/*
+ * Gives the window's picture of a dock animation to sample, with the part
+ * of it its body was drawn in (uv: left, top, right, bottom, from 0 to 1).
+ */
+VkDescriptorSet
+kwl_layers_anim_picture(
+	struct kwl_server *server,
+	float uv[4])
+{
+	struct kwl_layers *layers;
+
+	/* The rectangle the body was drawn in, as a part of the picture. */
+	layers = &server->compose->layers;
+	uv[0] = (float)layers->anim_rect[0] / (float)layers->width;
+	uv[1] = (float)layers->anim_rect[1] / (float)layers->height;
+	uv[2] = (float)(layers->anim_rect[0] + layers->anim_rect[2]) / (float)layers->width;
+	uv[3] = (float)(layers->anim_rect[1] + layers->anim_rect[3]) / (float)layers->height;
+
+	/* Succeeded: the window's picture. */
+	return layers->images[KWL_LAYER_WINDOW].set;
+}
+
+/*
  * Ends a submission that drew pictures (a frame, or one that presents
  * nothing): they are taken unless the output was opened again since, or a
  * glyph one of them uses was evicted from the atlas while it waited
@@ -419,7 +559,7 @@ kwl_layers_complete(
 			continue;
 		layers->valid[which] = 0U;
 		server->home_picture_stale = 1U;
-		printf("KWL LAYER dropped what=%s reason=eviction evictions=%u\n", which == KWL_LAYER_HOME ? "home" : "desktop", evictions);
+		printf("KWL LAYER dropped what=%s reason=eviction evictions=%u\n", layers_name(which), evictions);
 	}
 	layers->inflight = 0U;
 }
@@ -588,14 +728,16 @@ layers_record_pass(
 	server->view_height = 0U;
 	memset(&server->draw_counts, 0, sizeof(server->draw_counts));
 
-	/* Home's content as it opens, no icon lit, no clock; or the desktop layer, noting the windows it draws. */
+	/* Home's content as it opens, no icon lit, no clock; the desktop layer, noting the windows it draws; or the animated window. */
 	if (which == KWL_LAYER_HOME) {
 		kwl_home_draw_content(server, command, 1.0f, 1U);
-	} else {
+	} else if (which == KWL_LAYER_DESKTOP) {
 		layers->window_count = 0U;
 		layers->noting = 1U;
 		kwl_glass_draw_desktop_picture(server, command, windows, count);
 		layers->noting = 0U;
+	} else {
+		kwl_glass_draw_anim_picture(server, command);
 	}
 	layers->bake_draws = server->draw_counts.shapes + server->draw_counts.quads;
 
@@ -844,4 +986,19 @@ layers_destroy(
 		vkDestroyRenderPass(compose->device, compose->layers.pass, NULL);
 	compose->layers.pass = VK_NULL_HANDLE;
 	compose->layers.ready = 0U;
+}
+
+/* Names a picture for the log. */
+static const char *
+layers_name(
+	unsigned which)
+{
+	/* Home's, the desktop's, or the animated window's. */
+	if (which == KWL_LAYER_HOME)
+		return "home";
+	if (which == KWL_LAYER_DESKTOP)
+		return "desktop";
+
+	/* Succeeded: the window's. */
+	return "window";
 }

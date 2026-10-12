@@ -1347,6 +1347,15 @@ struct kwl_server {
 	int32_t anim_from[4];
 	int32_t anim_to[4];
 	/*
+	 * anim_serial names each animation started (it counts from 1, so that
+	 * the layers' pictures, which start at 0, decide on the first one too,
+	 * layer-cache.c); anim_configure says the window is told its size when
+	 * its animation ends, not when it starts (a dock and an undock scale
+	 * its image meanwhile, ws211-p007).
+	 */
+	uint64_t anim_serial;
+	unsigned anim_configure;
+	/*
 	 * Whether the last frame left the system bar out to keep a fullscreen
 	 * window whole (ws035-p119, shell.c); only the change is logged.
 	 */

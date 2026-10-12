@@ -122,13 +122,15 @@ struct kwl_backdrop {
 };
 
 /*
- * The pictures of the layers (layer-cache.c, ws211-p002): App Home's content
- * and the desktop layer, each an image of the output's size drawn into
- * offscreen and sampled linearly.  KWL_LAYER_* name them.
+ * The pictures of the layers (layer-cache.c, ws211-p002): App Home's content,
+ * the desktop layer, and the window a dock or an undock animates
+ * (ws211-p007), each an image of the output's size drawn into offscreen
+ * and sampled linearly.  KWL_LAYER_* name them.
  */
 #define KWL_LAYER_HOME		0U
 #define KWL_LAYER_DESKTOP	1U
-#define KWL_LAYERS		2U
+#define KWL_LAYER_WINDOW	2U
+#define KWL_LAYERS		3U
 
 /* One layer's picture: its image and memory, view, framebuffer of the layers' pass, and descriptor set. */
 struct kwl_layer_image {
@@ -153,7 +155,11 @@ struct kwl_layer_image {
  * use_pictures and use_drawn count an animation's frames by how they were
  * drawn; bake_draws and bake_us are the last drawing's draws and recording
  * time, and bake_times the starts of the last two drawings on their own
- * (two a second at most).
+ * (two a second at most).  anim_decided is the window's animation
+ * (server->anim_serial) whose first frame decided whether its frames use
+ * the desktop's and the window's pictures (anim_using, until a frame could
+ * not), and anim_rect the rectangle of the window's picture its body was
+ * drawn in (ws211-p007).
  */
 struct kwl_layers {
 	unsigned ready;
@@ -183,6 +189,9 @@ struct kwl_layers {
 	unsigned bake_draws;
 	uint64_t bake_us;
 	uint64_t bake_times[2];
+	uint64_t anim_decided;
+	unsigned anim_using;
+	int32_t anim_rect[4];
 };
 
 /* How many new client images wait at most for their move to the general layout in the next frame (ws099-p016). */
@@ -536,6 +545,9 @@ int kwl_layers_home_hidden(struct kwl_server *server);
 void kwl_layers_note(struct kwl_server *server, const struct kwl_object *surface);
 int kwl_layers_showing(struct kwl_server *server);
 VkDescriptorSet kwl_layers_set(struct kwl_server *server, unsigned which);
+void kwl_layers_anim_inband(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count);
+int kwl_layers_anim_showing(struct kwl_server *server, struct kwl_object **windows, unsigned count);
+VkDescriptorSet kwl_layers_anim_picture(struct kwl_server *server, float uv[4]);
 
 /* Descriptor sets of the image layout, reused rather than freed (compose.c). */
 VkResult kwl_compose_set_get(struct kwl_compose *compose, VkDescriptorSet *result);

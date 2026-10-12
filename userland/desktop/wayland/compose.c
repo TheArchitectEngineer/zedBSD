@@ -2442,6 +2442,9 @@ compose_record(
 	compose->frame_layers_generation = compose->layers.generation;
 	kwl_layers_inband(server, compose->command, windows, count);
 
+	/* The pictures a window's dock or undock animation shows, drawn in its first frame (layer-cache.c, ws211-p007). */
+	kwl_layers_anim_inband(server, compose->command, windows, count);
+
 	/* The anchor's pass: its own part of the plane (ws113-p007). */
 	server->view_output = KWL_PLANE_ANCHOR;
 	server->view_x = 0;
