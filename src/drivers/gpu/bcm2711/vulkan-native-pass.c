@@ -23,7 +23,7 @@ static int prepare_clear(struct bcm2711_vulkan_native_pass *pass, const struct b
 static int prepare_target(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_prepared_event *begin);
 static int prepare_target_clear(struct bcm2711_vulkan_native_pass *pass);
 static int collect_draws(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_prepared_event *begin, uint64_t *remaining, const struct bcm2711_vulkan_prepared_event **next);
-static int allocate_storage(struct bcm2711_vulkan_native_pass *pass, uint64_t bytes, uint64_t *remaining, struct bcm2711_native_storage **storage);
+static int allocate_storage(struct bcm2711_vulkan_native_pass *pass, uint64_t bytes, unsigned fill, uint64_t *remaining, struct bcm2711_native_storage **storage);
 static int prepare_lists(struct bcm2711_vulkan_native_pass *pass, uint64_t *remaining);
 static void prepare_image(struct bcm2711_native_storage *storage, struct bcm2711_native_pass_image *image);
 
@@ -575,6 +575,7 @@ static int
 allocate_storage(
 	struct bcm2711_vulkan_native_pass *pass,
 	uint64_t bytes,
+	unsigned fill,
 	uint64_t *remaining,
 	struct bcm2711_native_storage **storage)
 {
@@ -590,7 +591,7 @@ allocate_storage(
 	/* Every physical page, including command padding and overflow reserves, consumes the shared job budget. */
 	if (pass->count == BCM2711_VULKAN_PASS_STORAGE || padded > *remaining)
 		return ENOMEM;
-	error = bcm2711_native_storage_create(pass->space, bytes, storage);
+	error = bcm2711_native_storage_create_as(pass->space, bytes, fill, storage);
 	if (error != 0)
 		return error;
 	pass->storage[pass->count] = *storage;
@@ -625,24 +626,25 @@ prepare_lists(
 		return error;
 
 	/* Three independent list images precede the pool and tile state in the fixed whole-pass owner vector. */
-	error = allocate_storage(pass, sizes.bin, remaining, &storage);
+	error = allocate_storage(pass, sizes.bin, BCM2711_NATIVE_STORAGE_ZEROED, remaining, &storage);
 	if (error != 0)
 		return error;
 	prepare_image(storage, &bin);
-	error = allocate_storage(pass, sizes.render, remaining, &storage);
+	error = allocate_storage(pass, sizes.render, BCM2711_NATIVE_STORAGE_ZEROED, remaining, &storage);
 	if (error != 0)
 		return error;
 	prepare_image(storage, &render);
-	error = allocate_storage(pass, sizes.tile, remaining, &storage);
+	error = allocate_storage(pass, sizes.tile, BCM2711_NATIVE_STORAGE_ZEROED, remaining, &storage);
 	if (error != 0)
 		return error;
 	prepare_image(storage, &tile);
-	error = allocate_storage(pass, sizes.pool, remaining, &storage);
+	/* The binner writes the tile lists it later reads into the pool; a reused pool is not zeroed (ws141-p016 (b)). */
+	error = allocate_storage(pass, sizes.pool, BCM2711_NATIVE_STORAGE_WRITTEN, remaining, &storage);
 	if (error != 0)
 		return error;
 	pass->state.pool = storage->view->address;
 	pass->state.pool_bytes = (uint32_t)storage->view->bytes;
-	error = allocate_storage(pass, sizes.state, remaining, &storage);
+	error = allocate_storage(pass, sizes.state, BCM2711_NATIVE_STORAGE_ZEROED, remaining, &storage);
 	if (error != 0)
 		return error;
 	pass->state.state = storage->view->address;
@@ -668,7 +670,8 @@ prepare_lists(
 	/* Four independently mapped overflow reserves support supervised native binning without allocation in IRQ service. */
 	job = &pass->job.command.cl;
 	for (index = 0; index < 4U; index++) {
-		error = allocate_storage(pass, 256U * 1024U, remaining, &storage);
+		/* The binner reads only what it wrote into an overflow reserve; a reused one is not zeroed (ws141-p016 (b)). */
+		error = allocate_storage(pass, 256U * 1024U, BCM2711_NATIVE_STORAGE_WRITTEN, remaining, &storage);
 		if (error != 0)
 			return error;
 		job->overflow[index].address = storage->view->address;

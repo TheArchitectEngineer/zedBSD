@@ -329,6 +329,9 @@ bcm2711_buffer_release_stats(
 	*ticks = 0;
 }
 
+/* The reused runs given again without zeroing (bcm2711_buffer_kept). */
+static unsigned host_kept_runs;
+
 /*
  * Takes a reused run's zeroing; the fixture keeps no allocation timing.
  */
@@ -347,13 +350,25 @@ bcm2711_buffer_zeroed(
  */
 void
 bcm2711_buffer_create_stats(
-	uint64_t stats[7])
+	uint64_t stats[9])
 {
 	unsigned index;
 
 	/* The fixture keeps no creation timing. */
-	for (index = 0; index < 7U; index++)
+	for (index = 0; index < 9U; index++)
 		stats[index] = 0;
+}
+
+/*
+ * Counts a reused run given again without zeroing (ws141-p016 (b)).
+ */
+void
+bcm2711_buffer_kept(
+	uint64_t bytes)
+{
+	/* The fixture counts them for its checks. */
+	(void)bytes;
+	host_kept_runs++;
 }
 
 /*
@@ -1257,6 +1272,7 @@ native_draw_test(
 	uint64_t available;
 	uint64_t owned;
 	uint64_t updates;
+	unsigned kept;
 	uint32_t box[4];
 	int error;
 
@@ -1354,6 +1370,68 @@ native_draw_test(
 		assert(source[index] == 0);
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
 	assert(error == 0 && draw == NULL && space->cache_bytes == owned);
+
+	/*
+	 * Every reused view seeded with a marker (ws141-p016 (b), review-b2):
+	 * the defaults come back as (0, 0, 0, 1) each, the zeroed kinds come
+	 * back zero, and the code (written whole) is given again as it is.
+	 */
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw != NULL);
+	for (index = 0; index < draw->count; index++)
+		memset(draw->storage[index]->view->buffer->address, 0xa5, (size_t)draw->storage[index]->view->bytes);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && draw == NULL);
+	kept = host_kept_runs;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw != NULL && draw->defaults != NULL && host_kept_runs > kept);
+	source = draw->defaults->view->buffer->address;
+	for (index = 0; index < 256U; index++) {
+		/* Each default is x, y, z zero and w one (little-endian 0x3f800000). */
+		if (index % 16U == 14U)
+			assert(source[index] == 0x80);
+		else if (index % 16U == 15U)
+			assert(source[index] == 0x3f);
+		else
+			assert(source[index] == 0);
+	}
+	for (index = 0; index < draw->count; index++) {
+		/* A storage given again as it was is code: its words are the program's, not the marker. */
+		if (draw->storage[index] == draw->code[0] || draw->storage[index] == draw->code[1] || draw->storage[index] == draw->code[2])
+			continue;
+		if (draw->storage[index] == draw->defaults)
+			continue;
+		source = draw->storage[index]->view->buffer->address;
+		for (byte = 0; byte < 64U; byte++)
+			assert(source[byte] != 0xa5);
+	}
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0 && draw == NULL);
+
+	/* A storage given as written keeps its bytes; a zeroed one does not. */
+	error = bcm2711_native_storage_create(space, 4096, &storage);
+	assert(error == 0);
+	memset(storage->view->buffer->address, 0xa5, 4096);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && storage == NULL);
+	kept = host_kept_runs;
+	error = bcm2711_native_storage_create_as(space, 4096, BCM2711_NATIVE_STORAGE_WRITTEN, &storage);
+	assert(error == 0 && host_kept_runs == kept + 1U);
+	source = storage->view->buffer->address;
+	assert(source[0] == 0xa5 && source[4095] == 0xa5);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && storage == NULL);
+	error = bcm2711_native_storage_create(space, 4096, &storage);
+	assert(error == 0);
+	source = storage->view->buffer->address;
+	assert(source[0] == 0 && source[4095] == 0);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && storage == NULL);
+	error = bcm2711_native_storage_create_as(space, 4096, 2U, &storage);
+	assert(error == EINVAL && storage == NULL);
+	puts("WS141 reused native storage: zeroed kinds and defaults cleared, written kinds kept and counted: PASS");
 
 	/* Draining unmaps every cached view and returns all storage. */
 	error = bcm2711_native_storage_drain(space);

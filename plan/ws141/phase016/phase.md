@@ -300,6 +300,27 @@ executor の pass ごとの 3 区分:
   - host（vulkan-device の fixture）: 埋めない種類が使い回しで 0 にされないこと、埋める種類は今どおり 0 になること、新しい確保は 0 になること。
   - Pi: `v3d: alloc` の reused の zero_us、prep、Settings の hover の submit→shown。
 
+## (b) 第 2 版への review（[review-b2](review-b2.md)）と Q1 の判断の反映（2026-10-12 P3）
+
+- **Q1 の判断**:
+  - (1) 今すぐ実装してよいのは、overflow・tile の pool・upload の chunk・shader の code。
+  - (2) TFU が書く物（変換先・snapshot）は、H1 の (a)（cached view に前の使用者の session の印を付け、同じ session の時だけ埋めない）を先に入れる。安全（別の process の画素が見える経路）を最優先にする。(b)（padding の実機の確かめ）は T1 の後の候補。
+  - (3) 計測は M3 のとおり。
+- **実装（(1) と (3)）**:
+  - `bcm2711_native_storage_create_as(space, bytes, fill, storage)` を足した（`BCM2711_NATIVE_STORAGE_ZEROED`／`_WRITTEN`。H2: 呼び出し元ごとの明示の引数）。今の `bcm2711_native_storage_create` は ZEROED。WRITTEN は、使い回しの時だけ 0 で埋めない。新しい確保は今どおり埋める。
+  - WRITTEN にしたのは 4 つ。code（`bcm2711_native_program_upload`）、upload の chunk（`vulkan-native-draw.c` の pool の chunk）、tile の pool、overflow の reserve（`vulkan-native-pass.c`）。
+  - ZEROED のままの物: defaults、meta と独立の draw の upload、大きな upload、変換先、snapshot、list の image、tile state。
+  - M1: GPU に渡す前の全体の clean は、今どおり呼び出し元で行う。加えて、cache に戻す時（`cache_put` の受け入れの後）に view の全体を clean する。cache に dirty な line を持ち込まないため。
+  - M2: 埋めない使い回しは別に数える（`bcm2711_buffer_kept`、`v3d: alloc ... kept= kib=`）。overflow を controller に 1 つの reserve として worker が持つ代案は、reserve の寿命と recovery・drain の扱いを設計してからにする（この版は pass ごとの reserve を埋めないだけ）。
+  - L3: uniform が 0 個の時の 4 byte の placeholder に、0 を 1 word 書く。
+  - L1 の訂正: list の image を埋める理由は「encoder が 0 の image を前提にしている」ではない。bin は encoder が全部を書き、render と tile は encoder が全体を memset する（`native-pass.c:174-184`）。埋めるのは冗長だが、この版は変えない。
+  - M3: perf の `hold_us decode=<最大の request>/cmds<その command の数>/op<その中で一番長い command> command=<窓の中で一番長い 1 command の時間>/op<その opcode> step=`。preempt と IRQ で wall の時間が膨らむ外れ値に注意して読む。
+- **試験**:
+  - vulkan-device の fixture: draw の storage の全部を 0xA5 で埋めて cache に戻し、作り直すと、defaults は (0,0,0,1)×16 で、code 以外の storage の先頭に目印が残らず、code の使い回しが kept に数えられる。単独の storage で、WRITTEN は目印を保って kept が 1 増える、ZEROED は 0 になる、不正な fill は EINVAL になる。
+  - v3d-hardware・vulkan-stream・display・stage は PASS。
+  - pass の pool の chunk の経路（pool の draw）は、この fixture では通らない（独立の draw だけ）。
+- **(2) の残り**: 変換先と snapshot の H1 (a)。draw は session を持たないので、印の元（job の session の番号）を draw の作成まで渡す必要がある。次の段で設計して入れる。
+
 ## HAL arm64 の物理 page の allocator: 呼び出し元の監査（2026-10-12 P3、変更はしない、Q1 に相談）
 
 - 実装（`src/hal/arm64/page.c` `alloc_ram`）: 8GiB 分の bitmap の first fit。`first_free_candidate`（そこより下は全部使用中）から上へ、**1 page ずつ** 候補を進め、候補ごとに alignment・boundary・空きの長さを測る。全部 **IRQ を止めたまま**（CPU は 1 つ）。zone・上からの配置は無い。

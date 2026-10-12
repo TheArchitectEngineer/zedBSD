@@ -33,6 +33,10 @@ static uint64_t reuse_count;
 static uint64_t reuse_bytes;
 static uint64_t reuse_zero_ticks;
 
+/* The reused runs given again without zeroing (their users write every byte the device reads, ws141-p016 (b)). */
+static uint64_t kept_count;
+static uint64_t kept_bytes;
+
 /* Bounds storage descriptions independently of available physical memory. */
 #define BUFFER_MAX_BYTES (256ULL * 1024U * 1024U)
 
@@ -274,14 +278,24 @@ bcm2711_buffer_zeroed(
 	__atomic_add_fetch(&reuse_zero_ticks, ticks, __ATOMIC_RELAXED);
 }
 
+/* Counts a reused run given again without zeroing, apart from the zeroed ones (review-b2 M2). */
+void
+bcm2711_buffer_kept(
+	uint64_t bytes)
+{
+	/* One more kept run and its bytes. */
+	__atomic_add_fetch(&kept_count, 1U, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&kept_bytes, bytes, __ATOMIC_RELAXED);
+}
+
 /*
  * Reports and clears the diagnostic sums of buffer creations and reuses
- * (stats[0..6]: made, bytes, allocator ticks, zeroing ticks, reused, reused
- * bytes, their zeroing ticks).
+ * (stats[0..8]: made, bytes, allocator ticks, zeroing ticks, reused, reused
+ * bytes, their zeroing ticks, kept unzeroed, their bytes).
  */
 void
 bcm2711_buffer_create_stats(
-	uint64_t stats[7])
+	uint64_t stats[9])
 {
 	/* Each sum is read and cleared on its own; a creation between them lands in the next report. */
 	stats[0] = __atomic_exchange_n(&create_count, 0U, __ATOMIC_RELAXED);
@@ -291,6 +305,8 @@ bcm2711_buffer_create_stats(
 	stats[4] = __atomic_exchange_n(&reuse_count, 0U, __ATOMIC_RELAXED);
 	stats[5] = __atomic_exchange_n(&reuse_bytes, 0U, __ATOMIC_RELAXED);
 	stats[6] = __atomic_exchange_n(&reuse_zero_ticks, 0U, __ATOMIC_RELAXED);
+	stats[7] = __atomic_exchange_n(&kept_count, 0U, __ATOMIC_RELAXED);
+	stats[8] = __atomic_exchange_n(&kept_bytes, 0U, __ATOMIC_RELAXED);
 }
 
 /*

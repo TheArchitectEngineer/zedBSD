@@ -659,9 +659,11 @@ prepare_programs(
 			return error;
 		}
 
-		/* Scalar words are copied before their temporary CPU owner is retired. */
+		/* Scalar words are copied before their temporary CPU owner is retired; an empty stream's placeholder is a written zero (review-b2 L3). */
 		for (index = 0; index < words->count; index++)
 			write_word(destination + (size_t)index * 4U, words->words[index]);
+		if (words->count == 0)
+			write_word(destination, 0U);
 		bcm2711_vulkan_uniform_release(words);
 		kern_dcache_clean_range(destination, (size_t)bytes);
 		shader->programs[stage].binary = program;
@@ -1253,13 +1255,14 @@ upload_take(
 		chunk = kern_calloc(1, sizeof(*chunk));
 		if (chunk == NULL)
 			return ENOMEM;
-		error = bcm2711_native_storage_create(draw->space, NATIVE_UPLOAD_CHUNK_BYTES, &chunk->storage);
+		/* Each carved upload writes all of its bytes the device reads; a reused chunk is not zeroed (ws141-p016 (b)). */
+		error = bcm2711_native_storage_create_as(draw->space, NATIVE_UPLOAD_CHUNK_BYTES, BCM2711_NATIVE_STORAGE_WRITTEN, &chunk->storage);
 		if (error != 0) {
 			kern_free(chunk);
 			return error;
 		}
 
-		/* The zeroed chunk is written back once, so no dirty zero line can later land over device-read bytes. */
+		/* The chunk is written back once (a new one zeroed, a reused one as the cache kept it clean), so no dirty line can later land over device-read bytes. */
 		error = bcm2711_native_storage_clean(chunk->storage);
 		if (error != 0) {
 			(void)bcm2711_native_storage_release(draw->space, &chunk->storage, true);

@@ -53,6 +53,17 @@ struct bcm2711_native_snapshot {
 
 /* The controller mutex serializes every operation with native execution and recovery. */
 int bcm2711_native_storage_create(struct bcm2711_v3d_space *space, uint64_t bytes, struct bcm2711_native_storage **storage);
+
+/*
+ * How a reused (cached, still mapped) view is given again (ws141-p016 (b)):
+ * zeroed, or as it is, for a caller that writes every byte the device may
+ * read before the device reads it (the zeroing is the caller's to skip, by
+ * kind; a new allocation is always zeroed).  Either way the caller cleans
+ * the whole storage before the device sees it.
+ */
+#define BCM2711_NATIVE_STORAGE_ZEROED	0U
+#define BCM2711_NATIVE_STORAGE_WRITTEN	1U
+int bcm2711_native_storage_create_as(struct bcm2711_v3d_space *space, uint64_t bytes, unsigned fill, struct bcm2711_native_storage **storage);
 int bcm2711_native_storage_clean(struct bcm2711_native_storage *storage);
 int bcm2711_native_storage_clean_range(struct bcm2711_native_storage *storage, uint64_t offset, uint64_t bytes);
 int bcm2711_native_program_upload(struct bcm2711_v3d_space *space, const struct bcm2711_shader_binary *binary, struct bcm2711_native_storage **storage);
