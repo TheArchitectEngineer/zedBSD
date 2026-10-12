@@ -276,6 +276,8 @@ test_lookup_cases(
 			continue;
 		(void)test_publish(session, (enum i915_vk_object_kind)(1U + identity % (I915_VK_OBJ_KIND_COUNT - 1U)), identity + 1000000U);
 	}
+
+	/* Every one of them is in the list once and found by the index. */
 	test_check_list(session, TEST_OBJECT_LIMIT - 2U + 1U);
 
 	/* The last free slot of the limit, then the refusal past it. */
@@ -304,14 +306,21 @@ test_remove_cases(
 	struct bcm2711_vulkan_object *object;
 	struct bcm2711_vulkan_object *next;
 	struct bcm2711_vulkan_object *kept;
+	enum i915_vk_object_kind kind;
 	uint64_t identity;
 	uint32_t remaining;
 	int error;
 
-	/* Two hundred identities of two kinds. */
+	/* Two hundred identities: odd ones descriptor sets, even ones images. */
 	session = test_session();
-	for (identity = 1U; identity <= 200U; identity++)
-		(void)test_publish(session, (identity & 1U) != 0U ? I915_VK_OBJ_DESCRIPTOR_SET : I915_VK_OBJ_IMAGE, identity);
+	for (identity = 1U; identity <= 200U; identity++) {
+		kind = I915_VK_OBJ_IMAGE;
+		if ((identity & 1U) != 0U)
+			kind = I915_VK_OBJ_DESCRIPTOR_SET;
+		(void)test_publish(session, kind, identity);
+	}
+
+	/* All two hundred are in the list and the index. */
 	test_check_list(session, 200U);
 
 	/* The newest (the list's head), the oldest (its tail) and one in the middle. */
@@ -353,13 +362,19 @@ test_remove_cases(
 	object = session->objects;
 	while (object != NULL) {
 		next = object->next;
+
+		/* A descriptor set goes; the held next entry stays valid. */
 		if (object->kind == I915_VK_OBJ_DESCRIPTOR_SET) {
 			error = bcm2711_vulkan_object_remove(session, I915_VK_OBJ_DESCRIPTOR_SET, object->identity);
 			assert(error == 0);
 			remaining--;
 		}
+
+		/* On to the entry that followed it. */
 		object = next;
 	}
+
+	/* The images are left, each still in the list and the index. */
 	test_check_list(session, remaining);
 	assert(remaining == 98U);
 
@@ -404,6 +419,8 @@ test_timing(
 		if (found == oldest)
 			hits++;
 	}
+
+	/* The index's average lookup. */
 	indexed = (test_now() - started) / TEST_LOOKUPS;
 
 	/* The former walk of the list. */
@@ -413,6 +430,8 @@ test_timing(
 		if (found == oldest)
 			hits++;
 	}
+
+	/* The walk's average lookup. */
 	walked = (test_now() - started) / TEST_LOOKUPS;
 
 	/* Both found the command buffer every time, and the index is faster once the namespace is large. */

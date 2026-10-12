@@ -1276,6 +1276,21 @@ kwl_perf_report(
 		    (double)perf->compose_cycles / per_ms / (double)perf->compose_frames);
 	}
 
+	/* The render thread's steps of a frame, averages then longest, in milliseconds (ws211-p010). */
+	if (perf->rec_frames != 0) {
+		printf("KWL PERF rec frames=%u copied=%u begin=%.2f encode=%.2f end=%.2f submit=%.2f present=%.2f | max end=%.2f submit=%.2f present=%.2f\n",
+		    perf->rec_frames,
+		    perf->rec_copied,
+		    (double)perf->rec_begin_cycles / per_ms / (double)perf->rec_frames,
+		    (double)perf->rec_encode_cycles / per_ms / (double)perf->rec_frames,
+		    (double)perf->rec_end_cycles / per_ms / (double)perf->rec_frames,
+		    (double)perf->rec_submit_cycles / per_ms / (double)perf->rec_frames,
+		    (double)perf->rec_present_cycles / per_ms / (double)perf->rec_frames,
+		    (double)perf->rec_end_max_cycles / per_ms,
+		    (double)perf->rec_submit_max_cycles / per_ms,
+		    (double)perf->rec_present_max_cycles / per_ms);
+	}
+
 	/*
 	 * The pass's parts in milliseconds of the window (ws213-p001 M0): the
 	 * ticks before the poll (outside work), then the parts of work, and

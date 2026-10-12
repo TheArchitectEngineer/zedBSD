@@ -151,6 +151,13 @@ struct kwl_render_outcome {
 	VkResult head_results[KWL_RENDER_HEADS];
 	uint64_t replay_cycles;
 	uint64_t run_cycles;
+	/* Of replay_cycles, the Begins and the drawing's End, and how long the submit and the presents took (ws211-p010). */
+	uint64_t begin_cycles;
+	uint64_t end_cycles;
+	uint64_t submit_cycles;
+	uint64_t present_cycles;
+	/* The frame's host-image copies had a command buffer of their own. */
+	unsigned copied;
 	uint64_t recorded_us;
 	uint64_t queued_us;
 	uint64_t presented_us;
