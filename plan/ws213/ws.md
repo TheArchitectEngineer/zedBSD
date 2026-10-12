@@ -31,6 +31,8 @@ compositor（userland/desktop/wayland/）の main loop の CPU の仕事（描�
 
 Pi 4 で App Home の開閉・drag・app の起動の間も、cursor が 60fps で動き入力が遅れない（実機の log とユーザーの確認）。i915・Venus で回帰が無い（T1）。
 
+- 依存（p001 review-1 C1）: 画面に映る cursor の 60fps は WS141 p016 (B) の B-u（位置だけの present が libvulkan の present の worker と GPU を通らない）が入ってから判定する。この WS が単独で保証するのは main の止まりが無くなること（M0 の区間と `event_us` で測る）。
+
 ## Phase
 
 | Phase | 内容 | Status |
