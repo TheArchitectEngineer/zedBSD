@@ -189,6 +189,9 @@ static uint32_t desktop_key_eaten;
 #define BAR_SLOT		34
 #define BAR_STATUS_PAD		8
 #define BAR_CLOCK_PAD		16
+
+/* How far under the system bar its glass and shadow reach, which a minute's redrawing of the bar covers (ws211). */
+#define BAR_CLOCK_REACH		16
 #define BAR_PILL_GAP		10
 #define BAR_EDGE		8
 
@@ -3344,9 +3347,21 @@ kwl_glass_tick(
 	if ((int64_t)now / 60 == server->clock_minute)
 		return;
 
-	/* A new minute. */
+	/*
+	 * A new minute: only the system bar is drawn again (its clock, and the
+	 * status pill its width may move), with App Home's clock when Home
+	 * shows (ws211, the 2026-10-12 user request: a whole frame each minute
+	 * was 99 draws and 36 ms of the Pi 4's GPU).  Outside the glass look's
+	 * desktop the whole output is drawn as before.
+	 */
 	server->clock_minute = (int64_t)now / 60;
-	server->dirty = 1;
+	if (!server->glass || server->greeter || server->locked) {
+		server->dirty = 1;
+		return;
+	}
+	kwl_damage_rect(server, 0, 0, (int32_t)server->width, KWL_GLASS_BAR + BAR_CLOCK_REACH);
+	if (kwl_home_progress(server) > 0.0f)
+		kwl_home_clock_damage(server);
 }
 
 /* Lays out the system bar on the anchor (bar_layout_on). */
