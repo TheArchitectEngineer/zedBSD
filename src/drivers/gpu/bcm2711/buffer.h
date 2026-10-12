@@ -14,8 +14,12 @@
 #include <kern/lock.h>
 #include <kern/pmem.h>
 
-/* The number of recent writes a run remembers for incremental copies. */
-#define BCM2711_BUFFER_WRITES 8U
+/*
+ * The number of recent writes a run remembers for incremental copies: a
+ * frame's pass records one for each tile box it changed (ws211-p009), so
+ * a frame drawn in a few passes still fits.
+ */
+#define BCM2711_BUFFER_WRITES 16U
 
 /* One remembered write: the run's generation after it, and the pixel box of the image at offset it covered. */
 struct bcm2711_buffer_write {

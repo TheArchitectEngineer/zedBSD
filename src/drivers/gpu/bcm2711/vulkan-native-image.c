@@ -30,6 +30,7 @@ static int retain_raster(struct bcm2711_vulkan_resource *resource, uint64_t offs
 static bool copy_whole(const struct bcm2711_vulkan_transfer *transfer, uint32_t region, const struct bcm2711_vulkan_resource *source, const struct bcm2711_vulkan_resource *destination);
 static int prepare_copy(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_transfer *transfer, struct bcm2711_vulkan_resource *source, struct bcm2711_vulkan_resource *destination, uint64_t *remaining);
 static uint32_t ratio_bits(uint32_t numerator, uint32_t denominator);
+static void copy_narrow(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_resource *destination, uint32_t (*boxes)[4], uint32_t count);
 
 /*
  * Prepares one actual FIFO image transfer region as an independently owned native texture draw and pass.
@@ -567,7 +568,8 @@ prepare_copy(
 	VkRect2D area;
 	uint64_t target_offset;
 	uint32_t address;
-	uint32_t box[4];
+	uint32_t boxes[BCM2711_NATIVE_PASS_BOXES][4];
+	uint32_t count;
 	bool changed;
 	void *cpu;
 	int error;
@@ -608,29 +610,19 @@ prepare_copy(
 	    target->synced_offset == pass->sync_offset &&
 	    target->synced_target_offset == target_offset &&
 	    target->synced_generation == target->generation)
-		changed = bcm2711_v3d_memory_changes(view->buffer, pass->sync_offset, target->synced_source_generation, box);
+		changed = bcm2711_v3d_memory_changes_boxes(view->buffer, pass->sync_offset, target->synced_source_generation, boxes, BCM2711_NATIVE_PASS_BOXES, &count);
 
 	/* Nothing changed: the destination already equals the source. */
-	if (changed && (box[2] <= box[0] || box[3] <= box[1]))
+	if (changed && count == 0)
 		return EALREADY;
 
-	/* A known change narrows the copy to its box, clamped to the image. */
-	if (changed) {
-		if (box[2] > destination->width)
-			box[2] = destination->width;
-		if (box[3] > destination->height)
-			box[3] = destination->height;
-		if (box[0] < box[2] && box[1] < box[3]) {
-			pass->area.offset.x = (int32_t)box[0];
-			pass->area.offset.y = (int32_t)box[1];
-			pass->area.extent.width = box[2] - box[0];
-			pass->area.extent.height = box[3] - box[1];
-			pass->state.first_x = box[0] / 64U;
-			pass->state.first_y = box[1] / 64U;
-			pass->state.last_x = (box[2] - 1U) / 64U;
-			pass->state.last_y = (box[3] - 1U) / 64U;
-		}
-	}
+	/*
+	 * A known change narrows the copy to the box around the changed boxes,
+	 * clamped to the image, and to the tiles of the boxes themselves
+	 * (ws211-p009): a frame that drew two places apart copies the two.
+	 */
+	if (changed)
+		copy_narrow(pass, destination, boxes, count);
 
 	/* The pass holds the source's view through native retirement, like its output. */
 	bcm2711_v3d_memory_retain(view);
@@ -749,4 +741,73 @@ retain_raster(
 
 	/* Succeeded: the caller's pass owns one reference of the view. */
 	return 0;
+}
+
+/*
+ * Narrows a whole-image copy pass to the changed boxes of its source
+ * (pixels, left, top, right, bottom): its area to the box around them,
+ * clamped to the destination, and its tiles to the boxes' tiles
+ * (ws211-p009).  Boxes left with nothing inside the image leave the copy
+ * whole.
+ */
+static void
+copy_narrow(
+	struct bcm2711_vulkan_native_pass *pass,
+	const struct bcm2711_vulkan_resource *destination,
+	uint32_t (*boxes)[4],
+	uint32_t count)
+{
+	uint32_t around[4];
+	uint32_t index;
+	uint32_t kept;
+
+	/* Each box clamped to the image; empty ones left out; the box around the rest. */
+	kept = 0;
+	around[0] = UINT32_MAX;
+	around[1] = UINT32_MAX;
+	around[2] = 0;
+	around[3] = 0;
+	for (index = 0; index < count; index++) {
+		/* The box inside the image. */
+		if (boxes[index][2] > destination->width)
+			boxes[index][2] = destination->width;
+		if (boxes[index][3] > destination->height)
+			boxes[index][3] = destination->height;
+		if (boxes[index][0] >= boxes[index][2] || boxes[index][1] >= boxes[index][3])
+			continue;
+
+		/* Kept, as its tiles, and in the box around them. */
+		pass->state.boxes[kept][0] = boxes[index][0] / 64U;
+		pass->state.boxes[kept][1] = boxes[index][1] / 64U;
+		pass->state.boxes[kept][2] = (boxes[index][2] - 1U) / 64U;
+		pass->state.boxes[kept][3] = (boxes[index][3] - 1U) / 64U;
+		kept++;
+		if (boxes[index][0] < around[0])
+			around[0] = boxes[index][0];
+		if (boxes[index][1] < around[1])
+			around[1] = boxes[index][1];
+		if (boxes[index][2] > around[2])
+			around[2] = boxes[index][2];
+		if (boxes[index][3] > around[3])
+			around[3] = boxes[index][3];
+	}
+
+	/* Nothing inside the image: the copy stays whole, as before. */
+	if (kept == 0)
+		return;
+
+	/* The area and the rectangle of tiles around the boxes. */
+	pass->area.offset.x = (int32_t)around[0];
+	pass->area.offset.y = (int32_t)around[1];
+	pass->area.extent.width = around[2] - around[0];
+	pass->area.extent.height = around[3] - around[1];
+	pass->state.first_x = around[0] / 64U;
+	pass->state.first_y = around[1] / 64U;
+	pass->state.last_x = (around[2] - 1U) / 64U;
+	pass->state.last_y = (around[3] - 1U) / 64U;
+
+	/* One box is the rectangle itself; more select their own tiles. */
+	pass->state.box_count = 0;
+	if (kept > 1U)
+		pass->state.box_count = kept;
 }

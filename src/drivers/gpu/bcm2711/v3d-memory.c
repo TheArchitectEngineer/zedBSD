@@ -17,6 +17,8 @@ static int synchronize_range(struct bcm2711_v3d_space *space, uint32_t address, 
 static bool memory_ready(struct bcm2711_v3d_space *space);
 static bool window_open(struct bcm2711_v3d_space *space);
 static bool changes_locked(const struct bcm2711_buffer *buffer, uint64_t offset, uint64_t since, uint32_t *box);
+static bool changes_boxes_locked(const struct bcm2711_buffer *buffer, uint64_t offset, uint64_t since, uint32_t (*boxes)[4], uint32_t capacity, uint32_t *count);
+static void boxes_add(uint32_t (*boxes)[4], uint32_t capacity, uint32_t *count, const uint32_t *box);
 static void remove_view(struct bcm2711_v3d_space *space, struct bcm2711_v3d_view *view);
 
 /*
@@ -378,6 +380,38 @@ bcm2711_v3d_memory_changes(
 	return known;
 }
 
+/*
+ * Reports the writes of the image at offset after generation since as a
+ * list of at most capacity boxes (ws211-p009): a box another holds is
+ * left out, and writes needing more boxes are given as their union.
+ *
+ * Every generation after since must still be in the ring and belong to the
+ * same image; otherwise the caller copies the whole image.  A count of 0
+ * with true means nothing changed.
+ */
+bool
+bcm2711_v3d_memory_changes_boxes(
+	struct bcm2711_buffer *buffer,
+	uint64_t offset,
+	uint64_t since,
+	uint32_t (*boxes)[4],
+	uint32_t capacity,
+	uint32_t *count)
+{
+	unsigned long enabled;
+	bool known;
+
+	/* The generation and the ring are read together under the run's guard. */
+	enabled = spin_lock_irqsave(&buffer->guard);
+
+	known = changes_boxes_locked(buffer, offset, since, boxes, capacity, count);
+
+	spin_unlock_irqrestore(&buffer->guard, enabled);
+
+	/* Reports whether the boxes cover every change. */
+	return known;
+}
+
 /* Computes the union of the writes after since; the caller holds the run's guard. */
 static bool
 changes_locked(
@@ -571,3 +605,90 @@ bcm2711_v3d_memory_release_delayed(
 	return 0;
 }
 
+/* Collects the writes after since as boxes; the caller holds the run's guard. */
+static bool
+changes_boxes_locked(
+	const struct bcm2711_buffer *buffer,
+	uint64_t offset,
+	uint64_t since,
+	uint32_t (*boxes)[4],
+	uint32_t capacity,
+	uint32_t *count)
+{
+	const struct bcm2711_buffer_write *write;
+	uint64_t generation;
+	uint32_t index;
+
+	/* No change leaves no box. */
+	*count = 0;
+	if (capacity == 0)
+		return false;
+	if (since > buffer->generation || buffer->generation - since > BCM2711_BUFFER_WRITES)
+		return false;
+
+	/* Each later generation's write, found by its place in the ring. */
+	for (generation = since + 1U; generation <= buffer->generation; generation++) {
+		index = (uint32_t)((buffer->write_next - 1U - (buffer->generation - generation)) % BCM2711_BUFFER_WRITES);
+		write = &buffer->writes[index];
+
+		/* A forgotten, unknown or other image's write leaves only a whole copy. */
+		if (write->generation != generation || write->offset != offset)
+			return false;
+
+		/* An empty box changed nothing. */
+		if (write->box[2] <= write->box[0] || write->box[3] <= write->box[1])
+			continue;
+		boxes_add(boxes, capacity, count, write->box);
+	}
+
+	/* Succeeded: the boxes cover every pixel the image changed after since. */
+	return true;
+}
+
+/* Adds a box to a list: left out when one holds it, as the union of all when no room is left. */
+static void
+boxes_add(
+	uint32_t (*boxes)[4],
+	uint32_t capacity,
+	uint32_t *count,
+	const uint32_t *box)
+{
+	uint32_t index;
+
+	/* A box that holds it already. */
+	for (index = 0; index < *count; index++) {
+		if (boxes[index][0] <= box[0] &&
+		    boxes[index][1] <= box[1] &&
+		    boxes[index][2] >= box[2] &&
+		    boxes[index][3] >= box[3])
+			return;
+	}
+
+	/* Room for it. */
+	if (*count < capacity) {
+		kern_memcpy(boxes[*count], box, sizeof(boxes[0]));
+		*count += 1U;
+		return;
+	}
+
+	/* No room: the first box becomes the union of all of them and the new one. */
+	for (index = 1; index < *count; index++) {
+		if (boxes[index][0] < boxes[0][0])
+			boxes[0][0] = boxes[index][0];
+		if (boxes[index][1] < boxes[0][1])
+			boxes[0][1] = boxes[index][1];
+		if (boxes[index][2] > boxes[0][2])
+			boxes[0][2] = boxes[index][2];
+		if (boxes[index][3] > boxes[0][3])
+			boxes[0][3] = boxes[index][3];
+	}
+	if (box[0] < boxes[0][0])
+		boxes[0][0] = box[0];
+	if (box[1] < boxes[0][1])
+		boxes[0][1] = box[1];
+	if (box[2] > boxes[0][2])
+		boxes[0][2] = box[2];
+	if (box[3] > boxes[0][3])
+		boxes[0][3] = box[3];
+	*count = 1;
+}

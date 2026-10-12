@@ -296,8 +296,7 @@ bcm2711_vulkan_native_job_step(
 		/* The cost report separates graphics passes, image clears and image transfers. */
 		if (error == 0) {
 			bcm2711_vulkan_native_pass_costs(job->pass, perf);
-			tiles = (job->pass->state.last_x - job->pass->state.first_x + 1U) *
-			    (job->pass->state.last_y - job->pass->state.first_y + 1U);
+			tiles = bcm2711_native_pass_tiles(&job->pass->state);
 			if (event->opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
 				perf->render_passes++;
 				perf->render_tiles += tiles;

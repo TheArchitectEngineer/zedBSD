@@ -25,6 +25,8 @@ static int prepare_target_clear(struct bcm2711_vulkan_native_pass *pass);
 static int collect_draws(struct bcm2711_vulkan_native_pass *pass, const struct bcm2711_vulkan_prepared_event *begin, uint64_t *remaining, const struct bcm2711_vulkan_prepared_event **next);
 static int allocate_storage(struct bcm2711_vulkan_native_pass *pass, uint64_t bytes, unsigned fill, uint64_t *remaining, struct bcm2711_native_storage **storage);
 static int prepare_lists(struct bcm2711_vulkan_native_pass *pass, uint64_t *remaining);
+static void select_boxes(struct bcm2711_vulkan_native_pass *pass);
+static bool box_add(struct bcm2711_native_pass *state, const uint32_t *box);
 static void prepare_image(struct bcm2711_native_storage *storage, struct bcm2711_native_pass_image *image);
 
 /*
@@ -89,6 +91,10 @@ bcm2711_vulkan_native_pass_create(
 		stage = "draws";
 		error = collect_draws(created, begin, &remaining, &following);
 	}
+
+	/* The tiles the draws can change, when the pass may leave the others unrendered (ws211-p009). */
+	if (error == 0)
+		select_boxes(created);
 
 	/* Native command storage follows the complete independent draw prefix. */
 	if (error == 0) {
@@ -601,6 +607,104 @@ allocate_storage(
 
 	/* Succeeded: every complete physical/mapped owner is reachable from the whole pass before bytes are published. */
 	return 0;
+}
+
+/*
+ * Narrows a pass that loads its own output to the tiles its draws' clip
+ * windows meet (ws211-p009).
+ *
+ * Every other tile would be loaded and stored back unchanged: no draw
+ * writes a pixel outside its window, and a partial clear was written to
+ * the image before the launch.  A pass that clears natively, or whose
+ * windows need more boxes than the pass holds, renders every tile of its
+ * rectangle as before.
+ */
+static void
+select_boxes(
+	struct bcm2711_vulkan_native_pass *pass)
+{
+	const struct bcm2711_vulkan_native_draw *draw;
+	uint32_t box[4];
+	bool added;
+
+	/* Only a pass whose tiles start from its own output can leave a tile as it is. */
+	pass->state.box_count = 0;
+	if (pass->state.load == 0 || pass->state.source != 0)
+		return;
+
+	/* Each draw's window, as the tiles it covers inside the pass's rectangle. */
+	for (draw = pass->first; draw != NULL; draw = draw->next) {
+		/* A window with no pixel draws nothing. */
+		if (draw->window[2] == 0 || draw->window[3] == 0)
+			continue;
+
+		/* The window's first and last tiles, kept inside the rectangle. */
+		box[0] = draw->window[0] / 64U;
+		box[1] = draw->window[1] / 64U;
+		box[2] = (draw->window[0] + draw->window[2] - 1U) / 64U;
+		box[3] = (draw->window[1] + draw->window[3] - 1U) / 64U;
+		if (box[0] < pass->state.first_x)
+			box[0] = pass->state.first_x;
+		if (box[1] < pass->state.first_y)
+			box[1] = pass->state.first_y;
+		if (box[2] > pass->state.last_x)
+			box[2] = pass->state.last_x;
+		if (box[3] > pass->state.last_y)
+			box[3] = pass->state.last_y;
+		if (box[0] > box[2] || box[1] > box[3])
+			continue;
+
+		/* Too many different boxes: every tile, as before. */
+		added = box_add(&pass->state, box);
+		if (!added) {
+			pass->state.box_count = 0;
+			return;
+		}
+	}
+}
+
+/*
+ * Adds a tile box to a pass's boxes: nothing when one holds it already,
+ * the boxes it holds replaced by it.  Returns false when no room is left.
+ */
+static bool
+box_add(
+	struct bcm2711_native_pass *state,
+	const uint32_t *box)
+{
+	uint32_t index;
+
+	/* A box that holds it already. */
+	for (index = 0; index < state->box_count; index++) {
+		if (state->boxes[index][0] <= box[0] &&
+		    state->boxes[index][1] <= box[1] &&
+		    state->boxes[index][2] >= box[2] &&
+		    state->boxes[index][3] >= box[3])
+			return true;
+	}
+
+	/* The boxes it holds are taken out, the last moved into each one's place. */
+	index = 0;
+	while (index < state->box_count) {
+		if (box[0] <= state->boxes[index][0] &&
+		    box[1] <= state->boxes[index][1] &&
+		    box[2] >= state->boxes[index][2] &&
+		    box[3] >= state->boxes[index][3]) {
+			state->box_count--;
+			kern_memcpy(state->boxes[index], state->boxes[state->box_count], sizeof(state->boxes[index]));
+			continue;
+		}
+		index++;
+	}
+
+	/* No room for another box. */
+	if (state->box_count == BCM2711_NATIVE_PASS_BOXES)
+		return false;
+
+	/* Succeeded: the box is the pass's. */
+	kern_memcpy(state->boxes[state->box_count], box, sizeof(state->boxes[0]));
+	state->box_count++;
+	return true;
 }
 
 /* Allocates, assembles and cleans every native list/binning/overflow input before publishing the complete CL job. */

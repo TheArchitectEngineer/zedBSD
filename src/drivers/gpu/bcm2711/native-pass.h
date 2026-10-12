@@ -14,6 +14,9 @@
 
 #define BCM2711_NATIVE_PASS_BIN_PREFIX 13U
 
+/* The most tile boxes a pass is narrowed to (ws211-p009); more render every tile of its rectangle. */
+#define BCM2711_NATIVE_PASS_BOXES 8U
+
 /* Numerical framebuffer and tile state describe one single-layer, single-sample raster pass; no public identities are retained. */
 struct bcm2711_native_pass {
 	uint32_t width;
@@ -37,6 +40,17 @@ struct bcm2711_native_pass {
 	uint32_t source;
 	uint32_t source_pitch;
 	uint32_t source_bytes;
+	/*
+	 * The tile boxes (first x, first y, last x, last y, inclusive, inside
+	 * the rectangle above) whose tiles the pass changes (ws211-p009): only
+	 * the supertiles that meet one of them are rendered.  A tile no box
+	 * meets is one whose load and store would write back the bytes it
+	 * holds, so the owner names boxes only for a pass that loads its own
+	 * output (or copies the tiles it names).  box_count 0: every
+	 * supertile of the rectangle.
+	 */
+	uint32_t box_count;
+	uint32_t boxes[BCM2711_NATIVE_PASS_BOXES][4];
 };
 
 /* Exact active list lengths and minimum binning storage are measured before mapped owners are allocated. */
@@ -63,6 +77,7 @@ struct bcm2711_native_pass_image {
 
 /* Draw sequences must already occupy bin.bytes + PREFIX; this operation preserves those complete numerical sequences. */
 int bcm2711_native_pass_measure(const struct bcm2711_native_pass *state, uint32_t draws, struct bcm2711_native_pass_sizes *sizes);
+uint32_t bcm2711_native_pass_tiles(const struct bcm2711_native_pass *state);
 int bcm2711_native_pass_encode(const struct bcm2711_native_pass *state, uint32_t draws, struct bcm2711_native_pass_image *bin, struct bcm2711_native_pass_image *render, struct bcm2711_native_pass_image *tile);
 
 #endif

@@ -16,6 +16,9 @@
 #include "drivers/gpu/bcm2711/native-colour.h"
 #include "drivers/gpu/bcm2711/vulkan-native-pass.h"
 
+/* The most tile boxes a pass records as writes of their own; more, and its area is recorded (ws211-p009). */
+#define NATIVE_EXECUTE_WRITTEN_BOXES 4U
+
 static int validate_pass(struct bcm2711_vulkan_native_pass *pass);
 static int clear_target(struct bcm2711_vulkan_native_pass *pass);
 static int convert_textures(struct bcm2711_vulkan_native_pass *pass, struct bcm2711_v3d_job_result *result, uint64_t *ticks, uint32_t *jobs, uint64_t *longest);
@@ -165,7 +168,9 @@ bcm2711_vulkan_native_pass_finish(
 	struct bcm2711_buffer *output;
 	uint64_t offset;
 	uint32_t box[4];
+	uint32_t tiles[4];
 	uint32_t index;
+	bool written;
 
 	/* Snapshots the unit filled are valid for later passes from now on. */
 	if (pass->converted) {
@@ -184,7 +189,41 @@ bcm2711_vulkan_native_pass_finish(
 	box[1] = (uint32_t)pass->area.offset.y;
 	box[2] = box[0] + pass->area.extent.width;
 	box[3] = box[1] + pass->area.extent.height;
-	bcm2711_v3d_memory_written(output, offset, box);
+
+	/*
+	 * A completed pass narrowed to a few tile boxes changed only them
+	 * (ws211-p009): each is recorded alone, so that a later copy takes the
+	 * boxes and not the area around them.  A failed one, a copy, or one of
+	 * more boxes records its area.
+	 */
+	written = false;
+	if (error == 0 &&
+	    pass->state.source == 0 &&
+	    pass->state.box_count != 0 &&
+	    pass->state.box_count <= NATIVE_EXECUTE_WRITTEN_BOXES)
+		written = true;
+	if (written) {
+		for (index = 0; index < pass->state.box_count; index++) {
+			/* The box's tiles in pixels, inside the render area. */
+			tiles[0] = pass->state.boxes[index][0] * 64U;
+			tiles[1] = pass->state.boxes[index][1] * 64U;
+			tiles[2] = (pass->state.boxes[index][2] + 1U) * 64U;
+			tiles[3] = (pass->state.boxes[index][3] + 1U) * 64U;
+			if (tiles[0] < box[0])
+				tiles[0] = box[0];
+			if (tiles[1] < box[1])
+				tiles[1] = box[1];
+			if (tiles[2] > box[2])
+				tiles[2] = box[2];
+			if (tiles[3] > box[3])
+				tiles[3] = box[3];
+			bcm2711_v3d_memory_written(output, offset, tiles);
+		}
+	}
+
+	/* Any other pass: its whole area. */
+	if (!written)
+		bcm2711_v3d_memory_written(output, offset, box);
 	if (error != 0)
 		return error;
 

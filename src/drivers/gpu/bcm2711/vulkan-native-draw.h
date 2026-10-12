@@ -85,6 +85,13 @@ struct bcm2711_vulkan_native_draw {
 	uint32_t shader;
 	uint32_t attributes;
 	uint32_t vertices;
+	/*
+	 * The draw's clip window in the framebuffer's pixels (x, y, width,
+	 * height): the drawable, render area, viewport and scissor together.
+	 * No pixel outside it is written; the pass renders only the tiles
+	 * its draws' windows meet (ws211-p009).
+	 */
+	uint32_t window[4];
 	/* Numerical BCL state refers only to this draw or retained earlier draws in the same pass. */
 	uint32_t bin_bytes;
 	uint8_t bin[BCM2711_NATIVE_BIN_BYTES];

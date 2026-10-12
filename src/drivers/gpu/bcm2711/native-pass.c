@@ -6,6 +6,8 @@
  */
 
 /* Independent 4.2 pass serialization uses fixed packet fields and native workarounds; allocation, cache management and launch belong to the job owner. */
+#include <stdbool.h>
+
 #include <kern/kcrt.h>
 #include <uapi/errno.h>
 
@@ -27,6 +29,10 @@ static void write_half(uint8_t *bytes, uint32_t half);
 static void write_raster(uint8_t *bytes, uint8_t opcode, uint32_t pitch, uint32_t address);
 static void encode_render(const struct bcm2711_native_pass *state, const struct bcm2711_native_pass_image *tile, const struct bcm2711_native_pass_sizes *sizes, uint8_t *bytes);
 static void encode_tile(const struct bcm2711_native_pass *state, uint8_t *bytes);
+static bool supertile_selected(const struct bcm2711_native_pass *state, uint32_t group, uint32_t x, uint32_t y);
+static int validate_boxes(const struct bcm2711_native_pass *state);
+static uint32_t selected_supertiles(const struct bcm2711_native_pass *state, uint32_t group);
+static uint32_t supertile_group(uint32_t columns, uint32_t rows);
 
 /*
  * Measures exact list lengths and complete binning storage for one bounded pass.
@@ -50,6 +56,7 @@ bcm2711_native_pass_measure(
 	uint32_t group;
 	uint32_t selected_columns;
 	uint32_t selected_rows;
+	int error;
 
 	/* Missing numerical input cannot supply any complete measurement. */
 	if (state == NULL || sizes == NULL)
@@ -90,6 +97,11 @@ bcm2711_native_pass_measure(
 	    state->last_y >= rows)
 		return EINVAL;
 
+	/* The tile boxes, when the pass is narrowed to them, lie inside the rectangle (ws211-p009). */
+	error = validate_boxes(state);
+	if (error != 0)
+		return error;
+
 	/* The aggregate staging bound keeps list arithmetic representable before allocation. */
 	if (draws > (NATIVE_PASS_MAX_BYTES - 14U) / BCM2711_NATIVE_BIN_BYTES)
 		return E2BIG;
@@ -108,21 +120,22 @@ bcm2711_native_pass_measure(
 		measured.tile += 13U;
 
 	/* Square power-of-two groups cover all binning tiles within the native maximum of 256 supertiles. */
-	group = 1;
-	measured.columns = columns;
-	measured.rows = rows;
-	while (measured.columns * measured.rows > 256U) {
-		group *= 2U;
-		measured.columns = (columns + group - 1U) / group;
-		measured.rows = (rows + group - 1U) / group;
-	}
+	group = supertile_group(columns, rows);
+	measured.columns = (columns + group - 1U) / group;
+	measured.rows = (rows + group - 1U) / group;
 
-	/* Selected groups may include neighbouring tiles, whose samples the owner must preserve with a load when necessary. */
+	/*
+	 * Selected groups may include neighbouring tiles, whose samples the
+	 * owner must preserve with a load when necessary.  A pass narrowed to
+	 * tile boxes selects only the groups that meet one (ws211-p009).
+	 */
 	measured.supertile_width = group;
 	measured.supertile_height = group;
 	selected_columns = state->last_x / group - state->first_x / group + 1U;
 	selected_rows = state->last_y / group - state->first_y / group + 1U;
 	measured.render = 103U + selected_columns * selected_rows * 3U;
+	if (state->box_count != 0U)
+		measured.render = 103U + selected_supertiles(state, group) * 3U;
 
 	/* Succeeded: no partial measurement escapes a refused pass geometry. */
 	*sizes = measured;
@@ -191,6 +204,45 @@ bcm2711_native_pass_encode(
 	render->used = sizes.render;
 	tile->used = sizes.tile;
 	return 0;
+}
+
+/*
+ * Counts the tiles of a pass's rectangle that it renders: all of them, or
+ * those in a supertile one of its tile boxes meets (ws211-p009).
+ *
+ * The count is the cost report's.
+ */
+uint32_t
+bcm2711_native_pass_tiles(
+	const struct bcm2711_native_pass *state)
+{
+	uint32_t group;
+	uint32_t count;
+	uint32_t x;
+	uint32_t y;
+	bool selected;
+
+	/* An inverted rectangle renders nothing measure would accept. */
+	if (state->first_x > state->last_x || state->first_y > state->last_y)
+		return 0;
+
+	/* A pass not narrowed renders its whole rectangle. */
+	if (state->box_count == 0U)
+		return (state->last_x - state->first_x + 1U) * (state->last_y - state->first_y + 1U);
+
+	/* Each tile of the rectangle whose group is rendered. */
+	group = supertile_group((state->width + 63U) / 64U, (state->height + 63U) / 64U);
+	count = 0;
+	for (y = state->first_y; y <= state->last_y; y++) {
+		for (x = state->first_x; x <= state->last_x; x++) {
+			selected = supertile_selected(state, group, x / group, y / group);
+			if (selected)
+				count++;
+		}
+	}
+
+	/* The tiles rendered. */
+	return count;
 }
 
 /* Establishes one nonempty, aligned complete native interval without wrapping the thirty-two-bit VA space. */
@@ -383,6 +435,7 @@ encode_render(
 	uint32_t x;
 	uint32_t y;
 	uint32_t cursor;
+	bool selected;
 
 	/* Common is the first configuration; target clear/type follow and depth clear is last. */
 	bytes[0] = 121;
@@ -436,6 +489,11 @@ encode_render(
 	cursor = 102;
 	for (y = state->first_y / sizes->supertile_height; y <= state->last_y / sizes->supertile_height; y++) {
 		for (x = state->first_x / sizes->supertile_width; x <= state->last_x / sizes->supertile_width; x++) {
+			/* A group no tile box meets keeps its bytes without being rendered (ws211-p009). */
+			selected = supertile_selected(state, sizes->supertile_width, x, y);
+			if (!selected)
+				continue;
+
 			/* Each selected group executes the generic sequence for all of its valid framebuffer tiles. */
 			bytes[cursor] = 23;
 			bytes[cursor + 1U] = (uint8_t)x;
@@ -496,4 +554,112 @@ encode_tile(
 
 	/* Succeeded: one complete generic tile invocation returns to the next selected supertile. */
 	return;
+}
+
+/*
+ * Tells whether a supertile (a group of group by group tiles at x, y in
+ * supertiles) is rendered: always without tile boxes, else when it meets
+ * one of them (ws211-p009).
+ */
+static bool
+supertile_selected(
+	const struct bcm2711_native_pass *state,
+	uint32_t group,
+	uint32_t x,
+	uint32_t y)
+{
+	uint32_t first_x;
+	uint32_t first_y;
+	uint32_t last_x;
+	uint32_t last_y;
+	uint32_t index;
+
+	/* A pass not narrowed renders every group of its rectangle. */
+	if (state->box_count == 0U)
+		return true;
+
+	/* The group's tiles. */
+	first_x = x * group;
+	first_y = y * group;
+	last_x = first_x + group - 1U;
+	last_y = first_y + group - 1U;
+
+	/* A box that shares a tile with the group. */
+	for (index = 0; index < state->box_count; index++) {
+		if (state->boxes[index][0] > last_x || state->boxes[index][2] < first_x)
+			continue;
+		if (state->boxes[index][1] > last_y || state->boxes[index][3] < first_y)
+			continue;
+		return true;
+	}
+
+	/* No box reaches it. */
+	return false;
+}
+
+/* Refuses tile boxes that are too many, inverted or outside the pass's rectangle. */
+static int
+validate_boxes(
+	const struct bcm2711_native_pass *state)
+{
+	uint32_t index;
+
+	/* Room for every box. */
+	if (state->box_count > BCM2711_NATIVE_PASS_BOXES)
+		return EINVAL;
+
+	/* Each box in order and inside the rectangle. */
+	for (index = 0; index < state->box_count; index++) {
+		if (state->boxes[index][0] > state->boxes[index][2] || state->boxes[index][1] > state->boxes[index][3])
+			return EINVAL;
+		if (state->boxes[index][0] < state->first_x || state->boxes[index][2] > state->last_x)
+			return EINVAL;
+		if (state->boxes[index][1] < state->first_y || state->boxes[index][3] > state->last_y)
+			return EINVAL;
+	}
+
+	/* Succeeded: the boxes select groups of the rectangle alone. */
+	return 0;
+}
+
+/* Counts the supertiles a pass narrowed to tile boxes renders, in groups of group by group tiles. */
+static uint32_t
+selected_supertiles(
+	const struct bcm2711_native_pass *state,
+	uint32_t group)
+{
+	uint32_t count;
+	uint32_t x;
+	uint32_t y;
+	bool selected;
+
+	/* Every group of the rectangle that a box meets, as encode_render walks them. */
+	count = 0;
+	for (y = state->first_y / group; y <= state->last_y / group; y++) {
+		for (x = state->first_x / group; x <= state->last_x / group; x++) {
+			selected = supertile_selected(state, group, x, y);
+			if (selected)
+				count++;
+		}
+	}
+
+	/* The number rendered. */
+	return count;
+}
+
+/* Reports the side, in tiles, of the square power-of-two groups that keep a grid within the native 256 supertiles. */
+static uint32_t
+supertile_group(
+	uint32_t columns,
+	uint32_t rows)
+{
+	uint32_t group;
+
+	/* The smallest group that fits. */
+	group = 1;
+	while (((columns + group - 1U) / group) * ((rows + group - 1U) / group) > 256U)
+		group *= 2U;
+
+	/* The group's side. */
+	return group;
 }
