@@ -541,6 +541,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
 <!-- master:decisions-log:start -->
+- 2026-10-12 ユーザー（WS211）: icon の時間差の演出は「やめる」、クロスフェードの間の見た目の変化（消える desktop が 1 枚の絵で薄くなる・窓の中身が止まる・拡大縮小中の柔らかさ・Home の content が 1 枚で薄くなる・画面外の窓と影が端で切れる・glass の blur の拡大縮小）は「受け入れる」。部分の描き直しの kernel の小さな CPU の変換・消去は「一番高速な方法で。PIで少しでも動作にひっかかりがあるなら許容しない。ただしSMPで問題なくなれば許容する。それを総合的に評価し、実装は何回か作り替えていいので、最適化する。」→ 方式は Pi の実測で選ぶ（CPU の小さな変換・全面の TFU・WS141 での GPU の部分変換を比べる）、引っかかりがあれば採らない、SMP の後に再評価。Guardrail「画像の処理は GPU で」の例外はこの評価の結果で決める。
 - 2026-10-12 ユーザー（クリック）: ws141-p016 の非同期化は「列を app ごとに」— GPU の実行の列を session ごとに分け、pass の単位で round-robin するところまで p016 に含める（review-3 N4: 全体 1 本の列では cursor・drag が重い client の後ろに並ぶ）。2026-10-12 ユーザー「描画が終わらなくても制御が戻るのがコマンドバッファ形式のメリットで、Vulkan移行の目的」→ i915 の非同期の submit は F-093。Q1: arm64 の HAL の uncached の unmap の TLB の flush を 1 回に（b17a753d4）、kern_free の large の allocation を O(1) に（4d3d7eddf）。
 - 2026-10-08 午後 ユーザー:「サウンドはlibkeiland-backendに入れてください。libkeilandのAPIはkl_audio_がいいです。」→ WS191 の音の出力は libkeiland-backend の中、公開の API は `kl_audio_*`。
 - 2026-10-08 午後 ユーザー（クリック）: WS191 の Linux の再生の経路は「alsa-lib を dlopen」（ALSA の default、普通は pipewire-alsa で PipeWire）。Q1: D4 は stream ごとの接続のまま限りは pid ごと、p004 は Linux・FreeBSD の正弦波の試験の client を入れる（plan/ws191/phase001/phase.md）。
