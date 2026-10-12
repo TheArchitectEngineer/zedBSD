@@ -1241,7 +1241,7 @@ kwl_perf_report(
 	main_other = 0.0;
 	if (perf->work_cycles > main_parts)
 		main_other = (double)(perf->work_cycles - main_parts) / per_ms;
-	printf("KWL PERF main ticks=%.1f input=%.1f clients=%.1f frame_done=%.1f schedule=%.1f flush=%.1f other=%.1f | schedule ticks=%.1f adopt=%.1f shm=%.1f cursor=%.1f layers=%.1f draw=%.1f | cursor presents=%u held=%u\n",
+	printf("KWL PERF main ticks=%.1f input=%.1f clients=%.1f frame_done=%.1f schedule=%.1f flush=%.1f other=%.1f | schedule ticks=%.1f adopt=%.1f shm=%.1f cursor=%.1f layers=%.1f draw=%.1f | cursor presents=%u held=%u fence=%.1f acquire=%.1f copy=%.1f present=%.1f present_max=%.2f\n",
 	    (double)perf->tick_cycles / per_ms,
 	    (double)perf->input_cycles / per_ms,
 	    (double)perf->client_cycles / per_ms,
@@ -1256,7 +1256,12 @@ kwl_perf_report(
 	    (double)perf->layers_cycles / per_ms,
 	    (double)perf->draw_cycles / per_ms,
 	    perf->cursor_presents,
-	    perf->cursor_deferred);
+	    perf->cursor_deferred,
+	    (double)perf->cursor_fence_cycles / per_ms,
+	    (double)perf->cursor_acquire_cycles / per_ms,
+	    (double)perf->cursor_copy_cycles / per_ms,
+	    (double)perf->cursor_queue_present_cycles / per_ms,
+	    (double)perf->cursor_queue_present_max_cycles / per_ms);
 
 	/* wl_shm's copies: how many, and the CPU time of one. */
 	if (perf->shm_copies != 0) {

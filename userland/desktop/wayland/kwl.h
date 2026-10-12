@@ -917,6 +917,16 @@ struct kwl_perf {
 	/* The cursor plane's presents, and the passes that held a move for the next refresh (cursor-plane.c, ws213-p001 C0). */
 	uint32_t cursor_presents;
 	uint32_t cursor_deferred;
+	/*
+	 * A present's parts (ws213-p001 review-1 M0): the copy's fence asked,
+	 * the image acquired, the copy recorded and submitted, and the present
+	 * itself with its longest; each counts the presents that reached it.
+	 */
+	uint64_t cursor_fence_cycles;
+	uint64_t cursor_acquire_cycles;
+	uint64_t cursor_copy_cycles;
+	uint64_t cursor_queue_present_cycles;
+	uint64_t cursor_queue_present_max_cycles;
 };
 
 uint64_t kwl_cycles(void);
@@ -1058,6 +1068,12 @@ struct kwl_server {
 	float home_progress_value;
 	/* The event loop records the latest traced motion; recording a frame consumes this timestamp. */
 	uint64_t pointer_accepted_us;
+	/*
+	 * The kernel's time of the latest mouse report that moved the pointer
+	 * (its evdev stamp, microseconds), logged with the cursor plane's
+	 * present when frames are logged (ws213-p001 review-1 C1).
+	 */
+	uint64_t pointer_event_us;
 	/*
 	 * Hover probes (damage.c): the rectangles the last whole scene's drawing
 	 * tested the pointer against, and where the pointer was then.  A later

@@ -482,6 +482,8 @@ plane_present(
 	VkSemaphore wait;
 	uint32_t image;
 	uint32_t version;
+	uint64_t mark;
+	uint64_t spent;
 	VkResult result;
 
 	/*
@@ -493,6 +495,7 @@ plane_present(
 	 * every move of the pointer on the Pi 4 (ws141-p016 (B) review C1).
 	 */
 	compose = server->compose;
+	mark = kwl_cycles();
 	if (plane->copied) {
 		result = vkGetFenceStatus(compose->device, plane->fences[plane->last_copy]);
 		if (result == VK_NOT_READY)
@@ -505,7 +508,11 @@ plane_present(
 		plane->copied = 0U;
 	}
 
+	/* The copy's fence asked (KWL PERF main, ws213-p001 M0; a pass that stops here is not counted). */
+	server->perf.cursor_fence_cycles += kwl_cycles() - mark;
+
 	/* A free image now, or at a later pass. */
+	mark = kwl_cycles();
 	acquired = plane->acquired[plane->next];
 	result = vkAcquireNextImageKHR(compose->device, plane->output.swapchain, 0U, acquired, VK_NULL_HANDLE, &image);
 	if (result == VK_NOT_READY || result == VK_TIMEOUT)
@@ -517,8 +524,10 @@ plane_present(
 	}
 	plane->next = (plane->next + 1U) % (plane->output.image_count + 1U);
 	version = source != NULL ? source->version : 0U;
+	server->perf.cursor_acquire_cycles += kwl_cycles() - mark;
 
 	/* The cursor image goes into the swapchain image once; later moves present it as it is. */
+	mark = kwl_cycles();
 	wait = acquired;
 	if (!plane->held_valid[image] || plane->held[image] != source || plane->held_version[image] != version) {
 		/* The image's last copy finished before it was presented, which it was to be acquired again. */
@@ -558,6 +567,9 @@ plane_present(
 		wait = plane->ready[image];
 	}
 
+	/* The copy's recording and submission, when there was one. */
+	server->perf.cursor_copy_cycles += kwl_cycles() - mark;
+
 	/* The whole image with its top-left corner at the place. */
 	memset(&display, 0, sizeof(display));
 	display.sType = VK_STRUCTURE_TYPE_DISPLAY_PRESENT_INFO_KHR;
@@ -574,12 +586,22 @@ plane_present(
 	present.swapchainCount = 1U;
 	present.pSwapchains = &plane->output.swapchain;
 	present.pImageIndices = &image;
+	mark = kwl_cycles();
 	result = vkQueuePresentKHR(compose->queue, &present);
 	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
 		printf("KWL CURSOR_PLANE failed step=present result=%d\n", (int)result);
 		kwl_cursor_plane_close(server);
 		return;
 	}
+
+	/*
+	 * The time in the present, its waits for the queue's and the device's
+	 * locks included (ws213-p001 review-1 H3), and the longest of the window.
+	 */
+	spent = kwl_cycles() - mark;
+	server->perf.cursor_queue_present_cycles += spent;
+	if (spent > server->perf.cursor_queue_present_max_cycles)
+		server->perf.cursor_queue_present_max_cycles = spent;
 
 	/* What the plane shows now, and when; the log ties it to the input it shows. */
 	plane->presented = 1U;
@@ -591,7 +613,14 @@ plane_present(
 	plane->y = y;
 	plane->presents++;
 	if (server->log_frames)
-		printf("KWL CURSOR_PLANE present x=%d y=%d copy=%u input_us=%llu at_us=%llu\n", x, y, wait != acquired ? 1U : 0U, (unsigned long long)server->pointer_accepted_us, (unsigned long long)kwl_microseconds());
+		printf("KWL CURSOR_PLANE present x=%d y=%d copy=%u event_us=%llu input_us=%llu present_cycles=%llu at_us=%llu\n",
+		       x,
+		       y,
+		       wait != acquired ? 1U : 0U,
+		       (unsigned long long)server->pointer_event_us,
+		       (unsigned long long)server->pointer_accepted_us,
+		       (unsigned long long)spent,
+		       (unsigned long long)kwl_microseconds());
 }
 
 /* Records the swapchain image's clearing and the cursor image's copy into its top-left corner. */
