@@ -63,8 +63,17 @@ kwl_cursor_box_init(
 	error = pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);
 	if (error == 0)
 		error = pthread_cond_init(&box->changed, &attributes);
+	if (error != 0) {
+		pthread_condattr_destroy(&attributes);
+		pthread_mutex_destroy(&box->lock);
+		return error;
+	}
+
+	/* The cursor thread's answers to the main thread, on the same clock. */
+	error = pthread_cond_init(&box->answered, &attributes);
 	pthread_condattr_destroy(&attributes);
 	if (error != 0) {
+		pthread_cond_destroy(&box->changed);
 		pthread_mutex_destroy(&box->lock);
 		return error;
 	}
@@ -80,7 +89,8 @@ void
 kwl_cursor_box_destroy(
 	struct kwl_cursor_box *box)
 {
-	/* The signal, then the lock. */
+	/* The signals, then the lock. */
+	pthread_cond_destroy(&box->answered);
 	pthread_cond_destroy(&box->changed);
 	pthread_mutex_destroy(&box->lock);
 }
@@ -235,6 +245,23 @@ kwl_cursor_box_read(
 }
 
 /*
+ * Takes the cursor thread's counts of the window and starts them again.
+ */
+void
+kwl_cursor_box_take_stats(
+	struct kwl_cursor_box *box,
+	struct kwl_cursor_stats *stats)
+{
+	/* The counts, and zero for the next window. */
+	pthread_mutex_lock(&box->lock);
+
+	*stats = box->stats;
+	memset(&box->stats, 0, sizeof(box->stats));
+
+	pthread_mutex_unlock(&box->lock);
+}
+
+/*
  * Maps one absolute axis value onto 0 .. size - 1 pixels.
  */
 int32_t
@@ -315,6 +342,7 @@ box_write(
 		box->event_us = event_us;
 	box->write_us = now;
 	box->writes++;
+	box->sequence++;
 
 	/* What the writer tells the main thread. */
 	motion->x = x;

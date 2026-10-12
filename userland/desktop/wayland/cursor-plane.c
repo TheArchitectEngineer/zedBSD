@@ -15,14 +15,25 @@
  * Vulkan is used: an output without such a plane composes the cursor as
  * before.  A drag, a client's cursor without a host-written image or larger
  * than the plane, and a pointer on another display are composed too.
+ *
+ * Since ws213-p004 the cursor thread (cursor-thread.c) presents the plane
+ * from the cursor's box, where the input thread writes the pointer's
+ * place.  The main thread here makes and destroys the plane's objects,
+ * chooses the image the plane shows at each pass of its loop and writes
+ * it to the box: a cursor shape or the arrow as it is (made once, never
+ * written again), a client's cursor through one of the plane's two copies
+ * (design 4.7), which the main thread writes only while the cursor
+ * thread does not read it.
  */
 
 #include "compose.h"
+#include "cursor-thread.h"
 #include "extras.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* The refresh assumed when the display told none, in millihertz. */
 #define PLANE_REFRESH_DEFAULT_MHZ	60000U
@@ -30,24 +41,32 @@
 /*
  * How much sooner than a whole refresh after the last present a held move
  * may be presented, in microseconds (ws211-p006): the clock reads whole
- * milliseconds on the Pi 4 and the event loop sleeps whole milliseconds,
- * so a hold of exactly a refresh woke a millisecond or two late, after the
- * pointer's next report (8 ms apart), and presented every 20 to 22 ms (45
- * a second) instead of every refresh.
+ * milliseconds on the Pi 4, so a hold of exactly a refresh woke a
+ * millisecond or two late, after the pointer's next report (8 ms apart),
+ * and presented every 20 to 22 ms (45 a second) instead of every refresh.
  */
 #define PLANE_HOLD_SLACK_US		2500U
 
-static int plane_state(struct kwl_server *server, const struct kwl_import **image, int32_t *x, int32_t *y);
+/* How long the main thread waits for the cursor thread to park, in milliseconds (design 4.8). */
+#define PLANE_PARK_WAIT_MS		2000U
+
+static int plane_state(struct kwl_server *server, const struct kwl_import **image, int32_t *hotspot_x, int32_t *hotspot_y);
 static VkResult plane_find(struct kwl_compose *compose, VkDisplayModeKHR *mode, uint32_t *index, uint32_t *stack, VkExtent2D *extent);
 static VkResult plane_mode(struct kwl_compose *compose, VkDisplayModeKHR *mode);
-static VkResult plane_objects(struct kwl_compose *compose, struct kwl_cursor_plane *plane);
-static void plane_present(struct kwl_server *server, struct kwl_cursor_plane *plane, const struct kwl_import *source, int32_t x, int32_t y);
-static void plane_record(struct kwl_cursor_plane *plane, VkCommandBuffer command, VkImage target, const struct kwl_import *source);
+static VkResult plane_objects(struct kwl_compose *compose, struct kwl_cursor_thread *cursor);
+static void plane_objects_destroy(struct kwl_compose *compose, struct kwl_cursor_thread *cursor);
+static VkResult plane_copies_create(struct kwl_compose *compose, struct kwl_cursor_plane *plane);
+static void plane_copies_destroy(struct kwl_compose *compose, struct kwl_cursor_plane *plane);
+static int plane_fixed(const struct kwl_server *server, const struct kwl_import *image);
+static const struct kwl_import *plane_copy(struct kwl_server *server, struct kwl_cursor_plane *plane, const struct kwl_import *image);
+static void plane_publish(struct kwl_server *server, struct kwl_cursor_plane *plane, const struct kwl_import *image, int32_t hotspot_x, int32_t hotspot_y, unsigned show);
 static uint64_t plane_period_us(const struct kwl_server *server);
 static uint64_t plane_hold_us(const struct kwl_server *server);
 
 /*
- * Makes the cursor plane's surface and swapchain after the output's, when the display has such a plane.
+ * Makes the cursor plane's surface and swapchain after the output's, when
+ * the display has such a plane, and starts the cursor thread that presents
+ * it.
  *
  * Any failure leaves the plane closed, and the cursor composed.
  */
@@ -57,17 +76,20 @@ kwl_cursor_plane_open(
 {
 	struct kwl_compose *compose;
 	struct kwl_cursor_plane *plane;
+	struct kwl_cursor_thread *cursor;
 	VkDisplaySurfaceCreateInfoKHR create;
 	VkDisplayModeKHR mode;
 	VkExtent2D extent;
 	uint32_t index;
 	uint32_t stack;
+	unsigned copy;
 	VkResult result;
+	int error;
 
-	/* Nothing when it is open already. */
+	/* Nothing when it is open already, or without the box the thread reads (ws213-p004). */
 	compose = server->compose;
 	plane = &compose->cursor_plane;
-	if (plane->open)
+	if (plane->open || !server->threads_prepared)
 		return;
 	memset(plane, 0, sizeof(*plane));
 
@@ -75,6 +97,21 @@ kwl_cursor_plane_open(
 	result = plane_find(compose, &mode, &index, &stack, &extent);
 	if (result != VK_SUCCESS)
 		return;
+
+	/* The cursor thread's record, which owns the presentation's objects. */
+	cursor = calloc(1, sizeof(*cursor));
+	if (cursor == NULL)
+		return;
+	cursor->box = &server->cursor_box;
+	cursor->instance = compose->instance;
+	cursor->device = compose->device;
+	cursor->queue = compose->queue;
+	cursor->wake_main = server->wake[1];
+	cursor->log = server->log_frames;
+	cursor->hold_us = plane_hold_us(server);
+	plane->thread = cursor;
+	plane->width = extent.width;
+	plane->height = extent.height;
 
 	/* Its surface, with per-pixel premultiplied alpha. */
 	memset(&create, 0, sizeof(create));
@@ -86,25 +123,30 @@ kwl_cursor_plane_open(
 	create.globalAlpha = 1.0f;
 	create.alphaMode = VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_PREMULTIPLIED_BIT_KHR;
 	create.imageExtent = extent;
-	plane->output.width = extent.width;
-	plane->output.height = extent.height;
-	result = vkCreateDisplayPlaneSurfaceKHR(compose->instance, &create, NULL, &plane->output.surface);
+	cursor->output.width = extent.width;
+	cursor->output.height = extent.height;
+	result = vkCreateDisplayPlaneSurfaceKHR(compose->instance, &create, NULL, &cursor->output.surface);
 	if (result != VK_SUCCESS) {
 		printf("KWL CURSOR_PLANE unavailable step=surface result=%d\n", (int)result);
+		free(cursor);
 		memset(plane, 0, sizeof(*plane));
 		return;
 	}
 
 	/*
-	 * Its swapchain, its images filled by copies only: with no other use
-	 * declared, the driver shows an unchanged image at a new place without
-	 * copying it again (ws141-p016 (B)).
+	 * Its swapchain, its images filled by copies only: no colour
+	 * attachment, or libvulkan's fast path of a move (ws141-p016 B-u)
+	 * never applies (main 2ef0688a8).  Then the thread's own command pool,
+	 * buffers, fences and semaphores, and the two copies of a client's
+	 * cursor.
 	 */
-	result = vkdemo_display_create_swapchain_exact(compose->physical, compose->device, compose->family, &plane->output, VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-	if (result == VK_SUCCESS && plane->output.image_count > KWL_CURSOR_PLANE_IMAGES)
+	result = vkdemo_display_create_swapchain_exact(compose->physical, compose->device, compose->family, &cursor->output, VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+	if (result == VK_SUCCESS && cursor->output.image_count > KWL_CURSOR_THREAD_IMAGES)
 		result = VK_ERROR_INITIALIZATION_FAILED;
 	if (result == VK_SUCCESS)
-		result = plane_objects(compose, plane);
+		result = plane_objects(compose, cursor);
+	if (result == VK_SUCCESS)
+		result = plane_copies_create(compose, plane);
 	if (result != VK_SUCCESS) {
 		printf("KWL CURSOR_PLANE unavailable step=swapchain result=%d\n", (int)result);
 		plane->open = 1;
@@ -112,13 +154,40 @@ kwl_cursor_plane_open(
 		return;
 	}
 
-	/* Succeeded: the next pass shows the cursor on it. */
+	/* The box shows nothing until the main thread's next pass, and knows the copies. */
+	pthread_mutex_lock(&server->cursor_box.lock);
+
+	server->cursor_box.image = NULL;
+	server->cursor_box.show = 0U;
+	server->cursor_box.failed = 0U;
+	server->cursor_box.stop = 0U;
+	server->cursor_box.park = 0U;
+	server->cursor_box.parked = 0U;
+	for (copy = 0; copy < KWL_CURSOR_COPIES; copy++) {
+		server->cursor_box.copies[copy] = plane->copies[copy];
+		server->cursor_box.pins[copy] = 0U;
+		cursor->copies[copy] = plane->copies[copy];
+	}
+
+	pthread_mutex_unlock(&server->cursor_box.lock);
+
+	/* The thread presents from now on. */
 	plane->open = 1;
-	printf("KWL CURSOR_PLANE open plane=%u width=%u height=%u images=%u format=%d\n", index, extent.width, extent.height, plane->output.image_count, (int)plane->output.format);
+	error = kwl_cursor_thread_start(cursor);
+	if (error != 0) {
+		printf("KWL CURSOR_PLANE unavailable step=thread errno=%d\n", error);
+		kwl_cursor_plane_close(server);
+		return;
+	}
+
+	/* Succeeded: the next pass shows the cursor on it. */
+	printf("KWL CURSOR_PLANE open plane=%u width=%u height=%u images=%u format=%d\n", index, extent.width, extent.height, cursor->output.image_count, (int)cursor->output.format);
 }
 
 /*
- * Destroys the cursor plane's swapchain and surface once the device is idle (before the output's).
+ * Stops the cursor thread and destroys the plane's objects once the device
+ * is idle (before the output's).  A thread whose copies do not finish ends
+ * the compositor at once, as no Vulkan call is safe under it (design 4.8).
  */
 void
 kwl_cursor_plane_close(
@@ -126,33 +195,53 @@ kwl_cursor_plane_close(
 {
 	struct kwl_compose *compose;
 	struct kwl_cursor_plane *plane;
+	struct kwl_cursor_thread *cursor;
 	unsigned index;
+	int error;
 
 	/* A closed plane has nothing. */
 	compose = server->compose;
 	plane = &compose->cursor_plane;
 	if (!plane->open)
 		return;
+	cursor = plane->thread;
+
+	/* The thread ends after its copies. */
+	error = kwl_cursor_thread_stop(cursor);
+	if (error != 0) {
+		printf("KWL FAILED site=park errno=%d\n", error);
+		fflush(stdout);
+		_exit(1);
+	}
+
+	/* No copy of the plane may still run. */
 	(void)vkDeviceWaitIdle(compose->device);
 
-	/* The commands, fences and semaphores, then the swapchain and surface. */
-	for (index = 0; index < KWL_CURSOR_PLANE_IMAGES; index++) {
-		if (plane->commands[index] != VK_NULL_HANDLE)
-			vkFreeCommandBuffers(compose->device, compose->pool, 1U, &plane->commands[index]);
-		if (plane->fences[index] != VK_NULL_HANDLE)
-			vkDestroyFence(compose->device, plane->fences[index], NULL);
-		if (plane->ready[index] != VK_NULL_HANDLE)
-			vkDestroySemaphore(compose->device, plane->ready[index], NULL);
+	/* The commands, fences, semaphores and pool, the copies, then the swapchain and surface. */
+	plane_objects_destroy(compose, cursor);
+	plane_copies_destroy(compose, plane);
+	vkdemo_display_close(compose->instance, compose->device, &cursor->output);
+
+	/* The box shows nothing and has no copies. */
+	pthread_mutex_lock(&server->cursor_box.lock);
+
+	server->cursor_box.image = NULL;
+	server->cursor_box.show = 0U;
+	server->cursor_box.failed = 0U;
+	server->cursor_box.stop = 0U;
+	server->cursor_box.park = 0U;
+	server->cursor_box.parked = 0U;
+	for (index = 0; index < KWL_CURSOR_COPIES; index++) {
+		server->cursor_box.copies[index] = NULL;
+		server->cursor_box.pins[index] = 0U;
 	}
-	for (index = 0; index < KWL_CURSOR_PLANE_IMAGES + 1U; index++) {
-		if (plane->acquired[index] != VK_NULL_HANDLE)
-			vkDestroySemaphore(compose->device, plane->acquired[index], NULL);
-	}
-	vkdemo_display_close(compose->instance, compose->device, &plane->output);
+
+	pthread_mutex_unlock(&server->cursor_box.lock);
 
 	/* A frame shows the cursor again. */
 	if (plane->shown)
 		server->dirty = 1;
+	free(cursor);
 	memset(plane, 0, sizeof(*plane));
 	printf("KWL CURSOR_PLANE closed\n");
 }
@@ -165,23 +254,33 @@ kwl_cursor_plane_takes(
 	struct kwl_server *server)
 {
 	const struct kwl_import *image;
-	int32_t x;
-	int32_t y;
+	int32_t hotspot_x;
+	int32_t hotspot_y;
 	int state;
 
-	/* Only an open plane that can show the cursor as it is. */
+	/* Only an open plane, for a pointer on the anchor. */
 	if (server->compose == NULL || !server->compose->cursor_plane.open)
 		return 0;
-	state = plane_state(server, &image, &x, &y);
-	return state >= 0;
+	if (server->pointer_output != KWL_PLANE_ANCHOR)
+		return 0;
+
+	/* That can show the cursor as it is. */
+	state = plane_state(server, &image, &hotspot_x, &hotspot_y);
+	if (state < 0)
+		return 0;
+
+	/* Succeeded: the plane shows it. */
+	return 1;
 }
 
 /*
- * Brings the cursor plane up to date at a pass of the event loop: its image and its place.
+ * Brings the cursor plane up to date at a pass of the event loop: the
+ * image it shows, written to the box for the cursor thread (the place is
+ * the input thread's).
  *
  * A change between the plane and the composed cursor redraws the frame,
- * which draws the cursor or leaves it out.  When no swapchain image is
- * free the update waits for a later pass.
+ * which draws the cursor or leaves it out.  A cursor thread that failed
+ * closes the plane, and the cursor is composed.
  */
 void
 kwl_cursor_plane_update(
@@ -189,158 +288,137 @@ kwl_cursor_plane_update(
 {
 	struct kwl_cursor_plane *plane;
 	const struct kwl_import *image;
-	uint64_t now;
-	uint64_t period;
-	int32_t x;
-	int32_t y;
+	const struct kwl_import *shown_image;
+	int32_t hotspot_x;
+	int32_t hotspot_y;
+	unsigned failed;
+	unsigned shown;
+	int fixed;
 	int state;
 
 	/* An output without the plane composes the cursor. */
 	if (server->compose == NULL || !server->compose->cursor_plane.open || !server->compose->output_open)
 		return;
 	plane = &server->compose->cursor_plane;
-	state = plane_state(server, &image, &x, &y);
+
+	/* A failed thread has stopped presenting: the plane closes, and frames draw the cursor. */
+	pthread_mutex_lock(&server->cursor_box.lock);
+
+	failed = server->cursor_box.failed;
+
+	pthread_mutex_unlock(&server->cursor_box.lock);
+	if (failed) {
+		kwl_cursor_plane_close(server);
+		return;
+	}
+
+	/* A park for the game mode or a sleep's request ends with this pass. */
+	if (plane->parked) {
+		(void)kwl_cursor_thread_park(&server->cursor_box, 0U, 0U);
+		plane->parked = 0U;
+	}
+
+	/* The cursor as the frames would draw it. */
+	state = plane_state(server, &image, &hotspot_x, &hotspot_y);
 
 	/* Moving between the plane and composing redraws the frame with or without the cursor. */
-	if ((state >= 0) != (plane->shown != 0U)) {
-		plane->shown = state >= 0 ? 1U : 0U;
+	shown = 0U;
+	if (state >= 0 && server->pointer_output == KWL_PLANE_ANCHOR)
+		shown = 1U;
+	if (shown != plane->shown) {
+		plane->shown = shown;
 		server->dirty = 1;
 	}
 
-	/* A composed cursor leaves the plane empty; an empty plane stays where it was. */
-	if (state <= 0) {
-		image = NULL;
-		x = plane->x;
-		y = plane->y;
-	}
-
-	/* Nothing changed since the last present. */
-	plane->deferred = 0U;
-	if (plane->presented &&
-	    plane->source == image &&
-	    (image == NULL ||
-	     (plane->generation == image->generation &&
-	      plane->version == image->version &&
-	      plane->x == x &&
-	      plane->y == y)))
+	/* A composed cursor leaves the plane empty. */
+	if (state < 0) {
+		plane_publish(server, plane, NULL, 0, 0, 0U);
 		return;
-
-	/*
-	 * A move of the image shown is presented once a refresh, at the latest
-	 * place: the pointer reports more often than the display shows, and
-	 * each present cost the event loop about 3 ms on the Pi 4 (ws213-p001
-	 * C0).  The first move after a still refresh goes at once; a held one
-	 * goes when kwl_cursor_plane_due_ms lets the loop wake, a little before
-	 * the refresh is over (plane_hold_us), so that no refresh goes without
-	 * a move.  A new image is not held, so the plane and the frames never
-	 * disagree for a refresh.
-	 */
-	if (plane->presented &&
-	    plane->source == image &&
-	    image != NULL &&
-	    plane->generation == image->generation &&
-	    plane->version == image->version) {
-		now = kwl_microseconds();
-		period = plane_hold_us(server);
-		if (now - plane->presented_us < period) {
-			plane->deferred = 1U;
-			server->perf.cursor_deferred++;
-			return;
-		}
 	}
 
-	/* The image at its place. */
-	plane_present(server, plane, image, x, y);
+	/* No cursor shows: the plane is empty where it was. */
+	if (state == 0) {
+		plane_publish(server, plane, NULL, 0, 0, 1U);
+		return;
+	}
+
+	/* A shape or the arrow as it is; a client's cursor through a copy, unless both are in use now. */
+	shown_image = image;
+	fixed = plane_fixed(server, image);
+	if (!fixed) {
+		shown_image = plane_copy(server, plane, image);
+		if (shown_image == NULL)
+			return;
+	}
+
+	/* The box shows it from the cursor thread's next look. */
+	plane_publish(server, plane, shown_image, hotspot_x, hotspot_y, 1U);
 }
 
 /*
- * Gives how many milliseconds the event loop may sleep before a move held
- * for the next refresh is presented, or -1 when none is held.
- *
- * It is at least 1, so that a loop woken a little early sleeps again
- * rather than turning without sleeping, and -1 again once a held move is
- * overdue by a refresh, so that a pass that does not reach the plane does
- * not keep the loop awake.
+ * Parks the cursor thread while the scheduler shows nothing (the game mode,
+ * a sleep's request, a mode switch waiting): the plane is not presented
+ * then.  The next kwl_cursor_plane_update ends the park.  A thread that
+ * does not park in time ends the compositor (design 4.8).
  */
-int
-kwl_cursor_plane_due_ms(
+void
+kwl_cursor_plane_hold(
 	struct kwl_server *server)
 {
 	struct kwl_cursor_plane *plane;
-	uint64_t elapsed;
-	uint64_t period;
-	uint64_t refresh;
-	uint64_t remaining;
+	int error;
 
-	/* Only an open plane has a time. */
+	/* Only an open plane not parked yet. */
 	if (server->compose == NULL || !server->compose->cursor_plane.open)
-		return -1;
-
-	/* Nothing is held: the loop sleeps as long as it would. */
+		return;
 	plane = &server->compose->cursor_plane;
-	if (!plane->deferred)
-		return -1;
+	if (plane->parked)
+		return;
 
-	/*
-	 * A move held past a whole further refresh was not taken by the
-	 * scheduler (a pass that ends before the cursor plane: a paused or
-	 * sleeping output, the game mode).  The loop does not wake for it each
-	 * millisecond; the plane's next update presents it, as it differs.
-	 */
-	elapsed = kwl_microseconds() - plane->presented_us;
-	period = plane_hold_us(server);
-	refresh = plane_period_us(server);
-	if (elapsed >= period + refresh)
-		return -1;
+	/* The thread's answer, or the end. */
+	error = kwl_cursor_thread_park(&server->cursor_box, 1U, PLANE_PARK_WAIT_MS);
+	if (error != 0) {
+		printf("KWL FAILED site=park errno=%d\n", error);
+		fflush(stdout);
+		_exit(1);
+	}
 
-	/* Due now: the loop sleeps the least it can. */
-	if (elapsed >= period)
-		return 1;
-
-	/* The time left of the refresh since the last present. */
-	remaining = period - elapsed;
-
-	/* Succeeded: the rest, rounded up to whole milliseconds. */
-	return (int)((remaining + 999U) / 1000U);
+	/* Parked until the next update. */
+	plane->parked = 1U;
 }
 
 /*
- * Finds what the plane shows: 1 with an image and its top-left place, 0 for nothing, -1 when the cursor must be composed.
+ * Finds what the plane shows: 1 with an image and its hotspot, 0 for
+ * nothing, -1 when the cursor must be composed (a drag, or an image the
+ * plane cannot show).  The output the pointer is on is the cursor
+ * thread's to judge, from the box.
  */
 static int
 plane_state(
 	struct kwl_server *server,
 	const struct kwl_import **image,
-	int32_t *x,
-	int32_t *y)
+	int32_t *hotspot_x,
+	int32_t *hotspot_y)
 {
 	struct kwl_cursor_plane *plane;
-	int32_t hotspot_x;
-	int32_t hotspot_y;
 	int state;
 
 	/* The cursor as the frames would draw it. */
 	plane = &server->compose->cursor_plane;
-	state = kwl_compose_cursor_source(server, image, &hotspot_x, &hotspot_y);
-	*x = server->pointer_x - hotspot_x;
-	*y = server->pointer_y - hotspot_y;
+	state = kwl_compose_cursor_source(server, image, hotspot_x, hotspot_y);
 	if (state <= 0)
 		return state;
 
-	/* The plane is the anchor's; another display composes its cursor. */
-	if (server->pointer_output != KWL_PLANE_ANCHOR)
-		return -1;
-
 	/* Only a host-written image (the arrow, the shapes, a wl_shm cursor) that fits the plane. */
 	if ((*image)->staging == VK_NULL_HANDLE ||
-	    (*image)->width > plane->output.width ||
-	    (*image)->height > plane->output.height)
+	    (*image)->map == NULL ||
+	    (*image)->width > plane->width ||
+	    (*image)->height > plane->height)
 		return -1;
 
-	/* Succeeded: the plane shows this image there. */
+	/* Succeeded: the plane shows this image. */
 	return 1;
 }
-
 /* Finds a plane of the output's display and mode with per-pixel premultiplied alpha and a small image, above the output's. */
 static VkResult
 plane_find(
@@ -410,6 +488,7 @@ plane_find(
 	return VK_ERROR_INITIALIZATION_FAILED;
 }
 
+
 /* Finds the mode of the output's display with the output's size. */
 static VkResult
 plane_mode(
@@ -440,22 +519,38 @@ plane_mode(
 	return VK_ERROR_INITIALIZATION_FAILED;
 }
 
-/* Makes a command buffer, fence and semaphore for each swapchain image, and the acquisitions' semaphores. */
+
+/*
+ * Makes the cursor thread's own command pool, and a command buffer, fence
+ * and semaphore for each swapchain image, and the acquisitions'
+ * semaphores.  The pool is the thread's alone, not the frames' (review-4
+ * H-C): Vulkan requires a pool to be used by one thread at a time.
+ */
 static VkResult
 plane_objects(
 	struct kwl_compose *compose,
-	struct kwl_cursor_plane *plane)
+	struct kwl_cursor_thread *cursor)
 {
+	VkCommandPoolCreateInfo pool;
 	VkCommandBufferAllocateInfo allocate;
 	VkFenceCreateInfo fence;
 	VkSemaphoreCreateInfo semaphore;
 	unsigned index;
 	VkResult result;
 
+	/* The pool, its buffers reset one at a time. */
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	pool.queueFamilyIndex = compose->family;
+	result = vkCreateCommandPool(compose->device, &pool, NULL, &cursor->pool);
+	if (result != VK_SUCCESS)
+		return result;
+
 	/* One of each per image; the fences start signaled, as no copy is in flight. */
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocate.commandPool = compose->pool;
+	allocate.commandPool = cursor->pool;
 	allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	allocate.commandBufferCount = 1U;
 	memset(&fence, 0, sizeof(fence));
@@ -463,19 +558,19 @@ plane_objects(
 	fence.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 	memset(&semaphore, 0, sizeof(semaphore));
 	semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	for (index = 0; index < plane->output.image_count; index++) {
-		result = vkAllocateCommandBuffers(compose->device, &allocate, &plane->commands[index]);
+	for (index = 0; index < cursor->output.image_count; index++) {
+		result = vkAllocateCommandBuffers(compose->device, &allocate, &cursor->commands[index]);
 		if (result == VK_SUCCESS)
-			result = vkCreateFence(compose->device, &fence, NULL, &plane->fences[index]);
+			result = vkCreateFence(compose->device, &fence, NULL, &cursor->fences[index]);
 		if (result == VK_SUCCESS)
-			result = vkCreateSemaphore(compose->device, &semaphore, NULL, &plane->ready[index]);
+			result = vkCreateSemaphore(compose->device, &semaphore, NULL, &cursor->ready[index]);
 		if (result != VK_SUCCESS)
 			return result;
 	}
 
 	/* One more acquisition semaphore than images, so a free one is always there. */
-	for (index = 0; index < plane->output.image_count + 1U; index++) {
-		result = vkCreateSemaphore(compose->device, &semaphore, NULL, &plane->acquired[index]);
+	for (index = 0; index < cursor->output.image_count + 1U; index++) {
+		result = vkCreateSemaphore(compose->device, &semaphore, NULL, &cursor->acquired[index]);
 		if (result != VK_SUCCESS)
 			return result;
 	}
@@ -484,256 +579,230 @@ plane_objects(
 	return VK_SUCCESS;
 }
 
-/*
- * Presents the plane's image at a place: copies the cursor image into a
- * free swapchain image first unless that image holds it already.  A
- * failure closes the plane, and the cursor is composed again.
- */
+/* Destroys the cursor thread's command buffers, fences, semaphores and pool, once the thread has stopped. */
 static void
-plane_present(
-	struct kwl_server *server,
-	struct kwl_cursor_plane *plane,
-	const struct kwl_import *source,
-	int32_t x,
-	int32_t y)
+plane_objects_destroy(
+	struct kwl_compose *compose,
+	struct kwl_cursor_thread *cursor)
 {
-	struct kwl_compose *compose;
-	VkDisplayPresentInfoKHR display;
-	VkPresentInfoKHR present;
-	VkSubmitInfo submit;
-	VkPipelineStageFlags stage;
-	VkSemaphore acquired;
-	VkSemaphore wait;
-	uint32_t image;
-	uint32_t version;
-	uint64_t generation;
-	uint64_t mark;
-	uint64_t spent;
-	uint64_t started_us;
-	VkResult result;
+	unsigned index;
 
-	/*
-	 * A copy still running holds this pass back before an image is acquired:
-	 * an acquired image must be presented, and waiting here would stop the
-	 * main loop behind the GPU.  The next pass tries again.  Once the copy
-	 * is seen done it is not asked about again: each question is a round
-	 * trip to the kernel, which waited behind the other clients' work for
-	 * every move of the pointer on the Pi 4 (ws141-p016 (B) review C1).
-	 */
-	compose = server->compose;
-	started_us = kwl_microseconds();
-	mark = kwl_cycles();
-	if (plane->copied) {
-		result = vkGetFenceStatus(compose->device, plane->fences[plane->last_copy]);
-		if (result == VK_NOT_READY)
-			return;
-		if (result != VK_SUCCESS) {
-			printf("KWL CURSOR_PLANE failed step=fence result=%d\n", (int)result);
-			kwl_cursor_plane_close(server);
-			return;
-		}
-		plane->copied = 0U;
+	/* Each image's. */
+	for (index = 0; index < KWL_CURSOR_THREAD_IMAGES; index++) {
+		if (cursor->commands[index] != VK_NULL_HANDLE)
+			vkFreeCommandBuffers(compose->device, cursor->pool, 1U, &cursor->commands[index]);
+		if (cursor->fences[index] != VK_NULL_HANDLE)
+			vkDestroyFence(compose->device, cursor->fences[index], NULL);
+		if (cursor->ready[index] != VK_NULL_HANDLE)
+			vkDestroySemaphore(compose->device, cursor->ready[index], NULL);
 	}
 
-	/* The copy's fence asked (KWL PERF main, ws213-p001 M0; a pass that stops here is not counted). */
-	server->perf.cursor_fence_cycles += kwl_cycles() - mark;
-
-	/* A free image now, or at a later pass. */
-	mark = kwl_cycles();
-	acquired = plane->acquired[plane->next];
-	result = vkAcquireNextImageKHR(compose->device, plane->output.swapchain, 0U, acquired, VK_NULL_HANDLE, &image);
-	if (result == VK_NOT_READY || result == VK_TIMEOUT)
-		return;
-	if ((result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) || image >= plane->output.image_count) {
-		printf("KWL CURSOR_PLANE failed step=acquire result=%d\n", (int)result);
-		kwl_cursor_plane_close(server);
-		return;
-	}
-	plane->next = (plane->next + 1U) % (plane->output.image_count + 1U);
-	version = source != NULL ? source->version : 0U;
-	generation = source != NULL ? source->generation : 0U;
-	server->perf.cursor_acquire_cycles += kwl_cycles() - mark;
-
-	/* The cursor image goes into the swapchain image once; later moves present it as it is. */
-	mark = kwl_cycles();
-	wait = acquired;
-	if (!plane->held_valid[image] ||
-	    plane->held[image] != source ||
-	    plane->held_generation[image] != generation ||
-	    plane->held_version[image] != version) {
-		/* The image's last copy finished before it was presented, which it was to be acquired again. */
-		result = vkWaitForFences(compose->device, 1U, &plane->fences[image], VK_TRUE, 100000000ULL);
-		if (result == VK_SUCCESS)
-			result = vkResetFences(compose->device, 1U, &plane->fences[image]);
-		if (result == VK_SUCCESS)
-			result = vkResetCommandBuffer(plane->commands[image], 0U);
-		if (result == VK_SUCCESS) {
-			plane_record(plane, plane->commands[image], plane->output.images[image], source);
-			result = vkEndCommandBuffer(plane->commands[image]);
-		}
-		if (result == VK_SUCCESS) {
-			stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-			memset(&submit, 0, sizeof(submit));
-			submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-			submit.waitSemaphoreCount = 1U;
-			submit.pWaitSemaphores = &acquired;
-			submit.pWaitDstStageMask = &stage;
-			submit.commandBufferCount = 1U;
-			submit.pCommandBuffers = &plane->commands[image];
-			submit.signalSemaphoreCount = 1U;
-			submit.pSignalSemaphores = &plane->ready[image];
-			result = vkQueueSubmit(compose->queue, 1U, &submit, plane->fences[image]);
-		}
-		if (result != VK_SUCCESS) {
-			printf("KWL CURSOR_PLANE failed step=copy result=%d\n", (int)result);
-			kwl_cursor_plane_close(server);
-			return;
-		}
-		plane->held_valid[image] = 1U;
-		plane->held[image] = source;
-		plane->held_generation[image] = generation;
-		plane->held_version[image] = version;
-		plane->copies++;
-		plane->copied = 1U;
-		plane->last_copy = image;
-		wait = plane->ready[image];
+	/* The acquisitions'. */
+	for (index = 0; index < KWL_CURSOR_THREAD_IMAGES + 1U; index++) {
+		if (cursor->acquired[index] != VK_NULL_HANDLE)
+			vkDestroySemaphore(compose->device, cursor->acquired[index], NULL);
 	}
 
-	/* The copy's recording and submission, when there was one. */
-	server->perf.cursor_copy_cycles += kwl_cycles() - mark;
-
-	/* The whole image with its top-left corner at the place. */
-	memset(&display, 0, sizeof(display));
-	display.sType = VK_STRUCTURE_TYPE_DISPLAY_PRESENT_INFO_KHR;
-	display.srcRect.extent.width = plane->output.width;
-	display.srcRect.extent.height = plane->output.height;
-	display.dstRect.offset.x = x;
-	display.dstRect.offset.y = y;
-	display.dstRect.extent = display.srcRect.extent;
-	memset(&present, 0, sizeof(present));
-	present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	present.pNext = &display;
-	present.waitSemaphoreCount = 1U;
-	present.pWaitSemaphores = &wait;
-	present.swapchainCount = 1U;
-	present.pSwapchains = &plane->output.swapchain;
-	present.pImageIndices = &image;
-	mark = kwl_cycles();
-	result = vkQueuePresentKHR(compose->queue, &present);
-	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-		printf("KWL CURSOR_PLANE failed step=present result=%d\n", (int)result);
-		kwl_cursor_plane_close(server);
-		return;
-	}
-
-	/*
-	 * The time in the present, its waits for the queue's and the device's
-	 * locks included (ws213-p001 review-1 H3), and the longest of the window.
-	 */
-	spent = kwl_cycles() - mark;
-	server->perf.cursor_queue_present_cycles += spent;
-	if (spent > server->perf.cursor_queue_present_max_cycles)
-		server->perf.cursor_queue_present_max_cycles = spent;
-
-	/*
-	 * What the plane shows now, and when; the log ties it to the input it
-	 * shows.  The time is the present's start, not its end: the present
-	 * itself took about 3 ms on the Pi 4, and counting the hold from its
-	 * end spaced the presents by a refresh and that (ws211-p006).
-	 */
-	plane->presented = 1U;
-	plane->presented_us = started_us;
-	server->perf.cursor_presents++;
-	plane->source = source;
-	plane->generation = generation;
-	plane->version = version;
-	plane->x = x;
-	plane->y = y;
-	plane->presents++;
-	if (server->log_frames)
-		printf("KWL CURSOR_PLANE present x=%d y=%d copy=%u event_us=%llu input_us=%llu present_cycles=%llu at_us=%llu\n",
-		       x,
-		       y,
-		       wait != acquired ? 1U : 0U,
-		       (unsigned long long)server->pointer_event_us,
-		       (unsigned long long)server->pointer_accepted_us,
-		       (unsigned long long)spent,
-		       (unsigned long long)kwl_microseconds());
+	/* The pool. */
+	if (cursor->pool != VK_NULL_HANDLE)
+		vkDestroyCommandPool(compose->device, cursor->pool, NULL);
 }
 
-/* Records the swapchain image's clearing and the cursor image's copy into its top-left corner. */
-static void
-plane_record(
-	struct kwl_cursor_plane *plane,
-	VkCommandBuffer command,
-	VkImage target,
-	const struct kwl_import *source)
+/*
+ * Makes the plane's two copies of a client's cursor: host-written images
+ * of the plane's size, transparent (design 4.7).  They are never marked
+ * written, so no frame copies them: only the cursor thread reads their
+ * staging.
+ */
+static VkResult
+plane_copies_create(
+	struct kwl_compose *compose,
+	struct kwl_cursor_plane *plane)
 {
-	VkCommandBufferBeginInfo begin;
-	VkImageMemoryBarrier barrier;
-	VkClearColorValue clear;
-	VkImageCopy copy;
-	VkImageBlit blit;
+	struct kwl_import *copy;
+	unsigned index;
+	uint32_t row;
+	VkResult result;
 
-	/* One use of the command buffer. */
-	memset(&begin, 0, sizeof(begin));
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	(void)vkBeginCommandBuffer(command, &begin);
-
-	/* The swapchain image, its old contents dropped, takes the copy. */
-	memset(&barrier, 0, sizeof(barrier));
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.srcAccessMask = 0U;
-	barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = target;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	barrier.subresourceRange.levelCount = 1U;
-	barrier.subresourceRange.layerCount = 1U;
-	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
-
-	/* Transparent where the cursor image does not reach. */
-	memset(&clear, 0, sizeof(clear));
-	vkCmdClearColorImage(command, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1U, &barrier.subresourceRange);
-
-	/* The cursor image's host-written staging (B, G, R, A, premultiplied) into the corner. */
-	if (source != NULL) {
-		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
-		if (plane->output.format == VK_FORMAT_B8G8R8A8_UNORM) {
-			memset(&copy, 0, sizeof(copy));
-			copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			copy.srcSubresource.layerCount = 1U;
-			copy.dstSubresource = copy.srcSubresource;
-			copy.extent.width = source->width;
-			copy.extent.height = source->height;
-			copy.extent.depth = 1U;
-			vkCmdCopyImage(command, source->staging, VK_IMAGE_LAYOUT_GENERAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &copy);
-		} else {
-			/* Another channel order is converted by a one-to-one blit. */
-			memset(&blit, 0, sizeof(blit));
-			blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			blit.srcSubresource.layerCount = 1U;
-			blit.dstSubresource = blit.srcSubresource;
-			blit.srcOffsets[1].x = (int32_t)source->width;
-			blit.srcOffsets[1].y = (int32_t)source->height;
-			blit.srcOffsets[1].z = 1;
-			blit.dstOffsets[1] = blit.srcOffsets[1];
-			vkCmdBlitImage(command, source->staging, VK_IMAGE_LAYOUT_GENERAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &blit, VK_FILTER_NEAREST);
-		}
+	/* Each copy, its rows cleared. */
+	for (index = 0; index < KWL_CURSOR_COPIES; index++) {
+		copy = calloc(1, sizeof(*copy));
+		if (copy == NULL)
+			return VK_ERROR_OUT_OF_HOST_MEMORY;
+		plane->copies[index] = copy;
+		result = kwl_host_image_create(compose, plane->width, plane->height, compose->sampler, copy);
+		if (result != VK_SUCCESS)
+			return result;
+		for (row = 0; row < plane->height; row++)
+			memset((unsigned char *)copy->map + (size_t)row * copy->row_pitch, 0, (size_t)plane->width * 4U);
+		copy->draw = KWL_DRAW_ALPHA;
 	}
 
-	/* Then to the layout it is presented in. */
-	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+	/* Succeeded: both copies can be written. */
+	return VK_SUCCESS;
+}
+
+/* Releases the plane's two copies, once the cursor thread has stopped. */
+static void
+plane_copies_destroy(
+	struct kwl_compose *compose,
+	struct kwl_cursor_plane *plane)
+{
+	unsigned index;
+
+	/* Each copy made. */
+	for (index = 0; index < KWL_CURSOR_COPIES; index++) {
+		if (plane->copies[index] == NULL)
+			continue;
+		kwl_host_image_release(compose, plane->copies[index]);
+		free(plane->copies[index]);
+		plane->copies[index] = NULL;
+	}
+}
+
+/* Tells whether an image is the compositor's own cursor (the arrow, a shape), made once and never written again. */
+static int
+plane_fixed(
+	const struct kwl_server *server,
+	const struct kwl_import *image)
+{
+	unsigned index;
+
+	/* The arrow. */
+	if (image == server->arrow)
+		return 1;
+
+	/* A shape. */
+	for (index = 0; index < KWL_CURSOR_IMAGES; index++) {
+		if (image == server->cursor_images[index])
+			return 1;
+	}
+
+	/* A client's. */
+	return 0;
+}
+
+/*
+ * Gives the plane's copy that holds a client's cursor image as it is now:
+ * the copy already written with it, or the other copy written now.  Only a
+ * copy the box does not show and the cursor thread does not read is
+ * written (design 4.7 3); when neither is, NULL, and a later pass tries
+ * again.  The copy is written whole, transparent beyond the image.
+ */
+static const struct kwl_import *
+plane_copy(
+	struct kwl_server *server,
+	struct kwl_cursor_plane *plane,
+	const struct kwl_import *image)
+{
+	struct kwl_import *copy;
+	const unsigned char *source;
+	unsigned char *target;
+	unsigned candidate;
+	unsigned chosen;
+	uint32_t row;
+
+	/* The copy that already holds this version. */
+	if (plane->copy_valid &&
+	    plane->copy_source == image &&
+	    plane->copy_generation == image->generation &&
+	    plane->copy_version == image->version)
+		return plane->copies[plane->copy_index];
+
+	/* A copy neither shown nor read now. */
+	chosen = KWL_CURSOR_COPIES;
+	pthread_mutex_lock(&server->cursor_box.lock);
+
+	for (candidate = 0; candidate < KWL_CURSOR_COPIES; candidate++) {
+		if (server->cursor_box.image == plane->copies[candidate])
+			continue;
+		if (server->cursor_box.pins[candidate] != 0U)
+			continue;
+		chosen = candidate;
+		break;
+	}
+
+	pthread_mutex_unlock(&server->cursor_box.lock);
+
+	/* Both are in use: the next pass. */
+	if (chosen == KWL_CURSOR_COPIES)
+		return NULL;
+
+	/* The image's rows, and nothing beyond them (a smaller image after a larger one). */
+	copy = plane->copies[chosen];
+	source = image->map;
+	target = copy->map;
+	for (row = 0; row < plane->height; row++) {
+		memset(target + (size_t)row * copy->row_pitch, 0, (size_t)plane->width * 4U);
+		if (row < image->height)
+			memcpy(target + (size_t)row * copy->row_pitch, source + (size_t)row * image->row_pitch, (size_t)image->width * 4U);
+	}
+
+	/* A new version of the copy, which the cursor thread copies again. */
+	copy->version++;
+	plane->copy_valid = 1U;
+	plane->copy_source = image;
+	plane->copy_generation = image->generation;
+	plane->copy_version = image->version;
+	plane->copy_index = chosen;
+
+	/* Succeeded: the copy holds the image now. */
+	return copy;
+}
+
+/* Writes what the plane shows to the box when it changed, and wakes the cursor thread. */
+static void
+plane_publish(
+	struct kwl_server *server,
+	struct kwl_cursor_plane *plane,
+	const struct kwl_import *image,
+	int32_t hotspot_x,
+	int32_t hotspot_y,
+	unsigned show)
+{
+	uint64_t generation;
+	uint32_t version;
+
+	/* The image's identity now. */
+	generation = 0U;
+	version = 0U;
+	if (image != NULL) {
+		generation = image->generation;
+		version = image->version;
+	}
+
+	/* The box already says so. */
+	if (plane->published &&
+	    plane->published_image == image &&
+	    plane->published_generation == generation &&
+	    plane->published_version == version &&
+	    plane->published_hotspot_x == hotspot_x &&
+	    plane->published_hotspot_y == hotspot_y &&
+	    plane->published_show == show)
+		return;
+
+	/* The box, and the cursor thread woken. */
+	pthread_mutex_lock(&server->cursor_box.lock);
+
+	server->cursor_box.image = image;
+	server->cursor_box.image_generation = generation;
+	server->cursor_box.image_version = version;
+	server->cursor_box.hotspot_x = hotspot_x;
+	server->cursor_box.hotspot_y = hotspot_y;
+	server->cursor_box.show = show;
+	server->cursor_box.sequence++;
+	pthread_cond_broadcast(&server->cursor_box.changed);
+
+	pthread_mutex_unlock(&server->cursor_box.lock);
+
+	/* What the box was given. */
+	plane->published = 1U;
+	plane->published_image = image;
+	plane->published_generation = generation;
+	plane->published_version = version;
+	plane->published_hotspot_x = hotspot_x;
+	plane->published_hotspot_y = hotspot_y;
+	plane->published_show = show;
 }
 
 /* Gives the output's refresh period in microseconds: the display's mode, or 60 Hz when it told none. */
@@ -752,7 +821,7 @@ plane_period_us(
 	return 1000000000ULL / refresh;
 }
 
-/* Gives how long a move of the same image is held after a present: a refresh, less the slack of the clock and the loop's sleep. */
+/* Gives how long a move of the same image is held after a present: a refresh, less the slack of the clock. */
 static uint64_t
 plane_hold_us(
 	const struct kwl_server *server)

@@ -18,8 +18,8 @@ if ! cmp -s "$out/list-replay.txt" plan/ws213/tests/list-replay.golden; then
 fi
 # The drawing writes the list only: Vulkan commands are recorded by draw-list.c's
 # replay, by the host images' copies and new images' layouts (shm.c, import.c),
-# and by the cursor plane, which records its own command buffers.
-walk=$(grep -l 'vkCmd' userland/desktop/wayland/*.c | grep -v -e '/draw-list.c$' -e '/cursor-plane.c$' -e '/shm.c$' -e '/import.c$' || true)
+# and by the cursor thread, which records its own command buffers (cursor-thread.c, ws213-p004).
+walk=$(grep -l 'vkCmd' userland/desktop/wayland/*.c | grep -v -e '/draw-list.c$' -e '/cursor-thread.c$' -e '/shm.c$' -e '/import.c$' || true)
 if [ -n "$walk" ] || [ "$(grep -c 'vkCmd' userland/desktop/wayland/shm.c)" != 4 ] || [ "$(grep -c 'vkCmd' userland/desktop/wayland/import.c)" != 1 ]; then
 	echo "list-replay-host-test: FAIL (a Vulkan command recorded outside the list: $walk)"
 	exit 1

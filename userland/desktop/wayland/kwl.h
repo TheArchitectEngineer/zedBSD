@@ -1212,6 +1212,7 @@ struct kwl_server {
 	 */
 	struct kwl_cursor_box cursor_box;
 	struct kwl_input_thread input_thread;
+	unsigned threads_prepared;
 	unsigned input_thread_ready;
 	uint64_t pointer_warp;
 	struct kwl_input_settings input_settings_given;
@@ -2018,7 +2019,7 @@ int kwl_cursor_client_shown(struct kwl_server *server);
  */
 int kwl_cursor_plane_takes(struct kwl_server *server);
 void kwl_cursor_plane_update(struct kwl_server *server);
-int kwl_cursor_plane_due_ms(struct kwl_server *server);
+void kwl_cursor_plane_hold(struct kwl_server *server);
 int kwl_arrow_create(struct kwl_server *server);
 void kwl_arrow_destroy(struct kwl_server *server);
 struct kwl_object *kwl_top_window(struct kwl_server *server);
@@ -2434,6 +2435,7 @@ void kwl_input_scan(struct kwl_server *server);
 int kwl_input_probe(struct kwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);
 int kwl_input_alt_held(const struct kwl_server *server);
 int kwl_input_attach(struct kwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, const struct input_absinfo *x, const struct input_absinfo *y);
+int kwl_threads_prepare(struct kwl_server *server);
 int kwl_input_threads_start(struct kwl_server *server);
 void kwl_input_threads_stop(struct kwl_server *server);
 void kwl_input_drain(struct kwl_server *server);

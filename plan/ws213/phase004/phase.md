@@ -3,7 +3,7 @@
 # ws213-p004: S2: 描画 thread・cursor の thread・入力の thread（2 段の pull）
 
 Parent: [WS213](../ws.md)
-Status: in-progress（2026-10-12 Q1「p004 に進む」。段 I（入力の thread）を実装、C・R は次）
+Status: in-progress（2026-10-12 Q1「p004 に進む」。段 I（入力の thread、main に merge 済み）・段 C（cursor の thread）を実装、R は次）
 
 ## 依存と再開の条件（review-4 L-f）
 
@@ -67,3 +67,19 @@ Phase disposition: normal
 - `cursor-due-host-test.sh` PASS（main の 2ef0688a8 で cursor-plane.c が `vkdemo_display_create_swapchain_exact` に変わったので stub の名前を直した）、`list-replay-host-test.sh` PASS。
 - build（warning 0）: rpi4・amd64（自分の worktree の `build/arm64`・`build/amd64`、`-o .../sysroot/.zedbsd-sysroot-complete`）、`make keiland-linux`。`style-check.py` で新しい file と触った input.c・main.c の指摘 0（試験の .c は p006 で）。
 - 未実施: Pi・T1。段 I だけでも Pi で `KWL PERF cursor` の box_lag を測れる（C が無いので画面の cursor は M の present のまま）。
+
+### 段 C: cursor の thread（2026-10-12 P4）
+
+- **新しい file**: `userland/desktop/wayland/cursor-thread.{c,h}`（C: plane の present の状態の全部（swapchain・**専用の VkCommandPool**・command buffer・fence・semaphore・`held[]`・present の記録）、受け箱を読んで C0 の規則（最初の動きと像の変化はすぐ、同じ像の動きは refresh − 2.5ms まで待つ）で present。`kwl_cursor_thread_step` が 1 歩（受け箱の写し → 終わった copy の pin を下ろす → 判断 → present）、thread はその間に受け箱の `sequence` の変化か期限を condvar で待つ。copied の gate はやめ、待つのは acquire した swapchain の画像の前の copy の fence だけ（review-B4 F1 (b)）。失敗（acquire・copy・present）で `failed` を立てて以後 Vulkan を呼ばず、M の pipe を起こす（M の持ち物を消さない）。停止は自分の fence を 100ms ずつ待ってから終わり、終わらなければ M が `KWL FAILED site=park` で `_exit`。park（`kwl_cursor_thread_park`）は答えるまで M が 2 秒まで待つ。計数は present ごとに受け箱の `stats` に足す）。
+- **受け箱**（cursor-box.h）に C の物を足した: M が書く像（cursor の形・arrow・client の cursor の 2 枚の copy のどれか）とその世代・version・hotspot・出すか、park・stop、C が書く parked・failed・2 枚の pin・計数、C が待つ変化の番号 `sequence`、C の答えの condvar。
+- **cursor-plane.c は M の側に**: `struct kwl_cursor_plane`（compose.h）を M の持ち物（open・shown・extent・2 枚の copy・最後に受け箱に書いた物・parked・C への pointer）に分けた。open で swapchain（`vkdemo_display_create_swapchain_exact(..., VK_IMAGE_USAGE_TRANSFER_DST_BIT)`、main 2ef0688a8 の P2 の修正を保持）・C 専用の pool と object・2 枚の copy（plane の extent の host image、透明で初期化、`written` を立てないのでコマは写さない）を作って C を起こす。close は C を止めて（join）から壊す。`kwl_compose_output_close` は `vkDeviceWaitIdle` の前に plane を閉じる（C を先に止める）。毎 pass の `kwl_cursor_plane_update` は C の failed を見たら plane を閉じて composite、park を解き、像を決めて受け箱に書くだけ（位置は I）。client の wl_shm の cursor は 2 枚の copy へ全体を写す（外側は透明）。書くのは受け箱が今見せていなくて pin が 0 の copy だけで、両方ふさがっていれば次の pass（4.7 の 3）。C は受け箱から copy を取る時に同じ区間で pin を足し、copy を記録しなければすぐ下ろし、記録したらその fence の完了を見た時に下ろす。
+- **park**: sleep の依頼の保留・game mode（scanout）・window mode に入る途中（EAGAIN）の pass で `kwl_cursor_plane_hold`（C は答えて Vulkan を呼ばない）、次の `kwl_cursor_plane_update` で解く。session の pause は output の close で C を止める。
+- main loop の `kwl_cursor_plane_due_ms`（M を C0 のために起こす）は無くした（C が自分で待つ）。
+- **箱と pipe の作成を前に**: `kwl_threads_prepare`（wake pipe と受け箱）を `kwl_compose_open` の前に（plane の open で C が受け箱を使うため）。I の開始で受け箱に最初の位置と出力の矩形を warp で書く。
+- **計数**: `KWL PERF main` の cursor の欄は C の計数（受け箱から取る）、`KWL PERF cursor` に `presents= held= copies= present_gap_max_us= present_max_us=`（C の present の全段の最長）を足した。`KWL CURSOR_PLANE present` の行は C が出す（`input_us=` は無くした、`event_us=` は受け箱の report の時刻）。
+
+確かめ（host、2026-10-12）:
+- `sh plan/ws213/tests/cursor-due-host-test.sh` → PASS（34 checks、plain と ThreadSanitizer）。cursor-plane.c・cursor-thread.c・cursor-box.c を本物で、Vulkan と時計を fake に書き直した（9 (i) と C0 を C に移す）。1 歩ずつ: arrow を受け箱へ、最初の動きはすぐ・hotspot を引いた位置、refresh の中の動きは refresh − 2.5ms まで待ち最新の位置で present、止まった pointer は変化だけを待つ、新しい像は待たない、copy を飛ばしたまま別の swapchain の画像から present して前の copy の fence を待たない、copy の間は pin、pin の立った copy と見せている copy には M が書かない（書けなければ次の pass）、fence の完了を見て pin を下ろし M が書く、計数を受け箱から読める、present の失敗で failed が受け箱に立ち以後 Vulkan を呼ばない、lock を持ったままの Vulkan の呼び出し 0。thread: 本物の C と 1000Hz の書き手と M（像の変更・update・park）を約 2 秒、fake の GPU が copy の元が submit から fence までに書き換わらないことを見る（0 件）、park の間 present しない、停止で copy を待つ、TSan の報告 0。script は cursor-plane.c・cursor-thread.c に `compose->pool` が無いことも grep で見る。
+- `input-thread-host-test.sh` PASS、`list-replay-host-test.sh` PASS（一覧の外の vkCmd* の例外を cursor-plane.c から cursor-thread.c に替えた）。
+- build（warning 0）: rpi4・amd64・keiland-linux。style-check: 新しい・触った file の指摘は plane_find の元からの 3 件だけ（p006）。
+- 未実施: Pi・T1。Pi では段 C で初めて画面の cursor が M と切り離される（WS141 p016 B-u と合わせて判定）。

@@ -455,12 +455,14 @@ kwl_compose_output_close(
 		return;
 	}
 
+	/* The cursor thread stops before anything waits on the device, and its plane goes (ws213-p004). */
+	kwl_cursor_plane_close(server);
+
 	/* No frame may still use the swapchain's images. */
 	(void)vkDeviceWaitIdle(compose->device);
 
-	/* The heads go with the output (ws113-p004b), and the cursor plane before it. */
+	/* The heads go with the output (ws113-p004b). */
 	kwl_heads_close_all(server);
-	kwl_cursor_plane_close(server);
 
 	/* The layers' pictures, the backdrop, the targets, then the swapchain and surface. */
 	kwl_layers_close(compose);
