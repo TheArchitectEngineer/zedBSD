@@ -34,3 +34,20 @@ Phase disposition: normal
 - build（warning 0、出力は自分の `build/ws213-p004/` に、review-4 L-b）: `make -j16 ZEDBSD_CONFIG=config/ci/config-rpi4.mk BUILD=build/ws213-p004/arm64 build/ws213-p004/arm64/bin/wayland`、`make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws213-p004/amd64 build/ws213-p004/amd64/bin/wayland`、`make -j16 KEILAND_ASK=n KEILAND_LINUX_BUILD=build/ws213-p004/linux keiland-linux`（`KEILAND_ASK=n` で package の導入と install を聞かない、`Makefile:476-482`）（各 900 秒まで）。FreeBSD は T1 の guest（`plan/tools/keiland-freebsd/backend-test.sh`）。
 - build の注記（p001 review-5 の答え (4)、Q1）: `BUILD=` の override は動き（`Makefile:79`）、libc.so なども自分の dir に作るので最初の build は長い（`vmunix.mk:411`）。LLVM と sysroot は共有のまま使う（wayland は `$(DYNAMIC_SYSROOT)/usr/lib/crt1.o` に依存、`userland-dynamic.mk:239`）。**make が共有の sysroot を作り直そうとしたら（sysroot の規則が動き出したら）止めて main に報告する**。toolchain と共有の `build/` は変えない。
 - host 試験は各 120 秒まで。同じ条件で変更なしの再試行は 3 回まで。QEMU・実機は T1 と Q1 経由（担当は QEMU を起動しない）。
+
+## 実行（2026-10-12 P4、agent/p4）
+
+Status: in-progress（Q1「p004 に進む」、p003 の閾値は実質満たす）
+
+### p003 の small の 1 回の超過（17.29ms）の場面（Q1 の依頼、Pi place17 の session.log）
+
+- `KWL PERF walk` の small の max 17.29ms（log の 4259 行の窓）は、App Home から Files を起動した窓（`KWL HOME launch name=Files`、Files の窓の最初の map、titlebar の control・menu の 42 回の commit、`KWL GLASS launch`、frame 190〜195）。middle の max 17.39ms（6119 行の窓）も client 9 の窓の最初の map（`KWL MAP client=9`、`SHM_COPY`）の窓。どちらも場面 (4)（app の起動）で、walk の中の初出の仕事（新しい窓の shm の画像の作成と写し・import の descriptor set・titlebar の字）と見られる。場面 (1)〜(3) の窓の small・large の max は ≤ 2.67ms。p004 の受け入れでも (4) は `pass_p99_us` の記録だけ（6.4）なので、閾値の判断は変わらない。
+
+### 始めに確かめた事（p001 11 節 3・9・12、source を読んだ。Pi での実測ではない）
+
+1. **pthread の優先度**: I の優先度を上げる手段は無い。libc に `pthread_setschedparam`・`sched_setscheduler` は無く、`pthread_attr_setschedparam` は 0 以外を `ENOTSUP`（`userland/base/libc/pthread.c:1014-1029`）。`setpriority`/`nice` は `process->nice_value` を書くだけで sched は読まない（`src/kern/syscall.c:8656-8729`）。user の thread は全部 `SCHED_PRIORITY_DEFAULT`（`src/kern/thread.c:101,175,395`）。→ I は M・R・C と同じ優先度。下の 2 のとおり同じ優先度の起床で横取りされるので、p004 は kernel の変更なしで進める（優先度の API が要ると分かったら Q1 に理由を送る）。
+2. **sched の横取りと tick**: Pi の tick は 1ms（`HAL_TIMER_FREQUENCY`=1000、`src/hal/arm64/bsp-rpi4/clock.c:29-41`）、quantum 10ms。同じか高い優先度の thread が起きると `cpu->preempt` が立ち（`src/kern/sched.c:1812-1835`）、user への戻り（763-774）か tick（957-1004、`preempt_count==0` の時、kernel の中の実行も）で切り替わる。同じ CPU の起床は割り込みを送らないので、遅れは最大 1 tick（1ms）。
+3. **decode が preempt を止めるか**: 止めない。`hold_us decode` の decode は kernel thread `worker_main`（`render-worker.c:121`、既定の優先度）が sleep できる `controller->mutex`（`render-device.h:75`、`render-worker.c:249-317`）の下で行い、`preempt_count` も割り込みも触らない（`spin_lock_irqsave` は decode の前後の短い区間だけ）。tick で decode の途中でも I に切り替わる。I は GPU の mutex を取らないので decode を待たない。→ p001 11 節 9 の「decode の間 I が待つ」見込みは外れ、box_lag の最長を決めるのは decode ではなく 1ms の tick と他の `spin_lock_irqsave` の区間の見込み（Pi で `KWL CURSOR_LAG` を見る）。
+4. **evdev の fd を別の thread から poll**: 可。fd は process の表（`process->fd`）で全 thread が共有、`input_poll`（`src/drivers/generic/input.c:2041-2077`）は待ち手の制限が無く、poll の待ちは全体の waitq（`src/kern/poll.c:31-127`）。別の thread の close と並んでも poll は object の参照を持ち、閉じた fd は `POLLNVAL`（`poll.c:319-337`）。
+5. **時計**: 同じ基準。evdev の時刻は `clock_milliseconds`（`kernel_ticks`、`src/drivers/generic/input.c:1725-1731`）、`kwl_microseconds` の `CLOCK_MONOTONIC` も `clock_ticks()`（`src/kern/clock.c:507-548`）。どちらも boot からで分解能は 1ms。→ box_lag（`event_us` → 書き込み）で判定できる（代替の超過分は使わない）。値は 1ms 刻み。
+6. **fd を閉じる順**: FreeBSD の `seat_disable`（`seat-freebsd.c:496-535`）は `session_paused` → 各 lease の `input_gone` → `lease_close` の順で、callback が close の前（設計どおり）。Linux logind の gone（`seat-logind-linux.c:676-686`）も callback が先。logind の `seat_resume` は古い fd を close してから `input_resumed`（`seat-logind-linux.c:730-741`）なので、設計の保険（callback の後に close）を p004 で入れる。
