@@ -138,3 +138,7 @@ Phase disposition: normal
 - 直し（原因が分かる log）: 新しい `kwl_fatal()`（main.c、kwl.h）が KWL の行を stdout に書いて flush し、**syslog にも送る**（`/var/log/messages` に `wayland[pid]: …`、次の login で消えない）。exit 1 に至る全部の所をこれに: `KWL EXIT …`（失敗の時だけ syslog）、`site=accept`・`accept-client`・`accept-display`・`clock`・`poll-set`・`poll`（count と errno）・`listener`（revents）、`site=input-thread`、`site=input-detach`／`input-detach-all`（device の path・kind・slot・devices・sequence・`waited_ms`・errno）、`site=park`（`thread=render depth=`・`thread=cursor step=stop|hold`）、`site=compose_draw`（`operation=acquire|submit|present result=`）、`compose_poll`・`acquire-semaphore`・`frame_done`・`layers_tick`・`window_mode`・`buffer_put`・`seat-lost`。`KWL INPUT_CLOSED` に `kind=`・`reason=ended|revoked`。
 - 試験: `input-thread-host-test.c` に第 3 部 `hotplug()`: mouse だけで poll(-1) で待つ I に touch（slot 4）と pen tablet（slot 5）を付け、すぐ読まれる、5000 報告ずつ（2 本の指・MSC_TIMESTAMP・BTN_TOUCH・ABS_X/Y、97 番ごとに 64 events を超える報告、1 度の SYN_DROPPED）が全部 1 回ずつ順に・欠けずに届く（超えた報告と切れた報告だけ落ちる）、抜いた（EOF）両方が ENDED の最後の event で終わりその後に何も来ない、同じ slot に挿し直すと読まれる。PASS（131 checks、plain と ThreadSanitizer、TSan の報告 0）。
 - 次に起きた時: Pi で `grep 'wayland\[' /var/log/messages | tail` を見る（session.log が消えても残る）。
+
+## WS214 からの伝達（2026-10-12 Q1）
+
+- WS214（窓を HVS の plane に載せる）p001 第 3 版の 5.8 で、この WS の不変条件「C は自分専用の swapchain だけを使う」（p001 3.2）を変える: drag の間、窓の plane の swapchain の持ち主を R と C の間で entered・took・given の message で移す（C だけを止めて ack、park は使わない）。WS214 p005 の実装の時に WS213 の 3.2 の文と試験を合わせる。文案は [plan/ws214/phase001/phase.md](../../ws214/phase001/phase.md) の 5.8。

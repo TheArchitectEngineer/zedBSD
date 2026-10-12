@@ -239,3 +239,7 @@ hardware blend の後の実機の counter で、1 tile（64x64）あたり約 39
 - 中: CPU へ回す判断は `vulkan-native-job.c:158-185`（job は event ごとに pass 1 つ）で、複数 region・pass→退役→memcpy・TFU→draw の 2 段には job loop の作り直し・一時の画像の予算と quarantine の所有が要る（A1 の file に `vulkan-native-job.c`）。3 節の「feedback は今と同じく断る」は誤り（今は検査が無く snapshot で動いている、新しい拒否として書き、meta の copy の src==dst を巻き込まない）。完了の条件 1 は perf が hardware に 1 つで client と混ざる（session ごとに数えるか client を止めて測る）。部分 LOAD_OP_CLEAR の meta の draw は `prepare_meta_texture` が resource を要する（1x1 の storage の所有・予算・挿す位置が未記述）。門の名前 `uif_optimal`／`uif_ready` の不一致、V9 の TFU の結果を門に含めるか。
 - 低: pitch を代入する他の所（`vulkan-native-pass.c:775-785`、`vulkan-native-image.c:220,229,437`）、CPU の fallback の write log（`bcm2711_v3d_memory_written`）、frame＝範囲の readback の 64 byte の制約、in-tree の一覧の漏れ（`shm.c:1026`、`cursor-plane.c:533-559`、`heads.c:1172-1197`、`backdrop.c:388`、`notes/render.c:304`、`libegl/vulkan.c:1037,1380`、`wsi-swapchain.c:2611`）、alignment 1024 の性能（page cache の bank、推測）。
 - 確かめられた点: `vulkan-resource.c:546` の ENOTSUP、門は画像より先に決まる、vkCmdClearColorImage は全体の tile の clear だけ、display の swapchain は OPTIMAL、Wayland の WSI と keiland の buffer は LINEAR、scene の写しは 1 region、texture の record は strict UIF、write log は画素の箱、HAL の変更は不要。
+
+## WS214 からの伝達（2026-10-12 Q1）
+
+- WS214 の overlay（HVS の plane）に出す swapchain の画像は linear のままにする（HVS は UIF を読めない）。UIF 化はこの制約を守る範囲で（[plan/ws214/phase001/phase.md](../../ws214/phase001/phase.md)）。

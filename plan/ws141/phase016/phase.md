@@ -674,3 +674,7 @@ executor の pass ごとの 3 区分:
 
 - GPU の実行中に無関係の VA の PTE を編集して TLB を flush する安全（review-2 の未確認）: 第 3 版は窓の間に PTE を編集しないので不要。
 - 準備の区間（CPU の変換、per-draw の upload）は executor の mutex の下に残る。per-draw の upload の削減は ws141-p013 で先に行う（2026-10-12 Q1）。
+
+## WS214 からの伝達（2026-10-12 Q1）
+
+- B-k2（cursor の CURSOR_SET・MOVE を adoption の待ちの mutex から外す）は単独で実装しない。WS214 p001 第 3 版（[plan/ws214/phase001/phase.md](../../ws214/phase001/phase.md)、review-2 の H1・H2）で、session の gate 外し・状態から作る list の coalesce・settle と EBUSY の撤去と一緒に WS214 p003a（承認不要の kernel の段）として作る。p016 の受け入れ B が B-k2 を要する時は WS214 p003a の clear に依る。
