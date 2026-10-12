@@ -64,7 +64,10 @@ struct kwl_cursor_stats {
  * motion computed before a later warp is not taken as the pointer's
  * place).  event_us is the evdev time of the report that moved it and
  * write_us when the box was written (kwl_microseconds), the two ends of
- * the box's lag (design 6.4).
+ * the box's lag (design 6.4).  The input thread adds where the lag went
+ * (ws213-p004, the KWL CURSOR_LAG line): when its pass began to poll, when
+ * the poll returned and when the read that gave the report returned; 0
+ * for a write that is not the input thread's.
  */
 struct kwl_cursor_motion {
 	unsigned moved;
@@ -75,6 +78,9 @@ struct kwl_cursor_motion {
 	uint64_t warp;
 	uint64_t event_us;
 	uint64_t write_us;
+	uint64_t poll_entered_us;
+	uint64_t poll_returned_us;
+	uint64_t read_us;
 };
 
 /*

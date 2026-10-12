@@ -213,8 +213,9 @@ struct kwl_input_event {
 /*
  * One device as the input thread reads it: its descriptor, its kind, an
  * absolute pointer's ranges and last place, the report being gathered,
- * its acceleration and its touch pad layer.  Only the input thread touches
- * it.
+ * when its last read returned (read_ms for the layers' quiet, read_us for
+ * the box's lag, ws213-p004), its acceleration and its touch pad layer.
+ * Only the input thread touches it.
  */
 struct kwl_input_reader {
 	unsigned active;
@@ -227,6 +228,7 @@ struct kwl_input_reader {
 	struct input_event frame[KWL_INPUT_THREAD_FRAME_MAX];
 	uint64_t frame_time_us;
 	uint64_t read_ms;
+	uint64_t read_us;
 	struct kwl_pointer_accel accel;
 	struct kwl_touchpad pad;
 };
@@ -248,8 +250,9 @@ typedef ssize_t kwl_input_read_fn(int descriptor, struct input_event *events, si
  * dropped for want of memory and the error that stopped the thread.  The two
  * pipes wake each side: the input thread polls wake_input, the main thread
  * polls the read end of the wake pipe it gave (wake_main is its write
- * end).  The readers, the settings' copy, the touch pads' speed fractions
- * and the reader function are the input thread's own.
+ * end).  The readers, the settings' copy, the touch pads' speed fractions,
+ * the reader function and when the pass's poll began and returned (for the
+ * box's lag, ws213-p004) are the input thread's own.
  */
 struct kwl_input_thread {
 	struct kwl_cursor_box *box;
@@ -274,6 +277,8 @@ struct kwl_input_thread {
 	int64_t remainder_x;
 	int64_t remainder_y;
 	kwl_input_read_fn *read;
+	uint64_t poll_entered_us;
+	uint64_t poll_returned_us;
 	uint64_t next_sequence;
 	pthread_t thread;
 	unsigned started;
