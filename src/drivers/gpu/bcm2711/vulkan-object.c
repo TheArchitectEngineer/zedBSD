@@ -294,6 +294,6 @@ object_bucket(
 	/* The top bits of the Fibonacci hash, which mix every bit of the identity. */
 	hashed = identity * VULKAN_OBJECT_HASH;
 
-	/* The bucket's number, below BCM2711_VULKAN_OBJECT_BUCKETS. */
-	return (uint32_t)(hashed >> (64U - VULKAN_OBJECT_BUCKET_BITS));
+	/* The bucket's number, kept below BCM2711_VULKAN_OBJECT_BUCKETS even if the two sizes ever disagree. */
+	return (uint32_t)(hashed >> (64U - VULKAN_OBJECT_BUCKET_BITS)) & (BCM2711_VULKAN_OBJECT_BUCKETS - 1U);
 }
