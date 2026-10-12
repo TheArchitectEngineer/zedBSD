@@ -742,6 +742,7 @@ snapshot_scrub(
 {
 	/* Nothing of the earlier session remains, and the pixels match no generation. */
 	kern_memset(snapshot->pixels->view->buffer->address, 0, (size_t)snapshot->pixels->view->bytes);
+	snapshot->pixels->owner = 0;
 	snapshot->owner = 0;
 	snapshot->valid = false;
 
@@ -924,8 +925,13 @@ snapshot_release(
 {
 	int error;
 
-	/* Every pass that sampled the pixels has retired, so they can join the idle views. */
+	/*
+	 * Every pass that sampled the pixels has retired, so they can join the
+	 * idle views, unmarked: other sessions may have converted or updated
+	 * them since the session that made them (review M1).
+	 */
 	space->snapshot_bytes -= snapshot->pixels->view->bytes;
+	snapshot->pixels->owner = 0;
 	error = bcm2711_native_storage_release(space, &snapshot->pixels, true);
 	bcm2711_buffer_release(snapshot->buffer);
 	kern_free(snapshot);

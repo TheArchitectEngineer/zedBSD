@@ -1638,6 +1638,55 @@ native_draw_test(
 	error = bcm2711_native_storage_release(space, &storage, true);
 	assert(error == 0 && space->cache_pages->owner == 9);
 
+	/* A written kind takes a marked view as it is, and its release drops the mark. */
+	kept = host_kept_runs;
+	error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_WRITTEN, &storage);
+	assert(error == 0 && storage->owner == 0 && storage->stale && host_kept_runs == kept + 1U);
+	assert(((uint8_t *)storage->view->buffer->address)[4095] == 0xa5);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && space->cache_pages->owner == 0);
+
+	/* A host-mapped source's private conversion target is given unzeroed only to the session that left it. */
+	view->buffer->host_mapped = true;
+	for (index = 0; index < 2U; index++) {
+		/* The marked page is the only cached view, so the target, allocated first, takes it. */
+		error = bcm2711_native_storage_drain(space);
+		assert(error == 0 && space->cache_bytes == 0);
+		space->builder = 9;
+		error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+		assert(error == 0);
+		memset(storage->view->buffer->address, 0xa5, 4096);
+		error = bcm2711_native_storage_release(space, &storage, true);
+		assert(error == 0 && space->cache_pages->owner == 9);
+		space->builder = 9U + index;
+		kept = host_kept_runs;
+		available = 1024U * 1024U;
+		error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+		assert(error == 0 && draw->textures[0].snapshot == NULL && draw->textures[0].convert);
+		source = draw->textures[0].pixels->view->buffer->address;
+		if (index == 0) {
+			assert(draw->textures[0].pixels->stale && draw->textures[0].pixels->owner == 9 && host_kept_runs > kept);
+			assert(source[4095] == 0xa5);
+		} else {
+			assert(!draw->textures[0].pixels->stale && draw->textures[0].pixels->owner == 10);
+			for (byte = 0; byte < 4096U; byte++)
+				assert(source[byte] == 0);
+		}
+		error = bcm2711_vulkan_native_draw_release(&draw, true);
+		assert(error == 0);
+	}
+	view->buffer->host_mapped = false;
+
+	/* The snapshot below starts from the session's own marked page again. */
+	error = bcm2711_native_storage_drain(space);
+	assert(error == 0 && space->cache_bytes == 0);
+	space->builder = 9;
+	error = bcm2711_native_storage_create_as(space, texture_bytes, BCM2711_NATIVE_STORAGE_OWNED, &storage);
+	assert(error == 0);
+	memset(storage->view->buffer->address, 0xa5, 4096);
+	error = bcm2711_native_storage_release(space, &storage, true);
+	assert(error == 0 && space->cache_pages->owner == 9);
+
 	/* A snapshot the unit fills over the session's own unzeroed pixels remembers the session. */
 	view->buffer->generation++;
 	available = 1024U * 1024U;
@@ -1707,6 +1756,36 @@ native_draw_test(
 	assert(((uint8_t *)space->snapshots->pixels->view->buffer->address)[4095] == 0);
 	error = bcm2711_vulkan_native_draw_release(&draw, true);
 	assert(error == 0);
+
+	/*
+	 * Pixels session 9 made and session 10 brought up to date go back to
+	 * the cache unmarked when the snapshot is evicted (review M1): session
+	 * 9's next owned page of that size is zeroed.
+	 */
+	error = bcm2711_native_storage_drain(space);
+	assert(error == 0 && space->snapshots == NULL && space->cache_bytes == 0);
+	space->builder = 9;
+	view->buffer->generation++;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && space->snapshots != NULL && space->snapshots->pixels->owner == 9 && space->snapshots->owner == 0);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+	space->builder = 10;
+	view->buffer->generation++;
+	fills = space->snapshot_fills;
+	available = 1024U * 1024U;
+	error = bcm2711_vulkan_native_draw_create(space, event, &available, NULL, NULL, &draw);
+	assert(error == 0 && draw->textures[0].snapshot == space->snapshots && space->snapshot_fills == fills + 1U);
+	error = bcm2711_vulkan_native_draw_release(&draw, true);
+	assert(error == 0);
+	space->builder = 9;
+	space->snapshot_limit = space->snapshot_bytes;
+	error = bcm2711_native_snapshot_get(space, view->buffer, address - view->address, image->width, image->height - 1U, image->pitch, cpu, (size_t)image->bytes, false, &snapshot);
+	assert(error == 0 && snapshot != NULL && snapshot->next == NULL);
+	assert(!snapshot->pixels->stale && snapshot->owner == 0);
+	bcm2711_native_snapshot_put(snapshot);
+	space->snapshot_limit = BCM2711_NATIVE_SNAPSHOT_BYTES;
 	space->builder = 0;
 	space->cache_limit = 0;
 	puts("WS141 session marks: owned storage kept only for its session, foreign snapshots zeroed before sampling: PASS");
@@ -5146,6 +5225,9 @@ job_execute(
 	error = 0;
 	while (!done) {
 		error = bcm2711_vulkan_native_job_step(controller, session, job, &done, retired);
+
+		/* A step marks owned storage with its session only while it builds, on success or failure. */
+		assert(controller->space.builder == 0);
 		if (error != 0)
 			break;
 	}
