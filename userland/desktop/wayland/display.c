@@ -194,12 +194,19 @@ kwl_schedule(
 	/*
 	 * The windows the last frame told get a moment to commit (frame
 	 * pacing), unless the pointer moved and waits to be shown, or App Home
-	 * or Wiseview was asked to open or close (ws099-p002).
+	 * or Wiseview was asked to open or close (ws099-p002), or the
+	 * compositor's own animation moves: up to 50 ms after each of its
+	 * frames on the Pi 4 was a third of App Home's opening (WS211 p001
+	 * review-2 N3).
 	 */
 	now = kwl_milliseconds();
 	if (server->awaiting != 0 &&
 	    !server->pointer_moved &&
 	    server->transition == NULL &&
+	    server->anim == NULL &&
+	    !server->home_moving &&
+	    !server->wiseview_moving &&
+	    !server->desktop_moving &&
 	    now - server->frame_done_ms < server->frame_wait_ms)
 		return;
 
