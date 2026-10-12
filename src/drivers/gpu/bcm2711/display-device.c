@@ -1650,6 +1650,7 @@ output_cursor_set(
 	uint64_t span;
 	uint32_t index;
 	uint32_t row;
+	bool copied;
 	int same;
 	int error;
 
@@ -1724,8 +1725,10 @@ output_cursor_set(
 		mutex_unlock(&controller->mutex);
 		return EBUSY;
 	}
+	copied = false;
 	if (target == NULL) {
 		target = controller->cursors[index];
+		copied = true;
 
 		/* A cacheable source may hold lines older than the device's writes; they go before the rows are read. */
 		if (!resource->buffer->uncached)
@@ -1740,6 +1743,9 @@ output_cursor_set(
 		kern_io_write_barrier();
 		kern_memcpy(&controller->keys[index], &key, sizeof(key));
 	}
+
+	/* The flip report counts the set, and whether it copied rows. */
+	bcm2711_display_flip_count_cursor(controller->native, copied);
 
 	/* The plane names the new image from now on, shown or not. */
 	cursor = controller->cursor;

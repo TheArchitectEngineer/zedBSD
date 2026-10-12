@@ -74,6 +74,10 @@ static unsigned allocations;
 /* A selected ordinary heap failure must unwind parent/domain ownership acquired by native publication. */
 static unsigned fail_after;
 
+/* The cost reports the executor logged after the mutex, and those whose record ended its line. */
+static unsigned host_perf_records;
+static unsigned host_perf_lines_ended;
+
 /* The explicit callback fixture records actual worker delivery and checks both native ownership locks. */
 static struct bcm2711_render_session *runtime_session;
 
@@ -725,6 +729,33 @@ kern_logf(
 }
 
 /*
+ * Takes the cost report the executor logs after the mutex (v3d.perf=1); every record ends its line.
+ */
+void
+kern_log_write(
+	const char *bytes,
+	size_t length)
+{
+	/* A record is never empty and the report's last record ends with its newline. */
+	if (bytes == NULL || length == 0U)
+		abort();
+	host_perf_records++;
+	if (bytes[length - 1U] == '\n')
+		host_perf_lines_ended++;
+}
+
+/*
+ * Turns the cost report on, so that the fixture formats it under the mutex and logs it after.
+ */
+bool
+bcm2711_stage_perf_on(
+	void)
+{
+	/* The report is on in this fixture. */
+	return true;
+}
+
+/*
  * Keeps physical stage output outside the scope of this CPU-only fixture.
  */
 void
@@ -1005,6 +1036,12 @@ main(
 	count = reply_buffer.references;
 	assert(count == 1);
 	puts("WS141 Vulkan actual client records/native discovery/device/domain ownership: PASS");
+
+	/* Every cost report the executor logged after the mutex ended its line; a flush with nothing pending logs nothing. */
+	count = host_perf_records;
+	bcm2711_vulkan_native_perf_flush();
+	assert(host_perf_records == count && host_perf_lines_ended == host_perf_records);
+	printf("WS141 cost report logged after the mutex records=%u: PASS\n", host_perf_records);
 
 	/* Succeeded: actual native software semantics are verified without claiming physical GPU or scheduler execution. */
 	return 0;

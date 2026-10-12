@@ -49,4 +49,10 @@ int bcm2711_vulkan_native_job_dispose(struct bcm2711_render_device *controller, 
 /* Only checked global native reset and zero external sessions authorize whole quarantine/closed-session retirement. */
 int bcm2711_vulkan_native_jobs_recover(struct bcm2711_render_device *controller);
 
+/*
+ * Writes the cost report a step formatted (v3d.perf=1) to the log; the
+ * executor calls it after it gave up the controller mutex.
+ */
+void bcm2711_vulkan_native_perf_flush(void);
+
 #endif

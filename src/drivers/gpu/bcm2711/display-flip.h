@@ -70,6 +70,13 @@ struct bcm2711_flip_state {
 	uint64_t perf_raise;
 	uint64_t perf_wait;
 	uint64_t perf_finish;
+	/*
+	 * The cursor images set in the window and those that needed their rows
+	 * copied (the others were shown again unchanged); added atomically by
+	 * the display device under its own mutex, read and cleared by the report.
+	 */
+	uint64_t perf_cursor_sets;
+	uint64_t perf_cursor_copies;
 };
 
 /* A caller-owned snapshot names borrowed buffers that must remain DMA-readable. */
@@ -116,6 +123,9 @@ int bcm2711_display_flip_compose(struct bcm2711_display *display, const struct d
  * without it is adopted (bcm2711_display_flip_settle after the change).
  */
 int bcm2711_display_flip_cursor(struct bcm2711_display *display, const struct bcm2711_flip_cursor *cursor);
+
+/* Counts one cursor image set for the flip report, copied or shown again unchanged. */
+void bcm2711_display_flip_count_cursor(struct bcm2711_display *display, bool copied);
 
 /* Tells whether a retained list or the recorded cursor names a cursor image, which must then stay unchanged. */
 bool bcm2711_display_flip_cursor_named(struct bcm2711_display *display, uint32_t physical);

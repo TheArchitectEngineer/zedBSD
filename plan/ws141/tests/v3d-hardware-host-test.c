@@ -782,6 +782,31 @@ bcm2711_stage_tfu_off(
 }
 
 /*
+ * Leaves the cost report off (v3d.perf=1 absent), as an ordinary boot has it.
+ */
+bool
+bcm2711_stage_perf_on(
+	void)
+{
+	/* No report by default. */
+	return false;
+}
+
+/*
+ * Consumes a log record; with the report off the executor logs none.
+ */
+void
+kern_log_write(
+	const char *bytes,
+	size_t length)
+{
+	/* The report is off in this fixture, so nothing is logged through here. */
+	(void)bytes;
+	(void)length;
+	abort();
+}
+
+/*
  * Consumes diagnostics without representing model logs as hardware evidence.
  */
 void

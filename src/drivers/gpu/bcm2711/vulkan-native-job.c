@@ -6,7 +6,10 @@
  */
 
 /* Logical callbacks, whole pending graph ownership and checked native DMA retirement are separate boundaries. */
+#include <stdarg.h>
+
 #include <kern/clock.h>
+#include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <kern/klog.h>
 #include <uapi/errno.h>
@@ -21,9 +24,28 @@
 /* All concurrently resident native pass/draw uploads share this submission-wide padded budget. */
 #define NATIVE_JOB_BYTES (256ULL * 1024U * 1024U)
 
+/* The room of one window's cost report, formatted under the controller mutex and logged after it. */
+#define NATIVE_PERF_TEXT_BYTES 2048U
+
+/* Whether the boot asked for the cost report (v3d.perf=1): not read yet, on, or off. */
+#define NATIVE_PERF_UNREAD 0
+#define NATIVE_PERF_ON 1
+#define NATIVE_PERF_OFF 2
+
+/*
+ * The cost report a step formatted and the executor has yet to log
+ * (bcm2711_vulkan_native_perf_flush), and whether the report is on.  The
+ * executor's thread alone reads and writes them.
+ */
+static char native_perf_text[NATIVE_PERF_TEXT_BYTES];
+static size_t native_perf_used;
+static int native_perf_state;
+
 static int release_job(struct bcm2711_vulkan_native_job *job);
 static int retire_closed_sessions(struct bcm2711_render_device *controller);
 static void report_perf(struct bcm2711_v3d_perf *perf);
+static bool perf_enabled(void);
+static void perf_append(const char *format, ...) __attribute__((format(printf, 1, 2)));
 static uint64_t average_us(uint64_t ticks, uint64_t count);
 
 /*
@@ -594,7 +616,7 @@ report_perf(
 	busy = perf->total_ticks * 100U / (now - perf->window_start);
 
 	/* Prints the window's per-submission averages and its worst submission. */
-	kern_logf(
+	perf_append(
 		"v3d: perf ms=%llu busy=%llu%% subs=%llu passes=%u/%u/%u skipped=%u draws=%u kib=%llu avg_us total=%llu prep=%llu tex=%llu copy=%llu prog=%llu rec=%llu alloc=%llu map=%llu clean=%llu exec=%llu tfu=%llu bin=%llu render=%llu oclean=%llu rel=%llu xfer=%llu max_us=%llu snap=%u/%u/%u/%u upd=%u mapped_kib=%llu largest=%ux%u%c tiles=%u/%u\n",
 		(unsigned long long)kern_ticks_to_ms(now - perf->window_start),
 		(unsigned long long)busy,
@@ -636,7 +658,7 @@ report_perf(
 
 	/* The render runs' performance counters, in thousands per run. */
 	if (perf->counter_runs != 0U) {
-		kern_logf(
+		perf_append(
 			"v3d: gpu runs=%u k/run cycles=%llu qidle=%llu qfrag=%llu qvalid=%llu qtmu=%llu qsb=%llu qvary=%llu qstall=%llu tmu=%llu tmumiss=%llu tmustall=%llu cle=%llu quads=%llu written=%llu tlbrd=%llu tlbwr=%llu\n",
 			perf->counter_runs,
 			(unsigned long long)(perf->counters[0] / perf->counter_runs / 1000U),
@@ -660,7 +682,7 @@ report_perf(
 	/* Worker requests' FIFO waits and worker time, and the final buffer releases, in the window. */
 	bcm2711_buffer_release_stats(&released, &released_bytes, &released_ticks);
 	if (perf->requests != 0U) {
-		kern_logf(
+		perf_append(
 			"v3d: requests=%llu wait_us avg=%llu max=%llu run_us avg=%llu max=%llu freed=%llu kib=%llu free_us=%llu markers_max=%u submit_lock_us avg=%llu max=%llu hold_us decode=%llu/op%u step=%llu\n",
 			(unsigned long long)perf->requests,
 			(unsigned long long)(kern_ticks_to_rate(perf->request_wait_ticks, 1000000U) / perf->requests),
@@ -680,7 +702,7 @@ report_perf(
 
 	/* Where the release time goes: draw teardown, the batch end's flush and frees, and the views' fate. */
 	if (perf->submissions != 0U) {
-		kern_logf(
+		perf_append(
 			"v3d: release draws=%llu draw_us=%llu end_us=%llu views cached=%llu unmapped=%llu\n",
 			(unsigned long long)perf->released_draws,
 			(unsigned long long)kern_ticks_to_rate(perf->release_draw_ticks, 1000000U),
@@ -691,7 +713,7 @@ report_perf(
 
 	/* Cycles a tile takes when it is only loaded and stored, and when it is also drawn. */
 	if (perf->copy_tiles != 0U || perf->draw_tiles != 0U) {
-		kern_logf(
+		perf_append(
 			"v3d: gpu tiles copy=%u cycles/tile=%llu draw=%u cycles/tile=%llu\n",
 			perf->copy_tiles,
 			(unsigned long long)(perf->copy_tiles != 0U ? perf->copy_cycles / perf->copy_tiles : 0U),
@@ -701,7 +723,7 @@ report_perf(
 
 	/* The texture formatting unit's conversions: how many, and their average and longest wall time. */
 	if (perf->tfu_jobs != 0U) {
-		kern_logf(
+		perf_append(
 			"v3d: tfu jobs=%u avg_us=%llu max_us=%llu\n",
 			perf->tfu_jobs,
 			(unsigned long long)average_us(perf->tfu_ticks, perf->tfu_jobs),
@@ -709,7 +731,7 @@ report_perf(
 	}
 
 	/* The Vulkan allocation budget: in use now, the window's most, and what it refused. */
-	kern_logf(
+	perf_append(
 		"v3d: memory kib=%llu max_kib=%llu budget_kib=%llu refused=%u last_kib=%llu\n",
 		(unsigned long long)(perf->memory_bytes / 1024U),
 		(unsigned long long)(perf->memory_max / 1024U),
@@ -723,6 +745,76 @@ report_perf(
 	perf->window_start = now;
 	perf->memory_bytes = in_use;
 	perf->memory_max = in_use;
+}
+
+/* Tells whether the boot asked for the cost report, reading the boot line once. */
+static bool
+perf_enabled(
+	void)
+{
+	/* The boot line is read at the first report. */
+	if (native_perf_state == NATIVE_PERF_UNREAD) {
+		native_perf_state = NATIVE_PERF_OFF;
+		if (bcm2711_stage_perf_on())
+			native_perf_state = NATIVE_PERF_ON;
+	}
+
+	/* On only when asked for. */
+	return native_perf_state == NATIVE_PERF_ON;
+}
+
+/*
+ * Formats one line of the cost report into the text the executor logs once
+ * it has given up the controller mutex; nothing without v3d.perf=1, and a
+ * line that does not fit is cut.
+ */
+static void
+perf_append(
+	const char *format,
+	...)
+{
+	va_list args;
+	size_t room;
+	int rendered;
+
+	/* Nothing to format without the report, or without room. */
+	if (!perf_enabled())
+		return;
+	room = sizeof(native_perf_text) - native_perf_used;
+	if (room <= 1U)
+		return;
+
+	/* The line after the ones before. */
+	va_start(args, format);
+	rendered = kern_vsnprintf(native_perf_text + native_perf_used, room, format, args);
+	va_end(args);
+	if (rendered <= 0)
+		return;
+
+	/* A cut line keeps what fitted. */
+	if ((size_t)rendered >= room)
+		rendered = (int)(room - 1U);
+	native_perf_used += (size_t)rendered;
+}
+
+/*
+ * Writes the cost report a step formatted to the log, after the executor
+ * gave up the controller mutex (the console's output then holds up no
+ * ioctl), and empties it.
+ */
+void
+bcm2711_vulkan_native_perf_flush(
+	void)
+{
+	/* Nothing waits. */
+	if (native_perf_used == 0U)
+		return;
+
+	/* The report as one record; a cut last line still ends its record. */
+	kern_log_write(native_perf_text, native_perf_used);
+	if (native_perf_text[native_perf_used - 1U] != '\n')
+		kern_log_write("\n", 1U);
+	native_perf_used = 0U;
 }
 
 /* Converts a tick total into microseconds per item, rounding down. */
