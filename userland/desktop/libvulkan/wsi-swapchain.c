@@ -4101,6 +4101,8 @@ present_cursor_log(
 		(unsigned long long)lengths[3],
 		(unsigned long long)lengths[4],
 		log->retries);
+
+	/* A line that could not be formatted is not written; a long one is cut to the buffer. */
 	if (length <= 0)
 		return;
 	if ((size_t)length >= sizeof(line))
