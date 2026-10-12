@@ -54,6 +54,7 @@ WAYLAND_LINUX_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/compose-bind.c \
 	userland/desktop/wayland/draw-list.c \
 	userland/desktop/wayland/render-thread.c \
+	userland/desktop/wayland/glyph-worker.c \
 	userland/desktop/wayland/batch.c \
 	userland/desktop/wayland/damage.c \
 	userland/desktop/wayland/greeter.c \
