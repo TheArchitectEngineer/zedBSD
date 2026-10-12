@@ -3,7 +3,7 @@
 # ws213-p007: kernel の入力の遅れ（K-D の診断、K-1・K-2 の設計）
 
 Parent: [WS213](../ws.md)
-Status: in-progress（2026-10-12 Q1 が P5 に依頼。K-D は実装済み。review-1 の後、Q1 の判断で K2-1・K2-8・KD-1・K-2 (b) を実装（agent/p9、T1 の amd64 の boot と Pi の確認は未実施）。K-1 と K-2 (d) は設計を直しただけで、K-D の Pi の結果の後に Q1 が再 review に掛ける）
+Status: in-progress（2026-10-13 ユーザーの判断「SMP に進む」で Pi の読みを途中で止めた（下の「Pi の K-D の 1 boot の読み」）。2026-10-12 Q1 が P5 に依頼。K-D は実装済み。review-1 の後、Q1 の判断で K2-1・K2-8・KD-1・K-2 (b) を実装（agent/p9、T1 の amd64 の boot と Pi の確認は未実施）。K-1 と K-2 (d) は設計を直しただけで、K-D の Pi の結果の後に Q1 が再 review に掛ける）
 Phase disposition: normal
 
 ## 由来
@@ -156,6 +156,18 @@ commit: 874b5f935（K2-1・K2-8、`lock-host-test.sh`、review-1.md）、a30ce8e
 3. guest の make（`plan/tools/guest/make-cases.sh`）: exec の引数・環境の写し（`vmspace_copy_to`、短い写しは stack の配列）、多数の process の終了（terminate の間の `mutex_lock`）。
 4. 終了・signal の回帰: 複数の thread の process を signal で終わらせる場面（terminate の間の vmspace の後始末で `mutex_lock` が眠ること）。tests/ のシナリオに signal・thread の終了の物があればそれ。
 5. 時間があれば `plan/tools/kbench` の system call・pipe・fault の時間を前後で（悪化しない）。
+
+## Pi の K-D の 1 boot の読み（2026-10-13 P5、途中で止めた）
+
+2026-10-13 ユーザーの判断「これ以上詰めなくていい、SMP に進む」で途中で止めた。K-1・K-2 (d) は実装しない。`KWL CURSOR_LAG` 225 行の 1 行ごとの分類の表は作っていない。以下は止めるまでに読めた事（Q1 が写した main 1392d52 の image の log、1024x680、`v3d.perf=1 kern.perf=1`）。
+
+- 場面の時刻（session.log から）: A pointer だけ 約 153〜164 s、B App Home の開閉 165.3〜181.0 s（開きは 6 回）、C files の起動 185.2 s と窓の drag 〜209.8 s、D calendar 212.7〜236.1 s・settings 237.8〜255.5 s、E terminal 257.0 s、wlshm 295.7〜379.5 s。
+- **report_us**: 大きいのは最初の 4 行（7〜15 s、23〜38 ms）だけ。17 s 以降（場面の全部）は 18〜52 µs。表示の driver が画面を取る（14.3 s の `KWL MODE`、`rpi4_cons_suspend_output`）前は、rpi4 の早い console（`src/hal/arm64/bsp-rpi4/cons.c`）が 1 文字ごとに割り込みを止めて fb に 8x16 を描き、改行・折り返しごとに 80x25 を全部描き直すので、約 500 byte の行が 20〜40 ms かかっていた。この image は serial の console が無い（`CONFIG_RPI4_SERIAL_CONSOLE := n`）ので、画面を取った後の klog の console への写しは 1 文字ごとの確かめだけ。→ **報告そのものは場面の `CURSOR_LAG` の原因ではない**。直し（ring だけに書く報告）は要らないと判断し、実装していない。serial の console の build（115200 baud で 1 行 約 43 ms）や amd64 の text console では同じ懸念が残る（その時は ring だけに書く `kern_logf` の形を足す）。
+- **meta（候補 2 と両方）**: 場面の殆どの 2 秒窓で `hold max_us` が約 10 ms（時々 20 ms）、持ち主は compositor（24/41、他に 24/55・24/56・24/61）、`at=0xffff0000000dae7c`、`switched=1`。待ちの最長も約 10 ms（24/56 など compositor の他の thread）。持ち主が metadata lock を持ったまま quantum（10 ms）分横取りされ、別の compositor の thread が待つ形（上の表の「両方」）。`at` の関数名は未確認（Pi の vmunix は raw Image で symbol が無く、手元の build と config が違う）。
+- **woken（候補 1）**: 窓の最長は多くが 1〜3 ms（kernel thread 0/3）、時々 5〜10 ms。compositor の thread が woken の最長の窓は少ない。`preempted` の最長は 13〜38 ms、`ahead` 300〜2000（kernel thread 0/8・0/11 と compositor の thread）。
+- **その他**: `switches` が 2 秒に 60 万〜160 万（場面の前の何もしない間も 160 万、21〜45 s は 440 万）。woken・preempted の数（2 秒に 3 万・5 千）では説明できず、sched_yield の回り（`src/drivers/usb/` などに多数）の可能性。未調査。
+- **pass_max**: 707 ms は起動（14.26 s、出力を開く pass、`schedule_us=613901`、`KWL MODE switch_ms=425`）で場面の外。135 ms は 296.2 s の wlshm の接続（`shm_us=121719`、最初の shm の写し）。
+
 
 ## K-1 の設計（sched、候補 1 への直し）
 
