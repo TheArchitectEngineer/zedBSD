@@ -329,4 +329,3 @@ Future Work（2026-10-12 Q1 が記入）: F-094 client の画像の import を R
 - 調べたこと: 1 節（source の地図、Pi の既存の log の集計。P3 の boot の b4・b6・b10）。
 - 変えた file: この phase.md、[review-1](review-1.md)・[review-2](review-2.md)（design-reviewer の要点の写し）、ws.md、p002〜p006 の phase.md（骨組み）。p002 の source は下の節。
 - 次: 第 3 版の再 review。p003 の着手は Q1 が WS211 と順を決めてから。
-
