@@ -260,7 +260,7 @@ frame の番号、結果（描いた・失敗）、画像ごとの最後の fram
 | p005 | S3: W（glyph の raster、壁紙、大きな字） | p004 の後 |
 | p006 | 規約の全文の見直し | 最後 |
 
-Future Work（Q1 に記入を頼む）: client の画像の import を R へ（backend の API の変更、zedBSD・Linux・FreeBSD の 3 つの backend、別の設計）、GPU と walk を重ねる・2 コマ飛ばす（WS211 p006 の案 3 と合わせて）、cursor の plane に別の VkDevice（別の session・queue）。
+Future Work（2026-10-12 Q1 が記入）: F-094 client の画像の import を R へ（backend の API の変更、zedBSD・Linux・FreeBSD の 3 つの backend、別の設計）、F-095 GPU と walk を重ねる・2 コマ飛ばす（WS211 p006 の案 3 と合わせて）、F-096 cursor の plane に別の VkDevice（別の session・queue）。kernel の CURSOR_SET・MOVE の時刻の log は Q1 が WS141（P3）に依頼。
 
 ## 9. 試験
 
