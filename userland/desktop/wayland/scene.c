@@ -7,6 +7,7 @@
 
 /* Cursor-only frames restore selected cached pixels without sampling unchanged client images. */
 #include "scene.h"
+#include "kwl.h"
 
 #include <string.h>
 
@@ -100,6 +101,11 @@ kwl_scene_close(
 /*
  * Records a selected region's cursor-free capture or restoration.
  *
+ * The regions are the frame's damage rectangles (ws211-p009 D4), count of
+ * them, each copied alone: their box would take in pixels of the image
+ * the frame does not draw, where an older cursor may still show.  No
+ * region (count 0) copies the whole output.
+ *
  * Regions use output coordinates and a full-output buffer stride. The caller
  * ends its scene pass before capture and starts its cursor LOAD pass afterwards.
  * Restoration happens outside any pass, after acquiring the swapchain image.
@@ -109,31 +115,42 @@ kwl_scene_copy(
 	struct kwl_scene *scene,
 	struct kwl_list *command,
 	VkImage image,
-	const VkRect2D *region,
+	const VkRect2D *regions,
+	unsigned count,
 	unsigned restore)
 {
 	VkImageMemoryBarrier image_barrier;
 	VkBufferMemoryBarrier buffer_barrier;
-	VkBufferImageCopy copy;
+	VkBufferImageCopy copies[KWL_DAMAGE_RECTS];
 	VkPipelineStageFlags source_stages;
 	VkImageLayout transfer_layout;
+	uint32_t copy_count;
+	unsigned index;
 
-	/* Preserves all buffer bytes outside the selected output rectangle. */
-	memset(&copy, 0, sizeof(copy));
-	copy.bufferRowLength = scene->width;
-	copy.bufferImageHeight = scene->height;
-	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	copy.imageSubresource.layerCount = 1U;
-	copy.imageExtent.width = scene->width;
-	copy.imageExtent.height = scene->height;
-	copy.imageExtent.depth = 1U;
-	if (region != NULL) {
-		copy.imageOffset.x = region->offset.x;
-		copy.imageOffset.y = region->offset.y;
-		copy.imageExtent.width = region->extent.width;
-		copy.imageExtent.height = region->extent.height;
-		copy.bufferOffset = ((VkDeviceSize)region->offset.y * scene->width + region->offset.x) * 4U;
+	/* The whole output when no region is named. */
+	memset(copies, 0, sizeof(copies));
+	copies[0].bufferRowLength = scene->width;
+	copies[0].bufferImageHeight = scene->height;
+	copies[0].imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copies[0].imageSubresource.layerCount = 1U;
+	copies[0].imageExtent.width = scene->width;
+	copies[0].imageExtent.height = scene->height;
+	copies[0].imageExtent.depth = 1U;
+	copy_count = 1U;
+
+	/* Preserves all buffer bytes outside the selected output rectangles (no more than a frame's damage holds). */
+	if (regions == NULL || count > KWL_DAMAGE_RECTS)
+		count = 0U;
+	for (index = 0U; index < count; index++) {
+		copies[index] = copies[0];
+		copies[index].imageOffset.x = regions[index].offset.x;
+		copies[index].imageOffset.y = regions[index].offset.y;
+		copies[index].imageExtent.width = regions[index].extent.width;
+		copies[index].imageExtent.height = regions[index].extent.height;
+		copies[index].bufferOffset = ((VkDeviceSize)regions[index].offset.y * scene->width + regions[index].offset.x) * 4U;
 	}
+	if (count != 0U)
+		copy_count = count;
 
 	/* Orders earlier captures/restores and colour writes before this queue transfer. */
 	memset(&image_barrier, 0, sizeof(image_barrier));
@@ -182,9 +199,9 @@ kwl_scene_copy(
 
 	/* Raw copies retain the output's actual channel order and alpha bits. */
 	if (restore) {
-		kwl_list_copy_buffer_to_image(command, scene->buffer, image, transfer_layout, 1U, &copy);
+		kwl_list_copy_buffer_to_image(command, scene->buffer, image, transfer_layout, copy_count, copies);
 	} else {
-		kwl_list_copy_image_to_buffer(command, image, transfer_layout, scene->buffer, 1U, &copy);
+		kwl_list_copy_image_to_buffer(command, image, transfer_layout, scene->buffer, copy_count, copies);
 	}
 
 	/* Makes the transferred pixels available to the next cursor's LOAD pass. */

@@ -12,6 +12,10 @@
  * body's place and kept inside it; a commit without damage, damage wholly
  * outside the image, or an image drawn at another size marks the whole
  * body; a new size marks the whole output.
+ *
+ * The damage's rectangles (ws211-p009): overlapping ones are joined,
+ * nearly touching ones too, far ones stay apart, a full list joins the
+ * pair that grows least, and the list never holds two that overlap.
  */
 
 #include "userland/desktop/wayland/compose.h"
@@ -154,6 +158,7 @@ commit(
 {
 	server->dirty = 0;
 	server->damaged = 0;
+	server->damage_count = 0;
 	memset(server->damage, 0, sizeof(server->damage));
 	surface->committed_damaged = 0;
 	if (damage != NULL) {
@@ -163,7 +168,7 @@ commit(
 	kwl_damage_commit(server, surface, &old_image);
 }
 
-/* Checks that the frame draws exactly a rectangle (left, top, right, bottom). */
+/* Checks that the frame draws exactly one rectangle (left, top, right, bottom). */
 static void
 expect(
 	const struct kwl_server *server,
@@ -174,13 +179,183 @@ expect(
 {
 	assert(!server->dirty);
 	assert(server->damaged);
-	if (server->damage[0] != left ||
-	    server->damage[1] != top ||
-	    server->damage[2] != right ||
-	    server->damage[3] != bottom) {
-		printf("damage %d,%d,%d,%d expected %d,%d,%d,%d\n", server->damage[0], server->damage[1], server->damage[2], server->damage[3], left, top, right,
-		       bottom);
+	assert(server->damage_count == 1U);
+	if (server->damage[0][0] != left ||
+	    server->damage[0][1] != top ||
+	    server->damage[0][2] != right ||
+	    server->damage[0][3] != bottom) {
+		printf("damage %d,%d,%d,%d expected %d,%d,%d,%d\n", server->damage[0][0], server->damage[0][1], server->damage[0][2], server->damage[0][3], left, top,
+		       right, bottom);
 		assert(0);
+	}
+}
+
+/* Adds a rectangle to a list. */
+static void
+add(
+	int32_t (*rects)[4],
+	unsigned *count,
+	int32_t left,
+	int32_t top,
+	int32_t right,
+	int32_t bottom)
+{
+	int32_t rect[4];
+
+	rect[0] = left;
+	rect[1] = top;
+	rect[2] = right;
+	rect[3] = bottom;
+	kwl_damage_rects_add(rects, count, rect);
+}
+
+/* Tells whether a list holds a rectangle exactly. */
+static int
+holds(
+	int32_t (*rects)[4],
+	unsigned count,
+	int32_t left,
+	int32_t top,
+	int32_t right,
+	int32_t bottom)
+{
+	unsigned index;
+
+	for (index = 0; index < count; index++) {
+		if (rects[index][0] == left && rects[index][1] == top && rects[index][2] == right && rects[index][3] == bottom)
+			return 1;
+	}
+	return 0;
+}
+
+/* Checks that no two rectangles of a list overlap, and that each contains every rectangle given (inside). */
+static void
+check_list(
+	int32_t (*rects)[4],
+	unsigned count,
+	int32_t (*given)[4],
+	unsigned given_count)
+{
+	unsigned first;
+	unsigned second;
+	int inside;
+
+	assert(count <= KWL_DAMAGE_RECTS);
+	for (first = 0; first < count; first++) {
+		assert(rects[first][2] > rects[first][0] && rects[first][3] > rects[first][1]);
+		for (second = first + 1U; second < count; second++) {
+			if (rects[first][0] < rects[second][2] && rects[second][0] < rects[first][2] && rects[first][1] < rects[second][3] &&
+			    rects[second][1] < rects[first][3]) {
+				printf("overlap %d,%d,%d,%d and %d,%d,%d,%d\n", rects[first][0], rects[first][1], rects[first][2], rects[first][3], rects[second][0],
+				       rects[second][1], rects[second][2], rects[second][3]);
+				assert(0);
+			}
+		}
+	}
+	for (second = 0; second < given_count; second++) {
+		inside = 0;
+		for (first = 0; first < count; first++) {
+			if (given[second][0] >= rects[first][0] && given[second][1] >= rects[first][1] && given[second][2] <= rects[first][2] &&
+			    given[second][3] <= rects[first][3])
+				inside = 1;
+		}
+		assert(inside);
+	}
+}
+
+/* The rectangle list's rules (ws211-p009 D1). */
+static void
+test_rects(void)
+{
+	int32_t rects[KWL_DAMAGE_RECTS][4];
+	int32_t given[64][4];
+	unsigned count;
+	unsigned given_count;
+	unsigned round;
+	unsigned seed;
+	int32_t x;
+	int32_t y;
+
+	/* Far apart (the clock and a hovered cell): two. */
+	count = 0;
+	add(rects, &count, 700, 0, 790, 30);
+	add(rects, &count, 300, 200, 404, 309);
+	assert(count == 2);
+	assert(holds(rects, count, 700, 0, 790, 30));
+	assert(holds(rects, count, 300, 200, 404, 309));
+
+	/* Overlapping: one box. */
+	add(rects, &count, 350, 250, 450, 350);
+	assert(count == 2);
+	assert(holds(rects, count, 300, 200, 450, 350));
+
+	/* Next to each other (the hovered cell moving one cell): one box, it adds no area. */
+	count = 0;
+	add(rects, &count, 0, 0, 104, 109);
+	add(rects, &count, 104, 0, 208, 109);
+	assert(count == 1);
+	assert(holds(rects, count, 0, 0, 208, 109));
+
+	/* A small gap (box adds 104x30 = 3120 < 4096): one. */
+	count = 0;
+	add(rects, &count, 0, 0, 104, 100);
+	add(rects, &count, 0, 130, 104, 230);
+	assert(count == 1);
+
+	/* A larger gap (104x50 = 5200 > 4096): two. */
+	count = 0;
+	add(rects, &count, 0, 0, 104, 100);
+	add(rects, &count, 0, 150, 104, 250);
+	assert(count == 2);
+
+	/* An empty rectangle adds nothing. */
+	add(rects, &count, 10, 10, 10, 20);
+	assert(count == 2);
+
+	/* A joined box that meets a third joins it too (no overlap left). */
+	count = 0;
+	add(rects, &count, 0, 0, 10, 10);
+	add(rects, &count, 500, 0, 510, 10);
+	add(rects, &count, 200, 0, 300, 400);
+	add(rects, &count, 5, 300, 505, 310);
+	check_list(rects, count, NULL, 0);
+	assert(count == 1);
+	assert(holds(rects, count, 0, 0, 510, 400));
+
+	/* Five far apart: four, the closest pair joined. */
+	count = 0;
+	add(rects, &count, 0, 0, 10, 10);
+	add(rects, &count, 1000, 0, 1010, 10);
+	add(rects, &count, 0, 1000, 10, 1010);
+	add(rects, &count, 1000, 1000, 1010, 1010);
+	add(rects, &count, 1000, 200, 1010, 210);
+	assert(count == 4);
+	assert(holds(rects, count, 1000, 0, 1010, 210));
+
+	/* Edges far outside are kept near the output. */
+	count = 0;
+	add(rects, &count, INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX);
+	assert(count == 1);
+	assert(rects[0][0] == -(1 << 20) && rects[0][2] == (1 << 20));
+
+	/* Many random ones: never more than the room, never an overlap, each one inside the list. */
+	seed = 12345U;
+	for (round = 0; round < 2000; round++) {
+		count = 0;
+		given_count = 1U + round % 60U;
+		for (x = 0; x < (int32_t)given_count; x++) {
+			seed = seed * 1103515245U + 12345U;
+			y = (int32_t)((seed >> 8) % 1900U);
+			seed = seed * 1103515245U + 12345U;
+			given[x][0] = y;
+			given[x][1] = (int32_t)((seed >> 8) % 1100U);
+			seed = seed * 1103515245U + 12345U;
+			given[x][2] = y + 1 + (int32_t)((seed >> 8) % 300U);
+			seed = seed * 1103515245U + 12345U;
+			given[x][3] = given[x][1] + 1 + (int32_t)((seed >> 8) % 200U);
+			kwl_damage_rects_add(rects, &count, given[x]);
+		}
+		check_list(rects, count, given, given_count);
 	}
 }
 
@@ -255,6 +430,17 @@ main(void)
 	new_width = 1000;
 	commit(&server, &surface, cell);
 	assert(server.dirty);
+
+	/* Two windows' commits far apart: two rectangles. */
+	server.dirty = 0;
+	server.damaged = 0;
+	server.damage_count = 3;
+	kwl_damage_rect(&server, 0, 0, 50, 50);
+	kwl_damage_rect(&server, 900, 900, 950, 950);
+	assert(server.damaged && server.damage_count == 2);
+
+	/* The rectangle list. */
+	test_rects();
 
 	printf("damage-host-test: PASS\n");
 	return 0;

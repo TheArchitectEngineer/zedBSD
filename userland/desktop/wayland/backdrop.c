@@ -121,13 +121,12 @@ kwl_backdrop_end(
 		backdrop_blur(server, command, &backdrop->targets[1], &backdrop->targets[0], 0.0f, BACKDROP_SPREAD / (float)backdrop->height);
 	}
 
-	/* The output's pass again, keeping what was drawn. */
+	/* The output's pass again, keeping what was drawn, over the frame's own area (its damage's box, ws211-p009). */
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	pass.renderPass = compose->pass_load;
 	pass.framebuffer = compose->framebuffer_now;
-	pass.renderArea.extent.width = compose->output.width;
-	pass.renderArea.extent.height = compose->output.height;
+	pass.renderArea = compose->pass_area;
 	kwl_list_begin_render_pass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 	kwl_compose_bind_forget(server->compose);
 	backdrop_viewport(command, compose->output.width, compose->output.height);

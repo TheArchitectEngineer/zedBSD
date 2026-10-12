@@ -148,7 +148,10 @@ struct kwl_list_op {
  * ends).  failed says a growth could not be allocated: the list is not
  * replayed.  draws counts the draw commands, joined the quads drawn
  * together and joined_draws the draws that drew them, for the walk's
- * timing by the number of things drawn.
+ * timing by the number of things drawn.  scissor_serial only increases:
+ * each reset, pass begun and scissor set moves it, so a writer that
+ * remembers it can tell whether the scissor it set last is still the
+ * list's (compose-bind.c, ws211-p009).
  */
 struct kwl_list {
 	struct kwl_list_op *ops;
@@ -167,6 +170,7 @@ struct kwl_list {
 	unsigned joined;
 	unsigned joined_draws;
 	unsigned failed;
+	uint64_t scissor_serial;
 };
 
 void kwl_list_reset(struct kwl_list *list);

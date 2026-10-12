@@ -52,8 +52,8 @@ static void compose_quad(struct kwl_server *server, struct kwl_list *command, co
 static void compose_quad_part(struct kwl_server *server, struct kwl_list *command, const struct kwl_import *import, int32_t x, int32_t y, uint32_t quad_width, uint32_t quad_height, const float *uv);
 static const struct kwl_import *surface_image(const struct kwl_object *surface);
 static void compose_cursor(struct kwl_server *server, struct kwl_list *command);
-static VkResult compose_record(struct kwl_server *server, uint32_t image, struct kwl_object **windows, unsigned count, const VkRect2D *region);
-static int compose_region(struct kwl_server *server, uint32_t image, VkRect2D *region);
+static VkResult compose_record(struct kwl_server *server, uint32_t image, struct kwl_object **windows, unsigned count, const VkRect2D *region, const VkRect2D *rects, unsigned rect_count);
+static int compose_region(struct kwl_server *server, uint32_t image, VkRect2D *region, VkRect2D *rects, unsigned *rect_count);
 static void compose_walk_timed(struct kwl_server *server, uint64_t walk, uint64_t replay, unsigned quiet);
 static int compose_output_open_parked(struct kwl_server *server);
 static void compose_want(struct kwl_server *server, enum kwl_render_kind kind);
@@ -561,6 +561,8 @@ kwl_compose_draw(
 	struct kwl_compose *compose;
 	const VkRect2D *region_drawn;
 	VkRect2D region;
+	VkRect2D rects[KWL_DAMAGE_RECTS];
+	unsigned rect_count;
 	uint64_t now;
 	uint32_t image;
 	unsigned count;
@@ -651,8 +653,8 @@ kwl_compose_draw(
 	image = compose->ready.held.output_image;
 	missed = kwl_heads_take(server, &compose->ready.held);
 
-	/* The part of the image to draw: all of it, or the damage it has missed (its buffer age). */
-	partial = compose_region(server, image, &region);
+	/* The part of the image to draw: all of it, or the damage it has missed (its buffer age), as rectangles apart (ws211-p009). */
+	partial = compose_region(server, image, &region, rects, &rect_count);
 
 	/* The frame's display list. */
 	region_drawn = NULL;
@@ -661,7 +663,7 @@ kwl_compose_draw(
 	server->home_progress_frozen = 0U;
 	server->home_progress_value = kwl_home_progress(server);
 	server->home_progress_frozen = 1U;
-	result = compose_record(server, image, windows, count, region_drawn);
+	result = compose_record(server, image, windows, count, region_drawn, rects, rect_count);
 	server->home_progress_frozen = 0U;
 
 	/* A list that could not grow is not given (the compositor's failure). */
@@ -2485,6 +2487,7 @@ compose_quad_part(
 	float constants[8];
 	float width;
 	float height;
+	int visible;
 
 	/* The output drawn: the anchor, or a head's part of the plane (ws113-p007). */
 	width = (float)server->width;
@@ -2496,12 +2499,9 @@ compose_quad_part(
 		height = (float)server->view_height;
 	}
 
-	/* Omit images wholly outside the actual pass scissor, retaining one pixel for viewport rounding. */
-	if (server->compose->backdrop_recording == 0U &&
-	    ((int64_t)x + quad_width < (int64_t)server->compose->scissor_now.offset.x - 1 ||
-	    (int64_t)y + quad_height < (int64_t)server->compose->scissor_now.offset.y - 1 ||
-	    (int64_t)x > (int64_t)server->compose->scissor_now.offset.x + server->compose->scissor_now.extent.width + 1 ||
-	    (int64_t)y > (int64_t)server->compose->scissor_now.offset.y + server->compose->scissor_now.extent.height + 1))
+	/* Omit images wholly outside the pass scissor, or between the damage's rectangles (ws211-p009). */
+	visible = kwl_compose_clip_visible(server->compose, (float)x, (float)y, (float)quad_width, (float)quad_height);
+	if (!visible)
 		return;
 
 	/* The rectangle in normalized device coordinates, and the part of the image. */
@@ -2516,39 +2516,50 @@ compose_quad_part(
 	kwl_batch_flush(server, command);
 	kwl_compose_bind(server, command, server->compose->pipelines[import->draw], server->compose->layout, import->set);
 	kwl_list_push_constants(command, server->compose->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
-	kwl_list_draw(command, KWL_QUAD_VERTICES, 1U, 0U, 0U);
+	kwl_compose_clip_draw(server, command, (float)x, (float)y, (float)quad_width, (float)quad_height, KWL_QUAD_VERTICES);
 	kwl_compose_count_commands(server, 1U, 1U);
 }
 
 /*
  * Works out the part of a swapchain image a frame draws: the damage of
  * this frame and of every frame since the image was last drawn (its buffer
- * age).  Returns 1 with that part, or 0 when the whole image is drawn: a
- * change of unknown extent, an image not drawn lately, or damage over most
- * of the output.
+ * age), as rectangles that do not overlap (ws211-p009 D2).  Returns 1 with
+ * the box around them and the rectangles, or 0 when the whole image is
+ * drawn: a change of unknown extent, an image not drawn lately, or damage
+ * over most of the output.
  */
 static int
 compose_region(
 	struct kwl_server *server,
 	uint32_t image,
-	VkRect2D *region)
+	VkRect2D *region,
+	VkRect2D *rects,
+	unsigned *rect_count)
 {
 	struct kwl_compose *compose;
+	int32_t list[KWL_DAMAGE_RECTS][4];
 	int32_t box[4];
+	int64_t area;
 	uint64_t frame;
 	uint64_t last;
 	uint64_t index;
+	unsigned count;
 	unsigned slot;
+	unsigned rect;
+	unsigned kept;
 	VkResult result;
 
 	/* This frame's number and its damage, kept for the images that miss it. */
 	compose = server->compose;
+	*rect_count = 0U;
 	frame = server->frame + 1U;
 	slot = (unsigned)(frame % KWL_DAMAGE_HISTORY);
 	compose->history_whole[slot] = 1;
-	if (!server->dirty && server->damaged) {
+	compose->history_count[slot] = 0U;
+	if (!server->dirty && server->damaged && server->damage_count != 0U) {
 		compose->history_whole[slot] = 0;
-		memcpy(compose->history[slot], server->damage, sizeof(compose->history[slot]));
+		compose->history_count[slot] = server->damage_count;
+		memcpy(compose->history[slot], server->damage, (size_t)server->damage_count * sizeof(compose->history[slot][0]));
 	}
 
 	/* The image is drawn in this frame. */
@@ -2562,36 +2573,63 @@ compose_region(
 	if (last == 0U || frame - last >= KWL_DAMAGE_HISTORY)
 		return 0;
 
-	/* The damage of each frame it missed and of this one; a whole one makes it whole. */
-	memcpy(box, compose->history[slot], sizeof(box));
+	/* The damage of each frame it missed and of this one, joined as few rectangles; a whole one makes it whole. */
+	count = 0U;
 	for (index = last + 1U; index <= frame; index++) {
 		slot = (unsigned)(index % KWL_DAMAGE_HISTORY);
 		if (compose->history_whole[slot])
 			return 0;
-		if (compose->history[slot][0] < box[0])
-			box[0] = compose->history[slot][0];
-		if (compose->history[slot][1] < box[1])
-			box[1] = compose->history[slot][1];
-		if (compose->history[slot][2] > box[2])
-			box[2] = compose->history[slot][2];
-		if (compose->history[slot][3] > box[3])
-			box[3] = compose->history[slot][3];
+		for (rect = 0U; rect < compose->history_count[slot]; rect++)
+			kwl_damage_rects_add(list, &count, compose->history[slot][rect]);
 	}
 
-	/* Inside the output. */
-	if (box[0] < 0)
-		box[0] = 0;
-	if (box[1] < 0)
-		box[1] = 0;
-	if (box[2] > (int32_t)compose->output.width)
-		box[2] = (int32_t)compose->output.width;
-	if (box[3] > (int32_t)compose->output.height)
-		box[3] = (int32_t)compose->output.height;
-	if (box[2] <= box[0] || box[3] <= box[1])
+	/* Each rectangle inside the output, those left with nothing dropped; their box and their area. */
+	kept = 0U;
+	area = 0;
+	box[0] = INT32_MAX;
+	box[1] = INT32_MAX;
+	box[2] = INT32_MIN;
+	box[3] = INT32_MIN;
+	for (rect = 0U; rect < count; rect++) {
+		/* The rectangle cut to the output. */
+		if (list[rect][0] < 0)
+			list[rect][0] = 0;
+		if (list[rect][1] < 0)
+			list[rect][1] = 0;
+		if (list[rect][2] > (int32_t)compose->output.width)
+			list[rect][2] = (int32_t)compose->output.width;
+		if (list[rect][3] > (int32_t)compose->output.height)
+			list[rect][3] = (int32_t)compose->output.height;
+		if (list[rect][2] <= list[rect][0] || list[rect][3] <= list[rect][1])
+			continue;
+
+		/* Kept, in the box and the area. */
+		rects[kept].offset.x = list[rect][0];
+		rects[kept].offset.y = list[rect][1];
+		rects[kept].extent.width = (uint32_t)(list[rect][2] - list[rect][0]);
+		rects[kept].extent.height = (uint32_t)(list[rect][3] - list[rect][1]);
+		kept++;
+		area += (int64_t)(list[rect][2] - list[rect][0]) * (list[rect][3] - list[rect][1]);
+		if (list[rect][0] < box[0])
+			box[0] = list[rect][0];
+		if (list[rect][1] < box[1])
+			box[1] = list[rect][1];
+		if (list[rect][2] > box[2])
+			box[2] = list[rect][2];
+		if (list[rect][3] > box[3])
+			box[3] = list[rect][3];
+	}
+
+	/* Nothing inside the output: the whole image (as before, for a damage left of nothing). */
+	if (kept == 0U)
 		return 0;
 
-	/* Most of the output is drawn whole (the loading pass costs more than it saves). */
-	if ((int64_t)(box[2] - box[0]) * (box[3] - box[1]) * 10 > (int64_t)compose->output.width * compose->output.height * 7)
+	/*
+	 * Most of the output drawn is drawn whole (the loading pass costs more
+	 * than it saves): the rectangles' own area, not their box's, so that
+	 * two small changes far apart stay a partial frame.
+	 */
+	if (area * 10 > (int64_t)compose->output.width * compose->output.height * 7)
 		return 0;
 
 	/* The pass that keeps the image's pixels, made the first time. */
@@ -2599,24 +2637,36 @@ compose_region(
 	if (result != VK_SUCCESS)
 		return 0;
 
-	/* Succeeded: the part, logged when frames are. */
+	/* Succeeded: the box and the rectangles, logged when frames are. */
 	region->offset.x = box[0];
 	region->offset.y = box[1];
 	region->extent.width = (uint32_t)(box[2] - box[0]);
 	region->extent.height = (uint32_t)(box[3] - box[1]);
-	if (server->log_frames)
-		printf("KWL DAMAGE frame=%llu image=%u x=%d y=%d width=%u height=%u\n", (unsigned long long)frame, image, box[0], box[1], region->extent.width, region->extent.height);
+	*rect_count = kept;
+	if (server->log_frames) {
+		printf("KWL DAMAGE frame=%llu image=%u x=%d y=%d width=%u height=%u rects=%u", (unsigned long long)frame, image, box[0], box[1], region->extent.width, region->extent.height, kept);
+		for (rect = 0U; rect < kept; rect++)
+			printf(" %d,%d,%u,%u", rects[rect].offset.x, rects[rect].offset.y, rects[rect].extent.width, rects[rect].extent.height);
+		printf("\n");
+	}
 	return 1;
 }
 
-/* Records a frame: the background, then each window from the bottom. */
+/*
+ * Records a frame: the background, then each window from the bottom.  A
+ * partial frame (region) draws inside its damage's rectangles (rects,
+ * rect_count of them, inside region); two or more are drawn apart in one
+ * pass over the box around them (ws211-p009 D3).
+ */
 static VkResult
 compose_record(
 	struct kwl_server *server,
 	uint32_t image,
 	struct kwl_object **windows,
 	unsigned count,
-	const VkRect2D *region)
+	const VkRect2D *region,
+	const VkRect2D *rects,
+	unsigned rect_count)
 {
 	struct kwl_compose *compose;
 	struct kwl_list *command;
@@ -2629,10 +2679,12 @@ compose_record(
 	unsigned reuse;
 	unsigned capture;
 
-	/* A fresh list for the frame's drawing, which compose_replay records (ws213-p003). */
+	/* A fresh list for the frame's drawing, which compose_replay records (ws213-p003); no rectangle is drawn apart yet. */
 	compose = server->compose;
 	command = &compose->list;
 	kwl_compose_list_begin(compose);
+	compose->clip_count = 0U;
+	compose->clip_scissor_valid = 0U;
 
 	/*
 	 * The scene is kept only while the cursor is drawn into the frames: with
@@ -2651,8 +2703,17 @@ compose_record(
 		compose->scene.valid = 0U;
 
 	/* Unknown cache contents require one whole scene before any reuse. */
-	if (capture && !compose->scene.valid)
+	if (capture && !compose->scene.valid) {
 		region = NULL;
+		rects = NULL;
+		rect_count = 0U;
+	}
+
+	/* A partial frame of one rectangle draws it as its region (the box around one is itself). */
+	if (region != NULL && rect_count == 0U) {
+		rects = region;
+		rect_count = 1U;
+	}
 
 	/*
 	 * Only cursor damage over an unchanged initialized scene may skip client
@@ -2708,9 +2769,9 @@ compose_record(
 	server->view_width = 0U;
 	server->view_height = 0U;
 
-	/* Removes every older cursor covered by buffer-age damage before drawing its new place. */
+	/* Removes every older cursor covered by buffer-age damage before drawing its new place: each rectangle, not their box (ws211-p009 D4). */
 	if (reuse)
-		kwl_scene_copy(&compose->scene, command, compose->output.images[image], region, 1U);
+		kwl_scene_copy(&compose->scene, command, compose->output.images[image], rects, rect_count, 1U);
 
 	/* The pass clears the image to the background. */
 	memset(&clear, 0, sizeof(clear));
@@ -2730,9 +2791,10 @@ compose_record(
 	pass.renderArea.extent.width = compose->output.width;
 	pass.renderArea.extent.height = compose->output.height;
 
-	/* Restrict tile loading and storing to the same preserved damage as rasterization. */
+	/* Restrict tile loading and storing to the same preserved damage as rasterization; the backdrop takes the pass up again so. */
 	if (region != NULL)
 		pass.renderArea = *region;
+	compose->pass_area = pass.renderArea;
 
 	/* The clear value belongs to a whole frame; the partial pass and a restored scene retain old pixels. */
 	pass.clearValueCount = 1U;
@@ -2753,6 +2815,18 @@ compose_record(
 		scissor = *region;
 	compose->scissor_now = scissor;
 	kwl_list_set_scissor(command, 0U, 1U, &scissor);
+
+	/*
+	 * Two or more rectangles are drawn apart inside the box (compose-bind.c):
+	 * each quad once for each one it meets, the scissor cut to it.  The
+	 * anchor's pass alone; the heads', the layers' and the backdrop's are
+	 * drawn as before.
+	 */
+	if (rect_count >= 2U) {
+		memcpy(compose->clips, rects, (size_t)rect_count * sizeof(compose->clips[0]));
+		compose->clip_count = rect_count;
+		compose->clip_framebuffer = compose->framebuffers[image];
+	}
 
 	/* Every quad's corners. */
 	offset = 0U;
@@ -2790,7 +2864,7 @@ compose_record(
 	if (!reuse && capture) {
 		kwl_batch_flush(server, command);
 		kwl_list_end_render_pass(command);
-		kwl_scene_copy(&compose->scene, command, compose->output.images[image], region, 0U);
+		kwl_scene_copy(&compose->scene, command, compose->output.images[image], rects, rect_count, 0U);
 		compose->scene.written = 1U;
 
 		/* The compatible LOAD pass retains scene pixels and adds only the cursor. */
@@ -2799,10 +2873,14 @@ compose_record(
 		kwl_compose_bind_forget(compose);
 	}
 
-	/* The cursor over everything. */
+	/* The cursor over everything, in the rectangles too. */
 	compose_cursor(server, command);
 	kwl_batch_flush(server, command);
 	kwl_list_end_render_pass(command);
+
+	/* The anchor's pass is done: nothing after it is drawn apart. */
+	compose->clip_count = 0U;
+	compose->clip_scissor_valid = 0U;
 
 	/* A test image's capture copies the finished image (shot.c; nothing elsewhere, ws173-p002). */
 	kwl_shot_record(server, command, compose->output.images[image]);
