@@ -3,7 +3,7 @@
 # ws210-p014: libkeiland の frame の枠組み（lit の変化の damage、motion の合流と描き直しの取り消し、ペインの部品）
 
 Parent: [WS210](../ws.md)
-Status: planning（P1 の設計 第 1 版、2026-10-12。design-reviewer の review 待ち）
+Status: in-progress（P1。[review-1](review-1.md) の後 Q1 の分け方（M7）で (a) merge 済み、(b) F1・F3 を直した。(c) F2 は設計の書き直し待ち、(d) F4 は保留）
 Phase disposition: normal
 Queue: [P1 の lane](../../agents/P1/queue.md)
 
@@ -109,11 +109,13 @@ if (due) {
 - T1（QEMU）: Settings の左ペインを速く上下に動かした後の PNG と、全体で描いた PNG の比べ。
 - Pi（ユーザー）: Settings の左ペインを速く動かした時の遅れが「単項目のポイント」の遅れを超えて積み重ならないこと。P3 の perf の行で、hover 中の frame の数と面積を比べる。
 
-### F7. 完了の条件
+### F7. 完了の条件（review-1 の後、H5・M7）
 
-1. host の試験が PASS。6 つの app の rpi4・amd64 の build が warning 0。`exports.py --check` と OS 境界の check が通る。
-2. 6 つの app が `kl_ui_take_frame`（と申請した pacing）で動く。Settings・Files・Music の左ペインが部品で描かれる。
-3. Pi でユーザーが、遅れの積み重なりが無いことを確かめる。
+1. host の試験が PASS。対象の app の rpi4・amd64 の build が warning 0。`exports.py --check` と OS 境界の check が通る。
+2. (a) と (b): Settings・Files の hover は「描いた時と今」の 2 つだけを描く。kl_ui の F1・F3 が入り、frame ごとに take する app が NONE で描かない。
+3. 受け入れは app の描く面積と frame の数で測る（H5）。compositor の側の効果は p013 と別 WS。
+4. Pi でユーザーが、遅れの積み重なりが無いことを確かめる。
+5. (c) F2 と (d) F4 は、この条件に含めない（別に Q1 が決める）。
 
 ## 実施の記録
 
@@ -133,6 +135,26 @@ if (due) {
   - 既存の host の試験: Phone 19・Calendar 13・Music 16 PASS、Files は host build が通った。
   - build: rpi4・amd64 の libkeiland と 6 つの app が warning 0。keiland-os-boundary PASS。exports.py --check。
   - app はまだ載せ替えていない（F3 の app の段と F4 は review の後）。
+
+- 2026-10-12 [review-1](review-1.md) と Q1 の判断（M7 の分け方）:
+  - **(a)** Settings と Files の自前の lit に「描いた時の hover と今の hover」の比べを入れた（H2）。agent/p1-a 05a6b4d8d → main d75a27337。
+    - Files: `fm_input_hover_settle`、Settings: `se_ui_hover_settle`。どちらも main loop が frame を決める前に 1 回呼ぶ。damage は 2 部分で、部分ごとに clip して描く。
+    - motion ごとの kl_ui の damage は取らない（app の hit が同じ矩形）。Settings の左ペインは自前の描画のまま（M4）。
+  - **(b)** F1・F3 の直し（agent/p1、merge は Q1）:
+    - H1: 互換の `kl_ui_take_damage` は、lit が変わって元に戻った時に 1 と 1x1 を返す（全体にしない）。試験 back-to-drawn。
+    - M1: drawn_hot は kl_ui_end で記録する（`ui_settle_lighting`）。その frame が今の hot の widget を記録した時、hot が無ければ前の drawn_hot の widget を記録した時だけ。描かない frame（1x1 の key の frame）は何も変えない。試験 frame-after-key-frame は NONE にならない。
+      - ただし、その frame の後は kl_ui_end の pointer の再評価で、記録の無い widget が WHOLE になる（前からの shown の入れ替えの作り）。前の ui.c でも同じ WHOLE になるので、この試験は前後を見分けない。
+    - M5: canvas に複数矩形の clip は足さない（公開の `struct kl_canvas` を変えない、p001 の A2）。部分は近ければまとめる（外接の箱が和の 1.5 倍以下、最大 4）。
+      - 根拠（host、Files）: 1 回の部分の走査の固定の費用は約 0.2ms（sidebar の 1 行の部分、224x58 で 0.24ms）。行あたりの画素の費用は 1 行（216x30）で約 0.1〜0.2ms。
+      - 離れた 2 行は 2 回の走査の方が、間の行を全部描くより安い。Pi での比は p013 の baseline と合わせて測る。
+    - M6: Mailer の host の試験（plan/ws169/tests/run-host-mailer.sh）18 PASS（hover-part を含む）。
+    - L2: keiland.h の F3 の注記に「KL_VERSION 90 から」の意味の変化を書いた。新しい source の file は無い（Makefile 3 つは不変）。exports は 4 名。
+    - L3: drawn_hot が無い（invalid）時は何も足さない（ui_damage_key は invalid の key で 0）。
+    - 試験: run-host-kl-ui-lit.sh 22 PASS。Phone 19・Calendar 13・Music 16・Mailer 18 PASS。Files の保留の hover の画素は 3 場面で一致。
+    - build: rpi4・amd64 の libkeiland と 7 app（files・settings・music・calendar・photos・phone・mailer）が warning 0。keiland-os-boundary PASS、exports.py --check。
+  - **(c)** F2（KL_PACING_FRAME）は H3・H4・M2・M3・L7 を直した設計を書き直してから review（後回し）。MOTION の合流は L4 のとおり window_push で、効果は小さい見込み。
+  - **(d)** F4 は保留。Music は不要（L1）。
+  - **H5（受け入れの範囲）**: p014 の受け入れは「app の描く面積と frame の数」に限る。compositor の側の効果（wl_surface.damage と VkPresentRegionsKHR が外接の 1 つにまとめられる、wsi-swapchain.c:3304-3349・wsi-wayland.c:833-842）は、p013 と WSI の複数矩形の damage（別 WS、Q1 が判断）に回す。
 
 ## Phase の中の順
 

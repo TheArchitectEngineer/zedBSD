@@ -44,7 +44,7 @@ Pi 4 で標準 app（Files・Settings・Phone など）の再描画が CPU の�
 | p011 | T1 の QEMU の回帰と Pi の実機の確認 | planned |
 | p012 | 規約の全文の見直し | planned |
 | [p013](phase013/phase.md) | 中間: app の present を変わった所の copy に（staging から swapchain の image へ直接、image ごとの古い所の list、方式は Pi の実測で選ぶ） | planning（設計 1.1、review-1 を反映、Pi の baseline 待ち） |
-| [p014](phase014/phase.md) | libkeiland の frame の枠組み（lit の変化は描いた時と今だけ、window ごとの motion の合流と frame の速さ、共通の口、ペインの部品） | planning（設計 第 1 版、review 待ち） |
+| [p014](phase014/phase.md) | libkeiland の frame の枠組み（(a) Settings・Files の描いた時と今の hover、(b) kl_ui の F1・F3、(c) window ごとの pacing、(d) ペインの部品）。受け入れは app の描く面積と frame の数（compositor の側は p013 と別 WS） | in-progress（(a) merge 済み、(b) 直し済み・merge 待ち、(c) 設計の書き直し待ち、(d) 保留） |
 
 見積 計 約 32 LW（p001 の設計 1.1 の Phase の表）。
 

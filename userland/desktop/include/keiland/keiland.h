@@ -3623,7 +3623,12 @@ int kl_ui_take_damage(struct kl_ui *ui, struct kl_rect *rect);
  * KL_FRAME_NONE (nothing to draw), KL_FRAME_PARTS (count parts, each
  * drawn clipped to it, the rest of the frame keeping its pixels) or
  * KL_FRAME_WHOLE.  kl_window_present_parts shows a frame by such parts.
- * kl_ui_take_damage gives the box round the same parts.
+ * From this version kl_ui_pointer_motion and kl_ui_pointer_leave return 1
+ * only when the lighting changed, without adding parts themselves, and
+ * kl_ui_take_damage gives the box round the same parts (1 with one pixel
+ * when the lighting changed and came back, 0 for nothing or the whole
+ * window as before).  The lighting drawn is the one kl_ui_end saw the
+ * frame record.
  */
 #define KL_FRAME_NONE		0
 #define KL_FRAME_PARTS		1
