@@ -36,6 +36,7 @@
 #include "cons.h"
 #include "framebuffer.h"
 #include "uart.h"
+#include "../watch.h"
 
 #define CONS_COLUMNS	80U
 #define CONS_ROWS	25U
@@ -81,6 +82,9 @@ hal_putc(
 {
 	void (*kernel_output)(int c);
 	bool interrupts_enabled;
+
+	/* Keeps the character for a stall report, which shows the log's last lines. */
+	arm64_watch_note_char(character);
 
 	/* Delegates to the kernel console after the handover. */
 	kernel_output = __atomic_load_n(&kernel_putc, __ATOMIC_ACQUIRE);
@@ -183,6 +187,23 @@ rpi4_cons_resume_output(
 }
 
 /*
+ * Reports whether a display driver owns the screen, so the early console
+ * leaves the framebuffer alone.
+ */
+int
+rpi4_cons_output_suspended(
+	void)
+{
+	int suspended;
+
+	/* Read without the lock: the stall watch must not wait for it. */
+	suspended = __atomic_load_n(&output_suspended, __ATOMIC_ACQUIRE);
+
+	/* Succeeded: whether the screen is another driver's. */
+	return suspended != 0;
+}
+
+/*
  * Prepares the Raspberry Pi early console.
  *
  * This runs before kernel_entry(), so it may not allocate or block.
@@ -228,13 +249,19 @@ output_enter(
 	void)
 {
 	bool interrupts_enabled;
+	unsigned tries;
 
 	/* Keeps rendering atomic against interrupt-context output. */
 	interrupts_enabled = hal_irq_disable();
 
-	/* Spins until this CPU owns the output lock. */
-	while (__atomic_exchange_n(&output_lock, 1U, __ATOMIC_ACQUIRE) != 0U)
+	/* Spins until this CPU owns the output lock, now and then looking for its own stall. */
+	tries = 0;
+	while (__atomic_exchange_n(&output_lock, 1U, __ATOMIC_ACQUIRE) != 0U) {
 		__asm__ volatile("yield" : : : "memory");
+		tries++;
+		if ((tries % ARM64_WATCH_SPIN_INTERVAL) == 0)
+			arm64_watch_self_check();
+	}
 
 	/* Reports the interrupt state the release has to restore. */
 	return interrupts_enabled;

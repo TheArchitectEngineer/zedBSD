@@ -11,5 +11,6 @@
 
 void rpi4_cons_suspend_output(void);
 void rpi4_cons_resume_output(void);
+int rpi4_cons_output_suspended(void);
 
 #endif

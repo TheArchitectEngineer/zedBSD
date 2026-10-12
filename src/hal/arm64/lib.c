@@ -1,5 +1,6 @@
 #include <hal/hal.h>
 #include "asm.h"
+#include "watch.h"
 
 int hal_strlen(const char *s) { int n = 0; while (s[n] != '\0') n++; return n; }
 void *hal_memset(void *p, int c, size_t n)
@@ -68,9 +69,51 @@ int hal_printf(const char *fmt, ...)
 	__builtin_va_end(ap);
 	return 0;
 }
-void hal_assert(const char *f, int l, const char *e)
-{ hal_printf("assert: %s:%u: %s\n", f, (uint32_t)l, e); arm64_irq_mask(); for (;;) arm64_wfe(); }
-void hal_fatal(const char *f, int l, const char *s)
-{ hal_printf("fatal: %s:%u: %s\n", f, (uint32_t)l, s); arm64_irq_mask(); for (;;) arm64_wfe(); }
+/*
+ * Stops the calling CPU on a failed assertion.
+ *
+ * The console may have nowhere to print on a board whose screen a display
+ * driver owns, so the stall watch draws the stop on the screen as well.
+ */
+void
+hal_assert(
+	const char *f,
+	int l,
+	const char *e)
+{
+	/* Prints the failed assertion where the console can. */
+	hal_printf("assert: %s:%u: %s\n", f, (uint32_t)l, e);
+
+	/* Draws it where a photograph of the screen reads it. */
+	arm64_watch_fatal(f, l, e);
+
+	/* Halts with interrupts off for good. */
+	arm64_irq_mask();
+	for (;;)
+		arm64_wfe();
+}
+
+/*
+ * Stops the calling CPU on a fatal error.
+ *
+ * As for hal_assert(), the stall watch draws the stop on the screen.
+ */
+void
+hal_fatal(
+	const char *f,
+	int l,
+	const char *s)
+{
+	/* Prints the site and the message where the console can. */
+	hal_printf("fatal: %s:%u: %s\n", f, (uint32_t)l, s);
+
+	/* Draws them where a photograph of the screen reads them. */
+	arm64_watch_fatal(f, l, s);
+
+	/* Halts with interrupts off for good. */
+	arm64_irq_mask();
+	for (;;)
+		arm64_wfe();
+}
 bool hal_entropy_fill(void *buffer, size_t size)
 { (void)buffer; (void)size; return false; }

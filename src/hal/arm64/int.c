@@ -3,6 +3,7 @@
 #include "int.h"
 #include "task.h"
 #include "irq.h"
+#include "watch.h"
 #include "bsp-rpi4/gic.h"
 #include <uapi/errno.h>
 
@@ -133,17 +134,54 @@ void arm64_sync_handler(struct arm64_exception_frame *f,uint64_t vector)
 	}
 	hal_printf("ARM64 sync vector=%u ec=%x esr=%llx elr=%llx far=%llx\n",
 	    (uint32_t)vector,ec,f->esr,f->elr,f->far);
+
+	/* Keeps the syndrome and the addresses for the stall watch's screen, then stops. */
+	arm64_watch_fault(f->esr, f->elr, f->far);
 	HAL_FATAL("unhandled AArch64 synchronous exception");
 }
 
-void arm64_irq_handler(struct arm64_exception_frame *f, int from_user)
+/*
+ * Takes one interrupt from the GIC and hands it on.
+ *
+ * The stall watch is told which interrupt this CPU serves, since when and
+ * what it interrupted; the interrupted code had interrupts on, so any
+ * older note that they were off is stale and is dropped.
+ */
+void
+arm64_irq_handler(
+	struct arm64_exception_frame *f,
+	int from_user)
 {
-	uint32_t iar,id;
+	struct arm64_percpu *cpu;
+	uint64_t now;
+	uint32_t iar;
+	uint32_t id;
+
+	/* A user context is recorded before the kernel sees the interrupt. */
 	if (from_user)
 		arm64_task_enter_user_frame(f);
-	iar=rpi4_gic_ack();id=iar&0x3ff;
-	if(id<1020)
+
+	/* Acknowledges the interrupt and reads its number. */
+	iar = rpi4_gic_ack();
+	id = iar & 0x3ffU;
+
+	/* Tells the stall watch what this CPU serves now. */
+	cpu = arm64_watch_record();
+	now = arm64_watch_counter();
+	__atomic_store_n(&cpu->watch_irq_off_time, 0U, __ATOMIC_RELAXED);
+	__atomic_store_n(&cpu->watch_irq_elr, f->elr, __ATOMIC_RELAXED);
+	__atomic_store_n(&cpu->watch_irq_time, now, __ATOMIC_RELAXED);
+	__atomic_store_n(&cpu->watch_irq_id, (uint64_t)id + 1U, __ATOMIC_RELAXED);
+
+	/* A real interrupt goes to its handler; a spurious one (1020-1023) is nothing. */
+	if (id < 1020U)
 		arm64_irq_dispatch(id, (hal_irq_ack_t)iar + 1U);
+
+	/* The interrupt is served; a switch inside it already cleared this. */
+	cpu = arm64_watch_record();
+	__atomic_store_n(&cpu->watch_irq_id, 0U, __ATOMIC_RELAXED);
+
+	/* A user context goes back through the kernel's return path. */
 	if (from_user) {
 		kernel_user_return_handler();
 		arm64_task_leave_user_frame();

@@ -19,6 +19,7 @@
 #define KERN_HAL_ARM64_SPIN_H
 
 #include <hal/hal.h>
+#include "watch.h"
 
 /*
  * Takes a HAL lock with interrupts off.
@@ -31,16 +32,21 @@ arm64_spin_lock(
 {
 	bool enabled;
 	bool acquired;
+	unsigned tries;
 
 	/* Keeps this CPU's interrupt handlers out while the lock is held. */
 	enabled = hal_irq_disable();
 
-	/* Spins until the word goes from free to held under this CPU. */
+	/* Spins until the word goes from free to held under this CPU, now and then looking for its own stall. */
+	tries = 0;
 	for (;;) {
 		acquired = hal_atomic_uint_try_acquire(lock);
 		if (acquired)
 			break;
 		hal_atomic_relax();
+		tries++;
+		if ((tries % ARM64_WATCH_SPIN_INTERVAL) == 0)
+			arm64_watch_self_check();
 	}
 
 	/* Succeeded: the lock is held, and the caller keeps the interrupt state. */

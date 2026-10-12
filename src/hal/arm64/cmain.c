@@ -20,6 +20,7 @@
 #include "bsp-rpi4/framebuffer.h"
 #include "bsp-rpi4/led.h"
 #include "percpu.h"
+#include "watch.h"
 
 /* The most bytes of the firmware's device tree the parser may read. */
 #define RPI4_FDT_READ_LIMIT (2U * 1024U * 1024U)
@@ -92,6 +93,7 @@ arm64_cmain(
 	/* Sets up memory, the tables, the task switch, interrupts and debug. */
 	arm64_page_init();
 	arm64_space_init();
+	arm64_watch_init();
 	arm64_context_selftest();
 	arm64_int_init();
 	arm64_debug_init();

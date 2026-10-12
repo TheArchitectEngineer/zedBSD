@@ -16,6 +16,7 @@
 #include "int.h"
 #include "percpu.h"
 #include "spin.h"
+#include "watch.h"
 
 /* The bytes of one saved floating-point state (Q0-Q31, FPCR, FPSR). */
 #define ARM64_FPREGS_SIZE 528U
@@ -531,6 +532,14 @@ hal_task_context_switch(
 	 */
 	cpu->switching_from = from;
 	__atomic_store_n(&to->run_cpu, (int)cpu->logical_id, __ATOMIC_RELEASE);
+
+	/*
+	 * The stall watch counts the switch, which shows this CPU's scheduler
+	 * moving, and stops naming an interrupt: the arriving task does not
+	 * run inside the departing one's.
+	 */
+	__atomic_store_n(&cpu->watch_switches, cpu->watch_switches + 1U, __ATOMIC_RELAXED);
+	__atomic_store_n(&cpu->watch_irq_id, 0U, __ATOMIC_RELAXED);
 
 	/* Keeps the departing task's floating-point state and TLS. */
 	arm64_fp_save(from->fpregs);

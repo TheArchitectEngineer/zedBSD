@@ -3,6 +3,7 @@
 #include "irq.h"
 #include "percpu.h"
 #include "spin.h"
+#include "watch.h"
 #include "bsp-rpi4/gic.h"
 
 #define IRQ_MAX 1020
@@ -24,16 +25,46 @@ static volatile unsigned slots_lock;
 
 void rpi4_timer_interrupt(hal_irq_ack_t acknowledge);
 
+/*
+ * Turns the calling CPU's interrupts off and reports whether they were on.
+ *
+ * The change from on to off is noted for the stall watch with the place
+ * of the code that made it, so a CPU that stops with its interrupts off
+ * is described by where they went off.
+ */
 bool
-hal_irq_disable(void)
+hal_irq_disable(
+	void)
 {
-	uint64_t state = arm64_irq_save();
-	return (state & (1U << 7)) == 0;
+	uint64_t state;
+	uint64_t pc;
+
+	/* Masks IRQs and keeps the mask bit as it was. */
+	state = arm64_irq_save();
+
+	/* Interrupts that were off already were noted when they went off. */
+	if ((state & (1U << 7)) != 0)
+		return false;
+
+	/* Notes when and where they went off: this code, inlined into its caller, and the caller's caller. */
+	__asm__ volatile("adr %0, ." : "=r"(pc));
+	arm64_watch_note_irq_off(pc, (uint64_t)(uintptr_t)__builtin_return_address(0));
+
+	/* Succeeded: interrupts were on, and the caller turns them on again. */
+	return true;
 }
 
+/*
+ * Turns the calling CPU's interrupts on.
+ */
 void
-hal_irq_enable(void)
+hal_irq_enable(
+	void)
 {
+	/* The stall watch learns first that interrupts are on again. */
+	arm64_watch_note_irq_on();
+
+	/* Unmasks IRQs. */
 	arm64_irq_unmask();
 }
 
