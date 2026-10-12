@@ -46,6 +46,9 @@ static int listen_socket(struct kwl_server *server);
 static void unlink_socket(struct kwl_server *server);
 static int accept_client(struct kwl_server *server);
 static void kwl_perf_report(struct kwl_server *server, uint64_t now);
+static void perf_walk_report(const struct kwl_perf *perf, double per_ms);
+static void perf_walk_class(const struct kwl_perf *perf, double per_ms, const char *name, uint32_t lowest, uint32_t highest, unsigned quiet, unsigned replay);
+static int perf_cycles_order(const void *left, const void *right);
 static int event_loop(struct kwl_server *server);
 static void service_cleanup(struct kwl_server *server);
 static uint64_t startup_step(const char *step, uint64_t since);
@@ -1263,6 +1266,9 @@ kwl_perf_report(
 	    (double)perf->cursor_queue_present_cycles / per_ms,
 	    (double)perf->cursor_queue_present_max_cycles / per_ms);
 
+	/* The drawings' walks and replays (ws213-p003). */
+	perf_walk_report(perf, per_ms);
+
 	/* wl_shm's copies: how many, and the CPU time of one. */
 	if (perf->shm_copies != 0) {
 		printf("KWL PERF shm copies=%u copy_ms=%.3f\n",
@@ -1275,6 +1281,110 @@ kwl_perf_report(
 	memset(perf, 0, sizeof(*perf));
 	perf->window_start_ms = now;
 	perf->window_start_cycles = kwl_cycles();
+}
+
+/*
+ * Prints the window's drawings (KWL PERF walk, ws213-p003): the walk that
+ * wrote each frame's display list, by how many things the frame drew
+ * (fewer than 100, 100 to 299, and 300 or more as App Home draws), the
+ * replay that recorded the frames' lists, and the walk and the replay of
+ * the layers' quiet pictures; each as how many, the median, the 90th
+ * percentile and the longest, in milliseconds.
+ */
+static void
+perf_walk_report(
+	const struct kwl_perf *perf,
+	double per_ms)
+{
+	/* Nothing was drawn in the window. */
+	if (perf->walk_count == 0U && perf->walk_dropped == 0U)
+		return;
+
+	/* The drawings kept and those past the window's room. */
+	printf("KWL PERF walk drawings=%u dropped=%u", perf->walk_count, perf->walk_dropped);
+
+	/* The frames' walks by the things they drew, then their replays. */
+	perf_walk_class(perf, per_ms, "small", 0U, 99U, 0U, 0U);
+	perf_walk_class(perf, per_ms, "middle", 100U, 299U, 0U, 0U);
+	perf_walk_class(perf, per_ms, "large", 300U, UINT32_MAX, 0U, 0U);
+	perf_walk_class(perf, per_ms, "replay", 0U, UINT32_MAX, 0U, 1U);
+
+	/* The quiet pictures' walks and replays, and the line's end. */
+	perf_walk_class(perf, per_ms, "quiet", 0U, UINT32_MAX, 1U, 0U);
+	perf_walk_class(perf, per_ms, "quiet_replay", 0U, UINT32_MAX, 1U, 1U);
+	printf("\n");
+}
+
+/*
+ * Prints one class of the window's drawings: those that drew from lowest
+ * to highest things and presented nothing or not (quiet), by their walks'
+ * or their replays' times.
+ */
+static void
+perf_walk_class(
+	const struct kwl_perf *perf,
+	double per_ms,
+	const char *name,
+	uint32_t lowest,
+	uint32_t highest,
+	unsigned quiet,
+	unsigned replay)
+{
+	uint64_t times[KWL_PERF_WALKS];
+	uint32_t count;
+	uint32_t index;
+
+	/* The times of the drawings of the class. */
+	count = 0U;
+	for (index = 0U; index < perf->walk_count; index++) {
+		/* Another class's drawing. */
+		if (perf->walk_quiet[index] != quiet)
+			continue;
+		if (perf->walk_things[index] < lowest || perf->walk_things[index] > highest)
+			continue;
+
+		/* Its walk's or its replay's time. */
+		times[count] = perf->walk_cycles[index];
+		if (replay)
+			times[count] = perf->replay_cycles[index];
+		count++;
+	}
+
+	/* A class with no drawing is shown as empty. */
+	if (count == 0U) {
+		printf(" | %s n=0", name);
+		return;
+	}
+
+	/* The median, the 90th percentile (the nearest lower rank) and the longest. */
+	qsort(times, count, sizeof(times[0]), perf_cycles_order);
+	printf(" | %s n=%u p50=%.2f p90=%.2f max=%.2f",
+	    name,
+	    count,
+	    (double)times[(count - 1U) * 50U / 100U] / per_ms,
+	    (double)times[(count - 1U) * 90U / 100U] / per_ms,
+	    (double)times[count - 1U] / per_ms);
+}
+
+/* Orders two cycle counts from the smaller (qsort's comparison). */
+static int
+perf_cycles_order(
+	const void *left,
+	const void *right)
+{
+	uint64_t first;
+	uint64_t second;
+
+	/* The two counts. */
+	memcpy(&first, left, sizeof(first));
+	memcpy(&second, right, sizeof(second));
+
+	/* Smaller first, equal ones as they are. */
+	if (first < second)
+		return -1;
+	if (first > second)
+		return 1;
+	return 0;
 }
 
 /*

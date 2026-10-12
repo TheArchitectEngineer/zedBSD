@@ -498,7 +498,7 @@ kwl_corner_showing(
 void
 kwl_corner_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float ink[4] = { 0.10f, 0.16f, 0.30f, 1.0f };
 	struct glass_shape shape;

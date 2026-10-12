@@ -48,7 +48,7 @@ static float power_progress(struct kwl_server *server);
 static void power_close(struct kwl_server *server);
 static void power_choose(struct kwl_server *server, int choice, const char *via);
 static void power_logout(struct kwl_server *server);
-static void power_draw_button(struct kwl_server *server, VkCommandBuffer command, const int32_t *rect, int choice, int lit, float progress);
+static void power_draw_button(struct kwl_server *server, struct kwl_list *command, const int32_t *rect, int choice, int lit, float progress);
 static const char *power_words(int choice);
 static int power_enabled(struct kwl_server *server, int choice);
 
@@ -316,7 +316,7 @@ kwl_power_dialog_tick(
 void
 kwl_power_dialog_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	struct kwl_power_dialog *dialog;
 	struct kwl_power_layout layout;
@@ -473,7 +473,7 @@ power_logout(
 static void
 power_draw_button(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const int32_t *rect,
 	int choice,
 	int lit,

@@ -58,7 +58,7 @@ kwl_shot_tick(
 void
 kwl_shot_record(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	VkImage image)
 {
 	(void)server;

@@ -17,6 +17,7 @@
 #ifndef KWL_MEDIA_H
 #define KWL_MEDIA_H
 
+#include "draw-list.h"
 #include "kwl.h"
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
@@ -29,7 +30,7 @@ size_t kwl_media_volumes(struct kl_backend_volume *list, size_t capacity);
 int kwl_media_ask(int mount, const char *id, uint32_t *request);
 int kwl_media_take_result(uint32_t *request, int *error, char *user, size_t size);
 int32_t kwl_media_width(void);
-void kwl_media_draw_icon(struct kwl_server *server, VkCommandBuffer command, int32_t x, const float *ink);
+void kwl_media_draw_icon(struct kwl_server *server, struct kwl_list *command, int32_t x, const float *ink);
 int kwl_media_button(struct kwl_server *server, uint32_t button, uint32_t state);
 
 #endif

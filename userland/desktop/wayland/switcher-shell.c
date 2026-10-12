@@ -436,7 +436,7 @@ kwl_switch_tick(
 void
 kwl_switch_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float faint[4] = { 1.0f, 1.0f, 1.0f, 0.5f };
 	struct apps_view view;

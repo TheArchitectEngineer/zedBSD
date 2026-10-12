@@ -608,9 +608,9 @@ static void keyboard_key_rect(struct kwl_server *server, unsigned row, unsigned 
 static int keyboard_key_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *row, unsigned *column);
 static unsigned keyboard_key_direction(struct kwl_server *server);
 static void keyboard_key_release(struct kwl_server *server);
-static void keyboard_draw_keys(struct kwl_server *server, VkCommandBuffer command);
-static void keyboard_draw_key(struct kwl_server *server, VkCommandBuffer command, const int32_t *rect, const char *label, const float *ground, const float *ink, enum glass_size size);
-static void keyboard_draw_petals(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_keys(struct kwl_server *server, struct kwl_list *command);
+static void keyboard_draw_key(struct kwl_server *server, struct kwl_list *command, const int32_t *rect, const char *label, const float *ground, const float *ink, enum glass_size size);
+static void keyboard_draw_petals(struct kwl_server *server, struct kwl_list *command);
 static unsigned keyboard_characters(const char *text);
 static int keyboard_band_swiped(int32_t x, int32_t y);
 static void keyboard_qwerty_rect(struct kwl_server *server, unsigned row, unsigned index, int32_t *rect);
@@ -620,8 +620,8 @@ static void keyboard_qwerty_release(struct kwl_server *server);
 static void keyboard_qwerty_shift(void);
 static void keyboard_qwerty_log(struct kwl_server *server);
 static void keyboard_follow_field(struct kwl_server *server);
-static void keyboard_draw_qwerty(struct kwl_server *server, VkCommandBuffer command);
-static void keyboard_draw_bubble(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_qwerty(struct kwl_server *server, struct kwl_list *command);
+static void keyboard_draw_bubble(struct kwl_server *server, struct kwl_list *command);
 static void keyboard_band_button_rect(int32_t *rect);
 static void keyboard_hand_area(int32_t *rect);
 static void keyboard_hand_key_rect(unsigned key, int32_t *rect);
@@ -631,7 +631,7 @@ static void keyboard_hand_point(struct kwl_server *server, int32_t x, int32_t y,
 static void keyboard_hand_release(struct kwl_server *server);
 static void keyboard_hand_key_release(struct kwl_server *server);
 static void keyboard_hand_recognize(struct kwl_server *server);
-static void keyboard_draw_hand(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_hand(struct kwl_server *server, struct kwl_list *command);
 static void keyboard_send(struct kwl_server *server, const char *text);
 static int keyboard_send_key(struct kwl_server *server, unsigned code, int shift);
 static void keyboard_key_event(struct kwl_server *server, uint32_t time, unsigned code, uint32_t state);
@@ -649,11 +649,11 @@ static int keyboard_secret(const struct kwl_text_input *input);
 static void keyboard_candidate_rect(struct kwl_server *server, unsigned slot, int32_t *rect);
 static int keyboard_candidate_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *slot);
 static void keyboard_candidate_release(struct kwl_server *server);
-static void keyboard_draw_candidates(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_candidates(struct kwl_server *server, struct kwl_list *command);
 static void keyboard_close_rect(int32_t *rect);
-static void keyboard_draw_panel(struct kwl_server *server, VkCommandBuffer command, const int32_t *rect, float opacity);
-static void keyboard_draw_hint(struct kwl_server *server, VkCommandBuffer command);
-static void keyboard_draw_sliding(struct kwl_server *server, VkCommandBuffer command, int leaving);
+static void keyboard_draw_panel(struct kwl_server *server, struct kwl_list *command, const int32_t *rect, float opacity);
+static void keyboard_draw_hint(struct kwl_server *server, struct kwl_list *command);
+static void keyboard_draw_sliding(struct kwl_server *server, struct kwl_list *command, int leaving);
 static float keyboard_slide(void);
 static void keyboard_work_area(struct kwl_server *server);
 static int keyboard_is_window(const struct kwl_object *surface);
@@ -668,11 +668,11 @@ static int keyboard_tool_enabled(struct kwl_server *server, unsigned index, uint
 static void keyboard_tool_release(struct kwl_server *server);
 static void keyboard_tool_move(struct kwl_server *server, unsigned code);
 static void keyboard_tool_edit(struct kwl_server *server, unsigned action);
-static void keyboard_draw_tools(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_tools(struct kwl_server *server, struct kwl_list *command);
 static void keyboard_history_rect(struct kwl_server *server, unsigned row, int32_t *rect);
 static int keyboard_history_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *row);
 static void keyboard_history_release(struct kwl_server *server);
-static void keyboard_draw_history(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_history(struct kwl_server *server, struct kwl_list *command);
 static void keyboard_emoji_rect(struct kwl_server *server, unsigned slot, int32_t *rect);
 static int keyboard_emoji_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *slot);
 static void keyboard_emoji_release(struct kwl_server *server);
@@ -682,7 +682,7 @@ static uint64_t keyboard_microseconds(void);
 static void keyboard_latency_sent(struct kwl_server *server);
 static void keyboard_slide_frame(int leaving, uint64_t elapsed);
 static int keyboard_slide_unfinished(uint64_t now);
-static void keyboard_draw_emoji(struct kwl_server *server, VkCommandBuffer command);
+static void keyboard_draw_emoji(struct kwl_server *server, struct kwl_list *command);
 static const char *keyboard_kind_name(enum keyboard_kind kind);
 static const char *keyboard_source_name(enum kwl_contact_source source);
 static int keyboard_touch_button(struct kwl_server *server, int32_t x, int32_t y, uint32_t state);
@@ -1180,7 +1180,7 @@ kwl_keyboard_reserved_now(
 void
 kwl_keyboard_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	/* The held key's colours: the accent the user chose, on the panel's ground. */
 	kwl_accent_colour(server, server->dark, KWL_ACCENT_FILL, 1.0f, keyboard_blue);
@@ -1951,7 +1951,7 @@ keyboard_close_rect(
 static void
 keyboard_draw_panel(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const int32_t *rect,
 	float opacity)
 {
@@ -2053,7 +2053,7 @@ keyboard_draw_panel(
 static void
 keyboard_draw_hint(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float ink[4] = { 0.10f, 0.16f, 0.30f, 1.0f };
 	struct glass_shape shape;
@@ -2168,7 +2168,7 @@ keyboard_draw_hint(
 static void
 keyboard_draw_sliding(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int leaving)
 {
 	int32_t kept[4];
@@ -2359,7 +2359,7 @@ keyboard_key_release(
 static void
 keyboard_draw_keys(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
 	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
@@ -2402,7 +2402,7 @@ keyboard_draw_keys(
 static void
 keyboard_draw_key(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const int32_t *rect,
 	const char *label,
 	const float *ground,
@@ -2438,7 +2438,7 @@ keyboard_draw_key(
 static void
 keyboard_draw_petals(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
@@ -3045,7 +3045,7 @@ keyboard_follow_field(
 static void
 keyboard_draw_qwerty(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
 	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
@@ -3106,7 +3106,7 @@ keyboard_draw_qwerty(
 static void
 keyboard_draw_bubble(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
@@ -3417,7 +3417,7 @@ keyboard_hand_recognize(
 static void
 keyboard_draw_hand(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float paper[4] = { 1.0f, 1.0f, 1.0f, 0.80f };
 	static const float guide[4] = { 0.12f, 0.16f, 0.24f, 0.10f };
@@ -4157,7 +4157,7 @@ keyboard_tool_edit(
 static void
 keyboard_draw_tools(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
 	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
@@ -4296,7 +4296,7 @@ keyboard_history_release(
 static void
 keyboard_draw_history(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
@@ -4502,7 +4502,7 @@ keyboard_emoji_log(
 static void
 keyboard_draw_emoji(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
 	static const float pale[4] = { 0.78f, 0.86f, 0.99f, 1.0f };
@@ -5021,7 +5021,7 @@ keyboard_candidate_release(
 static void
 keyboard_draw_candidates(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };

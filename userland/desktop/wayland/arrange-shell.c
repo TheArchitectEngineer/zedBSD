@@ -282,7 +282,7 @@ static int arrange_slot_of(unsigned desktop, unsigned output, const struct kwl_o
 static int arrange_menu_view(struct kwl_server *server, struct arrange_view *view);
 static float arrange_menu_grown(struct kwl_server *server);
 static void arrange_menu_grow(struct kwl_server *server, float grown, struct arrange_view *view);
-static void arrange_draw_icon(struct kwl_server *server, VkCommandBuffer command, unsigned layout, float x, float y, float scale, const float *ink, float alpha);
+static void arrange_draw_icon(struct kwl_server *server, struct kwl_list *command, unsigned layout, float x, float y, float scale, const float *ink, float alpha);
 static void arrange_swap_end(struct kwl_server *server);
 static int arrange_moving(void);
 
@@ -1178,7 +1178,7 @@ kwl_arrange_showing(
 void
 kwl_arrange_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float soft[4] = { 0.40f, 0.46f, 0.56f, 1.0f };
@@ -1915,7 +1915,7 @@ arrange_output(
 static void
 arrange_draw_icon(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned layout,
 	float x,
 	float y,

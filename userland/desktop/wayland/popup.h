@@ -47,14 +47,14 @@ void kwl_popup_mapped(struct kwl_server *server, struct kwl_object *surface);
 void kwl_popup_object_gone(struct kwl_object *object);
 int kwl_popup_origin(struct kwl_server *server, struct kwl_object *surface, int32_t *x, int32_t *y);
 unsigned kwl_popup_collect(struct kwl_server *server, struct kwl_object **popups, unsigned capacity);
-void kwl_popup_draw(struct kwl_server *server, VkCommandBuffer command);
+void kwl_popup_draw(struct kwl_server *server, struct kwl_list *command);
 struct kwl_object *kwl_popup_focus(struct kwl_server *server, struct kwl_object *target);
 struct kwl_object *kwl_popup_chain_at(struct kwl_server *server);
 struct kwl_object *kwl_popup_root(struct kwl_object *surface);
 int kwl_popup_button(struct kwl_server *server, uint32_t button, uint32_t state);
 
 /* What popup.c needs from the compositor and the shell. */
-void kwl_compose_surface_quad(struct kwl_server *server, VkCommandBuffer command, const struct kwl_object *surface, const struct kwl_import *import, int32_t x, int32_t y);
+void kwl_compose_surface_quad(struct kwl_server *server, struct kwl_list *command, const struct kwl_object *surface, const struct kwl_import *import, int32_t x, int32_t y);
 int kwl_glass_body_origin(struct kwl_server *server, struct kwl_object *surface, int32_t *x, int32_t *y);
 struct kwl_object *kwl_glass_body_at(struct kwl_server *server, int32_t x, int32_t y);
 void kwl_seat_pointer_move(struct kwl_server *server, struct kwl_object *from, struct kwl_object *to);

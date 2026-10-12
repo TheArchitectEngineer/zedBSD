@@ -286,16 +286,16 @@ static void network_log_state(void);
 static unsigned network_switch_on(void);
 static void network_switch_settle(struct kwl_server *server);
 static void network_log_layout(void);
-static void network_draw_bars(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t bottom, unsigned lit, const float *ink, float faint);
-static void network_draw_fan(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t middle, unsigned lit, const float *ink, float faint);
-static void network_draw_wired(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t middle, const float *ink);
-static void network_draw_row(struct kwl_server *server, VkCommandBuffer command, const struct network_row *row, int32_t top, unsigned over);
-static void network_draw_row_in(struct kwl_server *server, VkCommandBuffer command, const struct network_row *row, int32_t top, unsigned over);
+static void network_draw_bars(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t bottom, unsigned lit, const float *ink, float faint);
+static void network_draw_fan(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t middle, unsigned lit, const float *ink, float faint);
+static void network_draw_wired(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t middle, const float *ink);
+static void network_draw_row(struct kwl_server *server, struct kwl_list *command, const struct network_row *row, int32_t top, unsigned over);
+static void network_draw_row_in(struct kwl_server *server, struct kwl_list *command, const struct network_row *row, int32_t top, unsigned over);
 static unsigned network_ink_as_is(struct kwl_server *server, unsigned over);
-static void network_draw_check(struct kwl_server *server, VkCommandBuffer command, int32_t left, int32_t middle, int32_t baseline, const float *ink);
-static void network_draw_disconnect(struct kwl_server *server, VkCommandBuffer command, const struct network_row *row, int32_t top, int on_button);
-static void network_draw_switch(struct kwl_server *server, VkCommandBuffer command, int32_t right, int32_t middle, unsigned on);
-static void network_draw_lock(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t middle, const float *ink);
+static void network_draw_check(struct kwl_server *server, struct kwl_list *command, int32_t left, int32_t middle, int32_t baseline, const float *ink);
+static void network_draw_disconnect(struct kwl_server *server, struct kwl_list *command, const struct network_row *row, int32_t top, int on_button);
+static void network_draw_switch(struct kwl_server *server, struct kwl_list *command, int32_t right, int32_t middle, unsigned on);
+static void network_draw_lock(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t middle, const float *ink);
 static unsigned network_strength(int rssi);
 static const char *network_request_name(unsigned request);
 static const char *network_request_phrase(unsigned request);
@@ -314,7 +314,7 @@ static void network_connecting(const char *ssid);
 static void network_info_open(struct kwl_server *server);
 static void network_info_close(struct kwl_server *server, const char *via);
 static void network_info_place(struct kwl_server *server);
-static void network_info_draw(struct kwl_server *server, VkCommandBuffer command);
+static void network_info_draw(struct kwl_server *server, struct kwl_list *command);
 
 /*
  * Reads what the network watch has brought since the last tick, and makes
@@ -419,7 +419,7 @@ kwl_network_tick(
 void
 kwl_network_draw_icon(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t top,
 	const float *ink)
@@ -481,7 +481,7 @@ kwl_network_draw_icon(
 void
 kwl_network_draw_menu(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	struct glass_shape shape;
 	const struct network_row *over;
@@ -1469,7 +1469,7 @@ network_log_layout(
 static void
 network_draw_fan(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t middle,
 	unsigned lit,
@@ -1497,7 +1497,7 @@ network_draw_fan(
 static void
 network_draw_bars(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t bottom,
 	unsigned lit,
@@ -1522,7 +1522,7 @@ network_draw_bars(
 static void
 network_draw_wired(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t middle,
 	const float *ink)
@@ -1551,7 +1551,7 @@ network_draw_wired(
 static void
 network_draw_row(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct network_row *row,
 	int32_t top,
 	unsigned over)
@@ -1564,7 +1564,7 @@ network_draw_row(
 static void
 network_draw_row_in(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct network_row *row,
 	int32_t top,
 	unsigned over)
@@ -1744,7 +1744,7 @@ network_ink_as_is(
 static void
 network_draw_switch(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t right,
 	int32_t middle,
 	unsigned on)
@@ -1775,7 +1775,7 @@ network_draw_switch(
 static void
 network_draw_lock(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t middle,
 	const float *ink)
@@ -2321,7 +2321,7 @@ network_in_disconnect(
 static void
 network_draw_check(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t left,
 	int32_t middle,
 	int32_t baseline,
@@ -2342,7 +2342,7 @@ network_draw_check(
 static void
 network_draw_disconnect(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct network_row *row,
 	int32_t top,
 	int on_button)
@@ -2438,7 +2438,7 @@ network_info_place(
 static void
 network_info_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float soft[4] = { 0.40f, 0.46f, 0.56f, 1.0f };

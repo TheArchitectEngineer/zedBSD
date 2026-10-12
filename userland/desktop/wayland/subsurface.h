@@ -20,7 +20,7 @@ int kwl_subsurface_request(struct kwl_object *subsurface, uint32_t opcode, const
 int kwl_subsurface_commit(struct kwl_object *surface);
 void kwl_subsurface_applied(struct kwl_object *surface);
 void kwl_subsurface_object_gone(struct kwl_object *object);
-void kwl_subsurface_draw(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *parent, float x, float y, float scale_x, float scale_y, unsigned above);
+void kwl_subsurface_draw(struct kwl_server *server, struct kwl_list *command, struct kwl_object *parent, float x, float y, float scale_x, float scale_y, unsigned above);
 unsigned kwl_subsurface_collect(struct kwl_server *server, struct kwl_object **surfaces, unsigned capacity);
 struct kwl_object *kwl_subsurface_at(struct kwl_object *root, int32_t x, int32_t y);
 

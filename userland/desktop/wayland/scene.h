@@ -11,6 +11,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include "draw-list.h"
+
 /* One output owns its cache until idle teardown; only a successful frame makes it valid. */
 struct kwl_scene {
 	VkBuffer buffer;
@@ -24,6 +26,6 @@ struct kwl_scene {
 
 VkResult kwl_scene_open(struct kwl_scene *scene, VkPhysicalDevice physical, VkDevice device, uint32_t width, uint32_t height);
 void kwl_scene_close(struct kwl_scene *scene, VkDevice device);
-void kwl_scene_copy(struct kwl_scene *scene, VkCommandBuffer command, VkImage image, const VkRect2D *region, unsigned restore);
+void kwl_scene_copy(struct kwl_scene *scene, struct kwl_list *command, VkImage image, const VkRect2D *region, unsigned restore);
 
 #endif

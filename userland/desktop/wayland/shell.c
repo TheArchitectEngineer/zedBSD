@@ -401,18 +401,18 @@ struct shell_bar {
 static int glass_still(struct kwl_server *server, int hover);
 static void bar_layout(struct kwl_server *server, struct shell_bar *bar);
 static void bar_layout_on(struct kwl_server *server, unsigned slot, struct shell_bar *bar);
-static void draw_window(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, unsigned focused, const struct shell_bar *bar);
+static void draw_window(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, unsigned focused, const struct shell_bar *bar);
 static int window_shown(struct kwl_server *server, struct kwl_object *surface, float home, float position);
 static void window_layer(struct kwl_server *server, struct kwl_object *surface, float home, float position);
-static void draw_backdrop(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned below, float position);
-static void draw_window_blurred(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface);
-static void draw_body(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *body, unsigned focused);
-static void draw_body_part(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *body, unsigned focused, unsigned part);
-static void draw_title_bar(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
-static void draw_title(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
-static int draw_picture_mark(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, int32_t x, int32_t middle, const float *ink);
+static void draw_backdrop(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned below, float position);
+static void draw_window_blurred(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface);
+static void draw_body(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct shell_rect *body, unsigned focused);
+static void draw_body_part(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct shell_rect *body, unsigned focused, unsigned part);
+static void draw_title_bar(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct shell_rect *panel, float fade, float buttons, unsigned focused);
+static void draw_title(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, int32_t x, int32_t middle, int32_t limit, const float *ink);
+static int draw_picture_mark(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, int32_t x, int32_t middle, const float *ink);
 static enum glass_hole mark_hole(struct kwl_server *server);
-static void draw_letter_mark(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const char *title, int32_t x, int32_t middle);
+static void draw_letter_mark(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const char *title, int32_t x, int32_t middle);
 static int32_t title_end(struct kwl_server *server, struct kwl_object *surface, int32_t limit);
 static const char *mark_name(const char *app_id);
 static unsigned window_square(const struct kwl_object *surface);
@@ -421,22 +421,22 @@ static void glass_clear_edges(struct kwl_server *server, int32_t width, int32_t 
 static int glass_top(struct kwl_server *server, struct kwl_object *surface, int32_t *x, int32_t *y);
 static int glass_placed(struct kwl_server *server, struct kwl_object *surface, struct kwl_object *other);
 static void shown_title(const struct kwl_object *surface, char *title, size_t size);
-static void draw_sign(struct kwl_server *server, VkCommandBuffer command, int button, int32_t cx, int32_t cy, unsigned restore, unsigned over, float fade, const float *ink);
-static void draw_system_bar(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar);
-static void draw_bar_strip(struct kwl_server *server, VkCommandBuffer command, const struct glass_bar_colours *colours, int32_t x, int32_t y, int32_t width);
-static void draw_bar_buttons(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, struct kwl_object *docked, const struct glass_bar_colours *colours);
-static void draw_bar_group_faded(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t width, int32_t height, float opacity);
-static void draw_bar_group_at(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t bar_top, int32_t width, int32_t height, float opacity);
-static void draw_head_bar(struct kwl_server *server, VkCommandBuffer command, unsigned slot);
+static void draw_sign(struct kwl_server *server, struct kwl_list *command, int button, int32_t cx, int32_t cy, unsigned restore, unsigned over, float fade, const float *ink);
+static void draw_system_bar(struct kwl_server *server, struct kwl_list *command, const struct shell_bar *bar);
+static void draw_bar_strip(struct kwl_server *server, struct kwl_list *command, const struct glass_bar_colours *colours, int32_t x, int32_t y, int32_t width);
+static void draw_bar_buttons(struct kwl_server *server, struct kwl_list *command, const struct shell_bar *bar, struct kwl_object *docked, const struct glass_bar_colours *colours);
+static void draw_bar_group_faded(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t width, int32_t height, float opacity);
+static void draw_bar_group_at(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t bar_top, int32_t width, int32_t height, float opacity);
+static void draw_head_bar(struct kwl_server *server, struct kwl_list *command, unsigned slot);
 static int head_bar_press(struct kwl_server *server, unsigned slot);
 static void bar_dock_follow(struct kwl_server *server);
-static void draw_bar_group(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t width, int32_t height);
-static void draw_desktops(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const struct glass_bar_colours *colours);
-static void draw_status(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, const float *ink);
-static void draw_home_status(struct kwl_server *server, VkCommandBuffer command, const struct shell_bar *bar, float opacity);
+static void draw_bar_group(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t width, int32_t height);
+static void draw_desktops(struct kwl_server *server, struct kwl_list *command, const struct shell_bar *bar, const struct glass_bar_colours *colours);
+static void draw_status(struct kwl_server *server, struct kwl_list *command, const struct shell_bar *bar, const float *ink);
+static void draw_home_status(struct kwl_server *server, struct kwl_list *command, const struct shell_bar *bar, float opacity);
 static int home_bar_passes(struct kwl_server *server, uint32_t state);
-static void draw_battery(struct kwl_server *server, VkCommandBuffer command, int32_t x, int32_t middle, int percent, unsigned charging, const float *ink);
-static void draw_dock_hint(struct kwl_server *server, VkCommandBuffer command);
+static void draw_battery(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t middle, int percent, unsigned charging, const float *ink);
+static void draw_dock_hint(struct kwl_server *server, struct kwl_list *command);
 static float animation_progress(struct kwl_server *server);
 static void lerp_rect(const struct shell_rect *from, const struct shell_rect *to, float t, struct shell_rect *result);
 static void body_rect(struct kwl_server *server, const struct kwl_object *surface, struct shell_rect *body);
@@ -471,7 +471,7 @@ static struct kwl_object *sheet_owner(struct kwl_object *surface);
 static void sheet_narrow(struct kwl_server *server, struct kwl_object *surface, struct kwl_object *parent, int32_t width, int32_t height);
 static void sheet_anchor(struct kwl_server *server, struct kwl_object *parent, int32_t width, int32_t height, int32_t *x, int32_t *top);
 static int sheet_centred(struct kwl_server *server, const struct kwl_object *parent);
-static void draw_sheet(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, struct kwl_object *parent, unsigned focused);
+static void draw_sheet(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, struct kwl_object *parent, unsigned focused);
 static void window_dock(struct kwl_server *server, struct kwl_object *surface, int32_t restore_x, int32_t restore_y, const char *via);
 static void window_undock(struct kwl_server *server, struct kwl_object *surface, int32_t x, int32_t y, const char *via);
 static void window_configure(struct kwl_object *surface);
@@ -490,7 +490,7 @@ static void layout_log_windows(struct kwl_server *server, unsigned slot);
 static void docked_body(struct kwl_server *server, const struct kwl_object *surface, struct shell_rect *body);
 static void dock_restore_default(struct kwl_server *server, struct kwl_object *surface);
 static int window_centred_over(struct kwl_server *server, const struct kwl_object *surface);
-static void draw_centred_cover(struct kwl_server *server, VkCommandBuffer command);
+static void draw_centred_cover(struct kwl_server *server, struct kwl_list *command);
 static unsigned double_click(struct kwl_server *server, struct kwl_object *surface);
 static int title_tap_release(struct kwl_server *server);
 static unsigned title_clicks(struct kwl_server *server, struct kwl_object *surface);
@@ -526,8 +526,8 @@ static void wiseview_key(struct kwl_server *server, uint32_t key, uint32_t state
 static void wiseview_close_key(struct kwl_server *server);
 static unsigned wiseview_windows(struct kwl_server *server, struct kwl_object **windows, unsigned capacity);
 static void wiseview_layout(struct kwl_server *server, struct kwl_object **windows, unsigned count, struct shell_rect *tiles);
-static void draw_wiseview(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **stacked, unsigned stacked_count, float progress);
-static void draw_tile(struct kwl_server *server, VkCommandBuffer command, struct kwl_object *surface, const struct shell_rect *tile, float progress, unsigned current, unsigned over);
+static void draw_wiseview(struct kwl_server *server, struct kwl_list *command, struct kwl_object **stacked, unsigned stacked_count, float progress);
+static void draw_tile(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, const struct shell_rect *tile, float progress, unsigned current, unsigned over);
 static int wiseview_button(struct kwl_server *server, uint32_t button, uint32_t state);
 static void wiseview_log(struct kwl_server *server);
 static int home_edge_press(struct kwl_server *server, uint32_t button, uint32_t state);
@@ -537,7 +537,7 @@ static int32_t band_depth(struct kwl_server *server);
 static void band_replay(struct kwl_server *server, int release);
 static void band_tick(struct kwl_server *server);
 static void band_handback(struct kwl_server *server, int lifted);
-static void draw_desktop_layer(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count, float home, const struct shell_bar *bar);
+static void draw_desktop_layer(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count, float home, const struct shell_bar *bar);
 static void home_layer_log(unsigned hidden);
 
 /*
@@ -597,8 +597,8 @@ static float desktop_position(struct kwl_server *server);
 static void desktop_turn(struct kwl_server *server, int target, const char *via);
 static void desktop_release(struct kwl_server *server);
 static unsigned desktop_windows(struct kwl_server *server, unsigned desktop);
-static void draw_home_picture(struct kwl_server *server, VkCommandBuffer command, float home);
-static void draw_layer_animated(struct kwl_server *server, VkCommandBuffer command, struct kwl_object **windows, unsigned count, float home, const struct shell_bar *bar);
+static void draw_home_picture(struct kwl_server *server, struct kwl_list *command, float home);
+static void draw_layer_animated(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count, float home, const struct shell_bar *bar);
 
 /*
  * Draws the wallpaper, the windows from the bottom with their shadows and
@@ -607,7 +607,7 @@ static void draw_layer_animated(struct kwl_server *server, VkCommandBuffer comma
 void
 kwl_glass_draw(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object **windows,
 	unsigned count)
 {
@@ -862,7 +862,7 @@ kwl_glass_draw(
 void
 kwl_glass_draw_head(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object **windows,
 	unsigned count)
 {
@@ -1980,7 +1980,7 @@ kwl_glass_lower(
 void
 kwl_glass_draw_drag_badge(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float edge[4] = { 0.12f, 0.16f, 0.24f, 0.35f };
 	static const float page[4] = { 1.0f, 1.0f, 1.0f, 0.97f };
@@ -2016,7 +2016,7 @@ kwl_glass_draw_drag_badge(
 void
 kwl_glass_draw_drag_mark(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned state)
 {
 	static const float copy_green[4] = { 0.19f, 0.69f, 0.31f, 0.95f };
@@ -3619,7 +3619,7 @@ window_layer(
 static void
 draw_backdrop(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object **windows,
 	unsigned below,
 	float position)
@@ -3666,7 +3666,7 @@ draw_backdrop(
 static void
 draw_window_blurred(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface)
 {
 	struct shell_rect body;
@@ -3705,7 +3705,7 @@ draw_window_blurred(
 static void
 draw_window(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	unsigned focused,
 	const struct shell_bar *bar)
@@ -3820,7 +3820,7 @@ draw_window(
 static void
 draw_body(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	const struct shell_rect *body,
 	unsigned focused)
@@ -3838,7 +3838,7 @@ draw_body(
 static void
 draw_body_part(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	const struct shell_rect *body,
 	unsigned focused,
@@ -4033,7 +4033,7 @@ draw_body_part(
 static void
 draw_title_bar(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	const struct shell_rect *panel,
 	float fade,
@@ -4124,7 +4124,7 @@ draw_title_bar(
 static void
 draw_title(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	int32_t x,
 	int32_t middle,
@@ -4155,7 +4155,7 @@ draw_title(
 static int
 draw_picture_mark(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	int32_t x,
 	int32_t middle,
@@ -4209,7 +4209,7 @@ mark_hole(
 static void
 draw_letter_mark(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	const char *title,
 	int32_t x,
@@ -4356,7 +4356,7 @@ shown_title(
 static void
 draw_sign(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int button,
 	int32_t cx,
 	int32_t cy,
@@ -4447,7 +4447,7 @@ draw_sign(
 static void
 draw_system_bar(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct shell_bar *bar)
 {
 	struct glass_bar_colours colours;
@@ -4573,7 +4573,7 @@ draw_system_bar(
 static void
 draw_head_bar(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	unsigned slot)
 {
 	struct glass_bar_colours colours;
@@ -4747,7 +4747,7 @@ head_bar_press(
 static void
 draw_bar_strip(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct glass_bar_colours *colours,
 	int32_t x,
 	int32_t y,
@@ -4826,7 +4826,7 @@ draw_bar_strip(
 static void
 draw_bar_group(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t width,
 	int32_t height)
@@ -4839,7 +4839,7 @@ draw_bar_group(
 static void
 draw_bar_group_faded(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t width,
 	int32_t height,
@@ -4853,7 +4853,7 @@ draw_bar_group_faded(
 static void
 draw_bar_group_at(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t bar_top,
 	int32_t width,
@@ -4891,7 +4891,7 @@ draw_bar_group_at(
 static void
 draw_bar_buttons(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct shell_bar *bar,
 	struct kwl_object *docked,
 	const struct glass_bar_colours *colours)
@@ -4938,7 +4938,7 @@ draw_bar_buttons(
 static void
 draw_desktops(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct shell_bar *bar,
 	const struct glass_bar_colours *colours)
 {
@@ -4999,7 +4999,7 @@ draw_desktops(
 static void
 draw_status(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct shell_bar *bar,
 	const float *ink)
 {
@@ -5049,7 +5049,7 @@ draw_status(
 static void
 draw_home_status(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	const struct shell_bar *bar,
 	float opacity)
 {
@@ -5135,7 +5135,7 @@ home_bar_passes(
 static void
 draw_battery(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	int32_t x,
 	int32_t middle,
 	int percent,
@@ -5184,7 +5184,7 @@ draw_battery(
 static void
 draw_dock_hint(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float fill[4] = { 1.0f, 1.0f, 1.0f, 0.22f };
 	struct glass_shape shape;
@@ -6145,7 +6145,7 @@ sheet_centred(
 static void
 draw_sheet(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	struct kwl_object *parent,
 	unsigned focused)
@@ -6185,7 +6185,7 @@ draw_sheet(
 	cut.extent.height = (uint32_t)(bottom - cut.offset.y);
 	kwl_batch_flush(server, command);
 	server->compose->scissor_now = cut;
-	vkCmdSetScissor(command, 0U, 1U, &cut);
+	kwl_list_set_scissor(command, 0U, 1U, &cut);
 
 	/* The body, and a hairline along the seam with the title bar. */
 	draw_body(server, command, surface, &body, focused);
@@ -6194,7 +6194,7 @@ draw_sheet(
 	/* The frame's scissor back. */
 	kwl_batch_flush(server, command);
 	server->compose->scissor_now = saved;
-	vkCmdSetScissor(command, 0U, 1U, &saved);
+	kwl_list_set_scissor(command, 0U, 1U, &saved);
 }
 
 /*
@@ -7107,7 +7107,7 @@ window_centred_over(
 static void
 draw_centred_cover(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	static const float shade[4] = { 0.02f, 0.03f, 0.06f, 0.32f };
 	struct glass_shape shape;
@@ -8371,7 +8371,7 @@ wiseview_layout(
 static void
 draw_wiseview(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object **stacked,
 	unsigned stacked_count,
 	float progress)
@@ -8477,7 +8477,7 @@ draw_wiseview(
 static void
 draw_tile(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	const struct shell_rect *tile,
 	float progress,
@@ -9170,7 +9170,7 @@ kwl_glass_switch_place(
 void
 kwl_glass_draw_app_mark(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	int32_t x,
 	int32_t middle,
@@ -9238,7 +9238,7 @@ kwl_glass_draw_app_mark(
 void
 kwl_glass_draw_preview(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object *surface,
 	int32_t x,
 	int32_t y,
@@ -10313,7 +10313,7 @@ desktop_alt_shift_key(
 static void
 draw_desktop_layer(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object **windows,
 	unsigned count,
 	float home,
@@ -10411,7 +10411,7 @@ home_layer_log(
 static void
 draw_home_picture(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	float home)
 {
 	struct kwl_edge_depth depth;
@@ -10484,7 +10484,7 @@ draw_home_picture(
 static void
 draw_layer_animated(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object **windows,
 	unsigned count,
 	float home,
@@ -10520,7 +10520,7 @@ draw_layer_animated(
 void
 kwl_glass_draw_desktop_picture(
 	struct kwl_server *server,
-	VkCommandBuffer command,
+	struct kwl_list *command,
 	struct kwl_object **windows,
 	unsigned count)
 {
@@ -10561,7 +10561,7 @@ kwl_glass_draw_desktop_picture(
 void
 kwl_glass_draw_anim_picture(
 	struct kwl_server *server,
-	VkCommandBuffer command)
+	struct kwl_list *command)
 {
 	struct shell_rect from;
 

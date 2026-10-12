@@ -14,11 +14,13 @@
  * its floor lines joined (batch.c) and drawn alone; a drag's partial redraw
  * with the cut scissor; the backdrop's small passes; two heads (a mirror's
  * blit and an extended head's pass); a layer's quiet picture; the scene's
- * capture and restoration (scene.c); and a test image's capture.  The fake
- * Vulkan writes every command with its arguments as a line, descriptor sets
- * by the (image, kind) they stand for, and each scene ends with a sum of
- * the joined quads' vertices.  The lines are compared with the golden file
- * taken from the direct recording (the first commit of ws213-p003).
+ * capture and restoration (scene.c); and a test image's capture.  Each
+ * scene is written into a display list (draw-list.c) and replayed into a
+ * fake command buffer, whose Vulkan writes every command with its arguments
+ * as a line, descriptor sets by the (image, kind) they stand for; each
+ * scene ends with a sum of the joined quads' vertices the replay wrote.
+ * The lines are compared with the golden file taken from the direct
+ * recording (the first commit of ws213-p003).
  */
 
 #include "userland/desktop/wayland/compose.h"
@@ -36,8 +38,8 @@
 #define TEST_WIDTH		1920U
 #define TEST_HEIGHT		1080U
 
-/* A recording the scenes write into (the command buffer of the direct recording). */
-typedef VkCommandBuffer test_target;
+/* A recording the scenes write into: the display list. */
+typedef struct kwl_list *test_target;
 
 /* One handle the lines show by a name. */
 struct test_name {
@@ -55,15 +57,18 @@ static unsigned test_name_count;
 /* The file the lines go to (the output compared with the golden file). */
 static FILE *test_out;
 
-/* The joined quads' vertex buffer the batch writes (batch.c maps it in the compositor). */
+/* The joined quads' vertex buffer the replay writes (batch.c maps it in the compositor). */
 static uint8_t test_vertices[1024U * 1024U];
+
+/* The fake command buffer the lists are replayed into. */
+static VkCommandBuffer test_command;
 
 static void test_line(const char *format, ...);
 static const char *test_handle_name(uint64_t handle);
 static uint64_t test_handle(const char *name);
 static void test_floats(const char *what, const float *values, unsigned count);
 static void test_image_barriers(uint32_t count, const VkImageMemoryBarrier *barriers);
-static void test_scene_begin(struct kwl_server *server, const char *name);
+static void test_scene_begin(struct kwl_server *server, test_target target, const char *name);
 static void test_scene_end(struct kwl_server *server, test_target target);
 static void test_pass(test_target target, const char *pass, const char *framebuffer, const VkRect2D *area, unsigned clear);
 static void test_view(test_target target, uint32_t width, uint32_t height, const VkRect2D *scissor);
@@ -78,6 +83,7 @@ static void scene_heads(struct kwl_server *server, test_target target);
 static void scene_bake(struct kwl_server *server, test_target target);
 static void scene_capture(struct kwl_server *server, test_target target);
 static void scene_shot(struct kwl_server *server, test_target target);
+static void test_growth(struct kwl_server *server);
 
 /* Writes the beginning of a render pass. */
 VKAPI_ATTR void VKAPI_CALL
@@ -456,7 +462,8 @@ main(
 {
 	static struct kwl_server server;
 	static struct kwl_compose compose;
-	VkCommandBuffer command;
+	static struct kwl_list list;
+	struct kwl_list *command;
 
 	/* The lines' file. */
 	test_out = stdout;
@@ -490,7 +497,8 @@ main(
 	compose.scene.buffer = (VkBuffer)(uintptr_t)test_handle("scene-buffer");
 	compose.scene.width = TEST_WIDTH;
 	compose.scene.height = TEST_HEIGHT;
-	command = (VkCommandBuffer)(uintptr_t)test_handle("frame-command");
+	test_command = (VkCommandBuffer)(uintptr_t)test_handle("frame-command");
+	command = &list;
 
 	/* Each scene, with the batch on, then App Home with it off. */
 	compose.batch.ready = 1U;
@@ -505,7 +513,12 @@ main(
 	compose.batch.ready = 0U;
 	scene_home(&server, command);
 
-	/* The lines are written. */
+	/* A list that grows past its first room keeps every operation, array and vertex (not in the golden file). */
+	compose.batch.ready = 1U;
+	test_growth(&server);
+
+	/* The lines are written, and the list's memory freed. */
+	kwl_list_free(&list);
 	if (test_out != stdout)
 		fclose(test_out);
 
@@ -617,20 +630,26 @@ test_image_barriers(
 	}
 }
 
-/* Starts a scene's recording, as compose_record does. */
+/* Starts a scene's recording, as kwl_compose_list_begin does. */
 static void
 test_scene_begin(
 	struct kwl_server *server,
+	test_target target,
 	const char *name)
 {
-	/* The scene's name, then a fresh recording. */
+	/* The scene's name, then an empty list with nothing bound and no quad waiting. */
 	test_line("scene %s", name);
 	memset(test_vertices, 0, sizeof(test_vertices));
+	kwl_list_reset(target);
 	kwl_compose_bind_forget(server->compose);
 	kwl_batch_begin(server->compose);
 }
 
-/* Ends a scene's recording: the joined quads' vertices are summed as the GPU would read them. */
+/*
+ * Ends a scene's recording as compose_replay does: the list's vertices
+ * where the batch's draws read them, its operations into the fake command
+ * buffer; then the vertices are summed as the GPU would read them.
+ */
 static void
 test_scene_end(
 	struct kwl_server *server,
@@ -639,7 +658,13 @@ test_scene_end(
 	uint32_t sum;
 	uint32_t index;
 
-	(void)target;
+	/* The list grew as it was written, and the batch's offsets are the list's. */
+	assert(!target->failed);
+	assert(target->vertex_used == server->compose->batch.used);
+
+	/* The replay. */
+	memcpy(test_vertices, target->vertices, target->vertex_used);
+	kwl_list_replay(target, test_command);
 
 	/* A sum of the bytes the batch's draws read. */
 	sum = 0U;
@@ -675,7 +700,7 @@ test_pass(
 	begin.renderArea = *area;
 	begin.clearValueCount = clear;
 	begin.pClearValues = &colour;
-	vkCmdBeginRenderPass(target, &begin, VK_SUBPASS_CONTENTS_INLINE);
+	kwl_list_begin_render_pass(target, &begin, VK_SUBPASS_CONTENTS_INLINE);
 }
 
 /* Places the whole target and keeps the drawing to a scissor. */
@@ -693,8 +718,8 @@ test_view(
 	viewport.width = (float)width;
 	viewport.height = (float)height;
 	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(target, 0U, 1U, &viewport);
-	vkCmdSetScissor(target, 0U, 1U, scissor);
+	kwl_list_set_viewport(target, 0U, 1U, &viewport);
+	kwl_list_set_scissor(target, 0U, 1U, scissor);
 }
 
 /* Binds every quad's corners and forgets the binds, as a pass's start does. */
@@ -707,7 +732,7 @@ test_corners(
 
 	/* The corners from the buffer's start. */
 	offset = 0U;
-	vkCmdBindVertexBuffers(target, 0U, 1U, &server->compose->corners, &offset);
+	kwl_list_bind_vertex_buffers(target, 0U, 1U, &server->compose->corners, &offset);
 	kwl_compose_bind_forget(server->compose);
 }
 
@@ -735,8 +760,8 @@ test_quad(
 	/* The waiting quads first, the image's pipeline and set, the constants, the draw. */
 	kwl_batch_flush(server, target);
 	kwl_compose_bind(server, target, server->compose->pipelines[1], server->compose->layout, (VkDescriptorSet)(uintptr_t)test_handle(set));
-	vkCmdPushConstants(target, server->compose->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
-	vkCmdDraw(target, KWL_QUAD_VERTICES, 1U, 0U, 0U);
+	kwl_list_push_constants(target, server->compose->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
+	kwl_list_draw(target, KWL_QUAD_VERTICES, 1U, 0U, 0U);
 }
 
 /* Draws a glass shape, joined to the batch when it is a small solid quad, as glass_shape_draw does. */
@@ -789,8 +814,8 @@ test_shape(
 	kwl_batch_flush(server, target);
 	pipeline = server->compose->panel_pipelines[mode];
 	kwl_compose_bind(server, target, pipeline, server->compose->panel_layout, handle);
-	vkCmdPushConstants(target, server->compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
-	vkCmdDraw(target, KWL_QUAD_VERTICES, 1U, 0U, 0U);
+	kwl_list_push_constants(target, server->compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(constants), constants);
+	kwl_list_draw(target, KWL_QUAD_VERTICES, 1U, 0U, 0U);
 }
 
 /* The plain look: the desktop, two windows between their sub-surfaces, a popup and the cursor. */
@@ -802,7 +827,7 @@ scene_plain(
 	VkRect2D whole;
 
 	/* The whole output, cleared. */
-	test_scene_begin(server, "plain");
+	test_scene_begin(server, target, "plain");
 	memset(&whole, 0, sizeof(whole));
 	whole.extent.width = TEST_WIDTH;
 	whole.extent.height = TEST_HEIGHT;
@@ -819,7 +844,7 @@ scene_plain(
 	test_quad(server, target, "set:popup:0", 0.2f, 0.2f);
 	test_quad(server, target, "set:arrow:0", 0.3f, 0.3f);
 	kwl_batch_flush(server, target);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 	test_scene_end(server, target);
 }
 
@@ -834,7 +859,7 @@ scene_home(
 	float place;
 
 	/* The layer's pass over the whole picture. */
-	test_scene_begin(server, "home");
+	test_scene_begin(server, target, "home");
 	memset(&whole, 0, sizeof(whole));
 	whole.extent.width = TEST_WIDTH;
 	whole.extent.height = TEST_HEIGHT;
@@ -856,7 +881,7 @@ scene_home(
 		test_shape(server, target, "set:blurred:0", 3U, -0.5f + 0.02f * (float)index, 0.8f, 0.01f);
 	test_shape(server, target, "set:atlas:0", 5U, 0.0f, 0.9f, 0.02f);
 	kwl_batch_flush(server, target);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 
 	/* The frame: the wallpaper, Home's picture over it, the cursor. */
 	test_pass(target, "output-pass", "output-framebuffer-1", &whole, 1U);
@@ -866,7 +891,7 @@ scene_home(
 	test_shape(server, target, "set:layer-home:0", 2U, -1.0f, -1.0f, 2.0f);
 	test_quad(server, target, "set:arrow:0", 0.3f, 0.3f);
 	kwl_batch_flush(server, target);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 	test_scene_end(server, target);
 }
 
@@ -880,7 +905,7 @@ scene_drag(
 	VkRect2D cut;
 
 	/* The damaged part, its pixels kept. */
-	test_scene_begin(server, "drag");
+	test_scene_begin(server, target, "drag");
 	memset(&region, 0, sizeof(region));
 	region.offset.x = 400;
 	region.offset.y = 300;
@@ -894,13 +919,13 @@ scene_drag(
 	test_shape(server, target, "set:blurred:0", 0U, -0.4f, -0.4f, 0.5f);
 	cut = region;
 	cut.extent.height = 44U;
-	vkCmdSetScissor(target, 0U, 1U, &cut);
+	kwl_list_set_scissor(target, 0U, 1U, &cut);
 	test_shape(server, target, "set:atlas:0", 5U, -0.39f, -0.39f, 0.02f);
-	vkCmdSetScissor(target, 0U, 1U, &region);
+	kwl_list_set_scissor(target, 0U, 1U, &region);
 	test_quad(server, target, "set:window-a:0", -0.4f, -0.35f);
 	test_quad(server, target, "set:arrow:0", 0.3f, 0.3f);
 	kwl_batch_flush(server, target);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 	test_scene_end(server, target);
 }
 
@@ -914,7 +939,7 @@ scene_backdrop(
 	VkRect2D small;
 
 	/* The frame up to the window with the glass. */
-	test_scene_begin(server, "backdrop");
+	test_scene_begin(server, target, "backdrop");
 	memset(&whole, 0, sizeof(whole));
 	whole.extent.width = TEST_WIDTH;
 	whole.extent.height = TEST_HEIGHT;
@@ -923,7 +948,7 @@ scene_backdrop(
 	test_corners(server, target);
 	test_shape(server, target, "set:wallpaper:0", 2U, -1.0f, -1.0f, 2.0f);
 	kwl_batch_flush(server, target);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 
 	/* The small pass, then the two blur steps between the targets. */
 	memset(&small, 0, sizeof(small));
@@ -933,15 +958,15 @@ scene_backdrop(
 	test_view(target, TEST_WIDTH / 4U, TEST_HEIGHT / 4U, &small);
 	test_corners(server, target);
 	test_shape(server, target, "set:wallpaper:0", 2U, -1.0f, -1.0f, 2.0f);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 	test_pass(target, "backdrop-pass", "backdrop-framebuffer-1", &small, 0U);
 	test_view(target, TEST_WIDTH / 4U, TEST_HEIGHT / 4U, &small);
 	test_shape(server, target, "set:backdrop-0:0", 6U, -1.0f, -1.0f, 2.0f);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 	test_pass(target, "backdrop-pass", "backdrop-framebuffer-0", &small, 0U);
 	test_view(target, TEST_WIDTH / 4U, TEST_HEIGHT / 4U, &small);
 	test_shape(server, target, "set:backdrop-1:0", 6U, -1.0f, -1.0f, 2.0f);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 
 	/* The frame's pass again, keeping its pixels, the glass over the blurred scene. */
 	test_pass(target, "output-pass-load", "output-framebuffer-0", &whole, 0U);
@@ -949,7 +974,7 @@ scene_backdrop(
 	test_corners(server, target);
 	test_shape(server, target, "set:backdrop-0:0", 0U, -0.4f, -0.4f, 0.5f);
 	kwl_batch_flush(server, target);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 	test_scene_end(server, target);
 }
 
@@ -966,7 +991,7 @@ scene_heads(
 	VkRect2D whole;
 
 	/* The output's image to a copy's source, the mirror's to a copy's destination. */
-	test_scene_begin(server, "heads");
+	test_scene_begin(server, target, "heads");
 	memset(barriers, 0, sizeof(barriers));
 	barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 	barriers[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
@@ -985,7 +1010,7 @@ scene_heads(
 	barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 	barriers[1].image = (VkImage)(uintptr_t)test_handle("head-0-image-1");
-	vkCmdPipelineBarrier(target, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 2U, barriers);
+	kwl_list_pipeline_barrier(target, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 2U, barriers);
 
 	/* The mirror cleared black, then the output's picture scaled into it. */
 	memset(&black, 0, sizeof(black));
@@ -994,7 +1019,7 @@ scene_heads(
 	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	range.levelCount = 1U;
 	range.layerCount = 1U;
-	vkCmdClearColorImage(target, barriers[1].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1U, &range);
+	kwl_list_clear_color_image(target, barriers[1].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1U, &range);
 	memset(&blit, 0, sizeof(blit));
 	blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	blit.srcSubresource.layerCount = 1U;
@@ -1006,7 +1031,7 @@ scene_heads(
 	blit.dstOffsets[1].x = 1120;
 	blit.dstOffsets[1].y = 540;
 	blit.dstOffsets[1].z = 1;
-	vkCmdBlitImage(target, barriers[0].image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, barriers[1].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &blit, VK_FILTER_LINEAR);
+	kwl_list_blit_image(target, barriers[0].image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, barriers[1].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &blit, VK_FILTER_LINEAR);
 
 	/* The extended head's own pass: the wallpaper and its windows. */
 	memset(&whole, 0, sizeof(whole));
@@ -1018,7 +1043,7 @@ scene_heads(
 	test_shape(server, target, "set:wallpaper:0", 2U, -1.0f, -1.0f, 2.0f);
 	test_quad(server, target, "set:window-c:1", -0.5f, -0.5f);
 	kwl_batch_flush(server, target);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 
 	/* Both images back to presentation. */
 	barriers[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
@@ -1028,7 +1053,7 @@ scene_heads(
 	barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 	barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 	barriers[1].newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	vkCmdPipelineBarrier(target, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0U, 0U, NULL, 0U, NULL, 2U, barriers);
+	kwl_list_pipeline_barrier(target, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0U, 0U, NULL, 0U, NULL, 2U, barriers);
 	test_scene_end(server, target);
 }
 
@@ -1042,7 +1067,7 @@ scene_bake(
 	unsigned index;
 
 	/* The layer's pass and Home's content with a few floor lines. */
-	test_scene_begin(server, "bake");
+	test_scene_begin(server, target, "bake");
 	memset(&whole, 0, sizeof(whole));
 	whole.extent.width = TEST_WIDTH;
 	whole.extent.height = TEST_HEIGHT;
@@ -1053,7 +1078,7 @@ scene_bake(
 		test_shape(server, target, "set:blurred:0", 3U, -0.9f + 0.02f * (float)index, 0.6f, 0.01f);
 	test_shape(server, target, "set:atlas:0", 5U, 0.0f, 0.9f, 0.02f);
 	kwl_batch_flush(server, target);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 	test_scene_end(server, target);
 }
 
@@ -1068,7 +1093,7 @@ scene_capture(
 	VkImage image;
 
 	/* The damaged part restored, outside any pass. */
-	test_scene_begin(server, "capture");
+	test_scene_begin(server, target, "capture");
 	image = (VkImage)(uintptr_t)test_handle("output-image-1");
 	memset(&region, 0, sizeof(region));
 	region.offset.x = 64;
@@ -1086,12 +1111,12 @@ scene_capture(
 	test_corners(server, target);
 	test_quad(server, target, "set:window-a:0", -0.5f, -0.5f);
 	kwl_batch_flush(server, target);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 	kwl_scene_copy(&server->compose->scene, target, image, NULL, 0U);
 	test_pass(target, "output-pass-load", "output-framebuffer-1", &whole, 1U);
 	kwl_compose_bind_forget(server->compose);
 	test_quad(server, target, "set:arrow:0", 0.3f, 0.3f);
-	vkCmdEndRenderPass(target);
+	kwl_list_end_render_pass(target);
 	test_scene_end(server, target);
 }
 
@@ -1107,7 +1132,7 @@ scene_shot(
 	VkBufferImageCopy copy;
 
 	/* The image to the copy's source. */
-	test_scene_begin(server, "shot");
+	test_scene_begin(server, target, "shot");
 	memset(&barrier, 0, sizeof(barrier));
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 	barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
@@ -1120,7 +1145,7 @@ scene_shot(
 	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	barrier.subresourceRange.levelCount = 1U;
 	barrier.subresourceRange.layerCount = 1U;
-	vkCmdPipelineBarrier(target, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+	kwl_list_pipeline_barrier(target, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 
 	/* The whole image into the buffer. */
 	memset(&copy, 0, sizeof(copy));
@@ -1129,7 +1154,7 @@ scene_shot(
 	copy.imageExtent.width = TEST_WIDTH;
 	copy.imageExtent.height = TEST_HEIGHT;
 	copy.imageExtent.depth = 1U;
-	vkCmdCopyImageToBuffer(target, barrier.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, (VkBuffer)(uintptr_t)test_handle("shot-buffer"), 1U, &copy);
+	kwl_list_copy_image_to_buffer(target, barrier.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, (VkBuffer)(uintptr_t)test_handle("shot-buffer"), 1U, &copy);
 
 	/* The copy visible to the host (with a memory barrier, which the list keeps too), and the image back to presentation. */
 	memset(&memory, 0, sizeof(memory));
@@ -1144,11 +1169,92 @@ scene_shot(
 	visible.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	visible.buffer = (VkBuffer)(uintptr_t)test_handle("shot-buffer");
 	visible.size = VK_WHOLE_SIZE;
-	vkCmdPipelineBarrier(target, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0U, 1U, &memory, 1U, &visible, 0U, NULL);
+	kwl_list_pipeline_barrier(target, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0U, 1U, &memory, 1U, &visible, 0U, NULL);
 	barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 	barrier.dstAccessMask = 0U;
 	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	vkCmdPipelineBarrier(target, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+	kwl_list_pipeline_barrier(target, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 	test_scene_end(server, target);
+}
+
+/*
+ * Writes into one list more operations, more array bytes and more vertices
+ * than it first makes room for (1024 operations, 64 KiB of each), and
+ * checks that the replay gives every one back in order: the push
+ * constants' last values, the number of lines, and the vertices.
+ */
+static void
+test_growth(
+	struct kwl_server *server)
+{
+	static struct kwl_list list;
+	float constants[KWL_PANEL_CONSTANTS];
+	char line[256];
+	FILE *saved;
+	FILE *lines;
+	size_t operations;
+	unsigned checked;
+	unsigned count;
+	unsigned index;
+	int joined;
+
+	/* The replay's lines go to a file of their own. */
+	saved = test_out;
+	lines = tmpfile();
+	assert(lines != NULL);
+	test_out = lines;
+
+	/* 3000 pushes and draws of distinct values, and 600 joined quads (100 KiB of vertices). */
+	kwl_list_reset(&list);
+	kwl_compose_bind_forget(server->compose);
+	kwl_batch_begin(server->compose);
+	memset(constants, 0, sizeof(constants));
+	constants[20] = (float)TEST_WIDTH;
+	constants[21] = (float)TEST_HEIGHT;
+	for (index = 0U; index < 3000U; index++) {
+		/* One draw alone, its first value its number. */
+		constants[0] = (float)index;
+		kwl_list_push_constants(&list, server->compose->panel_layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(constants), constants);
+		kwl_list_draw(&list, KWL_QUAD_VERTICES, 1U, 0U, 0U);
+	}
+	for (index = 0U; index < 600U; index++) {
+		/* One quad joined, its corner its number. */
+		constants[0] = (float)index;
+		joined = kwl_batch_add(server, &list, constants, (VkDescriptorSet)(uintptr_t)test_handle("set:blurred:0"));
+		assert(joined == 1);
+	}
+	kwl_batch_flush(server, &list);
+	assert(!list.failed);
+	assert(list.op_count > 1024U);
+	assert(list.data_used > 64U * 1024U);
+	assert(list.vertex_used == 600U * 6U * 11U * sizeof(float));
+	assert(list.vertex_used == server->compose->batch.used);
+	assert(kwl_list_things(&list) == 3600U);
+
+	/* The replay, counted: two lines a push (its values), a line a draw, so the 3000th push's values are line 8998. */
+	kwl_list_replay(&list, test_command);
+	rewind(lines);
+	checked = 0U;
+	count = 0U;
+	while (fgets(line, sizeof(line), lines) != NULL) {
+		/* The 3000th push's values start with its number. */
+		if (count == 3U * 2999U + 1U) {
+			assert(strncmp(line, "  values 2999 ", 14U) == 0);
+			checked = 1U;
+		}
+		count++;
+	}
+	assert(checked);
+	assert(count >= 3U * 3000U);
+
+	/* The vertices kept: the last quad's first vertex starts at its corner. */
+	assert(*(const float *)(list.vertices + 599U * 6U * 11U * sizeof(float)) == 599.0f);
+
+	/* The lines go back to the golden file's output. */
+	operations = list.op_count;
+	fclose(lines);
+	test_out = saved;
+	kwl_list_free(&list);
+	fprintf(stderr, "list-replay-host-test: growth ok (%u lines, %zu operations)\n", count, operations);
 }
