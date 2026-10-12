@@ -5,18 +5,42 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Synchronous primary-plane flips within the boot display's established mode. */
+/* Display lists made from the recorded plane state, within the boot display's established mode. */
 #ifndef KERN_DRIVERS_GPU_BCM2711_DISPLAY_FLIP_H
 #define KERN_DRIVERS_GPU_BCM2711_DISPLAY_FLIP_H
 
 #include <stdbool.h>
 #include <stdint.h>
 #include <kern/lock.h>
+#include <kern/waitq.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-gpu.h"
 
-/* Two private SRAM lists alternate while the boot console list stays intact. */
-#define BCM2711_FLIP_SLOTS 2U
+/*
+ * Three private SRAM lists while the boot console list stays intact: the
+ * adopted one, one published but not yet seen adopted, and one that may
+ * replace it before the hardware takes it.
+ */
+#define BCM2711_FLIP_SLOTS 3U
+
+/* The slot index that stands for the boot console list. */
+#define BCM2711_FLIP_NO_SLOT 3U
+
+/* The borrowed images waiting for the adoption that lets them go. */
+#define BCM2711_FLIP_RETIRING 16U
+
+/* A shared allocation a recorded plane borrows (buffer.h). */
+struct bcm2711_buffer;
+
+/*
+ * Who may change the planes: the open holding the display lease and the
+ * lease, or no open and lease zero while nothing leases the display (the
+ * driver's own checks at boot use that).
+ */
+struct bcm2711_flip_owner {
+	const void *session;
+	uint64_t lease;
+};
 
 /*
  * The cursor plane drawn above a composed frame: an unscaled image of at most
@@ -33,6 +57,42 @@ struct bcm2711_flip_cursor {
 	uint32_t format;
 	int32_t x;
 	int32_t y;
+};
+
+/*
+ * The primary plane: an unscaled image placed at (x, y) over the console,
+ * opaque or with premultiplied alpha.  An opaque image that covers the whole
+ * output hides the console, which is then left out of the list.  hold is the
+ * borrowed allocation the recorded state keeps (NULL for driver-owned
+ * storage); it goes when a later record replaces the plane and a list made
+ * after that is adopted.
+ */
+struct bcm2711_flip_primary {
+	bool shown;
+	bool premultiplied;
+	uint32_t x;
+	uint32_t y;
+	struct drv_bcm2711_boot_screen frame;
+	struct bcm2711_buffer *hold;
+};
+
+/*
+ * One SRAM list slot: used while the hardware may read the list (the adopted
+ * list and the published ones not yet seen adopted), with the state number
+ * it was made from and the images it names.
+ */
+struct bcm2711_flip_slot {
+	bool used;
+	uint64_t serial;
+	bool has_frame;
+	struct drv_bcm2711_boot_screen frame;
+	uint32_t cursor_image;
+};
+
+/* A borrowed image replaced by the record numbered serial; it goes once that record's list is adopted. */
+struct bcm2711_flip_retiring {
+	struct bcm2711_buffer *hold;
+	uint64_t serial;
 };
 
 /*
@@ -59,48 +119,76 @@ struct bcm2711_flip_cadence {
 #define BCM2711_FLIP_CADENCE_OFF	1U
 #define BCM2711_FLIP_CADENCE_ON		2U
 
-/* One display owns this state until shutdown; guard protects IRQ and callers. */
+/*
+ * The flip report's counts of one window (v3d.perf=1 only), kept under the
+ * guard: the stage times of adopted primary flips in ticks, the records of
+ * each plane, the lists written, the replacements of a list the hardware had
+ * not yet taken, the changes left for the next adoption because two lists
+ * were already out, and the underruns.
+ */
+struct bcm2711_flip_perf {
+	uint64_t start;
+	uint64_t flips;
+	uint64_t clean;
+	uint64_t raise;
+	uint64_t wait;
+	uint64_t primary_records;
+	uint64_t cursor_records;
+	uint64_t lists;
+	uint64_t replaced;
+	uint64_t coalesced;
+	uint64_t underruns;
+};
+
+/*
+ * One display's plane state and lists, alive until shutdown.
+ *
+ * guard protects every field below it against the vblank IRQ and the
+ * recording threads.  The recorded state (owner, primary, cursor) is the
+ * truth; a list is made from all of it, so a change is a new state number
+ * (state_serial) and lists carry the number they were made from.
+ * list_serial is the number of the newest list written, adopted_serial the
+ * highest number shown by an adopted list (every lower record is then shown
+ * or replaced by a shown one).  clock_mutex serializes firmware clock
+ * requests, which sleep, and is taken before the guard.
+ */
 struct bcm2711_flip_state {
 	struct spinlock guard;
+	struct mutex clock_mutex;
+	struct wait_queue adoption_waitq;
 	bool initialized;
 	bool attached;
-	bool busy;
 	bool uncertain;
-	bool completed;
+	bool restoring;
+	const void *owner;
+	uint64_t lease;
+	bool revoking;
+	struct bcm2711_flip_primary primary;
+	struct bcm2711_flip_cursor cursor;
+	uint64_t state_serial;
+	uint64_t list_serial;
+	uint64_t adopted_serial;
 	uint32_t active_list;
-	uint32_t pending_list;
-	uint32_t retained_mask;
+	uint32_t active_slot;
+	uint32_t pending[2];
+	uint32_t pending_count;
+	bool console_pending;
+	struct bcm2711_flip_slot slots[BCM2711_FLIP_SLOTS];
+	struct bcm2711_flip_retiring retiring[BCM2711_FLIP_RETIRING];
+	uint32_t retiring_count;
 	uint64_t frame_sequence;
 	uint32_t core_hz;
 	int clock_error;
-	struct drv_bcm2711_boot_screen frames[BCM2711_FLIP_SLOTS];
-	/*
-	 * The planes of each slot's composed list before the cursor (console and
-	 * frame), so that a cursor change republishes the shown frame with the
-	 * cursor in the other slot; composed[slot] says the slot has them.
-	 * cursor_dirty says the cursor changed since the last list was written.
-	 */
-	uint32_t base_words[BCM2711_FLIP_SLOTS][16];
-	bool composed[BCM2711_FLIP_SLOTS];
-	/* The cursor image each slot's list shows, 0 for none. */
-	uint32_t cursor_images[BCM2711_FLIP_SLOTS];
-	struct bcm2711_flip_cursor cursor;
-	bool cursor_dirty;
-	uint64_t cursor_lists;
-	/* Diagnostic flip-stage tick totals of one reporting window, written only by the BUSY owner. */
-	uint64_t perf_start;
-	uint64_t perf_flips;
-	uint64_t perf_clean;
-	uint64_t perf_raise;
-	uint64_t perf_wait;
-	uint64_t perf_finish;
+	struct bcm2711_flip_perf perf;
+
 	/*
 	 * The cursor images set in the window and those that needed their rows
 	 * copied (the others were shown again unchanged); added atomically by
-	 * the display device under its own mutex, read and cleared by the report.
+	 * the display device under its plane mutex, read and cleared by the report.
 	 */
 	uint64_t perf_cursor_sets;
 	uint64_t perf_cursor_copies;
+
 	/*
 	 * The cadence of display events (WS213), kept under guard; reporting
 	 * says one caller is printing the copied window, so no other starts.
@@ -109,19 +197,25 @@ struct bcm2711_flip_state {
 	uint64_t cadence_start;
 	bool cadence_reporting;
 	struct bcm2711_flip_cadence cadence[BCM2711_FLIP_CADENCE_KINDS];
+	bool perf_reporting;
 };
 
-/* A caller-owned snapshot names borrowed buffers that must remain DMA-readable. */
+/* A caller-owned copy of the state's progress and of what the lists name. */
 struct bcm2711_flip_status {
 	bool attached;
-	bool busy;
 	bool uncertain;
+	bool restoring;
 	uint32_t active_list;
-	uint32_t pending_list;
-	uint32_t retained_mask;
+	uint32_t pending_count;
+	uint32_t used_mask;
+	uint32_t retiring_count;
 	uint64_t frame_sequence;
+	uint64_t state_serial;
+	uint64_t list_serial;
+	uint64_t adopted_serial;
 	uint32_t core_hz;
 	int clock_error;
+	struct bcm2711_flip_primary primary;
 	struct drv_bcm2711_boot_screen frames[BCM2711_FLIP_SLOTS];
 };
 
@@ -137,24 +231,44 @@ int bcm2711_display_flip_attach(struct bcm2711_display *display);
 /* Registration unwind may detach only at the confirmed, unheld console list. */
 int bcm2711_display_flip_detach(struct bcm2711_display *display);
 
+/* Gives the planes to a new lease, with the cursor hidden. */
+void bcm2711_display_flip_own(struct bcm2711_display *display, const struct bcm2711_flip_owner *owner);
+
+/* Starts ending a lease: later records fail and waiters return; EINVAL when the lease is not the owner's. */
+int bcm2711_display_flip_revoke(struct bcm2711_display *display, const struct bcm2711_flip_owner *owner);
+
+/* Gives the planes back to the driver once the console is restored. */
+void bcm2711_display_flip_disown(struct bcm2711_display *display);
+
+/* Tells whether an owner may change the planes now: 0, or EBUSY. */
+int bcm2711_display_flip_owned(struct bcm2711_display *display, const struct bcm2711_flip_owner *owner);
+
 /*
- * Caller serializes buffer ownership, freezes bytes before submission and keeps
- * storage contiguous and mapped. Never free or modify a retained buffer, even
- * after an error. Snapshot after each call determines which buffers are held.
- * Calls may busy-wait up to 100 ms; never call from IRQ or while holding a lock.
+ * Records the primary plane and returns the record's number without waiting.
+ * On success the state takes the caller's reference in primary->hold.
+ * May sleep for the clock; never call from IRQ or while holding a lock.
  */
+int bcm2711_display_flip_record(struct bcm2711_display *display, const struct bcm2711_flip_owner *owner, const struct bcm2711_flip_primary *primary, uint64_t *serial);
+
+/*
+ * Waits until a list showing the record numbered serial, or a later one, is
+ * adopted (at most 100 ms, ETIMEDOUT then, and the borrowed images stay
+ * until the console is restored); EBUSY when the lease ends meanwhile.
+ */
+int bcm2711_display_flip_wait(struct bcm2711_display *display, const struct bcm2711_flip_owner *owner, uint64_t serial);
+
+/* Records a full-screen opaque frame of the driver's own and waits for its adoption. */
 int bcm2711_display_flip_present(struct bcm2711_display *display, const struct drv_bcm2711_boot_screen *frame);
 
-/* Composes an unscaled upper plane over the console, with optional premultiplied alpha. */
+/* Records an unscaled frame of the driver's own over the console and waits for its adoption. */
 int bcm2711_display_flip_compose(struct bcm2711_display *display, const struct drv_bcm2711_boot_screen *frame, uint32_t x, uint32_t y, bool premultiplied);
 
 /*
- * Records the cursor and shows it from the next refresh boundary without
- * waiting: over the shown composed frame now when no list is pending, or in
- * the next list otherwise.  The image must stay unchanged until a list
- * without it is adopted (bcm2711_display_flip_settle after the change).
+ * Records the cursor and shows it from a coming refresh boundary without
+ * waiting.  The image must stay unchanged while
+ * bcm2711_display_flip_cursor_named says it is named.
  */
-int bcm2711_display_flip_cursor(struct bcm2711_display *display, const struct bcm2711_flip_cursor *cursor);
+int bcm2711_display_flip_cursor(struct bcm2711_display *display, const struct bcm2711_flip_owner *owner, const struct bcm2711_flip_cursor *cursor);
 
 /* Counts one cursor image set for the flip report, copied or shown again unchanged. */
 void bcm2711_display_flip_count_cursor(struct bcm2711_display *display, bool copied);
@@ -166,11 +280,23 @@ void bcm2711_display_flip_count_cursor(struct bcm2711_display *display, bool cop
  */
 void bcm2711_display_flip_note(struct bcm2711_display *display, unsigned kind);
 
-/* Tells whether a retained list or the recorded cursor names a cursor image, which must then stay unchanged. */
+/* Adds an adopted primary flip's stage times to the flip report, printing a full window. */
+void bcm2711_display_flip_report(struct bcm2711_display *display, uint64_t clean, uint64_t raise, uint64_t wait);
+
+/* Tells whether a list the hardware may read or the recorded cursor names a cursor image. */
 bool bcm2711_display_flip_cursor_named(struct bcm2711_display *display, uint32_t physical);
 
-/* Waits until no published list is pending; the caller excludes other publishers. */
-int bcm2711_display_flip_settle(struct bcm2711_display *display);
+/* How a frame's storage is named: not at all, only by lists the hardware may read, or by the recorded primary. */
+#define BCM2711_FLIP_FRAME_FREE		0U
+#define BCM2711_FLIP_FRAME_LISTED	1U
+#define BCM2711_FLIP_FRAME_RECORDED	2U
+unsigned bcm2711_display_flip_frame_use(struct bcm2711_display *display, uint64_t physical, uint64_t bytes);
+
+/* Waits, at most 100 ms, until no list the hardware may read names the storage. */
+int bcm2711_display_flip_wait_unlisted(struct bcm2711_display *display, const struct bcm2711_flip_owner *owner, uint64_t physical, uint64_t bytes);
+
+/* Lets go of the borrowed images whose replacement has been adopted; thread context only. */
+void bcm2711_display_flip_reap(struct bcm2711_display *display);
 
 /* Only confirmed boot-console adoption releases buffers after uncertain DMA. */
 int bcm2711_display_flip_restore(struct bcm2711_display *display);

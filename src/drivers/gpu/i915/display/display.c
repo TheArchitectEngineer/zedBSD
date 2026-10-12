@@ -221,8 +221,9 @@ static int i915_display_outputs_differ(const struct i915_display_output *one, co
  * moves it when a connector is connected or disconnected (ws113-p002).
  * Power and refresh (ws113-p012) check the display here and are done by
  * the display control (control.c).  The cursor plane is not used yet
- * (ws141-p014; F-092), so the cursor operations are absent.  The table
- * never changes.
+ * (ws141-p014; F-092), so the cursor operations are absent.  Presents
+ * wait under the open's admission (no DRV_GPU_DISPLAY_UNGATED,
+ * ws214-p003a).  The table never changes.
  */
 static const struct drv_gpu_display_ops i915_display_ops = {
 	i915_display_query,
@@ -236,7 +237,9 @@ static const struct drv_gpu_display_ops i915_display_ops = {
 	i915_display_refresh,
 	NULL,
 	NULL,
-	NULL
+	NULL,
+	NULL,
+	0
 };
 
 /*

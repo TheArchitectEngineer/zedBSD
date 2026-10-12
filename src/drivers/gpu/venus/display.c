@@ -155,13 +155,15 @@ static int display_status(struct venus_controller *controller, const void *comma
  * Hardware callbacks share the controller mutex; event snapshots use only the IRQ-safe queue lock.
  * Power and refresh (ws113-p012) are the guest's virtual display's: the refresh boundaries are the
  * virtual clock's, not the host monitor's.  The virtual display has no
- * cursor plane (ws141-p014), so the cursor operations are absent.
+ * cursor plane (ws141-p014), so the cursor operations are absent.  Presents
+ * wait under the open's admission (no DRV_GPU_DISPLAY_UNGATED, ws214-p003a).
  */
 const struct drv_gpu_display_ops drv_venus_display_operations = {
 	display_query, display_mode, display_claim,
 	display_release, display_present, display_wait, display_events,
 	display_power, display_refresh_boundary,
-	NULL, NULL, NULL
+	NULL, NULL, NULL,
+	NULL, 0
 };
 
 /* Native sharing is supported only within this Venus controller's resource namespace. */
