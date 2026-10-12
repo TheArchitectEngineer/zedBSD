@@ -205,3 +205,60 @@ lowering は今のまま 1 演算ずつ出すが、語に encode せず「演算
 - 実機（Pi 4）は未確認（焼き直し待ち、BUG-294）。host の模擬は hardware の事実（Mesa の validator・scheduler に記された規則と公開の命令の形式）に基づくが、実機の timing の未知の規則があれば画面の崩れ・GPU の hang として出る。
 - Pi で見る点: (1) 起動して Keiland の描画が前と同じ（glass の色・blur・影・窓の絵・文字・cursor・dark の外観、app の canvas）。(2) GPU の hang・`v3d:` の error の行が無い。(3) `v3d: gpu` の draw の cycles/tile、cycles/quad、qvalid/quad が下がる（見込み 4〜5 割）。(4) KWL LAT の input→shown。
 - 崩れた時の切り分け: 変える所は fragment の compiler だけなので、vmunix を前の版に戻せば元に戻る。
+
+## 修正 15: 共通の IR の上の CSE・DCE・定数の畳み込み・簡約（2026-10-12 P3）
+
+承認: 2026-10-12 ユーザー「進め方はおすすめでいいです」（残りの描画の最適化）、Q1 の割り当て（修正 14 の続き）。2026-10-12 Q1 の指示で、pass は bcm2711 の中ではなく共通の IR（`src/drivers/gpu/compiler/`）の上に置き、bcm2711 だけの物（register・accumulator・dual issue）は bcm2711 の中のまま。Mesa の NIR は写していない（規則と構造は自分で書き、ir.h の意味と模擬で確かめた）。
+
+### 実装
+
+- `src/drivers/gpu/compiler/optimize.c`・`optimize.h`（新規）: `drv_gpu_shader_optimize(ir, options, optimized)`。parse の後の IR の private な写しを書き換え、命令の列だけを新しく持つ（他の列は ir と共有、呼び手が kern_free）。扱えない program（表に無い演算、loop・値の再定義、上限超え）は手を付けず、呼び手は元の IR を lower する。失敗は ENOMEM だけ。
+  - 共通部分式（CSE）: 純粋な演算（定数・LOAD_PUSH・LOAD_UBO・LOAD_INPUT・SAMPLE・算術・比較・論理）を hash で引き、同じ class・同じ意味の field・同じ source の先の結果を使う。定数は CONST/ICONST/BOOL を bit で 1 つの class に。可換は FEQ・FNEU と整数・bit・Boolean の演算だけ（FADD・FMUL・FMIN・FMAX は NaN が 2 つの時にどちらの payload を返すかが順で変わるので可換に数えない。host の試験で FMUL の入れ替えが NaN の payload を変えるのを確かめて外した）。
+  - 死んだ code（DCE）: 後ろから、backend が要る出力の slot の最後の store を根に。後の store に上書きされる store と、要らない slot の store を消す。slot の外（point size などの builtin、component ≥ 4）の store は残す（backend の拒否がそのまま立つ）。
+  - 畳み込みと簡約（`simplify` の時だけ）: bit・整数・Boolean の演算（NOT(NOT x)、x&~0、x&0、x|0、x^0、x^x、x+0、x−0、x−x、shift の 0 と mod 32、定数どうし）、SELECT の定数の条件と同じ両腕、FNEG・FABS（符号 bit、FNEG(FNEG x)、FABS(FNEG x)、FABS(FABS x)）、正確な I2F/U2F（有効 bit が 24 以内）、普通の値（NaN・denormal でない、FMIN/FMAX は ±0 の組を除く）の FMIN・FMAX・比較。浮動小数の算術の定数どうしは畳まない（kernel に浮動小数が無く、target の丸めを確かめられない。tree の shader には定数どうしの算術は無い: glslang が畳んでいる）。
+  - 浮動小数の恒等式: x*1.0、x+(−0.0)、x−(+0.0) を x に。結果を読むのが全部 FADD・FSUB・FMUL の時だけ（それらは x を同じ入力の扱い（denormal の flush・signalling NaN の quiet）で読むので区別できない）。出力・比較・bit の move・texture の座標・特殊関数が読む時は残す。x+0（−0 の扱い）、x*0（NaN）、結合則の並べ替え、FMAX(x,x)（signalling NaN を quiet する）はしない。
+  - skip の block と texture の guard: `runs_every_block` の backend（bcm2711: 全 block を走らせ全 channel を sample する）では印と guard を落とす。そうでない backend（i915）では、印か guard のある program は手を付けない（skip されうる block をまたいで値を共有すると、block が計算しなかった値を読むため）。
+- `src/drivers/gpu/bcm2711/shader.c`: parse の後に `optimize_options`（fragment: 全 slot・simplify、coordinate: position、vertex: position＋key の varying、どちらも simplify なし＝ CSE・DCE だけ）で pass を通し、4→2 thread の試み（`compile_stage` に分けた）を書き換えた program で行う。書き換えた program を native の compiler が ENOMEM 以外で拒否したら元の IR で compile し直す（元の結果と diagnostic を保つ）。`binary->optimized`（`shader.h`）で、書き換えた program から lower した物かを示す。
+- 一覧: `platform/arm64/vmunix.mk`（compiler/optimize.c）、`plan/ws210/tests/spike/count.sh`、`plan/ws141/tests/shader-host-test.sh`・`vulkan-sources.sh`、`plan/ws211/tests/glass-shader-host-test.sh`。
+
+### i915 では使わない（今は）理由
+
+- i915 の compiler は入出力の interface を命令から読む（`i915_compile_interface`: LOAD_INPUT の列が fragment の入力・payload の配置、STORE_OUTPUT が varying）。DCE が読まれない LOAD_INPUT を消すと fragment の入力の列（SBE の配置）が変わる。設計上は許される（「一部を任意の順で読んでよい」）が、i915 の側の見直しと 5330 の実機・QEMU の確かめ（T1）が要り、VC6 の Phase の範囲の外。
+- i915 は skip の block と texture の guard を性能に使う（ws075-p021・p023）。pass はそれらのある program に手を付けない作りなので、効く program は限られ、効果は測っていない。
+- 繋ぐのは小さい: `render/pipeline-prepare.c` の `i915_pipeline_compile_stage` で parse の後に `options = {runs_every_block = 0, simplify = 1, needed = 全 slot}` で通し、失敗時は元の IR で compile。加えて `platform/amd64/vmunix.mk` と `plan/ws031/tests/run-vk-host-tests.sh` の executor の一覧に `compiler/optimize.c`。i915 の担当（WS075）の後続として提案する。
+
+### 命令数（host、語、前 = 修正 14 の f7cabf7c9 の上の main bed49895e、後 = 修正 15）
+
+| shader | 前 | 後 | 減 | uniform |
+| --- | --- | --- | --- | --- |
+| glass（panel 0、frag） | 93 | 85 | −9% | 29→25 |
+| dark glass（panel 7、frag） | 106 | 98 | −8% | 32→28 |
+| generic panel（frag、2 thread） | 293 | 254 | −13% | 104→71 |
+| blur（panel 6） | 70 | 69 | −1% | 34→32 |
+| shadow・image・solid・ring・text（panel 1〜5） | 51・51・46・50・23 | 同じ | 0% | 1 ずつ減 |
+| monitor shape（frag、2 thread） | 203 | 175 | −14% | 10 |
+| terminal・egltest・notes fill（frag） | 41・33・28 | 39・32・27 | −3〜5% | |
+| quad・batch・ui・files・imageview・mview（frag） | 17・51・17・17・17・19 | 同じ | 0% | |
+| panel の coordinate | 85 | 63 | −26% | 22→14 |
+| panel の vertex（mode 0・1・3・4・7） | 90 | 76 | −16% | 24→18 |
+| quad の coordinate・vertex | 75・80 | 63・78 | −16%・−2% | |
+| mview の coordinate | 166 | 115 | −31% | |
+| libGL 1・8 の coordinate | 532・1638 | 147・147 | −72%・−91% | |
+| libGL 1・8 の vertex | 561・1667 | 505・1436 | −10%・−14% | |
+
+- thread 数はどれも変わらない（4 は 4、2 は 2）。fragment の減りが小さいのは、修正 14 の scheduler が消えた演算の多くを空いた ALU の枠に既に組んでいたため。glass の IR は 138→119 命令（重複の push の読み・1−t の 3 回・x*1.0 の 6 回・3 つ重なる FMUL）。
+
+### 確かめ（host、2026-10-12 P3）
+
+- `plan/ws141/tests/shader-host-test.sh`: PASS。tree の全 shader・variant・R/B を、qpu-machine.c の模擬と SPIR-V の解釈（書き換え前の IR）で bit 一致（Keiland は決定的 32＋乱数 96、app は乱数 96）。lookup の数の比較は「書き換え後 ≤ 元」に（generic panel は 8 → 6: 重複と読まれない sample）。全 program が `binary->optimized == 1`（fallback を通っていない）を確かめる。足した `verify_optimizer`: 手で組んだ IR（各規則の当たる例と、当たってはいけない近い例: +0 の和、−0 の差、出力が読む x*1.0、FMIN の両順、FSUB の両順、NaN・±0 の FMIN/FMAX・比較、不正確な I2F、mod 32 の shift ほか）を書き換えの前と後で解釈し、4096 回の乱数（±0・±1・quiet NaN・±inf・denormal・整数の bit を含む）で全出力の bit が一致、残る命令の数で解釈に見えない規則（出力が読む恒等式、vertex で簡約しない、FMIN の順）を確かめる。skip の block と guard: `runs_every_block = 0` は手付かず、1 は印・guard・重複が消える。
+- `plan/ws211/tests/glass-shader-host-test.sh`: PASS（3,856,896 fragment、light 85・dark 98・generic 254 語、全 channel bit 一致）。lookup の比較を「≤」に（WS211 の試験の 1 行）。
+- `plan/ws210/tests/spike/count.sh` PASS、`plan/ws141/tests/vulkan-device-host-test.sh` PASS。
+- 故意の誤り（optimize.c を 1 つずつ変えて shader-host-test を走らせる、28 種）: FSUB・FMUL・FMIN・ISUB を可換に、push の offset・UBO の location を無視、恒等式の定数を 0.5 に、+0 の和・−0 の差を消す、読み手の制限を外す、vertex でも簡約、sample の結果の取り違え、DCE が第 1 source だけを生かす、要る slot・最後の store を落とす、skip の印を無視、FABS(FNEG) を copy、定数の FNEG で符号を反転しない、SELECT の腕の取り違え、x&0 を x に、x^x を 1 に、ASR を論理 shift に、不正確な I2F を畳む、U2F を符号付きに、±0 の FMAX を畳む、NaN の比較を畳む、FGE を > に → 27 種を検出。検出しないのは「shift の数を mod 64 に」だけ（host の x86 の shift が 5 bit で mask するので結果が同じ。規則は mod 32 のまま）。
+- rpi4 の vmunix（`make -j16 -o …/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix`）warning 0、`build/arm64/vmunix` cksum 994222987 8183808。
+- `plan/tools/style-check.py`: 新しい・変えた kernel の file と shader-host-test.c で指摘 0（glass-shader-host-test.c の指摘は前からの物で、変えたのは 1 行）。
+
+### 未実施・Pi で見ること
+
+- 実機（Pi 4）は未確認（焼き直しの後）。修正 14 と同じ点（見た目が同じ、`v3d:` の error・hang が無い、`v3d: gpu` の cycles/quad）に加え、vertex の program が短くなった（coordinate −26%）ので bin の段の時間。
+- 崩れた時の切り分け: `drv_gpu_shader_optimize` の呼び出しを外す（shader.c の 1 か所）と修正 14 の出力に戻る。
+- i915 への接続は上の理由で未実施（WS075 への提案）。

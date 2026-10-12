@@ -11,6 +11,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/shader-private.h"
+#include "drivers/gpu/compiler/optimize.h"
 #include "drivers/gpu/compiler/spirv.h"
 
 /* Nine constant levels match the shared frontend's eight aggregate edges followed by one scalar leaf. */
@@ -21,6 +22,8 @@
 
 static int preflight_declaration(const uint32_t *instruction, uint32_t count, uint8_t *levels, uint32_t bound, uint32_t model, const char **reason);
 static int compile_program(struct bcm2711_shader_compiler *compiler);
+static void optimize_options(enum bcm2711_shader_stage stage, const struct bcm2711_shader_key *key, struct drv_gpu_shader_optimize_options *options);
+static int compile_stage(const struct drv_gpu_shader_ir *ir, const struct bcm2711_shader_key *key, enum bcm2711_shader_stage stage, struct bcm2711_shader_diagnostic *diagnostic, struct bcm2711_shader_binary **binary);
 static int compile_threads(const struct drv_gpu_shader_ir *ir, const struct bcm2711_shader_key *key, enum bcm2711_shader_stage stage, uint32_t threads, struct bcm2711_shader_diagnostic *diagnostic, struct bcm2711_shader_binary **binary);
 static int encode_register(const struct bcm2711_shader_compiler *compiler, uint32_t *number);
 static uint32_t operation_gaps(enum bcm2711_qpu_operation operation, uint32_t destination, uint32_t peripheral);
@@ -41,6 +44,8 @@ bcm2711_shader_compile(
 {
 	struct bcm2711_shader_binary *created;
 	struct drv_gpu_shader_ir *ir;
+	struct drv_gpu_shader_ir optimized;
+	struct drv_gpu_shader_optimize_options options;
 	struct drv_gpu_compile_diagnostic parse_diagnostic;
 	enum drv_gpu_shader_stage parse_stage;
 	int error;
@@ -82,24 +87,37 @@ bcm2711_shader_compile(
 		return error;
 	}
 
-	/*
-	 * A fragment program first tries four threads per QPU, which hide texture
-	 * latency better but leave each thread only rf0 to rf31; a program whose
-	 * values do not fit is compiled again for two threads.  Vertex programs
-	 * use two threads.
-	 */
-	created = NULL;
-	error = E2BIG;
-	if (stage == BCM2711_SHADER_FRAGMENT)
-		error = compile_threads(ir, key, stage, 4, diagnostic, &created);
-	if (error == E2BIG) {
-		/* The four-thread attempt's refusal is not this program's outcome. */
-		if (diagnostic != NULL)
-			kern_memset(diagnostic, 0, sizeof(*diagnostic));
-		error = compile_threads(ir, key, stage, 2, diagnostic, &created);
+	/* Removes repeated and unread work from a private copy of the source program. */
+	optimize_options(stage, key, &options);
+	error = drv_gpu_shader_optimize(ir, &options, &optimized);
+	if (error != 0) {
+		drv_gpu_shader_ir_free(ir);
+		return error;
 	}
 
-	/* Source IR retires before the immutable native program becomes visible. */
+	/* Lowers the rewritten program, or the source program when the optimizer left it alone. */
+	created = NULL;
+	if (optimized.instructions != NULL) {
+		error = compile_stage(&optimized, key, stage, diagnostic, &created);
+		if (error == 0)
+			created->optimized = 1;
+	} else {
+		error = compile_stage(ir, key, stage, diagnostic, &created);
+	}
+
+	/*
+	 * A rewritten program the native compiler refuses for any reason but
+	 * memory is lowered from its source, which keeps the source program's
+	 * own outcome and diagnostic.
+	 */
+	if (optimized.instructions != NULL && error != 0 && error != ENOMEM) {
+		if (diagnostic != NULL)
+			kern_memset(diagnostic, 0, sizeof(*diagnostic));
+		error = compile_stage(ir, key, stage, diagnostic, &created);
+	}
+
+	/* Source IR and its rewritten instructions retire before the immutable native program becomes visible. */
+	kern_free(optimized.instructions);
 	drv_gpu_shader_ir_free(ir);
 
 	/* A failed native prefix can never escape as a usable shader binary. */
@@ -991,6 +1009,88 @@ operation_gaps(
 	}
 
 	/* A plain ALU result is ready for the next instruction. */
+	return 0;
+}
+
+/*
+ * Describes the native stage to the shared optimization.
+ *
+ * Every program runs every skippable block and samples for every channel.
+ * A fragment program writes its colour (every slot is kept, so a store the
+ * analysis refuses still reaches it); a coordinate program passes on its
+ * position alone, a vertex program its position and the key's varyings.
+ * Only fragment programs, which run once per pixel, are folded and
+ * simplified; vertex programs are only cleared of repeated and unread work.
+ */
+static void
+optimize_options(
+	enum bcm2711_shader_stage stage,
+	const struct bcm2711_shader_key *key,
+	struct drv_gpu_shader_optimize_options *options)
+{
+	const struct bcm2711_shader_component *varying;
+	uint32_t index;
+
+	/* Starts with no slot needed. */
+	kern_memset(options, 0, sizeof(*options));
+	options->runs_every_block = 1;
+
+	/* A fragment program keeps every output and is simplified. */
+	if (stage == BCM2711_SHADER_FRAGMENT) {
+		kern_memset(options->needed, 1, sizeof(options->needed));
+		options->simplify = 1;
+		return;
+	}
+
+	/* Both vertex programs pass on the position. */
+	for (index = 0; index < 4; index++)
+		options->needed[DRV_GPU_IR_OPTIMIZE_POSITION + index] = 1;
+
+	/* A vertex program also passes on the key's varyings, which the analysis checks later. */
+	if (stage != BCM2711_SHADER_VERTEX)
+		return;
+	for (index = 0; index < key->varying_count && index < BCM2711_SHADER_INTERFACE_WORDS; index++) {
+		varying = &key->varyings[index];
+		if (varying->location < 16 && varying->component < 4)
+			options->needed[varying->location * 4U + varying->component] = 1;
+	}
+}
+
+/*
+ * Compiles one source program for the threads it fits.
+ *
+ * A fragment program first tries four threads per QPU, which hide texture
+ * latency better but leave each thread only rf0 to rf31; a program whose
+ * values do not fit is compiled again for two threads.  Vertex programs
+ * use two threads.
+ */
+static int
+compile_stage(
+	const struct drv_gpu_shader_ir *ir,
+	const struct bcm2711_shader_key *key,
+	enum bcm2711_shader_stage stage,
+	struct bcm2711_shader_diagnostic *diagnostic,
+	struct bcm2711_shader_binary **binary)
+{
+	int error;
+
+	/* Tries four threads for a fragment program. */
+	error = E2BIG;
+	if (stage == BCM2711_SHADER_FRAGMENT)
+		error = compile_threads(ir, key, stage, 4, diagnostic, binary);
+
+	/* Falls back to two threads; the four-thread attempt's refusal is not this program's outcome. */
+	if (error == E2BIG) {
+		if (diagnostic != NULL)
+			kern_memset(diagnostic, 0, sizeof(*diagnostic));
+		error = compile_threads(ir, key, stage, 2, diagnostic, binary);
+	}
+
+	/* Reports why neither thread count compiled. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: *binary is the compiled program. */
 	return 0;
 }
 
