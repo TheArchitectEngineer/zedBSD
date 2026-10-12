@@ -191,17 +191,10 @@ fm_input_motion(
 	if (kind == app->hover_kind && index == app->hover_index)
 		return;
 
-	/*
-	 * A new region under it needs only the one before and it drawn again
-	 * (BUG-226), and only those of them that light under the pointer: the
-	 * content's ground between the items draws the same with the pointer
-	 * on it, and drawing all of it again for each pass over a gap made a
-	 * frame of the whole card (2026-10-12, the Pi 4).
-	 */
-	input_hover_damage(app, app->hover_kind, app->hover_index);
-	input_hover_damage(app, kind, index);
+	/* A new region under it: the next frame draws what changed (fm_input_hover_settle). */
 	app->hover_kind = kind;
 	app->hover_index = index;
+	app->hover_moved = 1;
 }
 
 /*
@@ -212,13 +205,38 @@ void
 fm_input_leave(
 	struct fm_app *app)
 {
-	/* The lit region, drawn again unlit. */
-	input_hover_damage(app, app->hover_kind, app->hover_index);
-
-	/* Nothing is under the pointer. */
+	/* Nothing is under the pointer: the next frame draws the lit region unlit (fm_input_hover_settle). */
 	app->pointer_inside = 0;
 	app->hover_kind = FM_HIT_NONE;
 	app->hover_index = -1;
+	app->hover_moved = 1;
+}
+
+/*
+ * Turns the change of the region under the pointer since the last frame
+ * into the parts the next frame draws: the region lit when that frame was
+ * drawn and the one lit now, and only those of them that light under the
+ * pointer (BUG-226).  The regions crossed in between are not drawn: the
+ * pointer crossing a pane while a slow frame was drawn made the next one
+ * draw every row it crossed (2026-10-12, the Pi 4).  Called once before
+ * each frame is decided.
+ */
+void
+fm_input_hover_settle(
+	struct fm_app *app)
+{
+	/* No change since the last frame. */
+	if (app->hover_moved == 0)
+		return;
+	app->hover_moved = 0;
+
+	/* Back on the region lit when drawn: nothing to draw. */
+	if (app->hover_kind == app->drawn_hover_kind && app->hover_index == app->drawn_hover_index)
+		return;
+
+	/* The region lit then goes dark, the one under the pointer now lights. */
+	input_hover_damage(app, app->drawn_hover_kind, app->drawn_hover_index);
+	input_hover_damage(app, app->hover_kind, app->hover_index);
 }
 
 /*

@@ -545,6 +545,9 @@ main_loop(
 			main_app.dirty = 1;
 		}
 
+		/* The region under the pointer: what changed since the last frame (ws210-p014). */
+		se_ui_hover_settle(&main_app);
+
 		/* A frame when something changed, or the lit region alone (BUG-226). */
 		if (main_app.dirty != 0 || main_app.hover_pending != 0) {
 			status = main_frame();
