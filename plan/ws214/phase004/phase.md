@@ -3,7 +3,7 @@
 # ws214-p004: libvulkan の overlay の plane
 
 Parent: [WS214](../ws.md)
-Status: planned（2026-10-12 P2 が実装の手順を書いた。実装は未着手）
+Status: in-progress（2026-10-12 P2。実装と host 試験・build 済み。clear は WS141 p016 B-u の Pi の受け入れの後、Q1 の判定）
 Phase disposition: normal
 Queue: P2（2026-10-12 Q1 が着手を許した）
 
@@ -48,6 +48,61 @@ Queue: P2（2026-10-12 Q1 が着手を許した）
 
 上の host の (i)〜(ix) が PASS、build が warning 0、T1 の回帰が変わらない、WS141 p016 B-u の Pi の受け入れが済んでいる（Q1 が判定）。
 
-## 結果
+## コマンドと上限
 
-（未着手）
+- host: `timeout 600 sh plan/ws214/tests/vulkan-overlay-host.sh <out>`（ordinary と ASan/UBSan、log off/on）、回帰 `timeout 300 sh plan/ws141/tests/vulkan-cursor-host.sh <out>`。
+- build: `timeout 3000 make -j16 -o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk BUILD=build/p2-ws214-rpi4 "ZEDBSD_USER_PROGRAMS=wayland libvulkan" build/p2-ws214-rpi4/bin/wayland build/p2-ws214-rpi4/dynamic/libvulkan.so`、amd64 は `ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/p2-ws214-amd64`。QEMU は起動しない（T1）。
+
+## 結果（2026-10-12 P2、段 2）
+
+commit: d1e626a52（この phase.md）、d6973d075（段 1: 列挙・能力・overlay の surface、前の P2）、e7e634cca（段 2: claim・保留・primary の commit・fast/lane・watcher・flush・reclaim）、6bb24987c（host 試験）、046a376af（README・書き方）。
+
+### 実装
+
+- `wsi-internal.h`: platform の op を 9 個足した（`primary_ticket`・`present_primary`・`primary_skip`・`overlay_decide`・`overlay_commit`・`overlay_ready`・`overlay_status`・`overlay_forget`・`reclaim`）。overlay の present の要求 `struct vulkan_wsi_overlay_present` と結果 `enum vulkan_wsi_overlay_outcome`、`vulkan_wsi_display_overlay_flush`。wayland の platform と ws141 の cursor の fixture の初期化子に NULL を足した（`-Wextra`）。
+- `wsi-display.c`:
+  - claim: overlay の surface は cursor と同じく primary の claim を借りる。1 つの overlay の plane は 1 つの surface（2 つ目は `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR`）。claim は overlay の数、mode の generation、1 refresh の長さを持つ。overlay の surface の minImageCount は 1。copy の経路は無い。
+  - 状態は `display_overlay_mutex`（display_mutex の後に取る leaf の lock）の下: plane ごとの保留（`wsi_display_hold`、`min_primary`・期限・ready・owner）、front の画像、退役中の画像（置き換えた記録の番号）、serial、`recorded_serial`、`shown`（保留の外で決めた present を全部記録した後の見え方）。overlay の画像の holds もこの lock。
+  - decide（`vkQueuePresentKHR` の呼び出しの順）: serial を振り、保留がある plane は置き換え（`min_primary`・期限は最初の物、置き換えた画像はすぐ空く）、見える・隠れるの切り替えは新しい保留（`min_primary`＝それまでに振った primary の ticket＋1、期限＝2 refresh）、他は単独の commit へ。隠す（src・dst ともに (0,0) の 1×1）は画像を名指さない。
+  - 単独の commit（fast は呼んだ thread、lane は worker）: overlay_mutex の下で decide の順に記録（後の serial が記録済みなら ioctl せずに捨てる）、APPLIED で front を替え前の画像は退役（`adopted` ≥ 番号で解く）、DROPPED は画像をすぐ空ける、EBUSY は BUSY（worker が 1 refresh ごとに 1 秒まで再試行）、ENOSPC・EINVAL はその chain だけ OUT_OF_DATE。display_mutex は取らない。
+  - primary（`present_primary`）: ticket が `min_primary` 以上の保留があれば、保留の ready（copy の完了、1 秒まで）を待ち、primary（serial＝ticket、wait の fence 付き）と保留を 1 回の COMMIT にし、`GPU_DISPLAY_WAIT` で採用を待つ（同期の selection と同じ約束）。無ければ今の PRESENT_SYNC/PRESENT（overlay の無い出力・i915・Venus は ticket 0 で今どおり）。ENOSPC・EINVAL は保留を全部捨てて OUT_OF_DATE を owner の chain に残し、primary も出さず present は成功（N10）。他の失敗は primary と保留の chain の両方に。
+  - `primary_skip`: primary が present_primary に届かない時（copy の経路は単独の flush、失敗は保留を捨てて OUT_OF_DATE）。
+  - watcher（claim ごとの thread、最初の保留で起こし、最後の release で止めて join）: 期限を過ぎ、その後に primary が呼ばれていない ready な保留を単独で commit（`why=expired`）。
+  - `vulkan_wsi_display_overlay_flush`（`present_drain` の最後、`vkQueueWaitIdle`・`vkDeviceWaitIdle`）: ready な保留を単独で commit して採用を待つ（`why=flush`）。
+  - 画像の破棄（`vkDestroySwapchainKHR`）: その画像の保留を捨て、出ていれば隠す commit を単独で出し、退役中なら採用を 1 秒まで待つ（`why=destroy`）。overlay の lease の release は保留を捨て plane を空ける。最後の release は watcher を止め、kernel の release の後に全部の借りを解く。
+  - reclaim: acquire で空きが無い時、退役中の一番古い番号で `GPU_DISPLAY_WAIT` を lock 無しで呼ぶ。
+  - log `WSI OVERLAY present plane= serial= ticket= min_primary= path=held|replaced|fast|lane|commit|flush why= result= sequence= adopted= call_ns=`（`VULKAN_ZEDBSD_OVERLAY_LOG=1`）。
+- `wsi-swapchain.c`: `WSI_LANE_OVERLAY`、overlay の矩形の検査（src は画像の中、dst は出力の中、persistent は不可）、primary の ticket を予約の時に swapchain_mutex の下で、route は cursor と同じ判定（隠す present は待ちだけ）、overlay の画像は丸ごと copy（合成しない）、submit の後（fast は present_fast の中）で decide、worker は fence の後に保留の ready を知らせ、present_native で単独の commit・primary の commit、primary に届かなかった ticket は `primary_skip`、退役・破棄の chain は `overlay_forget`、`swapchain_current` は落とされた保留の chain に OUT_OF_DATE、acquire は reclaim、`present_drain` は flush。
+- README に overlay の節（列挙、規則 1〜6、隠す約束、失敗、log）。
+
+### 設計（p001 4.4）からの違い
+
+- primary と保留の commit は COMMIT_WAIT を使わず、COMMIT（記録だけ）の後に `GPU_DISPLAY_WAIT` で採用を待つ。理由: overlay の commit を decide の順に kernel に記録するため overlay_mutex を記録の間持つので、採用の待ち（1 refresh）の間 C の fast path を止めないため。signal の fence（completion_fd）は使わない（libvulkan の中で誰も待っていない）。
+- overlay の plane の state に wait の fence を付けない。lane の worker と primary の job は CPU で GPU の完了（copy の fence）を見てから commit し、保留は ready（copy の完了）を待ってから commit に入る。job の fence の fd は slot が再利用するので、保留に持たせると寿命が合わないため。
+- primary の present は保留が無い時は今の PRESENT_SYNC のまま（display_mutex を採用まで持つ今の形）。acquire の WAIT を display_mutex の外で行うのは overlay の chain（overlay の画像の holds は overlay_mutex）。
+- fast path と lane は 1 つの platform の op（`overlay_commit`）で、ioctl の前に `overlay_mutex` を取る（decide の順の記録のため）。C の fast path が待つのは他の overlay の記録（µs〜clock を上げる時の ms）だけで、primary の採用は待たない。
+
+### 確かめ（host・build。QEMU・実機ではない）
+
+- `timeout 600 sh plan/ws214/tests/vulkan-overlay-host.sh build/p2-ws214/overlay-host` PASS（3 回続けて、ordinary と ASan/UBSan、log off で 0 行、on で 29 行・形の外 0、全部の path と why=expired・flush・destroy・nospace）。本物の display の platform と偽の kernel（plane ごとの serial・DROPPED・記録の番号・adopted・WAIT）、overlay の chain は TRANSFER_DST だけ:
+  - (i) N1: 前のコマの primary が lane で fence を待つ間に window と bar を出す → その primary は PRESENT（取り込まない）、次の primary が primary＋2 枚の 1 commit（primary の serial は ticket 3）。
+  - (vii) 新しい中身は lane の単独の commit、変わらない画像は呼んだ thread で submit 無しに commit、overlay の commit は display_mutex を持たない。
+  - (ii) 隠す present は保留、後の present は置き換え（kernel に出ない）、置き換えた画像はすぐ acquire できる、次の primary が最後の物を出す。
+  - (iii) primary が来ない保留は 2 refresh で単独の commit（why=expired）。
+  - (iv) `vulkan_wsi_queue_idle` が保留を単独で commit してから返る。
+  - (v) oldSwapchain で退役した chain の保留は捨て、次の primary は PRESENT。退役した chain の破棄は出ている plane を隠す。
+  - (vi) 保留を含む commit の ENOSPC: kernel は何も変わらず primary も出ない、primary の chain は続き、overlay の chain は acquire で OUT_OF_DATE。
+  - (viii) DROPPED の画像はすぐ holds 0。
+  - (ix) 採用が遅れると退役中の画像は空かず、acquire は `GPU_DISPLAY_WAIT` を display_mutex も overlay_mutex も持たずに呼んで空きを得る。
+  - fast path の ENOSPC はその chain の present が OUT_OF_DATE。
+  - 最後に overlay の chain の破棄で plane が隠れ、primary の破棄で claim の release が 1 回。
+- 回帰: `timeout 300 sh plan/ws141/tests/vulkan-cursor-host.sh build/p2-ws214/cursor-host` PASS（ordinary・sanitize、log off/on）。
+- build: rpi4 の `build/p2-ws214-rpi4/dynamic/libvulkan.so` と `bin/wayland`、amd64 の `build/p2-ws214-amd64/dynamic/libvulkan.so` と `bin/wayland` が exit 0・warning 0。keiland-linux の build は行っていない（libvulkan はその build の対象でない）。
+
+### 未実施・残件
+
+- Pi の実機: p004 だけでは compositor が overlay を使わない（p005）。Pi で見る点は、今の desktop が今どおり動くこと（overlay の plane の列挙で compositor の plane の選びが変わらない: cursor は maxSrcExtent 32〜256 と負の minDstPosition で選ぶので overlay（minDst (0,0)、maxSrc は出力の大きさ）は選ばれない、primary は plane 0）と、`hvs-load` の後の p005 での overlay。Pi は root の UFS が書けない（BUG-294）ので焼き直しの後。
+- T1: i915・Venus の回帰（ticket は overlay の無い出力で 0 なので present の道は今どおり）。
+- 出力が 2 つの時、compositor の cursor の plane の探し（`cursor-plane.c` の properties[8]）は 1 つの出力が 4 plane（primary・overlay 2・cursor）なので 2 出力でちょうど 8。3 出力目の cursor は探せない（p005 で compositor 側に記録）。
+- 保留の期限 2 refresh が R の 1 core の preempt に対して十分かは p005 の Pi の log（`why=expired` が出ないこと）で見る。
+- WS141 p016 B-u の Pi の受け入れ（clear の条件、Q1 が判定）。
