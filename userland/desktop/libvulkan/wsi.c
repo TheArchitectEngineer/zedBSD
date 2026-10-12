@@ -39,6 +39,8 @@ static VkResult wsi_display_get(struct VkPhysicalDevice_T *physical, const struc
 static VkResult wsi_mode_get(struct vulkan_display *display, uint64_t generation, const VkDisplayModeParametersKHR *parameters, const VkAllocationCallbacks *allocator, struct vulkan_display_mode **result);
 static VkResult wsi_plane_count(struct VkPhysicalDevice_T *physical, uint32_t *count);
 static bool wsi_cursor_plane(const struct vulkan_wsi_output *output, uint32_t local_plane);
+static bool wsi_overlay_plane(const struct vulkan_wsi_output *output, uint32_t local_plane);
+static void wsi_overlay_capabilities(const struct gpu_display_overlay_info *info, const VkDisplayModeParametersKHR *mode, VkDisplayPlaneCapabilitiesKHR *capabilities);
 static VkResult wsi_plane_lookup(struct VkPhysicalDevice_T *physical, uint32_t plane, struct vulkan_display **display, uint32_t *local_plane);
 static VkBool32 wsi_mode_equal(const VkDisplayModeParametersKHR *first, const VkDisplayModeParametersKHR *second);
 static void wsi_surface_unlink(struct vulkan_surface *surface);
@@ -474,6 +476,7 @@ vkGetDisplayPlaneCapabilitiesKHR(
 	struct vulkan_display_mode *mode;
 	struct vulkan_display *display;
 	struct vulkan_wsi_output output;
+	struct gpu_display_overlay_info overlay;
 	uint32_t local_plane;
 	VkResult error;
 
@@ -531,6 +534,15 @@ vkGetDisplayPlaneCapabilitiesKHR(
 		return VK_SUCCESS;
 	}
 
+	/* An overlay plane shows a premultiplied part of its image inside the output, within the kernel's limits. */
+	if (wsi_overlay_plane(&output, local_plane)) {
+		error = vulkan_wsi_display_overlay_info(physical, &output, local_plane, &overlay);
+		if (error != VK_SUCCESS)
+			return error;
+		wsi_overlay_capabilities(&overlay, &mode->parameters, capabilities);
+		return VK_SUCCESS;
+	}
+
 	/* Describes only full-image 1:1 opaque presentation, without scaling claims. */
 	capabilities->supportedAlpha = VK_DISPLAY_PLANE_ALPHA_OPAQUE_BIT_KHR;
 	capabilities->minSrcExtent = mode->parameters.visibleRegion;
@@ -561,6 +573,7 @@ vkCreateDisplayPlaneSurfaceKHR(
 	struct vulkan_wsi_output output;
 	uint32_t local_plane;
 	bool cursor;
+	bool overlay;
 	VkResult error;
 
 	/* Resolves the instance and the mode before allocating a surface. */
@@ -602,6 +615,7 @@ vkCreateDisplayPlaneSurfaceKHR(
 	if (error != VK_SUCCESS)
 		return error;
 	cursor = wsi_cursor_plane(&output, local_plane);
+	overlay = wsi_overlay_plane(&output, local_plane);
 
 	/* Exposes the direct adapter's supported transform and the plane's composition behavior. */
 	if (create_info->transform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR ||
@@ -609,8 +623,8 @@ vkCreateDisplayPlaneSurfaceKHR(
 		return VK_ERROR_INITIALIZATION_FAILED;
 	}
 
-	/* A cursor image fits the plane's limits; a full plane takes the complete selected mode without scaling. */
-	if (cursor) {
+	/* A cursor or overlay image fits the plane's limits; a full plane takes the complete selected mode without scaling. */
+	if (cursor || overlay) {
 		if (create_info->imageExtent.width < capabilities.minSrcExtent.width ||
 		    create_info->imageExtent.width > capabilities.maxSrcExtent.width ||
 		    create_info->imageExtent.height < capabilities.minSrcExtent.height ||
@@ -649,6 +663,7 @@ vkCreateDisplayPlaneSurfaceKHR(
 	surface->display_info.pNext = NULL;
 	surface->native_plane = local_plane;
 	surface->cursor = cursor ? VK_TRUE : VK_FALSE;
+	surface->overlay = overlay ? VK_TRUE : VK_FALSE;
 	surface->swapchain_references = 0U;
 
 	/* Publishes generic ownership before making the surface discoverable to WSI. */
@@ -1540,4 +1555,61 @@ wsi_cursor_plane(
 	if ((output->flags & VULKAN_WSI_OUTPUT_CURSOR) == 0U || output->plane_count == 0U)
 		return false;
 	return local_plane == output->plane_count - 1U;
+}
+
+/* Tells whether a local plane is one of its output's overlay planes (1 to overlay_count). */
+static bool
+wsi_overlay_plane(
+	const struct vulkan_wsi_output *output,
+	uint32_t local_plane)
+{
+	/* Only an output with overlays has them, right after the primary. */
+	if ((output->flags & VULKAN_WSI_OUTPUT_OVERLAYS) == 0U)
+		return false;
+	if (local_plane == 0U || local_plane > output->overlay_count)
+		return false;
+
+	/* Succeeded: an overlay plane. */
+	return true;
+}
+
+/*
+ * Describes an overlay plane: per-pixel premultiplied alpha, a source of up
+ * to the kernel's limit, shown at any place inside the mode's visible region,
+ * at the same size or, as the kernel allows, scaled up and down.
+ */
+static void
+wsi_overlay_capabilities(
+	const struct gpu_display_overlay_info *info,
+	const VkDisplayModeParametersKHR *mode,
+	VkDisplayPlaneCapabilitiesKHR *capabilities)
+{
+	/* The image's alpha, and the source part of it the plane reads. */
+	capabilities->supportedAlpha = VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_PREMULTIPLIED_BIT_KHR;
+	capabilities->minSrcPosition.x = 0;
+	capabilities->minSrcPosition.y = 0;
+	capabilities->maxSrcPosition.x = (int32_t)info->max_src_width - 1;
+	capabilities->maxSrcPosition.y = (int32_t)info->max_src_height - 1;
+	capabilities->minSrcExtent.width = 1U;
+	capabilities->minSrcExtent.height = 1U;
+	capabilities->maxSrcExtent.width = info->max_src_width;
+	capabilities->maxSrcExtent.height = info->max_src_height;
+
+	/* Anywhere inside the visible region. */
+	capabilities->minDstPosition.x = 0;
+	capabilities->minDstPosition.y = 0;
+	capabilities->maxDstPosition.x = (int32_t)mode->visibleRegion.width - 1;
+	capabilities->maxDstPosition.y = (int32_t)mode->visibleRegion.height - 1;
+	capabilities->minDstExtent.width = 1U;
+	capabilities->minDstExtent.height = 1U;
+	capabilities->maxDstExtent.width = info->max_dst_width;
+	capabilities->maxDstExtent.height = info->max_dst_height;
+
+	/* Without scaling up, the shown size is at most the largest source. */
+	if ((info->flags & GPU_DISPLAY_OVERLAY_SCALE_UP) == 0U) {
+		if (capabilities->maxDstExtent.width > info->max_src_width)
+			capabilities->maxDstExtent.width = info->max_src_width;
+		if (capabilities->maxDstExtent.height > info->max_src_height)
+			capabilities->maxDstExtent.height = info->max_src_height;
+	}
 }
