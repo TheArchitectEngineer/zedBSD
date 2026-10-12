@@ -20,6 +20,7 @@
 #include "kern/panic.h"
 #include "kern/clock.h"
 #include <kern/kcrt.h>
+#include <kern/page.h>
 
 #include <uapi/errno.h>
 #include <stdint.h>
@@ -42,8 +43,21 @@
 #define FAT_LFN_MAX_ENTRIES		((FAT_LFN_MAX_UNITS + 12U) / 13U)
 #define FAT_BATCH_SECTORS		8U
 #define FAT_RUN_SECTORS			128U
-#define FAT_ZERO_SECTORS		8U
-#define FAT_BATCH_ENTRIES		32U
+
+/*
+ * The sectors of one block of zeroes: one line of the buffer cache, which
+ * holds a page of the leaf disk for 512-byte blocks (BUG-295).
+ */
+#define FAT_ZERO_SECTORS		(KERN_PAGE_SIZE / 512U)
+
+/*
+ * The most FAT entries one table transaction changes.  The sectors those
+ * entries touch are still bounded by FAT_BATCH_SECTORS, and a batch that
+ * would need more is split before anything is written (BUG-295: 128, one
+ * FAT32 sector's worth, so a 64 KiB run of small clusters is one
+ * transaction rather than four).
+ */
+#define FAT_BATCH_ENTRIES		128U
 #define FAT16_RESERVED_CLUSTER		0xfff0U
 #define FAT16_END_OF_CHAIN		0xffffU
 #define FAT12_RESERVED_CLUSTER		0xff0U
@@ -345,9 +359,9 @@ static struct fat_file_state fat_files[FAT_FILE_MAX] __attribute__((section(".vf
 /*
  * Zeroes that a newly handed-out cluster is written from.
  *
- * Eight sectors are written per request, so a cluster or a run of clusters is
- * cleared in a few writes rather than one per sector (BUG-269).  It is never
- * written to.
+ * One cache line of sectors is written per request, so a cluster or a run of
+ * clusters is cleared in a few writes rather than one per sector (BUG-269).
+ * It is never written to.
  */
 static const uint8_t fat_zero_block[FAT_ZERO_SECTORS * 512U];
 
@@ -1419,6 +1433,12 @@ fat_engine_write_run(
 /*
  * Writes zeroes over a run of whole sectors, a block of zeroes at a time,
  * past the one-sector cache.
+ *
+ * The blocks end on the buffer cache's line boundaries of the leaf disk, so
+ * every block but the first and the last covers one whole line, which the
+ * cache writes without reading it first.  A block that straddled two lines
+ * made the cache read and write back both of them (BUG-295).  What lands on
+ * the volume is the same either way.
  */
 static int
 fat_engine_zero_run(
@@ -1426,6 +1446,8 @@ fat_engine_zero_run(
 	uint32_t lba,
 	uint32_t count)
 {
+	struct disk *leaf;
+	uint64_t mapped;
 	uint32_t done;
 	uint32_t chunk;
 	int error;
@@ -1435,6 +1457,15 @@ fat_engine_zero_run(
 	if (error != 0)
 		return error;
 
+	/*
+	 * Finds where the run starts on the leaf disk, whose block numbers
+	 * the cache's lines are aligned to.  A run that cannot be resolved is
+	 * cut from its own start; the write below then reports why.
+	 */
+	error = disk_resolve_range(filesystem->disk, lba, count, &leaf, &mapped);
+	if (error != 0)
+		mapped = lba;
+
 	/* The run is cleared inside one write epoch of the mount. */
 	if (filesystem->owner != NULL)
 		io_epoch_begin(&filesystem->owner->m_write_epoch);
@@ -1442,10 +1473,11 @@ fat_engine_zero_run(
 	/* Clears the run a block of zeroes at a time. */
 	error = 0;
 	for (done = 0; done < count; done += chunk) {
-		/* The block, or what is left of the run when that is less. */
-		chunk = count - done;
-		if (chunk > FAT_ZERO_SECTORS)
-			chunk = FAT_ZERO_SECTORS;
+		/* The block reaches the next line boundary, or the end of the run when that is nearer. */
+		chunk = FAT_ZERO_SECTORS -
+			(uint32_t)((mapped + done) % FAT_ZERO_SECTORS);
+		if (chunk > count - done)
+			chunk = count - done;
 
 		/* Writes one block of zeroes. */
 		error = fat_sectors_write(filesystem, lba + done, chunk,

@@ -213,6 +213,25 @@ rpi4-fdt-host-test: $(BUILD)/tests/rpi4-fdt-host-test
 
 CHECK_RUN_TARGETS += rpi4-fdt-host-test
 
+# The SD driver on the host against a fake controller (BUG-295): the driver
+# is copied without its kernel includes and with its two generic-timer reads
+# replaced by the test's fake timer.
+$(BUILD)/tests/rpi4-sdhci-under-test.c: src/drivers/platform/rpi4/rpi4-sdhci.c
+	@mkdir -p $(dir $@)
+	sed -e '/^#include/d' \
+ -e 's/__asm__ volatile("mrs %0,cntpct_el0" : "=r"(value));/value = host_counter();/' \
+ -e 's/__asm__ volatile("mrs %0,cntfrq_el0" : "=r"(value));/value = host_frequency();/' \
+ $< > $@
+
+$(BUILD)/tests/rpi4-sdhci-host-test: tests/rpi4-sdhci-host-test.c \
+	$(BUILD)/tests/rpi4-sdhci-under-test.c
+	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -I$(BUILD)/tests $< -o $@
+
+rpi4-sdhci-host-test: $(BUILD)/tests/rpi4-sdhci-host-test
+	$<
+
+CHECK_RUN_TARGETS += rpi4-sdhci-host-test
+
 $(BUILD)/src/hal/cpu-up.o: src/hal/cpu-up.c
 	@mkdir -p $(dir $@)
 	$(ARM64_CC) $(ARM64_CPPFLAGS) $(ARM64_CFLAGS) $(ARM64_KERNEL_LTO_CFLAGS) -MMD -MP -c $< -o $@
@@ -620,7 +639,7 @@ $(BUILD)/vmunix: $(BUILD)/kernel.elf \
  --elf $< --image $@ --fix-image
 	$(PYTHON) platform/arm64/tools/check-arm64-vmunix.py --elf $< --image $@
 
-.PHONY: rpi4-fdt-host-test
+.PHONY: rpi4-fdt-host-test rpi4-sdhci-host-test
 
 -include $(ARM64_BOOT_OBJS:.o=.d) $(ARM64_KERNEL_OBJS:.o=.d)
 
