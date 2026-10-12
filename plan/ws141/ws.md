@@ -78,6 +78,7 @@ Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver �
 | [p014](phase014/phase.md) | HVS の cursor plane | in-progress（実機で 60fps、ユーザー確認） | p013 | — |
 | [p015](phase015/phase.md) | GPU が書いて GPU が読む画像を UIF で持つ（設計） | planning（第 3 版） | p013 | 未見積 |
 | [p016](phase016/phase.md) | GPU の実行中に ioctl と cursor を止めない（worker の mutex、cursor の GPU 無しの更新） | planning（設計の第 1 版、review 前） | p014 | 未見積 |
+| [p017](phase017/phase.md) | bcm2711 の Vulkan の stencil（Notes） | planning（調べと見積もり、(b) の後の候補） | p016 の (b) | 未投入 |
 | [p012](phase012/phase.md) | KeilandのEL0 counter例外 | cleared（実機でcounter trap消失・描画送信到達） | p011実機成功、p005/p006起動経路 | 今回有限scope |
 | [p011](phase011/phase.md) | R0拒否とブラックアウトの修正 | cleared（実機R0/list43採用成功） | N0/preflight実機成功 | 今回部分scope |
 | [p010](phase010/phase.md) | core clock/実時間job期限 | cleared（software/実機表示未確認） | main211be00dcと実機ログ | 今回有限scope |
