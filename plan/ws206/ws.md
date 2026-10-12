@@ -3,7 +3,7 @@
 # WS206: Raspberry Pi 4 の WiFi（BCM43455、SDIO）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-11 Q1 作成、P1 の予約の Queue。2026-10-13 p001 の設計の第 2 版、design-reviewer 待ち）
+Status: incomplete（p001 in-progress、設計の第 2 版、review 待ち）（2026-10-11 Q1 作成、P1 の予約の Queue。2026-10-13 p001 の設計の第 2 版、design-reviewer 待ち）
 Primary Milestone: MG005
 Related Milestones: —
 Parent: [Master](../master.md)
