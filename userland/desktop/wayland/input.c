@@ -869,6 +869,9 @@ apply_touchpad(
 
 	/* The report's end: what the fingers did. */
 	kwl_touchpad_frame(&device->pad, kwl_milliseconds(), &actions);
+
+	/* The latest report's kernel time, for the cursor plane's log line of a move the fingers make (ws213-p001 review-2). */
+	server->pointer_event_us = device->frame_time_us;
 	apply_touchpad_actions(server, &device->pad, &actions, time);
 
 	/* Succeeded: the report has been applied. */
