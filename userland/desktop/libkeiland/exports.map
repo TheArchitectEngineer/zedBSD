@@ -367,6 +367,7 @@
 		kl_window_present;
 		kl_window_present_part;
 		kl_window_present_parts;
+		kl_window_set_pacing;
 		kl_window_see_through;
 		kl_window_display;
 		kl_window_surface;

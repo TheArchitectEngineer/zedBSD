@@ -111,6 +111,7 @@ static void window_touch_frame(void *data, struct wl_touch *touch);
 static void window_touch_cancel(void *data, struct wl_touch *touch);
 static int window_touch_foreign(struct kl_window *window, int32_t id, int forget);
 static struct kl_window_event *window_push(struct kl_window *window, unsigned kind);
+static struct kl_window_event *window_newest_motion(struct kl_window *window);
 static int window_setup(struct kl_window *window, const struct kl_window_options *options);
 static int window_setup_shared(struct kl_window *window, struct xdg_toplevel *parent, const struct kl_window_options *options, uint32_t min_width, uint32_t min_height);
 static int window_setup_app(struct kl_window *window, struct kl_app *app, const struct kl_window_options *options);
@@ -643,6 +644,29 @@ kl_window_present(
 	/* The whole frame changed. */
 	error = kl_window_present_part(window, pixels, stride, NULL);
 	return error;
+}
+
+/*
+ * Asks for how a window's input and frames are paced (KL_VERSION 91,
+ * ws210-p014 F2.1): KL_PACING_MOTION merges a pointer's motions queued one
+ * after another into the last.  max_fps is for a later version and must
+ * be 0.  Returns 0, or EINVAL for a flag or a rate not known.
+ */
+int
+kl_window_set_pacing(
+	struct kl_window *window,
+	unsigned flags,
+	unsigned max_fps)
+{
+	/* Only what this version knows. */
+	if ((flags & ~KL_PACING_MOTION) != 0U)
+		return EINVAL;
+	if (max_fps != 0U)
+		return EINVAL;
+
+	/* Succeeded: the window's input is paced so from now on. */
+	window->pacing = flags;
+	return 0;
 }
 
 /*
@@ -1625,6 +1649,47 @@ keiui_window_push(
 }
 
 /*
+ * Finds the newest input queued for the window when it is a motion of the
+ * window with nothing queued after it (keiui_motion_merges); NULL
+ * otherwise, or while the window's input is kept from the queue.
+ */
+static struct kl_window_event *
+window_newest_motion(
+	struct kl_window *window)
+{
+	struct kl_app_event *queued;
+	struct kl_window_event *input;
+	unsigned slot;
+	int merges;
+
+	/* A window of an application: the application's queue, nothing while it is made. */
+	if (window->app != NULL) {
+		if (window->app_quiet)
+			return NULL;
+		if (window->app->event_count == 0U)
+			return NULL;
+		slot = (window->app->event_first + window->app->event_count - 1U) % KEIUI_APP_EVENTS;
+		queued = &window->app->events[slot];
+		merges = keiui_motion_merges(queued->kind, queued->window, queued->input.kind, window);
+		if (!merges)
+			return NULL;
+		return &queued->input;
+	}
+
+	/* A window of its own: its own queue. */
+	if (window->event_count == 0U)
+		return NULL;
+	slot = (window->event_first + window->event_count - 1U) % KEIUI_WINDOW_EVENTS;
+	input = &window->events[slot];
+	merges = keiui_motion_merges(KL_APP_WINDOW, window, input->kind, window);
+	if (!merges)
+		return NULL;
+
+	/* Succeeded: the motion the new one moves. */
+	return input;
+}
+
+/*
  * Queues a new input of a kind at the pointer's place with the modifiers
  * held; NULL when the queue is full (the input is dropped).
  */
@@ -2022,9 +2087,31 @@ window_pointer_motion(
 	if (!window->pointer_ours)
 		return;
 
-	/* The new place, as a motion at the compositor's time (libkeiui's version 11: a stroke's samples keep their times). */
+	/* The new place. */
 	window->pointer_x = wl_fixed_to_double(x);
 	window->pointer_y = wl_fixed_to_double(y);
+
+	/*
+	 * A window that asked for its motions merged (KL_PACING_MOTION): a
+	 * motion queued last, with nothing after it, moves to the new place
+	 * instead of a motion more being queued.
+	 */
+	event = NULL;
+	if ((window->pacing & KL_PACING_MOTION) != 0U)
+		event = window_newest_motion(window);
+	if (event != NULL) {
+		event->x = window->pointer_x;
+		event->y = window->pointer_y;
+		event->modifiers = window->modifiers;
+		event->serial = window->serial;
+		event->arrival_us = kl_clock_us();
+		event->time_us = event->arrival_us;
+		keiui_window_stamp(event, time);
+		keiui_window_wake(window);
+		return;
+	}
+
+	/* The new place, as a motion at the compositor's time (libkeiui's version 11: a stroke's samples keep their times). */
 	event = window_push(window, KL_WINDOW_MOTION);
 	if (event != NULL)
 		keiui_window_stamp(event, time);
