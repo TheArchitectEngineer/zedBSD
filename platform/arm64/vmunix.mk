@@ -60,6 +60,7 @@ ARM64_KERNEL_SOURCES := \
 	src/drivers/platform/rpi4/rpi4-sdhci.c \
 	src/drivers/platform/rpi4/rpi4-console.c \
 	src/drivers/platform/rpi4/rpi4-pcie.c \
+	src/drivers/platform/rpi4/rpi4-board.c \
 	src/drivers/platform/rpi4/rpi4-firmware.c src/kern/dcache.c \
 	src/kern/uncached.c \
 	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
@@ -203,10 +204,12 @@ ARM64_USER_OBJS := $(ARM64_USER_SH_OBJS)
 
 vmunix: $(BUILD)/vmunix
 $(BUILD)/tests/rpi4-fdt-host-test: tests/rpi4-fdt-host-test.c \
-	src/hal/arm64/bsp-rpi4/fdt.c
+	src/hal/arm64/bsp-rpi4/fdt.c src/drivers/generic/fdt.c \
+	src/drivers/platform/rpi4/rpi4-board.c
 	@mkdir -p $(dir $@)
 	$(HOSTCC) -std=c11 -O2 -Wall -Wextra -Werror -Iinclude -Isrc \
- src/hal/arm64/bsp-rpi4/fdt.c $< -o $@
+ src/hal/arm64/bsp-rpi4/fdt.c src/drivers/generic/fdt.c \
+ src/drivers/platform/rpi4/rpi4-board.c $< -o $@
 
 rpi4-fdt-host-test: $(BUILD)/tests/rpi4-fdt-host-test
 	$< vendor/raspberrypi-firmware/boot/bcm2711-rpi-4-b.dtb
