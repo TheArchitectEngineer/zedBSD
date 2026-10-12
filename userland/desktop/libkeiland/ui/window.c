@@ -660,6 +660,35 @@ kl_window_present_part(
 	size_t stride,
 	const struct kl_rect *part)
 {
+	unsigned count;
+	int error;
+
+	/* One part, or none for the whole frame. */
+	count = 0;
+	if (part != NULL)
+		count = 1;
+	error = kl_window_present_parts(window, pixels, stride, part, count);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the frame is shown. */
+	return 0;
+}
+
+/*
+ * Shows a frame of which only some parts changed since the last one
+ * (KL_VERSION 90, ws210-p014): at most KL_FRAME_PARTS_MAX of them, the
+ * whole frame when count is 0.  Returns 0, EAGAIN when the window's size
+ * changed (a resize and another frame), or EIO.
+ */
+int
+kl_window_present_parts(
+	struct kl_window *window,
+	const uint32_t *pixels,
+	size_t stride,
+	const struct kl_rect *parts,
+	unsigned count)
+{
 	VkResult result;
 	int error;
 
@@ -676,7 +705,7 @@ kl_window_present_part(
 		return EINVAL;
 
 	/* Vulkan: out of date asks for a resize and another frame. */
-	result = keiui_present_frame(&window->vulkan, pixels, stride, part);
+	result = keiui_present_frame(&window->vulkan, pixels, stride, parts, count);
 	error = errno;
 	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
 		return EAGAIN;

@@ -199,10 +199,11 @@ keiui_present_resize(
  * Shows a frame (pixels of the swapchain's size, stride words a row) and
  * waits for it to finish.
  *
- * part, when not NULL, is the only part of the frame that changed since
- * the last one (BUG-221): only its rows are copied into the canvas, which
- * keeps the rest, and the window system is told that part alone
- * (VK_KHR_incremental_present).  A new canvas takes the whole frame.
+ * parts, when count is not 0, are the only parts of the frame that changed
+ * since the last one (BUG-221, at most KL_FRAME_PARTS_MAX, ws210-p014):
+ * only their rows are copied into the canvas, which keeps the rest, and
+ * the window system is told those parts alone (VK_KHR_incremental_present).
+ * A new canvas, or parts all outside the frame, take the whole frame.
  *
  * Returns VK_ERROR_OUT_OF_DATE_KHR when the swapchain no longer matches
  * the window; the caller resizes and draws again.
@@ -212,18 +213,21 @@ keiui_present_frame(
 	struct keiui_present *present,
 	const uint32_t *pixels,
 	size_t stride,
-	const struct kl_rect *part)
+	const struct kl_rect *parts,
+	unsigned count)
 {
 	VkSubmitInfo submit;
 	VkPresentInfoKHR info;
 	VkPresentRegionsKHR regions;
 	VkPresentRegionKHR region;
-	VkRectLayerKHR rect;
+	VkRectLayerKHR rects[KL_FRAME_PARTS_MAX];
 	VkPipelineStageFlags stage;
-	struct kl_rect area;
+	struct kl_rect areas[KL_FRAME_PARTS_MAX];
+	unsigned area_count;
+	unsigned index;
 	uint64_t started;
 	uint32_t image;
-	int partial;
+	int clipped;
 	VkResult error;
 
 	/* A failed resize left no swapchain or canvas: nothing is shown until one succeeds. */
@@ -232,20 +236,29 @@ keiui_present_frame(
 		return VK_ERROR_INITIALIZATION_FAILED;
 	}
 
-	/* The part to copy and tell: the whole frame for a new canvas, or without a part. */
-	partial = 0;
-	if (part != NULL && present->canvas_whole)
-		partial = keiui_present_part_clip(present->extent.width, present->extent.height, part, &area);
-	if (!partial) {
-		area.x = 0;
-		area.y = 0;
-		area.width = (int)present->extent.width;
-		area.height = (int)present->extent.height;
+	/* The parts to copy and tell, inside the frame: none for a new canvas or without parts. */
+	area_count = 0;
+	if (present->canvas_whole) {
+		for (index = 0; index < count && index < KL_FRAME_PARTS_MAX; index++) {
+			clipped = keiui_present_part_clip(present->extent.width, present->extent.height, &parts[index], &areas[area_count]);
+			if (clipped)
+				area_count++;
+		}
 	}
 
-	/* The part's rows into the canvas image; the canvas keeps the rest of the last frame. */
+	/* Without a part inside the frame, the whole frame is the one part, told as no region. */
+	if (area_count == 0) {
+		areas[0].x = 0;
+		areas[0].y = 0;
+		areas[0].width = (int)present->extent.width;
+		areas[0].height = (int)present->extent.height;
+	}
+
+	/* The parts' rows into the canvas image; the canvas keeps the rest of the last frame. */
 	started = keiui_clock_ms();
-	keiui_present_copy(present->canvas_map, present->canvas_pitch, pixels, stride, &area);
+	keiui_present_copy(present->canvas_map, present->canvas_pitch, pixels, stride, &areas[0]);
+	for (index = 1; index < area_count; index++)
+		keiui_present_copy(present->canvas_map, present->canvas_pitch, pixels, stride, &areas[index]);
 	present->canvas_whole = 1;
 	present->copy_ms = (unsigned)(keiui_clock_ms() - started);
 
@@ -301,15 +314,17 @@ keiui_present_frame(
 	info.pSwapchains = &present->swapchain;
 	info.pImageIndices = &image;
 
-	/* The changed part, for the window system to take alone. */
-	if (partial && present->incremental) {
-		memset(&rect, 0, sizeof(rect));
-		rect.offset.x = area.x;
-		rect.offset.y = area.y;
-		rect.extent.width = (uint32_t)area.width;
-		rect.extent.height = (uint32_t)area.height;
-		region.rectangleCount = 1U;
-		region.pRectangles = &rect;
+	/* The changed parts, for the window system to take alone. */
+	if (area_count != 0 && present->incremental) {
+		memset(rects, 0, sizeof(rects));
+		for (index = 0; index < area_count; index++) {
+			rects[index].offset.x = areas[index].x;
+			rects[index].offset.y = areas[index].y;
+			rects[index].extent.width = (uint32_t)areas[index].width;
+			rects[index].extent.height = (uint32_t)areas[index].height;
+		}
+		region.rectangleCount = area_count;
+		region.pRectangles = rects;
 		memset(&regions, 0, sizeof(regions));
 		regions.sType = VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR;
 		regions.swapchainCount = 1U;

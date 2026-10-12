@@ -125,6 +125,15 @@ if (due) {
   - build: rpi4・amd64 の libkeiland と 6 つの app が warning 0。
   - 限り: 公開の口が 1 つの矩形なので、縦の list を上から下へ通った時は、上下の端の外接の箱が通った行を全部含む（軌跡と同じ大きさ）。効くのは、行き来・回り道・still を越える場合。端の 2 つを別々に描くには F3 の `kl_ui_take_frame`（矩形の list）が要る。
 
+- 2026-10-12 F3 の口を agent/p1 に実装した（Q1「review の指摘で変わり得る前提で、merge はしない」）。
+  - libkeiland: `kl_ui_take_frame`・`kl_ui_damage`・`kl_ui_damage_whole`・`kl_window_present_parts`・`KL_FRAME_*`、KL_VERSION 90、exports.map。docs/architecture/keiland.md の Widgets の行。
+  - kl_ui の damage は矩形の list（最大 4）。重なるか外接の箱が和の 1.5 倍以下ならまとめる。5 つ目はいちばん広がりの少ない所にまとめる。
+  - `kl_ui_take_damage` は同じ list の外接の箱（互換）。present.c は部分の list を写し、incremental present に渡す。
+  - host の試験 `run-host-kl-ui-lit.sh` は 21 PASS。F3 の分: 縦に全部の行を通ると、最初と最後の行が 2 つの部分になる。app の部分も足される。元に戻ると NONE。容量 1 で 1 つにまとまる。WHOLE。各部分を clip して描いた後の画素は、全体の描画と一致した。
+  - 既存の host の試験: Phone 19・Calendar 13・Music 16 PASS、Files は host build が通った。
+  - build: rpi4・amd64 の libkeiland と 6 つの app が warning 0。keiland-os-boundary PASS。exports.py --check。
+  - app はまだ載せ替えていない（F3 の app の段と F4 は review の後）。
+
 ## Phase の中の順
 
 1. F1（kl_ui の内側だけ、公開の口は変えない）。これだけで Music・Calendar・Photos・Phone の「軌跡」が消える。KL_VERSION は変えない。

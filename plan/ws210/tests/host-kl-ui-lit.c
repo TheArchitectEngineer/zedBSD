@@ -16,6 +16,10 @@
  *
  *     host-kl-ui-lit FONT FALLBACK
  *
+ * F3: kl_ui_take_frame gives the two rows as two parts, not the rows
+ * between, and parts the application adds (kl_ui_damage); each part is
+ * drawn clipped to it in turn and the frame must again equal the whole.
+ *
  * Prints "PASS name" or "FAIL name ..." for each check; exits with 1 when
  * one failed.
  */
@@ -61,6 +65,8 @@ static int test_failures;
 int main(int argc, char **argv);
 static void test_draw(struct test_scene *scene);
 static void test_frame(struct test_scene *scene, const struct kl_rect *part);
+static void test_frame_parts(struct test_scene *scene, const struct kl_rect *parts, unsigned count);
+static void test_take_frame(struct test_scene *scene);
 static int test_take(struct test_scene *scene, struct kl_rect *part);
 static void test_row(int index, struct kl_rect *row);
 static int test_contains(const struct kl_rect *outer, const struct kl_rect *inner);
@@ -216,6 +222,9 @@ main(
 		passed = 1;
 	test_check(passed, "still-only", &part);
 
+	/* The parts of a frame (F3). */
+	test_take_frame(&scene);
+
 	/* The result. */
 	kl_ui_destroy(scene.ui);
 	kl_text_close(&scene.text);
@@ -284,6 +293,112 @@ test_frame(
 	(void)kl_ui_end(scene->ui, scene->now);
 	if (part != NULL)
 		kl_canvas_clip_pop(&scene->canvas);
+}
+
+/* Draws one frame clipped to each of some parts in turn, the input's frame begun once for each. */
+static void
+test_frame_parts(
+	struct test_scene *scene,
+	const struct kl_rect *parts,
+	unsigned count)
+{
+	unsigned index;
+
+	/* Each part, as an application draws a frame of several parts. */
+	for (index = 0; index < count; index++)
+		test_frame(scene, &parts[index]);
+}
+
+/*
+ * Checks kl_ui_take_frame: the rows crossed between two frames are not
+ * drawn, only the row lit when drawn and the one lit now, as two parts;
+ * the application's parts join them; nothing is drawn when the lighting
+ * came back; the whole window when asked.
+ */
+static void
+test_take_frame(
+	struct test_scene *scene)
+{
+	struct kl_rect parts[KL_FRAME_PARTS_MAX];
+	struct kl_rect first;
+	struct kl_rect last;
+	struct kl_rect added;
+	unsigned count;
+	unsigned index;
+	int need;
+	int passed;
+	int found_first;
+	int found_last;
+
+	/* A frame with the pointer on the first row. */
+	(void)kl_ui_pointer_motion(scene->ui, TEST_ROW_X + 20, TEST_ROW_Y + 15);
+	test_frame(scene, NULL);
+	(void)kl_ui_take_frame(scene->ui, parts, KL_FRAME_PARTS_MAX, &count);
+
+	/* Down every row to the last before a frame: two parts, the first and the last rows, nothing between. */
+	for (index = 1; index < TEST_ROWS; index++)
+		(void)kl_ui_pointer_motion(scene->ui, TEST_ROW_X + 20, TEST_ROW_Y + (int)index * TEST_ROW_HEIGHT + 15);
+	need = kl_ui_take_frame(scene->ui, parts, KL_FRAME_PARTS_MAX, &count);
+	test_row(0, &first);
+	test_row(TEST_ROWS - 1, &last);
+	found_first = 0;
+	found_last = 0;
+	for (index = 0; index < count; index++) {
+		if (test_contains(&parts[index], &first) && parts[index].height < 2 * TEST_ROW_HEIGHT)
+			found_first = 1;
+		if (test_contains(&parts[index], &last) && parts[index].height < 2 * TEST_ROW_HEIGHT)
+			found_last = 1;
+	}
+	passed = 0;
+	if (need == KL_FRAME_PARTS && count == 2U && found_first && found_last)
+		passed = 1;
+	test_check(passed, "frame-two-parts", &parts[0]);
+	test_frame_parts(scene, parts, count);
+	test_same_as_whole(scene, "frame-two-parts-pixels");
+
+	/* The application's part far from the lighting's joins it as a part of its own. */
+	(void)kl_ui_pointer_motion(scene->ui, TEST_ROW_X + 20, TEST_ROW_Y + 5 * TEST_ROW_HEIGHT + 15);
+	added.x = 300;
+	added.y = 40;
+	added.width = 60;
+	added.height = 20;
+	kl_ui_damage(scene->ui, &added);
+	need = kl_ui_take_frame(scene->ui, parts, KL_FRAME_PARTS_MAX, &count);
+	passed = 0;
+	if (need == KL_FRAME_PARTS && count == 3U)
+		passed = 1;
+	test_check(passed, "frame-added", &parts[0]);
+	test_frame_parts(scene, parts, count);
+	test_same_as_whole(scene, "frame-added-pixels");
+
+	/* Away and back to the row lit when drawn: nothing to draw. */
+	(void)kl_ui_pointer_motion(scene->ui, TEST_ROW_X + 20, TEST_ROW_Y + 7 * TEST_ROW_HEIGHT + 15);
+	(void)kl_ui_pointer_motion(scene->ui, TEST_ROW_X + 20, TEST_ROW_Y + 5 * TEST_ROW_HEIGHT + 15);
+	need = kl_ui_take_frame(scene->ui, parts, KL_FRAME_PARTS_MAX, &count);
+	passed = 0;
+	if (need == KL_FRAME_NONE && count == 0U)
+		passed = 1;
+	test_check(passed, "frame-none", NULL);
+
+	/* Fewer places than parts: the parts beyond merged into the last one given. */
+	(void)kl_ui_pointer_motion(scene->ui, TEST_ROW_X + 20, TEST_ROW_Y + 9 * TEST_ROW_HEIGHT + 15);
+	need = kl_ui_take_frame(scene->ui, parts, 1U, &count);
+	test_row(5, &first);
+	test_row(9, &last);
+	passed = 0;
+	if (need == KL_FRAME_PARTS && count == 1U && test_contains(&parts[0], &first) && test_contains(&parts[0], &last))
+		passed = 1;
+	test_check(passed, "frame-capacity", &parts[0]);
+	test_frame_parts(scene, parts, count);
+	test_same_as_whole(scene, "frame-capacity-pixels");
+
+	/* The whole window asked for. */
+	kl_ui_damage_whole(scene->ui);
+	need = kl_ui_take_frame(scene->ui, parts, KL_FRAME_PARTS_MAX, &count);
+	passed = 0;
+	if (need == KL_FRAME_WHOLE && count == 0U)
+		passed = 1;
+	test_check(passed, "frame-whole", NULL);
 }
 
 /* Takes the part the lighting needs drawn again; 0 when there is none (or the whole window). */
