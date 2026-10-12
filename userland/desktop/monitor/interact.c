@@ -72,6 +72,9 @@
 #define CORE_TURN_MAX		0.44f
 #define CORE_TURN_PER_PIXEL	0.004f
 
+/* How near the pointer the camera's tilt, and how slow its speed, count as settled (the pointer's -1..1 units, and a second). */
+#define TILT_SETTLED		0.002f
+
 /* The plates' names in the log, in the order of enum sm_plate. */
 static const char *const plate_names[SM_PLATES] = {
 	"cpu", "gpu", "memory", "network", "disk", "cores", "state", "graphics", "flow", "strata", "lanes", "latency", "events"
@@ -108,6 +111,7 @@ static void gesture_events(struct sm_app *app, uint64_t now_us);
 static void drag_end(struct sm_app *app, const struct kl_gesture_event *gesture);
 static void pinch_tick(struct sm_app *app, uint64_t now_us);
 static int card_tick(struct sm_app *app, uint64_t now_ms);
+static int tilt_settling(const struct sm_app *app);
 
 /*
  * Makes the gestures of the window's fingers; returns 0, or -1 when
@@ -196,6 +200,7 @@ sm_interact_tick(
 	int error;
 	int active;
 	int moving;
+	int settling;
 	int held;
 
 	/* The gestures due, then a pinch of two fingers. */
@@ -241,6 +246,15 @@ sm_interact_tick(
 	/* The card coming out or going back. */
 	moving = card_tick(app, now_ms);
 	if (moving)
+		active = 1;
+
+	/*
+	 * The camera still turning towards the pointer: it is the hover's
+	 * answer, so it keeps the input's frame rate rather than the
+	 * animation's two frames a second.
+	 */
+	settling = tilt_settling(app);
+	if (settling)
 		active = 1;
 
 	/* A finger or the button down keeps the clock going. */
@@ -1120,5 +1134,49 @@ card_tick(
 	}
 
 	/* Succeeded: the card rests. */
+	return 0;
+}
+
+/*
+ * Tells whether the camera's tilt is still on its way to the pointer;
+ * returns 1 while it moves.  A stopped clock puts it there at once, and a
+ * hidden window draws nothing to move it.
+ */
+static int
+tilt_settling(
+	const struct sm_app *app)
+{
+	const struct sm_motion *motion;
+	float distance_x;
+	float distance_y;
+	float speed_x;
+	float speed_y;
+
+	/* A stopped clock or a hidden window: nothing to draw for it. */
+	if (app->fixed_clock)
+		return 0;
+	if (!app->visible)
+		return 0;
+
+	/* How far the tilt is from the pointer, and how fast it moves. */
+	motion = &app->motion;
+	distance_x = fabsf(motion->pointer_x - motion->tilt_x);
+	distance_y = fabsf(motion->pointer_y - motion->tilt_y);
+	speed_x = fabsf(motion->tilt_speed_x);
+	speed_y = fabsf(motion->tilt_speed_y);
+
+	/* Away from the pointer on either axis: still moving. */
+	if (distance_x > TILT_SETTLED)
+		return 1;
+	if (distance_y > TILT_SETTLED)
+		return 1;
+
+	/* Still swinging through the pointer's place: still moving. */
+	if (speed_x > TILT_SETTLED)
+		return 1;
+	if (speed_y > TILT_SETTLED)
+		return 1;
+
+	/* Succeeded: the camera rests on the pointer. */
 	return 0;
 }

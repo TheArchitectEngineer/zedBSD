@@ -1,4 +1,5 @@
-// zedBSD Notes: the toolbar's picture, drawn on the CPU.
+// zedBSD Notes: the toolbar's picture, drawn on the CPU.  The picture is
+// straight alpha; the result is premultiplied by its alpha.
 // Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #version 450
 
@@ -10,5 +11,6 @@ layout(location = 0) out vec4 result;
 
 void main()
 {
-	result = texture(picture, extra) * color;
+	vec4 straight = texture(picture, extra) * color;
+	result = vec4(straight.rgb * straight.a, straight.a);
 }
