@@ -42,6 +42,6 @@ Pi 4 で App Home の開閉・drag・app の起動の間も、cursor が 60fps �
 | [p001](phase001/phase.md) | 調査と設計（main loop の内訳と Pi の実測、描く物の一覧＋2 段の pull、不変条件、Vulkan の持ち主、cursor の thread・入力の thread と WS141 の依存、試験） | planning（第 6 版、review-5 で S2 条件付き可、Q1 の確認とユーザーの review 待ち） |
 | [p002](phase002/phase.md) | M0（main loop の区間・cursor の present の内訳・event_us）と C0（cursor の present を 1 refresh に 1 回） | in-progress（main 41bd7a5a4 まで、Pi・T1 の確認待ち） |
 | [p003](phase003/phase.md) | S1: display list（同じ thread で再生、等価の試験、walk の費用を測る） | in-progress（実装済み、T1・Pi の確かめ待ち） |
-| [p004](phase004/phase.md) | S2: 描画 thread・cursor の thread・入力の thread（2 段の pull、park、R→M の通り道） | in-progress（段 I・C・R 実装済み、T1・Pi の確かめ待ち） |
-| [p005](phase005/phase.md) | S3: 作業 thread（glyph・壁紙・大きな字） | planned |
+| [p004](phase004/phase.md) | S2: 描画 thread・cursor の thread・入力の thread（2 段の pull、park、R→M の通り道） | in-progress（段 I・C・R 実装済み。place23 の box_lag の超過は kernel 側（1 core の順番か user の写しの global な lock）と切り分け、kernel の設計 K-D・K-1・K-2 を Q1 の判断待ち。T1・Pi の確かめ待ち） |
+| [p005](phase005/phase.md) | S3: 作業 thread（glyph・壁紙・大きな字） | in-progress（実装済み agent/p4 09e429a9a、host 試験 PASS、T1・Pi の確かめ待ち） |
 | [p006](phase006/phase.md) | 規約の全文の見直し | planned |
