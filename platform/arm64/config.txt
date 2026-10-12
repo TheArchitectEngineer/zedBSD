@@ -18,13 +18,17 @@ framebuffer_ignore_alpha=1
 # display 0, so the kernel's framebuffer went there while a monitor on HDMI1
 # kept the firmware's picture.  Without it, the display actually attached is
 # display 0 on either port.
-# A fixed 1920x1080 60 Hz (DMT mode 82) that a monitor keeps in sync, on both
-# ports, no overscan border, and a framebuffer of the same size, scanned out
-# 1:1.
+# A fixed 1024x600 60 Hz (a CVT mode, DMT group mode 87) on both ports, no
+# overscan border, and a framebuffer of the same size, scanned out 1:1: the
+# default for the 1024x600 touch LCD (2026-10-12 user, the OSC Tokyo demo).
+# Before it was 1920x1080 60 Hz (hdmi_mode 82 without hdmi_cvt, framebuffer
+# 1920x1080).
 hdmi_group:0=2
-hdmi_mode:0=82
+hdmi_mode:0=87
+hdmi_cvt:0=1024 600 60 6 0 0 0
 hdmi_group:1=2
-hdmi_mode:1=82
+hdmi_mode:1=87
+hdmi_cvt:1=1024 600 60 6 0 0 0
 disable_overscan=1
-framebuffer_width=1920
-framebuffer_height=1080
+framebuffer_width=1024
+framebuffer_height=600

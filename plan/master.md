@@ -543,6 +543,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
 
+- 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
 - 2026-10-12 ユーザー（Pi の試し）: 1280x720 で「めちゃくちゃ速くなりました」、1024x600 で「めちゃくちゃ快適です」、place23（WS213 p004 の I・C・R＋WS211 p008 の client の damage）で「非常に快適です」。数字（compositor の draw→shown の p50/p90）: 1920x1080 92/125ms、1280x720 60/87ms、1024x600 59/102ms、1024x600+place23 58/90ms（submit→shown p50 26ms）。place23 で KWL RENDER stalled 0、FAILED 0。WS213 p004 の box_lag の p99 は 5 秒窓の一部で 19〜30ms（必達 16.7ms 未達の窓あり、最長 36ms）、pass_max 1 回 401ms → p004 は未 clear、原因の切り分け（kernel の長い transaction・SMP 依存か）が残り。ユーザーの次の希望: 1280x720 で試した後、ディスプレイ本来の解像度（1920x1200、今は config.txt の hdmi_mode=82 で 1920x1080 に固定）で出す。Pi は今 config.txt を 1024x600（hdmi_cvt、元は config.txt.res1080）。
