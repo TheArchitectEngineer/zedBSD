@@ -303,7 +303,8 @@ static void bt_remove_device(struct kl_backend_bluetooth *bluetooth, const char 
 static void bt_request_answer(struct kl_backend_bluetooth *bluetooth, struct dbus_reply *reply, const char *error_name, const char *error_text);
 static void bt_request_finish(struct kl_backend_bluetooth *bluetooth, int error, const char *reason);
 static int bt_request_send(struct kl_backend_bluetooth *bluetooth, unsigned step);
-static int bt_errno(const char *error_name, unsigned request, unsigned step);
+static int bt_errno(const char *error_name, const char *error_text, unsigned request, unsigned step);
+static int bt_says_timeout(const char *text);
 static int bt_error_is_unknown(const char *error_name);
 static void bt_reason(const char *error_name, const char *error_text, char *reason, size_t size);
 static void bt_agent_call(struct kl_backend_bluetooth *bluetooth, struct dbus_reply *call);
@@ -2210,7 +2211,7 @@ bt_request_answer(
 	error = 0;
 	reason[0] = '\0';
 	if (error_name != NULL) {
-		error = bt_errno(error_name, bluetooth->request_kind, bluetooth->request_step);
+		error = bt_errno(error_name, error_text, bluetooth->request_kind, bluetooth->request_step);
 		bt_reason(error_name, error_text, reason, sizeof(reason));
 	}
 
@@ -2222,10 +2223,12 @@ bt_request_answer(
 		if (bluetooth->question_id != 0U && same == 0)
 			bt_question_end(bluetooth);
 
-		/* A pairing that failed is the request's end; a code the agent would not type is said so. */
+		/* A pairing that failed is the request's end; a code the agent would not type is what this computer cannot do. */
 		if (error != 0) {
-			if (bluetooth->input_rejected)
+			if (bluetooth->input_rejected) {
+				error = ENOTSUP;
 				bt_copy_text(reason, sizeof(reason), "input-unsupported");
+			}
 			bt_request_finish(bluetooth, error, reason);
 			return;
 		}
@@ -2392,11 +2395,18 @@ bt_error_is_unknown(
 
 /*
  * Gives the errno value of a BlueZ or bus error for a request and its
- * step; what the request wanted already being so is 0.
+ * step; what the request wanted already being so is 0.  The values mean
+ * what zedBSD's bluetoothd's reasons mean (bluetooth-zedbsd.c): a pairing
+ * the device or the user refused is ECONNREFUSED ("rejected"), a device
+ * that did not answer ETIMEDOUT ("timeout"), and EACCES only a caller the
+ * system does not permit ("permission").  A connection to a device that
+ * has no profile this computer uses (BlueZ's NotAvailable,
+ * br-connection-profile-unavailable) is ENOTSUP.
  */
 static int
 bt_errno(
 	const char *error_name,
+	const char *error_text,
 	unsigned request,
 	unsigned step)
 {
@@ -2404,11 +2414,11 @@ bt_errno(
 		const char *name;
 		int error;
 	} table[] = {
-		{ "org.bluez.Error.AuthenticationFailed", EACCES },
-		{ "org.bluez.Error.AuthenticationRejected", EACCES },
-		{ "org.bluez.Error.AuthenticationCanceled", EACCES },
-		{ "org.bluez.Error.Rejected", EACCES },
-		{ "org.bluez.Error.Canceled", EACCES },
+		{ "org.bluez.Error.AuthenticationFailed", ECONNREFUSED },
+		{ "org.bluez.Error.AuthenticationRejected", ECONNREFUSED },
+		{ "org.bluez.Error.AuthenticationCanceled", ECONNREFUSED },
+		{ "org.bluez.Error.Rejected", ECONNREFUSED },
+		{ "org.bluez.Error.Canceled", ECONNREFUSED },
 		{ "org.bluez.Error.NotAuthorized", EACCES },
 		{ "org.freedesktop.DBus.Error.AccessDenied", EACCES },
 		{ "org.bluez.Error.InProgress", EBUSY },
@@ -2431,11 +2441,18 @@ bt_errno(
 		{ "org.freedesktop.DBus.Error.NameHasNoOwner", ENOTCONN }
 	};
 	size_t index;
+	int connecting;
+	int timeout;
 	int same;
+
+	/* Whether the call connects (Connect, or the one after a pairing). */
+	connecting = 0;
+	if (request == KL_BACKEND_BT_CONNECT || step == BT_STEP_CONNECT)
+		connecting = 1;
 
 	/* Connecting what is connected, ending what is not, pairing what is paired: done. */
 	same = strcmp(error_name, "org.bluez.Error.AlreadyConnected");
-	if (same == 0 && (request == KL_BACKEND_BT_CONNECT || step == BT_STEP_CONNECT))
+	if (same == 0 && connecting)
 		return 0;
 	same = strcmp(error_name, "org.bluez.Error.NotConnected");
 	if (same == 0 && request == KL_BACKEND_BT_DISCONNECT)
@@ -2443,6 +2460,20 @@ bt_errno(
 	same = strcmp(error_name, "org.bluez.Error.AlreadyExists");
 	if (same == 0 && step == BT_STEP_PAIR)
 		return 0;
+
+	/* A device with nothing this computer connects to: not a refusal. */
+	same = strcmp(error_name, "org.bluez.Error.NotAvailable");
+	if (same == 0 && connecting)
+		return ENOTSUP;
+
+	/* A failure whose text says the device did not answer (br-connection-page-timeout, Page Timeout). */
+	timeout = bt_says_timeout(error_text);
+	same = strcmp(error_name, "org.bluez.Error.Failed");
+	if (same == 0 && timeout)
+		return ETIMEDOUT;
+	same = strcmp(error_name, "org.bluez.Error.ConnectionAttemptFailed");
+	if (same == 0 && timeout)
+		return ETIMEDOUT;
 
 	/* The table. */
 	for (index = 0; index < sizeof(table) / sizeof(table[0]); index++) {
@@ -2453,6 +2484,27 @@ bt_errno(
 
 	/* Anything else, LimitsExceeded among them. */
 	return EIO;
+}
+
+/* Tells whether an error's text says a timeout (in any case). */
+static int
+bt_says_timeout(
+	const char *text)
+{
+	size_t length;
+	size_t index;
+	int same;
+
+	/* Each place the word may start. */
+	length = strlen(text);
+	for (index = 0; index + 7U <= length; index++) {
+		same = strncasecmp(&text[index], "timeout", 7U);
+		if (same == 0)
+			return 1;
+	}
+
+	/* Not said. */
+	return 0;
 }
 
 /*

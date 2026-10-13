@@ -826,9 +826,12 @@ void kl_backend_bluetooth_set_scanning(struct kl_backend_bluetooth *bluetooth, u
 int kl_backend_bluetooth_request(struct kl_backend_bluetooth *bluetooth, unsigned request, const char *address, unsigned type, uint32_t *id);
 
 /*
- * Takes the oldest answer: its id, its errno value (0, EACCES, EBUSY,
- * ETIMEDOUT, ECONNREFUSED, ENETDOWN while off, EIO) and the service's
- * reason in words.  Returns 1 with one, 0 when none waits.
+ * Takes the oldest answer: its id, its errno value (0, EACCES for a caller
+ * not permitted, EBUSY, ETIMEDOUT for a device that did not answer,
+ * ECONNREFUSED for a pairing or a connection the device or the user
+ * refused, ENOTSUP for what this computer cannot do with the device,
+ * ENETDOWN while off, EIO) and the service's reason in words.  Returns 1
+ * with one, 0 when none waits.
  */
 int kl_backend_bluetooth_take_result(struct kl_backend_bluetooth *bluetooth, uint32_t *id, int *error, char *reason, size_t size);
 
