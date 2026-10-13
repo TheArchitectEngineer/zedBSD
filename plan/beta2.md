@@ -1,99 +1,80 @@
 <!-- awesome-plan project=zedbsd record=beta2-triage -->
 
-# ベータ2 の残り作業（2026-10-11 Q1 更新）
+# ベータ2 の残り作業（2026-10-13 夜 Q1 更新）
 
 公開は 10/17（OSC 当日、朝から会場）なので、**10/16 中にリリースの準備を終える**。
-体制（2026-10-11 ユーザー）: Q1＋P1（新規の実装）・P2（Bug）・P3（Pi 4 の VC6 の描画）＋T1（試験）＋ユーザー（UAT・判断）。WS203（Pi 4 の Ethernet）は Codex の別のセッション。この表は計画で、Queue の承認ではない。
-見積もりは LW（1 LW ≈ エージェントの実時間 20 分）。完了した項目は消す。Q1 は進むたびに更新する。
+体制（2026-10-13 ユーザー「N=3で、P2を追加し、実装を担当してもらいます。」）: Q1＋P1・P2・P3（ベータ2 の残りの実装）＋T1（試験）＋ユーザー（UAT・判断）。WS074（ブラウザ）は Codex の別のセッションが main の checkout で作業（ユーザーの依頼、ベータ2 まで）。**ベータ2 には機能を足さない**（2026-10-13 ユーザー「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。」）。この表は計画で、Queue の承認ではない。
+見積もりは LW（1 LW ≈ 担当 1 人の実時間 1〜2 時間）。完了した項目は消す。Q1 は進むたびに更新する。
 
 ## 日程
 
 | 日 | やること |
 | --- | --- |
-| 10/10〜10/12 | 走っている Bug の直しと試験を終える → WS199（セキュリティキー）→ WS200 |
-| **10/13** | 機能の凍結の目標。ベータなので UAT の Bug は直し切れなくてよく、code freeze はぎりぎりまで行わないこともある |
-| 10/14〜10/15 | 最終回帰（QEMU）と 5330 の UAT、出た Bug を「直す／既知の問題に書く」で仕分け |
-| **10/16** | 最終の image・配布物・license の一覧・release notes を確定。Vulkan Video は既定で ON（2026-10-11 ユーザー）。公開の手順の確認（公開はユーザーの指示で） |
+| **10/13** | 機能の凍結の目標（凍結はぎりぎりまで行わないこともある）。UAT 待ちの Phase は全部 cleared（ユーザー「すべてテスト済み」） |
+| 10/14〜10/15 | 残りの実装（下の表）、T1 の QEMU の確かめ、最終回帰（WS129 p006）、出た Bug を「直す／既知の問題に書く」で仕分け |
+| **10/16** | 最終の image・配布物・license の一覧・release notes を確定。Vulkan Video は既定で ON。公開の手順の確認（公開はユーザーの指示で） |
 
-## 今の状況
+## 今の状況（2026-10-13 夜）
 
-- 2026-10-13 ユーザー: WS197 の HFP（p006 の制御・p007 の音）は全体をベータ3（ベータ2 では既知の問題、UAT #13 を外した）。WS090 p020・p021 と WS181 p011 は外観・動きで OK、WS173 p005 はユーザーの USB の起動。
-- 2026-10-11: [WS197](ws197/ws.md)（スマホ連携）は SMS・MMS の受信と表示（日本語・写真を実機で確認済み）、PBAP の連絡先と通話の履歴、Bluetooth の自動復旧まで main に入った。P1 の書きかけの差分は照合して必要な 1 点だけ merge（d5296c23e）。残りは HFP（通話）と MMS の写真・動画の送信。**HFP をベータ2 に入れるかはユーザーの判断待ち。**
-- [BUG-287](bugs/BUG-287.md)（スマホ連携が「connecting」のまま）の直しは全部 main に入った。image を作り直してよい。
-- WS199・WS200 は実装と QEMU の試験が済み、残りは次の UAT。
-- WS083（Vulkan Video）は既定で ON（2026-10-11 ユーザー）。残りは p007 の hang の実機の確かめ。[WS202](ws202/ws.md)（libmedia だけで mp4・m4a）は software を main に統合済み、実機と受け入れの全項目が未確認。
-- Raspberry Pi 4: [WS141](ws141/ws.md) の VC6 の描画の改善を P3 が Codex から引き継いだ（mouse の移動 300 ms → 33 ms → 16 ms）。
-  - 2026-10-12 夜（ユーザーの実機）: App Home を開くアニメが約 10 コマ（WS211 のクロスフェード、4c3a56cf9）、Files・Settings・Music を起動していても App Home の上のマウス移動が 60fps（seat の pointer_taken 93701e2ef、Settings・Files の無操作の描画と起床の直し 45cb43ecd、Music の部分の描き直し 784e6c5a5）、App Home の開閉で落ちない、Music は他の app があっても起動（Vulkan の予算 512MiB・準備の失敗の局所化）。残り: デスクトップの CPU の負荷の瞬間の引っかかり（CPU 1 つ、SMP WS208）、30 コマへは draw の束ね（WS211 p003）・SMP・kernel の準備の mutex（WS141 (b)）。
-  - 2026-10-12: App Home の遷移 9 秒 → 1 秒（HAL の uncached の unmap の TLB の flush を 1 回 b17a753d4、kern_free の O(1) 4d3d7eddf、draw の pool）、drag は非常に速く、Settings の present-copy 305 → 2〜15 ms。3 回目の App Home の compositor の終了（record の上限 1MiB）と preview の hover の全面の再合成を直した（main f07c345d3、実機の確認待ち）。vkQueueSubmit の非同期化 [ws141-p016](ws141/phase016/phase.md) は review-4 を通り A1・A2 を実装、2026-10-12 ユーザーの判断で実機の確認の前に main に merge（d9e0c35af、今回の image で確かめる）、A3（lazy map）が続く。App Home の hover は変わったアイコンだけの damage（efe8f8b63）。
-- WS157 Photos の削除の統合は P1 の q924。WS202 の再生の実機・QEMU の確認は T1-529。
-- 残る既知の Bug は USB LAN の遅さ（BUG-222）。
+- 2026-10-13 のユーザーの判断: UAT 待ちは全部 cleared。WS049・WS100・WS127・WS128・WS142・WS182・WS183・WS200・WS120・WS168・WS178・WS187 は completed、WS014・WS044・WS048・WS118・WS139 は close、WS195 は cancel。WS004・WS009・WS046・WS074・WS095・WS155・WS157・WS171・WS172・WS196・WS217 はベータ2 へ。WS197 の HFP はベータ3。WS172 はベータ2 では設計まで。BUG-165・287・288・290・291・293・295・296・298 は resolved（実機 OK）。
+- 動いている実装: P1 WS217 p003（回転に合わせた入力の座標）、P2 WS145 p005（印刷の Linux・FreeBSD）→ WS161 の build → WS172 p004b の設計、P3 WS156 p006（Linux の D-Bus の通知）→ WS051 p005b → WS081 → WS033 p001。
+- T1 の待ち（QEMU）: T1-583 画面の回転（WS217 p002b）、T1-584 Photos の大きな JPEG（WS157 p015・p017）、T1-585 TCP の損失の時と 60 秒を超える転送（WS220 p005）、T1-586 画面 keyboard の遅れの計測（低い優先度）。5330 が届けば T1-582（BUG-300 の切り分け）。
+- main に入って試験待ちの物: WS216 Notes の描く道具（p004〜p006 cleared、p007 は 5330 のユーザーの確かめ）、WS220 TCP（p003・p004 cleared、p005 は T1-585）、BUG-300 の直し（終わりの判定、50% の原因は 5330 の log 待ち）。
+- 残る既知の Bug は USB LAN の遅さ（BUG-222）ほか（下の「既知の問題に書いて出す」）。
 
 ## 必須
 
 | 項目 | 状態 | LW | 担当 |
 | --- | --- | --- | --- |
-| [WS083](ws083/ws.md) Vulkan Video（H.264） | p001〜p006・p008 cleared（実機で全 stream 一致、1080p 相当 1 frame 約 5 ms）。2026-10-11 から既定で ON（ユーザー）。p007 の hang の回復は 2026-10-13 ユーザーの実機の確かめ OK（hang の kernel を 1 回置く、手順は phase007、ユーザーの判断） | 0.5 | ユーザー・Q1 |
-| [WS202](ws202/ws.md) 動画再生（libmedia の H.264・AAC を Video Player・Music で使う） | p013 の 5330 の UAT OK（2026-10-13 ユーザー）。残り: p012 の T1 の全項目、p014 の規約。スライダーが再生の終わりで約 50% に止まる件は [BUG-300](bugs/BUG-300.md) | 4.0 | T1 |
-| [WS197](ws197/ws.md) Bluetooth のスマホ連携（SMS の MAP・通話の HFP・連絡先の PBAP）（2026-10-10 ユーザー「WS197はbeta2.mdで必須に入れておいてください。」） | 2026-10-11: p001〜p005・p011〜p013 cleared。SMS・MMS（文と写真）の受信・表示、PBAP の電話帳・通話の履歴・Settings、Bluetooth の自動復旧は main。残り: p010 の写真・動画の送信（約 3）、HFP の制御 p006（12）と音 p007（25）、実機の UAT p008（Android）。**HFP をベータ2 に入れるかは判断待ち**。規約の p009 はベータ3 | 約 40（HFP を含む。除けば約 6） | 未割当 |
-| [WS129](ws129/ws.md) p005・p013 release notes・既知の問題・利用の手引き | 下書き済み（[notes](../docs/release/zedbsd-1.0.0-beta2.md)・[known issues](../docs/release/zedbsd-1.0.0-beta2-known-issues.md)・[guide](../docs/release/zedbsd-1.0.0-beta2-guide.md)）。**ユーザーの review 待ち**。WS199・WS200 の機能を足し、RC で review の comment を消す | 1.5 | ユーザー・P1 |
-| [WS129](ws129/ws.md) p006 最終回帰（release の image） | 10/14 | 3 | T1 |
-| [WS129](ws129/ws.md) p008 公開の準備（tag・CI・配布物） | 手順は用意済み。10/16、公開はユーザーの指示 | 0.5 | Q1・P1 |
-| 次の UAT で出る Bug の枠 | — | 5 | P1 |
-| **計** | | **約 55 LW**（約 18 時間、うち WS197 が約 40。HFP をベータ3 に回すと約 18 LW） | |
-| [WS225](ws225/ws.md) Vulkan の header を仕様から導ける内容だけで書き直し、Khronos の著作権表示を外す | blocked（2026-10-13 ユーザー「まだ着手せず、ブロッキング」「ベータ2で実装」）。前提の WS224（今の header の解説と表示の形）の後 | 未見積 | 未割当 |
-
-## 次の UAT で確認してほしい事項（5330、WS199・WS200 の後の image）
-
-| # | 項目 | 手順 | 期待 |
-| --- | --- | --- | --- |
-| 11 | [WS197](ws197/ws.md) スマホの SMS（Android） | 手順は ws197/ws.md の「5330 の UAT の手順」: Settings → Bluetooth でスマホを pairing して「Use as phone」→ Phone の app で受信・送信・同期、app を閉じている間の通知 | SMS が送受信でき、履歴が同期される |
-| 12 | [WS197](ws197/ws.md) 写真・動画の MMS の送信と「＋」の添付の選択（2026-10-11、main e7ff23fba 以降の image） | 手順は [phase010](ws197/phase010/phase.md) の末尾: Phone の「＋」→ Photos & Videos で写真・動画を選ぶ（File… でも可）→ 文を添えて Send | スマホから相手に MMS が届く。1 通は元の bytes で合計 8 MiB まで（carrier の上限を越えるとスマホ側で失敗しうる） |
+| [WS202](ws202/ws.md) 動画再生（libmedia の H.264・AAC を Video Player・Music で使う） | p013 の UAT OK。残り: p012 の T1 の全項目、BUG-300（スライダー約 50%、5330 の CLOCK の log 待ち） | 0.5 | T1 |
+| [WS197](ws197/ws.md) Bluetooth のスマホ連携（SMS の MAP・連絡先の PBAP） | UAT は済み（2026-10-13 ユーザー）。HFP（p006・p007）はベータ3（既知の問題に書いた） | 0 | — |
+| [WS129](ws129/ws.md) p005・p013 release notes・既知の問題・利用の手引き | 下書き済み（[notes](../docs/release/zedbsd-1.0.0-beta2.md)・[known issues](../docs/release/zedbsd-1.0.0-beta2-known-issues.md)）。今日の決定（HFP・DSDT の行）を反映済み、Notes の描く道具の節は未 | 0.5 | Q1 |
+| [WS129](ws129/ws.md) p006 最終回帰（release の image） | 10/14〜15 | 3 | T1 |
+| [WS129](ws129/ws.md) p008 公開の準備（tag・CI・配布物） | 手順は用意済み。10/16、公開はユーザーの指示 | 0.5 | Q1 |
+| [WS225](ws225/ws.md) Vulkan の header の書き直し | blocked（2026-10-13 ユーザー「まだ着手せず、ブロッキング」） | — | — |
 
 ## 既知の問題に書いて出す（ベータ3 以降）
 
 | 項目 | 理由 |
 | --- | --- |
-| BUG-255（蓋を閉じた間の HDMI）、BUG-159（電池で 5 fps）、BUG-145（AX211 の DHCP）、BUG-165（5330 の DSDT、2026-10-13 resolved） | 調査が長い・実機の時間が要る |
-| WS201（/home の暗号化）、WS195（/opt/keiland）、WS196（useradd 等）、WS198（self-build）、[WS001 p045](ws001/phase045/phase.md) POSIX の header、[WS126](ws126/ws.md) Python | ベータ3 の列 |
+| BUG-255（蓋を閉じた間の HDMI）、BUG-159（電池で 5 fps）、BUG-145（AX211 の DHCP）、BUG-222（USB LAN の遅さ） | 調査が長い・実機の時間が要る |
+| WS197 の HFP（スマホの通話） | 2026-10-13 ユーザー「HFP 全体をベータ3」 |
+| WS201（/home の暗号化）、WS198（self-build）、[WS001 p045](ws001/phase045/phase.md) POSIX の header、[WS126](ws126/ws.md) Python、WS172 の実装 | ベータ3 の列 |
 | 規約の全文の見直しの Phase（各 WS） | ユーザーの決定でベータ3 |
 
-## ベータ2 の残りの工数（2026-10-13 Q1、各 ws.md から見積もり直し、±50 %）
+## ベータ2 の残りの工数（2026-10-13 夜 Q1 更新、±50 %）
 
-ユーザー「残っているWSの一覧と、工数のLW見積もりをください。」「残っているベータ2のWSです」→ 2 つの担当が ws.md の残りの Phase から見積もった（master.md の 10/06 の表は古い）。
+各 ws.md の残りの Phase からの見積もり（2026-10-13 の 2 つの担当の見積もりに、その後の完了と決定を反映）。
 
-- 実装・設計の残り: 合計 **約 48 LW**。うち空き時間だけの WS031（7）・WS075（4）と blocked の WS225（8、未見積の推測）を除くと **約 29 LW**（1 LW ≈ 実時間 1〜2 時間、担当 1 人あたり）。
-- T1・実機・UAT・判断を待つだけ（実装 0）の WS: 約 35。待ちの後に出うる直しは数えていない（WS197 1〜2、WS159 1〜2 など）。
-- ベータ3 に回った規約の全文の見直しなど: 約 32 LW（別。WS197 の HFP 59 LW と WS172 の OpenSSL の置き換え約 6 は含まない）。
+- 実装・設計の残り: 空き時間だけの WS031・WS075 と blocked の WS225 を除いて **約 19 LW**。今の担当: P1 WS217、P2 WS145 → WS161 → WS172 の設計、P3 WS156 → WS051 → WS081 → WS033。
+- 待つだけ（T1・判断・完了の記録）の WS は表に入れない。待ちの後に出うる直しは数えていない。ベータ3 に回った規約の全文の見直しなど約 32 LW は別。
 
-| WS | 残りの実装 | LW |
-| --- | --- | --- |
-| [WS225](ws225/ws.md) | Vulkan の header の書き直し（blocked、WS226 の後） | 8（推測） |
-| [WS031](ws031/ws.md) | Vulkan の実行器と compiler の残り（空き時間だけ） | 7（推測） |
-| [WS157](ws157/ws.md) | Photos の thumbnail の jail（p015）・libjpeg の縮小 decode（p017） | 4.5 |
-| [WS075](ws075/ws.md) | i915 の高度化（空き時間だけ、描画の高速化は止めている） | 4（推測） |
-| [WS172](ws172/ws.md) | passkey の security chip の調べ（p004）・/dev/security0 と TPM の設計（p004b） | 2.5 |
-| [WS196](ws196/ws.md) | useradd・usermod・userdel（先に判断 E1〜E6） | 2.3 |
-| [WS143](ws143/ws.md) | Bluetooth の 5330 の firmware の load と scan の後の直し、Linux の BlueZ の backend | 2.2（推測） |
-| [WS004](ws004/ws.md) | WLAN の driver の共通化（p039、任意）、SN740 の実機の手順 | 2 |
-| [WS113](ws113/ws.md) | Linux・FreeBSD の KMS の互換（p010、後回し） | 2（推測） |
-| [WS046](ws046/ws.md) | GNU 互換の make の残り（p014 の make check の判断、p007） | 1.5 |
-| [WS102](ws102/ws.md) | 画面 keyboard の frame の p95 を目標まで（p011） | 1.5（推測） |
-| [WS171](ws171/ws.md) | hal.h の契約の comment（優先度低め、やることが無い時） | 1.5 |
-| [WS009](ws009/ws.md) | /dev/gpu の文書（DOC-54、保留の解除の後） | 1 |
-| [WS051](ws051/ws.md) | USB-C の残り（p004c・p005b） | 1 |
-| [WS081](ws081/ws.md) | touch の L3 の計測と係数 | 1（推測） |
-| [WS090](ws090/ws.md) | p026 の層 3（5330 で測ってから） | 1（条件つき） |
-| [WS095](ws095/ws.md) | IME の Browser の欄（p009）と回帰（p011）、優先度低め | 1 |
-| [WS145](ws145/ws.md) | Linux・FreeBSD の build・install と guest（p005） | 1 |
-| [WS156](ws156/ws.md) | 通知の Linux の D-Bus（p006） | 0.7 |
-| [WS033](ws033/ws.md) | USB LAN の後挿し（p001） | 0.5 |
-| [WS129](ws129/ws.md) | release notes・既知の問題・手引き | 0.5 |
-| [WS161](ws161/ws.md) | YubiKey の Linux・FreeBSD の build | 0.5 |
-| [WS202](ws202/ws.md) | BUG-300 の残り | 0.5（推測） |
-| [WS089](ws089/ws.md)・[WS193](ws193/ws.md)・[WS191](ws191/ws.md) | 小さな照合・残り | 0.3・0.3・0.1 |
+| WS | 残りの実装 | LW | 担当 |
+| --- | --- | --- | --- |
+| [WS217](ws217/ws.md) | 画面の回転: p003 入力の座標（p002b は T1-583 待ち） | 3（推測） | P1 |
+| [WS196](ws196/ws.md) | useradd・usermod・userdel（先に判断 E1〜E6、WS195 の cancel で前提 D7 の見直し） | 2.3 | 未割当（判断待ち） |
+| [WS143](ws143/ws.md) | Bluetooth の 5330 の firmware の load と scan の後の直し、Linux の BlueZ の backend | 2.2（推測） | 未割当 |
+| [WS004](ws004/ws.md) | WLAN の driver の共通化（p039、任意）、SN740 の実機の手順（5330 の NVMe に書き込んでよい） | 2 | 未割当 |
+| [WS113](ws113/ws.md) | Linux・FreeBSD の KMS の互換（p010、後回し） | 2（推測） | 未割当 |
+| [WS171](ws171/ws.md) | hal.h の契約の comment（優先度低め、やることが無い時） | 1.5 | 空き時間 |
+| [WS172](ws172/ws.md) | p004b の設計だけ（S1〜S13 は推奨、実装はベータ3） | 1.5 | P2 |
+| [WS009](ws009/ws.md) | /dev/gpu の文書（DOC-54、保留の解除の後） | 1 | 未割当 |
+| [WS051](ws051/ws.md) | USB-C の抜けの停止（p005b） | 1 | P3 |
+| [WS081](ws081/ws.md) | touch の L3 の計測と係数 | 1（推測） | P3 |
+| [WS090](ws090/ws.md) | p026 の層 3（5330 で測ってから） | 1（条件つき） | 未割当 |
+| [WS095](ws095/ws.md) | IME の Browser の欄（p009、WS074 次第）と回帰（p011）、優先度低め | 1 | 未割当 |
+| [WS145](ws145/ws.md) | 印刷の Linux・FreeBSD の build・install と guest（p005） | 1 | P2 |
+| [WS156](ws156/ws.md) | 通知の Linux の D-Bus（p006） | 0.7 | P3 |
+| [WS033](ws033/ws.md) | USB LAN の後挿し（p001） | 0.5 | P3 |
+| [WS129](ws129/ws.md) | release notes・既知の問題・手引き | 0.5 | Q1 |
+| [WS161](ws161/ws.md) | YubiKey の Linux・FreeBSD の build | 0.5 | P2 |
+| [WS202](ws202/ws.md) | BUG-300 の残り（5330 の log の後） | 0.5（推測） | T1 → 直しは未割当 |
+| [WS089](ws089/ws.md)・[WS193](ws193/ws.md)・[WS191](ws191/ws.md) | 小さな照合・残り | 0.3・0.3・0.1 | 未割当 |
+| [WS031](ws031/ws.md)・[WS075](ws075/ws.md) | Vulkan の実行器と compiler・i915 の高度化（空き時間だけ） | 7・4（推測） | 空き時間 |
+| [WS225](ws225/ws.md) | Vulkan の header の書き直し（blocked、WS226 の後） | 8（推測） | — |
 
-実装 0（待ち・判定・完了の記録だけ）: WS049・WS100・WS127（全 Phase cleared、完了の処理だけ）、WS083（規約だけ）、WS050・WS079・WS084・WS094・WS099・WS128・WS130・WS131・WS132・WS134・WS142・WS154・WS159・WS164・WS165・WS173・WS174・WS175・WS181・WS182・WS183・WS189・WS197・WS200（T1・実機・UAT・判断の待ち）、WS155・WS169・WS170・WS177・WS190・WS194（ベータ2 の残り無し）。
-記録のずれ（phase.md が正しく ws.md の表が古い）: WS095 p006・p007、WS190 p002・p003、WS194 p001。見積もりの表の全文は 2 つの担当の出力（Q1 の scratchpad、lw1.md・lw2.md）。
+2026-10-13 夜に表から外した（済み・決定）: WS157 p015・p017（main、T1-584 待ち）、WS046（p007・p014 cleared）、WS102 p011（計測を入れ、判定は 5330 の実機、直しは足さない）、WS216 Notes の描く道具（p004〜p007 の実装は main、p007 は 5330 のユーザーの確かめ）、WS220 TCP（p003〜p005 は main、p005 は T1-585）。
+記録のずれ（phase.md が正しく ws.md の表が古い）: WS095 p006・p007、WS190 p002・p003、WS194 p001。
 
 ## 終わっていない WS（2026-10-13 Q1、114 件）
 
