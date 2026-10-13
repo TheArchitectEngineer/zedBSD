@@ -50,7 +50,9 @@
  * The largest input read, the largest side asked for, and the largest
  * picture decoded: Photos' own limits since its pictures are made here
  * (ws157-p015, the user's decision L1 of 2026-10-11), within the child's
- * 1 GiB of memory and 10 s of processor time (client.h).
+ * 1 GiB of memory and 10 s of processor time (client.h).  A JPEG is
+ * decoded scaled down as far as the size asked allows (ws157-p017), and
+ * the picture limits apply to its scaled size.
  */
 #define PREVIEW_INPUT_MAX	(96UL * 1024UL * 1024UL)
 #define PREVIEW_SIDE_MAX	4096
