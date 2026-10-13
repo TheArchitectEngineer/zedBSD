@@ -41,11 +41,25 @@
 #define I915_FLUSH_XCS_DWORDS		4U
 #define I915_FLUSH_XCS_INVALIDATE_DWORDS	10U
 
+/*
+ * The Gen9 breadcrumb sizes: the copy, video and enhancement engines write
+ * no stalling flush before the seqno (14 dwords); the render engine's 22 are
+ * the same as Gen12's.
+ */
+#define I915_GEN9_FINI_BREADCRUMB_XCS_DWORDS	14U
+
+/* The Gen9 render flush: the combined PIPE_CONTROL, and the null one before a VF invalidate. */
+#define I915_GEN9_FLUSH_RCS_DWORDS		6U
+#define I915_GEN9_FLUSH_RCS_VF_WA_DWORDS	6U
+
 static uint32_t i915_preparser_disable(int state);
 static uint32_t *i915_emit_pipe_control(uint32_t *cs, uint32_t bit_group_0, uint32_t bit_group_1, uint32_t offset);
 static int i915_emit_flush(struct i915_gt_request *rq, uint32_t mode);
 static int i915_emit_flush_rcs(struct i915_gt_request *rq, uint32_t mode);
 static int i915_emit_flush_xcs(struct i915_gt_request *rq, uint32_t mode);
+static int i915_gen9_emit_flush_rcs(struct i915_gt_request *rq, uint32_t mode);
+static int i915_gen9_emit_flush_xcs(struct i915_gt_request *rq, uint32_t mode);
+static uint32_t *i915_gen9_emit_fini_breadcrumb(struct i915_gt_request *rq, uint32_t *cs);
 static uint32_t *i915_emit_fini_breadcrumb_tail(struct i915_gt_request *rq, uint32_t *cs);
 
 /*
@@ -303,60 +317,73 @@ drv_i915_request_add(
 	if (rq->ce == NULL)
 		return EINVAL;
 
-	/* Reserves the breadcrumb, whose size depends on the engine class. */
+	/* Reserves the breadcrumb, whose size depends on the engine class and the graphics version. */
 	dwords = I915_FINI_BREADCRUMB_XCS_DWORDS;
+	if (rq->ce->ge->info->graphics_ver == 9)
+		dwords = I915_GEN9_FINI_BREADCRUMB_XCS_DWORDS;
 	if (rq->ce->ge->info->class == I915_RENDER_CLASS)
 		dwords = I915_FINI_BREADCRUMB_RCS_DWORDS;
 	cs = drv_i915_ring_begin(rq, dwords);
 	if (cs == NULL)
 		return rq->error;
 
-	/* Flushes everything, then writes the seqno to the timeline's slot. */
-	if (rq->ce->ge->info->class == I915_RENDER_CLASS) {
-		/*
-		 * The render flush: L3 is flushed before 12.70, Wa_14016712196
-		 * (12.70 to 12.74, DG2) is not taken, and Wa_1409600907 adds
-		 * the depth stall.
-		 */
-		flags = PIPE_CONTROL_CS_STALL |
-			PIPE_CONTROL_TLB_INVALIDATE |
-			PIPE_CONTROL_TILE_CACHE_FLUSH |
-			PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-			PIPE_CONTROL_DEPTH_CACHE_FLUSH |
-			PIPE_CONTROL_DC_FLUSH_ENABLE |
-			PIPE_CONTROL_FLUSH_ENABLE;
-		flags |= PIPE_CONTROL_FLUSH_L3;
-		flags |= PIPE_CONTROL_DEPTH_STALL;
-		cs = i915_emit_pipe_control(cs, PIPE_CONTROL0_HDC_PIPELINE_FLUSH, flags, 0U);
-
-		/* Writes the seqno (gen12_emit_ggtt_write_rcs(seqno, hwsp, 0, FLUSH_ENABLE | CS_STALL)). */
-		*cs++ = GFX_OP_PIPE_CONTROL(6);
-		*cs++ = PIPE_CONTROL_FLUSH_ENABLE |
-			PIPE_CONTROL_CS_STALL |
-			PIPE_CONTROL_GLOBAL_GTT_IVB |
-			PIPE_CONTROL_QW_WRITE;
-		*cs++ = rq->hwsp_ggtt;
-		*cs++ = 0U;
-		*cs++ = rq->seqno;
-
-		/* The reference writes one extra dword of the qword. */
-		*cs++ = 0U;
+	/*
+	 * A Gen9 engine writes the Gen8 breadcrumb (gen8_emit_fini_breadcrumb_rcs()
+	 * and _xcs()); a Gen12 engine flushes everything, writes the seqno to the
+	 * timeline's slot and then the Gen12 tail.
+	 */
+	if (rq->ce->ge->info->graphics_ver == 9) {
+		cs = i915_gen9_emit_fini_breadcrumb(rq, cs);
 	} else {
-		/* A stalling flush before the seqno write; the post-sync write is not. */
-		*cs++ = MI_FLUSH_DW + 1U;
-		*cs++ = 0U;
-		*cs++ = 0U;
-		*cs++ = 0U;
+		/* Flushes everything, then writes the seqno to the timeline's slot. */
+		if (rq->ce->ge->info->class == I915_RENDER_CLASS) {
+			/*
+			 * The render flush: L3 is flushed before 12.70, Wa_14016712196
+			 * (12.70 to 12.74, DG2) is not taken, and Wa_1409600907 adds
+			 * the depth stall.
+			 */
+			flags = PIPE_CONTROL_CS_STALL |
+				PIPE_CONTROL_TLB_INVALIDATE |
+				PIPE_CONTROL_TILE_CACHE_FLUSH |
+				PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+				PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+				PIPE_CONTROL_DC_FLUSH_ENABLE |
+				PIPE_CONTROL_FLUSH_ENABLE;
+			flags |= PIPE_CONTROL_FLUSH_L3;
+			flags |= PIPE_CONTROL_DEPTH_STALL;
+			cs = i915_emit_pipe_control(cs, PIPE_CONTROL0_HDC_PIPELINE_FLUSH, flags, 0U);
 
-		/* Writes the seqno (gen8_emit_ggtt_write(seqno, hwsp, 0)). */
-		*cs++ = (MI_FLUSH_DW + 1U) | MI_FLUSH_DW_OP_STOREDW;
-		*cs++ = rq->hwsp_ggtt | MI_FLUSH_DW_USE_GTT;
-		*cs++ = 0U;
-		*cs++ = rq->seqno;
+			/* Writes the seqno (gen12_emit_ggtt_write_rcs(seqno, hwsp, 0, FLUSH_ENABLE | CS_STALL)). */
+			*cs++ = GFX_OP_PIPE_CONTROL(6);
+			*cs++ = PIPE_CONTROL_FLUSH_ENABLE |
+				PIPE_CONTROL_CS_STALL |
+				PIPE_CONTROL_GLOBAL_GTT_IVB |
+				PIPE_CONTROL_QW_WRITE;
+			*cs++ = rq->hwsp_ggtt;
+			*cs++ = 0U;
+			*cs++ = rq->seqno;
+
+			/* The reference writes one extra dword of the qword. */
+			*cs++ = 0U;
+		} else {
+			/* A stalling flush before the seqno write; the post-sync write is not. */
+			*cs++ = MI_FLUSH_DW + 1U;
+			*cs++ = 0U;
+			*cs++ = 0U;
+			*cs++ = 0U;
+
+			/* Writes the seqno (gen8_emit_ggtt_write(seqno, hwsp, 0)). */
+			*cs++ = (MI_FLUSH_DW + 1U) | MI_FLUSH_DW_OP_STOREDW;
+			*cs++ = rq->hwsp_ggtt | MI_FLUSH_DW_USE_GTT;
+			*cs++ = 0U;
+			*cs++ = rq->seqno;
+		}
+
+		/* Writes the tail: the interrupt, the preemption busywait and the workaround tail. */
+		cs = i915_emit_fini_breadcrumb_tail(rq, cs);
 	}
 
-	/* Writes the tail: the interrupt, the preemption busywait and the workaround tail. */
-	cs = i915_emit_fini_breadcrumb_tail(rq, cs);
+	/* Moves the write position past the breadcrumb. */
 	drv_i915_ring_advance(rq, cs);
 
 	/* The request is complete and may be submitted. */
@@ -439,8 +466,14 @@ i915_emit_flush(
 	if (rq == NULL || rq->ce == NULL)
 		return EINVAL;
 
-	/* Chooses the render flush or the flush of the other engines. */
-	if (rq->ce->ge->info->class == I915_RENDER_CLASS) {
+	/* Chooses the render flush or the flush of the other engines, in the Gen9 or the Gen12 form. */
+	if (rq->ce->ge->info->graphics_ver == 9) {
+		if (rq->ce->ge->info->class == I915_RENDER_CLASS) {
+			error = i915_gen9_emit_flush_rcs(rq, mode);
+		} else {
+			error = i915_gen9_emit_flush_xcs(rq, mode);
+		}
+	} else if (rq->ce->ge->info->class == I915_RENDER_CLASS) {
 		error = i915_emit_flush_rcs(rq, mode);
 	} else {
 		error = i915_emit_flush_xcs(rq, mode);
@@ -636,6 +669,176 @@ i915_emit_fini_breadcrumb_tail(
 	*cs++ = 0U;
 
 	/* The request ends here; Wa_14014475959 is DG2 only. */
+	rq->tail = (uint32_t)((char *)cs - (char *)ring->vaddr);
+
+	/* Leaves at least one preemption point per request (gen8_emit_wa_tail()). */
+	*cs++ = MI_ARB_CHECK;
+	*cs++ = MI_NOOP;
+	rq->wa_tail = (uint32_t)((char *)cs - (char *)ring->vaddr);
+
+	/* Reports where the next command goes. */
+	return cs;
+}
+
+/*
+ * Writes the Gen9 render engine's flush (gen8_emit_flush_rcs()).
+ *
+ * One PIPE_CONTROL carries the flush and the invalidate together; Gen9
+ * needs a null PIPE_CONTROL before a VF cache invalidate.  There is no
+ * pre-parser control, AUX table, tile cache or HDC pipeline flush on Gen9.
+ * WaForGAMHang (Kaby Lake before stepping C0) is not done.
+ */
+static int
+i915_gen9_emit_flush_rcs(
+	struct i915_gt_request *rq,
+	uint32_t mode)
+{
+	uint32_t *cs;
+	uint32_t flags;
+	unsigned dwords;
+
+	/* Every flush stalls the command streamer. */
+	flags = PIPE_CONTROL_CS_STALL;
+
+	/* A flush writes back the render target, depth and data caches. */
+	if ((mode & EMIT_FLUSH) != 0U) {
+		flags |= PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH;
+		flags |= PIPE_CONTROL_DEPTH_CACHE_FLUSH;
+		flags |= PIPE_CONTROL_DC_FLUSH_ENABLE;
+		flags |= PIPE_CONTROL_FLUSH_ENABLE;
+	}
+
+	/* An invalidate drops the TLB and the read caches, with a post-sync write to the scratch slot. */
+	dwords = I915_GEN9_FLUSH_RCS_DWORDS;
+	if ((mode & EMIT_INVALIDATE) != 0U) {
+		flags |= PIPE_CONTROL_TLB_INVALIDATE;
+		flags |= PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE;
+		flags |= PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE;
+		flags |= PIPE_CONTROL_VF_CACHE_INVALIDATE;
+		flags |= PIPE_CONTROL_CONST_CACHE_INVALIDATE;
+		flags |= PIPE_CONTROL_STATE_CACHE_INVALIDATE;
+		flags |= PIPE_CONTROL_QW_WRITE;
+		flags |= PIPE_CONTROL_STORE_DATA_INDEX;
+		dwords += I915_GEN9_FLUSH_RCS_VF_WA_DWORDS;
+	}
+
+	/* Reserves the flush. */
+	cs = drv_i915_ring_begin(rq, dwords);
+	if (cs == NULL)
+		return rq->error;
+
+	/* A VF cache invalidate is preceded by a null PIPE_CONTROL on Gen9. */
+	if ((mode & EMIT_INVALIDATE) != 0U)
+		cs = i915_emit_pipe_control(cs, 0U, 0U, 0U);
+
+	/* Writes the flush and the invalidate. */
+	cs = i915_emit_pipe_control(cs, 0U, flags, LRC_PPHWSP_SCRATCH_ADDR);
+	drv_i915_ring_advance(rq, cs);
+
+	/* Succeeded: the flush is in the ring. */
+	return 0;
+}
+
+/*
+ * Writes the Gen9 flush of a copy, video or enhancement engine
+ * (gen8_emit_flush_xcs()): one MI_FLUSH_DW with a post-sync write, which is
+ * always a command barrier, and the TLB (and video BSD) invalidate on
+ * request.
+ */
+static int
+i915_gen9_emit_flush_xcs(
+	struct i915_gt_request *rq,
+	uint32_t mode)
+{
+	uint32_t *cs;
+	uint32_t command;
+
+	/* Reserves the flush. */
+	cs = drv_i915_ring_begin(rq, I915_FLUSH_XCS_DWORDS);
+	if (cs == NULL)
+		return rq->error;
+
+	/* A command barrier always; an invalidate adds the TLB and the video BSD cache. */
+	command = (MI_FLUSH_DW + 1U) | MI_FLUSH_DW_STORE_INDEX | MI_FLUSH_DW_OP_STOREDW;
+	if ((mode & EMIT_INVALIDATE) != 0U) {
+		command |= MI_INVALIDATE_TLB;
+		if (rq->ce->ge->info->class == I915_VIDEO_DECODE_CLASS)
+			command |= MI_INVALIDATE_BSD;
+	}
+
+	/* Writes the flush with its post-sync write to the scratch slot: upper address and value zero. */
+	*cs++ = command;
+	*cs++ = LRC_PPHWSP_SCRATCH_ADDR;
+	*cs++ = 0U;
+	*cs++ = 0U;
+	drv_i915_ring_advance(rq, cs);
+
+	/* Succeeded: the flush is in the ring. */
+	return 0;
+}
+
+/*
+ * Writes the Gen9 final breadcrumb and records rq->tail and rq->wa_tail
+ * (gen8_emit_fini_breadcrumb_rcs(), _xcs() and gen8_emit_fini_breadcrumb_tail()).
+ *
+ * The render engine flushes its caches first and writes the seqno with a
+ * stalling PIPE_CONTROL; the others write it with MI_FLUSH_DW.  The tail is
+ * the user interrupt, the preemption busywait in the four-dword Gen8
+ * semaphore form, and the workaround tail.
+ */
+static uint32_t *
+i915_gen9_emit_fini_breadcrumb(
+	struct i915_gt_request *rq,
+	uint32_t *cs)
+{
+	struct i915_gt_ring *ring;
+
+	/* The tail offsets are measured from the start of the ring. */
+	ring = &rq->ce->ring;
+
+	/* Writes the seqno: after a cache flush on the render engine, by MI_FLUSH_DW on the others. */
+	if (rq->ce->ge->info->class == I915_RENDER_CLASS) {
+		cs = i915_emit_pipe_control(
+			cs,
+			0U,
+			PIPE_CONTROL_CS_STALL |
+			PIPE_CONTROL_TLB_INVALIDATE |
+			PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+			PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+			PIPE_CONTROL_DC_FLUSH_ENABLE,
+			0U);
+
+		/* gen8_emit_ggtt_write_rcs(seqno, hwsp, FLUSH_ENABLE | CS_STALL) */
+		*cs++ = GFX_OP_PIPE_CONTROL(6);
+		*cs++ = PIPE_CONTROL_FLUSH_ENABLE |
+			PIPE_CONTROL_CS_STALL |
+			PIPE_CONTROL_GLOBAL_GTT_IVB |
+			PIPE_CONTROL_QW_WRITE;
+		*cs++ = rq->hwsp_ggtt;
+		*cs++ = 0U;
+		*cs++ = rq->seqno;
+		*cs++ = 0U;
+	} else {
+		/* gen8_emit_ggtt_write(seqno, hwsp) */
+		*cs++ = (MI_FLUSH_DW + 1U) | MI_FLUSH_DW_OP_STOREDW;
+		*cs++ = rq->hwsp_ggtt | MI_FLUSH_DW_USE_GTT;
+		*cs++ = 0U;
+		*cs++ = rq->seqno;
+	}
+
+	/* Raises the interrupt and allows arbitration. */
+	*cs++ = MI_USER_INTERRUPT;
+	*cs++ = MI_ARB_ON_OFF | MI_ARB_ENABLE;
+
+	/* Triggers IDLE to ACTIVE first, then waits for PREEMPT to be zero (the four-dword Gen8 semaphore). */
+	*cs++ = MI_ARB_CHECK;
+	*cs++ = MI_SEMAPHORE_WAIT | MI_SEMAPHORE_GLOBAL_GTT | MI_SEMAPHORE_POLL | MI_SEMAPHORE_SAD_EQ_SDD;
+	*cs++ = 0U;
+	*cs++ = rq->preempt_ggtt;
+	*cs++ = 0U;
+	*cs++ = MI_NOOP;
+
+	/* The request ends here. */
 	rq->tail = (uint32_t)((char *)cs - (char *)ring->vaddr);
 
 	/* Leaves at least one preemption point per request (gen8_emit_wa_tail()). */
