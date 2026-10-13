@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws171-p002 -->
 # ws171-p002: hal.h の契約の comment の差分の案
 
-Status: in-progress（2026-10-14 P3 q966: 6 領域のうち 3（IRQ）と 4（task）の案を作った。1・2・5・6 は未）
+Status: 案が全部そろった・ユーザーの review 待ち（2026-10-14 P3 q966: 6 領域の spec と diff。hal.h には未適用）
 Parent: [WS171](../ws.md)
 Queue: q966（P3、2026-10-14。ユーザー: WS171 は優先度低め、やることが無い時に）
 依存: p001（[inventory.md](../phase001/inventory.md)）
@@ -34,12 +34,16 @@ review は `diff/NN-area.diff` を領域ごとに見る。承認された領域�
 
 | # | 領域 | 関数 | spec / diff | 状態 |
 | --- | --- | --- | --- | --- |
-| 1 | 文字列と console・assert・fatal | 11 | — | 未 |
-| 2 | CPU・mask・idle・panic・halt・reset・poweroff | 20 | — | 未 |
+| 1 | 文字列と console・assert・fatal（と `HAL_ASSERT`・`HAL_FATAL`） | 11 | [spec](spec/01-runtime.txt) / [diff](diff/01-runtime.diff) | 案（2026-10-14） |
+| 2 | CPU・mask・idle・panic・halt・reset・poweroff（SMP の節の説明、`hal_cpu_id_t`・`struct hal_cpu_mask`） | 20 | [spec](spec/02-cpu.txt) / [diff](diff/02-cpu.diff) | 案（2026-10-14） |
 | 3 | IRQ（と `HAL_IRQ_*`・`hal_irq_ack_t`・`hal_irq_handler_t`） | 19 | [spec](spec/03-irq.txt) / [diff](diff/03-irq.diff) | 案（2026-10-14） |
 | 4 | task と context（と `hal_task_t`、debug の register） | 28 | [spec](spec/04-task.txt) / [diff](diff/04-task.diff) | 案（2026-10-14） |
-| 5 | 空間・pmem・mmio・io・barrier・cache | 47 | — | 未 |
-| 6 | rtc・entropy・get | 5 | — | 未 |
+| 5 | 空間・pmem・mmio・io・barrier・cache（`HAL_SPACE_*` の属性と flag、`hal_space_t`） | 47 | [spec](spec/05-memory.txt) / [diff](diff/05-memory.diff) | 案（2026-10-14） |
+| 6 | rtc・entropy・get（`struct hal_memstat`） | 5 | [spec](spec/06-misc.txt) / [diff](diff/06-misc.diff) | 案（2026-10-14） |
+
+- 全部を当てた hal.h を p001 の `inventory.py` で数え直すと contract 81・short 33・none 16（none は全て、群の頭に 1 つの comment を置いた群の 2 つ目以降: `hal_rmb`・`hal_wmb`、`hal_io_rmb`・`hal_io_wmb`、`hal_io_inp16`〜`hal_io_outp32`、`hal_mmio_read16`〜`hal_mmio_write64`）・placeholder 0。short の 33 は 1〜2 文で足りる物（`hal_task_get_tls` など）。
+- 「XXX: Add explanation.」と「XXX: Add a single-line explanation here.」は無くした。名前を変える案の XXX（`hal_halt`・`hal_space_prot_query`・`hal_space_query`・`hal_space_clear_flags`）はユーザーの問いなので残した（`hal_halt` の「hal_cpu_idle() と同じか」には comment の中で答えた）。
+- 節の説明（「HAL C runtime」の「HAL と early init だけで使う」）は変えていない（H18）。
 
 ## 実装との差（ユーザーの判断か bug。契約の案は amd64 の動作に合わせた所が多い）
 
@@ -60,13 +64,24 @@ review は `diff/NN-area.diff` を領域ごとに見る。承認された領域�
 | H13 | hal_task_get/set_user_*regs・single_step・debug_points | i386 は定義が無く、`include/hal/arch/i386.h` に HAL_DEBUG_POINT_MAX も無い（kern/ptrace.c が i386 で build されるかは p003 で確かめる） | 記録だけ |
 | H14 | sparcv9・m68k の hal_irq_get_affinity | 宣言と違う形（`struct hal_irq_affinity *`）で、hal_irq_register・unregister が無い（`hal_irq_set_handler` だけ） | サポート外、記録だけ |
 | H15 | exec・fork・signal・get_user_context・register の関数 | 返り値は HAL_OK などではなく 0 と -1 | 契約にそのまま書いた（型を変えるのは API の変更） |
+| H16 | hal_printf | 変換: amd64・i386 は c s d u x X %、aarch64 は c s u x p %（d と X は「?」を出す）、amd64・i386 に p は無い | 契約は共通の c s u x % と幅・0・l/ll だけ。aarch64 の d・X は bug 候補 |
+| H17 | hal_assert・hal_fatal | amd64 は他の CPU も止める（hal_cpu_panic_all）、aarch64・i386 は呼んだ CPU だけ（aarch64 は画面にも描く） | 契約は「呼んだ CPU が止まる」だけ。揃えるかはユーザーの判断 |
+| H18 | 「HAL C runtime」の節 | 「HAL と kernel の early init だけで使う」とあるが、kernel は hal_fatal・HAL_FATAL を各所で使う（kern/entry.c・sched.c ほか） | 節の文を直すか使い方を直すかはユーザーの判断（案では変えていない） |
+| H19 | hal_cpu_notify_mask | online でない CPU: aarch64 は STATE、amd64 は INVALID（hal_cpu_notify は STATE）。空の mask: amd64 は HAL_OK、aarch64 と UP は INVALID。UP は CPU 0 だけの mask に UNSUPPORTED | 契約は hal_cpu_notify と同じ INVALID・STATE・UNSUPPORTED。amd64 は bug 候補、空の mask は決めていない |
+| H20 | hal_reset・hal_poweroff・hal_panic | aarch64（と m68k・sparcv9 の reset）だけが定義し、amd64・i386 は定義しない（kernel の platform の code が ACPI などで行う）。hal_panic は kernel から呼ばれていない | 契約に「定義しない HAL がある」と書いた。hal_panic を残すかはユーザーの判断（消すのは API の変更） |
+| H21 | hal_dcache_* | aarch64・m68k だけが定義（kernel の dcache.c はそれらだけで build） | 契約に書いた |
+| H22 | 空間 | aarch64 の hal_space_map は書けて実行できる page と RAM の外の device の page を INVALID で断る、clear_flags は ACCESSED を消さない（控えめ）、flush_tlb_range は space 全体、get_page_size(3) は aarch64 で 1 GiB・amd64 で 0 | 契約に「断ってよい」「控えめでよい」「多く flush してよい」と書いた |
+| H23 | hal_space_map_device | amd64 は WRITETHRU を、aarch64 は WC を UNSUPPORTED | 契約に書いた |
+| H24 | SMP の節 | 「secondary は HAL の中で初期化され kernel_main() の時に IPI を待つ」は今の動作（hal_cpu_start_others が kernel から起こす）と違う | 節の文を直した（案） |
+| H25 | hal_rtc_read_epoch_time | rpi4 はいつも false（RTC が無い） | 契約の false の場合に入る |
+| H26 | hal_cpu_panic_all | aarch64 は mask できる SGI で止めるので、割り込みを切って走る CPU は止まらない（amd64 は NMI） | 契約に書いた |
 
 ## 確認
 
-- 2026-10-14 `gen.sh`: 各 spec の後と全部で `declarations unchanged: yes`、`comment delimiter problems: none`。`git apply --check diff/all.diff` 成功。hal.h は不変（worktree の include/hal/hal.h は変えていない）。
+- 2026-10-14 `gen.sh`（6 つの spec）: 各 spec の後と全部で `declarations unchanged: yes`、`comment delimiter problems: none`。`git apply --check diff/all.diff` 成功（今の main の hal.h に当たる）。hal.h は不変（worktree の include/hal/hal.h は変えていない）。
 - build は不要（comment だけ。p003 で当てた後に amd64・aarch64・i386 の vmunix を build する）。
 
 ## 残り
 
-- 領域 1・2・5・6 の spec（p001 の数で 83 関数）。
-- 全部の案がそろったら、ユーザーへ review を頼む（Q1 経由）。
+- ユーザーの review（Q1 経由）: 領域ごとの diff と、上の H1〜H26 の判断。承認された領域の spec だけで gen.sh を流し、p003 で当てる。
+- bug 候補（H2・H3・H4・H5・H6・H10・H16・H19）は p003 で bug にするか、src/hal の直し（承認不要）として別の Phase に。

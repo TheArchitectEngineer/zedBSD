@@ -1,6 +1,6 @@
 --- a/include/hal/hal.h
 +++ b/include/hal/hal.h
-@@ -307,40 +307,98 @@
+@@ -446,40 +446,98 @@
   * IRQ
   */
  
@@ -106,7 +106,7 @@
   */
  int
  hal_irq_set_affinity(
-@@ -348,7 +406,16 @@
+@@ -487,7 +545,16 @@
  	const struct hal_cpu_mask *requested);
  
  /*
@@ -124,7 +124,7 @@
   */
  int
  hal_irq_get_affinity(
-@@ -359,14 +426,19 @@
+@@ -498,14 +565,19 @@
  /*
   * Set the trigger mode and polarity of a numbered IRQ.
   *
@@ -147,7 +147,7 @@
   */
  int
  hal_irq_set_mode(
-@@ -433,21 +505,46 @@
+@@ -572,21 +644,46 @@
  hal_irq_resume(void);
  
  /*
@@ -197,7 +197,7 @@
   */
  int
  hal_irq_register(
-@@ -456,7 +553,22 @@
+@@ -595,7 +692,22 @@
  	void *arg);
  
  /*
@@ -221,7 +221,7 @@
   */
  int
  hal_irq_unregister(
-@@ -465,9 +577,28 @@
+@@ -604,9 +716,28 @@
  	void *arg);
  
  /*
@@ -252,7 +252,7 @@
   */
  int
  hal_irq_register_msi(
-@@ -479,20 +610,44 @@
+@@ -618,20 +749,44 @@
  	uint32_t *mapped_event);
  
  /*
@@ -305,7 +305,7 @@
   */
  int
  hal_irq_alloc_msi(
-@@ -502,8 +657,16 @@
+@@ -641,8 +796,16 @@
  	uint32_t *mapped_event);
  
  /*
@@ -324,7 +324,7 @@
   */
  int
  hal_irq_attach_msi(
-@@ -512,11 +675,19 @@
+@@ -651,11 +814,19 @@
  	void *handler_arg);
  
  /*
@@ -349,7 +349,7 @@
   */
  int
  hal_irq_detach_msi_sync(
-@@ -525,17 +696,34 @@
+@@ -664,17 +835,34 @@
  	void *handler_arg);
  
  /*

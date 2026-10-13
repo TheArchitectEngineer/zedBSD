@@ -3,10 +3,13 @@
 # ws143-p007: Linux の Bluetooth の backend（BlueZ の D-Bus）と FreeBSD の未対応の表示
 
 Parent: [WS143](../ws.md)
-Status: planning（2026-10-13 P2 q962: 詳細設計の第 1 版。WS143 §10.1 の規則で design-reviewer を通してから実装する）
+Status: 実装済み・T1 の試験待ち（2026-10-14 P3 q967: 第 2 版（§9）で実装、host 試験 PASS、記録は §10。QEMU の Debian と FreeBSD の PNG は T1。第 1 版は 2026-10-13 P2 q962）
 Phase disposition: normal
 Queue: q962（P2、2026-10-13）。承認: ユーザー「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。」、WS143 の design.md §9（D7・D13 ほか、2026-10-05 夕 ユーザー「全部推奨」）と §10 の p007、2026-10-08 ユーザー「Linux・FreeBSD は 10/13 以降」。
-依存: p006（desktop の backend の口 `kl_backend_bluetooth_*`、compositor の `bluetooth-shell.c`・`bluetooth-ask.c`・`bluetooth-bar.c`、Settings の頁。test-wait だが口は main にある）。
+Queue（実装）: q967（P3、2026-10-14）。review: [review-1](review-1.md)（design-reviewer、判定「直せば実装してよい」、重大 4 と中 M1・M3・M5・M7・M8 を入れれば再 review なし、Q1）。
+依存: p006（desktop の backend の口 `kl_backend_bluetooth_*`、compositor の `bluetooth-shell.c`・`bluetooth-ask.c`・`bluetooth-bar.c`、Settings の頁。p006 は 2026-10-08 に cleared）。
+
+**§3〜§6 の第 1 版の文と §9（第 2 版）が違う所は §9 が優先する。**
 
 ## 1. 範囲
 
@@ -154,3 +157,125 @@ reason は error の名前の最後の語（`AuthenticationFailed` など、`KL_
 ## 8. 見積もり
 
 `bluetooth-linux.c` 約 1200 行、`dbus-linux.c` の拡張 約 250 行、host 試験。約 3〜4 LW（design.md の見積もりの BlueZ の部分）。
+
+## 9. 第 2 版（review-1 の後、2026-10-14 P3 q967）
+
+review-1 の重大 R1〜R4、中 M1〜M13、軽微 m1〜m9 を入れた。Q1 の決め（2026-10-14）: R1〜R4・M1〜M9・M11・軽微は review の案どおり。ユーザーの決定（2026-10-14、Q1 経由）: L1・M10・M12・M13（下）。
+
+### 9.1 不変条件と接続の状態機械（R1・R2・L4・L5）
+
+- **同期の呼び出しは開く時だけ**: Bluetooth の connection で待つのは `dbus_open_address()` の connect・EXTERNAL の認証・`Hello` だけ（最初の待たない call と Agent の export より前）。他は全部 `dbus_send_call()`（AddMatch・GetNameOwner・RegisterAgent・RequestDefaultAgent・UnregisterAgent・Introspect・GetAll・Set・Pair ほか）。`dbus_call()` と `dbus_add_match()`（同期）は使わない。AddMatch も待たない call で送る: bus は 1 つの connection の message を順に処理するので、後の GetNameOwner より前に match が効く（R3）。
+- 状態: **閉じている**（fd < 0）→ 期限（backoff）が来たら開く。開くのに失敗したら、または開いた後に閉じた（受け取りの誤り・64 KiB 超・送りの失敗）ら、次の試みまで `BT_RETRY_MS` 1 秒から倍ずつ 30 秒まで延ばす。開いてから 60 秒続いたら backoff を 1 秒に戻す（64 KiB 超の返事が繰り返しても 30 秒に 1 回までしか開き直さない）。
+- 接続を失った時、および `NameOwnerChanged` で org.bluez の owner が変わった・居なくなった時: 出ている request に result `ENOTCONN`（reason `lost`）、出ている question に `ASK_END`、保留の Agent の call は捨てる（返事は送れない、または新しい owner には無意味）、送った call の表・adapter・device の表を空に、`agent` 0、`discovery_sent` 0。owner が居ない間は `reachable` 0・state `ABSENT`。
+- 開いた直後: AddMatch 4 つ（`type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='org.bluez'`、`type='signal',sender='org.bluez',interface='org.freedesktop.DBus.ObjectManager',member='InterfacesAdded'`、同 `InterfacesRemoved`、`type='signal',sender='org.bluez',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path_namespace='/org/bluez'`）→ `GetNameOwner("org.bluez")`。
+- owner が来た時（GetNameOwner の答え、NameOwnerChanged の new）: `RegisterAgent(path, "DisplayYesNo")` → 成功（か `AlreadyExists`）で `RequestDefaultAgent(path)` → 成功で `agent` 1。失敗は log し 30 秒後にやり直す。並んで adapter を探す（§9.2）。scan を求めている間は adapter が ON になったら `StartDiscovery` を送り直す（BlueZ は client の切断・電源の入り直しで discovery を止める）。
+- **M1 auto-start**: org.bluez への call は全部 header の flags に `NO_AUTO_START`（0x2）。owner が居ない間は org.bluez に何も送らない。
+- 接続は専用の 1 本（L5）。compositor の poll には足さない（m1: tick ごとに `kl_backend_bluetooth_update` が読む、口は変えない）。
+
+### 9.2 読み方（R3・M3・M4・M5・m8）
+
+- adapter を探す: `Introspect(/org/bluez)` の子の node（`hciN`）の名前の順で最初 → その path に `GetAll(org.bluez.Adapter1)` と `Introspect(path)`（子の `dev_…` の node）。Introspect の XML は interface の記述も含めて数 KB〜十数 KB で 64 KiB に収まる見込み（超えれば接続を閉じて backoff）。
+- device ごとに `GetAll(org.bluez.Device1)` と `GetAll(org.bluez.Battery1)`（Battery1 が無ければ error、無視して battery -1）。送り中の call は表（`BT_CALLS_MAX` 16）に持ち、読みは同時に 4 つまで。表が満ちたら送りを次の tick に延ばす（device の「読みが要る」印で持つ）。
+- signal: `InterfacesAdded(o, a{sa{sv}})` と `GetAll` の答えは同じ upsert。`InterfacesRemoved(o, as)` は interface ごと: Device1 → device を消す、Battery1 → battery -1、Adapter1（選んだ adapter）→ 表を空にして adapter を探し直す。`GetAll` を待つ間に device が消えたら答えは捨てる（表の項目は path で引く）。`GetAll` が `UnknownObject`・`UnknownMethod`・`InvalidArgs`（Device1 の時）なら device を消す。
+- `PropertiesChanged(s, a{sv}, as)`: 変わった物を当て、invalidated の `RSSI` は 0 に（M4）。表に無い device の path（選んだ adapter の下）から来たら `GetAll` を送る（M5）。
+- variant の読みは `y`・`b`・`n`・`q`・`u`・`i`・`s`・`o`（他は `dbus_skip_value`）。`Percentage` は `y`、`RSSI` は `n`（M3）。
+- 内部の表は `BT_TABLE_MAX` 128。満ちた時の新しい device は、paired でない device のうち RSSI の一番弱い物と入れ替える（paired はいつも残す）。口に出すのは 32 まで: paired を先に、残りは RSSI の強い順で選び、出す並びは paired を先に名前の順（M5）。
+- 周期の再読みは adapter の `GetAll` だけ（見ている間 2 秒、他 30 秒、result の後すぐ）。
+- **M6**: RSSI だけの変化は `CHANGED_DEVICES` を 2 秒に 1 回までにまとめる（口に出す一覧を前回と比べ、RSSI 以外が違えばすぐ、RSSI だけなら 2 秒ごと）。`SetDiscoveryFilter` は送らない（既定と同じ、RSSI の閾値の既定を保つ）。§4 の `a{sv}` の書きは要らない。
+
+### 9.3 写し（M2・m4・m5）
+
+- state: owner 無し → `ABSENT`、adapter 無し → `NONE`。`PowerState` が在れば（experimental、Debian の既定では無い見込み）`on`・`on-disabling` → `ON`、`off`・`off-blocked` → `OFF`、`off-enabling` → `STARTING`。無ければ `Powered` で `ON`・`OFF`（普通の経路）。rfkill の block は区別しない。
+- device の type: `AddressType` が `random` → `LE_RANDOM`。`public` は `Class` が在れば `BREDR`、`Appearance` だけなら `LE_PUBLIC`、どちらも無ければ `BREDR`（m4）。
+- 名前: `Name` が在れば `Alias`（利用者の付けた名、無ければ Name と同じ）、無ければ address。63 byte に UTF-8 の文字の境界で切る（m5）。
+
+### 9.4 request（M7・M8・M12・M13・m3）
+
+- device の path は表に持った物を使う（address から作らない、m3）。表に無い address は `EINVAL`。adapter が無い時の POWER は `EINVAL`。
+- **PAIR（ユーザーの決定 M12・M13、zedBSD と同じ）**: `Device1.Pair()` → 成功（か `AlreadyExists`）で `Properties.Set(Device1, Trusted, true)` → `Device1.Connect()`。result は Connect の答えで出す: Pair が成功していれば error 0（Connect の失敗は log と reason に error の最後の語、Trusted の失敗は log だけ）。Pair の失敗はその errno。`pairing` は Pair〜Connect の間 1。
+- 期限（M7）: 送った call ごとに期限（内部の読み・Set・Agent の登録 25 秒、Pair 90 秒、Connect 25 秒）。期限が来たら ETIMEDOUT として扱い（Pair なら `CancelPairing` も送る）、遅れて来た答えは表に無いので捨てる。
+- `cancel`: 自分の Pair（〜Connect）の間なら `CancelPairing` を送り、result `ECANCELED`（reason `cancelled`）をすぐ出す。
+- error の写し（M8、§5.3 を置き換え）:
+
+| error | errno |
+| --- | --- |
+| Connect の `org.bluez.Error.AlreadyConnected`、Disconnect の `NotConnected`、Pair の `AlreadyExists`（続けて Trusted・Connect） | 0 |
+| `AuthenticationFailed`・`AuthenticationRejected`・`AuthenticationCanceled`・`Rejected`・`Canceled`・`NotAuthorized`、`org.freedesktop.DBus.Error.AccessDenied` | `EACCES` |
+| `InProgress`・`AlreadyExists`（Pair 以外）・`Busy` | `EBUSY` |
+| `AuthenticationTimeout`、`org.freedesktop.DBus.Error.NoReply`・`Timeout`、backend の期限 | `ETIMEDOUT` |
+| `ConnectionAttemptFailed`、`Failed`（Connect・Pair の時）、`NotAvailable` | `ECONNREFUSED` |
+| `NotReady` | `ENETDOWN` |
+| `DoesNotExist`・`InvalidArguments`、`org.freedesktop.DBus.Error.UnknownObject`・`UnknownMethod`・`InvalidArgs` | `EINVAL` |
+| `NotSupported` | `ENOTSUP` |
+| `org.freedesktop.DBus.Error.ServiceUnknown`・`NameHasNoOwner` | `ENOTCONN` |
+| `LimitsExceeded`・他 | `EIO` |
+
+  `reachable` は owner の追跡だけで決め、error では変えない。reason は error の名前の最後の語、`Failed` の時は error の本文（`br-connection-page-timeout` など）を 31 byte に切って使う。自分の Agent が `RequestPinCode`・`RequestPasskey` を断った後の Pair の失敗は reason を `input-unsupported` に（m7）。
+
+### 9.5 Agent（L1・L2・M9・M10・M11・m6・m9）
+
+- 受ける call の検査（M9）: sender が今の org.bluez の owner（unique name）、path が `/org/keiland/bluetooth/agent`、interface が `org.bluez.Agent1`。sender が違えば `org.freedesktop.DBus.Error.AccessDenied`、知らない method・path は `org.freedesktop.DBus.Error.UnknownMethod`。答えを待つ call（`RequestConfirmation`・`RequestAuthorization`・HID の `AuthorizeService`）は 1 つだけ保留し、保留中に 2 つ目が来たら `org.bluez.Error.Rejected`。保留は 30 秒で `Rejected` を返して捨てる（BlueZ の期限の約 25 秒の後の保険）。
+- **AuthorizeService（ユーザーの決定 M10）**: device が表に無いか paired でない → `Rejected`。paired で trusted → すぐ return。paired で untrusted → uuid が HID（`00001124-0000-1000-8000-00805f9b34fb`）か HOGP（`00001812-0000-1000-8000-00805f9b34fb`）なら `ASK_CONSENT` で尋ね、他は `Rejected`。
+- **M11**: `ASK_PASSKEY` は `Cancel` の他に、自分の Pair の答えが来た時と、その device の `Paired` が true になった時にも `ASK_END`。
+- m6: question の `own` は「device の path が自分の Pair の device の path と同じ」。`user` は `getpwuid(getuid())`。
+- L2: `RequestDefaultAgent` は後勝ち。利用者の切り替え・別の VT の session では後に登録した方が勝つ（session が active になった時の送り直しはしない、制限として下に記録）。
+- close（m9）: 保留の Agent の call に `Rejected`、自分の Pair なら `CancelPairing`、scan を送っていれば `StopDiscovery`、`UnregisterAgent` を送ってから閉じる（どれも待たない。送りの失敗は無視）。
+
+### 9.6 `dbus-linux.c` の追加（§4 を置き換え、L4）
+
+| 追加 | 内容 |
+| --- | --- |
+| `dbus_open_address(bus, path)` | unix の path の bus に繋ぐ（認証 EXTERNAL、fd の受け渡しは無し、Hello）。`bluetooth-linux.c` は `BT_DBUS_SOCKET`（既定 `/run/dbus/system_bus_socket`、host の試験は build 時の define で私的な bus）を渡す（R4 (b)） |
+| `dbus_send_call(bus, flags, destination, path, interface, member, signature, args, count, &serial)` | 待たない method call（flags に `LINUX_DBUS_NO_AUTO_START`） |
+| `dbus_dispatch_messages` | 返事・error も callback に渡す（notify-linux.c の callback は METHOD_CALL 以外を見ないので動作は変わらない、review L4） |
+| `dbus_send_return_to`・`dbus_send_error_to` | 呼び手の sender と serial を写して後で答える。`dbus_send_return`・`dbus_send_error` はその包み |
+| `struct dbus_arg` の `variant` | `v` の時の中の signature（`b`・`s`・`u`）。`Properties.Set`（`ssv`）に使う |
+| `dbus_read_variant(reply, &signature)`・`dbus_read_int16(reply, &value)` | variant の中の型（1 つの完全な型）と `n`・`q` の読み |
+
+### 9.7 試験（R4）
+
+| 層 | 試験 |
+| --- | --- |
+| host（偽の org.bluez） | `plan/ws143/tests/bt-linux-host-test.sh`: 私的な `dbus-daemon`（試験の directory の socket）の上に python3 の dbus-python と GLib で偽の org.bluez（`Adapter1`・`Device1`・`Battery1`・`AgentManager1`、ObjectManager の signal、error を返す台本）を立て、`bluetooth-linux.c`・`dbus-linux.c` を `-DBT_DBUS_SOCKET` で build した C の試験（plain と ASan+UBSan）が口を叩く。確かめ: ABSENT → owner が来て ON・device の一覧（paired が先）、Battery1、RSSI だけの変化のまとめ、PropertiesChanged の invalidated、表に無い device の signal から GetAll、Pair → Agent の RequestConfirmation → answer yes → Trusted・Connect → result 0、Pair の error の写し、AuthorizeService の 3 つの場合、RequestPinCode の拒否と reason、Cancel・Release、owner の入れ替わり（偽の org.bluez を止めて別の名で立て直す）で request が ENOTCONN・question が ASK_END、cancel、POWER の Set、FORGET、Connect の AlreadyConnected が 0、sender の違う Agent の call が AccessDenied、32 を越える device と paired の保持 |
+| build | `make keiland-linux`（または target を名指す libkeiland-backend.a と compositor）の warning 0、`plan/tools/keiland-os-boundary/check.sh`（R4 (e)） |
+| QEMU（T1、WS131 の Debian の QEMU+KVM、SSH・QMP PNG の例外） | (1) guest で `busctl introspect org.bluez /org/bluez/hci0` で PowerState の有無、`btvirt` が bluez-test-tools に在るか（無ければ `hci_vhci` の module と `btmgmt` の代わり）を確かめる。(2) Keiland を root でない利用者で起動（[F13] の確かめ）。(3) Settings の Bluetooth の頁で電源の on・off、scan で相手の仮想 controller が見える、Pair（相手側の `bluetoothctl` は `agent on` と `default-agent` を Keiland の起動の後に。1 つの bluetoothd が hci0 と hci1 を持つと相手側の pairing も default agent に来るため）で数の一致の窓（仮想 controller が SSP の numeric comparison をしなければ Just Works で窓は出ない: その時は窓無しで pairing が済むことを記録）、Forget、Connect・Disconnect、system bar。PNG |
+| FreeBSD（T1、WS109） | Settings の Bluetooth の頁が未対応（ABSENT）の文を出す PNG（source は変えない） |
+
+### 9.8 既知の制限（ユーザーの決定 L1、2026-10-14「制限を受け入れる」）
+
+- Linux の Keiland の Agent は `DisplayYesNo` で、文字・数を打って答える口が無い。pairing できないのは BlueZ が `RequestPinCode`（PIN を打つ必要のある、SSP の無い古い device のうち、キーボードでない物）か `RequestPasskey`（相手が表示だけの device で、こちらが数を打つ場合）を送ってくる device だけ。SSP の無い古いキーボードは BlueZ が `DisplayPinCode` で 6 桁の PIN を示すので `ASK_PASSKEY`（device で打つ数）で pairing できる。BlueZ が一般的な PIN を自分で試すかは未確認（QEMU で見る）。断った時の result の reason は `input-unsupported`。
+- `RequestDefaultAgent` は後勝ち（L2）。同じ機械で別の desktop の session（別の VT・利用者の切り替え）が後に Agent を登録すると、相手からの pairing の question はそちらへ行く。自分の Pair の question は自分の connection の Agent に来る。
+
+## 10. 実装の記録（2026-10-14 P3 q967）
+
+### 変えた物
+
+| file | 内容 |
+| --- | --- |
+| `userland/desktop/libkeiland-backend-linux/bluetooth-linux.c`（新） | §9 の backend。専用の connection（開く時だけ同期）、送った call の表（16、期限つき）、adapter と device の表（128、出すのは 32）、Agent（DisplayYesNo）、request（Pair → Trusted → Connect）、RSSI だけの変化の 2 秒のまとめ、接続を失った時の backoff（1 秒 → 30 秒、60 秒続けば戻す） |
+| `userland/desktop/libkeiland-backend-linux/dbus-linux.c`・`.h` | `dbus_open_address`、`dbus_send_call`（flags、`LINUX_DBUS_NO_AUTO_START`）、`dbus_send_return_to`・`dbus_send_error_to`（`dbus_send_return`・`dbus_send_error` はその包み）、`dbus_arg.variant` と `writer_variant`、`dbus_read_variant`・`dbus_read_int16`、`dbus_dispatch_messages` が返事と error も callback に渡す |
+| `userland/desktop/libkeiland-backend-linux/Makefile.linux` | Linux の build は `bluetooth-unsupported.c` の代わりに `bluetooth-linux.c` |
+| `userland/desktop/libkeiland-backend/unsupported/bluetooth-unsupported.c`・`keiland-backend.h` | comment だけ（unsupported は FreeBSD の物、Linux は BlueZ） |
+| `plan/ws143/tests/bt-linux-host-test.sh`・`.c`・`bt-linux-fake-bluez.py`（新） | §9.7 の host 試験 |
+
+FreeBSD の source（`libkeiland-backend-freebsd/Makefile.freebsd` は `bluetooth-unsupported.c` のまま）は変えていない。
+
+### 確かめ（host、2026-10-14）
+
+- `sh plan/ws143/tests/bt-linux-host-test.sh`: **PASS**（plain 54 checks ok、ASan+UBSan 54 checks ok。出力 `build/ws143-bt-linux.run.w8rNrK`）。確かめた物: 起動で ON・adapter の名・Agent の default・device 3 つ（paired が先、Battery1 の 80、LE random、BR/EDR）、RegisterAgent の capability `DisplayYesNo`、InterfacesAdded、RSSI の変化と invalidated、表に無い device の PropertiesChanged から GetAll、Pair の数の一致（question CONFIRM 123456・own 1・pairing 1）→ yes → Paired・Trusted・Connected、no → EACCES、`Failed` の本文が reason（ECONNREFUSED `br-connection-page-timeout`）、RequestPinCode の拒否（Rejected、result EACCES `input-unsupported`）、DisplayPasskey（PASSKEY 654321、Pair の後に ASK_END）、cancel（ECANCELED、CancelPairing が送られた）、BlueZ の Cancel（ASK_END、EACCES）、AuthorizeService の 4 つ（未 paired → Rejected、paired untrusted の HID → CONSENT → yes → ok、HID でない → Rejected、trusted → ok）、RequestPasskey の拒否、owner でない caller の Agent の call → AccessDenied、POWER off・on、Connect の AlreadyConnected → 0、Disconnect、NotConnected → 0、表に無い address → EINVAL、PAIR_PHONE → ENOTSUP、FORGET（device が消える）、scan の StartDiscovery・StopDiscovery、device 45 で 32 を出し paired を残し RSSI の弱い物を落とす、Pair の途中で org.bluez が消える（ENOTCONN・ABSENT・device 0・request は ENOTCONN）→ 戻る（Agent と device を読み直す）、64 KiB を越える signal で接続が閉じ、backoff の後に開き直して読み直す、Release で agent 0、close で UnregisterAgent。
+- `sh plan/ws156/tests/run-host-notify-dbus.sh build/tmp/p3-notify-dbus`（dbus-linux.c の dispatch の変更の回帰）: PASS（plain・sanitized 41 checks ok）。
+- `make -f userland/desktop/keiland-linux.mk -j8 KEILAND_LINUX_BUILD=build/p3-keiland-linux build/p3-keiland-linux/bin/wayland`: 成功、warning 0（compositor が新しい backend と link）。
+- `sh plan/tools/keiland-os-boundary/check.sh`: PASS。
+- `git diff --check`: 問題なし。
+- zedBSD の amd64 の build: 実施していない。zedBSD が build する file で変わったのは `keiland-backend.h` の comment だけ（`bluetooth-unsupported.c` は host の cc の `-fsyntax-only` で確かめた）。
+
+### 未実施（T1 に依頼）
+
+- QEMU（Debian 13 の QEMU+KVM、WS131 の環境、SSH・QMP PNG の例外）: §9.7 の (1)〜(3)。
+- FreeBSD（WS109 の guest）: Settings の Bluetooth の頁の未対応の表示の PNG。
+
+### 残り・制限
+
+- 試験の C（`bt-linux-host-test.c`）は確かめの式を `check()` の引数に書いており、coding-style の「Boolean を式で作らない」に合わない所がある（p009 の規約の全文の見直しで扱う）。
+- GetNameOwner が期限切れ（bus daemon が応答しない）の時は、NameOwnerChanged が来るまで owner を知らないまま（再試行しない）。
+- §9.8 の既知の制限（L1・L2）。

@@ -1,0 +1,224 @@
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -186,39 +186,72 @@
+ /*
+  * SMP
+  *
+- * Secondary processors are initialized inside HAL, and waiting fo
+- * IPI at the moment kernel_main() called.
++ * Only the boot CPU runs when kernel_main() is called.  The kernel starts
++ * the others with hal_cpu_start_others() once it can schedule them; each
++ * enters the kernel through kernel_secondary_entry().  CPUs are named by
++ * dense logical IDs, 0 (the boot CPU) to hal_cpu_count() - 1, which never
++ * change.
++ *
++ * HAL_CPU_MAX is the most CPUs any HAL supports; a CPU mask holds one bit
++ * for each of them.
+  */
+ 
+ #define HAL_CPU_MAX	512U
+ #define HAL_CPU_MASK_WORDS	((HAL_CPU_MAX + 63U) / 64U)
+ 
++/*
++ * A logical CPU ID: 0 to hal_cpu_count() - 1.
++ */
+ typedef uint32_t hal_cpu_id_t;
+ 
++/*
++ * A set of CPUs, one bit per logical ID (bit id % 64 of word id / 64).
++ * It is a plain value: the hal_cpu_mask_*() helpers below change it
++ * without any lock, and the caller serializes a mask it shares.
++ */
+ struct hal_cpu_mask {
+ 	uint64_t bits[HAL_CPU_MASK_WORDS];
+ };
+ 
+ /*
+- * XXX: Add explanation.
++ * Start every secondary CPU the HAL found.
++ *
++ * The boot CPU calls it once, after the kernel is ready for
++ * kernel_secondary_entry() to run on each of the others.  Each secondary
++ * CPU initializes itself, wraps its context as its initial task
++ * (hal_task_create_for_init_context()), starts its tick, joins
++ * hal_cpu_ready_mask(), and enters kernel_secondary_entry(), which never
++ * returns.  The call returns once each of them has started; it does not
++ * wait for them to reach the kernel.  On a uniprocessor HAL it does
++ * nothing.
++ *
++ * Returns HAL_OK, or the error of the first CPU that could not be
++ * started; the CPUs started before it keep running.
+  */
+ int
+ hal_cpu_start_others(void);
+ 
+ /*
+- * Get the numbers of the CPUs.
++ * Return the number of CPUs the HAL found, which is fixed before
++ * kernel_main() is called.  CPUs that failed to start are counted.
+  */
+ unsigned
+ hal_cpu_count(void);
+ 
+ /*
+- * Get the ID of the current CPU of the caller context.
++ * Return the logical ID of the CPU the caller runs on.
++ *
++ * The answer is only stable while the caller cannot be moved to another
++ * CPU (interrupts disabled, or the kernel's preemption held off).
+  */
+ hal_cpu_id_t
+ hal_cpu_current(void);
+ 
+ /*
+- * XXX: Add explanation.
++ * Copy the set of CPUs that have started and can take notifications
++ * (the boot CPU, and each secondary CPU from the moment it joins, before
++ * kernel_secondary_entry()).  A NULL result is ignored.  It may be called
++ * in any context.
+  */
+ void
+ hal_cpu_ready_mask(
+@@ -246,25 +279,47 @@
+ /*
+  * Notify every CPU of a mask, as hal_cpu_notify() does one.  Every CPU
+  * is checked before any is notified: on an error none was.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for a NULL mask or one that names a CPU
++ * that does not exist, HAL_ERR_STATE for one that names a CPU not online,
++ * or HAL_ERR_UNSUPPORTED on a machine without a way to interrupt another
++ * CPU.
+  */
+ int
+ hal_cpu_notify_mask(
+ 	const struct hal_cpu_mask *targets);
+ 
+ /*
+- * XXX: Add explanation.
++ * Stop the calling CPU for good.
++ *
++ * Interrupts are disabled and the CPU halts; it takes no interrupt, no
++ * notification and no tick again.  The HAL calls it on the CPUs that
++ * hal_cpu_panic_all() stops.  It may be called in any context.
+  */
+ _Noreturn void
+ hal_cpu_park(void);
+ 
+ /*
+- * XXX: Add explanation.
++ * Stop every CPU after a fatal error, the calling one last; it never
++ * returns.
++ *
++ * The other online CPUs are made to call hal_cpu_park() by an interrupt
++ * they take even with interrupts disabled where the machine has one (on
++ * other machines a CPU running with interrupts disabled stops when it
++ * enables them).  Before hal_cpu_start_others() has returned, the other
++ * CPUs may not be stopped.  It may be called in any context.
+  */
+ _Noreturn void
+ hal_cpu_panic_all(void);
+ 
+ /*
+  * Atomically enable interrupts and halt, then return with IRQs disabled.
++ *
++ * Call it with interrupts disabled, from the CPU's idle loop.  No
++ * interrupt can arrive between the check that made the caller idle and
++ * the halt.  It returns after one interrupt (an IRQ, the tick or a
++ * notification) has been dispatched, or at once on a machine that cannot
++ * halt.
+  */
+ void
+ hal_cpu_idle(void);
+@@ -309,12 +364,18 @@
+  * XXX: Is this same to hal_cpu_idle()??
+  *
+  * Halt until a next interrupt.
++ *
++ * Unlike hal_cpu_idle() it does not change the interrupt state: with
++ * interrupts disabled the CPU stays halted until a non-maskable event,
++ * which is how the stop loops use it (for (;;) hal_halt()).  With
++ * interrupts enabled an interrupt that arrives just before the halt is
++ * dispatched first and the CPU then halts until the next one.
+  */
+ void
+ hal_halt(void);
+ 
+ /*
+- * Utility to clear all CPU mask bits.
++ * Clear every bit of a CPU mask.
+  */
+ static inline void
+ hal_cpu_mask_zero(
+@@ -327,7 +388,9 @@
+ }
+ 
+ /*
+- * Utility to set all CPU mask bits.
++ * Set every bit of a CPU mask, including the bits of CPUs that do not
++ * exist; a caller that sends to such a mask first masks it with
++ * hal_cpu_ready_mask().
+  */
+ static inline void
+ hal_cpu_mask_fill(
+@@ -340,7 +403,8 @@
+ }
+ 
+ /*
+- * Utility to set a CPU mask bit.
++ * Set the bit of a CPU in a mask.  A CPU ID of HAL_CPU_MAX or more is
++ * ignored.
+  */
+ static inline void
+ hal_cpu_mask_set(
+@@ -352,7 +416,8 @@
+ }
+ 
+ /*
+- * Utility to clear a CPU mask bit.
++ * Clear the bit of a CPU in a mask.  A CPU ID of HAL_CPU_MAX or more is
++ * ignored.
+  */
+ static inline void
+ hal_cpu_mask_clear(
+@@ -364,7 +429,8 @@
+ }
+ 
+ /*
+- * Utility to check a CPU mask bit.
++ * Return 1 when the bit of a CPU is set in a mask, 0 otherwise (and for
++ * a CPU ID of HAL_CPU_MAX or more).
+  */
+ static inline int
+ hal_cpu_mask_test(
+@@ -1364,19 +1430,28 @@
+ 	const char *name);
+ 
+ /*
+- * Do system reset for a reboot.
++ * Reset the machine for a reboot; it does not return.
++ *
++ * Interrupts are disabled first.  A HAL whose machine the kernel's
++ * platform code resets by other means (ACPI on a PC) does not define it;
++ * the kernel's platform code knows which machines call it.
+  */
+ void
+ hal_reset(void);
+ 
+ /*
+- * Do system power off.
++ * Power the machine off; it does not return.
++ *
++ * As for hal_reset(), only some HALs define it.  A machine without a
++ * power switch the HAL can reach halts the calling CPU with interrupts
++ * disabled instead.
+  */
+ void
+ hal_poweroff(void);
+ 
+ /*
+- * Halt for a kernel panic.
++ * Halt the calling CPU for good after a kernel panic has been reported;
++ * it does not return.  Interrupts are disabled.
+  */
+ void
+ hal_panic(void);

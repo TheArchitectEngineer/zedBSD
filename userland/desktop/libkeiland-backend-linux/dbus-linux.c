@@ -80,6 +80,7 @@ static int writer_number(struct dbus_writer *writer, uint32_t number);
 static int writer_field(struct dbus_writer *writer, unsigned code, char type, const char *string);
 static int writer_field_number(struct dbus_writer *writer, unsigned code, uint32_t number);
 static int writer_strings(struct dbus_writer *writer, const char *const *strings, size_t count);
+static int writer_variant(struct dbus_writer *writer, const struct dbus_arg *argument);
 static int bus_build(struct dbus_reply *message, const struct dbus_header *header, const struct dbus_arg *args, size_t count);
 static int bus_emit(struct linux_dbus *bus, struct dbus_header *header, const struct dbus_arg *args, size_t count);
 static uint32_t bus_next_serial(struct linux_dbus *bus);
@@ -166,6 +167,60 @@ dbus_open_session(
 		return error;
 
 	/* No descriptor travels on the session bus's notifications. */
+	error = bus_authenticate(bus, 0, deadline);
+	if (error != 0)
+		return error;
+
+	/* The bus names this connection before any other message. */
+	error = bus_hello(bus);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: this bus owns an authenticated unique connection name. */
+	return 0;
+}
+
+/*
+ * Connects to the bus listening on a Unix socket path and authenticates
+ * this UID, without file passing.
+ *
+ * Bluetooth's connection uses it with the system bus's path, or with a
+ * private bus's path in a host test.  Returns 0, EINVAL for a path that
+ * does not fit, or the error of connecting.
+ */
+int
+dbus_open_address(
+	struct linux_dbus *bus,
+	const char *path)
+{
+	struct sockaddr_un address;
+	uint64_t deadline;
+	size_t length;
+	int error;
+
+	/* A failed open can always be unwound by the same close path. */
+	memset(bus, 0, sizeof(*bus));
+	bus->fd = -1;
+	deadline = 0;
+	error = bus_now(&deadline);
+	if (error != 0)
+		return error;
+	deadline += DBUS_TIMEOUT_MS;
+
+	/* The socket's path, with its NUL, must fit the address. */
+	length = strlen(path);
+	if (length == 0 || length >= sizeof(address.sun_path))
+		return EINVAL;
+	memset(&address, 0, sizeof(address));
+	address.sun_family = AF_UNIX;
+	memcpy(address.sun_path, path, length + 1);
+
+	/* The connection, inside the authentication deadline. */
+	error = bus_connect(bus, &address, sizeof(address), deadline);
+	if (error != 0)
+		return error;
+
+	/* No descriptor travels on this connection. */
 	error = bus_authenticate(bus, 0, deadline);
 	if (error != 0)
 		return error;
@@ -313,6 +368,50 @@ dbus_call(
 			dbus_reply_free(message);
 		}
 	}
+}
+
+/*
+ * Sends one method call without waiting for its answer.
+ *
+ * The answer (a return or an error naming *serial) comes later through
+ * dbus_dispatch_messages().  flags are the header's flags, for example
+ * LINUX_DBUS_NO_AUTO_START.  Returns 0 with the call's serial, or the
+ * error of building or sending (a sending error closes the bus).
+ */
+int
+dbus_send_call(
+	struct linux_dbus *bus,
+	unsigned flags,
+	const char *destination,
+	const char *path,
+	const char *interface,
+	const char *member,
+	const char *signature,
+	const struct dbus_arg *args,
+	size_t count,
+	uint32_t *serial)
+{
+	struct dbus_header header;
+	int error;
+
+	/* The call's header: where it goes and what it asks. */
+	memset(&header, 0, sizeof(header));
+	header.type = LINUX_DBUS_METHOD_CALL;
+	header.flags = flags;
+	header.destination = destination;
+	header.path = path;
+	header.interface = interface;
+	header.member = member;
+	header.signature = signature;
+
+	/* The call goes out with the next serial. */
+	error = bus_emit(bus, &header, args, count);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the answer will name this serial. */
+	*serial = header.serial;
+	return 0;
 }
 
 /*
@@ -488,9 +587,11 @@ dbus_take_fd(
  * Dispatches the method calls and signals that have arrived, without
  * blocking the main loop.
  *
- * The callback is given each call (the bus's own and other peers') and each
- * signal, in arrival order; returns and errors, which nothing here awaits
- * between calls, are dropped.  Returns 0, or the error that closed the bus.
+ * The callback is given each message in arrival order: each call (the
+ * bus's own and other peers'), each signal, and each return and error,
+ * which answer the calls of dbus_send_call() (a callback that sent none
+ * looks only at the calls and the signals).  Returns 0, or the error that
+ * closed the bus.
  */
 int
 dbus_dispatch_messages(
@@ -528,10 +629,8 @@ dbus_dispatch_messages(
 			}
 		}
 
-		/* Calls and signals go to the callback; the frame is freed after it. */
-		error = 0;
-		if (message->type == LINUX_DBUS_METHOD_CALL || message->type == LINUX_DBUS_SIGNAL)
-			error = callback(message, data);
+		/* Every message goes to the callback; the frame is freed after it. */
+		error = callback(message, data);
 		dbus_reply_free(message);
 		if (error != 0)
 			return error;
@@ -555,7 +654,6 @@ dbus_send_return(
 	const struct dbus_arg *args,
 	size_t count)
 {
-	struct dbus_header header;
 	int error;
 
 	/* A caller that wants no answer gets none. */
@@ -563,13 +661,7 @@ dbus_send_return(
 		return 0;
 
 	/* The return goes back to the caller, naming the call it answers. */
-	memset(&header, 0, sizeof(header));
-	header.type = LINUX_DBUS_METHOD_RETURN;
-	header.flags = LINUX_DBUS_NO_REPLY_EXPECTED;
-	header.reply_serial = call->serial;
-	header.destination = call->sender;
-	header.signature = signature;
-	error = bus_emit(bus, &header, args, count);
+	error = dbus_send_return_to(bus, call->sender, call->serial, signature, args, count);
 	if (error != 0)
 		return error;
 
@@ -590,8 +682,6 @@ dbus_send_error(
 	const char *name,
 	const char *text)
 {
-	struct dbus_header header;
-	struct dbus_arg argument;
 	int error;
 
 	/* A caller that wants no answer gets none. */
@@ -599,11 +689,73 @@ dbus_send_error(
 		return 0;
 
 	/* The error goes back to the caller with its text. */
+	error = dbus_send_error_to(bus, call->sender, call->serial, name, text);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller has its answer. */
+	return 0;
+}
+
+/*
+ * Answers a call later, by its caller's name and serial, with a return
+ * carrying the arguments of signature.
+ *
+ * The caller kept both from the call (the call's frame is freed when its
+ * dispatch ends), and checked that it wants an answer.  Returns 0, or the
+ * error of building or sending (which closes the bus).
+ */
+int
+dbus_send_return_to(
+	struct linux_dbus *bus,
+	const char *destination,
+	uint32_t serial,
+	const char *signature,
+	const struct dbus_arg *args,
+	size_t count)
+{
+	struct dbus_header header;
+	int error;
+
+	/* The return names the caller and the call it answers. */
+	memset(&header, 0, sizeof(header));
+	header.type = LINUX_DBUS_METHOD_RETURN;
+	header.flags = LINUX_DBUS_NO_REPLY_EXPECTED;
+	header.reply_serial = serial;
+	header.destination = destination;
+	header.signature = signature;
+	error = bus_emit(bus, &header, args, count);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller has its answer. */
+	return 0;
+}
+
+/*
+ * Answers a call later, by its caller's name and serial, with an error of
+ * a name and a text.
+ *
+ * Returns 0, or the error of building or sending (which closes the bus).
+ */
+int
+dbus_send_error_to(
+	struct linux_dbus *bus,
+	const char *destination,
+	uint32_t serial,
+	const char *name,
+	const char *text)
+{
+	struct dbus_header header;
+	struct dbus_arg argument;
+	int error;
+
+	/* The error names the caller and the call it answers, with its text. */
 	memset(&header, 0, sizeof(header));
 	header.type = LINUX_DBUS_ERROR;
 	header.flags = LINUX_DBUS_NO_REPLY_EXPECTED;
-	header.reply_serial = call->serial;
-	header.destination = call->sender;
+	header.reply_serial = serial;
+	header.destination = destination;
 	header.error_name = name;
 	header.signature = "s";
 	memset(&argument, 0, sizeof(argument));
@@ -684,6 +836,63 @@ dbus_read_signature(
 		return error;
 
 	/* Succeeded: the signature remains valid until the caller frees this reply. */
+	return 0;
+}
+
+/*
+ * Reads a variant's signature from a message body and checks that it is
+ * one complete type, so that the value that follows can be read or stepped
+ * over by it.
+ */
+int
+dbus_read_variant(
+	struct dbus_reply *reply,
+	const char **signature)
+{
+	const char *type_end;
+	size_t length;
+	int error;
+
+	/* The variant's own signature: one byte of length and the text. */
+	error = reader_string(reply, &reply->cursor, reply->size, 'g', signature);
+	if (error != 0)
+		return error;
+
+	/* Exactly one complete type, no more and no less. */
+	length = strlen(*signature);
+	type_end = dbus_type_end(*signature, 1);
+	if (length == 0)
+		return EPROTO;
+	if (type_end != *signature + length)
+		return EPROTO;
+
+	/* Succeeded: the value of that type follows. */
+	return 0;
+}
+
+/*
+ * Reads one aligned sixteen-bit integer (a signed "n" or an unsigned "q")
+ * from a message body; a signed value is the same bits.
+ */
+int
+dbus_read_int16(
+	struct dbus_reply *reply,
+	uint16_t *value)
+{
+	size_t cursor;
+
+	/* Padding and both bytes must fit before either is read. */
+	cursor = (reply->cursor + 1U) & ~(size_t)1U;
+	if (cursor > reply->size)
+		return EPROTO;
+	if (reply->size - cursor < 2)
+		return EPROTO;
+
+	/* The little-endian value. */
+	*value = (uint16_t)(reply->bytes[cursor] | (reply->bytes[cursor + 1] << 8));
+	reply->cursor = cursor + 2;
+
+	/* Succeeded: the next body argument follows this value. */
 	return 0;
 }
 
@@ -1500,9 +1709,65 @@ writer_strings(
 }
 
 /*
+ * Encodes a variant of one simple value: its signature, then the value of
+ * argument->variant's type ("s", "o" or "g" from string, "u" or "b" from
+ * number).  Returns 0, EINVAL for another type or a Boolean that is not 0
+ * or 1, or EOVERFLOW.
+ */
+static int
+writer_variant(
+	struct dbus_writer *writer,
+	const struct dbus_arg *argument)
+{
+	const char *type;
+	int error;
+
+	/* Only one simple type, named by one character. */
+	type = argument->variant;
+	if (type == NULL)
+		return EINVAL;
+	if (type[0] == '\0' || type[1] != '\0')
+		return EINVAL;
+
+	/* The variant's signature. */
+	error = writer_string(writer, 'g', type);
+	if (error != 0)
+		return error;
+
+	/* A string, an object path or a signature. */
+	if (type[0] == 's' ||
+	    type[0] == 'o' ||
+	    type[0] == 'g') {
+		error = writer_string(writer, type[0], argument->string);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the variant is complete. */
+		return 0;
+	}
+
+	/* A Boolean is 0 or 1. */
+	if (type[0] == 'b') {
+		if (argument->number > 1)
+			return EINVAL;
+	} else if (type[0] != 'u') {
+		/* No other type is spoken here. */
+		return EINVAL;
+	}
+
+	/* An unsigned or a Boolean: four aligned bytes. */
+	error = writer_number(writer, argument->number);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the variant is complete. */
+	return 0;
+}
+
+/*
  * Builds one message from a header and the small argument vocabulary: a
- * string, an object path, a signature, an unsigned, a Boolean, and an
- * array of strings.
+ * string, an object path, a signature, an unsigned, a Boolean, an array of
+ * strings, and a variant of one of the simple ones.
  */
 static int
 bus_build(
@@ -1604,6 +1869,9 @@ bus_build(
 		} else if (type == 'a' && signature[1] == 's') {
 			error = writer_strings(&writer, args[index].strings, args[index].string_count);
 			signature += 2;
+		} else if (type == 'v') {
+			error = writer_variant(&writer, &args[index]);
+			signature++;
 		} else {
 			return ENOTSUP;
 		}

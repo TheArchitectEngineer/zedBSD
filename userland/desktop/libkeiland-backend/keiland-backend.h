@@ -695,8 +695,8 @@ int kl_backend_volumes_take_result(struct kl_backend_volumes *volumes, uint32_t 
  * forget, connect, disconnect), whose answers come later as results.  A
  * pairing's questions (compare a number, agree, type a number shown on the
  * device) come as questions the compositor asks the user and answers.
- * zedBSD's is bluetoothd's socket; elsewhere the state is unreachable
- * until a backend is written (Linux's BlueZ: ws143-p007).
+ * zedBSD's is bluetoothd's socket, Linux's BlueZ's org.bluez on the
+ * system bus (ws143-p007); on FreeBSD the state is unreachable (D7).
  *
  * Nothing here waits: kl_backend_bluetooth_update reads what has arrived,
  * and reads the state again every two seconds while someone watches

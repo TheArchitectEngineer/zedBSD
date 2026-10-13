@@ -1,0 +1,62 @@
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -888,6 +888,12 @@
+ 
+ /*
+  * Read wall-clock time as whole seconds since the Unix epoch.
++ *
++ * It reads the machine's battery-backed clock, taken as UTC, and is
++ * slow (milliseconds): the kernel reads it at boot and after a sleep and
++ * keeps its own time from hal_rtc_read_counter().  Call it from thread
++ * context.  Returns true with the time, or false when the machine has no
++ * such clock or its value is not valid (*unix_seconds is then unchanged).
+  */
+ bool
+ hal_rtc_read_epoch_time(
+@@ -2010,6 +2016,12 @@
+  * Return an architecture-specific boot handoff object by name.  The
+  * returned object remains owned by HAL.  Unknown or unavailable
+  * handoffs return NULL.
++ *
++ * The names and the types of their objects are the architecture's:
++ * "boot.command-line" (a NUL-terminated string) on every port that boots
++ * with one, and machine-specific ones such as "pcat.framebuffer" or
++ * "acpi.rsdp".  The objects live for the boot and do not change after
++ * kernel_main() is called.
+  */
+ void *
+ hal_get_arch_handoff(
+@@ -2047,6 +2059,9 @@
+  * Fill a buffer from a platform cryptographic entropy source. Ports which
+  * have no such source return false. Buffer contents are unspecified when the
+  * function returns false.
++ *
++ * It may also return false when the source fails to deliver after a few
++ * tries.  It may be called in any context.
+  */
+ bool
+ hal_entropy_fill(
+@@ -2058,6 +2073,13 @@
+  * Memory Usage 
+  */
+ 
++/*
++ * A snapshot of the HAL's memory accounting, for the kernel's statistics:
++ * the physical pages (total, reserved, allocated, free), the tasks and
++ * their kernel stacks, the spaces and their page tables, what the boot
++ * firmware reported, and the allocator's own costs.  A port fills what
++ * it keeps and leaves the rest 0.
++ */
+ struct hal_memstat {
+ 	size_t physical_total;
+ 	size_t physical_reserved;
+@@ -2090,6 +2112,9 @@
+ 
+ /*
+  * Get the memory usage statistics.
++ *
++ * The fields are read together under the allocator's lock.  A NULL stat
++ * is ignored.  It may be called in any context.
+  */
+ void
+ hal_get_memstat(

@@ -6,6 +6,7 @@ Usage: apply.py HEADER SPEC
 SPEC holds entries:
   @@ name          the declaration whose name line starts with "name("
   @@ ^regex        the declaration whose first line matches regex
+  @@ block:regex   the comment block that has a line matching regex
 followed by the new comment block (/* ... */).
 """
 import re
@@ -44,6 +45,19 @@ def main():
         key, body = entry.split("\n", 1)
         key = key.strip()
         comment = body.strip("\n").split("\n")
+        if key.startswith("block:"):
+            pattern = re.compile(key[6:])
+            inside = [i for i, line in enumerate(lines) if pattern.match(line)]
+            if len(inside) != 1:
+                raise SystemExit("block not found once: " + key)
+            top = inside[0]
+            while not lines[top].startswith("/*"):
+                top -= 1
+            end = inside[0]
+            while not lines[end].rstrip().endswith("*/"):
+                end += 1
+            lines[top:end + 1] = comment
+            continue
         start, _ = find_decl(lines, key)
         if start > 0 and lines[start - 1].rstrip().endswith("*/"):
             end = start - 1
