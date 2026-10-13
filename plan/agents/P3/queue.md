@@ -58,3 +58,4 @@ Next（予約）: ws115-p006（libpng・freetype・harfbuzz・fontconfig）〜
 - q941 結果（2026-10-13 夜）: a82c9ba7b を敵対的 review（plan/ws220/phase003/review-1.md、重大 G1・中 M1・M2）→ 直し 37ed0dd97（EAGAIN は LOST で RTO・R2 へ、ACK の数は順序外だけ、timer の再送の拒みは 10 ms、tcp-stream-series.sh の停止の直し）→ main 282f46038。模型・amd64/rpi4 build warning 0。ws220-p003 は test-wait（T1-577、T1-574 の後）。
 
 2026-10-13 夜 / q943: ws220-p004 RTT の推定と RTO（RFC 6298、最小 200 ms はユーザーの決定）。同じ P3 の続き。承認: ユーザーの再開の指示と WS220 のユーザーの決定（2026-10-13「はい、推奨でいいです。」）。p003 の出力は main 282f46038（p003 の clearance は T1-577 の後）。State: active。
+- q943 結果（2026-10-13 夜）: ws220-p004 設計 a52a81575 → design review（plan/ws220/phase004/review-1.md、重大 G1・G2）→ 実装 9ef6fd540・直し 6bc7fc367 → main 51f753f27。Q1 の決めから 2 点（即時の再送で計りを捨てるのは計っている segment の時だけ、回復の即時の再送は timeout の時の送った端まで）を模型の根拠でずらした、Q1 が採用。UAPI は entry の reserved → rtt_samples（大きさ・版は不変）。test-wait（T1-579、T1-577 の後）。
