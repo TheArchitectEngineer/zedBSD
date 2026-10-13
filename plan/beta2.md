@@ -31,6 +31,10 @@
 | [WS129](ws129/ws.md) p005・p013 release notes・既知の問題・利用の手引き | 下書き済み（[notes](../docs/release/zedbsd-1.0.0-beta2.md)・[known issues](../docs/release/zedbsd-1.0.0-beta2-known-issues.md)）。今日の決定（HFP・DSDT の行）を反映済み、Notes の描く道具の節は未 | 0.5 | Q1 |
 | [WS129](ws129/ws.md) p006 最終回帰（release の image） | 10/14〜15 | 3 | T1 |
 | [WS129](ws129/ws.md) p008 公開の準備（tag・CI・配布物） | 手順は用意済み。10/16、公開はユーザーの指示 | 0.5 | Q1 |
+| [WS196](ws196/ws.md) useradd・usermod・userdel（account-admin を呼ぶ前段）と account-admin の欠陥の直し | p001 cleared（7 つの決定、2026-10-14）。p002 実装中 | 1.5 | P2 |
+| [WS227](ws227/ws.md) menuconfig の表示名・画像と PDF の library を Desktop へ・Linux/FreeBSD に独自の base の命令 | p001 実装中 | 0.5 | P1 |
+| [WS228](ws228/ws.md) 独自実装の簡単な vi（**ベータ2 の最後の機能**、2026-10-14 ユーザー「ここまでがベータ2ですね。」） | p001 設計中 | 1.5 | P3 |
+| [BUG-302](bugs/BUG-302.md) emacs の SKK の辞書が見つからない（UAT） | 解析中 | — | bug-analyzer |
 | [WS225](ws225/ws.md) Vulkan の header の書き直し | blocked（2026-10-13 ユーザー「まだ着手せず、ブロッキング」） | — | — |
 
 ## 既知の問題に書いて出す（ベータ3 以降）
