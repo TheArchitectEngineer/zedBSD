@@ -8,7 +8,7 @@ script が変わったら、この文書の行の番号も直す。
 
 | 規則 | 根拠 |
 | --- | --- |
-| 実機を使う試験は `/tmp/i915-hw.lock`（centris の `/tmp`）を `flock` で取ってから、1 つずつ。2 つ同時に走らせない | `plan/ws031/tests/vkloop-hw.sh:41`、`plan/ws075/ws.md:39` |
+| 実機を使う試験は `/tmp/i915-hw.lock`（centris の `/tmp`）を `flock` で取ってから、1 つずつ。2 つ同時に走らせない | `plan/ws031/tests/vkloop-hw.sh:46`、`plan/ws075/ws.md:39` |
 | `hdmi-h4-hw.sh start` とそれを呼ぶ script（`c5-hw.sh`・`resize-hw.sh`・`measure-apps.sh`・`s13-hw.sh`）を `timeout` で括らない。長いので background で走らせて待つ | `plan/ws075/tests/hdmi-h4-hw.sh:16-20`、`plan/ws075/phase018/phase.md`「実機の harness の事故と対策」 |
 | QEMU の console log・serial log を読んで判定しない（解析も含む）。例外はユーザーがその場で許したときだけ | AGENTS.md「検証」、`plan/guardrail.md:53` |
 | QEMU（passthrough を含む）の証拠と、5330 を USB から単独で起動した証拠を分けて書く。やっていない確認は「未実施」 | AGENTS.md「検証」、`plan/guardrail.md:59-60` |
@@ -25,6 +25,7 @@ script が変わったら、この文書の行の番号も直す。
 | 試験機 | Dell Latitude 5330。CPU i5-1245U（ADL-P）、iGPU `8086:46a8`（subsystem `1028:0b02`）。普段は Linux（hostname `chaos`）が動き、KVM の host を兼ねる | `plan/ws031/ws.md` の「ホスト」の表 |
 | ssh の名前 | centris の `~/.ssh/config` の alias `solaris10-man`（2026-10-01 は `HostName 10.0.10.25`）。全ての試験の script の既定の `I915_HOST` | `~/.ssh/config`、`plan/ws075/tests/hdmi-h4-hw.sh:24` |
 | 5330 の側の作業の directory | `~/bigbang/`（`run-parity-vk.sh`・`igpu-mode.sh`・`ufs-cat.py`）と `~/bigbang/h4/`（H4 の harness） | `plan/ws031/tests/host/README.md`、`plan/ws075/tests/hdmi/h4-qemu.sh:15` |
+| 2 台目の試験機（Gen9.5） | Let's Note SV7（`awe@10.0.10.27`）。`vkloop-hw.sh`・`test-hw.sh`・`run-hw.sh` は `I915_MACHINE=sv7` で SV7 に向く（既定 `5330` はこの文書の振る舞いのまま）。[SV7 の手引き](../hwsv7/README.md) | `plan/ws031/tests/hw-machine.sh` |
 
 5330 の IP は電源の入れ直しで変わったことがある（`10.0.10.25` → `10.0.30.3` → `10.0.10.25`。`plan/ws075/hdmi-main-output.md:76`、
 `plan/ws084/ws.md:132`）。届かないときは `~/.ssh/config` を直すのは main の仕事であり、subagent は main に報告する。
@@ -109,7 +110,7 @@ plan/ws075/tests/hdmi-h4-hw.sh ctl pointer move 22 16 sleep 100 down up sleep 15
 | 項目 | 内容 | 根拠 |
 | --- | --- | --- |
 | 場所 | centris の `/tmp/i915-hw.lock`。centris の上の全ての checkout と worktree が共有する。centris の外の agent には効かない（advisory） | `h4-lock.sh:8` |
-| 取り方（一括の script） | `exec 9>/tmp/i915-hw.lock; flock 9` … `flock -u 9`。空くまで待つ | `test-hw.sh:24-31`、`gles-hw.sh:35-45`、`g3-hw.sh:41-51` |
+| 取り方（一括の script） | `exec 9>/tmp/i915-hw.lock; flock 9` … `flock -u 9`。空くまで待つ | `test-hw.sh:28-35`、`gles-hw.sh:35-45`、`g3-hw.sh:41-51` |
 | 取り方（H4 の harness） | `start` が `setsid nohup hdmi/h4-lock.sh OUTDIR &` を起こす。それが lock を取ると `OUTDIR/.locked` を作り、`OUTDIR/.running` が消えるまで持つ。`start` は lock を得ると `/tmp/i915-h4-owner` に OUTDIR の絶対 path を書く | `hdmi-h4-hw.sh:46-52`、`h4-lock.sh:7-15` |
 | H4 の守り | `ctl`・`fetch` は、この tree の run が lock を持つとき（owner の path がこの tree の下で `.locked` がある）だけ動く。持たない `stop` は自分の待ちだけを終える | `hdmi-h4-hw.sh:30-39,62,67,82-87` |
 | 返し方 | `stop OUTDIR` が `.running` を消し、`.locked` が消えるのを待ち、owner を消す | `hdmi-h4-hw.sh:93-96` |
@@ -135,7 +136,7 @@ busy のとき: 待つ（`start` は空くまで待つので background で走�
 | `s13-hw.sh` | `H4_MINUTES` 既定 12 | `plan/ws101/tests/demo/s13-hw.sh:18` |
 | 1 つの `ctl` | script の中では `timeout 120`（`c6` は 300、`stop` は 400） | `c5-hw.sh:21`、`measure-apps.sh:18,30,37` |
 | `run-parity-vk.sh`（gles・g3・vkloop 系） | QEMU は `timeout 360`、呼ぶ側の ssh は `timeout 600` | `plan/ws031/tests/host/run-parity-vk.sh:53`、`gles-hw.sh:41` |
-| `run-hw.sh` | 事前の build 3000 秒、run は lock の待ちを含めて 3600 秒 | `run-hw.sh:10,32,41` |
+| `run-hw.sh` | 事前の build 3000 秒、run は lock の待ちを含めて 3600 秒 | `run-hw.sh:10,35,42` |
 
 ### 1.9 止まったとき・壊れたとき
 
@@ -343,7 +344,7 @@ plan/ws075/tests/hdmi-h4-hw.sh stop OUTDIR             # QEMU を quit、fetch�
 | `plan/ws101/tests/hw/gles-hw.sh` | GLES 3.1 の compute と egltest の feedback・queries | `plan/ws101/tests/hw/gles-hw.sh [OUTDIR]`（`BUILD` 既定 `build/ws101-p010-hw`、`GLES_HW_BUILD_ONLY=1` で build だけ） | `OUTDIR/guest-logs.txt`・`build.log`。**`gles-hw: PASS`**（`GLESCOMPUTE DONE failures=0` が 2 回、`EGLTEST CHECK run=feedback/queries failures=0 glerror=0x0`、`GLES HW DONE`、:50-54） | build ＋ lock 約 6 分（`plan/ws101/phase010/phase.md:32`） | 一括（:35-45、build は lock の外） |
 | `plan/ws101/tests/hw/g3-hw.sh` | Noct の GPU の自動並列化（S13 の G3）: CPU と GPU の結果の一致 | `NOCT=PATH/bin/noct plan/ws101/tests/hw/g3-hw.sh [OUTDIR]`（`BUILD` 既定 `build/ws101-p011-hw`、`G3_HW_BUILD_ONLY=1`） | `OUTDIR/s13.txt`・`cpu.txt`・`gpu.txt`。**`g3-hw: PASS`**（同じ結果、`MIX check=1001 wrong=0` が 2 つ、checksum 一致、dispatch ≥ 8、`G3 HW DONE`、:66-72） | **未確認** | 一括（:41-51） |
 | `plan/ws101/tests/hw/run-hw.sh` | i915 の試験の場面（vkx・vke1・vke2・vkc・vkcs）を順に | `plan/ws101/tests/hw/run-hw.sh TAG SCENARIO...`（`OUT` 既定 `build/ws101-hw`） | `OUT/hw-SCENARIO-TAG/run.log`（verdict の行）。場面ごとの PASS 数は `plan/ws031/ws.md` の表（vkx 8/8 等） | 1 場面 約 5 分（`plan/ws101/phase005/phase.md` の注意） | `test-hw.sh` が一括で |
-| `plan/ws075/tests/test-hw.sh` | 1 つの試験の場面を lock の下で（`vkloop-hw.sh test SCENARIO`） | `I915_HOST=solaris10-man plan/ws075/tests/test-hw.sh SCENARIO OUTDIR`（`BUILD` 既定 `build/resident-vkx`）。**OUTDIR を `rm -rf` する**（:16） | `OUTDIR/run.log`・`serial.log`・`build.log`、`verdict` の行 | 3〜5 分（`plan/ws031/ws.md`「日常のコマンド」） | 一括（:24-31） |
+| `plan/ws075/tests/test-hw.sh` | 1 つの試験の場面を lock の下で（`vkloop-hw.sh test SCENARIO`） | `I915_HOST=solaris10-man plan/ws075/tests/test-hw.sh SCENARIO OUTDIR`（`BUILD` 既定 `build/resident-vkx`）。**OUTDIR を `rm -rf` する**（:16） | `OUTDIR/run.log`・`serial.log`・`build.log`、`verdict` の行 | 3〜5 分（`plan/ws031/ws.md`「日常のコマンド」） | 一括（:28-35） |
 | `plan/ws075/tests/capture-hw.sh` | capture の場面（`vkloop-hw.sh MODE` + `CAPTURE`） | `I915_HOST=solaris10-man plan/ws075/tests/capture-hw.sh SCENARIO MODE OUTDIR`。**OUTDIR を `rm -rf`**（:18） | `OUTDIR/capture/result.json`・PPM・`sheet.png`、`guest-logs.txt` | 3〜5 分 | 一括（:31-38） |
 | `plan/tools/titlebar/menu-hw.sh` | System Menu の capture | `I915_HOST=solaris10-man plan/tools/titlebar/menu-hw.sh [OUTDIR]`。**OUTDIR を `rm -rf`**（:13） | `OUTDIR/capture/result.json` | 3〜5 分 | 一括（:17-24） |
 | `plan/ws075/tests/hdmi-h1-hw.sh` | HDMI の試験の場面と 5330 の USB の記録（HDMI の LCD 用、今は使わない） | `plan/ws075/tests/hdmi-h1-hw.sh SCENARIO OUTDIR ["-DFLAG=1 ..."]` | `run.log`・`usb-*.txt`・`new-devices/` | — | 一括（:72-73） |
@@ -404,7 +405,7 @@ ls build/wsNNN/pNNN-hw/shots/*-live.png
 | `login=graphical` の重複 | `boot: parameter parsing failed (16)`、splash のまま。main の不具合と誤認 | 3.4 節。cfg を読む | `plan/history/queue-q509.md:30`、git の `plan/ws103/phase002/phase.md` |
 | `start` を `timeout` で括った | lock の待ちの間に start が殺され、後の `ctl` が**別の agent の QEMU** に click を送った | 括らない。今の `hdmi-h4-hw.sh` は owner の確認で拒むが、待ちの間に殺すと lock だけ後で取られる | `hdmi-h4-hw.sh:16-20`、`plan/ws075/phase018/phase.md` |
 | lock の中の make が途中の tree を拾った | 回帰の実行中に source を書き、`vke1` が BUILD FAILED | image は lock の外で先に（`VKLOOP_BUILD_ONLY=1`・`*_BUILD_ONLY=1`）、run の間は編集しない | `plan/ws101/phase005/phase.md`、`run-hw.sh:2-6` |
-| 古い IP・古い既定の host | `test-hw.sh`・`capture-hw.sh`・`menu-hw.sh` の既定は `awe@10.0.30.3`（2026-10-01 の 5330 は `10.0.10.25`） | `I915_HOST=solaris10-man` を明示 | `test-hw.sh:9,20`、`capture-hw.sh:10,20`、`menu-hw.sh:8,15`、`~/.ssh/config` |
+| 古い IP・古い既定の host | `test-hw.sh`・`capture-hw.sh`・`menu-hw.sh` の既定は `awe@10.0.30.3`（2026-10-01 の 5330 は `10.0.10.25`） | `I915_HOST=solaris10-man` を明示 | `test-hw.sh:9,22-24`、`capture-hw.sh:10,20`、`menu-hw.sh:8,15`、`~/.ssh/config` |
 | checkout の移動で path が切れた | `gles-hw.sh`・`g3-hw.sh`・`build-s13-image.sh`・`g3-venus.sh` が `/home/awe/zedBSD-rpi4/build/...`（font・`demo-lcd9/bin/noct`・壁紙）を指すが、その directory は無い | `NOCT=/home/awe/zedBSD-claude1/build/demo-lcd9/bin/noct` を渡す（2026-10-01 に存在を確認。最新の source で作った noct かは別）。font の path は script の中で固定なので font は入らない（`[ -f ]` で飛ばす）。直すのは script の持ち主の WS | `gles-hw.sh:19`、`g3-hw.sh:20,24`、`plan/ws101/tests/demo/build-s13-image.sh:12,15` |
 | C の flag の違う image を同じ BUILD で作った | make が flag の変更を見ず、古い object のまま | 版ごとに新しい BUILD | `build-demo-image.sh:19` |
 | USB の image に `passthrough` を付けた・付けなかった | 素の 5330 は OpRegion の VBT を使い、passthrough は試験の VBT が要る | USB は付けない、passthrough は付ける。別の BUILD | `build-demo-image.sh:15-17` |

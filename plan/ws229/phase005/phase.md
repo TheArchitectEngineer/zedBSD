@@ -59,3 +59,48 @@ base: main bb57b2397（worktree `agent/p1` に merge）。Gen9 の boot の key 
 ## 2026-10-14 ユーザーの指示: 全部入りの試験
 
 「ごめんなさい、テストが多すぎます。ws229は全部入りのテストを作ってください。」→ 実機の試験は 1 つの image・1 回の起動で eu → vkcs → vkx → vke1 → vke2 → vkc を順に流し、試験ごとの要約と全体の判定を出す形に変える（P3）。試験ごとの 6 つの image（Q1 が途中まで作った物）は消した。
+
+## 2026-10-14: SV7（Gen9.5）の自動の試験（P1）
+
+ユーザー:「ssh awe@10.0.10.27 で第8世代Core i5のLinuxに入れます。…i915その他をblacklistして再起動すれば、5330同様に自動でテストできます。」
+「Core i5 8thのLet's Note SV7では、自動のテストなので、細かく分けたテストでOKです」→ SV7 では試験の場面を 1 つずつ、5330 の passthrough の道具で流す
+（USB の全部入りの image は、手で起動する 6・7 世代の機械のための物として残る）。
+
+### 道具（commit 3f1879119 ほか）
+
+- `plan/ws031/tests/hw-machine.sh`（新）: `I915_MACHINE`（既定 `5330`、`sv7`）で host・iGPU の ID の確かめ・試験の VBT・boot の語を決める。
+  sv7: `awe@10.0.10.27`、`8086:5917`、`I915_TEST_VBT=n`、`i915.gen9=on`。5330: 前と同じ（`solaris10-man`、VBT y、boot の語無し、ID の確かめ無し）。
+- `plan/ws031/tests/vkloop-hw.sh`・`plan/ws075/tests/test-hw.sh`・`plan/ws101/tests/hw/run-hw.sh` がそれを読む。`I915_TEST_VBT` は環境の値を使う（既定 y）、
+  `I915_BOOT_EXTRA` があれば `ZEDBSD_BOOT_EXTRA_LINES=` を make に足し flag の記録に入れる、`I915_IGPU` があれば host の `00:02.0` を読んで違えば止まる。
+  `run-hw.sh` の `OUT` の既定は sv7 で `build/ws101-hw-sv7`。lock（centris の `/tmp/i915-hw.lock`）は 5330 と共有。
+- `plan/tools/hwsv7/setup.sh`（新）: SV7 の `~/bigbang/` に `run-parity-vk.sh`・`igpu-mode.sh` を写し、QEMU を起動せずに機械を確かめる。
+- `plan/tools/hwsv7/README.md`（新）: SV7 の手引き。`plan/tools/hw5330/README.md` に SV7 への行を足し、変わった script の行の番号を直した。
+
+### 確かめ（host と build だけ、QEMU は起動していない）
+
+| 確かめ | コマンド | 結果 |
+| --- | --- | --- |
+| machine の選択 | `I915_MACHINE=`（空）・`5330`・`sv7`・`bogus` で `hw-machine.sh` を dash で読み、値と make の語の展開を出す | 空と 5330: host `solaris10-man`・VBT y・boot 無し・ID 無し、make の語は足されない。sv7: `awe@10.0.10.27`・`8086:5917`・n・`ZEDBSD_BOOT_EXTRA_LINES=i915.gen9=on`。bogus: rc 2。環境の `I915_TEST_VBT=y` は sv7 でも勝つ |
+| script の構文 | `sh -n` を 4 本に | OK |
+| SV7 の準備 | `plan/tools/hwsv7/setup.sh` | rc 0、13 の `ok`（写した 2 本が一致、`8086:5917` が vfio-pci で group に単独、`/dev/kvm`、OVMF、QEMU 10.0.13、`sudo -n`、39 bit、14 GiB、204 GiB、QEMU 無し）、`setup: awe@10.0.10.27 ready` |
+| iGPU の ID の読み方 | `ssh awe@10.0.10.27 'cat …/vendor …/device' \| sed 's/^0x//' \| paste -sd:` | `8086:5917` |
+| SV7 の image の build | `I915_MACHINE=sv7 BUILD=build/ws229-p005/sv7-ktest ZEDBSD_CONFIG=plan/ws075/tests/config-test-hw.mk VKLOOP_BUILD_ONLY=1 plan/ws031/tests/vkloop-hw.sh test ktest` | （下に追記） |
+
+未実施: SV7 の上の QEMU の run（T1）。5330 の run（5330 の振る舞いは変えていない: make の行・host・VBT が前と同じ）。
+
+### T1 への依頼の文（SV7、Q1 が出す）
+
+> **依頼主**: P1（ws229-p005）。**目的**: Gen9 の GT・EU・Vulkan の経路（p002・p003・p004、main に merge 済み）が Gen9.5 の実機の iGPU
+> （SV7 の UHD 620 `8086:5917`）で動くかを、QEMU の passthrough で場面ごとに確かめる。ユーザー（2026-10-14）「細かく分けたテストでOK」。
+> **前提**: main の HEAD（commit を書く）。`plan/tools/hwsv7/setup.sh` が `setup: awe@10.0.10.27 ready` を出すこと（P1 が 2026-10-14 に確認済み）。
+> 5330 と同じ lock を取るので、5330 の試験と同時に流さない。
+> **流し方**: `I915_MACHINE=sv7 OUT=build/ws229-p005/hw-sv7 plan/ws101/tests/hw/run-hw.sh ws229 ktest eu vkcs vkx vke1 vke2 vkc`
+> （image は lock の外で場面ごとに build、その後 `test-hw.sh` が lock の下で 1 つずつ。7 本、1 本 5〜10 分。`timeout` で括らず background で）。
+> 途中で止まった場面があっても残りは流れる。1 本だけ流し直す時は場面の名前を 1 つにする。
+> **合否**: 各 `build/ws229-p005/hw-sv7/hw-<scenario>-ws229/run.log` の verdict の行で判定。
+> `ktest`: `i915: test ktest: PASS`。`eu`: `i915: test eu: PASS` と `i915: EU-TEST PASS:`（Gen9 の固定の store kernel、`i915: MCR-PROBE skipped` が出るのは正しい）。
+> `vkcs`・`vkx`・`vke1`・`vke2`・`vkc`: `i915: <name>: verdict PASS (n of n steps passed)`。
+> どれか FAIL・HANG・行が無い、なら FAIL。`run.log` に `the iGPU of awe@10.0.10.27 is …` が出たら、機械の取り違え（試験の FAIL ではない）。
+> 最初の run で QEMU の IGD の quirk（OpRegion・stolen memory）が Gen9.5 で働くかは未確認なので、`i915:` の行が 1 つも無い場面は
+> `run.log` の `--- vkdemo` の後の行（`i915: vk`・`panic`・`fault`）と、SV7 の `~/bigbang/run-parity-qemu.log` の VFIO の行を添えて返す。
+> **返し先**: Q1 と P1（または Q1 が p005 を割り当てた担当）。場面ごとの verdict の行と log の場所。FAIL の解析はしない。
