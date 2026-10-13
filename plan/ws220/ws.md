@@ -30,7 +30,7 @@ Related Milestones: なし
 | [p002](phase002/phase.md) | 正しさ: sequence の剰余の比較（wrap の後に ACK を全部捨てる）、SND.WL1/WL2、重なりのある segment、諦めの時間（R2: data 100 s・SYN 180 s）、RST の窓の検査と同期済みの SYN への ACK（RFC 5961）、S2（net.tcpstats の sequence は superuser だけ）、測りの道具の直し（review S1・S3・S8） | in-progress（2026-10-13 P4 c13a8413f、実装・模型・build 済み、T1 の QEMU 待ち） |
 | [p003](phase003/phase.md) | 送りの packet の不足: device が拒んだ data の segment で書き手が 10 ms 眠らない、未送信を順に出す、ACK の出し直し | in-progress（2026-10-13 P3、実装・模型・build 済み、review-1 の重大 1・中 2 を直した、tcp-stream-series.sh の止まりも直した。T1 の QEMU 待ち。模型の queue 7・5・2・1 が 0.68〜0.10 → 37 MB/s、2 つの書き手の二重送信が消えた） |
 | [p004](phase004/phase.md) | RTT の推定と RTO（RFC 6298）: SRTT・RTTVAR、Karn、RTO = SRTT + max(G, 4·RTTVAR, 200 ms)、SYN の 3 s | in-progress（2026-10-13 P3、実装・模型・build 済み、design review-1 の重大 2・中 5 を直した（backoff の指数を分け sample でだけ戻す）、T1 の QEMU 待ち。模型の lan-loss-0.1 の停止 1000 → 202 ms） |
-| p005（案） | fast retransmit と NewReno の回復、persist timer、窓が開いた時の再送を外す | planning |
+| [p005](phase005/phase.md) | fast retransmit と NewReno の回復、窓 0 の probe と FreeBSD と同じ persist（`TCP_MAXUNACKTIME`）、窓が開いた時の再送を外す | in-progress（2026-10-13 P3、実装・模型・build 済み、design review-1 の重大 2・中 8 と M7 のユーザーの決定を入れた、T1 の QEMU 待ち。模型の lan-loss-0.1 4.63 → 36.54、lan-loss-1 0.46 → 12.16 MB/s） |
 | p006（案） | 輻輳の制御（cwnd）と byte の送りの buffer、相手の MSS、Nagle | planning |
 | p007（案） | 受けの窓の約束、受け側の SWS 回避、window scale、delayed ACK | planning |
 | p008（案） | 受けの SACK（RFC 2018） | planning（候補） |
@@ -51,3 +51,5 @@ Related Milestones: なし
 2026-10-13 Q1（WS221 review-1 S3）: MSS を MTU − 40/−60 で決める時は packet の slot の大きさでも抑える（lo0 の MTU 65535 で segment が slot を超え、自分の機械への TCP が止まる）。p006 の設計にこれを入れる。tcp_device_mss の持ち主は WS220 p006（WS221 p005 はそれを使う、review M7）。
 
 2026-10-13 Q1（WS221 第 2 版 §3.4 の要件、p006 に写す）: (1) `tcp_device_mss` は slot の上限で抑える（暫定 `PACKET_BUF_STORAGE_SIZE − 64`、WS221 p002 の `net_device_frame_max(device)` で置き換える）、(2) IPv6 は送る時の path MTU − 60（`ipv6_route_source`）、(3) IPv4 の gateway 経由（`route.gateway != 0`）は min(1460, MTU − 40)、on-link だけ device の MTU。`tcp_stats_header` の 48 → 72 byte の拡張（WS221 M6）は WS221 p002 が行う（WS220 p002 は main に入った後なので順は問題なし、読み手は struct_size で読む）。
+
+2026-10-13 P3（ws220-p005 review-1 M7・M8、ユーザーの決定「FreeBSD と同じ＋p006 で pool を切り離す (Recommended)」）: p005 は窓 0 の相手を FreeBSD と同じ persist（間隔 clamp(RTO × backoff, 5 s, 60 s)、答えない相手は 12 段と min(2 h, RTO × 2559) の沈黙で、close の後は 60 s の沈黙で落とす）と `TCP_MAXUNACKTIME`（既定 0）で扱う。答え続ける相手が共有の packet の pool を接続ごとに最大 8 個握れる問題は **p006(b)（送りの buffer を pool から切り離す）で解く**。pool の逼迫で落とす・`TCP_MAXUNACKTIME` の既定を 0 以外にする、は入れない。cwnd の無い NewReno（損失の後も送る量を減らさない）は送りの ring が 8 segment の間だけ許し、**ring の既定（`CONFIG_TCP_SEND_QUEUE_MAX`）を広げるのは p006(a)（cwnd）の後に限る**。p001 §4 の目標の移し替え（Q1 の判断）: rtt-10ms-loss-0.1 の 2 MB/s は p006 へ（ring の上限 0.78 MB/s）、slow-reader の `immediate_resends` 0 は p007(a) へ。

@@ -55,12 +55,18 @@ enum tcp_state {
 #define TCP_REORDER_MAX 16U
 #endif
 
+/*
+ * One segment in the send ring: its copy, where it lies in the sequence
+ * space, its TCP flags, and whether it went out as a probe of a window
+ * that could not take it (ws220-p005; set when it is marked sent).
+ */
 struct tcp_pending {
 	struct packet_buf *packet;
 	uint32_t sequence;
 	uint32_t advance;
 	uint16_t length;
 	uint8_t flags;
+	uint8_t probe;
 };
 
 /*
@@ -93,6 +99,7 @@ struct tcp_counters {
 	uint64_t out_of_order_in;
 	uint64_t out_of_order_kept;
 	uint64_t receive_refused;
+	uint64_t fast_retransmits;
 };
 
 struct tcp_socket {
@@ -216,13 +223,56 @@ struct tcp_socket {
 	uint64_t rtt_start;
 	unsigned syn_timed_out;
 	/*
-	 * A recovery after a timeout that really expired: while
-	 * recovery_active is set, an acknowledgement after a resend has the
-	 * next segment resent at once only while it lies before recovery_end,
-	 * what had been sent at the timeout (ws220-p004 review-1 G1).
+	 * NewReno's recovery (RFC 6582, ws220-p005): duplicate_acks counts the
+	 * duplicate acknowledgements in a row; the third starts a fast
+	 * retransmit.  A fast retransmit or a timeout that really expired sets
+	 * recover to the end of what was sent and recovery: while it lasts,
+	 * each acknowledgement that moves but stops short of recover (a
+	 * partial one) has the next segment resent at once, and one that
+	 * reaches recover ends it.  recover means nothing outside a recovery
+	 * (ws220-p005 review-1 G2: compared later it would turn false across
+	 * 2 GiB).  recovery_by_timeout says a timeout started the recovery: when
+	 * it ends exactly at recover, dupack_guard holds back the duplicates of
+	 * that recover (the answers to the resends of a spurious timeout) until
+	 * an acknowledgement goes beyond it (review-1 M1).  Duplicates count
+	 * only while the oldest segment fits the window (review-1 G1): the
+	 * answers to a closed window are not losses.
 	 */
-	uint32_t recovery_end;
-	unsigned recovery_active;
+	unsigned duplicate_acks;
+	uint32_t recover;
+	unsigned recovery;
+	unsigned recovery_by_timeout;
+	unsigned dupack_guard;
+	uint32_t dupack_guard_sequence;
+	/*
+	 * Each resend by the timer takes the next number, which no
+	 * acknowledgement sets back: a refused resend is still the last one
+	 * when the number is unchanged (review-1 M4).
+	 */
+	unsigned retransmit_serial;
+	/*
+	 * The persist state of a window too small for the oldest segment
+	 * (ws220-p005, as FreeBSD has it): while persist is set the timer
+	 * probes the window every clamp(RTO x 2^persist_shift, 5 s, 60 s)
+	 * (the doubling stops at 512), apart from the retransmission backoff;
+	 * persist_shift goes back to 0 when the state is entered and left.
+	 * last_receive is the tick of the last segment from the peer: a peer
+	 * that stops answering is dropped after 12 probes and an idle of
+	 * min(2 h, RTO x 2559), and after 60 s once this end has closed
+	 * (FIN_WAIT_1, LAST_ACK).  A peer that keeps answering is kept
+	 * (RFC 1122 section 4.2.2.17) unless TCP_MAXUNACKTIME is set:
+	 * maxunack (ticks, 0: off; maxunack_seconds as set) drops a
+	 * connection with a reset when its data has not moved since
+	 * unack_since (the tick data was queued with nothing outstanding, or
+	 * an acknowledgement took more than a byte; 0 with nothing
+	 * outstanding).
+	 */
+	unsigned persist;
+	unsigned persist_shift;
+	uint64_t last_receive;
+	uint64_t maxunack;
+	unsigned maxunack_seconds;
+	uint64_t unack_since;
 	/*
 	 * TCP_NODELAY as the caller set it, and the idle-probe state for
 	 * SO_KEEPALIVE: when the next probe is due and how many have gone

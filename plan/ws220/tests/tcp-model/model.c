@@ -31,6 +31,8 @@
  *             [--no-route-at-ms T --no-route-ms D]
  *             [--expect-first-srtt-us LOW:HIGH] [--expect-first-rttvar-us LOW:HIGH]
  *             [--expect-srtt-max-us N] [--expect-retransmits-max N] [--expect-stall-rto]
+ *             [--drop-ab LIST] [--expect-fast-retransmits LOW:HIGH] [--expect-timeouts-max N]
+ *             [--close-at-ms T] [--maxunacktime S] [--expect-probe-gap-s LOW:HIGH]
  *             [--quiet]
  *
  * --loss-ab is the share (percent) of the frames from A to B (the data) the
@@ -91,8 +93,17 @@
  * the longest stall is within what the timeouts explain: the doublings of
  * one RTO up to the most the backoff reached (e), (2^(e+1) - 1) RTO + 20 ms
  * (one loss with no backoff: one RTO; a resend lost too, or a loss before
- * the backoff ended (Karn): more).  A check that fails prints
- * "check: FAIL".
+ * the backoff ended (Karn): more).  ws220-p005: --drop-ab LIST loses the
+ * data frames from A of those numbers (counted from 1 from the transfer's
+ * start, comma separated), so one window can lose two segments;
+ * --expect-fast-retransmits LOW:HIGH and --expect-timeouts-max N check A's
+ * fast retransmits and its timeouts that really expired (the backoff's
+ * steps).  --close-at-ms T makes A's writer stop at T and shut its side
+ * (FIN_WAIT_1 behind what is outstanding); --maxunacktime S sets A's
+ * TCP_MAXUNACKTIME; the "close:" line says when A's connection closed and
+ * B's state, and the "persist:" line the gaps between A's resends after
+ * the first (--expect-probe-gap-s checks them, in seconds).  A check that
+ * fails prints "check: FAIL".
  */
 
 #include "kern/net/tcp-socket.h"
@@ -205,6 +216,17 @@ struct model_settings {
 	uint64_t expect_retransmits_max;
 	int expect_retransmits;
 	int expect_stall_rto;
+	uint64_t drop_ab[16];
+	unsigned drop_ab_count;
+	uint64_t expect_fast_low;
+	uint64_t expect_fast_high;
+	int expect_fast;
+	uint64_t expect_timeouts_max;
+	int expect_timeouts;
+	uint64_t close_at_ns;
+	unsigned maxunacktime;
+	uint64_t expect_gap_low;
+	uint64_t expect_gap_high;
 	int quiet;
 };
 
@@ -272,6 +294,25 @@ static unsigned resends_in_row_max;
 static uint64_t double_losses;
 static unsigned resends_in_row_last;
 
+/* A's data frames that have left its device since the transfer began (--drop-ab), and A's timeouts. */
+static uint64_t data_frames_ab;
+static uint64_t timeouts;
+static unsigned backoff_last;
+
+/*
+ * When A's connection closed (0: not), whether A's writer has shut its
+ * side, and A's resends: how many have been seen and when the last was,
+ * and the least and most time between two of them after the first.
+ */
+static uint64_t closed_at_ns;
+static int writer_closed;
+static uint64_t resends_seen;
+static uint64_t resend_last_ns;
+static uint64_t resend_gaps;
+static int previous_in_persist;
+static uint64_t gap_min_ns;
+static uint64_t gap_max_ns;
+
 /* The reader on B: bytes read, bytes that differed from what was written, and the bytes it may read now. */
 static uint64_t received;
 static uint64_t corrupt;
@@ -291,6 +332,9 @@ static int blind_given;
 static int tcp_socket_create_inet(int type, int protocol, struct socket **result);
 static void parse_settings(int argc, char **argv);
 static void parse_range(const char *text, uint64_t *low, uint64_t *high);
+static void parse_list(const char *text, uint64_t *list, unsigned *count);
+static void note_gap(uint64_t gap);
+static int dropped_on_purpose(struct model_link *link, const struct packet_buf *packet);
 static uint64_t isn_tick_base(uint64_t wrap_before);
 static double random_unit(void);
 static uint8_t stream_byte(uint64_t offset);
@@ -329,6 +373,9 @@ main(
 	uint64_t start_ns;
 	uint64_t interval_bytes;
 	uint64_t out_of_order;
+	int option_value;
+	double closed_s;
+	int b_state;
 	struct tcp_socket *a;
 	double allowed_ms;
 	double rate;
@@ -375,6 +422,18 @@ main(
 	}
 	stream_sequence = tcp_of(sender)->send_unacknowledged;
 	transfer_start_ns = now_ns;
+
+	/* A's TCP_MAXUNACKTIME, when the scenario sets one. */
+	if (settings.maxunacktime != 0) {
+		option_value = (int)settings.maxunacktime;
+		error = sender->ops->setsockopt(sender, IPPROTO_TCP, TCP_MAXUNACKTIME, &option_value, sizeof(option_value));
+		if (error != 0) {
+			printf("tcp-model: TCP_MAXUNACKTIME refused (%d)\n", error);
+			return 2;
+		}
+	}
+
+	/* The connection, and A's timeout as it starts. */
 	printf("tcp-model: connected at %llu us, A's first sequence number %u, rto_ms=%llu srtt_us=%u\n",
 	    (unsigned long long)(now_ns / 1000U), stream_sequence,
 	    (unsigned long long)kern_ticks_to_ms(tcp_of(sender)->rto), tcp_of(sender)->srtt_us);
@@ -429,6 +488,12 @@ main(
 		}
 	}
 
+	/* A connection A has closed: a second more, so its reset reaches B. */
+	if (closed_at_ns != 0) {
+		while (now_ns < closed_at_ns + 1000000000ULL)
+			step();
+	}
+
 	/* A stall still going at the end counts too. */
 	if (now_ns - last_progress_ns > longest_stall_ns)
 		longest_stall_ns = now_ns - last_progress_ns;
@@ -453,6 +518,24 @@ main(
 	    (unsigned long long)out_of_order, (unsigned long long)unresolved_refusals, transfer_error, complete);
 	report(now_ns - start_ns, 0);
 
+	/* When A's connection closed and how B stands, and the gaps between A's resends (ws220-p005). */
+	closed_s = -1.0;
+	if (closed_at_ns != 0)
+		closed_s = (double)(closed_at_ns - start_ns) / 1e9;
+	b_state = -1;
+	if (receiver != NULL)
+		b_state = (int)tcp_of(receiver)->state;
+	printf("close: a_closed_at_s=%.3f b_state=%d\n", closed_s, b_state);
+	printf("persist: resends=%llu gaps=%llu gap_min_s=%.3f gap_max_s=%.3f\n", (unsigned long long)resends_seen,
+	    (unsigned long long)resend_gaps, (double)gap_min_ns / 1e9, (double)gap_max_ns / 1e9);
+	if (settings.expect_gap_high != 0 &&
+	    (resend_gaps == 0 || gap_min_ns < settings.expect_gap_low * 1000000000ULL ||
+	     gap_max_ns > settings.expect_gap_high * 1000000000ULL)) {
+		printf("check: FAIL: the gaps between A's resends are not within %llu..%llu s\n",
+		    (unsigned long long)settings.expect_gap_low, (unsigned long long)settings.expect_gap_high);
+		return 1;
+	}
+
 	/* A link that loses nothing delivers A's segments in the order A queued them. */
 	if (settings.expect_in_order && out_of_order != 0) {
 		printf("check: FAIL: %llu segments reached B ahead of a gap on a link that loses nothing\n",
@@ -463,10 +546,27 @@ main(
 	/* A's round-trip estimate and resends (ws220-p004). */
 	a = tcp_of(sender);
 	printf("rtt: samples=%u srtt_us=%u rttvar_us=%u rto_ms=%llu backoff=%u first_srtt_us=%u first_rttvar_us=%u "
-	    "srtt_max_us=%u retransmits=%llu immediate=%llu no_route_refusals=%llu\n", a->rtt_samples, a->srtt_us,
-	    a->rttvar_us, (unsigned long long)kern_ticks_to_ms(a->rto), a->rto_backoff, first_srtt_us, first_rttvar_us,
-	    srtt_max_us, (unsigned long long)a->counters.retransmit_segments,
-	    (unsigned long long)a->counters.immediate_resends, (unsigned long long)no_route_refusals);
+	    "srtt_max_us=%u retransmits=%llu immediate=%llu fast=%llu timeouts=%llu no_route_refusals=%llu\n",
+	    a->rtt_samples, a->srtt_us, a->rttvar_us, (unsigned long long)kern_ticks_to_ms(a->rto), a->rto_backoff,
+	    first_srtt_us, first_rttvar_us, srtt_max_us, (unsigned long long)a->counters.retransmit_segments,
+	    (unsigned long long)a->counters.immediate_resends, (unsigned long long)a->counters.fast_retransmits,
+	    (unsigned long long)timeouts, (unsigned long long)no_route_refusals);
+
+	/* A's fast retransmits, when the scenario says how many (ws220-p005). */
+	if (settings.expect_fast &&
+	    (a->counters.fast_retransmits < settings.expect_fast_low || a->counters.fast_retransmits > settings.expect_fast_high)) {
+		printf("check: FAIL: A made %llu fast retransmits, not %llu..%llu\n",
+		    (unsigned long long)a->counters.fast_retransmits, (unsigned long long)settings.expect_fast_low,
+		    (unsigned long long)settings.expect_fast_high);
+		return 1;
+	}
+
+	/* A's timeouts, when the scenario bounds them. */
+	if (settings.expect_timeouts && timeouts > settings.expect_timeouts_max) {
+		printf("check: FAIL: A had %llu timeouts, more than %llu\n", (unsigned long long)timeouts,
+		    (unsigned long long)settings.expect_timeouts_max);
+		return 1;
+	}
 
 	/* The first sample's estimate, when the scenario says where it should lie. */
 	if (settings.expect_first_srtt_high != 0 &&
@@ -521,7 +621,7 @@ main(
 	}
 
 	/* net.tcpstats as the kernel copies it out must agree with the sockets (of a connection still up). */
-	if (transfer_error == 0) {
+	if (transfer_error == 0 && closed_at_ns == 0) {
 		error = check_tcpstats();
 		if (error != 0)
 			return 1;
@@ -733,6 +833,16 @@ parse_settings(
 	settings.expect_retransmits_max = 0;
 	settings.expect_retransmits = 0;
 	settings.expect_stall_rto = 0;
+	settings.drop_ab_count = 0;
+	settings.expect_fast_low = 0;
+	settings.expect_fast_high = 0;
+	settings.expect_fast = 0;
+	settings.expect_timeouts_max = 0;
+	settings.expect_timeouts = 0;
+	settings.close_at_ns = 0;
+	settings.maxunacktime = 0;
+	settings.expect_gap_low = 0;
+	settings.expect_gap_high = 0;
 	settings.quiet = 0;
 
 	/* Each option and its value. */
@@ -825,7 +935,21 @@ parse_settings(
 			parse_range(argv[index + 1], &settings.expect_first_srtt_low, &settings.expect_first_srtt_high);
 		else if (strcmp(argv[index], "--expect-first-rttvar-us") == 0)
 			parse_range(argv[index + 1], &settings.expect_first_rttvar_low, &settings.expect_first_rttvar_high);
-		else if (strcmp(argv[index], "--expect-srtt-max-us") == 0)
+		else if (strcmp(argv[index], "--drop-ab") == 0)
+			parse_list(argv[index + 1], settings.drop_ab, &settings.drop_ab_count);
+		else if (strcmp(argv[index], "--expect-fast-retransmits") == 0) {
+			parse_range(argv[index + 1], &settings.expect_fast_low, &settings.expect_fast_high);
+			settings.expect_fast = 1;
+		} else if (strcmp(argv[index], "--expect-timeouts-max") == 0) {
+			settings.expect_timeouts_max = strtoull(argv[index + 1], NULL, 0);
+			settings.expect_timeouts = 1;
+		} else if (strcmp(argv[index], "--close-at-ms") == 0) {
+			settings.close_at_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		} else if (strcmp(argv[index], "--maxunacktime") == 0) {
+			settings.maxunacktime = (unsigned)strtoull(argv[index + 1], NULL, 0);
+		} else if (strcmp(argv[index], "--expect-probe-gap-s") == 0) {
+			parse_range(argv[index + 1], &settings.expect_gap_low, &settings.expect_gap_high);
+		} else if (strcmp(argv[index], "--expect-srtt-max-us") == 0)
 			settings.expect_srtt_max = strtoull(argv[index + 1], NULL, 0);
 		else if (strcmp(argv[index], "--expect-retransmits-max") == 0) {
 			settings.expect_retransmits_max = strtoull(argv[index + 1], NULL, 0);
@@ -837,6 +961,69 @@ parse_settings(
 	/* A queue the model can hold. */
 	if (settings.queue == 0 || settings.queue > MODEL_QUEUE_MAX)
 		settings.queue = MODEL_QUEUE_MAX;
+}
+
+/* Keeps the least and the most time between two of A's resends. */
+static void
+note_gap(
+	uint64_t gap)
+{
+	/* The first gap, or a smaller or larger one. */
+	if (resend_gaps == 0 || gap < gap_min_ns)
+		gap_min_ns = gap;
+	if (gap > gap_max_ns)
+		gap_max_ns = gap;
+	resend_gaps++;
+}
+
+/* Reads a comma separated list of up to 16 numbers. */
+static void
+parse_list(
+	const char *text,
+	uint64_t *list,
+	unsigned *count)
+{
+	char *end;
+
+	/* Each number and the comma after it. */
+	*count = 0;
+	while (*text != '\0' && *count < 16U) {
+		list[*count] = strtoull(text, &end, 0);
+		(*count)++;
+		if (*end != ',')
+			break;
+		text = end + 1;
+	}
+}
+
+/*
+ * Tells whether a frame leaving A's device is one --drop-ab names: A's data
+ * frames are counted from 1 from the transfer's start.
+ */
+static int
+dropped_on_purpose(
+	struct model_link *link,
+	const struct packet_buf *packet)
+{
+	size_t header;
+	unsigned index;
+
+	/* Only A's data frames after the connection count. */
+	if (link != &links[0] || settings.drop_ab_count == 0 || transfer_start_ns == 0)
+		return 0;
+	header = (size_t)(packet->data[12] >> 4) * 4U;
+	if (packet->length <= header)
+		return 0;
+	data_frames_ab++;
+
+	/* One of the numbers named. */
+	for (index = 0; index < settings.drop_ab_count; index++) {
+		if (settings.drop_ab[index] == data_frames_ab)
+			return 1;
+	}
+
+	/* Succeeded: not one of them. */
+	return 0;
 }
 
 /* Reads LOW:HIGH. */
@@ -944,6 +1131,7 @@ link_advance(
 	struct model_frame *frame;
 	struct packet_buf *packet;
 	uint64_t end_ns;
+	int purpose;
 	int error;
 
 	/* Each frame whose transmission has ended leaves the device. */
@@ -952,8 +1140,9 @@ link_advance(
 		end_ns = link->transmit_end_ns;
 		link->frames++;
 
-		/* The link loses it, or carries it to the other host. */
-		if (random_unit() < link->loss) {
+		/* The link loses it (by chance, or on purpose), or carries it to the other host. */
+		purpose = dropped_on_purpose(link, packet);
+		if (random_unit() < link->loss || purpose) {
 			link->lost++;
 		} else {
 			frame = malloc(sizeof(*frame));
@@ -1166,10 +1355,23 @@ run_writer(
 	uint32_t window;
 	uint32_t in_flight;
 	ssize_t written;
+	int error;
 
 	/* A writer asleep, or done. */
 	if (sender == NULL || now_ns < send_sleep_until_ns)
 		return;
+
+	/* A writer that stops at its time and shuts its side (--close-at-ms), once the FIN fits the ring. */
+	if (settings.close_at_ns != 0 && transfer_start_ns != 0 && now_ns >= transfer_start_ns + settings.close_at_ns) {
+		if (!writer_closed) {
+			error = sender->ops->shutdown(sender, SHUT_WR);
+			if (error == 0)
+				writer_closed = 1;
+		}
+
+		/* Nothing more is written. */
+		return;
+	}
 
 	/* Each piece the stack takes, after the bytes of any write still inside it. */
 	while (send_left > writer_reserved) {
@@ -1407,9 +1609,27 @@ step(
 		first_rttvar_us = a->rttvar_us;
 	}
 
+	/* When A's connection closed. */
+	if (closed_at_ns == 0 && transfer_start_ns != 0 && a->state == TCP_CLOSED)
+		closed_at_ns = now_ns;
+
+	/* The time between two of A's resends both in the persist state (the probes of a closed window). */
+	if (a->counters.retransmit_segments != resends_seen) {
+		if (a->persist != 0 && previous_in_persist)
+			note_gap(now_ns - resend_last_ns);
+		previous_in_persist = a->persist != 0;
+		resends_seen = a->counters.retransmit_segments;
+		resend_last_ns = now_ns;
+	}
+
 	/* The largest SRTT so far. */
 	if (a->rtt_samples != 0 && a->srtt_us > srtt_max_us)
 		srtt_max_us = a->srtt_us;
+
+	/* A timeout that really expired doubles the backoff. */
+	if (a->rto_backoff > backoff_last)
+		timeouts += a->rto_backoff - backoff_last;
+	backoff_last = a->rto_backoff;
 
 	/* The resends of one segment in a row, the times a resend was lost again, and the backoff. */
 	if (a->rto_backoff > backoff_max)
