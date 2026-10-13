@@ -70,3 +70,6 @@ Next（予約）: ws115-p006（libpng・freetype・harfbuzz・fontconfig）〜
 - 予約（2026-10-13 夜 Q1、ベータ2 の残りの実装）: q955 [WS156](../../ws156/ws.md) p006（Linux の D-Bus の Notifications）→ q956 [WS051](../../ws051/ws.md) p005b（抜けの停止）→ q957 [WS081](../../ws081/ws.md) の残り（L3 の計測の script と係数）→ q958 [WS033](../../ws033/ws.md) p001（USB LAN の後挿し）。
 - q955 結果（2026-10-13 夜）: WS156 p006 Linux の D-Bus の org.freedesktop.Notifications e5167e0c4 → main bb1ca9a1f（main で wayland の build warning 0）、test-wait（T1-588）。q956 WS051 p005b に入った。
 - q956 結果: WS051 p005b（firmware の外の出力の抜け）ac87a8440 → main b719680b6、確かめは 5330 の実機でユーザー（USB-C の DP の monitor だけで起動して抜く）。q957 結果: WS081 p017 の L3 の setup e11cfe4c2 → main、T1-591、係数の調整はユーザーの Windows の session.log 待ち。q958 WS033 p001 に入った。
+- P3 の第 2 世代はここで終わり（2026-10-14、context 約 70 万 token）。
+
+2026-10-14 / P3 の第 3 世代: P2 の第 2 世代から引き継ぎ（P2 は手元の作業が残ると報告、worktree p2 には触らない）。q966 [WS171](../../ws171/ws.md) hal.h の契約の comment の差分の案（適用しない）→ q967 [WS143](../../ws143/ws.md) p007 Linux の BlueZ の backend の実装（設計 db09ac249 は main、design-reviewer の結果の後）。State: active。
