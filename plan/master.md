@@ -908,6 +908,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 ## Tools
 | [tests/rpi4-sdhci-host-test.c](../tests/rpi4-sdhci-host-test.c)（BUG-295、2026-10-13） | Pi 4 の SD の driver（多 block の CMD25/CMD18・auto-CMD12、失敗の時の 1 block の書き直し、要求の切り分け）の回帰（偽の register） | `make -o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk rpi4-sdhci-host-test`、PASS で終わる |
+| [plan/ws081/tests/run-notestouch.sh](ws081/tests/run-notestouch.sh)（2026-10-13 BUG-296 で追従） | Notes の touch（userland/desktop/notes/touch.c）の host 試験: 2 本指の pinch と上限、drag・flick・glide、overscroll、double tap、toolbar と頁の tap（toolbar の印）、ペンの近くの掌、指で書く。`plan/ws081/tests/run-notestouch.sh [OUTDIR]`（sanitizer は `EXTRA_CFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"`）。PASS は `host-notestouch: ok (N checks)` |
+| [plan/ws079/tests/run-notes-zoom-limit.sh](ws079/tests/run-notes-zoom-limit.sh)（BUG-296、2026-10-13） | Notes の頁の絵の確保が断られた時に倍率を下げて作り直す（i915 の 16 MiB の上限の模型）。`sh plan/ws079/tests/run-notes-zoom-limit.sh`、PASS は `ok (15 checks)` と `PASS` |
 
 回帰と観察の道具は `plan/tools/` に置く。完了した WS の試験は、ここへ移したもの以外を削除した。Phase に固有の試験は各 WS の `tests/` にある。
 
