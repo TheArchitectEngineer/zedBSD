@@ -45,7 +45,7 @@ static int parse_arguments(int argc, char **argv, const char **path, const char 
 static void usage(void);
 static int start_editor(struct vi_editor *editor, const char *path, const char *start);
 static void place_start(struct vi_editor *editor, const char *start);
-static void install_handlers(void);
+static void install_handlers(struct vi_terminal *terminal);
 static void install_handler(int number, void (*handler)(int));
 static void restore_at_exit(void);
 static void resize_handler(int number);
@@ -64,6 +64,7 @@ main(
 	struct vi_editor *editor;
 	const char *path;
 	const char *start;
+	int modified;
 	int status;
 	int key;
 
@@ -104,8 +105,17 @@ main(
 		vi_command_finish(editor);
 	}
 
-	/* Gives the terminal back and releases the session. */
+	/* Gives the terminal back. */
 	vi_terminal_leave(&editor->terminal);
+
+	/* A session cut short by a hangup or a termination keeps unwritten changes in a recovery file. */
+	if (editor->exit_status != 0) {
+		modified = vi_undo_modified(editor);
+		if (modified)
+			vi_file_recover(editor);
+	}
+
+	/* Releases the session. */
 	vi_screen_free(editor);
 	vi_undo_free(&editor->undo);
 	vi_buffer_free(&editor->buffer);
@@ -129,7 +139,7 @@ vi_signal_pending(
 {
 	int error;
 
-	/* A hangup or a termination ends the session; unwritten changes are lost. */
+	/* A hangup or a termination ends the session; unwritten changes go to a recovery file. */
 	if (vi_stop_requested) {
 		editor->quit = 1;
 		editor->exit_status = 1;
@@ -174,16 +184,25 @@ void
 vi_suspend(
 	struct vi_editor *editor)
 {
+	sigset_t stop_set;
 	int error;
 
 	/* The shell gets the terminal as it was before vi. */
 	vi_terminal_leave(&editor->terminal);
 
-	/* Stops with the default action, which the handler would otherwise catch. */
+	/*
+	 * Stops the whole process group with the default action, so that a
+	 * program waiting for vi, such as one that started it as an editor,
+	 * stops with it and the shell gets control.
+	 */
 	install_handler(SIGTSTP, SIG_DFL);
-	(void)kill(getpid(), SIGTSTP);
+	(void)sigemptyset(&stop_set);
+	(void)sigaddset(&stop_set, SIGTSTP);
+	(void)sigprocmask(SIG_UNBLOCK, &stop_set, NULL);
+	(void)kill(0, SIGTSTP);
 
-	/* Running again: takes the terminal back and draws everything. */
+	/* Running again: blocks the stop signal again, takes the terminal back and draws everything. */
+	(void)sigprocmask(SIG_BLOCK, &stop_set, NULL);
 	install_handler(SIGTSTP, suspend_handler);
 	vi_continue_requested = 0;
 	error = vi_terminal_enter(&editor->terminal);
@@ -308,7 +327,7 @@ start_editor(
 
 	/* Gives the terminal back however vi ends, and takes the signals vi handles. */
 	(void)atexit(restore_at_exit);
-	install_handlers();
+	install_handlers(&editor->terminal);
 
 	/* Puts the terminal into the editing mode. */
 	error = vi_terminal_enter(&editor->terminal);
@@ -347,11 +366,17 @@ place_start(
 	vi_cursor_first_nonblank(editor);
 }
 
-/* Sets the handlers of the signals vi takes. */
+/*
+ * Sets the handlers of the signals vi takes, and blocks those signals
+ * except while waiting for a key, so that none can arrive between the
+ * check of what arrived and the wait.
+ */
 static void
 install_handlers(
-	void)
+	struct vi_terminal *terminal)
 {
+	sigset_t handled;
+
 	/* The window size, a continue, a stop, and the signals that end the session. */
 	install_handler(SIGWINCH, resize_handler);
 	install_handler(SIGCONT, continue_handler);
@@ -359,6 +384,19 @@ install_handlers(
 	install_handler(SIGHUP, stop_handler);
 	install_handler(SIGTERM, stop_handler);
 	install_handler(SIGINT, stop_handler);
+	install_handler(SIGQUIT, stop_handler);
+
+	/* Blocks them, keeping the mask from before for the waits. */
+	(void)sigemptyset(&handled);
+	(void)sigaddset(&handled, SIGWINCH);
+	(void)sigaddset(&handled, SIGCONT);
+	(void)sigaddset(&handled, SIGTSTP);
+	(void)sigaddset(&handled, SIGHUP);
+	(void)sigaddset(&handled, SIGTERM);
+	(void)sigaddset(&handled, SIGINT);
+	(void)sigaddset(&handled, SIGQUIT);
+	(void)sigprocmask(SIG_BLOCK, &handled, &terminal->wait_mask);
+	terminal->wait_mask_set = 1;
 }
 
 /*

@@ -15,6 +15,7 @@
 #define USERLAND_BASE_VI_VI_H
 
 #include <regex.h>
+#include <signal.h>
 #include <stddef.h>
 #include <termios.h>
 
@@ -240,7 +241,8 @@ struct vi_register {
  * terminal has no description.  Output is collected in the output buffer
  * and written at the end of each screen update.  A byte read while
  * telling ESC from a key sequence, and found to start the next key, waits
- * in pushed_byte.
+ * in pushed_byte.  wait_mask is the signal mask used only while waiting
+ * for a key; the editor's signals are blocked at all other times.
  */
 struct vi_terminal {
 	int input;
@@ -264,6 +266,8 @@ struct vi_terminal {
 	size_t output_length;
 	unsigned char pushed_byte;
 	int has_pushed_byte;
+	sigset_t wait_mask;
+	int wait_mask_set;
 };
 
 /*
@@ -352,6 +356,7 @@ int vi_edit(struct vi_editor *editor, enum vi_change_kind kind, size_t line, siz
 /* file.c */
 int vi_file_load(struct vi_editor *editor, const char *path);
 int vi_file_write(struct vi_editor *editor, const char *path, int force);
+void vi_file_recover(struct vi_editor *editor);
 
 /* terminal.c */
 int vi_terminal_open(struct vi_terminal *terminal);

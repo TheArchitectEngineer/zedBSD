@@ -327,6 +327,11 @@ vi_editor_key(
 
 	/* Waits for a key from the terminal. */
 	for (;;) {
+		/* Handles the signals that arrived since the last wait, stopping if one asks to. */
+		stop = vi_signal_pending(editor);
+		if (stop)
+			return VI_KEY_STOP;
+
 		/* Draws the screen unless pasted or typed-ahead keys are waiting. */
 		pending = vi_terminal_input_pending(&editor->terminal);
 		if (!pending)
@@ -342,10 +347,7 @@ vi_editor_key(
 		if (key >= 0)
 			break;
 
-		/* A signal arrived: handles it, and stops if it asked to. */
-		stop = vi_signal_pending(editor);
-		if (stop)
-			return VI_KEY_STOP;
+		/* A signal ended the wait; the next turn handles it. */
 	}
 
 	/* Records the key for the . command. */

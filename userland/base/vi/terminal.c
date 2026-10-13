@@ -16,9 +16,11 @@
 
 #include <errno.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <time.h>
 #include <unistd.h>
 
 /*
@@ -134,7 +136,7 @@ vi_terminal_enter(
 	/* Turns off line editing, echo, signal keys, flow control and CR translation. */
 	modes = terminal->saved_modes;
 	modes.c_lflag &= ~(tcflag_t)(ICANON | ECHO | ISIG | IEXTEN);
-	modes.c_iflag &= ~(tcflag_t)(IXON | ICRNL | INLCR | IGNCR);
+	modes.c_iflag &= ~(tcflag_t)(IXON | ICRNL | INLCR | IGNCR | ISTRIP);
 	modes.c_cc[VMIN] = 1;
 	modes.c_cc[VTIME] = 0;
 
@@ -175,9 +177,9 @@ vi_terminal_leave(
 		terminal->screen_entered = 0;
 	}
 
-	/* Restores the line mode the shell expects, dropping unread keys. */
+	/* Restores the line mode the shell expects, keeping keys typed ahead for the shell. */
 	if (terminal->raw) {
-		(void)tcsetattr(terminal->input, TCSAFLUSH, &terminal->saved_modes);
+		(void)tcsetattr(terminal->input, TCSADRAIN, &terminal->saved_modes);
 		terminal->raw = 0;
 	}
 }
@@ -495,6 +497,9 @@ read_byte(
 	unsigned char *byte)
 {
 	struct pollfd poll_entry;
+	struct timespec timeout;
+	const struct timespec *limit;
+	const sigset_t *mask;
 	ssize_t count;
 	int ready;
 
@@ -505,17 +510,32 @@ read_byte(
 		return 1;
 	}
 
-	/* A bounded wait first asks whether a byte is coming. */
+	/*
+	 * Waits for a byte with the editor's signals let through only during
+	 * the wait, so a signal either arrives before the wait and is seen by
+	 * the caller, or ends the wait.
+	 */
+	memset(&poll_entry, 0, sizeof(poll_entry));
+	poll_entry.fd = terminal->input;
+	poll_entry.events = POLLIN;
+	limit = NULL;
 	if (wait >= 0) {
-		memset(&poll_entry, 0, sizeof(poll_entry));
-		poll_entry.fd = terminal->input;
-		poll_entry.events = POLLIN;
-		ready = poll(&poll_entry, 1, wait);
-
-		/* Nothing came in time, or a signal cut the wait short. */
-		if (ready <= 0)
-			return 0;
+		timeout.tv_sec = wait / 1000;
+		timeout.tv_nsec = (long)(wait % 1000) * 1000000L;
+		limit = &timeout;
 	}
+	mask = NULL;
+	if (terminal->wait_mask_set)
+		mask = &terminal->wait_mask;
+	ready = ppoll(&poll_entry, 1, limit, mask);
+	if (ready < 0) {
+		/* A signal ended an endless wait; a bounded one just ends. */
+		if (errno == EINTR && wait < 0)
+			return -1;
+		return 0;
+	}
+	if (ready == 0)
+		return 0;
 
 	/* Reads the byte. */
 	count = read(terminal->input, byte, 1);
@@ -536,7 +556,7 @@ read_byte(
 
 /*
  * Reads the rest of a key sequence after ESC [ or ESC O and names the key.
- * An unknown sequence is read to its end and dropped as an ESC.
+ * An unknown sequence is read to its end, so none of it is taken as keys.
  */
 static int
 read_sequence(
@@ -553,11 +573,11 @@ read_sequence(
 	sequence[0] = introducer;
 	length = 1;
 
-	/* Reads until the final byte, which is a letter or a tilde. */
+	/* Reads until the final byte, which is a letter or a tilde; a cut sequence is dropped. */
 	for (;;) {
 		status = read_byte(terminal, TERMINAL_ESCAPE_WAIT, &byte);
 		if (status <= 0)
-			return VI_KEY_ESCAPE;
+			return VI_KEY_UNKNOWN;
 
 		/* A sequence longer than any key vi knows is skipped. */
 		if (length < TERMINAL_SEQUENCE_LENGTH) {
@@ -573,11 +593,11 @@ read_sequence(
 	/* Names the key the whole sequence stands for. */
 	key = sequence_key(sequence, length);
 
-	/* Succeeded: the key, or ESC for one vi does not know. */
+	/* Succeeded: the key, or VI_KEY_UNKNOWN for one vi does not know. */
 	return key;
 }
 
-/* Names the key a sequence after ESC stands for, or ESC when vi does not know it. */
+/* Names the key a sequence after ESC stands for, or VI_KEY_UNKNOWN when vi does not know it. */
 static int
 sequence_key(
 	const unsigned char *sequence,
@@ -604,16 +624,16 @@ sequence_key(
 		case 'F':
 			return VI_KEY_END;
 		default:
-			return VI_KEY_ESCAPE;
+			return VI_KEY_UNKNOWN;
 		}
 	}
 
 	/* The keys that send ESC [ number ~. */
 	if (length == 3) {
 		if (sequence[0] != '[')
-			return VI_KEY_ESCAPE;
+			return VI_KEY_UNKNOWN;
 		if (final != '~')
-			return VI_KEY_ESCAPE;
+			return VI_KEY_UNKNOWN;
 
 		/* Chooses the key by its number. */
 		switch (sequence[1]) {
@@ -630,10 +650,10 @@ sequence_key(
 		case '6':
 			return VI_KEY_PAGE_DOWN;
 		default:
-			return VI_KEY_ESCAPE;
+			return VI_KEY_UNKNOWN;
 		}
 	}
 
 	/* Any longer sequence is a key vi does not use. */
-	return VI_KEY_ESCAPE;
+	return VI_KEY_UNKNOWN;
 }

@@ -75,6 +75,34 @@ def run(command, keys, cwd, timeout=8.0, output=None):
     return "timeout"
 
 
+def run_then_close(command, keys, cwd, timeout=5.0):
+    """Runs command on a pty, types the keys, then closes the pty as a hangup
+    does, and returns the exit status (or "timeout" if the program keeps running)."""
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.chdir(cwd)
+        env = dict(os.environ)
+        env["TERM"] = "xterm"
+        env["TERMINFO"] = os.path.join(ROOT, "userland/base/terminfo")
+        os.execve("/bin/sh", ["sh", "-c", command], env)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+    time.sleep(0.3)
+    drain(fd, 0.0)
+    os.write(fd, keys.encode("utf-8"))
+    time.sleep(0.3)
+    drain(fd, 0.0)
+    os.close(fd)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        done, status = os.waitpid(pid, os.WNOHANG)
+        if done:
+            return os.waitstatus_to_exitcode(status)
+        time.sleep(0.05)
+    os.kill(pid, 9)
+    os.waitpid(pid, 0)
+    return "timeout"
+
+
 def drain(fd, wait, output=None):
     while True:
         ready, _, _ = select.select([fd], [], [], wait)
@@ -299,6 +327,64 @@ def main():
     status = run("%s f.txt" % vi, keys_of(":w g.txt\r:q\r"), work)
     report("w-exists-refused", status == 0 and open(os.path.join(work, "g.txt")).read() == "two\n")
 
+    # A file that cannot be read is not opened at all, so :wq cannot empty it.
+    work = tempfile.mkdtemp(prefix="unreadable.", dir=out)
+    path = os.path.join(work, "f.txt")
+    with open(path, "w") as handle:
+        handle.write("secret\n")
+    os.chmod(path, 0o200)
+    status = run("%s f.txt" % vi, keys_of("ix" + ESC + ":wq\r"), work)
+    os.chmod(path, 0o600)
+    report("unreadable-refused", status == 1 and open(path).read() == "secret\n", "status=%r" % status)
+    status = run("%s ." % vi, keys_of(":q\r"), work)
+    report("directory-refused", status == 1, "status=%r" % status)
+
+    # Writing another file leaves the buffer changed, so :q still refuses.
+    work = tempfile.mkdtemp(prefix="w-other.", dir=out)
+    with open(os.path.join(work, "f.txt"), "w") as handle:
+        handle.write("abc\n")
+    status = run("%s f.txt" % vi, keys_of("x:w g.txt\r:q\r$x:wq\r"), work)
+    report("w-other-then-q", status == 0 and open(os.path.join(work, "f.txt")).read() == "b\n"
+           and open(os.path.join(work, "g.txt")).read() == "bc\n")
+
+    # Written, taken back, changed again: a different change, so :q refuses.
+    work = tempfile.mkdtemp(prefix="saved-state.", dir=out)
+    with open(os.path.join(work, "f.txt"), "w") as handle:
+        handle.write("abc\n")
+    status = run("%s f.txt" % vi, keys_of("x:w\ru$x:q\r:wq\r"), work)
+    report("saved-state", status == 0 and open(os.path.join(work, "f.txt")).read() == "ab\n",
+           repr(open(os.path.join(work, "f.txt")).read()))
+
+    # Bytes that are not text come back as they were, with a newline added at the end.
+    work = tempfile.mkdtemp(prefix="binary.", dir=out)
+    data = b"a\x00b\r\n\xff\xfe\xe6\x97\n\x1b[31m\xc2\x9b\nlast"
+    with open(os.path.join(work, "f.txt"), "wb") as handle:
+        handle.write(data)
+    status = run("%s f.txt" % vi, keys_of(":wq\r"), work)
+    got = open(os.path.join(work, "f.txt"), "rb").read()
+    report("binary-round-trip", status == 0 and got == data + b"\n", repr(got))
+
+    # A file with two names is written in place: both names show the change.
+    work = tempfile.mkdtemp(prefix="hardlink.", dir=out)
+    with open(os.path.join(work, "f.txt"), "w") as handle:
+        handle.write("abc\n")
+    os.link(os.path.join(work, "f.txt"), os.path.join(work, "g.txt"))
+    inode = os.stat(os.path.join(work, "f.txt")).st_ino
+    status = run("%s f.txt" % vi, keys_of("x:wq\r"), work)
+    report("hardlink-in-place", status == 0 and open(os.path.join(work, "g.txt")).read() == "bc\n"
+           and os.stat(os.path.join(work, "f.txt")).st_ino == inode)
+
+    # A big edit is one step: 20000 lines deleted and taken back at once.
+    work = tempfile.mkdtemp(prefix="many-lines.", dir=out)
+    lines = "".join("line %d\n" % number for number in range(20000))
+    with open(os.path.join(work, "f.txt"), "w") as handle:
+        handle.write(lines)
+    began = time.time()
+    status = run("%s f.txt" % vi, keys_of("dGuyGGp:wq\r"), work, timeout=20.0)
+    took = time.time() - began
+    report("many-lines", status == 0 and open(os.path.join(work, "f.txt")).read() == lines + lines and took < 15,
+           "status=%r took=%.1f" % (status, took))
+
     # The terminal modes after vi are the modes before it.
     work = tempfile.mkdtemp(prefix="stty.", dir=out)
     with open(os.path.join(work, "f.txt"), "w") as handle:
@@ -317,6 +403,25 @@ def main():
     before = open(os.path.join(work, "before")).read() if os.path.exists(os.path.join(work, "before")) else None
     after = open(os.path.join(work, "after")).read() if os.path.exists(os.path.join(work, "after")) else None
     report("hangup", code == "1" and before == after, "code=%r" % code)
+
+    # A terminal that goes away ends vi (status 1), and unwritten changes go to a recovery file in HOME.
+    work = tempfile.mkdtemp(prefix="hangup-recover.", dir=out)
+    with open(os.path.join(work, "f.txt"), "w") as handle:
+        handle.write("abc\n")
+    status = run_then_close("HOME=%s exec %s f.txt" % (work, vi), "x", work)
+    recovered = [name for name in os.listdir(work) if name.startswith(".vi-recover.f.txt.")]
+    content = open(os.path.join(work, recovered[0])).read() if recovered else None
+    mode = os.stat(os.path.join(work, recovered[0])).st_mode & 0o777 if recovered else None
+    report("hangup-recover", status == 1 and content == "bc\n" and mode == 0o600
+           and open(os.path.join(work, "f.txt")).read() == "abc\n", "status=%r files=%r" % (status, recovered))
+
+    # An unchanged buffer leaves no recovery file.
+    work = tempfile.mkdtemp(prefix="hangup-clean.", dir=out)
+    with open(os.path.join(work, "f.txt"), "w") as handle:
+        handle.write("abc\n")
+    status = run_then_close("HOME=%s exec %s f.txt" % (work, vi), "l", work)
+    recovered = [name for name in os.listdir(work) if name.startswith(".vi-recover.")]
+    report("hangup-clean", status == 1 and not recovered, "status=%r files=%r" % (status, recovered))
 
     if failures:
         print("host-vi: FAIL (%d of %d, output in %s)" % (failures, count, out))

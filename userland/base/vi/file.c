@@ -22,6 +22,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/*
+ * The longest file name that the new file next to it repeats; a longer one
+ * gets a short new name, so the new name stays within NAME_MAX.
+ */
+#define FILE_TEMPORARY_NAME_LIMIT 200U
+
 /* The size of the blocks the buffer is written out in. */
 #define FILE_WRITE_BLOCK 65536U
 
@@ -40,6 +46,9 @@ static int write_all(int descriptor, const char *bytes, size_t length);
 static int write_replacing(const char *target, const struct stat *existing, int exists, const struct vi_buffer *buffer, struct file_totals *totals);
 static int write_in_place(const char *target, const struct vi_buffer *buffer, struct file_totals *totals);
 static int resolve_target(const char *path, char **target);
+static int keeps_identity(const struct stat *existing);
+static int dangling_target(const char *path, char **target);
+static void sync_directory(const char *path, size_t directory_length);
 
 /*
  * Reads a file into the buffer, replacing what the buffer held.
@@ -188,6 +197,7 @@ vi_file_write(
 	int exists;
 	int refused;
 	int blocked;
+	int in_place;
 	int result;
 	int error;
 
@@ -259,22 +269,29 @@ vi_file_write(
 	}
 
 	/*
-	 * A file with other hard links is written where it is, so every name
-	 * keeps showing the same file.  Anything else is replaced whole.
+	 * A file is replaced whole through a new file, unless replacing would
+	 * change it for others: a file with other hard links, or one whose
+	 * owner or group vi could not give back, is written where it is.
 	 */
 	memset(&totals, 0, sizeof(totals));
-	if (exists && existing.st_nlink > 1) {
+	in_place = 0;
+	if (exists) {
+		in_place = keeps_identity(&existing);
+	}
+	if (in_place) {
 		error = write_in_place(target, &editor->buffer, &totals);
 	} else {
 		error = write_replacing(target, &existing, exists, &editor->buffer, &totals);
 
-		/* A directory vi cannot add a file to still lets the file itself be written. */
+		/* A directory vi cannot add a file to, or rename in, still lets the file itself be written. */
 		blocked = 0;
 		if (error == EACCES)
 			blocked = 1;
 		else if (error == EROFS)
 			blocked = 1;
 		else if (error == EPERM)
+			blocked = 1;
+		else if (error == EXDEV)
 			blocked = 1;
 		if (exists && blocked) {
 			memset(&totals, 0, sizeof(totals));
@@ -530,7 +547,7 @@ write_replacing(
 	int result;
 	int error;
 
-	/* The new file is .NAME.vi-XXXXXX in the directory of the target. */
+	/* The new file is .NAME.vi-XXXXXX in the directory of the target, or .vi-XXXXXX for a long name. */
 	slash = strrchr(target, '/');
 	directory_length = 0;
 	if (slash != NULL)
@@ -541,7 +558,11 @@ write_replacing(
 		return ENOMEM;
 
 	memcpy(temporary, target, directory_length);
-	(void)snprintf(temporary + directory_length, size - directory_length, ".%s.vi-XXXXXX", target + directory_length);
+	if (strlen(target + directory_length) > FILE_TEMPORARY_NAME_LIMIT) {
+		(void)snprintf(temporary + directory_length, size - directory_length, ".vi-XXXXXX");
+	} else {
+		(void)snprintf(temporary + directory_length, size - directory_length, ".%s.vi-XXXXXX", target + directory_length);
+	}
 
 	/* Creates the new file. */
 	descriptor = mkstemp(temporary);
@@ -556,17 +577,23 @@ write_replacing(
 	if (error != 0)
 		goto fail;
 
-	/* An existing file keeps its permissions and, where allowed, its owner. */
+	/*
+	 * An existing file keeps its owner and permissions.  The owner comes
+	 * first, because changing the owner clears the set-ID bits.
+	 */
 	if (exists) {
+		result = fchown(descriptor, existing->st_uid, existing->st_gid);
+		if (result != 0) {
+			error = errno;
+			goto fail;
+		}
+
 		mode = existing->st_mode & 07777;
 		result = fchmod(descriptor, mode);
 		if (result != 0) {
 			error = errno;
 			goto fail;
 		}
-
-		/* Only the superuser may give a file away, so a refusal is expected. */
-		(void)fchown(descriptor, existing->st_uid, existing->st_gid);
 	} else {
 		/* A new file gets the permissions any new file would, after the umask. */
 		mask = umask(0);
@@ -600,6 +627,8 @@ write_replacing(
 		goto fail;
 	}
 
+	/* Puts the new name on the disk too. */
+	sync_directory(temporary, directory_length);
 	free(temporary);
 
 	/* Succeeded: the target holds the buffer. */
@@ -614,9 +643,11 @@ fail:
 }
 
 /*
- * Writes the buffer over the target itself, keeping its inode and its
- * links.  A failure part way leaves the file cut short, which the
- * message after it reports.
+ * Writes the buffer over the target itself, keeping its inode, its links,
+ * its owner and its permissions.
+ *
+ * The storage for a longer file is claimed before anything is written,
+ * so a full disk is found while the old contents are still whole.
  */
 static int
 write_in_place(
@@ -624,18 +655,49 @@ write_in_place(
 	const struct vi_buffer *buffer,
 	struct file_totals *totals)
 {
+	struct stat status;
+	off_t old_size;
+	off_t new_size;
 	int descriptor;
 	int result;
 	int error;
 
-	/* Opens the file and empties it. */
-	descriptor = open(target, O_WRONLY | O_TRUNC);
+	/* Opens the file without emptying it. */
+	descriptor = open(target, O_WRONLY);
 	if (descriptor < 0)
 		return errno;
 
-	/* Writes the lines. */
+	/* Learns how large the file is now. */
+	result = fstat(descriptor, &status);
+	if (result != 0) {
+		error = errno;
+		(void)close(descriptor);
+		return error;
+	}
+	old_size = status.st_size;
+	new_size = (off_t)buffer->bytes;
+
+	/* A longer file claims its storage first; a failure puts the old size back. */
+	if (new_size > old_size) {
+		error = posix_fallocate(descriptor, old_size, new_size - old_size);
+		if (error != 0) {
+			(void)ftruncate(descriptor, old_size);
+			(void)close(descriptor);
+			return error;
+		}
+	}
+
+	/* Writes the lines from the start. */
 	error = write_lines(descriptor, buffer, totals);
 	if (error != 0) {
+		(void)close(descriptor);
+		return error;
+	}
+
+	/* Cuts off what is left of a longer old file. */
+	result = ftruncate(descriptor, new_size);
+	if (result != 0) {
+		error = errno;
 		(void)close(descriptor);
 		return error;
 	}
@@ -658,6 +720,65 @@ write_in_place(
 }
 
 /*
+ * Tells whether replacing a file with a new one would change who owns it,
+ * which only the superuser can put back.
+ */
+static int
+keeps_identity(
+	const struct stat *existing)
+{
+	uid_t user;
+
+	/* Other names for the same file would keep the old contents. */
+	if (existing->st_nlink > 1)
+		return 1;
+
+	/* The superuser can give the new file any owner. */
+	user = geteuid();
+	if (user == 0)
+		return 0;
+
+	/* Anyone else makes a new file that is theirs, in their own group. */
+	if (existing->st_uid != user)
+		return 1;
+	if (existing->st_gid != getegid())
+		return 1;
+
+	/* The new file can have the same owner and group. */
+	return 0;
+}
+
+/* Puts a directory's entries on the disk, after a rename in it. */
+static void
+sync_directory(
+	const char *path,
+	size_t directory_length)
+{
+	char *directory;
+	int descriptor;
+
+	/* The directory is the part of the path before the name, or the current one. */
+	directory = malloc(directory_length + 2);
+	if (directory == NULL)
+		return;
+	if (directory_length == 0) {
+		directory[0] = '.';
+		directory[1] = '\0';
+	} else {
+		memcpy(directory, path, directory_length);
+		directory[directory_length] = '\0';
+	}
+
+	/* Opens and syncs the directory; a failure here only weakens the guarantee. */
+	descriptor = open(directory, O_RDONLY);
+	free(directory);
+	if (descriptor < 0)
+		return;
+	(void)fsync(descriptor);
+	(void)close(descriptor);
+}
+
+/*
  * Finds the file a name stands for: the name itself, or the file a
  * symbolic link points to, so that writing replaces the file rather than
  * the link.
@@ -670,6 +791,7 @@ resolve_target(
 	struct stat link_status;
 	char *resolved;
 	int result;
+	int error;
 
 	/* A name that is not a symbolic link is its own target. */
 	result = lstat(path, &link_status);
@@ -682,11 +804,118 @@ resolve_target(
 
 	/* Follows every link in the name to the real file. */
 	resolved = realpath(path, NULL);
-	if (resolved == NULL)
-		return errno;
+	if (resolved == NULL) {
+		/* A link to a file that does not exist yet names the file to create. */
+		error = errno;
+		if (error != ENOENT)
+			return error;
+		error = dangling_target(path, target);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	*target = resolved;
 
 	/* Succeeded: the caller owns the target name. */
 	return 0;
+}
+
+/*
+ * Finds the file a symbolic link names when that file does not exist:
+ * the link's text, taken from the link's directory when it is relative.
+ */
+static int
+dangling_target(
+	const char *path,
+	char **target)
+{
+	char link[PATH_MAX];
+	const char *slash;
+	size_t directory_length;
+	size_t link_length;
+	ssize_t count;
+	char *joined;
+
+	/* Reads what the link says. */
+	count = readlink(path, link, sizeof(link) - 1);
+	if (count < 0)
+		return errno;
+	link[count] = '\0';
+	link_length = (size_t)count;
+
+	/* A relative link is relative to the directory the link is in. */
+	directory_length = 0;
+	if (link[0] != '/') {
+		slash = strrchr(path, '/');
+		if (slash != NULL)
+			directory_length = (size_t)(slash - path) + 1;
+	}
+
+	/* Joins the directory and the link's text. */
+	joined = malloc(directory_length + link_length + 1);
+	if (joined == NULL)
+		return ENOMEM;
+	memcpy(joined, path, directory_length);
+	memcpy(joined + directory_length, link, link_length + 1);
+	*target = joined;
+
+	/* Succeeded: the caller owns the name. */
+	return 0;
+}
+
+/*
+ * Keeps the buffer of a session that ended with unwritten changes in
+ * $HOME/.vi-recover.NAME.PID, made new with only the user able to read it,
+ * and says so on the standard error.  Without HOME nothing is kept.
+ */
+void
+vi_file_recover(
+	struct vi_editor *editor)
+{
+	struct file_totals totals;
+	const char *home;
+	const char *name;
+	const char *slash;
+	char path[PATH_MAX];
+	int length;
+	int descriptor;
+	int result;
+	int error;
+
+	/* The file goes in the home directory, never in a directory others can write. */
+	home = getenv("HOME");
+	if (home == NULL || home[0] == '\0')
+		return;
+
+	/* Names it after the file being edited and this process. */
+	name = "noname";
+	if (editor->file_name != NULL) {
+		name = editor->file_name;
+		slash = strrchr(name, '/');
+		if (slash != NULL)
+			name = slash + 1;
+	}
+	length = snprintf(path, sizeof(path), "%s/.vi-recover.%s.%ld", home, name, (long)getpid());
+	if (length < 0 || (size_t)length >= sizeof(path))
+		return;
+
+	/* Creates the file new, readable by the user alone. */
+	descriptor = open(path, O_WRONLY | O_CREAT | O_EXCL, 0600);
+	if (descriptor < 0)
+		return;
+
+	/* Writes the lines and puts them on the disk. */
+	memset(&totals, 0, sizeof(totals));
+	error = write_lines(descriptor, &editor->buffer, &totals);
+	if (error == 0) {
+		result = fsync(descriptor);
+		if (result != 0)
+			error = errno;
+	}
+	(void)close(descriptor);
+
+	/* Tells where the changes are, if the standard error still goes anywhere. */
+	if (error == 0)
+		(void)fprintf(stderr, "vi: unwritten changes saved in %s\n", path);
 }
