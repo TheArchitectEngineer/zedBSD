@@ -322,6 +322,7 @@ box_build_element(
 	int replaced;
 	int is_control;
 	int is_iframe;
+	int is_loaded_object;
 	int atomic;
 	int kind;
 	int error;
@@ -342,6 +343,9 @@ box_build_element(
 
 	/* Keep iframe descendants in the DOM without making parent-page boxes for them. */
 	is_iframe = element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IFRAME;
+	is_loaded_object = element->ns == DOM_NS_HTML && element->tag == DOM_TAG_OBJECT &&
+	    element->child_context != NULL && element->child_load_seen &&
+	    element->child_loaded_epoch == element->child_epoch;
 
 	/* display: none makes no box, for the element or its children (a table column neither, in this pass). */
 	if (style->display == CSS_DISPLAY_NONE || style->display == CSS_DISPLAY_TABLE_COLUMN) {
@@ -353,7 +357,7 @@ box_build_element(
 	if (style->display == CSS_DISPLAY_CONTENTS && parent != NULL) {
 		/* iframe descendants never represent fallback content, even without an iframe box. */
 		error = 0;
-		if (!is_iframe)
+		if (!is_iframe && !is_loaded_object)
 			error = box_build_children(tree, css, &element->node, style, parent, depth + 1);
 		free(style);
 		return error;
@@ -453,8 +457,8 @@ box_build_element(
 		box_append(parent, box);
 	}
 
-	/* A replaced box's content is its image; iframe children remain DOM-only. */
-	if (replaced || is_iframe)
+	/* A loaded object or iframe keeps fallback children only in the DOM. */
+	if (replaced || is_iframe || is_loaded_object)
 		return 0;
 
 	/* The ::before box, the children, the ::after box, then the fix-ups a block needs. */

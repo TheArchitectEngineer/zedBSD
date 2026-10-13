@@ -619,6 +619,9 @@ frame_load_activate(
 			return ENOMEM;
 		return 0;
 	}
+	if (load->element->tag == DOM_TAG_OBJECT && !load->blank &&
+	    (load->response.status < 200 || load->response.status > 299))
+		return 0;
 
 	/* Redirects must retain the verified actual origin before any parsed DOM is exposed. */
 	if (!load->blank) {

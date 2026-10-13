@@ -4,7 +4,7 @@
 
 ## 2026-10-13 WS074 の独立 lane
 
-[q1000](history/queue-q1000.md) は p178 初回試行 uncleared、[q1001](history/queue-q1001.md) は p179 cleared、[q1002](history/queue-q1002.md) は p178 得点位置の部分 scope cleared、[q1003](history/queue-q1003.md) は p180 cleared、[q1004](history/queue-q1004.md) は p181 cleared。[q1005](history/queue-q1005.md) は p182 cleared。[q1006](history/queue-q1006.md) は p183 cleared、Acid3 差12600/480000、Acid2差1865/120000。ユーザーは目標の画素差0まで、各最大90分 Queue を何度でも自動実行するよう指示。各 Queue の exact scope を記録してから着手する。p178 whole/p100は未達。メインセッションの q924〜q939 と同じ番号を使わない。`master.md` は変更しない。
+[q1000](history/queue-q1000.md) は p178 初回試行 uncleared、[q1001](history/queue-q1001.md) は p179 cleared、[q1002](history/queue-q1002.md) は p178 得点位置の部分 scope cleared、[q1003](history/queue-q1003.md) は p180 cleared、[q1004](history/queue-q1004.md) は p181 cleared。[q1005](history/queue-q1005.md) は p182 cleared。[q1006](history/queue-q1006.md) は p183 cleared。[q1007](history/queue-q1007.md) は p184 cleared、Acid3 差12417/480000、Acid2差1865/120000。ユーザーは目標の画素差0まで、各最大90分 Queue を何度でも自動実行するよう指示。各 Queue の exact scope を記録してから着手する。p178 whole/p100は未達。メインセッションの q924〜q939 と同じ番号を使わない。`master.md` は変更しない。
 
 Active Queues: q780（P1）・q784（T1・P2）。予約 q781〜q783（2026-10-06 の節）。以前の記載: q700（P1）・q703（P2）。2026-10-05 未明のベータ1 の実装の束（下の節）。委譲の session の P4 は q697・q698・q699 を cleared で終了（main efe846a に統合）。uat-3 の image を作成（plan/uat.md）。
 Status: active

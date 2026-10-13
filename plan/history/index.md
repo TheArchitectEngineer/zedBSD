@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1007 / WS074 loaded object fallback（2026-10-13）
+
+[q1007履歴](queue-q1007.md): loaded HTML object の fallback を親 layout/paint から除外し、404 object の fallback は保持。実 HTTP fixture 修正前 FAIL→修正後 PASS、frame load pass、build warning0。固定 Acid3 得点100/100・pixel差12417/480000（q1006から183減、97.413125%一致）、Acid2差1865/120000不変。p184 cleared。上部リンク文字等、p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
+
 ## 最新: q1006 / WS074 CSS HSL/HSLA（2026-10-13）
 
 [q1006履歴](queue-q1006.md): CSS hsl()/hsla() 解析・RGB変換。host HSL14/14、build warning0。固定 Acid3 得点100/100・pixel差12600/480000（q1005から702減、97.375%一致）、Acid2差1865/120000不変。p183 cleared。上部の余分な文字等、p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
