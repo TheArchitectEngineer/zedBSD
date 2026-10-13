@@ -707,4 +707,13 @@
 #define GEN8_L3SQCREG4	(0xb118)
 #define GEN8_LQSC_FLUSH_COHERENT_LINES	(1U << 21)
 
+/* drivers/gpu/drm/i915/gt/intel_engine_regs.h, intel_engine.h, intel_lrc_reg.h, intel_execlists_submission.c: Gen8 execlists */
+#define RING_IMR(base)	((base) + 0xa8)
+#define RING_ELSP(base)	((base) + 0x230)
+#define GFX_RUN_LIST_ENABLE	(1U << 15)
+#define I915_HWS_CSB_WRITE_INDEX	0x1f
+#define GEN8_CSB_ENTRIES	6
+#define GEN8_CTX_STATUS_IDLE_ACTIVE	(1U << 0)
+#define GEN8_CTX_STATUS_PREEMPTED	(1U << 1)
+
 #endif /* DRIVERS_GPU_I915_INTEL_GT_REGS_H */

@@ -166,8 +166,9 @@ drv_i915_engine_stop_cs(
 	/* Asks the ring to stop. */
 	drv_i915_write32(mmio, mode, I915_MASKED_ENABLE(STOP_RING));
 
-	/* Stops the prefetcher too, so the streamer is really halted before a reset. */
-	drv_i915_write32(mmio, RING_MODE_GEN7(base), I915_MASKED_ENABLE(GEN12_GFX_PREFETCH_DISABLE));
+	/* Stops the prefetcher too, so the streamer is really halted before a reset; Gen9 has no such stop. */
+	if (ge->info->graphics_ver != 9)
+		drv_i915_write32(mmio, RING_MODE_GEN7(base), I915_MASKED_ENABLE(GEN12_GFX_PREFETCH_DISABLE));
 
 	/* Waits for MODE_IDLE (__intel_wait_for_register_fw(mode, MODE_IDLE, 1000 us, stop timeout)). */
 	error = drv_i915_wait_reg(mmio, mode, MODE_IDLE, MODE_IDLE, I915_STOP_CS_FAST_US, I915_STOP_CS_TIMEOUT_MS, NULL);
@@ -213,6 +214,10 @@ drv_i915_engine_wait_for_pending_mi_fw(
 
 	/* Nothing to wait for without an engine or register access. */
 	if (ge == NULL || mmio == NULL)
+		return;
+
+	/* The workaround is for graphics 11 to before 12.70; a Gen9 engine has nothing to drain. */
+	if (ge->info->graphics_ver == 9)
 		return;
 
 	/* An engine without a MSG_IDLE register has nothing pending. */
