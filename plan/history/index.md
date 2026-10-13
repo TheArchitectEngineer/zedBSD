@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1080 / WS074 module named export declarations（2026-10-14）
+## 最新: q1081 / WS074 module graph design boundary（2026-10-14）
+
+[q1081履歴](queue-q1081.md): VM export env/間接import・module graph・HTML deferred queueの内部境界と実装順を[設計証拠](../ws074/phase216/evidence/20261014-q1081/README.md)に記録。p216部分cleared、固定Grid32 no_outputと全件100%未達。共有投影/GitHub publication pending。
+
+## q1080 / WS074 module named export declarations（2026-10-14）
 
 [q1080履歴](queue-q1080.md): export宣言5種をmodule scope/hoist/評価に接続。WPT共通support module単独評価exit0、classic JS14/14、warning0 build、Acid3差0。[証拠](../ws074/phase216/evidence/20261014-q1080/README.md)。p216部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

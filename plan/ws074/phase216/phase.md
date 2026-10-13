@@ -2,7 +2,7 @@
 
 # ws074-p216: Interop 2025 JavaScript module loading
 
-Status: uncleared（q1079/q1080 partial cleared、import/HTML未実装）
+Status: uncleared（q1079–q1081 partial cleared、module graph/HTML未実装）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -35,3 +35,11 @@ Event ws074-p216-q1079-partial-clear-20261014: module top-level宣言をglobal�
 ## q1080-i01 結果（2026-10-14 06:37 JST）
 
 Event ws074-p216-q1080-partial-clear-20261014: named export宣言5種を通常宣言のmodule scope/hoist/実行に接続。[証拠](evidence/20261014-q1080/README.md)。局所fixture exact、固定WPT共通support module単独評価exit0、classic JS14/14、build warning0、Acid3差0・Acid2差1865。q1080-i01 partial cleared、p216 wholeはmodule namespace/import/HTML未実装でuncleared。固定Grid32 no_outputとp189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## q1081-i01 有限部分範囲（2026-10-14 06:38 JST）
+
+このchatのユーザーによる全3,805件100%までの有限Queue事前承認を最大90分（08:08 JSTまで）に適用。現行JS compiler/VMのclosure/environment/GC root、page script loaderとURL/fetch経路を読み、named import/exportのlive bindingとmodule graphを既存境界で実装する具体的内部API・依存順・有限次Queueへの分割設計を証拠化する。読み取り専用調査と必要な既存browser probeのみ。browser/runner/WPT/公開ABI/`plan/master.md`変更なし。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。p216 wholeと固定32 IDのcallbackはこの部分受け入れに含めない。
+
+## q1081-i01 結果（2026-10-14 06:41 JST）
+
+Event ws074-p216-q1081-partial-clear-20261014: [設計証拠](evidence/20261014-q1081/README.md)でstable export env slot、importの間接参照、graph link/evaluate、HTML parse後・DOMContentLoaded前のmodule queueを既存VM/page境界に写し、次の有限実装範囲を確定。q1081-i01 partial cleared。製品code/runner/WPT/ABI/Master変更なし。p216 wholeと固定Grid32 no_output、p189/p173全件100%は未達、共有投影/GitHub publication保留。

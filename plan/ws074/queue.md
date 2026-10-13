@@ -1,18 +1,18 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1080 / WS074 module named export declarations
+# q1081 / WS074 module graph design boundary
 
-Status: finished（2026-10-14 06:36–06:37 JST）
+Status: finished（2026-10-14 06:38–06:41 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を下記有限範囲に適用。
-Timebox: 2026-10-14 06:36 JST開始、最大90分（08:06 JSTまで）。
+Timebox: 2026-10-14 06:38 JST開始、最大90分（08:08 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1080-i01 | [ws074-p216](phase216/phase.md) partial | JS module内の`export`付きfunction/class/var/let/const宣言を通常宣言と同じscope/hoist/実行へ接続し、module内参照可能・global不可視を確認する。`export {}`、default、re-export、import/module graph/HTML loaderは含めず未対応を明示維持。局所fixture、classic JS14件、warning0 host build、Acid3差0・Acid2非増加を確認。WPT/runner/ABI/Master不変更 | cleared | p216 q1079 module scope |
+| q1081-i01 | [ws074-p216](phase216/phase.md) partial | 現行JS compiler/VMのclosure/environment/GC root、page script loaderとURL/fetch経路を読み、named import/exportのlive bindingとmodule graphを既存境界で実装する具体的内部API・依存順・有限次Queueへ分割した設計を証拠化する。read-only調査と必要な既存browser probeのみ。browser/runner/WPT/ABI/Master変更なし | cleared | p216 q1079/q1080出力 |
 
-Dependency graph: p173 manifest → p216 q1079 scope → p216 q1080 export宣言 → 後続module graph/HTML Queue → p189/q173再測定。
+Dependency graph: p173 manifest → p216 q1079 scope → p216 q1080 export宣言 → p216 q1081 graph設計 → 後続module graph/HTML Queue → p189/q173再測定。
 
-Outcome: export宣言fixture exact・固定WPT共通support module単独評価exit0、classic JS14/14、warning0 build、Acid3差0・Acid2差1865。[証拠](phase216/evidence/20261014-q1080/README.md)。q1080-i01 partial cleared、p216 whole uncleared。
+Outcome: exported stable env slotとimport間接参照、graph/link/HTML parse後queueの内部境界を[設計証拠](phase216/evidence/20261014-q1081/README.md)へ記録。q1081-i01 partial cleared、p216 whole uncleared。
 
-Upcoming Work Outlook: module namespace/graphとHTML loadを別有限Queueへ進める。p216 whole、p189/p190/p173全件100%は未達。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
+Upcoming Work Outlook: stable export environmentを次有限Queueで実装し、その後import linkとHTML loadに進める。p216 whole、p189/p190/p173全件100%は未達。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
