@@ -139,6 +139,8 @@ useradd・usermod・userdel（p003）が呼ぶ account-admin を、端末の roo
 
 ## T1 への依頼の文（p004 で Q1 が出す）
 
+2026-10-14 P2: 下の 1〜4 は p003 の依頼と 1 つにまとめて [phase004](../phase004/phase.md) に移した（2 と 3 は `plan/ws196/tests/user-commands-guest.sh` に入れた）。T1 に渡すのは phase004 の文。下は元の文として残す。
+
 image: `plan/ws089/tests/config-amd64-account-admin.mk`（account-admin と sessiond を含む物。graphical の確かめには Settings の config）。
 1. `plan/ws089/tests/admin-p026-guest.sh` を流す（PASS は最後の行 `admin-p026: status=0`。p002 で root の場合の期待を `error bad-request` に直した）。
 2. root で（`plan/tools/guest/guest.py run`）: `printf 'user-add\nname tom\ngroups network\n' | /usr/libexec/account-admin` が `ok`、`/etc/passwd` の tom の uid が 1001 以上で `/etc/account-admin.last-id` と同じ、`/home/tom` が 0700 で tom の物、shadow の tom の hash が `!`。`printf 'user-modify\nname tom\npassword unlock\n' | …` が `error no-password`。`printf 'user-modify\nname kei\npassword lock\n' | …` が `error last-administrator`（kei が唯一の管理者の時）。`printf 'user-remove\nname tom\nhome remove\n' | …` が `ok` で `/home/tom` が消える。もう一度 `user-add` した人の uid が前の tom より大きい。最後に `/etc/account-admin.last-id` と足した人を消して元に戻す。
