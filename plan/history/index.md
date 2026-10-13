@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1100 / WS074 vertical Grid style-changes diagnosis（2026-10-14）
+## 最新: q1101 / WS074 vertical-rl empty Grid baseline x（2026-10-14）
+
+[q1101履歴](queue-q1101.md): 固定003/004各1/6→6/6 subtest・whole PASS、旧4件と100-subtest PASS維持。warning0 build、Acid3差0。[証拠](../ws074/phase217/evidence/20261014-q1101/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1100 / WS074 vertical Grid style-changes diagnosis（2026-10-14）
 
 [q1100履歴](queue-q1100.md): 残4縦書きIDを空vertical-rl子のoffsetのみ2件と、vertical-lr文字子のwidth初回差2件に分割。[証拠](../ws074/phase217/evidence/20261014-q1100/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

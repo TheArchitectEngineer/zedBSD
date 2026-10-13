@@ -74,6 +74,14 @@ Follow-up ws074-p217-p219-q1099-eight-20261014: [p219 q1099](../phase219/evidenc
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（09:45 JSTまで）に適用。q1099残4 vertical-rl/lr style-changes IDの48中22失敗から期待/実際の初回不一致と後続assertを分類。固定WPT sourceとGrid layout/text/geometry経路を追い、必要ならhost最小HTMLで縦書き空子/文字子を実測。次の独立有限実装境界を記録。browser/runner/WPT/公開ABI/`plan/master.md`変更なし、Acid/全Grid再測定なし。p217 whole/p189/p173全件100%は本部分基準外。
 
-## q1100-i01 結果（2026-10-14 08:17 JST）
+## q1100-i01 結果（2026-10-14 08:16 JST）
 
 Event ws074-p217-q1100-partial-clear-20261014: [証拠](evidence/20261014-q1100/README.md)。003/004は空vertical-rl子のwidth/heightが合い、失敗はoffsetLeftのみ。baseline群ではx40、50px子除外後は残群x70・除外子x40。007/008はvertical-lr文字子が初回width期待20/40/30対実100で全12 subtest失敗。前者の限定された縦書き空子baseline配置を次の有限修正とし、後者は縦文字layout/論理幅の別設計が必要。q1100部分cleared、p217/p219/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
+## q1101-i01 有限部分範囲（2026-10-14 08:16 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（09:46 JSTまで）に適用。水平Gridの固定pixel単一column内の直接空子、vertical-rl、明示pixel幅、column span1、`justify-items/self:baseline`群でborder-leftを共有し、最大右側extentをarea終端へ合わせる。`justify-self:end`子は除外。auto幅/文字/縦container/他alignmentは対象外。最小2行・margin変化fixture、固定style-changes003/004、旧001/002/005/006と100-subtest代表、Grid/CSS/JS、warning0 build、Acid3差0・Acid2非増加。WPT/runner/公開ABI/`plan/master.md`変更なし。p217 whole/p189/p173全件100%は本部分基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1101-i01 結果（2026-10-14 08:19 JST）
+
+Event ws074-p217-q1101-partial-clear-20261014: [証拠](evidence/20261014-q1101/README.md)。水平Grid固定1列の空vertical-rl子でborder-left baselineを共有。最小2gridのmargin/endケースPASS、固定003/004各1/6→6/6 subtest・whole FAIL→PASS。旧001/002/005/006と100-subtest PASS維持。Grid48/CSS51/JS14、warning0 build、Acid3差0・Acid2差1865。q1101部分cleared、p217/p219/p189/p173全件100%未達。文字入りvertical-lr 007/008と一般縦書きは残る。共有投影/GitHub publication保留。

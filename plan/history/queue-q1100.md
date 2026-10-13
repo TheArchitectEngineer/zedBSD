@@ -2,7 +2,7 @@
 
 # q1100 / WS074 vertical Grid style-changes diagnosis
 
-Status: finished（2026-10-14 08:15–08:17 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p217有限部分scope](../ws074/phase217/phase.md)に適用。最大90分。
+Status: finished（2026-10-14 08:15–08:16 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p217有限部分scope](../ws074/phase217/phase.md)に適用。最大90分。
 
 | Attempt | Phase | Scope | Outcome |
 | --- | --- | --- | --- |
