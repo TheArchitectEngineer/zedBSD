@@ -323,6 +323,13 @@ _Static_assert(sizeof(struct thermal_entry) == 64U,
 #define TCP_STATS_HAVE_WSCALE	0x00000004U
 #define TCP_STATS_HAVE_SACK	0x00000008U
 #define TCP_STATS_HAVE_FAST_RETRANSMIT	0x00000010U
+/*
+ * send_unacknowledged, send_next and receive_next are given: the reader is
+ * the superuser (ws220-p002).  Without the bit the three are 0.  The
+ * addresses, ports and every other field are given to every reader, as
+ * netstat shows them on other systems.
+ */
+#define TCP_STATS_HAVE_SEQUENCE	0x00000020U
 
 /*
  * The head of net.tcpstats: the layout's version, the header's size, one

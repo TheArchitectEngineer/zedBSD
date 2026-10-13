@@ -105,6 +105,15 @@ struct tcp_socket {
 	uint32_t active_connect_generation;
 	uint64_t connect_wait_deadline;
 	uint16_t peer_window;
+	/*
+	 * The sequence and acknowledgement numbers of the segment peer_window
+	 * was last taken from (RFC 9293's SND.WL1 and SND.WL2).  A segment
+	 * older than that one, by these two numbers, does not set the window
+	 * again, so an acknowledgement overtaken on the way cannot replace the
+	 * window with one the peer has already replaced itself.
+	 */
+	uint32_t send_window_sequence;
+	uint32_t send_window_acknowledgement;
 	/* The window last put in a segment; a read that opens it says so. */
 	uint16_t advertised_window;
 	/*
@@ -120,6 +129,15 @@ struct tcp_socket {
 	unsigned send_count;
 	uint64_t retransmit_deadline;
 	unsigned retransmit_count;
+	/*
+	 * The tick the retransmission timer first found the oldest segment
+	 * unacknowledged since the peer last answered, or 0 while no timeout
+	 * has run since then.  The attempt is given up once the timer has
+	 * gone on resending for RFC 1122's R2 from that tick; an
+	 * acknowledgement of any kind sets it back to 0, so a peer that
+	 * answers is never given up.
+	 */
+	uint64_t retransmit_since;
 	/*
 	 * TCP_NODELAY as the caller set it, and the idle-probe state for
 	 * SO_KEEPALIVE: when the next probe is due and how many have gone
@@ -159,6 +177,7 @@ int
 tcp_stats_copy(
 	void *output,
 	size_t capacity,
-	size_t *needed);
+	size_t *needed,
+	int superuser);
 
 #endif

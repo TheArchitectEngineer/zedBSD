@@ -3,6 +3,7 @@
 # as the kernel builds them (freestanding, the kernel's headers) with shim.c and model.c, and runs the transfer
 # scenarios: A sends to B over a modelled link; the model prints each interval's rate and both ends' state.
 #   plan/ws220/tests/tcp-model/run.sh                 the scenarios against WS220's targets, a summary line each and PASS/FAIL
+#   plan/ws220/tests/tcp-model/run.sh NAME...         only the scenarios named (for a fix phase's own, e.g. lan-wrap overlap)
 #   plan/ws220/tests/tcp-model/run.sh -- ARGS...      one run of the model with ARGS (see model.c), every interval printed
 # OUT= chooses the build folder (default build/ws220-host, nothing in it is removed: each build overwrites its files).
 # MODEL_CFLAGS= adds compile flags for a what-if (MODEL_CFLAGS=-DCONFIG_TCP_SEND_QUEUE_MAX=44: a larger send ring).
@@ -31,6 +32,7 @@ if [ "${1:-}" = "--" ]; then
 fi
 
 status=0
+only=" $* "
 # One scenario: its name, the least mean MB/s WS220 aims for in it (the stream must also arrive whole), and the model's
 # arguments.  The targets are the model's (zedBSD at both ends, or a peer whose window does not move): p001 records which
 # the code before the fix misses; the fix phases make them all pass.  --peer-window 65535 stands for a Linux peer.
@@ -38,8 +40,16 @@ scenario() {
 	name=$1
 	least=$2
 	shift 2
-	line=$(timeout 600 "$out/tcp-model" --quiet "$@" | grep '^tcp-model: summary')
+	if [ "$only" != "  " ] && ! echo "$only" | grep -q " $name "; then
+		return 0
+	fi
+	output=$(timeout 600 "$out/tcp-model" --quiet "$@")
+	line=$(echo "$output" | grep '^tcp-model: summary')
 	echo "$name: $line"
+	if echo "$output" | grep -q '^tcpstats: FAIL'; then
+		echo "$output" | grep '^tcpstats: FAIL' | sed 's/^/  /'
+		status=1
+	fi
 	complete=$(echo "$line" | sed -n 's/.*complete=\([01]\).*/\1/p')
 	mean=$(echo "$line" | sed -n 's/.*mean_mbs=\([0-9.]*\).*/\1/p')
 	if [ "$complete" != 1 ]; then
@@ -67,6 +77,29 @@ scenario lan-ackloss-1 30 --bytes 33554432 --loss-ba 1 --peer-window 65535
 scenario lan-wrap 10 --bytes 16777216 --wrap-before 4194304 --limit-s 120
 # A reader slower than the link (2 MB/s): the window closes and opens again, the rate is the reader's.
 scenario slow-reader 1.6 --bytes 16777216 --reader-kbps 16000
+# ws220-p002: one data segment in twenty starts 100 bytes before B's receive_next (B takes the rest), also across the wrap.
+scenario overlap 30 --bytes 33554432 --overlap-ab 5
+scenario overlap-wrap 30 --bytes 16777216 --overlap-ab 5 --wrap-before 4194304 --limit-s 120
+# ws220-p002: a blind reset within the window, one outside it and a SYN, 100 ms in: none ends the connection.
+scenario blind-segments 30 --bytes 33554432 --blind-at-ms 100
+# ws220-p002: the link loses everything 500 ms in: A gives up after R2 (at least 100 s; 1+2+4+8+16+32+60 s of resends).
+giveup() {
+	name=$1
+	shift
+	if [ "$only" != "  " ] && ! echo "$only" | grep -q " $name "; then
+		return 0
+	fi
+	line=$(timeout 600 "$out/tcp-model" --quiet "$@" | grep '^tcp-model: summary')
+	echo "$name: $line"
+	seconds=$(echo "$line" | sed -n 's/.* seconds=\([0-9.]*\).*/\1/p')
+	if ! awk -v a="$seconds" 'BEGIN { exit !(a >= 100.5 && a <= 200) }'; then
+		echo "  FAIL: $name: gave up after $seconds s, not between R2 (100 s) and 200 s"
+		status=1
+	fi
+}
+giveup data-giveup --bytes 1073741824 --blackhole-at-ms 500 --limit-s 400
+# ws220-p002: A's SYN is lost from the start: the connect gives up only after 3 minutes (R2 for a SYN).
+scenario syn-giveup 0 --connect-blackhole
 
 [ $status = 0 ] && echo "tcp-model: PASS" || echo "tcp-model: FAIL"
 exit $status
