@@ -108,6 +108,7 @@ drv_i915_mmio_init(
 	mmio->forcewake_underflow = 0;
 	mmio->mcr_locked = 0;
 	mmio->mcr_steer = 0U;
+	mmio->graphics_ver = 0;
 }
 
 /*

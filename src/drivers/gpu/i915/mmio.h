@@ -126,6 +126,13 @@ struct i915_mmio {
 
 	/* The instance the steering section targets. */
 	uint32_t mcr_steer;
+
+	/*
+	 * The graphics version whose register layout the block has (9 or 12;
+	 * 0 until the device start sets it).  Paths that only differ by a
+	 * register, such as the GGTT flush, branch on it.
+	 */
+	int graphics_ver;
 };
 
 /*

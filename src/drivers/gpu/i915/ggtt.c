@@ -13,6 +13,9 @@
  * gen8_ggtt_invalidate() writes no register at all -- needs_wc_ggtt_mapping()
  * is false there, and the flush register GFX_FLSH_CNTL_GEN6 belongs to the
  * gen6 path only.  Writing it here would be a deviation, not a safety net.
+ * Gen9 (ws229-p002) is before graphics version 11: the reference writes
+ * GFX_FLSH_CNTL_GEN6 after every update there, and so does this driver,
+ * although its window is uncached.
  */
 
 #include "i915.h"
@@ -25,6 +28,10 @@
 
 #include <uapi/errno.h>
 #include <stddef.h>
+
+/* GFX_FLSH_CNTL_GEN6 and its enable (Linux 6.8.12 i915_reg.h): the GGTT flush before graphics version 11. */
+#define I915_GFX_FLSH_CNTL_GEN6		0x101008U
+#define I915_GFX_FLSH_CNTL_EN		(1U << 0)
 
 static int i915_ggtt_encode(i915_dma_addr_t dma, uint64_t length, uint64_t mask, uint64_t flags, uint64_t *pte_out);
 static int i915_ggtt_window_bit(const struct i915_gt_mem *gm, unsigned page);
@@ -241,6 +248,10 @@ drv_i915_gt_ggtt_flush(
 	/* Orders the entry writes before what follows. */
 	kern_io_write_barrier();
 	gm->flushes++;
+
+	/* A Gen9 GT also flushes the GGTT through GFX_FLSH_CNTL_GEN6 (gen8_ggtt_invalidate()). */
+	if (gm->m != NULL && gm->m->graphics_ver == 9)
+		drv_i915_raw_write32(gm->m, I915_GFX_FLSH_CNTL_GEN6, I915_GFX_FLSH_CNTL_EN);
 }
 
 /*
