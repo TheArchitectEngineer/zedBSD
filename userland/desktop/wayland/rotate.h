@@ -96,6 +96,21 @@ struct kwl_rotate_state {
 };
 
 /*
+ * A floating window an output's new size moved to fit it (BUG-306,
+ * kwl_rotate_fit_window): the place it had before (home_x, home_y) and
+ * the place it was moved to (x, y).  While the window stays there, the
+ * next new size starts from the place it had before, so that a display
+ * turned and turned back puts it where it was.
+ */
+struct kwl_fit_home {
+	unsigned moved;
+	int32_t home_x;
+	int32_t home_y;
+	int32_t x;
+	int32_t y;
+};
+
+/*
  * The steps a change of an output's state takes (kwl_rotate_steps): the
  * output opened again (the scanout's angle is a property of its surface),
  * the turn's images exchanged, the input's mapping and the clients told
@@ -397,6 +412,68 @@ kwl_rotate_pointer_place(
 	} else if (after == KWL_ROTATE_270) {
 		*x = high - 1 - physical_y;
 		*y = physical_x;
+	}
+}
+
+/*
+ * Places a floating window of a size (its body, width by height) inside an
+ * output's space after the output's size changed (BUG-306): from where it
+ * is, or from the place it had before the last such change moved it when
+ * it is still where that change put it (fit); its right and bottom edges
+ * inside the space, never left of it nor above it.  *x and *y are its place
+ * now and get the new one; fit remembers the place it had when it moves.
+ */
+static __inline void
+kwl_rotate_fit_window(
+	struct kwl_fit_home *fit,
+	int32_t *x,
+	int32_t *y,
+	int32_t width,
+	int32_t height,
+	int32_t space_x,
+	int32_t space_y,
+	int32_t space_width,
+	int32_t space_height)
+{
+	int32_t home_x;
+	int32_t home_y;
+	int32_t right;
+	int32_t bottom;
+
+	/* The place to start from: the one before the last fit, while the window stayed where that fit put it. */
+	home_x = *x;
+	home_y = *y;
+	if (fit->moved && *x == fit->x && *y == fit->y) {
+		home_x = fit->home_x;
+		home_y = fit->home_y;
+	}
+
+	/* Its right edge inside the space. */
+	*x = home_x;
+	*y = home_y;
+	right = space_x + space_width;
+	if (*x + width > right)
+		*x = right - width;
+
+	/* And its bottom edge. */
+	bottom = space_y + space_height;
+	if (*y + height > bottom)
+		*y = bottom - height;
+
+	/* Never left of the space, nor above it. */
+	if (*x < space_x)
+		*x = space_x;
+	if (*y < space_y)
+		*y = space_y;
+
+	/* Moved: the place it had is kept with the place it got; else nothing is kept. */
+	fit->moved = 0U;
+	if (*x != home_x || *y != home_y) {
+		fit->moved = 1U;
+		fit->home_x = home_x;
+		fit->home_y = home_y;
+		fit->x = *x;
+		fit->y = *y;
 	}
 }
 

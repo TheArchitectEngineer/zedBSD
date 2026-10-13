@@ -543,6 +543,8 @@ struct kwl_object {
 	 */
 	unsigned placed;
 	unsigned place_pending;
+	/* The place a floating window had before an output's new size moved it (rotate.h, BUG-306). */
+	struct kwl_fit_home fit;
 	/* A surface whose current image has not been shown yet. */
 	unsigned fresh;
 	/*
