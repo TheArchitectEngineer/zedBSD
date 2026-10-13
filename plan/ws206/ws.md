@@ -9,6 +9,7 @@ Related Milestones: —
 Parent: [Master](../master.md)
 Queue: [P1 の lane](../agents/P1/queue.md)
 Resume point: p002a・p002b は実装・host 試験・build 済み（agent/p1）。p002b は Pi の実機で CMD5・CCCR・CIS の dmesg の行を読み（Q1 がユーザーに依頼、[p002b](phase002b/phase.md) の「Pi 4 で見る dmesg の行」）、T1 の QEMU raspi4b の起動の回帰の後に clearance。次は p003（firmware の package）・p008（core の FullMAC の engine）。p004 の前に shutdown の口の要否を Q1 へ。
+p004 への申し送り（2026-10-13 Q1、ws206-p003 の P3 の判断 2）: E6「世界共通」→ NVRAM に ccode・regrev が無く、CLM に world の `XX` があり、Cypress の license は file の改変を禁じるので、driver が CLM の load の後に `country` を `XX` に設定し、読み戻した値を log に出す（p001 の「firmware の既定のまま」の推奨を置き換える。p004 の W4 にこの手順を足す）。
 <!-- awesome-plan-current:end -->
 
 ## 由来
