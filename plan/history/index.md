@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1057 / WS074 vertical-lr logical margins（2026-10-14）
+## 最新: q1058 / WS074 residual Flex reftest regressions（2026-10-14）
+
+[q1058履歴](queue-q1058.md): 旧回帰残3件を0→2 local pixel exact PASS。縦textarea1件は198差画素でp206 whole未達。host physical21/21、固定Flex10/10 PASS、Acid3差0。[証拠](../ws074/phase206/evidence/20261014-q1058/README.md)。p190/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1057 / WS074 vertical-lr logical margins（2026-10-14）
 
 [q1057履歴](queue-q1057.md): 固定vertical-lr gap5 reftestが5/5 local pixel exact PASS。p205 whole cleared。host CSS51/51、固定Flex10/10 PASS、Acid3差0。[証拠](../ws074/phase205/evidence/20261014-q1057/README.md)。残る旧8回帰中3件、p190/p173全件100%未達、共有投影/GitHub publication pending。
 

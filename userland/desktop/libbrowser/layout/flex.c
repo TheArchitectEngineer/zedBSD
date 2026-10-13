@@ -66,6 +66,7 @@ static int flex_collect(struct layout_box *box, struct flex_item **items, size_t
 static int flex_base_size(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row, layout_unit available);
 static int flex_auto_minimums(struct layout_tree *tree, struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
 static int flex_min_content(struct layout_tree *tree, struct layout_box *box, layout_unit *width);
+static void flex_grow(struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
 static void flex_shrink(struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
 static void flex_resolve(struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
 static int flex_lay_item(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
@@ -471,11 +472,16 @@ flex_base_size(
 	if (item->minimum < 0)
 		item->minimum = 0;
 
-	/* The hypothetical size is the base within the limits. */
-	if (item->maximum >= 0 && item->base > item->maximum)
+	/* An item already clamped at a limit is frozen before growing. */
+	item->frozen = 0;
+	if (item->maximum >= 0 && item->base > item->maximum) {
 		item->base = item->maximum;
-	if (item->base < item->minimum)
+		item->frozen = 1;
+	}
+	if (item->base < item->minimum) {
 		item->base = item->minimum;
+		item->frozen = 1;
+	}
 	item->size = item->base;
 
 	/* The container's measure of its content counts the item's margin box at that size. */
@@ -483,6 +489,71 @@ flex_base_size(
 
 	/* Succeeded: the item has its hypothetical size. */
 	return 0;
+}
+
+/*
+ * Grows unfrozen items from their bases, freezing a max-size violation and
+ * redistributing the resulting leftover space until no item crosses a limit.
+ */
+static void
+flex_grow(
+	struct flex_item *items,
+	size_t count,
+	layout_unit available,
+	layout_unit gap)
+{
+	layout_unit used;
+	layout_unit remaining;
+	layout_unit share;
+	float total;
+	float weight;
+	size_t index;
+	size_t round;
+	int violated;
+
+	/* Each violation freezes at least one item, so the bounded loop terminates. */
+	for (round = 0; round <= count; round++) {
+		used = 0;
+		total = 0;
+		for (index = 0; index < count; index++) {
+			used += items[index].frame + items[index].margin_start + items[index].margin_end;
+			if (items[index].frozen) {
+				used += items[index].size;
+			} else {
+				used += items[index].base;
+				total += items[index].box->style.flex_grow;
+			}
+		}
+		if (count > 1)
+			used += gap * (layout_unit)(count - 1U);
+		remaining = available - used;
+		if (remaining <= 0 || total <= 0) {
+			for (index = 0; index < count; index++) {
+				if (!items[index].frozen)
+					items[index].size = items[index].base;
+			}
+			return;
+		}
+
+		/* Factors below one leave a proportional part of the free space unused. */
+		weight = total;
+		if (weight < 1)
+			weight = 1;
+		violated = 0;
+		for (index = 0; index < count; index++) {
+			if (items[index].frozen)
+				continue;
+			share = (layout_unit)((float)remaining * items[index].box->style.flex_grow / weight);
+			items[index].size = items[index].base + share;
+			if (items[index].maximum >= 0 && items[index].size > items[index].maximum) {
+				items[index].size = items[index].maximum;
+				items[index].frozen = 1;
+				violated = 1;
+			}
+		}
+		if (!violated)
+			return;
+	}
 }
 
 /*
@@ -671,7 +742,7 @@ flex_min_content(
 /*
  * Shares a line's free space among its items: growing by flex-grow when
  * there is room, shrinking by flex-shrink weighted by the basis when there
- * is too little (each once, held at its limits), then giving what is left
+ * is too little (redistributing after an item reaches its limit), then giving what is left
  * to auto margins.  Without a definite main size nothing flexes.
  */
 static void
@@ -684,8 +755,6 @@ flex_resolve(
 	layout_unit used;
 	layout_unit free_space;
 	layout_unit share;
-	float total;
-	float weight;
 	size_t index;
 	int autos;
 
@@ -699,23 +768,9 @@ flex_resolve(
 		return;
 	free_space = available - used;
 
-	/* Room left: the growing items share it (all of it, or their factors' sum of it when that is under one). */
-	if (free_space > 0) {
-		total = 0;
-		for (index = 0; index < count; index++)
-			total += items[index].box->style.flex_grow;
-		if (total > 0) {
-			weight = total;
-			if (weight < 1)
-				weight = 1;
-			for (index = 0; index < count; index++) {
-				share = (layout_unit)((float)free_space * items[index].box->style.flex_grow / weight);
-				items[index].size += share;
-				if (items[index].maximum >= 0 && items[index].size > items[index].maximum)
-					items[index].size = items[index].maximum;
-			}
-		}
-	}
+	/* A clamped item freezes and the rest share its leftover space. */
+	if (free_space > 0)
+		flex_grow(items, count, available, gap);
 
 	/* Too little room: the items shrink in proportion to their factors times their bases, those held at their minimums frozen. */
 	if (free_space < 0)
@@ -1000,6 +1055,7 @@ flex_place_line(
 	layout_unit cross_outer;
 	layout_unit offset;
 	layout_unit frame;
+	layout_unit reverse_extent;
 	size_t index;
 	int reverse;
 	int align;
@@ -1013,6 +1069,9 @@ flex_place_line(
 	free_space = 0;
 	if (available >= 0)
 		free_space = available - used;
+	reverse_extent = available;
+	if (reverse_extent < 0)
+		reverse_extent = used;
 
 	/* justify-content: where the first item starts and what goes between them. */
 	cursor = 0;
@@ -1082,8 +1141,8 @@ flex_place_line(
 		child = items[index].box;
 		main_outer = items[index].size + items[index].frame + items[index].margin_start + items[index].margin_end;
 		offset = cursor + items[index].margin_start;
-		if (reverse && available >= 0)
-			offset = available - cursor - main_outer + items[index].margin_start;
+		if (reverse)
+			offset = reverse_extent - cursor - main_outer + items[index].margin_start;
 
 		/* Across: stretched, at the start, the end or the center of the line. */
 		align = flex_align_of(box, child);

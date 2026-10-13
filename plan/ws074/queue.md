@@ -1,21 +1,23 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1057 / WS074 vertical writing-mode logical margin mapping
+# q1058 / WS074 residual Flex reftest regressions
 
-Status: finished（2026-10-14 03:01–03:05 JST）
+Status: finished（2026-10-14 03:06–03:12 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p205のq1057有限部分scope](phase205/phase.md)に適用。
-Timebox: 2026-10-14 03:01 JST 開始、最大90分（04:31 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p206のq1058有限部分scope](phase206/phase.md)に適用。
+Timebox: 2026-10-14 03:06 JST 開始、最大90分（04:36 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1057-i01 | [ws074-p205](phase205/phase.md) whole | 4論理margin longhandと2 shorthandをcomputed writing-mode/directionで物理側へcascade解決。固定vertical-lr gap5件・Flex10件とhost/CSS/build/Acid回帰。WPT/公開ABI/Master変更なし、最大90分 | cleared | p190 q1056旧8回帰とp202 vertical-lr axis |
+| q1058-i01 | [ws074-p206](phase206/phase.md) partial | 旧8回帰中残るFlex3件の画像・DOM・幾何を切り分け、共通の一般的欠陥だけ最小修正、固定3/Flex10とhost/build/Acid回帰。WPT/runner/ABI/Master変更なし、最大90分 | cleared | q1056旧8回帰、q1057 gap5回復 |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
 Outcome: q1056-i01 partial cleared、p190 whole uncleared。固定静的1,561 IDは640 local PASS/921 pixel FAIL/0 error/0 timeout。旧359 load errorは122 PASS/237 pixel FAIL、旧8 PASS→FAILは未回復。[証拠](phase190/evidence/20261014-q1056/README.md)。p173全3,805件100%は未達。
 
 Outcome: q1057-i01 / p205 whole cleared。旧PASS→FAIL8件中vertical-lr gap5件は5/5 local pixel exact PASSへ回復。host CSS rule51/51・CSSOM12/12・mutation12/12、warning0 build、固定Flex10/10 PASS、Acid3差0/Acid2差1865。[証拠](phase205/evidence/20261014-q1057/README.md)。残る3回帰とp190/p173全件100%未達。
+
+Outcome: q1058-i01 partial cleared、p206 whole uncleared。旧回帰3件は0→2 local pixel exact PASS。残る縦textarea1件は198差画素。host physical21/21・CSS rule51/51・CSSOM12/12、warning0 build、固定Flex10/10 PASS、Acid3差0/Acid2差1865。[証拠](phase206/evidence/20261014-q1058/README.md)。p190/p173全件100%未達。
 
 Upcoming Work Outlook: p191の残るtextdecoration CSSOM、p189 runnerの環境対応、[p190](phase190/phase.md) reftest/crashtest coverage、p173全件baselineを候補とする。次の Queue も有限scopeを記録する。
 
