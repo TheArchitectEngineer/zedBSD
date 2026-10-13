@@ -117,16 +117,51 @@ struct tcp_socket {
 	/* The window last put in a segment; a read that opens it says so. */
 	uint16_t advertised_window;
 	/*
-	 * Segments that have been sent and not yet acknowledged, oldest
-	 * first.  Several may be in flight at once, bounded by the peer's
-	 * advertised window and by the size of this ring; each keeps a copy
-	 * of its payload so it can be sent again.  The deadline and the
-	 * attempt count belong to the oldest entry, which is the one a
-	 * timeout resends.
+	 * Segments queued and not yet acknowledged, oldest first.  Several
+	 * may be in flight at once, bounded by the peer's advertised window
+	 * and by the size of this ring; each keeps a copy of its payload so
+	 * it can be sent again.  The deadline and the attempt count belong to
+	 * the oldest entry, which is the one a timeout resends.
+	 *
+	 * The last send_unsent entries have not been handed to the device yet
+	 * (ws220-p003): the device or the packet pool refused them, or a
+	 * refused one came before them.  They go out in order, oldest first,
+	 * through the output retry below, never through the retransmission
+	 * timer, which the first sent entry starts.  So three positions follow
+	 * a connection: send_unacknowledged; the end of what was sent (the
+	 * first unsent entry's sequence, or send_next with none: RFC 9293's
+	 * SND.NXT); and send_next, the end of what was queued, which the next
+	 * segment takes.  Unlike BSD's snd_max, send_next is never behind
+	 * what was sent.
 	 */
 	struct tcp_pending send_queue[CONFIG_TCP_SEND_QUEUE_MAX];
 	unsigned send_first;
 	unsigned send_count;
+	unsigned send_unsent;
+	/*
+	 * Set while one thread hands unsent entries to the device with the
+	 * socket lock released; another that queues meanwhile leaves its
+	 * entry unsent for that one to send, so entries go out in order.
+	 * Only the thread that set it moves the end of what was sent.
+	 */
+	unsigned send_flushing;
+	/*
+	 * Pure acknowledgements the device or the pool refused, which the
+	 * output retry sends again, and the receive_next of the last one
+	 * refused: while it stands they are duplicates, each of which the
+	 * peer counts towards its fast retransmit; once it has moved, one
+	 * acknowledgement says all of them.
+	 */
+	unsigned ack_pending;
+	uint32_t ack_pending_receive_next;
+	/*
+	 * When the output retry runs for the unsent entries and the pending
+	 * acknowledgements: on the network worker's next pass after a full
+	 * device refused them (the device's transmit completion runs a pass),
+	 * and at the deadline in any case.  Both are 0 while nothing waits.
+	 */
+	unsigned output_retry_on_pass;
+	uint64_t output_retry_deadline;
 	uint64_t retransmit_deadline;
 	unsigned retransmit_count;
 	/*

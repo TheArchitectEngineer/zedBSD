@@ -16,6 +16,13 @@
  * backoff until it is acknowledged or the attempt is abandoned; the ones
  * behind it follow once it is taken.
  *
+ * A segment the device or the packet pool refuses stays in the ring unsent
+ * (ws220-p003), with every segment queued after it, and the writer goes on:
+ * the network worker sends them in order on its next pass after the device
+ * has room (its transmit completion runs one) or when the pool may have
+ * packets again.  A pure acknowledgement refused the same way is counted
+ * and sent again with them.
+ *
  * Listeners hold half-open children until their handshake completes and then
  * queue them for accept.  Payload is delivered in order only; anything else
  * is dropped and re-acknowledged.
@@ -120,9 +127,27 @@ enum tcp_drain {
 	/* Everything acknowledged, the FIN included. */
 	TCP_DRAIN_ALL,
 };
-/* The pause before sending again when buffers are short. */
+/*
+ * The pause before sending again when buffers are short: a connect whose
+ * SYN found no packet for its copy; a writer whose segment found none; and
+ * the output retry of segments the packet pool or an unresolved neighbour
+ * refused, or a device that refused again without having taken any.
+ */
 #define TCP_SYN_RETRY_MS 250U
 #define TCP_SEND_RETRY_MS 10U
+
+/*
+ * When the output retry runs at the latest after a full device refused a
+ * segment (ws220-p003).  The device's transmit completion runs the network
+ * worker sooner; this is for a device that runs it for nothing.
+ */
+#define TCP_OUTPUT_RETRY_DEVICE_MS 1U
+
+/*
+ * The most pure acknowledgements of one receive_next kept to be sent again:
+ * three duplicates are what a peer's fast retransmit waits for.
+ */
+#define TCP_ACK_PENDING_MAX 3U
 
 /*
  * The longest the retransmission timeout grows to as it doubles for each
@@ -158,6 +183,16 @@ enum tcp_reset_check {
 	TCP_RESET_CHALLENGE,
 	/* It is exactly the next sequence number expected: the connection is reset. */
 	TCP_RESET_ACCEPT,
+};
+
+/* How a segment the stack could not hand to the device is sent again (ws220-p003). */
+enum tcp_refusal {
+	/* It went, or it failed for good (no route, a device gone), as the wire would lose it. */
+	TCP_REFUSAL_NONE,
+	/* A full device queue: on the network worker's next pass, which the device's transmit completion runs. */
+	TCP_REFUSAL_DEVICE,
+	/* An empty packet pool or an unresolved neighbour: after TCP_SEND_RETRY_MS. */
+	TCP_REFUSAL_WAIT,
 };
 
 /*
@@ -210,7 +245,18 @@ static int tcp_send_segment_at(struct tcp_endpoint *endpoint, uint32_t sequence,
 static int tcp_output_segment(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
 static void tcp_stats_fill_locked(const struct tcp_endpoint *endpoint, uint64_t now, int superuser, struct tcp_stats_entry *entry);
 static int tcp_allocate_port(struct tcp_endpoint *endpoint);
-static int tcp_send_segment(struct tcp_endpoint *endpoint, uint8_t flags, const void *data, size_t length);
+static enum tcp_refusal tcp_refusal_of(int error);
+static uint64_t tcp_refusal_delay(enum tcp_refusal refusal);
+static unsigned tcp_sent_count_locked(const struct tcp_endpoint *endpoint);
+static uint32_t tcp_sent_end_locked(const struct tcp_endpoint *endpoint);
+static void tcp_mark_sent_locked(struct tcp_endpoint *endpoint, uint64_t now);
+static void tcp_unmark_sent_locked(struct tcp_endpoint *endpoint, const struct packet_buf *packet);
+static void tcp_output_refused_locked(struct tcp_endpoint *endpoint, enum tcp_refusal refusal, uint64_t now);
+static int tcp_output_retry_due_locked(const struct tcp_endpoint *endpoint, uint64_t now);
+static void tcp_output_retry(struct tcp_endpoint *endpoint, uint8_t *payload, uint64_t now);
+static void tcp_send_unsent(struct tcp_endpoint *endpoint, uint8_t *payload);
+static void tcp_send_ack_pending(struct tcp_endpoint *endpoint);
+static int tcp_send_ack(struct tcp_endpoint *endpoint);
 static int tcp_sequence_before(uint32_t left, uint32_t right);
 static int tcp_sequence_at_or_before(uint32_t left, uint32_t right);
 static uint32_t tcp_initial_sequence(uint32_t chosen);
@@ -445,6 +491,10 @@ tcp6_error(
 
 /*
  * Retransmits expired segments, abandoning attempts that failed too often.
+ *
+ * Each pass also sends what the device or the packet pool refused before,
+ * once its retry is due (ws220-p003); the network worker runs a pass after
+ * each device's transmit completion as well as at its deadlines.
  */
 void
 tcp_timer_run(
@@ -469,6 +519,10 @@ tcp_timer_run(
 	uint32_t sequence;
 	size_t length;
 	uint64_t delay;
+	enum tcp_refusal refusal;
+	unsigned sent;
+	unsigned backoff;
+	int still_oldest;
 	int given_up;
 	int error;
 	int failed;
@@ -533,8 +587,17 @@ tcp_timer_run(
 		discard.count = 0;
 		endpoint = snapshot[index];
 		socket = &endpoint->tcp.inet.socket;
+
+		/* Sends the segments and acknowledgements refused before, when their retry is due. */
+		tcp_output_retry(endpoint, payload, now);
+
+		/*
+		 * Only a segment handed to the device has a retransmission
+		 * deadline; the unsent ones wait for the output retry.
+		 */
 		irq = spin_lock_irqsave(&socket->lock);
-		if (endpoint->tcp.send_count == 0 ||
+		sent = tcp_sent_count_locked(endpoint);
+		if (sent == 0 ||
 		    endpoint->tcp.retransmit_deadline > now) {
 			/*
 			 * With nothing to retransmit, an armed idle probe is
@@ -627,20 +690,49 @@ tcp_timer_run(
 
 		/* Backs the deadline off exponentially, up to the longest timeout. */
 		endpoint->tcp.retransmit_count++;
-		delay = tcp_backoff_timeout(endpoint->tcp.retransmit_count);
+		backoff = endpoint->tcp.retransmit_count;
+		delay = tcp_backoff_timeout(backoff);
 		endpoint->tcp.retransmit_deadline = now + delay;
+		spin_unlock_irqrestore(&socket->lock, irq);
 
-		/* The resend is counted for net.tcpstats, whether or not the device takes it. */
-		endpoint->tcp.counters.retransmit_segments++;
-		endpoint->tcp.counters.retransmit_bytes += length;
+		/* Resends the oldest segment. */
+		error = tcp_send_segment_at(endpoint, sequence, flags, payload, length);
+		refusal = tcp_refusal_of(error);
+
+		/*
+		 * A resend the device took is counted for net.tcpstats.  One the
+		 * device or the pool refused did not happen: the backoff is taken
+		 * back and the resend tried again soon (ws220-p003), rather than
+		 * after the doubled timeout.
+		 */
+		irq = spin_lock_irqsave(&socket->lock);
+
+		if (error == 0) {
+			endpoint->tcp.counters.retransmit_segments++;
+			endpoint->tcp.counters.retransmit_bytes += length;
+		}
+
+		sent = tcp_sent_count_locked(endpoint);
+		still_oldest = 0;
+		if (refusal != TCP_REFUSAL_NONE &&
+		    sent != 0 &&
+		    endpoint->tcp.send_queue[endpoint->tcp.send_first].sequence == sequence &&
+		    endpoint->tcp.retransmit_count == backoff)
+			still_oldest = 1;
+		if (still_oldest) {
+			delay = tcp_refusal_delay(refusal);
+			endpoint->tcp.retransmit_count--;
+			endpoint->tcp.retransmit_deadline = now + delay;
+		}
+
 		spin_unlock_irqrestore(&socket->lock, irq);
 
 		/* A hard send error abandons the attempt the segment belonged to. */
-		error = tcp_send_segment_at(endpoint, sequence, flags, payload, length);
-		if (error != 0 && error != EAGAIN && error != ENOBUFS) {
+		if (error != 0 && refusal == TCP_REFUSAL_NONE) {
 			failed = 0;
 			irq = spin_lock_irqsave(&socket->lock);
-			if (endpoint->tcp.send_count != 0 &&
+			sent = tcp_sent_count_locked(endpoint);
+			if (sent != 0 &&
 			    endpoint->tcp.send_queue[endpoint->tcp.send_first]
 				.sequence == sequence) {
 				tcp_retransmit_reset(endpoint, &discard);
@@ -683,6 +775,11 @@ tcp_timer_run(
 
 /*
  * Reports the earliest retransmission deadline, or zero without one.
+ *
+ * A socket's deadline is its oldest sent segment's retransmission, or with
+ * nothing queued its idle probe, and its output retry when that comes
+ * first (ws220-p003): unsent segments and pending acknowledgements have no
+ * retransmission deadline of their own.
  */
 uint64_t
 tcp_timer_next_deadline(
@@ -692,7 +789,9 @@ tcp_timer_next_deadline(
 	uint64_t deadline;
 	unsigned long irq;
 	uint64_t candidate;
+	uint64_t retry;
 	unsigned long socket_irq;
+	unsigned sent;
 
 	deadline = 0;
 	irq = spin_lock_irqsave(&tcp_registry_lock);
@@ -701,11 +800,22 @@ tcp_timer_next_deadline(
 	for (endpoint = tcp_sockets; endpoint != NULL; endpoint = endpoint->next) {
 		socket_irq = spin_lock_irqsave(
 		    &endpoint->tcp.inet.socket.lock);
-		if (endpoint->tcp.send_count != 0)
+
+		sent = tcp_sent_count_locked(endpoint);
+		candidate = 0;
+		if (sent != 0)
 			candidate = endpoint->tcp.retransmit_deadline;
-		else
+		else if (endpoint->tcp.send_count == 0)
 			candidate = endpoint->tcp.keepalive_deadline;
+		retry = endpoint->tcp.output_retry_deadline;
+
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
+
+		/* The output retry, when it is due before the socket's other deadline. */
+		if (retry != 0 && (candidate == 0 || retry < candidate))
+			candidate = retry;
+
+		/* The earliest so far. */
 		if (candidate != 0 && (deadline == 0 || candidate < deadline))
 			deadline = candidate;
 	}
@@ -1263,6 +1373,8 @@ tcp_stats_fill_locked(
 	const struct tcp_socket *tcp;
 	const struct socket *socket;
 	const struct tcp_counters *counters;
+	uint32_t sent_end;
+	unsigned sent;
 	int ipv6;
 
 	/* The parts of the endpoint read, and an entry with every field not kept 0. */
@@ -1270,6 +1382,10 @@ tcp_stats_fill_locked(
 	socket = &tcp->inet.socket;
 	counters = &tcp->counters;
 	kern_memset(entry, 0, sizeof(*entry));
+
+	/* What has been handed to the device, which unsent segments are not part of (ws220-p003). */
+	sent_end = tcp_sent_end_locked(endpoint);
+	sent = tcp_sent_count_locked(endpoint);
 
 	/* The addresses: IPv6 for a socket that speaks it, else IPv4 in network order. */
 	ipv6 = inet_socket_speaks_ipv6(&tcp->inet);
@@ -1296,13 +1412,13 @@ tcp_stats_fill_locked(
 	if (superuser) {
 		entry->features |= TCP_STATS_HAVE_SEQUENCE;
 		entry->send_unacknowledged = tcp->send_unacknowledged;
-		entry->send_next = tcp->send_next;
+		entry->send_next = sent_end;
 		entry->receive_next = tcp->receive_next;
 	}
 
-	/* The send side: the peer's window, and the ring that holds what is in flight. */
+	/* The send side: the peer's window, and the ring that holds what is in flight and what waits unsent. */
 	entry->send_window = tcp->peer_window;
-	entry->in_flight_bytes = tcp->send_next - tcp->send_unacknowledged;
+	entry->in_flight_bytes = sent_end - tcp->send_unacknowledged;
 	entry->send_segments = tcp->send_count;
 	entry->send_ring = TCP_SEND_QUEUE_MAX;
 	entry->send_mss = TCP_MSS;
@@ -1316,7 +1432,7 @@ tcp_stats_fill_locked(
 	entry->rto_ms = (uint32_t)kern_ticks_to_ms(tcp_backoff_timeout(tcp->retransmit_count));
 
 	/* The time left of a deadline still ahead; one due or none is 0. */
-	if (tcp->send_count != 0 && tcp->retransmit_deadline > now)
+	if (sent != 0 && tcp->retransmit_deadline > now)
 		entry->retransmit_in_ms = (uint32_t)kern_ticks_to_ms(tcp->retransmit_deadline - now);
 
 	/* The receive side: what the peer may send, and what waits for the reader. */
@@ -1404,21 +1520,26 @@ tcp_output_segment(
 	if (error != 0)
 		return error;
 
-	/* Allocates its buffer. */
+	/*
+	 * Allocates its buffer.  An empty pool is ENOMEM, which tells it from
+	 * a full device queue (ENOBUFS from the driver): the device says when
+	 * it has room again, the pool does not (ws220-p003).
+	 */
 	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
 	if (packet == NULL) {
 		if (device != NULL)
 			net_device_release(device);
-		return ENOBUFS;
+		return ENOMEM;
 	}
 
+	/* A segment too large for one packet's storage is never sent (the callers keep within TCP_MSS). */
 	tcp = packet_buf_append(packet, sizeof(*tcp) + options);
 	payload = packet_buf_append(packet, length);
 	if (tcp == NULL || payload == NULL) {
 		packet_buf_free(packet);
 		if (device != NULL)
 			net_device_release(device);
-		return ENOBUFS;
+		return EMSGSIZE;
 	}
 
 	/* Fills the header with the current receive state and the free space. */
