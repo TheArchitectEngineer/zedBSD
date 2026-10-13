@@ -53,7 +53,7 @@ Pi 4 の側と kernel:
 | 初めの seq | **0xff、max 0**（窓 1） | bwfm attach |
 | event mask 16 byte | **18 byte** | bwfm（43455 を扱う）。WHD は 16 |
 | event の subtype 0x8001 を要求 | 読むが要求しない（OUI と user subtype を見る） | bwfm `bwfm_rx()` |
-| country（rev は推測） | rev −1、断られたら 0、読み戻した abbrev が `XX` でなければ起動を断る | E6。−1 は公開の出典で未確認（values.md） |
+| country（rev は推測） | rev −1、断られたら 0、読み戻した abbrev が `XX` でなければ起動を断る（**2026-10-13 Q1 の判断で p005 が rev 0 を先、断られたら −1 に替えた**、[p005](../phase005/phase.md)） | E6。−1 は公開の出典で未確認（values.md） |
 | `bus:rxglom` 0 | 送るが失敗しても続け、glom の frame が来たら 1 度 log | 名前は公開の寛容な出典で未確認 |
 | open で file を読み直す（W8） | file は publish の時に 1 度読み、device が持つ（約 550 KB） | open の文脈で file system を使わない。p007 で見直してよい |
 | bus の thread 以外は SDIO を使わない（W12） | **direct mode**: bus の thread が動いていない時（bring-up と停止）は lifecycle の持ち主が同じ受けの code を自分で回す | thread を 2 つの用途に分けないため。control の mutex で直列 |
@@ -164,7 +164,7 @@ bcm43455: published as wlan0
 
 `ifconfig wlan0 up`（または Settings の Wi-Fi を入れる）で同じ bring-up の行がもう一度出て（`rpi4-wifi: SDIO card` の行は最初の 1 回だけ）、`bcm43455: event <n> status <n> reason <n>` が最大 16 行。
 
-失敗の時に出る行: `rpi4-wifi: package bcm43455-firmware not installed; no onboard Wi-Fi`、`bcm43455: <path> not opened (<errno>)`・`not read`・`is not the 43455 C0 firmware`、`rpi4-wifi: no root file system after 300 s`、`bcm43455: chip <id> revision <n> bus type <n>` の後の ENODEV、`bcm43455: backplane clock not available`・`fast clock not available`・`frame function not ready`、`bcm43455: core <id> stays in reset`、`bcm43455: RAM at <hex> does not read back what was written`、`bcm43455: firmware halted`、`bcm43455: firmware refused command <n> (status <n>)`、`bcm43455: country XX with the firmware's revision refused … trying revision 0`、`bcm43455: country XX not set`、`bcm43455: CLM refused`、`bcm43455: receive glomming not turned off`、`bcm43455: glommed frame dropped; …`、`bcm43455: firmware has no supplicant (idsup: …)`、`bcm43455: chip reports the NVRAM's placeholder address`、`bcm43455: bus thread stopped on error <n>`、`rpi4-wifi: onboard Wi-Fi not published (<errno>)`。
+失敗の時に出る行: `rpi4-wifi: package bcm43455-firmware not installed; no onboard Wi-Fi`、`bcm43455: <path> not opened (<errno>)`・`not read`・`is not the 43455 C0 firmware`、`rpi4-wifi: no root file system after 300 s`、`bcm43455: chip <id> revision <n> bus type <n>` の後の ENODEV、`bcm43455: backplane clock not available`・`fast clock not available`・`frame function not ready`、`bcm43455: core <id> stays in reset`、`bcm43455: RAM at <hex> does not read back what was written`、`bcm43455: firmware halted`、`bcm43455: firmware refused command <n> (status <n>)`、`bcm43455: country XX revision 0 refused … trying the firmware's revision`（p005 の後の行）、`bcm43455: country XX not set`、`bcm43455: CLM refused`、`bcm43455: receive glomming not turned off`、`bcm43455: glommed frame dropped; …`、`bcm43455: firmware has no supplicant (idsup: …)`、`bcm43455: chip reports the NVRAM's placeholder address`、`bcm43455: bus thread stopped on error <n>`、`rpi4-wifi: onboard Wi-Fi not published (<errno>)`。
 
 実機で読む未確認の値: PMU の場所と rev・save-restore の有無（R8）、HT・F2 が来る時間、firmware の版と SDPCM の版、country の rev（−1 か 0 か）、`bus:rxglom` が受け付けられるか、event mask の 18 byte が受け付けられるか、有効な channel の数、chip の MAC、MAC が NVRAM の仮の値でないこと、card interrupt の数（R9 の poll との比較は p005）。
 

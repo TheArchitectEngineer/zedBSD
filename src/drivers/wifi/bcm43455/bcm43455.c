@@ -21,9 +21,11 @@
  *
  * Sources: the variable names and the country's layout are those of
  * Infineon's WHD (Apache-2.0) whd_wlioctl.h; the event mask's length (18
- * bytes) is OpenBSD bwfm(4)'s (ISC) bwfmreg.h 1.26.  "bus:rxglom" and the
- * country revision -1 have no permissively licensed public source; they
- * are marked so in plan/ws206/phase004/values.md and checked on a board.
+ * bytes) is OpenBSD bwfm(4)'s (ISC) bwfmreg.h 1.26; the world-wide
+ * country's revision 0 is WHD's WHD_COUNTRY_WORLD_WIDE_XX (whd_types.h).
+ * "bus:rxglom" and the fallback revision -1 have no permissively licensed
+ * public source; they are marked so in plan/ws206/phase004/values.md and
+ * checked on a board.
  *
  * The station is attached with the FullMAC radio operations of
  * bcm43455-station.c (ws206-p005), which use the WLAN core's FullMAC
@@ -41,9 +43,13 @@
 #include <kern/net/packet-buf.h>
 #include <uapi/errno.h>
 
-/* The country the regulatory table is set to: world-wide (E6), the firmware's choice of revision. */
+/*
+ * The country the regulatory table is set to: world-wide (E6), revision 0
+ * as WHD defines it, else the firmware's choice of revision.
+ */
 #define COUNTRY_CODE_0			'X'
 #define COUNTRY_CODE_1			'X'
+#define COUNTRY_REVISION_WORLD		0U
 #define COUNTRY_REVISION_ANY		0xffffffffU
 #define COUNTRY_LENGTH			12U
 #define COUNTRY_ABBREVIATION		0U
@@ -949,9 +955,9 @@ load_clm(
  * Sets the country to the world-wide "XX" and logs what the firmware
  * reads back, which is the regulatory domain it then runs in.
  *
- * The revision is first left to the firmware (-1); a firmware that
- * refuses that is asked for revision 0, the only other one a world-wide
- * table is expected to carry (both unconfirmed on a board).
+ * The revision is first 0, the world-wide locale as WHD defines it
+ * (WHD_COUNTRY_WORLD_WIDE_XX); a firmware whose table does not carry it
+ * is asked to choose the revision itself (-1, unconfirmed on a board).
  */
 static int
 set_country(
@@ -962,19 +968,19 @@ set_country(
 	size_t answered;
 	int error;
 
-	/* The abbreviation and the code are both XX; the revision is the firmware's choice. */
+	/* The abbreviation and the code are both XX, the revision the world-wide locale's. */
 	kern_memset(country, 0, sizeof(country));
 	country[COUNTRY_ABBREVIATION] = (uint8_t)COUNTRY_CODE_0;
 	country[COUNTRY_ABBREVIATION + 1U] = (uint8_t)COUNTRY_CODE_1;
-	bcm43455_put_le32(country + COUNTRY_REVISION, COUNTRY_REVISION_ANY);
+	bcm43455_put_le32(country + COUNTRY_REVISION, COUNTRY_REVISION_WORLD);
 	country[COUNTRY_CODE] = (uint8_t)COUNTRY_CODE_0;
 	country[COUNTRY_CODE + 1U] = (uint8_t)COUNTRY_CODE_1;
 
-	/* Sets it, falling back to revision 0. */
+	/* Sets it, falling back to the firmware's choice of revision. */
 	error = bcm43455_bus_iovar_set(&device->bus, "country", country, sizeof(country));
 	if (error == EIO || error == EOPNOTSUPP) {
-		kern_logf("bcm43455: country XX with the firmware's revision refused (%d); trying revision 0\n", error);
-		bcm43455_put_le32(country + COUNTRY_REVISION, 0);
+		kern_logf("bcm43455: country XX revision 0 refused (%d); trying the firmware's revision\n", error);
+		bcm43455_put_le32(country + COUNTRY_REVISION, COUNTRY_REVISION_ANY);
 		error = bcm43455_bus_iovar_set(&device->bus, "country", country, sizeof(country));
 	}
 	if (error != 0) {

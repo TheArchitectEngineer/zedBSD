@@ -97,7 +97,7 @@ Parent: [ws206-p004](phase.md)
 | `bus:rxglom` 0 | `start_settings` | **公開の寛容な出典で未確認**（WHD には `bus:txglom` だけ、`whd_wlioctl.h:1088`）。失敗しても続け、glom の frame が来たら 1 度 log に出す | glom の log の有無: |
 | clmload: flag（handler 版 1<<12・BEGIN 0x2・END 0x4）、type 2（CLM）、len、crc 0、1 回 1400 byte | `bcm43455-nvram.c` | WHD `whd_wlioctl.h:4154-4172`、`whd_clm.c:54-58`。bwfm `bwfmreg.h:785-797` | CLM の status: |
 | country: abbrev[4]・rev（int32）・ccode[4] の 12 byte、`XX` | `set_country` | WHD `whd_wlioctl.h:667-673,1073` | 読み戻した country・rev: |
-| country の rev −1（firmware に任せる）、断られたら 0 | `COUNTRY_REVISION_ANY` | **推測、公開の寛容な出典で未確認**。Pi で読み戻した rev を log で確かめる | |
+| country の rev 0（世界共通の locale）を先に、断られたら −1（firmware に任せる）（2026-10-13 Q1 の判断、p005 で順を替えた） | `COUNTRY_REVISION_WORLD`・`COUNTRY_REVISION_ANY` | rev 0 は WHD `whd_types.h:859`（`WHD_COUNTRY_WORLD_WIDE_XX = MK_CNTRY('X','X',0)`、「passive Ch12-14」）。−1 は**推測、公開の寛容な出典で未確認**。Pi で読み戻した rev を log で確かめる | |
 | PM 0（省電力を切る） | `POWER_SAVE_OFF` | bwfm `bwfm.c:548`（`BWFM_C_SET_PM` の値の意味は WHD `whd_wlioctl.h` の PM の定義） | |
 
 ## firmware の file（p003 の package の値）
