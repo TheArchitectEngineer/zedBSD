@@ -45,3 +45,5 @@ Pi 4（10.0.30.2）の実機で、内蔵の BCM43455 の wlan0 が現れ（chip 
 ## 2026-10-11 ユーザー「推し通りです。」
 
 E1: 4-way handshake は firmware の supplicant（PMK は core が計算）。E3: WLAN の core に FullMAC の mode を足す。E2（試験の AP の SSID・passphrase・帯域）は未回答。
+
+2026-10-13 Q1（ws206-p005 の判断の依頼）: country の revision は、出典のある rev 0（WHD の whd_types.h:859 が世界共通を XX rev 0 と定義）を先に試し、断られたら -1 の順に変える（p004 の -1 が先の順を置き換え）。P3 が p005 の続きで直す。chip.c の core の reset の関数の引数の名前（bwfm と同じ）の付け直しも同じ続きで。
