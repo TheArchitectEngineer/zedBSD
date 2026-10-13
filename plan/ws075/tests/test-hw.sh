@@ -7,6 +7,8 @@
 #
 #   plan/ws075/tests/test-hw.sh SCENARIO OUTDIR        e.g. plan/ws075/tests/test-hw.sh vke2 build/ws075-p004/hw-vke2
 #   BUILD (default build/resident-vkx) and I915_HOST (default awe@10.0.30.3) pass through.
+#   I915_MACHINE=sv7 runs on the Let's Note SV7 in place of the 5330 (plan/ws031/tests/hw-machine.sh: its host is
+#   then the default; build the image with the same I915_MACHINE).  Both machines share the one lock.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 [ $# -eq 2 ] || { echo "usage: $0 SCENARIO OUTDIR"; exit 2; }
@@ -17,7 +19,9 @@ rm -rf "$out"
 mkdir -p "$out"
 BUILD=${BUILD:-build/resident-vkx}
 ZEDBSD_CONFIG=${ZEDBSD_CONFIG:-plan/ws075/tests/config-test-hw.mk}
-I915_HOST=${I915_HOST:-awe@10.0.30.3}
+. plan/ws031/tests/hw-machine.sh
+[ "$I915_MACHINE" != 5330 ] || I915_MACHINE_HOST=awe@10.0.30.3
+I915_HOST=${I915_HOST:-$I915_MACHINE_HOST}
 export BUILD ZEDBSD_CONFIG I915_HOST
 
 # The machine, for the whole run; what the run left in /tmp is copied before the lock goes.
