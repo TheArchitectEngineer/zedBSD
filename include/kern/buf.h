@@ -149,6 +149,20 @@ buf_writeback_range(
 	uint32_t count);
 
 /*
+ * Writes the dirty lines of a range that the cache holds back to the disk,
+ * without bringing a missing line in and without flushing the device.  A
+ * line a journal pins keeps its journaled blocks for the commit, while the
+ * blocks of the range that ordinary writes left in it are written beneath
+ * the cache.  For a file's sync, which writes its own blocks and no others
+ * (BUG-307).
+ */
+int
+buf_writeback_cached(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count);
+
+/*
  * Writes, beneath the cache, the blocks of a disk's dirty lines that
  * ordinary writes left and the disk does not have yet, and no other block
  * of those lines: a line a journal pins keeps its journaled blocks back for

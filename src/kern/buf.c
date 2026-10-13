@@ -1478,6 +1478,95 @@ buf_writeback_range(
 }
 
 /*
+ * Writes the dirty lines of a range that the cache holds back to the disk
+ * (BUG-307).  A missing line has nothing to write and is not brought in, so
+ * a large file's sync takes no memory for the blocks it does not have in
+ * the cache.  A line a journal pins keeps its journaled blocks for the
+ * commit; the blocks of the range that ordinary writes left in it are
+ * written beneath the cache, as buf_write_unjournaled() writes them.  The
+ * device is not flushed.
+ */
+int
+buf_writeback_cached(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count)
+{
+	struct disk *leaf;
+	struct buf *buffer;
+	uint64_t mapped;
+	uint64_t end;
+	uint64_t line_blocks;
+	uint64_t line_start;
+	unsigned long irq;
+	int error;
+
+	/* An empty range has no lines to write. */
+	if (count == 0)
+		return 0;
+
+	/* Resolves the range to the leaf disk the lines belong to. */
+	error = disk_resolve_range(disk, block, count, &leaf, &mapped);
+	if (error != 0)
+		return error;
+
+	/* Measures a line in blocks: a page, or one block larger than a page. */
+	line_blocks = KERN_PAGE_SIZE / leaf->d_block_size;
+	if (leaf->d_block_size > KERN_PAGE_SIZE)
+		line_blocks = 1;
+
+	/* Writes each line of the range that the cache holds. */
+	end = mapped + count;
+	line_start = mapped - mapped % line_blocks;
+	while (line_start < end) {
+		/* Takes the line only when the cache already holds it. */
+		irq = spin_lock_irqsave(&cache_lock);
+
+		buffer = hash_find_locked(leaf, line_start);
+		if (buffer != NULL) {
+			refcount_get(&buffer->b_refs);
+			lru_remove_locked(buffer);
+		}
+
+		spin_unlock_irqrestore(&cache_lock, irq);
+
+		/* A line the cache does not hold has nothing waiting to be written. */
+		if (buffer == NULL) {
+			line_start += line_blocks;
+			continue;
+		}
+
+		/* Becomes the line's busy owner, so that its data holds still. */
+		error = busy_acquire(buffer);
+		if (error != 0) {
+			drop_caller_reference(buffer);
+			return error;
+		}
+
+		/*
+		 * Writes the whole line when no journal pins it; a pinned line
+		 * is left whole, and only the range's ordinary blocks in it are
+		 * written beneath the cache.  After a whole write the line is
+		 * clean and has no such blocks left.
+		 */
+		error = buf_writeback(buffer);
+		if (error == 0)
+			error = unjournaled_write_line(buffer, mapped, end);
+		buf_release(buffer);
+
+		/* Reports why the line could not be written. */
+		if (error != 0)
+			return error;
+
+		/* Steps to the next line. */
+		line_start += line_blocks;
+	}
+
+	/* Succeeded: the range's cached dirty blocks are on their way to the disk. */
+	return 0;
+}
+
+/*
  * Hashes a disk and block to a bucket.
  *
  * A line starts at a multiple of the blocks it holds, so the low bits of its
@@ -2704,9 +2793,12 @@ unjournaled_reference(
  * as the filesystem writes a delayed line, and takes them out of the
  * record.  The caller is the line's busy owner, so neither its data nor
  * its record changes meanwhile; no other block of the line is written, so
- * the blocks a journal pinned wait for its commit.  A run that touches
- * another owner's claim (a swap file's, a loop image's) is left for that
- * owner, as writeback_line() leaves it.
+ * the blocks a journal pinned wait for its commit.  A run that crosses an
+ * end of the range is cut to it, so that a narrow range (one file's
+ * blocks, one sector of a journal) still has its own blocks written
+ * (BUG-307); the rest of the run keeps its record for a later write.  A
+ * run that touches another owner's claim (a swap file's, a loop image's)
+ * is left for that owner, as writeback_line() leaves it.
  */
 static int
 unjournaled_write_line(
@@ -2718,9 +2810,13 @@ unjournaled_write_line(
 	const struct backing_claim *foreign;
 	unsigned long irq;
 	uint64_t block;
+	uint64_t low;
+	uint64_t high;
 	uint32_t record;
 	uint32_t written;
 	uint32_t first;
+	uint32_t offset;
+	uint32_t count;
 	uint32_t run;
 	int error;
 
@@ -2743,24 +2839,38 @@ unjournaled_write_line(
 			run = buffer->b_block_count - first;
 		block = buffer->b_block + first;
 
-		/* Leaves a run outside the range, or one of another owner's claim, as it is. */
-		foreign = NULL;
-		error = backing_claim_find_extent_owner(buffer->b_disk, block, run, NULL, &foreign);
-		if (error != 0)
-			foreign = NULL;
-		if (block < start ||
-		    block + run > end ||
-		    foreign != NULL) {
+		/* Cuts the run to the range. */
+		low = block;
+		if (low < start)
+			low = start;
+		high = block + run;
+		if (high > end)
+			high = end;
+
+		/* Leaves a run wholly outside the range as it is. */
+		if (low >= high) {
 			first += run;
 			continue;
 		}
 
-		/* Writes the run as the filesystem, beneath the cache. */
-		error = backing_mutation_begin_disk_filesystem(buffer->b_disk, block, run, &guard);
+		/* Leaves a run of another owner's claim as it is. */
+		offset = (uint32_t)(low - buffer->b_block);
+		count = (uint32_t)(high - low);
+		foreign = NULL;
+		error = backing_claim_find_extent_owner(buffer->b_disk, low, count, NULL, &foreign);
+		if (error != 0)
+			foreign = NULL;
+		if (foreign != NULL) {
+			first += run;
+			continue;
+		}
+
+		/* Writes the run's part in the range as the filesystem, beneath the cache. */
+		error = backing_mutation_begin_disk_filesystem(buffer->b_disk, low, count, &guard);
 		if (error != 0)
 			return error;
-		error = disk_write_direct_context(buffer->b_disk, block, run,
-						  (uint8_t *)buffer->b_data + (size_t)first * buffer->b_disk->d_block_size,
+		error = disk_write_direct_context(buffer->b_disk, low, count,
+						  (uint8_t *)buffer->b_data + (size_t)offset * buffer->b_disk->d_block_size,
 						  NULL);
 		backing_mutation_end(&guard);
 
@@ -2768,9 +2878,9 @@ unjournaled_write_line(
 		if (error != 0)
 			return error;
 
-		/* Counts it and steps past it. */
-		io_stats_record(IO_BUF_UNJOURNALED_WRITE, (uint64_t)run * buffer->b_disk->d_block_size);
-		written |= buf_unjournaled_bits(first, run);
+		/* Counts what was written and steps past the run. */
+		io_stats_record(IO_BUF_UNJOURNALED_WRITE, (uint64_t)count * buffer->b_disk->d_block_size);
+		written |= buf_unjournaled_bits(offset, count);
 		first += run;
 	}
 

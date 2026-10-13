@@ -346,6 +346,19 @@ struct ufs_j3_extent {
 };
 
 /*
+ * The run of disk sectors a file's sync has gathered from the file's block
+ * map and not yet written back (BUG-307).  It lives on the sync's stack for
+ * one walk of the map; adjacent blocks extend it, and a block elsewhere on
+ * the disk first sends it to the cache's write-back.  A count of zero is
+ * an empty run.
+ */
+struct ufs_sync_run {
+	struct mount *mountp;
+	uint64_t lba;
+	uint32_t count;
+};
+
+/*
  * The batched metadata journal of one mount.
  *
  * It lives from the mount to the unmount inside the mount's state.  The
@@ -692,6 +705,7 @@ static int write_sectors_context(struct mount *mountp, uint64_t lba, uint32_t co
 static int write_sectors(struct mount *mountp, uint64_t lba, uint32_t count, const void *buffer);
 static int observed_disk_read(struct disk *disk, uint64_t block, uint32_t count, void *buffer);
 static int ufs_sync(struct mount *mountp);
+static int ufs_sync_journal(struct ufs_mount_state *ms, struct mount *mountp);
 static int ufs_sync_commit(struct ufs_mount_state *ms, struct mount *mountp);
 static int ufs_sync_close(struct ufs_mount_state *ms, struct mount *mountp, int *closed, int *busy);
 static int journal_checkpoint_locked(struct mount *mountp);
@@ -866,6 +880,10 @@ static int retire_inode_locked(struct inode *inode, struct ufs_release_group *gr
 static int retire_inode_group(struct inode *inode, int *handled);
 static void ufs_reclaim(struct inode *inode);
 static int ufs_file_sync(struct file *file);
+static int file_writeback_locked(struct inode *inode);
+static int sync_tree(struct ufs_sync_run *run, uint64_t fragment, unsigned depth, uint64_t blocks, uint8_t *sectors);
+static int sync_run_add(struct ufs_sync_run *run, uint64_t fragment);
+static int sync_run_write(struct ufs_sync_run *run);
 static struct inode *ufs_alloc_inode(struct mount *mountp);
 static void ufs_free_inode(struct inode *inode);
 static int ufs_read_super(struct disk *disk, struct ufs_super *super);
@@ -878,6 +896,7 @@ static void write_cached_start(struct mount *mountp, struct ufs_mount_state *ms,
 static int write_cached_intended(const struct mount *mountp, const struct ufs_mount_state *ms);
 static uint64_t j3_sector(const struct ufs_j3 *j3, uint64_t file_sector, uint32_t *run);
 static int j3_io(struct mount *mountp, const struct ufs_j3 *j3, uint64_t file_sector, uint32_t count, void *buffer, int write);
+static int j3_writeback(struct mount *mountp, const struct ufs_j3 *j3, uint64_t file_sector, uint32_t count);
 static int j3_durable(struct mount *mountp);
 static unsigned j3_hash(uint64_t key, unsigned size);
 static void j3_range_add(struct ufs_j3 *j3, uint64_t lba, uint32_t count, uint32_t hold);
@@ -16124,27 +16143,361 @@ discard_reserved_inode(
 	return 0;
 }
 
-/* Makes everything a file has written durable. */
+/*
+ * Makes everything a file has written durable (BUG-307).
+ *
+ * On a volume whose metadata the batched journal carries, only the file's
+ * own blocks are written from the cache, and then the running transaction
+ * is committed, which holds the file's inode, its indirect blocks and the
+ * allocation records of its blocks.  The commit writes, before it seals,
+ * the content that waits in the cache, so that no block a commit makes
+ * reachable is read back with its old owner's bytes; past that point the
+ * sync writes nothing of the other files, whose later writes wait for the
+ * flusher or the next commit instead of being chased through the whole
+ * cache again and again.  A namespace change made before the sync (a new
+ * name, a rename) is in the same transaction and is committed with it.  A
+ * volume without the batched journal is synced whole, as before.
+ */
 static int
 ufs_file_sync(
 	struct file *file)
 {
-	int synced;
+	struct inode *inode;
+	struct mount *mountp;
+	struct ufs_mount_state *ms;
+	int journaled;
 	int error;
 
 	/* A call without a file has nothing to flush. */
 	if (file == NULL)
 		return EINVAL;
-	error = inode_sync(file->f_inode);
+	inode = file->f_inode;
+	mountp = inode->i_mount;
 
-	/* The mount is only flushed when the file itself came out clean. */
+	/* Puts the inode as it now stands into the volume's metadata. */
+	error = inode_sync(inode);
 	if (error != 0)
-		synced = error;
-	else
-		synced = ufs_sync(file->f_inode->i_mount);
+		return error;
 
-	/* Reports how the flush went. */
-	return synced;
+	/* Reads whether the batched journal carries the volume's metadata. */
+	ms = state(mountp);
+	mutex_lock(&ms->lock);
+
+	journaled = ms->j3.active;
+
+	mutex_unlock(&ms->lock);
+
+	/*
+	 * Without the batched journal the metadata is written where it lives
+	 * or through the tail journal, which a whole sync drains; a volume
+	 * that writes through has little left for it to write.
+	 */
+	if (!journaled) {
+		error = ufs_sync(mountp);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the volume is durable, and the file with it. */
+		return 0;
+	}
+
+	/*
+	 * Writes the file's own blocks that wait in the cache, before the
+	 * commit seals the metadata that names them.
+	 */
+	mutex_lock(&inode->i_lock);
+
+	error = file_writeback_locked(inode);
+
+	mutex_unlock(&inode->i_lock);
+
+	/* Reports why the file's blocks could not be written. */
+	if (error != 0)
+		return error;
+
+	/* Commits the running transaction, and again while a held home is owed. */
+	error = ufs_sync_journal(ms, mountp);
+	if (error != 0)
+		return error;
+
+	/*
+	 * Flushes the device: the commit's seal made the file's blocks and its
+	 * metadata durable, and the content a commit holds in a block freed
+	 * before it reaches its home only after the seal.
+	 */
+	error = bio_flush(mountp->m_disk);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the file's data and metadata are on the device. */
+	return 0;
+}
+
+/*
+ * Writes the blocks of a regular file that wait in the cache, the inode's
+ * lock held so that the block map holds still (BUG-307).  The indirect
+ * blocks are metadata, which the journal carries, and are not written here.
+ */
+static int
+file_writeback_locked(
+	struct inode *inode)
+{
+	struct ufs_mount_state *ms;
+	struct ufs_inode_info *ui;
+	struct ufs_sync_run run;
+	uint8_t sectors[UFS_NIADDR * UFS_SECTOR_SIZE];
+	uint64_t blocks;
+	uint64_t direct_blocks;
+	uint64_t span;
+	uint64_t used;
+	uint64_t n;
+	unsigned level;
+	int error;
+
+	/*
+	 * Only a regular file keeps content in its blocks; a directory's
+	 * blocks are metadata.  An inode without a home on the volume has no
+	 * blocks of its own to write.
+	 */
+	if (inode->i_type != INODE_REG)
+		return 0;
+	if (inode->i_ino == 0)
+		return 0;
+
+	/* Counts the blocks the file's size reaches. */
+	ms = state(inode->i_mount);
+	ui = info(inode);
+	blocks = 0;
+	if (inode->i_size > 0)
+		blocks = ((uint64_t)inode->i_size - 1U) / ms->super.bsize + 1U;
+
+	/* Starts with no run gathered. */
+	run.mountp = inode->i_mount;
+	run.lba = 0;
+	run.count = 0;
+
+	/* Gathers the blocks the inode names itself. */
+	direct_blocks = blocks;
+	if (direct_blocks > UFS_NDADDR)
+		direct_blocks = UFS_NDADDR;
+	error = 0;
+	for (n = 0; n < direct_blocks && error == 0; n++) {
+		/* A hole has no block to write. */
+		if (ui->direct[n] != 0)
+			error = sync_run_add(&run, ui->direct[n]);
+	}
+
+	/* Reports why a direct block could not be gathered. */
+	if (error != 0)
+		return error;
+
+	/* A file of direct blocks only has nothing more to walk. */
+	blocks -= direct_blocks;
+	if (blocks != 0) {
+		/*
+		 * Walks each indirect level the size reaches, each nindir times
+		 * wider, reading entries into a sector of each level on the
+		 * stack, so that a sync has no allocation to fail.
+		 */
+		span = ms->super.nindir;
+		for (level = 0; level < UFS_NIADDR && blocks != 0 && error == 0; level++) {
+			/* Walks the blocks of this level's tree. */
+			used = blocks;
+			if (used > span)
+				used = span;
+			error = sync_tree(&run, ui->indirect[level], level + 1U, used, sectors);
+			blocks -= used;
+
+			/* Widens the span for the next level, unless it cannot be represented. */
+			if (error == 0 && blocks != 0) {
+				if (span > UINT64_MAX / ms->super.nindir)
+					error = EOVERFLOW;
+				else
+					span *= ms->super.nindir;
+			}
+		}
+
+		/* Reports why the tree could not be walked. */
+		if (error != 0)
+			return error;
+
+		/* A size past the last indirect level names more than a file can hold. */
+		if (blocks != 0)
+			return EFBIG;
+	}
+
+	/* Writes the last run gathered. */
+	error = sync_run_write(&run);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the file's cached blocks are on their way to the device. */
+	return 0;
+}
+
+/*
+ * Gathers the data blocks under one indirect block of the given depth (one
+ * names data blocks), at most blocks of them, reading its entries a sector
+ * at a time into the depth's sector of sectors.
+ */
+static int
+sync_tree(
+	struct ufs_sync_run *run,
+	uint64_t fragment,
+	unsigned depth,
+	uint64_t blocks,
+	uint8_t *sectors)
+{
+	const struct ufs_super *super;
+	uint8_t *sector;
+	uint64_t span;
+	uint64_t child;
+	uint64_t used;
+	uint64_t lba;
+	uint32_t index;
+	uint32_t per_sector;
+	unsigned level;
+	int error;
+
+	/* A level that is not there is a hole, with no blocks under it. */
+	if (fragment == 0)
+		return 0;
+
+	/* Refuses a depth the walk does not reach and a block the volume could not hold. */
+	super = &state(run->mountp)->super;
+	if (depth == 0 || depth > UFS_NIADDR)
+		return EINVAL;
+	if (fragment >= super->size || super->frag > super->size - fragment)
+		return EIO;
+
+	/* Measures how many data blocks one entry of this level reaches. */
+	span = 1;
+	for (level = 1; level < depth; level++) {
+		if (span > UINT64_MAX / super->nindir)
+			return EOVERFLOW;
+		span *= super->nindir;
+	}
+
+	/* Follows each entry the blocks reach, reading the entries a sector at a time. */
+	sector = sectors + (size_t)(depth - 1U) * UFS_SECTOR_SIZE;
+	per_sector = UFS_SECTOR_SIZE / 8U;
+	index = 0;
+	while (blocks != 0) {
+		/* An indirect block names no more than nindir entries. */
+		if (index >= super->nindir)
+			return EIO;
+
+		/* Reads the sector the next entries live in when the walk enters it. */
+		if (index % per_sector == 0) {
+			lba = (fragment << super->fsbtodb) + index / per_sector;
+			error = read_metadata_sectors(run->mountp, lba, 1, sector);
+			if (error != 0)
+				return error;
+		}
+
+		/* Takes the entry and the blocks it reaches. */
+		child = drv_ufs_get64(sector, (size_t)(index % per_sector) * 8U, super->swapped);
+		used = blocks;
+		if (used > span)
+			used = span;
+
+		/* Gathers a data block, or walks the indirect block below. */
+		error = 0;
+		if (depth == 1U) {
+			/* A hole has no block to write. */
+			if (child != 0)
+				error = sync_run_add(run, child);
+		} else {
+			error = sync_tree(run, child, depth - 1U, used, sectors);
+		}
+
+		/* Reports why the entry's blocks could not be gathered. */
+		if (error != 0)
+			return error;
+
+		/* Steps to the next entry. */
+		blocks -= used;
+		index++;
+	}
+
+	/* Succeeded: every block under the indirect block is gathered. */
+	return 0;
+}
+
+/*
+ * Adds one data block to the run, first writing the run gathered so far
+ * when the block does not follow it on the disk.  A block that the volume
+ * could not hold is a damaged map.
+ */
+static int
+sync_run_add(
+	struct ufs_sync_run *run,
+	uint64_t fragment)
+{
+	const struct ufs_super *super;
+	uint64_t lba;
+	uint64_t fragments;
+	uint32_t sectors;
+	int error;
+
+	/* Refuses a block outside the volume. */
+	super = &state(run->mountp)->super;
+	if (fragment >= super->size)
+		return EIO;
+
+	/*
+	 * Takes the whole block, or what the volume has of it: a file's last
+	 * block may be fragments, and a write-back of the cache's lines past
+	 * them writes only what is waiting there anyway.
+	 */
+	fragments = super->frag;
+	if (fragments > super->size - fragment)
+		fragments = super->size - fragment;
+	lba = fragment << super->fsbtodb;
+	sectors = (uint32_t)(fragments << super->fsbtodb);
+
+	/* Extends the run when the block follows it and the count still fits. */
+	if (run->count != 0 &&
+	    run->lba + run->count == lba &&
+	    run->count <= UINT32_MAX - sectors) {
+		run->count += sectors;
+
+		/* Succeeded: the block joined the run. */
+		return 0;
+	}
+
+	/* Writes the run so far, since the block starts another. */
+	error = sync_run_write(run);
+	if (error != 0)
+		return error;
+
+	/* Starts the next run at the block. */
+	run->lba = lba;
+	run->count = sectors;
+
+	/* Succeeded: the block starts the run. */
+	return 0;
+}
+
+/* Writes the run's lines that wait in the cache, and empties the run. */
+static int
+sync_run_write(
+	struct ufs_sync_run *run)
+{
+	int error;
+
+	/* An empty run has nothing to write. */
+	if (run->count == 0)
+		return 0;
+
+	/* Writes the cached dirty lines the run covers, leaving the device unflushed. */
+	error = buf_writeback_cached(run->mountp->m_disk, run->lba, run->count);
+	run->count = 0;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the run is on its way to the device. */
+	return 0;
 }
 
 /* Takes one of the driver's fixed inode slots. */
@@ -17224,8 +17577,6 @@ ufs_sync(
 	struct mount *mountp)
 {
 	struct ufs_mount_state *ms;
-	unsigned round;
-	int owed;
 	int error;
 
 	/* A call that names no mount has nothing to flush. */
@@ -17237,27 +17588,8 @@ ufs_sync(
 	if (ms == NULL)
 		return EINVAL;
 
-	/*
-	 * Commits the running transaction.  A held range a finish could not
-	 * write, because a later transaction pinned its line again, reaches
-	 * its home with the commit of that later transaction, so the sync
-	 * commits again while a home is owed, at most UFS_SYNC_OWED_ROUNDS
-	 * more times (ws073-p051).
-	 */
-	error = ufs_sync_commit(ms, mountp);
-	for (round = 0; round < UFS_SYNC_OWED_ROUNDS && error == 0; round++) {
-		/* Reads whether a home is owed. */
-		mutex_lock(&ms->j3.lock);
-		owed = ms->j3.home_owed;
-		mutex_unlock(&ms->j3.lock);
-
-		/* Stops once every held range is on its way home. */
-		if (!owed)
-			break;
-
-		/* Commits the transaction that holds the owed line. */
-		error = ufs_sync_commit(ms, mountp);
-	}
+	/* Commits the running transaction, and again while a held home is owed. */
+	error = ufs_sync_journal(ms, mountp);
 
 	/*
 	 * Writes the dirty lines, then the content a journal's pin still holds
@@ -17287,6 +17619,46 @@ ufs_sync(
 		return error;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Commits the running transaction for a sync.  A held range a finish could
+ * not write, because a later transaction pinned its line again, reaches
+ * its home with the commit of that later transaction, so the sync commits
+ * again while a home is owed, at most UFS_SYNC_OWED_ROUNDS more times
+ * (ws073-p051).  A volume's sync and a file's sync both commit this way.
+ */
+static int
+ufs_sync_journal(
+	struct ufs_mount_state *ms,
+	struct mount *mountp)
+{
+	unsigned round;
+	int owed;
+	int error;
+
+	/* Commits the running transaction, then again while a home is owed. */
+	error = ufs_sync_commit(ms, mountp);
+	for (round = 0; round < UFS_SYNC_OWED_ROUNDS && error == 0; round++) {
+		/* Reads whether a home is owed. */
+		mutex_lock(&ms->j3.lock);
+		owed = ms->j3.home_owed;
+		mutex_unlock(&ms->j3.lock);
+
+		/* Stops once every held range is on its way home. */
+		if (!owed)
+			break;
+
+		/* Commits the transaction that holds the owed line. */
+		error = ufs_sync_commit(ms, mountp);
+	}
+
+	/* Reports why the transaction could not be committed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the running transaction is committed. */
 	return 0;
 }
 
@@ -18939,6 +19311,53 @@ j3_io(
 	return 0;
 }
 
+/*
+ * Writes the journal file's sectors that wait in the cache, an extent at a
+ * time, the ones in a line a journal pins included: such a line, which a
+ * journal's slot shares with a block the transaction logs on a volume
+ * whose lines do not fall on its blocks, is left by a whole write-back
+ * until the commit, while what the slot holds has to be on the device
+ * before the commit record that seals it (BUG-307).  The device is not
+ * flushed.
+ */
+static int
+j3_writeback(
+	struct mount *mountp,
+	const struct ufs_j3 *j3,
+	uint64_t file_sector,
+	uint32_t count)
+{
+	uint64_t lba;
+	uint32_t amount;
+	int error;
+
+	/* Refuses sectors past the end of the journal. */
+	if (file_sector + count > j3->total_sectors)
+		return EINVAL;
+
+	/* Writes the run inside each extent in turn. */
+	while (count != 0) {
+		/* Finds where the next sectors lie, and how many follow there. */
+		lba = j3_sector(j3, file_sector, &amount);
+
+		/* Takes no more of the run than the write still needs. */
+		if (amount > count)
+			amount = count;
+
+		/* Writes the run's cached dirty sectors. */
+		error = buf_writeback_cached(mountp->m_disk, lba, amount);
+		if (error != 0)
+			return error;
+
+		/* Steps past the run. */
+		file_sector += amount;
+		count -= amount;
+	}
+
+	/* Succeeded: the sectors are on their way to the device. */
+	return 0;
+}
+
 /* Makes the writes so far durable on the device. */
 static int
 j3_durable(
@@ -19512,6 +19931,7 @@ j3_commit_seal(
 {
 	uint8_t commit[SECTOR_SIZE];
 	uint64_t base;
+	uint64_t used;
 	uint32_t desc_sum;
 	uint32_t sum;
 	int error;
@@ -19519,6 +19939,22 @@ j3_commit_seal(
 	/* Writes the descriptor at the head of the slot the sequence picks. */
 	base = j3->header_sectors + (sequence & 1U) * j3->slot_sectors;
 	error = j3_io(mountp, j3, base, desc_sectors, descriptor, 1);
+	if (error != 0)
+		return error;
+
+	/* Counts the sectors the descriptor and the payloads after it take in the slot. */
+	used = (uint64_t)desc_sectors + get32(descriptor + 32);
+
+	/* A slot holds no more than what its commit record leaves. */
+	if (used > (uint64_t)j3->slot_sectors - 1U)
+		return EINVAL;
+
+	/*
+	 * Writes those sectors, the ones in a line a journal pins included,
+	 * which the whole write-back below leaves for the commit, so that the
+	 * record never reaches the device before what it seals (BUG-307).
+	 */
+	error = j3_writeback(mountp, j3, base, (uint32_t)used);
 	if (error != 0)
 		return error;
 
@@ -19548,8 +19984,17 @@ j3_commit_seal(
 	if (error != 0)
 		return error;
 
-	/* Makes the record durable. */
-	error = j3_durable(mountp);
+	/*
+	 * Makes the record durable.  Everything the record seals was made
+	 * durable before it was written, so only the record's own line is
+	 * written and the device flushed: the rest of the cache, which writers
+	 * keep dirtying meanwhile, waits for the flusher or the next commit
+	 * (BUG-307).
+	 */
+	error = j3_writeback(mountp, j3, base + j3->slot_sectors - 1U, 1);
+	if (error != 0)
+		return error;
+	error = bio_flush(mountp->m_disk);
 	if (error != 0)
 		return error;
 
