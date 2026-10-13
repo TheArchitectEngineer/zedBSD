@@ -54,6 +54,7 @@ static void touch_double_tap(struct notes_touch *touch, const struct kl_gesture_
 static void touch_pinch(struct notes_touch *touch, uint64_t now);
 static void touch_pinch_end(struct notes_touch *touch, uint64_t now);
 static float touch_zoom_max(const struct notes_touch *touch);
+static void touch_fit(struct notes_touch *touch);
 static void touch_extent(const struct notes_touch *touch, double *largest_x, double *largest_y);
 static void touch_bounds(struct notes_touch *touch);
 static void touch_zoom_about(struct notes_touch *touch, float zoom, float anchor_x, float anchor_y, float x, float y);
@@ -129,10 +130,6 @@ notes_touch_layout(
 	float page_height,
 	float fit_scale)
 {
-	double largest_x;
-	double largest_y;
-	float zoom_max;
-
 	/* The layout. */
 	touch->width = (float)width;
 	touch->height = (float)height;
@@ -142,31 +139,31 @@ notes_touch_layout(
 	touch->page_height = page_height;
 	touch->fit_scale = fit_scale;
 
-	/* The zoom within what this page allows. */
-	zoom_max = touch_zoom_max(touch);
-	if (touch->zoom > zoom_max)
-		touch->zoom = zoom_max;
-	if (touch->zoom < 1.0f)
-		touch->zoom = 1.0f;
+	/* The zoom within what this page allows, and the page placed for it. */
+	touch_fit(touch);
+}
 
-	/* The scroll's ends; a page at rest stays within them. */
-	touch_bounds(touch);
-	if (!touch->moving) {
-		touch_extent(touch, &largest_x, &largest_y);
-		if (touch->scroll_x > largest_x)
-			touch->scroll_x = largest_x;
-		if (touch->scroll_x < 0.0)
-			touch->scroll_x = 0.0;
-		if (touch->scroll_y > largest_y)
-			touch->scroll_y = largest_y;
-		if (touch->scroll_y < 0.0)
-			touch->scroll_y = 0.0;
-		if (touch->gesture != NULL)
-			kl_scroll_move_to(&touch->scroll, touch->scroll_x, touch->scroll_y, 0, notes_touch_clock());
-	}
+/*
+ * Holds the page's picture to a number of pixels, which the device could
+ * hold where it could not hold a larger one (BUG-296: i915's allocations
+ * are at most 16 MiB): the zoom is lowered to the most that keeps the
+ * whole page's picture within them (never below the whole page), and the
+ * page is placed again.  A limit is only ever lowered.
+ */
+void
+notes_touch_picture_limit(
+	struct notes_touch *touch,
+	double pixels)
+{
+	/* A limit no lower than the one held changes nothing. */
+	if (touch->picture_pixels > 0.0 && pixels >= touch->picture_pixels)
+		return;
+	touch->picture_pixels = pixels;
 
-	/* Where the page is drawn. */
-	touch_place(touch);
+	/* The zoom within the new limit, and the page placed for it. */
+	touch_fit(touch);
+	printf("NOTES TOUCH picture limit pixels=%.0f zoom=%.3f\n", pixels, (double)touch->zoom);
+	fflush(stdout);
 }
 
 /*
@@ -902,29 +899,77 @@ touch_pinch_end(
 		touch_press(touch, now);
 }
 
-/* Reports the most the page may be zoomed: NOTES_TOUCH_ZOOM_MAX, or less where the page's picture would pass NOTES_TOUCH_PICTURE_MAX. */
+/*
+ * Reports the most the page may be zoomed: NOTES_TOUCH_ZOOM_MAX, or less
+ * where the page's picture would pass NOTES_TOUCH_PICTURE_MAX on a side or
+ * the pixels the device can hold.
+ */
 static float
 touch_zoom_max(
 	const struct notes_touch *touch)
 {
+	double area;
 	float longest;
 	float zoom;
 
-	/* The page's longer side at the whole page's scale. */
+	/* The page's longer side and its area at the whole page's scale. */
 	longest = touch->page_width;
 	if (touch->page_height > longest)
 		longest = touch->page_height;
 	longest *= touch->fit_scale;
+	area = (double)touch->page_width * (double)touch->fit_scale * (double)touch->page_height * (double)touch->fit_scale;
 
-	/* The picture's limit, the zoom's own, and never below the whole page. */
+	/* The picture's side, the zoom's own limit, and the picture's pixels as the device told them (BUG-296). */
 	zoom = NOTES_TOUCH_ZOOM_MAX;
 	if (longest > 0.0f && NOTES_TOUCH_PICTURE_MAX / longest < zoom)
 		zoom = NOTES_TOUCH_PICTURE_MAX / longest;
+	if (touch->picture_pixels > 0.0 &&
+	    area > 0.0 &&
+	    touch->picture_pixels < (double)zoom * (double)zoom * area)
+		zoom = (float)sqrt(touch->picture_pixels / area);
+
+	/* Never below the whole page. */
 	if (zoom < 1.0f)
 		zoom = 1.0f;
 
 	/* Reports the limit. */
 	return zoom;
+}
+
+/* Holds the zoom within what the page allows and places the page for it; a page at rest stays within the scroll's ends. */
+static void
+touch_fit(
+	struct notes_touch *touch)
+{
+	double largest_x;
+	double largest_y;
+	float zoom_max;
+
+	/* The zoom within what this page allows. */
+	zoom_max = touch_zoom_max(touch);
+	if (touch->zoom > zoom_max)
+		touch->zoom = zoom_max;
+	if (touch->zoom < 1.0f)
+		touch->zoom = 1.0f;
+
+	/* The scroll's ends; a page at rest stays within them. */
+	touch_bounds(touch);
+	if (!touch->moving) {
+		touch_extent(touch, &largest_x, &largest_y);
+		if (touch->scroll_x > largest_x)
+			touch->scroll_x = largest_x;
+		if (touch->scroll_x < 0.0)
+			touch->scroll_x = 0.0;
+		if (touch->scroll_y > largest_y)
+			touch->scroll_y = largest_y;
+		if (touch->scroll_y < 0.0)
+			touch->scroll_y = 0.0;
+		if (touch->gesture != NULL)
+			kl_scroll_move_to(&touch->scroll, touch->scroll_x, touch->scroll_y, 0, notes_touch_clock());
+	}
+
+	/* Where the page is drawn. */
+	touch_place(touch);
 }
 
 /* Reports how far the page can scroll on each axis at the zoom: 0 where it fits the room. */

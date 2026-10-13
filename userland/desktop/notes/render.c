@@ -61,6 +61,7 @@ static VkResult render_stencil_image(struct notes_renderer *renderer, uint32_t w
 static void render_stencil_free(struct notes_renderer *renderer);
 static VkResult render_pass(struct notes_renderer *renderer);
 static VkResult render_page_pass(struct notes_renderer *renderer, int load, VkRenderPass *pass);
+static VkResult render_page_make(struct notes_renderer *renderer, uint32_t width, uint32_t height);
 static void render_page_free(struct notes_renderer *renderer);
 static VkResult render_targets(struct notes_renderer *renderer);
 static void render_targets_free(struct notes_renderer *renderer);
@@ -250,7 +251,9 @@ notes_renderer_resize(
  * either way), with its stencil buffer, unless it has that size already.
  *
  * A picture made again is empty and has a new page_serial: the caller
- * draws the whole page into it with the next frame.
+ * draws the whole page into it with the next frame.  A picture that could
+ * not be made leaves none (BUG-296: a device may refuse a large one, and
+ * the caller asks for a smaller).
  */
 VkResult
 notes_renderer_page(
@@ -258,13 +261,6 @@ notes_renderer_page(
 	uint32_t width,
 	uint32_t height)
 {
-	VkImageCreateInfo image;
-	VkMemoryRequirements requirements;
-	VkImageViewCreateInfo view;
-	VkFramebufferCreateInfo framebuffer;
-	VkImageView attachments[2];
-	VkDescriptorImageInfo image_info;
-	VkWriteDescriptorSet write;
 	VkResult error;
 
 	/* The picture is at most NOTES_PICTURE_MAX either way (it has a stencil buffer of its own), and never empty. */
@@ -290,87 +286,12 @@ notes_renderer_page(
 		return error;
 	render_page_free(renderer);
 
-	/* The image: drawn into by the page's passes and sampled by the frame. */
-	memset(&image, 0, sizeof(image));
-	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	image.imageType = VK_IMAGE_TYPE_2D;
-	image.format = renderer->format;
-	image.extent.width = width;
-	image.extent.height = height;
-	image.extent.depth = 1U;
-	image.mipLevels = 1U;
-	image.arrayLayers = 1U;
-	image.samples = VK_SAMPLE_COUNT_1_BIT;
-	image.tiling = VK_IMAGE_TILING_OPTIMAL;
-	image.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	renderer->operation = "vkCreateImage";
-	error = vkCreateImage(renderer->device, &image, NULL, &renderer->page);
-	if (error != VK_SUCCESS)
+	/* A new picture, or none at all when any part of it could not be made. */
+	error = render_page_make(renderer, width, height);
+	if (error != VK_SUCCESS) {
+		render_page_free(renderer);
 		return error;
-
-	/* Its memory, on the device when it can be. */
-	vkGetImageMemoryRequirements(renderer->device, renderer->page, &requirements);
-	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &renderer->page_memory);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* Binds the memory to the image. */
-	renderer->operation = "vkBindImageMemory";
-	error = vkBindImageMemory(renderer->device, renderer->page, renderer->page_memory, 0U);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* The view the framebuffer attaches and the shader samples. */
-	memset(&view, 0, sizeof(view));
-	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	view.image = renderer->page;
-	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	view.format = renderer->format;
-	view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	view.subresourceRange.levelCount = 1U;
-	view.subresourceRange.layerCount = 1U;
-	renderer->operation = "vkCreateImageView";
-	error = vkCreateImageView(renderer->device, &view, NULL, &renderer->page_view);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* The picture's own stencil buffer, of its size. */
-	error = render_stencil_image(renderer, width, height, &renderer->page_stencil, &renderer->page_stencil_memory,
-				     &renderer->page_stencil_view);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* The framebuffer over the picture and its stencil buffer. */
-	attachments[0] = renderer->page_view;
-	attachments[1] = renderer->page_stencil_view;
-	memset(&framebuffer, 0, sizeof(framebuffer));
-	framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-	framebuffer.renderPass = renderer->page_clear_pass;
-	framebuffer.attachmentCount = 2U;
-	framebuffer.pAttachments = attachments;
-	framebuffer.width = width;
-	framebuffer.height = height;
-	framebuffer.layers = 1U;
-	renderer->operation = "vkCreateFramebuffer";
-	error = vkCreateFramebuffer(renderer->device, &framebuffer, NULL, &renderer->page_framebuffer);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* The page's set names the picture in the layout its passes leave it in. */
-	memset(&image_info, 0, sizeof(image_info));
-	image_info.sampler = renderer->sampler;
-	image_info.imageView = renderer->page_view;
-	image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	memset(&write, 0, sizeof(write));
-	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet = renderer->sets[NOTES_TEXTURE_PAGE];
-	write.dstBinding = 0U;
-	write.descriptorCount = 1U;
-	write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	write.pImageInfo = &image_info;
-	vkUpdateDescriptorSets(renderer->device, 1U, &write, 0U, NULL);
+	}
 
 	/* Succeeded: a new, empty picture, which the serial announces. */
 	renderer->page_width = width;
@@ -1160,6 +1081,109 @@ render_page_pass(
 	/* Succeeded: the pass. */
 	return VK_SUCCESS;
 }
+
+/* Makes the page's picture, its stencil buffer and framebuffer at a size, and names it in the page's set. */
+static VkResult
+render_page_make(
+	struct notes_renderer *renderer,
+	uint32_t width,
+	uint32_t height)
+{
+	VkImageCreateInfo image;
+	VkMemoryRequirements requirements;
+	VkImageViewCreateInfo view;
+	VkFramebufferCreateInfo framebuffer;
+	VkImageView attachments[2];
+	VkDescriptorImageInfo image_info;
+	VkWriteDescriptorSet write;
+	VkResult error;
+
+	/* The image: drawn into by the page's passes and sampled by the frame. */
+	memset(&image, 0, sizeof(image));
+	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image.imageType = VK_IMAGE_TYPE_2D;
+	image.format = renderer->format;
+	image.extent.width = width;
+	image.extent.height = height;
+	image.extent.depth = 1U;
+	image.mipLevels = 1U;
+	image.arrayLayers = 1U;
+	image.samples = VK_SAMPLE_COUNT_1_BIT;
+	image.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	renderer->operation = "vkCreateImage";
+	error = vkCreateImage(renderer->device, &image, NULL, &renderer->page);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Its memory, on the device when it can be. */
+	vkGetImageMemoryRequirements(renderer->device, renderer->page, &requirements);
+	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &renderer->page_memory);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Binds the memory to the image. */
+	renderer->operation = "vkBindImageMemory";
+	error = vkBindImageMemory(renderer->device, renderer->page, renderer->page_memory, 0U);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The view the framebuffer attaches and the shader samples. */
+	memset(&view, 0, sizeof(view));
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = renderer->page;
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view.format = renderer->format;
+	view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view.subresourceRange.levelCount = 1U;
+	view.subresourceRange.layerCount = 1U;
+	renderer->operation = "vkCreateImageView";
+	error = vkCreateImageView(renderer->device, &view, NULL, &renderer->page_view);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The picture's own stencil buffer, of its size. */
+	error = render_stencil_image(renderer, width, height, &renderer->page_stencil, &renderer->page_stencil_memory,
+				     &renderer->page_stencil_view);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The framebuffer over the picture and its stencil buffer. */
+	attachments[0] = renderer->page_view;
+	attachments[1] = renderer->page_stencil_view;
+	memset(&framebuffer, 0, sizeof(framebuffer));
+	framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	framebuffer.renderPass = renderer->page_clear_pass;
+	framebuffer.attachmentCount = 2U;
+	framebuffer.pAttachments = attachments;
+	framebuffer.width = width;
+	framebuffer.height = height;
+	framebuffer.layers = 1U;
+	renderer->operation = "vkCreateFramebuffer";
+	error = vkCreateFramebuffer(renderer->device, &framebuffer, NULL, &renderer->page_framebuffer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The page's set names the picture in the layout its passes leave it in. */
+	memset(&image_info, 0, sizeof(image_info));
+	image_info.sampler = renderer->sampler;
+	image_info.imageView = renderer->page_view;
+	image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	memset(&write, 0, sizeof(write));
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet = renderer->sets[NOTES_TEXTURE_PAGE];
+	write.dstBinding = 0U;
+	write.descriptorCount = 1U;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	write.pImageInfo = &image_info;
+	vkUpdateDescriptorSets(renderer->device, 1U, &write, 0U, NULL);
+
+	/* Succeeded: the picture and what draws into it and samples it are made. */
+	return VK_SUCCESS;
+}
+
 
 /* Releases the page's picture; the next frame makes it again. */
 static void
