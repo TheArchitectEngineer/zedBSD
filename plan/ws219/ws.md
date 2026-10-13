@@ -3,7 +3,7 @@
 # WS219: Venus の protocol の op の流用の整理（定数名の付け直し、Venus の著作権表示を外し、引用の明記に留める）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-13 Q1 作成。担当は WS218 p001 の後の P1（同じ種類の監査）、空きができ次第）
+Status: incomplete（2026-10-13 P2 が p001 を実施、判断待ち。旧: planning（2026-10-13 Q1 作成））
 Primary Milestone: MG006
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -25,5 +25,5 @@ Related Milestones: なし
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 監査: Venus 由来の物の洗い出し、事実と表現の写しの区別、付け直す名前の一覧 | planned |
+| [p001](phase001/phase.md) | 監査: Venus 由来の物の洗い出し、事実と表現の写しの区別、付け直す名前の一覧 | in-progress（2026-10-13 P2 実施。表現の写しは無し、Google の表示は WS167 で既に除去済み。判断 4 点を Q1 → ユーザー） |
 | p002 | 定数名の付け直し、著作権表示の除去と引用の明記、試験 | planned |
