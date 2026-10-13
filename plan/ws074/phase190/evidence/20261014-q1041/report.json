@@ -1,0 +1,382 @@
+{
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "fail": 21
+  },
+  "eligible": 21,
+  "results": [
+    {
+      "image": "001-anchor-center-002.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/anchor-center-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-center-002.html"
+    },
+    {
+      "image": "002-anchor-in-css-min-max-function.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 20000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/reference/anchor-in-css-min-max-function-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-in-css-min-max-function.html"
+    },
+    {
+      "image": "003-anchor-name-005.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 18200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/reference/anchor-name-005-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-name-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 15040,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/anchor-name-multicol-003-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-name-multicol-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10700,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-name-multicol-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 20000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/reference/anchor-position-circular-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-circular.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 12900,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/anchor-position-inline-004-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-inline-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 38356,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/anchor-position-multicol-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10500,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 3800,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/anchor-position-multicol-004-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1665,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 15000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 7480,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-011.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 6700,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/anchor-position-multicol-fixed-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-fixed-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1936,
+          "equal": false,
+          "max_difference": 240,
+          "path": "css/css-anchor-position/auto-margins-position-area-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/auto-margins-position-area.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 21600,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/position-anchor-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/position-anchor-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 80000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/position-area-inline-container-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/position-area-abs-inline-container.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 30000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/position-area-inline-container-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/position-area-inline-container.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/position-visibility-anchors-visible-css-visibility-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/position-visibility-anchors-visible-css-visibility.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10798,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/position-visibility-no-overflow-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/position-visibility-no-overflow-stacked-child.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9998,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/position-visibility-no-overflow-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/position-visibility-no-overflow.html"
+    }
+  ],
+  "root": "css/css-anchor-position",
+  "schema": 1,
+  "selected": 21,
+  "selection": "first-level round-robin, path-sorted",
+  "selection_manifest": "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+  "skipped": {
+    "script": 116
+  },
+  "suite": "wpt",
+  "viewport": [
+    800,
+    600
+  ]
+}

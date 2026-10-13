@@ -1,0 +1,318 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "total": 77,
+  "counts": {
+    "measured": 21,
+    "script": 56
+  },
+  "rows": [
+    {
+      "id": "/css/css-anchor-position/anchor-center-002.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-center-scroll-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-in-css-min-max-function.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-name-005.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-name-multicol-003.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-name-multicol-004.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-circular.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-dynamic-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-inline-004.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-multicol-002.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-multicol-003.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-multicol-004.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-multicol-007.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-multicol-008.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-multicol-011.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-multicol-fixed-001.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-006.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scope-scroll.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-chained-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-chained-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-chained-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-chained-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-chained-fallback.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-composited-scrolling-006.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-fixedpos-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-fixedpos.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-nested.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-overflow-hidden.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-scrollable-anchor.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-to-sticky-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-to-sticky-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-to-sticky-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-to-sticky-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-006.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-007.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-vlr.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-vrl.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/auto-margins-position-area.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/position-anchor-001.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/position-anchor-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-anchor-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-anchor-target-with-children.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-area-abs-inline-container.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/position-area-inline-container.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/position-area-scroll-adjust.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-try-switch-from-fixed-anchor.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-try-switch-to-fixed-anchor.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-add-no-overflow.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-in.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-out.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-chained-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-chained-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-chained-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-chained-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-change-anchor.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-change-css-visibility.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-css-visibility.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-non-intervening-container.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-stacked-child.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-with-position.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-no-overflow-scroll.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-no-overflow-stacked-child.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-no-overflow.html",
+      "reason": "measured"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-remove-anchors-visible.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-remove-no-overflow.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/sticky-anchor-position-invalid.html",
+      "reason": "script"
+    }
+  ]
+}

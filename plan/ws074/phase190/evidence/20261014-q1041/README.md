@@ -1,0 +1,7 @@
+# q1041 anchor-positioning static reftest census
+
+The fixed Interop 2025 manifest selects 77 `anchor-positioning` reftest IDs, all under `css/css-anchor-position`. The q1034 static runner admitted 21 and measured **0 local PASS, 21 FAIL, 0 error** at 800×600 on one localhost HTTP origin with fixed fonts. [Report](report.json) contains each match comparison; differences range from 1,665 to 80,000 pixels (median 10,798). [Coverage by ID](coverage.json) confirms the other **56 selected IDs contain scripts**, so they are unrun by this static runner. The runner's raw `skipped.script=116` includes unselected files and is not the Interop selection count.
+
+Saved representative side-by-side images: [anchor-center](failures/001-anchor-center-002.png), [anchor in min/max](failures/002-anchor-in-css-min-max-function.png), and [anchor-name](failures/003-anchor-name-005.png). The consistent FAILs point to absent or incomplete anchor-positioning behavior; specific CSS mechanisms need separate diagnosis before any engine change. No result is inferred for the 56 scripted IDs.
+
+All 77 IDs, the fixed WPT commit, reference metrics and measured/unrun partition were checked; `git diff --check` passed. Browser/WPT/Master source did not change, so host build and Acid reruns were outside this measurement Queue. p190 whole and the 3,805-ID objective remain uncleared. Shared Queue/Master/GitHub publication is Q1 owned; no push.

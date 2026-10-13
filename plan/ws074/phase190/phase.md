@@ -77,3 +77,13 @@ Event ws074-p190-q1039-outcome-20261014: q1039-i01 partial cleared、p190 whole 
 **partial scope cleared、p190 whole uncleared。** 固定manifestのcrashtest48一意IDを全実測し、48 local PASS/0 crash/0 timeout/0 process error/0 no-image/0 unsupported。[証拠](evidence/20261014-q1040/README.md)。全IDの800×600画像を検証し、q1039 details3件は画像hashとoutcomeが一致。分野分布・固定commit・ID集合を照合。選択/分類control6/6、Python compile/diff check PASS。browser/WPT/Master無変更、host build/Acid再計測省略。これはlocal host条件のcrashtest測定であり公式WPT環境同等性やreftest/testharnessを証明しない。p190 whole/p173全件100%未達、GitHub publication保留。
 
 Event ws074-p190-q1040-outcome-20261014: q1040-i01 partial cleared、p190 whole uncleared。固定48 crashtestのlocal測定を完了、reftest全件と公式環境同等性が残る。
+
+## q1041-i01 の有限部分範囲
+
+2026-10-14 01:37 JST、ユーザーの事前承認を適用、最大90分。固定Interop manifestのanchor-positioning focusに属するreftest77 IDのうち、既存q1034 static runnerが実行できる`css/css-anchor-position`の全候補を800×600・固定font・単一HTTPで実測する。残りの選定IDはscript/variant/参照/別directory等の理由をID単位で照合し、PASS/FAIL/errorと参照・代表差分を記録する。runnerやbrowser/WPT/公開ABI/`master.md`変更は含めない。固定commit/manifestと結果ID/件数、diff checkを検証する。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。
+
+## q1041-i01 結果（2026-10-14 01:37 JST）
+
+**partial scope cleared、p190 whole uncleared。** 固定anchor-positioning reftest77 ID中、静的適格21件を実測し0 local PASS/21 FAIL/0 error。差画素1,665～80,000、中央値10,798。[結果・選定ID別未実行理由・代表画像](evidence/20261014-q1041/README.md)。残り56 IDはscriptを含むため未実行。固定commit/manifestとID集合、diff check PASS。コード無変更のためhost build/Acid再計測省略。anchor-positioning描画の一般欠陥とscripted runner条件は今後の別範囲。p190 whole/p173全件100%未達、browser/WPT/Master無変更、GitHub publication保留。
+
+Event ws074-p190-q1041-outcome-20261014: q1041-i01 partial cleared、p190 whole uncleared。anchor-positioning固定77 reftestを21静的FAIL/56 scripted未実行に分類。

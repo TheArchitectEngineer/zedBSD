@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1041 / WS074 anchor-positioning static reftest census（2026-10-14）
+
+[q1041履歴](queue-q1041.md): 固定anchor-positioning reftest77 ID中static21件は0 local PASS/21 FAIL、scripted56件未実行。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1041/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1040 / WS074 fixed crashtest full census（2026-10-14）
 
 [q1040履歴](queue-q1040.md): 固定crashtest全48 IDはlocal rendererで48 PASS/0 crash/0 timeout。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1040/README.md)。共有投影/GitHub publication pending。
