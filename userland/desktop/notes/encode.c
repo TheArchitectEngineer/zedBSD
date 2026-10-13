@@ -35,6 +35,18 @@
  * A reader of version 1 refuses it, and opens the file as another
  * program's PDF, the edits drawn in it.  A notebook without edits is
  * written as version 1.1, as before.
+ *
+ * Version 3.0 (ws216-p003, plan/ws216/phase001/phase.md section 5.4) is
+ * written when a stroke is of the brush, the pencil, the watercolour or
+ * the fill; it is 2.0 and more.  TOOL's curve byte is the version of the
+ * tool's constants, and a stroke's flags may say that its baked width
+ * factors follow its samples (FACTORS: the column count, then each
+ * sample's factors), its darkness steps after them (STEPS, the pencil),
+ * and that its samples are the corners of contours (CONTOURS, a fill:
+ * after the sample count, the contour count and each contour's samples).
+ * A fill's samples have no times.  A reader of versions 1 and 2 refuses
+ * it and opens the file as another program's PDF; a document whose
+ * constants this file does not know is refused the same way.
  */
 
 #include "notes.h"
@@ -50,6 +62,13 @@
 #define ENCODE_MAJOR_EDITS	2U
 #define ENCODE_MINOR_EDITS	0U
 
+/* The version with the drawing tools of ws216 (brush, pencil, watercolour, fill). */
+#define ENCODE_MAJOR_TOOLS	3U
+#define ENCODE_MINOR_TOOLS	0U
+
+/* The journal's version whose stroke records carry the tool's constants (journal.c). */
+#define ENCODE_JOURNAL_TOOLS	3U
+
 /* The grid of an edit's transform's first four numbers, and the largest of them. */
 #define ENCODE_SCALE_UNITS	65536.0
 #define ENCODE_SCALE_MAX	100000.0
@@ -61,9 +80,18 @@
 /* The longest new words of a line, in bytes. */
 #define ENCODE_TEXT_MAX		65536U
 
-/* The stroke flags: the samples carry the tilt, and their times. */
+/*
+ * The stroke flags: the samples carry the tilt, and their times; version
+ * 3.0 adds the baked factors, the pencil's steps and a fill's contours.
+ */
 #define ENCODE_STROKE_TILT	0x01U
 #define ENCODE_STROKE_TIME	0x02U
+#define ENCODE_STROKE_FACTORS	0x04U
+#define ENCODE_STROKE_STEPS	0x08U
+#define ENCODE_STROKE_CONTOURS	0x10U
+
+/* The most contours a fill may declare. */
+#define ENCODE_CONTOURS_MAX	65535U
 
 /* The largest counts a document may declare, which keep a damaged file from asking for all memory. */
 #define ENCODE_PAGES_MAX	100000U
@@ -77,12 +105,14 @@
 #define ENCODE_BUFFER_MIN	256U
 
 /*
- * One tool of the TOOL chunk: a kind, a colour and a width.
+ * One tool of the TOOL chunk: a kind, a colour, a width and the version of
+ * the kind's constants (ws216-p003).
  */
 struct encode_tool {
 	unsigned kind;
 	uint32_t color;
 	float width;
+	unsigned constants;
 };
 
 /*
@@ -120,11 +150,15 @@ struct encode_reader {
 
 static void buffer_reserve(struct notes_buffer *buffer, size_t more);
 static int tools_find(struct encode_tools *tools, const struct notes_stroke *stroke, size_t *index);
-static void encode_samples(struct notes_buffer *buffer, const struct notes_stroke *stroke, uint64_t first_time);
+static void encode_samples(struct notes_buffer *buffer, const struct notes_stroke *stroke, uint64_t first_time, int timed);
 static int decode_samples(struct encode_reader *reader, struct notes_stroke *stroke, unsigned flags, size_t count, uint64_t *first_time);
+static int stroke_flags(const struct notes_stroke *stroke, unsigned *flags);
+static void encode_stroke_tail(struct notes_buffer *buffer, const struct notes_stroke *stroke, unsigned flags, uint64_t first_time);
+static int decode_stroke_tail(struct encode_reader *reader, struct notes_stroke *stroke, unsigned flags, int tools, uint64_t *first_time);
+static int check_kind(unsigned kind, unsigned constants, int tools);
 static int decode_doc(struct encode_reader *reader, struct notes_document *document, size_t *pages);
-static int decode_tools(struct encode_reader *reader, struct encode_tools *tools);
-static int decode_page(struct encode_reader *reader, struct notes_document *document, const struct encode_tools *tools, size_t index);
+static int decode_tools(struct encode_reader *reader, struct encode_tools *tools, unsigned major);
+static int decode_page(struct encode_reader *reader, struct notes_document *document, const struct encode_tools *tools, size_t index, unsigned major);
 static int decode_base(struct encode_reader *reader, struct notes_document *document);
 static int decode_source(struct encode_reader *reader, struct notes_document *document);
 static int images_add(struct encode_images *images, struct notes_image *image);
@@ -314,16 +348,26 @@ notes_encode_document(
 	size_t stroke_index;
 	size_t edit_index;
 	size_t tool;
+	unsigned flags;
 	int edited;
+	int drawn;
 	int error;
 
-	/* The header: magic, version (2.0 with edits of the PDF's objects) and no flags. */
+	/*
+	 * The header: magic, the lowest version that holds the document (3.0
+	 * with the drawing tools of ws216, 2.0 with edits of the PDF's objects,
+	 * 1.1 otherwise) and no flags.
+	 */
 	memset(&tools, 0, sizeof(tools));
 	memset(&images, 0, sizeof(images));
 	notes_buffer_init(&chunk);
 	notes_buffer_bytes(buffer, "ZNOT", 4U);
 	edited = notes_document_edited(document);
-	if (edited) {
+	drawn = notes_document_new_tools(document);
+	if (drawn) {
+		notes_buffer_u16(buffer, ENCODE_MAJOR_TOOLS);
+		notes_buffer_u16(buffer, ENCODE_MINOR_TOOLS);
+	} else if (edited) {
 		notes_buffer_u16(buffer, ENCODE_MAJOR_EDITS);
 		notes_buffer_u16(buffer, ENCODE_MINOR_EDITS);
 	} else {
@@ -367,7 +411,7 @@ notes_encode_document(
 		}
 	}
 
-	/* TOOL: each tool's kind, colour (red, green, blue, alpha), width, pressure curve and flags. */
+	/* TOOL: each tool's kind, colour (red, green, blue, alpha), width, constants' version (the curve in 1.1) and flags. */
 	notes_buffer_varint(&chunk, tools.count);
 	for (tool = 0; tool < tools.count; tool++) {
 		notes_buffer_u8(&chunk, tools.tools[tool].kind);
@@ -376,7 +420,7 @@ notes_encode_document(
 		notes_buffer_u8(&chunk, (tools.tools[tool].color >> 8) & 0xffU);
 		notes_buffer_u8(&chunk, tools.tools[tool].color & 0xffU);
 		notes_buffer_varint(&chunk, (uint64_t)units(tools.tools[tool].width));
-		notes_buffer_u8(&chunk, 0U);
+		notes_buffer_u8(&chunk, tools.tools[tool].constants);
 		notes_buffer_u8(&chunk, 0U);
 	}
 
@@ -425,23 +469,28 @@ notes_encode_document(
 		notes_buffer_bytes(&chunk, page->content_hash, sizeof(page->content_hash));
 		notes_buffer_varint(&chunk, page->stroke_count);
 
-		/* Each stroke: number, tool, flags, samples. */
+		/* Each stroke: number, tool, flags, samples (and the baked values, ws216-p003). */
 		for (stroke_index = 0; stroke_index < page->stroke_count; stroke_index++) {
+			/* The flags; a stroke without the values its tool needs cannot be kept. */
 			stroke = page->strokes[stroke_index];
+			error = stroke_flags(stroke, &flags);
+			if (error != 0) {
+				free(tools.tools);
+				notes_buffer_free(&chunk);
+				return error;
+			}
+
+			/* The number, the tool and the flags. */
 			(void)tools_find(&tools, stroke, &tool);
 			notes_buffer_varint(&chunk, stroke->id);
 			notes_buffer_varint(&chunk, tool);
-			if (stroke->has_tilt)
-				notes_buffer_u8(&chunk, ENCODE_STROKE_TILT | ENCODE_STROKE_TIME);
-			else
-				notes_buffer_u8(&chunk, ENCODE_STROKE_TIME);
-			notes_buffer_varint(&chunk, stroke->point_count);
+			notes_buffer_u8(&chunk, flags);
 
 			/* The first sample's time counts from the document's time base. */
 			first_time = 0U;
 			if (stroke->start_ms > document->time_base)
 				first_time = stroke->start_ms - document->time_base;
-			encode_samples(&chunk, stroke, first_time);
+			encode_stroke_tail(&chunk, stroke, flags, first_time);
 		}
 
 		/* The chunk. */
@@ -489,7 +538,9 @@ notes_encode_document(
  *
  * The document is made here (notes_document_init is not called first);
  * on failure it is freed again.  Returns 0, EINVAL for data that is not
- * edit data of a version this file reads or is damaged, or ENOMEM.
+ * edit data of a version this file reads or is damaged, ENOTSUP for a
+ * tool whose constants are of a version this file does not know, or
+ * ENOMEM.
  */
 int
 notes_decode_document(
@@ -532,11 +583,16 @@ notes_decode_document(
 		return EINVAL;
 	reader.offset = 4U;
 
-	/* A major version this file does not know is not read (design-pdf.md section 2.1; 2 has edits, ws175-p007). */
+	/*
+	 * A major version this file does not know is not read (design-pdf.md
+	 * section 2.1; 2 has edits, ws175-p007; 3 the drawing tools, ws216-p003).
+	 */
 	major = read_u16(&reader);
 	(void)read_u16(&reader);
 	(void)read_u32(&reader);
-	if (major != ENCODE_MAJOR && major != ENCODE_MAJOR_EDITS)
+	if (major != ENCODE_MAJOR &&
+	    major != ENCODE_MAJOR_EDITS &&
+	    major != ENCODE_MAJOR_TOOLS)
 		return EINVAL;
 	memset(&images, 0, sizeof(images));
 
@@ -579,17 +635,17 @@ notes_decode_document(
 			error = decode_doc(&reader, document, &declared);
 			seen_doc = 1;
 		} else if (is_tool == 0 && tools.count == 0U) {
-			error = decode_tools(&reader, &tools);
+			error = decode_tools(&reader, &tools, major);
 		} else if (is_page == 0 && seen_doc) {
-			error = decode_page(&reader, document, &tools, pages);
+			error = decode_page(&reader, document, &tools, pages, major);
 			pages++;
 		} else if (is_base == 0 && seen_doc) {
 			error = decode_base(&reader, document);
 		} else if (is_source == 0 && seen_doc) {
 			error = decode_source(&reader, document);
-		} else if (is_image == 0 && seen_doc && major == ENCODE_MAJOR_EDITS) {
+		} else if (is_image == 0 && seen_doc && major >= ENCODE_MAJOR_EDITS) {
 			error = decode_image(&reader, &images);
-		} else if (is_edit == 0 && seen_doc && major == ENCODE_MAJOR_EDITS) {
+		} else if (is_edit == 0 && seen_doc && major >= ENCODE_MAJOR_EDITS) {
 			error = decode_edits(&reader, document, &images);
 		}
 
@@ -620,31 +676,46 @@ notes_decode_document(
 }
 
 /*
- * Encodes one stroke with its tool written out, for the journal.
+ * Encodes one stroke with its tool written out, for a journal of a version
+ * (2, or 3 with the tool's constants and the baked values, ws216-p003).
  *
- * Returns 0, or ENOMEM.
+ * Returns 0, EINVAL for a stroke the version cannot hold (or without the
+ * values its tool needs), or ENOMEM.
  */
 int
 notes_encode_stroke(
 	const struct notes_stroke *stroke,
+	unsigned version,
 	struct notes_buffer *buffer)
 {
+	unsigned constants;
 	unsigned flags;
+	int error;
 
-	/* The stroke's number, its tool and colour, its width and when it started. */
+	/* The flags; the values the tool needs must be there. */
+	error = stroke_flags(stroke, &flags);
+	if (error != 0)
+		return error;
+
+	/* A journal of version 2 holds the pen and the highlighter only. */
+	constants = notes_tool_constants(stroke->tool);
+	if (version < ENCODE_JOURNAL_TOOLS && constants != 0U)
+		return EINVAL;
+
+	/* The stroke's number and its tool, then its constants' version (version 3). */
 	notes_buffer_varint(buffer, stroke->id);
 	notes_buffer_u8(buffer, stroke->tool);
+	if (version >= ENCODE_JOURNAL_TOOLS)
+		notes_buffer_u8(buffer, stroke->constants);
+
+	/* Its colour, its width, its flags and when it started. */
 	notes_buffer_u32(buffer, stroke->color);
 	notes_buffer_varint(buffer, (uint64_t)units(stroke->width));
-	flags = ENCODE_STROKE_TIME;
-	if (stroke->has_tilt)
-		flags |= ENCODE_STROKE_TILT;
 	notes_buffer_u8(buffer, flags);
 	notes_buffer_u64(buffer, stroke->start_ms);
 
-	/* Its samples; the first sample's time counts from the stroke's start. */
-	notes_buffer_varint(buffer, stroke->point_count);
-	encode_samples(buffer, stroke, 0U);
+	/* Its samples and values; the first sample's time counts from the stroke's start. */
+	encode_stroke_tail(buffer, stroke, flags, 0U);
 	if (buffer->error != 0)
 		return buffer->error;
 
@@ -653,27 +724,31 @@ notes_encode_stroke(
 }
 
 /*
- * Decodes one stroke that notes_encode_stroke() wrote.
+ * Decodes one stroke that notes_encode_stroke() wrote for a journal of a
+ * version.
  *
- * *used tells how many bytes it took.  Returns 0, EINVAL or ENOMEM.
+ * *used tells how many bytes it took.  Returns 0, EINVAL, ENOTSUP for a
+ * tool's constants of a version this file does not know, or ENOMEM.
  */
 int
 notes_decode_stroke(
 	const unsigned char *data,
 	size_t size,
+	unsigned version,
 	size_t *used,
 	struct notes_stroke **stroke)
 {
 	struct encode_reader reader;
 	struct notes_stroke *made;
 	uint64_t first_time;
-	uint64_t count;
 	uint32_t id;
 	uint32_t color;
 	unsigned tool;
+	unsigned constants;
 	unsigned flags;
 	float width;
 	uint64_t start;
+	int tools;
 	int error;
 
 	/* A reader over the bytes. */
@@ -681,30 +756,40 @@ notes_decode_stroke(
 	reader.data = data;
 	reader.length = size;
 
-	/* The number, tool, colour, width, flags and start. */
+	/* The number and the tool, then the constants' version (version 3; none before). */
 	id = (uint32_t)read_varint(&reader);
 	tool = read_u8(&reader);
+	tools = 0;
+	constants = 0U;
+	if (version >= ENCODE_JOURNAL_TOOLS) {
+		tools = 1;
+		constants = read_u8(&reader);
+	}
+
+	/* The colour, width, flags and start. */
 	color = read_u32(&reader);
 	width = read_length(&reader);
 	flags = read_u8(&reader);
 	start = read_u64(&reader);
-	count = read_varint(&reader);
 	if (reader.error != 0)
 		return EINVAL;
 
-	/* A stroke of no samples, too many, or no width is damaged. */
-	if (count == 0U ||
-	    count > ENCODE_POINTS_MAX ||
-	    !(width > 0.0f))
+	/* A stroke of no width is damaged. */
+	if (!(width > 0.0f))
 		return EINVAL;
+
+	/* A tool the version does not have, or constants this file does not know, are refused. */
+	error = check_kind(tool, constants, tools);
+	if (error != 0)
+		return error;
 
 	/* The stroke. */
 	made = notes_stroke_create(id, tool, color, width, start);
 	if (made == NULL)
 		return ENOMEM;
 
-	/* Its samples. */
-	error = decode_samples(&reader, made, flags, (size_t)count, &first_time);
+	/* Its samples and values. */
+	error = decode_stroke_tail(&reader, made, flags, tools, &first_time);
 	if (error != 0) {
 		notes_stroke_free(made);
 		return error;
@@ -713,6 +798,34 @@ notes_decode_stroke(
 	/* Succeeded: the caller owns the stroke. */
 	*used = reader.offset;
 	*stroke = made;
+	return 0;
+}
+
+/*
+ * Tells whether a document has a stroke of the drawing tools of ws216,
+ * which only the edit data's version 3.0 (and the journal's version 3)
+ * holds.
+ */
+int
+notes_document_new_tools(
+	const struct notes_document *document)
+{
+	const struct notes_page *page;
+	size_t page_index;
+	size_t stroke_index;
+	unsigned constants;
+
+	/* Each stroke of each page. */
+	for (page_index = 0; page_index < document->page_count; page_index++) {
+		page = document->pages[page_index];
+		for (stroke_index = 0; stroke_index < page->stroke_count; stroke_index++) {
+			constants = notes_tool_constants(page->strokes[stroke_index]->tool);
+			if (constants != 0U)
+				return 1;
+		}
+	}
+
+	/* Only the pen and the highlighter. */
 	return 0;
 }
 
@@ -769,13 +882,15 @@ tools_find(
 	size_t capacity;
 	size_t tool;
 
-	/* A tool of the same kind, colour and width is the stroke's. */
+	/* A tool of the same kind, colour, width and constants is the stroke's. */
 	for (tool = 0; tool < tools->count; tool++) {
 		if (tools->tools[tool].kind != stroke->tool)
 			continue;
 		if (tools->tools[tool].color != stroke->color)
 			continue;
 		if (tools->tools[tool].width != stroke->width)
+			continue;
+		if (tools->tools[tool].constants != stroke->constants)
 			continue;
 		*index = tool;
 		return 0;
@@ -797,17 +912,19 @@ tools_find(
 	tools->tools[tools->count].kind = stroke->tool;
 	tools->tools[tools->count].color = stroke->color;
 	tools->tools[tools->count].width = stroke->width;
+	tools->tools[tools->count].constants = stroke->constants;
 	*index = tools->count;
 	tools->count++;
 	return 0;
 }
 
-/* Writes a stroke's samples as differences from the sample before. */
+/* Writes a stroke's samples as differences from the sample before, with their times when it is timed. */
 static void
 encode_samples(
 	struct notes_buffer *buffer,
 	const struct notes_stroke *stroke,
-	uint64_t first_time)
+	uint64_t first_time,
+	int timed)
 {
 	const struct notes_point *point;
 	int64_t x;
@@ -850,6 +967,10 @@ encode_samples(
 			last_tilt_x = point->tilt_x;
 			last_tilt_y = point->tilt_y;
 		}
+
+		/* A fill's samples have no time (ws216-p003). */
+		if (!timed)
+			continue;
 
 		/* The time: the first from the given base, the others from the sample before (never backwards). */
 		if (index == 0U) {
@@ -951,6 +1072,255 @@ decode_samples(
 	return 0;
 }
 
+/*
+ * Tells the flags a stroke is written with: its samples' tilt, their times
+ * (not a fill's), and the baked values and contours its tool has
+ * (ws216-p003).  A stroke without the values its tool needs is refused.
+ */
+static int
+stroke_flags(
+	const struct notes_stroke *stroke,
+	unsigned *flags)
+{
+	unsigned columns;
+	int baked;
+
+	/* The times, except a fill's, and the tilt when the samples carry it. */
+	*flags = 0U;
+	if (stroke->tool != NOTES_TOOL_FILL)
+		*flags |= ENCODE_STROKE_TIME;
+	if (stroke->has_tilt)
+		*flags |= ENCODE_STROKE_TILT;
+
+	/* The baked factors, and the pencil's steps; a stroke not baked cannot be kept. */
+	columns = notes_tool_columns(stroke->tool);
+	if (columns != 0U) {
+		baked = notes_stroke_baked(stroke);
+		if (!baked)
+			return EINVAL;
+		*flags |= ENCODE_STROKE_FACTORS;
+		if (stroke->tool == NOTES_TOOL_PENCIL)
+			*flags |= ENCODE_STROKE_STEPS;
+	}
+
+	/* A fill's contours. */
+	if (stroke->tool == NOTES_TOOL_FILL) {
+		if (stroke->contours == NULL || stroke->contour_count == 0U)
+			return EINVAL;
+		if (stroke->contour_count > ENCODE_CONTOURS_MAX)
+			return EINVAL;
+		*flags |= ENCODE_STROKE_CONTOURS;
+	}
+
+	/* Succeeded: the flags. */
+	return 0;
+}
+
+/*
+ * Writes what follows a stroke's flags: the sample count, a fill's
+ * contours, the samples, then the baked factors and steps.
+ */
+static void
+encode_stroke_tail(
+	struct notes_buffer *buffer,
+	const struct notes_stroke *stroke,
+	unsigned flags,
+	uint64_t first_time)
+{
+	size_t index;
+	size_t count;
+	int timed;
+
+	/* The sample count. */
+	notes_buffer_varint(buffer, stroke->point_count);
+
+	/* A fill's contours: their count, then each one's samples. */
+	if ((flags & ENCODE_STROKE_CONTOURS) != 0U) {
+		notes_buffer_u16(buffer, (unsigned)stroke->contour_count);
+		for (index = 0; index < stroke->contour_count; index++)
+			notes_buffer_u32(buffer, (uint32_t)stroke->contours[index]);
+	}
+
+	/* The samples, timed unless they are a fill's. */
+	timed = 0;
+	if ((flags & ENCODE_STROKE_TIME) != 0U)
+		timed = 1;
+	encode_samples(buffer, stroke, first_time, timed);
+
+	/* The baked factors: the column count, then each sample's. */
+	if ((flags & ENCODE_STROKE_FACTORS) != 0U) {
+		notes_buffer_u8(buffer, stroke->factor_columns);
+		count = stroke->point_count * stroke->factor_columns;
+		for (index = 0; index < count; index++)
+			notes_buffer_u16(buffer, stroke->factors[index]);
+	}
+
+	/* The pencil's steps, one a sample. */
+	if ((flags & ENCODE_STROKE_STEPS) != 0U)
+		notes_buffer_bytes(buffer, stroke->steps, stroke->point_count);
+}
+
+/*
+ * Reads what follows a stroke's flags (encode_stroke_tail()).  Only a
+ * version with the drawing tools (tools nonzero) reads the values; there
+ * the flags must give exactly the values the stroke's tool has.
+ */
+static int
+decode_stroke_tail(
+	struct encode_reader *reader,
+	struct notes_stroke *stroke,
+	unsigned flags,
+	int tools,
+	uint64_t *first_time)
+{
+	uint64_t count;
+	uint64_t total;
+	size_t index;
+	size_t values;
+	unsigned expected;
+	unsigned columns;
+	unsigned stored;
+	unsigned step;
+	int error;
+
+	/* The sample count, which must be sane. */
+	count = read_varint(reader);
+	if (reader->error != 0 ||
+	    count == 0U ||
+	    count > ENCODE_POINTS_MAX)
+		return EINVAL;
+
+	/* The values the stroke's tool has. */
+	columns = notes_tool_columns(stroke->tool);
+	expected = 0U;
+	if (columns != 0U)
+		expected |= ENCODE_STROKE_FACTORS;
+	if (stroke->tool == NOTES_TOOL_PENCIL)
+		expected |= ENCODE_STROKE_STEPS;
+	if (stroke->tool == NOTES_TOOL_FILL)
+		expected |= ENCODE_STROKE_CONTOURS;
+
+	/* Before the drawing tools the other flags mean nothing; from them they must match the tool. */
+	if (!tools) {
+		flags &= ENCODE_STROKE_TILT | ENCODE_STROKE_TIME;
+	} else if ((flags & (ENCODE_STROKE_FACTORS | ENCODE_STROKE_STEPS | ENCODE_STROKE_CONTOURS)) != expected) {
+		return EINVAL;
+	}
+
+	/* A fill's contours: at least one, each of three samples or more, as many samples as the stroke has. */
+	if ((flags & ENCODE_STROKE_CONTOURS) != 0U) {
+		stroke->contour_count = read_u16(reader);
+		if (reader->error != 0 || stroke->contour_count == 0U)
+			return EINVAL;
+		if (stroke->contour_count * 4U > reader->length - reader->offset)
+			return EINVAL;
+
+		/* Allocates the contours. */
+		stroke->contours = malloc(stroke->contour_count * sizeof(stroke->contours[0]));
+		if (stroke->contours == NULL)
+			return ENOMEM;
+
+		/* Each contour's samples. */
+		total = 0U;
+		for (index = 0; index < stroke->contour_count; index++) {
+			stroke->contours[index] = read_u32(reader);
+			if (stroke->contours[index] < 3U)
+				return EINVAL;
+			total += stroke->contours[index];
+		}
+		if (reader->error != 0 || total != count)
+			return EINVAL;
+	}
+
+	/* The samples. */
+	error = decode_samples(reader, stroke, flags, (size_t)count, first_time);
+	if (error != 0)
+		return error;
+
+	/* The baked factors, in the tool's columns. */
+	if ((flags & ENCODE_STROKE_FACTORS) != 0U) {
+		stored = read_u8(reader);
+		if (stored != columns)
+			return EINVAL;
+		values = (size_t)count * columns;
+		if (reader->error != 0 || values * 2U > reader->length - reader->offset)
+			return EINVAL;
+
+		/* Allocates them. */
+		stroke->factors = malloc(values * sizeof(stroke->factors[0]));
+		if (stroke->factors == NULL)
+			return ENOMEM;
+		stroke->factor_columns = columns;
+
+		/* Each factor. */
+		for (index = 0; index < values; index++)
+			stroke->factors[index] = (uint16_t)read_u16(reader);
+	}
+
+	/* The pencil's steps, each within the steps the pencil has. */
+	if ((flags & ENCODE_STROKE_STEPS) != 0U) {
+		if ((size_t)count > reader->length - reader->offset)
+			return EINVAL;
+
+		/* Allocates them. */
+		stroke->steps = malloc((size_t)count);
+		if (stroke->steps == NULL)
+			return ENOMEM;
+
+		/* Each step. */
+		for (index = 0; index < (size_t)count; index++) {
+			step = read_u8(reader);
+			if (step > NOTES_PENCIL_STEPS)
+				return EINVAL;
+			stroke->steps[index] = (unsigned char)step;
+		}
+	}
+
+	/* Values past the data are damaged. */
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* Succeeded: the stroke has its samples and values; its shapes follow them. */
+	notes_shape_drop(stroke);
+	return 0;
+}
+
+/*
+ * Tells whether a version reads a tool kind with constants of a version:
+ * before the drawing tools (tools zero) only the kinds without constants,
+ * from them the kinds up to the fill with the constants this Notes draws.
+ * Returns 0, EINVAL, or ENOTSUP for constants of another version.
+ */
+static int
+check_kind(
+	unsigned kind,
+	unsigned constants,
+	int tools)
+{
+	unsigned known;
+
+	/* The constants this Notes draws the kind with. */
+	known = notes_tool_constants(kind);
+
+	/* Before the drawing tools, their kinds are not there (and other numbers are read as before). */
+	if (!tools) {
+		if (known != 0U)
+			return EINVAL;
+		return 0;
+	}
+
+	/* From them, no kind past the fill. */
+	if (kind > NOTES_TOOL_FILL)
+		return EINVAL;
+
+	/* Constants of another version would be drawn otherwise than they were. */
+	if (constants != known)
+		return ENOTSUP;
+
+	/* Succeeded: the kind is read. */
+	return 0;
+}
+
 /* Reads the DOC chunk: the page count, the pressure's range, the time base, the next number. */
 static int
 decode_doc(
@@ -988,11 +1358,14 @@ decode_doc(
 static int
 decode_tools(
 	struct encode_reader *reader,
-	struct encode_tools *tools)
+	struct encode_tools *tools,
+	unsigned major)
 {
 	uint64_t count;
 	size_t index;
 	uint32_t color;
+	unsigned constants;
+	int error;
 
 	/* The count, which must be sane. */
 	count = read_varint(reader);
@@ -1007,7 +1380,11 @@ decode_tools(
 		return ENOMEM;
 	tools->capacity = (size_t)count;
 
-	/* Each tool: kind, colour, width, curve and flags (the last two have one value in version 1). */
+	/*
+	 * Each tool: kind, colour, width, curve and flags (the last two have one
+	 * value in versions 1 and 2; from 3.0 the curve byte is the version of
+	 * the kind's constants, ws216-p003).
+	 */
 	for (index = 0; index < (size_t)count; index++) {
 		tools->tools[index].kind = read_u8(reader);
 		color = (uint32_t)read_u8(reader) << 24;
@@ -1016,10 +1393,20 @@ decode_tools(
 		color |= (uint32_t)read_u8(reader);
 		tools->tools[index].color = color;
 		tools->tools[index].width = read_length(reader);
-		(void)read_u8(reader);
+		constants = read_u8(reader);
 		(void)read_u8(reader);
 		if (reader->error != 0)
 			return EINVAL;
+
+		/* Before 3.0 the curve byte is not read: the kind has the constants of none. */
+		if (major < ENCODE_MAJOR_TOOLS)
+			constants = notes_tool_constants(tools->tools[index].kind);
+		tools->tools[index].constants = constants;
+
+		/* A kind the version does not have, or constants this file does not know, are refused. */
+		error = check_kind(tools->tools[index].kind, constants, major >= ENCODE_MAJOR_TOOLS);
+		if (error != 0)
+			return error;
 	}
 
 	/* Succeeded: the strokes can name their tools. */
@@ -1033,7 +1420,8 @@ decode_page(
 	struct encode_reader *reader,
 	struct notes_document *document,
 	const struct encode_tools *tools,
-	size_t index)
+	size_t index,
+	unsigned major)
 {
 	struct notes_page *page;
 	struct notes_page **larger;
@@ -1044,7 +1432,6 @@ decode_page(
 	uint64_t strokes;
 	uint64_t id;
 	uint64_t tool;
-	uint64_t count;
 	uint64_t first_time;
 	float width;
 	float height;
@@ -1100,22 +1487,20 @@ decode_page(
 
 	/* Each stroke; the page owns each as it is read. */
 	for (stroke_index = 0; stroke_index < strokes; stroke_index++) {
-		/* The number, the tool, the flags and the sample count. */
+		/* The number, the tool and the flags. */
 		id = read_varint(reader);
 		tool = read_varint(reader);
 		flags = read_u8(reader);
-		count = read_varint(reader);
 		if (reader->error != 0 ||
 		    tool >= tools->count ||
-		    count == 0U ||
-		    count > ENCODE_POINTS_MAX ||
 		    id > 0xffffffffU)
 			return EINVAL;
 
-		/* The stroke with its tool. */
+		/* The stroke with its tool and the tool's constants. */
 		stroke = notes_stroke_create((uint32_t)id, tools->tools[tool].kind, tools->tools[tool].color, tools->tools[tool].width, 0U);
 		if (stroke == NULL)
 			return ENOMEM;
+		stroke->constants = tools->tools[tool].constants;
 
 		/* The page's array grows to hold it (the count is bounded, so the size cannot overflow). */
 		if (page->stroke_count == page->stroke_capacity) {
@@ -1134,8 +1519,8 @@ decode_page(
 		page->strokes[page->stroke_count] = stroke;
 		page->stroke_count++;
 
-		/* Its samples, and its start from the time base. */
-		error = decode_samples(reader, stroke, flags, (size_t)count, &first_time);
+		/* Its samples (and values), and its start from the time base. */
+		error = decode_stroke_tail(reader, stroke, flags, major >= ENCODE_MAJOR_TOOLS, &first_time);
 		if (error != 0)
 			return error;
 		stroke->start_ms = document->time_base + first_time;

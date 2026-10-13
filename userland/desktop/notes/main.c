@@ -906,6 +906,18 @@ app_start_document(
 	/* A journal rebuilds the notebook as it was when Notes last ran; one written on a PDF gets that PDF back from the file. */
 	if (found) {
 		error = notes_journal_recover(journal_path, &app->document, recovered_path, sizeof(recovered_path), &records);
+
+		/*
+		 * A journal of a tool's constants this Notes does not know (a later
+		 * Notes wrote it, ws216-p003) is set aside, not written over by the
+		 * next change.
+		 */
+		if (error == ENOTSUP) {
+			printf("NOTES RECOVER failed reason=version journal=%s\n", journal_path);
+			(void)notes_journal_set_aside(journal_path);
+		}
+
+		/* The recovered notebook gets the PDF it writes on. */
 		if (error == 0) {
 			error = notes_attach_base(recovered_path, &app->document);
 			if (error != 0) {

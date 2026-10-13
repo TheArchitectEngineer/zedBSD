@@ -38,6 +38,13 @@
  * that every edit's object is on the base's page and reads every image
  * back from the file; when one is not, the file is opened as it is shown
  * (NOTES_OPENED_REBASED, design.md [H3], [N1]).
+ *
+ * ws216-p003: each stroke is written as its shapes (shape.c), each one fill:
+ * the watercolour's multiplied over what is under it, the pencil's as a
+ * plain fill of the grain's least opacity under a fill of the grain (a
+ * tiling pattern of the page, plan/ws216/phase001/phase.md section 5.2).
+ * A notebook with the drawing tools (edit data 3.0) has its pages'
+ * content compressed with Flate; one without them is written as before.
  */
 
 #include "notes.h"
@@ -61,10 +68,24 @@
 /* The size of each read while a file is loaded. */
 #define SAVE_READ_CHUNK		65536U
 
+/*
+ * What the strokes of one save share in the writer (ws216-p003): the
+ * pencil's grain, added to the document once, when the first pencil
+ * stroke is written.
+ */
+struct save_paint {
+	int has_grain;
+	size_t grain;
+};
+
 static int save_whole(struct notes_document *document, const char *temporary);
 static int save_update(struct notes_document *document, const char *temporary);
-static int save_page(struct pdf_writer *writer, struct notes_document *document, size_t index);
-static int save_strokes(struct pdf_writer *writer, struct notes_page *page);
+static int save_page(struct pdf_writer *writer, struct notes_document *document, size_t index, struct save_paint *paint);
+static int save_strokes(struct pdf_writer *writer, struct notes_page *page, struct save_paint *paint);
+static int save_shape(struct pdf_writer *writer, const struct notes_stroke *stroke, const struct notes_shape *shape, struct save_paint *paint);
+static int save_shape_path(struct pdf_writer *writer, const struct notes_shape *shape);
+static int save_grain(struct pdf_writer *writer, struct save_paint *paint);
+static int save_compress(struct pdf_writer *writer, const struct notes_document *document);
 static int save_edit_data(struct pdf_writer *writer, struct notes_document *document);
 static int save_sync(const char *path);
 static int save_sync_folder(const char *path);
@@ -422,14 +443,23 @@ save_whole(
 	const char *temporary)
 {
 	struct pdf_writer *writer;
+	struct save_paint paint;
 	size_t index;
 	int result;
 	int error;
 
 	/* The writer. */
+	memset(&paint, 0, sizeof(paint));
 	error = pdf_writer_create(&writer);
 	if (error != 0)
 		return error;
+
+	/* The pages' content compressed, for a notebook with the drawing tools. */
+	error = save_compress(writer, document);
+	if (error != 0) {
+		pdf_writer_destroy(writer);
+		return error;
+	}
 
 	/* The identifier a saved document keeps, and its creation date. */
 	if (document->has_pdf_id) {
@@ -449,7 +479,7 @@ save_whole(
 
 	/* Each page with its strokes. */
 	for (index = 0; index < document->page_count; index++) {
-		error = save_page(writer, document, index);
+		error = save_page(writer, document, index, &paint);
 		if (error != 0) {
 			pdf_writer_destroy(writer);
 			return error;
@@ -497,13 +527,22 @@ save_update(
 	struct pdf_writer *writer;
 	struct pdf_page_editor *editor;
 	struct notes_page *page;
+	struct save_paint paint;
 	size_t index;
 	int error;
 
 	/* The writer that adds to the base; a signed base is refused. */
+	memset(&paint, 0, sizeof(paint));
 	error = pdf_writer_create_update(document->base, &writer);
 	if (error != 0)
 		return error;
+
+	/* The revision's content compressed, for a notebook with the drawing tools. */
+	error = save_compress(writer, document);
+	if (error != 0) {
+		pdf_writer_destroy(writer);
+		return error;
+	}
 
 	/* Each page, in the notebook's order. */
 	for (index = 0; index < document->page_count; index++) {
@@ -551,7 +590,7 @@ save_update(
 		}
 
 		/* The page's strokes. */
-		error = save_strokes(writer, page);
+		error = save_strokes(writer, page, &paint);
 		if (error != 0) {
 			pdf_writer_destroy(writer);
 			return error;
@@ -590,7 +629,8 @@ static int
 save_page(
 	struct pdf_writer *writer,
 	struct notes_document *document,
-	size_t index)
+	size_t index,
+	struct save_paint *paint)
 {
 	struct pdf_page_editor *editor;
 	struct notes_page *page;
@@ -612,7 +652,7 @@ save_page(
 	}
 
 	/* Its strokes. */
-	error = save_strokes(writer, page);
+	error = save_strokes(writer, page, paint);
 	if (error != 0)
 		return error;
 
@@ -625,44 +665,216 @@ save_page(
 	return 0;
 }
 
-/* Writes a page's strokes, bottom first: each one's outline filled once in its colour. */
+/* Writes a page's strokes, bottom first: each one's shapes, each filled once. */
 static int
 save_strokes(
 	struct pdf_writer *writer,
-	struct notes_page *page)
+	struct notes_page *page,
+	struct save_paint *paint)
 {
 	struct notes_stroke *stroke;
-	double red;
-	double green;
-	double blue;
-	double alpha;
 	size_t index;
+	size_t shape;
 	int error;
 
 	/* Each stroke, bottom first. */
 	for (index = 0; index < page->stroke_count; index++) {
-		/* The outline, the same polygon the screen draws. */
+		/* The shapes, the same polygons the screen draws. */
 		stroke = page->strokes[index];
 		error = notes_stroke_outline(stroke);
 		if (error != 0)
 			return error;
 
-		/* The colour and its opacity. */
-		red = (double)((stroke->color >> 24) & 0xffU) / 255.0;
-		green = (double)((stroke->color >> 16) & 0xffU) / 255.0;
-		blue = (double)((stroke->color >> 8) & 0xffU) / 255.0;
-		alpha = (double)(stroke->color & 0xffU) / 255.0;
-		error = pdf_writer_set_fill_color(writer, red, green, blue, alpha);
-		if (error != 0)
-			return error;
-
-		/* The polygon, filled once. */
-		error = pdf_writer_fill_outline(writer, stroke->outline, stroke->outline_count);
-		if (error != 0)
-			return error;
+		/* Each shape in its order. */
+		for (shape = 0; shape < stroke->shape_count; shape++) {
+			error = save_shape(writer, stroke, &stroke->shapes[shape], paint);
+			if (error != 0)
+				return error;
+		}
 	}
 
 	/* Succeeded: every stroke is written. */
+	return 0;
+}
+
+/*
+ * Writes one shape of a stroke: in the stroke's colour at its opacity times
+ * the shape's, laid over by its blend mode; a shape of the grain as a plain
+ * fill of the grain's least opacity under a fill of the grain, which add up
+ * to 1 - (1 - a g) (1 - a h) at a texel of the grain h, as the screen draws.
+ */
+static int
+save_shape(
+	struct pdf_writer *writer,
+	const struct notes_stroke *stroke,
+	const struct notes_shape *shape,
+	struct save_paint *paint)
+{
+	enum pdf_blend_mode blend;
+	double red;
+	double green;
+	double blue;
+	double alpha;
+	int error;
+
+	/* The colour and its opacity, times the shape's. */
+	red = (double)((stroke->color >> 24) & 0xffU) / 255.0;
+	green = (double)((stroke->color >> 16) & 0xffU) / 255.0;
+	blue = (double)((stroke->color >> 8) & 0xffU) / 255.0;
+	alpha = (double)(stroke->color & 0xffU) / 255.0;
+	alpha *= (double)shape->alpha;
+
+	/* The blend mode the next colour selects. */
+	blend = PDF_BLEND_NORMAL;
+	if (shape->blend == NOTES_BLEND_MULTIPLY)
+		blend = PDF_BLEND_MULTIPLY;
+	error = pdf_writer_set_blend_mode(writer, blend);
+	if (error != 0)
+		return error;
+
+	/* A plain shape, filled once. */
+	if (shape->paint != NOTES_PAINT_GRAIN) {
+		error = pdf_writer_set_fill_color(writer, red, green, blue, alpha);
+		if (error != 0)
+			return error;
+		error = save_shape_path(writer, shape);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the shape is painted. */
+		return 0;
+	}
+
+	/* The grain's least opacity, a plain fill under the grain. */
+	error = pdf_writer_set_fill_color(writer, red, green, blue, alpha * (double)NOTES_GRAIN_FLOOR);
+	if (error != 0)
+		return error;
+	error = save_shape_path(writer, shape);
+	if (error != 0)
+		return error;
+
+	/* The grain, added to the document the first time. */
+	error = save_grain(writer, paint);
+	if (error != 0)
+		return error;
+
+	/* The grain in the colour at the shape's opacity, in squares of the grain's cell from the page's top left. */
+	error = pdf_writer_set_fill_grain(writer, paint->grain, red, green, blue, alpha, NOTES_GRAIN_CELL);
+	if (error != 0)
+		return error;
+	error = save_shape_path(writer, shape);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the shape is painted through the grain. */
+	return 0;
+}
+
+/* Fills a shape's polygon with the nonzero rule, each contour a subpath. */
+static int
+save_shape_path(
+	struct pdf_writer *writer,
+	const struct notes_shape *shape)
+{
+	size_t contour;
+	size_t first;
+	size_t corner;
+	int error;
+
+	/* A polygon of one contour, as the pen's outline has always been written. */
+	if (shape->contours == NULL) {
+		error = pdf_writer_fill_outline(writer, shape->polygon, shape->corner_count);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the polygon is painted. */
+		return 0;
+	}
+
+	/* Each contour: a subpath from its first corner, closed. */
+	first = 0;
+	for (contour = 0; contour < shape->contour_count; contour++) {
+		error = pdf_writer_move_to(writer, shape->polygon[first].x, shape->polygon[first].y);
+		if (error != 0)
+			return error;
+
+		/* An edge to each of its other corners. */
+		for (corner = first + 1U; corner < first + shape->contours[contour]; corner++) {
+			error = pdf_writer_line_to(writer, shape->polygon[corner].x, shape->polygon[corner].y);
+			if (error != 0)
+				return error;
+		}
+
+		/* Back to its first corner. */
+		error = pdf_writer_close_path(writer);
+		if (error != 0)
+			return error;
+		first += shape->contours[contour];
+	}
+
+	/* Paints every contour at once, so that a hole stays empty. */
+	error = pdf_writer_fill(writer, PDF_FILL_NONZERO);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the contours are painted. */
+	return 0;
+}
+
+/* Adds the pencil's grain to the writer's document, once. */
+static int
+save_grain(
+	struct pdf_writer *writer,
+	struct save_paint *paint)
+{
+	unsigned char *tile;
+	int error;
+
+	/* A grain added already. */
+	if (paint->has_grain)
+		return 0;
+
+	/* Allocates the tile. */
+	tile = malloc((size_t)NOTES_GRAIN_SIDE * NOTES_GRAIN_SIDE);
+	if (tile == NULL)
+		return ENOMEM;
+
+	/* Makes it and gives it to the writer, which keeps a copy. */
+	notes_grain_tile(tile);
+	error = pdf_writer_add_grain(writer, tile, NOTES_GRAIN_SIDE, NOTES_GRAIN_SIDE, &paint->grain);
+	free(tile);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the strokes share the grain. */
+	paint->has_grain = 1;
+	return 0;
+}
+
+/*
+ * Has the writer compress the pages' content with Flate when the notebook
+ * has the drawing tools (edit data 3.0, whose readers decode it); other
+ * notebooks are written as before, which older readers compare unchanged.
+ */
+static int
+save_compress(
+	struct pdf_writer *writer,
+	const struct notes_document *document)
+{
+	int drawn;
+	int error;
+
+	/* A notebook without the drawing tools is not compressed. */
+	drawn = notes_document_new_tools(document);
+	if (!drawn)
+		return 0;
+
+	/* Compresses the content at the save. */
+	error = pdf_writer_set_content_flate(writer, 1);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the content is compressed. */
 	return 0;
 }
 

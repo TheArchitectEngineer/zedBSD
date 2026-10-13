@@ -34,6 +34,15 @@
  * and is followed by their records, so the journal holds every image the
  * document uses, also those of the saved file.  A Notes that reads
  * version 1 only does not recover a version 2 journal.
+ *
+ * Version 3 (ws216-p003, plan/ws216/phase003/phase.md section 5) logs the
+ * strokes of the drawing tools: a stroke's record carries its tool's
+ * constants' version and its baked values (encode.c).  A journal is
+ * written in the lowest version that holds its document: 2 while there is
+ * no such stroke, and when one is drawn into a journal of version 2, the
+ * journal is written anew as version 3 from the document as it stands.
+ * Recovery reads both; a journal of constants this Notes does not know is
+ * not recovered (ENOTSUP), so that the caller can set it aside.
  */
 
 #include "notes.h"
@@ -48,9 +57,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* The magic and version of a journal file. */
+/* The magic and the versions of a journal file: with the edits of the PDF's objects, and with the drawing tools. */
 #define JOURNAL_MAGIC		"ZNJL"
-#define JOURNAL_VERSION		2U
+#define JOURNAL_VERSION_EDITS	2U
+#define JOURNAL_VERSION_TOOLS	3U
 
 /* The record types. */
 #define JOURNAL_SNAPSHOT	1U
@@ -79,12 +89,14 @@
  * It lives as long as Notes shows the document.  descriptor is -1 while no
  * journal file is open: before the first change, and after a save or a
  * failure removed it.  images lists the numbers of the images the open
- * journal has logged (ws175-p007).
+ * journal has logged (ws175-p007).  version is the open journal's
+ * (ws216-p003), the version its records are written in.
  */
 struct notes_journal {
 	char document_path[JOURNAL_PATH_MAX];
 	char path[JOURNAL_PATH_MAX];
 	int descriptor;
+	unsigned version;
 	uint32_t *images;
 	size_t image_count;
 	size_t image_capacity;
@@ -100,14 +112,14 @@ struct journal_images {
 	size_t capacity;
 };
 
-static int journal_start(struct notes_journal *journal, const struct notes_document *document);
+static int journal_start(struct notes_journal *journal, const struct notes_document *document, int tools);
 static int journal_append(struct notes_journal *journal, const struct notes_document *document, unsigned type, const struct notes_buffer *body);
 static void journal_record(struct notes_buffer *out, unsigned type, const unsigned char *body, size_t length);
 static uint32_t journal_checksum(const unsigned char *data, size_t length);
 static int journal_make_folder(const char *path);
 static int write_all(int descriptor, const unsigned char *data, size_t length);
 static int read_file(const char *path, unsigned char **data, size_t *size);
-static int replay(struct notes_document *document, unsigned type, const unsigned char *body, size_t length, struct journal_images *table, const char *journal_path);
+static int replay(struct notes_document *document, unsigned type, unsigned version, const unsigned char *body, size_t length, struct journal_images *table, const char *journal_path);
 static int journal_ready(struct notes_journal *journal, const struct notes_document *document);
 static int journal_image(struct notes_journal *journal, const struct notes_document *document, const struct notes_image *image);
 static int journal_logged(const struct notes_journal *journal, uint32_t id);
@@ -274,13 +286,38 @@ notes_journal_add_stroke(
 	const struct notes_stroke *stroke)
 {
 	struct notes_buffer body;
+	unsigned constants;
+	int tools;
 	int error;
 
-	/* The page, the place and the stroke. */
+	/*
+	 * A stroke of the drawing tools needs a journal of version 3: one of
+	 * version 2 is written anew from the document as it stands, before the
+	 * change, which the record then logs.
+	 */
+	constants = notes_tool_constants(stroke->tool);
+	tools = 0;
+	if (constants != 0U)
+		tools = 1;
+	if (tools &&
+	    journal->descriptor >= 0 &&
+	    journal->version < JOURNAL_VERSION_TOOLS) {
+		(void)close(journal->descriptor);
+		journal->descriptor = -1;
+	}
+
+	/* The journal file, when the change is the first since a save (or the old one was of version 2). */
+	if (journal->descriptor < 0) {
+		error = journal_start(journal, document, tools);
+		if (error != 0)
+			return error;
+	}
+
+	/* The page, the place and the stroke, in the journal's version. */
 	notes_buffer_init(&body);
 	notes_buffer_varint(&body, page);
 	notes_buffer_varint(&body, place);
-	error = notes_encode_stroke(stroke, &body);
+	error = notes_encode_stroke(stroke, journal->version, &body);
 	if (error != 0) {
 		notes_buffer_free(&body);
 		return error;
@@ -529,7 +566,8 @@ notes_journal_set_aside(
  * record is replayed onto it; *records tells how many were.  The path of
  * the journal's document is written to document_path.  Returns 0, ENOENT
  * when there is no journal, EINVAL for a file that is not a journal or has
- * no snapshot, or ENOMEM.
+ * no snapshot, ENOTSUP for a journal of a tool's constants this Notes does
+ * not know (ws216-p003; the caller sets it aside), or ENOMEM.
  */
 int
 notes_journal_recover(
@@ -550,6 +588,7 @@ notes_journal_recover(
 	uint32_t stored;
 	uint32_t computed;
 	unsigned type;
+	unsigned version;
 	int have_snapshot;
 	int matched;
 	int error;
@@ -562,16 +601,17 @@ notes_journal_recover(
 	if (error != 0)
 		return error;
 
-	/* The header: the magic, then the version this file writes. */
+	/* The header: the magic, then a version this file writes (2, or 3 with the drawing tools). */
 	matched = -1;
 	if (length >= 12U)
 		matched = memcmp(data, JOURNAL_MAGIC, 4U);
 	if (matched != 0 ||
-	    data[4] != JOURNAL_VERSION ||
+	    (data[4] != JOURNAL_VERSION_EDITS && data[4] != JOURNAL_VERSION_TOOLS) ||
 	    data[5] != 0U) {
 		free(data);
 		return EINVAL;
 	}
+	version = data[4];
 
 	/* The document's path follows the header. */
 	path_length = (size_t)data[8] | ((size_t)data[9] << 8) | ((size_t)data[10] << 16) | ((size_t)data[11] << 24);
@@ -633,8 +673,18 @@ notes_journal_recover(
 			/* The records that follow change it. */
 			have_snapshot = 1;
 		} else {
-			/* A later record is a change; one that does not apply ends the replay. */
-			error = replay(document, type, data + offset + 5U, body_length, &table, journal_path);
+			/*
+			 * A later record is a change; one that does not apply ends the
+			 * replay, and one of constants this Notes does not know ends the
+			 * recovery (the journal is not to be replayed in part).
+			 */
+			error = replay(document, type, version, data + offset + 5U, body_length, &table, journal_path);
+			if (error == ENOTSUP) {
+				table_free(&table);
+				notes_document_free(document);
+				free(data);
+				return ENOTSUP;
+			}
 			if (error != 0)
 				break;
 		}
@@ -731,10 +781,16 @@ notes_journal_newest(
 }
 
 /* Writes a new journal: the header and a snapshot of the document, then keeps it open for appending. */
+/*
+ * The version is the lowest that holds the document, and the record that
+ * follows when tools is nonzero (a stroke of the drawing tools): 3 with
+ * those tools, 2 without.
+ */
 static int
 journal_start(
 	struct notes_journal *journal,
-	const struct notes_document *document)
+	const struct notes_document *document,
+	int tools)
 {
 	char temporary[JOURNAL_PATH_MAX + 8U];
 	struct notes_buffer snapshot;
@@ -743,10 +799,18 @@ journal_start(
 	size_t path_length;
 	size_t page;
 	size_t at;
+	unsigned version;
 	int descriptor;
 	int logged;
+	int drawn;
 	int status;
 	int error;
+
+	/* The version the journal's records are written in. */
+	version = JOURNAL_VERSION_EDITS;
+	drawn = notes_document_new_tools(document);
+	if (tools || drawn)
+		version = JOURNAL_VERSION_TOOLS;
 
 	/* The folder, made when it is missing. */
 	error = journal_make_folder(journal->path);
@@ -765,7 +829,7 @@ journal_start(
 	notes_buffer_init(&file);
 	path_length = strlen(journal->document_path);
 	notes_buffer_bytes(&file, JOURNAL_MAGIC, 4U);
-	notes_buffer_u16(&file, JOURNAL_VERSION);
+	notes_buffer_u16(&file, version);
 	notes_buffer_u16(&file, 0U);
 	notes_buffer_u32(&file, (uint32_t)path_length);
 	notes_buffer_bytes(&file, journal->document_path, path_length);
@@ -812,7 +876,8 @@ journal_start(
 		return error;
 	}
 
-	/* Opens it for the records that follow. */
+	/* Opens it for the records that follow, in its version. */
+	journal->version = version;
 	journal->image_count = 0;
 	journal->descriptor = open(journal->path, O_WRONLY | O_APPEND);
 	if (journal->descriptor < 0)
@@ -855,7 +920,7 @@ journal_append(
 
 	/* The journal file, when the change is the first since a save. */
 	if (journal->descriptor < 0) {
-		error = journal_start(journal, document);
+		error = journal_start(journal, document, 0);
 		if (error != 0)
 			return error;
 	}
@@ -1050,6 +1115,7 @@ static int
 replay(
 	struct notes_document *document,
 	unsigned type,
+	unsigned version,
 	const unsigned char *body,
 	size_t length,
 	struct journal_images *table,
@@ -1084,7 +1150,7 @@ replay(
 		error = read_number(body, length, &offset, &second);
 		if (error != 0)
 			return error;
-		error = notes_decode_stroke(body + offset, length - offset, &used, &stroke);
+		error = notes_decode_stroke(body + offset, length - offset, version, &used, &stroke);
 		if (error != 0)
 			return error;
 		error = notes_document_insert_stroke(document, (size_t)first, (size_t)second, stroke);
@@ -1208,7 +1274,7 @@ journal_ready(
 		return 0;
 
 	/* A new one. */
-	return journal_start(journal, document);
+	return journal_start(journal, document, 0);
 }
 
 /*

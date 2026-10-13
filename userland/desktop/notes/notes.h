@@ -14,7 +14,9 @@
  * encode.c turns a document into the edit data (ZNOT) the saved PDF carries
  * and back; journal.c keeps an append-only log of every change since the
  * last save, so that a crash loses nothing; save.c writes the PDF with
- * libpdf; geometry.c turns strokes into the triangles the renderer draws;
+ * libpdf; shape.c makes the shapes of the drawing tools' strokes and the
+ * pencil's grain (ws216-p003); geometry.c turns strokes into the triangles
+ * the renderer draws;
  * render.c draws them with Vulkan; ui.c draws the toolbar; window.c holds
  * the Wayland window and turns the seat's input into Notes' own input
  * events; menu.c gives the compositor the window's menus; main.c ties them
@@ -37,9 +39,50 @@
 #define NOTES_PAGE_WIDTH	595.276f
 #define NOTES_PAGE_HEIGHT	841.890f
 
-/* The kinds of tool a stroke is drawn with (the edit data's tool type). */
+/*
+ * The kinds of tool a stroke is drawn with (the edit data's tool type).
+ * ws216-p003: the brush, the pencil, the watercolour and the fill
+ * (plan/ws216/phase001/phase.md section 3), whose strokes the edit data
+ * keeps from version 3.0.
+ */
 #define NOTES_TOOL_PEN		0U
 #define NOTES_TOOL_HIGHLIGHTER	1U
+#define NOTES_TOOL_BRUSH	2U
+#define NOTES_TOOL_PENCIL	3U
+#define NOTES_TOOL_WATERCOLOR	4U
+#define NOTES_TOOL_FILL		5U
+
+/*
+ * The version of the drawing tools' constants (ws216-p003): the numbers that
+ * turn a stroke's baked factors and steps into its shapes (the pencil's
+ * opacities and grain, the watercolour's opacities, libpdf's style).  A
+ * stroke of the brush, the pencil, the watercolour or the fill carries it;
+ * the pen and the highlighter have 0.  A document or a journal with another
+ * version is not read, so that Notes never draws it differently.
+ */
+#define NOTES_TOOL_CONSTANTS	1U
+
+/* The ways a shape is painted: one colour, or the colour through the pencil's grain. */
+#define NOTES_PAINT_SOLID	0U
+#define NOTES_PAINT_GRAIN	1U
+
+/* The ways a shape is laid over what is under it: source over, or multiplied (the watercolour). */
+#define NOTES_BLEND_NORMAL	0U
+#define NOTES_BLEND_MULTIPLY	1U
+
+/* A baked factor of a stroke runs from 0 to this value, which stands for NOTES_FACTOR_MAX. */
+#define NOTES_FACTOR_UNITS	65535U
+#define NOTES_FACTOR_MAX	2.0f
+
+/* The pencil's darkness steps run from 0 to this value. */
+#define NOTES_PENCIL_STEPS	7U
+
+/* The pencil's grain: a square tile of this many texels a side, repeated every NOTES_GRAIN_CELL points of the page. */
+#define NOTES_GRAIN_SIDE	256U
+#define NOTES_GRAIN_CELL	48.0
+
+/* The share of the pencil's opacity that the grain never takes away (g_min). */
+#define NOTES_GRAIN_FLOOR	0.35f
 
 /*
  * The page backgrounds (the edit data's background kind): plain, and the
@@ -125,12 +168,46 @@ struct notes_point {
 };
 
 /*
+ * One shape of a stroke's ink (ws216-p003): a polygon filled once with the
+ * nonzero rule, the same on the screen and in the PDF.
+ *
+ * A pen's stroke has one shape, a pencil's one for each range of one
+ * darkness, a watercolour's three (its core and two edges).  The polygon
+ * may hold several contours (a fill with holes): contours then lists the
+ * corner count of each, in order; it is NULL for one contour.  alpha is
+ * multiplied into the stroke's colour's.  seam_start and seam_end name the
+ * edges (by their first corner) where a pencil's range meets the one
+ * before and after it, which the screen draws without a soft edge, or are
+ * PDF_OUTLINE_NO_SEAM.  The stroke owns its shapes and makes them again
+ * when its samples change.
+ */
+struct notes_shape {
+	struct pdf_point *polygon;
+	size_t corner_count;
+	const size_t *contours;
+	size_t contour_count;
+	float alpha;
+	unsigned paint;
+	unsigned blend;
+	size_t seam_start;
+	size_t seam_end;
+};
+
+/*
  * One stroke of ink: the samples and the tool they were drawn with.
  *
  * A stroke belongs to one page, or to an undo entry while it is off the
  * page.  Its outline, the polygon both the screen and the PDF fill, is made
  * from the samples by libpdf's pdf_outline_stroke() and kept until the
  * samples change.
+ *
+ * ws216-p003: a stroke of the brush, the pencil or the watercolour is baked
+ * when it is put on a page: the width factors of each sample (one column,
+ * three for the watercolour, NOTES_FACTOR_UNITS standing for
+ * NOTES_FACTOR_MAX) and the pencil's darkness steps are kept, so that its
+ * shapes depend on the samples, the baked values and the tool's constants
+ * only, whatever the formulas become.  A fill's samples are the corners
+ * of its contours.  shapes is what both the screen and the PDF fill.
  */
 struct notes_stroke {
 	/* The stroke's number, unique in its document and never reused. */
@@ -140,6 +217,22 @@ struct notes_stroke {
 	unsigned tool;
 	uint32_t color;
 	float width;
+
+	/* The version of the tool's constants (NOTES_TOOL_CONSTANTS; 0 for the pen and the highlighter). */
+	unsigned constants;
+
+	/*
+	 * The baked values: factor_columns factors a sample (NULL and 0 until
+	 * baked, and for the pen, the highlighter and the fill), and one
+	 * darkness step a sample for the pencil (NULL otherwise).
+	 */
+	uint16_t *factors;
+	unsigned factor_columns;
+	unsigned char *steps;
+
+	/* A fill's contours: the sample count of each, in order (NULL for other tools). */
+	size_t *contours;
+	size_t contour_count;
 
 	/* Whether the samples carry the pen's tilt, and when the stroke started (UNIX milliseconds). */
 	int has_tilt;
@@ -156,6 +249,10 @@ struct notes_stroke {
 	/* The outline polygon in points (NULL until made), and its corner count. */
 	struct pdf_point *outline;
 	size_t outline_count;
+
+	/* The shapes (NULL until made, with the outline), and their count. */
+	struct notes_shape *shapes;
+	size_t shape_count;
 };
 
 /*
@@ -438,6 +535,17 @@ int notes_document_undo(struct notes_document *document, size_t *page);
 int notes_document_redo(struct notes_document *document, size_t *page);
 size_t notes_document_stroke_total(const struct notes_document *document);
 
+/* The drawing tools' shapes and the pencil's grain (shape.c, ws216-p003). */
+unsigned notes_tool_constants(unsigned tool);
+unsigned notes_tool_columns(unsigned tool);
+int notes_stroke_bake(struct notes_stroke *stroke);
+int notes_stroke_baked(const struct notes_stroke *stroke);
+float notes_stroke_reach(const struct notes_stroke *stroke);
+int notes_shape_make(struct notes_stroke *stroke);
+void notes_shape_drop(struct notes_stroke *stroke);
+void notes_grain_tile(unsigned char *tile);
+void notes_grain_level(const unsigned char *finer, size_t finer_side, unsigned char *coarser);
+
 /* The images and the edits of the PDF's objects (edit.c, ws175-p007). */
 struct notes_image *notes_image_create(struct notes_document *document, unsigned kind, const void *data, size_t size, size_t width, size_t height, int components, int orientation);
 void notes_image_release(struct notes_image *image);
@@ -477,8 +585,9 @@ void notes_buffer_zigzag(struct notes_buffer *buffer, int64_t value);
 /* The edit data (encode.c). */
 int notes_encode_document(const struct notes_document *document, struct notes_buffer *buffer);
 int notes_decode_document(const void *data, size_t size, struct notes_document *document);
-int notes_encode_stroke(const struct notes_stroke *stroke, struct notes_buffer *buffer);
-int notes_decode_stroke(const unsigned char *data, size_t size, size_t *used, struct notes_stroke **stroke);
+int notes_encode_stroke(const struct notes_stroke *stroke, unsigned version, struct notes_buffer *buffer);
+int notes_decode_stroke(const unsigned char *data, size_t size, unsigned version, size_t *used, struct notes_stroke **stroke);
+int notes_document_new_tools(const struct notes_document *document);
 void notes_encode_edit(struct notes_buffer *buffer, const struct notes_edit *edit);
 int notes_decode_edit(const unsigned char *data, size_t size, size_t *used, struct notes_edit *edit, uint32_t *image);
 void notes_encode_image(struct notes_buffer *buffer, const struct notes_image *image);

@@ -36,10 +36,11 @@ static int undo_apply(struct notes_document *document, struct notes_undo *entry)
 static int undo_hold_more(struct notes_undo *entry, size_t more);
 static int erase_entry(struct notes_document *document, size_t page, struct notes_undo **entry);
 static int stroke_touches(struct notes_stroke *stroke, float x, float y, float radius);
-static int stroke_split(struct notes_document *document, const struct notes_stroke *stroke, float x, float y, float reach, struct notes_stroke ***pieces, size_t *piece_count, int *crossed);
+static int stroke_split(const struct notes_stroke *stroke, float x, float y, float reach, struct notes_stroke ***pieces, size_t *piece_count, int *crossed);
 static int segment_inside(const struct notes_point *a, const struct notes_point *b, float x, float y, float reach, float *enter, float *leave);
 static void point_between(const struct notes_point *a, const struct notes_point *b, float share, struct notes_point *point);
-static int piece_add(struct notes_document *document, const struct notes_stroke *stroke, struct notes_stroke **piece, const struct notes_point *point);
+static int piece_add(const struct notes_stroke *stroke, struct notes_stroke **piece, const struct notes_point *point, size_t from, size_t to, float share);
+static void piece_values(const struct notes_stroke *stroke, struct notes_stroke *piece, size_t from, size_t to, float share);
 static int piece_close(struct notes_stroke **piece, struct notes_stroke ***pieces, size_t *piece_count, size_t *piece_capacity);
 static void pieces_free(struct notes_stroke **pieces, size_t first, size_t count);
 static float segment_distance(float px, float py, float ax, float ay, float bx, float by);
@@ -131,11 +132,12 @@ notes_stroke_create(
 	if (stroke == NULL)
 		return NULL;
 
-	/* Succeeded: a stroke with no samples, its width on the edit data's grid. */
+	/* Succeeded: a stroke with no samples, its width on the edit data's grid, of the tool's constants now. */
 	stroke->id = id;
 	stroke->tool = tool;
 	stroke->color = color;
 	stroke->width = notes_quantize(width);
+	stroke->constants = notes_tool_constants(tool);
 	stroke->start_ms = start_ms;
 	return stroke;
 }
@@ -151,8 +153,11 @@ notes_stroke_free(
 	if (stroke == NULL)
 		return;
 
-	/* The outline, the samples and the stroke. */
-	pdf_outline_free(stroke->outline);
+	/* The shapes and the outline, the baked values, the contours, the samples and the stroke. */
+	notes_shape_drop(stroke);
+	free(stroke->factors);
+	free(stroke->steps);
+	free(stroke->contours);
 	free(stroke->points);
 	free(stroke);
 }
@@ -183,32 +188,34 @@ notes_stroke_append(
 	kept->y = notes_quantize(point->y);
 	stroke->point_count++;
 
-	/* The outline no longer matches the samples. */
-	pdf_outline_free(stroke->outline);
-	stroke->outline = NULL;
-	stroke->outline_count = 0;
+	/* The shapes and the outline no longer match the samples. */
+	notes_shape_drop(stroke);
 
 	/* Succeeded: the sample is the stroke's last. */
 	return 0;
 }
 
 /*
- * Makes the stroke's outline polygon and its bounding box, when they are
- * not made yet.
+ * Makes the stroke's shapes, its outline polygon and its bounding box, when
+ * they are not made yet.
  *
- * The polygon comes from libpdf's pdf_outline_stroke(), the one source of a
- * stroke's shape on the screen and in the PDF.  A highlighter ignores the
- * pressure and draws its full width.  Returns 0, or the errno value
- * pdf_outline_stroke() reports.
+ * The polygons come from libpdf's outlines (shape.c), the one source of a
+ * stroke's shape on the screen and in the PDF: the pen's from
+ * pdf_outline_stroke() (a highlighter ignores the pressure and draws its
+ * full width), the brush's, the pencil's and the watercolour's from their
+ * baked factors (ws216-p003).  The box holds every shape.  Returns 0,
+ * EINVAL for a stroke without samples (or values that do not fit its
+ * tool), or the errno value libpdf reports.
  */
 int
 notes_stroke_outline(
 	struct notes_stroke *stroke)
 {
-	struct pdf_stroke_point *samples;
-	struct pdf_point *outline;
-	size_t outline_count;
+	const struct notes_shape *shape;
 	size_t index;
+	size_t corner;
+	float x;
+	float y;
 	int error;
 
 	/* An outline that is made already stands. */
@@ -219,50 +226,36 @@ notes_stroke_outline(
 	if (stroke->point_count == 0)
 		return EINVAL;
 
-	/* Allocates the samples in libpdf's form. */
-	samples = malloc(stroke->point_count * sizeof(*samples));
-	if (samples == NULL)
-		return ENOMEM;
-
-	/* Converts each sample: its position and its pressure from 0 to 1. */
-	for (index = 0; index < stroke->point_count; index++) {
-		samples[index].x = stroke->points[index].x;
-		samples[index].y = stroke->points[index].y;
-		samples[index].pressure = (double)stroke->points[index].pressure / (double)NOTES_PRESSURE_MAX;
-
-		/* A highlighter's width does not follow the pressure. */
-		if (stroke->tool == NOTES_TOOL_HIGHLIGHTER)
-			samples[index].pressure = 1.0;
-	}
-
-	/* Builds the polygon. */
-	error = pdf_outline_stroke(samples, stroke->point_count, stroke->width, &outline, &outline_count);
-	free(samples);
+	/* Builds the shapes and the outline. */
+	error = notes_shape_make(stroke);
 	if (error != 0)
 		return error;
 
-	/* Measures the box the polygon lies in. */
-	stroke->bounds[0] = (float)outline[0].x;
-	stroke->bounds[1] = (float)outline[0].y;
-	stroke->bounds[2] = (float)outline[0].x;
-	stroke->bounds[3] = (float)outline[0].y;
-	for (index = 1; index < outline_count; index++) {
-		/* Widens the box to the corner horizontally. */
-		if ((float)outline[index].x < stroke->bounds[0])
-			stroke->bounds[0] = (float)outline[index].x;
-		if ((float)outline[index].x > stroke->bounds[2])
-			stroke->bounds[2] = (float)outline[index].x;
+	/* Measures the box every shape lies in, from the outline's first corner. */
+	stroke->bounds[0] = (float)stroke->outline[0].x;
+	stroke->bounds[1] = (float)stroke->outline[0].y;
+	stroke->bounds[2] = (float)stroke->outline[0].x;
+	stroke->bounds[3] = (float)stroke->outline[0].y;
+	for (index = 0; index < stroke->shape_count; index++) {
+		shape = &stroke->shapes[index];
+		for (corner = 0; corner < shape->corner_count; corner++) {
+			/* Widens the box to the corner horizontally. */
+			x = (float)shape->polygon[corner].x;
+			y = (float)shape->polygon[corner].y;
+			if (x < stroke->bounds[0])
+				stroke->bounds[0] = x;
+			if (x > stroke->bounds[2])
+				stroke->bounds[2] = x;
 
-		/* And vertically. */
-		if ((float)outline[index].y < stroke->bounds[1])
-			stroke->bounds[1] = (float)outline[index].y;
-		if ((float)outline[index].y > stroke->bounds[3])
-			stroke->bounds[3] = (float)outline[index].y;
+			/* And vertically. */
+			if (y < stroke->bounds[1])
+				stroke->bounds[1] = y;
+			if (y > stroke->bounds[3])
+				stroke->bounds[3] = y;
+		}
 	}
 
-	/* Succeeded: the stroke keeps its outline until its samples change. */
-	stroke->outline = outline;
-	stroke->outline_count = outline_count;
+	/* Succeeded: the stroke keeps its shapes until its samples change. */
 	return 0;
 }
 
@@ -534,6 +527,14 @@ notes_document_add_stroke(
 	if (page >= document->page_count)
 		return EINVAL;
 
+	/*
+	 * The values the formulas give the finished stroke are baked into it
+	 * (ws216-p003): its shape is kept as drawn from now on.
+	 */
+	error = notes_stroke_bake(stroke);
+	if (error != 0)
+		return error;
+
 	/* The history's entry: the stroke on top of the page. */
 	error = undo_push(document, NOTES_UNDO_ADD_STROKE, page);
 	if (error != 0)
@@ -691,10 +692,11 @@ notes_document_erase_at(
  *
  * The circle is at (x, y) with a radius, in points.  A stroke it touches
  * is taken off the page and the pieces of its path outside the circle
- * (widened by half the stroke's width, so that the circle's edge is where
- * the ink ends) are put in its place, each a new stroke of the same tool,
- * colour and width with a new number; where the path crosses the circle
- * the pieces end at the crossing.  A stroke wholly inside leaves no piece.
+ * (widened by the stroke's reach, so that the circle's edge is where the
+ * ink ends) are put in its place, each a new stroke of the same tool,
+ * colour and width with a new number and the baked values of the samples
+ * it keeps (ws216-p003); where the path crosses the circle the pieces end
+ * at the crossing.  A stroke wholly inside leaves no piece.
  * *cut tells how many strokes were cut.  The drag's cuts gather into one
  * change to undo.  Returns 0, EINVAL or ENOMEM (the cuts made so far stay,
  * and in the history).
@@ -716,6 +718,7 @@ notes_document_erase_parts_at(
 	size_t index;
 	size_t place;
 	size_t piece;
+	float reach;
 	int touched;
 	int crossed;
 	int error;
@@ -737,8 +740,13 @@ notes_document_erase_parts_at(
 		if (!touched)
 			continue;
 
-		/* The pieces of the path outside the circle; a path the circle does not cross stays. */
-		error = stroke_split(document, stroke, x, y, radius + stroke->width / 2.0f, &pieces, &piece_count, &crossed);
+		/*
+		 * The pieces of the path outside the circle widened by the stroke's
+		 * reach (so that a piece's round end stops at the circle's edge); a
+		 * path the circle does not cross stays.
+		 */
+		reach = radius + notes_stroke_reach(stroke);
+		error = stroke_split(stroke, x, y, reach, &pieces, &piece_count, &crossed);
 		if (error != 0)
 			return error;
 		if (!crossed)
@@ -1233,8 +1241,12 @@ undo_revert(
 			return ENOMEM;
 		}
 
-		/* The entry holds the stroke until it is redone. */
+		/*
+		 * The entry holds the stroke until it is redone; its count of one
+		 * is what lets the history free it when the entry is forgotten.
+		 */
 		entry->strokes[0] = stroke;
+		entry->count = 1U;
 		entry->owned = 1;
 		break;
 	case NOTES_UNDO_REMOVE_STROKES:
@@ -1311,6 +1323,7 @@ undo_apply(
 			return error;
 		free(entry->strokes);
 		entry->strokes = NULL;
+		entry->count = 0;
 		entry->owned = 0;
 		break;
 	case NOTES_UNDO_REMOVE_STROKES:
@@ -1376,6 +1389,13 @@ stroke_touches(
 	size_t index;
 	int error;
 
+	/*
+	 * A fill is not touched by its path: which eraser drag removes it is
+	 * the fill's own rule (ws216-p005), and until then no eraser does.
+	 */
+	if (stroke->tool == NOTES_TOOL_FILL)
+		return 0;
+
 	/* The outline's box, which a circle outside cannot touch. */
 	error = notes_stroke_outline(stroke);
 	if (error != 0)
@@ -1385,8 +1405,8 @@ stroke_touches(
 	if (y + radius < stroke->bounds[1] || y - radius > stroke->bounds[3])
 		return 0;
 
-	/* The circle touches the ink when it comes within half the width of the stroke's path. */
-	reach = radius + stroke->width / 2.0f;
+	/* The circle touches the ink when it comes within the stroke's reach of its path. */
+	reach = radius + notes_stroke_reach(stroke);
 
 	/* A single sample is a dot. */
 	if (stroke->point_count == 1U) {
@@ -1453,7 +1473,6 @@ segment_distance(
  */
 static int
 stroke_split(
-	struct notes_document *document,
 	const struct notes_stroke *stroke,
 	float x,
 	float y,
@@ -1489,7 +1508,7 @@ stroke_split(
 	if (dx * dx + dy * dy < reach * reach) {
 		*crossed = 1;
 	} else {
-		error = piece_add(document, stroke, &piece, &stroke->points[0]);
+		error = piece_add(stroke, &piece, &stroke->points[0], 0U, 0U, 0.0f);
 		if (error != 0)
 			return error;
 	}
@@ -1503,13 +1522,13 @@ stroke_split(
 		/* A segment outside the circle carries the piece on to its end. */
 		if (!inside) {
 			if (piece == NULL) {
-				error = piece_add(document, stroke, &piece, a);
+				error = piece_add(stroke, &piece, a, index - 1U, index - 1U, 0.0f);
 				if (error != 0)
 					break;
 			}
 
 			/* The segment's end joins the piece. */
-			error = piece_add(document, stroke, &piece, b);
+			error = piece_add(stroke, &piece, b, index, index, 0.0f);
 			if (error != 0)
 				break;
 			continue;
@@ -1519,7 +1538,7 @@ stroke_split(
 		*crossed = 1;
 		if (enter > 0.0f && piece != NULL) {
 			point_between(a, b, enter, &point);
-			error = piece_add(document, stroke, &piece, &point);
+			error = piece_add(stroke, &piece, &point, index - 1U, index, enter);
 			if (error != 0)
 				break;
 		}
@@ -1532,12 +1551,12 @@ stroke_split(
 		/* A segment that leaves the circle starts a new piece where it does. */
 		if (leave < 1.0f) {
 			point_between(a, b, leave, &point);
-			error = piece_add(document, stroke, &piece, &point);
+			error = piece_add(stroke, &piece, &point, index - 1U, index, leave);
 			if (error != 0)
 				break;
 
 			/* The segment's end joins it. */
-			error = piece_add(document, stroke, &piece, b);
+			error = piece_add(stroke, &piece, b, index, index, 0.0f);
 			if (error != 0)
 				break;
 		}
@@ -1659,33 +1678,98 @@ point_between(
 
 /*
  * Adds a sample to the piece being made of a stroke, making the piece
- * first (a stroke of the same tool, colour and width) when there is none.
+ * first (a stroke of the same tool, colour, width and constants) when there
+ * is none.  The sample lies a share of the way from the stroke's sample
+ * from to its sample to, whose baked values it takes in between.
  */
 static int
 piece_add(
-	struct notes_document *document,
 	const struct notes_stroke *stroke,
 	struct notes_stroke **piece,
-	const struct notes_point *point)
+	const struct notes_point *point,
+	size_t from,
+	size_t to,
+	float share)
 {
+	size_t room;
 	int error;
 
 	/* A new piece; it takes its number once it is kept. */
-	(void)document;
 	if (*piece == NULL) {
 		*piece = notes_stroke_create(0U, stroke->tool, stroke->color, stroke->width, stroke->start_ms);
 		if (*piece == NULL)
 			return ENOMEM;
 		(*piece)->has_tilt = stroke->has_tilt;
+		(*piece)->constants = stroke->constants;
 	}
 
-	/* The sample joins it. */
+	/*
+	 * Room for the baked values: a piece never has more samples than the
+	 * stroke has and two crossings, so its arrays are made that large once.
+	 */
+	room = stroke->point_count + 2U;
+	if (stroke->factors != NULL && (*piece)->factors == NULL) {
+		(*piece)->factors = malloc(room * stroke->factor_columns * sizeof((*piece)->factors[0]));
+		if ((*piece)->factors == NULL)
+			return ENOMEM;
+		(*piece)->factor_columns = stroke->factor_columns;
+	}
+
+	/* And for the pencil's steps. */
+	if (stroke->steps != NULL && (*piece)->steps == NULL) {
+		(*piece)->steps = malloc(room);
+		if ((*piece)->steps == NULL)
+			return ENOMEM;
+	}
+
+	/* The sample's baked values, then the sample joins it. */
+	piece_values(stroke, *piece, from, to, share);
 	error = notes_stroke_append(*piece, point);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the piece has the sample. */
 	return 0;
+}
+
+/*
+ * Writes the baked values of a piece's next sample: those of the stroke's
+ * samples from and to, a share of the way between them (the factors in
+ * between, rounded; the step of the nearer sample).
+ */
+static void
+piece_values(
+	const struct notes_stroke *stroke,
+	struct notes_stroke *piece,
+	size_t from,
+	size_t to,
+	float share)
+{
+	unsigned column;
+	double first;
+	double second;
+	size_t at;
+
+	/* The piece's next sample. */
+	at = piece->point_count;
+
+	/* Each factor column, in between. */
+	if (piece->factors != NULL) {
+		for (column = 0; column < stroke->factor_columns; column++) {
+			first = (double)stroke->factors[from * stroke->factor_columns + column];
+			second = (double)stroke->factors[to * stroke->factor_columns + column];
+			piece->factors[at * stroke->factor_columns + column] = (uint16_t)floor(first + (second - first) * (double)share + 0.5);
+		}
+	}
+
+	/* The step of the nearer sample. */
+	if (piece->steps != NULL) {
+		if (share < 0.5f) {
+			piece->steps[at] = stroke->steps[from];
+		} else {
+			piece->steps[at] = stroke->steps[to];
+		}
+	}
 }
 
 /*
