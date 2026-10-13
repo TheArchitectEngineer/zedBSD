@@ -369,11 +369,22 @@ static void
 i915_compile_terminate_compute(
 	struct i915_compile_state *state)
 {
+	uint32_t descriptor;
+
+	/*
+	 * The message: one register, the thread's end.  Before Gfx11 (Gen9) it
+	 * also says not to dereference the URB handle, which the fixed function
+	 * frees itself (emit_cs_terminate(), brw_fs_visitor.cpp).
+	 */
+	descriptor = EU_DESC_TERMINATE;
+	if (state->graphics_ver == 9U)
+		descriptor |= GEN9_EU_DESC_TERMINATE_NO_URB;
+
 	/* Copies the header into the last register, outside the mask. */
 	drv_i915_eu_mov_all(&state->code, drv_i915_eu_grf_ud(COMPILE_CS_END_GRF), drv_i915_eu_grf_ud(0U));
 
 	/* Retires the thread. */
-	drv_i915_eu_send_all_end(&state->code, drv_i915_eu_grf(COMPILE_CS_END_GRF), EU_SFID_THREAD_SPAWNER, EU_DESC_TERMINATE);
+	drv_i915_eu_send_all_end(&state->code, drv_i915_eu_grf(COMPILE_CS_END_GRF), EU_SFID_THREAD_SPAWNER, descriptor);
 }
 
 /*
@@ -647,12 +658,15 @@ i915_compile_atomic_shared(
  * commit bit; the encoder waits for each reply before going on, so the
  * thread's earlier accesses are done when the next instruction runs.  An
  * acquire needs no more: nothing after a fence starts before its reply.
+ * Gen9 sends the data cache's fence alone and reads its reply (see below).
  */
 static void
 i915_compile_fence(
 	struct i915_compile_state *state,
 	uint32_t fences)
 {
+	struct i915_eu_reg null;
+	struct i915_eu_reg wait;
 	uint32_t descriptor;
 	uint32_t reply;
 
@@ -671,6 +685,24 @@ i915_compile_fence(
 		     EU_DESC_HEADER_PRESENT |
 		     (EU_DP_MEMORY_FENCE << EU_DP_TYPE_SHIFT) |
 		     (EU_DP_FENCE_COMMIT << EU_DP_CONTROL_SHIFT);
+
+	/*
+	 * Gen9: one fence at the data cache's entry orders shared memory too,
+	 * and the hardware waits for a reply only when something reads it, so a
+	 * move of the reply to the null register holds the thread until the
+	 * fence is done (the memory fence before Gfx11, brw_fs_nir.cpp, and
+	 * FS_OPCODE_SCHEDULING_FENCE before Gfx12, brw_generator.cpp).
+	 */
+	if (state->graphics_ver == 9U) {
+		drv_i915_eu_send_scalar(&state->code, drv_i915_eu_grf(reply), drv_i915_eu_grf(0U), EU_SFID_DATA_CACHE, descriptor | EU_BTI_DATA_CACHE);
+		null = drv_i915_eu_null();
+		null.type = EU_TYPE_UW;
+		wait = drv_i915_eu_grf_scalar(reply, 0U);
+		wait.type = EU_TYPE_UW;
+		drv_i915_eu_mov_scalar(&state->code, null, wait);
+		state->grf_busy[reply] = 0U;
+		return;
+	}
 
 	/* The buffers' fence, at the data cache's entry. */
 	if ((fences & DRV_GPU_IR_FENCE_GLOBAL) != 0U)
@@ -700,6 +732,7 @@ i915_compile_barrier(
 {
 	struct i915_eu_reg dword;
 	struct i915_eu_reg identity;
+	uint32_t identity_mask;
 	uint32_t payload;
 	int threads;
 
@@ -711,6 +744,11 @@ i915_compile_barrier(
 	if (threads <= 1)
 		return;
 
+	/* The bits of r0.2 that hold the barrier ID: Gen9 has its own (emit_barrier(), brw_fs_nir.cpp). */
+	identity_mask = EU_BARRIER_ID_MASK;
+	if (state->graphics_ver == 9U)
+		identity_mask = GEN9_EU_BARRIER_ID_MASK;
+
 	/* The payload: cleared, then the barrier ID in dword 2. */
 	payload = i915_compile_temporary(state);
 	if (state->out_of_registers != 0)
@@ -720,9 +758,9 @@ i915_compile_barrier(
 	dword.subnr = 4U * EU_BARRIER_ID_DWORD;
 	identity = drv_i915_eu_grf_scalar(0U, 4U * EU_BARRIER_ID_DWORD);
 	identity.type = COMPILE_TYPE_UD;
-	drv_i915_eu_alu2_scalar(&state->code, I915_EU_AND, dword, identity, drv_i915_eu_imm_ud(EU_BARRIER_ID_MASK));
+	drv_i915_eu_alu2_scalar(&state->code, I915_EU_AND, dword, identity, drv_i915_eu_imm_ud(identity_mask));
 
-	/* The gateway message for the whole thread, then the wait for the group. */
+	/* The gateway message for the whole thread, then the wait for the group (sync.bar, on Gen9 a WAIT). */
 	drv_i915_eu_send_all(&state->code,
 			     drv_i915_eu_null(),
 			     drv_i915_eu_grf(payload),
