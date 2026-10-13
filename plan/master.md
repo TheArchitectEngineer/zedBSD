@@ -14,7 +14,7 @@
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
   - P1: 空き（SV7 の passthrough の道具は merge 済み、T1-608 待ち）。
   - P2: 空き（ws231-p001 AHCI は merge 済み、T1-609 待ち）。
-  - P3: 空き（q979 ws229-p004 は merge 済み）。
+  - P3: 空き（ws229 の fixture・draw-test・r1 の Gen9 化は merge 済み）。
   - T1: 空き。T1-606（5330 の Gen12 の回帰）はユーザーが 5330 を Linux（chaos）で起動し直すのを待つ。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
 <!-- master:agents:end -->
