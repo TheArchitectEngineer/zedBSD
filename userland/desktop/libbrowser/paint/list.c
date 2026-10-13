@@ -1162,16 +1162,40 @@ list_control(
 	struct list_walk *walk,
 	const struct layout_box *box)
 {
+	struct layout_box snapped;
 	struct list_area painting;
 	struct list_area area;
 	layout_unit width;
 	layout_unit height;
 	layout_unit pixel;
+	layout_unit left;
+	layout_unit right;
+	layout_unit top;
+	layout_unit bottom;
 	int native;
 
 	/* The border box. */
 	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
 	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+	if (box->control == DOM_CONTROL_TEXTAREA && width >= LAYOUT_UNIT && height >= LAYOUT_UNIT) {
+		/* Native textarea painting snaps both border-box edges while layout keeps subpixel sizes. */
+		left = (layout_unit)floorf(layout_to_px(box->x) + 0.5f) * LAYOUT_UNIT;
+		right = (layout_unit)floorf(layout_to_px(box->x + width) + 0.5f) * LAYOUT_UNIT;
+		top = (layout_unit)floorf(layout_to_px(box->y) + 0.5f) * LAYOUT_UNIT;
+		bottom = (layout_unit)floorf(layout_to_px(box->y + height) + 0.5f) * LAYOUT_UNIT;
+		snapped = *box;
+		snapped.x = left;
+		snapped.y = top;
+		snapped.width += right - left - width;
+		snapped.height += bottom - top - height;
+		if (snapped.width < 0)
+			snapped.width = 0;
+		if (snapped.height < 0)
+			snapped.height = 0;
+		box = &snapped;
+		width = right - left;
+		height = bottom - top;
+	}
 
 	/* A checkbox or a radio button is drawn as the platform draws one. */
 	if (box->control == DOM_CONTROL_CHECKBOX || box->control == DOM_CONTROL_RADIO) {

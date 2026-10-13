@@ -1277,6 +1277,11 @@ css_parse_font(
 		if (error != 0)
 			return error;
 		index++;
+	} else {
+		/* A font shorthand without a slash resets inherited line-height to normal. */
+		memset(&value, 0, sizeof(value));
+		value.kind = CSS_VALUE_INITIAL;
+		values_add(out, out_count, CSS_PROP_LINE_HEIGHT, &value);
 	}
 
 	/* The families take the rest. */

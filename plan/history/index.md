@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1058 / WS074 residual Flex reftest regressions（2026-10-14）
+## 最新: q1059 / WS074 fractional textarea border rasterization（2026-10-14）
+
+[q1059履歴](queue-q1059.md): 旧残1 IDの198差画素を0へ、固定旧3件3/3・Flex10/10 local pixel exact PASS。p207と後続証拠によるp206 whole cleared。Acid3差0。[証拠](../ws074/phase207/evidence/20261014-q1059/README.md)。p190/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1058 / WS074 residual Flex reftest regressions（2026-10-14）
 
 [q1058履歴](queue-q1058.md): 旧回帰残3件を0→2 local pixel exact PASS。縦textarea1件は198差画素でp206 whole未達。host physical21/21、固定Flex10/10 PASS、Acid3差0。[証拠](../ws074/phase206/evidence/20261014-q1058/README.md)。p190/p173全件100%未達、共有投影/GitHub publication pending。
 

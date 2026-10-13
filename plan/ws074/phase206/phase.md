@@ -2,7 +2,7 @@
 
 # ws074-p206: residual Flex vertical-row and textarea reftest regressions
 
-Status: uncleared（2026-10-14 q1058-i01 partial cleared、縦textarea1件残）
+Status: cleared（2026-10-14 q1058-i01 partial、q1059後続証拠で縦textarea画素差0）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -23,3 +23,7 @@ Event ws074-p206-created-20261014: q1057で旧8件中gap5件を回復。残る3�
 ## q1058-i01 結果（2026-10-14）
 
 Event ws074-p206-q1058-outcome-20261014: auto主軸のRTL rowをused extent内でreverseし、min/maxで凍結したflex itemの残余空間を再配分。固定旧回帰3件は0→2 local pixel exact PASS、縦textarea1件は198差画素。[証拠](evidence/20261014-q1058/README.md)。host physical21/21・CSS rule51/51・CSSOM12/12、warning0 build、固定Flex10/10 PASS、Acid3差0/Acid2差1865。残1件は小数寸法のdotted border/文字差を別範囲で調査。q1058-i01 partial cleared、p206 whole uncleared、p190/p173全件100%未達。共有投影/GitHub publication保留。
+
+## q1059後続判定（2026-10-14）
+
+Event ws074-p206-q1059-followup-20261014: [p207](../phase207/phase.md)のfont shorthand resetとtextarea描画端pixel丸めで旧残1件の差198→0。[後続証拠](../phase207/evidence/20261014-q1059/README.md)。固定旧3件が3/3 local pixel exact PASS、固定Flex10とAcid回帰を確認。q1058当時のpartial outcomeは保持し、p206 wholeを後続証拠でcleared。p190/p173全件100%は未達、共有投影/GitHub publication保留。
