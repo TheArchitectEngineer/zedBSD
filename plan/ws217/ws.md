@@ -73,3 +73,5 @@ T1 の束（p001 §13）: A = p002b+p003（QEMU）、B = p009+p010（実機）�
 2026-10-13 ユーザー（原文）:「Video Playerは、Game Modeをやめます。…Game Modeは別途、Wayland拡張で要求があったときのみ使用することにします。Game Modeを利用したアプリは現段階では存在しない、という整理にします。全画面ではコンポジターを利用しましょう。」→ D18 は不要（video は game mode に入らない、WS223）。p012 の対象は game mode を Wayland の拡張で求めた client だけ。
 
 2026-10-13 Q1: review-4（致命的 1 C7、重大 5 S12〜S16、中 9、軽微 12）。p002a は C7（open の前後の比較の before は compose が持つ「最後に開いた・回した状態」と比べる。switch は open の前に server->width を書くので入口で取ると RESIZED が立たない、回転 0 でも壊れる）と L49 を p002a の phase.md に入れてから（S16 の steps の mode の引数も推奨）。p002b は C7・S12・M21 の後、p009 の実装は M23・M24・M25・M27 を p009 の phase.md に書いた後、p010 は S13 の後、p012 は第 5 版で §4.12 を直してから（WS223 p001 の game mode の求めの決定にも依る）。Q1 の判断: p012 を p007 の後ろへ回す（完了の条件は外れない、ユーザーに報告）。暫定の「turn の出力では game mode に入らない」は安全。
+
+2026-10-13 Q1（WS223 p001 の依頼、第 5 版で反映）: p012 の session の定義は `KWL_SCANOUT_CONTENT_GAME`（WS223 の推奨 (a) wp_content_type_v1 の game のまま）。p012 と §12.2 の回帰の項 7・9 は WS223 の p002（規則から video を外す）・p003（wltest に `--content-type=`）に依存。§4.12 の「video は D18」・§10 の D18・§12.2 の 9 の末尾「Videoplayer は reason=rotated のまま」は「video は content type で合成・log 無し」に直す。
