@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1032 / WS074 details testharness full focus measurement（2026-10-14）
+
+[q1032履歴](queue-q1032.md): 固定details testharness全18件を測り6 PASS/10 FAIL/2 no_output。25 reftest/3 crashtestはp190待ち。p193 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1032/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1031 / WS074 details toggle task（2026-10-14）
 
 [q1031履歴](queue-q1031.md): 非同期toggleをcoalesceし、固定hidden/details WPT1/1 PASS。p193 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1031/README.md)。共有投影/GitHub publication pending。

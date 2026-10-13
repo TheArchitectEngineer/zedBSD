@@ -1,0 +1,163 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "count": 18,
+  "counts": {
+    "pass": 6,
+    "fail": 10,
+    "no_output": 2
+  },
+  "results": [
+    {
+      "index": 1,
+      "id": "/html/editing/the-hidden-attribute/beforematch-attribute-removal-001.html",
+      "outcome": "pass",
+      "subtests": 1,
+      "messages": []
+    },
+    {
+      "index": 2,
+      "id": "/html/editing/the-hidden-attribute/beforematch-attribute-removal-002.html",
+      "outcome": "pass",
+      "subtests": 1,
+      "messages": []
+    },
+    {
+      "index": 3,
+      "id": "/html/editing/the-hidden-attribute/beforematch-element-fragment-navigation.html",
+      "outcome": "fail",
+      "subtests": 10,
+      "messages": [
+        "assert_true: beforematch should have been fired on parentid. expected true got false",
+        "assert_true: The beforematch event should have been fired. expected true got false",
+        "assert_true: bar was navigated to, so it should get the beforematch event. expected true got false"
+      ]
+    },
+    {
+      "index": 4,
+      "id": "/html/editing/the-hidden-attribute/beforematch-element-removal-001.html",
+      "outcome": "pass",
+      "subtests": 1,
+      "messages": []
+    },
+    {
+      "index": 5,
+      "id": "/html/editing/the-hidden-attribute/beforematch-element-removal-002.html",
+      "outcome": "no_output",
+      "subtests": 0,
+      "messages": []
+    },
+    {
+      "index": 6,
+      "id": "/html/editing/the-hidden-attribute/beforematch-infinite-loop.html",
+      "outcome": "fail",
+      "subtests": 1,
+      "messages": [
+        "assert_false: beforematch should not have been fired on h2. expected false got true"
+      ]
+    },
+    {
+      "index": 7,
+      "id": "/html/editing/the-hidden-attribute/beforematch-scroll-to-text-fragment.html",
+      "outcome": "fail",
+      "subtests": 3,
+      "messages": [
+        "promise_test: Unhandled rejection with value: object \"Error: element click intercepted error\"",
+        "promise_test: Unhandled rejection with value: object \"Error: element click intercepted error\"",
+        "promise_test: Unhandled rejection with value: object \"Error: element click intercepted error\""
+      ]
+    },
+    {
+      "index": 8,
+      "id": "/html/editing/the-hidden-attribute/hidden-idl.html",
+      "outcome": "pass",
+      "subtests": 17,
+      "messages": []
+    },
+    {
+      "index": 9,
+      "id": "/html/editing/the-hidden-attribute/hidden-ua-stylesheet.html",
+      "outcome": "fail",
+      "subtests": 8,
+      "messages": [
+        "assert_equals: div.removeAttribute('hidden') should not affect the div's content-visibility property. expected (string) \"visible\" but got (undefined) undefined",
+        "assert_equals: div.setAttribute('hidden', '') should not affect the div's content-visibility property. expected (string) \"visible\" but got (undefined) undefined",
+        "assert_equals: div.setAttribute('hidden', 'asdf') should not affect the div's content-visibility property. expected (string) \"visible\" but got (undefined) undefined"
+      ]
+    },
+    {
+      "index": 10,
+      "id": "/html/editing/the-hidden-attribute/hidden-until-found-002.html",
+      "outcome": "no_output",
+      "subtests": 0,
+      "messages": []
+    },
+    {
+      "index": 11,
+      "id": "/html/editing/the-hidden-attribute/hidden-until-found-and-details.html",
+      "outcome": "pass",
+      "subtests": 1,
+      "messages": []
+    },
+    {
+      "index": 12,
+      "id": "/html/editing/the-hidden-attribute/hidden-until-found-idl.html",
+      "outcome": "pass",
+      "subtests": 1,
+      "messages": []
+    },
+    {
+      "index": 13,
+      "id": "/html/editing/the-hidden-attribute/hidden-until-found-text-fragment.html",
+      "outcome": "fail",
+      "subtests": 1,
+      "messages": [
+        "promise_test: Unhandled rejection with value: object \"ReferenceError: fetchResults is not defined\""
+      ]
+    },
+    {
+      "index": 14,
+      "id": "/html/rendering/the-details-element/auto-expand-details-text-fragment.html",
+      "outcome": "fail",
+      "subtests": 1,
+      "messages": [
+        "promise_test: Unhandled rejection with value: object \"ReferenceError: fetchResults is not defined\""
+      ]
+    },
+    {
+      "index": 15,
+      "id": "/html/rendering/the-details-element/details-blockification.html",
+      "outcome": "fail",
+      "subtests": 1,
+      "messages": [
+        "assert_equals: expected \"block\" but got \"inline\""
+      ]
+    },
+    {
+      "index": 16,
+      "id": "/html/rendering/the-details-element/details-display.html",
+      "outcome": "fail",
+      "subtests": 8,
+      "messages": [
+        "assert_equals: expected \"list-item\" but got \"block\""
+      ]
+    },
+    {
+      "index": 17,
+      "id": "/html/rendering/the-details-element/details-pseudo-elements-006.html",
+      "outcome": "fail",
+      "subtests": 1,
+      "messages": [
+        "promise_test: Unhandled rejection with value: object \"Error: action_sequence() is not implemented by testdriver-vendor.js\""
+      ]
+    },
+    {
+      "index": 18,
+      "id": "/html/semantics/interactive-elements/the-details-element/auto-expand-details-element-fragment.html",
+      "outcome": "fail",
+      "subtests": 1,
+      "messages": [
+        "assert_not_equals: The page should be scrolled down to the <details> element. got disallowed value 0"
+      ]
+    }
+  ]
+}

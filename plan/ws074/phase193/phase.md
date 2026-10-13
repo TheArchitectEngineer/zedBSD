@@ -65,3 +65,13 @@ Event ws074-p193-q1030-outcome-20261014: q1030-i01 partial cleared、p193 whole�
 **partial scope cleared、p193 whole uncleared。** details.open IDLとfragment revealの状態変化で非同期・非bubblingのtoggle通知を1回queue。[証拠](evidence/20261014-q1031/README.md)。局所fixtureで同期時未発火・同task内3変更のcoalescing・最終状態を確認。固定`hidden-until-found-and-details.html`1/1 PASS、先行beforematch PASS維持。host build warning0、native property65/65、realm30/30、diff check PASS。Acid3 score100/100・画素差0、Acid2差1865不変。p193 whole、p173全件は未達、GitHub publication保留。
 
 Event ws074-p193-q1031-outcome-20261014: q1031-i01 partial cleared、p193 wholeはuncleared。残るdetails/hidden固定対象を再分類する。
+
+## q1032-i01 の有限部分範囲
+
+2026-10-14 01:19 JST、ユーザーの事前承認を適用、最大90分。固定Interop 2025 manifestのdetails焦点testharness全18 IDを既存の単一HTTP runnerで同条件実測し、PASS/FAIL/harness error/no completion/no outputと共通原因を分類する。対象の25 reftest/3 crashtestはp190のcoverageが必要として未実行理由を記す。browser/WPT/公開ABI/`master.md`は変更しない。検証はrunnerのmanifest整合、結果JSON、diff check。適用は[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)。
+
+## q1032-i01 結果（2026-10-14 01:19 JST）
+
+**partial scope cleared、p193 whole uncleared。** 固定details testharness18件を全実測し6 PASS・10 FAIL・2 no_output。[一覧と分類](evidence/20261014-q1032/README.md)。主な残件はfragment/scroll、reveal再入・DOM除去、computed content-visibility、text fragment/testdriver、details layout。25 reftest/3 crashtestはp190のrunnerを待つ未実行。browser/WPT/Master無変更、manifest整合・結果JSON・diff check PASS。コード無変更のためhost build/Acid再計測省略。p193 wholeとp173全件100%未達、GitHub publication保留。
+
+Event ws074-p193-q1032-outcome-20261014: q1032-i01 partial cleared、p193 wholeはuncleared。固定18 testharnessの残る12件を分類、28件はp190待ち。

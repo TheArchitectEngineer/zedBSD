@@ -1,0 +1,110 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "div.removeAttribute('hidden')",
+      "status": 1,
+      "message": "assert_equals: div.removeAttribute('hidden') should not affect the div's content-visibility property. expected (string) \"visible\" but got (undefined) undefined"
+    },
+    {
+      "name": "div.setAttribute('hidden', '')",
+      "status": 1,
+      "message": "assert_equals: div.setAttribute('hidden', '') should not affect the div's content-visibility property. expected (string) \"visible\" but got (undefined) undefined"
+    },
+    {
+      "name": "div.setAttribute('hidden', 'asdf')",
+      "status": 1,
+      "message": "assert_equals: div.setAttribute('hidden', 'asdf') should not affect the div's content-visibility property. expected (string) \"visible\" but got (undefined) undefined"
+    },
+    {
+      "name": "div.setAttribute('hidden', 'until-found')",
+      "status": 1,
+      "message": "assert_equals: div.setAttribute('hidden', 'until-found') should not affect the div's display property. expected \"block\" but got \"none\""
+    },
+    {
+      "name": "div.setAttribute('hidden', 'UNTIL-FOUND')",
+      "status": 1,
+      "message": "assert_equals: div.setAttribute('hidden', 'UNTIL-FOUND') should not affect the div's display property. expected \"block\" but got \"none\""
+    },
+    {
+      "name": "div.setAttribute('hidden', 'UnTiL-FoUnD')",
+      "status": 1,
+      "message": "assert_equals: div.setAttribute('hidden', 'UnTiL-FoUnD') should not affect the div's display property. expected \"block\" but got \"none\""
+    },
+    {
+      "name": "div.setAttribute('hidden', '0')",
+      "status": 1,
+      "message": "assert_equals: div.setAttribute('hidden', '0') should not affect the div's content-visibility property. expected (string) \"visible\" but got (undefined) undefined"
+    },
+    {
+      "name": "hidden-ua-stylesheet",
+      "status": 0,
+      "message": ""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "hidden-ua-stylesheet",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.removeAttribute('hidden')",
+        "status": 1,
+        "message": "assert_equals: div.removeAttribute('hidden') should not affect the div's content-visibility property. expected (string) \"visible\" but got (undefined) undefined"
+      },
+      {
+        "name": "div.setAttribute('hidden', '')",
+        "status": 1,
+        "message": "assert_equals: div.setAttribute('hidden', '') should not affect the div's content-visibility property. expected (string) \"visible\" but got (undefined) undefined"
+      },
+      {
+        "name": "div.setAttribute('hidden', 'asdf')",
+        "status": 1,
+        "message": "assert_equals: div.setAttribute('hidden', 'asdf') should not affect the div's content-visibility property. expected (string) \"visible\" but got (undefined) undefined"
+      },
+      {
+        "name": "div.setAttribute('hidden', 'until-found')",
+        "status": 1,
+        "message": "assert_equals: div.setAttribute('hidden', 'until-found') should not affect the div's display property. expected \"block\" but got \"none\""
+      },
+      {
+        "name": "div.setAttribute('hidden', 'UNTIL-FOUND')",
+        "status": 1,
+        "message": "assert_equals: div.setAttribute('hidden', 'UNTIL-FOUND') should not affect the div's display property. expected \"block\" but got \"none\""
+      },
+      {
+        "name": "div.setAttribute('hidden', 'UnTiL-FoUnD')",
+        "status": 1,
+        "message": "assert_equals: div.setAttribute('hidden', 'UnTiL-FoUnD') should not affect the div's display property. expected \"block\" but got \"none\""
+      },
+      {
+        "name": "div.setAttribute('hidden', '0')",
+        "status": 1,
+        "message": "assert_equals: div.setAttribute('hidden', '0') should not affect the div's content-visibility property. expected (string) \"visible\" but got (undefined) undefined"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/html/editing/the-hidden-attribute/hidden-ua-stylesheet.html",
+  "focus": [
+    "details"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=3000",
+    "http://127.0.0.1:39067/html/editing/the-hidden-attribute/hidden-ua-stylesheet.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"div.removeAttribute('hidden')\",\"status\":1,\"message\":\"assert_equals: div.removeAttribute('hidden') should not affect the div's content-visibility property. expected (string) \\\"visible\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"div.setAttribute('hidden', '')\",\"status\":1,\"message\":\"assert_equals: div.setAttribute('hidden', '') should not affect the div's content-visibility property. expected (string) \\\"visible\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"div.setAttribute('hidden', 'asdf')\",\"status\":1,\"message\":\"assert_equals: div.setAttribute('hidden', 'asdf') should not affect the div's content-visibility property. expected (string) \\\"visible\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"div.setAttribute('hidden', 'until-found')\",\"status\":1,\"message\":\"assert_equals: div.setAttribute('hidden', 'until-found') should not affect the div's display property. expected \\\"block\\\" but got \\\"none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"div.setAttribute('hidden', 'UNTIL-FOUND')\",\"status\":1,\"message\":\"assert_equals: div.setAttribute('hidden', 'UNTIL-FOUND') should not affect the div's display property. expected \\\"block\\\" but got \\\"none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"div.setAttribute('hidden', 'UnTiL-FoUnD')\",\"status\":1,\"message\":\"assert_equals: div.setAttribute('hidden', 'UnTiL-FoUnD') should not affect the div's display property. expected \\\"block\\\" but got \\\"none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"div.setAttribute('hidden', '0')\",\"status\":1,\"message\":\"assert_equals: div.setAttribute('hidden', '0') should not affect the div's content-visibility property. expected (string) \\\"visible\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"hidden-ua-stylesheet\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"hidden-ua-stylesheet\",\"status\":0,\"message\":\"\"},{\"name\":\"div.removeAttribute('hidden')\",\"status\":1,\"message\":\"assert_equals: div.removeAttribute('hidden') should not affect the div's content-visibility property. expected (string) \\\"visible\\\" but got (undefined) undefined\"},{\"name\":\"div.setAttribute('hidden', '')\",\"status\":1,\"message\":\"assert_equals: div.setAttribute('hidden', '') should not affect the div's content-visibility property. expected (string) \\\"visible\\\" but got (undefined) undefined\"},{\"name\":\"div.setAttribute('hidden', 'asdf')\",\"status\":1,\"message\":\"assert_equals: div.setAttribute('hidden', 'asdf') should not affect the div's content-visibility property. expected (string) \\\"visible\\\" but got (undefined) undefined\"},{\"name\":\"div.setAttribute('hidden', 'until-found')\",\"status\":1,\"message\":\"assert_equals: div.setAttribute('hidden', 'until-found') should not affect the div's display property. expected \\\"block\\\" but got \\\"none\\\"\"},{\"name\":\"div.setAttribute('hidden', 'UNTIL-FOUND')\",\"status\":1,\"message\":\"assert_equals: div.setAttribute('hidden', 'UNTIL-FOUND') should not affect the div's display property. expected \\\"block\\\" but got \\\"none\\\"\"},{\"name\":\"div.setAttribute('hidden', 'UnTiL-FoUnD')\",\"status\":1,\"message\":\"assert_equals: div.setAttribute('hidden', 'UnTiL-FoUnD') should not affect the div's display property. expected \\\"block\\\" but got \\\"none\\\"\"},{\"name\":\"div.setAttribute('hidden', '0')\",\"status\":1,\"message\":\"assert_equals: div.setAttribute('hidden', '0') should not affect the div's content-visibility property. expected (string) \\\"visible\\\" but got (undefined) undefined\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 3000,
+  "process_timeout": 20
+}
