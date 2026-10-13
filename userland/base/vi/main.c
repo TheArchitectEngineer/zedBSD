@@ -207,6 +207,7 @@ parse_arguments(
 {
 	int index;
 	int options_done;
+	int compare;
 
 	*path = NULL;
 	*start = NULL;
@@ -214,18 +215,21 @@ parse_arguments(
 
 	/* Reads each argument in turn. */
 	for (index = 1; index < argc; index++) {
-		/* +N and + say where to start; -- ends the options. */
-		if (!options_done && argv[index][0] == '+') {
-			*start = argv[index] + 1;
-			continue;
-		}
-		if (!options_done && strcmp(argv[index], "--") == 0) {
-			options_done = 1;
-			continue;
-		}
-		if (!options_done && argv[index][0] == '-' && argv[index][1] != '\0') {
-			usage();
-			return 2;
+		/* +N and + say where to start; -- ends the options; any other option is unknown. */
+		if (!options_done) {
+			if (argv[index][0] == '+') {
+				*start = argv[index] + 1;
+				continue;
+			}
+			compare = strcmp(argv[index], "--");
+			if (compare == 0) {
+				options_done = 1;
+				continue;
+			}
+			if (argv[index][0] == '-' && argv[index][1] != '\0') {
+				usage();
+				return 2;
+			}
 		}
 
 		/* Only one file can be edited at a time. */
@@ -390,7 +394,7 @@ static void
 resize_handler(
 	int number)
 {
-	(void)number;
+	UNUSED_PARAMETER(number);
 
 	vi_resize_requested = 1;
 }
@@ -400,7 +404,7 @@ static void
 continue_handler(
 	int number)
 {
-	(void)number;
+	UNUSED_PARAMETER(number);
 
 	vi_continue_requested = 1;
 }
@@ -410,7 +414,7 @@ static void
 suspend_handler(
 	int number)
 {
-	(void)number;
+	UNUSED_PARAMETER(number);
 
 	vi_suspend_requested = 1;
 }
@@ -420,7 +424,7 @@ static void
 stop_handler(
 	int number)
 {
-	(void)number;
+	UNUSED_PARAMETER(number);
 
 	vi_stop_requested = 1;
 }

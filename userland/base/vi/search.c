@@ -84,6 +84,7 @@ vi_search_find(
 	size_t visited;
 	size_t start;
 	size_t offset;
+	int returned;
 	int status;
 
 	/* Tries every line once, starting with the one the search starts on. */
@@ -92,6 +93,9 @@ vi_search_find(
 		line = &editor->buffer.lines[index];
 
 		/* The first line is searched only beyond the start; on coming back, only before it. */
+		returned = 0;
+		if (visited == editor->buffer.count)
+			returned = 1;
 		if (!backward) {
 			start = 0;
 			if (visited == 0) {
@@ -102,25 +106,34 @@ vi_search_find(
 			status = -1;
 			if (start <= line->length)
 				status = match_after(&editor->search_regex, line, start, &offset);
-			if (status == 0 && visited == editor->buffer.count && offset > from.offset)
-				status = -1;
+			if (status == 0 && returned) {
+				if (offset > from.offset)
+					status = -1;
+			}
 		} else {
 			start = line->length + 1;
 			if (visited == 0)
 				start = from.offset;
 			status = match_before(&editor->search_regex, line, start, &offset);
-			if (status == 0 && visited == editor->buffer.count && offset < from.offset)
-				status = -1;
+			if (status == 0 && returned) {
+				if (offset < from.offset)
+					status = -1;
+			}
 		}
 
 		/* A match ends the search, with a note when it went round the end. */
 		if (status == 0) {
 			found->line = index;
 			found->offset = offset;
-			if ((!backward && index < from.line) || (backward && index > from.line))
+			if (returned) {
 				vi_message(editor, "Search wrapped");
-			else if (visited == editor->buffer.count)
-				vi_message(editor, "Search wrapped");
+			} else if (!backward) {
+				if (index < from.line)
+					vi_message(editor, "Search wrapped");
+			} else {
+				if (index > from.line)
+					vi_message(editor, "Search wrapped");
+			}
 			return 0;
 		}
 

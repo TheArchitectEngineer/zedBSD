@@ -186,6 +186,8 @@ vi_file_write(
 	char *name_copy;
 	int is_own_file;
 	int exists;
+	int refused;
+	int blocked;
 	int result;
 	int error;
 
@@ -235,7 +237,12 @@ vi_file_write(
 	}
 
 	/* Another existing file is overwritten only when asked with !. */
-	if (exists && !is_own_file && !force) {
+	refused = 0;
+	if (exists && !is_own_file) {
+		if (!force)
+			refused = 1;
+	}
+	if (refused) {
 		(void)snprintf(editor->message, sizeof(editor->message), "\"%s\": file exists (add ! to override)", path);
 		free(target);
 		return EEXIST;
@@ -262,11 +269,16 @@ vi_file_write(
 		error = write_replacing(target, &existing, exists, &editor->buffer, &totals);
 
 		/* A directory vi cannot add a file to still lets the file itself be written. */
-		if (exists) {
-			if (error == EACCES || error == EROFS || error == EPERM) {
-				memset(&totals, 0, sizeof(totals));
-				error = write_in_place(target, &editor->buffer, &totals);
-			}
+		blocked = 0;
+		if (error == EACCES)
+			blocked = 1;
+		else if (error == EROFS)
+			blocked = 1;
+		else if (error == EPERM)
+			blocked = 1;
+		if (exists && blocked) {
+			memset(&totals, 0, sizeof(totals));
+			error = write_in_place(target, &editor->buffer, &totals);
 		}
 	}
 	free(target);

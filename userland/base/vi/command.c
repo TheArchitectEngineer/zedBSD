@@ -59,6 +59,7 @@ static int step_forward(struct vi_editor *editor, struct vi_position *position);
 static int step_backward(struct vi_editor *editor, struct vi_position *position);
 static int position_before(struct vi_position first, struct vi_position second);
 static int motion_word_forward(struct vi_editor *editor, unsigned long count, int big, int for_operator, struct motion *motion);
+static void motion_buffer_end(struct vi_editor *editor, int for_operator, struct motion *motion);
 static int motion_word_end(struct vi_editor *editor, unsigned long count, int big, struct motion *motion);
 static int motion_word_backward(struct vi_editor *editor, unsigned long count, int big, struct motion *motion);
 static int motion_find(struct vi_editor *editor, int key, unsigned long count, int repeat, struct motion *motion);
@@ -84,6 +85,9 @@ static void command_page(struct vi_editor *editor, int key, unsigned long count)
 static void command_open(struct vi_editor *editor, int above);
 static void command_line(struct vi_editor *editor);
 static void record_key(struct vi_editor *editor, int key);
+static int key_is_text(int key);
+static int key_ends_input(int key);
+static int word_ends_at(struct vi_editor *editor, struct vi_position position, int big);
 
 /*
  * Runs one command, given its first key.
@@ -97,6 +101,7 @@ vi_command(
 	int key)
 {
 	struct motion moved;
+	struct vi_line *line;
 	unsigned long count;
 	int has_count;
 	int status;
@@ -121,9 +126,8 @@ vi_command(
 		break;
 	case 'a':
 		/* Appends after the character under the cursor. */
-		editor->cursor.offset = vi_text_next(line_at(editor, editor->cursor.line)->text,
-						     line_at(editor, editor->cursor.line)->length,
-						     editor->cursor.offset);
+		line = line_at(editor, editor->cursor.line);
+		editor->cursor.offset = vi_text_next(line->text, line->length, editor->cursor.offset);
 		insert_mode(editor);
 		break;
 	case 'I':
@@ -243,24 +247,24 @@ vi_command(
 			break;
 		}
 
-		/* Moves the cursor, aiming at the remembered column after j and k. */
+		/* Moves the cursor. */
 		editor->cursor = moved.target;
 		vi_cursor_clamp(editor);
-		if (!moved.keep_column) {
-			editor->want_column = vi_text_column(line_at(editor, editor->cursor.line)->text,
-							     line_at(editor, editor->cursor.line)->length,
-							     editor->cursor.offset);
-			if (key == '$' || key == VI_KEY_END)
-				editor->want_column = SIZE_MAX;
-		}
+
+		/* j and k keep aiming at the remembered column; $ aims at every line's end. */
+		if (moved.keep_column)
+			return;
+		line = line_at(editor, editor->cursor.line);
+		editor->want_column = vi_text_column(line->text, line->length, editor->cursor.offset);
+		if (key == '$' || key == VI_KEY_END)
+			editor->want_column = SIZE_MAX;
 		return;
 	}
 
 	/* Every command but a movement leaves the cursor on a character, aiming at its column. */
 	vi_cursor_clamp(editor);
-	editor->want_column = vi_text_column(line_at(editor, editor->cursor.line)->text,
-					     line_at(editor, editor->cursor.line)->length,
-					     editor->cursor.offset);
+	line = line_at(editor, editor->cursor.line);
+	editor->want_column = vi_text_column(line->text, line->length, editor->cursor.offset);
 }
 
 /*
@@ -383,6 +387,7 @@ vi_cursor_clamp(
 {
 	struct vi_line *line;
 	size_t last;
+	size_t next;
 	size_t start;
 
 	/* The cursor's line must exist. */
@@ -401,9 +406,10 @@ vi_cursor_clamp(
 			editor->cursor.offset = last;
 	}
 
-	/* The cursor must sit on the first byte of a character. */
+	/* The cursor must sit on the first byte of a character: the start of the one that ends after it. */
 	if (editor->cursor.offset < line->length) {
-		start = vi_text_previous(line->text, line->length, vi_text_next(line->text, line->length, editor->cursor.offset));
+		next = vi_text_next(line->text, line->length, editor->cursor.offset);
+		start = vi_text_previous(line->text, line->length, next);
 		editor->cursor.offset = start;
 	}
 }
@@ -436,6 +442,8 @@ vi_read_line(
 	size_t start;
 	int key;
 	int result;
+	int abandon;
+	int typed;
 
 	/* Shows the prompt with an empty line after it. */
 	previous = editor->mode;
@@ -449,12 +457,13 @@ vi_read_line(
 	for (;;) {
 		key = vi_editor_key(editor);
 
-		/* RETURN ends the line; ESC and CONTROL-C abandon it. */
+		/* RETURN ends the line; ESC and CONTROL-C abandon it, as does a stopping editor. */
 		if (key == VI_KEY_RETURN || key == VI_KEY_NEWLINE) {
 			result = 1;
 			break;
 		}
-		if (key == VI_KEY_ESCAPE || key == VI_KEY_CONTROL_C || key == VI_KEY_STOP)
+		abandon = key_ends_input(key);
+		if (abandon)
 			break;
 
 		/* Erasing removes one character; erasing an empty line abandons it. */
@@ -475,7 +484,8 @@ vi_read_line(
 		}
 
 		/* Keys without a character of their own are refused. */
-		if (key > 0xff || (key < 0x20 && key != VI_KEY_TAB)) {
+		typed = key_is_text(key);
+		if (!typed) {
 			vi_bell(editor);
 			continue;
 		}
@@ -557,7 +567,9 @@ read_character(
 	int next;
 
 	/* Keys without a byte of their own, and ESC, have no character. */
-	if (key > 0xff || key == VI_KEY_ESCAPE || key == VI_KEY_STOP)
+	if (key > 0xff)
+		return -1;
+	if (key == VI_KEY_ESCAPE)
 		return -1;
 
 	/* The first byte tells how many bytes the character has. */
@@ -665,7 +677,11 @@ class_at(
 
 	/* Spaces, tabs and the ideographic space are blanks. */
 	code = vi_text_code(line->text, line->length, position.offset);
-	if (code == ' ' || code == '\t' || code == 0x3000)
+	if (code == ' ')
+		return CLASS_BLANK;
+	if (code == '\t')
+		return CLASS_BLANK;
+	if (code == 0x3000)
 		return CLASS_BLANK;
 
 	/* A big word is any run of characters that are not blank. */
@@ -817,8 +833,10 @@ motion_word_forward(
 		start_class = class_at(editor, position, big);
 		if (start_class == CLASS_EMPTY) {
 			status = step_forward(editor, &position);
-			if (status != 0)
-				goto end;
+			if (status != 0) {
+				motion_buffer_end(editor, for_operator, motion);
+				return 0;
+			}
 		} else if (start_class != CLASS_BLANK) {
 			for (;;) {
 				line = line_at(editor, position.line);
@@ -828,8 +846,10 @@ motion_word_forward(
 				if (class != start_class)
 					break;
 				status = step_forward(editor, &position);
-				if (status != 0)
-					goto end;
+				if (status != 0) {
+					motion_buffer_end(editor, for_operator, motion);
+					return 0;
+				}
 			}
 		}
 
@@ -848,8 +868,10 @@ motion_word_forward(
 			if (class != CLASS_BLANK)
 				break;
 			status = step_forward(editor, &position);
-			if (status != 0)
-				goto end;
+			if (status != 0) {
+				motion_buffer_end(editor, for_operator, motion);
+				return 0;
+			}
 		}
 	}
 
@@ -862,16 +884,28 @@ motion_word_forward(
 
 	/* Succeeded. */
 	return 0;
+}
 
-end:
-	/* The end of the buffer: the last character, or past it for an operator. */
-	position.line = editor->buffer.count - 1;
-	line = line_at(editor, position.line);
-	position.offset = last_offset(line);
+/*
+ * Ends a forward word movement that ran off the end of the buffer: on the
+ * last character, or past it for an operator, so dw takes the last word.
+ */
+static void
+motion_buffer_end(
+	struct vi_editor *editor,
+	int for_operator,
+	struct motion *motion)
+{
+	struct vi_line *line;
+
+	/* The last line of the buffer. */
+	motion->target.line = editor->buffer.count - 1;
+	line = line_at(editor, motion->target.line);
+
+	/* Its last character, or its end for an operator. */
+	motion->target.offset = last_offset(line);
 	if (for_operator)
-		position.offset = line->length;
-	motion->target = position;
-	return 0;
+		motion->target.offset = line->length;
 }
 
 /* Moves to the end of the word, or of the next word, count times. */
@@ -1010,12 +1044,14 @@ motion_find(
 	int before;
 	int status;
 	int compare;
+	int typed;
 
 	line = line_at(editor, editor->cursor.line);
 
 	/* A new search reads the character to look for. */
 	if (!repeat) {
-		status = read_character(editor, vi_editor_key(editor), editor->find_text, &editor->find_length);
+		typed = vi_editor_key(editor);
+		status = read_character(editor, typed, editor->find_text, &editor->find_length);
 		if (status != 0)
 			return -1;
 		editor->find_key = key;
@@ -1028,8 +1064,12 @@ motion_find(
 	forward = 0;
 	if (key == 'f' || key == 't')
 		forward = 1;
-	if (repeat == ',')
-		forward = !forward;
+	if (repeat == ',') {
+		if (forward)
+			forward = 0;
+		else
+			forward = 1;
+	}
 	before = 0;
 	if (key == 't' || key == 'T')
 		before = 1;
@@ -1113,8 +1153,12 @@ motion_search(
 
 	/* n searches the way the pattern was typed; N the other way. */
 	backward = editor->search_backward;
-	if (key == 'N')
-		backward = !backward;
+	if (key == 'N') {
+		if (backward)
+			backward = 0;
+		else
+			backward = 1;
+	}
 
 	/* Finds the match count times. */
 	position = editor->cursor;
@@ -1171,8 +1215,10 @@ motion(
 {
 	struct vi_line *line;
 	size_t offset;
+	size_t last;
 	size_t index;
 	size_t last_line;
+	int big;
 	int next;
 	int status;
 
@@ -1203,8 +1249,9 @@ motion(
 	case VI_KEY_RIGHT:
 		/* Forward count characters; an operator may reach the end of the line. */
 		offset = editor->cursor.offset;
+		last = last_offset(line);
 		if (!for_operator) {
-			if (offset >= last_offset(line))
+			if (offset >= last)
 				return -1;
 		}
 		while (count > 0 && offset < line->length) {
@@ -1212,8 +1259,8 @@ motion(
 			count--;
 		}
 		if (!for_operator) {
-			if (offset > last_offset(line))
-				offset = last_offset(line);
+			if (offset > last)
+				offset = last;
 		}
 		motion->target.offset = offset;
 		return 0;
@@ -1278,15 +1325,25 @@ motion(
 		return 0;
 	case 'w':
 	case 'W':
-		status = motion_word_forward(editor, count, key == 'W', for_operator, motion);
+		/* The capital letters move by words of anything but blanks. */
+		big = 0;
+		if (key == 'W')
+			big = 1;
+		status = motion_word_forward(editor, count, big, for_operator, motion);
 		return status;
 	case 'e':
 	case 'E':
-		status = motion_word_end(editor, count, key == 'E', motion);
+		big = 0;
+		if (key == 'E')
+			big = 1;
+		status = motion_word_end(editor, count, big, motion);
 		return status;
 	case 'b':
 	case 'B':
-		status = motion_word_backward(editor, count, key == 'B', motion);
+		big = 0;
+		if (key == 'B')
+			big = 1;
+		status = motion_word_backward(editor, count, big, motion);
 		return status;
 	case 'G':
 		/* Line count, or the last line without a count. */
@@ -1531,6 +1588,10 @@ operator(
 	struct vi_line *line;
 	unsigned long inner_count;
 	int has_inner_count;
+	int at_word_end;
+	int reversed;
+	int empty;
+	int big;
 	int key;
 	int status;
 	int error;
@@ -1556,13 +1617,19 @@ operator(
 		moved.linewise = 1;
 	} else {
 		/* cw changes to the end of the word, unless the cursor is on a blank. */
-		if (operator_key == 'c' && (key == 'w' || key == 'W')) {
-			class = class_at(editor, editor->cursor, key == 'W');
-			if (class != CLASS_BLANK && class != CLASS_EMPTY) {
-				if (key == 'w')
+		at_word_end = 0;
+		if (operator_key == 'c') {
+			if (key == 'w' || key == 'W') {
+				big = 0;
+				if (key == 'W')
+					big = 1;
+				class = class_at(editor, editor->cursor, big);
+				if (class != CLASS_BLANK && class != CLASS_EMPTY) {
 					key = 'e';
-				else
-					key = 'E';
+					if (big)
+						key = 'E';
+					at_word_end = word_ends_at(editor, editor->cursor, big);
+				}
 			}
 		}
 
@@ -1574,17 +1641,16 @@ operator(
 			return;
 		}
 
-		/* cw on a word acts on the word even when it is one character long. */
-		if (operator_key == 'c' && (key == 'e' || key == 'E')) {
-			if (moved.target.line != editor->cursor.line)
-				moved.target = editor->cursor;
-		}
+		/* cw on the last character of a word changes that character alone. */
+		if (at_word_end && count == 1)
+			moved.target = editor->cursor;
 	}
 
 	/* Puts the two ends in order. */
 	start = editor->cursor;
 	end = moved.target;
-	if (position_before(end, start)) {
+	reversed = position_before(end, start);
+	if (reversed) {
 		start = moved.target;
 		end = editor->cursor;
 	}
@@ -1601,12 +1667,15 @@ operator(
 		end.offset = 0;
 	}
 
-	/* A character-wise movement that covers nothing does nothing. */
-	if (!moved.linewise && start.line == end.line && start.offset == end.offset) {
-		if (operator_key != 'c') {
-			vi_bell(editor);
-			return;
-		}
+	/* A character-wise movement that covers nothing does nothing, except start c's insertion. */
+	empty = 0;
+	if (!moved.linewise) {
+		if (start.line == end.line && start.offset == end.offset)
+			empty = 1;
+	}
+	if (empty && operator_key != 'c') {
+		vi_bell(editor);
+		return;
 	}
 
 	/* Copies the text into the register. */
@@ -1668,14 +1737,16 @@ insert_mode(
 {
 	struct vi_line *line;
 	int key;
+	int done;
 
 	/* The cursor may now rest at the end of the line. */
 	editor->mode = VI_MODE_INSERT;
 
-	/* Takes keys until ESC or CONTROL-C. */
+	/* Takes keys until ESC or CONTROL-C, or until the editor stops. */
 	for (;;) {
 		key = vi_editor_key(editor);
-		if (key == VI_KEY_ESCAPE || key == VI_KEY_CONTROL_C || key == VI_KEY_STOP)
+		done = key_ends_input(key);
+		if (done)
 			break;
 		insert_key(editor, key);
 	}
@@ -1701,9 +1772,11 @@ insert_key(
 	size_t start;
 	size_t offset;
 	enum char_class class;
+	enum char_class previous_class;
 	struct vi_position position;
 	int status;
 	int error;
+	int typed;
 
 	line = line_at(editor, editor->cursor.line);
 	error = 0;
@@ -1765,7 +1838,8 @@ insert_key(
 		while (position.offset > 0) {
 			offset = vi_text_previous(line->text, line->length, position.offset);
 			position.offset = offset;
-			if (class_at(editor, position, 0) != class) {
+			previous_class = class_at(editor, position, 0);
+			if (previous_class != class) {
 				position.offset = vi_text_next(line->text, line->length, offset);
 				break;
 			}
@@ -1815,7 +1889,8 @@ insert_key(
 		break;
 	default:
 		/* A typed character goes in at the cursor; other control keys are refused. */
-		if (key > 0xff || (key < 0x20 && key != VI_KEY_TAB)) {
+		typed = key_is_text(key);
+		if (!typed) {
 			vi_bell(editor);
 			break;
 		}
@@ -2459,4 +2534,68 @@ record_key(
 
 	record->keys[record->length] = key;
 	record->length++;
+}
+
+/* Tells whether a key types a character: any byte but the control characters, tab excepted. */
+static int
+key_is_text(
+	int key)
+{
+	/* The special keys have no byte. */
+	if (key > 0xff)
+		return 0;
+
+	/* A tab is typed text; the other control characters are commands. */
+	if (key == VI_KEY_TAB)
+		return 1;
+	if (key < 0x20)
+		return 0;
+
+	/* Any other byte is text, a UTF-8 byte included. */
+	return 1;
+}
+
+/* Tells whether a key ends typing: ESC, CONTROL-C, or the editor stopping. */
+static int
+key_ends_input(
+	int key)
+{
+	/* The keys that end insert mode and the bottom line. */
+	if (key == VI_KEY_ESCAPE)
+		return 1;
+	if (key == VI_KEY_CONTROL_C)
+		return 1;
+	if (key == VI_KEY_STOP)
+		return 1;
+
+	/* Any other key goes on. */
+	return 0;
+}
+
+/* Tells whether the character at a position is the last of its word on the line. */
+static int
+word_ends_at(
+	struct vi_editor *editor,
+	struct vi_position position,
+	int big)
+{
+	struct vi_position next;
+	enum char_class class;
+	enum char_class next_class;
+	int status;
+
+	/* The next character must exist, be on the same line, and be of the same class. */
+	class = class_at(editor, position, big);
+	next = position;
+	status = step_forward(editor, &next);
+	if (status != 0)
+		return 1;
+	if (next.line != position.line)
+		return 1;
+	next_class = class_at(editor, next, big);
+	if (next_class != class)
+		return 1;
+
+	/* The word goes on past the position. */
+	return 0;
 }

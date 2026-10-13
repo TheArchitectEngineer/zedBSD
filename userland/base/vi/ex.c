@@ -50,7 +50,11 @@ vi_ex_command(
 		return;
 
 	/* A line number, $ or . alone goes to that line. */
-	if ((*line >= '0' && *line <= '9') || *line == '$' || *line == '.') {
+	if (*line >= '0' && *line <= '9') {
+		go_to_line(editor, line);
+		return;
+	}
+	if (*line == '$' || *line == '.') {
 		go_to_line(editor, line);
 		return;
 	}
@@ -153,14 +157,16 @@ name_is(
 {
 	size_t length;
 	size_t short_length;
+	size_t long_length;
 	int compare;
 
 	/* The name must be at least the short form and at most the long one. */
 	length = strlen(name);
 	short_length = strlen(short_name);
+	long_length = strlen(long_name);
 	if (length < short_length)
 		return 0;
-	if (length > strlen(long_name))
+	if (length > long_length)
 		return 0;
 
 	/* It must start the long form. */
@@ -249,11 +255,13 @@ write_and_quit(
 	if (argument[0] != '\0')
 		path = argument;
 
-	/* :x on an unchanged buffer leaves without writing. */
+	/* :x on an unchanged buffer, with no other file named, leaves without writing. */
 	modified = vi_undo_modified(editor);
-	if (only_if_modified && !modified && path == NULL) {
-		editor->quit = 1;
-		return;
+	if (only_if_modified && path == NULL) {
+		if (!modified) {
+			editor->quit = 1;
+			return;
+		}
 	}
 
 	/* Writes, and leaves only when the write succeeded. */

@@ -28,6 +28,9 @@
 #define VI_FILE_SIZE_LIMIT (64UL * 1024UL * 1024UL)
 #define VI_LINE_COUNT_LIMIT 4194304UL
 
+/* Marks a parameter a function must take but does not use. */
+#define UNUSED_PARAMETER(parameter) ((void)(parameter))
+
 /* The number of changes u can take back; older ones are forgotten. */
 #define VI_UNDO_GROUP_LIMIT 1000U
 

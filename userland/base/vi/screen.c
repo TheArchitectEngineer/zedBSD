@@ -489,6 +489,7 @@ read_unit(
 	size_t used;
 	size_t next;
 	int width;
+	int mark_width;
 
 	/* Decodes the first character. */
 	used = decode(text, length, offset, &code);
@@ -540,7 +541,8 @@ read_unit(
 			break;
 		if (mark < 0x300)
 			break;
-		if (code_width(mark) != 0)
+		mark_width = code_width(mark);
+		if (mark_width != 0)
 			break;
 		if (next + used - offset > SCREEN_COMBINING_LENGTH)
 			break;
@@ -841,6 +843,7 @@ row_add_unit(
 {
 	char cell[SCREEN_CELL_BYTES];
 	int length;
+	int base_width;
 
 	/* Chooses what the cell shows by the kind of character. */
 	switch (unit->kind) {
@@ -858,7 +861,8 @@ row_add_unit(
 		break;
 	case UNIT_TEXT:
 		/* A combining mark that starts the line is drawn on a space. */
-		if (code_width(unit->code) == 0)
+		base_width = code_width(unit->code);
+		if (base_width == 0)
 			row_add(row, " ", 1, 0);
 		row_add(row, text, unit->length, unit->width);
 		break;
@@ -934,6 +938,7 @@ draw_status(
 	size_t start;
 	struct unit unit;
 	size_t offset;
+	size_t shown;
 	int limit;
 	char prompt[1];
 
@@ -950,7 +955,10 @@ draw_status(
 		length = editor->input_length;
 
 		/* A typed line wider than the screen shows its end. */
-		while (vi_text_column(text + start, length - start, length - start) + 1 > (size_t)limit) {
+		for (;;) {
+			shown = vi_text_column(text + start, length - start, length - start);
+			if (shown + 1 <= (size_t)limit)
+				break;
 			start = vi_text_next(text, length, start);
 		}
 	} else if (editor->message[0] != '\0') {
@@ -983,15 +991,17 @@ show_row(
 	struct vi_screen_row *shown;
 	char *copy;
 	int same;
+	int difference;
 
 	shown = &editor->screen[index];
 
 	/* A row that already shows the same text is left alone. */
 	same = 0;
 	if (shown->valid && shown->length == row->length) {
-		if (row->length == 0)
-			same = 1;
-		else if (memcmp(shown->text, row->text, row->length) == 0)
+		difference = 0;
+		if (row->length != 0)
+			difference = memcmp(shown->text, row->text, row->length);
+		if (difference == 0)
 			same = 1;
 	}
 	if (same)
