@@ -19,8 +19,8 @@
  * swipe up from the bottom edge of the desktop and the touch pad's two
  * fingers up from its bottom edge (the 2026-10-13 user's instruction) open
  * it, the last two following the finger.  The launcher again, the Windows
- * key, a drag down on Home, the touch pad's two fingers up from its bottom
- * edge again, Esc, or starting an application closes it.  A drag from the top-left corner
+ * key, a drag down on Home, the touch pad's two fingers swiped down on it
+ * (ws181-p012, following them), Esc, or starting an application closes it.  A drag from the top-left corner
  * opens nothing any more (WS184 takes that swipe).
  *
  * Typing while it is open searches: the text shows at the top and only the
@@ -143,11 +143,11 @@
 
 /*
  * The touch pad's two fingers up from its bottom edge (the 2026-10-13
- * user's instruction; from the top edge down before, ws181-p008): the
- * fingers' travel that opens Home all the way (micrometres; Wiseview's
- * from the top edge is as long, shell.c), and the speed at the lift that
- * opens it whatever the travel (micrometres a second, shell.c's
- * GESTURE_FLICK).
+ * user's instruction; from the top edge down before, ws181-p008), and
+ * their swipe down on Home (ws181-p012): the fingers' travel that opens or
+ * closes Home all the way (micrometres; Wiseview's from the top edge is as
+ * long, shell.c), and the speed at the lift that does it whatever the
+ * travel (micrometres a second, shell.c's GESTURE_FLICK).
  */
 #define HOME_PAD_UM		40000
 #define HOME_PAD_FLICK		100000
@@ -261,11 +261,11 @@ static int32_t home_icon_y[HOME_APPS_MAX];
 static unsigned home_pages = 1U;
 
 /*
- * Whether the touch pad's gesture Home follows closes it (two fingers up
- * from the pad's bottom edge on Home, ws181-p009) rather than opens it
- * (the same from the desktop or Wiseview, the 2026-10-13 user's
- * instruction): set at the gesture's beginning in kwl_home_pad, read by its
- * later phases; the event loop's thread only.
+ * Whether the touch pad's gesture Home follows closes it (two fingers
+ * swiped down on Home, DOWN2, ws181-p012) rather than opens it (two fingers
+ * up from the pad's bottom edge on the desktop or Wiseview, the 2026-10-13
+ * user's instruction): set at the gesture's beginning in kwl_home_pad, read
+ * by its later phases; the event loop's thread only.
  */
 static unsigned home_pad_closing;
 
@@ -481,15 +481,17 @@ kwl_home_close_now(
 }
 
 /*
- * Follows a touch pad gesture of Home's: two fingers up from the pad's
- * bottom edge (BOTTOM2).  With Home closed (the 2026-10-13 user's
- * instruction, as the touch screen's swipe up from the bottom edge; TOP2
- * opened it before, ws181-p008) they open it as far as they have come, and
- * at their lift it opens past HOME_THRESHOLD of HOME_PAD_UM or when
- * flicked, and goes back closed otherwise (or when the gesture is given
- * up).  With Home open (ws181-p009) they close it the same way, the
- * desktop coming back as they go.  shell.c gives it every phase of the
- * gesture.
+ * Follows a touch pad gesture of Home's, its travel along its own way.
+ * With Home closed it is two fingers up from the pad's bottom edge
+ * (BOTTOM2, the 2026-10-13 user's instruction, as the touch screen's swipe
+ * up from the bottom edge; TOP2 opened it before, ws181-p008): they open it
+ * as far as they have come, and at their lift it opens past HOME_THRESHOLD
+ * of HOME_PAD_UM or when flicked, and goes back closed otherwise (or when
+ * the gesture is given up).  With Home open it is two fingers swiped down
+ * (DOWN2, ws181-p012, the 2026-10-13 user's instruction, as the touch
+ * screen's drag down on Home; BOTTOM2 closed it before, ws181-p009): they
+ * close it the same way, the desktop coming back as they go, and Home
+ * stays when they go back.  shell.c gives it every phase of the gesture.
  */
 void
 kwl_home_pad(
@@ -545,7 +547,7 @@ kwl_home_pad(
 	if (phase == KWL_TOUCHPAD_PHASE_BEGIN || phase == KWL_TOUCHPAD_PHASE_UPDATE)
 		return;
 
-	/* The end of a closing: past the threshold or flicked up the desktop comes back; otherwise Home stays. */
+	/* The end of a closing: past the threshold or flicked down the desktop comes back; otherwise Home stays. */
 	server->home_pad = 0;
 	server->home_dragging = 0;
 	if (home_pad_closing) {

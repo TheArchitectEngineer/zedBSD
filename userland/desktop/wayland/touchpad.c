@@ -45,6 +45,12 @@
  *   - two fingers of which one touches within EDGE_UM of the top edge and
  *     that move down are TOP2 (ws142-p009; Wiseview in the shell, the
  *     2026-10-13 user's instruction, BOTTOM2 being App Home);
+ *   - while the shell asks for it (kwl_touchpad_set_down: App Home shows,
+ *     ws181-p012, the 2026-10-13 user's instruction that two fingers swiped
+ *     down close it), two fingers that move down, mostly down, and are not
+ *     TOP2 are DOWN2 wherever they landed; such a touch away from the edges
+ *     is then decided by its first DECIDE_UM too, and scrolls by what was
+ *     held back when it goes otherwise (App Home's pages turn by it);
  *   - the end of a touch of two fingers that scrolled (all of them lifted,
  *     or one of them) is told as SWIPE2's end, after its scrolling, so
  *     that the shell can make one swipe one step (ws142-p009);
@@ -260,6 +266,20 @@ kwl_touchpad_set_feel(
 
 	/* The scrolling's direction. */
 	pad->natural_scroll = natural != 0;
+}
+
+/*
+ * Takes whether two fingers moving down are DOWN2 (the shell asks it while
+ * App Home shows, ws181-p012) rather than a scroll; a touch already decided
+ * keeps its decision.
+ */
+void
+kwl_touchpad_set_down(
+	struct kwl_touchpad *pad,
+	int32_t on)
+{
+	/* From the next decision on. */
+	pad->down2 = on != 0;
 }
 
 /*
@@ -1043,8 +1063,8 @@ gesture_motion(
 		return;
 	}
 
-	/* Two fingers that touch no edge scroll at once. */
-	if (fingers == 2U && pad->edges == 0U) {
+	/* Two fingers that touch no edge scroll at once, unless a swipe down is a gesture now. */
+	if (fingers == 2U && pad->edges == 0U && !pad->down2) {
 		pad->decided = DECIDED_OTHER;
 		scroll(pad, dx_um, dy_um, actions);
 		return;
@@ -1079,6 +1099,13 @@ gesture_motion(
 		    pad->gesture_dy_um > 0 &&
 		    down >= 2 * across)
 			gesture = KWL_TOUCHPAD_GESTURE_TOP2;
+
+		/* Down from anywhere else, while the shell asks for it (ws181-p012). */
+		if (gesture == KWL_TOUCHPAD_GESTURE_NONE &&
+		    pad->down2 &&
+		    pad->gesture_dy_um > 0 &&
+		    down >= 2 * across)
+			gesture = KWL_TOUCHPAD_GESTURE_DOWN2;
 	}
 
 	/* Three fingers: up, mostly up. */
@@ -1193,7 +1220,7 @@ gesture_speed_at(
 	return (pad->gesture_travel_um - base_um) * 1000 / (int64_t)span;
 }
 
-/* Gives a motion along a gesture's way: up for BOTTOM2 and UP3, right for LEFT2, left for RIGHT2, down for TOP2. */
+/* Gives a motion along a gesture's way: up for BOTTOM2 and UP3, right for LEFT2, left for RIGHT2, down for TOP2 and DOWN2. */
 static int64_t
 gesture_along(
 	uint32_t gesture,
@@ -1207,6 +1234,7 @@ gesture_along(
 	case KWL_TOUCHPAD_GESTURE_RIGHT2:
 		return -dx_um;
 	case KWL_TOUCHPAD_GESTURE_TOP2:
+	case KWL_TOUCHPAD_GESTURE_DOWN2:
 		return dy_um;
 	default:
 		return -dy_um;

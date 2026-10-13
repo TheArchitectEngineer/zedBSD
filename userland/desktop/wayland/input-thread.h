@@ -117,7 +117,9 @@ struct kwl_input_attach {
 /*
  * The user's settings the input thread applies (settings.c owns them):
  * the mouse's speed and acceleration, the touch pads' speed (a
- * percentage), acceleration and scrolling direction.
+ * percentage), acceleration and scrolling direction; and the shell's ask of
+ * the touch pads, whether two fingers moving down are a gesture (App Home
+ * shows, ws181-p012).
  */
 struct kwl_input_settings {
 	int32_t mouse_speed;
@@ -125,6 +127,7 @@ struct kwl_input_settings {
 	int32_t touchpad_speed;
 	int32_t touchpad_acceleration;
 	int32_t touchpad_natural;
+	int32_t touchpad_down;
 };
 
 /*

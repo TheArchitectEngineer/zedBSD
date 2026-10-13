@@ -100,7 +100,7 @@ static void input_detach_failed(const char *site, const struct kwl_server *serve
 static const char *input_kind_name(const struct kwl_input_device *device);
 static const char *input_reason_name(enum kwl_input_detach_reason reason);
 static void input_retire(struct kwl_server *server, struct kwl_input_device *device);
-static void input_settings(const struct kwl_server *server, struct kwl_input_settings *settings);
+static void input_settings(struct kwl_server *server, struct kwl_input_settings *settings);
 static void pointer_warp_place(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
 
 /*
@@ -1718,12 +1718,19 @@ input_retire(
 	update_capabilities(server);
 }
 
-/* Gives the settings the input thread applies, as the user has them now. */
+/*
+ * Gives the settings the input thread applies, as the user has them now,
+ * and whether the touch pads make two fingers moving down a gesture: while
+ * App Home shows, outside the login and lock screens, its swipe down
+ * closes it (ws181-p012).
+ */
 static void
 input_settings(
-	const struct kwl_server *server,
+	struct kwl_server *server,
 	struct kwl_input_settings *settings)
 {
+	float home;
+
 	/* Every field, so that two copies compare whole. */
 	memset(settings, 0, sizeof(*settings));
 	settings->mouse_speed = server->mouse_speed;
@@ -1731,6 +1738,11 @@ input_settings(
 	settings->touchpad_speed = server->touchpad_speed;
 	settings->touchpad_acceleration = server->touchpad_acceleration;
 	settings->touchpad_natural = server->touchpad_natural;
+
+	/* App Home showing, or on its way to. */
+	home = kwl_home_progress(server);
+	if ((home > 0.0f || server->home_to > 0.0f) && !server->greeter && !server->locked)
+		settings->touchpad_down = 1;
 }
 
 /* Gives the place an absolute device put the pointer at (a warp's move). */

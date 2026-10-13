@@ -9391,13 +9391,16 @@ kwl_glass_pad_scroll(
  * user's instruction, which replaces ws181-p008's top edge to App Home);
  * three fingers up open Wiseview too, and two fingers in from the left or
  * the right edge switch to the desktop on that side, each following the
- * fingers as the pointer's edge drags do (D10).  On App Home two fingers up
- * from the bottom edge close it (ws181-p009) and two fingers down from the
- * top edge go from it to Wiseview; on Wiseview two fingers up from the
- * bottom edge go from it to App Home.  A tap of three fingers shows the
- * switcher (ws142-p005).  Nothing else starts over the login and lock
- * screens, a fullscreen window (D6), App Home, an open Wiseview or another
- * swipe.
+ * fingers as the pointer's edge drags do (D10).  On App Home two fingers
+ * swiped down from anywhere but the top edge close it following them, as
+ * the touch screen's drag down on Home does (DOWN2, ws181-p012, the
+ * 2026-10-13 user's instruction, which replaces ws181-p009's two fingers
+ * up from the bottom edge: those do nothing on Home now, as the touch
+ * screen's swipe up there), and two fingers down from the top edge go
+ * from it to Wiseview; on Wiseview two fingers up from the bottom edge go
+ * from it to App Home.  A tap of three fingers shows the switcher
+ * (ws142-p005).  Nothing else starts over the login and lock screens, a
+ * fullscreen window (D6), App Home, an open Wiseview or another swipe.
  */
 void
 kwl_glass_gesture(
@@ -9467,7 +9470,7 @@ kwl_glass_gesture(
 		return;
 	}
 
-	/* App Home following two fingers from the bottom edge goes on (home.c). */
+	/* App Home following two fingers (from the bottom edge, or down on it) goes on (home.c). */
 	if (server->home_pad) {
 		kwl_home_pad(server, phase, travel_um, speed);
 		return;
@@ -9478,16 +9481,23 @@ kwl_glass_gesture(
 		return;
 
 	/*
-	 * On App Home, two fingers up from the bottom edge bring the desktop
-	 * back following them (home.c, ws181-p009, the 2026-10-07 UAT; one
-	 * finger on the edge is enough, as for every edge).
+	 * On App Home, two fingers swiped down bring the desktop back following
+	 * them (home.c, ws181-p012, the 2026-10-13 user's instruction: the
+	 * touch pad closes Home by a swipe down, as the touch screen's drag);
+	 * the touch pad makes DOWN2 only while Home shows, and one that begins
+	 * after Home has gone (the pad told a pass late) does nothing.  Two
+	 * fingers up from the bottom edge do nothing on Home (they closed it
+	 * before, ws181-p009), as the touch screen's swipe up there.
 	 */
 	home = kwl_home_progress(server);
-	if (gesture == KWL_TOUCHPAD_GESTURE_BOTTOM2 &&
-	    (home > 0.0f || server->home_to > 0.0f)) {
-		kwl_home_pad(server, phase, travel_um, speed);
+	if (gesture == KWL_TOUCHPAD_GESTURE_DOWN2) {
+		if (home > 0.0f || server->home_to > 0.0f)
+			kwl_home_pad(server, phase, travel_um, speed);
 		return;
 	}
+	if (gesture == KWL_TOUCHPAD_GESTURE_BOTTOM2 &&
+	    (home > 0.0f || server->home_to > 0.0f))
+		return;
 
 	/*
 	 * On App Home, two fingers down from the top edge close it at once and
@@ -9757,9 +9767,10 @@ gesture_fullscreen(
 }
 
 /*
- * Gives what an edge's gesture of two fingers is as a swipe (while Wiseview
- * or the switcher shows): from the left edge the fingers go right, from the
- * right edge left, from the top edge down, from the bottom edge up.
+ * Gives what an edge's gesture of two fingers is as a swipe (while Wiseview,
+ * the switcher or the power dialog shows): from the left edge the fingers go
+ * right, from the right edge left, from the top edge down (and DOWN2, the
+ * swipe down on App Home, ws181-p012), from the bottom edge up.
  */
 static unsigned
 gesture_as_swipe(
@@ -9772,6 +9783,7 @@ gesture_as_swipe(
 	case KWL_TOUCHPAD_GESTURE_RIGHT2:
 		return KWL_SWIPE_LEFT;
 	case KWL_TOUCHPAD_GESTURE_TOP2:
+	case KWL_TOUCHPAD_GESTURE_DOWN2:
 		return KWL_SWIPE_DOWN;
 	case KWL_TOUCHPAD_GESTURE_BOTTOM2:
 		return KWL_SWIPE_UP;
@@ -9837,6 +9849,8 @@ gesture_name(
 		return "top2";
 	case KWL_TOUCHPAD_GESTURE_SWIPE2:
 		return "swipe2";
+	case KWL_TOUCHPAD_GESTURE_DOWN2:
+		return "down2";
 	default:
 		return "none";
 	}

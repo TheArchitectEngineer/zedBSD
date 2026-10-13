@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws181-p012 -->
 # ws181-p012: touchpad の上端・下端の 2 本指の入れ替え（下端 → App Home、上端 → Wiseview）
 
-Status: in-progress（2026-10-13 P4、実装・build・host 試験まで。QEMU は T1、実機の感触はユーザーの UAT）
+Status: in-progress（2026-10-13 P4、端の入れ替えと「App Home を下へ払って閉じる」の追加まで、実装・build・host 試験。QEMU は T1、実機の感触はユーザーの UAT）
 Disposition: normal
 Parent: [WS181](../ws.md)
 Queue: Q1 の割り当て（2026-10-13 ユーザーの指示）
@@ -13,7 +13,7 @@ Queue: Q1 の割り当て（2026-10-13 ユーザーの指示）
 ## 置き換える決定
 
 - [p008](../phase008/phase.md) の範囲 3（2026-10-07 の UAT「タッチパッドの上端からのスワイプダウン … ホーム画面への遷移に割り当ててほしい」、TOP2 → App Home）を、この指示で置き換える。touchpad の端の割り当ては touch panel の端と同じになる: 下端から上 → App Home、上端から下 → Wiseview（窓の一覧）。
-- [p009](../phase009/phase.md) の範囲 3（App Home の上で下端から 2 本指で上 → desktop に戻る）は、この指示と矛盾しないので残す（下端の 2 本指は App Home の開閉の toggle になる）。
+- [p009](../phase009/phase.md) の範囲 3（App Home の上で下端から 2 本指で上 → desktop に戻る）は、この指示と矛盾しないので残す（下端の 2 本指は App Home の開閉の toggle になる）。→ 同じ日の 2 回目の指示（下の「追加」）で、下へ払って閉じる形に置き換えた。
 - touch panel（指で画面）の gesture は変えない。
 
 ## 割り当て（実装後）
@@ -22,7 +22,8 @@ Queue: Q1 の割り当て（2026-10-13 ユーザーの指示）
 | --- | --- | --- | --- |
 | desktop（窓・docked） | 下端から上（BOTTOM2） | Wiseview が指に付いて開く | **App Home** が指に付いて開く（travel / 40 mm、離した時 0.30 以上か flick 100 mm/s で開く、足りなければ戻る。`KWL HOME pad swipe closing=0`・`KWL HOME open via=pad`・`KWL HOME pad back`） |
 | desktop | 上端から下（TOP2） | App Home | **Wiseview** が指に付いて開く（travel / 40 mm、0.35 以上か flick で開く。`KWL WISEVIEW gesture via=pad`・`opening`・`cancel`） |
-| App Home | 下端から上 | desktop に戻る（p009） | 同じ（`KWL HOME pad swipe closing=1`・`KWL HOME close via=pad`・`pad stays`） |
+| App Home | 下端から上 | desktop に戻る（p009） | 同じ（`KWL HOME pad swipe closing=1`・`KWL HOME close via=pad`・`pad stays`）→ **2 回目で何もしないに変えた**（下の「追加」） |
+| App Home | 上端の帯の外から 2 本指で下へ | page（scroll） | **2 回目で追加**: App Home が指に付いて閉じる（DOWN2） |
 | App Home | 上端から下 | 何もしない | App Home をすぐ閉じて Wiseview が指に付いて開く（touch panel の上端と同じ。`KWL HOME close via=pad-top`） |
 | Wiseview | 下端から上 | 何もしない | Wiseview をすぐ閉じて App Home が指に付いて開く（touch panel の Wiseview の下端の press と同じ。`KWL WISEVIEW close via=pad-bottom`） |
 | Wiseview | 上端から下 | 今の tile を選ぶ | 同じ |
@@ -57,3 +58,63 @@ touch panel の下端の swipe（`home.c` の `kwl_home_edge_press`・`home_rise
 | `sh -n` p003-guest.sh・p010-guest.sh、`git diff --check` | ok |
 | QEMU（p003-guest.sh・p010-guest.sh・p009-guest.sh） | 未実施（T1） |
 | 実機（5320・5330 の touchpad の感触） | 未実施（ユーザーの UAT） |
+
+## 追加（2026-10-13 の 2 回目）: App Home を touchpad の 2 本指で下へ払って閉じる
+
+### 由来
+
+前の報告の問い「App Home を閉じる pad の向きを touch panel のように下へ払う形に変えるか」へのユーザーの答え（2026-10-13、原文）:
+
+> ・トラックパッドも下へ払って閉じる形に変えます。
+
+### 判断（P4）
+
+1. **上端の帯からの下（TOP2）と帯の外からの下（新しい DOWN2）を分ける**（既定の案のまま）。App Home の上の TOP2 は今の「Home をすぐ閉じて Wiseview が指に付いて開く」を残す。上端の帯（6 mm）の外から始まる 2 本指の下向きは App Home を閉じる。下端・左右の端の帯から下へ動かすのも DOWN2（帯の外と同じ扱い）。
+2. **touchpad.c に DOWN2 を足した。ただし shell が頼んでいる間だけ作る**。touchpad.c には帯の外の 2 本指の下向きの gesture が無く、帯の外の 2 本指はすぐ scroll になる。DOWN2 を常に作ると、どこでも 2 本指で下へ scroll できなくなるので、`kwl_touchpad_set_down` で shell が App Home の出ている間だけ頼む形にした。touchpad の層は input thread で動くので、頼みは既存の設定の受け渡し（`struct kwl_input_settings`、`kwl_input_sync` が毎 pass で比べて変われば input thread を起こす）に `touchpad_down` を足して運ぶ。新しく付いた pad（attach）にも渡す。login・lock の画面では頼まない。
+3. **App Home の中の 2 本指の scroll との衝突の解決**: 今の App Home は pad の 2 本指の scroll を wheel として受け、縦・横とも page をめくる（`kwl_home_axis`）。頼まれている間、端に触れない 2 本指も「すぐ scroll」にせず、他の端の gesture と同じく最初の 4 mm（`DECIDE_UM`）で決める: ほぼ下（下 ≥ 2 × 横）なら DOWN2、それ以外（横・上）はためた分から scroll（page をめくる、今まで通り）。下への 2 本指は App Home では page をめくらなくなる（page は横に並び、横の swipe と上の scroll でめくれる）。自然な解決と判断した: touch panel の Home の上でも下への drag は閉じ、横は page。
+4. **閉じる決め方は pad の今の規則**（`kwl_home_pad` の閉じる向きをそのまま使う）: travel / 40 mm に指が付いて閉じ、離した時 0.30 以上か flick 100 mm/s（下向きの速さ）で閉じる（`KWL HOME close via=pad`）、足りなければ開いたまま（`KWL HOME pad stays`）。途中で上へ戻せば travel が減って開いたままに戻る。
+5. **「App Home の上で下端から上 → 閉じる」（p009 の範囲 3）は外した**（既定の案）。下へ払う形に置き換えたので、App Home の上の BOTTOM2 は何もしない。touch panel でも Home の上の下端の swipe up は何もしない（`kwl_home_edge_press` は Home が閉じている時だけ）ので、touch panel と揃う。残すと「上へ払っても下へ払っても閉じる」になり、iOS と同じ「下端から上 = Home へ」の向きの意味が Home の上でだけ逆になるので、残す理由は無いと判断した。p009 の phase.md に置き換えの注記を足した。
+6. 電源の dialog（App Home の Power Off から出る）が出ている時の DOWN2 は、TOP2 と同じく下への swipe として dialog を取り消す（`gesture_as_swipe`）。
+
+### 割り当て（2 回目の後、App Home の上の pad）
+
+| 2 本指 | 前（1 回目の後） | 今 |
+| --- | --- | --- |
+| 帯の外（または下端・左右の端）から下へ | page をめくる（scroll） | **App Home が指に付いて閉じる**（`KWL GESTURE kind=down2`・`KWL HOME pad swipe closing=1`・`KWL HOME close via=pad`・`pad stays`） |
+| 上端の帯から下へ（TOP2） | Home をすぐ閉じて Wiseview | 同じ（`KWL HOME close via=pad-top`） |
+| 下端の帯から上へ（BOTTOM2） | Home を閉じる（p009） | **何もしない**（`KWL GESTURE kind=bottom2` の行だけ） |
+| 横へ・帯の外から上へ | page をめくる | 同じ（ただし最初の 4 mm で決まるまで待つ） |
+
+desktop・Wiseview の上の pad、touch panel の gesture は変えていない。
+
+### 実装
+
+- `touchpad.h`・`touchpad.c`: `KWL_TOUCHPAD_GESTURE_DOWN2`（enum の末尾）、`struct kwl_touchpad` の `down2`、`kwl_touchpad_set_down`。`gesture_motion` は `down2` の間、端に触れない 2 本指もためて決め、TOP2 でない下向きを DOWN2 にする。`gesture_along` の DOWN2 は下が正。
+- `input-thread.h`・`input-thread.c`: `struct kwl_input_settings` の `touchpad_down`、設定の世代が変わった時と attach の時に `kwl_touchpad_set_down`。
+- `input.c` の `input_settings`: App Home が出ている（`kwl_home_progress` > 0 か `home_to` > 0）かつ login・lock でない時に `touchpad_down = 1`。
+- `shell.c` の `kwl_glass_gesture`: DOWN2 は App Home が出ていれば `kwl_home_pad`（閉じる向き）、出ていなければ何もしない。App Home の上の BOTTOM2 は何もしない（前は `kwl_home_pad`）。`gesture_name` に `down2`、`gesture_as_swipe` の DOWN2 は下。
+- `home.c`・`kwl.h`: 注記だけ（`kwl_home_pad` の判定は変えていない）。
+
+### 試験の追従
+
+- host `plan/ws142/tests/host-gesture.c`: 32.〜36.（頼まれた時の真ん中の下 20 mm が DOWN2 で付いて flick、遅いのは flick でない、上・横は scroll、上端からは TOP2 のまま、下端の帯から下は DOWN2、頼まれていない・頼みを外した時は下も scroll）。101 checks。
+- `plan/ws181/tests/p009-guest.sh` の 3.: App Home の上で真ん中から下 30 mm → `kind=down2`・`closing=1`・`close via=pad`、下端の帯から下でも `closing=1`、短く遅いのは `pad stays`、下端から上（BOTTOM2）は何もしない（Esc で閉じる = 開いたまま）。`close via=pad` の照合を `close via=pad `（空白付き、`pad-top` と分ける）に。
+- `plan/ws142/tests/p003-guest.sh` の新しい 7e.: App Home を下端から開き、横の 2 本指は gesture でなく開いたまま、真ん中から下で閉じる、desktop の上の同じ下は gesture でない。8. の数を 6・6 に。
+- `plan/ws142/tests/p010-guest.sh`: App Home は Esc で閉じていて pad で閉じないので変更なし。
+- AAT `tests/scenarios/desktop/touchpad/preview-swipe-step.md`: 3b. から「App Home の上で下端から上 → desktop」を外し、新しい 3c.（下へ払って閉じる・戻すと開いたまま・横は page・下端から上は何もしない）。
+- 削除する試験: なし。
+
+### 確認（2 回目）
+
+| 確認 | 結果 |
+| --- | --- |
+| amd64 の compositor（`make -j8 ZEDBSD_CONFIG=config/ci/config-amd64.mk -o <p4>/build/amd64/sysroot/.zedbsd-sysroot-complete build/amd64/bin/wayland`） | exit 0、warning 0 |
+| rpi4 の compositor（`make -j8 ZEDBSD_CONFIG=config/ci/config-rpi4.mk -o <p4>/build/arm64/sysroot/.zedbsd-sysroot-complete build/arm64/bin/wayland`） | exit 0、warning 0 |
+| Linux の Keiland（`make -j8 keiland-linux`） | exit 0、warning 0 |
+| host `plan/ws142/tests/run-host-gesture.sh build/p4-host-gesture` | ok（101 checks） |
+| host `plan/ws159/tests/run-host-touchpad.sh build/p4-host-touchpad` | ok（32 checks） |
+| host `plan/ws213/tests/input-thread-host-test.sh build/p4-host-ws213`（設定の struct が変わったので） | PASS（131 checks、plain と ThreadSanitizer） |
+| `sh -n` p003-guest.sh・p009-guest.sh、`git diff --check` | ok |
+| QEMU（pen の image、p003-guest.sh・p010-guest.sh・p009-guest.sh） | 未実施（T1。1 回目の T1-559 と合わせて 1 回で流せる） |
+| 実機（5320・5330 の touchpad の感触） | 未実施（ユーザーの UAT） |
+
