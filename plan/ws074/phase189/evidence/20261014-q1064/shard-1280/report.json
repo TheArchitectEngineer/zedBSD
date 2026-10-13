@@ -1,0 +1,922 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "eligible": 1455,
+  "reason_counts": {
+    "candidate": 1455,
+    "generated_context": 45,
+    "https": 44,
+    "other_type": 2022,
+    "requires_driver_origin_or_worker": 126,
+    "variant_url": 80,
+    "worker_or_substitution_path": 33
+  },
+  "eligible_sha256": "d9b36bd0c947a35529eeb11e46b4d2038053cc0b8786a2354be87536e563dae2",
+  "offset": 1280,
+  "limit": 128,
+  "selected": [
+    "/navigation-api/navigation-history-entry/key-id-back-same-document.html",
+    "/navigation-api/navigation-history-entry/key-id-location-reload-intercept.html",
+    "/navigation-api/navigation-history-entry/key-id-location-reload.html",
+    "/navigation-api/navigation-history-entry/key-id-location-replace.html",
+    "/navigation-api/navigation-history-entry/no-referrer-dynamic-url-censored.html",
+    "/navigation-api/navigation-history-entry/no-referrer-from-meta-url-censored.html",
+    "/navigation-api/navigation-history-entry/no-referrer-url-censored.html",
+    "/navigation-api/navigation-history-entry/opaque-origin-data-url.html",
+    "/navigation-api/navigation-history-entry/opaque-origin.html",
+    "/navigation-api/navigation-history-entry/sameDocument-after-fragment-navigate.html",
+    "/navigation-api/navigation-history-entry/sameDocument-after-navigate-restore.html",
+    "/navigation-api/navigation-history-entry/sameDocument-after-navigate.html",
+    "/navigation-api/navigation-history-entry/state-after-navigate-restore.html",
+    "/navigation-api/navigation-methods/back-forward-multiple-frames.html",
+    "/navigation-api/navigation-methods/disambigaute-back.html",
+    "/navigation-api/navigation-methods/disambigaute-forward.html",
+    "/navigation-api/navigation-methods/disambigaute-traverseTo-back-multiple.html",
+    "/navigation-api/navigation-methods/disambigaute-traverseTo-forward-multiple.html",
+    "/navigation-api/navigation-methods/navigate-base-url.html",
+    "/navigation-api/navigation-methods/navigate-from-initial-about-blank-gc.html",
+    "/navigation-api/navigation-methods/navigate-from-initial-about-blank-src.html",
+    "/navigation-api/navigation-methods/navigate-from-initial-about-blank.html",
+    "/navigation-api/navigation-methods/navigate-history-push-not-loaded.html",
+    "/navigation-api/navigation-methods/navigate-history-push-same-url-cross-document.html",
+    "/navigation-api/navigation-methods/navigate-history-push-same-url.html",
+    "/navigation-api/navigation-methods/navigate-history-state-replace.html",
+    "/navigation-api/navigation-methods/navigate-history-state.html",
+    "/navigation-api/navigation-methods/navigate-info-and-state.html",
+    "/navigation-api/navigation-methods/navigate-intercept-history-state.html",
+    "/navigation-api/navigation-methods/navigate-relative-url.html",
+    "/navigation-api/navigation-methods/navigate-replace-cross-document.html",
+    "/navigation-api/navigation-methods/navigate-replace-same-document.html",
+    "/navigation-api/navigation-methods/navigate-same-document.html",
+    "/navigation-api/navigation-methods/navigate-state-repeated-await.html",
+    "/navigation-api/navigation-methods/navigate-state-repeated.html",
+    "/navigation-api/navigation-methods/reload-base-url.html",
+    "/navigation-api/navigation-methods/reload-info.html",
+    "/navigation-api/navigation-methods/reload-navigation-timing.html",
+    "/navigation-api/navigation-methods/reload-no-args.html",
+    "/navigation-api/navigation-methods/reload-state-and-info.html",
+    "/navigation-api/navigation-methods/reload-state-undefined.html",
+    "/navigation-api/navigation-methods/return-value/back-204-205-download.html",
+    "/navigation-api/navigation-methods/return-value/back-already-detached.html",
+    "/navigation-api/navigation-methods/return-value/back-beforeunload.html",
+    "/navigation-api/navigation-methods/return-value/back-forward-initial-about-blank.html",
+    "/navigation-api/navigation-methods/return-value/back-forward-opaque-origin.html",
+    "/navigation-api/navigation-methods/return-value/back-forward-out-of-bounds.html",
+    "/navigation-api/navigation-methods/return-value/back-intercept-rejected.html",
+    "/navigation-api/navigation-methods/return-value/back-intercept.html",
+    "/navigation-api/navigation-methods/return-value/back.html",
+    "/navigation-api/navigation-methods/return-value/forward-already-detached.html",
+    "/navigation-api/navigation-methods/return-value/forward-beforeunload.html",
+    "/navigation-api/navigation-methods/return-value/forward-intercept-rejected.html",
+    "/navigation-api/navigation-methods/return-value/forward-intercept.html",
+    "/navigation-api/navigation-methods/return-value/forward.html",
+    "/navigation-api/navigation-methods/return-value/navigate-204-205-download.html",
+    "/navigation-api/navigation-methods/return-value/navigate-already-detached.html",
+    "/navigation-api/navigation-methods/return-value/navigate-beforeunload.html",
+    "/navigation-api/navigation-methods/return-value/navigate-cross-document.html",
+    "/navigation-api/navigation-methods/return-value/navigate-detach-in-onnavigate.html",
+    "/navigation-api/navigation-methods/return-value/navigate-detach-in-serialization.html",
+    "/navigation-api/navigation-methods/return-value/navigate-file-url.html",
+    "/navigation-api/navigation-methods/return-value/navigate-initial-about-blank-cross-document.html",
+    "/navigation-api/navigation-methods/return-value/navigate-initial-about-blank.html",
+    "/navigation-api/navigation-methods/return-value/navigate-intercept-interrupted.html",
+    "/navigation-api/navigation-methods/return-value/navigate-intercept-rejected.html",
+    "/navigation-api/navigation-methods/return-value/navigate-intercept.html",
+    "/navigation-api/navigation-methods/return-value/navigate-interrupted-within-onnavigate.html",
+    "/navigation-api/navigation-methods/return-value/navigate-interrupted.html",
+    "/navigation-api/navigation-methods/return-value/navigate-invalid-url.html",
+    "/navigation-api/navigation-methods/return-value/navigate-opaque-origin.html",
+    "/navigation-api/navigation-methods/return-value/navigate-pagehide.html",
+    "/navigation-api/navigation-methods/return-value/navigate-preventDefault.html",
+    "/navigation-api/navigation-methods/return-value/navigate-push-initial-about-blank.html",
+    "/navigation-api/navigation-methods/return-value/navigate-push-javascript-url.html",
+    "/navigation-api/navigation-methods/return-value/navigate-rejection-order-beforeunload-unserializablestate.html",
+    "/navigation-api/navigation-methods/return-value/navigate-rejection-order-detached-unserializablestate.html",
+    "/navigation-api/navigation-methods/return-value/navigate-rejection-order-invalidurl-beforeunload.html",
+    "/navigation-api/navigation-methods/return-value/navigate-rejection-order-invalidurl-detached.html",
+    "/navigation-api/navigation-methods/return-value/navigate-rejection-order-invalidurl-pagehide.html",
+    "/navigation-api/navigation-methods/return-value/navigate-rejection-order-invalidurl-unserializablestate.html",
+    "/navigation-api/navigation-methods/return-value/navigate-rejection-order-pagehide-unserializablestate.html",
+    "/navigation-api/navigation-methods/return-value/navigate-unserializable-state.html",
+    "/navigation-api/navigation-methods/return-value/navigate.html",
+    "/navigation-api/navigation-methods/return-value/reload-already-detached.html",
+    "/navigation-api/navigation-methods/return-value/reload-beforeunload.html",
+    "/navigation-api/navigation-methods/return-value/reload-detach-in-onnavigate.html",
+    "/navigation-api/navigation-methods/return-value/reload-detach-in-serialization.html",
+    "/navigation-api/navigation-methods/return-value/reload-initial-about-blank.html",
+    "/navigation-api/navigation-methods/return-value/reload-intercept-rejected.html",
+    "/navigation-api/navigation-methods/return-value/reload-intercept.html",
+    "/navigation-api/navigation-methods/return-value/reload-pagehide.html",
+    "/navigation-api/navigation-methods/return-value/reload-preventDefault.html",
+    "/navigation-api/navigation-methods/return-value/reload-rejection-order-beforeunload-unserializablestate.html",
+    "/navigation-api/navigation-methods/return-value/reload-rejection-order-detached-unserializablestate.html",
+    "/navigation-api/navigation-methods/return-value/reload-rejection-order-pagehide-unserializablestate.html",
+    "/navigation-api/navigation-methods/return-value/reload-unserializable-state.html",
+    "/navigation-api/navigation-methods/return-value/reload.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo-already-detached.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo-beforeunload.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo-cross-document-preventDefault.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo-current.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo-detach-cross-document-before-navigate-event.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo-detach-cross-document.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo-detach-same-document-before-navigate-event.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo-detach-same-document.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo-intercept-rejected.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo-intercept.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo-invalid-key.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo-repeated.html",
+    "/navigation-api/navigation-methods/return-value/traverseTo.html",
+    "/navigation-api/navigation-methods/sandboxing-back-parent.html",
+    "/navigation-api/navigation-methods/sandboxing-back-sibling.html",
+    "/navigation-api/navigation-methods/sandboxing-navigate-parent.html",
+    "/navigation-api/navigation-methods/sandboxing-navigate-sibling.html",
+    "/navigation-api/navigation-methods/traverseTo-after-adding-iframe.html",
+    "/navigation-api/navigation-methods/traverseTo-after-data-url.html",
+    "/navigation-api/navigation-methods/traverseTo-cross-document.html",
+    "/navigation-api/navigation-methods/traverseTo-detach-between-navigate-and-navigatesuccess.html",
+    "/navigation-api/navigation-methods/traverseTo-multiple-steps.html",
+    "/navigation-api/navigation-methods/traverseTo-navigates-multiple-iframes.html",
+    "/navigation-api/navigation-methods/traverseTo-same-document.html",
+    "/navigation-api/ordering-and-transition/anchor-download.html",
+    "/navigation-api/ordering-and-transition/currententrychange-before-popstate-intercept.html",
+    "/navigation-api/ordering-and-transition/currententrychange-dispose-ordering.html",
+    "/navigation-api/ordering-and-transition/location-href-canceled.html",
+    "/navigation-api/ordering-and-transition/navigate-canceled.html",
+    "/navigation-api/ordering-and-transition/reload-canceled.html"
+  ],
+  "results": [
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/key-id-back-same-document.html",
+      "outcome": "fail",
+      "report": "test-1281.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/key-id-location-reload-intercept.html",
+      "outcome": "fail",
+      "report": "test-1282.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/key-id-location-reload.html",
+      "outcome": "fail",
+      "report": "test-1283.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/key-id-location-replace.html",
+      "outcome": "fail",
+      "report": "test-1284.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/no-referrer-dynamic-url-censored.html",
+      "outcome": "fail",
+      "report": "test-1285.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/no-referrer-from-meta-url-censored.html",
+      "outcome": "fail",
+      "report": "test-1286.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/no-referrer-url-censored.html",
+      "outcome": "fail",
+      "report": "test-1287.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/opaque-origin-data-url.html",
+      "outcome": "no_output",
+      "report": "test-1288.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/opaque-origin.html",
+      "outcome": "no_completion",
+      "report": "test-1289.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/sameDocument-after-fragment-navigate.html",
+      "outcome": "fail",
+      "report": "test-1290.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/sameDocument-after-navigate-restore.html",
+      "outcome": "fail",
+      "report": "test-1291.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/sameDocument-after-navigate.html",
+      "outcome": "fail",
+      "report": "test-1292.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/state-after-navigate-restore.html",
+      "outcome": "fail",
+      "report": "test-1293.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/back-forward-multiple-frames.html",
+      "outcome": "fail",
+      "report": "test-1294.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/disambigaute-back.html",
+      "outcome": "fail",
+      "report": "test-1295.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/disambigaute-forward.html",
+      "outcome": "fail",
+      "report": "test-1296.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/disambigaute-traverseTo-back-multiple.html",
+      "outcome": "fail",
+      "report": "test-1297.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/disambigaute-traverseTo-forward-multiple.html",
+      "outcome": "fail",
+      "report": "test-1298.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-base-url.html",
+      "outcome": "fail",
+      "report": "test-1299.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-from-initial-about-blank-gc.html",
+      "outcome": "fail",
+      "report": "test-1300.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-from-initial-about-blank-src.html",
+      "outcome": "fail",
+      "report": "test-1301.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-from-initial-about-blank.html",
+      "outcome": "fail",
+      "report": "test-1302.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-history-push-not-loaded.html",
+      "outcome": "fail",
+      "report": "test-1303.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-history-push-same-url-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1304.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-history-push-same-url.html",
+      "outcome": "fail",
+      "report": "test-1305.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-history-state-replace.html",
+      "outcome": "fail",
+      "report": "test-1306.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-history-state.html",
+      "outcome": "fail",
+      "report": "test-1307.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-info-and-state.html",
+      "outcome": "fail",
+      "report": "test-1308.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-intercept-history-state.html",
+      "outcome": "fail",
+      "report": "test-1309.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-relative-url.html",
+      "outcome": "fail",
+      "report": "test-1310.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-replace-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1311.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-replace-same-document.html",
+      "outcome": "fail",
+      "report": "test-1312.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-same-document.html",
+      "outcome": "fail",
+      "report": "test-1313.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-state-repeated-await.html",
+      "outcome": "fail",
+      "report": "test-1314.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/navigate-state-repeated.html",
+      "outcome": "fail",
+      "report": "test-1315.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/reload-base-url.html",
+      "outcome": "fail",
+      "report": "test-1316.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/reload-info.html",
+      "outcome": "fail",
+      "report": "test-1317.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/reload-navigation-timing.html",
+      "outcome": "fail",
+      "report": "test-1318.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/reload-no-args.html",
+      "outcome": "fail",
+      "report": "test-1319.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/reload-state-and-info.html",
+      "outcome": "fail",
+      "report": "test-1320.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/reload-state-undefined.html",
+      "outcome": "fail",
+      "report": "test-1321.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/back-204-205-download.html",
+      "outcome": "no_output",
+      "report": "test-1322.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/back-already-detached.html",
+      "outcome": "fail",
+      "report": "test-1323.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/back-beforeunload.html",
+      "outcome": "fail",
+      "report": "test-1324.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/back-forward-initial-about-blank.html",
+      "outcome": "fail",
+      "report": "test-1325.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/back-forward-opaque-origin.html",
+      "outcome": "no_completion",
+      "report": "test-1326.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/back-forward-out-of-bounds.html",
+      "outcome": "fail",
+      "report": "test-1327.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/back-intercept-rejected.html",
+      "outcome": "fail",
+      "report": "test-1328.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/back-intercept.html",
+      "outcome": "fail",
+      "report": "test-1329.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/back.html",
+      "outcome": "fail",
+      "report": "test-1330.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/forward-already-detached.html",
+      "outcome": "fail",
+      "report": "test-1331.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/forward-beforeunload.html",
+      "outcome": "fail",
+      "report": "test-1332.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/forward-intercept-rejected.html",
+      "outcome": "fail",
+      "report": "test-1333.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/forward-intercept.html",
+      "outcome": "fail",
+      "report": "test-1334.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/forward.html",
+      "outcome": "fail",
+      "report": "test-1335.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-204-205-download.html",
+      "outcome": "no_output",
+      "report": "test-1336.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-already-detached.html",
+      "outcome": "fail",
+      "report": "test-1337.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-beforeunload.html",
+      "outcome": "fail",
+      "report": "test-1338.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1339.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-detach-in-onnavigate.html",
+      "outcome": "fail",
+      "report": "test-1340.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-detach-in-serialization.html",
+      "outcome": "fail",
+      "report": "test-1341.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-file-url.html",
+      "outcome": "fail",
+      "report": "test-1342.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-initial-about-blank-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1343.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-initial-about-blank.html",
+      "outcome": "fail",
+      "report": "test-1344.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-intercept-interrupted.html",
+      "outcome": "fail",
+      "report": "test-1345.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-intercept-rejected.html",
+      "outcome": "fail",
+      "report": "test-1346.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-intercept.html",
+      "outcome": "fail",
+      "report": "test-1347.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-interrupted-within-onnavigate.html",
+      "outcome": "fail",
+      "report": "test-1348.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-interrupted.html",
+      "outcome": "fail",
+      "report": "test-1349.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-invalid-url.html",
+      "outcome": "fail",
+      "report": "test-1350.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-opaque-origin.html",
+      "outcome": "no_completion",
+      "report": "test-1351.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-pagehide.html",
+      "outcome": "fail",
+      "report": "test-1352.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-preventDefault.html",
+      "outcome": "fail",
+      "report": "test-1353.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-push-initial-about-blank.html",
+      "outcome": "fail",
+      "report": "test-1354.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-push-javascript-url.html",
+      "outcome": "fail",
+      "report": "test-1355.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-rejection-order-beforeunload-unserializablestate.html",
+      "outcome": "fail",
+      "report": "test-1356.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-rejection-order-detached-unserializablestate.html",
+      "outcome": "fail",
+      "report": "test-1357.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-rejection-order-invalidurl-beforeunload.html",
+      "outcome": "fail",
+      "report": "test-1358.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-rejection-order-invalidurl-detached.html",
+      "outcome": "fail",
+      "report": "test-1359.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-rejection-order-invalidurl-pagehide.html",
+      "outcome": "fail",
+      "report": "test-1360.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-rejection-order-invalidurl-unserializablestate.html",
+      "outcome": "fail",
+      "report": "test-1361.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-rejection-order-pagehide-unserializablestate.html",
+      "outcome": "fail",
+      "report": "test-1362.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate-unserializable-state.html",
+      "outcome": "fail",
+      "report": "test-1363.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/navigate.html",
+      "outcome": "fail",
+      "report": "test-1364.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-already-detached.html",
+      "outcome": "fail",
+      "report": "test-1365.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-beforeunload.html",
+      "outcome": "fail",
+      "report": "test-1366.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-detach-in-onnavigate.html",
+      "outcome": "fail",
+      "report": "test-1367.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-detach-in-serialization.html",
+      "outcome": "fail",
+      "report": "test-1368.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-initial-about-blank.html",
+      "outcome": "fail",
+      "report": "test-1369.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-intercept-rejected.html",
+      "outcome": "fail",
+      "report": "test-1370.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-intercept.html",
+      "outcome": "fail",
+      "report": "test-1371.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-pagehide.html",
+      "outcome": "fail",
+      "report": "test-1372.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-preventDefault.html",
+      "outcome": "fail",
+      "report": "test-1373.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-rejection-order-beforeunload-unserializablestate.html",
+      "outcome": "fail",
+      "report": "test-1374.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-rejection-order-detached-unserializablestate.html",
+      "outcome": "fail",
+      "report": "test-1375.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-rejection-order-pagehide-unserializablestate.html",
+      "outcome": "fail",
+      "report": "test-1376.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload-unserializable-state.html",
+      "outcome": "fail",
+      "report": "test-1377.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/reload.html",
+      "outcome": "fail",
+      "report": "test-1378.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo-already-detached.html",
+      "outcome": "fail",
+      "report": "test-1379.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo-beforeunload.html",
+      "outcome": "fail",
+      "report": "test-1380.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo-cross-document-preventDefault.html",
+      "outcome": "fail",
+      "report": "test-1381.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo-current.html",
+      "outcome": "fail",
+      "report": "test-1382.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo-detach-cross-document-before-navigate-event.html",
+      "outcome": "fail",
+      "report": "test-1383.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo-detach-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1384.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo-detach-same-document-before-navigate-event.html",
+      "outcome": "fail",
+      "report": "test-1385.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo-detach-same-document.html",
+      "outcome": "fail",
+      "report": "test-1386.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo-intercept-rejected.html",
+      "outcome": "fail",
+      "report": "test-1387.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo-intercept.html",
+      "outcome": "fail",
+      "report": "test-1388.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo-invalid-key.html",
+      "outcome": "fail",
+      "report": "test-1389.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo-repeated.html",
+      "outcome": "fail",
+      "report": "test-1390.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/return-value/traverseTo.html",
+      "outcome": "fail",
+      "report": "test-1391.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/sandboxing-back-parent.html",
+      "outcome": "fail",
+      "report": "test-1392.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/sandboxing-back-sibling.html",
+      "outcome": "fail",
+      "report": "test-1393.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/sandboxing-navigate-parent.html",
+      "outcome": "fail",
+      "report": "test-1394.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/sandboxing-navigate-sibling.html",
+      "outcome": "fail",
+      "report": "test-1395.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/traverseTo-after-adding-iframe.html",
+      "outcome": "fail",
+      "report": "test-1396.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/traverseTo-after-data-url.html",
+      "outcome": "fail",
+      "report": "test-1397.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/traverseTo-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1398.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/traverseTo-detach-between-navigate-and-navigatesuccess.html",
+      "outcome": "fail",
+      "report": "test-1399.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/traverseTo-multiple-steps.html",
+      "outcome": "fail",
+      "report": "test-1400.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/traverseTo-navigates-multiple-iframes.html",
+      "outcome": "fail",
+      "report": "test-1401.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-methods/traverseTo-same-document.html",
+      "outcome": "fail",
+      "report": "test-1402.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/ordering-and-transition/anchor-download.html",
+      "outcome": "fail",
+      "report": "test-1403.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/ordering-and-transition/currententrychange-before-popstate-intercept.html",
+      "outcome": "fail",
+      "report": "test-1404.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/ordering-and-transition/currententrychange-dispose-ordering.html",
+      "outcome": "fail",
+      "report": "test-1405.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/ordering-and-transition/location-href-canceled.html",
+      "outcome": "no_output",
+      "report": "test-1406.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/ordering-and-transition/navigate-canceled.html",
+      "outcome": "no_output",
+      "report": "test-1407.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/ordering-and-transition/reload-canceled.html",
+      "outcome": "no_output",
+      "report": "test-1408.json.gz"
+    }
+  ],
+  "outcome_counts": {
+    "fail": 119,
+    "no_completion": 3,
+    "no_output": 6
+  }
+}

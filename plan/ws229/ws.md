@@ -38,8 +38,8 @@ GOP のままで GT と EU: 6〜8 LW。display controller を足して全体: 10
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 調べと設計（a〜d の答え、Phase の分け方 §5、見積もり 14.5 LW） | cleared（2026-10-14） | — |
 | p002 | GT の起動（Gen9）、最初の commit で共有の契約（`gt->graphics_ver`） | planned（q977、P2） | p001 |
-| p003 | EU の符号化（Gen9）、`drv_i915_shader_compile_gen()` | planned（q978、P1） | p001 |
+| [p003](phase003/phase.md) | EU の符号化（Gen9）、`drv_i915_shader_compile_gen()`、SENDS、fence の stall | in-progress — merge 済み（28d6deaae）、host の受け入れ PASS（Gen12 の 88 の kernel の byte が同一、Gen9 の 96 の往復と期待の byte）。実機は p005 | p001 |
 | p004 | 3D と compute の state（Gen9） | planned（q979、P3。P3 の ws143 の直しの後） | p001、p002 の契約 |
-| p005 | Vulkan の通しと実機（6・7・8 世代を USB で） | planned | p002〜p004 |
+| [p005](phase005/phase.md) | Vulkan の通しと実機（6・7・8 世代を USB で）、5330 の回帰 | planned（q980、P1。準備から） | p002〜p004 |
 | p006 | display controller（Gen9） | planned（今日の範囲外） | p005 |
 | p007 | 規約の全文の見直し | planned | p005 |

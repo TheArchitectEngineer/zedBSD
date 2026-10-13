@@ -6,6 +6,7 @@
 
 import argparse
 from collections import Counter
+import gzip
 import hashlib
 import importlib.util
 import json
@@ -61,6 +62,8 @@ def main():
     parser.add_argument("--limit", type=int, default=128)
     parser.add_argument("--settle-ms", type=int, default=5000)
     parser.add_argument("--process-timeout", type=int, default=20)
+    parser.add_argument("--gzip-raw", action="store_true",
+                        help="preserve raw callback reports as gzip files")
     args = parser.parse_args()
     if (args.offset < 0 or args.limit < 1 or args.limit > 128 or
             args.settle_ms < 0 or args.settle_ms > 60000 or
@@ -100,6 +103,13 @@ def main():
             result = {"test_id": identifier, "outcome": "runner_error",
                       "error": str(error)}
             path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        if args.gzip_raw:
+            compressed = path.with_suffix(path.suffix + ".gz")
+            with path.open("rb") as source, gzip.open(compressed, "wb") as output:
+                for block in iter(lambda: source.read(65536), b""):
+                    output.write(block)
+            path.unlink()
+            path = compressed
         row = {"kind": "result", "test_id": identifier,
                "outcome": result["outcome"], "report": path.name}
         results.append(row)

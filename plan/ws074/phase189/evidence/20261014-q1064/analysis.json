@@ -1,0 +1,203 @@
+{
+  "eligible": 1455,
+  "measured": 1455,
+  "outcomes": {
+    "fail": 910,
+    "harness_error": 13,
+    "no_completion": 299,
+    "no_output": 73,
+    "pass": 160
+  },
+  "q1064_outcomes": {
+    "fail": 817,
+    "harness_error": 8,
+    "no_completion": 291,
+    "no_output": 69,
+    "pass": 142
+  },
+  "excluded_testharness": 328,
+  "eligible_sha256": "d9b36bd0c947a35529eeb11e46b4d2038053cc0b8786a2354be87536e563dae2",
+  "shards": [
+    {
+      "offset": 0,
+      "selected": 128,
+      "outcomes": {
+        "fail": 93,
+        "harness_error": 5,
+        "no_completion": 8,
+        "no_output": 4,
+        "pass": 18
+      }
+    },
+    {
+      "offset": 128,
+      "selected": 128,
+      "outcomes": {
+        "fail": 112,
+        "harness_error": 8,
+        "no_output": 1,
+        "pass": 7
+      }
+    },
+    {
+      "offset": 256,
+      "selected": 128,
+      "outcomes": {
+        "fail": 54,
+        "no_completion": 1,
+        "pass": 73
+      }
+    },
+    {
+      "offset": 384,
+      "selected": 128,
+      "outcomes": {
+        "fail": 78,
+        "no_completion": 8,
+        "no_output": 23,
+        "pass": 19
+      }
+    },
+    {
+      "offset": 512,
+      "selected": 128,
+      "outcomes": {
+        "fail": 29,
+        "no_completion": 89,
+        "no_output": 10
+      }
+    },
+    {
+      "offset": 640,
+      "selected": 128,
+      "outcomes": {
+        "fail": 13,
+        "no_completion": 115
+      }
+    },
+    {
+      "offset": 768,
+      "selected": 128,
+      "outcomes": {
+        "fail": 72,
+        "no_completion": 54,
+        "pass": 2
+      }
+    },
+    {
+      "offset": 896,
+      "selected": 128,
+      "outcomes": {
+        "fail": 79,
+        "no_completion": 15,
+        "no_output": 9,
+        "pass": 25
+      }
+    },
+    {
+      "offset": 1024,
+      "selected": 128,
+      "outcomes": {
+        "fail": 96,
+        "no_completion": 2,
+        "no_output": 14,
+        "pass": 16
+      }
+    },
+    {
+      "offset": 1152,
+      "selected": 128,
+      "outcomes": {
+        "fail": 123,
+        "no_output": 5
+      }
+    },
+    {
+      "offset": 1280,
+      "selected": 128,
+      "outcomes": {
+        "fail": 119,
+        "no_completion": 3,
+        "no_output": 6
+      }
+    },
+    {
+      "offset": 1408,
+      "selected": 47,
+      "outcomes": {
+        "fail": 42,
+        "no_completion": 4,
+        "no_output": 1
+      }
+    }
+  ],
+  "focus_outcomes": {
+    "anchor-positioning": {
+      "fail": 107,
+      "harness_error": 5,
+      "no_completion": 8,
+      "no_output": 4,
+      "pass": 23
+    },
+    "backdrop-filter": {
+      "fail": 7,
+      "pass": 1
+    },
+    "core-web-vitals": {
+      "fail": 46,
+      "no_completion": 1,
+      "no_output": 1
+    },
+    "details": {
+      "fail": 4,
+      "no_output": 1,
+      "pass": 8
+    },
+    "layout": {
+      "fail": 382,
+      "no_completion": 281,
+      "no_output": 33,
+      "pass": 103
+    },
+    "modules": {
+      "fail": 5,
+      "no_output": 8
+    },
+    "navigation": {
+      "fail": 288,
+      "no_completion": 7,
+      "no_output": 12
+    },
+    "pointer-and-mouse-events": {
+      "fail": 1
+    },
+    "remove-mutation-events": {
+      "pass": 1
+    },
+    "scope": {
+      "fail": 13,
+      "harness_error": 8,
+      "no_output": 1
+    },
+    "scrollend": {
+      "fail": 1,
+      "no_output": 1
+    },
+    "textdecoration": {
+      "pass": 16
+    },
+    "view-transitions": {
+      "fail": 41,
+      "pass": 3
+    },
+    "webcompat": {
+      "fail": 8
+    },
+    "writingmodes": {
+      "fail": 7,
+      "no_completion": 2,
+      "no_output": 12,
+      "pass": 5
+    }
+  }
+}

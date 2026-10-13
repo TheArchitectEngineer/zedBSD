@@ -455,6 +455,10 @@ struct dom_document {
 	struct vm_object *images_collection;
 	/* The current native inline stylesheet query retains its SameObject wrapper. */
 	struct vm_object *style_sheets;
+	/* Initial FontFaceSet.ready and its SameObject wrapper survive GC with this Document. */
+	struct vm_object *font_set;
+	struct vm_cell *font_ready;
+	int fonts_settled;
 	/* Loaded Documents own their final URL and normalized declared MIME essence. */
 	struct vm_string *resource_url;
 	struct vm_string *resource_mime;

@@ -218,6 +218,7 @@ void page_sheets_release(struct page *page);
 void page_fonts_init(struct page *page);
 int page_fonts_add_sheet(struct page *page, const struct css_sheet *sheet);
 void page_fonts_install(struct page *page);
+int page_fonts_pending(const struct page *page);
 void page_fonts_release(struct page *page);
 
 /* Scripts, events and time (script.c). */

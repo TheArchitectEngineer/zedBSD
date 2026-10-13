@@ -3,7 +3,7 @@
 # ws143-p007: Linux の Bluetooth の backend（BlueZ の D-Bus）と FreeBSD の未対応の表示
 
 Parent: [WS143](../ws.md)
-Status: in-progress — test-wait（2026-10-14 P3: T1-604 の観察の直し（§12、commit 56f416f41、host 試験 PASS）。Pair の窓の Cancel（no）で自分の pairing をすぐ終える（CancelPairing、ECONNREFUSED `rejected`）、Pair の終わりで窓の question と保留の Agent の call を必ず終える。T1 の再試験（§12.5 の依頼の文）待ち。旧 2026-10-14 P3: T1-593 の Connect の文を直した（§11、eb79dde1c）、T1-604 で文は PASS。FreeBSD の頁は未実施（GPU の無い guest で compositor が起きない、T1-587））
+Status: cleared（2026-10-14 Q1: T1-593・T1-604・T1-605（Debian 13 の QEMU+KVM、btvirt）で ON・adapter の名・検出・番号の照合・pair・Forget・電源・Connect の失敗の文・古い bond での拒否・Cancel（約 1 秒で閉じ「The pairing was refused.」）・失敗の後の窓の閉じが PASS。制限: 仮想の相手への Connect が約 20 秒の Timeout で終わる間は Remove が効かない（1 度に 1 つの request の作り、記録だけ）、FreeBSD の頁は未実施（T1-587）、実機は未実施）
 Phase disposition: normal
 Queue: q962（P2、2026-10-13）。承認: ユーザー「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。」、WS143 の design.md §9（D7・D13 ほか、2026-10-05 夕 ユーザー「全部推奨」）と §10 の p007、2026-10-08 ユーザー「Linux・FreeBSD は 10/13 以降」。
 Queue（実装）: q967（P3、2026-10-14）。review: [review-1](review-1.md)（design-reviewer、判定「直せば実装してよい」、重大 4 と中 M1・M3・M5・M7・M8 を入れれば再 review なし、Q1）。

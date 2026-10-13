@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1063](queue.md) finished / p189 testharness最初の128 ID実測。2026-10-14 03:39 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1065](queue.md) finished / p209 FontFaceSet.ready初期settlement。2026-10-14 04:02 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -467,6 +467,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p206](phase206/phase.md) | Interop 2025 Flex残3回帰 | cleared / q1059後続証拠で3 ID local PASS | p190 q1056旧8回帰・p205 gap5回復 |
 | [ws074-p207](phase207/phase.md) | Interop 2025 縦textarea小数差 | cleared / q1059固定1 ID差0 | p206 q1058残198差画素 |
 | [ws074-p208](phase208/phase.md) | Interop 2025 Flex base/hypothetical分離 | cleared / q1061固定回帰1 ID差0 | p190 q1060新規FAIL・p206 Flex分配 |
+| [ws074-p209](phase209/phase.md) | Interop 2025 Document FontFaceSet.ready 初期完了 | uncleared / q1065初期ready部分scope cleared | p189 q1064 CSS Grid 280 no_completion |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -762,3 +763,9 @@ Event ws074-browser-next-goals-20261002: ユーザーが専任P10の次の目標
 Event ws074-p190-q1062-outcome-20261014: [p190](phase190/phase.md) q1062-i01 partial cleared。固定静的1,561 IDは662 local PASS/899 pixel FAIL/0 error/0 timeout、q1060比2 FAIL→PASS/0 PASS→FAIL。[証拠](phase190/evidence/20261014-q1062/README.md)。p190 whole/p173全3,805件100%は未達。共有投影/GitHub publication保留。
 
 Event ws074-p189-q1063-outcome-20261014: [p189](phase189/phase.md) q1063-i01 partial cleared。単一HTTP候補1,455件中最初の128 IDを測り18 PASS/110非PASS。[証拠](phase189/evidence/20261014-q1063/README.md)。p189 whole/p173全3,805件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p189-q1064-outcome-20261014: [p189](phase189/phase.md) q1064-i01 partial cleared。現行単一HTTP候補全1,455 IDは160 PASS/1,283非PASS、環境未対応328 ID。[証拠](phase189/evidence/20261014-q1064/README.md)。p189 whole/p173全3,805件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p209-addition-q1065-20261014: [p209](phase209/phase.md)を追加。p189 q1064のCSS Grid no_completion280件に共通の`document.fonts.ready`欠落を一般修正する。q1065は固定3 IDと初期フォント待機に限定し、p189/p173分母を維持。共有Master/Queue/GitHub publication保留。
+
+Event ws074-p209-q1065-outcome-20261014: [p209](phase209/phase.md) q1065-i01は初期ready部分scope cleared、whole uncleared。固定Grid3 IDはcompletion取得、局所/host・warning0 build・Acid3差0。[証拠](phase209/evidence/20261014-q1065/README.md)。既定runner font条件と280件再測定、p173全3,805件100%未達。共有投影/GitHub publication保留。

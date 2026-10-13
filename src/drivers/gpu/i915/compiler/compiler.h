@@ -205,6 +205,7 @@ struct i915_shader_binary {
 
 int drv_i915_shader_compile(const struct drv_gpu_shader_ir *ir, struct i915_shader_binary **out);
 int drv_i915_shader_compile_stage(const struct drv_gpu_shader_ir *ir, const struct i915_shader_binary *producer, struct i915_shader_binary **out);
+int drv_i915_shader_compile_gen(const struct drv_gpu_shader_ir *ir, const struct i915_shader_binary *producer, unsigned graphics_ver, struct i915_shader_binary **out);
 void drv_i915_shader_binary_free(struct i915_shader_binary *binary);
 
 #endif /* DRIVERS_GPU_I915_COMPILER_COMPILER_H */

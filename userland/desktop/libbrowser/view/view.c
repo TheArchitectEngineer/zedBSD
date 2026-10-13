@@ -1429,8 +1429,8 @@ browser_view_settle(
 	if (error != 0)
 		return error;
 
-	/* The DOM and the style need no layout. */
-	if ((flags & BROWSER_SETTLE_LAYOUT) == 0U)
+	/* A script waiting for fonts also needs the first completed layout. */
+	if ((flags & BROWSER_SETTLE_LAYOUT) == 0U && view->page->document->font_set == NULL)
 		return 0;
 
 	/* The layout, which asks for the page's images. */
@@ -1443,6 +1443,11 @@ browser_view_settle(
 	error = view_update(view);
 	if (error != 0)
 		return error;
+	if (view->page->document->font_set != NULL) {
+		error = bind_checkpoint(view->page->window);
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the page is at rest. */
 	return 0;

@@ -1,7 +1,7 @@
 /*
  * WS031 E-128: host tool -- runs the executor's own compiler (spirv.c -> compile.c -> eu.c) on a SPIR-V
  * module and writes the kernel it produces, for Mesa's gentool to disassemble / re-assemble.
- *   i915-vk-eudump vertex|fragment|geometry module.spv kernel.bin
+ *   i915-vk-eudump [-gen9] vertex|fragment|geometry module.spv kernel.bin   (ws229-p003: -gen9 compiles for Gen9)
  * A geometry shader is compiled after a vertex shader that writes exactly the locations it reads (ws075-p007a).
  */
 #include <stdint.h>
@@ -29,7 +29,14 @@ main(int argc, char **argv)
 	long bytes;
 	FILE *f;
 	int error;
+	unsigned graphics_ver;
 
+	graphics_ver = 12U;
+	if (argc == 5 && strcmp(argv[1], "-gen9") == 0) {
+		graphics_ver = 9U;
+		argc--;
+		argv++;
+	}
 	if (argc != 4)
 		return 2;
 	f = fopen(argv[2], "rb");
@@ -61,9 +68,9 @@ main(int argc, char **argv)
 	for (index = 0U; index < ir->input_count && index < I915_SHADER_MAX_INPUTS; index++)
 		producer.varying_locations[producer.varying_count++] = ir->inputs[index].location;
 	if (stage == DRV_GPU_STAGE_GEOMETRY)
-		error = drv_i915_shader_compile_stage(ir, &producer, &binary);
+		error = drv_i915_shader_compile_gen(ir, &producer, graphics_ver, &binary);
 	else
-		error = drv_i915_shader_compile(ir, &binary);
+		error = drv_i915_shader_compile_gen(ir, NULL, graphics_ver, &binary);
 	if (error != 0) {
 		fprintf(stderr, "compile: error %d\n", error);
 		return 1;

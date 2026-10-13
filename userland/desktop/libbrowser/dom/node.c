@@ -901,6 +901,10 @@ node_trace(
 		/* A Document alone preserves its current live stylesheet query identity. */
 		if (node->document->style_sheets != NULL)
 			vm_heap_mark(heap, &node->document->style_sheets->cell);
+		if (node->document->font_set != NULL)
+			vm_heap_mark(heap, &node->document->font_set->cell);
+		if (node->document->font_ready != NULL)
+			vm_heap_mark(heap, node->document->font_ready);
 	}
 
 	/* Connected relatives retain the live tree around a saved node. */

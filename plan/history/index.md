@@ -2,7 +2,15 @@
 
 # Past Log
 
-## 最新: q1063 / WS074 testharness census shard 0（2026-10-14）
+## 最新: q1065 / WS074 initial Document.fonts.ready（2026-10-14）
+
+[q1065履歴](queue-q1065.md): 固定Grid3 IDがno_completion→completion付きFAIL。SameObject/ready順序とhost・Acid3差0を確認。[証拠](../ws074/phase209/evidence/20261014-q1065/README.md)。p209/p189/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1064 / WS074 all eligible testharness（2026-10-14）
+
+[q1064履歴](queue-q1064.md): 現行単一HTTP候補全1,455 IDは160 PASS/1,283非PASS、環境未対応328。[証拠](../ws074/phase189/evidence/20261014-q1064/README.md)。p189/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1063 / WS074 testharness census shard 0（2026-10-14）
 
 [q1063履歴](queue-q1063.md): 現行単一HTTP候補1,455件中128件実測18 PASS/110非PASS。checkpoint/report/raw一致。[証拠](../ws074/phase189/evidence/20261014-q1063/README.md)。p189/p173全件100%未達、共有投影/GitHub publication pending。
 

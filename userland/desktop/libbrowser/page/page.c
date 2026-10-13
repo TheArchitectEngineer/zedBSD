@@ -538,6 +538,13 @@ page_layout(
 			goto cleanup;
 	}
 
+	/* The ready promise may allocate; retain the prior layout if it fails. */
+	if (!page_sheets_pending(page) && !page_fonts_pending(page)) {
+		error = bind_document_fonts_settle(page->document);
+		if (error != 0)
+			goto cleanup;
+	}
+
 	/* The old layout is no longer needed. */
 	if (page->previous_laid_out) {
 		layout_release(&page->previous_layout);

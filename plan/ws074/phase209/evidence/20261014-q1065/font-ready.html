@@ -1,0 +1,12 @@
+<!doctype html>
+<style>@font-face { font-family: ReadyFace; src: url(file:///home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf) format('truetype'); } #face { font-family: ReadyFace; }</style>
+<script>
+var set = document.fonts;
+var ready = set.ready;
+console.log('same-set', set === document.fonts);
+console.log('same-ready', ready === document.fonts.ready);
+console.log('is-promise', ready instanceof Promise);
+ready.then(function (value) { console.log('ready-after-layout', value === set); });
+window.onload = function () { console.log('load-before-ready'); };
+</script>
+<div id="face">ReadyFace</div>
