@@ -96,6 +96,24 @@
  */
 #define I915_TAKEOVER_TRACE_STAGE		4U
 
+/*
+ * The Gen9 registers the firmware display check of a Gen9 device reads
+ * (i915_reg.h, skl_universal_plane_regs.h of Linux 6.8.12).  HSW_PWR_WELL_CTL2
+ * reports the state of power well 1 (pw_idx 14, pipe A and the eDP
+ * transcoder) and power well 2 (pw_idx 15, pipes B and C) in bits 28 and 30.
+ * The first universal plane's registers repeat every 0x1000 bytes per pipe.
+ */
+#define I915_GEN9_PWR_WELL_CTL2			0x45404U
+#define I915_GEN9_PW_1_STATE			(1U << 28)
+#define I915_GEN9_PW_2_STATE			(1U << 30)
+#define I915_GEN9_PLANE_CTL_1_A			0x70180U
+#define I915_GEN9_PLANE_STRIDE_1_A		0x70188U
+#define I915_GEN9_PLANE_SIZE_1_A		0x70190U
+#define I915_GEN9_PLANE_SURF_1_A		0x7019cU
+#define I915_GEN9_PIPE_STRIDE			0x1000U
+#define I915_GEN9_PLANE_ENABLE			(1U << 31)
+#define I915_GEN9_PIPES				3U
+
 /* The PCODE mailbox commands of the watermark latencies and the SAGV block time. */
 #define I915_GEN9_PCODE_READ_MEM_LATENCY	0x6U
 #define I915_GEN9_MEM_LATENCY_LEVEL_0_4_MASK	0x000000ffU
@@ -2662,6 +2680,103 @@ drv_i915_vga_disable(
 	drv_i915_posting_read32(m, I915_CPU_VGACNTRL);
 
 	/* Succeeded: the VGA plane is off. */
+	return 0;
+}
+
+/*
+ * Checks what the firmware scans out on a Gen9 device and leaves the display unused (N0-lite).
+ *
+ * A Gen9 device runs its GT with the firmware's picture kept: the display
+ * controller is not driven, so the check only reads, for every pipe whose
+ * power well is up, the first plane's enable, surface, stride and size, and
+ * logs them.  It refuses a scanout that reaches into the GGTT pages the
+ * driver writes (from driver_ggtt_first up), because the GT memory would
+ * overwrite the picture.  Nothing is written.  The display is marked absent
+ * either way.  Returns 0, or EBUSY for an overlap.
+ */
+int
+drv_i915_n0_lite_gen9(
+	struct i915_display *display,
+	struct i915_mmio *m,
+	unsigned driver_ggtt_first)
+{
+	uint64_t surface_start;
+	uint64_t surface_bytes;
+	uint64_t driver_start;
+	uint32_t power;
+	uint32_t control;
+	uint32_t stride;
+	uint32_t size;
+	uint32_t surface;
+	uint32_t powered_bit;
+	unsigned pipe;
+	int overlap;
+
+	/* Reads which display power wells the firmware left up. */
+	power = drv_i915_raw_read32(m, I915_GEN9_PWR_WELL_CTL2);
+	driver_start = (uint64_t)driver_ggtt_first * 4096U;
+	kern_logf("i915: N0-lite (gen9): PWR_WELL_CTL2=0x%08x driver GGTT from 0x%llx\n",
+		  power,
+		  (unsigned long long)driver_start);
+
+	/* Reads the first plane of every powered pipe. */
+	overlap = 0;
+	for (pipe = 0U; pipe < I915_GEN9_PIPES; pipe++) {
+		/* Pipe A needs power well 1; pipes B and C need power well 2 as well. */
+		powered_bit = I915_GEN9_PW_1_STATE;
+		if (pipe != 0U)
+			powered_bit = I915_GEN9_PW_2_STATE;
+
+		/* An unpowered pipe's registers do not answer and are not read. */
+		if ((power & powered_bit) == 0U)
+			continue;
+
+		/* An unpowered power well 1 leaves every pipe unpowered. */
+		if ((power & I915_GEN9_PW_1_STATE) == 0U)
+			continue;
+
+		/* Reads the plane's enable, layout and surface. */
+		control = drv_i915_raw_read32(m, I915_GEN9_PLANE_CTL_1_A + pipe * I915_GEN9_PIPE_STRIDE);
+		stride = drv_i915_raw_read32(m, I915_GEN9_PLANE_STRIDE_1_A + pipe * I915_GEN9_PIPE_STRIDE);
+		size = drv_i915_raw_read32(m, I915_GEN9_PLANE_SIZE_1_A + pipe * I915_GEN9_PIPE_STRIDE);
+		surface = drv_i915_raw_read32(m, I915_GEN9_PLANE_SURF_1_A + pipe * I915_GEN9_PIPE_STRIDE);
+		kern_logf("i915: N0-lite (gen9): pipe %u PLANE_CTL=0x%08x STRIDE=0x%08x SIZE=0x%08x SURF=0x%08x\n",
+			  pipe,
+			  control,
+			  stride,
+			  size,
+			  surface);
+
+		/* A disabled plane scans nothing out. */
+		if ((control & I915_GEN9_PLANE_ENABLE) == 0U)
+			continue;
+
+		/*
+		 * The surface is a GGTT offset; a linear stride counts 64-byte
+		 * units and the height is the size's upper field plus one.
+		 */
+		surface_start = (uint64_t)(surface & 0xfffff000U);
+		surface_bytes = (uint64_t)(stride & 0x7ffU) * 64U * (uint64_t)(((size >> 16) & 0xfffU) + 1U);
+
+		/* A scanout that reaches the driver's GGTT pages would be overwritten. */
+		if (surface_start + surface_bytes > driver_start) {
+			kern_logf("i915: N0-lite (gen9): pipe %u scans out 0x%llx..0x%llx, inside the driver's GGTT pages\n",
+				  pipe,
+				  (unsigned long long)surface_start,
+				  (unsigned long long)(surface_start + surface_bytes));
+			overlap = 1;
+		}
+	}
+
+	/* The display controller is not driven on Gen9: the node has no display. */
+	display->absent = 1;
+	kern_logf("i915: N0-lite (gen9): the firmware's picture is kept; the GPU node has no display\n");
+
+	/* Refuses a GT start that would overwrite the firmware's scanout. */
+	if (overlap != 0)
+		return EBUSY;
+
+	/* Succeeded: the scanout is clear of the driver's GGTT pages. */
 	return 0;
 }
 

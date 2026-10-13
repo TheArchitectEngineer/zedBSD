@@ -14,6 +14,10 @@
  * replicated registers can be steered to, and which engines exist.  This is
  * the Linux intel_gt_init_mmio() step.
  *
+ * Gen9 (Skylake and its Gen9.5 successors) reads the same facts from the
+ * Gen8 fuse layout: GEN8_FUSE2 and one GEN9_EU_DISABLE register per slice,
+ * a fixed 24 MHz crystal behind CTC_MODE, and no L3 bank steering.
+ *
  * Easy to get wrong, and checked by the tests:
  *
  *   - GEN11_EU_DISABLE is a disable mask with one bit per pair of EUs; each
@@ -58,6 +62,18 @@ struct i915_mmio;
 #define I915_MAX_ENGINE_INSTANCE	7
 
 /*
+ * The platforms whose workarounds differ.
+ *
+ * Every Gen12 device the driver matches shares one set; the Gen9 parts are
+ * told apart because their workaround lists and stepping rules differ.
+ */
+#define I915_PLATFORM_GEN12		0
+#define I915_PLATFORM_SKYLAKE		1
+#define I915_PLATFORM_KABYLAKE		2
+#define I915_PLATFORM_COFFEELAKE	3
+#define I915_PLATFORM_COMETLAKE		4
+
+/*
  * The slice, subslice and EU layout that survived fusing.
  *
  * It is the subset of Linux's struct sseu_dev_info this driver uses.  It is
@@ -73,10 +89,13 @@ struct i915_sseu {
 	/* The slices that are present. */
 	uint8_t slice_mask;
 
-	/* The (dual-)subslices of slice 0 that are present. */
+	/*
+	 * The (dual-)subslices of the lowest present slice.  Gen12 has one
+	 * slice; on Gen9 the subslice fuse applies to every slice alike.
+	 */
 	uint16_t subslice_mask;
 
-	/* The EUs present in each subslice of slice 0. */
+	/* The EUs present in each subslice of the lowest present slice. */
 	uint16_t eu_mask[I915_SSEU_MAX_SUBSLICES];
 
 	/* How many EUs one subslice has, and how many the whole GT has. */
@@ -137,6 +156,17 @@ struct i915_engine_info {
  * read afterwards.  The owner keeps it for the life of the device.
  */
 struct i915_gt_info {
+	/* The graphics version the information was read for: 9 or 12. */
+	int graphics_ver;
+
+	/*
+	 * The platform (I915_PLATFORM_*) and the PCI revision, which is the
+	 * stepping some Gen9 workarounds depend on.  The device start fills
+	 * both from the PCI configuration space before this step.
+	 */
+	int platform;
+	unsigned revision;
+
 	/* The command streamer timestamp frequency in Hz, and its period. */
 	uint32_t clock_frequency;
 	uint32_t clock_period_ns;

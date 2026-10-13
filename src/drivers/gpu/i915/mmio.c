@@ -41,6 +41,10 @@
 #define I915_FORCEWAKE_REQUEST_VEBOX0	0x0000a560U
 #define I915_FORCEWAKE_ACK_VEBOX0	0x00000d70U
 
+/* FORCEWAKE_MEDIA_GEN9: the one media domain of Gen9, request 0xa270, acknowledge 0xd88. */
+#define I915_FORCEWAKE_REQUEST_MEDIA_GEN9	0x0000a270U
+#define I915_FORCEWAKE_ACK_MEDIA_GEN9		0x00000d88U
+
 /* The value a read returns when the register cannot be reached. */
 #define I915_MMIO_UNREADABLE		0xffffffffU
 
@@ -52,6 +56,16 @@
  */
 static const struct i915_mmio_range i915_gen12_ranges[] = {
 #include "intel/forcewake-ranges.inc"
+};
+
+/*
+ * The Gen9 register-to-domain map.
+ *
+ * It is the reference's table for Skylake, Kaby Lake, Coffee Lake and Comet
+ * Lake and never changes, so every Gen9 device shares it.
+ */
+static const struct i915_mmio_range i915_gen9_ranges[] = {
+#include "intel/forcewake-ranges-gen9.inc"
 };
 
 static void i915_mmio_note(struct i915_mmio *mmio, uint16_t op, const char *what, uint64_t argument0, uint64_t argument1);
@@ -127,6 +141,20 @@ drv_i915_mmio_gen12_ranges(
 
 	/* Succeeded: the table is static and shared. */
 	return i915_gen12_ranges;
+}
+
+/*
+ * Returns the Gen9 register-to-domain map and its length.
+ */
+const struct i915_mmio_range *
+drv_i915_mmio_gen9_ranges(
+	unsigned *count)
+{
+	/* Reports the table length alongside the table. */
+	*count = sizeof(i915_gen9_ranges) / sizeof(i915_gen9_ranges[0]);
+
+	/* Succeeded: the table is static and shared. */
+	return i915_gen9_ranges;
 }
 
 /*
@@ -642,6 +670,8 @@ i915_forcewake_request_register(
 		return I915_FORCEWAKE_REQUEST_VDBOX2;
 	case I915_FORCEWAKE_MEDIA_VEBOX0:
 		return I915_FORCEWAKE_REQUEST_VEBOX0;
+	case I915_FORCEWAKE_MEDIA_GEN9:
+		return I915_FORCEWAKE_REQUEST_MEDIA_GEN9;
 	default:
 		return I915_FORCEWAKE_REQUEST_RENDER;
 	}
@@ -662,6 +692,8 @@ i915_forcewake_ack_register(
 		return I915_FORCEWAKE_ACK_VDBOX2;
 	case I915_FORCEWAKE_MEDIA_VEBOX0:
 		return I915_FORCEWAKE_ACK_VEBOX0;
+	case I915_FORCEWAKE_MEDIA_GEN9:
+		return I915_FORCEWAKE_ACK_MEDIA_GEN9;
 	default:
 		return I915_FORCEWAKE_ACK_RENDER;
 	}

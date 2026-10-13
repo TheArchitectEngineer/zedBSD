@@ -35,7 +35,9 @@ struct i915_trace;
  * The forcewake domains the driver wakes.
  *
  * Gen12 gives the media engines domains of their own: a video engine
- * register reached while only RENDER and GT are held is not covered.
+ * register reached while only RENDER and GT are held is not covered.  Gen9
+ * has RENDER, GT and one MEDIA domain that covers every media engine; a
+ * device uses only the domains of its own generation's map.
  */
 enum i915_forcewake_domain {
 	I915_FORCEWAKE_RENDER = 0,
@@ -43,6 +45,7 @@ enum i915_forcewake_domain {
 	I915_FORCEWAKE_MEDIA_VDBOX0,
 	I915_FORCEWAKE_MEDIA_VDBOX2,
 	I915_FORCEWAKE_MEDIA_VEBOX0,
+	I915_FORCEWAKE_MEDIA_GEN9,
 	I915_FORCEWAKE_DOMAIN_COUNT
 };
 
@@ -136,6 +139,7 @@ struct i915_mmio_window {
 void drv_i915_mmio_init(struct i915_mmio *mmio, const struct i915_mmio_ops *ops, void *context, const struct i915_mmio_range *ranges, unsigned range_count, struct i915_trace *trace);
 const struct i915_mmio_ops *drv_i915_mmio_window_ops(void);
 const struct i915_mmio_range *drv_i915_mmio_gen12_ranges(unsigned *count);
+const struct i915_mmio_range *drv_i915_mmio_gen9_ranges(unsigned *count);
 int drv_i915_mmio_domain_of(const struct i915_mmio *mmio, uint32_t offset);
 
 int drv_i915_forcewake_get(struct i915_mmio *mmio, int domain);
