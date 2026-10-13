@@ -95,7 +95,7 @@ GPU の image の共有の表示（H6）、browser の `<video>` の UAT、libvu
 | [ws202-p010](phase010/phase.md) | Vulkan Video の back end (2): POC の表示順と時刻（D29: 出ない picture は空の entry で時刻を消費）、in-band だけの track、flush・seek、失敗と作り直し、表の先頭へ、media-probe の video、`config-media.mk`、5330 の小さい確認（scp、J10） | 9 | uncleared（software出力あり、whole未達） | p009、p016、J10、p017 source出力 |
 | [ws202-p011](phase011/phase.md) | Video Player（notice・縦横比・log・trim）、media-probe の音、利用者の文書 | 3 | uncleared（software出力あり、whole未達） | p007、p010 |
 | [ws202-p012](phase012/phase.md) | T1: QEMU（libavcodec 無し・有り）と 5330 の実機（USB の 1 回の起動、J10）、zgears の fps（J9） | 4 | planned（T1/User UAT/whole規約待ち） | p011、J9 |
-| [ws202-p013](phase013/phase.md) | 5330 の UAT（ユーザー、p012 と同じ起動） | 2 | planned（T1/User UAT/whole規約待ち） | p012 |
+| [ws202-p013](phase013/phase.md) | 5330 の UAT（ユーザー、p012 と同じ起動） | 2 | cleared（2026-10-13 ユーザー「WS202のp013はUAT OKでした。」。スライダーが終わりで約 50% の件は [BUG-300](../bugs/BUG-300.md) で別に追う） | p012 |
 | [ws202-p014](phase014/phase.md) | 全文規約の見直しと、残す試験の登録（master.md の Tools）・開発だけの試験の削除の依頼 | 4 | planned（T1/User UAT/whole規約待ち） | p013 |
 | [ws202-p017](phase017/phase.md) | Vulkan標準NV12 readback補完（offline p016衝突を由来付きで修復） | —（承認済み補完） | uncleared（software接続/build済み、実機pixel待ち） | WS083の実装source、i03承認 |
 

@@ -32,7 +32,7 @@
 | 項目 | 状態 | LW | 担当 |
 | --- | --- | --- | --- |
 | [WS083](ws083/ws.md) Vulkan Video（H.264） | p001〜p006・p008 cleared（実機で全 stream 一致、1080p 相当 1 frame 約 5 ms）。2026-10-11 から既定で ON（ユーザー）。残り: p007 の hang の回復の実機の確かめ（hang の kernel を 1 回置く、手順は phase007、ユーザーの判断） | 0.5 | ユーザー・Q1 |
-| [WS202](ws202/ws.md) 動画再生） | libmediaにH.264, AACを実装、動画app, 音楽appで利用。） | 4.0 | ユーザー |
+| [WS202](ws202/ws.md) 動画再生） | libmediaにH.264, AACを実装、動画app, 音楽appで利用。） | 4.0 | p013 の UAT OK（2026-10-13 ユーザー）。残り p012 の T1 の全項目・p014 の規約。スライダーが終わりで約 50% は BUG-300 |
 | [WS197](ws197/ws.md) Bluetooth のスマホ連携（SMS の MAP・通話の HFP・連絡先の PBAP）（2026-10-10 ユーザー「WS197はbeta2.mdで必須に入れておいてください。」） | 2026-10-11: p001〜p005・p011〜p013 cleared。SMS・MMS（文と写真）の受信・表示、PBAP の電話帳・通話の履歴・Settings、Bluetooth の自動復旧は main。残り: p010 の写真・動画の送信（約 3）、HFP の制御 p006（12）と音 p007（25）、実機の UAT p008（Android）。**HFP をベータ2 に入れるかは判断待ち**。規約の p009 はベータ3 | 約 40（HFP を含む。除けば約 6） | 未割当 |
 | [WS129](ws129/ws.md) p005・p013 release notes・既知の問題・利用の手引き | 下書き済み（[notes](../docs/release/zedbsd-1.0.0-beta2.md)・[known issues](../docs/release/zedbsd-1.0.0-beta2-known-issues.md)・[guide](../docs/release/zedbsd-1.0.0-beta2-guide.md)）。**ユーザーの review 待ち**。WS199・WS200 の機能を足し、RC で review の comment を消す | 1.5 | ユーザー・P1 |
 | [WS129](ws129/ws.md) p006 最終回帰（release の image） | 10/14 | 3 | T1 |
