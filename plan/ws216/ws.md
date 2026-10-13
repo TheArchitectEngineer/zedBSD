@@ -43,3 +43,5 @@ Notes（`userland/desktop/notes/`）に、今のペン・消しゴムに加え�
 ## ユーザーの決定（2026-10-13）
 
 「ではあとは推奨でお願いします」 → D1〜D12 は全部推奨。review-1 を受けて推奨を変えた D7 は (c)「見えている所に触れたらその物を消す」、D8 は「Flate は major 3 の file だけ、reader は decode してから hash」。D10〜D12 は第 2 版で設計者（P3）が推奨を決め、その推奨を採った（[p001 §10](phase001/phase.md#10-決定d1d12)）: D10 Pi 4 を受け入れに含める（別の段 p009、WS141 の後）、D11 鉛筆の粒は tiling pattern と単色の下塗り（libpdf の reader に tiling pattern を足す）、D12 囲まれていない所は頁の縁を境としてつながった所を塗る（複雑すぎる時は notice）。
+
+2026-10-13 Q1: review-2 の判定「p002 は条件つきで始めてよい」（致命的・重大 0）。p002 の phase.md の設計と受け入れに中の M-6〜M-9（粒の tiling pattern は頁ごと・name_prefix、reader の pattern の cell の解像度、鉛筆の区間の自己重なり、範囲の輪郭の API の index の意味）と M-13（Save Clean Copy の試験）・L-3 を入れてから実装する。残りの中（M-1〜M-5・M-10〜M-12）は担当の段（p003・p005 など）の phase.md で解決する。p002 の担当は次に空いた P。
