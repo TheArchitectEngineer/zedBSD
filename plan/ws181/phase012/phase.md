@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws181-p012 -->
 # ws181-p012: touchpad の上端・下端の 2 本指の入れ替え（下端 → App Home、上端 → Wiseview）
 
-Status: in-progress（2026-10-13 Q1: T1-559・T1-560（QEMU）PASS、残りは実機の感触の UAT。2026-10-13 P4、端の入れ替えと「App Home を下へ払って閉じる」の追加まで、実装・build・host 試験。QEMU は T1、実機の感触はユーザーの UAT）
+Status: in-progress（2026-10-13 P4 3 回目: App Home の page の送りの量を半分に（touch panel・mouse の drag、幅 / 4 → 幅 / 8）、build まで、QEMU は T1。2026-10-13 Q1: T1-559・T1-560（QEMU）PASS、残りは実機の感触の UAT。2026-10-13 P4、端の入れ替えと「App Home を下へ払って閉じる」の追加まで、実装・build・host 試験。QEMU は T1、実機の感触はユーザーの UAT）
 Disposition: normal
 Parent: [WS181](../ws.md)
 Queue: Q1 の割り当て（2026-10-13 ユーザーの指示）
@@ -118,3 +118,49 @@ desktop・Wiseview の上の pad、touch panel の gesture は変えていない
 | QEMU（pen の image、p003-guest.sh・p010-guest.sh・p009-guest.sh） | 未実施（T1。1 回目の T1-559 と合わせて 1 回で流せる） |
 | 実機（5320・5330 の touchpad の感触） | 未実施（ユーザーの UAT） |
 
+
+## 追加（2026-10-13 の 3 回目）: App Home のページ送りに要る swipe の量を半分に
+
+### 由来（ユーザーの UAT、2026-10-13、原文）
+
+> ・App Homeで、ページ送りに必要なスワイプ量を半分にしてほしいです。
+
+### 調べたこと（P4）
+
+App Home の page が送られる経路は 3 つある。
+
+1. **touch panel の指の swipe と mouse の drag**: 同じ経路（touch.c は App Home の上の指を pointer の左 button として shell に渡す）。`home.c` の `kwl_home_motion` が HOME_PAGE_START（10 px）動いた所で drag と決め（`home_page_follow`、横・下・上の向き）、`home_page_release` が離した時の横の移動 `dx` で決める: 前は出力の幅の 1/4 以上で次・前の page、足りなければ戻る。速さ（flick）の判定は無い（離した位置だけ）。
+2. **touchpad の 2 本指の scroll**: `touchpad.c` の notch（`KWL_TOUCHPAD_NOTCH_UM` = 2.5 mm）ごとに `seat_axis` → `kwl_home_axis` が 1 page 送る。App Home が出ている間は DOWN2 を頼んでいるので（2 回目の実装）、2 本指は最初の 4 mm（`DECIDE_UM`、縦 + 横の和）で gesture か scroll かを決め、scroll と決まった時にためた 4 mm を流す → その場で 1 notch（1 page）。つまり 1 page めの送りに要る量は決めの 4 mm で、その後は 2.5 mm ごとにもう 1 page（1 回の swipe で何 page も進む）。page の送りだけの閾値は無い。
+3. **mouse の wheel・PageUp/PageDown**: 1 notch・1 押しで 1 page。swipe の量ではない。
+
+### 変えた定数
+
+| 経路 | 定数 | 前 | 今 |
+| --- | --- | --- | --- |
+| touch panel の swipe・mouse の drag（`home.c` `home_page_release`） | 新しい `HOME_PAGE_TURN`（出力の幅をこれで割った横の移動で送る） | 幅 / 4（1280 px で 320 px、1920 px で 480 px） | **幅 / 8**（1280 px で 160 px、1920 px で 240 px） |
+
+変えていない物: drag と決める HOME_PAGE_START（10 px、送りの量ではない）、下への drag で閉じる量（HOME_RISE_DISTANCE × HOME_THRESHOLD = 108 px）、touchpad の決めの 4 mm（`DECIDE_UM`、依頼の通り）、touchpad の notch 2.5 mm（`KWL_TOUCHPAD_NOTCH_UM`）、wheel の 1 notch 1 page。
+
+### touchpad を変えなかった理由（判断が要る点として Q1 に返す）
+
+- touchpad の 1 page めは 4 mm の決めで送られる。これを半分（2 mm）にするには `DECIDE_UM` を変えることになり、依頼で変えないとされた 4 mm そのもの（これは端の gesture 全部の決めでもある）。
+- notch の 2.5 mm を App Home だけ半分にしても、1 page めは 4 mm の決めのまま変わらず、2 page め以降が 1.25 mm ごとに進む（今でも 1 回の swipe で何 page も進む）だけで、指摘の「必要な量」は減らない。notch は volume・tab・lock 画面・Wiseview の swipe と共用なので、共用の値は変えない。
+- したがって touchpad は変えていない。実機で touchpad の page 送りも重いと感じるなら、(a) App Home の上でだけ「横が縦の 2 倍以上なら 2 mm で scroll と決める」、(b) 1 回の swipe で 1 page だけ送る（幅に対する比で指に付ける形）などの別の変更になり、ユーザーの判断が要る。
+
+### 試験の追従
+
+- `plan/ws181/tests/p009-guest.sh` の 4.: drag は 400 px（1280 の出力で前の 320 px・今の 160 px のどちらも超える）、1 枚めの右・最後の page の左は端で止まる。閾値に依らないので変更なし（pen の guest は Home が 1 page で、4. の送りは流れない）。
+- `plan/ws142/tests/`・`tests/scenarios/desktop/`: page の送りの量に依る試験は無い（touchpad の preview-swipe-step.md の 3c. の「横へは page」は閉じないことを見るだけ）。変更なし。
+- host 試験: `home_page_release` を host で動かす試験は無い（home.c の host の試験は無い）。定数 1 つの変更で、読んで確かめた。
+- 削除する試験: なし。
+
+### 確認（3 回目）
+
+| 確認 | 結果 |
+| --- | --- |
+| amd64 の compositor（`make -j8 ZEDBSD_CONFIG=config/ci/config-amd64.mk -o <p4>/build/amd64/sysroot/.zedbsd-sysroot-complete build/amd64/bin/wayland`） | exit 0、warning 0（home.c を build し直した） |
+| rpi4 の compositor（`make -j8 ZEDBSD_CONFIG=config/ci/config-rpi4.mk -o <p4>/build/arm64/sysroot/.zedbsd-sysroot-complete build/arm64/bin/wayland`） | exit 0、warning 0 |
+| Linux の Keiland（`make -j8 keiland-linux`） | exit 0、warning 0 |
+| `git diff --check` | ok |
+| QEMU（AAT の image、Home が 2 page: 幅 1280 の上で 220 px の横の drag で送られ、120 px では戻る） | 未実施（T1） |
+| 実機（5320・5330 の touch panel の swipe の量） | 未実施（ユーザーの UAT） |
