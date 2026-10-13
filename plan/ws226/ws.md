@@ -28,4 +28,4 @@ Related Milestones: なし
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 調べと設計: 今の libvulkan の実装の範囲と 1.3 との差の一覧、不整合の一覧、device ごとの 1.3 の必須の feature、header の取り込みの形、conformance の試験の入手、段の分け → design-reviewer | planned |
+| [p001](phase001/phase.md) | 調べと設計: 今の libvulkan の実装の範囲と 1.3 との差の一覧、不整合の一覧、device ごとの 1.3 の必須の feature、header の取り込みの形、conformance の試験の入手、段の分け → design-reviewer | planning（第 1 版 2026-10-13 P4、design-reviewer の review-1 待ち。決めてほしい点 D1〜D7） |
