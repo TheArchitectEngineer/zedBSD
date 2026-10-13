@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1008 / WS074 zero-font inline line（2026-10-13）
+
+[q1008履歴](queue-q1008.md): font-size0 strut の偽0.5px を修正、bucket line162・結果top230・本文top350に。最小 fixture 修正前 FAIL→修正後 PASS、position25/25、build warning0。固定 Acid3 得点100/100・pixel差4152/480000（q1007から8265減、99.135%一致）、Acid2差1865/120000不変。p185 cleared。見出し影・上部リンク文字等、p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
+
 ## 最新: q1007 / WS074 loaded object fallback（2026-10-13）
 
 [q1007履歴](queue-q1007.md): loaded HTML object の fallback を親 layout/paint から除外し、404 object の fallback は保持。実 HTTP fixture 修正前 FAIL→修正後 PASS、frame load pass、build warning0。固定 Acid3 得点100/100・pixel差12417/480000（q1006から183減、97.413125%一致）、Acid2差1865/120000不変。p184 cleared。上部リンク文字等、p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。

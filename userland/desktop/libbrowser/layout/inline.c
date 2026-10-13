@@ -1202,8 +1202,13 @@ inline_font_extent(
 	layout_unit leading;
 	int error;
 
-	/* The font's measures, or the font size when the font cannot be measured. */
-	error = text_font_metrics(tree->text, font, &metrics);
+	/* A zero-sized font has no ascent or descent, even if rasterization uses a minimum glyph size. */
+	if (style->font_size == 0.0f) {
+		memset(&metrics, 0, sizeof(metrics));
+		error = 0;
+	} else {
+		error = text_font_metrics(tree->text, font, &metrics);
+	}
 	if (error != 0) {
 		metrics.ascent = (int)style->font_size;
 		metrics.descent = 0;
