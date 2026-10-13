@@ -9,8 +9,8 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1013](queue.md) finished / p189 partial cleared、whole uncleared。23:59〜翌00:03 JST。
-Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。p189 の単一HTTP testharness実行で12 subtest 4 PASS/8 FAILを取得。残り1,782 testharnessと p190 のreftest/crashtest coverage、p173全件baselineと100%は未達。Acid3 score100/100・pixel差0/480000、p100 whole は別に未達。
+Queue: [q1014](queue.md) finished / p189 partial cleared、whole uncleared。2026-10-14 00:04〜00:07 JST。
+Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。p189 q1013/q1014 でユニーク16 testharnessを試行、q1014 は15件中 0 PASS/12 FAIL/1 harness ERROR/1 completion無し/1無出力、4領域は未実行。残り1,767 testharnessと p190 のreftest/crashtest coverage、p173全件baselineと100%は未達。Acid3 score100/100・pixel差0/480000、p100 whole は別に未達。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p173-interop-resume-20261013: ユーザーが「WPTに進みます。2025を100%」と指示。既存の p173 Interop 2025 公式 focus area 全件 PASS 100% を次の優先対象にした。p173 と p100 の依存関係を、p188 の main 統合済み Acid3 検証出力に限定して整理。p100 whole の Acid2 exact/target gate は未達のまま。p173 の [候補選定と q1012 範囲](phase173/selection-snapshot.md)を記録、ユーザーが 23:49 JST 承認して開始。p101・p174〜p176 の受け入れは維持。Master の focused goal / WS priority 投影は、このセッションの編集禁止により Q1 へ pending。GitHub publication保留。
@@ -18,6 +18,8 @@ Event ws074-p173-interop-resume-20261013: ユーザーが「WPTに進みます�
 Event ws074-p173-q1012-outcome-and-split-20261013: q1012-i01 は [固定manifest・runner inventory・sample証拠](phase173/evidence/20261013-q1012/README.md)を完成し、partial scope cleared。p173 whole は全件baseline未取得で uncleared。3,805 ID中 testharness1,783、crashtest48、scripted reftest/reference407、variant6がrunner未対応。静的候補1,561中の選定sample35件は5 PASS/30 FAIL。結果取得を[p189](phase189/phase.md)、残るreftest/crashtestを[p190](phase190/phase.md)に分割。両者は p173 の固定manifest出力を前提に独立し、p173 whole は両出力と全件baselineを待つ。p100/p101/p174〜p176 の条件は維持。共有 Master/Queue/GitHub projection は別セッション所有のため pending、`master.md` は変更しない。
 
 Event ws074-p189-q1013-outcome-20261014: [p189](phase189/phase.md) の q1013-i01 は WPT callback を単一公式選定ページで機械可読化し partial cleared。12 subtestを4 PASS/8 FAIL、completion OKと正しく記録。[証拠](phase189/evidence/20261014-q1013/README.md)。p189 whole1,783件とp173全件baselineは未達のまま。次の小さい runner Queue が必要。ブラウザ本体・Masterは未変更、GitHub publication保留。
+
+Event ws074-p189-q1014-outcome-20261014: [p189](phase189/phase.md) の q1014-i01 は [19領域から最大1件の選定と実測](phase189/evidence/20261014-q1014/README.md)を完了、partial cleared。15 IDの結果は0 PASS/12 FAIL/1 harness ERROR/1 completion無し/1無出力。4領域は選定条件上未実行。p189 whole・p173全件baselineと100%は未達。browser/WPT/Master無変更、GitHub publication保留。
 
 ## Q1 向けの整理（2026-10-05、Q1）
 
@@ -323,7 +325,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p186](phase186/phase.md) | sharp text-shadow と見出し影を調べる | cleared（q1009-i01、sharp 単一 scope、Acid3差2451減） | p172〜p185 cleared、q1008 実測出力 |
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
-| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q1013-i01 partial cleared | p173 q1012 固定manifest出力 |
+| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q1013・q1014 partial cleared、ユニーク16件試行 | p173 q1012 固定manifest出力 |
 | [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | planned / Queueなし | p173 q1012 固定manifest出力 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。

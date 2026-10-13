@@ -1,0 +1,245 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "selection": "lexicographic first eligible ID per focus area, at most one each",
+  "execution_count": 15,
+  "executed": {
+    "/css/css-anchor-position/anchor-center-001.html": {
+      "outcome": "fail",
+      "report": "test-01.json"
+    },
+    "/css/css-cascade/at-scope-parsing.html": {
+      "outcome": "harness_error",
+      "report": "test-02.json"
+    },
+    "/css/css-flexbox/abspos/abspos-descendent-001.html": {
+      "outcome": "fail",
+      "report": "test-03.json"
+    },
+    "/css/css-flexbox/negative-overflow-003.html": {
+      "outcome": "fail",
+      "report": "test-04.json"
+    },
+    "/css/css-text-decor/parsing/text-decoration-color-computed.html": {
+      "outcome": "fail",
+      "report": "test-05.json"
+    },
+    "/css/css-view-transitions/duplicate-tag-rejects-capture.html": {
+      "outcome": "fail",
+      "report": "test-06.json"
+    },
+    "/css/css-viewport/zoom/parsing/zoom-computed.html": {
+      "outcome": "fail",
+      "report": "test-07.json"
+    },
+    "/css/filter-effects/animation/backdrop-filter-interpolation-001.html": {
+      "outcome": "fail",
+      "report": "test-08.json"
+    },
+    "/dom/events/scrolling/scrollend-fires-to-text-input.html": {
+      "outcome": "no_output",
+      "report": "test-09.json"
+    },
+    "/dom/historical-mutation-events.html": {
+      "outcome": "fail",
+      "report": "test-10.json"
+    },
+    "/event-timing/supported-types-consistent-with-self.html": {
+      "outcome": "fail",
+      "report": "test-11.json"
+    },
+    "/html/editing/the-hidden-attribute/beforematch-attribute-removal-001.html": {
+      "outcome": "no_completion",
+      "report": "test-12.json"
+    },
+    "/html/semantics/scripting-1/the-script-element/import-attributes/empty-attributes-clause.html": {
+      "outcome": "fail",
+      "report": "test-13.json"
+    },
+    "/navigation-api/currententrychange-event/anchor-click.html": {
+      "outcome": "fail",
+      "report": "test-14.json"
+    },
+    "/pointerevents/pointerevent_constructor.html": {
+      "outcome": "fail",
+      "report": "test-15.json"
+    }
+  },
+  "focus": {
+    "anchor-positioning": {
+      "test_id": "/css/css-anchor-position/anchor-center-001.html",
+      "outcome": "fail",
+      "reason_counts": {
+        "candidate": 147,
+        "other_type": 86,
+        "requires_driver_origin_or_worker": 1
+      }
+    },
+    "backdrop-filter": {
+      "test_id": "/css/filter-effects/animation/backdrop-filter-interpolation-001.html",
+      "outcome": "fail",
+      "reason_counts": {
+        "candidate": 8,
+        "other_type": 61
+      }
+    },
+    "core-web-vitals": {
+      "test_id": "/event-timing/supported-types-consistent-with-self.html",
+      "outcome": "fail",
+      "reason_counts": {
+        "candidate": 48,
+        "generated_context": 5,
+        "https": 1,
+        "requires_driver_origin_or_worker": 61,
+        "worker_or_substitution_path": 2
+      }
+    },
+    "details": {
+      "test_id": "/html/editing/the-hidden-attribute/beforematch-attribute-removal-001.html",
+      "outcome": "no_completion",
+      "reason_counts": {
+        "candidate": 13,
+        "other_type": 28,
+        "requires_driver_origin_or_worker": 5
+      }
+    },
+    "layout": {
+      "test_id": "/css/css-flexbox/abspos/abspos-descendent-001.html",
+      "outcome": "fail",
+      "reason_counts": {
+        "candidate": 799,
+        "other_type": 1453
+      }
+    },
+    "modules": {
+      "test_id": "/html/semantics/scripting-1/the-script-element/import-attributes/empty-attributes-clause.html",
+      "outcome": "fail",
+      "reason_counts": {
+        "candidate": 13,
+        "generated_context": 15,
+        "worker_or_substitution_path": 2
+      }
+    },
+    "navigation": {
+      "test_id": "/navigation-api/currententrychange-event/anchor-click.html",
+      "outcome": "fail",
+      "reason_counts": {
+        "candidate": 307,
+        "requires_driver_origin_or_worker": 24,
+        "variant_url": 39,
+        "worker_or_substitution_path": 8
+      }
+    },
+    "pointer-and-mouse-events": {
+      "test_id": "/pointerevents/pointerevent_constructor.html",
+      "outcome": "fail",
+      "reason_counts": {
+        "candidate": 1,
+        "https": 1,
+        "requires_driver_origin_or_worker": 20,
+        "variant_url": 20
+      }
+    },
+    "remove-mutation-events": {
+      "test_id": "/dom/historical-mutation-events.html",
+      "outcome": "fail",
+      "reason_counts": {
+        "candidate": 1
+      }
+    },
+    "scope": {
+      "test_id": "/css/css-cascade/at-scope-parsing.html",
+      "outcome": "harness_error",
+      "reason_counts": {
+        "candidate": 22,
+        "other_type": 5,
+        "requires_driver_origin_or_worker": 2
+      }
+    },
+    "scrollend": {
+      "test_id": "/dom/events/scrolling/scrollend-fires-to-text-input.html",
+      "outcome": "no_output",
+      "reason_counts": {
+        "candidate": 2,
+        "requires_driver_origin_or_worker": 5,
+        "variant_url": 21
+      }
+    },
+    "storageaccess": {
+      "test_id": null,
+      "outcome": "unrun",
+      "reason_counts": {
+        "generated_context": 3,
+        "https": 18,
+        "worker_or_substitution_path": 1
+      }
+    },
+    "textdecoration": {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-color-computed.html",
+      "outcome": "fail",
+      "reason_counts": {
+        "candidate": 16
+      }
+    },
+    "urlpattern": {
+      "test_id": null,
+      "outcome": "unrun",
+      "reason_counts": {
+        "generated_context": 8,
+        "https": 4
+      }
+    },
+    "view-transitions": {
+      "test_id": "/css/css-view-transitions/duplicate-tag-rejects-capture.html",
+      "outcome": "fail",
+      "reason_counts": {
+        "candidate": 44,
+        "other_type": 215,
+        "requires_driver_origin_or_worker": 4
+      }
+    },
+    "webassembly": {
+      "test_id": null,
+      "outcome": "unrun",
+      "reason_counts": {
+        "generated_context": 12
+      }
+    },
+    "webcompat": {
+      "test_id": "/css/css-viewport/zoom/parsing/zoom-computed.html",
+      "outcome": "fail",
+      "reason_counts": {
+        "candidate": 8,
+        "generated_context": 2,
+        "https": 10,
+        "other_type": 41,
+        "requires_driver_origin_or_worker": 1,
+        "worker_or_substitution_path": 20
+      }
+    },
+    "webrtc": {
+      "test_id": null,
+      "outcome": "unrun",
+      "reason_counts": {
+        "https": 10,
+        "requires_driver_origin_or_worker": 1
+      }
+    },
+    "writingmodes": {
+      "test_id": "/css/css-flexbox/negative-overflow-003.html",
+      "outcome": "fail",
+      "reason_counts": {
+        "candidate": 26,
+        "other_type": 139,
+        "requires_driver_origin_or_worker": 2
+      }
+    }
+  },
+  "outcome_counts": {
+    "fail": 12,
+    "harness_error": 1,
+    "no_completion": 1,
+    "no_output": 1
+  },
+  "limitations": "Single HTTP origin, physical HTML source only; unrun focus areas remain in the fixed manifest."
+}

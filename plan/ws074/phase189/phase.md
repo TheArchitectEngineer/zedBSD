@@ -2,7 +2,7 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
-Status: uncleared（2026-10-14 q1013-i01 partial cleared、whole 1,783件は未達）
+Status: uncleared（2026-10-14 q1013/q1014 partial cleared、whole 1,783件は未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -29,3 +29,13 @@ Queue: [q1013-i01](../queue.md) partial。2026-10-13 23:59 JST にユーザー�
 runner の結果分類は PASS、FAIL、WPT timeout、process timeout、無出力、completion欠落、harness error、process errorを区別し、未実行をPASSにしない。Python unit5/5、py_compile、`git diff --check` PASS。browser source無変更のため Acid3の再計測はしない。実行環境は host、単一localhost HTTP origin、固定WPT commit、5秒virtual settle、20秒process timeout。HTTPS/worker/multi-origin/variantや残り1,782 testharness は未測定。p189 wholeと p173 whole/全件100%は未達。
 
 Event ws074-p189-q1013-outcome-20261014: q1013-i01 partial cleared、p189 whole uncleared。実際の test FAIL とrunner result取得を区別した。残る1,782件と環境対応の有限 Queue 再開が必要。GitHub publication保留。
+
+Queue: [q1014-i01](../queue.md) partial。2026-10-14 00:04 JST ユーザーが [最大90分の範囲](next-queue-proposal.md)を承認。最大19件、browser/WPT/Master変更なし。
+
+## q1014-i01 結果（2026-10-14 00:07 JST）
+
+**partial scope cleared、p189 whole は uncleared。** 公式固定manifestの19 focus areaから単一HTTP・実ファイルHTML・driver不要の範囲で各最大1件を決定的に選定し、15 IDを実行。重複なし。Storage Access API、URLPattern、WebAssembly、WebRTC は条件を満たす候補がなく未実行と明記。[証拠](evidence/20261014-q1014/README.md)に全選定理由・ID・raw reportを保存。結果は **0 PASS、12 test FAIL、1 harness ERROR、1 completion無し、1 stdout無し**。無出力や未実行はPASSとしていない。q1013のIDを加えるとこのlaneで試したユニークIDは16/1,783。正式全件率とはしない。
+
+最初の `align-self: anchor-center` 不受理、`main is not defined`、`a1 is not defined` 等の失敗を観測。現runnerのHTTP/自動操作/worker環境との切り分けが未完了なので全てをbrowser欠陥と断定しない。batch選定の重複・除外の unit2/2、py_compile、diff check PASS。browser/WPT/Masterの変更なし、Acid3は再計測しない。残る1,767 testharness、4領域の環境、p190の2,022件、p173全件baseline/100%は未達。
+
+Event ws074-p189-q1014-outcome-20261014: q1014-i01 partial cleared、p189 whole uncleared。上記の15 ID結果と4領域の未実行理由を保存。次は実行環境整備と大量shard、または失敗群の最小原因調査を有限Queueで選定する。GitHub publication保留。
