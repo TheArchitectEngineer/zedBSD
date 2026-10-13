@@ -8,11 +8,13 @@
 /*
  * Shutdown preparation.
  *
- * The first caller quiesces the network, USB, and PCI layers in dependency
- * order; every later caller waits until that preparation has finished.
+ * The first caller flushes the disks and quiesces the network, USB, and PCI
+ * layers in dependency order; every later caller waits until that
+ * preparation has finished.
  */
 
 #include "kern/system-device.h"
+#include "kern/disk.h"
 #include "kern/atomic.h"
 #include "kern/sched.h"
 #include "kern/readahead.h"
@@ -42,6 +44,8 @@ static atomic_uint_t shutdown_preparation_state;
 static struct readahead_boundary shutdown_readahead;
 
 static void shutdown_readers_restore(void);
+static void shutdown_disks_flush(void);
+static int shutdown_disk_flushable(const struct disk *disk);
 
 /*
  * Quiesces the device layers before a shutdown or reboot.
@@ -127,7 +131,16 @@ system_shutdown_prepare(
 	/* Ends the writeback; from here on the volumes are on disk. */
 	if (writeback_shutdown_finish != NULL)
 		writeback_shutdown_finish(1);
-	kern_logf("shutdown: the volumes are synced; stopping the network\n");
+	kern_logf("shutdown: the volumes are synced; flushing the disks\n");
+
+	/*
+	 * Flushes every disk's write cache before the network stops (BUG-305).
+	 * A network that does not stop leaves PCI and USB to the reset, and with
+	 * them the drivers' own shutdown flush, so raw writes and unmounted
+	 * disks would otherwise depend on the network stopping in time.
+	 */
+	shutdown_disks_flush();
+	kern_logf("shutdown: the disks are flushed; stopping the network\n");
 
 	/*
 	 * Stops the platform's device threads first, so none publishes a
@@ -179,4 +192,67 @@ shutdown_readers_restore(
 	if (readahead_boundary_end != NULL)
 		readahead_boundary_end(&shutdown_readahead);
 	atomic_store_release(&shutdown_preparation_state, 0);
+}
+
+/*
+ * Writes back and flushes the cache of every whole physical disk.
+ *
+ * The disks still serve requests here, so each flush is an ordinary barrier
+ * through its driver.  A failure is logged and the other disks still flush;
+ * the shutdown goes on, as the drivers' own shutdown flush does.
+ */
+static void
+shutdown_disks_flush(
+	void)
+{
+	struct disk *disk;
+	unsigned index;
+	int flushable;
+	int error;
+
+	/* Visits the live disks in registration order. */
+	index = 0;
+	disk = disk_at(index);
+	while (disk != NULL) {
+		/*
+		 * Flushes a whole writable disk, and logs one that did not flush
+		 * unless its medium is gone; a partition shares its disk's cache.
+		 */
+		flushable = shutdown_disk_flushable(disk);
+		if (flushable) {
+			error = disk_sync(disk);
+			if (error != 0 && error != ENXIO)
+				kern_logf("shutdown: %s: the disk could not be flushed (error %d)\n",
+					  disk->d_name,
+					  error);
+		}
+
+		/* Drops the reference and moves to the next disk. */
+		disk_release(disk);
+		index++;
+		disk = disk_at(index);
+	}
+}
+
+/* Tests whether a disk is a whole writable device whose cache shutdown flushes. */
+static int
+shutdown_disk_flushable(
+	const struct disk *disk)
+{
+	/* A partition is flushed through its whole disk. */
+	if (disk->d_parent != NULL)
+		return 0;
+	if ((disk->d_flags & DISK_PARTITION) != 0)
+		return 0;
+
+	/* A read-only disk holds nothing to write. */
+	if ((disk->d_flags & DISK_READ_ONLY) != 0)
+		return 0;
+
+	/* A loop disk lives in a file on a volume that is already synced. */
+	if ((disk->d_flags & DISK_FILE_BACKED) != 0)
+		return 0;
+
+	/* Flushes every other disk. */
+	return 1;
 }
