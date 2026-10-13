@@ -59,3 +59,5 @@ T1 の束（p001 §13）: A = p002+p003（QEMU）、B = p009+p010（実機）、
 - 90°・270°: Intel は全部（5320 の Tiger Lake も）compositor の GPU の回転（第 2 版の turn pass）。Y-tiled の作業はしない（Future Work）。Pi 4 は WS141 p015 の後に compositor で、それまでは無効表示。
 - Venus（QEMU）: 回転は無効表示（画面の大きさを変えればよい）。
 - 第 3 版で review-2 の C3・C4・M1〜M4 と合わせてこの形にする。担当は次に空いた P。
+
+2026-10-13 Q1（第 3 版の残る問い D13〜D17）: ユーザーの「推奨でいい」の流れに沿って推奨を採り、ユーザーに報告（変更可）: D13 test image だけ `--rotate-policy=any`、D14 hw180 の無い display は回転を出さない（Linux・FreeBSD の build も無効表示、KMS の rotation は Future Work）、D15 Pi の HVS の反転はまず tree と実機、GPL の参照は分からなかった時だけ（その時はユーザーに）、D16 UAPI の 3 つの定数（90/270 の bit は作らない）、D17 180 の scanout の出力で game mode の直の scanout はしない（Future Work）。
