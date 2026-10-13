@@ -31,6 +31,15 @@ class ClassifyTest(unittest.TestCase):
     def test_missing_image(self):
         self.assertEqual(RUNNER.classify(0, False, False), "no_image")
 
+    def test_all_focus_keeps_only_unique_crashtests(self):
+        manifest = {"selected": [
+            {"id": "/a.html", "type": "crashtest", "focus": ["a"]},
+            {"id": "/b.html", "type": "crashtest", "focus": ["b"]},
+            {"id": "/c.html", "type": "testharness", "focus": ["a"]},
+        ]}
+        self.assertEqual(len(RUNNER.selected_cases(manifest, "all")), 2)
+        self.assertEqual(len(RUNNER.selected_cases(manifest, "a")), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

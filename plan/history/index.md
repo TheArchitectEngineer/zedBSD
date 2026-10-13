@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1040 / WS074 fixed crashtest full census（2026-10-14）
+
+[q1040履歴](queue-q1040.md): 固定crashtest全48 IDはlocal rendererで48 PASS/0 crash/0 timeout。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1040/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1039 / WS074 details crashtest runner（2026-10-14）
 
 [q1039履歴](queue-q1039.md): 固定details crashtest3件はlocal rendererで3 PASS/0 crash/0 timeout。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1039/README.md)。共有投影/GitHub publication pending。

@@ -61,7 +61,8 @@ def image_details(path):
 
 def selected_cases(manifest, focus):
     rows = [row for row in manifest["selected"]
-            if row["type"] == "crashtest" and focus in row["focus"]]
+            if row["type"] == "crashtest" and
+            (focus == "all" or focus in row["focus"])]
     ids = [row["id"] for row in rows]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate selected crashtest ID")

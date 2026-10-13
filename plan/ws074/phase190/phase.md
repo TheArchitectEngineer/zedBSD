@@ -67,3 +67,13 @@ Event ws074-p190-q1038-outcome-20261014: q1038-i01 partial cleared、p190 whole 
 **partial scope cleared、p190 whole uncleared。** 固定manifest検証付き単一HTTP crashtest runnerを追加し、details3 IDは全て画像を生成してexit0、3 local PASS/0 crash/0 timeout/0 no-image。[証拠](evidence/20261014-q1039/README.md)。成功・非0・signal・timeout・画像欠損の分類control5/5、Python compile/diff check PASS。残り45 crashtestと条件差は未測定、公式WPT runner同等性も未確認。browser/WPT/Master/公開ABI無変更、host build/Acid再計測省略。p190 whole/p173全件100%未達、GitHub publication保留。
 
 Event ws074-p190-q1039-outcome-20261014: q1039-i01 partial cleared、p190 whole uncleared。details crashtest3件のlocal renderer実測を得た。
+
+## q1040-i01 の有限部分範囲
+
+2026-10-14 01:35 JST、ユーザーの事前承認を適用、最大90分。q1039 runnerに全focus選択を追加し、固定manifestのcrashtest全48一意IDを800×600・固定font・単一HTTP・3秒settle・process timeout条件で一回ずつ測る。manifest/件数/分野分布、local PASS、crash signal、timeout、process error、画像欠損、unsupportedを区別し、q1039 details3件の結果と照合する。異origin/HTTPS/testdriver対応やbrowser描画機能修正、WPT/Master/公開ABI変更は含めない。runner選択control、Python compile、結果JSON/diff checkを検証する。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。
+
+## q1040-i01 結果（2026-10-14 01:36 JST）
+
+**partial scope cleared、p190 whole uncleared。** 固定manifestのcrashtest48一意IDを全実測し、48 local PASS/0 crash/0 timeout/0 process error/0 no-image/0 unsupported。[証拠](evidence/20261014-q1040/README.md)。全IDの800×600画像を検証し、q1039 details3件は画像hashとoutcomeが一致。分野分布・固定commit・ID集合を照合。選択/分類control6/6、Python compile/diff check PASS。browser/WPT/Master無変更、host build/Acid再計測省略。これはlocal host条件のcrashtest測定であり公式WPT環境同等性やreftest/testharnessを証明しない。p190 whole/p173全件100%未達、GitHub publication保留。
+
+Event ws074-p190-q1040-outcome-20261014: q1040-i01 partial cleared、p190 whole uncleared。固定48 crashtestのlocal測定を完了、reftest全件と公式環境同等性が残る。

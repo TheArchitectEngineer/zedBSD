@@ -1,0 +1,1362 @@
+{
+  "schema": 1,
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "focus": "all",
+  "viewport": [
+    800,
+    600
+  ],
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "settle_ms": 3000,
+  "process_timeout": 60,
+  "counts": {
+    "pass": 48
+  },
+  "results": [
+    {
+      "test_id": "/css/css-anchor-position/anchor-as-multicol-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-anchor-position/anchor-as-multicol-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-composited-scrolling-001-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "045c150b04d1b7b5b610d44bf6051837b23d69725e6df920a892a0dae3720fcf"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-anchor-position/anchor-scroll-composited-scrolling-001-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-composited-scrolling-002-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "681624437f09bba98cc64ef2173269b99e3234b69834c38eb24a1a9e24c8d169"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-anchor-position/anchor-scroll-composited-scrolling-002-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-composited-scrolling-003-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "681624437f09bba98cc64ef2173269b99e3234b69834c38eb24a1a9e24c8d169"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-anchor-position/anchor-scroll-composited-scrolling-003-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-composited-scrolling-004-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "812bca66abf67b395bc2a10b74a46c6f0073556084e2051a75d7f892bb7c178b"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-anchor-position/anchor-scroll-composited-scrolling-004-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-scroll-composited-scrolling-005-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "681624437f09bba98cc64ef2173269b99e3234b69834c38eb24a1a9e24c8d169"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-anchor-position/anchor-scroll-composited-scrolling-005-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-anchor-position/grid-anchor-center-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-anchor-position/grid-anchor-center-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-anchor-position/inline-grid-try-fallbacks-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "47c91233129f85452162f5ff3a3b375bc33ea118b506a95f36dc6dc1f355db52"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-anchor-position/inline-grid-try-fallbacks-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-anchor-position/position-try-invalid-anchor-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "c740e913625437c12a888d014927ab20ce6caf39195e5780f84b169f0640449d"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-anchor-position/position-try-invalid-anchor-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-cascade/scope-declaration-list-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "67382760d0508312fb2cfc3c387dea41d2e5a505353ef25d0cfc99960ba1af14"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-cascade/scope-declaration-list-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/contain-size-layout-abspos-flex-container-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "ab623dbc82d5e5a343e5d0251ae503008545c69674309d6a7a1b464c4719e07d"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/contain-size-layout-abspos-flex-container-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/fixedpos-video-in-abspos-quirk-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/fixedpos-video-in-abspos-quirk-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/flex-shrink-large-value-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "def045dd3e6ef028b476e6a3d3edad44ce7d43677f1f13fff9f87b0c44373fcf"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/flex-shrink-large-value-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/frameset-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/frameset-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/inline-flex-editing-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "7491258af5ff2cc2ccb72b30b7f5705b6a973fef4c4017be5e9b0221464dde4e"
+      },
+      "stdout": "",
+      "stderr": "console: Uncaught TypeError: value is not a function (at http://127.0.0.1:44651/css/css-flexbox/inline-flex-editing-crash.html:2:1)\n",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/inline-flex-editing-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/inline-flex-editing-with-updating-text-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "9de682d4cb5258af43fe01f4ca8e485239567f9cdf2407073f5f76e0bffc6694"
+      },
+      "stdout": "",
+      "stderr": "console: Uncaught TypeError: value is not a function (at http://127.0.0.1:44651/css/css-flexbox/inline-flex-editing-with-updating-text-crash.html:3:1)\n",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/inline-flex-editing-with-updating-text-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/inline-flex-frameset-main-axis-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/inline-flex-frameset-main-axis-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/negative-flex-margins-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "e6c0e133023b04fe339632a2472dd08ff07a4c3a75fdefc690196b75e916e78d"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/negative-flex-margins-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/negative-flex-rounding-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "96272ef36778c4f8f9994da7e3fddd70571a2a72fd7458f45dc9c79f483a80ca"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/negative-flex-rounding-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/negative-item-margins-002-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "98556c2dbfa7ac176a06479d12bb322e04ff7afa97b2ac45003a78e3c2ca6396"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/negative-item-margins-002-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/negative-item-margins-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "98556c2dbfa7ac176a06479d12bb322e04ff7afa97b2ac45003a78e3c2ca6396"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/negative-item-margins-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/orthogonal-flex-item-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "eaaa52ee1a95b84b50f331d747141ab9c935f06df95420e5d9b40caa10fde9a0"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/orthogonal-flex-item-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/position-relative-with-scrollable-with-abspos-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "aa0a841ae11466202102c24f94a3f6f869b191991bfb04e7287766d978539d15"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/position-relative-with-scrollable-with-abspos-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/remove-out-of-flow-child-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/remove-out-of-flow-child-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-flexbox/zero-content-size-with-scrollbar-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-flexbox/zero-content-size-with-scrollbar-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-grid/abspos/positioned-grid-items-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-grid/abspos/positioned-grid-items-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-grid/grid-definition/grid-add-item-with-positioned-items-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-grid/grid-definition/grid-add-item-with-positioned-items-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-grid/grid-definition/grid-add-positioned-block-item-after-inline-item-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "188c6740015aa5838150961c3d9cacce5541c51c20d89fc9e23d2bb875df2c74"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-grid/grid-definition/grid-add-positioned-block-item-after-inline-item-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-grid/subgrid/crashtests/contain-strict-nested-subgrid.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "3cb32c9f03f60ec63d5c19391f535f3a28e0eab8dc409a0cf2b81eb510d1d25e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-grid/subgrid/crashtests/contain-strict-nested-subgrid.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-grid/subgrid/crashtests/contain-strict-subgrid.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "57afb7b09b3f3a0e327c35b5b46715c4e93754b8678a98a54dc37d7a09f20df3"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-grid/subgrid/crashtests/contain-strict-subgrid.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-grid/subgrid/crashtests/subgrid-reflow-root.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "e2da448cce27c1ab9b4df1c9fec9d7b716f43656367bda91d4a7e0e59ac6b13b"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-grid/subgrid/crashtests/subgrid-reflow-root.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-view-transitions/document-element-detached-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "console: Uncaught TypeError: value is not a function (at 3:3)\n",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-view-transitions/document-element-detached-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-view-transitions/empty-render-target-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "41648a602505e75c4c18b579de0ec2c2a6d071a09d6153eb12b4f2ba1cb88922"
+      },
+      "stdout": "",
+      "stderr": "console: Uncaught (in promise) TypeError: value is not a function (at 4:11)\n",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-view-transitions/empty-render-target-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-view-transitions/get-computed-style-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-view-transitions/get-computed-style-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-view-transitions/iframe-transition-destroyed-document-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-view-transitions/iframe-transition-destroyed-document-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-view-transitions/list-style-position-style-change-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "console: Uncaught (in promise) TypeError: value is not a function (at 3:12)\n",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-view-transitions/list-style-position-style-change-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-view-transitions/root-element-cv-hidden-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "console: Uncaught TypeError: value is not a function (at http://127.0.0.1:44651/css/css-view-transitions/root-element-cv-hidden-crash.html:2:3)\n",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-view-transitions/root-element-cv-hidden-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-view-transitions/root-element-display-none-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-view-transitions/root-element-display-none-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-view-transitions/root-element-display-none-during-transition-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "console: Uncaught (in promise) TypeError: value is not a function (at 3:16)\n",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-view-transitions/root-element-display-none-during-transition-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-viewport/zoom/perspective-small-effective-zoom-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-viewport/zoom/perspective-small-effective-zoom-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-viewport/zoom/scroll-corner-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-viewport/zoom/scroll-corner-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-viewport/zoom/scrollbar-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "5d577db5ae40371dc2cc42b2fe23a023b78edaeb5f26f91491ca579bc52fa74e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-viewport/zoom/scrollbar-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-viewport/zoom/textarea-very-small-zoom-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "5d577db5ae40371dc2cc42b2fe23a023b78edaeb5f26f91491ca579bc52fa74e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-viewport/zoom/textarea-very-small-zoom-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/css-writing-modes/link-writing-mode-dependency-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/css-writing-modes/link-writing-mode-dependency-crash.html"
+      ]
+    },
+    {
+      "test_id": "/css/filter-effects/backdrop-filter-feimage-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/css/filter-effects/backdrop-filter-feimage-crash.html"
+      ]
+    },
+    {
+      "test_id": "/html/rendering/the-details-element/details-autofocus-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "f0971a6e1ab32519c72448ac7e0a1c6ca2ed8b57c322a4f857967f073db58f6f"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/html/rendering/the-details-element/details-autofocus-crash.html"
+      ]
+    },
+    {
+      "test_id": "/html/rendering/the-details-element/empty-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/html/rendering/the-details-element/empty-crash.html"
+      ]
+    },
+    {
+      "test_id": "/html/rendering/the-details-element/two-summaries-removal-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1040/wpt-crash-bmbehqoi/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:44651/html/rendering/the-details-element/two-summaries-removal-crash.html"
+      ]
+    }
+  ]
+}
