@@ -263,8 +263,11 @@ def walk(function, answers: list, values: dict[str, object]) -> list[tuple[str, 
 def check_i386_and_retro() -> None:
     """WS232 (2026-10-14 user): the CPU i386 with the boards PC-9800 and
     PC/AT, and Retro at the top of the main menu with Xzed, zwm, zshell and
-    zterm on every CPU.  The configurations the menu writes for i386 PC/AT
-    and PC-9800 are then resolved by make -n."""
+    zterm on every CPU.  On i386 the Desktop is left out by itself (2026-10-14
+    user: "i386 では Desktop を自動で外す"): its entry is not shown and its
+    programs are not written, and switching back to x86_64 writes them
+    again.  The configurations the menu writes for i386 PC/AT and PC-9800,
+    the defaults as they are and with Retro, are then resolved by make -n."""
     values = menu.defaults()
     shown = walk(menu.select_cpu_board, ["CPU: x86_64", "i386", "Back"], values)
     if shown[1] != ("CPU", ["x86_64", "arm64", "i386"]):
@@ -308,33 +311,74 @@ def check_i386_and_retro() -> None:
     if not menu.in_menu("zterm", "x11-applications") or menu.in_menu("zgears", "x11-applications"):
         fail("the menu shows the wrong X11 programs")
 
-    directory = scratch_directory("i386")
-    for platform, board in (("i386", "pcat"), ("pc98", "pc98")):
+    desktop = {row[0] for row in USER_PROGRAM_ROWS if row[4] in menu.DESKTOP_GROUPS}
+    desktop_packages = {row[5] for row in USER_PROGRAM_ROWS
+                        if row[4] in menu.DESKTOP_GROUPS and row[5]}
+    needing_desktop = {row[0] for row in USER_PROGRAM_ROWS
+                       if desktop_packages.intersection(row[6].split())}
+    for platform, cpu, shows in (("amd64", "x86_64", True), ("rpi4", "arm64", True),
+                                 ("i386", "i386", False), ("pc98", "i386", False)):
         values = menu.defaults()
         values["ZEDBSD_PLATFORM"] = platform
-        values["ZEDBSD_USER_PROGRAMS"].update(menu.RETRO_PROGRAMS)
-        # The Desktop (Keiland, Vulkan) has no i386 build, so these are
-        # written with it turned off, as config/ci/config-pc98.mk is.
-        values["ZEDBSD_USER_PROGRAMS"].difference_update(
-            row[0] for row in USER_PROGRAM_ROWS if row[4] in menu.DESKTOP_GROUPS)
-        path = directory / f"config-{platform}.mk"
-        menu.save(path, values)
+        menu.normalize(values)
+        shown = walk(lambda screen, v: menu.tui(screen, v, Path("/nonexistent")),
+                     ["Exit"], values)
+        if ("Desktop" in shown[0][1]) != shows:
+            fail(f"the main menu on {platform} ({cpu}) is {shown[0][1]}")
+
+    directory = scratch_directory("i386")
+
+    def written(path: Path) -> list[str]:
         text = path.read_text(encoding="utf-8")
-        programs = next(line for line in text.splitlines()
-                        if line.startswith("ZEDBSD_USER_PROGRAMS := ")).split()[2:]
-        if not set(menu.RETRO_PROGRAMS) <= set(programs):
-            fail(f"the {platform} config.mk does not build Retro: {programs}")
-        for assignment in ("ZEDBSD_ARCHITECTURE := i386", f"ZEDBSD_BOARD := {board}",
-                           "CONFIG_DRIVER_GRAPHICS := y"):
-            if assignment not in text:
-                fail(f"the {platform} config.mk omits {assignment}")
+        return next(line for line in text.splitlines()
+                    if line.startswith("ZEDBSD_USER_PROGRAMS := ")).split()[2:]
+
+    def resolves(path: Path, platform: str) -> None:
         result = subprocess.run(
             ["make", "--no-print-directory", "-n", f"ZEDBSD_CONFIG={path}"],
             cwd=REPO, check=False, text=True,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if result.returncode != 0:
-            fail(f"make -n did not resolve the {platform} config.mk: "
-                 f"{result.stdout[-2000:]}")
+            fail(f"make -n did not resolve the {platform} config.mk "
+                 f"({path}): {result.stdout[-2000:]}")
+
+    # The defaults with only the CPU changed to i386 (its first board,
+    # PC-9800), saved as they are, and then back to x86_64.
+    values = menu.defaults()
+    walk(menu.select_cpu_board, ["CPU: x86_64", "i386", "Back"], values)
+    path = directory / "config-default-pc98.mk"
+    menu.save(path, values)
+    programs = written(path)
+    if set(programs) & (desktop | needing_desktop):
+        fail(f"the default i386 config.mk writes the Desktop: "
+             f"{sorted(set(programs) & (desktop | needing_desktop))}")
+    resolves(path, "pc98")
+    walk(menu.select_cpu_board, ["CPU: i386", "x86_64", "Back"], values)
+    path = directory / "config-default-amd64.mk"
+    menu.save(path, values)
+    expected = {row[0] for row in USER_PROGRAM_ROWS
+                if row[4] in menu.DESKTOP_GROUPS and row[3] == "y"}
+    if not expected <= set(written(path)):
+        fail(f"back on x86_64 the Desktop's defaults are not written: "
+             f"{sorted(expected - set(written(path)))}")
+
+    for platform, board in (("i386", "pcat"), ("pc98", "pc98")):
+        values = menu.defaults()
+        values["ZEDBSD_PLATFORM"] = platform
+        values["ZEDBSD_USER_PROGRAMS"].update(menu.RETRO_PROGRAMS)
+        path = directory / f"config-{platform}.mk"
+        menu.save(path, values)
+        text = path.read_text(encoding="utf-8")
+        programs = written(path)
+        if not set(menu.RETRO_PROGRAMS) <= set(programs):
+            fail(f"the {platform} config.mk does not build Retro: {programs}")
+        if set(programs) & desktop:
+            fail(f"the {platform} config.mk writes the Desktop: {sorted(set(programs) & desktop)}")
+        for assignment in ("ZEDBSD_ARCHITECTURE := i386", f"ZEDBSD_BOARD := {board}",
+                           "CONFIG_DRIVER_GRAPHICS := y"):
+            if assignment not in text:
+                fail(f"the {platform} config.mk omits {assignment}")
+        resolves(path, platform)
 
 
 def check_build_progress() -> None:
@@ -522,7 +566,7 @@ def main() -> None:
     print("MAC-T001 menuconfig round-trip: PASS "
           "(6 targets, 3 amd64 Variants, obsolete capacity removed, "
           "package requirements resolved, the WS193 menu, "
-          "i386 PC/AT and PC-9800 with Retro)")
+          "i386 PC/AT and PC-9800 with Retro and without the Desktop)")
 
 
 if __name__ == "__main__":

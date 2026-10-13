@@ -25,3 +25,10 @@ Resume point: p001。
 3. menuconfig の host 試験（`make menuconfig-host-test`）を足して PASS。i386 pcat・pc98 で config.mk を書き出し、`make -n` で解決すること（build はできれば）。
 4. （2026-10-14 ユーザー、Q1 経由「WS232はconfig/ci/config-pc98.mkがビルドを通るように修正をお願いします。」）`config/ci/config-pc98.mk` で普通の target（world、できれば image）が build を通る。WS227 で 4 つの library を Desktop へ移した影響と Retro の program を含めて失敗を直す。toolchain は変えない。
 5. （2026-10-14 ユーザー、Q1 経由「WS232は ~/qemu-pc98にあるqemuを使って起動できるところまでお願いします。」）pc98 の image が `~/qemu-pc98/build/qemu-system-i386`（PC-98 の machine）で login prompt まで起動する。QEMU は担当が自分で起動せず、T1 への依頼の文（command line・machine・disk の付け方・PNG の判定）を phase.md に書き、Q1 が T1 に流させる。
+
+## 決定
+
+- 2026-10-14 ユーザー（クリック「i386 では Desktop を自動で外す」）: menuconfig で CPU を i386（PC-9800・PC/AT）にした時は
+  Desktop の program を全部外し、Desktop の menu を出さない（`config/ci/config-pc98.mk` と同じ形）。amd64・arm64 に戻した時は
+  既存の CPU の切り替えの規則（build しない選択は menu の状態に残し、書き出さない）に従う。実装と試験は
+  [p001](phase001/phase.md)（commit 7401f3fb8）。

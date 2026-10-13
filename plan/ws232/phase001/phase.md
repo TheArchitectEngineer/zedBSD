@@ -32,7 +32,34 @@ Queue: q982
 - menuconfig の既定（amd64 の既定と同じ選択）のまま CPU を i386 にすると、Desktop の既定の program（files・settings・wayland など）が
   書かれ、i386 の `make -n` は `No rule to make target 'build/pcat/bin/keiland-preview'`（ほか libvulkan・libkeiland・libEGL など）で
   止まる。Desktop の program は Makefile が全 CPU を「*」にしている（2026-10-10 ユーザー）が、i386 の build の規則は無い。
-  試験は `config/ci/config-pc98.mk` と同じく Desktop を外して書いた。i386 を選んだ時に Desktop を外すかどうかは未決（Q1・ユーザー）。
+  試験は `config/ci/config-pc98.mk` と同じく Desktop を外して書いた。i386 を選んだ時に Desktop を外すかどうかは未決（Q1・ユーザー）→ 下の決定で解決。
+
+### 決定と対応: i386 では Desktop を自動で外す（2026-10-14 ユーザー、クリック「i386 では Desktop を自動で外す」）
+
+- `tools/menuconfig.py`
+  - `NO_DESKTOP_ARCHITECTURES = ("i386",)` と `desktop_builds(platform)`。i386（PC-9800・PC/AT）では主の menu に
+    Desktop の項目を出さない（Retro・CPU / Board・Boot Option・Drivers・Development・Base・Packages・Firmware）。
+  - `builds_for(platform)`: その platform で build する program の集合。従来の platform の指定（`applies`）に加え、
+    Desktop を build しない CPU では Desktop の group の program と、Desktop の package を直接・間接に要る program
+    （今の表では `packages/desktop` の gtk4 が `desktop/libwayland` を要る）を除く。`save`（書き出し）・`group_rows`
+    （Base・Packages・Firmware の menu）・`retro_rows` がこれを使う。結果として i386 の config.mk は
+    `config/ci/config-pc98.mk` と同じ形（Retro・Base・Packages・Firmware、Desktop 無し）になる。
+- amd64・arm64 に戻した時の既定の扱い: 既存の CPU の切り替えの規則（「build しない選択は menu の状態に残し、書き出さない。
+  target を戻すと保たれる」、`save` の注記）に合わせた。i386 にしている間も Desktop の選択は menu の状態に残るので、
+  同じ session で x86_64・arm64 に戻すと Desktop の選択（既定なら既定の program）がそのまま書かれる。
+  i386 で保存して menu を閉じ、その config.mk を開き直してから戻した場合は、file に Desktop が書かれていないので
+  Desktop は空のまま（amd64 だけの試験の program など、他の platform の限られた選択と同じ扱い）。必要なら Desktop の All で戻す。
+- 試験 `check_i386_and_retro` に足した事:
+  - 主の menu に Desktop が出る（amd64・rpi4）・出ない（i386・pc98）。
+  - 既定（`menu.defaults()`）から CPU の menu で i386 だけを選び（PC-9800）、既定のまま保存 → Desktop の program と
+    Desktop を要る program が書かれず、`make -n ZEDBSD_CONFIG=<その file>` が解決する。
+  - 続けて CPU を x86_64 に戻して保存 → Desktop の既定の program（既定 y の全部）が書かれる。
+  - Retro を足した i386 PC/AT・pc98 の config.mk（以前は試験の中で Desktop を手で外していた。今は外さない）に Desktop が無く、
+    `make -n` が解決する。
+- 結果: `make menuconfig-host-test` → `MAC-T001 menuconfig round-trip: PASS (6 targets, 3 amd64 Variants, obsolete capacity
+  removed, package requirements resolved, the WS193 menu, i386 PC/AT and PC-9800 with Retro and without the Desktop)`（約 18 秒）。
+  既定のまま i386 にした config.mk の `ZEDBSD_USER_PROGRAMS` は 186 語、x86_64 に戻した物は 232 語。
+- commit 7401f3fb8（P1 の worktree、branch agent/p1）。
 
 ## 目標 4: config/ci/config-pc98.mk の build
 

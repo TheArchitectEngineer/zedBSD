@@ -93,6 +93,15 @@ FIRMWARE_GROUPS = ("firmware",)
 # programs by name, in this order, each shown as its command's name.
 RETRO_PROGRAMS = ("Xzed", "zwm", "zshell", "zterm")
 
+# The CPUs the Desktop (Keiland, Vulkan, Wayland) is not built for
+# (2026-10-14 user, WS232: "i386 では Desktop を自動で外す"): on them the
+# menu offers no Desktop and writes none of its programs, nor a program that
+# needs one of them, as config/ci/config-pc98.mk has only Retro and Base.
+# As with any selection that does not build for the target, the menu keeps
+# the Desktop's selection while i386 is chosen, so switching back to x86_64
+# or arm64 in the same session writes it again.
+NO_DESKTOP_ARCHITECTURES = ("i386",)
+
 
 def package_categories(rows: list[list[str]]) -> list[tuple[str, str]]:
     """The Packages menu's categories: the directories of userland/packages
@@ -118,6 +127,30 @@ def variant_default(platform: str) -> str:
 
 def applies(specification: str, platform: str) -> bool:
     return specification == "*" or platform in specification.replace(",", " ").split()
+
+
+def desktop_builds(platform: str) -> bool:
+    """Whether the Desktop is built for this platform."""
+    return platform_record(platform)[1] not in NO_DESKTOP_ARCHITECTURES
+
+
+def builds_for(platform: str) -> set[str]:
+    """The user programs that build for this platform: those whose platforms
+    name it, without, where the Desktop is not built, its programs and the
+    programs that need them, directly or through one another."""
+    rows = user_program_rows()
+    result = {row[0] for row in rows if applies(row[2], platform)}
+    if desktop_builds(platform):
+        return result
+    missing = {row[5] for row in rows if row[4] in DESKTOP_GROUPS and row[5]}
+    result.difference_update(row[0] for row in rows if row[4] in DESKTOP_GROUPS)
+    while True:
+        needing = {row[0] for row in rows
+                   if row[0] in result and missing.intersection(row[6].split())}
+        if not needing:
+            return result
+        result.difference_update(needing)
+        missing.update(row[5] for row in rows if row[0] in needing and row[5])
 
 
 def read_rows(path: Path, fields: int) -> list[list[str]]:
@@ -277,8 +310,9 @@ def save(path: Path, values: dict[str, object]) -> None:
     # A selection that does not build for this platform stays in the menu's
     # state, so switching the target back keeps it, but is not written.
     programs = values.get("ZEDBSD_USER_PROGRAMS", set())
+    building = builds_for(platform)
     ordered = [row[0] for row in user_program_rows()
-               if row[0] in programs and applies(row[2], platform)]
+               if row[0] in programs and row[0] in building]
     lines.extend(["", "ZEDBSD_USER_PROGRAMS := " + " ".join(ordered)])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -443,10 +477,10 @@ def edit_program_group(screen, values: dict[str, object], groups: tuple[str, ...
 
 def retro_rows(values: dict[str, object]) -> list[list[str]]:
     """Retro's programs that build for the current platform, in Retro's order."""
-    platform = str(values["ZEDBSD_PLATFORM"])
+    building = builds_for(str(values["ZEDBSD_PLATFORM"]))
     rows = {row[0]: row for row in user_program_rows()}
     return [rows[name] for name in RETRO_PROGRAMS
-            if name in rows and applies(rows[name][2], platform)]
+            if name in rows and name in building]
 
 
 def edit_programs(screen, values: dict[str, object], rows: list[list[str]],
@@ -502,9 +536,9 @@ def select_package_programs(screen, values: dict[str, object]) -> None:
 
 def group_rows(values: dict[str, object], groups: tuple[str, ...]) -> list[list[str]]:
     """The programs of some groups that build for the current platform."""
-    platform = str(values["ZEDBSD_PLATFORM"])
+    building = builds_for(str(values["ZEDBSD_PLATFORM"]))
     return [row for row in user_program_rows()
-            if row[4] in groups and applies(row[2], platform)]
+            if row[4] in groups and row[0] in building]
 
 
 def all_selected(values: dict[str, object], groups: tuple[str, ...]) -> bool:
@@ -766,7 +800,7 @@ def build_boot_image(screen, values: dict[str, object], output: Path) -> None:
 def tui(screen, values: dict[str, object], output: Path) -> None:
     curses.curs_set(0)
     screen.keypad(True)
-    entries = [
+    every_entry = [
         ("Retro", "retro"),
         ("CPU / Board", "cpu-board"),
         ("Boot Option", "boot"),
@@ -783,6 +817,10 @@ def tui(screen, values: dict[str, object], output: Path) -> None:
     ]
     selected = 0
     while True:
+        # The Desktop entry is shown only where the Desktop is built.
+        entries = [entry for entry in every_entry
+                   if entry[1] != "desktop" or
+                   desktop_builds(str(values["ZEDBSD_PLATFORM"]))]
         labels = [label for label, _action in entries]
         choice = choose(screen, "Main menu", labels, target_label(values), selected)
         if choice is None:
