@@ -913,7 +913,8 @@ test_fit_window(void)
  * The wait after a turn to another size: a configure acknowledged after
  * the one sent before the turn ends a window's wait (over the serials'
  * wrap too), the same or an older one does not; the old frame stays while
- * a window is waited for, until KWL_ROTATE_HOLD_MS.
+ * a window is waited for, until KWL_ROTATE_HOLD_MS; a window that no longer
+ * fits must also draw an image of another size.
  */
 static void
 test_hold(void)
@@ -932,4 +933,25 @@ test_hold(void)
 	check(kwl_rotate_holding(1U, 1000U, 1000U + KWL_ROTATE_HOLD_MS - 1U) == 1, "hold: just before the end");
 	check(kwl_rotate_holding(1U, 1000U, 1000U + KWL_ROTATE_HOLD_MS) == 0, "hold: at the end");
 	check(kwl_rotate_holding(1U, 1000U, 1000U + 10U * KWL_ROTATE_HOLD_MS) == 0, "hold: long after the end");
+
+	/*
+	 * Whether a window must draw another size (T1-614: Settings 1180x680
+	 * turned to bounds 776x1160, and 776x800 turned back to 1256x680): a
+	 * fullscreen or docked one always, a floating one when it no longer fits.
+	 */
+	check(kwl_rotate_size_needed(1U, 800U, 600U, 2000, 2000) == 1, "hold: a fullscreen or docked window is given a size");
+	check(kwl_rotate_size_needed(0U, 1180U, 680U, 776, 1160) == 1, "hold: a window wider than the new bounds");
+	check(kwl_rotate_size_needed(0U, 776U, 800U, 1256, 680) == 1, "hold: a window taller than the new bounds");
+	check(kwl_rotate_size_needed(0U, 600U, 500U, 776, 1160) == 0, "hold: a window that fits keeps its size");
+	check(kwl_rotate_size_needed(0U, 776U, 1160U, 776, 1160) == 0, "hold: a window of the bounds' size fits");
+	check(kwl_rotate_size_needed(0U, 10U, 10U, 0, 0) == 1, "hold: no space at all");
+
+	/* The image drawn: after a newer acknowledgement, and of another size when one is needed. */
+	check(kwl_rotate_drawn(20U, 19U, 1U, 1180U, 680U, 776U, 800U) == 1, "hold: a new size after the new configure");
+	check(kwl_rotate_drawn(20U, 19U, 1U, 1180U, 680U, 1180U, 680U) == 0, "hold: the old size after the new configure (T1-614 rotation 5)");
+	check(kwl_rotate_drawn(20U, 19U, 1U, 1180U, 680U, 1180U, 600U) == 1, "hold: only the height changed");
+	check(kwl_rotate_drawn(19U, 19U, 1U, 1180U, 680U, 776U, 800U) == 0, "hold: a new size before the new configure");
+	check(kwl_rotate_drawn(20U, 19U, 0U, 600U, 500U, 600U, 500U) == 1, "hold: a window that fits, after the new configure");
+	check(kwl_rotate_drawn(19U, 19U, 0U, 600U, 500U, 600U, 500U) == 0, "hold: a window that fits, before the new configure");
+	check(kwl_rotate_drawn(1U, 0xffffffffU, 1U, 1180U, 680U, 776U, 800U) == 1, "hold: a new size after the serials' wrap");
 }
