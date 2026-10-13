@@ -9,7 +9,7 @@ Related Milestones: なし
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: q976（p001、P1）
-Target: ベータ3 以降（2026-10-14 ユーザー「これはベータ2の必須ではないけど、裏で走らせてくれる？」）
+Target: ベータ2 に入れば入れる（2026-10-14 ユーザー「Gen9対応は進めて、今日の夕方のコードフリーズに間に合えば入れます。間に合わなくてもドロップはオーケーです。」）。間に合わなければベータ3
 Resume point: p001。
 <!-- awesome-plan-current:end -->
 
