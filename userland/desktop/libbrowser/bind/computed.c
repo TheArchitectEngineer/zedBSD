@@ -113,7 +113,8 @@ enum computed_property {
 	COMPUTED_TEXT_TRANSFORM,
 	COMPUTED_TEXT_DECORATION_LINE,
 	COMPUTED_TEXT_DECORATION_STYLE,
-	COMPUTED_TEXT_DECORATION_SKIP_INK
+	COMPUTED_TEXT_DECORATION_SKIP_INK,
+	COMPUTED_TEXT_DECORATION_COLOR
 };
 
 /*
@@ -238,6 +239,7 @@ static const struct computed_entry computed_entries[] = {
 	{ "text-decoration-line", COMPUTED_TEXT_DECORATION_LINE },
 	{ "text-decoration-style", COMPUTED_TEXT_DECORATION_STYLE },
 	{ "text-decoration-skip-ink", COMPUTED_TEXT_DECORATION_SKIP_INK },
+	{ "text-decoration-color", COMPUTED_TEXT_DECORATION_COLOR },
 	{ NULL, 0 }
 };
 
@@ -872,6 +874,12 @@ computed_write_keyword(
 		break;
 	case COMPUTED_TEXT_DECORATION_SKIP_INK:
 		error = computed_name(computed_decoration_skip_inks, 3, style->text_decoration_skip_ink, out);
+		break;
+	case COMPUTED_TEXT_DECORATION_COLOR:
+		if (style->text_decoration_current_color)
+			error = computed_color(style->color, out);
+		else
+			error = computed_color(style->text_decoration_color, out);
 		break;
 	case COMPUTED_WHITE_SPACE:
 		error = computed_name(computed_white_spaces, 5, style->white_space, out);

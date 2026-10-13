@@ -1,0 +1,5 @@
+parent=rgb(255, 0, 0)
+child-initial=rgb(0, 255, 0)
+child-inherit=rgb(0, 255, 0)
+alpha=rgba(10, 20, 30, 0.4)
+invalid=false

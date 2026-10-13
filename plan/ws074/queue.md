@@ -1,17 +1,17 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1019 / WS074 text-decoration style and skip ink CSSOM
+# q1020 / WS074 text-decoration-color CSSOM
 
-Status: finished（2026-10-14 00:26〜00:28 JST）
+Status: finished（2026-10-14 00:29〜00:31 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p191のq1019有限部分scope](phase191/phase.md) に適用。
-Timebox: 2026-10-14 00:26 JST 開始、最大90分（01:56 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p191のq1020有限部分scope](phase191/phase.md) に適用。
+Timebox: 2026-10-14 00:29 JST 開始、最大90分（01:59 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1019-i01 | [ws074-p191](phase191/phase.md) partial | text-decoration-styleと-skip-inkの値/初期値/継承/computed CSSOM。描画方式変更なし。invalid試験、局所fixture、build、対象4 WPT、全16件、Acid3/Acid2非増加。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p191 whole は uncleared） | q1018までのCSSOM baseline |
+| q1020-i01 | [ws074-p191](phase191/phase.md) partial | text-decoration-colorのCSS値、初期currentcolorと明示inheritの遅延解決、computed CSSOM。描画色変更なし。invalid試験、局所fixture、build、対象2 WPT、全16件、Acid3/Acid2非増加。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p191 whole は uncleared） | q1019までのCSSOM baseline |
 
-Dependency graph: p173固定manifest → p189 q1015 baseline → q1016〜q1018 CSSOM出力 → q1019-i01 → p191 whole判断 → p173最終100%判断。p189 whole/p190は別の必要出力。
+Dependency graph: p173固定manifest → p189 q1015 baseline → q1016〜q1019 CSSOM出力 → q1020-i01 → p191 whole判断 → p173最終100%判断。p189 whole/p190は別の必要出力。
 
 Upcoming Work Outlook: p191の残るtextdecoration CSSOM、p189 runnerの環境対応、[p190](phase190/phase.md) reftest/crashtest coverage、p173全件baselineを候補とする。次の Queue も有限scopeを記録する。
 
@@ -30,3 +30,5 @@ Outcome: q1017-i01 partial cleared、p191 whole uncleared。対象WPT18/18 subte
 Outcome: q1018-i01 partial cleared、p191 whole uncleared。対象WPT67/67 subtest PASS、固定textdecoration全16件6 PASS/10 FAIL、subtest128 PASS/51 FAIL。host build warning0・局所fixture・Acid3差0/Acid2差1865の回帰確認。[証拠](phase191/evidence/20261014-q1018/README.md)。全件100%未達。
 
 Outcome: q1019-i01 partial cleared、p191 whole uncleared。対象4 WPT16/16 subtest・invalid既存2 WPT PASS、固定textdecoration全16件10 PASS/6 FAIL、subtest144 PASS/35 FAIL。host build warning0・局所fixture・Acid3差0/Acid2差1865の回帰確認。[証拠](phase191/evidence/20261014-q1019/README.md)。全件100%未達。
+
+Outcome: q1020-i01 partial cleared、p191 whole uncleared。対象2 WPT6/6 subtest・invalid既存WPT PASS、固定textdecoration全16件12 PASS/4 FAIL、subtest150 PASS/29 FAIL。host build warning0・局所fixture・Acid3差0/Acid2差1865の回帰確認。[証拠](phase191/evidence/20261014-q1020/README.md)。全件100%未達。

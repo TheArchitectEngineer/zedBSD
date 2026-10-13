@@ -1,0 +1,120 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "focus": "textdecoration",
+  "selected_count": 16,
+  "results": [
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-color-computed.html",
+      "outcome": "pass",
+      "report": "test-01.json",
+      "completion_status": 0,
+      "subtests": 3
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-color-invalid.html",
+      "outcome": "pass",
+      "report": "test-02.json",
+      "completion_status": 0,
+      "subtests": 4
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-color-valid.html",
+      "outcome": "pass",
+      "report": "test-03.json",
+      "completion_status": 0,
+      "subtests": 3
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-computed.html",
+      "outcome": "fail",
+      "report": "test-04.json",
+      "completion_status": 0,
+      "subtests": 14
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-invalid.html",
+      "outcome": "fail",
+      "report": "test-05.json",
+      "completion_status": 0,
+      "subtests": 3
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-line-computed.html",
+      "outcome": "pass",
+      "report": "test-06.json",
+      "completion_status": 0,
+      "subtests": 18
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-line-invalid.html",
+      "outcome": "pass",
+      "report": "test-07.json",
+      "completion_status": 0,
+      "subtests": 14
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-line-valid.html",
+      "outcome": "pass",
+      "report": "test-08.json",
+      "completion_status": 0,
+      "subtests": 67
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-shorthand.html",
+      "outcome": "fail",
+      "report": "test-09.json",
+      "completion_status": 0,
+      "subtests": 5
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-skip-ink-computed.html",
+      "outcome": "pass",
+      "report": "test-10.json",
+      "completion_status": 0,
+      "subtests": 3
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-skip-ink-invalid.html",
+      "outcome": "pass",
+      "report": "test-11.json",
+      "completion_status": 0,
+      "subtests": 13
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-skip-ink-valid.html",
+      "outcome": "pass",
+      "report": "test-12.json",
+      "completion_status": 0,
+      "subtests": 3
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-style-computed.html",
+      "outcome": "pass",
+      "report": "test-13.json",
+      "completion_status": 0,
+      "subtests": 5
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-style-invalid.html",
+      "outcome": "pass",
+      "report": "test-14.json",
+      "completion_status": 0,
+      "subtests": 2
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-style-valid.html",
+      "outcome": "pass",
+      "report": "test-15.json",
+      "completion_status": 0,
+      "subtests": 5
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-valid.html",
+      "outcome": "fail",
+      "report": "test-16.json",
+      "completion_status": 0,
+      "subtests": 17
+    }
+  ]
+}

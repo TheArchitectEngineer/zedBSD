@@ -55,3 +55,13 @@ Event ws074-p191-q1018-outcome-20261014: q1018-i01 partial cleared、p191 whole�
 **partial scope cleared、p191 whole uncleared。** style/skip-inkの値parser、初期値、継承、computed CSSOMを追加。[証拠](evidence/20261014-q1019/README.md)。対象4 WPTは16/16 subtest PASS、invalid既存2 WPT PASS。固定textdecoration全16件は10 PASS/6 FAIL、subtest144 PASS/35 FAIL（q1018の6/10、128/51から改善）。局所fixture、host build warning0、CSSOM12/12、rule model44/44。Acid3 score100/100・画素差0、Acid2差1865不変。描画反映と残る色/shorthand等は未達。GitHub publication保留。
 
 Event ws074-p191-q1019-outcome-20261014: q1019-i01 partial cleared。p191 wholeは6 test FAILのためuncleared。p173分母・p189/p190 runner依存は維持。残る互換は別の有限Queueへ。
+
+## q1020-i01 の有限部分範囲
+
+2026-10-14 00:29 JST、ユーザーの事前承認を適用、最大90分。固定領域の `text-decoration-color-valid.html` / `-computed.html` 各3 subtestを対象に、CSS color値解析、非継承初期`currentcolor`、明示的`inherit`でも継承後の要素colorで`currentcolor`を解決するcomputed CSSOMを実装する。実際のunderline描画色変更はこの部分scope外。invalid既存試験、局所fixture、build、2対象WPTと領域全16件、Acid3/Acid2差画素非増加を確認。WPT本体/期待・公開ABI・`master.md`は変更しない。
+
+## q1020-i01 結果（2026-10-14 00:31 JST）
+
+**partial scope cleared、p191 whole uncleared。** `text-decoration-color` の色解析と遅延`currentcolor`を追加。[証拠](evidence/20261014-q1020/README.md)。対象2 WPT6/6 subtest PASS、invalid既存WPTもPASS。固定textdecoration全16件12 PASS/4 FAIL、subtest150 PASS/29 FAIL（q1019の10/6、144/35から改善）。局所fixture、host build warning0、CSSOM12/12、rule model44/44。Acid3 score100/100・画素差0、Acid2差1865不変。残る4件は`text-decoration` shorthandの解析・computed/inline CSSOM。GitHub publication保留。
+
+Event ws074-p191-q1020-outcome-20261014: q1020-i01 partial cleared。p191 wholeは4 test FAILのためuncleared。p173分母・p189/p190 runner依存は維持。shorthandの原因を別の有限Queueへ。

@@ -205,6 +205,7 @@ static const struct values_name values_names[] = {
 	{ "text-decoration-line", CSS_PROP_TEXT_DECORATION_LINE },
 	{ "text-decoration-style", CSS_PROP_TEXT_DECORATION_STYLE },
 	{ "text-decoration-skip-ink", CSS_PROP_TEXT_DECORATION_SKIP_INK },
+	{ "text-decoration-color", CSS_PROP_TEXT_DECORATION_COLOR },
 	{ "list-style-type", CSS_PROP_LIST_STYLE_TYPE },
 	{ "top", CSS_PROP_TOP },
 	{ "right", CSS_PROP_RIGHT },
@@ -1623,6 +1624,7 @@ values_single(
 	if (property == CSS_PROP_FONT_FAMILY)
 		return values_families(parse, tokens, count, value);
 	if (property == CSS_PROP_COLOR || property == CSS_PROP_BACKGROUND_COLOR ||
+	    property == CSS_PROP_TEXT_DECORATION_COLOR ||
 	    (property >= CSS_PROP_BORDER_TOP_COLOR && property <= CSS_PROP_BORDER_LEFT_COLOR)) {
 		error = css_parse_color(tokens, count, &value->color);
 		if (error != 0)

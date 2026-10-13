@@ -556,6 +556,8 @@ struct css_style {
 	int text_decoration_line;
 	int text_decoration_style;
 	int text_decoration_skip_ink;
+	uint32_t text_decoration_color;
+	int text_decoration_current_color;
 	int list_style;
 
 	/*

@@ -961,6 +961,7 @@ css_initial_style(
 	style->outline_width = 3;
 	style->outline_style = CSS_BORDER_NONE;
 	style->outline_color = CSS_CURRENT_COLOR;
+	style->text_decoration_current_color = 1;
 }
 
 /* Gathers every declaration that applies to an element: the matching rules' and the style attribute's. */
@@ -3655,6 +3656,10 @@ cascade_apply(
 	case CSS_PROP_TEXT_DECORATION_SKIP_INK:
 		style->text_decoration_skip_ink = value->keyword;
 		break;
+	case CSS_PROP_TEXT_DECORATION_COLOR:
+		style->text_decoration_current_color = value->color == CSS_CURRENT_COLOR;
+		style->text_decoration_color = value->color;
+		break;
 	case CSS_PROP_LIST_STYLE_TYPE:
 		style->list_style = value->keyword;
 		break;
@@ -4043,6 +4048,10 @@ cascade_inherit(
 		break;
 	case CSS_PROP_TEXT_DECORATION_SKIP_INK:
 		style->text_decoration_skip_ink = parent->text_decoration_skip_ink;
+		break;
+	case CSS_PROP_TEXT_DECORATION_COLOR:
+		style->text_decoration_current_color = parent->text_decoration_current_color;
+		style->text_decoration_color = parent->text_decoration_color;
 		break;
 	case CSS_PROP_LIST_STYLE_TYPE:
 		style->list_style = parent->list_style;

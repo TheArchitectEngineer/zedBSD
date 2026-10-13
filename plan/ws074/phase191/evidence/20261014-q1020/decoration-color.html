@@ -1,0 +1,16 @@
+<!doctype html>
+<style>#parent { color: rgb(255, 0, 0); text-decoration-color: currentcolor; } #child { color: rgb(0, 255, 0); }</style>
+<div id="parent"><span id="child">child</span></div>
+<div id="target" style="color:blue"></div>
+<script>
+const parent = document.getElementById('parent');
+const child = document.getElementById('child');
+const target = document.getElementById('target');
+console.log('parent=' + getComputedStyle(parent).textDecorationColor);
+console.log('child-initial=' + getComputedStyle(child).textDecorationColor);
+child.style.textDecorationColor = 'inherit';
+console.log('child-inherit=' + getComputedStyle(child).textDecorationColor);
+target.style.textDecorationColor = 'rgba(10, 20, 30, 0.4)';
+console.log('alpha=' + getComputedStyle(target).textDecorationColor);
+console.log('invalid=' + CSS.supports('text-decoration-color', 'red green'));
+</script>
