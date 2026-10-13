@@ -32,3 +32,10 @@ Resume point: p001。
   Desktop の program を全部外し、Desktop の menu を出さない（`config/ci/config-pc98.mk` と同じ形）。amd64・arm64 に戻した時は
   既存の CPU の切り替えの規則（build しない選択は menu の状態に残し、書き出さない）に従う。実装と試験は
   [p001](phase001/phase.md)（commit 7401f3fb8）。
+
+## Phase
+
+| Phase | 内容 | 目標 | Status | 依存 |
+| --- | --- | --- | --- | --- |
+| [p001](phase001/phase.md) | i386 の CPU と board、Retro の menu、pc98 の build・起動 | 1〜5 | in-progress | 無し |
+| [p002](phase002/phase.md) | 規約の全文の見直し（menuconfig・rtld の #if） | 規約 | cleared | p001 |
