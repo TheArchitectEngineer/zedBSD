@@ -49,3 +49,5 @@ Related Milestones: なし
 2026-10-13 Q1（WS221 p001 の依頼）: p006・p007 の設計に「MSS・segment の大きさは `tcp_device_mss(device)`（interface の MTU − 40/−60）から決め、定数にしない」「受けの queue の上限は packet の pool の class（標準 2 KB × 256、jumbo 9216 × 32）を考慮」を入れる。WS221 p005（TCP の MSS）は WS220 p006・p007 の後。
 
 2026-10-13 Q1（WS221 review-1 S3）: MSS を MTU − 40/−60 で決める時は packet の slot の大きさでも抑える（lo0 の MTU 65535 で segment が slot を超え、自分の機械への TCP が止まる）。p006 の設計にこれを入れる。tcp_device_mss の持ち主は WS220 p006（WS221 p005 はそれを使う、review M7）。
+
+2026-10-13 Q1（WS221 第 2 版 §3.4 の要件、p006 に写す）: (1) `tcp_device_mss` は slot の上限で抑える（暫定 `PACKET_BUF_STORAGE_SIZE − 64`、WS221 p002 の `net_device_frame_max(device)` で置き換える）、(2) IPv6 は送る時の path MTU − 60（`ipv6_route_source`）、(3) IPv4 の gateway 経由（`route.gateway != 0`）は min(1460, MTU − 40)、on-link だけ device の MTU。`tcp_stats_header` の 48 → 72 byte の拡張（WS221 M6）は WS221 p002 が行う（WS220 p002 は main に入った後なので順は問題なし、読み手は struct_size で読む）。

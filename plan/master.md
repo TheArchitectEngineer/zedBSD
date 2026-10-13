@@ -7,13 +7,15 @@
 <!--
   Q1 の操作盤。先頭（awesome-plan-current）は「今」だけを書き、各 block は「master:<名前>:start」〜「master:<名前>:end」で丸ごと置き換えてよい。
   block: updated・agents・merge・next・open-decisions・focus・blocked（先頭）、priority・outlook（本体）、decisions-log・history-log（末尾の付録、新しい物を block の先頭に足す）。
-  置き換え: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
-- **2026-10-12 夜（Q1）: P3 だけ**（P1・P2・T1 は停止）。Settings/Files の無操作の描画・CPU の直しは bug-fixer（別 worktree）が作業中。
-  - P3（agent/p3、最新 60583b336）: [WS141](ws141/ws.md) と [WS211](ws211/ws.md)。Pi 4（10.0.30.2）への書き込みは auto mode の判定で止まるので、P3 が /tmp に束と place*.sh を置き、ユーザーが Pi で sudo sh を実行して電源を入れ直す。
-    - Pi の今: place3（vmunix 3188273747）。place4（main 47ec30eea: serial 無効・console 停止・perf は v3d.perf=1 の時だけ・frame pacing の免除・段 0/0b）は /tmp に置いてあり、ユーザーの実行待ち。(B) の perf-on.sh は reboot で消えるので P3 が置き直す（原本 scratchpad/p3g3/bundle4/）。
-    - WS211: 段 0・0b は main。段 1・2（60583b336）は review-4 中、未 merge。決定（時間差をやめる、見た目の変化を受け入れる、最速で引っかかり無し）は decisions-log。
-    - WS141: p016 の A1・A2・予算 512MiB・TFU・部分変換・準備の失敗の局所化・CURSOR_SET の鍵・HAL の allocator の word 走査は main。(B) の libvulkan の fast path は第 4 版の review 待ち（review-B3 の後、904bdfe0d）。(b) は v3d.perf=1 の計測の後。
-  - 結果（2026-10-12 ユーザー）: App Home の開閉で落ちない、Music は起動する、Settings を開くと App Home 4fps（直し中）、デスクトップは CPU の負荷で引っかかる（SMP は WS208、最後の予定でユーザーに再確認中）。
+  置き換え（この行も marker の文字を含むので、範囲は `^<!-- master:agents:start` で行頭に固定する）: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
+-->
+
+<!-- master:agents:start -->
+- **2026-10-13 夜（Q1）: N=2（P1・P3）＋T1**（ユーザー「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」）。前のセッションは 20:06 で止まり、書きかけを救った（写し `build/salvage-20261013/`）。
+  - P1（agent/p1、救った WIP 6b09ad269）: q940 [ws216-p004](ws216/phase004/phase.md) Notes の画面（形の列・Normal/Multiply・粒の texture）。実装 約 1400 行はあり、build・host 試験・§7 から。
+  - P3（agent/p3、救った WIP 398bbdebb）: q941 [ws220-p003](ws220/phase003/phase.md) TCP の送りの未送信・retry。設計 §1 は済み、実装は途中。
+  - T1（agent/t1）: 未実行の T1-571〜T1-576（BUG-298・ws219-p002・ws218-p002・WS220 の基線 T1-574・ws206-p005・ws217-p002a）。
+  - P2・P4 は停止（未 commit なし）。WS221 p001 はユーザーの §9 Q1〜Q13、WS217 p002a は T1-576 待ち。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
@@ -32,7 +34,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-300、WS227、q940、T1-577。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-300、WS227、q942、T1-577。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
