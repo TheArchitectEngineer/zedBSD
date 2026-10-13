@@ -63,3 +63,11 @@ Event ws074-p189-q1024-outcome-20261014: q1024-i01 partial cleared、p189 whole 
 ## q1063-i01 結果（2026-10-14）
 
 Event ws074-p189-q1063-outcome-20261014: 全1,783 testharness IDから現行単一HTTP条件で1,455候補を決定的に列挙できるrunnerを追加し、offset0の128 IDを実測。[証拠](evidence/20261014-q1063/README.md)。18 PASS/93 FAIL/5 harness error/8 completion無し/4 stdout無し。checkpoint128行・raw report・選定ID一致、局所選定2/2、py_compile/diff check PASS。q1063-i01 partial cleared、p189 whole uncleared。残り1,327候補と環境未対応328 ID、110非PASS、p173全3,805件100%が残る。browser/WPT/Master変更なし、共有投影/GitHub publication保留。
+
+## q1064-i01 の有限部分範囲（2026-10-14 03:39 JST）
+
+このchatのユーザーによる全3,805件100%までの有限Queue事前承認を最大90分 Queue（03:39–05:09 JST）に適用。q1063の現行単一HTTP物理HTML候補1,455 IDの残るoffset128〜末尾1,327 IDを、最大128件ごとの独立shardで固定WPT/manifest/host条件のまま全測定する。raw callback結果を可逆gzipで保存するrunnerの最小変更を含める。各shardのfsync checkpoint、選定ID/件数、全shard合算の重複・欠落・outcome/環境分類を照合し、途中中断なら完了済みと未実行を区別してunclearedで止める。browser/WPT/公開ABI/`plan/master.md`は変更せず、環境未対応328 IDはPASSに算入しない。上限を超えない。適用は[Guardrail](../../guardrail.md)、Python runner近傍規則、py_compile・gzip roundtrip・結果照合。p189 whole全1,783件とp173全3,805件100%はこの部分範囲の受け入れに含めない。
+
+## q1064-i01 結果（2026-10-14 03:53 JST）
+
+Event ws074-p189-q1064-outcome-20261014: q1063の単一HTTP候補1,455 IDの残り1,327を最大128件×11 shardで全測定。[証拠](evidence/20261014-q1064/README.md)。q1063と合算160 PASS/910 FAIL/299 completion無し/73 stdout無し/13 harness error、環境未対応328 IDは未実行。全1,455 ID一意・選定hash、11 checkpoint/report、gzip raw1,327件のID/outcome一致。runnerの可逆gzip保存を追加、py_compile/diff check PASS。q1064-i01 partial cleared、p189 whole uncleared。browser/WPT/Master変更なし、p173全3,805件100%未達、共有投影/GitHub publication保留。
