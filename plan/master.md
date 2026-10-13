@@ -12,7 +12,7 @@
 
 <!-- master:agents:start -->
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
-  - P1: ws229-p007 規約の全文の見直し（Gen9）。
+  - P1: 空き（ws229-p007 cleared）。
   - P2: ws231-p001 の T1-609 の FAIL（poll での完了・sync の flush・wr_bytes の過大）の直し。
   - P3: 空き（ws232-p002 cleared、直す所無し）。
   - T1: T1-609（AHCI）→ T1-607（pc98）→ T1-606 の判定（5330）→ T1-608（SV7、Gen9.5）。
