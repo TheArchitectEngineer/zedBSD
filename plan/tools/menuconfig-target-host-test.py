@@ -180,7 +180,7 @@ def check_menu_layout() -> None:
         menu.tui(_FakeScreen(), menu.defaults(), Path("/nonexistent"))
     finally:
         menu.choose, menu.save, menu.curses.curs_set = real_choose, real_save, real_cursor
-    expected = ["CPU / Board", "Boot Option", "Drivers", "Development", "Base", "Desktop",
+    expected = ["Retro", "CPU / Board", "Boot Option", "Drivers", "Development", "Base", "Desktop",
                 "Packages", "Firmware", "", "Build boot image", "", "Exit"]
     if not shown or shown[0][1] != expected:
         fail(f"the main menu is {shown[0][1] if shown else 'not shown'}, not {expected}")
@@ -218,12 +218,123 @@ def check_menu_layout() -> None:
     menu.save(path, values)
     kept = menu.load(path)
     if "zterm" not in kept["ZEDBSD_USER_PROGRAMS"] or kept["CONFIG_BUF_CACHE_KIB"] != "4096":
-        fail("a selection the menu does not show (X11, the kernel options) was not kept")
+        fail("a selection (Retro's zterm, the kernel options) was not kept")
+    values = menu.defaults()
+    values["ZEDBSD_USER_PROGRAMS"].add("zgears")
+    menu.save(path, values)
+    if "zgears" not in menu.load(path)["ZEDBSD_USER_PROGRAMS"]:
+        fail("an X11 program the menu does not show (zgears) was not kept")
 
     if menu.trace_target("Makefile:12: update target 'build/amd64/vmunix' due to: x") != "build/amd64/vmunix":
         fail("the build's progress does not read make's trace")
     if menu.trace_target("cc -c x.c") is not None:
         fail("the build's progress counts a line that is no target")
+
+
+def walk(function, answers: list, values: dict[str, object]) -> list[tuple[str, list[str]]]:
+    """Runs one submenu with choose() answering from a list, each answer a
+    label to pick (or None to go back), and returns what the menu showed."""
+    shown: list[tuple[str, list[str]]] = []
+    pending = list(answers)
+
+    def choose(_screen, title, labels, _target, _selected=0):
+        shown.append((title, list(labels)))
+        if not pending:
+            fail(f"the {title} walk did not end: {shown}")
+        answer = pending.pop(0)
+        if answer is None:
+            return None
+        if answer not in labels:
+            fail(f"{title} does not offer {answer}: {labels}")
+        return labels.index(answer)
+
+    real = (menu.choose, menu.message, menu.save, menu.curses.curs_set)
+    menu.choose = choose
+    menu.message = lambda _screen, title, lines, _target: shown.append((title, list(lines)))
+    menu.save = lambda _path, _values: None
+    menu.curses.curs_set = lambda _visibility: None
+    try:
+        function(_FakeScreen(), values)
+    finally:
+        menu.choose, menu.message, menu.save, menu.curses.curs_set = real
+    return shown
+
+
+def check_i386_and_retro() -> None:
+    """WS232 (2026-10-14 user): the CPU i386 with the boards PC-9800 and
+    PC/AT, and Retro at the top of the main menu with Xzed, zwm, zshell and
+    zterm on every CPU.  The configurations the menu writes for i386 PC/AT
+    and PC-9800 are then resolved by make -n."""
+    values = menu.defaults()
+    shown = walk(menu.select_cpu_board, ["CPU: x86_64", "i386", "Back"], values)
+    if shown[1] != ("CPU", ["x86_64", "arm64", "i386"]):
+        fail(f"the CPU menu is {shown[1]}")
+    if values["ZEDBSD_PLATFORM"] != "pc98" or values["ZEDBSD_VARIANT"] != "default":
+        fail(f"choosing i386 selected {values['ZEDBSD_PLATFORM']}/{values['ZEDBSD_VARIANT']}")
+    shown = walk(menu.select_cpu_board, ["Board: PC-9800", "PC/AT", "Back"], values)
+    if shown[1] != ("Board", ["PC-9800", "PC/AT"]):
+        fail(f"the i386 Board menu is {shown[1]}")
+    if values["ZEDBSD_PLATFORM"] != "i386":
+        fail(f"choosing PC/AT selected {values['ZEDBSD_PLATFORM']}")
+    shown = walk(menu.select_cpu_board, ["CPU: i386", "i386", "Back"], values)
+    if values["ZEDBSD_PLATFORM"] != "i386":
+        fail("choosing i386 again changed the board")
+    shown = walk(menu.select_cpu_board, ["Board: PC/AT", "PC-9800", "Back"], values)
+    if values["ZEDBSD_PLATFORM"] != "pc98":
+        fail(f"choosing PC-9800 selected {values['ZEDBSD_PLATFORM']}")
+    other = menu.defaults()
+    shown = walk(menu.select_cpu_board, ["Board: UEFI + ACPI", "Back"], other)
+    if shown[1][0] != "Board" or "The board follows the CPU." not in shown[1][1]:
+        fail(f"x86_64's one board was offered as a choice: {shown[1]}")
+
+    for platform in ("amd64", "rpi4", "i386", "pc98"):
+        values = menu.defaults()
+        values["ZEDBSD_PLATFORM"] = platform
+        menu.normalize(values)
+        values["ZEDBSD_USER_PROGRAMS"].difference_update(menu.RETRO_PROGRAMS)
+        shown = walk(lambda screen, v: menu.tui(screen, v, Path("/nonexistent")),
+                     ["Retro", "[ ] Xzed", "[ ] zwm", "[ ] zshell", "[ ] zterm",
+                      "Back", "Exit"], values)
+        if shown[0][1][0] != "Retro":
+            fail(f"Retro is not the top of the main menu on {platform}")
+        if shown[-2] != ("Retro", ["[*] Xzed", "[*] zwm", "[*] zshell", "[*] zterm", "Back"]):
+            fail(f"the Retro menu on {platform} is {shown[1]}, then {shown[-2]}")
+        if not set(menu.RETRO_PROGRAMS) <= values["ZEDBSD_USER_PROGRAMS"]:
+            fail(f"Retro did not select its programs on {platform}")
+        walk(lambda screen, v: menu.edit_programs(screen, v, menu.retro_rows(v), "Retro"),
+             ["[*] zterm", "Back"], values)
+        if "zterm" in values["ZEDBSD_USER_PROGRAMS"]:
+            fail(f"Retro did not turn zterm off on {platform}")
+    if not menu.in_menu("zterm", "x11-applications") or menu.in_menu("zgears", "x11-applications"):
+        fail("the menu shows the wrong X11 programs")
+
+    directory = scratch_directory("i386")
+    for platform, board in (("i386", "pcat"), ("pc98", "pc98")):
+        values = menu.defaults()
+        values["ZEDBSD_PLATFORM"] = platform
+        values["ZEDBSD_USER_PROGRAMS"].update(menu.RETRO_PROGRAMS)
+        # The Desktop (Keiland, Vulkan) has no i386 build, so these are
+        # written with it turned off, as config/ci/config-pc98.mk is.
+        values["ZEDBSD_USER_PROGRAMS"].difference_update(
+            row[0] for row in USER_PROGRAM_ROWS if row[4] in menu.DESKTOP_GROUPS)
+        path = directory / f"config-{platform}.mk"
+        menu.save(path, values)
+        text = path.read_text(encoding="utf-8")
+        programs = next(line for line in text.splitlines()
+                        if line.startswith("ZEDBSD_USER_PROGRAMS := ")).split()[2:]
+        if not set(menu.RETRO_PROGRAMS) <= set(programs):
+            fail(f"the {platform} config.mk does not build Retro: {programs}")
+        for assignment in ("ZEDBSD_ARCHITECTURE := i386", f"ZEDBSD_BOARD := {board}",
+                           "CONFIG_DRIVER_GRAPHICS := y"):
+            if assignment not in text:
+                fail(f"the {platform} config.mk omits {assignment}")
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-n", f"ZEDBSD_CONFIG={path}"],
+            cwd=REPO, check=False, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if result.returncode != 0:
+            fail(f"make -n did not resolve the {platform} config.mk: "
+                 f"{result.stdout[-2000:]}")
 
 
 def check_build_progress() -> None:
@@ -279,6 +390,7 @@ def main() -> None:
     check_packages()
     check_fonts_menu()
     check_menu_layout()
+    check_i386_and_retro()
     check_build_progress()
 
     template = menu.defaults()
@@ -409,7 +521,8 @@ def main() -> None:
 
     print("MAC-T001 menuconfig round-trip: PASS "
           "(6 targets, 3 amd64 Variants, obsolete capacity removed, "
-          "package requirements resolved, the WS193 menu)")
+          "package requirements resolved, the WS193 menu, "
+          "i386 PC/AT and PC-9800 with Retro)")
 
 
 if __name__ == "__main__":
