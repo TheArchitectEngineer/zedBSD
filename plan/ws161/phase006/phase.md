@@ -3,7 +3,7 @@
 # ws161-p006: 実機の UAT と Linux・FreeBSD の build
 
 Parent: [WS161](../ws.md)
-Status: in-progress（実機の UAT は 2026-10-13 ユーザー「OKでした」（USB の YubiKey）。Linux・FreeBSD の build は 2026-10-13 P2 q954 で規則と os-freebsd.c を書き、Linux の build・host 試験まで。keiland の Linux の build に入れるかの判断（OpenSSL の依存）を Q1 に問い中、FreeBSD の build と guest は T1）
+Status: in-progress（実機の UAT は 2026-10-13 ユーザー「OKでした」（USB の YubiKey）。Linux・FreeBSD の build は 2026-10-13 P2 q954 で os-freebsd.c を書いた（main に統合）。fidoctl は zedBSD だけ（2026-10-13 ユーザー (c)）。FreeBSD の本当の header での os-freebsd.c の build は未実施）
 Phase disposition: normal
 Queue: q954（P2、2026-10-13。承認: ユーザー「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。」と p001 §9.6 の p006）
 
@@ -18,7 +18,7 @@ Queue: q954（P2、2026-10-13。承認: ユーザー「これ以上ベータ2に
 | --- | --- |
 | `userland/base/libpasskey/os-freebsd.c`（新） | FreeBSD の hidraw(4) の `/dev/hidrawN`。hidraw(4) は Linux 互換の request（`HIDIOCGRDESCSIZE`・`HIDIOCGRDESC`・`HIDIOCGRAWINFO`・`HIDIOCGRAWNAME`、`struct hidraw_report_descriptor`・`hidraw_devinfo`）を持つので、os-linux.c と同じ形（include は `<sys/types.h>`・`<dev/hid/hidraw.h>`、記述の大きさの上限は `sizeof(report.value)`）。grab は無し、NFC の slot は無し。一次資料: freebsd-src の `sys/dev/hid/hidraw.h`（2026-10-13 に main を読んだ: 定義は上と同じ、`HID_MAX_DESCRIPTOR_SIZE` 4096、`_KERNEL` の条件なし） |
 | `userland/base/libpasskey/os.h` | FreeBSD の行を注記に |
-| `userland/base/fidoctl/Makefile.linux`・`Makefile.freebsd`（新） | fidoctl を bin に（libpasskey の source と各 OS の層、`-lcrypto`）。keiland の `.mk` への include は判断待ち（下） |
+| ~~`userland/base/fidoctl/Makefile.linux`・`Makefile.freebsd`~~ | 書いたが、下のユーザーの決定 (c) で Q1 が main から外した |
 
 ## 確かめ（2026-10-13 P2、host = Debian 13）
 
@@ -29,12 +29,15 @@ Queue: q954（P2、2026-10-13。承認: ユーザー「これ以上ベータ2に
 | `cc -fsyntax-only -Wall -Wextra -Werror` で os-freebsd.c（`dev/hid/hidraw.h` を Linux の header に向けた代わりの物で） | 通る（FreeBSD の本当の header での build は未実施） |
 | `python3 plan/tools/style-check.py userland/base/libpasskey/os-freebsd.c` | 指摘 0 |
 
-## 判断（Q1 へ、2026-10-13）
+## 判断（Q1 へ、2026-10-13）→ ユーザーの決定 (c)
+
+**2026-10-13 ユーザー（Q1 経由）: (c)「Linux・FreeBSD には入れない」**。fidoctl は zedBSD だけ。Linux の Keiland の build に libssl-dev を必須にしない。fidoctl の Makefile.linux・Makefile.freebsd は Q1 が main から外し、os-freebsd.c は残した（libpasskey の FreeBSD の os 層、後で使う時のため）。
+
+元の問い:
 
 fidoctl を `keiland-linux.mk`・`keiland-freebsd.mk` の既定の all に入れると、Linux の build に libssl-dev（dnf/yum は openssl-devel、pacman は openssl）が新しく必須になる（FreeBSD は base の OpenSSL）。(a) 入れて `tools/build/keiland-prerequisites.sh`・`LINUX.md` に足す（P2 の推し）、(b) 別の target にして依存を増やさない、(c) 入れない。
 
 ## 未実施
 
-- FreeBSD 15 の guest（WS109）での build（os-freebsd.c と fidoctl）と `fidoctl list`、USB の YubiKey を guest に渡せるなら鍵が 1 つ見えること（T1）。
-- Debian の guest での `fidoctl list`（鍵を guest に渡せるなら）。
+- os-freebsd.c の FreeBSD の本当の header での build（Linux・FreeBSD の Keiland の build に fidoctl を入れないので、build の規則は無い。使う時に確かめる）。
 - NFC（ACR1252U と YubiKey 5 NFC）の実機の確かめ（ws.md の 2026-10-10 の記録で未確認のまま）。
