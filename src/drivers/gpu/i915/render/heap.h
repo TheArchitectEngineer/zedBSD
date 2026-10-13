@@ -187,8 +187,10 @@
 #define I915_GFX_CURBE_BYTES			(I915_GFX_SCRATCH - I915_GFX_DYNAMIC_HEAP - I915_GFX_DYN_CURBE)
 
 /*
- * The MOCS table entry the render paths use for their surfaces, vertex
- * buffers and state: index 3, uncached (see GEN12_MOCS()).
+ * The Gen12 MOCS table entry the render paths use for their surfaces,
+ * vertex buffers and state: index 3, uncached (see GEN12_MOCS()).  Gen9's
+ * uncached entry is index 0; the render paths take the version's through
+ * drv_i915_gfx_mocs_uncached() (ws229-p004).
  */
 #define I915_MOCS_UNCACHED_INDEX	3U
 

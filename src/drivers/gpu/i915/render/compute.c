@@ -416,26 +416,33 @@ drv_i915_gfx_dispatch_build(
 					    PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
 		select = (GEN12_CMD_PIPELINE_SELECT << 16) | GEN9_PIPELINE_SELECT_MASK | GEN12_PIPELINE_SELECT_GPGPU;
 	}
+
+	/* Selects GPGPU. */
 	drv_i915_batch_emit(batch, select);
 
 	/* The stalling flush MEDIA_VFE_STATE wants before it. */
 	drv_i915_batch_pipe_control(batch, PIPE_CONTROL_CS_STALL | I915_COMPUTE_STALL_AT_SCOREBOARD);
 
 	/*
-	 * MEDIA_VFE_STATE: the kernel's scratch, the thread limit (112 threads
-	 * a dual-subslice, less one), two URB entries of two, and the CURBE's
-	 * registers.
+	 * The VFE's thread limit and URB entries: 112 threads a dual-subslice,
+	 * less one, and two URB entries; on Gen9, where dss_count counts
+	 * subslices, 56 threads a subslice and the gateway timer reset anv sets
+	 * below Gen11.
 	 */
-	scratch = i915_compute_scratch(kernels->cs_scratch_bytes, kernels->cs_scratch_offset);
 	max_threads = GEN12_VFE_THREADS_PER_DSS * dss_count - 1U;
 	vfe_dword3 = (max_threads << GEN12_VFE_MAX_THREADS_SHIFT) | (GEN12_VFE_URB_ENTRIES << GEN12_VFE_URB_ENTRIES_SHIFT);
 	if (gen9 != 0) {
-		/* Gen9: 56 threads a subslice (dss_count counts subslices), and the gateway timer reset anv sets below Gen11. */
 		max_threads = GEN9_VFE_THREADS_PER_SUBSLICE * dss_count - 1U;
 		vfe_dword3 = (max_threads << GEN12_VFE_MAX_THREADS_SHIFT) |
 		    (GEN12_VFE_URB_ENTRIES << GEN12_VFE_URB_ENTRIES_SHIFT) |
 		    GEN9_VFE_RESET_GATEWAY_TIMER;
 	}
+
+	/*
+	 * MEDIA_VFE_STATE: the kernel's scratch, the thread limit, two URB
+	 * entries of two, and the CURBE's registers.
+	 */
+	scratch = i915_compute_scratch(kernels->cs_scratch_bytes, kernels->cs_scratch_offset);
 	drv_i915_batch_emit(batch, GEN12_MEDIA_VFE_STATE_HEADER);
 	drv_i915_batch_emit(batch, (uint32_t)scratch);
 	drv_i915_batch_emit(batch, (uint32_t)(scratch >> 32));

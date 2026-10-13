@@ -21,7 +21,8 @@
 # The Mesa tree is pinned by the SHA-256 of the files used; a missing
 # or different file fails loudly.
 #
-# Usage:
+# Usage (--root gen90.xml decodes Gen9 with gen90.xml and the chain it
+# imports, ws229-p004; the default is gen120.xml):
 #   genxml-decode.py --mesa DIR --self-test
 #   genxml-decode.py --mesa DIR --dump INSTRUCTION
 #   genxml-decode.py --mesa DIR --batch FILE --expect FILE
@@ -415,6 +416,8 @@ def main():
     global xml_directory
     parser = argparse.ArgumentParser()
     parser.add_argument('--mesa', required=True, help='the Mesa source tree')
+    parser.add_argument('--root', default='gen120.xml', choices=('gen120.xml', 'gen90.xml'),
+                        help='the genxml file to resolve (gen90.xml for Gen9)')
     parser.add_argument('--self-test', action='store_true')
     parser.add_argument('--dump')
     parser.add_argument('--batch')
@@ -424,8 +427,10 @@ def main():
     xml_directory = os.path.join(arguments.mesa, 'src', 'intel', 'genxml')
     if not os.path.isdir(xml_directory):
         fail('no genxml directory under ' + arguments.mesa)
-    xml = GenXml(xml_directory, 'gen120.xml')
+    xml = GenXml(xml_directory, arguments.root)
 
+    if arguments.self_test and arguments.root != 'gen120.xml':
+        fail('the self-test checks gen120.xml')
     if arguments.self_test:
         sys.exit(1 if self_test(xml) else 0)
     if arguments.dump:

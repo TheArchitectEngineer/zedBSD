@@ -77,8 +77,8 @@ static struct i915_shader_binary *i915_blit_resolve_kernel;
  */
 static unsigned i915_blit_logged;
 
-static int i915_blit_compile(int copy, struct i915_shader_binary **result);
-static int i915_blit_compile_resolve(struct i915_shader_binary **result);
+static int i915_blit_compile(int copy, unsigned graphics_ver, struct i915_shader_binary **result);
+static int i915_blit_compile_resolve(unsigned graphics_ver, struct i915_shader_binary **result);
 static int i915_blit_record_resolve(const struct i915_gfx_op_space *space, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *samples, const struct i915_gfx_rect *src_rect);
 static int i915_blit_check_rect(const struct i915_gfx_surface *surface, const struct i915_gfx_rect *rect);
 static int i915_blit_window(struct i915_render_session *session, struct i915_gfx_session *work, int copy, struct i915_gfx_op_space *space);
@@ -99,11 +99,17 @@ drv_i915_gfx_rect_prepare(
 	struct i915_render_session *session)
 {
 	struct i915_gfx_session *work;
+	unsigned graphics_ver;
 	int error;
+
+	/* The kernels are compiled for the GT's version, Gen12 unless it is Gen9 (ws229-p004). */
+	graphics_ver = 12U;
+	if (session->vk->i915->gt.graphics_ver == GEN9_GRAPHICS_VER)
+		graphics_ver = GEN9_GRAPHICS_VER;
 
 	/* Compiles the fill kernel the first time. */
 	if (i915_blit_fill_kernel == NULL) {
-		error = i915_blit_compile(0, &i915_blit_fill_kernel);
+		error = i915_blit_compile(0, graphics_ver, &i915_blit_fill_kernel);
 		if (error != 0) {
 			kern_logf("i915: vk: the fill kernel does not compile: %d\n", error);
 			return error;
@@ -112,7 +118,7 @@ drv_i915_gfx_rect_prepare(
 
 	/* Compiles the copy kernel the first time. */
 	if (i915_blit_copy_kernel == NULL) {
-		error = i915_blit_compile(1, &i915_blit_copy_kernel);
+		error = i915_blit_compile(1, graphics_ver, &i915_blit_copy_kernel);
 		if (error != 0) {
 			kern_logf("i915: vk: the copy kernel does not compile: %d\n", error);
 			return error;
@@ -126,7 +132,7 @@ drv_i915_gfx_rect_prepare(
 
 	/* Compiles the resolve kernel the first time. */
 	if (i915_blit_resolve_kernel == NULL) {
-		error = i915_blit_compile_resolve(&i915_blit_resolve_kernel);
+		error = i915_blit_compile_resolve(graphics_ver, &i915_blit_resolve_kernel);
 		if (error != 0) {
 			kern_logf("i915: vk: the resolve kernel does not compile: %d\n", error);
 			return error;
@@ -392,6 +398,7 @@ drv_i915_gfx_resolve(
 static int
 i915_blit_compile(
 	int copy,
+	unsigned graphics_ver,
 	struct i915_shader_binary **result)
 {
 	struct drv_gpu_shader_ir_inst instructions[8];
@@ -458,7 +465,7 @@ i915_blit_compile(
 	ir.value_count = first + 4U;
 
 	/* Compiles it. */
-	error = drv_i915_shader_compile(&ir, result);
+	error = drv_i915_shader_compile_gen(&ir, NULL, graphics_ver, result);
 	if (error != 0)
 		return error;
 
@@ -473,6 +480,7 @@ i915_blit_compile(
  */
 static int
 i915_blit_compile_resolve(
+	unsigned graphics_ver,
 	struct i915_shader_binary **result)
 {
 	struct drv_gpu_shader_ir_inst instructions[48];
@@ -559,7 +567,7 @@ i915_blit_compile_resolve(
 	ir.uniform_count = 4U;
 
 	/* Compiles it. */
-	error = drv_i915_shader_compile(&ir, result);
+	error = drv_i915_shader_compile_gen(&ir, NULL, graphics_ver, result);
 	if (error != 0)
 		return error;
 

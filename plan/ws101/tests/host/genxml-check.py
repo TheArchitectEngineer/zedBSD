@@ -5,7 +5,9 @@
 # field is checked where Mesa places it, by the name Mesa gives it, independently of the constants of
 # src/drivers/gpu/i915/intel/genxml.h.
 #
-#   genxml-check.py GENXML_DIR OUT-NAME      reads OUT-NAME.bin, OUT-NAME.idd and OUT-NAME.expect
+#   genxml-check.py GENXML_DIR OUT-NAME [ROOT]   reads OUT-NAME.bin, OUT-NAME.idd and OUT-NAME.expect
+#
+# ROOT is the genxml file to resolve, gen120.xml unless given; gen90.xml decodes a Gen9 dispatch (ws229-p004).
 #
 # Every dword of the batch must start or continue a Gen12.0 instruction, and no bit outside an instruction's fields may
 # be set.  The lines of the expect file are:
@@ -74,10 +76,10 @@ class Item:
         return values, stray
 
 
-def load(directory):
+def load(directory, name):
     sys.path.insert(0, directory)
     import intel_genxml
-    root = intel_genxml.GenXml(directory + '/gen120.xml', import_xml=True).et.getroot()
+    root = intel_genxml.GenXml(directory + '/' + name, import_xml=True).et.getroot()
     # The render engine's instructions only: a video engine's may share a header with a media command.
     instructions = [Item(e) for e in root
                     if e.tag == 'instruction' and 'render' in e.attrib.get('engine', 'render').split('|')]
@@ -132,7 +134,10 @@ def pairs_of(tokens):
 
 def main():
     directory, out = sys.argv[1], sys.argv[2]
-    instructions, structs = load(directory)
+    name = 'gen120.xml'
+    if len(sys.argv) > 3:
+        name = sys.argv[3]
+    instructions, structs = load(directory, name)
     with open(out + '.bin', 'rb') as file:
         data = file.read()
     words = list(struct.unpack('<%dI' % (len(data) // 4), data))
@@ -181,8 +186,8 @@ def main():
             else:
                 raise SystemExit('FAIL unknown expect line: %s' % line.strip())
             checks += 1
-    print('%s: %d instructions of %d dwords decoded by Mesa genxml (gen120), %d expectations hold' %
-          (out.rsplit('/', 1)[-1], len(decoded), len(words), checks))
+    print('%s: %d instructions of %d dwords decoded by Mesa genxml (%s), %d expectations hold' %
+          (out.rsplit('/', 1)[-1], len(decoded), len(words), name[:-4], checks))
 
 
 main()

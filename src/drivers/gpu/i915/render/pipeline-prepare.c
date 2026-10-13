@@ -35,7 +35,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-static int i915_pipeline_compile_stage(const struct i915_gfx_shader *shader, enum drv_gpu_shader_stage stage, const struct i915_shader_binary *producer, struct i915_shader_binary **result);
+static int i915_pipeline_compile_stage(const struct i915_gfx_shader *shader, enum drv_gpu_shader_stage stage, const struct i915_shader_binary *producer, unsigned graphics_ver, struct i915_shader_binary **result);
+static unsigned i915_pipeline_graphics_ver(const struct i915_render_session *session);
 static int i915_pipeline_geometry_inputs(const struct drv_gpu_shader_ir *ir, const struct i915_shader_binary *producer);
 static int i915_pipeline_kernels_fit(const struct i915_gfx_pipeline *pipeline);
 static int i915_pipeline_geometry_fits(const struct i915_shader_binary *geometry);
@@ -63,15 +64,17 @@ drv_i915_gfx_pipeline_prepare(
 	const struct i915_shader_binary *geometry;
 	int fits;
 	int error;
+	unsigned graphics_ver;
 
-	UNUSED_PARAMETER(session);
+	/* The kernels are compiled for the session's GT (ws229-p004). */
+	graphics_ver = i915_pipeline_graphics_ver(session);
 
 	/* Refuses a pipeline without both the vertex and the fragment stage. */
 	if (pipeline->vertex == NULL || pipeline->fragment == NULL)
 		return EINVAL;
 
 	/* Compiles the vertex stage. */
-	error = i915_pipeline_compile_stage(pipeline->vertex, DRV_GPU_STAGE_VERTEX, NULL, &pipeline->vs_binary);
+	error = i915_pipeline_compile_stage(pipeline->vertex, DRV_GPU_STAGE_VERTEX, NULL, graphics_ver, &pipeline->vs_binary);
 	if (error != 0) {
 		drv_i915_gfx_pipeline_release(pipeline);
 		return error;
@@ -79,7 +82,7 @@ drv_i915_gfx_pipeline_prepare(
 
 	/* Compiles the geometry stage, when there is one, against the vertex kernel's VUE. */
 	if (pipeline->geometry != NULL) {
-		error = i915_pipeline_compile_stage(pipeline->geometry, DRV_GPU_STAGE_GEOMETRY, pipeline->vs_binary, &pipeline->gs_binary);
+		error = i915_pipeline_compile_stage(pipeline->geometry, DRV_GPU_STAGE_GEOMETRY, pipeline->vs_binary, graphics_ver, &pipeline->gs_binary);
 		if (error != 0) {
 			drv_i915_gfx_pipeline_release(pipeline);
 			return error;
@@ -87,7 +90,7 @@ drv_i915_gfx_pipeline_prepare(
 	}
 
 	/* Compiles the fragment stage. */
-	error = i915_pipeline_compile_stage(pipeline->fragment, DRV_GPU_STAGE_FRAGMENT, NULL, &pipeline->fs_binary);
+	error = i915_pipeline_compile_stage(pipeline->fragment, DRV_GPU_STAGE_FRAGMENT, NULL, graphics_ver, &pipeline->fs_binary);
 	if (error != 0) {
 		drv_i915_gfx_pipeline_release(pipeline);
 		return error;
@@ -176,15 +179,17 @@ drv_i915_gfx_compute_prepare(
 {
 	int fits;
 	int error;
+	unsigned graphics_ver;
 
-	UNUSED_PARAMETER(session);
+	/* The kernels are compiled for the session's GT (ws229-p004). */
+	graphics_ver = i915_pipeline_graphics_ver(session);
 
 	/* Refuses a pipeline without its compute stage. */
 	if (pipeline->compute == NULL)
 		return EINVAL;
 
 	/* Compiles the compute stage. */
-	error = i915_pipeline_compile_stage(pipeline->compute, DRV_GPU_STAGE_COMPUTE, NULL, &pipeline->cs_binary);
+	error = i915_pipeline_compile_stage(pipeline->compute, DRV_GPU_STAGE_COMPUTE, NULL, graphics_ver, &pipeline->cs_binary);
 	if (error != 0) {
 		drv_i915_gfx_pipeline_release(pipeline);
 		return error;
@@ -393,6 +398,7 @@ i915_pipeline_compile_stage(
 	const struct i915_gfx_shader *shader,
 	enum drv_gpu_shader_stage stage,
 	const struct i915_shader_binary *producer,
+	unsigned graphics_ver,
 	struct i915_shader_binary **result)
 {
 	struct drv_gpu_shader_ir *ir;
@@ -444,7 +450,7 @@ i915_pipeline_compile_stage(
 	 * primitive and the vertices it may emit, which size its output URB
 	 * entry (refused past 32 KiB).  The IR is freed either way.
 	 */
-	error = drv_i915_shader_compile_stage(ir, producer, result);
+	error = drv_i915_shader_compile_gen(ir, producer, graphics_ver, result);
 	if (error != 0) {
 		kern_logf("i915: vk: %s shader refused by the compiler: error %d\n", i915_pipeline_stage_name(stage), error);
 
@@ -781,4 +787,25 @@ i915_pipeline_thread_ids(
 	pipeline->thread_ids = table;
 	pipeline->threads = threads;
 	return 0;
+}
+
+/*
+ * Returns the graphics version a session's kernels are compiled for: 9 on
+ * a Gen9 GT, 12 on any other, and 12 without a session (the host tests
+ * prepare pipelines with none).
+ */
+static unsigned
+i915_pipeline_graphics_ver(
+	const struct i915_render_session *session)
+{
+	/* No session: the Gen12 kernels the host tests compare. */
+	if (session == NULL)
+		return 12U;
+
+	/* A Gen9 GT. */
+	if (session->vk->i915->gt.graphics_ver == 9U)
+		return 9U;
+
+	/* Every other GT the driver runs is Gen12. */
+	return 12U;
 }
