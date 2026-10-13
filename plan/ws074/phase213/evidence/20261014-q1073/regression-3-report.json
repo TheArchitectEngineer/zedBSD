@@ -1,0 +1,78 @@
+{
+  "checkpoint": "build/ws074-q1073-regressions-r3/progress.jsonl",
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "pass": 3
+  },
+  "eligible": 3,
+  "eligible_not_sampled": 0,
+  "render_timeout": 5.0,
+  "results": [
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-grid/reference/grid-inline-axis-alignment-auto-margins-008-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/alignment/grid-inline-axis-alignment-auto-margins-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-grid/alignment/grid-justify-baseline-001-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/alignment/grid-justify-baseline-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-grid/layout-algorithm/references/auto-margins-ignored-during-track-sizing-001-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/auto-margins-ignored-during-track-sizing-001.html"
+    }
+  ],
+  "root": "css/css-grid",
+  "schema": 1,
+  "selected": 3,
+  "selection": "focus round-robin, path-sorted",
+  "selection_manifest": "build/ws074-q1073-regression-selection.json",
+  "skipped": {},
+  "suite": "wpt",
+  "unrun": [],
+  "viewport": [
+    800,
+    600
+  ]
+}

@@ -78,7 +78,7 @@ static int grid_fits(const struct grid_state *grid, int row, int column, int row
 static int grid_take(struct grid_state *grid, int row, int column, int row_span, int column_span);
 static int grid_size_columns(struct layout_tree *tree, struct layout_box *box, struct grid_state *grid, layout_unit gap);
 static int grid_item_width(struct layout_tree *tree, struct layout_box *item, layout_unit *width);
-static int grid_lay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width);
+static int grid_lay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width, int justify);
 static void grid_size_rows(struct layout_box *box, struct grid_state *grid, layout_unit gap);
 static int grid_relay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width, layout_unit height, int align);
 static layout_unit grid_outer_height(const struct layout_box *item);
@@ -177,7 +177,18 @@ layout_grid(
 		area_width = column_gap * (layout_unit)(item->column_span - 1);
 		for (position = item->column; position < item->column + item->column_span; position++)
 			area_width += grid.columns[position];
-		error = grid_lay_item(tree, item->box, area_width);
+		justify = item->box->style.justify_self;
+		if (justify == CSS_ALIGN_AUTO)
+			justify = box->style.justify_items;
+		if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB ||
+		    item->box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB || item->box->replaced ||
+		    item->box->style.min_width.unit != CSS_UNIT_AUTO ||
+		    item->box->style.max_width.unit != CSS_UNIT_NONE)
+			justify = CSS_ALIGN_STRETCH;
+		else if (item->box->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO ||
+		    item->box->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO)
+			justify = CSS_ALIGN_START;
+		error = grid_lay_item(tree, item->box, area_width, justify);
 		if (error != 0) {
 			grid_release(&grid);
 			return error;
@@ -237,7 +248,12 @@ layout_grid(
 		/* Its place, moved down by the room it leaves when it is at the end or the center. */
 		child->x = x + child->margin[CSS_LEFT];
 		if (box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
-		    child->style.width.unit != CSS_UNIT_AUTO) {
+		    (child->style.width.unit != CSS_UNIT_AUTO ||
+		    (!child->replaced && child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+		    child->style.min_width.unit == CSS_UNIT_AUTO &&
+		    child->style.max_width.unit == CSS_UNIT_NONE &&
+		    child->style.margin[CSS_LEFT].unit != CSS_UNIT_AUTO &&
+		    child->style.margin[CSS_RIGHT].unit != CSS_UNIT_AUTO))) {
 			justify = child->style.justify_self;
 			if (justify == CSS_ALIGN_AUTO)
 				justify = box->style.justify_items;
@@ -760,18 +776,23 @@ grid_item_width(
 }
 
 /*
- * Lays an item out as a block in its area's width: one without a width of
- * its own fills the area (its style's sizes and margins are put back
- * afterwards), another is laid out in it as it is.
+ * Lays an item out as a block in its area's width. An auto-width item
+ * stretches by default; non-stretch self-alignment uses its max-content
+ * width capped by the area. Its style is put back afterwards.
  */
 static int
 grid_lay_item(
 	struct layout_tree *tree,
 	struct layout_box *item,
-	layout_unit width)
+	layout_unit width,
+	int justify)
 {
 	struct grid_sizes saved;
 	layout_unit content;
+	layout_unit intrinsic;
+	layout_unit remaining;
+	int left_auto;
+	int right_auto;
 	int side;
 	int error;
 
@@ -780,6 +801,12 @@ grid_lay_item(
 		error = layout_block(tree, item, width);
 		return error;
 	}
+	intrinsic = 0;
+	if (justify != CSS_ALIGN_STRETCH) {
+		error = layout_max_content(tree, item, &intrinsic);
+		if (error != 0)
+			return error;
+	}
 
 	/* Keeps the style's sizes and margins, which the layout at the area's width overrides. */
 	saved.box_sizing = item->style.box_sizing;
@@ -787,6 +814,8 @@ grid_lay_item(
 	saved.min_width = item->style.min_width;
 	saved.max_width = item->style.max_width;
 	memcpy(saved.margin, item->style.margin, sizeof(saved.margin));
+	left_auto = item->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO;
+	right_auto = item->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO;
 
 	/* The content width that fills the area: the area less the margins (auto ones are none), borders and paddings. */
 	layout_box_model(item, width);
@@ -804,6 +833,8 @@ grid_lay_item(
 	    item->padding[CSS_RIGHT] - item->border[CSS_RIGHT];
 	if (content < 0)
 		content = 0;
+	if (justify != CSS_ALIGN_STRETCH && content > intrinsic)
+		content = intrinsic;
 
 	/* The layout at that width. */
 	item->style.box_sizing = CSS_BOX_SIZING_CONTENT;
@@ -814,6 +845,22 @@ grid_lay_item(
 	item->style.min_width.value = 0;
 	item->style.max_width.unit = CSS_UNIT_NONE;
 	error = layout_block(tree, item, width);
+	if (error == 0 && (left_auto || right_auto)) {
+		/* Auto margins absorb only the area left after the item's content-sized box. */
+		remaining = width - item->margin[CSS_LEFT] - item->border[CSS_LEFT] -
+		    item->padding[CSS_LEFT] - item->width - item->padding[CSS_RIGHT] -
+		    item->border[CSS_RIGHT] - item->margin[CSS_RIGHT];
+		if (remaining < 0)
+			remaining = 0;
+		if (left_auto && right_auto) {
+			item->margin[CSS_LEFT] = remaining / 2;
+			item->margin[CSS_RIGHT] = remaining - item->margin[CSS_LEFT];
+		} else if (left_auto) {
+			item->margin[CSS_LEFT] = remaining;
+		} else {
+			item->margin[CSS_RIGHT] = remaining;
+		}
+	}
 
 	/* The style is the item's own again. */
 	item->style.box_sizing = saved.box_sizing;
@@ -826,7 +873,7 @@ grid_lay_item(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the item fills its area's width. */
+	/* Succeeded: the item's width follows its self-alignment. */
 	return 0;
 }
 

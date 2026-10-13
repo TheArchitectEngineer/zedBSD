@@ -11,11 +11,13 @@ import subprocess
 import tempfile
 
 
-def position(program, parent_style, child_style):
+def position(program, parent_style, child_style, auto_width=False):
+    width = "auto" if auto_width else "20px"
+    content = '<span style="display:inline-block;width:20px;height:10px"></span>' if auto_width else ""
     source = ('<!doctype html><body><div style="display:grid;width:100px;'
-              'grid-template-columns:100px;%s"><div style="width:20px;'
-              'height:10px;%s"></div></div></body>' %
-              (parent_style, child_style))
+              'grid-template-columns:100px;%s"><div style="width:%s;'
+              'height:10px;%s">%s</div></div></body>' %
+              (parent_style, width, child_style, content))
     fonts = Path("userland/desktop/fonts")
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "grid-justify.html"
@@ -83,9 +85,29 @@ def main():
             print("FAIL %s %s: expected %s, got %s" %
                   (parent_style, child_style, expected, observed))
             failures += 1
+    auto_cases = [
+        ("", "", (0.0, 100.0)),
+        ("justify-items:start;", "", (0.0, 20.0)),
+        ("justify-items:end;", "", (80.0, 20.0)),
+        ("justify-items:center;", "", (40.0, 20.0)),
+        ("justify-items:start;", "justify-self:stretch;", (0.0, 100.0)),
+        ("direction:rtl;justify-items:start;", "", (80.0, 20.0)),
+        ("direction:rtl;justify-items:end;", "", (0.0, 20.0)),
+        ("", "margin-left:auto;", (80.0, 20.0)),
+        ("", "margin-right:auto;", (0.0, 20.0)),
+        ("", "margin-left:auto;margin-right:auto;", (40.0, 20.0)),
+        ("justify-items:end;", "margin-left:auto;margin-right:auto;", (40.0, 20.0)),
+    ]
+    for parent_style, child_style, expected in auto_cases:
+        observed = position(args.program, parent_style, child_style, True)
+        if observed != expected:
+            print("FAIL auto %s %s: expected %s, got %s" %
+                  (parent_style, child_style, expected, observed))
+            failures += 1
     if failures:
         return 1
-    print("grid inline-axis placement: %d/%d passed" % (len(cases), len(cases)))
+    total = len(cases) + len(auto_cases)
+    print("grid inline-axis placement: %d/%d passed" % (total, total))
     return 0
 
 

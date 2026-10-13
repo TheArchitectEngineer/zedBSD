@@ -161,7 +161,8 @@ enum css_direction {
 /* Physical direction of the inline axis. Other vertical modes are not yet laid out. */
 enum css_writing_mode {
 	CSS_WRITING_HORIZONTAL_TB,
-	CSS_WRITING_VERTICAL_LR
+	CSS_WRITING_VERTICAL_LR,
+	CSS_WRITING_VERTICAL_RL
 };
 
 /* The values of overflow-x and overflow-y. */

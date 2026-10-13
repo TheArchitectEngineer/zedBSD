@@ -408,10 +408,11 @@ static const struct values_keyword values_direction[] = {
 	{ NULL, 0 }
 };
 
-/* The vertical-lr mode is used by the current Flexbox layout subset. */
+/* Vertical-lr is laid out in Flexbox; vertical-rl is retained for Grid item classification. */
 static const struct values_keyword values_writing_mode[] = {
 	{ "horizontal-tb", CSS_WRITING_HORIZONTAL_TB },
 	{ "vertical-lr", CSS_WRITING_VERTICAL_LR },
+	{ "vertical-rl", CSS_WRITING_VERTICAL_RL },
 	{ NULL, 0 }
 };
 

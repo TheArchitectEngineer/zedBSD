@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1072 / WS074 CSS Grid testharness recensus（2026-10-14）
+## 最新: q1073 / WS074 CSS Grid auto-width self alignment（2026-10-14）
+
+[q1073履歴](queue-q1073.md): 代表Grid WPT1 ID whole FAIL→PASS、固定静的529件は旧123 PASS全維持・1 FAIL→PASSで124 PASS/405 FAIL。p213 whole cleared、Acid3差0。[証拠](../ws074/phase213/evidence/20261014-q1073/README.md)。p189/p190/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1072 / WS074 CSS Grid testharness recensus（2026-10-14）
 
 [q1072履歴](queue-q1072.md): 固定Grid502 IDは41→43 PASS、429→427 FAIL、32 no_output維持。旧PASS後退0、subtest PASS+32、p189 partial cleared。[証拠](../ws074/phase189/evidence/20261014-q1072/README.md)。p189/p190/p173全件100%未達、共有投影/GitHub publication pending。
 

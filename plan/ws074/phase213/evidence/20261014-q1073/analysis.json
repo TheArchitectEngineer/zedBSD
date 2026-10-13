@@ -1,0 +1,25 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "manifest": "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+  "old_counts": {
+    "fail": 406,
+    "pass": 123
+  },
+  "new_counts": {
+    "fail": 405,
+    "pass": 124
+  },
+  "selected": 529,
+  "old_selected": 529,
+  "old_ids_sha256": "a5a03c28c352a6c89e0a935ca4af0d4ab86e84540527240448d0e76aebf37817",
+  "new_ids_sha256": "a5a03c28c352a6c89e0a935ca4af0d4ab86e84540527240448d0e76aebf37817",
+  "transitions": {
+    "fail->fail": 405,
+    "fail->pass": 1,
+    "pass->pass": 123
+  },
+  "regressions": [],
+  "improvements": [
+    "css/css-grid/grid-items/grid-minimum-size-grid-items-014.html"
+  ]
+}
