@@ -162,10 +162,14 @@ layout_grid(
 	room = box->width - used;
 	if (room > 0 && box->style.justify_content == CSS_ALIGN_CENTER)
 		shift = room / 2;
-	if (room > 0 &&
-	    (box->style.justify_content == CSS_ALIGN_END ||
-	    box->style.justify_content == CSS_ALIGN_RIGHT))
-		shift = room;
+	if (room > 0) {
+		if (box->style.justify_content == CSS_ALIGN_RIGHT ||
+		    (box->style.justify_content == CSS_ALIGN_END &&
+		    box->style.direction == CSS_DIRECTION_LTR) ||
+		    (box->style.justify_content == CSS_ALIGN_START &&
+		    box->style.direction == CSS_DIRECTION_RTL))
+			shift = room;
+	}
 
 	/* Each item laid out in its area's width. */
 	for (index = 0; index < grid.item_count; index++) {
@@ -188,20 +192,26 @@ layout_grid(
 		item = &grid.items[index];
 		child = item->box;
 
-		/* The area's corner and height. */
+		/* The area's width, then its corner and height. */
+		area_width = column_gap * (layout_unit)(item->column_span - 1);
+		for (position = item->column; position < item->column + item->column_span; position++)
+			area_width += grid.columns[position];
 		x = shift;
-		for (position = 0; position < item->column; position++)
-			x += grid.columns[position] + column_gap;
+		if (box->style.direction == CSS_DIRECTION_RTL &&
+		    box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB) {
+			for (position = item->column + item->column_span;
+			     position < grid.column_count; position++)
+				x += grid.columns[position] + column_gap;
+		} else {
+			for (position = 0; position < item->column; position++)
+				x += grid.columns[position] + column_gap;
+		}
 		y = 0;
 		for (position = 0; position < item->row; position++)
 			y += grid.rows[position] + row_gap;
 		area_height = row_gap * (layout_unit)(item->row_span - 1);
 		for (position = item->row; position < item->row + item->row_span; position++)
 			area_height += grid.rows[position];
-		area_width = column_gap * (layout_unit)(item->column_span - 1);
-		for (position = item->column; position < item->column + item->column_span; position++)
-			area_width += grid.columns[position];
-
 		/* The item's alignment: its align-self, or the container's align-items (baseline as start). */
 		align = child->style.align_self;
 		if (align == CSS_ALIGN_AUTO)
@@ -227,11 +237,12 @@ layout_grid(
 		/* Its place, moved down by the room it leaves when it is at the end or the center. */
 		child->x = x + child->margin[CSS_LEFT];
 		if (box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
-		    box->style.direction == CSS_DIRECTION_LTR &&
 		    child->style.width.unit != CSS_UNIT_AUTO) {
 			justify = child->style.justify_self;
 			if (justify == CSS_ALIGN_AUTO)
 				justify = box->style.justify_items;
+			if (justify == CSS_ALIGN_STRETCH)
+				justify = CSS_ALIGN_START;
 			if (justify == CSS_ALIGN_SELF_START)
 				justify = child->style.direction == CSS_DIRECTION_RTL ? CSS_ALIGN_RIGHT : CSS_ALIGN_LEFT;
 			if (justify == CSS_ALIGN_SELF_END)
@@ -240,7 +251,9 @@ layout_grid(
 			    child->padding[CSS_LEFT] + child->width + child->padding[CSS_RIGHT] +
 			    child->border[CSS_RIGHT] + child->margin[CSS_RIGHT];
 			if (area_width > outer_width &&
-			    (justify == CSS_ALIGN_END || justify == CSS_ALIGN_RIGHT))
+			    (justify == CSS_ALIGN_RIGHT ||
+			    (justify == CSS_ALIGN_END && box->style.direction == CSS_DIRECTION_LTR) ||
+			    (justify == CSS_ALIGN_START && box->style.direction == CSS_DIRECTION_RTL)))
 				child->x += area_width - outer_width;
 			if (area_width > outer_width && justify == CSS_ALIGN_CENTER)
 				child->x += (area_width - outer_width) / 2;
@@ -573,11 +586,13 @@ grid_size_columns(
 	layout_unit width;
 	layout_unit used;
 	layout_unit share;
+	layout_unit remainder;
 	layout_unit spanned;
 	float fr_total;
 	size_t index;
 	int column;
 	int autos;
+	int last_auto;
 	int error;
 
 	/* The row of widths. */
@@ -686,19 +701,25 @@ grid_size_columns(
 	if (tree->measuring != 0 || available <= used)
 		return 0;
 	autos = 0;
+	last_auto = -1;
 	for (column = 0; column < grid->column_count; column++) {
-		if (column >= box->style.column_count || box->style.columns[column].kind == CSS_TRACK_AUTO)
+		if (column >= box->style.column_count || box->style.columns[column].kind == CSS_TRACK_AUTO) {
 			autos++;
+			last_auto = column;
+		}
 	}
 
 	/* Without auto tracks the room stays empty. */
 	if (autos == 0)
 		return 0;
 	share = (available - used) / autos;
+	/* Give the last auto track the subpixel remainder so the grid fills its box exactly. */
+	remainder = available - used - share * autos;
 	for (column = 0; column < grid->column_count; column++) {
 		if (column >= box->style.column_count || box->style.columns[column].kind == CSS_TRACK_AUTO)
 			grid->columns[column] += share;
 	}
+	grid->columns[last_auto] += remainder;
 
 	/* Succeeded: the columns are sized. */
 	return 0;

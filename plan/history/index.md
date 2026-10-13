@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1070 / WS074 CSS Grid LTR inline-axis alignment（2026-10-14）
+## 最新: q1071 / WS074 CSS Grid horizontal RTL alignment（2026-10-14）
+
+[q1071履歴](queue-q1071.md): 固定代表Grid WPT9/18→18/18 subtest PASS・1 ID whole FAIL→PASS。関連90/全Grid529静的の旧PASSを維持、p212 whole cleared、Acid3差0。[証拠](../ws074/phase212/evidence/20261014-q1071/README.md)。p189/p190/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1070 / WS074 CSS Grid LTR inline-axis alignment（2026-10-14）
 
 [q1070履歴](queue-q1070.md): 固定Grid代表WPT subtest旧4/18→9/18 PASS、関連静的57件旧15 PASS維持、p211 whole cleared。Acid3画素差0。[証拠](../ws074/phase211/evidence/20261014-q1070/README.md)。RTLとp189/p190/p173全件100%未達、共有投影/GitHub publication pending。
 

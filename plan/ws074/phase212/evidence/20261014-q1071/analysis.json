@@ -1,0 +1,36 @@
+{
+  "wpt_test_id": "/css/css-grid/alignment/grid-align-justify-margin-border-padding.html",
+  "old_pass_subtests": 9,
+  "new_pass_subtests": 18,
+  "subtest_transitions": {
+    "(0, 0)": 9,
+    "(1, 0)": 9
+  },
+  "static_runs": {
+    "related-static-pre-remainder": {
+      "count": 90,
+      "status_transitions": {
+        "('fail', 'fail')": 72,
+        "('pass', 'fail')": 1,
+        "('pass', 'pass')": 17
+      }
+    },
+    "related-static": {
+      "count": 90,
+      "status_transitions": {
+        "('fail', 'fail')": 72,
+        "('pass', 'pass')": 18
+      }
+    },
+    "full-grid-static": {
+      "count": 529,
+      "status_transitions": {
+        "('fail', 'fail')": 406,
+        "('pass', 'pass')": 123
+      }
+    }
+  },
+  "acid3_score": "100",
+  "acid3_different_pixels": 0,
+  "acid2_different_pixels": 1865
+}
