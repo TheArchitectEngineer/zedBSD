@@ -5,9 +5,10 @@
 #
 # SPDX-License-Identifier: Zlib
 #
-# Builds the BCM43455 driver's host test (ws206-p004) twice and runs it:
-# the unit scenario under AddressSanitizer and UndefinedBehaviorSanitizer,
-# the smp scenario under ThreadSanitizer.  The guest is not started.
+# Builds the BCM43455 driver's host test (ws206-p004, ws206-p005) twice and
+# runs it: the unit and radio scenarios under AddressSanitizer and
+# UndefinedBehaviorSanitizer, the smp and radio-smp scenarios under
+# ThreadSanitizer.  The guest is not started.
 #
 #   sh plan/ws206/tests/bcm43455-host-test.sh OUT [FILES]
 #
@@ -33,15 +34,19 @@ $DRIVER/bcm43455-bus.c
 $DRIVER/bcm43455-chip.c
 $DRIVER/bcm43455-event.c
 $DRIVER/bcm43455-nvram.c
+$DRIVER/bcm43455-radio.c
 $DRIVER/bcm43455-sdpcm.c"
 
-# The device and the test include both the network device and the WLAN
+# The device, its radio operations, the WLAN core's frame parser the test
+# checks scan results with, and the test include both the network device and the WLAN
 # headers, whose UAPI request numbers the host's <sys/ioctl.h> also
 # defines; the host compiler's redefinition notes cannot be turned off
 # one by one, so these two are compiled with -w.  The kernel's own build
-# compiles bcm43455.c with -Wall -Wextra -Werror.
+# compiles bcm43455.c and bcm43455-station.c with -Wall -Wextra -Werror.
 QUIET="$REPO/plan/ws206/tests/bcm43455-host-test.c
-$DRIVER/bcm43455.c"
+$DRIVER/bcm43455.c
+$DRIVER/bcm43455-station.c
+$REPO/src/kern/net/wifi/wlan-frame.c"
 
 # The test's thread header stands in for the kernel's, which needs the HAL.
 INCLUDES="-I$REPO/plan/ws206/tests/stub -I$REPO/include -I$REPO/src -I$REPO"
@@ -81,4 +86,6 @@ else
 	"$OUT/bcm43455-host-test-unit" unit
 fi
 "$OUT/bcm43455-host-test-smp" smp
+"$OUT/bcm43455-host-test-unit" radio
+"$OUT/bcm43455-host-test-smp" radio-smp
 echo "bcm43455-host-test: PASS"

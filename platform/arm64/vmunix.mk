@@ -106,7 +106,9 @@ ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-mmc-irq.c \
 	src/drivers/wifi/bcm43455/bcm43455-event.c \
 	src/drivers/wifi/bcm43455/bcm43455-files.c \
 	src/drivers/wifi/bcm43455/bcm43455-nvram.c \
-	src/drivers/wifi/bcm43455/bcm43455-sdpcm.c
+	src/drivers/wifi/bcm43455/bcm43455-radio.c \
+	src/drivers/wifi/bcm43455/bcm43455-sdpcm.c \
+	src/drivers/wifi/bcm43455/bcm43455-station.c
 endif
 
 # The onboard Bluetooth: the PL011 as the controller's HCI transport (ws215-p003).

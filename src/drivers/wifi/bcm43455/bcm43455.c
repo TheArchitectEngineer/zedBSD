@@ -25,10 +25,10 @@
  * country revision -1 have no permissively licensed public source; they
  * are marked so in plan/ws206/phase004/values.md and checked on a board.
  *
- * The radio operations (scan and connect) and the FullMAC data path are
- * not here yet: the station is attached with only quiesce and stop_retry,
- * and a received data frame is dropped (ws206-p005, with the WLAN core's
- * FullMAC engine of ws206-p008).
+ * The station is attached with the FullMAC radio operations of
+ * bcm43455-station.c (ws206-p005), which use the WLAN core's FullMAC
+ * engine (ws206-p008): the bus hooks here hand events, received frames,
+ * the radio work and a bus failure to them, and the poll lets them report.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-device.h"
@@ -64,35 +64,6 @@
 #define CHANNEL_14_MHZ			2484U
 #define BAND_5G_BASE_MHZ		5000U
 
-/* The parts of the station's radio interface this stage implements. */
-static int radio_quiesce(void *context);
-static int radio_stop_retry(void *context);
-
-/*
- * The radio operations: only the lifecycle's two, which the WLAN layer
- * takes as a radio without connection methods.  Scan, disconnect and the
- * two FullMAC methods (fullmac_connect, ethernet_transmit) come together
- * in ws206-p005, which turns this into a FullMAC method set.
- */
-static const struct wlan_radio_ops radio_operations = {
-	NULL,
-	NULL,
-	NULL,
-	NULL,
-	NULL,
-	NULL,
-	NULL,
-	NULL,
-	NULL,
-	NULL,
-	NULL,
-	radio_quiesce,
-	radio_stop_retry,
-	NULL,
-	NULL,
-	NULL
-};
-
 /* The network device's operations. */
 static int net_open(struct net_device *net);
 static void net_close(struct net_device *net);
@@ -116,19 +87,21 @@ static void hook_event(void *context, const struct bcm43455_event *event, const 
 static void hook_data(void *context, const uint8_t *frame, size_t length);
 static int hook_transmit(void *context, uint8_t *frame, size_t capacity, size_t *length);
 static void hook_failed(void *context, int error);
+static int hook_work(void *context);
 
-/* What the bus does with what it receives. */
+/* What the bus does with what it receives, and the radio work it runs. */
 static const struct bcm43455_bus_hooks bus_hooks = {
 	hook_event,
 	hook_data,
 	hook_transmit,
-	hook_failed
+	hook_failed,
+	hook_work
 };
 
 static int ring_init(struct bcm43455_frame_ring *ring, unsigned capacity);
 static void ring_release(struct bcm43455_frame_ring *ring);
-static int ring_put_locked(struct bcm43455_frame_ring *ring, const uint8_t *frame, size_t length);
-static int ring_take_locked(struct bcm43455_frame_ring *ring, uint8_t *frame, size_t capacity, size_t *length);
+static int ring_put_locked(struct bcm43455_frame_ring *ring, uint64_t generation, const uint8_t *frame, size_t length);
+static int ring_take_locked(struct bcm43455_frame_ring *ring, uint8_t *frame, size_t capacity, size_t *length, uint64_t *generation);
 static void ring_clear_locked(struct bcm43455_frame_ring *ring);
 static int start_settings(struct bcm43455_device *device);
 static int load_clm(struct bcm43455_device *device);
@@ -136,6 +109,8 @@ static int set_country(struct bcm43455_device *device);
 static int read_identity(struct bcm43455_device *device);
 static int enable_events(struct bcm43455_device *device);
 static int read_channels(struct bcm43455_device *device);
+static void read_layouts(struct bcm43455_device *device);
+static void set_runtime_active(struct bcm43455_device *device, unsigned active);
 static int command_u32(struct bcm43455_device *device, uint32_t command, uint32_t value);
 static int check_address(const struct bcm43455_device *device);
 static int discard_unpublished(struct bcm43455_device *device);
@@ -220,6 +195,14 @@ bcm43455_device_create(
 	error = ring_init(&device->tx_ring, BCM43455_TX_RING_SIZE);
 	if (error != 0)
 		goto fail;
+
+	/* Allocates the ring of networks a scanned channel found. */
+	device->scan_ring.entries = kern_calloc(BCM43455_SCAN_RING_SIZE, sizeof(*device->scan_ring.entries));
+	if (device->scan_ring.entries == NULL) {
+		error = ENOMEM;
+		goto fail;
+	}
+	device->scan_ring.capacity = BCM43455_SCAN_RING_SIZE;
 
 	/* Succeeded: the device waits for its probe. */
 	kern_logf("bcm43455: firmware file %s\n", device->file_version);
@@ -340,7 +323,7 @@ bcm43455_device_publish(
 	station = NULL;
 	error = net_device_set_carrier(net, 0);
 	if (error == 0)
-		error = wlan_station_attach(net, &radio_operations, device, &device->identity.profile, &station);
+		error = wlan_station_attach(net, &bcm43455_radio_operations, device, &device->identity.profile, &station);
 	if (error == 0 && station == NULL)
 		error = EIO;
 	if (error != 0) {
@@ -375,6 +358,11 @@ bcm43455_device_destroy(
 	kern_memset(device->nvram, 0, sizeof(device->nvram));
 	ring_release(&device->rx_ring);
 	ring_release(&device->tx_ring);
+	if (device->scan_ring.entries != NULL) {
+		kern_memset(device->scan_ring.entries, 0, (size_t)device->scan_ring.capacity * sizeof(*device->scan_ring.entries));
+		kern_free(device->scan_ring.entries);
+		device->scan_ring.entries = NULL;
+	}
 	bcm43455_files_release(&device->files);
 	kern_free(device);
 }
@@ -439,14 +427,14 @@ bcm43455_device_start(
 		goto fail;
 	}
 
-	/* Hands the bus to its thread. */
+	/* Hands the bus to its thread, with no failure recorded from an earlier run. */
 	bcm43455_bus_direct(&device->bus, 0);
 	error = bcm43455_bus_thread_start(&device->bus);
 	if (error != 0)
 		goto fail;
 
 	/* Succeeded: the firmware runs and the bus thread serves it. */
-	device->runtime_active = 1;
+	set_runtime_active(device, 1);
 	return 0;
 
 fail:
@@ -465,7 +453,7 @@ bcm43455_device_stop(
 	int error;
 
 	/* Takes the bus back from its thread. */
-	device->runtime_active = 0;
+	set_runtime_active(device, 0);
 	error = bcm43455_bus_thread_stop(&device->bus);
 	if (error != 0)
 		kern_logf("bcm43455: bus thread had stopped on error %d\n", error);
@@ -487,8 +475,9 @@ bcm43455_device_stop(
 		device->powered = 0;
 	}
 
-	/* Drops what the rings still hold, and the bus's frame copies. */
+	/* Drops what the rings still hold, the scan and the connection, and the bus's frame copies. */
 	clear_rings(device);
+	bcm43455_station_reset(device);
 	bcm43455_bus_forget(&device->bus);
 }
 
@@ -498,6 +487,7 @@ bcm43455_device_stop(
 int
 bcm43455_device_ethernet_transmit(
 	struct bcm43455_device *device,
+	uint64_t generation,
 	const uint8_t *frame,
 	size_t length)
 {
@@ -510,13 +500,16 @@ bcm43455_device_ethernet_transmit(
 	if (length > BCM43455_BUS_ETHERNET_MAX)
 		return EMSGSIZE;
 
-	/* Queues it while the bus thread serves the device. */
+	/* Queues it while the bus thread serves the device and the connection is the frame's. */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
-	if (!device->runtime_active)
+	if (!device->runtime_active || device->failure_pending) {
 		error = ENETDOWN;
-	else
-		error = ring_put_locked(&device->tx_ring, frame, length);
+	} else if (generation == 0 || generation != device->connection.generation) {
+		error = ESTALE;
+	} else {
+		error = ring_put_locked(&device->tx_ring, generation, frame, length);
+	}
 
 	spin_unlock_irqrestore(&device->ring_lock, enabled);
 
@@ -538,7 +531,8 @@ bcm43455_device_ethernet_receive(
 	struct bcm43455_device *device,
 	uint8_t *frame,
 	size_t capacity,
-	size_t *length)
+	size_t *length,
+	uint64_t *generation)
 {
 	unsigned long enabled;
 	int taken;
@@ -546,7 +540,7 @@ bcm43455_device_ethernet_receive(
 	/* Takes the frame out of the ring. */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
-	taken = ring_take_locked(&device->rx_ring, frame, capacity, length);
+	taken = ring_take_locked(&device->rx_ring, frame, capacity, length, generation);
 
 	spin_unlock_irqrestore(&device->ring_lock, enabled);
 
@@ -714,6 +708,122 @@ bcm43455_device_has_feature(
 }
 
 /*
+ * Stops the chip for the station's quiesce if it still runs.
+ *
+ * Called by the WLAN layer's detach and shutdown with the station's
+ * control gate held.
+ */
+int
+bcm43455_device_quiesce(
+	struct bcm43455_device *device)
+{
+	/* Stops a chip that still runs; a closed one has nothing left. */
+	mutex_lock(&device->lifecycle_lock);
+
+	if (device->runtime_active || device->powered)
+		bcm43455_device_stop(device);
+
+	mutex_unlock(&device->lifecycle_lock);
+
+	/* Succeeded: no producer is left. */
+	return 0;
+}
+
+/*
+ * Runs a failed close again for the station's retry.
+ */
+int
+bcm43455_device_stop_retry(
+	struct bcm43455_device *device)
+{
+	int error;
+
+	/* Retries the whole close. */
+	mutex_lock(&device->lifecycle_lock);
+
+	error = close_locked(device);
+
+	mutex_unlock(&device->lifecycle_lock);
+
+	/* Reports a close that is still not done. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the radio is stopped and the station reconciled. */
+	return 0;
+}
+
+/*
+ * Restarts a chip whose bus failed while the interface stayed up.
+ *
+ * The bus thread stopped on its own; the poll reported the lost link and
+ * asked for this restart.  The close retires the station's scan and
+ * connection and stops the chip, the start loads the firmware again, and
+ * the station is opened once more, as a user's open would.  A close that
+ * came meanwhile leaves the chip down.
+ */
+int
+bcm43455_device_restart(
+	struct bcm43455_device *device)
+{
+	unsigned long enabled;
+	unsigned pending;
+	unsigned opened;
+	int error;
+
+	mutex_lock(&device->lifecycle_lock);
+
+	/* Takes the request; a device closed since it was made needs nothing. */
+	enabled = spin_lock_irqsave(&device->ring_lock);
+
+	pending = device->restart_pending;
+	device->restart_pending = 0;
+	opened = device->opened;
+
+	spin_unlock_irqrestore(&device->ring_lock, enabled);
+
+	if (!pending || !opened || device->station == NULL) {
+		mutex_unlock(&device->lifecycle_lock);
+		return 0;
+	}
+
+	/* Retires the station's work and stops the failed chip, as a close does. */
+	kern_logf("bcm43455: restarting the chip after a bus failure (%d)\n", device->bus_error);
+	error = close_locked(device);
+	if (error != 0) {
+		mutex_unlock(&device->lifecycle_lock);
+		kern_logf("bcm43455: restart's close left for a retry (%d)\n", error);
+		return error;
+	}
+
+	/* The close let the lifecycle go for a while; a user's close meanwhile wins. */
+	if (!device->opened) {
+		mutex_unlock(&device->lifecycle_lock);
+		return 0;
+	}
+
+	/* Starts the chip again and reopens the station. */
+	error = bcm43455_device_start(device, 1);
+	if (error == 0) {
+		error = wlan_station_open(device->station);
+		if (error != 0)
+			bcm43455_device_stop(device);
+	}
+
+	mutex_unlock(&device->lifecycle_lock);
+
+	/* Reports a restart that did not bring the radio back; cycling the interface tries again. */
+	if (error != 0) {
+		kern_logf("bcm43455: restart failed (%d); cycle Wi-Fi to retry\n", error);
+		return error;
+	}
+
+	/* Succeeded: scans and joins are admitted again. */
+	kern_logf("bcm43455: chip restarted\n");
+	return 0;
+}
+
+/*
  * Makes the settings every start makes and reads the identity.
  */
 static int
@@ -763,6 +873,9 @@ start_settings(
 	error = read_channels(device);
 	if (error != 0)
 		return error;
+
+	/* Learns how the firmware lays out channel specifications and scan requests. */
+	read_layouts(device);
 
 	/* Succeeded: the firmware is set up. */
 	return 0;
@@ -1061,6 +1174,73 @@ read_channels(
 	return 0;
 }
 
+/*
+ * Reads how the firmware lays out channel specifications (its I/O
+ * version) and which escan request it takes ("scan_ver"); a firmware
+ * that does not say is taken to use the 802.11ac layout and the first
+ * escan request.
+ */
+static void
+read_layouts(
+	struct bcm43455_device *device)
+{
+	uint8_t bytes[4];
+	size_t answered;
+	uint32_t value;
+	int error;
+
+	/* The channel specification's layout. */
+	device->identity.io_type = BCM43455_CHANSPEC_LAYOUT_AC;
+	kern_memset(bytes, 0, sizeof(bytes));
+	answered = 0;
+	error = bcm43455_bus_control(&device->bus, BCM43455_COMMAND_IO_VERSION, 0, NULL, 0, bytes, sizeof(bytes), &answered);
+	if (error == 0 && answered == sizeof(bytes)) {
+		value = bcm43455_get_le32(bytes);
+		if (value == BCM43455_CHANSPEC_LAYOUT_N)
+			device->identity.io_type = BCM43455_CHANSPEC_LAYOUT_N;
+	} else {
+		kern_logf("bcm43455: channel layout not read (%d); taking the 802.11ac one\n", error);
+	}
+
+	/* The escan request's layout; an older firmware does not know the variable. */
+	device->identity.scan_layout = BCM43455_SCAN_LAYOUT_V0;
+	kern_memset(bytes, 0, sizeof(bytes));
+	answered = 0;
+	error = bcm43455_bus_iovar_get(&device->bus, "scan_ver", bytes, sizeof(bytes), &answered);
+	if (error == 0 && answered == sizeof(bytes)) {
+		value = bcm43455_get_le32(bytes);
+		if (value == BCM43455_SCAN_LAYOUT_V2)
+			device->identity.scan_layout = BCM43455_SCAN_LAYOUT_V2;
+	}
+
+	/* Logs both, for a board's first bring-up. */
+	kern_logf("bcm43455: channel layout %u, scan layout %u\n", device->identity.io_type, device->identity.scan_layout);
+}
+
+/*
+ * Marks the runtime as serving or not under ring_lock, which the radio
+ * operations read it under; starting it clears an earlier run's failure.
+ */
+static void
+set_runtime_active(
+	struct bcm43455_device *device,
+	unsigned active)
+{
+	unsigned long enabled;
+
+	/* runtime_active admits frames and radio requests; the failure latch belongs to one run. */
+	enabled = spin_lock_irqsave(&device->ring_lock);
+
+	device->runtime_active = active;
+	if (active) {
+		device->failure_pending = 0;
+		device->failure_reported = 0;
+		device->bus_error = 0;
+	}
+
+	spin_unlock_irqrestore(&device->ring_lock, enabled);
+}
+
 /* Sets a firmware command that takes one 32-bit number. */
 static int
 command_u32(
@@ -1254,57 +1434,6 @@ clear_rings(
 }
 
 /*
- * The station's quiesce: stops the chip if it still runs.  Called by the
- * WLAN layer's detach and shutdown with the station's control gate held.
- */
-static int
-radio_quiesce(
-	void *context)
-{
-	struct bcm43455_device *device;
-
-	device = context;
-
-	/* Stops a chip that still runs; a closed one has nothing left. */
-	mutex_lock(&device->lifecycle_lock);
-
-	if (device->runtime_active || device->powered)
-		bcm43455_device_stop(device);
-
-	mutex_unlock(&device->lifecycle_lock);
-
-	/* Succeeded: no producer is left. */
-	return 0;
-}
-
-/*
- * The station's retry of a close that failed: runs the close again.
- */
-static int
-radio_stop_retry(
-	void *context)
-{
-	struct bcm43455_device *device;
-	int error;
-
-	device = context;
-
-	/* Retries the whole close. */
-	mutex_lock(&device->lifecycle_lock);
-
-	error = close_locked(device);
-
-	mutex_unlock(&device->lifecycle_lock);
-
-	/* Reports a close that is still not done. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the radio is stopped and the station reconciled. */
-	return 0;
-}
-
-/*
  * Opens the interface: starts the chip with its radio up and opens the
  * station.
  */
@@ -1313,6 +1442,7 @@ net_open(
 	struct net_device *net)
 {
 	struct bcm43455_device *device;
+	unsigned long enabled;
 	int busy;
 	int error;
 
@@ -1344,6 +1474,17 @@ net_open(
 			bcm43455_device_stop(device);
 	}
 
+	/* An open interface may be restarted after a failure; a user's open starts the count afresh. */
+	if (error == 0) {
+		enabled = spin_lock_irqsave(&device->ring_lock);
+
+		device->opened = 1;
+		device->restarts = 0;
+		device->restart_pending = 0;
+
+		spin_unlock_irqrestore(&device->ring_lock, enabled);
+	}
+
 	mutex_unlock(&device->lifecycle_lock);
 
 	/* Reports why the interface did not open. */
@@ -1364,6 +1505,7 @@ net_close(
 	struct net_device *net)
 {
 	struct bcm43455_device *device;
+	unsigned long enabled;
 	int error;
 
 	/* Drops the carrier first. */
@@ -1373,6 +1515,14 @@ net_close(
 	device = net->driver_data;
 
 	mutex_lock(&device->lifecycle_lock);
+
+	/* A closed interface is not restarted behind the user's back. */
+	enabled = spin_lock_irqsave(&device->ring_lock);
+
+	device->opened = 0;
+	device->restart_pending = 0;
+
+	spin_unlock_irqrestore(&device->ring_lock, enabled);
 
 	/* A failed close is left to the station's retry. */
 	if (device->station != NULL) {
@@ -1421,8 +1571,8 @@ net_transmit(
 }
 
 /*
- * Takes received frames off the ring.  Until the FullMAC data path exists
- * (ws206-p005) they are counted and dropped.
+ * Lets the radio operations report what the bus thread latched, and hands
+ * the received frames to the station.
  */
 static unsigned
 net_poll(
@@ -1430,24 +1580,17 @@ net_poll(
 	unsigned budget)
 {
 	struct bcm43455_device *device;
-	uint8_t frame[BCM43455_BUS_ETHERNET_MAX];
-	size_t length;
 	unsigned done;
-	int taken;
 
-	/* Refuses a device without its driver. */
+	/* Refuses a device without its driver or its station. */
 	if (net == NULL || net->driver_data == NULL)
 		return 0;
 	device = net->driver_data;
+	if (device->station == NULL)
+		return 0;
 
-	/* Drains up to the budget. */
-	for (done = 0; done < budget; done++) {
-		taken = bcm43455_device_ethernet_receive(device, frame, sizeof(frame), &length);
-		if (!taken)
-			break;
-		net->rx_dropped++;
-	}
-	kern_memset(frame, 0, sizeof(frame));
+	/* Reports the scan and the connection, then delivers up to the budget. */
+	done = bcm43455_station_poll(device, budget);
 
 	/* Reports how many frames were taken. */
 	return done;
@@ -1480,8 +1623,8 @@ net_release(
 }
 
 /*
- * The bus's event hook.  Until the radio operations exist (ws206-p005)
- * events are counted, and the first few after each start are logged.
+ * The bus's event hook: counts the event, logs the first few after each
+ * start, and lets the radio operations take it.
  */
 static void
 hook_event(
@@ -1493,9 +1636,6 @@ hook_event(
 	struct bcm43455_device *device;
 	unsigned long enabled;
 	int log;
-
-	(void)frame;
-	(void)length;
 
 	device = context;
 
@@ -1514,9 +1654,15 @@ hook_event(
 	/* Logs it for the board's first bring-up. */
 	if (log)
 		kern_logf("bcm43455: event %u status %u reason %u\n", event->type, event->status, event->reason);
+
+	/* A scan result, a join's progress or a lost link goes to the scan or the connection. */
+	bcm43455_station_event(device, event, frame, length);
 }
 
-/* The bus's data hook: keeps the frame for the poll and schedules it. */
+/*
+ * The bus's data hook: keeps the frame, with the connection it arrived
+ * in, for the poll and schedules it.
+ */
 static void
 hook_data(
 	void *context,
@@ -1526,14 +1672,21 @@ hook_data(
 	struct bcm43455_device *device;
 	unsigned long enabled;
 	struct net_device *net;
+	uint64_t generation;
 	int error;
 
 	device = context;
 
-	/* Queues a copy; a full ring drops it. */
+	/* Queues a copy; a full ring, or no connection to carry it, drops it. */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
-	error = ring_put_locked(&device->rx_ring, frame, length);
+	generation = bcm43455_station_data_generation_locked(device);
+	if (generation == 0) {
+		device->rx_ring.dropped++;
+		error = ENOTCONN;
+	} else {
+		error = ring_put_locked(&device->rx_ring, generation, frame, length);
+	}
 	net = device->net;
 
 	spin_unlock_irqrestore(&device->ring_lock, enabled);
@@ -1543,7 +1696,10 @@ hook_data(
 		net_device_schedule_poll(net);
 }
 
-/* The bus's transmit hook: hands the oldest queued frame to the bus thread. */
+/*
+ * The bus's transmit hook: hands the oldest queued frame of the current
+ * connection to the bus thread, dropping the older connections' frames.
+ */
 static int
 hook_transmit(
 	void *context,
@@ -1553,14 +1709,26 @@ hook_transmit(
 {
 	struct bcm43455_device *device;
 	unsigned long enabled;
+	uint64_t generation;
+	uint64_t current;
 	int taken;
 
 	device = context;
 
-	/* Takes it out of the ring. */
+	/* Takes frames out of the ring until one belongs to the connection that carries data. */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
-	taken = ring_take_locked(&device->tx_ring, frame, capacity, length);
+	current = bcm43455_station_data_generation_locked(device);
+	for (;;) {
+		generation = 0;
+		taken = ring_take_locked(&device->tx_ring, frame, capacity, length, &generation);
+		if (!taken)
+			break;
+		if (current != 0 && generation == current)
+			break;
+		kern_memset(frame, 0, *length);
+		device->tx_ring.dropped++;
+	}
 
 	spin_unlock_irqrestore(&device->ring_lock, enabled);
 
@@ -1569,8 +1737,8 @@ hook_transmit(
 }
 
 /*
- * The bus's failure hook.  Records the error; the link loss and the
- * restart are reported by the radio operations (ws206-p005).
+ * The bus's failure hook: the radio operations latch the error for the
+ * poll, which reports the lost link and asks for a restart.
  */
 static void
 hook_failed(
@@ -1578,17 +1746,30 @@ hook_failed(
 	int error)
 {
 	struct bcm43455_device *device;
-	unsigned long enabled;
 
 	device = context;
 
-	/* Keeps the first error. */
-	enabled = spin_lock_irqsave(&device->ring_lock);
+	/* Latches the failure for the poll. */
+	bcm43455_station_bus_failed(device, error);
+}
 
-	if (device->bus_error == 0)
-		device->bus_error = error;
+/* The bus's work hook: runs the radio work the operations queued. */
+static int
+hook_work(
+	void *context)
+{
+	struct bcm43455_device *device;
+	int error;
 
-	spin_unlock_irqrestore(&device->ring_lock, enabled);
+	device = context;
+
+	/* Sends the escan request or the connection's commands that wait. */
+	error = bcm43455_station_work(device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the queued work is done. */
+	return 0;
 }
 
 /* Allocates a ring's frames. */
@@ -1632,6 +1813,7 @@ ring_release(
 static int
 ring_put_locked(
 	struct bcm43455_frame_ring *ring,
+	uint64_t generation,
 	const uint8_t *frame,
 	size_t length)
 {
@@ -1655,6 +1837,7 @@ ring_put_locked(
 	entry = &ring->entries[tail];
 	kern_memcpy(entry->bytes, frame, length);
 	entry->length = length;
+	entry->generation = generation;
 	ring->count++;
 
 	/* Succeeded: the frame waits in the ring. */
@@ -1667,7 +1850,8 @@ ring_take_locked(
 	struct bcm43455_frame_ring *ring,
 	uint8_t *frame,
 	size_t capacity,
-	size_t *length)
+	size_t *length,
+	uint64_t *generation)
 {
 	struct bcm43455_frame_entry *entry;
 	size_t copied;
@@ -1683,10 +1867,12 @@ ring_take_locked(
 		copied = capacity;
 	kern_memcpy(frame, entry->bytes, copied);
 	*length = copied;
+	*generation = entry->generation;
 
 	/* Clears the entry and moves past it. */
 	kern_memset(entry->bytes, 0, entry->length);
 	entry->length = 0;
+	entry->generation = 0;
 	ring->head = (ring->head + 1U) % ring->capacity;
 	ring->count--;
 

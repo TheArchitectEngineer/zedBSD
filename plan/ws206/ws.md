@@ -33,7 +33,7 @@ Pi 4（10.0.30.2）の実機で、内蔵の BCM43455 の wlan0 が現れ（chip 
 | [p002b](phase002b/phase.md) | SDIO の host（`rpi4-sdio-host.c`、独立の file）、SPI 126 の dispatcher（`rpi4-mmc-irq.c`）、SDIO の card の層と DT の slot（`rpi4-sdio.c`）、probe と thread（`rpi4-wifi.c`）、SD の base の記録は `rpi4.c`（`rpi4-sdhci.c` は不変）、pin と電源。Pi で CMD5・CCCR・CIS、Pi と QEMU の起動の回帰 | in-progress（実装・host・build 済み、Pi の実機と T1 待ち） | p002a（BUG-295 への依存は review-3 の指摘 7 で外した） |
 | [p003](phase003/phase.md) | firmware の package `bcm43455-firmware` と license の監査（E4: GPL-2 を同梱、E6: world） | cleared（2026-10-13 Q1、T1-564 PASS） | p001、E4 |
 | [p004](phase004/phase.md) | Broadcom の bring-up、SDPCM・BCDC・event、bus の thread と lock、wlan0 の公開と shutdown、[値の出典の表](phase004/values.md) | in-progress（2026-10-13 P4、実装・host 試験・build 済み、Pi の実機と T1 待ち） | p002b、p003 |
-| p005 | driver の radio の op（scan の順、非同期の connect と firmware の supplicant、errno の表、data、link loss、restart） | planned | p004、p008 |
+| [p005](phase005/phase.md) | driver の radio の op（scan の順、非同期の connect と firmware の supplicant、errno の表、data、link loss、restart） | in-progress（2026-10-13 P3、実装・host 試験（radio・radio-smp の scenario を足した）・rpi4/amd64 の build 済み、Pi の実機（scan・WPA2・DHCP・ping）と T1 待ち。country の rev の順は Q1 の判断） | p004、p008 |
 | p006 | 実機の受け入れ（T1）: scan・WPA2・DHCP・ping・Settings、可能なら Bluetooth と同時 | planned | p005、E2 |
 | p007 | 規約の全文の見直しと値の出典の監査 | planned | p006 |
 | [p008](phase008/phase.md) | WLAN の core の FullMAC の engine（`wlan-fullmac.c`）と station の分岐（kernel の内部の API）と host の試験（p004 と並べて進められる、6〜8 LW） | in-progress（2026-10-13 P3、実装・host 試験（ASan/UBSan・TSan・既存の SoftMAC の試験）・amd64/rpi4 の build 済み、Q1 の判定待ち。driver との API は phase.md の「driver から見える内部の API」） | p001 |
