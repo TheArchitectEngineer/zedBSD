@@ -1098,9 +1098,12 @@ interpreter_scope(
 	struct vm_function *closure;
 	struct vm_env *env;
 	struct vm_env *parent;
+	struct vm_import_binding *import;
+	struct vm_cell *cell;
 	vm_value *frame;
 	vm_value *place;
 	vm_value value;
+	int is_cell;
 	int strict;
 	int status;
 
@@ -1163,6 +1166,23 @@ interpreter_scope(
 		if (status != 0)
 			return status;
 		value = *place;
+		break;
+	case VM_OP_GET_IMPORT:
+		/* An import follows its target's current value on every read. */
+		value = registers[words[2]];
+		is_cell = vm_value_is_cell(value);
+		if (!is_cell)
+			return vm_throw_reference_error(realm, "Module import is not linked");
+		cell = vm_value_as_cell(value);
+		if (cell->type != &vm_import_binding_type)
+			return vm_throw_reference_error(realm, "Module import is not linked");
+		import = (struct vm_import_binding *)cell;
+		if (import->env == NULL || import->slot >= import->env->count)
+			return EINVAL;
+		value = vm_env_slots(import->env)[import->slot];
+		if (value == VM_VALUE_EMPTY)
+			return vm_throw_reference_error(realm, "Cannot access import before initialization");
+		status = 0;
 		break;
 	case VM_OP_PUT_ENV:
 		status = interpreter_env(registers[words[1]], words[2], words[3], &place);

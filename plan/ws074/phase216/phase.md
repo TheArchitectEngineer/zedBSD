@@ -2,7 +2,7 @@
 
 # ws074-p216: Interop 2025 JavaScript module loading
 
-Status: uncleared（q1079–q1082 partial cleared、import/HTML未実装）
+Status: uncleared（q1079–q1083 partial cleared、URL graph/HTML未実装）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -51,3 +51,11 @@ Event ws074-p216-q1081-partial-clear-20261014: [設計証拠](evidence/20261014-
 ## q1082-i01 結果（2026-10-14 06:48 JST）
 
 Event ws074-p216-q1082-partial-clear-20261014: named export宣言をGC追跡stable env slotに置き、内部module instanceの一度限り評価・live読取を追加。[証拠](evidence/20261014-q1082/README.md)。局所hostではexported closureでcounter1→2、強制GC後も同じ値、固定WPT共通support sourceの`runTests`抽出PASS。classic JS14/14、build warning0、Acid3差0・Acid2差1865。q1082-i01 partial cleared、p216 wholeはimport/HTML未実装でuncleared。固定Grid32 no_outputとp189/p173全件100%未達、共有投影/GitHub publication保留。
+
+## q1083-i01 有限部分範囲（2026-10-14 06:49 JST）
+
+このchatのユーザーによる全3,805件100%までの有限Queue事前承認を最大90分（08:19 JSTまで）に適用。named static importをmodule local immutable indirect bindingとして登録し、既存export instanceへ内部link APIで接続する。link前評価拒否、import readのlive値/TDZ/代入拒否、GC参照、重複/未解決名を局所2-module hostで検証する。VM内部参照cell/opcodeは必要最小限。URL graph fetch・HTML loader・namespace/default/re-exportは含めない。classic JS14件、warning0 build、Acid3差0・Acid2非増加を検証。WPT/runner/公開ABI/`plan/master.md`変更なし。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。固定Grid32 callbackとp216 whole clearanceは本部分範囲外。
+
+## q1083-i01 結果（2026-10-14 06:54 JST）
+
+Event ws074-p216-q1083-partial-clear-and-design-revision-20261014: named importをimmutable indirect bindingとして内部link可能にし、VM `GET_IMPORT`はtarget envの現在値を読む。[証拠](evidence/20261014-q1083/README.md)。q1081のcompile-time env constant案はlate linkでtarget未確定のためGC追跡ref cellに改訂。2-module hostはTDZ/代入/重複拒否、target解放と強制GC後のlive counter1→2をPASS。classic JS14/14、build warning0、Acid3差0・Acid2差1865。q1083-i01 partial cleared、p216 wholeはURL graph/HTML未実装でuncleared。固定Grid32 no_outputとp189/p173全件100%未達、共有投影/GitHub publication保留。

@@ -24,8 +24,8 @@
  * bring (let and const, arrow functions, classes, destructuring, spread,
  * templates, generators, async functions, regular expressions and direct
  * eval) arrived in later phases.  Modules now have local bindings, direct
- * export declarations and retained export environments; graph linking is
- * still pending.
+ * export declarations, retained export environments and direct named
+ * import links; URL graph loading is still pending.
  */
 
 #include "js/compile.h"
@@ -41,6 +41,20 @@ struct js_module_export {
 	size_t length;
 	struct js_binding *binding;
 	uint32_t slot;
+	int lexical;
+};
+
+/* One static named import waiting for the host to link its indirect binding. */
+struct js_module_import {
+	uint16_t *local;
+	size_t local_length;
+	uint16_t *imported;
+	size_t imported_length;
+	uint16_t *specifier;
+	size_t specifier_length;
+	struct js_binding *binding;
+	uint32_t slot;
+	int linked;
 };
 
 /* One compiled module instance, kept rooted by its owner until release. */
@@ -50,6 +64,8 @@ struct js_module {
 	struct vm_function *function;
 	struct js_module_export *exports;
 	size_t export_count;
+	struct js_module_import *imports;
+	size_t import_count;
 	int env_rooted;
 	int function_rooted;
 	int evaluated;
@@ -61,6 +77,7 @@ static void compile_release_all(struct js_compiler *compiler);
 static int compile_program(struct vm_realm *realm, struct js_program *program, struct vm_function **function, struct js_module *module, struct js_syntax_error *error);
 static void compile_module_exports(struct js_compiler *compiler, struct js_function_info *info, struct js_module *module);
 static void compile_module_export_name(struct js_compiler *compiler, struct js_function_info *info, struct js_module *module, struct js_node *name);
+static void compile_module_imports(struct js_compiler *compiler, struct js_function_info *info, struct js_module *module);
 static void compile_prepare(struct js_function_compiler *fc);
 static void compile_place_binding(struct js_function_compiler *fc, struct js_scope *scope, struct js_binding *binding, uint32_t *env_count);
 static void compile_prologue(struct js_function_compiler *fc, uint32_t env_count);
@@ -155,13 +172,19 @@ compile_program(
 
 	/* The scopes, then the program's code. */
 	info = js_scope_analyze(compiler, program->root);
-	if (module != NULL)
+	if (module != NULL) {
 		compile_module_exports(compiler, info, module);
+		compile_module_imports(compiler, info, module);
+	}
 	code = js_compile_function(compiler, NULL, info->node, NULL, 0);
 	if (module != NULL) {
 		for (index = 0; index < module->export_count; index++) {
 			module->exports[index].slot = module->exports[index].binding->location;
 			module->exports[index].binding = NULL;
+		}
+		for (index = 0; index < module->import_count; index++) {
+			module->imports[index].slot = module->imports[index].binding->location;
+			module->imports[index].binding = NULL;
 		}
 	}
 	vm_heap_remove_tracer(realm->heap, compile_trace, compiler);
@@ -178,6 +201,10 @@ compile_program(
 		if (env == NULL)
 			return ENOMEM;
 		module->env = env;
+		for (index = 0; index < module->export_count; index++) {
+			if (module->exports[index].lexical)
+				vm_env_slots(env)[module->exports[index].slot] = VM_VALUE_EMPTY;
+		}
 	}
 
 	/* The program as a function, retaining the module environment when present. */
@@ -280,11 +307,85 @@ compile_module_export_name(
 	entry->name[name->text_length] = 0;
 	entry->length = name->text_length;
 	entry->binding = binding;
+	entry->lexical = binding->kind == JS_BINDING_LET || binding->kind == JS_BINDING_CONST;
 	module->export_count++;
 
 	/* An export lives in the module's retained environment, even without a closure. */
 	binding->captured = 1;
 	info->has_env = 1;
+}
+
+/* Records static named imports and keeps their local slots after evaluation. */
+static void
+compile_module_imports(
+	struct js_compiler *compiler,
+	struct js_function_info *info,
+	struct js_module *module)
+{
+	struct js_module_import *imports;
+	struct js_module_import *entry;
+	struct js_binding *binding;
+	struct js_node *item;
+	struct js_node *part;
+	struct js_node *local;
+	struct js_node *imported;
+	struct js_node *specifier;
+	int same;
+
+	/* This finite pass accepts explicit named imports from string specifiers. */
+	for (item = info->node->first; item != NULL; item = item->next) {
+		if (item->kind != JS_NODE_IMPORT)
+			continue;
+		specifier = item->second;
+		if (specifier == NULL || specifier->kind != JS_NODE_STRING || item->first == NULL)
+			js_compile_unsupported(compiler, item, "this kind of module import");
+		for (part = item->first; part != NULL; part = part->next) {
+			imported = part->first;
+			local = part->second;
+			if (imported == NULL || imported->kind != JS_NODE_IDENTIFIER || local == NULL ||
+			    local->kind != JS_NODE_IDENTIFIER)
+				js_compile_unsupported(compiler, part, "this kind of module import");
+
+			/* The scope pass already declared the local name. */
+			binding = NULL;
+			for (binding = info->scope->bindings; binding != NULL; binding = binding->next) {
+				same = binding->length == local->text_length;
+				if (same)
+					same = memcmp(binding->name, local->text,
+					    local->text_length * sizeof(uint16_t)) == 0;
+				if (same)
+					break;
+			}
+			if (binding == NULL || binding->kind != JS_BINDING_IMPORT)
+				js_compile_fail(compiler, local, "Module import has no local binding");
+
+			/* A stable import entry owns its names beyond the parser arena. */
+			imports = realloc(module->imports, (module->import_count + 1U) * sizeof(*imports));
+			if (imports == NULL)
+				js_compile_out_of_memory(compiler);
+			module->imports = imports;
+			entry = &imports[module->import_count];
+			memset(entry, 0, sizeof(*entry));
+			module->import_count++;
+			entry->local = malloc((local->text_length + 1U) * sizeof(uint16_t));
+			entry->imported = malloc((imported->text_length + 1U) * sizeof(uint16_t));
+			entry->specifier = malloc((specifier->text_length + 1U) * sizeof(uint16_t));
+			if (entry->local == NULL || entry->imported == NULL || entry->specifier == NULL)
+				js_compile_out_of_memory(compiler);
+			memcpy(entry->local, local->text, local->text_length * sizeof(uint16_t));
+			memcpy(entry->imported, imported->text, imported->text_length * sizeof(uint16_t));
+			memcpy(entry->specifier, specifier->text, specifier->text_length * sizeof(uint16_t));
+			entry->local[local->text_length] = 0;
+			entry->imported[imported->text_length] = 0;
+			entry->specifier[specifier->text_length] = 0;
+			entry->local_length = local->text_length;
+			entry->imported_length = imported->text_length;
+			entry->specifier_length = specifier->text_length;
+			entry->binding = binding;
+			binding->captured = 1;
+			info->has_env = 1;
+		}
+	}
 }
 
 /*
@@ -385,11 +486,16 @@ js_module_evaluate(
 	struct js_module *module)
 {
 	vm_value completion;
+	size_t index;
 	int status;
 
 	/* A second call cannot repeat a module's side effects. */
 	if (module->evaluated)
 		return module->eval_status;
+	for (index = 0; index < module->import_count; index++) {
+		if (!module->imports[index].linked)
+			return EAGAIN;
+	}
 	module->evaluated = 1;
 	status = vm_call(module->realm, vm_value_cell(module->function), VM_VALUE_UNDEFINED, NULL, 0, &completion);
 	module->eval_status = status;
@@ -427,6 +533,65 @@ js_module_export(
 	return ENOENT;
 }
 
+/* Links one local named import to the target module's retained export slot. */
+int
+js_module_link_import(
+	struct js_module *module,
+	const uint16_t *local,
+	size_t local_length,
+	struct js_module *target,
+	const uint16_t *exported,
+	size_t exported_length)
+{
+	struct js_module_import *import;
+	struct js_module_export *entry;
+	struct vm_import_binding *binding;
+	size_t import_index;
+	size_t export_index;
+	int same;
+
+	/* Both instances belong to one realm, and linking precedes evaluation. */
+	if (module->realm != target->realm || module->evaluated)
+		return EINVAL;
+	import = NULL;
+	for (import_index = 0; import_index < module->import_count; import_index++) {
+		import = &module->imports[import_index];
+		same = import->local_length == local_length;
+		if (same)
+			same = memcmp(import->local, local, local_length * sizeof(uint16_t)) == 0;
+		if (same)
+			break;
+	}
+	if (import_index == module->import_count)
+		return ENOENT;
+	if (import->linked)
+		return EALREADY;
+	if (import->imported_length != exported_length ||
+	    memcmp(import->imported, exported, exported_length * sizeof(uint16_t)) != 0)
+		return EINVAL;
+
+	/* A missing target export cannot become a valid binding by evaluation. */
+	entry = NULL;
+	for (export_index = 0; export_index < target->export_count; export_index++) {
+		entry = &target->exports[export_index];
+		same = entry->length == exported_length;
+		if (same)
+			same = memcmp(entry->name, exported, exported_length * sizeof(uint16_t)) == 0;
+		if (same)
+			break;
+	}
+	if (export_index == target->export_count)
+		return ENOENT;
+
+	/* The import binding itself keeps the target environment live. */
+	binding = vm_import_binding_create(module->realm->heap, target->env, entry->slot);
+	if (binding == NULL)
+		return ENOMEM;
+	vm_env_slots(module->env)[import->slot] = vm_value_cell(binding);
+	import->linked = 1;
+	return 0;
+}
+
 /* Releases the module's GC roots and owned export names before its realm goes away. */
 void
 js_module_release(
@@ -443,6 +608,12 @@ js_module_release(
 	for (index = 0; index < module->export_count; index++)
 		free(module->exports[index].name);
 	free(module->exports);
+	for (index = 0; index < module->import_count; index++) {
+		free(module->imports[index].local);
+		free(module->imports[index].imported);
+		free(module->imports[index].specifier);
+	}
+	free(module->imports);
 	free(module);
 }
 
@@ -1017,6 +1188,11 @@ compile_statement(
 
 	/* Each kind of statement. */
 	switch (node->kind) {
+	case JS_NODE_IMPORT:
+		/* A linked module prepared its immutable import slots before evaluation. */
+		if (!fc->compiler->module_instance)
+			js_compile_unsupported(fc->compiler, node, "modules");
+		break;
 	case JS_NODE_EXPORT:
 		/* A named export declaration runs its declaration in this module's scope. */
 		if ((node->flags & (JS_FLAG_DEFAULT | JS_FLAG_ALL)) != 0U || node->second != NULL ||

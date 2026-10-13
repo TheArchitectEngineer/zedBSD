@@ -210,6 +210,7 @@ int js_run_script(struct vm_realm *realm, const uint16_t *source, size_t length,
 int js_module_create(struct vm_realm *realm, const uint16_t *source, size_t length, struct js_module **module, struct js_syntax_error *error);
 int js_module_evaluate(struct js_module *module);
 int js_module_export(struct js_module *module, const uint16_t *name, size_t length, vm_value *value);
+int js_module_link_import(struct js_module *module, const uint16_t *local, size_t local_length, struct js_module *target, const uint16_t *exported, size_t exported_length);
 void js_module_release(struct js_module *module);
 
 /* The built-in objects (builtin.c). */

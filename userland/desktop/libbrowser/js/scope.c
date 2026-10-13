@@ -438,6 +438,17 @@ scope_declarations(
 	/* Each statement by its kind. */
 	for (node = list; node != NULL; node = node->next) {
 		switch (node->kind) {
+		case JS_NODE_IMPORT:
+			/* Each local import name is an immutable binding of the module. */
+			for (declarator = node->first; declarator != NULL; declarator = declarator->next) {
+				if (declarator->second == NULL || declarator->second->kind != JS_NODE_IDENTIFIER)
+					js_compile_unsupported(compiler, declarator, "this kind of module import");
+				if (scope_find(info->scope, declarator->second->text, declarator->second->text_length) != NULL)
+					scope_redeclared(compiler, declarator->second);
+				scope_declare(compiler, info->scope, declarator->second->text,
+				    declarator->second->text_length, JS_BINDING_IMPORT);
+			}
+			break;
 		case JS_NODE_EXPORT:
 			/* A declaration with export still declares its local names. */
 			if ((node->flags & (JS_FLAG_DEFAULT | JS_FLAG_ALL)) == 0U && node->second == NULL &&

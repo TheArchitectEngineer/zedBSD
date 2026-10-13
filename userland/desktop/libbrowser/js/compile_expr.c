@@ -240,6 +240,12 @@ expr_load_binding_plain(
 		js_emit2(fc, opcode, target, key);
 		return;
 	}
+	if (binding->kind == JS_BINDING_IMPORT) {
+		/* The module's slot holds a link, which reads the export's current value. */
+		js_emit4(fc, VM_OP_GET_ENV, target, fc->env_register, hops, binding->location);
+		js_emit2(fc, VM_OP_GET_IMPORT, target, target);
+		return;
+	}
 
 	/* A captured binding in an environment, or a binding of this function's frame. */
 	if (binding->in_env) {
@@ -373,6 +379,10 @@ expr_store_binding_plain(
 	if (binding == NULL) {
 		key = js_constant_key(fc, name, length);
 		js_emit2(fc, VM_OP_PUT_GLOBAL, key, source);
+		return;
+	}
+	if (binding->kind == JS_BINDING_IMPORT) {
+		js_emit_throw_error(fc, VM_ERROR_TYPE, "Assignment to import binding.");
 		return;
 	}
 

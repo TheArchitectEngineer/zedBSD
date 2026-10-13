@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1082 / WS074 stable module export environment（2026-10-14）
+## 最新: q1083 / WS074 named import live binding（2026-10-14）
+
+[q1083履歴](queue-q1083.md): named importをGC追跡indirect bindingでlink。target解放/強制GC後のlive counter1→2、TDZ/代入/重複拒否、classic JS14/14、Acid3差0。[証拠](../ws074/phase216/evidence/20261014-q1083/README.md)。p216部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1082 / WS074 stable module export environment（2026-10-14）
 
 [q1082履歴](queue-q1082.md): export bindingのstable env/live読取を実装。GC後のcounter更新1→2・固定WPT共通support source`runTests`抽出PASS、classic JS14/14、Acid3差0。[証拠](../ws074/phase216/evidence/20261014-q1082/README.md)。p216部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

@@ -106,6 +106,7 @@ enum vm_opcode {
 	VM_OP_ARRAY_HOLE,	/* R array: a hole as the next element */
 	VM_OP_NEW_ENV,		/* R dst, R parent environment (or undefined), I slot count */
 	VM_OP_GET_ENV,		/* R dst, R environment, I hops outwards, I slot */
+	VM_OP_GET_IMPORT,	/* R dst, R indirect binding: read its live target slot */
 	VM_OP_PUT_ENV,		/* R environment, I hops outwards, I slot, R value */
 	VM_OP_LOAD_CLOSURE_ENV,	/* R dst: the running function's environment (or undefined) */
 	VM_OP_LOAD_THIS,	/* R dst: the this value (sloppy code's undefined or null is the global object) */
@@ -268,6 +269,13 @@ struct vm_env {
 	uint32_t reserved;
 };
 
+/* One immutable import's indirect reference to a module environment slot. */
+struct vm_import_binding {
+	struct vm_cell cell;
+	struct vm_env *env;
+	uint32_t slot;
+};
+
 /* The opcodes' table (code.c). */
 extern const struct vm_opcode_info vm_opcodes[VM_OPCODE_COUNT];
 
@@ -279,9 +287,11 @@ int vm_code_position(const struct vm_code *code, uint32_t offset, uint32_t *line
 
 /* Bytecode functions and environments (function.c). */
 extern const struct vm_cell_type vm_env_type;
+extern const struct vm_cell_type vm_import_binding_type;
 struct vm_function *vm_function_create(struct vm_realm *realm, struct vm_code *code);
 struct vm_function *vm_closure_create(struct vm_realm *realm, struct vm_code *code, struct vm_env *env);
 struct vm_env *vm_env_create(struct vm_heap *heap, struct vm_env *parent, uint32_t count);
 vm_value *vm_env_slots(struct vm_env *env);
+struct vm_import_binding *vm_import_binding_create(struct vm_heap *heap, struct vm_env *env, uint32_t slot);
 
 #endif

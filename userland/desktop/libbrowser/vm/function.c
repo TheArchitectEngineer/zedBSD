@@ -33,6 +33,7 @@ struct function_roots {
 /* Trace declarations are required by the cell-type initializers below. */
 static void function_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void function_env_trace(struct vm_heap *heap, struct vm_cell *cell);
+static void function_import_trace(struct vm_heap *heap, struct vm_cell *cell);
 
 /* The cell type of functions: objects that also hold their realm's objects through the realm's tracer. */
 const struct vm_cell_type vm_function_type = {
@@ -42,6 +43,11 @@ const struct vm_cell_type vm_function_type = {
 /* The cell type of environments: they hold their parent and their slots. */
 const struct vm_cell_type vm_env_type = {
 	"environment", function_env_trace, NULL
+};
+
+/* An import binding keeps the target module environment alive. */
+const struct vm_cell_type vm_import_binding_type = {
+	"import binding", function_import_trace, NULL
 };
 
 static int function_retain(struct vm_realm *realm, const vm_value *values, unsigned value_count, const vm_value *args, unsigned count, struct function_roots *roots);
@@ -451,6 +457,33 @@ vm_env_slots(
 {
 	/* Succeeded: the slots follow the environment header. */
 	return (vm_value *)(env + 1);
+}
+
+/* Makes one indirect reference to a module's exported environment slot. */
+struct vm_import_binding *
+vm_import_binding_create(
+	struct vm_heap *heap,
+	struct vm_env *env,
+	uint32_t slot)
+{
+	struct vm_import_binding *binding;
+	struct vm_cell *root;
+	int status;
+
+	/* A link always names a real slot; retain the target across allocation. */
+	if (env == NULL || slot >= env->count)
+		return NULL;
+	root = &env->cell;
+	status = vm_heap_add_root(heap, &root);
+	if (status != 0)
+		return NULL;
+	binding = vm_heap_alloc(heap, &vm_import_binding_type, sizeof(*binding));
+	vm_heap_remove_root(heap, &root);
+	if (binding == NULL)
+		return NULL;
+	binding->env = env;
+	binding->slot = slot;
+	return binding;
 }
 
 /*
@@ -1127,6 +1160,19 @@ function_env_trace(
 
 	/* Succeeded: the parent and initialized environment slots were marked. */
 	return;
+}
+
+/* Marks an import's target environment; its slot is traced by that environment. */
+static void
+function_import_trace(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct vm_import_binding *binding;
+
+	binding = (struct vm_import_binding *)cell;
+	if (binding->env != NULL)
+		vm_heap_mark(heap, &binding->env->cell);
 }
 
 /* Gives a constructor its prototype object, whose constructor property points back. */
