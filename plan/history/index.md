@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1078 / WS074 module script capability investigation（2026-10-14）
+## 最新: q1079 / WS074 standalone module scope（2026-10-14）
+
+[q1079履歴](queue-q1079.md): module top-level宣言をglobalから分離。局所fixture exact、classic JS14/14、warning0 build、Acid3差0、p216 partial cleared。[証拠](../ws074/phase216/evidence/20261014-q1079/README.md)。import/export・HTML module loadとp189/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1078 / WS074 module script capability investigation（2026-10-14）
 
 [q1078履歴](queue-q1078.md): 固定Grid no_output32件全て同じmodule named import。HTML loaderとJS compilerの未対応を確認し[p216](../ws074/phase216/phase.md)を追加。[証拠](../ws074/phase189/evidence/20261014-q1078/README.md)。p189/p173全件100%未達、共有投影/GitHub publication pending。
 

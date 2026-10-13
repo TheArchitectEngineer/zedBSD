@@ -157,7 +157,11 @@ js_run_script(
 		return status;
 
 	/* The run. */
-	status = vm_call(realm, vm_value_cell(function), vm_value_cell(realm->global), NULL, 0, result);
+	/* A module's top-level this is undefined; a classic script receives the global object. */
+	if ((how & JS_PARSE_MODULE) != 0U)
+		status = vm_call(realm, vm_value_cell(function), VM_VALUE_UNDEFINED, NULL, 0, result);
+	else
+		status = vm_call(realm, vm_value_cell(function), vm_value_cell(realm->global), NULL, 0, result);
 	if (status != 0)
 		return status;
 
@@ -655,7 +659,7 @@ compile_hoisted(
 		js_emit3(fc, VM_OP_NEW_CLOSURE, closure, constant, fc->env_register);
 
 		/* The program's function is a global; a function's is its binding. */
-		if (info->program) {
+		if (info->program && (info->node->flags & JS_FLAG_MODULE) == 0U) {
 			key = js_constant_key(fc, hoisted->node->text, hoisted->node->text_length);
 			js_emit2(fc, VM_OP_DEFINE_GLOBAL_FUNCTION, key, closure);
 		} else {

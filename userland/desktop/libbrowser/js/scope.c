@@ -394,8 +394,8 @@ scope_declare_var(
 	struct js_global_name *listed;
 	int same;
 
-	/* A function's var is a binding. */
-	if (!info->program) {
+	/* A function's or module's var is a binding, not a global property. */
+	if (!info->program || (info->node->flags & JS_FLAG_MODULE) != 0U) {
 		scope_declare(compiler, info->scope, name, length, JS_BINDING_VAR);
 		return;
 	}
@@ -494,7 +494,7 @@ scope_declare_function(
 	struct js_hoisted *hoisted;
 
 	/* The name, like a var (a function's binding records that it is a function). */
-	if (info->program) {
+	if (info->program && (info->node->flags & JS_FLAG_MODULE) == 0U) {
 		scope_declare_var(compiler, info, node->text, node->text_length);
 	} else {
 		scope_declare(compiler, info->scope, node->text, node->text_length, JS_BINDING_FUNCTION);
@@ -745,7 +745,8 @@ scope_declare_lexicals(
 		/* A class declaration's name is a let. */
 		if (node->kind == JS_NODE_CLASS_DECLARATION && node->text != NULL) {
 			found = 1;
-			if (scope->kind == JS_SCOPE_FUNCTION && scope->function->program) {
+			if (scope->kind == JS_SCOPE_FUNCTION && scope->function->program &&
+			    (scope->function->node->flags & JS_FLAG_MODULE) == 0U) {
 				scope_global_lexical(compiler, scope->function, node, 0);
 			} else {
 				scope_declare_lexical(compiler, scope, node, JS_BINDING_LET);
@@ -771,7 +772,8 @@ scope_declare_lexicals(
 
 		/* Each declarator's names: the realm's for the program's top level, the scope's otherwise. */
 		for (declarator = node->first; declarator != NULL; declarator = declarator->next) {
-			if (scope->kind == JS_SCOPE_FUNCTION && scope->function->program) {
+			if (scope->kind == JS_SCOPE_FUNCTION && scope->function->program &&
+			    (scope->function->node->flags & JS_FLAG_MODULE) == 0U) {
 				scope_global_lexical(compiler, scope->function, declarator->first, is_const);
 			} else {
 				scope_declare_lexical(compiler, scope, declarator->first, kind);
