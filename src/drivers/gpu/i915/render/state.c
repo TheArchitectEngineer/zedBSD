@@ -1586,6 +1586,20 @@ drv_i915_gfx_emit_constants(
 		for (index = 1U; index < GEN12_3DSTATE_CONSTANT_DWORDS; index++)
 			drv_i915_batch_emit(batch, 0U);
 	}
+
+	/*
+	 * Commits the vertex and the geometry stage's push data on Gen9: there
+	 * a 3DSTATE_CONSTANT_* packet takes effect only at the stage's next
+	 * 3DSTATE_BINDING_TABLE_POINTERS_* (anv's cmd_buffer_emit_descriptor_pointers(),
+	 * "on SKL this is what flushes push constants"; ws229-p005, T1-608).
+	 * The context setup cleared those stages' pointers before these packets,
+	 * and the pixel stage's pointer comes later with the draw.  Gen12 is
+	 * left as it is.
+	 */
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_VS, GEN12_3DSTATE_POINTERS_DWORDS);
+		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_GS, GEN12_3DSTATE_POINTERS_DWORDS);
+	}
 }
 
 /*

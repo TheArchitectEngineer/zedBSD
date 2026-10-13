@@ -68,6 +68,8 @@ GEN9_ONLY = {
     'PIPE_CONTROL': 'the flushes around an L3 change, and the PIPELINE_SELECT flushes Gen9 splits in two',
     '3DSTATE_CC_STATE_POINTERS': 'the colour calc pointer cleared before PIPELINE_SELECT to GPGPU (SKL PRM)',
     'MEDIA_VFE_STATE': 'the VFE state re-emitted before PIPELINE_SELECT to 3D (anv, Gen9)',
+    '3DSTATE_BINDING_TABLE_POINTERS_VS': 'commits the vertex push constants after 3DSTATE_CONSTANT_VS (SKL; ws229-p005)',
+    '3DSTATE_BINDING_TABLE_POINTERS_GS': 'commits the geometry push constants after 3DSTATE_CONSTANT_GS (SKL; ws229-p005)',
 }
 
 # Fields both versions name whose values differ, by instruction or structure, with the reason.  Every field whose
