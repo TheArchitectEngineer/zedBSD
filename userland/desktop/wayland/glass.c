@@ -315,6 +315,7 @@ static const unsigned glass_icon_pixels[GLASS_ICON_SIZES] = { 16U, 20U };
 static const unsigned glass_tile_pixels[GLASS_TILE_SIZES] = { 20U, 26U, 48U, 72U };
 
 static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
+static int glass_size_make(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
 static int wallpaper_fill(struct kwl_glass *glass, const char *path, uint32_t width, uint32_t height);
 static int wallpaper_draw(struct kwl_glass *glass, struct wallpaper_picture *given, uint32_t width, uint32_t height);
 static void wallpaper_pixel(uint32_t x, uint32_t y, uint32_t width, uint32_t height, float *rgb);
@@ -603,8 +604,10 @@ kwl_glass_resize(
  * Makes the wallpaper and its frosted glass at another size, the picture
  * in them, before an output turns (WS217): the look keeps its own images
  * until kwl_glass_size_swap gives it these, so that a failure here leaves
- * everything as it was.  Returns 0 (nothing made without the look) or an
- * errno value, with nothing left made.
+ * everything as it was.  The two images' layout moves are submitted and
+ * waited for once, as at the start (each alone waited for the render
+ * thread and the queue, BUG-306).  Returns 0 (nothing made without the
+ * look) or an errno value, with nothing left made.
  */
 int
 kwl_glass_size_prepare(
@@ -613,9 +616,8 @@ kwl_glass_size_prepare(
 	uint32_t height,
 	struct kwl_glass_size *size)
 {
-	struct wallpaper_picture picture;
 	uint64_t started;
-	VkResult result;
+	VkResult moved;
 	int error;
 
 	/* Without the look there is no wallpaper. */
@@ -623,32 +625,17 @@ kwl_glass_size_prepare(
 	if (server->compose == NULL || server->compose->glass == NULL)
 		return 0;
 
-	/* The wallpaper's image at the size. */
+	/* The images and the picture in them, their layout moves recorded together. */
 	started = kwl_milliseconds();
-	result = kwl_host_image_create(server->compose, width, height, server->compose->sampler, &size->wallpaper);
-	if (result != VK_SUCCESS) {
-		kwl_glass_size_drop(server, size);
-		return ENOMEM;
-	}
+	kwl_host_image_batch_begin(server->compose);
+	error = glass_size_make(server, width, height, size);
 
-	/* The frosted glass's small image. */
-	result = kwl_host_image_create(server->compose, width / GLASS_BLUR_SCALE, height / GLASS_BLUR_SCALE, server->compose->linear_sampler, &size->blurred);
-	if (result != VK_SUCCESS) {
-		kwl_glass_size_drop(server, size);
-		return ENOMEM;
-	}
+	/* The moves submitted once, before a failure lets the images go (the moves name them). */
+	moved = kwl_host_image_batch_end(server->compose);
+	if (error == 0 && moved != VK_SUCCESS)
+		error = EIO;
 
-	/* The picture shown now (or the landscape drawn here), read again. */
-	memset(&picture, 0, sizeof(picture));
-	if (server->wallpaper_path != NULL) {
-		error = wallpaper_load(server->wallpaper_path, &picture);
-		if (error != 0)
-			printf("KWL GLASS no wallpaper: path=%s errno=%d\n", server->wallpaper_path, error);
-	}
-
-	/* Into both images at the size; then its bytes go. */
-	error = wallpaper_render(&picture, width, height, size->wallpaper.map, size->wallpaper.row_pitch, size->blurred.map, size->blurred.row_pitch);
-	free(picture.data);
+	/* A failure leaves nothing made. */
 	if (error != 0) {
 		kwl_glass_size_drop(server, size);
 		return error;
@@ -896,6 +883,51 @@ wallpaper_create(
 		return error;
 
 	/* Succeeded: the wallpaper is drawn. */
+	return 0;
+}
+
+/*
+ * Makes the wallpaper's image and the frosted glass's at a size and draws
+ * the picture shown now into them (kwl_glass_size_prepare); a failure
+ * leaves what was made in size for the caller to let go.  Returns 0,
+ * ENOMEM for an image that could not be made, or the error of drawing.
+ */
+static int
+glass_size_make(
+	struct kwl_server *server,
+	uint32_t width,
+	uint32_t height,
+	struct kwl_glass_size *size)
+{
+	struct wallpaper_picture picture;
+	VkResult result;
+	int error;
+
+	/* The wallpaper's image at the size. */
+	result = kwl_host_image_create(server->compose, width, height, server->compose->sampler, &size->wallpaper);
+	if (result != VK_SUCCESS)
+		return ENOMEM;
+
+	/* The frosted glass's small image. */
+	result = kwl_host_image_create(server->compose, width / GLASS_BLUR_SCALE, height / GLASS_BLUR_SCALE, server->compose->linear_sampler, &size->blurred);
+	if (result != VK_SUCCESS)
+		return ENOMEM;
+
+	/* The picture shown now (or the landscape drawn here), read again. */
+	memset(&picture, 0, sizeof(picture));
+	if (server->wallpaper_path != NULL) {
+		error = wallpaper_load(server->wallpaper_path, &picture);
+		if (error != 0)
+			printf("KWL GLASS no wallpaper: path=%s errno=%d\n", server->wallpaper_path, error);
+	}
+
+	/* Into both images at the size; then its bytes go. */
+	error = wallpaper_render(&picture, width, height, size->wallpaper.map, size->wallpaper.row_pitch, size->blurred.map, size->blurred.row_pitch);
+	free(picture.data);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: both images hold the picture. */
 	return 0;
 }
 

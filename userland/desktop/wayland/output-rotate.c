@@ -34,17 +34,49 @@
 #include <stdio.h>
 #include <string.h>
 
-static int output_rotate_turn(struct kwl_server *server, const struct kwl_rotate_state *after);
+/*
+ * When each step of a change of the angle shown ended (kwl_milliseconds),
+ * for the log's times (BUG-306: a turn that took 7 to 12 s); a step not
+ * taken ends when the one before it did.
+ */
+struct output_rotate_clock {
+	/* The change began. */
+	uint64_t started;
+
+	/* The new turn image made, and the look's wallpaper at the new size. */
+	uint64_t turn_made;
+	uint64_t glass_made;
+
+	/* The fingers and the pens ended (everything made before the render thread parks). */
+	uint64_t prepared;
+
+	/* The render thread parked, and the device idle. */
+	uint64_t parked;
+	uint64_t idle;
+
+	/* The turn image and the wallpaper exchanged, then the caches made again and the thread going on. */
+	uint64_t exchanged;
+	uint64_t swapped;
+
+	/* The pointer and the windows fitted, the clients told, and the choice given to displays.conf's writer. */
+	uint64_t fitted;
+	uint64_t told;
+	uint64_t saved;
+};
+
+static int output_rotate_turn(struct kwl_server *server, const struct kwl_rotate_state *after, struct output_rotate_clock *clock);
 static const char *output_rotate_heads(const struct kwl_compose *compose);
 static void output_rotate_caches(struct kwl_server *server, unsigned scene_kept, unsigned resized);
 static const char *output_rotate_mode_name(unsigned mode);
-static void output_rotate_times(uint64_t started, uint64_t prepared, uint64_t parked, uint64_t idle);
+static void output_rotate_times(const struct output_rotate_clock *clock);
+static void output_rotate_clock_fill(struct output_rotate_clock *clock, uint64_t now);
 
 /*
  * Takes the user's choice of an output's angle: refused outside the
  * display's mask; saved, and shown now when the output is open (or at its
  * next opening).  *applied says whether the angle is shown now, *saved
- * whether displays.conf was written (0) or its errno.  Returns 0, EINVAL
+ * whether displays.conf's writing was given (0: its thread writes it,
+ * heads.c) or its errno.  Returns 0, EINVAL
  * for a number that is not an angle, ENOTSUP for an angle the display may
  * not take (or a head's, ws217-p005), or the error of showing it (the
  * choice then goes back to what it was).
@@ -186,9 +218,9 @@ kwl_output_apply_rotation(
 {
 	struct kwl_compose *compose;
 	struct kwl_rotate_state after;
+	struct output_rotate_clock clock;
 	char names[64];
 	int32_t pointer[4];
-	uint64_t started;
 	unsigned steps;
 	unsigned before_rotation;
 	int error;
@@ -221,17 +253,20 @@ kwl_output_apply_rotation(
 	}
 
 	/* Another turn: the images exchanged (nothing changes when the new ones cannot be made). */
-	started = kwl_milliseconds();
+	memset(&clock, 0, sizeof(clock));
+	clock.started = kwl_milliseconds();
 	before_rotation = compose->rotation;
 	if ((steps & KWL_ROTATE_STEP_TURN) != 0U) {
-		error = output_rotate_turn(server, &after);
+		error = output_rotate_turn(server, &after, &clock);
 		if (error != 0)
 			return error;
 	}
 
-	/* The same angle (a choice saved alone): the size is set as it is. */
-	if ((steps & KWL_ROTATE_STEP_TURN) == 0U)
+	/* The same angle (a choice saved alone): the size is set as it is, and no image was made. */
+	if ((steps & KWL_ROTATE_STEP_TURN) == 0U) {
 		kwl_output_size_set(server, compose->mode_width, compose->mode_height, rotation);
+		output_rotate_clock_fill(&clock, clock.started);
+	}
 
 	/*
 	 * The pointer first, from its old logical place to the same point of
@@ -247,15 +282,21 @@ kwl_output_apply_rotation(
 	pointer[3] = -1;
 	if ((steps & KWL_ROTATE_STEP_ROTATED) != 0U)
 		kwl_output_pointer_turn(server, before_rotation, rotation, pointer);
-	if ((steps & KWL_ROTATE_STEP_RESIZED) != 0U) {
+	if ((steps & KWL_ROTATE_STEP_RESIZED) != 0U)
 		kwl_output_fit(server, 0U);
+	clock.fitted = kwl_milliseconds();
+
+	/* The clients told the new size; the input thread computes the motions over the new angle (the pointer's warp gave it already when it ran). */
+	if ((steps & KWL_ROTATE_STEP_RESIZED) != 0U)
 		kwl_outputs_changed(server);
-	}
-
-	/* The input thread computes the motions over the new angle (the pointer's warp gave it already when it ran). */
 	kwl_input_geometry(server);
+	clock.told = kwl_milliseconds();
 
-	/* Everything is drawn again; the user's change of choice is written. */
+	/*
+	 * Everything is drawn again; the user's change of choice is given to
+	 * displays.conf's writer, whose thread waits for the file's flush
+	 * (heads.c, BUG-306: the flush in the event loop took seconds).
+	 */
 	server->dirty = 1;
 	compose->rotate_saved = -1;
 	if ((steps & KWL_ROTATE_STEP_SAVE) != 0U) {
@@ -263,16 +304,18 @@ kwl_output_apply_rotation(
 		if (compose->rotate_saved != 0)
 			printf("KWL OUTPUT rotate save errno=%d\n", compose->rotate_saved);
 	}
+	clock.saved = kwl_milliseconds();
 
-	/* Succeeded: the output shows the angle from now on, and the tests read it. */
+	/* Succeeded: the output shows the angle from now on, and the tests read it with how long each step took. */
 	compose->opened = after;
 	compose->opened_display = compose->display;
 	kwl_output_steps_name(steps, names, sizeof(names));
+	output_rotate_times(&clock);
 	printf("KWL OUTPUT rotate key=%s rotation=%u selected=%u scanout=%u turn=%u width=%u height=%u mode=%ux%u steps=%s by=%s "
 	    "pointer=%d,%d>%d,%d ms=%llu\n",
 	    compose->display_name, after.rotation, after.selected, after.scanout, after.turn, after.width, after.height, compose->mode_width,
 	    compose->mode_height, names, output_rotate_mode_name(mode), pointer[0], pointer[1], pointer[2], pointer[3],
-	    (unsigned long long)(kwl_milliseconds() - started));
+	    (unsigned long long)(kwl_milliseconds() - clock.started));
 	return 0;
 }
 
@@ -375,20 +418,18 @@ kwl_output_rotation_report(
  * size-bound caches are made again.  The same size (90 and 270, 0 and a
  * turned 180) keeps every image of the size, the turn image too (its
  * pixels are logical), and only the swapchain's images are drawn whole
- * (review M5).  Returns 0 or the errno of making the new images.
+ * (review M5).  The clock gets when each step ended.  Returns 0 or the
+ * errno of making the new images.
  */
 static int
 output_rotate_turn(
 	struct kwl_server *server,
-	const struct kwl_rotate_state *after)
+	const struct kwl_rotate_state *after,
+	struct output_rotate_clock *clock)
 {
 	struct kwl_compose *compose;
 	struct kwl_turn fresh;
 	struct kwl_glass_size glass;
-	uint64_t started;
-	uint64_t prepared;
-	uint64_t parked;
-	uint64_t idle;
 	unsigned scene_kept;
 	unsigned resized;
 	unsigned reuse;
@@ -396,7 +437,6 @@ output_rotate_turn(
 	int error;
 
 	/* Whether the logical size changes, and whether the turn image of the size can serve the new angle. */
-	started = kwl_milliseconds();
 	compose = server->compose;
 	memset(&fresh, 0, sizeof(fresh));
 	memset(&glass, 0, sizeof(glass));
@@ -415,6 +455,7 @@ output_rotate_turn(
 			return ENOMEM;
 		}
 	}
+	clock->turn_made = kwl_milliseconds();
 
 	/* The look's wallpaper at the new logical size, when the size changes. */
 	if (resized) {
@@ -425,25 +466,25 @@ output_rotate_turn(
 			return error;
 		}
 	}
+	clock->glass_made = kwl_milliseconds();
 
 	/*
 	 * The fingers and the pens end what they were doing while their places
 	 * still mean the old points (ws217-p003): the angle changes now.
 	 */
 	kwl_input_rotated(server);
-	prepared = kwl_milliseconds();
+	clock->prepared = kwl_milliseconds();
 
 	/*
 	 * No frame, nor the cursor's plane (its thread submits on the same
 	 * queue, review M2), may use the old images while they go; the cursor
-	 * thread goes on at the next kwl_cursor_plane_update.  How long each
-	 * step took is logged (BUG-306: a turn that took 12 s).
+	 * thread goes on at the next kwl_cursor_plane_update.
 	 */
 	kwl_compose_park(server);
 	kwl_cursor_plane_hold(server);
-	parked = kwl_milliseconds();
+	clock->parked = kwl_milliseconds();
 	(void)vkDeviceWaitIdle(compose->device);
-	idle = kwl_milliseconds();
+	clock->idle = kwl_milliseconds();
 
 	/* The new angle and logical size; the turn's images can be made again. */
 	kwl_output_size_set(server, compose->mode_width, compose->mode_height, after->rotation);
@@ -456,7 +497,8 @@ output_rotate_turn(
 		compose->turn.rotation = after->turn;
 		memset(compose->image_frames, 0, sizeof(compose->image_frames));
 		kwl_compose_unpark(server);
-		output_rotate_times(started, prepared, parked, idle);
+		output_rotate_clock_fill(clock, clock->idle);
+		clock->swapped = kwl_milliseconds();
 		return 0;
 	}
 
@@ -472,6 +514,7 @@ output_rotate_turn(
 
 	/* The look's wallpaper exchanged. */
 	kwl_glass_size_swap(server, &glass);
+	clock->exchanged = kwl_milliseconds();
 
 	/* The caches of another size made again; every image is drawn whole next. */
 	scene_kept = 0U;
@@ -481,27 +524,52 @@ output_rotate_turn(
 
 	/* Succeeded: the render thread goes on with the new images. */
 	kwl_compose_unpark(server);
-	output_rotate_times(started, prepared, parked, idle);
+	clock->swapped = kwl_milliseconds();
 	return 0;
 }
 
 /*
- * Logs how long the steps of a turn took (BUG-306): the new images made,
- * the render thread parked, the device idle, and the images exchanged.
+ * Logs how long each step of a change of the angle shown took (BUG-306):
+ * the new images made (the turn image, the wallpaper), the render thread
+ * parked, the device idle, the images exchanged and the caches made
+ * again, then the windows fitted, the clients told and the choice given
+ * to displays.conf's writer.
  */
 static void
 output_rotate_times(
-	uint64_t started,
-	uint64_t prepared,
-	uint64_t parked,
-	uint64_t idle)
+	const struct output_rotate_clock *clock)
 {
-	uint64_t now;
+	/* Each step's length, from the one before it; prepare and swap as before, with their parts. */
+	printf("KWL OUTPUT rotate times prepare_ms=%llu turn_ms=%llu glass_ms=%llu park_ms=%llu idle_ms=%llu swap_ms=%llu caches_ms=%llu "
+	    "fit_ms=%llu tell_ms=%llu save_ms=%llu\n",
+	    (unsigned long long)(clock->prepared - clock->started), (unsigned long long)(clock->turn_made - clock->started),
+	    (unsigned long long)(clock->glass_made - clock->turn_made), (unsigned long long)(clock->parked - clock->prepared),
+	    (unsigned long long)(clock->idle - clock->parked), (unsigned long long)(clock->swapped - clock->idle),
+	    (unsigned long long)(clock->swapped - clock->exchanged), (unsigned long long)(clock->fitted - clock->swapped),
+	    (unsigned long long)(clock->told - clock->fitted), (unsigned long long)(clock->saved - clock->told));
+}
 
-	/* Each step's length, from the one before it. */
-	now = kwl_milliseconds();
-	printf("KWL OUTPUT rotate times prepare_ms=%llu park_ms=%llu idle_ms=%llu swap_ms=%llu\n", (unsigned long long)(prepared - started),
-	    (unsigned long long)(parked - prepared), (unsigned long long)(idle - parked), (unsigned long long)(now - idle));
+/* Marks every step of the turn from the first not taken as ended when the one before it did (now). */
+static void
+output_rotate_clock_fill(
+	struct output_rotate_clock *clock,
+	uint64_t now)
+{
+	/* Each image step not taken yet ends now. */
+	if (clock->turn_made == 0U)
+		clock->turn_made = now;
+	if (clock->glass_made == 0U)
+		clock->glass_made = now;
+	if (clock->prepared == 0U)
+		clock->prepared = now;
+	if (clock->parked == 0U)
+		clock->parked = now;
+	if (clock->idle == 0U)
+		clock->idle = now;
+	if (clock->exchanged == 0U)
+		clock->exchanged = now;
+	if (clock->swapped == 0U)
+		clock->swapped = now;
 }
 
 /*

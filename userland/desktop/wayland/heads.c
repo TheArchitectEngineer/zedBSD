@@ -48,6 +48,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,6 +66,55 @@
 
 /* The first wl_output global name of a head, past every name of the fixed globals (protocol.c). */
 #define HEADS_GLOBAL_FIRST	1000U
+
+/*
+ * One writing of displays.conf, made ready on the main thread (the paths
+ * read HOME there): the file, its folder, and the text.
+ */
+struct heads_write {
+	char path[HEADS_PATH_MAX];
+	char folder[HEADS_PATH_MAX];
+	char text[HEADS_TEXT_MAX];
+	size_t length;
+};
+
+/*
+ * The thread that writes displays.conf for a choice of an angle (WS217,
+ * BUG-306): the file's flush (fsync, which writes the whole volume out on
+ * zedBSD's UFS and asks the disk to flush) took seconds in the event loop,
+ * where no frame was drawn and no client served meanwhile.  The main
+ * thread makes the writing ready and gives it; the thread writes the
+ * latest one given, one at a time, and a writing given while it writes is
+ * written after it.  The other writings of displays.conf (heads_save) wait
+ * for it first, so that the file always ends with the latest choice.
+ */
+struct heads_writer {
+	/* Guards every field below but thread and started, which only the main thread uses (made when the thread starts). */
+	pthread_mutex_t lock;
+
+	/* Signalled when a writing is given or the thread is to end. */
+	pthread_cond_t wake;
+
+	/* Signalled when the thread has written everything it was given. */
+	pthread_cond_t idle;
+
+	/* The latest writing given and not taken yet, and whether there is one. */
+	struct heads_write given;
+	unsigned pending;
+
+	/* The thread writes a writing it took (pending or busy: the file is not final yet). */
+	unsigned busy;
+
+	/* The thread ends once nothing is pending (the compositor's end). */
+	unsigned stop;
+
+	/* When the writing pending was given (kwl_milliseconds), for the log. */
+	uint64_t given_ms;
+
+	/* The thread, and whether it runs. */
+	pthread_t thread;
+	unsigned started;
+};
 
 /*
  * A warp of the pointer off an output going away (heads_evacuate): the
@@ -104,6 +154,11 @@ static void heads_record_extended(struct kwl_server *server, struct kwl_list *co
 static void heads_barrier(struct kwl_list *command, VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags source_access, VkAccessFlags destination_access, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
 static int heads_path(char *path, size_t size, int folder);
 static int heads_save(const struct kwl_display_config *config);
+static int heads_write_ready(const struct kwl_display_config *config, struct heads_write *write_job);
+static int heads_write_file(struct heads_write *write_job);
+static int heads_writer_start(void);
+static void heads_writer_drain(void);
+static void *heads_writer_run(void *argument);
 static void heads_mkdir(char *folder);
 static void heads_changed(struct kwl_server *server);
 static void heads_evacuate(struct kwl_server *server, unsigned slot);
@@ -117,24 +172,85 @@ static void heads_redraw(struct kwl_server *server);
 static int heads_index(const struct kwl_compose *compose, VkDisplayKHR display);
 static int heads_off(const struct kwl_compose *compose, unsigned index);
 
+/* The writer of displays.conf for the angles (struct heads_writer): its lock guards it once started is set. */
+static struct heads_writer heads_writer;
+
 /*
- * Writes the displays' choice as it is now to displays.conf (an output's
- * angle chosen, WS217).  Returns 0 or an errno value; a failure leaves the
- * file as it was.
+ * Gives the displays' choice as it is now to be written to displays.conf
+ * (an output's angle chosen, WS217) by the writer's thread, so that the
+ * event loop does not wait for the file's flush (BUG-306); without the
+ * thread it is written here.  Returns 0 (given, or written) or an errno
+ * value; a failure leaves the file as it was, and a failure of the
+ * thread's writing is logged ("KWL DISPLAYS saved ... errno=").
  */
 int
 kwl_heads_config_save(
 	struct kwl_server *server)
 {
+	struct heads_write write_job;
 	int error;
 
-	/* The choice the compositor holds. */
-	error = heads_save(&server->compose->config);
+	/* The text and the paths, made here. */
+	error = heads_write_ready(&server->compose->config, &write_job);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the file holds the choice. */
+	/* The thread, started at the first choice; without it the file is written now. */
+	error = heads_writer_start();
+	if (error != 0) {
+		/* Written here instead; a failure is the file's. */
+		printf("KWL DISPLAYS writer unavailable errno=%d\n", error);
+		error = heads_write_file(&write_job);
+		if (error != 0)
+			return error;
+
+		/* The file holds the choice. */
+		return 0;
+	}
+
+	/* The latest choice replaces one not taken yet: the file ends with it either way. */
+	pthread_mutex_lock(&heads_writer.lock);
+
+	heads_writer.given = write_job;
+	heads_writer.pending = 1U;
+	heads_writer.given_ms = kwl_milliseconds();
+	pthread_cond_signal(&heads_writer.wake);
+
+	pthread_mutex_unlock(&heads_writer.lock);
+
+	/* Succeeded: the thread writes the choice. */
 	return 0;
+}
+
+/*
+ * Ends the writer of displays.conf at the compositor's end: the choice
+ * given last reaches its file first.
+ */
+void
+kwl_heads_config_close(void)
+{
+	/* Nothing runs without the thread. */
+	if (!heads_writer.started)
+		return;
+
+	/* Everything given is written first. */
+	heads_writer_drain();
+
+	/* Then the thread ends. */
+	pthread_mutex_lock(&heads_writer.lock);
+
+	heads_writer.stop = 1U;
+	pthread_cond_signal(&heads_writer.wake);
+
+	pthread_mutex_unlock(&heads_writer.lock);
+
+	/* The thread joined, and its lock and conditions let go. */
+	(void)pthread_join(heads_writer.thread, NULL);
+	pthread_cond_destroy(&heads_writer.idle);
+	pthread_cond_destroy(&heads_writer.wake);
+	pthread_mutex_destroy(&heads_writer.lock);
+	heads_writer.started = 0U;
+	heads_writer.stop = 0U;
 }
 
 /*
@@ -1574,18 +1690,79 @@ heads_mkdir(
 }
 
 /*
- * Writes a choice to displays.conf: a new file beside it, flushed, then
- * renamed over it (D-STORE), in the folder made when it is missing.
- * Returns 0 or an errno value; a failure leaves the file as it was.
+ * Writes a choice to displays.conf now (the displays' mode, a display
+ * turned off or on): after the writer's thread has written what it was
+ * given, so that the file ends with this choice.  Returns 0 or an errno
+ * value; a failure leaves the file as it was.
  */
 static int
 heads_save(
 	const struct kwl_display_config *config)
 {
-	char path[HEADS_PATH_MAX];
-	char folder[HEADS_PATH_MAX];
+	struct heads_write write_job;
+	int error;
+
+	/* The angle's choice given before this one is written first. */
+	heads_writer_drain();
+
+	/* The text and the paths. */
+	error = heads_write_ready(config, &write_job);
+	if (error != 0)
+		return error;
+
+	/* The file. */
+	error = heads_write_file(&write_job);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the file keeps the choice. */
+	return 0;
+}
+
+/*
+ * Makes a writing of displays.conf ready on the main thread: the choice's
+ * text, the file's path and its folder's.  Returns 0, ENOSPC for a text
+ * longer than the file may be, or the error of the paths.
+ */
+static int
+heads_write_ready(
+	const struct kwl_display_config *config,
+	struct heads_write *write_job)
+{
+	int error;
+
+	/* The text. */
+	write_job->length = kwl_displays_format(config, write_job->text, sizeof(write_job->text));
+	if (write_job->length == 0U)
+		return ENOSPC;
+
+	/* The file's path. */
+	error = heads_path(write_job->path, sizeof(write_job->path), 0);
+	if (error != 0)
+		return error;
+
+	/* Its folder's. */
+	error = heads_path(write_job->folder, sizeof(write_job->folder), 1);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the writing is ready. */
+	return 0;
+}
+
+/*
+ * Writes displays.conf: a new file beside it, flushed, then renamed over
+ * it (D-STORE), in the folder made when it is missing (made the user's
+ * alone: a new home has no .config).  It touches nothing but the writing
+ * given, so the writer's thread runs it too.  Returns 0 or an errno value;
+ * a failure leaves the file as it was.
+ */
+static int
+heads_write_file(
+	struct heads_write *write_job)
+{
 	char temporary[HEADS_PATH_MAX + 8U];
-	char text[HEADS_TEXT_MAX];
+	const char *text;
 	size_t length;
 	size_t done;
 	ssize_t count;
@@ -1593,22 +1770,13 @@ heads_save(
 	int status;
 	int error;
 
-	/* The text. */
-	length = kwl_displays_format(config, text, sizeof(text));
-	if (length == 0U)
-		return ENOSPC;
-
-	/* The paths, and the folder and those above it (made the user's alone when they are missing: a new home has no .config). */
-	error = heads_path(path, sizeof(path), 0);
-	if (error != 0)
-		return error;
-	error = heads_path(folder, sizeof(folder), 1);
-	if (error != 0)
-		return error;
-	heads_mkdir(folder);
+	/* The folder and those above it. */
+	heads_mkdir(write_job->folder);
+	text = write_job->text;
+	length = write_job->length;
 
 	/* A new file beside the file. */
-	(void)snprintf(temporary, sizeof(temporary), "%s.XXXXXX", path);
+	(void)snprintf(temporary, sizeof(temporary), "%s.XXXXXX", write_job->path);
 	descriptor = mkstemp(temporary);
 	if (descriptor < 0)
 		return errno;
@@ -1648,7 +1816,7 @@ heads_save(
 	}
 
 	/* Renamed over the file, which replaces it at once. */
-	status = rename(temporary, path);
+	status = rename(temporary, write_job->path);
 	if (status != 0) {
 		error = errno;
 		(void)unlink(temporary);
@@ -1657,6 +1825,117 @@ heads_save(
 
 	/* Succeeded: the file keeps the choice. */
 	return 0;
+}
+
+/*
+ * Starts the writer's thread once (the first choice of an angle).  Returns
+ * 0 (it runs) or the errno value of making it.
+ */
+static int
+heads_writer_start(void)
+{
+	int error;
+
+	/* Already running. */
+	if (heads_writer.started)
+		return 0;
+
+	/* Its lock and conditions, then the thread. */
+	memset(&heads_writer, 0, sizeof(heads_writer));
+	error = pthread_mutex_init(&heads_writer.lock, NULL);
+	if (error != 0)
+		return error;
+	error = pthread_cond_init(&heads_writer.wake, NULL);
+	if (error != 0) {
+		pthread_mutex_destroy(&heads_writer.lock);
+		return error;
+	}
+	error = pthread_cond_init(&heads_writer.idle, NULL);
+	if (error != 0) {
+		pthread_cond_destroy(&heads_writer.wake);
+		pthread_mutex_destroy(&heads_writer.lock);
+		return error;
+	}
+	error = pthread_create(&heads_writer.thread, NULL, heads_writer_run, NULL);
+	if (error != 0) {
+		pthread_cond_destroy(&heads_writer.idle);
+		pthread_cond_destroy(&heads_writer.wake);
+		pthread_mutex_destroy(&heads_writer.lock);
+		return error;
+	}
+
+	/* Succeeded: the thread waits for a choice. */
+	heads_writer.started = 1U;
+	return 0;
+}
+
+/* Waits until the writer's thread has written everything it was given (none: nothing waits). */
+static void
+heads_writer_drain(void)
+{
+	/* Nothing is written without the thread. */
+	if (!heads_writer.started)
+		return;
+
+	/* Until nothing is pending and nothing is being written. */
+	pthread_mutex_lock(&heads_writer.lock);
+
+	while (heads_writer.pending || heads_writer.busy)
+		(void)pthread_cond_wait(&heads_writer.idle, &heads_writer.lock);
+
+	pthread_mutex_unlock(&heads_writer.lock);
+}
+
+/* Writes each writing given, the latest one each time, until it is told to end with nothing pending. */
+static void *
+heads_writer_run(
+	void *argument)
+{
+	struct heads_write write_job;
+	uint64_t given_ms;
+	uint64_t started;
+	int error;
+
+	(void)argument;
+
+	/* One writing at a time. */
+	pthread_mutex_lock(&heads_writer.lock);
+
+	for (;;) {
+		/* Asleep until a writing is given or the end. */
+		while (!heads_writer.pending && !heads_writer.stop)
+			(void)pthread_cond_wait(&heads_writer.wake, &heads_writer.lock);
+
+		/* The end, with everything written. */
+		if (!heads_writer.pending)
+			break;
+
+		/* The writing taken: busy until it is written, so a drain waits for it. */
+		write_job = heads_writer.given;
+		given_ms = heads_writer.given_ms;
+		heads_writer.pending = 0U;
+		heads_writer.busy = 1U;
+
+		pthread_mutex_unlock(&heads_writer.lock);
+
+		/* The file, outside the lock; how long it took after it was given is logged. */
+		started = kwl_milliseconds();
+		error = heads_write_file(&write_job);
+		printf("KWL DISPLAYS saved by=writer errno=%d wait_ms=%llu ms=%llu\n", error, (unsigned long long)(started - given_ms),
+		    (unsigned long long)(kwl_milliseconds() - started));
+
+		/* Written: whoever drains goes on when nothing else was given meanwhile. */
+		pthread_mutex_lock(&heads_writer.lock);
+
+		heads_writer.busy = 0U;
+		if (!heads_writer.pending)
+			pthread_cond_broadcast(&heads_writer.idle);
+	}
+
+	pthread_mutex_unlock(&heads_writer.lock);
+
+	/* Succeeded: the thread ends with every choice written. */
+	return NULL;
 }
 
 /* Tells the clients the displays changed and draws everything again. */

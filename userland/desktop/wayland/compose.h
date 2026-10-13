@@ -791,6 +791,7 @@ const struct kwl_import *kwl_glass_wallpaper(struct kwl_server *server);
 /* The displays shown besides the output (heads.c, ws113-p004b). */
 void kwl_heads_config_load(struct kwl_server *server);
 int kwl_heads_config_save(struct kwl_server *server);
+void kwl_heads_config_close(void);
 void kwl_heads_sync(struct kwl_server *server);
 void kwl_heads_close_display(struct kwl_server *server, VkDisplayKHR display);
 void kwl_heads_close_all(struct kwl_server *server);
