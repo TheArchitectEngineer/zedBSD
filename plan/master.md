@@ -543,6 +543,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 ## 判断の記録（新しい順）
 
 ユーザーの決定と Q1 の技術の決定の記録。決まった判断は先頭の open-decisions からここへ移す。各 WS の phase.md・ws.md が正本で、ここは索引。
+- 2026-10-13 朝 ユーザー（WS215・WS206 の問いへの答え）: D1「シリアルコンソールはオプションにしてデフォルトでOFFです。ONにしたらBluetoothが使えなくてよいです。Bluetoothはデフォルト有効です。」（WS215 の CONFIG_DRIVER_BCM2711_BT は既定 y、serial の console は既定 n、serial を y にした build では BT は使えない）。D2「OKです」（BCM4345C0.hcd、Cypress EULA を Pi 4 の image に）。D3 推しで OK（実機で読んでから）。D4「よいです」。E2「ファイル".wifi"に書いてあります。読んで利用してください。テスト用の認証情報なので、サブエージェントに伝えてOKです。保存しなければOKです。」（.wifi を試験に使う、plan・log・commit に書き写さない）。E4「FATにGPLのライセンスファイルを入れれば問題ないように思います。」（NVRAM は FAT（/boot/boot0）に GPL-2 の license file を同梱、Cypress の firmware・CLM も可）。E6「世界共通でお願いします。」。D5 は未回答（推しの (a) で進め、p006 で観察）。「ぜんぶmainにマージしてください」→ BUG-295（SD の多 block・FAT の 0 埋めの line 揃え）を main に merge（235f77edb）、FAT_BATCH_ENTRIES は x68k の stack のため 32 に戻した（1d7121c15）。rpi4 の vmunix は warning 0、rpi4-sdhci-host-test PASS。「現在、Bluetoothを無効にするdevice treeになっているような気がする」→ platform/arm64/config.txt の dtoverlay=disable-bt（と enable_uart=1・uart_2ndstage=1）で BT は無効、WS215 p003 で既定を BT 有効に変える。
 - 2026-10-13 Q1: BUG-295 の直し（agent/p4 b200ebb02・0f88f43e8: SD の多 block、FAT の 0 埋めの line 揃え、FAT_BATCH_ENTRIES 32→128）は main にまだ入れない。SD の書き込みを変えるので Pi の実機で確かめてから（ユーザーが起きた後、SMP の kernel の確認の後に、旧 vmunix を残して試す）。(4) は x68k（kernel stack 8KiB）の stack が約 1.9KiB 増える懸念 → merge の時に 32 に戻すか Q1 が判断。
 - 2026-10-13 ユーザー: 4 core の固まり（窓 3 つの arrange）が P6 の直し（WS208 p007: src/kern/lock.c の spin_trylock の owner_valid を acquire で読む・klog の fatal の経路も、render-worker.c の waitq の起床を guard の中に、stall watch、QEMU の audio の skip）で「修正されたことを確認しました」→ main に merge。Pi は 4 core（cmdline.txt は login=graphical、元の kernel は vmunix.p007-bak）。FAT への 8MB の書き込みに数分かかった（遅い、要調査）。
 - 2026-10-13 ユーザー: SMP の image で「ウィンドウを3つ出して、アレンジメントをする」と全体が固まる（SSH・ping も不可、deadlock の見え方）。cpus=1 では 10 回試して再現せず → 4 core に特有（WS208 p007、P6 が固まりの検出の仕組みと候補を調べ中）。Pi は今 cmdline.txt に cpus=1（元は cmdline.txt.cpus-bak）。
@@ -903,6 +904,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 
 ## Tools
+| [tests/rpi4-sdhci-host-test.c](../tests/rpi4-sdhci-host-test.c)（BUG-295、2026-10-13） | Pi 4 の SD の driver（多 block の CMD25/CMD18・auto-CMD12、失敗の時の 1 block の書き直し、要求の切り分け）の回帰（偽の register） | `make -o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk rpi4-sdhci-host-test`、PASS で終わる |
 
 回帰と観察の道具は `plan/tools/` に置く。完了した WS の試験は、ここへ移したもの以外を削除した。Phase に固有の試験は各 WS の `tests/` にある。
 
