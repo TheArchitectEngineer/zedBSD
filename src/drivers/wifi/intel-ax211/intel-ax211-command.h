@@ -81,17 +81,17 @@ int drv_intel_ax211_command_transaction_init(
 	struct intel_ax211_transport *transport, size_t max_pending,
 	uint32_t hardware_epoch);
 
-int drv_intel_ax211_command_nvm_access_complete_encode(uint8_t output[4]);
-int drv_intel_ax211_command_nvm_get_info_encode(uint8_t output[4]);
+int drv_intel_ax211_command_nvm_handoff_encode(uint8_t output[4]);
+int drv_intel_ax211_command_nvm_query_encode(uint8_t output[4]);
 
 int drv_intel_ax211_command_submit(
 	struct intel_ax211_command_transaction *transaction,
 	const struct intel_ax211_command_request *request, uint64_t now,
 	uint64_t timeout, struct intel_ax211_command_handle *handle);
-int drv_intel_ax211_command_submit_nvm_access_complete(
+int drv_intel_ax211_command_submit_nvm_handoff(
 	struct intel_ax211_command_transaction *transaction, uint64_t now,
 	uint64_t timeout, struct intel_ax211_command_handle *handle);
-int drv_intel_ax211_command_submit_nvm_get_info(
+int drv_intel_ax211_command_submit_nvm_query(
 	struct intel_ax211_command_transaction *transaction, uint64_t now,
 	uint64_t timeout, struct intel_ax211_command_handle *handle);
 

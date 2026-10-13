@@ -1,55 +1,33 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private API89 runtime contract
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private API89 runtime contract.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/api/commands.h, fw/api/phy.h, fw/api/coex.h, fw/api/power.h,
+ * fw/api/nvm-reg.h and fw/file.h.  They were cross-checked against OpenBSD
+ * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
+ * values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * OpenBSD source provenance:
- *   sys/dev/pci/if_iwx.c, if_iwxreg.h at
- *   0f464d413c50396e4e6cd70948f15613d6a73081
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_RUNTIME_H
@@ -61,56 +39,140 @@
 #include "intel-ax211-internal.h"
 #include "intel-ax211-protocol.h"
 
+/* zedBSD's bounds: one second per runtime command and its largest payload. */
 #define INTEL_AX211_RUNTIME_COMMAND_TIMEOUT_US 1000000U
 #define INTEL_AX211_RUNTIME_PAYLOAD_MAX 60U
 
-#define INTEL_AX211_RUNTIME_GROUP_LONG 1U
-#define INTEL_AX211_RUNTIME_GROUP_SYSTEM 2U
-#define INTEL_AX211_RUNTIME_GROUP_PHY 4U
+/*
+ * The command families of the runtime start commands.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/commands.h (enum
+ * iwl_mvm_command_groups): family 1 is the classic opcode space through the
+ * wide header, family 2 holds the platform (system) commands and family 4
+ * the radio (PHY) operations.
+ */
+#define INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE 1U
+#define INTEL_AX211_RUNTIME_FAMILY_PLATFORM 2U
+#define INTEL_AX211_RUNTIME_FAMILY_RADIO 4U
 
-#define INTEL_AX211_RUNTIME_TX_ANT_OPCODE 0x98U
-#define INTEL_AX211_RUNTIME_BT_CONFIG_OPCODE 0x9bU
+/*
+ * The commands that bring a freshly started firmware to the state in which
+ * it can scan, with their opcodes, layout versions and payload sizes.
+ *
+ * Sources: Linux iwlwifi v6.17 fw/api/commands.h for the opcodes of family
+ * 1, fw/api/system.h for the platform command, fw/api/phy.h for the
+ * temperature thresholds, fw/api/coex.h, fw/api/power.h and fw/api/nvm-reg.h
+ * for the payloads; the versions are those listed in the command version
+ * record of the pinned API 89 image.  The runtime sends them one at a time
+ * and waits for each answer, in the order of enum intel_ax211_runtime_step:
+ * - TRANSMIT_CHAINS (1/0x98, v1, 4 bytes): the transmit chain mask from the
+ *   NVM answer.
+ * - COEXISTENCE (1/0x9b, v6, 8 bytes): the Bluetooth coexistence mode word,
+ *   sent as 3, the mode coex.h calls BT_COEX_WIFI.
+ * - SOC_CONFIG (2/0x01, v2, 8 bytes): the platform flags 0x0a and the
+ *   crystal start-up latency of 12000 (see below).
+ * - LATENCY_TOLERANCE (1/0xee, v3, 32 bytes): sent only when the PCI Express
+ *   LTR is enabled and the firmware does not set the latency itself
+ *   (FEATURE_BIT_SELF_LATENCY); the first word is 1.
+ * - TEMP_REPORT (4/0x04, v1, 20 bytes): an empty set of temperature
+ *   thresholds.
+ * - POWER_POLICY (1/0x77, v7, 4 bytes): the device power policy, all zero.
+ * - COUNTRY_UPDATE (1/0xc8, v1, 28 bytes, answer v6): sent only when the
+ *   firmware keeps its own regulatory domain; the driver asks for country
+ *   "ZZ" (the world domain) with 0x10 as the source byte, and the answer
+ *   lists the permitted channels.
+ * - the scan setup of intel-ax211-protocol.h (1/0x0c, v5, 12 bytes): the
+ *   transmit and receive chain masks at bytes 4 and 8.
+ * - BEACON_FILTER (1/0xd2, v4, 60 bytes): beacon filtering, all zero, which
+ *   leaves every beacon delivered to the host.
+ */
+#define INTEL_AX211_RUNTIME_TRANSMIT_CHAINS_OPCODE 0x98U
+#define INTEL_AX211_RUNTIME_COEXISTENCE_OPCODE 0x9bU
 #define INTEL_AX211_RUNTIME_SOC_CONFIG_OPCODE 0x01U
-#define INTEL_AX211_RUNTIME_LTR_CONFIG_OPCODE 0xeeU
+#define INTEL_AX211_RUNTIME_LATENCY_TOLERANCE_OPCODE 0xeeU
 #define INTEL_AX211_RUNTIME_TEMP_REPORT_OPCODE 0x04U
-#define INTEL_AX211_RUNTIME_POWER_TABLE_OPCODE 0x77U
-#define INTEL_AX211_RUNTIME_MCC_UPDATE_OPCODE 0xc8U
+#define INTEL_AX211_RUNTIME_POWER_POLICY_OPCODE 0x77U
+#define INTEL_AX211_RUNTIME_COUNTRY_UPDATE_OPCODE 0xc8U
 #define INTEL_AX211_RUNTIME_BEACON_FILTER_OPCODE 0xd2U
 
-#define INTEL_AX211_RUNTIME_TX_ANT_VERSION 1U
-#define INTEL_AX211_RUNTIME_BT_CONFIG_VERSION 6U
+#define INTEL_AX211_RUNTIME_TRANSMIT_CHAINS_VERSION 1U
+#define INTEL_AX211_RUNTIME_COEXISTENCE_VERSION 6U
 #define INTEL_AX211_RUNTIME_SOC_CONFIG_VERSION 2U
-#define INTEL_AX211_RUNTIME_LTR_CONFIG_VERSION 3U
+#define INTEL_AX211_RUNTIME_LATENCY_TOLERANCE_VERSION 3U
 #define INTEL_AX211_RUNTIME_TEMP_REPORT_VERSION 1U
-#define INTEL_AX211_RUNTIME_POWER_TABLE_VERSION 7U
-#define INTEL_AX211_RUNTIME_MCC_UPDATE_VERSION 1U
-#define INTEL_AX211_RUNTIME_MCC_RESPONSE_VERSION 6U
+#define INTEL_AX211_RUNTIME_POWER_POLICY_VERSION 7U
+#define INTEL_AX211_RUNTIME_COUNTRY_UPDATE_VERSION 1U
+#define INTEL_AX211_RUNTIME_COUNTRY_RESPONSE_VERSION 6U
 #define INTEL_AX211_RUNTIME_BEACON_FILTER_VERSION 4U
 
-#define INTEL_AX211_RUNTIME_TX_ANT_SIZE 4U
-#define INTEL_AX211_RUNTIME_BT_CONFIG_SIZE 8U
+#define INTEL_AX211_RUNTIME_TRANSMIT_CHAINS_SIZE 4U
+#define INTEL_AX211_RUNTIME_COEXISTENCE_SIZE 8U
 #define INTEL_AX211_RUNTIME_SOC_CONFIG_SIZE 8U
-#define INTEL_AX211_RUNTIME_LTR_CONFIG_SIZE 32U
+#define INTEL_AX211_RUNTIME_LATENCY_TOLERANCE_SIZE 32U
 #define INTEL_AX211_RUNTIME_TEMP_REPORT_SIZE 20U
-#define INTEL_AX211_RUNTIME_POWER_TABLE_SIZE 4U
-#define INTEL_AX211_RUNTIME_MCC_UPDATE_SIZE 28U
+#define INTEL_AX211_RUNTIME_POWER_POLICY_SIZE 4U
+#define INTEL_AX211_RUNTIME_COUNTRY_UPDATE_SIZE 28U
 #define INTEL_AX211_RUNTIME_BEACON_FILTER_SIZE 60U
 
-#define INTEL_AX211_RUNTIME_API_WIFI_MCC_UPDATE 9U
-#define INTEL_AX211_RUNTIME_API_REDUCED_SCAN_CONFIG 56U
-#define INTEL_AX211_RUNTIME_API_SCAN_EXT_CHANNEL 58U
-#define INTEL_AX211_RUNTIME_CAP_DS_PARAM_SET_IE 9U
-#define INTEL_AX211_RUNTIME_CAP_DQA 12U
-#define INTEL_AX211_RUNTIME_CAP_LAR_MULTI_MCC 29U
-#define INTEL_AX211_RUNTIME_CAP_SET_LTR_GEN2 50U
-#define INTEL_AX211_RUNTIME_CAP_CT_KILL_BY_FW 74U
-#define INTEL_AX211_RUNTIME_CAP_MCC_UPDATE_11AX 89U
+/*
+ * The capability bits of the firmware image that the runtime depends on.
+ *
+ * Source: Linux iwlwifi v6.17 fw/file.h (enum iwl_ucode_tlv_api and enum
+ * iwl_ucode_tlv_capa).  The INTERFACE_FLAGS records of the image form a
+ * 128-bit set (API bits) and the FEATURE_FLAGS records a 160-bit set
+ * (feature bits); bit n is bit n % 32 of word n / 32.  The pinned image
+ * must have:
+ * - API 56 (the short scan setup command) and API 58 (the wider channel
+ *   records of the scan request), because the scan commands are written in
+ *   those forms;
+ * - feature 9 (the firmware inserts the DS parameter element into probe
+ *   requests) and feature 74 (the firmware stops the radio itself on
+ *   overheating);
+ * - and must not have feature 12 (dynamic queue allocation), whose queue
+ *   model the driver does not implement; the pinned image has no such bit
+ *   and no row for family 5 opcode 0 in its command table.
+ * When the firmware keeps its own regulatory domain, API 9 or feature 29
+ * (country updates) and feature 89 (country updates that include 802.11ax)
+ * are also required.  Feature 50 means the firmware sets the PCI Express
+ * latency tolerance itself, and the driver then skips its own command.
+ */
+#define INTEL_AX211_RUNTIME_API_BIT_COUNTRY_UPDATE 9U
+#define INTEL_AX211_RUNTIME_API_BIT_SHORT_SCAN_SETUP 56U
+#define INTEL_AX211_RUNTIME_API_BIT_WIDE_CHANNEL_RECORDS 58U
+#define INTEL_AX211_RUNTIME_FEATURE_BIT_PROBE_DS_ELEMENT 9U
+#define INTEL_AX211_RUNTIME_FEATURE_BIT_DYNAMIC_QUEUES 12U
+#define INTEL_AX211_RUNTIME_FEATURE_BIT_COUNTRY_LIST 29U
+#define INTEL_AX211_RUNTIME_FEATURE_BIT_SELF_LATENCY 50U
+#define INTEL_AX211_RUNTIME_FEATURE_BIT_FIRMWARE_THERMAL_STOP 74U
+#define INTEL_AX211_RUNTIME_FEATURE_BIT_COUNTRY_UPDATE_HE 89U
 
+/*
+ * The payload of the platform command.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/system.h (struct
+ * iwl_soc_configuration_cmd and its flag bits) and cfg/ax210.c (the crystal
+ * latencies of the family).  By that layout the flags 0x0a leave bit 0 (a
+ * discrete module) clear, set bit 1 (low-latency crystal) and put 2 in the
+ * latency-tolerance delay field of bits 3:2 (2500 us).  12000 is the crystal
+ * start-up latency in microseconds, the value Linux gives the low-latency
+ * AX210-family configurations.  The firmware accepts this pair on the test
+ * machines, whose AX211 is the CNVio2 part with its MAC in the platform.
+ */
 #define INTEL_AX211_RUNTIME_SOC_CONFIG_FLAGS 0x0aU
 #define INTEL_AX211_RUNTIME_SOC_CONFIG_XTAL_LATENCY 12000U
 
-#define INTEL_AX211_RUNTIME_MCC_CHANNEL_LIMIT 110U
-#define INTEL_AX211_RUNTIME_MCC_STATUS_MAX 8U
+/*
+ * The bounds of the country answer.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/nvm-reg.h (struct iwl_mcc_update_resp
+ * and enum iwl_mcc_update_status).  The answer has a 20-byte header (status
+ * at 0, country code at 4, capabilities at 6, time at 8, geographic
+ * information at 10, channel count at 16) and one 32-bit flag word per
+ * channel; there are at most 110 channels, and every status from 0 to 8
+ * still carries a usable channel list.
+ */
+#define INTEL_AX211_RUNTIME_COUNTRY_CHANNEL_LIMIT 110U
+#define INTEL_AX211_RUNTIME_COUNTRY_STATUS_MAX 8U
 
 enum intel_ax211_runtime_result {
 	INTEL_AX211_RUNTIME_OK = 0,
@@ -128,13 +190,13 @@ enum intel_ax211_runtime_result {
 };
 
 enum intel_ax211_runtime_step {
-	INTEL_AX211_RUNTIME_STEP_TX_ANT = 0,
-	INTEL_AX211_RUNTIME_STEP_BT_CONFIG = 1,
+	INTEL_AX211_RUNTIME_STEP_TRANSMIT_CHAINS = 0,
+	INTEL_AX211_RUNTIME_STEP_COEXISTENCE = 1,
 	INTEL_AX211_RUNTIME_STEP_SOC_CONFIG = 2,
-	INTEL_AX211_RUNTIME_STEP_LTR_CONFIG = 3,
+	INTEL_AX211_RUNTIME_STEP_LATENCY_TOLERANCE = 3,
 	INTEL_AX211_RUNTIME_STEP_TEMP_REPORT = 4,
-	INTEL_AX211_RUNTIME_STEP_POWER_TABLE = 5,
-	INTEL_AX211_RUNTIME_STEP_MCC_UPDATE = 6,
+	INTEL_AX211_RUNTIME_STEP_POWER_POLICY = 5,
+	INTEL_AX211_RUNTIME_STEP_COUNTRY_UPDATE = 6,
 	INTEL_AX211_RUNTIME_STEP_SCAN_CONFIG = 7,
 	INTEL_AX211_RUNTIME_STEP_BEACON_FILTER = 8,
 	INTEL_AX211_RUNTIME_STEP_DONE = 9
@@ -143,7 +205,7 @@ enum intel_ax211_runtime_step {
 struct intel_ax211_runtime_profile {
 	uint8_t tx_chain_mask;
 	uint8_t rx_chain_mask;
-	uint8_t lar_enabled;
+	uint8_t firmware_regulatory;
 	uint8_t ltr_enabled;
 	uint32_t api_changes[4];
 	uint32_t capabilities[5];
@@ -167,7 +229,7 @@ struct intel_ax211_runtime_mcc {
 	uint16_t geographic_info;
 	uint8_t source;
 	uint32_t channel_count;
-	uint32_t channel[INTEL_AX211_RUNTIME_MCC_CHANNEL_LIMIT];
+	uint32_t channel[INTEL_AX211_RUNTIME_COUNTRY_CHANNEL_LIMIT];
 };
 
 struct intel_ax211_runtime_state {

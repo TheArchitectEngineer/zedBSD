@@ -1,52 +1,33 @@
 /* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
 
 /*
- * zedBSD Intel AX211 private MMIO implementation
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
- * commit 0f464d413c50396e4e6cd70948f15613d6a73081.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private MMIO implementation.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * iwl-csr.h, iwl-prph.h and pcie/gen1_2/trans.c.  They were cross-checked
+ * against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit
+ * 0f464d413c50.  Each block of values below names the header it was taken
+ * from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-mmio.h"
@@ -55,58 +36,182 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define AX211_CSR_HW_IF_CONFIG_REG 0x000U
-#define AX211_CSR_RESET 0x020U
-#define AX211_CSR_GP_CNTRL 0x024U
-#define AX211_CSR_GIO_REG 0x03cU
-#define AX211_CSR_MBOX_SET_REG 0x088U
-#define AX211_CSR_LTR_LONG_VAL_AD 0x0d4U
-#define AX211_CSR_GIO_CHICKEN_BITS 0x100U
-#define AX211_CSR_CTXT_INFO_ADDR 0x118U
-#define AX211_CSR_IML_DATA_ADDR 0x120U
-#define AX211_CSR_IML_SIZE_ADDR 0x128U
-#define AX211_CSR_DBG_HPET_MEM_REG 0x240U
-#define AX211_CSR_DBG_LINK_PWR_MGMT_REG 0x250U
-#define AX211_CSR_MAC_ADDRESS_BASE 0x380U
-#define AX211_CSR_MAC_ADDRESS0_OTP (AX211_CSR_MAC_ADDRESS_BASE + 0x00U)
-#define AX211_CSR_MAC_ADDRESS1_OTP (AX211_CSR_MAC_ADDRESS_BASE + 0x04U)
-#define AX211_CSR_MAC_ADDRESS0_STRAP (AX211_CSR_MAC_ADDRESS_BASE + 0x08U)
-#define AX211_CSR_MAC_ADDRESS1_STRAP (AX211_CSR_MAC_ADDRESS_BASE + 0x0cU)
+/*
+ * The host-visible control registers (the CSR window at the start of BAR0)
+ * that power the device up, hand it to the driver and start its firmware.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-csr.h (all offsets); the boot context and
+ * loader image registers also in pcie/iwl-context-info-v2.h.  Every register
+ * here is 32 bits wide and is written with a read-modify-write of the bits
+ * named below, except the address and length registers, which are written
+ * whole.
+ *
+ * - FUNCTION_CONTROL (0x000) carries the ownership handshake, the prepare
+ *   request, the power-event enable, the host-wake-from-L1A permission and
+ *   the self-boot enable.
+ * - RESTART_CONTROL (0x020) carries the whole-device reset and the bus
+ *   master stop request and its acknowledgment.
+ * - POWER_CONTROL (0x024) carries the active-state request, the keep-awake
+ *   request and the clock and sleep indications.
+ * - LINK_STATE_CONTROL (0x03c) and LINK_WORKAROUNDS (0x100) tune the PCI
+ *   Express link power states (L0s and L1A).
+ * - HOST_ANNOUNCE (0x088) is the mailbox in which the driver says that an
+ *   operating system driver is present.
+ * - LATENCY_TOLERANCE (0x0d4) holds the latency tolerance the device
+ *   reports while it boots.
+ * - BOOT_CONTEXT_ADDRESS (0x118), LOADER_IMAGE_ADDRESS (0x120) and
+ *   LOADER_IMAGE_LENGTH (0x128) tell the device where the boot context and
+ *   the image loader are.  The two address registers are 64 bits wide as two
+ *   words, and drv_intel_ax211_mmio_publish_gen3() writes the low word first.
+ * - DMA_WAIT_TUNING (0x240) holds the DMA engine's wait threshold.  Linux
+ *   names the register a debug register and sets its upper half to the
+ *   maximum to avoid a hardware error under stress; this driver does the
+ *   same in apm_init.
+ * - LINK_POWER_OVERRIDE (0x250) keeps the link awake while bit 31 is set.
+ *   The prepare fallback sets it before its first retry; the stop sequence
+ *   sets it and clears it again 1 ms later.
+ * - STATION_ADDRESS_* (0x380 to 0x38c) hold the station address twice: the
+ *   OEM strap copy and the fused (one-time programmable) copy.  Each copy is
+ *   two words; the first gives address bytes 0 to 3 from its most
+ *   significant byte down, the second gives bytes 4 and 5 from bits 15:0.
+ */
+#define AX211_CSR_FUNCTION_CONTROL 0x000U
+#define AX211_CSR_RESTART_CONTROL 0x020U
+#define AX211_CSR_POWER_CONTROL 0x024U
+#define AX211_CSR_LINK_STATE_CONTROL 0x03cU
+#define AX211_CSR_HOST_ANNOUNCE 0x088U
+#define AX211_CSR_LATENCY_TOLERANCE 0x0d4U
+#define AX211_CSR_LINK_WORKAROUNDS 0x100U
+#define AX211_CSR_BOOT_CONTEXT_ADDRESS 0x118U
+#define AX211_CSR_LOADER_IMAGE_ADDRESS 0x120U
+#define AX211_CSR_LOADER_IMAGE_LENGTH 0x128U
+#define AX211_CSR_DMA_WAIT_TUNING 0x240U
+#define AX211_CSR_LINK_POWER_OVERRIDE 0x250U
+#define AX211_CSR_STATION_ADDRESS_BASE 0x380U
+#define AX211_CSR_STATION_ADDRESS_FUSE_FIRST                                    \
+	(AX211_CSR_STATION_ADDRESS_BASE + 0x00U)
+#define AX211_CSR_STATION_ADDRESS_FUSE_SECOND                                   \
+	(AX211_CSR_STATION_ADDRESS_BASE + 0x04U)
+#define AX211_CSR_STATION_ADDRESS_STRAP_FIRST                                   \
+	(AX211_CSR_STATION_ADDRESS_BASE + 0x08U)
+#define AX211_CSR_STATION_ADDRESS_STRAP_SECOND                                  \
+	(AX211_CSR_STATION_ADDRESS_BASE + 0x0cU)
 
-#define AX211_HW_IF_HAP_WAKE_L1A 0x00080000U
-#define AX211_HW_IF_NIC_READY 0x00400000U
-#define AX211_HW_IF_PREPARE 0x08000000U
-#define AX211_HW_IF_ENABLE_PME 0x10000000U
-#define AX211_MBOX_OS_ALIVE 0x00000020U
-#define AX211_RESET_SW 0x00000080U
-#define AX211_RESET_MASTER_DISABLED 0x00000100U
-#define AX211_RESET_STOP_MASTER 0x00000200U
-#define AX211_LINK_POWER_MANAGEMENT_DISABLED 0x80000000U
-#define AX211_GP_MAC_CLOCK_READY 0x00000001U
-#define AX211_GP_INIT_DONE 0x00000004U
-#define AX211_GP_MAC_ACCESS_REQ 0x00000008U
-#define AX211_GP_GOING_TO_SLEEP 0x00000010U
-#define AX211_GIO_L0S_DISABLED 0x00000002U
-#define AX211_GIO_L1A_NO_L0S_RX 0x00800000U
-#define AX211_HPET_WAIT_THRESHOLD 0xffff0000U
-#define AX211_AUTO_FUNC_BOOT 0x00000002U
+/*
+ * The bits of those registers, grouped by register.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-csr.h.  Version 6.17 names the three
+ * ownership bits of FUNCTION_CONTROL PCI_OWN_SET (bit 22), WAKE_ME (bit 27)
+ * and WAKE_ME_PCIE_OWNER_EN (bit 28); OpenBSD if_iwxreg.h and older Linux
+ * releases give them the names of the ownership handshake, the prepare
+ * request and the power-event enable, which say better what the driver uses
+ * them for.  The self-boot bit is in pcie/iwl-context-info-v2.h.
+ *
+ * What the driver found about each group:
+ * - FUNCTION_CONTROL.  Writing OWNERSHIP_REQUEST asks for the device; the
+ *   device grants it by keeping the bit set when read back, within 50 us.
+ *   When it does not, the prepare fallback sets PREPARE_REQUEST and asks
+ *   again (drv_intel_ax211_mmio_take_ownership()).  HOST_WAKE_FROM_L1A lets
+ *   management traffic wake the link and is set in apm_init.  SELF_BOOT is
+ *   set last in publish_gen3, after the boot context and loader image are
+ *   visible: from then on the device fetches the loader image by itself.
+ *   PREPARE_REQUEST and POWER_EVENT_ENABLE are set together during stop.
+ * - HOST_ANNOUNCE.  DRIVER_PRESENT (bit 5) is written once ownership has
+ *   been granted.
+ * - RESTART_CONTROL.  WHOLE_DEVICE resets the device, and the driver waits
+ *   5 ms after it before the next access.  BUS_MASTER_STOP_REQUEST asks the DMA engines to stop,
+ *   and BUS_MASTER_STOPPED reads back set when they have; Linux and OpenBSD
+ *   wait 100 us for it and treat a timeout as a warning, and so does this
+ *   driver.
+ * - POWER_CONTROL.  ACTIVE_STATE moves the device from its unpowered D0U
+ *   state to D0A; CLOCK_STABLE reads set when the MAC clock runs, which is
+ *   needed before any periphery register is touched.  KEEP_AWAKE_REQUEST
+ *   holds the device awake for register access; the hold is granted when
+ *   CLOCK_STABLE is set and ENTERING_SLEEP is clear.
+ * - LINK_STATE_CONTROL.  NO_L0S disables L0s without touching L1.
+ * - LINK_WORKAROUNDS.  L1A_WAKE keeps the link from entering L0s while it
+ *   wakes from L1A for received traffic.
+ * - DMA_WAIT_TUNING.  MAXIMUM sets the upper half of the register, the FH
+ *   (DMA engine) wait threshold, to its largest value.
+ */
+#define AX211_FUNCTION_HOST_WAKE_FROM_L1A 0x00080000U
+#define AX211_FUNCTION_OWNERSHIP_REQUEST 0x00400000U
+#define AX211_FUNCTION_PREPARE_REQUEST 0x08000000U
+#define AX211_FUNCTION_POWER_EVENT_ENABLE 0x10000000U
+#define AX211_HOST_ANNOUNCE_DRIVER_PRESENT 0x00000020U
+#define AX211_RESTART_WHOLE_DEVICE 0x00000080U
+#define AX211_RESTART_BUS_MASTER_STOPPED 0x00000100U
+#define AX211_RESTART_BUS_MASTER_STOP_REQUEST 0x00000200U
+#define AX211_LINK_POWER_OVERRIDE_HOLD_AWAKE 0x80000000U
+#define AX211_POWER_CLOCK_STABLE 0x00000001U
+#define AX211_POWER_ACTIVE_STATE 0x00000004U
+#define AX211_POWER_KEEP_AWAKE_REQUEST 0x00000008U
+#define AX211_POWER_ENTERING_SLEEP 0x00000010U
+#define AX211_LINK_STATE_NO_L0S 0x00000002U
+#define AX211_LINK_WORKAROUND_L1A_WAKE 0x00800000U
+#define AX211_DMA_WAIT_TUNING_MAXIMUM 0xffff0000U
+#define AX211_FUNCTION_SELF_BOOT 0x00000002U
 
-#define AX211_LTR_NO_SNOOP_BOOTSTRAP 0x80000000U
-#define AX211_LTR_NO_SNOOP_SCALE_US 0x02000000U
-#define AX211_LTR_NO_SNOOP_250_US 0x00fa0000U
-#define AX211_LTR_SNOOP_BOOTSTRAP 0x00008000U
-#define AX211_LTR_SNOOP_SCALE_US 0x00000800U
-#define AX211_LTR_SNOOP_250_US 0x000000faU
-#define AX211_LTR_BOOTSTRAP                                                    \
-	(AX211_LTR_NO_SNOOP_BOOTSTRAP | AX211_LTR_NO_SNOOP_SCALE_US |          \
-	 AX211_LTR_NO_SNOOP_250_US | AX211_LTR_SNOOP_BOOTSTRAP |               \
-	 AX211_LTR_SNOOP_SCALE_US | AX211_LTR_SNOOP_250_US)
+/*
+ * The latency tolerance the device reports while it boots.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-csr.h (the register layout) and
+ * pcie/gen1_2/trans-gen2.c, which writes a value of about 250 us on a
+ * discrete (not integrated) AX210-family device to work around latency
+ * problems while the device boots; the firmware replaces it later with a
+ * smaller value.  The register has two halves, the
+ * no-snoop requirement in bits 31:16 and the snoop requirement in bits 15:0;
+ * in each half the top bit says the requirement is valid, a 3-bit scale
+ * follows (bits 28:26 and 12:10; scale 2 is units of 1024 ns) and the low
+ * 10 bits are the value.  The snoop half written here is valid, scale 2,
+ * value 250, about 256 us.  The no-snoop half is written as 0x82fa: valid,
+ * and with the scale bit placed at bit 25, which lies in the value field, so
+ * by that layout it reads as scale 0 and value 762 (762 ns) rather than the
+ * 256 us of the snoop half.  The device boots with this value on the test
+ * machines; it is recorded here as found, not corrected (ws218-p002).
+ */
+#define AX211_LATENCY_NO_SNOOP_REQUIRED 0x80000000U
+#define AX211_LATENCY_NO_SNOOP_UNIT_MICROSECOND 0x02000000U
+#define AX211_LATENCY_NO_SNOOP_250 0x00fa0000U
+#define AX211_LATENCY_SNOOP_REQUIRED 0x00008000U
+#define AX211_LATENCY_SNOOP_UNIT_MICROSECOND 0x00000800U
+#define AX211_LATENCY_SNOOP_250 0x000000faU
+#define AX211_LATENCY_BOOT_VALUE                                               \
+	(AX211_LATENCY_NO_SNOOP_REQUIRED |                                     \
+	 AX211_LATENCY_NO_SNOOP_UNIT_MICROSECOND |                             \
+	 AX211_LATENCY_NO_SNOOP_250 | AX211_LATENCY_SNOOP_REQUIRED |           \
+	 AX211_LATENCY_SNOOP_UNIT_MICROSECOND | AX211_LATENCY_SNOOP_250)
 
-#define AX211_UREG_CPU_INIT_RUN 0xa05c44U
+/*
+ * The periphery register that starts the upper CPU, and the bound of the
+ * periphery address space.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-prph.h.  Periphery registers are reached
+ * through an indirect window (intel-ax211-pci-mmio.c), and the upper CPU's
+ * registers lie at the upper-CPU base (0x300000 on this family) plus their
+ * offset.  Writing 1 to UPPER_CPU_START at that base is the last step of
+ * publish_gen3; the firmware boot then runs on its own and reports ALIVE.
+ * Periphery addresses are 24 bits wide.
+ */
+#define AX211_PRPH_UPPER_CPU_START 0xa05c44U
 #define AX211_PRPH_MAX_ADDRESS 0x00ffffffU
 
-#define AX211_HW_READY_TIMEOUT_US 50U
-#define AX211_HW_READY_POLL_US 10U
+/*
+ * The timing of the power and ownership sequences.
+ *
+ * Source: the delays Linux iwlwifi v6.17 pcie/gen1_2/trans.c and OpenBSD
+ * if_iwx.c use for the same sequences; the device's documentation of them is
+ * not public.  The ownership handshake is polled every 10 us for 50 us.  The
+ * prepare fallback retries 10 times, polling every 200 us within one 150 ms
+ * budget shared by all retries (as OpenBSD does; Linux restarts the budget
+ * for each retry), with 25 ms between retries.  A whole-device reset needs
+ * 5 ms; the MAC clock is awaited for at most 25 ms; a keep-awake request is
+ * given 2 us before polling and 150 ms in all; the stop sequence waits 1 ms
+ * after its prepare request, 5 ms after releasing the link override and at
+ * most 100 us for the bus master stop.
+ */
+#define AX211_OWNERSHIP_ACK_TIMEOUT_US 50U
+#define AX211_OWNERSHIP_ACK_POLL_US 10U
 #define AX211_PREPARE_SETTLE_US 1000U
 #define AX211_PREPARE_RETRY_POLL_US 200U
 #define AX211_PREPARE_TOTAL_POLL_US 150000U
@@ -120,11 +225,13 @@
 #define AX211_STOP_LINK_DELAY_US 5000U
 #define AX211_STOP_MASTER_TIMEOUT_US 100U
 #define AX211_GENERAL_POLL_US 10U
+
+/* The length of an 802.11 station address in bytes. */
 #define AX211_MAC_ADDRESS_SIZE 6U
 
 static int ax211_profile_valid(const struct intel_ax211_mmio_profile *profile);
 static int ax211_mmio_valid(const struct intel_ax211_mmio *mmio);
-static int ax211_set_hw_ready(struct intel_ax211_mmio *mmio);
+static int ax211_request_ownership(struct intel_ax211_mmio *mmio);
 static int ax211_csr_set_bits(struct intel_ax211_mmio *mmio, uint32_t offset, uint32_t bits);
 static int ax211_csr_read(struct intel_ax211_mmio *mmio, uint32_t offset, uint32_t *value);
 static int ax211_csr_write(struct intel_ax211_mmio *mmio, uint32_t offset, uint32_t value);
@@ -184,7 +291,7 @@ drv_intel_ax211_mmio_init(
  * Acquires PCI ownership through the bounded AX210-family prepare sequence.
  */
 int
-drv_intel_ax211_mmio_prepare_card_hw(
+drv_intel_ax211_mmio_take_ownership(
 	struct intel_ax211_mmio *mmio)
 {
 	int result;
@@ -194,7 +301,7 @@ drv_intel_ax211_mmio_prepare_card_hw(
 		return INTEL_AX211_MMIO_INVALID;
 
 	/* Handles the mmio condition. */
-	if (mmio->nic_lock_depth != 0U)
+	if (mmio->wake_hold_depth != 0U)
 		return INTEL_AX211_MMIO_ORDER;
 
 	/* Starts each attempt from an unpublished state. */
@@ -206,7 +313,7 @@ drv_intel_ax211_mmio_prepare_card_hw(
 	/* Tries the ordinary ownership handshake first. */
 
 	/* Checks the operation result. */
-	result = ax211_set_hw_ready(mmio);
+	result = ax211_request_ownership(mmio);
 	if (result == INTEL_AX211_MMIO_OK) {
 		mmio->prepared = 1;
 
@@ -245,7 +352,7 @@ drv_intel_ax211_mmio_sw_reset(
 		return INTEL_AX211_MMIO_INVALID;
 
 	/* Handles the mmio condition. */
-	if (!mmio->prepared || mmio->nic_lock_depth != 0U)
+	if (!mmio->prepared || mmio->wake_hold_depth != 0U)
 		return INTEL_AX211_MMIO_ORDER;
 
 	/* Invalidates every post-reset readiness assertion. */
@@ -255,7 +362,7 @@ drv_intel_ax211_mmio_sw_reset(
 	/* Requests the AX210-family CSR reset. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_set_bits(mmio, AX211_CSR_RESET, AX211_RESET_SW);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_RESTART_CONTROL, AX211_RESTART_WHOLE_DEVICE);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
@@ -290,47 +397,47 @@ drv_intel_ax211_mmio_apm_init(
 		return INTEL_AX211_MMIO_ORDER;
 
 	/* Handles the mmio condition. */
-	if (mmio->nic_lock_depth != 0U)
+	if (mmio->wake_hold_depth != 0U)
 		return INTEL_AX211_MMIO_ORDER;
 
 	/* Keeps L0s from racing L1A receive wakeup. */
 	mmio->apm_ready = 0;
 
 	/* Checks the operation result. */
-	result = ax211_csr_set_bits(mmio, AX211_CSR_GIO_CHICKEN_BITS,
-				    AX211_GIO_L1A_NO_L0S_RX);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_LINK_WORKAROUNDS,
+				    AX211_LINK_WORKAROUND_L1A_WAKE);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
-	/* Raises the host-processor-event wait threshold. */
+	/* Raises the DMA engine (FH) wait threshold to its maximum. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_set_bits(mmio, AX211_CSR_DBG_HPET_MEM_REG,
-				    AX211_HPET_WAIT_THRESHOLD);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_DMA_WAIT_TUNING,
+				    AX211_DMA_WAIT_TUNING_MAXIMUM);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
 	/* Permits management traffic to wake the PCIe link. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_set_bits(mmio, AX211_CSR_HW_IF_CONFIG_REG,
-				    AX211_HW_IF_HAP_WAKE_L1A);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_FUNCTION_CONTROL,
+				    AX211_FUNCTION_HOST_WAKE_FROM_L1A);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
 	/* Disables unsupported L0s without disabling L1. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_set_bits(mmio, AX211_CSR_GIO_REG,
-				    AX211_GIO_L0S_DISABLED);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_LINK_STATE_CONTROL,
+				    AX211_LINK_STATE_NO_L0S);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
 	/* Moves the adapter from D0U into its active power state. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_set_bits(mmio, AX211_CSR_GP_CNTRL,
-				    AX211_GP_INIT_DONE);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_POWER_CONTROL,
+				    AX211_POWER_ACTIVE_STATE);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
@@ -338,8 +445,8 @@ drv_intel_ax211_mmio_apm_init(
 
 	/* Checks the operation result. */
 	result = ax211_poll_csr(
-		mmio, AX211_CSR_GP_CNTRL, AX211_GP_MAC_CLOCK_READY,
-		AX211_GP_MAC_CLOCK_READY, AX211_APM_CLOCK_TIMEOUT_US,
+		mmio, AX211_CSR_POWER_CONTROL, AX211_POWER_CLOCK_STABLE,
+		AX211_POWER_CLOCK_STABLE, AX211_APM_CLOCK_TIMEOUT_US,
 		AX211_GENERAL_POLL_US, INTEL_AX211_MMIO_WAIT_APM_CLOCK);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
@@ -365,40 +472,40 @@ drv_intel_ax211_mmio_stop(
 		return INTEL_AX211_MMIO_INVALID;
 
 	/* Makes every failure fail closed to later MMIO/PRPH users. */
-	mmio->nic_lock_depth = 0U;
+	mmio->wake_hold_depth = 0U;
 	mmio->prepared = 0;
 	mmio->reset_done = 0;
 	mmio->apm_ready = 0;
 	first_error = INTEL_AX211_MMIO_OK;
 
 	/* Releases a redundant or leaked request to keep the MAC awake. */
-	result = ax211_csr_clear_bits(mmio, AX211_CSR_GP_CNTRL,
-				      AX211_GP_MAC_ACCESS_REQ);
+	result = ax211_csr_clear_bits(mmio, AX211_CSR_POWER_CONTROL,
+				      AX211_POWER_KEEP_AWAKE_REQUEST);
 	ax211_remember_error(&first_error, result);
 
 	/* Uses the exact pre-BZ OpenBSD link-power stop preamble. */
-	result = ax211_csr_set_bits(mmio, AX211_CSR_DBG_LINK_PWR_MGMT_REG,
-				    AX211_LINK_POWER_MANAGEMENT_DISABLED);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_LINK_POWER_OVERRIDE,
+				    AX211_LINK_POWER_OVERRIDE_HOLD_AWAKE);
 	ax211_remember_error(&first_error, result);
-	result = ax211_csr_set_bits(mmio, AX211_CSR_HW_IF_CONFIG_REG,
-				    AX211_HW_IF_PREPARE |
-					    AX211_HW_IF_ENABLE_PME);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_FUNCTION_CONTROL,
+				    AX211_FUNCTION_PREPARE_REQUEST |
+					    AX211_FUNCTION_POWER_EVENT_ENABLE);
 	ax211_remember_error(&first_error, result);
 	result = ax211_delay(mmio, AX211_STOP_PREPARE_DELAY_US);
 	ax211_remember_error(&first_error, result);
-	result = ax211_csr_clear_bits(mmio, AX211_CSR_DBG_LINK_PWR_MGMT_REG,
-				      AX211_LINK_POWER_MANAGEMENT_DISABLED);
+	result = ax211_csr_clear_bits(mmio, AX211_CSR_LINK_POWER_OVERRIDE,
+				      AX211_LINK_POWER_OVERRIDE_HOLD_AWAKE);
 	ax211_remember_error(&first_error, result);
 	result = ax211_delay(mmio, AX211_STOP_LINK_DELAY_US);
 	ax211_remember_error(&first_error, result);
 
 	/* Stops bus-master DMA and exposes the finite 100-us deadline. */
-	result = ax211_csr_set_bits(mmio, AX211_CSR_RESET,
-				    AX211_RESET_STOP_MASTER);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_RESTART_CONTROL,
+				    AX211_RESTART_BUS_MASTER_STOP_REQUEST);
 	ax211_remember_error(&first_error, result);
 	result = ax211_poll_csr(
-		mmio, AX211_CSR_RESET, AX211_RESET_MASTER_DISABLED,
-		AX211_RESET_MASTER_DISABLED, AX211_STOP_MASTER_TIMEOUT_US,
+		mmio, AX211_CSR_RESTART_CONTROL, AX211_RESTART_BUS_MASTER_STOPPED,
+		AX211_RESTART_BUS_MASTER_STOPPED, AX211_STOP_MASTER_TIMEOUT_US,
 		AX211_GENERAL_POLL_US, INTEL_AX211_MMIO_WAIT_MASTER_DISABLED);
 
 	/*
@@ -413,14 +520,14 @@ drv_intel_ax211_mmio_stop(
 		ax211_remember_error(&first_error, result);
 
 	/* Returns the adapter to D0U even when an earlier stop stage failed. */
-	result = ax211_csr_clear_bits(mmio, AX211_CSR_GP_CNTRL,
-				      AX211_GP_INIT_DONE);
+	result = ax211_csr_clear_bits(mmio, AX211_CSR_POWER_CONTROL,
+				      AX211_POWER_ACTIVE_STATE);
 	ax211_remember_error(&first_error, result);
 
 	/*
 	 * Invalidates the stopped firmware generation with the required reset.
 	 */
-	result = ax211_csr_set_bits(mmio, AX211_CSR_RESET, AX211_RESET_SW);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_RESTART_CONTROL, AX211_RESTART_WHOLE_DEVICE);
 	ax211_remember_error(&first_error, result);
 	result = ax211_delay(mmio, AX211_SW_RESET_DELAY_US);
 	ax211_remember_error(&first_error, result);
@@ -433,7 +540,7 @@ drv_intel_ax211_mmio_stop(
  * Acquires nested NIC ownership with a 150-ms outer bound.
  */
 int
-drv_intel_ax211_mmio_nic_lock(
+drv_intel_ax211_mmio_wake_hold(
 	struct intel_ax211_mmio *mmio)
 {
 	int clear_result;
@@ -448,11 +555,11 @@ drv_intel_ax211_mmio_nic_lock(
 		return INTEL_AX211_MMIO_ORDER;
 
 	/* Reuses an ownership scope already held by this state. */
-	if (mmio->nic_lock_depth != 0U) {
+	if (mmio->wake_hold_depth != 0U) {
 		/* Handles the mmio condition. */
-		if (mmio->nic_lock_depth == (unsigned int)-1)
+		if (mmio->wake_hold_depth == (unsigned int)-1)
 			return INTEL_AX211_MMIO_INVALID;
-		mmio->nic_lock_depth++;
+		mmio->wake_hold_depth++;
 
 		/* Returns the computed result. */
 		return INTEL_AX211_MMIO_OK;
@@ -461,8 +568,8 @@ drv_intel_ax211_mmio_nic_lock(
 	/* Requests access and gives the power controller time to react. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_set_bits(mmio, AX211_CSR_GP_CNTRL,
-				    AX211_GP_MAC_ACCESS_REQ);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_POWER_CONTROL,
+				    AX211_POWER_KEEP_AWAKE_REQUEST);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
@@ -470,8 +577,8 @@ drv_intel_ax211_mmio_nic_lock(
 	result = ax211_delay(mmio, AX211_NIC_REQUEST_SETTLE_US);
 	if (result != INTEL_AX211_MMIO_OK) {
 		/* Handles the clear result condition. */
-		clear_result = ax211_csr_clear_bits(mmio, AX211_CSR_GP_CNTRL,
-						    AX211_GP_MAC_ACCESS_REQ);
+		clear_result = ax211_csr_clear_bits(mmio, AX211_CSR_POWER_CONTROL,
+						    AX211_POWER_KEEP_AWAKE_REQUEST);
 		if (clear_result != INTEL_AX211_MMIO_OK) {
 			mmio->apm_ready = 0;
 
@@ -487,14 +594,14 @@ drv_intel_ax211_mmio_nic_lock(
 
 	/* Checks the operation result. */
 	result = ax211_poll_csr(
-		mmio, AX211_CSR_GP_CNTRL, AX211_GP_MAC_CLOCK_READY,
-		AX211_GP_MAC_CLOCK_READY | AX211_GP_GOING_TO_SLEEP,
+		mmio, AX211_CSR_POWER_CONTROL, AX211_POWER_CLOCK_STABLE,
+		AX211_POWER_CLOCK_STABLE | AX211_POWER_ENTERING_SLEEP,
 		AX211_NIC_OWNERSHIP_TIMEOUT_US, AX211_GENERAL_POLL_US,
 		INTEL_AX211_MMIO_WAIT_NIC_OWNERSHIP);
 	if (result != INTEL_AX211_MMIO_OK) {
 		/* Handles the clear result condition. */
-		clear_result = ax211_csr_clear_bits(mmio, AX211_CSR_GP_CNTRL,
-						    AX211_GP_MAC_ACCESS_REQ);
+		clear_result = ax211_csr_clear_bits(mmio, AX211_CSR_POWER_CONTROL,
+						    AX211_POWER_KEEP_AWAKE_REQUEST);
 		if (clear_result != INTEL_AX211_MMIO_OK) {
 			mmio->apm_ready = 0;
 
@@ -506,7 +613,7 @@ drv_intel_ax211_mmio_nic_lock(
 		return result;
 	}
 
-	mmio->nic_lock_depth = 1U;
+	mmio->wake_hold_depth = 1U;
 
 	/* Returns the computed result. */
 	return INTEL_AX211_MMIO_OK;
@@ -516,7 +623,7 @@ drv_intel_ax211_mmio_nic_lock(
  * Releases one nested NIC ownership reference.
  */
 int
-drv_intel_ax211_mmio_nic_unlock(
+drv_intel_ax211_mmio_wake_release(
 	struct intel_ax211_mmio *mmio)
 {
 	int result;
@@ -526,21 +633,21 @@ drv_intel_ax211_mmio_nic_unlock(
 		return INTEL_AX211_MMIO_INVALID;
 
 	/* Handles the mmio condition. */
-	if (mmio->nic_lock_depth == 0U)
+	if (mmio->wake_hold_depth == 0U)
 		return INTEL_AX211_MMIO_NOT_OWNER;
 
 	/* Retains hardware ownership for an outer caller. */
-	mmio->nic_lock_depth--;
+	mmio->wake_hold_depth--;
 
 	/* Handles the mmio condition. */
-	if (mmio->nic_lock_depth != 0U)
+	if (mmio->wake_hold_depth != 0U)
 		return INTEL_AX211_MMIO_OK;
 
 	/* Drops the hardware request at the outermost boundary. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_clear_bits(mmio, AX211_CSR_GP_CNTRL,
-				      AX211_GP_MAC_ACCESS_REQ);
+	result = ax211_csr_clear_bits(mmio, AX211_CSR_POWER_CONTROL,
+				      AX211_POWER_KEEP_AWAKE_REQUEST);
 	if (result != INTEL_AX211_MMIO_OK) {
 		mmio->apm_ready = 0;
 
@@ -571,7 +678,7 @@ drv_intel_ax211_mmio_read_mac(
 	kern_memset(candidate, 0, sizeof(candidate));
 
 	/* Checks the operation result. */
-	result = drv_intel_ax211_mmio_nic_lock(mmio);
+	result = drv_intel_ax211_mmio_wake_hold(mmio);
 	if (result != INTEL_AX211_MMIO_OK) {
 		ax211_scrub(candidate, sizeof(candidate));
 
@@ -582,12 +689,12 @@ drv_intel_ax211_mmio_read_mac(
 	/* Prefers the OEM strap value when it is a usable unicast address. */
 
 	/* Checks the ax211 mac valid result. */
-	result = ax211_read_mac_words(mmio, AX211_CSR_MAC_ADDRESS0_STRAP,
-				      AX211_CSR_MAC_ADDRESS1_STRAP, candidate);
+	result = ax211_read_mac_words(mmio, AX211_CSR_STATION_ADDRESS_STRAP_FIRST,
+				      AX211_CSR_STATION_ADDRESS_STRAP_SECOND, candidate);
 	if (result == INTEL_AX211_MMIO_OK && !ax211_mac_valid(candidate)) {
 		ax211_scrub(candidate, sizeof(candidate));
-		result = ax211_read_mac_words(mmio, AX211_CSR_MAC_ADDRESS0_OTP,
-					      AX211_CSR_MAC_ADDRESS1_OTP,
+		result = ax211_read_mac_words(mmio, AX211_CSR_STATION_ADDRESS_FUSE_FIRST,
+					      AX211_CSR_STATION_ADDRESS_FUSE_SECOND,
 					      candidate);
 	}
 
@@ -600,7 +707,7 @@ drv_intel_ax211_mmio_read_mac(
 	 */
 
 	/* Handles the unlock result condition. */
-	unlock_result = drv_intel_ax211_mmio_nic_unlock(mmio);
+	unlock_result = drv_intel_ax211_mmio_wake_release(mmio);
 	if (unlock_result != INTEL_AX211_MMIO_OK)
 		result = unlock_result;
 	if (result == INTEL_AX211_MMIO_OK)
@@ -625,7 +732,7 @@ drv_intel_ax211_mmio_prph_read32(
 		return INTEL_AX211_MMIO_INVALID;
 
 	/* Handles the mmio condition. */
-	if (mmio->nic_lock_depth == 0U)
+	if (mmio->wake_hold_depth == 0U)
 		return INTEL_AX211_MMIO_NOT_OWNER;
 
 	/* Handles the address condition. */
@@ -654,7 +761,7 @@ drv_intel_ax211_mmio_prph_write32(
 		return INTEL_AX211_MMIO_INVALID;
 
 	/* Handles the mmio condition. */
-	if (mmio->nic_lock_depth == 0U)
+	if (mmio->wake_hold_depth == 0U)
 		return INTEL_AX211_MMIO_NOT_OWNER;
 
 	/* Handles the address condition. */
@@ -686,7 +793,7 @@ drv_intel_ax211_mmio_publish_gen3(
 		return INTEL_AX211_MMIO_INVALID;
 
 	/* Handles the mmio condition. */
-	if (!mmio->apm_ready || mmio->nic_lock_depth != 0U)
+	if (!mmio->apm_ready || mmio->wake_hold_depth != 0U)
 		return INTEL_AX211_MMIO_ORDER;
 
 	/* Handles the boot condition. */
@@ -694,7 +801,7 @@ drv_intel_ax211_mmio_publish_gen3(
 		return INTEL_AX211_MMIO_INVALID;
 
 	/* Handles the boot condition. */
-	if (boot->iml_size != INTEL_AX211_MMIO_IML_SIZE)
+	if (boot->iml_size != INTEL_AX211_MMIO_LOADER_IMAGE_SIZE)
 		return INTEL_AX211_MMIO_INVALID;
 
 	/*
@@ -702,7 +809,7 @@ drv_intel_ax211_mmio_publish_gen3(
 	 */
 
 	/* Checks the operation result. */
-	result = ax211_publish_address(mmio, AX211_CSR_CTXT_INFO_ADDR,
+	result = ax211_publish_address(mmio, AX211_CSR_BOOT_CONTEXT_ADDRESS,
 				       boot->context_address);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
@@ -710,13 +817,13 @@ drv_intel_ax211_mmio_publish_gen3(
 	/* Publishes the IML physical address before its byte length. */
 
 	/* Checks the operation result. */
-	result = ax211_publish_address(mmio, AX211_CSR_IML_DATA_ADDR,
+	result = ax211_publish_address(mmio, AX211_CSR_LOADER_IMAGE_ADDRESS,
 				       boot->iml_address);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
 	/* Checks the operation result. */
-	result = ax211_csr_write(mmio, AX211_CSR_IML_SIZE_ADDR, boot->iml_size);
+	result = ax211_csr_write(mmio, AX211_CSR_LOADER_IMAGE_LENGTH, boot->iml_size);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
@@ -725,14 +832,14 @@ drv_intel_ax211_mmio_publish_gen3(
 	 * visible.
 	 */
 	result =
-		ax211_csr_read(mmio, AX211_CSR_HW_IF_CONFIG_REG, &boot_control);
+		ax211_csr_read(mmio, AX211_CSR_FUNCTION_CONTROL, &boot_control);
 
 	/* Checks the operation result. */
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
-	boot_control |= AX211_AUTO_FUNC_BOOT;
+	boot_control |= AX211_FUNCTION_SELF_BOOT;
 	result =
-		ax211_csr_write(mmio, AX211_CSR_HW_IF_CONFIG_REG, boot_control);
+		ax211_csr_write(mmio, AX211_CSR_FUNCTION_CONTROL, boot_control);
 
 	/* Checks the operation result. */
 	if (result != INTEL_AX211_MMIO_OK)
@@ -741,17 +848,17 @@ drv_intel_ax211_mmio_publish_gen3(
 	/* Acquires ownership before the LTR bootstrap and UMAC PRPH write. */
 
 	/* Checks the operation result. */
-	result = drv_intel_ax211_mmio_nic_lock(mmio);
+	result = drv_intel_ax211_mmio_wake_hold(mmio);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
 	/* Applies the non-integrated SO/GF bootstrap latency contract. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_write(mmio, AX211_CSR_LTR_LONG_VAL_AD,
-				 AX211_LTR_BOOTSTRAP);
+	result = ax211_csr_write(mmio, AX211_CSR_LATENCY_TOLERANCE,
+				 AX211_LATENCY_BOOT_VALUE);
 	if (result != INTEL_AX211_MMIO_OK) {
-		(void)drv_intel_ax211_mmio_nic_unlock(mmio);
+		(void)drv_intel_ax211_mmio_wake_release(mmio);
 
 		/* Failed. */
 		return result;
@@ -759,9 +866,9 @@ drv_intel_ax211_mmio_publish_gen3(
 
 	/* Starts UMAC through the supplied, validated PRPH aperture offset. */
 	result = drv_intel_ax211_mmio_prph_write32(
-		mmio, mmio->profile.umac_prph_offset + AX211_UREG_CPU_INIT_RUN,
+		mmio, mmio->profile.upper_cpu_prph_base + AX211_PRPH_UPPER_CPU_START,
 		1U);
-	unlock_result = drv_intel_ax211_mmio_nic_unlock(mmio);
+	unlock_result = drv_intel_ax211_mmio_wake_release(mmio);
 
 	/* Checks the operation result. */
 	if (result != INTEL_AX211_MMIO_OK)
@@ -796,11 +903,11 @@ ax211_profile_valid(
 		return 0;
 
 	/* Handles the profile condition. */
-	if (profile->cdb != 0U || profile->integrated != 0U)
+	if (profile->concurrent_bands != 0U || profile->integrated != 0U)
 		return 0;
 
 	/* Handles the profile condition. */
-	if (profile->umac_prph_offset != INTEL_AX211_MMIO_UMAC_PRPH_OFFSET)
+	if (profile->upper_cpu_prph_base != INTEL_AX211_MMIO_UPPER_CPU_PRPH_BASE)
 		return 0;
 
 	/* Reports operation failure. */
@@ -838,29 +945,29 @@ ax211_mmio_valid(
 
 /* Requests NIC readiness and announces OS_ALIVE only after acceptance. */
 static int
-ax211_set_hw_ready(
+ax211_request_ownership(
 	struct intel_ax211_mmio *mmio)
 {
 	int error;
 	int result;
 
 	/* Checks the operation result. */
-	result = ax211_csr_set_bits(mmio, AX211_CSR_HW_IF_CONFIG_REG,
-				    AX211_HW_IF_NIC_READY);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_FUNCTION_CONTROL,
+				    AX211_FUNCTION_OWNERSHIP_REQUEST);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
 	/* Checks the operation result. */
 	result = ax211_poll_csr(
-		mmio, AX211_CSR_HW_IF_CONFIG_REG, AX211_HW_IF_NIC_READY,
-		AX211_HW_IF_NIC_READY, AX211_HW_READY_TIMEOUT_US,
-		AX211_HW_READY_POLL_US, INTEL_AX211_MMIO_WAIT_HW_READY);
+		mmio, AX211_CSR_FUNCTION_CONTROL, AX211_FUNCTION_OWNERSHIP_REQUEST,
+		AX211_FUNCTION_OWNERSHIP_REQUEST, AX211_OWNERSHIP_ACK_TIMEOUT_US,
+		AX211_OWNERSHIP_ACK_POLL_US, INTEL_AX211_MMIO_WAIT_HW_READY);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
 	/* Obtains the ax211 csr write result. */
-	error = ax211_csr_write(mmio, AX211_CSR_MBOX_SET_REG,
-					  AX211_MBOX_OS_ALIVE);
+	error = ax211_csr_write(mmio, AX211_CSR_HOST_ANNOUNCE,
+					  AX211_HOST_ANNOUNCE_DRIVER_PRESENT);
 
 	/* Returns the computed result. */
 	return error;
@@ -1049,8 +1156,8 @@ ax211_prepare_fallback(
 	/* Keeps the PCIe link awake while requesting ownership. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_set_bits(mmio, AX211_CSR_DBG_LINK_PWR_MGMT_REG,
-				    AX211_LINK_POWER_MANAGEMENT_DISABLED);
+	result = ax211_csr_set_bits(mmio, AX211_CSR_LINK_POWER_OVERRIDE,
+				    AX211_LINK_POWER_OVERRIDE_HOLD_AWAKE);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
@@ -1064,15 +1171,15 @@ ax211_prepare_fallback(
 	/* Process each remaining element. */
 	for (retry = 0U; retry < AX211_PREPARE_RETRY_COUNT; retry++) {
 		/* Checks the operation result. */
-		result = ax211_csr_set_bits(mmio, AX211_CSR_HW_IF_CONFIG_REG,
-					    AX211_HW_IF_PREPARE);
+		result = ax211_csr_set_bits(mmio, AX211_CSR_FUNCTION_CONTROL,
+					    AX211_FUNCTION_PREPARE_REQUEST);
 		if (result != INTEL_AX211_MMIO_OK)
 			return result;
 
 		/* Rechecks readiness at 200-us fallback intervals. */
 		do {
 			/* Checks the operation result. */
-			result = ax211_set_hw_ready(mmio);
+			result = ax211_request_ownership(mmio);
 			if (result == INTEL_AX211_MMIO_OK)
 				return INTEL_AX211_MMIO_OK;
 			if (result != INTEL_AX211_MMIO_TIMEOUT)

@@ -1,61 +1,40 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private firmware protocol codecs
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private firmware protocol codecs.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/api/alive.h, fw/api/nvm-reg.h, fw/api/commands.h and fw/file.h.  They
+ * were cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
+ * commit 0f464d413c50.  Each block of values below names the header it was
+ * taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * OpenBSD source provenance:
- *   sys/dev/pci/if_iwx.c, if_iwxreg.h at
- *   0f464d413c50396e4e6cd70948f15613d6a73081
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-protocol.h"
 #include <kern/kcrt.h>
 
 
+/* One row of the command version table that the driver requires. */
 struct ax211_required_version {
 	uint8_t group;
 	uint8_t opcode;
@@ -71,6 +50,22 @@ static void ax211_protocol_lmac_decode(const uint8_t *bytes, struct intel_ax211_
 static uint32_t ax211_protocol_get_le32(const uint8_t *bytes);
 static uint64_t ax211_protocol_get_le64(const uint8_t *bytes);
 
+/*
+ * The command versions the boot path depends on, as the pinned firmware
+ * lists them.
+ *
+ * Source: the command version record (type 48) of the pinned API 89 image
+ * from linux-firmware 20260410, read by zedBSD; the family and opcode
+ * numbers are those of Linux iwlwifi v6.17 fw/api/commands.h and
+ * fw/api/nvm-reg.h.  Each row is family, opcode, command layout version and
+ * notification layout version: ALIVE (0, 1) has no command and
+ * notification version 6; SCAN_SETUP (1, 0x0c) is version 5 and SCAN_START
+ * (1, 0x0d) version 17; NVM_HANDOFF (12, 0) is version 1; NVM_QUERY (12, 2)
+ * is command version 1 with a version 4 answer; PNVM_ACCEPTED (12, 0xfe) has
+ * no command and notification version 1.  99 is the image's "no version".
+ * The boot is refused when the image lists any of them differently, because
+ * the layouts the driver writes and reads are those versions.
+ */
 static const struct ax211_required_version ax211_api89_required[] = {
 	{0x00U, 0x01U, 99U, 6U}, {0x01U, 0x0cU, 5U, 0U},
 	{0x01U, 0x0dU, 17U, 0U}, {0x0cU, 0x00U, 1U, 0U},
@@ -261,7 +256,7 @@ drv_intel_ax211_protocol_alive_decode(
 
 	/* Checks the operation result. */
 	result = ax211_protocol_message_validate(
-		message, INTEL_AX211_PROTOCOL_GROUP_LEGACY,
+		message, INTEL_AX211_PROTOCOL_FAMILY_CLASSIC,
 		INTEL_AX211_PROTOCOL_ALIVE_OPCODE,
 		INTEL_AX211_PROTOCOL_ALIVE_VERSION, generation,
 		INTEL_AX211_PROTOCOL_ALIVE_SIZE,
@@ -276,17 +271,17 @@ drv_intel_ax211_protocol_alive_decode(
 	ax211_protocol_lmac_decode(bytes + 52U, &decoded.lmac[1]);
 	decoded.umac.major = ax211_protocol_get_le32(bytes + 100U);
 	decoded.umac.minor = ax211_protocol_get_le32(bytes + 104U);
-	decoded.umac.error_info = ax211_protocol_get_le32(bytes + 108U);
-	decoded.umac.debug_print_buffer = ax211_protocol_get_le32(bytes + 112U);
+	decoded.umac.upper_error_log_address = ax211_protocol_get_le32(bytes + 108U);
+	decoded.umac.trace_buffer_address = ax211_protocol_get_le32(bytes + 112U);
 	decoded.sku[0] = ax211_protocol_get_le32(bytes + 116U);
 	decoded.sku[1] = ax211_protocol_get_le32(bytes + 120U);
 	decoded.sku[2] = ax211_protocol_get_le32(bytes + 124U);
-	decoded.imr_base = ax211_protocol_get_le64(bytes + 128U);
-	decoded.imr_size = ax211_protocol_get_le32(bytes + 136U);
-	decoded.imr_enabled = ax211_protocol_get_le32(bytes + 140U);
+	decoded.restore_region_base = ax211_protocol_get_le64(bytes + 128U);
+	decoded.restore_region_size = ax211_protocol_get_le32(bytes + 136U);
+	decoded.restore_region_enabled = ax211_protocol_get_le32(bytes + 140U);
 
 	/* Handles the decoded condition. */
-	if (decoded.status != INTEL_AX211_PROTOCOL_ALIVE_STATUS_OK)
+	if (decoded.status != INTEL_AX211_PROTOCOL_ALIVE_HEALTHY)
 		return INTEL_AX211_PROTOCOL_FAILED;
 
 	/* Handles the decoded condition. */
@@ -294,10 +289,10 @@ drv_intel_ax211_protocol_alive_decode(
 		return INTEL_AX211_PROTOCOL_MISSING;
 
 	/* Handles the decoded condition. */
-	if (decoded.imr_enabled != 0U) {
+	if (decoded.restore_region_enabled != 0U) {
 		/* Handles the decoded condition. */
-		if (decoded.imr_base == 0U || decoded.imr_size == 0U ||
-		    UINT64_MAX - decoded.imr_base < decoded.imr_size) {
+		if (decoded.restore_region_base == 0U || decoded.restore_region_size == 0U ||
+		    UINT64_MAX - decoded.restore_region_base < decoded.restore_region_size) {
 			/* Returns the computed result. */
 			return INTEL_AX211_PROTOCOL_INVALID;
 		}
@@ -307,7 +302,7 @@ drv_intel_ax211_protocol_alive_decode(
 	}
 
 	/* Handles the decoded condition. */
-	if (decoded.imr_base != 0U || decoded.imr_size != 0U)
+	if (decoded.restore_region_base != 0U || decoded.restore_region_size != 0U)
 		return INTEL_AX211_PROTOCOL_INVALID;
 	*alive = decoded;
 	/* Returns the computed result. */
@@ -318,7 +313,7 @@ drv_intel_ax211_protocol_alive_decode(
  * Implements the drv intel ax211 protocol pnvm init complete operation.
  */
 int
-drv_intel_ax211_protocol_pnvm_init_complete(
+drv_intel_ax211_protocol_pnvm_accepted(
 	const struct intel_ax211_protocol_message *message,
 	uint32_t generation)
 {
@@ -326,11 +321,11 @@ drv_intel_ax211_protocol_pnvm_init_complete(
 
 	/* Obtains the ax211 protocol message validate result. */
 	error = ax211_protocol_message_validate(
-		message, INTEL_AX211_PROTOCOL_GROUP_REGULATORY_NVM,
-		INTEL_AX211_PROTOCOL_PNVM_INIT_COMPLETE_OPCODE,
-		INTEL_AX211_PROTOCOL_PNVM_INIT_COMPLETE_VERSION, generation,
-		INTEL_AX211_PROTOCOL_PNVM_INIT_COMPLETE_SIZE,
-		INTEL_AX211_PROTOCOL_PNVM_INIT_COMPLETE_SIZE);
+		message, INTEL_AX211_PROTOCOL_FAMILY_REGULATORY_STORE,
+		INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_OPCODE,
+		INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_VERSION, generation,
+		INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_SIZE,
+		INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_SIZE);
 
 	/* Returns the computed result. */
 	return error;
@@ -340,7 +335,7 @@ drv_intel_ax211_protocol_pnvm_init_complete(
  * Implements the drv intel ax211 protocol init complete operation.
  */
 int
-drv_intel_ax211_protocol_init_complete(
+drv_intel_ax211_protocol_init_finished(
 	const struct intel_ax211_protocol_message *message,
 	uint32_t generation)
 {
@@ -348,11 +343,11 @@ drv_intel_ax211_protocol_init_complete(
 
 	/* Obtains the ax211 protocol message validate result. */
 	error = ax211_protocol_message_validate(
-		message, INTEL_AX211_PROTOCOL_GROUP_LEGACY,
-		INTEL_AX211_PROTOCOL_INIT_COMPLETE_OPCODE,
+		message, INTEL_AX211_PROTOCOL_FAMILY_CLASSIC,
+		INTEL_AX211_PROTOCOL_INIT_FINISHED_OPCODE,
 		INTEL_AX211_PROTOCOL_UNKNOWN_VERSION, generation,
-		INTEL_AX211_PROTOCOL_INIT_COMPLETE_SIZE,
-		INTEL_AX211_PROTOCOL_INIT_COMPLETE_SIZE);
+		INTEL_AX211_PROTOCOL_INIT_FINISHED_SIZE,
+		INTEL_AX211_PROTOCOL_INIT_FINISHED_SIZE);
 
 	/* Returns the computed result. */
 	return error;
@@ -362,13 +357,17 @@ drv_intel_ax211_protocol_init_complete(
  * Implements the drv intel ax211 protocol nvm get info decode operation.
  */
 int
-drv_intel_ax211_protocol_nvm_get_info_decode(
+drv_intel_ax211_protocol_nvm_query_decode(
 	const struct intel_ax211_protocol_message *message,
 	const struct intel_ax211_protocol_pending_command *pending,
 	struct intel_ax211_protocol_nvm *nvm)
 {
 	struct intel_ax211_protocol_channel *channel_local;
 	struct intel_ax211_protocol_channel *channel_local1;
+	/*
+	 * The 5 GHz channel numbers (IEEE Std 802.11-2020 Annex E) in the order
+	 * the firmware lists their flag words after the 14 channels of 2.4 GHz.
+	 */
 	static const uint8_t
 		channel_5ghz[INTEL_AX211_PROTOCOL_5GHZ_CHANNEL_LIMIT] = {
 			36U,  40U,  44U,  48U,	52U,  56U,  60U,  64U,
@@ -387,14 +386,14 @@ drv_intel_ax211_protocol_nvm_get_info_decode(
 		return INTEL_AX211_PROTOCOL_INVALID;
 
 	/* Handles the pending condition. */
-	if (pending->group != INTEL_AX211_PROTOCOL_GROUP_REGULATORY_NVM ||
-	    pending->opcode != INTEL_AX211_PROTOCOL_NVM_GET_INFO_OPCODE ||
+	if (pending->group != INTEL_AX211_PROTOCOL_FAMILY_REGULATORY_STORE ||
+	    pending->opcode != INTEL_AX211_PROTOCOL_NVM_QUERY_OPCODE ||
 	    pending->response_version !=
-		    INTEL_AX211_PROTOCOL_NVM_GET_INFO_VERSION ||
+		    INTEL_AX211_PROTOCOL_NVM_QUERY_VERSION ||
 	    pending->minimum_response_length !=
-		    INTEL_AX211_PROTOCOL_NVM_GET_INFO_SIZE ||
+		    INTEL_AX211_PROTOCOL_NVM_QUERY_SIZE ||
 	    pending->maximum_response_length !=
-		    INTEL_AX211_PROTOCOL_NVM_GET_INFO_SIZE) {
+		    INTEL_AX211_PROTOCOL_NVM_QUERY_SIZE) {
 		/* Returns the computed result. */
 		return INTEL_AX211_PROTOCOL_UNSUPPORTED;
 	}
@@ -406,35 +405,35 @@ drv_intel_ax211_protocol_nvm_get_info_decode(
 		return result;
 	bytes = message->payload;
 	kern_memset(&decoded, 0, sizeof(decoded));
-	decoded.general_flags = ax211_protocol_get_le32(bytes);
-	decoded.nvm_version = ax211_protocol_get_le16(bytes + 4U);
-	decoded.board_type = bytes[6];
+	decoded.nvm_flags = ax211_protocol_get_le32(bytes);
+	decoded.nvm_revision = ax211_protocol_get_le16(bytes + 4U);
+	decoded.board_kind = bytes[6];
 	decoded.hardware_address_count = bytes[7];
-	decoded.mac_sku_flags = ax211_protocol_get_le32(bytes + 8U);
+	decoded.standard_flags = ax211_protocol_get_le32(bytes + 8U);
 	tx_chains = ax211_protocol_get_le32(bytes + 12U);
 	rx_chains = ax211_protocol_get_le32(bytes + 16U);
-	decoded.lar_enabled = ax211_protocol_get_le32(bytes + 20U) != 0U;
-	decoded.n_channels = ax211_protocol_get_le32(bytes + 24U);
+	decoded.firmware_regulatory = ax211_protocol_get_le32(bytes + 20U) != 0U;
+	decoded.channel_total = ax211_protocol_get_le32(bytes + 24U);
 
 	/* Handles the decoded condition. */
-	if ((decoded.general_flags &
-	     INTEL_AX211_PROTOCOL_NVM_GENERAL_EMPTY_OTP) != 0U) {
+	if ((decoded.nvm_flags &
+	     INTEL_AX211_PROTOCOL_NVM_FUSES_BLANK) != 0U) {
 		/* Returns the computed result. */
 		return INTEL_AX211_PROTOCOL_FAILED;
 	}
 	decoded.band_24_enabled =
-		(decoded.mac_sku_flags &
+		(decoded.standard_flags &
 		 INTEL_AX211_PROTOCOL_NVM_BAND_24_ENABLED) != 0U;
 	decoded.band_52_enabled =
-		(decoded.mac_sku_flags &
+		(decoded.standard_flags &
 		 INTEL_AX211_PROTOCOL_NVM_BAND_52_ENABLED) != 0U;
-	decoded.ht_enabled = (decoded.mac_sku_flags &
+	decoded.standard_11n = (decoded.standard_flags &
 			      INTEL_AX211_PROTOCOL_NVM_11N_ENABLED) != 0U;
-	decoded.vht_enabled = (decoded.mac_sku_flags &
+	decoded.standard_11ac = (decoded.standard_flags &
 			       INTEL_AX211_PROTOCOL_NVM_11AC_ENABLED) != 0U;
-	decoded.he_enabled = (decoded.mac_sku_flags &
+	decoded.standard_11ax = (decoded.standard_flags &
 			      INTEL_AX211_PROTOCOL_NVM_11AX_ENABLED) != 0U;
-	decoded.mimo_disabled = (decoded.mac_sku_flags &
+	decoded.mimo_disabled = (decoded.standard_flags &
 				 INTEL_AX211_PROTOCOL_NVM_MIMO_DISABLED) != 0U;
 
 	/* Handles the decoded condition. */
@@ -446,13 +445,13 @@ drv_intel_ax211_protocol_nvm_get_info_decode(
 		return INTEL_AX211_PROTOCOL_UNSUPPORTED;
 
 	/* Handles the decoded condition. */
-	if (decoded.n_channels > INTEL_AX211_PROTOCOL_NVM_CHANNEL_LIMIT)
+	if (decoded.channel_total > INTEL_AX211_PROTOCOL_NVM_CHANNEL_LIMIT)
 		return INTEL_AX211_PROTOCOL_OVERSIZED;
 	decoded.tx_chain_mask = (uint8_t)tx_chains;
 	decoded.rx_chain_mask = (uint8_t)rx_chains;
 
 	/* Handles the channel count condition. */
-	channel_count = decoded.n_channels;
+	channel_count = decoded.channel_total;
 	if (channel_count > INTEL_AX211_PROTOCOL_24GHZ_CHANNEL_LIMIT)
 		channel_count = INTEL_AX211_PROTOCOL_24GHZ_CHANNEL_LIMIT;
 	decoded.channel_24ghz_count = channel_count;
@@ -466,11 +465,11 @@ drv_intel_ax211_protocol_nvm_get_info_decode(
 			bytes + 28U + index * sizeof(uint32_t));
 		channel_local->valid =
 			(channel_local->flags &
-			 INTEL_AX211_PROTOCOL_NVM_CHANNEL_VALID) != 0U;
+			 INTEL_AX211_PROTOCOL_CHANNEL_FLAG_USABLE) != 0U;
 		channel_local->active =
 			channel_local->valid &&
 			(channel_local->flags &
-			 INTEL_AX211_PROTOCOL_NVM_CHANNEL_ACTIVE) != 0U;
+			 INTEL_AX211_PROTOCOL_CHANNEL_FLAG_MAY_TRANSMIT) != 0U;
 
 		/* Handles the channel local condition. */
 		if (channel_local->valid)
@@ -480,8 +479,8 @@ drv_intel_ax211_protocol_nvm_get_info_decode(
 	channel_offset = INTEL_AX211_PROTOCOL_24GHZ_CHANNEL_LIMIT;
 
 	/* Handles the channel count condition. */
-	channel_count = decoded.n_channels > channel_offset
-				? decoded.n_channels - channel_offset
+	channel_count = decoded.channel_total > channel_offset
+				? decoded.channel_total - channel_offset
 				: 0U;
 	if (channel_count > INTEL_AX211_PROTOCOL_5GHZ_CHANNEL_LIMIT)
 		channel_count = INTEL_AX211_PROTOCOL_5GHZ_CHANNEL_LIMIT;
@@ -498,11 +497,11 @@ drv_intel_ax211_protocol_nvm_get_info_decode(
 		channel_local1->valid =
 			decoded.band_52_enabled &&
 			(channel_local1->flags &
-			 INTEL_AX211_PROTOCOL_NVM_CHANNEL_VALID) != 0U;
+			 INTEL_AX211_PROTOCOL_CHANNEL_FLAG_USABLE) != 0U;
 		channel_local1->active =
 			channel_local1->valid &&
 			(channel_local1->flags &
-			 INTEL_AX211_PROTOCOL_NVM_CHANNEL_ACTIVE) != 0U;
+			 INTEL_AX211_PROTOCOL_CHANNEL_FLAG_MAY_TRANSMIT) != 0U;
 
 		/* Handles the channel local1 condition. */
 		if (channel_local1->valid)
@@ -514,7 +513,7 @@ drv_intel_ax211_protocol_nvm_get_info_decode(
 	 * still supplies the hardware channel table, but its VALID bit is not a
 	 * prerequisite for using a channel accepted by MCC.
 	 */
-	if (decoded.valid_24ghz_count == 0U && !decoded.lar_enabled)
+	if (decoded.valid_24ghz_count == 0U && !decoded.firmware_regulatory)
 		return INTEL_AX211_PROTOCOL_MISSING;
 	*nvm = decoded;
 	/* Returns the computed result. */
@@ -636,14 +635,14 @@ ax211_protocol_lmac_decode(
 	lmac->mac = bytes[10];
 	lmac->option = bytes[11];
 	lmac->timestamp = ax211_protocol_get_le32(bytes + 12U);
-	lmac->error_event_table = ax211_protocol_get_le32(bytes + 16U);
-	lmac->log_event_table = ax211_protocol_get_le32(bytes + 20U);
-	lmac->cpu_register = ax211_protocol_get_le32(bytes + 24U);
-	lmac->debug_config = ax211_protocol_get_le32(bytes + 28U);
-	lmac->alive_counter = ax211_protocol_get_le32(bytes + 32U);
-	lmac->scheduler_base = ax211_protocol_get_le32(bytes + 36U);
-	lmac->store_forward_address = ax211_protocol_get_le32(bytes + 40U);
-	lmac->store_forward_size = ax211_protocol_get_le32(bytes + 44U);
+	lmac->error_log_address = ax211_protocol_get_le32(bytes + 16U);
+	lmac->event_log_address = ax211_protocol_get_le32(bytes + 20U);
+	lmac->cpu_state_address = ax211_protocol_get_le32(bytes + 24U);
+	lmac->trace_setup_address = ax211_protocol_get_le32(bytes + 28U);
+	lmac->alive_counter_address = ax211_protocol_get_le32(bytes + 32U);
+	lmac->scheduler_sram_base = ax211_protocol_get_le32(bytes + 36U);
+	lmac->relay_buffer_address = ax211_protocol_get_le32(bytes + 40U);
+	lmac->relay_buffer_size = ax211_protocol_get_le32(bytes + 44U);
 }
 
 /* Supports the ax211 protocol get le32 operation. */

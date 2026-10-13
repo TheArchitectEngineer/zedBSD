@@ -7,8 +7,9 @@ python3 "$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)/plan/tools/driver
 
 test_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$test_dir/../../.." && pwd)
-build_dir=$(mktemp -d "${TMPDIR:-/tmp}/zedbsd-intel-ax211-runtime-start.XXXXXX")
-trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
+# The work directory stays in build/tmp; deleting it is Q1's step (plan/tools/q1-clean.sh).
+mkdir -p "$repo_root/build/tmp"
+build_dir=$(mktemp -d "$repo_root/build/tmp/zedbsd-intel-ax211-runtime-start.XXXXXX")
 
 cc=${CC:-cc}
 # _DEFAULT_SOURCE: the host mapping of kcrt.h calls vsnprintf, which strict c89 does not declare.

@@ -78,12 +78,12 @@ static int test_receive_epoch_begin(void *argument, uint32_t generation);
 static int test_transport_bind(void *argument, struct intel_ax211_dma_resources *dma, struct intel_ax211_mmio *mmio, struct intel_ax211_transport *transport, uint32_t generation);
 static int test_receive_event(void *argument, uint64_t deadline_us, uint8_t *bytes, size_t capacity, struct intel_ax211_boot_received_event *event);
 static int test_publish_pnvm(void *argument, struct intel_ax211_dma_resources *dma);
-static int test_post_alive(void *argument, const struct intel_ax211_protocol_alive *alive);
+static int test_after_alive(void *argument, const struct intel_ax211_protocol_alive *alive);
 static int test_interrupt_drain(void *argument);
 static int test_bus_master_disable(void *argument);
 static int test_clock_us(void *argument, uint64_t *time_us);
-static int test_nic_lock(void *argument);
-static int test_nic_unlock(void *argument);
+static int test_wake_hold(void *argument);
+static int test_wake_release(void *argument);
 static void test_fixture_running(struct test_fixture *fixture, const struct test_row *row);
 static void test_row_run(const struct test_row *row);
 
@@ -239,7 +239,7 @@ drv_intel_ax211_firmware_files_release(
  * Never reached: a session start prepares the card.
  */
 int
-drv_intel_ax211_mmio_prepare_card_hw(
+drv_intel_ax211_mmio_take_ownership(
 	struct intel_ax211_mmio *mmio)
 {
 	(void)mmio;
@@ -391,7 +391,7 @@ drv_intel_ax211_command_submit(
  * Never reached: the running fixture submits no command.
  */
 int
-drv_intel_ax211_command_submit_nvm_access_complete(
+drv_intel_ax211_command_submit_nvm_handoff(
 	struct intel_ax211_command_transaction *transaction,
 	uint64_t now,
 	uint64_t timeout,
@@ -577,7 +577,7 @@ test_publish_pnvm(
 
 /* Never reached: a session start accepts ALIVE. */
 static int
-test_post_alive(
+test_after_alive(
 	void *argument,
 	const struct intel_ax211_protocol_alive *alive)
 {
@@ -639,7 +639,7 @@ test_clock_us(
 
 /* Never reached: the running fixture holds no NIC lock. */
 static int
-test_nic_lock(
+test_wake_hold(
 	void *argument)
 {
 	(void)argument;
@@ -649,7 +649,7 @@ test_nic_lock(
 
 /* Never reached: the running fixture holds no NIC lock. */
 static int
-test_nic_unlock(
+test_wake_release(
 	void *argument)
 {
 	(void)argument;
@@ -675,12 +675,12 @@ test_fixture_running(
 	fixture->ops.boot.transport_bind = test_transport_bind;
 	fixture->ops.boot.receive_event = test_receive_event;
 	fixture->ops.boot.publish_pnvm = test_publish_pnvm;
-	fixture->ops.boot.post_alive = test_post_alive;
+	fixture->ops.boot.after_alive = test_after_alive;
 	fixture->ops.boot.interrupt_drain = test_interrupt_drain;
 	fixture->ops.boot.bus_master_disable = test_bus_master_disable;
 	fixture->ops.boot.clock_us = test_clock_us;
-	fixture->ops.nic_lock = test_nic_lock;
-	fixture->ops.nic_unlock = test_nic_unlock;
+	fixture->ops.wake_hold = test_wake_hold;
+	fixture->ops.wake_release = test_wake_release;
 
 	/* Leaves the session as a completed start does. */
 	fixture->session.ops = &fixture->ops;

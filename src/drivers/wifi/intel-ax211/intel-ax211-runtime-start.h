@@ -52,12 +52,12 @@ enum intel_ax211_runtime_start_state {
 /*
  * The operational pass additionally serializes all runtime commands under
  * firmware NIC ownership.  boot supplies the checked hardware epoch and
- * transport seams; nic_lock/unlock must be finite and must not recurse.
+ * transport seams; wake_hold/unlock must be finite and must not recurse.
  */
 struct intel_ax211_runtime_start_ops {
 	struct intel_ax211_boot_ops boot;
-	int (*nic_lock)(void *argument);
-	int (*nic_unlock)(void *argument);
+	int (*wake_hold)(void *argument);
+	int (*wake_release)(void *argument);
 };
 
 /*
@@ -99,7 +99,7 @@ struct intel_ax211_runtime_start {
 	uint8_t profile_valid;
 	uint8_t mcc_valid;
 	uint8_t ltr_enabled;
-	uint8_t nic_locked;
+	uint8_t wake_held;
 	/*
 	 * A stop saw the master-disable indication time out and kept the DMA
 	 * for one later retry instead of freeing pages the device may still be

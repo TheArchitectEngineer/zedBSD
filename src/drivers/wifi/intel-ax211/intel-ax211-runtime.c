@@ -1,61 +1,40 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private API89 runtime codecs and state
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private API89 runtime codecs and state.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/api/commands.h, fw/api/phy.h, fw/api/coex.h, fw/api/power.h,
+ * fw/api/nvm-reg.h and fw/file.h.  They were cross-checked against OpenBSD
+ * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
+ * values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * OpenBSD source provenance:
- *   sys/dev/pci/if_iwx.c, if_iwxreg.h at
- *   0f464d413c50396e4e6cd70948f15613d6a73081
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-runtime.h"
 #include <kern/kcrt.h>
 
 
+/* One row of the command version table that the runtime start requires. */
 struct ax211_runtime_version {
 	uint8_t group;
 	uint8_t opcode;
@@ -73,6 +52,18 @@ static uint32_t ax211_runtime_get_le32(const uint8_t *bytes);
 static uint16_t ax211_runtime_get_le16(const uint8_t *bytes);
 static enum intel_ax211_runtime_step ax211_runtime_next_step(enum intel_ax211_runtime_step step, const struct intel_ax211_runtime_profile *profile);
 
+/*
+ * The command versions the runtime start depends on, as the pinned firmware
+ * lists them.
+ *
+ * Source: the command version record (type 48) of the pinned API 89 image,
+ * read by zedBSD; the family and opcode numbers are those of Linux iwlwifi
+ * v6.17 fw/api/commands.h.  Each row is family, opcode, command version and
+ * notification version, for the commands of intel-ax211-runtime.h and the
+ * scan setup, scan start and scan cancel commands (1/0x0c v5, 1/0x0d v17,
+ * 1/0x0e v1).  The country update answer is version 6.  The latency
+ * tolerance row is not checked when the firmware sets the latency itself.
+ */
 static const struct ax211_runtime_version ax211_runtime_versions[] = {
 	{0x01U, 0x98U, 1U, 0U},	 {0x01U, 0x9bU, 6U, 0U}, {0x02U, 0x01U, 2U, 0U},
 	{0x01U, 0xeeU, 3U, 0U},	 {0x04U, 0x04U, 1U, 0U}, {0x01U, 0x77U, 7U, 0U},
@@ -101,7 +92,7 @@ drv_intel_ax211_runtime_profile_from_manifest(
 	kern_memset(&parsed, 0, sizeof(parsed));
 	parsed.tx_chain_mask = nvm->tx_chain_mask;
 	parsed.rx_chain_mask = nvm->rx_chain_mask;
-	parsed.lar_enabled = nvm->lar_enabled ? 1U : 0U;
+	parsed.firmware_regulatory = nvm->firmware_regulatory ? 1U : 0U;
 	parsed.ltr_enabled = ltr_enabled ? 1U : 0U;
 	kern_memcpy(parsed.api_changes, manifest->api_changes,
 	       sizeof(parsed.api_changes));
@@ -144,11 +135,11 @@ drv_intel_ax211_runtime_api89_validate(
 	     index++) {
 		/* Checks the ax211 runtime bit result. */
 		if (ax211_runtime_versions[index].group ==
-			    INTEL_AX211_RUNTIME_GROUP_LONG &&
+			    INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE &&
 		    ax211_runtime_versions[index].opcode ==
-			    INTEL_AX211_RUNTIME_LTR_CONFIG_OPCODE &&
+			    INTEL_AX211_RUNTIME_LATENCY_TOLERANCE_OPCODE &&
 		    ax211_runtime_bit(profile->capabilities, 5U,
-				      INTEL_AX211_RUNTIME_CAP_SET_LTR_GEN2))
+				      INTEL_AX211_RUNTIME_FEATURE_BIT_SELF_LATENCY))
 			continue;
 
 		/* Checks the operation result. */
@@ -195,22 +186,22 @@ drv_intel_ax211_runtime_command_encode(
 	encoded.response_version = 0U;
 	/* Dispatch the selected operation case. */
 	switch (step) {
-	case INTEL_AX211_RUNTIME_STEP_TX_ANT:
-		encoded.group = INTEL_AX211_RUNTIME_GROUP_LONG;
-		encoded.opcode = INTEL_AX211_RUNTIME_TX_ANT_OPCODE;
-		encoded.layout_version = INTEL_AX211_RUNTIME_TX_ANT_VERSION;
-		encoded.payload_length = INTEL_AX211_RUNTIME_TX_ANT_SIZE;
+	case INTEL_AX211_RUNTIME_STEP_TRANSMIT_CHAINS:
+		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
+		encoded.opcode = INTEL_AX211_RUNTIME_TRANSMIT_CHAINS_OPCODE;
+		encoded.layout_version = INTEL_AX211_RUNTIME_TRANSMIT_CHAINS_VERSION;
+		encoded.payload_length = INTEL_AX211_RUNTIME_TRANSMIT_CHAINS_SIZE;
 		ax211_runtime_put_le32(encoded.payload, profile->tx_chain_mask);
 		break;
-	case INTEL_AX211_RUNTIME_STEP_BT_CONFIG:
-		encoded.group = INTEL_AX211_RUNTIME_GROUP_LONG;
-		encoded.opcode = INTEL_AX211_RUNTIME_BT_CONFIG_OPCODE;
-		encoded.layout_version = INTEL_AX211_RUNTIME_BT_CONFIG_VERSION;
-		encoded.payload_length = INTEL_AX211_RUNTIME_BT_CONFIG_SIZE;
+	case INTEL_AX211_RUNTIME_STEP_COEXISTENCE:
+		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
+		encoded.opcode = INTEL_AX211_RUNTIME_COEXISTENCE_OPCODE;
+		encoded.layout_version = INTEL_AX211_RUNTIME_COEXISTENCE_VERSION;
+		encoded.payload_length = INTEL_AX211_RUNTIME_COEXISTENCE_SIZE;
 		ax211_runtime_put_le32(encoded.payload, 3U);
 		break;
 	case INTEL_AX211_RUNTIME_STEP_SOC_CONFIG:
-		encoded.group = INTEL_AX211_RUNTIME_GROUP_SYSTEM;
+		encoded.group = INTEL_AX211_RUNTIME_FAMILY_PLATFORM;
 		encoded.opcode = INTEL_AX211_RUNTIME_SOC_CONFIG_OPCODE;
 		encoded.layout_version = INTEL_AX211_RUNTIME_SOC_CONFIG_VERSION;
 		encoded.payload_length = INTEL_AX211_RUNTIME_SOC_CONFIG_SIZE;
@@ -220,41 +211,41 @@ drv_intel_ax211_runtime_command_encode(
 			encoded.payload + 4U,
 			INTEL_AX211_RUNTIME_SOC_CONFIG_XTAL_LATENCY);
 		break;
-	case INTEL_AX211_RUNTIME_STEP_LTR_CONFIG:
-		encoded.group = INTEL_AX211_RUNTIME_GROUP_LONG;
-		encoded.opcode = INTEL_AX211_RUNTIME_LTR_CONFIG_OPCODE;
-		encoded.layout_version = INTEL_AX211_RUNTIME_LTR_CONFIG_VERSION;
-		encoded.payload_length = INTEL_AX211_RUNTIME_LTR_CONFIG_SIZE;
+	case INTEL_AX211_RUNTIME_STEP_LATENCY_TOLERANCE:
+		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
+		encoded.opcode = INTEL_AX211_RUNTIME_LATENCY_TOLERANCE_OPCODE;
+		encoded.layout_version = INTEL_AX211_RUNTIME_LATENCY_TOLERANCE_VERSION;
+		encoded.payload_length = INTEL_AX211_RUNTIME_LATENCY_TOLERANCE_SIZE;
 		ax211_runtime_put_le32(encoded.payload, 1U);
 		break;
 	case INTEL_AX211_RUNTIME_STEP_TEMP_REPORT:
-		encoded.group = INTEL_AX211_RUNTIME_GROUP_PHY;
+		encoded.group = INTEL_AX211_RUNTIME_FAMILY_RADIO;
 		encoded.opcode = INTEL_AX211_RUNTIME_TEMP_REPORT_OPCODE;
 		encoded.layout_version =
 			INTEL_AX211_RUNTIME_TEMP_REPORT_VERSION;
 		encoded.payload_length = INTEL_AX211_RUNTIME_TEMP_REPORT_SIZE;
 		break;
-	case INTEL_AX211_RUNTIME_STEP_POWER_TABLE:
-		encoded.group = INTEL_AX211_RUNTIME_GROUP_LONG;
-		encoded.opcode = INTEL_AX211_RUNTIME_POWER_TABLE_OPCODE;
+	case INTEL_AX211_RUNTIME_STEP_POWER_POLICY:
+		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
+		encoded.opcode = INTEL_AX211_RUNTIME_POWER_POLICY_OPCODE;
 		encoded.layout_version =
-			INTEL_AX211_RUNTIME_POWER_TABLE_VERSION;
-		encoded.payload_length = INTEL_AX211_RUNTIME_POWER_TABLE_SIZE;
+			INTEL_AX211_RUNTIME_POWER_POLICY_VERSION;
+		encoded.payload_length = INTEL_AX211_RUNTIME_POWER_POLICY_SIZE;
 		break;
-	case INTEL_AX211_RUNTIME_STEP_MCC_UPDATE:
-		encoded.group = INTEL_AX211_RUNTIME_GROUP_LONG;
-		encoded.opcode = INTEL_AX211_RUNTIME_MCC_UPDATE_OPCODE;
-		encoded.layout_version = INTEL_AX211_RUNTIME_MCC_UPDATE_VERSION;
+	case INTEL_AX211_RUNTIME_STEP_COUNTRY_UPDATE:
+		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
+		encoded.opcode = INTEL_AX211_RUNTIME_COUNTRY_UPDATE_OPCODE;
+		encoded.layout_version = INTEL_AX211_RUNTIME_COUNTRY_UPDATE_VERSION;
 		encoded.response_version =
-			INTEL_AX211_RUNTIME_MCC_RESPONSE_VERSION;
-		encoded.payload_length = INTEL_AX211_RUNTIME_MCC_UPDATE_SIZE;
+			INTEL_AX211_RUNTIME_COUNTRY_RESPONSE_VERSION;
+		encoded.payload_length = INTEL_AX211_RUNTIME_COUNTRY_UPDATE_SIZE;
 		ax211_runtime_put_le16(encoded.payload,
 				       (uint16_t)(('Z' << 8) | 'Z'));
 		encoded.payload[2] = 0x10U;
 		break;
 	case INTEL_AX211_RUNTIME_STEP_SCAN_CONFIG:
-		encoded.group = INTEL_AX211_RUNTIME_GROUP_LONG;
-		encoded.opcode = INTEL_AX211_PROTOCOL_SCAN_CFG_OPCODE;
+		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
+		encoded.opcode = INTEL_AX211_PROTOCOL_SCAN_SETUP_OPCODE;
 		encoded.layout_version = 5U;
 		encoded.payload_length = 12U;
 		ax211_runtime_put_le32(encoded.payload + 4U,
@@ -263,7 +254,7 @@ drv_intel_ax211_runtime_command_encode(
 				       profile->rx_chain_mask);
 		break;
 	case INTEL_AX211_RUNTIME_STEP_BEACON_FILTER:
-		encoded.group = INTEL_AX211_RUNTIME_GROUP_LONG;
+		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
 		encoded.opcode = INTEL_AX211_RUNTIME_BEACON_FILTER_OPCODE;
 		encoded.layout_version =
 			INTEL_AX211_RUNTIME_BEACON_FILTER_VERSION;
@@ -303,9 +294,9 @@ drv_intel_ax211_runtime_mcc_decode(
 		return INTEL_AX211_RUNTIME_STALE;
 
 	/* Handles the message condition. */
-	if (message->group != INTEL_AX211_RUNTIME_GROUP_LONG ||
-	    message->opcode != INTEL_AX211_RUNTIME_MCC_UPDATE_OPCODE ||
-	    message->version != INTEL_AX211_RUNTIME_MCC_RESPONSE_VERSION) {
+	if (message->group != INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE ||
+	    message->opcode != INTEL_AX211_RUNTIME_COUNTRY_UPDATE_OPCODE ||
+	    message->version != INTEL_AX211_RUNTIME_COUNTRY_RESPONSE_VERSION) {
 		/* Returns the computed result. */
 		return INTEL_AX211_RUNTIME_UNSUPPORTED;
 	}
@@ -334,7 +325,7 @@ drv_intel_ax211_runtime_mcc_decode(
 	/*
 	 * Every documented MCC status still carries a usable channel profile.
 	 */
-	if (parsed.status > INTEL_AX211_RUNTIME_MCC_STATUS_MAX)
+	if (parsed.status > INTEL_AX211_RUNTIME_COUNTRY_STATUS_MAX)
 		return INTEL_AX211_RUNTIME_FAILED;
 
 	/* Handles the parsed condition. */
@@ -342,7 +333,7 @@ drv_intel_ax211_runtime_mcc_decode(
 		return INTEL_AX211_RUNTIME_UNSUPPORTED;
 
 	/* Handles the parsed condition. */
-	if (parsed.channel_count > INTEL_AX211_RUNTIME_MCC_CHANNEL_LIMIT)
+	if (parsed.channel_count > INTEL_AX211_RUNTIME_COUNTRY_CHANNEL_LIMIT)
 		return INTEL_AX211_RUNTIME_OVERSIZED;
 
 	/* Handles the message condition. */
@@ -393,7 +384,7 @@ drv_intel_ax211_runtime_begin(
 	started.profile = *profile;
 	started.generation = generation;
 	started.deadline = now_us + INTEL_AX211_RUNTIME_COMMAND_TIMEOUT_US;
-	started.step = INTEL_AX211_RUNTIME_STEP_TX_ANT;
+	started.step = INTEL_AX211_RUNTIME_STEP_TRANSMIT_CHAINS;
 	started.active = 1U;
 	*state = started;
 	/* Returns the computed result. */
@@ -534,7 +525,7 @@ ax211_runtime_profile_valid(
 	/* Handles the profile availability. */
 	if (profile == NULL || profile->tx_chain_mask == 0U ||
 	    profile->rx_chain_mask == 0U || profile->tx_chain_mask > 0x07U ||
-	    profile->rx_chain_mask > 0x07U || profile->lar_enabled > 1U ||
+	    profile->rx_chain_mask > 0x07U || profile->firmware_regulatory > 1U ||
 	    profile->ltr_enabled > 1U) {
 		/* Succeeded. */
 		return 0;
@@ -542,33 +533,33 @@ ax211_runtime_profile_valid(
 
 	/* Checks the ax211 runtime bit result. */
 	if (!ax211_runtime_bit(profile->api_changes, 4U,
-			       INTEL_AX211_RUNTIME_API_REDUCED_SCAN_CONFIG) ||
+			       INTEL_AX211_RUNTIME_API_BIT_SHORT_SCAN_SETUP) ||
 	    !ax211_runtime_bit(profile->api_changes, 4U,
-			       INTEL_AX211_RUNTIME_API_SCAN_EXT_CHANNEL) ||
+			       INTEL_AX211_RUNTIME_API_BIT_WIDE_CHANNEL_RECORDS) ||
 	    !ax211_runtime_bit(profile->capabilities, 5U,
-			       INTEL_AX211_RUNTIME_CAP_DS_PARAM_SET_IE) ||
+			       INTEL_AX211_RUNTIME_FEATURE_BIT_PROBE_DS_ELEMENT) ||
 	    ax211_runtime_bit(profile->capabilities, 5U,
-			      INTEL_AX211_RUNTIME_CAP_DQA) ||
+			      INTEL_AX211_RUNTIME_FEATURE_BIT_DYNAMIC_QUEUES) ||
 	    !ax211_runtime_bit(profile->capabilities, 5U,
-			       INTEL_AX211_RUNTIME_CAP_CT_KILL_BY_FW)) {
+			       INTEL_AX211_RUNTIME_FEATURE_BIT_FIRMWARE_THERMAL_STOP)) {
 		/* Succeeded. */
 		return 0;
 	}
 
 	/* Checks the ax211 runtime bit result. */
-	if (profile->lar_enabled &&
+	if (profile->firmware_regulatory &&
 	    !ax211_runtime_bit(profile->api_changes, 4U,
-			       INTEL_AX211_RUNTIME_API_WIFI_MCC_UPDATE) &&
+			       INTEL_AX211_RUNTIME_API_BIT_COUNTRY_UPDATE) &&
 	    !ax211_runtime_bit(profile->capabilities, 5U,
-			       INTEL_AX211_RUNTIME_CAP_LAR_MULTI_MCC)) {
+			       INTEL_AX211_RUNTIME_FEATURE_BIT_COUNTRY_LIST)) {
 		/* Succeeded. */
 		return 0;
 	}
 
 	/* Checks the ax211 runtime bit result. */
-	if (profile->lar_enabled &&
+	if (profile->firmware_regulatory &&
 	    !ax211_runtime_bit(profile->capabilities, 5U,
-			       INTEL_AX211_RUNTIME_CAP_MCC_UPDATE_11AX)) {
+			       INTEL_AX211_RUNTIME_FEATURE_BIT_COUNTRY_UPDATE_HE)) {
 		/* Succeeded. */
 		return 0;
 	}
@@ -634,20 +625,20 @@ ax211_runtime_step_enabled(
 	int error;
 
 	/* Handles the step condition. */
-	if (step == INTEL_AX211_RUNTIME_STEP_LTR_CONFIG) {
+	if (step == INTEL_AX211_RUNTIME_STEP_LATENCY_TOLERANCE) {
 		/* Computes the function result. */
 		error = profile->ltr_enabled &&
 				  !ax211_runtime_bit(
 					  profile->capabilities, 5U,
-					  INTEL_AX211_RUNTIME_CAP_SET_LTR_GEN2);
+					  INTEL_AX211_RUNTIME_FEATURE_BIT_SELF_LATENCY);
 
 		/* Failed. */
 		return error;
 	}
 
 	/* Handles the step condition. */
-	if (step == INTEL_AX211_RUNTIME_STEP_MCC_UPDATE)
-		return profile->lar_enabled;
+	if (step == INTEL_AX211_RUNTIME_STEP_COUNTRY_UPDATE)
+		return profile->firmware_regulatory;
 
 	/* Returns the computed result. */
 	return step < INTEL_AX211_RUNTIME_STEP_DONE;

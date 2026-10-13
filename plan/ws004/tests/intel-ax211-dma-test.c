@@ -295,7 +295,7 @@ fixture_make_boot_manifest(struct intel_ax211_firmware_manifest *manifest)
 {
 	memset(manifest, 0, sizeof(*manifest));
 	manifest->iml_offset = 128U;
-	manifest->iml_length = INTEL_AX211_IML_SIZE;
+	manifest->iml_length = INTEL_AX211_LOADER_IMAGE_SIZE;
 	manifest->runtime_count = 5U;
 	manifest->lmac_count = 1U;
 	manifest->umac_count = 1U;
@@ -303,11 +303,11 @@ fixture_make_boot_manifest(struct intel_ax211_firmware_manifest *manifest)
 	manifest->runtime[0].destination = 0x00440000U;
 	manifest->runtime[0].file_offset = 20000U;
 	manifest->runtime[0].length = 16U;
-	manifest->runtime[1].destination = INTEL_AX211_CPU1_CPU2_SEPARATOR;
+	manifest->runtime[1].destination = INTEL_AX211_UPPER_CPU_IMAGE_MARK;
 	manifest->runtime[2].destination = 0x80440000U;
 	manifest->runtime[2].file_offset = 21000U;
 	manifest->runtime[2].length = 24U;
-	manifest->runtime[3].destination = INTEL_AX211_PAGING_SEPARATOR;
+	manifest->runtime[3].destination = INTEL_AX211_PAGED_IMAGE_MARK;
 	manifest->runtime[4].destination = 0x01000000U;
 	manifest->runtime[4].file_offset = 22000U;
 	manifest->runtime[4].length = 32U;
@@ -347,12 +347,12 @@ static int
 fixture_check_history(void)
 {
 	static const size_t fixed_size[11] = {
-		INTEL_AX211_CONTEXT_INFO_GEN3_SIZE,
-		INTEL_AX211_PRPH_SCRATCH_SIZE,
-		INTEL_AX211_PRPH_INFO_SIZE,
-		INTEL_AX211_ICT_SIZE,
+		INTEL_AX211_BOOT_CONTEXT_SIZE,
+		INTEL_AX211_SCRATCH_AREA_SIZE,
+		INTEL_AX211_STATUS_PAGE_SIZE,
+		INTEL_AX211_INTERRUPT_TABLE_SIZE,
 		INTEL_AX211_COMMAND_TFD_RING_SIZE,
-		INTEL_AX211_COMMAND_BC_TABLE_SIZE,
+		INTEL_AX211_COMMAND_LENGTH_TABLE_SIZE,
 		INTEL_AX211_COMMAND_SLOTS_SIZE,
 		INTEL_AX211_COMMAND_EXTERNAL_SIZE,
 		INTEL_AX211_RX_TRANSFER_RING_SIZE,
@@ -360,7 +360,7 @@ fixture_check_history(void)
 		INTEL_AX211_RX_STATUS_SIZE
 	};
 	static const size_t fixed_alignment[11] = {
-		1U, 1U, 1U, INTEL_AX211_ICT_SIZE, 256U, 128U, 64U,
+		1U, 1U, 1U, INTEL_AX211_INTERRUPT_TABLE_SIZE, 256U, 128U, 64U,
 		64U, 256U, 256U, 16U
 	};
 	unsigned index;
@@ -370,7 +370,7 @@ fixture_check_history(void)
 		TEST_CHECK(history_size[index] == fixed_size[index]);
 		TEST_CHECK(history_alignment[index] == fixed_alignment[index]);
 	}
-	TEST_CHECK(history_size[11] == INTEL_AX211_IML_SIZE);
+	TEST_CHECK(history_size[11] == INTEL_AX211_LOADER_IMAGE_SIZE);
 	TEST_CHECK(history_size[12] == 16U);
 	TEST_CHECK(history_size[13] == 24U);
 	TEST_CHECK(history_size[14] == 32U);
@@ -399,7 +399,7 @@ fixture_check_boot_layout(const uint8_t *firmware,
 	TEST_CHECK(fixture_bytes_are(resources->command_external.address,
 	    resources->command_external.size, 0U));
 	TEST_CHECK(memcmp(resources->iml.address, firmware + 128U,
-	    INTEL_AX211_IML_SIZE) == 0);
+	    INTEL_AX211_LOADER_IMAGE_SIZE) == 0);
 	TEST_CHECK(memcmp(resources->firmware[0].buffer.address,
 	    firmware + 20000U, 16U) == 0);
 	TEST_CHECK(memcmp(resources->firmware[1].buffer.address,
@@ -416,7 +416,7 @@ fixture_check_boot_layout(const uint8_t *firmware,
 	TEST_CHECK(fixture_get_le16(scratch) == 0x0370U);
 	TEST_CHECK(fixture_get_le16(scratch + 2U) == 0U);
 	TEST_CHECK(fixture_get_le16(scratch + 4U) ==
-	    INTEL_AX211_PRPH_SCRATCH_SIZE / 4U);
+	    INTEL_AX211_SCRATCH_AREA_SIZE / 4U);
 	TEST_CHECK(fixture_get_le32(scratch + 8U) == 0x000f0000U);
 	TEST_CHECK(fixture_get_le64(scratch + 16U) == 0U);
 	TEST_CHECK(fixture_get_le32(scratch + 24U) == 0U);
@@ -434,16 +434,16 @@ fixture_check_boot_layout(const uint8_t *firmware,
 
 	TEST_CHECK(fixture_get_le16(context) == 0U);
 	TEST_CHECK(fixture_get_le16(context + 2U) ==
-	    INTEL_AX211_CONTEXT_INFO_GEN3_SIZE / 4U);
+	    INTEL_AX211_BOOT_CONTEXT_SIZE / 4U);
 	TEST_CHECK(fixture_get_le32(context + 4U) == 0U);
 	TEST_CHECK(fixture_get_le64(context + 8U) ==
-	    resources->prph_info.device_address);
+	    resources->status_page.device_address);
 	TEST_CHECK(fixture_get_le64(context + 16U) ==
 	    resources->rx_status.device_address);
 	TEST_CHECK(fixture_get_le64(context + 24U) ==
-	    resources->prph_info.device_address + 2048U);
+	    resources->status_page.device_address + 2048U);
 	TEST_CHECK(fixture_get_le64(context + 32U) ==
-	    resources->prph_info.device_address + 3072U);
+	    resources->status_page.device_address + 3072U);
 	TEST_CHECK(fixture_get_le64(context + 40U) == 0U);
 	TEST_CHECK(fixture_get_le16(context + 48U) == 0U);
 	TEST_CHECK(fixture_get_le16(context + 50U) == 0U);
@@ -459,7 +459,7 @@ fixture_check_boot_layout(const uint8_t *firmware,
 	TEST_CHECK(fixture_get_le64(context + 88U) ==
 	    resources->scratch.device_address);
 	TEST_CHECK(fixture_get_le32(context + 96U) ==
-	    INTEL_AX211_PRPH_SCRATCH_SIZE);
+	    INTEL_AX211_SCRATCH_AREA_SIZE);
 	TEST_CHECK(fixture_get_le32(context + 100U) == 0U);
 
 	for (index = 0U; index < INTEL_AX211_RX_RING_SIZE; index++) {
@@ -594,7 +594,7 @@ fixture_success_and_pnvm(uint8_t *firmware,
 		return error;
 	active_after_boot = fixture_active_count();
 	TEST_CHECK(active_after_boot == FIXTURE_BOOT_ALLOCATION_COUNT);
-	TEST_CHECK(drv_intel_ax211_dma_prepare_pnvm(pnvm, INTEL_AX211_PNVM_SIZE,
+	TEST_CHECK(drv_intel_ax211_dma_prepare_pnvm(pnvm, INTEL_AX211_PNVM_FILE_SIZE,
 	    pnvm_manifest, &resources) == EINVAL);
 	TEST_CHECK(fixture_active_count() == active_after_boot);
 
@@ -613,8 +613,8 @@ fixture_success_and_pnvm(uint8_t *firmware,
 
 	/* Malformed fragmented manifests do not mutate scratch or ownership. */
 	bad = *pnvm_manifest;
-	bad.section[1].file_offset = INTEL_AX211_PNVM_SIZE;
-	TEST_CHECK(drv_intel_ax211_dma_prepare_pnvm(pnvm, INTEL_AX211_PNVM_SIZE,
+	bad.section[1].file_offset = INTEL_AX211_PNVM_FILE_SIZE;
+	TEST_CHECK(drv_intel_ax211_dma_prepare_pnvm(pnvm, INTEL_AX211_PNVM_FILE_SIZE,
 	    &bad, &resources) == EINVAL);
 	TEST_CHECK(!resources.pnvm_prepared && resources.pnvm_count == 0U);
 	scratch = resources.scratch.address;
@@ -622,14 +622,14 @@ fixture_success_and_pnvm(uint8_t *firmware,
 	TEST_CHECK(fixture_get_le32(scratch + 24U) == 0U);
 	bad = *pnvm_manifest;
 	bad.total_length++;
-	TEST_CHECK(drv_intel_ax211_dma_prepare_pnvm(pnvm, INTEL_AX211_PNVM_SIZE,
+	TEST_CHECK(drv_intel_ax211_dma_prepare_pnvm(pnvm, INTEL_AX211_PNVM_FILE_SIZE,
 	    &bad, &resources) == EINVAL);
 	bad = *pnvm_manifest;
 	bad.total_length = (size_t)UINT32_MAX + 1U;
-	TEST_CHECK(drv_intel_ax211_dma_prepare_pnvm(pnvm, INTEL_AX211_PNVM_SIZE,
+	TEST_CHECK(drv_intel_ax211_dma_prepare_pnvm(pnvm, INTEL_AX211_PNVM_FILE_SIZE,
 	    &bad, &resources) == EINVAL);
 	TEST_CHECK(drv_intel_ax211_dma_prepare_pnvm(pnvm,
-	    INTEL_AX211_PNVM_SIZE - 1U, pnvm_manifest, &resources) == EINVAL);
+	    INTEL_AX211_PNVM_FILE_SIZE - 1U, pnvm_manifest, &resources) == EINVAL);
 
 	/* Every pointer-table/segment allocation failure unwinds in reverse. */
 	for (index = 1U; index <= FIXTURE_PNVM_ALLOCATION_COUNT; index++) {
@@ -638,7 +638,7 @@ fixture_success_and_pnvm(uint8_t *firmware,
 		failure_attempt = allocation_attempts + index;
 		reverse_required = 1U;
 		TEST_CHECK(drv_intel_ax211_dma_prepare_pnvm(pnvm,
-		    INTEL_AX211_PNVM_SIZE, pnvm_manifest, &resources) == ENOMEM);
+		    INTEL_AX211_PNVM_FILE_SIZE, pnvm_manifest, &resources) == ENOMEM);
 		reverse_required = 0U;
 		TEST_CHECK(fixture_active_count() == active_before);
 		TEST_CHECK(resources.pnvm_count == 0U &&
@@ -649,7 +649,7 @@ fixture_success_and_pnvm(uint8_t *firmware,
 		failure_attempt = 0U;
 	}
 
-	TEST_CHECK(drv_intel_ax211_dma_prepare_pnvm(pnvm, INTEL_AX211_PNVM_SIZE,
+	TEST_CHECK(drv_intel_ax211_dma_prepare_pnvm(pnvm, INTEL_AX211_PNVM_FILE_SIZE,
 	    pnvm_manifest, &resources) == 0);
 	TEST_CHECK(resources.pnvm_prepared);
 	TEST_CHECK(resources.pnvm_count == FIXTURE_PNVM_SEGMENT_COUNT);
@@ -683,7 +683,7 @@ fixture_success_and_pnvm(uint8_t *firmware,
 #ifdef INTEL_AX211_DMA_EXACT_BLOB_TEST
 static int
 fixture_first_sku(const uint8_t *bytes, size_t length,
-	struct intel_ax211_sku_id *sku)
+	struct intel_ax211_board_signature *sku)
 {
 	size_t offset = 0U;
 
@@ -722,21 +722,21 @@ fixture_exact_blobs(void)
 	struct intel_ax211_firmware_manifest firmware_manifest;
 	struct intel_ax211_pnvm_manifest pnvm_manifest;
 	struct intel_ax211_dma_resources resources;
-	struct intel_ax211_sku_id sku;
+	struct intel_ax211_board_signature sku;
 	unsigned failure;
 
 	TEST_CHECK(ucode_size == INTEL_AX211_FIRMWARE_SIZE);
-	TEST_CHECK(pnvm_size == INTEL_AX211_PNVM_SIZE);
+	TEST_CHECK(pnvm_size == INTEL_AX211_PNVM_FILE_SIZE);
 	TEST_CHECK(drv_intel_ax211_firmware_parse(ucode, ucode_size,
-	    &firmware_manifest) == INTEL_AX211_OK);
-	TEST_CHECK(firmware_manifest.iml_length == INTEL_AX211_IML_SIZE);
+	    &firmware_manifest) == INTEL_AX211_SUCCESS);
+	TEST_CHECK(firmware_manifest.iml_length == INTEL_AX211_LOADER_IMAGE_SIZE);
 	TEST_CHECK(firmware_manifest.lmac_count == 15U);
 	TEST_CHECK(firmware_manifest.umac_count == 17U);
 	TEST_CHECK(firmware_manifest.paging_count == 26U);
 	TEST_CHECK(fixture_first_sku(pnvm, pnvm_size, &sku) == 0);
-	TEST_CHECK(drv_intel_ax211_pnvm_parse(pnvm, pnvm_size, &sku,
-	    INTEL_AX211_MAC_TYPE_SO, INTEL_AX211_RF_TYPE,
-	    &pnvm_manifest) == INTEL_AX211_OK);
+	TEST_CHECK(drv_intel_ax211_pnvm_select(pnvm, pnvm_size, &sku,
+	    INTEL_AX211_SILICON_SO, INTEL_AX211_RADIO_GF,
+	    &pnvm_manifest) == INTEL_AX211_SUCCESS);
 	TEST_CHECK(pnvm_manifest.section_count == 2U);
 
 	TEST_CHECK(fixture_allocator_reset() == 0);
@@ -784,7 +784,7 @@ main(void)
 	int error;
 
 	firmware = fixture_make_bytes(INTEL_AX211_FIRMWARE_SIZE);
-	pnvm = fixture_make_bytes(INTEL_AX211_PNVM_SIZE);
+	pnvm = fixture_make_bytes(INTEL_AX211_PNVM_FILE_SIZE);
 	TEST_CHECK(firmware != NULL && pnvm != NULL);
 	fixture_make_boot_manifest(&firmware_manifest);
 	fixture_make_pnvm_manifest(&pnvm_manifest);

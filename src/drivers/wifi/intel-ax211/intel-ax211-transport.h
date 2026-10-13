@@ -1,52 +1,32 @@
 /* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
 
 /*
- * zedBSD Intel AX211 private Gen3 transport contract
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
- * commit 0f464d413c50396e4e6cd70948f15613d6a73081.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private Gen3 transport contract.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * iwl-csr.h and iwl-fh.h.  They were cross-checked against OpenBSD
+ * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
+ * values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_TRANSPORT_H
@@ -58,6 +38,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * The command slots and receive descriptors shared with the boot code.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-fh.h (the 16-byte receive transfer
+ * descriptor and 32-byte completion descriptor) for the device layouts; the
+ * slot sizes are zedBSD's.  A command slot of 324 bytes holds the 8-byte
+ * wide header and up to 316 payload bytes inline; a longer command uses the
+ * one 4 KiB external buffer, which holds the header and up to 4088 payload
+ * bytes.  The receive ring has 512 descriptors.
+ */
 #define INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE 324U
 #define INTEL_AX211_TRANSPORT_COMMAND_INLINE_PAYLOAD_MAX 316U
 #define INTEL_AX211_TRANSPORT_COMMAND_EXTERNAL_SIZE 4096U
@@ -65,15 +55,26 @@
 #define INTEL_AX211_TRANSPORT_RX_DESCRIPTOR_COUNT 512U
 #define INTEL_AX211_TRANSPORT_RX_DESCRIPTOR_SIZE 16U
 #define INTEL_AX211_TRANSPORT_RX_COMPLETION_SIZE 32U
-#define INTEL_AX211_TRANSPORT_HW_CAUSE_ALIVE 0x00000001U
-#define INTEL_AX211_TRANSPORT_FH_CAUSE_ERROR 0x00200000U
-#define INTEL_AX211_TRANSPORT_HW_CAUSE_SW_ERROR_V2 0x00000020U
-#define INTEL_AX211_TRANSPORT_HW_CAUSE_SW_ERROR 0x02000000U
-#define INTEL_AX211_TRANSPORT_HW_CAUSE_HW_ERROR 0x20000000U
-#define INTEL_AX211_TRANSPORT_HW_FATAL_CAUSES                                  \
-	(INTEL_AX211_TRANSPORT_HW_CAUSE_SW_ERROR_V2 |                          \
-	 INTEL_AX211_TRANSPORT_HW_CAUSE_SW_ERROR |                             \
-	 INTEL_AX211_TRANSPORT_HW_CAUSE_HW_ERROR)
+
+/*
+ * The MSI-X causes that the boot and runtime code test for themselves.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-csr.h (enum msix_hw_int_causes and enum
+ * msix_fh_int_causes).  ALIVE is bit 0 of the event-cause register; the
+ * firmware faults are bits 5 and 25 and the hardware fault bit 29 of the
+ * same register; the DMA engine fault is bit 21 of the queue-cause register.
+ * A command that fails while one of the fatal causes is pending makes the
+ * driver read the firmware error tables (intel-ax211.c).
+ */
+#define INTEL_AX211_TRANSPORT_EVENT_CAUSE_ALIVE 0x00000001U
+#define INTEL_AX211_TRANSPORT_QUEUE_CAUSE_FAULT 0x00200000U
+#define INTEL_AX211_TRANSPORT_EVENT_CAUSE_FIRMWARE_FAULT_V2 0x00000020U
+#define INTEL_AX211_TRANSPORT_EVENT_CAUSE_FIRMWARE_FAULT 0x02000000U
+#define INTEL_AX211_TRANSPORT_EVENT_CAUSE_HARDWARE_FAULT 0x20000000U
+#define INTEL_AX211_TRANSPORT_EVENT_FATAL_CAUSES                               \
+	(INTEL_AX211_TRANSPORT_EVENT_CAUSE_FIRMWARE_FAULT_V2 |                 \
+	 INTEL_AX211_TRANSPORT_EVENT_CAUSE_FIRMWARE_FAULT |                    \
+	 INTEL_AX211_TRANSPORT_EVENT_CAUSE_HARDWARE_FAULT)
 
 enum intel_ax211_transport_result {
 	INTEL_AX211_TRANSPORT_OK = 0,
@@ -110,8 +111,8 @@ struct intel_ax211_transport_ops {
 	int (*csr_read32)(void *argument, uint32_t offset, uint32_t *value);
 	int (*csr_write32)(void *argument, uint32_t offset, uint32_t value);
 	int (*csr_write8)(void *argument, uint32_t offset, uint8_t value);
-	int (*nic_lock)(void *argument);
-	int (*nic_unlock)(void *argument);
+	int (*wake_hold)(void *argument);
+	int (*wake_release)(void *argument);
 	int (*prph_read32)(void *argument, uint32_t address, uint32_t *value);
 	int (*prph_write32)(void *argument, uint32_t address, uint32_t value);
 	int (*dma_sync)(void *argument,
@@ -145,9 +146,9 @@ struct intel_ax211_transport_ring_memory {
 };
 
 struct intel_ax211_transport_causes {
-	uint32_t flow_handler;
+	uint32_t queue_causes;
 	uint32_t hardware;
-	uint32_t raw_flow_handler;
+	uint32_t raw_queue_causes;
 	uint32_t raw_hardware;
 };
 
@@ -165,8 +166,8 @@ struct intel_ax211_transport {
 	struct intel_ax211_ring command_ring;
 	struct intel_ax211_ring_token command_prepared_token;
 	struct intel_ax211_ring_token command_external_token;
-	uint32_t enabled_fh_causes;
-	uint32_t enabled_hw_causes;
+	uint32_t enabled_queue_causes;
+	uint32_t enabled_event_causes;
 	/* Counts published commands modulo 65536; reset starts at zero. */
 	uint16_t command_write_sequence;
 	uint16_t rx_head;

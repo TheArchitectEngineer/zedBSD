@@ -89,7 +89,7 @@ struct intel_ax211_boot_ops {
 			     struct intel_ax211_boot_received_event *event);
 	int (*publish_pnvm)(void *argument,
 			    struct intel_ax211_dma_resources *dma);
-	int (*post_alive)(void *argument,
+	int (*after_alive)(void *argument,
 			  const struct intel_ax211_protocol_alive *alive);
 	int (*interrupt_drain)(void *argument);
 	int (*bus_master_disable)(void *argument);

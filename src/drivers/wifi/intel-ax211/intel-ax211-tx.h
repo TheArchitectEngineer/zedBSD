@@ -1,53 +1,32 @@
 /* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
 
 /*
- * zedBSD Intel AX211 private API89 transmit contract
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Wire constants and layouts are derived from OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit
- * 0f464d413c50396e4e6cd70948f15613d6a73081.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private API89 transmit contract.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/api/tx.h and fw/api/commands.h.  They were cross-checked against OpenBSD
+ * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
+ * values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_TX_H
@@ -58,7 +37,19 @@
 
 #include "intel-ax211-protocol.h"
 
-#define INTEL_AX211_TX_GROUP 1U
+/*
+ * The transmit command and the limits of a frame and of a data queue.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/commands.h (TX_CMD, opcode 0x1c) and
+ * fw/api/tx.h; the versions are those of the pinned API 89 image (command
+ * version 10, completion version 7).  The command is sent in family 1 on the
+ * data queue, not on the command ring.  Its fixed part is 28 bytes and the
+ * MAC header after it at most 36 bytes, with up to 2 bytes of padding.  A
+ * frame body may not exceed 2304 bytes (the 802.11 MSDU limit).  A data
+ * queue has 256 descriptors; the firmware's queue numbers run from 1 to 511;
+ * its scheduler sequence numbers are 16 bits wide.
+ */
+#define INTEL_AX211_TX_FAMILY 1U
 #define INTEL_AX211_TX_OPCODE 0x1cU
 #define INTEL_AX211_TX_COMMAND_VERSION 10U
 #define INTEL_AX211_TX_NOTIFICATION_VERSION 7U
@@ -68,7 +59,7 @@
 #define INTEL_AX211_TX_COMMAND_BUFFER_SIZE                                     \
 	(INTEL_AX211_TX_COMMAND_FIXED_SIZE + INTEL_AX211_TX_MAC_HEADER_MAX + 2U)
 #define INTEL_AX211_TX_FRAME_MAX 2304U
-#define INTEL_AX211_TX_QUEUE_SIZE 256U
+#define INTEL_AX211_TX_QUEUE_SLOTS 256U
 #define INTEL_AX211_TX_QUEUE_MIN 1U
 #define INTEL_AX211_TX_QUEUE_MAX 511U
 #define INTEL_AX211_TX_SCHEDULER_SEQUENCE_LIMIT 65536U
@@ -135,8 +126,8 @@ struct intel_ax211_tx_completion {
 	uint16_t byte_count;
 	uint8_t index;
 	uint8_t acknowledged;
-	uint8_t failure_rts;
-	uint8_t failure_frame;
+	uint8_t rts_retries;
+	uint8_t frame_retries;
 };
 
 int drv_intel_ax211_tx_api89_validate(

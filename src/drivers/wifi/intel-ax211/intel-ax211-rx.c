@@ -1,53 +1,37 @@
 /* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
 
 /*
- * zedBSD Intel AX211 private API89 receive implementation
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Wire constants and descriptor layout are derived from OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit
- * 0f464d413c50396e4e6cd70948f15613d6a73081.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private API89 receive implementation.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/api/rx.h.  They were cross-checked against OpenBSD
+ * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
+ * values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Values of the 802.11 frame itself (frame control bits, element identifiers,
+ * rates and channel numbers) come from IEEE Std 802.11-2020, and the WMM
+ * element from the Wi-Fi Alliance WMM specification; the blocks that hold
+ * them say so.
  *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-rx.h"
@@ -56,21 +40,58 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define AX211_RX_STATUS_CRC_OK 0x00000001U
-#define AX211_RX_STATUS_OVERRUN_OK 0x00000002U
-#define AX211_RX_STATUS_MIC_OK 0x00000040U
-#define AX211_RX_STATUS_SECURITY_MASK 0x00000700U
-#define AX211_RX_STATUS_SECURITY_NONE 0x00000000U
-#define AX211_RX_STATUS_SECURITY_CCMP 0x00000200U
-#define AX211_RX_STATUS_DECRYPTED 0x00000800U
-#define AX211_RX_STATUS_DUPLICATE 0x00400000U
+/*
+ * The status word of the receive descriptor (bytes 12 to 15).
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/rx.h (enum iwl_mvm_rx_status).  A frame
+ * is delivered only when FCS_GOOD (bit 0, the frame check sequence was
+ * right) and NO_OVERRUN (bit 1) are both set; a frame with REPEATED_FRAME
+ * (bit 22, the firmware's duplicate detection) is dropped.  Bits 10:8 name
+ * the cipher the firmware applied: 0 none, 2 CCMP.  A CCMP frame is
+ * accepted only with PLAINTEXT_RESTORED (bit 11, the firmware decrypted it)
+ * and MIC_GOOD (bit 6, its integrity check passed).
+ */
+#define AX211_RX_CHECK_FCS_GOOD 0x00000001U
+#define AX211_RX_CHECK_NO_OVERRUN 0x00000002U
+#define AX211_RX_CHECK_MIC_GOOD 0x00000040U
+#define AX211_RX_CIPHER_FIELD_MASK 0x00000700U
+#define AX211_RX_CIPHER_FIELD_NONE 0x00000000U
+#define AX211_RX_CIPHER_FIELD_CCMP 0x00000200U
+#define AX211_RX_PLAINTEXT_RESTORED 0x00000800U
+#define AX211_RX_REPEATED_FRAME 0x00400000U
 
+/*
+ * The MAC flags and radio information of the receive descriptor.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/rx.h (the MAC flag bytes and the PHY
+ * information word of struct iwl_rx_mpdu_desc).  Byte 3: PADDING (bit 5)
+ * says the firmware inserted two bytes after the MAC header (and the CCMP
+ * header) to align the body, which the driver removes; AMSDU (bit 6) marks
+ * a frame of an aggregate, which the driver does not accept.  Bits 7:4 of
+ * byte 2 give the length of the trailer the hardware left at the end, in
+ * units of two bytes; the driver cuts it off and appends a zeroed 8-byte
+ * MIC field in its place for a CCMP frame, so the frame handed on has the
+ * usual 802.11 shape.  The 16-bit radio information at bytes 5 and 6 has
+ * RADIO_TIME_REPLACED (bit 8) set when the 64-bit word at byte 48 holds
+ * something other than the TSF; only otherwise is the TSF used.  The other
+ * fields used are the two antennas' energies at bytes 40 and 41 (turned
+ * into a signal strength), the channel at byte 42 and, at byte 44, the
+ * device clock at the moment the frame started on the air.
+ */
 #define AX211_RX_MAC_FLAG_PADDING 0x20U
 #define AX211_RX_MAC_FLAG_AMSDU 0x40U
 #define AX211_RX_MAC_FLAG1_MIC_CRC_LENGTH_MASK 0xf0U
 #define AX211_RX_MAC_FLAG1_MIC_CRC_LENGTH_SHIFT 3U
-#define AX211_RX_PHY_INFO_TSF_OVERLOAD 0x0100U
+#define AX211_RX_RADIO_TIME_REPLACED 0x0100U
 
+/*
+ * The 802.11 frame control field.
+ *
+ * Source: IEEE Std 802.11-2020 9.2.4.1 (frame control: protocol version,
+ * type in bits 3:2, subtype in bits 7:4, To DS, From DS, Protected Frame and
+ * +HTC/Order) and 9.2.4.1.3 (the control subtypes CTS 12 and ACK 13).  The
+ * driver uses them to find the header length of a received frame.
+ */
 #define AX211_FRAME_TYPE_MASK 0x000cU
 #define AX211_FRAME_TYPE_MANAGEMENT 0x0000U
 #define AX211_FRAME_TYPE_CONTROL 0x0004U
@@ -84,8 +105,15 @@
 #define AX211_FRAME_CONTROL_CTS 0x00c0U
 #define AX211_FRAME_CONTROL_ACK 0x00d0U
 
+/*
+ * The CCMP header and MIC.
+ *
+ * Source: IEEE Std 802.11-2020 12.5.3.2 (the 8-byte CCMP header with the
+ * Ext IV bit, bit 5 of its fourth byte, always set, and the 8-byte MIC of
+ * CCMP-128).
+ */
 #define AX211_CCMP_HEADER_SIZE 8U
-#define AX211_CCMP_MIC_SIZE 8U
+#define AX211_CCMP_TAG_SIZE 8U
 #define AX211_CCMP_EXTENDED_IV 0x20U
 
 static uint16_t ax211_rx_get_le16(const uint8_t *bytes);
@@ -93,7 +121,7 @@ static uint32_t ax211_rx_get_le32(const uint8_t *bytes);
 static int32_t ax211_rx_rssi(uint8_t energy_a, uint8_t energy_b);
 static uint64_t ax211_rx_get_le64(const uint8_t *bytes);
 static int ax211_rx_header_length(const uint8_t *frame, size_t length, size_t *header_length);
-static int ax211_rx_security(struct intel_ax211_rx_mpdu *mpdu, const uint8_t *frame, size_t length, size_t header_length);
+static int ax211_rx_security(struct intel_ax211_rx_delivery *mpdu, const uint8_t *frame, size_t length, size_t header_length);
 
 /*
  * Implements the drv intel ax211 rx api89 validate operation.
@@ -111,7 +139,7 @@ drv_intel_ax211_rx_api89_validate(
 
 	/* Checks the operation result. */
 	result = drv_intel_ax211_protocol_command_version_lookup(
-		table, INTEL_AX211_RX_MPDU_GROUP, INTEL_AX211_RX_MPDU_OPCODE,
+		table, INTEL_AX211_RX_FRAME_FAMILY, INTEL_AX211_RX_FRAME_OPCODE,
 		&version);
 	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_RX_UNSUPPORTED;
@@ -119,7 +147,7 @@ drv_intel_ax211_rx_api89_validate(
 	/* Handles the version condition. */
 	if (version.command_version != INTEL_AX211_PROTOCOL_UNKNOWN_VERSION ||
 	    version.notification_version !=
-		    INTEL_AX211_RX_MPDU_NOTIFICATION_VERSION) {
+		    INTEL_AX211_RX_FRAME_NOTIFICATION_VERSION) {
 		/* Returns the computed result. */
 		return INTEL_AX211_RX_UNSUPPORTED;
 	}
@@ -137,9 +165,9 @@ drv_intel_ax211_rx_mpdu_decode(
 	uint32_t generation,
 	uint8_t *output,
 	size_t output_capacity,
-	struct intel_ax211_rx_mpdu *mpdu)
+	struct intel_ax211_rx_delivery *mpdu)
 {
-	struct intel_ax211_rx_mpdu decoded;
+	struct intel_ax211_rx_delivery decoded;
 	const uint8_t *descriptor;
 	const uint8_t *frame;
 	size_t frame_length;
@@ -166,9 +194,9 @@ drv_intel_ax211_rx_mpdu_decode(
 		return INTEL_AX211_RX_STALE;
 
 	/* Handles the message condition. */
-	if (message->group != INTEL_AX211_RX_MPDU_GROUP ||
-	    message->opcode != INTEL_AX211_RX_MPDU_OPCODE ||
-	    message->version != INTEL_AX211_RX_MPDU_NOTIFICATION_VERSION) {
+	if (message->group != INTEL_AX211_RX_FRAME_FAMILY ||
+	    message->opcode != INTEL_AX211_RX_FRAME_OPCODE ||
+	    message->version != INTEL_AX211_RX_FRAME_NOTIFICATION_VERSION) {
 		/* Returns the computed result. */
 		return INTEL_AX211_RX_UNSUPPORTED;
 	}
@@ -182,18 +210,18 @@ drv_intel_ax211_rx_mpdu_decode(
 		return INTEL_AX211_RX_INVALID;
 
 	/* Handles the message condition. */
-	if (message->payload_length < INTEL_AX211_RX_MPDU_DESCRIPTOR_SIZE)
+	if (message->payload_length < INTEL_AX211_RX_FRAME_DESCRIPTOR_SIZE)
 		return INTEL_AX211_RX_TRUNCATED;
 
 	descriptor = message->payload;
 
 	/* Handles the frame length condition. */
 	frame_length = ax211_rx_get_le16(descriptor);
-	if (frame_length > INTEL_AX211_RX_MPDU_FRAME_MAX)
+	if (frame_length > INTEL_AX211_RX_FRAME_BODY_MAX)
 		return INTEL_AX211_RX_OVERSIZED;
 
 	/* Handles the message condition. */
-	if (message->payload_length - INTEL_AX211_RX_MPDU_DESCRIPTOR_SIZE <
+	if (message->payload_length - INTEL_AX211_RX_FRAME_DESCRIPTOR_SIZE <
 	    frame_length) {
 		/* Returns the computed result. */
 		return INTEL_AX211_RX_TRUNCATED;
@@ -211,14 +239,14 @@ drv_intel_ax211_rx_mpdu_decode(
 
 	/* Handles the decoded condition. */
 	if ((decoded.status &
-	     (AX211_RX_STATUS_CRC_OK | AX211_RX_STATUS_OVERRUN_OK)) !=
-	    (AX211_RX_STATUS_CRC_OK | AX211_RX_STATUS_OVERRUN_OK)) {
+	     (AX211_RX_CHECK_FCS_GOOD | AX211_RX_CHECK_NO_OVERRUN)) !=
+	    (AX211_RX_CHECK_FCS_GOOD | AX211_RX_CHECK_NO_OVERRUN)) {
 		/* Returns the computed result. */
 		return INTEL_AX211_RX_FAILED;
 	}
 
 	/* Handles the decoded condition. */
-	if ((decoded.status & AX211_RX_STATUS_DUPLICATE) != 0U)
+	if ((decoded.status & AX211_RX_REPEATED_FRAME) != 0U)
 		return INTEL_AX211_RX_DUPLICATE;
 
 	/* Handles the mac flags condition. */
@@ -231,16 +259,16 @@ drv_intel_ax211_rx_mpdu_decode(
 	/* Handles the decoded condition. */
 	if (decoded.channel == 0U)
 		return INTEL_AX211_RX_FAILED;
-	decoded.gp2_on_air_rise = ax211_rx_get_le32(descriptor + 44U);
+	decoded.air_start_clock = ax211_rx_get_le32(descriptor + 44U);
 
 	/* Handles the phy info condition. */
 	phy_info = ax211_rx_get_le16(descriptor + 5U);
-	if ((phy_info & AX211_RX_PHY_INFO_TSF_OVERLOAD) == 0U) {
+	if ((phy_info & AX211_RX_RADIO_TIME_REPLACED) == 0U) {
 		decoded.tsf = ax211_rx_get_le64(descriptor + 48U);
 		decoded.tsf_valid = 1U;
 	}
 
-	frame = descriptor + INTEL_AX211_RX_MPDU_DESCRIPTOR_SIZE;
+	frame = descriptor + INTEL_AX211_RX_FRAME_DESCRIPTOR_SIZE;
 
 	/* Checks the operation result. */
 	result = ax211_rx_header_length(frame, frame_length, &header_length);
@@ -254,16 +282,16 @@ drv_intel_ax211_rx_mpdu_decode(
 	if (hardware_trailer_length > frame_length)
 		return INTEL_AX211_RX_TRUNCATED;
 	common_trailer_length =
-		(decoded.status & AX211_RX_STATUS_SECURITY_MASK) ==
-				AX211_RX_STATUS_SECURITY_CCMP
-			? AX211_CCMP_MIC_SIZE
+		(decoded.status & AX211_RX_CIPHER_FIELD_MASK) ==
+				AX211_RX_CIPHER_FIELD_CCMP
+			? AX211_CCMP_TAG_SIZE
 			: 0U;
 	copied_length = frame_length - hardware_trailer_length;
 
 	/* Handles the decoded condition. */
 	padding_offset = header_length;
-	if ((decoded.status & AX211_RX_STATUS_SECURITY_MASK) ==
-	    AX211_RX_STATUS_SECURITY_CCMP) {
+	if ((decoded.status & AX211_RX_CIPHER_FIELD_MASK) ==
+	    AX211_RX_CIPHER_FIELD_CCMP) {
 		/* Handles the padding offset condition. */
 		if (padding_offset > copied_length ||
 		    copied_length - padding_offset < AX211_CCMP_HEADER_SIZE) {
@@ -323,7 +351,7 @@ drv_intel_ax211_rx_mpdu_decode(
 
 	/* Handles the frame control condition. */
 	if ((frame_control & AX211_FRAME_PROTECTED) == 0U &&
-	    decoded.cipher != INTEL_AX211_RX_CIPHER_NONE) {
+	    decoded.cipher != INTEL_AX211_RX_PROTECTION_NONE) {
 		/* Returns the computed result. */
 		return INTEL_AX211_RX_FAILED;
 	}
@@ -441,7 +469,7 @@ ax211_rx_header_length(
 /* Supports the ax211 rx security operation. */
 static int
 ax211_rx_security(
-	struct intel_ax211_rx_mpdu *mpdu,
+	struct intel_ax211_rx_delivery *mpdu,
 	const uint8_t *frame,
 	size_t length,
 	size_t header_length)
@@ -453,8 +481,8 @@ ax211_rx_security(
 	frame_control = ax211_rx_get_le16(frame);
 
 	/* Handles the security condition. */
-	security = mpdu->status & AX211_RX_STATUS_SECURITY_MASK;
-	if (security == AX211_RX_STATUS_SECURITY_NONE) {
+	security = mpdu->status & AX211_RX_CIPHER_FIELD_MASK;
+	if (security == AX211_RX_CIPHER_FIELD_NONE) {
 		/* Handles the frame control condition. */
 		if ((frame_control & AX211_FRAME_PROTECTED) != 0U)
 			return INTEL_AX211_RX_FAILED;
@@ -464,14 +492,14 @@ ax211_rx_security(
 	}
 
 	/* Handles the security condition. */
-	if (security != AX211_RX_STATUS_SECURITY_CCMP)
+	if (security != AX211_RX_CIPHER_FIELD_CCMP)
 		return INTEL_AX211_RX_UNSUPPORTED;
 
 	/* Handles the frame control condition. */
 	if ((frame_control & AX211_FRAME_PROTECTED) == 0U ||
 	    (mpdu->status &
-	     (AX211_RX_STATUS_DECRYPTED | AX211_RX_STATUS_MIC_OK)) !=
-		    (AX211_RX_STATUS_DECRYPTED | AX211_RX_STATUS_MIC_OK)) {
+	     (AX211_RX_PLAINTEXT_RESTORED | AX211_RX_CHECK_MIC_GOOD)) !=
+		    (AX211_RX_PLAINTEXT_RESTORED | AX211_RX_CHECK_MIC_GOOD)) {
 		/* Returns the computed result. */
 		return INTEL_AX211_RX_FAILED;
 	}
@@ -493,7 +521,7 @@ ax211_rx_security(
 	if (mpdu->packet_number == 0U)
 		return INTEL_AX211_RX_FAILED;
 	mpdu->key_index = (uint8_t)((ccmp[3U] >> 6) & 0x03U);
-	mpdu->cipher = INTEL_AX211_RX_CIPHER_CCMP;
+	mpdu->cipher = INTEL_AX211_RX_PROTECTION_CCMP;
 	mpdu->decrypted = 1U;
 
 	/* Returns the computed result. */

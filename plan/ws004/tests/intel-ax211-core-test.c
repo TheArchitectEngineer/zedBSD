@@ -91,10 +91,10 @@ make_firmware(uint8_t *firmware)
 	uint8_t section[8];
 	uint8_t iml[5] = { 1, 2, 3, 4, 5 };
 	uint8_t command_version[4] = { 1, 0, 99, 6 };
-	size_t offset = INTEL_AX211_TLV_HEADER_SIZE;
+	size_t offset = INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE;
 
 	memset(firmware, 0, TEST_FW_CAPACITY);
-	put_le32(firmware + 4U, INTEL_AX211_TLV_MAGIC);
+	put_le32(firmware + 4U, INTEL_AX211_FIRMWARE_FILE_MAGIC);
 	put_le32(firmware + 72U, 0x59000000U);
 	put_le32(firmware + 76U, 7U);
 	offset = append_u32(firmware, TEST_FW_CAPACITY, offset, 23U,
@@ -113,7 +113,7 @@ make_firmware(uint8_t *firmware)
 	put_le32(section + 4U, 0xaaaaaaaaU);
 	offset = append_tlv(firmware, TEST_FW_CAPACITY, offset, 19U, section,
 	    sizeof(section));
-	put_le32(section, INTEL_AX211_CPU1_CPU2_SEPARATOR);
+	put_le32(section, INTEL_AX211_UPPER_CPU_IMAGE_MARK);
 	put_le32(section + 4U, 0U);
 	offset = append_tlv(firmware, TEST_FW_CAPACITY, offset, 19U, section,
 	    sizeof(section));
@@ -121,7 +121,7 @@ make_firmware(uint8_t *firmware)
 	put_le32(section + 4U, 0xbbbbbbbbU);
 	offset = append_tlv(firmware, TEST_FW_CAPACITY, offset, 19U, section,
 	    sizeof(section));
-	put_le32(section, INTEL_AX211_PAGING_SEPARATOR);
+	put_le32(section, INTEL_AX211_PAGED_IMAGE_MARK);
 	put_le32(section + 4U, 0U);
 	offset = append_tlv(firmware, TEST_FW_CAPACITY, offset, 19U, section,
 	    sizeof(section));
@@ -154,18 +154,18 @@ test_identity_and_metadata(void)
 	identity.subvendor--;
 	identity.subdevice++;
 	assert(!drv_intel_ax211_identity_matches(&identity));
-	assert(INTEL_AX211_MAC_TYPE_SO == 0x37U);
-	assert(INTEL_AX211_MAC_TYPE_SOF == 0x43U);
-	assert(drv_intel_ax211_mac_type_supported(INTEL_AX211_MAC_TYPE_SO));
-	assert(drv_intel_ax211_mac_type_supported(INTEL_AX211_MAC_TYPE_SOF));
+	assert(INTEL_AX211_SILICON_SO == 0x37U);
+	assert(INTEL_AX211_SILICON_SOF == 0x43U);
+	assert(drv_intel_ax211_mac_type_supported(INTEL_AX211_SILICON_SO));
+	assert(drv_intel_ax211_mac_type_supported(INTEL_AX211_SILICON_SOF));
 	assert(!drv_intel_ax211_mac_type_supported(0x42U));
 	assert(INTEL_AX211_CRF_ID == 0x401410U);
 	assert(INTEL_AX211_CNV_ID == 0x80400U);
 	assert(INTEL_AX211_WFPM_ID == 0x80000020U);
 	assert(INTEL_AX211_RAW_RF_ID == 0x2010d000U);
-	assert(INTEL_AX211_RF_TYPE == 0x10dU);
-	assert(INTEL_AX211_RF_CDB == 0U);
-	assert(INTEL_AX211_RF_JACKET == 1U);
+	assert(INTEL_AX211_RADIO_GF == 0x10dU);
+	assert(INTEL_AX211_RADIO_CONCURRENT_BANDS == 0U);
+	assert(INTEL_AX211_RADIO_JACKET == 1U);
 	identity.subdevice--;
 	identity.revision++;
 	assert(!drv_intel_ax211_identity_matches(&identity));
@@ -177,7 +177,7 @@ test_identity_and_metadata(void)
 	assert(strcmp(INTEL_AX211_FIRMWARE_VERSION, "89.735b75a4.0") == 0);
 	assert(strcmp(INTEL_AX211_PNVM_PATH,
 	    "intel/iwlwifi/iwlwifi-so-a0-gf-a0.pnvm") == 0);
-	assert(INTEL_AX211_PNVM_SIZE == 55176U);
+	assert(INTEL_AX211_PNVM_FILE_SIZE == 55176U);
 	assert(strcmp(INTEL_AX211_PNVM_SHA256,
 	    "efa9726d4a9d44b83fc9a14cedcf306a4e439e9de919802eb9e92df4ec032b2a") == 0);
 	assert(strcmp(INTEL_AX211_LINUX_FIRMWARE_TAG, "20260410") == 0);
@@ -195,11 +195,11 @@ test_firmware_parser(void)
 	size_t offset;
 
 	assert(drv_intel_ax211_firmware_parse(firmware, length, &manifest) ==
-	    INTEL_AX211_OK);
+	    INTEL_AX211_SUCCESS);
 	assert(manifest.api_major == 89U);
 	assert(manifest.api_minor == 0x735b75a4U);
 	assert(manifest.cpu_count == 2U);
-	assert(manifest.phy_sku == 0x12345678U);
+	assert(manifest.radio_profile == 0x12345678U);
 	assert(manifest.iml_length == 5U);
 	assert(manifest.command_versions_length == 4U);
 	assert(memcmp(firmware + manifest.command_versions_offset,
@@ -225,19 +225,19 @@ test_firmware_parser(void)
 	    INTEL_AX211_TRUNCATED);
 
 	memcpy(malformed, firmware, length);
-	put_le32(malformed + INTEL_AX211_TLV_HEADER_SIZE, 0xdeadbeefU);
+	put_le32(malformed + INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE, 0xdeadbeefU);
 	assert(drv_intel_ax211_firmware_parse(malformed, length, &manifest) ==
 	    INTEL_AX211_UNSUPPORTED);
 
 	memcpy(malformed, firmware, length);
 	/* FW_VERSION payload follows the two leading four-byte TLVs. */
-	put_le32(malformed + INTEL_AX211_TLV_HEADER_SIZE + 32U, 0U);
+	put_le32(malformed + INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE + 32U, 0U);
 	assert(drv_intel_ax211_firmware_parse(malformed, length, &manifest) ==
 	    INTEL_AX211_IDENTITY_MISMATCH);
 
 	memcpy(malformed, firmware, length);
 	/* The command-version TLV follows IML and must contain whole rows. */
-	put_le32(malformed + INTEL_AX211_TLV_HEADER_SIZE + 64U, 3U);
+	put_le32(malformed + INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE + 64U, 3U);
 	assert(drv_intel_ax211_firmware_parse(malformed, length, &manifest) ==
 	    INTEL_AX211_INVALID);
 
@@ -248,9 +248,9 @@ test_firmware_parser(void)
 	    INTEL_AX211_DUPLICATE);
 
 	memset(malformed, 0, sizeof(malformed));
-	put_le32(malformed + 4U, INTEL_AX211_TLV_MAGIC);
-	offset = INTEL_AX211_TLV_HEADER_SIZE;
-	for (size_t index = 0; index <= INTEL_AX211_MAX_FW_SECTIONS; index++) {
+	put_le32(malformed + 4U, INTEL_AX211_FIRMWARE_FILE_MAGIC);
+	offset = INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE;
+	for (size_t index = 0; index <= INTEL_AX211_FIRMWARE_SECTION_LIMIT; index++) {
 		uint8_t section[5] = { 0, 0, 0, 0, 0xaa };
 		put_le32(section, 0x1000U + (uint32_t)index * 4U);
 		offset = append_tlv(malformed, TEST_FW_CAPACITY, offset, 19U,
@@ -262,7 +262,7 @@ test_firmware_parser(void)
 
 static size_t
 append_sku(uint8_t *bytes, size_t offset,
-	const struct intel_ax211_sku_id *sku)
+	const struct intel_ax211_board_signature *sku)
 {
 	uint8_t payload[12];
 
@@ -288,8 +288,8 @@ static void
 test_pnvm_parser(void)
 {
 	uint8_t pnvm[TEST_PNVM_CAPACITY] = { 0 };
-	struct intel_ax211_sku_id wanted = { { 1U, 2U, 3U } };
-	struct intel_ax211_sku_id other = { { 4U, 5U, 6U } };
+	struct intel_ax211_board_signature wanted = { { 1U, 2U, 3U } };
+	struct intel_ax211_board_signature other = { { 4U, 5U, 6U } };
 	struct intel_ax211_pnvm_manifest manifest;
 	uint8_t section[7] = { 0, 0, 0, 0, 9, 8, 7 };
 	size_t offset = 0;
@@ -308,43 +308,43 @@ test_pnvm_parser(void)
 	    0x89abcdefU);
 	/* A SKU may list several HW_TYPE records before the exact match. */
 	offset = append_hw(pnvm, offset, 0x99U, 0x99U);
-	offset = append_hw(pnvm, offset, INTEL_AX211_MAC_TYPE_SO,
-	    INTEL_AX211_RF_TYPE);
+	offset = append_hw(pnvm, offset, INTEL_AX211_SILICON_SO,
+	    INTEL_AX211_RADIO_GF);
 	put_le32(section, 0x5000U);
 	offset = append_tlv(pnvm, TEST_PNVM_CAPACITY, offset, 19U, section,
 	    sizeof(section));
-	assert(drv_intel_ax211_pnvm_parse(pnvm, offset, &wanted,
-	    INTEL_AX211_MAC_TYPE_SO, INTEL_AX211_RF_TYPE,
-	    &manifest) == INTEL_AX211_OK);
+	assert(drv_intel_ax211_pnvm_select(pnvm, offset, &wanted,
+	    INTEL_AX211_SILICON_SO, INTEL_AX211_RADIO_GF,
+	    &manifest) == INTEL_AX211_SUCCESS);
 	assert(manifest.version == 0x89abcdefU);
 	assert(manifest.section_count == 1U);
 	assert(manifest.section[0].destination == 0x5000U);
 	assert(manifest.section[0].length == 3U);
 	assert(manifest.total_length == 3U);
-	assert(drv_intel_ax211_pnvm_parse(pnvm, offset, &wanted, 0x38U,
-	    INTEL_AX211_RF_TYPE,
+	assert(drv_intel_ax211_pnvm_select(pnvm, offset, &wanted, 0x38U,
+	    INTEL_AX211_RADIO_GF,
 	    &manifest) == INTEL_AX211_IDENTITY_MISMATCH);
-	assert(drv_intel_ax211_pnvm_parse(pnvm, offset - 1U, &wanted,
-	    INTEL_AX211_MAC_TYPE_SO, INTEL_AX211_RF_TYPE,
+	assert(drv_intel_ax211_pnvm_select(pnvm, offset - 1U, &wanted,
+	    INTEL_AX211_SILICON_SO, INTEL_AX211_RADIO_GF,
 	    &manifest) == INTEL_AX211_TRUNCATED);
 	offset = append_u32(pnvm, TEST_PNVM_CAPACITY, offset, 62U,
 	    0x22222222U);
-	assert(drv_intel_ax211_pnvm_parse(pnvm, offset, &wanted,
-	    INTEL_AX211_MAC_TYPE_SO, INTEL_AX211_RF_TYPE,
+	assert(drv_intel_ax211_pnvm_select(pnvm, offset, &wanted,
+	    INTEL_AX211_SILICON_SO, INTEL_AX211_RADIO_GF,
 	    &manifest) == INTEL_AX211_DUPLICATE);
 }
 
 static void
 test_descriptors(void)
 {
-	struct intel_ax211_context_info_gen3 context;
+	struct intel_ax211_boot_context context;
 	struct intel_ax211_command_id command = { 0x11U, 0x22U, 0x33U };
 	struct intel_ax211_ring_token token = { 7U, 9U };
 	struct intel_ax211_event event;
-	uint8_t encoded[INTEL_AX211_CONTEXT_INFO_GEN3_SIZE];
+	uint8_t encoded[INTEL_AX211_BOOT_CONTEXT_SIZE];
 	uint8_t transfer[INTEL_AX211_RX_TRANSFER_DESCRIPTOR_SIZE];
 	uint8_t completion[INTEL_AX211_RX_COMPLETION_DESCRIPTOR_SIZE] = { 0 };
-	uint8_t tfd[INTEL_AX211_TFD_SIZE];
+	uint8_t tfd[INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE];
 	uint8_t narrow[INTEL_AX211_NARROW_COMMAND_HEADER_SIZE];
 	uint8_t wide[INTEL_AX211_WIDE_COMMAND_HEADER_SIZE];
 	uint8_t packet[11] = { 0 };
@@ -358,16 +358,16 @@ test_descriptors(void)
 	memset(&context, 0, sizeof(context));
 	context.version = 2U;
 	context.config = 0x11223344U;
-	context.prph_info_base = UINT64_C(0x0123456789abcdef);
-	context.cr_head_index_base = UINT64_C(0x1111111122222222);
-	context.command_transfer_ring_base = UINT64_C(0x3333333344444444);
-	context.command_completion_ring_base = UINT64_C(0x5555555566666666);
-	context.command_transfer_ring_size = INTEL_AX211_COMMAND_RING_CB_SIZE;
-	context.command_completion_ring_size = INTEL_AX211_RX_RING_CB_SIZE;
-	context.prph_scratch_base = UINT64_C(0x7777777788888888);
-	context.prph_scratch_size = 0x1234U;
-	assert(drv_intel_ax211_context_info_gen3_encode(encoded, &context) ==
-	    INTEL_AX211_OK);
+	context.status_page_address = UINT64_C(0x0123456789abcdef);
+	context.completion_head_array_address = UINT64_C(0x1111111122222222);
+	context.command_ring_address = UINT64_C(0x3333333344444444);
+	context.response_ring_address = UINT64_C(0x5555555566666666);
+	context.command_ring_size_code = INTEL_AX211_COMMAND_RING_CB_SIZE;
+	context.response_ring_size_code = INTEL_AX211_RX_RING_CB_SIZE;
+	context.scratch_area_address = UINT64_C(0x7777777788888888);
+	context.scratch_area_size = 0x1234U;
+	assert(drv_intel_ax211_boot_context_encode(encoded, &context) ==
+	    INTEL_AX211_SUCCESS);
 	assert(get_le16(encoded) == 2U);
 	assert(get_le16(encoded + 2U) == 26U);
 	assert(get_le32(encoded + 4U) == 0x11223344U);
@@ -377,21 +377,21 @@ test_descriptors(void)
 	assert(get_le64(encoded + 88U) == UINT64_C(0x7777777788888888));
 	assert(get_le32(encoded + 96U) == 0x1234U);
 	assert(get_le32(encoded + 100U) == 0U);
-	context.command_transfer_ring_size = 6U;
-	assert(drv_intel_ax211_context_info_gen3_encode(encoded, &context) ==
+	context.command_ring_size_code = 6U;
+	assert(drv_intel_ax211_boot_context_encode(encoded, &context) ==
 	    INTEL_AX211_INVALID);
 
 	assert(drv_intel_ax211_rx_transfer_descriptor_encode(transfer, 0x1234U,
-	    UINT64_C(0x1020304050607080)) == INTEL_AX211_OK);
+	    UINT64_C(0x1020304050607080)) == INTEL_AX211_SUCCESS);
 	assert(get_le16(transfer) == 0x1234U);
 	assert(get_le32(transfer + 4U) == 0U);
 	assert(get_le64(transfer + 8U) == UINT64_C(0x1020304050607080));
 	put_le16(completion + 4U, 0xabcdU);
 	completion[6] = 1U;
 	assert(drv_intel_ax211_rx_completion_descriptor_decode(completion,
-	    &buffer_id, &flags) == INTEL_AX211_OK);
+	    &buffer_id, &flags) == INTEL_AX211_SUCCESS);
 	assert(buffer_id == 0xabcdU && flags == 1U);
-	assert(drv_intel_ax211_tfd_encode(tfd, buffers, 2U) == INTEL_AX211_OK);
+	assert(drv_intel_ax211_tfd_encode(tfd, buffers, 2U) == INTEL_AX211_SUCCESS);
 	assert(get_le16(tfd) == 2U);
 	assert(get_le16(tfd + 2U) == 4U);
 	assert(get_le64(tfd + 4U) == UINT64_C(0x1000200030004000));
@@ -405,11 +405,11 @@ test_descriptors(void)
 		assert(tfd[index] == 0U);
 
 	assert(drv_intel_ax211_narrow_command_encode(narrow, 0xa1U, 0x40U,
-	    &token) == INTEL_AX211_OK);
+	    &token) == INTEL_AX211_SUCCESS);
 	assert(narrow[0] == 0xa1U && narrow[1] == 0x40U &&
 	    narrow[2] == 9U && narrow[3] == 7U);
 	assert(drv_intel_ax211_wide_command_encode(wide, &command, 0x456U,
-	    &token) == INTEL_AX211_OK);
+	    &token) == INTEL_AX211_SUCCESS);
 	assert(wide[0] == 0x11U && wide[1] == 0x22U && wide[2] == 9U &&
 	    wide[3] == 7U && get_le16(wide + 4U) == 0x456U &&
 	    wide[6] == 0U && wide[7] == 0x33U);
@@ -423,7 +423,7 @@ test_descriptors(void)
 	packet[9] = 2U;
 	packet[10] = 3U;
 	assert(drv_intel_ax211_event_decode(packet, sizeof(packet), &event) ==
-	    INTEL_AX211_OK);
+	    INTEL_AX211_SUCCESS);
 	assert(event.command.opcode == 0x71U && event.flags == 0x40U);
 	assert(event.index == 9U && event.queue == 7U && event.rx_queue == 5U);
 	assert(event.payload_offset == 8U && event.payload_length == 3U);
@@ -441,10 +441,10 @@ test_ring_and_staging(void)
 	static const uint8_t secret[] = "sensitive staging bytes";
 	size_t index;
 
-	assert(drv_intel_ax211_ring_init(&ring, 3U, 4U) == INTEL_AX211_OK);
+	assert(drv_intel_ax211_ring_init(&ring, 3U, 4U) == INTEL_AX211_SUCCESS);
 	for (index = 0; index < 4U; index++) {
 		assert(drv_intel_ax211_ring_reserve(&ring, &token[index]) ==
-		    INTEL_AX211_OK);
+		    INTEL_AX211_SUCCESS);
 		assert(token[index].index == index);
 	}
 	assert(drv_intel_ax211_ring_available(&ring) == 0U);
@@ -452,19 +452,19 @@ test_ring_and_staging(void)
 	    INTEL_AX211_FULL);
 	stale = token[1];
 	assert(drv_intel_ax211_ring_complete(&ring, &stale) == INTEL_AX211_STALE);
-	assert(drv_intel_ax211_ring_complete(&ring, &token[0]) == INTEL_AX211_OK);
-	assert(drv_intel_ax211_ring_reserve(&ring, &token[4]) == INTEL_AX211_OK);
+	assert(drv_intel_ax211_ring_complete(&ring, &token[0]) == INTEL_AX211_SUCCESS);
+	assert(drv_intel_ax211_ring_reserve(&ring, &token[4]) == INTEL_AX211_SUCCESS);
 	assert(token[4].index == 0U);
 	for (index = 1; index < 5U; index++)
 		assert(drv_intel_ax211_ring_complete(&ring, &token[index]) ==
-		    INTEL_AX211_OK);
+		    INTEL_AX211_SUCCESS);
 	assert(drv_intel_ax211_ring_available(&ring) == 4U);
 	assert(drv_intel_ax211_ring_complete(&ring, &token[4]) ==
 	    INTEL_AX211_STALE);
 
 	memset(&staging, 0xa5, sizeof(staging));
 	assert(drv_intel_ax211_staging_set(&staging, secret, sizeof(secret)) ==
-	    INTEL_AX211_OK);
+	    INTEL_AX211_SUCCESS);
 	assert(staging.length == sizeof(secret));
 	assert(memcmp(staging.bytes, secret, sizeof(secret)) == 0);
 	drv_intel_ax211_staging_clear(&staging);
@@ -500,9 +500,9 @@ test_real_firmware(const char *path)
 	assert(fclose(file) == 0);
 	result = drv_intel_ax211_firmware_parse(bytes, (size_t)file_length,
 	    &manifest);
-	if (result != INTEL_AX211_OK)
+	if (result != INTEL_AX211_SUCCESS)
 		fprintf(stderr, "real firmware parse result: %d\n", result);
-	assert(result == INTEL_AX211_OK);
+	assert(result == INTEL_AX211_SUCCESS);
 	assert(manifest.api_major == INTEL_AX211_FIRMWARE_API);
 	assert(manifest.cpu_count == 2U);
 	assert(manifest.iml_length == 13944U);
@@ -514,9 +514,9 @@ test_real_firmware(const char *path)
 	/* Every exact runtime DMA object fits the frozen 32-KiB bound. */
 	for (index = 0; index < manifest.runtime_count; index++) {
 		if (manifest.runtime[index].destination ==
-		    INTEL_AX211_CPU1_CPU2_SEPARATOR ||
+		    INTEL_AX211_UPPER_CPU_IMAGE_MARK ||
 		    manifest.runtime[index].destination ==
-		    INTEL_AX211_PAGING_SEPARATOR) {
+		    INTEL_AX211_PAGED_IMAGE_MARK) {
 			assert(manifest.runtime[index].length == 0U);
 		} else {
 			assert(manifest.runtime[index].length != 0U);
@@ -538,7 +538,7 @@ test_real_pnvm(const char *path)
 	assert(file != NULL);
 	assert(fseek(file, 0, SEEK_END) == 0);
 	file_length = ftell(file);
-	assert(file_length == (long)INTEL_AX211_PNVM_SIZE);
+	assert(file_length == (long)INTEL_AX211_PNVM_FILE_SIZE);
 	assert(fseek(file, 0, SEEK_SET) == 0);
 	bytes = malloc((size_t)file_length);
 	assert(bytes != NULL);
@@ -546,7 +546,7 @@ test_real_pnvm(const char *path)
 	    (size_t)file_length);
 	assert(fclose(file) == 0);
 	assert(drv_intel_ax211_pnvm_inspect(bytes, (size_t)file_length,
-	    &inventory) == INTEL_AX211_OK);
+	    &inventory) == INTEL_AX211_SUCCESS);
 	assert(inventory.sku_count == 4U);
 	assert(inventory.version_count == 4U);
 	assert(inventory.hardware_type_count == 8U);

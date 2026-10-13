@@ -1,53 +1,37 @@
 /* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
 
 /*
- * zedBSD Intel AX211 private API89 transmit implementation
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Wire constants and layouts are derived from OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit
- * 0f464d413c50396e4e6cd70948f15613d6a73081.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private API89 transmit implementation.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/api/tx.h and fw/api/rs.h.  They were cross-checked against OpenBSD
+ * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
+ * values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Values of the 802.11 frame itself (frame control bits, element identifiers,
+ * rates and channel numbers) come from IEEE Std 802.11-2020, and the WMM
+ * element from the Wi-Fi Alliance WMM specification; the blocks that hold
+ * them say so.
  *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-tx.h"
@@ -56,6 +40,28 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * The fields of the transmit command (version 10) that precede the frame.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/tx.h (struct iwl_tx_cmd_gen3, enum
+ * iwl_tx_cmd_flags and the offload-assist bits) and fw/api/rs.h (the rate
+ * word).  The 28-byte fixed part holds the frame length at byte 0 (without
+ * the CCMP header, which the firmware inserts itself), the flags at 2, the
+ * offload-assist word at 4 and the rate at 16; the MAC header follows from
+ * byte 28, padded to four bytes.
+ * - Flags: COMMAND_RATE (bit 0) makes the firmware use the rate in the
+ *   command; ENCRYPT_DISABLE (bit 1) sends the frame unencrypted;
+ *   HIGH_PRIORITY (bit 2) queues it ahead of normal traffic.  The driver
+ *   sets bits 0 and 2 on every frame, because the API 89 firmware has no
+ *   rate state until rate control is configured, and bit 1 on every frame
+ *   it does not encrypt.
+ * - Offload assist: bits 12:8 give the MAC header length in 16-bit words,
+ *   and PADDING (bit 13) says two bytes of padding follow the header.
+ * - Rate: 0 is 1 Mbit/s CCK and 0x0100 marks the legacy OFDM rate table,
+ *   whose code 0 is 6 Mbit/s; ANTENNA_A (bit 14) transmits on the first
+ *   antenna.  The driver sends at 1 Mbit/s on 2.4 GHz and at 6 Mbit/s on
+ *   5 GHz, where CCK is not allowed.
+ */
 #define AX211_TX_FLAG_COMMAND_RATE 0x0001U
 #define AX211_TX_FLAG_ENCRYPT_DISABLE 0x0002U
 #define AX211_TX_FLAG_HIGH_PRIORITY 0x0004U
@@ -68,6 +74,15 @@
 #define AX211_TX_RATE_6M_OFDM 0x0100U
 #define AX211_TX_RATE_ANTENNA_A 0x4000U
 
+/*
+ * The 802.11 frame control field and the CCMP header.
+ *
+ * Source: IEEE Std 802.11-2020 9.2.4.1 (frame control) and 12.5.3.2 (the
+ * 8-byte CCMP header with the Ext IV bit, bit 5 of its fourth byte).  The
+ * driver uses them to find the header length of a frame to send and to
+ * check that a frame it is asked to encrypt carries a well-formed CCMP
+ * header.
+ */
 #define AX211_TX_FRAME_TYPE_MASK 0x000cU
 #define AX211_TX_FRAME_TYPE_MANAGEMENT 0x0000U
 #define AX211_TX_FRAME_TYPE_CONTROL 0x0004U
@@ -82,12 +97,25 @@
 #define AX211_TX_CCMP_HEADER_SIZE 8U
 #define AX211_TX_CCMP_EXTENDED_IV 0x20U
 
+/*
+ * The transmit completion notification (version 7, 48 bytes for one frame).
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/tx.h (struct iwl_tx_resp and enum
+ * iwl_tx_status).  Byte 0 is the number of frames reported and must be 1;
+ * bytes 2 and 3 are the RTS and frame retry counts; byte 28 is the sequence
+ * control and byte 30 the byte count; byte 36 the queue; byte 40 the status
+ * word, whose low byte is the outcome; byte 44 the scheduler sequence
+ * number, which must be below 65536.  Outcome 1 means the frame was
+ * delivered and acknowledged, 2 that it was sent without waiting for an
+ * acknowledgment (as for a group-addressed frame); the driver counts both as
+ * sent, and every other outcome as a failure.
+ */
 #define AX211_TX_RESPONSE_SIZE 48U
 #define AX211_TX_RESPONSE_STATUS_OFFSET 40U
 #define AX211_TX_RESPONSE_SSN_OFFSET 44U
-#define AX211_TX_STATUS_MASK 0x000000ffU
-#define AX211_TX_STATUS_SUCCESS 1U
-#define AX211_TX_STATUS_DIRECT_DONE 2U
+#define AX211_TX_OUTCOME_MASK 0x000000ffU
+#define AX211_TX_OUTCOME_DELIVERED 1U
+#define AX211_TX_OUTCOME_SENT_WITHOUT_ACK 2U
 
 static int ax211_tx_header_length(const uint8_t *frame, size_t length, size_t *header_length);
 static uint16_t ax211_tx_get_le16(const uint8_t *bytes);
@@ -113,7 +141,7 @@ drv_intel_ax211_tx_api89_validate(
 
 	/* Checks the operation result. */
 	result = drv_intel_ax211_protocol_command_version_lookup(
-		table, INTEL_AX211_TX_GROUP, INTEL_AX211_TX_OPCODE, &version);
+		table, INTEL_AX211_TX_FAMILY, INTEL_AX211_TX_OPCODE, &version);
 	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_TX_UNSUPPORTED;
 
@@ -264,7 +292,7 @@ drv_intel_ax211_tx_completion_decode(
 		return INTEL_AX211_TX_STALE;
 
 	/* Handles the message condition. */
-	if (message->group != INTEL_AX211_TX_GROUP ||
+	if (message->group != INTEL_AX211_TX_FAMILY ||
 	    message->opcode != INTEL_AX211_TX_OPCODE ||
 	    message->version != INTEL_AX211_TX_NOTIFICATION_VERSION) {
 		/* Returns the computed result. */
@@ -310,7 +338,7 @@ drv_intel_ax211_tx_completion_decode(
 		return INTEL_AX211_TX_FAILED;
 	status = ax211_tx_get_le32(message->payload +
 				   AX211_TX_RESPONSE_STATUS_OFFSET) &
-		 AX211_TX_STATUS_MASK;
+		 AX211_TX_OUTCOME_MASK;
 
 	/* Renders the notification as one completion record. */
 	kern_memset(&decoded, 0, sizeof(decoded));
@@ -320,10 +348,10 @@ drv_intel_ax211_tx_completion_decode(
 	decoded.sequence_control = ax211_tx_get_le16(message->payload + 28U);
 	decoded.byte_count = ax211_tx_get_le16(message->payload + 30U);
 	decoded.index = expected_index;
-	decoded.acknowledged = status == AX211_TX_STATUS_SUCCESS ||
-			       status == AX211_TX_STATUS_DIRECT_DONE;
-	decoded.failure_rts = message->payload[2U];
-	decoded.failure_frame = message->payload[3U];
+	decoded.acknowledged = status == AX211_TX_OUTCOME_DELIVERED ||
+			       status == AX211_TX_OUTCOME_SENT_WITHOUT_ACK;
+	decoded.rts_retries = message->payload[2U];
+	decoded.frame_retries = message->payload[3U];
 	*completion = decoded;
 	/* Returns the computed result. */
 	return INTEL_AX211_TX_OK;

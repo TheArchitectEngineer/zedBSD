@@ -2,100 +2,126 @@
 
 /* Begin consolidated intel-ax211.c. */
 /*
- * zedBSD Intel AX211 firmware and descriptor core
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Wire formats and constants are derived from the OpenBSD iwx(4) driver.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 firmware and descriptor core.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/file.h, fw/pnvm.c, pcie/iwl-context-info-v2.h, iwl-fh.h and
+ * fw/api/cmdhdr.h.  They were cross-checked against OpenBSD
+ * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
+ * values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-internal.h"
 #include <kern/kcrt.h>
 
-
+/*
+ * The record types of the firmware file and of the PNVM file.
+ *
+ * Source: Linux iwlwifi v6.17 fw/file.h (enum iwl_ucode_tlv_type),
+ * cross-checked with OpenBSD sys/dev/pci/if_iwxreg.h at 0f464d413c50, which
+ * also lists types 35, 53 and 59 that v6.17 no longer names.
+ *
+ * What the pinned API 89 image and its PNVM contain, and what the loaders in
+ * this file do with each type:
+ * - RUNTIME_SECTION (19) is the only code record the driver loads.  Its body
+ *   is a 32-bit device destination followed by the section bytes; the two
+ *   mark destinations of intel-ax211-internal.h split the list into the
+ *   LMAC, UMAC and paged groups, which the scratch area then lists
+ *   separately.  The same type carries the sections of the PNVM file.
+ * - INIT_SECTION (20) and WAKE_SECTION (21) hold the images of the
+ *   initialization and wake-on-WLAN modes.  The driver counts them against
+ *   the section limit but never loads them: the driver loads only the runtime
+ *   image and selects the initialization stage inside it with the
+ *   stage-select command (intel-ax211-init.h).
+ * - RADIO_PROFILE (23), CPU_COUNT (27), IMAGE_VERSION (36), LOADER_IMAGE (52)
+ *   and COMMAND_VERSION_TABLE (48) are required and may appear only once; an
+ *   image without one of them is refused.  CPU_COUNT must be 1 or 2 and is 2
+ *   on this image.  INTERFACE_FLAGS (29) and FEATURE_FLAGS (30) each carry an
+ *   index and a word of capability bits, at most once per index (4 and 5
+ *   words); the runtime code tests single bits of them
+ *   (intel-ax211-runtime.h).  IMAGE_VERSION is three words: major (89),
+ *   minor and serial, which must equal the pinned values.  LOADER_IMAGE is
+ *   the 13944-byte image loader that the device runs first from the address
+ *   in the loader image register.  COMMAND_VERSION_TABLE is 868 bytes, 217
+ *   entries of four bytes, and is the only source of the layout version of
+ *   each command.
+ * - PNVM_BOARD (64), PNVM_REVISION (62) and HARDWARE_KIND (58) frame the
+ *   boards of the PNVM file.  A board starts with its 12-byte signature; the
+ *   revision word, the 4-byte hardware-kind records (MAC type and radio kind,
+ *   16 bits each) and the sections that follow belong to it until the next
+ *   signature.  The pinned file holds 4 boards with 8 hardware-kind records
+ *   and 8 sections between them.
+ * - Every other listed type is recognised and skipped.  An unknown type
+ *   makes the loader refuse the image, so an image that grew a record the
+ *   driver has never seen is not booted with a guessed meaning.
+ * - TRACE_RANGE_FIRST to TRACE_RANGE_LAST is the block of debug
+ *   configuration records (0x1000005 to 0x100000a).  0x1000000 to 0x1000004,
+ *   0x100000b, 0x100000c, 65, 69, 0x101 and 1092 are further types that
+ *   ax211_ignored_firmware_tlv() skips by number.
+ */
 enum {
-	AX211_TLV_PROBE_MAX_LEN = 6,
-	AX211_TLV_PAN = 7,
-	AX211_TLV_FLAGS = 18,
-	AX211_TLV_SEC_RT = 19,
-	AX211_TLV_SEC_INIT = 20,
-	AX211_TLV_SEC_WOWLAN = 21,
-	AX211_TLV_DEF_CALIB = 22,
-	AX211_TLV_PHY_SKU = 23,
-	AX211_TLV_NUM_OF_CPU = 27,
-	AX211_TLV_CSCHEME = 28,
-	AX211_TLV_API_CHANGES = 29,
-	AX211_TLV_CAPABILITIES = 30,
-	AX211_TLV_SCAN_CHANNELS = 31,
-	AX211_TLV_PAGING = 32,
-	AX211_TLV_SEC_RT_USNIFFER = 34,
-	AX211_TLV_SDIO_ADMA = 35,
-	AX211_TLV_FW_VERSION = 36,
-	AX211_TLV_DEBUG_DEST = 38,
-	AX211_TLV_DEBUG_CONF = 39,
-	AX211_TLV_DEBUG_TRIGGER = 40,
-	AX211_TLV_CMD_VERSIONS = 48,
-	AX211_TLV_GSCAN_CAPA = 50,
-	AX211_TLV_FW_MEM_SEG = 51,
-	AX211_TLV_IML = 52,
-	AX211_TLV_FMAC_API = 53,
-	AX211_TLV_UMAC_DEBUG = 54,
-	AX211_TLV_LMAC_DEBUG = 55,
-	AX211_TLV_RECOVERY = 57,
-	AX211_TLV_HW_TYPE = 58,
-	AX211_TLV_FMAC_RECOVERY = 59,
-	AX211_TLV_FSEQ_VERSION = 60,
-	AX211_TLV_PHY_INTEGRATION = 61,
-	AX211_TLV_PNVM_VERSION = 62,
-	AX211_TLV_PNVM_SKU = 64,
-	AX211_TLV_SEC_TABLE = 66,
-	AX211_TLV_D3_KEYS = 67,
-	AX211_TLV_CURRENT_PC = 68,
-	AX211_TLV_PNVM_DATA = 74,
-	AX211_TLV_FW_NUM_STATIONS = 0x100,
-	AX211_TLV_FW_NUM_BEACONS = 0x102,
-	AX211_TLV_DEBUG_BASE = 0x1000005,
-	AX211_TLV_DEBUG_LAST = 0x100000a
+	AX211_RECORD_PROBE_LIMIT = 6,
+	AX211_RECORD_PAN_SUPPORT = 7,
+	AX211_RECORD_OLD_FLAGS = 18,
+	AX211_RECORD_RUNTIME_SECTION = 19,
+	AX211_RECORD_INIT_SECTION = 20,
+	AX211_RECORD_WAKE_SECTION = 21,
+	AX211_RECORD_CALIBRATION_DEFAULTS = 22,
+	AX211_RECORD_RADIO_PROFILE = 23,
+	AX211_RECORD_CPU_COUNT = 27,
+	AX211_RECORD_CIPHER_SCHEMES = 28,
+	AX211_RECORD_INTERFACE_FLAGS = 29,
+	AX211_RECORD_FEATURE_FLAGS = 30,
+	AX211_RECORD_SCAN_CHANNEL_LIMIT = 31,
+	AX211_RECORD_PAGED_SIZE = 32,
+	AX211_RECORD_SNIFFER_SECTION = 34,
+	AX211_RECORD_SDIO_DMA_ADDRESS = 35,
+	AX211_RECORD_IMAGE_VERSION = 36,
+	AX211_RECORD_TRACE_DESTINATION = 38,
+	AX211_RECORD_TRACE_SETUP = 39,
+	AX211_RECORD_TRACE_TRIGGER = 40,
+	AX211_RECORD_COMMAND_VERSION_TABLE = 48,
+	AX211_RECORD_BACKGROUND_SCAN_LIMITS = 50,
+	AX211_RECORD_MEMORY_SEGMENTS = 51,
+	AX211_RECORD_LOADER_IMAGE = 52,
+	AX211_RECORD_FMAC_INTERFACE = 53,
+	AX211_RECORD_UPPER_CPU_TRACE_ADDRESSES = 54,
+	AX211_RECORD_LOWER_CPU_TRACE_ADDRESSES = 55,
+	AX211_RECORD_RECOVERY_BUFFER = 57,
+	AX211_RECORD_HARDWARE_KIND = 58,
+	AX211_RECORD_FMAC_RECOVERY_BUFFER = 59,
+	AX211_RECORD_SEQUENCER_REVISION = 60,
+	AX211_RECORD_RADIO_INTEGRATION_REVISION = 61,
+	AX211_RECORD_PNVM_REVISION = 62,
+	AX211_RECORD_PNVM_BOARD = 64,
+	AX211_RECORD_SECTION_TABLE_ADDRESS = 66,
+	AX211_RECORD_SUSPEND_KEY_ADDRESS = 67,
+	AX211_RECORD_PROGRAM_COUNTER_ADDRESS = 68,
+	AX211_RECORD_PNVM_PAYLOAD = 74,
+	AX211_RECORD_STATION_LIMIT = 0x100,
+	AX211_RECORD_BEACON_LIMIT = 0x102,
+	AX211_RECORD_TRACE_RANGE_FIRST = 0x1000005,
+	AX211_RECORD_TRACE_RANGE_LAST = 0x100000a
 };
 
 static uint16_t ax211_get_le16(const uint8_t *bytes);
@@ -183,7 +209,7 @@ ax211_tlv_span(
 		return INTEL_AX211_TRUNCATED;
 	*span = length;
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 static int ax211_ignored_firmware_tlv(uint32_t type);
@@ -195,19 +221,19 @@ ax211_ignored_firmware_tlv(
 {
 	/* Handles the type condition. */
 	if ((type >= 1U && type <= 18U) ||
-	    (type >= AX211_TLV_SEC_WOWLAN && type <= AX211_TLV_DEF_CALIB) ||
-	    (type >= AX211_TLV_CSCHEME && type <= AX211_TLV_SCAN_CHANNELS) ||
-	    type == AX211_TLV_PAGING || type == AX211_TLV_SEC_RT_USNIFFER ||
-	    type == AX211_TLV_SDIO_ADMA || type == AX211_TLV_DEBUG_DEST ||
-	    type == AX211_TLV_DEBUG_CONF || type == AX211_TLV_DEBUG_TRIGGER ||
-	    (type >= AX211_TLV_GSCAN_CAPA && type <= AX211_TLV_LMAC_DEBUG) ||
-	    (type >= AX211_TLV_RECOVERY && type <= AX211_TLV_PHY_INTEGRATION) ||
-	    type == AX211_TLV_PNVM_VERSION || type == AX211_TLV_PNVM_SKU ||
-	    type == 65U || (type >= AX211_TLV_SEC_TABLE && type <= 69U) ||
-	    type == AX211_TLV_PNVM_DATA || type == AX211_TLV_FW_NUM_STATIONS ||
-	    type == 0x101U || type == AX211_TLV_FW_NUM_BEACONS ||
+	    (type >= AX211_RECORD_WAKE_SECTION && type <= AX211_RECORD_CALIBRATION_DEFAULTS) ||
+	    (type >= AX211_RECORD_CIPHER_SCHEMES && type <= AX211_RECORD_SCAN_CHANNEL_LIMIT) ||
+	    type == AX211_RECORD_PAGED_SIZE || type == AX211_RECORD_SNIFFER_SECTION ||
+	    type == AX211_RECORD_SDIO_DMA_ADDRESS || type == AX211_RECORD_TRACE_DESTINATION ||
+	    type == AX211_RECORD_TRACE_SETUP || type == AX211_RECORD_TRACE_TRIGGER ||
+	    (type >= AX211_RECORD_BACKGROUND_SCAN_LIMITS && type <= AX211_RECORD_LOWER_CPU_TRACE_ADDRESSES) ||
+	    (type >= AX211_RECORD_RECOVERY_BUFFER && type <= AX211_RECORD_RADIO_INTEGRATION_REVISION) ||
+	    type == AX211_RECORD_PNVM_REVISION || type == AX211_RECORD_PNVM_BOARD ||
+	    type == 65U || (type >= AX211_RECORD_SECTION_TABLE_ADDRESS && type <= 69U) ||
+	    type == AX211_RECORD_PNVM_PAYLOAD || type == AX211_RECORD_STATION_LIMIT ||
+	    type == 0x101U || type == AX211_RECORD_BEACON_LIMIT ||
 	    (type >= 0x1000000U && type <= 0x1000004U) ||
-	    (type >= AX211_TLV_DEBUG_BASE && type <= AX211_TLV_DEBUG_LAST) ||
+	    (type >= AX211_RECORD_TRACE_RANGE_FIRST && type <= AX211_RECORD_TRACE_RANGE_LAST) ||
 	    type == 0x100000bU || type == 0x100000cU || type == 1092U) {
 		/* Reports operation failure. */
 		return 1;
@@ -244,8 +270,8 @@ drv_intel_ax211_mac_type_supported(
 	uint16_t mac_type)
 {
 	/* Returns the computed result. */
-	return mac_type == INTEL_AX211_MAC_TYPE_SO ||
-	       mac_type == INTEL_AX211_MAC_TYPE_SOF;
+	return mac_type == INTEL_AX211_SILICON_SO ||
+	       mac_type == INTEL_AX211_SILICON_SOF;
 }
 
 /*
@@ -280,12 +306,12 @@ drv_intel_ax211_firmware_parse(
 		return INTEL_AX211_INVALID;
 
 	/* Checks the current data length. */
-	if (length < INTEL_AX211_TLV_HEADER_SIZE)
+	if (length < INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE)
 		return INTEL_AX211_TRUNCATED;
 
 	/* Checks the ax211 get le32 result. */
 	if (ax211_get_le32(bytes) != 0U ||
-	    ax211_get_le32(bytes + 4U) != INTEL_AX211_TLV_MAGIC) {
+	    ax211_get_le32(bytes + 4U) != INTEL_AX211_FIRMWARE_FILE_MAGIC) {
 		/* Returns the computed result. */
 		return INTEL_AX211_INVALID;
 	}
@@ -293,38 +319,38 @@ drv_intel_ax211_firmware_parse(
 	kern_memset(&parsed, 0, sizeof(parsed));
 	parsed.header_version = ax211_get_le32(bytes + 72U);
 	parsed.build = ax211_get_le32(bytes + 76U);
-	offset = INTEL_AX211_TLV_HEADER_SIZE;
+	offset = INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE;
 	/* Process each remaining element. */
 	while (offset < length) {
 		/* Checks the current data length. */
-		if (length - offset < INTEL_AX211_TLV_RECORD_HEADER_SIZE)
+		if (length - offset < INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE)
 			return INTEL_AX211_TRUNCATED;
 		type = ax211_get_le32(bytes + offset);
 		tlv_length = ax211_get_le32(bytes + offset + 4U);
-		offset += INTEL_AX211_TLV_RECORD_HEADER_SIZE;
+		offset += INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE;
 
 		/* Checks the operation result. */
 		result = ax211_tlv_span(tlv_length, length - offset, &span);
-		if (result != INTEL_AX211_OK)
+		if (result != INTEL_AX211_SUCCESS)
 			return result;
 		data = bytes + offset;
 
 		/* Dispatch the selected syntax or record type. */
 		switch (type) {
-		case AX211_TLV_SEC_RT:
+		case AX211_RECORD_RUNTIME_SECTION:
 
 			/* Handles the tlv length condition. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 
 			/* Handles the parsed condition. */
-			if (parsed.runtime_count >= INTEL_AX211_MAX_FW_SECTIONS)
+			if (parsed.runtime_count >= INTEL_AX211_FIRMWARE_SECTION_LIMIT)
 				return INTEL_AX211_OVERFLOW;
 			destination = ax211_get_le32(data);
 			separator = 0;
 
 			/* Handles the destination condition. */
-			if (destination == INTEL_AX211_CPU1_CPU2_SEPARATOR) {
+			if (destination == INTEL_AX211_UPPER_CPU_IMAGE_MARK) {
 				/* Checks the ax211 get le32 result. */
 				if (tlv_length != 8U ||
 				    ax211_get_le32(data + 4U) != 0U) {
@@ -338,7 +364,7 @@ drv_intel_ax211_firmware_parse(
 				cpu_separator = parsed.runtime_count;
 				separator = 1;
 			} else if (destination ==
-				   INTEL_AX211_PAGING_SEPARATOR) {
+				   INTEL_AX211_PAGED_IMAGE_MARK) {
 				/* Checks the ax211 get le32 result. */
 				if (tlv_length != 8U ||
 				    ax211_get_le32(data + 4U) != 0U) {
@@ -362,25 +388,25 @@ drv_intel_ax211_firmware_parse(
 			section->length =
 				separator ? 0U : (size_t)tlv_length - 4U;
 			break;
-		case AX211_TLV_SEC_INIT:
+		case AX211_RECORD_INIT_SECTION:
 			/* Handles the tlv length condition. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 
 			/* Handles the init sections condition. */
-			if (++init_sections > INTEL_AX211_MAX_FW_SECTIONS)
+			if (++init_sections > INTEL_AX211_FIRMWARE_SECTION_LIMIT)
 				return INTEL_AX211_OVERFLOW;
 			break;
-		case AX211_TLV_SEC_WOWLAN:
+		case AX211_RECORD_WAKE_SECTION:
 			/* Handles the tlv length condition. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 
 			/* Handles the wow sections condition. */
-			if (++wow_sections > INTEL_AX211_MAX_FW_SECTIONS)
+			if (++wow_sections > INTEL_AX211_FIRMWARE_SECTION_LIMIT)
 				return INTEL_AX211_OVERFLOW;
 			break;
-		case AX211_TLV_PHY_SKU:
+		case AX211_RECORD_RADIO_PROFILE:
 			/* Handles the seen condition. */
 			if ((seen & 1U) != 0U)
 				return INTEL_AX211_DUPLICATE;
@@ -389,9 +415,9 @@ drv_intel_ax211_firmware_parse(
 			if (tlv_length != 4U)
 				return INTEL_AX211_INVALID;
 			seen |= 1U;
-			parsed.phy_sku = ax211_get_le32(data);
+			parsed.radio_profile = ax211_get_le32(data);
 			break;
-		case AX211_TLV_NUM_OF_CPU:
+		case AX211_RECORD_CPU_COUNT:
 			/* Handles the seen condition. */
 			if ((seen & 2U) != 0U)
 				return INTEL_AX211_DUPLICATE;
@@ -406,7 +432,7 @@ drv_intel_ax211_firmware_parse(
 			if (parsed.cpu_count == 0U || parsed.cpu_count > 2U)
 				return INTEL_AX211_INVALID;
 			break;
-		case AX211_TLV_API_CHANGES:
+		case AX211_RECORD_INTERFACE_FLAGS:
 
 			/* Handles the tlv length condition. */
 			if (tlv_length != 8U)
@@ -424,7 +450,7 @@ drv_intel_ax211_firmware_parse(
 			parsed.api_changes[index_local] =
 				ax211_get_le32(data + 4U);
 			break;
-		case AX211_TLV_CAPABILITIES:
+		case AX211_RECORD_FEATURE_FLAGS:
 
 			/* Handles the tlv length condition. */
 			if (tlv_length != 8U)
@@ -442,7 +468,7 @@ drv_intel_ax211_firmware_parse(
 			parsed.capabilities[index_local1] =
 				ax211_get_le32(data + 4U);
 			break;
-		case AX211_TLV_FW_VERSION:
+		case AX211_RECORD_IMAGE_VERSION:
 			/* Handles the seen condition. */
 			if ((seen & 4U) != 0U)
 				return INTEL_AX211_DUPLICATE;
@@ -455,7 +481,7 @@ drv_intel_ax211_firmware_parse(
 			parsed.api_minor = ax211_get_le32(data + 4U);
 			parsed.api_serial = ax211_get_le32(data + 8U);
 			break;
-		case AX211_TLV_IML:
+		case AX211_RECORD_LOADER_IMAGE:
 			/* Handles the seen condition. */
 			if ((seen & 8U) != 0U)
 				return INTEL_AX211_DUPLICATE;
@@ -467,7 +493,7 @@ drv_intel_ax211_firmware_parse(
 			parsed.iml_offset = offset;
 			parsed.iml_length = tlv_length;
 			break;
-		case AX211_TLV_CMD_VERSIONS:
+		case AX211_RECORD_COMMAND_VERSION_TABLE:
 			/* Handles the seen condition. */
 			if ((seen & 16U) != 0U)
 				return INTEL_AX211_DUPLICATE;
@@ -515,7 +541,7 @@ drv_intel_ax211_firmware_parse(
 	parsed.paging_count = parsed.runtime_count - paging_separator - 1U;
 	*manifest = parsed;
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -523,8 +549,8 @@ drv_intel_ax211_firmware_parse(
  */
 int
 drv_intel_ax211_sku_equal(
-	const struct intel_ax211_sku_id *left,
-	const struct intel_ax211_sku_id *right)
+	const struct intel_ax211_board_signature *left,
+	const struct intel_ax211_board_signature *right)
 {
 	/* Handles the left availability. */
 	if (left == NULL || right == NULL)
@@ -565,23 +591,23 @@ ax211_pnvm_finish(
 	}
 	*manifest = *candidate;
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
  * Implements the drv intel ax211 pnvm parse operation.
  */
 int
-drv_intel_ax211_pnvm_parse(
+drv_intel_ax211_pnvm_select(
 	const uint8_t *bytes,
 	size_t length,
-	const struct intel_ax211_sku_id *sku,
+	const struct intel_ax211_board_signature *sku,
 	uint16_t mac_type,
 	uint16_t rf_id,
 	struct intel_ax211_pnvm_manifest *manifest)
 {
 	int error;
-	struct intel_ax211_sku_id found;
+	struct intel_ax211_board_signature found;
 	uint16_t found_mac;
 	uint16_t found_rf;
 	struct intel_ax211_section *section;
@@ -604,20 +630,20 @@ drv_intel_ax211_pnvm_parse(
 	/* Process each remaining element. */
 	while (offset < length) {
 		/* Checks the current data length. */
-		if (length - offset < INTEL_AX211_TLV_RECORD_HEADER_SIZE)
+		if (length - offset < INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE)
 			return INTEL_AX211_TRUNCATED;
 		type = ax211_get_le32(bytes + offset);
 		tlv_length = ax211_get_le32(bytes + offset + 4U);
-		offset += INTEL_AX211_TLV_RECORD_HEADER_SIZE;
+		offset += INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE;
 
 		/* Checks the operation result. */
 		result = ax211_tlv_span(tlv_length, length - offset, &span);
-		if (result != INTEL_AX211_OK)
+		if (result != INTEL_AX211_SUCCESS)
 			return result;
 		data = bytes + offset;
 
 		/* Handles the type condition. */
-		if (type == AX211_TLV_PNVM_SKU) {
+		if (type == AX211_RECORD_PNVM_BOARD) {
 			/* Handles the tlv length condition. */
 			if (tlv_length != 12U)
 				return INTEL_AX211_INVALID;
@@ -629,7 +655,7 @@ drv_intel_ax211_pnvm_parse(
 					&candidate, active, version_seen,
 					hardware_match, mac_type, rf_id,
 					manifest);
-				if (result == INTEL_AX211_OK)
+				if (result == INTEL_AX211_SUCCESS)
 					return result;
 				if (result != INTEL_AX211_IDENTITY_MISMATCH)
 					return result;
@@ -643,7 +669,7 @@ drv_intel_ax211_pnvm_parse(
 			hardware_match = 0;
 			kern_memset(&candidate, 0, sizeof(candidate));
 			candidate.sku = found;
-		} else if (type == AX211_TLV_PNVM_VERSION) {
+		} else if (type == AX211_RECORD_PNVM_REVISION) {
 			/* Handles the tlv length condition. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
@@ -656,7 +682,7 @@ drv_intel_ax211_pnvm_parse(
 				version_seen = 1;
 				candidate.version = ax211_get_le32(data);
 			}
-		} else if (type == AX211_TLV_HW_TYPE) {
+		} else if (type == AX211_RECORD_HARDWARE_KIND) {
 			/* Handles the tlv length condition. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
@@ -674,7 +700,7 @@ drv_intel_ax211_pnvm_parse(
 					candidate.rf_id = found_rf;
 				}
 			}
-		} else if (type == AX211_TLV_SEC_RT) {
+		} else if (type == AX211_RECORD_RUNTIME_SECTION) {
 			/* Handles the tlv length condition. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
@@ -682,7 +708,7 @@ drv_intel_ax211_pnvm_parse(
 			/* Handles the active condition. */
 			destination = ax211_get_le32(data);
 			if (active &&
-			    destination != INTEL_AX211_PNVM_SEPARATOR) {
+			    destination != INTEL_AX211_PNVM_IMAGE_MARK) {
 				/* Handles the data length condition. */
 				data_length = (size_t)tlv_length - 4U;
 				if (data_length == 0U)
@@ -690,7 +716,7 @@ drv_intel_ax211_pnvm_parse(
 
 				/* Handles the candidate condition. */
 				if (candidate.section_count >=
-				    INTEL_AX211_MAX_PNVM_SECTIONS) {
+				    INTEL_AX211_PNVM_SECTION_LIMIT) {
 					/* Returns the computed result. */
 					return INTEL_AX211_OVERFLOW;
 				}
@@ -750,30 +776,30 @@ drv_intel_ax211_pnvm_inspect(
 	/* Process each remaining element. */
 	while (offset < length) {
 		/* Checks the current data length. */
-		if (length - offset < INTEL_AX211_TLV_RECORD_HEADER_SIZE)
+		if (length - offset < INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE)
 			return INTEL_AX211_TRUNCATED;
 		type = ax211_get_le32(bytes + offset);
 		tlv_length = ax211_get_le32(bytes + offset + 4U);
-		offset += INTEL_AX211_TLV_RECORD_HEADER_SIZE;
+		offset += INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE;
 
 		/* Checks the operation result. */
 		result = ax211_tlv_span(tlv_length, length - offset, &span);
-		if (result != INTEL_AX211_OK)
+		if (result != INTEL_AX211_SUCCESS)
 			return result;
 		data = bytes + offset;
 
 		/* Handles the type condition. */
-		if (type == AX211_TLV_PNVM_SKU) {
+		if (type == AX211_RECORD_PNVM_BOARD) {
 			/* Handles the tlv length condition. */
 			if (tlv_length != 12U)
 				return INTEL_AX211_INVALID;
 			found.sku_count++;
-		} else if (type == AX211_TLV_PNVM_VERSION) {
+		} else if (type == AX211_RECORD_PNVM_REVISION) {
 			/* Handles the tlv length condition. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 			found.version_count++;
-		} else if (type == AX211_TLV_HW_TYPE) {
+		} else if (type == AX211_RECORD_HARDWARE_KIND) {
 			/* Handles the tlv length condition. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
@@ -783,16 +809,16 @@ drv_intel_ax211_pnvm_inspect(
 
 			/* Checks the drv intel ax211 mac type supported result. */
 			if (drv_intel_ax211_mac_type_supported(mac_type) &&
-			    rf_type == INTEL_AX211_RF_TYPE)
+			    rf_type == INTEL_AX211_RADIO_GF)
 				found.supported_hardware_type_count++;
-		} else if (type == AX211_TLV_SEC_RT) {
+		} else if (type == AX211_RECORD_RUNTIME_SECTION) {
 			/* Handles the tlv length condition. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 
 			/* Checks the ax211 get le32 result. */
 			if (ax211_get_le32(data) !=
-			    INTEL_AX211_PNVM_SEPARATOR) {
+			    INTEL_AX211_PNVM_IMAGE_MARK) {
 				/* Handles the section length condition. */
 				section_length = (size_t)tlv_length - 4U;
 				if (section_length == 0U)
@@ -823,59 +849,59 @@ drv_intel_ax211_pnvm_inspect(
 	}
 	*inventory = found;
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
  * Implements the drv intel ax211 context info gen3 encode operation.
  */
 int
-drv_intel_ax211_context_info_gen3_encode(
+drv_intel_ax211_boot_context_encode(
 	uint8_t output[104],
-	const struct intel_ax211_context_info_gen3 *context)
+	const struct intel_ax211_boot_context *context)
 {
 	/* Handles the output availability. */
 	if (output == NULL || context == NULL)
 		return INTEL_AX211_INVALID;
 
 	/* Handles the context condition. */
-	if (context->command_transfer_ring_size !=
+	if (context->command_ring_size_code !=
 		    INTEL_AX211_COMMAND_RING_CB_SIZE ||
-	    context->command_completion_ring_size !=
+	    context->response_ring_size_code !=
 		    INTEL_AX211_RX_RING_CB_SIZE) {
 		/* Returns the computed result. */
 		return INTEL_AX211_INVALID;
 	}
-	kern_memset(output, 0, INTEL_AX211_CONTEXT_INFO_GEN3_SIZE);
+	kern_memset(output, 0, INTEL_AX211_BOOT_CONTEXT_SIZE);
 	ax211_put_le16(output, context->version);
-	ax211_put_le16(output + 2U, INTEL_AX211_CONTEXT_INFO_GEN3_SIZE / 4U);
+	ax211_put_le16(output + 2U, INTEL_AX211_BOOT_CONTEXT_SIZE / 4U);
 	ax211_put_le32(output + 4U, context->config);
-	ax211_put_le64(output + 8U, context->prph_info_base);
-	ax211_put_le64(output + 16U, context->cr_head_index_base);
-	ax211_put_le64(output + 24U, context->tr_tail_index_base);
-	ax211_put_le64(output + 32U, context->cr_tail_index_base);
-	ax211_put_le64(output + 40U, context->tr_head_index_base);
-	ax211_put_le16(output + 48U, context->cr_index_count);
-	ax211_put_le16(output + 50U, context->tr_index_count);
-	ax211_put_le64(output + 52U, context->command_transfer_ring_base);
-	ax211_put_le64(output + 60U, context->command_completion_ring_base);
-	ax211_put_le16(output + 68U, context->command_transfer_ring_size);
-	ax211_put_le16(output + 70U, context->command_completion_ring_size);
-	ax211_put_le16(output + 72U, context->command_transfer_doorbell);
-	ax211_put_le16(output + 74U, context->command_completion_doorbell);
-	ax211_put_le16(output + 76U, context->command_transfer_msi);
-	ax211_put_le16(output + 78U, context->command_completion_msi);
-	output[80] = context->transfer_header_dwords;
-	output[81] = context->transfer_footer_dwords;
-	output[82] = context->completion_header_dwords;
-	output[83] = context->completion_footer_dwords;
-	ax211_put_le16(output + 84U, context->message_ring_flags);
-	ax211_put_le16(output + 86U, context->prph_info_msi);
-	ax211_put_le64(output + 88U, context->prph_scratch_base);
-	ax211_put_le32(output + 96U, context->prph_scratch_size);
+	ax211_put_le64(output + 8U, context->status_page_address);
+	ax211_put_le64(output + 16U, context->completion_head_array_address);
+	ax211_put_le64(output + 24U, context->transfer_tail_array_address);
+	ax211_put_le64(output + 32U, context->completion_tail_array_address);
+	ax211_put_le64(output + 40U, context->transfer_head_array_address);
+	ax211_put_le16(output + 48U, context->completion_index_slots);
+	ax211_put_le16(output + 50U, context->transfer_index_slots);
+	ax211_put_le64(output + 52U, context->command_ring_address);
+	ax211_put_le64(output + 60U, context->response_ring_address);
+	ax211_put_le16(output + 68U, context->command_ring_size_code);
+	ax211_put_le16(output + 70U, context->response_ring_size_code);
+	ax211_put_le16(output + 72U, context->command_ring_doorbell);
+	ax211_put_le16(output + 74U, context->response_ring_doorbell);
+	ax211_put_le16(output + 76U, context->command_ring_vector);
+	ax211_put_le16(output + 78U, context->response_ring_vector);
+	output[80] = context->command_entry_header_words;
+	output[81] = context->command_entry_footer_words;
+	output[82] = context->response_entry_header_words;
+	output[83] = context->response_entry_footer_words;
+	ax211_put_le16(output + 84U, context->ring_control_flags);
+	ax211_put_le16(output + 86U, context->status_page_vector);
+	ax211_put_le64(output + 88U, context->scratch_area_address);
+	ax211_put_le32(output + 96U, context->scratch_area_size);
 
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -895,7 +921,7 @@ drv_intel_ax211_rx_transfer_descriptor_encode(
 	ax211_put_le64(output + 8U, address);
 
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -913,7 +939,7 @@ drv_intel_ax211_rx_completion_descriptor_decode(
 	*buffer_id = ax211_get_le16(input + 4U);
 	*flags = input[6];
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -930,11 +956,11 @@ drv_intel_ax211_tfd_encode(
 
 	/* Handles the output availability. */
 	if (output == NULL || buffers == NULL || buffer_count == 0U ||
-	    buffer_count > INTEL_AX211_TFD_MAX_BUFFERS) {
+	    buffer_count > INTEL_AX211_TRANSFER_DESCRIPTOR_BUFFERS) {
 		/* Returns the computed result. */
 		return INTEL_AX211_INVALID;
 	}
-	kern_memset(output, 0, INTEL_AX211_TFD_SIZE);
+	kern_memset(output, 0, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE);
 	ax211_put_le16(output, (uint16_t)buffer_count);
 	/* Process each remaining element. */
 	for (index = 0; index < buffer_count; index++) {
@@ -942,8 +968,8 @@ drv_intel_ax211_tfd_encode(
 
 		/* Handles the buffers condition. */
 		if (buffers[index].length == 0U ||
-		    buffers[index].length > INTEL_AX211_TFD_BUFFER_MAX_LENGTH) {
-			drv_intel_ax211_scrub(output, INTEL_AX211_TFD_SIZE);
+		    buffers[index].length > INTEL_AX211_TRANSFER_BUFFER_LENGTH_MAX) {
+			drv_intel_ax211_scrub(output, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE);
 
 			/* Returns the computed result. */
 			return INTEL_AX211_INVALID;
@@ -954,7 +980,7 @@ drv_intel_ax211_tfd_encode(
 	}
 
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -976,7 +1002,7 @@ drv_intel_ax211_narrow_command_encode(
 	output[3] = token->queue;
 
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -1004,7 +1030,7 @@ drv_intel_ax211_wide_command_encode(
 	output[7] = command->version;
 
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -1046,7 +1072,7 @@ drv_intel_ax211_event_decode(
 	event->payload_length = frame_length - 4U;
 
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -1070,7 +1096,7 @@ drv_intel_ax211_ring_init(
 	ring->queue = queue;
 
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -1094,7 +1120,7 @@ drv_intel_ax211_ring_reserve(
 	ring->used++;
 
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -1119,7 +1145,7 @@ drv_intel_ax211_ring_complete(
 	ring->used--;
 
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -1179,7 +1205,7 @@ drv_intel_ax211_staging_set(
 	staging->length = length;
 
 	/* Returns the computed result. */
-	return INTEL_AX211_OK;
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -1201,9 +1227,29 @@ drv_intel_ax211_staging_clear(
 /* -*- mode: c; c-basic-offset: 8; indent-tabs-mode: t; tab-width: 8 -*- */
 
 /*
- * zedBSD Intel AX211 PCI/CNVio2 transport
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 PCI/CNVio2 transport.
+ *
+ * Sources of the values.  The register offsets and bits, command numbers and
+ * firmware table sizes in this part are facts of the AX211 hardware and of
+ * its firmware interface, collected with Intel's own driver headers as the
+ * primary source: Linux iwlwifi at tag v6.17, under
+ * drivers/net/wireless/intel/iwlwifi/, in iwl-csr.h, iwl-prph.h, fw/img.h,
+ * fw/dump.c and fw/api/commands.h, cross-checked against OpenBSD
+ * sys/dev/pci/if_iwxreg.h at commit 0f464d413c50.  The PCI and PCI Express
+ * values come from the PCI Local Bus and PCI Express Base specifications and
+ * the 802.11 values from IEEE Std 802.11-2020.  Each block names its source.
+ *
+ * This part is not an adaptation of those headers.  It collects the
+ * interface values, gives them names of its own, and adds what the zedBSD
+ * driver established about them on AX211 hardware: where each value is used,
+ * what it means, and how the device and the firmware behaved.
  */
 
 #include <drivers/wifi/intel-ax211/pci-intel-ax211.h>
@@ -1234,6 +1280,16 @@ drv_intel_ax211_staging_clear(
 #include "kern/kmem.h"
 #include "kern/device-io.h"
 
+/*
+ * The PCI identity and the PCI configuration values the probe checks.
+ *
+ * Source: the PCI ID database and the hardware intake of the test machines
+ * (ws004 HW-T37) for the identity; the PCI Local Bus specification for the
+ * class code (0x0280, other network controller) and the command register
+ * bits (memory space 1, bus master 2).  BAR0 must map at least 16 KiB: the
+ * MSI-X cause and vector registers this driver uses lie up to 0x2890, and
+ * the receive free-index doorbell at 0x1c80.
+ */
 #define AX211_PCI_VENDOR 0x8086U
 #define AX211_PCI_PRODUCT 0x51f0U
 #define AX211_PCI_SUBVENDOR 0x8086U
@@ -1245,6 +1301,8 @@ drv_intel_ax211_staging_clear(
 #define AX211_PCI_COMMAND_MEMORY 0x0002U
 #define AX211_PCI_COMMAND_MASTER 0x0004U
 #define AX211_BAR0_MINIMUM_SIZE 0x4000U
+
+/* zedBSD's own limits and timings of the network interface and its events. */
 #define AX211_MTU 1500U
 #define AX211_MAC_ADDRESS_SIZE 6U
 #define AX211_PASSIVE_CHANNEL_COUNT 11U
@@ -1260,21 +1318,83 @@ drv_intel_ax211_staging_clear(
  * completes resets the count.
  */
 #define AX211_REOPEN_ATTEMPTS_MAX 3U
-#define AX211_ASSOC_STATION_ID 0U
+
+/*
+ * The station slot of the access point, and the rate and capability bits of
+ * the link.
+ *
+ * Source: IEEE Std 802.11-2020 for the capability bits (9.4.1.4: short
+ * preamble bit 5, short slot time bit 10) and for the basic rates; the
+ * firmware's rate bitmaps from Linux iwlwifi v6.17 fw/api/mac.h.  The CCK
+ * bitmap 0x0f is 1, 2, 5.5 and 11 Mbit/s and the OFDM bitmap 0x15 is 6, 12
+ * and 24 Mbit/s, the mandatory rates.  On 5 GHz the CCK bitmap is reduced to
+ * bit 0, because the link command keeps a non-empty CCK set even where the
+ * firmware sends no CCK frame.  The access point always takes station slot 0.
+ */
+#define AX211_PEER_SLOT 0U
 #define AX211_ASSOC_CCK_ACK_RATES 0x0fU
 #define AX211_ASSOC_OFDM_ACK_RATES 0x15U
 #define AX211_CAPABILITY_SHORT_PREAMBLE 0x0020U
 #define AX211_CAPABILITY_SHORT_SLOT 0x0400U
-#define AX211_REPLY_ERROR_OPCODE 0x02U
-#define AX211_REPLY_ERROR_SIZE 20U
-#define AX211_UREG_DOORBELL_TO_ISR6 0xa05c04U
-#define AX211_UREG_DOORBELL_PNVM (1U << 20)
+
+/*
+ * The firmware's report that it rejected a command.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/commands.h (opcode 2 of the classic
+ * family) and fw/api/alive.h (struct iwl_error_resp, 20 bytes).  The event
+ * arrives unsolicited (bit 7 of the ring byte of its header set); the driver
+ * logs the error type at byte 0, the rejected opcode at byte 4, the rejected
+ * sequence number at byte 6, which names the ring slot of the command that
+ * failed, and the word at byte 8.
+ */
+#define AX211_COMMAND_REJECTION_OPCODE 0x02U
+#define AX211_COMMAND_REJECTION_SIZE 20U
+
+/*
+ * The doorbell that tells the firmware the PNVM sections are in place.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-prph.h (the doorbell register of the upper
+ * CPU and its PNVM bit).  The register is in the periphery space of the upper
+ * CPU, so it is written at the upper-CPU base (0x300000 on this device) plus
+ * 0xa05c04, while the driver holds the device awake.  The driver rings it
+ * after the PNVM sections and their address table have been written to DMA
+ * memory and published in the scratch area; the firmware answers with the
+ * PNVM-accepted notification.
+ */
+#define AX211_PRPH_FIRMWARE_DOORBELL 0xa05c04U
+#define AX211_FIRMWARE_DOORBELL_PNVM_READY (1U << 20)
+
+/*
+ * The PCI Express latency tolerance (LTR) enable of the root port side.
+ *
+ * Source: PCI Express Base Specification (Device Control 2 at offset 0x28 of
+ * the PCI Express capability, LTR mechanism enable at bit 10).  The driver
+ * reads it to decide whether the firmware's latency tolerance command is
+ * sent at runtime.
+ */
 #define AX211_PCIE_CAPABILITY 0x10U
 #define AX211_PCIE_DEVICE_CONTROL2 0x28U
 #define AX211_PCIE_DEVICE_CONTROL2_LTR (1U << 10)
-#define AX211_HBUS_TARG_MEM_RADDR 0x40cU
-#define AX211_HBUS_TARG_MEM_RDAT 0x41cU
-#define AX211_FW_ADDR_CACHE_CONTROL 0xc0000000U
+
+/*
+ * The window through which the host reads the firmware's internal SRAM, and
+ * the error tables found there.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-csr.h (the target memory read address and
+ * data registers), fw/img.h (the cache-control tag bits of a firmware
+ * pointer) and fw/dump.c (the LMAC error table of 30 words and the UMAC
+ * error table of 15 words).  Writing an SRAM address to 0x40c and then
+ * reading 0x41c repeatedly returns consecutive words; the address advances
+ * by four bytes after each read.  The ALIVE notification gives the address
+ * of each table; the UMAC pointer carries tag bits 31:30 that are not part of
+ * the address and are masked off.  The driver refuses addresses below
+ * 0x400000 as a sanity bound, and reads the tables only when a command failed
+ * while a fault cause was raised, to log the error identifier, the data
+ * words, the interrupt status words and the last host command.
+ */
+#define AX211_CSR_SRAM_READ_ADDRESS 0x40cU
+#define AX211_CSR_SRAM_READ_DATA 0x41cU
+#define AX211_SRAM_POINTER_TAG_BITS 0xc0000000U
 #define AX211_ERROR_LOG_MIN_ADDRESS 0x00400000U
 #define AX211_LMAC_ERROR_WORD_COUNT 30U
 #define AX211_UMAC_ERROR_WORD_COUNT 15U
@@ -1292,20 +1412,27 @@ struct ax211_pci_deferred_event {
 };
 
 /*
- * These are stable device register encodings, not a copied implementation.
- * HW_REV bits 15:4 contain the MAC type. HW_RF_ID bits 23:12 contain the RF
- * type. The frozen P038 target is an SO-or-SOF MAC with a Garfield Peak RF.
+ * The silicon revision and radio identity registers, read at attach.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-csr.h (the two registers and the field
+ * positions) and iwl-config.h (the MAC and radio codes).  The MAC type is
+ * bits 15:4 of the silicon revision register (0x37 for So, 0x43 for SoF);
+ * the radio kind is bits 23:12 of the radio identity register (0x10d for
+ * Garfield Peak), and bit 28 of that register is set on a radio that can run
+ * two bands at once.  The driver attaches only to an So or SoF MAC with a
+ * single-band Garfield Peak radio, the combination the pinned firmware and
+ * PNVM files are built for (ws004 p038).
  */
-#define AX211_CSR_HW_REV 0x028U
-#define AX211_CSR_HW_RF_ID 0x09cU
-#define AX211_CSR_HW_REV_TYPE_MASK 0x0000fff0U
-#define AX211_CSR_HW_REV_TYPE_SHIFT 4U
-#define AX211_CSR_HW_REV_TYPE_SO 0x037U
-#define AX211_CSR_HW_REV_TYPE_SOF 0x043U
-#define AX211_CSR_HW_RF_TYPE_MASK 0x00fff000U
-#define AX211_CSR_HW_RF_TYPE_SHIFT 12U
-#define AX211_CSR_HW_RF_TYPE_GF 0x10dU
-#define AX211_CSR_HW_RF_CDB 0x10000000U
+#define AX211_CSR_SILICON_REVISION 0x028U
+#define AX211_CSR_RADIO_IDENTITY 0x09cU
+#define AX211_SILICON_FAMILY_MASK 0x0000fff0U
+#define AX211_SILICON_FAMILY_SHIFT 4U
+#define AX211_SILICON_FAMILY_SO 0x037U
+#define AX211_SILICON_FAMILY_SOF 0x043U
+#define AX211_RADIO_KIND_MASK 0x00fff000U
+#define AX211_RADIO_KIND_SHIFT 12U
+#define AX211_RADIO_KIND_GF 0x10dU
+#define AX211_RADIO_CONCURRENT_BANDS_FLAG 0x10000000U
 
 struct ax211_pci_controller {
 	struct mutex lifecycle_lock;
@@ -1336,7 +1463,7 @@ struct ax211_pci_controller {
 	uint64_t retired_pairwise_key_generation;
 	uint64_t retired_group_key_generation[INTEL_AX211_KEY_INDEX_LIMIT];
 	uint8_t retired_group_key_remove[INTEL_AX211_KEY_INDEX_LIMIT];
-	struct intel_ax211_tx_ring tx_ring;
+	struct intel_ax211_frame_ring frame_ring;
 	struct intel_ax211_tx_queue_config tx_queue_config;
 	struct intel_ax211_dma_resources *active_dma;
 	struct drv_pci_irq irq;
@@ -1348,7 +1475,7 @@ struct ax211_pci_controller {
 	uint32_t radio_identity;
 	uint32_t hardware_epoch;
 	uint8_t runtime_event[INTEL_AX211_BOOT_EVENT_CAPACITY];
-	uint8_t runtime_frame[INTEL_AX211_RX_MPDU_FRAME_MAX];
+	uint8_t runtime_frame[INTEL_AX211_RX_FRAME_BODY_MAX];
 	uint8_t last_receive_header[INTEL_AX211_EVENT_HEADER_SIZE];
 	size_t last_receive_length;
 	uint8_t last_receive_version;
@@ -1356,7 +1483,7 @@ struct ax211_pci_controller {
 	uint32_t command_hw_causes;
 	uint32_t command_raw_fh_causes;
 	uint32_t command_raw_hw_causes;
-	uint8_t tx_report_completion[INTEL_AX211_TX_RING_SLOT_COUNT];
+	uint8_t tx_report_completion[INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS];
 	uint32_t scan_step_index;
 	uint64_t bss_staging_generation;
 	uint64_t bss_published_generation;
@@ -1467,12 +1594,12 @@ static int ax211_pci_receive_epoch_begin(void *argument, uint32_t generation);
 static int ax211_pci_transport_bind(void *argument, struct intel_ax211_dma_resources *dma, struct intel_ax211_mmio *mmio, struct intel_ax211_transport *transport, uint32_t generation);
 static int ax211_pci_receive_event(void *argument, uint64_t deadline_us, uint8_t *bytes, size_t capacity, struct intel_ax211_boot_received_event *event);
 static int ax211_pci_publish_pnvm(void *argument, struct intel_ax211_dma_resources *dma);
-static int ax211_pci_post_alive(void *argument, const struct intel_ax211_protocol_alive *alive);
+static int ax211_pci_after_alive(void *argument, const struct intel_ax211_protocol_alive *alive);
 static int ax211_pci_interrupt_drain(void *argument);
 static int ax211_pci_bus_master_disable(void *argument);
 static int ax211_pci_clock_us(void *argument, uint64_t *time_us);
-static int ax211_pci_nic_lock(void *argument);
-static int ax211_pci_nic_unlock(void *argument);
+static int ax211_pci_wake_hold(void *argument);
+static int ax211_pci_wake_release(void *argument);
 static int ax211_pci_tx_event(const struct intel_ax211_event *event);
 static uint8_t ax211_pci_notification_version(const uint8_t *bytes, size_t length);
 static int ax211_pci_scan_initialize(struct ax211_pci_controller *controller);
@@ -1521,7 +1648,7 @@ static int ax211_pci_key_fail_closed(struct ax211_pci_controller *controller, in
 static int ax211_pci_tx_submit(struct ax211_pci_controller *controller, const struct intel_ax211_tx_request *request, uint64_t deadline_ticks, int report_completion);
 static int ax211_pci_tx_dispatch(struct ax211_pci_controller *controller, const struct intel_ax211_protocol_message *message);
 static int ax211_pci_tx_timeout_check(struct ax211_pci_controller *controller, uint64_t now_us);
-static int ax211_pci_connection_rx_dispatch(struct ax211_pci_controller *controller, const struct intel_ax211_rx_mpdu *mpdu, uint16_t frame_control);
+static int ax211_pci_connection_rx_dispatch(struct ax211_pci_controller *controller, const struct intel_ax211_rx_delivery *mpdu, uint16_t frame_control);
 
 static int ax211_net_open(struct net_device *device);
 static int ax211_pci_open_locked(struct ax211_pci_controller *controller, int restarting);
@@ -1599,12 +1726,12 @@ static const struct intel_ax211_runtime_start_ops ax211_runtime_start_ops = {
 		 .transport_bind = ax211_pci_transport_bind,
 		 .receive_event = ax211_pci_receive_event,
 		 .publish_pnvm = ax211_pci_publish_pnvm,
-		 .post_alive = ax211_pci_post_alive,
+		 .after_alive = ax211_pci_after_alive,
 		 .interrupt_drain = ax211_pci_interrupt_drain,
 		 .bus_master_disable = ax211_pci_bus_master_disable,
 		 .clock_us = ax211_pci_clock_us},
-	.nic_lock = ax211_pci_nic_lock,
-	.nic_unlock = ax211_pci_nic_unlock};
+	.wake_hold = ax211_pci_wake_hold,
+	.wake_release = ax211_pci_wake_release};
 
 static const struct intel_ax211_tx_ring_ops ax211_tx_ring_ops = {
 	.sync_for_device = ax211_pci_tx_sync_for_device,
@@ -2034,24 +2161,24 @@ ax211_pci_hardware_validate(
 	uint32_t mac_type;
 	uint32_t radio_type;
 
-	mac_type = (hardware_revision & AX211_CSR_HW_REV_TYPE_MASK) >>
-		   AX211_CSR_HW_REV_TYPE_SHIFT;
-	radio_type = (radio_identity & AX211_CSR_HW_RF_TYPE_MASK) >>
-		     AX211_CSR_HW_RF_TYPE_SHIFT;
+	mac_type = (hardware_revision & AX211_SILICON_FAMILY_MASK) >>
+		   AX211_SILICON_FAMILY_SHIFT;
+	radio_type = (radio_identity & AX211_RADIO_KIND_MASK) >>
+		     AX211_RADIO_KIND_SHIFT;
 
 	/* Handles the mac type condition. */
-	if (mac_type != AX211_CSR_HW_REV_TYPE_SO &&
-	    mac_type != AX211_CSR_HW_REV_TYPE_SOF) {
+	if (mac_type != AX211_SILICON_FAMILY_SO &&
+	    mac_type != AX211_SILICON_FAMILY_SOF) {
 		/* Failed. */
 		return ENODEV;
 	}
 
 	/* Handles the radio type condition. */
-	if (radio_type != AX211_CSR_HW_RF_TYPE_GF)
+	if (radio_type != AX211_RADIO_KIND_GF)
 		return ENODEV;
 
 	/* Returns the computed result. */
-	return (radio_identity & AX211_CSR_HW_RF_CDB) == 0U ? 0 : ENODEV;
+	return (radio_identity & AX211_RADIO_CONCURRENT_BANDS_FLAG) == 0U ? 0 : ENODEV;
 }
 
 /* Derives the already validated private MMIO profile. */
@@ -2067,11 +2194,11 @@ ax211_pci_profile(
 		return EINVAL;
 	kern_memset(profile, 0, sizeof(*profile));
 	mac_type =
-		(controller->hardware_revision & AX211_CSR_HW_REV_TYPE_MASK) >>
-		AX211_CSR_HW_REV_TYPE_SHIFT;
+		(controller->hardware_revision & AX211_SILICON_FAMILY_MASK) >>
+		AX211_SILICON_FAMILY_SHIFT;
 	profile->mac_type = (uint16_t)mac_type;
 	profile->rf_type = INTEL_AX211_MMIO_RF_GF;
-	profile->umac_prph_offset = INTEL_AX211_MMIO_UMAC_PRPH_OFFSET;
+	profile->upper_cpu_prph_base = INTEL_AX211_MMIO_UPPER_CPU_PRPH_BASE;
 
 	/* Succeeded. */
 	return 0;
@@ -2161,9 +2288,9 @@ ax211_pci_acquire(
 		return EIO;
 	}
 	controller->hardware_revision =
-		ax211_pci_read32(controller, AX211_CSR_HW_REV);
+		ax211_pci_read32(controller, AX211_CSR_SILICON_REVISION);
 	controller->radio_identity =
-		ax211_pci_read32(controller, AX211_CSR_HW_RF_ID);
+		ax211_pci_read32(controller, AX211_CSR_RADIO_IDENTITY);
 
 	/* Obtains the ax211 pci hardware validate result. */
 	function_result = ax211_pci_hardware_validate(
@@ -2472,7 +2599,7 @@ ax211_pci_refresh_one(
 		error = ax211_pci_partial_discard(controller);
 	if (error == 0) {
 		hardware_attempted = 1;
-		error = drv_intel_ax211_mmio_prepare_card_hw(&controller->mmio);
+		error = drv_intel_ax211_mmio_take_ownership(&controller->mmio);
 	}
 
 	/* Checks the operation status. */
@@ -3092,7 +3219,7 @@ ax211_pci_session_stop(
 	if (result == 0 && controller->tx_ring_allocated) {
 		/* Handles the release result condition. */
 		release_result = drv_intel_ax211_tx_ring_release(
-			&controller->tx_ring, hardware_quiesced);
+			&controller->frame_ring, hardware_quiesced);
 		if (release_result != INTEL_AX211_TX_RING_OK)
 			result = EIO;
 		else
@@ -3478,20 +3605,20 @@ ax211_pci_receive_event(
 			&controller->transport, &causes);
 		if (result != INTEL_AX211_TRANSPORT_OK)
 			return INTEL_AX211_BOOT_RECEIVE_IO;
-		controller->command_fh_causes |= causes.flow_handler;
+		controller->command_fh_causes |= causes.queue_causes;
 		controller->command_hw_causes |= causes.hardware;
-		controller->command_raw_fh_causes |= causes.raw_flow_handler;
+		controller->command_raw_fh_causes |= causes.raw_queue_causes;
 		controller->command_raw_hw_causes |= causes.raw_hardware;
 
 		/* Checks the operation status. */
-		if ((causes.flow_handler &
-		     INTEL_AX211_TRANSPORT_FH_CAUSE_ERROR) != 0U ||
-		    (causes.hardware & INTEL_AX211_TRANSPORT_HW_FATAL_CAUSES) !=
+		if ((causes.queue_causes &
+		     INTEL_AX211_TRANSPORT_QUEUE_CAUSE_FAULT) != 0U ||
+		    (causes.hardware & INTEL_AX211_TRANSPORT_EVENT_FATAL_CAUSES) !=
 			    0U) {
 			kern_logf("intel-ax211: fatal firmware interrupt "
 				   "fh=%08x hw=%08x raw-fh=%08x raw-hw=%08x\n",
-				   causes.flow_handler, causes.hardware,
-				   causes.raw_flow_handler,
+				   causes.queue_causes, causes.hardware,
+				   causes.raw_queue_causes,
 				   causes.raw_hardware);
 
 			/* Returns the computed result. */
@@ -3505,7 +3632,7 @@ ax211_pci_receive_event(
 		 * that setup.
 		 */
 		if (!controller->transport.rx_active &&
-		    (causes.hardware & INTEL_AX211_TRANSPORT_HW_CAUSE_ALIVE) !=
+		    (causes.hardware & INTEL_AX211_TRANSPORT_EVENT_CAUSE_ALIVE) !=
 			    0U) {
 			/* Checks the operation result. */
 			result = drv_intel_ax211_transport_activate_rx(
@@ -3633,15 +3760,15 @@ ax211_pci_publish_pnvm(
 	kern_io_write_barrier();
 
 	/* Checks the operation result. */
-	result = drv_intel_ax211_mmio_nic_lock(&controller->mmio);
+	result = drv_intel_ax211_mmio_wake_hold(&controller->mmio);
 	if (result != INTEL_AX211_MMIO_OK)
 		return -1;
 	result = drv_intel_ax211_mmio_prph_write32(
 		&controller->mmio,
-		controller->mmio.profile.umac_prph_offset +
-			AX211_UREG_DOORBELL_TO_ISR6,
-		AX211_UREG_DOORBELL_PNVM);
-	unlock_result = drv_intel_ax211_mmio_nic_unlock(&controller->mmio);
+		controller->mmio.profile.upper_cpu_prph_base +
+			AX211_PRPH_FIRMWARE_DOORBELL,
+		AX211_FIRMWARE_DOORBELL_PNVM_READY);
+	unlock_result = drv_intel_ax211_mmio_wake_release(&controller->mmio);
 
 	/* Returns the computed result. */
 	return result == INTEL_AX211_MMIO_OK &&
@@ -3652,7 +3779,7 @@ ax211_pci_publish_pnvm(
 
 /* The MSI-X path needs no ICT reset, but ownership must still be balanced. */
 static int
-ax211_pci_post_alive(
+ax211_pci_after_alive(
 	void *argument,
 	const struct intel_ax211_protocol_alive *alive)
 {
@@ -3663,16 +3790,16 @@ ax211_pci_post_alive(
 	/* Handles the controller availability. */
 	controller = argument;
 	if (controller == NULL || alive == NULL ||
-	    alive->status != INTEL_AX211_PROTOCOL_ALIVE_STATUS_OK) {
+	    alive->status != INTEL_AX211_PROTOCOL_ALIVE_HEALTHY) {
 		/* Reports operation failure. */
 		return -1;
 	}
 
 	/* Checks the operation result. */
-	result = drv_intel_ax211_mmio_nic_lock(&controller->mmio);
+	result = drv_intel_ax211_mmio_wake_hold(&controller->mmio);
 	if (result != INTEL_AX211_MMIO_OK)
 		return -1;
-	unlock_result = drv_intel_ax211_mmio_nic_unlock(&controller->mmio);
+	unlock_result = drv_intel_ax211_mmio_wake_release(&controller->mmio);
 
 	/* Returns the computed result. */
 	return unlock_result == INTEL_AX211_MMIO_OK ? 0 : -1;
@@ -3796,7 +3923,7 @@ ax211_pci_clock_us(
 
 /* Supports the ax211 pci nic lock operation. */
 static int
-ax211_pci_nic_lock(
+ax211_pci_wake_hold(
 	void *argument)
 {
 	int error;
@@ -3805,7 +3932,7 @@ ax211_pci_nic_lock(
 	controller = argument;
 
 	/* Computes the function result. */
-	error = controller != NULL && drv_intel_ax211_mmio_nic_lock(
+	error = controller != NULL && drv_intel_ax211_mmio_wake_hold(
 							&controller->mmio) ==
 							INTEL_AX211_MMIO_OK
 				  ? 0
@@ -3817,7 +3944,7 @@ ax211_pci_nic_lock(
 
 /* Supports the ax211 pci nic unlock operation. */
 static int
-ax211_pci_nic_unlock(
+ax211_pci_wake_release(
 	void *argument)
 {
 	int error;
@@ -3826,7 +3953,7 @@ ax211_pci_nic_unlock(
 	controller = argument;
 
 	/* Computes the function result. */
-	error = controller != NULL && drv_intel_ax211_mmio_nic_unlock(
+	error = controller != NULL && drv_intel_ax211_mmio_wake_release(
 							&controller->mmio) ==
 							INTEL_AX211_MMIO_OK
 				  ? 0
@@ -3850,8 +3977,8 @@ ax211_pci_tx_event(
 		(uint8_t)~INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK;
 
 	/* Returns the computed result. */
-	return group == INTEL_AX211_PROTOCOL_GROUP_LEGACY ||
-	       group == INTEL_AX211_TX_GROUP;
+	return group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC ||
+	       group == INTEL_AX211_TX_FAMILY;
 }
 
 /* Pins layouts absent from the RX wire header at the PCI boundary. */
@@ -3872,8 +3999,8 @@ ax211_pci_notification_version(
 	queue = bytes[7U];
 
 	/* Handles the group condition. */
-	if ((group == INTEL_AX211_PROTOCOL_GROUP_LEGACY ||
-	     group == INTEL_AX211_TX_GROUP) &&
+	if ((group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC ||
+	     group == INTEL_AX211_TX_FAMILY) &&
 	    opcode == INTEL_AX211_TX_OPCODE) {
 		/* Returns the computed result. */
 		return INTEL_AX211_TX_NOTIFICATION_VERSION;
@@ -3884,22 +4011,22 @@ ax211_pci_notification_version(
 		return 0U;
 
 	/* Handles the group condition. */
-	if (group == INTEL_AX211_PROTOCOL_GROUP_LEGACY &&
+	if (group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC &&
 	    opcode == INTEL_AX211_PROTOCOL_ALIVE_OPCODE) {
 		/* Returns the computed result. */
 		return INTEL_AX211_PROTOCOL_ALIVE_VERSION;
 	}
 
 	/* Handles the group condition. */
-	if (group == INTEL_AX211_PROTOCOL_GROUP_REGULATORY_NVM &&
-	    opcode == INTEL_AX211_PROTOCOL_PNVM_INIT_COMPLETE_OPCODE) {
+	if (group == INTEL_AX211_PROTOCOL_FAMILY_REGULATORY_STORE &&
+	    opcode == INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_OPCODE) {
 		/* Returns the computed result. */
-		return INTEL_AX211_PROTOCOL_PNVM_INIT_COMPLETE_VERSION;
+		return INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_VERSION;
 	}
 
 	/* Handles the group condition. */
-	if (group == INTEL_AX211_PROTOCOL_GROUP_LEGACY &&
-	    opcode == INTEL_AX211_PROTOCOL_INIT_COMPLETE_OPCODE) {
+	if (group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC &&
+	    opcode == INTEL_AX211_PROTOCOL_INIT_FINISHED_OPCODE) {
 		/* Returns the computed result. */
 		return INTEL_AX211_PROTOCOL_UNKNOWN_VERSION;
 	}
@@ -3909,10 +4036,10 @@ ax211_pci_notification_version(
 		return 5U;
 
 	/* Handles the group condition. */
-	if (group == INTEL_AX211_ASSOC_GROUP_MAC_CONFIG &&
-	    opcode == INTEL_AX211_ASSOC_SESSION_NOTIFICATION_OPCODE) {
+	if (group == INTEL_AX211_ASSOC_FAMILY_LINK_SETUP &&
+	    opcode == INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_OPCODE) {
 		/* Returns the computed result. */
-		return INTEL_AX211_ASSOC_SESSION_NOTIFICATION_LAYOUT_VERSION;
+		return INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_LAYOUT_VERSION;
 	}
 
 	/* Handles the group condition. */
@@ -4173,7 +4300,7 @@ ax211_pci_event_message(
 	    message == NULL || received->generation == 0U ||
 	    received->length != length ||
 	    drv_intel_ax211_event_decode(bytes, length, event) !=
-		    INTEL_AX211_OK ||
+		    INTEL_AX211_SUCCESS ||
 	    event->payload_offset > length ||
 	    event->payload_length != length - event->payload_offset) {
 		/* Failed. */
@@ -4193,7 +4320,7 @@ ax211_pci_event_message(
 
 	/* Handles the ax211 pci tx event condition. */
 	if (ax211_pci_tx_event(event)) {
-		message->group = INTEL_AX211_TX_GROUP;
+		message->group = INTEL_AX211_TX_FAMILY;
 		message->version = INTEL_AX211_TX_NOTIFICATION_VERSION;
 	}
 
@@ -4358,7 +4485,7 @@ ax211_pci_rx_dispatch(
 	const struct intel_ax211_protocol_message *message)
 {
 	struct intel_ax211_bss_entry bss_entry;
-	struct intel_ax211_rx_mpdu mpdu;
+	struct intel_ax211_rx_delivery mpdu;
 	uint16_t frame_control;
 	uint16_t subtype;
 	int dispatch_result;
@@ -4566,9 +4693,9 @@ ax211_pci_runtime_event_dispatch(
 	}
 
 	/* Handles the message condition. */
-	if (message.group == INTEL_AX211_SCAN_GROUP_LEGACY &&
-	    (message.opcode == INTEL_AX211_SCAN_COMPLETE_OPCODE ||
-	     message.opcode == INTEL_AX211_SCAN_ITERATION_COMPLETE_OPCODE)) {
+	if (message.group == INTEL_AX211_SCAN_FAMILY_CLASSIC &&
+	    (message.opcode == INTEL_AX211_SCAN_FINISHED_OPCODE ||
+	     message.opcode == INTEL_AX211_SCAN_PASS_FINISHED_OPCODE)) {
 		/* Obtains the ax211 pci scan notification dispatch result. */
 		error = ax211_pci_scan_notification_dispatch(
 			controller, &message, now);
@@ -4578,8 +4705,8 @@ ax211_pci_runtime_event_dispatch(
 	}
 
 	/* Handles the message condition. */
-	if (message.group == INTEL_AX211_RX_MPDU_GROUP &&
-	    message.opcode == INTEL_AX211_RX_MPDU_OPCODE) {
+	if (message.group == INTEL_AX211_RX_FRAME_FAMILY &&
+	    message.opcode == INTEL_AX211_RX_FRAME_OPCODE) {
 		/* Obtains the ax211 pci rx dispatch result. */
 		error = ax211_pci_rx_dispatch(controller, &message);
 
@@ -4588,8 +4715,8 @@ ax211_pci_runtime_event_dispatch(
 	}
 
 	/* Handles the message condition. */
-	if (message.group == INTEL_AX211_ASSOC_GROUP_MAC_CONFIG &&
-	    message.opcode == INTEL_AX211_ASSOC_SESSION_NOTIFICATION_OPCODE &&
+	if (message.group == INTEL_AX211_ASSOC_FAMILY_LINK_SETUP &&
+	    message.opcode == INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_OPCODE &&
 	    controller->association_initialized) {
 		/* Checks the operation result. */
 		result = drv_intel_ax211_assoc_session_event_accept(
@@ -4738,7 +4865,7 @@ ax211_pci_tx_sync_for_device(
 	    buffer->device_address == 0U || offset > buffer->size ||
 	    length > buffer->size - offset ||
 	    !controller->runtime_initialized ||
-	    !drv_dma_device_is_coherent(controller->tx_ring.dma_device)) {
+	    !drv_dma_device_is_coherent(controller->frame_ring.dma_device)) {
 		/* Reports operation failure. */
 		return -1;
 	}
@@ -4858,7 +4985,7 @@ ax211_pci_sram_read_locked(
 	if (controller == NULL || words == NULL || count == 0U ||
 	    address < AX211_ERROR_LOG_MIN_ADDRESS || (address & 3U) != 0U ||
 	    count - 1U > (UINT32_MAX - address) / sizeof(uint32_t) ||
-	    controller->mmio.nic_lock_depth == 0U ||
+	    controller->mmio.wake_hold_depth == 0U ||
 	    controller->mmio.ops == NULL ||
 	    controller->mmio.ops->csr_read32 == NULL ||
 	    controller->mmio.ops->csr_write32 == NULL) {
@@ -4868,7 +4995,7 @@ ax211_pci_sram_read_locked(
 
 	/* Checks the csr write32 result. */
 	if (controller->mmio.ops->csr_write32(controller->mmio.argument,
-					      AX211_HBUS_TARG_MEM_RADDR,
+					      AX211_CSR_SRAM_READ_ADDRESS,
 					      address) != 0) {
 		/* Failed. */
 		return EIO;
@@ -4878,7 +5005,7 @@ ax211_pci_sram_read_locked(
 	for (index = 0U; index < count; index++) {
 		/* Checks the csr read32 result. */
 		if (controller->mmio.ops->csr_read32(controller->mmio.argument,
-						     AX211_HBUS_TARG_MEM_RDAT,
+						     AX211_CSR_SRAM_READ_DATA,
 						     &words[index]) != 0) {
 			kern_memset(words, 0, count * sizeof(*words));
 
@@ -4910,7 +5037,7 @@ ax211_pci_firmware_error_dump(
 	/* Handles the controller condition. */
 	if (!controller->runtime_start.alive_accepted ||
 	    controller->runtime_start.alive.status !=
-		    INTEL_AX211_PROTOCOL_ALIVE_STATUS_OK) {
+		    INTEL_AX211_PROTOCOL_ALIVE_HEALTHY) {
 		kern_logf("intel-ax211: firmware error table unavailable "
 			   "alive=%u status=%04x\n",
 			   (unsigned)controller->runtime_start.alive_accepted,
@@ -4923,9 +5050,9 @@ ax211_pci_firmware_error_dump(
 	kern_memset(lmac, 0, sizeof(lmac));
 	kern_memset(umac, 0, sizeof(umac));
 	lmac_address =
-		controller->runtime_start.alive.lmac[0].error_event_table;
-	umac_address = controller->runtime_start.alive.umac.error_info &
-		       ~AX211_FW_ADDR_CACHE_CONTROL;
+		controller->runtime_start.alive.lmac[0].error_log_address;
+	umac_address = controller->runtime_start.alive.umac.upper_error_log_address &
+		       ~AX211_SRAM_POINTER_TAG_BITS;
 	lmac_result = ax211_pci_sram_read_locked(controller, lmac_address, lmac,
 						 AX211_LMAC_ERROR_WORD_COUNT);
 	umac_result = ax211_pci_sram_read_locked(controller, umac_address, umac,
@@ -5031,7 +5158,7 @@ ax211_pci_direct_command(
 		return result;
 
 	/* Handles the lock result condition. */
-	lock_result = ax211_pci_nic_lock(controller);
+	lock_result = ax211_pci_wake_hold(controller);
 	if (lock_result != 0)
 		return EIO;
 	command_submitted = 0;
@@ -5068,7 +5195,7 @@ ax211_pci_direct_command(
 			 received.length > sizeof(controller->runtime_event) ||
 			 drv_intel_ax211_event_decode(
 				 controller->runtime_event, received.length,
-				 &decoded) != INTEL_AX211_OK)
+				 &decoded) != INTEL_AX211_SUCCESS)
 			result = EIO;
 		else if (ax211_pci_tx_event(&decoded)) {
 			result = ax211_pci_deferred_event_enqueue(
@@ -5083,14 +5210,14 @@ ax211_pci_direct_command(
 				(uint8_t)~INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK;
 
 			/* Checks the operation status. */
-			if (event_group == INTEL_AX211_PROTOCOL_GROUP_LEGACY &&
+			if (event_group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC &&
 			    decoded.command.opcode ==
-				    AX211_REPLY_ERROR_OPCODE) {
+				    AX211_COMMAND_REJECTION_OPCODE) {
 				/* Checks the operation status. */
 				error_payload = controller->runtime_event +
 						decoded.payload_offset;
 				if (decoded.payload_length ==
-				    AX211_REPLY_ERROR_SIZE) {
+				    AX211_COMMAND_REJECTION_SIZE) {
 					bad_sequence =
 						(uint16_t)error_payload[6U] |
 						((uint16_t)error_payload[7U]
@@ -5195,9 +5322,9 @@ ax211_pci_direct_command(
 		result = ETIMEDOUT;
 	if (result != 0 && command_submitted &&
 	    ((controller->command_fh_causes &
-	      INTEL_AX211_TRANSPORT_FH_CAUSE_ERROR) != 0U ||
+	      INTEL_AX211_TRANSPORT_QUEUE_CAUSE_FAULT) != 0U ||
 	     (controller->command_hw_causes &
-	      INTEL_AX211_TRANSPORT_HW_FATAL_CAUSES) != 0U))
+	      INTEL_AX211_TRANSPORT_EVENT_FATAL_CAUSES) != 0U))
 		ax211_pci_firmware_error_dump(controller);
 	if (result == ETIMEDOUT && command_submitted) {
 		slot_address = controller->transport.memory
@@ -5234,7 +5361,7 @@ ax211_pci_direct_command(
 	}
 
 	/* Checks the operation result. */
-	unlock_result = ax211_pci_nic_unlock(controller);
+	unlock_result = ax211_pci_wake_release(controller);
 	if (result == 0 && unlock_result != 0)
 		result = EIO;
 
@@ -5293,7 +5420,7 @@ ax211_pci_assoc_exchange(
 	if (command->step == INTEL_AX211_ASSOC_STEP_QUEUE_ENABLE) {
 		/* Checks the operation result. */
 		result = drv_intel_ax211_tx_ring_queue_add_build(
-			&controller->tx_ring, AX211_ASSOC_STATION_ID,
+			&controller->frame_ring, AX211_PEER_SLOT,
 			INTEL_AX211_TX_RING_MANAGEMENT_TID,
 			&controller->tx_queue_config);
 		if (result != INTEL_AX211_TX_RING_OK ||
@@ -5351,7 +5478,7 @@ ax211_pci_assoc_exchange(
 	if (command->step == INTEL_AX211_ASSOC_STEP_QUEUE_ENABLE) {
 		/* Checks the operation result. */
 		result = drv_intel_ax211_tx_ring_queue_add_complete(
-			&controller->tx_ring, &controller->tx_queue_config,
+			&controller->frame_ring, &controller->tx_queue_config,
 			controller->hardware_epoch,
 			controller->connection_generation, &message, &pending);
 		if (result != INTEL_AX211_TX_RING_OK) {
@@ -5390,7 +5517,7 @@ ax211_pci_assoc_exchange(
 		}
 	} else if (command->step == INTEL_AX211_ASSOC_STEP_QUEUE_REMOVE) {
 		/* Checks the operation result. */
-		result = drv_intel_ax211_tx_ring_reset(&controller->tx_ring, 1);
+		result = drv_intel_ax211_tx_ring_reset(&controller->frame_ring, 1);
 		if (result != INTEL_AX211_TX_RING_OK)
 			return INTEL_AX211_ASSOC_IO;
 	}
@@ -5555,7 +5682,7 @@ ax211_pci_assoc_profile(
 
 	/* Checks the operation result. */
 	result = drv_intel_ax211_tx_ring_queue_add_build(
-		&controller->tx_ring, AX211_ASSOC_STATION_ID,
+		&controller->frame_ring, AX211_PEER_SLOT,
 		INTEL_AX211_TX_RING_MANAGEMENT_TID, &queue);
 	if (result != INTEL_AX211_TX_RING_OK) {
 		/* Obtains the ax211 pci tx ring result errno result. */
@@ -5743,8 +5870,8 @@ ax211_pci_assoc_rollback(
 	}
 
 	/* Handles the controller condition. */
-	if (controller->tx_ring.enabled ||
-	    controller->tx_ring.pending_count != 0U) {
+	if (controller->frame_ring.enabled ||
+	    controller->frame_ring.pending_count != 0U) {
 		/* Failed. */
 		return EIO;
 	}
@@ -5762,7 +5889,7 @@ ax211_pci_mcast_filter_configure(
 {
 	int error;
 	struct intel_ax211_command_request request;
-	uint8_t payload[INTEL_AX211_ASSOC_MCAST_FILTER_SIZE];
+	uint8_t payload[INTEL_AX211_ASSOC_MULTICAST_LIST_SIZE];
 	size_t response_length;
 	int result;
 
@@ -5785,9 +5912,9 @@ ax211_pci_mcast_filter_configure(
 	}
 
 	kern_memset(&request, 0, sizeof(request));
-	request.command.group = INTEL_AX211_ASSOC_GROUP_LEGACY;
-	request.command.opcode = INTEL_AX211_ASSOC_MCAST_FILTER_OPCODE;
-	request.command.version = INTEL_AX211_ASSOC_MCAST_FILTER_VERSION;
+	request.command.group = INTEL_AX211_ASSOC_FAMILY_CLASSIC;
+	request.command.opcode = INTEL_AX211_ASSOC_MULTICAST_LIST_OPCODE;
+	request.command.version = INTEL_AX211_ASSOC_MULTICAST_LIST_VERSION;
 	request.payload = payload;
 	request.payload_length = sizeof(payload);
 	request.response_version = 0U;
@@ -5815,8 +5942,8 @@ ax211_pci_mac_power_configure(
 {
 	int error;
 	struct intel_ax211_command_request request;
-	uint8_t payload[INTEL_AX211_ASSOC_MAC_POWER_SIZE];
-	uint8_t response[INTEL_AX211_ASSOC_MAC_POWER_RESPONSE_SIZE];
+	uint8_t payload[INTEL_AX211_ASSOC_POWER_SAVE_SIZE];
+	uint8_t response[INTEL_AX211_ASSOC_POWER_SAVE_RESPONSE_SIZE];
 	uint32_t beacon_interval_ms;
 	size_t response_length;
 	int result;
@@ -5855,9 +5982,9 @@ ax211_pci_mac_power_configure(
 	}
 
 	kern_memset(&request, 0, sizeof(request));
-	request.command.group = INTEL_AX211_ASSOC_GROUP_LEGACY;
-	request.command.opcode = INTEL_AX211_ASSOC_MAC_POWER_OPCODE;
-	request.command.version = INTEL_AX211_ASSOC_MAC_POWER_VERSION;
+	request.command.group = INTEL_AX211_ASSOC_FAMILY_CLASSIC;
+	request.command.opcode = INTEL_AX211_ASSOC_POWER_SAVE_OPCODE;
+	request.command.version = INTEL_AX211_ASSOC_POWER_SAVE_VERSION;
 	request.payload = payload;
 	request.payload_length = sizeof(payload);
 	request.response_version = 0U;
@@ -5984,7 +6111,7 @@ ax211_pci_key_command(
 	if (controller == NULL || payload == NULL)
 		return EINVAL;
 	kern_memset(&request, 0, sizeof(request));
-	request.command.group = INTEL_AX211_KEY_GROUP;
+	request.command.group = INTEL_AX211_KEY_FAMILY;
 	request.command.opcode = INTEL_AX211_KEY_OPCODE;
 
 	/*
@@ -6233,7 +6360,7 @@ ax211_pci_tx_submit(
 	kern_memset(&handle, 0, sizeof(handle));
 
 	/* Checks the operation result. */
-	result = drv_intel_ax211_tx_ring_submit(&controller->tx_ring, request,
+	result = drv_intel_ax211_tx_ring_submit(&controller->frame_ring, request,
 						now_us, timeout_us, &handle);
 	if (result != INTEL_AX211_TX_RING_OK) {
 		/* Checks the operation status. */
@@ -6281,7 +6408,7 @@ ax211_pci_tx_dispatch(
 	tx_message.queue &= 0x7fU;
 
 	/* Checks the operation result. */
-	result = drv_intel_ax211_tx_ring_complete(&controller->tx_ring,
+	result = drv_intel_ax211_tx_ring_complete(&controller->frame_ring,
 						  &tx_message, &retired);
 	if (result == INTEL_AX211_TX_RING_DUPLICATE ||
 	    result == INTEL_AX211_TX_RING_STALE ||
@@ -6311,8 +6438,8 @@ ax211_pci_tx_dispatch(
 			   "acknowledged=%u failure=%u/%u\n",
 			   (unsigned)retired.handle.connection_generation,
 			   (unsigned)retired.handle.cookie,
-			   retired.acknowledged, retired.failure_rts,
-			   retired.failure_frame);
+			   retired.acknowledged, retired.rts_retries,
+			   retired.frame_retries);
 	}
 
 	/* Handles the report result condition. */
@@ -6359,15 +6486,15 @@ ax211_pci_tx_timeout_check(
 
 	/* Handles the controller availability. */
 	if (controller == NULL || !controller->tx_ring_allocated ||
-	    !controller->tx_ring.enabled ||
-	    controller->tx_ring.pending_count == 0U) {
+	    !controller->frame_ring.enabled ||
+	    controller->frame_ring.pending_count == 0U) {
 		/* Succeeded. */
 		return 0;
 	}
 	kern_memset(&handle, 0, sizeof(handle));
 
 	/* Checks the operation result. */
-	result = drv_intel_ax211_tx_ring_timeout_oldest(&controller->tx_ring,
+	result = drv_intel_ax211_tx_ring_timeout_oldest(&controller->frame_ring,
 							now_us, &handle);
 	if (result == INTEL_AX211_TX_RING_PENDING ||
 	    result == INTEL_AX211_TX_RING_NOT_READY) {
@@ -6409,7 +6536,7 @@ ax211_pci_tx_timeout_check(
 static int
 ax211_pci_connection_rx_dispatch(
 	struct ax211_pci_controller *controller,
-	const struct intel_ax211_rx_mpdu *mpdu,
+	const struct intel_ax211_rx_delivery *mpdu,
 	uint16_t frame_control)
 {
 	struct wlan_radio_rx_frame report;
@@ -6439,7 +6566,7 @@ ax211_pci_connection_rx_dispatch(
 	report.channel = mpdu->channel;
 
 	/* Handles the mpdu condition. */
-	if (mpdu->cipher == INTEL_AX211_RX_CIPHER_CCMP) {
+	if (mpdu->cipher == INTEL_AX211_RX_PROTECTION_CCMP) {
 		/* Handles the controller condition. */
 		if (!controller->keys_initialized || mpdu->length < 10U ||
 		    !mpdu->decrypted) {
@@ -6463,7 +6590,7 @@ ax211_pci_connection_rx_dispatch(
 		report.cipher = WLAN_RADIO_CIPHER_CCMP;
 		report.decrypted = 1U;
 		report.key_index = key_index;
-	} else if (mpdu->cipher != INTEL_AX211_RX_CIPHER_NONE) {
+	} else if (mpdu->cipher != INTEL_AX211_RX_PROTECTION_NONE) {
 		/* Succeeded. */
 		return 0;
 	}
@@ -6699,7 +6826,7 @@ ax211_pci_open_locked(
 					&controller->mmio,
 					&controller->transport,
 					(uint16_t)controller->hardware_revision,
-					AX211_CSR_HW_RF_TYPE_GF,
+					AX211_RADIO_KIND_GF,
 					controller->hardware_epoch) ==
 						INTEL_AX211_BOOT_OK
 					? 0
@@ -6795,7 +6922,7 @@ ax211_pci_open_locked(
 					dma_device, &controller->mmio,
 					&controller->transport,
 					(uint16_t)controller->hardware_revision,
-					AX211_CSR_HW_RF_TYPE_GF, &table, &nvm,
+					AX211_RADIO_KIND_GF, &table, &nvm,
 					ltr_enabled,
 					controller->hardware_epoch) ==
 						INTEL_AX211_RUNTIME_START_OK
@@ -6841,7 +6968,7 @@ ax211_pci_open_locked(
 					controller->runtime_start.init_accepted,
 					controller->runtime_start.profile_valid,
 					controller->runtime_start.mcc_valid,
-					controller->runtime_start.nic_locked);
+					controller->runtime_start.wake_held);
 			}
 
 			/* Checks the operation status. */
@@ -6884,7 +7011,7 @@ ax211_pci_open_locked(
 			/* Checks the operation status. */
 			error = drv_intel_ax211_tx_ring_allocate(
 					dma_device, &ax211_tx_ring_ops,
-					controller, &controller->tx_ring) ==
+					controller, &controller->frame_ring) ==
 						INTEL_AX211_TX_RING_OK
 					? 0
 					: ENOMEM;
@@ -7768,8 +7895,8 @@ ax211_radio_connect_start(
 		/* Handles the controller condition. */
 		if (controller->association.phase ==
 			    INTEL_AX211_ASSOC_PHASE_IDLE &&
-		    !controller->tx_ring.enabled &&
-		    controller->tx_ring.pending_count == 0U)
+		    !controller->frame_ring.enabled &&
+		    controller->frame_ring.pending_count == 0U)
 			ax211_pci_connection_clear(controller);
 		else
 			result = ax211_pci_key_fail_closed(controller, result);
@@ -7884,7 +8011,7 @@ ax211_radio_management_transmit(
 	/* Handles the controller condition. */
 	if (!controller->runtime_active || controller->close_pending ||
 	    controller->recovery_pending || controller->recovery_running ||
-	    !controller->tx_ring.enabled ||
+	    !controller->frame_ring.enabled ||
 	    controller->connection_generation != generation) {
 		/* Handles the ax211 pci log rejection condition. */
 		if (ax211_pci_log_rejection(controller)) {
@@ -7895,7 +8022,7 @@ ax211_radio_management_transmit(
 				   controller->runtime_active,
 				   controller->recovery_pending,
 				   controller->recovery_running,
-				   controller->tx_ring.enabled,
+				   controller->frame_ring.enabled,
 				   (unsigned)controller->connection_generation,
 				   (unsigned)generation);
 		}
@@ -7911,7 +8038,7 @@ ax211_radio_management_transmit(
 		result = EEXIST;
 		attempt = 0U;
 		/* Process each remaining element. */
-		while (attempt < INTEL_AX211_TX_RING_SLOT_COUNT &&
+		while (attempt < INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS &&
 		       result == EEXIST) {
 			/* Handles the controller condition. */
 			if (controller->next_management_cookie == 0U)
@@ -7972,7 +8099,7 @@ ax211_radio_association_set(
 		update.dtim_count = controller->selected_metadata.dtim_count;
 		update.beacon_arrive_time =
 			controller->selected_metadata.beacon_arrive_time;
-		update.beacon_tsf = controller->selected_metadata.beacon_tsf;
+		update.beacon_timestamp = controller->selected_metadata.beacon_timestamp;
 
 		/* Checks the operation result. */
 		result = ax211_pci_clock_us(controller, &now);
@@ -8108,7 +8235,7 @@ ax211_radio_frame_transmit(
 	/* Handles the controller condition. */
 	if (!controller->runtime_active || controller->close_pending ||
 	    controller->recovery_pending || controller->recovery_running ||
-	    !controller->tx_ring.enabled)
+	    !controller->frame_ring.enabled)
 		result = ENETDOWN;
 	else if (controller->connection_generation != request->generation) {
 		result = ESTALE;

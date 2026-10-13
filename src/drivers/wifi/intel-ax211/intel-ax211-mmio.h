@@ -1,52 +1,32 @@
 /* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
 
 /*
- * zedBSD Intel AX211 private MMIO contract
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
- * commit 0f464d413c50396e4e6cd70948f15613d6a73081.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private MMIO contract.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * iwl-csr.h, iwl-prph.h and iwl-config.h.  They were cross-checked against
+ * OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each
+ * block of values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_MMIO_H
@@ -54,11 +34,23 @@
 
 #include <stdint.h>
 
+/*
+ * The device profile the MMIO layer accepts.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-config.h (MAC type codes 0x37 So and 0x43
+ * SoF, radio kind 0x10d Garfield Peak) and cfg/ax210.c (the upper-CPU
+ * periphery base 0x300000 of the AX210 family).  drv_intel_ax211_mmio_init()
+ * refuses any other profile, a radio that runs two bands at once, an
+ * integrated part, or another periphery base, because the register
+ * sequences in intel-ax211-mmio.c were established for this combination
+ * only.  The image loader size is that of the loader record of the pinned
+ * firmware image (13944 bytes), and publish_gen3 refuses any other length.
+ */
 #define INTEL_AX211_MMIO_MAC_SO 0x37U
 #define INTEL_AX211_MMIO_MAC_SOF 0x43U
 #define INTEL_AX211_MMIO_RF_GF 0x10dU
-#define INTEL_AX211_MMIO_UMAC_PRPH_OFFSET 0x300000U
-#define INTEL_AX211_MMIO_IML_SIZE 13944U
+#define INTEL_AX211_MMIO_UPPER_CPU_PRPH_BASE 0x300000U
+#define INTEL_AX211_MMIO_LOADER_IMAGE_SIZE 13944U
 
 enum intel_ax211_mmio_result {
 	INTEL_AX211_MMIO_OK = 0,
@@ -80,9 +72,9 @@ enum intel_ax211_mmio_wait {
 struct intel_ax211_mmio_profile {
 	uint16_t mac_type;
 	uint16_t rf_type;
-	uint8_t cdb;
+	uint8_t concurrent_bands;
 	uint8_t integrated;
-	uint32_t umac_prph_offset;
+	uint32_t upper_cpu_prph_base;
 };
 
 struct intel_ax211_mmio_ops {
@@ -106,7 +98,7 @@ struct intel_ax211_mmio {
 	const struct intel_ax211_mmio_ops *ops;
 	void *argument;
 	struct intel_ax211_mmio_profile profile;
-	unsigned int nic_lock_depth;
+	unsigned int wake_hold_depth;
 	int prepared;
 	int reset_done;
 	int apm_ready;
@@ -117,13 +109,13 @@ int drv_intel_ax211_mmio_init(struct intel_ax211_mmio *mmio,
 			      const struct intel_ax211_mmio_ops *ops,
 			      void *argument,
 			      const struct intel_ax211_mmio_profile *profile);
-int drv_intel_ax211_mmio_prepare_card_hw(struct intel_ax211_mmio *mmio);
+int drv_intel_ax211_mmio_take_ownership(struct intel_ax211_mmio *mmio);
 int drv_intel_ax211_mmio_sw_reset(struct intel_ax211_mmio *mmio);
 int drv_intel_ax211_mmio_apm_init(struct intel_ax211_mmio *mmio);
 /* Success guarantees a STOP_MASTER request, APM stop, and settled reset. */
 int drv_intel_ax211_mmio_stop(struct intel_ax211_mmio *mmio);
-int drv_intel_ax211_mmio_nic_lock(struct intel_ax211_mmio *mmio);
-int drv_intel_ax211_mmio_nic_unlock(struct intel_ax211_mmio *mmio);
+int drv_intel_ax211_mmio_wake_hold(struct intel_ax211_mmio *mmio);
+int drv_intel_ax211_mmio_wake_release(struct intel_ax211_mmio *mmio);
 int drv_intel_ax211_mmio_read_mac(struct intel_ax211_mmio *mmio,
 				  uint8_t mac_address[6]);
 int drv_intel_ax211_mmio_prph_read32(struct intel_ax211_mmio *mmio,

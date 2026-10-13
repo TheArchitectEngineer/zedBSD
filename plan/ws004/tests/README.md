@@ -944,14 +944,14 @@ production metadata, absence from the default image, and the visible WHENCE
 
 ```sh
 plan/ws004/tests/run-intelax211-firmware-package-test.sh
-plan/ws004/tests/run-intel-ax211-driver-license-test.sh
 ```
 
 This package gate does not claim that the AX211 PCI function attaches or that
-firmware starts.  The automatically selected hidden driver-notice package is
-separate from the optional firmware package: every image with the kernel
-driver carries the complete OpenBSD `iwx(4)` ISC and Intel BSD-3-Clause terms
-at `/usr/share/licenses/intel-ax211-driver/LICENSE`.  The AX211-private pure
+firmware starts.  The driver itself is the project's own code under Zlib since
+ws218-p002 (2026-10-13): the separate driver-notice package
+(`intel-ax211-driver-license`) and its test were withdrawn, and the values
+taken from Intel's headers are cited at their blocks in the source.  The
+firmware package keeps its Intel notice.  The AX211-private pure
 core then validates the complete
 cached API89 firmware and PNVM, strict TLV bounds and section inventories,
 Gen3 descriptors/context, command/event codecs, ring wrap, and staging scrub

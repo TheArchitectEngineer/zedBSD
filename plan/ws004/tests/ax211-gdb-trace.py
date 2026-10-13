@@ -28,7 +28,7 @@ KLOG_BYTES = int(os.environ.get('AX211_TRACE_KLOG_BYTES', '6000'))
 EVENT_FUNCTIONS = [
     'hal_fatal', 'kern_fatal',
     'drv_intel_ax211_mmio_stop', 'drv_intel_ax211_mmio_sw_reset',
-    'drv_intel_ax211_mmio_prepare_card_hw', 'drv_intel_ax211_mmio_apm_init',
+    'drv_intel_ax211_mmio_take_ownership', 'drv_intel_ax211_mmio_apm_init',
     'ax211_pci_session_stop', 'ax211_runtime_start_stop_and_release',
     'ax211_pci_interrupt_drain', 'ax211_pci_recovery_latch_locked',
     'ax211_pci_recovery_run_locked', 'ax211_pci_close_locked',

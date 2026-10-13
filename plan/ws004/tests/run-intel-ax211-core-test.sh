@@ -5,8 +5,9 @@ python3 "$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)/plan/tools/driver
 
 test_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$test_dir/../../.." && pwd)
-build_dir=$(mktemp -d "${TMPDIR:-/tmp}/zedbsd-intel-ax211.XXXXXX")
-trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
+# The work directory stays in build/tmp; deleting it is Q1's step (plan/tools/q1-clean.sh).
+mkdir -p "$repo_root/build/tmp"
+build_dir=$(mktemp -d "$repo_root/build/tmp/zedbsd-intel-ax211.XXXXXX")
 
 cc=${CC:-cc}
 warnings="-std=c11 -Wall -Wextra -Werror"
@@ -19,6 +20,7 @@ abi_includes="$abi_includes -I$repo_root/include -I$repo_root/src"
 host_includes="-I$repo_root/include"
 firmware_cache="$repo_root/build/sources/firmware/intelax211"
 firmware_cache="$firmware_cache/dc85ccedc9c973682fbcf4d628ca61174bcc3120"
+firmware_cache=${INTEL_AX211_FIRMWARE_TEST_CACHE:-$firmware_cache}
 firmware="$firmware_cache/iwlwifi-so-a0-gf-a0-89.ucode"
 pnvm="$firmware_cache/iwlwifi-so-a0-gf-a0.pnvm"
 

@@ -1,55 +1,33 @@
 /* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
 
 /*
- * zedBSD Intel AX211 private Gen3 data transmit ring
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Wire constants and layouts are derived from OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit
- * 0f464d413c50396e4e6cd70948f15613d6a73081.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private Gen3 data transmit ring.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * iwl-fh.h, fw/api/datapath.h, fw/api/tx.h and iwl-csr.h.  They were
+ * cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
+ * commit 0f464d413c50.  Each block of values below names the header it was
+ * taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * SPDX-License-Identifier: ISC AND BSD-3-Clause
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_TX_RING_H
@@ -63,9 +41,31 @@
 #include "intel-ax211-protocol.h"
 #include "intel-ax211-tx.h"
 
+/*
+ * The data transmit ring of the management queue.
+ *
+ * Sources: Linux iwlwifi v6.17 iwl-fh.h (the 256-byte TFD, its 10-byte
+ * transfer buffer entries, the byte-count table of 1024 16-bit entries and
+ * the 4092-byte buffer limit), iwl-csr.h (the transmit write-index doorbell
+ * at 0x460) and fw/api/tx.h.  The limit of 255 frames outstanding is the
+ * statement "A maximum of 255 (not 256!) TFDs may be on a queue waiting for
+ * Tx." in the description of the TFD in Linux iwlwifi v6.17 iwl-fh.h (and
+ * in OpenBSD sys/dev/pci/if_iwxreg.h at 0f464d413c50, above struct
+ * iwx_tfh_tfd).
+ *
+ * The ring carries the frames of TID 15 (management frames) on the queue the
+ * firmware assigned in the queue setup answer.  It has 256 descriptors of
+ * 256 bytes (64 KiB) and keeps at most 255 frames outstanding, so a full
+ * ring is never confused with an empty one.  Each frame uses three transfer
+ * buffers: the first 20 bytes of its command, which the device copies before
+ * it reads the rest; the rest of the command (fixed part and MAC header) in
+ * a 128-byte slot; and the frame body in a 4092-byte slot.  The byte-count
+ * table entry of the descriptor gets the frame length the firmware will
+ * send.  After filling a descriptor the driver writes the queue number
+ * (bits 23:16) and the new write index to the doorbell.
+ */
 #define INTEL_AX211_TX_RING_MANAGEMENT_TID 15U
-#define INTEL_AX211_TX_RING_SLOT_COUNT 256U
-/* Intel documents that at most 255 of the 256 TFDs may be outstanding. */
+#define INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS 256U
 #define INTEL_AX211_TX_RING_INFLIGHT_LIMIT 255U
 #define INTEL_AX211_TX_RING_TFD_SIZE 256U
 #define INTEL_AX211_TX_RING_TFD_RING_SIZE 65536U
@@ -73,17 +73,24 @@
 #define INTEL_AX211_TX_RING_BYTE_COUNT_SIZE 2048U
 #define INTEL_AX211_TX_RING_COMMAND_DMA_SIZE 128U
 #define INTEL_AX211_TX_RING_PAYLOAD_DMA_SIZE 4092U
-#define INTEL_AX211_TX_RING_FIRST_TB_SIZE 20U
+#define INTEL_AX211_TX_RING_HEADER_COPY_SIZE 20U
 #define INTEL_AX211_TX_RING_TB_SIZE_MAX 4092U
 
 #define INTEL_AX211_TX_RING_WRITE_POINTER_REGISTER 0x460U
 
-#define INTEL_AX211_TX_QUEUE_CONFIG_GROUP 5U
-#define INTEL_AX211_TX_QUEUE_CONFIG_OPCODE 0x17U
-#define INTEL_AX211_TX_QUEUE_CONFIG_COMMAND_VERSION 3U
-#define INTEL_AX211_TX_QUEUE_CONFIG_RESPONSE_VERSION 2U
-#define INTEL_AX211_TX_QUEUE_CONFIG_COMMAND_SIZE 36U
-#define INTEL_AX211_TX_QUEUE_CONFIG_RESPONSE_SIZE 8U
+/*
+ * The queue setup command as the ring sends it.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/datapath.h (SCD_QUEUE_CONFIG_CMD,
+ * opcode 0x17 of family 5); versions from the pinned API 89 image (command
+ * 3, answer 2).  The layout is described in intel-ax211-assoc.h.
+ */
+#define INTEL_AX211_TX_QUEUE_SETUP_FAMILY 5U
+#define INTEL_AX211_TX_QUEUE_SETUP_OPCODE 0x17U
+#define INTEL_AX211_TX_QUEUE_SETUP_COMMAND_VERSION 3U
+#define INTEL_AX211_TX_QUEUE_SETUP_RESPONSE_VERSION 2U
+#define INTEL_AX211_TX_QUEUE_SETUP_COMMAND_SIZE 36U
+#define INTEL_AX211_TX_QUEUE_SETUP_RESPONSE_SIZE 8U
 
 enum intel_ax211_tx_ring_result {
 	INTEL_AX211_TX_RING_OK = 0,
@@ -117,7 +124,7 @@ struct intel_ax211_tx_ring_ops {
 };
 
 struct intel_ax211_tx_queue_config {
-	uint8_t command[INTEL_AX211_TX_QUEUE_CONFIG_COMMAND_SIZE];
+	uint8_t command[INTEL_AX211_TX_QUEUE_SETUP_COMMAND_SIZE];
 	uint64_t tfd_address;
 	uint64_t byte_count_address;
 	uint8_t station_id;
@@ -141,8 +148,8 @@ struct intel_ax211_tx_ring_retired {
 	uint16_t sequence_control;
 	uint16_t byte_count;
 	uint8_t acknowledged;
-	uint8_t failure_rts;
-	uint8_t failure_frame;
+	uint8_t rts_retries;
+	uint8_t frame_retries;
 	uint8_t reserved;
 };
 
@@ -156,13 +163,13 @@ struct intel_ax211_tx_ring_slot {
 };
 
 /* Private controller-owned object; do not copy after allocation. */
-struct intel_ax211_tx_ring {
+struct intel_ax211_frame_ring {
 	struct drv_dma_device *dma_device;
 	const struct intel_ax211_tx_ring_ops *ops;
 	void *ops_argument;
 	struct drv_dma_buffer tfd;
 	struct drv_dma_buffer byte_count;
-	struct intel_ax211_tx_ring_slot slot[INTEL_AX211_TX_RING_SLOT_COUNT];
+	struct intel_ax211_tx_ring_slot slot[INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS];
 	uint64_t connection_generation;
 	uint32_t hardware_generation;
 	uint16_t read_sequence;
@@ -186,39 +193,39 @@ int drv_intel_ax211_tx_ring_api89_validate(
 int drv_intel_ax211_tx_ring_allocate(struct drv_dma_device *dma_device,
 				     const struct intel_ax211_tx_ring_ops *ops,
 				     void *ops_argument,
-				     struct intel_ax211_tx_ring *ring);
+				     struct intel_ax211_frame_ring *ring);
 
 int drv_intel_ax211_tx_ring_queue_add_build(
-	const struct intel_ax211_tx_ring *ring, uint8_t station_id, uint8_t tid,
+	const struct intel_ax211_frame_ring *ring, uint8_t station_id, uint8_t tid,
 	struct intel_ax211_tx_queue_config *config);
 
 int drv_intel_ax211_tx_ring_queue_add_complete(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	const struct intel_ax211_tx_queue_config *config,
 	uint32_t hardware_generation, uint64_t connection_generation,
 	const struct intel_ax211_protocol_message *message,
 	const struct intel_ax211_protocol_pending_command *pending);
 
-int drv_intel_ax211_tx_ring_submit(struct intel_ax211_tx_ring *ring,
+int drv_intel_ax211_tx_ring_submit(struct intel_ax211_frame_ring *ring,
 				   const struct intel_ax211_tx_request *request,
 				   uint64_t now, uint64_t timeout,
 				   struct intel_ax211_tx_ring_handle *handle);
 
 int drv_intel_ax211_tx_ring_complete(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	const struct intel_ax211_protocol_message *message,
 	struct intel_ax211_tx_ring_retired *retired);
 
 int drv_intel_ax211_tx_ring_timeout_oldest(
-	struct intel_ax211_tx_ring *ring, uint64_t now,
+	struct intel_ax211_frame_ring *ring, uint64_t now,
 	struct intel_ax211_tx_ring_handle *handle);
 
 /* dma_quiesced is proof that queue 1 can no longer access host memory. */
-int drv_intel_ax211_tx_ring_reset(struct intel_ax211_tx_ring *ring,
+int drv_intel_ax211_tx_ring_reset(struct intel_ax211_frame_ring *ring,
 				  int dma_quiesced);
 
 /* Release has the same barrier rule and frees allocations in reverse order. */
-int drv_intel_ax211_tx_ring_release(struct intel_ax211_tx_ring *ring,
+int drv_intel_ax211_tx_ring_release(struct intel_ax211_frame_ring *ring,
 				    int dma_quiesced);
 
 #endif

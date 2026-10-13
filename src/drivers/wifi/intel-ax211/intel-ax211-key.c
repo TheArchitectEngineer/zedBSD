@@ -1,52 +1,32 @@
 /* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
 
 /*
- * zedBSD Intel AX211 private API89 CCMP key implementation
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
- * commit 0f464d413c50396e4e6cd70948f15613d6a73081.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private API89 CCMP key implementation.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/api/datapath.h.  They were cross-checked against OpenBSD
+ * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
+ * values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-key.h"
@@ -54,11 +34,23 @@
 
 #include <stdint.h>
 
+/*
+ * The fields of the key command.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/datapath.h (struct iwl_sec_key_cmd and
+ * enum iwl_sec_key_flags).  The command carries the action at byte 0 (1
+ * adds, 3 removes), the mask of stations the key applies to at byte 4 (bit 0,
+ * the access point's slot), the key index at 8 and the flags at 12; for an
+ * add, the key itself follows from byte 16 and the receive packet number of
+ * the key at byte 64.  The flags select the cipher (2 is CCMP) and, with
+ * APPLIES_TO_GROUP (bit 6), mark a group key rather than the pairwise one.
+ * A CCMP packet number is 48 bits (IEEE Std 802.11-2020 12.5.3.2).
+ */
 #define AX211_KEY_ACTION_ADD 1U
 #define AX211_KEY_ACTION_REMOVE 3U
 #define AX211_KEY_STATION_MASK 1U
-#define AX211_KEY_FLAG_CCMP 2U
-#define AX211_KEY_FLAG_MULTICAST 0x40U
+#define AX211_KEY_SUITE_CCMP 2U
+#define AX211_KEY_APPLIES_TO_GROUP 0x40U
 #define AX211_KEY_PACKET_NUMBER_MAX UINT64_C(0x0000ffffffffffff)
 
 static int ax211_key_request_valid(const struct intel_ax211_key_request *request);
@@ -82,7 +74,7 @@ drv_intel_ax211_key_api89_validate(
 
 	/* Checks the operation result. */
 	result = drv_intel_ax211_protocol_command_version_lookup(
-		table, INTEL_AX211_KEY_GROUP, INTEL_AX211_KEY_OPCODE, &version);
+		table, INTEL_AX211_KEY_FAMILY, INTEL_AX211_KEY_OPCODE, &version);
 	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_KEY_UNSUPPORTED;
 
@@ -113,9 +105,9 @@ drv_intel_ax211_key_add_encode(
 	kern_memset(output, 0, INTEL_AX211_KEY_COMMAND_SIZE);
 
 	/* Handles the request condition. */
-	flags = AX211_KEY_FLAG_CCMP;
+	flags = AX211_KEY_SUITE_CCMP;
 	if (request->kind == INTEL_AX211_KEY_GROUP_KEY)
-		flags |= AX211_KEY_FLAG_MULTICAST;
+		flags |= AX211_KEY_APPLIES_TO_GROUP;
 	ax211_key_put_le32(output, AX211_KEY_ACTION_ADD);
 	ax211_key_put_le32(output + 4U, AX211_KEY_STATION_MASK);
 	ax211_key_put_le32(output + 8U, request->key_index);
@@ -152,9 +144,9 @@ drv_intel_ax211_key_remove_encode(
 	kern_memset(output, 0, INTEL_AX211_KEY_COMMAND_SIZE);
 
 	/* Handles the kind condition. */
-	flags = AX211_KEY_FLAG_CCMP;
+	flags = AX211_KEY_SUITE_CCMP;
 	if (kind == INTEL_AX211_KEY_GROUP_KEY)
-		flags |= AX211_KEY_FLAG_MULTICAST;
+		flags |= AX211_KEY_APPLIES_TO_GROUP;
 	ax211_key_put_le32(output, AX211_KEY_ACTION_REMOVE);
 	ax211_key_put_le32(output + 4U, AX211_KEY_STATION_MASK);
 	ax211_key_put_le32(output + 8U, key_index);

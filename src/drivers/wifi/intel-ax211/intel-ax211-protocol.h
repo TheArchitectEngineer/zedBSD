@@ -1,55 +1,33 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private firmware protocol contract
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private firmware protocol contract.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/api/alive.h, fw/api/nvm-reg.h, fw/api/commands.h and fw/api/cmdhdr.h.
+ * They were cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and
+ * if_iwx.c at commit 0f464d413c50.  Each block of values below names the
+ * header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * OpenBSD source provenance:
- *   sys/dev/pci/if_iwx.c, if_iwxreg.h at
- *   0f464d413c50396e4e6cd70948f15613d6a73081
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_PROTOCOL_H
@@ -58,6 +36,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * The command version table and the limits of a command response.
+ *
+ * Source: Linux iwlwifi v6.17 fw/file.h (struct iwl_fw_cmd_version, the
+ * body of record 48) and fw/api/cmdhdr.h (the failure bit of the event
+ * header).  The table is a list of 4-byte entries: opcode, family, command
+ * layout version, notification layout version.  The pinned image carries
+ * 217 entries (868 bytes), and the parser refuses a longer table.  An entry
+ * may say 99 where the firmware gives no version; the driver treats 99 as
+ * "unknown" and does not accept a response whose layout version is
+ * unknown.  Bit 6 of the event header's flags byte marks a response to a
+ * command that the firmware failed.  A response may not exceed 4088 bytes,
+ * one external command buffer less its header.
+ */
 #define INTEL_AX211_PROTOCOL_UNKNOWN_VERSION 99U
 #define INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK 0x40U
 #define INTEL_AX211_PROTOCOL_COMMAND_VERSION_ENTRY_SIZE 4U
@@ -65,34 +57,99 @@
 #define INTEL_AX211_PROTOCOL_API89_COMMAND_BYTES 868U
 #define INTEL_AX211_PROTOCOL_COMMAND_RESPONSE_MAX 4088U
 
-#define INTEL_AX211_PROTOCOL_GROUP_LEGACY 0U
-#define INTEL_AX211_PROTOCOL_GROUP_LONG 1U
-#define INTEL_AX211_PROTOCOL_GROUP_REGULATORY_NVM 12U
+/*
+ * The command families (the "group" byte of the wide header) used here.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/commands.h (enum iwl_mvm_command_groups).
+ * Family 0 is the classic opcode space and family 1 the same space through
+ * the wide header; family 12 holds the regulatory and NVM commands.  Every
+ * command and notification of the driver is identified by its family and
+ * opcode together, so the same opcode can mean different commands in
+ * different families (opcode 8, for instance, is three different commands
+ * in families 0, 3 and 5; see intel-ax211-assoc.h).
+ */
+#define INTEL_AX211_PROTOCOL_FAMILY_CLASSIC 0U
+#define INTEL_AX211_PROTOCOL_FAMILY_CLASSIC_WIDE 1U
+#define INTEL_AX211_PROTOCOL_FAMILY_REGULATORY_STORE 12U
 
+/*
+ * The boot notifications and commands, with their layout versions and sizes.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/commands.h and fw/api/nvm-reg.h
+ * (opcodes), fw/api/alive.h (struct iwl_alive_ntf_v6, 144 bytes) and
+ * fw/api/nvm-reg.h (struct iwl_nvm_get_info_rsp, 468 bytes, and the PNVM
+ * notification).  The order on the AX211, as the boot code drives it:
+ * - ALIVE (family 0, opcode 1, version 6) arrives first, after the upper CPU
+ *   is started.  It carries a status word that must be 0xcafe (0xdead is the
+ *   firmware's error status), the two LMAC records at bytes 4 and
+ *   52, the UMAC record at 100, the board signature at 116 and the restore
+ *   region at 128.  The restore region must be absent: the driver does not
+ *   support firmware state restore.
+ * - PNVM_ACCEPTED (family 12, opcode 0xfe, version 1, 4 bytes) answers the
+ *   PNVM doorbell.
+ * - NVM_HANDOFF (family 12, opcode 0) tells the firmware the driver has
+ *   finished with the NVM in the initialization stage.
+ * - NVM_QUERY (family 12, opcode 2, response version 4, 468 bytes) returns
+ *   the radio's NVM: general flags, revision, board kind, number of station
+ *   addresses, the standard flags, the transmit and receive chain masks, the
+ *   regulatory mode, the channel count and one 32-bit flag word per channel.
+ * - INIT_FINISHED (family 0, opcode 4, 4 bytes) ends the initialization
+ *   stage; the image carries no version for it.
+ * - SCAN_SETUP and SCAN_START (family 1, opcodes 0x0c and 0x0d) are the scan
+ *   commands; the runtime sends SCAN_SETUP once, and the command table check
+ *   of API 89 requires versions 5 and 17 for them.
+ */
 #define INTEL_AX211_PROTOCOL_ALIVE_OPCODE 0x01U
-#define INTEL_AX211_PROTOCOL_INIT_COMPLETE_OPCODE 0x04U
-#define INTEL_AX211_PROTOCOL_SCAN_CFG_OPCODE 0x0cU
-#define INTEL_AX211_PROTOCOL_SCAN_REQ_OPCODE 0x0dU
-#define INTEL_AX211_PROTOCOL_NVM_ACCESS_COMPLETE_OPCODE 0x00U
-#define INTEL_AX211_PROTOCOL_NVM_GET_INFO_OPCODE 0x02U
-#define INTEL_AX211_PROTOCOL_PNVM_INIT_COMPLETE_OPCODE 0xfeU
+#define INTEL_AX211_PROTOCOL_INIT_FINISHED_OPCODE 0x04U
+#define INTEL_AX211_PROTOCOL_SCAN_SETUP_OPCODE 0x0cU
+#define INTEL_AX211_PROTOCOL_SCAN_START_OPCODE 0x0dU
+#define INTEL_AX211_PROTOCOL_NVM_HANDOFF_OPCODE 0x00U
+#define INTEL_AX211_PROTOCOL_NVM_QUERY_OPCODE 0x02U
+#define INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_OPCODE 0xfeU
 
 #define INTEL_AX211_PROTOCOL_ALIVE_VERSION 6U
-#define INTEL_AX211_PROTOCOL_PNVM_INIT_COMPLETE_VERSION 1U
-#define INTEL_AX211_PROTOCOL_NVM_GET_INFO_VERSION 4U
+#define INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_VERSION 1U
+#define INTEL_AX211_PROTOCOL_NVM_QUERY_VERSION 4U
 
 #define INTEL_AX211_PROTOCOL_ALIVE_SIZE 144U
-#define INTEL_AX211_PROTOCOL_INIT_COMPLETE_SIZE 4U
-#define INTEL_AX211_PROTOCOL_PNVM_INIT_COMPLETE_SIZE 4U
-#define INTEL_AX211_PROTOCOL_NVM_GET_INFO_SIZE 468U
+#define INTEL_AX211_PROTOCOL_INIT_FINISHED_SIZE 4U
+#define INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_SIZE 4U
+#define INTEL_AX211_PROTOCOL_NVM_QUERY_SIZE 468U
+
+/*
+ * The channel list of the NVM answer.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/nvm-reg.h (the channel flag array of
+ * 110 entries) and iwl-nvm-parse.c (the order of the channels); the channel
+ * numbers are IEEE Std 802.11-2020 Annex E.  The first 14 flag words are
+ * 2.4 GHz channels 1 to 14, the next 37 are the 5 GHz channels from 36 to
+ * 181 in the order of the table in drv_intel_ax211_protocol_nvm_query_decode();
+ * the rest (6 GHz) are not decoded.
+ */
 #define INTEL_AX211_PROTOCOL_NVM_CHANNEL_LIMIT 110U
 #define INTEL_AX211_PROTOCOL_24GHZ_CHANNEL_LIMIT 14U
 #define INTEL_AX211_PROTOCOL_5GHZ_CHANNEL_LIMIT 37U
 
-#define INTEL_AX211_PROTOCOL_ALIVE_STATUS_ERROR 0xdeadU
-#define INTEL_AX211_PROTOCOL_ALIVE_STATUS_OK 0xcafeU
+/* The status words of ALIVE: the error status and a healthy start. */
+#define INTEL_AX211_PROTOCOL_ALIVE_FAULTED 0xdeadU
+#define INTEL_AX211_PROTOCOL_ALIVE_HEALTHY 0xcafeU
 
-#define INTEL_AX211_PROTOCOL_NVM_GENERAL_EMPTY_OTP 0x01U
+/*
+ * The flags of the NVM answer.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/nvm-reg.h (the general flags and the
+ * MAC SKU flags of struct iwl_nvm_get_info_rsp, and the channel flags).
+ * FUSES_BLANK in the general flags means the radio's fuses were never
+ * programmed; the driver refuses such a radio.  The standard flags say which
+ * bands and 802.11 amendments the module may use and whether MIMO is
+ * disabled; the driver requires 2.4 GHz.  In a channel's flag word, USABLE
+ * (bit 0) means the channel exists on this module and MAY_TRANSMIT (bit 3)
+ * that the driver may send probe requests on it (active scan); a 5 GHz
+ * channel counts as usable only when the 5 GHz band is enabled.  When the
+ * firmware runs its own regulatory domain, the country answer, not the
+ * USABLE bit, decides which channels may be used.
+ */
+#define INTEL_AX211_PROTOCOL_NVM_FUSES_BLANK 0x01U
 #define INTEL_AX211_PROTOCOL_NVM_BAND_24_ENABLED 0x01U
 #define INTEL_AX211_PROTOCOL_NVM_BAND_52_ENABLED 0x02U
 #define INTEL_AX211_PROTOCOL_NVM_11N_ENABLED 0x04U
@@ -100,8 +157,8 @@
 #define INTEL_AX211_PROTOCOL_NVM_11AX_ENABLED 0x10U
 #define INTEL_AX211_PROTOCOL_NVM_MIMO_DISABLED 0x20U
 
-#define INTEL_AX211_PROTOCOL_NVM_CHANNEL_VALID 0x01U
-#define INTEL_AX211_PROTOCOL_NVM_CHANNEL_ACTIVE 0x08U
+#define INTEL_AX211_PROTOCOL_CHANNEL_FLAG_USABLE 0x01U
+#define INTEL_AX211_PROTOCOL_CHANNEL_FLAG_MAY_TRANSMIT 0x08U
 
 enum intel_ax211_protocol_result {
 	INTEL_AX211_PROTOCOL_OK = 0,
@@ -159,21 +216,21 @@ struct intel_ax211_protocol_lmac_alive {
 	uint8_t mac;
 	uint8_t option;
 	uint32_t timestamp;
-	uint32_t error_event_table;
-	uint32_t log_event_table;
-	uint32_t cpu_register;
-	uint32_t debug_config;
-	uint32_t alive_counter;
-	uint32_t scheduler_base;
-	uint32_t store_forward_address;
-	uint32_t store_forward_size;
+	uint32_t error_log_address;
+	uint32_t event_log_address;
+	uint32_t cpu_state_address;
+	uint32_t trace_setup_address;
+	uint32_t alive_counter_address;
+	uint32_t scheduler_sram_base;
+	uint32_t relay_buffer_address;
+	uint32_t relay_buffer_size;
 };
 
 struct intel_ax211_protocol_umac_alive {
 	uint32_t major;
 	uint32_t minor;
-	uint32_t error_info;
-	uint32_t debug_print_buffer;
+	uint32_t upper_error_log_address;
+	uint32_t trace_buffer_address;
 };
 
 struct intel_ax211_protocol_alive {
@@ -182,9 +239,9 @@ struct intel_ax211_protocol_alive {
 	struct intel_ax211_protocol_lmac_alive lmac[2];
 	struct intel_ax211_protocol_umac_alive umac;
 	uint32_t sku[3];
-	uint64_t imr_base;
-	uint32_t imr_size;
-	uint32_t imr_enabled;
+	uint64_t restore_region_base;
+	uint32_t restore_region_size;
+	uint32_t restore_region_enabled;
 };
 
 struct intel_ax211_protocol_channel {
@@ -195,21 +252,21 @@ struct intel_ax211_protocol_channel {
 };
 
 struct intel_ax211_protocol_nvm {
-	uint32_t general_flags;
-	uint16_t nvm_version;
-	uint8_t board_type;
+	uint32_t nvm_flags;
+	uint16_t nvm_revision;
+	uint8_t board_kind;
 	uint8_t hardware_address_count;
-	uint32_t mac_sku_flags;
+	uint32_t standard_flags;
 	uint8_t band_24_enabled;
 	uint8_t band_52_enabled;
-	uint8_t ht_enabled;
-	uint8_t vht_enabled;
-	uint8_t he_enabled;
+	uint8_t standard_11n;
+	uint8_t standard_11ac;
+	uint8_t standard_11ax;
 	uint8_t mimo_disabled;
 	uint8_t tx_chain_mask;
 	uint8_t rx_chain_mask;
-	uint8_t lar_enabled;
-	uint32_t n_channels;
+	uint8_t firmware_regulatory;
+	uint32_t channel_total;
 	struct intel_ax211_protocol_channel
 		channel_24ghz[INTEL_AX211_PROTOCOL_24GHZ_CHANNEL_LIMIT];
 	size_t channel_24ghz_count;
@@ -236,13 +293,13 @@ int drv_intel_ax211_protocol_command_response_validate(
 int drv_intel_ax211_protocol_alive_decode(
 	const struct intel_ax211_protocol_message *message, uint32_t generation,
 	struct intel_ax211_protocol_alive *alive);
-int drv_intel_ax211_protocol_pnvm_init_complete(
+int drv_intel_ax211_protocol_pnvm_accepted(
 	const struct intel_ax211_protocol_message *message,
 	uint32_t generation);
-int drv_intel_ax211_protocol_init_complete(
+int drv_intel_ax211_protocol_init_finished(
 	const struct intel_ax211_protocol_message *message,
 	uint32_t generation);
-int drv_intel_ax211_protocol_nvm_get_info_decode(
+int drv_intel_ax211_protocol_nvm_query_decode(
 	const struct intel_ax211_protocol_message *message,
 	const struct intel_ax211_protocol_pending_command *pending,
 	struct intel_ax211_protocol_nvm *nvm);

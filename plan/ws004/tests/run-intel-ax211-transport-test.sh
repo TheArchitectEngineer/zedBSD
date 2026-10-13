@@ -5,8 +5,9 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 python3 "$repo_root/plan/tools/driver-fragments/prepare.py" \
     --source src/drivers/wifi/intel-ax211/intel-ax211.c
-fixture_dir=$(mktemp -d "${TMPDIR:-/tmp}/zedbsd-ax211-transport.XXXXXX")
-trap 'rm -rf "$fixture_dir"' EXIT HUP INT TERM
+# The work directory stays in build/tmp; deleting it is Q1's step (plan/tools/q1-clean.sh).
+mkdir -p "$repo_root/build/tmp"
+fixture_dir=$(mktemp -d "$repo_root/build/tmp/zedbsd-ax211-transport.XXXXXX")
 cc=${CC:-cc}
 core="$repo_root/build/driver-fragments/src/drivers/intel-ax211.c"
 transport="$repo_root/src/drivers/wifi/intel-ax211/intel-ax211-transport.c"
