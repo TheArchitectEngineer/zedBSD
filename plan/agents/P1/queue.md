@@ -94,3 +94,4 @@ Next（予約、2026-10-03 user）: q635 BUG-149（kernel の poll の SHUT_WR �
 - q948 結果（2026-10-13 夜）: ws217-p002b（turn pass と実行中の回転、review-1 を反映）c6e4a94b6 → main 2d804c237、test-wait（T1-583）。P1 の第 2 世代はここで終わり（context 約 60 万 token）。
 
 2026-10-13 夜 / q959（P1 の第 3 世代）: ws217-p003 入力の座標（touch・ペン・mouse・touchpad を回転に合わせる）。ユーザー（AskUserQuestion「WS217 p003（入力の座標）を続ける」、WS217 をベータ2 に）。State: active。
+- q959 結果（2026-10-14）: ws217-p003 入力の座標（設計・review-1 の全部・T1-583 の saved=-1 の直し）64e24f620..fe27f8f19 → main 64bc6b90d（main で vmunix・wayland warning 0）、test-wait（T1-592、p002b の B と saved も）。P1 の第 3 世代はここで終わり。

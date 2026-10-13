@@ -35,7 +35,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-302、WS227、q968、T1-592。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-302、WS227、q968、T1-593。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -577,6 +577,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-14 ユーザー（AskUserQuestion、WS143 p007 Linux の Bluetooth）: DisplayYesNo の Agent の制限（PIN の要るキーボード以外の機器と表示だけの機器の passkey は pairing できない）を受け入れる、pair の後は zedBSD と同じく Pair → Trusted → Connect、pair 済みで Trusted でない機器の service の接続は HID だけ尋ね他は拒む。
 - 2026-10-13 夜 ユーザー:「あ、Linux/FreeBSDでは、FIDO2バックエンドがないだけで、passkeyコマンドは入れてください。」→ Linux・FreeBSD の Keiland に passkey の command を入れる（FIDO2 の backend 無し、P2 q961）。補足「/opt/keiland/etc/passkey に書き込める /opt/keiland/sbin/passkey コマンドがLinuxとFreeBSDに移植されればいいと思います。」
 - 2026-10-13 夜 ユーザー:「Linux/FreeBSDではFIDO2はまだ入れなくていいです。あとでLinux標準のFIDO2について調べて入れますが、ベータ3にします。」→ WS161 の Linux・FreeBSD の FIDO2 はベータ3。os-freebsd.c も main から外した。WS161 のベータ2 の範囲は完了（残りは規約 p007＝ベータ3 と Linux・FreeBSD）。
 - 2026-10-13 夜 ユーザー（AskUserQuestion、WS161 p006）: fidoctl は「Linux・FreeBSD には入れない」→ os-freebsd.c（FreeBSD の hidraw）だけ main に入れ、fidoctl の Makefile.linux・Makefile.freebsd は Q1 が外した（Linux の build に libssl-dev を必須にしない）。
