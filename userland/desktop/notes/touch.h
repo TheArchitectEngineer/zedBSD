@@ -136,7 +136,9 @@ struct notes_touch_finger {
  * between them, pinch_zoom the zoom and pinch_ratio their distance's ratio
  * when the zoom began; zooming is what the frame asks (the page's picture
  * may be stretched rather than drawn again).  bounds_* are the scroll's
- * ends and room as last set.
+ * ends and room as last set.  picture_pixels is the most pixels the page's
+ * picture may have, which the device told by failing a larger one (0 until
+ * then; BUG-296): the zoom stays within it.
  *
  * write_mode says one finger writes (the toolbar's Finger); writing that a
  * finger writes now: writer_id is that finger, writer_down_us when it
@@ -171,6 +173,9 @@ struct notes_touch {
 	float anchor_y;
 	float pinch_zoom;
 	double pinch_ratio;
+
+	/* The most pixels the page's picture may have, as the device told (0: only NOTES_TOUCH_PICTURE_MAX bounds it). */
+	double picture_pixels;
 
 	/* The taps not yet taken, oldest first, and whether each was on the toolbar (ws177-p012: the page's too). */
 	float tap_x[NOTES_TOUCH_TAPS];
@@ -217,6 +222,7 @@ struct notes_touch {
 int notes_touch_open(struct notes_touch *touch);
 void notes_touch_close(struct notes_touch *touch);
 void notes_touch_layout(struct notes_touch *touch, uint32_t width, uint32_t height, float top, float margin, float page_width, float page_height, float fit_scale);
+void notes_touch_picture_limit(struct notes_touch *touch, double pixels);
 void notes_touch_event(struct notes_touch *touch, const struct notes_touch_event *event);
 void notes_touch_pen(struct notes_touch *touch, int near, uint64_t now);
 int notes_touch_tick(struct notes_touch *touch, uint64_t now);

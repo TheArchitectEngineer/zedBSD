@@ -193,6 +193,14 @@
 /* The most extra frames the text box draws at once to take keys that wait for it (one key a frame). */
 #define MAIN_BOX_CATCH_UP	32U
 
+/*
+ * How often a frame asks for a smaller page picture after the device could
+ * not hold one, and the share of the refused picture's pixels the zoom is
+ * then held to (BUG-296).
+ */
+#define MAIN_PICTURE_TRIES	8U
+#define MAIN_PICTURE_SHRINK	0.75
+
 #define MAIN_SIDE_MIN		4.0
 #define MAIN_SIDE_TIMES_PAGE	4.0
 #define MAIN_NUDGE		1.0
@@ -484,6 +492,7 @@ static void app_end_contact(struct notes_app *app, const struct notes_input *inp
 static void app_changed(struct notes_app *app);
 static int app_save(struct notes_app *app, const char *reason);
 static void app_draw(struct notes_app *app);
+static VkResult app_picture(struct notes_app *app, const struct notes_page *page, struct notes_view *view);
 static struct notes_frame *app_page_frame(struct notes_app *app, const struct notes_page *page, float scale, int *clear);
 static void app_desk(struct notes_app *app, const struct notes_view *view, float width, float height);
 static void app_mark(struct notes_app *app, const struct notes_view *view, int over_toolbar);
@@ -2259,8 +2268,6 @@ app_draw(
 	uint64_t started;
 	uint64_t built;
 	uint64_t finished;
-	uint32_t picture_width;
-	uint32_t picture_height;
 	size_t pitch;
 	size_t index;
 	float stretch;
@@ -2302,6 +2309,33 @@ app_draw(
 
 	/* The place the frame is drawn at. */
 	notes_touch_view(&app->touch, &view.x, &view.y, &view.scale);
+
+	/*
+	 * While two fingers zoom, a picture of the page as it stands (at another
+	 * scale) is stretched to the new one rather than drawn again every frame
+	 * (ws081-p013); the page is drawn at its scale when they stop.
+	 */
+	stretch = 1.0f;
+	stretched = 0;
+	if (app->touch.zooming &&
+	    app->picture_page == page &&
+	    app->picture_serial == app->renderer.page_serial &&
+	    app->picture_reshaped == app->document.reshaped &&
+	    app->picture_strokes == page->stroke_count &&
+	    app->picture_scale > 0.0f) {
+		stretched = 1;
+		stretch = view.scale / app->picture_scale;
+	}
+
+	/* The page's picture at the scale, which may lower the zoom (and so the place) where the device cannot hold it (BUG-296). */
+	if (!stretched) {
+		error = (int)app_picture(app, page, &view);
+		if (error != (int)VK_SUCCESS) {
+			fprintf(stderr, "notes: %s failed (%d)\n", app->renderer.operation, error);
+			app->quit = 1;
+			return;
+		}
+	}
 
 	/* A new place (and the first) is logged for the tests, once the fingers let the page rest. */
 	if (!app->touch.moving &&
@@ -2345,39 +2379,11 @@ app_draw(
 		}
 	}
 
-	/*
-	 * While two fingers zoom, a picture of the page as it stands (at another
-	 * scale) is stretched to the new one rather than drawn again every frame
-	 * (ws081-p013); the page is drawn at its scale when they stop.
-	 */
-	stretch = 1.0f;
-	stretched = 0;
-	if (app->touch.zooming &&
-	    app->picture_page == page &&
-	    app->picture_serial == app->renderer.page_serial &&
-	    app->picture_reshaped == app->document.reshaped &&
-	    app->picture_strokes == page->stroke_count &&
-	    app->picture_scale > 0.0f) {
-		stretched = 1;
-		stretch = view.scale / app->picture_scale;
-	}
-
-	/* The page's picture, at the page's size in whole pixels. */
+	/* What the page's picture lacks, when anything: the whole page, or the strokes put on top since. */
 	page_clear = 0;
 	page_frame = NULL;
-	if (!stretched) {
-		picture_width = (uint32_t)ceil((double)(page->width * view.scale));
-		picture_height = (uint32_t)ceil((double)(page->height * view.scale));
-		error = (int)notes_renderer_page(&app->renderer, picture_width, picture_height);
-		if (error != (int)VK_SUCCESS) {
-			fprintf(stderr, "notes: %s failed (%d)\n", app->renderer.operation, error);
-			app->quit = 1;
-			return;
-		}
-
-		/* What the picture lacks, when anything: the whole page, or the strokes put on top since. */
+	if (!stretched)
 		page_frame = app_page_frame(app, page, view.scale, &page_clear);
-	}
 
 	/* The desk and the page's picture on it. */
 	notes_frame_begin(&app->frame);
@@ -2469,6 +2475,63 @@ app_draw(
 	/* Nothing waits to be drawn. */
 	app->drawn = 1;
 	app->redraw = 0;
+}
+
+/*
+ * Makes the page's picture at the view's scale, in whole pixels.  A device
+ * that cannot hold a picture so large (BUG-296: i915's allocations are at
+ * most 16 MiB, a page zoomed four times on the 5330 needs 40 for its
+ * colour alone) is asked for a smaller one: the fingers' zoom is held to a
+ * share of the refused picture's pixels and the view placed again, until a
+ * picture is made or the zoom is the whole page's.
+ *
+ * Returns VK_SUCCESS, or the renderer's error for a picture that could not
+ * be made at any zoom.
+ */
+static VkResult
+app_picture(
+	struct notes_app *app,
+	const struct notes_page *page,
+	struct notes_view *view)
+{
+	uint32_t width;
+	uint32_t height;
+	unsigned tries;
+	double pixels;
+	float scale;
+	VkResult error;
+
+	/* Pictures at the scale, smaller each time the device refuses one. */
+	tries = 0U;
+	for (;;) {
+		width = (uint32_t)ceil((double)(page->width * view->scale));
+		height = (uint32_t)ceil((double)(page->height * view->scale));
+		error = notes_renderer_page(&app->renderer, width, height);
+		if (error == VK_SUCCESS)
+			break;
+
+		/* Only a refusal for memory is met with a smaller picture, and only so often. */
+		tries++;
+		if (error != VK_ERROR_OUT_OF_DEVICE_MEMORY && error != VK_ERROR_OUT_OF_HOST_MEMORY)
+			return error;
+		if (tries >= MAIN_PICTURE_TRIES)
+			return error;
+
+		/* The zoom within a share of the refused picture's pixels, and the place it gives. */
+		printf("NOTES PICTURE refused size=%ux%u error=%d\n", width, height, (int)error);
+		fflush(stdout);
+		pixels = (double)width * (double)height * MAIN_PICTURE_SHRINK;
+		scale = view->scale;
+		notes_touch_picture_limit(&app->touch, pixels);
+		notes_touch_view(&app->touch, &view->x, &view->y, &view->scale);
+
+		/* A zoom that cannot be lowered (the whole page's) leaves the refusal. */
+		if (view->scale >= scale)
+			return error;
+	}
+
+	/* Succeeded: the picture is at the view's scale. */
+	return VK_SUCCESS;
 }
 
 /*
