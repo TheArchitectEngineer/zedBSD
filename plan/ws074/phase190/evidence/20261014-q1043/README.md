@@ -1,0 +1,7 @@
+# q1043 incomplete full static reftest run
+
+The q1042 runner began the fixed 1,561-ID static reftest census at 800×600 with the pinned WPT revision, fonts and localhost origin. The [recorded progress](progress.json) has the first **380/1,561 IDs: 105 local PASS, 273 FAIL, 2 error**. IDs 376 and 377 were `css/css-flexbox/flexbox-justify-content-horiz-003.xhtml` and `004.xhtml`. Each consumed the renderer's long 60-second per-page limit; adjacent XHTML cases also progressed slowly. Continuing unchanged threatened the 90-minute Queue bound, so this attempt was deliberately interrupted before ID 381 completed.
+
+The runner writes its JSON report only after the whole loop. Consequently this partial evidence retains IDs and statuses from its line log but **does not retain per-reference pixel metrics**, and the 2 errors cannot be diagnosed solely from the partial JSON. The 1,181 remaining eligible IDs were not measured in this attempt. The exact fixed selection and prior 100-case sample remain in [q1042](../20261014-q1042/README.md). The next runner Queue should bound each render more tightly and persist each result as it finishes, then repeat the full census.
+
+No browser/WPT/Master source changed; host build and Acid reruns were outside this measurement attempt. q1043-i01 is **uncleared**; p190 whole and the 3,805-ID objective remain uncleared. Shared Queue/Master/GitHub publication is Q1 owned; no push.

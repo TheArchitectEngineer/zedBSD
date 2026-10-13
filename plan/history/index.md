@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1043 / WS074 fixed static reftest full census attempt（2026-10-14）
+
+[q1043履歴](queue-q1043.md): 静的全1,561件測定は380件で中断、105 local PASS/273 FAIL/2 error、残り1,181未測定。case別上限と途中保存を次へ。q1043-i01 uncleared、p190 whole/p173全件100%未達。[部分証拠](../ws074/phase190/evidence/20261014-q1043/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1042 / WS074 manifest-driven static reftest selection（2026-10-14）
 
 [q1042履歴](queue-q1042.md): 固定reftest1,974 IDを静的適格1,561/script関連407/variant6に分類。広域100件は28 local PASS/72 FAIL。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1042/README.md)。共有投影/GitHub publication pending。

@@ -97,3 +97,13 @@ Event ws074-p190-q1041-outcome-20261014: q1041-i01 partial cleared、p190 whole 
 **partial scope cleared、p190 whole uncleared。** static runnerが固定manifest選定sourceのみを走査し、選定reftest1,974 IDを静的適格1,561、script402、scripted reference5、variant6に一意分類。[証拠](evidence/20261014-q1042/README.md)。局所selection3/3・既存chain4/4、固定details21/anchor21の全結果/画素差が先行報告と一致。全分野focus round-robin 100件sampleは28 local PASS/72 FAIL/0 error。Python compile/ID分母/diff check PASS。残り1,461静的適格IDと413未対応IDは未実行。browser/WPT/Master無変更、host build/Acid再計測省略。p190 whole/p173全件100%未達、GitHub publication保留。
 
 Event ws074-p190-q1042-outcome-20261014: q1042-i01 partial cleared、p190 whole uncleared。全reftest選定分母を高速に分類し、広域100件のlocal baselineを得た。
+
+## q1043-i01 の有限部分範囲
+
+2026-10-14 01:42 JST、ユーザーの事前承認を適用、最大90分。q1042で適格と確定した固定Interop静的reftest全1,561 IDを同一HTTP・800×600・固定font・q1034参照連鎖条件で全実測する。固定manifest1,974 reftest IDと適格1,561/未対応413の分母照合、focus別local PASS/FAIL/error、最初の代表差分画像と結果JSONを保存し、q1042広域100件の結果/画素差との一致も監査する。script関連407・variant6の実行、browser/WPT/公開ABI/`master.md`変更は含めない。90分内に終わらなければ測定済み件数と未測定件数を記録して終了する。結果JSON、ID集合、diff checkを検証する。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。
+
+## q1043-i01 結果（2026-10-14 01:46 JST）
+
+**uncleared、p190 whole uncleared。** 固定静的1,561件の先頭380 IDまで実行し、105 local PASS/273 FAIL/2 error。2件のXHTMLで1件約60秒を要し、周辺caseも遅いため、90分timebox内の完了が危ぶまれた。runnerは最後にのみreportを書き、途中の参照画素差は保存しない。これ以上同じ実行条件に時間を費やさず中断し、先頭380 IDのstatusを[部分証拠](evidence/20261014-q1043/README.md)に保存。残り1,181 IDは未実測。次はcase別上限の短縮とcaseごとのdurable checkpointをrunnerへ追加し、全件を再実行する。browser/WPT/Master変更なし、host build/Acid再計測省略。p190 whole/p173全件100%未達、GitHub publication保留。
+
+Event ws074-p190-q1043-uncleared-20261014: q1043-i01 uncleared。遅いXHTMLと最終reportのみのrunnerでは全件測定が再開しにくいため、q1044で有界case時間と途中保存を追加する。

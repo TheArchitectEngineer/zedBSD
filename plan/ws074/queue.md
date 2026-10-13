@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1042 / WS074 manifest-driven static reftest selection
+# q1043 / WS074 fixed static reftest full census
 
-Status: finished（2026-10-14 01:39–01:41 JST）
+Status: finished（2026-10-14 01:42–01:46 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p190のq1042有限部分scope](phase190/phase.md) に適用。
-Timebox: 2026-10-14 01:39 JST 開始、最大90分（03:09 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p190のq1043有限部分scope](phase190/phase.md) に適用。
+Timebox: 2026-10-14 01:42 JST 開始、最大90分（03:12 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1042-i01 | [ws074-p190](phase190/phase.md) partial | static reftest runnerをmanifest直読にし、選定ID別未実行理由を保存。重複/variant排除control、既存details/anchor結果の同一性、全分野100件上限の広域sampleを測定。browser/WPT/Master/公開ABI変更なし。最大90分 | cleared（partial） | q1034 runner、q1041 ID分類 |
+| q1043-i01 | [ws074-p190](phase190/phase.md) partial | q1042で適格と確定した固定静的reftest1,561 IDを同条件で全測定し、focus別PASS/FAIL/error、未実行413 ID/variant、代表画像を証拠化。browser/WPT/Master/公開ABI変更なし。最大90分 | uncleared（380/1,561で中断） | q1042 100件sampleと分母 |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -76,3 +76,5 @@ Outcome: q1040-i01 partial cleared、p190 whole uncleared。固定crashtest全48
 Outcome: q1041-i01 partial cleared、p190 whole uncleared。anchor-positioning固定reftest77 ID中静的21件は0 local PASS/21 FAIL、scripted56件未実行。ID別照合と代表差分、diff check PASS。[証拠](phase190/evidence/20261014-q1041/README.md)。browser/WPT/Master無変更、p173全件100%未達。
 
 Outcome: q1042-i01 partial cleared、p190 whole uncleared。固定reftest1,974 IDを静的適格1,561/script402/scripted reference5/variant6に分類。局所selection3/3+chain4/4、既存details/anchor42件の結果/画素差一致。広域100件は28 local PASS/72 FAIL。[証拠](phase190/evidence/20261014-q1042/README.md)。browser/WPT/Master無変更、p173全件100%未達。
+
+Outcome: q1043-i01 uncleared、p190 whole uncleared。静的全1,561 ID中先頭380まで105 local PASS/273 FAIL/2 error。遅いXHTMLでcase別60秒、runnerは最終reportのみのため中断し、ID/statusを[部分証拠](phase190/evidence/20261014-q1043/README.md)へ保存。残り1,181未測定。次はcase別上限と逐次checkpoint。browser/WPT/Master無変更、p173全件100%未達。
