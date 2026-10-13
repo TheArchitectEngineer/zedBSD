@@ -13,7 +13,7 @@
 <!-- master:agents:start -->
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
   - P1: 空き（Gen9 を既定で有効、release の文書を確定）。
-  - P2: 空き（BUG-307 の直し f9f7acba9・6f4e0f11b は design-reviewer の review の後に merge）。
+  - P2（新しい世代）: BUG-307 の review-1 の指摘（中-1 の範囲をまたぐ unjournaled の run、ENOMEM、T1 の依頼の直し）。
   - P3: 空き（BUG-306 の一部の直しと診断の log は merge 済み、T1-613 待ち）。
   - T1（新しい世代）: T1-614（回転の速さ）。
   - P3: 空き（回転の速さの直しは merge 済み）。
