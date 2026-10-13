@@ -3,7 +3,7 @@
 # ws217-p003: 入力の座標を回転に合わせる（touch panel・pen・絶対の pointer、anchor）
 
 Parent: [WS217](../ws.md)
-Status: in-progress（2026-10-13 P1 q959: 第 1 版の設計で実装し、build 6 つ（amd64 ci・試験の config の wayland・vmunix・peninject、rpi4 の wayland・vmunix）と keiland-linux が warning 0、host 試験 PASS（§16）。design-reviewer の review 待ち（指摘は同じ attempt で直す）。T1 の試験は §12 の依頼の後 test-wait）
+Status: in-progress（2026-10-14 P1: T1-592 の P3-3 の FAIL を解析した（§16.6）。code の誤りは見つからず、原因は試験の手順（pen の宣言の直後の接近が compositor の node の open より前に出て失われる）。§12 の 3・5 の script に宣言の後の `wait 3000` を足し、T1 への再試験（P3-3・P3-5）を §16.6 に書いた。T1 の結果を Q1 が判定するまで test-wait）
 Disposition: normal
 Primary Milestone: MG006（WS から継承）
 Queue / attempts: q959（2026-10-13 Q1 の依頼、P1）。承認: ユーザーの選択（2026-10-13 AskUserQuestion「WS217 p003（入力の座標）を続ける」、WS217 はベータ2）と WS217 の D1〜D6・D11・D12（ws.md）
@@ -114,6 +114,7 @@ struct kwl_cursor_geometry {
 
 - `host-rotate.c` に: `kwl_rotate_pixel_back` を 4 つの panel × 4 つの角度の全画素で `kwl_rotate_point_back` と、256 倍の大きさで `kwl_rotate_fixed_back` と一致。
 - `host-absolute.{c,sh}`（新）: cursor-box.c・plane.c を link。`kwl_cursor_geometry_place` を 4 つの panel × 4 つの角度 × direct/非 direct × unit 1/256 で、軸の範囲の全部の値（小さい範囲）と端（最小・最大・外）を、「物理の画素を `kwl_cursor_scale_absolute` で出して `kwl_rotate_point_back`」の式と比べる。0° は今の式（`kwl_cursor_scale_absolute`、touch の `scale_fixed` の写し）と一致。slot の矩形の左上の足し。`kwl_cursor_box_place` の 4 つの角度（相対の足しと clamp）、`kwl_cursor_box_warp` と `kwl_cursor_box_outputs` が geometry の 4 つを丸ごと書くこと。
+- `host-tablet-direct.{c,sh}`（T1-592 の解析で足した）: tablet.c を seat の fake と link し、peninject の hover・down・up の report を direct の pen と pen tablet に 0°・90° で入れ、surface が proximity_in・down・up・proximity_out を聞き、場所が §12 の 3 の期待値であることを確かめる。node を接近の後に open した場合（LATE-OPEN）の再現も印字する（失敗には数えない）。
 - `host-hid-pen-props.{c,sh}`（新）: kernel の hid-report・hid-digitizer・hid-touch・hid-input を freestanding で build し、記録する input layer の fake で `drv_hid_input_prepare` → `drv_hid_input_publish`。BUG-267 の if1（Pen）→ DIRECT、if0（Touch Screen の node）→ DIRECT（既存）、合成の Digitizer だけの pen → POINTER、合成の Digitizer の pen と touch screen の 1 つの descriptor → DIRECT（補い）、mouse → 0。
 - build: amd64（`bin/wayland`・`vmunix`・`bin/peninject`、ci と試験の config）、rpi4（`bin/wayland`・`vmunix`）、`keiland-linux`、warning 0。`plan/tools/keiland-os-boundary/check.sh`。
 - 回帰: `host-rotate.sh`・`host-scanout-rules.sh`、WS213 の `cursor-due-host-test.sh`・`input-thread-host-test.sh`（後者は warp の引数が変わるので直しが要る、§13）、WS143 の `hid-input-host-test.sh`（pen の property が増えるので比べ方の直しが要る、§13）、WS079 の `run-hid-touch.sh`。
@@ -124,9 +125,9 @@ p001 §12.2 の 3 と 7 の C5 の行。image は p002b と同じ（`AAT_CONFIG=
 
 1. touch: 各角度で `aat-input tap 1000 400`（物理）→ 論理 90 (400, 279)、270 (399, 1000)、180 (279, 399)、0 (1000, 400)。
 2. 絶対の pointer: `aat-input move-to 1000 400` → `keiland-shot --request POINTER` が同じ論理の点。
-3. pen（direct）: peninject の `size 1279 799`・`down 1000 400 2000 20 0`・`up` → `KWL TABLET added … direct=1`、90° で `KWL TABLET down … x=400 y=279 direct=1 tilt=0,-a`（0° の `tilt=a,0` の a）。`peninject --pointer` は `name="Test pen tablet (input-inject)" … direct=0`、90° で `x=624 y=640 direct=0 tilt=a,0`。
+3. pen（direct）: peninject の `size 1279 799`・`wait 3000`・`down 1000 400 2000 20 0`・`wait 300`・`up` → `KWL TABLET added … direct=1`、90° で `KWL TABLET down … x=400 y=279 direct=1 tilt=0,-a`（0° の `tilt=a,0` の a）。`peninject --pointer` は `name="Test pen tablet (input-inject)" … direct=0`、90° で `x=624 y=640 direct=0 tilt=a,0`。
 4. C5 の指（実行中の回転）: 90 で tablet-probe `--touch` の窓の上に `touch-down 0 X Y` → `ROTATE 270` → `KWL TOUCH cancel all reason=rotated fingers=1` と `KWL TOUCH cancel client=… reason=rotated`、tablet-probe に `TABLETPROBE touch cancel`。続く `touch-move 0 …` で tablet-probe に motion が来ない、`touch-up 0` の後の tap は新しい写像。90↔270 と 0↔180 でも cancel。
-5. pen の cancel（M2 (1)）: tablet-probe（tablet の protocol）の窓の上で peninject の `down` を保ったまま（script の `down` の後に `wait 5000`）`ROTATE` → `KWL TABLET cancel pens=1`、tablet-probe に up と proximity_out、次の `move` で proximity_in（down は来ない、§15）。
+5. pen の cancel（M2 (1)）: tablet-probe（tablet の protocol）の窓の上で peninject の `down` を保ったまま（script は `size 1279 799`・`wait 3000`・`down …`・`wait 5000`・`move …`・`up`）`ROTATE` → `KWL TABLET cancel pens=1`、tablet-probe に up と proximity_out、次の `move` で proximity_in（down は来ない、§15）。
 6. open の経路（M2 (2)、S1）: 90 で shell の上に指を置いたまま（`touch-down 0 1000 400`）`keiland-shot --request "MODE mirror"` か output switch の無い 1 画面では `--rotate` を変えた compositor の起こし直しが無いので、**2 画面の image が要る**（WS113 の `config-amd64-p004b.mk` の形、p005 の束 C で流す。今回は未実施として記録してよい）。
 7. grab（M3）: 窓の title を `aat-input down left` で掴んで少し動かしたまま `ROTATE 90` → `KWL SEAT grabs end grabs=1`、`KWL GLASS moved …`、その後の `up left` で窓が飛ばない。
 8. mirror の拒み（M6）: 2 画面の image が要るので p005 の束で（`KWL OUTPUT rotate refused … reason=mirror`）。
@@ -229,9 +230,34 @@ T1-583（p002b）の不具合も同じ attempt で直した: `POLICY default`（
 - host: host-absolute・host-rotate・host-hid-pen-props（7 件）・WS213 input-thread（plain・TSan）と cursor-due・WS113 host-output-switch・WS143 hid-input が PASS、keiland-os-boundary PASS、style-check の新しい指摘 0、`git diff --check` 空。
 - 未実施: FreeBSD の build（guest が要る、T1 の §12 の 11）、QEMU・実機、open の経路と mirror の拒みの QEMU（2 画面の image、p005 の束）。
 
+### 16.6 T1-592 の P3-3 の FAIL の解析（2026-10-14 P1 第 4 世代、base main `6545a532e`）
+
+T1-592（QEMU Venus、tree `127cc1472`）: 注入の pen（`--pointer` 無し）で `KWL TABLET added … direct=1` と `removed` は出るが `KWL TABLET down` が無く、tablet-probe も proximity・motion・down を受けない。0°・90°、(1000,400)・(600,300)、hover→down→up の script のどれも同じ。`--pointer` を付けると `down direct=0` が出た。`127cc1472` から今の main まで、wayland・input-inject・input.c・peninject・UAPI の変更は無い。
+
+調べたこと（code を読んだ範囲と host 試験）:
+
+1. 注入の device の側: `input-inject.c` の PEN と PEN_POINTER の違いは名前と `info.properties`（DIRECT か POINTER）だけで、axes・capability・event の検査と emit（`inject_write_pen` → `drv_input_device_emit`）は同じ。kernel の input layer（`src/drivers/generic/input.c`）は `properties` を保存して `EVIOCGPROP` と system event の detail に出すだけで、event の配送（capability の検査・queue・subscriber）は property を見ない。peninject の違いは setup の `kind` だけ。
+2. compositor の分類: `kwl_input_probe` の pen の枝は `INPUT_PROP_DIRECT` で `direct` を決めるだけで、`attach_tablet`・`input_attach`（I thread への attach）・I thread の `input_report`・main thread の `apply_report` → `kwl_tablet_frame` は `direct` を見ない。`device->direct` を読むのは tablet.c の `place_pointer`（`kwl_output_absolute`）・`device_tilt`・log の 3 か所だけ（`grep -- '->direct'`）。名前（`Test pen (input-inject)`）を見る所も無い。
+3. tablet.c の direct の経路（host 試験 `plan/ws217/tests/host-tablet-direct.sh`、新）: 実の tablet.c・cursor-box.c・plane.c・rotate.c に heads.c と同じ式の `kwl_output_absolute` と seat の fake を付け、peninject の hover・down・up の report を入れた。direct=1・0 の 0° と 90° の 4 件で、surface が proximity_in・down・up・proximity_out を 1 回ずつ聞き、`KWL TABLET down` が出て、場所は 0° (1000,400)、90° direct (400,279)・`tilt=0,-20`、90° 非 direct (624,640)。PASS（plain・ASan/UBSan）。**direct の経路は report が届けば down を出す**。
+4. 再現（同じ試験の LATE-OPEN）: compositor が node を open するのは device の event（`KWL EVENT input changed`）の後の main の pass の scan で、sessiond が node を利用者に渡す前なら `KWL_INPUT_SETTLE_SCAN_MS`（100 ms）ごとに再び scan する（BUG-264）。open の前に書かれた event は compositor の reader に届かない。tablet.c は open の時に key の状態（`EVIOCGKEY`）を読まない（axes は `EVIOCGABS` で読む）ので、接近（`BTN_TOOL_PEN 1`）が open より前だと、後の report には tool が無く（`pen_near` 0）、`apply_report` は何も配らない。open の後に down・up の report だけが届く場合を host で流すと `LATE-OPEN direct=1 proximity_in=0 down=0 up=0`（direct=0 も同じ）: **T1-592 の症状と同じ**。
+5. 手順: §12 の 3 の script（`size 1279 799`・`down …`・`up`）は宣言と接近の間に wait が無い。peninject は宣言の直後（μs）に down の frame を書くので、compositor の open（数 ms〜100 ms 余り）より前になる。WS079 の pen の試験の script は全部 `size` の後に `wait 3000` を置いている（`plan/ws079/tests/p003-scripts.py`）。
+
+結論: 注入の device と compositor の direct の経路に誤りは見つからなかった。症状は、宣言の直後の接近が node の open より前に出て失われることで説明でき、host で同じ症状を再現した。T1 の報告には script の本文が無いので、`--pointer` の回だけ down が出た理由（wait の有無か open の速さ）は確かめられていない。§12 の 3・5 の script を直した（宣言の後に `wait 3000`）。code は変えていない。
+
+残り（Q1 の判断）: 接近したままの pen を後から open した場合（compositor の起動・hotplug の遅れ・seat の pause の後）、pen が一度離れるまで何も届かない。直すには open の時に key の状態を読む backend の関数（`EVIOCGKEY`、zedBSD・Linux・FreeBSD の 3 つの backend）が要り、p003 の範囲の外なので実装していない（Future Work の候補）。
+
+T1 への再試験の依頼（P3-3・P3-5、Q1 が T1 に送る文案）:
+
+> ws217-p003 の P3-3（pen の direct）と P3-5（pen の cancel）の再試験。image・起動は T1-592 と同じ（`AAT_CONFIG=plan/ws217/tests/config-amd64.mk plan/tools/aat/build-image.sh`、`aat-input start --width 1280 --height 800`、`keiland-shot --request "POLICY any"`）。注意: aat-input は inject の open を 4 つ持つ（`INPUT_INJECT_OPENS_MAX` 4）ので、peninject を流す時は aat-input を止めておく（T1-592 と同じやり方でよい）。**どの script も `size` の直後に `wait 3000` を置く**（compositor が node を open する前の event は届かない、phase.md §16.6）。script の本文は結果に貼る。
+> 1. P3-3: tablet-probe の窓を (600,300) の上に置き、0° で script A = `size 1279 799` / `wait 3000` / `hover 600 300` / `wait 300` / `down 600 300 2000 20 0` / `wait 300` / `up`。期待: `KWL INPUT device=… kind=tablet abs=1 direct=1` が `hover` より前、`KWL TABLET down device=… x=600 y=300 direct=1 tilt=20,0`、tablet-probe に proximity_in・motion・down・up・proximity_out。
+> 2. P3-3 の 90°: `ROTATE 90` の後、script B = `size 1279 799` / `wait 3000` / `down 1000 400 2000 20 0` / `wait 300` / `up` → `KWL TABLET down … x=400 y=279 direct=1 tilt=0,-20`。同じ script B を `peninject --pointer` で → `name="Test pen tablet (input-inject)" … direct=0`、`KWL TABLET down … x=624 y=640 direct=0 tilt=20,0`。
+> 3. P3-5: 90° で tablet-probe の窓の上の物理の点（窓の場所を見て決める）に script C = `size 1279 799` / `wait 3000` / `down X Y 2000` / `wait 5000` / `move X Y 2000` / `wait 300` / `up`。`wait 5000` の間に `keiland-shot --request "ROTATE 270"`。期待: `KWL TABLET cancel pens=1`、tablet-probe に up と proximity_out、続く `move` で proximity_in（down は来ない）。最後に `ROTATE 0`・`POLICY default`。
+> 4. もし 1 で `wait 3000` を置いても down が無ければ、同じ回で `peninject -d 8000` を別に流して node に event が出ていること（`PENDUMP` の行）と、compositor の `KWL INPUT …`・`KWL EVENT input changed` の行の順を記録して返す（解析は P1）。
+
 ## Event
 
 - 2026-10-13 / ws217-p003-design-1: P1 が q959 で第 1 版を書いた（source は main `86ee7cf3e`）。review を待たずに実装へ。
 - 2026-10-13 / ws217-p003-impl-1: P1 が実装（§16）。build と host 試験 PASS、他の WS の試験 3 つを変更に追従（Q1 の許可）。
 - 2026-10-13 / ws217-p003-review-1: design-reviewer の [review-1](review-1.md)（条件つきで進めてよい、致命的 0・重大 1・中 7・軽微 12）。Q1 の決め（S1・M1・M2・M5・M7 は推奨どおり、M3 は grab を終える、M6 は mirror で拒む、M4 は Q1 がユーザーに報告）。
 - 2026-10-14 / ws217-p003-impl-2: P1 が review-1 の全部と T1-583（p002b）の saved=-1 を直し、試験の image に wltest・tablet-probe を足した（§15b・§16.5）。
+- 2026-10-14 / ws217-p003-t1-592: T1-592 で P3-3（direct の pen）が FAIL。P1（第 4 世代）が解析し、code の誤りは無く試験の手順（宣言の直後の接近が node の open より前）と判断、host で症状を再現（§16.6）。§12 の 3・5 の script を直し、T1 への再試験（P3-3・P3-5）の文案を書いた。
