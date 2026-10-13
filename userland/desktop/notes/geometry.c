@@ -449,11 +449,17 @@ frame_fill(
 
 	/* The vertices of the fans: a triangle for each corner of a contour but two. */
 	fan = 0;
+	start = 0;
 	for (contour = 0; contour < contour_count; contour++) {
 		corners = frame_contour(fill, contour);
+		start += corners;
 		if (corners >= 3U)
 			fan += (corners - 2U) * 3U;
 	}
+
+	/* Contours that do not list every corner once are not drawn (the loops below walk the corners by them). */
+	if (start != fill->count)
+		return;
 
 	/* The edges with a fringe: one a corner, but the seams. */
 	edges = 0;

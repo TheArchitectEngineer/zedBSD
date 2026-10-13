@@ -577,9 +577,10 @@ test_geometry(
 	      frame.draws[2].count == 6U,
 	      "the fill: fans of both contours (%u), the fringe of 8 edges (%u), one cover", frame.draws[0].count, frame.draws[1].count);
 	vertex = frame.vertices + 6U * NOTES_VERTEX_FLOATS;
-	check(vertex[0] == view.x + 130.0f * view.scale && vertex[1] == view.y + 130.0f * view.scale, "the hole's fan starts at its own first corner");
+	check(vertex[0] == view.x + 160.0f * view.scale && vertex[1] == view.y + 160.0f * view.scale, "the hole's fan starts at its own first corner");
 	vertex = frame.vertices + (size_t)frame.draws[2].first * NOTES_VERTEX_FLOATS;
 	check(vertex[0] == view.x + 100.0f * view.scale - 1.0f && vertex[1] == view.y + 100.0f * view.scale - 1.0f, "the cover is the outer contour's box");
+	notes_stroke_free(stroke);
 
 	/* The grain's size for a scale: the finest of at most 1.5 texels a pixel, the coarsest below. */
 	check(notes_frame_grain_level(4.0f) == 0U, "4 px/pt draws the full tile");

@@ -1769,15 +1769,17 @@ render_chunks(
 		if (error == VK_SUCCESS)
 			break;
 
-		/* Only a refusal for memory is met with smaller chunks, and only down to the smallest. */
+		/* Only a refusal for memory is met with smaller chunks. */
 		if (error != VK_ERROR_OUT_OF_DEVICE_MEMORY && error != VK_ERROR_OUT_OF_HOST_MEMORY)
-			return error;
-		if (renderer->chunk_bytes / 2U < NOTES_CHUNK_BYTES_MIN)
 			return error;
 
 		/* The refusal is logged for the tests and the measurements. */
 		printf("NOTES FRAME chunk refused bytes=%lu error=%d\n", (unsigned long)renderer->chunk_bytes, (int)error);
 		fflush(stdout);
+
+		/* A refusal of the smallest chunks fails the frame, as one buffer too large did before. */
+		if (renderer->chunk_bytes / 2U < NOTES_CHUNK_BYTES_MIN)
+			return error;
 
 		/* Every chunk goes once nothing uses them, and they are made again at half the size. */
 		renderer->operation = "vkDeviceWaitIdle";
@@ -2078,12 +2080,20 @@ render_group_make(
 
 	/* The two pipelines, the cover's only after the fringe's. */
 	error = render_pipeline(renderer, fringe, vertex, fragment);
-	if (error == VK_SUCCESS)
-		error = render_pipeline(renderer, cover, vertex, fragment);
+	if (error != VK_SUCCESS) {
+		vkDestroyShaderModule(renderer->device, vertex, NULL);
+		vkDestroyShaderModule(renderer->device, fragment, NULL);
+		return error;
+	}
+
+	/* The cover's pipeline. */
+	error = render_pipeline(renderer, cover, vertex, fragment);
 
 	/* The modules are not needed once the pipelines are made (or refused). */
 	vkDestroyShaderModule(renderer->device, vertex, NULL);
 	vkDestroyShaderModule(renderer->device, fragment, NULL);
+
+	/* Reports a refused cover (the caller releases the fringe's pipeline with the group). */
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -2748,6 +2758,7 @@ render_draws(
 	float size[4];
 	float grain[4];
 	float pushed[3];
+	int place_changed;
 	size_t bound_chunk;
 	unsigned bound;
 	unsigned bound_texture;
@@ -2807,14 +2818,27 @@ render_draws(
 		if (pipe == NOTES_PIPE_FRINGE_GRAIN || pipe == NOTES_PIPE_COVER_GRAIN) {
 			texture = NOTES_TEXTURE_GRAIN + notes_frame_grain_level(draw->place[2]);
 			if (texture != bound_texture) {
-				vkCmdBindDescriptorSets(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->layout, 0U, 1U,
-							&renderer->sets[texture], 0U, NULL);
+				vkCmdBindDescriptorSets(renderer->command,
+							VK_PIPELINE_BIND_POINT_GRAPHICS,
+							renderer->layout,
+							0U,
+							1U,
+							&renderer->sets[texture],
+							0U,
+							NULL);
 				bound_texture = texture;
 			}
-			if (memcmp(pushed, draw->place, sizeof(pushed)) != 0) {
+
+			/* The page's place, pushed after the target's size when another page's was pushed last. */
+			place_changed = memcmp(pushed, draw->place, sizeof(pushed));
+			if (place_changed != 0) {
 				render_grain_place(draw, grain);
-				vkCmdPushConstants(renderer->command, renderer->layout, VK_SHADER_STAGE_VERTEX_BIT, (uint32_t)sizeof(size),
-						   sizeof(grain), grain);
+				vkCmdPushConstants(renderer->command,
+						   renderer->layout,
+						   VK_SHADER_STAGE_VERTEX_BIT,
+						   (uint32_t)sizeof(size),
+						   sizeof(grain),
+						   grain);
 				memcpy(pushed, draw->place, sizeof(pushed));
 			}
 		}

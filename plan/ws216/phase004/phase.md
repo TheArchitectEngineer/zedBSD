@@ -3,7 +3,7 @@
 # ws216-p004: Notes の画面（形の列の描画、Normal・Multiply、粒の texture、遅延の pipeline と代わり、頂点の塊）
 
 Parent: [WS216](../ws.md)
-Status: in-progress（2026-10-13 P1。設計を先にこの phase.md に決め、実装と host の受け入れへ。QEMU・実機の画の確かめは p007 で T1）
+Status: in-progress（2026-10-13 P1: 実装と host の受け入れ（C1〜C8）済み。test-wait: QEMU・実機の画の確かめは p007 で T1、Q1 の判定まで cleared にしない）
 Phase disposition: normal
 Queue: Q1 の依頼（2026-10-13、P1）。承認は ws.md の「ユーザーの決定」（D1〜D12）と review-2 の判定（p004 に当たる指摘はこの phase.md で解決してから実装）
 
@@ -88,6 +88,44 @@ Queue: Q1 の依頼（2026-10-13、P1）。承認は ws.md の「ユーザーの
 
 試験: `plan/ws216/tests/run-notes-render.sh`（`host-notes-render.c`: render.c・geometry.c と Notes の model を直に link し、Vulkan の関数を模型で置く）。出力は worktree の `build/ws216-p004-host/`。画面の画（粒・Multiply・継ぎ目・塊の境に跡が無い）は p007 で T1。
 
-## 7. 実行の記録
+## 7. 実行の記録（2026-10-13 P1、agent/p1、base main 0047ea2a5）
 
-（実装の後に書く）
+前の世代の書きかけ（設計 §1〜§6、実装、host 試験の source）は Q1 が `6b09ad269` に救った。この世代で main を merge（`7cf2cf1ac`、衝突なし）し、review して次を足した。
+
+### 7.1 変えた所
+
+| file | 内容 |
+| --- | --- |
+| `app.h` | pipe 9 つ（新しい 4 つ）と組（grain・multiply）と組の状態、塊の大きさ（4 MiB・最小 256 KiB）、粒の texture 3 つ（`NOTES_TEXTURES` 7）、`struct notes_draw` の `place`（頁の原点と倍率）、`struct notes_chunk`・`struct notes_grain_picture`、renderer の組・粒・塊の欄、`notes_frame_shape()`・`notes_frame_stroke()`・`notes_frame_grain_level()` |
+| `notes.h` | `NOTES_GRAIN_MEAN`（tile の平均、host 試験が tile から計算して一致を確かめる） |
+| `geometry.c` | `frame_fill()`（複数の輪郭の fan、継ぎ目の辺の fringe なし、cover 1 回）。`notes_frame_polygon()` はその 1 輪郭の形（ペンの頂点は前と bit 同一）。`notes_frame_shape()`（§2 の表の頂点と pipe）、`notes_frame_stroke()`、`notes_frame_grain_level()`（§5 の段）。**この世代で足した**: 輪郭の角の数の和が角の数と違う形は描かない（fringe の数と書く頂点の数がずれて未初期化の頂点を出すのを防ぐ） |
+| `render.c` | 塊の列（§4、拒まれたら半分、log）、遅延の組（§5、作る・代わり・log、粒の 3 つの texture と REPEAT・LINEAR の sampler、`NOTES GRAIN hash=`）、push constant 32 byte、粒の draw の段の set と頁の置き場所の push、draw を塊の境で切る記録、Multiply の blend。**この世代で直した**: 最小の塊が拒まれた時も `NOTES FRAME chunk refused` を出す（log を先に）、関数の呼び出しを条件の中から出す（`memcmp`）、組の pipeline の作成を 1 つずつ確かめる形に |
+| `shape.c` | 鉛筆の `outline` は最初の区間（全体の輪郭を作らない） |
+| `main.c` | stroke を描く 2 か所を `notes_frame_stroke()` に |
+| `shaders/grain.vert`・`grain.frag`・`multiply.frag`（新）、`regenerate.py`、`shaders.h` | §3 |
+| `plan/ws216/tests/host-vulkan-mock.[ch]`・`host-notes-render.c` | Vulkan の模型と §6 の受け入れ。**この世代で直した**: 穴の fan の最初の角の期待値（160 pt、誤って 130）、塗りの stroke の解放（ASan の leak） |
+| `plan/ws216/tests/run-notes-render.sh`（新、この世代） | plain・ASan・UBSan の build と実行、SPIR-V の作り直しと比較 |
+
+### 7.2 受け入れの結果（host、gcc 14.2.0、shaderc 2025.2、SPIRV-Tools v2025.1）
+
+`sh plan/ws216/tests/run-notes-render.sh` → `run-notes-render: ok`（plain・ASan・UBSan とも `244 checks, 0 failed`、出力 `build/ws216-p004-host/`）。
+
+| # | 結果 |
+| --- | --- |
+| C1 | amd64（`ZEDBSD_CONFIG=config/current-uat.mk make build/amd64/bin/notes`）・rpi4（`ZEDBSD_CONFIG=config/ci/config-rpi4.mk make build/arm64/bin/notes`）・Linux の host rules（`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws216-linux build/ws216-linux/bin/notes`）とも exit 0、warning 0（-Werror）。`regenerate.py`（各 shader に `spirv-val --target-env vulkan1.0`）の出力が tree の `shaders.h` と同じ bytes。FreeBSD の native の build は未実施 |
+| C2 | 粒の 3 つの texture（256・128・64、LINEAR tiling、`B8G8R8A8`）が tile と `notes_grain_level()` の値を 4 channel に持ち、各 set が REPEAT・LINEAR の sampler で名指す。tile の FNV-1a `2a644409`（log `NOTES GRAIN hash=2a644409`）。`NOTES_GRAIN_MEAN` が tile の平均と 1e-7 以内 |
+| C3 | i915 の模型（buffer・image とも 16 MiB 超を拒む）で 646,938 頂点の frame が 5 つの 4 MiB の塊（131,070 頂点）で描け、最大の確保 16 MiB 以下・拒否 0。記録した draw は全部 3 の倍数で塊の中、切れを並べると元の頂点の列と同じ bytes、2 つの draw が塊の境で切れ、切れは同じ pass・同じ pipeline で続く。`NOTES FRAME vertices=646938 chunks=5 bytes=4194304` |
+| C4 | 1 MiB の模型: 開く時に 4・2 MiB が拒まれ（log 2 行）1 MiB（32,766 頂点）の塊、633,084 頂点の frame が 20 の塊で描ける。続けて 128 KiB に下げた模型では 512・256 KiB も拒まれ描画が `VK_ERROR_OUT_OF_DEVICE_MEMORY`、128 KiB の模型では開けない。どちらも close で漏れなし |
+| C5 | ペン・蛍光ペンだけの frame で pipeline は初期化の 5 つのまま、粒の texture・sampler なし。鉛筆の frame で grain の組だけ（7 つ）、水彩の frame で multiply の組（9 つ）、次の frame で何も作らない。`NOTES PIPE made` が組ごとに 1 回 |
+| C6 | grain・multiply・両方の pipeline を拒む模型で、開ける・描ける、`NOTES PIPE fallback name=grain|multiply error=-3` が組ごとに 1 回、拒まれた grain は texture・sampler・pipeline を残さず、その draw は FRINGE・COVER で記録、2 つ目の frame で作り直さない |
+| C7 | ペン・蛍光ペン 20 本の頂点と draw が `notes_frame_polygon(outline)` と bit 同一。鉛筆の区間の fringe の頂点の数 = (角の数 − 継ぎ目の数) × 6、頂点は (cs, ā) と v = a、fringe と cover の draw が置き場所（原点と倍率）を持つ。水彩は 3 つの形が MULTIPLY の pipe で (cs, a)。2 つの輪郭の塗りは fan 2 つ・fringe 8 辺・cover 1 回、穴の fan は穴の最初の角から。粒の draw の push constant が (原点, 1/(48 × 倍率))、段は 4・3.56 px/pt で 0、3.5・2 で 1、1.5・1・0.5 で 2 |
+| C8 | `run-notes-tools.sh`（p003）ok、`plan/ws079/tests/run-notes-host.sh` ok、`plan/ws175/tests/run-host-notes-edit.sh` PASS、`plan/ws175/tests/run-host-clean.sh` PASS |
+
+`git diff --check 569d8e952 -- userland/desktop/notes plan/ws216` は空。
+
+### 7.3 未実施・残り
+
+- 画面の画（粒・Multiply・継ぎ目・塊の境に跡が無い、代わりの見え方）は QEMU・実機で未確認（p007 で T1、Pi 4 は p009）。この Phase は T1 の結果を Q1 が判定するまで cleared にしない。
+- 道具は p006 まで UI から選べない。T1 の画の確かめは p005・p006 の後の p007 にまとめるか、先に試験の image（編集 data に新しい道具の stroke を持つ PDF を `--file` で置き、Notes で開く）で見るかは Q1 の判断。
+- FreeBSD の native の build は未実施。
+- 規約の全文の見直しは p008。

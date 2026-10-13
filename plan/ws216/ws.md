@@ -31,7 +31,7 @@ Notes（`userland/desktop/notes/`）に、今のペン・消しゴムに加え�
 | [p001](phase001/phase.md) | 設計: 形の列と焼き込んだ係数、PDF への出し方、塗りつぶしの方式、描画の速さと確保の上限（Pi 4・5330）、UI、段の分け方 | — | in-progress（設計 2、review-2 の待ち） |
 | p002 | libpdf: 係数の輪郭（style・範囲・gentle な境）、writer（ExtGState の (ca, BM)、`q/Q` の状態、tiling pattern、major 3 の content の Flate）、reader（Flate の content の hash、tiling pattern） | p001 | planned |
 | [p003](phase003/phase.md) | Notes の model と形式: 道具の種類 2〜5、形の列、係数の式と焼き込み、鉛筆の区間、編集 data 3.0・journal 3、undo・部分消し、PDF の書き出し | p002 | in-progress（2026-10-13 P1: 実装と host の受け入れ済み、Q1 の review 待ち） |
-| p004 | 画面: 頂点の塊（16 MiB の上限）、遅延の pipeline と代わり（Pi）、粒の texture 3 段、Multiply、複数の輪郭、継ぎ目の fringe なし | p003 | planned |
+| [p004](phase004/phase.md) | 画面: 頂点の塊（4 MiB の塊、i915 の 1 確保 16 MiB の上限）、遅延の pipeline と代わり（Pi）、粒の texture 3 段、Multiply、複数の輪郭、継ぎ目の fringe なし | p003 | in-progress（2026-10-13 P1: 実装と host の受け入れ C1〜C8 済み、test-wait（画は p007 で T1）） |
 | p005 | 領域の塗りつぶし: 決まった倍率の帯の画面外の描画と読み戻し、flood fill（許容差・隙間を閉じる）、輪郭化と上限、重なりの順、undo・journal、消しゴム（D7 (c)） | p003、p004 | planned |
 | p006 | UI: 描く道具の button と帯、Tool menu、key、色と太さの表、pen・mouse・指での選択と塗り、AAT の helper の追従 | p004、p005 | planned |
 | p007 | T1 の QEMU（AAT の draw-tools・fill-region）、実機 5330 のペン（ユーザー） | p002〜p006 | planned |
