@@ -15,8 +15,10 @@
  *           for one open (os-zedbsd.c)
  *   Linux   /dev/hidrawN, whose report descriptor's first application
  *           collection is FIDO's (os-linux.c; no grab)
+ *   FreeBSD /dev/hidrawN of hidraw(4), the same requests as Linux's
+ *           (os-freebsd.c, ws161-p006; no grab)
  *
- * The report functions on an open node are the same on both (os-posix.c).
+ * The report functions on an open node are the same on all (os-posix.c).
  *
  * The smart card slots (ws161-p005): on zedBSD /dev/smartcardN, a reader's
  * slot (an NFC reader's contactless one, where a key is held) whose card
