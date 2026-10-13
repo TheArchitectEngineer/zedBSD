@@ -236,6 +236,7 @@ static void cascade_apply(struct css_engine *engine, struct css_style *style, co
 static void cascade_inherit(struct css_style *style, const struct css_style *parent, int property);
 static struct css_length cascade_length(struct css_engine *engine, const struct css_value *value, float font_size);
 static void cascade_shadows(struct css_engine *engine, struct css_style *style, const struct css_value *value);
+static void cascade_text_shadow(struct css_engine *engine, struct css_style *style, const struct css_value *value);
 static void cascade_tracks(struct css_engine *engine, struct css_style *style, const struct css_value *value, struct css_track *tracks, int *count);
 static float cascade_font_size(struct css_engine *engine, const struct css_value *value, float parent_size);
 static int cascade_font_size_keyword(const struct css_value *value, int parent_keyword);
@@ -660,6 +661,8 @@ cascade_compute(
 		style->visibility = parent->visibility;
 		style->list_style = parent->list_style;
 		style->underline = parent->underline;
+		style->text_shadow = parent->text_shadow;
+		style->text_shadow_set = parent->text_shadow_set;
 		style->custom = parent->custom;
 	}
 
@@ -756,6 +759,8 @@ cascade_compute(
 		if (style->shadows[side].color == CSS_CURRENT_COLOR)
 			style->shadows[side].color = style->color;
 	}
+	if (style->text_shadow_set && style->text_shadow.color == CSS_CURRENT_COLOR)
+		style->text_shadow.color = style->color;
 
 	/* The root's font size is what rem measures (its pseudo-elements do not change it). */
 	is_root = 0;
@@ -3290,6 +3295,7 @@ cascade_apply(
 		    property == CSS_PROP_TEXT_INDENT ||
 		    property == CSS_PROP_WHITE_SPACE ||
 		    property == CSS_PROP_TEXT_TRANSFORM ||
+		    property == CSS_PROP_TEXT_SHADOW ||
 		    property == CSS_PROP_CURSOR ||
 		    property == CSS_PROP_VISIBILITY ||
 		    property == CSS_PROP_DIRECTION ||
@@ -3606,6 +3612,9 @@ cascade_apply(
 	case CSS_PROP_BOX_SHADOW:
 		cascade_shadows(engine, style, value);
 		break;
+	case CSS_PROP_TEXT_SHADOW:
+		cascade_text_shadow(engine, style, value);
+		break;
 	case CSS_PROP_OUTLINE_WIDTH:
 		style->outline_width = cascade_length(engine, value, style->font_size).value;
 		break;
@@ -3754,6 +3763,10 @@ cascade_inherit(
 	case CSS_PROP_BOX_SHADOW:
 		memcpy(style->shadows, parent->shadows, sizeof(style->shadows));
 		style->shadow_count = parent->shadow_count;
+		break;
+	case CSS_PROP_TEXT_SHADOW:
+		style->text_shadow = parent->text_shadow;
+		style->text_shadow_set = parent->text_shadow_set;
 		break;
 	case CSS_PROP_OUTLINE_WIDTH:
 		style->outline_width = parent->outline_width;
@@ -4013,6 +4026,28 @@ cascade_shadows(
 		shadow->inset = declared->inset;
 		style->shadow_count++;
 	}
+}
+
+/* Computes the single sharp text shadow supported by this pass. */
+static void
+cascade_text_shadow(
+	struct css_engine *engine,
+	struct css_style *style,
+	const struct css_value *value)
+{
+	const struct css_declared_shadow *declared;
+	struct css_length length;
+
+	style->text_shadow_set = 0;
+	if (value->kind != CSS_VALUE_SHADOWS || value->shadows == NULL || value->shadows->count == 0)
+		return;
+	declared = &value->shadows->shadows[0];
+	length = cascade_length(engine, &declared->lengths[0], style->font_size);
+	style->text_shadow.x = length.unit == CSS_UNIT_PX ? length.value : 0.0f;
+	length = cascade_length(engine, &declared->lengths[1], style->font_size);
+	style->text_shadow.y = length.unit == CSS_UNIT_PX ? length.value : 0.0f;
+	style->text_shadow.color = declared->color;
+	style->text_shadow_set = 1;
 }
 
 /* Converts a declared length to a computed one: pixels, a percentage or a keyword. */

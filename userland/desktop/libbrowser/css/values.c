@@ -139,6 +139,7 @@ static int values_border_radius(struct css_parse *parse, const struct css_token 
 static int values_corner_radius(struct css_parse *parse, int corner, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_radii(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *radii);
 static int values_box_shadow(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_text_shadow(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_one_shadow(const struct css_token *tokens, size_t count, struct css_declared_shadow *shadow);
 static int values_outline(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_clip_path(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
@@ -239,6 +240,7 @@ static const struct values_name values_names[] = {
 	{ "vertical-align", CSS_PROP_VERTICAL_ALIGN },
 	{ "opacity", CSS_PROP_OPACITY },
 	{ "box-shadow", CSS_PROP_BOX_SHADOW },
+	{ "text-shadow", CSS_PROP_TEXT_SHADOW },
 	{ "-webkit-box-shadow", CSS_PROP_BOX_SHADOW },
 	{ "-moz-box-shadow", CSS_PROP_BOX_SHADOW },
 	{ "outline-width", CSS_PROP_OUTLINE_WIDTH },
@@ -1555,6 +1557,8 @@ values_single(
 	/* box-shadow takes a list of shadows. */
 	if (property == CSS_PROP_BOX_SHADOW)
 		return values_box_shadow(parse, tokens, count, value);
+	if (property == CSS_PROP_TEXT_SHADOW)
+		return values_text_shadow(parse, tokens, count, value);
 
 	/* clip-path takes a shape. */
 	if (property == CSS_PROP_CLIP_PATH)
@@ -4060,6 +4064,35 @@ values_box_shadow(
 	}
 
 	/* Succeeded: the shadows are parsed. */
+	return 0;
+}
+
+/* Parses one sharp text shadow, or none; blur and lists remain unsupported. */
+static int
+values_text_shadow(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	struct css_shadow_list *list;
+	int error;
+
+	list = wb_arena_zalloc(parse->arena, sizeof(*list));
+	if (list == NULL)
+		return ENOMEM;
+	value->kind = CSS_VALUE_SHADOWS;
+	value->shadows = list;
+	if (count == 1 && tokens[0].type == CSS_TOKEN_IDENT && css_ident_equal(tokens, "none"))
+		return 0;
+
+	error = values_one_shadow(tokens, count, &list->shadows[0]);
+	if (error != 0)
+		return error;
+	if (list->shadows[0].inset || list->shadows[0].lengths[2].number != 0.0f ||
+	    list->shadows[0].lengths[3].number != 0.0f)
+		return EINVAL;
+	list->count = 1;
 	return 0;
 }
 

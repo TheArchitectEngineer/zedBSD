@@ -1,0 +1,145 @@
+canvas 800.00 x 600.00 #ffc0c0c0
+rect 20.00 449.00 644.00 4.00 #ff808080
+rect 660.00 20.00 4.00 429.00 #ff808080
+rect 16.00 16.00 644.00 433.00 #ffffffff
+clip 16.00 16.00 644.00 433.00
+image 638.00 18.00 20.00 20.00 20x20
+unclip
+rect 16.00 16.00 644.00 1.00 #ff000000
+rect 16.00 448.00 644.00 1.00 #ff000000
+rect 16.00 17.00 1.00 431.00 #ff000000
+rect 659.00 17.00 1.00 431.00 #ff000000
+clip 57.00 350.00 582.00 98.00
+image 619.00 350.00 20.00 20.00 20x20
+unclip
+text 60.00 150.00 100px face 0 bold 1 #ffc0c0c0 "Acid3"
+text 57.00 147.00 100px face 0 bold 1 #ff000000 "Acid3"
+rect 64.00 217.00 54.00 42.00 #ffff0000
+rect 64.00 217.00 54.00 1.00 #ff000000
+rect 64.00 258.00 54.00 1.00 #ff000000
+rect 64.00 218.00 1.00 40.00 #ff000000
+rect 117.00 218.00 1.00 40.00 #ff000000
+rect 127.00 201.00 64.00 50.00 #ffffa500
+rect 127.00 201.00 64.00 1.00 #ff000000
+rect 127.00 250.00 64.00 1.00 #ff000000
+rect 127.00 202.00 1.00 48.00 #ff000000
+rect 190.00 202.00 1.00 48.00 #ff000000
+rect 202.00 185.00 74.00 58.00 #ffffff00
+rect 202.00 185.00 74.00 1.00 #ff000000
+rect 202.00 242.00 74.00 1.00 #ff000000
+rect 202.00 186.00 1.00 56.00 #ff000000
+rect 275.00 186.00 1.00 56.00 #ff000000
+rect 288.00 169.00 86.00 66.00 #ff00ff00
+rect 288.00 169.00 86.00 1.00 #ff000000
+rect 288.00 234.00 86.00 1.00 #ff000000
+rect 288.00 170.00 1.00 64.00 #ff000000
+rect 373.00 170.00 1.00 64.00 #ff000000
+rect 387.00 153.00 96.00 74.00 #ff0000ff
+rect 387.00 153.00 96.00 1.00 #ff000000
+rect 387.00 226.00 96.00 1.00 #ff000000
+rect 387.00 154.00 1.00 72.00 #ff000000
+rect 482.00 154.00 1.00 72.00 #ff000000
+rect 498.00 137.00 96.00 82.00 #ff800080
+rect 498.00 137.00 96.00 1.00 #ff000000
+rect 498.00 218.00 96.00 1.00 #ff000000
+rect 498.00 138.00 1.00 80.00 #ff000000
+rect 593.00 138.00 1.00 80.00 #ff000000
+text 231.80 320.00 100px face 0 bold 1 #ff000000 "100"
+text 400.45 320.00 100px face 0 bold 1 #ff000000 "/"
+text 456.34 320.00 100px face 0 bold 1 #ff000000 "100"
+rect 619.00 350.00 20.00 20.00 #ffffffff
+text 57.00 364.59 16px face 0 bold 0 #ff808080 "To"
+text 74.12 364.59 16px face 0 bold 0 #ff808080 " "
+text 78.92 364.59 16px face 0 bold 0 #ff808080 "pass"
+text 110.56 364.59 16px face 0 bold 0 #ff808080 " "
+text 115.36 364.59 16px face 0 bold 0 #ff808080 "the"
+text 139.19 364.59 16px face 0 bold 0 #ff808080 " "
+text 143.98 364.59 16px face 0 bold 0 #ff808080 "test,"
+text 179.44 364.59 16px face 0 bold 0 #ff808080 " "
+text 184.23 364.59 16px face 0 bold 0 #ff808080 "a"
+text 192.48 364.59 16px face 0 bold 0 #ff808080 " "
+text 197.28 364.59 16px face 0 bold 0 #ff808080 "browser"
+text 253.44 364.59 16px face 0 bold 0 #ff808080 " "
+text 258.23 364.59 16px face 0 bold 0 #ff808080 "must"
+text 290.48 364.59 16px face 0 bold 0 #ff808080 " "
+text 295.28 364.59 16px face 0 bold 0 #ff808080 "use"
+text 319.03 364.59 16px face 0 bold 0 #ff808080 " "
+text 323.83 364.59 16px face 0 bold 0 #ff808080 "its"
+text 344.02 364.59 16px face 0 bold 0 #ff808080 " "
+text 348.81 364.59 16px face 0 bold 0 #ff808080 "default"
+text 402.23 364.59 16px face 0 bold 0 #ff808080 " "
+text 407.03 364.59 16px face 0 bold 0 #ff808080 "settings,"
+text 470.39 364.59 16px face 0 bold 0 #ff808080 " "
+text 475.19 364.59 16px face 0 bold 0 #ff808080 "the"
+text 499.02 364.59 16px face 0 bold 0 #ff808080 " "
+text 503.81 364.59 16px face 0 bold 0 #ff808080 "animation"
+text 570.11 364.59 16px face 0 bold 0 #ff808080 " "
+text 574.91 364.59 16px face 0 bold 0 #ff808080 "has"
+text 57.00 383.80 16px face 0 bold 0 #ff808080 "to"
+text 73.27 383.80 16px face 0 bold 0 #ff808080 " "
+text 78.06 383.80 16px face 0 bold 0 #ff808080 "be"
+text 94.48 383.80 16px face 0 bold 0 #ff808080 " "
+text 99.28 383.80 16px face 0 bold 0 #ff808080 "smooth,"
+text 151.72 383.80 16px face 0 bold 0 #ff808080 " "
+text 156.52 383.80 16px face 0 bold 0 #ff808080 "the"
+text 180.34 383.80 16px face 0 bold 0 #ff808080 " "
+text 185.14 383.80 16px face 0 bold 0 #ff808080 "score"
+text 224.58 383.80 16px face 0 bold 0 #ff808080 " "
+text 229.38 383.80 16px face 0 bold 0 #ff808080 "has"
+text 252.77 383.80 16px face 0 bold 0 #ff808080 " "
+text 257.56 383.80 16px face 0 bold 0 #ff808080 "to"
+text 273.83 383.80 16px face 0 bold 0 #ff808080 " "
+text 278.62 383.80 16px face 0 bold 0 #ff808080 "end"
+text 302.64 383.80 16px face 0 bold 0 #ff808080 " "
+text 307.44 383.80 16px face 0 bold 0 #ff808080 "on"
+text 323.38 383.80 16px face 0 bold 0 #ff808080 " "
+text 328.17 383.80 16px face 0 bold 0 #ff808080 "100/100,"
+text 393.75 383.80 16px face 0 bold 0 #ff808080 " "
+text 398.55 383.80 16px face 0 bold 0 #ff808080 "and"
+text 422.47 383.80 16px face 0 bold 0 #ff808080 " "
+text 427.27 383.80 16px face 0 bold 0 #ff808080 "the"
+text 451.09 383.80 16px face 0 bold 0 #ff808080 " "
+text 455.89 383.80 16px face 0 bold 0 #ff808080 "final"
+text 489.42 383.80 16px face 0 bold 0 #ff808080 " "
+text 494.22 383.80 16px face 0 bold 0 #ff808080 "page"
+text 527.12 383.80 16px face 0 bold 0 #ff808080 " "
+text 531.92 383.80 16px face 0 bold 0 #ff808080 "has"
+text 555.31 383.80 16px face 0 bold 0 #ff808080 " "
+text 560.11 383.80 16px face 0 bold 0 #ff808080 "to"
+text 576.38 383.80 16px face 0 bold 0 #ff808080 " "
+text 581.17 383.80 16px face 0 bold 0 #ff808080 "look"
+text 57.00 403.00 16px face 0 bold 0 #ff808080 "exactly,"
+text 115.89 403.00 16px face 0 bold 0 #ff808080 " "
+text 120.69 403.00 16px face 0 bold 0 #ff808080 "pixel"
+text 155.62 403.00 16px face 0 bold 0 #ff808080 " "
+text 160.42 403.00 16px face 0 bold 0 #ff808080 "for"
+text 183.89 403.00 16px face 0 bold 0 #ff808080 " "
+text 188.69 403.00 16px face 0 bold 0 #ff808080 "pixel,"
+text 227.36 403.00 16px face 0 bold 0 #ff808080 " "
+text 232.16 403.00 16px face 0 bold 0 #ff808080 "like"
+text 258.31 403.00 16px face 0 bold 0 #ff808080 " "
+text 263.11 403.00 16px face 0 bold 0 #ff0000ff "this"
+rect 263.11 405.00 27.77 1.00 #ff0000ff
+text 290.88 403.00 16px face 0 bold 0 #ff0000ff " "
+rect 290.88 405.00 4.80 1.00 #ff0000ff
+text 295.67 403.00 16px face 0 bold 0 #ff0000ff "reference"
+rect 295.67 405.00 71.23 1.00 #ff0000ff
+text 366.91 403.00 16px face 0 bold 0 #ff0000ff " "
+rect 366.91 405.00 4.80 1.00 #ff0000ff
+text 371.70 403.00 16px face 0 bold 0 #ff0000ff "rendering"
+rect 371.70 405.00 67.14 1.00 #ff0000ff
+text 438.84 403.00 16px face 0 bold 0 #ff808080 "."
+text 17.00 27.00 10px face 0 bold 1 #ffff0000 "YOU"
+text 35.97 27.00 10px face 0 bold 1 #ffff0000 " "
+text 39.97 27.00 10px face 0 bold 1 #ffff0000 "SHOULD"
+text 17.00 39.00 10px face 0 bold 1 #ffff0000 "NOT"
+text 35.88 39.00 10px face 0 bold 1 #ffff0000 " "
+text 39.88 39.00 10px face 0 bold 1 #ffff0000 "SEE"
+text 56.73 39.00 10px face 0 bold 1 #ffff0000 " "
+text 60.73 39.00 10px face 0 bold 1 #ffff0000 "THIS"
+text 17.00 51.00 10px face 0 bold 1 #ffff0000 "AT"
+text 30.34 51.00 10px face 0 bold 1 #ffff0000 " "
+text 34.34 51.00 10px face 0 bold 1 #ffff0000 "ALL"
+rect 638.00 18.00 20.00 20.00 #ffff00ff
+text 638.00 34.00 20px face 3 bold 0 #ffffffff "X"
+text 10.00 46.00 40px face 0 bold 0 #00000000 "FAIL"

@@ -457,6 +457,9 @@ struct css_style {
 	float opacity;
 	struct css_shadow shadows[CSS_SHADOWS];
 	int shadow_count;
+	/* One inherited sharp text shadow; blur and lists are added by a later phase. */
+	struct css_shadow text_shadow;
+	int text_shadow_set;
 	float outline_width;
 	int outline_style;
 	uint32_t outline_color;

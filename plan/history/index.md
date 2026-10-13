@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1009 / WS074 sharp text-shadow（2026-10-13）
+
+[q1009履歴](queue-q1009.md): 単一 sharp text-shadow で h1 の +3px 灰色影を描画。局所 fixture・CSS rule44/44、build warning0。固定 Acid3 得点100/100・pixel差1701/480000（q1008から2451減、99.645625%一致）、Acid2差1865/120000不変。p186の有限部分 scope cleared。残差は左上リンク文字801画素と紫の箱右端900画素。p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
+
 ## 最新: q1008 / WS074 zero-font inline line（2026-10-13）
 
 [q1008履歴](queue-q1008.md): font-size0 strut の偽0.5px を修正、bucket line162・結果top230・本文top350に。最小 fixture 修正前 FAIL→修正後 PASS、position25/25、build warning0。固定 Acid3 得点100/100・pixel差4152/480000（q1007から8265減、99.135%一致）、Acid2差1865/120000不変。p185 cleared。見出し影・上部リンク文字等、p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
