@@ -1,0 +1,200 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "e.style['text-decoration'] = \"none\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"line-through\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"solid\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"currentcolor\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"auto\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"from-font\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"10px\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"double overline underline\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"underline overline line-through red\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"underline overline line-through blink\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"underline overline line-through blink red\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"rgba(10, 20, 30, 0.4) dotted\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"overline green from-font\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"overline from-font green\" but got \"overline green from-font\""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"underline dashed green\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"underline auto\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline\" but got \"underline auto\""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"line-through 20px\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"overline 3em\" should set the property value",
+      "status": 0,
+      "message": ""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "e.style['text-decoration'] = \"none\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"line-through\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"solid\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"currentcolor\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"auto\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"from-font\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"10px\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"double overline underline\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"underline overline line-through red\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"underline overline line-through blink\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"underline overline line-through blink red\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"rgba(10, 20, 30, 0.4) dotted\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"overline green from-font\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"overline from-font green\" but got \"overline green from-font\""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"underline dashed green\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"underline auto\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline\" but got \"underline auto\""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"line-through 20px\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"overline 3em\" should set the property value",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-text-decor/parsing/text-decoration-valid.html",
+  "focus": [
+    "textdecoration"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:38301/css/css-text-decor/parsing/text-decoration-valid.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"none\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"line-through\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"solid\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"currentcolor\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"auto\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"from-font\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"double overline underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"underline overline line-through red\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"underline overline line-through blink\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"underline overline line-through blink red\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"rgba(10, 20, 30, 0.4) dotted\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"overline green from-font\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline from-font green\\\" but got \\\"overline green from-font\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"underline dashed green\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"underline auto\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline\\\" but got \\\"underline auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"line-through 20px\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"overline 3em\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"e.style['text-decoration'] = \\\"none\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration'] = \\\"line-through\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration'] = \\\"solid\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['text-decoration'] = \\\"currentcolor\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['text-decoration'] = \\\"auto\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['text-decoration'] = \\\"from-font\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['text-decoration'] = \\\"10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['text-decoration'] = \\\"double overline underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['text-decoration'] = \\\"underline overline line-through red\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration'] = \\\"underline overline line-through blink\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration'] = \\\"underline overline line-through blink red\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration'] = \\\"rgba(10, 20, 30, 0.4) dotted\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['text-decoration'] = \\\"overline green from-font\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline from-font green\\\" but got \\\"overline green from-font\\\"\"},{\"name\":\"e.style['text-decoration'] = \\\"underline dashed green\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration'] = \\\"underline auto\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline\\\" but got \\\"underline auto\\\"\"},{\"name\":\"e.style['text-decoration'] = \\\"line-through 20px\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration'] = \\\"overline 3em\\\" should set the property value\",\"status\":0,\"message\":\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

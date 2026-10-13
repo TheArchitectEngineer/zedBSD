@@ -78,6 +78,7 @@ static int style_set_property(struct vm_realm *realm, vm_value this_value, const
 static int style_remove_property(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int style_member_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int style_member_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int style_css_supports(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 
 /*
  * The attributes of CSSStyleDeclaration; the properties' accessors are
@@ -119,6 +120,7 @@ int
 bind_style_install(
 	struct bind_window *window)
 {
+	struct vm_object *css;
 	struct vm_string *property;
 	const char *name;
 	char camel[STYLE_NAME_MAX];
@@ -167,6 +169,17 @@ bind_style_install(
 
 	/* Both inline and computed declarations use the ordinary float accessor. */
 	status = style_accessor(window, "cssFloat", property);
+	if (status != 0)
+		return status;
+
+	/* The CSS namespace consults the same declaration parser as inline style. */
+	css = vm_object_create(window->realm->heap, window->realm->object_prototype);
+	if (css == NULL)
+		return ENOMEM;
+	status = js_builtin_value(window->realm, window->realm->global, "CSS", vm_value_cell(css), JS_BUILTIN_METHOD);
+	if (status != 0)
+		return status;
+	status = js_builtin_method(window->realm, css, "supports", 2, style_css_supports);
 	if (status != 0)
 		return status;
 
@@ -237,6 +250,74 @@ bind_style_set(
 	status = style_css_text_set(realm, declaration, args, count, result);
 	if (status != 0)
 		return status;
+	return 0;
+}
+
+/* Answers CSS.supports for a property/value or a simple parenthesized declaration. */
+static int
+style_css_supports(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_string *name;
+	struct vm_string *value;
+	struct vm_string *condition;
+	struct vm_cell *name_root;
+	struct wb_units units;
+	size_t start;
+	size_t end;
+	int valid;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+	valid = 0;
+	if (count >= 2U) {
+		/* The two-argument form uses the engine's actual declaration grammar. */
+		status = style_property_name(realm, args[0], &name);
+		if (status != 0)
+			return status;
+		name_root = &name->cell;
+		status = vm_heap_add_root(realm->heap, &name_root);
+		if (status != 0)
+			return status;
+		status = bind_to_string(realm, args[1], &value);
+		if (status != 0) {
+			vm_heap_remove_root(realm->heap, &name_root);
+			return status;
+		}
+		status = style_valid(realm, name, value, &valid);
+		vm_heap_remove_root(realm->heap, &name_root);
+		if (status != 0)
+			return status;
+	} else {
+		/* A basic condition is one declaration enclosed in parentheses. */
+		status = bind_to_string(realm, count > 0U ? args[0] : VM_VALUE_UNDEFINED, &condition);
+		if (status != 0)
+			return status;
+		wb_units_init(&units);
+		status = vm_string_append_units(condition, &units);
+		if (status != 0) {
+			wb_units_release(&units);
+			return status;
+		}
+		start = 0;
+		end = units.length;
+		while (start < end && style_is_space(units.data[start]))
+			start++;
+		while (end > start && style_is_space(units.data[end - 1U]))
+			end--;
+		if (end > start + 2U && units.data[start] == '(' && units.data[end - 1U] == ')')
+			status = css_declaration_valid(realm->heap, units.data + start + 1U, end - start - 2U, &valid);
+		wb_units_release(&units);
+		if (status != 0)
+			return status;
+	}
+
+	/* Unsupported declarations and conditions are false. */
+	*result = vm_value_boolean(valid);
 	return 0;
 }
 

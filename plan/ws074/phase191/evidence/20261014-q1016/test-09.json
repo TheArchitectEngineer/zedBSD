@@ -1,0 +1,80 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "e.style['text-decoration'] = \"overline from-font dotted green\" should set text-decoration-color",
+      "status": 1,
+      "message": "assert_equals: text-decoration-color should be canonical expected (string) \"green\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['text-decoration'] = \"overline from-font dotted green\" should set text-decoration-line",
+      "status": 1,
+      "message": "assert_equals: text-decoration-line should be canonical expected \"overline\" but got \"\""
+    },
+    {
+      "name": "e.style['text-decoration'] = \"overline from-font dotted green\" should set text-decoration-style",
+      "status": 1,
+      "message": "assert_equals: text-decoration-style should be canonical expected (string) \"dotted\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['text-decoration'] = \"overline from-font dotted green\" should set text-decoration-thickness",
+      "status": 1,
+      "message": "assert_equals: text-decoration-thickness should be canonical expected (string) \"from-font\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['text-decoration'] = \"overline from-font dotted green\" should not set unrelated longhands",
+      "status": 1,
+      "message": "assert_equals: expected 0 but got 1"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "e.style['text-decoration'] = \"overline from-font dotted green\" should set text-decoration-color",
+        "status": 1,
+        "message": "assert_equals: text-decoration-color should be canonical expected (string) \"green\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['text-decoration'] = \"overline from-font dotted green\" should set text-decoration-line",
+        "status": 1,
+        "message": "assert_equals: text-decoration-line should be canonical expected \"overline\" but got \"\""
+      },
+      {
+        "name": "e.style['text-decoration'] = \"overline from-font dotted green\" should set text-decoration-style",
+        "status": 1,
+        "message": "assert_equals: text-decoration-style should be canonical expected (string) \"dotted\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['text-decoration'] = \"overline from-font dotted green\" should set text-decoration-thickness",
+        "status": 1,
+        "message": "assert_equals: text-decoration-thickness should be canonical expected (string) \"from-font\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['text-decoration'] = \"overline from-font dotted green\" should not set unrelated longhands",
+        "status": 1,
+        "message": "assert_equals: expected 0 but got 1"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-text-decor/parsing/text-decoration-shorthand.html",
+  "focus": [
+    "textdecoration"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:37215/css/css-text-decor/parsing/text-decoration-shorthand.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"overline from-font dotted green\\\" should set text-decoration-color\",\"status\":1,\"message\":\"assert_equals: text-decoration-color should be canonical expected (string) \\\"green\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"overline from-font dotted green\\\" should set text-decoration-line\",\"status\":1,\"message\":\"assert_equals: text-decoration-line should be canonical expected \\\"overline\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"overline from-font dotted green\\\" should set text-decoration-style\",\"status\":1,\"message\":\"assert_equals: text-decoration-style should be canonical expected (string) \\\"dotted\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"overline from-font dotted green\\\" should set text-decoration-thickness\",\"status\":1,\"message\":\"assert_equals: text-decoration-thickness should be canonical expected (string) \\\"from-font\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration'] = \\\"overline from-font dotted green\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_equals: expected 0 but got 1\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"e.style['text-decoration'] = \\\"overline from-font dotted green\\\" should set text-decoration-color\",\"status\":1,\"message\":\"assert_equals: text-decoration-color should be canonical expected (string) \\\"green\\\" but got (undefined) undefined\"},{\"name\":\"e.style['text-decoration'] = \\\"overline from-font dotted green\\\" should set text-decoration-line\",\"status\":1,\"message\":\"assert_equals: text-decoration-line should be canonical expected \\\"overline\\\" but got \\\"\\\"\"},{\"name\":\"e.style['text-decoration'] = \\\"overline from-font dotted green\\\" should set text-decoration-style\",\"status\":1,\"message\":\"assert_equals: text-decoration-style should be canonical expected (string) \\\"dotted\\\" but got (undefined) undefined\"},{\"name\":\"e.style['text-decoration'] = \\\"overline from-font dotted green\\\" should set text-decoration-thickness\",\"status\":1,\"message\":\"assert_equals: text-decoration-thickness should be canonical expected (string) \\\"from-font\\\" but got (undefined) undefined\"},{\"name\":\"e.style['text-decoration'] = \\\"overline from-font dotted green\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_equals: expected 0 but got 1\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

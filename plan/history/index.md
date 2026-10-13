@@ -2,6 +2,14 @@
 
 # Past Log
 
+## 最新: q1016 / WS074 CSS.supports（2026-10-14）
+
+[q1016履歴](queue-q1016.md): `CSS` globalと `supports` を既存宣言parserに接続。textdecoration16件の computed系で `CSS is not defined` を解消し、値の不足を特定。固定16件4 PASS/12 FAIL、Acid3 score100/100・RGB差0維持。p191 partial scope cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase191/evidence/20261014-q1016/README.md)。共有投影/GitHub publication pending。
+
+## 最新: q1015 / WS074 textdecoration全16 testharness（2026-10-14）
+
+[q1015履歴](queue-q1015.md): 固定Interop 2025 manifestのtextdecoration領域全16 IDを実行、4 PASS/12 FAIL、subtest47 PASS/132 FAIL、全completion取得。`CSS` global欠落とCSSOM不足を共通原因候補に分類。p189 partial scope cleared、whole1,783件、p173全件baseline/100%は未達。[証拠](../ws074/phase189/evidence/20261014-q1015/README.md)。browser/WPT/Master無変更、共有投影/GitHub publication pending。
+
 ## 最新: q1014 / WS074 testharness領域sample（2026-10-14）
 
 [q1014履歴](queue-q1014.md): Interop 2025 の19領域から各最大1件、単一HTTP対応15 IDを実行。0 PASS/12 test FAIL/1 harness ERROR/1 completion無し/1無出力。4領域は対象環境が未対応で未実行、PASSに算入しない。p189 partial scope cleared、whole1,783件とp173全件baseline/100%は未達。[証拠](../ws074/phase189/evidence/20261014-q1014/README.md)。browser/WPT/Master無変更、共有投影/GitHub publicationは pending。

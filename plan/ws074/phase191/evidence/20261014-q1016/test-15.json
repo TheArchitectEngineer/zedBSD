@@ -1,0 +1,80 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "e.style['text-decoration-style'] = \"solid\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['text-decoration-style'] = \"double\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['text-decoration-style'] = \"dotted\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['text-decoration-style'] = \"dashed\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['text-decoration-style'] = \"wavy\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "e.style['text-decoration-style'] = \"solid\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['text-decoration-style'] = \"double\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['text-decoration-style'] = \"dotted\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['text-decoration-style'] = \"dashed\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['text-decoration-style'] = \"wavy\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-text-decor/parsing/text-decoration-style-valid.html",
+  "focus": [
+    "textdecoration"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:44727/css/css-text-decor/parsing/text-decoration-style-valid.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"e.style['text-decoration-style'] = \\\"solid\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-style'] = \\\"double\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-style'] = \\\"dotted\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-style'] = \\\"dashed\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-style'] = \\\"wavy\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"e.style['text-decoration-style'] = \\\"solid\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['text-decoration-style'] = \\\"double\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['text-decoration-style'] = \\\"dotted\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['text-decoration-style'] = \\\"dashed\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['text-decoration-style'] = \\\"wavy\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

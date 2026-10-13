@@ -1,0 +1,210 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "Property text-decoration-line value 'none'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'underline'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'overline'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'line-through'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'blink'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'underline overline'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'underline line-through'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'underline blink'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'overline line-through'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'overline blink'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'line-through blink'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'underline overline line-through'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'underline overline blink'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'underline line-through blink'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'overline line-through blink'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'underline overline line-through blink'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'spelling-error'",
+      "status": 1,
+      "message": "CSS is not defined"
+    },
+    {
+      "name": "Property text-decoration-line value 'grammar-error'",
+      "status": 1,
+      "message": "CSS is not defined"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Property text-decoration-line value 'none'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'underline'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'overline'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'line-through'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'blink'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'underline overline'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'underline line-through'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'underline blink'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'overline line-through'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'overline blink'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'line-through blink'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'underline overline line-through'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'underline overline blink'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'underline line-through blink'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'overline line-through blink'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'underline overline line-through blink'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'spelling-error'",
+        "status": 1,
+        "message": "CSS is not defined"
+      },
+      {
+        "name": "Property text-decoration-line value 'grammar-error'",
+        "status": 1,
+        "message": "CSS is not defined"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-text-decor/parsing/text-decoration-line-computed.html",
+  "focus": [
+    "textdecoration"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:40551/css/css-text-decor/parsing/text-decoration-line-computed.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'none'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'underline'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'overline'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'line-through'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'blink'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'underline overline'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'underline line-through'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'underline blink'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'overline line-through'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'overline blink'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'line-through blink'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'underline overline line-through'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'underline overline blink'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'underline line-through blink'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'overline line-through blink'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'underline overline line-through blink'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'spelling-error'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration-line value 'grammar-error'\",\"status\":1,\"message\":\"CSS is not defined\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Property text-decoration-line value 'none'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'underline'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'overline'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'line-through'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'blink'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'underline overline'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'underline line-through'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'underline blink'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'overline line-through'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'overline blink'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'line-through blink'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'underline overline line-through'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'underline overline blink'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'underline line-through blink'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'overline line-through blink'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'underline overline line-through blink'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'spelling-error'\",\"status\":1,\"message\":\"CSS is not defined\"},{\"name\":\"Property text-decoration-line value 'grammar-error'\",\"status\":1,\"message\":\"CSS is not defined\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

@@ -1,0 +1,7 @@
+<!doctype html><script>
+console.log('CSS=' + typeof CSS);
+console.log('display=' + CSS.supports('display', 'block'));
+console.log('invalid=' + CSS.supports('display', 'nonsense'));
+console.log('condition=' + CSS.supports('(display: block)'));
+console.log('complex=' + CSS.supports('(display: block) and (display: grid)'));
+</script>
