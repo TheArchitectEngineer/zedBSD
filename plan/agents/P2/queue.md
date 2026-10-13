@@ -63,3 +63,5 @@ Next（予約）: debug を続ける（BUG-147 の後: 優先度の高い bug。
 - q949 結果（2026-10-13 夜）: WS157 p015（実装は 10-11 の P1）・p017（libjpeg-compat の 1/2・1/4・1/8 の縮小 decode と preview）7278694ff → main 523370caf（main で photos・keiland-preview の build warning 0）。test-wait（T1-584）。
 - q950: WS172 p004・p004b はユーザーの判断 S1〜S13 と 5330 の ACPI TPM2 の読み（Linux で起動）待ちで止めた（e06b7d41d、phase004/phase.md の記録）。
 - q951: WS046 の残りに進む。
+- q951 結果（2026-10-13 夜）: WS046 p007 は T1-050 の証拠で Q1 が cleared、p014 は「make check の status 0」をユーザーの判断に（(a) expat の runtests 4932/4932 で満たしたとみなす が推し）。記録 20a4dab66 → main 0d4ac1421。
+- 予約（2026-10-13 夜 Q1）: q952 [WS102](../../ws102/ws.md) p011（画面 keyboard の frame の p95 を目標まで）→ q953 [WS145](../../ws145/ws.md) p005（Linux・FreeBSD の build・install と guest）→ q954 [WS161](../../ws161/ws.md) p006 の残り（Linux・FreeBSD の build）。

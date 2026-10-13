@@ -66,3 +66,5 @@ Next（予約）: ws115-p006（libpng・freetype・harfbuzz・fontconfig）〜
 - q945 結果（2026-10-13 夜）: ws220-p005 設計 6923b94e6 → design review（plan/ws220/phase005/review-1.md、重大 G1・G2）→ 直し 14d230247 → M7 の FreeBSD と同じ persist と TCP_MAXUNACKTIME（ユーザーの決定）29056974d → main e7ccb1a1c。libc の tcp.h の注記は Q1 が直した（3fb62183e）。test-wait（T1 の依頼は下の q947 の後にまとめる）。P3 の世代はここで終わり（context 約 83 万 token）。
 
 2026-10-13 夜 / q947（P3 の新しい世代）: WS220 の T1-577 の損失 0 の退行の調べと直し（longest_stall_ms 2〜8 → 178〜226 ms、再送 0、down・down-disk 88〜89 %）。ユーザー「main に残し、直しを急ぐ」（2026-10-13）。State: active。
+- q947 結果（2026-10-13 夜）: WS220 の T1-577 の遅さは環境（T1-581、同じ session で k1 < k2 < k3）、code の変更なし。記録 f3ef3fc22・ed94f056f → main 0d4ac1421。p003・p004 は Q1 が cleared、p005 は T1-585。
+- 予約（2026-10-13 夜 Q1、ベータ2 の残りの実装）: q955 [WS156](../../ws156/ws.md) p006（Linux の D-Bus の Notifications）→ q956 [WS051](../../ws051/ws.md) p005b（抜けの停止）→ q957 [WS081](../../ws081/ws.md) の残り（L3 の計測の script と係数）→ q958 [WS033](../../ws033/ws.md) p001（USB LAN の後挿し）。
