@@ -809,4 +809,70 @@ drv_ahci_command_expire(
 	return state;
 }
 
+/*
+ * Says whether a finished command is evidence of a missing interrupt.
+ *
+ * Only a completion found after a sleep that the poll interval ended,
+ * with no wakeup from the interrupt handler, counts.  A command found
+ * finished at the waiter's first look, before it ever slept, finished
+ * faster than its interrupt could be taken (the interrupt then finds the
+ * status already cleared); that says nothing about the interrupt path.
+ * An idle-thread waiter never sleeps and is not counted.
+ */
+static __inline int
+drv_ahci_completion_by_polling(
+	unsigned state,
+	int idle,
+	int slept,
+	int woken)
+{
+	/* Only a command that finished without an error is counted. */
+	if (state != DRV_AHCI_COMMAND_DONE)
+		return 0;
+
+	/* A waiter that yields instead of sleeping never waits for an interrupt. */
+	if (idle)
+		return 0;
+
+	/* A completion seen before any sleep did not wait for an interrupt. */
+	if (!slept)
+		return 0;
+
+	/* The interrupt handler woke the waiter: the interrupt worked. */
+	if (woken)
+		return 0;
+
+	/* The poll interval, not an interrupt, ended the last sleep. */
+	return 1;
+}
+
+/*
+ * Reports whether a disk's volatile write cache may hold unflushed data
+ * after one command.
+ *
+ * Any write, even one that failed, may have left data in the cache.  A
+ * flush that succeeded empties it of every earlier write, since a port runs
+ * one command at a time.  Other commands leave it as it was.
+ */
+static __inline int
+drv_ahci_cache_dirty_after(
+	int dirty,
+	uint8_t command,
+	int succeeded)
+{
+	/* A write may have reached the cache, whatever its outcome. */
+	if (command == DRV_AHCI_ATA_WRITE_DMA_EXT)
+		return 1;
+
+	/* A failed flush or a non-flush command changes nothing. */
+	if (!succeeded)
+		return dirty;
+	if (command != DRV_AHCI_ATA_FLUSH_CACHE_EXT &&
+	    command != DRV_AHCI_ATA_FLUSH_CACHE)
+		return dirty;
+
+	/* A finished flush leaves nothing behind it. */
+	return 0;
+}
+
 #endif
