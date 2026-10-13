@@ -10,8 +10,9 @@
  * display the resident output was moved to is unplugged while it is lit,
  * the hotplug path marks the window to be left at once and wakes the
  * worker; the worker's looks (the hold's end, the top of its loop) see it,
- * held or not.  Another connector, the firmware's own output, or an output
- * not lit is not marked.
+ * held or not.  Another connector, the built-in panel as the firmware's
+ * own output, or an output not lit is not marked (the firmware's own
+ * external output is, since ws051-p005b: plan/ws051/tests/host-unplug-gop.c).
  */
 
 #include "src/drivers/gpu/i915/tests/display/host-test.h"
@@ -86,7 +87,7 @@ main(
 	drv_i915_present_unplugged(&display, 3U);
 	i915_host_check(display.window.unplugged == 0 && wakes == 1U, "an output not lit is not marked");
 
-	/* The firmware's own output (not moved): not marked; its connector is not an external one here. */
+	/* The firmware's own output, the built-in panel here (not moved): never marked. */
 	display.resident_up = 1;
 	display.output = display.gop_output;
 	drv_i915_present_unplugged(&display, 0U);
