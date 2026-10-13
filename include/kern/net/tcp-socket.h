@@ -181,6 +181,49 @@ struct tcp_socket {
 	 */
 	unsigned retransmit_refused;
 	/*
+	 * The round-trip time estimate of RFC 6298 (ws220-p004): how many
+	 * samples have been taken (0: none, so the next is the first of
+	 * section 2.2), the smoothed round-trip time and its variation in
+	 * microseconds, and the retransmission timeout, in clock ticks before
+	 * any backoff (0 stands for the initial second; a handshake whose SYN
+	 * timed out sets three seconds, section 5.7).
+	 *
+	 * rto_backoff is how many times that timeout is doubled: one more for
+	 * each timeout that really expired, back to 0 only with a valid sample
+	 * (Karn's rule, RFC 6298 section 5 note).  retransmit_count above, the
+	 * resends of the oldest segment, is a different count (an immediate
+	 * resend adds to it, and an acknowledgement that moves sets it back).
+	 * retransmit_immediate marks a deadline set to now for an immediate
+	 * resend (recovery, a reopened window), which does not double.
+	 *
+	 * One segment at a time is timed: while rtt_timing is set, the one
+	 * ending at rtt_sequence, handed to the device at tick rtt_start; it
+	 * is in the ring and marked sent.  A resend by the timer stops the
+	 * timing (Karn), as do the segment going unsent again or taken back
+	 * and the ring's reset; the next segment sent starts it again.
+	 * syn_timed_out is set when the timer resent the SYN (or SYN-ACK), or
+	 * a repeated SYN had the SYN-ACK sent again: the handshake then gives
+	 * no sample and the data starts with three seconds.
+	 */
+	uint32_t rtt_samples;
+	uint32_t srtt_us;
+	uint32_t rttvar_us;
+	uint64_t rto;
+	unsigned rto_backoff;
+	unsigned retransmit_immediate;
+	unsigned rtt_timing;
+	uint32_t rtt_sequence;
+	uint64_t rtt_start;
+	unsigned syn_timed_out;
+	/*
+	 * A recovery after a timeout that really expired: while
+	 * recovery_active is set, an acknowledgement after a resend has the
+	 * next segment resent at once only while it lies before recovery_end,
+	 * what had been sent at the timeout (ws220-p004 review-1 G1).
+	 */
+	uint32_t recovery_end;
+	unsigned recovery_active;
+	/*
 	 * TCP_NODELAY as the caller set it, and the idle-probe state for
 	 * SO_KEEPALIVE: when the next probe is due and how many have gone
 	 * unanswered.

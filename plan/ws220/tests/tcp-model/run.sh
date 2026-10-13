@@ -69,18 +69,19 @@ scenario() {
 scenario lan-clean 30 --bytes 67108864
 # 10 ms of round trip: the rate is the window over the round trip (64 KB: 6.4 MB/s).
 scenario rtt-10ms 4 --bytes 16777216 --delay-us 5000
+# (ws220-p004 review-1 G2: the resends of these and of slow-reader stay at most p003's, --expect-retransmits-max.)
 # Losses on the data with a Linux peer's window: each must cost a round trip or so, not a timeout.
-scenario lan-loss-0.1 10 --bytes 33554432 --loss-ab 0.1 --peer-window 65535 --limit-s 300
-scenario lan-loss-1 2 --bytes 8388608 --loss-ab 1 --peer-window 65535 --limit-s 300
-scenario rtt-10ms-loss-0.1 2 --bytes 8388608 --delay-us 5000 --loss-ab 0.1 --peer-window 65535 --limit-s 300
+scenario lan-loss-0.1 10 --bytes 33554432 --loss-ab 0.1 --peer-window 65535 --limit-s 300 --expect-retransmits-max 30
+scenario lan-loss-1 2 --bytes 8388608 --loss-ab 1 --peer-window 65535 --limit-s 300 --expect-retransmits-max 83
+scenario rtt-10ms-loss-0.1 2 --bytes 8388608 --delay-us 5000 --loss-ab 0.1 --peer-window 65535 --limit-s 300 --expect-retransmits-max 10
 # The same losses with zedBSD as the receiver (its window moves, which hides part of the sender's fault).
 scenario lan-loss-1-zedbsd 2 --bytes 16777216 --loss-ab 1 --limit-s 300
 # Losses on the acknowledgements only.
-scenario lan-ackloss-1 30 --bytes 33554432 --loss-ba 1 --peer-window 65535
+scenario lan-ackloss-1 30 --bytes 33554432 --loss-ba 1 --peer-window 65535 --expect-retransmits-max 0
 # A's sequence numbers wrap 4 MiB into the transfer (a 1 GB transfer crosses the wrap one time in four).
 scenario lan-wrap 10 --bytes 16777216 --wrap-before 4194304 --limit-s 120
 # A reader slower than the link (2 MB/s): the window closes and opens again, the rate is the reader's.
-scenario slow-reader 1.6 --bytes 16777216 --reader-kbps 16000
+scenario slow-reader 1.6 --bytes 16777216 --reader-kbps 16000 --expect-retransmits-max 14246
 # ws220-p002: one data segment in twenty starts 100 bytes before B's receive_next (B takes the rest), also across the wrap.
 scenario overlap 30 --bytes 33554432 --overlap-ab 5
 scenario overlap-wrap 30 --bytes 16777216 --overlap-ab 5 --wrap-before 4194304 --limit-s 120
@@ -157,6 +158,48 @@ connect_unresolved() {
 	fi
 }
 connect_unresolved connect-unresolved --connect-unresolved
+# ws220-p004: the round-trip estimate (RFC 6298): A's SRTT on the LAN (0.2 ms, within a tick) and with 10 ms of round
+# trip, and net.tcpstats gives it.
+scenario rtt-estimate-lan 30 --bytes 16777216 --expect-srtt-us 0:2000
+scenario rtt-estimate-10ms 0.5 --bytes 4194304 --delay-us 5000 --expect-srtt-us 9000:13000
+# ws220-p004: A's first SYN is lost: the data starts with a timeout of 3 s (RFC 6298 section 5.7), and the first sample
+# sets SRTT = R and RTTVAR = R / 2 (section 2.2; RTT 10 ms).
+syn_retried() {
+	name=$1
+	shift
+	if [ "$only" != "  " ] && ! echo "$only" | grep -q " $name "; then
+		return 0
+	fi
+	scenario "$name" 0.5 "$@"
+	connected=$(timeout 600 "$out/tcp-model" --quiet "$@" | grep '^tcp-model: connected')
+	echo "$name: $connected"
+	if ! echo "$connected" | grep -q ' rto_ms=3000 '; then
+		echo "  FAIL: $name: the connection did not start with a 3 s timeout"
+		status=1
+	fi
+}
+syn_retried syn-retried --bytes 4194304 --delay-us 5000 --lose-first-syn --expect-first-srtt-us 9000:11000 \
+    --expect-first-rttvar-us 4000:6000
+# ws220-p004 review-1: the losses' stalls are what the timeouts explain (one RTO a loss, more only for a resend lost
+# too or a loss before the backoff ended), the seed fixed (the counts are printed on the "stall:" line).
+scenario loss-stall-0.1 0 --bytes 33554432 --loss-ab 0.1 --peer-window 65535 --limit-s 300 --expect-stall-rto
+scenario loss-stall-1 0 --bytes 8388608 --loss-ab 1 --peer-window 65535 --limit-s 300 --expect-stall-rto
+# ws220-p004 review-1: a peer that delays its acknowledgements 40 ms (Linux) or 200 ms (the longest), each segment alone
+# (a writer with gaps) or in a stream: no spurious resend, and SRTT takes the delay in.
+scenario delayed-ack-40 0 --bytes 262144 --writer-gap-ms 300 --ack-delay-ms 40 --expect-retransmits-max 0 \
+    --expect-srtt-us 30000:50000
+scenario delayed-ack-200 0 --bytes 262144 --writer-gap-ms 300 --ack-delay-ms 200 --expect-retransmits-max 0 \
+    --expect-srtt-us 190000:210000
+scenario delayed-ack-stream 30 --bytes 16777216 --ack-delay-ms 200 --expect-retransmits-max 0
+# ws220-p004 review-1 G1: the round trip grows from 0.2 ms to 600 ms past the timeout: the backoff holds until a sample,
+# the resends stay few, and SRTT follows (a Linux-like peer, whose window does not move).
+scenario rtt-step 0 --bytes 1048576 --delay-step-at-ms 20 --delay-step-us 300000 --peer-window 65535 --limit-s 120 \
+    --expect-retransmits-max 4 --expect-srtt-us 500000:700000
+# ws220-p004 review-1 G2: B's reader stops for 5 s, B's window closes: A's probes double apart (at most 10, p003: 17739).
+scenario zero-window 2 --bytes 16777216 --reader-pause-at-ms 100 --reader-pause-ms 5000 --expect-retransmits-max 10
+# ws220-p004 review-1 M1: A's route fails for 50 ms; a write taken back and written again is not timed from its first
+# try (SRTT stays within 5 ms).
+scenario no-route 10 --bytes 16777216 --no-route-at-ms 100 --no-route-ms 50 --expect-srtt-max-us 5000
 # ws220-p002: the link loses everything 500 ms in: A gives up after R2 (at least 100 s; 1+2+4+8+16+32+60 s of resends).
 giveup() {
 	name=$1
