@@ -23,6 +23,17 @@ def complete(test_status, harness_status=0):
 
 
 class OutcomeTests(unittest.TestCase):
+    def test_explicit_font_arguments_require_all_three_files(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as name:
+            directory = Path(name)
+            self.assertEqual(RUNNER.font_arguments(None), [])
+            with self.assertRaises(ValueError):
+                RUNNER.font_arguments(directory)
+            for font in RUNNER.FONT_NAMES:
+                (directory / font).touch()
+            self.assertEqual(len(RUNNER.font_arguments(directory)), 3)
+
     def test_pass_needs_completion_and_passing_subtest(self):
         self.assertEqual(RUNNER.classify_output(complete(0), 0)["outcome"], "pass")
 

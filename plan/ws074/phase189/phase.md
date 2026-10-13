@@ -71,3 +71,11 @@ Event ws074-p189-q1063-outcome-20261014: 全1,783 testharness IDから現行単�
 ## q1064-i01 結果（2026-10-14 03:53 JST）
 
 Event ws074-p189-q1064-outcome-20261014: q1063の単一HTTP候補1,455 IDの残り1,327を最大128件×11 shardで全測定。[証拠](evidence/20261014-q1064/README.md)。q1063と合算160 PASS/910 FAIL/299 completion無し/73 stdout無し/13 harness error、環境未対応328 IDは未実行。全1,455 ID一意・選定hash、11 checkpoint/report、gzip raw1,327件のID/outcome一致。runnerの可逆gzip保存を追加、py_compile/diff check PASS。q1064-i01 partial cleared、p189 whole uncleared。browser/WPT/Master変更なし、p173全3,805件100%未達、共有投影/GitHub publication保留。
+
+## q1066-i01 有限部分範囲（2026-10-14 04:03 JST）
+
+このchatのユーザーによる全3,805件100%までの有限Queue事前承認を最大90分（05:33 JSTまで）に適用。q1065の`Document.fonts.ready`をWPT testharness runnerの通常起動で検証できるよう、既存runnerに明示的な固定font directory optionを追加し、存在確認とbrowser CLI引数へ接続する。固定manifest/q1064で`document.fonts.ready`欠落の同一TypeErrorだったCSS Grid `no_completion`280 unique IDを、同じWPT/host/localhost/5秒条件＋明示font dirで全再測定し、旧→新の全status・completion/subtestとID/checkpointを照合する。テスト本体/WPT/browser engine/公開ABI/`plan/master.md`は変更しない。PASSに変わらない結果は正直に分類し、90分上限時は完了済み/未実行を保存してunclearedで止める。Python compile・runner option局所検査・結果照合・diff checkで検証する。[Guardrail](../../guardrail.md)とrunner近傍規則を適用。p189 wholeとp173全件100%はこの部分の基準に含めない。
+
+## q1066-i01 結果（2026-10-14 04:07 JST）
+
+Event ws074-p189-q1066-outcome-20261014: runnerに明示固定font directoryを追加、旧`document.fonts.ready`停止のCSS Grid280 IDを全再測定。[証拠](evidence/20261014-q1066/README.md)。19 PASS/260 FAIL/1 process error(-11 SIGSEGV)、279 completion、subtest313/2640 PASS。旧全280 no_completionは0、残るSIGSEGV1は同条件1回再現。ID/checkpoint280/raw gzip280一致、runner unit6/6・py_compile/diff check PASS。q1066-i01 partial cleared、p189 whole uncleared。q1063/q1064との混合条件暫定179 PASS/1170 FAIL/1 process error/19 no_completion/73 no_output/13 harness error、環境未対応328。browser/WPT/Master変更なし、p173全3,805件100%未達、共有投影/GitHub publication保留。

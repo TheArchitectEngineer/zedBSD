@@ -50,6 +50,19 @@ TEST_STATUSES = {0: "PASS", 1: "FAIL", 2: "TIMEOUT", 3: "NOTRUN",
                  4: "PRECONDITION_FAILED"}
 HARNESS_STATUSES = {0: "OK", 1: "ERROR", 2: "TIMEOUT",
                     3: "PRECONDITION_FAILED"}
+FONT_NAMES = ("Mahora-Regular.ttf", "JetBrainsMono-Regular.ttf",
+              "DroidSansFallbackFull.ttf")
+
+
+def font_arguments(directory):
+    """Pass a complete explicit font set to pages that need layout."""
+    if directory is None:
+        return []
+    paths = [directory / name for name in FONT_NAMES]
+    if not all(path.is_file() for path in paths):
+        raise ValueError("fixed font directory is missing a required font")
+    return ["--font=" + str(paths[0]), "--mono-font=" + str(paths[1]),
+            "--fallback-font=" + str(paths[2])]
 
 
 class WptHandler(http.server.SimpleHTTPRequestHandler):
@@ -145,7 +158,8 @@ def run(args):
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
     url = "http://127.0.0.1:%d%s" % (server.server_port, args.test_id)
-    command = [str(args.program), "--run", "--settle-ms=%d" % args.settle_ms, url]
+    command = ([str(args.program), "--run", "--settle-ms=%d" % args.settle_ms] +
+               font_arguments(getattr(args, "font_dir", None)) + [url])
     try:
         try:
             process = subprocess.run(command, capture_output=True, text=True,
@@ -184,6 +198,8 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--settle-ms", type=int, default=5000)
     parser.add_argument("--process-timeout", type=int, default=20)
+    parser.add_argument("--font-dir", type=Path,
+                        help="directory with the three fixed host fonts for layout")
     args = parser.parse_args()
     if args.settle_ms < 0 or args.settle_ms > 60000 or args.process_timeout < 1:
         parser.error("invalid time budget")

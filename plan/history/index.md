@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1065 / WS074 initial Document.fonts.ready（2026-10-14）
+## 最新: q1066 / WS074 grid FontFaceSet recensus（2026-10-14）
+
+[q1066履歴](queue-q1066.md): 旧CSS Grid no_completion280 IDは19 PASS/260 FAIL/1再現SIGSEGV、279 completion。[証拠](../ws074/phase189/evidence/20261014-q1066/README.md)。p189/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1065 / WS074 initial Document.fonts.ready（2026-10-14）
 
 [q1065履歴](queue-q1065.md): 固定Grid3 IDがno_completion→completion付きFAIL。SameObject/ready順序とhost・Acid3差0を確認。[証拠](../ws074/phase209/evidence/20261014-q1065/README.md)。p209/p189/p173全件100%未達、共有投影/GitHub publication pending。
 
