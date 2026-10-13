@@ -64,23 +64,34 @@ PACKAGE_LABELS = {
     "security": "Security",
 }
 
-# The CPUs and the board each one boots on (2026-10-09 user, WS193): the
-# platform each pair builds.  Another platform read from a config.mk is kept
-# as it is and shown as the current one.
+# The CPUs and the boards each one boots on (2026-10-09 user, WS193; i386
+# with the PC-9800 and the PC/AT, 2026-10-14 user, WS232): the platform each
+# pair builds.  Choosing a CPU selects its first board; a CPU with more than
+# one board offers them under Board.  Another platform read from a config.mk
+# is kept as it is and shown as the current one.
 MENU_CPUS = [
     ("amd64", "x86_64", "amd64", "UEFI + ACPI"),
     ("arm64", "arm64", "rpi4", "Raspberry Pi 4"),
+    ("i386", "i386", "pc98", "PC-9800"),
+    ("i386", "i386", "i386", "PC/AT"),
 ]
 
 # The user programs' groups the Base, Desktop and Firmware menus select
-# from.  The X11 and test programs, the disk layout (Variant), the kernel's
-# options, the test hooks and Noct's GPU accelerator are not in
-# the menu (2026-10-09 user: "menu から外す", "X11とTestsはメニューから削除し、
-# 直接記述のみにする"): they are set in config.mk by hand, and the values a
-# config.mk holds are read and written back as they are.
+# from.  The test programs, the X11 programs other than Retro's, the disk
+# layout (Variant), the kernel's options, the test hooks and Noct's GPU
+# accelerator are not in the menu (2026-10-09 user: "menu から外す",
+# "X11とTestsはメニューから削除し、直接記述のみにする"): they are set in
+# config.mk by hand, and the values a config.mk holds are read and written
+# back as they are.
 BASE_GROUPS = ("base", "comp")
 DESKTOP_GROUPS = ("desktop",)
 FIRMWARE_GROUPS = ("firmware",)
+
+# The Retro menu, the first entry of the main menu on every CPU (2026-10-14
+# user, WS232: "アーキにかかわらずmenuconfigのトップにRetroというメニューを
+# 追加して、Xzed, zwm, zshell, ztermを追加してほしいです。"): these X11
+# programs by name, in this order, each shown as its command's name.
+RETRO_PROGRAMS = ("Xzed", "zwm", "zshell", "zterm")
 
 
 def package_categories(rows: list[list[str]]) -> list[tuple[str, str]]:
@@ -385,10 +396,12 @@ def package_dependents(rows: list[list[str]], selected: set,
             package in row[6].split()]
 
 
-def in_menu(group: str) -> bool:
-    """Whether the menu shows the programs of this group (the X11 and test
-    programs are only set in config.mk by hand)."""
-    return (group in BASE_GROUPS + DESKTOP_GROUPS + FIRMWARE_GROUPS or
+def in_menu(program: str, group: str) -> bool:
+    """Whether the menu shows this program of this group (the test programs
+    and the X11 programs other than Retro's are only set in config.mk by
+    hand)."""
+    return (program in RETRO_PROGRAMS or
+            group in BASE_GROUPS + DESKTOP_GROUPS + FIRMWARE_GROUPS or
             group.startswith("packages/"))
 
 
@@ -412,22 +425,33 @@ def removal_closure(rows: list[list[str]], selected: set,
             continue
         for program in sorted(selected):
             if (program not in removing and package in needs.get(program, []) and
-                    not in_menu(groups.get(program, ""))):
+                    not in_menu(program, groups.get(program, ""))):
                 removing.add(program)
                 hidden.append(program)
                 pending.append(program)
     gone = {packages[program] for program in removing if packages.get(program)}
     blocking = [labels[program] for program in selected
-                if program not in removing and in_menu(groups.get(program, "")) and
+                if program not in removing and in_menu(program, groups.get(program, "")) and
                 gone.intersection(needs.get(program, []))]
     return sorted(blocking), hidden
 
 
 def edit_program_group(screen, values: dict[str, object], groups: tuple[str, ...],
                        title: str) -> None:
+    edit_programs(screen, values, group_rows(values, groups), title)
+
+
+def retro_rows(values: dict[str, object]) -> list[list[str]]:
+    """Retro's programs that build for the current platform, in Retro's order."""
     platform = str(values["ZEDBSD_PLATFORM"])
-    rows = [row for row in user_program_rows()
-            if row[4] in groups and applies(row[2], platform)]
+    rows = {row[0]: row for row in user_program_rows()}
+    return [rows[name] for name in RETRO_PROGRAMS
+            if name in rows and applies(rows[name][2], platform)]
+
+
+def edit_programs(screen, values: dict[str, object], rows: list[list[str]],
+                  title: str) -> None:
+    """Turns the programs of one menu on and off, one by one."""
     selected_programs = values.setdefault("ZEDBSD_USER_PROGRAMS", set())
     selected = 0
     while True:
@@ -553,6 +577,15 @@ def drivers_menu(screen, values: dict[str, object]) -> None:
         driver_options(screen, values, rows, title)
 
 
+def menu_cpu_labels() -> list[tuple[str, str]]:
+    """The CPUs the menu offers, each once and in order, with its name."""
+    result: list[tuple[str, str]] = []
+    for cpu, label, _platform, _board in MENU_CPUS:
+        if (cpu, label) not in result:
+            result.append((cpu, label))
+    return result
+
+
 def select_cpu_board(screen, values: dict[str, object]) -> None:
     """CPU / Board: the CPU, and the board it boots on."""
     while True:
@@ -566,17 +599,28 @@ def select_cpu_board(screen, values: dict[str, object]) -> None:
         if choice is None or choice == 2:
             return
         if choice == 0:
-            index = choose(screen, "CPU", [item[1] for item in MENU_CPUS],
+            cpus = menu_cpu_labels()
+            index = choose(screen, "CPU", [label for _cpu, label in cpus],
                            target_label(values),
-                           next((i for i, item in enumerate(MENU_CPUS)
-                                 if item[2] == platform), 0))
-            if index is not None:
-                values["ZEDBSD_PLATFORM"] = MENU_CPUS[index][2]
+                           next((i for i, item in enumerate(cpus)
+                                 if current and item[0] == current[0]), 0))
+            if index is not None and not (current and current[0] == cpus[index][0]):
+                values["ZEDBSD_PLATFORM"] = next(
+                    item[2] for item in MENU_CPUS if item[0] == cpus[index][0])
                 normalize(values)
-        else:
+            continue
+        boards = [item for item in MENU_CPUS
+                  if current is not None and item[0] == current[0]]
+        if len(boards) < 2:
             message(screen, "Board", [f"{cpu} boots on {board}.",
                                       "The board follows the CPU."],
                     target_label(values))
+            continue
+        index = choose(screen, "Board", [item[3] for item in boards],
+                       target_label(values), boards.index(current))
+        if index is not None:
+            values["ZEDBSD_PLATFORM"] = boards[index][2]
+            normalize(values)
 
 
 def boot_options(screen, values: dict[str, object]) -> None:
@@ -723,6 +767,7 @@ def tui(screen, values: dict[str, object], output: Path) -> None:
     curses.curs_set(0)
     screen.keypad(True)
     entries = [
+        ("Retro", "retro"),
         ("CPU / Board", "cpu-board"),
         ("Boot Option", "boot"),
         ("Drivers", "drivers"),
@@ -748,7 +793,9 @@ def tui(screen, values: dict[str, object], output: Path) -> None:
         if action == "exit":
             save(output, values)
             return
-        if action == "cpu-board":
+        if action == "retro":
+            edit_programs(screen, values, retro_rows(values), "Retro")
+        elif action == "cpu-board":
             select_cpu_board(screen, values)
         elif action == "boot":
             boot_options(screen, values)
