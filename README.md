@@ -226,18 +226,19 @@ Furthermore, Keiland effectively acts as a secondary OS, much like
 OPENSTEP did. The Keiland desktop server features original Wayland
 extensions that integrate audio access, Wi-Fi/LAN and Bluetooth
 settings, a picture/video media library, calls and SMS via
-Bluetooth-connected smartphones or modems, on-screen keyboard,
-predictive conversion extension for IMEs, user account management, and
-FIDO2 security. Because all of these are implemented within the
-Keiland backend, Keiland can be ported to any OS simply by
-implementing an OS backend. Moreover, since Keiland applications
-depend only on `libkeiland`, they can even be ported to Windows using
+Bluetooth-connected smartphones or modems, an on-screen keyboard,
+predictive conversion for IMEs, user account management, and FIDO2
+security. Because all of these are implemented within the Keiland
+backend, Keiland can be ported to any OS simply by implementing an OS
+backend. Moreover, since Keiland applications depend only on
+`libkeiland`, they can even be ported to Windows using
 `libkeiland.dll`.
 
 Although the Keiland desktop server uses the Wayland protocol as its
 front-end API and Vulkan WSI for its backend, it is actually a
 "desktop OS server" and a "desktop app toolkit" rather than just a
-Wayland compositor.
+Wayland compositor. This is precisely how Windows and macOS work—and
+it is something that Linux lacks.
 
 ---
 

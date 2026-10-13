@@ -1,0 +1,15 @@
+<!doctype html>
+<style>
+.grid { position: relative; display: grid; width: 100px; height: 300px;
+  grid-template-columns: 100px; grid-template-rows: 150px 150px; }
+.grid > div { position: absolute; width: 20px; height: 10px; }
+.end { grid-row: 1 / 2; grid-column: 1 / 2; align-self: end; }
+.center { grid-row: 2 / 3; grid-column: 1 / 2; align-self: center; }
+.inset { grid-row: 1 / 2; grid-column: 1 / 2; align-self: end; top: 7px; }
+.invalid { grid-row: 99 / 100; grid-column: 99 / 100; align-self: end; }
+.parent { align-items: end; justify-items: start; }
+.parent > .inherit { grid-row: 2 / 3; grid-column: 1 / 2; }
+.rtl { direction: rtl; }
+</style>
+<div class="grid"><div class="end"></div><div class="center"></div><div class="inset"></div><div class="invalid"></div></div>
+<div class="grid parent rtl"><div class="inherit"></div></div>

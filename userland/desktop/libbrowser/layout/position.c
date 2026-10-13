@@ -589,6 +589,18 @@ position_place(
 		y = containing->y + top + box->margin[CSS_TOP];
 	} else if (has_bottom) {
 		y = containing->y + containing->height - bottom - box->margin[CSS_BOTTOM] - position_outer_height(box);
+	} else if (box->static_y_align == CSS_ALIGN_END ||
+	    box->static_y_align == CSS_ALIGN_SELF_END) {
+		y = box->static_y + box->static_y_area_height -
+		    box->margin[CSS_BOTTOM] - position_outer_height(box);
+	} else if (box->static_y_align == CSS_ALIGN_CENTER) {
+		layout_unit free_height;
+
+		free_height = box->static_y_area_height - box->margin[CSS_TOP] -
+		    position_outer_height(box) - box->margin[CSS_BOTTOM];
+		if (free_height < 0)
+			free_height = 0;
+		y = box->static_y + box->margin[CSS_TOP] + free_height / 2;
 	} else {
 		y = box->static_y + box->margin[CSS_TOP];
 	}

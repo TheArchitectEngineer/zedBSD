@@ -132,6 +132,9 @@ struct layout_box {
 	layout_unit static_y;
 	/* A Grid absolute child's static_x names the right edge of its area. */
 	int static_x_from_right;
+	/* Definite Grid block-axis area, used after an absolute child's height is known. */
+	layout_unit static_y_area_height;
+	int static_y_align;
 
 	/* The box model, resolved. */
 	layout_unit x;

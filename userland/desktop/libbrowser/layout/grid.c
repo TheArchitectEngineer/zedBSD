@@ -143,6 +143,8 @@ layout_grid(
 		child->static_x = 0;
 		child->static_y = 0;
 		child->static_x_from_right = 0;
+		child->static_y_area_height = 0;
+		child->static_y_align = CSS_ALIGN_AUTO;
 	}
 
 	/* The items, placed in their cells. */
@@ -496,6 +498,7 @@ grid_static_position(
 	int row_span;
 	int index;
 	int justify;
+	int align;
 
 	/* Other writing directions retain their existing static-position path. */
 	if (box->style.position != CSS_POSITION_RELATIVE)
@@ -563,6 +566,19 @@ grid_static_position(
 			y += grid->rows[index] + row_gap;
 		child->static_x = x;
 		child->static_y = y;
+		align = child->style.align_self;
+		if (align == CSS_ALIGN_AUTO)
+			align = box->style.align_items;
+		if (child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+		    (align == CSS_ALIGN_END || align == CSS_ALIGN_SELF_END ||
+		    align == CSS_ALIGN_CENTER)) {
+			child->static_y_align = align;
+			for (index = row; index < row + row_span; index++) {
+				child->static_y_area_height += grid->rows[index];
+				if (index + 1 < row + row_span)
+					child->static_y_area_height += row_gap;
+			}
+		}
 	}
 }
 

@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1108 / WS074 positioned Grid self-alignment diagnosis（2026-10-14）
+## 最新: q1109 / WS074 positioned Grid block-axis alignment（2026-10-14）
+
+[q1109履歴](queue-q1109.md): 固定列軸5件の水平10 subtest FAIL→PASS、縦書き差は残る。旧PASSとAcid3差0維持。[証拠](../ws074/phase217/evidence/20261014-q1109/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1108 / WS074 positioned Grid self-alignment diagnosis（2026-10-14）
 
 [q1108履歴](queue-q1108.md): positioned列軸/行軸各17件を水平/縦書きに分割し、列軸5件の水平end/center offsetTop差を次候補へ。[証拠](../ws074/phase217/evidence/20261014-q1108/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 
