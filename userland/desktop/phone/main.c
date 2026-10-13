@@ -1618,9 +1618,10 @@ ph_send(
 	if (phone->view.message.length == 0U && attachments == 0U)
 		return;
 
-	/* No phone set up: nothing kept or sent, and where to set one up (the text stays to send later, BUG-287). */
+	/* No phone set up: nothing kept or sent, where to set one up, and the refusal logged by length (the text stays to send later, BUG-287). */
 	if (phone->system != NULL && phone->phone_sync && phone->link_known && phone->link.backend == PH_BACKEND_NONE) {
 		ph_view_notice(&phone->view, PH_NOTICE_SET_UP, kl_clock_us());
+		ph_log("REFUSED action=send contact=%ld length=%zu why=no-backend", contact, phone->view.message.length);
 		return;
 	}
 
@@ -1628,12 +1629,14 @@ ph_send(
 	paired = ph_paired(phone);
 	if (paired && phone->link.messages != PH_MESSAGES_READY) {
 		ph_view_notice(&phone->view, PH_NOTICE_NOT_LINKED, kl_clock_us());
+		ph_log("REFUSED action=send contact=%ld length=%zu why=not-linked", contact, phone->view.message.length);
 		return;
 	}
 
 	/* The paired phone that takes no text: nothing kept or sent. */
 	if (paired && !phone->link.can_send) {
 		ph_view_notice(&phone->view, "The phone does not take texts to send.", kl_clock_us());
+		ph_log("REFUSED action=send contact=%ld length=%zu why=no-send", contact, phone->view.message.length);
 		return;
 	}
 

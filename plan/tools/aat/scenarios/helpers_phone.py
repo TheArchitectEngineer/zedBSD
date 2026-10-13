@@ -122,15 +122,18 @@ def message(item):
 		mark = run.mark()
 		run.type("Again")
 		run.key("enter")
-		# The error is ENODEV, whose number differs between the systems: any nonzero one, with the message failed.
-		refused = run.wait(r"PHONE RESULT request=\d+ error=[1-9]\d*", mark, 10)
-		failed = run.wait(r"PHONE STATUS request=\d+ state=0 failed=1", mark, 10)
-		item.step("Again with no backend", f"{refused}; {failed}")
+		# Refused by Phone before the compositor (BUG-287): nothing kept or sent, the words stay, the notice for 4 seconds.
+		refused = run.wait(r"PHONE REFUSED action=send contact=0 length=5 why=no-backend", mark, 10)
 		run.shot(item, "no-backend")
-		item.check(refused and failed, "the message was not refused without a backend")
+		sent = run.lines(r"PHONE SEND |KWL PHONE send ", mark)
+		item.step("Again with no backend", f"{refused}; sent={len(sent)}")
+		item.check(refused, "the message was not refused without a backend")
+		item.check(not sent, "the message went to the compositor without a backend")
+		status, files = run.sh(f"grep -l 'Again' {FOLDER}/messages/aat-ben/*.txt | wc -l")
+		item.check(files.strip() == "0", f"the refused message was kept in a file ({files.strip()})")
 		code_lines = [line for line in run.lines(r"(PHONE|KWL PHONE)", mark) if "Again" in line or "555" in line]
 		item.check(not code_lines, "a number or the words are in the log")
-		item.person("the echo under the message, the call card 'Call not answered', the failed message and the notice")
+		item.person("the echo under the message, the call card 'Call not answered', Again left in the field and the notice No phone is set up")
 	finally:
 		forget_store()
 
