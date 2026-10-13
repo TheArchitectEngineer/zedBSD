@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws196-p004 -->
 # ws196-p004: T1 — account-admin の root の形と useradd・usermod・userdel を guest で
 
-Status: uncleared（T1-600 で 1 の remove-alice が FAIL（答えが空、SSH の経路）。試験の直し e317a9b1d、再試験の依頼は下の「T1 への再試験の依頼（T1-600 の後）」）
+Status: cleared（2026-10-14 Q1: T1-603 で admin-p026・user-commands-guest とも status=0、ssh-retries 0・ssh-lost 0。T1-600 の空の答えは SSH の経路（BUG-281 に記録））
 Disposition: normal
 Parent: [WS196](../ws.md)
 Queue: —（Q1 が T1 に渡す）

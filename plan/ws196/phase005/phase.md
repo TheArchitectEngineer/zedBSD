@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws196-p005 -->
 # ws196-p005: 規約の全文の見直し（WS196 が変えた C）
 
-Status: cleared 待ち（2026-10-14 P2 が見直しと host 試験まで済み、Q1 が判定する。p004 の T1 の結果とは独立）
+Status: cleared（2026-10-14 Q1: 規約の全文の見直し、build warning 0・host 試験 4 本 PASS、見直しの後の tree で T1-603 PASS）
 Disposition: normal
 Parent: [WS196](../ws.md)
 依存: p004 の結果（コードの書き方だけの変更で動作は変えていないので、p004 の試験は見直し前後で同じ。T1 が見直し前の tree を流した場合、見直しの差分の再試験は Q1 が決める）

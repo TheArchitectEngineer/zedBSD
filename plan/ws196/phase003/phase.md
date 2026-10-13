@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws196-p003 -->
 # ws196-p003: useradd・usermod・userdel（account-admin を呼ぶ root の前段）
 
-Status: in-progress — test-wait（p004 の T1、依頼の文は [phase004](../phase004/phase.md)）。実装と host 試験は済み（2026-10-14 P2、branch agent/p2-ws215）。clearance は T1 の結果を Q1 が判定した後
+Status: cleared（2026-10-14 Q1: host 試験 148 項目 PASS、T1-603 の user-commands-guest PASS（QEMU）。実機は未実施）
 Disposition: normal
 Parent: [WS196](../ws.md)
 Queue: q972

@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws196-p002 -->
 # ws196-p002: account-admin の欠陥の直しと、root の前段の request の口
 
-Status: in-progress — 実装と確かめ済み、Q1 が 7f2c850a7 を merge（2026-10-14）。D1・D3・D6 の 3 つの技術判断は Q1 が受け入れた。clearance は p004 の T1 の結果の後（AGENTS.md: T1 に頼んだ Phase は結果の判定まで cleared にしない）
+Status: cleared（2026-10-14 Q1: host 試験 PASS、T1-597 の autologin の拒否・Settings の Users、T1-603 の admin-p026 PASS（QEMU）。実機は未実施）
 Disposition: normal
 Parent: [WS196](../ws.md)
 Queue: q969
