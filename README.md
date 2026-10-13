@@ -50,7 +50,7 @@ GPU support is a native, Vulkan-direct stack.  It does not require
 Linux DRM/KMS or Mesa, and it does not use user-space drivers and
 compilers.
 
-Intel iGPU (Xe-LP) and Raspberry Pi 4 (VideoCore VI) are the current
+Intel iGPU (gen 6th to 14th Core i) and Raspberry Pi 4 (VideoCore VI) are the current
 drivers.  NVIDIA and AMD drivers will follow soon.
 
 ---
@@ -254,8 +254,8 @@ it is something that Linux lacks.
     runs on Linux and FreeBSD.
 
 - **Native Vulkan** — a GPU stack that does not sit on Linux DRM/KMS
-    or Mesa, and does not use user-space drivers. Intel iGPU (Xe-LP)
-    is supported today. NVIDIA and AMD are planned.
+    or Mesa, and does not use user-space drivers. Intel iGPU (Core i 6th to 14th)
+    and Raspberry Pi VideoCore are supported today. NVIDIA and AMD are planned.
 
 - **Two machine classes** — modern 64-bit x86 and Raspberry Pi, plus
     partial retro targets used to show compatibility.
