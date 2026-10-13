@@ -12,10 +12,10 @@
 
 <!-- master:agents:start -->
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
-  - P1: 空き（SV7 の描画の FAIL の直しは merge 済み、T1-612 待ち）。
+  - P1（新しい世代）: Gen9 を既定で有効にし、release の文書の〔判定待ち〕を確定の文に。
   - P2: 空き（BUG-304・305 resolved）。
   - P3: 空き（BUG-306 の一部の直しと診断の log は merge 済み、T1-613 待ち）。
-  - T1: T1-609（AHCI）→ T1-607（pc98）→ T1-606 の判定（5330）→ T1-608（SV7、Gen9.5）。
+  - T1: 空き（T1-606〜613 を流し終えた）。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
 <!-- master:agents:end -->
 
@@ -534,9 +534,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS226](ws226/ws.md) | MG006 | Khronos の Vulkan 1.3 の header をそのまま使い、libvulkan で Vulkan 1.3 の API を実装しきる（不整合の整理）（2026-10-13 ユーザー） | planning | 次に空いた P |
 | [WS227](ws227/ws.md) | MG002 | menuconfig の Base・Desktop の表示名の整理、画像と PDF の library を Desktop へ、Linux・FreeBSD に zedBSD 独自の base の命令（2026-10-14 ユーザー） | completed（2026-10-14） | — |
 | [WS228](ws228/ws.md) | MG002 | 独自実装の簡単な vi を base に足す（2026-10-14 ユーザー、ベータ2 の最後の機能） | completed（2026-10-14） | — |
-| [WS229](ws229/ws.md) | MG006 | i915 を Gen9・Gen9.5（Core の 6〜10 世代の iGPU）に対応（GOP のままで GT と EU → 最後に display controller）（2026-10-14 ユーザー、今日の夕方のコードフリーズに間に合えばベータ2、間に合わなければドロップ可） | planned | P1（q976 p001） |
+| [WS229](ws229/ws.md) | MG006 | i915 を Gen9・Gen9.5（Core の 6〜10 世代の iGPU）に対応（GOP のままで GT と EU → 最後に display controller）（2026-10-14 ユーザー、ベータ2 に入る、既定で有効） | incomplete（p001〜p005・p007 cleared、display controller の p006 はベータ3） | P1（q976 p001） |
 | [WS230](ws230/ws.md) | MG006 | i915 の GuC 対応（2026-10-14 ユーザー、ベータ3） | planning | 未割当 |
-| [WS231](ws231/ws.md) | MG002 | AHCI（SATA）の driver（2026-10-14 ユーザー、18 時のコードフリーズに間に合えばベータ2、間に合わなければベータ3） | planned | P2（q981） |
+| [WS231](ws231/ws.md) | MG002 | AHCI（SATA）の driver（2026-10-14 ユーザー、ベータ2 に入る） | incomplete（p001・p002 cleared、NCQ・TRIM・hotplug・ATAPI は後） | — |
 | [WS232](ws232/ws.md) | MG002 | menuconfig に i386（PC-9800・PC/AT）と Retro の menu（Xzed・zwm・zshell・zterm）（2026-10-14 ユーザー） | completed（2026-10-14） | — |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。

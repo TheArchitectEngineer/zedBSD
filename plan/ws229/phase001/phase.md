@@ -301,3 +301,5 @@ Gen9 の **PCI ID の合計 86**（SKL 25 ＋ KBL 22 ＋ CFL 39）。Gen9 の GT
 - U1:「実機で PASS したら既定で有効」→ 実装は boot の指定（例 `i915.gen9=on`）でも有効にできる口を持ち、p005 の実機の試験が PASS したら既定で Gen9 に attach する（PASS までは既定 off）。
 - U2:「Gen9 の間は suspend を拒む」（推しどおり）→ display が absent の Gen9 では suspend を断るか D0 を保つ。display controller の段階（p006）で外す。
 - U3:「5330 の回帰を必須」（推しどおり）→ ベータ2 に入れる条件は、5330（Gen12）の実機で T1 の Vulkan の回帰が PASS。通らなければ Gen9 はドロップ。
+
+- 2026-10-14 ユーザー（U1 の実行）: SV7 の実機の GT で全部 PASS の後、クリック「既定で有効にする」→ `I915_GEN9_DEFAULT_ON` を 1（`i915.gen9=off` で無効）。6 世代（Skylake）と USB の単独起動は未確認のまま。
