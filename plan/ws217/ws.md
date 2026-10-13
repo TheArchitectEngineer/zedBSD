@@ -62,3 +62,4 @@ T1 の束（p001 §13）: A = p002+p003（QEMU）、B = p009+p010（実機）、
 
 2026-10-13 Q1（第 3 版の残る問い D13〜D17）: ユーザーの「推奨でいい」の流れに沿って推奨を採り、ユーザーに報告（変更可）: D13 test image だけ `--rotate-policy=any`、D14 hw180 の無い display は回転を出さない（Linux・FreeBSD の build も無効表示、KMS の rotation は Future Work）、D15 Pi の HVS の反転はまず tree と実機、GPL の参照は分からなかった時だけ（その時はユーザーに）、D16 UAPI の 3 つの定数（90/270 の bit は作らない）、D17 180 の scanout の出力で game mode の直の scanout はしない（Future Work）。
 2026-10-13 ユーザー（原文）:「D14～D17  推奨でいいです。」→ 上の Q1 の採った推奨を確定（D13 は Q1 の推奨のまま）。
+2026-10-13 ユーザー（原文）:「Game Modeでは回転不要です。むしろ、ハードウェアでできない回転を禁止します。」→ Q1 の読み（ユーザーに確認中）: game mode の窓を回して合成に落とす D6 はやめる。90°・270°（compositor の回転）の出力では game mode に入らない（直の scanout も合成もしない、窓は通常の窓のまま）。180°（hardware）の出力の game mode は D17 のとおり今は直の scanout をしない。
