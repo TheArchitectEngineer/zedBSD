@@ -1,7 +1,18 @@
 /*
- * Vulkan external-memory/fence, capability-query and memory-requirement declarations.
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * The zedBSD selection, formatting and additions in this file are Zlib.
+ */
+
+/*
+ * This file is a derived work of the Khronos Vulkan-Headers
+ * (external memory and fence, capability queries, memory requirements).
+ * The Vulkan API declarations it contains are:
  * Copyright 2015-2023 The Khronos Group Inc.
+ *
  * SPDX-License-Identifier: Apache-2.0
+ *
  * See API-PROVENANCE.md and LICENSE-API for the pinned declaration source.
  */
 

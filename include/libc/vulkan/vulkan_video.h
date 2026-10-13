@@ -1,8 +1,19 @@
 /*
- * Vulkan Video (H.264 decode) and synchronization2 declarations (ws083).
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * The zedBSD selection, formatting and additions in this file are Zlib.
+ */
+
+/*
+ * This file is a derived work of the Khronos Vulkan-Headers
+ * (Vulkan Video H.264 decode and synchronization2).
+ * The Vulkan API declarations it contains are:
  * Copyright 2015-2025 The Khronos Group Inc.
+ *
  * SPDX-License-Identifier: Apache-2.0
- * See API-PROVENANCE.md and LICENSE-API for the declaration source.
+ *
+ * See API-PROVENANCE.md and LICENSE-API for the pinned declaration source.
  */
 
 #ifndef VULKAN_VIDEO_H_

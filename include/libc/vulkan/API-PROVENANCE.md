@@ -9,6 +9,11 @@ The ABI and numeric declarations are selected from the Khronos Vulkan
 - Input SHA-256: `8cb01233ecf0fac130f0db2fdbbd79b6643f91f65c9afb807978924148798287`.
 - [Pinned source](https://github.com/KhronosGroup/Vulkan-Headers/blob/v1.3.269/include/vulkan/vulkan_core.h).
 - Declaration license: Apache-2.0, copyright 2015–2023 The Khronos Group Inc.
+- The derived headers (`vulkan_core.h`, `vulkan_wayland.h`, `vulkan_external.h`,
+  `vulkan_video.h`, `vulkan_display_control.h`) carry the zedBSD copyright in the
+  file header and, in a separate comment block below it, the Khronos copyright and
+  the Apache-2.0 license of the declarations they contain. The `vk_video/` headers
+  are unmodified Khronos files and carry only the Khronos notice.
 - The copy virglrenderer 1.1.0 (commit `1aeaf5e10a9c89096e96d09599aa419d5c50712f`)
   carries as `src/venus/venus-protocol/vulkan_core.h` is the same file, byte for
   byte (the SHA-256 above; ws219-p001); it is not a Venus declaration.

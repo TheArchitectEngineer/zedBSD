@@ -3,7 +3,7 @@
 # WS224: Vulkan の header（include/libc/vulkan/）の API ごとの解説と著作権表示の形
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-13 Q1 作成。担当は次に空いた P）
+Status: completed（2026-10-13 Q1。範囲はユーザーの指示で著作権表示の形だけに縮めた）
 Primary Milestone: MG006
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -24,3 +24,9 @@ Related Milestones: なし
 | Phase | 内容 | Status |
 | --- | --- | --- |
 | p001 | 頭の形の変更と inventory、解説の書き方の決め（道具との関係）、まず vulkan_core.h の command と主な構造体 | planned |
+
+## ユーザーの指示（2026-10-13、範囲の縮小）と結果
+
+ユーザー（原文）:「今のところ、VulkanヘッダのAPIに解説をいれなくていいです。AS ISの内容でいいです。だから著作権表示を入れます。」→ 完了の条件 2（API ごとの解説）は外す。宣言は今のまま。
+
+結果（Q1、2026-10-13）: vulkan_core.h・vulkan_wayland.h・vulkan_external.h・vulkan_video.h・vulkan_display_control.h の頭を、zedBSD の file header（Copyright (C) 2026 Awe Morris、選択・整形・追加は Zlib）と、その下の別の comment block（Khronos の Vulkan-Headers の派生物、Copyright The Khronos Group Inc.、Apache-2.0、API-PROVENANCE.md・LICENSE-API）にした。vk_video/ は Khronos の file をそのまま写した物なので Khronos の表示だけのまま。vulkan.h・vk_platform.h は zedBSD だけの file（Zlib）のまま。API-PROVENANCE.md に形を書いた。確かめ: `plan/ws129/tests/license-inventory-test.sh` PASS、`vulkan/vulkan.h` を -Wall -Wextra -Werror で compile して ok（comment だけの変更）。Phase の表の p001 は範囲の縮小で不要（completed の記録はこの節）。

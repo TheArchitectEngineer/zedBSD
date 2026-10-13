@@ -1,7 +1,19 @@
 /*
- * Vulkan public declaration data: Copyright 2015-2023 The Khronos Group Inc.
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * The zedBSD selection, formatting and additions in this file are Zlib.
+ */
+
+/*
+ * This file is a derived work of the Khronos Vulkan-Headers
+ * (v1.3.269, VK_KHR_wayland_surface).
+ * The Vulkan API declarations it contains are:
+ * Copyright 2015-2023 The Khronos Group Inc.
+ *
  * SPDX-License-Identifier: Apache-2.0
- * Selected VK_KHR_wayland_surface ABI; no upstream implementation code.
+ *
+ * See API-PROVENANCE.md and LICENSE-API for the pinned declaration source.
  */
 #ifndef KERN_VULKAN_WAYLAND_H
 #define KERN_VULKAN_WAYLAND_H

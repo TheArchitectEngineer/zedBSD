@@ -520,7 +520,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS221](ws221/ws.md) | MG005 | Jumbo frame（Ethernet の L2 の大きな MTU、device ごとの上限、IP・TCP の MSS）（2026-10-13 ユーザー） | planning | 次に空いた P |
 | [WS222](ws222/ws.md) | MG006 | 画像・PDF・字形の library を menuconfig の Desktop へ戻す（PNG・PDF・JPEG・TrueType）（2026-10-13 ユーザー、今の作業が全部終わってから） | planned | 最後（今の作業の後） |
 | [WS223](ws223/ws.md) | MG006 | 全画面は compositor の合成、game mode は Wayland の拡張で求められた時だけ（Video Player は game mode をやめる）（2026-10-13 ユーザー） | planning | 次に空いた P |
-| [WS224](ws224/ws.md) | MG006 | Vulkan の header の API ごとの解説と著作権表示の形（zedBSD の file header の下に Khronos の表示を別の block で、派生物）（2026-10-13 ユーザー） | planning | 次に空いた P |
+| [WS224](ws224/ws.md) | MG006 | Vulkan の header の著作権表示の形（zedBSD の file header の下に Khronos の表示を別の block で、派生物、解説は入れない）（2026-10-13 ユーザー） | completed（2026-10-13） | Q1 |
 | [WS225](ws225/ws.md) | MG006 | Vulkan の header を仕様から導ける内容だけで書き直し、Khronos の著作権表示を外す（2026-10-13 ユーザー） | planning（blocked、ベータ2 で実装） | 着手しない |
 | [WS198](ws198/ws.md) | MG002 | zedBSD の上で zedBSD を self-build（host の clang、2026-10-09 ユーザー、優先度低、ベータ2 の見込み） | planning | p001 前提の調べ |
 | [WS199](ws199/ws.md) | MG006 | Settings のセキュリティキーの独立の頁とウィザード（2026-10-10 ユーザーの UAT、ベータ2） | planned | p001 |

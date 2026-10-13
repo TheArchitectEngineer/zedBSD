@@ -1,10 +1,21 @@
 /* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
 
 /*
- * zedBSD declaration formatting and selection: Copyright (C) 2026 Awe Morris.
- * Registry-derived API declarations: Copyright 2015-2023 The Khronos Group Inc.
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * The zedBSD selection, formatting and additions in this file are Zlib.
+ */
+
+/*
+ * This file is a derived work of the Khronos Vulkan-Headers
+ * (v1.3.269, include/vulkan/vulkan_core.h).
+ * The Vulkan API declarations it contains are:
+ * Copyright 2015-2023 The Khronos Group Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * See API-PROVENANCE.md and LICENSE-API for the pinned declaration source.
  */
 
 /*
