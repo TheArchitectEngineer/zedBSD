@@ -1,11 +1,11 @@
 <!-- awesome-plan project=zedbsd record=ws196-p001 -->
 # ws196-p001: useradd・usermod・userdel の範囲と、account-admin と共有する code の置き場
 
-Status: planning（2026-10-09 夜 P1 が調べと設計の案を書いた。E1〜E6 のユーザーの判断と design-reviewer の review の後に cleared の候補。code は変えていない）
+Status: cleared（2026-10-14 Q1: E1〜E6（2026-10-09）と review-1 の 7 つの判断（2026-10-14）がそろった。review の直しは p002・p003 の設計に入れる。code は変えていない）
 Disposition: normal
 Parent: [WS196](../ws.md)
-Queue: Q1 の投入（2026-10-09 夜、設計だけ。実装はベータ3 以降）
-依存: [WS195 p001](../../ws195/phase001/phase.md) の D7（account-admin の source の置き場）
+Queue: Q1 の投入（2026-10-09 夜、設計だけ）
+依存: 無し（旧: WS195 p001 の D7。WS195 は 2026-10-13 に cancel、account-admin は base に残る）
 
 ## 1. 事実（2026-10-09 の tree）
 
@@ -69,3 +69,18 @@ Queue: Q1 の投入（2026-10-09 夜、設計だけ。実装はベータ3 以降
 ## ユーザーの決定（2026-10-09）
 
 E1〜E6 はクリック「全部推しどおり」（各 (a)）。10/17 の後に design-reviewer を通して p002 から。
+
+## review-1 と 2026-10-14 のユーザーの決定
+
+[review-1](review-1.md)（design-reviewer、2026-10-13）: 致命的 F1・F2、重大 S1〜S8、中 M1〜M8、軽微 L1〜L8。ユーザーの判断（2026-10-14、クリックと文）:
+
+- 全体: 「7 点を今決めてベータ2 で」。account-admin の既存の欠陥（S1・S3・S4・S5・S6・M7 など）も「ベータ2 で直す」。
+- ① E4 の見直し（M1）: ユーザー「useraddなどがaccount-adminを呼び出す構成はどうでしょうか。」→ **採る**。useradd・usermod・userdel は root の前段で、account-admin の request の行を渡す。/etc/passwd・group・shadow の編集・保護・lock は account-admin（setuid の 1 つの program）だけが持つ。§3 の common/ への切り出し（E4 (a)）は取りやめ、P2 の 7d632a555（agent/p2-ws215、common/account-edit・account-change）は merge しない。account-admin に「呼び手が root（実の uid 0）なら wheel と password の確かめを飛ばす」口と、usermod の操作（shell・comment・lock・unlock・group）の request を足す。
+- ② S1・M8: 最後の管理者は**使える管理者だけ数える**（hash が使える（`!`・`*`・空でない）、期限が切れていない、shell が login できる）。account-admin（Settings）の数え方も同じに変える。
+- ③ S3: uid は**使い回さず、掃除する**（新しい uid は既に使われた最大より上、userdel が cron・at の spool と autologin の設定を掃除する）。
+- ④ S8: `-g`・`-G` で許す group は **Settings と同じ**（private group・wheel・network）。`-u` は 1000〜59999 で uid・gid のどちらとも重ならない値。
+- ⑤ S7: `usermod -d HOME -m` は**入れない**。`-d` も入れず home は常に `/home/NAME`（F2 の任意の path は起こらない）。
+- ⑥ M2: **lock した人は autologin しない**（sessiond が shadow を見て、lock・期限切れの人は greeter を出す）。
+- ⑦ M3: root の `passwd NAME` は PIN とセキュリティキーの登録を**消さない**（password だけを変える）。L7 のとおり `passwd NAME` は暗に lock を解く、を仕様として書く。
+
+技術判断のまま直す物（Q1、review の修正案どおり）: F1（`!` だけの hash への `-U` を拒む）、S2（最後の使える管理者を無くす全ての変更 `-L`・`-s`・`-g`・`-a` 無しの `-G` を拒む）、S4（lock を process の死で解ける形にし、home の削除と skel の複写は commit と unlock の後）、S5（途中の失敗は lock の下で元の文に戻す。userdel は passwd の行が無くても残りを掃除）、S6（st_dev の違う entry は降りない、`-r` と `-f` の同時は拒む）、M4（self の確かめは持たず busy と最後の管理者で守る）、M5（p002 の後に `plan/ws089/tests/admin-p026-guest.sh` を T1、Linux・FreeBSD の passkey の build）、M7（他の人の primary group の group は消さない）、L2〜L6。
