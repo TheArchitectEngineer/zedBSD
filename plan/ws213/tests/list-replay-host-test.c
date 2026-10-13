@@ -1107,7 +1107,7 @@ scene_capture(
 	region.offset.y = 32;
 	region.extent.width = 48U;
 	region.extent.height = 48U;
-	kwl_scene_copy(&server->compose->scene, target, image, &region, 1U, 1U);
+	kwl_scene_copy(&server->compose->scene, target, image, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, &region, 1U, 1U);
 
 	/* A whole frame's pass, its capture, and the pass that keeps the pixels for the cursor. */
 	memset(&whole, 0, sizeof(whole));
@@ -1119,7 +1119,7 @@ scene_capture(
 	test_quad(server, target, "set:window-a:0", -0.5f, -0.5f);
 	kwl_batch_flush(server, target);
 	kwl_list_end_render_pass(target);
-	kwl_scene_copy(&server->compose->scene, target, image, NULL, 0U, 0U);
+	kwl_scene_copy(&server->compose->scene, target, image, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, NULL, 0U, 0U);
 	test_pass(target, "output-pass-load", "output-framebuffer-1", &whole, 1U);
 	kwl_compose_bind_forget(server->compose);
 	test_quad(server, target, "set:arrow:0", 0.3f, 0.3f);
