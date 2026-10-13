@@ -47,6 +47,7 @@
 #include <stdint.h>
 
 #include "../intel/genxml.h"
+#include "../intel/genxml-gen9.h"
 
 /* How many rectangles are logged even when they succeed. */
 #define I915_BLIT_LOGGED_RECTANGLES	4U
@@ -76,13 +77,13 @@ static struct i915_shader_binary *i915_blit_resolve_kernel;
  */
 static unsigned i915_blit_logged;
 
-static int i915_blit_compile(int copy, struct i915_shader_binary **result);
-static int i915_blit_compile_resolve(struct i915_shader_binary **result);
+static int i915_blit_compile(int copy, unsigned graphics_ver, struct i915_shader_binary **result);
+static int i915_blit_compile_resolve(unsigned graphics_ver, struct i915_shader_binary **result);
 static int i915_blit_record_resolve(const struct i915_gfx_op_space *space, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *samples, const struct i915_gfx_rect *src_rect);
 static int i915_blit_check_rect(const struct i915_gfx_surface *surface, const struct i915_gfx_rect *rect);
 static int i915_blit_window(struct i915_render_session *session, struct i915_gfx_session *work, int copy, struct i915_gfx_op_space *space);
 static int i915_blit_record(const struct i915_gfx_op_space *space, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear);
-static int i915_blit_write_state(uint8_t *page, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear, uint32_t mocs);
+static int i915_blit_write_state(uint8_t *page, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear, uint32_t mocs, unsigned graphics_ver);
 static void i915_blit_write_vertices(uint8_t *page, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int flags);
 static void i915_blit_build_batch(struct i915_gfx_batch *batch, const struct i915_gfx_op_space *space, const struct i915_gfx_surface *dst, const struct i915_gfx_kernels *kernels, uint32_t mocs);
 
@@ -98,11 +99,17 @@ drv_i915_gfx_rect_prepare(
 	struct i915_render_session *session)
 {
 	struct i915_gfx_session *work;
+	unsigned graphics_ver;
 	int error;
+
+	/* The kernels are compiled for the GT's version, Gen12 unless it is Gen9 (ws229-p004). */
+	graphics_ver = 12U;
+	if (session->vk->i915->gt.graphics_ver == GEN9_GRAPHICS_VER)
+		graphics_ver = GEN9_GRAPHICS_VER;
 
 	/* Compiles the fill kernel the first time. */
 	if (i915_blit_fill_kernel == NULL) {
-		error = i915_blit_compile(0, &i915_blit_fill_kernel);
+		error = i915_blit_compile(0, graphics_ver, &i915_blit_fill_kernel);
 		if (error != 0) {
 			kern_logf("i915: vk: the fill kernel does not compile: %d\n", error);
 			return error;
@@ -111,7 +118,7 @@ drv_i915_gfx_rect_prepare(
 
 	/* Compiles the copy kernel the first time. */
 	if (i915_blit_copy_kernel == NULL) {
-		error = i915_blit_compile(1, &i915_blit_copy_kernel);
+		error = i915_blit_compile(1, graphics_ver, &i915_blit_copy_kernel);
 		if (error != 0) {
 			kern_logf("i915: vk: the copy kernel does not compile: %d\n", error);
 			return error;
@@ -125,7 +132,7 @@ drv_i915_gfx_rect_prepare(
 
 	/* Compiles the resolve kernel the first time. */
 	if (i915_blit_resolve_kernel == NULL) {
-		error = i915_blit_compile_resolve(&i915_blit_resolve_kernel);
+		error = i915_blit_compile_resolve(graphics_ver, &i915_blit_resolve_kernel);
 		if (error != 0) {
 			kern_logf("i915: vk: the resolve kernel does not compile: %d\n", error);
 			return error;
@@ -391,6 +398,7 @@ drv_i915_gfx_resolve(
 static int
 i915_blit_compile(
 	int copy,
+	unsigned graphics_ver,
 	struct i915_shader_binary **result)
 {
 	struct drv_gpu_shader_ir_inst instructions[8];
@@ -457,7 +465,7 @@ i915_blit_compile(
 	ir.value_count = first + 4U;
 
 	/* Compiles it. */
-	error = drv_i915_shader_compile(&ir, result);
+	error = drv_i915_shader_compile_gen(&ir, NULL, graphics_ver, result);
 	if (error != 0)
 		return error;
 
@@ -472,6 +480,7 @@ i915_blit_compile(
  */
 static int
 i915_blit_compile_resolve(
+	unsigned graphics_ver,
 	struct i915_shader_binary **result)
 {
 	struct drv_gpu_shader_ir_inst instructions[48];
@@ -558,7 +567,7 @@ i915_blit_compile_resolve(
 	ir.uniform_count = 4U;
 
 	/* Compiles it. */
-	error = drv_i915_shader_compile(&ir, result);
+	error = drv_i915_shader_compile_gen(&ir, NULL, graphics_ver, result);
 	if (error != 0)
 		return error;
 
@@ -637,7 +646,7 @@ i915_blit_record(
 	int error;
 
 	/* A copy runs the copy kernel and a fill the fill kernel; every surface is uncached. */
-	mocs = GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
+	mocs = drv_i915_gfx_mocs_uncached(space->batch->graphics_ver);
 	kernel = i915_blit_fill_kernel;
 	if (src != NULL)
 		kernel = i915_blit_copy_kernel;
@@ -655,7 +664,7 @@ i915_blit_record(
 	}
 
 	/* Writes the surfaces, the sampler and the vertices into the slot. */
-	error = i915_blit_write_state(space->slot, dst, dst_rect, src, src_rect, clear, linear, mocs);
+	error = i915_blit_write_state(space->slot, dst, dst_rect, src, src_rect, clear, linear, mocs, space->batch->graphics_ver);
 	if (error != 0)
 		return error;
 
@@ -697,7 +706,7 @@ i915_blit_record_resolve(
 	int error;
 
 	/* Refuses a destination rectangle outside its surface. */
-	mocs = GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
+	mocs = drv_i915_gfx_mocs_uncached(space->batch->graphics_ver);
 	error = i915_blit_check_rect(dst, dst_rect);
 	if (error != 0)
 		return error;
@@ -708,7 +717,7 @@ i915_blit_record_resolve(
 		return error;
 
 	/* Writes the target, sample 0 with its nearest sampler and the vertices, as a copy does. */
-	error = i915_blit_write_state(space->slot, dst, dst_rect, &samples[0], src_rect, NULL, 0, mocs);
+	error = i915_blit_write_state(space->slot, dst, dst_rect, &samples[0], src_rect, NULL, 0, mocs, space->batch->graphics_ver);
 	if (error != 0)
 		return error;
 
@@ -717,7 +726,7 @@ i915_blit_record_resolve(
 	dynamic = space->slot + I915_GFX_DYNAMIC_HEAP;
 	for (texture = 1U; texture < 4U; texture++) {
 		surface[I915_GFX_BINDING_TABLE / 4U + 1U + texture] = I915_GFX_RSS_TEXTURE + texture * I915_GFX_RSS_BYTES;
-		error = drv_i915_gfx_surface_write(&surface[(I915_GFX_RSS_TEXTURE + texture * I915_GFX_RSS_BYTES) / 4U], &samples[texture], mocs);
+		error = drv_i915_gfx_surface_write_gen(&surface[(I915_GFX_RSS_TEXTURE + texture * I915_GFX_RSS_BYTES) / 4U], &samples[texture], mocs, space->batch->graphics_ver);
 		if (error != 0)
 			return error;
 		kern_memcpy(dynamic + I915_GFX_DYN_SAMPLER + texture * I915_GFX_SAMPLER_BYTES,
@@ -781,7 +790,8 @@ i915_blit_write_state(
 	const struct i915_gfx_rect *src_rect,
 	const uint32_t clear[4],
 	int linear,
-	uint32_t mocs)
+	uint32_t mocs,
+	unsigned graphics_ver)
 {
 	struct i915_gfx_sampler sampler;
 	uint32_t *surface;
@@ -799,13 +809,13 @@ i915_blit_write_state(
 	surface[I915_GFX_BINDING_TABLE / 4U + 1U] = I915_GFX_RSS_TEXTURE;
 
 	/* Describes the destination. */
-	error = drv_i915_gfx_surface_write(&surface[I915_GFX_RSS_TARGET / 4U], dst, mocs);
+	error = drv_i915_gfx_surface_write_gen(&surface[I915_GFX_RSS_TARGET / 4U], dst, mocs, graphics_ver);
 	if (error != 0)
 		return error;
 
 	/* Describes the source of a copy. */
 	if (src != NULL) {
-		error = drv_i915_gfx_surface_write(&surface[I915_GFX_RSS_TEXTURE / 4U], src, mocs);
+		error = drv_i915_gfx_surface_write_gen(&surface[I915_GFX_RSS_TEXTURE / 4U], src, mocs, graphics_ver);
 		if (error != 0)
 			return error;
 	}
@@ -958,16 +968,36 @@ i915_blit_build_batch(
 	uint64_t vertices_va;
 	uint32_t index;
 	uint32_t vs_dword;
+	uint32_t l3_bypass;
+	uint32_t null_depth;
+	uint32_t stencil_dwords;
+	int gen9;
 
 	/* Switches to 3D, programs the state bases and the once-per-context state. */
 	state_va = space->slot_va;
 	drv_i915_gfx_emit_context_setup(batch, state_va, space->window_va, 0U, mocs);
 
+	/*
+	 * Takes the forms of the batch's version (ws229-p004): Gen9 has no L3
+	 * bypass bit, its null depth buffer has the format in bits 20:18, and
+	 * its stencil buffer is five dwords.
+	 */
+	gen9 = 0;
+	l3_bypass = GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE;
+	null_depth = (GEN12_SURFTYPE_NULL << 29) | (GEN12_DEPTH_FORMAT_D32_FLOAT << 24);
+	stencil_dwords = GEN12_3DSTATE_STENCIL_BUFFER_DWORDS;
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+		gen9 = 1;
+		l3_bypass = 0U;
+		null_depth = (GEN12_SURFTYPE_NULL << 29) | (GEN12_DEPTH_FORMAT_D32_FLOAT << GEN9_DEPTH_FORMAT_SHIFT);
+		stencil_dwords = GEN9_3DSTATE_STENCIL_BUFFER_DWORDS;
+	}
+
 	/* Describes the one vertex buffer: MOCS, address modify enable and the stride; the address; the size. */
 	vertices_va = state_va + I915_GFX_RECT_VERTICES;
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VERTEX_BUFFERS, 1U + GEN12_VERTEX_BUFFER_STATE_DWORDS));
 	drv_i915_batch_emit(batch,
-			    GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE |
+			    l3_bypass |
 			    (mocs << 16) |
 			    (1U << 14) |
 			    I915_GFX_RECT_VERTEX_BYTES);
@@ -990,7 +1020,10 @@ i915_blit_build_batch(
 	drv_i915_batch_emit(batch, (GEN12_CMD_3DSTATE_VF_STATISTICS << 16) | 1U);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF, GEN12_3DSTATE_VF_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS, GEN12_3DSTATE_VF_SGVS_DWORDS);
-	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS_2, GEN12_3DSTATE_VF_SGVS_2_DWORDS);
+
+	/* Clears the extended system values, which only Gen12 has. */
+	if (gen9 == 0)
+		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS_2, GEN12_3DSTATE_VF_SGVS_2_DWORDS);
 
 	/* Turns instancing off for every vertex element. */
 	for (index = 0U; index < 3U; index++) {
@@ -1014,11 +1047,14 @@ i915_blit_build_batch(
 				    0U,
 				    mocs);
 
-	/* Points the pipeline at the colour calc, blend, viewport and coarse pixel state. */
+	/* Points the pipeline at the colour calc, blend and viewport state. */
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CC_STATE_POINTERS, I915_GFX_DYN_COLOR_CALC | 1U);
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_BLEND_STATE_POINTERS, I915_GFX_DYN_BLEND | 1U);
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_VIEWPORT_STATE_POINTERS_CC, I915_GFX_DYN_CC_VIEWPORT);
-	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CPS_POINTERS, I915_GFX_DYN_CPS);
+
+	/* Points it at the coarse pixel state, which only Gen12 has. */
+	if (gen9 == 0)
+		drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CPS_POINTERS, I915_GFX_DYN_CPS);
 
 	/* Disables the binding table pool, as anv does against state leaking from other contexts. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_BINDING_TABLE_POOL_ALLOC, GEN12_3DSTATE_BINDING_TABLE_POOL_ALLOC_DWORDS));
@@ -1046,7 +1082,10 @@ i915_blit_build_batch(
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_DS, GEN12_3DSTATE_DS_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_STREAMOUT, GEN12_3DSTATE_STREAMOUT_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_GS, GEN12_3DSTATE_GS_DWORDS);
-	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION, GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
+
+	/* No primitive replication, which only Gen12 has. */
+	if (gen9 == 0)
+		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION, GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
 
 	/* Clips with statistics only, and passes screen-space positions through. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_CLIP, GEN12_3DSTATE_CLIP_DWORDS));
@@ -1074,13 +1113,21 @@ i915_blit_build_batch(
 	/* Turns the depth test off and describes null depth and stencil buffers. */
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_WM_DEPTH_STENCIL, GEN12_3DSTATE_WM_DEPTH_STENCIL_DWORDS);
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_DEPTH_BUFFER, GEN12_3DSTATE_DEPTH_BUFFER_DWORDS));
-	drv_i915_batch_emit(batch, (GEN12_SURFTYPE_NULL << 29) | (GEN12_DEPTH_FORMAT_D32_FLOAT << 24));
+	drv_i915_batch_emit(batch, null_depth);
 	for (index = 2U; index < GEN12_3DSTATE_DEPTH_BUFFER_DWORDS; index++)
 		drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_STENCIL_BUFFER, GEN12_3DSTATE_STENCIL_BUFFER_DWORDS));
-	drv_i915_batch_emit(batch, GEN12_SURFTYPE_NULL << 29);
-	for (index = 2U; index < GEN12_3DSTATE_STENCIL_BUFFER_DWORDS; index++)
+
+	/* A null stencil buffer: SURFTYPE_NULL on Gen12, not enabled on Gen9. */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_STENCIL_BUFFER, stencil_dwords));
+	if (gen9 != 0) {
 		drv_i915_batch_emit(batch, 0U);
+	} else {
+		drv_i915_batch_emit(batch, GEN12_SURFTYPE_NULL << 29);
+	}
+	for (index = 2U; index < stencil_dwords; index++)
+		drv_i915_batch_emit(batch, 0U);
+
+	/* No hierarchical depth and no clear values. */
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_HIER_DEPTH_BUFFER, GEN12_3DSTATE_HIER_DEPTH_BUFFER_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_CLEAR_PARAMS, GEN12_3DSTATE_CLEAR_PARAMS_DWORDS);
 

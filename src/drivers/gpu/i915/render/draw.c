@@ -39,6 +39,7 @@
 #include <stdint.h>
 
 #include "../intel/genxml.h"
+#include "../intel/genxml-gen9.h"
 
 /*
  * The draw checkpoint.
@@ -109,11 +110,15 @@ drv_i915_gfx_session_get(
 		return NULL;
 	}
 
-	/* Starts with an empty batch over the batch object and the first generation of windows. */
+	/*
+	 * Starts with an empty batch over the batch object, built for the GT's
+	 * graphics version (ws229-p004), and the first generation of windows.
+	 */
 	work->cursor.cmds = work->batch->address;
 	work->cursor.count = 0U;
 	work->cursor.capacity = I915_GFX_BATCH_BYTES / 4U;
 	work->cursor.overflow = 0;
+	work->cursor.graphics_ver = session->vk->i915->gt.graphics_ver;
 	work->window_generation = 1U;
 
 	/* Keeps the objects with the session until it closes. */
@@ -289,7 +294,7 @@ drv_i915_gfx_window(
 
 		/* Fills the window with threads that end at once, then copies the kernels in. */
 		address = (uint8_t *)work->kernels->address + (uint64_t)work->window_next * I915_GFX_INSTRUCTION_BYTES;
-		drv_i915_gfx_instruction_heap_clear(address);
+		drv_i915_gfx_instruction_heap_clear_gen(address, work->cursor.graphics_ver);
 		if (vs_code != NULL)
 			kern_memcpy(address + I915_GFX_VS_KERNEL, vs_code, vs_bytes);
 		if (gs_code != NULL)
@@ -544,7 +549,7 @@ drv_i915_gfx_draw(
 		return ENOMEM;
 
 	/* Every surface, vertex buffer and state of a draw is uncached. */
-	mocs = GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
+	mocs = drv_i915_gfx_mocs_uncached(work->cursor.graphics_ver);
 
 	/* Takes the pipeline's kernels and their push data layouts. */
 	drv_i915_gfx_pipeline_kernels(state->pipeline, &kernels);
@@ -598,7 +603,7 @@ drv_i915_gfx_draw(
 		return error;
 
 	/* Writes the heaps into the slot, then the draw's commands into the batch. */
-	error = drv_i915_gfx_write_state(space.slot, state, &kernels, target, mocs);
+	error = drv_i915_gfx_write_state_gen(space.slot, state, &kernels, target, mocs, work->cursor.graphics_ver);
 	if (error == 0) {
 		error = i915_draw_build_batch(space.batch,
 					      &space,
@@ -1057,13 +1062,16 @@ i915_draw_build_batch(
 				    kernels->ps_push_regs,
 				    mocs);
 
-	/* Points the pipeline at the colour calc, blend, viewport, scissor and coarse pixel state. */
+	/* Points the pipeline at the colour calc, blend, viewport and scissor state. */
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CC_STATE_POINTERS, I915_GFX_DYN_COLOR_CALC | 1U);
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_BLEND_STATE_POINTERS, I915_GFX_DYN_BLEND | 1U);
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_VIEWPORT_STATE_POINTERS_CC, I915_GFX_DYN_CC_VIEWPORT);
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_VIEWPORT_STATE_POINTERS_SF_CLIP, I915_GFX_DYN_SF_CLIP_VIEWPORT);
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_SCISSOR_STATE_POINTERS, I915_GFX_DYN_SCISSOR);
-	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CPS_POINTERS, I915_GFX_DYN_CPS);
+
+	/* Points it at the coarse pixel state, which only Gen12 has (ws229-p004). */
+	if (batch->graphics_ver != GEN9_GRAPHICS_VER)
+		drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CPS_POINTERS, I915_GFX_DYN_CPS);
 
 	/* Disables the binding table pool, as anv does against state leaking from other contexts. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_BINDING_TABLE_POOL_ALLOC, GEN12_3DSTATE_BINDING_TABLE_POOL_ALLOC_DWORDS));
@@ -1108,9 +1116,12 @@ i915_draw_build_batch(
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, 0U);
 
-	/* The geometry kernel when the pipeline has one, and no primitive replication. */
+	/* The geometry kernel when the pipeline has one. */
 	drv_i915_gfx_emit_geometry_shader(batch, kernels);
-	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION, GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
+
+	/* No primitive replication, which only Gen12 has (ws229-p004). */
+	if (batch->graphics_ver != GEN9_GRAPHICS_VER)
+		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION, GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
 
 	/* Programs the clipper, setup and rasterizer, then the pixel stage. */
 	drv_i915_gfx_emit_raster(batch, state->pipeline, kernels);

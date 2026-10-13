@@ -15,6 +15,7 @@
 
 #include "../intel/commands.h"
 #include "../intel/genxml.h"
+#include "../intel/genxml-gen9.h"
 
 /* The dwords of a Gen12 PIPE_CONTROL: the header, the flags and four address and data words. */
 #define I915_PIPE_CONTROL_DWORDS	6U
@@ -98,8 +99,9 @@ drv_i915_batch_pointer(
 /*
  * Appends a PIPE_CONTROL with the given flags and no post-sync write.
  *
- * A render target cache flush also asks for the HDC pipeline flush in the
- * header dword, as the Gen12 flush of the render target requires.
+ * On Gen12 a render target cache flush also asks for the HDC pipeline flush
+ * in the header dword, as the Gen12 flush of the render target requires;
+ * Gen9 has no such bit and flushes the data cache instead (ws229-p004).
  */
 void
 drv_i915_batch_pipe_control(
@@ -109,10 +111,19 @@ drv_i915_batch_pipe_control(
 	uint32_t header;
 	unsigned index;
 
-	/* Builds the header; a render target flush adds the HDC pipeline flush to it. */
+	/*
+	 * Builds the header; a render target flush adds the HDC pipeline flush
+	 * to it on Gen12, and on Gen9, which has none, the data cache flush
+	 * anv puts in its place (genX_cmd_buffer.c, GFX_VER < 12).
+	 */
 	header = GFX_OP_PIPE_CONTROL(6);
-	if ((flags & PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U)
-		header |= PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
+	if ((flags & PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U) {
+		if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+			flags |= PIPE_CONTROL_DC_FLUSH_ENABLE;
+		} else {
+			header |= PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
+		}
+	}
 
 	/* Writes the header and the flags. */
 	drv_i915_batch_emit(batch, header);
@@ -129,17 +140,27 @@ drv_i915_batch_pipe_control(
  *
  * A compute dispatch ends with it before the pipeline goes back to 3D: the
  * data port's writes are flushed without a render target flush, which the
- * GPGPU pipeline does not take (anv, flush_pipeline_select()).
+ * GPGPU pipeline does not take (anv, flush_pipeline_select()).  Gen9 has no
+ * HDC pipeline flush; the data cache flush takes its place (ws229-p004).
  */
 void
 drv_i915_batch_pipe_control_hdc(
 	struct i915_gfx_batch *batch,
 	uint32_t flags)
 {
+	uint32_t header;
 	unsigned index;
 
-	/* Writes the header with the HDC pipeline flush, and the flags. */
-	drv_i915_batch_emit(batch, GFX_OP_PIPE_CONTROL(6) | PIPE_CONTROL0_HDC_PIPELINE_FLUSH);
+	/* Builds the header with the HDC pipeline flush on Gen12, and the data cache flush in its place on Gen9. */
+	header = GFX_OP_PIPE_CONTROL(6);
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+		flags |= PIPE_CONTROL_DC_FLUSH_ENABLE;
+	} else {
+		header |= PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
+	}
+
+	/* Writes the header and the flags. */
+	drv_i915_batch_emit(batch, header);
 	drv_i915_batch_emit(batch, flags);
 
 	/* Zeroes the address and the immediate data: nothing is written after the sync. */

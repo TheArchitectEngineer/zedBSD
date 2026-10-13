@@ -282,6 +282,7 @@ i915_instance_properties(
 	struct i915_wire_writer *reply)
 {
 	static const char name[] = "zedBSD i915 (Gen12 Xe)";
+	static const char name_gen9[] = "zedBSD i915 (Gen9)";
 	VkPhysicalDeviceProperties *properties;
 
 	/* Skips the physical device and the present word. */
@@ -301,6 +302,10 @@ i915_instance_properties(
 	properties->vendorID = 0x8086U;
 	properties->deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
 	kern_memcpy(properties->deviceName, name, sizeof(name));
+
+	/* A Gen9 GT is named for what it is (ws229-p004). */
+	if (session->vk->i915 != NULL && session->vk->i915->gt.graphics_ver == 9U)
+		kern_memcpy(properties->deviceName, name_gen9, sizeof(name_gen9));
 
 	/* Reports the PCI product, or zero for an executor without a device. */
 	if (session->vk->i915 != NULL) {

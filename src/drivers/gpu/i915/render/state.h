@@ -203,12 +203,16 @@ int drv_i915_gfx_texel_buffer_format(uint32_t format, uint32_t *surface_format, 
 
 void drv_i915_gfx_pipeline_kernels(const struct i915_gfx_pipeline *pipeline, struct i915_gfx_kernels *kernels);
 
+uint32_t drv_i915_gfx_mocs_uncached(unsigned graphics_ver);
 int drv_i915_gfx_write_state(uint8_t *page, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, uint32_t mocs);
+int drv_i915_gfx_write_state_gen(uint8_t *page, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, uint32_t mocs, unsigned graphics_ver);
 int drv_i915_gfx_write_push(uint8_t *data, const struct i915_gfx_draw_state *state, const struct i915_gfx_push_layout *layout);
 int drv_i915_gfx_surface_write(uint32_t *rss, const struct i915_gfx_surface *surface, uint32_t mocs);
+int drv_i915_gfx_surface_write_gen(uint32_t *rss, const struct i915_gfx_surface *surface, uint32_t mocs, unsigned graphics_ver);
 void drv_i915_gfx_sampler_write(uint32_t *state, const struct i915_gfx_sampler *sampler);
 void drv_i915_gfx_sampler_border_write(uint32_t *state, uint32_t *border, uint32_t offset, const struct i915_gfx_sampler *sampler);
 void drv_i915_gfx_instruction_heap_clear(uint8_t *window);
+void drv_i915_gfx_instruction_heap_clear_gen(uint8_t *window, unsigned graphics_ver);
 
 void drv_i915_gfx_emit_context_setup(struct i915_gfx_batch *batch, uint64_t state_va, uint64_t instruction_va, uint64_t general_va, uint32_t mocs);
 uint32_t drv_i915_gfx_topology(const struct i915_gfx_pipeline *pipeline);
