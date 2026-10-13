@@ -1,0 +1,105 @@
+{
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "fail": 5
+  },
+  "eligible": 96,
+  "results": [
+    {
+      "image": "001-abs-pos-border-offset-002.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 14400,
+          "equal": false,
+          "max_difference": 203,
+          "path": "css/css-writing-modes/abs-pos-border-offset-002-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/abs-pos-border-offset-002.html"
+    },
+    {
+      "image": "002-block-flow-direction-slr-043.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10119,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-043-ref.xht",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/block-flow-direction-slr-043.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10119,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-002-ref.xht",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/block-flow-direction-slr-047.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10190,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-002-ref.xht",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/block-flow-direction-slr-048.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10119,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-001-ref.xht",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/block-flow-direction-slr-050.xht"
+    }
+  ],
+  "root": "css/css-writing-modes",
+  "schema": 1,
+  "selected": 5,
+  "selection": "first-level round-robin, path-sorted",
+  "selection_manifest": "build/ws074-interop2025-q1012/manifest.json",
+  "skipped": {
+    "script": 34,
+    "script_reference": 2
+  },
+  "suite": "wpt",
+  "viewport": [
+    800,
+    600
+  ]
+}

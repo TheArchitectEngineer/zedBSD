@@ -38,9 +38,9 @@ Keiland の標準 app として、写真を集めて整理し、見る app を�
 | [ws157-p012](phase012/phase.md) | media の経路の review（q937）と小さな直し、jail 化の設計 | in-progress（review・直し済み、設計は承認） | p011 |
 | [ws157-p013](phase013/phase.md) | mediastorage の解析を keiland-preview `--info` の jail へ（J1〜J7）、取り込みの時間と一時の名前（#4） | in-progress（実装・host 済み、T1 待ち。UAT の部分は OK、2026-10-13 ユーザー） | p012 |
 | [ws157-p014](phase014/phase.md) | libkeiland の media の API を非同期に、picker・chooser はすぐ窓を開く（#1） | in-progress（実装・host 済み、T1 待ち。UAT の部分は OK、2026-10-13 ユーザー） | p012 |
-| [ws157-p015](phase015/phase.md) | Photos・Phone の thumbnail の decode を jail へ（#11） | in-progress — test-wait（実装は 2026-10-11 P1、main に統合済み。T1 は p017 と 1 本、2026-10-13 P2 q949） | p013 |
+| [ws157-p015](phase015/phase.md) | Photos・Phone の thumbnail の decode を jail へ（#11） | in-progress — test-wait（実装は 2026-10-11 P1、main に統合済み。T1 は p017 と 1 本、2026-10-13 P2 q949） | cleared（2026-10-13 Q1 判定: T1-584 の QEMU で 72 MP・200 MP の JPEG の thumbnail・開く・drag の絵、keiland-preview の jail。Phone の picker の上の入力は T1 の道具で届かず未判定、UAT はユーザー OK） |
 | ws157-p016 | 動画の寸法と撮影日時を mp4 の header（moov の mvhd・tkhd）から jail（`keiland-preview --info`）の中で読む（2026-10-11 ユーザー「OKです」、T1-538 で動画が寸法 0・取り込みの日だった件） | in-progress（2026-10-11 P1 a1d5efa46: 実装・host・build 済み、main に未統合、T1 待ち。UAT の部分は OK、2026-10-13 ユーザー） | p013 |
-| [ws157-p017](phase017/phase.md) | libjpeg-compat に 1/2・1/4・1/8 の縮小 decode（L1、2026-10-11 ユーザー「Q1の推しにします」、約 3 LW） | in-progress — test-wait（2026-10-13 P2 q949: 実装・host・build 済み、T1 待ち） | p015 |
+| [ws157-p017](phase017/phase.md) | libjpeg-compat に 1/2・1/4・1/8 の縮小 decode（L1、2026-10-11 ユーザー「Q1の推しにします」、約 3 LW） | in-progress — test-wait（2026-10-13 P2 q949: 実装・host・build 済み、T1 待ち） | cleared（2026-10-13 Q1 判定: T1-584 の QEMU で 72 MP・200 MP の JPEG の thumbnail・開く・drag の絵、keiland-preview の jail。Phone の picker の上の入力は T1 の道具で届かず未判定、UAT はユーザー OK） |
 
 ## p001 の観点（要件の検討）
 

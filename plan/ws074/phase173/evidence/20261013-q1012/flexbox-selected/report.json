@@ -1,0 +1,185 @@
+{
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "fail": 10
+  },
+  "eligible": 788,
+  "results": [
+    {
+      "image": "001-align-baseline.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 4262,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/reference/align-baseline-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/align-baseline.html"
+    },
+    {
+      "image": "002-abspos-autopos-htb-ltr.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 55200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-htb-ltr.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 33669,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/flex-lines/multi-line-wrap-reverse-column-reverse-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-lines/multi-line-wrap-reverse-column-reverse.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square-only.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/order/order-abs-children-painting-order.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 6249,
+          "allowed_max_difference": 1,
+          "different_pixels": 14400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/reference/align-content-001-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/align-content-001.htm"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 55200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-htb-rtl.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1206,
+          "equal": false,
+          "max_difference": 204,
+          "path": "css/css-flexbox/flex-lines/multi-line-wrap-reverse-row-reverse-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-lines/multi-line-wrap-reverse-row-reverse.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 588,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/order/order-with-column-reverse-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/order/order-with-column-reverse.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 6225,
+          "allowed_max_difference": 1,
+          "different_pixels": 14400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/reference/align-content-001-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/align-content-002.htm"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 55200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-vlr-ltr.html"
+    }
+  ],
+  "root": "css/css-flexbox",
+  "schema": 1,
+  "selected": 10,
+  "selection": "first-level round-robin, path-sorted",
+  "selection_manifest": "build/ws074-interop2025-q1012/manifest.json",
+  "skipped": {
+    "non_static_flag": 1,
+    "script": 66
+  },
+  "suite": "wpt",
+  "viewport": [
+    800,
+    600
+  ]
+}

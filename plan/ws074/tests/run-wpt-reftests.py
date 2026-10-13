@@ -34,7 +34,7 @@ except ImportError as error:
 
 
 ROOT = Path(__file__).resolve().parents[3]
-WPT = ROOT / "build/ws074-suites/wpt"
+WPT = (ROOT / "build/ws074-suites/wpt").resolve()
 WPT_COMMIT = "2d66b9b7998bb58c336138c178323ddee857b586"
 FONT_NAMES = ("Mahora-Regular.ttf", "JetBrainsMono-Regular.ttf",
               "DroidSansFallbackFull.ttf")
@@ -287,6 +287,8 @@ def main():
     parser.add_argument("--program", type=Path,
                         default=ROOT / "build/ws074-host/plain/browser")
     parser.add_argument("--root", default="css/CSS2")
+    parser.add_argument("--selection-manifest", type=Path,
+                        help="limit candidates to test IDs in an Interop selection JSON")
     parser.add_argument("--limit", type=int, default=100,
                         help="0 runs every eligible test")
     parser.add_argument("--width", type=int, default=800)
@@ -303,6 +305,10 @@ def main():
     failures = args.out / "failures"
     failures.mkdir(exist_ok=True)
     candidates, skipped = discover(args.root)
+    if args.selection_manifest is not None:
+        selection = json.loads(args.selection_manifest.read_text(encoding="utf-8"))
+        selected_ids = {row["id"] for row in selection["selected"]}
+        candidates = [row for row in candidates if "/" + row["path"] in selected_ids]
     selected = stratified(candidates, args.root, args.limit)
     results = []
     counts = defaultdict(int)
@@ -373,6 +379,8 @@ def main():
         "eligible": len(candidates),
         "selected": len(selected),
         "selection": "first-level round-robin, path-sorted",
+        "selection_manifest": (str(args.selection_manifest) if args.selection_manifest
+                               is not None else None),
         "skipped": skipped,
         "counts": dict(sorted(counts.items())),
         "results": results,
