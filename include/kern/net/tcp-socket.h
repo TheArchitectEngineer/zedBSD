@@ -229,14 +229,27 @@ struct tcp_socket {
 	 * recover to the end of what was sent and recovery: while it lasts,
 	 * each acknowledgement that moves but stops short of recover (a
 	 * partial one) has the next segment resent at once, and one that
-	 * reaches recover ends it.  recover_set says recover holds a value; a
-	 * new fast retransmit waits for an acknowledgement beyond it, so the
-	 * duplicates a resent window brings start none.
+	 * reaches recover ends it.  recover means nothing outside a recovery
+	 * (ws220-p005 review-1 G2: compared later it would turn false across
+	 * 2 GiB).  recovery_by_timeout says a timeout started the recovery: when
+	 * it ends exactly at recover, dupack_guard holds back the duplicates of
+	 * that recover (the answers to the resends of a spurious timeout) until
+	 * an acknowledgement goes beyond it (review-1 M1).  Duplicates count
+	 * only while the oldest segment fits the window (review-1 G1): the
+	 * answers to a closed window are not losses.
 	 */
 	unsigned duplicate_acks;
 	uint32_t recover;
-	unsigned recover_set;
 	unsigned recovery;
+	unsigned recovery_by_timeout;
+	unsigned dupack_guard;
+	uint32_t dupack_guard_sequence;
+	/*
+	 * Each resend by the timer takes the next number, which no
+	 * acknowledgement sets back: a refused resend is still the last one
+	 * when the number is unchanged (review-1 M4).
+	 */
+	unsigned retransmit_serial;
 	/*
 	 * TCP_NODELAY as the caller set it, and the idle-probe state for
 	 * SO_KEEPALIVE: when the next probe is due and how many have gone

@@ -39,7 +39,7 @@ import sys
 FIELD = re.compile(r"(\w+)=(\S+)")
 COUNTS = ("retransmit_segments", "immediate_resends", "duplicate_acks_in", "acks_outside", "segment_send_failures",
 	"send_refused", "send_buffer_sleeps", "out_of_order_in", "out_of_order_kept", "old_segments_in",
-	"receive_refused", "zero_windows_in", "zero_windows_out", "window_updates_out")
+	"receive_refused", "zero_windows_in", "zero_windows_out", "window_updates_out", "fast_retransmits")
 STATE = ("send_window", "in_flight_bytes", "send_segments", "backoff", "rto_ms", "srtt_us", "rttvar_us", "rtt_samples",
 	"receive_window", "receive_bytes", "reorder_segments")
 STEP = 0.1
