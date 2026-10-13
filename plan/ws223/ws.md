@@ -32,3 +32,5 @@ p001 第 1 版の要点（2026-10-13 P3）: 「Game Mode でない全画面」�
 | p003 | 試験: wltest に `--content-type=none|photo|video|game`、AAT の `desktop.game-mode.wltest`（Venus の `direct=1`・`reason=shot`・`reason=pointer`・`reason=no-window`、video の対照）と `full.suite`、AAT の image に wltest、`plan/tools/compositor/scanout-rules-host-test`（規則の表、ASan・UBSan、master の Tools への登録は Q1） | planned | p002 |
 | p004 | 実機の確かめ（Q1 → T1・ユーザー）: 5330 の Video Player の全画面（`KWL SCANOUT` 無し、`FRAMES late=` が window と同じ桁）と wltest の game の `direct=1`（BUG-223 の i915 の証拠）、Pi 4 の全画面の再生の計測の記録（D4） | planned | p003 |
 | p005 | 記録の整理の確認（WS122・BUG-223・guardrail・master・WS217 p001 第 5 版、Q1 の編集）と規約の全文の見直し | planned | p002〜p004 |
+
+2026-10-13 Q1: review-1（致命的 0、重大 2、中 6、軽微 10）。p002 は第 2 版で S1（WS217 p002a の plan/ws217/tests/host-scanout-rules.c:93-95 が KWL_SCANOUT_CONTENT_VIDEO を使う、p002 の範囲で直し p003 はこの試験を plan/tools へ移す）と M1（p002a の後の規則の順 CONTENT→BUFFER→ROTATED→SIZE、行番号）を直し、ユーザーが D1・D2 と新しい D7（S2: 合成の全画面の動画で cursor が消えない、推奨は libkeiland に cursor を隠す API を足し Video Player が全画面で bar を隠す時に cursor も隠す）を決めてから。p002 の main への統合は D7 の答えの後。D4 は完了の条件 3 を緩める決定として問い直す（M3）。M2: ENOTSUP を受けたら以後は試さない印（Pi 4・Linux・FreeBSD で全画面の動画の窓ごとに出力を閉じ開きしている）。
