@@ -1,0 +1,10 @@
+<!doctype html>
+<style>
+.grid { display: grid; grid: 50px 50px / 100px; justify-items: baseline; margin-bottom: 10px; }
+.grid > div { writing-mode: vertical-rl; height: 50px; }
+.small { width: 20px; }
+.wide { width: 50px; margin: 0 10px; }
+.end { justify-self: end; }
+</style>
+<div class="grid"><div class="small"></div><div class="wide"></div></div>
+<div class="grid"><div class="small"></div><div class="wide end"></div></div>

@@ -1,0 +1,266 @@
+{
+  "eligible": 502,
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "fixed_id_set_verified": true,
+  "checkpoint_verified": {
+    "q1093": {
+      "checkpoint_rows": 502,
+      "gzip_raw_reports": 502
+    },
+    "q1105": {
+      "checkpoint_rows": 502,
+      "gzip_raw_reports": 502
+    }
+  },
+  "gzip_raw_verified": true,
+  "old": {
+    "outcomes": {
+      "fail": 399,
+      "pass": 103
+    },
+    "subtest_status": {
+      "1": 5906,
+      "0": 5099
+    },
+    "fail_by_directory": {
+      "abspos": 24,
+      "alignment": 206,
+      "animation": 11,
+      "grid-definition": 42,
+      "grid-items": 28,
+      "grid-layout-properties.html": 1,
+      "grid-model": 10,
+      "grid-tracks-stretched-with-different-flex-factors-sum.html": 1,
+      "inheritance.html": 1,
+      "layout-algorithm": 28,
+      "parsing": 35,
+      "placement": 4,
+      "subgrid": 7,
+      "table-grid-item-005.html": 1
+    }
+  },
+  "new": {
+    "outcomes": {
+      "pass": 110,
+      "fail": 392
+    },
+    "subtest_status": {
+      "0": 5225,
+      "1": 5780
+    },
+    "fail_by_directory": {
+      "abspos": 23,
+      "alignment": 200,
+      "animation": 11,
+      "grid-definition": 42,
+      "grid-items": 28,
+      "grid-layout-properties.html": 1,
+      "grid-model": 10,
+      "grid-tracks-stretched-with-different-flex-factors-sum.html": 1,
+      "inheritance.html": 1,
+      "layout-algorithm": 28,
+      "parsing": 35,
+      "placement": 4,
+      "subgrid": 7,
+      "table-grid-item-005.html": 1
+    }
+  },
+  "transitions": {
+    "fail->pass": 7
+  },
+  "changed_ids": [
+    {
+      "id": "/css/css-grid/abspos/absolute-positioning-definite-sizes-001.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-001.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-002.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-003.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-004.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-005.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-006.html",
+      "before": "fail",
+      "after": "pass"
+    }
+  ],
+  "old_pass_regressions": [],
+  "subtest_transitions": {
+    "1->0": 127,
+    "0->1": 1
+  },
+  "subtest_changed_ids": [
+    {
+      "id": "/css/css-grid/abspos/absolute-positioning-definite-sizes-001.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-004.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-content.html",
+      "transitions": {
+        "1->0": 8
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-001.html",
+      "transitions": {
+        "1->0": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-002.html",
+      "transitions": {
+        "1->0": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-003.html",
+      "transitions": {
+        "1->0": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-004.html",
+      "transitions": {
+        "1->0": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-005.html",
+      "transitions": {
+        "1->0": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-006.html",
+      "transitions": {
+        "1->0": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-self-baseline-synthesized-002.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-gutters-and-alignment.html",
+      "transitions": {
+        "1->0": 7
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-justify-baseline-005.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/flex-content-distribution-001.html",
+      "transitions": {
+        "1->0": 4
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-relative-offsets-001.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-layout-properties.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-gutters-and-flex-content-001.html",
+      "transitions": {
+        "1->0": 3
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-gutters-and-tracks-001.html",
+      "transitions": {
+        "1->0": 5
+      }
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/flex-sizing-columns-min-max-width-001.html",
+      "transitions": {
+        "1->0": 3
+      }
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/flex-sizing-rows-min-max-height-001.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-find-fr-size-gutters-001.html",
+      "transitions": {
+        "1->0": 14,
+        "0->1": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-find-fr-size-gutters-002.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-shorthand-serialization.html",
+      "transitions": {
+        "1->0": 26
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-shorthand-valid.html",
+      "transitions": {
+        "1->0": 5
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-shorthand-valid.html",
+      "transitions": {
+        "1->0": 5
+      }
+    },
+    {
+      "id": "/css/css-grid/subgrid/subgrid-baseline-007.html",
+      "transitions": {
+        "1->0": 1
+      }
+    }
+  ]
+}

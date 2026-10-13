@@ -41,3 +41,11 @@ Event ws074-p219-q1097-partial-clear-20261014: [証拠](evidence/20261014-q1097/
 ## q1098-i01 結果（2026-10-14 08:11 JST）
 
 Event ws074-p219-q1098-partial-clear-20261014: [証拠](evidence/20261014-q1098/README.md)。固定pixel行の水平Grid直接inline textで先頭line baselineをempty合成baseline groupへ追加。最小2行で文字line3件がy42.5、次行empty/文字がy148を共有し、end子は独立。固定style-changes-005/006は各3/6→6/6 subtest、whole FAIL→PASS。旧001/002と100 subtest PASS維持、Grid48/CSS51/JS14、warning0 build、Acid3差0・Acid2差1865。q1098-i01部分cleared、p219 whole/p217/p189/p173全件100%未達。縦書き4件/auto行等残、共有投影/GitHub publication保留。
+
+## q1099-i01 有限部分範囲（2026-10-14 08:13 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（09:43 JSTまで）に適用。固定Grid alignment style-changes-001〜008の8 IDをq1097と同じWPT/localhost/固定font3種/5秒settle/20秒processで再測定し、q1097 rawとwhole/subtest遷移、旧PASS後退、残FAIL条件を分類。browser/runner/WPT/公開ABI/`plan/master.md`変更なし、Acid/全Grid再測定なし。p219 whole/p217/p189/p173全件100%は本部分基準外。
+
+## q1099-i01 結果（2026-10-14 08:14 JST）
+
+Event ws074-p219-q1099-partial-clear-20261014: [証拠](evidence/20261014-q1099/README.md)。固定8 IDは2→4 whole PASS、20→26/48 subtest PASS。005/006で計6 FAIL→PASS、旧PASS後退0。残003/004はvertical-rl水平offset、007/008はvertical-lr文字幅/offset。q1099-i01部分cleared、p219/p217/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。

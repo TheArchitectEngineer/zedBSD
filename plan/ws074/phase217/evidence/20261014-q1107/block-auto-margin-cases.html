@@ -1,0 +1,18 @@
+<!doctype html>
+<style>
+.grid { display: grid; grid-template-rows: 100px; width: 120px; margin-bottom: 10px; }
+.grid > div { width: 20px; height: 20px; }
+.top > div { margin: auto 0 0; }
+.bottom > div { margin: 0 0 auto; }
+.both > div { margin: auto 0; }
+.overflow > div { height: 120px; margin: auto 0; }
+.aligned { align-items: end; }
+.aligned > div { margin: auto 0; }
+.content > div { height: auto; margin: auto 0; font: 10px/1 monospace; }
+</style>
+<div class="grid top"><div></div></div>
+<div class="grid bottom"><div></div></div>
+<div class="grid both"><div></div></div>
+<div class="grid overflow"><div></div></div>
+<div class="grid aligned"><div></div></div>
+<div class="grid content"><div>X</div></div>

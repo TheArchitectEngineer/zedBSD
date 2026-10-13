@@ -1,0 +1,19 @@
+<!doctype html>
+<style>
+.grid { display: grid; margin-bottom: 10px; }
+.grid > div { height: 10px; }
+.short { grid-template: 80px / 50px 50px; column-gap: 5px; }
+.order { grid-template-columns: 100px; grid-template: 80px / 50px 50px; grid-template-columns: 30px 70px; }
+.invalid { grid-template-rows: 40px; grid-template-columns: 30px 70px; grid-template: 80px / auto-flow 50px; }
+.none { grid-template: none / 50px 50px; }
+.before { grid-template-rows: 40px; grid-template-columns: 100px; grid-template: 80px / 50px 50px; }
+.lone { grid-template: 80px / 50px; grid-template: none; }
+.areas { grid-template-rows: 40px; grid-template-columns: 30px 70px; grid-template: "a b" / 50px 50px; }
+</style>
+<div class="grid short"><div>A</div><div>B</div></div>
+<div class="grid order"><div>A</div><div>B</div></div>
+<div class="grid invalid"><div>A</div><div>B</div></div>
+<div class="grid none"><div>A</div><div>B</div></div>
+<div class="grid before"><div>A</div><div>B</div></div>
+<div class="grid areas"><div>A</div><div>B</div></div>
+<div class="grid lone"><div>A</div><div>B</div></div>

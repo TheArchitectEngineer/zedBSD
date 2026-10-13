@@ -400,8 +400,9 @@ parameter_word(
 
 	/*
 	 * i915.gen9= lets the i915 drive a Gen9 GPU (Skylake to Comet Lake),
-	 * on, or leaves it to the firmware, off.  The i915 reads it from the
-	 * loader's line at PCI attach, before this parse.
+	 * on (the default when absent), or leaves it to the firmware, off.
+	 * The i915 reads it from the loader's line at PCI attach, before this
+	 * parse.
 	 */
 	if (key == KERN_BOOT_PARAMETER_I915_GEN9) {
 		other = parameter_text_is(value, length, "on");

@@ -106,17 +106,20 @@ X11 programs run on the desktop through a rootless X server, with GLX.
   timer initialization failed": when the CPU reports the frequency of its
   time-stamp counter (TSC), the kernel measures its timer with the TSC
   instead.
-- 〔判定待ち〕 A preview of the older Intel graphics, Gen9 and Gen9.5 (the
-  integrated GPUs of the 6th to 10th generation Core processors). It is off
-  by default; the [user guide](https://github.com/awemorris/zedBSD/blob/zedbsd-1.0.0-beta2/docs/release/zedbsd-1.0.0-beta2-guide.md#older-intel-graphics)
-  shows how to turn it on with `i915.gen9=on`. It drives the GPU's engines
-  and Vulkan only: the picture stays on the framebuffer the firmware set up,
-  there is no Vulkan Video, and sleep is refused while it is on.
-- 〔判定待ち〕 SATA drives on AHCI controllers, including Intel controllers
-  set to RAID mode in the firmware, kept working across sleep. Kei still
-  starts from USB; a SATA drive inside the computer can be read and
-  written. NCQ, TRIM, hot plugging and optical drives are not supported
-  yet.
+- The older Intel graphics, Gen9 and Gen9.5 (the integrated GPUs of the
+  6th to 10th generation Core processors), on by default. The driver runs
+  the GPU's engines and Vulkan only: the picture stays on the framebuffer
+  the firmware set up, there is no Vulkan Video, and sleep is refused while
+  it drives the GPU. Gen9.5 (7th to 10th generation) was checked on the GPU
+  of an 8th generation Core; the 6th generation (Skylake), and starting
+  such a computer from the USB drive by itself, were not. The
+  [user guide](https://github.com/awemorris/zedBSD/blob/zedbsd-1.0.0-beta2/docs/release/zedbsd-1.0.0-beta2-guide.md#older-intel-graphics)
+  shows how to turn it off with `i915.gen9=off`.
+- SATA drives on AHCI controllers, on by default, including Intel
+  controllers set to RAID mode in the firmware, with basic support for
+  sleep and resume. Kei still starts from USB; a SATA drive inside the
+  computer can be read and written. NCQ, TRIM, hot plugging and optical
+  drives are not supported yet.
 
 <!-- review (2026-10-09 user): Bluetooth (WS143) and Vulkan Video (WS083) are in, and are turned off at the last
      moment (10/16) if they are not ready. If one is turned off, replace its line:
@@ -128,9 +131,9 @@ X11 programs run on the desktop through a rootless X server, with GLX.
 
 <!-- review (2026-10-14): the TSC timer line passed in QEMU (KVM and TCG, the PIT path); the TSC path itself waits for
      the user's check on the Core i5-13400F desktop and the 5330. Drop the line if that check fails.
-     "〔判定待ち〕" marks the lines that go in only if the code freeze of 2026-10-14 18:00 takes them (Gen9: WS229,
-     AHCI: WS231). Delete the mark when a line is in, or delete the line (and its rows in the known issues and the
-     guide's section "Older Intel graphics") when it is not. -->
+     The code freeze of 2026-10-14 18:00 took Gen9 (WS229) and AHCI (WS231); both are on by default. Gen9's GPU tests
+     passed on a Let's Note SV7 (Core i5 8th generation, UHD 620) with its GPU passed through to a QEMU guest on that
+     machine, so the machine's own firmware start from the USB drive is untested, as is any 6th generation part. -->
 
 ### For developers
 

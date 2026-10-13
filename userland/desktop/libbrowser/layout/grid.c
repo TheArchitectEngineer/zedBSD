@@ -19,7 +19,7 @@
  * absolute children with definite lines use their area's static origin in
  * horizontal LTR/RTL grids, without taking part in track sizing.  Not in
  * this pass: named lines and areas, dense packing, full inline-axis
- * alignment, order, baselines, subgrid, and auto-fill and auto-fit.
+ * alignment, order, full baseline alignment, subgrid, and auto-fill and auto-fit.
  */
 
 #include "layout/layout.h"
@@ -87,6 +87,7 @@ static void grid_size_rows(struct layout_box *box, struct grid_state *grid, layo
 static int grid_relay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width, layout_unit height, int align);
 static layout_unit grid_outer_height(const struct layout_box *item);
 static int grid_fixed_row_baseline(const struct layout_box *box, const struct grid_item *item, layout_unit *baseline);
+static int grid_fixed_column_baseline(const struct layout_box *box, const struct grid_item *item, layout_unit *right_extent);
 static layout_unit grid_track_length(const struct css_length *length, layout_unit whole, int measuring);
 static void grid_release(struct grid_state *grid);
 
@@ -120,6 +121,9 @@ layout_grid(
 	layout_unit baseline;
 	layout_unit peer_baseline;
 	layout_unit shared_baseline;
+	layout_unit right_extent;
+	layout_unit shared_right_extent;
+	layout_unit free_height;
 	size_t index;
 	size_t peer;
 	int position;
@@ -127,6 +131,9 @@ layout_grid(
 	int align;
 	int baseline_eligible;
 	int peer_baseline_eligible;
+	int auto_top;
+	int auto_bottom;
+	int auto_block_margin;
 	int error;
 
 	/* The children out of the flow have their static place at the content box's corner. */
@@ -253,6 +260,20 @@ layout_grid(
 			align = box->style.align_items;
 		if (align == CSS_ALIGN_NORMAL)
 			align = child->replaced ? CSS_ALIGN_START : CSS_ALIGN_STRETCH;
+		/* Definite horizontal rows distribute block-axis auto margins after sizing. */
+		auto_top = child->style.margin[CSS_TOP].unit == CSS_UNIT_AUTO;
+		auto_bottom = child->style.margin[CSS_BOTTOM].unit == CSS_UNIT_AUTO;
+		auto_block_margin = 0;
+		if ((auto_top || auto_bottom) && box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+		    item->row_span == 1 && item->row < box->style.row_count &&
+		    box->style.rows[item->row].kind == CSS_TRACK_LENGTH) {
+			if (box->style.rows[item->row].size.unit == CSS_UNIT_PX ||
+			    (box->style.rows[item->row].size.unit == CSS_UNIT_PERCENT &&
+			    box->style.height.unit == CSS_UNIT_PX))
+				auto_block_margin = 1;
+		}
+		if (auto_block_margin)
+			align = CSS_ALIGN_START;
 		baseline_eligible = grid_fixed_row_baseline(box, item, &baseline);
 		if (align == CSS_ALIGN_BASELINE && !baseline_eligible)
 			align = CSS_ALIGN_START;
@@ -303,7 +324,26 @@ layout_grid(
 			if (area_width > outer_width && justify == CSS_ALIGN_CENTER)
 				child->x += (area_width - outer_width) / 2;
 		}
+		if (grid_fixed_column_baseline(box, item, &right_extent)) {
+			/* Orthogonal empty items share a border-left baseline in this column. */
+			shared_right_extent = 0;
+			for (peer = 0; peer < grid.item_count; peer++) {
+				if (grid.items[peer].column != item->column)
+					continue;
+				if (!grid_fixed_column_baseline(box, &grid.items[peer], &right_extent))
+					continue;
+				if (right_extent > shared_right_extent)
+					shared_right_extent = right_extent;
+			}
+			child->x = x + area_width - shared_right_extent;
+		}
 		child->y = y + child->margin[CSS_TOP];
+		if (auto_block_margin) {
+			/* Auto margins absorb only positive space left in the final row. */
+			free_height = area_height - grid_outer_height(child);
+			if (free_height > 0 && auto_top)
+				child->y += auto_bottom ? free_height / 2 : free_height;
+		}
 		if (align == CSS_ALIGN_BASELINE) {
 			/* Members in this fixed row share their first or synthesized baseline. */
 			shared_baseline = 0;
@@ -1250,6 +1290,9 @@ grid_fixed_row_baseline(
 		return 0;
 	if (box->style.rows[item->row].size.unit != CSS_UNIT_PX)
 		return 0;
+	if (child->style.margin[CSS_TOP].unit == CSS_UNIT_AUTO ||
+	    child->style.margin[CSS_BOTTOM].unit == CSS_UNIT_AUTO)
+		return 0;
 
 	/* Only members with a baseline preference join the row's group. */
 	align = child->style.align_self;
@@ -1271,6 +1314,42 @@ grid_fixed_row_baseline(
 	*baseline = grid_outer_height(child) - child->margin[CSS_BOTTOM];
 
 	/* This child has a baseline in the fixed row. */
+	return 1;
+}
+
+/* Finds an empty orthogonal item's extent right of its border-left baseline. */
+static int
+grid_fixed_column_baseline(
+	const struct layout_box *box,
+	const struct grid_item *item,
+	layout_unit *right_extent)
+{
+	const struct layout_box *child;
+	int justify;
+
+	child = item->box;
+	if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB ||
+	    child->style.writing_mode != CSS_WRITING_VERTICAL_RL)
+		return 0;
+	if (box->style.column_count != 1 || item->column != 0 || item->column_span != 1 ||
+	    box->style.columns[0].kind != CSS_TRACK_LENGTH ||
+	    box->style.columns[0].size.unit != CSS_UNIT_PX)
+		return 0;
+	if (child->first_child != NULL || child->line_count != 0 ||
+	    child->style.width.unit != CSS_UNIT_PX ||
+	    child->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO ||
+	    child->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO)
+		return 0;
+
+	justify = child->style.justify_self;
+	if (justify == CSS_ALIGN_AUTO)
+		justify = box->style.justify_items;
+	if (justify != CSS_ALIGN_BASELINE)
+		return 0;
+
+	*right_extent = child->border[CSS_LEFT] + child->padding[CSS_LEFT] +
+	    child->width + child->padding[CSS_RIGHT] + child->border[CSS_RIGHT] +
+	    child->margin[CSS_RIGHT];
 	return 1;
 }
 

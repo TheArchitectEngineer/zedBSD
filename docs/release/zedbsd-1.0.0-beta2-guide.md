@@ -113,27 +113,30 @@ USB drive to start the computer's own system again.
 
 ### Older Intel graphics
 
-〔判定待ち〕 On computers with a 6th to 10th generation Core processor
-(Intel Gen9 and Gen9.5 graphics), Kei draws on the framebuffer the firmware
-set up and does not use the GPU, unless you turn on the preview of the GPU
-driver:
+On computers with a 6th to 10th generation Core processor (Intel Gen9 and
+Gen9.5 graphics), Kei drives the GPU's engines and Vulkan, but not yet the
+display. The screen stays at the resolution the firmware chose, its
+brightness and external displays cannot be changed, and sleep is refused
+while the driver drives the GPU (see the
+[known issues](zedbsd-1.0.0-beta2-known-issues.md)). Gen9.5 (7th to 10th
+generation) was checked on an 8th generation Core; the 6th generation
+(Skylake) was not.
+
+If the GPU driver gives trouble on such a computer, turn it off. Kei then
+draws on the framebuffer the firmware set up and does not use the GPU:
 
 1. Plug the USB drive into a computer and open its small FAT partition, the
    one that holds `vmunix` and `zedbsd.cfg`.
-2. Open `zedbsd.cfg` in a text editor, add the line `i915.gen9=on` at the
+2. Open `zedbsd.cfg` in a text editor, add the line `i915.gen9=off` at the
    end, and save it.
 3. Eject the USB drive and start Kei from it.
 
-The preview drives the GPU's engines and Vulkan only. The screen stays at
-the resolution the firmware chose, its brightness and external displays
-cannot be changed, and sleep is refused while it is on (see the
-[known issues](zedbsd-1.0.0-beta2-known-issues.md)). To turn it off, delete
-the line again.
+To turn the driver on again, delete the line.
 
-<!-- review (2026-10-14): "〔判定待ち〕" marks a section that is in only if the code freeze of 2026-10-14 18:00 takes
-     the Gen9 driver (WS229). Delete the mark, or the whole section. The steps follow how the image's zedbsd.cfg takes
-     extra lines (one per line, CR LF is accepted); they were not tried by hand on Windows or macOS, which may not show
-     an EFI system partition by themselves (on macOS, `diskutil mount` it first). -->
+<!-- review (2026-10-14): the code freeze of 2026-10-14 18:00 took the Gen9 driver (WS229), on by default. The steps
+     follow how the image's zedbsd.cfg takes extra lines (one per line, CR LF is accepted); they were not tried by hand
+     on Windows or macOS, which may not show an EFI system partition by themselves (on macOS, `diskutil mount` it
+     first). Whether sleep works with the driver off was not checked on a Gen9 machine. -->
 
 ## 5. Connect to a network
 

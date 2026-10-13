@@ -2,7 +2,47 @@
 
 # Past Log
 
-## 最新: q1098 / WS074 horizontal text-line Grid baseline（2026-10-14）
+## 最新: q1108 / WS074 positioned Grid self-alignment diagnosis（2026-10-14）
+
+[q1108履歴](queue-q1108.md): positioned列軸/行軸各17件を水平/縦書きに分割し、列軸5件の水平end/center offsetTop差を次候補へ。[証拠](../ws074/phase217/evidence/20261014-q1108/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1107 / WS074 Grid block-axis auto margins（2026-10-14）
+
+[q1107履歴](queue-q1107.md): 固定auto-margins7件は全whole FAIL→PASS、計14 subtest改善、旧PASSとAcid3差0維持。[証拠](../ws074/phase217/evidence/20261014-q1107/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1106 / WS074 Grid alignment residual triage（2026-10-14）
+
+[q1106履歴](queue-q1106.md): 固定alignment残200 whole FAILを分類。auto margin系列7件の行内余白吸収欠落を次候補へ。[証拠](../ws074/phase217/evidence/20261014-q1106/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1105 / WS074 fixed Grid502 full recensus（2026-10-14）
+
+[q1105履歴](queue-q1105.md): 固定Grid502は103→110 PASS、399→392 FAIL。旧whole PASS後退0、subtest127改善/1後退。全502 raw等を照合。[証拠](../ws074/phase189/evidence/20261014-q1105/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1104 / WS074 explicit Grid template shorthand（2026-10-14）
+
+[q1104履歴](queue-q1104.md): 明示`grid-template`二側と単独noneをatomic展開、固定template-validは0→5/40 subtest PASS、whole FAIL。旧PASSとAcid3差0維持。[証拠](../ws074/phase218/evidence/20261014-q1104/README.md)。p218部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1103 / WS074 vertical inline text layout design（2026-10-14）
+
+[q1103履歴](queue-q1103.md): 固定007/008のwidth100差はGrid stretchと横書き固定のinline/paint/geometryが重なる。[p220](../ws074/phase220/phase.md)を追加。[証拠](../ws074/phase217/evidence/20261014-q1103/README.md)。部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1102 / WS074 Grid style-changes eight-ID recensus（2026-10-14）
+
+[q1102履歴](queue-q1102.md): 固定8 IDは4→6 whole PASS、26→36/48 subtest PASS、旧PASS後退0。残007/008は縦書き文字幅差。[証拠](../ws074/phase189/evidence/20261014-q1102/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1101 / WS074 vertical-rl empty Grid baseline x（2026-10-14）
+
+[q1101履歴](queue-q1101.md): 固定003/004各1/6→6/6 subtest・whole PASS、旧4件と100-subtest PASS維持。warning0 build、Acid3差0。[証拠](../ws074/phase217/evidence/20261014-q1101/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1100 / WS074 vertical Grid style-changes diagnosis（2026-10-14）
+
+[q1100履歴](queue-q1100.md): 残4縦書きIDを空vertical-rl子のoffsetのみ2件と、vertical-lr文字子のwidth初回差2件に分割。[証拠](../ws074/phase217/evidence/20261014-q1100/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1099 / WS074 Grid style-changes eight-ID recensus（2026-10-14）
+
+[q1099履歴](queue-q1099.md): 固定8 IDは2→4 whole PASS、20→26/48 subtest PASS、旧PASS後退0。残4件は縦書きoffset/文字幅差。[証拠](../ws074/phase219/evidence/20261014-q1099/README.md)。p219部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1098 / WS074 horizontal text-line Grid baseline（2026-10-14）
 
 [q1098履歴](queue-q1098.md): 固定005/006各3/6→6/6 subtest・whole FAIL→PASS、旧001/002と100 subtest PASS維持。warning0 build、Acid3差0。[証拠](../ws074/phase219/evidence/20261014-q1098/README.md)。p219部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

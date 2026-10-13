@@ -33,3 +33,11 @@ Event ws074-p218-q1094-partial-clear-20261014: [証拠](evidence/20261014-q1094/
 ## q1095-i01 結果（2026-10-14 08:02 JST）
 
 Event ws074-p218-q1095-partial-clear-20261014: [証拠](evidence/20261014-q1095/README.md)。既存track-listの明示`grid: rows / columns`を両側成功時のみatomicにlonghand展開。gap、前後cascade、`none`とinvalid/auto-flow/areas拒否を最小12 geometryで検証。固定WPT style-changesは0→3/6 subtest PASS、wholeはbaseline差でFAIL。旧PASS代表100/100維持、CSS rule51/CSSOM12/mutation12、Grid48、JS14、warning0 build、Acid3差0・Acid2差1865。q1095-i01部分cleared、p218 whole/p189/p173全件100%未達。implicit six longhand/CSSOMなど残、共有投影/GitHub publication保留。
+
+## q1104-i01 有限部分範囲（2026-10-14 08:23 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（09:53 JSTまで）に適用。`grid-template: <既存対応track-list> / <既存対応track-list>`と単独`none`を既存rows/columnsへatomic展開。areas/line names/CSSOM getter/auto-flow等は対象外。最小geometryとcascade/invalid検証、固定grid-template-shorthand-valid代表のsubtest推移、旧Grid/JS/CSS、warning0 build、Acid3差0・Acid2非増加。WPT/runner/公開ABI/`plan/master.md`変更なし。p218 whole/p189/p173全件100%は本部分基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1104-i01 結果（2026-10-14 08:25 JST）
+
+Event ws074-p218-q1104-partial-clear-20261014: [証拠](evidence/20261014-q1104/README.md)。既存track-listの`grid-template: rows / columns`と単独`none`をatomicにlonghand展開。最小14 geometry、invalid/cascade/gap/none、旧Grid/CSSOM/JS、warning0 build、Acid3差0・Acid2差1865。固定template-validは0→5/40 subtest PASS、whole FAIL継続、旧100-subtest代表PASS。q1104部分cleared、p218/p189/p173全件100%未達。areas/lines/CSSOM等残、共有投影/GitHub publication保留。

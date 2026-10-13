@@ -59,6 +59,7 @@ enum values_shorthand {
 	SHORT_GRID_COLUMN,
 	SHORT_GRID_ROW,
 	SHORT_GRID_AREA,
+	SHORT_GRID_TEMPLATE,
 	SHORT_GRID,
 	SHORT_PLACE_ITEMS,
 	SHORT_CONTAINER,
@@ -153,6 +154,7 @@ static int values_grid_line(const struct css_token *tokens, size_t count, struct
 static int values_grid_pair(int start, int end, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_grid_area(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_grid_explicit(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_grid_template(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_decoration_line(const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_text_decoration(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 
@@ -293,6 +295,7 @@ static const struct values_name values_names[] = {
 	{ "grid-column", SHORT_GRID_COLUMN },
 	{ "grid-row", SHORT_GRID_ROW },
 	{ "grid-area", SHORT_GRID_AREA },
+	{ "grid-template", SHORT_GRID_TEMPLATE },
 	{ "grid", SHORT_GRID },
 	{ "place-items", SHORT_PLACE_ITEMS },
 	{ "container", SHORT_CONTAINER },
@@ -1063,7 +1066,7 @@ css_parse_property(
 	wide = values_keyword(values_wide, &tokens[0], &value.kind);
 	if (count == 1 && wide) {
 		/* A complete grid shorthand needs the implicit longhands, which this pass cannot reset. */
-		if (property == SHORT_GRID)
+		if (property == SHORT_GRID || property == SHORT_GRID_TEMPLATE)
 			return EINVAL;
 		values_wide_keyword(property, &value, out, out_count);
 		return 0;
@@ -1150,6 +1153,8 @@ css_parse_property(
 		return values_grid_pair(CSS_PROP_GRID_ROW_START, CSS_PROP_GRID_ROW_END, tokens, count, out, out_count);
 	case SHORT_GRID_AREA:
 		return values_grid_area(tokens, count, out, out_count);
+	case SHORT_GRID_TEMPLATE:
+		return values_grid_template(parse, tokens, count, out, out_count);
 	case SHORT_GRID:
 		return values_grid_explicit(parse, tokens, count, out, out_count);
 	case SHORT_BORDER_SPACING:
@@ -4951,6 +4956,36 @@ values_grid_explicit(
 	values_add(out, made, CSS_PROP_GRID_TEMPLATE_COLUMNS, &columns);
 
 	/* Succeeded: both explicit track lists are declared. */
+	return 0;
+}
+
+/* Parses the supported grid-template forms without changing implicit tracks. */
+static int
+values_grid_template(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	struct css_value rows;
+	struct css_value columns;
+	int error;
+
+	if (count != 1 || !css_ident_equal(&tokens[0], "none"))
+		return values_grid_explicit(parse, tokens, count, out, made);
+
+	/* A lone none resets both explicit track lists. */
+	memset(&rows, 0, sizeof(rows));
+	error = values_single(parse, CSS_PROP_GRID_TEMPLATE_ROWS, tokens, count, &rows);
+	if (error != 0)
+		return error;
+	memset(&columns, 0, sizeof(columns));
+	error = values_single(parse, CSS_PROP_GRID_TEMPLATE_COLUMNS, tokens, count, &columns);
+	if (error != 0)
+		return error;
+	values_add(out, made, CSS_PROP_GRID_TEMPLATE_ROWS, &rows);
+	values_add(out, made, CSS_PROP_GRID_TEMPLATE_COLUMNS, &columns);
 	return 0;
 }
 

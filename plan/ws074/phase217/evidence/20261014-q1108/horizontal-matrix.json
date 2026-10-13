@@ -1,0 +1,512 @@
+[
+  {
+    "axis": "column",
+    "index": 1,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        0,
+        ""
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 2,
+    "horizontal": [
+      [
+        1,
+        "offsetTop expected 140 but got 0"
+      ],
+      [
+        1,
+        "offsetTop expected 140 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 3,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        0,
+        ""
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 4,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        0,
+        ""
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 5,
+    "horizontal": [
+      [
+        1,
+        "offsetTop expected 70 but got 0"
+      ],
+      [
+        1,
+        "offsetTop expected 70 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 6,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        0,
+        ""
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 7,
+    "horizontal": [
+      [
+        1,
+        "offsetTop expected 140 but got 0"
+      ],
+      [
+        1,
+        "offsetTop expected 140 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 8,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        0,
+        ""
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 9,
+    "horizontal": [
+      [
+        1,
+        "offsetTop expected 140 but got 0"
+      ],
+      [
+        1,
+        "offsetTop expected 140 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 10,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        0,
+        ""
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 11,
+    "horizontal": [
+      [
+        1,
+        "offsetTop expected 140 but got 0"
+      ],
+      [
+        1,
+        "offsetTop expected 140 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 12,
+    "horizontal": [
+      [
+        1,
+        "offsetTop expected 100 but got 0"
+      ],
+      [
+        1,
+        "offsetLeft expected 190 but got 948"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 13,
+    "horizontal": [
+      [
+        1,
+        "offsetTop expected 90 but got 0"
+      ],
+      [
+        1,
+        "offsetLeft expected 190 but got 948"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 14,
+    "horizontal": [
+      [
+        1,
+        "offsetTop expected 45 but got 0"
+      ],
+      [
+        1,
+        "offsetLeft expected 190 but got 948"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 15,
+    "horizontal": [
+      [
+        1,
+        "offsetTop expected 100 but got 0"
+      ],
+      [
+        1,
+        "offsetLeft expected 190 but got 948"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 16,
+    "horizontal": [
+      [
+        1,
+        "offsetTop expected 90 but got 0"
+      ],
+      [
+        1,
+        "offsetLeft expected 190 but got 948"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "column",
+    "index": 17,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        0,
+        ""
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 1,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        0,
+        ""
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 2,
+    "horizontal": [
+      [
+        1,
+        "offsetLeft expected 40 but got 0"
+      ],
+      [
+        1,
+        "offsetLeft expected 300 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 3,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        1,
+        "offsetLeft expected 300 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 4,
+    "horizontal": [
+      [
+        1,
+        "offsetLeft expected 40 but got 0"
+      ],
+      [
+        1,
+        "offsetLeft expected 340 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 5,
+    "horizontal": [
+      [
+        1,
+        "offsetLeft expected 20 but got 0"
+      ],
+      [
+        1,
+        "offsetLeft expected 320 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 6,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        0,
+        ""
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 7,
+    "horizontal": [
+      [
+        1,
+        "offsetLeft expected 40 but got 0"
+      ],
+      [
+        1,
+        "offsetLeft expected 300 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 8,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        1,
+        "offsetLeft expected 340 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 9,
+    "horizontal": [
+      [
+        1,
+        "offsetLeft expected 40 but got 0"
+      ],
+      [
+        1,
+        "offsetLeft expected 300 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 10,
+    "horizontal": [
+      [
+        1,
+        "offsetLeft expected 40 but got 0"
+      ],
+      [
+        1,
+        "offsetLeft expected 300 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 11,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        1,
+        "offsetLeft expected 340 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 12,
+    "horizontal": [
+      [
+        1,
+        "offsetLeft expected 0 but got 100"
+      ],
+      [
+        1,
+        "offsetLeft expected 390 but got 290"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 13,
+    "horizontal": [
+      [
+        1,
+        "offsetLeft expected 40 but got 100"
+      ],
+      [
+        1,
+        "offsetLeft expected 350 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 14,
+    "horizontal": [
+      [
+        1,
+        "offsetLeft expected 20 but got 100"
+      ],
+      [
+        1,
+        "offsetLeft expected 370 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 15,
+    "horizontal": [
+      [
+        1,
+        "offsetLeft expected 40 but got 100"
+      ],
+      [
+        1,
+        "offsetLeft expected 350 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 16,
+    "horizontal": [
+      [
+        1,
+        "offsetLeft expected 0 but got 100"
+      ],
+      [
+        1,
+        "offsetLeft expected 390 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  },
+  {
+    "axis": "row",
+    "index": 17,
+    "horizontal": [
+      [
+        0,
+        ""
+      ],
+      [
+        1,
+        "offsetLeft expected 340 but got 0"
+      ]
+    ],
+    "vertical_fail": 2
+  }
+]
