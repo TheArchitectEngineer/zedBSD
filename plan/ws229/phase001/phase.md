@@ -284,3 +284,5 @@ Gen9 の **PCI ID の合計 86**（SKL 25 ＋ KBL 22 ＋ CFL 39）。Gen9 の GT
 - D1: 段階 (1) の受け入れは「実機の GT で Vulkan の試験の読み戻しが PASS」（推しどおり）。画面は GOP の console のまま。
 - D2: 実機は 6・7・8 世代の Core i5 の laptop（ユーザー「全部Laptopです。」）を USB で直に起動（推しどおり）。結果は SSH か画面の写真。
 - D3: display の無い node で Keiland を動かす経路は作らない（D1 の決定で不要）。
+
+- 2026-10-14 Q1: §5 の所有の追記（P2 の報告）: `request.c`（PIPE_CONTROL・MI_ARB_CHECK・AUX の invalidate・MI_FLUSH_DW_CCS の Gen12 だけの命令）・`verify-workarounds.c`（MCR の range の表）・`defaults.c`（Gen9 の null render state、第 1 版は流さず残件）は p002 の所有。`intel/commands.h` は p004 の所有のまま。
