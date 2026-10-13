@@ -34,3 +34,7 @@ Related Milestones: なし
 | p005 | head の回転（extended の head の turn と配置の再検査、mirror の元を scene の画像に） | 案 | p002、p004 |
 | p006 | 確かめ: T1 の scenario（Settings から 90/180/270/0、注入の touch と pen、再起動後の保持、0° の回帰）、5330（ユーザー: 内蔵 panel とペン LCD の縦置きで Notes）、Pi 4 の計測、D5 の Notes の幅 | 案 | p002〜p005 |
 | p007 | 規約の全文の見直し | 案 | p002〜p005 |
+
+## ユーザーの決定（2026-10-13）
+
+「ではあとは推奨でお願いします」 → 推奨で決定。D1 は数字ではなく倒す向きの絵で選ぶ（内部・file は時計回りの度数）、D2 hardware の回転はやらない（Future Work）、D3 は回転と一緒に pen・touch と display の結び付けを入れる（Settings で選ぶ＋「この画面に触って」で決める、自動の推測は後で。机の上の画面の無い pen tablet は INPUT_PROP_DIRECT で分けて回さない）、D4 すぐ反映・確認なし、D5 p006 で先に測る、D6 回転した出力の game mode は合成に落とす、mirror は各 display が自分の回転に対して正立、回転した出力では cursor の plane を使わない（review-1 S3）。
