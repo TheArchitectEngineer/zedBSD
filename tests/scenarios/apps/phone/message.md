@@ -17,7 +17,7 @@ browse と同じ連絡先。`/bin/keiland-settings set phone.backend 1`（loopba
 
 ## 操作と確認
 1. 操作: Ben の行を click、下の欄を click して `Hello from AAT`、Enter。
-   確認事項: 送信と返事。正解: `PHONE SEND contact=0 channel=0 length=14 error=0`、`PHONE STATUS … state=2 failed=0`（delivered）、`PHONE RECEIVED contact=0 channel=0 length=20 error=0`、`~/Documents/Phone/messages/aat-ben/` に「Echo: Hello from AAT」の file。確認方法: log、target の file、撮影。
+   確認事項: 送信と返事。正解: `PHONE SEND contact=0 channel=0 length=14 … error=0`（間の `paired=` などの欄は問わない）、`PHONE STATUS … state=2 failed=0`（delivered）、`PHONE RECEIVED contact=0 channel=0 length=20 error=0`、`~/Documents/Phone/messages/aat-ben/` に「Echo: Hello from AAT」の file。確認方法: log、target の file、撮影。
 2. 操作: header の右の電話の button。
    確認事項: 通話。正解: `PHONE CALL contact=0 error=0`、`PHONE STATUS … state=5`（応答なし）、timeline に「Call not answered」。確認方法: log、撮影。
 3. 操作: `keiland-settings set phone.backend 0`、欄に `Again`、Enter。

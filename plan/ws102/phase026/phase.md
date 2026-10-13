@@ -2,9 +2,9 @@
 # ws102-p026: UAT 2026-10-13 の画面 keyboard の指摘（flick の日本語・IME・配置）
 
 Parent: [WS102](../ws.md)
-Status: in-progress（T1-563 FAIL → attempt 2（P1、2026-10-13）で試験の誤りを直した。T1 の再試験待ち: 下の「attempt 2」）
+Status: in-progress（T1-563 FAIL → attempt 2（P1）で試験の誤りを直した。T1-565 で bugs.phone-ime-flick だけ FAIL → attempt 3（P2、2026-10-13）で判定の型を直した。T1 の再試験待ち: 下の「attempt 3」）
 Disposition: normal
-Queue: Q1 の依頼（2026-10-13、P2: attempt 1、P1: attempt 2）
+Queue: Q1 の依頼（2026-10-13、P2: attempt 1、P1: attempt 2、P2: attempt 3）
 
 ## 由来（ユーザー、2026-10-13 UAT、原文のまま）
 
@@ -150,3 +150,35 @@ AAT 4 本（`bugs.osk-flick-terminal`・`bugs.phone-ime-flick`・`bugs.osk-qwert
 
 1. image は attempt 1 と同じ（`plan/ws095/tests/build-ime-image.sh BUILD`、同じ BUILD を BIN）。`GUEST_RUNTIME=... BIN=BUILD plan/ws102/tests/osk-guest.sh OUTDIR install p026 send tools history emoji` → 最後の行 `osk-guest: PASS`（qwerty・qwerty-ime は T1-563 で ok、変えていないので省いてよい）。PNG は tools-pasted・history-pasted・emoji-sent を目視。
 2. AAT の image（`plan/tools/aat/build-image.sh BUILD`）を QEMU で起動し、`plan/tools/aat/run-aat.sh qemu OUTDIR bugs.osk-flick-terminal bugs.phone-ime-flick bugs.osk-qwerty-ime desktop.osk.prediction` → 4 本 pass（`desktop.osk.prediction` は needs-person の撮影を目視）。
+
+## attempt 3（P2、2026-10-13: T1-565 の bugs.phone-ime-flick の FAIL）
+
+T1-565（QEMU、AAT の標準の image）: osk-guest と AAT の `bugs.osk-flick-terminal`・`bugs.osk-qwerty-ime`・`desktop.osk.prediction` は PASS。
+`bugs.phone-ime-flick` だけ step 7 が `None; Japanese kept True`（retry も同じ）で、"BUG-203 reproduced" の FAIL。
+同じ step の PNG（`ime-sent`）には Phone の message に 日本 が送られ "Delivered"・"Echo: 日本" が写っている。
+証拠: t1 の worktree の `build/review/t1-565/aat3/`（records・logs・png、読んだだけ）。
+
+### 原因（判定の側。p026 の preedit の経路とも、Phone の確定の経路とも関係しない）
+
+- `aat3/logs/bugs.phone-ime-flick.log` の送信の行は `PHONE SEND contact=0 channel=0 length=6 paired=0 error=0`（日本 の 6 byte）。続いて
+  `KWL PHONE send … text=6 backend=loopback`・`PHONE STATUS request=2 state=2 failed=0`・`PHONE RECEIVED contact=0 channel=0 length=12 error=0`。IME の日本語は欄に入り、送られている（BUG-203 は起きていない。file の非 ASCII の判定 `Japanese kept True` とも合う）。
+- helper の型は `PHONE SEND contact=0 channel=0 length=\d+ error=0` で、length と error の間の `paired=` を許さない。
+  `paired=` は ws197-p004（commit 778c1e377、2026-10-10）が `userland/desktop/phone/main.c` の `ph_log("SEND contact=%ld channel=%u length=%zu paired=%d error=%d", …)` に足した欄で、AAT の型が追従していなかった。
+- 同じ型は step 3 の `length=3 error=0`（が の送信）と、`apps.phone.message`（`plan/tools/aat/scenarios/helpers_phone.py` の `length=14 error=0`）にもあり、同じ理由で必ず外れる。
+
+### 直し（試験だけ。source は変えていない）
+
+- `plan/tools/aat/scenarios/helpers_bugs.py`: phone-ime-flick の 2 つの型を `length=\d+ (?:\S+ )*error=0`・`length=3 (?:\S+ )*error=0` に（間の欄は問わず、error=0 は要る）。
+- `plan/tools/aat/scenarios/helpers_phone.py`: apps.phone.message の型を `length=14 (?:\S+ )*error=0` に。
+- `tests/scenarios/bugs/phone-ime-flick.md`・`tests/scenarios/apps/phone/message.md`: 正解の行を同じ形に（間の欄は問わない）。
+- BUG-203・BUG-204 の試験の意図（IME の日本語が Phone の欄に入り送られる、flick のかなが届き閉じると確定して送られる）は変えていない。
+
+### 確かめた事（host のみ）
+
+- 新しい型を Python の `re` で当てた: `… length=6 paired=0 error=0`・`… length=6 error=0` に合い、`error=5`・`channel=mms` には合わない。`length=3` の型は `length=3 paired=1 error=0` だけ、`length=14` の型は `length=14 paired=0 error=0` だけに合う。
+- `py_compile`（helpers_bugs.py・helpers_phone.py）OK、`plan/tools/aat/check-scenarios.py` PASS（153）、`git diff --check` OK。
+- step 2・3（flick の が）は T1-565 では step 7 で止まったため未実行（QEMU の確認は未実施）。
+
+### T1 への再依頼
+
+AAT の標準の image（`plan/tools/aat/build-image.sh BUILD`）を QEMU で起動し、`plan/tools/aat/run-aat.sh qemu OUTDIR bugs.phone-ime-flick`（できれば同じ回に `apps.phone.message`）。合格は両方 pass（phone-ime-flick は step 1〜3 の全部: `PHONE SEND … length=N … error=0` と非 ASCII の file、`KWL OSK preedit text=が`・refused 無し、`KWL OSK reading commit text=が reason=close`・`PHONE SEND … length=3 … error=0`）。PNG は ime-sent・flick を目視。
