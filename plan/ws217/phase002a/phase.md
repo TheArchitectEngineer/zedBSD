@@ -3,7 +3,7 @@
 # ws217-p002a: compositor の中核、turn 無し（論理と物理の分離、回転の値、open の組の比較）
 
 Parent: [WS217](../ws.md)
-Status: in-progress（2026-10-13 P4 実装済み、agent/p4 `b58ff4b06`。host 試験と 3 つの build は PASS。T1 の 0° の回帰の試験待ち（依頼は下の「T1 への依頼」、Q1 経由、番号は未割当））
+Status: cleared（T1-576 の (A) boot・(B) AAT smoke・(C) WS113 の 2 画面と rotate= の回帰が全部 PASS、Q1 判定 2026-10-13。実装 agent/p4 `b58ff4b06`）
 Disposition: normal
 Primary Milestone: MG006（WS から継承）
 Queue / attempts: Q1 の指示（2026-10-13、P4「WS217 の p002a を実行する」。設計は p001 第 4 版、review-3 の判定で開始可）。同日 Q1 の追加の指示（review-4 `315105fed` の条件: C7・L49・S16 の mode の引数（推奨）・L44 を入れてから実装）。
@@ -121,3 +121,4 @@ Prerequisites: p001 第 4 版（review-3 の判定で p002a は開始可）、re
 
 - 2026-10-13 / ws217-p002a-impl-1: P4 が実装（agent/p4 `b58ff4b06`）。review-4 の C7（`compose->opened` と open の最後の比較）、L49（state に選択、OPEN の mode で REOPEN・TURN を落とす、open は自分で park）、S16 の mode の引数、L44（switch は常に 1 回 tell）を入れた。build 3 つと host 試験 PASS。T1 の試験待ち。
 - 2026-10-13 / ws217-p002a-tests-1: Q1 の許可で他 WS の試験を直した（`plan/ws113/tests/host-output-switch.c` に stub の `kwl_outputs`・`kwl_pointer_warp`、stub の open の成功で `kwl_output_rotated`。`plan/ws211/tests/anim-host-test.c` に `target_width/height` の 2 行）。`host-output-switch.sh`（plain・ASan/UBSan）と `anim-host-test.sh` が PASS。
+- 2026-10-13 / ws217-p002a-cleared: T1-576 の (A)(B)(C) が全部 PASS。Q1 が cleared と判定（P1 が q948 の中で記録）。
