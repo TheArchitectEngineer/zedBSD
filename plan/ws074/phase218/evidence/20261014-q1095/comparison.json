@@ -1,0 +1,43 @@
+{
+  "id": "/css/css-grid/alignment/grid-alignment-style-changes-001.html",
+  "old_outcome": "fail",
+  "new_outcome": "fail",
+  "subtests": [
+    {
+      "subtest": ".before 1",
+      "old_status": 1,
+      "new_status": 1,
+      "new_failure": "assert_equals: \n<div id=\"item1\" data-expected-width=\"50\" data-expected-height=\"20\" data-offset-x=\"0\" class=\" before\" data-offset-y=\"30\"></div>\noffsetTop expected 30 but got 0"
+    },
+    {
+      "subtest": ".before 2",
+      "old_status": 1,
+      "new_status": 0,
+      "new_failure": ""
+    },
+    {
+      "subtest": ".before 3",
+      "old_status": 1,
+      "new_status": 1,
+      "new_failure": "assert_equals: \n<div id=\"item3\" data-expected-width=\"50\" data-expected-height=\"30\" data-offset-x=\"100\" class=\" before\" data-offset-y=\"20\"></div>\noffsetTop expected 20 but got 0"
+    },
+    {
+      "subtest": ".after 4",
+      "old_status": 1,
+      "new_status": 1,
+      "new_failure": "assert_equals: \n<div id=\"item1\" data-expected-width=\"50\" data-expected-height=\"20\" data-offset-x=\"0\" class=\" before after\" data-offset-y=\"10\"></div>\noffsetTop expected 10 but got 0"
+    },
+    {
+      "subtest": ".after 5",
+      "old_status": 1,
+      "new_status": 0,
+      "new_failure": ""
+    },
+    {
+      "subtest": ".after 6",
+      "old_status": 1,
+      "new_status": 0,
+      "new_failure": ""
+    }
+  ]
+}

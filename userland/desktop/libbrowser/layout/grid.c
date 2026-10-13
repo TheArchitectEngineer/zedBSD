@@ -17,7 +17,7 @@
  * ones sharing what is left (auto columns share it when there is no fr);
  * rows are as tall as their items unless the template fixes them.  Direct
  * absolute children with definite lines use their area's static origin in
- * horizontal LTR grids, without taking part in track sizing.  Not in
+ * horizontal LTR/RTL grids, without taking part in track sizing.  Not in
  * this pass: named lines and areas, dense packing, full inline-axis
  * alignment, order, baselines, subgrid, and auto-fill and auto-fit.
  */

@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1094 / WS074 CSS Grid shorthand diagnosis（2026-10-14）
+## 最新: q1095 / WS074 explicit Grid shorthand tracks（2026-10-14）
+
+[q1095履歴](queue-q1095.md): 明示`grid: rows / columns`をatomic展開。固定style-changesは0→3/6 subtest PASS、wholeはbaseline差でFAIL。旧PASSとAcid3差0維持。[証拠](../ws074/phase218/evidence/20261014-q1095/README.md)。p218部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1094 / WS074 CSS Grid shorthand diagnosis（2026-10-14）
 
 [q1094履歴](queue-q1094.md): `grid:`字面は固定Grid中FAIL83/PASS7の上限。最小静的HTMLでshorthand未認識、longhand配置50px×2列を確認。p218追加、p217一部出力依存。[証拠](../ws074/phase218/evidence/20261014-q1094/README.md)。p218部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

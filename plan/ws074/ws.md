@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1094](queue.md) finished / p218 Grid shorthand調査、部分cleared。2026-10-14 07:59 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1095](queue.md) finished / p218明示Grid shorthand track構文、部分cleared。2026-10-14 08:02 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -842,3 +842,5 @@ Event ws074-p189-q1093-partial-clear-20261014: [p189](phase189/phase.md) q1093-i
 Event ws074-p218-addition-20261014: [p218](phase218/phase.md)を追加。q1093固定Grid399 FAILのshorthand使用はalignment/grid-definition/parsingにまたがるため独立して調査・修正する。p217のalignment受け入れやp189/p173分母は変えない。q1094読取調査を開始。共有投影/GitHub publication保留。
 
 Event ws074-p218-q1094-partial-clear-and-p217-dependency-20261014: [p218](phase218/phase.md) q1094-i01は固定source字面83 FAILを上限とし、静的HTMLでshorthand未認識・longhand正常を再現。[証拠](phase218/evidence/20261014-q1094/README.md)。最初は明示行/列構文をatomic展開、implicit/CSSOM等は後続。p217 alignment style-changesのtrack sizingのみp218該当出力に依存するが、p217受け入れや他alignment作業は不変。[p217変更](phase217/phase.md)。q1094部分cleared、p218/p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p218-q1095-partial-clear-20261014: [p218](phase218/phase.md) q1095-i01は既存track-listの明示`grid: rows / columns`をatomic展開。[証拠](phase218/evidence/20261014-q1095/README.md)。最小12 geometry、CSS rule51/CSSOM12/mutation12、Grid48、JS14、warning0 build、Acid3差0。固定style-changes 0→3/6 subtest PASS、wholeはbaseline差でFAIL、旧PASS代表維持。p217のshorthand track sizing出力は利用可能だがbaseline等の受け入れは未達。q1095部分cleared、p218/p217/p189/p173全件100%未達。共有投影/GitHub publication保留。

@@ -59,6 +59,7 @@ enum values_shorthand {
 	SHORT_GRID_COLUMN,
 	SHORT_GRID_ROW,
 	SHORT_GRID_AREA,
+	SHORT_GRID,
 	SHORT_PLACE_ITEMS,
 	SHORT_CONTAINER,
 	SHORT_BORDER_SPACING
@@ -151,6 +152,7 @@ static size_t values_split_at(const struct css_token *tokens, size_t count, int 
 static int values_grid_line(const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_grid_pair(int start, int end, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_grid_area(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_grid_explicit(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_decoration_line(const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_text_decoration(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 
@@ -291,6 +293,7 @@ static const struct values_name values_names[] = {
 	{ "grid-column", SHORT_GRID_COLUMN },
 	{ "grid-row", SHORT_GRID_ROW },
 	{ "grid-area", SHORT_GRID_AREA },
+	{ "grid", SHORT_GRID },
 	{ "place-items", SHORT_PLACE_ITEMS },
 	{ "container", SHORT_CONTAINER },
 	{ "border-spacing", SHORT_BORDER_SPACING },
@@ -1059,6 +1062,9 @@ css_parse_property(
 	memset(&value, 0, sizeof(value));
 	wide = values_keyword(values_wide, &tokens[0], &value.kind);
 	if (count == 1 && wide) {
+		/* A complete grid shorthand needs the implicit longhands, which this pass cannot reset. */
+		if (property == SHORT_GRID)
+			return EINVAL;
 		values_wide_keyword(property, &value, out, out_count);
 		return 0;
 	}
@@ -1144,6 +1150,8 @@ css_parse_property(
 		return values_grid_pair(CSS_PROP_GRID_ROW_START, CSS_PROP_GRID_ROW_END, tokens, count, out, out_count);
 	case SHORT_GRID_AREA:
 		return values_grid_area(tokens, count, out, out_count);
+	case SHORT_GRID:
+		return values_grid_explicit(parse, tokens, count, out, out_count);
 	case SHORT_BORDER_SPACING:
 		/* One length for both directions, or across then down. */
 		return values_pair(parse, CSS_PROP_BORDER_SPACING_X, CSS_PROP_BORDER_SPACING_Y, tokens, count, out, out_count);
@@ -4892,6 +4900,57 @@ values_grid_area(
 	}
 
 	/* Succeeded: the four are declared. */
+	return 0;
+}
+
+/* Parses the supported explicit grid shorthand as two complete track lists. */
+static int
+values_grid_explicit(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	struct css_value rows;
+	struct css_value columns;
+	size_t slash;
+	size_t row_end;
+	size_t column_start;
+	int error;
+
+	/* A single top-level slash separates the explicit row and column tracks. */
+	slash = values_split_at(tokens, count, CSS_TOKEN_DELIM, '/');
+	if (slash == count)
+		return EINVAL;
+	row_end = slash;
+	/* Trailing whitespace is not part of a single `none` row value. */
+	while (row_end > 0 && tokens[row_end - 1U].type == CSS_TOKEN_WHITESPACE)
+		row_end--;
+	column_start = values_skip_space(tokens, count, slash + 1U);
+	if (row_end == 0 || column_start == count)
+		return EINVAL;
+
+	/* Both sides must parse before either longhand is declared. */
+	memset(&rows, 0, sizeof(rows));
+	error = values_single(parse, CSS_PROP_GRID_TEMPLATE_ROWS, tokens, row_end, &rows);
+	if (error != 0)
+		return error;
+	memset(&columns, 0, sizeof(columns));
+	error = values_single(
+	    parse,
+	    CSS_PROP_GRID_TEMPLATE_COLUMNS,
+	    tokens + column_start,
+	    count - column_start,
+	    &columns);
+	if (error != 0)
+		return error;
+
+	/* The established longhand cascade handles order and leaves gaps alone. */
+	values_add(out, made, CSS_PROP_GRID_TEMPLATE_ROWS, &rows);
+	values_add(out, made, CSS_PROP_GRID_TEMPLATE_COLUMNS, &columns);
+
+	/* Succeeded: both explicit track lists are declared. */
 	return 0;
 }
 

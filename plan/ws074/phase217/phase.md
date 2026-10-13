@@ -60,3 +60,5 @@ Event ws074-p217-q1091-partial-clear-20261014: [証拠](evidence/20261014-q1091/
 Event ws074-p217-q1092-partial-clear-20261014: [証拠](evidence/20261014-q1092/README.md)。固定WPT縦書きは両代表で最初にwidth期待10/実60。最小vertical-lr Gridでin-flow100×13・absolute24×13、テキストは横方向の幅24を維持。Gridは列/行を物理x/yに対応させ非水平を強制stretch、inline文字組みはwriting-modeを使わない。幅だけの局所修正では全条件を満たさないため、文字組み・Grid軸・absolute areaを分けて有限実装する設計を次候補にし、独立のGrid shorthand等へも進める。q1092-i01部分cleared、p217 whole/p189/p173全件100%未達。製品browser/runner/WPT/ABI/Master無変更、共有投影/GitHub publication保留。
 
 Event ws074-p217-p218-shorthand-output-20261014: [p218](../phase218/phase.md)を独立追加。p217 alignment style-changes 8件の`grid` shorthand指定によるtrack sizingはp218の該当出力に依存する。p217全206件の受け入れは不変で、他alignment修正は独立。q1094は字面83 FAILを上限として記録し、原因同一性は断定しない。[p218調査証拠](../phase218/evidence/20261014-q1094/README.md)。
+
+Follow-up ws074-p217-p218-q1095-output-20261014: [p218 q1095](../phase218/evidence/20261014-q1095/README.md)で明示`grid: rows / columns`のtrack sizing出力を検証。固定alignment style-changes-001は幅失敗が解消し3/6 subtest PASSになったが、baseline縦offset差でwholeはFAIL。p217の他style-changesと全206件は未測定/未達で、p217受け入れは不変。
