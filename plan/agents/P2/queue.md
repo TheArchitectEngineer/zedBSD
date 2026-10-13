@@ -68,3 +68,5 @@ Next（予約）: debug を続ける（BUG-147 の後: 優先度の高い bug。
 - q952〜q954・q960 結果（2026-10-13 夜）: WS102 p011 の計測 030e77da1・WS145 p005 a07a5b174・WS161 p006 c2fcd7d3d（ユーザーの指示で os-freebsd.c と fidoctl の Makefile は main から外した、Linux・FreeBSD の FIDO2 はベータ3）・WS172 p004b の設計 71d457c16 → main（1d9880aa0）。p004b は design-reviewer。
 
 2026-10-13 夜 / q961: Linux・FreeBSD の Keiland に passkey の command を入れる（FIDO2 の backend 無し）。ユーザー「あ、Linux/FreeBSDでは、FIDO2バックエンドがないだけで、passkeyコマンドは入れてください。」。State: active。
+- q961 結果（2026-10-13 夜）: WS172 p011 passkey の Linux・FreeBSD（/opt/keiland/sbin/passkey、/opt/keiland/etc/passkey、FIDO2 は fail no-key、FreeBSD の shadow の橋）e7e2c7ce2・ca75d0aa7 → main、test-wait（T1-589）。
+- 予約（2026-10-13 夜 Q1、ベータ2 の残り）: q962 [WS143](../../ws143/ws.md) の残り（5330 の firmware の load と scan の後の直しは実機待ちなので、Linux の BlueZ の backend p007 を先に）→ q963 [WS004](../../ws004/ws.md) p039（WLAN の driver の共通化、「抽出しない」の結論でもよい）→ q964 小さな照合（[WS089](../../ws089/ws.md)・[WS193](../../ws193/ws.md)・[WS191](../../ws191/ws.md)）。

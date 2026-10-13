@@ -23,7 +23,8 @@ KEILAND_FREEBSD_LDFLAGS := -Wl,-rpath,$(KEILAND_PREFIX)/lib -Wl,--enable-new-dta
 KEILAND_FREEBSD_HEADERS := $(shell find include/libc/compat -type f -name '*.h') \
 	include/libc/pdf.h include/libc/sha2.h include/libc/md5.h include/libc/sha1.h
 KEILAND_FREEBSD_HEADER_COPIES := $(patsubst include/libc/%,$(KEILAND_FREEBSD_BUILD)/include/%,$(KEILAND_FREEBSD_HEADERS))
-KEILAND_FREEBSD_NATIVE_HEADERS := $(KEILAND_FREEBSD_BUILD)/include/pty.h $(KEILAND_FREEBSD_BUILD)/include/sys/xattr.h
+KEILAND_FREEBSD_NATIVE_HEADERS := $(KEILAND_FREEBSD_BUILD)/include/pty.h $(KEILAND_FREEBSD_BUILD)/include/sys/xattr.h \
+	$(KEILAND_FREEBSD_BUILD)/include/shadow.h $(KEILAND_FREEBSD_BUILD)/include/crypt.h
 $(KEILAND_FREEBSD_BUILD)/include/%: include/libc/%
 	@mkdir -p $(dir $@)
 	cp $< $@
@@ -120,6 +121,7 @@ KEILAND_FREEBSD_PACKAGES ?= userland/base/libz-compat/Makefile.freebsd \
 	userland/tests/kuidemo/Makefile.freebsd
 include $(KEILAND_FREEBSD_PACKAGES)
 include userland/desktop/mediastorage/Makefile.freebsd
+include userland/base/passkey/Makefile.freebsd
 include userland/desktop/printd/Makefile.freebsd
 include userland/tests/printtest/Makefile.freebsd
 
@@ -175,7 +177,7 @@ KEILAND_FREEBSD_RETIRED := lib/libkeiui.so include/keiland-ui.h include/keiui.h 
 
 install: all install-headers
 	@set -e; for f in $(KEILAND_FREEBSD_INSTALL); do \
-		mode=0644; case $$f in lib/*|bin/*|libexec/*) mode=0755 ;; esac; \
+		mode=0644; case $$f in lib/*|bin/*|libexec/*) mode=0755 ;; sbin/*) mode=0500 ;; esac; \
 		mkdir -p "$(DESTDIR)$(KEILAND_PREFIX)/$$(dirname "$$f")"; \
 		install -m $$mode "$(KEILAND_FREEBSD_BUILD)/$$f" "$(DESTDIR)$(KEILAND_PREFIX)/$$f"; \
 	done

@@ -35,7 +35,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-301、WS227、q962、T1-588。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-301、WS227、q965、T1-591。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -937,6 +937,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 
 ## Tools
+| [plan/ws157/tests/run-host-jpeg-scale.py](ws157/tests/run-host-jpeg-scale.py)（ws157-p017、2026-10-13） | libjpeg-compat の 1/2・1/4・1/8 の縮小 decode を djpeg -scale と比べる（大きさ・差 ≤2・PSNR、壊した file で crash 0、ASan・UBSan） | `python3 plan/ws157/tests/run-host-jpeg-scale.py` |
+| [plan/ws172/tests/passkey-linux-host-test.sh](ws172/tests/passkey-linux-host-test.sh)（ws172-p011、2026-10-13） | Linux の Keiland の /opt/keiland/sbin/passkey（password・PIN の登録と照合、/opt/keiland/etc/passkey の行と mode 600、fido2 は fail no-key） | sudo が要る（unshare -m で試験の passwd・shadow を bind mount、host の file は変えない） |
 | [tests/rpi4-sdhci-host-test.c](../tests/rpi4-sdhci-host-test.c)（BUG-295、2026-10-13） | Pi 4 の SD の driver（多 block の CMD25/CMD18・auto-CMD12、失敗の時の 1 block の書き直し、要求の切り分け）の回帰（偽の register） | `make -o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk rpi4-sdhci-host-test`、PASS で終わる |
 | [plan/ws081/tests/run-notestouch.sh](ws081/tests/run-notestouch.sh)（2026-10-13 BUG-296 で追従） | Notes の touch（userland/desktop/notes/touch.c）の host 試験: 2 本指の pinch と上限、drag・flick・glide、overscroll、double tap、toolbar と頁の tap（toolbar の印）、ペンの近くの掌、指で書く。`plan/ws081/tests/run-notestouch.sh [OUTDIR]`（sanitizer は `EXTRA_CFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"`）。PASS は `host-notestouch: ok (N checks)` |
 | [plan/ws079/tests/run-notes-zoom-limit.sh](ws079/tests/run-notes-zoom-limit.sh)（BUG-296、2026-10-13） | Notes の頁の絵の確保が断られた時に倍率を下げて作り直す（i915 の 16 MiB の上限の模型）。`sh plan/ws079/tests/run-notes-zoom-limit.sh`、PASS は `ok (15 checks)` と `PASS` |

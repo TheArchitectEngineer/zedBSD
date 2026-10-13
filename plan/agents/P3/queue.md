@@ -68,3 +68,4 @@ Next（予約）: ws115-p006（libpng・freetype・harfbuzz・fontconfig）〜
 2026-10-13 夜 / q947（P3 の新しい世代）: WS220 の T1-577 の損失 0 の退行の調べと直し（longest_stall_ms 2〜8 → 178〜226 ms、再送 0、down・down-disk 88〜89 %）。ユーザー「main に残し、直しを急ぐ」（2026-10-13）。State: active。
 - q947 結果（2026-10-13 夜）: WS220 の T1-577 の遅さは環境（T1-581、同じ session で k1 < k2 < k3）、code の変更なし。記録 f3ef3fc22・ed94f056f → main 0d4ac1421。p003・p004 は Q1 が cleared、p005 は T1-585。
 - 予約（2026-10-13 夜 Q1、ベータ2 の残りの実装）: q955 [WS156](../../ws156/ws.md) p006（Linux の D-Bus の Notifications）→ q956 [WS051](../../ws051/ws.md) p005b（抜けの停止）→ q957 [WS081](../../ws081/ws.md) の残り（L3 の計測の script と係数）→ q958 [WS033](../../ws033/ws.md) p001（USB LAN の後挿し）。
+- q955 結果（2026-10-13 夜）: WS156 p006 Linux の D-Bus の org.freedesktop.Notifications e5167e0c4 → main bb1ca9a1f（main で wayland の build warning 0）、test-wait（T1-588）。q956 WS051 p005b に入った。
