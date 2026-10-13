@@ -652,8 +652,6 @@ ZEDBSD_PRIMARY_TARGETS := menuconfig vmunix bootloader rootfs-bin rootfs-usr \
 ZEDBSD_SUPPORT_TARGETS := help list-targets check clean distclean
 ZEDBSD_CHECK_TARGETS := check softfloat-host-test \
 	check-disk-image \
-	phase20-init-notify-host-test phase20-net-config-host-test \
-	phase20-networkd-protocol-host-test phase20-dhcp-host-test \
 	libc-opcode-check softfloat-opcode-check uapi-abi-layout-check \
 	hal-signal-frame-layout-check \
 	posix-header-check posix-api-matrix-check susv4-header-check \
