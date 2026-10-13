@@ -1233,6 +1233,8 @@ page_needs_layout(
 	/* A change since the layout. */
 	if (page->laid_out_generation != page->document->generation)
 		return 1;
+	if (page->laid_out_visits != page->visits_generation)
+		return 1;
 
 	/* Images that arrived since the layout. */
 	if (page->laid_out_images != page->images_generation)

@@ -457,6 +457,9 @@ struct css_style {
 	float opacity;
 	struct css_shadow shadows[CSS_SHADOWS];
 	int shadow_count;
+	/* One inherited sharp text shadow; blur and lists are added by a later phase. */
+	struct css_shadow text_shadow;
+	int text_shadow_set;
 	float outline_width;
 	int outline_style;
 	uint32_t outline_color;
@@ -480,6 +483,8 @@ struct css_style {
 
 	/* The colors. */
 	uint32_t color;
+	/* Only painting uses visited link color; script-visible computed color stays unvisited. */
+	uint32_t paint_color;
 	uint32_t background_color;
 
 	/*
@@ -634,6 +639,7 @@ const char *css_property_name(size_t index);
 
 /* The engine (cascade.c). */
 int css_engine_create(struct css_engine **engine, struct vm_heap *heap);
+void css_engine_set_visited_lookup(struct css_engine *engine, int (*lookup)(void *, struct dom_element *), void *context);
 void css_engine_destroy(struct css_engine *engine);
 int css_engine_add_sheet(struct css_engine *engine, const uint16_t *units, size_t length);
 int css_engine_add_sheet_origin(struct css_engine *engine, const uint16_t *units, size_t length, int origin);

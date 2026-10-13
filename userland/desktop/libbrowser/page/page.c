@@ -28,6 +28,7 @@
 #define PAGE_DUMP_DEPTH		512
 
 static int page_gather_styles(struct page *page);
+static int page_link_visited(void *context, struct dom_element *element);
 static int page_container_size(void *context, const struct dom_element *container, float *width, float *height);
 static int page_containers_moved(const struct page *page);
 static int page_text_of(const struct dom_node *node, struct wb_units *units);
@@ -69,6 +70,7 @@ page_create(
 	page_fonts_init(created);
 	page_scripts_init(created);
 	page_frames_init(created);
+	wb_vector_init(&created->visited_urls, sizeof(char *));
 
 	/* Makes the document and keeps it alive as a root. */
 	created->document = dom_document_create(created->heap);
@@ -116,6 +118,9 @@ void
 page_destroy(
 	struct page *page)
 {
+	char **url;
+	size_t index;
+
 	/* A NULL page is nothing to destroy. */
 	if (page == NULL)
 		return;
@@ -137,6 +142,13 @@ page_destroy(
 	page_sheets_release(page);
 	page_fonts_release(page);
 	page_frames_release(page);
+
+	/* The tab's observed URLs are owned separately from VM cells. */
+	for (index = 0; index < page->visited_urls.count; index++) {
+		url = wb_vector_at(&page->visited_urls, index);
+		free(*url);
+	}
+	wb_vector_release(&page->visited_urls);
 	page_scripts_release(page);
 	bind_window_destroy(page->window);
 	vm_realm_destroy(page->realm);
@@ -528,6 +540,7 @@ page_layout(
 
 	/* Only a complete layout advances observable generation and geometry caches. */
 	page->laid_out_generation = page->document->generation;
+	page->laid_out_visits = page->visits_generation;
 	page->layout_serial++;
 
 	/* Succeeded: the page is laid out. */
@@ -785,6 +798,7 @@ page_update_styles(
 	/* Styles that are up to date stay. */
 	if (page->css != NULL &&
 	    page->styled_generation == page->document->generation &&
+	    page->styled_visits == page->visits_generation &&
 	    page->styled_sheets == page->sheets_generation)
 		return 0;
 
@@ -793,7 +807,8 @@ page_update_styles(
 	 * the page is styled again once they are all here (ws074-p071).
 	 */
 	pending = page_sheets_pending(page);
-	if (page->css != NULL && page->styled_generation == page->document->generation && pending)
+	if (page->css != NULL && page->styled_generation == page->document->generation &&
+	    page->styled_visits == page->visits_generation && pending)
 		return 0;
 
 	/* A new engine with the sheets as they are now. */
@@ -802,6 +817,56 @@ page_update_styles(
 		return error;
 
 	/* Succeeded: the styles match the document. */
+	return 0;
+}
+
+/*
+ * Records a successful same-origin child navigation observed by this page.
+ * The caller verifies current ownership and origin before recording the URL.
+ */
+int
+page_record_visited(
+	struct page *page,
+	const struct wb_buffer *url)
+{
+	struct wb_buffer location;
+	char **existing;
+	char *copy;
+	size_t index;
+	int error;
+
+	/* An empty page has no URL against which to resolve a child location. */
+	if (page->base == NULL)
+		return 0;
+
+	/* Canonicalize the final response URL in the same way as an anchor's href. */
+	wb_buffer_init(&location);
+	error = page_resolve_location(page->base, wb_buffer_string(url), &location);
+	if (error != 0) {
+		wb_buffer_release(&location);
+		return error;
+	}
+
+	/* A repeated navigation leaves the paint generation unchanged. */
+	for (index = 0; index < page->visited_urls.count; index++) {
+		existing = wb_vector_at(&page->visited_urls, index);
+		if (strcmp(*existing, wb_buffer_string(&location)) == 0) {
+			wb_buffer_release(&location);
+			return 0;
+		}
+	}
+
+	/* Keep the new URL until the page closes and require a fresh style pass. */
+	copy = strdup(wb_buffer_string(&location));
+	wb_buffer_release(&location);
+	if (copy == NULL)
+		return ENOMEM;
+	error = wb_vector_push(&page->visited_urls, &copy);
+	if (error != 0) {
+		free(copy);
+		return error;
+	}
+	page->visits_generation++;
 	return 0;
 }
 
@@ -818,6 +883,8 @@ page_gather_styles(
 	error = css_engine_create(&page->css, page->heap);
 	if (error != 0)
 		return error;
+	if (page->visited_urls.count != 0)
+		css_engine_set_visited_lookup(page->css, page_link_visited, page);
 
 	/* The document's sheets, parsed once and lent to the engine. */
 	error = page_sheets_add(page);
@@ -826,7 +893,58 @@ page_gather_styles(
 
 	/* Succeeded: the sheets match the document of this generation. */
 	page->styled_generation = page->document->generation;
+	page->styled_visits = page->visits_generation;
 	return 0;
+}
+
+/* A visited paint lookup cannot consult any history outside this page. */
+static int
+page_link_visited(
+	void *context,
+	struct dom_element *element)
+{
+	struct page *page;
+	struct dom_attribute *attribute;
+	struct vm_string *name;
+	struct wb_buffer href;
+	struct wb_buffer location;
+	char **existing;
+	size_t index;
+	int visited;
+	int error;
+
+	/* Read only the HTML link's href; an absent or invalid URL is unvisited. */
+	page = context;
+	name = vm_atom_from_ascii(page->heap, "href");
+	if (name == NULL)
+		return 0;
+	attribute = dom_element_find_attribute(element, DOM_NS_NONE, name);
+	if (attribute == NULL)
+		return 0;
+	if (page->base == NULL)
+		return 0;
+
+	/* Resolve link and navigation through the same URL normalization. */
+	wb_buffer_init(&href);
+	wb_buffer_init(&location);
+	error = vm_string_to_utf8(attribute->value, &href);
+	if (error == 0)
+		error = page_resolve_location(page->base, wb_buffer_string(&href), &location);
+
+	/* Search only the successful child navigations this page observed. */
+	visited = 0;
+	if (error == 0) {
+		for (index = 0; index < page->visited_urls.count; index++) {
+			existing = wb_vector_at(&page->visited_urls, index);
+			if (strcmp(*existing, wb_buffer_string(&location)) == 0) {
+				visited = 1;
+				break;
+			}
+		}
+	}
+	wb_buffer_release(&href);
+	wb_buffer_release(&location);
+	return visited;
 }
 
 /* Appends the text of a node's text children. */

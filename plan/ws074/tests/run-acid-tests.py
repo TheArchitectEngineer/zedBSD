@@ -142,7 +142,7 @@ def render(program, font_dir, width, height, data_home, url, output):
     with Image.open(ppm) as image:
         converted = image.convert("RGB")
         converted.save(output)
-    ppm.unlink()
+    # Keep the intermediate PPM for the Queue manager to clean later.
     return [line for line in result.stderr.splitlines() if "Uncaught" in line]
 
 
@@ -369,6 +369,13 @@ def main():
                     args.out / "acid3-side.png",
                 )
                 acid3_result["pixel_pass"] = acid3_result.pop("pass")
+                for kind in ("style", "layout", "paint"):
+                    dump_page(args.program, font_dir, 800, 600, data_home,
+                              acid3_url, kind,
+                              args.out / ("acid3-test." + kind))
+                    dump_page(args.program, font_dir, 800, 600, data_home,
+                              acid3_reference_url, kind,
+                              args.out / ("acid3-reference." + kind))
             except RuntimeError as error:
                 render_errors = [str(error)]
                 acid3_result = {"pixel_pass": None, "agreement": None,
@@ -415,9 +422,8 @@ def main():
                 str(inventory["pass_count"]) == acid3_result["score"]
             )
     finally:
-        acid2.unlink(missing_ok=True)
-        acid3_ref.unlink(missing_ok=True)
-        diagnostic.unlink(missing_ok=True)
+        print("Temporary WPT files retained for Queue-manager cleanup:",
+              acid2, acid3_ref, diagnostic)
     report = {
         "schema": 2,
         "suite": "WPT historical Acid tests",

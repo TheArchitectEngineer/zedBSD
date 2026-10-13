@@ -86,6 +86,13 @@ main(
 	placed(page->layout.root, "over", 272, 172, 200, 100);
 	placed(page->layout.root, "stretch", 582, 272, 176, 40);
 
+	/* An unbreakable auto-width child extends left from a zero-width containing block's right edge. */
+	box = find_class(page->layout.root, "zero-anchor");
+	check(box != NULL && box->x == 522 * LAYOUT_UNIT && box->width == 0, "zero-width right anchor");
+	box = find_class(page->layout.root, "zero-child");
+	check(box != NULL && box->width > 0, "right-aligned child keeps min-content width");
+	check(box != NULL && box->x + box->width == 522 * LAYOUT_UNIT, "right-aligned child ends at anchor");
+
 	/* The label shrinks to its text (its width depends on the font; it is narrower than the room). */
 	box = find_class(page->layout.root, "label");
 	check(box != NULL && box->x == 182 * LAYOUT_UNIT && box->y == 142 * LAYOUT_UNIT, "label: at 182,142");
@@ -120,7 +127,7 @@ main(
 	/* A positioned child stays in its explicit parent's stacking level, over the lower sibling. */
 	printf("host-position: order %s\n", sequence);
 	check(strcmp(sequence, "below;|flow|stage;corner top-left;corner top-right;corner bottom-left;corner bottom-right;"
-	    "label;stretch;percent-shrink;shifted;middle;over;context-lower;context-high;context-child;") == 0,
+	    "label;stretch;percent-shrink;zero-anchor;zero-child;shifted;middle;over;context-lower;context-high;context-child;") == 0,
 	    "order: nested stacking level stays together");
 	wb_vector_release(&order);
 

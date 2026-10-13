@@ -75,8 +75,14 @@ for file in userland/base/libjpeg-compat/*.c userland/base/libpng-compat/*.c use
 done
 
 # libmedia (ws121-p002, ws177-p031), which the engine's <video> and <audio> play through: its engine, the container reader and
-# its decoders (the add-in that opens FFmpeg with dlopen); it plays no sound (WS191).
-for file in userland/desktop/libmedia/engine.c userland/desktop/libmedia/decoder.c userland/desktop/libmedia/avcodec.c userland/desktop/libmedia/bitstream.c \
+# its decoders; it plays no sound (WS191).
+for file in userland/desktop/libmedia/engine.c userland/desktop/libmedia/decoder.c userland/desktop/libmedia/bitstream.c \
+    userland/desktop/libmedia/picture.c userland/desktop/libmedia/h264.c userland/desktop/libmedia/h264-dpb.c \
+    userland/desktop/libmedia/vkvideo.c userland/desktop/libmedia/vkvideo-runtime.c \
+    userland/desktop/libmedia/bits.c userland/desktop/libmedia/aac-input.c userland/desktop/libmedia/aac-huffman.c \
+    userland/desktop/libmedia/aac-codec.c userland/desktop/libmedia/aac-bands.c userland/desktop/libmedia/aac-frame.c \
+    userland/desktop/libmedia/aac-synth.c userland/desktop/libmedia/aac.c userland/desktop/libmedia/sound.c \
+    userland/desktop/libmedia/sbc.c userland/desktop/libmedia/aac-encode.c \
     userland/desktop/mediafile/mediafile.c userland/desktop/mediafile/mp4.c \
     userland/desktop/mediafile/mkv.c userland/desktop/mediafile/ts.c userland/desktop/mediafile/ogg.c userland/desktop/mediafile/avi.c; do
 	object=$out/obj/media-$(basename "$(dirname "$file")")-$(basename "$file" .c).o

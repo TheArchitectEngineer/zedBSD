@@ -13,6 +13,7 @@
 #include "css/internal.h"
 
 #include <errno.h>
+#include <math.h>
 #include <string.h>
 
 /* The most items a content value keeps. */
@@ -108,6 +109,7 @@ static int values_border(struct css_parse *parse, int side, const struct css_tok
 static void values_add(struct css_declaration *out, size_t *made, int property, const struct css_value *value);
 static int values_hex_digit(uint16_t unit);
 static int values_rgb_function(const struct css_token *tokens, size_t count, uint32_t *color);
+static int values_hsl_function(const struct css_token *tokens, size_t count, uint32_t *color);
 static void values_wide_keyword(int property, const struct css_value *value, struct css_declaration *out, size_t *made);
 static int values_background(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static size_t values_function_length(const struct css_token *tokens, size_t count);
@@ -137,6 +139,7 @@ static int values_border_radius(struct css_parse *parse, const struct css_token 
 static int values_corner_radius(struct css_parse *parse, int corner, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_radii(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *radii);
 static int values_box_shadow(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_text_shadow(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_one_shadow(const struct css_token *tokens, size_t count, struct css_declared_shadow *shadow);
 static int values_outline(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_clip_path(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
@@ -237,6 +240,7 @@ static const struct values_name values_names[] = {
 	{ "vertical-align", CSS_PROP_VERTICAL_ALIGN },
 	{ "opacity", CSS_PROP_OPACITY },
 	{ "box-shadow", CSS_PROP_BOX_SHADOW },
+	{ "text-shadow", CSS_PROP_TEXT_SHADOW },
 	{ "-webkit-box-shadow", CSS_PROP_BOX_SHADOW },
 	{ "-moz-box-shadow", CSS_PROP_BOX_SHADOW },
 	{ "outline-width", CSS_PROP_OUTLINE_WIDTH },
@@ -1267,7 +1271,7 @@ css_parse_font(
 
 /*
  * Parses a color: a named color, transparent, currentcolor, #rgb, #rgba,
- * #rrggbb, #rrggbbaa, rgb() or rgba().
+ * #rrggbb, #rrggbbaa, rgb(), rgba(), hsl() or hsla().
  *
  * currentcolor is reported as 0x00000001, a value no real color has with
  * zero alpha, which the cascade replaces with the color property.
@@ -1285,6 +1289,7 @@ css_parse_color(
 	int keyword;
 	int digit;
 	int same;
+	int hsl;
 
 	/* Skips leading whitespace. */
 	while (count > 0 && tokens[0].type == CSS_TOKEN_WHITESPACE) {
@@ -1364,13 +1369,16 @@ css_parse_color(
 		same = css_ident_equal(token, "rgb");
 		if (!same)
 			same = css_ident_equal(token, "rgba");
-		if (!same)
+		hsl = css_ident_equal(token, "hsl") || css_ident_equal(token, "hsla");
+		if (!same && !hsl)
 			return EINVAL;
 		if (count < 2U || tokens[count - 1U].type != CSS_TOKEN_CLOSE_PAREN)
 			return EINVAL;
 		used = values_function_length(tokens, count);
 		if (used != count)
 			return EINVAL;
+		if (hsl)
+			return values_hsl_function(tokens + 1, count - 1U, color);
 		return values_rgb_function(tokens + 1, count - 1U, color);
 	}
 
@@ -1549,6 +1557,8 @@ values_single(
 	/* box-shadow takes a list of shadows. */
 	if (property == CSS_PROP_BOX_SHADOW)
 		return values_box_shadow(parse, tokens, count, value);
+	if (property == CSS_PROP_TEXT_SHADOW)
+		return values_text_shadow(parse, tokens, count, value);
 
 	/* clip-path takes a shape. */
 	if (property == CSS_PROP_CLIP_PATH)
@@ -1875,8 +1885,14 @@ values_single(
 		return values_length(&tokens[0], 0, value);
 	}
 
-	/* The other lengths: sizes, margins and paddings. */
-	return values_length(&tokens[0], 1, value);
+	/* Padding cannot be negative; reject the declaration before it replaces an earlier value. */
+	error = values_length(&tokens[0], 1, value);
+	if (error != 0)
+		return error;
+	if (property >= CSS_PROP_PADDING_TOP && property <= CSS_PROP_PADDING_LEFT &&
+	    value->kind == CSS_VALUE_LENGTH && value->number < 0)
+		return EINVAL;
+	return 0;
 }
 
 /* Parses font-family: names (identifiers joined by spaces, or strings) separated by commas. */
@@ -2214,6 +2230,137 @@ values_rgb_function(
 	    (uint32_t)(channels[2] + 0.5);
 
 	/* Succeeded: the color is packed. */
+	return 0;
+}
+
+/* Parses hsl()/hsla() components and converts their sRGB result to packed RGBA. */
+static int
+values_hsl_function(
+	const struct css_token *tokens,
+	size_t count,
+	uint32_t *color)
+{
+	const struct css_token *parts[4];
+	double hue;
+	double saturation;
+	double lightness;
+	double alpha;
+	double chroma;
+	double secondary;
+	double offset;
+	double red;
+	double green;
+	double blue;
+	size_t index;
+	size_t made;
+	size_t commas;
+	size_t slashes;
+	int awaiting;
+
+	/* The legacy form has commas; the modern form uses spaces and a slash. */
+	made = 0;
+	commas = 0;
+	slashes = 0;
+	awaiting = 0;
+	for (index = 0; index < count && tokens[index].type != CSS_TOKEN_CLOSE_PAREN; index++) {
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE)
+			continue;
+		if (tokens[index].type == CSS_TOKEN_COMMA ||
+		    (tokens[index].type == CSS_TOKEN_DELIM && tokens[index].delim == '/')) {
+			if (made == 0 || awaiting)
+				return EINVAL;
+			if (tokens[index].type == CSS_TOKEN_COMMA)
+				commas++;
+			else
+				slashes++;
+			awaiting = 1;
+			continue;
+		}
+		if (made >= 4 || (tokens[index].type != CSS_TOKEN_NUMBER &&
+		    tokens[index].type != CSS_TOKEN_PERCENTAGE &&
+		    tokens[index].type != CSS_TOKEN_DIMENSION))
+			return EINVAL;
+		parts[made++] = &tokens[index];
+		awaiting = 0;
+	}
+	if (made < 3 || awaiting || (commas != 0 && (slashes != 0 || commas != made - 1)) ||
+	    (commas == 0 && slashes != (made == 4 ? 1U : 0U)))
+		return EINVAL;
+
+	/* Hue accepts degrees or the three other CSS angle units. */
+	if (parts[0]->type == CSS_TOKEN_NUMBER)
+		hue = parts[0]->number;
+	else if (parts[0]->type == CSS_TOKEN_DIMENSION) {
+		hue = parts[0]->number;
+		if (css_units_equal_ascii(parts[0]->text, parts[0]->length, "turn"))
+			hue *= 360.0;
+		else if (css_units_equal_ascii(parts[0]->text, parts[0]->length, "grad"))
+			hue *= 0.9;
+		else if (css_units_equal_ascii(parts[0]->text, parts[0]->length, "rad"))
+			hue *= 180.0 / 3.14159265358979323846;
+		else if (!css_units_equal_ascii(parts[0]->text, parts[0]->length, "deg"))
+			return EINVAL;
+	} else
+		return EINVAL;
+	if ((parts[1]->type != CSS_TOKEN_PERCENTAGE &&
+	    (commas != 0 || parts[1]->type != CSS_TOKEN_NUMBER)) ||
+	    (parts[2]->type != CSS_TOKEN_PERCENTAGE &&
+	    (commas != 0 || parts[2]->type != CSS_TOKEN_NUMBER)))
+		return EINVAL;
+	saturation = parts[1]->number / 100.0;
+	lightness = parts[2]->number / 100.0;
+	alpha = 1.0;
+	if (made == 4) {
+		if (parts[3]->type != CSS_TOKEN_NUMBER && parts[3]->type != CSS_TOKEN_PERCENTAGE)
+			return EINVAL;
+		alpha = parts[3]->number;
+		if (parts[3]->type == CSS_TOKEN_PERCENTAGE)
+			alpha /= 100.0;
+	}
+	if (!isfinite(hue) || !isfinite(saturation) || !isfinite(lightness) || !isfinite(alpha))
+		return EINVAL;
+	if (saturation < 0.0)
+		saturation = 0.0;
+	if (saturation > 1.0)
+		saturation = 1.0;
+	if (lightness < 0.0)
+		lightness = 0.0;
+	if (lightness > 1.0)
+		lightness = 1.0;
+	if (alpha < 0.0)
+		alpha = 0.0;
+	if (alpha > 1.0)
+		alpha = 1.0;
+	hue = fmod(hue, 360.0);
+	if (hue < 0.0)
+		hue += 360.0;
+	chroma = (1.0 - fabs(2.0 * lightness - 1.0)) * saturation;
+	secondary = chroma * (1.0 - fabs(fmod(hue / 60.0, 2.0) - 1.0));
+	offset = lightness - chroma / 2.0;
+	red = green = blue = 0.0;
+	if (hue < 60.0) {
+		red = chroma;
+		green = secondary;
+	} else if (hue < 120.0) {
+		red = secondary;
+		green = chroma;
+	} else if (hue < 180.0) {
+		green = chroma;
+		blue = secondary;
+	} else if (hue < 240.0) {
+		green = secondary;
+		blue = chroma;
+	} else if (hue < 300.0) {
+		red = secondary;
+		blue = chroma;
+	} else {
+		red = chroma;
+		blue = secondary;
+	}
+	*color = (uint32_t)(alpha * 255.0 + 0.5) << 24 |
+	    (uint32_t)((red + offset) * 255.0 + 0.5) << 16 |
+	    (uint32_t)((green + offset) * 255.0 + 0.5) << 8 |
+	    (uint32_t)((blue + offset) * 255.0 + 0.5);
 	return 0;
 }
 
@@ -3923,6 +4070,35 @@ values_box_shadow(
 	}
 
 	/* Succeeded: the shadows are parsed. */
+	return 0;
+}
+
+/* Parses one sharp text shadow, or none; blur and lists remain unsupported. */
+static int
+values_text_shadow(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	struct css_shadow_list *list;
+	int error;
+
+	list = wb_arena_zalloc(parse->arena, sizeof(*list));
+	if (list == NULL)
+		return ENOMEM;
+	value->kind = CSS_VALUE_SHADOWS;
+	value->shadows = list;
+	if (count == 1 && tokens[0].type == CSS_TOKEN_IDENT && css_ident_equal(tokens, "none"))
+		return 0;
+
+	error = values_one_shadow(tokens, count, &list->shadows[0]);
+	if (error != 0)
+		return error;
+	if (list->shadows[0].inset || list->shadows[0].lengths[2].number != 0.0f ||
+	    list->shadows[0].lengths[3].number != 0.0f)
+		return EINVAL;
+	list->count = 1;
 	return 0;
 }
 

@@ -772,7 +772,7 @@ inline_finish_line(
 		fragment->text = pieces[index].text;
 		fragment->length = pieces[index].length;
 		fragment->font = pieces[index].font;
-		fragment->color = pieces[index].box->style.color;
+		fragment->color = pieces[index].box->style.paint_color;
 		fragment->underline = pieces[index].box->style.underline;
 		fragment->x = x;
 		fragment->width = pieces[index].width;
@@ -820,7 +820,7 @@ inline_finish_line(
 		fragment->text = box->marker;
 		fragment->length = box->marker_length;
 		fragment->font = font;
-		fragment->color = box->style.color;
+		fragment->color = box->style.paint_color;
 		fragment->width = 0;
 
 		/* The marker is as wide as its characters. */
@@ -1202,8 +1202,13 @@ inline_font_extent(
 	layout_unit leading;
 	int error;
 
-	/* The font's measures, or the font size when the font cannot be measured. */
-	error = text_font_metrics(tree->text, font, &metrics);
+	/* A zero-sized font has no ascent or descent, even if rasterization uses a minimum glyph size. */
+	if (style->font_size == 0.0f) {
+		memset(&metrics, 0, sizeof(metrics));
+		error = 0;
+	} else {
+		error = text_font_metrics(tree->text, font, &metrics);
+	}
 	if (error != 0) {
 		metrics.ascent = (int)style->font_size;
 		metrics.descent = 0;

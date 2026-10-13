@@ -31,7 +31,10 @@ fetch_git() {
 			git -C "$dir" sparse-checkout set --no-cone "/$license" "$@"
 		fi
 	else
-		rm -rf "$dir"
+		if [ -e "$dir" ]; then
+			echo "$name: existing checkout differs from the pinned commit; ask the Queue manager to clean $dir" >&2
+			exit 1
+		fi
 		mkdir -p "$dir"
 		git -C "$dir" init -q
 		git -C "$dir" remote add origin "$url"

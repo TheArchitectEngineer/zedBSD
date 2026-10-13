@@ -100,6 +100,9 @@ struct css_engine {
 	struct dom_element *current;
 	int container_missed;
 	struct wb_vector container_uses;
+	int (*visited_lookup)(void *, struct dom_element *);
+	void *visited_context;
+	int visited_pass;
 };
 
 /*
@@ -218,9 +221,10 @@ static int cascade_any_relative(struct css_engine *engine, struct dom_element *e
 static int cascade_nth(struct dom_element *element, const struct css_simple *simple);
 static int cascade_is_form_element(const struct dom_element *element);
 static int cascade_compute(struct css_engine *engine, struct dom_element *element, const struct css_style *parent, struct css_style *style, int pseudo);
+static int cascade_paint_color(struct css_engine *engine, struct dom_element *element, const struct css_style *parent, struct css_style *style, int pseudo);
 static int cascade_compound_matches(struct css_engine *engine, struct dom_element *element, const struct css_compound *compound);
 static int cascade_simple_matches(struct css_engine *engine, struct dom_element *element, const struct css_simple *simple);
-static int cascade_attribute_matches(const struct vm_string *value, const struct css_simple *simple);
+static int cascade_attribute_matches(const struct vm_string *value, const struct css_simple *simple, int insensitive, int html_type);
 static int cascade_has_class(const struct vm_string *classes, const struct vm_string *name);
 static int cascade_class_atoms(struct css_engine *engine, struct vm_string *classes, struct vm_string *const **atoms, size_t *count);
 static int cascade_class_grow(struct css_engine *engine);
@@ -236,6 +240,7 @@ static void cascade_apply(struct css_engine *engine, struct css_style *style, co
 static void cascade_inherit(struct css_style *style, const struct css_style *parent, int property);
 static struct css_length cascade_length(struct css_engine *engine, const struct css_value *value, float font_size);
 static void cascade_shadows(struct css_engine *engine, struct css_style *style, const struct css_value *value);
+static void cascade_text_shadow(struct css_engine *engine, struct css_style *style, const struct css_value *value);
 static void cascade_tracks(struct css_engine *engine, struct css_style *style, const struct css_value *value, struct css_track *tracks, int *count);
 static float cascade_font_size(struct css_engine *engine, const struct css_value *value, float parent_size);
 static int cascade_font_size_keyword(const struct css_value *value, int parent_keyword);
@@ -584,11 +589,32 @@ css_engine_compute(
 	if (error != 0)
 		return error;
 
+	/* A second cascade supplies paint color without changing script-visible style or geometry. */
+	error = cascade_paint_color(engine, element, parent, style, CSS_PSEUDO_ELEMENT_NONE);
+	if (error != 0)
+		return error;
+
 	/* The engine keeps it (a copy it cannot keep is only computed again). */
 	cascade_style_keep(engine, element, style);
 
 	/* Succeeded: the style is computed. */
 	return 0;
+}
+
+/*
+ * Sets the page-local visited lookup used only for a paint-color cascade.
+ * Script-visible selectors and computed styles still use the unvisited pass.
+ */
+void
+css_engine_set_visited_lookup(
+	struct css_engine *engine,
+	int (*lookup)(void *, struct dom_element *),
+	void *context)
+{
+	/* A changed lookup invalidates any previously computed styles. */
+	engine->visited_lookup = lookup;
+	engine->visited_context = context;
+	cascade_style_forget(engine);
 }
 
 /*
@@ -610,7 +636,58 @@ css_engine_compute_pseudo(
 	if (error != 0)
 		return error;
 
+	/* A pseudo-element inherits the paint color of its owner, even if visited. */
+	error = cascade_paint_color(engine, element, element_style, style, pseudo);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the pseudo-element's style is computed. */
+	return 0;
+}
+
+/* Computes only the alternate color and restores all cascade bookkeeping. */
+static int
+cascade_paint_color(
+	struct css_engine *engine,
+	struct dom_element *element,
+	const struct css_style *parent,
+	struct css_style *style,
+	int pseudo)
+{
+	struct css_style visited;
+	struct css_style visited_parent;
+	const struct css_style *alternate_parent;
+	float root_font_size;
+	size_t container_uses;
+	int container_missed;
+	int error;
+
+	/* With no observed history the ordinary cascade paints unchanged. */
+	style->paint_color = style->color;
+	if (engine->visited_lookup == NULL)
+		return 0;
+
+	/* Children inherit only the alternate color, not alternate dimensions or content. */
+	alternate_parent = parent;
+	if (parent != NULL) {
+		visited_parent = *parent;
+		visited_parent.color = parent->paint_color;
+		alternate_parent = &visited_parent;
+	}
+
+	/* An alternate cascade is discarded except for color and cannot affect later layout. */
+	root_font_size = engine->root_font_size;
+	container_uses = engine->container_uses.count;
+	container_missed = engine->container_missed;
+	engine->visited_pass = 1;
+	error = cascade_compute(engine, element, alternate_parent, &visited, pseudo);
+	engine->visited_pass = 0;
+	engine->root_font_size = root_font_size;
+	engine->container_uses.count = container_uses;
+	engine->container_missed = container_missed;
+	if (error != 0)
+		return error;
+	style->paint_color = visited.color;
 	return 0;
 }
 
@@ -640,6 +717,7 @@ cascade_compute(
 	css_initial_style(style);
 	if (parent != NULL) {
 		style->color = parent->color;
+		style->paint_color = parent->paint_color;
 		style->font_size = parent->font_size;
 		style->font_size_keyword = parent->font_size_keyword;
 		style->font_weight = parent->font_weight;
@@ -660,6 +738,8 @@ cascade_compute(
 		style->visibility = parent->visibility;
 		style->list_style = parent->list_style;
 		style->underline = parent->underline;
+		style->text_shadow = parent->text_shadow;
+		style->text_shadow_set = parent->text_shadow_set;
 		style->custom = parent->custom;
 	}
 
@@ -756,6 +836,8 @@ cascade_compute(
 		if (style->shadows[side].color == CSS_CURRENT_COLOR)
 			style->shadows[side].color = style->color;
 	}
+	if (style->text_shadow_set && style->text_shadow.color == CSS_CURRENT_COLOR)
+		style->text_shadow.color = style->color;
 
 	/* The root's font size is what rem measures (its pseudo-elements do not change it). */
 	is_root = 0;
@@ -841,6 +923,7 @@ css_initial_style(
 
 	/* The initial values that are not zero. */
 	style->color = 0xff000000U;
+	style->paint_color = style->color;
 	style->background_color = 0;
 	style->background_image = NULL;
 	style->background_repeat = CSS_REPEAT_BOTH;
@@ -2288,6 +2371,8 @@ cascade_simple_matches(
 	size_t count;
 	size_t position;
 	int matches;
+	int insensitive;
+	int html_type;
 	int error;
 
 	/* The kind of selector. */
@@ -2324,7 +2409,14 @@ cascade_simple_matches(
 		attribute = dom_element_find_attribute(element, DOM_NS_NONE, simple->name);
 		if (attribute == NULL)
 			return 0;
-		return cascade_attribute_matches(attribute->value, simple);
+
+		/* HTML type values match without case unless an explicit s flag overrides the host language. */
+		html_type = element->ns == DOM_NS_HTML && element->node.document->content == DOM_CONTENT_HTML &&
+		    vm_string_equal_ascii(simple->name, "type");
+		insensitive = simple->case_insensitive;
+		if (!simple->case_sensitive && html_type)
+			insensitive = 1;
+		return cascade_attribute_matches(attribute->value, simple, insensitive, html_type);
 	case CSS_SIMPLE_PSEUDO_CLASS:
 		matches = cascade_pseudo_class(engine, element, simple);
 		return matches;
@@ -2485,9 +2577,25 @@ cascade_pseudo_class(
 		/* No element or nonempty text child prevents the match. */
 		return 1;
 	case CSS_PSEUDO_LINK:
+	case CSS_PSEUDO_VISITED:
+	case CSS_PSEUDO_ANY_LINK:
+		/* Link history applies only to HTML hyperlinks with an href. */
 		if (element->ns != DOM_NS_HTML || (element->tag != DOM_TAG_A && element->tag != DOM_TAG_AREA))
 			return 0;
-		return dom_element_find_attribute(element, DOM_NS_NONE, engine->atom_href) != NULL;
+		if (dom_element_find_attribute(element, DOM_NS_NONE, engine->atom_href) == NULL)
+			return 0;
+
+		/* Script-visible matching is intentionally always unvisited. */
+		if (simple->pseudo == CSS_PSEUDO_ANY_LINK)
+			return 1;
+		if (!engine->visited_pass)
+			return simple->pseudo == CSS_PSEUDO_LINK;
+
+		/* The visited pass uses only navigations the owning page observed. */
+		matches = engine->visited_lookup(engine->visited_context, element);
+		if (simple->pseudo == CSS_PSEUDO_VISITED)
+			return matches;
+		return !matches;
 	case CSS_PSEUDO_NOT:
 		matches = cascade_any_matches(engine, element, simple);
 		return !matches;
@@ -2794,7 +2902,9 @@ cascade_is_form_element(
 static int
 cascade_attribute_matches(
 	const struct vm_string *value,
-	const struct css_simple *simple)
+	const struct css_simple *simple,
+	int insensitive,
+	int html_type)
 {
 	const struct vm_string *wanted;
 	size_t start;
@@ -2808,12 +2918,14 @@ cascade_attribute_matches(
 		return 1;
 	wanted = simple->value;
 
-	/* A word of a space-separated list. */
-	if (simple->match == CSS_MATCH_INCLUDES)
+	/* Keep existing list matching for other attributes outside this HTML type change. */
+	if (simple->match == CSS_MATCH_INCLUDES && !html_type)
 		return cascade_has_class(value, wanted);
 
 	/* Compares at the place the kind of match asks for. */
 	length = wanted->length;
+	if (simple->match == CSS_MATCH_INCLUDES && length == 0)
+		return 0;
 	if (simple->match == CSS_MATCH_EQUAL && value->length != length)
 		return 0;
 	if (value->length < length)
@@ -2828,10 +2940,23 @@ cascade_attribute_matches(
 	for (start = 0; start + length <= value->length; start++) {
 		if (simple->match == CSS_MATCH_SUFFIX && start != value->length - length)
 			continue;
+		if (simple->match == CSS_MATCH_INCLUDES) {
+			/* A list match spans a complete CSS-whitespace-separated word. */
+			if (start > 0) {
+				a = vm_string_at(value, start - 1U);
+				if (a != ' ' && a != '\t' && a != '\n' && a != '\f' && a != '\r')
+					continue;
+			}
+			if (start + length < value->length) {
+				a = vm_string_at(value, start + length);
+				if (a != ' ' && a != '\t' && a != '\n' && a != '\f' && a != '\r')
+					continue;
+			}
+		}
 		for (index = 0; index < length; index++) {
 			a = vm_string_at(value, start + index);
 			b = vm_string_at(wanted, index);
-			if (simple->case_insensitive) {
+			if (insensitive) {
 				if (a >= 'A' && a <= 'Z')
 					a = (uint16_t)(a + 0x20U);
 				if (b >= 'A' && b <= 'Z')
@@ -2846,7 +2971,7 @@ cascade_attribute_matches(
 		/* The whole value matched here. */
 		if (index == length)
 			return 1;
-		if (simple->match != CSS_MATCH_SUBSTRING && simple->match != CSS_MATCH_SUFFIX)
+		if (simple->match != CSS_MATCH_SUBSTRING && simple->match != CSS_MATCH_SUFFIX && simple->match != CSS_MATCH_INCLUDES)
 			return 0;
 	}
 
@@ -3264,6 +3389,7 @@ cascade_apply(
 		    property == CSS_PROP_TEXT_INDENT ||
 		    property == CSS_PROP_WHITE_SPACE ||
 		    property == CSS_PROP_TEXT_TRANSFORM ||
+		    property == CSS_PROP_TEXT_SHADOW ||
 		    property == CSS_PROP_CURSOR ||
 		    property == CSS_PROP_VISIBILITY ||
 		    property == CSS_PROP_DIRECTION ||
@@ -3580,6 +3706,9 @@ cascade_apply(
 	case CSS_PROP_BOX_SHADOW:
 		cascade_shadows(engine, style, value);
 		break;
+	case CSS_PROP_TEXT_SHADOW:
+		cascade_text_shadow(engine, style, value);
+		break;
 	case CSS_PROP_OUTLINE_WIDTH:
 		style->outline_width = cascade_length(engine, value, style->font_size).value;
 		break;
@@ -3728,6 +3857,10 @@ cascade_inherit(
 	case CSS_PROP_BOX_SHADOW:
 		memcpy(style->shadows, parent->shadows, sizeof(style->shadows));
 		style->shadow_count = parent->shadow_count;
+		break;
+	case CSS_PROP_TEXT_SHADOW:
+		style->text_shadow = parent->text_shadow;
+		style->text_shadow_set = parent->text_shadow_set;
 		break;
 	case CSS_PROP_OUTLINE_WIDTH:
 		style->outline_width = parent->outline_width;
@@ -3987,6 +4120,28 @@ cascade_shadows(
 		shadow->inset = declared->inset;
 		style->shadow_count++;
 	}
+}
+
+/* Computes the single sharp text shadow supported by this pass. */
+static void
+cascade_text_shadow(
+	struct css_engine *engine,
+	struct css_style *style,
+	const struct css_value *value)
+{
+	const struct css_declared_shadow *declared;
+	struct css_length length;
+
+	style->text_shadow_set = 0;
+	if (value->kind != CSS_VALUE_SHADOWS || value->shadows == NULL || value->shadows->count == 0)
+		return;
+	declared = &value->shadows->shadows[0];
+	length = cascade_length(engine, &declared->lengths[0], style->font_size);
+	style->text_shadow.x = length.unit == CSS_UNIT_PX ? length.value : 0.0f;
+	length = cascade_length(engine, &declared->lengths[1], style->font_size);
+	style->text_shadow.y = length.unit == CSS_UNIT_PX ? length.value : 0.0f;
+	style->text_shadow.color = declared->color;
+	style->text_shadow_set = 1;
 }
 
 /* Converts a declared length to a computed one: pixels, a percentage or a keyword. */

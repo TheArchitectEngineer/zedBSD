@@ -391,6 +391,8 @@ struct dom_element {
 	/* Last attempted source and generation invalidate stale asynchronous responses. */
 	struct vm_string *child_source;
 	uint64_t child_epoch;
+	/* The epoch that installed a real child; an older context is not current fallback content. */
+	uint64_t child_loaded_epoch;
 	/* Distinguish an unobserved source from an attempted absent or empty source. */
 	int child_load_seen;
 };

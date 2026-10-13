@@ -246,6 +246,7 @@ bind_frame_install(
 
 		/* The native element now owns the new actual global and Document pair. */
 		element->child_context = &realm->cell;
+		element->child_loaded_epoch = element->child_epoch;
 		*window = made;
 	}
 
