@@ -807,6 +807,10 @@ vp_draw(
 		player->media.picture_count == 0U &&
 		clock >= player->picture_time &&
 		played_out) {
+		/* The clock stays at the end (BUG-300), as the slider and the time show it while ended. */
+		player->media.clock_time = clock;
+		if (player->media.duration > clock)
+			player->media.clock_time = player->media.duration;
 		player->media.state = VP_ENDED;
 		vp_log("FRAMES shown=%u time_ms=%lld late=%u", player->shown, (long long)(clock * 1000.0), player->media.late);
 		vp_log("ENDED shown=%u", player->shown);
