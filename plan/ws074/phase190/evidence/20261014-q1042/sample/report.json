@@ -1,0 +1,3436 @@
+{
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "fail": 72,
+    "pass": 28
+  },
+  "eligible": 1561,
+  "eligible_not_sampled": 1461,
+  "results": [
+    {
+      "image": "001-anchor-center-002.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/anchor-center-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-center-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/filter-effects/backdrop-filter-backdrop-root-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/filter-effects/backdrop-filter-backdrop-root-backdrop-filter.html"
+    },
+    {
+      "image": "002-hidden-until-found-004.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 22500,
+          "equal": false,
+          "max_difference": 82,
+          "path": "html/editing/the-hidden-attribute/resources/container-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/editing/the-hidden-attribute/hidden-until-found-004.html"
+    },
+    {
+      "image": "003-abspos-autopos-htb-ltr.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 55200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-htb-ltr.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-cascade/scope-featureless-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-cascade/scope-featureless.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-view-transitions/view-transition-name-is-backdrop-filter-root-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-view-transitions/view-transition-name-is-backdrop-filter-root.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-lists/list-style-position-001-ref.html",
+          "relation": "match",
+          "resolved": true
+        },
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-lists/list-style-position-001-notref.html",
+          "relation": "mismatch"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-lists/list-style-position-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5994,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/flexbox-align-self-baseline-horiz-008-ref.xhtml",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flexbox-align-self-baseline-horiz-008.xhtml"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 20000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/reference/anchor-in-css-min-max-function-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-in-css-min-max-function.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/filter-effects/backdrop-filter-backdrop-root-clip-path-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/filter-effects/backdrop-filter-backdrop-root-clip-path.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1568,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/editing/the-hidden-attribute/hidden-until-found-005-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/editing/the-hidden-attribute/hidden-until-found-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 55200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-htb-rtl.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5918,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-cascade/scope-pseudo-element-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-cascade/scope-pseudo-element.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-view-transitions/view-transition-name-is-grouping-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-view-transitions/view-transition-name-is-grouping.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-viewport/zoom/background-image-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-viewport/zoom/background-image.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 26584,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/flexbox-writing-mode-slr-row-mix-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flexbox-writing-mode-slr-row-mix.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 18200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/reference/anchor-name-005-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-name-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 2696,
+          "allowed_max_difference": 5,
+          "different_pixels": 196,
+          "equal": false,
+          "max_difference": 26,
+          "path": "css/filter-effects/backdrop-filter-backdrop-root-filter-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/filter-effects/backdrop-filter-backdrop-root-filter.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 243,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/single-summary.html",
+          "relation": "mismatch"
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "html/rendering/the-details-element/details-after.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 55200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-vlr-ltr.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 30000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-viewport/zoom/basic-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-viewport/zoom/basic.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 7200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/flexbox-writing-mode-003-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flexbox-writing-mode-slr-rtl.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 15040,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/anchor-name-multicol-003-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-name-multicol-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/filter-effects/backdrop-filter-backdrop-root-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/filter-effects/backdrop-filter-backdrop-root-mix-blend-mode.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1957,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/single-summary.html",
+          "relation": "mismatch"
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "html/rendering/the-details-element/details-before.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 55200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-vlr-rtl.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 79566,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-viewport/zoom/reference/border-spacing-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-viewport/zoom/border-spacing.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 7200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/flexbox-writing-mode-slr-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flexbox-writing-mode-slr.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10700,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-name-multicol-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 2696,
+          "allowed_max_difference": 5,
+          "different_pixels": 196,
+          "equal": false,
+          "max_difference": 51,
+          "path": "css/filter-effects/backdrop-filter-backdrop-root-opacity-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/filter-effects/backdrop-filter-backdrop-root-opacity.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 4930,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/details-display-type-001-ref2.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-display-type-001-ref.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 55200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-vrl-ltr.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-viewport/zoom/reference/container-queries-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-viewport/zoom/container-queries.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 26608,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/flexbox-writing-mode-srl-row-mix-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flexbox-writing-mode-srl-row-mix.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 20000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/reference/anchor-position-circular-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-circular.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 10000,
+          "allowed_max_difference": 1,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 128,
+          "path": "css/filter-effects/backdrop-filter-basic-opacity-2-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/filter-effects/backdrop-filter-basic-opacity-2.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [
+            {
+              "allowed_different_pixels": 0,
+              "allowed_max_difference": 0,
+              "different_pixels": 4930,
+              "equal": false,
+              "max_difference": 255,
+              "path": "html/rendering/the-details-element/details-display-type-001-ref2.html",
+              "relation": "match"
+            }
+          ],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "html/rendering/the-details-element/details-display-type-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-display-type-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 55200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-vrl-rtl.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 7420,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-viewport/zoom/font-size-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-viewport/zoom/font-size.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 7200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/flexbox-writing-mode-005-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flexbox-writing-mode-srl-rtl.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 12900,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/anchor-position-inline-004-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-inline-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/filter-effects/backdrop-filter-basic-opacity-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/filter-effects/backdrop-filter-basic-opacity.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "html/rendering/the-details-element/details-display-type-002-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "html/rendering/the-details-element/details-display-type-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/abspos/flex-abspos-staticpos-align-self-safe-001-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/flex-abspos-staticpos-align-self-safe-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-viewport/zoom/reference/iframe-zoom-ref.html",
+          "relation": "match",
+          "resolved": true,
+          "script_errors": [
+            "console: Uncaught ReferenceError: URLSearchParams is not defined (at (document stream):2:18)",
+            "console: Uncaught ReferenceError: URLSearchParams is not defined (at (document stream):2:18)",
+            "console: Uncaught ReferenceError: URLSearchParams is not defined (at (document stream):2:18)"
+          ]
+        }
+      ],
+      "script_errors": [
+        "console: Uncaught ReferenceError: URLSearchParams is not defined (at (document stream):2:18)",
+        "console: Uncaught ReferenceError: URLSearchParams is not defined (at (document stream):2:18)"
+      ],
+      "status": "pass",
+      "test": "css/css-viewport/zoom/iframe-zoom.sub.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 7200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/flexbox-writing-mode-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flexbox-writing-mode-srl.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 38356,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/anchor-position-multicol-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/filter-effects/backdrop-filter-basic-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/filter-effects/backdrop-filter-basic.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 12493,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/details-pseudo-elements-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-pseudo-elements-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 144,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/abspos/flex-abspos-staticpos-fallback-justify-content-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/flex-abspos-staticpos-fallback-justify-content-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-viewport/zoom/background-image-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-viewport/zoom/image-intrinsic-size.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10800,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/justify-content-sideways-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10500,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 2000,
+          "allowed_max_difference": 200,
+          "different_pixels": 3996,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/filter-effects/backdrop-filter-clip-radius-zoom-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/filter-effects/backdrop-filter-clip-radius-zoom.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 12493,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/details-pseudo-elements-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-pseudo-elements-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/abspos/flex-abspos-staticpos-justify-self-001-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/flex-abspos-staticpos-justify-self-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 7500,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-viewport/zoom/green-square-100px.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-viewport/zoom/inherited-length.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 350451,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/reference/grid-container-baseline-synthesized-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-container-baseline-synthesized-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 3800,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/anchor-position-multicol-004-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 1000,
+          "allowed_max_difference": 80,
+          "different_pixels": 28325,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/filter-effects/reference/backdrop-filter-clip-rect-2-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/filter-effects/backdrop-filter-clip-rect-2.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 334,
+          "equal": false,
+          "max_difference": 127,
+          "path": "html/rendering/the-details-element/details-pseudo-elements-003-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-pseudo-elements-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/abspos/flex-abspos-staticpos-margin-001-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/flex-abspos-staticpos-margin-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 30000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-viewport/zoom/basic-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-viewport/zoom/inherited.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 350451,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/reference/grid-container-baseline-synthesized-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-container-baseline-synthesized-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1665,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 8,
+          "allowed_max_difference": 1,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/filter-effects/backdrop-filter-clip-rect-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/filter-effects/backdrop-filter-clip-rect.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1140,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/details-pseudo-elements-004-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-pseudo-elements-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1536,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/abspos/flex-abspos-staticpos-margin-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/flex-abspos-staticpos-margin-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 15014,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-viewport/zoom/reference/letter-spacing-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-viewport/zoom/letter-spacing.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 350451,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/reference/grid-container-baseline-synthesized-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-container-baseline-synthesized-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 15000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10100,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/filter-effects/backdrop-filter-clip-rounded-clip-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/filter-effects/backdrop-filter-clip-rounded-clip.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2282,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/details-pseudo-elements-005-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-pseudo-elements-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1632,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-flexbox/abspos/flex-abspos-staticpos-margin-003-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/flex-abspos-staticpos-margin-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 13814,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-viewport/zoom/line-height-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-viewport/zoom/line-height.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 350451,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/reference/grid-container-baseline-synthesized-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-container-baseline-synthesized-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 7480,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-011.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/filter-effects/backdrop-filter-clipped-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/filter-effects/backdrop-filter-clipped.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 50,
+          "equal": false,
+          "max_difference": 198,
+          "path": "html/rendering/the-details-element/details-revert-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-revert.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/abspos/flexbox-abspos-child-001-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/flexbox-abspos-child-001a.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 4205,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-viewport/zoom/reference/list-style-image-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-viewport/zoom/list-style-image.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 173290,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-multicol/multicol-span-all-rule-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-multicol/multicol-span-all-rule-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 6700,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/anchor-position-multicol-fixed-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-fixed-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 78400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/filter-effects/backdrop-filter-containing-block-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/filter-effects/backdrop-filter-containing-block.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "html/rendering/the-details-element/details-summary-display-inline-001-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "html/rendering/the-details-element/details-summary-display-inline-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/abspos/flexbox-abspos-child-001-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/flexbox-abspos-child-001b.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2124,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-viewport/zoom/relative-units-from-parent-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-viewport/zoom/relative-units-from-parent.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 30472,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-shapes/shape-outside/shape-box/reference/shape-outside-border-box-border-radius-009-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-shapes/shape-outside/shape-box/shape-outside-border-box-border-radius-009.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1936,
+          "equal": false,
+          "max_difference": 240,
+          "path": "css/css-anchor-position/auto-margins-position-area-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/auto-margins-position-area.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/filter-effects/backdrop-filter-paint-order-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/filter-effects/backdrop-filter-edge-clipping.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 52166,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/details-summary-display-inline-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-summary-display-inline-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/abspos/flexbox-abspos-child-002-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/flexbox-abspos-child-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-viewport/zoom/reference/stroke-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-viewport/zoom/stroke.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 30460,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-shapes/shape-outside/shape-box/reference/shape-outside-border-box-border-radius-010-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-shapes/shape-outside/shape-box/shape-outside-border-box-border-radius-010.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 21600,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-anchor-position/position-anchor-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/position-anchor-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/filter-effects/backdrop-filter-edge-pixels-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/filter-effects/backdrop-filter-edge-pixels.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "html/rendering/the-details-element/summary-display-flex-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "html/rendering/the-details-element/summary-display-flex.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/abspos/flexbox_absolute-atomic-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/flexbox_absolute-atomic.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-viewport/zoom/svg-path-simple-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-viewport/zoom/svg-path-simple.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 30472,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-shapes/shape-outside/shape-box/reference/shape-outside-border-box-border-radius-011-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-shapes/shape-outside/shape-box/shape-outside-border-box-border-radius-011.html"
+    }
+  ],
+  "root": ".",
+  "schema": 1,
+  "selected": 100,
+  "selection": "focus round-robin, path-sorted",
+  "selection_manifest": "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+  "skipped": {
+    "script": 402,
+    "script_reference": 5,
+    "variant_url": 6
+  },
+  "suite": "wpt",
+  "unrun": [
+    {
+      "id": "/css/css-anchor-position/anchor-center-scroll-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-dynamic-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-006.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scope-scroll.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-chained-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-chained-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-chained-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-chained-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-chained-fallback.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-composited-scrolling-006.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-fixedpos-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-fixedpos.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-nested.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-overflow-hidden.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-scrollable-anchor.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-to-sticky-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-to-sticky-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-to-sticky-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-to-sticky-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-006.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-update-007.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-vlr.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scroll-vrl.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-anchor-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-anchor-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-anchor-target-with-children.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-area-scroll-adjust.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-try-switch-from-fixed-anchor.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-try-switch-to-fixed-anchor.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-add-no-overflow.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-in.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-after-scroll-out.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-chained-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-chained-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-chained-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-chained-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-change-anchor.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-change-css-visibility.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-non-intervening-container.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-stacked-child.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-anchors-visible-with-position.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-no-overflow-scroll.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-remove-anchors-visible.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/position-visibility-remove-no-overflow.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-anchor-position/sticky-anchor-position-invalid.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-cascade/scope-part.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-cascade/scope-shadow-sharing.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/abspos/position-absolute-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/align-items-008.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/anonymous-flex-item-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/anonymous-flex-item-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/anonymous-flex-item-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/anonymous-flex-item-006.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/aspect-ratio-intrinsic-size-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/aspect-ratio-intrinsic-size-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/aspect-ratio-intrinsic-size-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/auto-margins-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/dynamic-baseline-change-nested.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/dynamic-baseline-change.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/dynamic-bsize-change.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/dynamic-change-simplified-layout-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/dynamic-change-simplified-layout.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/dynamic-isize-change-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/dynamic-isize-change-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/dynamic-isize-change-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/dynamic-isize-change-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/dynamic-stretch-change.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/fieldset-as-item-dynamic.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/flex-aspect-ratio-img-column-010.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/flex-aspect-ratio-img-row-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/flex-aspect-ratio-img-row-016.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/flex-direction-modify.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/flex-direction-with-element-insert.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/flex-item-contains-size-layout-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/flex-minimum-height-flex-items-019.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/flex-wrap-006.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/flexbox-dyn-resize-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/flexible-box-float.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/grid-flex-item-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/image-items-flake-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/nested-orthogonal-flexbox-relayout.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/overflow-auto-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/overflow-auto-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/overflow-auto-007.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/percentage-heights-014.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/position-absolute-scrollbar-freeze.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/scrollbars-auto.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/scrollbars-no-margin.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/scrollbars.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-flexbox/table-as-item-change-cell.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/abspos/absolute-positioning-changing-containing-block-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-item-absolute-positioning-dynamic-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-006.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-item-dynamic-change-007.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-baseline-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-container-auto-margins-scrollbars-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-1.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-2.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-3.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-aspect-ratio-stretch-4.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-2.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-3.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-4.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-5.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-6.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/chrome-bug-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/dynamic-grid-with-auto-fill.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/dynamic-grid-within-flexbox.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-repeat-dynamic-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-repeat-dynamic-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-repeat-dynamic-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-repeat-positioned-container-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-repeat-max-width-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-auto-margin-and-replaced-item-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-item-rel-pos-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-item-rel-pos-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-item-script-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-006.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-007.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-008.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-009.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-010.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-011.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-012.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-013.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-014.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-006.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-007.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-008.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-009.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-010.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-011.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-012.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-013.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-014.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-size-with-orthogonal-child-dynamic.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/percentage-margin-dynamic.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/remove-svg-grid-item-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-items/replaced-element-015.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-layout-stale-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-layout-stale-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-with-content-dynamic-display-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-with-content-dynamic-display-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/grid-with-dynamic-img.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/implicit-grids/grid-support-grid-auto-columns-rows-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/flex-tracks-with-fractional-size.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-intrinsic-size-dynamic-block-size.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/placement/grid-placement-using-named-grid-lines-007.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/subgrid/line-names-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/subgrid/line-names-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/subgrid/line-names-005.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/subgrid/parent-repeat-auto-fit-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/subgrid/parent-repeat-auto-fit-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/subgrid/repeat-auto-fill-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/subgrid/repeat-auto-fill-006.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/subgrid/repeat-auto-fill-008.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/table-grid-item-dynamic-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/table-grid-item-dynamic-002.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/table-grid-item-dynamic-003.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/table-grid-item-dynamic-004.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-grid/whitespace-reattach.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-background-attachment-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-background-color-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-block-start-color-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-block-start-style-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-block-start-width-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-image-source-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-top-color-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-top-left-radius-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-top-style-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-ui/compute-kind-widget-generated/grouped-kind-of-widget-fallback-border-top-width-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/3d-transform-incoming.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/3d-transform-outgoing.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/active-view-transition-on-non-root.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/active-view-transition-pseudo-class-match.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/animating-new-content-subset.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/animating-new-content.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/backdrop-filter-animated.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/backdrop-filter-captured.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/block-with-overflowing-text.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/break-inside-avoid-child.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/capture-old-state-error-flag-cleanup.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/capture-with-offscreen-child-translated.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/capture-with-offscreen-child.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/capture-with-opacity-zero-child.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/capture-with-visibility-hidden-child.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/capture-with-visibility-mixed-descendants.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/class-specificity.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/clip-path-larger-than-border-box-on-child-of-named-element.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/content-smaller-than-box-size.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/content-visibility-auto-shared-element.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/content-with-child-with-transparent-background.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/content-with-clip-root.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/content-with-clip.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/content-with-inline-child.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/content-with-transform-new-image.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/content-with-transform-old-image.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/content-with-transparent-background.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/css-tags-paint-order-with-entry.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/css-tags-paint-order.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/css-tags-shared-element.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/dialog-in-rtl-iframe.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/dialog-in-top-layer-during-transition-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/dialog-in-top-layer-during-transition-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/element-is-grouping-during-animation.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/element-stops-grouping-after-animation.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/element-with-overflow.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/exit-transition-with-anonymous-layout-object.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/far-away-capture.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/fractional-box-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/fractional-box-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/fractional-box-with-overflow-children-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/fractional-box-with-overflow-children-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/fractional-box-with-shadow-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/fractional-box-with-shadow-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/fractional-translation-from-position.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/fractional-translation-from-transform.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/fragmented-at-start-ignored.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/fragmented-during-transition-skips.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/hit-test-unpainted-element.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/hit-test-unrelated-element.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/iframe-and-main-frame-transition-new-main-new-iframe.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/iframe-and-main-frame-transition-new-main-old-iframe.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/iframe-and-main-frame-transition-old-main-new-iframe.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/iframe-and-main-frame-transition-old-main-old-iframe.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/iframe-and-main-frame-transition-old-main.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/iframe-and-main-frame-transition-with-name-on-iframe.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/iframe-new-has-scrollbar.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/iframe-old-has-scrollbar.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/iframe-transition.sub.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/inline-child-with-filter.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/inline-child-with-overflow-shadow.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/inline-element-size.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/inline-with-offset-from-containing-block.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/japanese-tag.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-below-and-on-top-of-viewport-partially-onscreen-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-below-and-on-top-of-viewport-partially-onscreen-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-below-viewport-offscreen-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-below-viewport-offscreen-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-below-viewport-partially-onscreen-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-below-viewport-partially-onscreen-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-left-of-viewport-offscreen-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-left-of-viewport-offscreen-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-left-of-viewport-partially-onscreen-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-left-of-viewport-partially-onscreen-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-on-top-of-viewport-offscreen-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-on-top-of-viewport-offscreen-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-on-top-of-viewport-partially-onscreen-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-on-top-of-viewport-partially-onscreen-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-right-and-left-of-viewport-partially-onscreen-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-right-and-left-of-viewport-partially-onscreen-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-right-of-viewport-offscreen-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-right-of-viewport-offscreen-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-right-of-viewport-partially-onscreen-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/massive-element-right-of-viewport-partially-onscreen-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/match-element-name.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/modify-style-via-cssom.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/multiline-span-with-overflowing-text-and-box-decorations.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/named-element-with-fix-pos-child-new.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/named-element-with-fix-pos-child-old.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/names-are-tree-scoped.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/nested-elements-in-overflow.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-and-old-sizes-match.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-ancestor-clipped-2.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-ancestor-clipped.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-captures-clip-path.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-captures-different-size.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-captures-opacity.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-captures-positioned-spans.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-captures-root.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-captures-spans.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-changes-overflow-left.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-changes-overflow.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-container-writing-modes.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-element-writing-modes.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-escapes-clip-with-abspos-child.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-flat-transform-ancestor.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-from-root-display-none.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-has-scrollbars.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-inline-with-offset-from-containing-block-clipped.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-intrinsic-aspect-ratio.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-is-empty-div.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-is-inline.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-object-fit-fill.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-object-fit-none.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-preserve-3d-ancestor.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-root-scrollbar-with-fixed-background.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-scaling.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-transform-position-fixed.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-with-overflow-zoomed.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-content-with-overflow.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-element-on-start.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/new-root-vertical-writing-mode.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/no-named-elements.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/no-root-capture.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/nothing-captured.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/offscreen-element-modified-before-coming-onscreen.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-captures-clip-path.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-captures-different-size.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-captures-opacity.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-captures-root.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-container-writing-modes.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-element-writing-modes.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-escapes-clip-with-abspos-child.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-has-scrollbars.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-inline-with-offset-from-containing-block-clipped.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-intrinsic-aspect-ratio.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-is-empty-div.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-is-inline.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-object-fit-fill.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-object-fit-none.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-root-scrollbar-with-fixed-background.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-with-overflow-zoomed.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-content-with-overflow.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/old-root-vertical-writing-mode.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/outer-padding-inner-background.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/paint-holding-in-iframe.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-element-overflow-hidden.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-element-preserve-3d.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-rendering-invalidation.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-entry.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-exit.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-match-ident.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-match-multiple-wildcard.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-match-multiple.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-match-wildcard-no-star.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-match-wildcard.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-mismatch-ident.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-mismatch-partial.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-mismatch-wildcard.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-multiple-vt-classes.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-new-with-class-old-without.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-old-with-class-new-without.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-view-transition-group.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/pseudo-with-classes-view-transition-image-pair.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/reset-state-after-scrolled-view-transition.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/root-captured-as-different-tag.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/root-style-change-during-animation.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/root-to-shared-animation-end.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/root-to-shared-animation-incoming.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/root-to-shared-animation-start.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/rotated-cat-off-top-edge.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/rtl-with-scrollbar.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/scroller-child-abspos.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/scroller-child.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/scroller.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/set-current-time-transform.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/set-current-time.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/set-universal-specificity.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/shadow-part-with-class-inside-shadow-important.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/shadow-part-with-class-inside-shadow.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/shadow-part-with-class.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/shadow-part-with-name-nested.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/shadow-part-with-name-overridden-by-important.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/shadow-part-with-name.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/sibling-frames-transition.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/snapshot-containing-block-absolute.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/snapshot-containing-block-includes-scrollbar-gutter.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/snapshot-containing-block-static.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/span-with-overflowing-text-and-box-decorations.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/span-with-overflowing-text-hidden.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/span-with-overflowing-text.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/transform-origin-view-transition-group.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/transformed-element-scroll-transform.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/transition-in-empty-iframe.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/update-callback-called-once.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/view-transition-name-on-document-root.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/view-transition-name-removed-mid-transition.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group(      first )",
+      "reason": "variant_url"
+    },
+    {
+      "id": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group( first",
+      "reason": "variant_url"
+    },
+    {
+      "id": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group( first)",
+      "reason": "variant_url"
+    },
+    {
+      "id": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group(first",
+      "reason": "variant_url"
+    },
+    {
+      "id": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group(first )",
+      "reason": "variant_url"
+    },
+    {
+      "id": "/css/css-view-transitions/web-animations-api-parse-pseudo-argument.html?first-pseudo=::view-transition-group(first)",
+      "reason": "variant_url"
+    },
+    {
+      "id": "/css/css-view-transitions/web-animations-api.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-view-transitions/writing-mode-container-resize.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-viewport/zoom/canvas.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/css-viewport/zoom/iframe-zoom-nested.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/filter-effects/backdrop-filter-basic-blur.html",
+      "reason": "script_reference"
+    },
+    {
+      "id": "/css/filter-effects/backdrop-filter-boundary.html",
+      "reason": "script_reference"
+    },
+    {
+      "id": "/css/filter-effects/backdrop-filter-clip-rect-zoom.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/filter-effects/backdrop-filter-edge-behavior.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/filter-effects/backdrop-filter-edge-clipping-2.html",
+      "reason": "script_reference"
+    },
+    {
+      "id": "/css/filter-effects/backdrop-filter-edge-mirror.html",
+      "reason": "script_reference"
+    },
+    {
+      "id": "/css/filter-effects/backdrop-filter-edge-pixels-2.html",
+      "reason": "script_reference"
+    },
+    {
+      "id": "/css/filter-effects/backdrop-filter-update.html",
+      "reason": "script"
+    },
+    {
+      "id": "/css/filter-effects/repaint-added-backdrop-filter.html",
+      "reason": "script"
+    },
+    {
+      "id": "/html/editing/the-hidden-attribute/hidden-until-found-001.html",
+      "reason": "script"
+    },
+    {
+      "id": "/html/editing/the-hidden-attribute/hidden-until-found-007.html",
+      "reason": "script"
+    }
+  ],
+  "viewport": [
+    800,
+    600
+  ]
+}

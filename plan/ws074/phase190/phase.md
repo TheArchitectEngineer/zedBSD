@@ -87,3 +87,13 @@ Event ws074-p190-q1040-outcome-20261014: q1040-i01 partial cleared、p190 whole 
 **partial scope cleared、p190 whole uncleared。** 固定anchor-positioning reftest77 ID中、静的適格21件を実測し0 local PASS/21 FAIL/0 error。差画素1,665～80,000、中央値10,798。[結果・選定ID別未実行理由・代表画像](evidence/20261014-q1041/README.md)。残り56 IDはscriptを含むため未実行。固定commit/manifestとID集合、diff check PASS。コード無変更のためhost build/Acid再計測省略。anchor-positioning描画の一般欠陥とscripted runner条件は今後の別範囲。p190 whole/p173全件100%未達、browser/WPT/Master無変更、GitHub publication保留。
 
 Event ws074-p190-q1041-outcome-20261014: q1041-i01 partial cleared、p190 whole uncleared。anchor-positioning固定77 reftestを21静的FAIL/56 scripted未実行に分類。
+
+## q1042-i01 の有限部分範囲
+
+2026-10-14 01:39 JST、ユーザーの事前承認を適用、最大90分。現行static runnerは広いWPT treeを走査してから選定IDで絞る。固定manifestのreftest ID/sourceを直接走査し、variant・script・参照欠損等を選定IDごとの未実行理由としてreportに残す。既存details/anchor静的結果との同一性、variant/重複を含む局所selection control、全分野から最大100静的IDの決定的sampleを同条件実測する。全1,974件実行、scripted/HTTPS対応、browser/WPT/公開ABI/`master.md`変更は含めない。Python compile、ID/件数/結果JSON/diff checkを検証する。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。
+
+## q1042-i01 結果（2026-10-14 01:41 JST）
+
+**partial scope cleared、p190 whole uncleared。** static runnerが固定manifest選定sourceのみを走査し、選定reftest1,974 IDを静的適格1,561、script402、scripted reference5、variant6に一意分類。[証拠](evidence/20261014-q1042/README.md)。局所selection3/3・既存chain4/4、固定details21/anchor21の全結果/画素差が先行報告と一致。全分野focus round-robin 100件sampleは28 local PASS/72 FAIL/0 error。Python compile/ID分母/diff check PASS。残り1,461静的適格IDと413未対応IDは未実行。browser/WPT/Master無変更、host build/Acid再計測省略。p190 whole/p173全件100%未達、GitHub publication保留。
+
+Event ws074-p190-q1042-outcome-20261014: q1042-i01 partial cleared、p190 whole uncleared。全reftest選定分母を高速に分類し、広域100件のlocal baselineを得た。

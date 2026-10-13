@@ -145,54 +145,90 @@ def fuzzy_limits(values, reference):
     return maximum, pixels
 
 
-def discover(relative_root):
-    """Find static reftests and explain the ones omitted from this pass."""
+def discover(relative_root, selection=None):
+    """Find static reftests, reading selected sources directly when given."""
     directory = (WPT / relative_root).resolve()
     if not directory.is_dir():
         raise RuntimeError("WPT root is absent: " + relative_root)
     candidates = []
     skipped = defaultdict(int)
+    omitted = []
     extensions = {".html", ".htm", ".xht", ".xhtml", ".svg"}
-    for path in sorted(directory.rglob("*")):
-        if not path.is_file() or path.suffix.lower() not in extensions:
+    if selection is None:
+        paths = [(path, None, []) for path in sorted(directory.rglob("*"))
+                 if path.is_file() and path.suffix.lower() in extensions]
+    else:
+        paths = []
+        seen = set()
+        for row in selection:
+            if row["type"] != "reftest":
+                continue
+            test_id = row["id"]
+            if test_id in seen:
+                raise RuntimeError("duplicate selected reftest ID: " + test_id)
+            seen.add(test_id)
+            path = (WPT / row["source"]).resolve()
+            try:
+                path.relative_to(directory)
+                path.relative_to(WPT)
+            except ValueError:
+                continue
+            paths.append((path, test_id, row.get("focus", [])))
+        paths.sort(key=lambda item: item[1])
+    for path, test_id, focus in paths:
+        reason = None
+        if test_id is not None and ("?" in test_id or "#" in test_id):
+            reason = "variant_url"
+        elif not path.is_file():
+            reason = "missing_test"
+        elif path.suffix.lower() not in extensions:
+            reason = "unsupported_extension"
+        if reason:
+            skipped[reason] += 1
+            if test_id is not None:
+                omitted.append({"id": test_id, "reason": reason})
             continue
         text, metadata = read_metadata(path)
         if not metadata.references:
+            if test_id is not None:
+                skipped["no_reference"] += 1
+                omitted.append({"id": test_id, "reason": "no_reference"})
             continue
         if ACTIVE_SCRIPT.search(text):
-            skipped["script"] += 1
-            continue
-        if metadata.flags.intersection({"animated", "interact", "paged", "speech"}):
-            skipped["non_static_flag"] += 1
-            continue
+            reason = "script"
+        elif metadata.flags.intersection({"animated", "interact", "paged", "speech"}):
+            reason = "non_static_flag"
         references = []
-        reason = None
-        for relation, href in metadata.references:
-            resolved = resolve_reference(path, href)
-            if resolved is None:
-                reason = "external_reference"
-                break
-            reference_path, reference_url = resolved
-            if not reference_path.is_file():
-                reason = "missing_reference"
-                break
-            reference_text = reference_path.read_text(
-                encoding="utf-8", errors="replace"
-            )
-            if ACTIVE_SCRIPT.search(reference_text):
-                reason = "script_reference"
-                break
-            references.append((relation, reference_url))
+        if reason is None:
+            for relation, href in metadata.references:
+                resolved = resolve_reference(path, href)
+                if resolved is None:
+                    reason = "external_reference"
+                    break
+                reference_path, reference_url = resolved
+                if not reference_path.is_file():
+                    reason = "missing_reference"
+                    break
+                reference_text = reference_path.read_text(
+                    encoding="utf-8", errors="replace"
+                )
+                if ACTIVE_SCRIPT.search(reference_text):
+                    reason = "script_reference"
+                    break
+                references.append((relation, reference_url))
         if reason:
             skipped[reason] += 1
+            if test_id is not None:
+                omitted.append({"id": test_id, "reason": reason})
             continue
         candidates.append({
             "path": path.relative_to(WPT).as_posix(),
+            "focus": focus,
             "references": references,
             "fuzzy": metadata.fuzzy,
             "flags": sorted(metadata.flags),
         })
-    return candidates, dict(sorted(skipped.items()))
+    return candidates, dict(sorted(skipped.items())), omitted
 
 
 def stratified(candidates, relative_root, limit):
@@ -202,8 +238,11 @@ def stratified(candidates, relative_root, limit):
     root_parts = Path(relative_root).parts
     groups = defaultdict(list)
     for candidate in candidates:
-        parts = Path(candidate["path"]).parts[len(root_parts):]
-        group = parts[0] if len(parts) > 1 else "."
+        if candidate["focus"]:
+            group = candidate["focus"][0]
+        else:
+            parts = Path(candidate["path"]).parts[len(root_parts):]
+            group = parts[0] if len(parts) > 1 else "."
         groups[group].append(candidate)
     queues = {name: deque(items) for name, items in groups.items()}
     selected = []
@@ -355,11 +394,13 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     failures = args.out / "failures"
     failures.mkdir(exist_ok=True)
-    candidates, skipped = discover(args.root)
+    selection = None
     if args.selection_manifest is not None:
-        selection = json.loads(args.selection_manifest.read_text(encoding="utf-8"))
-        selected_ids = {row["id"] for row in selection["selected"]}
-        candidates = [row for row in candidates if "/" + row["path"] in selected_ids]
+        manifest = json.loads(args.selection_manifest.read_text(encoding="utf-8"))
+        if manifest.get("wpt_commit") != WPT_COMMIT:
+            raise RuntimeError("selection manifest has a different WPT revision")
+        selection = manifest["selected"]
+    candidates, skipped, omitted = discover(args.root, selection)
     selected = stratified(candidates, args.root, args.limit)
     results = []
     counts = defaultdict(int)
@@ -438,10 +479,13 @@ def main():
         "viewport": [args.width, args.height],
         "eligible": len(candidates),
         "selected": len(selected),
-        "selection": "first-level round-robin, path-sorted",
+        "selection": ("focus round-robin, path-sorted" if selection is not None
+                      else "first-level round-robin, path-sorted"),
         "selection_manifest": (str(args.selection_manifest) if args.selection_manifest
                                is not None else None),
         "skipped": skipped,
+        "unrun": omitted,
+        "eligible_not_sampled": len(candidates) - len(selected),
         "counts": dict(sorted(counts.items())),
         "results": results,
     }

@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1042 / WS074 manifest-driven static reftest selection（2026-10-14）
+
+[q1042履歴](queue-q1042.md): 固定reftest1,974 IDを静的適格1,561/script関連407/variant6に分類。広域100件は28 local PASS/72 FAIL。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1042/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1041 / WS074 anchor-positioning static reftest census（2026-10-14）
 
 [q1041履歴](queue-q1041.md): 固定anchor-positioning reftest77 ID中static21件は0 local PASS/21 FAIL、scripted56件未実行。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1041/README.md)。共有投影/GitHub publication pending。
