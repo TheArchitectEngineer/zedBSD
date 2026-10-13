@@ -13,9 +13,9 @@
 <!-- master:agents:start -->
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
   - P1: 空き（q973 ws228-p004 は merge 済み、T1-596 待ち）。
-  - P2（新しい世代、agent/p2-ws215）: q972 ws196-p003 useradd・usermod・userdel の前段（p002 は merge 済み、T1 待ち）。
+  - P2: 空き（q972 ws196-p003 は merge 済み、T1-597 待ち）。
   - P3: 空き（q971 ws228-p001 は merge 済み、T1-595 待ち）。
-  - T1（新しい世代）: T1-594（BUG-302）→ T1-595（ws228 vi の試験 A）→ T1-596（ws228-p004 console＋vi の試験 B）→ T1-592（ws217-p002b B と p003）・T1-593（ws143-p007）・T1-586・T1-591（低い優先度）。
+  - T1（新しい世代）: T1-594（BUG-302）→ T1-595（ws228 vi の試験 A）→ T1-596（ws228-p004 console＋vi の試験 B）→ T1-597（ws196 の useradd など）→ T1-592（ws217-p002b B と p003）・T1-593（ws143-p007）・T1-586・T1-591（低い優先度）。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
 <!-- master:agents:end -->
 
@@ -35,7 +35,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-303、WS229、q974、T1-597。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-303、WS229、q976、T1-598。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -943,6 +943,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [plan/ws157/tests/run-host-jpeg-scale.py](ws157/tests/run-host-jpeg-scale.py)（ws157-p017、2026-10-13） | libjpeg-compat の 1/2・1/4・1/8 の縮小 decode を djpeg -scale と比べる（大きさ・差 ≤2・PSNR、壊した file で crash 0、ASan・UBSan） | `python3 plan/ws157/tests/run-host-jpeg-scale.py` |
 | [plan/ws172/tests/passkey-linux-host-test.sh](ws172/tests/passkey-linux-host-test.sh)（ws172-p011、2026-10-13） | Linux の Keiland の /opt/keiland/sbin/passkey（password・PIN の登録と照合、/opt/keiland/etc/passkey の行と mode 600、fido2 は fail no-key） | sudo が要る（unshare -m で試験の passwd・shadow を bind mount、host の file は変えない） |
 | [plan/ws196/tests/account-admin-root-host-test.sh](ws196/tests/account-admin-root-host-test.sh)（ws196-p002、2026-10-14） | account-admin の全体（root の形・使える管理者の数え方・uid の記録・flock・途中の失敗の戻し・mount の境・home の guard・M7・残りの掃除）を ASan・UBSan で 74 項目 | sudo が要る（`sudo unshare -m`、path は全部新しい folder へ。host の file は変えない） |
+| [plan/ws196/tests/user-commands-host-test.sh](ws196/tests/user-commands-host-test.sh)（ws196-p003、2026-10-14、helper `user-commands-run.sh`） | useradd・usermod・userdel の前段（option から request の文、使い方の誤り、答えの語から終わりの状態）と、本物の account-admin との通しの 148 項目 | sudo が要る（path は新しい folder へ、host の file は変えない） |
 | [tests/tty-csi-host-test.c](../tests/tty-csi-host-test.c)（ws228-p004、2026-10-14） | kernel の VT console の CSI の解析（`src/kern/tty-csi.c`: 引数の配列、`H`・`f`、SGR の最小限、38・48 の飛ばし、知らない列の捨て方） | `cc -std=c99 -Wall -Wextra -Werror -Isrc src/kern/tty-csi.c tests/tty-csi-host-test.c` で作って走らせる。PASS の行 |
 | [tests/rpi4-sdhci-host-test.c](../tests/rpi4-sdhci-host-test.c)（BUG-295、2026-10-13） | Pi 4 の SD の driver（多 block の CMD25/CMD18・auto-CMD12、失敗の時の 1 block の書き直し、要求の切り分け）の回帰（偽の register） | `make -o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk rpi4-sdhci-host-test`、PASS で終わる |
 | [plan/ws081/tests/run-notestouch.sh](ws081/tests/run-notestouch.sh)（2026-10-13 BUG-296 で追従） | Notes の touch（userland/desktop/notes/touch.c）の host 試験: 2 本指の pinch と上限、drag・flick・glide、overscroll、double tap、toolbar と頁の tap（toolbar の印）、ペンの近くの掌、指で書く。`plan/ws081/tests/run-notestouch.sh [OUTDIR]`（sanitizer は `EXTRA_CFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"`）。PASS は `host-notestouch: ok (N checks)` |
