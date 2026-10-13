@@ -1,0 +1,922 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "eligible": 1455,
+  "reason_counts": {
+    "candidate": 1455,
+    "generated_context": 45,
+    "https": 44,
+    "other_type": 2022,
+    "requires_driver_origin_or_worker": 126,
+    "variant_url": 80,
+    "worker_or_substitution_path": 33
+  },
+  "eligible_sha256": "d9b36bd0c947a35529eeb11e46b4d2038053cc0b8786a2354be87536e563dae2",
+  "offset": 1152,
+  "limit": 128,
+  "font_dir": "userland/desktop/fonts",
+  "selected": [
+    "/navigation-api/currententrychange-event/navigate-from-initial-about-blank-same-doc-popup.html",
+    "/navigation-api/currententrychange-event/navigate-from-initial-about-blank-same-doc.html",
+    "/navigation-api/currententrychange-event/navigate-from-initial-about-blank.html",
+    "/navigation-api/currententrychange-event/navigation-back-forward-cross-doc.html",
+    "/navigation-api/currententrychange-event/navigation-back-forward-same-doc.html",
+    "/navigation-api/currententrychange-event/navigation-navigate-cross-doc.html",
+    "/navigation-api/currententrychange-event/navigation-navigate-intercept.html",
+    "/navigation-api/currententrychange-event/navigation-navigate-preventDefault.html",
+    "/navigation-api/currententrychange-event/navigation-navigate-replace-cross-doc.html",
+    "/navigation-api/currententrychange-event/navigation-navigate-replace-intercept.html",
+    "/navigation-api/currententrychange-event/navigation-navigate-replace-same-doc.html",
+    "/navigation-api/currententrychange-event/navigation-navigate-same-doc.html",
+    "/navigation-api/currententrychange-event/navigation-reload-cross-doc.html",
+    "/navigation-api/currententrychange-event/navigation-reload-intercept.html",
+    "/navigation-api/currententrychange-event/navigation-updateCurrentEntry.html",
+    "/navigation-api/currententrychange-event/not-on-load.html",
+    "/navigation-api/currententrychange-event/properties.html",
+    "/navigation-api/focus-reset/change-focus-again-in-blur-during-intercept.html",
+    "/navigation-api/focus-reset/change-focus-back-to-origial-during-intercept.html",
+    "/navigation-api/focus-reset/change-focus-during-intercept.html",
+    "/navigation-api/focus-reset/change-focus-then-remove-during-intercept.html",
+    "/navigation-api/focus-reset/focus-reset-timing.html",
+    "/navigation-api/navigate-event/cross-window/click-crossdocument-sameorigin.html",
+    "/navigation-api/navigate-event/cross-window/click-samedocument-sameorigin.html",
+    "/navigation-api/navigate-event/cross-window/location-crossdocument-sameorigin.html",
+    "/navigation-api/navigate-event/cross-window/location-samedocument-sameorigin.html",
+    "/navigation-api/navigate-event/cross-window/open-crossdocument-sameorigin.html",
+    "/navigation-api/navigate-event/cross-window/open-samedocument-sameorigin.html",
+    "/navigation-api/navigate-event/cross-window/submit-crossdocument-sameorigin.html",
+    "/navigation-api/navigate-event/cross-window/submit-samedocument-sameorigin.html",
+    "/navigation-api/navigate-event/defaultPrevented-navigation-preempted.html",
+    "/navigation-api/navigate-event/defaultPrevented-window-stop-after-dispatch.html",
+    "/navigation-api/navigate-event/event-constructor.html",
+    "/navigation-api/navigate-event/intercept-after-dispatch.html",
+    "/navigation-api/navigate-event/intercept-and-navigate.html",
+    "/navigation-api/navigate-event/intercept-canceled-event.html",
+    "/navigation-api/navigate-event/intercept-cross-document-same-origin.html",
+    "/navigation-api/navigate-event/intercept-detach-multiple.html",
+    "/navigation-api/navigate-event/intercept-detach.html",
+    "/navigation-api/navigate-event/intercept-handler-null-or-undefined.html",
+    "/navigation-api/navigate-event/intercept-handler-returns-non-promise.html",
+    "/navigation-api/navigate-event/intercept-handler-throws.html",
+    "/navigation-api/navigate-event/intercept-history-pushState.html",
+    "/navigation-api/navigate-event/intercept-history-replaceState.html",
+    "/navigation-api/navigate-event/intercept-multiple-times-reject.html",
+    "/navigation-api/navigate-event/intercept-multiple-times.html",
+    "/navigation-api/navigate-event/intercept-navigation-back.html",
+    "/navigation-api/navigate-event/intercept-on-synthetic-event.html",
+    "/navigation-api/navigate-event/intercept-reject.html",
+    "/navigation-api/navigate-event/intercept-resolve.html",
+    "/navigation-api/navigate-event/intercept-same-document-history-back.html",
+    "/navigation-api/navigate-event/navigate-anchor-download.html",
+    "/navigation-api/navigate-event/navigate-anchor-fragment.html",
+    "/navigation-api/navigate-event/navigate-anchor-same-origin-cross-document.html",
+    "/navigation-api/navigate-event/navigate-anchor-with-target.html",
+    "/navigation-api/navigate-event/navigate-destination-after-detach.html",
+    "/navigation-api/navigate-event/navigate-destination-getState-back-forward.html",
+    "/navigation-api/navigate-event/navigate-destination-getState-navigate.html",
+    "/navigation-api/navigate-event/navigate-destination-getState-reload.html",
+    "/navigation-api/navigate-event/navigate-form-get.html",
+    "/navigation-api/navigate-event/navigate-form-reload.html",
+    "/navigation-api/navigate-event/navigate-form-requestSubmit.html",
+    "/navigation-api/navigate-event/navigate-form-traverse.html",
+    "/navigation-api/navigate-event/navigate-form-with-target.html",
+    "/navigation-api/navigate-event/navigate-form.html",
+    "/navigation-api/navigate-event/navigate-history-back-after-fragment.html",
+    "/navigation-api/navigate-event/navigate-history-back-after-pushState.html",
+    "/navigation-api/navigate-event/navigate-history-back-bfcache.html",
+    "/navigation-api/navigate-event/navigate-history-back-cross-document.html",
+    "/navigation-api/navigate-event/navigate-history-back-noop.html",
+    "/navigation-api/navigate-event/navigate-history-go-0.html",
+    "/navigation-api/navigate-event/navigate-history-pushState.html",
+    "/navigation-api/navigate-event/navigate-history-replaceState.html",
+    "/navigation-api/navigate-event/navigate-iframe-location.html",
+    "/navigation-api/navigate-event/navigate-location.html",
+    "/navigation-api/navigate-event/navigate-meta-refresh.html",
+    "/navigation-api/navigate-event/navigate-navigation-back-cross-document.html",
+    "/navigation-api/navigate-event/navigate-navigation-back-same-document-in-iframe.html",
+    "/navigation-api/navigate-event/navigate-navigation-back-same-document.html",
+    "/navigation-api/navigate-event/navigate-navigation-navigate.html",
+    "/navigation-api/navigate-event/navigate-svg-anchor-fragment.html",
+    "/navigation-api/navigate-event/navigate-to-javascript.html",
+    "/navigation-api/navigate-event/navigate-to-srcdoc.html",
+    "/navigation-api/navigate-event/navigate-window-open-self.html",
+    "/navigation-api/navigate-event/navigate-window-open.html",
+    "/navigation-api/navigate-event/navigatesuccess-cross-document.html",
+    "/navigation-api/navigate-event/navigatesuccess-same-document.html",
+    "/navigation-api/navigate-event/navigation-back-cross-document-preventDefault.html",
+    "/navigation-api/navigate-event/navigation-back-same-document-preventDefault.html",
+    "/navigation-api/navigate-event/navigation-traverseTo-navigates-top-and-same-doc-child-and-cross-doc-child.html",
+    "/navigation-api/navigate-event/navigation-traverseTo-same-document-preventDefault-multiple-windows.html",
+    "/navigation-api/navigate-event/navigation-traverseTo-top-cancels-cross-document-child.html",
+    "/navigation-api/navigate-event/replaceState-inside-back-handler.html",
+    "/navigation-api/navigate-event/same-url-replace-cross-document.html",
+    "/navigation-api/navigate-event/same-url-replace-same-document.html",
+    "/navigation-api/navigate-event/signal-abort-detach-in-onnavigate.html",
+    "/navigation-api/navigate-event/signal-abort-intercept.html",
+    "/navigation-api/navigate-event/signal-abort-preventDefault.html",
+    "/navigation-api/navigate-event/signal-abort-window-stop-after-intercept.html",
+    "/navigation-api/navigate-event/signal-abort-window-stop-in-onnavigate.html",
+    "/navigation-api/navigate-event/signal-abort-window-stop.html",
+    "/navigation-api/navigation-activation/activation-after-bfcache-cross-origin.html",
+    "/navigation-api/navigation-activation/activation-after-bfcache.html",
+    "/navigation-api/navigation-activation/activation-history-pushState.html",
+    "/navigation-api/navigation-activation/activation-history-replaceState.html",
+    "/navigation-api/navigation-activation/activation-initial-about-blank.html",
+    "/navigation-api/navigation-activation/activation-push.html",
+    "/navigation-api/navigation-activation/activation-reload.html",
+    "/navigation-api/navigation-activation/activation-replace.html",
+    "/navigation-api/navigation-activation/activation-same-document-then-cross-document.html",
+    "/navigation-api/navigation-activation/activation-traverse-then-clobber.html",
+    "/navigation-api/navigation-activation/activation-traverse.html",
+    "/navigation-api/navigation-history-entry/after-detach.html",
+    "/navigation-api/navigation-history-entry/current-basic.html",
+    "/navigation-api/navigation-history-entry/entries-after-bfcache.html",
+    "/navigation-api/navigation-history-entry/entries-after-blank-navigation.html",
+    "/navigation-api/navigation-history-entry/entries-after-blob-navigation.html",
+    "/navigation-api/navigation-history-entry/entries-after-cross-document-forward-pruning.html",
+    "/navigation-api/navigation-history-entry/entries-after-javascript-url-navigation.html",
+    "/navigation-api/navigation-history-entry/entries-after-navigations-in-multiple-windows.html",
+    "/navigation-api/navigation-history-entry/entries-after-srcdoc-navigation.html",
+    "/navigation-api/navigation-history-entry/entries-array-equality.html",
+    "/navigation-api/navigation-history-entry/entries-in-new-javascript-url-iframe.html",
+    "/navigation-api/navigation-history-entry/entries-in-new-srcdoc-iframe.html",
+    "/navigation-api/navigation-history-entry/entries-when-inactive.html",
+    "/navigation-api/navigation-history-entry/entry-after-detach.html",
+    "/navigation-api/navigation-history-entry/index-not-in-entries.html",
+    "/navigation-api/navigation-history-entry/key-id-back-cross-document.html"
+  ],
+  "results": [
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigate-from-initial-about-blank-same-doc-popup.html",
+      "outcome": "fail",
+      "report": "test-1153.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigate-from-initial-about-blank-same-doc.html",
+      "outcome": "fail",
+      "report": "test-1154.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigate-from-initial-about-blank.html",
+      "outcome": "fail",
+      "report": "test-1155.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigation-back-forward-cross-doc.html",
+      "outcome": "fail",
+      "report": "test-1156.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigation-back-forward-same-doc.html",
+      "outcome": "fail",
+      "report": "test-1157.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigation-navigate-cross-doc.html",
+      "outcome": "fail",
+      "report": "test-1158.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigation-navigate-intercept.html",
+      "outcome": "fail",
+      "report": "test-1159.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigation-navigate-preventDefault.html",
+      "outcome": "fail",
+      "report": "test-1160.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigation-navigate-replace-cross-doc.html",
+      "outcome": "fail",
+      "report": "test-1161.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigation-navigate-replace-intercept.html",
+      "outcome": "fail",
+      "report": "test-1162.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigation-navigate-replace-same-doc.html",
+      "outcome": "fail",
+      "report": "test-1163.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigation-navigate-same-doc.html",
+      "outcome": "fail",
+      "report": "test-1164.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigation-reload-cross-doc.html",
+      "outcome": "fail",
+      "report": "test-1165.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigation-reload-intercept.html",
+      "outcome": "fail",
+      "report": "test-1166.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/navigation-updateCurrentEntry.html",
+      "outcome": "fail",
+      "report": "test-1167.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/not-on-load.html",
+      "outcome": "fail",
+      "report": "test-1168.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/currententrychange-event/properties.html",
+      "outcome": "fail",
+      "report": "test-1169.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/focus-reset/change-focus-again-in-blur-during-intercept.html",
+      "outcome": "fail",
+      "report": "test-1170.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/focus-reset/change-focus-back-to-origial-during-intercept.html",
+      "outcome": "fail",
+      "report": "test-1171.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/focus-reset/change-focus-during-intercept.html",
+      "outcome": "fail",
+      "report": "test-1172.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/focus-reset/change-focus-then-remove-during-intercept.html",
+      "outcome": "fail",
+      "report": "test-1173.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/focus-reset/focus-reset-timing.html",
+      "outcome": "fail",
+      "report": "test-1174.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/cross-window/click-crossdocument-sameorigin.html",
+      "outcome": "fail",
+      "report": "test-1175.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/cross-window/click-samedocument-sameorigin.html",
+      "outcome": "fail",
+      "report": "test-1176.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/cross-window/location-crossdocument-sameorigin.html",
+      "outcome": "fail",
+      "report": "test-1177.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/cross-window/location-samedocument-sameorigin.html",
+      "outcome": "fail",
+      "report": "test-1178.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/cross-window/open-crossdocument-sameorigin.html",
+      "outcome": "fail",
+      "report": "test-1179.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/cross-window/open-samedocument-sameorigin.html",
+      "outcome": "fail",
+      "report": "test-1180.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/cross-window/submit-crossdocument-sameorigin.html",
+      "outcome": "fail",
+      "report": "test-1181.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/cross-window/submit-samedocument-sameorigin.html",
+      "outcome": "fail",
+      "report": "test-1182.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/defaultPrevented-navigation-preempted.html",
+      "outcome": "fail",
+      "report": "test-1183.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/defaultPrevented-window-stop-after-dispatch.html",
+      "outcome": "fail",
+      "report": "test-1184.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/event-constructor.html",
+      "outcome": "fail",
+      "report": "test-1185.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-after-dispatch.html",
+      "outcome": "fail",
+      "report": "test-1186.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-and-navigate.html",
+      "outcome": "fail",
+      "report": "test-1187.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-canceled-event.html",
+      "outcome": "fail",
+      "report": "test-1188.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-cross-document-same-origin.html",
+      "outcome": "fail",
+      "report": "test-1189.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-detach-multiple.html",
+      "outcome": "fail",
+      "report": "test-1190.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-detach.html",
+      "outcome": "fail",
+      "report": "test-1191.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-handler-null-or-undefined.html",
+      "outcome": "fail",
+      "report": "test-1192.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-handler-returns-non-promise.html",
+      "outcome": "fail",
+      "report": "test-1193.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-handler-throws.html",
+      "outcome": "fail",
+      "report": "test-1194.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-history-pushState.html",
+      "outcome": "fail",
+      "report": "test-1195.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-history-replaceState.html",
+      "outcome": "fail",
+      "report": "test-1196.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-multiple-times-reject.html",
+      "outcome": "fail",
+      "report": "test-1197.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-multiple-times.html",
+      "outcome": "fail",
+      "report": "test-1198.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-navigation-back.html",
+      "outcome": "fail",
+      "report": "test-1199.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-on-synthetic-event.html",
+      "outcome": "fail",
+      "report": "test-1200.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-reject.html",
+      "outcome": "fail",
+      "report": "test-1201.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-resolve.html",
+      "outcome": "fail",
+      "report": "test-1202.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/intercept-same-document-history-back.html",
+      "outcome": "fail",
+      "report": "test-1203.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-anchor-download.html",
+      "outcome": "fail",
+      "report": "test-1204.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-anchor-fragment.html",
+      "outcome": "fail",
+      "report": "test-1205.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-anchor-same-origin-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1206.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-anchor-with-target.html",
+      "outcome": "fail",
+      "report": "test-1207.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-destination-after-detach.html",
+      "outcome": "fail",
+      "report": "test-1208.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-destination-getState-back-forward.html",
+      "outcome": "fail",
+      "report": "test-1209.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-destination-getState-navigate.html",
+      "outcome": "fail",
+      "report": "test-1210.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-destination-getState-reload.html",
+      "outcome": "fail",
+      "report": "test-1211.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-form-get.html",
+      "outcome": "fail",
+      "report": "test-1212.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-form-reload.html",
+      "outcome": "fail",
+      "report": "test-1213.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-form-requestSubmit.html",
+      "outcome": "fail",
+      "report": "test-1214.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-form-traverse.html",
+      "outcome": "fail",
+      "report": "test-1215.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-form-with-target.html",
+      "outcome": "fail",
+      "report": "test-1216.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-form.html",
+      "outcome": "fail",
+      "report": "test-1217.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-history-back-after-fragment.html",
+      "outcome": "fail",
+      "report": "test-1218.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-history-back-after-pushState.html",
+      "outcome": "fail",
+      "report": "test-1219.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-history-back-bfcache.html",
+      "outcome": "fail",
+      "report": "test-1220.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-history-back-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1221.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-history-back-noop.html",
+      "outcome": "fail",
+      "report": "test-1222.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-history-go-0.html",
+      "outcome": "fail",
+      "report": "test-1223.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-history-pushState.html",
+      "outcome": "fail",
+      "report": "test-1224.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-history-replaceState.html",
+      "outcome": "fail",
+      "report": "test-1225.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-iframe-location.html",
+      "outcome": "fail",
+      "report": "test-1226.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-location.html",
+      "outcome": "fail",
+      "report": "test-1227.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-meta-refresh.html",
+      "outcome": "no_output",
+      "report": "test-1228.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-navigation-back-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1229.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-navigation-back-same-document-in-iframe.html",
+      "outcome": "fail",
+      "report": "test-1230.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-navigation-back-same-document.html",
+      "outcome": "fail",
+      "report": "test-1231.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-navigation-navigate.html",
+      "outcome": "fail",
+      "report": "test-1232.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-svg-anchor-fragment.html",
+      "outcome": "fail",
+      "report": "test-1233.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-to-javascript.html",
+      "outcome": "fail",
+      "report": "test-1234.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-to-srcdoc.html",
+      "outcome": "fail",
+      "report": "test-1235.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-window-open-self.html",
+      "outcome": "fail",
+      "report": "test-1236.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigate-window-open.html",
+      "outcome": "fail",
+      "report": "test-1237.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigatesuccess-cross-document.html",
+      "outcome": "no_output",
+      "report": "test-1238.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigatesuccess-same-document.html",
+      "outcome": "fail",
+      "report": "test-1239.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigation-back-cross-document-preventDefault.html",
+      "outcome": "fail",
+      "report": "test-1240.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigation-back-same-document-preventDefault.html",
+      "outcome": "fail",
+      "report": "test-1241.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigation-traverseTo-navigates-top-and-same-doc-child-and-cross-doc-child.html",
+      "outcome": "fail",
+      "report": "test-1242.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigation-traverseTo-same-document-preventDefault-multiple-windows.html",
+      "outcome": "fail",
+      "report": "test-1243.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/navigation-traverseTo-top-cancels-cross-document-child.html",
+      "outcome": "fail",
+      "report": "test-1244.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/replaceState-inside-back-handler.html",
+      "outcome": "fail",
+      "report": "test-1245.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/same-url-replace-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1246.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/same-url-replace-same-document.html",
+      "outcome": "fail",
+      "report": "test-1247.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/signal-abort-detach-in-onnavigate.html",
+      "outcome": "no_output",
+      "report": "test-1248.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/signal-abort-intercept.html",
+      "outcome": "fail",
+      "report": "test-1249.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/signal-abort-preventDefault.html",
+      "outcome": "fail",
+      "report": "test-1250.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/signal-abort-window-stop-after-intercept.html",
+      "outcome": "fail",
+      "report": "test-1251.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/signal-abort-window-stop-in-onnavigate.html",
+      "outcome": "fail",
+      "report": "test-1252.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigate-event/signal-abort-window-stop.html",
+      "outcome": "fail",
+      "report": "test-1253.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-activation/activation-after-bfcache-cross-origin.html",
+      "outcome": "fail",
+      "report": "test-1254.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-activation/activation-after-bfcache.html",
+      "outcome": "fail",
+      "report": "test-1255.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-activation/activation-history-pushState.html",
+      "outcome": "fail",
+      "report": "test-1256.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-activation/activation-history-replaceState.html",
+      "outcome": "fail",
+      "report": "test-1257.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-activation/activation-initial-about-blank.html",
+      "outcome": "fail",
+      "report": "test-1258.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-activation/activation-push.html",
+      "outcome": "fail",
+      "report": "test-1259.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-activation/activation-reload.html",
+      "outcome": "fail",
+      "report": "test-1260.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-activation/activation-replace.html",
+      "outcome": "fail",
+      "report": "test-1261.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-activation/activation-same-document-then-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1262.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-activation/activation-traverse-then-clobber.html",
+      "outcome": "fail",
+      "report": "test-1263.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-activation/activation-traverse.html",
+      "outcome": "fail",
+      "report": "test-1264.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/after-detach.html",
+      "outcome": "fail",
+      "report": "test-1265.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/current-basic.html",
+      "outcome": "fail",
+      "report": "test-1266.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/entries-after-bfcache.html",
+      "outcome": "fail",
+      "report": "test-1267.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/entries-after-blank-navigation.html",
+      "outcome": "fail",
+      "report": "test-1268.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/entries-after-blob-navigation.html",
+      "outcome": "fail",
+      "report": "test-1269.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/entries-after-cross-document-forward-pruning.html",
+      "outcome": "no_output",
+      "report": "test-1270.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/entries-after-javascript-url-navigation.html",
+      "outcome": "fail",
+      "report": "test-1271.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/entries-after-navigations-in-multiple-windows.html",
+      "outcome": "fail",
+      "report": "test-1272.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/entries-after-srcdoc-navigation.html",
+      "outcome": "no_output",
+      "report": "test-1273.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/entries-array-equality.html",
+      "outcome": "fail",
+      "report": "test-1274.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/entries-in-new-javascript-url-iframe.html",
+      "outcome": "fail",
+      "report": "test-1275.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/entries-in-new-srcdoc-iframe.html",
+      "outcome": "fail",
+      "report": "test-1276.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/entries-when-inactive.html",
+      "outcome": "fail",
+      "report": "test-1277.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/entry-after-detach.html",
+      "outcome": "fail",
+      "report": "test-1278.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/index-not-in-entries.html",
+      "outcome": "fail",
+      "report": "test-1279.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/navigation-api/navigation-history-entry/key-id-back-cross-document.html",
+      "outcome": "fail",
+      "report": "test-1280.json.gz"
+    }
+  ],
+  "outcome_counts": {
+    "fail": 123,
+    "no_output": 5
+  }
+}

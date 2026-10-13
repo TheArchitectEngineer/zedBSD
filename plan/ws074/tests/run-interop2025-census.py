@@ -62,6 +62,8 @@ def main():
     parser.add_argument("--limit", type=int, default=128)
     parser.add_argument("--settle-ms", type=int, default=5000)
     parser.add_argument("--process-timeout", type=int, default=20)
+    parser.add_argument("--font-dir", type=Path,
+                        help="explicit fixed fonts for pages that require layout")
     parser.add_argument("--gzip-raw", action="store_true",
                         help="preserve raw callback reports as gzip files")
     args = parser.parse_args()
@@ -73,6 +75,7 @@ def main():
     selection = json.loads(args.manifest.read_text(encoding="utf-8"))
     batch = load_module("run-interop2025-batch.py", "interop_batch")
     runner = load_module("run-interop2025-harness.py", "interop_harness")
+    runner.font_arguments(args.font_dir)
     revision = subprocess.check_output(["git", "-C", str(wpt), "rev-parse", "HEAD"],
                                        text=True).strip()
     if revision != runner.WPT_COMMIT or selection["wpt_commit"] != revision:
@@ -87,7 +90,8 @@ def main():
               "metadata_commit": selection["metadata_commit"],
               "eligible": len(identifiers), "reason_counts": reasons,
               "eligible_sha256": digest, "offset": args.offset,
-              "limit": args.limit, "selected": selected}
+              "limit": args.limit, "selected": selected,
+              "font_dir": str(args.font_dir) if args.font_dir else None}
     checkpoint = args.out / "progress.jsonl"
     append_checkpoint(checkpoint, header)
     results = []
@@ -95,7 +99,8 @@ def main():
         path = args.out / ("test-%03d.json" % (args.offset + index))
         single = SimpleNamespace(wpt=wpt, manifest=args.manifest, program=args.program,
                                  test_id=identifier, out=path, settle_ms=args.settle_ms,
-                                 process_timeout=args.process_timeout)
+                                 process_timeout=args.process_timeout,
+                                 font_dir=args.font_dir)
         try:
             runner.run(single)
             result = json.loads(path.read_text(encoding="utf-8"))
@@ -119,6 +124,7 @@ def main():
     report = {"wpt_commit": revision, "metadata_commit": selection["metadata_commit"],
               "eligible": len(identifiers), "reason_counts": reasons,
               "eligible_sha256": digest, "offset": args.offset, "limit": args.limit,
+              "font_dir": str(args.font_dir) if args.font_dir else None,
               "selected": selected, "results": results,
               "outcome_counts": dict(sorted(Counter(row["outcome"] for row in results).items()))}
     (args.out / "report.json").write_text(

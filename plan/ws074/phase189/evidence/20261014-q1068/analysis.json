@@ -1,0 +1,117 @@
+{
+  "eligible": 1455,
+  "outcomes": {
+    "fail": 1135,
+    "harness_error": 14,
+    "no_completion": 10,
+    "no_output": 73,
+    "pass": 223
+  },
+  "transitions_from_q1063_q1064": {
+    "fail->fail": 847,
+    "fail->pass": 63,
+    "harness_error->harness_error": 13,
+    "no_completion->fail": 269,
+    "no_completion->harness_error": 1,
+    "no_completion->no_completion": 10,
+    "no_completion->pass": 19,
+    "no_output->no_output": 73,
+    "pass->fail": 19,
+    "pass->pass": 141
+  },
+  "pass_to_nonpass": [
+    "/css/css-anchor-position/anchor-position-borders-002.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-001.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-002.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-003.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-004.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-005.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-006.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-007.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-008.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-009.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-010.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-011.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-013.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-014.html",
+    "/css/css-flexbox/radiobutton-min-size.html",
+    "/css/cssom-view/scrollIntoView-sideways-lr-writing-mode-and-rtl-direction.html",
+    "/css/cssom-view/scrollIntoView-sideways-lr-writing-mode.html",
+    "/css/cssom-view/scrollIntoView-sideways-rl-writing-mode-and-rtl-direction.html",
+    "/css/cssom-view/scrollIntoView-sideways-rl-writing-mode.html"
+  ],
+  "q1066_280_transitions": {
+    "fail->fail": 260,
+    "pass->pass": 19,
+    "process_error->fail": 1
+  },
+  "focus_outcomes": {
+    "anchor-positioning": {
+      "fail": 126,
+      "harness_error": 5,
+      "no_completion": 2,
+      "no_output": 4,
+      "pass": 10
+    },
+    "backdrop-filter": {
+      "fail": 7,
+      "pass": 1
+    },
+    "core-web-vitals": {
+      "fail": 46,
+      "no_completion": 1,
+      "no_output": 1
+    },
+    "details": {
+      "fail": 3,
+      "no_output": 1,
+      "pass": 9
+    },
+    "layout": {
+      "fail": 584,
+      "no_output": 33,
+      "pass": 182
+    },
+    "modules": {
+      "fail": 5,
+      "no_output": 8
+    },
+    "navigation": {
+      "fail": 288,
+      "no_completion": 7,
+      "no_output": 12
+    },
+    "pointer-and-mouse-events": {
+      "fail": 1
+    },
+    "remove-mutation-events": {
+      "pass": 1
+    },
+    "scope": {
+      "fail": 13,
+      "harness_error": 8,
+      "no_output": 1
+    },
+    "scrollend": {
+      "fail": 1,
+      "no_output": 1
+    },
+    "textdecoration": {
+      "pass": 16
+    },
+    "view-transitions": {
+      "fail": 41,
+      "pass": 3
+    },
+    "webcompat": {
+      "fail": 8
+    },
+    "writingmodes": {
+      "fail": 12,
+      "harness_error": 1,
+      "no_output": 12,
+      "pass": 1
+    }
+  },
+  "eligible_sha256": "d9b36bd0c947a35529eeb11e46b4d2038053cc0b8786a2354be87536e563dae2"
+}

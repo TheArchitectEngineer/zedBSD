@@ -81,3 +81,11 @@ Event ws074-p189-q1064-outcome-20261014: q1063の単一HTTP候補1,455 IDの残�
 Event ws074-p189-q1066-outcome-20261014: runnerに明示固定font directoryを追加、旧`document.fonts.ready`停止のCSS Grid280 IDを全再測定。[証拠](evidence/20261014-q1066/README.md)。19 PASS/260 FAIL/1 process error(-11 SIGSEGV)、279 completion、subtest313/2640 PASS。旧全280 no_completionは0、残るSIGSEGV1は同条件1回再現。ID/checkpoint280/raw gzip280一致、runner unit6/6・py_compile/diff check PASS。q1066-i01 partial cleared、p189 whole uncleared。q1063/q1064との混合条件暫定179 PASS/1170 FAIL/1 process error/19 no_completion/73 no_output/13 harness error、環境未対応328。browser/WPT/Master変更なし、p173全3,805件100%未達、共有投影/GitHub publication保留。
 
 Event ws074-p189-q1067-p210-followup-20261014: q1066旧process_error1 IDは[p210](../phase210/phase.md)のGC一般修正後、同条件で通常3/3・ASan1/1 completion付きFAILへ進んだ。[証拠](../phase210/evidence/20261014-q1067/README.md)。q1066当時の結果は書き換えず、p189全件の最新集計は次Queueで同条件再測定する。p189 whole/p173全件100%は未達。
+
+## q1068-i01 有限部分範囲（2026-10-14 04:14 JST）
+
+このchatのユーザーによる全3,805件100%までの有限Queue事前承認を最大90分（05:44 JSTまで）に適用。q1066の明示固定font optionをcensus shard runnerへ接続し、q1063/q1064と同じ単一HTTP物理HTML適格1,455 unique testharness IDを、p209 font ready・p210 GC修正後の現行host browserで全件同条件（固定WPT/manifest・localhost・5秒settle・20秒process・固定font3種）測定する。各最大128件shardのfsync checkpoint、gzip raw、ID集合/hash、全遷移・focus・non-PASS分類を照合する。runnerのfont option以外のbrowser/WPT/公開ABI/`plan/master.md`変更なし。90分内に終わらなければ完了済み/未実行を保存してunclearedで止める。Python compile・font option局所検査・結果照合・diff checkを行う。[Guardrail](../../guardrail.md)とrunner近傍規則を適用。p189 whole全1,783件とp173全3,805件100%はこの部分の基準に含めない。
+
+## q1068-i01 結果（2026-10-14 04:40 JST）
+
+Event ws074-p189-q1068-outcome-20261014: 単一HTTP適格testharness1,455 IDを固定font/修正後host browserで同条件全再測定。[証拠](evidence/20261014-q1068/README.md)。223 PASS/1135 FAIL/10 completion無し/73 stdout無し/14 harness error。旧q1063/q1064比63 FAIL→PASS・19 no_completion→PASS、19旧PASS→FAIL候補（anchor14・sideways scroll4・Flex radio1）。q1066同font280件は19 PASS/260 FAIL維持、旧SIGSEGV1はp210修正でcompletion付きFAIL。12 shard正常終了、ID/hash/checkpoint/gzip raw1455一致、runner unit6/6・py_compile/diff check PASS。q1068-i01 partial cleared、p189 whole uncleared。環境未対応328と非PASS1232、p173全3805件100%が残る。browser/WPT/Master無変更、共有投影/GitHub publication保留。

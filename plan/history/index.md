@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1067 / WS074 CSS Grid WPT process crash（2026-10-14）
+## 最新: q1068 / WS074 uniform testharness census（2026-10-14）
+
+[q1068履歴](queue-q1068.md): 同条件適格1,455 IDは223 PASS/1,232非PASS、旧PASS→FAIL19候補。[証拠](../ws074/phase189/evidence/20261014-q1068/README.md)。p189/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1067 / WS074 CSS Grid WPT process crash（2026-10-14）
 
 [q1067履歴](queue-q1067.md): pre-fix ASan heap-buffer-overflowをGC large登録照合で修正、固定WPT旧SIGSEGV→通常/ASan completion。[証拠](../ws074/phase210/evidence/20261014-q1067/README.md)。p189/p173全件100%未達、共有投影/GitHub publication pending。
 
