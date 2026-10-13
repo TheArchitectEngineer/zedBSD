@@ -82,6 +82,13 @@ struct i915_gt_defaults {
 	struct i915_gt_object *tl_page[I915_MAX_ENGINES];
 	uint32_t tl_seqno[I915_MAX_ENGINES];
 
+	/*
+	 * The Gen9 render engine's null render state batch, which the record
+	 * request runs to give the default image a golden 3D state; it lives
+	 * as long as the record context.
+	 */
+	struct i915_gt_object *null_state[I915_MAX_ENGINES];
+
 	/* The record request and the park switch request of each engine. */
 	struct i915_gt_request rq[I915_MAX_ENGINES];
 	struct i915_gt_request krq[I915_MAX_ENGINES];

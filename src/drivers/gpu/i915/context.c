@@ -13,6 +13,12 @@
  * __lrc_init_regs() (the image), lrc_update_regs() (the ring registers, the
  * render power clock state, the two workaround batches and the descriptor)
  * and lrc_reset().
+ *
+ * A Gen9 engine (ws229-p002) takes the Gen9 branch of each: the gen9 offset
+ * tables without CS-relative addressing, the Gen9 register-state slots, the
+ * pre-Gen11 context control bits, the Gen8 power clock fields, and, on the
+ * render engine only, the gen9_init_indirectctx_bb() workaround batch
+ * instead of the Gen12 INDIRECT_CTX and PER_CTX_BB batches.
  */
 
 #include "context.h"
@@ -52,6 +58,19 @@
 #define I915_LRC_BB_OFFSET_INDEX	0x70
 #define I915_LRC_RING_GPR0		0x74
 
+/* The same slots on Gen9 (lrc_ring_*() for GRAPHICS_VER 9). */
+#define I915_GEN9_LRC_RING_INDIRECT_PTR		0x1a
+#define I915_GEN9_LRC_RING_INDIRECT_OFFSET	0x1c
+#define I915_GEN9_LRC_MI_MODE_INDEX		0x54
+#define I915_GEN9_LRC_BB_OFFSET_INDEX		0x64
+
+/*
+ * Where the Gen9 coherent-L3 workaround keeps L3SQCREG4 while it flushes:
+ * a dword near the end of the context's own INDIRECT_CTX page, which the
+ * batch never reaches.  The reference keeps it in the GT scratch page.
+ */
+#define I915_GEN9_L3SQCREG4_SAVE_OFFSET		0xf00U
+
 /* The CMD_BUF_CCTL slot, which only the render engine's image has. */
 #define I915_LRC_RING_CMD_BUF_CCTL	0xb6
 
@@ -65,8 +84,12 @@
 static int i915_lrc_alloc_objects(struct i915_gt_context *ce, struct i915_gt_mem *gm, uint32_t ring_size);
 static unsigned i915_hweight8(uint8_t value);
 static uint32_t i915_lrc_state_size(uint32_t context_size, unsigned *wa_bb_page);
-static unsigned i915_lrc_set_offsets(uint32_t *regs, const uint8_t *data, uint32_t mmio_base, int close);
+static unsigned i915_lrc_set_offsets(uint32_t *regs, const uint8_t *data, uint32_t mmio_base, int close, int gen9);
 static uint32_t i915_sseu_make_rpcs(uint8_t slice_mask, int has_slice_pg);
+static uint32_t i915_gen9_sseu_make_rpcs(const struct i915_gt_engine *ge);
+static int i915_lrc_gen9(const struct i915_gt_context *ce);
+static uint32_t *i915_lrc_emit_pipe_control(uint32_t *cs, uint32_t flags, uint32_t offset);
+static void i915_gen9_setup_indirect_ctx_bb(struct i915_gt_context *ce);
 static void i915_lrc_init_regs(struct i915_gt_context *ce, int inhibit);
 static void i915_lrc_init_common_regs(struct i915_gt_context *ce, int inhibit);
 static void i915_lrc_init_ppgtt_regs(struct i915_gt_context *ce);
@@ -226,10 +249,14 @@ drv_i915_lrc_update_regs(
 {
 	uint32_t *regs;
 	uint32_t lrca;
+	int gen9;
 
 	/* A context without an image has no registers to write. */
 	if (ce == NULL || ce->allocated == 0)
 		return 0U;
+
+	/* Tells which context layout the engine has. */
+	gen9 = i915_lrc_gen9(ce);
 
 	/* Points the image at the ring and gives it the ring's positions and size. */
 	regs = ce->lrc_reg_state;
@@ -244,17 +271,25 @@ drv_i915_lrc_update_regs(
 	 * first thread never dispatches.
 	 */
 	if (ce->ge->info->class == I915_RENDER_CLASS) {
-		regs[CTX_R_PWR_CLK_STATE] = i915_sseu_make_rpcs(ce->ge->sseu_slice_mask,
-								ce->ge->sseu_has_slice_pg);
+		if (gen9 != 0) {
+			regs[CTX_R_PWR_CLK_STATE] = i915_gen9_sseu_make_rpcs(ce->ge);
+		} else {
+			regs[CTX_R_PWR_CLK_STATE] = i915_sseu_make_rpcs(ce->ge->sseu_slice_mask,
+									ce->ge->sseu_has_slice_pg);
+		}
 	}
 
 	/*
 	 * The engine's global workaround batch is empty on Gen12, which uses
-	 * these per-context batches instead, so both are built here.
+	 * these per-context batches instead, so both are built here.  Gen9
+	 * has only the render engine's indirect batch, which this context's
+	 * own page carries.
 	 */
-	if (ce->wa_bb_page != 0U) {
+	if (ce->wa_bb_page != 0U && gen9 == 0) {
 		i915_lrc_setup_indirect_ctx_bb(ce);
 		i915_lrc_setup_per_ctx_bb(ce);
+	} else if (ce->wa_bb_page != 0U && ce->ge->info->class == I915_RENDER_CLASS) {
+		i915_gen9_setup_indirect_ctx_bb(ce);
 	}
 
 	/*
@@ -430,7 +465,8 @@ i915_lrc_set_offsets(
 	uint32_t *regs,
 	const uint8_t *data,
 	uint32_t mmio_base,
-	int close)
+	int close,
+	int gen9)
 {
 	uint32_t *start;
 	uint32_t offset;
@@ -458,7 +494,8 @@ i915_lrc_set_offsets(
 		*regs = MI_LOAD_REGISTER_IMM(count);
 		if ((flags & I915_LRC_POSTED) != 0U)
 			*regs |= MI_LRI_FORCE_POSTED;
-		*regs |= MI_LRI_LRM_CS_MMIO;
+		if (gen9 == 0)
+			*regs |= MI_LRI_LRM_CS_MMIO;
 		regs++;
 
 		/* Writes the offset of every register the header loads, leaving its value slot. */
@@ -484,8 +521,11 @@ i915_lrc_set_offsets(
 	 * restore (set_offsets() is called with close equal to inhibit); Gen11+
 	 * sets bit 0 of the terminator.
 	 */
-	if (close != 0)
-		*regs = MI_BATCH_BUFFER_END | 1U;
+	if (close != 0) {
+		*regs = MI_BATCH_BUFFER_END;
+		if (gen9 == 0)
+			*regs |= 1U;
+	}
 
 	/* Reports how many state dwords the table laid out. */
 	return (unsigned)(regs - start);
@@ -530,6 +570,7 @@ i915_lrc_init_regs(
 	int inhibit)
 {
 	const uint8_t *offsets;
+	int gen9;
 
 	/* A context without an image has no register state. */
 	if (ce == NULL || ce->allocated == 0)
@@ -539,16 +580,24 @@ i915_lrc_init_regs(
 	if (inhibit != 0)
 		kern_memset(ce->lrc_reg_state, 0, I915_LRC_PAGE_BYTES);
 
-	/* Chooses the layout by the engine class. */
-	offsets = gen12_xcs_offsets;
-	if (ce->ge->info->class == I915_RENDER_CLASS)
-		offsets = gen12_rcs_offsets;
+	/* Chooses the layout by the graphics version and the engine class. */
+	gen9 = i915_lrc_gen9(ce);
+	if (gen9 != 0) {
+		offsets = gen9_xcs_offsets;
+		if (ce->ge->info->class == I915_RENDER_CLASS)
+			offsets = gen9_rcs_offsets;
+	} else {
+		offsets = gen12_xcs_offsets;
+		if (ce->ge->info->class == I915_RENDER_CLASS)
+			offsets = gen12_rcs_offsets;
+	}
 
 	/* Lays out the LRI headers and register offsets. */
 	ce->reg_state_dwords = i915_lrc_set_offsets(ce->lrc_reg_state,
 						    offsets,
 						    ce->ge->info->mmio_base,
-						    inhibit);
+						    inhibit,
+						    gen9);
 
 	/* Fills the context control, the timestamp and the page directory. */
 	i915_lrc_init_common_regs(ce, inhibit);
@@ -571,24 +620,36 @@ i915_lrc_init_common_regs(
 {
 	uint32_t *regs;
 	uint32_t control;
+	int gen9;
+
+	/* Tells which context layout the engine has. */
+	gen9 = i915_lrc_gen9(ce);
 
 	/*
 	 * Synchronous context switches are inhibited; the restore is inhibited
-	 * only for an image that has nothing to restore.  The pre-Gen11 bits and
-	 * the run-alone bit of a protected context do not apply.
+	 * only for an image that has nothing to restore.  The run-alone bit of a
+	 * protected context does not apply.
 	 */
 	control = I915_MASKED_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH);
 	control |= I915_MASKED_DISABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT);
 	if (inhibit != 0)
 		control |= CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT;
 
+	/* Before Gen11 the context also saves itself and runs without the resource streamer. */
+	if (gen9 != 0)
+		control |= I915_MASKED_DISABLE(CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT | CTX_CTRL_RS_CTX_ENABLE);
+
 	/* Writes the control word and a zero runtime (ce->stats.runtime.last). */
 	regs = ce->lrc_reg_state;
 	regs[CTX_CONTEXT_CONTROL] = control;
 	regs[CTX_TIMESTAMP] = 0U;
 
-	/* Clears the batch offset, whose slot exists on Gen12. */
-	regs[I915_LRC_BB_OFFSET_INDEX + 1] = 0U;
+	/* Clears the batch offset, whose slot exists on Gen9 and Gen12 at different places. */
+	if (gen9 != 0) {
+		regs[I915_GEN9_LRC_BB_OFFSET_INDEX + 1] = 0U;
+	} else {
+		regs[I915_LRC_BB_OFFSET_INDEX + 1] = 0U;
+	}
 }
 
 /* Names the address space's top directory in the image (init_ppgtt_regs()). */
@@ -616,11 +677,21 @@ i915_lrc_reset_stop_ring(
 	struct i915_gt_context *ce)
 {
 	uint32_t *regs;
+	uint32_t index;
+	int gen9;
+
+	/* Tells which context layout the engine has. */
+	gen9 = i915_lrc_gen9(ce);
+
+	/* Finds the saved MI_MODE of the graphics version. */
+	index = I915_LRC_MI_MODE_INDEX;
+	if (gen9 != 0)
+		index = I915_GEN9_LRC_MI_MODE_INDEX;
 
 	/* The restored MI_MODE lets the ring run. */
 	regs = ce->lrc_reg_state;
-	regs[I915_LRC_MI_MODE_INDEX + 1] &= ~STOP_RING;
-	regs[I915_LRC_MI_MODE_INDEX + 1] |= STOP_RING << 16;
+	regs[index + 1] &= ~STOP_RING;
+	regs[index + 1] |= STOP_RING << 16;
 }
 
 /* Returns the CPU view of the INDIRECT_CTX page, or of the PER_CTX_BB page. */
@@ -870,4 +941,155 @@ i915_lrc_descriptor(
 
 	/* Reports the image address with the flags. */
 	return (uint32_t)ce->state->ggtt_offset | flags;
+}
+
+/* Reports nonzero when a context belongs to a Gen9 engine. */
+static int
+i915_lrc_gen9(
+	const struct i915_gt_context *ce)
+{
+	/* The engine information says which GT it belongs to. */
+	if (ce->ge->info->graphics_ver == 9)
+		return 1;
+
+	/* Every other engine takes the Gen12 layout. */
+	return 0;
+}
+
+/*
+ * Builds the render power clock state of Gen9 (intel_sseu_make_rpcs()).
+ *
+ * Gen9 asks for every slice when it can power-gate slices, and for every
+ * EU of a subslice when it can power-gate EUs (more than one pair per
+ * subslice); it never power-gates single subslices.
+ */
+static uint32_t
+i915_gen9_sseu_make_rpcs(
+	const struct i915_gt_engine *ge)
+{
+	uint32_t slices;
+	uint32_t eus;
+	uint32_t rpcs;
+
+	/* Starts with no explicit request. */
+	rpcs = 0U;
+
+	/* Requests every enabled slice. */
+	if (ge->sseu_has_slice_pg != 0) {
+		slices = (uint32_t)i915_hweight8(ge->sseu_slice_mask);
+		slices <<= GEN8_RPCS_S_CNT_SHIFT;
+		slices &= GEN8_RPCS_S_CNT_MASK;
+		rpcs |= GEN8_RPCS_ENABLE | GEN8_RPCS_S_CNT_ENABLE | slices;
+	}
+
+	/* Requests every EU of each subslice, as the minimum and the maximum. */
+	if (ge->sseu_eu_per_subslice > 2U) {
+		eus = (uint32_t)ge->sseu_max_eus_per_subslice;
+		rpcs |= (eus << GEN8_RPCS_EU_MIN_SHIFT) & GEN8_RPCS_EU_MIN_MASK;
+		rpcs |= (eus << GEN8_RPCS_EU_MAX_SHIFT) & GEN8_RPCS_EU_MAX_MASK;
+		rpcs |= GEN8_RPCS_ENABLE;
+	}
+
+	/* Reports the power clock state word. */
+	return rpcs;
+}
+
+/* Writes a six-dword PIPE_CONTROL with a post-sync address (gen8_emit_pipe_control()). */
+static uint32_t *
+i915_lrc_emit_pipe_control(
+	uint32_t *cs,
+	uint32_t flags,
+	uint32_t offset)
+{
+	/* The command, its flags and the address; the data dwords are zero. */
+	*cs++ = GFX_OP_PIPE_CONTROL(6);
+	*cs++ = flags;
+	*cs++ = offset;
+	*cs++ = 0U;
+	*cs++ = 0U;
+	*cs++ = 0U;
+
+	/* Reports where the next command goes. */
+	return cs;
+}
+
+/*
+ * Builds the Gen9 render engine's indirect context batch and points the
+ * image at it (gen9_init_indirectctx_bb(), lrc_setup_indirect_ctx()).
+ *
+ * The batch runs on every restore of the context: with arbitration off it
+ * flushes the coherent L3 lines, clears the shared local memory through an
+ * L3 flush, sets the gather and provoking-vertex chicken bits, and turns
+ * arbitration on again.
+ */
+static void
+i915_gen9_setup_indirect_ctx_bb(
+	struct i915_gt_context *ce)
+{
+	uint32_t *start;
+	uint32_t *regs;
+	uint32_t *cs;
+	uint32_t save;
+	uint32_t size;
+
+	/* Writes from the start of the INDIRECT_CTX page; L3SQCREG4 is kept near its end. */
+	start = i915_lrc_wa_bb(ce, 0);
+	regs = ce->lrc_reg_state;
+	save = i915_lrc_indirect_bb(ce) + I915_GEN9_L3SQCREG4_SAVE_OFFSET;
+
+	/* Nothing preempts the batch. */
+	cs = start;
+	*cs++ = MI_ARB_ON_OFF | MI_ARB_DISABLE;
+
+	/* Saves L3SQCREG4 (WaFlushCoherentL3CacheLinesAtContextSwitch). */
+	*cs++ = MI_STORE_REGISTER_MEM_GEN8 | MI_SRM_LRM_GLOBAL_GTT;
+	*cs++ = GEN8_L3SQCREG4;
+	*cs++ = save;
+	*cs++ = 0U;
+
+	/* Asks L3 to flush its coherent lines. */
+	*cs++ = MI_LOAD_REGISTER_IMM(1);
+	*cs++ = GEN8_L3SQCREG4;
+	*cs++ = 0x40400000U | GEN8_LQSC_FLUSH_COHERENT_LINES;
+
+	/* Waits for the flush through a data-cache flush with a command streamer stall. */
+	cs = i915_lrc_emit_pipe_control(cs, PIPE_CONTROL_CS_STALL | PIPE_CONTROL_DC_FLUSH_ENABLE, 0U);
+
+	/* Restores L3SQCREG4. */
+	*cs++ = MI_LOAD_REGISTER_MEM_GEN8 | MI_SRM_LRM_GLOBAL_GTT;
+	*cs++ = GEN8_L3SQCREG4;
+	*cs++ = save;
+	*cs++ = 0U;
+
+	/* Clears the shared local memory with an L3 flush (WaClearSlmSpaceAtContextSwitch). */
+	cs = i915_lrc_emit_pipe_control(
+		cs,
+		PIPE_CONTROL_FLUSH_L3 | PIPE_CONTROL_STORE_DATA_INDEX | PIPE_CONTROL_CS_STALL | PIPE_CONTROL_QW_WRITE,
+		LRC_PPHWSP_SCRATCH_ADDR);
+
+	/* Sets the gather and provoking-vertex chicken bits (WaDisableGatherAtSetShaderCommonSlice, BSpec 11391, 11299). */
+	*cs++ = MI_LOAD_REGISTER_IMM(3);
+	*cs++ = GEN9_COMMON_SLICE_CHICKEN2;
+	*cs++ = GEN9_DISABLE_GATHER_AT_SET_SHADER_COMMON_SLICE << 16;
+	*cs++ = GEN9_FF_SLICE_CHICKEN;
+	*cs++ = I915_MASKED_ENABLE(GEN9_FF_SLICE_CHICKEN_CL_PROVOKING_VERTEX_FIX);
+	*cs++ = GEN9_3D_CHICKEN3;
+	*cs++ = I915_MASKED_ENABLE(GEN9_3D_CHICKEN_SF_PROVOKING_VERTEX_FIX);
+	*cs++ = MI_NOOP;
+
+	/* Lets the engine be preempted again. */
+	*cs++ = MI_ARB_ON_OFF | MI_ARB_ENABLE;
+
+	/* Pads the executed size to a whole number of cachelines. */
+	while ((((uintptr_t)cs - (uintptr_t)start) % I915_CACHELINE_BYTES) != 0U)
+		*cs++ = MI_NOOP;
+
+	/* Names the batch and its size in cachelines, and the Gen9 default offset. */
+	size = (uint32_t)((cs - start) * 4U);
+	regs[I915_GEN9_LRC_RING_INDIRECT_PTR + 1] = i915_lrc_indirect_bb(ce) | (size / I915_CACHELINE_BYTES);
+	regs[I915_GEN9_LRC_RING_INDIRECT_OFFSET + 1] = GEN9_CTX_RCS_INDIRECT_CTX_OFFSET_DEFAULT << I915_INDIRECT_CTX_OFFSET_SHIFT;
+
+	/* Records where the batch is and how much of it runs. */
+	ce->indirect_bb_ggtt = i915_lrc_indirect_bb(ce);
+	ce->indirect_bb_dwords = (unsigned)(cs - start);
 }

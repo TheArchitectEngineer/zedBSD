@@ -97,4 +97,88 @@
 #define RING_NOPID(base)			((base) + 0x94U)
 #define RING_MAX_NONPRIV_SLOTS			12U
 
+/*
+ * The Gen9 (Skylake, Kaby Lake, Coffee Lake, Comet Lake) workaround,
+ * whitelist and GTT-workaround registers (ws229-p002), excerpted by hand from
+ * the Linux 6.8.12 reference; values are unchanged.  Sources (SHA-256):
+ *   drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ *     e0b8207e1799fc7e061eb38fe6ebc3e87bea8eca63040f4214358436ca115a83
+ *   drivers/gpu/drm/i915/i915_reg.h
+ *     efcb6385e32031ca3c5b97f7691c5ed1706c2a6709e3875ff78c2cf2eff0e626
+ *   drivers/gpu/drm/i915/gt/intel_engine_regs.h (RING_SEMA_WAIT_POLL)
+ */
+
+/* gen9_wa_init_mcr: the Gen8 layout of the steering selector. */
+#define GEN8_MCR_SLICE(slice)			((((uint32_t)(slice)) & 0x3U) << 26)
+#define GEN8_MCR_SLICE_MASK			GEN8_MCR_SLICE(3U)
+#define GEN8_MCR_SUBSLICE(subslice)		((((uint32_t)(subslice)) & 0x3U) << 24)
+#define GEN8_MCR_SUBSLICE_MASK			GEN8_MCR_SUBSLICE(3U)
+
+/* gen9_gt_workarounds_init and the skl, kbl and cfl GT lists. */
+#define GAM_ECOCHK				0x4090U
+#define BDW_DISABLE_HDC_INVALIDATION		(1U << 25)
+#define ECOCHK_DIS_TLB				(1U << 8)
+#define MMCD_MISC_CTRL				0x4ddcU
+#define MMCD_PCLA				(1U << 31)
+#define MMCD_HOTSPOT_EN				(1U << 27)
+#define GEN7_UCGCTL4				0x940cU
+#define GEN8_EU_GAUNIT_CLOCK_GATE_DISABLE	(1U << 14)
+#define GEN9_GAMT_ECO_REG_RW_IA			0x4ab0U
+#define GAMT_ECO_ENABLE_IN_PLACE_DECOMPRESS	(1U << 18)
+#define GAMT_CHKN_BIT_REG			0x4ab8U
+#define GAMT_CHKN_DISABLE_DYNAMIC_CREDIT_SHARING	(1U << 28)
+
+/* gen9_ctx_workarounds_init and the kbl and cfl context lists (COMMON_SLICE_CHICKEN2 is in gt-regs.h). */
+#define GEN9_PBE_COMPRESSED_HASH_SELECTION	(1U << 13)
+#define GEN8_SBE_DISABLE_REPLAY_BUF_OPTIMIZATION	(1U << 8)
+#define GEN9_HALF_SLICE_CHICKEN7		0xe194U
+#define GEN9_SAMPLER_HASH_COMPRESSED_READ_ADDR	(1U << 8)
+#define GEN9_ENABLE_YV12_BUGFIX			(1U << 4)
+#define GEN9_ENABLE_GPGPU_PREEMPTION		(1U << 2)
+#define GEN8_ROW_CHICKEN			0xe4f0U
+#define FLOW_CONTROL_ENABLE			(1U << 15)
+#define PARTIAL_INSTRUCTION_SHOOTDOWN_DISABLE	(1U << 8)
+#define CACHE_MODE_1				0x7004U
+#define GEN8_4x4_STC_OPTIMIZATION_DISABLE	(1U << 6)
+#define GEN9_PARTIAL_RESOLVE_IN_VC_DISABLE	(1U << 1)
+#define GEN9_HALF_SLICE_CHICKEN5		0xe188U
+#define GEN9_CCS_TLB_PREFETCH_ENABLE		(1U << 3)
+#define HDC_CHICKEN0				0x7300U
+#define HDC_FORCE_CONTEXT_SAVE_RESTORE_NON_COHERENT	(1U << 5)
+#define HDC_FORCE_CSR_NON_COHERENT_OVR_DISABLE	(1U << 15)
+#define HDC_FORCE_NON_COHERENT			(1U << 4)
+#define GEN8_HALF_SLICE_CHICKEN3		0xe184U
+#define GEN8_SAMPLER_POWER_BYPASS_DIS		(1U << 1)
+#define HALF_SLICE_CHICKEN2			0xe180U
+#define GEN8_ST_PO_DISABLE			(1U << 13)
+#define GEN9_PREEMPT_3D_OBJECT_LEVEL		(1U << 0)
+#define GEN9_PREEMPT_GPGPU_COMMAND_LEVEL	0x4U
+#define GEN8_HALF_SLICE_CHICKEN1		0xe100U
+#define GEN7_SBE_SS_CACHE_DISPATCH_PORT_SHARING_DISABLE	(1U << 4)
+
+/* rcs_engine_wa_init and xcs_engine_wa_init for graphics version 9 (L3SQCREG4 is in gt-regs.h). */
+#define GEN8_GARBCNTL				0xb004U
+#define GEN9_GAPS_TSV_CREDIT_DISABLE		(1U << 7)
+#define GEN9_CSFE_CHICKEN1_RCS			0x20d4U
+#define GEN9_PREEMPT_GPGPU_SYNC_SWITCH_DISABLE	(1U << 2)
+#define BDW_SCRATCH1				0xb11cU
+#define GEN9_LBS_SLA_RETRY_TIMER_DECREMENT_ENABLE	(1U << 2)
+#define EVICTION_PERF_FIX_ENABLE		(1U << 8)
+#define GEN8_LQSQ_NONIA_COHERENT_ATOMICS_ENABLE	(1U << 22)
+#define GEN9_SCRATCH_LNCF1			0xb008U
+#define GEN9_LNCF_NONIA_COHERENT_ATOMICS_ENABLE	(1U << 0)
+#define RING_SEMA_WAIT_POLL(base)		((base) + 0x24cU)
+
+/* gen9_whitelist_build and its skl, kbl, cfl and cml callers. */
+#define GEN9_CTX_PREEMPT_REG			0x2248U
+#define GEN8_HDC_CHICKEN1			0x7304U
+
+/* gtt_write_workarounds for graphics version 9. */
+#define GEN8_L3_LRA_1_GPGPU			0x4dd4U
+#define GEN9_L3_LRA_1_GPGPU_DEFAULT_VALUE_SKL	0x67F1427FU
+#define GEN8_GAMW_ECO_DEV_RW_IA			0x4080U
+#define GAMW_ECO_ENABLE_64K_IPS_FIELD		0xFU
+#define HSW_GTT_CACHE_EN			0x4024U
+#define GTT_CACHE_EN_ALL			0xF0007FFFU
+
 #endif /* DRIVERS_GPU_I915_INTEL_WORKAROUNDS_H */

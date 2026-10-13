@@ -67,6 +67,10 @@
 #define RESET_GRDOM_MEDIA		(1U << 5)
 #define RESET_GRDOM_SFC0		(1U << 17)
 
+/* The Gen9 video decode engine's base and its Gen6-layout reset domain (GEN6_GRDOM_MEDIA). */
+#define RESET_GEN9_VCS0_BASE		0x12000U
+#define RESET_GEN6_GRDOM_MEDIA		(1U << 2)
+
 /* How many register writes the model keeps, in order. */
 #define RESET_LOG_MAX			64U
 
@@ -121,6 +125,7 @@ static void reset_check_not_ready(void);
 static void reset_check_catastrophic(void);
 static void reset_check_stuck(void);
 static void reset_check_release(void);
+static void reset_check_gen9_converter(void);
 
 /*
  * Runs the engine reset and quarantine release contract checks.
@@ -152,6 +157,7 @@ main(void)
 	reset_check_not_ready();
 	reset_check_catastrophic();
 	reset_check_stuck();
+	reset_check_gen9_converter();
 	reset_check_release();
 
 	/* Reports whether every check held. */
@@ -174,7 +180,7 @@ reset_model_write(
 	uint32_t lock_status;
 	int asked;
 
-	/* The model the hook was given, and the registers of VCS0 it answers. */
+	/* The model the hook was given, and the registers of VCS0 it answers (its Gen9 RESET_CTL too). */
 	state = context;
 	ctl = RESET_CTL(RESET_VCS0_BASE);
 	lock = RESET_SFC_LOCK(RESET_VCS0_BASE);
@@ -188,7 +194,7 @@ reset_model_write(
 	}
 
 	/* RESET_CTL takes masked words: a request becomes ready, a catastrophic error clears, a withdrawal clears. */
-	if (offset == ctl) {
+	if (offset == ctl || offset == RESET_CTL(RESET_GEN9_VCS0_BASE)) {
 		/* A request is a masked word that enables the request bit. */
 		asked = 0;
 		if ((value & (RESET_CTL_REQUEST << 16)) != 0U && (value & RESET_CTL_REQUEST) != 0U)
@@ -434,6 +440,42 @@ reset_check_stuck(void)
 	contract_check(first >= 0, "GDRST was written once");
 	contract_check(reset_log_find(RESET_GDRST, RESET_GRDOM_MEDIA, (unsigned)first + 1U) < 0, "no second pass follows a timed-out one");
 	contract_check(reset_log_find(RESET_CTL(RESET_VCS0_BASE), RESET_CTL_REQUEST << 16, 0U) > first, "the ready request is still withdrawn");
+}
+
+/*
+ * A Gen9 video decode engine whose converter is in use: Gen9 resets the
+ * engine alone, with the Gen6 domain, and never asks for the converter lock.
+ */
+static void
+reset_check_gen9_converter(void)
+{
+	struct i915_gt_info gen9;
+	int first;
+	int second;
+	int error;
+
+	/* Starts the section. */
+	contract_section("Gen9 VCS0 reset, converter in use");
+	reset_model_clear();
+	mock_mmio_preset(&mock, RESET_SFC_STATUS(RESET_GEN9_VCS0_BASE), RESET_SFC_USAGE);
+
+	/* A Gen9 GT with VCS0 at its Gen9 base, the converter reachable as on Gen12. */
+	gen9 = gt;
+	gen9.graphics_ver = 9;
+	gen9.engines[0].mmio_base = RESET_GEN9_VCS0_BASE;
+	gen9.engines[0].reset_domain = RESET_GEN6_GRDOM_MEDIA;
+
+	/* Resets VCS0. */
+	error = drv_i915_gt_reset_engine(&uncore_lock, &mmio, &gen9, &gen9.engines[0], I915_GT_RESET_ACK_US);
+	contract_check(error == 0, "the reset succeeds");
+	first = reset_log_find(RESET_GDRST, RESET_GEN6_GRDOM_MEDIA, 0U);
+	second = -1;
+	if (first >= 0)
+		second = reset_log_find(RESET_GDRST, RESET_GEN6_GRDOM_MEDIA, (unsigned)first + 1U);
+	contract_check(first >= 0, "GDRST is written with GEN6_GRDOM_MEDIA (0x4) alone");
+	contract_check(second > first, "GDRST is written a second time");
+	contract_check(reset_log_find(RESET_SFC_LOCK(RESET_GEN9_VCS0_BASE), 1U, 0U) < 0, "the converter lock is not asked for on Gen9");
+	contract_check(reset_log_find(RESET_GDRST, RESET_GEN6_GRDOM_MEDIA | RESET_GRDOM_SFC0, 0U) < 0, "the converter is not reset with the engine");
 }
 
 /* The checked reset releases the quarantine: the object, the address space and the retained video records. */

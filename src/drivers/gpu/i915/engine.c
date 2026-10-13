@@ -99,6 +99,8 @@ drv_i915_engine_setup_common(
 	if (sseu != NULL) {
 		ge->sseu_slice_mask = sseu->slice_mask;
 		ge->sseu_has_slice_pg = sseu->has_slice_pg;
+		ge->sseu_max_eus_per_subslice = sseu->max_eus_per_subslice;
+		ge->sseu_eu_per_subslice = sseu->eu_per_subslice;
 	}
 
 	/* Marks the engine ready for the execlists setup. */
@@ -164,8 +166,9 @@ drv_i915_engine_stop_cs(
 	/* Asks the ring to stop. */
 	drv_i915_write32(mmio, mode, I915_MASKED_ENABLE(STOP_RING));
 
-	/* Stops the prefetcher too, so the streamer is really halted before a reset. */
-	drv_i915_write32(mmio, RING_MODE_GEN7(base), I915_MASKED_ENABLE(GEN12_GFX_PREFETCH_DISABLE));
+	/* Stops the prefetcher too, so the streamer is really halted before a reset; Gen9 has no such stop. */
+	if (ge->info->graphics_ver != 9)
+		drv_i915_write32(mmio, RING_MODE_GEN7(base), I915_MASKED_ENABLE(GEN12_GFX_PREFETCH_DISABLE));
 
 	/* Waits for MODE_IDLE (__intel_wait_for_register_fw(mode, MODE_IDLE, 1000 us, stop timeout)). */
 	error = drv_i915_wait_reg(mmio, mode, MODE_IDLE, MODE_IDLE, I915_STOP_CS_FAST_US, I915_STOP_CS_TIMEOUT_MS, NULL);
@@ -211,6 +214,10 @@ drv_i915_engine_wait_for_pending_mi_fw(
 
 	/* Nothing to wait for without an engine or register access. */
 	if (ge == NULL || mmio == NULL)
+		return;
+
+	/* The workaround is for graphics 11 to before 12.70; a Gen9 engine has nothing to drain. */
+	if (ge->info->graphics_ver == 9)
 		return;
 
 	/* An engine without a MSG_IDLE register has nothing pending. */
@@ -551,10 +558,11 @@ drv_i915_gt_resume(
 		drv_i915_engine_apply_resume_wa(gi, gt, index, mmio);
 
 		/*
-		 * execlists_resume() starts with intel_mocs_init_engine(): global
-		 * MOCS means no per-engine table, but the render engine's L3CC
-		 * table is programmed again.
+		 * execlists_resume() starts with intel_mocs_init_engine(): Gen9
+		 * programs the engine's own MOCS table, global MOCS has none, and
+		 * the render engine's L3CC table is programmed again.
 		 */
+		drv_i915_mocs_init_engine(&gi->mocs, ge->info, mmio, NULL);
 		if (ge->info->class == I915_RENDER_CLASS)
 			drv_i915_init_l3cc_table(&gi->mocs, mmio, &es->l3cc_writes_rcs);
 
@@ -631,7 +639,8 @@ drv_i915_engine_reset(
 	/* Applies the engine workarounds and the whitelist the reset cleared (intel_engine_resume()). */
 	drv_i915_engine_apply_resume_wa(gi, gt, index, mmio);
 
-	/* The render engine's L3CC table is programmed again, as execlists_resume() does. */
+	/* The engine's MOCS (Gen9) and the render engine's L3CC table are programmed again, as execlists_resume() does. */
+	drv_i915_mocs_init_engine(&gi->mocs, ge->info, mmio, NULL);
 	if (ge->info->class == I915_RENDER_CLASS)
 		drv_i915_init_l3cc_table(&gi->mocs, mmio, &es->l3cc_writes_rcs);
 

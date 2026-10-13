@@ -101,6 +101,13 @@ struct i915_gt_verify_wa {
 	/* The positive errno each engine failed with, or zero. */
 	int engine_err[I915_MAX_ENGINES];
 
+	/*
+	 * The graphics version of each engine's stores, which decides the
+	 * multicast ranges the stores and the comparison skip (Gen9 has the
+	 * Gen8 ranges); zero takes the Gen12 ranges.
+	 */
+	int graphics_ver[I915_MAX_ENGINES];
+
 	/* The first positive errno recorded, and the step that produced it. */
 	int err;
 	const char *err_where;

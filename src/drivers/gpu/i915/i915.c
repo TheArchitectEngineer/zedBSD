@@ -30,6 +30,7 @@
 #include <drivers/gpu/gpu.h>
 #include <drivers/pci/pci-i915.h>
 #include <drivers/pci/pci.h>
+#include <hal/hal.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
@@ -46,18 +47,30 @@
 /* How long a suspend waits for the request worker to park, in milliseconds (ws052-p009). */
 #define I915_SUSPEND_PARK_MS	2000U
 
+/*
+ * Whether a Gen9 device (Skylake to Comet Lake) is driven when the boot line
+ * does not say (2026-10-14 user decision U1: off until the hardware tests
+ * pass, then this one line becomes 1).  i915.gen9=on or i915.gen9=off on the
+ * boot line overrides it.
+ */
+#define I915_GEN9_DEFAULT_ON	0
+
 static int i915_attach(struct drv_pci_device *pci, const struct drv_pci_id *id);
 static int i915_detach(struct drv_pci_device *pci, unsigned flags);
 static void i915_shutdown(struct drv_pci_device *pci);
 static int i915_suspend(struct drv_pci_device *pci);
 static int i915_resume(struct drv_pci_device *pci);
+static int i915_gen9_enabled(void);
+static int i915_boot_line_has(const char *line, const char *token);
 
 /*
- * Registers the i915 PCI driver for the Gen12 Xe graphics devices it covers.
+ * Registers the i915 PCI driver for the graphics devices it covers.
  *
- * Tiger Lake, Alder Lake-P/N and Raptor Lake-P/U are matched.  A matched
- * device whose display this driver has no platform data for says so in its
- * start log instead of programming the wrong registers.
+ * Tiger Lake, Alder Lake-P/N and Raptor Lake-P/U are matched, and the Gen9
+ * parts (Skylake, Kaby Lake, Coffee Lake, Comet Lake), which the attach
+ * takes only when i915.gen9 is on.  A matched device whose display this
+ * driver has no platform data for says so in its start log instead of
+ * programming the wrong registers.
  */
 int
 drv_pci_i915_driver_register(void)
@@ -67,7 +80,11 @@ drv_pci_i915_driver_register(void)
 		INTEL_ADLP_IDS(I915_ID),
 		INTEL_ADLN_IDS(I915_ID),
 		INTEL_RPLU_IDS(I915_ID),
-		INTEL_RPLP_IDS(I915_ID)
+		INTEL_RPLP_IDS(I915_ID),
+		INTEL_SKL_IDS(I915_ID),
+		INTEL_KBL_IDS(I915_ID),
+		INTEL_CFL_IDS(I915_ID),
+		INTEL_CML_IDS(I915_ID)
 	};
 	static struct drv_pci_driver driver = {
 		"i915",
@@ -240,10 +257,30 @@ i915_attach(
 	struct drv_pci_device *pci,
 	const struct drv_pci_id *id)
 {
+	struct i915_product_kind kind;
 	struct i915_device *device;
+	uint16_t product;
+	int enabled;
 	int error;
 
 	UNUSED_PARAMETER(id);
+
+	/*
+	 * Leaves a Gen9 device unbound unless i915.gen9 is on, so the machine
+	 * behaves as before the driver knew the part: the firmware's picture
+	 * stays and the PCI core never suspends the function.
+	 */
+	product = drv_pci_device_product(pci);
+	error = drv_i915_product_kind(product, &kind);
+	if (error == 0 && kind.graphics_ver == 9U) {
+		enabled = i915_gen9_enabled();
+		if (enabled == 0) {
+			kern_logf("i915: device 8086:%04x is %s; not taken (boot with i915.gen9=on to drive it)\n",
+			    (unsigned)product,
+			    kind.name);
+			return ENODEV;
+		}
+	}
 
 	/* Allocates the device state before any hardware is touched. */
 	device = kern_calloc(1U, sizeof(*device));
@@ -348,13 +385,25 @@ static int
 i915_suspend(
 	struct drv_pci_device *pci)
 {
+	struct i915_product_kind kind;
 	struct i915_device *device;
+	int product_error;
 	int error;
 
 	/* An attach that already cleaned up has nothing to suspend. */
 	device = drv_pci_device_driver_data(pci);
 	if (device == NULL)
 		return 0;
+
+	/*
+	 * A Gen9 device refuses the suspend (2026-10-14 user decision U2): its
+	 * display is the firmware's, which D3hot would lose for good.
+	 */
+	product_error = drv_i915_product_kind(device->product, &kind);
+	if (product_error == 0 && kind.graphics_ver == 9U) {
+		kern_logf("i915: suspend refused: a Gen9 device keeps the firmware's display, which D3hot would lose\n");
+		return EBUSY;
+	}
 
 	/* Parks the request worker. */
 	error = drv_i915_worker_park(device, I915_SUSPEND_PARK_MS);
@@ -411,5 +460,80 @@ i915_resume(
 		return error;
 
 	/* Succeeded: the device serves again. */
+	return 0;
+}
+
+/*
+ * Reports nonzero when Gen9 devices are to be driven: i915.gen9=on or
+ * i915.gen9=off on the boot line, else I915_GEN9_DEFAULT_ON.
+ *
+ * The PCI attach runs before the kernel parses the boot parameters, so the
+ * line the loader handed over is read directly.
+ */
+static int
+i915_gen9_enabled(void)
+{
+	const char *line;
+	int found;
+
+	/* Without a boot line the default holds. */
+	line = hal_get_arch_handoff("boot.command-line");
+	if (line == NULL)
+		return I915_GEN9_DEFAULT_ON;
+
+	/* An explicit on wins. */
+	found = i915_boot_line_has(line, "i915.gen9=on");
+	if (found != 0)
+		return 1;
+
+	/* An explicit off wins over the default. */
+	found = i915_boot_line_has(line, "i915.gen9=off");
+	if (found != 0)
+		return 0;
+
+	/* Otherwise the default holds. */
+	return I915_GEN9_DEFAULT_ON;
+}
+
+/* Reports nonzero when a whitespace-separated word of the boot line is exactly the token. */
+static int
+i915_boot_line_has(
+	const char *line,
+	const char *token)
+{
+	size_t length;
+	size_t start;
+	size_t end;
+	int different;
+
+	/* Compares the token with each word in turn. */
+	length = kern_strlen(token);
+	start = 0U;
+	for (;;) {
+		/* Skips the spaces before the word. */
+		while (line[start] == ' ' || line[start] == '\t')
+			start++;
+
+		/* The end of the line ends the search. */
+		if (line[start] == '\0')
+			break;
+
+		/* The word runs to the next space or to the end. */
+		end = start;
+		while (line[end] != '\0' && line[end] != ' ' && line[end] != '\t')
+			end++;
+
+		/* The word is the token when it has its length and characters. */
+		if (end - start == length) {
+			different = kern_memcmp(line + start, token, length);
+			if (different == 0)
+				return 1;
+		}
+
+		/* The next word starts after this one. */
+		start = end;
+	}
+
+	/* No word is the token. */
 	return 0;
 }

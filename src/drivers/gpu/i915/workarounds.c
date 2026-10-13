@@ -10,8 +10,9 @@
  * (see workarounds.h).
  *
  * The lists hold only the arms Alder Lake-P takes in the Linux 6.8.12
- * reference; the other platforms' arms are absent rather than built and
- * skipped.  Every register access goes through the held accessors: the
+ * reference, and (ws229-p002) the arms of the Gen9 parts: Skylake, Kaby
+ * Lake, Coffee Lake and Comet Lake.  The other platforms' arms are absent
+ * rather than built and skipped.  Every register access goes through the held accessors: the
  * device start holds every GT forcewake domain across the GT initialization
  * and resume that call these functions.
  */
@@ -55,6 +56,14 @@ static const struct i915_mocs_row i915_gen12_mocs_table[] = {
 };
 
 /*
+ * The Gen9 MOCS table (skl_mocs_table), which every engine is programmed
+ * with on its own.  The table never changes.
+ */
+static const struct i915_mocs_row i915_gen9_mocs_table[] = {
+#include "intel/mocs-table-gen9.inc"
+};
+
+/*
  * The Gen12 private PAT: the memory type of every PAT index.
  *
  * Tiger Lake and later do not support the LLC or age settings, so each
@@ -77,6 +86,12 @@ static void i915_wa_apply_result_reset(struct i915_wa_apply_result *result);
 static void i915_icl_wa_init_mcr(struct i915_wa_list *wal, const struct i915_gt_info *gt);
 static void i915_wa_14011060649(struct i915_wa_list *wal, const struct i915_gt_info *gt);
 static void i915_whitelist_reg_ext(struct i915_wa_list *wal, uint32_t reg, uint32_t flags, const char *name);
+static void i915_gen9_wa_init_mcr(struct i915_wa_list *wal, const struct i915_gt_info *gt);
+static void i915_gen9_engine_workarounds(struct i915_wa_list *wal, const struct i915_gt_info *gt, const struct i915_engine_info *engine);
+static void i915_gen9_ctx_workarounds(struct i915_wa_list *wal, const struct i915_gt_info *gt, const struct i915_engine_info *engine);
+static void i915_gen9_whitelist(struct i915_wa_list *wal, const struct i915_gt_info *gt, const struct i915_engine_info *engine);
+static void i915_gen9_gtt_write_workarounds(struct i915_mmio *mmio);
+static void i915_mocs_fill(struct i915_mocs *table, const struct i915_mocs_row *rows, unsigned row_count);
 
 /*
  * Adds a workaround that sets bits and verifies them.
@@ -201,6 +216,53 @@ drv_i915_gt_init_workarounds_adlp(
 	 * register.
 	 */
 	drv_i915_wa_add_no_verify(wal, GEN7_MISCCPCTL, GEN12_DOP_CLOCK_GATE_RENDER_ENABLE, 0U, 0, "Wa_14015795083");
+}
+
+/*
+ * Builds the Gen9 GT workaround list.
+ *
+ * Linux intel_gt_init_workarounds() for Skylake, Kaby Lake, Coffee Lake and
+ * Comet Lake: gen9_gt_workarounds_init() with the steering at the first
+ * enabled slice and subslice, then the platform's own entries.  Every part
+ * has an LLC.  The stepping is the PCI revision.
+ */
+void
+drv_i915_gt_init_workarounds_gen9(
+	struct i915_wa_list *wal,
+	const struct i915_gt_info *gt)
+{
+	/* Starts the GT list empty. */
+	i915_wa_list_reset(wal, "gt_wa");
+
+	/* Steers slice-specific reads at a powered slice and subslice (WaProgramMgsrForCorrectSliceSpecificMmioReads). */
+	i915_gen9_wa_init_mcr(wal, gt);
+
+	/* WaDisableKillLogic:skl,kbl */
+	if (gt->platform == I915_PLATFORM_SKYLAKE || gt->platform == I915_PLATFORM_KABYLAKE)
+		drv_i915_wa_write_or(wal, GAM_ECOCHK, ECOCHK_DIS_TLB, 0, "WaDisableKillLogic");
+
+	/* WaCompressedResourceSamplerPbeMediaNewHashMode:skl,kbl, which matches the display engine. */
+	drv_i915_wa_write_or(wal, MMCD_MISC_CTRL, MMCD_PCLA | MMCD_HOTSPOT_EN, 0, "WaCompressedResourceSamplerPbeMediaNewHashMode");
+
+	/* WaDisableHDCInvalidation:skl,kbl,cfl */
+	drv_i915_wa_write_or(wal, GAM_ECOCHK, BDW_DISABLE_HDC_INVALIDATION, 0, "WaDisableHDCInvalidation");
+
+	/* WaDisableDynamicCreditSharing:kbl, before stepping C0 (revision 2). */
+	if (gt->platform == I915_PLATFORM_KABYLAKE && gt->revision < 2U)
+		drv_i915_wa_write_or(wal, GAMT_CHKN_BIT_REG, GAMT_CHKN_DISABLE_DYNAMIC_CREDIT_SHARING, 0, "WaDisableDynamicCreditSharing");
+
+	/* WaDisableGafsUnitClkGating:skl,kbl,cfl */
+	drv_i915_wa_write_or(wal, GEN7_UCGCTL4, GEN8_EU_GAUNIT_CLOCK_GATE_DISABLE, 0, "WaDisableGafsUnitClkGating");
+
+	/*
+	 * WaInPlaceDecompressionHang: every Kaby Lake, Coffee Lake and Comet
+	 * Lake, and Skylake before stepping H0 (revision 7).
+	 */
+	if (gt->platform != I915_PLATFORM_SKYLAKE) {
+		drv_i915_wa_write_or(wal, GEN9_GAMT_ECO_REG_RW_IA, GAMT_ECO_ENABLE_IN_PLACE_DECOMPRESS, 0, "WaInPlaceDecompressionHang");
+	} else if (gt->revision < 7U) {
+		drv_i915_wa_write_or(wal, GEN9_GAMT_ECO_REG_RW_IA, GAMT_ECO_ENABLE_IN_PLACE_DECOMPRESS, 0, "WaInPlaceDecompressionHang");
+	}
 }
 
 /*
@@ -608,11 +670,8 @@ drv_i915_get_mocs_settings(
 	struct i915_mocs *table,
 	int graphics_ver)
 {
-	uint32_t unused_control;
-	uint16_t unused_l3cc;
 	unsigned row_count;
 	unsigned index;
-	unsigned row;
 
 	/* Starts from an empty, invalid table. */
 	for (index = 0U; index < (unsigned)I915_MOCS_ENTRIES; index++) {
@@ -624,10 +683,25 @@ drv_i915_get_mocs_settings(
 	table->uc_index = 0U;
 	table->unused_entries_index = 0U;
 	table->valid = 0;
+	table->engine_mocs = 0;
 
-	/* Only the graphics version 12 table exists in this driver. */
+	/*
+	 * Gen9 takes skl_mocs_table with the uncached index 0 and the
+	 * unused-entries index 1 (I915_MOCS_PTE), one table per engine.
+	 */
+	if (graphics_ver == 9) {
+		table->n_entries = GEN9_NUM_MOCS_ENTRIES;
+		table->uc_index = GEN9_MOCS_UC_INDEX;
+		table->unused_entries_index = GEN9_MOCS_UNUSED_ENTRIES_INDEX;
+		table->engine_mocs = 1;
+		row_count = (unsigned)(sizeof(i915_gen9_mocs_table) / sizeof(i915_gen9_mocs_table[0]));
+		i915_mocs_fill(table, i915_gen9_mocs_table, row_count);
+		return;
+	}
+
+	/* Only the graphics version 9 and 12 tables exist in this driver. */
 	if (graphics_ver < 12) {
-		kern_logf("i915: MOCS: only the gen12 table is ported\n");
+		kern_logf("i915: MOCS: only the gen9 and gen12 tables are ported\n");
 		return;
 	}
 
@@ -636,37 +710,9 @@ drv_i915_get_mocs_settings(
 	table->uc_index = GEN12_MOCS_UC_INDEX;
 	table->unused_entries_index = GEN12_MOCS_UNUSED_ENTRIES_INDEX;
 
-	/* Finds the values every undefined index takes. */
+	/* Fills the table from the Gen12 rows. */
 	row_count = (unsigned)(sizeof(i915_gen12_mocs_table) / sizeof(i915_gen12_mocs_table[0]));
-	unused_control = 0U;
-	unused_l3cc = 0U;
-	for (row = 0U; row < row_count; row++) {
-		if (i915_gen12_mocs_table[row].idx == table->unused_entries_index) {
-			unused_control = i915_gen12_mocs_table[row].control;
-			unused_l3cc = i915_gen12_mocs_table[row].l3cc;
-		}
-	}
-
-	/* Fills every index with the unused-entry values first. */
-	for (index = 0U; index < (unsigned)I915_MOCS_ENTRIES; index++) {
-		table->control[index] = unused_control;
-		table->l3cc[index] = unused_l3cc;
-	}
-
-	/* Then overwrites the indices the table defines. */
-	for (row = 0U; row < row_count; row++) {
-		index = i915_gen12_mocs_table[row].idx;
-
-		/* A row beyond the table size is ignored. */
-		if (index >= (unsigned)I915_MOCS_ENTRIES)
-			continue;
-
-		table->control[index] = i915_gen12_mocs_table[row].control;
-		table->l3cc[index] = i915_gen12_mocs_table[row].l3cc;
-	}
-
-	/* The table can now be programmed. */
-	table->valid = 1;
+	i915_mocs_fill(table, i915_gen12_mocs_table, row_count);
 }
 
 /*
@@ -695,10 +741,12 @@ drv_i915_mocs_init(
 	if (table->valid == 0)
 		return;
 
-	/* Writes every control value into the global MOCS registers. */
-	for (index = 0U; index < table->n_entries; index++) {
-		drv_i915_write32(mmio, GEN12_GLOBAL_MOCS(index), table->control[index]);
-		global_count++;
+	/* Writes every control value into the global MOCS registers; Gen9 has per-engine tables instead. */
+	if (table->engine_mocs == 0) {
+		for (index = 0U; index < table->n_entries; index++) {
+			drv_i915_write32(mmio, GEN12_GLOBAL_MOCS(index), table->control[index]);
+			global_count++;
+		}
 	}
 
 	/* Writes the L3 cache control pairs. */
@@ -747,6 +795,98 @@ drv_i915_init_l3cc_table(
 }
 
 /*
+ * Programs one engine's own MOCS table (intel_mocs_init_engine(), Gen9).
+ *
+ * A platform with global MOCS has nothing to write per engine.  The caller
+ * holds every forcewake domain.
+ */
+void
+drv_i915_mocs_init_engine(
+	const struct i915_mocs *table,
+	const struct i915_engine_info *engine,
+	struct i915_mmio *mmio,
+	unsigned *writes)
+{
+	uint32_t base;
+	unsigned index;
+	unsigned count;
+
+	/* Nothing has been written yet. */
+	count = 0U;
+	if (writes != NULL)
+		*writes = 0U;
+
+	/* A table that was never built, or a global one, is not written per engine. */
+	if (table->valid == 0 || table->engine_mocs == 0)
+		return;
+
+	/* Picks the engine's table (mocs_offset()). */
+	switch (engine->id) {
+	case I915_RCS0:
+		base = GEN9_RCS0_MOCS0;
+		break;
+	case I915_BCS0:
+		base = GEN9_BCS0_MOCS0;
+		break;
+	case I915_VCS0:
+		base = GEN9_VCS0_MOCS0;
+		break;
+	case I915_VECS0:
+		base = GEN9_VECS0_MOCS0;
+		break;
+	default:
+		/* An engine without a Gen9 table is left alone. */
+		return;
+	}
+
+	/* Writes every control value into the engine's registers. */
+	for (index = 0U; index < table->n_entries; index++) {
+		drv_i915_write32(mmio, base + index * 4U, table->control[index]);
+		count++;
+	}
+
+	/* Reports how many registers were written. */
+	if (writes != NULL)
+		*writes = count;
+}
+
+/*
+ * Programs the Gen8 private PAT that Gen9 uses (bdw_setup_private_ppat()).
+ *
+ * Index 0 is write-back in the LLC, 1 write-combining, 2 write-back with the
+ * eLLC override, 3 uncached, 4 to 7 write-back in LLC and eLLC with the four
+ * ages.  The eight one-byte entries fill the low and high registers.
+ */
+void
+drv_i915_bdw_setup_private_ppat(
+	struct i915_mmio *mmio,
+	unsigned *writes)
+{
+	uint32_t low;
+	uint32_t high;
+
+	/* Entries 0 to 3. */
+	low = (GEN8_PPAT_WB | GEN8_PPAT_LLC) << 0;
+	low |= (GEN8_PPAT_WC | GEN8_PPAT_LLCELLC) << 8;
+	low |= (GEN8_PPAT_WB | GEN8_PPAT_ELLC_OVERRIDE) << 16;
+	low |= GEN8_PPAT_UC << 24;
+
+	/* Entries 4 to 7. */
+	high = (GEN8_PPAT_WB | GEN8_PPAT_LLCELLC | GEN8_PPAT_AGE(0)) << 0;
+	high |= (GEN8_PPAT_WB | GEN8_PPAT_LLCELLC | GEN8_PPAT_AGE(1)) << 8;
+	high |= (GEN8_PPAT_WB | GEN8_PPAT_LLCELLC | GEN8_PPAT_AGE(2)) << 16;
+	high |= (GEN8_PPAT_WB | GEN8_PPAT_LLCELLC | GEN8_PPAT_AGE(3)) << 24;
+
+	/* Writes both halves. */
+	drv_i915_write32(mmio, GEN8_PRIVATE_PAT_LO, low);
+	drv_i915_write32(mmio, GEN8_PRIVATE_PAT_HI, high);
+
+	/* Reports that every entry was written. */
+	if (writes != NULL)
+		*writes = I915_PAT_ENTRIES;
+}
+
+/*
  * Programs the Gen12 private PAT.
  *
  * Linux setup_private_pat() -> tgl_setup_private_ppat().  It belongs with
@@ -791,11 +931,23 @@ drv_i915_gt_init_tables(
 	 */
 	drv_i915_get_mocs_settings(&gt_init->mocs, graphics_ver);
 
-	/* Builds the GT workaround list. */
-	drv_i915_gt_init_workarounds_adlp(&gt_init->gt_wa, gt);
+	/* Builds the GT workaround list of the graphics version. */
+	if (graphics_ver == 9) {
+		drv_i915_gt_init_workarounds_gen9(&gt_init->gt_wa, gt);
+	} else {
+		drv_i915_gt_init_workarounds_adlp(&gt_init->gt_wa, gt);
+	}
 
 	/* Builds the engine, whitelist and context lists of every engine. */
 	for (index = 0U; index < gt->num_engines && index < (unsigned)I915_WA_ENGINES; index++) {
+		/* A Gen9 engine takes the Gen9 lists, which depend on the platform and stepping. */
+		if (graphics_ver == 9) {
+			i915_gen9_engine_workarounds(&gt_init->engine_wa[index], gt, &gt->engines[index]);
+			i915_gen9_whitelist(&gt_init->whitelist[index], gt, &gt->engines[index]);
+			i915_gen9_ctx_workarounds(&gt_init->ctx_wa[index], gt, &gt->engines[index]);
+			continue;
+		}
+
 		drv_i915_engine_init_workarounds(&gt_init->engine_wa[index], &gt->engines[index], graphics_ver, gt_init->mocs.uc_index);
 		drv_i915_engine_init_whitelist(&gt_init->whitelist[index], &gt->engines[index], graphics_ver);
 		drv_i915_engine_init_ctx_wa(&gt_init->ctx_wa[index], &gt->engines[index], graphics_ver, gt_init->mocs.uc_index);
@@ -804,6 +956,14 @@ drv_i915_gt_init_tables(
 	/* Prepares RC6, then RPS, as Linux intel_gt_pm_init() does. */
 	drv_i915_rc6_init(&gt_init->rc6, mmio);
 	drv_i915_rps_init(&gt_init->rps, sb_lock, mmio);
+
+	/*
+	 * A Gen9 GT reads RP1 from the capabilities (it has no
+	 * GEN10_FREQ_INFO_REC) and keeps its frequency fixed in its first
+	 * version.
+	 */
+	if (graphics_ver == 9)
+		drv_i915_rps_init_gen9(&gt_init->rps, mmio);
 
 	/* The tables can now be programmed. */
 	gt_init->tables_built = 1;
@@ -824,15 +984,19 @@ drv_i915_gt_init_hw_core(
 {
 	unsigned pat_writes;
 
-	UNUSED_PARAMETER(gt);
-
 	/*
 	 * Programs the PAT.  Linux setup_private_pat() runs in i915_gem_init(),
 	 * before intel_gt_init(); it is kept at the head of the GT programming
-	 * so it precedes everything that relies on a PAT index.
+	 * so it precedes everything that relies on a PAT index.  Gen9 has the
+	 * Gen8 private PAT.
 	 */
 	pat_writes = 0U;
-	drv_i915_tgl_setup_private_ppat(mmio, &pat_writes);
+	if (gt->graphics_ver == 9) {
+		drv_i915_bdw_setup_private_ppat(mmio, &pat_writes);
+	} else {
+		drv_i915_tgl_setup_private_ppat(mmio, &pat_writes);
+	}
+
 	gt_init->pat_programmed = 0;
 	if (pat_writes == I915_PAT_ENTRIES)
 		gt_init->pat_programmed = 1;
@@ -843,6 +1007,10 @@ drv_i915_gt_init_hw_core(
 	 * diagnostic that changes no hardware state.
 	 */
 	drv_i915_wa_list_apply(&gt_init->gt_wa, mmio, 1, &gt_init->gt_wa_applied);
+
+	/* Programs the Gen9 GTT workarounds of i915_ppgtt_init_hw(); Gen12 has none. */
+	if (gt->graphics_ver == 9)
+		i915_gen9_gtt_write_workarounds(mmio);
 
 	/*
 	 * Programs the MOCS tables.  intel_gt_init_swizzling() and
@@ -1077,4 +1245,280 @@ i915_whitelist_reg_ext(
 	entry->is_mcr = 0;
 	entry->name = name;
 	wal->count++;
+}
+
+/*
+ * Steers slice-specific reads at the first enabled slice and subslice
+ * (gen9_wa_init_mcr()).
+ *
+ * Gen9 has no multicast default: a read of a slice-specific register goes
+ * to the slice and subslice the selector names, and a fused-off one answers
+ * with garbage.
+ */
+static void
+i915_gen9_wa_init_mcr(
+	struct i915_wa_list *wal,
+	const struct i915_gt_info *gt)
+{
+	unsigned slice;
+	unsigned subslice;
+	unsigned candidate;
+
+	/* Finds the lowest enabled slice. */
+	slice = 0U;
+	for (candidate = 0U; candidate < 3U; candidate++) {
+		if ((gt->sseu.slice_mask & (1U << candidate)) == 0U)
+			continue;
+
+		slice = candidate;
+		break;
+	}
+
+	/* Finds the lowest enabled subslice, which every enabled slice has. */
+	subslice = 0U;
+	for (candidate = 0U; candidate < 4U; candidate++) {
+		if ((gt->sseu.subslice_mask & (1U << candidate)) == 0U)
+			continue;
+
+		subslice = candidate;
+		break;
+	}
+
+	/* Adds the steering to the GT list. */
+	drv_i915_wa_write_clr_set(
+		wal,
+		GEN8_MCR_SELECTOR,
+		GEN8_MCR_SLICE_MASK | GEN8_MCR_SUBSLICE_MASK,
+		GEN8_MCR_SLICE(slice) | GEN8_MCR_SUBSLICE(subslice),
+		0,
+		"MCR steering (gen9_wa_init_mcr)");
+}
+
+/*
+ * Builds the workaround list of one Gen9 engine (rcs_engine_wa_init() and
+ * xcs_engine_wa_init() for graphics version 9).
+ *
+ * Gen9 has no RING_CMD_CCTL default MOCS (engine_fake_wa_init() is Gen12+).
+ */
+static void
+i915_gen9_engine_workarounds(
+	struct i915_wa_list *wal,
+	const struct i915_gt_info *gt,
+	const struct i915_engine_info *engine)
+{
+	/* Starts the engine list empty, named after the engine. */
+	i915_wa_list_reset(wal, engine->name);
+
+	/*
+	 * WaKBLVECSSemaphoreWaitPoll:kbl, steppings A0 to before F0: the
+	 * revisions 0 to 3 and the C0 respin 5.
+	 */
+	if (engine->class != I915_RENDER_CLASS) {
+		if (gt->platform != I915_PLATFORM_KABYLAKE)
+			return;
+		if (gt->revision == 4U || gt->revision > 5U)
+			return;
+
+		drv_i915_wa_write_clr_set(wal, RING_SEMA_WAIT_POLL(engine->mmio_base), 0xffffffffU, 1U, 0, "WaKBLVECSSemaphoreWaitPoll");
+		return;
+	}
+
+	/* Per-context preemption control (graphics version 9 and later). */
+	drv_i915_wa_masked_en(wal, GEN7_FF_SLICE_CS_CHICKEN1, GEN9_FFSC_PERCTX_PREEMPT_CTRL, 0, "perctx preempt ctrl");
+
+	/* WaEnableGapsTsvCreditFix:skl,kbl,cfl */
+	drv_i915_wa_write_or(wal, GEN8_GARBCNTL, GEN9_GAPS_TSV_CREDIT_DISABLE, 0, "WaEnableGapsTsvCreditFix");
+
+	/* WaContextSwitchWithConcurrentTLBInvalidate:skl,kbl,cfl */
+	drv_i915_wa_masked_en(wal, GEN9_CSFE_CHICKEN1_RCS, GEN9_PREEMPT_GPGPU_SYNC_SWITCH_DISABLE, 0, "WaContextSwitchWithConcurrentTLBInvalidate");
+
+	/* WaEnableLbsSlaRetryTimerDecrement:skl,kbl,cfl */
+	drv_i915_wa_write_or(wal, BDW_SCRATCH1, GEN9_LBS_SLA_RETRY_TIMER_DECREMENT_ENABLE, 1, "WaEnableLbsSlaRetryTimerDecrement");
+
+	/* WaOCLCoherentLineFlush:skl,kbl,cfl */
+	drv_i915_wa_write_or(wal, GEN8_L3SQCREG4, GEN8_LQSC_FLUSH_COHERENT_LINES, 1, "WaOCLCoherentLineFlush");
+
+	/* Disables the L3 atomics, which can hang the GPU unrecoverably. */
+	drv_i915_wa_write_clr_set(wal, GEN9_SCRATCH_LNCF1, GEN9_LNCF_NONIA_COHERENT_ATOMICS_ENABLE, 0U, 0, "L3 atomics off (LNCF1)");
+	drv_i915_wa_write_clr_set(wal, GEN8_L3SQCREG4, GEN8_LQSQ_NONIA_COHERENT_ATOMICS_ENABLE, 0U, 1, "L3 atomics off (L3SQCREG4)");
+	drv_i915_wa_write_clr_set(wal, BDW_SCRATCH1, EVICTION_PERF_FIX_ENABLE, 0U, 1, "L3 atomics off (SCRATCH1)");
+}
+
+/*
+ * Builds the context workaround list of one Gen9 engine
+ * (gen9_ctx_workarounds_init() and the kbl and cfl additions).
+ *
+ * Only the render engine has a context list.  skl_tune_iz_hashing(), which
+ * balances parts with exactly one 7-EU subslice, is not done.
+ */
+static void
+i915_gen9_ctx_workarounds(
+	struct i915_wa_list *wal,
+	const struct i915_gt_info *gt,
+	const struct i915_engine_info *engine)
+{
+	/* Starts the context list empty. */
+	i915_wa_list_reset(wal, "ctx_wa");
+
+	/* A non-render engine has no context workarounds on Gen9. */
+	if (engine->class != I915_RENDER_CLASS)
+		return;
+
+	/* WaCompressedResourceSamplerPbeMediaNewHashMode:skl,kbl, which matches the display engine. */
+	drv_i915_wa_masked_en(wal, GEN9_COMMON_SLICE_CHICKEN2, GEN9_PBE_COMPRESSED_HASH_SELECTION, 0, "WaCompressedResourceSamplerPbeMediaNewHashMode");
+	drv_i915_wa_masked_en(wal, GEN9_HALF_SLICE_CHICKEN7, GEN9_SAMPLER_HASH_COMPRESSED_READ_ADDR, 1, "WaCompressedResourceSamplerPbeMediaNewHashMode");
+
+	/* WaClearFlowControlGpgpuContextSave, WaDisablePartialInstShootdown */
+	drv_i915_wa_masked_en(wal, GEN8_ROW_CHICKEN, FLOW_CONTROL_ENABLE | PARTIAL_INSTRUCTION_SHOOTDOWN_DISABLE, 1, "WaDisablePartialInstShootdown");
+
+	/* WaEnableYV12BugFixInHalfSliceChicken7, WaEnableSamplerGPGPUPreemptionSupport */
+	drv_i915_wa_masked_en(wal, GEN9_HALF_SLICE_CHICKEN7, GEN9_ENABLE_YV12_BUGFIX | GEN9_ENABLE_GPGPU_PREEMPTION, 1, "WaEnableSamplerGPGPUPreemptionSupport");
+
+	/* Wa4x4STCOptimizationDisable, WaDisablePartialResolveInVc */
+	drv_i915_wa_masked_en(wal, CACHE_MODE_1, GEN8_4x4_STC_OPTIMIZATION_DISABLE | GEN9_PARTIAL_RESOLVE_IN_VC_DISABLE, 0, "WaDisablePartialResolveInVc");
+
+	/* WaCcsTlbPrefetchDisable */
+	drv_i915_wa_masked_field_set(wal, GEN9_HALF_SLICE_CHICKEN5, GEN9_CCS_TLB_PREFETCH_ENABLE, 0U, 1, "WaCcsTlbPrefetchDisable");
+
+	/* WaForceContextSaveRestoreNonCoherent, then WaForceEnableNonCoherent on the same register. */
+	drv_i915_wa_masked_en(wal, HDC_CHICKEN0, HDC_FORCE_CONTEXT_SAVE_RESTORE_NON_COHERENT | HDC_FORCE_CSR_NON_COHERENT_OVR_DISABLE, 0, "WaForceContextSaveRestoreNonCoherent");
+	drv_i915_wa_masked_en(wal, HDC_CHICKEN0, HDC_FORCE_NON_COHERENT, 0, "WaForceEnableNonCoherent");
+
+	/* WaDisableSamplerPowerBypassForSOPingPong:skl,kbl,cfl */
+	drv_i915_wa_masked_en(wal, GEN8_HALF_SLICE_CHICKEN3, GEN8_SAMPLER_POWER_BYPASS_DIS, 1, "WaDisableSamplerPowerBypassForSOPingPong");
+
+	/* WaDisableSTUnitPowerOptimization */
+	drv_i915_wa_masked_en(wal, HALF_SLICE_CHICKEN2, GEN8_ST_PO_DISABLE, 1, "WaDisableSTUnitPowerOptimization");
+
+	/* WaDisable3DMidCmdPreemption */
+	drv_i915_wa_masked_field_set(wal, GEN8_CS_CHICKEN1, GEN9_PREEMPT_3D_OBJECT_LEVEL, 0U, 0, "WaDisable3DMidCmdPreemption");
+
+	/* WaDisableGPGPUMidCmdPreemption */
+	drv_i915_wa_masked_field_set(wal, GEN8_CS_CHICKEN1, GEN9_PREEMPT_GPGPU_LEVEL_MASK, GEN9_PREEMPT_GPGPU_COMMAND_LEVEL, 0, "WaDisableGPGPUMidCmdPreemption");
+
+	/* Skylake has nothing more. */
+	if (gt->platform == I915_PLATFORM_SKYLAKE)
+		return;
+
+	/*
+	 * WaToEnableHwFixForPushConstHWBug: every Coffee Lake and Comet Lake,
+	 * and Kaby Lake from stepping C0 (revision 2) on.
+	 */
+	if (gt->platform != I915_PLATFORM_KABYLAKE) {
+		drv_i915_wa_masked_en(wal, GEN9_COMMON_SLICE_CHICKEN2, GEN8_SBE_DISABLE_REPLAY_BUF_OPTIMIZATION, 0, "WaToEnableHwFixForPushConstHWBug");
+	} else if (gt->revision >= 2U) {
+		drv_i915_wa_masked_en(wal, GEN9_COMMON_SLICE_CHICKEN2, GEN8_SBE_DISABLE_REPLAY_BUF_OPTIMIZATION, 0, "WaToEnableHwFixForPushConstHWBug");
+	}
+
+	/* WaDisableSbeCacheDispatchPortSharing:kbl,cfl */
+	drv_i915_wa_masked_en(wal, GEN8_HALF_SLICE_CHICKEN1, GEN7_SBE_SS_CACHE_DISPATCH_PORT_SHARING_DISABLE, 1, "WaDisableSbeCacheDispatchPortSharing");
+}
+
+/*
+ * Builds the register whitelist of one Gen9 engine (skl, kbl, cfl and cml
+ * whitelist_build()).
+ */
+static void
+i915_gen9_whitelist(
+	struct i915_wa_list *wal,
+	const struct i915_gt_info *gt,
+	const struct i915_engine_info *engine)
+{
+	/* Starts the whitelist empty. */
+	i915_wa_list_reset(wal, "whitelist");
+
+	/* Comet Lake lets every non-render engine read its context timestamp. */
+	if (engine->class != I915_RENDER_CLASS) {
+		if (gt->platform == I915_PLATFORM_COMETLAKE)
+			i915_whitelist_reg_ext(wal, RING_CTX_TIMESTAMP(engine->mmio_base), RING_FORCE_TO_NONPRIV_ACCESS_RD, "ctx timestamp RD");
+		return;
+	}
+
+	/* gen9_whitelist_build(): WaVFEStateAfterPipeControlwithMediaStateClear and the preemption, HDC and push-constant chickens. */
+	i915_whitelist_reg_ext(wal, GEN9_CTX_PREEMPT_REG, 0U, "WaVFEStateAfterPipeControlwithMediaStateClear");
+	i915_whitelist_reg_ext(wal, GEN8_CS_CHICKEN1, 0U, "WaEnablePreemptionGranularityControlByUMD");
+	i915_whitelist_reg_ext(wal, GEN8_HDC_CHICKEN1, 0U, "WaAllowUMDToModifyHDCChicken1");
+	i915_whitelist_reg_ext(wal, GEN9_COMMON_SLICE_CHICKEN2, 0U, "WaSendPushConstantsFromMMIO");
+
+	/* Skylake and Kaby Lake: WaDisableLSQCROPERFforOCL. */
+	if (gt->platform == I915_PLATFORM_SKYLAKE || gt->platform == I915_PLATFORM_KABYLAKE) {
+		i915_whitelist_reg_ext(wal, GEN8_L3SQCREG4, 0U, "WaDisableLSQCROPERFforOCL");
+		return;
+	}
+
+	/* Coffee Lake and Comet Lake: the four depth and invocation counters. */
+	i915_whitelist_reg_ext(
+		wal,
+		PS_INVOCATION_COUNT,
+		RING_FORCE_TO_NONPRIV_ACCESS_RD | RING_FORCE_TO_NONPRIV_RANGE_4,
+		"WaAllowPMDepthAndInvocationCountAccessFromUMD");
+}
+
+/*
+ * Programs the Gen9 GTT workarounds (gtt_write_workarounds()): more TLB
+ * entries for the GPGPU, the 64 KiB page-size field of the PDE, and the GTT
+ * cache, which Gen9 may use because it has no 2 MiB pages.
+ */
+static void
+i915_gen9_gtt_write_workarounds(
+	struct i915_mmio *mmio)
+{
+	uint32_t value;
+
+	/* WaIncreaseDefaultTLBEntries:skl,kbl,cfl */
+	drv_i915_write32(mmio, GEN8_L3_LRA_1_GPGPU, GEN9_L3_LRA_1_GPGPU_DEFAULT_VALUE_SKL);
+
+	/* Lets the page walker honour the IPS bit of a PDE. */
+	value = drv_i915_read32(mmio, GEN8_GAMW_ECO_DEV_RW_IA);
+	drv_i915_write32(mmio, GEN8_GAMW_ECO_DEV_RW_IA, value | GAMW_ECO_ENABLE_64K_IPS_FIELD);
+
+	/* WaGttCachingOffByDefault */
+	drv_i915_write32(mmio, HSW_GTT_CACHE_EN, GTT_CACHE_EN_ALL);
+}
+
+/*
+ * Fills a MOCS table from its platform rows: every index first takes the
+ * values of the unused-entries index, then the rows overwrite theirs.
+ */
+static void
+i915_mocs_fill(
+	struct i915_mocs *table,
+	const struct i915_mocs_row *rows,
+	unsigned row_count)
+{
+	uint32_t unused_control;
+	uint16_t unused_l3cc;
+	unsigned index;
+	unsigned row;
+
+	/* Finds the values every undefined index takes. */
+	unused_control = 0U;
+	unused_l3cc = 0U;
+	for (row = 0U; row < row_count; row++) {
+		if (rows[row].idx == table->unused_entries_index) {
+			unused_control = rows[row].control;
+			unused_l3cc = rows[row].l3cc;
+		}
+	}
+
+	/* Fills every index with the unused-entry values first. */
+	for (index = 0U; index < (unsigned)I915_MOCS_ENTRIES; index++) {
+		table->control[index] = unused_control;
+		table->l3cc[index] = unused_l3cc;
+	}
+
+	/* Then overwrites the indices the table defines. */
+	for (row = 0U; row < row_count; row++) {
+		index = rows[row].idx;
+
+		/* A row beyond the table size is ignored. */
+		if (index >= (unsigned)I915_MOCS_ENTRIES)
+			continue;
+
+		table->control[index] = rows[row].control;
+		table->l3cc[index] = rows[row].l3cc;
+	}
+
+	/* The table can now be programmed. */
+	table->valid = 1;
 }

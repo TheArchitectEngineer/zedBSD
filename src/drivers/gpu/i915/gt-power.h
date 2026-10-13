@@ -168,6 +168,13 @@ struct i915_rps {
 	int use_timer;
 
 	/*
+	 * Nonzero for a GT whose frequency is not followed at all (Gen9 in its
+	 * first version, ws229-p002): the start requests the efficient
+	 * frequency once and starts neither the work nor the interrupts.
+	 */
+	int fixed;
+
+	/*
 	 * The busy-time evaluation: the engines' busy time of the runs that
 	 * ended, when the runs under way began (busy_runs counts them), the
 	 * busy time and the clock at the last evaluation (nanoseconds), the
@@ -207,6 +214,7 @@ void drv_i915_rc6_init(struct i915_rc6 *rc6, struct i915_mmio *mmio);
 void drv_i915_gen11_rc6_enable(struct i915_rc6 *rc6, struct i915_mmio *mmio, const struct i915_gt_info *gt);
 void drv_i915_rc6_sanitize(struct i915_rc6 *rc6, struct i915_mmio *mmio);
 void drv_i915_rps_init(struct i915_rps *rps, struct mutex *sb_lock, struct i915_mmio *mmio);
+void drv_i915_rps_init_gen9(struct i915_rps *rps, struct i915_mmio *mmio);
 void drv_i915_rps_enable(struct i915_rps *rps, struct i915_mmio *mmio, uint32_t clock_frequency);
 void drv_i915_rps_sanitize(struct i915_rps *rps, struct i915_mmio *mmio);
 int drv_i915_rps_start(struct i915_rps *rps, struct i915_irq_dev *irq, struct i915_mmio *mmio);

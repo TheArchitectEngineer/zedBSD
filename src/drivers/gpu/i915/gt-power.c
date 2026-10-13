@@ -122,6 +122,14 @@ drv_i915_gen11_rc6_enable(
 	if (rc6->supported == 0)
 		return;
 
+	/*
+	 * Gen9 keeps RC6 and power gating off in its first version: the RC6
+	 * context-corruption workaround it needs is not ported.  The sanitize
+	 * has already written both controls to 0.
+	 */
+	if (gt->graphics_ver == 9)
+		return;
+
 	/* Programs the RC6 wake, evaluation and idle thresholds. */
 	drv_i915_write32(mmio, GEN6_RC6_WAKE_RATE_LIMIT, (54U << 16) | 85U);
 	drv_i915_write32(mmio, GEN10_MEDIA_WAKE_RATE_LIMIT, 150U);
@@ -292,6 +300,7 @@ drv_i915_rps_init(
 
 	/* Graphics version 12 follows the busy time, as Linux does with the engines' busy stats. */
 	rps->use_timer = 1;
+	rps->fixed = 0;
 	rps->busy_total_ns = 0U;
 	rps->busy_since_ns = 0U;
 	rps->busy_runs = 0U;
@@ -301,6 +310,34 @@ drv_i915_rps_init(
 	rps->ticking = 0;
 	rps->unparking = 0;
 	rps->timers_ready = 0;
+}
+
+/*
+ * Corrects the RPS state of a Gen9 GT after drv_i915_rps_init() and fixes
+ * its frequency.
+ *
+ * Gen9 has RP1 in GEN6_RP_STATE_CAP bits 15:8 (it has no
+ * GEN10_FREQ_INFO_REC), and the efficient frequency falls back to it when
+ * the PCODE did not answer.  The first Gen9 version keeps the frequency
+ * at that request (drv_i915_rps_start()).
+ */
+void
+drv_i915_rps_init_gen9(
+	struct i915_rps *rps,
+	struct i915_mmio *mmio)
+{
+	uint32_t capabilities;
+
+	/* Reads RP1 from the capabilities, in 50 MHz units. */
+	capabilities = drv_i915_read32(mmio, GEN6_RP_STATE_CAP);
+	rps->rp1_freq = ((capabilities >> GEN9_RP1_CAP_SHIFT) & 0xffU) * GEN9_FREQ_SCALER;
+
+	/* Without the PCODE's answer RP1 is the efficient frequency. */
+	if (rps->pcode_ok == 0)
+		rps->efficient_freq = rps->rp1_freq;
+
+	/* The frequency is requested once and not followed. */
+	rps->fixed = 1;
 }
 
 /*
@@ -326,10 +363,9 @@ drv_i915_rps_enable(
 	/* The unit of the evaluation intervals. */
 	rps->clock_frequency = clock_frequency;
 
-	/*
-	 * Programs the idle hysteresis.  The graphics version is not 9, so
-	 * GEN6_RC_VIDEO_FREQ is not written.
-	 */
+	/* Programs the idle hysteresis; Gen9 also gives RP1 to the video frequency. */
+	if (rps->fixed != 0)
+		drv_i915_write32(mmio, GEN6_RC_VIDEO_FREQ, GEN9_FREQUENCY(rps->rp1_freq));
 	drv_i915_write32(mmio, GEN6_RP_IDLE_HYSTERSIS, 0xaU);
 
 	/* RPS follows the up and down threshold events. */
@@ -389,6 +425,21 @@ drv_i915_rps_start(
 	/* A GT that RPS did not enable has nothing to follow. */
 	if (rps->enabled == 0)
 		return 0;
+
+	/*
+	 * A GT whose frequency is not followed gets the efficient frequency
+	 * once; no work, timer or interrupt is started, so the stop has
+	 * nothing to undo.
+	 */
+	if (rps->fixed != 0) {
+		rps->mmio = mmio;
+		i915_rps_set_freq(rps, rps->efficient_freq);
+		kern_logf("i915: rps: fixed at RPe=%u (min=%u RP0=%u)\n",
+		    rps->cur_freq,
+		    rps->min_freq,
+		    rps->rp0_freq);
+		return 0;
+	}
 
 	/* The queue and the work that change the frequency. */
 	error = drv_i915_workqueue_create(&rps->workqueue, "i915-rps");

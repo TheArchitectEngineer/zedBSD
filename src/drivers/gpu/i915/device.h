@@ -16,7 +16,24 @@
 #ifndef DRIVERS_GPU_I915_DEVICE_H
 #define DRIVERS_GPU_I915_DEVICE_H
 
+#include <stdint.h>
+
 struct i915_device;
+
+/*
+ * What a PCI device id says about the device: its graphics and display
+ * versions, its platform (I915_PLATFORM_*) and a name for the log.  It is
+ * filled by drv_i915_product_kind() from a constant table.
+ */
+struct i915_product_kind {
+	unsigned graphics_ver;
+	unsigned display_ver;
+	int platform;
+	int is_alderlake_p;
+	const char *name;
+};
+
+int drv_i915_product_kind(uint16_t product, struct i915_product_kind *kind);
 
 void drv_i915_device_start_ops_install(void);
 void drv_i915_device_schedule_start(struct i915_device *device);

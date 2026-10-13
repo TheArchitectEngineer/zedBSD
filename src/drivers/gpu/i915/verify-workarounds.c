@@ -60,7 +60,22 @@ static const struct i915_mcr_range i915_mcr_ranges_gen12[] = {
 #include "intel/mcr-ranges.inc"
 };
 
+/*
+ * The Gen8 multicast register ranges, which Gen9 uses (Linux 6.8.12
+ * intel_workarounds.c mcr_ranges_gen8, SHA-256
+ * 912f7dd288e3924095d598b198ab006c28133e22b0ff2ad806a3f59aad891028; values
+ * unchanged).  The table never changes.
+ */
+static const struct i915_mcr_range i915_mcr_ranges_gen8[] = {
+	{ 0x5500U, 0x55ffU },
+	{ 0x7000U, 0x7fffU },
+	{ 0x9400U, 0x97ffU },
+	{ 0xb000U, 0xb3ffU },
+	{ 0xe000U, 0xe7ffU }
+};
+
 static int i915_verify_wa_fail(struct i915_gt_verify_wa *verify, int error, const char *where);
+static int i915_mcr_range_of(int graphics_ver, uint32_t offset);
 static int i915_verify_wa_retired(struct i915_gt_request *rq, struct i915_execlists *execlists);
 static int i915_verify_wa_wait_engine(struct i915_gt_verify_wa *verify, unsigned index, struct i915_gt_engines *engines, struct i915_mmio *mmio, int want, unsigned timeout_ms);
 
@@ -115,6 +130,7 @@ drv_i915_wa_list_srm(
 	uint32_t offset;
 	unsigned count;
 	unsigned index;
+	int graphics_ver;
 	int multicast;
 
 	/* Refuses a missing request or list. */
@@ -124,9 +140,10 @@ drv_i915_wa_list_srm(
 		return EINVAL;
 
 	/* Counts the entries the command streamer can read. */
+	graphics_ver = rq->ce->ge->info->graphics_ver;
 	count = 0U;
 	for (index = 0U; index < wal->count; index++) {
-		multicast = drv_i915_gen12_mcr_range(wal->list[index].reg);
+		multicast = i915_mcr_range_of(graphics_ver, wal->list[index].reg);
 		if (multicast == 0)
 			count++;
 	}
@@ -153,7 +170,7 @@ drv_i915_wa_list_srm(
 		offset = wal->list[index].reg;
 
 		/* A multicast register is not read by the command streamer. */
-		multicast = drv_i915_gen12_mcr_range(offset);
+		multicast = i915_mcr_range_of(graphics_ver, offset);
 		if (multicast != 0)
 			continue;
 
@@ -216,7 +233,7 @@ drv_i915_wa_list_check(
 		entry = &wal->list[entry_index];
 
 		/* A multicast register was not stored. */
-		multicast = drv_i915_gen12_mcr_range(entry->reg);
+		multicast = i915_mcr_range_of(verify->graphics_ver[index], entry->reg);
 		if (multicast != 0)
 			continue;
 
@@ -347,6 +364,7 @@ drv_i915_engine_verify_wa_submit(
 	 * Emits the stores.  i915_vma_move_to_active() is fence bookkeeping
 	 * only and has nothing to do here.
 	 */
+	verify->graphics_ver[index] = engine->info->graphics_ver;
 	error = drv_i915_wa_list_srm(rq, wal, (uint32_t)verify->scratch[index]->ggtt_offset, &verify->emitted[index], &verify->mcr_skipped[index]);
 	if (error != 0)
 		return i915_verify_wa_fail(verify, error, "wa_list_srm");
@@ -739,4 +757,41 @@ i915_verify_wa_wait_engine(
 
 	/* The engine did not reach the state in time. */
 	return ETIMEDOUT;
+}
+
+/*
+ * Reports whether a register lies in a multicast range of its graphics
+ * version (Linux mcr_range()): Gen9 takes the Gen8 ranges, every other
+ * version the Gen12 ones.
+ */
+static int
+i915_mcr_range_of(
+	int graphics_ver,
+	uint32_t offset)
+{
+	unsigned count;
+	unsigned index;
+	int multicast;
+
+	/* A Gen12 register is looked up in the Gen12 ranges. */
+	if (graphics_ver != 9) {
+		multicast = drv_i915_gen12_mcr_range(offset);
+		return multicast;
+	}
+
+	/* Looks for a Gen8 range that contains the register. */
+	count = (unsigned)(sizeof(i915_mcr_ranges_gen8) / sizeof(i915_mcr_ranges_gen8[0]));
+	for (index = 0U; index < count; index++) {
+		/* A register outside the range is not in it. */
+		if (offset < i915_mcr_ranges_gen8[index].start)
+			continue;
+		if (offset > i915_mcr_ranges_gen8[index].end)
+			continue;
+
+		/* The register is multicast. */
+		return 1;
+	}
+
+	/* The register is not multicast. */
+	return 0;
 }

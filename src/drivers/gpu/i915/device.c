@@ -28,6 +28,7 @@
 #include "irq.h"
 #include "display/display.h"
 #include "display/diagnostics.h"
+#include "display/takeover.h"
 #include "render/render.h"
 #include <kern/kcrt.h>
 #include <kern/sysctl.h>
@@ -52,20 +53,49 @@
 /* The Alder Lake-P engines the GT is brought up with: RCS0, BCS0, VCS0, VCS2 and VECS0. */
 #define I915_START_ENGINE_MASK	((1U << 0) | (1U << 1) | (1U << 8) | (1U << 10) | (1U << 16))
 
+/* The engines a Gen9 device runs: RCS0, BCS0, VCS0 and VECS0 (the second video engine is unused). */
+#define I915_START_ENGINE_MASK_GEN9	((1U << 0) | (1U << 1) | (1U << 8) | (1U << 16))
+
 /* The GPU addresses 39 bits of DMA space (the reference's dma_mask_size). */
 #define I915_START_DMA_MASK	((((uint64_t)1) << 39) - 1U)
 
 /* Gen12 has 32 fence registers. */
 #define I915_START_FENCES	32U
 
-/* How many forcewake domains the running GT holds awake. */
+/* How many forcewake domains the running GT holds awake, at most. */
 #define I915_START_DOMAINS	5U
+
+/* How many forcewake domains a running Gen9 GT holds awake. */
+#define I915_START_DOMAINS_GEN9	3U
+
+/* GEN8_MCR_SELECTOR and the Gen11+ multicast bit it starts with. */
+#define I915_MCR_SELECTOR	0x0fdcU
+#define I915_MCR_MULTICAST	0x80000000U
 
 /* How many of the newest trace records a dump examines. */
 #define I915_START_TRACE_DUMP	256U
 
 /* The display's interrupt summary control (GEN11_DISPLAY_INT_CTL). */
 #define I915_DISPLAY_INT_CTL	0x44200U
+
+/*
+ * The Gen9 display power well state (HSW_PWR_WELL_CTL2): power well 1
+ * powers pipe A, power well 2 pipes B and C.  Gen9 has three pipes.
+ */
+#define I915_GEN9_PWR_WELL_CTL2	0x45404U
+#define I915_GEN9_PW_1_STATE	(1U << 28)
+#define I915_GEN9_PW_2_STATE	(1U << 30)
+#define I915_GEN9_PIPES		3U
+
+/*
+ * The Gen9 eDP PSR and south display (PCH) interrupt registers that
+ * gen8_irq_reset() also silences (Linux 6.8.12 intel_psr_regs.h, i915_reg.h).
+ */
+#define I915_GEN9_EDP_PSR_IMR	0x64834U
+#define I915_GEN9_EDP_PSR_IIR	0x64838U
+#define I915_GEN9_SDEIMR	0xc4004U
+#define I915_GEN9_SDEIIR	0xc4008U
+#define I915_GEN9_SDEIER	0xc400cU
 
 /* Turns an id-list entry into the bare product id. */
 #define I915_ID_VALUE(product)	(product)
@@ -130,6 +160,18 @@ static const int i915_start_domains[I915_START_DOMAINS] = {
 };
 
 /*
+ * The forcewake domains a running Gen9 GT holds, in the order they are taken.
+ *
+ * Gen9 has a single media domain for every media engine.  The table never
+ * changes.
+ */
+static const int i915_start_domains_gen9[I915_START_DOMAINS_GEN9] = {
+	I915_FORCEWAKE_RENDER,
+	I915_FORCEWAKE_GT,
+	I915_FORCEWAKE_MEDIA_GEN9
+};
+
+/*
  * The test checkpoint after the start.
  *
  * The test build defines it to run the scenario it was built for on the
@@ -153,6 +195,7 @@ static const struct kern_gpu_start_ops i915_start_ops = {
 static void i915_interim_display_irq_enable(void *context, int enabled);
 static void i915_interim_display_irq_nothing(void *context);
 static void i915_interim_display_irq_reset(void *context);
+static void i915_interim_irq_silence(struct i915_mmio *mmio, uint32_t imr, uint32_t iir, uint32_t ier);
 static void i915_interim_display_irq_handle(void *context, uint32_t master_ctl);
 
 /*
@@ -198,7 +241,8 @@ static void i915_stop_hardware(struct i915_device *device);
 static int i915_forcewake_get_all(struct i915_gt *gt, unsigned *held);
 static void i915_forcewake_put_all(struct i915_gt *gt, unsigned held);
 static void i915_start_dump_trace(struct i915_gt *gt);
-static int i915_product_is_tigerlake(uint16_t product);
+static int i915_product_listed(uint16_t product, const uint16_t *list, unsigned count);
+static const int *i915_start_domain_list(const struct i915_gt *gt, unsigned *count);
 static unsigned i915_popcount32(uint32_t value);
 static unsigned i915_cpu_physical_bits(void);
 
@@ -687,6 +731,94 @@ drv_i915_device_attach_settled(
 	spin_unlock_irqrestore(&i915_start_registry.lock, enabled);
 }
 
+/*
+ * Tells the graphics version, display version and platform of a PCI device id.
+ *
+ * The table is explicit: Tiger Lake (12, 12), Alder Lake-P and -N and Raptor
+ * Lake-P and -U (12, 13), Skylake, Kaby Lake, Coffee Lake and Comet Lake
+ * (9, 9).  Returns 0, or ENODEV for an id in no list, which the device start
+ * refuses rather than guessing its registers.
+ */
+int
+drv_i915_product_kind(
+	uint16_t product,
+	struct i915_product_kind *kind)
+{
+	static const uint16_t tigerlake[] = { INTEL_TGL_IDS(I915_ID_VALUE) };
+	static const uint16_t alderlake[] = {
+		INTEL_ADLP_IDS(I915_ID_VALUE),
+		INTEL_ADLN_IDS(I915_ID_VALUE),
+		INTEL_RPLU_IDS(I915_ID_VALUE),
+		INTEL_RPLP_IDS(I915_ID_VALUE)
+	};
+	static const uint16_t skylake[] = { INTEL_SKL_IDS(I915_ID_VALUE) };
+	static const uint16_t kabylake[] = { INTEL_KBL_IDS(I915_ID_VALUE) };
+	static const uint16_t coffeelake[] = { INTEL_CFL_IDS(I915_ID_VALUE) };
+	static const uint16_t cometlake[] = { INTEL_CML_IDS(I915_ID_VALUE) };
+	int listed;
+
+	/* Starts from a Gen9 part, the shape every Gen9 list shares. */
+	kind->graphics_ver = 9U;
+	kind->display_ver = 9U;
+	kind->is_alderlake_p = 0;
+
+	/* Tiger Lake: Gen12 with display version 12. */
+	listed = i915_product_listed(product, tigerlake, sizeof(tigerlake) / sizeof(tigerlake[0]));
+	if (listed != 0) {
+		kind->graphics_ver = 12U;
+		kind->display_ver = 12U;
+		kind->platform = I915_PLATFORM_GEN12;
+		kind->name = "Tiger Lake";
+		return 0;
+	}
+
+	/* Alder Lake-P and -N, Raptor Lake-P and -U: Gen12 with XE_LPD (display version 13). */
+	listed = i915_product_listed(product, alderlake, sizeof(alderlake) / sizeof(alderlake[0]));
+	if (listed != 0) {
+		kind->graphics_ver = 12U;
+		kind->display_ver = 13U;
+		kind->is_alderlake_p = 1;
+		kind->platform = I915_PLATFORM_GEN12;
+		kind->name = "Alder Lake-P class (XE_LPD)";
+		return 0;
+	}
+
+	/* Skylake. */
+	listed = i915_product_listed(product, skylake, sizeof(skylake) / sizeof(skylake[0]));
+	if (listed != 0) {
+		kind->platform = I915_PLATFORM_SKYLAKE;
+		kind->name = "Skylake (Gen9, display kept as the firmware left it)";
+		return 0;
+	}
+
+	/* Kaby Lake. */
+	listed = i915_product_listed(product, kabylake, sizeof(kabylake) / sizeof(kabylake[0]));
+	if (listed != 0) {
+		kind->platform = I915_PLATFORM_KABYLAKE;
+		kind->name = "Kaby Lake (Gen9, display kept as the firmware left it)";
+		return 0;
+	}
+
+	/* Coffee Lake. */
+	listed = i915_product_listed(product, coffeelake, sizeof(coffeelake) / sizeof(coffeelake[0]));
+	if (listed != 0) {
+		kind->platform = I915_PLATFORM_COFFEELAKE;
+		kind->name = "Coffee Lake (Gen9.5, display kept as the firmware left it)";
+		return 0;
+	}
+
+	/* Comet Lake. */
+	listed = i915_product_listed(product, cometlake, sizeof(cometlake) / sizeof(cometlake[0]));
+	if (listed != 0) {
+		kind->platform = I915_PLATFORM_COMETLAKE;
+		kind->name = "Comet Lake (Gen9.5, display kept as the firmware left it)";
+		return 0;
+	}
+
+	/* An id in no list has no known registers. */
+	return ENODEV;
+}
+
 /* Initializes the registry lock the first time the registry is used. */
 static void
 i915_start_registry_init(void)
@@ -991,6 +1123,7 @@ static int
 i915_start_prepare(
 	struct i915_device *device)
 {
+	struct i915_product_kind kind;
 	struct i915_gt *gt;
 	uint16_t product;
 	int available;
@@ -1016,22 +1149,30 @@ i915_start_prepare(
 
 	/*
 	 * Tells the graphics and display versions from the device id, as the
-	 * PCI driver matches it.  Every device the driver matches today has a
-	 * Gen12 GT.
+	 * PCI driver matches it: Tiger Lake and Alder Lake have a Gen12 GT,
+	 * Skylake to Comet Lake a Gen9 one.  The revision is the stepping some
+	 * Gen9 workarounds depend on.
 	 */
 	product = drv_i915_pci_read16(&gt->pci, 0x02U);
-	gt->graphics_ver = 12U;
-	gt->display_ver = 13U;
-	gt->is_alderlake_p = 1;
-	if (i915_product_is_tigerlake(product) != 0) {
-		gt->display_ver = 12U;
-		gt->is_alderlake_p = 0;
+	gt->info.revision = (unsigned)drv_i915_pci_read8(&gt->pci, 0x08U);
+	device->stage = "unknown_product";
+	error = drv_i915_product_kind(product, &kind);
+	if (error != 0) {
+		kern_logf("i915: display device: 8086:%04x is in no version table; not started\n", (unsigned)product);
+		return error;
 	}
 
-	kern_logf("i915: display device: 8086:%04x -> display version %u, %s\n",
+	gt->graphics_ver = kind.graphics_ver;
+	gt->display_ver = kind.display_ver;
+	gt->is_alderlake_p = kind.is_alderlake_p;
+	gt->info.platform = kind.platform;
+
+	kern_logf("i915: display device: 8086:%04x rev 0x%02x -> graphics version %u, display version %u, %s\n",
 	    (unsigned)product,
+	    gt->info.revision,
+	    gt->graphics_ver,
 	    gt->display_ver,
-	    gt->is_alderlake_p != 0 ? "Alder Lake-P class (XE_LPD)" : "Tiger Lake");
+	    kind.name);
 
 	/*
 	 * Takes the PCI core's runtime PM hold and resumes the device to D0
@@ -1163,11 +1304,16 @@ i915_start_registers(
 
 	gt->regs_mapped = 1U;
 
-	/* Binds register access and the Gen12 forcewake map to the mapping. */
+	/* Binds register access and the forcewake map of the graphics version to the mapping. */
 	gt->regs_window.base = gt->regs.address;
 	gt->regs_window.size = (unsigned long)gt->regs.size;
-	ranges = drv_i915_mmio_gen12_ranges(&range_count);
+	if (gt->graphics_ver == 9U) {
+		ranges = drv_i915_mmio_gen9_ranges(&range_count);
+	} else {
+		ranges = drv_i915_mmio_gen12_ranges(&range_count);
+	}
 	drv_i915_mmio_init(&gt->mmio, drv_i915_mmio_window_ops(), &gt->regs_window, ranges, range_count, &gt->trace);
+	gt->mmio.graphics_ver = (int)gt->graphics_ver;
 	kern_logf("i915: uncore BAR mapped (%llu bytes)\n", (unsigned long long)gt->regs.size);
 
 	/* Reads the slice and DSS fuses, which sleep with the GT domain. */
@@ -1185,9 +1331,15 @@ i915_start_registers(
 	    dss,
 	    i915_popcount32(dss));
 
-	/* Points the replicated-register selector at multicast (intel_gt_init_mmio). */
-	drv_i915_write32(&gt->mmio, 0x0fdcU, 0x80000000U);
-	drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_NOTE, "intel_gt_init_mmio:mcr_multicast", 0U, 0U);
+	/*
+	 * Points the replicated-register selector at multicast (intel_gt_init_mmio).
+	 * Gen9 has no multicast bit: its GT workaround list steers the selector
+	 * at the first enabled slice and subslice instead.
+	 */
+	if (gt->graphics_ver != 9U) {
+		drv_i915_write32(&gt->mmio, I915_MCR_SELECTOR, I915_MCR_MULTICAST);
+		drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_NOTE, "intel_gt_init_mmio:mcr_multicast", 0U, 0U);
+	}
 
 	/* Reads the clock, the SSEU, the steering mask and the engine set, which need GT and render awake. */
 	error = i915_start_gt_info(device);
@@ -1213,10 +1365,16 @@ i915_start_gt_info(
 	struct i915_device *device)
 {
 	struct i915_gt *gt;
+	uint32_t engine_mask;
 	unsigned index;
 	int error;
 
 	gt = &device->gt;
+
+	/* Picks the engine set of the platform. */
+	engine_mask = I915_START_ENGINE_MASK;
+	if (gt->graphics_ver == 9U)
+		engine_mask = I915_START_ENGINE_MASK_GEN9;
 
 	/* Wakes GT and render: the fuse and clock registers read all-ones while asleep. */
 	device->stage = "forcewake_gt_init_mmio";
@@ -1230,8 +1388,8 @@ i915_start_gt_info(
 		return error;
 	}
 
-	/* Decodes the fuses for the Alder Lake-P engine set RCS0|BCS0|VCS0|VCS2|VECS0. */
-	(void)drv_i915_gt_init_mmio(&gt->info, (int)gt->graphics_ver, I915_START_ENGINE_MASK, &gt->mmio);
+	/* Decodes the fuses for the platform's engine set (Alder Lake-P: RCS0|BCS0|VCS0|VCS2|VECS0). */
+	(void)drv_i915_gt_init_mmio(&gt->info, (int)gt->graphics_ver, engine_mask, &gt->mmio);
 	(void)drv_i915_forcewake_put(&gt->mmio, I915_FORCEWAKE_RENDER);
 	(void)drv_i915_forcewake_put(&gt->mmio, I915_FORCEWAKE_GT);
 
@@ -1276,6 +1434,8 @@ i915_start_memory(
 		1
 	};
 	struct i915_gt *gt;
+	unsigned driver_ggtt_first;
+	unsigned reserved;
 	int error;
 
 	gt = &device->gt;
@@ -1336,6 +1496,23 @@ i915_start_memory(
 	error = drv_i915_display_create(device);
 	if (error != 0)
 		return error;
+
+	/*
+	 * A Gen9 display controller is not driven: the firmware's picture is
+	 * kept and the display stages are skipped.  The check refuses a start
+	 * whose GT memory would overwrite the firmware's scanout.
+	 */
+	if (gt->graphics_ver == 9U && device->display != NULL) {
+		reserved = I915_GT_GGTT_PAGES + I915_GT_DISPLAY_PAGES;
+		driver_ggtt_first = 0U;
+		if (gt->ggtt_entries > reserved)
+			driver_ggtt_first = gt->ggtt_entries - reserved;
+
+		device->stage = "n0_lite_gen9";
+		error = drv_i915_n0_lite_gen9(device->display, &gt->mmio, driver_ggtt_first);
+		if (error != 0)
+			return error;
+	}
 
 	/* The end of the hardware probe: the OpRegion and its VBT, the DRAM and the display bandwidth. */
 	drv_i915_display_init_opregion(device);
@@ -1556,7 +1733,7 @@ i915_start_interrupts(
 	 * half in their place.
 	 */
 	gt->irq.display_ops = &i915_interim_display_irq_ops;
-	gt->irq.display_context = &gt->mmio;
+	gt->irq.display_context = gt;
 	drv_i915_display_irq_prepare(device);
 
 	/* Resets every source, attaches the handler and enables the GT sources. */
@@ -1803,6 +1980,12 @@ i915_start_pxp(
 	int error;
 
 	gt = &device->gt;
+
+	/* Gen9 has no protected-content support: the context is not created. */
+	if (gt->graphics_ver == 9U) {
+		kern_logf("i915: pxp_init: skipped (no protected content on Gen9)\n");
+		return;
+	}
 
 	/* Creates the context on the video engine (intel_pxp_init). */
 	error = drv_i915_pxp_init(&gt->pxp, &gt->engines, &gt->ppgtt, &gt->mem, 1);
@@ -2086,12 +2269,15 @@ i915_forcewake_get_all(
 	struct i915_gt *gt,
 	unsigned *held)
 {
+	const int *domains;
+	unsigned count;
 	int error;
 
-	/* Takes the domains one at a time, stopping at the first that fails. */
+	/* Takes the domains of the graphics version one at a time, stopping at the first that fails. */
+	domains = i915_start_domain_list(gt, &count);
 	*held = 0U;
-	while (*held < I915_START_DOMAINS) {
-		error = drv_i915_forcewake_get(&gt->mmio, i915_start_domains[*held]);
+	while (*held < count) {
+		error = drv_i915_forcewake_get(&gt->mmio, domains[*held]);
 		if (error != 0)
 			return error;
 
@@ -2108,11 +2294,32 @@ i915_forcewake_put_all(
 	struct i915_gt *gt,
 	unsigned held)
 {
+	const int *domains;
+	unsigned count;
+
 	/* Puts back only what was taken, last first. */
+	domains = i915_start_domain_list(gt, &count);
 	while (held > 0U) {
 		held--;
-		(void)drv_i915_forcewake_put(&gt->mmio, i915_start_domains[held]);
+		(void)drv_i915_forcewake_put(&gt->mmio, domains[held]);
 	}
+}
+
+/* Names the forcewake domains the running GT of the device's graphics version holds. */
+static const int *
+i915_start_domain_list(
+	const struct i915_gt *gt,
+	unsigned *count)
+{
+	/* A Gen9 GT has one media domain. */
+	if (gt->graphics_ver == 9U) {
+		*count = I915_START_DOMAINS_GEN9;
+		return i915_start_domains_gen9;
+	}
+
+	/* A Gen12 GT has a domain for each media engine. */
+	*count = I915_START_DOMAINS;
+	return i915_start_domains;
 }
 
 /* Dumps the newest trace records and what was overwritten. */
@@ -2142,21 +2349,22 @@ i915_start_dump_trace(
 	}
 }
 
-/* Reports nonzero when a PCI device id is a Tiger Lake part. */
+/* Reports nonzero when a PCI device id is in a list. */
 static int
-i915_product_is_tigerlake(
-	uint16_t product)
+i915_product_listed(
+	uint16_t product,
+	const uint16_t *list,
+	unsigned count)
 {
-	static const uint16_t tigerlake[] = { INTEL_TGL_IDS(I915_ID_VALUE) };
 	unsigned index;
 
-	/* Looks the id up in the same list the PCI driver matches on. */
-	for (index = 0U; index < sizeof(tigerlake) / sizeof(tigerlake[0]); index++) {
-		if (tigerlake[index] == product)
+	/* Looks the id up in the list. */
+	for (index = 0U; index < count; index++) {
+		if (list[index] == product)
 			return 1;
 	}
 
-	/* Not a Tiger Lake part. */
+	/* Not in the list. */
 	return 0;
 }
 
@@ -2203,17 +2411,78 @@ i915_cpu_physical_bits(void)
 	return (unsigned)(eax & 0xffU);
 }
 
-/* Keeps the display interrupt summary switched off while the display is not connected. */
+/*
+ * Keeps the display interrupts switched off while the display is not connected.
+ *
+ * Gen12 has a display summary control to turn off.  Gen9 has none: its
+ * display sources report straight into GEN8_MASTER_IRQ, so each one is
+ * masked, disabled and cleared instead (the display half of
+ * gen8_irq_reset() and ibx_irq_reset()): the eDP PSR, the pipes, the
+ * ports, the miscellaneous sources and the south display.  A pipe whose
+ * power well is down is not touched, and GEN8_MASTER_IRQ is not written.
+ */
 static void
 i915_interim_display_irq_reset(
 	void *context)
 {
-	struct i915_mmio *mmio;
+	struct i915_gt *gt;
+	uint32_t power;
+	unsigned pipe;
 
 	/* Only the summary: a device without a display acknowledges no display source. */
-	mmio = context;
-	drv_i915_raw_write32(mmio, I915_DISPLAY_INT_CTL, 0U);
-	drv_i915_posting_read32(mmio, I915_DISPLAY_INT_CTL);
+	gt = context;
+	if (gt->graphics_ver != 9U) {
+		drv_i915_raw_write32(&gt->mmio, I915_DISPLAY_INT_CTL, 0U);
+		drv_i915_posting_read32(&gt->mmio, I915_DISPLAY_INT_CTL);
+		return;
+	}
+
+	/* Silences the eDP PSR source, which power well 1 holds. */
+	power = drv_i915_raw_read32(&gt->mmio, I915_GEN9_PWR_WELL_CTL2);
+	if ((power & I915_GEN9_PW_1_STATE) != 0U) {
+		drv_i915_raw_write32(&gt->mmio, I915_GEN9_EDP_PSR_IMR, 0xffffffffU);
+		drv_i915_raw_write32(&gt->mmio, I915_GEN9_EDP_PSR_IIR, 0xffffffffU);
+	}
+
+	/* Silences the pipe sources of every pipe whose power well is up. */
+	for (pipe = 0U; pipe < I915_GEN9_PIPES; pipe++) {
+		/* Pipe A needs power well 1, pipes B and C power well 2 as well. */
+		if ((power & I915_GEN9_PW_1_STATE) == 0U)
+			break;
+		if (pipe != 0U && (power & I915_GEN9_PW_2_STATE) == 0U)
+			break;
+
+		i915_interim_irq_silence(&gt->mmio, GEN8_DE_PIPE_IMR(pipe), GEN8_DE_PIPE_IIR(pipe), GEN8_DE_PIPE_IER(pipe));
+	}
+
+	/* Silences the port and miscellaneous display sources, which are always powered. */
+	i915_interim_irq_silence(&gt->mmio, GEN8_DE_PORT_IMR, GEN8_DE_PORT_IIR, GEN8_DE_PORT_IER);
+	i915_interim_irq_silence(&gt->mmio, GEN8_DE_MISC_IMR, GEN8_DE_MISC_IIR, GEN8_DE_MISC_IER);
+
+	/* Silences the south display, whose hotplug would otherwise interrupt. */
+	i915_interim_irq_silence(&gt->mmio, I915_GEN9_SDEIMR, I915_GEN9_SDEIIR, I915_GEN9_SDEIER);
+}
+
+/* Masks, disables and clears one display interrupt register set (gen3_irq_reset()). */
+static void
+i915_interim_irq_silence(
+	struct i915_mmio *mmio,
+	uint32_t imr,
+	uint32_t iir,
+	uint32_t ier)
+{
+	/* Masks every source, and flushes the mask. */
+	drv_i915_raw_write32(mmio, imr, 0xffffffffU);
+	drv_i915_posting_read32(mmio, imr);
+
+	/* Disables every source. */
+	drv_i915_raw_write32(mmio, ier, 0U);
+
+	/* Clears what is pending, twice because IIR can queue two events. */
+	drv_i915_raw_write32(mmio, iir, 0xffffffffU);
+	drv_i915_posting_read32(mmio, iir);
+	drv_i915_raw_write32(mmio, iir, 0xffffffffU);
+	drv_i915_posting_read32(mmio, iir);
 }
 
 /* Ignores the interrupt enable state while no display is connected. */

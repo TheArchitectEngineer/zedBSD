@@ -101,4 +101,113 @@
 	MACRO__(0xA7AA), \
 	MACRO__(0xA7AB)
 
+/*
+ * The Gen9 graphics devices: Skylake, Kaby Lake (with Amber Lake-Y on the
+ * Kaby Lake GT), Coffee Lake (with Whiskey Lake and Amber Lake-Y on the
+ * Coffee Lake GT) and Comet Lake.  The Gen9 LP parts (Broxton, Apollo Lake,
+ * Gemini Lake) are not listed.
+ *
+ * Modified for zedBSD: excerpted and reformatted by hand from the Linux
+ * 6.8.12 reference.  Values are unchanged.  Source (SHA-256 of the file):
+ *   include/drm/i915_pciids.h, INTEL_SKL_IDS, INTEL_KBL_IDS, INTEL_CFL_IDS
+ *     ef2ef3613dccba0d205f86b9283f870b48871d3f82ea3aba62084711f9ac2fb2
+ * The reference lists Comet Lake inside INTEL_CFL_IDS; it is a list of its
+ * own here because its workarounds differ.  The GT3 and GT4 parts have a
+ * second video decode engine the driver does not use.
+ */
+
+/* include/drm/i915_pciids.h:331-381 */
+#define INTEL_SKL_IDS(MACRO__)	MACRO__(0x1906), \
+	MACRO__(0x1913), \
+	MACRO__(0x190E), \
+	MACRO__(0x1915), \
+	MACRO__(0x1902), \
+	MACRO__(0x190A), \
+	MACRO__(0x190B), \
+	MACRO__(0x1917), \
+	MACRO__(0x1916), \
+	MACRO__(0x1921), \
+	MACRO__(0x191E), \
+	MACRO__(0x1912), \
+	MACRO__(0x191A), \
+	MACRO__(0x191B), \
+	MACRO__(0x191D), \
+	MACRO__(0x1923), \
+	MACRO__(0x1926), \
+	MACRO__(0x1927), \
+	MACRO__(0x192A), \
+	MACRO__(0x192B), \
+	MACRO__(0x192D), \
+	MACRO__(0x1932), \
+	MACRO__(0x193A), \
+	MACRO__(0x193B), \
+	MACRO__(0x193D)
+
+/* include/drm/i915_pciids.h:394-447, 475-480 */
+#define INTEL_KBL_IDS(MACRO__)	MACRO__(0x5906), \
+	MACRO__(0x5913), \
+	MACRO__(0x590E), \
+	MACRO__(0x5915), \
+	MACRO__(0x5902), \
+	MACRO__(0x5908), \
+	MACRO__(0x590A), \
+	MACRO__(0x590B), \
+	MACRO__(0x5916), \
+	MACRO__(0x5921), \
+	MACRO__(0x591E), \
+	MACRO__(0x5912), \
+	MACRO__(0x5917), \
+	MACRO__(0x591A), \
+	MACRO__(0x591B), \
+	MACRO__(0x591D), \
+	MACRO__(0x5926), \
+	MACRO__(0x5923), \
+	MACRO__(0x5927), \
+	MACRO__(0x593B), \
+	MACRO__(0x591C), \
+	MACRO__(0x87C0)
+
+/* include/drm/i915_pciids.h:451-453, 482-525: Coffee Lake, Whiskey Lake and Amber Lake-Y */
+#define INTEL_CFL_IDS(MACRO__)	MACRO__(0x3E90), \
+	MACRO__(0x3E93), \
+	MACRO__(0x3E99), \
+	MACRO__(0x3E91), \
+	MACRO__(0x3E92), \
+	MACRO__(0x3E96), \
+	MACRO__(0x3E98), \
+	MACRO__(0x3E9A), \
+	MACRO__(0x3E9C), \
+	MACRO__(0x3E94), \
+	MACRO__(0x3E9B), \
+	MACRO__(0x3EA9), \
+	MACRO__(0x3EA5), \
+	MACRO__(0x3EA6), \
+	MACRO__(0x3EA7), \
+	MACRO__(0x3EA8), \
+	MACRO__(0x3EA1), \
+	MACRO__(0x3EA4), \
+	MACRO__(0x3EA0), \
+	MACRO__(0x3EA3), \
+	MACRO__(0x3EA2), \
+	MACRO__(0x87CA)
+
+/* include/drm/i915_pciids.h:455-473: Comet Lake */
+#define INTEL_CML_IDS(MACRO__)	MACRO__(0x9BA2), \
+	MACRO__(0x9BA4), \
+	MACRO__(0x9BA5), \
+	MACRO__(0x9BA8), \
+	MACRO__(0x9B21), \
+	MACRO__(0x9BAA), \
+	MACRO__(0x9BAC), \
+	MACRO__(0x9BC2), \
+	MACRO__(0x9BC4), \
+	MACRO__(0x9BC5), \
+	MACRO__(0x9BC6), \
+	MACRO__(0x9BC8), \
+	MACRO__(0x9BE6), \
+	MACRO__(0x9BF6), \
+	MACRO__(0x9B41), \
+	MACRO__(0x9BCA), \
+	MACRO__(0x9BCC)
+
 #endif /* DRIVERS_GPU_I915_INTEL_PCI_IDS_H */
