@@ -156,3 +156,24 @@ T1-608 の draw は後で着いて PASS（`i915: test draw: PASS`、1024/1024）
 > `i915: vkx: verdict PASS (9 of 9 steps passed)`、`i915: vke1: verdict PASS (6 of 6 steps passed)`、`i915: vke2: verdict PASS (21 of 21 steps passed)`、
 > `i915: vkc: verdict PASS (9 of 9 steps passed)`。どれか FAIL・HANG・行が無い、なら FAIL。FAIL なら場面ごとの step の FAIL の行を添えて返す。
 > **返し先**: Q1 と P1（または Q1 が p005 を割り当てた担当）。FAIL の解析はしない。
+
+## 2026-10-14 P1: 既定で有効に切り替え
+
+根拠: U1「実機で PASS したら既定で有効」、SV7 の T1-608・T1-612 が全部 PASS、2026-10-14 ユーザーのクリック「既定で有効にする」（Q1 から）。
+
+- `src/drivers/gpu/i915/i915.c`: `I915_GEN9_DEFAULT_ON` を 1 に（commit b0a5dfea9）。boot の行に何も無ければ Gen9 を取り、`i915.gen9=off` で取らない
+  （firmware の framebuffer のまま、PCI core は function を suspend しない）。`i915.gen9=on` は受けて既定と同じ。両方が在る時は前と同じく on が勝つ
+  （`i915_gen9_enabled()` は変えていない）。注釈と、取らない時の log を `not taken (i915.gen9=off on the boot line)` に直した。
+- `src/kern/boot.c`: `i915.gen9=` の説明の注釈に「on が既定」。`include/kern/boot.h` は enum だけで説明の文は無く、変えていない。
+- `=on` を前提に書いた所: `plan/ws229/tests/config-amd64-gen9.mk`・`plan/ws229/tests/gen9-hw.md`・`plan/tools/hwsv7/README.md`（3 節の表）・
+  `plan/ws031/tests/hw-machine.sh`（sv7 の注釈）の文を「既定で有効、`=on` は不要だが害は無い（試した image と同じ flag を保つために残す）」に直した。
+  値（`ZEDBSD_BOOT_EXTRA_LINES := i915.gen9=on`、sv7 の `I915_BOOT_EXTRA`）は変えていない。`plan/ws101/tests/hw/run-hw.sh`・`plan/ws031/tests/vkloop-hw.sh`
+  の注釈は語を挙げるだけで今も正しい。
+
+| 確かめ | コマンド | 結果 |
+| --- | --- | --- |
+| amd64 の kernel | `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws229-p005-default build/ws229-p005-default/vmunix` | rc 0、log の `warning:` 0 行、`amd64 vmunix check: PASS`。vmunix の strings に新しい log の文 |
+| boot の key の host 試験 | `sh plan/ws229/tests/run-host-boot-gen9.sh` | `host-boot-gen9: 10 checks, 0 failures`（boot.c の parse の試験。既定の値は i915.c の側なので、この試験に既定を見る所は無く、直していない） |
+
+未実施: 既定 on の image の QEMU・実機の起動（Gen12 の 5330 は Gen9 の分岐を通らない。SV7 の試験は `=on` 付きの image で PASS 済み）。
+`i915.gen9=off` の実機での確かめ（off の道は p002 の既定の動きと同じ）。
