@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws229-p005 -->
 # ws229-p005: Vulkan の通しと実機（Gen9）、5330 の回帰
 
-Status: planned（2026-10-14 Q1、q980、P1。準備の部分を先に）
+Status: cleared（2026-10-14 Q1: Gen9.5 の実機（SV7、Let's Note SV7、UHD 620、QEMU の passthrough）で ktest・eu・vkcs・vkx・vke1・vke2・vkc・draw・r1 が全部 PASS（T1-608・T1-612）。5330（Gen12）の回帰 PASS（T1-606、その後の Gen9 の直しは Gen12 の byte が不変）。Gen9（6 世代 Skylake）と USB の単独の起動は未実施）
 Disposition: normal
 Parent: [WS229](../ws.md)
 Queue: q980
