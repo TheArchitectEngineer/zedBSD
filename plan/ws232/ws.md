@@ -19,6 +19,7 @@ Resume point: p001。
 （2026-10-09 の決定「X11とTestsはメニューから削除し、直接記述のみにする」のうち、X11 の 4 つの program はこの指示で Retro の menu に戻る。Tests は直接記述のまま）
 
 「WS232はconfig/ci/config-pc98.mkがビルドを通るように修正をお願いします。」
+「WS232は ~/qemu-pc98にあるqemuを使って起動できるところまでお願いします。」
 
 ## 目標
 
@@ -26,3 +27,4 @@ Resume point: p001。
 2. 主の menu の一番上（アーキによらず常に）に「Retro」を足し、Xzed・zwm・zshell・zterm を選べるようにする（今の menu の group は x11-servers・x11-applications）。
 3. menuconfig の host 試験（`make menuconfig-host-test`）を足して PASS。i386 pcat・pc98 で config.mk を書き出し、`make -n` で解決すること（build はできれば）。
 4. `config/ci/config-pc98.mk` で build が通るようにする（2026-10-14 ユーザーの追加の指示）。
+5. pc98 の image が `~/qemu-pc98/build/qemu-system-i386`（PC-98 の machine）で login prompt まで起動する（2026-10-14 ユーザー）。起動の確かめは T1。
