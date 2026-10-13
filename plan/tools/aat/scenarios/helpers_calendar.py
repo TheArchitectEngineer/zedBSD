@@ -7,7 +7,8 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 Calendar keeps its events under ~/Documents/Calendar as iCalendar files (one each); the helper takes kei's folder away
 before and after.  The places in the window are view.c's layout, from the window's right edge: the panel 300 wide,
-its Work card at (right - 220, 146), the editor's Save at (right - 54, 274).  Today's cell is the one the view logs
+its Work card at (right - 220, 146), the editor's Save at (right - 54, 274) and Cancel at (right - 132, 274); an
+event's first pill in a cell 39 below the cell's top (ws155-p006).  Today's cell is the one the view logs
 (CALENDAR CELL today x= y= width= height=, in the window).  The system bar's clock is at the screen's top right.
 """
 import re
@@ -48,6 +49,18 @@ def event(item):
 		item.check(saved, "the event was not saved")
 		status, found = run.sh(f"grep -l 'SUMMARY:New Work Event' {FOLDER}/Work/*.ics | wc -l")
 		item.check(found.strip() == "1", f"the event is not in its file ({found.strip()})")
+		# Its pill on today's cell double-clicked: the editor opens with it (ws155-p006); Cancel changes nothing.
+		mark = run.mark()
+		run.click(window.x + x + width // 2, window.y + y + 39, "--count", "2")
+		edited = run.wait(r"CALENDAR EDIT open index=\d+ memo=0", mark, 10)
+		item.step("double-clicked the event's pill", edited or "")
+		run.shot(item, "edit")
+		item.check(edited, "the double click did not open the event in the editor")
+		mark = run.mark()
+		run.click(right - 132, window.y + 274)
+		cancelled = run.wait(r"CALENDAR EDIT cancel", mark, 10)
+		item.step("Cancel", cancelled or "")
+		item.check(cancelled, "Cancel did not close the editor")
 		# Closed, then opened again from the system bar's clock.
 		run.close(item, window)
 		screen_width, _ = run.screen()
@@ -62,7 +75,7 @@ def event(item):
 		time.sleep(1.0)
 		run.shot(item, "from-clock")
 		item.check(opened and ready, "the clock did not open Calendar")
-		item.person("the editor, the event on today's cell, and Calendar opened from the clock")
+		item.person("the editor, the event on today's cell, the editor of the event opened by its pill, and Calendar opened from the clock")
 	finally:
 		run.sh(f"rm -rf {FOLDER}")
 
