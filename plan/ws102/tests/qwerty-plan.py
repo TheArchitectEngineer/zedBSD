@@ -39,7 +39,7 @@ def where(character, faces):
     if character == ' ':
         return ('letters', 'space', False)
     if character == '\n':
-        return ('letters', 'Enter', False)
+        return ('letters', 'Return', False)
     if character.islower() and character in letters:
         return ('letters', character, False)
     if character.isupper() and character.lower() in letters:

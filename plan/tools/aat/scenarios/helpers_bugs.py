@@ -393,17 +393,20 @@ def phone_ime_flick(item):
 		mark = run.mark()
 		tap(flick_key(panel, 0, 1))
 		tap(flick_key(panel, 3, 0))
-		voiced = run.wait(r"KWL OSK send via=commit text=が before=3", mark, 10)
+		voiced = run.wait(r"KWL OSK preedit text=が", mark, 10)
 		refused = run.lines(r"KWL OSK refused ", mark)
-		item.step("か, then the voice key (が)", f"{voiced}; refused {refused[-1] if refused else 'none'}")
+		item.step("か, then the voice key (が, the panel's preedit, ws102-p026)", f"{voiced}; refused {refused[-1] if refused else 'none'}")
 		run.shot(item, "flick")
+		closing = run.mark()
 		close_panel("flick")
+		committed = run.wait(r"KWL OSK reading commit text=が reason=close", closing, 10)
+		item.step("closed the panel (the preedit committed)", committed)
 		send = run.mark()
 		run.click(*phone_field(window))
 		run.key("enter")
 		flicked = run.wait(r"PHONE SEND contact=0 channel=0 length=3 error=0", send, 10)
 		item.step("Enter (send)", flicked)
-		item.check(voiced and not refused, "BUG-204 reproduced: the flick panel's kana did not reach Phone's field")
+		item.check(voiced and committed and not refused, "BUG-204 reproduced: the flick panel's kana did not reach Phone's field")
 		item.check(flicked, "the kana が was not sent (no PHONE SEND length=3)")
 		item.passed("Japanese by the input method and by the flick panel went into Phone's field")
 	finally:
@@ -714,6 +717,73 @@ def osk_hint(item):
 	item.person("the quarter disc of glass with \"Keyboard\" as Notes' pull, not a white square (BUG-230), in the three screenshots")
 
 
+# ws102-p026 (the UAT of 2026-10-13): the flick panel's kana in Terminal are one preedit (a word chosen is not typed
+# after the kana), a reading with okurigana converts, and the kana face turns the input method on.
+
+def flick(panel, row: int, column: int, dx: int, dy: int) -> None:
+	"""A flick of a key of the flick panel by (dx, dy) in two steps."""
+	x, y = flick_key(panel, row, column)
+	run.press_path([(x, y), (x + dx // 2, y + dy // 2), (x + dx, y + dy)], pause=0.05)
+	time.sleep(0.4)
+
+
+@run.define("bugs.osk-flick-terminal")
+def osk_flick_terminal(item):
+	old = common.current_method(run)
+	common.set_method(run, item, 1)
+	try:
+		window = run.launch(item, "Terminal")
+		run.click(*window.middle())
+		time.sleep(0.5)
+		run.type("echo ")
+		mark = run.mark()
+		panel = open_panel(item, "flick")
+		kana_face(item, panel)
+		on = run.wait(r"KWL OSK ime face=kana on=1", mark, 5)
+		item.step("the flick panel's kana face", on)
+		item.check(on, "the kana face did not turn the input method on")
+		# あい, then the first candidate.
+		mark = run.mark()
+		tap(flick_key(panel, 0, 0))
+		flick(panel, 0, 0, -30, 0)
+		preedit = run.wait(r"KWL OSK preedit text=あい", mark, 10)
+		predictions = run.wait(r"KWL OSK predictions .*reading=あい count=[1-9]", mark, 10)
+		item.step("あ, い (flicked left)", f"{preedit}; {predictions}")
+		item.check(preedit and predictions, "no preedit or candidates for あい")
+		slots = run.lines(r"KWL OSK crect slot=0 ", mark)
+		item.check(slots, "no KWL OSK crect slot=0")
+		x, y, width, height = (aatlib.number(slots[-1], name) for name in ("x", "y", "width", "height"))
+		tap((x + width // 2, y + height // 2))
+		chosen = run.wait(r"KWL OSK candidate commit sent=1 slot=0 word=\S+", mark, 10)
+		time.sleep(0.6)
+		run.shot(item, "chosen")
+		word = aatlib.field(chosen, "word") if chosen else None
+		commits = run.lines(r"ZTERM IME commit ", mark)
+		deletes = run.lines(r"ZTERM IME delete", mark)
+		item.step("tapped the first candidate", f"{chosen}; Terminal's commits {commits}; deletions {deletes}")
+		item.check(word and len(commits) == 1 and word in commits[0] and not deletes,
+			"the double input reproduced: Terminal took more than the word chosen")
+		# よむ (や down, ま up), Space converts with the okurigana, 改行 commits.
+		mark = run.mark()
+		flick(panel, 2, 1, 0, 30)
+		flick(panel, 2, 0, 0, -30)
+		run.wait(r"KWL OSK predictions .*reading=よむ count=[1-9]", mark, 10)
+		tap(flick_key(panel, 1, 3))
+		converted = run.wait(r"KWL OSK convert slot=0 word=読む reading=よむ", mark, 10)
+		run.shot(item, "converted")
+		tap(flick_key(panel, 2, 3))
+		committed = run.wait(r"ZTERM IME commit bytes=6 text=読む", mark, 10)
+		item.step("よ, む, Space, 改行", f"{converted}; {committed}")
+		item.check(converted and committed, "よむ was not converted to 読む (okurigana)")
+		close_panel("flick")
+		run.key("ctrl+c")
+		common.to_language(run, item, "direct")
+	finally:
+		if common.current_method(run) != old:
+			common.set_method(run, item, old)
+	item.passed(f"Terminal took {word} once and 読む")
+
+
 # BUG-231: the full keyboard goes through the input method (a: あ, Space converts).
 
 @run.define("bugs.osk-qwerty-ime")
@@ -726,10 +796,10 @@ def osk_qwerty_ime(item):
 		mark = run.mark()
 		open_panel(item, "qwerty")
 		rects = qwerty_rects(mark)
-		for label in ("a", "space", "Enter"):
+		for label in ("a", "space", "Return"):
 			item.check(label in rects, f"no key {label} in KWL OSK qrect")
 		sends = []
-		for label, code in (("a", 30), ("space", 57), ("Enter", 28)):
+		for label, code in (("a", 30), ("space", 57), ("Return", 28)):
 			key = run.mark()
 			rx, ry, rw, rh = rects[label]
 			tap((rx + rw // 2, ry + rh // 2))

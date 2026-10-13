@@ -11,7 +11,8 @@
  * typed on the alpha or the number face; the 46 plain kana and the long
  * vowel mark on the kana face; no face types a character twice; the
  * flick's direction from a movement; the voice key's and the case key's
- * forms.
+ * forms; the places of Backspace, Return and the flick faces' 削除
+ * (ws102-p026).
  */
 
 #include "keyboard.h"
@@ -31,6 +32,9 @@ static int qwerty_keys(void);
 static int qwerty_widths(void);
 static void check_hand(void);
 static void check_emoji(void);
+static void check_places(void);
+static int row_has_action(unsigned face, unsigned row, unsigned action);
+static int row_ends_with(const struct kwl_qwerty_key *keys, unsigned count, const char *label, unsigned action);
 
 /* The 46 plain kana (UTF-8, three bytes each). */
 static const char host_kana[] = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん";
@@ -129,7 +133,7 @@ main(void)
 	found = kwl_flick_voice("な", next, sizeof(next));
 	check(!found, "な has no other form");
 
-	/* The case key. */
+	/* The other case (the a/A key's capitals). */
 	found = kwl_flick_case("a", next, sizeof(next));
 	check(found && strcmp(next, "A") == 0, "a -> A");
 	found = kwl_flick_case("Z", next, sizeof(next));
@@ -189,7 +193,10 @@ main(void)
 	missing = qwerty_keys();
 	check(missing == 0, "QWERTY: every character has a key of the US layout");
 	missing = qwerty_widths();
-	check(missing == 0, "QWERTY: no row wider than 40 quarters, at most 12 keys");
+	check(missing == 0, "QWERTY: no row wider than 46 quarters, at most 12 keys");
+
+	/* The places the user asked for (ws102-p026): Backspace, Return, the flick faces' 削除. */
+	check_places();
 
 	/* The handwriting's ink and the stub recognizer (ws102-p008). */
 	check_hand();
@@ -421,6 +428,106 @@ qwerty_widths(void)
 
 	/* The wrong rows. */
 	return wrong;
+}
+
+/*
+ * Checks the keys' places of ws102-p026: on the letters and symbols faces
+ * Backspace ends the digits' row and Return the middle row of letters (or
+ * symbols), the lowest row and the space row have neither; every flick
+ * face's delete key is 削除.
+ */
+static void
+check_places(void)
+{
+	const struct kwl_qwerty_key *keys;
+	const struct kwl_flick_key *key;
+	unsigned faces[2];
+	unsigned count;
+	unsigned face;
+	unsigned index;
+	int found;
+	int wrong;
+	int order;
+
+	/* The letters' and the symbols' faces. */
+	faces[0] = KWL_QWERTY_LETTERS;
+	faces[1] = KWL_QWERTY_SYMBOLS;
+	for (index = 0; index < 2U; index++) {
+		face = faces[index];
+		keys = kwl_qwerty_row(face, 1U, &count);
+		found = row_ends_with(keys, count, "Backspace", KWL_FLICK_BACKSPACE);
+		check(found, "QWERTY: Backspace at the right of the digits");
+		keys = kwl_qwerty_row(face, 3U, &count);
+		found = row_ends_with(keys, count, "Return", KWL_FLICK_ENTER);
+		check(found, "QWERTY: Return at the right of the middle row");
+		found = row_has_action(face, 4U, KWL_FLICK_BACKSPACE);
+		check(!found, "QWERTY: no delete key in the lowest row");
+		found = row_has_action(face, 5U, KWL_FLICK_ENTER);
+		check(!found, "QWERTY: no enter key in the space row");
+	}
+
+	/* Every flick face's delete key, at the top of the last column. */
+	wrong = 0;
+	for (face = 0; face < KWL_FLICK_FACES; face++) {
+		key = kwl_flick_key(face, 0U, 3U);
+		if (key == NULL || key->action != KWL_FLICK_BACKSPACE) {
+			wrong++;
+			continue;
+		}
+
+		/* Its label. */
+		order = strcmp(key->label, "削除");
+		if (order != 0)
+			wrong++;
+	}
+
+	/* None wrong. */
+	check(wrong == 0, "flick: the delete key is 削除 on every face");
+}
+
+/* Tells whether a QWERTY row's last key has a label and an action.  Returns 1 or 0. */
+static int
+row_ends_with(
+	const struct kwl_qwerty_key *keys,
+	unsigned count,
+	const char *label,
+	unsigned action)
+{
+	int order;
+
+	/* An empty row, or another action. */
+	if (count == 0U || keys[count - 1U].action != action)
+		return 0;
+
+	/* The label. */
+	order = strcmp(keys[count - 1U].label, label);
+	if (order != 0)
+		return 0;
+
+	/* Succeeded: the key is there. */
+	return 1;
+}
+
+/* Tells whether a QWERTY row has a key of an action.  Returns 1 or 0. */
+static int
+row_has_action(
+	unsigned face,
+	unsigned row,
+	unsigned action)
+{
+	const struct kwl_qwerty_key *keys;
+	unsigned count;
+	unsigned index;
+
+	/* Each key of the row. */
+	keys = kwl_qwerty_row(face, row, &count);
+	for (index = 0; index < count; index++) {
+		if (keys[index].action == action)
+			return 1;
+	}
+
+	/* None. */
+	return 0;
 }
 
 /* Checks the handwriting's ink (strokes, points, limits, bounds) and the stub recognizer (ws102-p008). */

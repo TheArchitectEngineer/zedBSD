@@ -725,7 +725,8 @@ kwl_ime_focus(
 {
 	struct kwl_ime *ime;
 
-	/* The preedit shown is committed where it was typed. */
+	/* The on-screen keyboard's reading and the preedit shown are committed where they were typed. */
+	kwl_keyboard_focus_leaving(server);
 	ime = server->ime;
 	if (ime != NULL && ime->active != NULL && ime->preedit_shown != NULL && ime->preedit_shown[0] != '\0')
 		ime_deliver(server, ime->active, NULL, 0, 0, ime->preedit_shown, 0, 0);
@@ -788,6 +789,9 @@ kwl_ime_text_input_gone(
 	struct kwl_text_input *input)
 {
 	struct kwl_ime *ime;
+
+	/* The on-screen keyboard's reading in it goes with it. */
+	kwl_keyboard_text_input_gone(server, input);
 
 	/* Only the text input being served matters. */
 	ime = server->ime;
@@ -1104,6 +1108,75 @@ kwl_ime_panel_next(
 	/* The next language. */
 	ime_emit(ime->status, STATUS_NEXT, NULL, 0);
 	printf("KWL IME indicator next via=panel\n");
+}
+
+/*
+ * Chooses the language for the on-screen keyboard's face (ws102-p026): on
+ * is the language that composes the user had last (Japanese when none),
+ * off is direct input; a language already of that kind is kept.  Returns
+ * 0, or ENOENT without an input method that hears its status.
+ */
+int
+kwl_ime_choose(
+	struct kwl_server *server,
+	int on)
+{
+	struct kwl_ime *ime;
+	const char *wanted;
+	int direct;
+
+	/* Only an input method that hears its status. */
+	ime = server->ime;
+	if (ime == NULL || ime->status == NULL)
+		return ENOENT;
+
+	/* A language of the kind asked for already. */
+	direct = ime_is_direct(ime);
+	if (on && !direct)
+		return 0;
+	if (!on && direct)
+		return 0;
+
+	/* The language to choose: direct input, or the composing one the user had (Japanese when none). */
+	wanted = "direct";
+	if (on) {
+		wanted = "ja";
+		if (ime->composing_language[0] != '\0')
+			wanted = ime->composing_language;
+	}
+
+	/* The input method is asked, and the log line the tests read. */
+	ime_select(server, wanted);
+	printf("KWL IME choose language=%s via=keyboard\n", wanted);
+
+	/* Succeeded: the input method is asked for it (its answer names the language). */
+	return 0;
+}
+
+/*
+ * Tells whether the input method composes: 1 while a language other than
+ * direct input is chosen, 0 for direct input, -1 without an input method
+ * that hears its status.
+ */
+int
+kwl_ime_on(
+	struct kwl_server *server)
+{
+	struct kwl_ime *ime;
+	int direct;
+
+	/* No input method. */
+	ime = server->ime;
+	if (ime == NULL || ime->status == NULL)
+		return -1;
+
+	/* Direct input. */
+	direct = ime_is_direct(ime);
+	if (direct)
+		return 0;
+
+	/* Succeeded: a language that composes. */
+	return 1;
 }
 
 /*
@@ -1552,6 +1625,7 @@ ime_status_request(
 	char *label;
 	size_t next;
 	size_t end;
+	int direct;
 	int error;
 
 	ime = status->client->server->ime;
@@ -1578,6 +1652,11 @@ ime_status_request(
 		if (ime != NULL && ime->status == status) {
 			snprintf(ime->language, sizeof(ime->language), "%s", id);
 			snprintf(ime->label, sizeof(ime->label), "%s", label);
+
+			/* A language that composes is the one the on-screen keyboard's kana face chooses again (ws102-p026). */
+			direct = ime_is_direct(ime);
+			if (!direct)
+				snprintf(ime->composing_language, sizeof(ime->composing_language), "%s", id);
 			status->client->server->dirty = 1;
 			printf("KWL IME language=%s\n", ime->language);
 

@@ -18,7 +18,8 @@
  * The kana face is the Japanese twelve-key layout (あ in the middle,
  * い う え お to the left, up, right and down); its voice key turns the
  * last kana into its voiced, half-voiced or small form and back.  The alpha
- * face is the telephone's letters, with a case key; the number face has
+ * face is the telephone's letters, with a Shift key (a/A: capitals for
+ * the next letter, or locked; ws102-p026); the number face has
  * the digits, with the ASCII symbols the alpha face does not have around
  * them.  Between the alpha and the number face every lower-case letter,
  * digit and printable ASCII symbol can be typed (the host's tests check
@@ -68,7 +69,7 @@ static const struct kwl_flick_key layout_keys[KWL_FLICK_FACES][KWL_FLICK_ROWS][K
 			{ "あ", KWL_FLICK_TYPE, { "あ", "い", "う", "え", "お" } },
 			{ "か", KWL_FLICK_TYPE, { "か", "き", "く", "け", "こ" } },
 			{ "さ", KWL_FLICK_TYPE, { "さ", "し", "す", "せ", "そ" } },
-			{ "Del", KWL_FLICK_BACKSPACE, { NULL, NULL, NULL, NULL, NULL } }
+			{ "削除", KWL_FLICK_BACKSPACE, { NULL, NULL, NULL, NULL, NULL } }
 		},
 		{
 			{ "た", KWL_FLICK_TYPE, { "た", "ち", "つ", "て", "と" } },
@@ -94,7 +95,7 @@ static const struct kwl_flick_key layout_keys[KWL_FLICK_FACES][KWL_FLICK_ROWS][K
 			{ "@", KWL_FLICK_TYPE, { "@", "#", "/", "&", "_" } },
 			{ "abc", KWL_FLICK_TYPE, { "a", "b", "c", NULL, NULL } },
 			{ "def", KWL_FLICK_TYPE, { "d", "e", "f", NULL, NULL } },
-			{ "Del", KWL_FLICK_BACKSPACE, { NULL, NULL, NULL, NULL, NULL } }
+			{ "削除", KWL_FLICK_BACKSPACE, { NULL, NULL, NULL, NULL, NULL } }
 		},
 		{
 			{ "ghi", KWL_FLICK_TYPE, { "g", "h", "i", NULL, NULL } },
@@ -120,7 +121,7 @@ static const struct kwl_flick_key layout_keys[KWL_FLICK_FACES][KWL_FLICK_ROWS][K
 			{ "1", KWL_FLICK_TYPE, { "1", "+", "-", "*", "/" } },
 			{ "2", KWL_FLICK_TYPE, { "2", "=", "%", "<", ">" } },
 			{ "3", KWL_FLICK_TYPE, { "3", "[", "]", "{", "}" } },
-			{ "Del", KWL_FLICK_BACKSPACE, { NULL, NULL, NULL, NULL, NULL } }
+			{ "削除", KWL_FLICK_BACKSPACE, { NULL, NULL, NULL, NULL, NULL } }
 		},
 		{
 			{ "4", KWL_FLICK_TYPE, { "4", "$", "^", "~", "\\" } },
@@ -152,18 +153,18 @@ static const struct kwl_flick_key layout_keys[KWL_FLICK_FACES][KWL_FLICK_ROWS][K
  */
 
 static const struct kwl_qwerty_key layout_extra[] = {
-	{ "Esc", "Esc", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_ESC, 4U },
-	{ "Tab", "Tab", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_TAB, 4U },
-	{ "Ctrl", "Ctrl", NULL, NULL, KWL_FLICK_CTRL, 0U, 4U },
-	{ "Alt", "Alt", NULL, NULL, KWL_FLICK_ALT, 0U, 4U },
+	{ "Esc", "Esc", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_ESC, 5U },
+	{ "Tab", "Tab", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_TAB, 5U },
+	{ "Ctrl", "Ctrl", NULL, NULL, KWL_FLICK_CTRL, 0U, 5U },
+	{ "Alt", "Alt", NULL, NULL, KWL_FLICK_ALT, 0U, 5U },
 	{ "|", "|", "|", "|", KWL_FLICK_TYPE, 0U, 3U },
 	{ "~", "~", "~", "~", KWL_FLICK_TYPE, 0U, 3U },
 	{ "/", "/", "/", "/", KWL_FLICK_TYPE, 0U, 3U },
 	{ "-", "-", "-", "-", KWL_FLICK_TYPE, 0U, 3U },
 	{ "Home", "Home", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_HOME, 3U },
 	{ "End", "End", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_END, 3U },
-	{ "PgUp", "PgUp", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_PAGE_UP, 3U },
-	{ "PgDn", "PgDn", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_PAGE_DOWN, 3U }
+	{ "PgUp", "PgUp", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_PAGE_UP, 4U },
+	{ "PgDn", "PgDn", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_PAGE_DOWN, 4U }
 };
 
 static const struct kwl_qwerty_key layout_digits[] = {
@@ -176,7 +177,8 @@ static const struct kwl_qwerty_key layout_digits[] = {
 	{ "7", "&", "7", "&", KWL_FLICK_TYPE, 0U, 4U },
 	{ "8", "*", "8", "*", KWL_FLICK_TYPE, 0U, 4U },
 	{ "9", "(", "9", "(", KWL_FLICK_TYPE, 0U, 4U },
-	{ "0", ")", "0", ")", KWL_FLICK_TYPE, 0U, 4U }
+	{ "0", ")", "0", ")", KWL_FLICK_TYPE, 0U, 4U },
+	{ "Backspace", "Backspace", NULL, NULL, KWL_FLICK_BACKSPACE, 0U, 6U }
 };
 
 static const struct kwl_qwerty_key layout_letters_top[] = {
@@ -186,22 +188,22 @@ static const struct kwl_qwerty_key layout_letters_top[] = {
 
 static const struct kwl_qwerty_key layout_letters_middle[] = {
 	LAYOUT_LETTER("a", "A"), LAYOUT_LETTER("s", "S"), LAYOUT_LETTER("d", "D"), LAYOUT_LETTER("f", "F"), LAYOUT_LETTER("g", "G"),
-	LAYOUT_LETTER("h", "H"), LAYOUT_LETTER("j", "J"), LAYOUT_LETTER("k", "K"), LAYOUT_LETTER("l", "L")
+	LAYOUT_LETTER("h", "H"), LAYOUT_LETTER("j", "J"), LAYOUT_LETTER("k", "K"), LAYOUT_LETTER("l", "L"),
+	{ "Return", "Return", "\n", "\n", KWL_FLICK_ENTER, 0U, 10U }
 };
 
 static const struct kwl_qwerty_key layout_letters_bottom[] = {
-	{ "Shift", "Shift", NULL, NULL, KWL_FLICK_SHIFT, 0U, 6U },
+	{ "Shift", "Shift", NULL, NULL, KWL_FLICK_SHIFT, 0U, 9U },
 	LAYOUT_LETTER("z", "Z"), LAYOUT_LETTER("x", "X"), LAYOUT_LETTER("c", "C"), LAYOUT_LETTER("v", "V"),
 	LAYOUT_LETTER("b", "B"), LAYOUT_LETTER("n", "N"), LAYOUT_LETTER("m", "M"),
-	{ "Del", "Del", NULL, NULL, KWL_FLICK_BACKSPACE, 0U, 6U }
+	{ "Shift", "Shift", NULL, NULL, KWL_FLICK_SHIFT, 0U, 9U }
 };
 
 static const struct kwl_qwerty_key layout_letters_space[] = {
-	{ "?123", "?123", NULL, NULL, KWL_FLICK_FACE, 0U, 5U },
-	{ ",", ",", ",", ",", KWL_FLICK_TYPE, 0U, 3U },
-	{ "space", "space", " ", " ", KWL_FLICK_SPACE, 0U, 12U },
-	{ ".", ".", ".", ".", KWL_FLICK_TYPE, 0U, 3U },
-	{ "Enter", "Enter", "\n", "\n", KWL_FLICK_ENTER, 0U, 5U },
+	{ "?123", "?123", NULL, NULL, KWL_FLICK_FACE, 0U, 6U },
+	{ ",", ",", ",", ",", KWL_FLICK_TYPE, 0U, 4U },
+	{ "space", "space", " ", " ", KWL_FLICK_SPACE, 0U, 20U },
+	{ ".", ".", ".", ".", KWL_FLICK_TYPE, 0U, 4U },
 	{ "←", "←", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_LEFT, 3U },
 	{ "↑", "↑", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_UP, 3U },
 	{ "↓", "↓", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_DOWN, 3U },
@@ -215,21 +217,20 @@ static const struct kwl_qwerty_key layout_symbols_top[] = {
 
 static const struct kwl_qwerty_key layout_symbols_middle[] = {
 	LAYOUT_SYMBOL("."), LAYOUT_SYMBOL(","), LAYOUT_SYMBOL("?"), LAYOUT_SYMBOL("!"), LAYOUT_SYMBOL("'"),
-	LAYOUT_SYMBOL("\""), LAYOUT_SYMBOL("`"), LAYOUT_SYMBOL("_"), LAYOUT_SYMBOL("\\"), LAYOUT_SYMBOL("|")
+	LAYOUT_SYMBOL("\""), LAYOUT_SYMBOL("`"), LAYOUT_SYMBOL("_"), LAYOUT_SYMBOL("\\"), LAYOUT_SYMBOL("|"),
+	{ "Return", "Return", "\n", "\n", KWL_FLICK_ENTER, 0U, 6U }
 };
 
 static const struct kwl_qwerty_key layout_symbols_bottom[] = {
 	LAYOUT_SYMBOL("~"), LAYOUT_SYMBOL("+"), LAYOUT_SYMBOL("="), LAYOUT_SYMBOL("*"),
-	LAYOUT_SYMBOL("#"), LAYOUT_SYMBOL("%"), LAYOUT_SYMBOL("^"), LAYOUT_SYMBOL("&"),
-	{ "Del", "Del", NULL, NULL, KWL_FLICK_BACKSPACE, 0U, 8U }
+	LAYOUT_SYMBOL("#"), LAYOUT_SYMBOL("%"), LAYOUT_SYMBOL("^"), LAYOUT_SYMBOL("&")
 };
 
 static const struct kwl_qwerty_key layout_symbols_space[] = {
-	{ "ABC", "ABC", NULL, NULL, KWL_FLICK_FACE, 0U, 5U },
-	{ ",", ",", ",", ",", KWL_FLICK_TYPE, 0U, 3U },
-	{ "space", "space", " ", " ", KWL_FLICK_SPACE, 0U, 12U },
-	{ ".", ".", ".", ".", KWL_FLICK_TYPE, 0U, 3U },
-	{ "Enter", "Enter", "\n", "\n", KWL_FLICK_ENTER, 0U, 5U },
+	{ "ABC", "ABC", NULL, NULL, KWL_FLICK_FACE, 0U, 6U },
+	{ ",", ",", ",", ",", KWL_FLICK_TYPE, 0U, 4U },
+	{ "space", "space", " ", " ", KWL_FLICK_SPACE, 0U, 20U },
+	{ ".", ".", ".", ".", KWL_FLICK_TYPE, 0U, 4U },
 	{ "←", "←", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_LEFT, 3U },
 	{ "↑", "↑", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_UP, 3U },
 	{ "↓", "↓", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_DOWN, 3U },
@@ -238,11 +239,10 @@ static const struct kwl_qwerty_key layout_symbols_space[] = {
 
 /* The space row of the email address's letters: @ in the place of the comma (q893). */
 static const struct kwl_qwerty_key layout_email_space[] = {
-	{ "?123", "?123", NULL, NULL, KWL_FLICK_FACE, 0U, 5U },
-	{ "@", "@", "@", "@", KWL_FLICK_TYPE, 0U, 3U },
-	{ "space", "space", " ", " ", KWL_FLICK_SPACE, 0U, 12U },
-	{ ".", ".", ".", ".", KWL_FLICK_TYPE, 0U, 3U },
-	{ "Enter", "Enter", "\n", "\n", KWL_FLICK_ENTER, 0U, 5U },
+	{ "?123", "?123", NULL, NULL, KWL_FLICK_FACE, 0U, 6U },
+	{ "@", "@", "@", "@", KWL_FLICK_TYPE, 0U, 4U },
+	{ "space", "space", " ", " ", KWL_FLICK_SPACE, 0U, 20U },
+	{ ".", ".", ".", ".", KWL_FLICK_TYPE, 0U, 4U },
 	{ "←", "←", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_LEFT, 3U },
 	{ "↑", "↑", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_UP, 3U },
 	{ "↓", "↓", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_DOWN, 3U },
@@ -251,11 +251,10 @@ static const struct kwl_qwerty_key layout_email_space[] = {
 
 /* The space row of the web address's letters: / in the place of the comma (q893). */
 static const struct kwl_qwerty_key layout_url_space[] = {
-	{ "?123", "?123", NULL, NULL, KWL_FLICK_FACE, 0U, 5U },
-	{ "/", "/", "/", "/", KWL_FLICK_TYPE, 0U, 3U },
-	{ "space", "space", " ", " ", KWL_FLICK_SPACE, 0U, 12U },
-	{ ".", ".", ".", ".", KWL_FLICK_TYPE, 0U, 3U },
-	{ "Enter", "Enter", "\n", "\n", KWL_FLICK_ENTER, 0U, 5U },
+	{ "?123", "?123", NULL, NULL, KWL_FLICK_FACE, 0U, 6U },
+	{ "/", "/", "/", "/", KWL_FLICK_TYPE, 0U, 4U },
+	{ "space", "space", " ", " ", KWL_FLICK_SPACE, 0U, 20U },
+	{ ".", ".", ".", ".", KWL_FLICK_TYPE, 0U, 4U },
 	{ "←", "←", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_LEFT, 3U },
 	{ "↑", "↑", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_UP, 3U },
 	{ "↓", "↓", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_DOWN, 3U },
@@ -292,14 +291,14 @@ static const struct kwl_qwerty_key layout_pad_bottom[] = {
 	{ "*", "*", "*", "*", KWL_FLICK_TYPE, 0U, 6U },
 	{ "0", "0", "0", "0", KWL_FLICK_TYPE, 0U, 6U },
 	{ "#", "#", "#", "#", KWL_FLICK_TYPE, 0U, 6U },
-	{ "Del", "Del", NULL, NULL, KWL_FLICK_BACKSPACE, 0U, 6U }
+	{ "Backspace", "Backspace", NULL, NULL, KWL_FLICK_BACKSPACE, 0U, 6U }
 };
 
 static const struct kwl_qwerty_key layout_pad_space[] = {
 	{ "ABC", "ABC", NULL, NULL, KWL_FLICK_FACE, 0U, 5U },
 	{ ",", ",", ",", ",", KWL_FLICK_TYPE, 0U, 3U },
 	{ "space", "space", " ", " ", KWL_FLICK_SPACE, 0U, 12U },
-	{ "Enter", "Enter", "\n", "\n", KWL_FLICK_ENTER, 0U, 5U },
+	{ "Return", "Return", "\n", "\n", KWL_FLICK_ENTER, 0U, 5U },
 	{ "←", "←", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_LEFT, 3U },
 	{ "→", "→", NULL, NULL, KWL_FLICK_ARROW, KWL_KEY_RIGHT, 3U }
 };
@@ -609,7 +608,7 @@ kwl_flick_voice(
 }
 
 /*
- * Works out the other case of a letter for the case key.  Returns 1 with
+ * Works out the other case of a letter (the capitals of the a/A key's Shift).  Returns 1 with
  * it in next, or 0 when the text is not one ASCII letter.
  */
 int

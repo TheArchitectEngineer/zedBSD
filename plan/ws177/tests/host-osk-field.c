@@ -78,7 +78,7 @@ main(void)
 	check(face_has(KWL_QWERTY_EMAIL, "@") && face_has(KWL_QWERTY_EMAIL, "q") && !face_has(KWL_QWERTY_EMAIL, ","), "keys: the email's letters have @ for the comma");
 	check(face_has(KWL_QWERTY_URL, "/") && face_has(KWL_QWERTY_URL, "q"), "keys: the web address's letters have /");
 	check(face_has(KWL_QWERTY_NUMBER, "0") && face_has(KWL_QWERTY_NUMBER, "9") && face_has(KWL_QWERTY_NUMBER, "+") &&
-	    face_has(KWL_QWERTY_NUMBER, "#") && face_has(KWL_QWERTY_NUMBER, "Del") && !face_has(KWL_QWERTY_NUMBER, "q"), "keys: the pad has digits and signs, no letters");
+	    face_has(KWL_QWERTY_NUMBER, "#") && face_has(KWL_QWERTY_NUMBER, "Backspace") && !face_has(KWL_QWERTY_NUMBER, "q"), "keys: the pad has digits and signs, no letters");
 	check(strcmp(kwl_qwerty_face_name(KWL_QWERTY_NUMBER), "number") == 0 && strcmp(kwl_qwerty_face_name(KWL_QWERTY_EMAIL), "email") == 0, "keys: face names");
 
 	/* The outcome. */

@@ -42,7 +42,8 @@
  * or resized in the meantime.  Fullscreen windows keep their size.
  *
  * Above the flick panel's keys are its tools (ws102-p016, design §2.10):
- * a row that is always there (the application used before, delete), the
+ * a row that is always there (the application used before, and the next
+ * application, which goes round every window; ws102-p026), the
  * tools' tabs (edit now; candidates, history and emoji to come), and the
  * edit tools -- the arrows, line start and end, page up and down (keys,
  * with Shift while selecting), selecting (a toggle), select all, undo,
@@ -53,18 +54,25 @@
  * tap pastes an item into the focused window.
  *
  * The candidates' tab (ws166-p003) predicts words: the hiragana the flick
- * panel commits one after another are a reading (keyboard.reading); each
- * time it changes the input method is asked for the words it starts
- * (kwl_ime_predict, kl_ime_status_v1 version 2: the reading's own
- * words first, then longer ones, the user's choices before the
- * dictionary's), and the answer fills the tab, which comes up by itself
- * when a reading begins.  A word tapped replaces the reading before the
- * cursor (the text input deletes the reading's bytes and commits the
- * word, as the voice key does) and is learned (kwl_ime_learn).  When the
- * field tells its text, the reading must be what is before the cursor, or
- * nothing is replaced.  Any other key or tool, another field, a secret
- * field (a password, a PIN, hidden or sensitive text) or the panel's
- * closing ends the reading.
+ * panel's kana face types are a reading (keyboard.reading), shown in the
+ * focused field as the panel's own preedit and not committed until a word
+ * is chosen or the reading confirmed (ws102-p026: a word replacing kana
+ * already committed reached a terminal twice).  Each time it changes the
+ * input method is asked for the words (kwl_ime_predict, kl_ime_status_v1
+ * version 2: the reading converted whole, okurigana and all, then the
+ * words it starts, the user's choices before the dictionary's), and the
+ * answer fills the tab, which comes up by itself when a reading begins.
+ * A word tapped is committed in place of the preedit and learned
+ * (kwl_ime_learn); the space key converts (the next word each time, shown
+ * as the preedit), enter commits what is shown, delete takes back the
+ * conversion or the last kana.  Any other character, key or tool, a key of
+ * the keyboard, the focus moving, another face or the panel's closing
+ * commits the reading first; a field that goes takes it with it.  A secret
+ * field (a password, a PIN, hidden or sensitive text) keeps no reading:
+ * its kana are committed one by one.  While the flick panel is open the
+ * input method's language follows its face: the kana face composes, the
+ * alpha face is direct input, the number face keeps it (its band's button
+ * turns it on, full width, or off).
  *
  * The same swipe again closes the panel it opened; the other corner's
  * swipe changes panels; the panel's close key closes it, and so does a
@@ -109,9 +117,9 @@
  * kwl_text_input_deliver of ime.h).  A field without a text input cannot
  * take such a character, nor can one the input method is composing in;
  * the keyboard then says so in the log and sends nothing.  The voice key
- * replaces the kana it sent last by its next form (the text input deletes
- * the one before and commits the other), the case key the letter it sent
- * last (delete, then the other case).
+ * replaces the reading's last kana by its next form (in a secret field,
+ * the kana sent last: the text input deletes it and commits the other);
+ * a/A is the alpha face's Shift, as the QWERTY panel's.
  */
 
 #include "desktop.h"
@@ -226,7 +234,7 @@
 /* The flick panel's tools (p016): what each does. */
 enum keyboard_tool_kind {
 	TOOL_PREVIOUS,
-	TOOL_DELETE,
+	TOOL_NEXT,
 	TOOL_TAB_EDIT,
 	TOOL_TAB_CANDIDATES,
 	TOOL_TAB_HISTORY,
@@ -282,9 +290,16 @@ enum keyboard_tool_kind {
 #define KEYBOARD_HISTORY_ROWS	10U
 #define KEYBOARD_HISTORY_TEXT	160U
 
-/* The tools' rows: the row always there, the tabs' row (lower), and the edit tools' rows. */
-#define KEYBOARD_TOOL_ROW	44
-#define KEYBOARD_TOOL_TABS	30
+/*
+ * The tools' rows' heights (ws102-p026, the user's 2026-10-13 sizes): the
+ * row always there, the tabs' row, and each of the edit tools' rows
+ * (KEYBOARD_TOOL_EDIT_ROWS of them); on a screen whose column has not the
+ * room, all three are made smaller in the same proportion.
+ */
+#define KEYBOARD_TOOL_ROW	66
+#define KEYBOARD_TOOL_TABS	60
+#define KEYBOARD_TOOL_EDIT	88
+#define KEYBOARD_TOOL_EDIT_ROWS	4
 
 /* The most floating windows the work area moves at once. */
 #define KEYBOARD_MOVES		32U
@@ -419,13 +434,15 @@ struct keyboard_move {
  * history_row the history's row held.  emoji_category is the emoji face's
  * category shown, emoji_active and emoji_slot its tab or cell held (the
  * tabs first, then the cells, keyboard_emoji_rect).  The candidates' tab
- * (ws166-p003): reading is the hiragana committed since the reading began
- * (empty for none) into reading_input's field, reading_commit that
- * field's count of commits when the reading last changed (its surrounding
- * text tells the reading only when set by a later commit), predict_serial the latest
- * request to the input method, predictions and prediction_readings its
- * answer's words and their readings (prediction_count of them), and
- * candidate_active and candidate_slot the word held.
+ * (ws166-p003): reading is the hiragana typed since the reading began
+ * (empty for none), shown as the preedit of reading_input's field and not
+ * yet committed (ws102-p026), predict_serial the latest request to the
+ * input method, predictions and prediction_readings its answer's words and
+ * their readings (prediction_count of them; an empty reading for a
+ * conversion, which is not learned), candidate_active and candidate_slot
+ * the word held, and converting while the space key has chosen the
+ * candidate chosen (shown in place of the reading).  flick_shift is the
+ * alpha face's Shift (KEYBOARD_SHIFT_*, and when a/A was last pressed).
  */
 
 /*
@@ -441,8 +458,8 @@ static struct kwl_hand_ink keyboard_ink;
  * program).
  */
 static const struct keyboard_tool keyboard_tools[] = {
-	{ "前の app", TOOL_PREVIOUS, 0U, 0U, 2U, 4U },
-	{ "Del", TOOL_DELETE, 0U, 2U, 2U, 4U },
+	{ "前のApp", TOOL_PREVIOUS, 0U, 0U, 2U, 4U },
+	{ "次のApp", TOOL_NEXT, 0U, 2U, 2U, 4U },
 	{ "編集", TOOL_TAB_EDIT, 1U, 0U, 1U, 4U },
 	{ "候補", TOOL_TAB_CANDIDATES, 1U, 1U, 1U, 4U },
 	{ "履歴", TOOL_TAB_HISTORY, 1U, 2U, 1U, 4U },
@@ -518,13 +535,16 @@ struct keyboard_state {
 	unsigned emoji_slot;
 	char reading[KEYBOARD_READING];
 	struct kwl_text_input *reading_input;
-	uint32_t reading_commit;
 	uint32_t predict_serial;
 	char predictions[KEYBOARD_PREDICTIONS][KEYBOARD_PREDICTION_TEXT];
 	char prediction_readings[KEYBOARD_PREDICTIONS][KEYBOARD_PREDICTION_TEXT];
 	unsigned prediction_count;
 	unsigned candidate_active;
 	unsigned candidate_slot;
+	unsigned converting;
+	unsigned chosen;
+	unsigned flick_shift;
+	uint64_t flick_shift_ms;
 
 	/*
 	 * The panel App Home or Wiseview put away, and the window that had
@@ -617,12 +637,12 @@ static void keyboard_qwerty_rect(struct kwl_server *server, unsigned row, unsign
 static int keyboard_qwerty_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *row, unsigned *index);
 static const struct kwl_qwerty_key *keyboard_qwerty_key(unsigned row, unsigned index);
 static void keyboard_qwerty_release(struct kwl_server *server);
-static void keyboard_qwerty_shift(void);
 static void keyboard_qwerty_log(struct kwl_server *server);
 static void keyboard_follow_field(struct kwl_server *server);
 static void keyboard_draw_qwerty(struct kwl_server *server, struct kwl_list *command);
 static void keyboard_draw_bubble(struct kwl_server *server, struct kwl_list *command);
 static void keyboard_band_button_rect(int32_t *rect);
+static void keyboard_width_toggle(struct kwl_server *server);
 static void keyboard_hand_area(int32_t *rect);
 static void keyboard_hand_key_rect(unsigned key, int32_t *rect);
 static int keyboard_hand_key_at(int32_t x, int32_t y, unsigned *key);
@@ -637,9 +657,18 @@ static int keyboard_send_key(struct kwl_server *server, unsigned code, int shift
 static void keyboard_key_event(struct kwl_server *server, uint32_t time, unsigned code, uint32_t state);
 static int keyboard_send_commit(struct kwl_server *server, const char *text, uint32_t before);
 static void keyboard_voice(struct kwl_server *server);
-static void keyboard_case(struct kwl_server *server);
+static void keyboard_flick_type(struct kwl_server *server, const char *text);
+static int keyboard_full_width(const char *text, char *wide, size_t size);
+static void keyboard_face_set(struct kwl_server *server, unsigned face);
+static void keyboard_face_ime(struct kwl_server *server);
+static void keyboard_shift_press(unsigned *state, uint64_t *when);
+static const char *keyboard_flick_label(const char *text, char *out, size_t size);
 static void keyboard_remember(const char *text, unsigned sent);
-static void keyboard_reading_sent(struct kwl_server *server, const char *text, unsigned sent);
+static int keyboard_reading_add(struct kwl_server *server, const char *text);
+static void keyboard_reading_show(struct kwl_server *server);
+static void keyboard_reading_commit(struct kwl_server *server, const char *why);
+static int keyboard_reading_delete(struct kwl_server *server);
+static int keyboard_convert(struct kwl_server *server);
 static void keyboard_reading_back(struct kwl_server *server);
 static void keyboard_reading_replace(struct kwl_server *server, const char *before, const char *after);
 static void keyboard_reading_end(struct kwl_server *server, const char *why);
@@ -663,6 +692,9 @@ static void keyboard_move_step(struct kwl_server *server, float t);
 static int keyboard_window_live(struct kwl_server *server, const struct kwl_object *window);
 static void keyboard_moves_at_end(struct kwl_server *server, int end);
 static void keyboard_tool_rect(struct kwl_server *server, unsigned index, int32_t *rect);
+static void keyboard_tool_heights(struct kwl_server *server, int32_t *heights);
+static void keyboard_tools_face_area(struct kwl_server *server, int32_t *top, int32_t *bottom);
+static void keyboard_tools_log(struct kwl_server *server);
 static int keyboard_tool_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *index);
 static int keyboard_tool_enabled(struct kwl_server *server, unsigned index, uint32_t enabled, int state);
 static void keyboard_tool_release(struct kwl_server *server);
@@ -672,6 +704,7 @@ static void keyboard_draw_tools(struct kwl_server *server, struct kwl_list *comm
 static void keyboard_history_rect(struct kwl_server *server, unsigned row, int32_t *rect);
 static int keyboard_history_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *row);
 static void keyboard_history_release(struct kwl_server *server);
+static void keyboard_history_log(struct kwl_server *server);
 static void keyboard_draw_history(struct kwl_server *server, struct kwl_list *command);
 static void keyboard_emoji_rect(struct kwl_server *server, unsigned slot, int32_t *rect);
 static int keyboard_emoji_at(struct kwl_server *server, int32_t x, int32_t y, unsigned *slot);
@@ -934,6 +967,7 @@ void
 kwl_keyboard_tick(
 	struct kwl_server *server)
 {
+	struct kwl_text_input *input;
 	int32_t rect[4];
 	uint64_t now;
 	float slide;
@@ -995,6 +1029,11 @@ kwl_keyboard_tick(
 		server->dirty = 1;
 	}
 
+	/* A reading whose field no longer has the keyboard (disabled, or another field) is gone with its preedit. */
+	input = kwl_text_input_current(server);
+	if (keyboard.reading[0] != '\0' && input != keyboard.reading_input)
+		keyboard_reading_end(server, "field");
+
 	/* The faces follow the kind of the field served (q893), open or not. */
 	keyboard_follow_field(server);
 
@@ -1037,6 +1076,8 @@ kwl_keyboard_tick(
 		memcpy(keyboard.panel, rect, sizeof(rect));
 		server->dirty = 1;
 		printf("KWL OSK place kind=%s x=%d y=%d width=%d height=%d\n", keyboard_kind_name(keyboard.open), rect[0], rect[1], rect[2], rect[3]);
+		if (keyboard.open == PANEL_FLICK)
+			keyboard_tools_log(server);
 	}
 }
 
@@ -1105,7 +1146,7 @@ kwl_keyboard_close(
 	keyboard.emoji_active = 0;
 	keyboard.candidate_active = 0;
 	keyboard.selecting = 0;
-	keyboard_reading_end(server, "close");
+	keyboard_reading_commit(server, "close");
 	keyboard_work_area(server);
 	keyboard.held = 0;
 	keyboard.pressing = 0;
@@ -1226,6 +1267,58 @@ kwl_keyboard_surface_commit(
 	now = keyboard_microseconds();
 	printf("KWL OSK latency frame_us=%llu\n", (unsigned long long)(now - keyboard.latency_start_us));
 	keyboard.latency_client = NULL;
+}
+
+/*
+ * Commits the flick panel's reading before a key of the keyboard acts.
+ *
+ * kwl_seat_key calls it first (ws102-p026): the input method's own
+ * preedit, or the application's answer to the key, would otherwise come
+ * before the reading or take its place.
+ */
+void
+kwl_keyboard_key_typed(
+	struct kwl_server *server,
+	uint32_t state)
+{
+	/* A press, while a reading is typed. */
+	if (state == 0U || keyboard.reading[0] == '\0')
+		return;
+	keyboard_reading_commit(server, "key");
+}
+
+/*
+ * Commits the flick panel's reading where it was typed when the focus moves.
+ *
+ * kwl_ime_focus calls it before the text inputs hear leave.
+ */
+void
+kwl_keyboard_focus_leaving(
+	struct kwl_server *server)
+{
+	/* A reading being typed. */
+	if (keyboard.reading[0] == '\0')
+		return;
+	keyboard_reading_commit(server, "focus");
+}
+
+/*
+ * Forgets a text input that goes away (kwl_ime_text_input_gone).
+ *
+ * A reading typed into it goes with it: nothing is left to commit it to.
+ */
+void
+kwl_keyboard_text_input_gone(
+	struct kwl_server *server,
+	struct kwl_text_input *input)
+{
+	/* Only the reading's field. */
+	if (keyboard.reading_input != input)
+		return;
+
+	/* The record goes with the object (never followed again), and the reading with it. */
+	keyboard.reading_input = NULL;
+	keyboard_reading_end(server, "gone");
 }
 
 /*
@@ -1578,7 +1671,8 @@ keyboard_open(
 	struct kwl_server *server,
 	enum keyboard_kind kind)
 {
-	/* A panel opened is no longer one waiting to come back. */
+	/* A reading of the panel before is committed; a panel opened is no longer one waiting to come back. */
+	keyboard_reading_commit(server, "open");
 	keyboard.restore = PANEL_NONE;
 	keyboard.restore_focus = NULL;
 
@@ -1597,6 +1691,12 @@ keyboard_open(
 	keyboard_work_area(server);
 	if (kind == PANEL_QWERTY)
 		keyboard_qwerty_log(server);
+
+	/* The flick panel: its tools' places, and the input method's language for its face (ws102-p026). */
+	if (kind == PANEL_FLICK) {
+		keyboard_tools_log(server);
+		keyboard_face_ime(server);
+	}
 }
 
 /*
@@ -1798,6 +1898,12 @@ keyboard_panel_button(
 			return 1;
 		}
 
+		/* On the flick panel's number face's band button, full width or half (the input method on or off, ws102-p026). */
+		if (inside && keyboard.open == PANEL_FLICK && keyboard.face == KWL_FLICK_NUMBER) {
+			keyboard_width_toggle(server);
+			return 1;
+		}
+
 		/* On the close key, the panel closes. */
 		keyboard_close_rect(close);
 		inside = keyboard_contains(close, server->pointer_x, server->pointer_y);
@@ -1965,6 +2071,7 @@ keyboard_draw_panel(
 	int32_t advance;
 	const char *title;
 	const char *label;
+	int on;
 
 	/* The glass, square against the screen's edges (the band of an edge, as the system bar). */
 	glass_shape_init(&shape, (float)rect[0], (float)rect[1], (float)rect[2], (float)rect[3]);
@@ -2036,6 +2143,16 @@ keyboard_draw_panel(
 		label = "手書き";
 		if (keyboard.hand)
 			label = "ABC";
+		keyboard_draw_key(server, command, button, label, key_ground, dark, SIZE_TITLE);
+	}
+
+	/* The flick panel's number face's band button: full width while the input method composes, else half (ws102-p026). */
+	on = kwl_ime_on(server);
+	if (keyboard.open == PANEL_FLICK && keyboard.face == KWL_FLICK_NUMBER && on >= 0) {
+		keyboard_band_button_rect(button);
+		label = "半角";
+		if (on == 1)
+			label = "全角";
 		keyboard_draw_key(server, command, button, label, key_ground, dark, SIZE_TITLE);
 	}
 
@@ -2293,9 +2410,12 @@ keyboard_key_direction(
 
 /*
  * Acts on the release of the held key: the face key goes to the next
- * face, delete sends the delete key, the voice and case keys change the
- * last character, and any other key sends its character in the flick's
- * direction (none where the direction has none).
+ * face; delete takes back the reading's last character (or its
+ * conversion), else sends the delete key; the voice key changes the last
+ * kana; a/A is the alpha face's Shift; space converts the reading and
+ * enter commits it (each sends its key when there is none); any other key
+ * types its character in the flick's direction (none where the direction
+ * has none).
  */
 static void
 keyboard_key_release(
@@ -2306,6 +2426,7 @@ keyboard_key_release(
 	const char *shown;
 	unsigned direction;
 	int newline;
+	int taken;
 	int sent;
 
 	/* The key and the flick's direction. */
@@ -2329,30 +2450,225 @@ keyboard_key_release(
 	/* What the key does. */
 	switch (key->action) {
 	case KWL_FLICK_FACE:
-		/* The next face. */
-		keyboard.face = kwl_flick_face_next(keyboard.face);
+		/* The next face (the reading committed, the input method's language following). */
+		keyboard_face_set(server, kwl_flick_face_next(keyboard.face));
 		printf("KWL OSK face name=%s\n", kwl_flick_face_name(keyboard.face));
 		break;
 	case KWL_FLICK_BACKSPACE:
-		/* The delete key; the last character is gone, from the reading too. */
-		sent = keyboard_send_key(server, KWL_FLICK_KEY_BACKSPACE, 0);
-		if (!sent)
+		/* The reading's last character or its conversion; without a reading, the delete key. */
+		taken = keyboard_reading_delete(server);
+		if (taken)
 			break;
-		keyboard_remember("", KEYBOARD_SENT_NONE);
-		keyboard_reading_back(server);
+		sent = keyboard_send_key(server, KWL_FLICK_KEY_BACKSPACE, 0);
+		if (sent)
+			keyboard_remember("", KEYBOARD_SENT_NONE);
 		break;
 	case KWL_FLICK_VOICE:
 		keyboard_voice(server);
 		break;
 	case KWL_FLICK_CASE:
-		keyboard_case(server);
+		/* Shift for the alpha face's letters: once, then locked, then off. */
+		keyboard_shift_press(&keyboard.flick_shift, &keyboard.flick_shift_ms);
+		printf("KWL OSK flick-shift state=%u\n", keyboard.flick_shift);
+		break;
+	case KWL_FLICK_SPACE:
+		/* The reading converted (its next candidate); without one, a space. */
+		taken = keyboard_convert(server);
+		if (!taken && text != NULL)
+			keyboard_send(server, text);
+		break;
+	case KWL_FLICK_ENTER:
+		/* The reading committed; without one, a new line. */
+		if (keyboard.reading[0] != '\0') {
+			keyboard_reading_commit(server, "enter");
+			break;
+		}
+
+		/* No reading: the new line. */
+		if (text != NULL)
+			keyboard_send(server, text);
 		break;
 	default:
 		/* A character, when the direction has one. */
 		if (text != NULL)
-			keyboard_send(server, text);
+			keyboard_flick_type(server, text);
 		break;
 	}
+}
+
+/*
+ * Types a character of a flick key (ws102-p026): the kana face's hiragana
+ * join the reading, shown as the panel's own preedit; the alpha face's
+ * letters are capitals while its Shift is on; the number face's ASCII is
+ * committed in full width while the input method composes (a field without
+ * a text input takes it as its key); anything else is sent as it is.
+ */
+static void
+keyboard_flick_type(
+	struct kwl_server *server,
+	const char *text)
+{
+	char upper[KEYBOARD_LAST];
+	char wide[KEYBOARD_LAST];
+	int found;
+	int taken;
+	int sent;
+	int on;
+
+	/* A hiragana of the kana face: the reading's. */
+	found = keyboard_hiragana(text);
+	if (keyboard.face == KWL_FLICK_KANA && found) {
+		taken = keyboard_reading_add(server, text);
+		if (taken)
+			return;
+	}
+
+	/* A letter of the alpha face with Shift: its capital (a single Shift is used up). */
+	if (keyboard.face == KWL_FLICK_ALPHA &&
+	    keyboard.flick_shift != KEYBOARD_SHIFT_OFF &&
+	    text[0] >= 'a' &&
+	    text[0] <= 'z') {
+		found = kwl_flick_case(text, upper, sizeof(upper));
+		if (found)
+			text = upper;
+		if (keyboard.flick_shift == KEYBOARD_SHIFT_ONCE)
+			keyboard.flick_shift = KEYBOARD_SHIFT_OFF;
+		server->dirty = 1;
+	}
+
+	/* The number face's ASCII in full width while the input method composes. */
+	on = kwl_ime_on(server);
+	found = keyboard_full_width(text, wide, sizeof(wide));
+	if (keyboard.face == KWL_FLICK_NUMBER && on == 1 && found) {
+		keyboard_reading_commit(server, "other");
+		sent = keyboard_send_commit(server, wide, 0);
+		if (sent) {
+			keyboard_remember(wide, KEYBOARD_SENT_COMMIT);
+			return;
+		}
+	}
+
+	/* Anything else as it is. */
+	keyboard_send(server, text);
+}
+
+/*
+ * Writes the full-width form (U+FF01 to U+FF5E, UTF-8) of one printable
+ * ASCII character other than the space.  Returns 1 with it in wide, or 0
+ * when the text is not one such character or the room is too small.
+ */
+static int
+keyboard_full_width(
+	const char *text,
+	char *wide,
+	size_t size)
+{
+	uint32_t code;
+
+	/* One printable ASCII character, and room for three bytes and the end. */
+	if (text[0] < 0x21 ||
+	    text[0] > 0x7e ||
+	    text[1] != '\0' ||
+	    size < 4U)
+		return 0;
+
+	/* Its full-width code point in UTF-8. */
+	code = 0xff01U + (uint32_t)(text[0] - 0x21);
+	wide[0] = (char)(0xe0U | (code >> 12));
+	wide[1] = (char)(0x80U | ((code >> 6) & 0x3fU));
+	wide[2] = (char)(0x80U | (code & 0x3fU));
+	wide[3] = '\0';
+
+	/* Succeeded: the full-width form. */
+	return 1;
+}
+
+/*
+ * Goes to a face of the flick panel (ws102-p026): the reading is committed
+ * first, the alpha face's Shift goes, and while the flick panel is open
+ * the input method's language follows the face.
+ */
+static void
+keyboard_face_set(
+	struct kwl_server *server,
+	unsigned face)
+{
+	int32_t rect[4];
+
+	/* The same face needs nothing. */
+	if (face == keyboard.face)
+		return;
+
+	/* The reading is the old face's. */
+	keyboard_reading_commit(server, "face");
+	keyboard.face = face;
+	keyboard.flick_shift = KEYBOARD_SHIFT_OFF;
+	server->dirty = 1;
+
+	/* The language for it; the number face's band button's place for the tests. */
+	if (keyboard.open != PANEL_FLICK)
+		return;
+	keyboard_face_ime(server);
+	if (face == KWL_FLICK_NUMBER) {
+		keyboard_band_button_rect(rect);
+		printf("KWL OSK wrect x=%d y=%d width=%d height=%d\n", (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
+	}
+}
+
+/*
+ * Chooses the input method's language for the flick panel's face
+ * (ws102-p026, the user's 2026-10-13 request): the kana face composes
+ * (Japanese), the alpha face is direct input, and the number face keeps
+ * the language there is (its band's button changes it: full width or
+ * half).
+ */
+static void
+keyboard_face_ime(
+	struct kwl_server *server)
+{
+	int error;
+	int on;
+
+	/* The number face keeps it. */
+	if (keyboard.face == KWL_FLICK_NUMBER)
+		return;
+
+	/* The kana face on, the alpha face off, and the log line the tests read. */
+	on = 0;
+	if (keyboard.face == KWL_FLICK_KANA)
+		on = 1;
+	error = kwl_ime_choose(server, on);
+	printf("KWL OSK ime face=%s on=%d error=%d\n", kwl_flick_face_name(keyboard.face), on, error);
+}
+
+/*
+ * Gives a flick key's text as it shows: the alpha face's letters in
+ * capitals while its Shift is on (written into out), else the text.
+ */
+static const char *
+keyboard_flick_label(
+	const char *text,
+	char *out,
+	size_t size)
+{
+	size_t i;
+
+	/* As it is, unless the alpha face's Shift is on. */
+	if (keyboard.face != KWL_FLICK_ALPHA || keyboard.flick_shift == KEYBOARD_SHIFT_OFF)
+		return text;
+
+	/* Its lower-case letters in capitals (cut to the room). */
+	for (i = 0; text[i] != '\0' && i + 1U < size; i++) {
+		out[i] = text[i];
+		if (text[i] >= 'a' && text[i] <= 'z')
+			out[i] = (char)(text[i] - 'a' + 'A');
+	}
+
+	/* The end of the copy. */
+	out[i] = '\0';
+
+	/* Succeeded: the capitals. */
+	return out;
 }
 
 /* Draws the flick panel's keys: character keys pale white, the fixed keys a little darker, the held one blue. */
@@ -2363,10 +2679,13 @@ keyboard_draw_keys(
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
 	static const float grey[4] = { 0.86f, 0.89f, 0.93f, 0.95f };
+	static const float pale[4] = { 0.78f, 0.86f, 0.99f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	const struct kwl_flick_key *key;
 	const float *ground;
 	const float *ink;
+	const char *label;
+	char upper[KEYBOARD_LAST];
 	enum glass_size size;
 	int32_t rect[4];
 	unsigned characters;
@@ -2376,24 +2695,33 @@ keyboard_draw_keys(
 	/* Each key of the face. */
 	for (row = 0; row < KWL_FLICK_ROWS; row++) {
 		for (column = 0; column < KWL_FLICK_COLUMNS; column++) {
-			/* The key, its place, its colours: the held one blue, the acting ones grey. */
+			/* The key, its place, its colours: the held one blue, the acting ones grey, a/A pale once and blue locked. */
 			key = kwl_flick_key(keyboard.face, row, column);
 			keyboard_key_rect(server, row, column, rect);
 			ground = white;
 			ink = dark;
 			if (key->action != KWL_FLICK_TYPE)
 				ground = grey;
+			if (key->action == KWL_FLICK_CASE && keyboard.flick_shift == KEYBOARD_SHIFT_ONCE)
+				ground = pale;
+			if (key->action == KWL_FLICK_CASE && keyboard.flick_shift == KEYBOARD_SHIFT_LOCKED) {
+				ground = keyboard_blue;
+				ink = keyboard_on_blue;
+			}
 			if (keyboard.key_active && keyboard.key_row == row && keyboard.key_column == column) {
 				ground = keyboard_blue;
 				ink = keyboard_on_blue;
 			}
 
-			/* A single character large, a longer label a size smaller (the same for all of them). */
+			/* The label (the letters in capitals with Shift); a single character large, a longer label a size smaller. */
+			label = key->label;
+			if (key->action == KWL_FLICK_TYPE)
+				label = keyboard_flick_label(key->label, upper, sizeof(upper));
 			size = SIZE_SEARCH;
-			characters = keyboard_characters(key->label);
+			characters = keyboard_characters(label);
 			if (characters > 1U)
 				size = SIZE_SIGN;
-			keyboard_draw_key(server, command, rect, key->label, ground, ink, size);
+			keyboard_draw_key(server, command, rect, label, ground, ink, size);
 		}
 	}
 }
@@ -2445,6 +2773,7 @@ keyboard_draw_petals(
 	struct glass_shape shape;
 	const struct kwl_flick_key *key;
 	const char *text;
+	char upper[KEYBOARD_LAST];
 	unsigned direction;
 	unsigned side;
 	int32_t rect[4];
@@ -2465,10 +2794,11 @@ keyboard_draw_petals(
 
 	/* Each side's petal that has a character. */
 	for (side = KWL_FLICK_LEFT; side < KWL_FLICK_DIRECTIONS; side++) {
-		/* A side without a character has no petal. */
+		/* A side without a character has no petal; a letter shows its capital with Shift. */
 		text = kwl_flick_text(key, side);
 		if (text == NULL)
 			continue;
+		text = keyboard_flick_label(text, upper, sizeof(upper));
 
 		/* The petal next to the key on that side, centred on it. */
 		petal[2] = size;
@@ -2511,7 +2841,8 @@ keyboard_draw_petals(
 /*
  * Sends a character to the focused application: as the key of the US
  * layout that types it, else as the commit of the focused field's text
- * input.  The character is remembered for the voice and case keys.
+ * input, after the reading being typed is committed.  The character is
+ * remembered for the voice key.
  */
 static void
 keyboard_send(
@@ -2523,13 +2854,15 @@ keyboard_send(
 	int found;
 	int sent;
 
+	/* A reading being typed is committed before (ws102-p026). */
+	keyboard_reading_commit(server, "other");
+
 	/* A character of the US layout: its key. */
 	found = kwl_flick_us_key(text, &code, &shift);
 	if (found) {
 		sent = keyboard_send_key(server, code, shift);
 		if (sent)
 			keyboard_remember(text, KEYBOARD_SENT_KEY);
-		keyboard_reading_sent(server, text, KEYBOARD_SENT_KEY);
 		return;
 	}
 
@@ -2537,15 +2870,6 @@ keyboard_send(
 	sent = keyboard_send_commit(server, text, 0);
 	if (sent)
 		keyboard_remember(text, KEYBOARD_SENT_COMMIT);
-
-	/* The reading grows by a hiragana committed, and ends at anything else. */
-	if (sent) {
-		keyboard_reading_sent(server, text, KEYBOARD_SENT_COMMIT);
-		return;
-	}
-
-	/* A character the field did not take ends it too. */
-	keyboard_reading_end(server, "refused");
 }
 
 /*
@@ -2668,14 +2992,37 @@ keyboard_send_commit(
 	return 1;
 }
 
-/* Replaces the last kana sent (committed) by its next voiced, half-voiced or small form. */
+/*
+ * Replaces the reading's last kana by its next voiced, half-voiced or small
+ * form; without a reading (a secret field, whose kana are committed one by
+ * one), the last kana committed.
+ */
 static void
 keyboard_voice(
 	struct kwl_server *server)
 {
+	char last[KEYBOARD_LAST];
 	char next[KEYBOARD_LAST];
+	size_t length;
 	int found;
 	int sent;
+
+	/* The reading's last kana (three bytes, as every hiragana), back from its conversion. */
+	length = strlen(keyboard.reading);
+	if (length >= 3U) {
+		memcpy(last, keyboard.reading + length - 3U, 3U);
+		last[3] = '\0';
+		found = kwl_flick_voice(last, next, sizeof(next));
+		if (!found) {
+			printf("KWL OSK voice none\n");
+			return;
+		}
+
+		/* Replaced in the reading (shown again, a conversion given up). */
+		keyboard.converting = 0;
+		keyboard_reading_replace(server, last, next);
+		return;
+	}
 
 	/* Only a kana that was committed. */
 	if (keyboard.last_sent != KEYBOARD_SENT_COMMIT) {
@@ -2698,43 +3045,7 @@ keyboard_voice(
 	}
 }
 
-/* Replaces the last letter sent (as a key) by its other case: the delete key, then the letter's key. */
-static void
-keyboard_case(
-	struct kwl_server *server)
-{
-	char next[KEYBOARD_LAST];
-	unsigned code;
-	int shift;
-	int found;
-	int sent;
-
-	/* Only a letter that was sent as a key. */
-	if (keyboard.last_sent != KEYBOARD_SENT_KEY) {
-		printf("KWL OSK case none\n");
-		return;
-	}
-
-	/* Its other case, if it is a letter. */
-	found = kwl_flick_case(keyboard.last, next, sizeof(next));
-	if (!found) {
-		printf("KWL OSK case none\n");
-		return;
-	}
-
-	/* The letter before the cursor deleted, and the other one typed. */
-	sent = keyboard_send_key(server, KWL_FLICK_KEY_BACKSPACE, 0);
-	if (!sent)
-		return;
-	found = kwl_flick_us_key(next, &code, &shift);
-	if (!found)
-		return;
-	sent = keyboard_send_key(server, code, shift);
-	if (sent)
-		keyboard_remember(next, KEYBOARD_SENT_KEY);
-}
-
-/* Remembers the last character sent and how, for the voice and case keys. */
+/* Remembers the last character sent and how, for the voice key. */
 static void
 keyboard_remember(
 	const char *text,
@@ -2902,7 +3213,8 @@ keyboard_qwerty_release(
 	/* What the key does. */
 	switch (key->action) {
 	case KWL_FLICK_SHIFT:
-		keyboard_qwerty_shift();
+		keyboard_shift_press(&keyboard.shift, &keyboard.shift_ms);
+		printf("KWL OSK shift state=%u\n", keyboard.shift);
 		break;
 	case KWL_FLICK_FACE:
 		/* The next face for the field (the symbols, or back from them); Shift goes. */
@@ -2943,10 +3255,15 @@ keyboard_qwerty_release(
 	}
 }
 
-/* Presses Shift: off to once; once to locked when pressed again soon, else off; locked to off. */
+/*
+ * Presses a Shift (the QWERTY panel's, or the flick panel's a/A): off to
+ * once; once to locked when pressed again soon, else off; locked to off.
+ * when is the time of its last press.
+ */
 static void
-keyboard_qwerty_shift(
-	void)
+keyboard_shift_press(
+	unsigned *state,
+	uint64_t *when)
 {
 	uint64_t now;
 
@@ -2954,17 +3271,16 @@ keyboard_qwerty_shift(
 	now = kwl_milliseconds();
 
 	/* The next state. */
-	if (keyboard.shift == KEYBOARD_SHIFT_OFF) {
-		keyboard.shift = KEYBOARD_SHIFT_ONCE;
-	} else if (keyboard.shift == KEYBOARD_SHIFT_ONCE && now - keyboard.shift_ms <= KEYBOARD_SHIFT_LOCK_MS) {
-		keyboard.shift = KEYBOARD_SHIFT_LOCKED;
+	if (*state == KEYBOARD_SHIFT_OFF) {
+		*state = KEYBOARD_SHIFT_ONCE;
+	} else if (*state == KEYBOARD_SHIFT_ONCE && now - *when <= KEYBOARD_SHIFT_LOCK_MS) {
+		*state = KEYBOARD_SHIFT_LOCKED;
 	} else {
-		keyboard.shift = KEYBOARD_SHIFT_OFF;
+		*state = KEYBOARD_SHIFT_OFF;
 	}
 
-	/* When it was pressed, and the log line the tests read. */
-	keyboard.shift_ms = now;
-	printf("KWL OSK shift state=%u\n", keyboard.shift);
+	/* When it was pressed. */
+	*when = now;
 }
 
 /* Logs the QWERTY panel's keys' places for its face (the tests find the keys by them). */
@@ -3027,8 +3343,8 @@ keyboard_follow_field(
 		keyboard.flick_chosen = keyboard.face;
 	keyboard.field_kind = kind;
 
-	/* The faces for the kind; Shift goes. */
-	keyboard.face = kwl_field_flick_face(kind, keyboard.flick_chosen);
+	/* The faces for the kind (the input method's language following the flick face); Shift goes. */
+	keyboard_face_set(server, kwl_field_flick_face(kind, keyboard.flick_chosen));
 	keyboard.field_qface = kwl_field_qwerty_face(kind);
 	keyboard.qface = keyboard.field_qface;
 	keyboard.shift = KEYBOARD_SHIFT_OFF;
@@ -3150,7 +3466,31 @@ keyboard_draw_bubble(
 	keyboard_draw_key(server, command, bubble, label, white, dark, SIZE_SEARCH);
 }
 
-/* Works out the QWERTY panel's band button's rectangle, left of the close key. */
+/*
+ * Turns the input method on or off from the flick panel's number face
+ * (ws102-p026): on, its ASCII is typed in full width; off, as it is.
+ */
+static void
+keyboard_width_toggle(
+	struct kwl_server *server)
+{
+	int error;
+	int on;
+
+	/* Without an input method there is only half width. */
+	on = kwl_ime_on(server);
+	if (on < 0) {
+		printf("KWL OSK width toggle none\n");
+		return;
+	}
+
+	/* The other way, and the log line the tests read. */
+	error = kwl_ime_choose(server, !on);
+	printf("KWL OSK width toggle on=%d error=%d\n", !on, error);
+	server->dirty = 1;
+}
+
+/* Works out the band button's rectangle (the QWERTY panel's, the flick panel's number face's), left of the close key. */
 static void
 keyboard_band_button_rect(
 	int32_t *rect)
@@ -3898,30 +4238,89 @@ keyboard_tool_rect(
 	int32_t *rect)
 {
 	const struct keyboard_tool *tool;
+	int32_t heights[3];
 	int32_t width;
 	int32_t column;
 	int32_t top;
 
-	/* The tool, and the column's width for its row's columns. */
-	(void)server;
+	/* The tool, the rows' heights, and the column's width for its row's columns. */
 	tool = &keyboard_tools[index];
+	keyboard_tool_heights(server, heights);
 	width = (keyboard.panel[2] - (int32_t)(tool->columns + 1U) * KEYBOARD_KEY_GAP) / (int32_t)tool->columns;
 	column = width + KEYBOARD_KEY_GAP;
 
 	/* Its row's top: the row always there, the tabs, then the edit tools' rows. */
 	top = keyboard.panel[1] + KEYBOARD_BAND + KEYBOARD_KEY_GAP;
 	if (tool->row >= 1U)
-		top += KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP;
+		top += heights[0] + KEYBOARD_KEY_GAP;
 	if (tool->row >= 2U)
-		top += KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP + (int32_t)(tool->row - 2U) * (KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP);
+		top += heights[1] + KEYBOARD_KEY_GAP + (int32_t)(tool->row - 2U) * (heights[2] + KEYBOARD_KEY_GAP);
 
-	/* The rectangle, over its columns. */
+	/* The rectangle, over its columns, as high as its row. */
 	rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)tool->column * column;
 	rect[1] = top;
 	rect[2] = (int32_t)tool->span * column - KEYBOARD_KEY_GAP;
-	rect[3] = KEYBOARD_TOOL_ROW;
+	rect[3] = heights[2];
+	if (tool->row == 0U)
+		rect[3] = heights[0];
 	if (tool->row == 1U)
-		rect[3] = KEYBOARD_TOOL_TABS;
+		rect[3] = heights[1];
+}
+
+/*
+ * Works out the tools' rows' heights for the open flick panel (ws102-p026):
+ * heights[0] the row always there, heights[1] the tabs', heights[2] each
+ * edit tools' row.  They are the user's sizes when the column has the room
+ * for them between its title band and its keys, else all made smaller in
+ * the same proportion.
+ */
+static void
+keyboard_tool_heights(
+	struct kwl_server *server,
+	int32_t *heights)
+{
+	int32_t room;
+	int32_t wanted;
+	int key;
+
+	/* The user's sizes. */
+	heights[0] = KEYBOARD_TOOL_ROW;
+	heights[1] = KEYBOARD_TOOL_TABS;
+	heights[2] = KEYBOARD_TOOL_EDIT;
+
+	/* The room between the band and the keys, less the gaps around and between the rows. */
+	key = keyboard_key_size(server);
+	room = keyboard.panel[3] - KEYBOARD_BAND - (int32_t)KWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - (KEYBOARD_TOOL_EDIT_ROWS + 3) * KEYBOARD_KEY_GAP;
+	wanted = KEYBOARD_TOOL_ROW + KEYBOARD_TOOL_TABS + KEYBOARD_TOOL_EDIT_ROWS * KEYBOARD_TOOL_EDIT;
+	if (room >= wanted)
+		return;
+
+	/* Not the room: each the same share smaller (one pixel at least). */
+	if (room < wanted / 16)
+		room = wanted / 16;
+	heights[0] = KEYBOARD_TOOL_ROW * room / wanted;
+	heights[1] = KEYBOARD_TOOL_TABS * room / wanted;
+	heights[2] = KEYBOARD_TOOL_EDIT * room / wanted;
+}
+
+/*
+ * Works out the place the faces under the tools' tabs share (the history,
+ * the emoji, the candidates): from under the tabs to over the keys.
+ */
+static void
+keyboard_tools_face_area(
+	struct kwl_server *server,
+	int32_t *top,
+	int32_t *bottom)
+{
+	int32_t heights[3];
+	int key;
+
+	/* Under the band, the row always there and the tabs; over the keys' grid. */
+	keyboard_tool_heights(server, heights);
+	key = keyboard_key_size(server);
+	*top = keyboard.panel[1] + KEYBOARD_BAND + KEYBOARD_KEY_GAP + heights[0] + KEYBOARD_KEY_GAP + heights[1] + KEYBOARD_KEY_GAP;
+	*bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)KWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
 }
 
 /* Finds the flick panel's tool at a point.  Returns 1 with its index, or 0. */
@@ -4012,8 +4411,8 @@ keyboard_tool_enabled(
 }
 
 /*
- * Acts on the release of the held tool: the application before comes up,
- * delete is sent, the movements are sent as keys (with Shift while
+ * Acts on the release of the held tool: the application before or the next
+ * one comes up, the movements are sent as keys (with Shift while
  * selecting), selecting turns on or off, the edit operations go to the
  * focused window (copy and cut end the selecting).
  */
@@ -4023,7 +4422,6 @@ keyboard_tool_release(
 {
 	const struct keyboard_tool *tool;
 	int error;
-	int sent;
 
 	/* The tool. */
 	keyboard.tool_active = 0;
@@ -4031,9 +4429,9 @@ keyboard_tool_release(
 	tool = &keyboard_tools[keyboard.tool];
 	printf("KWL OSK tool label=%s\n", tool->label);
 
-	/* A tool that is not a tab or delete ends the reading (the cursor or the text may move). */
-	if (tool->row != 1U && tool->kind != TOOL_DELETE)
-		keyboard_reading_end(server, "tool");
+	/* A tool that is not a tab commits the reading first (the cursor, the text or the window may change). */
+	if (tool->row != 1U)
+		keyboard_reading_commit(server, "tool");
 
 	/* What it does. */
 	switch (tool->kind) {
@@ -4041,10 +4439,10 @@ keyboard_tool_release(
 		error = kwl_focus_previous(server);
 		printf("KWL OSK tool previous error=%d\n", error);
 		break;
-	case TOOL_DELETE:
-		sent = keyboard_send_key(server, KWL_FLICK_KEY_BACKSPACE, 0);
-		if (sent)
-			keyboard_reading_back(server);
+	case TOOL_NEXT:
+		/* The lowest window comes forward: again and again, every window in turn (ws102-p026). */
+		error = kwl_focus_next(server);
+		printf("KWL OSK tool next error=%d\n", error);
 		break;
 	case TOOL_LEFT:
 		keyboard_tool_move(server, KWL_KEY_LEFT);
@@ -4102,6 +4500,7 @@ keyboard_tool_release(
 	case TOOL_TAB_HISTORY:
 		keyboard.tools_face = KEYBOARD_FACE_HISTORY;
 		printf("KWL OSK tool face=history items=%u\n", kwl_clipboard_history_count(server));
+		keyboard_history_log(server);
 		break;
 	case TOOL_TAB_EMOJI:
 		/* The emoji face, at the category shown last; the log gives the tests its places. */
@@ -4226,12 +4625,9 @@ keyboard_history_rect(
 	int32_t top;
 	int32_t bottom;
 	int32_t height;
-	int key;
 
 	/* From under the tabs to over the keys. */
-	key = keyboard_key_size(server);
-	top = keyboard.panel[1] + KEYBOARD_BAND + 2 * KEYBOARD_KEY_GAP + KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP + KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP;
-	bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)KWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
+	keyboard_tools_face_area(server, &top, &bottom);
 	height = (bottom - top - (int32_t)(KEYBOARD_HISTORY_ROWS - 1U) * KEYBOARD_KEY_GAP) / (int32_t)KEYBOARD_HISTORY_ROWS;
 
 	/* The row. */
@@ -4279,12 +4675,44 @@ keyboard_history_release(
 {
 	int error;
 
-	/* The item, pasted, and the log line the tests read; a reading ends. */
+	/* The item, pasted after the reading is committed, and the log line the tests read. */
 	keyboard.history_active = 0;
 	server->dirty = 1;
-	keyboard_reading_end(server, "paste");
+	keyboard_reading_commit(server, "paste");
 	error = kwl_clipboard_history_paste(server, keyboard.history_row);
 	printf("KWL OSK history paste index=%u error=%d\n", keyboard.history_row, error);
+}
+
+/* Logs the history's rows' places (those with an item) for the tests. */
+static void
+keyboard_history_log(
+	struct kwl_server *server)
+{
+	int32_t rect[4];
+	unsigned count;
+	unsigned row;
+
+	/* Each row with an item. */
+	count = kwl_clipboard_history_count(server);
+	for (row = 0; row < count && row < KEYBOARD_HISTORY_ROWS; row++) {
+		keyboard_history_rect(server, row, rect);
+		printf("KWL OSK hrect row=%u x=%d y=%d width=%d height=%d\n", row, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
+	}
+}
+
+/* Logs the flick panel's tools' places by their labels for the tests (ws102-p026). */
+static void
+keyboard_tools_log(
+	struct kwl_server *server)
+{
+	int32_t rect[4];
+	unsigned index;
+
+	/* Each tool. */
+	for (index = 0; index < sizeof(keyboard_tools) / sizeof(keyboard_tools[0]); index++) {
+		keyboard_tool_rect(server, index, rect);
+		printf("KWL OSK trect label=%s x=%d y=%d width=%d height=%d\n", keyboard_tools[index].label, (int)rect[0], (int)rect[1], (int)rect[2], (int)rect[3]);
+	}
 }
 
 /*
@@ -4368,13 +4796,12 @@ keyboard_emoji_rect(
 	int32_t grid_top;
 	int32_t cell_width;
 	int32_t cell_height;
+	int32_t heights[3];
 	unsigned cell;
-	int key;
 
-	/* From under the tools' tabs to over the keys, as the history's rows. */
-	key = keyboard_key_size(server);
-	top = keyboard.panel[1] + KEYBOARD_BAND + 2 * KEYBOARD_KEY_GAP + KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP + KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP;
-	bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)KWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
+	/* From under the tools' tabs to over the keys, as the history's rows; the category tabs as high as the tools'. */
+	keyboard_tools_face_area(server, &top, &bottom);
+	keyboard_tool_heights(server, heights);
 	width = keyboard.panel[2] - 2 * KEYBOARD_KEY_GAP;
 
 	/* A category's tab: an equal share of the top row. */
@@ -4383,13 +4810,13 @@ keyboard_emoji_rect(
 		rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)slot * (tab_width + KEYBOARD_KEY_GAP);
 		rect[1] = top;
 		rect[2] = tab_width;
-		rect[3] = KEYBOARD_TOOL_TABS;
+		rect[3] = heights[1];
 		return;
 	}
 
 	/* An emoji's cell: its column and row in the grid under the tabs. */
 	cell = slot - KWL_EMOJI_CATEGORIES;
-	grid_top = top + KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP;
+	grid_top = top + heights[1] + KEYBOARD_KEY_GAP;
 	cell_width = (width - (int32_t)(KEYBOARD_EMOJI_COLUMNS - 1U) * KEYBOARD_KEY_GAP) / (int32_t)KEYBOARD_EMOJI_COLUMNS;
 	cell_height = (bottom - grid_top - (int32_t)(KEYBOARD_EMOJI_ROWS - 1U) * KEYBOARD_KEY_GAP) / (int32_t)KEYBOARD_EMOJI_ROWS;
 	rect[0] = keyboard.panel[0] + KEYBOARD_KEY_GAP + (int32_t)(cell % KEYBOARD_EMOJI_COLUMNS) * (cell_width + KEYBOARD_KEY_GAP);
@@ -4458,10 +4885,10 @@ keyboard_emoji_release(
 	if (text == NULL)
 		return;
 
-	/* Committed whole (no deletion before it), and the log line the tests read; a reading ends. */
+	/* After the reading, committed whole (no deletion before it), and the log line the tests read. */
+	keyboard_reading_commit(server, "emoji");
 	sent = keyboard_send_commit(server, text, 0U);
 	printf("KWL OSK emoji commit sent=%d text=%s\n", sent, text);
-	keyboard_reading_end(server, "emoji");
 
 	/*
 	 * The voice key replaces the last kana sent by deleting its bytes; after
@@ -4664,8 +5091,13 @@ kwl_keyboard_predictions(
 		line = end + 1;
 	}
 
-	/* Shown, and the log line the tests read. */
+	/* Shown (a conversion whose candidate is no longer there goes back to the reading), and the log line the tests read. */
 	keyboard.candidate_active = 0;
+	if (keyboard.converting && keyboard.chosen >= keyboard.prediction_count) {
+		keyboard.converting = 0;
+		keyboard.chosen = 0;
+		keyboard_reading_show(server);
+	}
 	server->dirty = 1;
 	first = "-";
 	if (keyboard.prediction_count != 0U)
@@ -4680,65 +5112,213 @@ kwl_keyboard_predictions(
 }
 
 /*
- * Follows the reading after a character was sent (ws166-p003): a hiragana
- * committed into the field the reading is in, or begins one in, grows it;
- * anything else ends it.
+ * Adds a hiragana to the reading (ws102-p026): the reading is the flick
+ * panel's own composition, shown in the focused field as its preedit, not
+ * committed until it is chosen or confirmed, so a word chosen for it
+ * replaces nothing already in the field.  A conversion shown is committed
+ * first, and a reading too long is committed and a new one begun.  A field
+ * without a text input, a secret field (its kana are committed one by one)
+ * or one the input method is composing in takes no reading.  Returns 1
+ * when the hiragana is the reading's, 0 when it is to be sent as it is.
  */
-static void
-keyboard_reading_sent(
+static int
+keyboard_reading_add(
 	struct kwl_server *server,
-	const char *text,
-	unsigned sent)
+	const char *text)
 {
 	struct kwl_text_input *input;
 	size_t length;
 	size_t added;
-	int kana;
 	int secret;
 
-	/* A key, or a character that is not hiragana, ends the reading. */
-	kana = keyboard_hiragana(text);
-	if (sent != KEYBOARD_SENT_COMMIT || !kana) {
-		keyboard_reading_end(server, "other");
-		return;
-	}
-
-	/* A secret field keeps no reading. */
+	/* A field that takes a reading. */
 	input = kwl_text_input_current(server);
 	secret = keyboard_secret(input);
-	if (input == NULL || secret) {
-		keyboard_reading_end(server, "secret");
-		return;
-	}
+	if (input == NULL || secret)
+		return 0;
+	if (server->ime != NULL && server->ime->composing)
+		return 0;
 
-	/* Another field begins a new reading. */
-	if (input != keyboard.reading_input) {
+	/* A reading of another field is gone with it; a conversion shown is chosen. */
+	if (keyboard.reading[0] != '\0' && input != keyboard.reading_input)
 		keyboard_reading_end(server, "field");
-		keyboard.reading_input = input;
-	}
+	if (keyboard.converting)
+		keyboard_reading_commit(server, "next");
 
-	/* The hiragana added, when it fits (a reading too long ends). */
+	/* A reading that would be too long is committed, and the hiragana begins the next. */
 	length = strlen(keyboard.reading);
 	added = strlen(text);
 	if (length + added >= sizeof(keyboard.reading)) {
-		keyboard_reading_end(server, "long");
+		keyboard_reading_commit(server, "long");
+		length = 0;
+	}
+
+	/* Added; a reading that begins brings the candidates' tab up. */
+	memcpy(keyboard.reading + length, text, added + 1U);
+	keyboard.reading_input = input;
+	if (length == 0U)
+		keyboard.tools_face = KEYBOARD_FACE_CANDIDATES;
+	keyboard_remember("", KEYBOARD_SENT_NONE);
+
+	/* Shown, and its words asked for. */
+	keyboard_reading_show(server);
+	keyboard_reading_predict(server);
+	return 1;
+}
+
+/*
+ * Shows the reading, or the candidate the conversion has chosen, as the
+ * preedit of the field it is typed into, the cursor at its end.
+ */
+static void
+keyboard_reading_show(
+	struct kwl_server *server)
+{
+	struct kwl_text_input *input;
+	const char *shown;
+	size_t length;
+
+	/* Only in the field the reading is typed into, while it has the keyboard. */
+	input = kwl_text_input_current(server);
+	if (input == NULL || input != keyboard.reading_input)
+		return;
+
+	/* The candidate chosen, or the reading; nothing clears the preedit. */
+	shown = keyboard.reading;
+	if (keyboard.converting && keyboard.chosen < keyboard.prediction_count)
+		shown = keyboard.predictions[keyboard.chosen];
+	length = strlen(shown);
+	kwl_text_input_deliver(input, shown, (int32_t)length, (int32_t)length, NULL, 0, 0);
+
+	/* The log line the tests read (and the key's latency). */
+	printf("KWL OSK preedit text=%s\n", shown);
+	keyboard_latency_sent(server);
+	server->dirty = 1;
+}
+
+/*
+ * Commits the reading, or the candidate the conversion has chosen, into the
+ * field it was typed into (its preedit replaced), and ends it; a candidate
+ * of the dictionary is learned.  A field that went away takes nothing.
+ */
+static void
+keyboard_reading_commit(
+	struct kwl_server *server,
+	const char *why)
+{
+	char text[KEYBOARD_PREDICTION_TEXT];
+	char reading[KEYBOARD_PREDICTION_TEXT];
+
+	/* No reading: nothing to commit (a stale prediction goes). */
+	if (keyboard.reading[0] == '\0') {
+		keyboard_reading_end(server, why);
 		return;
 	}
 
-	/* Added. */
-	memcpy(keyboard.reading + length, text, added + 1U);
+	/* What is shown, and the dictionary's reading of a candidate (empty for a conversion, which is not learned). */
+	(void)snprintf(text, sizeof(text), "%s", keyboard.reading);
+	reading[0] = '\0';
+	if (keyboard.converting && keyboard.chosen < keyboard.prediction_count) {
+		(void)snprintf(text, sizeof(text), "%s", keyboard.predictions[keyboard.chosen]);
+		(void)snprintf(reading, sizeof(reading), "%s", keyboard.prediction_readings[keyboard.chosen]);
+	}
 
-	/* A reading that begins brings the candidates' tab up; the words are asked for. */
-	if (length == 0U)
-		keyboard.tools_face = KEYBOARD_FACE_CANDIDATES;
-	keyboard_reading_predict(server);
+	/* Into the field it was typed into (a text input that went away clears it, kwl_keyboard_text_input_gone). */
+	if (keyboard.reading_input == NULL) {
+		printf("KWL OSK reading dropped reason=%s text=%s\n", why, text);
+		keyboard_reading_end(server, why);
+		return;
+	}
+
+	/* The text replaces the preedit. */
+	kwl_text_input_deliver(keyboard.reading_input, NULL, 0, 0, text, 0, 0);
+	printf("KWL OSK reading commit text=%s reason=%s\n", text, why);
+	keyboard_reading_end(server, why);
+
+	/* A candidate of the dictionary is learned; nothing is left for the voice key. */
+	if (reading[0] != '\0')
+		kwl_ime_learn(server, reading, text);
+	keyboard_remember("", KEYBOARD_SENT_NONE);
 }
 
-/* Takes the last character off the reading (the delete key), asking again for what is left. */
+/*
+ * Takes back what the delete key takes while a reading is typed: a
+ * conversion goes back to the reading, else the reading's last character
+ * goes (the preedit cleared when nothing is left).  Returns 1 when there
+ * was a reading, 0 when the delete key is to be sent.
+ */
+static int
+keyboard_reading_delete(
+	struct kwl_server *server)
+{
+	/* No reading. */
+	if (keyboard.reading[0] == '\0')
+		return 0;
+
+	/* A conversion: back to the reading. */
+	if (keyboard.converting) {
+		keyboard.converting = 0;
+		printf("KWL OSK convert cancel reading=%s\n", keyboard.reading);
+		keyboard_reading_show(server);
+		return 1;
+	}
+
+	/* The last character. */
+	keyboard_reading_back(server);
+	return 1;
+}
+
+/*
+ * Converts the reading (the space key while a reading is typed): the first
+ * candidate the first time, the next one each time after, shown as the
+ * preedit and lit in the candidates' tab.  Returns 1 when the key was
+ * taken, 0 when the space is to be sent (no reading, or no input method to
+ * give candidates).
+ */
+static int
+keyboard_convert(
+	struct kwl_server *server)
+{
+	unsigned count;
+	int on;
+
+	/* No reading. */
+	if (keyboard.reading[0] == '\0')
+		return 0;
+
+	/* No candidates: without an input method the space is typed (after the reading), else they are still to come. */
+	count = keyboard.prediction_count;
+	if (count > KEYBOARD_CANDIDATE_COLUMNS * KEYBOARD_CANDIDATE_ROWS)
+		count = KEYBOARD_CANDIDATE_COLUMNS * KEYBOARD_CANDIDATE_ROWS;
+	on = kwl_ime_on(server);
+	if (count == 0U && on < 0)
+		return 0;
+	if (count == 0U) {
+		printf("KWL OSK convert none reading=%s\n", keyboard.reading);
+		return 1;
+	}
+
+	/* The first candidate, or the next one round. */
+	if (!keyboard.converting) {
+		keyboard.converting = 1;
+		keyboard.chosen = 0;
+	} else {
+		keyboard.chosen = (keyboard.chosen + 1U) % count;
+	}
+
+	/* Shown in the field and in the tab, and the log line the tests read. */
+	keyboard.tools_face = KEYBOARD_FACE_CANDIDATES;
+	printf("KWL OSK convert slot=%u word=%s reading=%s\n", keyboard.chosen, keyboard.predictions[keyboard.chosen], keyboard.reading);
+	keyboard_reading_show(server);
+	return 1;
+}
+
+/* Takes the last character off the reading (the delete key), showing and asking again for what is left. */
 static void
 keyboard_reading_back(
 	struct kwl_server *server)
 {
+	struct kwl_text_input *input;
 	size_t length;
 
 	/* No reading. */
@@ -4753,17 +5333,22 @@ keyboard_reading_back(
 		length--;
 	keyboard.reading[length] = '\0';
 
-	/* The words for what is left (none for nothing). */
+	/* Nothing left: the preedit cleared, and no words. */
 	if (length == 0U) {
+		input = kwl_text_input_current(server);
+		if (input != NULL && input == keyboard.reading_input)
+			kwl_text_input_deliver(input, NULL, 0, 0, NULL, 0, 0);
+		printf("KWL OSK preedit text=\n");
 		keyboard_reading_end(server, "empty");
 		return;
 	}
 
-	/* What is left is asked for. */
+	/* What is left is shown and asked for. */
+	keyboard_reading_show(server);
 	keyboard_reading_predict(server);
 }
 
-/* Replaces the reading's last character (the voice key's change), asking again. */
+/* Replaces the reading's last character (the voice key's change), showing and asking again. */
 static void
 keyboard_reading_replace(
 	struct kwl_server *server,
@@ -4779,24 +5364,25 @@ keyboard_reading_replace(
 	length = strlen(keyboard.reading);
 	old = strlen(before);
 	added = strlen(after);
-	if (length < old) {
-		keyboard_reading_end(server, "voice");
+	if (length < old)
 		return;
-	}
 
 	/* The end is the character changed, and the new one fits. */
 	differs = memcmp(keyboard.reading + length - old, before, old);
-	if (differs != 0 || length - old + added >= sizeof(keyboard.reading)) {
-		keyboard_reading_end(server, "voice");
+	if (differs != 0 || length - old + added >= sizeof(keyboard.reading))
 		return;
-	}
 
-	/* The character replaced, and the words asked for again. */
+	/* The character replaced, shown, and the words asked for again. */
 	memcpy(keyboard.reading + length - old, after, added + 1U);
+	keyboard_reading_show(server);
 	keyboard_reading_predict(server);
 }
 
-/* Ends the reading: no reading, no words (the request in flight is dropped when it answers). */
+/*
+ * Ends the reading without committing it: no reading, no words, no
+ * conversion (the request in flight is dropped when it answers).  The
+ * callers commit it first, but where the field went away.
+ */
 static void
 keyboard_reading_end(
 	struct kwl_server *server,
@@ -4812,24 +5398,21 @@ keyboard_reading_end(
 	keyboard.reading_input = NULL;
 	keyboard.prediction_count = 0;
 	keyboard.candidate_active = 0;
+	keyboard.converting = 0;
+	keyboard.chosen = 0;
 	keyboard.predict_serial++;
 	server->dirty = 1;
 }
 
-/* Asks the input method for the reading's words; the old words stay until they come. */
+/* Asks the input method for the reading's words; the old words stay until they come, a conversion goes. */
 static void
 keyboard_reading_predict(
 	struct kwl_server *server)
 {
-	struct kwl_text_input *input;
 	int error;
 
-	/* The field's text known so far is older than this reading (the field read only while it is current). */
-	input = kwl_text_input_current(server);
-	if (input != NULL && input == keyboard.reading_input)
-		keyboard.reading_commit = input->commits;
-
 	/* A new request: an answer to an older one is dropped. */
+	keyboard.converting = 0;
 	keyboard.predict_serial++;
 	error = kwl_ime_predict(server, keyboard.predict_serial, keyboard.reading);
 	printf("KWL OSK reading=%s serial=%u error=%d\n", keyboard.reading, keyboard.predict_serial, error);
@@ -4839,6 +5422,7 @@ keyboard_reading_predict(
 		keyboard.prediction_count = 0;
 	server->dirty = 1;
 }
+
 
 /* Tells whether a text is hiragana alone (with the long vowel mark), the characters a reading has. */
 static int
@@ -4902,12 +5486,9 @@ keyboard_candidate_rect(
 	int32_t width;
 	int32_t cell_width;
 	int32_t cell_height;
-	int key;
 
 	/* From under the tools' tabs to over the keys, as the history's rows. */
-	key = keyboard_key_size(server);
-	top = keyboard.panel[1] + KEYBOARD_BAND + 2 * KEYBOARD_KEY_GAP + KEYBOARD_TOOL_ROW + KEYBOARD_KEY_GAP + KEYBOARD_TOOL_TABS + KEYBOARD_KEY_GAP;
-	bottom = keyboard.panel[1] + keyboard.panel[3] - (int32_t)KWL_FLICK_ROWS * (key + KEYBOARD_KEY_GAP) - KEYBOARD_KEY_GAP;
+	keyboard_tools_face_area(server, &top, &bottom);
 	width = keyboard.panel[2] - 2 * KEYBOARD_KEY_GAP;
 
 	/* The cell's column and row. */
@@ -4949,14 +5530,11 @@ keyboard_candidate_at(
 }
 
 /*
- * Replaces the reading before the cursor by the word held, and has the
- * input method learn it (ws166-p003).  The field must still be the
- * reading's, and when it has told its text since the reading last changed,
- * the reading must be what is before the cursor; otherwise nothing is
- * replaced and the reading ends.  A field that tells no text, or has not
- * told it since (most applications never do, and ime-probe tells it once
- * at the enable), is trusted to hold the reading the keyboard itself
- * committed.
+ * Commits the word held in place of the reading, which is the field's
+ * preedit (ws102-p026: nothing typed before is deleted, so no application
+ * sees the reading twice), and has the input method learn it (ws166-p003)
+ * when the dictionary gave it.  The field must still be the reading's and
+ * have the keyboard; otherwise the reading ends and nothing is committed.
  */
 static void
 keyboard_candidate_release(
@@ -4965,10 +5543,6 @@ keyboard_candidate_release(
 	struct kwl_text_input *input;
 	char word[KEYBOARD_PREDICTION_TEXT];
 	char reading[KEYBOARD_PREDICTION_TEXT];
-	size_t length;
-	size_t text_length;
-	int differs;
-	int sent;
 
 	/* The word is let go. */
 	keyboard.candidate_active = 0;
@@ -4976,7 +5550,7 @@ keyboard_candidate_release(
 	if (keyboard.candidate_slot >= keyboard.prediction_count || keyboard.reading[0] == '\0')
 		return;
 
-	/* The field the reading was typed into. */
+	/* The field the reading is typed into. */
 	input = kwl_text_input_current(server);
 	if (input == NULL || input != keyboard.reading_input) {
 		printf("KWL OSK candidate refused reason=field\n");
@@ -4984,33 +5558,19 @@ keyboard_candidate_release(
 		return;
 	}
 
-	/* When the field told its text after the reading changed, the reading is what is before the cursor. */
-	length = strlen(keyboard.reading);
-	if (input->text != NULL && input->cursor >= 0 && input->text_commit > keyboard.reading_commit) {
-		differs = 1;
-		text_length = strlen(input->text);
-		if ((size_t)input->cursor >= length && (size_t)input->cursor <= text_length)
-			differs = memcmp(input->text + (size_t)input->cursor - length, keyboard.reading, length);
-		if (differs != 0) {
-			printf("KWL OSK candidate refused reason=surrounding\n");
-			keyboard_reading_end(server, "surrounding");
-			return;
-		}
-	}
-
 	/* The word and its reading, kept before the reading ends. */
 	(void)snprintf(word, sizeof(word), "%s", keyboard.predictions[keyboard.candidate_slot]);
 	(void)snprintf(reading, sizeof(reading), "%s", keyboard.prediction_readings[keyboard.candidate_slot]);
 
-	/* The reading's bytes deleted and the word committed together. */
-	sent = keyboard_send_commit(server, word, (uint32_t)length);
-	printf("KWL OSK candidate commit sent=%d slot=%u word=%s reading=%s\n", sent, keyboard.candidate_slot, word, reading);
+	/* The word replaces the preedit. */
+	kwl_text_input_deliver(input, NULL, 0, 0, word, 0, 0);
+	printf("KWL OSK candidate commit sent=1 slot=%u word=%s reading=%s\n", keyboard.candidate_slot, word, reading);
+	keyboard_latency_sent(server);
 	keyboard_reading_end(server, "chosen");
-	if (!sent)
-		return;
 
-	/* Learned, and nothing for the voice key to change. */
-	kwl_ime_learn(server, reading, word);
+	/* A word of the dictionary is learned; nothing for the voice key to change. */
+	if (reading[0] != '\0')
+		kwl_ime_learn(server, reading, word);
 	keyboard_remember("", KEYBOARD_SENT_NONE);
 }
 
@@ -5024,6 +5584,7 @@ keyboard_draw_candidates(
 	struct kwl_list *command)
 {
 	static const float white[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
+	static const float pale[4] = { 0.78f, 0.86f, 0.99f, 1.0f };
 	static const float dark[4] = { 0.12f, 0.16f, 0.24f, 1.0f };
 	static const float soft[4] = { 0.34f, 0.38f, 0.46f, 1.0f };
 	const float *ground;
@@ -5048,6 +5609,8 @@ keyboard_draw_candidates(
 		keyboard_candidate_rect(server, index, rect);
 		ground = white;
 		ink = dark;
+		if (keyboard.converting && keyboard.chosen == index)
+			ground = pale;
 		if (keyboard.candidate_active && keyboard.candidate_slot == index) {
 			ground = keyboard_blue;
 			ink = keyboard_on_blue;

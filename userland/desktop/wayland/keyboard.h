@@ -47,7 +47,7 @@
  * What a key does besides typing its characters: nothing more (a
  * character key), delete the character before the cursor, a space, a new
  * line, go to the next face, cycle the last kana through its voiced and
- * small forms, or change the last letter's case.
+ * small forms, or Shift the alpha face's letters (KWL_FLICK_CASE, a/A).
  */
 #define KWL_FLICK_TYPE		0U
 #define KWL_FLICK_BACKSPACE	1U
@@ -68,8 +68,11 @@
  * space), and the digits' pad (q893, the field's kind); its rows, the most
  * keys a row has, and a row's width in quarter keys.  The rows count from
  * the top: the extra keys (Esc, Tab, Ctrl, Alt, a few symbols, Home, End,
- * PgUp, PgDn; ws102-p020), the digits, three rows of letters (or symbols)
- * and the space row; the pad's middle four rows are its keys.
+ * PgUp, PgDn; ws102-p020), the digits with Backspace at their right, three
+ * rows of letters (or symbols) with Return at the right of the middle one
+ * and Shift at both ends of the lowest (the places of a desktop keyboard's
+ * keys, ws102-p026), and the space row; the pad's middle four rows are its
+ * keys.
  */
 #define KWL_QWERTY_LETTERS	0U
 #define KWL_QWERTY_SYMBOLS	1U
@@ -80,7 +83,7 @@
 #define KWL_QWERTY_ROWS		6U
 #define KWL_QWERTY_EXTRA_ROW	0U
 #define KWL_QWERTY_ROW_KEYS	12U
-#define KWL_QWERTY_ROW_UNITS	40U
+#define KWL_QWERTY_ROW_UNITS	46U
 
 /* The evdev codes of the keys sent by their code (KWL_FLICK_ARROW): the arrows, Esc, Tab, Home, End, PgUp, PgDn. */
 #define KWL_KEY_ESC		1U
