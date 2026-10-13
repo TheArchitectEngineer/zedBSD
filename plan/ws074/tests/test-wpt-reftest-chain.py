@@ -34,7 +34,8 @@ class ReferenceChainTest(unittest.TestCase):
     def check_chain(self, child_color):
         parent = Image.new("RGB", (1, 1), "white")
 
-        def render(_program, _fonts, _width, _height, _url, _output, _data):
+        def render(_program, _fonts, _width, _height, _url, _output,
+                   _data, _timeout):
             return Image.new("RGB", (1, 1), child_color), []
 
         with patch.object(RUNNER, "render", side_effect=render):

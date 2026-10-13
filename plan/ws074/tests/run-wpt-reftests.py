@@ -14,6 +14,7 @@ import argparse
 from collections import defaultdict, deque
 import contextlib
 import functools
+import hashlib
 from html.parser import HTMLParser
 import http.server
 import json
@@ -271,7 +272,7 @@ def suite_server():
         thread.join()
 
 
-def render(program, fonts, width, height, url, output, data_home):
+def render(program, fonts, width, height, url, output, data_home, timeout=60):
     command = [
         str(program), "--render", "--async", "--output=" + str(output),
         "--width=%d" % width, "--height=%d" % height,
@@ -282,7 +283,7 @@ def render(program, fonts, width, height, url, output, data_home):
     environment = dict(os.environ)
     environment["XDG_DATA_HOME"] = str(data_home)
     result = subprocess.run(
-        command, capture_output=True, text=True, timeout=60,
+        command, capture_output=True, text=True, timeout=timeout,
         env=environment,
     )
     if result.returncode != 0 or not output.is_file():
@@ -311,7 +312,7 @@ def compare(left, right, maximum, pixels):
 
 
 def match_chain(reference, image, base, program, fonts, width, height,
-                temporary, data_home, visited, depth):
+                temporary, data_home, visited, depth, timeout=60):
     """Check static match-only descendants of a reference, without false PASS."""
     if depth > MAX_MATCH_CHAIN:
         raise RuntimeError("reference chain exceeds %d edges" % MAX_MATCH_CHAIN)
@@ -342,7 +343,7 @@ def match_chain(reference, image, base, program, fonts, width, height,
             raise RuntimeError("reference chain cycle: " + child)
         child_url = base + quote(child, safe="/?=&")
         child_image, errors = render(program, fonts, width, height, child_url,
-                                     temporary / "chain.ppm", data_home)
+                                     temporary / "chain.ppm", data_home, timeout)
         if errors:
             raise RuntimeError("reference chain script error: " + child)
         maximum, pixels = fuzzy_limits(metadata.fuzzy, child)
@@ -353,7 +354,7 @@ def match_chain(reference, image, base, program, fonts, width, height,
             continue
         descendant, child_records = match_chain(
             child, child_image, base, program, fonts, width, height,
-            temporary, data_home, visited | {child}, depth + 1)
+            temporary, data_home, visited | {child}, depth + 1, timeout)
         item["chain"] = child_records
         if descendant:
             return True, comparisons
@@ -372,6 +373,14 @@ def save_failure(directory, number, test_name, test, reference, difference):
     return path.name
 
 
+def write_checkpoint(path, value):
+    """Keep a complete result even if a later renderer stalls or crashes."""
+    with path.open("a", encoding="utf-8") as output:
+        output.write(json.dumps(value, sort_keys=True) + "\n")
+        output.flush()
+        os.fsync(output.fileno())
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--program", type=Path,
@@ -384,9 +393,13 @@ def main():
     parser.add_argument("--width", type=int, default=800)
     parser.add_argument("--height", type=int, default=600)
     parser.add_argument("--save-failures", type=int, default=20)
+    parser.add_argument("--render-timeout", type=float, default=60,
+                        help="seconds allowed for each test or reference render")
     parser.add_argument("--out", type=Path,
                         default=ROOT / "build/ws074-wpt-reftest")
     args = parser.parse_args()
+    if args.render_timeout <= 0:
+        raise RuntimeError("render timeout must be positive")
     verify_suite()
     if not args.program.is_file():
         raise RuntimeError("browser is absent: " + str(args.program))
@@ -404,6 +417,18 @@ def main():
     selected = stratified(candidates, args.root, args.limit)
     results = []
     counts = defaultdict(int)
+    checkpoint = args.out / "progress.jsonl"
+    checkpoint.write_text("", encoding="utf-8")
+    selected_names = "\n".join(row["path"] for row in selected)
+    write_checkpoint(checkpoint, {
+        "kind": "header", "wpt_commit": WPT_COMMIT,
+        "selection_manifest": (str(args.selection_manifest) if args.selection_manifest
+                               is not None else None),
+        "selected": len(selected),
+        "selected_sha256": hashlib.sha256(selected_names.encode("utf-8")).hexdigest(),
+        "viewport": [args.width, args.height],
+        "render_timeout": args.render_timeout,
+    })
     with tempfile.TemporaryDirectory(prefix="wpt-render-", dir=args.out) as raw:
         temporary = Path(raw)
         data_home = temporary / "data"
@@ -415,7 +440,7 @@ def main():
                 try:
                     test_image, errors = render(
                         args.program, fonts, args.width, args.height, test_url,
-                        temporary / "test.ppm", data_home,
+                        temporary / "test.ppm", data_home, args.render_timeout,
                     )
                     record["script_errors"] = errors
                     match_results = []
@@ -426,6 +451,7 @@ def main():
                         reference_image, reference_errors = render(
                             args.program, fonts, args.width, args.height,
                             reference_url, temporary / "reference.ppm", data_home,
+                            args.render_timeout,
                         )
                         maximum, pixels = fuzzy_limits(candidate["fuzzy"], reference)
                         equal, metrics = compare(
@@ -438,7 +464,8 @@ def main():
                             resolved, chain = match_chain(
                                 reference, reference_image, base, args.program,
                                 fonts, args.width, args.height, temporary,
-                                data_home, {candidate["path"], reference}, 1)
+                                data_home, {candidate["path"], reference}, 1,
+                                args.render_timeout)
                             item["chain"] = chain
                         if relation == "match":
                             item["resolved"] = resolved
@@ -463,11 +490,16 @@ def main():
                             failures, counts["fail"] + 1,
                             candidate["path"], *first_failed_images
                         )
-                except (RuntimeError, subprocess.TimeoutExpired) as error:
+                except subprocess.TimeoutExpired as error:
+                    record["status"] = "timeout"
+                    record["error"] = str(error)
+                except RuntimeError as error:
                     record["status"] = "error"
                     record["error"] = str(error)
                 counts[record["status"]] += 1
                 results.append(record)
+                write_checkpoint(checkpoint, {"kind": "result", "index": index,
+                                              "record": record})
                 print("[%d/%d] %s %s" % (
                     index, len(selected), record["status"], candidate["path"]
                 ))
@@ -481,6 +513,8 @@ def main():
         "selected": len(selected),
         "selection": ("focus round-robin, path-sorted" if selection is not None
                       else "first-level round-robin, path-sorted"),
+        "render_timeout": args.render_timeout,
+        "checkpoint": str(checkpoint),
         "selection_manifest": (str(args.selection_manifest) if args.selection_manifest
                                is not None else None),
         "skipped": skipped,
@@ -493,8 +527,9 @@ def main():
     report_path.write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    print("WPT reftest: %d pass, %d fail, %d error of %d" % (
-        counts["pass"], counts["fail"], counts["error"], len(selected)
+    print("WPT reftest: %d pass, %d fail, %d error, %d timeout of %d" % (
+        counts["pass"], counts["fail"], counts["error"], counts["timeout"],
+        len(selected)
     ))
     print(report_path)
     return 0

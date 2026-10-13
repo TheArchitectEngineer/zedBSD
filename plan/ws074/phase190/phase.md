@@ -107,3 +107,13 @@ Event ws074-p190-q1042-outcome-20261014: q1042-i01 partial cleared、p190 whole 
 **uncleared、p190 whole uncleared。** 固定静的1,561件の先頭380 IDまで実行し、105 local PASS/273 FAIL/2 error。2件のXHTMLで1件約60秒を要し、周辺caseも遅いため、90分timebox内の完了が危ぶまれた。runnerは最後にのみreportを書き、途中の参照画素差は保存しない。これ以上同じ実行条件に時間を費やさず中断し、先頭380 IDのstatusを[部分証拠](evidence/20261014-q1043/README.md)に保存。残り1,181 IDは未実測。次はcase別上限の短縮とcaseごとのdurable checkpointをrunnerへ追加し、全件を再実行する。browser/WPT/Master変更なし、host build/Acid再計測省略。p190 whole/p173全件100%未達、GitHub publication保留。
 
 Event ws074-p190-q1043-uncleared-20261014: q1043-i01 uncleared。遅いXHTMLと最終reportのみのrunnerでは全件測定が再開しにくいため、q1044で有界case時間と途中保存を追加する。
+
+## q1044-i01 の有限部分範囲
+
+2026-10-14 01:47 JST、ユーザーの事前承認を適用、最大90分。q1043は60秒上限の重いXHTMLで遅延し、runnerが最後にしかJSONを書かないため380件の画素差が失われた。static runnerにcaseごとに指定可能なrenderer timeoutを追加し、test/reference/chainの各renderへ適用する。全選定/環境情報と各結果を完了時にfsyncしたJSONLへ保存し、異常中断でも測定済みmetricsを残す。固定静的1,561 IDをcase別5秒で再実行し、q1042広域100件の非timeout結果との一致、q1043遅延2 IDの明示的timeout、focus別結果/分母を検証する。短い上限によるtimeoutはPASSに数えず、後続調査対象とする。script/variant/公式環境同等性、browser/WPT/公開ABI/`master.md`変更は含めない。局所timeout/checkpoint control、Python compile/diff checkを行う。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。
+
+## q1044-i01 結果（2026-10-14 01:55 JST）
+
+**partial scope cleared、p190 whole uncleared。** runnerにcase別描画上限と逐次fsync JSONLを追加し、固定静的1,561 IDを全実測。[結果・checkpoint](evidence/20261014-q1044/README.md): 500 local PASS/1,051 FAIL/10 timeout/0他error。未対応413 IDはscript402/scripted reference5/variant6。timeout10件はflexbox justify-content XHTMLに集中、q1043の遅延2 IDも明示的timeout。q1042広域100件はstatusと参照画素差が全件一致。JSONL1,561結果のindex/選定hashとfinal report一致、selection3/3+chain4/4+checkpoint2/2、Python compile/diff check PASS。browser/WPT/Master無変更、host build/Acid再計測省略。公式環境同等性、scripted/variant対応と描画FAILは残り、p190 whole/p173全件100%未達、GitHub publication保留。
+
+Event ws074-p190-q1044-outcome-20261014: q1044-i01 partial cleared、p190 whole uncleared。固定静的1,561 reftestのlocal baselineを完了。10 timeoutと1,051 FAIL、413 runner未対応を次の調査へ分ける。

@@ -1,0 +1,9 @@
+# q1044 bounded full static reftest census
+
+The static runner now accepts `--render-timeout` for each test, reference and match-chain render, distinguishes timeout from other errors, and fsyncs a [JSONL checkpoint](progress.jsonl) after every completed ID. The checkpoint header records the selected ID hash, WPT commit, viewport and timeout. All 1,561 result rows and their metrics match the final [report](report.json), with no missing or duplicate index.
+
+The fixed Interop 2025 selection has 1,974 reftest IDs: **1,561 static eligible** and **413 unsupported by this runner** (402 scripted tests, 5 scripted references, 6 variant URLs). With a five-second render bound at 800×600, fixed fonts and one localhost origin, the full static census is **500 local PASS, 1,051 FAIL, 10 timeout, 0 other error**. All 10 timeouts are clustered in `css/css-flexbox/flexbox-justify-content-*` XHTML cases and remain investigation targets. The 100-case q1042 sample has exactly the same status and per-reference pixel counts in this full run.
+
+Per-focus local static outcomes: anchor-positioning 0 PASS/21 FAIL; backdrop-filter 31 PASS/20 FAIL; details 12 PASS/11 FAIL; layout 429 PASS/866 FAIL/10 timeout; scope 1 PASS/1 FAIL; view-transitions 2 PASS; webcompat 9 PASS/16 FAIL; writingmodes 16 PASS/122 FAIL. The five saved `failures/` images preserve initial representative differences. Selection/checkpoint/chain controls passed 9/9, Python compile and `git diff --check` passed. Browser/WPT/Master source did not change, so host build and Acid reruns were outside this runner Queue.
+
+These are local static-runner results, not official WPT certification. Scripted/variant reftests still lack runner coverage; 1,051 rendering comparisons fail and 10 timed-out cases need diagnosis. p190 whole and the 3,805-ID goal remain uncleared. Shared Queue/Master/GitHub publication is Q1 owned; no push.

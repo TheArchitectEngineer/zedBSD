@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1043 / WS074 fixed static reftest full census
+# q1044 / WS074 bounded static reftest census
 
-Status: finished（2026-10-14 01:42–01:46 JST）
+Status: finished（2026-10-14 01:47–01:55 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p190のq1043有限部分scope](phase190/phase.md) に適用。
-Timebox: 2026-10-14 01:42 JST 開始、最大90分（03:12 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p190のq1044有限部分scope](phase190/phase.md) に適用。
+Timebox: 2026-10-14 01:47 JST 開始、最大90分（03:17 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1043-i01 | [ws074-p190](phase190/phase.md) partial | q1042で適格と確定した固定静的reftest1,561 IDを同条件で全測定し、focus別PASS/FAIL/error、未実行413 ID/variant、代表画像を証拠化。browser/WPT/Master/公開ABI変更なし。最大90分 | uncleared（380/1,561で中断） | q1042 100件sampleと分母 |
+| q1044-i01 | [ws074-p190](phase190/phase.md) partial | static runnerに指定可能なcase別描画上限と逐次durable JSONLを追加。5秒上限で固定静的1,561 ID全件を再測定し、q1043遅延case/100件sample照合、focus別分類。browser/WPT/Master/公開ABI変更なし。最大90分 | cleared（partial） | q1043遅延/途中保存不足 |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -78,3 +78,5 @@ Outcome: q1041-i01 partial cleared、p190 whole uncleared。anchor-positioning�
 Outcome: q1042-i01 partial cleared、p190 whole uncleared。固定reftest1,974 IDを静的適格1,561/script402/scripted reference5/variant6に分類。局所selection3/3+chain4/4、既存details/anchor42件の結果/画素差一致。広域100件は28 local PASS/72 FAIL。[証拠](phase190/evidence/20261014-q1042/README.md)。browser/WPT/Master無変更、p173全件100%未達。
 
 Outcome: q1043-i01 uncleared、p190 whole uncleared。静的全1,561 ID中先頭380まで105 local PASS/273 FAIL/2 error。遅いXHTMLでcase別60秒、runnerは最終reportのみのため中断し、ID/statusを[部分証拠](phase190/evidence/20261014-q1043/README.md)へ保存。残り1,181未測定。次はcase別上限と逐次checkpoint。browser/WPT/Master無変更、p173全件100%未達。
+
+Outcome: q1044-i01 partial cleared、p190 whole uncleared。case別5秒上限・逐次fsync JSONLで固定静的1,561 IDを全測定し500 local PASS/1,051 FAIL/10 timeout/0他error。未対応413 IDは保持。100件sample結果/画素差一致、checkpoint1,561行一致、局所control9/9。[証拠](phase190/evidence/20261014-q1044/README.md)。browser/WPT/Master無変更、p173全件100%未達。
