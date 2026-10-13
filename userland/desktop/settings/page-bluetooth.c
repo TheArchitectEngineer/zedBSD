@@ -328,6 +328,15 @@ se_bluetooth_result(
 		{ ENOTSUP, "Bluetooth cannot do that here yet." },
 		{ EINVAL, "That device is not known." }
 	};
+	static const struct {
+		int error;
+		const char *words;
+	} connect_failed[] = {
+		{ EACCES, "The device refused the connection." },
+		{ ENOTSUP, "This computer cannot connect to this kind of device." },
+		{ ENETUNREACH, "The device did not answer. Check that it is on and nearby." },
+		{ EIO, "The device could not be connected." }
+	};
 	struct se_bluetooth *bluetooth;
 	size_t index;
 	int phone;
@@ -378,6 +387,15 @@ se_bluetooth_result(
 	for (index = 0; index < sizeof(failed) / sizeof(failed[0]); index++) {
 		if (failed[index].error == error)
 			(void)snprintf(bluetooth->message, sizeof(bluetooth->message), "%s", failed[index].words);
+	}
+
+	/* A connection that failed is not a pairing refused: its own words (ws143-p007, T1-593). */
+	same = strcmp(bluetooth->doing, "connect");
+	if (same == 0) {
+		for (index = 0; index < sizeof(connect_failed) / sizeof(connect_failed[0]); index++) {
+			if (connect_failed[index].error == error)
+				(void)snprintf(bluetooth->message, sizeof(bluetooth->message), "%s", connect_failed[index].words);
+		}
 	}
 
 	/* A phone that did not take the pairing may keep an old one of this computer (BUG-287). */

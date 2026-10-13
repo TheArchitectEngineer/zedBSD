@@ -235,7 +235,8 @@ class Device(dbus.service.Object):
     def Connect(self):
         self.fake.calls.append("Connect " + self.address)
         if self.fake.connect_error:
-            raise Failure(self.fake.connect_error)
+            parts = self.fake.connect_error.split(":", 1)
+            raise Failure(parts[0], parts[1] if len(parts) > 1 else "")
         self.set("Connected", dbus.Boolean(True))
 
     @dbus.service.method("org.bluez.Device1", in_signature="", out_signature="")

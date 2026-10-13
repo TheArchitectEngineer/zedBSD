@@ -176,20 +176,20 @@ main(
 	found = pump(bluetooth, &seen, 3000, until_question, NULL);
 	(void)kl_backend_bluetooth_answer(bluetooth, seen.question.id, 0U);
 	found = pump(bluetooth, &seen, 3000, until_result, NULL);
-	check(error == 0 && found && seen.result_error == EACCES, "pair-no", "error=%d found=%d result=%d", error, found, seen.result_error);
+	check(error == 0 && found && seen.result_error == ECONNREFUSED, "pair-no", "error=%d found=%d result=%d", error, found, seen.result_error);
 
-	/* 6. BlueZ's plain Failed: its text is the reason. */
+	/* 6. BlueZ's plain Failed: its text is the reason, and a page timeout is a device that did not answer. */
 	(void)fake("script", "fail:org.bluez.Error.Failed:br-connection-page-timeout", answer, sizeof(answer));
 	(void)request(bluetooth, &seen, KL_BACKEND_BT_PAIR, "AA:00:00:00:00:06", KL_BACKEND_BT_BREDR);
 	found = pump(bluetooth, &seen, 3000, until_result, NULL);
-	check(found && seen.result_error == ECONNREFUSED && strcmp(seen.result_reason, "br-connection-page-timeout") == 0, "pair-failed-text", "result=%d reason=%s", seen.result_error, seen.result_reason);
+	check(found && seen.result_error == ETIMEDOUT && strcmp(seen.result_reason, "br-connection-page-timeout") == 0, "pair-failed-text", "result=%d reason=%s", seen.result_error, seen.result_reason);
 
-	/* 7. A PIN to type: refused, and the reason says so. */
+	/* 7. A PIN to type: refused as what this computer cannot do, and the reason says so. */
 	(void)fake("script", "pin", answer, sizeof(answer));
 	(void)request(bluetooth, &seen, KL_BACKEND_BT_PAIR, "AA:00:00:00:00:06", KL_BACKEND_BT_BREDR);
 	found = pump(bluetooth, &seen, 3000, until_result, NULL);
 	(void)fake("agent-result", "", answer, sizeof(answer));
-	check(found && seen.result_error == EACCES && strcmp(seen.result_reason, "input-unsupported") == 0, "pin-refused", "result=%d reason=%s", seen.result_error, seen.result_reason);
+	check(found && seen.result_error == ENOTSUP && strcmp(seen.result_reason, "input-unsupported") == 0, "pin-refused", "result=%d reason=%s", seen.result_error, seen.result_reason);
 	check(strcmp(answer, "org.bluez.Error.Rejected") == 0, "pin-rejected", "%s", answer);
 
 	/* 8. A number to type on the device: shown, then ended when the pairing ends. */
@@ -216,7 +216,7 @@ main(
 	seen.ends = 0U;
 	(void)request(bluetooth, &seen, KL_BACKEND_BT_PAIR, "AA:00:00:00:00:04", KL_BACKEND_BT_BREDR);
 	found = pump(bluetooth, &seen, 3000, until_result, NULL);
-	check(found && seen.result_error == EACCES && seen.ends > 0U, "bluez-cancel", "result=%d ends=%u", seen.result_error, seen.ends);
+	check(found && seen.result_error == ECONNREFUSED && seen.ends > 0U, "bluez-cancel", "result=%d ends=%u", seen.result_error, seen.ends);
 
 	/* 11. Services: an unpaired device refused, HID of a paired untrusted one asked, another service refused, a trusted one allowed. */
 	(void)fake("trigger", "what=authorize;address=AA:00:00:00:00:04;uuid=00001124-0000-1000-8000-00805f9b34fb", answer, sizeof(answer));
@@ -269,6 +269,25 @@ main(
 	(void)request(bluetooth, &seen, KL_BACKEND_BT_CONNECT, MOUSE, KL_BACKEND_BT_BREDR);
 	found = pump(bluetooth, &seen, 2000, until_result, NULL);
 	check(found && seen.result_error == 0, "already-connected", "result=%d", seen.result_error);
+
+	/* 15a. Connect's failures are not a pairing refused: no profile, no answer, refused (T1-593). */
+	(void)fake("connect-error", "org.bluez.Error.NotAvailable:br-connection-profile-unavailable", answer, sizeof(answer));
+	(void)request(bluetooth, &seen, KL_BACKEND_BT_CONNECT, MOUSE, KL_BACKEND_BT_BREDR);
+	found = pump(bluetooth, &seen, 2000, until_result, NULL);
+	check(found && seen.result_error == ENOTSUP && strcmp(seen.result_reason, "NotAvailable") == 0, "connect-no-profile", "result=%d reason=%s", seen.result_error, seen.result_reason);
+	(void)fake("connect-error", "org.bluez.Error.Failed:br-connection-page-timeout", answer, sizeof(answer));
+	(void)request(bluetooth, &seen, KL_BACKEND_BT_CONNECT, MOUSE, KL_BACKEND_BT_BREDR);
+	found = pump(bluetooth, &seen, 2000, until_result, NULL);
+	check(found && seen.result_error == ETIMEDOUT && strcmp(seen.result_reason, "br-connection-page-timeout") == 0, "connect-no-answer", "result=%d reason=%s", seen.result_error, seen.result_reason);
+	(void)fake("connect-error", "org.bluez.Error.Failed:br-connection-refused", answer, sizeof(answer));
+	(void)request(bluetooth, &seen, KL_BACKEND_BT_CONNECT, MOUSE, KL_BACKEND_BT_BREDR);
+	found = pump(bluetooth, &seen, 2000, until_result, NULL);
+	check(found && seen.result_error == ECONNREFUSED, "connect-refused", "result=%d reason=%s", seen.result_error, seen.result_reason);
+	(void)fake("connect-error", "org.bluez.Error.NotSupported", answer, sizeof(answer));
+	(void)request(bluetooth, &seen, KL_BACKEND_BT_CONNECT, MOUSE, KL_BACKEND_BT_BREDR);
+	found = pump(bluetooth, &seen, 2000, until_result, NULL);
+	check(found && seen.result_error == ENOTSUP, "connect-not-supported", "result=%d reason=%s", seen.result_error, seen.result_reason);
+
 	(void)fake("connect-error", "", answer, sizeof(answer));
 	(void)request(bluetooth, &seen, KL_BACKEND_BT_DISCONNECT, MOUSE, KL_BACKEND_BT_BREDR);
 	found = pump(bluetooth, &seen, 2000, until_result, NULL);
