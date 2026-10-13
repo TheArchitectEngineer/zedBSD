@@ -85,6 +85,9 @@ static int displays_light_set(struct kwl_server *server, unsigned percent, int *
 static int displays_apply_request(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int displays_brightness_request(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int displays_shown_request(struct kwl_object *object, const unsigned char *bytes, size_t size);
+static int displays_rotation_request(struct kwl_object *object, const unsigned char *bytes, size_t size);
+static int displays_touch_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
+static void displays_rotation(struct kwl_object *object, struct kwl_server *server, const char *key, unsigned anchor);
 static int displays_places(const char *text, struct kwl_display_config *wanted);
 static void displays_result(struct kwl_object *object, uint32_t request, uint32_t applied, uint32_t saved);
 static void displays_answer(struct kwl_object *object, VkDisplayKHR before, uint32_t request, uint32_t applied, uint32_t written);
@@ -160,6 +163,24 @@ kwl_displays_request(
 	/* A display turned off or on (since 19, ws113-p014). */
 	if (opcode == KL_SYSTEM_DISPLAYS_SET_SHOWN && object->version >= KL_SYSTEM_SINCE_SHOWN) {
 		error = displays_shown_request(object, bytes, size);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* A display's angle chosen (since 34, ws217-p004). */
+	if (opcode == KL_SYSTEM_DISPLAYS_SET_ROTATION && object->version >= KL_SYSTEM_SINCE_ROTATION) {
+		error = displays_rotation_request(object, bytes, size);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* A touch or pen device bound to a display, or the next touch listened for (since 34; ws217-p006 carries them out). */
+	if (opcode == KL_SYSTEM_DISPLAYS_BIND_TOUCH || opcode == KL_SYSTEM_DISPLAYS_LISTEN_TOUCH) {
+		if (object->version < KL_SYSTEM_SINCE_ROTATION)
+			return EPROTO;
+		error = displays_touch_request(object, opcode, bytes, size);
 		if (error != 0)
 			return error;
 		return 0;
@@ -384,6 +405,7 @@ displays_output(
 	int32_t x;
 	int32_t y;
 	size_t offset;
+	unsigned anchor;
 	int internal;
 	int place;
 	int off;
@@ -463,6 +485,45 @@ displays_output(
 	offset = displays_put_word(payload, offset, flags);
 	offset = displays_put_word(payload, offset, percent);
 	(void)kwl_emit(object->client, object->id, KL_SYSTEM_DISPLAYS_EVENT_OUTPUT, payload, offset);
+
+	/* Its angle after it, for an object that hears the angles (since 34, ws217-p004). */
+	anchor = 0U;
+	if ((flags & KL_SYSTEM_DISPLAY_ANCHOR) != 0U)
+		anchor = 1U;
+	if (object->version >= KL_SYSTEM_SINCE_ROTATION)
+		displays_rotation(object, server, key, anchor);
+}
+
+/*
+ * Sends an object a display's rotation event (the angle the user chose)
+ * and its rotations event (the angles it may take now, and why not).
+ */
+static void
+displays_rotation(
+	struct kwl_object *object,
+	struct kwl_server *server,
+	const char *key,
+	unsigned anchor)
+{
+	unsigned char payload[DISPLAYS_EVENT_MAX];
+	unsigned rotation;
+	unsigned mask;
+	unsigned why;
+	size_t offset;
+
+	/* What the compositor tells of the display's angle. */
+	kwl_output_rotation_report(server, anchor, &rotation, &mask, &why);
+
+	/* The angle chosen. */
+	offset = displays_put_string(payload, 0U, key);
+	offset = displays_put_word(payload, offset, rotation);
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_DISPLAYS_EVENT_ROTATION, payload, offset);
+
+	/* The angles it may take, and why not. */
+	offset = displays_put_string(payload, 0U, key);
+	offset = displays_put_word(payload, offset, mask);
+	offset = displays_put_word(payload, offset, why);
+	(void)kwl_emit(object->client, object->id, KL_SYSTEM_DISPLAYS_EVENT_ROTATIONS, payload, offset);
 }
 
 /*
@@ -836,6 +897,144 @@ displays_shown_request(
 	if (error == 0 && saved == 0)
 		written = 1U;
 	displays_answer(object, before, request, applied, written);
+	return 0;
+}
+
+/*
+ * Carries out a set_rotation(request, key, rotation) (ws217-p004): the
+ * angle of the desktop's anchor chosen, shown at once and kept
+ * (output-rotate.c); another display connected is not turned until a
+ * head's angle (ws217-p005).
+ */
+static int
+displays_rotation_request(
+	struct kwl_object *object,
+	const unsigned char *bytes,
+	size_t size)
+{
+	struct kwl_server *server;
+	struct kwl_compose *compose;
+	const char *key;
+	uint32_t request;
+	uint32_t rotation;
+	uint32_t applied;
+	uint32_t written;
+	unsigned shown;
+	unsigned index;
+	size_t next;
+	int connected;
+	int differs;
+	int active;
+	int saved;
+	int error;
+
+	/* The request's words and key. */
+	if (size < 12U)
+		return EPROTO;
+	request = displays_word(bytes, 0U);
+	error = displays_string(bytes, size, 4U, KL_SYSTEM_DISPLAY_KEY_MAX, &key, &next);
+	if (error != 0 || next + 4U != size)
+		return EPROTO;
+	rotation = displays_word(bytes, next);
+
+	/* Only an active session turns a display (D-AUTH2). */
+	server = object->client->server;
+	active = displays_active(server);
+	if (!active) {
+		displays_result(object, request, KL_SYSTEM_RESULT_DENIED, 0U);
+		return 0;
+	}
+
+	/* Whether the key names a display connected. */
+	compose = server->compose;
+	connected = 0;
+	if (compose != NULL) {
+		for (index = 0U; index < compose->display_count; index++) {
+			differs = strcmp(compose->display_names[index], key);
+			if (differs == 0)
+				connected = 1;
+		}
+	}
+
+	/* The anchor's angle chosen; another display connected cannot be turned yet; a key not connected is not found. */
+	saved = -1;
+	shown = 0U;
+	error = ENOENT;
+	if (connected) {
+		error = ENOTSUP;
+		differs = strcmp(compose->display_name, key);
+		if (differs == 0)
+			error = kwl_output_select_rotation(server, KWL_PLANE_ANCHOR, rotation, &shown, &saved);
+	}
+	printf("KWL DISPLAYS rotation client=%llu key=%s rotation=%u error=%d applied=%u saved=%d\n", (unsigned long long)object->client->number, key,
+	    rotation, error, shown, saved);
+
+	/* The answer for each outcome. */
+	switch (error) {
+	case 0:
+		applied = KL_SYSTEM_RESULT_OK;
+		break;
+	case EINVAL:
+		applied = KL_SYSTEM_RESULT_INVALID;
+		break;
+	case ENOTSUP:
+		applied = KL_SYSTEM_RESULT_UNSUPPORTED;
+		break;
+	case ENOENT:
+		applied = KL_SYSTEM_RESULT_UNAVAILABLE;
+		break;
+	default:
+		applied = KL_SYSTEM_RESULT_FAILED;
+		break;
+	}
+
+	/* Succeeded: answered, with whether it was written. */
+	written = 0U;
+	if (error == 0 && saved == 0)
+		written = 1U;
+	displays_result(object, request, applied, written);
+	return 0;
+}
+
+/*
+ * Answers a bind_touch(request, identity, key) or a listen_touch(request,
+ * key) as unsupported: the binding of the touch and pen devices to the
+ * displays is ws217-p006's.
+ */
+static int
+displays_touch_request(
+	struct kwl_object *object,
+	uint32_t opcode,
+	const unsigned char *bytes,
+	size_t size)
+{
+	const char *identity;
+	const char *key;
+	uint32_t request;
+	size_t next;
+	int error;
+
+	/* The request's number. */
+	if (size < 8U)
+		return EPROTO;
+	request = displays_word(bytes, 0U);
+
+	/* A bind's identity, then the key both name. */
+	next = 4U;
+	identity = "";
+	if (opcode == KL_SYSTEM_DISPLAYS_BIND_TOUCH) {
+		error = displays_string(bytes, size, next, KL_SYSTEM_TOUCH_IDENTITY_MAX, &identity, &next);
+		if (error != 0)
+			return EPROTO;
+	}
+	error = displays_string(bytes, size, next, KL_SYSTEM_DISPLAY_KEY_MAX, &key, &next);
+	if (error != 0 || next != size)
+		return EPROTO;
+
+	/* Succeeded: not in this compositor yet. */
+	printf("KWL DISPLAYS touch client=%llu opcode=%u identity=%s key=%s unsupported\n", (unsigned long long)object->client->number, opcode, identity,
+	    key);
+	displays_result(object, request, KL_SYSTEM_RESULT_UNSUPPORTED, 0U);
 	return 0;
 }
 

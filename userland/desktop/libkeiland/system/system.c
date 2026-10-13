@@ -207,6 +207,9 @@ struct system_displays_listener {
 	void (*output)(void *data, struct wl_proxy *proxy, const char *key, const char *label, int32_t x, int32_t y, uint32_t width, uint32_t height, uint32_t refresh_mhz, uint32_t flags, uint32_t brightness);
 	void (*done)(void *data, struct wl_proxy *proxy, uint32_t serial, uint32_t mode);
 	void (*result)(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t applied, uint32_t saved);
+	void (*rotation)(void *data, struct wl_proxy *proxy, const char *key, uint32_t rotation);
+	void (*rotations)(void *data, struct wl_proxy *proxy, const char *key, uint32_t mask, uint32_t why);
+	void (*touch)(void *data, struct wl_proxy *proxy, const char *identity, const char *label, uint32_t kind, const char *key);
 };
 
 /* The listener of kl_system_machine_v1's events (ws188-p002), in their order. */
@@ -276,6 +279,9 @@ static void system_print_job(void *data, struct wl_proxy *proxy, uint32_t job, u
 static void system_printers_done(void *data, struct wl_proxy *proxy, uint32_t serial);
 static void system_display(void *data, struct wl_proxy *proxy, const char *key, const char *label, int32_t x, int32_t y, uint32_t width, uint32_t height, uint32_t refresh_mhz, uint32_t flags, uint32_t brightness);
 static void system_displays_done(void *data, struct wl_proxy *proxy, uint32_t serial, uint32_t mode);
+static void system_display_rotation(void *data, struct wl_proxy *proxy, const char *key, uint32_t rotation);
+static void system_display_rotations(void *data, struct wl_proxy *proxy, const char *key, uint32_t mask, uint32_t why);
+static void system_display_touch(void *data, struct wl_proxy *proxy, const char *identity, const char *label, uint32_t kind, const char *key);
 static void system_machine_parts(void *data, struct wl_proxy *proxy, uint32_t request, uint32_t what);
 static void system_machine_about(void *data, struct wl_proxy *proxy, const char *name, const char *kernel, const char *architecture, const char *processor, const char *host, uint32_t cpus);
 static void system_machine_filesystem(void *data, struct wl_proxy *proxy, const char *path, uint32_t total_high, uint32_t total_low, uint32_t available_high, uint32_t available_low, uint32_t used_high, uint32_t used_low);
@@ -435,7 +441,10 @@ static const struct system_printers_listener system_printers_listener = {
 static const struct system_displays_listener system_displays_listener = {
 	system_display,
 	system_displays_done,
-	system_result
+	system_result,
+	system_display_rotation,
+	system_display_rotations,
+	system_display_touch
 };
 
 /* The computer's object's callbacks (ws188-p002). */
@@ -2293,6 +2302,110 @@ kl_system_displays_set_shown(
 	number = system_number(system, request);
 	shown = (unsigned)(shown != 0U);
 	wl_proxy_marshal(system->displays, KL_SYSTEM_DISPLAYS_SET_SHOWN, number, key, (uint32_t)shown);
+
+	/* Succeeded: the snapshot and the answer come later. */
+	return 0;
+}
+
+/*
+ * Gives the angle the user chose for a display of the last snapshot
+ * (ws217-p004).
+ */
+int
+kl_system_displays_rotation(
+	const struct kl_system *system,
+	const char *key,
+	unsigned *rotation)
+{
+	struct system_view_rotation told;
+	int error;
+
+	/* A display's key, from a compositor that tells the angles. */
+	if (system == NULL ||
+	    key == NULL ||
+	    rotation == NULL)
+		return EINVAL;
+	if (system->displays == NULL || system->manager_version < KL_SYSTEM_SINCE_ROTATION)
+		return ENOTSUP;
+
+	/* What the snapshot holds of it. */
+	error = system_view_rotation_of(&system->view, key, &told);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the angle chosen. */
+	*rotation = told.rotation;
+	return 0;
+}
+
+/*
+ * Gives the angles a display of the last snapshot may be turned to now and
+ * why it may not take the others (ws217-p004).
+ */
+int
+kl_system_displays_rotations(
+	const struct kl_system *system,
+	const char *key,
+	unsigned *mask,
+	unsigned *why)
+{
+	struct system_view_rotation told;
+	int error;
+
+	/* A display's key, from a compositor that tells the angles. */
+	if (system == NULL ||
+	    key == NULL ||
+	    mask == NULL ||
+	    why == NULL)
+		return EINVAL;
+	if (system->displays == NULL || system->manager_version < KL_SYSTEM_SINCE_ROTATION)
+		return ENOTSUP;
+
+	/* What the snapshot holds of it. */
+	error = system_view_rotation_of(&system->view, key, &told);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the angles and the reasons. */
+	*mask = told.mask;
+	*why = told.why;
+	return 0;
+}
+
+/*
+ * Turns a display's picture by an angle, at once and kept (ws217-p004).
+ */
+int
+kl_system_displays_set_rotation(
+	struct kl_system *system,
+	const char *key,
+	unsigned rotation,
+	uint32_t *request)
+{
+	size_t length;
+	uint32_t number;
+
+	/* A display's key. */
+	if (system == NULL || key == NULL)
+		return EINVAL;
+	length = strlen(key);
+	if (length == 0U || length >= KL_DISPLAY_KEY_MAX)
+		return EINVAL;
+
+	/* One of the four angles. */
+	if (rotation != KL_DISPLAY_ROTATE_0 &&
+	    rotation != KL_DISPLAY_ROTATE_90 &&
+	    rotation != KL_DISPLAY_ROTATE_180 &&
+	    rotation != KL_DISPLAY_ROTATE_270)
+		return EINVAL;
+
+	/* The displays object, from a compositor that turns the displays. */
+	if (system->displays == NULL || system->lost || system->manager_version < KL_SYSTEM_SINCE_ROTATION)
+		return ENOTSUP;
+
+	/* Sent with the application's next flush. */
+	number = system_number(system, request);
+	wl_proxy_marshal(system->displays, KL_SYSTEM_DISPLAYS_SET_ROTATION, number, key, (uint32_t)rotation);
 
 	/* Succeeded: the snapshot and the answer come later. */
 	return 0;
@@ -5436,6 +5549,59 @@ system_displays_done(
 	/* The snapshot, as one state. */
 	system = data;
 	system_view_displays_done(&system->view, serial, mode);
+}
+
+/* Keeps the angle the user chose for a display of the snapshot being sent (ws217-p004). */
+static void
+system_display_rotation(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *key,
+	uint32_t rotation)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* Kept with the display. */
+	system = data;
+	system_view_display_rotation(&system->view, key, rotation);
+}
+
+/* Keeps the angles a display of the snapshot being sent may take and why not (ws217-p004). */
+static void
+system_display_rotations(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *key,
+	uint32_t mask,
+	uint32_t why)
+{
+	struct kl_system *system;
+
+	UNUSED_PARAMETER(proxy);
+
+	/* Kept with the display. */
+	system = data;
+	system_view_display_rotations(&system->view, key, mask, why);
+}
+
+/* Takes a touch or pen device's event, which the compositor sends from ws217-p006 (nothing keeps it yet). */
+static void
+system_display_touch(
+	void *data,
+	struct wl_proxy *proxy,
+	const char *identity,
+	const char *label,
+	uint32_t kind,
+	const char *key)
+{
+	UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(proxy);
+	UNUSED_PARAMETER(identity);
+	UNUSED_PARAMETER(label);
+	UNUSED_PARAMETER(kind);
+	UNUSED_PARAMETER(key);
 }
 
 /* Puts the printers and the jobs into effect (ws145-p003). */

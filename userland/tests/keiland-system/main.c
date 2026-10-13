@@ -18,8 +18,9 @@
  * "display-mode extended|mirror", "display-place KEY X Y" (the extended
  * mode with one display's place), "brightness KEY PERCENT" (ws113-p005;
  * each request waits up to the timeout for its result), "display-shown
- * KEY on|off" (ws113-p014: a display turned on or off), "displays" (the
- * displays' snapshot), "watch" (the
+ * KEY on|off" (ws113-p014: a display turned on or off), "display-rotate
+ * KEY ANGLE" (ws217-p004: a display's picture turned by 0, 90, 180 or 270),
+ * "displays" (the displays' snapshot, with each display's angle), "watch" (the
  * changes until the timeout) and "monitor" (the machine's monitor at
  * 250 ms until the timeout: its info and each frame, WS134 p012).  Each
  * line starts with KEILAND-SYSTEM:
@@ -27,7 +28,8 @@
  *   KEILAND-SYSTEM open capabilities=0xB | failed step=open errno=E
  *   KEILAND-SYSTEM network reachable=... ssid=S        (and ap, link, dns, saved, audio, power, device)
  *   KEILAND-SYSTEM displays mode=extended|mirror count=N, then display key=K label=L x=X y=Y width=W
- *       height=H refresh_mhz=R flags=0xF brightness=B for each
+ *       height=H refresh_mhz=R flags=0xF brightness=B for each, and its rotation key=K rotation=R mask=M why=W
+ *       (rotation unknown errno=E from a compositor before the angles, ws217-p004)
  *   KEILAND-SYSTEM result request=R error=E          (E: 0 or the errno's name)
  *   KEILAND-SYSTEM change bits=0xB
  *   KEILAND-SYSTEM monitor-info changes=N cpus=N host=H gpus=N disks=N links=N   (and monitor-disk, monitor-link, monitor-gpu)
@@ -70,6 +72,7 @@ static const struct probe_command probe_commands[] = {
 	{ "display-place", 3 },
 	{ "brightness", 2 },
 	{ "display-shown", 2 },
+	{ "display-rotate", 2 },
 	{ "displays", 0 },
 	{ "watch", 0 },
 	{ "monitor", 0 },
@@ -332,6 +335,11 @@ probe_display_ask(
 		return kl_system_displays_set_shown(system, words[0], shown, request);
 	}
 
+	/* A display's picture turned (ws217-p004). */
+	differs = strcmp(name, "display-rotate");
+	if (differs == 0)
+		return kl_system_displays_set_rotation(system, words[0], (unsigned)atoi(words[1]), request);
+
 	/* A light. */
 	return kl_system_displays_set_brightness(system, words[0], (unsigned)atoi(words[1]), request);
 }
@@ -344,8 +352,12 @@ probe_displays(
 	struct kl_display displays[KL_DISPLAYS_MAX];
 	const char *mode;
 	unsigned shown;
+	unsigned rotation;
+	unsigned mask;
+	unsigned why;
 	size_t count;
 	size_t index;
+	int error;
 
 	/* The mode and the count. */
 	count = kl_system_displays_get(system, displays, KL_DISPLAYS_MAX);
@@ -367,6 +379,16 @@ probe_displays(
 		    displays[index].refresh_mhz,
 		    displays[index].flags,
 		    displays[index].brightness);
+
+		/* Its angle (ws217-p004). */
+		error = kl_system_displays_rotation(system, displays[index].key, &rotation);
+		if (error == 0)
+			error = kl_system_displays_rotations(system, displays[index].key, &mask, &why);
+		if (error != 0) {
+			printf("KEILAND-SYSTEM rotation key=%s unknown errno=%s\n", displays[index].key, probe_error(error));
+			continue;
+		}
+		printf("KEILAND-SYSTEM rotation key=%s rotation=%u mask=%u why=%u\n", displays[index].key, rotation, mask, why);
 	}
 }
 

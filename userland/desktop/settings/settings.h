@@ -24,6 +24,7 @@
 #include "storage-scan.h"
 #include "storage-trash.h"
 #include "arrange.h"
+#include "rotate.h"
 
 #include <keiland/keiland.h>
 
@@ -578,7 +579,9 @@ struct se_sharing {
  * dragged, the light shown and when it was last sent), the requests
  * awaited (0 for none; a display turned off or on too, ws113-p014), the
  * last answer (red for a failure), and whether the first snapshot was
- * taken.
+ * taken.  Each display's angle (ws217-p004), at its index: whether the
+ * desktop told it, the angle chosen, the angles it may take now and why
+ * not; and the angle's request awaited.
  */
 struct se_display {
 	struct kl_display displays[KL_DISPLAYS_MAX];
@@ -599,6 +602,11 @@ struct se_display {
 	uint32_t request;
 	uint32_t light_request;
 	uint32_t shown_request;
+	unsigned rotation_told[KL_DISPLAYS_MAX];
+	unsigned rotation[KL_DISPLAYS_MAX];
+	unsigned rotation_mask[KL_DISPLAYS_MAX];
+	unsigned rotation_why[KL_DISPLAYS_MAX];
+	uint32_t rotation_request;
 	char message[SE_MESSAGE];
 	int message_bad;
 	int taken;

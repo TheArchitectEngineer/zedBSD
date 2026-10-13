@@ -107,6 +107,7 @@ kwl_output_select_rotation(
 			return error;
 		*saved = kwl_heads_config_save(server);
 		printf("KWL OUTPUT rotate key=%s selected=%u saved=%d applied=1 reason=kept\n", compose->display_name, rotation, *saved);
+		kwl_displays_tell(server);
 		return 0;
 	}
 
@@ -137,6 +138,7 @@ kwl_output_select_rotation(
 	if (decision == KWL_ROTATE_SELECT_SAVE) {
 		*saved = kwl_heads_config_save(server);
 		printf("KWL OUTPUT rotate key=%s selected=%u saved=%d applied=0 reason=closed\n", compose->display_name, rotation, *saved);
+		kwl_displays_tell(server);
 		return 0;
 	}
 
@@ -145,6 +147,7 @@ kwl_output_select_rotation(
 		*saved = kwl_heads_config_save(server);
 		kwl_scanout_leave(server, KWL_SCANOUT_ROTATED);
 		printf("KWL OUTPUT rotate key=%s selected=%u saved=%d applied=0 reason=scanout\n", compose->display_name, rotation, *saved);
+		kwl_displays_tell(server);
 		return 0;
 	}
 
@@ -156,9 +159,10 @@ kwl_output_select_rotation(
 		return error;
 	}
 
-	/* Succeeded: shown now, and saved with the turn (SAVE). */
+	/* Succeeded: shown now, saved with the turn (SAVE), and Settings told the new angle and size. */
 	*applied = 1U;
 	*saved = compose->rotate_saved;
+	kwl_displays_tell(server);
 	return 0;
 }
 
@@ -302,18 +306,64 @@ kwl_output_policy_set(
 		name = "any";
 	printf("KWL OUTPUT rotate policy=%s mask=%u why=%u turn_default=%u\n", name, compose->rotations, why, compose->turn_default);
 
-	/* A choice still allowed stays. */
+	/* A choice still allowed stays; Settings is told the new angles. */
 	bit = kwl_rotate_bit(compose->rotation_selected);
-	if ((compose->rotations & bit) != 0U)
+	if ((compose->rotations & bit) != 0U) {
+		kwl_displays_tell(server);
 		return;
+	}
 
 	/* Otherwise 0, as an opening chooses for an angle the display cannot take (nothing saved). */
 	compose->rotation_selected = KWL_ROTATE_0;
-	if (!compose->output_open || compose->output_lost)
+	if (!compose->output_open || compose->output_lost) {
+		kwl_displays_tell(server);
 		return;
+	}
 	error = kwl_output_apply_rotation(server, KWL_PLANE_ANCHOR, KWL_ROTATE_0, KWL_ROTATE_MODE_POLICY);
 	if (error != 0)
 		printf("KWL OUTPUT rotate policy errno=%d\n", error);
+
+	/* Settings is told the new angles and size. */
+	kwl_displays_tell(server);
+}
+
+/*
+ * Gives what Settings is told of a display's angle (ws217-p004): for the
+ * desktop's anchor (anchor 1), the angle the user chose, the angles it may
+ * take and why not, the others but the chosen one held while another
+ * display is shown beside it; for any other display (a head, or one shown
+ * nowhere), 0 alone until a head's angle (ws217-p005), with that reason.
+ */
+void
+kwl_output_rotation_report(
+	struct kwl_server *server,
+	unsigned anchor,
+	unsigned *rotation,
+	unsigned *mask,
+	unsigned *why)
+{
+	struct kwl_compose *compose;
+	const char *heads;
+	unsigned alone;
+
+	/* Another display than the anchor: unturned, its angle comes with the heads'. */
+	compose = server->compose;
+	if (compose == NULL || !anchor) {
+		*rotation = KWL_ROTATE_0;
+		*mask = KWL_ROTATION_0;
+		*why = KWL_ROTATE_WHY_ALONE;
+		return;
+	}
+
+	/* The anchor, alone or beside the heads shown. */
+	heads = output_rotate_heads(compose);
+	alone = 1U;
+	if (heads != NULL)
+		alone = 0U;
+
+	/* Succeeded: the choice, and the angles it may take now. */
+	*rotation = compose->rotation_selected;
+	kwl_rotate_report(compose->rotation_selected, compose->rotations, compose->rotate_why, alone, mask, why);
 }
 
 /*

@@ -51,13 +51,15 @@
  * Why a display cannot take an angle, or does not show the one chosen (the
  * same bits as libkeiland's KL_DISPLAY_ROTATE_WHY_*): its hardware cannot
  * turn the picture by 180 (nothing can be rotated), this build has no turn
- * pass (90 and 270), a game is shown (the turn is paused), or the turn's
- * images could not be made.
+ * pass (90 and 270), a game is shown (the turn is paused), the turn's
+ * images could not be made, or another display is shown beside it (a
+ * head's angle, and the anchor's beside one, come with ws217-p005).
  */
 #define KWL_ROTATE_WHY_SCANOUT	1U
 #define KWL_ROTATE_WHY_TURN	2U
 #define KWL_ROTATE_WHY_GAME	4U
 #define KWL_ROTATE_WHY_RESOURCE	8U
+#define KWL_ROTATE_WHY_ALONE	16U
 
 /* The policies: the angles the display's hardware allows, or all of them (a test's --rotate-policy=any). */
 #define KWL_ROTATE_POLICY_DEFAULT	0U
@@ -147,6 +149,7 @@ void kwl_rotate_rect_back(unsigned rotation, uint32_t physical_width, uint32_t p
 void kwl_rotate_vector(unsigned rotation, int32_t physical_x, int32_t physical_y, int32_t *x, int32_t *y);
 unsigned kwl_rotate_mask(unsigned hw180, unsigned turn_default, unsigned turn_build, unsigned policy, unsigned *why);
 int kwl_rotate_plan(unsigned rotation, unsigned mask, unsigned hw180, unsigned *scanout, unsigned *turn);
+void kwl_rotate_report(unsigned selected, unsigned mask, unsigned why, unsigned alone, unsigned *told_mask, unsigned *told_why);
 void kwl_turn_coefficients(unsigned rotation, float *u, float *v);
 
 /*

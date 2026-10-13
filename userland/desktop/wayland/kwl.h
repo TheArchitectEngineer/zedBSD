@@ -2023,6 +2023,7 @@ void kwl_output_size_set(struct kwl_server *server, uint32_t mode_width, uint32_
 int kwl_output_select_rotation(struct kwl_server *server, unsigned slot, unsigned rotation, unsigned *applied, int *saved);
 int kwl_output_apply_rotation(struct kwl_server *server, unsigned slot, unsigned rotation, unsigned mode);
 void kwl_output_policy_set(struct kwl_server *server, unsigned policy);
+void kwl_output_rotation_report(struct kwl_server *server, unsigned anchor, unsigned *rotation, unsigned *mask, unsigned *why);
 void kwl_output_fit(struct kwl_server *server, unsigned glass_rebuild);
 void kwl_output_steps_name(unsigned steps, char *text, size_t size);
 void kwl_output_pointer_turn(struct kwl_server *server, unsigned before, unsigned after, int32_t *seen);
