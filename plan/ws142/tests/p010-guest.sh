@@ -7,11 +7,12 @@
 #  1. Docked, then a switch: a double click on apps.b's title bar docks it ("KWL LAYOUT mode=docked
 #     reason=double-click"); Alt held, Tab, Tab, Alt let go brings apps.a, which docks too ("KWL LAYOUT switch surface=A
 #     action=dock mode=docked via=switch"); apps.b is not drawn (layout-docked.png shows apps.a alone).
-#  2. Two fingers from the pad's top edge down (TOP2) open App Home (ws181-p008: "KWL GESTURE kind=top2 phase=begin",
-#     "KWL HOME open via=pad"), which Esc closes; then a double click on apps.a's title in the bar floats it again
-#     ("KWL GLASS undock surface=A via=double-click", "KWL LAYOUT mode=windowed reason=double-click"), and apps.b,
-#     docked behind it, floats at once too (WS181, the 2026-10-07 UAT: "KWL LAYOUT float-quiet ... client=B",
-#     "KWL LAYOUT leave via=double-click"; layout-windowed.png shows both as windows).
+#  2. Two fingers from the pad's bottom edge up (BOTTOM2) open App Home (the 2026-10-13 user's instruction; TOP2 before,
+#     ws181-p008: "KWL GESTURE kind=bottom2 phase=begin", "KWL HOME open via=pad"), which Esc closes; then a double
+#     click on apps.a's title in the bar floats it again ("KWL GLASS undock surface=A via=double-click", "KWL LAYOUT
+#     mode=windowed reason=double-click"), and apps.b, docked behind it, floats at once too (WS181, the 2026-10-07
+#     UAT: "KWL LAYOUT float-quiet ... client=B", "KWL LAYOUT leave via=double-click"; layout-windowed.png shows both
+#     as windows).
 #  3. Windowed, a switch to apps.b: it is a window already, so it only comes forward ("KWL LAYOUT switch surface=B
 #     action=keep mode=windowed via=switch").
 #  4. Docked again (apps.b's title double-clicked), then apps.b ends by itself: the docked mode ends and apps.a stays a
@@ -19,8 +20,8 @@
 #  5. apps.a docked (its title double-clicked), a window of one size opens (wltest --fixed 420x300, apps.f): it opens
 #     docked ("KWL GLASS open-docked client=F"), drawn at its size in the middle over the blurred, darkened scene
 #     (fixed-docked.png).
-#  6. Wiseview by two fingers up from the bottom edge, then two fingers across the middle 25 mm to the right: one step
-#     only ("KWL SWIPE right via=pad", one "KWL WISEVIEW select step=+1 via=swipe"); two fingers down 15 mm choose
+#  6. Wiseview by two fingers down from the top edge (the 2026-10-13 user's instruction: "kind=top2 phase=begin"), then
+#     two fingers across the middle 25 mm to the right: one step only ("KWL SWIPE right via=pad", one "KWL WISEVIEW select step=+1 via=swipe"); two fingers down 15 mm choose
 #     ("KWL WISEVIEW select surface=[0-9]* via=swipe"); wiseview-swipe.png before the choice, without the title text.
 #  7. The switcher by a tap of three fingers, two fingers 40 mm to the right: one step only ("KWL SWITCH step ... via=pad"
 #     once); two fingers down: it brings the selection ("KWL SWITCH commit ... via=pad-swipe").
@@ -99,13 +100,13 @@ sleep 1.5
 expect_some switch-docks "KWL LAYOUT switch surface=[0-9]* action=dock mode=docked via=switch client=${a:-0}\$"
 shot layout-docked
 
-# 2. Two fingers from the top edge down: App Home (ws181-p008), closed by Esc; apps.a's title in the bar double-clicked:
-# it floats again, the mode windowed, and apps.b behind it floats too.
-pad top2 "down 0 500 10; down 1 700 20" "wait 30" "swipe 0 240 12 16" "up 0; up 1" "wait 600"
-expect_some top2-gesture 'KWL GESTURE kind=top2 phase=begin'
-expect_some top2-home 'KWL HOME open via=pad'
+# 2. Two fingers from the bottom edge up: App Home (the 2026-10-13 user's instruction), closed by Esc; apps.a's title in
+# the bar double-clicked: it floats again, the mode windowed, and apps.b behind it floats too.
+pad bottom2-home "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -240 12 16" "up 0; up 1" "wait 600"
+expect_some bottom2-gesture 'KWL GESTURE kind=bottom2 phase=begin'
+expect_some bottom2-home 'KWL HOME open via=pad'
 tap esc
-expect_some top2-home-esc 'KWL HOME close via=escape'
+expect_some bottom2-home-esc 'KWL HOME close via=escape'
 bar_double_click
 expect_some bar-undock "KWL GLASS undock surface=[0-9]* via=double-click x=[-0-9]* y=[-0-9]* client=${a:-0}\$"
 expect_some bar-windowed 'KWL LAYOUT mode=windowed reason=double-click'
@@ -141,8 +142,9 @@ expect_some fixed-open-docked "KWL GLASS open-docked client=${f:-0} "
 sleep 1
 shot fixed-docked
 
-# 6. Wiseview from the bottom edge, one step for a long swipe across, a swipe down chooses.
-pad wiseview-open "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -240 10 8" "up 0; up 1" "wait 1200"
+# 6. Wiseview from the top edge, one step for a long swipe across, a swipe down chooses.
+pad wiseview-open "down 0 500 10; down 1 700 20" "wait 30" "swipe 0 240 10 8" "up 0; up 1" "wait 1200"
+expect_some wiseview-gesture 'KWL GESTURE kind=top2 phase=begin'
 expect_some wiseview-opens 'KWL WISEVIEW opening from='
 pad wiseview-across "down 0 500 400; down 1 700 400" "wait 30" "swipe 300 0 15 16" "up 0; up 1" "wait 500"
 expect_count wiseview-one-step 'KWL WISEVIEW select step=+1 via=swipe' 1

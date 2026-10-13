@@ -16,8 +16,8 @@ WiseView の中の 2 本指の swipe が 1 回で 1 つ選びを動かし、下�
 5330 の desktop で 3 つ以上の窓を開く。
 
 ## 操作と確認
-1. 操作: 下端から 2 本指で上。
-   確認事項: WiseView。正解: 開き、上に「Wiseview」の題の文字が無い、下に「Swipe left or right to choose · Swipe down to open」。確認方法: 人、撮影。
+1. 操作: 上端から 2 本指で下（2026-10-13 ユーザーの指示、touch panel の上端と同じ。前は下端から上）。
+   確認事項: WiseView。正解: 指に付いて開き（`KWL GESTURE kind=top2`・`KWL WISEVIEW gesture via=pad`）、上に「Wiseview」の題の文字が無い、下に「Swipe left or right to choose · Swipe down to open」。確認方法: 人、撮影。
 2. 操作: 2 本指で長く右へ（指を離さずに 3 cm ほど）。
    確認事項: 選び。正解: 1 つだけ右へ（`ZWL WISEVIEW select step=+1 via=swipe` が 1 回）。確認方法: 人、log。
 3. 操作: 2 本指で下へ。

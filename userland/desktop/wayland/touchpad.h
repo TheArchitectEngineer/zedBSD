@@ -44,12 +44,13 @@ enum kwl_touchpad_action_kind {
 
 /*
  * The gestures (ws142-p003, plan/ws142/phase001 D): two fingers from the
- * bottom edge up, three fingers up anywhere (both open Wiseview), two
- * fingers from the left edge to the right and from the right edge to the
- * left (the desktop on that side), and a tap of three fingers (the
- * application switcher, D1).  Two fingers from the top edge down (TOP2,
- * ws142-p009: App Home, ws181-p008; a fullscreen window is docked,
- * BUG-228).  An edge's gesture needs one of the two fingers in its band
+ * bottom edge up (App Home in the shell, the 2026-10-13 user's
+ * instruction), three fingers up anywhere (Wiseview), two fingers from the
+ * left edge to the right and from the right edge to the left (the desktop
+ * on that side), and a tap of three fingers (the application switcher,
+ * D1).  Two fingers from the top edge down (TOP2, ws142-p009: Wiseview,
+ * the 2026-10-13 user's instruction; over a fullscreen window either edge's
+ * docks it, BUG-228).  An edge's gesture needs one of the two fingers in its band
  * (ws181-p008).  SWIPE2 is no gesture of its own: its end says that a touch of
  * two fingers that scrolled has lifted, so that one swipe can be one step
  * of Wiseview or the switcher (ws142-p009, BUG-215 and BUG-216).
