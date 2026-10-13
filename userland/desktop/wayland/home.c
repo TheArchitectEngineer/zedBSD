@@ -87,6 +87,13 @@
 #define HOME_PAGE_MS		200U
 #define HOME_PAGE_START		10
 
+/*
+ * A sideways drag (the mouse's or a finger's on the touch screen) turns the
+ * page when it went the output's width over this: an eighth (ws181-p012,
+ * the 2026-10-13 UAT: half the quarter it was).
+ */
+#define HOME_PAGE_TURN		8
+
 /* How long a launch waits for its window, and how far towards the top left a drag closes Home. */
 #define HOME_LAUNCH_WAIT_MS	5000U
 
@@ -2843,8 +2850,8 @@ home_page_turn(
 
 /*
  * Ends a press on Home: a drag mostly down closes Home when it went far
- * enough (WS181), one mostly up turns nothing, a sideways drag turns to the next or the page before when it went a
- * quarter of the output (else back), and a press that did not move starts
+ * enough (WS181), one mostly up turns nothing, a sideways drag turns to the next or the page before when it went
+ * an eighth of the output (HOME_PAGE_TURN, else back), and a press that did not move starts
  * the application under it when it is still there.
  */
 static void
@@ -2890,9 +2897,9 @@ home_page_release(
 	/* A sideways drag turns the page, or goes back. */
 	if (server->home_page_dragging) {
 		server->home_page_dragging = 0;
-		if (dx <= -(int32_t)server->width / 4) {
+		if (dx <= -(int32_t)server->width / HOME_PAGE_TURN) {
 			home_page_turn(server, (int)server->home_page + 1, "drag");
-		} else if (dx >= (int32_t)server->width / 4) {
+		} else if (dx >= (int32_t)server->width / HOME_PAGE_TURN) {
 			home_page_turn(server, (int)server->home_page - 1, "drag");
 		} else {
 			home_page_turn(server, (int)server->home_page, "drag");
