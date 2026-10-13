@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1104](queue.md) finished / p218明示grid-template shorthand。2026-10-14 08:25 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1105](queue.md) finished / p189固定Grid502件全再測定。2026-10-14 08:36 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -866,3 +866,5 @@ Event ws074-p189-q1102-partial-clear-20261014: [p189](phase189/phase.md) q1102-i
 Event ws074-p217-q1103-partial-clear-and-p220-add-20261014: [p217](phase217/phase.md) q1103-i01で固定007/008のvertical-lr幅100誤差をCSS/inline/paint/bounds/hitの横書き固定として切り分け。[証拠](phase217/evidence/20261014-q1103/README.md)。[p220](phase220/phase.md)を追加し、p217の該当文字alignmentだけ検証済み縦inline geometry出力に依存させる。q1103部分cleared、p217/p220/p189/p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p218-q1104-partial-clear-20261014: [p218](phase218/phase.md) q1104-i01で明示`grid-template`二側と単独`none`をatomic展開。[証拠](phase218/evidence/20261014-q1104/README.md)。最小14 geometry、旧回帰、warning0 build、Acid3差0/Acid2差1865。固定template-validは0→5/40 subtest PASS、whole FAIL、旧100-subtest代表PASS。q1104部分cleared、p218/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p189-q1105-partial-clear-20261014: [p189](phase189/phase.md) q1105-i01は固定Grid502件を同条件全再測定し103→110 PASS、399→392 FAIL、no_output0。[証拠](phase189/evidence/20261014-q1105/README.md)。7 whole FAIL→PASS・旧whole PASS後退0、subtest127改善/1後退（fr/gutter `.grid 17`）。502 ID/hash/checkpoint/gzip raw一致。q1105部分cleared、p189/p173全件100%未達。共有投影/GitHub publication保留。

@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1104 / WS074 explicit Grid template shorthand（2026-10-14）
+## 最新: q1105 / WS074 fixed Grid502 full recensus（2026-10-14）
+
+[q1105履歴](queue-q1105.md): 固定Grid502は103→110 PASS、399→392 FAIL。旧whole PASS後退0、subtest127改善/1後退。全502 raw等を照合。[証拠](../ws074/phase189/evidence/20261014-q1105/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1104 / WS074 explicit Grid template shorthand（2026-10-14）
 
 [q1104履歴](queue-q1104.md): 明示`grid-template`二側と単独noneをatomic展開、固定template-validは0→5/40 subtest PASS、whole FAIL。旧PASSとAcid3差0維持。[証拠](../ws074/phase218/evidence/20261014-q1104/README.md)。p218部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

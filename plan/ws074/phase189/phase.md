@@ -151,3 +151,11 @@ Event ws074-p189-q1093-partial-clear-20261014: [証拠](evidence/20261014-q1093/
 ## q1102-i01 結果（2026-10-14 08:20 JST）
 
 Event ws074-p189-q1102-partial-clear-20261014: [証拠](evidence/20261014-q1102/README.md)。固定style-changes8 IDを同条件再測定し4→6 whole PASS、26→36/48 subtest PASS。003/004計10 FAIL→PASS、旧PASS後退0。残007/008はvertical-lr文字子width期待20/40/30対実100。q1102部分cleared、p189/p217/p219/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
+## q1105-i01 有限部分範囲（2026-10-14 08:26 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（09:56 JSTまで）に適用。q1093固定Grid502 IDを同一WPT/localhost/固定font3種/5秒settle/20秒process・4 shardで全再測定。502 ID/hash/checkpoint/raw一致、q1093 whole/subtest遷移、旧PASS後退、残FAIL群を分類。browser/runner/WPT/公開ABI/`plan/master.md`変更なし、Acid/静的reftest再測定なし。p189 whole/p173全件100%は本部分基準外。
+
+## q1105-i01 結果（2026-10-14 08:36 JST）
+
+Event ws074-p189-q1105-partial-clear-20261014: [証拠](evidence/20261014-q1105/README.md)。固定Grid502件を同条件全再測定し103→110 PASS、399→392 FAIL、no_output0。7 whole FAIL→PASS、旧whole PASS後退0。subtestは127 FAIL→PASS・1 PASS→FAIL（既存whole FAILのfr/gutter `.grid 17` 幅期待200/実120）。全502 ID/hash/checkpoint/gzip raw一致。q1105部分cleared、p189 whole1,783/p173全3,805件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
