@@ -82,7 +82,7 @@ ARM64_KERNEL_SOURCES := \
 	$(KERN_AUDIO_SOURCES) \
 	src/kern/kcrt.c src/kern/heap.c \
 	src/kern/random.c src/kern/random-crypto.c \
-	src/kern/tty.c \
+	src/kern/tty.c src/kern/tty-csi.c \
  src/drivers/generic/system-device.c src/kern/system-event.c src/drivers/generic/memory-device.c src/kern/shutdown.c \
 	src/kern/init.c
 # Onboard Ethernet uses the SCB bus, without PCIe or USB.
