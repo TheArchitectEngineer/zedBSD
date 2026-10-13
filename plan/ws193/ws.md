@@ -7,7 +7,7 @@
 Userの追加指摘をread-onlyで確認。[証拠](tests/rpi4-boot0-readout-20261011.md)。実機rootはmmcblk0p2 UFS rw、/boot/boot0は不存在。cmdlineはlogin=だけを生成し、legacy native UFS経路がboot source登録とboot swap準備をskipしている。vmunix読み込み指定とは別のruntime mount問題。source修正・remote mount/swap/update/rebootは行っていない。既存p009/p010の限定criteriaとWS incompleteは維持、追加実装/実機確認は未実施。共有投影/GitHubはQ1 pending。
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-13 P2 q964 の照合: p001・p002・p004〜p011 cleared、残りは p003（規約、未着手）と RPi4 の実機の確かめ（host key・SSH・/boot/boot0・graphical login）。旧: p004〜p008 sourceはmain統合済み、p009 Graphical login・p010共通rootfsの限定criteriaはcleared）
+Status: incomplete（ベータ2 の範囲は完了 2026-10-13 Q1 判定: 完了の条件 1〜3 は満たした、RPi4 の実機の確かめはユーザーの UAT で済みとする（2026-10-13 ユーザーの UAT の一括）。残りは規約 p003＝ベータ3）。旧: incomplete（2026-10-13 P2 q964 の照合: p001・p002・p004〜p011 cleared、残りは p003（規約、未着手）と RPi4 の実機の確かめ（host key・SSH・/boot/boot0・graphical login）。旧: p004〜p008 sourceはmain統合済み、p009 Graphical login・p010共通rootfsの限定criteriaはcleared）
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O2
