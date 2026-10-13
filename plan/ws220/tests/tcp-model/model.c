@@ -24,7 +24,8 @@
  *             [--limit-s L] [--reader-kbps K] [--peer-window W]
  *             [--overlap-ab P] [--overlap-bytes K] [--blind-at-ms T]
  *             [--blackhole-at-ms T] [--connect-blackhole] [--second-writer]
- *             [--unresolved-at-ms T --unresolved-ms D] [--expect-in-order]
+ *             [--unresolved-at-ms T --unresolved-ms D] [--connect-unresolved]
+ *             [--expect-in-order]
  *             [--quiet]
  *
  * --loss-ab is the share (percent) of the frames from A to B (the data) the
@@ -58,8 +59,12 @@
  * that loses nothing, without a segment arriving ahead of a gap at B.
  * --unresolved-at-ms T --unresolved-ms D refuses every frame A gives its
  * device from T for D as IPv4 refuses one for a neighbour still being
- * resolved (EAGAIN); the summary counts the refusals, which a retry every
- * TCP_SEND_RETRY_MS keeps to about D / 10 ms.
+ * resolved (EAGAIN, each refusal an ARP request); the summary counts the
+ * refusals.  TCP takes such a segment as lost on the wire (ws220-p003
+ * review-1 G1), so the refusals are the ring's segments once and then one
+ * for each resend of the timer, and a neighbour that never answers ends
+ * the connection after R2.  --connect-unresolved refuses A's frames so
+ * from the start: the connect gives up after R2 for a SYN.
  */
 
 #include "kern/net/tcp-socket.h"
@@ -147,6 +152,7 @@ struct model_settings {
 	uint64_t blind_at_ns;
 	uint64_t blackhole_at_ns;
 	int connect_blackhole;
+	int connect_unresolved;
 	int second_writer;
 	uint64_t unresolved_at_ns;
 	uint64_t unresolved_ns;
@@ -272,13 +278,14 @@ main(
 	family.create = tcp_socket_create_inet;
 	(void)socket_family_register(AF_INET, &family);
 
-	/* The connection; with its SYN lost, only the time the connect gives up is wanted. */
+	/* The connection; with its SYN lost or refused, only the time the connect gives up is wanted. */
 	if (settings.connect_blackhole)
 		links[0].loss = 1.0;
 	error = connect_hosts();
-	if (settings.connect_blackhole) {
-		printf("tcp-model: summary connect gave up after %.3f s (state %d, error %d) complete=%d mean_mbs=0\n",
-		    (double)now_ns / 1e9, (int)tcp_of(sender)->state, error, error != 0 && now_ns >= 180000000000ULL);
+	if (settings.connect_blackhole || settings.connect_unresolved) {
+		printf("tcp-model: summary connect gave up after %.3f s (state %d, error %d) unresolved_refusals=%llu "
+		    "complete=%d mean_mbs=0\n", (double)now_ns / 1e9, (int)tcp_of(sender)->state, error,
+		    (unsigned long long)unresolved_refusals, error != 0 && now_ns >= 180000000000ULL);
 		return 0;
 	}
 	if (error != 0) {
@@ -432,6 +439,13 @@ model_link_output(
 		second_writer_active = 0;
 	}
 
+	/* IPv4 refuses every frame of the connect whose neighbour never resolves. */
+	if (host == 0U && settings.connect_unresolved) {
+		unresolved_refusals++;
+		packet_buf_free(packet);
+		return EAGAIN;
+	}
+
 	/* IPv4 refuses a frame for a neighbour still being resolved, and the frame is lost. */
 	if (host == 0U && settings.unresolved_ns != 0 && transfer_start_ns != 0 &&
 	    now_ns >= transfer_start_ns + settings.unresolved_at_ns &&
@@ -487,6 +501,7 @@ parse_settings(
 	settings.blind_at_ns = 0;
 	settings.blackhole_at_ns = 0;
 	settings.connect_blackhole = 0;
+	settings.connect_unresolved = 0;
 	settings.second_writer = 0;
 	settings.unresolved_at_ns = 0;
 	settings.unresolved_ns = 0;
@@ -501,6 +516,10 @@ parse_settings(
 		}
 		if (strcmp(argv[index], "--connect-blackhole") == 0) {
 			settings.connect_blackhole = 1;
+			continue;
+		}
+		if (strcmp(argv[index], "--connect-unresolved") == 0) {
+			settings.connect_unresolved = 1;
 			continue;
 		}
 		if (strcmp(argv[index], "--second-writer") == 0) {
@@ -997,6 +1016,8 @@ connect_hosts(
 	/* The handshake, for at most ten seconds (400 when the SYN is lost on purpose, until the connect gives up). */
 	limit_ns = 10000000000ULL;
 	if (settings.connect_blackhole)
+		limit_ns = 400000000000ULL;
+	if (settings.connect_unresolved)
 		limit_ns = 400000000000ULL;
 	while (now_ns < limit_ns) {
 		step();

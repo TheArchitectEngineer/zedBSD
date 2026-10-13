@@ -96,22 +96,67 @@ scenario queue-1 30 --bytes 33554432 --queue 1
 scenario two-writers 30 --bytes 33554432 --queue 3 --second-writer --expect-in-order
 # ws220-p003: losses with a one-frame device queue: the timer's resends and the acknowledgements are refused too.
 scenario queue-1-loss-1 2 --bytes 16777216 --queue 1 --loss-ab 1 --limit-s 300
-# ws220-p003: A's neighbour is unresolved for 500 ms (IPv4 refuses with EAGAIN): the output retry tries every 10 ms, not
-# every tick (at most 500 / 10 + 5 refusals), and the transfer goes on after it.
+# ws220-p003: A's neighbour is unresolved for 500 ms (IPv4 refuses with EAGAIN and asks ARP each time): TCP takes the
+# segments as lost on the wire (review-1 G1), so ARP is asked once for each segment of the ring and then at the timer's
+# resends (at most 12), and the transfer goes on after the timer's resend (a stall of about one RTO).
 unresolved() {
 	name=$1
-	shift
+	most=$2
+	shift 2
 	if [ "$only" != "  " ] && ! echo "$only" | grep -q " $name "; then
 		return 0
 	fi
 	scenario "$@"
 	refusals=$(echo "$line" | sed -n 's/.* unresolved_refusals=\([0-9]*\).*/\1/p')
-	if [ -z "$refusals" ] || [ "$refusals" -gt 55 ]; then
-		echo "  FAIL: $name: $refusals refusals in 500 ms, more than one try each 10 ms"
+	if [ -z "$refusals" ] || [ "$refusals" -gt "$most" ]; then
+		echo "  FAIL: $name: $refusals refusals (ARP requests), more than $most"
 		status=1
 	fi
 }
-unresolved unresolved unresolved 10 --bytes 16777216 --unresolved-at-ms 100 --unresolved-ms 500
+unresolved unresolved 12 unresolved 5 --bytes 16777216 --unresolved-at-ms 100 --unresolved-ms 500
+# ws220-p003: the neighbour never resolves again: the connection is given up after R2 (100 s), with ARP asked only at the
+# ring's segments and the timer's resends (review-1 G1: before, a retry every 10 ms for ever).
+giveup_unresolved() {
+	name=$1
+	shift
+	if [ "$only" != "  " ] && ! echo "$only" | grep -q " $name "; then
+		return 0
+	fi
+	line=$(timeout 600 "$out/tcp-model" --quiet "$@" | grep '^tcp-model: summary')
+	echo "$name: $line"
+	seconds=$(echo "$line" | sed -n 's/.* seconds=\([0-9.]*\).*/\1/p')
+	refusals=$(echo "$line" | sed -n 's/.* unresolved_refusals=\([0-9]*\).*/\1/p')
+	if ! awk -v a="$seconds" 'BEGIN { exit !(a >= 100.5 && a <= 200) }'; then
+		echo "  FAIL: $name: gave up after $seconds s, not between R2 (100 s) and 200 s"
+		status=1
+	fi
+	if [ -z "$refusals" ] || [ "$refusals" -gt 20 ]; then
+		echo "  FAIL: $name: $refusals refusals (ARP requests), more than 20"
+		status=1
+	fi
+}
+giveup_unresolved unresolved-giveup --bytes 1073741824 --unresolved-at-ms 500 --unresolved-ms 1000000 --limit-s 400
+# ws220-p003: a connect whose neighbour never resolves gives up after R2 for a SYN (3 minutes), asking ARP at each resend.
+connect_unresolved() {
+	name=$1
+	shift
+	if [ "$only" != "  " ] && ! echo "$only" | grep -q " $name "; then
+		return 0
+	fi
+	line=$(timeout 600 "$out/tcp-model" --quiet "$@" | grep '^tcp-model: summary')
+	echo "$name: $line"
+	seconds=$(echo "$line" | sed -n 's/.* after \([0-9.]*\) s.*/\1/p')
+	refusals=$(echo "$line" | sed -n 's/.* unresolved_refusals=\([0-9]*\).*/\1/p')
+	if ! awk -v a="$seconds" 'BEGIN { exit !(a >= 180 && a <= 300) }'; then
+		echo "  FAIL: $name: gave up after $seconds s, not between R2 for a SYN (180 s) and 300 s"
+		status=1
+	fi
+	if [ -z "$refusals" ] || [ "$refusals" -gt 20 ]; then
+		echo "  FAIL: $name: $refusals refusals (ARP requests), more than 20"
+		status=1
+	fi
+}
+connect_unresolved connect-unresolved --connect-unresolved
 # ws220-p002: the link loses everything 500 ms in: A gives up after R2 (at least 100 s; 1+2+4+8+16+32+60 s of resends).
 giveup() {
 	name=$1

@@ -129,9 +129,10 @@ enum tcp_drain {
 };
 /*
  * The pause before sending again when buffers are short: a connect whose
- * SYN found no packet for its copy; a writer whose copy found none; and
- * the output retry of segments the packet pool or an unresolved neighbour
- * refused, or a device that refused again on a retry that sent nothing.
+ * SYN found no packet for its copy; a writer whose copy found none; the
+ * output retry of segments the packet pool refused, or a device that
+ * refused again on a retry that sent nothing; and a timer's resend the
+ * device refused again.
  */
 #define TCP_SYN_RETRY_MS 250U
 #define TCP_SEND_RETRY_MS 10U
@@ -185,14 +186,26 @@ enum tcp_reset_check {
 	TCP_RESET_ACCEPT,
 };
 
-/* How a segment the stack could not hand to the device is sent again (ws220-p003). */
+/*
+ * What became of a segment handed to the output, and how it is sent again
+ * (ws220-p003).  Only DEVICE and WAIT keep a segment unsent for the output
+ * retry; LOST and HARD leave it sent, to the retransmission timer.
+ */
 enum tcp_refusal {
-	/* It went, or it failed for good (no route, a device gone), as the wire would lose it. */
+	/* The device took it. */
 	TCP_REFUSAL_NONE,
 	/* A full device queue: on the network worker's next pass, which the device's transmit completion runs. */
 	TCP_REFUSAL_DEVICE,
-	/* An empty packet pool or an unresolved neighbour: after TCP_SEND_RETRY_MS. */
+	/* An empty packet pool: after TCP_SEND_RETRY_MS. */
 	TCP_REFUSAL_WAIT,
+	/*
+	 * A neighbour still being resolved (IPv4 asked ARP for it): lost as on
+	 * the wire, so the timer's backoff and R2 bound how often ARP is asked
+	 * again and when a peer that never answers is given up (review-1 G1).
+	 */
+	TCP_REFUSAL_LOST,
+	/* An error that will not pass (no route, a device gone, too large). */
+	TCP_REFUSAL_HARD,
 };
 
 /*
@@ -247,6 +260,7 @@ static void tcp_stats_fill_locked(const struct tcp_endpoint *endpoint, uint64_t 
 static int tcp_allocate_port(struct tcp_endpoint *endpoint);
 static enum tcp_refusal tcp_refusal_of(int error);
 static uint64_t tcp_refusal_delay(enum tcp_refusal refusal);
+static int tcp_refusal_retries(enum tcp_refusal refusal);
 static unsigned tcp_sent_count_locked(const struct tcp_endpoint *endpoint);
 static uint32_t tcp_sent_end_locked(const struct tcp_endpoint *endpoint);
 static void tcp_mark_sent_locked(struct tcp_endpoint *endpoint, uint64_t now);
@@ -257,7 +271,7 @@ static int tcp_output_retry_due_locked(const struct tcp_endpoint *endpoint, uint
 static void tcp_output_retry(struct tcp_endpoint *endpoint, uint8_t *payload, uint64_t now);
 static void tcp_send_unsent(struct tcp_endpoint *endpoint, uint8_t *payload);
 static void tcp_send_ack_pending(struct tcp_endpoint *endpoint);
-static int tcp_send_ack(struct tcp_endpoint *endpoint);
+static int tcp_send_ack(struct tcp_endpoint *endpoint, int duplicate);
 static int tcp_sequence_before(uint32_t left, uint32_t right);
 static int tcp_sequence_at_or_before(uint32_t left, uint32_t right);
 static uint32_t tcp_initial_sequence(uint32_t chosen);
@@ -523,6 +537,7 @@ tcp_timer_run(
 	enum tcp_refusal refusal;
 	unsigned sent;
 	unsigned backoff;
+	int retries;
 	int still_oldest;
 	int given_up;
 	int error;
@@ -704,7 +719,10 @@ tcp_timer_run(
 		 * A resend the device took is counted for net.tcpstats.  One the
 		 * device or the pool refused did not happen: the backoff is taken
 		 * back and the resend tried again soon (ws220-p003), rather than
-		 * after the doubled timeout.
+		 * after the doubled timeout; soon is TCP_SEND_RETRY_MS once it has
+		 * been refused before (review-1 M2), so a device that never
+		 * completes is not tried every tick.  One lost for an unresolved
+		 * neighbour keeps the backoff, as one lost on the wire.
 		 */
 		irq = spin_lock_irqsave(&socket->lock);
 
@@ -715,22 +733,32 @@ tcp_timer_run(
 
 		/* A refused resend of the segment still oldest, whose backoff no one has moved since. */
 		sent = tcp_sent_count_locked(endpoint);
+		retries = tcp_refusal_retries(refusal);
 		still_oldest = 0;
-		if (refusal != TCP_REFUSAL_NONE &&
+		if (retries &&
 		    sent != 0 &&
 		    endpoint->tcp.send_queue[endpoint->tcp.send_first].sequence == sequence &&
 		    endpoint->tcp.retransmit_count == backoff)
 			still_oldest = 1;
 		if (still_oldest) {
 			delay = tcp_refusal_delay(refusal);
+			if (endpoint->tcp.retransmit_refused != 0)
+				delay = tcp_refusal_delay(TCP_REFUSAL_WAIT);
 			endpoint->tcp.retransmit_count--;
 			endpoint->tcp.retransmit_deadline = now + delay;
+
+			/* The next refused resend knows this one was refused too. */
+			endpoint->tcp.retransmit_refused = 1;
 		}
+
+		/* A resend that went, or was lost as on the wire, ends the run of refusals. */
+		if (!retries)
+			endpoint->tcp.retransmit_refused = 0;
 
 		spin_unlock_irqrestore(&socket->lock, irq);
 
 		/* A hard send error abandons the attempt the segment belonged to. */
-		if (error != 0 && refusal == TCP_REFUSAL_NONE) {
+		if (refusal == TCP_REFUSAL_HARD) {
 			failed = 0;
 			irq = spin_lock_irqsave(&socket->lock);
 			sent = tcp_sent_count_locked(endpoint);
@@ -1659,6 +1687,7 @@ tcp_retransmit_reset(
 	endpoint->tcp.retransmit_deadline = 0;
 	endpoint->tcp.retransmit_count = 0;
 	endpoint->tcp.retransmit_since = 0;
+	endpoint->tcp.retransmit_refused = 0;
 
 	/* Nothing is owed the device any more. */
 	endpoint->tcp.ack_pending = 0;
@@ -1948,6 +1977,7 @@ tcp_retire_acknowledged(
 	if (!progressed) {
 		endpoint->tcp.retransmit_count = 0;
 		endpoint->tcp.retransmit_since = 0;
+		endpoint->tcp.retransmit_refused = 0;
 		return;
 	}
 
@@ -1962,6 +1992,7 @@ tcp_retire_acknowledged(
 	recovering = progressed && endpoint->tcp.retransmit_count != 0;
 	endpoint->tcp.retransmit_count = 0;
 	endpoint->tcp.retransmit_since = 0;
+	endpoint->tcp.retransmit_refused = 0;
 	sent = tcp_sent_count_locked(endpoint);
 
 	/* No timer without a segment in flight, at once when recovering, else a timeout from now. */
@@ -2038,10 +2069,12 @@ tcp_connect_cancel_locked(
  * thread sending the ones before it or by the output retry already set for
  * them (ws220-p003).  One the device or the pool refuses stays in the ring
  * for the output retry, and the call succeeds: the ring holds the data.
- * Only a segment that failed for good (no route) while still the last in
- * the ring is taken back, and its error reported; one with others queued
- * after it stays, as a segment lost on the wire, for the retransmission
- * timer, since taking it back would make its writer send its bytes twice.
+ * One lost for an unresolved neighbour stays sent, as one lost on the
+ * wire, for the retransmission timer.  Only a segment that failed for good
+ * (no route) while still the last in the ring is taken back, and its error
+ * reported; one with others queued after it stays, as a segment lost on
+ * the wire, since taking it back would make its writer send its bytes
+ * twice.
  */
 static int
 tcp_send_reliable(
@@ -2062,6 +2095,7 @@ tcp_send_reliable(
 	enum tcp_refusal refusal;
 	int control;
 	int owner;
+	int retries;
 	int error;
 	struct tcp_discard discard;
 
@@ -2159,12 +2193,13 @@ tcp_send_reliable(
 	 */
 	error = tcp_send_segment_at(endpoint, sequence, flags, data, length);
 	refusal = tcp_refusal_of(error);
+	retries = tcp_refusal_retries(refusal);
 
 	/* Settles what became of the entry, and gives the sending up. */
 	discard.count = 0;
 	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
 
-	if (refusal != TCP_REFUSAL_NONE) {
+	if (retries) {
 		/*
 		 * A segment the device or the pool had no room for is unsent
 		 * again, ahead of any queued after it, and the output retry
@@ -2176,7 +2211,10 @@ tcp_send_reliable(
 			endpoint->tcp.counters.send_refused++;
 		tcp_output_refused_locked(endpoint, refusal, 1, now);
 		error = 0;
-	} else if (error != 0) {
+	} else if (refusal == TCP_REFUSAL_LOST) {
+		/* Lost for an unresolved neighbour: the timer resends it, and R2 ends a peer that never answers. */
+		error = 0;
+	} else if (refusal == TCP_REFUSAL_HARD) {
 		/*
 		 * A segment that failed for good is taken back while it is the
 		 * last in the ring (a connect's SYN without a route reports the
@@ -2198,6 +2236,7 @@ tcp_send_reliable(
 				endpoint->tcp.retransmit_deadline = 0;
 				endpoint->tcp.retransmit_count = 0;
 				endpoint->tcp.retransmit_since = 0;
+				endpoint->tcp.retransmit_refused = 0;
 			}
 		} else {
 			error = 0;
@@ -2209,7 +2248,7 @@ tcp_send_reliable(
 	 * the network worker's next pass, which has a buffer to copy their
 	 * payloads into.
 	 */
-	if (refusal == TCP_REFUSAL_NONE && endpoint->tcp.send_unsent != 0) {
+	if (!retries && endpoint->tcp.send_unsent != 0) {
 		endpoint->tcp.output_retry_on_pass = 1;
 		endpoint->tcp.output_retry_deadline = now;
 	}
@@ -2253,12 +2292,33 @@ tcp_refusal_of(
 	if (error == ENOBUFS || error == EBUSY)
 		return TCP_REFUSAL_DEVICE;
 
-	/* An empty packet pool or a neighbour still being resolved, which tell no one when they pass. */
-	if (error == ENOMEM || error == EAGAIN)
+	/* An empty packet pool, which tells no one when it has packets again. */
+	if (error == ENOMEM)
 		return TCP_REFUSAL_WAIT;
 
-	/* Succeeded: any other error (no route, a device gone) loses the segment as the wire would. */
-	return TCP_REFUSAL_NONE;
+	/* A neighbour still being resolved: the segment is lost, as on the wire. */
+	if (error == EAGAIN)
+		return TCP_REFUSAL_LOST;
+
+	/* Any other error does not pass by waiting. */
+	return TCP_REFUSAL_HARD;
+}
+
+/* Tells whether a segment so refused stays unsent for the output retry. */
+static int
+tcp_refusal_retries(
+	enum tcp_refusal refusal)
+{
+	/* A full device. */
+	if (refusal == TCP_REFUSAL_DEVICE)
+		return 1;
+
+	/* An empty pool. */
+	if (refusal == TCP_REFUSAL_WAIT)
+		return 1;
+
+	/* Succeeded: sent, lost as on the wire, or failed for good, it is the timer's. */
+	return 0;
 }
 
 /* Gives the ticks after which a refused output is tried again at the latest. */
@@ -2270,8 +2330,8 @@ tcp_refusal_delay(
 
 	/*
 	 * A full device runs the network worker when it has room again, so
-	 * its delay only covers a device that does not; the pool and the
-	 * neighbour tell no one, so the retry waits rather than spinning.
+	 * its delay only covers a device that does not; the pool tells no
+	 * one, so the retry waits rather than spinning.
 	 */
 	if (refusal == TCP_REFUSAL_DEVICE) {
 		delay = kern_ms_to_ticks(TCP_OUTPUT_RETRY_DEVICE_MS);
@@ -2344,6 +2404,7 @@ tcp_mark_sent_locked(
 	if (sent == 0) {
 		endpoint->tcp.retransmit_count = 0;
 		endpoint->tcp.retransmit_since = 0;
+		endpoint->tcp.retransmit_refused = 0;
 		endpoint->tcp.retransmit_deadline = now + TCP_INITIAL_RTO;
 	}
 }
@@ -2383,12 +2444,13 @@ tcp_unmark_sent_locked(
 		endpoint->tcp.retransmit_deadline = 0;
 		endpoint->tcp.retransmit_count = 0;
 		endpoint->tcp.retransmit_since = 0;
+		endpoint->tcp.retransmit_refused = 0;
 	}
 }
 
 /*
  * Sets the output retry after the device or the pool refused a segment,
- * under the socket lock.
+ * under the socket lock, keeping a sooner retry already set.
  *
  * A full device is tried again on the network worker's next pass, which
  * its transmit completion runs, and after TCP_OUTPUT_RETRY_DEVICE_MS at the
@@ -2405,21 +2467,29 @@ tcp_output_refused_locked(
 	uint64_t now)
 {
 	uint64_t delay;
+	uint64_t deadline;
 
-	/* A full device: the next pass, and the latest after it. */
+	/*
+	 * A full device: the next pass, and the latest after it.  The pool:
+	 * only after the wait.  The retry is one for the socket, so a pass
+	 * already asked for and an earlier deadline already set stand
+	 * (review-1 L1): the retry serves every refused segment and
+	 * acknowledgement at the soonest any of them asked for.
+	 */
 	if (refusal == TCP_REFUSAL_DEVICE) {
 		delay = tcp_refusal_delay(TCP_REFUSAL_DEVICE);
 		if (!progressed)
 			delay = tcp_refusal_delay(TCP_REFUSAL_WAIT);
 		endpoint->tcp.output_retry_on_pass = 1;
-		endpoint->tcp.output_retry_deadline = now + delay;
-		return;
+	} else {
+		delay = tcp_refusal_delay(TCP_REFUSAL_WAIT);
 	}
 
-	/* The pool or the neighbour: only after the wait, however often the worker passes. */
-	delay = tcp_refusal_delay(TCP_REFUSAL_WAIT);
-	endpoint->tcp.output_retry_on_pass = 0;
-	endpoint->tcp.output_retry_deadline = now + delay;
+	/* The earlier of the deadline set and this one. */
+	deadline = now + delay;
+	if (endpoint->tcp.output_retry_deadline == 0 ||
+	    deadline < endpoint->tcp.output_retry_deadline)
+		endpoint->tcp.output_retry_deadline = deadline;
 }
 
 /*
@@ -2559,6 +2629,7 @@ tcp_send_unsent(
 	uint64_t now;
 	enum tcp_refusal refusal;
 	int progressed;
+	int retries;
 	int error;
 
 	/* The socket whose lock guards the ring and the retry. */
@@ -2608,8 +2679,9 @@ tcp_send_unsent(
 		 * A refused entry is unsent again, and the retry set for it
 		 * and those after it; net.tcpstats counts the data ones.
 		 */
+		retries = tcp_refusal_retries(refusal);
 		irq = spin_lock_irqsave(&socket->lock);
-		if (refusal != TCP_REFUSAL_NONE) {
+		if (retries) {
 			tcp_unmark_sent_locked(endpoint, packet);
 			if (length != 0)
 				endpoint->tcp.counters.send_refused++;
@@ -2617,7 +2689,12 @@ tcp_send_unsent(
 			break;
 		}
 
-		/* One that went, or that failed for good as on the wire, is the timer's now. */
+		/*
+		 * One that went, or was lost for an unresolved neighbour, or
+		 * failed for good, is the timer's now.  Each of the others lost
+		 * the same way asks ARP once more, at most a ring of them; the
+		 * timer's backoff spaces the asking after that.
+		 */
 		progressed = 1;
 	}
 
@@ -2651,6 +2728,7 @@ tcp_send_ack_pending(
 	uint64_t now;
 	enum tcp_refusal refusal;
 	int progressed;
+	int retries;
 	int error;
 
 	/* The socket whose lock guards the ring and the retry. */
@@ -2676,17 +2754,19 @@ tcp_send_ack_pending(
 	if (count == 0)
 		return;
 
-	/* Sends them one by one until the device refuses one. */
+	/* Sends them one by one until the device or the pool refuses one; one lost otherwise is lost as on the wire. */
 	refusal = TCP_REFUSAL_NONE;
+	retries = 0;
 	for (sent = 0; sent < count; sent++) {
 		error = tcp_send_segment_at(endpoint, sequence, TCP_ACK, NULL, 0);
 		refusal = tcp_refusal_of(error);
-		if (refusal != TCP_REFUSAL_NONE)
+		retries = tcp_refusal_retries(refusal);
+		if (retries)
 			break;
 	}
 
-	/* Every one went. */
-	if (refusal == TCP_REFUSAL_NONE)
+	/* Every one went, or is lost for good. */
+	if (!retries)
 		return;
 
 	/*
@@ -2697,6 +2777,13 @@ tcp_send_ack_pending(
 	now = sched_ticks();
 	irq = spin_lock_irqsave(&socket->lock);
 
+	/* A connection closed meanwhile owes the peer nothing (review-1 L4). */
+	if (endpoint->tcp.state == TCP_CLOSED) {
+		spin_unlock_irqrestore(&socket->lock, irq);
+		return;
+	}
+
+	/* The ones not sent join the pending ones, or stand for them. */
 	if (endpoint->tcp.ack_pending == 0) {
 		endpoint->tcp.ack_pending = count - sent;
 		endpoint->tcp.ack_pending_receive_next = receive_next;
@@ -2723,21 +2810,27 @@ tcp_send_ack_pending(
  * Its sequence number is the end of what was sent (RFC 9293's SND.NXT): a
  * peer whose window is closed takes a segment at that number only.  One
  * the device or the pool refuses is kept to be sent again by the output
- * retry (ws220-p003), and the network worker woken to wait for it: up to
- * TCP_ACK_PENDING_MAX of one receive_next, which a peer's fast retransmit
- * counts as duplicates, and once receive_next has moved one, which says
- * all of them.  One that goes with a newer receive_next than the pending
- * ones says all of them too, and they are dropped.
+ * retry (ws220-p003), and the network worker woken to wait for it.
+ * duplicate is 1 for the acknowledgement of a segment that came ahead of a
+ * gap, which a peer's fast retransmit counts: up to TCP_ACK_PENDING_MAX of
+ * those are kept for one receive_next.  Any other (a window update, a
+ * challenge, an answer to an old segment) is kept as one, since repeating
+ * it would look like duplicates to the peer (review-1 M1).  Once
+ * receive_next has moved, one says all of them; one that goes with a newer
+ * receive_next than the pending ones says all of them too, and they are
+ * dropped.  A connection closed meanwhile keeps none (review-1 L4).
  */
 static int
 tcp_send_ack(
-	struct tcp_endpoint *endpoint)
+	struct tcp_endpoint *endpoint,
+	int duplicate)
 {
 	struct socket *socket;
 	unsigned long irq;
 	uint32_t sequence;
 	uint64_t now;
 	enum tcp_refusal refusal;
+	int retries;
 	int error;
 
 	/* The socket whose lock guards the ring and the retry. */
@@ -2753,15 +2846,20 @@ tcp_send_ack(
 	/* Hands it to the device. */
 	error = tcp_send_segment_at(endpoint, sequence, TCP_ACK, NULL, 0);
 	refusal = tcp_refusal_of(error);
+	retries = tcp_refusal_retries(refusal);
 
-	/* Keeps a refused one for the output retry, or drops the pending ones a newer one covers. */
+	/* A connection closed meanwhile owes the peer nothing. */
 	now = sched_ticks();
 	irq = spin_lock_irqsave(&socket->lock);
 
-	if (refusal != TCP_REFUSAL_NONE) {
+	if (endpoint->tcp.state == TCP_CLOSED)
+		retries = 0;
+
+	/* Keeps a refused one for the output retry, or drops the pending ones a newer one covers. */
+	if (retries) {
 		if (endpoint->tcp.ack_pending != 0 &&
 		    endpoint->tcp.ack_pending_receive_next == endpoint->tcp.receive_next) {
-			if (endpoint->tcp.ack_pending < TCP_ACK_PENDING_MAX)
+			if (duplicate && endpoint->tcp.ack_pending < TCP_ACK_PENDING_MAX)
 				endpoint->tcp.ack_pending++;
 		} else {
 			endpoint->tcp.ack_pending = 1;
@@ -2780,7 +2878,7 @@ tcp_send_ack(
 	spin_unlock_irqrestore(&socket->lock, irq);
 
 	/* A refused one: the worker learns of the retry's deadline. */
-	if (refusal != TCP_REFUSAL_NONE) {
+	if (retries) {
 		net_worker_wakeup();
 		return error;
 	}
@@ -3457,7 +3555,7 @@ tcp_recvfrom(
 	    (endpoint->tcp.state == TCP_ESTABLISHED ||
 	     endpoint->tcp.state == TCP_FIN_WAIT_1 ||
 	     endpoint->tcp.state == TCP_FIN_WAIT_2)) {
-		sent = tcp_send_ack(endpoint);
+		sent = tcp_send_ack(endpoint, 0);
 
 		/* An update that went is counted for net.tcpstats (a refused one is sent again later). */
 		if (sent == 0) {
@@ -4354,7 +4452,7 @@ tcp_segment_input(
 		if (reset_check == TCP_RESET_CHALLENGE) {
 			spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock,
 			    socket_irq);
-			(void)tcp_send_ack(endpoint);
+			(void)tcp_send_ack(endpoint, 0);
 			packet_buf_free(packet);
 			socket_release(&endpoint->tcp.inet.socket);
 			return 0;
@@ -4473,7 +4571,7 @@ tcp_segment_input(
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
 		tcp_discard_free(&retransmit);
 		if (established)
-			(void)tcp_send_ack(endpoint);
+			(void)tcp_send_ack(endpoint, 0);
 		packet_buf_free(packet);
 		socket_release(&endpoint->tcp.inet.socket);
 		return 0;
@@ -4488,7 +4586,7 @@ tcp_segment_input(
 	 */
 	if ((flags & TCP_SYN) != 0) {
 		/* Acknowledges what this end has, and drops the SYN. */
-		(void)tcp_send_ack(endpoint);
+		(void)tcp_send_ack(endpoint, 0);
 		packet_buf_free(packet);
 		socket_release(&endpoint->tcp.inet.socket);
 		return 0;
@@ -4541,7 +4639,7 @@ tcp_segment_input(
 		if (acknowledges_unsent) {
 			endpoint->tcp.counters.acks_outside++;
 			spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
-			(void)tcp_send_ack(endpoint);
+			(void)tcp_send_ack(endpoint, 0);
 			packet_buf_free(packet);
 			socket_release(&endpoint->tcp.inet.socket);
 			return 0;
@@ -4673,7 +4771,7 @@ tcp_segment_input(
 		 * so it gets one (RFC 793).
 		 */
 		if (!accept_payload && old_payload) {
-			(void)tcp_send_ack(endpoint);
+			(void)tcp_send_ack(endpoint, 0);
 			goto payload_done;
 		}
 
@@ -4692,7 +4790,7 @@ tcp_segment_input(
 				pulled = packet_buf_pull(packet, header_length);
 			if (pulled != NULL)
 				tcp_reorder_keep(endpoint, &packet, sequence);
-			(void)tcp_send_ack(endpoint);
+			(void)tcp_send_ack(endpoint, 1);
 			goto payload_done;
 		}
 
@@ -4726,7 +4824,7 @@ tcp_segment_input(
 		/* The segments kept ahead that now follow on, then one acknowledgement for all. */
 		if (queued)
 			tcp_reorder_drain(endpoint, discard_payload);
-		(void)tcp_send_ack(endpoint);
+		(void)tcp_send_ack(endpoint, 0);
 		if (!queued)
 			goto fin_done;
 	}
@@ -4755,12 +4853,12 @@ payload_done:
 		 * the same way; left unanswered, the peer repeats it forever.
 		 */
 		if (!accept_fin) {
-			(void)tcp_send_ack(endpoint);
+			(void)tcp_send_ack(endpoint, 0);
 			goto fin_done;
 		}
 
 		/* Acknowledges the FIN, and tells the reader of the end. */
-		(void)tcp_send_ack(endpoint);
+		(void)tcp_send_ack(endpoint, 0);
 		eof = packet_buf_alloc(0);
 		if (eof != NULL)
 			(void)socket_enqueue_packet(&endpoint->tcp.inet.socket,

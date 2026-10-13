@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws220-p003 -->
 # ws220-p003: 送りの packet の不足（device が拒んでも書き手が 10 ms 眠らない、未送信を順に出す、ACK の出し直し）
 
-Status: in-progress / test-wait（2026-10-13 P3: 実装・模型・build（amd64・rpi4、warning 0）は済み。QEMU は §5 の T1 の依頼待ち（番号は Q1 が付ける）。cleared は T1 の結果を Q1 が判定してから）
+Status: in-progress / test-wait（2026-10-13 P3: 実装・模型・build（amd64・rpi4、warning 0）は済み。review-1（重大 G1・中 M1・M2・軽微）を同じ attempt の中で直した（§7）。QEMU は §5 の T1 の依頼待ち（番号は Q1 が付ける）。cleared は T1 の結果を Q1 が判定してから）
 Parent: [WS220](../ws.md)
 設計の出所: [p001 §4 の p003 の行](../phase001/phase.md)、[review-1](../phase001/review-1.md) の S4（1〜6）・S5、[p002](../phase002/phase.md) の結果（main に入った c13a8413f 以後の tcp.c）、ws.md の Q1 の記録とユーザーの決定（症状は受けの向き）
 
@@ -27,11 +27,11 @@ review S5 の「p006(b) の byte の buffer を先に」は採らない（Q1 の
 | 各所の位置 | pure ACK の sequence・ACK の受理（`SEG.ACK > 送った端` は範囲外）・net.tcpstats の `send_next`・`in_flight_bytes` = 送った端。窓と ring の入場の判定（`tcp_in_flight`）・FIN_WAIT_1・LAST_ACK の「全部 ACK された」= 積んだ端 | 相手が受けていない sequence を ACK に載せない（窓 0 の相手は RCV.NXT 以外の sequence の segment を捨てる）。入場は未送信も約束した量に数える |
 | 順序 | 送り出しは 1 つの socket に 1 人だけ（`send_flushing`）。持ち主は socket の lock の下で「最初の未送信を送った印にする」→ lock を外して device へ → lock の下で結果、を未送信が尽きるか拒まれるまで繰り返す。持ち主がいる間に積んだ書き手は未送信を残して戻り、持ち主がそれを拾う（持ち主は「未送信 0 を見る」と「持ち主をやめる」を同じ lock の中で行うので取りこぼしは無い） | S4-1。2 つの書き手が lock の外で別々に device へ渡すと、後ろの segment が先に出る（今の code にもある並び替え） |
 | 書き手の道 | 積んだ segment が唯一の未送信で持ち主がいなければ、書き手がそのまま持ち主になり、自分の `data`（呼び手の kernel の buffer）から送る（今と同じ 1 回の写し）。前に未送信があるか持ち主がいれば未送信を残して成功を返す（持ち主か retry が出す）。書き手の持ち主が送った後にまだ未送信があれば（他の書き手が後ろに積んだ）、retry を「次の一巡」にして worker を起こす | 古い未送信の payload の写しには 1 KB の stack の buffer が要る（ring の packet は reset で lock の外で解放されうる）。書き手の stack（16 KB）に 1 KB を足さず、worker の `tcp_timer_run` が既に持つ再送の buffer を使う |
-| 拒まれ方の分類 | `tcp_output_segment` が自分の packet の確保に失敗した = **pool**（`ENOMEM` を返すように変えた、今までは `ENOBUFS`）。`EAGAIN` = 隣の address が未解決（ARP・ND）。この 2 つは **待つ**: retry は 10 ms（`TCP_SEND_RETRY_MS`）の期限だけ。`ENOBUFS`・`EBUSY` = **device** の queue が満杯（ECM・NCM・GENET）: retry は worker の次の一巡（driver の送りの完了は `net_device_schedule_poll` で worker を回す、usb-cdc-ecm.c:823・usb-cdc-ncm-net.c:887）と、完了を知らせない driver のための 1 ms（最低 1 tick）の期限。他の error は**固い**（route が無い等） | S4-4（pool の間は 1 ms ごとに空回りしない）。ECM の queue の満杯は pool と同じ `ENOBUFS` なので、pool は TCP の側で区別する。ARP の未解決で 1 ms ごとに試すと `arp_request` が 1 ms ごとに出るので待つ側に入れた |
+| 拒まれ方の分類 | `tcp_output_segment` が自分の packet の確保に失敗した = **pool**（`ENOMEM` を返すように変えた、今までは `ENOBUFS`）。`EAGAIN` = 隣の address が未解決（ARP・ND）。この 2 つは **待つ**: retry は 10 ms（`TCP_SEND_RETRY_MS`）の期限だけ。`ENOBUFS`・`EBUSY` = **device** の queue が満杯（ECM・NCM・GENET）: retry は worker の次の一巡（driver の送りの完了は `net_device_schedule_poll` で worker を回す、usb-cdc-ecm.c:823・usb-cdc-ncm-net.c:887）と、完了を知らせない driver のための 1 ms（最低 1 tick）の期限。他の error は**固い**（route が無い等） | S4-4（pool の間は 1 ms ごとに空回りしない）。ECM の queue の満杯は pool と同じ `ENOBUFS` なので、pool は TCP の側で区別する。ARP の未解決で 1 ms ごとに試すと `arp_request` が 1 ms ごとに出るので待つ側に入れた | **review-1 G1 で改訂**: `EAGAIN`（隣の未解決）は待たず「線の上で失った」として送った印のまま RTO・backoff・R2 に任せる。待つのは pool（`ENOMEM`）だけ（§7）。
 | 固い error | 送った印のまま（線の上で失ったのと同じ）にし、RTO の再送が決める（今の timer は再送の固い error で接続を閉じる）。ただし書き手の道で自分の segment が固い error で、まだ ring の最後なら、今と同じく取り戻して error を返す（connect の SYN の `ENETUNREACH`、write の error が今と同じに見える）。最後でなければ（後ろに他の書き手が積んだ）取り戻さず 0 を返す | S4-5: 取り戻せない segment に error を返すと、書き手が同じ data をもう一度送り stream に 2 回入る |
 | RTO の timer | 最古の segment が**送った印**になった時に張る（`retransmit_deadline = now + RTO`、count・since を 0）。最古が未送信の間は RTO は無い（timer は送った segment の数 `send_count − send_unsent` が 0 なら再送しない）。retire の後に新しい最古が未送信なら deadline 0。窓が開いた時の直ちの再送・「回復した時に次を直ちに再送」も送った segment がある時だけ | S4-2: 一度も出ていない segment を「再送」と数えない（backoff・Karn・R2 を誤って進めない）。p004 の RTT の計り始めは「送った印」の時刻にできる |
-| timer の再送が拒まれた時 | 再送の数（`retransmit_count`）を 1 つ戻し、期限を device なら 1 tick 後・待つなら 10 ms 後にする。net.tcpstats の `retransmit_segments` は device が受けた時だけ数える | S4-6（今は次の期限 = 2 s 以上を待つ） |
-| pure ACK | 全ての pure ACK を `tcp_send_ack()` に通す（送った端を sequence に）。device・pool に拒まれたら `ack_pending` に数え（同じ `receive_next` の間は最大 3、`receive_next` が進んだら 1 から）、retry で出す。出す時、拒まれた後に `receive_next` が進んでいれば 1 つだけ（新しい ACK が前の全部を含む）、進んでいなければ数だけ（重複の ACK は相手の fast retransmit の 3 つに数えられる） | p001 §4 p003(b)、S4「数も持つ」。最大 3 で、進んだ ACK の後に余計な重複の ACK が相手の閾値 3 に届かない |
+| timer の再送が拒まれた時 | 再送の数（`retransmit_count`）を 1 つ戻し、期限を device なら 1 tick 後・待つなら 10 ms 後にする。net.tcpstats の `retransmit_segments` は device が受けた時だけ数える | S4-6（今は次の期限 = 2 s 以上を待つ） | **review-1 M2 で改訂**: 続けて拒まれたら 10 ms 後（新しい欄 `retransmit_refused`）。隣の未解決は拒みでなく失った再送として backoff を進める（§7）。
+| pure ACK | 全ての pure ACK を `tcp_send_ack()` に通す（送った端を sequence に）。device・pool に拒まれたら `ack_pending` に数え（同じ `receive_next` の間は最大 3、`receive_next` が進んだら 1 から）、retry で出す。出す時、拒まれた後に `receive_next` が進んでいれば 1 つだけ（新しい ACK が前の全部を含む）、進んでいなければ数だけ（重複の ACK は相手の fast retransmit の 3 つに数えられる） | p001 §4 p003(b)、S4「数も持つ」。最大 3 で、進んだ ACK の後に余計な重複の ACK が相手の閾値 3 に届かない | **review-1 M1 で改訂**: 数を持つのは順序外の segment への ACK（本当の重複）だけ、他は 1 つにまとめる。閉じた接続には持たない（L4、§7）。
 | retry の状態 | socket ごとに 1 つ: `output_retry_on_pass`（device の拒み: worker の次の一巡で試す）と `output_retry_deadline`。未送信も ACK の待ちも無くなったら両方 0。`tcp_timer_run` は socket ごとに、未送信か ACK の待ちがあり、持ち主がいなくて、一巡の印か期限が来ていれば先に送り出す（RTO の判断の前） | S4-3・S4-4 |
 | worker を起こすか | 書き手・読み手（窓の更新）・input の道で拒まれて retry を置いた時は `net_worker_wakeup()`（眠っている worker が新しい期限を知るため）。`tcp_timer_run` の中の retry の失敗では起こさない（起こすと device が満杯の間 worker が自分を回し続ける） | 空回りの防止 |
 | 書き手の待ち | `tcp_sendto` は ring か窓に空きが無い（`EAGAIN`）と、10 ms 眠らずに ring の空きを `send_waitq` で待つ（他の書き手が先に空きを取った時も）。10 ms の眠りは ring の写しの packet が pool から取れない時（`ENOBUFS`）だけ（`send_buffer_sleeps`） | ゴール 1。pool の不足は本当の資源の不足で、塞がる書き手が空回りしないための今の待ちのまま |
@@ -87,7 +87,9 @@ review S5 の「p006(b) の byte の buffer を先に」は採らない（Q1 の
 | queue-1 | `--bytes 32Mi --queue 1` | 30 | 0.10 | 37.26 PASS |
 | two-writers | `--bytes 32Mi --queue 3 --second-writer --expect-in-order` | 30、byte の誤り 0、順の乱れ 0 | 0.39、**corrupt 33422555**（同じ byte が 2 回、S4-5）、out_of_order 16384（S4-1） | 37.26 PASS（corrupt 0、out_of_order 0） |
 | queue-1-loss-1 | `--bytes 16Mi --queue 1 --loss-ab 1` | 2 | 0.09 | 2.47 PASS |
-| unresolved | `--bytes 16Mi --unresolved-at-ms 100 --unresolved-ms 500` | 10、拒み ≤ 55（10 ms ごと） | 17.21（拒み 50、旧は書き手が 10 ms 眠る） | 17.03 PASS（拒み 51 = 10 ms ごと、停止 509.7 ms） |
+| unresolved | `--bytes 16Mi --unresolved-at-ms 100 --unresolved-ms 500` | 5、拒み（= ARP の要求）≤ 12 | 17.21（拒み 50、書き手が 10 ms ごとに試す） | 11.17 PASS（review-1 の後: 拒み 8 = ring の segment ごとに 1 回、停止 999.7 ms = RTO 1 回）。a82c9ba7b では 17.03・拒み 51（10 ms ごと、G1 の形） |
+| unresolved-giveup（review-1） | `--bytes 1Gi --unresolved-at-ms 500 --unresolved-ms 1000000 --limit-s 400` | R2 で諦める（100.5〜200 s）、拒み ≤ 20 | — | 123.5 s で諦め、拒み 14 PASS（a82c9ba7b なら諦めず 10 ms ごとに拒み続ける） |
+| connect-unresolved（review-1） | `--connect-unresolved` | SYN の R2 で諦める（180〜300 s）、拒み ≤ 20 | — | 183.0 s で諦め、拒み 8 PASS |
 
 what-if（`MODEL_CFLAGS=-DCONFIG_TCP_SEND_QUEUE_MAX=44`、device の queue 9）: p001 の 0.88 MB/s → **110.62 MB/s**（線の上限）。p006 で ring を広げる前提（device の queue を溢れても崩れない）が満たされた。
 
@@ -143,7 +145,35 @@ what-if（`MODEL_CFLAGS=-DCONFIG_TCP_SEND_QUEUE_MAX=44`、device の queue 9）:
 ## 6. 残りと判断
 
 - Status は test-wait: T1 の結果を Q1 が判定するまで cleared にしない。
-- 削除してほしい出力（Q1、P3 の worktree）: `build/tmp/p3-old.ko63`（旧 tcp.c・旧模型の比べと style の比べ）、`build/p3-ws220-host44`（ring 44 の what-if）、`build/p3-ws220-*.log`（build と模型の log、本 file に要点を写した）。`build/p3-ws220-host`・`build/p3-ws220-amd64`・`build/p3-ws220-rpi4` は次の段で使い回すので残す。
+- 削除してほしい出力（Q1、P3 の worktree）: `build/tmp/p3-cmp.D1j7`（review-1 の後の旧 tcp.c・旧模型・style の比べ）、`build/p3-ws220-host44`（ring 44 の what-if）、`build/p3-ws220-*.log`（build と模型の log、本 file に要点を写した）。`build/tmp/p3-old.ko63` は Q1 が消した。`build/p3-ws220-host`・`build/p3-ws220-amd64`・`build/p3-ws220-rpi4` は次の段で使い回すので残す。
 - 模型の option の解き方（`strcmp` を条件に書く形、既存の物を含む）は p009（規約の全文）で直す。
 - 模型が見ないこと: 本当の複数の CPU（`send_flushing` の取り合い、lock の外の並び）、pool の不足（模型の pool は共有の 256 で尽きない。`ENOMEM` の道は隣の未解決の `EAGAIN` と同じ待ちの分類で確かめた）、IPv6。
 - 範囲の外のまま: cwnd・byte の送りの buffer（p006）、RTT・RTO（p004）、fast retransmit と「窓が開いた時の再送」の除去（p005）、受けの窓（p007、slow-reader の `receive_refused` は残る）。
+
+## 7. review-1 への対応（2026-10-13、a82c9ba7b の review、全文は [review-1.md](review-1.md)）
+
+Q1 の判定「merge は保留、重大 1・中 2 を直してから」。同じ q941 の attempt の中で直した。
+
+| 指摘 | 直し |
+| --- | --- |
+| G1 隣の未解決（EAGAIN）で未送信の SYN・SYN-ACK・data が永久に残り、10 ms ごとに ARP | Q1 の決め (a) のとおり。`enum tcp_refusal` を NONE（通った）・DEVICE・WAIT（pool の `ENOMEM` だけ）・**LOST**（`EAGAIN`）・**HARD**（固い error）に分けた。DEVICE・WAIT だけが未送信に戻る（`tcp_refusal_retries`）。LOST は送った印のまま RTO・backoff・R2 に任せる: 書き手の道（SYN・SYN-ACK・FIN・data）は 0 を返し、未送信の送り出しは次へ進み（ring の segment ごとに ARP 1 回まで）、timer の再送は backoff を戻さない（固い error として接続を閉じもしない）、pure ACK は失ったものとして持たない。模型: unresolved の期待を「拒み ≤ 12、RTO 1 回の停止」に、`unresolved-giveup`（R2 の 123.5 s で諦め、ARP 14 回）と `connect-unresolved`（SYN の R2 の 183 s、ARP 8 回）を足した |
+| M1 出し直す pure ACK が偽の重複の ACK 3 つになる | `tcp_send_ack(endpoint, duplicate)`。数を増やすのは順序外の segment への ACK（`tcp_reorder_keep` の後、duplicate 1）だけ。窓の更新・challenge ACK・範囲外への答え・古い data への ACK・handshake・FIN の ACK は duplicate 0 で、同じ receive_next の待ちがあれば数を増やさない（無ければ 1） |
+| M2 timer の再送が device に拒まれると 1 ms ごとに試し続ける | `tcp_socket` に `retransmit_refused`。最古の再送が拒まれたら立て、続けて拒まれたら期限を TCP_SEND_RETRY_MS（10 ms）後にする。再送が通るか失ったら、また timer が始め直したら（retire・reset・印・取り戻し）0 |
+| L1 retry の on_pass・期限の上書き | `tcp_output_refused_locked` は on_pass を OR（立てるだけ）、期限は早い方を残す |
+| L4 reset の後に ack_pending が復活する | `tcp_send_ack` と `tcp_send_ack_pending` は、lock を取り直した時に接続が CLOSED なら数を持たない |
+| L5 `tcp_refusal_of` の最後の注記、NONE が成功と固い error を兼ねる | HARD を分け、注記を直した |
+| L2・L3 | 記録だけ（自然に回復する、review のとおり）。L2: 持ち主の送りと timer の再送が重なり持ち主が拒まれると、線に出た X が未送信に戻り、相手の ACK は送った端を越えて捨てられ、X は出し直されて回復する。L3: 持ち主が lock を外している間の pure ACK は印だけの segment の後ろを sequence に使う |
+
+確かめ（直しの後）:
+- 模型の全部（`build/p3-ws220-model-all3.log`）: FAIL は p004〜p006 の 4 つだけ（前と同じ）。p003 の scenario は全部 PASS（queue-7/5/2/1 37.28・37.28・37.28・37.26、two-writers 37.26・誤り 0・順の乱れ 0、queue-1-loss-1 2.47、unresolved・unresolved-giveup・connect-unresolved は上の表）。前の模型 + 直した tcp.c で p002 の 11 の scenario は全部 p002 と同じ値。
+- build: amd64・rpi4 の vmunix、warning 0、vmunix check PASS（`build/p3-ws220-amd64-5.log`・`build/p3-ws220-rpi4-5.log`）。
+- `python3 plan/tools/style-check.py src/kern/net/tcp.c`: 111（基線 1e0e3c3be の 121 と内容で比べ、新しい指摘 0）。`git diff --check` ok。
+- 模型が見ないこと（M1 の偽の重複は模型の相手が fast retransmit を持たないので数として見えない、code を読んで確かめた）。
+- §5 の T1 の依頼は変えない（隣の未解決は QEMU の網では起きない）。
+
+### 測りの道具の直し（2026-10-13 Q1 の依頼、T1-574 の報告）
+
+- 症状: `tcp-stream-series.sh` が毎 run の終わりで止まる。`sudo kill -INT "$capture_pid"` の pid は capture を起こした background の shell（`$!`）で、background の sh は SIGINT を無視するので tcpdump に届かず `wait` が戻らない。`stream.py serve` も同じ形で止まらず、10.77.0.1:8080 で待つ物が run ごとに残った（Q1 が 16 個止めた）。ss の sampler も sudo の下で残っていた。
+- 直し（`plan/ws220/tests/tcp-stream-series.sh`）: tcpdump・HTTP server・ss の sampler は、それぞれ自分の pid を `$out` の file（`wire-RUN.pid`・`server.pid`・`ss-RUN.pid`）に書いて `exec` する（`sh -c 'echo $$ > FILE; exec …'`）。新しい `stop_pidfile FILE` が SIGTERM を送り、10 s まで終わるのを待ってから SIGKILL。各 run の終わりに capture と sampler を止め、`teardown`（trap EXIT）で capture・sampler・server を必ず止める。rm は使わない（pid の file は出力の folder に残る）。
+- `plan/ws220/tests/stream.py`: `serve` は SIGTERM を SIGINT と同じに扱い、log の `done` の行を書いて終わる。
+- 確かめ（QEMU なし、host だけ）: 一時の namespace `p3t` の lo で、script と同じ形で server・sampler・capture を起こし、4 MiB を fetch して、pid の file で止めた（`build/tmp/p3-cmp.D1j7/harness.sh`、使い捨て）。pid の file の pid は `tcpdump`・`python3`・`sh` 自身、capture は止めてから 0.22 s で終わり起こした shell も終わった、namespace に残った process 0、8080 相当の port で待つ物 0、pcap は閉じられ（124 packets captured）、server の log に `done … bytes=4194304`。`sh -n` ok。QEMU の run（guest を含む全体）は T1 の次の run で確かめる。

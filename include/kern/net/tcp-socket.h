@@ -174,6 +174,13 @@ struct tcp_socket {
 	 */
 	uint64_t retransmit_since;
 	/*
+	 * Set when the device or the pool refused the timer's last resend of
+	 * the oldest segment, so a resend refused again is tried after
+	 * TCP_SEND_RETRY_MS rather than the next tick (ws220-p003 review-1
+	 * M2); 0 again once a resend goes or the timer starts over.
+	 */
+	unsigned retransmit_refused;
+	/*
 	 * TCP_NODELAY as the caller set it, and the idle-probe state for
 	 * SO_KEEPALIVE: when the next probe is due and how many have gone
 	 * unanswered.
