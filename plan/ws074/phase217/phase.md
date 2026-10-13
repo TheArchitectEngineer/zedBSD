@@ -114,3 +114,11 @@ Event ws074-p217-q1106-partial-clear-20261014: [証拠](evidence/20261014-q1106/
 ## q1107-i01 結果（2026-10-14 08:40 JST）
 
 Event ws074-p217-q1107-partial-clear-20261014: [証拠](evidence/20261014-q1107/README.md)。水平Grid definite行で上下auto marginを最終item高さ後の正の余白へ配分。最小6ケースPASS、固定auto-margins001〜007は全7 whole FAIL→PASS・計14 subtest FAIL→PASS、逆0。旧style-changes001と100-subtest代表PASS維持、Grid48/CSS51/JS14、warning0 build、Acid3差0・Acid2差1865。q1107部分cleared、p217/p189/p173全件100%未達。auto行/row span/縦書き残、共有投影/GitHub publication保留。
+
+## q1108-i01 有限部分範囲（2026-10-14 08:41 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（10:11 JSTまで）に適用。q1105固定column-axis/row-axis positioned-items各17件の水平LTR/RTLと縦書きsubtestを分け、水平初回失敗のalign/justify値・期待/実座標をWPT sourceと`grid_static_position`/`position_place`で追う。幅確定後area内整列に必要なprivate metadata境界と次の有限修正を記録。読取/証拠のみ、browser/runner/WPT/公開ABI/`plan/master.md`/Acid変更なし。p217 whole/p189/p173全件100%は本部分基準外。
+
+## q1108-i01 結果（2026-10-14 08:42 JST）
+
+Event ws074-p217-q1108-partial-clear-20261014: [証拠](evidence/20261014-q1108/README.md)。固定positioned列軸17/行軸17の水平subtestは20/34・26/34失敗、縦書き68/68はwidth期待10/実60。列軸002/005/007/009/011の水平10失敗はend/center系`align-self`のoffsetTop期待140/70・実0が共通。Gridはarea topのみstatic_yへ保存し、position_placeは子高さ確定後もそのまま使用。次はprivate area height/alignmentを渡す限定実装。q1108部分cleared、p217/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
