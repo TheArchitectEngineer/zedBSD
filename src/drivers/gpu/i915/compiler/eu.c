@@ -1623,6 +1623,7 @@ drv_i915_eu_sync_function(
 
 	/* Gen9 waits for the barrier with a WAIT and has nothing for the other functions. */
 	if (buffer->format->has_swsb == 0) {
+		/* The barrier's wait is a WAIT on n0; nothing else has a Gen9 form. */
 		if (function == EU_SYNC_BAR) {
 			i915_eu_wait_notification(buffer);
 		} else {
@@ -2077,14 +2078,19 @@ i915_eu_send_common(
 	 */
 	split = 0;
 	if (format->has_swsb == 0) {
+		/* Bit 31 of the descriptor would land on the end-of-thread bit. */
 		if ((descriptor >> 31) != 0U) {
 			buffer->error = 1;
 			return;
 		}
+
+		/* The extended descriptor's middle bits (a render target index, say) have no place. */
 		if ((ex_descriptor & GEN9_EU_SENDS_EX_DESC_ZERO_MASK) != 0U) {
 			buffer->error = 1;
 			return;
 		}
+
+		/* Anything left in the extended descriptor is a second payload. */
 		if (ex_descriptor != 0U)
 			split = 1;
 	}
@@ -2227,6 +2233,16 @@ i915_eu_send_gen9(
 		i915_eu_dst(buffer, inst, dst);
 		i915_eu_src0(buffer, inst, src0);
 		i915_eu_src1(buffer, inst, drv_i915_eu_imm_ud(descriptor));
+
+		/*
+		 * The extended descriptor, zero, overlays source 0's region and
+		 * source 1's type: written last, as brw_set_desc_ex() does, so the
+		 * message sees no stray extended bits.
+		 */
+		i915_eu_set(inst, GEN9_EU_SEND_EX_DESC_31_28_HI, GEN9_EU_SEND_EX_DESC_31_28_LO, 0U);
+		i915_eu_set(inst, GEN9_EU_SEND_EX_DESC_27_24_HI, GEN9_EU_SEND_EX_DESC_27_24_LO, 0U);
+		i915_eu_set(inst, GEN9_EU_SEND_EX_DESC_23_20_HI, GEN9_EU_SEND_EX_DESC_23_20_LO, 0U);
+		i915_eu_set(inst, GEN9_EU_SEND_EX_DESC_19_16_HI, GEN9_EU_SEND_EX_DESC_19_16_LO, 0U);
 		return;
 	}
 
@@ -2499,13 +2515,17 @@ i915_eu_branch_target(
 	/* Gen9: the immediate source 0, and for an IF the cleared UIP. */
 	if (buffer->format->has_swsb == 0) {
 		i915_eu_src0(buffer, inst, drv_i915_eu_imm_d(0U));
+
+		/* An IF's UIP overwrites what the immediate said of source 1. */
 		if (both != 0)
 			i915_eu_field(inst, buffer->format->uip, 0U);
 		return;
 	}
 
-	/* Gen12: the immediate bits of the sources that carry targets. */
+	/* Gen12: the JIP's source is an immediate. */
 	i915_eu_bit(inst, EU_SRC0_IS_IMM_BIT, 1U);
+
+	/* So is an IF's UIP source. */
 	if (both != 0)
 		i915_eu_bit(inst, EU_SRC1_IS_IMM_BIT, 1U);
 }

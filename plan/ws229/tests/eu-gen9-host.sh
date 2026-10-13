@@ -120,6 +120,33 @@ for source in "$repo"/plan/ws101/tests/host/shaders/*.comp "$repo"/src/drivers/g
 	fi
 done
 
+# 4. Intent, not only a round trip (design review-1 M6): the round trip passes an opcode or a descriptor that is wrong
+#    but valid.  The encoder's bytes must equal Mesa's assembly of the reviewed listing eu-gen9-expect.asm, and the
+#    Gen9-only message forms of the code generator must be in the kernels that use them.
+"$tools/brw_asm" --gen=skl -o "$work/expect.bin" "$repo/plan/ws229/tests/eu-gen9-expect.asm" > "$work/expect.log" 2>&1
+if [ -s "$work/expect.bin" ] && cmp -s "$work/expect.bin" "$work/encoder.bin"; then
+	echo "encoder: the bytes equal Mesa's assembly of the reviewed Gen9 listing"
+else
+	echo "encoder: FAIL the bytes differ from Mesa's assembly of eu-gen9-expect.asm"; status=1
+fi
+# expect NAME LISTING PATTERN WHAT: the listing has a line matching PATTERN.
+expect() {
+	if grep -q -- "$3" "$work/$2"; then
+		echo "$1: $4"
+	else
+		echo "$1: FAIL no $4 in $2"; status=1
+	fi
+}
+expect barrier compute-shared.asm 'and(1).*g0.2<0,1,0>UD.*0x8f000000UD' "barrier ID masked with 0x8f000000"
+expect barrier compute-shared.asm '^wait(1)' "WAIT on n0 after the gateway message"
+expect fence compute-shared.asm 'DC mfence, bti 0,' "one data cache fence at entry 0"
+expect fence compute-shared.asm '^mov(1) *null<1>UW *g[0-9]*<0,1,0>UW' "MOV of the fence's reply to null"
+expect terminate compute-shared.asm 'send(8) .*0x82000010' "thread spawner message with \"do not dereference URB\""
+expect sampler texops.frag.asm 'mov(8) *g[0-9]*<1>UD *g0<8,8,1>UD *{ align1 WE_all 1Q }' "sampler header copied from r0"
+expect targets mrt.frag.asm 'mov(1) *g124.2<1>UD *0x00000003UD' "last write's header naming target 3"
+expect targets mrt-kill.frag.asm 'mov(1) *g124.15<1>UW *f1<0,1,0>UW' "live pixels in header word 15"
+expect dual dual.frag.asm 'mlen 6 ex_mlen 4' "header and first colour as one run, second colour as the other"
+
 if [ $status -ne 0 ]; then
 	echo "ws229 Gen9 EU host test FAIL"
 else

@@ -154,6 +154,21 @@
 #define GEN9_EU_SEND_EOT_BIT		127
 
 /*
+ * The extended descriptor of a single-payload SEND (brw_eu_inst_set_send_ex_desc(), Gfx9..11): its bits 31:28,
+ * 27:24, 23:20 and 19:16 share the instruction with source 1's type (94:91) and source 0's region (88:85, 83:80) and
+ * subregister (67:64).  brw_set_desc_ex() writes it after the operands -- zero for every message compiler/eu.c sends
+ * this way -- so those operand fields end up clear.
+ */
+#define GEN9_EU_SEND_EX_DESC_31_28_HI	94
+#define GEN9_EU_SEND_EX_DESC_31_28_LO	91
+#define GEN9_EU_SEND_EX_DESC_27_24_HI	88
+#define GEN9_EU_SEND_EX_DESC_27_24_LO	85
+#define GEN9_EU_SEND_EX_DESC_23_20_HI	83
+#define GEN9_EU_SEND_EX_DESC_23_20_LO	80
+#define GEN9_EU_SEND_EX_DESC_19_16_HI	67
+#define GEN9_EU_SEND_EX_DESC_19_16_LO	64
+
+/*
  * SENDS / SENDSC, a message of two payloads: a one-bit destination file, the
  * second payload's file and register, and the extended descriptor's bits
  * 31:16 and 9:6 (the length of the second payload); its other bits must be
