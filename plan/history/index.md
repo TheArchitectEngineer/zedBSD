@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1101 / WS074 vertical-rl empty Grid baseline x（2026-10-14）
+## 最新: q1102 / WS074 Grid style-changes eight-ID recensus（2026-10-14）
+
+[q1102履歴](queue-q1102.md): 固定8 IDは4→6 whole PASS、26→36/48 subtest PASS、旧PASS後退0。残007/008は縦書き文字幅差。[証拠](../ws074/phase189/evidence/20261014-q1102/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1101 / WS074 vertical-rl empty Grid baseline x（2026-10-14）
 
 [q1101履歴](queue-q1101.md): 固定003/004各1/6→6/6 subtest・whole PASS、旧4件と100-subtest PASS維持。warning0 build、Acid3差0。[証拠](../ws074/phase217/evidence/20261014-q1101/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

@@ -1,0 +1,82 @@
+{
+  "aggregate": {
+    "old_pass": 26,
+    "new_pass": 36,
+    "fail_to_pass": 10,
+    "pass_to_fail": 0
+  },
+  "cases": [
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-001.html",
+      "old_outcome": "pass",
+      "new_outcome": "pass",
+      "old_pass": 6,
+      "new_pass": 6,
+      "fail_to_pass": 0,
+      "pass_to_fail": 0
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-002.html",
+      "old_outcome": "pass",
+      "new_outcome": "pass",
+      "old_pass": 6,
+      "new_pass": 6,
+      "fail_to_pass": 0,
+      "pass_to_fail": 0
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-003.html",
+      "old_outcome": "fail",
+      "new_outcome": "pass",
+      "old_pass": 1,
+      "new_pass": 6,
+      "fail_to_pass": 5,
+      "pass_to_fail": 0
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-004.html",
+      "old_outcome": "fail",
+      "new_outcome": "pass",
+      "old_pass": 1,
+      "new_pass": 6,
+      "fail_to_pass": 5,
+      "pass_to_fail": 0
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-005.html",
+      "old_outcome": "pass",
+      "new_outcome": "pass",
+      "old_pass": 6,
+      "new_pass": 6,
+      "fail_to_pass": 0,
+      "pass_to_fail": 0
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-006.html",
+      "old_outcome": "pass",
+      "new_outcome": "pass",
+      "old_pass": 6,
+      "new_pass": 6,
+      "fail_to_pass": 0,
+      "pass_to_fail": 0
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-007.html",
+      "old_outcome": "fail",
+      "new_outcome": "fail",
+      "old_pass": 0,
+      "new_pass": 0,
+      "fail_to_pass": 0,
+      "pass_to_fail": 0
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-008.html",
+      "old_outcome": "fail",
+      "new_outcome": "fail",
+      "old_pass": 0,
+      "new_pass": 0,
+      "fail_to_pass": 0,
+      "pass_to_fail": 0
+    }
+  ]
+}
