@@ -286,3 +286,12 @@ Gen9 の **PCI ID の合計 86**（SKL 25 ＋ KBL 22 ＋ CFL 39）。Gen9 の GT
 - D3: display の無い node で Keiland を動かす経路は作らない（D1 の決定で不要）。
 
 - 2026-10-14 Q1: §5 の所有の追記（P2 の報告）: `request.c`（PIPE_CONTROL・MI_ARB_CHECK・AUX の invalidate・MI_FLUSH_DW_CCS の Gen12 だけの命令）・`verify-workarounds.c`（MCR の range の表）・`defaults.c`（Gen9 の null render state、第 1 版は流さず残件）は p002 の所有。`intel/commands.h` は p004 の所有のまま。
+
+## review-1 と Q1 の判断（2026-10-14）
+
+[review-1](review-1.md)（致命的 F1・F2、重大 M1〜M10、中 1〜8、軽微）。Q1 の範囲の判断:
+- F1（request.c）は p002 の所有（既に P2 に了承済み）。F2: Gen9 では SENDS・SENDSC を出す（§3.4 の「1 payload に並べ直す」と §7 の SENDS を退けた理由は撤回）。見積もりの p003 は見直す。
+- 所有の追記: p002 に `display/display.c`（native check の配線・noirq_front・display irq の bind の Gen9 の分岐だけ）・`include/kern/boot.h`（Gen9 の boot の key）・`worker.c`。p004 に `render/batch.c`・`render/heap.h`・`render/fence.c`・`render/vulkan.c`・`render/instance.c`・`tests/fixtures/draw-fixture.c`。`plan/ws101/tests/host/genxml-check.py` は p004、それ以外の `plan/ws101/tests/host/` は p003。
+- 他の WS の plan/tests（ws101・ws075・ws031・ws083）は、Gen9 の選択肢を足すだけ（Gen12 の振る舞いと期待を変えない）の編集を Q1 が許可する。
+- 受け入れの直し（M6）: p003 は Gen9 の期待の text を brw_asm で byte にして zedBSD の byte と比べる試験と、Gen12 の byte の前後の同一。p004 は Gen12 の batch の byte の前後の同一。p002 は Gen12 の起動の mmio の書き込み列の golden（mock）か、5330 の T1 の回帰。ktest-gt は host で走らないので p005 へ。
+- U1〜U3 はユーザーに聞く。
