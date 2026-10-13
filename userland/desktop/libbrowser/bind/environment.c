@@ -1752,7 +1752,7 @@ environment_open_details(
 	struct vm_string *value;
 	int error;
 
-	name = vm_string_from_utf8(realm->heap, "open", 4U);
+	name = vm_atom_from_ascii(realm->heap, "open");
 	if (name == NULL)
 		return ENOMEM;
 	root = &name->cell;
@@ -1868,7 +1868,7 @@ environment_reveal_target(
 		if (!dom_is_inclusive_ancestor(&window->document->node, walk) ||
 		    !environment_hidden_until_found(dom_attribute_ascii(element, "hidden")))
 			break;
-		name = vm_string_from_utf8(window->realm->heap, "hidden", 6U);
+		name = vm_atom_from_ascii(window->realm->heap, "hidden");
 		if (name == NULL) {
 			error = ENOMEM;
 			break;

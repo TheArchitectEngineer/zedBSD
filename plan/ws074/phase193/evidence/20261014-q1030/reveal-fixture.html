@@ -1,0 +1,10 @@
+<!doctype html>
+<details id="outer"><div id="middle" hidden="until-found"><details id="inner" hidden="until-found"><div id="target">Target</div></details></div></details>
+<script>
+var events = [];
+inner.addEventListener('beforematch', function (event) { events.push('inner:' + String(inner.open) + ':' + String(inner.hidden)); });
+middle.addEventListener('beforematch', function (event) { events.push(event.target.id + ':' + String(inner.hidden) + ':' + String(middle.hidden)); });
+location.hash = '#target';
+console.log('events', events.join(','));
+console.log('final', String(inner.open), String(inner.hidden), String(middle.hidden), String(outer.open), location.hash);
+</script>

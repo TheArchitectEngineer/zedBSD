@@ -45,3 +45,13 @@ Event ws074-p193-q1027-outcome-20261014: q1027-i01 partial cleared、p193 whole�
 **partial scope cleared、p193 whole uncleared。** 同一文書URL更新、fragment ID探索、同期beforematch・祖先revealと状態変化時の中断を実装。[証拠](evidence/20261014-q1028/README.md)。局所fixtureは順序・伝播・中断・hashを確認。固定beforematch WPTはno outputからcompletion付きFAILへ進行したが、次は一般的な `Element.attributes` 欠落でWPT harnessの要素整形に失敗する。host build warning0、native property65/65、realm30/30、diff check PASS。Acid3 score100/100・画素差0、Acid2差1865不変。p193 whole、p173全件は未達、GitHub publication保留。
 
 Event ws074-p193-q1028-outcome-20261014: q1028-i01 partial cleared、p193 wholeはuncleared。固定WPTの新たな `Element.attributes` 欠落を次の独立scopeへ送る。
+
+## q1030-i01 の有限部分範囲
+
+2026-10-14 01:14 JST、ユーザーの事前承認を適用、最大90分。q1029後の固定`hidden-until-found-and-details.html` は内側の `hidden` を除去できないまま外側の `beforematch` に進む。`dom_element_remove_attribute` が intern 済み属性名のポインタ同一性を要するため、fragment祖先reveal内の `hidden` 除去と `details` の `open` 設定にatomを用い、順序・後続状態を修正する。固定hidden/details WPT、局所fixture、host build/関連試験、Acid3/Acid2差画素非増加を確認。toggle全仕様やp193全件PASSはこの部分基準に含めない。WPT本体/公開ABI/`master.md`は変更しない。適用は[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)。
+
+## q1030-i01 結果（2026-10-14 01:17 JST）
+
+**partial scope cleared、p193 whole uncleared。** reveal内の`hidden`除去と`open`設定をatom名に修正。[証拠](evidence/20261014-q1030/README.md)。局所fixtureは内側から外側への状態とイベント順を確認。固定beforematch中断2 WPTはPASS。`hidden-until-found-and-details.html`は次の`toggle`通知待ちでno output、PASS未達。host build warning0、native property65/65、realm30/30、diff check PASS。Acid3 score100/100・画素差0、Acid2差1865不変。p193 wholeとp173全件は未達、GitHub publication保留。
+
+Event ws074-p193-q1030-outcome-20261014: q1030-i01 partial cleared、p193 wholeはuncleared。次の固定WPT阻害はdetails toggle通知。

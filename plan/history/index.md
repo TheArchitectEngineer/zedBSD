@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1030 / WS074 fragment ancestor attribute identity（2026-10-14）
+
+[q1030履歴](queue-q1030.md): hidden/openのatom同一性を修正し、固定中断WPT2件PASS。別WPTはtoggle待ち。p193 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1030/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1029 / WS074 Element.attributes read surface（2026-10-14）
 
 [q1029履歴](queue-q1029.md): SameObject/live属性collectionの読み取り面を追加し、固定beforematch WPT1/1 PASS。別WPTはreveal順序差でFAIL。p194 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase194/evidence/20261014-q1029/README.md)。共有投影/GitHub publication pending。
