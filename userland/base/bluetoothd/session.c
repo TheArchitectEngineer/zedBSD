@@ -48,6 +48,7 @@
 #define SESSION_READ_CODECS		0x100bU
 #define SESSION_READ_CODECS_V2		0x100dU
 #define SESSION_READ_ADDRESS		0x1009U
+#define SESSION_READ_LOCAL_NAME		0x0c14U
 #define SESSION_LE_SET_EVENT_MASK	0x2001U
 #define SESSION_LE_READ_BUFFER_SIZE	0x2002U
 #define SESSION_LE_SCAN_PARAMETERS	0x200bU
@@ -136,6 +137,27 @@
 #define SESSION_DOWNLOAD_MS		5000U
 #define SESSION_BOOT_MS			5000U
 
+/*
+ * The timing of a Broadcom controller on a UART (ws215-p005): the wait for
+ * the kernel's reset notice and the pause after Download Minidriver are
+ * this daemon's own choices; Launch RAM's answer is waited for a second
+ * (it may not come); the patch's 270 ms to settle is Zephyr's Infineon
+ * driver's.
+ */
+#define SESSION_RESET_NOTICE_MS		1000U
+#define SESSION_MINIDRIVER_MS		50U
+#define SESSION_LAUNCH_MS		1000U
+#define SESSION_SETTLE_MS		270U
+
+/* Read Local Version's return parameters: the manufacturer's and the LMP subversion's offsets, and its length. */
+#define SESSION_VERSION_MANUFACTURER	4U
+#define SESSION_VERSION_SUBVERSION	6U
+#define SESSION_VERSION_LENGTH		8U
+
+/* The nanoseconds of a millisecond, and the milliseconds of a second. */
+#define SESSION_NS_PER_MS		1000000L
+#define SESSION_MS_PER_SECOND		1000U
+
 static void session_set(struct btd_session *session, enum btd_state state, const char *format, ...) __attribute__((format(printf, 3, 4)));
 static int session_write(struct btd_session *session, const uint8_t *packet, size_t length);
 static int session_read(struct btd_session *session, unsigned timeout_ms);
@@ -150,6 +172,15 @@ static int session_intel_send(struct btd_session *session, const uint8_t *file, 
 static void session_intel_ddc(struct btd_session *session);
 static int session_read_file(const char *path, uint8_t **contents, size_t *length);
 static int session_core(struct btd_session *session);
+static int session_broadcom(struct btd_session *session);
+static int session_broadcom_attempt(struct btd_session *session, int fast);
+static int session_broadcom_reset(struct btd_session *session);
+static int session_broadcom_load(struct btd_session *session, const uint8_t *file, size_t length, int fast);
+static int session_broadcom_speed(struct btd_session *session, uint32_t baud);
+static int session_broadcom_line(struct btd_session *session, uint32_t baud);
+static int session_broadcom_refused(struct btd_session *session, const char *name, unsigned index, int error);
+static int session_broadcom_address(struct btd_session *session);
+static void session_pause(unsigned milliseconds);
 static int session_remaining(uint64_t deadline);
 static int session_control(struct btd_session *session, unsigned long request, void *argument);
 static void session_normal_path(struct btd_session *session);
@@ -201,20 +232,25 @@ btd_session_init(
 	session->control_context = control_context;
 	(void)snprintf(session->path, sizeof(session->path), "%s", path);
 	session->firmware_folder = firmware_folder;
+	session->broadcom_folder = BTD_BROADCOM_FOLDER;
 	session->load_allowed = 1;
 
 	/* A real controller's timing; the tests shorten it. */
 	session->timing.command_ms = SESSION_COMMAND_MS;
 	session->timing.download_ms = SESSION_DOWNLOAD_MS;
 	session->timing.boot_ms = SESSION_BOOT_MS;
+	session->timing.reset_ms = SESSION_RESET_NOTICE_MS;
+	session->timing.minidriver_ms = SESSION_MINIDRIVER_MS;
+	session->timing.launch_ms = SESSION_LAUNCH_MS;
+	session->timing.settle_ms = SESSION_SETTLE_MS;
 	session->state = BTD_STATE_STARTING;
 }
 
 /*
- * Starts the controller: Intel's firmware when it needs it, then the HCI
- * core's set-up.  Returns 0 when it is ready, ENODEV when its node went (a
- * re-enumeration, the daemon opens the new one), or another errno with the
- * state and reason set.
+ * Starts the controller: Intel's firmware when it needs it, or on a UART
+ * Broadcom's patch, then the HCI core's set-up.  Returns 0 when it is
+ * ready, ENODEV when its node went (a re-enumeration, the daemon opens the
+ * new one), or another errno with the state and reason set.
  */
 int
 btd_session_start(
@@ -243,6 +279,13 @@ btd_session_start(
 	if (session->have_info && session->info.vendor == BTD_INTEL_VENDOR) {
 		session->intel = 1;
 		error = session_intel(session);
+		if (error != 0)
+			return error;
+	}
+
+	/* A controller on a UART is put back in its ROM and, when it is Broadcom's, patched first. */
+	if (session->have_info && session->info.bus == BT_BUS_UART) {
+		error = session_broadcom(session);
 		if (error != 0)
 			return error;
 	}
@@ -671,6 +714,105 @@ btd_now_ms(void)
 
 	/* Succeeded: milliseconds. */
 	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
+}
+
+/* Forgets a run of failed starts and lets the daemon try again (a start at the daemon's start, a recovery). */
+void
+btd_retry_clear(
+	struct btd_retry *retry)
+{
+	/* No failures, not stopped, no controller ready. */
+	memset(retry, 0, sizeof(*retry));
+}
+
+/*
+ * Notes that a start made the controller ready.  The failures before it
+ * are forgotten only once it stays up for BTD_RETRY_STEADY_MS
+ * (btd_retry_tick), so a controller reset again and again soon after its
+ * starts still stops the tries.
+ */
+void
+btd_retry_ready(
+	struct btd_retry *retry,
+	uint64_t now)
+{
+	/* Ready since now. */
+	retry->ready = 1;
+	retry->ready_ms = now;
+}
+
+/*
+ * Counts a start that failed in a way a new start may mend.  Returns 1
+ * when that makes BTD_RETRY_FAILURES_MAX in a row and the daemon stops
+ * trying, else 0.
+ */
+int
+btd_retry_failed(
+	struct btd_retry *retry)
+{
+	/* No controller ready, one failure more. */
+	retry->ready = 0;
+	retry->failures++;
+
+	/* Too many in a row stop the tries until a recovery. */
+	if (retry->failures >= BTD_RETRY_FAILURES_MAX) {
+		retry->stopped = 1;
+		return 1;
+	}
+
+	/* The daemon tries again. */
+	return 0;
+}
+
+/*
+ * Counts a reset the daemon did not ask for (the kernel's notice, a UART
+ * transport that lost step with its controller) of a ready controller: a
+ * failure when it comes within BTD_RETRY_STEADY_MS of the ready start,
+ * else the start of a new run.  Returns 1 when the daemon stops trying,
+ * else 0.
+ */
+int
+btd_retry_reset(
+	struct btd_retry *retry,
+	uint64_t now)
+{
+	int stopped;
+
+	/* A reset during a start is that start's failure, counted with it. */
+	if (!retry->ready)
+		return 0;
+
+	/* A controller that stayed up long enough: its reset is not one of a run. */
+	if (now >= retry->ready_ms + BTD_RETRY_STEADY_MS) {
+		retry->ready = 0;
+		retry->failures = 0U;
+		return 0;
+	}
+
+	/* Soon after the ready start: one failure more. */
+	stopped = btd_retry_failed(retry);
+	if (stopped)
+		return 1;
+
+	/* The daemon tries again. */
+	return 0;
+}
+
+/* Forgets the failures before a start whose controller has stayed ready for BTD_RETRY_STEADY_MS. */
+void
+btd_retry_tick(
+	struct btd_retry *retry,
+	uint64_t now)
+{
+	/* No controller ready, or nothing to forget. */
+	if (!retry->ready)
+		return;
+	if (retry->failures == 0U)
+		return;
+
+	/* Steady long enough: the run of failures is over. */
+	if (now >= retry->ready_ms + BTD_RETRY_STEADY_MS)
+		retry->failures = 0U;
 }
 
 /* Sets the state and its reason (a formatted text, "" for none). */
@@ -1627,6 +1769,533 @@ session_core(
 
 	/* Succeeded: set up. */
 	return 0;
+}
+
+/*
+ * Starts a controller on a UART (ws215-p001 section 4): back in its ROM,
+ * and a Broadcom one patched, at the line's fastest speed.  A failure
+ * after the speed changed (the fast line may be what failed) is tried
+ * once more from the reset at the ROM's speed throughout.  Returns 0 to go
+ * on with the core's set-up, or the error with the state set.
+ */
+static int
+session_broadcom(
+	struct btd_session *session)
+{
+	int error;
+
+	/* The first try, at the fastest speed the line allows. */
+	error = session_broadcom_attempt(session, 1);
+	if (error == 0)
+		return 0;
+
+	/* A node that went, or a failure before the speed changed, is not tried again here. */
+	if (error == ENODEV)
+		return error;
+	if (!session->speed_changed)
+		return error;
+
+	/* Again from the reset, the line left at the ROM's speed. */
+	session->slow = 1;
+	error = session_broadcom_attempt(session, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: patched at the ROM's speed. */
+	return 0;
+}
+
+/*
+ * One try at the start of a controller on a UART: the kernel's reset, the
+ * ROM's reset and version (a controller not Broadcom's goes on to the
+ * core's set-up as it is), the chip's name and its patch file, checked
+ * whole, then the load.  fast allows the line's fastest speed.  Returns 0,
+ * or the error with the state set.
+ */
+static int
+session_broadcom_attempt(
+	struct btd_session *session,
+	int fast)
+{
+	const char *reason;
+	uint16_t manufacturer;
+	uint8_t *file;
+	size_t length;
+	size_t records;
+	char path[256];
+	int fast_line;
+	int broadcom;
+	int error;
+
+	/* The controller back in its ROM at 115200 baud, whatever a daemon before left it in. */
+	error = session_broadcom_reset(session);
+	if (error != 0)
+		return error;
+
+	/* The ROM's reset; its answer is the kernel's first anchor on the line. */
+	error = session_step(session, "reset", SESSION_RESET, NULL, 0U);
+	if (error != 0)
+		return error;
+
+	/* Who made the controller. */
+	error = session_step(session, "local-version", SESSION_READ_LOCAL_VERSION, NULL, 0U);
+	if (error != 0)
+		return error;
+	if (session->returned_length < SESSION_VERSION_LENGTH) {
+		session_set(session, BTD_STATE_ERROR, "%s", "local-version short");
+		return EBADMSG;
+	}
+
+	/* Only Broadcom's and Cypress's are patched here; another goes on to the core's set-up as it is. */
+	manufacturer = (uint16_t)session->returned[SESSION_VERSION_MANUFACTURER];
+	manufacturer |= (uint16_t)(session->returned[SESSION_VERSION_MANUFACTURER + 1U] << 8);
+	broadcom = btd_broadcom_manufacturer(manufacturer);
+	if (!broadcom)
+		return 0;
+
+	/* A Broadcom controller, and its ROM's LMP subversion, which the patch changes. */
+	session->broadcom = 1;
+	session->rom_subversion = (uint16_t)session->returned[SESSION_VERSION_SUBVERSION];
+	session->rom_subversion |= (uint16_t)(session->returned[SESSION_VERSION_SUBVERSION + 1U] << 8);
+
+	/* The chip's name. */
+	error = session_step(session, "local-name", SESSION_READ_LOCAL_NAME, NULL, 0U);
+	if (error != 0)
+		return error;
+
+	/* Its patch file, looked up by the whole name; a chip the daemon does not know needs one installed. */
+	error = btd_broadcom_file_name(session->returned,
+				       session->returned_length,
+				       session->broadcom_folder,
+				       path,
+				       sizeof(path),
+				       session->chip,
+				       sizeof(session->chip));
+	if (error == ENOENT) {
+		session_set(session, BTD_STATE_FIRMWARE_NEEDED, "chip \"%s\" has no patch file", session->chip);
+		return error;
+	}
+	if (error != 0) {
+		session_set(session, BTD_STATE_UNSUPPORTED, "%s", "the patch file's name");
+		return error;
+	}
+
+	/* Its bytes; a missing file is firmware the user must install. */
+	error = session_read_file(path, &file, &length);
+	if (error == ENOENT) {
+		session_set(session, BTD_STATE_FIRMWARE_NEEDED, "%s", path);
+		return error;
+	}
+
+	/* A file that cannot be read fails the load. */
+	if (error != 0) {
+		session_set(session, BTD_STATE_FIRMWARE_FAILED, "%s %s", path, strerror(error));
+		return error;
+	}
+
+	/* The whole file is checked before any of it is sent. */
+	error = btd_broadcom_hcd_check(file, length, &records, &reason);
+	if (error != 0) {
+		free(file);
+		session_set(session, BTD_STATE_FIRMWARE_FAILED, "%s %s", path, reason);
+		return error;
+	}
+
+	/* The fast line, when this try allows it and the kernel can change the host's end up to a faster speed. */
+	fast_line = 0;
+	if (fast &&
+	    (session->info.flags & BT_INFO_SPEED) != 0U &&
+	    session->info.speed_max > BTD_BROADCOM_BOOT_BAUD)
+		fast_line = 1;
+
+	/* The load; the file is no longer needed after it. */
+	error = session_broadcom_load(session, file, length, fast_line);
+	free(file);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: patched. */
+	return 0;
+}
+
+/*
+ * Resets the controller through the kernel (BT_IOC_RESET: its power off
+ * and on, so it runs its ROM again at 115200 baud, and so does the host's
+ * end) and drops what the node holds from before: every packet up to the
+ * reset's notice, and after it until none is left.  Returns 0, or the
+ * error with the state set.
+ */
+static int
+session_broadcom_reset(
+	struct btd_session *session)
+{
+	uint64_t deadline;
+	int remaining;
+	int noticed;
+	int error;
+
+	/* The kernel's reset, which queues its notice before it returns. */
+	error = session_control(session, BT_IOC_RESET, NULL);
+	if (error == ENODEV) {
+		session_set(session, BTD_STATE_LOST, "%s", "the node went");
+		return error;
+	}
+	if (error != 0) {
+		session_set(session, BTD_STATE_ERROR, "power-reset %s", strerror(error));
+		return error;
+	}
+
+	/* The line is at the ROM's speed again, and this try has not changed it yet. */
+	session->line_speed = BTD_BROADCOM_BOOT_BAUD;
+	session->speed_changed = 0;
+
+	/* The packets of before the reset, waited for up to the notice and then read until none is left. */
+	deadline = btd_now_ms() + session->timing.reset_ms;
+	noticed = 0;
+	for (;;) {
+		/* After the notice nothing more is waited for; before it, what is left of the time. */
+		remaining = 0;
+		if (!noticed) {
+			remaining = session_remaining(deadline);
+			if (remaining == 0) {
+				session_set(session, BTD_STATE_ERROR, "%s", "no reset notice");
+				return ETIMEDOUT;
+			}
+		}
+
+		/* The next packet, dropped. */
+		error = session_read(session, (unsigned)remaining);
+		if (error == ETIMEDOUT && noticed)
+			break;
+		if (error == ETIMEDOUT)
+			continue;
+		if (error == ENODEV)
+			return error;
+		if (error != 0) {
+			session_set(session, BTD_STATE_ERROR, "reset-notice %s", strerror(error));
+			return error;
+		}
+
+		/* The notice of this reset ends the wait. */
+		if (session->packet[0] == BT_PACKET_NOTICE_RESET)
+			noticed = 1;
+	}
+
+	/* Succeeded: the controller runs its ROM and the node holds nothing of before. */
+	return 0;
+}
+
+/*
+ * Loads a checked .hcd file into a Broadcom controller in its ROM: the
+ * line fast (when fast says so), Download Minidriver, each Write RAM
+ * record, Launch RAM, the line back at the ROM's speed while the patch
+ * starts, the patched controller's reset, the line fast again, its
+ * version, and its address.  Returns 0, or the error with the state set.
+ */
+static int
+session_broadcom_load(
+	struct btd_session *session,
+	const uint8_t *file,
+	size_t length,
+	int fast)
+{
+	struct btd_broadcom_record record;
+	unsigned index;
+	size_t offset;
+	int launched;
+	int more;
+	int error;
+
+	/* The download at the line's fastest speed. */
+	if (fast) {
+		error = session_broadcom_speed(session, session->info.speed_max);
+		if (error != 0)
+			return error;
+	}
+
+	/* Download Minidriver: the ROM takes the patch's records from now on. */
+	error = session_step(session, "minidriver", BTD_BROADCOM_MINIDRIVER, NULL, 0U);
+	if (error != 0)
+		return error;
+
+	/*
+	 * A pause for the minidriver, then the host's end of the line started
+	 * afresh at the same speed: bytes the controller may send after the
+	 * answer (brcm_patchram_plus reads two by default) are dropped instead
+	 * of being taken for a lost step.
+	 */
+	session_pause(session->timing.minidriver_ms);
+	error = session_broadcom_line(session, session->line_speed);
+	if (error != 0)
+		return error;
+
+	/* Each Write RAM record in turn, each waited for, up to Launch RAM. */
+	offset = 0U;
+	index = 0U;
+	launched = 0;
+	for (;;) {
+		more = btd_broadcom_hcd_next(file, length, &offset, &record);
+		if (more <= 0)
+			break;
+
+		/* Launch RAM, the last record, goes on its own. */
+		if (record.opcode == BTD_BROADCOM_LAUNCH_RAM) {
+			launched = 1;
+			break;
+		}
+
+		/* The record, as one command. */
+		error = session_command(session, record.opcode, record.parameters, record.length, session->timing.command_ms);
+		if (error != 0) {
+			error = session_broadcom_refused(session, "record", index, error);
+			return error;
+		}
+
+		/* One record more written. */
+		index++;
+	}
+
+	/* The checked file always ends with Launch RAM. */
+	if (!launched) {
+		session_set(session, BTD_STATE_FIRMWARE_FAILED, "%s", "no launch-ram");
+		return EBADMSG;
+	}
+
+	/* Launch RAM: the patch starts; its answer is waited for a short time and may not come. */
+	error = session_command(session, record.opcode, record.parameters, record.length, session->timing.launch_ms);
+	if (error == ETIMEDOUT) {
+		session->launch_unanswered = 1;
+		error = 0;
+	}
+	if (error != 0) {
+		error = session_broadcom_refused(session, "launch-ram", index, error);
+		return error;
+	}
+
+	/* The controller restarts at the ROM's speed: the host's end goes back there at once, and the restart's bytes are dropped. */
+	error = session_broadcom_line(session, BTD_BROADCOM_BOOT_BAUD);
+	if (error != 0)
+		return error;
+
+	/* The patch settles. */
+	session_pause(session->timing.settle_ms);
+
+	/* The patched controller's reset. */
+	error = session_step(session, "patched-reset", SESSION_RESET, NULL, 0U);
+	if (error != 0)
+		return error;
+
+	/* The line fast again for the rest of the session. */
+	if (fast) {
+		error = session_broadcom_speed(session, session->info.speed_max);
+		if (error != 0)
+			return error;
+	}
+
+	/* The patched version, for the log: its LMP subversion is the patch's. */
+	error = session_step(session, "patched-version", SESSION_READ_LOCAL_VERSION, NULL, 0U);
+	if (error != 0)
+		return error;
+	if (session->returned_length < SESSION_VERSION_LENGTH) {
+		session_set(session, BTD_STATE_ERROR, "%s", "patched-version short");
+		return EBADMSG;
+	}
+
+	/* The patch's subversion, and the patch is loaded. */
+	session->lmp_subversion = (uint16_t)session->returned[SESSION_VERSION_SUBVERSION];
+	session->lmp_subversion |= (uint16_t)(session->returned[SESSION_VERSION_SUBVERSION + 1U] << 8);
+	session->firmware_loaded = 1;
+
+	/* The address the controller is known by. */
+	error = session_broadcom_address(session);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: patched and running. */
+	return 0;
+}
+
+/*
+ * Changes the line's speed: the controller's UART clock for the speed
+ * (refused by a controller without the command, which goes on as it is),
+ * Update UART Baud Rate, whose answer comes at the old speed, then the
+ * host's end.  Returns 0, or the error with the state set.
+ */
+static int
+session_broadcom_speed(
+	struct btd_session *session,
+	uint32_t baud)
+{
+	uint8_t parameters[BTD_BROADCOM_BAUD_BYTES];
+	uint8_t clock;
+	int error;
+
+	/* From here a failure may be the fast line's, which the next try avoids. */
+	session->speed_changed = 1;
+
+	/* The clock the speed needs: 48 MHz from 3,000,000 baud. */
+	clock = BTD_BROADCOM_CLOCK_24;
+	if (baud >= BTD_BROADCOM_CLOCK_48_BAUD)
+		clock = BTD_BROADCOM_CLOCK_48;
+
+	/* The controller's clock; only a node that went or a reset under it stops the change. */
+	error = session_command(session, BTD_BROADCOM_UART_CLOCK, &clock, sizeof(clock), session->timing.command_ms);
+	if (error == ENODEV)
+		return error;
+	if (error == ECONNRESET) {
+		session_set(session, BTD_STATE_ERROR, "uart-clock %s", strerror(error));
+		return error;
+	}
+
+	/* The controller's end. */
+	btd_broadcom_baud(baud, parameters);
+	error = session_command(session, BTD_BROADCOM_UPDATE_BAUD, parameters, sizeof(parameters), session->timing.command_ms);
+	if (error == ENODEV)
+		return error;
+	if (error != 0) {
+		session_set(session, BTD_STATE_ERROR, "speed %u %s", (unsigned)baud, strerror(error));
+		return error;
+	}
+
+	/* The host's end. */
+	error = session_broadcom_line(session, baud);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: both ends at the new speed. */
+	return 0;
+}
+
+/*
+ * Sets the host's end of the line to a speed (BT_IOC_SET_SPEED), which
+ * also drops what the line carries meanwhile and has the kernel look for
+ * the next answer afresh.  A transport that cannot change its speed stays
+ * at the ROM's.  Returns 0, or the error with the state set.
+ */
+static int
+session_broadcom_line(
+	struct btd_session *session,
+	uint32_t baud)
+{
+	uint32_t value;
+	int error;
+
+	/* A line that cannot change speed is always at the ROM's. */
+	if ((session->info.flags & BT_INFO_SPEED) == 0U)
+		return 0;
+
+	/* The host's end. */
+	value = baud;
+	error = session_control(session, BT_IOC_SET_SPEED, &value);
+	if (error == ENODEV) {
+		session_set(session, BTD_STATE_LOST, "%s", "the node went");
+		return error;
+	}
+	if (error != 0) {
+		session_set(session, BTD_STATE_ERROR, "line-speed %u %s", (unsigned)baud, strerror(error));
+		return error;
+	}
+
+	/* Succeeded: the line's speed now. */
+	session->line_speed = baud;
+	return 0;
+}
+
+/*
+ * Sets the state for a record of the patch that failed: refused by the
+ * controller (a status), the firmware failed; not answered or the
+ * controller reset meanwhile, a start a new one may mend.  Returns the
+ * error.
+ */
+static int
+session_broadcom_refused(
+	struct btd_session *session,
+	const char *name,
+	unsigned index,
+	int error)
+{
+	/* A node that went is the daemon's to open again. */
+	if (error == ENODEV)
+		return error;
+
+	/* The controller refused the record. */
+	if (error == EIO) {
+		session_set(session, BTD_STATE_FIRMWARE_FAILED, "%s %u status 0x%02x", name, index, session->status);
+		return error;
+	}
+
+	/* The line failed under it. */
+	session_set(session, BTD_STATE_ERROR, "%s %u %s", name, index, strerror(error));
+	return error;
+}
+
+/*
+ * Gives a patched controller its address (ws215-p001 B15): one of its own
+ * stays; a chip's default one is replaced by the board's (Write BD_ADDR,
+ * the board's bytes in the HCI's order as the kernel gives them), or kept
+ * when the board has none.  A refused write keeps the default one.
+ * Returns 0, or the error with the state set.
+ */
+static int
+session_broadcom_address(
+	struct btd_session *session)
+{
+	int have_board;
+	int error;
+
+	/* The controller's address now. */
+	error = session_step(session, "address", SESSION_READ_ADDRESS, NULL, 0U);
+	if (error != 0)
+		return error;
+	if (session->returned_length < BTD_ADDRESS_BYTES) {
+		session_set(session, BTD_STATE_ERROR, "%s", "address short");
+		return EBADMSG;
+	}
+
+	/* Kept for the log: the chip's default address is read on the board (ws215-p001 D3). */
+	memcpy(session->rom_address, session->returned, BTD_ADDRESS_BYTES);
+
+	/* Whether the board gives one. */
+	have_board = 0;
+	if ((session->info.flags & BT_INFO_ADDRESS) != 0U)
+		have_board = 1;
+
+	/* What becomes of it; only a default one with the board's at hand is written over. */
+	session->address_choice = btd_broadcom_address_choice(session->returned, session->info.board_address, have_board);
+	if (session->address_choice != BTD_BROADCOM_ADDRESS_WRITE)
+		return 0;
+
+	/* The board's address. */
+	error = session_command(session, BTD_BROADCOM_WRITE_ADDRESS, session->info.board_address, BTD_ADDRESS_BYTES, session->timing.command_ms);
+	if (error == ENODEV)
+		return error;
+	if (error == 0)
+		session->address_written = 1;
+
+	/* Succeeded: the address is settled (the core's set-up reads it again). */
+	return 0;
+}
+
+/* Sleeps for some milliseconds, the whole time even when a signal comes. */
+static void
+session_pause(
+	unsigned milliseconds)
+{
+	struct timespec left;
+	int status;
+
+	/* The time to sleep. */
+	left.tv_sec = (time_t)(milliseconds / SESSION_MS_PER_SECOND);
+	left.tv_nsec = (long)(milliseconds % SESSION_MS_PER_SECOND) * SESSION_NS_PER_MS;
+
+	/* Sleeps again for what a signal left. */
+	for (;;) {
+		status = nanosleep(&left, &left);
+		if (status == 0)
+			break;
+		if (errno != EINTR)
+			break;
+	}
 }
 
 /* Gives the milliseconds left before a deadline, 0 once it passed. */
