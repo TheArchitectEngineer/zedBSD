@@ -53,11 +53,12 @@
 /*
  * The most FAT entries one table transaction changes.  The sectors those
  * entries touch are still bounded by FAT_BATCH_SECTORS, and a batch that
- * would need more is split before anything is written (BUG-295: 128, one
- * FAT32 sector's worth, so a 64 KiB run of small clusters is one
- * transaction rather than four).
+ * would need more is split before anything is written.  It stays 32
+ * (BUG-295 tried 128): the batch arrays live on the kernel stack, and 128
+ * adds about 1.9 KiB on the rollback path, too much for x68k's 8 KiB
+ * stack; on the Pi the sync it would save is cheap.
  */
-#define FAT_BATCH_ENTRIES		128U
+#define FAT_BATCH_ENTRIES		32U
 #define FAT16_RESERVED_CLUSTER		0xfff0U
 #define FAT16_END_OF_CHAIN		0xffffU
 #define FAT12_RESERVED_CLUSTER		0xff0U
