@@ -86,7 +86,7 @@ static int grid_lay_item(struct layout_tree *tree, struct layout_box *item, layo
 static void grid_size_rows(struct layout_box *box, struct grid_state *grid, layout_unit gap);
 static int grid_relay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width, layout_unit height, int align);
 static layout_unit grid_outer_height(const struct layout_box *item);
-static int grid_empty_baseline(const struct layout_box *box, const struct grid_item *item);
+static int grid_fixed_row_baseline(const struct layout_box *box, const struct grid_item *item, layout_unit *baseline);
 static layout_unit grid_track_length(const struct css_length *length, layout_unit whole, int measuring);
 static void grid_release(struct grid_state *grid);
 
@@ -118,6 +118,7 @@ layout_grid(
 	layout_unit used;
 	layout_unit shift;
 	layout_unit baseline;
+	layout_unit peer_baseline;
 	layout_unit shared_baseline;
 	size_t index;
 	size_t peer;
@@ -246,13 +247,13 @@ layout_grid(
 		area_height = row_gap * (layout_unit)(item->row_span - 1);
 		for (position = item->row; position < item->row + item->row_span; position++)
 			area_height += grid.rows[position];
-		/* The item's alignment: its align-self, or the container's align-items (baseline as start). */
+		/* The item's alignment: its align-self, or the container's align-items. */
 		align = child->style.align_self;
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
 		if (align == CSS_ALIGN_NORMAL)
 			align = child->replaced ? CSS_ALIGN_START : CSS_ALIGN_STRETCH;
-		baseline_eligible = grid_empty_baseline(box, item);
+		baseline_eligible = grid_fixed_row_baseline(box, item, &baseline);
 		if (align == CSS_ALIGN_BASELINE && !baseline_eligible)
 			align = CSS_ALIGN_START;
 
@@ -304,21 +305,18 @@ layout_grid(
 		}
 		child->y = y + child->margin[CSS_TOP];
 		if (align == CSS_ALIGN_BASELINE) {
-			/* Empty items in this fixed row share their synthesized border-edge baseline. */
+			/* Members in this fixed row share their first or synthesized baseline. */
 			shared_baseline = 0;
-			/* Find the lowest border-edge baseline among participating siblings. */
+			/* Find the lowest baseline among participating siblings. */
 			for (peer = 0; peer < grid.item_count; peer++) {
 				if (grid.items[peer].row != item->row)
 					continue;
-				peer_baseline_eligible = grid_empty_baseline(box, &grid.items[peer]);
+				peer_baseline_eligible = grid_fixed_row_baseline(box, &grid.items[peer], &peer_baseline);
 				if (!peer_baseline_eligible)
 					continue;
-				baseline = grid_outer_height(grid.items[peer].box) -
-				    grid.items[peer].box->margin[CSS_BOTTOM];
-				if (baseline > shared_baseline)
-					shared_baseline = baseline;
+				if (peer_baseline > shared_baseline)
+					shared_baseline = peer_baseline;
 			}
-			baseline = grid_outer_height(child) - child->margin[CSS_BOTTOM];
 			child->y += shared_baseline - baseline;
 		}
 		outer = grid_outer_height(child);
@@ -1228,11 +1226,12 @@ grid_outer_height(
 	    item->padding[CSS_BOTTOM] + item->border[CSS_BOTTOM] + item->margin[CSS_BOTTOM];
 }
 
-/* Selects a fixed-row empty grid item whose baseline comes from its lower border edge. */
+/* Finds a fixed-row Grid item's first line or synthesized lower-border baseline. */
 static int
-grid_empty_baseline(
+grid_fixed_row_baseline(
 	const struct layout_box *box,
-	const struct grid_item *item)
+	const struct grid_item *item,
+	layout_unit *baseline)
 {
 	const struct layout_box *child;
 	int align;
@@ -1252,12 +1251,6 @@ grid_empty_baseline(
 	if (box->style.rows[item->row].size.unit != CSS_UNIT_PX)
 		return 0;
 
-	/* Empty boxes with a definite height synthesize at their lower border edge. */
-	if (child->style.height.unit != CSS_UNIT_PX)
-		return 0;
-	if (child->first_child != NULL || child->line_count != 0)
-		return 0;
-
 	/* Only members with a baseline preference join the row's group. */
 	align = child->style.align_self;
 	if (align == CSS_ALIGN_AUTO)
@@ -1265,7 +1258,19 @@ grid_empty_baseline(
 	if (align != CSS_ALIGN_BASELINE)
 		return 0;
 
-	/* This child has a synthesized baseline in the fixed row. */
+	/* An inline content block exports its first formatted line. */
+	if (child->children_inline && child->line_count > 0) {
+		*baseline = child->margin[CSS_TOP] + child->border[CSS_TOP] +
+		    child->padding[CSS_TOP] + child->lines[0].y + child->lines[0].baseline;
+		return 1;
+	}
+
+	/* An empty definite-height block synthesizes at its lower border edge. */
+	if (child->first_child != NULL || child->style.height.unit != CSS_UNIT_PX)
+		return 0;
+	*baseline = grid_outer_height(child) - child->margin[CSS_BOTTOM];
+
+	/* This child has a baseline in the fixed row. */
 	return 1;
 }
 

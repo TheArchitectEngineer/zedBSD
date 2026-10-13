@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1097 / WS074 Grid style-changes eight-ID measure（2026-10-14）
+## 最新: q1098 / WS074 horizontal text-line Grid baseline（2026-10-14）
+
+[q1098履歴](queue-q1098.md): 固定005/006各3/6→6/6 subtest・whole FAIL→PASS、旧001/002と100 subtest PASS維持。warning0 build、Acid3差0。[証拠](../ws074/phase219/evidence/20261014-q1098/README.md)。p219部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1097 / WS074 Grid style-changes eight-ID measure（2026-10-14）
 
 [q1097履歴](queue-q1097.md): 固定style-changes8 IDは0→2 whole PASS、0→20/48 subtest PASS。残005/006は文字line baseline、縦書き4件は別欠陥。[証拠](../ws074/phase219/evidence/20261014-q1097/README.md)。p219部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

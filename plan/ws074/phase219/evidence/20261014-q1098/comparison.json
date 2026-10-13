@@ -1,0 +1,44 @@
+[
+  {
+    "id": "/css/css-grid/alignment/grid-alignment-style-changes-005.html",
+    "old_outcome": "fail",
+    "new_outcome": "pass",
+    "old_subtest_status": [
+      1,
+      0,
+      1,
+      1,
+      0,
+      0
+    ],
+    "new_subtest_status": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "id": "/css/css-grid/alignment/grid-alignment-style-changes-006.html",
+    "old_outcome": "fail",
+    "new_outcome": "pass",
+    "old_subtest_status": [
+      1,
+      0,
+      0,
+      1,
+      0,
+      1
+    ],
+    "new_subtest_status": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  }
+]
