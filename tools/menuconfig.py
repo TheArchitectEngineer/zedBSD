@@ -385,6 +385,44 @@ def package_dependents(rows: list[list[str]], selected: set,
             package in row[6].split()]
 
 
+def in_menu(group: str) -> bool:
+    """Whether the menu shows the programs of this group (the X11 and test
+    programs are only set in config.mk by hand)."""
+    return (group in BASE_GROUPS + DESKTOP_GROUPS + FIRMWARE_GROUPS or
+            group.startswith("packages/"))
+
+
+def removal_closure(rows: list[list[str]], selected: set,
+                    name: str) -> tuple[list[str], list[str]]:
+    """What turning a program off takes with it.  Returns the labels of the
+    shown programs that still need it (which block the removal) and the
+    names of the programs outside the menu that need it, directly or
+    through one another, and go with it; a program the menu does not show
+    cannot be turned off by hand, so it must not keep a shown one on."""
+    groups = {row[0]: row[4] for row in rows}
+    labels = {row[0]: row[1] for row in rows}
+    packages = {row[0]: row[5] for row in rows}
+    needs = {row[0]: row[6].split() for row in rows}
+    hidden = []
+    removing = {name}
+    pending = [name]
+    while pending:
+        package = packages.get(pending.pop(), "")
+        if not package:
+            continue
+        for program in sorted(selected):
+            if (program not in removing and package in needs.get(program, []) and
+                    not in_menu(groups.get(program, ""))):
+                removing.add(program)
+                hidden.append(program)
+                pending.append(program)
+    gone = {packages[program] for program in removing if packages.get(program)}
+    blocking = [labels[program] for program in selected
+                if program not in removing and in_menu(groups.get(program, "")) and
+                gone.intersection(needs.get(program, []))]
+    return sorted(blocking), hidden
+
+
 def edit_program_group(screen, values: dict[str, object], groups: tuple[str, ...],
                        title: str) -> None:
     platform = str(values["ZEDBSD_PLATFORM"])
@@ -403,14 +441,20 @@ def edit_program_group(screen, values: dict[str, object], groups: tuple[str, ...
         selected = choice
         name = rows[choice][0]
         if name in selected_programs:
-            dependents = package_dependents(user_program_rows(),
-                                            selected_programs, name)
+            dependents, hidden = removal_closure(user_program_rows(),
+                                                 selected_programs, name)
             if dependents:
                 message(screen, "Required package",
                         [f"{name} is required by:", ", ".join(dependents)],
                         target_label(values))
                 continue
             selected_programs.remove(name)
+            if hidden:
+                selected_programs.difference_update(hidden)
+                message(screen, "Also removed",
+                        [f"{name} was needed by programs the menu does not show;",
+                         "they are removed too: " + ", ".join(sorted(hidden))],
+                        target_label(values))
         else:
             missing = package_select(user_program_rows(), selected_programs,
                                      name)

@@ -43,3 +43,5 @@ Related Milestones: なし
 ユーザー（原文）:「はい、推奨でいいです。」→ QEMU の受け入れは usb-net（CDC ECM）のまま（virtio-net は足さない、完了の条件 3 の「virtio-net」は usb-net に読み替え）。RTO の最小は 200 ms（Linux・FreeBSD と同じ、RFC 6298 の SHOULD の 1 s から外れることを phase.md に記録）。
 
 2026-10-13 Q1: review-1 の判定「致命的 0、重大 8、p002 は条件つきで開始可」。T1 の依頼 A（基線、T1-569 の再実行）は S1（塞がる送り手と disk へ書く down の run を足す）・S3（veth・bridge・tap の tso/gso/gro を切る）・S8（sample の細かさ、頭と尻の 0、4 GiB の wrap、目標の自己参照）を直してから。S2（net.tcpstats が superuser でなくても全接続の sequence・address・port を出す、main に入っている）は p002 と一緒に直す（superuser でなければ sequence の 3 つの欄を 0）。S6: ユーザーに伝えた「RTO の最小 200 ms は Linux・FreeBSD と同じ」は不正確（Linux は SRTT + max(4·RTTVAR, 200 ms) の形、review の記憶）→ 単純な 200 ms の床ではなく RFC 6298 の式に最小の項 200 ms を入れる形にし、ユーザーに訂正を報告する。依存: WS221（Jumbo frame）の MTU と MSS。p003 以後は S4〜S7 を設計に入れてから。
+
+2026-10-13 ユーザー（原文）:「遅くなった時の向きは受信です」「接続を諦めるまでの時間は延ばしてよいです。」→ 症状は受けの向き（zedBSD が受ける）。基線の測りと直しの順は受けの側（候補 5・6・7、p007）を重く見る。SYN の再送を諦めるまでの時間は RFC 1122 の R2 に合わせて最低 3 分に延ばす（利用者に見える変更として承認済み）。
