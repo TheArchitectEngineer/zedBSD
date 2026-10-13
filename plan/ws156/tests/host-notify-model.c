@@ -12,7 +12,8 @@
  * show and the log (newest first, its size, expired), the dismissal not
  * logged, the withdrawal, the clearing; and (ws177-p005) a client's or an
  * object's notifications left without action when they go, the rate of
- * posts, and the words mended into whole UTF-8 without control characters.
+ * posts, and the words mended into whole UTF-8 without control characters;
+ * and (ws156-p006) a client's oldest logged one expired for a new one.
  */
 
 #include "userland/desktop/wayland/notify.h"
@@ -168,6 +169,25 @@ main(void)
 	check(error == EINVAL, "the lock screen's words past 128 bytes are refused");
 	error = kwl_notify_set_lock_text(&model, 99999U, "x");
 	check(error == ENOENT, "the lock screen's words of a number not kept");
+
+	/*
+	 * ws156-p006: a client at its limit has its oldest logged one expired
+	 * for a new one; with none of its own logged nothing goes.
+	 */
+	kwl_notify_model_free(&model);
+	kwl_notify_model_init(&model);
+	(void)kwl_notify_post(&model, 11U, 0U, 0U, "Bus", "first", "", 0U, &first, closed, &closed_count);
+	error = kwl_notify_expire_oldest(&model, 11U, &closed[0]);
+	check(error == ENOENT && kwl_notify_find(&model, first) != NULL, "nothing logged: nothing expires");
+	(void)kwl_notify_show_next(&model, &id);
+	(void)kwl_notify_hide(&model, closed, &closed_count);
+	(void)kwl_notify_post(&model, 11U, 0U, 0U, "Bus", "second", "", 0U, &second, closed, &closed_count);
+	(void)kwl_notify_show_next(&model, &id);
+	(void)kwl_notify_hide(&model, closed, &closed_count);
+	(void)kwl_notify_post(&model, 12U, 0U, 0U, "Other", "other", "", 0U, &id, closed, &closed_count);
+	error = kwl_notify_expire_oldest(&model, 11U, &closed[0]);
+	check(error == 0 && closed[0].id == first && closed[0].reason == KWL_NOTIFY_EXPIRED && closed[0].client == 11U, "the client's oldest logged one expires");
+	check(kwl_notify_find(&model, first) == NULL && kwl_notify_find(&model, second) != NULL && kwl_notify_find(&model, id) != NULL, "only that one goes");
 
 	/* Done. */
 	kwl_notify_model_free(&model);

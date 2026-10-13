@@ -80,6 +80,11 @@ struct kl_backend {
 	struct kl_backend_power_outcome power_outcome;
 	/* Remote Login's state as sessiond last answered it (ws089-p025). */
 	struct kl_backend_sharing sharing;
+	/*
+	 * The bus's notifications (ws156-p006): the operating system's own
+	 * state of serving them, NULL while they are not served.
+	 */
+	struct kl_backend_notify *notify;
 };
 
 /*
@@ -117,6 +122,15 @@ void kl_backend_events_close(struct kl_backend *backend);
 size_t kl_backend_events_poll_count(const struct kl_backend *backend);
 void kl_backend_events_poll_fill(struct kl_backend *backend, struct pollfd *descriptors);
 void kl_backend_events_poll_done(struct kl_backend *backend, const struct pollfd *descriptors);
+
+/*
+ * The bus's notifications' part of the poll (ws156-p006): each operating
+ * system counts, fills and handles the descriptor of its bus, none while
+ * the notifications are not served.
+ */
+size_t kl_backend_notify_poll_count(const struct kl_backend *backend);
+void kl_backend_notify_poll_fill(struct kl_backend *backend, struct pollfd *descriptors);
+void kl_backend_notify_poll_done(struct kl_backend *backend, const struct pollfd *descriptors);
 
 /*
  * The shared POSIX parts of the computer's reading (ws188-p002,

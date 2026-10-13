@@ -2166,4 +2166,76 @@ int kl_backend_media_request(struct kl_backend_media *media, unsigned command, c
 void kl_backend_media_update(struct kl_backend_media *media);
 int kl_backend_media_take(struct kl_backend_media *media, uint32_t *id, int *error, int *descriptor);
 
+/*
+ * The applications' notifications of the desktop's bus (ws156-p006).
+ *
+ * On Linux the backend serves org.freedesktop.Notifications (the Desktop
+ * Notifications Specification 1.2) on the user's session bus, so the
+ * notifications of GTK, Qt and libnotify programs reach the compositor's
+ * own notifications.  Keiland's programs keep posting through the
+ * compositor's protocol and never pass here.  zedBSD has no D-Bus and
+ * FreeBSD's backend does not serve it yet: kl_backend_notify_open answers
+ * ENOTSUP there.
+ *
+ * Once opened, the bus is part of the backend's poll, and the callbacks are
+ * called from kl_backend_poll_done.  posted is given a notification: sender
+ * is the backend's number for the bus connection that sent it (each
+ * connection has its own, never 0, so the compositor can keep each sender
+ * to its own limit), app, title and body are plain UTF-8 text cut to
+ * KL_BACKEND_NOTIFY_*_MAX bytes, replaces is the number of an earlier one
+ * it replaces (0 for none; one the compositor does not know as the
+ * sender's makes a new one), and flags are KL_BACKEND_NOTIFY_URGENT and
+ * KL_BACKEND_NOTIFY_ACTION.  It returns the notification's number (never
+ * 0), which the sender is told, or 0 with *error EBUSY (too many or too
+ * fast), EACCES (the user turned the program's notifications off) or
+ * another errno value.  withdrawn takes back a sender's notification by its
+ * number (returns 0, or ENOENT when the sender has none of it); the
+ * compositor then calls kl_backend_notify_closed with
+ * KL_BACKEND_NOTIFY_CLOSED as for any other close.
+ *
+ * The compositor tells the backend what became of a notification it was
+ * given: kl_backend_notify_closed when one went (KL_BACKEND_NOTIFY_EXPIRED:
+ * out of the log; KL_BACKEND_NOTIFY_DISMISSED: by the user, its close sign
+ * or the log's clearing; KL_BACKEND_NOTIFY_CLOSED: taken back by its
+ * sender), and kl_backend_notify_activated when its body was clicked (one
+ * posted with KL_BACKEND_NOTIFY_ACTION).  It calls them only for the
+ * notifications the backend gave it, and may call kl_backend_notify_closed
+ * from within posted and withdrawn too (a sender's oldest expired to make
+ * room, the withdrawn one closed): unlike the host's callbacks, these two
+ * may call back into the backend.  kl_backend_notify_close gives the bus's
+ * name up; the backend's close does too.
+ */
+#define KL_BACKEND_NOTIFY_URGENT	0x1U
+#define KL_BACKEND_NOTIFY_ACTION	0x2U
+
+#define KL_BACKEND_NOTIFY_EXPIRED	1U
+#define KL_BACKEND_NOTIFY_DISMISSED	2U
+#define KL_BACKEND_NOTIFY_CLOSED	3U
+
+#define KL_BACKEND_NOTIFY_APP_MAX	64U
+#define KL_BACKEND_NOTIFY_TITLE_MAX	128U
+#define KL_BACKEND_NOTIFY_BODY_MAX	512U
+
+/* What the backend tells the compositor of the bus's notifications; data is passed to both unchanged. */
+struct kl_backend_notify_callbacks {
+	uint32_t (*posted)(void *data, uint32_t sender, const char *app, const char *title, const char *body, uint32_t replaces, unsigned flags, int *error);
+	int (*withdrawn)(void *data, uint32_t sender, uint32_t id);
+};
+
+/*
+ * Serves the bus's notifications.  Returns 0, ENOTSUP where the system has
+ * no such bus, EEXIST when another program serves them already, ENOENT
+ * when there is no session bus, or the error of connecting.
+ */
+int kl_backend_notify_open(struct kl_backend *backend, const struct kl_backend_notify_callbacks *callbacks, void *data);
+
+/* Tells the notification's sender that it went, and why (KL_BACKEND_NOTIFY_EXPIRED, _DISMISSED, _CLOSED). */
+void kl_backend_notify_closed(struct kl_backend *backend, uint32_t id, unsigned reason);
+
+/* Tells the notification's sender that its body was clicked. */
+void kl_backend_notify_activated(struct kl_backend *backend, uint32_t id);
+
+/* Stops serving the bus's notifications; nothing happens when they are not served. */
+void kl_backend_notify_close(struct kl_backend *backend);
+
 #endif
