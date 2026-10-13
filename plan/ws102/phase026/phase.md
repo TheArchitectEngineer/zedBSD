@@ -2,9 +2,9 @@
 # ws102-p026: UAT 2026-10-13 の画面 keyboard の指摘（flick の日本語・IME・配置）
 
 Parent: [WS102](../ws.md)
-Status: in-progress（実装済み・T1 の試験待ち。P2、2026-10-13。試験の依頼は Q1 へ送った: 下の「T1 に頼む試験」）
+Status: in-progress（T1-563 FAIL → attempt 2（P1、2026-10-13）で試験の誤りを直した。T1 の再試験待ち: 下の「attempt 2」）
 Disposition: normal
-Queue: Q1 の依頼（2026-10-13、P2）
+Queue: Q1 の依頼（2026-10-13、P2: attempt 1、P1: attempt 2）
 
 ## 由来（ユーザー、2026-10-13 UAT、原文のまま）
 
@@ -116,3 +116,37 @@ Queue: Q1 の依頼（2026-10-13、P2）
 
 - Pi 4 の touch panel（指）: flick のかなが下線つきの preedit で出て、候補の tap で語だけが入る（Terminal で「あい」→「愛」が「愛」だけ）。「おくる」→ 空白 → 送る。道具の行・tab・編集の操作が押しやすい高さか（画面が低いと比で縮む）。次のApp で窓が順に前へ。数字の面の 全角/半角。
 - 5330: system bar の言語の表示がかなの面であ、英字の面で A になる。物理の keyboard を打つと flick の読みが先に確定する。QWERTY の Return・Backspace の位置。
+
+## attempt 2（P1、2026-10-13: T1-563 の FAIL の調べと直し）
+
+T1-563（QEMU、2 回とも同じ）: p026 の中心（あい→会い の 1 回の commit、よむ→読む、Shift、number の全角）・qwerty・qwerty-ime は ok。
+tools・history・emoji・p026 の 次のApp が `tool …: no place MISSING`、send の `KWL OSK preedit text=あいうえおかが`・
+`reading commit text=あいうえおかが reason=enter`・`ime-probe: text` が MISSING。AAT 4 本は IME の image に `aat-input`・
+`keiland-shot` が無く未実施。証拠: t1 の worktree の `build/review/t1-563/osk-run2.txt`・`osk/`（読んだだけ）。
+
+### 原因（どちらも試験の誤り。実装は変えていない）
+
+| 症状 | 根拠 | 原因 |
+| --- | --- | --- |
+| `tool 次のApp: no place`（tools・history・emoji も） | T1 が host に取った `osk/osk-now.txt` に `KWL OSK trect label=次のApp x=1124 y=86 width=150 height=50` など 21 個の道具の行が全てある。同じ回の `place_middle` でも ASCII の型（`KWL OSK crect slot=0 `・`KWL OSK wrect `）は位置が取れ、tap が効いた（`candidate commit sent=1`・`width toggle on=1` が ok） | `place_middle`（osk-guest.sh）は型を guest の shell の `grep -a '…'` に渡していた。UTF-8 の label（前のApp・→・行頭…）の型は guest の shell を通すと何にも合わない（`expect_text` の注記と同じ: UTF-8 は host で比べる）。p026 で道具の位置を log から取る形にした時に、この経路を通った |
+| send の `preedit text=あいうえおかが` MISSING | `osk/ime-probe.log`: `PROBE DONE … preedit=あいうえおか` → `preedit=あいうえおが`（濁点の key が か を が に置き換え）→ `commit=あいうえおが`、`PROBE TEXT text=あいうえおが`、`PROBE DELETE` 無し。`keyboard.c` の `keyboard_voice`（読みの最後のかなを濁音に置き換える、設計の「濁点の key も読みの最後の字を置き換える」） | 期待値が p026 の前の挙動のまま: 前は か を commit した後に 3 byte を消して が を commit したので、commit の列が「あいうえおかが」だった。preedit では か が が に置き換わるので、正しい text は「あいうえおが」。ime-probe の preedit の経路は動いている（実装の bug ではない） |
+
+### 直し（`plan/ws102/tests/osk-guest.sh` だけ）
+
+- `place_middle`: guest では ASCII の `grep -a 'KWL OSK'` で keyboard の行を取り（`OUTDIR/place-now.txt`）、型は host の `grep -aF`（固定の文字列）で探す。呼び出し側（`tool_label`・crect・wrect・hrect）は変えない。T1-563 の `osk-now.txt` に当てて、次のApp 1199,111・行頭 1004,299・選択 1004,372・→ 1238,226・コピー 1017,445・前のApp 1043,111・貼り付け 1225,445・履歴 1160,164・絵文字 1238,164 が取れることを host で確かめた。
+- send: 期待を「あいうえおが」に（`KWL OSK preedit text=あいうえおが`・`KWL OSK reading commit text=あいうえおが reason=enter`・`PROBE TEXT text=あいうえおが`）、先頭の注記も。
+- 他の guest の grep に UTF-8 の型が無いことを確かめた（`grep -nP` で expect_log・expect_count・count・guest の grep を探して 0。`emoji_middle` は ASCII）。
+
+### AAT の image
+
+AAT 4 本（`bugs.osk-flick-terminal`・`bugs.phone-ime-flick`・`bugs.osk-qwerty-ime`・`desktop.osk.prediction`）の文書の準備は全て「AAT の image」で、session（App Home からの起動）・Phone・`keiland-settings`・`aat-input`・`keiland-shot` を使う。AAT の標準の image（`plan/tools/aat/config-amd64-aat.mk` → `plan/ws159/tests/config-amd64-uat.mk` → `config/current-uat.mk` → `config/release/config-amd64-beta2.mk` → `config/ci/config-amd64.mk`）には `keiland-ime`・`ime-dict-ja`・`ime-dict-skk`・terminal・textedit・phone が入っており、外す行も無い。よって AAT 4 本は **AAT の標準の image**（`plan/tools/aat/build-image.sh BUILD`）で流す。IME の image（`build-ime-image.sh`）は osk-guest.sh 用のまま（ime-probe が要る）。image の作り方は変えない。
+
+### 確かめた事（host のみ。QEMU は T1 の再試験）
+
+- `sh -n plan/ws102/tests/osk-guest.sh` OK。`sh plan/ws102/tests/host-keyboard.sh` PASS、`sh plan/ws102/tests/host-predict.sh` PASS。
+- source（C）は変えていないので build は attempt 1（P2）のまま（amd64・rpi4 の wayland、warning 0）。
+
+### T1 への再依頼
+
+1. image は attempt 1 と同じ（`plan/ws095/tests/build-ime-image.sh BUILD`、同じ BUILD を BIN）。`GUEST_RUNTIME=... BIN=BUILD plan/ws102/tests/osk-guest.sh OUTDIR install p026 send tools history emoji` → 最後の行 `osk-guest: PASS`（qwerty・qwerty-ime は T1-563 で ok、変えていないので省いてよい）。PNG は tools-pasted・history-pasted・emoji-sent を目視。
+2. AAT の image（`plan/tools/aat/build-image.sh BUILD`）を QEMU で起動し、`plan/tools/aat/run-aat.sh qemu OUTDIR bugs.osk-flick-terminal bugs.phone-ime-flick bugs.osk-qwerty-ime desktop.osk.prediction` → 4 本 pass（`desktop.osk.prediction` は needs-person の撮影を目視）。
