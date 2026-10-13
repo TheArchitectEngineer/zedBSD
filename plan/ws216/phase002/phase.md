@@ -3,7 +3,7 @@
 # ws216-p002: libpdf の拡張（係数の輪郭・範囲の輪郭、writer の状態・Flate・粒の pattern、reader の Flate の hash・tiling pattern）
 
 Parent: [WS216](../ws.md)
-Status: in-progress（2026-10-13 P1。設計を書いてから実装）
+Status: in-progress（2026-10-13 P1。実装と host の受け入れ A1〜A11 は済み、Q1 の review・merge の待ち。QEMU・実機の確かめは p007）
 Phase disposition: normal
 Queue: Q1 の依頼（2026-10-13、P1）。承認は ws.md の「ユーザーの決定」（D1〜D12 は推奨で決定）と review-2 の判定「p002 は条件つきで始めてよい」
 
@@ -94,6 +94,55 @@ void pdf_outline_ranges_free(ranges, range_count);
 
 試験: `plan/ws216/tests/run-pdf-tools.sh`（`host-pdf-tools.c` を plain・ASan・UBSan で）。出力は worktree の `build/ws216-p002-host/`。
 
-## 5. 実行の記録
+## 5. 実行の記録（2026-10-13 P1、agent/p1、base main f9077504e）
 
-（実装の後に書く）
+### 5.1 変えた所
+
+| file | 内容 |
+| --- | --- |
+| `include/libc/pdf.h`・`exports.map` | `pdf_factor_point`・`pdf_outline_style`・`pdf_outline_range`・`PDF_OUTLINE_NO_SEAM`、`pdf_outline_stroke_style()`・`pdf_outline_stroke_ranges()`・`pdf_outline_ranges_free()`、`pdf_writer_save_state()`・`restore_state()`・`set_blend_mode()`・`set_content_flate()`・`add_grain()`・`set_fill_grain()`、`PDF_ITEM_PATTERN`（9 symbol を足した。既存の symbol・struct の field は変えていない） |
+| `outline.c` | 筆圧を「係数」と「形（shape）」に一般化（ペンは style `{0.15, 0.7, 1, 0}` で同じ式の順）。範囲の輪郭（cut の移動、継ぎ目に使える頂点、平らな切り口、seam の index） |
+| `writer.c`・`writer.h` | ExtGState を (ca, BM) の state に、`q/Q` の 16 段の stack、blend の求め（次の色で効く）、Multiply を使う文書だけ `/BM /Normal`。頁ごとの `shown` の行列、粒・色の画像・tiling pattern の object と resources、content の Flate（64 MiB 以下、圧縮の関数は hook） |
+| `paint.c`（新） | `pdf_writer_set_content_flate()`・`pdf_writer_add_grain()`（libz-compat の deflate を writer に付ける。writer.c は zlib に依らないまま） |
+| `update.c` | 他の PDF の上の頁の `shown` は `shown_to_user()`、Pattern の分類の合わせと名前の衝突の調べ、`choose_prefix()` に Pattern、新しい content の Flate |
+| `reader.c` | content の hash: Flate だけ（DecodeParms なし）を decode して hash、decode 後 64 MiB 超・他の filter は ENOTSUP |
+| `content.c`・`display.c`・`raster.c`・`internal.h` | tiling pattern（PaintType 1）の fill: tile を list に一度だけ作り（画像 1 枚の cell はその画素、他は 8 px/pt で cell を rasterize、BBox の写し、入れ子 2 段）、`PDF_ITEM_PATTERN` を周期の折り返しの bilinear で塗る |
+| 3 つの Makefile | `paint.c` を足した（M-12） |
+| `plan/ws216/tests/host-pdf-tools.c`・`run-pdf-tools.sh`（新） | 下の受け入れ |
+| `plan/ws079/tests/host-pdf-reader.c` | 「壊れた Flate の content の hash は ENOTSUP」の期待を PDF_EFORMAT に（Flate を decode するようになった仕様の変更に試験を追従。1 行） |
+
+### 5.2 受け入れの結果（host、gcc 14.2.0、poppler 25.03.0、Ghostscript 10.05.1、qpdf 12.2.0）
+
+`sh plan/ws216/tests/run-pdf-tools.sh` → `run-pdf-tools: ok`（plain・ASan・UBSan で outline と write、ASan で render）。
+
+| # | 結果 |
+| --- | --- |
+| A1 | amd64（`ZEDBSD_CONFIG=config/current-uat.mk`、`build/amd64/dynamic/libpdf.so`・`bin/notes`・`bin/pdfviewer`・`bin/keiland-preview`）・rpi4（`config/ci/config-rpi4.mk`、`build/arm64/…` 同じ 4 つ）とも exit 0・warning 0（-Werror）。`libpdf.so` に新しい 9 symbol が出る（llvm-nm -D）。Linux の host の rules（`userland/desktop/keiland-linux.mk`、`KEILAND_LINUX_BUILD=build/ws216-linux`）で `lib/libpdf.so`・`bin/notes`・`bin/pdfviewer` exit 0・warning 0。**FreeBSD は native の build ができないので未実施**（`Makefile.freebsd` に paint.c を足しただけ） |
+| A2 | 600 本（乱数の walk、zigzag、重なる点、0..1 の外の筆圧、点）で `pdf_outline_stroke()` が main f9077504e の outline.c と bit 同一（0 本が違う） |
+| A3 | 3 つの gentle な stroke（19 cut → 20 区間）で継ぎ目の 2 角が bit で同じ、seam の index が約束どおり、start が cut の点。行ごと（0.01 pt）の nonzero の長さ: 区間の和・和集合が全体と一致（最大の差 5.7e-14 pt）。歯の細かい zigzag は cut を捨てて 1 区間・seam なし。点は 1 区間。ループ（1.25 周）は区間の和が全体の 1.254 倍（区間をまたぐ重なりが二度塗られる制限の記録）、和集合は全体と一致。不正な入力 9 種が EINVAL |
+| A4 | `Q` の後の同じ alpha の fill が `/GS1 gs` を出し直す。save したまま終えた頁は `Q` で閉じる。Multiply・Flate の無い文書に `/BM`・`/Filter` が無い。Multiply の文書は `/BM /Multiply` と `/BM /Normal` |
+| A5 | 72 dpi、libpdf と pdftoppm・gs（平均の差・差 64 超の割合）: tools p1 0.18/0%・0.48/0.13%、p2（全面の粒）2.30/0%・0.10/0%、p3（鉛筆 200 本）0.53/0%・1.90/0.12%、update p1（回転）2.38/0%・0.17/0%、p2 2.29/0%・0.11/0%。qpdf `--check` は 6 file とも誤り無し。PNG: `build/ws216-p002-host/libpdf-tools-72-1.png`・`poppler-tools-72-1.png`（目で見て同じ） |
+| A6 | 粒の block の中心（6 pt ごと）の alpha が期待と合う: 高さ 600 の頁 9702 点・`/Rotate 90` の他の PDF の上の頁 13580 点・update で足した頁 3200 点、libpdf・pdftoppm・gs の全てで外れ 0（最大の差 0.0039）。下半分は alpha 0.5 → pattern の fill に `/ca` が掛かることを 3 つの renderer で確かめた |
+| A7 | Flate の content の頁（tools の 3 頁、update で足した頁）で reader の hash = writer の hash。states.pdf に `/Filter` が無い |
+| A8 | 鉛筆 200 本 × 3 区間（下塗り 600・pattern 600 の fill）の頁: flags 0（LIMITED なし）、item 1200、path の点 100000（上限 8 Mi）、保持の画素 65536（tile 1 つを共有、上限 64 Mi）、72 dpi の raster 0.124 s（host、-O1）。全面の粒の頁は 0.55 s（縮小で 4×4 の sample） |
+| A9 | `pdf_document_save_clean()` の copy（34 object、使わない resources 28 を落とす）を qpdf が通し、libpdf・pdftoppm とも元と画素が完全に同じ（3 頁） |
+| A10 | 600 dpi、同じ alpha 0.6 の 10 区間の鉛筆の形と 1 つの形の差が 8 を超える画素: pdftoppm 29、libpdf 98（2000×834 の中、差 64 超は 0）。継ぎ目の髪の毛の線はほぼ見えない（記録のみ） |
+| A11 | `run-pdf-writer.sh` ok、`run-pdf-reader.sh` ok（上の 1 行の追従の後）、`run-pdf-render.sh 100` ok、`run-pdf-update.sh` ok、`plan/ws175/tests/run-host-clean.sh` PASS、`run-notes-host.sh` ok。他は §5.4 |
+| M-7 | 一般の tiling pattern の手書きの頁（塗りの cell、BBox が step より大きく回転した cell、別の pattern で塗る cell、PaintType 2）: 216 dpi で libpdf と gs の差 平均 1.30・差 64 超 0.57%。PaintType 2 の頁は SKIPPED。pdftoppm とは 3.45/1.58%（poppler は繰り返しを整数の device の画素に寄せるので、四角が 1 画素ずれる。区画ごとに見ると libpdf は gs と平均 0.5〜1.5） |
+
+### 5.3 決めたこと（review-2 の条件）
+
+- M-6: §2.3。pattern の鍵に頁の `shown` の行列、名前に name_prefix。試験 A6 で高さの違う頁と回転した頁を確かめた。
+- M-7: §3。tile は display list を作る時に一度だけ。画像 1 枚の cell は画像そのもの（Notes の粒）、他は 8 px/pt・1 Mi px・各辺 2048・写し 8×8・入れ子 2 段。
+- M-8: §1.2。継ぎ目に使える頂点の条件（±2 半径の gentle と曲がりの和 0.35 rad）、自分と重なる stroke は二度塗り（A3 のループで記録）。
+- M-9: §1.2。cuts と start は点の index、seam は角の index の辺（`seam_start` は `count − 1`）。
+- M-13: pattern は自分の `/Resources` を持つ。clean copy の試験 A9。
+- L-3: 上限 `PDF_WRITER_FLATE_CONTENT_MAX`（64 MiB）を writer.h に 1 つ、reader が include して共有。超える頁は圧縮しない。
+- L-16: A8 で item・点・画素を記録。
+
+### 5.4 未実施・残り
+
+- QEMU・実機（5330・Pi 4）の確かめは無い（libpdf だけの段。Notes に入るのは p003 以降、画面は p007 で T1）。
+- FreeBSD の native の build は未実施。
+- `review-2` の p003 以降の中（M-1〜M-5・M-10〜M-12 の Notes の分）は p003・p005 の phase.md で扱う。
+- 他の WS の libpdf の host 試験（`run-pdf-text.sh`・`plan/ws175/tests/run-host-notes-edit.sh`・`run-host-edit-scan.sh`・`run-pdfviewer-host.sh`）の結果は下に追記する。

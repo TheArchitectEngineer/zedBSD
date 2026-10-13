@@ -671,7 +671,7 @@ check_hand_made(void)
 		expect(box.rotation == 90 && box.width == 80.0 && box.height == 190.0, "a rotation of 450 is 90");
 		error = pdf_document_page_box(document, 1, &box);
 		expect(box.rotation == 0 && box.crop_right == 200.0, "a rotation of 45 and a crop box outside the media box");
-		expect_error(pdf_document_page_content_hash(document, 0, digest), ENOTSUP, "a filtered content stream");
+		expect_error(pdf_document_page_content_hash(document, 0, digest), PDF_EFORMAT, "a damaged Flate content stream (decoded since ws216-p002)");
 		error = pdf_document_find_attachment_type(document, "a(b)\\cd", "application/x-test", &data, &size);
 		expect_error(error, 0, "escapes in a string and in a name");
 		expect(size == 3 && memcmp(data, "xyz", 3) == 0, "the escaped attachment's bytes");

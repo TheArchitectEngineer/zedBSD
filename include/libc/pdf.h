@@ -144,7 +144,8 @@ enum pdf_item_type {
 	PDF_ITEM_FILL = 0,
 	PDF_ITEM_IMAGE = 1,
 	PDF_ITEM_CLIP_PUSH = 2,
-	PDF_ITEM_CLIP_POP = 3
+	PDF_ITEM_CLIP_POP = 3,
+	PDF_ITEM_PATTERN = 4
 };
 
 /*
@@ -177,7 +178,11 @@ enum pdf_path_verb {
  * matrix {a, b, c, d, e, f}, (0, 0) the first pixel's corner and (1, 1)
  * the last's; its alpha and blend mode apply as a fill's.  A clip push
  * intersects the clip with its path (by its rule) until the matching clip
- * pop.  Only the fields of the item's type are meaningful.
+ * pop.  A pattern (ws216-p002, a tiling pattern's fill) paints its path as
+ * a fill does, with an image repeated instead of a colour: its pixels and
+ * matrix as an image's, the matrix placing one repeat, the repeats tiling
+ * the plane by the sides of the unit square's parallelogram.  Only the
+ * fields of the item's type are meaningful.
  */
 struct pdf_display_item {
 	enum pdf_item_type type;
@@ -252,6 +257,23 @@ int pdf_writer_set_dates(struct pdf_writer *writer, time_t creation, time_t modi
 int pdf_writer_get_page_content_hash(const struct pdf_writer *writer, size_t index, unsigned char digest[32]);
 int pdf_writer_save(struct pdf_writer *writer, const char *path);
 
+/*
+ * ws216-p002: the graphics state saved and restored (q, Q), the blend mode
+ * of the following fills (taking effect, as an opacity does, at the next
+ * colour), and content compressed with Flate when the document is saved
+ * (a page past 64 MiB stays as it is).  A grain is an 8-bit coverage (rows
+ * from the top, at most 1024 a side, eight a document) that
+ * pdf_writer_set_fill_grain() paints in a colour, repeated in squares of
+ * cell points of the page as drawn from its top left (a tiling pattern of
+ * the page).
+ */
+int pdf_writer_save_state(struct pdf_writer *writer);
+int pdf_writer_restore_state(struct pdf_writer *writer);
+int pdf_writer_set_blend_mode(struct pdf_writer *writer, enum pdf_blend_mode blend);
+int pdf_writer_set_content_flate(struct pdf_writer *writer, int enabled);
+int pdf_writer_add_grain(struct pdf_writer *writer, const unsigned char *coverage, size_t width, size_t height, size_t *grain);
+int pdf_writer_set_fill_grain(struct pdf_writer *writer, size_t grain, double red, double green, double blue, double alpha, double cell);
+
 /* A writer that adds a revision to a document being read, and the pages of that document it lists. */
 int pdf_writer_create_update(struct pdf_document *base, struct pdf_writer **writer);
 int pdf_writer_keep_page(struct pdf_writer *writer, size_t index);
@@ -260,6 +282,46 @@ int pdf_writer_begin_page_over(struct pdf_writer *writer, size_t index, enum pdf
 /* The outline of a pen stroke, which the writer and a screen fill alike. */
 int pdf_outline_stroke(const struct pdf_stroke_point *points, size_t count, double width, struct pdf_point **outline, size_t *outline_count);
 void pdf_outline_free(struct pdf_point *outline);
+
+/*
+ * A stroke whose width follows a factor the caller gives each point
+ * (ws216-p002: Notes' brush, pencil and watercolour): the position in page
+ * points and the factor, which the style turns into the half width
+ * width / 2 * (floor + (1 - floor) * factor^exponent), the factor clamped
+ * to 0..factor_max, never less than radius_min.
+ */
+struct pdf_factor_point {
+	double x;
+	double y;
+	double factor;
+};
+struct pdf_outline_style {
+	double floor;
+	double exponent;
+	double factor_max;
+	double radius_min;
+};
+
+/*
+ * One range of a stroke cut into ranges: start is the point whose cut began
+ * it (0 for the first), corners its outline (nonzero), seam_start and
+ * seam_end the edges where it meets the range before and after (an edge is
+ * named by its first corner and goes to the next one, the last corner's to
+ * the first), or PDF_OUTLINE_NO_SEAM at the stroke's own ends.
+ */
+#define PDF_OUTLINE_NO_SEAM ((size_t)-1)
+struct pdf_outline_range {
+	size_t start;
+	struct pdf_point *corners;
+	size_t count;
+	size_t seam_start;
+	size_t seam_end;
+};
+
+/* The outline of a stroke of factors, and of one cut into ranges at the points cuts names (rising, 1 to count - 1). */
+int pdf_outline_stroke_style(const struct pdf_factor_point *points, size_t count, double width, const struct pdf_outline_style *style, struct pdf_point **outline, size_t *outline_count);
+int pdf_outline_stroke_ranges(const struct pdf_factor_point *points, size_t count, double width, const struct pdf_outline_style *style, const size_t *cuts, size_t cut_count, struct pdf_outline_range **ranges, size_t *range_count);
+void pdf_outline_ranges_free(struct pdf_outline_range *ranges, size_t count);
 
 /*
  * A substitute font held in memory, under the name of the file it stands

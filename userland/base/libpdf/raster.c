@@ -22,7 +22,9 @@
  * pixel when they are shrunk; an image enlarged four times or more without
  * /Interpolate keeps its pixels square (the nearest one), as poppler and
  * pdf.js draw it.  Colours are blended in premultiplied form
- * by the Normal or Multiply blend mode.
+ * by the Normal or Multiply blend mode.  A pattern's fill (ws216-p002) is
+ * covered as a fill and coloured, pixel by pixel, by its repeated image,
+ * sampled as an image with its edges wrapped around.
  */
 
 #include <errno.h>
@@ -134,6 +136,9 @@ static int draw_image(struct raster *raster, const struct pdf_display_item *item
 static void sample_image(const struct pdf_display_item *item, double u, double v, double sample[4]);
 static void sample_nearest(const struct pdf_display_item *item, double u, double v, double sample[4]);
 static void texel(const struct pdf_display_item *item, long x, long y, double sample[4]);
+static int fill_pattern(struct raster *raster, const struct pdf_display_item *item);
+static void sample_repeated(const struct pdf_display_item *item, double u, double v, double sample[4]);
+static long wrap_index(long index, size_t size);
 
 /*
  * Draws a display list into 32-bit pixels.
@@ -207,6 +212,9 @@ pdf_display_list_rasterize(
 			break;
 		case PDF_ITEM_CLIP_POP:
 			pop_clip(&raster);
+			break;
+		case PDF_ITEM_PATTERN:
+			error = fill_pattern(&raster, item);
 			break;
 		}
 
@@ -1300,4 +1308,197 @@ texel(
 	sample[1] = (double)pixel[0] / 255.0 * alpha;
 	sample[2] = (double)pixel[1] / 255.0 * alpha;
 	sample[3] = (double)pixel[2] / 255.0 * alpha;
+}
+
+/*
+ * Fills a pattern item's path, row by row: each covered pixel takes the
+ * colour of the repeated image there (averaged over the pixel when the
+ * image is shrunk), by coverage, alpha and clip.
+ */
+static int
+fill_pattern(
+	struct raster *raster,
+	const struct pdf_display_item *item)
+{
+	const unsigned char *mask;
+	unsigned color[3];
+	unsigned level;
+	size_t next_edge;
+	size_t active_count;
+	double determinant;
+	double area;
+	double shrink;
+	double page_x;
+	double page_y;
+	double u;
+	double v;
+	double sample[4];
+	double sum[4];
+	double alpha;
+	float coverage;
+	int samples;
+	int sub_x;
+	int sub_y;
+	int channel;
+	int top;
+	int bottom;
+	int row;
+	int x;
+	int error;
+
+	/* Nothing to draw at no alpha, or with a repeat squashed flat or without pixels. */
+	if (!(item->alpha > 0.0))
+		return 0;
+	if (item->pixels == NULL ||
+	    item->image_width == 0 ||
+	    item->image_height == 0)
+		return 0;
+	determinant = item->matrix[0] * item->matrix[3] - item->matrix[1] * item->matrix[2];
+	if (!(determinant > 1e-12 || determinant < -1e-12))
+		return 0;
+
+	/* How many of the image's pixels fall on one target pixel: more than one and a half are averaged. */
+	area = fabs(determinant) * raster->scale * raster->scale;
+	shrink = sqrt((double)item->image_width * (double)item->image_height / area);
+	samples = 1;
+	if (shrink > 1.5)
+		samples = (int)ceil(shrink);
+	if (samples > PDF_RASTER_IMAGE_SAMPLES)
+		samples = PDF_RASTER_IMAGE_SAMPLES;
+
+	/* Flattens the path and finds the rows it touches. */
+	error = build_edges(raster, item);
+	if (error != 0)
+		return error;
+	error = scan_path(raster, item->rule, &top, &bottom);
+	if (error != 0)
+		return error;
+
+	/* Blends each row's covered pixels in the image's colour there. */
+	mask = NULL;
+	if (raster->mask_depth > 0)
+		mask = raster->masks[raster->mask_depth - 1];
+	next_edge = 0;
+	active_count = 0;
+	for (row = top; row < bottom; row++) {
+		error = row_coverage(raster, item->rule, row, &next_edge, &active_count);
+		if (error != 0)
+			return error;
+		for (x = raster->row_left; x <= raster->row_right; x++) {
+			/* The pixel's coverage, within the clip. */
+			coverage = raster->coverage[x];
+			if (coverage <= 0.0f)
+				continue;
+			if (coverage > 1.0f)
+				coverage = 1.0f;
+			if (mask != NULL)
+				coverage *= (float)mask[(size_t)row * (size_t)raster->width + (size_t)x] / 255.0f;
+
+			/* Averages the repeated image over the pixel's samples. */
+			sum[0] = 0.0;
+			sum[1] = 0.0;
+			sum[2] = 0.0;
+			sum[3] = 0.0;
+			for (sub_y = 0; sub_y < samples; sub_y++) {
+				for (sub_x = 0; sub_x < samples; sub_x++) {
+					page_x = ((double)x + ((double)sub_x + 0.5) / (double)samples - raster->offset_x) / raster->scale - item->matrix[4];
+					page_y = ((double)row + ((double)sub_y + 0.5) / (double)samples - raster->offset_y) / raster->scale - item->matrix[5];
+					u = (item->matrix[3] * page_x - item->matrix[2] * page_y) / determinant;
+					v = (-item->matrix[1] * page_x + item->matrix[0] * page_y) / determinant;
+					sample_repeated(item, u - floor(u), v - floor(v), sample);
+					for (channel = 0; channel < 4; channel++)
+						sum[channel] += sample[channel];
+				}
+			}
+
+			/* A transparent part of the image paints nothing. */
+			if (sum[0] <= 0.0)
+				continue;
+
+			/* The image's alpha, times the item's and the coverage. */
+			alpha = sum[0] / (double)(samples * samples);
+			alpha *= item->alpha;
+			alpha *= (double)coverage;
+			level = to_level(alpha);
+			if (level == 0U)
+				continue;
+
+			/* Blends the colour, unpremultiplied from the sums. */
+			color[0] = to_level(sum[1] / sum[0]);
+			color[1] = to_level(sum[2] / sum[0]);
+			color[2] = to_level(sum[3] / sum[0]);
+			blend_pixel(raster->pixels + (size_t)row * raster->stride + (size_t)x, color, level, item->blend);
+		}
+	}
+
+	/* Succeeded: the pattern's fill is drawn. */
+	return 0;
+}
+
+/*
+ * Samples a repeated image at (u, v) of one repeat (0 to 1 each),
+ * bilinearly between the four nearest pixels, the pixels past an edge
+ * being those of the next repeat, as premultiplied alpha, red, green, blue
+ * from 0 to 1.
+ */
+static void
+sample_repeated(
+	const struct pdf_display_item *item,
+	double u,
+	double v,
+	double sample[4])
+{
+	double x;
+	double y;
+	double fraction_x;
+	double fraction_y;
+	double corner[4][4];
+	long left;
+	long top;
+	long right;
+	long bottom;
+	int channel;
+
+	/* The position among the pixels' centres. */
+	x = u * (double)item->image_width - 0.5;
+	y = v * (double)item->image_height - 0.5;
+	left = (long)floor(x);
+	top = (long)floor(y);
+	fraction_x = x - (double)left;
+	fraction_y = y - (double)top;
+
+	/* The four pixels around it, wrapped around the repeat's edges. */
+	right = wrap_index(left + 1, item->image_width);
+	bottom = wrap_index(top + 1, item->image_height);
+	left = wrap_index(left, item->image_width);
+	top = wrap_index(top, item->image_height);
+	texel(item, left, top, corner[0]);
+	texel(item, right, top, corner[1]);
+	texel(item, left, bottom, corner[2]);
+	texel(item, right, bottom, corner[3]);
+
+	/* Mixes them by the distances. */
+	for (channel = 0; channel < 4; channel++) {
+		sample[channel] = corner[0][channel] * (1.0 - fraction_x) * (1.0 - fraction_y) +
+		    corner[1][channel] * fraction_x * (1.0 - fraction_y) +
+		    corner[2][channel] * (1.0 - fraction_x) * fraction_y +
+		    corner[3][channel] * fraction_x * fraction_y;
+	}
+}
+
+/* Wraps a pixel index into 0..size - 1, as the repeats of an image tile the plane. */
+static long
+wrap_index(
+	long index,
+	size_t size)
+{
+	long wrapped;
+
+	/* The remainder, made positive. */
+	wrapped = index % (long)size;
+	if (wrapped < 0)
+		wrapped += (long)size;
+
+	/* Reports the index within the image. */
+	return wrapped;
 }
