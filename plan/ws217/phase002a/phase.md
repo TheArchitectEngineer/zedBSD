@@ -120,3 +120,4 @@ Prerequisites: p001 第 4 版（review-3 の判定で p002a は開始可）、re
 ## Event
 
 - 2026-10-13 / ws217-p002a-impl-1: P4 が実装（agent/p4 `b58ff4b06`）。review-4 の C7（`compose->opened` と open の最後の比較）、L49（state に選択、OPEN の mode で REOPEN・TURN を落とす、open は自分で park）、S16 の mode の引数、L44（switch は常に 1 回 tell）を入れた。build 3 つと host 試験 PASS。T1 の試験待ち。
+- 2026-10-13 / ws217-p002a-tests-1: Q1 の許可で他 WS の試験を直した（`plan/ws113/tests/host-output-switch.c` に stub の `kwl_outputs`・`kwl_pointer_warp`、stub の open の成功で `kwl_output_rotated`。`plan/ws211/tests/anim-host-test.c` に `target_width/height` の 2 行）。`host-output-switch.sh`（plain・ASan/UBSan）と `anim-host-test.sh` が PASS。
