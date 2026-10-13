@@ -913,6 +913,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [plan/ws081/tests/run-notestouch.sh](ws081/tests/run-notestouch.sh)（2026-10-13 BUG-296 で追従） | Notes の touch（userland/desktop/notes/touch.c）の host 試験: 2 本指の pinch と上限、drag・flick・glide、overscroll、double tap、toolbar と頁の tap（toolbar の印）、ペンの近くの掌、指で書く。`plan/ws081/tests/run-notestouch.sh [OUTDIR]`（sanitizer は `EXTRA_CFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"`）。PASS は `host-notestouch: ok (N checks)` |
 | [plan/ws079/tests/run-notes-zoom-limit.sh](ws079/tests/run-notes-zoom-limit.sh)（BUG-296、2026-10-13） | Notes の頁の絵の確保が断られた時に倍率を下げて作り直す（i915 の 16 MiB の上限の模型）。`sh plan/ws079/tests/run-notes-zoom-limit.sh`、PASS は `ok (15 checks)` と `PASS` |
 | [plan/ws206/tests/bcm43455-firmware-package-test.sh](ws206/tests/bcm43455-firmware-package-test.sh)（ws206-p003、2026-10-13） | Pi 4 の WiFi の firmware の package（版・sha256・license の本文の一致・CLM の world `XX`・NVRAM に ccode が無い）。`bash plan/ws206/tests/bcm43455-firmware-package-test.sh`、PASS |
+| [plan/ws206/tests/fullmac-host-test.sh](ws206/tests/fullmac-host-test.sh)（ws206-p008、2026-10-13） | WLAN の core の FullMAC の engine と station の分岐（scan・connect・event・EAPOL の扱い・carrier・30 s の期限、TSan で data の thread との競合）。`sh plan/ws206/tests/fullmac-host-test.sh`、ASan/UBSan と TSan の PASS |
 
 回帰と観察の道具は `plan/tools/` に置く。完了した WS の試験は、ここへ移したもの以外を削除した。Phase に固有の試験は各 WS の `tests/` にある。
 
