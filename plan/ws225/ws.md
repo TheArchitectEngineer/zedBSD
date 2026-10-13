@@ -26,3 +26,5 @@ Related Milestones: なし
 | Phase | 内容 | Status |
 | --- | --- | --- |
 | p001 | 入力の規則と出典、書き直しの方法（道具か手か）、ABI の比較の試験の設計 | planned（blocked、ベータ2） |
+
+2026-10-13 ユーザー（原文）:「さきほどの、独自VulkanヘッダにするWSはブロッキングのままです。」→ blocked のまま。先に WS226（Khronos の Vulkan 1.3 の header をそのまま使い、libvulkan で 1.3 を実装しきる）を行う。この WS を始める時は WS226 の 1.3 の API の全部を入力にする。
