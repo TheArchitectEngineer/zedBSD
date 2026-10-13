@@ -772,7 +772,7 @@ inline_finish_line(
 		fragment->text = pieces[index].text;
 		fragment->length = pieces[index].length;
 		fragment->font = pieces[index].font;
-		fragment->color = pieces[index].box->style.color;
+		fragment->color = pieces[index].box->style.paint_color;
 		fragment->underline = pieces[index].box->style.underline;
 		fragment->x = x;
 		fragment->width = pieces[index].width;
@@ -820,7 +820,7 @@ inline_finish_line(
 		fragment->text = box->marker;
 		fragment->length = box->marker_length;
 		fragment->font = font;
-		fragment->color = box->style.color;
+		fragment->color = box->style.paint_color;
 		fragment->width = 0;
 
 		/* The marker is as wide as its characters. */

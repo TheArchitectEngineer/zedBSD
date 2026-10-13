@@ -706,6 +706,12 @@ frame_load_activate(
 	/* Actual completion events require the same current native attempt after all script callbacks. */
 	current = frame_load_current(load);
 	if (window != NULL && current) {
+		/* The parent can observe this verified child navigation before its load event. */
+		if (!load->blank) {
+			error = page_record_visited(load->page, &load->response.url);
+			if (error != 0)
+				goto release_roots;
+		}
 		error = frame_load_events(load, window);
 		if (error != 0)
 			goto release_roots;

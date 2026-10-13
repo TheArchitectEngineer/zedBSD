@@ -115,6 +115,11 @@ struct page {
 	double now;
 	uint32_t styled_generation;
 	uint32_t laid_out_generation;
+	/* Only successful same-origin child navigations observed by this page. */
+	struct wb_vector visited_urls;
+	uint32_t visits_generation;
+	uint32_t styled_visits;
+	uint32_t laid_out_visits;
 	struct wb_vector images;
 	struct net_loader *loader;
 	uint32_t images_generation;
@@ -269,6 +274,7 @@ int page_link_at(struct page *page, int x, int y, struct wb_buffer *href, int *f
 int page_image_at(struct page *page, int x, int y, const struct img_bitmap **bitmap, struct wb_buffer *source);
 int page_resolve_file(const char *base, const char *href, struct wb_buffer *out);
 int page_resolve_location(const char *base, const char *href, struct wb_buffer *out);
+int page_record_visited(struct page *page, const struct wb_buffer *url);
 void page_images_init(struct page *page);
 void page_set_loader(struct page *page, struct net_loader *loader);
 int page_load_bytes(struct page *page, const unsigned char *bytes, size_t length, const char *location);
