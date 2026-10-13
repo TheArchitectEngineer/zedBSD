@@ -29,6 +29,7 @@
 
 #include "../intel/commands.h"
 #include "../intel/genxml.h"
+#include "../intel/genxml-gen9.h"
 
 /* The genxml SURFACE_FORMAT values of the VkFormats the render paths read and write. */
 /*
@@ -123,6 +124,11 @@ struct i915_gfx_vertex_format {
  */
 static const uint32_t i915_gfx_eot_only[4] = {
 	0x00030032U, 0x00001004U, 0x58007024U, 0x00c40000U,
+};
+
+/* The same thread in the Gen9 encoding (genxml-gen9.h, ws229-p004). */
+static const uint32_t i915_gfx_eot_only_gen9[4] = {
+	GEN9_EOT_ONLY_DWORD0, GEN9_EOT_ONLY_DWORD1, GEN9_EOT_ONLY_DWORD2, GEN9_EOT_ONLY_DWORD3,
 };
 
 /*
@@ -320,7 +326,7 @@ struct i915_image_range {
 	int render_target;
 };
 
-static int i915_image_surface_write(uint32_t *rss, const struct i915_gfx_image *image, const struct i915_image_range *range, uint32_t mocs);
+static int i915_image_surface_write(uint32_t *rss, const struct i915_gfx_image *image, const struct i915_image_range *range, uint32_t mocs, unsigned graphics_ver);
 static int i915_buffer_surface_write(uint32_t *rss, const struct i915_gfx_buffer_view *view, uint32_t mocs);
 static void i915_state_target_range(const struct i915_gfx_draw_state *state, uint32_t slot, struct i915_image_range *range);
 static const struct i915_gfx_view *i915_state_target_view(const struct i915_gfx_draw_state *state, uint32_t slot);
@@ -328,11 +334,17 @@ static int i915_state_target_integer(const struct i915_gfx_draw_state *state, ui
 static uint32_t i915_blend_write_disables(uint32_t disable);
 static void i915_state_stencil(const struct i915_gfx_draw_state *state, uint32_t *depth_state, uint32_t *masks, uint32_t *references);
 static int i915_state_stencil_buffer(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, const struct i915_gfx_image *image, uint32_t mocs);
+static void i915_state_depth_layers(const struct i915_gfx_draw_state *state, uint32_t *layer, uint32_t *layers);
+static void i915_state_depth_tail(struct i915_gfx_batch *batch, uint64_t scratch_va);
+static int i915_state_depth_buffer_gen9(struct i915_gfx_batch *batch, const struct i915_gfx_draw_state *state, const struct i915_gfx_image *depth, int has_depth, uint32_t mocs);
+static void i915_state_push_alloc(struct i915_gfx_batch *batch);
+static int i915_state_emit_urb_gen9(struct i915_gfx_batch *batch, uint32_t vs_entry_size, uint32_t gs_entry_size);
+static void i915_state_vf_invalidate(struct i915_gfx_batch *batch, uint32_t flags, uint64_t post_sync_va);
 static void i915_state_null_surface_write(uint32_t *rss, uint32_t width, uint32_t height);
-static int i915_state_write_targets(uint32_t *surface, const struct i915_gfx_draw_state *state, const struct i915_gfx_image *target, uint32_t mocs);
+static int i915_state_write_targets(uint32_t *surface, const struct i915_gfx_draw_state *state, const struct i915_gfx_image *target, uint32_t mocs, unsigned graphics_ver);
 static uint32_t i915_state_dynamic_offset(const struct i915_gfx_draw_state *state, uint32_t set, uint32_t binding);
 static uint32_t i915_sampler_mip_filter(uint32_t mipmap_mode);
-static int i915_state_write_surfaces(uint32_t *surface, uint32_t *dynamic, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, uint32_t mocs);
+static int i915_state_write_surfaces(uint32_t *surface, uint32_t *dynamic, const struct i915_gfx_draw_state *state, const struct i915_gfx_kernels *kernels, const struct i915_gfx_image *target, uint32_t mocs, unsigned graphics_ver);
 static int i915_state_viewport_source(const struct i915_gfx_draw_state *state, const uint32_t **viewport, const VkRect2D **scissor);
 static void i915_state_write_viewport(uint32_t *dynamic, const uint32_t *viewport, const VkRect2D *scissor);
 static void i915_state_write_blend(uint32_t *dynamic, const struct i915_gfx_draw_state *state, const struct i915_gfx_image *target);
@@ -454,6 +466,30 @@ drv_i915_gfx_write_state(
 	const struct i915_gfx_image *target,
 	uint32_t mocs)
 {
+	int error;
+
+	/* Writes the state in its Gen12 form. */
+	error = drv_i915_gfx_write_state_gen(page, state, kernels, target, mocs, 12U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the state object holds everything the batch points at. */
+	return 0;
+}
+
+/*
+ * Writes the state of a draw as drv_i915_gfx_write_state() does, in the form
+ * of the graphics version (9 for Gen9, any other the Gen12 one; ws229-p004).
+ */
+int
+drv_i915_gfx_write_state_gen(
+	uint8_t *page,
+	const struct i915_gfx_draw_state *state,
+	const struct i915_gfx_kernels *kernels,
+	const struct i915_gfx_image *target,
+	uint32_t mocs,
+	unsigned graphics_ver)
+{
 	const uint32_t *viewport;
 	const VkRect2D *scissor;
 	uint32_t *surface;
@@ -466,7 +502,7 @@ drv_i915_gfx_write_state(
 	kern_memset(page, 0, I915_GFX_SLOT_BYTES);
 
 	/* Writes the binding table, the surfaces and the samplers. */
-	error = i915_state_write_surfaces(surface, dynamic, state, kernels, target, mocs);
+	error = i915_state_write_surfaces(surface, dynamic, state, kernels, target, mocs, graphics_ver);
 	if (error != 0)
 		return error;
 
@@ -540,6 +576,29 @@ drv_i915_gfx_surface_write(
 	const struct i915_gfx_surface *surface,
 	uint32_t mocs)
 {
+	int error;
+
+	/* Writes the surface state in its Gen12 form. */
+	error = drv_i915_gfx_surface_write_gen(rss, surface, mocs, 12U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the surface state describes the surface. */
+	return 0;
+}
+
+/*
+ * Writes the RENDER_SURFACE_STATE of a 2D one-level surface as
+ * drv_i915_gfx_surface_write() does, for the graphics version: Gen9 has no
+ * unorm path bit (ws229-p004).
+ */
+int
+drv_i915_gfx_surface_write_gen(
+	uint32_t *rss,
+	const struct i915_gfx_surface *surface,
+	uint32_t mocs,
+	unsigned graphics_ver)
+{
 	uint32_t texel_bytes;
 	uint32_t format;
 	uint32_t unorm;
@@ -561,7 +620,7 @@ drv_i915_gfx_surface_write(
 	/* Names the format and the tiling: a depth surface is Y-tiled, a 16-bit one two bytes a texel. */
 	texel_bytes = 4U;
 	tile = GEN12_TILEMODE_LINEAR;
-	unorm = 1U << 31;
+	unorm = GEN12_RSS_UNORM_PATH;
 	if (surface->format == VK_FORMAT_D32_SFLOAT || surface->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
 		format = I915_GFX_SURFACE_R32_FLOAT;
 		tile = GEN12_TILEMODE_YMAJOR;
@@ -597,6 +656,10 @@ drv_i915_gfx_surface_write(
 		if (surface->tiled != 0U)
 			tile = GEN12_TILEMODE_YMAJOR;
 	}
+
+	/* Gen9 has no unorm path bit. */
+	if (graphics_ver == GEN9_GRAPHICS_VER)
+		unorm = 0U;
 
 	/* Refuses a pitch too short for a row of texels, and a Y-tiled surface of partial tiles. */
 	if (surface->pitch < surface->width * texel_bytes)
@@ -808,11 +871,47 @@ void
 drv_i915_gfx_instruction_heap_clear(
 	uint8_t *window)
 {
+	/* Fills the window with the Gen12 instructions. */
+	drv_i915_gfx_instruction_heap_clear_gen(window, 12U);
+}
+
+/*
+ * Fills one instruction window with threads that only end themselves, in
+ * the encoding of the graphics version (9 for Gen9, any other the Gen12 one).
+ */
+void
+drv_i915_gfx_instruction_heap_clear_gen(
+	uint8_t *window,
+	unsigned graphics_ver)
+{
+	const uint32_t *fill;
 	unsigned at;
 
-	/* Repeats the end-of-thread instructions over the whole window. */
+	/* Takes the version's end-of-thread instructions. */
+	fill = i915_gfx_eot_only;
+	if (graphics_ver == GEN9_GRAPHICS_VER)
+		fill = i915_gfx_eot_only_gen9;
+
+	/* Repeats them over the whole window. */
 	for (at = 0U; at + sizeof(i915_gfx_eot_only) <= I915_GFX_INSTRUCTION_BYTES; at += sizeof(i915_gfx_eot_only))
-		kern_memcpy(window + at, i915_gfx_eot_only, sizeof(i915_gfx_eot_only));
+		kern_memcpy(window + at, fill, sizeof(i915_gfx_eot_only));
+}
+
+/*
+ * Returns the MOCS field value of uncached memory on the graphics version:
+ * index 3 of the Gen12 table, index 0 of the Gen9 one (ws229-p004), shifted
+ * as every MOCS field holds it.
+ */
+uint32_t
+drv_i915_gfx_mocs_uncached(
+	unsigned graphics_ver)
+{
+	/* Gen9's uncached entry. */
+	if (graphics_ver == GEN9_GRAPHICS_VER)
+		return GEN12_MOCS(GEN9_MOCS_UNCACHED_INDEX);
+
+	/* Gen12's. */
+	return GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
 }
 
 /*
@@ -828,6 +927,11 @@ drv_i915_gfx_instruction_heap_clear(
  * flush precedes the pipeline select and the base addresses, so whatever an
  * earlier operation of the batch wrote is flushed first, and the caches
  * that hold state or read textures are invalidated after them.
+ *
+ * A Gen9 batch (ws229-p004) selects the pipeline with anv's Gen9 mask,
+ * programs CACHE_MODE_1 as anv does once a context, has a 19-dword
+ * STATE_BASE_ADDRESS, invalidates the vertex fetch cache the way the SKL
+ * PRM asks (see i915_state_vf_invalidate()) and has no depth bounds.
  */
 void
 drv_i915_gfx_emit_context_setup(
@@ -842,11 +946,31 @@ drv_i915_gfx_emit_context_setup(
 	uint64_t instruction;
 	uint32_t index;
 	uint32_t pattern;
+	uint32_t select;
+	uint32_t base_dwords;
+	int gen9;
 
 	/* Locates the three heaps the state bases name. */
 	surface = state_va + I915_GFX_SURFACE_HEAP;
 	dynamic = state_va + I915_GFX_DYNAMIC_HEAP;
 	instruction = instruction_va;
+
+	/* Notes whether the batch is built for Gen9. */
+	gen9 = 0;
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+		gen9 = 1;
+
+	/*
+	 * Chooses the pipeline select and the base address packet's length:
+	 * Gen12 also masks in and sets the media sampler DOP clock gate, Gen9
+	 * only the selection; Gen9 has no bindless sampler base.
+	 */
+	select = GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D);
+	base_dwords = GEN12_STATE_BASE_ADDRESS_DWORDS;
+	if (gen9 != 0) {
+		select = (GEN12_CMD_PIPELINE_SELECT << 16) | GEN9_PIPELINE_SELECT_MASK | GEN12_PIPELINE_SELECT_3D;
+		base_dwords = GEN9_STATE_BASE_ADDRESS_DWORDS;
+	}
 
 	/* Flushes and stalls before the pipeline is switched to 3D. */
 	drv_i915_batch_pipe_control(batch,
@@ -855,17 +979,24 @@ drv_i915_gfx_emit_context_setup(
 				    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
 				    PIPE_CONTROL_DC_FLUSH_ENABLE |
 				    PIPE_CONTROL_FLUSH_ENABLE);
-	drv_i915_batch_emit(batch, GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D));
+	drv_i915_batch_emit(batch, select);
+
+	/* Programs CACHE_MODE_1 on Gen9, as anv does after its first switch to 3D. */
+	if (gen9 != 0) {
+		drv_i915_batch_emit(batch, MI_LOAD_REGISTER_IMM(1));
+		drv_i915_batch_emit(batch, GEN9_REG_CACHE_MODE_1);
+		drv_i915_batch_emit(batch, GEN9_CACHE_MODE_1_VALUE);
+	}
 
 	/*
 	 * Programs STATE_BASE_ADDRESS: the general base at the scratch buffer
 	 * (zero without one) and the indirect base at zero, the surface and
 	 * dynamic heaps with the given MOCS, the instruction heap write-back
 	 * (instruction fetches go through the L3), every size the largest, the
-	 * bindless surface heap over the surface heap and no bindless sampler
-	 * heap.
+	 * bindless surface heap over the surface heap and, on Gen12, no
+	 * bindless sampler heap.
 	 */
-	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_STATE_BASE_ADDRESS, GEN12_STATE_BASE_ADDRESS_DWORDS));
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_STATE_BASE_ADDRESS, base_dwords));
 	drv_i915_batch_emit(batch, 1U | (mocs << 4) | ((uint32_t)general_va & 0xfffff000U));
 	drv_i915_batch_emit(batch, (uint32_t)(general_va >> 32));
 	drv_i915_batch_emit(batch, mocs << 16);
@@ -884,22 +1015,28 @@ drv_i915_gfx_emit_context_setup(
 	drv_i915_batch_emit(batch, 1U | (mocs << 4) | ((uint32_t)surface & 0xfffff000U));
 	drv_i915_batch_emit(batch, (uint32_t)(surface >> 32));
 	drv_i915_batch_emit(batch, (4096U / 64U - 1U) << 12);
-	drv_i915_batch_emit(batch, 1U | (mocs << 4));
-	drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, 0U);
+
+	/* The bindless sampler heap's base and size, which only Gen12 has. */
+	if (gen9 == 0) {
+		drv_i915_batch_emit(batch, 1U | (mocs << 4));
+		drv_i915_batch_emit(batch, 0U);
+		drv_i915_batch_emit(batch, 0U);
+	}
 
 	/*
 	 * Invalidates the caches that may hold state from before the new bases,
 	 * and the vertex fetch cache, which may hold a buffer an earlier draw's
-	 * shader wrote (transform feedback) or a copy filled.
+	 * shader wrote (transform feedback) or a copy filled.  Gen9's post-sync
+	 * write goes to the slot's scratch.
 	 */
-	drv_i915_batch_pipe_control(batch,
-				    PIPE_CONTROL_CS_STALL |
-				    PIPE_CONTROL_STATE_CACHE_INVALIDATE |
-				    PIPE_CONTROL_CONST_CACHE_INVALIDATE |
-				    PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
-				    PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE |
-				    PIPE_CONTROL_VF_CACHE_INVALIDATE);
+	i915_state_vf_invalidate(batch,
+				 PIPE_CONTROL_CS_STALL |
+				 PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+				 PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+				 PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+				 PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE |
+				 PIPE_CONTROL_VF_CACHE_INVALIDATE,
+				 state_va + I915_GFX_SCRATCH);
 
 	/* Clears the state anv clears once per context. */
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_WM_HZ_OP, GEN12_3DSTATE_WM_HZ_OP_DWORDS);
@@ -920,8 +1057,11 @@ drv_i915_gfx_emit_context_setup(
 		drv_i915_batch_emit(batch, pattern);
 	}
 
-	/* Clears the depth bounds and the binding tables of the unused geometry stages. */
-	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_DEPTH_BOUNDS, GEN12_3DSTATE_DEPTH_BOUNDS_DWORDS);
+	/* Clears the depth bounds, which only Gen12 has. */
+	if (gen9 == 0)
+		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_DEPTH_BOUNDS, GEN12_3DSTATE_DEPTH_BOUNDS_DWORDS);
+
+	/* Clears the binding tables of the unused geometry stages. */
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_VS, GEN12_3DSTATE_POINTERS_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_HS, GEN12_3DSTATE_POINTERS_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_DS, GEN12_3DSTATE_POINTERS_DWORDS);
@@ -1044,6 +1184,7 @@ drv_i915_gfx_emit_vertex_input(
 	uint32_t topology;
 	uint32_t instanced;
 	uint32_t sgvs;
+	uint32_t l3_bypass;
 	uint64_t va;
 	int error;
 
@@ -1087,6 +1228,11 @@ drv_i915_gfx_emit_vertex_input(
 		order[index] = other;
 	}
 
+	/* Gen12 keeps vertex data out of the L3 bypass; Gen9 has no such bit (ws229-p004). */
+	l3_bypass = GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE;
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+		l3_bypass = 0U;
+
 	/* Emits one VERTEX_BUFFER_STATE for each binding of the pipeline (none for a pipeline without). */
 	if (pipeline->binding_count != 0U)
 		drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VERTEX_BUFFERS, 1U + pipeline->binding_count * GEN12_VERTEX_BUFFER_STATE_DWORDS));
@@ -1113,7 +1259,7 @@ drv_i915_gfx_emit_vertex_input(
 		/* Writes the binding, MOCS, address modify enable and stride; the address; the size. */
 		drv_i915_batch_emit(batch,
 				    (binding << 26) |
-				    GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE |
+				    l3_bypass |
 				    (mocs << 16) |
 				    (1U << 14) |
 				    (pipeline->bindings[index].stride & 0xfffU));
@@ -1176,7 +1322,10 @@ drv_i915_gfx_emit_vertex_input(
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF, GEN12_3DSTATE_VF_DWORDS);
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VF_SGVS, GEN12_3DSTATE_VF_SGVS_DWORDS));
 	drv_i915_batch_emit(batch, sgvs);
-	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS_2, GEN12_3DSTATE_VF_SGVS_2_DWORDS);
+
+	/* Clears the extended system values, which only Gen12 has. */
+	if (batch->graphics_ver != GEN9_GRAPHICS_VER)
+		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS_2, GEN12_3DSTATE_VF_SGVS_2_DWORDS);
 
 	/*
 	 * Steps an element once an instance when its binding's input rate is
@@ -1228,6 +1377,7 @@ drv_i915_gfx_emit_index_buffer(
 	uint64_t va;
 	uint32_t format;
 	uint32_t index_bytes;
+	uint32_t l3_bypass;
 
 	/* Refuses an indexed draw with no index buffer bound. */
 	buffer = state->index.buffer;
@@ -1265,6 +1415,11 @@ drv_i915_gfx_emit_index_buffer(
 	if (va == 0U)
 		return EINVAL;
 
+	/* The L3 bypass disable, which only Gen12 has (ws229-p004). */
+	l3_bypass = GEN12_INDEX_BUFFER_L3_BYPASS_DISABLE;
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+		l3_bypass = 0U;
+
 	/*
 	 * Writes the MOCS, the index format and the L3 bypass disable (as for
 	 * the vertex buffers); the address; the bytes up to the end of the
@@ -1274,7 +1429,7 @@ drv_i915_gfx_emit_index_buffer(
 	drv_i915_batch_emit(batch,
 			    mocs |
 			    (format << GEN12_INDEX_FORMAT_SHIFT) |
-			    GEN12_INDEX_BUFFER_L3_BYPASS_DISABLE);
+			    l3_bypass);
 	drv_i915_batch_emit(batch, (uint32_t)va);
 	drv_i915_batch_emit(batch, (uint32_t)(va >> 32));
 	drv_i915_batch_emit(batch, (uint32_t)(buffer->size - offset));
@@ -1309,6 +1464,17 @@ drv_i915_gfx_emit_urb(
 	uint32_t entries;
 	uint32_t gs_entries;
 	uint32_t gs_start;
+	int error;
+
+	/* Gen9 allocates the URB with its own packets (ws229-p004). */
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+		error = i915_state_emit_urb_gen9(batch, vs_entry_size, gs_entry_size);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the push constants and the URB are allocated. */
+		return 0;
+	}
 
 	/* Counts the geometry stage's entries in its chunks, and gives the vertex stage the chunks before them. */
 	vs_bytes = GEN12_URB_VS_BYTES;
@@ -1334,21 +1500,8 @@ drv_i915_gfx_emit_urb(
 		entries = GEN12_URB_VS_ENTRIES;
 	entries &= ~7U;
 
-	/* Gives the vertex stage the first 8 KiB of the push constant space. */
-	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_VS, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS));
-	drv_i915_batch_emit(batch, (0U << 16) | I915_GFX_PUSH_ALLOC_VS_KB);
-
-	/* Gives the hull and domain stages none. */
-	for (opcode = GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_HS; opcode < GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_GS; opcode++)
-		drv_i915_batch_zero(batch, opcode, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS);
-
-	/* Gives the geometry stage the next 8 KiB, whether or not the draw has one. */
-	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_GS, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS));
-	drv_i915_batch_emit(batch, (I915_GFX_PUSH_ALLOC_VS_KB << 16) | I915_GFX_PUSH_ALLOC_GS_KB);
-
-	/* Gives the pixel stage the last 16 KiB. */
-	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_PS, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS));
-	drv_i915_batch_emit(batch, ((I915_GFX_PUSH_ALLOC_VS_KB + I915_GFX_PUSH_ALLOC_GS_KB) << 16) | I915_GFX_PUSH_ALLOC_PS_KB);
+	/* Splits the push constant space between the stages. */
+	i915_state_push_alloc(batch);
 
 	/* Gives the vertex stage its URB past the push constants. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_URB_ALLOC_VS, GEN12_3DSTATE_URB_ALLOC_DWORDS));
@@ -1499,6 +1652,10 @@ drv_i915_gfx_emit_raster(
 	if (kernels->gs_code != NULL)
 		deref = GEN12_URB_DEREF_BLOCK_SIZE_PER_POLY;
 
+	/* Gen9 has no deref block size (ws229-p004). */
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+		deref = 0U;
+
 	/*
 	 * Clips with statistics, early cull and 8-bit subpixel precision; the
 	 * D3D API mode (z in [0, 1]), viewport XY test and guardband, and the
@@ -1627,6 +1784,17 @@ drv_i915_gfx_emit_depth(
 	drv_i915_batch_emit(batch, stencil_masks);
 	drv_i915_batch_emit(batch, stencil_references);
 
+	/* Gen9 describes its depth and stencil buffers in its own forms (ws229-p004). */
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+		error = i915_state_depth_buffer_gen9(batch, state, depth, has_depth, mocs);
+		if (error != 0)
+			return error;
+
+		/* Clears the hierarchical depth and the clear values, and makes the post-sync write, as on Gen12. */
+		i915_state_depth_tail(batch, scratch_va);
+		return 0;
+	}
+
 	/* Describes the depth buffer, or a null one. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_DEPTH_BUFFER, GEN12_3DSTATE_DEPTH_BUFFER_DWORDS));
 	if (has_depth != 0) {
@@ -1689,17 +1857,8 @@ drv_i915_gfx_emit_depth(
 	if (error != 0)
 		return error;
 
-	/* Clears the hierarchical depth and the clear values. */
-	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_HIER_DEPTH_BUFFER, GEN12_3DSTATE_HIER_DEPTH_BUFFER_DWORDS);
-	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_CLEAR_PARAMS, GEN12_3DSTATE_CLEAR_PARAMS_DWORDS);
-
-	/* Makes the post-sync write anv makes after the depth state (Wa_1408224581, Wa_14014097488, Wa_14016712196). */
-	drv_i915_batch_emit(batch, GFX_OP_PIPE_CONTROL(6));
-	drv_i915_batch_emit(batch, PIPE_CONTROL_QW_WRITE);
-	drv_i915_batch_emit(batch, (uint32_t)scratch_va);
-	drv_i915_batch_emit(batch, (uint32_t)(scratch_va >> 32));
-	drv_i915_batch_emit(batch, 0U);
-	drv_i915_batch_emit(batch, 0U);
+	/* Clears the hierarchical depth and the clear values, and makes the post-sync write. */
+	i915_state_depth_tail(batch, scratch_va);
 
 	/* Succeeded: the depth state is programmed. */
 	return 0;
@@ -1718,9 +1877,15 @@ drv_i915_gfx_emit_vertex_shader(
 	const struct i915_gfx_kernels *kernels)
 {
 	uint64_t scratch;
+	uint32_t threads;
 
 	/* The scratch space of a kernel that spills: its per-thread size and the stage's buffer. */
 	scratch = i915_state_scratch(kernels->vs_scratch_bytes, kernels->vs_scratch_offset);
+
+	/* The thread count less one, where the version puts it: Gen9 has fewer threads, one bit higher (ws229-p004). */
+	threads = (I915_GFX_MAX_VS_THREADS - 1U) << 22;
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+		threads = (GEN9_MAX_VS_THREADS - 1U) << GEN9_VS_MAX_THREADS_SHIFT;
 
 	/*
 	 * Writes the kernel start pointer; IEEE-754 with no samplers and no
@@ -1734,7 +1899,7 @@ drv_i915_gfx_emit_vertex_shader(
 	drv_i915_batch_emit(batch, (uint32_t)scratch);
 	drv_i915_batch_emit(batch, (uint32_t)(scratch >> 32));
 	drv_i915_batch_emit(batch, (kernels->vs_grf_start << 20) | (((kernels->vs_input_count + 1U) / 2U) << 11));
-	drv_i915_batch_emit(batch, ((I915_GFX_MAX_VS_THREADS - 1U) << 22) | (1U << 10) | (1U << 2) | 1U);
+	drv_i915_batch_emit(batch, threads | (1U << 10) | (1U << 2) | 1U);
 	drv_i915_batch_emit(batch, 0U);
 }
 
@@ -2238,10 +2403,12 @@ i915_image_surface_write(
 	uint32_t *rss,
 	const struct i915_gfx_image *image,
 	const struct i915_image_range *range,
-	uint32_t mocs)
+	uint32_t mocs,
+	unsigned graphics_ver)
 {
 	uint64_t va;
 	uint32_t format;
+	uint32_t unorm;
 	uint32_t rows;
 	uint32_t type;
 	uint32_t depth;
@@ -2354,6 +2521,11 @@ i915_image_surface_write(
 	if (range->render_target != 0)
 		lod = (range->base_level & GEN12_RSS_LOD_MASK) << GEN12_RSS_MIP_COUNT_SHIFT;
 
+	/* Colour goes through the unorm path on Gen12; Gen9 has no such bit (ws229-p004). */
+	unorm = GEN12_RSS_UNORM_PATH;
+	if (graphics_ver == GEN9_GRAPHICS_VER)
+		unorm = 0U;
+
 	/*
 	 * Fills the surface state: the type, the array bit, the format, the
 	 * horizontal and vertical alignment 4, linear, the cube faces; the unorm
@@ -2370,7 +2542,7 @@ i915_image_surface_write(
 	    (GEN12_SURFACE_ALIGN_4 << 14) |
 	    (tile << 12) |
 	    faces;
-	rss[1] = (1U << 31) | (mocs << 24) | ((rows / 4U) & GEN12_RSS_QPITCH_MASK);
+	rss[1] = unorm | (mocs << 24) | ((rows / 4U) & GEN12_RSS_QPITCH_MASK);
 	rss[2] = (image->width - 1U) | ((image->height - 1U) << 16);
 	rss[3] = ((depth & GEN12_RSS_DEPTH_MASK) << GEN12_RSS_DEPTH_SHIFT) | (image->pitch - 1U);
 	rss[4] = ((range->base_layer & GEN12_RSS_DEPTH_MASK) << GEN12_RSS_MIN_ARRAY_ELEMENT_SHIFT) | samples;
@@ -2408,7 +2580,8 @@ i915_state_write_surfaces(
 	const struct i915_gfx_draw_state *state,
 	const struct i915_gfx_kernels *kernels,
 	const struct i915_gfx_image *target,
-	uint32_t mocs)
+	uint32_t mocs,
+	unsigned graphics_ver)
 {
 	const struct i915_gfx_dset *set;
 	const struct i915_gfx_view *view;
@@ -2423,7 +2596,7 @@ i915_state_write_surfaces(
 	const char *missing;
 
 	/* Points the render targets' binding table entries at the levels and layers their views write. */
-	error = i915_state_write_targets(surface, state, target, mocs);
+	error = i915_state_write_targets(surface, state, target, mocs, graphics_ver);
 	if (error != 0)
 		return error;
 
@@ -2504,7 +2677,7 @@ i915_state_write_surfaces(
 		range.channel_select = view->channel_select;
 		range.swizzle_set = view->swizzle_set;
 		range.render_target = 0;
-		error = i915_image_surface_write(&surface[rss / 4U], view->image, &range, mocs);
+		error = i915_image_surface_write(&surface[rss / 4U], view->image, &range, mocs, graphics_ver);
 		if (error != 0)
 			return error;
 
@@ -2611,7 +2784,8 @@ i915_state_write_targets(
 	uint32_t *surface,
 	const struct i915_gfx_draw_state *state,
 	const struct i915_gfx_image *target,
-	uint32_t mocs)
+	uint32_t mocs,
+	unsigned graphics_ver)
 {
 	const struct i915_gfx_view *view;
 	struct i915_image_range range;
@@ -2631,9 +2805,9 @@ i915_state_write_targets(
 		view = i915_state_target_view(state, slot);
 		i915_state_target_range(state, slot, &range);
 		if (view != NULL) {
-			error = i915_image_surface_write(&surface[rss / 4U], view->image, &range, mocs);
+			error = i915_image_surface_write(&surface[rss / 4U], view->image, &range, mocs, graphics_ver);
 		} else if (slot == 0U && state->framebuffer == NULL) {
-			error = i915_image_surface_write(&surface[rss / 4U], target, &range, mocs);
+			error = i915_image_surface_write(&surface[rss / 4U], target, &range, mocs, graphics_ver);
 		} else {
 			i915_state_null_surface_write(&surface[rss / 4U], target->width, target->height);
 			error = 0;
@@ -3544,5 +3718,324 @@ i915_buffer_surface_write(
 	rss[9] = (uint32_t)(va >> 32);
 
 	/* Succeeded: the surface state describes the texels. */
+	return 0;
+}
+
+
+/*
+ * Splits the 32 KiB of push constants between the stages, the same on
+ * Gen12 and Gen9: 8 KiB to the vertex stage, none to the hull and domain
+ * stages, 8 KiB to the geometry stage and 16 KiB to the pixel stage.
+ */
+static void
+i915_state_push_alloc(
+	struct i915_gfx_batch *batch)
+{
+	uint32_t opcode;
+
+	/* Gives the vertex stage the first 8 KiB of the push constant space. */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_VS, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS));
+	drv_i915_batch_emit(batch, (0U << 16) | I915_GFX_PUSH_ALLOC_VS_KB);
+
+	/* Gives the hull and domain stages none. */
+	for (opcode = GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_HS; opcode < GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_GS; opcode++)
+		drv_i915_batch_zero(batch, opcode, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS);
+
+	/* Gives the geometry stage the next 8 KiB, whether or not the draw has one. */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_GS, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS));
+	drv_i915_batch_emit(batch, (I915_GFX_PUSH_ALLOC_VS_KB << 16) | I915_GFX_PUSH_ALLOC_GS_KB);
+
+	/* Gives the pixel stage the last 16 KiB. */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_PS, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS));
+	drv_i915_batch_emit(batch, ((I915_GFX_PUSH_ALLOC_VS_KB + I915_GFX_PUSH_ALLOC_GS_KB) << 16) | I915_GFX_PUSH_ALLOC_PS_KB);
+}
+
+/*
+ * Allocates the push constants and the URB of a Gen9 draw (ws229-p004),
+ * the way drv_i915_gfx_emit_urb() does for Gen12: the vertex stage's
+ * entries in its 16 chunks after the push constants, or in the first 10 of
+ * them with the geometry stage's in the other 6; the hull and domain stages
+ * none.  The entries are capped at GT1's limits (genxml-gen9.h).  Returns
+ * 0, or ENOTSUP when fewer than two geometry entries fit; nothing is
+ * emitted then.
+ */
+static int
+i915_state_emit_urb_gen9(
+	struct i915_gfx_batch *batch,
+	uint32_t vs_entry_size,
+	uint32_t gs_entry_size)
+{
+	uint32_t vs_chunks;
+	uint32_t entries;
+	uint32_t gs_entries;
+	uint32_t gs_start;
+	uint32_t unused;
+
+	/* Counts the geometry stage's entries in its chunks, and gives the vertex stage the chunks before them. */
+	vs_chunks = GEN9_URB_VS_CHUNKS;
+	gs_entries = 0U;
+	gs_start = 0U;
+	if (gs_entry_size != 0U) {
+		vs_chunks = GEN9_URB_VS_SPLIT_CHUNKS;
+		gs_start = GEN9_URB_VS_START_CHUNK + GEN9_URB_VS_SPLIT_CHUNKS;
+		gs_entries = (GEN9_URB_GS_CHUNKS * GEN12_URB_CHUNK_KB * 1024U) / (gs_entry_size * 64U);
+		if (gs_entries > GEN9_URB_GS_ENTRIES)
+			gs_entries = GEN9_URB_GS_ENTRIES;
+		if (gs_entry_size < 9U)
+			gs_entries &= ~7U;
+
+		/* Refuses entries so large that the geometry stage cannot run two (its DUAL_OBJECT minimum). */
+		if (gs_entries < GEN12_URB_GS_MIN_ENTRIES)
+			return ENOTSUP;
+	}
+
+	/* Counts the entries the vertex stage's chunks hold, a multiple of eight. */
+	entries = (vs_chunks * GEN12_URB_CHUNK_KB * 1024U) / (vs_entry_size * 64U);
+	if (entries > GEN9_URB_VS_ENTRIES)
+		entries = GEN9_URB_VS_ENTRIES;
+	entries &= ~7U;
+
+	/* Splits the push constant space between the stages, as on Gen12. */
+	i915_state_push_alloc(batch);
+
+	/* Gives the vertex stage its URB past the push constants. */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN9_CMD_3DSTATE_URB_VS, GEN9_3DSTATE_URB_DWORDS));
+	drv_i915_batch_emit(batch,
+			    (GEN9_URB_VS_START_CHUNK << GEN9_URB_START_SHIFT) |
+			    ((vs_entry_size - 1U) << GEN9_URB_ENTRY_SIZE_SHIFT) |
+			    entries);
+
+	/* Gives the hull and domain stages no entries, after the vertex and geometry chunks. */
+	unused = GEN9_URB_UNUSED_START_CHUNK << GEN9_URB_START_SHIFT;
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN9_CMD_3DSTATE_URB_HS, GEN9_3DSTATE_URB_DWORDS));
+	drv_i915_batch_emit(batch, unused);
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN9_CMD_3DSTATE_URB_DS, GEN9_3DSTATE_URB_DWORDS));
+	drv_i915_batch_emit(batch, unused);
+
+	/* Gives the geometry stage its chunks and entries, or none as the hull and domain stages. */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN9_CMD_3DSTATE_URB_GS, GEN9_3DSTATE_URB_DWORDS));
+	if (gs_entries != 0U) {
+		drv_i915_batch_emit(batch,
+				    (gs_start << GEN9_URB_START_SHIFT) |
+				    ((gs_entry_size - 1U) << GEN9_URB_ENTRY_SIZE_SHIFT) |
+				    gs_entries);
+	} else {
+		drv_i915_batch_emit(batch, unused);
+	}
+
+	/* Succeeded: the push constants and the URB are allocated. */
+	return 0;
+}
+
+/*
+ * Appends the PIPE_CONTROL that invalidates the vertex fetch cache (with the
+ * other flags).  On Gen9 (ws229-p004) the SKL PRM wants a null PIPE_CONTROL
+ * before it and a post-sync write on it, which goes to post_sync_va (anv
+ * writes its workaround address); Gen12 needs neither.
+ */
+static void
+i915_state_vf_invalidate(
+	struct i915_gfx_batch *batch,
+	uint32_t flags,
+	uint64_t post_sync_va)
+{
+	/* Gen12 invalidates with the one PIPE_CONTROL. */
+	if (batch->graphics_ver != GEN9_GRAPHICS_VER) {
+		drv_i915_batch_pipe_control(batch, flags);
+		return;
+	}
+
+	/* The null PIPE_CONTROL: every field zero. */
+	drv_i915_batch_pipe_control(batch, 0U);
+
+	/* The invalidation, writing an immediate zero to the post-sync address. */
+	drv_i915_batch_emit(batch, GFX_OP_PIPE_CONTROL(6));
+	drv_i915_batch_emit(batch, flags | GEN9_PIPE_CONTROL_WRITE_IMMEDIATE);
+	drv_i915_batch_emit(batch, (uint32_t)post_sync_va);
+	drv_i915_batch_emit(batch, (uint32_t)(post_sync_va >> 32));
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, 0U);
+}
+
+/*
+ * Appends what follows the depth and stencil buffers on both versions: no
+ * hierarchical depth, no clear values, and the post-sync write anv makes
+ * after the depth state (Wa_1408224581, Wa_14014097488, Wa_14016712196) to
+ * the slot's scratch at scratch_va.
+ */
+static void
+i915_state_depth_tail(
+	struct i915_gfx_batch *batch,
+	uint64_t scratch_va)
+{
+	/* Clears the hierarchical depth and the clear values. */
+	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_HIER_DEPTH_BUFFER, GEN12_3DSTATE_HIER_DEPTH_BUFFER_DWORDS);
+	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_CLEAR_PARAMS, GEN12_3DSTATE_CLEAR_PARAMS_DWORDS);
+
+	/* Makes the post-sync write anv makes after the depth state (Wa_1408224581, Wa_14014097488, Wa_14016712196). */
+	drv_i915_batch_emit(batch, GFX_OP_PIPE_CONTROL(6));
+	drv_i915_batch_emit(batch, PIPE_CONTROL_QW_WRITE);
+	drv_i915_batch_emit(batch, (uint32_t)scratch_va);
+	drv_i915_batch_emit(batch, (uint32_t)(scratch_va >> 32));
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, 0U);
+}
+
+/* Finds the first layer the pass's depth view writes and how many (one without a view). */
+static void
+i915_state_depth_layers(
+	const struct i915_gfx_draw_state *state,
+	uint32_t *layer,
+	uint32_t *layers)
+{
+	const struct i915_gfx_view *view;
+
+	/* One layer from 0 unless the depth attachment has a view of more. */
+	*layer = 0U;
+	*layers = 1U;
+	if (state->framebuffer == NULL || state->pass == NULL)
+		return;
+	if (state->pass->depth_attachment >= state->framebuffer->view_count)
+		return;
+	view = state->framebuffer->views[state->pass->depth_attachment];
+	if (view == NULL)
+		return;
+
+	/* The view's first layer, and its layers when it has more than one. */
+	*layer = view->base_layer;
+	if (view->layer_count > 1U)
+		*layers = view->layer_count;
+}
+
+/*
+ * Emits the Gen9 3DSTATE_DEPTH_BUFFER and 3DSTATE_STENCIL_BUFFER
+ * (ws229-p004), as isl writes them below Gen12 (isl_emit_depth_stencil.c):
+ * the depth buffer as on Gen12 with its fields where Gen9 has them, the
+ * stencil write enable in the depth buffer, a depth buffer of an attachment
+ * with stencil and no depth typed 2D D32_FLOAT with the stencil's extent,
+ * and a five-dword stencil buffer (enable, MOCS and pitch; the address; the
+ * QPitch).  Returns EINVAL for a depth image with no storage or in another
+ * format than D32_SFLOAT and D16_UNORM, or a stencil plane with no storage.
+ */
+static int
+i915_state_depth_buffer_gen9(
+	struct i915_gfx_batch *batch,
+	const struct i915_gfx_draw_state *state,
+	const struct i915_gfx_image *depth,
+	int has_depth,
+	uint32_t mocs)
+{
+	uint64_t va;
+	uint64_t stencil_va;
+	uint32_t type;
+	uint32_t format;
+	uint32_t write;
+	uint32_t pitch;
+	uint32_t extent;
+	uint32_t array;
+	uint32_t qpitch;
+	uint32_t layer;
+	uint32_t layers;
+	uint32_t rows;
+	int has_stencil;
+
+	/* Notes whether the attachment has a stencil plane. */
+	has_stencil = 0;
+	if (depth != NULL && depth->stencil != 0U)
+		has_stencil = 1;
+
+	/* The stencil plane's address. */
+	stencil_va = 0U;
+	if (has_stencil != 0) {
+		stencil_va = drv_i915_gfx_memory_va(depth->memory, depth->offset + depth->stencil_offset);
+		if (stencil_va == 0U)
+			return EINVAL;
+	}
+
+	/* The first layer the pass's depth view writes, and how many. */
+	i915_state_depth_layers(state, &layer, &layers);
+
+	/* A null D32_FLOAT depth buffer unless the attachment has depth or stencil. */
+	va = 0U;
+	type = GEN12_SURFTYPE_NULL;
+	format = GEN12_DEPTH_FORMAT_D32_FLOAT;
+	write = 0U;
+	pitch = 0U;
+	extent = 0U;
+	array = 0U;
+	qpitch = 0U;
+	if (has_depth != 0) {
+		/* Refuses a depth image with no storage or in another format. */
+		va = drv_i915_gfx_memory_va(depth->memory, depth->offset);
+		if (va == 0U)
+			return EINVAL;
+		if (depth->format == VK_FORMAT_D32_SFLOAT || depth->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
+			format = GEN12_DEPTH_FORMAT_D32_FLOAT;
+		} else if (depth->format == VK_FORMAT_D16_UNORM) {
+			format = GEN12_DEPTH_FORMAT_D16_UNORM;
+		} else {
+			return EINVAL;
+		}
+
+		/* Uses the image slice stride to place each depth layer. */
+		rows = depth->slice_rows;
+		if (rows == 0U)
+			rows = (depth->height + 3U) & ~3U;
+
+		/* A 2D Y-tiled buffer that writes depth, its pitch, extent, layers and QPitch. */
+		type = GEN12_SURFTYPE_2D;
+		write = 1U << 28;
+		pitch = depth->pitch - 1U;
+		qpitch = (rows / 4U) | (((layers - 1U) & GEN12_RSS_DEPTH_MASK) << GEN9_DEPTH_DEPTH_SHIFT);
+	} else if (has_stencil != 0) {
+		/* A stencil-only attachment: a 2D D32_FLOAT buffer with no address (isl, GFX_VER < 12). */
+		type = GEN12_SURFTYPE_2D;
+	}
+
+	/* The extent and the layers of a typed buffer. */
+	if (type != GEN12_SURFTYPE_NULL) {
+		extent = ((depth->width - 1U) << GEN9_DEPTH_WIDTH_SHIFT) | ((depth->height - 1U) << GEN9_DEPTH_HEIGHT_SHIFT);
+		array = mocs |
+		    ((layer & GEN12_RSS_DEPTH_MASK) << GEN9_DEPTH_MIN_ARRAY_SHIFT) |
+		    (((layers - 1U) & GEN12_RSS_DEPTH_MASK) << GEN9_DEPTH_DEPTH_SHIFT);
+	}
+
+	/* An attachment with stencil writes it through the depth buffer packet on Gen9. */
+	if (has_stencil != 0)
+		write |= GEN9_DEPTH_STENCIL_WRITE_ENABLE;
+
+	/*
+	 * Writes the depth buffer: the type, the write enables, the format and
+	 * the pitch; the address; the extent at LOD 0; MOCS, the first array
+	 * element and the depth; nothing in dword 6; the QPitch and the render
+	 * target view extent, which is the depth again.
+	 */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_DEPTH_BUFFER, GEN12_3DSTATE_DEPTH_BUFFER_DWORDS));
+	drv_i915_batch_emit(batch, (type << 29) | write | (format << GEN9_DEPTH_FORMAT_SHIFT) | pitch);
+	drv_i915_batch_emit(batch, (uint32_t)va);
+	drv_i915_batch_emit(batch, (uint32_t)(va >> 32));
+	drv_i915_batch_emit(batch, extent);
+	drv_i915_batch_emit(batch, array);
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, qpitch);
+
+	/* Writes the stencil buffer: enabled with its MOCS, pitch, address and QPitch, or all zero. */
+	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_STENCIL_BUFFER, GEN9_3DSTATE_STENCIL_BUFFER_DWORDS));
+	if (has_stencil != 0) {
+		drv_i915_batch_emit(batch,
+				    GEN9_STENCIL_BUFFER_ENABLE |
+				    (mocs << GEN9_STENCIL_MOCS_SHIFT) |
+				    (depth->stencil_pitch - 1U));
+		drv_i915_batch_emit(batch, (uint32_t)stencil_va);
+		drv_i915_batch_emit(batch, (uint32_t)(stencil_va >> 32));
+		drv_i915_batch_emit(batch, depth->stencil_slice_rows / 4U);
+	} else {
+		drv_i915_batch_emit(batch, 0U);
+		drv_i915_batch_emit(batch, 0U);
+		drv_i915_batch_emit(batch, 0U);
+		drv_i915_batch_emit(batch, 0U);
+	}
+
+	/* Succeeded: the depth and stencil buffers are described. */
 	return 0;
 }

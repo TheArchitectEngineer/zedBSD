@@ -37,6 +37,14 @@ struct i915_gfx_batch {
 
 	/* Nonzero once a dword did not fit. */
 	int overflow;
+
+	/*
+	 * The graphics version the commands are built for (ws229-p004): 9
+	 * selects the Gen9 forms of the packets that differ; any other value
+	 * (12, or 0 in a batch a test makes by hand) the Gen12 ones.  The draw
+	 * path sets it from the GT when it makes the session's batch.
+	 */
+	unsigned graphics_ver;
 };
 
 void drv_i915_batch_emit(struct i915_gfx_batch *batch, uint32_t dword);

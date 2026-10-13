@@ -42,6 +42,7 @@ struct i915_gfx_grid {
 
 int drv_i915_gfx_dispatch(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_grid *grid);
 int drv_i915_gfx_dispatch_write(uint8_t *slot, uint64_t slot_va, const struct i915_gfx_draw_state *state, const struct i915_gfx_grid *grid);
+int drv_i915_gfx_dispatch_write_gen(uint8_t *slot, uint64_t slot_va, const struct i915_gfx_draw_state *state, const struct i915_gfx_grid *grid, unsigned graphics_ver);
 void drv_i915_gfx_dispatch_build(struct i915_gfx_batch *batch, const struct i915_gfx_op_space *space, const struct i915_gfx_pipeline *pipeline, const struct i915_gfx_kernels *kernels, const struct i915_gfx_grid *grid, uint32_t dss_count, uint32_t mocs);
 
 #endif

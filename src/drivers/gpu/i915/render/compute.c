@@ -53,6 +53,7 @@
 
 #include "../intel/commands.h"
 #include "../intel/genxml.h"
+#include "../intel/genxml-gen9.h"
 
 /*
  * PIPE_CONTROL's Stall At Pixel Scoreboard (gen120.xml, bit 33: bit 1 of
@@ -83,6 +84,7 @@ static int i915_compute_names_storage(const struct i915_shader_binary *binary);
 static uint32_t i915_compute_dss_count(const struct i915_render_session *session);
 static uint64_t i915_compute_scratch(uint32_t per_thread_bytes, uint64_t offset);
 static uint32_t i915_compute_slm_size(uint32_t bytes);
+static void i915_compute_l3(struct i915_gfx_batch *batch, uint32_t value);
 
 /*
  * Records one dispatch of the bound compute pipeline over the grid's
@@ -123,7 +125,7 @@ drv_i915_gfx_dispatch(
 		return ENOMEM;
 
 	/* Every buffer and state of a dispatch is uncached, as a draw's. */
-	mocs = GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
+	mocs = drv_i915_gfx_mocs_uncached(work->cursor.graphics_ver);
 
 	/*
 	 * Uniform data is copied into the CURBE by the CPU now, so an operation
@@ -167,7 +169,7 @@ drv_i915_gfx_dispatch(
 
 	/* Writes the interface descriptor, the group counts and the CURBE, then the dispatch's commands. */
 	dss_count = i915_compute_dss_count(session);
-	error = drv_i915_gfx_dispatch_write(space.slot, space.slot_va, state, grid);
+	error = drv_i915_gfx_dispatch_write_gen(space.slot, space.slot_va, state, grid, work->cursor.graphics_ver);
 	if (error == 0)
 		drv_i915_gfx_dispatch_build(space.batch, &space, pipeline, &kernels, grid, dss_count, mocs);
 
@@ -213,9 +215,34 @@ drv_i915_gfx_dispatch_write(
 	const struct i915_gfx_draw_state *state,
 	const struct i915_gfx_grid *grid)
 {
+	int error;
+
+	/* Writes the slot in its Gen12 form. */
+	error = drv_i915_gfx_dispatch_write_gen(slot, slot_va, state, grid, 12U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the slot holds everything the dispatch loads. */
+	return 0;
+}
+
+/*
+ * Writes a dispatch's slot as drv_i915_gfx_dispatch_write() does, for the
+ * graphics version: the Gen9 interface descriptor has no thread preemption
+ * disable (ws229-p004).
+ */
+int
+drv_i915_gfx_dispatch_write_gen(
+	uint8_t *slot,
+	uint64_t slot_va,
+	const struct i915_gfx_draw_state *state,
+	const struct i915_gfx_grid *grid,
+	unsigned graphics_ver)
+{
 	const struct i915_gfx_pipeline *pipeline;
 	const struct i915_shader_binary *binary;
 	const struct i915_shader_block *block;
+	uint32_t preemption;
 	struct i915_gfx_draw_state view;
 	struct i915_gfx_push_layout layout;
 	uint32_t address[I915_COMPUTE_ADDRESS_WORDS];
@@ -241,6 +268,11 @@ drv_i915_gfx_dispatch_write(
 	kern_memset(slot, 0, I915_GFX_SLOT_BYTES);
 	dynamic = slot + I915_GFX_DYNAMIC_HEAP;
 
+	/* Turns mid-thread preemption off as anv does; Gen9 has no such bit (ws229-p004). */
+	preemption = GEN12_IDD_PREEMPTION_DISABLE;
+	if (graphics_ver == GEN9_GRAPHICS_VER)
+		preemption = 0U;
+
 	/*
 	 * The interface descriptor: the kernel at the start of its window, no
 	 * mid-thread preemption (anv), the per-thread registers, the threads of
@@ -248,7 +280,7 @@ drv_i915_gfx_dispatch_write(
 	 * the cross-thread registers.
 	 */
 	descriptor = (uint32_t *)(void *)(dynamic + I915_GFX_DYN_INTERFACE);
-	descriptor[2] = GEN12_IDD_PREEMPTION_DISABLE;
+	descriptor[2] = preemption;
 	descriptor[5] = I915_SHADER_PER_THREAD_REGS << GEN12_IDD_PER_THREAD_LENGTH_SHIFT;
 	descriptor[6] = pipeline->threads | (i915_compute_slm_size(binary->shared_bytes) << GEN12_IDD_SLM_SIZE_SHIFT);
 	if (binary->uses_barrier != 0U)
@@ -305,6 +337,13 @@ drv_i915_gfx_dispatch_write(
  * CURBE and the interface descriptor, an indirect dispatch's loads of its
  * counts, the walker over the groups, and the switch back to 3D behind the
  * flushes.
+ *
+ * A Gen9 batch (ws229-p004) adds what anv does for Gen9 and its shared
+ * local memory, which lives in the L3: an L3 partition with shared local
+ * memory around a kernel that uses it, the colour calc pointer cleared and
+ * the read caches invalidated before the switch to GPGPU, the Gen9 VFE
+ * fields (56 threads a subslice, the gateway timer reset), and the VFE
+ * state again before the switch back to 3D.
  */
 void
 drv_i915_gfx_dispatch_build(
@@ -329,21 +368,55 @@ drv_i915_gfx_dispatch_build(
 	uint32_t curbe_regs;
 	uint32_t curbe_allocation;
 	uint32_t max_threads;
+	uint32_t vfe_dword3;
+	uint32_t select;
+	int gen9;
+	int shared;
 
 	/* The kernel, and its CURBE in whole pairs of registers (64-byte units). */
 	binary = pipeline->cs_binary;
 	curbe_regs = binary->cross_thread_regs + pipeline->threads * I915_SHADER_PER_THREAD_REGS;
 	curbe_allocation = (curbe_regs + 1U) & ~1U;
 
+	/* Notes whether the batch is built for Gen9 and whether the kernel shares memory in its group. */
+	gen9 = 0;
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+		gen9 = 1;
+	shared = 0;
+	if (binary->shared_bytes != 0U)
+		shared = 1;
+
 	/* In 3D: the flush, the state bases at the slot and the window, and the invalidation (Wa_1607854226). */
 	drv_i915_gfx_emit_context_setup(batch, space->slot_va, space->window_va, kernels->scratch_base, mocs);
 
-	/* Switches 3D to GPGPU behind a stalling flush of the render target, depth and HDC caches (TGL PRM). */
+	/* Gen9 gives the shared local memory its ways of the L3 for the kernel. */
+	if (gen9 != 0 && shared != 0)
+		i915_compute_l3(batch, GEN9_L3CNTLREG_SLM);
+
+	/* Gen9 clears the colour calc state pointer before switching to GPGPU (SKL PRM, PIPELINE_SELECT). */
+	if (gen9 != 0)
+		drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CC_STATE_POINTERS, 0U);
+
+	/*
+	 * Switches 3D to GPGPU behind a stalling flush of the render target,
+	 * depth and HDC caches (TGL PRM); Gen9 also invalidates the read-only
+	 * caches with a second PIPE_CONTROL (anv, flush_pipeline_select()) and
+	 * masks in only the selection.
+	 */
 	drv_i915_batch_pipe_control(batch,
 				    PIPE_CONTROL_CS_STALL |
 				    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
 				    PIPE_CONTROL_DEPTH_CACHE_FLUSH);
-	drv_i915_batch_emit(batch, GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_GPGPU));
+	select = GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_GPGPU);
+	if (gen9 != 0) {
+		drv_i915_batch_pipe_control(batch,
+					    PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+					    PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+					    PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+					    PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
+		select = (GEN12_CMD_PIPELINE_SELECT << 16) | GEN9_PIPELINE_SELECT_MASK | GEN12_PIPELINE_SELECT_GPGPU;
+	}
+	drv_i915_batch_emit(batch, select);
 
 	/* The stalling flush MEDIA_VFE_STATE wants before it. */
 	drv_i915_batch_pipe_control(batch, PIPE_CONTROL_CS_STALL | I915_COMPUTE_STALL_AT_SCOREBOARD);
@@ -355,10 +428,18 @@ drv_i915_gfx_dispatch_build(
 	 */
 	scratch = i915_compute_scratch(kernels->cs_scratch_bytes, kernels->cs_scratch_offset);
 	max_threads = GEN12_VFE_THREADS_PER_DSS * dss_count - 1U;
+	vfe_dword3 = (max_threads << GEN12_VFE_MAX_THREADS_SHIFT) | (GEN12_VFE_URB_ENTRIES << GEN12_VFE_URB_ENTRIES_SHIFT);
+	if (gen9 != 0) {
+		/* Gen9: 56 threads a subslice (dss_count counts subslices), and the gateway timer reset anv sets below Gen11. */
+		max_threads = GEN9_VFE_THREADS_PER_SUBSLICE * dss_count - 1U;
+		vfe_dword3 = (max_threads << GEN12_VFE_MAX_THREADS_SHIFT) |
+		    (GEN12_VFE_URB_ENTRIES << GEN12_VFE_URB_ENTRIES_SHIFT) |
+		    GEN9_VFE_RESET_GATEWAY_TIMER;
+	}
 	drv_i915_batch_emit(batch, GEN12_MEDIA_VFE_STATE_HEADER);
 	drv_i915_batch_emit(batch, (uint32_t)scratch);
 	drv_i915_batch_emit(batch, (uint32_t)(scratch >> 32));
-	drv_i915_batch_emit(batch, (max_threads << GEN12_VFE_MAX_THREADS_SHIFT) | (GEN12_VFE_URB_ENTRIES << GEN12_VFE_URB_ENTRIES_SHIFT));
+	drv_i915_batch_emit(batch, vfe_dword3);
 	drv_i915_batch_emit(batch, 0U);
 	drv_i915_batch_emit(batch, (GEN12_VFE_URB_ALLOCATION << GEN12_VFE_URB_ALLOCATION_SHIFT) | curbe_allocation);
 	drv_i915_batch_emit(batch, 0U);
@@ -436,7 +517,33 @@ drv_i915_gfx_dispatch_build(
 					PIPE_CONTROL_CS_STALL |
 					PIPE_CONTROL_DC_FLUSH_ENABLE |
 					PIPE_CONTROL_FLUSH_ENABLE);
-	drv_i915_batch_emit(batch, GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D));
+
+	/* Gen12 switches back to 3D at once. */
+	if (gen9 == 0) {
+		drv_i915_batch_emit(batch, GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D));
+		return;
+	}
+
+	/* Gen9 gives the L3 back its default partition, without shared local memory. */
+	if (shared != 0)
+		i915_compute_l3(batch, GEN9_L3CNTLREG_DEFAULT);
+
+	/*
+	 * Gen9 emits MEDIA_VFE_STATE again before switching back to 3D, as anv
+	 * does against geometry flickering and the mid-object preemption
+	 * workaround (the stalling flush above is the one VFE wants), with no
+	 * scratch and no CURBE; then selects 3D with its own mask.
+	 */
+	drv_i915_batch_emit(batch, GEN12_MEDIA_VFE_STATE_HEADER);
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, vfe_dword3);
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, GEN12_VFE_URB_ALLOCATION << GEN12_VFE_URB_ALLOCATION_SHIFT);
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, 0U);
+	drv_i915_batch_emit(batch, (GEN12_CMD_PIPELINE_SELECT << 16) | GEN9_PIPELINE_SELECT_MASK | GEN12_PIPELINE_SELECT_3D);
 }
 
 /* Reports whether a kernel reads a uniform block, which the CPU copies into the CURBE. */
@@ -556,4 +663,34 @@ i915_compute_slm_size(
 
 	/* Succeeded: the encoding. */
 	return encoded;
+}
+
+/*
+ * Changes the Gen9 L3 partition (L3CNTLREG) between the default one and the
+ * one with shared local memory (ws229-p004), as anv does: a stalling flush
+ * of the data cache, an invalidation of the read-only caches, a second
+ * stalling flush so the invalidation is complete, then the register.
+ */
+static void
+i915_compute_l3(
+	struct i915_gfx_batch *batch,
+	uint32_t value)
+{
+	/* Drains the pipeline and flushes the data cache. */
+	drv_i915_batch_pipe_control(batch, PIPE_CONTROL_CS_STALL | PIPE_CONTROL_DC_FLUSH_ENABLE);
+
+	/* Invalidates the read-only caches. */
+	drv_i915_batch_pipe_control(batch,
+				    PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+				    PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+				    PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE |
+				    PIPE_CONTROL_STATE_CACHE_INVALIDATE);
+
+	/* Waits for the invalidation with a second stalling flush. */
+	drv_i915_batch_pipe_control(batch, PIPE_CONTROL_CS_STALL | PIPE_CONTROL_DC_FLUSH_ENABLE);
+
+	/* Writes the partition. */
+	drv_i915_batch_emit(batch, MI_LOAD_REGISTER_IMM(1));
+	drv_i915_batch_emit(batch, GEN9_REG_L3CNTLREG);
+	drv_i915_batch_emit(batch, value);
 }

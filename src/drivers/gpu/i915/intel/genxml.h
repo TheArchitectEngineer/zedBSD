@@ -631,6 +631,12 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_RSS_VIEW_EXTENT_SHIFT		7U
 
 /*
+ * RENDER_SURFACE_STATE dword 1 bit 31, Enable Unorm Path In Color Pipe
+ * (gen120.xml); Gen9 has no such bit (ws229-p004).
+ */
+#define GEN12_RSS_UNORM_PATH			(1U << 31)
+
+/*
  * The multisample fields (gen120.xml): RENDER_SURFACE_STATE dword 4 Number
  * of Multisamples in bits 5:3 (the samples' log2) with Multisampled Surface
  * Storage Format bit 6 left MSFMT_MSS (every sample a slice, QPitch apart);
