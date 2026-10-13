@@ -2339,6 +2339,8 @@ void kwl_surface_outputs_sync(struct kwl_server *server);
 void kwl_surface_outputs_bound(struct kwl_object *output);
 void kwl_surface_outputs_gone(struct kwl_server *server, uint32_t head);
 uint32_t kwl_notify_post_system(struct kwl_server *server, const char *title, const char *body, unsigned flags);
+/* The desktop's bus's notifications, served for a session where the system has the bus (notify-shell.c, ws156-p006). */
+int kwl_notify_bus_open(struct kwl_server *server);
 uint32_t kwl_notify_post_as(struct kwl_server *server, const char *app, const char *title, const char *body, unsigned flags, const char *lock_text);
 /* The application ID of a client's mapped window ("" when it has none; notify-shell.c, ws177-p026). */
 const char *kwl_notify_app_id(const struct kwl_server *server, uint64_t client_number);

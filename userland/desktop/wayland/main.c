@@ -226,6 +226,14 @@ main(
 			printf("KWL OS unavailable errno=%d\n", error);
 	}
 
+	/*
+	 * A session serves the notifications of the desktop's bus where the
+	 * system has one (Linux's session bus, ws156-p006); without it the
+	 * session goes on with Keiland's own notifications only.
+	 */
+	if (error == 0 && !server.greeter)
+		(void)kwl_notify_bus_open(&server);
+
 	/* Reads the wallpaper while Vulkan starts, only after OS startup succeeded. */
 	if (error == 0)
 		kwl_glass_prefetch(&server);

@@ -29,12 +29,22 @@
  * An application the user turned off on Settings' Notifications page
  * (notify.allow.<its name> 0, ws177-p026) is refused: result(request,
  * DENIED); its name is the post's, or its window's app_id.
+ *
+ * On Linux the desktop's other programs post on the session bus
+ * (org.freedesktop.Notifications, ws156-p006): the backend serves it and
+ * hands each notification here, as a client of its own for each bus
+ * connection (NOTIFY_BUS_CLIENT and the backend's sender number, never a
+ * Wayland client's number), with no object.  Their closes and clicks go
+ * back to the backend, which tells the sender.  A sender with as many as it
+ * may has its oldest logged one expired for the new one, as a program on
+ * the bus does not expect a refusal.
  */
 
 #include "kwl.h"
 #include "notify.h"
 
 #include "userland/desktop/libkeiland/system/kl-system-protocol.h"
+#include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -44,6 +54,13 @@
 /* The longest string a post carries, with its NUL (longer words than the model keeps are refused as INVALID, not as a broken request). */
 #define NOTIFY_WIRE_TEXT_MAX	4096U
 
+/*
+ * The first client number of the bus's senders (ws156-p006): a sender's
+ * notifications are kept as client NOTIFY_BUS_CLIENT + its number.
+ * Wayland clients are numbered from 1 up and never come near it.
+ */
+#define NOTIFY_BUS_CLIENT	(1ULL << 62)
+
 static struct kwl_notify_model notify_model;
 static int notify_ready;
 
@@ -51,6 +68,11 @@ static void notify_open(void);
 static void notify_left(uint64_t client, uint32_t object);
 static int notify_post(struct kwl_object *object, const unsigned char *bytes, size_t size, int lock);
 static int notify_allowed(struct kwl_object *object, const char *app);
+static int notify_allowed_name(struct kwl_server *server, const char *name);
+static int notify_from_bus(uint64_t client);
+static unsigned notify_bus_reason(unsigned reason);
+static uint32_t notify_bus_posted(void *data, uint32_t sender, const char *app, const char *title, const char *body, uint32_t replaces, unsigned flags, int *error);
+static int notify_bus_withdrawn(void *data, uint32_t sender, uint32_t id);
 static int notify_withdraw(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static void notify_tell_closed(struct kwl_server *server, const struct kwl_notify_closed *closed);
 static void notify_result(struct kwl_object *object, uint32_t request, uint32_t applied);
@@ -120,6 +142,37 @@ kwl_notify_request(
 
 	/* No other request. */
 	return EPROTO;
+}
+
+/*
+ * Serves the notifications of the desktop's bus (ws156-p006, Linux's
+ * session bus) for a session: the backend hands each one here.  Returns 0,
+ * or the backend's error (ENOTSUP where the system has no such bus).
+ */
+int
+kwl_notify_bus_open(
+	struct kwl_server *server)
+{
+	struct kl_backend_notify_callbacks callbacks;
+	int error;
+
+	/* What the backend calls with the bus's posts and withdrawals. */
+	memset(&callbacks, 0, sizeof(callbacks));
+	callbacks.posted = notify_bus_posted;
+	callbacks.withdrawn = notify_bus_withdrawn;
+
+	/* The bus, served by the backend (the log the tests read). */
+	notify_open();
+	error = kl_backend_notify_open(server->backend, &callbacks, server);
+	if (error != 0) {
+		if (error != ENOTSUP)
+			printf("KWL NOTIFY bus unavailable errno=%d\n", error);
+		return error;
+	}
+
+	/* Succeeded: the bus's notifications come here. */
+	printf("KWL NOTIFY bus serving\n");
+	return 0;
 }
 
 /*
@@ -288,6 +341,7 @@ kwl_notify_activate(
 	uint64_t number;
 	uint32_t word;
 	int error;
+	int bus;
 
 	/* The notification. */
 	notify_open();
@@ -296,9 +350,12 @@ kwl_notify_activate(
 		return ENOENT;
 	number = item->client;
 
-	/* Its client's object, told; the compositor's own runs its action. */
+	/* Its client's object, told; the compositor's own runs its action; the bus's sender is told by the backend. */
+	bus = notify_from_bus(number);
 	if (number == 0U) {
 		kwl_notify_system_activated(server, id);
+	} else if (bus) {
+		kl_backend_notify_activated(server->backend, id);
 	} else {
 		for (client = server->clients; client != NULL; client = client->next) {
 			if (client->number != number || client->fatal)
@@ -488,20 +545,39 @@ notify_allowed(
 	const char *app)
 {
 	const char *name;
+	int allowed;
+
+	/* The application's name: the post's, or its window's app_id. */
+	name = app;
+	if (name[0] == '\0')
+		name = kwl_notify_app_id(object->client->server, object->client->number);
+
+	/* Its setting. */
+	allowed = notify_allowed_name(object->client->server, name);
+	return allowed;
+}
+
+/*
+ * Tells whether the user lets an application of a name notify: its setting
+ * notify.allow.<name> is not 0.  An empty name, and a name without a
+ * setting, is let.
+ */
+static int
+notify_allowed_name(
+	struct kwl_server *server,
+	const char *name)
+{
 	char key[96];
 	int number;
 	int error;
 
-	/* The application's name. */
-	name = app;
-	if (name[0] == '\0')
-		name = kwl_notify_app_id(object->client->server, object->client->number);
+	/* No name, nothing to look up. */
 	if (name[0] == '\0')
 		return 1;
 
 	/* Its setting; none (or no settings) lets it. */
 	(void)snprintf(key, sizeof(key), "notify.allow.%s", name);
-	error = kwl_settings_number(object->client->server, key, &number);
+	error = kwl_settings_number(server, key, &number);
 	if (error != 0)
 		return 1;
 
@@ -509,6 +585,159 @@ notify_allowed(
 	if (number == 0)
 		return 0;
 	return 1;
+}
+
+/* Tells whether a notification's client is one of the bus's senders (ws156-p006). */
+static int
+notify_from_bus(
+	uint64_t client)
+{
+	/* The bus's senders are numbered from NOTIFY_BUS_CLIENT up. */
+	if (client >= NOTIFY_BUS_CLIENT)
+		return 1;
+
+	/* A Wayland client, or the compositor. */
+	return 0;
+}
+
+/* Gives the bus's reason of a close (KL_BACKEND_NOTIFY_*) for the compositor's (KWL_NOTIFY_*). */
+static unsigned
+notify_bus_reason(
+	unsigned reason)
+{
+	/* Aged out of the log. */
+	if (reason == KWL_NOTIFY_EXPIRED)
+		return KL_BACKEND_NOTIFY_EXPIRED;
+
+	/* Taken back by its sender. */
+	if (reason == KWL_NOTIFY_WITHDRAWN)
+		return KL_BACKEND_NOTIFY_CLOSED;
+
+	/* The user's: its close sign, or the log's clearing. */
+	return KL_BACKEND_NOTIFY_DISMISSED;
+}
+
+/*
+ * Takes a notification of the bus (the backend's posted callback): kept as
+ * its sender's, under the same rate and the same user's choice as a
+ * Wayland client's.  Returns its number, or 0 with *error EBUSY (too fast,
+ * or too many with none logged to expire), EACCES (the user turned the
+ * program off) or the model's error.
+ */
+static uint32_t
+notify_bus_posted(
+	void *data,
+	uint32_t sender,
+	const char *app,
+	const char *title,
+	const char *body,
+	uint32_t replaces,
+	unsigned flags,
+	int *error)
+{
+	struct kwl_notify_closed closed[2];
+	struct kwl_notify_closed expired;
+	struct kwl_server *server;
+	size_t closed_count;
+	uint64_t client;
+	unsigned kept_flags;
+	uint32_t id;
+	int allowed;
+	int status;
+
+	/* The sender as a client of its own. */
+	server = data;
+	client = NOTIFY_BUS_CLIENT + (uint64_t)sender;
+	notify_open();
+
+	/* A sender posting faster than the rate is refused as busy (ws177-p005). */
+	status = kwl_notify_rate_take(&notify_model, client, kwl_milliseconds());
+	if (status != 0) {
+		printf("KWL NOTIFY bus-refused sender=%u error=%d rate=1\n", sender, status);
+		*error = EBUSY;
+		return 0U;
+	}
+
+	/* A program the user turned off (ws177-p026). */
+	allowed = notify_allowed_name(server, app);
+	if (!allowed) {
+		printf("KWL NOTIFY bus-denied sender=%u app=\"%.40s\"\n", sender, app);
+		*error = EACCES;
+		return 0U;
+	}
+
+	/* The flags the compositor keeps. */
+	kept_flags = 0U;
+	if ((flags & KL_BACKEND_NOTIFY_URGENT) != 0U)
+		kept_flags |= KWL_NOTIFY_URGENT;
+	if ((flags & KL_BACKEND_NOTIFY_ACTION) != 0U)
+		kept_flags |= KWL_NOTIFY_ACTION;
+
+	/* Kept; a replaces that is not the sender's (gone, or another's) makes a new one. */
+	status = kwl_notify_post(&notify_model, client, 0U, replaces, app, title, body, kept_flags, &id, closed, &closed_count);
+	if (status == ENOENT && replaces != 0U) {
+		replaces = 0U;
+		status = kwl_notify_post(&notify_model, client, 0U, 0U, app, title, body, kept_flags, &id, closed, &closed_count);
+	}
+
+	/* A sender with as many as it may: its oldest logged one expires for this one. */
+	if (status == EBUSY) {
+		status = kwl_notify_expire_oldest(&notify_model, client, &expired);
+		if (status != 0) {
+			printf("KWL NOTIFY bus-refused sender=%u error=%d\n", sender, EBUSY);
+			*error = EBUSY;
+			return 0U;
+		}
+
+		/* The expired one told, then the post again. */
+		notify_tell_closed(server, &expired);
+		status = kwl_notify_post(&notify_model, client, 0U, replaces, app, title, body, kept_flags, &id, closed, &closed_count);
+	}
+
+	/* Refused otherwise (the words are cut to fit by the backend, so this is rare). */
+	if (status != 0) {
+		printf("KWL NOTIFY bus-refused sender=%u error=%d\n", sender, status);
+		*error = status;
+		return 0U;
+	}
+
+	/* An oldest pushed out of the log is told to its client. */
+	if (closed_count > 0U)
+		notify_tell_closed(server, &closed[0]);
+
+	/* Succeeded: its number (the log the tests read). */
+	printf("KWL NOTIFY post bus sender=%u id=%u replaces=%u flags=%u app=\"%.40s\" title=\"%.40s\" waiting=%lu\n",
+	       sender, id, replaces, kept_flags, app, title, (unsigned long)kwl_notify_waiting(&notify_model));
+	return id;
+}
+
+/*
+ * Takes back a notification of the bus (the backend's withdrawn callback,
+ * CloseNotification): the sender's own only.  Returns 0, or ENOENT.
+ */
+static int
+notify_bus_withdrawn(
+	void *data,
+	uint32_t sender,
+	uint32_t id)
+{
+	struct kwl_notify_closed closed;
+	struct kwl_server *server;
+	uint64_t client;
+	int error;
+
+	/* The sender's own. */
+	server = data;
+	client = NOTIFY_BUS_CLIENT + (uint64_t)sender;
+	notify_open();
+	error = kwl_notify_withdraw(&notify_model, client, id, &closed);
+	if (error != 0)
+		return error;
+
+	/* Told as closed (NotificationClosed with the reason of a close by its sender). */
+	notify_tell_closed(server, &closed);
+	printf("KWL NOTIFY withdraw bus sender=%u id=%u\n", sender, id);
+	return 0;
 }
 
 /* Carries out withdraw(request, id). */
@@ -552,6 +781,7 @@ notify_tell_closed(
 	struct kwl_client *client;
 	struct kwl_object *object;
 	uint32_t words[2];
+	int bus;
 
 	/* The log the tests read. */
 	printf("KWL NOTIFY closed client=%llu id=%u reason=%u\n", (unsigned long long)closed->client, closed->id, closed->reason);
@@ -559,6 +789,13 @@ notify_tell_closed(
 	/* The compositor's own are told to nobody. */
 	if (closed->client == 0U)
 		return;
+
+	/* The bus's sender is told by the backend (ws156-p006). */
+	bus = notify_from_bus(closed->client);
+	if (bus) {
+		kl_backend_notify_closed(server->backend, closed->id, notify_bus_reason(closed->reason));
+		return;
+	}
 
 	/* The client, and its object of the notification. */
 	for (client = server->clients; client != NULL; client = client->next) {

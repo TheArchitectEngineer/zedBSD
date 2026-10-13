@@ -334,6 +334,42 @@ kwl_notify_withdraw(
 }
 
 /*
+ * Expires a client's oldest logged notification, to make room for the
+ * client's new one when it has as many as it may (ws156-p006: a program on
+ * the desktop's bus does not expect a refusal).  Returns 0 with closed
+ * filled (KWL_NOTIFY_EXPIRED), or ENOENT when none of the client's is in
+ * the log.
+ */
+int
+kwl_notify_expire_oldest(
+	struct kwl_notify_model *model,
+	uint64_t client,
+	struct kwl_notify_closed *closed)
+{
+	struct kwl_notification *oldest;
+	struct kwl_notification *item;
+	size_t index;
+
+	/* The client's logged one that entered the log first. */
+	oldest = NULL;
+	for (index = 0; index < model->count; index++) {
+		item = &model->items[index];
+		if (item->client != client || item->where != KWL_NOTIFY_LOGGED)
+			continue;
+		if (oldest == NULL || item->order < oldest->order)
+			oldest = item;
+	}
+
+	/* None of the client's is logged. */
+	if (oldest == NULL)
+		return ENOENT;
+
+	/* Gone, as if it had aged out of the log. */
+	notify_remove(model, oldest, KWL_NOTIFY_EXPIRED, closed);
+	return 0;
+}
+
+/*
  * Shows the oldest waiting notification.  Returns 0 with its number, EBUSY
  * while one is shown, or ENOENT when none waits.
  */

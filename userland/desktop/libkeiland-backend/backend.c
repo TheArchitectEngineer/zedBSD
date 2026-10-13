@@ -66,7 +66,8 @@ kl_backend_close(
 	if (backend == NULL)
 		return;
 
-	/* The system's events, then the backend. */
+	/* The bus's notifications (ws156-p006), the system's events, then the backend. */
+	kl_backend_notify_close(backend);
 	kl_backend_events_close(backend);
 	free(backend);
 }
@@ -84,9 +85,10 @@ kl_backend_poll_count(
 	if (backend == NULL)
 		return 0;
 
-	/* The seat's service (ws131-p006), then the system's events (ws132-p003). */
+	/* The seat's service (ws131-p006), the system's events (ws132-p003), then the bus's notifications (ws156-p006). */
 	count = kl_backend_seat_poll_count(backend);
 	count += kl_backend_events_poll_count(backend);
+	count += kl_backend_notify_poll_count(backend);
 	return count;
 }
 
@@ -99,15 +101,18 @@ kl_backend_poll_fill(
 	struct pollfd *descriptors)
 {
 	size_t seat;
+	size_t events;
 
 	/* A compositor whose backend did not open has nothing to fill. */
 	if (backend == NULL)
 		return;
 
-	/* The seat's service (ws131-p006), then the system's events after it (ws132-p003). */
+	/* The seat's service (ws131-p006), the system's events after it (ws132-p003), then the bus's notifications (ws156-p006). */
 	seat = kl_backend_seat_poll_count(backend);
+	events = kl_backend_events_poll_count(backend);
 	kl_backend_seat_poll_fill(backend, descriptors);
 	kl_backend_events_poll_fill(backend, descriptors + seat);
+	kl_backend_notify_poll_fill(backend, descriptors + seat + events);
 }
 
 /*
@@ -119,15 +124,23 @@ kl_backend_poll_done(
 	const struct pollfd *descriptors)
 {
 	size_t seat;
+	size_t events;
 
 	/* A compositor whose backend did not open was told nothing. */
 	if (backend == NULL)
 		return;
 
-	/* The seat's pauses and resumes (ws131-p006), then the system's events after them (ws132-p003). */
+	/*
+	 * The seat's pauses and resumes (ws131-p006), the system's events after
+	 * them (ws132-p003), then the bus's notifications (ws156-p006).  The
+	 * counts are taken before any is handled: a handler may close its
+	 * descriptor, and the places filled stay where they were.
+	 */
 	seat = kl_backend_seat_poll_count(backend);
+	events = kl_backend_events_poll_count(backend);
 	kl_backend_seat_poll_done(backend, descriptors);
 	kl_backend_events_poll_done(backend, descriptors + seat);
+	kl_backend_notify_poll_done(backend, descriptors + seat + events);
 }
 
 /*

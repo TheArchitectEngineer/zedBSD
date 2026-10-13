@@ -127,6 +127,7 @@ void kwl_notify_model_free(struct kwl_notify_model *model);
 int kwl_notify_post(struct kwl_notify_model *model, uint64_t client, uint32_t object, uint32_t replaces, const char *app, const char *title,
 		    const char *body, unsigned flags, uint32_t *id, struct kwl_notify_closed *closed, size_t *closed_count);
 int kwl_notify_withdraw(struct kwl_notify_model *model, uint64_t client, uint32_t id, struct kwl_notify_closed *closed);
+int kwl_notify_expire_oldest(struct kwl_notify_model *model, uint64_t client, struct kwl_notify_closed *closed);
 int kwl_notify_show_next(struct kwl_notify_model *model, uint32_t *id);
 int kwl_notify_hide(struct kwl_notify_model *model, struct kwl_notify_closed *closed, size_t *closed_count);
 int kwl_notify_dismiss(struct kwl_notify_model *model, uint32_t id, struct kwl_notify_closed *closed);

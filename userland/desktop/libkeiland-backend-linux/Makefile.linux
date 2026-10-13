@@ -28,6 +28,7 @@ KEILAND_LINUX_BACKEND_SOURCES := userland/desktop/libkeiland-backend/backend.c u
 	userland/desktop/libkeiland-backend/unsupported/sharing-unsupported.c \
 	userland/desktop/libkeiland-backend/session/session-none.c \
 	userland/desktop/libkeiland-backend-linux/dbus-linux.c \
+	userland/desktop/libkeiland-backend-linux/notify-linux.c \
 	userland/desktop/libkeiland-backend-linux/seat-linux.c \
 	userland/desktop/libkeiland-backend-linux/seat-logind-linux.c \
 	userland/desktop/libkeiland-backend-linux/seat-direct-linux.c \
