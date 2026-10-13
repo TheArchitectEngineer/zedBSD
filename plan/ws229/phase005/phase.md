@@ -104,3 +104,5 @@ base: main bb57b2397（worktree `agent/p1` に merge）。Gen9 の boot の key 
 > 最初の run で QEMU の IGD の quirk（OpRegion・stolen memory）が Gen9.5 で働くかは未確認なので、`i915:` の行が 1 つも無い場面は
 > `run.log` の `--- vkdemo` の後の行（`i915: vk`・`panic`・`fault`）と、SV7 の `~/bigbang/run-parity-qemu.log` の VFIO の行を添えて返す。
 > **返し先**: Q1 と P1（または Q1 が p005 を割り当てた担当）。場面ごとの verdict の行と log の場所。FAIL の解析はしない。
+
+- 2026-10-14 ユーザー（全部入りの取りやめ）:「全部入りの Gen9 の imageはいらないです。あなたがテストに必要な単位で機能を分けたイメージでテストしてください」→ 全部入りの image は作らない。Gen9.5 の試験は SV7 の passthrough で試験ごと（T1-608）。USB の手順（gen9-hw.md）は使わない。
