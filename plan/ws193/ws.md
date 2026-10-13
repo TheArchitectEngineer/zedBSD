@@ -7,7 +7,7 @@
 Userの追加指摘をread-onlyで確認。[証拠](tests/rpi4-boot0-readout-20261011.md)。実機rootはmmcblk0p2 UFS rw、/boot/boot0は不存在。cmdlineはlogin=だけを生成し、legacy native UFS経路がboot source登録とboot swap準備をskipしている。vmunix読み込み指定とは別のruntime mount問題。source修正・remote mount/swap/update/rebootは行っていない。既存p009/p010の限定criteriaとWS incompleteは維持、追加実装/実機確認は未実施。共有投影/GitHubはQ1 pending。
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p004〜p008 sourceはmain統合済み、p009 Graphical login・p010共通rootfsの限定criteriaはcleared）
+Status: incomplete（2026-10-13 P2 q964 の照合: p001・p002・p004〜p011 cleared、残りは p003（規約、未着手）と RPi4 の実機の確かめ（host key・SSH・/boot/boot0・graphical login）。旧: p004〜p008 sourceはmain統合済み、p009 Graphical login・p010共通rootfsの限定criteriaはcleared）
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O2
@@ -148,3 +148,15 @@ User explicitly approved main integration of `1b3d6cd03` (answer「mainへ統合
 User「/boot/boot0がないようですが、これもマージしてもらえますか？」and standing automatic-integration approval authorize this integration. Source `067ae96d8` and its read-only investigation record `9507b898e` merged into current main source in private worktree as `4cfddb3f9`; no source conflicts or extra source changes. Focused production publication host model passes for RPi4/amd64. `make -j16 build/arm64/vmunix > build/rpi4-boot0-integration.log 2>&1` exits0 with warnings0/errors0 and ELF/raw-image checks PASS. VFS source remains byte-identical to the previously reviewed fix; config.mk matches main. `git diff --check` PASS.
 
 Clean main `40cba8951` fast-forwarded to `4cfddb3f9`; all9 integrated paths read back identical to verified worktree. Main integration complete. Previous approval-pending text is historical. Next user boot with this kernel should expose firmware FAT at /boot/boot0; physical mount/write/kernel-update confirmation is still unverified. No push, deployment, runtime mount or reboot. Shared Master/Queue/history/cache/GitHub projections remain Q1-owned.
+
+## 2026-10-13 P2 q964 の照合（完了の条件との照らし合わせ）
+
+| 完了の条件 | 証拠 | 判定 |
+| --- | --- | --- |
+| 新しい階層で選び保存した config.mk で image が build でき、boot-test で login prompt | p002: T1-497 PASS（2026-10-10 Q1）。後の変更（p004〜p011）も各 Phase の build・check-disk-image（p008: RPi4 の SD image まで、p009・p010・p011 の build） | 達（amd64 は boot-test、RPi4 は image の build と検査まで。RPi4 の実機の起動は下） |
+| `make menuconfig-host-test` を新しい階層に追従させて PASS | p001（cleared）、p004〜p007 の host・PTY の試験（各 phase.md の証拠） | 達 |
+| 進捗の表示の画面をユーザーに見せる | p002: ユーザー「menuconfigはOK」（2026-10-10） | 達 |
+| 変えた code の規約の全文の見直し | p003 planning（未着手） | 未。他の WS と同じくベータ3 に回すかは Q1・ユーザーの判断 |
+
+- RPi4 の実機の確かめ（Resume point の host key・SSH、p009 の graphical login の実機、p011 の /boot/boot0 の実機）は各 Phase の「実機未確認」のまま。WS の完了の条件の表には無いが、ユーザーの UAT（RPi4）で見る項目。
+- 提案: ベータ2 の範囲（完了の条件の 1〜3）は満たした。p003 をベータ3 に回すなら、WS193 は他の WS と同じく「ベータ2 の範囲は完了、残りは規約＝ベータ3」にできる（Q1 の判断）。
