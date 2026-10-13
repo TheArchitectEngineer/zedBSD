@@ -137,6 +137,11 @@
 #define MAIN_KEY_DELETE		111U
 #define MAIN_KEY_ENTER		28U
 
+/* ws216-p006: the keys of the brush, the pencil and the fill (W, the watercolour's, is above). */
+#define MAIN_KEY_B		48U
+#define MAIN_KEY_L		38U
+#define MAIN_KEY_F		33U
+
 /* The points of a circle the pen's mark is drawn with. */
 #define MAIN_CIRCLE_POINTS	40U
 
@@ -170,6 +175,12 @@
 #define MAIN_CONTACT_SELECT	4U
 #define MAIN_CONTACT_TEXT	5U
 #define MAIN_CONTACT_BOX	6U
+
+/* ws216-p006: a press of the fill tool, which fills where it was pressed when it lifts close by. */
+#define MAIN_CONTACT_FILL	7U
+
+/* How far a press of the fill tool may move, in window pixels, and still fill (plan/ws216/phase001/phase.md section 7). */
+#define MAIN_FILL_SLOP		8.0f
 
 /*
  * The Select tool (ws175-p008): no object chosen; what a drag does (no
@@ -422,6 +433,26 @@ struct notes_app {
 	unsigned width;
 	int erase_parts;
 
+	/*
+	 * ws216-p006: the drawing tool used last (its NOTES_ACTION_*), which the
+	 * toolbar's drawing tool button names and goes back to, and whether its
+	 * strip of drawing tools is open.
+	 */
+	unsigned draw_tool;
+	int draws_open;
+
+	/*
+	 * ws216-p006: a press of the fill tool: where it was pressed (window
+	 * pixels) and whether it moved too far to fill; and a fill waiting for
+	 * the main loop (after the frame that says it is filling), at a place.
+	 */
+	float fill_press_x;
+	float fill_press_y;
+	int fill_moved;
+	int fill_pending;
+	float fill_x;
+	float fill_y;
+
 	/* The contact under way, the stroke it draws (off the page until it ends), and when it started. */
 	unsigned contact;
 	struct notes_stroke *live;
@@ -512,6 +543,12 @@ static int app_clean_told(void);
 static void app_place_page(struct notes_app *app);
 static void app_appearance_changed(void *data, unsigned appearance);
 static const char *app_tool_name(unsigned tool);
+static void app_fill(struct notes_app *app);
+static void app_fill_track(struct notes_app *app, float x, float y);
+static int app_on_page(const struct notes_app *app, float x, float y);
+static void app_notice(struct notes_app *app, const char *text);
+static int app_fill_background(void *context, uint32_t top, uint32_t width, uint32_t height, double scale);
+static int app_strip_press(struct notes_app *app, float x, float y);
 static uint64_t app_look(const struct notes_app *app);
 static void app_count_edits(const struct notes_app *app, size_t *edits, size_t *pages);
 static void app_select_press(struct notes_app *app, float x, float y, uint32_t time_ms);
@@ -623,6 +660,7 @@ main(
 
 	/* The notebook: recovered from a journal, or new. */
 	app.tool = NOTES_ACTION_PEN;
+	app.draw_tool = NOTES_ACTION_PEN;
 	app.selected = MAIN_NONE;
 	app.select_press_object = MAIN_NONE;
 	app.width = 1U;
@@ -776,6 +814,10 @@ main(
 			notes_touch_event(&app.touch, &app.window.touches[index]);
 		app.window.touch_count = 0;
 		app_touch(&app);
+
+		/* A fill asked for: the frame that says so, then the fill (ws216-p006). */
+		if (app.fill_pending && !app.quit)
+			app_fill(&app);
 
 		/* The autosave, once the notebook has been still long enough and nothing is being drawn. */
 		now = notes_clock();
@@ -1301,6 +1343,8 @@ app_state(
 	state->page_count = app->document.page_count;
 	state->dirty = app->document.dirty;
 	state->erase_parts = app->erase_parts;
+	state->draw_tool = app->draw_tool;
+	state->draws_open = app->draws_open;
 
 	/* Undo while a change stands, redo while one was taken back. */
 	if (app->document.undo_done > 0U)
@@ -1355,6 +1399,9 @@ app_action(
 	uint32_t action)
 {
 	struct notes_edit which;
+	struct notes_tools tools;
+	unsigned changes;
+	unsigned was;
 	size_t page;
 	int closed;
 	int keeps;
@@ -1392,11 +1439,25 @@ app_action(
 			app_box_close(app);
 	}
 
-	/* A colour or a width chooses by its index. */
+	/* What the action does to the tools and the strip of drawing tools (ws216-p006). */
+	was = app->tool;
+	tools.tool = app->tool;
+	tools.draw_tool = app->draw_tool;
+	tools.draws_open = app->draws_open;
+	changes = notes_ui_tools_press(&tools, action);
+	app->tool = tools.tool;
+	app->draw_tool = tools.draw_tool;
+	app->draws_open = tools.draws_open;
+
+	/* The strip's opening and closing are logged for the tests. */
+	if ((changes & NOTES_TOOLS_OPENED) != 0U)
+		printf("NOTES DRAWS open\n");
+	if ((changes & NOTES_TOOLS_CLOSED) != 0U)
+		printf("NOTES DRAWS closed\n");
+
+	/* A colour or a width chooses by its index (a colour with the eraser goes back to the drawing tool). */
 	if (action >= NOTES_ACTION_COLOR && action < NOTES_ACTION_COLOR + NOTES_COLORS) {
 		app->color = action - NOTES_ACTION_COLOR;
-		if (app->tool == NOTES_ACTION_ERASER)
-			app->tool = NOTES_ACTION_PEN;
 		app->toolbar_dirty = 1;
 		app->redraw = 1;
 		return;
@@ -1414,19 +1475,28 @@ app_action(
 	switch (action) {
 	case NOTES_ACTION_PEN:
 	case NOTES_ACTION_HIGHLIGHTER:
+	case NOTES_ACTION_BRUSH:
+	case NOTES_ACTION_PENCIL:
+	case NOTES_ACTION_WATERCOLOR:
+	case NOTES_ACTION_FILL:
 	case NOTES_ACTION_SELECT:
 	case NOTES_ACTION_TEXT:
-		/* The tool (another than Select lets the chosen object go). */
-		app->tool = action;
+		/* The tool, chosen above (another than Select lets the chosen object go). */
 		if (action != NOTES_ACTION_SELECT)
 			app_deselect(app);
 		printf("NOTES TOOL %u name=%s\n", action, app_tool_name(action));
 		break;
+	case NOTES_ACTION_DRAW:
+		/* The drawing tool button (ws216-p006): back to the drawing tool used last, or the strip opened or closed above. */
+		if ((changes & NOTES_TOOLS_CHOSEN) != 0U) {
+			app_deselect(app);
+			printf("NOTES TOOL %u name=%s\n", app->tool, app_tool_name(app->tool));
+		}
+		break;
 	case NOTES_ACTION_ERASER:
 		/* The eraser; chosen again, it switches between whole strokes and parts (design-input-notes.md section 5.2). */
-		if (app->tool == NOTES_ACTION_ERASER)
+		if (was == NOTES_ACTION_ERASER)
 			app->erase_parts = !app->erase_parts;
-		app->tool = action;
 		app_deselect(app);
 		printf("NOTES TOOL %u parts=%d name=eraser\n", action, app->erase_parts);
 		break;
@@ -1677,6 +1747,18 @@ app_key(
 	case MAIN_KEY_T:
 		app_action(app, NOTES_ACTION_TEXT);
 		break;
+	case MAIN_KEY_B:
+		app_action(app, NOTES_ACTION_BRUSH);
+		break;
+	case MAIN_KEY_L:
+		app_action(app, NOTES_ACTION_PENCIL);
+		break;
+	case MAIN_KEY_W:
+		app_action(app, NOTES_ACTION_WATERCOLOR);
+		break;
+	case MAIN_KEY_F:
+		app_action(app, NOTES_ACTION_FILL);
+		break;
 	case MAIN_KEY_ENTER:
 		/* The chosen line's words in the text box (ws175-p008). */
 		if (app->selected != MAIN_NONE && app->selected_kind == PDF_EDIT_TEXT && !app->selected_fixed)
@@ -1686,7 +1768,15 @@ app_key(
 		app_action(app, NOTES_ACTION_FULLSCREEN);
 		break;
 	case MAIN_KEY_ESC:
-		/* The chosen object let go, or fullscreen left. */
+		/* The strip of drawing tools closed (ws216-p006), the chosen object let go, or fullscreen left. */
+		if (app->draws_open) {
+			app->draws_open = 0;
+			app->toolbar_dirty = 1;
+			app->redraw = 1;
+			printf("NOTES DRAWS closed\n");
+			fflush(stdout);
+			break;
+		}
 		if (app->selected != MAIN_NONE) {
 			app_deselect(app);
 			break;
@@ -1749,6 +1839,7 @@ app_input(
 	int inside;
 	int closed;
 	int near;
+	int taken;
 
 	/*
 	 * The pen near the window or gone tells a palm from a finger
@@ -1772,6 +1863,8 @@ app_input(
 	if (input->kind == NOTES_INPUT_MOTION) {
 		if (app->contact == MAIN_CONTACT_DRAW || app->contact == MAIN_CONTACT_ERASE)
 			app_sample(app, input);
+		if (app->contact == MAIN_CONTACT_FILL)
+			app_fill_track(app, input->x, input->y);
 		if (app->contact == MAIN_CONTACT_SELECT)
 			app_select_motion(app, input->x, input->y);
 		return;
@@ -1792,6 +1885,15 @@ app_input(
 	app->frame_build_us = 0;
 	app->frame_draw_us = 0;
 	app->frame_longest_us = 0;
+
+	/* A press while the strip of drawing tools is open is the strip's, or closes it (ws216-p006). */
+	if (app->draws_open) {
+		taken = app_strip_press(app, input->x, input->y);
+		if (taken) {
+			app->contact = MAIN_CONTACT_TOOLBAR;
+			return;
+		}
+	}
 
 	/* A press on the toolbar is its button's. */
 	if (input->y < (float)NOTES_TOOLBAR_HEIGHT) {
@@ -1845,10 +1947,19 @@ app_input(
 		return;
 	}
 
-	/* Otherwise a stroke starts, in the tool's colour and width. */
-	tool = NOTES_TOOL_PEN;
-	if (app->tool == NOTES_ACTION_HIGHLIGHTER)
-		tool = NOTES_TOOL_HIGHLIGHTER;
+	/* The fill tool fills where it is pressed, once it lifts close by (ws216-p006). */
+	if (app->tool == NOTES_ACTION_FILL) {
+		app->contact = MAIN_CONTACT_FILL;
+		app->fill_press_x = input->x;
+		app->fill_press_y = input->y;
+		app->fill_moved = 0;
+		return;
+	}
+
+	/* Otherwise a stroke starts, of the drawing tool's kind, in its colour and width. */
+	tool = notes_ui_tool(app->tool);
+	if (tool == NOTES_UI_NOT_DRAWING)
+		tool = NOTES_TOOL_PEN;
 	color = notes_ui_color(tool, app->color);
 	width = notes_ui_width(tool, app->width);
 	id = app->document.next_id;
@@ -1924,6 +2035,13 @@ app_touch(
 		taken = notes_touch_take_tap(&app->touch, &x, &y, &toolbar);
 		if (!taken)
 			break;
+
+		/* A tap while the strip of drawing tools is open is the strip's, or closes it (ws216-p006). */
+		if (app->draws_open) {
+			taken = app_strip_press(app, x, y);
+			if (taken)
+				continue;
+		}
 
 		/* A tap on the page: the box's own taps never come here. */
 		if (!toolbar) {
@@ -2080,6 +2198,31 @@ app_end_contact(
 	if (app->contact == MAIN_CONTACT_ERASE)
 		notes_document_erase_end(&app->document);
 
+	/* A press of the fill tool that lifted close by fills where it was pressed, after the frame that says so (ws216-p006). */
+	if (app->contact == MAIN_CONTACT_FILL) {
+		if (input != NULL)
+			app_fill_track(app, input->x, input->y);
+		if (input == NULL) {
+			/* A press whose release was lost fills nothing. */
+			printf("NOTES FILL lost\n");
+			fflush(stdout);
+		} else if (app->fill_moved) {
+			/* A drag fills nothing, and says how to fill (the user's choice, 2026-10-13). */
+			printf("NOTES FILL moved\n");
+			fflush(stdout);
+			app_status(app, "Tap to fill");
+		} else if (!app_on_page(app, app->fill_press_x, app->fill_press_y)) {
+			/* A tap off the page is told at once (review-1 L-6). */
+			app_notice(app, notes_fill_notice(EINVAL));
+		} else {
+			/* The fill, after the frame that says it is under way. */
+			app->fill_pending = 1;
+			app->fill_x = app->fill_press_x;
+			app->fill_y = app->fill_press_y;
+			app_status(app, "Filling...");
+		}
+	}
+
 	/* A drag of the Select tool is one change. */
 	if (app->contact == MAIN_CONTACT_SELECT) {
 		if (input != NULL)
@@ -2136,7 +2279,9 @@ app_finger(
 			app_input(app, &input);
 			app->finger_contact = 0;
 			if (app->contact == MAIN_CONTACT_DRAW ||
-			    app->contact == MAIN_CONTACT_ERASE)
+			    app->contact == MAIN_CONTACT_ERASE ||
+			    app->contact == MAIN_CONTACT_FILL ||
+			    app->contact == MAIN_CONTACT_TOOLBAR)
 				app->finger_contact = 1;
 			break;
 		case NOTES_TOUCH_WRITE_MOTION:
@@ -2721,10 +2866,19 @@ app_mark(
 		return;
 	}
 
-	/* The pen or the highlighter: a dot of its colour and about its width, on a white halo. */
-	tool = NOTES_TOOL_PEN;
-	if (app->tool == NOTES_ACTION_HIGHLIGHTER)
-		tool = NOTES_TOOL_HIGHLIGHTER;
+	/* The fill: a dot of its colour in a ring (ws216-p006). */
+	tool = notes_ui_tool(app->tool);
+	if (tool == NOTES_TOOL_FILL) {
+		color = notes_ui_color(tool, app->color);
+		app_circle(&app->frame, app->hover_x, app->hover_y, 6.5f, MAIN_MARK_HALO);
+		app_ring(&app->frame, app->hover_x, app->hover_y, 6.5f, 1.5f, MAIN_MARK_RING);
+		app_circle(&app->frame, app->hover_x, app->hover_y, 4.0f, color);
+		return;
+	}
+
+	/* A drawing tool: a dot of its colour and about its width, on a white halo. */
+	if (tool == NOTES_UI_NOT_DRAWING)
+		tool = NOTES_TOOL_PEN;
 	color = notes_ui_color(tool, app->color);
 	radius = notes_ui_width(tool, app->width) * view->scale * 0.5f;
 	if (radius < 2.0f)
@@ -3346,12 +3500,234 @@ app_tool_name(
 		return "select";
 	case NOTES_ACTION_TEXT:
 		return "text";
+	case NOTES_ACTION_BRUSH:
+		return "brush";
+	case NOTES_ACTION_PENCIL:
+		return "pencil";
+	case NOTES_ACTION_WATERCOLOR:
+		return "watercolor";
+	case NOTES_ACTION_FILL:
+		return "fill";
 	default:
 		break;
 	}
 
 	/* The pen. */
 	return "pen";
+}
+
+/*
+ * Takes a press (or a tap) while the strip of drawing tools is open
+ * (ws216-p006): on the strip, its button's tool; anywhere else below the
+ * toolbar's band, the strip closes and the press does nothing more (it
+ * neither draws nor fills).  A press on the toolbar's band is left to the
+ * toolbar (its button closes the strip as it is carried out).  Returns 1
+ * when the press was taken.
+ */
+static int
+app_strip_press(
+	struct notes_app *app,
+	float x,
+	float y)
+{
+	uint32_t action;
+	int on_strip;
+
+	/* On the strip: its button's tool. */
+	on_strip = notes_ui_in_strip(&app->ui, x, y);
+	if (on_strip) {
+		action = notes_ui_hit(&app->ui, x, y);
+		if (action != NOTES_ACTION_NONE)
+			app_action(app, action);
+		return 1;
+	}
+
+	/* On the toolbar's band: the toolbar's. */
+	if (y < (float)NOTES_TOOLBAR_HEIGHT)
+		return 0;
+
+	/* Elsewhere the strip closes, and the press is spent. */
+	app->draws_open = 0;
+	app->toolbar_dirty = 1;
+	app->redraw = 1;
+	printf("NOTES DRAWS closed\n");
+	fflush(stdout);
+	return 1;
+}
+
+/*
+ * Fills where a press of the fill tool asked (ws216-p006), after a frame
+ * that shows the status "Filling..." (the fill holds the window while it
+ * works, review-1 L-8 of ws216-p005): the page's background drawn for
+ * each band when the page has one, the fill put on the page, and a
+ * refusal's notice shown.
+ */
+static void
+app_fill(
+	struct notes_app *app)
+{
+	const struct notes_page *page;
+	notes_fill_background *background;
+	const char *notice;
+	size_t place;
+	float x;
+	float y;
+	int shown;
+	int error;
+
+	/* The frame that says the fill is under way. */
+	app->fill_pending = 0;
+	app_draw(app);
+
+	/* The page's point under the press. */
+	page = app->document.pages[app->page];
+	x = (app->fill_x - app->view.x) / app->view.scale;
+	y = (app->fill_y - app->view.y) / app->view.scale;
+
+	/*
+	 * The page's background is drawn for each band exactly when the screen
+	 * draws one for the page (app_background(), which makes its display
+	 * list; review-1 C-1); otherwise the page is white paper.
+	 */
+	background = NULL;
+	shown = app_background(app, page, app->view.scale);
+	if (shown)
+		background = app_fill_background;
+
+	/* The fill. */
+	error = notes_fill_page(&app->renderer, &app->document, app->page, x, y, notes_ui_color(NOTES_TOOL_FILL, app->color), background, app, &place);
+
+	/* The renderer's background picture holds the last band now: drawn for the page again when next needed. */
+	if (background != NULL)
+		app->background_page = NULL;
+
+	/* A refusal is told; a fill is a change, and the status that said it was under way goes. */
+	if (error != 0) {
+		notice = notes_fill_notice(error);
+		app_notice(app, notice);
+	} else {
+		if (strcmp(app->status, "Filling...") == 0) {
+			app->status[0] = '\0';
+			app->status_until = 0;
+		}
+		app_changed(app);
+	}
+
+	/* The window shows the result. */
+	app->toolbar_dirty = 1;
+	app->redraw = 1;
+}
+
+/* Tells whether a point of the window is on the page shown. */
+static int
+app_on_page(
+	const struct notes_app *app,
+	float x,
+	float y)
+{
+	const struct notes_page *page;
+	float px;
+	float py;
+
+	/* The page's point under it. */
+	page = app->document.pages[app->page];
+	px = (x - app->view.x) / app->view.scale;
+	py = (y - app->view.y) / app->view.scale;
+
+	/* Outside the page's sides. */
+	if (px < 0.0f || px >= page->width)
+		return 0;
+	if (py < 0.0f || py >= page->height)
+		return 0;
+
+	/* On the page. */
+	return 1;
+}
+
+/* Shows a notice: a status that lasts MAIN_NOTICE_MS (review-1 L-6). */
+static void
+app_notice(
+	struct notes_app *app,
+	const char *text)
+{
+	/* The status, and its longer time. */
+	app_status(app, text);
+	app->status_until = notes_clock() + MAIN_NOTICE_MS;
+}
+
+/* Notes how far a press of the fill tool has moved: past MAIN_FILL_SLOP it fills nothing. */
+static void
+app_fill_track(
+	struct notes_app *app,
+	float x,
+	float y)
+{
+	float distance;
+
+	/* The distance from where it was pressed. */
+	distance = hypotf(x - app->fill_press_x, y - app->fill_press_y);
+	if (distance > MAIN_FILL_SLOP)
+		app->fill_moved = 1;
+}
+
+/*
+ * Draws the rows of the shown page's background for a band of the fill
+ * (the notes_fill_background function, ws216-p006): the page's display
+ * list (made as the screen makes it) drawn on the CPU at the band's scale
+ * from its top row, into the renderer's background picture.
+ */
+static int
+app_fill_background(
+	void *context,
+	uint32_t top,
+	uint32_t width,
+	uint32_t height,
+	double scale)
+{
+	struct notes_app *app;
+	const struct notes_page *page;
+	unsigned char *target;
+	uint32_t *pixels;
+	size_t count;
+	size_t index;
+	size_t row;
+	size_t pitch;
+	int error;
+
+	/* The page's display list, which app_fill() made current with the screen's background. */
+	app = context;
+	page = app->document.pages[app->page];
+	if (app->background_list == NULL || app->background_list_page != page || app->background_failed)
+		return EIO;
+
+	/* The band's pixels on the CPU: white, then the page over it from the band's top. */
+	count = (size_t)width * (size_t)height;
+	pixels = malloc(count * sizeof(*pixels));
+	if (pixels == NULL)
+		return ENOMEM;
+	for (index = 0; index < count; index++)
+		pixels[index] = 0xffffffffU;
+	error = pdf_display_list_rasterize(app->background_list, pixels, width, width, height, scale, 0.0, -(double)top);
+	if (error != 0) {
+		free(pixels);
+		return error;
+	}
+
+	/* The renderer's background picture of the band's size (memory refused: a smaller band, review-1 L-5), the rows copied in. */
+	error = (int)notes_renderer_background(&app->renderer, width, height, &target, &pitch);
+	if (error == (int)VK_ERROR_OUT_OF_DEVICE_MEMORY || error == (int)VK_ERROR_OUT_OF_HOST_MEMORY) {
+		free(pixels);
+		return ENOMEM;
+	} else if (error != (int)VK_SUCCESS || target == NULL) {
+		free(pixels);
+		return EIO;
+	}
+	for (row = 0; row < height; row++)
+		memcpy(target + row * pitch, pixels + row * width, (size_t)width * sizeof(*pixels));
+	free(pixels);
+
+	/* Succeeded: the band's background. */
+	return 0;
 }
 
 /*

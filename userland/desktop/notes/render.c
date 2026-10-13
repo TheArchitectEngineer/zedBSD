@@ -699,12 +699,19 @@ notes_renderer_band(
 
 /*
  * Frees the fill's band: its pass, picture, stencil buffer, framebuffer
- * and buffer, where made (the device must not use them any more).
+ * and buffer, where made, once the device is idle.
  */
 void
 notes_renderer_band_free(
 	struct notes_renderer *renderer)
 {
+	/*
+	 * Nothing runs that uses them: a band whose fence timed out or failed
+	 * may still be drawn (p005 code review 3).
+	 */
+	if (renderer->band != VK_NULL_HANDLE || renderer->band_buffer != VK_NULL_HANDLE)
+		(void)vkDeviceWaitIdle(renderer->device);
+
 	/* The framebuffer, the picture's view, image and memory. */
 	if (renderer->band_framebuffer != VK_NULL_HANDLE)
 		vkDestroyFramebuffer(renderer->device, renderer->band_framebuffer, NULL);

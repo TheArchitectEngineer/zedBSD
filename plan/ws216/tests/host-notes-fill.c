@@ -79,6 +79,13 @@ static unsigned char grain_tile[NOTES_GRAIN_SIDE * NOTES_GRAIN_SIDE];
 /* The raster the renderer's model copies into its band buffer, and what the copies saw. */
 static struct raster *band_raster;
 static unsigned band_wrong;
+
+/* ws216-p006: the background painter's calls, the band top it was last given, whether it fails, and whether the bands show it. */
+static unsigned painted;
+static uint32_t painted_top;
+static uint32_t painted_height;
+static int paint_fails;
+static int band_background;
 static const struct notes_page *band_page;
 
 /* The checks run, and those that failed. */
@@ -114,6 +121,7 @@ static void test_seen(void);
 static void test_eraser(void);
 static void test_page(const char *dir);
 static void copy_band(unsigned char *bytes, uint32_t width, uint32_t height);
+static int paint_band(void *context, uint32_t top, uint32_t width, uint32_t height, double scale);
 
 int
 main(
@@ -787,6 +795,7 @@ test_review(void)
 	struct raster raster;
 	struct notes_fill_region region;
 	double box[4];
+	unsigned dy;
 	int error;
 
 	/* M-2: a fill put above (z above 0) stops short of a thin line's edge: it does not cover it. */
@@ -807,6 +816,15 @@ test_review(void)
 	raster_ring(&raster, 200.0, 200.0, 0.9, 0.5, 0.0, 0.0, 0x00000000U, 1.0, PAINT_OVER);
 	error = find(&raster, 200.0f, 200.0f, &region);
 	check(error == ENOENT || (error == 0 && region.contour_count >= 1U && area_of(&region, 0) > 0.0), "tiny ring: no area, or an outside (%d)", error);
+	notes_fill_region_free(&region);
+	raster_close(&raster);
+
+	/* p005 code review M2: a dot of 0.75 point tapped at its middle is too small to fill (ENOENT, nothing allocated past the page). */
+	raster_open(&raster, 100.0f, 100.0f);
+	for (dy = 0; dy < 3U; dy++)
+		memset(raster.rgba + ((size_t)(198U + dy) * raster.width + 198U) * 4U, 0, 3U * 4U);
+	error = find(&raster, 49.875f, 49.875f, &region);
+	check(error == ENOENT, "dot: too small (%d)", error);
 	notes_fill_region_free(&region);
 	raster_close(&raster);
 
@@ -1182,6 +1200,11 @@ copy_band(
 
 	/* The band's draws: the page, and three for each shape of a stroke that reaches the rows. */
 	expected = 1U;
+	if (band_background) {
+		expected++;
+		if (painted_top != (uint32_t)top || painted_height != height)
+			band_wrong++;
+	}
 	top_points = (double)top / band_raster->scale - 1.0;
 	bottom_points = (double)(top + (long)height) / band_raster->scale + 1.0;
 	for (index = 0; index < band_page->stroke_count; index++) {
@@ -1192,6 +1215,34 @@ copy_band(
 	}
 	if (mock.draw_count != expected || mock.passes != 1U)
 		band_wrong++;
+}
+
+/* U4: draws a band's background into the renderer's background picture (white), or fails when told to. */
+static int
+paint_band(
+	void *context,
+	uint32_t top,
+	uint32_t width,
+	uint32_t height,
+	double scale)
+{
+	unsigned char *target;
+	size_t pitch;
+	uint32_t row;
+	VkResult error;
+
+	(void)scale;
+	if (paint_fails)
+		return EIO;
+	error = notes_renderer_background(context, width, height, &target, &pitch);
+	if (error != VK_SUCCESS || target == NULL)
+		return EIO;
+	for (row = 0; row < height; row++)
+		memset(target + (size_t)row * pitch, 0xff, (size_t)width * 4U);
+	painted++;
+	painted_top = top;
+	painted_height = height;
+	return 0;
 }
 
 /* F7, F9: notes_fill_page() through the renderer's model, undo and redo, and the journal. */
@@ -1247,7 +1298,7 @@ test_page(
 	band_wrong = 0;
 
 	/* Filled inside the ring, on the paper between the strokes: at the bottom. */
-	error = notes_fill_page(&renderer, &document, 0, 200.0f, 300.0f, 0x2a9d8f00U, 0, &place);
+	error = notes_fill_page(&renderer, &document, 0, 200.0f, 300.0f, 0x2a9d8f00U, NULL, NULL, &place);
 	check(error == 0 && place == 0U, "page: filled at the bottom (%d, %lu)", error, (unsigned long)place);
 	fill = document.pages[0]->strokes[0];
 	check(fill->tool == NOTES_TOOL_FILL && fill->color == 0x2a9d8fffU && fill->contour_count == 1U, "page: the fill's stroke, opaque");
@@ -1262,7 +1313,7 @@ test_page(
 	check(log_count("NOTES FILL made place=0") == 1U, "page: the fill is logged");
 
 	/* Filled on the brush: just above it. */
-	error = notes_fill_page(&renderer, &document, 0, 200.0f, 250.0f, 0xe9c46a00U, 0, &place);
+	error = notes_fill_page(&renderer, &document, 0, 200.0f, 250.0f, 0xe9c46a00U, NULL, NULL, &place);
 	check(error == 0 && place == 3U && document.pages[0]->strokes[3]->tool == NOTES_TOOL_FILL, "page: filled above the brush (%lu)", (unsigned long)place);
 	check(band_wrong == 0U, "page: the second fill's bands");
 
@@ -1286,21 +1337,46 @@ test_page(
 		notes_document_free(&recovered);
 	}
 
+	/* A second tap on the same fill: told, not filled again (p006 review-1 C-5). */
+	index = document.pages[0]->stroke_count;
+	error = notes_fill_page(&renderer, &document, 0, 200.0f, 250.0f, 0xe9c46a00U, NULL, NULL, &place);
+	check(error == EEXIST && document.pages[0]->stroke_count == index, "page: the same fill again is EEXIST (%d)", error);
+	check(strcmp(notes_fill_notice(EEXIST), "Already filled") == 0, "page: its notice");
+
 	/* A point off the page, and a page of dots too complex: nothing changes. */
-	check(notes_fill_page(&renderer, &document, 0, 700.0f, 300.0f, 0U, 0, &place) == EINVAL, "page: off the page");
+	check(notes_fill_page(&renderer, &document, 0, 700.0f, 300.0f, 0U, NULL, NULL, &place) == EINVAL, "page: off the page");
 	raster_close(&raster);
 	raster_open(&raster, TEST_A4_WIDTH, TEST_A4_HEIGHT);
 	raster_dots(&raster, 6.0, 0.75);
 	band_raster = &raster;
-	check(notes_fill_page(&renderer, &document, 0, 0.5f, 0.5f, 0U, 0, &place) == E2BIG && document.pages[0]->stroke_count == 5U, "page: too complex");
+	check(notes_fill_page(&renderer, &document, 0, 0.5f, 0.5f, 0U, NULL, NULL, &place) == E2BIG && document.pages[0]->stroke_count == 5U, "page: too complex");
 	check(log_count("NOTES FILL refused reason=complex") == 1U, "page: the refusal is logged");
 	check(strcmp(notes_fill_notice(E2BIG), "The area is too complex to fill") == 0 && notes_fill_notice(0) == NULL, "page: the notices");
 
 	/* A device that refuses every band. */
 	mock.image_limit = 64U * 1024U;
-	check(notes_fill_page(&renderer, &document, 0, 200.0f, 300.0f, 0U, 0, &place) == ENOMEM, "page: a device that refuses the bands");
+	check(notes_fill_page(&renderer, &document, 0, 200.0f, 300.0f, 0U, NULL, NULL, &place) == ENOMEM, "page: a device that refuses the bands");
 	check(renderer.band == VK_NULL_HANDLE, "page: nothing of the band is left");
 
+	/* U4 (ws216-p006): a background drawn for each band, at the band's top and size, shown in the band; its failure fails the fill. */
+	mock.image_limit = 16U * 1024U * 1024U;
+	raster_close(&raster);
+	raster_open(&raster, TEST_A4_WIDTH, TEST_A4_HEIGHT);
+	raster_ring(&raster, 300.0, 600.0, 50.0, 2.0, 0.0, 0.0, 0x00000000U, 1.0, PAINT_OVER);
+	band_raster = &raster;
+	band_background = 1;
+	band_wrong = 0;
+	painted = 0;
+	error = notes_fill_page(&renderer, &document, 0, 300.0f, 600.0f, 0x2a9d8f00U, paint_band, &renderer, &place);
+	check(error == 0 && painted >= 1U && band_wrong == 0U, "background: each band painted at its top and size and shown (%d, %u painted, %u wrong)", error,
+	      painted, band_wrong);
+	paint_fails = 1;
+	index = document.pages[0]->stroke_count;
+	error = notes_fill_page(&renderer, &document, 0, 300.0f, 600.0f, 0x1d4ed800U, paint_band, &renderer, &place);
+	check(error == EIO && document.pages[0]->stroke_count == index, "background: a painter that fails, EIO and no change (%d)", error);
+	check(log_count("NOTES FILL background failed") == 1U, "background: the failure is logged");
+	paint_fails = 0;
+	band_background = 0;
 	raster_close(&raster);
 	band_raster = NULL;
 	notes_journal_destroy(document.journal);

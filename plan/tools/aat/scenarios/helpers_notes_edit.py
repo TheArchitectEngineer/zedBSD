@@ -40,6 +40,8 @@ TEXT = 41
 EDIT_TEXT = 42
 FONT = 43
 PEN = 1
+# ws216-p006: the drawing tool button (the drawing tool used last, or its strip of drawing tools).
+DRAW = 48
 
 # edit-basic.pdf (make-edit-samples.py's BASIC_*): US Letter, the paragraph's baselines from 700 down by 20 at x 72,
 # 14 points; the image's box (x, y, width, height) in PDF points.
@@ -102,6 +104,11 @@ class Notes:
 		if wait:
 			self.item.check(line, f"no line {wait!r} after the toolbar's {what or action}")
 		return line
+
+	def pen(self) -> str | None:
+		"""Chooses the pen with its key P (ws216-p006: the toolbar's Pen is on the strip of drawing tools now, whose
+		buttons are logged only once the strip is drawn; the key is one step and needs no place)."""
+		return self.act(lambda: run.key("p"), r"NOTES TOOL 1 name=pen", "the key P (the pen)")
 
 	def act(self, action, wait: str, what: str, timeout: float = 10) -> str:
 		"""Does something (a function of no arguments) and waits for a line after it."""
@@ -520,7 +527,7 @@ def pdf_edit_multipage(item):
 	run.shot(item, "page-3-deleted")
 
 	# A pen line on page 3.
-	notes.press(PEN, r"NOTES TOOL 1 name=pen", "Pen")
+	notes.pen()
 	start = notes.at(300, 300)
 	stroke = notes.act(lambda: run.press_path([(start[0] + step * 20, start[1] + step * 8) for step in range(8)]),
 		r"NOTES STROKE page=2 ", "drew a line on page 3")

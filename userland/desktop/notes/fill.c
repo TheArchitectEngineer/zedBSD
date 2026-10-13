@@ -227,6 +227,27 @@ notes_fill_scale(
 }
 
 /*
+ * Tells how many pixels wide a page is drawn for the fill: its width at
+ * notes_fill_scale(), at most FILL_SIDE_MAX (the one place both the area's
+ * search and the bands' drawing take it from, p005 code review 1).
+ */
+uint32_t
+notes_fill_width(
+	float page_width,
+	float page_height)
+{
+	uint32_t width;
+
+	/* The width at the scale, kept within the widest image. */
+	width = (uint32_t)ceil((double)page_width * notes_fill_scale(page_width, page_height));
+	if (width > (uint32_t)FILL_SIDE_MAX)
+		width = (uint32_t)FILL_SIDE_MAX;
+
+	/* Reports the width. */
+	return width;
+}
+
+/*
  * Finds the area the fill tool paints from a point of a page (points), as
  * contours of page points: the first the area's outside, the others its
  * holes, turning the other way (filled by the nonzero rule).  under tells
@@ -278,9 +299,7 @@ notes_fill_find(
 
 	/* The page in pixels at the fill's scale, no wider than the widest image. */
 	map.scale = notes_fill_scale(page_width, page_height);
-	map.width = (uint32_t)ceil((double)page_width * map.scale);
-	if (map.width > (uint32_t)FILL_SIDE_MAX)
-		map.width = (uint32_t)FILL_SIDE_MAX;
+	map.width = notes_fill_width(page_width, page_height);
 	map.height = (uint32_t)ceil((double)page_height * map.scale);
 	map.band = band;
 	map.context = context;
@@ -351,6 +370,15 @@ notes_fill_find(
 		}
 		if (!narrow)
 			break;
+	}
+
+	/*
+	 * A seed narrower than every closing, or an area of no pixel (a dot too
+	 * small to hold one, p005 code review M2), is too small to fill.
+	 */
+	if (narrow || map.area == 0U) {
+		fill_map_free(&map);
+		return ENOENT;
 	}
 
 	/*

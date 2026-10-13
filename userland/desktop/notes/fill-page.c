@@ -31,24 +31,27 @@
 #define FILL_PAGE_MARGIN	1.0f
 
 /*
- * What one fill draws its bands with: the renderer, the page, whether the
- * renderer's background picture shows it, the fill's scale and the page's
- * width in pixels, and the frame each band is built in (freed after the
- * fill).
+ * What one fill draws its bands with: the renderer, the page, the
+ * function that draws its background's rows (NULL: white paper) and its
+ * context, the fill's scale and the page's width in pixels, the frame each
+ * band is built in (freed after the fill), and the device's last answer.
  */
 struct fill_page {
 	struct notes_renderer *renderer;
 	const struct notes_page *page;
-	int background;
+	notes_fill_background *background;
+	void *context;
 	double scale;
 	uint32_t width;
 	struct notes_frame frame;
 	VkResult refused;
+	uint64_t background_us;
 };
 
 static int fill_page_band(void *context, uint32_t top, uint32_t height, unsigned char *pixels);
 static int fill_page_stroke(const struct notes_fill_region *region, struct notes_document *document, uint32_t color, struct notes_stroke **made);
 static uint64_t fill_page_now(void);
+static uint64_t fill_page_now_us(void);
 
 /*
  * Fills the area around a point of a page (points) with a colour
@@ -57,10 +60,12 @@ static uint64_t fill_page_now(void);
  * the bottom when the paper is seen), as a change the user can undo; the
  * journal logs it.
  *
- * background tells that the renderer's background picture holds the
- * page's PDF page as the screen shows it (drawn under the strokes).  *place
+ * background, when not NULL, draws the rows of the page's background
+ * (the PDF's page under the strokes) for each band, at the band's scale
+ * (ws216-p006); without it the page is white paper.  *place
  * tells where the fill went among the page's strokes.  Returns 0, EINVAL
- * for a point off the page, ENOENT for an area too small, E2BIG for an
+ * for a point off the page, EEXIST when a fill of the colour is seen at
+ * the point already, ENOENT for an area too small, E2BIG for an
  * area too complex to fill (the page is not changed then), ENOMEM, or EIO
  * when the device failed.
  */
@@ -72,7 +77,8 @@ notes_fill_page(
 	float x,
 	float y,
 	uint32_t color,
-	int background,
+	notes_fill_background *background,
+	void *context,
 	size_t *place)
 {
 	struct fill_page fill;
@@ -96,9 +102,25 @@ notes_fill_page(
 	fill.renderer = renderer;
 	fill.page = target;
 	fill.background = background;
+	fill.context = context;
 	fill.scale = notes_fill_scale(target->width, target->height);
-	fill.width = (uint32_t)ceil((double)target->width * fill.scale);
+	fill.width = notes_fill_width(target->width, target->height);
 	fill.refused = VK_SUCCESS;
+
+	/*
+	 * A fill of the same colour seen at the point already fills it (a second
+	 * tap, or a finger's double tap that does not zoom while it writes): it
+	 * is told, not filled again (p006 review-1 C-5).
+	 */
+	found = notes_document_seen_at(document, page, x, y, &seen);
+	if (found) {
+		stroke = target->strokes[seen];
+		if (stroke->tool == NOTES_TOOL_FILL && stroke->color == (color | 0xffU)) {
+			printf("NOTES FILL refused reason=same place=%lu\n", (unsigned long)seen);
+			fflush(stdout);
+			return EEXIST;
+		}
+	}
 
 	/*
 	 * Where it goes: just above the stroke seen at the point, or under
@@ -106,7 +128,6 @@ notes_fill_page(
 	 * bound it does it reach further under them (review-1 M-2: above a
 	 * stroke it would cover the edges of the lines round it).
 	 */
-	found = notes_document_seen_at(document, page, x, y, &seen);
 	if (found)
 		*place = seen + 1U;
 
@@ -116,6 +137,8 @@ notes_fill_page(
 	notes_renderer_band_free(renderer);
 	notes_frame_free(&fill.frame);
 	finished = fill_page_now();
+	printf("NOTES FILL bands=%u background_us=%lu\n", region.bands, (unsigned long)fill.background_us);
+	fflush(stdout);
 
 	/* An area too complex is refused, with what it would have been. */
 	if (error == E2BIG) {
@@ -197,6 +220,8 @@ notes_fill_notice(
 		return "Fill inside the page";
 	case ENOENT:
 		return "The area is too small to fill";
+	case EEXIST:
+		return "Already filled";
 	default:
 		break;
 	}
@@ -226,6 +251,7 @@ fill_page_band(
 	float page_width;
 	float page_height;
 	size_t index;
+	uint64_t started;
 	VkResult result;
 	int error;
 
@@ -241,11 +267,30 @@ fill_page_band(
 	page_top = (float)top / view.scale - FILL_PAGE_MARGIN;
 	page_bottom = (float)(top + height) / view.scale + FILL_PAGE_MARGIN;
 
-	/* The white page, and the PDF's page over it when the screen shows one. */
+	/*
+	 * The background's rows, drawn for the band at its scale (ws216-p006);
+	 * one that cannot be drawn fails the fill, which would flood past the
+	 * PDF's lines on white paper.
+	 */
+	if (fill->background != NULL) {
+		started = fill_page_now_us();
+		error = fill->background(fill->context, top, fill->width, height, fill->scale);
+		fill->background_us += fill_page_now_us() - started;
+		if (error == ENOMEM) {
+			/* Memory refused for the band's background: the fill draws a smaller band (review-1 L-5). */
+			return ENOMEM;
+		} else if (error != 0) {
+			printf("NOTES FILL background failed error=%d\n", error);
+			fflush(stdout);
+			return EIO;
+		}
+	}
+
+	/* The white page, and the background's rows over it, one to one. */
 	notes_frame_begin(&fill->frame);
 	notes_frame_rect(&fill->frame, 0.0f, view.y, page_width, page_height, 0xffffffffU);
-	if (fill->background)
-		notes_frame_texture(&fill->frame, NOTES_TEXTURE_BACKGROUND, 0.0f, view.y, page_width, page_height);
+	if (fill->background != NULL)
+		notes_frame_texture(&fill->frame, NOTES_TEXTURE_BACKGROUND, 0.0f, 0.0f, (float)fill->width, (float)height);
 
 	/* The strokes that reach the band, bottom first, clipped to the page. */
 	notes_frame_clip(&fill->frame, 1, 0.0f, view.y, page_width, page_height);
@@ -282,7 +327,9 @@ fill_page_band(
 
 /*
  * Makes the fill's stroke from an area: its corners the samples, its
- * contours the area's, its colour opaque, the next number of the document.
+ * contours the area's, its colour opaque, the next number of the document
+ * (taken when the stroke goes on the page: notes_document_insert_stroke()
+ * moves the next number on, p005 code review 5).
  */
 static int
 fill_page_stroke(
@@ -301,7 +348,6 @@ fill_page_stroke(
 	stroke = notes_stroke_create(document->next_id, NOTES_TOOL_FILL, color | 0xffU, NOTES_FILL_WIDTH, 0U);
 	if (stroke == NULL)
 		return ENOMEM;
-	document->next_id++;
 
 	/* Each corner is a sample. */
 	memset(&point, 0, sizeof(point));
@@ -334,6 +380,22 @@ fill_page_stroke(
 	/* Succeeded: the stroke for the page. */
 	*made = stroke;
 	return 0;
+}
+
+/* Reads the monotonic clock in microseconds. */
+static uint64_t
+fill_page_now_us(void)
+{
+	struct timespec now;
+	int error;
+
+	/* The clock, or nothing when it cannot be read. */
+	error = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (error != 0)
+		return 0;
+
+	/* Reports the microseconds. */
+	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
 }
 
 /* Reads the monotonic clock in milliseconds. */
