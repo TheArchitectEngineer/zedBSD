@@ -360,7 +360,10 @@ struct tcp_stats_header {
  * wait, 8 last ACK, 9 time wait).  An IPv4 address is in the first 4 bytes
  * of its field, in network order.  backoff is how many times the oldest
  * outstanding segment has been resent; rto_ms is the timeout it waits now
- * and retransmit_in_ms how long is left of it (0: no segment outstanding).
+ * (the connection's, doubled for each resend) and retransmit_in_ms how long
+ * is left of it (0: no segment outstanding).  With TCP_STATS_HAVE_RTT,
+ * srtt_us and rttvar_us are RFC 6298's smoothed round-trip time and its
+ * variation (both 0 before the first sample; ws220-p004).
  * send_window is the window the peer last advertised; receive_window the
  * one this end last put in a segment.  send_next is the end of what was
  * handed to the device (RFC 9293's SND.NXT; segments queued behind a

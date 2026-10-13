@@ -181,6 +181,24 @@ struct tcp_socket {
 	 */
 	unsigned retransmit_refused;
 	/*
+	 * The round-trip time estimate of RFC 6298 (ws220-p004): whether a
+	 * sample has been taken, the smoothed round-trip time and its variation
+	 * in microseconds, and the retransmission timeout, in clock ticks before
+	 * any backoff (0 stands for the initial second; a handshake whose SYN
+	 * was resent sets three seconds before any sample).  One segment at a
+	 * time is timed:
+	 * while rtt_timing is set, the one ending at rtt_sequence, handed to
+	 * the device at tick rtt_start.  A resend by the timer stops the
+	 * timing (Karn's rule), and the next segment sent starts it again.
+	 */
+	unsigned rtt_measured;
+	uint32_t srtt_us;
+	uint32_t rttvar_us;
+	uint64_t rto;
+	unsigned rtt_timing;
+	uint32_t rtt_sequence;
+	uint64_t rtt_start;
+	/*
 	 * TCP_NODELAY as the caller set it, and the idle-probe state for
 	 * SO_KEEPALIVE: when the next probe is due and how many have gone
 	 * unanswered.

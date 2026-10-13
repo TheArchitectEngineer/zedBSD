@@ -157,6 +157,26 @@ connect_unresolved() {
 	fi
 }
 connect_unresolved connect-unresolved --connect-unresolved
+# ws220-p004: the round-trip estimate (RFC 6298): A's SRTT on the LAN (0.2 ms, within a tick) and with 10 ms of round
+# trip, and net.tcpstats gives it.
+scenario rtt-estimate-lan 30 --bytes 16777216 --expect-srtt-us 0:2000
+scenario rtt-estimate-10ms 0.5 --bytes 4194304 --delay-us 5000 --expect-srtt-us 9000:13000
+# ws220-p004: A's first SYN is lost: the data starts with a timeout of 3 s (RFC 6298 section 5.7) until the first sample.
+syn_retried() {
+	name=$1
+	shift
+	if [ "$only" != "  " ] && ! echo "$only" | grep -q " $name "; then
+		return 0
+	fi
+	scenario "$name" 30 "$@"
+	connected=$(timeout 600 "$out/tcp-model" --quiet "$@" | grep '^tcp-model: connected')
+	echo "$name: $connected"
+	if ! echo "$connected" | grep -q ' rto_ms=3000 '; then
+		echo "  FAIL: $name: the connection did not start with a 3 s timeout"
+		status=1
+	fi
+}
+syn_retried syn-retried --bytes 16777216 --lose-first-syn
 # ws220-p002: the link loses everything 500 ms in: A gives up after R2 (at least 100 s; 1+2+4+8+16+32+60 s of resends).
 giveup() {
 	name=$1

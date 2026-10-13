@@ -25,7 +25,7 @@
  *             [--overlap-ab P] [--overlap-bytes K] [--blind-at-ms T]
  *             [--blackhole-at-ms T] [--connect-blackhole] [--second-writer]
  *             [--unresolved-at-ms T --unresolved-ms D] [--connect-unresolved]
- *             [--expect-in-order]
+ *             [--expect-in-order] [--expect-srtt-us LOW:HIGH] [--lose-first-syn]
  *             [--quiet]
  *
  * --loss-ab is the share (percent) of the frames from A to B (the data) the
@@ -65,10 +65,15 @@
  * for each resend of the timer, and a neighbour that never answers ends
  * the connection after R2.  --connect-unresolved refuses A's frames so
  * from the start: the connect gives up after R2 for a SYN.
+ * --expect-srtt-us LOW:HIGH checks A's smoothed round-trip time at the end
+ * (ws220-p004) and that net.tcpstats gives it.  --lose-first-syn loses A's
+ * first SYN, so the connection starts its data with RFC 6298's 3 seconds;
+ * the line "connected" shows A's timeout then.
  */
 
 #include "kern/net/tcp-socket.h"
 #include "kern/net/packet-buf.h"
+#include "kern/clock.h"
 #include "kern/net/socket.h"
 #include "model.h"
 #include "src/kern/net/internal.h"
@@ -157,6 +162,9 @@ struct model_settings {
 	uint64_t unresolved_at_ns;
 	uint64_t unresolved_ns;
 	int expect_in_order;
+	uint64_t expect_srtt_low;
+	uint64_t expect_srtt_high;
+	int lose_first_syn;
 	int quiet;
 };
 
@@ -196,6 +204,9 @@ static int worker_pass;
 static uint64_t transfer_start_ns;
 static uint64_t unresolved_refusals;
 
+/* Whether A's first SYN has been lost (--lose-first-syn). */
+static int first_syn_lost;
+
 /* The reader on B: bytes read, bytes that differed from what was written, and the bytes it may read now. */
 static uint64_t received;
 static uint64_t corrupt;
@@ -214,6 +225,7 @@ static int blind_given;
 
 static int tcp_socket_create_inet(int type, int protocol, struct socket **result);
 static void parse_settings(int argc, char **argv);
+static void parse_range(const char *text, uint64_t *low, uint64_t *high);
 static uint64_t isn_tick_base(uint64_t wrap_before);
 static double random_unit(void);
 static uint8_t stream_byte(uint64_t offset);
@@ -250,6 +262,7 @@ main(
 	uint64_t start_ns;
 	uint64_t interval_bytes;
 	uint64_t out_of_order;
+	struct tcp_socket *a;
 	double rate;
 	double min_rate;
 	double mean;
@@ -294,8 +307,9 @@ main(
 	}
 	stream_sequence = tcp_of(sender)->send_unacknowledged;
 	transfer_start_ns = now_ns;
-	printf("tcp-model: connected at %llu us, A's first sequence number %u\n",
-	    (unsigned long long)(now_ns / 1000U), stream_sequence);
+	printf("tcp-model: connected at %llu us, A's first sequence number %u, rto_ms=%llu srtt_us=%u\n",
+	    (unsigned long long)(now_ns / 1000U), stream_sequence,
+	    (unsigned long long)kern_ticks_to_ms(tcp_of(sender)->rto), tcp_of(sender)->srtt_us);
 
 	/* The transfer, reported each interval until the reader has it all or the time is up. */
 	send_left = settings.bytes;
@@ -378,6 +392,18 @@ main(
 		return 1;
 	}
 
+	/* A's round-trip estimate, when the scenario says where it should lie (ws220-p004). */
+	a = tcp_of(sender);
+	if (settings.expect_srtt_high != 0) {
+		printf("rtt: srtt_us=%u rttvar_us=%u rto_ms=%llu\n", a->srtt_us, a->rttvar_us,
+		    (unsigned long long)kern_ticks_to_ms(a->rto));
+		if (a->srtt_us < settings.expect_srtt_low || a->srtt_us > settings.expect_srtt_high) {
+			printf("check: FAIL: A's srtt %u us outside %llu..%llu\n", a->srtt_us,
+			    (unsigned long long)settings.expect_srtt_low, (unsigned long long)settings.expect_srtt_high);
+			return 1;
+		}
+	}
+
 	/* net.tcpstats as the kernel copies it out must agree with the sockets (of a connection still up). */
 	if (transfer_error == 0) {
 		error = check_tcpstats();
@@ -437,6 +463,13 @@ model_link_output(
 		second_writer_active = 1;
 		run_writer();
 		second_writer_active = 0;
+	}
+
+	/* The link loses A's first SYN (it goes to the device and no further). */
+	if (host == 0U && settings.lose_first_syn && !first_syn_lost && (packet->data[13] & 0x02U) != 0) {
+		first_syn_lost = 1;
+		packet_buf_free(packet);
+		return 0;
 	}
 
 	/* IPv4 refuses every frame of the connect whose neighbour never resolves. */
@@ -506,6 +539,9 @@ parse_settings(
 	settings.unresolved_at_ns = 0;
 	settings.unresolved_ns = 0;
 	settings.expect_in_order = 0;
+	settings.expect_srtt_low = 0;
+	settings.expect_srtt_high = 0;
+	settings.lose_first_syn = 0;
 	settings.quiet = 0;
 
 	/* Each option and its value. */
@@ -528,6 +564,10 @@ parse_settings(
 		}
 		if (strcmp(argv[index], "--expect-in-order") == 0) {
 			settings.expect_in_order = 1;
+			continue;
+		}
+		if (strcmp(argv[index], "--lose-first-syn") == 0) {
+			settings.lose_first_syn = 1;
 			continue;
 		}
 		if (index + 1 >= argc)
@@ -568,12 +608,30 @@ parse_settings(
 			settings.unresolved_at_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
 		else if (strcmp(argv[index], "--unresolved-ms") == 0)
 			settings.unresolved_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		else if (strcmp(argv[index], "--expect-srtt-us") == 0)
+			parse_range(argv[index + 1], &settings.expect_srtt_low, &settings.expect_srtt_high);
 		index++;
 	}
 
 	/* A queue the model can hold. */
 	if (settings.queue == 0 || settings.queue > MODEL_QUEUE_MAX)
 		settings.queue = MODEL_QUEUE_MAX;
+}
+
+/* Reads LOW:HIGH. */
+static void
+parse_range(
+	const char *text,
+	uint64_t *low,
+	uint64_t *high)
+{
+	char *end;
+
+	/* The low end, then the high end after the colon. */
+	*low = strtoull(text, &end, 0);
+	*high = *low;
+	if (*end == ':')
+		*high = strtoull(end + 1, NULL, 0);
 }
 
 /*
@@ -1096,12 +1154,12 @@ report(
 	b = receiver != NULL ? tcp_of(receiver) : NULL;
 	packet_buf_pool_usage(&usage);
 	rate = (double)interval_bytes / 1048576.0 / ((double)settings.interval_ns / 1e9);
-	printf("t=%.3f mbs=%.2f received=%llu a.state=%d a.in_flight=%u a.ring=%u a.peer_window=%u a.backoff=%u "
+	printf("t=%.3f mbs=%.2f received=%llu a.state=%d a.in_flight=%u a.ring=%u a.peer_window=%u a.backoff=%u a.srtt_us=%u a.rto_ms=%llu "
 	    "a.retransmits=%llu a.immediate=%llu a.dupacks_in=%llu a.acks_outside=%llu a.refused=%llu a.send_fail=%llu "
 	    "b.window=%u b.reorder=%u b.ooo_in=%llu b.ooo_kept=%llu b.old_in=%llu b.refused=%llu b.send_fail=%llu "
 	    "link.ab.lost=%llu link.ab.full=%llu link.ba.lost=%llu link.ba.full=%llu rx_nobuf=%llu pool=%u/%u max=%u fail=%llu\n",
 	    (double)elapsed_ns / 1e9, rate, (unsigned long long)received, (int)a->state, a->send_next - a->send_unacknowledged,
-	    a->send_count, a->peer_window, a->retransmit_count,
+	    a->send_count, a->peer_window, a->retransmit_count, a->srtt_us, (unsigned long long)kern_ticks_to_ms(a->rto),
 	    (unsigned long long)a->counters.retransmit_segments, (unsigned long long)a->counters.immediate_resends,
 	    (unsigned long long)a->counters.duplicate_acks_in, (unsigned long long)a->counters.acks_outside,
 	    (unsigned long long)a->counters.send_refused, (unsigned long long)a->counters.segment_send_failures,
@@ -1132,9 +1190,13 @@ check_tcpstats(
 	const struct tcp_stats_entry *entry;
 	uint64_t sent;
 	uint64_t taken;
+	const struct tcp_socket *sender_tcp;
 	size_t needed;
 	unsigned index;
 	int error;
+
+	/* A's connection, which the entries are checked against. */
+	sender_tcp = tcp_of(sender);
 
 	/* The length, then the value. */
 	error = tcp_stats_copy(NULL, 0, &needed, 1);
@@ -1167,11 +1229,25 @@ check_tcpstats(
 		return 1;
 	}
 
-	/* The superuser is given the sequence numbers (ws220-p002). */
+	/* The superuser is given the sequence numbers (ws220-p002), and every reader the round-trip estimate (p004). */
 	for (index = 0; index < header->count; index++) {
 		entry = (const struct tcp_stats_entry *)(const void *)(buffer + header->struct_size + index * header->element_size);
 		if ((entry->features & TCP_STATS_HAVE_SEQUENCE) == 0) {
 			printf("tcpstats: FAIL: the superuser's entry %u has no sequence numbers\n", index);
+			return 1;
+		}
+
+		/* Every entry has the estimate's fields (ws220-p004). */
+		if ((entry->features & TCP_STATS_HAVE_RTT) == 0) {
+			printf("tcpstats: FAIL: entry %u has no round-trip estimate\n", index);
+			return 1;
+		}
+
+		/* A's entry gives A's estimate and a timeout. */
+		if (entry->local_port != MODEL_PORT && entry->state == TCP_ESTABLISHED &&
+		    (entry->srtt_us != sender_tcp->srtt_us || entry->rto_ms == 0)) {
+			printf("tcpstats: FAIL: A's srtt_us %u (socket %u), rto_ms %u\n", entry->srtt_us, sender_tcp->srtt_us,
+			    entry->rto_ms);
 			return 1;
 		}
 	}

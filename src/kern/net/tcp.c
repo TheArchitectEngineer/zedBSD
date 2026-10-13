@@ -115,6 +115,25 @@ struct tcp_segment_addresses {
 #define TCP_EPHEMERAL_FIRST 49152U
 /* The initial retransmission timeout of RFC 6298, one second. */
 #define TCP_INITIAL_RTO KERN_MS_TO_TICKS(1000U)
+
+/*
+ * The least term the round-trip variation adds to the smoothed round-trip
+ * time in the retransmission timeout (ws220-p004): the timeout is
+ * SRTT + max(G, 4 RTTVAR, 200 ms), always 200 ms beyond the round trip,
+ * as Linux has it, so a peer that delays its acknowledgement up to 200 ms
+ * does not look lost.  RFC 6298 section 2.4 asks for at least a second;
+ * the user chose 200 ms (2026-10-13).
+ */
+#define TCP_RTO_MIN_TERM_US 200000U
+
+/*
+ * The timeout a connection starts its data with when its SYN had to be
+ * resent and no round trip was measured (RFC 6298 section 5.7).
+ */
+#define TCP_SYN_RETRIED_RTO KERN_MS_TO_TICKS(3000U)
+
+/* The longest round-trip sample taken, so the sums in microseconds stay within 32 bits. */
+#define TCP_RTT_SAMPLE_MAX_US 60000000U
 /* How long closing a connection waits for what it sent to be taken. */
 #define TCP_CLOSE_DRAIN_MS 10000U
 
@@ -275,7 +294,11 @@ static int tcp_send_ack(struct tcp_endpoint *endpoint, int duplicate);
 static int tcp_sequence_before(uint32_t left, uint32_t right);
 static int tcp_sequence_at_or_before(uint32_t left, uint32_t right);
 static uint32_t tcp_initial_sequence(uint32_t chosen);
-static uint64_t tcp_backoff_timeout(unsigned count);
+static uint64_t tcp_backoff_timeout(uint64_t rto, unsigned count);
+static uint64_t tcp_rto_locked(const struct tcp_endpoint *endpoint);
+static void tcp_rtt_sample_locked(struct tcp_endpoint *endpoint, uint64_t now);
+static void tcp_rtt_forget_locked(struct tcp_endpoint *endpoint);
+static void tcp_rtt_handshake_locked(struct tcp_endpoint *endpoint, uint32_t acknowledgement, uint64_t now);
 static int tcp_retransmit_given_up_locked(struct tcp_endpoint *endpoint, uint64_t now);
 static enum tcp_reset_check tcp_reset_check_locked(const struct tcp_endpoint *endpoint, uint32_t sequence);
 static int tcp_send_window_update_allowed_locked(const struct tcp_endpoint *endpoint, uint32_t sequence, uint32_t acknowledgement);
@@ -537,6 +560,7 @@ tcp_timer_run(
 	enum tcp_refusal refusal;
 	unsigned sent;
 	unsigned backoff;
+	uint64_t rto;
 	int retries;
 	int still_oldest;
 	int given_up;
@@ -707,8 +731,16 @@ tcp_timer_run(
 		/* Backs the deadline off exponentially, up to the longest timeout. */
 		endpoint->tcp.retransmit_count++;
 		backoff = endpoint->tcp.retransmit_count;
-		delay = tcp_backoff_timeout(backoff);
+		rto = tcp_rto_locked(endpoint);
+		delay = tcp_backoff_timeout(rto, backoff);
 		endpoint->tcp.retransmit_deadline = now + delay;
+
+		/*
+		 * Karn's rule (RFC 6298 section 3): an acknowledgement after a
+		 * resend may answer either sending, so no sample is taken until
+		 * a segment sent after it is timed.
+		 */
+		endpoint->tcp.rtt_timing = 0;
 		spin_unlock_irqrestore(&socket->lock, irq);
 
 		/* Resends the oldest segment. */
@@ -1415,6 +1447,8 @@ tcp_stats_fill_locked(
 	const struct tcp_counters *counters;
 	uint32_t sent_end;
 	unsigned sent;
+	uint64_t rto;
+	uint64_t timeout;
 	int ipv6;
 
 	/* The parts of the endpoint read, and an entry with every field not kept 0. */
@@ -1464,12 +1498,18 @@ tcp_stats_fill_locked(
 	entry->send_mss = TCP_MSS;
 
 	/*
-	 * The retransmission timer: how often the oldest segment was resent,
-	 * the timeout it waits now (the initial one doubled for each resend,
-	 * up to 60 seconds), and what is left of it.
+	 * The round-trip estimate (ws220-p004; 0 before the first sample),
+	 * and the retransmission timer: how often the oldest segment was
+	 * resent, the timeout it waits now (the connection's doubled for each
+	 * resend, up to 60 seconds), and what is left of it.
 	 */
+	entry->features |= TCP_STATS_HAVE_RTT;
+	entry->srtt_us = tcp->srtt_us;
+	entry->rttvar_us = tcp->rttvar_us;
+	rto = tcp_rto_locked(endpoint);
+	timeout = tcp_backoff_timeout(rto, tcp->retransmit_count);
 	entry->backoff = tcp->retransmit_count;
-	entry->rto_ms = (uint32_t)kern_ticks_to_ms(tcp_backoff_timeout(tcp->retransmit_count));
+	entry->rto_ms = (uint32_t)kern_ticks_to_ms(timeout);
 
 	/* The time left of a deadline still ahead; one due or none is 0. */
 	if (sent != 0 && tcp->retransmit_deadline > now)
@@ -1689,6 +1729,9 @@ tcp_retransmit_reset(
 	endpoint->tcp.retransmit_since = 0;
 	endpoint->tcp.retransmit_refused = 0;
 
+	/* No segment is left to time; the estimate stays for the connection. */
+	endpoint->tcp.rtt_timing = 0;
+
 	/* Nothing is owed the device any more. */
 	endpoint->tcp.ack_pending = 0;
 	tcp_output_retry_settle_locked(endpoint);
@@ -1778,18 +1821,20 @@ tcp_initial_sequence(
 /*
  * Gives the retransmission timeout after a number of resends.
  *
- * The initial timeout doubles for each resend (RFC 6298 section 5.5) and
- * stops at TCP_RETRANSMIT_TIMEOUT_MAX.
+ * The connection's timeout (rto, in ticks; see tcp_rto_locked) doubles for
+ * each resend (RFC 6298 section 5.5) and stops at
+ * TCP_RETRANSMIT_TIMEOUT_MAX.
  */
 static uint64_t
 tcp_backoff_timeout(
+	uint64_t rto,
 	unsigned count)
 {
 	uint64_t timeout;
 	unsigned index;
 
-	/* Doubles the initial timeout once per resend, until it reaches the longest. */
-	timeout = TCP_INITIAL_RTO;
+	/* Doubles the connection's timeout once per resend, until it reaches the longest. */
+	timeout = rto;
 	for (index = 0; index < count; index++) {
 		timeout *= 2U;
 		if (timeout >= TCP_RETRANSMIT_TIMEOUT_MAX)
@@ -1802,6 +1847,140 @@ tcp_backoff_timeout(
 
 	/* Succeeded: the timeout the next deadline waits. */
 	return timeout;
+}
+
+/*
+ * Gives a connection's retransmission timeout before any backoff, in ticks,
+ * under the socket lock: the one its round-trip estimate gives, or the
+ * initial second before the first sample (RFC 6298 section 2.1).
+ */
+static uint64_t
+tcp_rto_locked(
+	const struct tcp_endpoint *endpoint)
+{
+	/* No sample yet. */
+	if (endpoint->tcp.rto == 0)
+		return TCP_INITIAL_RTO;
+
+	/* Succeeded: the estimate's timeout. */
+	return endpoint->tcp.rto;
+}
+
+/*
+ * Takes the round-trip sample of the segment being timed, which an
+ * acknowledgement has just covered, under the socket lock (RFC 6298
+ * section 2, ws220-p004).
+ *
+ * The sample is the ticks since the segment was handed to the device, in
+ * microseconds (0 when it came back within the tick).  The first sets
+ * SRTT to it and RTTVAR to half of it; each later one moves RTTVAR a
+ * quarter and SRTT an eighth of the way.  The timeout is then SRTT +
+ * max(G, 4 RTTVAR, TCP_RTO_MIN_TERM_US), G being one tick, rounded up to a
+ * tick and at most TCP_RETRANSMIT_TIMEOUT_MAX.
+ */
+static void
+tcp_rtt_sample_locked(
+	struct tcp_endpoint *endpoint,
+	uint64_t now)
+{
+	uint64_t ticks;
+	uint64_t sample;
+	uint64_t variation;
+	uint64_t difference;
+	uint64_t term;
+	uint64_t granularity;
+	uint64_t timeout_us;
+	uint64_t timeout;
+
+	/* The segment is timed no longer; the next one sent is. */
+	endpoint->tcp.rtt_timing = 0;
+
+	/* The sample in microseconds, bounded so the sums below stay small. */
+	ticks = now - endpoint->tcp.rtt_start;
+	sample = ticks * 1000000U / KERN_CLOCK_HZ;
+	if (sample > TCP_RTT_SAMPLE_MAX_US)
+		sample = TCP_RTT_SAMPLE_MAX_US;
+
+	/* The first sample (RFC 6298 section 2.2), or a later one (section 2.3). */
+	if (endpoint->tcp.rtt_measured == 0) {
+		endpoint->tcp.rtt_measured = 1;
+		endpoint->tcp.srtt_us = (uint32_t)sample;
+		endpoint->tcp.rttvar_us = (uint32_t)(sample / 2U);
+	} else {
+		/* |SRTT - R|, taken before SRTT moves. */
+		if (endpoint->tcp.srtt_us > sample) {
+			difference = endpoint->tcp.srtt_us - sample;
+		} else {
+			difference = sample - endpoint->tcp.srtt_us;
+		}
+
+		/* RTTVAR a quarter of the way to the difference, then SRTT an eighth of the way to the sample. */
+		variation = ((uint64_t)endpoint->tcp.rttvar_us * 3U + difference) / 4U;
+		endpoint->tcp.rttvar_us = (uint32_t)variation;
+		endpoint->tcp.srtt_us = (uint32_t)(((uint64_t)endpoint->tcp.srtt_us * 7U + sample) / 8U);
+	}
+
+	/* The term added to SRTT: the largest of the clock's tick, 4 RTTVAR and the least term. */
+	granularity = 1000000U / KERN_CLOCK_HZ;
+	term = (uint64_t)endpoint->tcp.rttvar_us * 4U;
+	if (term < granularity)
+		term = granularity;
+	if (term < TCP_RTO_MIN_TERM_US)
+		term = TCP_RTO_MIN_TERM_US;
+	timeout_us = endpoint->tcp.srtt_us + term;
+
+	/* In ticks, rounded up, and no longer than the longest timeout. */
+	timeout = (timeout_us * KERN_CLOCK_HZ + 999999U) / 1000000U;
+	if (timeout > TCP_RETRANSMIT_TIMEOUT_MAX)
+		timeout = TCP_RETRANSMIT_TIMEOUT_MAX;
+	endpoint->tcp.rto = timeout;
+}
+
+/*
+ * Forgets a connection's round-trip estimate, under the socket lock: a new
+ * connect measures its own, starting from the initial second.
+ */
+static void
+tcp_rtt_forget_locked(
+	struct tcp_endpoint *endpoint)
+{
+	/* No sample, no timeout of its own, nothing timed. */
+	endpoint->tcp.rtt_measured = 0;
+	endpoint->tcp.srtt_us = 0;
+	endpoint->tcp.rttvar_us = 0;
+	endpoint->tcp.rto = 0;
+	endpoint->tcp.rtt_timing = 0;
+}
+
+/*
+ * Takes what the handshake measured, under the socket lock, as an
+ * acknowledgement of this end's SYN (or SYN-ACK) completes it, before the
+ * ring is emptied (ws220-p004).
+ *
+ * The SYN timed and not resent gives the first sample.  One resent gives
+ * none (Karn's rule), and the data then starts with a timeout of three
+ * seconds rather than the initial one (RFC 6298 section 5.7).
+ */
+static void
+tcp_rtt_handshake_locked(
+	struct tcp_endpoint *endpoint,
+	uint32_t acknowledgement,
+	uint64_t now)
+{
+	int covered;
+
+	/* The SYN timed, and acknowledged now. */
+	covered = 0;
+	if (endpoint->tcp.rtt_timing != 0)
+		covered = tcp_sequence_at_or_before(endpoint->tcp.rtt_sequence, acknowledgement);
+	if (covered) {
+		tcp_rtt_sample_locked(endpoint, now);
+		return;
+	}
+
+	/* A SYN resent without a sample. */
+	if (endpoint->tcp.retransmit_count != 0 && endpoint->tcp.rtt_measured == 0)
+		endpoint->tcp.rto = TCP_SYN_RETRIED_RTO;
 }
 
 /*
@@ -1930,8 +2109,11 @@ tcp_retire_acknowledged(
 	struct tcp_pending *entry;
 	uint32_t end;
 	unsigned sent;
+	uint64_t now;
+	uint64_t rto;
 	int progressed = 0;
 	int recovering;
+	int covered;
 	int before;
 
 	/*
@@ -1994,16 +2176,24 @@ tcp_retire_acknowledged(
 	endpoint->tcp.retransmit_since = 0;
 	endpoint->tcp.retransmit_refused = 0;
 	sent = tcp_sent_count_locked(endpoint);
+	now = sched_ticks();
+
+	/* An acknowledgement that covers the segment being timed gives a round-trip sample (ws220-p004). */
+	covered = 0;
+	if (endpoint->tcp.rtt_timing != 0)
+		covered = tcp_sequence_at_or_before(endpoint->tcp.rtt_sequence, acknowledgement);
+	if (covered)
+		tcp_rtt_sample_locked(endpoint, now);
+	rto = tcp_rto_locked(endpoint);
 
 	/* No timer without a segment in flight, at once when recovering, else a timeout from now. */
 	if (sent == 0) {
 		endpoint->tcp.retransmit_deadline = 0;
 	} else if (recovering) {
-		endpoint->tcp.retransmit_deadline = sched_ticks();
+		endpoint->tcp.retransmit_deadline = now;
 		endpoint->tcp.counters.immediate_resends++;
 	} else {
-		endpoint->tcp.retransmit_deadline =
-		    sched_ticks() + TCP_INITIAL_RTO;
+		endpoint->tcp.retransmit_deadline = now + rto;
 	}
 }
 
@@ -2392,20 +2582,33 @@ tcp_mark_sent_locked(
 	struct tcp_endpoint *endpoint,
 	uint64_t now)
 {
+	struct tcp_pending *entry;
 	unsigned sent;
+	unsigned slot;
+	uint64_t rto;
 
-	/* What was in flight before it. */
+	/* What was in flight before it, and the entry itself, the first unsent one. */
 	sent = tcp_sent_count_locked(endpoint);
+	slot = (endpoint->tcp.send_first + sent) % TCP_SEND_QUEUE_MAX;
+	entry = &endpoint->tcp.send_queue[slot];
 
 	/* It is no longer owed to the device: the end of what was sent moves past it. */
 	endpoint->tcp.send_unsent--;
 
-	/* The oldest segment in flight starts the timer afresh. */
+	/* The oldest segment in flight starts the timer afresh, with the connection's timeout. */
 	if (sent == 0) {
+		rto = tcp_rto_locked(endpoint);
 		endpoint->tcp.retransmit_count = 0;
 		endpoint->tcp.retransmit_since = 0;
 		endpoint->tcp.retransmit_refused = 0;
-		endpoint->tcp.retransmit_deadline = now + TCP_INITIAL_RTO;
+		endpoint->tcp.retransmit_deadline = now + rto;
+	}
+
+	/* With no segment being timed, this one is: one sample a round trip (ws220-p004). */
+	if (endpoint->tcp.rtt_timing == 0) {
+		endpoint->tcp.rtt_timing = 1;
+		endpoint->tcp.rtt_sequence = entry->sequence + entry->advance;
+		endpoint->tcp.rtt_start = now;
 	}
 }
 
@@ -2423,6 +2626,7 @@ tcp_unmark_sent_locked(
 	struct tcp_endpoint *endpoint,
 	const struct packet_buf *packet)
 {
+	uint32_t end;
 	unsigned sent;
 	unsigned slot;
 
@@ -2438,6 +2642,11 @@ tcp_unmark_sent_locked(
 
 	/* It is owed to the device again, ahead of every entry queued after it. */
 	endpoint->tcp.send_unsent++;
+
+	/* A segment that did not go is not timed; the next one sent is. */
+	end = endpoint->tcp.send_queue[slot].sequence + endpoint->tcp.send_queue[slot].advance;
+	if (endpoint->tcp.rtt_timing != 0 && endpoint->tcp.rtt_sequence == end)
+		endpoint->tcp.rtt_timing = 0;
 
 	/* With nothing left in flight, nothing is timed. */
 	if (sent == 1U) {
@@ -3199,6 +3408,9 @@ tcp_connect(
 	endpoint->tcp.send_next = tcp_initial_sequence(endpoint->tcp.send_next);
 	endpoint->tcp.send_unacknowledged = endpoint->tcp.send_next;
 	endpoint->tcp.state = TCP_SYN_SENT;
+
+	/* A new connection measures its own round trip (ws220-p004). */
+	tcp_rtt_forget_locked(endpoint);
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
@@ -4519,6 +4731,7 @@ tcp_segment_input(
 		 */
 		if ((flags & TCP_ACK) != 0 &&
 		    acknowledgement == endpoint->tcp.send_next) {
+			tcp_rtt_handshake_locked(endpoint, acknowledgement, sched_ticks());
 			endpoint->tcp.send_unacknowledged = acknowledgement;
 			tcp_retransmit_reset(endpoint, &retransmit);
 			endpoint->tcp.peer_window = wire_get16(tcp->window);
@@ -4552,6 +4765,7 @@ tcp_segment_input(
 		if ((flags & (TCP_SYN | TCP_ACK)) == (TCP_SYN | TCP_ACK) &&
 		    endpoint->tcp.active_connect_generation != 0 &&
 		    acknowledgement == endpoint->tcp.send_next) {
+			tcp_rtt_handshake_locked(endpoint, acknowledgement, sched_ticks());
 			endpoint->tcp.send_unacknowledged = acknowledgement;
 			tcp_retransmit_reset(endpoint, &retransmit);
 			endpoint->tcp.receive_next = sequence + 1U;
