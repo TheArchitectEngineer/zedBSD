@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1077 / WS074 CSS Grid testharness recensus（2026-10-14）
+## 最新: q1078 / WS074 module script capability investigation（2026-10-14）
+
+[q1078履歴](queue-q1078.md): 固定Grid no_output32件全て同じmodule named import。HTML loaderとJS compilerの未対応を確認し[p216](../ws074/phase216/phase.md)を追加。[証拠](../ws074/phase189/evidence/20261014-q1078/README.md)。p189/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1077 / WS074 CSS Grid testharness recensus（2026-10-14）
 
 [q1077履歴](queue-q1077.md): 固定Grid502 IDは57→71 PASS、413→399 FAIL、32 no_output維持。旧PASS後退0、subtest PASS+26、p189 partial cleared。[証拠](../ws074/phase189/evidence/20261014-q1077/README.md)。p189/p190/p173全件100%未達、共有投影/GitHub publication pending。
 

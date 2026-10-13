@@ -121,3 +121,7 @@ Event ws074-p189-q1074-outcome-20261014: 固定Grid testharness適格502 IDを�
 ## q1077-i01 結果（2026-10-14 06:28 JST）
 
 Event ws074-p189-q1077-outcome-20261014: 固定Grid testharness適格502 IDを同条件で再測定。[証拠](evidence/20261014-q1077/README.md)。旧57 PASS/413 FAIL/32 no_output→新71 PASS/399 FAIL/32 no_output、14 whole FAIL→PASS・旧PASS後退0、subtest PASS1851→1877（+26）。4 shard exit0、全502 ID/hash/checkpoint/gzip raw照合済み。残る32 no_outputはmodule script2系列、399 FAIL中alignment配下206。q1077-i01 partial cleared、p189 wholeとp173全3,805件100%は未達。runner/browser/WPT/ABI/Master変更なし、共有投影/GitHub publication保留。
+
+## q1078-i01 有限部分範囲と結果（2026-10-14 06:30 JST）
+
+このchatのユーザーによる全3,805件100%までの有限Queue事前承認を最大90分（08:00 JSTまで）に適用。固定Grid no_output32件のmodule source/import形、HTML loader・JS parser/compilerの未対応点、一般的な次の実装境界を読み取り、必要なら既存host/browserでprobeする。製品code/runner/WPT/公開ABI/`plan/master.md`変更なし。[Guardrail](../../guardrail.md)と既存runner規則を適用。結果: [証拠](evidence/20261014-q1078/README.md)に32件全ての同形named import、module AST解析成功、HTMLのmodule skipとcompilerのmodule未対応を記録。[p216](../phase216/phase.md)を追加。q1078-i01 partial cleared、p189 whole/p173全件100%未達。共有投影/GitHub publication保留。

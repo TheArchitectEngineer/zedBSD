@@ -1,18 +1,18 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1077 / WS074 CSS Grid testharness recensus
+# q1078 / WS074 module script capability investigation
 
-Status: finished（2026-10-14 06:23–06:28 JST）
+Status: finished（2026-10-14 06:30 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p189 q1077有限部分scope](phase189/phase.md)に適用。
-Timebox: 2026-10-14 06:23 JST開始、最大90分（07:53 JSTまで）。
+Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を下記有限範囲に適用。
+Timebox: 2026-10-14 06:30 JST開始、最大90分（08:00 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1077-i01 | [ws074-p189](phase189/phase.md) partial | 固定Grid適格testharness502 IDをq1074同条件で最大128件shard再測定、全ID/outcome/subtest/raw照合と残失敗群分類。runner/browser/WPT/ABI/Master不変更 | cleared | p214 q1075・p215 q1076修正、p189 q1074 baseline |
+| q1078-i01 | [ws074-p189](phase189/phase.md) partial | 固定Grid502件のno_output32件で使うmodule scriptのsource/import形を列挙し、現行HTML loader・JS parser/compilerの未対応点と一般的な最小実装境界を調査。必要なら既存host/browserを使う読み取り専用probeで確認し、再現可能な証拠と次の有限Phase案を残す。製品code・runner・WPT・公開ABI・Masterは変更しない | cleared | p189 q1077 fixed census |
 
-Dependency graph: p173 manifest → p189 q1074 baseline → p214 q1075 → p215 q1076 → p189 q1077再計測 → p173全件100%判断。
+Dependency graph: p173 manifest → p189 q1077 census → q1078 module investigation → 後続Phase案 → p173全件100%判断。
 
-Outcome: q1077-i01 partial cleared、p189 whole uncleared。[証拠](phase189/evidence/20261014-q1077/README.md)。Grid502 ID旧57 PASS/413 FAIL/32 no_output→71 PASS/399 FAIL/32 no_output、旧PASS後退0、subtest PASS+26。p173全3,805件100%未達。
+Outcome: 32件すべて同じnamed import / shared export。HTML loaderはmodule typeをskip、JS parserはmoduleを解析可能だがcompilerはimport/export未対応。[証拠](phase189/evidence/20261014-q1078/README.md)。q1078-i01 partial cleared、p189 whole uncleared。
 
-Upcoming Work Outlook: Grid427 FAILとmodule script no_output32件から共通原因を別の有限Queueで切り分ける。全域baseline testharness223 PASS/1,232非PASS（q1068）、環境未対応328、reftest未対応413・静的899 pixel FAIL。Gridのみq1072で43/502 PASS、全域の数へは合算しない。共有 `plan/queue.md` / Master / GitHub publication はQ1セッションとの競合を避けpending projection。
+Upcoming Work Outlook: [p216](phase216/phase.md)でmodule実装を有限段階に分割する。p189/p190/p173全件100%は未達。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
