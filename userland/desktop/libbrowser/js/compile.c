@@ -738,6 +738,13 @@ compile_statement(
 
 	/* Each kind of statement. */
 	switch (node->kind) {
+	case JS_NODE_EXPORT:
+		/* A named export declaration runs its declaration in this module's scope. */
+		if ((node->flags & (JS_FLAG_DEFAULT | JS_FLAG_ALL)) != 0U || node->second != NULL ||
+		    node->first == NULL || node->first->kind == JS_NODE_EXPORT_SPECIFIER)
+			js_compile_unsupported(fc->compiler, node, "this kind of module export");
+		compile_statement(fc, node->first);
+		break;
 	case JS_NODE_VARIABLES:
 		compile_variables(fc, node);
 		break;

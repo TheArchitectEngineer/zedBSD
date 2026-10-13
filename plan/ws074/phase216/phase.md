@@ -2,7 +2,7 @@
 
 # ws074-p216: Interop 2025 JavaScript module loading
 
-Status: uncleared（q1079-i01単独module scope部分cleared、named import/HTML未実装）
+Status: uncleared（q1079/q1080 partial cleared、import/HTML未実装）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -27,3 +27,11 @@ Event ws074-p216-addition-20261014: q1078で32 ID全件同形moduleとHTML loade
 ## q1079-i01 結果（2026-10-14 06:35 JST）
 
 Event ws074-p216-q1079-partial-clear-20261014: module top-level宣言をglobalではなくmodule bindingにし、strict top-level `this=undefined`を維持。[証拠](evidence/20261014-q1079/README.md)。局所fixture exact、classic JS14/14、build warning0、Acid3差0・Acid2差1865。q1079-i01 partial cleared、p216 wholeはimport/exportとHTML module load未実装でuncleared。固定Grid32 no_outputとp189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## q1080-i01 有限部分範囲（2026-10-14 06:36 JST）
+
+このchatのユーザーによる全3,805件100%までの有限Queue事前承認を最大90分（08:06 JSTまで）に適用。JS module内の`export`付きfunction/class/var/let/const宣言を通常宣言と同じscope/hoist/実行へ接続し、module内から参照可能でglobalへ漏れないことを確認する。`export {}`、default、re-export、import/module graph/HTML loaderは含めず未対応を明示維持。局所fixture、classic JS14件、warning0 host build、固定Acid3差0・Acid2非増加を検証する。WPT/runner/公開ABI/`plan/master.md`変更なし。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。module namespaceと固定Grid32 IDのcallbackは部分scope受け入れに含めず、p216 wholeは未達。
+
+## q1080-i01 結果（2026-10-14 06:37 JST）
+
+Event ws074-p216-q1080-partial-clear-20261014: named export宣言5種を通常宣言のmodule scope/hoist/実行に接続。[証拠](evidence/20261014-q1080/README.md)。局所fixture exact、固定WPT共通support module単独評価exit0、classic JS14/14、build warning0、Acid3差0・Acid2差1865。q1080-i01 partial cleared、p216 wholeはmodule namespace/import/HTML未実装でuncleared。固定Grid32 no_outputとp189/p173全件100%未達。共有投影/GitHub publication保留。

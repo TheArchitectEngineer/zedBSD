@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1079 / WS074 standalone module scope（2026-10-14）
+## 最新: q1080 / WS074 module named export declarations（2026-10-14）
+
+[q1080履歴](queue-q1080.md): export宣言5種をmodule scope/hoist/評価に接続。WPT共通support module単独評価exit0、classic JS14/14、warning0 build、Acid3差0。[証拠](../ws074/phase216/evidence/20261014-q1080/README.md)。p216部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1079 / WS074 standalone module scope（2026-10-14）
 
 [q1079履歴](queue-q1079.md): module top-level宣言をglobalから分離。局所fixture exact、classic JS14/14、warning0 build、Acid3差0、p216 partial cleared。[証拠](../ws074/phase216/evidence/20261014-q1079/README.md)。import/export・HTML module loadとp189/p173全件100%未達、共有投影/GitHub publication pending。
 

@@ -438,6 +438,12 @@ scope_declarations(
 	/* Each statement by its kind. */
 	for (node = list; node != NULL; node = node->next) {
 		switch (node->kind) {
+		case JS_NODE_EXPORT:
+			/* A declaration with export still declares its local names. */
+			if ((node->flags & (JS_FLAG_DEFAULT | JS_FLAG_ALL)) == 0U && node->second == NULL &&
+			    node->first != NULL && node->first->kind != JS_NODE_EXPORT_SPECIFIER)
+				scope_declarations(compiler, info, node->first);
+			break;
 		case JS_NODE_VARIABLES:
 			/* Only var hoists (let and const are refused by the code pass). */
 			if (node->op != JS_P_VAR)
@@ -742,6 +748,14 @@ scope_declare_lexicals(
 	/* Each statement that is a let, const or class declaration. */
 	found = 0;
 	for (node = list; node != NULL; node = node->next) {
+		/* A named export declaration makes the same lexical binding as the declaration alone. */
+		if (node->kind == JS_NODE_EXPORT && (node->flags & (JS_FLAG_DEFAULT | JS_FLAG_ALL)) == 0U &&
+		    node->second == NULL && node->first != NULL && node->first->kind != JS_NODE_EXPORT_SPECIFIER) {
+			if (scope_declare_lexicals(compiler, scope, node->first))
+				found = 1;
+			continue;
+		}
+
 		/* A class declaration's name is a let. */
 		if (node->kind == JS_NODE_CLASS_DECLARATION && node->text != NULL) {
 			found = 1;
