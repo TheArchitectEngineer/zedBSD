@@ -353,11 +353,16 @@ void
 drv_i915_irq_reset(
 	struct i915_irq_dev *irq)
 {
+	int gen9;
+
+	/* Tells which register layout the device has. */
+	gen9 = i915_irq_gen9(irq);
+
 	/* Stops the device from raising any interrupt while the sources change. */
 	(void)i915_master_intr_disable(irq);
 
 	/* Resets the engine interrupt enables and masks of the GT's layout. */
-	if (i915_irq_gen9(irq) != 0) {
+	if (gen9 != 0) {
 		i915_gen8_gt_irq_reset(irq);
 	} else {
 		drv_i915_gen11_gt_irq_reset(irq);
@@ -373,7 +378,7 @@ drv_i915_irq_reset(
 		irq->display_ops->reset(irq->display_context);
 
 	/* Resets the GU_MISC source, which Gen9 does not have. */
-	if (i915_irq_gen9(irq) == 0)
+	if (gen9 == 0)
 		drv_i915_gen3_irq_reset(irq, GEN11_GU_MISC_IMR, GEN11_GU_MISC_IIR, GEN11_GU_MISC_IER);
 
 	/* Resets the PCU source. */
@@ -392,9 +397,13 @@ drv_i915_irq_postinstall(
 {
 	uint32_t gu_misc_masked;
 	uint32_t master;
+	int gen9;
+
+	/* Tells which register layout the device has. */
+	gen9 = i915_irq_gen9(irq);
 
 	/* Enables the engine interrupts the submission backend needs, in the GT's layout. */
-	if (i915_irq_gen9(irq) != 0) {
+	if (gen9 != 0) {
 		i915_gen8_gt_irq_postinstall(irq);
 	} else {
 		drv_i915_gen11_gt_irq_postinstall(irq);
@@ -405,7 +414,7 @@ drv_i915_irq_postinstall(
 		irq->display_ops->postinstall(irq->display_context);
 
 	/* Enables the GU_MISC graphics system event, which feeds the OpRegion; Gen9 has none. */
-	if (i915_irq_gen9(irq) == 0) {
+	if (gen9 == 0) {
 		gu_misc_masked = GEN11_GU_MISC_GSE;
 		drv_i915_gen3_irq_init(irq, GEN11_GU_MISC_IMR, ~gu_misc_masked, GEN11_GU_MISC_IER, gu_misc_masked, GEN11_GU_MISC_IIR);
 	}
@@ -415,7 +424,7 @@ drv_i915_irq_postinstall(
 
 	/* Lets the device raise interrupts, and flushes the enable. */
 	master = GEN11_GFX_MSTR_IRQ;
-	if (i915_irq_gen9(irq) != 0)
+	if (gen9 != 0)
 		master = GEN8_MASTER_IRQ;
 
 	i915_master_intr_enable(irq);
@@ -670,10 +679,12 @@ i915_master_intr_disable(
 {
 	uint32_t master_ctl;
 	uint32_t master;
+	int gen9;
 
 	/* Picks the master control of the GT's layout. */
+	gen9 = i915_irq_gen9(irq);
 	master = GEN11_GFX_MSTR_IRQ;
-	if (i915_irq_gen9(irq) != 0)
+	if (gen9 != 0)
 		master = GEN8_MASTER_IRQ;
 
 	/* Stops the device from raising further interrupts. */
@@ -694,8 +705,11 @@ static void
 i915_master_intr_enable(
 	struct i915_irq_dev *irq)
 {
+	int gen9;
+
 	/* Lets the device raise interrupts again, through the master control of the GT's layout. */
-	if (i915_irq_gen9(irq) != 0) {
+	gen9 = i915_irq_gen9(irq);
+	if (gen9 != 0) {
 		drv_i915_raw_write32(irq->m, GEN8_MASTER_IRQ, GEN8_MASTER_IRQ_CONTROL);
 	} else {
 		drv_i915_raw_write32(irq->m, GEN11_GFX_MSTR_IRQ, GEN11_MASTER_IRQ);
@@ -938,12 +952,16 @@ i915_irq_handler_body(
 	struct i915_irq_dev *irq;
 	uint32_t master_ctl;
 	uint32_t gu_misc_iir;
+	int gen9;
 
 	UNUSED_PARAMETER(vector);
 
 	/* The handler was attached with the interrupt device as its argument. */
 	irq = argument;
 	irq->irq_count++;
+
+	/* Tells which register layout the device has. */
+	gen9 = i915_irq_gen9(irq);
 
 	/* Interrupts are not enabled: the message is not ours to serve. */
 	if (irq->irqs_enabled == 0) {
@@ -969,7 +987,7 @@ i915_irq_handler_body(
 	 * display sources stay disabled while the display is not driven, so a
 	 * display bit is only counted (gen8_irq_handler()).
 	 */
-	if (i915_irq_gen9(irq) != 0) {
+	if (gen9 != 0) {
 		irq->gt_irq_count++;
 		i915_gen8_gt_irq_handler(irq, master_ctl);
 		if ((master_ctl & ~I915_IRQ_GEN8_GT_BITS) != 0U)

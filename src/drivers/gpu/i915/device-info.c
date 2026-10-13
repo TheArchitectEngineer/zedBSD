@@ -288,6 +288,7 @@ drv_i915_gt_init_mmio(
 
 		/* Records who the engine is and where its registers are. */
 		engine->id = entry->id;
+		engine->graphics_ver = graphics_ver;
 		engine->class = entry->class;
 		engine->instance = entry->instance;
 		engine->mmio_base = entry->base;

@@ -120,6 +120,13 @@ struct i915_engine_info {
 	/* The engine identifier, one of I915_RCS0 and the rest. */
 	int id;
 
+	/*
+	 * The graphics version of the GT the engine belongs to: 9 picks the
+	 * Gen9 context layout, submission ports and commands; any other value
+	 * the Gen12 ones.
+	 */
+	int graphics_ver;
+
 	/* The engine class and the instance within that class. */
 	int class;
 	int instance;

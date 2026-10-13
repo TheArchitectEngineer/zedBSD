@@ -684,4 +684,27 @@
 #define GEN8_DE_MISC_IIR	(0x44468)
 #define GEN8_DE_MISC_IER	(0x4446c)
 
+/* drivers/gpu/drm/i915/gt/intel_engine_regs.h: the pre-Gen11 context control bits and the Gen8 power clock fields */
+#define CTX_CTRL_RS_CTX_ENABLE	(1U << 1)
+#define CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT	(1U << 2)
+#define GEN8_RPCS_S_CNT_SHIFT	15
+#define GEN8_RPCS_S_CNT_MASK	(0x7U << GEN8_RPCS_S_CNT_SHIFT)
+#define GEN8_RPCS_EU_MAX_SHIFT	4
+#define GEN8_RPCS_EU_MAX_MASK	(0xfU << GEN8_RPCS_EU_MAX_SHIFT)
+#define GEN8_RPCS_EU_MIN_SHIFT	0
+#define GEN8_RPCS_EU_MIN_MASK	(0xfU << GEN8_RPCS_EU_MIN_SHIFT)
+
+/* drivers/gpu/drm/i915/gt/intel_lrc_reg.h */
+#define GEN9_CTX_RCS_INDIRECT_CTX_OFFSET_DEFAULT	0x26
+
+/* drivers/gpu/drm/i915/gt/intel_gt_regs.h: the registers of the Gen9 indirect context batch */
+#define GEN9_FF_SLICE_CHICKEN	(0x2088)
+#define GEN9_FF_SLICE_CHICKEN_CL_PROVOKING_VERTEX_FIX	(1U << 1)
+#define GEN9_3D_CHICKEN3	(0x2090)
+#define GEN9_3D_CHICKEN_SF_PROVOKING_VERTEX_FIX	(1U << 12)
+#define GEN9_COMMON_SLICE_CHICKEN2	(0x7014)
+#define GEN9_DISABLE_GATHER_AT_SET_SHADER_COMMON_SLICE	(1U << 12)
+#define GEN8_L3SQCREG4	(0xb118)
+#define GEN8_LQSC_FLUSH_COHERENT_LINES	(1U << 21)
+
 #endif /* DRIVERS_GPU_I915_INTEL_GT_REGS_H */
