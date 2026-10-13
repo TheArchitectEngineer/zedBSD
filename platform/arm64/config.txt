@@ -6,7 +6,8 @@ kernel_address=0x80000
 device_tree=bcm2711-rpi-4-b.dtb
 enable_gic=1
 enable_uart=1
-# The PL011 clock the kernel divides for 115200 baud (uart.c).
+# The PL011 clock: the serial console divides it for 115200 baud (uart.c), or
+# the onboard Bluetooth for its line (rpi4-bt.c).
 init_uart_clock=48000000
 # The firmware logs its own boot on the same UART, which shows whether the
 # serial line works before the kernel starts.

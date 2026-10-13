@@ -100,6 +100,12 @@ ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-mmc-irq.c \
 	src/drivers/platform/rpi4/rpi4-wifi.c
 endif
 
+# The onboard Bluetooth: the PL011 as the controller's HCI transport (ws215-p003).
+ifeq ($(CONFIG_DRIVER_BCM2711_BT),y)
+ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-bt.c \
+	src/drivers/platform/rpi4/rpi4-bt-link.c
+endif
+
 # The headphone jack: PWM1 and a legacy DMA channel (ws207-p002).
 ifeq ($(CONFIG_DRIVER_BCM2711_AUDIO),y)
 ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-audio.c \
@@ -139,8 +145,11 @@ ARM64_USB_SOURCES += src/drivers/usb/usb-ccid.c src/drivers/usb/usb-ccid-proto.c
 	src/drivers/generic/smartcard.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_BT),y)
-ARM64_USB_SOURCES += src/drivers/usb/usb-bt.c src/drivers/generic/bt-hci.c \
-	src/drivers/generic/bt-hci-proto.c
+ARM64_USB_SOURCES += src/drivers/usb/usb-bt.c
+endif
+# The Bluetooth HCI class, for a USB controller or the Pi 4's onboard one (ws215-p003).
+ifneq ($(filter y,$(CONFIG_DRIVER_USB_BT) $(CONFIG_DRIVER_BCM2711_BT)),)
+ARM64_KERNEL_SOURCES += src/drivers/generic/bt-hci.c src/drivers/generic/bt-hci-proto.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_RTL8822BU),y)
 ARM64_USB_SOURCES += src/drivers/usb/usb-rtl8822bu.c \
@@ -630,17 +639,30 @@ $(BUILD)/cmdline.txt: rpi4-boot-command-line
 	@printf '%s\n' login=$(if $(filter y,$(ZEDBSD_GRAPHICAL_LOGIN)),graphical,console) > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv -f $@.tmp $@; fi
 
+# The firmware's config.txt (ws215-p003): the source as it is, or, with the onboard
+# Bluetooth driver and without the serial console, without the lines that give the
+# PL011 to the console.  Rechecked on every invocation like cmdline.txt, so a change
+# of either option rebuilds the image.
+.PHONY: rpi4-config-file
+rpi4-config-file:
+
+$(BUILD)/config.txt: rpi4-config-file $(ARM64_PLATFORM)/config.txt platform/arm64/tools/make-rpi4-config.py
+	@mkdir -p $(dir $@)
+	@$(PYTHON) platform/arm64/tools/make-rpi4-config.py --source $(ARM64_PLATFORM)/config.txt \
+ --bluetooth $(CONFIG_DRIVER_BCM2711_BT) --serial $(CONFIG_RPI4_SERIAL_CONSOLE) --output $@.tmp
+	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv -f $@.tmp $@; fi
+
 # The SD card: a FAT boot partition with the firmware and the kernel, and
 # the UFS root that the kernel's legacy autoroot finds beside it.
 $(BUILD)/hdd-image.img: $(BUILD)/vmunix $(BUILD)/ufs-root.img \
-	$(DATA_IMAGE) $(SWAP_IMAGE) $(ARM64_PLATFORM)/config.txt $(BUILD)/cmdline.txt \
+	$(DATA_IMAGE) $(SWAP_IMAGE) $(BUILD)/config.txt $(BUILD)/cmdline.txt \
 	platform/arm64/tools/make-rpi4-ufs-root-hdd-image.py \
 	platform/arm64/tools/make-rpi4-hdd-image.py \
 	platform/arm64/tools/check-rpi4-hdd-image.py tools/build/check-ufs-image.py
 	$(PYTHON) platform/arm64/tools/make-rpi4-ufs-root-hdd-image.py --force \
  --kernel $(BUILD)/vmunix --ufs-root $(BUILD)/ufs-root.img \
  --data-image $(DATA_IMAGE) --swapfile $(SWAP_IMAGE) \
- --config $(ARM64_PLATFORM)/config.txt --cmdline $(BUILD)/cmdline.txt \
+ --config $(BUILD)/config.txt --cmdline $(BUILD)/cmdline.txt \
  --firmware-dir vendor/raspberrypi-firmware/boot $@
 
 $(BUILD)/kernel.elf: $(ARM64_VMUNIX_OBJS) $(ARM64_PLATFORM)/vmunix.ld \

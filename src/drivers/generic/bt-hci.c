@@ -123,6 +123,7 @@ static int bt_hci_slot_claim(struct drv_bt_hci *hci);
 static void bt_hci_slot_release(struct drv_bt_hci *hci);
 static void bt_hci_finalize(void *data);
 static void bt_hci_copy_text(char *target, const char *source);
+static uint32_t bt_hci_registered_flags(const struct drv_bt_hci_description *description, const struct drv_bt_hci_ops *ops);
 static ssize_t bt_hci_write_sco(struct drv_bt_hci *hci, const void *buffer, size_t size);
 static int bt_hci_set_sco(struct drv_bt_hci *hci, struct bt_sco *links);
 static void bt_hci_stop_sco(struct drv_bt_hci *hci);
@@ -224,9 +225,12 @@ drv_bt_hci_register(
 	hci->info.version = description->version;
 	hci->info.bus = description->bus;
 	hci->info.acl_data_max = BT_ACL_DATA_DEFAULT;
-	hci->info.flags = 0U;
-	if (ops->sco_set != NULL && ops->sco_send != NULL)
-		hci->info.flags = description->flags & BT_INFO_SCO;
+	hci->info.flags = bt_hci_registered_flags(description, ops);
+	hci->info.speed_max = 0U;
+	if ((hci->info.flags & BT_INFO_SPEED) != 0U)
+		hci->info.speed_max = description->speed_max;
+	if ((hci->info.flags & BT_INFO_ADDRESS) != 0U)
+		kern_memcpy(hci->info.board_address, description->board_address, BT_ADDRESS_SIZE);
 	bt_hci_copy_text(hci->info.name, description->name);
 	bt_hci_copy_text(hci->info.physical_path, description->physical_path);
 	hci->ops = ops;
@@ -372,6 +376,30 @@ drv_bt_hci_notice(
 	/* The reader waiting, and the pollers. */
 	waitq_wake_all(&hci->waitq);
 	poll_notify();
+}
+
+/*
+ * Reports the ACL data length limit the program has set now (the class's
+ * BT_IOC_SET_ACL_MAX, BT_ACL_DATA_DEFAULT before it), which a UART
+ * transport checks the received ACL headers against.  Any context but an
+ * interrupt handler.
+ */
+size_t
+drv_bt_hci_acl_limit(
+	struct drv_bt_hci *hci)
+{
+	unsigned long irq;
+	size_t limit;
+
+	/* The limit under the lock the requests change it under. */
+	irq = spin_lock_irqsave(&hci->lock);
+
+	limit = hci->info.acl_data_max;
+
+	spin_unlock_irqrestore(&hci->lock, irq);
+
+	/* Succeeded: the limit now. */
+	return limit;
 }
 
 /*
@@ -673,7 +701,7 @@ bt_hci_write(
 
 /*
  * Answers the requests: the information, the counts, the bootloader's
- * path, the reset and the ACL limit.  The information and the counts are
+ * path, the reset, the ACL limit and the UART's speed.  The information and the counts are
  * given after the controller's withdrawal too (as they were last); the
  * requests that act on it answer ENODEV then.
  */
@@ -723,6 +751,7 @@ bt_hci_ioctl(
 		break;
 	case BT_IOC_SET_BOOTLOADER:
 	case BT_IOC_SET_ACL_MAX:
+	case BT_IOC_SET_SPEED:
 		/* A value, then the transport's or the class's part. */
 		error = copyin(argument, &value, sizeof(value));
 		if (error == 0) {
@@ -898,7 +927,8 @@ bt_hci_room_call(
 
 /*
  * Does a request that acts on the controller or its limit, under the
- * operations' mutex: the bootloader's path, the reset, the ACL limit.
+ * operations' mutex: the bootloader's path, the reset, the ACL limit, the
+ * UART's speed.
  */
 static int
 bt_hci_operate(
@@ -930,9 +960,25 @@ bt_hci_operate(
 		return ENODEV;
 	}
 
+	/* A transport that cannot change its line's speed. */
+	if (request == BT_IOC_SET_SPEED && hci->ops->set_speed == NULL) {
+		mutex_unlock(&hci->op_lock);
+		return ENOTSUP;
+	}
+
+	/* A speed of nothing, or past what the controller's line takes (speed_max does not change). */
+	if (request == BT_IOC_SET_SPEED) {
+		if (value == 0U || value > hci->info.speed_max) {
+			mutex_unlock(&hci->op_lock);
+			return EINVAL;
+		}
+	}
+
 	/* The request's own part. */
 	if (request == BT_IOC_SET_BOOTLOADER) {
 		error = hci->ops->set_bootloader(hci->context, (int)value);
+	} else if (request == BT_IOC_SET_SPEED) {
+		error = hci->ops->set_speed(hci->context, value);
 	} else if (request == BT_IOC_RESET) {
 		error = hci->ops->reset(hci->context);
 	} else {
@@ -1024,6 +1070,45 @@ bt_hci_finalize(
 	kern_free(hci->acl_bytes);
 	kern_free(hci->event_bytes);
 	kern_free(hci);
+}
+
+/*
+ * Works out the flags a registered controller starts with, each from what
+ * makes it true (ws215 design B20): SCO from the transport's SCO
+ * operations and its description's flag, SPEED from its speed operation
+ * and a highest speed, ADDRESS from an address that is not all zero.
+ */
+static uint32_t
+bt_hci_registered_flags(
+	const struct drv_bt_hci_description *description,
+	const struct drv_bt_hci_ops *ops)
+{
+	uint32_t flags;
+	unsigned index;
+
+	/* No flag until something makes it true. */
+	flags = 0U;
+
+	/* SCO: the transport streams it and says the controller has it. */
+	if (ops->sco_set != NULL && ops->sco_send != NULL) {
+		if ((description->flags & BT_INFO_SCO) != 0U)
+			flags |= BT_INFO_SCO;
+	}
+
+	/* SPEED: the transport changes the line's speed, up to a known highest one. */
+	if (ops->set_speed != NULL && description->speed_max != 0U)
+		flags |= BT_INFO_SPEED;
+
+	/* ADDRESS: the board gives an address (all zero is none). */
+	for (index = 0U; index < BT_ADDRESS_SIZE; index++) {
+		if (description->board_address[index] != 0U) {
+			flags |= BT_INFO_ADDRESS;
+			break;
+		}
+	}
+
+	/* Succeeded: the flags the controller is published with. */
+	return flags;
 }
 
 /* Copies a text into a field of BT_TEXT_MAX bytes, cut and ended by a NUL. */
