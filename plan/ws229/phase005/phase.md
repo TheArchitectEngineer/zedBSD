@@ -106,3 +106,53 @@ base: main bb57b2397（worktree `agent/p1` に merge）。Gen9 の boot の key 
 > **返し先**: Q1 と P1（または Q1 が p005 を割り当てた担当）。場面ごとの verdict の行と log の場所。FAIL の解析はしない。
 
 - 2026-10-14 ユーザー（全部入りの取りやめ）:「全部入りの Gen9 の imageはいらないです。あなたがテストに必要な単位で機能を分けたイメージでテストしてください」→ 全部入りの image は作らない。Gen9.5 の試験は SV7 の passthrough で試験ごと（T1-608）。USB の手順（gen9-hw.md）は使わない。
+
+## 2026-10-14: T1-608（SV7）の FAIL の解析と直し（P1）
+
+T1-608（SV7、UHD 620 `8086:5917`、main bfebc43b7 以降）: ktest・eu・vkcs は PASS、vkx 2/9・vke1 5/6・vke2 20/21・vkc 8/9 が FAIL（draw・r1 は解析の時点で実行中）。
+log は T1 の worktree の `build/ws229-p005/hw-sv7/hw-<scenario>-ws229/run.log`（verdict と step の行だけを読んだ。serial.log は読んでいない）。
+
+### 原因: Gen9 では頂点の段の push 定数が commit されない（p004、3D の state）
+
+- 落ちた step は全部、頂点 shader が push の register を持つ pipeline だった。vkx は 6 つの pipeline が全部 `vs 624 bytes (… 1 push registers …)` で、
+  描画の 7 step（INDEX16・INDEX32・TOPOLOGY・VIEWPORT・GRID・MIP-NEAREST・MIP-LINEAR）が全部 FAIL、描画の無い COPY・MIP-BLIT だけ PASS。
+  vke1 は push の有る `vs 1328 bytes (… 3 push registers …)` の UBO だけ FAIL、vs の push が 0 の BLEND・TEX3・TEXOPS・TEXKINDS・LEVELDRAW は PASS。
+  vke2 は `pipeline 0: vs 3248 bytes (4 push registers)` の MATRIX だけ FAIL（全部 0）、他の 20 は vs の push が 0 で PASS。
+  vkc は `vs 1984 bytes (… 4 push registers …)` の mview だけ FAIL、他の 8 は vs の push が 0 で PASS。
+  失敗の画素は消去の色のまま（例 vkx INDEX16 `0xff000000, expected 0xff0000ff`）で、頂点の位置・行列が 0 として読まれた形。
+  compute の push（vkcs、CURBE）と、push の無い描画は通る。EU の符号化（p003）・GT（p002）の不具合なら push の有無で分かれない。
+- Skylake 以降、`3DSTATE_CONSTANT_*` はその段の次の `3DSTATE_BINDING_TABLE_POINTERS_*` で初めて効く（Mesa 25.0.7 anv
+  `genX_cmd_draw.c` の `cmd_buffer_emit_descriptor_pointers()`「on SKL this is what flushes push constants」、`cmd_buffer_flush_gfx_state()` の
+  「After emitting push constants, on SKL+ we have to emit the corresponding 3DSTATE_BINDING_TABLE_POINTER_*」）。
+  render の batch は文脈の setup（`drv_i915_gfx_emit_context_setup()`）で VS・HS・DS・GS の binding table の pointer を 0 にした**後**で
+  `drv_i915_gfx_emit_constants()` を出し、その後は PS の pointer（`drv_i915_gfx_emit_draw()`）しか出さない。PS の push は commit され、VS・GS の push は commit されない。
+  Gen12 の実機（5330）では今の順で PASS しているので、Gen12 の byte は変えない。
+
+### 直し（commit dfd55f0fe）
+
+- `src/drivers/gpu/i915/render/state.c` の `drv_i915_gfx_emit_constants()`: Gen9 のときだけ、5 つの `3DSTATE_CONSTANT_*` の後に
+  `3DSTATE_BINDING_TABLE_POINTERS_VS` と `_GS`（値 0、文脈の setup と同じ）を出す（2 dword × 2）。draw と blit（矩形の fill・copy）の両方が通る。
+- `plan/ws229/tests/host/gen9-check.py`: その 2 つの命令を Gen9 だけの命令（`GEN9_ONLY`）に理由とともに足した。
+
+### 確かめ（host と build だけ。QEMU・実機は起動していない）
+
+| 確かめ | コマンド | 結果 |
+| --- | --- | --- |
+| 3D の state（Gen12 の byte・gen90.xml の decode） | `plan/ws229/tests/host/run.sh` | PASS: `Gen12: 17 files byte for byte as 03dee2287's`、`14 batches (890 instructions) … decode with gen120.xml and gen90.xml; every field agrees or differs as listed`。直しの前の check.py では Gen9 の 4 つの batch に `3DSTATE_BINDING_TABLE_POINTERS_VS/GS has no Gen12 counterpart` が出る（新しい命令が decode で見えていること） |
+| EU（Gen9） | `plan/ws229/tests/eu-gen9-host.sh` | PASS（`ws229 Gen9 EU host test PASS`） |
+| eu-test の fixture | `plan/ws229/tests/eu-test-gen9-host.sh` | PASS（Gen12 322 dword・Gen9 327 dword の decode と期待） |
+| kernel | `make ZEDBSD_CONFIG=plan/ws229/tests/config-amd64-gen9.mk BUILD=build/ws229-p005/k-vkx GEN9_SCENARIO=vkx build/ws229-p005/k-vkx/vmunix` | rc 0、warning 0（log の `warning:` 0 行）、`amd64 vmunix check: PASS`、`render/state.o` を作り直した |
+
+未実施: SV7 の再試験（T1、下の依頼）。5330 の回帰は要らない（Gen12 の batch は byte で不変、host の試験で確認）。
+T1-608 の draw は後で着いて PASS（`i915: test draw: PASS`、1024/1024）。r1 は返却の時点で実行中（落ちていれば別に見る）。
+
+### T1 への再試験の依頼の文（SV7、落ちた場面だけ、Q1 が出す）
+
+> **依頼主**: P1（ws229-p005）。**目的**: T1-608 で SV7 の vkx・vke1・vke2・vkc が落ちた原因（Gen9 で頂点の段の push 定数が
+> commit されない、p004 の 3D の state）の直し（commit dfd55f0fe）が効くかを確かめる。
+> **前提**: main の HEAD（dfd55f0fe を含む commit を書く）。`plan/tools/hwsv7/setup.sh` が `setup: awe@10.0.10.27 ready`。5330 の試験と同時に流さない（lock を共有）。
+> **流し方**: `I915_MACHINE=sv7 OUT=build/ws229-p005/hw-sv7-r2 plan/ws101/tests/hw/run-hw.sh ws229 vkx vke1 vke2 vkc`（4 本、1 本 5〜10 分、background で）。
+> **合否**: 各 `build/ws229-p005/hw-sv7-r2/hw-<scenario>-ws229/run.log` の verdict の行。
+> `i915: vkx: verdict PASS (9 of 9 steps passed)`、`i915: vke1: verdict PASS (6 of 6 steps passed)`、`i915: vke2: verdict PASS (21 of 21 steps passed)`、
+> `i915: vkc: verdict PASS (9 of 9 steps passed)`。どれか FAIL・HANG・行が無い、なら FAIL。FAIL なら場面ごとの step の FAIL の行を添えて返す。
+> **返し先**: Q1 と P1（または Q1 が p005 を割り当てた担当）。FAIL の解析はしない。
