@@ -19,6 +19,11 @@
  * files with gen90.xml and compares the two field by field
  * (plan/ws229/tests/host/run.sh).
  *
+ * The hardware tests' single-colour draw fixture
+ * (tests/fixtures/draw-fixture.c) is built the same way: its batch, its
+ * state page, its render target's surface state and, for Gen9, its pixel
+ * shader (ws229-p005).
+ *
  * Built with -DTEST_BASELINE against a tree from before ws229-p004, only
  * the version 12 files are written, through the functions that tree has;
  * run.sh compares them byte for byte with the new tree's.
@@ -33,6 +38,7 @@
 #include "../../../../src/drivers/gpu/i915/render/compute.h"
 #include "../../../../src/drivers/gpu/i915/render/heap.h"
 #include "../../../../src/drivers/gpu/i915/render/state.h"
+#include "../../../../src/drivers/gpu/i915/tests/fixtures/draw-fixture.h"
 
 /*
  * The stub file stands in for the draw path's session functions, the
@@ -154,6 +160,7 @@ static void test_draw_indexed(unsigned ver);
 static void test_rect(unsigned ver, int copy);
 static void test_dispatch(unsigned ver, int indirect);
 static void test_structures(unsigned ver);
+static void test_fixture(unsigned ver);
 static void test_version(unsigned ver);
 
 /* Stand-ins for what draw.c calls in the kernel: the host has no GPU objects, no timing and no engine. */
@@ -802,6 +809,67 @@ test_structures(
 	test_write(ver, "eot", test_window, 64U);
 }
 
+/*
+ * Builds the hardware tests' single-colour draw fixture for one version.
+ *
+ * The new tree builds Gen12 through the functions without a version and
+ * checks that the _gen functions give the same bytes; the baseline has only
+ * the former.
+ */
+static void
+test_fixture(
+	unsigned ver)
+{
+	static uint8_t page[4096] __attribute__((aligned(4096)));
+	static uint8_t again[4096] __attribute__((aligned(4096)));
+	uint32_t again_words[TEST_BATCH_WORDS];
+	uint32_t mocs;
+	unsigned count;
+	unsigned again_count;
+
+	/* The state page and the batch, as the draw test writes them. */
+	memset(test_words, 0, sizeof(test_words));
+#ifndef TEST_BASELINE
+	mocs = drv_i915_draw_fixture_mocs_gen(ver);
+	drv_i915_draw_fixture_write_state_gen(page, I915_DRAW_FIXTURE_STATE_VA + 0x2000U, mocs, ver);
+	count = drv_i915_draw_fixture_build_batch_gen(test_words, TEST_BATCH_WORDS, I915_DRAW_FIXTURE_STATE_VA, mocs, ver);
+#else
+	mocs = drv_i915_draw_fixture_mocs();
+	drv_i915_draw_fixture_write_state(page, I915_DRAW_FIXTURE_STATE_VA + 0x2000U, mocs);
+	count = drv_i915_draw_fixture_build_batch(test_words, TEST_BATCH_WORDS, I915_DRAW_FIXTURE_STATE_VA, mocs);
+#endif
+	assert(count != 0U && count < TEST_BATCH_WORDS);
+
+	/* The Gen12 wrappers must build exactly what the version 12 functions build. */
+#ifndef TEST_BASELINE
+	if (ver == 12U) {
+		memset(again_words, 0, sizeof(again_words));
+		assert(drv_i915_draw_fixture_mocs() == mocs);
+		drv_i915_draw_fixture_write_state(again, I915_DRAW_FIXTURE_STATE_VA + 0x2000U, mocs);
+		again_count = drv_i915_draw_fixture_build_batch(again_words, TEST_BATCH_WORDS, I915_DRAW_FIXTURE_STATE_VA, mocs);
+		assert(again_count == count);
+		assert(memcmp(again_words, test_words, count * 4U) == 0);
+		assert(memcmp(again, page, sizeof(page)) == 0);
+		assert(drv_i915_tex_fixture_supported(12U) == 1);
+	} else {
+		assert(drv_i915_tex_fixture_supported(ver) == 0);
+	}
+#else
+	UNUSED_PARAMETER(again);
+	UNUSED_PARAMETER(again_words);
+	UNUSED_PARAMETER(again_count);
+#endif
+
+	/* The batch, the whole page, the render target's surface state, and the pixel shader. */
+	test_write(ver, "fixture-draw", test_words, count * 4U);
+	test_write(ver, "fixture-state", page, sizeof(page));
+	test_write(ver, "fixture-rss", page + 64U, GEN12_RENDER_SURFACE_STATE_DWORDS * 4U);
+#ifndef TEST_BASELINE
+	if (ver == 9U)
+		test_write(ver, "fixture-ps", page + I915_DRAW_FIXTURE_PS_OFFSET, 2048U - I915_DRAW_FIXTURE_PS_OFFSET);
+#endif
+}
+
 /* Builds every scenario for one graphics version. */
 static void
 test_version(
@@ -815,4 +883,5 @@ test_version(
 	test_dispatch(ver, 0);
 	test_dispatch(ver, 1);
 	test_structures(ver);
+	test_fixture(ver);
 }

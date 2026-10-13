@@ -61,12 +61,34 @@
 /* STATE_BASE_ADDRESS and its length. */
 #define I915_TEST_STATE_BASE_ADDRESS	((0x6101U << 16) | (22U - 2U))
 
-/* The Gen12 MOCS field value of a MOCS table index. */
+/* Gen9's STATE_BASE_ADDRESS, which ends at the bindless surface state size (19 dwords). */
+#define I915_TEST_STATE_BASE_ADDRESS_GEN9	((0x6101U << 16) | (19U - 2U))
+
+/* The Gen12 MOCS field value of a MOCS table index; Gen9 places the index the same way. */
 #define I915_TEST_GEN12_MOCS(index)	((index) << 1)
 
 /* The uncached and the write-back MOCS table entries. */
 #define I915_TEST_MOCS_UNCACHED		3U
 #define I915_TEST_MOCS_WRITEBACK	2U
+
+/* Gen9's uncached MOCS table entry (Skylake's I915_MOCS_UNCACHED); its write-back entry is also 2. */
+#define I915_TEST_MOCS_UNCACHED_GEN9	0U
+
+/* 3DSTATE_CC_STATE_POINTERS with its pointer and valid bit clear, which Gen9 needs before selecting GPGPU. */
+#define I915_TEST_3DSTATE_CC_STATE_POINTERS	0x780e0000U
+
+/* MEDIA_VFE_STATE's Reset Gateway Timer in dword 3, which the reference sets below Gen11. */
+#define I915_TEST_VFE_RESET_GATEWAY_TIMER	(1U << 7)
+
+/* INTERFACE_DESCRIPTOR_DATA dword 2's Thread Preemption Disable, a bit Gen9 does not define. */
+#define I915_TEST_IDD_PREEMPTION_DISABLE	(1U << 20)
+
+/* How many GPGPU threads one Gen9 subslice runs. */
+#define I915_TEST_GEN9_THREADS_PER_SUBSLICE	56U
+
+/* The ring fault register of Gen12 and of Gen9, which the hang dump reads. */
+#define I915_TEST_RING_FAULT		0xcec4U
+#define I915_TEST_RING_FAULT_GEN9	0x4094U
 
 /* PIPE_CONTROL's stall-at-scoreboard bit. */
 #define I915_TEST_PC_STALL_AT_SCOREBOARD	(1U << 1)
@@ -82,6 +104,9 @@
 
 /* The five forcewake domains the tests hold while they run, as the device start takes them. */
 #define I915_TEST_FORCEWAKE_DOMAINS	5U
+
+/* The two of them Gen9 has; its one media domain covers no register the tests touch. */
+#define I915_TEST_FORCEWAKE_DOMAINS_GEN9	2U
 
 /* The multicast selector and its slice and subslice fields. */
 #define I915_TEST_MCR_SELECTOR		0x0fdcU
@@ -113,6 +138,9 @@ struct i915_test_batch {
 
 	/* Nonzero when a word did not fit. */
 	int overflow;
+
+	/* The GT version the words are for: 9, or 12 for every other value. */
+	unsigned graphics_ver;
 };
 
 /*
@@ -132,6 +160,28 @@ const uint32_t drv_i915_test_eu_kernel[I915_TEST_EU_KERNEL_DWORDS] = {
 	0x00030161U, 0x03060660U, 0x00000104U, 0x00000000U,
 	0x00039031U, 0x00000000U, 0xcdfa0314U, 0x019a050cU,
 	0x80030131U, 0x00000004U, 0x70007f0cU, 0x00000000U
+};
+
+/*
+ * The store kernel of the compute test on Gen9.
+ *
+ * The same SIMD8 store in Gen9's encoding, assembled by Mesa 25.0.7's
+ * brw_asm --gen=skl from plan/ws229/tests/eu-test-gen9.asm: the moves need no
+ * software scoreboard, the address (g3-g4) and the data (g5) go as one
+ * three-register SEND to the data port 1, the thread ends with the "do not
+ * dereference URB" bit a compute thread sets, and a NOP pads the table to the
+ * Gen12 length.  The table never changes.
+ */
+const uint32_t drv_i915_test_eu_kernel_gen9[I915_TEST_EU_KERNEL_DWORDS] = {
+	0x00600001U, 0x20a00608U, 0x00000000U, 0xc0ffee02U,
+	0x00600001U, 0x2fe0020cU, 0x008d0000U, 0x00000000U,
+	0x00600001U, 0x4024060cU, 0x00000000U, 0x00000001U,
+	0x00600001U, 0x4020060cU, 0x00000000U, 0x00400c20U,
+	0x00600001U, 0x40640208U, 0x00000024U, 0x00000000U,
+	0x00600001U, 0x40600208U, 0x00000020U, 0x00000000U,
+	0x0c600031U, 0x20000240U, 0x06000060U, 0x06066efdU,
+	0x07600031U, 0x20000244U, 0x06000fe0U, 0x82000010U,
+	0x0000007eU, 0x00000000U, 0x00000000U, 0x00000000U
 };
 
 /*
@@ -158,6 +208,17 @@ static const int i915_test_forcewake_domains[I915_TEST_FORCEWAKE_DOMAINS] = {
 	I915_FORCEWAKE_MEDIA_VDBOX0,
 	I915_FORCEWAKE_MEDIA_VDBOX2,
 	I915_FORCEWAKE_MEDIA_VEBOX0
+};
+
+/*
+ * The forcewake domains the tests hold on Gen9, in the order they are taken.
+ *
+ * Gen9's render and GT (blitter) domains have the Gen12 request registers;
+ * the Gen12 media domains do not exist there.  The table never changes.
+ */
+static const int i915_test_forcewake_domains_gen9[I915_TEST_FORCEWAKE_DOMAINS_GEN9] = {
+	I915_FORCEWAKE_RENDER,
+	I915_FORCEWAKE_GT
 };
 
 /*
@@ -191,7 +252,9 @@ static void i915_eu_emit_marker(struct i915_test_batch *batch, uint64_t va, uint
 static void i915_eu_emit_copy(struct i915_test_batch *batch, uint64_t destination, uint64_t source);
 static void i915_eu_emit_state_base_address(struct i915_test_batch *batch, uint64_t shared, uint64_t inst_base, uint32_t mocs);
 static void i915_eu_emit_vfe_and_walker(struct i915_test_batch *batch, uint32_t max_threads);
-static uint32_t i915_eu_pipeline_select(uint32_t pipeline);
+static uint32_t i915_eu_pipeline_select(unsigned graphics_ver, uint32_t pipeline);
+static const uint32_t *i915_eu_kernel(unsigned graphics_ver);
+static const int *i915_eu_forcewake_domains(struct i915_device *device, unsigned *count);
 static int i915_eu_retired(struct i915_gt_request *rq, struct i915_execlists *el);
 static int i915_eu_find_render(struct i915_test_eu *t, struct i915_gt_engines *es);
 static int i915_eu_new_context(struct i915_test_eu *t, struct i915_gt_context *ce, struct i915_gt_object **tl_page, struct i915_gt_engine *ge, struct i915_gt_ppgtt *vm, struct i915_gt_mem *gm, unsigned repeat);
@@ -212,13 +275,11 @@ static void i915_eu_log_repeat(struct i915_device *device, const struct i915_tes
 static void i915_eu_cleanup(struct i915_device *device, struct i915_test_eu *t, const char *name);
 
 /*
- * Builds the compute test's batch into a buffer.
+ * Builds the compute test's Gen12 batch into a buffer.
  *
- * The batch establishes 3D mode, programs the state base addresses, copies
- * the descriptor and the kernel back, switches to GPGPU, loads the VFE state
- * and the descriptor, dispatches one thread, writes the done tag with a
- * post-sync PIPE_CONTROL and a command-streamer marker, and ends.  Returns the
- * number of dwords, or 0 when the buffer was too small.
+ * The batch of drv_i915_test_eu_build_batch_gen for Gen12, kept under its
+ * old name for the draw tests and the unit tests.  Returns the number of
+ * dwords, or 0 when the buffer was too small.
  */
 unsigned
 drv_i915_test_eu_build_batch(
@@ -227,6 +288,35 @@ drv_i915_test_eu_build_batch(
 	uint64_t shared_va,
 	uint64_t inst_base,
 	uint32_t max_threads)
+{
+	unsigned count;
+
+	/* Builds the Gen12 form. */
+	count = drv_i915_test_eu_build_batch_gen(cmds, capacity, shared_va, inst_base, max_threads, 12U);
+
+	/* Reports the batch length, 0 when it did not fit. */
+	return count;
+}
+
+/*
+ * Builds the compute test's batch for a GT version into a buffer.
+ *
+ * The batch establishes 3D mode, programs the state base addresses, copies
+ * the descriptor and the kernel back, switches to GPGPU, loads the VFE state
+ * and the descriptor, dispatches one thread, writes the done tag with a
+ * post-sync PIPE_CONTROL and a command-streamer marker, and ends.  A
+ * graphics_ver of 9 builds Gen9's forms of the commands; any other value
+ * builds the Gen12 batch.  Returns the number of dwords, or 0 when the
+ * buffer was too small.
+ */
+unsigned
+drv_i915_test_eu_build_batch_gen(
+	uint32_t *cmds,
+	unsigned capacity,
+	uint64_t shared_va,
+	uint64_t inst_base,
+	uint32_t max_threads,
+	unsigned graphics_ver)
 {
 	struct i915_test_batch batch;
 	uint64_t done_va;
@@ -238,8 +328,17 @@ drv_i915_test_eu_build_batch(
 	batch.capacity = capacity;
 	batch.count = 0U;
 	batch.overflow = 0;
-	mocs = I915_TEST_GEN12_MOCS(I915_TEST_MOCS_UNCACHED);
 	done_va = shared_va + I915_TEST_EU_DONE_OFF;
+
+	/* Builds Gen9's forms of the commands for a Gen9 GT, and the Gen12 batch for any other value. */
+	batch.graphics_ver = 12U;
+	if (graphics_ver == 9U)
+		batch.graphics_ver = 9U;
+
+	/* Sends the stateless and the state accesses uncached; Gen9's table keeps its uncached entry at 0. */
+	mocs = I915_TEST_GEN12_MOCS(I915_TEST_MOCS_UNCACHED);
+	if (batch.graphics_ver == 9U)
+		mocs = I915_TEST_GEN12_MOCS(I915_TEST_MOCS_UNCACHED_GEN9);
 
 	/* Establishes 3D mode; the base addresses are applied in 3D (Wa_1607854226). */
 	i915_eu_emit_pipe_control(&batch,
@@ -248,7 +347,7 @@ drv_i915_test_eu_build_batch(
 	    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
 	    PIPE_CONTROL_DC_FLUSH_ENABLE |
 	    PIPE_CONTROL_FLUSH_ENABLE);
-	i915_eu_emit(&batch, i915_eu_pipeline_select(0U));
+	i915_eu_emit(&batch, i915_eu_pipeline_select(batch.graphics_ver, 0U));
 	i915_eu_emit_state_base_address(&batch, shared_va, inst_base, mocs);
 	i915_eu_emit_pipe_control(&batch,
 	    PIPE_CONTROL_CS_STALL |
@@ -271,12 +370,34 @@ drv_i915_test_eu_build_batch(
 		    inst_base + I915_TEST_EU_KSP_OFFSET + i * 4U);
 	}
 
-	/* Switches 3D to GPGPU behind a stalling flush (the RT flush pulls in the HDC pipeline flush). */
-	i915_eu_emit_pipe_control(&batch,
-	    PIPE_CONTROL_CS_STALL |
-	    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-	    PIPE_CONTROL_DEPTH_CACHE_FLUSH);
-	i915_eu_emit(&batch, i915_eu_pipeline_select(2U));
+	/*
+	 * Switches 3D to GPGPU behind a stalling flush.  On Gen12 the RT flush
+	 * pulls in the HDC pipeline flush.  Gen9 first clears the colour calc
+	 * state's valid bit, flushes the write caches (the data cache in place of
+	 * the HDC pipeline) and then invalidates the read-only caches, as the
+	 * reference does before every PIPELINE_SELECT.
+	 */
+	if (batch.graphics_ver == 9U) {
+		i915_eu_emit(&batch, I915_TEST_3DSTATE_CC_STATE_POINTERS);
+		i915_eu_emit(&batch, 0U);
+		i915_eu_emit_pipe_control(&batch,
+		    PIPE_CONTROL_CS_STALL |
+		    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+		    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+		    PIPE_CONTROL_DC_FLUSH_ENABLE);
+		i915_eu_emit_pipe_control(&batch,
+		    PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+		    PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+		    PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+		    PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
+	} else {
+		i915_eu_emit_pipe_control(&batch,
+		    PIPE_CONTROL_CS_STALL |
+		    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+		    PIPE_CONTROL_DEPTH_CACHE_FLUSH);
+	}
+
+	i915_eu_emit(&batch, i915_eu_pipeline_select(batch.graphics_ver, 2U));
 	i915_eu_emit_pipe_control(&batch, PIPE_CONTROL_CS_STALL | I915_TEST_PC_STALL_AT_SCOREBOARD);
 
 	/* Loads the VFE state and the descriptor, marks readiness and dispatches the thread. */
@@ -310,13 +431,10 @@ drv_i915_test_eu_build_batch(
 }
 
 /*
- * Checks the PIPELINE_SELECT words of a compute batch.
+ * Checks the PIPELINE_SELECT words of a Gen12 compute batch.
  *
- * Returns 0 when the batch holds exactly one 3D select (0x69041310) followed
- * by exactly one GPGPU select (0x69041312), and no other word with the
- * PIPELINE_SELECT header or with the 0x6104 header (GPGPU_CSR_BASE_ADDRESS,
- * which the compute test never emits); EINVAL otherwise.  The counts are
- * reported through check when it is not NULL.
+ * drv_i915_test_eu_check_pipeline_select_gen for Gen12, kept under its old
+ * name for the draw tests and the unit tests.  Returns 0 or EINVAL.
  */
 int
 drv_i915_test_eu_check_pipeline_select(
@@ -324,20 +442,59 @@ drv_i915_test_eu_check_pipeline_select(
 	unsigned count,
 	struct i915_test_pipeline_select *check)
 {
+	int error;
+
+	/* Checks against the Gen12 words. */
+	error = drv_i915_test_eu_check_pipeline_select_gen(cmds, count, check, 12U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the batch selects 3D, then GPGPU, and nothing else. */
+	return 0;
+}
+
+/*
+ * Checks the PIPELINE_SELECT words of a compute batch for a GT version.
+ *
+ * Returns 0 when the batch holds exactly one 3D select followed by exactly
+ * one GPGPU select, and no other word with the PIPELINE_SELECT header or with
+ * the 0x6104 header (GPGPU_CSR_BASE_ADDRESS, which the compute test never
+ * emits); EINVAL otherwise.  The selects are the fixed reference words:
+ * 0x69041310 and 0x69041312 on Gen12, 0x69040300 and 0x69040302 (no media
+ * sampler DOP clock gate bit, mask bits 0x3) when graphics_ver is 9.  The
+ * counts are reported through check when it is not NULL.
+ */
+int
+drv_i915_test_eu_check_pipeline_select_gen(
+	const uint32_t *cmds,
+	unsigned count,
+	struct i915_test_pipeline_select *check,
+	unsigned graphics_ver)
+{
 	struct i915_test_pipeline_select found;
+	uint32_t select_3d;
+	uint32_t select_gpgpu;
 	uint32_t dword;
 	unsigned k;
+
+	/* Takes the reference words of the GT version. */
+	select_3d = 0x69041310U;
+	select_gpgpu = 0x69041312U;
+	if (graphics_ver == 9U) {
+		select_3d = 0x69040300U;
+		select_gpgpu = 0x69040302U;
+	}
 
 	/* Counts every select-like word, remembering where the first of each kind is. */
 	kern_memset(&found, 0, sizeof(found));
 	for (k = 0U; k < count; k++) {
 		dword = cmds[k];
-		if (dword == 0x69041310U) {
+		if (dword == select_3d) {
 			/* The fixed reference 3D select. */
 			if (found.n_3d == 0U)
 				found.idx_3d = k;
 			found.n_3d++;
-		} else if (dword == 0x69041312U) {
+		} else if (dword == select_gpgpu) {
 			/* The fixed reference GPGPU select. */
 			if (found.n_gpgpu == 0U)
 				found.idx_gpgpu = k;
@@ -368,6 +525,36 @@ drv_i915_test_eu_check_pipeline_select(
 
 	/* Succeeded: the batch selects 3D, then GPGPU, and nothing else. */
 	return 0;
+}
+
+/*
+ * Fills the compute test's interface descriptor for a GT version.
+ *
+ * The eight dwords hold the kernel start pointer, Thread Preemption Disable
+ * on Gen12 (Gen9 has no such bit, so a graphics_ver of 9 leaves dword 2
+ * zero) and one thread per group.
+ */
+void
+drv_i915_test_eu_fill_idd(
+	uint32_t *idd,
+	unsigned graphics_ver)
+{
+	uint32_t flags;
+
+	/* Disables preemption of the thread where the descriptor has the bit. */
+	flags = I915_TEST_IDD_PREEMPTION_DISABLE;
+	if (graphics_ver == 9U)
+		flags = 0U;
+
+	/* The kernel start pointer, the preemption bit and one thread per group. */
+	idd[0] = I915_TEST_EU_KSP_OFFSET;
+	idd[1] = 0U;
+	idd[2] = flags;
+	idd[3] = 0U;
+	idd[4] = 0U;
+	idd[5] = 0U;
+	idd[6] = 1U;
+	idd[7] = 0U;
 }
 
 /*
@@ -689,20 +876,27 @@ drv_i915_test_eu_hang_dump_reset(
 	struct i915_mmio *m,
 	struct spinlock *uncore_lock)
 {
+	uint32_t fault_reg;
 	uint32_t base;
 	unsigned i;
+
+	/* Reads the ring fault register where the GT version keeps it; the rest are at the same offsets. */
+	fault_reg = I915_TEST_RING_FAULT;
+	if (t->graphics_ver == 9U)
+		fault_reg = I915_TEST_RING_FAULT_GEN9;
 
 	/* Dumps the engine and the registers that tell where the EUs stopped. */
 	base = ge->info->mmio_base;
 	drv_i915_engine_dump(ge, el, m, "eu-test");
-	kern_logf("i915: EU-TEST hang: ipehr=%08x acthd=%08x:%08x instdone=%08x fault(0xcec4)=%08x "
+	kern_logf("i915: EU-TEST hang: ipehr=%08x acthd=%08x:%08x instdone=%08x fault(0x%04x)=%08x "
 	    "row_instdone(0xe164,raw)=%08x eu_dis(0x9134)=%08x slice_ack(0x804c)=%08x "
 	    "ss01_eu_ack(0x805c)=%08x ss23_eu_ack(0x8060)=%08x\n",
 	    drv_i915_read32(m, base + 0x68U),
 	    drv_i915_read32(m, base + 0x5cU),
 	    drv_i915_read32(m, base + 0x74U),
 	    drv_i915_read32(m, base + 0x6cU),
-	    drv_i915_read32(m, 0xcec4U),
+	    fault_reg,
+	    drv_i915_read32(m, fault_reg),
 	    drv_i915_read32(m, 0xe164U),
 	    drv_i915_read32(m, 0x9134U),
 	    drv_i915_read32(m, 0x804cU),
@@ -781,12 +975,17 @@ drv_i915_test_forcewake_get_all(
 	struct i915_device *device,
 	unsigned *held)
 {
+	const int *domains;
+	unsigned count;
 	int error;
+
+	/* Picks the domains the GT version has. */
+	domains = i915_eu_forcewake_domains(device, &count);
 
 	/* Takes the domains in order. */
 	*held = 0U;
-	while (*held < I915_TEST_FORCEWAKE_DOMAINS) {
-		error = drv_i915_forcewake_get(&device->gt.mmio, i915_test_forcewake_domains[*held]);
+	while (*held < count) {
+		error = drv_i915_forcewake_get(&device->gt.mmio, domains[*held]);
 		if (error != 0)
 			return error;
 
@@ -805,10 +1004,18 @@ drv_i915_test_forcewake_put_all(
 	struct i915_device *device,
 	unsigned held)
 {
+	const int *domains;
+	unsigned count;
+
+	/* Picks the same table the get took the domains from; never more than it holds. */
+	domains = i915_eu_forcewake_domains(device, &count);
+	if (held > count)
+		held = count;
+
 	/* Puts back what was taken, last first. */
 	while (held > 0U) {
 		held--;
-		(void)drv_i915_forcewake_put(&device->gt.mmio, i915_test_forcewake_domains[held]);
+		(void)drv_i915_forcewake_put(&device->gt.mmio, domains[held]);
 	}
 }
 
@@ -839,8 +1046,9 @@ drv_i915_test_eu_outcome_name(
  * Creates the shared page and the batch, maps them at the fixture addresses of
  * the GT address space, writes the kernel, the descriptor and unwritten
  * markers, builds and verifies the batch, creates a new context and its
- * timeline, submits one request, waits for it and reads the page back.  Returns
- * 0 on a pass, a positive errno otherwise; t says what happened.
+ * timeline, submits one request, waits for it and reads the page back.  The
+ * fixture is Gen9's when graphics_ver is 9 and Gen12's otherwise.  Returns 0
+ * on a pass, a positive errno otherwise; t says what happened.
  */
 int
 drv_i915_test_eu_run(
@@ -851,7 +1059,8 @@ drv_i915_test_eu_run(
 	const struct i915_sseu *sseu,
 	struct i915_mmio *m,
 	struct spinlock *uncore_lock,
-	unsigned timeout_ms)
+	unsigned timeout_ms,
+	unsigned graphics_ver)
 {
 	struct i915_gt_engine *ge;
 	struct i915_execlists *el;
@@ -864,8 +1073,13 @@ drv_i915_test_eu_run(
 	if (sseu == NULL || m == NULL)
 		return EINVAL;
 
-	/* Finds the render engine. */
+	/* Starts a clean record for the GT version: Gen9's fixture for 9, Gen12's for any other value. */
 	kern_memset(t, 0, sizeof(*t));
+	t->graphics_ver = 12U;
+	if (graphics_ver == 9U)
+		t->graphics_ver = 9U;
+
+	/* Finds the render engine. */
 	error = i915_eu_find_render(t, es);
 	if (error != 0)
 		return error;
@@ -884,7 +1098,14 @@ drv_i915_test_eu_run(
 		return error;
 	}
 
+	/*
+	 * Takes 112 threads per dual-subslice on Gen12 and 56 per subslice on
+	 * Gen9.  The mask is slice 0's, so a Gen9 GT with more slices gets a lower
+	 * limit than it could take, which one thread never reaches.
+	 */
 	t->max_threads = 112U * t->dss_count - 1U;
+	if (t->graphics_ver == 9U)
+		t->max_threads = I915_TEST_GEN9_THREADS_PER_SUBSLICE * t->dss_count - 1U;
 
 	/* Creates the two objects and maps them at the fixture addresses. */
 	error = i915_eu_map_fixture(t, vm, gm);
@@ -895,18 +1116,19 @@ drv_i915_test_eu_run(
 	i915_eu_write_shared(t);
 
 	/* Builds the batch into the object that is submitted. */
-	t->batch_dwords = drv_i915_test_eu_build_batch((uint32_t *)t->batch->cpu,
+	t->batch_dwords = drv_i915_test_eu_build_batch_gen((uint32_t *)t->batch->cpu,
 	    1024U,
 	    I915_TEST_EU_SHARED_VA,
 	    I915_TEST_EU_SHARED_VA,
-	    t->max_threads);
+	    t->max_threads,
+	    t->graphics_ver);
 	if (t->batch_dwords == 0U) {
 		error = drv_i915_test_eu_fail(t, ENOSPC, "build_batch");
 		return error;
 	}
 
 	/* Reads the selects back from the submitted object; a bad select is never submitted. */
-	t->pipesel_rc = drv_i915_test_eu_check_pipeline_select((const uint32_t *)t->batch->cpu, t->batch_dwords, &t->pipesel);
+	t->pipesel_rc = drv_i915_test_eu_check_pipeline_select_gen((const uint32_t *)t->batch->cpu, t->batch_dwords, &t->pipesel, t->graphics_ver);
 	if (t->pipesel_rc != 0) {
 		error = drv_i915_test_eu_fail(t, t->pipesel_rc, "pipeline_select_verify");
 		return error;
@@ -1034,7 +1256,7 @@ drv_i915_test_eu_repeat(
 	el = &es->el[t->engine_idx];
 
 	/* Refuses a batch object that no longer holds the verified words. */
-	error = drv_i915_test_eu_check_pipeline_select((const uint32_t *)t->batch->cpu, t->batch_dwords, NULL);
+	error = drv_i915_test_eu_check_pipeline_select_gen((const uint32_t *)t->batch->cpu, t->batch_dwords, NULL, t->graphics_ver);
 	hash = drv_i915_test_fnv1a64(t->batch->cpu, (size_t)t->batch_dwords * 4U, I915_TEST_FNV_BASIS);
 	if (error != 0 || hash != t->batch_hash) {
 		error = drv_i915_test_eu_fail(t, EINVAL, "repeat: batch changed");
@@ -1286,11 +1508,19 @@ drv_i915_test_execution_eu(
 	ctx0 = gt->irq.gt_ctx_switch_intr;
 	error0 = gt->irq.gt_error_intr;
 
-	/* Reads the multicast workaround registers after the start and before any submission. */
-	(void)drv_i915_test_mcr_probe_wa(&i915_test_mcr, &gt->mmio, &gt->init.engine_wa[0], &gt->info.sseu);
-	i915_eu_log_mcr(&i915_test_mcr, &gt->info.sseu);
+	/*
+	 * Reads the multicast workaround registers after the start and before
+	 * any submission.  The probe steers with Gen12's selector fields and reads
+	 * Gen12's registers, so a Gen9 GT skips it.
+	 */
+	if (gt->graphics_ver == 9U) {
+		kern_logf("i915: MCR-PROBE skipped: the probe is Gen12's (graphics_ver=9)\n");
+	} else {
+		(void)drv_i915_test_mcr_probe_wa(&i915_test_mcr, &gt->mmio, &gt->init.engine_wa[0], &gt->info.sseu);
+		i915_eu_log_mcr(&i915_test_mcr, &gt->info.sseu);
+	}
 
-	/* Runs the compute test and logs it. */
+	/* Runs the compute test for the GT's version and logs it. */
 	error = drv_i915_test_eu_run(t,
 	    &gt->engines,
 	    &gt->ppgtt,
@@ -1298,7 +1528,8 @@ drv_i915_test_execution_eu(
 	    &gt->info.sseu,
 	    &gt->mmio,
 	    &gt->uncore_lock,
-	    I915_TEST_TIMEOUT_MS);
+	    I915_TEST_TIMEOUT_MS,
+	    gt->graphics_ver);
 	i915_eu_log_run(device, t, error, user0, ctx0, error0);
 
 	/* After a pass, runs the same batch three more times on the context, then twice on a new one. */
@@ -1350,19 +1581,40 @@ i915_eu_emit(
 	batch->count++;
 }
 
-/* Emits a six-dword PIPE_CONTROL; a render-target flush also asks for the HDC pipeline flush. */
+/* Emits a six-dword PIPE_CONTROL; on Gen12 a render-target flush also asks for the HDC pipeline flush. */
 static void
 i915_eu_emit_pipe_control(
 	struct i915_test_batch *batch,
 	uint32_t flags)
 {
+	uint32_t stalls;
 	uint32_t header;
 	unsigned i;
 
-	/* Adds the HDC pipeline flush to a render-target flush, as the draw emitter does. */
+	/*
+	 * Adds the HDC pipeline flush to a render-target flush, as the draw
+	 * emitter does.  Gen9 has no such bit in dword 0: its callers flush the
+	 * data cache instead.
+	 */
 	header = GFX_OP_PIPE_CONTROL(6);
-	if ((flags & PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U)
+	if (batch->graphics_ver != 9U && (flags & PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U)
 		header |= PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
+
+	/*
+	 * A Gen9 CS stall must come with a flush, a stall or a post-sync
+	 * operation; one that comes with none stalls at the scoreboard too, as
+	 * the reference adds.
+	 */
+	stalls = PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+	    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+	    PIPE_CONTROL_DC_FLUSH_ENABLE |
+	    PIPE_CONTROL_DEPTH_STALL |
+	    I915_TEST_PC_STALL_AT_SCOREBOARD |
+	    I915_TEST_PC_POST_SYNC_WRITE;
+	if (batch->graphics_ver == 9U &&
+	    (flags & PIPE_CONTROL_CS_STALL) != 0U &&
+	    (flags & stalls) == 0U)
+		flags |= I915_TEST_PC_STALL_AT_SCOREBOARD;
 
 	/* Emits the header, the flags and four zero dwords. */
 	i915_eu_emit(batch, header);
@@ -1410,12 +1662,18 @@ i915_eu_emit_state_base_address(
 {
 	uint32_t shared_low;
 	uint32_t writeback;
+	uint32_t header;
 
 	shared_low = (uint32_t)shared & 0xfffff000U;
 	writeback = I915_TEST_GEN12_MOCS(I915_TEST_MOCS_WRITEBACK);
 
+	/* Takes the length of the GT version: Gen9's has no bindless sampler base. */
+	header = I915_TEST_STATE_BASE_ADDRESS;
+	if (batch->graphics_ver == 9U)
+		header = I915_TEST_STATE_BASE_ADDRESS_GEN9;
+
 	/* The header, and the general state base at 0 with the stateless data-port MOCS. */
-	i915_eu_emit(batch, I915_TEST_STATE_BASE_ADDRESS);
+	i915_eu_emit(batch, header);
 	i915_eu_emit(batch, 1U | (mocs << 4));
 	i915_eu_emit(batch, 0U);
 	i915_eu_emit(batch, mocs << 16);
@@ -1438,10 +1696,16 @@ i915_eu_emit_state_base_address(
 	i915_eu_emit(batch, 1U | (0xfffffU << 12));
 	i915_eu_emit(batch, 1U | (0xfffffU << 12));
 
-	/* The bindless surface base at the shared page, one page long, and the bindless sampler base at 0. */
+	/* The bindless surface base at the shared page, one page long. */
 	i915_eu_emit(batch, 1U | (mocs << 4) | shared_low);
 	i915_eu_emit(batch, (uint32_t)(shared >> 32));
 	i915_eu_emit(batch, (4096U / 64U - 1U) << 12);
+
+	/* Gen9's command ends at the bindless surface state size. */
+	if (batch->graphics_ver == 9U)
+		return;
+
+	/* The bindless sampler base at 0. */
 	i915_eu_emit(batch, 1U | (mocs << 4));
 	i915_eu_emit(batch, 0U);
 	i915_eu_emit(batch, 0U);
@@ -1453,11 +1717,18 @@ i915_eu_emit_vfe_and_walker(
 	struct i915_test_batch *batch,
 	uint32_t max_threads)
 {
+	uint32_t threads;
+
+	/* Takes the thread limit and two URB entries; Gen9 also resets the gateway timer, as the reference does. */
+	threads = (max_threads << 16) | (2U << 8);
+	if (batch->graphics_ver == 9U)
+		threads |= I915_TEST_VFE_RESET_GATEWAY_TIMER;
+
 	/* MEDIA_VFE_STATE (9 dwords): the thread limit and the URB layout. */
 	i915_eu_emit(batch, 0x70000007U);
 	i915_eu_emit(batch, 0U);
 	i915_eu_emit(batch, 0U);
-	i915_eu_emit(batch, (max_threads << 16) | (2U << 8));
+	i915_eu_emit(batch, threads);
 	i915_eu_emit(batch, 0U);
 	i915_eu_emit(batch, 2U << 16);
 	i915_eu_emit(batch, 0U);
@@ -1504,10 +1775,45 @@ i915_eu_emit_vfe_and_walker(
 /* Encodes PIPELINE_SELECT with the mask bits set for a pipeline (0 = 3D, 2 = GPGPU). */
 static uint32_t
 i915_eu_pipeline_select(
+	unsigned graphics_ver,
 	uint32_t pipeline)
 {
+	/* Gen9's: the header 0x6904, the mask bits of the pipeline field only (as the reference sets them) and the pipeline. */
+	if (graphics_ver == 9U)
+		return (0x6904U << 16) | (0x3U << 8) | pipeline;
+
 	/* The Gen12 header 0x6904, the mask bits, the media sampler DOP clock gate enable and the pipeline. */
 	return (0x6904U << 16) | (0x13U << 8) | (1U << 4) | pipeline;
+}
+
+/* Picks the store kernel of a GT version: Gen9's for 9, Gen12's for any other value. */
+static const uint32_t *
+i915_eu_kernel(
+	unsigned graphics_ver)
+{
+	/* Gen9 has its own encoding. */
+	if (graphics_ver == 9U)
+		return drv_i915_test_eu_kernel_gen9;
+
+	/* Every other version runs the Gen12 kernel. */
+	return drv_i915_test_eu_kernel;
+}
+
+/* Picks the forcewake domains the tests hold on a device and how many there are. */
+static const int *
+i915_eu_forcewake_domains(
+	struct i915_device *device,
+	unsigned *count)
+{
+	/* Gen9 has the render and the GT domains only. */
+	if (device->gt.graphics_ver == 9U) {
+		*count = I915_TEST_FORCEWAKE_DOMAINS_GEN9;
+		return i915_test_forcewake_domains_gen9;
+	}
+
+	/* Gen12 holds the five the device start holds. */
+	*count = I915_TEST_FORCEWAKE_DOMAINS;
+	return i915_test_forcewake_domains;
 }
 
 /* Tells whether a request has landed and the engine has reported its context complete. */
@@ -1657,22 +1963,23 @@ i915_eu_write_shared(
 {
 	volatile uint32_t *page;
 	volatile uint32_t *idd;
+	const uint32_t *kernel;
+	uint32_t words[8];
+	unsigned i;
 
 	page = (volatile uint32_t *)t->shared->cpu;
 	idd = page + I915_TEST_EU_IDD_OFFSET / 4U;
 
-	/* The kernel at its start pointer. */
-	kern_memcpy((char *)t->shared->cpu + I915_TEST_EU_KSP_OFFSET, drv_i915_test_eu_kernel, sizeof(drv_i915_test_eu_kernel));
+	/* The GT version's kernel at its start pointer. */
+	kernel = i915_eu_kernel(t->graphics_ver);
+	kern_memcpy((char *)t->shared->cpu + I915_TEST_EU_KSP_OFFSET, kernel, sizeof(drv_i915_test_eu_kernel));
 
-	/* The descriptor: the kernel start pointer, the sampler count field and one thread per group. */
-	idd[0] = I915_TEST_EU_KSP_OFFSET;
-	idd[1] = 0U;
-	idd[2] = 1U << 20;
-	idd[3] = 0U;
-	idd[4] = 0U;
-	idd[5] = 0U;
-	idd[6] = 1U;
-	idd[7] = 0U;
+	/* Builds the GT version's descriptor. */
+	drv_i915_test_eu_fill_idd(words, t->graphics_ver);
+
+	/* Writes it where the descriptor load reads it. */
+	for (i = 0U; i < 8U; i++)
+		idd[i] = words[i];
 
 	/* The markers, until the GPU writes them. */
 	page[I915_TEST_EU_READY_OFF / 4U] = I915_TEST_EU_UNWRITTEN;
@@ -1721,6 +2028,7 @@ i915_eu_read_back(
 	struct i915_test_eu *t)
 {
 	volatile uint32_t *page;
+	const uint32_t *kernel;
 	unsigned i;
 
 	page = (volatile uint32_t *)t->shared->cpu;
@@ -1740,10 +2048,11 @@ i915_eu_read_back(
 	}
 
 	/* The kernel as the GPU read it, compared with the table. */
+	kernel = i915_eu_kernel(t->graphics_ver);
 	t->kernel_rb_ok = 1;
 	for (i = 0U; i < I915_TEST_EU_KERNEL_DWORDS; i++) {
 		t->kernel_rb[i] = page[I915_TEST_EU_KERNEL_RB_OFF / 4U + i];
-		if (t->kernel_rb[i] != drv_i915_test_eu_kernel[i])
+		if (t->kernel_rb[i] != kernel[i])
 			t->kernel_rb_ok = 0;
 	}
 }
@@ -1828,6 +2137,7 @@ i915_eu_read_round(
 	struct i915_execlists *el)
 {
 	volatile uint32_t *page;
+	const uint32_t *kernel;
 	unsigned i;
 
 	page = (volatile uint32_t *)t->shared->cpu;
@@ -1846,10 +2156,11 @@ i915_eu_read_round(
 			round->idd_rb_ok = 0;
 	}
 
-	/* The kernel readback. */
+	/* The kernel readback, compared with the GT version's table. */
+	kernel = i915_eu_kernel(t->graphics_ver);
 	round->kernel_rb_ok = 1;
 	for (i = 0U; i < I915_TEST_EU_KERNEL_DWORDS; i++) {
-		if (page[I915_TEST_EU_KERNEL_RB_OFF / 4U + i] != drv_i915_test_eu_kernel[i])
+		if (page[I915_TEST_EU_KERNEL_RB_OFF / 4U + i] != kernel[i])
 			round->kernel_rb_ok = 0;
 	}
 

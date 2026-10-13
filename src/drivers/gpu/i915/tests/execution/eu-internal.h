@@ -103,6 +103,9 @@ struct i915_test_eu {
 	/* The render engine's index in the GT's engine table. */
 	unsigned engine_idx;
 
+	/* The GT version the fixture is built for: 9, or 12 for every other value (0 in the draw tests). */
+	unsigned graphics_ver;
+
 	/* How many fixture page entries the release put back to scratch. */
 	unsigned ptes_scrubbed;
 
@@ -220,6 +223,15 @@ struct i915_test_mcr_probe {
  */
 extern const uint32_t drv_i915_test_eu_kernel[I915_TEST_EU_KERNEL_DWORDS];
 
+/*
+ * The same store kernel for Gen9.
+ *
+ * The same stores in Gen9's encoding, with no software scoreboard, the
+ * address and the data in one message and a NOP after the end of the
+ * thread.  The table never changes.
+ */
+extern const uint32_t drv_i915_test_eu_kernel_gen9[I915_TEST_EU_KERNEL_DWORDS];
+
 int drv_i915_test_eu_fail(struct i915_test_eu *t, int rc, const char *where);
 int drv_i915_test_eu_wait_retired(struct i915_test_eu *t, struct i915_gt_engine *ge, struct i915_execlists *el, struct i915_gt_request *rq, struct i915_mmio *m, unsigned timeout_ms);
 int drv_i915_test_eu_build_request(struct i915_test_eu *t, struct i915_gt_request *rq, struct i915_gt_context *ce, struct i915_gt_object *tl_page, uint32_t seqno, uint64_t batch_va);
@@ -233,7 +245,7 @@ int drv_i915_test_forcewake_get_all(struct i915_device *device, unsigned *held);
 void drv_i915_test_forcewake_put_all(struct i915_device *device, unsigned held);
 const char *drv_i915_test_eu_outcome_name(int outcome);
 
-int drv_i915_test_eu_run(struct i915_test_eu *t, struct i915_gt_engines *es, struct i915_gt_ppgtt *vm, struct i915_gt_mem *gm, const struct i915_sseu *sseu, struct i915_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms);
+int drv_i915_test_eu_run(struct i915_test_eu *t, struct i915_gt_engines *es, struct i915_gt_ppgtt *vm, struct i915_gt_mem *gm, const struct i915_sseu *sseu, struct i915_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms, unsigned graphics_ver);
 int drv_i915_test_eu_repeat(struct i915_test_eu *t, struct i915_gt_engines *es, struct i915_gt_ppgtt *vm, struct i915_gt_mem *gm, struct i915_mmio *m, struct spinlock *uncore_lock, unsigned timeout_ms, unsigned same_ctx, unsigned new_ctx);
 void drv_i915_test_eu_release(struct i915_test_eu *t, struct i915_gt_mem *gm);
 int drv_i915_test_mcr_probe_wa(struct i915_test_mcr_probe *probe, struct i915_mmio *m, const struct i915_wa_list *wal, const struct i915_sseu *sseu);

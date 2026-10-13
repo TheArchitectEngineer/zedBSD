@@ -31,8 +31,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DECODER = os.path.join(HERE, '..', '..', '..', 'ws083', 'tests', 'genxml-decode.py')
 
 # The batches and the structures state-test.c writes, and the genxml struct each structure is.
-BATCHES = ('draw-depth', 'draw-indexed', 'rect-fill', 'rect-copy', 'dispatch-shared', 'dispatch-indirect')
+BATCHES = ('draw-depth', 'draw-indexed', 'rect-fill', 'rect-copy', 'dispatch-shared', 'dispatch-indirect', 'fixture-draw')
 STRUCTURES = {
+    'fixture-rss': 'RENDER_SURFACE_STATE',
     'rss-target': 'RENDER_SURFACE_STATE',
     'rss-texture': 'RENDER_SURFACE_STATE',
     'rss-depth': 'RENDER_SURFACE_STATE',
@@ -80,6 +81,8 @@ DIFFERENT = {
     ('PIPE_CONTROL', 'Post Sync Operation'): 'Gen9: the VF cache invalidation needs a post-sync write (SKL PRM)',
     ('PIPE_CONTROL', 'Address'): 'the address of that post-sync write',
     ('PIPE_CONTROL', 'DC Flush Enable'): 'Gen9 flushes the data cache where Gen12 flushes the HDC pipeline (anv)',
+    ('PIPE_CONTROL', 'Stall At Pixel Scoreboard'): 'the draw fixture: a Gen9 CS stall that only invalidates also stalls '
+                                                   'at the scoreboard (SKL PRM; iris adds it)',
     ('3DSTATE_VS', 'Maximum Number of Threads'): '336 vertex threads on Gen9 (Mesa GFX9_HW_INFO), 546 on Gen12',
     ('MEDIA_VFE_STATE', 'Maximum Number of Threads'): '56 threads a subslice on Gen9, 112 a dual-subslice on Gen12',
     ('3DSTATE_DEPTH_BUFFER', 'Surface Type'): 'Gen9 types a stencil-only depth buffer 2D (isl, GFX_VER < 12)',
@@ -163,15 +166,19 @@ class Item:
         """Decodes the fields under element from bit base; returns the bits they cover.
 
         A field past the end of the dwords given is absent (3DPRIMITIVE's
-        extended parameters), and a group of count 0 repeats to the end.
+        extended parameters), a field the end cuts short keeps the bits given
+        (MI_STORE_DATA_IMM's 64-bit Immediate Data in a dword store), and a
+        group of count 0 repeats to the end.
         """
         covered = 0
         for child in element:
             if child.tag == 'field':
                 start = base + int(child.attrib['start'])
                 end = base + int(child.attrib['end'])
-                if end >= total:
+                if start >= total:
                     continue
+                if end >= total:
+                    end = total - 1
                 width = end - start + 1
                 value = (whole >> start) & ((1 << width) - 1)
                 kind = child.attrib.get('type', 'uint')
@@ -284,7 +291,8 @@ def compare_fields(label, name, old, new, problems):
 
 
 # PIPE_CONTROL fields that differ by version on purpose, left out when PIPE_CONTROLs are matched up.
-PIPE_CONTROL_VERSION_FIELDS = ('HDC Pipeline Flush Enable', 'DC Flush Enable', 'Post Sync Operation', 'Address')
+PIPE_CONTROL_VERSION_FIELDS = ('HDC Pipeline Flush Enable', 'DC Flush Enable', 'Post Sync Operation', 'Address',
+                               'Stall At Pixel Scoreboard')
 
 
 def align_key(item):

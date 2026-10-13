@@ -12,10 +12,10 @@
 
 <!-- master:agents:start -->
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
-  - P1（新しい世代）: q980 ws229-p005 の準備（Gen9 の eu-test の kernel、実機の image と手順、5330 の回帰の依頼）。
+  - P1: 空き（ws232-p001 merge 済み、T1-607 待ち）。
   - P2（新しい世代）: q981 ws231-p001 基本の AHCI の driver（ws229-p002 は merge 済み）。
   - P3: 空き（q979 ws229-p004 は merge 済み）。
-  - T1: 空き（T1-605 PASS）。次は Gen9 の実機の USB の image の準備（p005）。
+  - T1: 空き。T1-606（5330 の Gen12 の回帰）はユーザーが 5330 を Linux（chaos）で起動し直すのを待つ。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
 <!-- master:agents:end -->
 
@@ -35,7 +35,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-304、WS232、q982、T1-606。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-304、WS233、q983、T1-608。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -537,6 +537,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS229](ws229/ws.md) | MG006 | i915 を Gen9・Gen9.5（Core の 6〜10 世代の iGPU）に対応（GOP のままで GT と EU → 最後に display controller）（2026-10-14 ユーザー、今日の夕方のコードフリーズに間に合えばベータ2、間に合わなければドロップ可） | planned | P1（q976 p001） |
 | [WS230](ws230/ws.md) | MG006 | i915 の GuC 対応（2026-10-14 ユーザー、ベータ3） | planning | 未割当 |
 | [WS231](ws231/ws.md) | MG002 | AHCI（SATA）の driver（2026-10-14 ユーザー、18 時のコードフリーズに間に合えばベータ2、間に合わなければベータ3） | planned | P2（q981） |
+| [WS232](ws232/ws.md) | MG002 | menuconfig に i386（PC-9800・PC/AT）と Retro の menu（Xzed・zwm・zshell・zterm）（2026-10-14 ユーザー） | planned | P1（q982） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -950,6 +951,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [tests/tty-csi-host-test.c](../tests/tty-csi-host-test.c)（ws228-p004、2026-10-14） | kernel の VT console の CSI の解析（`src/kern/tty-csi.c`: 引数の配列、`H`・`f`、SGR の最小限、38・48 の飛ばし、知らない列の捨て方） | `cc -std=c99 -Wall -Wextra -Werror -Isrc src/kern/tty-csi.c tests/tty-csi-host-test.c` で作って走らせる。PASS の行 |
 | [plan/ws229/tests/eu-gen9-host.sh](ws229/tests/eu-gen9-host.sh)（ws229-p003、2026-10-14） | i915 の EU の Gen9 の符号化: 96 の kernel を Mesa の brw_disasm/brw_asm `--gen=skl` で往復し byte が一致、拒否すべき module は拒否、期待の listing（`eu-gen9-expect.asm`）と encoder の byte の一致 | Mesa の道具（`build/mesa-tools/`）が要る |
 | [plan/ws229/tests/host/run.sh](ws229/tests/host/run.sh)（ws229-p004、2026-10-14） | i915 の 3D と compute の state: Gen12 の batch と state の byte が基準の commit と同一、Gen12 は gen120.xml・Gen9 は gen90.xml で厳密に decode、両者の field の比べ（許す差は gen9-check.py） | GENXML と BRW_TOOLS（`build/mesa-tools/`）、BASE の commit が要る |
+| [plan/ws229/tests/eu-test-gen9-host.sh](ws229/tests/eu-test-gen9-host.sh)（ws229-p005、2026-10-14） | eu-test の Gen9 の kernel の表が Mesa の組み立てと同一、Gen9 の batch と descriptor が gen90.xml で、Gen12 の batch が gen120.xml で decode でき期待どおり、Gen12 の batch が前と同一 | GENXML_CHECK（gen90 対応の genxml-check.py）と Mesa の道具 |
 | [tests/rpi4-sdhci-host-test.c](../tests/rpi4-sdhci-host-test.c)（BUG-295、2026-10-13） | Pi 4 の SD の driver（多 block の CMD25/CMD18・auto-CMD12、失敗の時の 1 block の書き直し、要求の切り分け）の回帰（偽の register） | `make -o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk rpi4-sdhci-host-test`、PASS で終わる |
 | [plan/ws081/tests/run-notestouch.sh](ws081/tests/run-notestouch.sh)（2026-10-13 BUG-296 で追従） | Notes の touch（userland/desktop/notes/touch.c）の host 試験: 2 本指の pinch と上限、drag・flick・glide、overscroll、double tap、toolbar と頁の tap（toolbar の印）、ペンの近くの掌、指で書く。`plan/ws081/tests/run-notestouch.sh [OUTDIR]`（sanitizer は `EXTRA_CFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"`）。PASS は `host-notestouch: ok (N checks)` |
 | [plan/ws079/tests/run-notes-zoom-limit.sh](ws079/tests/run-notes-zoom-limit.sh)（BUG-296、2026-10-13） | Notes の頁の絵の確保が断られた時に倍率を下げて作り直す（i915 の 16 MiB の上限の模型）。`sh plan/ws079/tests/run-notes-zoom-limit.sh`、PASS は `ok (15 checks)` と `PASS` |

@@ -58,3 +58,31 @@ batch を取らない state の書き手は `_gen` の版を足し、古い名�
 - `tests/fixtures/draw-fixture.c`（kernel の試験の Gen12 の draw）は Gen9 の形にしていない（p005 で Gen9 の機械で使うなら直す）。
 - scratch の thread ID の数（heap.h）は Gen12 の大きい値のまま（Gen9 の必要数より大きい）。
 - Gen9 の 3DSTATE_PS・WM の Gen9 固有の WA（anv の GFX_VER == 9 の残り）と HiZ・MSAA の Gen9 の確かめは p005 の実機で。
+
+## p005 のための fixture（2026-10-14 P3、ws229-p005 の一部。phase005/phase.md は P1 が書く）
+
+範囲: review-1 の中 7 と §5（p004 の所有に足された `tests/fixtures/draw-fixture.c`）。eu-test.c・image・手順は P1。
+
+| 何 | 内容 | file |
+| --- | --- | --- |
+| fixture の版 | `drv_i915_draw_fixture_write_state_gen()`・`_build_batch_gen()`・`_mocs_gen()`（9 で Gen9、他は Gen12）。古い名前は Gen12 の wrapper（byte 不変）。内部の batch に `graphics_ver` | draw-fixture.[ch] |
+| Gen9 の batch | render/state.c の Gen9 の形に合わせた: PIPE_CONTROL の HDC flush の代わりに DC flush、PIPELINE_SELECT 0x69040300、STATE_BASE_ADDRESS 19 dword、DEPTH_BOUNDS・VF_SGVS_2・CPS_POINTERS・PRIMITIVE_REPLICATION を出さない、VB の L3 bypass を立てない、3DSTATE_URB_VS/HS/DS/GS（VS は chunk 4 から 928 entry、他は chunk 20 で 0）、SF の deref 0、DEPTH_BUFFER の format を 20:18、STENCIL_BUFFER 5 dword、RSS dw1 bit 31（unorm path）を立てない、uncached MOCS は index 0。invalidate の PIPE_CONTROL（CS stall と invalidate だけ）に Gen9 では stall at scoreboard を足した（SKL PRM の CS stall の制約、iris と同じ） | draw-fixture.c |
+| Gen9 の pixel shader | Gen12 の SIMD8 版と同じ手順（f1 に pixel mask、A64 untyped write で marker 0xc0ffee01 を 0x100400c10 へ、g112-g115 の赤を headerless の RT write と EOT）。Mesa 25.0.7 の `brw_asm --gen=skl` で組んだ 192 byte。後ろの 832 byte は Gen9 の EOT（GEN9_EOT_ONLY）で敷く | draw-fixture.c、plan/ws229/tests/fixtures/draw-fixture-ps-gen9.asm |
+| Gen12 だけの binary の拒否 | `drv_i915_tex_fixture_supported()`（Gen9 で 0）。draw-test.c の tex・t3・bl はこれで、r1 は compute の半分が eu-test の Gen12 の kernel と batch なので Gen9 で拒否。log「not run: … Gen12 only (graphics version 9)」を出し `I915_TEST_SKIPPED`（scenarios.h、-1）を返し、runner は `SKIP` と log（PASS にも FAIL にもしない）。draw は Gen9 の fixture で走り、Gen9 の select の確かめ（0x69040300 が 1 つ、他の select 無し）を draw-test.c に置いた | draw-test.c・runner.c・scenarios.h・README.md |
+| `vkref-generated.inc` | どの source からも include されていない（`git grep vkref`）。拒否する呼び手が無いので変えていない | — |
+| ついで（Q1 経由の P1 の報告） | `plan/ws101/tests/host/genxml-check.py` の要約の行が xml の名前の代わりに命令の名前を出していた（`name` の使い回し）。`root_xml` に分けた | genxml-check.py |
+
+確かめ（host、QEMU は使っていない）:
+- `GENXML=<p1>/build/mesa-tools/mesa-25.0.7/src/intel/genxml BRW_TOOLS=<p1>/build/mesa-tools/build-asm/src/intel/compiler sh plan/ws229/tests/host/run.sh` → PASS。
+  - fixture の Gen12 の batch・state page・RSS の 3 file が 03dee2287 の tree の古い API の出力と byte で同一（計 17 file）。新しい tree の中でも古い名前と `_gen(…, 12)` の出力が同一（assert）。
+  - 12-fixture-draw と 9-fixture-draw を gen120.xml・gen90.xml で decode（全 dword が命令、field の外の bit 無し）、両版を命令ごとに並べ field を比べて PASS（14 batch・882 命令・16 構造体）。gen9-check.py の変更: MI_STORE_DATA_IMM の 64 bit の Immediate Data が 4 dword の命令で切れる分を読む（以前は field ごと捨てて stray と判定）、Stall At Pixel Scoreboard の版の差を理由付きで表に。
+  - Gen9 の shader が .asm の `brw_asm --gen=skl` の 192 byte と同一、後ろが Gen9 の EOT の send 52 個（brw_disasm）。
+- `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws229-p005f/k64-exec I915_TESTS=y I915_TEST_SET=execution ZEDBSD_TEST_CPPFLAGS=-DI915_TEST_SCENARIO=draw vmunix` と `I915_TEST_SET=display`（BUILD=build/ws229-p005f/k64-disp）→ どちらも warning 0、amd64 vmunix check PASS。
+- genxml-check.py: ws229 の 12/9-dispatch-shared を `PIPELINE_SELECT` の 1 行の expect で流し、要約が「(gen120)」「(gen90)」になることを確かめた。
+
+未実施・残り:
+- 実機（Gen9 で draw が描けるか、Gen12 の 5330 で draw・tex・r1・t3・bl が変わらず PASS か）は p005 の T1。fixture の Gen12 の byte は同一なので 5330 の回帰は fixture の面では変化なし（draw-test.c の経路の変更は select の確かめの wrapper だけ）。
+- Gen9 の draw は eu-test の helper（request・park・hang・forcewake）を使う。P1 の eu-test の Gen9 化（`struct i915_test_eu` の `graphics_ver` など）が merge されたら、draw-test.c の draw の `t->graphics_ver` を env から入れる 1 行が要る（今の main に field が無いので入れていない。0 のままだと hang の dump が Gen12 の ring fault register を読む）。
+- r1 の Gen9 化（eu-test の Gen9 の kernel と batch を使う）は P1 の eu-test の後。
+- Gen9 で CACHE_MODE_1 を fixture は書かない（anv の context 初期化の値。単色の draw には効かない判断）。
+- `build/ws229-p005f/`（kernel 2 本・log・逆アセンブルの作業物）と `build/ws229-p004/host.run.*` の古い run は Q1 が消してよい。

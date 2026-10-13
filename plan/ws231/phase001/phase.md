@@ -32,3 +32,10 @@ file: `include/drivers/pci/pci-ahci-protocol.h`（register の offset・bit、FI
 7. **回復**: 失敗・timeout の後は port を作り直す（ST=0、CR が消えるのを待つ、PxSERR・PxIS を消す、BSY・DRQ が残れば COMRESET、ST=1）。timeout と HBA・link の失敗は 2 回まで同じ request をやり直す（read・同じ data の write・flush は繰り返して安全）。device が ERR を返した時（TFES、media の error）はやり直さず EIO。
 8. **detach・shutdown**: detach は disk を出している間は EBUSY（hotplug は後）。shutdown は GHC.IE=0 と各 port の ST・FRE を落として DMA を止めるだけ（cache の flush は電源断の前の sync が disk の層の BIO_FLUSH で出す）。suspend/resume・NCQ・TRIM・ALPM・ATAPI・hotplug は後（ws.md）。
 9. **DMA の address**: PC/AT の PCI の DMA は 32 bit の device なので全部 4 GiB 未満。上位の register（CLBU・FBU・CTBAU・DBAU）にも上位 32 bit を書き、CAP.S64A が無いのに 4 GiB 以上の address が来たら attach を断る。
+## review-1 とユーザーの決定（2026-10-14）
+
+[review-1](review-1.md)（致命的 0、重大 R1〜R4、中 1〜9、軽微 1〜10）。ユーザーの決定（クリック）:
+- U1（R4: suspend の hook が無いと S0 idle が全体で失敗）:「既定を n にする」→ CONFIG_DRIVER_PCI_AHCI の既定は n。試験の config でだけ y。suspend・resume は後。
+- U2:「Intel の RAID mode にも bind」→ class 01.06.01 に加え、Intel の RAID mode（class 01.04.00）の controller を Intel の device ID の表で AHCI として bind（Linux と同じ）。RST が NVMe を AHCI の BAR に remap している機種は対象外（記録だけ）。
+- U3・U4: 推しどおり（shutdown では FLUSH CACHE（EXT）だけ、STANDBY IMMEDIATE は出さない。hw.diskstats の「IDE」は受け入れ、UAPI を増やさない）。
+技術判断（Q1）: R1〜R3 と中 1〜9、軽微は review の直し方の案どおり。試験の案 (a)〜(f) を T1 の依頼に入れる。

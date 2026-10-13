@@ -97,8 +97,9 @@ struct i915_test_ppgtt_walk {
 /*
  * What a batch holds in the way of PIPELINE_SELECT words.
  *
- * The check compares against fixed Gen12.0 words, not against the emitter's
- * macro, so a mis-encoded select is caught however it was produced.
+ * The check compares against fixed Gen12.0 words (or Gen9 words), not against
+ * the emitter's macro, so a mis-encoded select is caught however it was
+ * produced.
  */
 struct i915_test_pipeline_select {
 	/* How many 3D and GPGPU selects, and how many unexpected select-like words. */
@@ -130,7 +131,10 @@ struct i915_test_fhd_va {
 
 int drv_i915_test_ppgtt_walk(struct i915_gt_ppgtt *pp, uint64_t va, struct i915_test_ppgtt_walk *walk);
 unsigned drv_i915_test_eu_build_batch(uint32_t *cmds, unsigned capacity, uint64_t shared_va, uint64_t inst_base, uint32_t max_threads);
+unsigned drv_i915_test_eu_build_batch_gen(uint32_t *cmds, unsigned capacity, uint64_t shared_va, uint64_t inst_base, uint32_t max_threads, unsigned graphics_ver);
 int drv_i915_test_eu_check_pipeline_select(const uint32_t *cmds, unsigned count, struct i915_test_pipeline_select *check);
+int drv_i915_test_eu_check_pipeline_select_gen(const uint32_t *cmds, unsigned count, struct i915_test_pipeline_select *check, unsigned graphics_ver);
+void drv_i915_test_eu_fill_idd(uint32_t *idd, unsigned graphics_ver);
 int drv_i915_test_draw_check_pipeline_select(const uint32_t *cmds, unsigned count, struct i915_test_pipeline_select *check);
 int drv_i915_test_fhd_va_layout(const struct i915_test_fhd_va **layout, unsigned *count);
 
