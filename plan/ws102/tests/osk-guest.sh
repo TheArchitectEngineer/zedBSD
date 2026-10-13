@@ -18,8 +18,9 @@
 #   send      (p004) what the keys type reaches the focused application: in Text Editor (/root/osk.txt) the alpha face's
 #             a i u e, a/A (Shift, p026) and o (O), and the number face's 1 2 3 as keys, saved by Ctrl+S: the file is
 #             "aiueO123"; in ime-probe (a text input) the kana face's あ い う え お and か with the voice key (が)
-#             as the panel's preedit (p026: nothing deleted), 改行 commits it: its text is "あいうえおかが"; in wltest
-#             (no text input) a kana is refused; in Text Editor a kana (WS090's text input) is also tried, and noted
+#             as the panel's preedit (p026: nothing deleted; the voice key turns its か into が), 改行 commits it: its text
+#             is "あいうえおが"; in wltest (no text input) a kana is refused; in Text Editor a kana (WS090's text input)
+#             is also tried, and noted
 #   close     (p005) the title band dragged 100 px right closes the flick panel, 100 px down the QWERTY panel; App
 #             Home and Wiseview close an open panel (the lock screen needs a session's compositor: not checked here);
 #             (BUG-229) they put it away (put-away), and without a focused window it is not brought back
@@ -202,10 +203,12 @@ qkey_tap() {
 # A tap on a tool of the flick panel.
 tool_tap() { pointer move "$1" "$2" sleep 120 down sleep 50 up sleep 350; }
 
-# The middle of the latest logged place matching a pattern (... x=X y=Y width=W height=H): place_middle PATTERN sets px py
-# (both 0 when it is not logged).
+# The middle of the latest logged place with a fixed text (... x=X y=Y width=W height=H): place_middle TEXT sets px py
+# (both 0 when it is not logged).  The keyboard's lines are matched on the host: a UTF-8 pattern (the tools' labels)
+# through the guest's shell matches nothing (T1-563).
 place_middle() {
-	set -- $(guest "grep -a '$1' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+	guest "grep -a 'KWL OSK' /tmp/zdesktop.log" > "$out/place-now.txt"
+	set -- $(grep -aF "$1" "$out/place-now.txt" | tail -1 | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
 	px=$(( ${1:-0} + ${3:-0} / 2 ))
 	py=$(( ${2:-0} + ${4:-0} / 2 ))
 }
@@ -372,13 +375,13 @@ hold 800'
 		key_tap 1082 524
 		key_tap 1004 758
 		# (p026) the panel's preedit, then 改行 commits it whole; nothing is deleted.
-		expect_text 'KWL OSK preedit text=あいうえおかが'
+		expect_text 'KWL OSK preedit text=あいうえおが'
 		shot send-probe.png
 		key_tap 1238 680
-		expect_text 'KWL OSK reading commit text=あいうえおかが reason=enter'
+		expect_text 'KWL OSK reading commit text=あいうえおが reason=enter'
 		sleep 1
 		guest 'cat /tmp/ime-probe.log' > "$out/ime-probe.log"
-		grep -qF 'PROBE TEXT text=あいうえおかが' "$out/ime-probe.log" && echo "ime-probe: あいうえおかが ok" || { echo "ime-probe: text MISSING"; status=1; }
+		grep -qF 'PROBE TEXT text=あいうえおが' "$out/ime-probe.log" && echo "ime-probe: あいうえおが ok" || { echo "ime-probe: text MISSING"; status=1; }
 		grep -qF 'PROBE DELETE' "$out/ime-probe.log" && { echo "ime-probe: a deletion MISSING (p026: none expected)"; status=1; } || echo "ime-probe: no deletion ok"
 		# wltest (no text input) on top: a kana is refused.
 		guest 'for p in $(ps -A -o pid,args | grep "[i]me-probe" | awk "{print \$1}"); do kill $p; done' >/dev/null
