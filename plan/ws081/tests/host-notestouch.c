@@ -16,8 +16,8 @@
  * move it; two fingers zoom about the place between them, at most as far
  * as the limits allow; a zoomed page follows a flick and glides on, and
  * stretches past its top and springs back; a double tap zooms in about the
- * tap and back; a tap on the toolbar waits for the main loop and a drag
- * there moves nothing; a finger near the pen, or just after it left, is a
+ * tap and back; a tap waits for the main loop, marked as the toolbar's or
+ * the page's, and a drag from the toolbar moves nothing; a finger near the pen, or just after it left, is a
  * palm and moves nothing, and the pen coming near cancels a drag and stops
  * a glide; another page starts at its top.
  *
@@ -471,25 +471,33 @@ test_toolbar(void)
 	float tap_x;
 	float tap_y;
 	int taken;
+	int on_toolbar;
+
+	/* The earlier tests' taps on the page are not this test's. */
+	do
+		taken = notes_touch_take_tap(&touch, &tap_x, &tap_y, &on_toolbar);
+	while (taken);
 
 	/* A tap on the toolbar. */
 	finger(NOTES_TOUCH_DOWN, 7, 120.0f, 30.0f);
 	clock_us += 70000U;
 	finger(NOTES_TOUCH_UP, 7, 0.0f, 0.0f);
 	run(50.0);
-	taken = notes_touch_take_tap(&touch, &tap_x, &tap_y);
-	check(taken == 1 && tap_x == 120.0f && tap_y == 30.0f, "a tap on the toolbar waits to be taken");
-	taken = notes_touch_take_tap(&touch, &tap_x, &tap_y);
+	taken = notes_touch_take_tap(&touch, &tap_x, &tap_y, &on_toolbar);
+	check(taken == 1 && tap_x == 120.0f && tap_y == 30.0f && on_toolbar == 1, "a tap on the toolbar waits to be taken");
+	taken = notes_touch_take_tap(&touch, &tap_x, &tap_y, &on_toolbar);
 	check(taken == 0, "once");
 
-	/* A tap on the page does not. */
+	/* A tap on the page waits too, not as the toolbar's (it ends an open text box, ws177-p012). */
 	run(400.0);
 	finger(NOTES_TOUCH_DOWN, 8, 500.0f, 500.0f);
 	clock_us += 70000U;
 	finger(NOTES_TOUCH_UP, 8, 0.0f, 0.0f);
 	run(400.0);
-	taken = notes_touch_take_tap(&touch, &tap_x, &tap_y);
-	check(taken == 0, "a tap on the page is not the toolbar's");
+	taken = notes_touch_take_tap(&touch, &tap_x, &tap_y, &on_toolbar);
+	check(taken == 1 && tap_x == 500.0f && tap_y == 500.0f && on_toolbar == 0, "a tap on the page is not the toolbar's");
+	taken = notes_touch_take_tap(&touch, &tap_x, &tap_y, &on_toolbar);
+	check(taken == 0, "and once");
 
 	/* A drag that starts on the toolbar moves nothing. */
 	notes_touch_view(&touch, &x, &y, &scale);
@@ -613,6 +621,7 @@ test_write(void)
 	float tap_x;
 	float tap_y;
 	int taps;
+	int on_toolbar;
 	int k;
 
 	/* Off: a finger's drag writes nothing. */
@@ -699,14 +708,16 @@ test_write(void)
 	notes_touch_view(&touch, &after_x, &after_y, &scale);
 	check(after_x == x && after_y == y, "and the page stays");
 
-	/* The toolbar still takes a tap. */
+	/* The toolbar still takes a tap (the lines before left none waiting). */
+	taps = notes_touch_take_tap(&touch, &tap_x, &tap_y, &on_toolbar);
+	check(taps == 0, "a line on the page is not a tap");
 	finger(NOTES_TOUCH_DOWN, 1, 300.0f, 30.0f);
 	run(70.0);
 	finger(NOTES_TOUCH_UP, 1, 0.0f, 0.0f);
 	rest();
-	taps = notes_touch_take_tap(&touch, &tap_x, &tap_y);
+	taps = notes_touch_take_tap(&touch, &tap_x, &tap_y, &on_toolbar);
 	take_writes(counts, &first, &last);
-	check(taps == 1 && counts[NOTES_TOUCH_WRITE_BEGIN] == 0U, "a tap on the toolbar is a tap, not a line");
+	check(taps == 1 && on_toolbar == 1 && counts[NOTES_TOUCH_WRITE_BEGIN] == 0U, "a tap on the toolbar is a tap, not a line");
 
 	/* A double tap writes two dots and zooms nothing. */
 	zoom = touch.zoom;

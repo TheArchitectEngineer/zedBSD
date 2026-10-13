@@ -2,6 +2,8 @@
 # ws081-p013: builds Notes' touch screen (touch.c) with libkeiland's motion, scroller, scroll and gestures for the host
 # (plain, and with EXTRA_CFLAGS such as the sanitizers) and runs host-notestouch.
 #   plan/ws081/tests/run-notestouch.sh [OUTDIR]
+# With the sanitizers (another OUTDIR):
+#   EXTRA_CFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer" plan/ws081/tests/run-notestouch.sh build/ws081-p013-host-san
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 root=$(cd "$(dirname "$0")/../../.." && pwd)
