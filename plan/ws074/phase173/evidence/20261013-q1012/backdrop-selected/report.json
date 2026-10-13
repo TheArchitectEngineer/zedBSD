@@ -1,0 +1,106 @@
+{
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "fail": 2,
+    "pass": 3
+  },
+  "eligible": 51,
+  "results": [
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/filter-effects/backdrop-filter-backdrop-root-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/filter-effects/backdrop-filter-backdrop-root-backdrop-filter.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/filter-effects/backdrop-filter-backdrop-root-clip-path-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/filter-effects/backdrop-filter-backdrop-root-clip-path.html"
+    },
+    {
+      "image": "001-backdrop-filter-backdrop-root-filter.png",
+      "references": [
+        {
+          "allowed_different_pixels": 2696,
+          "allowed_max_difference": 5,
+          "different_pixels": 196,
+          "equal": false,
+          "max_difference": 26,
+          "path": "css/filter-effects/backdrop-filter-backdrop-root-filter-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/filter-effects/backdrop-filter-backdrop-root-filter.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/filter-effects/backdrop-filter-backdrop-root-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/filter-effects/backdrop-filter-backdrop-root-mix-blend-mode.html"
+    },
+    {
+      "image": "002-backdrop-filter-backdrop-root-opacity.png",
+      "references": [
+        {
+          "allowed_different_pixels": 2696,
+          "allowed_max_difference": 5,
+          "different_pixels": 196,
+          "equal": false,
+          "max_difference": 51,
+          "path": "css/filter-effects/backdrop-filter-backdrop-root-opacity-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/filter-effects/backdrop-filter-backdrop-root-opacity.html"
+    }
+  ],
+  "root": "css/filter-effects",
+  "schema": 1,
+  "selected": 5,
+  "selection": "first-level round-robin, path-sorted",
+  "selection_manifest": "build/ws074-interop2025-q1012/manifest.json",
+  "skipped": {
+    "script": 56,
+    "script_reference": 6
+  },
+  "suite": "wpt",
+  "viewport": [
+    800,
+    600
+  ]
+}

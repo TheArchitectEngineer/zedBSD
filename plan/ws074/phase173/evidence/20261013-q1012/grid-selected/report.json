@@ -1,0 +1,106 @@
+{
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "fail": 3,
+    "pass": 2
+  },
+  "eligible": 529,
+  "results": [
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-grid/reference/anonymous-grid-items-001-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/anonymous-grid-items-001.html"
+    },
+    {
+      "image": "001-descendant-static-position-001.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1430,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/descendant-static-position-001-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/descendant-static-position-001.html"
+    },
+    {
+      "image": "002-grid-align-baseline-005.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 78400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/grid-align-baseline-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 20000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/reference/flex-item-grid-container-percentage-rows-001-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-definition/flex-item-grid-container-percentage-rows-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/anonymous-flex-item-split-ref.html",
+          "relation": "match"
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/anonymous-grid-item-001.html"
+    }
+  ],
+  "root": "css/css-grid",
+  "schema": 1,
+  "selected": 5,
+  "selection": "first-level round-robin, path-sorted",
+  "selection_manifest": "build/ws074-interop2025-q1012/manifest.json",
+  "skipped": {
+    "script": 132,
+    "script_reference": 9
+  },
+  "suite": "wpt",
+  "viewport": [
+    800,
+    600
+  ]
+}

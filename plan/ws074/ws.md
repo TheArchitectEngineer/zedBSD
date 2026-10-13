@@ -3,15 +3,19 @@
 # WS074: zedBSD の Web ブラウザ（`userland/desktop/browser`）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-05 に Q1 の担当へ戻した。2026-10-13 ユーザーが Acid3 の全100項目・pixel 完全一致を目標に再開指示。その他の WPT・Interop・Test262 などは停止を維持）
+Status: incomplete（2026-10-13 Acid3 得点100/100・pixel差0達成。ユーザーが次に WPT Interop 2025 全件PASS 100%を目標として指定）
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Owner: Q1（プロジェクト全体）。Acid3 の Queue はユーザーの指示によりこの Codex セッションが単独で管理し、別 worktree で実行中。ユーザーは画素差0まで最大90分 Queue の自動反復を指示。
-Queue: [q1011](../history/queue-q1011.md) finished / p188 cleared。Acid3 のユーザー目標達成、追加 Queue は未選定。
-Resume point: q1011 後、Acid3 score100/100・pixel差0/480000、Acid2差1865/120000。Acid3 のユーザー目標達成。p100 whole は Acid2 exact 回帰・target gate が残り未達。
+Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
+Queue: [q1012](queue.md) finished / p173 partial cleared、whole uncleared。23:49〜23:58 JST。
+Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。testharness1,783、reftest1,974、crashtest48。現 runner の静的候補1,561、未対応2,244。選定sample35件は5 PASS/30 FAIL。全件baselineと100%は未達。p189/p190のrunner coverageが次の依存。Acid3 score100/100・pixel差0/480000、p100 whole は別に未達。
 <!-- awesome-plan-current:end -->
+
+Event ws074-p173-interop-resume-20261013: ユーザーが「WPTに進みます。2025を100%」と指示。既存の p173 Interop 2025 公式 focus area 全件 PASS 100% を次の優先対象にした。p173 と p100 の依存関係を、p188 の main 統合済み Acid3 検証出力に限定して整理。p100 whole の Acid2 exact/target gate は未達のまま。p173 の [候補選定と q1012 範囲](phase173/selection-snapshot.md)を記録、ユーザーが 23:49 JST 承認して開始。p101・p174〜p176 の受け入れは維持。Master の focused goal / WS priority 投影は、このセッションの編集禁止により Q1 へ pending。GitHub publication保留。
+
+Event ws074-p173-q1012-outcome-and-split-20261013: q1012-i01 は [固定manifest・runner inventory・sample証拠](phase173/evidence/20261013-q1012/README.md)を完成し、partial scope cleared。p173 whole は全件baseline未取得で uncleared。3,805 ID中 testharness1,783、crashtest48、scripted reftest/reference407、variant6がrunner未対応。静的候補1,561中の選定sample35件は5 PASS/30 FAIL。結果取得を[p189](phase189/phase.md)、残るreftest/crashtestを[p190](phase190/phase.md)に分割。両者は p173 の固定manifest出力を前提に独立し、p173 whole は両出力と全件baselineを待つ。p100/p101/p174〜p176 の条件は維持。共有 Master/Queue/GitHub projection は別セッション所有のため pending、`master.md` は変更しない。
 
 ## Q1 向けの整理（2026-10-05、Q1）
 
@@ -29,9 +33,9 @@ Resume point: q1011 後、Acid3 score100/100・pixel差0/480000、Acid2差1865/1
 | p172（Codex の branch の取り込み） | whole cleared（2026-10-03、209/209 の review・hash、host・ASan・ABI・Acid2、target の boot と Venus） | [phase172/import/checkpoint98](phase172/import/checkpoint98/README.md) |
 | p100（Acid3 の pixel 完全一致・fail 0） | **planned、しかかり**。q1011 の現行値は得点100/100・pixel一致100%。Acid3 のユーザー目標は達成。Acid2 exact 回帰・target gate により p100 whole は未達 | [p100](phase100/phase.md) |
 
-### Acid3 の後に止めている目標（2026-10-13 現在）
+### Acid3 後の優先対象（2026-10-13 ユーザー更新）
 
-p100 Acid3 の pixel 完全一致は再開対象。後続の p101 WPT CSS2 reftest 5904 件の 100% → p174 File System Access API → p175 OPFS → p173 Interop 2025 の 100% → p176 Test262 は指示待ち。p098（ES module）と p036 も待機。
+Acid3 得点と pixel 完全一致のユーザー目標は達成。次は p173 の Interop 2025 全対象PASS 100%を優先する。p101 WPT CSS2 reftest 5904件、p174 File System Access API、p175 OPFS、p176 Test262、p098、p036 は独立の未開始候補。p100 whole は別の残余関門として保持。WS priority と focused goal の Master 投影は本セッションの `master.md` 編集禁止のため Q1 に pending。
 
 ### 既知の bug（Bug Board）
 
@@ -298,10 +302,10 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p097](phase097/phase.md) | 指定10公開siteの画像・box・DOM tree比較、阿部寛のホームページのguest full-screenデモ、WPT reftestとAcid、一般化できる差を最大4件修正 | **cleared**（2026-09-30。WPT 44/100、Acid2 90.56%、Acid3 9/100。`postMessage`、table rowspan、presentational hint、intrinsic auto margin） | p094、p096 |
 | ws074-p098 | ES module scriptのgraph取得・link・評価、`import`・`export`、GitHubのhydration比較 | planned（2026-09-30ユーザー指定によりp101後へ延期） | p087、p088、p097、p172 |
 | [ws074-p099](phase099/phase.md) | Acid2 100%: 固定harnessでexact pixel一致、crash・timeout 0 | **cleared**（2026-09-30、q507。90.56% → 100.00%、plain/ASan） | p097 |
-| [ws074-p100](phase100/phase.md) | Acid3の100/100、固定参照とのpixel完全一致、fail・Uncaught・crash・timeout 0 | planned（q1004 現行値: 得点100/100、pixel一致96.1258%。全体未達） | p099、p172（両方 cleared） |
+| [ws074-p100](phase100/phase.md) | Acid3の100/100、固定参照とのpixel完全一致、fail・Uncaught・crash・timeout 0 | planned（q1011 Acid3得点100/100・pixel差0。Acid2 exact/target gate が未達） | p099、p172（両方 cleared） |
 | ws074-p101 | WPT CSS2 reftest 100%: 固定commitのscriptなし全5904件でpass 100%、error 0 | planned（p100後、p172も必須） | p100、p172 |
 | [ws074-p172](phase172/phase.md) | origin/browser2のbrowser変更をWS107後のlibbrowser/browser配置へ取込み、関連計画/試験/bugを意味的に照合するblocking gate | cleared / b-q598（browser3 の q598、main の q598 とは別。209/209 review、whole final gates） | WS107の実成果、p099、branch snapshot |
-| [ws074-p173](phase173/phase.md) | Interop 2025の公式focus area対象WPTを固定・baseline化し、全件PASSへ向けた失敗群と後続Phaseを設計 | planned / Queueなし | p172、p100 |
+| [ws074-p173](phase173/phase.md) | Interop 2025の公式focus area対象WPTを固定・baseline化し、全件PASSへ向けた失敗群と後続Phaseを設計 | uncleared / q1012-i01 partial cleared、whole baseline未達 | p172、p188 の main 統合済み Acid3 出力、p189/p190のrunner出力 |
 | [ws074-p174](phase174/phase.md) | File System Access APIの仕様/WPT・権限・picker/handle契約を確定し、機能群ごとの実装Phaseへ分割 | planning / Queueなし | p172、p100 |
 | [ws074-p175](phase175/phase.md) | OPFSのorigin分離・永続保存・handle契約を確定し、機能群ごとの実装Phaseへ分割 | planning / Queueなし | p172、p174の共有契約の実出力 |
 | [ws074-p176](phase176/phase.md) | Test262固定全suiteのbaselineと失敗群/runner coverage、段階的改善Phaseの設計 | planning / Queueなし | p172、JS runnerの実出力 |
@@ -317,6 +321,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p186](phase186/phase.md) | sharp text-shadow と見出し影を調べる | cleared（q1009-i01、sharp 単一 scope、Acid3差2451減） | p172〜p185 cleared、q1008 実測出力 |
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
+| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | planned / Queueなし | p173 q1012 固定manifest出力 |
+| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | planned / Queueなし | p173 q1012 固定manifest出力 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

@@ -1,0 +1,87 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "manifest_sha256": "c12052922881eff3141aa56ba5e45ddd939c415200eb09e46cc70a5a17177234",
+  "wpt_manifest_sha256": "951619bb1a7c1f25ff0abc6e5ae4f15116a4e8874b053bd93cf0aca681098ac0",
+  "coverage_sha256": "11f8fc7e9abfbdac22ff7ccb0497b400ba987b8e7d90dd8f2a6e41045465cad6",
+  "selected_unique_tests": 3805,
+  "unresolved": 0,
+  "test_types": {
+    "testharness": 1783,
+    "crashtest": 48,
+    "reftest": 1974
+  },
+  "runner_classes": {
+    "static_reftest_candidate": 1561,
+    "unsupported_crashtest": 48,
+    "unsupported_scripted_reference": 5,
+    "unsupported_scripted_reftest": 402,
+    "unsupported_testharness": 1783,
+    "unsupported_variant_url": 6
+  },
+  "sample_groups": {
+    "anchor-selected": {
+      "eligible_static_in_root": 21,
+      "selected": 10,
+      "counts": {
+        "fail": 10
+      },
+      "skipped_scan": {
+        "script": 116
+      }
+    },
+    "flexbox-selected": {
+      "eligible_static_in_root": 788,
+      "selected": 10,
+      "counts": {
+        "fail": 10
+      },
+      "skipped_scan": {
+        "non_static_flag": 1,
+        "script": 66
+      }
+    },
+    "grid-selected": {
+      "eligible_static_in_root": 529,
+      "selected": 5,
+      "counts": {
+        "fail": 3,
+        "pass": 2
+      },
+      "skipped_scan": {
+        "script": 132,
+        "script_reference": 9
+      }
+    },
+    "backdrop-selected": {
+      "eligible_static_in_root": 51,
+      "selected": 5,
+      "counts": {
+        "fail": 2,
+        "pass": 3
+      },
+      "skipped_scan": {
+        "script": 56,
+        "script_reference": 6
+      }
+    },
+    "writing-selected": {
+      "eligible_static_in_root": 96,
+      "selected": 5,
+      "counts": {
+        "fail": 5
+      },
+      "skipped_scan": {
+        "script": 34,
+        "script_reference": 2
+      }
+    }
+  },
+  "sample_total": {
+    "fail": 30,
+    "pass": 5
+  },
+  "browser_binary_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "repo_head_at_report": "bcfdbedc7f21d682afe6c1754bc1e1af1b2215fd",
+  "claim_limit": "Samples only; no global Interop pass rate. Unsupported/unrun tests count as unrun, not pass."
+}

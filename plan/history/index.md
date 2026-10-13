@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1012 / WS074 Interop 2025 対象固定（2026-10-13）
+
+[q1012履歴](queue-q1012.md): ユーザー承認の最大90分 partial scope で公式19 focus area の固定3,805 unique test ID・未解決0を確定。現runnerの静的reftest候補1,561、未対応2,244、選定sample35件は5 PASS/30 FAIL/0 error。p173 whole は全件baseline未取得で uncleared、p189/p190 を後続runner Phaseに分割。全件PASS 100%の主張はしない。[証拠](../ws074/phase173/evidence/20261013-q1012/README.md)。共有 Master/Queue/GitHub publication は pending、`master.md` は未変更。
+
 ## 最新: q1011 / WS074 visited link color（2026-10-13）
 
 [q1011履歴](queue-q1011.md): 同一ページが観測した子 frame の成功 URL だけを `:visited` 描画色に反映。実 HTTP fixture6/6、frame load52/52、CSS rule44/44、build warning0。固定 Acid3 得点100/100・inventory100/100・例外0・pixel差**0/480000（100%一致）**、Acid2差1865/120000不変。p188 cleared、ユーザーの Acid3 目標達成。p100 whole は Acid2 exact・target gate 等が残り planned、WS074 は incomplete。2026-10-13 main commit `1f9cc35ca` に145 fileを統合し、mainでbuild warning0・固定 Acid3差0を再確認（[report](../ws074/phase188/evidence/20261013-merge-main/report.json)）。GitHub publicationとpushは保留。`master.md` は未変更。

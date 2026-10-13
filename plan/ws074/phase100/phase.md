@@ -18,7 +18,9 @@ Prerequisites: [p099](../phase099/phase.md) cleared、[p172](../phase172/phase.m
 
 - 固定したAcid3が表示する得点100/100、参照との画素差0、試験のfail/Uncaught/crash/timeout 0。試験環境・入力・出力画像・比較結果を保存する。
 - 該当するbrowser/libbrowserとWS107の回帰、build、sourceの全文規約を確認する。未実施/skipをPASSとして数えない。
-- p172のwhole-Phase clearance前に実装を始めない。後続の[p173](../phase173/phase.md)とp101は本Phaseのverified出力を前提にする。
+- p172のwhole-Phase clearance前に実装を始めない。後続の[p173](../phase173/phase.md)は p188 の main 統合済み Acid3 出力のみを前提にし、p100 whole の Acid2 exact/target gate は要求しない。p101 の whole-Phase 前提は維持する。
+
+Event ws074-p173-interop-resume-20261013: p173 が 2026-10-13 のユーザー指示で WPT Interop 2025 を先行するため、依存出力を明確化した。p188 の main 再計測で Acid3 得点100/100・RGB差0が確認済み。p100 whole の Acid2 exact/target gate は本Phase内に残り、p173 はその結果を要しない。p100 status/clearanceと p101 の前提は変更しない。GitHub publication保留。
 
 ## 制約・再開
 
