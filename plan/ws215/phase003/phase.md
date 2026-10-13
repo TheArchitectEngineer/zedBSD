@@ -3,7 +3,7 @@
 # ws215-p003: kernel の PL011 の UART の HCI の transport（Pi 4 の内蔵の Bluetooth）
 
 Parent: [WS215](../ws.md)
-Status: in-progress（2026-10-13 P2: 実装・build（warning 0）・host 試験 PASS まで。test-wait: T1 の QEMU raspi4b の起動の回帰と、Pi の実機の smoke（下の「実機で見る点」）の結果を Q1 が判定するまで cleared にしない）
+Status: in-progress（2026-10-13 Q1: T1-566（QEMU raspi4b の既定と serial、amd64 の bt-loopback）PASS、残りは Pi の実機。旧: 2026-10-13 P2: 実装・build（warning 0）・host 試験 PASS まで。test-wait: T1 の QEMU raspi4b の起動の回帰と、Pi の実機の smoke（下の「実機で見る点」）の結果を Q1 が判定するまで cleared にしない）
 Phase disposition: normal
 Queue: P2 の lane（2026-10-13 Q1 の割当。承認: 2026-10-12 ユーザー「RPi4のWiFiとBluetoothを実装し」、2026-10-13 朝の D1〜D4 の答え、D5 は未回答）
 

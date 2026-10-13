@@ -2,7 +2,7 @@
 # ws102-p026: UAT 2026-10-13 の画面 keyboard の指摘（flick の日本語・IME・配置）
 
 Parent: [WS102](../ws.md)
-Status: in-progress（T1-563 FAIL → attempt 2（P1）で試験の誤りを直した。T1-565 で bugs.phone-ime-flick だけ FAIL → attempt 3（P2、2026-10-13）で判定の型を直した。T1 の再試験待ち: 下の「attempt 3」）
+Status: in-progress（2026-10-13 Q1: QEMU の確かめは完了（T1-565 の osk-guest PASS・AAT 3 本、T1-567 の bugs.phone-ime-flick PASS）、残りは Pi 4 のタッチパネルと 5330 の実機の UAT。旧: T1-563 FAIL → attempt 2（P1）で試験の誤りを直した。T1-565 で bugs.phone-ime-flick だけ FAIL → attempt 3（P2、2026-10-13）で判定の型を直した。T1 の再試験待ち: 下の「attempt 3」）
 Disposition: normal
 Queue: Q1 の依頼（2026-10-13、P2: attempt 1、P1: attempt 2、P2: attempt 3）
 
