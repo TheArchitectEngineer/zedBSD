@@ -30,7 +30,7 @@ GOP のままで GT と EU: 6〜8 LW。display controller を足して全体: 10
 
 ## 実機（2026-10-14 ユーザー）
 
-「手元には第6、7，8、11，12、13世代、のCore i5があります。」→ Gen9（6・7 世代）と Gen9.5（8 世代）の実機の確かめができる。11〜13 世代は今の Gen12 の経路の回帰（desktop の model なら PCI ID の追加が要る）。
+「手元には第6、7，8、11，12、13世代、のCore i5があります。」「全部Laptopです。」→ 6 世代（Skylake、Gen9）・7 世代（Kaby Lake、Gen9.5）・8 世代（Kaby Lake R か Whiskey Lake、Gen9.5）で実機の確かめができる。11〜13 世代の laptop（Tiger Lake・Alder Lake-P・Raptor Lake-P）は今の PCI ID にあり、Gen12 の経路の回帰に使う。
 
 ## Phase
 
