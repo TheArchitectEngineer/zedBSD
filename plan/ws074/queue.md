@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1053 / WS074 fixed static reftest re-census
+# q1054 / WS074 XML external-ID DOCTYPE subset
 
-Status: finished（2026-10-14 02:37–02:42 JST）
+Status: finished（2026-10-14 02:43–02:47 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p190のq1053有限部分scope](phase190/phase.md) に適用。
-Timebox: 2026-10-14 02:37 JST 開始、最大90分（04:07 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p203のq1054有限部分scope](phase203/phase.md) に適用。
+Timebox: 2026-10-14 02:43 JST 開始、最大90分（04:13 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1053-i01 | [ws074-p190](phase190/phase.md) partial | 固定静的reftest1,561 IDをq1044同一条件で全再測定し、ID/focus別遷移・未対応413理由を集計。browser/WPT/Master/公開ABI変更なし。最大90分 | cleared（partial）。p190 whole uncleared | q1044旧baseline、p202 q1052固定10 PASS証拠 |
+| q1054-i01 | [ws074-p203](phase203/phase.md) partial | XML外部ID DOCTYPE構文を副作用無しで受け入れ、内部subset/未知実体を拒否。q1053 error359 ID・固定Flex10件、host/XML/build/Acid回帰。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial）。p203 whole uncleared | p190 q1053全359 error証拠、p196 XHTML解析 |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -24,6 +24,8 @@ Outcome: q1051-i01 / p201 whole cleared。nowrap縦Flexのauto高さ・pixel min
 Outcome: q1052-i01 / p202 scoped whole cleared。vertical-lr Flexの物理軸・float幅・line-left/rightを実装、固定10件は10/10 local pixel exact PASS。host21/21・CSS rule44/44・CSSOM12/12・mutation12/12・warning0 build・Acid3差0/Acid2差1865。[証拠](phase202/evidence/20261014-q1052/README.md)。後続証拠でp197/p198/p199もwhole cleared。p173全3,805件100%は未達。
 
 Outcome: q1053-i01 partial cleared、p190 whole uncleared。固定静的1,561 IDを同条件再測定し518 local PASS/684 FAIL/359 error/0 timeout。全359 errorはDOCTYPE付きXHTMLのXML parser ENOTSUP、旧PASS→FAIL8件を別記。[証拠](phase190/evidence/20261014-q1053/README.md)。p173全3,805件100%は未達。
+
+Outcome: q1054-i01 partial cleared、p203 whole uncleared。DOCTYPE外部IDを副作用なしで受理し、359旧error中312件は読み込み成功、122 local PASS/190 pixel FAIL/47 load error。残り47件はXHTML1 DTD由来`&nbsp;`。[証拠](phase203/evidence/20261014-q1054/README.md)。host XML243/243・DOM54/54・document16/16・binding34/34・warning0 build・固定Flex10/10 PASS・Acid3差0/Acid2差1865。p173全3,805件100%は未達。
 
 Coordination: [q1014](../history/queue-q1014.md) までの履歴を保持。共有 `plan/queue.md` / Master / GitHub publication は別の Q1 セッションとの競合を避け pending projection。WS074 lane の状態はこの file が所有。
 

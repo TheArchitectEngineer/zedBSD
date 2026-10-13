@@ -1,0 +1,15 @@
+{
+  "selected": 359,
+  "counts": {
+    "error": 47,
+    "fail": 190,
+    "pass": 122
+  },
+  "previous_error": 359,
+  "resolved_load_error": 312,
+  "remaining_error": 47,
+  "remaining_named_entities": {
+    "nbsp": 47
+  },
+  "checkpoint_rows": 359
+}

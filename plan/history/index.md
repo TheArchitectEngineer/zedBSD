@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1054 / WS074 XML external-ID DOCTYPE subset（2026-10-14）
+
+[q1054履歴](queue-q1054.md): 359旧error中312件の読み込みを解消し122 local PASS/190 pixel FAIL/47 `nbsp` load error。p203部分cleared、whole未達。XML host243/243、固定Flex10/10 PASS、Acid3差0。[証拠](../ws074/phase203/evidence/20261014-q1054/README.md)。p173全件100%未達、共有投影/GitHub publication pending。
+
 ## 最新: q1053 / WS074 fixed static reftest re-census（2026-10-14）
 
 [q1053履歴](queue-q1053.md): 固定静的1,561 IDを同条件再測定し518 local PASS/684 FAIL/359 error/0 timeout。全errorはDOCTYPE付きXHTML、旧PASS→FAIL8件。[証拠](../ws074/phase190/evidence/20261014-q1053/README.md)。p190部分cleared、p173全件100%未達、共有投影/GitHub publication pending。

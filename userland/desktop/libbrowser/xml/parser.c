@@ -24,6 +24,8 @@ struct xml_parser {
 	size_t offset;
 	unsigned depth;
 	int root_seen;
+	struct xml_units doctype;
+	int doctype_seen;
 };
 
 static int xml_decode(struct wb_units *units, const unsigned char *bytes, size_t length);
@@ -52,6 +54,8 @@ static int xml_text(struct xml_parser *parser);
 static int xml_delimited(struct xml_parser *parser, int type, const char *ending);
 static int xml_instruction(struct xml_parser *parser);
 static int xml_declaration(struct xml_parser *parser);
+static int xml_doctype_literal(struct xml_parser *parser, int public_id);
+static int xml_doctype(struct xml_parser *parser);
 static int xml_parse_tree(struct xml_parser *parser);
 
 /*
@@ -1038,6 +1042,9 @@ xml_start(
 	status = xml_name(parser, &node->name, &node->prefix, &node->local);
 	if (status != 0)
 		return status;
+	if (parser->open->type == XML_DOCUMENT && parser->doctype_seen &&
+	    !xml_equal(node->name, parser->doctype))
+		return EINVAL;
 	self_closing = 0;
 	ending = 0;
 
@@ -1439,6 +1446,110 @@ xml_instruction(
 	return 0;
 }
 
+/* Reads one system/public identifier literally, without fetching or expanding its content. */
+static int
+xml_doctype_literal(
+	struct xml_parser *parser,
+	int public_id)
+{
+	const uint16_t *input;
+	size_t length;
+	uint16_t quote;
+	uint16_t unit;
+	int legal;
+
+	input = parser->document->input.data;
+	length = parser->document->input.length;
+	if (parser->offset >= length)
+		return EINVAL;
+	quote = input[parser->offset];
+	if (quote != '\'' && quote != '"')
+		return EINVAL;
+	parser->offset++;
+	while (parser->offset < length) {
+		unit = input[parser->offset++];
+		if (unit == quote)
+			return 0;
+		if (!public_id)
+			continue;
+
+		/* PubidChar is a finite ASCII alphabet; a system literal admits any decoded XML character. */
+		legal = (unit >= 'A' && unit <= 'Z') ||
+		    (unit >= 'a' && unit <= 'z') ||
+		    (unit >= '0' && unit <= '9') ||
+		    unit == ' ' || unit == '\r' || unit == '\n' || unit == '-' ||
+		    unit == '\'' || unit == '(' || unit == ')' || unit == '+' ||
+		    unit == ',' || unit == '.' || unit == '/' || unit == ':' ||
+		    unit == '=' || unit == '?' || unit == ';' || unit == '!' ||
+		    unit == '*' || unit == '#' || unit == '@' || unit == '$' ||
+		    unit == '_' || unit == '%';
+		if (!legal)
+			return EINVAL;
+	}
+	return EINVAL;
+}
+
+/* Accepts only a declaration without an internal subset; external IDs have no resource effects. */
+static int
+xml_doctype(
+	struct xml_parser *parser)
+{
+	struct xml_units name;
+	struct xml_units prefix;
+	struct xml_units local;
+	const uint16_t *input;
+	size_t length;
+	int status;
+
+	if (parser->open->type != XML_DOCUMENT || parser->root_seen || parser->doctype_seen)
+		return EINVAL;
+	input = parser->document->input.data;
+	length = parser->document->input.length;
+	parser->offset += 9U;
+	if (parser->offset >= length || !xml_space(input[parser->offset]))
+		return EINVAL;
+	xml_skip_space(parser);
+	status = xml_name(parser, &name, &prefix, &local);
+	if (status != 0)
+		return status;
+	if (parser->offset >= length)
+		return EINVAL;
+	if (xml_space(input[parser->offset])) {
+		xml_skip_space(parser);
+		if (xml_at(parser, "SYSTEM") || xml_at(parser, "PUBLIC")) {
+			int public_id;
+
+			public_id = xml_at(parser, "PUBLIC");
+			parser->offset += 6U;
+			if (parser->offset >= length || !xml_space(input[parser->offset]))
+				return EINVAL;
+			xml_skip_space(parser);
+			status = xml_doctype_literal(parser, public_id);
+			if (status != 0)
+				return status;
+			if (public_id) {
+				if (parser->offset >= length || !xml_space(input[parser->offset]))
+					return EINVAL;
+				xml_skip_space(parser);
+				status = xml_doctype_literal(parser, 0);
+				if (status != 0)
+					return status;
+			}
+			xml_skip_space(parser);
+		}
+	}
+	if (parser->offset >= length)
+		return EINVAL;
+	if (input[parser->offset] == '[')
+		return ENOTSUP;
+	if (input[parser->offset] != '>')
+		return EINVAL;
+	parser->offset++;
+	parser->doctype = name;
+	parser->doctype_seen = 1;
+	return 0;
+}
+
 /* Dispatches strict actual XML markup without HTML recovery, script execution or external resource effects. */
 static int
 xml_parse_tree(
@@ -1494,16 +1605,13 @@ xml_parse_tree(
 			continue;
 		}
 
-		/* This explicit profile excludes DTD parsing and never publishes a silently incomplete model. */
-		matched = xml_at(parser, "<!DOCTYPE ");
-		if (!matched)
-			matched = xml_at(parser, "<!DOCTYPE\t");
-		if (!matched)
-			matched = xml_at(parser, "<!DOCTYPE\n");
+		/* Only a well-formed external identifier is admitted; DTD declarations remain unavailable. */
+		matched = xml_at(parser, "<!DOCTYPE");
 		if (matched) {
-			if (parser->open->type != XML_DOCUMENT || parser->root_seen)
-				return EINVAL;
-			return ENOTSUP;
+			status = xml_doctype(parser);
+			if (status != 0)
+				return status;
+			continue;
 		}
 
 		/* Other declarations are not accepted as ordinary XML start tags. */

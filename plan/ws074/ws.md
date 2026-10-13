@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1053](queue.md) finished / p190静的1,561 reftestの同条件再測定。2026-10-14 02:42 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1054](queue.md) finished / p203 XML外部ID DOCTYPE subset。2026-10-14 02:47 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1053固定静的reftest1,561件は518 local PASS/684 FAIL/359 error/0 timeout。全errorはDOCTYPE付きXHTML、旧PASS→FAIL8件。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p202 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -114,6 +114,10 @@ Event ws074-p202-q1052-clear-and-p197-p199-later-clearance-20261014: [p202](phas
 Event ws074-p190-q1053-selection-20261014: q1052固定Flexbox10/10 local pixel PASSの影響を[p190](phase190/phase.md) q1044静的1,561件baseline全体で同条件再測定する。p190全2,022件coverageとp173全3,805件目標は維持。共有Master/Queue/GitHub publication保留。
 
 Event ws074-p190-q1053-outcome-20261014: [p190](phase190/phase.md) q1053-i01で固定静的1,561 IDを全再測定、518 local PASS/684 FAIL/359 error/0 timeout。[ID別遷移とfocus集計](phase190/evidence/20261014-q1053/README.md)。全359 errorはDOCTYPE付きXHTMLの未対応、旧PASS→FAIL8件も残る。p190 whole/p173全3,805件100%は未達。共有Master/Queue/GitHub publication保留。
+
+Event ws074-p203-addition-q1054-20261014: q1053の359 error全てにDOCTYPE付きXHTMLのparser ENOTSUPを確認。XML外部識別子を外部取得せず構文だけ受け入れ、内部subset/未知実体を拒否する[p203](phase203/phase.md)を追加。p196/p190/p173の受け入れは不変。共有Master/Queue/GitHub publication保留。
+
+Event ws074-p203-q1054-outcome-20261014: [p203](phase203/phase.md) q1054-i01で外部ID DOCTYPEを副作用なしで受理。359旧error中312件は読み込み成功、122 local PASS/190 pixel FAIL/47 load error。[証拠](phase203/evidence/20261014-q1054/README.md)。残り47件は`&nbsp;`未解決でp203 whole uncleared。host XML243/243・固定Flex10/10 PASS・Acid3差0/Acid2差1865。p190/p173全件受け入れは未達、共有Master/Queue/GitHub publication保留。
 
 ## Q1 向けの整理（2026-10-05、Q1）
 
@@ -433,6 +437,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p200](phase200/phase.md) | Interop 2025 Flex分配余白の端数丸め | cleared / q1050対象3 ID pixel exact PASS | p199 q1049端数差証拠 |
 | [ws074-p201](phase201/phase.md) | Interop 2025 縦Flex auto高さとmin-height | cleared / q1051固定vert001b pixel exact PASS | p200 q1050固定8 PASS証拠 |
 | [ws074-p202](phase202/phase.md) | Interop 2025 vertical-lr Flex軸 | cleared / q1052固定wmvert pixel exact PASS | p201 q1051固定9 PASS証拠 |
+| [ws074-p203](phase203/phase.md) | Interop 2025 XHTML外部ID DOCTYPE読込 | uncleared / q1054部分scope cleared、47 `nbsp` load error残 | p190 q1053 error359・p196 XHTML解析 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

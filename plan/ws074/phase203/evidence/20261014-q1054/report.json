@@ -1,0 +1,5754 @@
+{
+  "checkpoint": "plan/ws074/phase203/evidence/20261014-q1054/progress.jsonl",
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "error": 47,
+    "fail": 190,
+    "pass": 122
+  },
+  "eligible": 359,
+  "eligible_not_sampled": 0,
+  "render_timeout": 5.0,
+  "results": [
+    {
+      "image": "001-anchor-name-multicol-004.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10600,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-name-multicol-004.html"
+    },
+    {
+      "image": "002-anchor-position-multicol-003.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9900,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-003.html"
+    },
+    {
+      "image": "003-anchor-position-multicol-007.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10651,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-007.html"
+    },
+    {
+      "image": "004-anchor-position-multicol-008.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 13000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-008.html"
+    },
+    {
+      "image": "005-anchor-position-multicol-011.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 17480,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-anchor-position/anchor-position-multicol-011.html"
+    },
+    {
+      "image": "006-abspos-autopos-htb-ltr.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 45200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-htb-ltr.html"
+    },
+    {
+      "image": "007-abspos-autopos-htb-rtl.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 45200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-htb-rtl.html"
+    },
+    {
+      "image": "008-abspos-autopos-vlr-ltr.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 45200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-vlr-ltr.html"
+    },
+    {
+      "image": "009-abspos-autopos-vlr-rtl.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 45200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-vlr-rtl.html"
+    },
+    {
+      "image": "010-abspos-autopos-vrl-ltr.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 45200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-vrl-ltr.html"
+    },
+    {
+      "image": "011-abspos-autopos-vrl-rtl.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 45200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/abspos/abspos-autopos-vrl-rtl.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/position-absolute-006.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/position-absolute-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/position-absolute-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/position-absolute-009.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/position-absolute-010.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/position-absolute-011.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-content-wrap-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-items-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-self-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-self-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-self-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-self-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-self-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-self-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-self-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-self-009.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-self-011.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-self-012.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/align-self-013.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/auto-margins-002.html"
+    },
+    {
+      "image": "012-baseline-synthesis-001.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 6700,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/baseline-synthesis-001.html"
+    },
+    {
+      "image": "013-baseline-synthesis-002.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 41700,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/baseline-synthesis-002.html"
+    },
+    {
+      "image": "014-baseline-synthesis-003.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 68400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/baseline-synthesis-003.html"
+    },
+    {
+      "image": "015-baseline-synthesis-004.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 68400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/baseline-synthesis-004.html"
+    },
+    {
+      "image": "016-fit-content-item-001.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 34200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/fit-content-item-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-column-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-column-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-column-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-column-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-column-005.html"
+    },
+    {
+      "image": "017-flex-aspect-ratio-img-column-006.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 3000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-column-006.html"
+    },
+    {
+      "image": "018-flex-aspect-ratio-img-column-007.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 3000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-column-007.html"
+    },
+    {
+      "image": "019-flex-aspect-ratio-img-column-008.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 3700,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-column-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-column-009.html"
+    },
+    {
+      "image": "020-flex-aspect-ratio-img-column-014.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-column-014.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-column-015.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-row-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-row-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-row-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-row-009.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-row-010.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-aspect-ratio-img-row-011.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-basis-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-basis-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-basis-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 3000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-basis-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-basis-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-basis-006.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-basis-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-basis-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 40000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-basis-010.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-basis-012.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-basis-item-margins-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/flex-grow-001-ref.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-grow-001.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-grow-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-grow-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-grow-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-grow-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-grow-006.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-grow-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-grow-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-height-min-content.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-item-and-percentage-abspos.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-001.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-002.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-003.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9900,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-004.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9900,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-005.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9900,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-006.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-007.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-008.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-011.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 8000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-013.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-014.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-015.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-016.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-017.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-018.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-height-flex-items-022.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-minimum-width-flex-items-001.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-minimum-width-flex-items-002.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-minimum-width-flex-items-003.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-minimum-width-flex-items-004.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9900,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-width-flex-items-005.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9900,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-width-flex-items-006.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-minimum-width-flex-items-007.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-minimum-width-flex-items-008.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 6400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-width-flex-items-009.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-minimum-width-flex-items-010.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-width-flex-items-013.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-minimum-width-flex-items-015.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-shrink-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-shrink-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-shrink-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-shrink-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-shrink-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-shrink-006.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-shrink-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flex-shrink-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-wrap-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-wrap-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-wrap-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-wrap-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flexbox-overflow-padding-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flexbox-overflow-padding-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 68400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flexbox_align-items-stretch-3.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/flexbox_align-items-stretch-4.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/gap-011.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/gap-012.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/gap-013.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/gap-014.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/gap-015.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/gap-016.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/grid-flex-item-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/grid-flex-item-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/grid-flex-item-006.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10800,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/justify-content-sideways-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/percentage-heights-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/percentage-heights-006.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/percentage-heights-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 27440,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/percentage-heights-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 200,
+          "equal": false,
+          "max_difference": 56,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/percentage-heights-009.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/percentage-heights-010.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/percentage-heights-016.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/percentage-heights-017.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/percentage-heights-018.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/percentage-heights-019.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/percentage-max-height-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/percentage-max-height-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 20000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/position-relative-percentage-top-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 20000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/position-relative-percentage-top-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/stretch-obeys-min-max-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/stretch-obeys-min-max-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/svg-no-natural-size-grandchild.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/svg-root-as-flex-item-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/svg-root-as-flex-item-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/svg-root-as-flex-item-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/svg-root-as-flex-item-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/table-as-item-auto-min-width.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/table-as-item-fixed-min-width-2.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/table-as-item-fixed-min-width-3.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/table-as-item-fixed-min-width.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9936,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/table-as-item-flex-cross-size.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/table-as-item-large-intrinsic-size.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/table-as-item-min-content-height-1.tentative.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/table-as-item-min-content-height-2.tentative.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 4000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/table-as-item-min-height-1.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9936,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/table-as-item-stretch-cross-size-2.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9976,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/table-as-item-stretch-cross-size-3.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/table-as-item-stretch-cross-size-4.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/table-as-item-stretch-cross-size-5.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 6800,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-flexbox/table-as-item-stretch-cross-size.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/table-as-item-wide-content.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 45200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/positioned-grid-items-020.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 45200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/positioned-grid-items-021.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/positioned-grid-items-024.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 68400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/grid-align-baseline-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 18708,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/grid-gutters-013.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/alignment/grid-item-auto-margins-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/alignment/grid-item-auto-margins-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-003.tentative.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-006.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-009.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1380,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1800,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 520,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1380,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1660,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 920,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-006.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1300,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1550,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 800,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-009.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1300,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-010.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1300,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-011.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-012.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/empty-grid-within-flexbox.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-items-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-items-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-inline-items-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-items-inline-blocks-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-order-property-painting-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-order-property-painting-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-order-property-painting-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-order-property-painting-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-order-property-painting-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-z-axis-ordering-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-z-axis-ordering-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-z-axis-ordering-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-z-axis-ordering-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-inline-z-axis-ordering-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-item-containing-block-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-item-containing-block-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-item-containing-block-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-item-containing-block-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 68400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-item-inline-contribution-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-item-inline-contribution-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-item-inline-contribution-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-items-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-items-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-items-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-items-contribution-negative-margins.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-items-inline-blocks-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 146800,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-010.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 30000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-011.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 30000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-012.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 39200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-013.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 68400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-014.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 68400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-015.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 146800,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-016.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-017.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-018.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 90000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-019.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 30000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-020.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-order-property-painting-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-order-property-painting-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-order-property-painting-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-order-property-painting-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-order-property-painting-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-z-axis-ordering-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-z-axis-ordering-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-z-axis-ordering-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-z-axis-ordering-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-z-axis-ordering-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 68400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/replaced-element-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/replaced-element-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 68400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/replaced-element-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/replaced-element-010.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-model/grid-display-grid-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-model/grid-display-inline-grid-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-model/grid-float-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-model/grid-floats-no-intrude-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-model/grid-inline-float-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-model/grid-inline-floats-no-intrude-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-model/grid-inline-multicol-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-model/grid-inline-vertical-align-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-model/grid-multicol-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-model/grid-vertical-align-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 200,
+          "equal": false,
+          "max_difference": 82,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/layout-algorithm/flex-and-intrinsic-sizes-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 4327,
+          "allowed_max_difference": 1,
+          "different_pixels": 437184,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/layout-algorithm/flex-sizing-rows-indefinite-height.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-006.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/layout-algorithm/grid-find-fr-size-restart-algorithm.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/layout-algorithm/grid-stretch-respects-min-size-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 4327,
+          "allowed_max_difference": 1,
+          "different_pixels": 437184,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/layout-algorithm/grid-template-flexible-rerun-track-sizing.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/placement/grid-placement-items-spanning-multiple-rows-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/placement/grid-placement-items-spanning-multiple-rows-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/placement/grid-placement-using-named-grid-lines-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/placement/grid-placement-using-named-grid-lines-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/placement/grid-placement-using-named-grid-lines-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/placement/grid-placement-using-named-grid-lines-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/placement/grid-placement-using-named-grid-lines-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/placement/grid-placement-using-named-grid-lines-006.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/placement/grid-placement-using-named-grid-lines-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/placement/grid-placement-using-named-grid-lines-009.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 20000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/relative-grandchild.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 13125,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/subgrid/auto-track-sizing-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 41700,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/subgrid/contribution-size-flex-tracks-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/subgrid/subgrid-no-items-on-edges-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 14000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/subgrid/subgrid-no-items-on-edges-002.html"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-slr-043.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-slr-043.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-slr-047.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-slr-047.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-slr-048.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-slr-048.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-slr-050.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-slr-050.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-slr-054.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-slr-054.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-slr-055.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-slr-055.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-slr-056.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-slr-056.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-slr-058.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-slr-058.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-slr-060.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-slr-060.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-slr-062.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-slr-062.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-slr-063.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-slr-063.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 27658,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-066-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/block-flow-direction-slr-066.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-srl-042.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-srl-042.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-srl-045.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-srl-045.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-srl-046.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-srl-046.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-srl-049.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-srl-049.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-srl-051.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-srl-051.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-srl-052.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-srl-052.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-srl-053.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-srl-053.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-srl-057.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-srl-057.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-srl-059.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-srl-059.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-srl-061.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-srl-061.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/block-flow-direction-srl-064.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/block-flow-direction-srl-064.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 27736,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-025-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/block-flow-direction-srl-065.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 27720,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/inline-block-alignment-slr-009-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/inline-block-alignment-slr-009.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 28800,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/inline-block-alignment-006-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/inline-block-alignment-srl-008.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-slr-043.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-slr-043.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-slr-047.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-slr-047.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-slr-048.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-slr-048.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-slr-050.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-slr-050.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-slr-053.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-slr-053.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-slr-054.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-slr-054.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-slr-056.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-slr-056.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-slr-058.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-slr-058.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-slr-060.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-slr-060.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-srl-042.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-srl-042.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-srl-045.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-srl-045.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-srl-046.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-srl-046.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-srl-049.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-srl-049.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-srl-051.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-srl-051.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-srl-052.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-srl-052.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-srl-055.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-srl-055.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-srl-057.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-srl-057.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/line-box-direction-srl-059.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/line-box-direction-srl-059.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/row-progression-slr-023.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/row-progression-slr-023.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/row-progression-slr-029.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/row-progression-slr-029.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/row-progression-srl-022.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/row-progression-srl-022.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/row-progression-srl-028.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/row-progression-srl-028.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/row-progression-vlr-009.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/row-progression-vlr-009.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/table-column-order-slr-007.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/table-column-order-slr-007.xht"
+    },
+    {
+      "error": "browser: cannot load http://127.0.0.1:40137/css/css-writing-modes/table-column-order-srl-006.xht: Invalid argument",
+      "references": [],
+      "status": "error",
+      "test": "css/css-writing-modes/table-column-order-srl-006.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 14688,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/text-baseline-slr-009-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/text-baseline-slr-009.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 15264,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/text-baseline-vrl-006-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/text-baseline-srl-008.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 68,
+          "allowed_max_difference": 231,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-writing-modes/text-orientation-mixed-srl-016-ref.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-writing-modes/text-orientation-mixed-srl-016.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-writing-modes/text-orientation-mixed-srl-016-ref.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-writing-modes/text-orientation-upright-srl-018.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 8100,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/vertical-alignment-slr-029-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/vertical-alignment-slr-029.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/vertical-alignment-slr-031-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/vertical-alignment-slr-031.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 7200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/vertical-alignment-slr-033-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/vertical-alignment-slr-033.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/vertical-alignment-slr-035-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/vertical-alignment-slr-035.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 20000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/vertical-alignment-slr-049-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/vertical-alignment-slr-041.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 8100,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/vertical-alignment-002-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/vertical-alignment-srl-028.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/vertical-alignment-004-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/vertical-alignment-srl-030.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/vertical-alignment-006-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/vertical-alignment-srl-032.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 9000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/vertical-alignment-008-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/vertical-alignment-srl-034.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 23200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/vertical-alignment-vrl-026-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/vertical-alignment-srl-040.xht"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 27736,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-025-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/wm-propagation-body-032.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 27736,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-025-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/wm-propagation-body-034.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 27736,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-025-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/wm-propagation-body-036.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 27736,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-025-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/wm-propagation-body-038.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 27736,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-025-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/wm-propagation-body-045.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 27736,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-025-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/wm-propagation-body-046.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 27736,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-025-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/wm-propagation-body-053.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 27736,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-writing-modes/block-flow-direction-025-ref.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-writing-modes/wm-propagation-body-055.html"
+    }
+  ],
+  "root": ".",
+  "schema": 1,
+  "selected": 359,
+  "selection": "focus round-robin, path-sorted",
+  "selection_manifest": "plan/ws074/phase203/evidence/20261014-q1054/selection-manifest.json",
+  "skipped": {},
+  "suite": "wpt",
+  "unrun": [],
+  "viewport": [
+    800,
+    600
+  ]
+}
