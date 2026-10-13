@@ -122,12 +122,23 @@ static struct se_titlebar_event main_titlebar_event;
 static uint32_t *main_pixels;
 static struct kl_canvas main_canvas;
 
+/*
+ * When the window's last new size was taken (se_clock's milliseconds) and
+ * when its swapchain and canvas were made, kept from the resize until the
+ * first frame at that size is shown, which logs them (BUG-306: how long a
+ * display's turn leaves the window at its old size); 0 while no new size
+ * waits for its frame.
+ */
+static uint64_t main_resize_began;
+static uint64_t main_resize_made;
+
 static int main_parse(int argc, char **argv, struct main_options *options);
 static const char *main_value(const char *argument, const char *name);
 static int main_number(const char *text, unsigned maximum, unsigned *value);
 static int main_loop(const struct main_options *options);
 static int main_frame(void);
 static void main_slow_frame(uint64_t draw, uint64_t present);
+static void main_resize_shown(void);
 static void main_text_input(void);
 static int main_canvas_make(void);
 static int main_timeout(uint64_t now, uint64_t deadline);
@@ -543,6 +554,7 @@ main_loop(
 		/* A new size: a new swapchain and canvas, and a frame. */
 		if (main_window.resized != 0) {
 			main_window.resized = 0;
+			main_resize_began = se_clock();
 			status = se_present_resize(&main_present, main_window.width, main_window.height);
 			if (status != VK_SUCCESS) {
 				fprintf(stderr, "ZSETTINGS FAILED operation=%s result=%d\n", main_present.operation, status);
@@ -553,6 +565,7 @@ main_loop(
 			status = main_canvas_make();
 			if (status != 0)
 				return -1;
+			main_resize_made = se_clock();
 			main_app.dirty = 1;
 		}
 
@@ -579,6 +592,10 @@ main_loop(
 			status = main_frame();
 			if (status != 0)
 				return -1;
+
+			/* The first frame at a new size says how long it took. */
+			if (main_resize_began != 0U)
+				main_resize_shown();
 		}
 	}
 }
@@ -663,6 +680,28 @@ main_slow_frame(
 
 	/* One line. */
 	se_log("SLOW-FRAME draw=%lu present=%lu copy=%u acquire=%u queue=%u wait=%u parts=%u area=%lu", (unsigned long)draw, (unsigned long)present, main_present.copy_ms, main_present.acquire_ms, main_present.present_ms, main_present.wait_ms, main_app.frame_part_count, area);
+}
+
+/*
+ * Logs the first frame shown at the window's new size (BUG-306, a display's
+ * turn): the size, how long the swapchain and the canvas took to make, how
+ * long until the frame was shown, and when the new size was taken (at_ms,
+ * the monotonic clock's milliseconds the compositor's lines use too).
+ */
+static void
+main_resize_shown(void)
+{
+	uint64_t now;
+
+	/* The line, from the moment the new size was taken. */
+	now = se_clock();
+	se_log("RESIZE width=%u height=%u swapchain_ms=%llu shown_ms=%llu at_ms=%llu", main_present.extent.width, main_present.extent.height,
+	    (unsigned long long)(main_resize_made - main_resize_began), (unsigned long long)(now - main_resize_began),
+	    (unsigned long long)main_resize_began);
+
+	/* No new size waits for its frame any more. */
+	main_resize_began = 0U;
+	main_resize_made = 0U;
 }
 
 /*

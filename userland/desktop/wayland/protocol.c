@@ -101,7 +101,6 @@ static void add_damage(struct kwl_object *surface, int32_t x, int32_t y, int32_t
 static void commit_fence(struct kwl_object *surface, unsigned attached);
 static void commit_damage(struct kwl_object *surface);
 static int send_bounds(struct kwl_object *surface);
-static void window_bounds(struct kwl_server *server, int32_t *width, int32_t *height);
 
 /*
  * Dispatches one validated frame through its client-local interface identity.
@@ -1502,6 +1501,26 @@ shell_request(
 
 
 /*
+ * Gives the space the look leaves for a window's body (xdg-shell's
+ * configure_bounds): under the system bar and a floating title bar in the
+ * glass look, the output otherwise.
+ */
+void
+kwl_window_bounds(
+	struct kwl_server *server,
+	int32_t *width,
+	int32_t *height)
+{
+	/* The output. */
+	*width = (int32_t)server->width;
+	*height = (int32_t)server->height;
+
+	/* Less the glass look's bars and margins (shell.c). */
+	if (server->glass)
+		kwl_glass_space(server, width, height);
+}
+
+/*
  * Tells the windows of xdg-shell version 4 new bounds when the space for
  * their bodies changed since the bounds were last sent (the glass look
  * given up when the output opened, another output size): each configured
@@ -1520,7 +1539,7 @@ kwl_window_bounds_refresh(
 	int error;
 
 	/* Unchanged bounds, or none sent yet: nothing to tell. */
-	window_bounds(server, &width, &height);
+	kwl_window_bounds(server, &width, &height);
 	if (server->bounds_width == 0 || (width == server->bounds_width && height == server->bounds_height))
 		return;
 	printf("KWL BOUNDS changed width=%d height=%d was=%dx%d\n", width, height, server->bounds_width, server->bounds_height);
@@ -1809,7 +1828,7 @@ send_bounds(
 
 	/* The space the look leaves for a body. */
 	server = surface->client->server;
-	window_bounds(server, &width, &height);
+	kwl_window_bounds(server, &width, &height);
 
 	/* The width and the height, in that order. */
 	bounds[0] = width;
@@ -1825,22 +1844,6 @@ send_bounds(
 	/* Succeeded. */
 	printf("KWL BOUNDS client=%llu surface=%u width=%d height=%d\n", (unsigned long long)surface->client->number, surface->id, width, height);
 	return 0;
-}
-
-/* Gives the space the look leaves for a window's body: under the system bar and a floating title bar in the glass look, the output otherwise. */
-static void
-window_bounds(
-	struct kwl_server *server,
-	int32_t *width,
-	int32_t *height)
-{
-	/* The output. */
-	*width = (int32_t)server->width;
-	*height = (int32_t)server->height;
-
-	/* Less the glass look's bars and margins (shell.c). */
-	if (server->glass)
-		kwl_glass_space(server, width, height);
 }
 
 /* Adds a rectangle to a surface's pending damage (their bounding box). */

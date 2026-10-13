@@ -506,6 +506,75 @@ kwl_rotate_serial_newer(
 }
 
 /*
+ * Tells whether a window must change its size after its output turned to
+ * another size (BUG-306): a fullscreen or docked one (fixed) is given the
+ * new size; a floating one only when its image of width x height no
+ * longer fits the new bounds (bounds_width x bounds_height).
+ */
+static __inline int
+kwl_rotate_size_needed(
+	unsigned fixed,
+	uint32_t width,
+	uint32_t height,
+	int32_t bounds_width,
+	int32_t bounds_height)
+{
+	/* A fullscreen or docked window is sent the output's or the docked space's new size. */
+	if (fixed)
+		return 1;
+
+	/* A floating one wider or taller than the new bounds draws a smaller image. */
+	if ((int64_t)width > (int64_t)bounds_width)
+		return 1;
+	if ((int64_t)height > (int64_t)bounds_height)
+		return 1;
+
+	/* Succeeded: the image it has fits, and it may keep its size. */
+	return 0;
+}
+
+/*
+ * Tells whether a window an output's turn waits for has drawn the new size
+ * with the image it just committed (BUG-306): it acknowledged a configure
+ * newer than the last one sent before the turn (acked against sent), and,
+ * when it must change its size (needed), the image is of another size than
+ * the one it had at the turn (from_width x from_height against width x
+ * height).  An image drawn before the client read the configure but
+ * committed after its acknowledgement keeps the old size, and is not the
+ * new one.
+ */
+static __inline int
+kwl_rotate_drawn(
+	uint32_t acked,
+	uint32_t sent,
+	unsigned needed,
+	uint32_t from_width,
+	uint32_t from_height,
+	uint32_t width,
+	uint32_t height)
+{
+	int newer;
+
+	/* An image committed before the client acknowledged a configure sent after the turn. */
+	newer = kwl_rotate_serial_newer(acked, sent);
+	if (!newer)
+		return 0;
+
+	/* A window that may keep its size has drawn the new state. */
+	if (!needed)
+		return 1;
+
+	/* One that must change it has, once its image is of another size. */
+	if (width != from_width)
+		return 1;
+	if (height != from_height)
+		return 1;
+
+	/* The image is still of the old size. */
+	return 0;
+}
+
+/*
  * Tells whether an output turned to another size still shows its old
  * frame (BUG-306): some windows have not drawn the new size yet, and the
  * wait that began at began (ms) has not reached KWL_ROTATE_HOLD_MS by now.
