@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1061 / WS074 Flex base vs hypothetical wrap/grow
+# q1062 / WS074 static reftest re-census after Flex base correction
 
-Status: finished（2026-10-14 03:24–03:29 JST）
+Status: finished（2026-10-14 03:30–03:35 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p208のq1061有限部分scope](phase208/phase.md)に適用。
-Timebox: 2026-10-14 03:24 JST 開始、最大90分（04:54 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p190 q1062有限部分scope](phase190/phase.md)に適用。
+Timebox: 2026-10-14 03:30 JST 開始、最大90分（05:00 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1061-i01 | [ws074-p208](phase208/phase.md) whole | Flex base/hypotheticalを分けwrapとmin/max freezeを修正、固定回帰1・textarea3・Flex10とhost/build/Acid回帰。WPT/runner/ABI/Master変更なし、最大90分 | cleared | q1060新規FAIL1件、p206 Flex分配 |
+| q1062-i01 | [ws074-p190](phase190/phase.md) partial | 固定静的1,561 IDをq1060同条件再測定、全遷移・新規PASS→FAIL・focus分類。runner/browser/WPT/Master変更なし、最大90分 | cleared | q1061 Flex修正とq1060 baseline |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -24,6 +24,8 @@ Outcome: q1059-i01 / p207 whole cleared。font shorthand line-height resetで差
 Outcome: q1060-i01 partial cleared、p190 whole uncleared。固定静的1,561 IDは660 local PASS/901 pixel FAIL/0 error/0 timeout。旧8回帰全PASS、q1056比21 FAIL→PASS/1 PASS→FAIL（flexbox-flex-wrap-flexing.html）。[証拠](phase190/evidence/20261014-q1060/README.md)。p173全3,805件100%は未達。
 
 Outcome: q1061-i01 / p208 whole cleared。q1060新規PASS→FAIL1件は5000差画素→0、textarea guard3件と合わせ4/4 local pixel exact PASS。固定Flex10/10・host physical21/21・CSS rule51/51・CSSOM12/12、warning0 build、Acid3差0/Acid2差1865。[証拠](phase208/evidence/20261014-q1061/README.md)。p190/p173全件100%未達、次Queueで広域census。
+
+Outcome: q1062-i01 partial cleared、p190 whole uncleared。固定静的1,561 IDは662 local PASS/899 pixel FAIL/0 error/0 timeout、q1060比2 FAIL→PASS/0 PASS→FAIL。固定ID/checkpoint/report一致。[証拠](phase190/evidence/20261014-q1062/README.md)。runner未対応413 ID、p173全3,805件100%未達。
 
 Upcoming Work Outlook: p191の残るtextdecoration CSSOM、p189 runnerの環境対応、[p190](phase190/phase.md) reftest/crashtest coverage、p173全件baselineを候補とする。次の Queue も有限scopeを記録する。
 

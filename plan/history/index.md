@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1061 / WS074 Flex base versus hypothetical（2026-10-14）
+## 最新: q1062 / WS074 static reftest re-census（2026-10-14）
+
+[q1062履歴](queue-q1062.md): 固定静的1,561 IDは662 local PASS/899 pixel FAIL/0 error/0 timeout。q1060比2 FAIL→PASS/0 PASS→FAIL。[証拠](../ws074/phase190/evidence/20261014-q1062/README.md)。p190/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1061 / WS074 Flex base versus hypothetical（2026-10-14）
 
 [q1061履歴](queue-q1061.md): q1060新規失敗1件5000差画素→0、guard3件を含む4/4・固定Flex10/10 local pixel exact PASS。p208 whole cleared、Acid3差0。[証拠](../ws074/phase208/evidence/20261014-q1061/README.md)。p190/p173全件100%未達、共有投影/GitHub publication pending。
 
