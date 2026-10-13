@@ -154,3 +154,11 @@ Event ws074-p217-q1111-partial-clear-20261014: [証拠](evidence/20261014-q1111/
 ## q1112-i01 結果（2026-10-14 08:53 JST）
 
 Event ws074-p217-q1112-partial-clear-20261014: [証拠](evidence/20261014-q1112/README.md)。水平Gridの絶対子で物理left/rightと子方向self-startをprivate area端へ配置。最小fixture PASS。固定行軸5件で横書き6 subtest FAIL→PASS、横書き10/10 PASS。縦書き10 subtestはwidth期待10/実60でFAIL継続、whole5件FAIL。旧PASS2件、Grid48/CSS51/JS14、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1112部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## q1113-i01 有限部分範囲（2026-10-14 08:54 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（10:24 JSTまで）に適用。q1112後の固定column-axis/row-axis positioned-items012–016計10件を同条件再測定。水平LTR/RTL各subtestの初回差、親/子direction・明示area・align/justify値をWPT sourceと現行static area/position_placeで照合し、次の有限修正候補を確定。読取/証拠のみ、browser/runner/WPT/公開ABI/`plan/master.md`/Acid変更なし。p217 whole/p189/p173全件100%は本部分基準外。
+
+## q1113-i01 結果（2026-10-14 08:56 JST）
+
+Event ws074-p217-q1113-partial-clear-20261014: [証拠](evidence/20261014-q1113/README.md)。固定列軸/行軸012–016計10件の横書き20/20・縦書き20/20 subtestがFAIL。行軸はauto線をpadding edgeでなく最初のtrackへ潰し100pxのcontent shift差、列軸はblock軸content center shift未伝搬とRTL offsetLeft大差が重なる。次は行軸auto境界の有限修正、列軸は別調査。q1113部分cleared、p217/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。

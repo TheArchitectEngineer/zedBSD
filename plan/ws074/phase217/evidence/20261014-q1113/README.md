@@ -1,0 +1,9 @@
+# q1113-i01 — positioned Grid auto-boundary and content-alignment residuals
+
+The fixed column-axis and row-axis positioned-items 012–016 files were rerun after q1112 using the same pinned WPT and runner. The [machine-readable matrix](matrix.json) records each file's self-alignment and first horizontal/vertical callback errors. All ten files remain whole FAIL; all 20 horizontal and 20 vertical subtests fail.
+
+The row-axis series uses `grid-column:auto / 1`, `2 / auto`, `auto / auto`, and `1 / 2` with a 450px container, 100px+150px tracks and `justify-content:center`. The first horizontal failure in each file is a 100px physical offset: LTR expected x0/40/20 but actual x100/140/120; RTL expected x390/350/370 but actual x290/250/270. An auto Grid line denotes the container padding edge for an absolutely positioned child, while the current `grid_resolve` turns `auto / 1` into the first track. Thus the content shift is wrongly applied to the auto boundary. The next bounded candidate is inline-axis auto-boundary area geometry, preserving explicit line positions and q1110–q1112 self alignment.
+
+The column-axis series instead uses `grid-row:auto / 1`, `1 / 2`, `2 / auto`, and `auto / auto`, a 450px height and `align-content:center`. The first LTR mismatch for 012/015 is offsetTop expected100/actual0, because `grid_static_position` sums row tracks but has no block-axis content shift. End/center variants also use the wrong area extent. Their RTL first error is offsetLeft expected190/actual948, requiring a separate containing-block/static-x investigation before a general fix. The vertical-writing failures also depend on [p220](../../../phase220/phase.md).
+
+q1113-i01 read-only diagnosis cleared. p217/p189/p173 whole and all3,805 PASS remain uncleared. Browser, runner, WPT, ABI, Master and Acid were unchanged. Shared projection/GitHub publication pending with Q1; no push.
