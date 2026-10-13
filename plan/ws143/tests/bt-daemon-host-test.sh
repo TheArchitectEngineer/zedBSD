@@ -14,7 +14,7 @@ firmware=$(mktemp -d "$OUT/firmware.XXXXXX")
 bonds=$(mktemp -d "$OUT/bonds.XXXXXX")
 flags="-std=gnu11 -D_GNU_SOURCE -Wall -Wextra -Werror -Wdeclaration-after-statement -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -Iinclude -I."
 cc $flags -o "$OUT/bt-daemon-host-test" plan/ws143/tests/bt-daemon-host-test.c \
-	userland/base/bluetoothd/hci.c userland/base/bluetoothd/intel.c userland/base/bluetoothd/session.c \
+	userland/base/bluetoothd/hci.c userland/base/bluetoothd/intel.c userland/base/bluetoothd/session.c userland/base/bluetoothd/broadcom.c \
 	userland/base/bluetoothd/acl.c -lpthread
 # The intelbt-firmware package's verified cache (make -C userland/firmware/intelbt intelbt-firmware), when it is there:
 # the real .sfi and .ddc files are planned and loaded into the scripted bootloader too (ws143-p003 i02).
@@ -29,7 +29,7 @@ cc $flags -o "$OUT/bt-pair-host-test" plan/ws143/tests/bt-pair-host-test.c userl
 	userland/base/bluetoothd/keys.c userland/base/bluetoothd/hci.c
 timeout 120 "$OUT/bt-pair-host-test" "$bonds"
 links=$(mktemp -d "$OUT/links.XXXXXX")
-cc $flags -o "$OUT/bt-link-host-test" plan/ws143/tests/bt-link-host-test.c userland/base/bluetoothd/session.c \
+cc $flags -o "$OUT/bt-link-host-test" plan/ws143/tests/bt-link-host-test.c userland/base/bluetoothd/session.c userland/base/bluetoothd/broadcom.c \
 	userland/base/bluetoothd/pair.c userland/base/bluetoothd/hci.c userland/base/bluetoothd/intel.c \
 	userland/base/bluetoothd/acl.c userland/base/bluetoothd/l2cap.c userland/base/bluetoothd/smp.c \
 	userland/base/bluetoothd/crypto.c userland/base/bluetoothd/keys.c userland/base/bluetoothd/router.c \
@@ -42,7 +42,7 @@ cc $flags -o "$OUT/bt-hid-host-test" plan/ws143/tests/bt-hid-host-test.c userlan
 timeout 120 "$OUT/bt-hid-host-test" "$hid"
 hidhost=$(mktemp -d "$OUT/hidhost.XXXXXX")
 cc $flags -o "$OUT/bt-hidhost-host-test" plan/ws143/tests/bt-hidhost-host-test.c userland/base/bluetoothd/hid.c \
-	userland/base/bluetoothd/session.c userland/base/bluetoothd/pair.c userland/base/bluetoothd/router.c \
+	userland/base/bluetoothd/session.c userland/base/bluetoothd/broadcom.c userland/base/bluetoothd/pair.c userland/base/bluetoothd/router.c \
 	userland/base/bluetoothd/linkmgr.c \
 	userland/base/bluetoothd/hci.c userland/base/bluetoothd/intel.c userland/base/bluetoothd/acl.c \
 	userland/base/bluetoothd/l2cap.c userland/base/bluetoothd/smp.c userland/base/bluetoothd/crypto.c \
