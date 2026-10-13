@@ -244,6 +244,7 @@ struct bind_window;
 
 /* The window (window.c). */
 int bind_window_create(struct vm_realm *realm, struct dom_document *document, const struct bind_host *host, struct bind_window **window);
+int bind_document_fonts_settle(struct dom_document *document);
 /* Explicit primary windows are destroyed here; managed windows belong to GC. */
 void bind_window_destroy(struct bind_window *window);
 /* Cancels detached context tasks while saved script references remain valid. */

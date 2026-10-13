@@ -130,6 +130,22 @@ page_fonts_install(
 	page->laid_out_fonts = page->fonts_generation;
 }
 
+/* A ready promise waits until every requested font has finished fetching. */
+int
+page_fonts_pending(
+	const struct page *page)
+{
+	const struct page_font *font;
+	size_t index;
+
+	for (index = 0; index < page->fonts.count; index++) {
+		font = *(struct page_font *const *)wb_vector_at(&page->fonts, index);
+		if (font->state == FONTS_FETCHING)
+			return 1;
+	}
+	return 0;
+}
+
 /*
  * Frees the page's web fonts, cancelling the fetches under way.
  */

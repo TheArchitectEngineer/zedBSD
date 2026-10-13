@@ -1,0 +1,120 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": ".grid 1",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"grid alignItemsBaseline\">\n    <div style=\"margin: 40px 0px;\" class=\"firstRowFirstColumn\" data-offset-x=\"0\" data-offset-y=\"40\" data-expected-width=\"200\" data-expected-height=\"20\"><div style=\"display:inline-block;\"></div></div>\n    <div style=\"margin: auto 0px 0px;\" class=\"firstRowSecondColumn\" data-offset-x=\"200\" data-offset-y=\"80\" data-expected-width=\"200\" data-expected-height=\"20\"><div style=\"display:inline-block;\"></div></div>\n    <div style=\"margin: 20px 0px;\" class=\"firstRowThirdColumn\" data-offset-x=\"400\" data-offset-y=\"40\" data-expected-width=\"200\" data-expected-height=\"20\"><div style=\"display:inline-block;\"></div></div>\n</div>\noffsetTop expected 80 but got 0"
+    },
+    {
+      "name": ".grid 2",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"grid\">\n    <div data-expected-height=\"20\" data-offset-y=\"20\" class=\"firstRowFirstColumn alignSelfBaseline\" style=\"height: 20px;\"></div>\n    <div data-expected-height=\"10\" data-offset-y=\"30\" class=\"firstRowSecondColumn alignSelfBaseline\" style=\"height: 10px; margin: 30px 0 10px;\"></div>\n    <div data-expected-height=\"10\" data-offset-y=\"30\" class=\"firstRowThirdColumn alignSelfBaseline\" style=\"height: 10px; margin: 20px 0 0;\"></div>\n    <div data-expected-height=\"100\" data-offset-y=\"0\" class=\"firstRowFourthColumn\" style=\"height: 100px;\"></div>\n</div>\noffsetTop expected 20 but got 0"
+    },
+    {
+      "name": ".grid 3",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"grid\">\n    <div data-expected-height=\"20\" data-offset-y=\"70\" class=\"firstRowFirstColumn alignSelfLastBaseline\" style=\"height: 20px;\"></div>\n    <div data-expected-height=\"10\" data-offset-y=\"80\" class=\"firstRowSecondColumn alignSelfLastBaseline\" style=\"height: 10px; margin: 30px 0 10px;\"></div>\n    <div data-expected-height=\"10\" data-offset-y=\"80\" class=\"firstRowThirdColumn alignSelfLastBaseline\" style=\"height: 10px; margin: 20px 0 0;\"></div>\n    <div data-expected-height=\"100\" data-offset-y=\"0\" class=\"firstRowFourthColumn\" style=\"height: 100px;\"></div>\n</div>\noffsetTop expected 70 but got 0"
+    },
+    {
+      "name": ".grid 4",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": ".grid 5",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "Additional Check 1",
+      "status": 1,
+      "message": "assert_equals: baseline1 and baseline2 should have the same baseline; expected 54 but got 20"
+    },
+    {
+      "name": "Additional Check 2",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "Additional Check 3",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "Additional Check 4",
+      "status": 1,
+      "message": "assert_greater_than: baseline4 and baseline5 should be below the dominant baseline; expected a number greater than 0 but got 0"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": ".grid 1",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"grid alignItemsBaseline\">\n    <div style=\"margin: 40px 0px;\" class=\"firstRowFirstColumn\" data-offset-x=\"0\" data-offset-y=\"40\" data-expected-width=\"200\" data-expected-height=\"20\"><div style=\"display:inline-block;\"></div></div>\n    <div style=\"margin: auto 0px 0px;\" class=\"firstRowSecondColumn\" data-offset-x=\"200\" data-offset-y=\"80\" data-expected-width=\"200\" data-expected-height=\"20\"><div style=\"display:inline-block;\"></div></div>\n    <div style=\"margin: 20px 0px;\" class=\"firstRowThirdColumn\" data-offset-x=\"400\" data-offset-y=\"40\" data-expected-width=\"200\" data-expected-height=\"20\"><div style=\"display:inline-block;\"></div></div>\n</div>\noffsetTop expected 80 but got 0"
+      },
+      {
+        "name": ".grid 2",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"grid\">\n    <div data-expected-height=\"20\" data-offset-y=\"20\" class=\"firstRowFirstColumn alignSelfBaseline\" style=\"height: 20px;\"></div>\n    <div data-expected-height=\"10\" data-offset-y=\"30\" class=\"firstRowSecondColumn alignSelfBaseline\" style=\"height: 10px; margin: 30px 0 10px;\"></div>\n    <div data-expected-height=\"10\" data-offset-y=\"30\" class=\"firstRowThirdColumn alignSelfBaseline\" style=\"height: 10px; margin: 20px 0 0;\"></div>\n    <div data-expected-height=\"100\" data-offset-y=\"0\" class=\"firstRowFourthColumn\" style=\"height: 100px;\"></div>\n</div>\noffsetTop expected 20 but got 0"
+      },
+      {
+        "name": ".grid 3",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"grid\">\n    <div data-expected-height=\"20\" data-offset-y=\"70\" class=\"firstRowFirstColumn alignSelfLastBaseline\" style=\"height: 20px;\"></div>\n    <div data-expected-height=\"10\" data-offset-y=\"80\" class=\"firstRowSecondColumn alignSelfLastBaseline\" style=\"height: 10px; margin: 30px 0 10px;\"></div>\n    <div data-expected-height=\"10\" data-offset-y=\"80\" class=\"firstRowThirdColumn alignSelfLastBaseline\" style=\"height: 10px; margin: 20px 0 0;\"></div>\n    <div data-expected-height=\"100\" data-offset-y=\"0\" class=\"firstRowFourthColumn\" style=\"height: 100px;\"></div>\n</div>\noffsetTop expected 70 but got 0"
+      },
+      {
+        "name": ".grid 4",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": ".grid 5",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "Additional Check 1",
+        "status": 1,
+        "message": "assert_equals: baseline1 and baseline2 should have the same baseline; expected 54 but got 20"
+      },
+      {
+        "name": "Additional Check 2",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "Additional Check 3",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "Additional Check 4",
+        "status": 1,
+        "message": "assert_greater_than: baseline4 and baseline5 should be below the dominant baseline; expected a number greater than 0 but got 0"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/alignment/grid-align-baseline.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "f23158b5ee6035e65aa3b25f620f2965f43d4469a123aaffe47762ddc4cd5fd6",
+  "command": [
+    "/tmp/ws074-browser-fonts",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:37957/css/css-grid/alignment/grid-align-baseline.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\".grid 1\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"grid alignItemsBaseline\\\">\\n    <div style=\\\"margin: 40px 0px;\\\" class=\\\"firstRowFirstColumn\\\" data-offset-x=\\\"0\\\" data-offset-y=\\\"40\\\" data-expected-width=\\\"200\\\" data-expected-height=\\\"20\\\"><div style=\\\"display:inline-block;\\\"></div></div>\\n    <div style=\\\"margin: auto 0px 0px;\\\" class=\\\"firstRowSecondColumn\\\" data-offset-x=\\\"200\\\" data-offset-y=\\\"80\\\" data-expected-width=\\\"200\\\" data-expected-height=\\\"20\\\"><div style=\\\"display:inline-block;\\\"></div></div>\\n    <div style=\\\"margin: 20px 0px;\\\" class=\\\"firstRowThirdColumn\\\" data-offset-x=\\\"400\\\" data-offset-y=\\\"40\\\" data-expected-width=\\\"200\\\" data-expected-height=\\\"20\\\"><div style=\\\"display:inline-block;\\\"></div></div>\\n</div>\\noffsetTop expected 80 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".grid 2\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"grid\\\">\\n    <div data-expected-height=\\\"20\\\" data-offset-y=\\\"20\\\" class=\\\"firstRowFirstColumn alignSelfBaseline\\\" style=\\\"height: 20px;\\\"></div>\\n    <div data-expected-height=\\\"10\\\" data-offset-y=\\\"30\\\" class=\\\"firstRowSecondColumn alignSelfBaseline\\\" style=\\\"height: 10px; margin: 30px 0 10px;\\\"></div>\\n    <div data-expected-height=\\\"10\\\" data-offset-y=\\\"30\\\" class=\\\"firstRowThirdColumn alignSelfBaseline\\\" style=\\\"height: 10px; margin: 20px 0 0;\\\"></div>\\n    <div data-expected-height=\\\"100\\\" data-offset-y=\\\"0\\\" class=\\\"firstRowFourthColumn\\\" style=\\\"height: 100px;\\\"></div>\\n</div>\\noffsetTop expected 20 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".grid 3\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"grid\\\">\\n    <div data-expected-height=\\\"20\\\" data-offset-y=\\\"70\\\" class=\\\"firstRowFirstColumn alignSelfLastBaseline\\\" style=\\\"height: 20px;\\\"></div>\\n    <div data-expected-height=\\\"10\\\" data-offset-y=\\\"80\\\" class=\\\"firstRowSecondColumn alignSelfLastBaseline\\\" style=\\\"height: 10px; margin: 30px 0 10px;\\\"></div>\\n    <div data-expected-height=\\\"10\\\" data-offset-y=\\\"80\\\" class=\\\"firstRowThirdColumn alignSelfLastBaseline\\\" style=\\\"height: 10px; margin: 20px 0 0;\\\"></div>\\n    <div data-expected-height=\\\"100\\\" data-offset-y=\\\"0\\\" class=\\\"firstRowFourthColumn\\\" style=\\\"height: 100px;\\\"></div>\\n</div>\\noffsetTop expected 70 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".grid 4\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\".grid 5\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"Additional Check 1\",\"status\":1,\"message\":\"assert_equals: baseline1 and baseline2 should have the same baseline; expected 54 but got 20\"}\nWS074_WPT_RESULT {\"name\":\"Additional Check 2\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"Additional Check 3\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"Additional Check 4\",\"status\":1,\"message\":\"assert_greater_than: baseline4 and baseline5 should be below the dominant baseline; expected a number greater than 0 but got 0\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\".grid 1\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"grid alignItemsBaseline\\\">\\n    <div style=\\\"margin: 40px 0px;\\\" class=\\\"firstRowFirstColumn\\\" data-offset-x=\\\"0\\\" data-offset-y=\\\"40\\\" data-expected-width=\\\"200\\\" data-expected-height=\\\"20\\\"><div style=\\\"display:inline-block;\\\"></div></div>\\n    <div style=\\\"margin: auto 0px 0px;\\\" class=\\\"firstRowSecondColumn\\\" data-offset-x=\\\"200\\\" data-offset-y=\\\"80\\\" data-expected-width=\\\"200\\\" data-expected-height=\\\"20\\\"><div style=\\\"display:inline-block;\\\"></div></div>\\n    <div style=\\\"margin: 20px 0px;\\\" class=\\\"firstRowThirdColumn\\\" data-offset-x=\\\"400\\\" data-offset-y=\\\"40\\\" data-expected-width=\\\"200\\\" data-expected-height=\\\"20\\\"><div style=\\\"display:inline-block;\\\"></div></div>\\n</div>\\noffsetTop expected 80 but got 0\"},{\"name\":\".grid 2\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"grid\\\">\\n    <div data-expected-height=\\\"20\\\" data-offset-y=\\\"20\\\" class=\\\"firstRowFirstColumn alignSelfBaseline\\\" style=\\\"height: 20px;\\\"></div>\\n    <div data-expected-height=\\\"10\\\" data-offset-y=\\\"30\\\" class=\\\"firstRowSecondColumn alignSelfBaseline\\\" style=\\\"height: 10px; margin: 30px 0 10px;\\\"></div>\\n    <div data-expected-height=\\\"10\\\" data-offset-y=\\\"30\\\" class=\\\"firstRowThirdColumn alignSelfBaseline\\\" style=\\\"height: 10px; margin: 20px 0 0;\\\"></div>\\n    <div data-expected-height=\\\"100\\\" data-offset-y=\\\"0\\\" class=\\\"firstRowFourthColumn\\\" style=\\\"height: 100px;\\\"></div>\\n</div>\\noffsetTop expected 20 but got 0\"},{\"name\":\".grid 3\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"grid\\\">\\n    <div data-expected-height=\\\"20\\\" data-offset-y=\\\"70\\\" class=\\\"firstRowFirstColumn alignSelfLastBaseline\\\" style=\\\"height: 20px;\\\"></div>\\n    <div data-expected-height=\\\"10\\\" data-offset-y=\\\"80\\\" class=\\\"firstRowSecondColumn alignSelfLastBaseline\\\" style=\\\"height: 10px; margin: 30px 0 10px;\\\"></div>\\n    <div data-expected-height=\\\"10\\\" data-offset-y=\\\"80\\\" class=\\\"firstRowThirdColumn alignSelfLastBaseline\\\" style=\\\"height: 10px; margin: 20px 0 0;\\\"></div>\\n    <div data-expected-height=\\\"100\\\" data-offset-y=\\\"0\\\" class=\\\"firstRowFourthColumn\\\" style=\\\"height: 100px;\\\"></div>\\n</div>\\noffsetTop expected 70 but got 0\"},{\"name\":\".grid 4\",\"status\":0,\"message\":\"\"},{\"name\":\".grid 5\",\"status\":0,\"message\":\"\"},{\"name\":\"Additional Check 1\",\"status\":1,\"message\":\"assert_equals: baseline1 and baseline2 should have the same baseline; expected 54 but got 20\"},{\"name\":\"Additional Check 2\",\"status\":0,\"message\":\"\"},{\"name\":\"Additional Check 3\",\"status\":0,\"message\":\"\"},{\"name\":\"Additional Check 4\",\"status\":1,\"message\":\"assert_greater_than: baseline4 and baseline5 should be below the dominant baseline; expected a number greater than 0 but got 0\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

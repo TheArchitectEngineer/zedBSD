@@ -34,6 +34,7 @@ static int document_doctype(struct vm_realm *realm, vm_value this_value, const v
 static int document_title_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_title_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_ready_state(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_fonts(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_default_view(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_get_element_by_id(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_create_element(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -73,6 +74,7 @@ static const struct bind_attribute document_attributes[] = {
 	{ "doctype", document_doctype, NULL },
 	{ "title", document_title_get, document_title_set },
 	{ "readyState", document_ready_state, NULL },
+	{ "fonts", document_fonts, NULL },
 	{ "cookie", document_cookie_get, document_cookie_set },
 	{ "URL", document_url, NULL },
 	{ "documentURI", document_url, NULL },
@@ -1246,6 +1248,107 @@ document_ready_state(
 		return status;
 
 	/* Succeeded: the state is reported. */
+	return 0;
+}
+
+/* Returns the Document's one initial font set and its stable ready promise. */
+static int
+document_fonts(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_document *document;
+	struct vm_object *set;
+	struct vm_string *key;
+	struct vm_cell *roots[3];
+	vm_value promise;
+	unsigned registered;
+	unsigned index;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	status = document_this(realm, this_value, &document);
+	if (status != 0)
+		return status;
+	if (document->font_set != NULL) {
+		*result = vm_value_cell(document->font_set);
+		return 0;
+	}
+
+	set = vm_object_create(realm->heap, realm->object_prototype);
+	if (set == NULL)
+		return ENOMEM;
+	roots[0] = &set->cell;
+	roots[1] = NULL;
+	roots[2] = NULL;
+	registered = 0;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	status = vm_promise_create(realm, NULL, &promise);
+	if (status != 0)
+		goto cleanup;
+	roots[1] = vm_value_as_cell(promise);
+	key = vm_atom_from_ascii(realm->heap, "ready");
+	if (key == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+	roots[2] = &key->cell;
+	status = vm_object_define(realm->heap, set, vm_value_cell(key), promise,
+	                          VM_PROPERTY_ENUMERABLE);
+	if (status != 0)
+		goto cleanup;
+
+	/* Publish only a complete, GC-traced SameObject graph. */
+	document->font_set = set;
+	document->font_ready = roots[1];
+	if (document->view == NULL || document->fonts_settled) {
+		status = vm_promise_resolve(realm, promise, vm_value_cell(set));
+		if (status != 0) {
+			document->font_set = NULL;
+			document->font_ready = NULL;
+			goto cleanup;
+		}
+	}
+	*result = vm_value_cell(set);
+
+cleanup:
+	while (registered != 0) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+	return status;
+}
+
+/* A completed page layout releases the pending initial ready promise. */
+int
+bind_document_fonts_settle(
+	struct dom_document *document)
+{
+	struct bind_window *window;
+	int status;
+
+	if (document->fonts_settled)
+		return 0;
+	if (document->font_ready != NULL) {
+		window = document->view;
+		if (window == NULL)
+			return 0;
+		status = vm_promise_resolve(window->realm, vm_value_cell(document->font_ready),
+		                            vm_value_cell(document->font_set));
+		if (status != 0)
+			return status;
+	}
+	document->fonts_settled = 1;
 	return 0;
 }
 

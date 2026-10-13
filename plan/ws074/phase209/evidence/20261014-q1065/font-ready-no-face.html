@@ -1,0 +1,8 @@
+<!doctype html><script>
+var set = document.fonts;
+console.log('same-set', set === document.fonts);
+console.log('same-ready', set.ready === document.fonts.ready);
+console.log('is-promise', set.ready instanceof Promise);
+set.ready.then(function (value) { console.log('ready-after-layout', value === set); });
+window.onload = function () { console.log('load-before-ready'); };
+</script><body>No font face</body>

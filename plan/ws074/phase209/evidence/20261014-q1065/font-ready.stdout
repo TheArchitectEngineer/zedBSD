@@ -1,0 +1,5 @@
+same-set true
+same-ready true
+is-promise true
+load-before-ready
+ready-after-layout true
