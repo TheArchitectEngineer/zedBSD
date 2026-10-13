@@ -338,6 +338,7 @@ vi_editor_key(
 		if (!pending)
 			vi_screen_update(editor);
 
+		/* Reads a key from the terminal. */
 		key = vi_terminal_read_key(&editor->terminal);
 		if (key == VI_KEY_STOP) {
 			/* The terminal went away; the editor stops. */
@@ -345,6 +346,8 @@ vi_editor_key(
 			editor->exit_status = 1;
 			return VI_KEY_STOP;
 		}
+
+		/* A key ends the wait. */
 		if (key >= 0)
 			break;
 
@@ -398,6 +401,7 @@ vi_cursor_clamp(
 	if (editor->cursor.line >= editor->buffer.count)
 		editor->cursor.line = editor->buffer.count - 1;
 
+	/* Finds the cursor's line. */
 	line = line_at(editor, editor->cursor.line);
 
 	/* Insert mode may rest at the end of the line; command mode rests on the last character. */
@@ -466,6 +470,8 @@ vi_read_line(
 			result = 1;
 			break;
 		}
+
+		/* ESC, CONTROL-C and a stopping editor abandon the line. */
 		abandon = key_ends_input(key);
 		if (abandon)
 			break;
@@ -500,10 +506,14 @@ vi_read_line(
 			result = 0;
 			continue;
 		}
+
+		/* Refuses a character that does not fit. */
 		if (editor->input_length + length >= sizeof(editor->input)) {
 			vi_bell(editor);
 			continue;
 		}
+
+		/* Adds the character to the line. */
 		memcpy(editor->input + editor->input_length, text, length);
 		editor->input_length += length;
 		editor->input[editor->input_length] = '\0';
@@ -596,6 +606,8 @@ read_character(
 				editor->pending_key = next;
 			break;
 		}
+
+		/* Takes the following byte into the character. */
 		text[*length] = (char)next;
 		(*length)++;
 	}
@@ -671,6 +683,7 @@ class_at(
 	struct vi_line *line;
 	unsigned long code;
 
+	/* Finds the line of the position. */
 	line = line_at(editor, position.line);
 
 	/* An empty line, and the newline at the end of a line. */
@@ -740,6 +753,7 @@ step_forward(
 {
 	struct vi_line *line;
 
+	/* Finds the line of the position. */
 	line = line_at(editor, position->line);
 
 	/* Within the line, steps over one character, onto the newline at the end. */
@@ -752,6 +766,7 @@ step_forward(
 	if (position->line + 1 >= editor->buffer.count)
 		return -1;
 
+	/* Moves to the start of the next line. */
 	position->line++;
 	position->offset = 0;
 
@@ -782,6 +797,7 @@ step_backward(
 	if (position->line == 0)
 		return -1;
 
+	/* Moves to the end of the line before. */
 	position->line--;
 	position->offset = line_at(editor, position->line)->length;
 
@@ -827,6 +843,7 @@ motion_word_forward(
 	struct vi_line *line;
 	int status;
 
+	/* Starts from the cursor. */
 	position = editor->cursor;
 
 	/* Steps over one word and the blanks after it, count times. */
@@ -884,6 +901,8 @@ motion_word_forward(
 		position.line = editor->cursor.line;
 		position.offset = line_at(editor, position.line)->length;
 	}
+
+	/* Tells where the movement ends. */
 	motion->target = position;
 
 	/* Succeeded. */
@@ -926,6 +945,7 @@ motion_word_end(
 	enum char_class next_class;
 	int status;
 
+	/* Starts from the cursor. */
 	position = editor->cursor;
 
 	/* Moves one character, skips blanks, then runs to the end of the word, count times. */
@@ -962,6 +982,7 @@ motion_word_end(
 		}
 	}
 
+	/* Ends on the last character of the word, which the movement takes in. */
 	motion->target = position;
 	motion->inclusive = 1;
 
@@ -983,6 +1004,7 @@ motion_word_backward(
 	enum char_class previous_class;
 	int status;
 
+	/* Starts from the cursor. */
 	position = editor->cursor;
 
 	/* Moves one character, skips blanks back, then runs to the start of the word, count times. */
@@ -1023,6 +1045,7 @@ motion_word_backward(
 		}
 	}
 
+	/* Tells where the movement ends. */
 	motion->target = position;
 
 	/* Succeeded. */
@@ -1050,6 +1073,7 @@ motion_find(
 	int compare;
 	int typed;
 
+	/* Finds the cursor's line. */
 	line = line_at(editor, editor->cursor.line);
 
 	/* A new search reads the character to look for. */
@@ -1074,6 +1098,8 @@ motion_find(
 		else
 			forward = 1;
 	}
+
+	/* t and T stop beside the character instead of on it. */
 	before = 0;
 	if (key == 't' || key == 'T')
 		before = 1;
@@ -1117,6 +1143,7 @@ motion_find(
 			found = vi_text_next(line->text, line->length, found);
 	}
 
+	/* Tells where the movement ends; f and t take in the character they stop on. */
 	motion->target.line = editor->cursor.line;
 	motion->target.offset = found;
 	if (forward)
@@ -1173,6 +1200,7 @@ motion_search(
 		count--;
 	}
 
+	/* Tells where the movement ends. */
 	motion->target = position;
 
 	/* Succeeded. */
@@ -1196,6 +1224,8 @@ motion_vertical(
 	} else {
 		motion->target.offset = vi_text_offset_at_column(target->text, target->length, editor->want_column);
 	}
+
+	/* A vertical movement takes whole lines and keeps aiming at the column. */
 	motion->linewise = 1;
 	motion->keep_column = 1;
 
@@ -1246,6 +1276,8 @@ motion(
 			offset = vi_text_previous(line->text, line->length, offset);
 			count--;
 		}
+
+		/* Tells where the movement ends. */
 		motion->target.offset = offset;
 		return 0;
 	case 'l':
@@ -1262,10 +1294,14 @@ motion(
 			offset = vi_text_next(line->text, line->length, offset);
 			count--;
 		}
+
+		/* Without an operator the cursor stays on the last character of the line. */
 		if (!for_operator) {
 			if (offset > last)
 				offset = last;
 		}
+
+		/* Tells where the movement ends. */
 		motion->target.offset = offset;
 		return 0;
 	case '0':
@@ -1357,6 +1393,8 @@ motion(
 			if (index > last_line)
 				index = last_line;
 		}
+
+		/* Tells where the movement ends: the first character of the line. */
 		motion->target.line = index;
 		motion->target.offset = first_nonblank(line_at(editor, index));
 		motion->linewise = 1;
@@ -1372,6 +1410,8 @@ motion(
 			if (index > last_line)
 				index = last_line;
 		}
+
+		/* Tells where the movement ends: the first character of the line. */
 		motion->target.line = index;
 		motion->target.offset = first_nonblank(line_at(editor, index));
 		motion->linewise = 1;
@@ -1391,6 +1431,8 @@ motion(
 		} else {
 			index = editor->top + (editor->bottom - editor->top) / 2;
 		}
+
+		/* Holds the line to the buffer. */
 		if (index > last_line)
 			index = last_line;
 		motion->target.line = index;
@@ -1475,8 +1517,11 @@ text_between(
 			size++;
 		}
 	}
+
+	/* Ends the copy with a NUL. */
 	text[size] = '\0';
 
+	/* Hands the copy to the caller. */
 	copy->text = text;
 	copy->length = size;
 	copy->linewise = linewise;
@@ -1568,6 +1613,7 @@ delete_between(
 	if (error != 0)
 		return error;
 
+	/* Joins what is left of the last line onto the first. */
 	error = vi_edit(editor, VI_CHANGE_JOIN_LINE, start.line, 0, "", 0);
 	if (error != 0)
 		return error;
@@ -1618,6 +1664,8 @@ operator(
 			vi_bell(editor);
 			return;
 		}
+
+		/* Describes the movement as the whole lines down from the cursor's. */
 		memset(&moved, 0, sizeof(moved));
 		moved.target.line = editor->cursor.line + (size_t)(count - 1);
 		moved.linewise = 1;
@@ -1679,6 +1727,8 @@ operator(
 		if (start.line == end.line && start.offset == end.offset)
 			empty = 1;
 	}
+
+	/* Refuses an empty text, except for c, which still starts typing. */
 	if (empty && operator_key != 'c') {
 		vi_bell(editor);
 		return;
@@ -1690,6 +1740,8 @@ operator(
 		report_error(editor, error);
 		return;
 	}
+
+	/* Makes the copy what p and P put. */
 	register_replace(editor, &copy);
 
 	/* y only copies; the cursor goes to the start of the text, keeping its column for lines. */
@@ -1699,6 +1751,8 @@ operator(
 		} else {
 			editor->cursor = start;
 		}
+
+		/* y is done once the text is copied. */
 		return;
 	}
 
@@ -1717,6 +1771,8 @@ operator(
 	} else {
 		error = delete_between(editor, start, end);
 	}
+
+	/* Reports a delete the buffer could not take. */
 	if (error != 0) {
 		report_error(editor, error);
 		return;
@@ -1791,6 +1847,7 @@ insert_key(
 	int error;
 	int typed;
 
+	/* Finds the cursor's line. */
 	line = line_at(editor, editor->cursor.line);
 	error = 0;
 
@@ -1804,6 +1861,7 @@ insert_key(
 			editor->cursor.line++;
 			editor->cursor.offset = 0;
 		}
+
 		break;
 	case VI_KEY_BACKSPACE:
 	case VI_KEY_ERASE:
@@ -1823,6 +1881,7 @@ insert_key(
 		} else {
 			vi_bell(editor);
 		}
+
 		break;
 	case VI_KEY_DELETE:
 		/* Deletes the character under the cursor, or joins with the line below. */
@@ -1834,6 +1893,7 @@ insert_key(
 		} else {
 			vi_bell(editor);
 		}
+
 		break;
 	case VI_KEY_CONTROL_W:
 		/* Erases the word before the cursor, and the blanks after it. */
@@ -1847,6 +1907,8 @@ insert_key(
 				break;
 			}
 		}
+
+		/* Finds the class of the word the blanks led back to. */
 		class = class_at(editor, position, 0);
 		while (position.offset > 0) {
 			offset = vi_text_previous(line->text, line->length, position.offset);
@@ -1857,11 +1919,14 @@ insert_key(
 				break;
 			}
 		}
+
+		/* Erases the word and the blanks after it, if there is any. */
 		if (position.offset < editor->cursor.offset) {
 			error = vi_edit(editor, VI_CHANGE_DELETE_TEXT, editor->cursor.line, position.offset, "", editor->cursor.offset - position.offset);
 			if (error == 0)
 				editor->cursor.offset = position.offset;
 		}
+
 		break;
 	case VI_KEY_CONTROL_U:
 		/* Erases everything before the cursor on the line. */
@@ -1870,6 +1935,7 @@ insert_key(
 			if (error == 0)
 				editor->cursor.offset = 0;
 		}
+
 		break;
 	case VI_KEY_LEFT:
 	case VI_KEY_RIGHT:
@@ -1895,6 +1961,8 @@ insert_key(
 			if (status == 0)
 				editor->cursor = moved.target;
 		}
+
+		/* Remembers the column, except after a vertical movement, which keeps aiming at the old one. */
 		if (key != VI_KEY_UP && key != VI_KEY_DOWN) {
 			line = line_at(editor, editor->cursor.line);
 			editor->want_column = vi_text_column(line->text, line->length, editor->cursor.offset);
@@ -1910,6 +1978,8 @@ insert_key(
 			vi_bell(editor);
 			break;
 		}
+
+		/* Reads the whole character the key starts. */
 		status = read_character(editor, key, text, &length);
 		if (status != 0)
 			break;
@@ -1936,6 +2006,7 @@ insert_text(
 	if (error != 0)
 		return error;
 
+	/* Moves the cursor past the text. */
 	editor->cursor.offset += length;
 
 	/* Succeeded. */
@@ -1964,6 +2035,7 @@ command_put(
 	int newlines;
 	int error;
 
+	/* Finds the register. */
 	yank = &editor->yank;
 
 	/* An empty register has nothing to put. */
@@ -1984,12 +2056,16 @@ command_put(
 			report_error(editor, EFBIG);
 			return;
 		}
+
+		/* Allocates a block that holds all the copies. */
 		size = yank->length * (size_t)count;
 		block = malloc(size + 1);
 		if (block == NULL) {
 			report_error(editor, ENOMEM);
 			return;
 		}
+
+		/* Fills the block with the copies. */
 		for (index = 0; index < (size_t)count; index++)
 			memcpy(block + index * yank->length, yank->text, yank->length);
 		error = vi_edit(editor, VI_CHANGE_INSERT_LINE, at.line, 0, block, size);
@@ -1998,6 +2074,8 @@ command_put(
 			report_error(editor, error);
 			return;
 		}
+
+		/* The cursor goes to the first line put in. */
 		editor->cursor.line = first_line;
 		vi_cursor_first_nonblank(editor);
 		return;
@@ -2027,6 +2105,8 @@ command_put(
 					report_error(editor, error);
 					return;
 				}
+
+				/* Moves past the piece put in. */
 				at.offset += index - start;
 			}
 
@@ -2037,10 +2117,14 @@ command_put(
 					report_error(editor, error);
 					return;
 				}
+
+				/* Moves to the start of the new line. */
 				at.line++;
 				at.offset = 0;
 				newlines = 1;
 			}
+
+			/* The next piece starts after the newline. */
 			start = index + 1;
 		}
 	}
@@ -2069,6 +2153,7 @@ command_delete_characters(
 	struct vi_register copy;
 	int error;
 
+	/* Finds the cursor's line, which the characters are taken from. */
 	line = line_at(editor, editor->cursor.line);
 	start = editor->cursor;
 	end = editor->cursor;
@@ -2098,13 +2183,18 @@ command_delete_characters(
 		report_error(editor, error);
 		return;
 	}
+
+	/* Makes the copy what p and P put. */
 	register_replace(editor, &copy);
+
+	/* Takes the characters out of the line. */
 	error = delete_between(editor, start, end);
 	if (error != 0) {
 		report_error(editor, error);
 		return;
 	}
 
+	/* The cursor goes to where the characters were. */
 	editor->cursor = start;
 }
 
@@ -2123,6 +2213,7 @@ command_replace(
 	int status;
 	int error;
 
+	/* Finds the cursor's line. */
 	line = line_at(editor, editor->cursor.line);
 
 	/* Reads the replacing character; ESC cancels. */
@@ -2138,6 +2229,8 @@ command_replace(
 			vi_bell(editor);
 			return;
 		}
+
+		/* Steps over one character. */
 		end.offset = vi_text_next(line->text, line->length, end.offset);
 		count--;
 	}
@@ -2151,6 +2244,8 @@ command_replace(
 			report_error(editor, error);
 			return;
 		}
+
+		/* The cursor goes to the start of the new line. */
 		editor->cursor.line++;
 		editor->cursor.offset = 0;
 		return;
@@ -2170,6 +2265,8 @@ command_replace(
 		report_error(editor, error);
 		return;
 	}
+
+	/* Puts the new character in once for each deleted one. */
 	end = editor->cursor;
 	while (count > 0) {
 		error = vi_edit(editor, VI_CHANGE_INSERT_TEXT, end.line, end.offset, text, length);
@@ -2177,6 +2274,8 @@ command_replace(
 			report_error(editor, error);
 			return;
 		}
+
+		/* Moves past the character put in. */
 		end.offset += length;
 		count--;
 	}
@@ -2222,10 +2321,14 @@ command_join(
 				break;
 			blanks++;
 		}
+
+		/* Deletes the blanks, if there are any. */
 		if (blanks > 0) {
 			error = vi_edit(editor, VI_CHANGE_DELETE_TEXT, editor->cursor.line + 1, 0, "", blanks);
-			if (error != 0)
-				goto fail;
+			if (error != 0) {
+				report_error(editor, error);
+				return;
+			}
 		}
 
 		/* A space goes between two texts, unless one side is empty, the first ends in a blank, or the second starts with ). */
@@ -2244,22 +2347,23 @@ command_join(
 
 		/* Joins the two lines. */
 		error = vi_edit(editor, VI_CHANGE_JOIN_LINE, editor->cursor.line, 0, "", 0);
-		if (error != 0)
-			goto fail;
+		if (error != 0) {
+			report_error(editor, error);
+			return;
+		}
 
+		/* Puts the space in between, when the texts need one. */
 		if (add_space) {
 			error = vi_edit(editor, VI_CHANGE_INSERT_TEXT, editor->cursor.line, length, " ", 1);
-			if (error != 0)
-				goto fail;
+			if (error != 0) {
+				report_error(editor, error);
+				return;
+			}
 		}
 
 		/* The cursor goes to the join. */
 		editor->cursor.offset = length;
 	}
-	return;
-
-fail:
-	report_error(editor, error);
 }
 
 /* Switches the case of count ASCII letters from the cursor on (~), moving past them. */
@@ -2302,11 +2406,16 @@ command_toggle_case(
 				report_error(editor, error);
 				return;
 			}
+
+			/* Finds the line again, since the edit changed it. */
 			line = line_at(editor, editor->cursor.line);
 		}
+
+		/* Moves on to the next character. */
 		offset = vi_text_next(line->text, line->length, offset);
 	}
 
+	/* The cursor ends after the last character switched. */
 	editor->cursor.offset = offset;
 }
 
@@ -2335,6 +2444,8 @@ command_undo(
 				vi_message(editor, "Already at oldest change");
 			break;
 		}
+
+		/* Reports any other failure of the history. */
 		if (error != 0) {
 			report_error(editor, error);
 			break;
@@ -2361,6 +2472,7 @@ command_repeat(
 	size_t index;
 	int length;
 
+	/* Finds the keys to feed back and the keys of the change. */
 	replay = &editor->replay;
 	repeat = &editor->repeat;
 
@@ -2406,6 +2518,7 @@ command_page(
 	size_t step;
 	size_t text_rows;
 
+	/* Finds the last line, and how many rows show text. */
 	last_line = editor->buffer.count - 1;
 	text_rows = (size_t)editor->terminal.rows - 1;
 
@@ -2418,6 +2531,8 @@ command_page(
 			vi_bell(editor);
 			return;
 		}
+
+		/* A page is the lines the screen showed whole, at least one. */
 		step = editor->bottom - editor->top;
 		if (step == 0)
 			step = 1;
@@ -2434,6 +2549,8 @@ command_page(
 			vi_bell(editor);
 			return;
 		}
+
+		/* A page is the screen less two lines, at least one. */
 		step = 1;
 		if (text_rows > 2)
 			step = text_rows - 2;
@@ -2455,6 +2572,8 @@ command_page(
 			vi_bell(editor);
 			return;
 		}
+
+		/* A half page is half the rows, or count lines. */
 		step = text_rows / 2;
 		if (count > 1)
 			step = (size_t)count;
@@ -2474,6 +2593,8 @@ command_page(
 			vi_bell(editor);
 			return;
 		}
+
+		/* A half page is half the rows, or count lines. */
 		step = text_rows / 2;
 		if (count > 1)
 			step = (size_t)count;
@@ -2532,6 +2653,7 @@ command_line(
 	if (!accepted)
 		return;
 
+	/* Runs the typed command. */
 	vi_ex_command(editor, editor->input);
 }
 
@@ -2543,6 +2665,7 @@ record_key(
 {
 	struct vi_keys *record;
 
+	/* Finds the keys recorded for the running command. */
 	record = &editor->record;
 
 	/* Only keys of a recorded command are kept. */
@@ -2555,6 +2678,7 @@ record_key(
 		return;
 	}
 
+	/* Adds the key. */
 	record->keys[record->length] = key;
 	record->length++;
 }
@@ -2653,6 +2777,7 @@ insert_repeat(
 	char *block;
 	int error;
 
+	/* Finds where the typed text began. */
 	start = editor->insert_start;
 
 	/* The typed text must be on the cursor's line, before the cursor. */
@@ -2669,11 +2794,15 @@ insert_repeat(
 		report_error(editor, EFBIG);
 		return;
 	}
+
+	/* Allocates the block of copies. */
 	block = malloc(length * (size_t)count + 1);
 	if (block == NULL) {
 		report_error(editor, ENOMEM);
 		return;
 	}
+
+	/* Fills the block with the copies. */
 	for (index = 0; index < (size_t)count; index++)
 		memcpy(block + index * length, line->text + start.offset, length);
 
@@ -2685,5 +2814,6 @@ insert_repeat(
 		return;
 	}
 
+	/* The cursor goes after the copies. */
 	editor->cursor.offset += length * (size_t)count;
 }
