@@ -3164,6 +3164,60 @@ drv_i915_display_output_fail_back(
 }
 
 /*
+ * Gives up the firmware's own output after its display was unplugged while
+ * it was lit (ws051-p005b, Q1's choice (b) of 2026-10-08): the driver does
+ * not light another output in its place (the user's decision 3: Keiland
+ * decides), and the rest of the lease's presentations fail (ENXIO).
+ *
+ * The built-in panel, when the machine has one, stands as the resident
+ * output from here on, not lit: the display sessions list it, and
+ * Keiland's claim and first frame light it, as after a moved output's
+ * fail-back.  It becomes the firmware's output too, so that a moved
+ * output's end comes back to it and not to the display that went.
+ * Without a panel the node has no output (none), as at a start whose
+ * firmware's output cannot be driven.  Runs on the worker after it left
+ * the display window.
+ */
+void
+drv_i915_display_output_lost(
+	struct i915_device *device)
+{
+	struct i915_display_output panel;
+	struct i915_display *display;
+	unsigned long irq;
+
+	/* The display whose output is given up, and the panel that may stand for it. */
+	display = device->display;
+	drv_i915_display_output_panel(display, &panel);
+
+	/* A machine without the built-in panel's connector has no output from here on. */
+	if (!panel.has_connector) {
+		kern_memset(&panel, 0, sizeof(panel));
+		panel.none = 1;
+	}
+
+	/*
+	 * The output and the firmware's output, under the lock the worker's
+	 * readers share; lease_failed makes the lease's presentations fail
+	 * outside the window until the next claim.
+	 */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	display->output = panel;
+	display->gop_output = panel;
+	display->window.lease_failed = 1;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Succeeded: nothing is lit until a display is claimed. */
+	if (panel.none) {
+		kern_logf("i915: resident display: the firmware's output was unplugged; the node has no output (no built-in panel), and the lease's presentations fail\n");
+	} else {
+		kern_logf("i915: resident display: the firmware's output was unplugged; the built-in panel is the output, not lit until a display is claimed, and the lease's presentations fail\n");
+	}
+}
+
+/*
  * Reports whether the resident output is a moved one, not the output the
  * firmware left lit (ws113-p011a).
  */

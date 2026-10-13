@@ -733,6 +733,7 @@ drv_i915_present_window(
 	int moved;
 	int moved_after;
 	int unplugged;
+	int lost;
 	int retry;
 	int spared;
 	int error;
@@ -783,18 +784,32 @@ drv_i915_present_window(
 	/*
 	 * A moved output that failed, or whose display was unplugged (BUG-268),
 	 * gives the firmware's output back (ws113-p011a), and the rest of its
-	 * lease fails.
+	 * lease fails.  The firmware's own output whose display was unplugged
+	 * is given up (ws051-p005b): the driver lights nothing in its place,
+	 * the rest of the lease fails, and Keiland claims the next display.
 	 */
-	if ((error != 0 || unplugged) && moved)
+	lost = 0;
+	if ((error != 0 || unplugged) && moved) {
 		drv_i915_display_output_fail_back(device);
+	} else if (unplugged) {
+		drv_i915_display_output_lost(device);
+		lost = 1;
+	}
 
 	/* A moved output whose last hold ended without a lease gives the firmware's back (ws113-p011a), before the hold is over. */
 	drv_i915_display_output_back(device);
 
-	/* The output moved back: the display sessions list the displays again now, an idle desktop too (BUG-268). */
+	/*
+	 * The output moved back, or the firmware's output was given up: the
+	 * display sessions list the displays again now, an idle desktop too
+	 * (BUG-268, ws051-p005b).
+	 */
 	moved_after = drv_i915_display_output_moved(display);
-	if (moved && !moved_after)
+	if (moved && !moved_after) {
 		drv_i915_hpd_topology_touch(display);
+	} else if (lost) {
+		drv_i915_hpd_topology_touch(display);
+	}
 
 	/*
 	 * The output is stopped: no picture is held any more (a shutdown waiting
@@ -814,9 +829,10 @@ drv_i915_present_window(
 	 * fail; the window is not entered for it again.  A run for two pipes
 	 * that failed but gave everything back is spared (ws113-p011, review
 	 * F9): the second output is latched limited and the next lighting is
-	 * for one pipe.
+	 * for one pipe.  So is a run whose display was unplugged (ws051-p005b):
+	 * the run failed because the sink went, and the output was given up.
 	 */
-	if (error != 0 && !moved && !spared && !display->window.display_failed) {
+	if (error != 0 && !moved && !spared && !lost && !display->window.display_failed) {
 		display->window.display_failed = 1;
 		kern_logf("i915: resident display: the firmware's output did not come up (or did not stop cleanly); presentation fails from now on\n");
 	}
@@ -943,11 +959,13 @@ drv_i915_present_retrain_request(
 
 /*
  * Asks the window to be left at once because a connector's display was
- * unplugged, when the resident output was moved to it and is lit
- * (BUG-268): the output is stopped, the firmware's output comes back and
+ * unplugged while the resident output is lit on it: an output a claim
+ * moved there (BUG-268), whose firmware's output then comes back, or the
+ * firmware's own external display (ws051-p005b, a Type-C or HDMI display
+ * the firmware lit), which is then given up.  The output is stopped and
  * the display sessions are told, without waiting for the lease's next
- * frame, a hold to run out or the Type-C link's reset.  Runs from the
- * hotplug path.
+ * frame, a hold to run out or the Type-C link's reset.  The built-in
+ * panel is never unplugged.  Runs from the hotplug path.
  */
 void
 drv_i915_present_unplugged(
@@ -957,17 +975,21 @@ drv_i915_present_unplugged(
 	struct i915_device *device;
 	unsigned long irq;
 	int moved;
+	int external;
 	int asked;
 
 	/* The device, whose IRQ lock guards the mark. */
 	device = display->device;
 
-	/* Only the connector of a moved output that is lit now. */
+	/* Only the connector of a lit output that is a moved one or an external display. */
 	irq = spin_lock_irqsave(&device->irq_lock);
 
 	asked = 0;
 	moved = drv_i915_display_output_moved(display);
-	if (moved &&
+	external = 0;
+	if (display->output.kind != I915_OUTPUT_KIND_PANEL && !display->output.none)
+		external = 1;
+	if ((moved || external) &&
 	    display->resident_up &&
 	    display->output.has_connector &&
 	    display->output.connector == connector &&
@@ -982,9 +1004,58 @@ drv_i915_present_unplugged(
 	if (!asked)
 		return;
 
+	/* Says what follows: the firmware's output comes back, or nothing is lit until a claim. */
+	if (moved) {
+		kern_logf("i915: resident display: the %s display was unplugged; the window is left and the firmware's output comes back\n", drv_i915_display_output_name(display));
+	} else {
+		kern_logf("i915: resident display: the %s display (the firmware's output) was unplugged; the window is left and nothing is lit until a display is claimed\n", drv_i915_display_output_name(display));
+	}
+
 	/* Wakes the worker to leave the window. */
-	kern_logf("i915: resident display: the %s display was unplugged; the window is left and the firmware's output comes back\n", drv_i915_display_output_name(display));
 	drv_i915_worker_wake(device);
+}
+
+/*
+ * Takes a Type-C port whose DisplayPort Alternate Mode partner stayed away
+ * for the link reset's delay (ws051-p005b): when the resident output is lit
+ * on that port's external DP display, the display is taken as unplugged
+ * (drv_i915_present_unplugged), in case its connector's disconnection was
+ * not seen.  Runs from the hotplug path's link reset work.
+ */
+void
+drv_i915_present_tc_partner_gone(
+	struct i915_display *display,
+	unsigned tc_port)
+{
+	struct i915_device *device;
+	unsigned long irq;
+	unsigned connector;
+	int on_port;
+
+	/* The device, whose IRQ lock guards the output the worker reads. */
+	device = display->device;
+
+	/* Whether the resident output is the port's external DP display, and its connector. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	on_port = 0;
+	connector = 0U;
+	if (display->output.kind == I915_OUTPUT_KIND_DP_EXT &&
+	    !display->output.none &&
+	    display->output.has_connector &&
+	    display->output.tc_port == tc_port) {
+		on_port = 1;
+		connector = display->output.connector;
+	}
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Another port, or no external DP display. */
+	if (!on_port)
+		return;
+
+	/* The display is gone as an unplugged one is (lit or not is checked there). */
+	drv_i915_present_unplugged(display, connector);
 }
 
 /*

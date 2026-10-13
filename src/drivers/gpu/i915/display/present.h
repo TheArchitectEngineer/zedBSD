@@ -57,8 +57,14 @@ int drv_i915_present_display_release(void *device, void *session, const struct g
 int drv_i915_present_relight_begin(struct i915_device *device);
 void drv_i915_present_retrain_request(struct i915_display *display);
 
-/* Leaves the window at once when the display the resident output was moved to is unplugged (the hotplug path). */
+/*
+ * Leaves the window at once when the display the lit resident output shows
+ * is unplugged: a moved output's (BUG-268), or the firmware's own external
+ * display (ws051-p005b); a Type-C port whose partner stayed away counts as
+ * its display's unplug (the hotplug path).
+ */
 void drv_i915_present_unplugged(struct i915_display *display, unsigned connector);
+void drv_i915_present_tc_partner_gone(struct i915_display *display, unsigned tc_port);
 int drv_i915_present_unplug_pending(struct i915_device *device);
 
 /* Prepares the display lease once (its mutex and numbering). */
