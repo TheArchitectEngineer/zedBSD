@@ -959,6 +959,8 @@ element_trace(
 	/* A form alone retains its cached live controls list across collection. */
 	if (element->controls_collection != NULL)
 		vm_heap_mark(heap, &element->controls_collection->cell);
+	if (element->attributes_collection != NULL)
+		vm_heap_mark(heap, &element->attributes_collection->cell);
 
 	/* The cached current select remains valid during option-owner reconciliation. */
 	if (element->option_select != NULL)

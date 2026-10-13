@@ -27,6 +27,8 @@ static int element_id_get(struct vm_realm *realm, vm_value this_value, const vm_
 static int element_id_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_class_name_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_class_name_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_attributes_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_attributes_get_own(struct vm_object *object, vm_value key, struct vm_property *property);
 static int element_title_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_title_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_hidden_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -61,6 +63,11 @@ static int script_async_set(struct vm_realm *realm, vm_value this_value, const v
 static int element_reflect_get(struct vm_realm *realm, vm_value this_value, const char *name, vm_value *result);
 static int element_reflect_set(struct vm_realm *realm, vm_value this_value, const char *name, const vm_value *args, unsigned count);
 
+/* Current attribute indices are virtual; the owning Element retains the map. */
+static const struct vm_native_operations element_attributes_native = {
+	element_attributes_get_own, NULL, NULL, NULL, NULL
+};
+
 /*
  * The attributes of Element, with the members of its mixins.  The table
  * is constant for the life of the program.
@@ -72,6 +79,7 @@ static const struct bind_attribute element_attributes[] = {
 	{ "prefix", element_prefix, NULL },
 	{ "id", element_id_get, element_id_set },
 	{ "className", element_class_name_get, element_class_name_set },
+	{ "attributes", element_attributes_get, NULL },
 	{ "children", bind_children, NULL },
 	{ "firstElementChild", bind_first_element_child_get, NULL },
 	{ "lastElementChild", bind_last_element_child_get, NULL },
@@ -307,6 +315,104 @@ element_this(
 	/* Succeeded: the element is found. */
 	*element = (struct dom_element *)node;
 	return 0;
+}
+
+/* Returns one saved wrapper whose indexed content follows current attributes. */
+static int
+element_attributes_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	struct vm_object *wrapper;
+	struct vm_object *prototype;
+	struct vm_cell *root;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	if (element->attributes_collection == NULL) {
+		root = &element->node.cell;
+		status = vm_heap_add_root(element->node.document->heap, &root);
+		if (status != 0)
+			return status;
+		prototype = realm->object_prototype;
+		if (element->node.document->view != NULL)
+			prototype = ((struct bind_window *)element->node.document->view)->realm->object_prototype;
+		wrapper = vm_object_create(element->node.document->heap, prototype);
+		if (wrapper != NULL) {
+			wrapper->kind = VM_KIND_PLATFORM;
+			wrapper->internal = vm_value_cell(element);
+			wrapper->native_operations = &element_attributes_native;
+			element->attributes_collection = wrapper;
+		}
+		vm_heap_remove_root(element->node.document->heap, &root);
+		if (wrapper == NULL)
+			return ENOMEM;
+	}
+	*result = vm_value_cell(element->attributes_collection);
+	return 0;
+}
+
+/* Materializes one read-only indexed attribute view for the WPT read surface. */
+static int
+element_attributes_get_own(
+	struct vm_object *object,
+	vm_value key,
+	struct vm_property *property)
+{
+	struct dom_element *element;
+	struct dom_attribute *attribute;
+	struct vm_realm *realm;
+	struct vm_object *item;
+	struct vm_cell *root;
+	struct vm_string *name;
+	uint32_t index;
+	int status;
+
+	element = (struct dom_element *)vm_value_as_cell(object->internal);
+	if (!vm_value_is_array_index(key, &index)) {
+		if (!vm_value_is_string(key))
+			return 0;
+		name = (struct vm_string *)vm_value_as_cell(key);
+		if (!vm_string_equal_ascii(name, "length"))
+			return 0;
+		property->temporary = vm_value_number((double)element->attribute_count);
+		property->holder = object;
+		property->value = &property->temporary;
+		property->attributes = VM_PROPERTY_CONFIGURABLE;
+		return 1;
+	}
+	if ((size_t)index >= element->attribute_count)
+		return 0;
+	if (element->node.document->view == NULL)
+		return -EINVAL;
+	realm = ((struct bind_window *)element->node.document->view)->realm;
+	attribute = &element->attributes[index];
+	item = vm_object_create(element->node.document->heap, realm->object_prototype);
+	if (item == NULL)
+		return -ENOMEM;
+	root = &item->cell;
+	status = vm_heap_add_root(element->node.document->heap, &root);
+	if (status != 0)
+		return -status;
+	status = js_builtin_value(realm, item, "name", vm_value_cell(attribute->name), VM_PROPERTY_DEFAULT);
+	if (status == 0)
+		status = js_builtin_value(realm, item, "value", vm_value_cell(attribute->value), VM_PROPERTY_DEFAULT);
+	vm_heap_remove_root(element->node.document->heap, &root);
+	if (status != 0)
+		return -status;
+	property->temporary = vm_value_cell(item);
+	property->holder = object;
+	property->value = &property->temporary;
+	property->attributes = VM_PROPERTY_ENUMERABLE | VM_PROPERTY_CONFIGURABLE;
+	return 1;
 }
 
 /* Reports a qualified name, uppercasing HTML elements only within HTML Documents. */

@@ -1,0 +1,6 @@
+same true
+initial 2 id target data-a one
+added 3 data-b two
+changed changed
+removed 2 data-a data-b
+missing undefined

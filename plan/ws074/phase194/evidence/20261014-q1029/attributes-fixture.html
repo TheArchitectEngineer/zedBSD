@@ -1,0 +1,12 @@
+<!doctype html><div id="target" data-a="one"></div><script>
+var map = target.attributes;
+console.log('same', String(map === target.attributes));
+console.log('initial', String(map.length), map[0].name, map[0].value, map[1].name, map[1].value);
+target.setAttribute('data-b', 'two');
+console.log('added', String(map.length), map[2].name, map[2].value);
+target.setAttribute('data-a', 'changed');
+console.log('changed', map[1].value);
+target.removeAttribute('id');
+console.log('removed', String(map.length), map[0].name, map[1].name);
+console.log('missing', String(map[2]));
+</script>

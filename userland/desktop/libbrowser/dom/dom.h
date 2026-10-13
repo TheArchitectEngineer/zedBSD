@@ -371,6 +371,8 @@ struct dom_element {
 	struct vm_cell *svg_width;
 	/* A form retains the SameObject wrapper for its live associated controls. */
 	struct vm_object *controls_collection;
+	/* Element.attributes retains one live indexed wrapper for this element. */
+	struct vm_object *attributes_collection;
 	/* A select retains its SameObject live native options wrapper. */
 	struct vm_object *options_collection;
 	/* Option selectedness separates script-owned state from its clean default attribute. */
