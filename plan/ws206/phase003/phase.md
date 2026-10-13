@@ -3,7 +3,7 @@
 # ws206-p003: BCM43455 の WiFi の firmware の package（bcm43455-firmware）と license の監査
 
 Parent: [WS206](../ws.md)
-Status: in-progress（2026-10-13 P3: package・host 試験・license の監査まで済み。Pi 4 の image の build で 7 つの file が rootfs に載る確かめは Q1・T1 の rpi4 の image の build で見る。Q1 の判定まで cleared にしない）
+Status: cleared（2026-10-13 Q1: T1-564 PASS（rpi4 の image に 7 file、sha256 一致、inventory の open 0）。E4 の読み（GPL-2 を package と同じ root の UFS に置く）は、ユーザーの「ではあとは推奨でお願いします」で推奨のまま。旧: 2026-10-13 P3: package・host 試験・license の監査まで済み。Pi 4 の image の build で 7 つの file が rootfs に載る確かめは Q1・T1 の rpi4 の image の build で見る。Q1 の判定まで cleared にしない）
 Phase disposition: normal
 Queue: P3 の lane（2026-10-13 Q1 の割当。承認: 2026-10-13 朝 ユーザー E4「FATにGPLのライセンスファイルを入れれば問題ないように思います。」、E6「世界共通でお願いします。」）
 
