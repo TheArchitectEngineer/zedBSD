@@ -120,6 +120,8 @@ include userland/desktop/imageview/Makefile.linux
 include userland/desktop/pdfviewer/Makefile.linux
 include userland/tests/kuidemo/Makefile.linux
 include userland/desktop/ime/Makefile.linux
+include userland/desktop/printd/Makefile.linux
+include userland/tests/printtest/Makefile.linux
 
 # App Home uses the compositor's existing config parser; no common built-in list changes.
 $(KEILAND_LINUX_BUILD)/etc/keiland/apps.conf: userland/desktop/wayland/data/apps-linux.conf.in
