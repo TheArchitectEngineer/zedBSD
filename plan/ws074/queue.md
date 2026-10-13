@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1038 / WS074 hidden-attribute static reftests
+# q1039 / WS074 details crashtest runner
 
-Status: finished（2026-10-14 01:32 JST）
+Status: finished（2026-10-14 01:33–01:35 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p190のq1038有限部分scope](phase190/phase.md) に適用。
-Timebox: 2026-10-14 01:32 JST 開始、最大90分（03:02 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p190のq1039有限部分scope](phase190/phase.md) に適用。
+Timebox: 2026-10-14 01:33 JST 開始、最大90分（03:03 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1038-i01 | [ws074-p190](phase190/phase.md) partial | 固定details focusのhidden-attribute directory reftest残り4 IDをq1034 runnerで同条件測定し、q1037の21 IDと合わせた25件の状態・画素差/未対応理由を記録。browser/WPT/Master/公開ABI変更なし。最大90分 | cleared（partial） | q1037 root21 census |
+| q1039-i01 | [ws074-p190](phase190/phase.md) partial | 単一HTTP・plain HTMLの固定details crashtest3件で、rendererを実際に起動し exit/crash/timeout/画像未生成を区別する最小runnerと分類controlを作り全3件実測。browser/WPT/Master/公開ABI変更なし。最大90分 | cleared（partial） | p173 manifest、host renderer |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -68,3 +68,5 @@ Outcome: q1036-i01 partial cleared、p193 whole uncleared。ancestor reveal候�
 Outcome: q1037-i01 partial cleared、p190 whole uncleared。固定details rootの静的reftest全21件は12 local PASS/9 FAIL/0 error。focusの残り4 reftestは別directory未実行。FAIL分類はreference-chain2、details-content pseudo5、revert1、inline layout1。[証拠](phase190/evidence/20261014-q1037/README.md)。コード無変更、p173全件100%未達。
 
 Outcome: q1038-i01 partial cleared、p190 whole uncleared。hidden directory固定reftest4件中静的2件は0 local PASS/2 FAIL、scripted2件は未実行。q1037と合わせdetails focus25件中23件実測、12 local PASS/11 FAIL/2未実行。[証拠](phase190/evidence/20261014-q1038/README.md)。コード無変更、p173全件100%未達。
+
+Outcome: q1039-i01 partial cleared、p190 whole uncleared。固定details crashtest3件のlocal renderer測定は3 PASS/0 crash/0 timeout/0 no-image。分類control5/5、Python compile/diff check PASS。[証拠](phase190/evidence/20261014-q1039/README.md)。残り45 crashtest未測定、browser/WPT/Master無変更、p173全件100%未達。

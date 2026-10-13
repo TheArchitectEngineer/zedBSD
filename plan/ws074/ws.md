@@ -9,8 +9,8 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1038](queue.md) finished / p190 partial cleared、whole uncleared。2026-10-14 01:32 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
-Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。textdecoration領域全16 testharnessは16 PASS/0 FAIL、subtest179 PASS/0 FAILで p191 cleared。p189の単一HTTP shard100件はq1024時点で9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details焦点testharness全18件はq1032時点6 PASS/10 FAIL/2 no_outputだが、q1035 details-displayとq1036 beforematch-infinite-loopが追加PASS。q1037/q1038 details reftest25件中23件実測、12 local PASS/11 FAIL/2 scripted未実行。p189の残りtestharnessと p190 のreftest/crashtest coverage、p173全件baselineと100%は未達。Acid3 score100/100・pixel差0/480000、p100 whole は別に未達。
+Queue: [q1039](queue.md) finished / p190 partial cleared、whole uncleared。2026-10-14 01:35 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。textdecoration領域全16 testharnessは16 PASS/0 FAIL、subtest179 PASS/0 FAILで p191 cleared。p189の単一HTTP shard100件はq1024時点で9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details焦点testharness全18件はq1032時点6 PASS/10 FAIL/2 no_outputだが、q1035 details-displayとq1036 beforematch-infinite-loopが追加PASS。q1037/q1038 details reftest25件中23件実測、12 local PASS/11 FAIL/2 scripted未実行。q1039 details crashtest3件local PASS、残り45未測定。p189の残りtestharnessと p190 のreftest/crashtest coverage、p173全件baselineと100%は未達。Acid3 score100/100・pixel差0/480000、p100 whole は別に未達。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p173-interop-resume-20261013: ユーザーが「WPTに進みます。2025を100%」と指示。既存の p173 Interop 2025 公式 focus area 全件 PASS 100% を次の優先対象にした。p173 と p100 の依存関係を、p188 の main 統合済み Acid3 検証出力に限定して整理。p100 whole の Acid2 exact/target gate は未達のまま。p173 の [候補選定と q1012 範囲](phase173/selection-snapshot.md)を記録、ユーザーが 23:49 JST 承認して開始。p101・p174〜p176 の受け入れは維持。Master の focused goal / WS priority 投影は、このセッションの編集禁止により Q1 へ pending。GitHub publication保留。
@@ -70,6 +70,8 @@ Event ws074-p193-q1036-outcome-20261014: [p193](phase193/phase.md) q1036-i01でf
 Event ws074-p190-q1037-outcome-20261014: [p190](phase190/phase.md) q1037-i01で固定details rootの静的reftest21件を測定し、12 local PASS/9 FAIL/0 error。[証拠](phase190/evidence/20261014-q1037/README.md)。focus残り4 reftestは別directory未実行。p190 whole/p173全件100%未達、browser/Master無変更、GitHub publication保留。
 
 Event ws074-p190-q1038-outcome-20261014: [p190](phase190/phase.md) q1038-i01でhidden directory固定reftest4件中静的2件を測定、0 local PASS/2 FAIL。[証拠](phase190/evidence/20261014-q1038/README.md)。scripted2件未実行。details focus25件中23件測定で12 local PASS/11 FAIL。p190 whole/p173全件100%未達、browser/Master無変更、GitHub publication保留。
+
+Event ws074-p190-q1039-outcome-20261014: [p190](phase190/phase.md) q1039-i01で固定details crashtest3件をlocal rendererで測定し、3 PASS/0 crash/0 timeout。[証拠](phase190/evidence/20261014-q1039/README.md)。残り45 crashtest未測定。p190 whole/p173全件100%未達、browser/Master無変更、GitHub publication保留。
 
 ## Q1 向けの整理（2026-10-05、Q1）
 
@@ -376,7 +378,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
 | [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q1013・q1014・q1015・q1024 partial cleared、shard100件実測 | p173 q1012 固定manifest出力 |
-| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q1037/q1038 details reftest25件中23測定、12 local PASS/11 FAIL/2 scripted未実行、3 crashtest未実行 | p173 q1012 固定manifest出力 |
+| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q1037/q1038 details reftest25件中23測定、12 local PASS/11 FAIL/2 scripted未実行、q1039 crashtest3 local PASS | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
 | [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1032計測6 PASS/10 FAIL/2 no output、q1035/q1036で2件追加PASS、reftest25/crashtest3未実行 | p189 q1024 shard、p192 q1025一意id output |

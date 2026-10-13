@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1039 / WS074 details crashtest runner（2026-10-14）
+
+[q1039履歴](queue-q1039.md): 固定details crashtest3件はlocal rendererで3 PASS/0 crash/0 timeout。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1039/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1038 / WS074 hidden-attribute static reftests（2026-10-14）
 
 [q1038履歴](queue-q1038.md): 固定hidden directory reftest4件中static2件は0 local PASS/2 FAIL、scripted2件未実行。details focus25件中23件を測定済み。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1038/README.md)。共有投影/GitHub publication pending。

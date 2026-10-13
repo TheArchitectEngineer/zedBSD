@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "focus": "details",
+  "viewport": [
+    800,
+    600
+  ],
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "settle_ms": 3000,
+  "process_timeout": 60,
+  "counts": {
+    "pass": 3
+  },
+  "results": [
+    {
+      "test_id": "/html/rendering/the-details-element/details-autofocus-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "f0971a6e1ab32519c72448ac7e0a1c6ca2ed8b57c322a4f857967f073db58f6f"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1039/wpt-crash-wsa9ncyq/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:37677/html/rendering/the-details-element/details-autofocus-crash.html"
+      ]
+    },
+    {
+      "test_id": "/html/rendering/the-details-element/empty-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1039/wpt-crash-wsa9ncyq/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:37677/html/rendering/the-details-element/empty-crash.html"
+      ]
+    },
+    {
+      "test_id": "/html/rendering/the-details-element/two-summaries-removal-crash.html",
+      "outcome": "pass",
+      "returncode": 0,
+      "timed_out": false,
+      "image": {
+        "size": [
+          800,
+          600
+        ],
+        "sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e"
+      },
+      "stdout": "",
+      "stderr": "",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+        "--render",
+        "--async",
+        "--settle-ms=3000",
+        "--output=/home/awe/zedBSD-claude1/plan/ws074/phase190/evidence/20261014-q1039/wpt-crash-wsa9ncyq/result.ppm",
+        "--width=800",
+        "--height=600",
+        "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+        "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+        "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+        "http://127.0.0.1:37677/html/rendering/the-details-element/two-summaries-removal-crash.html"
+      ]
+    }
+  ]
+}
