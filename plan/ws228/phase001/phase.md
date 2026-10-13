@@ -15,7 +15,9 @@ Queue: q971
 
 ## 設計（手順 1、2026-10-14 P3）
 
-印 **[判断]** はユーザーの判断が要る点（括弧の中が P3 の推し。推しのまま実装を進め、違えば直す）。
+印 **[判断]** はユーザーの判断が要る点（括弧の中が P3 の推し）。
+
+**決定（2026-10-14 ユーザー、クリック、Q1 経由）**: `.`（直前の変更の繰り返し）は「入れる」。他の判断（多段の undo と Ctrl-R、`gg`、file は 1 つ、64 MiB・4M 行、回復 file なし）は推しのまま（「このまま」）。
 
 ### 1. 置き場所と build
 
@@ -71,6 +73,7 @@ Queue: q971
 - yank と put: `yy` `Y` `y{移動}`、`p` `P`。register は名前の無い 1 つだけ（行の単位か文字の単位かを覚える）。`d`・`c`・`x` も register に入れる。
 - undo: `u`、`Ctrl-R`（§5）。
 - 検索: `/pat`、`?pat`、`n` `N`、`/`・`?` だけで前の pattern。pattern は POSIX の基本正規表現（libc の `regcomp`/`regexec`、zedBSD は TRE）。行の中で一致し、行を越える一致は無い。端で折り返し「search wrapped」と知らせる。見つからなければ「pattern not found」。
+- 繰り返し: `.`（決定 2026-10-14）。buffer を変えた直前の命令（count の後の key の列。insert の間に打った key を含む）を記録し、`.` はその key の列を入力の前に積んで流し直す。`.` に count が付けば元の count の代わりに使う。`u`・`Ctrl-R`・移動・`y`・`:` の命令は記録を変えない。記録は 4096 key まで（超えた命令は繰り返せず、前の記録を保つ）。
 - その他: `Ctrl-L`（描き直し）、`Ctrl-G`（file 名・行の数・位置・変更の有無）、`ZZ`（`:x` と同じ）、`ZQ`（`:q!`）。知らない key は `bel`。
 - ex（`:` の行。BS で編集、BS で空になったら・ESC で取り消し、Enter で実行）:
   - `:N`（行 N へ）、`:$`（最後の行）、`:.`
@@ -81,7 +84,7 @@ Queue: q971
 
 ### 8. 入れない物
 
-ex mode（`Q`・`:` の全部の ex の命令）、`:s` `:g` `:r` `:!` `:map` `:ab` `:set`、`.`（繰り返し、**[判断]** 推し: 入れない）、名前付きの register、mark（`m` `'`）、visual mode、text object、`%`、複数の file・window・buffer、tag、行の番号の表示、自動の字下げ、回復 file、`U`（行の undo）、`R`（上書き mode）、`-R`/view、option の file（`.exrc`・`EXINIT`）。
+ex mode（`Q`・`:` の全部の ex の命令）、`:s` `:g` `:r` `:!` `:map` `:ab` `:set`、名前付きの register、mark（`m` `'`）、visual mode、text object、`%`、複数の file・window・buffer、tag、行の番号の表示、自動の字下げ、回復 file、`U`（行の undo）、`R`（上書き mode）、`-R`/view、option の file（`.exrc`・`EXINIT`）。
 
 ### 9. file の保存の安全
 
