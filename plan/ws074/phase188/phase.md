@@ -35,4 +35,4 @@ Acid3 score100/100、inventory100/100、例外0、差 **801/480000** 非増加�
 - 固定 WPT commit `2d66b9b7998bb58c336138c178323ddee857b586`、800×600、15秒 settle、固定 font の `run-acid-tests.py --out build/ws074-acid-q1011-final`: Acid3 score100/100・inventory100/100・例外0・**RGB pixel 差0/480000（100%一致）**。q1010 の801から801減。Acid2差1865/120000は前回と不変。[report](evidence/20261013-q1011/report.json)、[Acid3参照](evidence/20261013-q1011/acid3-reference.png)、[Acid3描画](evidence/20261013-q1011/acid3-test.png)、[並列](evidence/20261013-q1011/acid3-side.png)、[Acid2並列](evidence/20261013-q1011/acid2-side.png)、style/paintを保存。最終 source の再計測で差0。
 - ユーザーの Acid3 画素一致目標は達成。p100 全体は Acid2 の過去 exact 回帰と target 確認を含むため、Phase whole の clearance は別に照合する。WS074 は他の機能目標・最終全文規約 gate が残り incomplete。永続・外部履歴は今回の scope 外。
 
-Source は独立 branch `codex/ws074-acid3` で WIP commit とし、main 作業 tree へ投影。GitHub Issue/Project publication と push は保留。`master.md` は変更しない。
+Source と証拠は独立 branch `codex/ws074-acid3` の commit `60f2c3134` に保存し、main 作業 tree へ投影。GitHub Issue/Project publication と push は保留。`master.md` は変更しない。
