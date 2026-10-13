@@ -1,0 +1,15 @@
+# zedBSD; Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+# The independent Linux build of fidoctl (ws161-p006): libpasskey's sources with its Linux layer (os-linux.c, the raw
+# HID nodes /dev/hidrawN) built into it, the cryptography the system's OpenSSL libcrypto until WS172 p005 replaces it.
+KEILAND_LINUX_FIDOCTL_SOURCES := userland/base/fidoctl/main.c \
+	userland/base/libpasskey/cbor.c \
+	userland/base/libpasskey/crypto-openssl.c \
+	userland/base/libpasskey/ctap2.c \
+	userland/base/libpasskey/descriptor.c \
+	userland/base/libpasskey/hid.c \
+	userland/base/libpasskey/os-posix.c \
+	userland/base/libpasskey/os-linux.c \
+	userland/base/libpasskey/pin.c \
+	userland/base/libpasskey/transport-nfc.c \
+	userland/base/libpasskey/verify.c
+$(eval $(call KEILAND_LINUX_PROGRAM,fidoctl,bin,$(KEILAND_LINUX_FIDOCTL_SOURCES),,-lcrypto))

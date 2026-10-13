@@ -30,7 +30,7 @@ libpasskey（CTAPHID・NFC の APDU・CTAP2・CBOR・PIN/UV、暗号は OpenSSL�
 | [ws161-p003](phase003/phase.md) | kernel: `usb-ccid`、`include/uapi/ccid.h`、seat の一覧。T1 | cleared（2026-10-05 Q1、T1-199。本物の USB CCID は p006） | p001、U2・U3 |
 | [ws161-p004](phase004/phase.md) | libpasskey: cbor・transport-hid・ctap2・pin・verify・os 層、道具 `fidoctl`、host 試験 | cleared（2026-10-07、T1-274） | p002（os 層だけ） |
 | [ws161-p005](phase005/phase.md) | libpasskey: transport-nfc と `/dev/smartcard*`、host 試験 | cleared（2026-10-08 T1-374 QEMU PASS、実機は p006） | p003・p004 |
-| ws161-p006 | 実機の UAT（YubiKey 5 の USB、ACR1252U と YubiKey 5 NFC）、Linux・FreeBSD の build | in-progress（実機の UAT は 2026-10-13 ユーザーの実機の確かめ「OKでした」、YubiKey。残りは Linux・FreeBSD の build） | p005 |
+| [ws161-p006](phase006/phase.md) | 実機の UAT（YubiKey 5 の USB、ACR1252U と YubiKey 5 NFC）、Linux・FreeBSD の build | in-progress（実機の UAT は 2026-10-13 ユーザーの実機の確かめ「OKでした」、YubiKey。Linux・FreeBSD の build は 2026-10-13 P2 q954: os-freebsd.c と fidoctl の規則、Linux の build・host 済み、keiland の .mk への組み込みは判断待ち、FreeBSD は T1） | p005 |
 | ws161-p007 | 全文規約の見直し | planned（ベータ3、2026-10-08 ユーザー） | p006 |
 
 ## 2026-10-10 UAT（Q1）
