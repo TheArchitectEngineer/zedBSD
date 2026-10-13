@@ -15,7 +15,10 @@
 //    or ~/SKKUSER.DIC on filesystems that reject the name).
 //
 // The main dictionary is ~/SKK-JISYO.L (EUC-JP), read through
-// FileUtil.readTextEucJp and searched on demand.
+// FileUtil.readTextEucJp and searched on demand. Without it, the
+// bundled UTF-8 dictionaries are used: the compact one
+// (REMACS_SKK_DICT, /usr/share/remacs/skkjisyo.dic) and then the
+// fuller SKK-JISYO.X (REMACS_SKK_DICT_X, /usr/share/remacs/skkjisyo-x.dic).
 //
 
 func skkInit() {
@@ -37,6 +40,17 @@ func skkInit() {
             SkkBundledPath = "dict/SKK-JISYO.remacs";
         }
     }
+    // The fuller bundled dictionary, looked in after the compact one.
+    SkkDictX = 0;
+    SkkBundledXPath = System.getEnv("REMACS_SKK_DICT_X");
+    if (Type.of(SkkBundledXPath) != "string" || SkkBundledXPath == "") {
+        SkkBundledXPath = "/usr/share/remacs/skkjisyo-x.dic";
+        if (FileUtil.checkFileExists(SkkBundledXPath) != 1) {
+            SkkBundledXPath = "dict/SKK-JISYO.X";
+        }
+    }
+    // 1 when no main dictionary could be read (see skkNoDictWarn).
+    SkkDictMissing = 0;
     // Composition state (one segment at a time).
     Skk = {
         pending: "",     // romaji not yet composed
@@ -53,7 +67,8 @@ func skkInit() {
         okuriConsonant: "",  // the okurigana's leading consonant (dict key tail)
         okuriKana: "",       // the composed okurigana so far
         okuriPending: "",    // okurigana romaji not yet composed
-        okuriShown: 0        // chars after the stem currently in the buffer
+        okuriShown: 0,       // chars after the stem currently in the buffer
+        noDictShown: 0       // 1 once this segment showed "no dictionary"
     };
     skkInitRomaji();
     return 0;
@@ -84,7 +99,7 @@ func skkIndicator() {
 // The C-x C-j toggle.
 func skkToggle(ed) {
     if (skkActive() == 1) {
-        skkClearPending();
+        skkFlushPending();
         skkResetComposition();
         Buf.skkOn = 0;
         ed.echoMessage = "";
@@ -109,6 +124,7 @@ func skkResetComposition() {
     Skk.reading = "";
     Skk.cands = [];
     Skk.idx = 0;
+    Skk.noDictShown = 0;
     return 0;
 }
 
@@ -244,6 +260,22 @@ func skkClearPending() {
     return 0;
 }
 
+// Finish the pending romaji before a conversion, a commit, or a mode
+// change. A lone "n" is ん (ン in katakana mode), as in DDSKK, so
+// Henkan SPC looks up へんかん; any other unfinished romaji is dropped.
+func skkFlushPending() {
+    var lone = 0;
+    if (Skk.pending == "n") {
+        lone = 1;
+    }
+    skkClearPending();
+    Skk.pending = "";
+    if (lone == 1) {
+        skkEmit("ん");
+    }
+    return 0;
+}
+
 // Input one romaji letter with the in-progress alphabet shown inline,
 // as DDSKK does. Completed kana replace the shown romaji.
 func skkInputRomaji(ch) {
@@ -303,13 +335,27 @@ func skkEmit(kana) {
 func skkLoadDicts() {
     if (Type.of(SkkDict) != "string") {
         // Prefer the user-downloaded SKK-JISYO.L (EUC-JP); otherwise fall
-        // back to the bundled clean-room dictionary (UTF-8).
+        // back to the bundled clean-room dictionaries (UTF-8): the
+        // compact one, then the fuller SKK-JISYO.X. A read error leaves
+        // SkkDict unset, so the next conversion tries (and reports) again.
+        var mainText = "";
+        var extraText = "";
         if (FileUtil.checkFileExists(SkkDictPath) == 1) {
-            SkkDict = FileUtil.readTextEucJp(SkkDictPath);
-        } else if (FileUtil.checkFileExists(SkkBundledPath) == 1) {
-            SkkDict = FileUtil.readText(SkkBundledPath);
+            mainText = FileUtil.readTextEucJp(SkkDictPath);
         } else {
-            SkkDict = "";
+            if (FileUtil.checkFileExists(SkkBundledPath) == 1) {
+                mainText = FileUtil.readText(SkkBundledPath);
+            }
+            if (FileUtil.checkFileExists(SkkBundledXPath) == 1) {
+                extraText = FileUtil.readText(SkkBundledXPath);
+            }
+        }
+        SkkDict = mainText;
+        SkkDictX = extraText;
+        if (SkkDict == "" && SkkDictX == "") {
+            SkkDictMissing = 1;
+        } else {
+            SkkDictMissing = 0;
         }
     }
     if (Type.of(SkkPersonal) != "string") {
@@ -341,7 +387,31 @@ func skkLookup(reading) {
     var out = [];
     skkLookupIn(SkkPersonal, reading, out);
     skkLookupIn(SkkDict, reading, out);
+    skkLookupIn(SkkDictX, reading, out);
     return out;
+}
+
+// Is cand already among the candidates?
+func skkHasCandidate(out, cand) {
+    for (c in out) {
+        if (c == cand) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// With no main dictionary, the first failed conversion of a segment
+// says so in the echo area instead of asking to register the word, so
+// a missing dictionary is told apart from a missing word. Returns 1
+// when the message was shown.
+func skkNoDictWarn(ed) {
+    if (SkkDictMissing != 1 || Skk.noDictShown == 1) {
+        return 0;
+    }
+    Skk.noDictShown = 1;
+    ed.echoMessage = "SKK: no dictionary (~/SKK-JISYO.L, " + SkkBundledPath + ")";
+    return 1;
 }
 
 func skkLookupIn(text, reading, out) {
@@ -353,9 +423,9 @@ func skkLookupIn(text, reading, out) {
     if (idx < 0) {
         return 0;
     }
-    // Cut the candidate line.
+    // Cut the candidate line. String.substring takes (start, length).
     var from = idx + String.charCount(probe);
-    var slice = String.substring(text, from, from + 4000);
+    var slice = String.substring(text, from, 4000);
     var eol = String.indexOf(slice, "\n");
     if (eol >= 0) {
         slice = String.substring(slice, 0, eol);
@@ -367,12 +437,13 @@ func skkLookupIn(text, reading, out) {
     while (i <= n) {
         if (i == n || String.charAt(slice, i) == "/") {
             if (i > start) {
-                var cand = String.substring(slice, start, i);
+                var cand = String.substring(slice, start, i - start);
                 var semi = String.indexOf(cand, ";");
                 if (semi >= 0) {
                     cand = String.substring(cand, 0, semi);
                 }
-                if (cand != "" && String.charAt(cand, 0) != "[") {
+                if (cand != "" && String.charAt(cand, 0) != "[" &&
+                    skkHasCandidate(out, cand) == 0) {
                     Array.push(out, cand);
                 }
             }
@@ -431,16 +502,16 @@ func skkHandleKey(ed, key) {
     // Reading (marked) state extras.
     if (Skk.conv == 1) {
         if (key == 0x20) {                        // SPC: convert
-            skkClearPending();
+            skkFlushPending();
             return skkStartConversion(ed);
         }
         if (key == (Term.CTRL | 0x6A)) {          // C-j: commit as kana
-            skkClearPending();
+            skkFlushPending();
             skkCommitReading();
             return 1;
         }
         if (key == 0x71) {                        // q: commit as katakana
-            skkClearPending();
+            skkFlushPending();
             var mk = Editor.markerPosition(Skk.start);
             var reading = Editor.bufferSubstring(mk + 1, Editor.point());
             Editor.deleteRegion(mk, Editor.point());
@@ -479,7 +550,7 @@ func skkHandleKey(ed, key) {
 
     // Uppercase inside a non-empty reading starts the okurigana.
     if (key >= 0x41 && key <= 0x5A && Skk.conv == 1 && Skk.okuri == 0) {
-        skkClearPending();
+        skkFlushPending();
         var mk = Editor.markerPosition(Skk.start);
         Skk.stem = Editor.bufferSubstring(mk + 1, Editor.point());
         if (Skk.stem != "") {
@@ -506,7 +577,7 @@ func skkHandleKey(ed, key) {
     if (key >= 0x61 && key <= 0x7A) {             // lowercase
         if (Skk.conv == 0) {
             if (key == 0x71) {                    // q: toggle kana type
-                skkClearPending();
+                skkFlushPending();
                 if (Buf.skkMode == "hira") {
                     Buf.skkMode = "kata";
                 } else {
@@ -516,7 +587,7 @@ func skkHandleKey(ed, key) {
                 return 1;
             }
             if (key == 0x6C) {                    // l: ASCII
-                skkClearPending();
+                skkFlushPending();
                 Buf.skkMode = "ascii";
                 Skk.pending = "";
                 return 1;
@@ -531,15 +602,15 @@ func skkHandleKey(ed, key) {
         // A user rom-kana rule for this single character wins first.
         var kc = String.chr(key);
         if (Dict.hasKey(Romaji, kc) && Skk.pending == "") {
-            skkClearPending();
+            skkFlushPending();
             skkEmit(Romaji[kc]);
             return 1;
         }
-        if (key == 0x2E) { skkClearPending(); skkEmit("。"); return 1; }
-        if (key == 0x2C) { skkClearPending(); skkEmit("、"); return 1; }
-        if (key == 0x2D) { skkClearPending(); skkEmit("ー"); return 1; }
-        if (key == 0x5B) { skkClearPending(); skkEmit("「"); return 1; }
-        if (key == 0x5D) { skkClearPending(); skkEmit("」"); return 1; }
+        if (key == 0x2E) { skkFlushPending(); skkEmit("。"); return 1; }
+        if (key == 0x2C) { skkFlushPending(); skkEmit("、"); return 1; }
+        if (key == 0x2D) { skkFlushPending(); skkEmit("ー"); return 1; }
+        if (key == 0x5B) { skkFlushPending(); skkEmit("「"); return 1; }
+        if (key == 0x5D) { skkFlushPending(); skkEmit("」"); return 1; }
     }
 
     if (Skk.conv == 1) {
@@ -551,9 +622,19 @@ func skkHandleKey(ed, key) {
     }
 
     if (key == 0x7F && Skk.pending != "") {
+        if (Skk.pendingShown > 0) {
+            deleteChar(0 - 1);
+            Skk.pendingShown = Skk.pendingShown - 1;
+        }
         Skk.pending = String.substring(Skk.pending, 0,
                                        String.charCount(Skk.pending) - 1);
         return 1;
+    }
+
+    // A key that inserts text (SPC, RET, TAB, a digit, ...) first
+    // finishes the pending romaji, so "hon" SPC is "ほん ".
+    if ((key >= 0x20 && key < 0x7F) || key == 0x0D || key == 0x09) {
+        skkFlushPending();
     }
 
     return 0;
@@ -590,6 +671,10 @@ func skkOkuriConvert(ed) {
     Skk.reading = Skk.stem;
     Skk.cands = skkLookup(key);
     if (Array.size(Skk.cands) == 0) {
+        if (skkNoDictWarn(ed) == 1) {
+            skkRenderOkuri();
+            return 1;
+        }
         return skkOkuriRegister(ed);
     }
     Skk.idx = 0;
@@ -641,6 +726,9 @@ func skkStartConversion(ed) {
     }
     Skk.cands = skkLookup(Skk.reading);
     if (Array.size(Skk.cands) == 0) {
+        if (skkNoDictWarn(ed) == 1) {
+            return 1;
+        }
         return skkRegisterFlow(ed);
     }
     Skk.idx = 0;
