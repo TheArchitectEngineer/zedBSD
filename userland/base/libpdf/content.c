@@ -21,7 +21,9 @@
  * "), whose glyph outlines (font.c) are filled, stroked, or added to a clip
  * that ET applies, by the rendering mode.  It paints the axial and radial
  * shadings (shading.c), by sh and as the colour of a shading pattern (cs
- * /Pattern and scn), as images clipped to what they fill.  Tiling
+ * /Pattern and scn), as images clipped to what they fill.  ws216-p002: it
+ * fills with tiling patterns of paint type 1, one tile of each drawn once
+ * for the list and repeated (PDF_ITEM_PATTERN).  Uncoloured tiling
  * patterns and the other shadings are left out and the list says so
  * (PDF_DISPLAY_SKIPPED).
  *
@@ -62,6 +64,21 @@
 /* The most entries of a dash pattern, and how deep clips may nest. */
 #define PDF_CONTENT_DASH_MAX 16
 #define PDF_CONTENT_CLIPS_MAX 64
+
+/*
+ * Tiling patterns (ws216-p002): how deep they may nest in each other's
+ * cells, the most tiles one list keeps for reuse, the pixels a point of a
+ * tile drawn from its cell's content gets, the largest side and the most
+ * pixels of such a tile, the most copies of a cell along each side that
+ * may reach into a tile, and the longest step a tile may have on the page.
+ */
+#define PDF_CONTENT_PATTERNS_MAX 2
+#define PDF_CONTENT_TILES_MAX 32
+#define PDF_CONTENT_TILE_DENSITY 8.0
+#define PDF_CONTENT_TILE_SIDE_MAX 2048
+#define PDF_CONTENT_TILE_PIXELS_MAX ((size_t)1048576)
+#define PDF_CONTENT_TILE_COPIES_MAX 8
+#define PDF_CONTENT_TILE_LENGTH_MAX 1e6
 
 /* The most characters one shown string draws. */
 #define PDF_CONTENT_STRING_MAX ((size_t)1048576)
@@ -219,6 +236,23 @@ struct content_state {
 };
 
 /*
+ * One tile of a tiling pattern drawn for a list (ws216-p002): the pattern,
+ * the scale and turn of the pattern space it was drawn in (the first four
+ * numbers of the space's matrix), its pixels (the list's, RGBA), their
+ * size, the square of one repeat in the pattern's space (cell maps the
+ * unit square onto it), and whether they are smoothed when enlarged.
+ */
+struct content_tile {
+	struct pdf_object *pattern;
+	double linear[4];
+	unsigned char *pixels;
+	size_t width;
+	size_t height;
+	double cell[6];
+	int interpolate;
+};
+
+/*
  * The path being built, in user space.
  */
 struct content_path {
@@ -245,7 +279,9 @@ struct content_path {
  * matching Q only uncount.  scratch holds the transformed copy of a path.
  *
  * pattern_base is the matrix of the content stream being run (the page's,
- * or a form's), which a pattern's own matrix is relative to.
+ * or a form's), which a pattern's own matrix is relative to.  tiles are
+ * the tiling patterns' tiles drawn for the list so far (ws216-p002), and
+ * pattern_depth how deep in patterns' cells the run is (0 for a page).
  *
  * A text object has its text matrix and line matrix; the glyphs of its
  * strings shown in a clipping mode gather in text_clip (in the page's
@@ -287,6 +323,9 @@ struct content_run {
 	struct pdf_point *scratch;
 	size_t scratch_capacity;
 	double pattern_base[6];
+	struct content_tile tiles[PDF_CONTENT_TILES_MAX];
+	size_t tiles_count;
+	int pattern_depth;
 	double text_matrix[6];
 	double line_matrix[6];
 	int text_clipping;
@@ -461,6 +500,14 @@ static void set_pattern(struct content_run *run, struct pdf_object *resources, i
 static void paint_shading(struct content_run *run, struct pdf_object *resources);
 static void paint_pattern(struct content_run *run, struct pdf_object *pattern, const unsigned char *verbs, size_t verb_count, const struct pdf_point *points, size_t point_count, enum pdf_fill_rule rule, double alpha);
 static int add_shading_image(struct content_run *run, struct pdf_object *shading, const double matrix[6], const double bounds[4], double alpha);
+static void paint_tiling(struct content_run *run, struct pdf_object *pattern, const double combined[6], const unsigned char *verbs, size_t verb_count, const struct pdf_point *points, size_t point_count, enum pdf_fill_rule rule, double alpha);
+static int find_tile(struct content_run *run, struct pdf_object *pattern, const double combined[6], struct content_tile **found);
+static int make_tile(struct content_run *run, struct pdf_object *pattern, const double combined[6], struct content_tile *tile);
+static int read_tiling(struct content_run *run, struct pdf_object *pattern, double steps[2], double box[4]);
+static int run_cell(struct content_run *run, const unsigned char *data, size_t size, struct pdf_object *resources, const double space[6], const double box[4], struct pdf_display_builder *builder);
+static int take_cell_image(struct pdf_display_builder *cell, const double space[6], const double box[4], size_t width, size_t height, struct content_tile *tile, unsigned char **pixels);
+static int draw_cell(struct pdf_display_builder *cell, const double steps[2], const double box[4], size_t width, size_t height, unsigned char **pixels);
+static void init_state(struct content_state *state);
 static int space_components(struct content_run *run, struct pdf_object *resources, int *components);
 static int device_components(const unsigned char *name, size_t length);
 static void set_color(struct content_run *run, int stroke, int components, const double *values);
@@ -703,16 +750,7 @@ page_run(
 	memcpy(run->pattern_base, run->stack[0].ctm, sizeof(run->pattern_base));
 	if (scan != NULL)
 		memcpy(scan->base, run->stack[0].ctm, sizeof(scan->base));
-	run->stack[0].horizontal_scale = 1.0;
-	run->stack[0].fill_components = 1;
-	run->stack[0].stroke_components = 1;
-	run->stack[0].fill_usable = 1;
-	run->stack[0].stroke_usable = 1;
-	run->stack[0].fill_alpha = 1.0;
-	run->stack[0].stroke_alpha = 1.0;
-	run->stack[0].blend = PDF_BLEND_NORMAL;
-	run->stack[0].line_width = 1.0;
-	run->stack[0].miter_limit = 10.0;
+	init_state(&run->stack[0]);
 
 	/* Reads the page's content streams, joined (or the content given, which is the caller's). */
 	content = NULL;
@@ -3301,8 +3339,9 @@ is_pattern_space(
 
 /*
  * Sets the fill or stroke colour to the pattern the last operand names: a
- * shading pattern is drawn; a tiling pattern, and a name the resources do
- * not have, leave the colour unusable.
+ * shading pattern and a tiling pattern of paint type 1 (ws216-p002) are
+ * drawn; an uncoloured tiling pattern, and a name the resources do not
+ * have, leave the colour unusable.
  */
 static void
 set_pattern(
@@ -3313,6 +3352,7 @@ set_pattern(
 	struct content_state *state;
 	struct pdf_object *pattern;
 	struct pdf_object *type;
+	struct pdf_object *paint;
 	struct pdf_object *chosen;
 	int error;
 
@@ -3329,12 +3369,19 @@ set_pattern(
 			pattern = NULL;
 	}
 
-	/* Its type decides whether it is drawn. */
+	/* Its type decides whether it is drawn: a shading, or a tiling whose cell paints its own colours. */
 	if (pattern != NULL) {
 		error = pdf_reader_resolve_key(run->document, pattern, "PatternType", &type);
 		if (error == 0 && type->type == PDF_OBJECT_INTEGER) {
 			if (type->integer == 2)
 				chosen = pattern;
+			if (type->integer == 1) {
+				error = pdf_reader_resolve_key(run->document, pattern, "PaintType", &paint);
+				if (error == 0 &&
+				    paint->type == PDF_OBJECT_INTEGER &&
+				    paint->integer == 1)
+					chosen = pattern;
+			}
 		}
 	}
 
@@ -3451,8 +3498,9 @@ paint_shading(
 }
 
 /*
- * Fills a path of the page with a shading pattern: the path as a clip,
- * the pattern's shading over the path's box, and the clip's end.
+ * Fills a path of the page with a pattern: a tiling pattern's tile
+ * repeated over it (ws216-p002), or, for a shading pattern, the path as a
+ * clip, the pattern's shading over the path's box, and the clip's end.
  */
 static void
 paint_pattern(
@@ -3468,15 +3516,25 @@ paint_pattern(
 	struct pdf_display_item style;
 	struct pdf_object *matrix_object;
 	struct pdf_object *shading;
+	struct pdf_object *type;
 	double matrix[6];
 	double combined[6];
 	double bounds[4];
 	size_t index;
 	int has_matrix;
+	int tiling;
 	int error;
 
-	/* Refuses clips nested past the limit. */
-	if (run->clip_depth >= PDF_CONTENT_CLIPS_MAX) {
+	/* Whether the pattern is a tiling one, which set_pattern() let through with paint type 1 only. */
+	tiling = 0;
+	error = pdf_reader_resolve_key(run->document, pattern, "PatternType", &type);
+	if (error == 0 &&
+	    type->type == PDF_OBJECT_INTEGER &&
+	    type->integer == 1)
+		tiling = 1;
+
+	/* Refuses clips nested past the limit (a shading pattern clips). */
+	if (!tiling && run->clip_depth >= PDF_CONTENT_CLIPS_MAX) {
 		run->flags |= PDF_DISPLAY_LIMITED;
 		return;
 	}
@@ -3539,6 +3597,12 @@ paint_pattern(
 	/* The pattern space: the pattern's matrix after the one in force where the content began. */
 	memcpy(combined, run->pattern_base, sizeof(combined));
 	concat_matrix(combined, matrix);
+
+	/* A tiling pattern repeats its tile over the path. */
+	if (tiling) {
+		paint_tiling(run, pattern, combined, verbs, verb_count, points, point_count, rule, alpha);
+		return;
+	}
 
 	/* The pattern's shading. */
 	error = pdf_reader_resolve_key(run->document, pattern, "Shading", &shading);
@@ -3614,6 +3678,603 @@ add_shading_image(
 
 	/* Succeeded: the shading is on the list. */
 	return 0;
+}
+
+/*
+ * Fills a path of the page with a tiling pattern (ws216-p002): one tile of
+ * the pattern, drawn once for the list (find_tile), repeated over the path.
+ */
+static void
+paint_tiling(
+	struct content_run *run,
+	struct pdf_object *pattern,
+	const double combined[6],
+	const unsigned char *verbs,
+	size_t verb_count,
+	const struct pdf_point *points,
+	size_t point_count,
+	enum pdf_fill_rule rule,
+	double alpha)
+{
+	struct content_tile *tile;
+	struct pdf_display_item style;
+	double matrix[6];
+	int error;
+
+	/* The pattern's tile; one the reader cannot draw is left out. */
+	error = find_tile(run, pattern, combined, &tile);
+	if (error == ENOMEM) {
+		stop_for(run, ENOMEM);
+		return;
+	}
+	if (error != 0) {
+		run->flags |= PDF_DISPLAY_SKIPPED;
+		return;
+	}
+
+	/* One repeat on the page: the tile's square in the pattern's space, then the pattern's space on the page. */
+	memcpy(matrix, combined, sizeof(matrix));
+	concat_matrix(matrix, tile->cell);
+
+	/* Adds the fill, painted with the tile, in the fill's alpha and blend mode. */
+	memset(&style, 0, sizeof(style));
+	style.rule = rule;
+	style.alpha = alpha;
+	style.blend = run->stack[run->depth].blend;
+	style.pixels = tile->pixels;
+	style.image_width = tile->width;
+	style.image_height = tile->height;
+	memcpy(style.matrix, matrix, sizeof(style.matrix));
+	style.interpolate = tile->interpolate;
+	error = pdf_display_add_pattern(run->builder, verbs, verb_count, points, point_count, &style);
+	if (error != 0)
+		stop_for(run, error);
+}
+
+/*
+ * Finds the tile of a tiling pattern in a pattern space: one drawn already
+ * for the list in a space of the same scale and turn, or a new one, kept
+ * for the next fills (when the list keeps many, the last kept is replaced;
+ * its pixels stay the list's).
+ */
+static int
+find_tile(
+	struct content_run *run,
+	struct pdf_object *pattern,
+	const double combined[6],
+	struct content_tile **found)
+{
+	struct content_tile made;
+	struct content_tile *slot;
+	size_t index;
+	int error;
+
+	/* A tile of the pattern in a space of the same scale and turn has the same pixels. */
+	for (index = 0; index < run->tiles_count; index++) {
+		slot = &run->tiles[index];
+		if (slot->pattern != pattern)
+			continue;
+		if (slot->linear[0] != combined[0] || slot->linear[1] != combined[1])
+			continue;
+		if (slot->linear[2] != combined[2] || slot->linear[3] != combined[3])
+			continue;
+
+		/* The tile is drawn already. */
+		*found = slot;
+		return 0;
+	}
+
+	/* Draws the tile. */
+	memset(&made, 0, sizeof(made));
+	error = make_tile(run, pattern, combined, &made);
+	if (error != 0)
+		return error;
+
+	/* Keeps it in a free slot, or in the last one. */
+	if (run->tiles_count < PDF_CONTENT_TILES_MAX) {
+		slot = &run->tiles[run->tiles_count];
+		run->tiles_count++;
+	} else {
+		slot = &run->tiles[PDF_CONTENT_TILES_MAX - 1];
+	}
+	*slot = made;
+
+	/* Succeeded: the tile is the list's. */
+	*found = slot;
+	return 0;
+}
+
+/*
+ * Draws one tile of a tiling pattern of paint type 1 (its cell paints its
+ * own colours) in a pattern space.
+ *
+ * The tile is the pattern's step rectangle, x from 0 to |XStep| and y from
+ * 0 to |YStep| of the pattern's space, with every copy of the cell that
+ * reaches into it.  When the cell paints one image that fills the
+ * rectangle exactly, the image's own pixels are the tile, at whatever
+ * scale the page is drawn.  Otherwise the cell is drawn into a list of its
+ * own and that list into pixels, PDF_CONTENT_TILE_DENSITY a point of the
+ * rectangle as shown, within the tile's limits.  The pixels are counted
+ * once, against the page's list.
+ */
+static int
+make_tile(
+	struct content_run *run,
+	struct pdf_object *pattern,
+	const double combined[6],
+	struct content_tile *tile)
+{
+	struct pdf_display_builder *cell;
+	struct pdf_object *resources;
+	const unsigned char *data;
+	unsigned char *owned;
+	unsigned char *pixels;
+	double box[4];
+	double steps[2];
+	double space[6];
+	double length_x;
+	double length_y;
+	double shrink;
+	size_t data_size;
+	size_t width;
+	size_t height;
+	int dct;
+	int error;
+
+	/* Refuses a pattern nested in cells past the limit (a pattern whose cell paints with itself ends here). */
+	if (run->pattern_depth >= PDF_CONTENT_PATTERNS_MAX)
+		return ENOTSUP;
+
+	/* A tiling pattern is a stream: its cell's content. */
+	if (pattern->type != PDF_OBJECT_STREAM)
+		return ENOTSUP;
+
+	/* Reads its steps and its box. */
+	error = read_tiling(run, pattern, steps, box);
+	if (error != 0)
+		return error;
+
+	/* How long the step rectangle's sides are on the page; one too small or too large to draw is left out. */
+	length_x = steps[0] * sqrt(combined[0] * combined[0] + combined[1] * combined[1]);
+	length_y = steps[1] * sqrt(combined[2] * combined[2] + combined[3] * combined[3]);
+	if (!(length_x > 1e-6 && length_x < PDF_CONTENT_TILE_LENGTH_MAX))
+		return ENOTSUP;
+	if (!(length_y > 1e-6 && length_y < PDF_CONTENT_TILE_LENGTH_MAX))
+		return ENOTSUP;
+
+	/* The tile's pixels at the density, within the limits of a side and of the whole. */
+	width = (size_t)ceil(length_x * PDF_CONTENT_TILE_DENSITY);
+	height = (size_t)ceil(length_y * PDF_CONTENT_TILE_DENSITY);
+	if (width > PDF_CONTENT_TILE_SIDE_MAX)
+		width = PDF_CONTENT_TILE_SIDE_MAX;
+	if (height > PDF_CONTENT_TILE_SIDE_MAX)
+		height = PDF_CONTENT_TILE_SIDE_MAX;
+	if (width * height > PDF_CONTENT_TILE_PIXELS_MAX) {
+		shrink = sqrt((double)PDF_CONTENT_TILE_PIXELS_MAX / ((double)width * (double)height));
+		width = (size_t)floor((double)width * shrink);
+		height = (size_t)floor((double)height * shrink);
+	}
+	if (width == 0)
+		width = 1;
+	if (height == 0)
+		height = 1;
+
+	/* The cell's space in the tile's pixels: the step rectangle onto the whole tile. */
+	space[0] = (double)width / steps[0];
+	space[1] = 0.0;
+	space[2] = 0.0;
+	space[3] = (double)height / steps[1];
+	space[4] = 0.0;
+	space[5] = 0.0;
+
+	/* The cell's resources, when it has them. */
+	error = pdf_reader_resolve_key(run->document, pattern, "Resources", &resources);
+	if (error != 0 || resources->type != PDF_OBJECT_DICTIONARY)
+		resources = NULL;
+
+	/* Decodes the cell's content. */
+	error = pdf_filter_decode(run->document, pattern, 0, &data, &data_size, &owned, &dct);
+	if (error == ENOMEM)
+		return ENOMEM;
+	if (error != 0)
+		return ENOTSUP;
+
+	/* Makes the list the cell is drawn into, in the tile's pixels. */
+	error = pdf_display_create(&cell);
+	if (error != 0) {
+		free(owned);
+		return error;
+	}
+	cell->list.width = (double)width;
+	cell->list.height = (double)height;
+
+	/* Runs the cell, clipped to its box, into its list. */
+	error = run_cell(run, data, data_size, resources, space, box, cell);
+	free(owned);
+	if (error != 0) {
+		pdf_display_free(cell);
+		return error;
+	}
+	pdf_display_finish(cell);
+
+	/* A cell that only paints an image filling the rectangle gives the image's own pixels. */
+	pixels = NULL;
+	error = take_cell_image(cell, space, box, width, height, tile, &pixels);
+	if (error != 0) {
+		pdf_display_free(cell);
+		return error;
+	}
+
+	/* Any other cell is drawn into the tile's pixels, with its copies that reach into the rectangle. */
+	if (pixels == NULL) {
+		error = draw_cell(cell, steps, box, width, height, &pixels);
+		if (error != 0) {
+			pdf_display_free(cell);
+			return error;
+		}
+
+		/* The tile's square is the step rectangle. */
+		tile->width = width;
+		tile->height = height;
+		tile->cell[0] = steps[0];
+		tile->cell[1] = 0.0;
+		tile->cell[2] = 0.0;
+		tile->cell[3] = steps[1];
+		tile->cell[4] = 0.0;
+		tile->cell[5] = 0.0;
+		tile->interpolate = 1;
+	}
+	pdf_display_free(cell);
+
+	/* The page's list keeps the pixels, counted once. */
+	error = pdf_display_keep_pixels(run->builder, pixels, tile->width, tile->height);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the tile is drawn, under the pattern and its space's scale and turn. */
+	tile->pattern = pattern;
+	tile->pixels = pixels;
+	tile->linear[0] = combined[0];
+	tile->linear[1] = combined[1];
+	tile->linear[2] = combined[2];
+	tile->linear[3] = combined[3];
+	return 0;
+}
+
+/*
+ * Reads a tiling pattern's steps (as lengths, |XStep| and |YStep|, which
+ * repeat the same lattice) and its box (left, bottom, right, top).
+ */
+static int
+read_tiling(
+	struct content_run *run,
+	struct pdf_object *pattern,
+	double steps[2],
+	double box[4])
+{
+	struct pdf_object *value;
+	struct pdf_object *number_object;
+	double swap;
+	size_t index;
+	int error;
+
+	/* The horizontal step, which must not be zero. */
+	error = pdf_reader_resolve_key(run->document, pattern, "XStep", &value);
+	if (error != 0)
+		return ENOTSUP;
+	error = pdf_object_number(value, &steps[0]);
+	if (error != 0)
+		return ENOTSUP;
+	steps[0] = fabs(steps[0]);
+	if (!(steps[0] > 1e-9 && steps[0] < PDF_CONTENT_TILE_LENGTH_MAX))
+		return ENOTSUP;
+
+	/* The vertical step, which must not be zero either. */
+	error = pdf_reader_resolve_key(run->document, pattern, "YStep", &value);
+	if (error != 0)
+		return ENOTSUP;
+	error = pdf_object_number(value, &steps[1]);
+	if (error != 0)
+		return ENOTSUP;
+	steps[1] = fabs(steps[1]);
+	if (!(steps[1] > 1e-9 && steps[1] < PDF_CONTENT_TILE_LENGTH_MAX))
+		return ENOTSUP;
+
+	/* The box: an array of four numbers. */
+	error = pdf_reader_resolve_key(run->document, pattern, "BBox", &value);
+	if (error != 0)
+		return ENOTSUP;
+	if (value->type != PDF_OBJECT_ARRAY || value->count != 4)
+		return ENOTSUP;
+	for (index = 0; index < 4; index++) {
+		error = pdf_reader_resolve(run->document, value->values[index], &number_object);
+		if (error != 0)
+			return ENOTSUP;
+		error = pdf_object_number(number_object, &box[index]);
+		if (error != 0)
+			return ENOTSUP;
+	}
+
+	/* Puts the left edge before the right one and the bottom before the top. */
+	if (box[0] > box[2]) {
+		swap = box[0];
+		box[0] = box[2];
+		box[2] = swap;
+	}
+	if (box[1] > box[3]) {
+		swap = box[1];
+		box[1] = box[3];
+		box[3] = swap;
+	}
+
+	/* Succeeded: the steps and the box are read. */
+	return 0;
+}
+
+/*
+ * Runs a pattern's cell into a list of its own: the cell's content in a
+ * level of its own on the given space, clipped to its box, with the
+ * resources given, one level of patterns deeper than the run that paints
+ * with it.  The cell shares the page's count of operators and of forms.
+ */
+static int
+run_cell(
+	struct content_run *run,
+	const unsigned char *data,
+	size_t size,
+	struct pdf_object *resources,
+	const double space[6],
+	const double box[4],
+	struct pdf_display_builder *builder)
+{
+	struct content_run *cell;
+	int error;
+
+	/* Makes the cell's interpretation, which is too large for the stack. */
+	cell = calloc(1, sizeof(*cell));
+	if (cell == NULL)
+		return ENOMEM;
+
+	/* Starts with the initial graphics state on the cell's space. */
+	cell->document = run->document;
+	cell->builder = builder;
+	init_state(&cell->stack[0]);
+	memcpy(cell->stack[0].ctm, space, sizeof(cell->stack[0].ctm));
+	memcpy(cell->pattern_base, space, sizeof(cell->pattern_base));
+	cell->pattern_depth = run->pattern_depth + 1;
+	cell->form_depth = run->form_depth;
+	cell->operators = run->operators;
+
+	/* Clips to the cell's box. */
+	error = add_rectangle(cell, box[0], box[1], box[2], box[3]);
+	if (error == 0) {
+		cell->clip_pending = 1;
+		cell->clip_rule = PDF_FILL_NONZERO;
+		paint_path(cell, 0, PDF_FILL_NONZERO, 0);
+	}
+
+	/* Runs the content, then ends every level it left open and the cell's own clips. */
+	run_content(cell, data, size, resources);
+	unwind_to(cell, 0);
+	end_clips(cell);
+
+	/* What the cell could not draw is the page's, and so are the operators it ran. */
+	run->flags |= cell->flags;
+	run->operators = cell->operators;
+
+	/* Frees the interpretation. */
+	pdf_arena_free(&cell->arena);
+	free(cell->path.verbs);
+	free(cell->path.points);
+	free(cell->scratch);
+	free(cell->text_clip_verbs);
+	free(cell->text_clip_points);
+	free(cell);
+
+	/* Succeeded: the cell is in its list. */
+	return 0;
+}
+
+/*
+ * Takes a cell's image over as a tile when the cell does nothing but paint
+ * one opaque, Normal image that fills the step rectangle exactly (its
+ * corners on the tile's, the pixels' axes along the tile's) inside the box
+ * (the clip then cuts nothing): *pixels is then the image's (the cell's
+ * list gives them up) and tile the image's size and square.  *pixels stays
+ * NULL for any other cell.
+ */
+static int
+take_cell_image(
+	struct pdf_display_builder *cell,
+	const double space[6],
+	const double box[4],
+	size_t width,
+	size_t height,
+	struct content_tile *tile,
+	unsigned char **pixels)
+{
+	const struct pdf_display_item *image;
+	double left;
+	double right;
+	double top;
+	double bottom;
+	double slack;
+	size_t index;
+
+	/* The cell's list is its box's clip, one image and the clip's end. */
+	if (cell->list.count != 3)
+		return 0;
+	if (cell->list.items[0].type != PDF_ITEM_CLIP_PUSH)
+		return 0;
+	if (cell->list.items[1].type != PDF_ITEM_IMAGE)
+		return 0;
+	if (cell->list.items[2].type != PDF_ITEM_CLIP_POP)
+		return 0;
+	image = &cell->list.items[1];
+
+	/* The image paints as it is: opaque in the Normal mode. */
+	if (image->alpha != 1.0 || image->blend != PDF_BLEND_NORMAL)
+		return 0;
+
+	/* Its pixels' axes lie along the tile's. */
+	if (image->matrix[1] != 0.0 || image->matrix[2] != 0.0)
+		return 0;
+
+	/* Its corners, in the tile's pixels, are the tile's (within a thousandth of a pixel). */
+	left = image->matrix[4];
+	right = image->matrix[4] + image->matrix[0];
+	if (left > right) {
+		left = right;
+		right = image->matrix[4];
+	}
+	top = image->matrix[5];
+	bottom = image->matrix[5] + image->matrix[3];
+	if (top > bottom) {
+		top = bottom;
+		bottom = image->matrix[5];
+	}
+	slack = 1e-3;
+	if (!(left > -slack && left < slack))
+		return 0;
+	if (!(top > -slack && top < slack))
+		return 0;
+	if (!(right > (double)width - slack && right < (double)width + slack))
+		return 0;
+	if (!(bottom > (double)height - slack && bottom < (double)height + slack))
+		return 0;
+
+	/* The box holds the whole rectangle, so its clip cuts nothing. */
+	if (box[0] * space[0] > slack || box[1] * space[3] > slack)
+		return 0;
+	if (box[2] * space[0] < (double)width - slack || box[3] * space[3] < (double)height - slack)
+		return 0;
+
+	/* Takes the pixels out of the cell's list, which then does not free them. */
+	for (index = 0; index < cell->images_count; index++) {
+		if (cell->images[index] == image->pixels) {
+			cell->images[index] = NULL;
+			break;
+		}
+	}
+
+	/* The tile is the image: its size, and its square in the pattern's space (the cell's space undone). */
+	*pixels = (unsigned char *)image->pixels;
+	tile->width = image->image_width;
+	tile->height = image->image_height;
+	tile->cell[0] = image->matrix[0] / space[0];
+	tile->cell[1] = 0.0;
+	tile->cell[2] = 0.0;
+	tile->cell[3] = image->matrix[3] / space[3];
+	tile->cell[4] = image->matrix[4] / space[0];
+	tile->cell[5] = image->matrix[5] / space[3];
+	tile->interpolate = image->interpolate;
+
+	/* Succeeded: the tile is the image's. */
+	return 0;
+}
+
+/*
+ * Draws a cell's list into a tile's pixels (RGBA, not premultiplied,
+ * malloc'd): every copy of the cell, one step rectangle apart, whose box
+ * reaches into the tile.  Too many copies are refused (ENOTSUP).
+ */
+static int
+draw_cell(
+	struct pdf_display_builder *cell,
+	const double steps[2],
+	const double box[4],
+	size_t width,
+	size_t height,
+	unsigned char **pixels)
+{
+	uint32_t *drawn;
+	unsigned char *tile;
+	unsigned alpha;
+	unsigned channel_value;
+	double first_x;
+	double last_x;
+	double first_y;
+	double last_y;
+	long copy_x;
+	long copy_y;
+	size_t index;
+	int channel;
+	int error;
+
+	/* The copies whose box reaches into the rectangle: the box moved by whole steps. */
+	first_x = floor(-box[2] / steps[0]) + 1.0;
+	last_x = ceil(1.0 - box[0] / steps[0]) - 1.0;
+	first_y = floor(-box[3] / steps[1]) + 1.0;
+	last_y = ceil(1.0 - box[1] / steps[1]) - 1.0;
+	if (!(last_x - first_x < (double)PDF_CONTENT_TILE_COPIES_MAX))
+		return ENOTSUP;
+	if (!(last_y - first_y < (double)PDF_CONTENT_TILE_COPIES_MAX))
+		return ENOTSUP;
+
+	/* Allocates the drawing, clear. */
+	drawn = calloc(width * height, sizeof(*drawn));
+	if (drawn == NULL)
+		return ENOMEM;
+
+	/* Draws each copy, moved by its steps in the tile's pixels. */
+	for (copy_y = (long)first_y; copy_y <= (long)last_y; copy_y++) {
+		for (copy_x = (long)first_x; copy_x <= (long)last_x; copy_x++) {
+			error = pdf_display_list_rasterize(&cell->list, drawn, width, width, height, 1.0, (double)copy_x * (double)width, (double)copy_y * (double)height);
+			if (error != 0) {
+				free(drawn);
+				return error;
+			}
+		}
+	}
+
+	/* Allocates the tile's pixels. */
+	tile = malloc(width * height * 4);
+	if (tile == NULL) {
+		free(drawn);
+		return ENOMEM;
+	}
+
+	/* Turns the premultiplied drawing into the pixels' straight colours. */
+	for (index = 0; index < width * height; index++) {
+		alpha = (drawn[index] >> 24) & 0xffU;
+		tile[index * 4 + 3] = (unsigned char)alpha;
+		for (channel = 0; channel < 3; channel++) {
+			channel_value = (drawn[index] >> (16 - 8 * channel)) & 0xffU;
+			if (alpha != 0U) {
+				channel_value = (channel_value * 255U + alpha / 2U) / alpha;
+				if (channel_value > 255U)
+					channel_value = 255U;
+			}
+			tile[index * 4 + (size_t)channel] = (unsigned char)channel_value;
+		}
+	}
+	free(drawn);
+
+	/* Succeeded: the caller owns the tile's pixels. */
+	*pixels = tile;
+	return 0;
+}
+
+/* Gives one level of the graphics state its initial values but the matrix: black, opaque, Normal, a line of 1. */
+static void
+init_state(
+	struct content_state *state)
+{
+	/* The colours and their spaces. */
+	state->horizontal_scale = 1.0;
+	state->fill_components = 1;
+	state->stroke_components = 1;
+	state->fill_usable = 1;
+	state->stroke_usable = 1;
+
+	/* The alphas and the blend mode. */
+	state->fill_alpha = 1.0;
+	state->stroke_alpha = 1.0;
+	state->blend = PDF_BLEND_NORMAL;
+
+	/* The line. */
+	state->line_width = 1.0;
+	state->miter_limit = 10.0;
 }
 
 /* Draws the XObject the operand names: an image, or a form's content. */

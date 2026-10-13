@@ -21,8 +21,27 @@
 /* The largest coordinate the writer accepts, well inside what any reader handles as a real. */
 #define PDF_WRITER_COORDINATE_LIMIT 1000000.0
 
-/* The most distinct fill alphas one document may use, each an ExtGState object. */
+/* The most distinct graphics states (a fill alpha and a blend mode) one document may use, each an ExtGState object. */
 #define PDF_WRITER_ALPHA_MAX 64
+
+/* How deep pdf_writer_save_state() may nest on one page. */
+#define PDF_WRITER_SAVED_MAX 16
+
+/*
+ * The grains a document may carry (ws216-p002), the largest side of one,
+ * and the most colour images and tiling patterns they may be painted in.
+ */
+#define PDF_WRITER_GRAIN_MAX 8
+#define PDF_WRITER_GRAIN_SIDE_MAX 1024
+#define PDF_WRITER_TINT_MAX 256
+#define PDF_WRITER_PATTERN_MAX 1024
+
+/*
+ * The largest page content the writer compresses, and the largest decoded
+ * content whose hash the reader takes (reader.c): a page past it is written
+ * as it is, so its hash stays readable.
+ */
+#define PDF_WRITER_FLATE_CONTENT_MAX ((size_t)64 * 1024 * 1024)
 
 /* The bytes of each element of the trailer's file identifier. */
 #define PDF_WRITER_ID_SIZE 16
@@ -69,11 +88,15 @@ struct pdf_buffer {
  * that saves the graphics state before the page's own content (OVERLAY on
  * a page that has content).  An EDIT page keeps the editor's new content of
  * the page in edited, written before the page's drawing, compressed when
- * edited_flate is set (ws175-p006, design.md [H6]).
+ * edited_flate is set (ws175-p006, design.md [H6]).  shown is the matrix
+ * from the page as its drawing sees it (the top left the origin, y
+ * downward) to the page's own space, which a grain's pattern on the page
+ * is placed by (ws216-p002).
  */
 struct pdf_writer_page {
 	double width;
 	double height;
+	double shown[6];
 	struct pdf_buffer content;
 	struct pdf_buffer edited;
 	int edited_flate;
@@ -146,6 +169,71 @@ struct pdf_writer_font {
 	size_t object;
 };
 
+/*
+ * One graphics state the content selects (an ExtGState): the fill alpha
+ * and the blend mode (enum pdf_blend_mode), which a page's state also is.
+ */
+struct pdf_writer_state {
+	double alpha;
+	int blend;
+};
+
+/*
+ * The state pdf_writer_save_state() saved: the page's graphics state and
+ * the blend mode asked for, which pdf_writer_restore_state() puts back.
+ */
+struct pdf_writer_saved {
+	struct pdf_writer_state state;
+	int wanted_blend;
+};
+
+/*
+ * One grain of the document (ws216-p002, paint.c): an 8-bit coverage, the
+ * first row the top one, kept as the alpha mask that every colour image
+ * painted with it shares.  data is the mask's bytes, a zlib stream when
+ * flate is set; object is its number, assigned when the document is laid
+ * out.
+ */
+struct pdf_writer_grain {
+	unsigned char *data;
+	size_t size;
+	int flate;
+	size_t width;
+	size_t height;
+	size_t object;
+};
+
+/*
+ * One colour a grain is painted in: an image of the grain's size in that
+ * one colour (8-bit DeviceRGB, the levels in rgb), whose mask is the
+ * grain.  The tiling patterns of the colour draw it.
+ */
+struct pdf_writer_tint {
+	size_t grain;
+	unsigned char rgb[3];
+	unsigned char *data;
+	size_t size;
+	int flate;
+	size_t object;
+};
+
+/*
+ * One tiling pattern of the document: a tint repeated in squares of cell
+ * points of a page as shown, from the page's top left.  matrix is the
+ * pattern's /Matrix: the square scaled by cell, then the page's shown
+ * matrix; shown and cell are kept to find the pattern again.
+ */
+struct pdf_writer_pattern {
+	size_t tint;
+	double cell;
+	double shown[6];
+	double matrix[6];
+	size_t object;
+};
+
+/* Compresses bytes into a zlib stream (update.c's pdf_writer_pack, set by paint.c). */
+typedef int (*pdf_writer_packer)(const unsigned char *data, size_t size, unsigned char **packed, size_t *packed_size);
+
 struct pdf_writer;
 
 /* Writes the embedded fonts' objects (embed.c, set when a font is first used). */
@@ -171,6 +259,14 @@ typedef int (*pdf_writer_update_layout)(struct pdf_writer *writer, struct pdf_bu
  * document already use.  first_alpha_object is the object number of the
  * first opacity's ExtGState, set when a file is laid out.  last_source is
  * one past the page of the base the update listed last.
+ *
+ * ws216-p002: the open page's graphics state is current_alpha and
+ * current_blend; wanted_blend is the blend mode the next colour selects,
+ * and saved the states pdf_writer_save_state() saved, saved_count deep.
+ * Each graphics state of the document is one of states.  The grains, their
+ * colours and their tiling patterns are the document's; pack compresses
+ * their samples and, when content_flate is set, the pages' content (both
+ * set by paint.c, which brings in libz-compat; the writer works without).
  */
 struct pdf_writer {
 	struct pdf_writer_page **pages;
@@ -178,8 +274,22 @@ struct pdf_writer {
 	size_t pages_capacity;
 	int page_is_open;
 	double current_alpha;
-	double alphas[PDF_WRITER_ALPHA_MAX];
+	int current_blend;
+	int wanted_blend;
+	struct pdf_writer_saved saved[PDF_WRITER_SAVED_MAX];
+	size_t saved_count;
+	struct pdf_writer_state states[PDF_WRITER_ALPHA_MAX];
 	size_t alphas_count;
+	struct pdf_writer_grain grains[PDF_WRITER_GRAIN_MAX];
+	size_t grains_count;
+	struct pdf_writer_tint *tints;
+	size_t tints_count;
+	size_t tints_capacity;
+	struct pdf_writer_pattern *patterns;
+	size_t patterns_count;
+	size_t patterns_capacity;
+	pdf_writer_packer pack;
+	int content_flate;
 	struct pdf_writer_image *images;
 	size_t images_count;
 	size_t images_capacity;
@@ -237,6 +347,10 @@ size_t pdf_writer_font_count(const struct pdf_writer *writer);
 /* The objects every layout writes (writer.c). */
 void pdf_writer_write_resources(struct pdf_writer *writer, struct pdf_buffer *file);
 void pdf_writer_write_opacity_entries(struct pdf_writer *writer, struct pdf_buffer *file);
+size_t pdf_writer_number_paint(struct pdf_writer *writer, size_t next);
+void pdf_writer_write_pattern_entries(struct pdf_writer *writer, struct pdf_buffer *file);
+void pdf_writer_write_paint_objects(struct pdf_writer *writer, struct pdf_buffer *file, size_t *offsets);
+void pdf_writer_write_content_stream(struct pdf_writer *writer, struct pdf_buffer *file, size_t object, const struct pdf_buffer *content);
 void pdf_writer_write_image_entries(struct pdf_writer *writer, struct pdf_buffer *file);
 void pdf_writer_write_image_objects(struct pdf_writer_image *image, struct pdf_buffer *file, size_t *offsets);
 void pdf_writer_write_attachment_objects(struct pdf_writer *writer, struct pdf_buffer *file, size_t *offsets, size_t file_object);

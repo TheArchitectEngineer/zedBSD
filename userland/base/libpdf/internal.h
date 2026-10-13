@@ -229,6 +229,8 @@ void pdf_display_free(struct pdf_display_builder *builder);
 int pdf_display_add_path(struct pdf_display_builder *builder, enum pdf_item_type type, const unsigned char *verbs, size_t verb_count, const struct pdf_point *points, size_t point_count, const struct pdf_display_item *style);
 int pdf_display_add_image(struct pdf_display_builder *builder, unsigned char *pixels, const struct pdf_display_item *style);
 int pdf_display_add_clip_pop(struct pdf_display_builder *builder);
+int pdf_display_keep_pixels(struct pdf_display_builder *builder, unsigned char *pixels, size_t width, size_t height);
+int pdf_display_add_pattern(struct pdf_display_builder *builder, const unsigned char *verbs, size_t verb_count, const struct pdf_point *points, size_t point_count, const struct pdf_display_item *style);
 void pdf_display_finish(struct pdf_display_builder *builder);
 
 /* The stroker (stroke.c): the outline a stroked path covers, in the path's own space. */

@@ -223,6 +223,82 @@ pdf_display_add_image(
 }
 
 /*
+ * Takes pixels (RGBA, malloc'd) over for the list, which items then share
+ * (ws216-p002: one tile of a tiling pattern, drawn by every fill of the
+ * pattern), counting them once against the list's limit.  The pixels are
+ * the builder's even when they are refused.
+ */
+int
+pdf_display_keep_pixels(
+	struct pdf_display_builder *builder,
+	unsigned char *pixels,
+	size_t width,
+	size_t height)
+{
+	size_t pixel_count;
+	int error;
+
+	/* Keeps the pixels first, so that they are freed whatever happens next. */
+	error = grow_images(builder);
+	if (error != 0) {
+		free(pixels);
+		return error;
+	}
+
+	/* The list owns the pixels from here on. */
+	builder->images[builder->images_count] = pixels;
+	builder->images_count++;
+
+	/* Refuses more pixels than one list may hold. */
+	pixel_count = width * height;
+	if (pixel_count > PDF_DISPLAY_PIXELS_MAX - builder->pixels_count)
+		return ENOMEM;
+
+	/* Counts them. */
+	builder->pixels_count += pixel_count;
+
+	/* Succeeded: the pixels are the list's. */
+	return 0;
+}
+
+/*
+ * Appends a pattern's fill (ws216-p002): a path in the page's shown space,
+ * painted with pixels the list keeps (pdf_display_keep_pixels()) repeated.
+ *
+ * style supplies the rule, the alpha, the blend mode, the pixels and their
+ * size, the matrix of one repeat and whether to interpolate.  The path is
+ * copied; the pixels are not.
+ */
+int
+pdf_display_add_pattern(
+	struct pdf_display_builder *builder,
+	const unsigned char *verbs,
+	size_t verb_count,
+	const struct pdf_point *points,
+	size_t point_count,
+	const struct pdf_display_item *style)
+{
+	struct pdf_display_item *item;
+	int error;
+
+	/* Appends the path as a fill would. */
+	error = pdf_display_add_path(builder, PDF_ITEM_PATTERN, verbs, verb_count, points, point_count, style);
+	if (error != 0)
+		return error;
+
+	/* Adds what the pattern paints with. */
+	item = &builder->items[builder->items_count - 1];
+	item->pixels = style->pixels;
+	item->image_width = style->image_width;
+	item->image_height = style->image_height;
+	memcpy(item->matrix, style->matrix, sizeof(item->matrix));
+	item->interpolate = style->interpolate;
+
+	/* Succeeded: the pattern's fill is the list's last item. */
+	return 0;
+}
+
+/*
  * Appends the end of the innermost clip.
  */
 int
@@ -265,7 +341,9 @@ pdf_display_finish(
 	/* Points each path item at its verbs and points, which no longer move. */
 	for (index = 0; index < builder->items_count; index++) {
 		item = &builder->items[index];
-		if (item->type == PDF_ITEM_FILL || item->type == PDF_ITEM_CLIP_PUSH) {
+		if (item->type == PDF_ITEM_FILL ||
+		    item->type == PDF_ITEM_CLIP_PUSH ||
+		    item->type == PDF_ITEM_PATTERN) {
 			item->verbs = builder->verbs + builder->verb_starts[index];
 			item->points = builder->points + builder->point_starts[index];
 		}

@@ -27,6 +27,14 @@
  * pieces' trapezoids, the joins' circular sectors and the two caps, all
  * turning the same way, so a stroke never narrows at a corner and never
  * shows a notch however sharply it turns.
+ *
+ * ws216-p002: the width may instead follow a factor the caller gives each
+ * point (pdf_outline_stroke_style(), the brush, pencil and watercolour of
+ * Notes), mapped by a style rather than by the pen's pressure curve, and a
+ * stroke may be cut into ranges (pdf_outline_stroke_ranges(), the pencil's
+ * steps of darkness).  A range ends at a gentle point of the centerline on
+ * a flat cut along the point's middle normal, which the next range starts
+ * from with the same two corners, so the ranges meet without a gap.
  */
 
 #include <errno.h>
@@ -61,19 +69,45 @@
 /* The exponent of the pressure curve, which widens light strokes faster than a straight line. */
 #define PDF_OUTLINE_PRESSURE_EXPONENT 0.7
 
+/* The largest exponent and factor limit a style may give. */
+#define PDF_OUTLINE_STYLE_LIMIT 16.0
+
+/*
+ * How far around a range's cut the centerline must be gentle, in the cut
+ * point's half widths, and how much it may turn there in all, in radians.
+ */
+#define PDF_OUTLINE_SEAM_REACH 2.0
+#define PDF_OUTLINE_SEAM_TURN 0.35
+
 /* Pi, which C89's math.h does not name. */
 #define PDF_OUTLINE_PI 3.14159265358979323846
 
 /*
+ * How a factor of the stroke becomes a half width.
+ *
+ * The pen's pressure is a factor of 0..1 mapped by the pressure curve; the
+ * caller's own factors (pdf_outline_stroke_style()) are mapped by the
+ * caller's style.  It lives only while one outline is being built.
+ */
+struct pdf_outline_shape {
+	double floor;
+	double exponent;
+	double factor_max;
+	double radius_min;
+};
+
+/*
  * One kept sample of the stroke.
  *
- * The pressure is clamped to 0..1.  It lives only while one outline is
- * being built.
+ * The factor (the pen's pressure) is clamped to the shape's range.  vertex
+ * is the centerline point the sample became, set while the centerline is
+ * built.  It lives only while one outline is being built.
  */
 struct pdf_outline_sample {
 	double x;
 	double y;
-	double pressure;
+	double factor;
+	size_t vertex;
 };
 
 /*
@@ -132,8 +166,8 @@ struct pdf_outline_join {
 };
 
 /*
- * The cubic Bezier form of one spline interval, and the four pressures
- * around it that the pressure is interpolated from.
+ * The cubic Bezier form of one spline interval, and the four factors (the
+ * pen's pressures) around it that the factor is interpolated from.
  */
 struct pdf_outline_piece {
 	double start_x;
@@ -144,22 +178,53 @@ struct pdf_outline_piece {
 	double control2_y;
 	double end_x;
 	double end_y;
-	double pressure_before;
-	double pressure_start;
-	double pressure_end;
-	double pressure_after;
+	double factor_before;
+	double factor_start;
+	double factor_end;
+	double factor_after;
 };
 
-static int keep_samples(const struct pdf_stroke_point *points, size_t count, struct pdf_outline_sample *samples, size_t *kept);
+/*
+ * The samples of one stroke, kept, and the shape that widens them.
+ *
+ * kept_of says, for each of the caller's points, which kept sample it
+ * became (NULL when no one asks).  It lives only while one outline is
+ * being built.
+ */
+struct pdf_outline_stroke {
+	struct pdf_outline_sample *samples;
+	size_t count;
+	size_t *kept_of;
+	struct pdf_outline_shape shape;
+};
+
+/*
+ * One range of the centerline being outlined: its first and last vertex.
+ * A range that starts or ends inside the centerline is cut there flat;
+ * one at an end of the centerline has a round cap.
+ */
+struct pdf_outline_span {
+	size_t first;
+	size_t last;
+};
+
+static int check_style(const struct pdf_outline_style *style);
+static int prepare_stroke(struct pdf_outline_stroke *stroke, size_t count, double width, int map_points);
+static int keep_sample(struct pdf_outline_stroke *stroke, size_t index, double x, double y, double factor);
 static int check_value(double value);
-static double pressure_radius(double width, double pressure);
-static void build_centerline(const struct pdf_outline_sample *samples, size_t count, double width, struct pdf_outline_path *path);
+static double shape_radius(const struct pdf_outline_shape *shape, double width, double factor);
+static int outline_whole(struct pdf_outline_stroke *stroke, double width, struct pdf_point **outline, size_t *outline_count);
+static int build_path(struct pdf_outline_stroke *stroke, double width, struct pdf_outline_path *path);
+static void build_centerline(struct pdf_outline_stroke *stroke, double width, struct pdf_outline_path *path);
 static void spline_interval(const struct pdf_outline_sample *samples, size_t count, size_t index, struct pdf_outline_piece *piece);
 static double knot_distance(double from_x, double from_y, double to_x, double to_y);
 static size_t interval_pieces(const struct pdf_outline_piece *piece);
-static double interpolate_pressure(const struct pdf_outline_piece *piece, double t);
+static double interpolate_factor(const struct pdf_outline_piece *piece, double t);
 static void path_append(struct pdf_outline_path *path, double x, double y, double radius);
-static void build_outline(const struct pdf_outline_path *path, struct pdf_outline_polygon *polygon);
+static int choose_cuts(const struct pdf_outline_stroke *stroke, const struct pdf_outline_path *path, const size_t *cuts, size_t cut_count, size_t *boundaries, size_t *starts, size_t *chosen);
+static int measure_arcs(const struct pdf_outline_path *path, double **arcs);
+static int seam_usable(const struct pdf_outline_path *path, const double *arcs, size_t index);
+static void build_range(const struct pdf_outline_path *path, const struct pdf_outline_span *span, struct pdf_outline_polygon *polygon, size_t *seam_end);
 static void measure_join(const struct pdf_outline_vertex *vertices, size_t index, struct pdf_outline_join *join);
 static double turn_angle(const struct pdf_outline_vertex *before, const struct pdf_outline_vertex *corner, const struct pdf_outline_vertex *after);
 static void segment_normal(const struct pdf_outline_vertex *from, const struct pdf_outline_vertex *to, double *normal_x, double *normal_y);
@@ -187,65 +252,283 @@ pdf_outline_stroke(
 	struct pdf_point **outline,
 	size_t *outline_count)
 {
-	struct pdf_outline_sample *samples;
-	struct pdf_outline_path path;
-	struct pdf_outline_polygon polygon;
-	size_t kept;
+	struct pdf_outline_stroke stroke;
+	size_t index;
 	int error;
 
 	/* Refuses a stroke without points. */
 	if (points == NULL)
 		return EINVAL;
-	if (count == 0)
-		return EINVAL;
 
-	/* Refuses a width without size or past the limit; the negation also refuses a NaN. */
-	if (!(width > 0.0 && width <= PDF_OUTLINE_COORDINATE_LIMIT))
-		return EINVAL;
+	/* The pen's pressure is a factor of 0..1 widened by the pressure curve. */
+	memset(&stroke, 0, sizeof(stroke));
+	stroke.shape.floor = PDF_OUTLINE_WIDTH_FLOOR;
+	stroke.shape.exponent = PDF_OUTLINE_PRESSURE_EXPONENT;
+	stroke.shape.factor_max = 1.0;
+	stroke.shape.radius_min = 0.0;
 
-	/* Refuses a stroke longer than one outline may be. */
-	if (count > PDF_OUTLINE_CORNERS_MAX)
-		return EINVAL;
-
-	/* Allocates the kept samples. */
-	samples = malloc(count * sizeof(*samples));
-	if (samples == NULL)
-		return ENOMEM;
+	/* Checks the stroke's size and width and allocates its kept samples. */
+	error = prepare_stroke(&stroke, count, width, 0);
+	if (error != 0)
+		return error;
 
 	/* Keeps each point that moved away from the previous kept one. */
-	error = keep_samples(points, count, samples, &kept);
+	for (index = 0; index < count; index++) {
+		error = keep_sample(&stroke, index, points[index].x, points[index].y, points[index].pressure);
+		if (error != 0) {
+			free(stroke.samples);
+			return error;
+		}
+	}
+
+	/* Walks around the whole centerline. */
+	error = outline_whole(&stroke, width, outline, outline_count);
+	free(stroke.samples);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the closed polygon. */
+	return 0;
+}
+
+/*
+ * Builds the outline polygon of a stroke whose width follows a factor the
+ * caller gives each point (ws216-p002: Notes' brush and watercolour).
+ *
+ * The half width at a point is width / 2 * (floor + (1 - floor) *
+ * factor^exponent), the factor clamped to 0..factor_max and interpolated
+ * between the points as the pen's pressure is, and never less than
+ * radius_min.  The polygon is drawn as pdf_outline_stroke() draws it, and
+ * the caller frees it with pdf_outline_free().
+ */
+int
+pdf_outline_stroke_style(
+	const struct pdf_factor_point *points,
+	size_t count,
+	double width,
+	const struct pdf_outline_style *style,
+	struct pdf_point **outline,
+	size_t *outline_count)
+{
+	struct pdf_outline_stroke stroke;
+	size_t index;
+	int error;
+
+	/* Refuses a stroke without points, and a style that cannot widen one. */
+	if (points == NULL)
+		return EINVAL;
+	error = check_style(style);
+	if (error != 0)
+		return error;
+
+	/* The caller's style widens the factors. */
+	memset(&stroke, 0, sizeof(stroke));
+	stroke.shape.floor = style->floor;
+	stroke.shape.exponent = style->exponent;
+	stroke.shape.factor_max = style->factor_max;
+	stroke.shape.radius_min = style->radius_min;
+
+	/* Checks the stroke's size and width and allocates its kept samples. */
+	error = prepare_stroke(&stroke, count, width, 0);
+	if (error != 0)
+		return error;
+
+	/* Keeps each point that moved away from the previous kept one. */
+	for (index = 0; index < count; index++) {
+		error = keep_sample(&stroke, index, points[index].x, points[index].y, points[index].factor);
+		if (error != 0) {
+			free(stroke.samples);
+			return error;
+		}
+	}
+
+	/* Walks around the whole centerline. */
+	error = outline_whole(&stroke, width, outline, outline_count);
+	free(stroke.samples);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the closed polygon. */
+	return 0;
+}
+
+/*
+ * Builds the outlines of a stroke cut into ranges (ws216-p002: the steps of
+ * Notes' pencil).
+ *
+ * The stroke is widened as pdf_outline_stroke_style() widens it.  cuts are
+ * indices of points, rising, each from 1 to count - 1: a range is to start
+ * at each.  A cut moves on along the stroke, toward its end, to the first
+ * point of the centerline where the stroke is gentle enough to be cut flat
+ * (within twice the half width around it nothing turns sharply, nor much in
+ * all), before the next cut's point; a cut with no such point is left out.
+ * Each range's start is the point whose cut began it (0 for the first),
+ * its corners its outline (nonzero), and seam_start and seam_end the edges
+ * where it meets the range before and after (an edge is named by its first
+ * corner and goes to the next one; PDF_OUTLINE_NO_SEAM at the stroke's
+ * ends, which are round).  Two ranges that meet share the two corners of
+ * their cut exactly.  The caller frees the ranges with
+ * pdf_outline_ranges_free().
+ */
+int
+pdf_outline_stroke_ranges(
+	const struct pdf_factor_point *points,
+	size_t count,
+	double width,
+	const struct pdf_outline_style *style,
+	const size_t *cuts,
+	size_t cut_count,
+	struct pdf_outline_range **ranges,
+	size_t *range_count)
+{
+	struct pdf_outline_stroke stroke;
+	struct pdf_outline_path path;
+	struct pdf_outline_polygon polygon;
+	struct pdf_outline_range *made;
+	struct pdf_outline_span span;
+	size_t *boundaries;
+	size_t *starts;
+	size_t chosen;
+	size_t index;
+	size_t seam_end;
+	int error;
+
+	/* Refuses a stroke without points, and a style that cannot widen one. */
+	if (points == NULL)
+		return EINVAL;
+	error = check_style(style);
+	if (error != 0)
+		return error;
+
+	/* Refuses cuts that are missing, out of order or outside the inner points. */
+	if (cut_count != 0 && cuts == NULL)
+		return EINVAL;
+	for (index = 0; index < cut_count; index++) {
+		if (cuts[index] == 0 || cuts[index] >= count)
+			return EINVAL;
+		if (index > 0 && cuts[index] <= cuts[index - 1])
+			return EINVAL;
+	}
+
+	/* The caller's style widens the factors. */
+	memset(&stroke, 0, sizeof(stroke));
+	stroke.shape.floor = style->floor;
+	stroke.shape.exponent = style->exponent;
+	stroke.shape.factor_max = style->factor_max;
+	stroke.shape.radius_min = style->radius_min;
+
+	/* Checks the stroke's size and width and allocates its kept samples and the map of points to them. */
+	error = prepare_stroke(&stroke, count, width, 1);
+	if (error != 0)
+		return error;
+
+	/* Keeps each point that moved away from the previous kept one. */
+	for (index = 0; index < count; index++) {
+		error = keep_sample(&stroke, index, points[index].x, points[index].y, points[index].factor);
+		if (error != 0) {
+			free(stroke.samples);
+			free(stroke.kept_of);
+			return error;
+		}
+	}
+
+	/* Joins the samples into the centerline. */
+	error = build_path(&stroke, width, &path);
 	if (error != 0) {
-		free(samples);
+		free(stroke.samples);
+		free(stroke.kept_of);
 		return error;
 	}
 
-	/* Joins the samples with the spline, cut into short pieces with their half widths. */
-	memset(&path, 0, sizeof(path));
-	build_centerline(samples, kept, width, &path);
-	free(samples);
-	if (path.error != 0) {
+	/* Allocates the cuts taken: one more range than cuts at most. */
+	boundaries = malloc((cut_count + 1) * sizeof(*boundaries));
+	if (boundaries == NULL) {
 		free(path.vertices);
-		return path.error;
+		free(stroke.samples);
+		free(stroke.kept_of);
+		return ENOMEM;
+	}
+	starts = malloc((cut_count + 1) * sizeof(*starts));
+	if (starts == NULL) {
+		free(boundaries);
+		free(path.vertices);
+		free(stroke.samples);
+		free(stroke.kept_of);
+		return ENOMEM;
 	}
 
-	/* Walks around the centerline; a stroke that never moved is a dot. */
-	memset(&polygon, 0, sizeof(polygon));
-	if (path.count == 1) {
-		build_dot(&path.vertices[0], &polygon);
-	} else {
-		build_outline(&path, &polygon);
+	/* Moves each cut to a point the stroke can be cut at; a stroke that never moved is one range. */
+	chosen = 0;
+	error = 0;
+	if (path.count > 1)
+		error = choose_cuts(&stroke, &path, cuts, cut_count, boundaries, starts, &chosen);
+	free(stroke.samples);
+	free(stroke.kept_of);
+	if (error != 0) {
+		free(starts);
+		free(boundaries);
+		free(path.vertices);
+		return error;
 	}
 
-	/* The centerline is not needed any more; a failed outline frees its corners. */
+	/* Allocates the ranges, every one empty. */
+	made = calloc(chosen + 1, sizeof(*made));
+	if (made == NULL) {
+		free(starts);
+		free(boundaries);
+		free(path.vertices);
+		return ENOMEM;
+	}
+
+	/* Walks around each range, from the start of the centerline or a cut to the next cut or its end. */
+	for (index = 0; index <= chosen; index++) {
+		/* The range's vertices and the point that decides its step. */
+		span.first = 0;
+		made[index].start = 0;
+		if (index > 0) {
+			span.first = boundaries[index - 1];
+			made[index].start = starts[index - 1];
+		}
+		span.last = path.count - 1;
+		if (index < chosen)
+			span.last = boundaries[index];
+
+		/* A stroke that never moved is a dot without seams; the others are outlined between their cuts. */
+		memset(&polygon, 0, sizeof(polygon));
+		seam_end = PDF_OUTLINE_NO_SEAM;
+		if (path.count == 1) {
+			build_dot(&path.vertices[0], &polygon);
+		} else {
+			build_range(&path, &span, &polygon, &seam_end);
+		}
+
+		/* A range that could not be built fails the whole stroke. */
+		if (polygon.error != 0) {
+			free(polygon.corners);
+			pdf_outline_ranges_free(made, index);
+			free(starts);
+			free(boundaries);
+			free(path.vertices);
+			return polygon.error;
+		}
+
+		/* The range's outline and its seams: its closing edge when it starts at a cut. */
+		made[index].corners = polygon.corners;
+		made[index].count = polygon.count;
+		made[index].seam_start = PDF_OUTLINE_NO_SEAM;
+		if (span.first > 0)
+			made[index].seam_start = polygon.count - 1;
+		made[index].seam_end = seam_end;
+	}
+
+	/* The centerline and the cuts are not needed any more. */
+	free(starts);
+	free(boundaries);
 	free(path.vertices);
-	if (polygon.error != 0) {
-		free(polygon.corners);
-		return polygon.error;
-	}
 
-	/* Succeeded: the caller owns the closed polygon. */
-	*outline = polygon.corners;
-	*outline_count = polygon.count;
+	/* Succeeded: the caller owns the ranges. */
+	*ranges = made;
+	*range_count = chosen + 1;
 	return 0;
 }
 
@@ -261,68 +544,158 @@ pdf_outline_free(
 }
 
 /*
- * Checks the points and keeps each one that moved away from the previous
- * kept one.
- *
- * A point that has not moved is merged into the previous one, which keeps
- * the harder of the two pressures.
+ * Frees the ranges that pdf_outline_stroke_ranges() made.
  */
-static int
-keep_samples(
-	const struct pdf_stroke_point *points,
-	size_t count,
-	struct pdf_outline_sample *samples,
-	size_t *kept)
+void
+pdf_outline_ranges_free(
+	struct pdf_outline_range *ranges,
+	size_t count)
 {
 	size_t index;
-	size_t used;
-	double pressure;
+
+	/* Nothing was made. */
+	if (ranges == NULL)
+		return;
+
+	/* Releases each range's polygon, then the ranges. */
+	for (index = 0; index < count; index++)
+		free(ranges[index].corners);
+	free(ranges);
+}
+
+/* Reports whether a style can widen a stroke: every number finite and within its range. */
+static int
+check_style(
+	const struct pdf_outline_style *style)
+{
+	/* Refuses a missing style. */
+	if (style == NULL)
+		return EINVAL;
+
+	/* The floor is a share of the full width; the negations also refuse a NaN. */
+	if (!(style->floor >= 0.0 && style->floor <= 1.0))
+		return EINVAL;
+
+	/* The exponent and the factor's limit are positive and moderate. */
+	if (!(style->exponent > 0.0 && style->exponent <= PDF_OUTLINE_STYLE_LIMIT))
+		return EINVAL;
+	if (!(style->factor_max > 0.0 && style->factor_max <= PDF_OUTLINE_STYLE_LIMIT))
+		return EINVAL;
+
+	/* The smallest half width is not negative and not past the coordinates' limit. */
+	if (!(style->radius_min >= 0.0 && style->radius_min <= PDF_OUTLINE_COORDINATE_LIMIT))
+		return EINVAL;
+
+	/* Succeeded: the style can be used. */
+	return 0;
+}
+
+/*
+ * Checks a stroke's size and width and allocates its kept samples, and,
+ * when map_points is set, the map of the caller's points to them.
+ */
+static int
+prepare_stroke(
+	struct pdf_outline_stroke *stroke,
+	size_t count,
+	double width,
+	int map_points)
+{
+	/* Refuses a stroke without points. */
+	if (count == 0)
+		return EINVAL;
+
+	/* Refuses a width without size or past the limit; the negation also refuses a NaN. */
+	if (!(width > 0.0 && width <= PDF_OUTLINE_COORDINATE_LIMIT))
+		return EINVAL;
+
+	/* Refuses a stroke longer than one outline may be. */
+	if (count > PDF_OUTLINE_CORNERS_MAX)
+		return EINVAL;
+
+	/* Allocates the kept samples. */
+	stroke->samples = malloc(count * sizeof(*stroke->samples));
+	if (stroke->samples == NULL)
+		return ENOMEM;
+	stroke->count = 0;
+
+	/* Allocates the map of the points to the samples, when the ranges need it. */
+	stroke->kept_of = NULL;
+	if (map_points) {
+		stroke->kept_of = malloc(count * sizeof(*stroke->kept_of));
+		if (stroke->kept_of == NULL) {
+			free(stroke->samples);
+			stroke->samples = NULL;
+			return ENOMEM;
+		}
+	}
+
+	/* Succeeded: the stroke takes its samples. */
+	return 0;
+}
+
+/*
+ * Checks one of the caller's points and keeps it when it moved away from
+ * the previous kept one.
+ *
+ * A point that has not moved is merged into the previous one, which keeps
+ * the larger of the two factors (the harder of two pressures).
+ */
+static int
+keep_sample(
+	struct pdf_outline_stroke *stroke,
+	size_t index,
+	double x,
+	double y,
+	double factor)
+{
+	struct pdf_outline_sample *last;
 	double step_x;
 	double step_y;
 	int error;
 
-	/* Walks the points in the order the pen drew them. */
-	used = 0;
-	for (index = 0; index < count; index++) {
-		/* Refuses an x that cannot be drawn. */
-		error = check_value(points[index].x);
-		if (error != 0)
-			return error;
+	/* Refuses an x that cannot be drawn. */
+	error = check_value(x);
+	if (error != 0)
+		return error;
 
-		/* Refuses a y that cannot be drawn. */
-		error = check_value(points[index].y);
-		if (error != 0)
-			return error;
+	/* Refuses a y that cannot be drawn. */
+	error = check_value(y);
+	if (error != 0)
+		return error;
 
-		/* Refuses a pressure that is not a number, and clamps the rest to 0..1. */
-		pressure = points[index].pressure;
-		if (pressure != pressure)
-			return EINVAL;
-		if (pressure < 0.0)
-			pressure = 0.0;
-		if (pressure > 1.0)
-			pressure = 1.0;
+	/* Refuses a factor that is not a number, and clamps the rest to the shape's range. */
+	if (factor != factor)
+		return EINVAL;
+	if (factor < 0.0)
+		factor = 0.0;
+	if (factor > stroke->shape.factor_max)
+		factor = stroke->shape.factor_max;
 
-		/* Merges a point that has not moved away from the previous kept one into it. */
-		if (used != 0) {
-			step_x = points[index].x - samples[used - 1].x;
-			step_y = points[index].y - samples[used - 1].y;
-			if (step_x * step_x + step_y * step_y < PDF_OUTLINE_MIN_STEP * PDF_OUTLINE_MIN_STEP) {
-				if (pressure > samples[used - 1].pressure)
-					samples[used - 1].pressure = pressure;
-				continue;
-			}
+	/* Merges a point that has not moved away from the previous kept one into it. */
+	if (stroke->count != 0) {
+		last = &stroke->samples[stroke->count - 1];
+		step_x = x - last->x;
+		step_y = y - last->y;
+		if (step_x * step_x + step_y * step_y < PDF_OUTLINE_MIN_STEP * PDF_OUTLINE_MIN_STEP) {
+			if (factor > last->factor)
+				last->factor = factor;
+			if (stroke->kept_of != NULL)
+				stroke->kept_of[index] = stroke->count - 1;
+			return 0;
 		}
-
-		/* Keeps the point. */
-		samples[used].x = points[index].x;
-		samples[used].y = points[index].y;
-		samples[used].pressure = pressure;
-		used++;
 	}
 
-	/* Succeeded: kept counts the distinct samples. */
-	*kept = used;
+	/* Keeps the point, and notes which sample the caller's point became. */
+	stroke->samples[stroke->count].x = x;
+	stroke->samples[stroke->count].y = y;
+	stroke->samples[stroke->count].factor = factor;
+	stroke->samples[stroke->count].vertex = 0;
+	if (stroke->kept_of != NULL)
+		stroke->kept_of[index] = stroke->count;
+	stroke->count++;
+
+	/* Succeeded: the point is kept or merged. */
 	return 0;
 }
 
@@ -339,19 +712,93 @@ check_value(
 	return 0;
 }
 
-/* Computes the half width the pressure curve gives a point. */
+/*
+ * Computes the half width a shape gives a factor.
+ *
+ * For the pen the arithmetic is the pressure curve's, in the same order,
+ * so the pen's outline does not change by a bit.
+ */
 static double
-pressure_radius(
+shape_radius(
+	const struct pdf_outline_shape *shape,
 	double width,
-	double pressure)
+	double factor)
 {
 	double share;
+	double radius;
 
-	/* Maps the pressure onto the share of the full width that it draws. */
-	share = PDF_OUTLINE_WIDTH_FLOOR + (1.0 - PDF_OUTLINE_WIDTH_FLOOR) * pow(pressure, PDF_OUTLINE_PRESSURE_EXPONENT);
+	/* Maps the factor onto the share of the full width that it draws. */
+	share = shape->floor + (1.0 - shape->floor) * pow(factor, shape->exponent);
 
-	/* Reports half of that width, the distance of each edge from the point. */
-	return width * share / 2.0;
+	/* Half of that width, the distance of each edge from the point, but no less than the shape's least. */
+	radius = width * share / 2.0;
+	if (radius < shape->radius_min)
+		radius = shape->radius_min;
+
+	/* Reports the half width. */
+	return radius;
+}
+
+/* Builds the outline of a whole stroke: its centerline walked around, or a dot. */
+static int
+outline_whole(
+	struct pdf_outline_stroke *stroke,
+	double width,
+	struct pdf_point **outline,
+	size_t *outline_count)
+{
+	struct pdf_outline_path path;
+	struct pdf_outline_polygon polygon;
+	struct pdf_outline_span span;
+	size_t seam_end;
+	int error;
+
+	/* Joins the samples with the spline, cut into short pieces with their half widths. */
+	error = build_path(stroke, width, &path);
+	if (error != 0)
+		return error;
+
+	/* Walks around the centerline from its first point to its last; a stroke that never moved is a dot. */
+	memset(&polygon, 0, sizeof(polygon));
+	if (path.count == 1) {
+		build_dot(&path.vertices[0], &polygon);
+	} else {
+		span.first = 0;
+		span.last = path.count - 1;
+		build_range(&path, &span, &polygon, &seam_end);
+	}
+
+	/* The centerline is not needed any more; a failed outline frees its corners. */
+	free(path.vertices);
+	if (polygon.error != 0) {
+		free(polygon.corners);
+		return polygon.error;
+	}
+
+	/* Succeeded: the caller owns the closed polygon. */
+	*outline = polygon.corners;
+	*outline_count = polygon.count;
+	return 0;
+}
+
+/* Joins a stroke's kept samples into its centerline, which the caller frees. */
+static int
+build_path(
+	struct pdf_outline_stroke *stroke,
+	double width,
+	struct pdf_outline_path *path)
+{
+	/* Cuts the spline through the samples into short pieces with their half widths. */
+	memset(path, 0, sizeof(*path));
+	build_centerline(stroke, width, path);
+	if (path->error != 0) {
+		free(path->vertices);
+		path->vertices = NULL;
+		return path->error;
+	}
+
+	/* Succeeded: the centerline has at least the first point. */
+	return 0;
 }
 
 /*
@@ -359,16 +806,18 @@ pressure_radius(
  *
  * Each interval between two samples is cut into the pieces its curve needs;
  * the first sample and the end of every interval become vertices, so the
- * centerline passes through every sample.
+ * centerline passes through every sample.  Each sample notes the vertex it
+ * became.
  */
 static void
 build_centerline(
-	const struct pdf_outline_sample *samples,
-	size_t count,
+	struct pdf_outline_stroke *stroke,
 	double width,
 	struct pdf_outline_path *path)
 {
+	struct pdf_outline_sample *samples;
 	struct pdf_outline_piece piece;
+	size_t count;
 	size_t index;
 	size_t pieces;
 	size_t step;
@@ -376,12 +825,15 @@ build_centerline(
 	double u;
 	double x;
 	double y;
-	double pressure;
+	double factor;
 	double radius;
 
 	/* Starts at the first sample. */
-	radius = pressure_radius(width, samples[0].pressure);
+	samples = stroke->samples;
+	count = stroke->count;
+	radius = shape_radius(&stroke->shape, width, samples[0].factor);
 	path_append(path, samples[0].x, samples[0].y, radius);
+	samples[0].vertex = 0;
 
 	/* Cuts each interval's curve into pieces and appends the end of each piece. */
 	for (index = 0; index + 1 < count; index++) {
@@ -403,11 +855,15 @@ build_centerline(
 				y = piece.end_y;
 			}
 
-			/* Appends the point with the half width of its interpolated pressure. */
-			pressure = interpolate_pressure(&piece, t);
-			radius = pressure_radius(width, pressure);
+			/* Appends the point with the half width of its interpolated factor. */
+			factor = interpolate_factor(&piece, t);
+			radius = shape_radius(&stroke->shape, width, factor);
 			path_append(path, x, y, radius);
 		}
+
+		/* The next sample is the vertex appended last (or the one it merged into). */
+		if (path->count != 0)
+			samples[index + 1].vertex = path->count - 1;
 	}
 }
 
@@ -440,22 +896,22 @@ spline_interval(
 	if (index > 0) {
 		before_x = samples[index - 1].x;
 		before_y = samples[index - 1].y;
-		piece->pressure_before = samples[index - 1].pressure;
+		piece->factor_before = samples[index - 1].factor;
 	} else {
 		before_x = 2.0 * samples[0].x - samples[1].x;
 		before_y = 2.0 * samples[0].y - samples[1].y;
-		piece->pressure_before = samples[0].pressure;
+		piece->factor_before = samples[0].factor;
 	}
 
 	/* Takes the sample after the interval, or mirrors the previous one through the last. */
 	if (index + 2 < count) {
 		after_x = samples[index + 2].x;
 		after_y = samples[index + 2].y;
-		piece->pressure_after = samples[index + 2].pressure;
+		piece->factor_after = samples[index + 2].factor;
 	} else {
 		after_x = 2.0 * samples[index + 1].x - samples[index].x;
 		after_y = 2.0 * samples[index + 1].y - samples[index].y;
-		piece->pressure_after = samples[index + 1].pressure;
+		piece->factor_after = samples[index + 1].factor;
 	}
 
 	/* Records the interval's ends. */
@@ -463,8 +919,8 @@ spline_interval(
 	piece->start_y = samples[index].y;
 	piece->end_x = samples[index + 1].x;
 	piece->end_y = samples[index + 1].y;
-	piece->pressure_start = samples[index].pressure;
-	piece->pressure_end = samples[index + 1].pressure;
+	piece->factor_start = samples[index].factor;
+	piece->factor_end = samples[index + 1].factor;
 
 	/*
 	 * Spaces the knots by the square roots of the distances, which is what
@@ -555,14 +1011,14 @@ interval_pieces(
 }
 
 /*
- * Interpolates the pressure at a point of an interval.
+ * Interpolates the factor (the pen's pressure) at a point of an interval.
  *
- * A Catmull-Rom curve through the four pressures around the interval gives
- * a smooth change; it is kept between the interval's two end pressures, so
+ * A Catmull-Rom curve through the four factors around the interval gives
+ * a smooth change; it is kept between the interval's two end factors, so
  * a stroke never draws wider or thinner than the samples on either side.
  */
 static double
-interpolate_pressure(
+interpolate_factor(
 	const struct pdf_outline_piece *piece,
 	double t)
 {
@@ -570,35 +1026,35 @@ interpolate_pressure(
 	double slope_end;
 	double t2;
 	double t3;
-	double pressure;
+	double factor;
 	double lowest;
 	double highest;
 
-	/* Finds the slopes at the interval's ends from the neighboring pressures. */
-	slope_start = (piece->pressure_end - piece->pressure_before) / 2.0;
-	slope_end = (piece->pressure_after - piece->pressure_start) / 2.0;
+	/* Finds the slopes at the interval's ends from the neighboring factors. */
+	slope_start = (piece->factor_end - piece->factor_before) / 2.0;
+	slope_end = (piece->factor_after - piece->factor_start) / 2.0;
 
-	/* Evaluates the cubic Hermite curve between the end pressures. */
+	/* Evaluates the cubic Hermite curve between the end factors. */
 	t2 = t * t;
 	t3 = t2 * t;
-	pressure = (2.0 * t3 - 3.0 * t2 + 1.0) * piece->pressure_start + (t3 - 2.0 * t2 + t) * slope_start + (-2.0 * t3 + 3.0 * t2) * piece->pressure_end + (t3 - t2) * slope_end;
+	factor = (2.0 * t3 - 3.0 * t2 + 1.0) * piece->factor_start + (t3 - 2.0 * t2 + t) * slope_start + (-2.0 * t3 + 3.0 * t2) * piece->factor_end + (t3 - t2) * slope_end;
 
-	/* Keeps the pressure between the two end pressures. */
-	lowest = piece->pressure_start;
-	highest = piece->pressure_end;
+	/* Keeps the factor between the two end factors. */
+	lowest = piece->factor_start;
+	highest = piece->factor_end;
 	if (highest < lowest) {
-		lowest = piece->pressure_end;
-		highest = piece->pressure_start;
+		lowest = piece->factor_end;
+		highest = piece->factor_start;
 	}
 
-	/* The pressure within them. */
-	if (pressure < lowest)
-		pressure = lowest;
-	if (pressure > highest)
-		pressure = highest;
+	/* The factor within them. */
+	if (factor < lowest)
+		factor = lowest;
+	if (factor > highest)
+		factor = highest;
 
-	/* Reports the interpolated pressure. */
-	return pressure;
+	/* Reports the interpolated factor. */
+	return factor;
 }
 
 /*
@@ -666,41 +1122,224 @@ path_append(
 }
 
 /*
- * Walks around a centerline of two or more points.
+ * Moves each cut to the first vertex at or after its point where the
+ * centerline can be cut flat, before the next cut's point (or the last
+ * vertex), and after the cut taken before it; a cut with none is left out.
+ * boundaries gets the vertices of the cuts taken, starts their points, and
+ * chosen their count.
+ */
+static int
+choose_cuts(
+	const struct pdf_outline_stroke *stroke,
+	const struct pdf_outline_path *path,
+	const size_t *cuts,
+	size_t cut_count,
+	size_t *boundaries,
+	size_t *starts,
+	size_t *chosen)
+{
+	double *arcs;
+	size_t previous;
+	size_t from;
+	size_t limit;
+	size_t index;
+	size_t vertex;
+	int usable;
+	int error;
+
+	/* Measures how far along the centerline each vertex is. */
+	error = measure_arcs(path, &arcs);
+	if (error != 0)
+		return error;
+
+	/* Takes each cut in order; the first range starts at the first vertex. */
+	*chosen = 0;
+	previous = 0;
+	for (index = 0; index < cut_count; index++) {
+		/* The cut's own vertex, after the cut taken before it. */
+		from = stroke->samples[stroke->kept_of[cuts[index]]].vertex;
+		if (from <= previous)
+			from = previous + 1;
+
+		/* The cut must come before the next cut's vertex, and before the last vertex. */
+		limit = path->count - 1;
+		if (index + 1 < cut_count)
+			limit = stroke->samples[stroke->kept_of[cuts[index + 1]]].vertex;
+
+		/* Walks on toward the end until a vertex the centerline can be cut at. */
+		for (vertex = from; vertex < limit; vertex++) {
+			usable = seam_usable(path, arcs, vertex);
+			if (!usable)
+				continue;
+
+			/* The cut is taken here; the next one must come after it. */
+			boundaries[*chosen] = vertex;
+			starts[*chosen] = cuts[index];
+			(*chosen)++;
+			previous = vertex;
+			break;
+		}
+	}
+
+	/* The lengths are not needed any more. */
+	free(arcs);
+
+	/* Succeeded: the cuts taken are listed. */
+	return 0;
+}
+
+/* Measures, for each vertex of the centerline, its distance along it from the first (a malloc'd array). */
+static int
+measure_arcs(
+	const struct pdf_outline_path *path,
+	double **arcs)
+{
+	double *lengths;
+	double step_x;
+	double step_y;
+	size_t index;
+
+	/* Allocates one length a vertex. */
+	lengths = malloc(path->count * sizeof(*lengths));
+	if (lengths == NULL)
+		return ENOMEM;
+
+	/* Adds up the segments' lengths from the first vertex. */
+	lengths[0] = 0.0;
+	for (index = 1; index < path->count; index++) {
+		step_x = path->vertices[index].x - path->vertices[index - 1].x;
+		step_y = path->vertices[index].y - path->vertices[index - 1].y;
+		lengths[index] = lengths[index - 1] + sqrt(step_x * step_x + step_y * step_y);
+	}
+
+	/* Succeeded: the caller owns the lengths. */
+	*arcs = lengths;
+	return 0;
+}
+
+/*
+ * Tells whether the centerline can be cut flat at an inner vertex: the turn
+ * there is gentle (one corner on each edge, on its middle normal), and so
+ * is every turn within twice its half width along the centerline on either
+ * side, which together turn little.  The trapezoids near such a cut do not
+ * reach across it, so the two ranges meet without overlapping there.
+ */
+static int
+seam_usable(
+	const struct pdf_outline_path *path,
+	const double *arcs,
+	size_t index)
+{
+	struct pdf_outline_join join;
+	double reach;
+	double turned;
+	size_t other;
+
+	/* Only an inner vertex can be cut. */
+	if (index == 0 || index + 1 >= path->count)
+		return 0;
+
+	/* The turn at the vertex must be gentle. */
+	measure_join(path->vertices, index, &join);
+	if (!join.gentle)
+		return 0;
+
+	/* How far around the vertex the centerline must stay gentle, and how much it has turned. */
+	reach = PDF_OUTLINE_SEAM_REACH * path->vertices[index].radius;
+	turned = fabs(join.turn);
+
+	/* Walks back over the inner vertices within the reach. */
+	other = index - 1;
+	while (other > 0 && arcs[index] - arcs[other] <= reach) {
+		measure_join(path->vertices, other, &join);
+		if (!join.gentle)
+			return 0;
+		turned += fabs(join.turn);
+		other--;
+	}
+
+	/* Walks on over the inner vertices within the reach. */
+	other = index + 1;
+	while (other + 1 < path->count && arcs[other] - arcs[index] <= reach) {
+		measure_join(path->vertices, other, &join);
+		if (!join.gentle)
+			return 0;
+		turned += fabs(join.turn);
+		other++;
+	}
+
+	/* Too much turning near the cut would let the pieces on either side reach across it. */
+	if (turned > PDF_OUTLINE_SEAM_TURN)
+		return 0;
+
+	/* Succeeded: the centerline can be cut at the vertex. */
+	return 1;
+}
+
+/*
+ * Walks around one range of a centerline of two or more points.
  *
  * The left edge lies along each segment's left normal and the right edge
  * along its right one.  At a corner, the edge on the outside of the turn
  * follows an arc around the corner point from one segment's normal to the
  * next; the edge on the inside passes through the corner point.  A gentle
- * turn, whose arc would be one chord, takes one corner on each edge.
+ * turn, whose arc would be one chord, takes one corner on each edge.  An end
+ * of the centerline is a round cap; a range that ends inside it is cut
+ * along the cut vertex's middle normal (its two corners are the gentle
+ * turn's), and seam_end gets the index of the cut's first corner.  A range
+ * that starts inside it closes along its start's middle normal.  The whole
+ * centerline as one range is the stroke's outline.
  */
 static void
-build_outline(
+build_range(
 	const struct pdf_outline_path *path,
-	struct pdf_outline_polygon *polygon)
+	const struct pdf_outline_span *span,
+	struct pdf_outline_polygon *polygon,
+	size_t *seam_end)
 {
 	const struct pdf_outline_vertex *vertices;
 	const struct pdf_outline_vertex *corner;
+	const struct pdf_outline_vertex *first;
 	const struct pdf_outline_vertex *last;
 	struct pdf_outline_join join;
+	struct pdf_outline_join end_join;
+	struct pdf_outline_join start_join;
 	size_t count;
 	size_t index;
 	size_t chords;
 	double normal_x;
 	double normal_y;
 	double start_angle;
+	int capped_start;
+	int capped_end;
 
-	/* Names the centerline and its last point. */
+	/* No cut is measured at the start until the range is known to start at one. */
+	memset(&start_join, 0, sizeof(start_join));
+
+	/* Names the centerline, the range's ends and whether each is an end of the centerline. */
 	vertices = path->vertices;
 	count = path->count;
-	last = &vertices[count - 1];
+	first = &vertices[span->first];
+	last = &vertices[span->last];
+	capped_start = 0;
+	if (span->first == 0)
+		capped_start = 1;
+	capped_end = 0;
+	if (span->last == count - 1)
+		capped_end = 1;
+	*seam_end = PDF_OUTLINE_NO_SEAM;
 
-	/* Starts the left edge at the first point. */
-	segment_normal(&vertices[0], &vertices[1], &normal_x, &normal_y);
-	polygon_append(polygon, vertices[0].x + normal_x * vertices[0].radius, vertices[0].y + normal_y * vertices[0].radius);
+	/* Starts the left edge at the first point: along the first segment's normal, or the cut's middle one. */
+	if (capped_start) {
+		segment_normal(&vertices[0], &vertices[1], &normal_x, &normal_y);
+		polygon_append(polygon, vertices[0].x + normal_x * vertices[0].radius, vertices[0].y + normal_y * vertices[0].radius);
+	} else {
+		measure_join(vertices, span->first, &start_join);
+		polygon_append(polygon, first->x + start_join.middle_x * first->radius, first->y + start_join.middle_y * first->radius);
+	}
 
-	/* Walks the left edge forward through each inner point. */
-	for (index = 1; index + 1 < count; index++) {
+	/* Walks the left edge forward through each inner point of the range. */
+	for (index = span->first + 1; index < span->last; index++) {
 		/* Measures the turn at the point. */
 		corner = &vertices[index];
 		measure_join(vertices, index, &join);
@@ -724,20 +1363,27 @@ build_outline(
 		}
 	}
 
-	/* Ends the left edge at the last point. */
-	segment_normal(&vertices[count - 2], last, &normal_x, &normal_y);
-	polygon_append(polygon, last->x + normal_x * last->radius, last->y + normal_y * last->radius);
+	/* Ends the left edge at the last point, then turns around it with a cap or crosses it along the cut. */
+	if (capped_end) {
+		/* The last segment's normal, then the cap from the left edge through the stroke's direction to the right edge. */
+		segment_normal(&vertices[count - 2], last, &normal_x, &normal_y);
+		polygon_append(polygon, last->x + normal_x * last->radius, last->y + normal_y * last->radius);
+		start_angle = atan2(normal_y, normal_x);
+		chords = arc_chords(last->radius, PDF_OUTLINE_PI, PDF_OUTLINE_CAP_MIN);
+		append_arc(polygon, last, start_angle, -PDF_OUTLINE_PI, chords);
 
-	/* Turns around the last point, from the left edge through the stroke's direction to the right edge. */
-	start_angle = atan2(normal_y, normal_x);
-	chords = arc_chords(last->radius, PDF_OUTLINE_PI, PDF_OUTLINE_CAP_MIN);
-	append_arc(polygon, last, start_angle, -PDF_OUTLINE_PI, chords);
+		/* Starts the right edge back at the last point. */
+		polygon_append(polygon, last->x - normal_x * last->radius, last->y - normal_y * last->radius);
+	} else {
+		/* The cut's two corners on its middle normal; the edge between them is the seam with the next range. */
+		measure_join(vertices, span->last, &end_join);
+		*seam_end = polygon->count;
+		polygon_append(polygon, last->x + end_join.middle_x * last->radius, last->y + end_join.middle_y * last->radius);
+		polygon_append(polygon, last->x - end_join.middle_x * last->radius, last->y - end_join.middle_y * last->radius);
+	}
 
-	/* Starts the right edge back at the last point. */
-	polygon_append(polygon, last->x - normal_x * last->radius, last->y - normal_y * last->radius);
-
-	/* Walks the right edge back through each inner point. */
-	for (index = count - 2; index > 0; index--) {
+	/* Walks the right edge back through each inner point of the range. */
+	for (index = span->last - 1; index > span->first; index--) {
 		/* Measures the turn at the point. */
 		corner = &vertices[index];
 		measure_join(vertices, index, &join);
@@ -761,14 +1407,18 @@ build_outline(
 		}
 	}
 
-	/* Ends the right edge at the first point. */
-	segment_normal(&vertices[0], &vertices[1], &normal_x, &normal_y);
-	polygon_append(polygon, vertices[0].x - normal_x * vertices[0].radius, vertices[0].y - normal_y * vertices[0].radius);
-
-	/* Turns around the first point, from the right edge against the stroke's direction back to the left edge. */
-	start_angle = atan2(-normal_y, -normal_x);
-	chords = arc_chords(vertices[0].radius, PDF_OUTLINE_PI, PDF_OUTLINE_CAP_MIN);
-	append_arc(polygon, &vertices[0], start_angle, -PDF_OUTLINE_PI, chords);
+	/* Ends the right edge at the first point: with the cap back to the left edge, or at the cut, which the polygon closes along. */
+	if (capped_start) {
+		/* The first segment's normal, then the cap against the stroke's direction back to the left edge. */
+		segment_normal(&vertices[0], &vertices[1], &normal_x, &normal_y);
+		polygon_append(polygon, vertices[0].x - normal_x * vertices[0].radius, vertices[0].y - normal_y * vertices[0].radius);
+		start_angle = atan2(-normal_y, -normal_x);
+		chords = arc_chords(vertices[0].radius, PDF_OUTLINE_PI, PDF_OUTLINE_CAP_MIN);
+		append_arc(polygon, &vertices[0], start_angle, -PDF_OUTLINE_PI, chords);
+	} else {
+		/* The cut's right corner, the same as the range before's. */
+		polygon_append(polygon, first->x - start_join.middle_x * first->radius, first->y - start_join.middle_y * first->radius);
+	}
 }
 
 /* Measures the normals and the turn at an inner point of the centerline. */

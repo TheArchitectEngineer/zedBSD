@@ -173,7 +173,8 @@ static void write_cross_reference_update(struct update_layout *layout);
 static unsigned long changed_generation(const struct update_layout *layout, unsigned long number);
 static void write_entries_except(struct pdf_buffer *file, const struct pdf_object *dictionary, const char *first, const char *second, int depth);
 static void write_object(struct pdf_buffer *file, const struct pdf_object *object, int depth);
-static void write_entries_but(struct pdf_buffer *file, const struct pdf_object *dictionary, const char *first, const char *second, const char *third);
+static void write_entries_but(struct pdf_buffer *file, const struct pdf_object *dictionary, const char *first, const char *second, const char *third, const char *fourth);
+static void place_page(struct pdf_writer_page *page, const double matrix[6]);
 static void write_name(struct pdf_buffer *file, const unsigned char *bytes, size_t length);
 static void write_real(struct pdf_buffer *file, double value);
 static int key_is(const struct pdf_object *key, const char *name);
@@ -344,11 +345,12 @@ pdf_writer_begin_page_over(
 		return ENOMEM;
 	}
 
-	/* Adds the page, open for drawing. */
+	/* Adds the page, open for drawing, placed as the matrix places it (its patterns are, ws216-p002). */
 	error = pdf_writer_add_page(writer, box.width, box.height, &prologue, &page);
 	free(prologue.data);
 	if (error != 0)
 		return error;
+	place_page(page, matrix);
 
 	/* The page stands for the document's page, drawn over or replaced. */
 	page->placement = PDF_WRITER_PLACE_OVERLAY;
@@ -430,13 +432,14 @@ pdf_update_begin_edited(
 		return ENOMEM;
 	}
 
-	/* Adds the page, open for drawing. */
+	/* Adds the page, open for drawing, placed as the matrix places it (its patterns are, ws216-p002). */
 	error = pdf_writer_add_page(writer, box.width, box.height, &prologue, &page);
 	free(prologue.data);
 	if (error != 0) {
 		free(edited->data);
 		return error;
 	}
+	place_page(page, matrix);
 
 	/* The page stands for the document's page, its content changed. */
 	page->placement = PDF_WRITER_PLACE_EDIT;
@@ -538,10 +541,11 @@ lay_out_update(
 		}
 	}
 
-	/* Writes the opacities, the images and the attached file. */
+	/* Writes the opacities, the images, the grains with their patterns and the attached file. */
 	pdf_writer_write_opacities(writer, file, layout.offsets);
 	for (index = 0; index < writer->images_count; index++)
 		pdf_writer_write_image_objects(&writer->images[index], file, layout.offsets);
+	pdf_writer_write_paint_objects(writer, file, layout.offsets);
 	if (writer->font_layout != NULL) {
 		error = writer->font_layout(writer, file, layout.offsets);
 		if (error != 0)
@@ -691,6 +695,19 @@ shown_to_user(
 	}
 }
 
+/* Notes on a page of the update the matrix from the page as drawn to its own space. */
+static void
+place_page(
+	struct pdf_writer_page *page,
+	const double matrix[6])
+{
+	size_t item;
+
+	/* Copies the six numbers. */
+	for (item = 0; item < 6; item++)
+		page->shown[item] = matrix[item];
+}
+
 /*
  * Numbers the objects the revision adds, from the document's first free
  * number: each added page and its content stream, each drawn-over page's
@@ -754,7 +771,8 @@ number_objects(
 			next++;
 	}
 
-	/* Then the embedded fonts (ws175-p005). */
+	/* Then the grains, their colours and their patterns (ws216-p002), and the embedded fonts (ws175-p005). */
+	next = pdf_writer_number_paint(writer, next);
 	next = pdf_writer_number_fonts(writer, next);
 
 	/* Then the attached file and its specification. */
@@ -1364,7 +1382,10 @@ write_merged_resources(
 	writer = layout->writer;
 	file = layout->file;
 	fonts = pdf_writer_font_count(writer);
-	if (writer->alphas_count == 0 && writer->images_count == 0 && fonts == 0) {
+	if (writer->alphas_count == 0 &&
+	    writer->images_count == 0 &&
+	    writer->patterns_count == 0 &&
+	    fonts == 0) {
 		own = pdf_object_get(page, "Resources");
 		if (own != NULL) {
 			write_object(file, own, 0);
@@ -1381,7 +1402,7 @@ write_merged_resources(
 	/* The page's entries but the three dictionaries the update adds to. */
 	pdf_buffer_printf(file, "<<");
 	if (resources->type == PDF_OBJECT_DICTIONARY)
-		write_entries_but(file, resources, "ExtGState", "XObject", "Font");
+		write_entries_but(file, resources, "ExtGState", "XObject", "Font", "Pattern");
 
 	/* The graphics states: the page's own and the opacities. */
 	error = write_merged_category(layout, resources, "ExtGState", 0);
@@ -1398,6 +1419,11 @@ write_merged_resources(
 	if (error != 0)
 		return error;
 
+	/* The patterns: the page's own and the grains' (ws216-p002). */
+	error = write_merged_category(layout, resources, "Pattern", 3);
+	if (error != 0)
+		return error;
+
 	/* Closes the resources. */
 	pdf_buffer_printf(file, " >>");
 
@@ -1408,8 +1434,9 @@ write_merged_resources(
 /*
  * Writes one category of a page's resources with the update's own entries
  * added: the ExtGState dictionary with the opacities, the XObject one with
- * the images (images 1), or the Font one with the embedded fonts (images
- * 2, ws175-p005).  A category the update adds nothing to is written as
+ * the images (images 1), the Font one with the embedded fonts (images
+ * 2, ws175-p005), or the Pattern one with the grains' patterns (images 3,
+ * ws216-p002).  A category the update adds nothing to is written as
  * the page had it.  An update's name the page uses already is refused
  * (EEXIST).
  */
@@ -1439,6 +1466,8 @@ write_merged_category(
 		count = writer->images_count;
 	if (images == 2)
 		count = pdf_writer_font_count(writer);
+	if (images == 3)
+		count = writer->patterns_count;
 
 	/* The page's own dictionary of the category (null when it has none). */
 	dictionary = NULL;
@@ -1471,6 +1500,8 @@ write_merged_category(
 			(void)snprintf(name, sizeof(name), "%sIm%lu", writer->name_prefix, (unsigned long)index);
 		else if (images == 2)
 			(void)snprintf(name, sizeof(name), "%sF%lu", writer->name_prefix, (unsigned long)index);
+		else if (images == 3)
+			(void)snprintf(name, sizeof(name), "%sP%lu", writer->name_prefix, (unsigned long)index);
 		else
 			(void)snprintf(name, sizeof(name), "%sGS%lu", writer->name_prefix, (unsigned long)index);
 		taken = pdf_object_get(dictionary, name);
@@ -1486,6 +1517,8 @@ write_merged_category(
 		pdf_writer_write_image_entries(writer, file);
 	else if (images == 2)
 		pdf_writer_write_font_entries(writer, file);
+	else if (images == 3)
+		pdf_writer_write_pattern_entries(writer, file);
 	else
 		pdf_writer_write_opacity_entries(writer, file);
 	pdf_buffer_printf(file, " >>");
@@ -1598,12 +1631,10 @@ write_content_streams(
 		pdf_buffer_printf(file, "\nendstream\nendobj\n");
 	}
 
-	/* The new content with its exact length. */
+	/* The new content, compressed when the writer compresses content (ws216-p002). */
 	object = layout->content_objects[index];
 	layout->offsets[object] = file->length;
-	pdf_buffer_printf(file, "%lu 0 obj\n<< /Length %lu >>\nstream\n", (unsigned long)object, (unsigned long)writer_page->content.length);
-	pdf_buffer_append(file, writer_page->content.data, writer_page->content.length);
-	pdf_buffer_printf(file, "\nendstream\nendobj\n");
+	pdf_writer_write_content_stream(layout->writer, file, object, &writer_page->content);
 }
 
 /*
@@ -2138,25 +2169,28 @@ write_entries_except(
 	}
 }
 
-/* Writes a dictionary's entries but three keys (ws175-p005: a page's resources but the categories the update adds to). */
+/* Writes a dictionary's entries but four keys (ws175-p005: a page's resources but the categories the update adds to; ws216-p002 the patterns). */
 static void
 write_entries_but(
 	struct pdf_buffer *file,
 	const struct pdf_object *dictionary,
 	const char *first,
 	const char *second,
-	const char *third)
+	const char *third,
+	const char *fourth)
 {
 	size_t index;
 	int skipped;
 
-	/* Each entry but the three. */
+	/* Each entry but the four. */
 	for (index = 0; index < dictionary->count; index++) {
 		skipped = key_is(dictionary->keys[index], first);
 		if (!skipped)
 			skipped = key_is(dictionary->keys[index], second);
 		if (!skipped)
 			skipped = key_is(dictionary->keys[index], third);
+		if (!skipped)
+			skipped = key_is(dictionary->keys[index], fourth);
 		if (skipped)
 			continue;
 
@@ -2402,7 +2436,7 @@ free_layout(
 /*
  * Chooses the prefix of an update's names (design.md [M4]): "Kei", or
  * "Kei1_" to "Kei9_", the first that begins no name of any page's
- * ExtGState, XObject or Font resources (Notes' own names of an earlier
+ * ExtGState, XObject, Font or Pattern resources (Notes' own names of an earlier
  * revision, for one).  The last is taken when all are used; the
  * per-page check (EEXIST) still refuses a name met.
  */
@@ -2429,13 +2463,13 @@ choose_prefix(
 	}
 }
 
-/* Tells whether any page's ExtGState, XObject or Font resources has a name that begins with a prefix. */
+/* Tells whether any page's ExtGState, XObject, Font or Pattern resources has a name that begins with a prefix. */
 static int
 prefix_used(
 	struct pdf_document *base,
 	const char *prefix)
 {
-	static const char *const categories[] = { "ExtGState", "XObject", "Font" };
+	static const char *const categories[] = { "ExtGState", "XObject", "Font", "Pattern" };
 	struct pdf_object *page;
 	struct pdf_object *resources;
 	struct pdf_object *dictionary;

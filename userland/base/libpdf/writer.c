@@ -48,7 +48,12 @@ static int buffer_reserve(struct pdf_buffer *buffer, size_t extra);
 static int check_coordinate(double value);
 static struct pdf_buffer *open_content(struct pdf_writer *writer);
 static int append_point(struct pdf_writer *writer, double x, double y, const char *operator_name);
-static int find_or_add_alpha(struct pdf_writer *writer, double alpha, size_t *index);
+static int select_state(struct pdf_writer *writer, struct pdf_buffer *content, double alpha);
+static int find_or_add_state(struct pdf_writer *writer, double alpha, int blend, size_t *index);
+static int find_or_add_tint(struct pdf_writer *writer, size_t grain, const unsigned char rgb[3], size_t *index);
+static int find_or_add_pattern(struct pdf_writer *writer, size_t tint, double cell, const double shown[6], size_t *index);
+static int uses_multiply(const struct pdf_writer *writer);
+static unsigned char color_level(double value);
 static int copy_string(const char *source, char **copy);
 static int add_image(struct pdf_writer *writer, struct pdf_writer_image *image, double x, double y, double draw_width, double draw_height);
 static int mime_type_is_valid(const char *mime_type);
@@ -110,6 +115,12 @@ pdf_writer_destroy(
 		free(writer->images[index].alpha);
 	}
 
+	/* Frees each grain's mask and each colour's samples (ws216-p002). */
+	for (index = 0; index < writer->grains_count; index++)
+		free(writer->grains[index].data);
+	for (index = 0; index < writer->tints_count; index++)
+		free(writer->tints[index].data);
+
 	/* Frees each embedded font's file and glyphs (ws175-p005). */
 	for (index = 0; index < PDF_WRITER_FONT_FILES; index++) {
 		free(writer->fonts[index].data);
@@ -117,7 +128,9 @@ pdf_writer_destroy(
 		free(writer->fonts[index].unicode);
 	}
 
-	/* Frees the page and image arrays, the attachment and the document. */
+	/* Frees the page, image, colour and pattern arrays, the attachment and the document. */
+	free(writer->tints);
+	free(writer->patterns);
 	free(writer->images);
 	free(writer->pages);
 	free(writer->attachment.name);
@@ -159,6 +172,14 @@ pdf_writer_begin_page(
 	if (error != 0)
 		return error;
 
+	/* The flip is also the matrix from the page as drawn to its own space, which places its patterns. */
+	page->shown[0] = 1.0;
+	page->shown[1] = 0.0;
+	page->shown[2] = 0.0;
+	page->shown[3] = -1.0;
+	page->shown[4] = 0.0;
+	page->shown[5] = height;
+
 	/* Succeeded: drawing now goes to the new page. */
 	return 0;
 }
@@ -170,9 +191,20 @@ int
 pdf_writer_end_page(
 	struct pdf_writer *writer)
 {
+	struct pdf_buffer *content;
+
 	/* Refuses to end a page that is not open. */
-	if (!writer->page_is_open)
+	content = open_content(writer);
+	if (content == NULL)
 		return EINVAL;
+
+	/* Restores every state the page saved and left saved, so that its content is balanced. */
+	while (writer->saved_count > 0) {
+		pdf_buffer_printf(content, "Q\n");
+		writer->saved_count--;
+	}
+	if (content->error != 0)
+		return content->error;
 
 	/* Later drawing is refused until another page opens. */
 	writer->page_is_open = 0;
@@ -184,8 +216,9 @@ pdf_writer_end_page(
 /*
  * Selects the color and opacity of the following fills.
  *
- * The components run from 0 to 1.  An opacity other than the current one is
- * selected through an ExtGState that every page's resources list.
+ * The components run from 0 to 1.  An opacity (or, ws216-p002, a blend
+ * mode asked for) other than the current one is selected through an
+ * ExtGState that every page's resources list.
  */
 int
 pdf_writer_set_fill_color(
@@ -196,7 +229,6 @@ pdf_writer_set_fill_color(
 	double alpha)
 {
 	struct pdf_buffer *content;
-	size_t alpha_index;
 	int error;
 
 	/* Refuses drawing outside a page. */
@@ -224,24 +256,198 @@ pdf_writer_set_fill_color(
 	if (content->error != 0)
 		return content->error;
 
-	/* An unchanged opacity needs no graphics state. */
-	if (alpha == writer->current_alpha)
-		return 0;
-
-	/* Finds the ExtGState that holds this opacity. */
-	error = find_or_add_alpha(writer, alpha, &alpha_index);
+	/* Selects the opacity and the blend mode asked for, when the page's state differs. */
+	error = select_state(writer, content, alpha);
 	if (error != 0)
 		return error;
 
-	/* Selects that ExtGState. */
-	pdf_buffer_printf(content, "/%sGS%lu gs\n", writer->name_prefix, (unsigned long)alpha_index);
+	/* Succeeded: the next fills use the new color and opacity. */
+	return 0;
+}
+
+/*
+ * Chooses the blend mode of the following fills and images (ws216-p002):
+ * Normal or Multiply.
+ *
+ * It takes effect, as an opacity does, at the next
+ * pdf_writer_set_fill_color() or pdf_writer_set_fill_grain(), which select
+ * an ExtGState only when the opacity or the blend mode changed.  Each page
+ * starts with Normal.  A document that uses Multiply writes /BM in every
+ * one of its ExtGStates, so a state that returns to Normal does.
+ */
+int
+pdf_writer_set_blend_mode(
+	struct pdf_writer *writer,
+	enum pdf_blend_mode blend)
+{
+	/* Refuses drawing outside a page. */
+	if (!writer->page_is_open)
+		return EINVAL;
+
+	/* Refuses a mode the writer does not write. */
+	if (blend != PDF_BLEND_NORMAL && blend != PDF_BLEND_MULTIPLY)
+		return EINVAL;
+
+	/* The next colour selects it. */
+	writer->wanted_blend = (int)blend;
+
+	/* Succeeded: the next colour carries the mode. */
+	return 0;
+}
+
+/*
+ * Saves the graphics state of the open page (q), which
+ * pdf_writer_restore_state() restores (ws216-p002).
+ *
+ * The writer saves with it what it knows of the state -- the opacity, the
+ * blend mode, the mode asked for -- so a fill after the restore selects
+ * its state again when it differs from the restored one.  The saves nest
+ * sixteen deep; a page ended with states saved restores them first.
+ */
+int
+pdf_writer_save_state(
+	struct pdf_writer *writer)
+{
+	struct pdf_buffer *content;
+
+	/* Refuses drawing outside a page. */
+	content = open_content(writer);
+	if (content == NULL)
+		return EINVAL;
+
+	/* Refuses saves nested past the limit. */
+	if (writer->saved_count == PDF_WRITER_SAVED_MAX)
+		return EINVAL;
+
+	/* Writes the save. */
+	pdf_buffer_printf(content, "q\n");
 	if (content->error != 0)
 		return content->error;
 
-	/* The page's fills now carry this opacity. */
-	writer->current_alpha = alpha;
+	/* Remembers the state the restore returns to. */
+	writer->saved[writer->saved_count].state.alpha = writer->current_alpha;
+	writer->saved[writer->saved_count].state.blend = writer->current_blend;
+	writer->saved[writer->saved_count].wanted_blend = writer->wanted_blend;
+	writer->saved_count++;
 
-	/* Succeeded: the next fills use the new color and opacity. */
+	/* Succeeded: the state is saved. */
+	return 0;
+}
+
+/*
+ * Restores the graphics state pdf_writer_save_state() saved last (Q).
+ */
+int
+pdf_writer_restore_state(
+	struct pdf_writer *writer)
+{
+	struct pdf_buffer *content;
+	struct pdf_writer_saved *saved;
+
+	/* Refuses drawing outside a page. */
+	content = open_content(writer);
+	if (content == NULL)
+		return EINVAL;
+
+	/* Refuses a restore without a save. */
+	if (writer->saved_count == 0)
+		return EINVAL;
+
+	/* Writes the restore. */
+	pdf_buffer_printf(content, "Q\n");
+	if (content->error != 0)
+		return content->error;
+
+	/* The page's state is the saved one again. */
+	writer->saved_count--;
+	saved = &writer->saved[writer->saved_count];
+	writer->current_alpha = saved->state.alpha;
+	writer->current_blend = saved->state.blend;
+	writer->wanted_blend = saved->wanted_blend;
+
+	/* Succeeded: the state is restored. */
+	return 0;
+}
+
+/*
+ * Selects a grain as the colour of the following fills (ws216-p002): the
+ * grain (pdf_writer_add_grain()) in one colour, repeated in squares of
+ * cell points of the page as drawn, from its top left, and painted at an
+ * opacity and the blend mode asked for, as pdf_writer_set_fill_color()
+ * paints.
+ *
+ * The squares are a tiling pattern of the page: a page of another size or
+ * another rotation has patterns of its own, so the grain lands on the same
+ * points of every page as drawn.  pdf_writer_set_fill_color() returns to
+ * a plain colour.
+ */
+int
+pdf_writer_set_fill_grain(
+	struct pdf_writer *writer,
+	size_t grain,
+	double red,
+	double green,
+	double blue,
+	double alpha,
+	double cell)
+{
+	struct pdf_writer_page *page;
+	struct pdf_buffer *content;
+	unsigned char rgb[3];
+	size_t tint;
+	size_t pattern;
+	int error;
+
+	/* Refuses drawing outside a page. */
+	content = open_content(writer);
+	if (content == NULL)
+		return EINVAL;
+	page = writer->pages[writer->pages_count - 1];
+
+	/* Refuses a grain the document does not have. */
+	if (grain >= writer->grains_count)
+		return EINVAL;
+
+	/* Refuses a component outside 0 to 1; the negations also refuse a NaN. */
+	if (!(red >= 0.0 && red <= 1.0))
+		return EINVAL;
+	if (!(green >= 0.0 && green <= 1.0))
+		return EINVAL;
+	if (!(blue >= 0.0 && blue <= 1.0))
+		return EINVAL;
+	if (!(alpha >= 0.0 && alpha <= 1.0))
+		return EINVAL;
+
+	/* Refuses a square without size or past the limit. */
+	if (!(cell > 0.0 && cell <= PDF_WRITER_COORDINATE_LIMIT))
+		return EINVAL;
+
+	/* The colour as the 8-bit levels its image is drawn in. */
+	rgb[0] = color_level(red);
+	rgb[1] = color_level(green);
+	rgb[2] = color_level(blue);
+
+	/* Finds the grain's image in this colour. */
+	error = find_or_add_tint(writer, grain, rgb, &tint);
+	if (error != 0)
+		return error;
+
+	/* Finds its pattern on a page placed as this one. */
+	error = find_or_add_pattern(writer, tint, cell, page->shown, &pattern);
+	if (error != 0)
+		return error;
+
+	/* Selects the pattern as the colour. */
+	pdf_buffer_printf(content, "/Pattern cs /%sP%lu scn\n", writer->name_prefix, (unsigned long)pattern);
+	if (content->error != 0)
+		return content->error;
+
+	/* Selects the opacity and the blend mode asked for, when the page's state differs. */
+	error = select_state(writer, content, alpha);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the next fills are painted with the grain. */
 	return 0;
 }
 
@@ -921,11 +1127,22 @@ pdf_writer_add_page(
 		return ENOMEM;
 	}
 
-	/* Publishes the page as the one drawing goes to; its graphics state starts opaque. */
+	/* Until its caller places it, the page as drawn is the page's own space. */
+	page->shown[0] = 1.0;
+	page->shown[1] = 0.0;
+	page->shown[2] = 0.0;
+	page->shown[3] = 1.0;
+	page->shown[4] = 0.0;
+	page->shown[5] = 0.0;
+
+	/* Publishes the page as the one drawing goes to; its graphics state starts opaque, Normal and unsaved. */
 	writer->pages[writer->pages_count] = page;
 	writer->pages_count++;
 	writer->page_is_open = 1;
 	writer->current_alpha = 1.0;
+	writer->current_blend = PDF_BLEND_NORMAL;
+	writer->wanted_blend = PDF_BLEND_NORMAL;
+	writer->saved_count = 0;
 
 	/* Succeeded: drawing now goes to the new page. */
 	*added = page;
@@ -1131,7 +1348,7 @@ pdf_buffer_append_date(
 }
 
 /*
- * Writes the resource dictionary every page shares, which lists the opacities and the images.
+ * Writes the resource dictionary every page shares, which lists the opacities, the images, the patterns and the fonts.
  *
  * The opacities' objects start at first_alpha_object and each image's
  * object is numbered, so the layout has numbered the objects already.
@@ -1157,6 +1374,13 @@ pdf_writer_write_resources(
 	if (writer->images_count != 0) {
 		pdf_buffer_printf(file, " /XObject <<");
 		pdf_writer_write_image_entries(writer, file);
+		pdf_buffer_printf(file, " >>");
+	}
+
+	/* Lists each grain's tiling pattern (ws216-p002). */
+	if (writer->patterns_count != 0) {
+		pdf_buffer_printf(file, " /Pattern <<");
+		pdf_writer_write_pattern_entries(writer, file);
 		pdf_buffer_printf(file, " >>");
 	}
 
@@ -1279,8 +1503,186 @@ pdf_writer_write_font_entries(
 }
 
 /*
- * Writes each opacity's ExtGState object, numbered from first_alpha_object,
- * and records where each starts in offsets.
+ * Numbers the objects of the grains, their colours' images and their
+ * tiling patterns from next (ws216-p002).  Returns the number after them.
+ */
+size_t
+pdf_writer_number_paint(
+	struct pdf_writer *writer,
+	size_t next)
+{
+	size_t index;
+
+	/* The grains' masks. */
+	for (index = 0; index < writer->grains_count; index++) {
+		writer->grains[index].object = next;
+		next++;
+	}
+
+	/* The colours' images. */
+	for (index = 0; index < writer->tints_count; index++) {
+		writer->tints[index].object = next;
+		next++;
+	}
+
+	/* The patterns. */
+	for (index = 0; index < writer->patterns_count; index++) {
+		writer->patterns[index].object = next;
+		next++;
+	}
+
+	/* The number after them. */
+	return next;
+}
+
+/*
+ * Writes the entries of a Pattern dictionary that name the patterns'
+ * objects by the names the content streams select them with: the name
+ * prefix, P and the pattern's index.
+ */
+void
+pdf_writer_write_pattern_entries(
+	struct pdf_writer *writer,
+	struct pdf_buffer *file)
+{
+	size_t index;
+
+	/* Names each pattern's object. */
+	for (index = 0; index < writer->patterns_count; index++) {
+		pdf_buffer_printf(file,
+				  " /%sP%lu %lu 0 R",
+				  writer->name_prefix,
+				  (unsigned long)index,
+				  (unsigned long)writer->patterns[index].object);
+	}
+}
+
+/*
+ * Writes the objects of the grains (their masks), their colours' images
+ * and their tiling patterns, and records where each starts in offsets.
+ *
+ * A pattern's cell is the unit square with the colour's image drawn on it,
+ * its first row at the top of the square (the page as drawn has y
+ * downward), and the pattern carries its own resources, so that whatever
+ * copies the pattern (the clean copy) finds the image by the pattern's
+ * own content.
+ */
+void
+pdf_writer_write_paint_objects(
+	struct pdf_writer *writer,
+	struct pdf_buffer *file,
+	size_t *offsets)
+{
+	static const char cell[] = "q 1 0 0 -1 0 1 cm /G Do Q";
+	struct pdf_writer_grain *grain;
+	struct pdf_writer_tint *tint;
+	struct pdf_writer_pattern *pattern;
+	size_t index;
+	size_t item;
+
+	/* Writes each grain as an 8-bit gray image of its coverage, the mask of its colours. */
+	for (index = 0; index < writer->grains_count; index++) {
+		grain = &writer->grains[index];
+		offsets[grain->object] = file->length;
+		pdf_buffer_printf(file,
+			      "%lu 0 obj\n<< /Type /XObject /Subtype /Image /Width %lu /Height %lu /ColorSpace /DeviceGray /BitsPerComponent 8",
+			      (unsigned long)grain->object,
+			      (unsigned long)grain->width,
+			      (unsigned long)grain->height);
+		if (grain->flate)
+			pdf_buffer_printf(file, " /Filter /FlateDecode");
+		pdf_buffer_printf(file, " /Length %lu >>\nstream\n", (unsigned long)grain->size);
+		pdf_buffer_append(file, grain->data, grain->size);
+		pdf_buffer_printf(file, "\nendstream\nendobj\n");
+	}
+
+	/* Writes each colour's image, whose mask is its grain. */
+	for (index = 0; index < writer->tints_count; index++) {
+		tint = &writer->tints[index];
+		grain = &writer->grains[tint->grain];
+		offsets[tint->object] = file->length;
+		pdf_buffer_printf(file,
+			      "%lu 0 obj\n<< /Type /XObject /Subtype /Image /Width %lu /Height %lu /ColorSpace /DeviceRGB /BitsPerComponent 8 /SMask %lu 0 R",
+			      (unsigned long)tint->object,
+			      (unsigned long)grain->width,
+			      (unsigned long)grain->height,
+			      (unsigned long)grain->object);
+		if (tint->flate)
+			pdf_buffer_printf(file, " /Filter /FlateDecode");
+		pdf_buffer_printf(file, " /Length %lu >>\nstream\n", (unsigned long)tint->size);
+		pdf_buffer_append(file, tint->data, tint->size);
+		pdf_buffer_printf(file, "\nendstream\nendobj\n");
+	}
+
+	/* Writes each pattern: a colored tiling of the unit square, its matrix, and its own resources. */
+	for (index = 0; index < writer->patterns_count; index++) {
+		pattern = &writer->patterns[index];
+		offsets[pattern->object] = file->length;
+		pdf_buffer_printf(file,
+			      "%lu 0 obj\n<< /Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 1 1] /XStep 1 /YStep 1 /Matrix [",
+			      (unsigned long)pattern->object);
+		for (item = 0; item < 6; item++) {
+			if (item != 0)
+				pdf_buffer_append(file, " ", 1);
+			pdf_buffer_append_number(file, pattern->matrix[item]);
+		}
+		pdf_buffer_printf(file,
+			      "] /Resources << /XObject << /G %lu 0 R >> >> /Length %lu >>\nstream\n",
+			      (unsigned long)writer->tints[pattern->tint].object,
+			      (unsigned long)(sizeof(cell) - 1));
+		pdf_buffer_append(file, cell, sizeof(cell) - 1);
+		pdf_buffer_printf(file, "\nendstream\nendobj\n");
+	}
+}
+
+/*
+ * Writes a page's content stream as one object: compressed when the writer
+ * compresses content (ws216-p002) and the content is within the limit the
+ * reader hashes, otherwise as it is.
+ */
+void
+pdf_writer_write_content_stream(
+	struct pdf_writer *writer,
+	struct pdf_buffer *file,
+	size_t object,
+	const struct pdf_buffer *content)
+{
+	unsigned char *packed;
+	size_t packed_size;
+	int error;
+
+	/* Compresses the content when asked to and the reader can hash it decoded. */
+	packed = NULL;
+	packed_size = 0;
+	if (writer->content_flate &&
+	    writer->pack != NULL &&
+	    content->length <= PDF_WRITER_FLATE_CONTENT_MAX) {
+		error = writer->pack(content->data, content->length, &packed, &packed_size);
+		if (error != 0) {
+			pdf_buffer_fail(file, error);
+			return;
+		}
+	}
+
+	/* Writes the compressed stream, or the content as it is. */
+	if (packed != NULL) {
+		pdf_buffer_printf(file, "%lu 0 obj\n<< /Filter /FlateDecode /Length %lu >>\nstream\n", (unsigned long)object, (unsigned long)packed_size);
+		pdf_buffer_append(file, packed, packed_size);
+		free(packed);
+	} else {
+		pdf_buffer_printf(file, "%lu 0 obj\n<< /Length %lu >>\nstream\n", (unsigned long)object, (unsigned long)content->length);
+		pdf_buffer_append(file, content->data, content->length);
+	}
+	pdf_buffer_printf(file, "\nendstream\nendobj\n");
+}
+
+/*
+ * Writes each graphics state's ExtGState object, numbered from
+ * first_alpha_object, and records where each starts in offsets.
+ *
+ * A document that never multiplies writes only the fill alpha, as it always
+ * did; one that does names the blend mode of every state, so that a state
+ * of Normal ends a Multiply.
  */
 void
 pdf_writer_write_opacities(
@@ -1290,13 +1692,22 @@ pdf_writer_write_opacities(
 {
 	size_t object;
 	size_t index;
+	int named;
 
-	/* Writes each opacity as the fill alpha of its own graphics state. */
+	/* Whether the states name their blend modes. */
+	named = uses_multiply(writer);
+
+	/* Writes each state as the fill alpha, and the blend mode, of its own graphics state. */
 	for (index = 0; index < writer->alphas_count; index++) {
 		object = writer->first_alpha_object + index;
 		offsets[object] = file->length;
 		pdf_buffer_printf(file, "%lu 0 obj\n<< /Type /ExtGState /ca ", (unsigned long)object);
-		pdf_buffer_append_number(file, writer->alphas[index]);
+		pdf_buffer_append_number(file, writer->states[index].alpha);
+		if (writer->states[index].blend == PDF_BLEND_MULTIPLY) {
+			pdf_buffer_printf(file, " /BM /Multiply");
+		} else if (named) {
+			pdf_buffer_printf(file, " /BM /Normal");
+		}
 		pdf_buffer_printf(file, " >>\nendobj\n");
 	}
 }
@@ -1549,34 +1960,265 @@ append_point(
 	return 0;
 }
 
-/* Finds the ExtGState index of an opacity, adding one when the document has none yet. */
+/*
+ * Selects, on the open page, the ExtGState of an opacity and the blend mode
+ * asked for, unless the page's state is that already.
+ */
 static int
-find_or_add_alpha(
+select_state(
+	struct pdf_writer *writer,
+	struct pdf_buffer *content,
+	double alpha)
+{
+	size_t state_index;
+	int error;
+
+	/* An unchanged opacity and blend mode need no graphics state. */
+	if (alpha == writer->current_alpha && writer->wanted_blend == writer->current_blend)
+		return 0;
+
+	/* Finds the ExtGState that holds this opacity and mode. */
+	error = find_or_add_state(writer, alpha, writer->wanted_blend, &state_index);
+	if (error != 0)
+		return error;
+
+	/* Selects that ExtGState. */
+	pdf_buffer_printf(content, "/%sGS%lu gs\n", writer->name_prefix, (unsigned long)state_index);
+	if (content->error != 0)
+		return content->error;
+
+	/* The page's fills now carry this opacity and mode. */
+	writer->current_alpha = alpha;
+	writer->current_blend = writer->wanted_blend;
+
+	/* Succeeded: the state is in force. */
+	return 0;
+}
+
+/* Finds the ExtGState index of an opacity and a blend mode, adding one when the document has none yet. */
+static int
+find_or_add_state(
 	struct pdf_writer *writer,
 	double alpha,
+	int blend,
 	size_t *index)
 {
 	size_t candidate;
 
-	/* Reuses the ExtGState that already holds this opacity. */
+	/* Reuses the ExtGState that already holds this opacity and mode. */
 	for (candidate = 0; candidate < writer->alphas_count; candidate++) {
-		if (writer->alphas[candidate] == alpha) {
+		if (writer->states[candidate].alpha == alpha && writer->states[candidate].blend == blend) {
 			*index = candidate;
 			return 0;
 		}
 	}
 
-	/* Refuses an opacity past the document's limit. */
+	/* Refuses a state past the document's limit. */
 	if (writer->alphas_count == PDF_WRITER_ALPHA_MAX)
 		return ENOSPC;
 
-	/* Adds the opacity as a new ExtGState. */
-	writer->alphas[writer->alphas_count] = alpha;
+	/* Adds the state as a new ExtGState. */
+	writer->states[writer->alphas_count].alpha = alpha;
+	writer->states[writer->alphas_count].blend = blend;
 	*index = writer->alphas_count;
 	writer->alphas_count++;
 
 	/* Succeeded: index names the ExtGState. */
 	return 0;
+}
+
+/*
+ * Finds the image of a grain in a colour, making it when the document has
+ * none yet: the colour's samples over the grain's size, compressed when the
+ * writer can compress.
+ */
+static int
+find_or_add_tint(
+	struct pdf_writer *writer,
+	size_t grain,
+	const unsigned char rgb[3],
+	size_t *index)
+{
+	struct pdf_writer_tint *grown;
+	struct pdf_writer_tint tint;
+	unsigned char *samples;
+	unsigned char *packed;
+	size_t packed_size;
+	size_t pixels;
+	size_t candidate;
+	size_t capacity;
+	size_t pixel;
+	int differs;
+	int error;
+
+	/* Reuses the colour's image of the grain. */
+	for (candidate = 0; candidate < writer->tints_count; candidate++) {
+		if (writer->tints[candidate].grain != grain)
+			continue;
+		differs = memcmp(writer->tints[candidate].rgb, rgb, 3);
+		if (differs != 0)
+			continue;
+
+		/* The image is the one asked for. */
+		*index = candidate;
+		return 0;
+	}
+
+	/* Refuses a colour past the document's limit. */
+	if (writer->tints_count == PDF_WRITER_TINT_MAX)
+		return ENOSPC;
+
+	/* Grows the colour array when it is full. */
+	if (writer->tints_count == writer->tints_capacity) {
+		capacity = writer->tints_capacity * 2;
+		if (capacity == 0)
+			capacity = 8;
+		grown = realloc(writer->tints, capacity * sizeof(*grown));
+		if (grown == NULL)
+			return ENOMEM;
+		writer->tints = grown;
+		writer->tints_capacity = capacity;
+	}
+
+	/* Allocates the colour's samples over the grain's size. */
+	pixels = writer->grains[grain].width * writer->grains[grain].height;
+	samples = malloc(pixels * 3);
+	if (samples == NULL)
+		return ENOMEM;
+
+	/* Fills every sample with the colour. */
+	for (pixel = 0; pixel < pixels; pixel++) {
+		samples[pixel * 3 + 0] = rgb[0];
+		samples[pixel * 3 + 1] = rgb[1];
+		samples[pixel * 3 + 2] = rgb[2];
+	}
+
+	/* Describes the image: the samples as they are, until they are compressed. */
+	memset(&tint, 0, sizeof(tint));
+	tint.grain = grain;
+	memcpy(tint.rgb, rgb, 3);
+	tint.data = samples;
+	tint.size = pixels * 3;
+
+	/* Compresses the samples (one colour, so they shrink to almost nothing) when the writer can. */
+	if (writer->pack != NULL) {
+		error = writer->pack(samples, pixels * 3, &packed, &packed_size);
+		if (error != 0) {
+			free(samples);
+			return error;
+		}
+		if (packed != NULL) {
+			free(samples);
+			tint.data = packed;
+			tint.size = packed_size;
+			tint.flate = 1;
+		}
+	}
+
+	/* Succeeded: the colour's image is the document's. */
+	writer->tints[writer->tints_count] = tint;
+	*index = writer->tints_count;
+	writer->tints_count++;
+	return 0;
+}
+
+/*
+ * Finds the tiling pattern of a colour's image in squares of a size on a
+ * page placed by a shown matrix, making it when the document has none yet.
+ */
+static int
+find_or_add_pattern(
+	struct pdf_writer *writer,
+	size_t tint,
+	double cell,
+	const double shown[6],
+	size_t *index)
+{
+	struct pdf_writer_pattern *grown;
+	struct pdf_writer_pattern *pattern;
+	size_t candidate;
+	size_t capacity;
+	int differs;
+
+	/* Reuses the pattern of the same image, squares and placement. */
+	for (candidate = 0; candidate < writer->patterns_count; candidate++) {
+		pattern = &writer->patterns[candidate];
+		if (pattern->tint != tint || pattern->cell != cell)
+			continue;
+		differs = memcmp(pattern->shown, shown, sizeof(pattern->shown));
+		if (differs != 0)
+			continue;
+
+		/* The pattern is the one asked for. */
+		*index = candidate;
+		return 0;
+	}
+
+	/* Refuses a pattern past the document's limit. */
+	if (writer->patterns_count == PDF_WRITER_PATTERN_MAX)
+		return ENOSPC;
+
+	/* Grows the pattern array when it is full. */
+	if (writer->patterns_count == writer->patterns_capacity) {
+		capacity = writer->patterns_capacity * 2;
+		if (capacity == 0)
+			capacity = 8;
+		grown = realloc(writer->patterns, capacity * sizeof(*grown));
+		if (grown == NULL)
+			return ENOMEM;
+		writer->patterns = grown;
+		writer->patterns_capacity = capacity;
+	}
+
+	/* Describes the pattern by what finds it again. */
+	pattern = &writer->patterns[writer->patterns_count];
+	memset(pattern, 0, sizeof(*pattern));
+	pattern->tint = tint;
+	pattern->cell = cell;
+	memcpy(pattern->shown, shown, sizeof(pattern->shown));
+
+	/*
+	 * Its matrix: the unit square scaled to the cell, in the page as drawn,
+	 * then the page's matrix to its own space (a point p of the pattern
+	 * lands on p * cell * shown).
+	 */
+	pattern->matrix[0] = cell * shown[0];
+	pattern->matrix[1] = cell * shown[1];
+	pattern->matrix[2] = cell * shown[2];
+	pattern->matrix[3] = cell * shown[3];
+	pattern->matrix[4] = shown[4];
+	pattern->matrix[5] = shown[5];
+
+	/* Succeeded: the pattern is the document's. */
+	*index = writer->patterns_count;
+	writer->patterns_count++;
+	return 0;
+}
+
+/* Tells whether any graphics state of the document multiplies. */
+static int
+uses_multiply(
+	const struct pdf_writer *writer)
+{
+	size_t index;
+
+	/* Looks for a state of Multiply. */
+	for (index = 0; index < writer->alphas_count; index++) {
+		if (writer->states[index].blend == PDF_BLEND_MULTIPLY)
+			return 1;
+	}
+
+	/* Every state is Normal. */
+	return 0;
+}
+
+/* Converts a colour component from 0..1 to the nearest 8-bit level. */
+static unsigned char
+color_level(
+	double value)
+{
+	/* Rounds to the nearest of the 256 levels; the caller checked the range. */
+	return (unsigned char)(value * 255.0 + 0.5);
 }
 
 /* Copies a string into a new allocation. */
@@ -1727,7 +2369,8 @@ mime_type_is_valid(
  *
  * The objects are numbered as follows: 1 the catalog, 2 the page tree, 3 the
  * information dictionary, then a page object and its content stream for each
- * page, then the ExtGStates, then the embedded file stream and its file
+ * page, then the ExtGStates, the images, the grains with their colours
+ * and patterns, the fonts, then the embedded file stream and its file
  * specification.
  */
 static int
@@ -1756,7 +2399,8 @@ write_document(
 			next_object++;
 	}
 
-	/* The embedded fonts' objects (ws175-p005). */
+	/* The grains, their colours and their patterns (ws216-p002), then the embedded fonts' objects (ws175-p005). */
+	next_object = pdf_writer_number_paint(writer, next_object);
 	next_object = pdf_writer_number_fonts(writer, next_object);
 
 	/* The attached file and its specification come last. */
@@ -1788,9 +2432,10 @@ write_document(
 	/* Writes each opacity's ExtGState. */
 	pdf_writer_write_opacities(writer, file, offsets);
 
-	/* Writes each image and its mask, and the embedded fonts (ws175-p005). */
+	/* Writes each image and its mask, the grains and their patterns (ws216-p002), and the embedded fonts (ws175-p005). */
 	for (index = 0; index < writer->images_count; index++)
 		pdf_writer_write_image_objects(&writer->images[index], file, offsets);
+	pdf_writer_write_paint_objects(writer, file, offsets);
 	if (writer->font_layout != NULL) {
 		error = writer->font_layout(writer, file, offsets);
 		if (error != 0)
@@ -1909,11 +2554,9 @@ write_page_objects(
 	pdf_writer_write_resources(writer, file);
 	pdf_buffer_printf(file, " /Contents %lu 0 R >>\nendobj\n", (unsigned long)(page_object + 1));
 
-	/* Writes the content stream with its exact length. */
+	/* Writes the content stream, compressed when the writer compresses content. */
 	offsets[page_object + 1] = file->length;
-	pdf_buffer_printf(file, "%lu 0 obj\n<< /Length %lu >>\nstream\n", (unsigned long)(page_object + 1), (unsigned long)page->content.length);
-	pdf_buffer_append(file, page->content.data, page->content.length);
-	pdf_buffer_printf(file, "\nendstream\nendobj\n");
+	pdf_writer_write_content_stream(writer, file, page_object + 1, &page->content);
 }
 
 /*

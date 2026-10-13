@@ -39,6 +39,7 @@
 #include <pdf.h>
 
 #include "internal.h"
+#include "writer.h"
 
 /* The largest file the reader opens. */
 #define PDF_READER_FILE_MAX ((size_t)512 * 1024 * 1024)
@@ -249,6 +250,7 @@ static time_t parse_date(const struct pdf_object *date);
 static int read_digits(const unsigned char *text, size_t length, size_t *position, size_t digits, long *value);
 static int read_rectangle(struct pdf_document *document, struct pdf_object *value, double rectangle[4]);
 static int check_unfiltered(struct pdf_document *document, const struct pdf_object *stream);
+static int hash_content_stream(struct pdf_document *document, const struct pdf_object *stream, SHA2_CTX *context);
 static int find_in_associated_files(struct pdf_document *document, const char *name, const char *mime_type, struct pdf_object **stream);
 static int find_in_embedded_files(struct pdf_document *document, const char *name, const char *mime_type, struct pdf_object **stream);
 static int find_in_name_tree(struct pdf_document *document, struct pdf_object *node, const char *name, int depth, struct pdf_object **value);
@@ -505,7 +507,10 @@ pdf_document_page_box(
  * The content is the page's content streams, decoded and joined in the
  * order /Contents lists them; a page without content hashes no bytes.
  * Notes compares it with the hash its edit data recorded to learn whether
- * another program changed the page.
+ * another program changed the page.  A stream without a filter is hashed
+ * as it is; one compressed with Flate alone (ws216-p002, as the writer
+ * compresses Notes' pages) is decoded first, up to 64 MiB; any other
+ * filter is ENOTSUP.
  */
 int
 pdf_document_page_content_hash(
@@ -537,10 +542,9 @@ pdf_document_page_content_hash(
 	/* Hashes one stream. */
 	SHA256Init(&context);
 	if (contents->type == PDF_OBJECT_STREAM) {
-		error = check_unfiltered(document, contents);
+		error = hash_content_stream(document, contents, &context);
 		if (error != 0)
 			return error;
-		SHA256Update(&context, document->data + contents->data_offset, contents->data_length);
 	}
 
 	/* Hashes each stream of an array in order. */
@@ -553,11 +557,10 @@ pdf_document_page_content_hash(
 			if (stream->type != PDF_OBJECT_STREAM)
 				return PDF_EFORMAT;
 
-			/* Adds its bytes, which must not need decoding. */
-			error = check_unfiltered(document, stream);
+			/* Adds its bytes, decoded when they are compressed with Flate. */
+			error = hash_content_stream(document, stream, &context);
 			if (error != 0)
 				return error;
-			SHA256Update(&context, document->data + stream->data_offset, stream->data_length);
 		}
 	}
 
@@ -3714,6 +3717,83 @@ check_unfiltered(
 
 	/* Any filter is not decoded yet. */
 	return ENOTSUP;
+}
+
+/*
+ * Adds a content stream's bytes to a hash: as they are when the stream has
+ * no filter, decoded when its one filter is FlateDecode without parameters
+ * (and the decoded bytes are within the writer's limit), ENOTSUP for any
+ * other filter.
+ */
+static int
+hash_content_stream(
+	struct pdf_document *document,
+	const struct pdf_object *stream,
+	SHA2_CTX *context)
+{
+	struct pdf_object *filter;
+	struct pdf_object *name;
+	struct pdf_object *parameters;
+	const unsigned char *data;
+	unsigned char *owned;
+	size_t size;
+	int is_flate;
+	int dct;
+	int error;
+
+	/* A stream without a filter is hashed as it is. */
+	error = check_unfiltered(document, stream);
+	if (error == 0) {
+		SHA256Update(context, document->data + stream->data_offset, stream->data_length);
+		return 0;
+	}
+
+	/* Refuses a failure other than a filter. */
+	if (error != ENOTSUP)
+		return error;
+
+	/* The filter: a name, or an array of exactly one. */
+	error = resolve_key(document, stream, "Filter", 0, &filter);
+	if (error != 0)
+		return error;
+	name = filter;
+	if (filter->type == PDF_OBJECT_ARRAY) {
+		if (filter->count != 1)
+			return ENOTSUP;
+		error = resolve(document, filter->values[0], 0, &name);
+		if (error != 0)
+			return error;
+	}
+
+	/* Refuses any filter but Flate. */
+	is_flate = pdf_object_is_name(name, "FlateDecode");
+	if (!is_flate)
+		return ENOTSUP;
+
+	/* Refuses Flate with parameters (a predictor), which the writer never gives content. */
+	error = resolve_key(document, stream, "DecodeParms", 0, &parameters);
+	if (error != 0)
+		return error;
+	if (parameters->type != PDF_OBJECT_NULL)
+		return ENOTSUP;
+
+	/* Decodes the stream. */
+	error = pdf_filter_decode(document, stream, 0, &data, &size, &owned, &dct);
+	if (error != 0)
+		return error;
+
+	/* Refuses decoded content past the limit the writer compresses to, which is not the writer's. */
+	if (size > PDF_WRITER_FLATE_CONTENT_MAX) {
+		free(owned);
+		return ENOTSUP;
+	}
+
+	/* Adds the decoded bytes. */
+	SHA256Update(context, data, size);
+	free(owned);
+
+	/* Succeeded: the stream is in the hash. */
+	return 0;
 }
 
 /*
