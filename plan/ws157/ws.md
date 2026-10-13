@@ -3,13 +3,13 @@
 # WS157: Keiland の app: 写真の管理
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 q902 P1 の照合: p001・p004・p005 cleared（2026-10-07 Q1、T1-331）。ベータ2 の範囲の残りは無い、続きはベータ3）
+Status: incomplete（2026-10-13: UAT はユーザーが OK、T1 待ちの Phase が残る。旧: 2026-10-08 q902 P1 の照合: p001・p004・p005 cleared（2026-10-07 Q1、T1-331）。ベータ2 の範囲の残りは無い、続きはベータ3）
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
 Queue: [Codex Photos削除実行記録](codex-queue.md)（photos-delete-20261010）→ 2026-10-11 q924（P1）で agent/p1 へ統合、main への merge は Q1。
-Resume point: 2026-10-10 p006/p007/p008/p009 cleared。folder/背景import/JPEGのUAT修正をmain e654733f1へ統合、GUI操作はユーザー確認。Media JSON CLI/compositor/PhotosとPhone＋DnDをmain 874e12d3bへ統合。実機GUI UATは未実施。WS全体はベータ3の残る受入を含みincomplete。
-Target: **ベータ3**（続き）（2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」）
+Resume point: 2026-10-13 ユーザー「UATは終わっています。OKでした。」→ 実機の GUI の UAT は OK。p011〜p014・p016 は T1 の結果・main の統合・Q1 の判定が残るので cleared にしていない（UAT の部分だけ OK）。p015・p017 は planned。旧: 2026-10-10 p006/p007/p008/p009 cleared。folder/背景import/JPEGのUAT修正をmain e654733f1へ統合、GUI操作はユーザー確認。Media JSON CLI/compositor/PhotosとPhone＋DnDをmain 874e12d3bへ統合。実機GUI UATは未実施。WS全体はベータ3の残る受入を含みincomplete。
+Target: **ベータ2**（2026-10-13 ユーザー「WS157はベータ2に入れます。UATは終わっています。OKでした。」。旧: ベータ3（続き）（2026-10-07 ユーザー「…写真の続き…」））
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -34,12 +34,12 @@ Keiland の標準 app として、写真を集めて整理し、見る app を�
 | [ws157-p008](phase008/phase.md) | folder選択・背景import/list・大きなJPEGの表示修正 | cleared | p006 source、ユーザーJPEG |
 | [ws157-p009](phase009/phase.md) | 今回UAT全sourceの全文規約/host/build/main統合 | cleared | ws197-p012、ws127-p013、p008 |
 | [ws157-p010](phase010/phase.md) | Photos削除/API/CLI/通知/背景worker | cleared | p006/p008 outputs |
-| [ws157-p011](phase011/phase.md) | 削除source全文規約/検証/main | in-progress | p010 |
+| [ws157-p011](phase011/phase.md) | 削除source全文規約/検証/main | in-progress（UAT の部分は OK、2026-10-13 ユーザー。Q1 の merge の判定が残る） | p010 |
 | [ws157-p012](phase012/phase.md) | media の経路の review（q937）と小さな直し、jail 化の設計 | in-progress（review・直し済み、設計は承認） | p011 |
-| [ws157-p013](phase013/phase.md) | mediastorage の解析を keiland-preview `--info` の jail へ（J1〜J7）、取り込みの時間と一時の名前（#4） | in-progress（実装・host 済み、T1 待ち） | p012 |
-| [ws157-p014](phase014/phase.md) | libkeiland の media の API を非同期に、picker・chooser はすぐ窓を開く（#1） | in-progress（実装・host 済み、T1 待ち） | p012 |
+| [ws157-p013](phase013/phase.md) | mediastorage の解析を keiland-preview `--info` の jail へ（J1〜J7）、取り込みの時間と一時の名前（#4） | in-progress（実装・host 済み、T1 待ち。UAT の部分は OK、2026-10-13 ユーザー） | p012 |
+| [ws157-p014](phase014/phase.md) | libkeiland の media の API を非同期に、picker・chooser はすぐ窓を開く（#1） | in-progress（実装・host 済み、T1 待ち。UAT の部分は OK、2026-10-13 ユーザー） | p012 |
 | ws157-p015 | Photos・Phone の thumbnail の decode を jail へ（#11） | planned | p013 |
-| ws157-p016 | 動画の寸法と撮影日時を mp4 の header（moov の mvhd・tkhd）から jail（`keiland-preview --info`）の中で読む（2026-10-11 ユーザー「OKです」、T1-538 で動画が寸法 0・取り込みの日だった件） | in-progress（2026-10-11 P1 a1d5efa46: 実装・host・build 済み、main に未統合、T1 待ち） | p013 |
+| ws157-p016 | 動画の寸法と撮影日時を mp4 の header（moov の mvhd・tkhd）から jail（`keiland-preview --info`）の中で読む（2026-10-11 ユーザー「OKです」、T1-538 で動画が寸法 0・取り込みの日だった件） | in-progress（2026-10-11 P1 a1d5efa46: 実装・host・build 済み、main に未統合、T1 待ち。UAT の部分は OK、2026-10-13 ユーザー） | p013 |
 | ws157-p017 | libjpeg-compat に 1/2・1/4・1/8 の縮小 decode（L1、2026-10-11 ユーザー「Q1の推しにします」、約 3 LW） | planned | p015 |
 
 ## p001 の観点（要件の検討）

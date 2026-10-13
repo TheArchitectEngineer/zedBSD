@@ -3,56 +3,48 @@
 # WS044: rpi4 を開発に使える形にする（console の font、FAT32 の boot、lldb）
 
 <!-- awesome-plan-current:start -->
-Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: incomplete
+Status: closed（2026-10-13 ユーザー「WS044、WS048、WS118はクローズします。」。旧: planning（要検討・ブロック、2026-10-05）、その前は incomplete）
 Primary Milestone: MG008
 Related Milestones: MG001, MG003
 Objectives: O2, O4
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001・p005〜p009 cleared（実機の結果待ち）。p002（FAT32）・p010（aarch64 の ptrace、HAL の追加は 2026-09-27 にユーザーが承認）・p011（aarch64 の package の基盤と libcxx）cleared（QEMU まで）。次は p003（lldb）
-Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
-## 目標
+## 目的
 
-aarch64 は主対象（2026-09-24 ユーザー決定）。rpi4 を、画面で読める console、標準的な boot partition、
-user program の debugger を持つ開発機として使えるようにする。
+aarch64 は主対象（2026-09-24 ユーザー決定）。rpi4 を、画面で読める console、標準的な boot partition、user program の debugger を持つ開発機として使えるようにする。2026-09-24 ユーザー:「rpi4 でlldbが動くようにしてほしいです。rpi4ではbootパーティションはFAT32にしてください。…rpi4のコンソールのフォントはPC/ATのものを複製して使ってください。」
 
-2026-09-24 ユーザー指示: 「rpi4 でlldbが動くようにしてほしいです。rpi4ではbootパーティションはFAT32にしてください。
-シリアル以外は先にカーネルを安定してからでいいです。あとrpi4のコンソールのフォントはPC/ATのものを複製して使ってください。
-パブリックドメインなので大丈夫です。」シリアルは QEMU でのデバッグ用で、既に PL011 の console で使えているので対応不要（同日の回答）。
+## 結果（2026-10-13 close）
 
-## 完了の条件
+- console の font（p001）: PC/AT の 8x16（`vgafont`、public domain）の複製に置き換えた（HAL、2026-09-24 承認）。QEMU raspi4b で login prompt を読めた。
+- FAT32 の boot partition（p002）: `make-rpi4-hdd-image.py`・検査の script・kernel の FAT の読み取り。QEMU で起動と mount。実機は未実施。
+- 実機の起動（p005〜p009、HAL の差分はいずれも 2026-09-24 承認、Guardrail の表）: firmware の読み込み番地と EMMC2 の 32-bit access、framebuffer の data cache の書き出し、1920x1080 の固定、起動の診断（ACT LED・テスト模様・SCTLR_EL1）、HDMI0 の hotplug の設定の誤りの特定、命令 cache の同期と EL0 の SCTLR の権限（init の SIGILL の修正）。実機で HDMI0 の表示と login prompt まで（ユーザー確認）。
+- aarch64 の ptrace（p010）: `struct reg`・`fpreg`、HAL の register・step・hardware の breakpoint と watchpoint（`include/hal/arch/aarch64.h` の追加は 2026-09-27 承認）。ptrace の試験 29/29 を QEMU raspi4b と amd64 で。
+- 外部 package の aarch64 の cross build の基盤と libcxx（p011）: `ZEDBSD_EXTERNAL_TRIPLE`、arch ごとの work tree、aarch64 の libc++・libc++abi・libunwind。
 
-- framebuffer の console が PC/AT の 8x16 font（public domain）で描かれる。
-- SD の boot partition が FAT32 で、firmware が起動できる。
-- rpi4 の guest で lldb が user program に breakpoint を置き、止めて backtrace を出せる。
-- 変更した source の規約の確認。
+## 制限・残り
 
-## 制約と依存
+- lldb の aarch64（p003）は未着手のまま canceled。rpi4 で lldb は動かない。
+- p001・p005〜p009 の一部（HDMI1・UART、cache・SIGILL の修正の実機の確認）はユーザーの実機の結果待ちのまま。p002 の FAT32 は実機で未確認。
+- 規約の全文の確認と rpi4 の回帰（p004）は canceled。
+- 残りを続けるなら rpi4 の新しい WS の候補（勝手に移していない）。USB は WS048（同日 close）。
+- HAL の承認済みの差分 `proposed/*.diff` は Guardrail の承認の表（`plan/guardrail.md` 78〜81 行）から参照される。消すか残すかは Q1。
 
-- HAL（`src/hal/arm64/bsp-rpi4/`）の変更は差分ごとの承認が要る。p001 の font の差分（font の追加と描画の置換、hal.h は不変）は
-  2026-09-24 にユーザーが承認した。
-- p002・p003 は **rpi4 の kernel の安定化の後**（ユーザー指示）。安定化の基準はまだ決まっていない（ユーザーとの合意が要る）。
-- lldb は WS032 の package（amd64 で breakpoint・watchpoint を確認済み）。aarch64 には zedbsd target の LLVM と sysroot が要る
-  （ws036-p026）。kernel 側は ptrace が amd64 専用（`struct reg` が `__x86_64__` だけ）なので aarch64 の ptrace とレジスタの定義が要る。
+## Phase
 
-## Phase 一覧
+| Phase | 内容 | 最終の状態 |
+| --- | --- | --- |
+| ws044-p001 | console の font を PC/AT の 8x16 の複製へ（HAL、承認済み） | cleared（q377-i01、QEMU） |
+| ws044-p002 | SD の boot partition を FAT32 に | cleared（2026-09-27、QEMU。実機は未実施） |
+| ws044-p003 | aarch64 で lldb（plugin の register context、clang＋lldb の aarch64 の package、guest での breakpoint） | canceled（2026-10-13、ユーザーの指示で WS を close。旧: planning） |
+| ws044-p004 | 変えた source の規約の全文の確認と rpi4 の回帰 | canceled（2026-10-13、同上。旧: planning） |
+| ws044-p005 | 実機の起動の準備（firmware の読み込み番地、EMMC2 の 32-bit access） | cleared（q378-i01、QEMU。実機はユーザー確認待ちだった） |
+| ws044-p006 | framebuffer の data cache の書き出し（HAL、承認済み） | cleared（QEMU。実機はユーザー確認待ちだった） |
+| ws044-p007 | 実機の表示を 1920x1080 に固定（HAL、承認済み） | cleared（QEMU。実機はユーザー確認待ちだった） |
+| ws044-p008 | 実機の起動の診断と boot の設定の洗い直し（HAL、承認済み） | cleared（HDMI0 で表示を確認。HDMI1・UART は実機の結果待ちだった） |
+| ws044-p009 | 実機の init の SIGILL: 命令 cache の同期と EL0 の SCTLR（HAL、承認済み） | cleared（QEMU。実機はユーザー確認待ちだった） |
+| ws044-p010 | aarch64 の ptrace（HAL の追加は 2026-09-27 承認） | cleared（2026-09-27、QEMU raspi4b と amd64） |
+| ws044-p011 | 外部 package の aarch64 の cross build の基盤と libcxx | cleared（2026-09-27） |
 
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| [ws044-p001](phase001/phase.md) | console の font を PC/AT の 8x16（`vgafont`）の複製へ置き換える（HAL、承認済み） | cleared（q377-i01。QEMU raspi4b の画面で login prompt を読めた） | — |
-| [ws044-p002](phase002/phase.md) | SD の boot partition を FAT32 にする（`make-rpi4-hdd-image.py`、検査の script、kernel の FAT の読み取り） | cleared（2026-09-27。QEMU で起動と FAT32 の mount。実機は未実施） | rpi4 の kernel の安定化（仮の基準で着手、phase.md） |
-| ws044-p003 | aarch64 で lldb を動かす（lldb の zedBSD の plugin の aarch64 の register context、clang＋lldb の package の aarch64 の build、guest での breakpoint・backtrace）。2026-09-27 に p010・p011 を分けた | planning | p010、p011 |
-| [ws044-p010](phase010/phase.md) | aarch64 の ptrace（`struct reg`・`fpreg`、HAL の register・step・hardware の breakpoint と watchpoint、kernel の ptrace を aarch64 に） | cleared（2026-09-27。ptrace の試験 29/29 を QEMU raspi4b と amd64 で。include/hal/arch/aarch64.h の追加は同日ユーザーが承認） | ws036-p026 |
-| [ws044-p011](phase011/phase.md) | 外部 package の aarch64 の cross build の基盤と libcxx（`ZEDBSD_EXTERNAL_TRIPLE`、arch ごとの work tree）。clang＋lldb の aarch64 は p003 | cleared（2026-09-27。aarch64 の libc++・libc++abi・libunwind） | ws036-p026、ws036-p029 |
-| [ws044-p005](phase005/phase.md) | 実機起動の準備: firmware の読み込み番地（`kernel_address=0x80000`）、EMMC2 の 32-bit だけの register access。実機との違いの洗い出し | cleared（q378-i01。QEMU で起動・SD の読み書き。実機はユーザー確認待ち） | p001 |
-| ws044-p004 | 変更した source の全文の規約確認と rpi4 の回帰 | planning | p001〜p003、p005 |
-| [ws044-p006](phase006/phase.md) | 実機で framebuffer に出ない: 描いた後に data cache を memory へ（HAL、承認済み） | cleared（QEMU まで。実機はユーザーの確認待ち） | p005 | `src/hal/arm64/bsp-rpi4/framebuffer.c` |
-| [ws044-p007](phase007/phase.md) | 実機の表示を 1920x1080 に固定（config.txt と HAL の framebuffer の大きさ、承認済み） | cleared（QEMU まで。実機はユーザーの確認待ち） | p006 | `platform/arm64/config.txt`、`src/hal/arm64/bsp-rpi4/framebuffer.c` |
-| [ws044-p008](phase008/phase.md) | 実機の起動の診断（ACT LED の段階、テスト模様、SCTLR_EL1 の初期化）と boot 設定の洗い直し（HAL、承認済み） | cleared（原因は config.txt の hdmi_force_hotplug が空の HDMI0 を display 0 にしていたこと。HDMI0 で表示を確認。HDMI1 と UART は実機の結果待ち） | p007 | `src/hal/arm64`、`platform/arm64/config.txt` |
-| [ws044-p009](phase009/phase.md) | 実機で init が SIGILL: 命令 cache の同期（実行可能にする page に `hal_sync_instruction_stream`）と EL0 の SCTLR の権限（HAL、承認済み） | cleared（QEMU まで。実機はユーザーの確認待ち） | p008 | `src/hal/arm64/space.c`・`locore.S` |
-
-## 要検討・ブロック（2026-10-05）
-
-ユーザーの指示で要検討の状態にしてブロックする。ユーザーと方針を決めるまで Queue に入れない。
+Phase の directory とこの WS だけの試験は、完了の規則（AGENTS.md）で削除する（git の履歴に残る、削除は Q1）。

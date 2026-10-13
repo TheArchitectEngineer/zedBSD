@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws172 -->
 # WS172: passkey の認証の枠組み（/sbin/passkey と /etc/passkey、sessiond は外部の program で認証）
 
-Target: **ベータ3**（2026-10-08 ユーザー「WS172はベータ3に回します。」。p002 の PIN の実装は main に入ったまま、T1 の結果を受けて判定する）
+Target: **ベータ2**（2026-10-13 ユーザー「WS196、WS172、WS009はベータ2に入れます。」。旧: ベータ3（2026-10-08 ユーザー「WS172はベータ3に回します。」）。p002 の PIN の実装は main に入ったまま、T1 の結果を受けて判定する）
 Status: incomplete（2026-10-05 追加、ベータ2。p001 設計 cleared、p002 PIN の login は cleared（T1-210、2026-10-05 夜）、p003 FIDO2 は段 A（passkey-fido2）を実装、2026-10-06。WS162・WS163 を吸収）
 Master: [master](../master.md)
 Primary Milestone: MG006
