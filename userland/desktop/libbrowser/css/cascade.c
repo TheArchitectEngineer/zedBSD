@@ -962,9 +962,11 @@ css_initial_style(
 
 	/* The flexible box's initial values that are not zero. */
 	style->justify_content = CSS_ALIGN_START;
+	style->justify_items = CSS_ALIGN_STRETCH;
 	style->align_items = CSS_ALIGN_STRETCH;
 	style->align_content = CSS_ALIGN_STRETCH;
 	style->align_self = CSS_ALIGN_AUTO;
+	style->justify_self = CSS_ALIGN_AUTO;
 	style->flex_shrink = 1;
 	style->flex_basis.unit = CSS_UNIT_AUTO;
 
@@ -3736,6 +3738,9 @@ cascade_apply(
 	case CSS_PROP_JUSTIFY_CONTENT:
 		style->justify_content = value->keyword;
 		break;
+	case CSS_PROP_JUSTIFY_ITEMS:
+		style->justify_items = value->keyword;
+		break;
 	case CSS_PROP_ALIGN_ITEMS:
 		style->align_items = value->keyword;
 		break;
@@ -3744,6 +3749,9 @@ cascade_apply(
 		break;
 	case CSS_PROP_ALIGN_SELF:
 		style->align_self = value->keyword;
+		break;
+	case CSS_PROP_JUSTIFY_SELF:
+		style->justify_self = value->keyword;
 		break;
 	case CSS_PROP_ROW_GAP:
 		style->row_gap = cascade_length(engine, value, style->font_size);
@@ -3884,6 +3892,9 @@ cascade_inherit(
 	case CSS_PROP_JUSTIFY_CONTENT:
 		style->justify_content = parent->justify_content;
 		break;
+	case CSS_PROP_JUSTIFY_ITEMS:
+		style->justify_items = parent->justify_items;
+		break;
 	case CSS_PROP_ALIGN_ITEMS:
 		style->align_items = parent->align_items;
 		break;
@@ -3892,6 +3903,9 @@ cascade_inherit(
 		break;
 	case CSS_PROP_ALIGN_SELF:
 		style->align_self = parent->align_self;
+		break;
+	case CSS_PROP_JUSTIFY_SELF:
+		style->justify_self = parent->justify_self;
 		break;
 	case CSS_PROP_ROW_GAP:
 		style->row_gap = parent->row_gap;

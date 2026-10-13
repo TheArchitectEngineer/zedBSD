@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1069 / WS074 prior PASS to FAIL audit（2026-10-14）
+## 最新: q1070 / WS074 CSS Grid LTR inline-axis alignment（2026-10-14）
+
+[q1070履歴](queue-q1070.md): 固定Grid代表WPT subtest旧4/18→9/18 PASS、関連静的57件旧15 PASS維持、p211 whole cleared。Acid3画素差0。[証拠](../ws074/phase211/evidence/20261014-q1070/README.md)。RTLとp189/p190/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1069 / WS074 prior PASS to FAIL audit（2026-10-14）
 
 [q1069履歴](queue-q1069.md): 旧PASS→FAIL19件はfont未指定の欠落geometryによる見かけのPASSと判定。[証拠](../ws074/phase189/evidence/20261014-q1069/README.md)。固定font最新223 PASS/1,232非PASS、p189/p173全件100%未達。
 

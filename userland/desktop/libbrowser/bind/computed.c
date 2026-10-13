@@ -99,8 +99,10 @@ enum computed_property {
 	COMPUTED_FLEX_SHRINK,
 	COMPUTED_FLEX_BASIS,
 	COMPUTED_JUSTIFY_CONTENT,
+	COMPUTED_JUSTIFY_ITEMS,
 	COMPUTED_ALIGN_ITEMS,
 	COMPUTED_ALIGN_SELF,
+	COMPUTED_JUSTIFY_SELF,
 	COMPUTED_ALIGN_CONTENT,
 	COMPUTED_ORDER,
 	COMPUTED_ROW_GAP,
@@ -228,8 +230,10 @@ static const struct computed_entry computed_entries[] = {
 	{ "flex-shrink", COMPUTED_FLEX_SHRINK },
 	{ "flex-basis", COMPUTED_FLEX_BASIS },
 	{ "justify-content", COMPUTED_JUSTIFY_CONTENT },
+	{ "justify-items", COMPUTED_JUSTIFY_ITEMS },
 	{ "align-items", COMPUTED_ALIGN_ITEMS },
 	{ "align-self", COMPUTED_ALIGN_SELF },
+	{ "justify-self", COMPUTED_JUSTIFY_SELF },
 	{ "align-content", COMPUTED_ALIGN_CONTENT },
 	{ "order", COMPUTED_ORDER },
 	{ "row-gap", COMPUTED_ROW_GAP },
@@ -346,6 +350,11 @@ static const char *const computed_flex_wraps[] = { "nowrap", "wrap", "wrap-rever
 /* The names of the alignments, by enum css_align (stretch is normal's). */
 static const char *const computed_aligns[] = {
 	"auto", "normal", "flex-start", "flex-end", "center", "baseline", "space-between", "space-around", "space-evenly"
+};
+
+/* Grid self-alignment uses start and end rather than Flexbox's flex-start and flex-end. */
+static const char *const computed_justifies[] = {
+	"auto", "normal", "start", "end", "center", "baseline", "space-between", "space-around", "space-evenly", "left", "right", "self-start", "self-end"
 };
 
 /*
@@ -929,11 +938,17 @@ computed_write_keyword(
 	case COMPUTED_JUSTIFY_CONTENT:
 		error = computed_name(computed_aligns, 9, style->justify_content, out);
 		break;
+	case COMPUTED_JUSTIFY_ITEMS:
+		error = computed_name(computed_justifies, 13, style->justify_items, out);
+		break;
 	case COMPUTED_ALIGN_ITEMS:
 		error = computed_name(computed_aligns, 9, style->align_items, out);
 		break;
 	case COMPUTED_ALIGN_SELF:
 		error = computed_name(computed_aligns, 9, style->align_self, out);
+		break;
+	case COMPUTED_JUSTIFY_SELF:
+		error = computed_name(computed_justifies, 13, style->justify_self, out);
 		break;
 	case COMPUTED_ALIGN_CONTENT:
 		error = computed_name(computed_aligns, 9, style->align_content, out);

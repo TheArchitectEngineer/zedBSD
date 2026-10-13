@@ -227,11 +227,13 @@ static const struct values_name values_names[] = {
 	{ "-webkit-flex-wrap", CSS_PROP_FLEX_WRAP },
 	{ "justify-content", CSS_PROP_JUSTIFY_CONTENT },
 	{ "-webkit-justify-content", CSS_PROP_JUSTIFY_CONTENT },
+	{ "justify-items", CSS_PROP_JUSTIFY_ITEMS },
 	{ "align-items", CSS_PROP_ALIGN_ITEMS },
 	{ "-webkit-align-items", CSS_PROP_ALIGN_ITEMS },
 	{ "align-content", CSS_PROP_ALIGN_CONTENT },
 	{ "align-self", CSS_PROP_ALIGN_SELF },
 	{ "-webkit-align-self", CSS_PROP_ALIGN_SELF },
+	{ "justify-self", CSS_PROP_JUSTIFY_SELF },
 	{ "row-gap", CSS_PROP_ROW_GAP },
 	{ "grid-row-gap", CSS_PROP_ROW_GAP },
 	{ "column-gap", CSS_PROP_COLUMN_GAP },
@@ -443,18 +445,18 @@ static const struct values_keyword values_flex_wrap[] = {
 	{ NULL, 0 }
 };
 
-/* The keywords of the alignment properties; justify-content keeps physical left and right distinct. */
+/* The keywords of the alignment properties; justify-* keeps physical left and right distinct. */
 static const struct values_keyword values_align[] = {
 	{ "auto", CSS_ALIGN_AUTO },
 	{ "normal", CSS_ALIGN_STRETCH },
 	{ "stretch", CSS_ALIGN_STRETCH },
 	{ "flex-start", CSS_ALIGN_START },
 	{ "start", CSS_ALIGN_START },
-	{ "self-start", CSS_ALIGN_START },
+	{ "self-start", CSS_ALIGN_SELF_START },
 	{ "left", CSS_ALIGN_LEFT },
 	{ "flex-end", CSS_ALIGN_END },
 	{ "end", CSS_ALIGN_END },
-	{ "self-end", CSS_ALIGN_END },
+	{ "self-end", CSS_ALIGN_SELF_END },
 	{ "right", CSS_ALIGN_RIGHT },
 	{ "center", CSS_ALIGN_CENTER },
 	{ "baseline", CSS_ALIGN_BASELINE },
@@ -1837,9 +1839,11 @@ values_single(
 		table = values_flex_wrap;
 		break;
 	case CSS_PROP_JUSTIFY_CONTENT:
+	case CSS_PROP_JUSTIFY_ITEMS:
 	case CSS_PROP_ALIGN_ITEMS:
 	case CSS_PROP_ALIGN_CONTENT:
 	case CSS_PROP_ALIGN_SELF:
+	case CSS_PROP_JUSTIFY_SELF:
 		table = values_align;
 		break;
 	default:
@@ -1857,6 +1861,17 @@ values_single(
 		    property == CSS_PROP_ALIGN_SELF) &&
 		    (keyword == CSS_ALIGN_LEFT || keyword == CSS_ALIGN_RIGHT))
 			return EINVAL;
+		if (property == CSS_PROP_JUSTIFY_ITEMS && keyword == CSS_ALIGN_AUTO)
+			return EINVAL;
+		if (property == CSS_PROP_JUSTIFY_CONTENT ||
+		    property == CSS_PROP_ALIGN_ITEMS ||
+		    property == CSS_PROP_ALIGN_CONTENT ||
+		    property == CSS_PROP_ALIGN_SELF) {
+			if (keyword == CSS_ALIGN_SELF_START)
+				keyword = CSS_ALIGN_START;
+			if (keyword == CSS_ALIGN_SELF_END)
+				keyword = CSS_ALIGN_END;
+		}
 		value->kind = CSS_VALUE_KEYWORD;
 		value->keyword = keyword;
 		return 0;

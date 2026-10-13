@@ -1,0 +1,18 @@
+{
+  "wpt_test_id": "/css/css-grid/alignment/grid-align-justify-margin-border-padding.html",
+  "subtests_old_pass": 4,
+  "subtests_new_pass": 9,
+  "subtest_transitions": {
+    "(0, 0)": 4,
+    "(1, 0)": 5,
+    "(1, 1)": 9
+  },
+  "static_selected": 57,
+  "static_transitions": {
+    "('fail', 'fail')": 42,
+    "('pass', 'pass')": 15
+  },
+  "acid3_score": "100",
+  "acid3_different_pixels": 0,
+  "acid2_different_pixels": 1865
+}

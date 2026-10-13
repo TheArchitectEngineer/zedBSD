@@ -342,8 +342,8 @@ enum css_flex_wrap {
 };
 
 /*
- * The places of justify-content, align-items, align-self and
- * align-content (auto is align-self's only; normal and stretch are one).
+ * The places of content and self alignment (auto belongs to self
+ * alignment; normal and stretch are one in this limited model).
  */
 enum css_align {
 	CSS_ALIGN_AUTO,
@@ -356,7 +356,9 @@ enum css_align {
 	CSS_ALIGN_SPACE_AROUND,
 	CSS_ALIGN_SPACE_EVENLY,
 	CSS_ALIGN_LEFT,
-	CSS_ALIGN_RIGHT
+	CSS_ALIGN_RIGHT,
+	CSS_ALIGN_SELF_START,
+	CSS_ALIGN_SELF_END
 };
 
 /* The generic font families. */
@@ -586,6 +588,7 @@ struct css_style {
 	int flex_direction;
 	int flex_wrap;
 	int justify_content;
+	int justify_items;
 	int align_items;
 	int align_content;
 	struct css_length row_gap;
@@ -602,6 +605,7 @@ struct css_style {
 	float flex_shrink;
 	struct css_length flex_basis;
 	int align_self;
+	int justify_self;
 	int order;
 
 	/*

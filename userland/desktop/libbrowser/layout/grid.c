@@ -16,8 +16,8 @@
  * ones, then the auto ones at their items' content width, then the fr
  * ones sharing what is left (auto columns share it when there is no fr);
  * rows are as tall as their items unless the template fixes them.  Not in
- * this pass: named lines and areas, dense packing, justify-items and
- * justify-self, order, baselines, subgrid, and auto-fill and auto-fit.
+ * this pass: named lines and areas, dense packing, full inline-axis
+ * alignment, order, baselines, subgrid, and auto-fill and auto-fit.
  */
 
 #include "layout/layout.h"
@@ -107,12 +107,14 @@ layout_grid(
 	layout_unit area_width;
 	layout_unit area_height;
 	layout_unit outer;
+	layout_unit outer_width;
 	layout_unit frame;
 	layout_unit room;
 	layout_unit used;
 	layout_unit shift;
 	size_t index;
 	int position;
+	int justify;
 	int align;
 	int error;
 
@@ -224,6 +226,25 @@ layout_grid(
 
 		/* Its place, moved down by the room it leaves when it is at the end or the center. */
 		child->x = x + child->margin[CSS_LEFT];
+		if (box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+		    box->style.direction == CSS_DIRECTION_LTR &&
+		    child->style.width.unit != CSS_UNIT_AUTO) {
+			justify = child->style.justify_self;
+			if (justify == CSS_ALIGN_AUTO)
+				justify = box->style.justify_items;
+			if (justify == CSS_ALIGN_SELF_START)
+				justify = child->style.direction == CSS_DIRECTION_RTL ? CSS_ALIGN_RIGHT : CSS_ALIGN_LEFT;
+			if (justify == CSS_ALIGN_SELF_END)
+				justify = child->style.direction == CSS_DIRECTION_RTL ? CSS_ALIGN_LEFT : CSS_ALIGN_RIGHT;
+			outer_width = child->margin[CSS_LEFT] + child->border[CSS_LEFT] +
+			    child->padding[CSS_LEFT] + child->width + child->padding[CSS_RIGHT] +
+			    child->border[CSS_RIGHT] + child->margin[CSS_RIGHT];
+			if (area_width > outer_width &&
+			    (justify == CSS_ALIGN_END || justify == CSS_ALIGN_RIGHT))
+				child->x += area_width - outer_width;
+			if (area_width > outer_width && justify == CSS_ALIGN_CENTER)
+				child->x += (area_width - outer_width) / 2;
+		}
 		child->y = y + child->margin[CSS_TOP];
 		outer = grid_outer_height(child);
 		if (align == CSS_ALIGN_END && area_height > outer)

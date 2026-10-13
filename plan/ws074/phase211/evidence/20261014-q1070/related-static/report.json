@@ -1,0 +1,1009 @@
+{
+  "checkpoint": "plan/ws074/phase211/evidence/20261014-q1070/related-static/progress.jsonl",
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "fail": 42,
+    "pass": 15
+  },
+  "eligible": 57,
+  "eligible_not_sampled": 0,
+  "render_timeout": 5.0,
+  "results": [
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-align-self-safe-001-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-align-self-safe-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1636,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 896,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 3959,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-img-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-img-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2288,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-img-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-img-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 481,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-img-last-baseline-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-img-last-baseline-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 472,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-img-last-baseline-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-img-last-baseline-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 172,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-last-baseline-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-last-baseline-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 160,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-last-baseline-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-last-baseline-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2056,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2056,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1408,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-003-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1408,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-004-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 132,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-last-baseline-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-last-baseline-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 132,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-last-baseline-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-last-baseline-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-last-baseline-003-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-last-baseline-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-last-baseline-004-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-rtl-last-baseline-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2376,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2376,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2016,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-003-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2016,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-004-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 188,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-last-baseline-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-last-baseline-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 188,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-last-baseline-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-last-baseline-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 176,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-last-baseline-003-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-last-baseline-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 176,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-last-baseline-004-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-justify-self-vertWM-last-baseline-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 37125,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/grid-gutters-013.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 297300,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-1-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/grid-item-no-aspect-ratio-stretch-1.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 92128,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/alignment/grid-item-self-baseline-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/grid-item-self-baseline-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-grid/alignment/grid-justify-baseline-001-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/alignment/grid-justify-baseline-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 10000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-003.tentative.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-006.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 5000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/replaced-alignment-with-aspect-ratio-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1300,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1550,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 800,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-009.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1300,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-010.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1300,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-011.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1000,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/alignment/self-baseline/grid-self-baseline-changes-grid-area-size-012.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-grid/grid-items/grid-intrinsic-maximums-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-intrinsic-maximums.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 156262,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/grid-items/grid-items-sizing-alignment-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-items-sizing-alignment-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-grid/grid-items/ref-filled-green-100px-square-image.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-grid/grid-items/ref-filled-green-100px-square-image.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-009.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 39200,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-013.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 68400,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/grid-items/grid-minimum-size-grid-items-014.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-005.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-006.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-007.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/layout-algorithm/grid-as-flex-item-should-not-shrink-to-fit-008.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 153700,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/subgrid/subgrid-stretch-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/subgrid/subgrid-stretch.html"
+    }
+  ],
+  "root": "css/css-grid",
+  "schema": 1,
+  "selected": 57,
+  "selection": "focus round-robin, path-sorted",
+  "selection_manifest": "plan/ws074/phase211/evidence/20261014-q1070/selection-manifest.json",
+  "skipped": {},
+  "suite": "wpt",
+  "unrun": [],
+  "viewport": [
+    800,
+    600
+  ]
+}
