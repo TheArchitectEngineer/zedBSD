@@ -312,3 +312,5 @@ ws.md の案を保ち、p003 を 2 つに分けることを提案する（gestur
 - main の判断（2026-09-28、p005 の報告）: D6 はユーザーの回答どおり「保存 button + 5 秒の無操作の後の自動保存 + journal からの復元」（p005 で実装）。
   Ctrl+N は新しい page（1 つの process は 1 つの notebook）。PDF の中に見える名前は Kei に改める: `/Producer (Kei Notes)`、添付は
   `kei-notes.bin`・`application/x-kei-notes`（まだ外に出た file は無いので互換は要らない）。
+
+2026-10-13 Q1: Notes の描く道具の種類（筆・鉛筆・水彩・塗りつぶし）の追加は [WS216 p001](../ws216/phase001/phase.md) の §5.4。

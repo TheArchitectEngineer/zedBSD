@@ -105,6 +105,7 @@ Future Work は実行を許可しない。
 | F-096 | WS213: cursor の plane に別の VkDevice（queue）を持たせ、描画の queue と独立に present する | WS213 p001 第 2 版 | WS141 p016 B-u の後も cursor が描画の列に引きずられる時 |
 | F-097 | Pi 4 の kernel: 何もしていない時も context switch が 2 秒に 60 万〜440 万回（kern: perf の switches、2026-10-13 の Pi の計測）。woken・preempted の数では説明できず、sched_yield の回り（src/drivers/usb/ ほか）の疑い。CPU の無駄で SMP（WS208）の後に効き方が変わる | 電力・CPU の余裕、SMP での他の core の取り合い | WS213 p007（P5 の Pi の K-D の読み、plan/ws213/phase007/phase.md） | 未着手 | WS208 の Pi の計測の後、または電池・発熱の問題が出た時 | [phase007](ws213/phase007/phase.md) |
 | F-098 | Pi 4 の SDHCI の手続きの重複（rpi4-sdhci.c と WS206 の rpi4-sdio-host.c で約 200 行）を 1 つの register の層に統合する（WS206 の R1'） | 保守の重複を減らす | WS206 p001 第 3 版（review-2 の F1 で R1 をやめた代わり） | 未着手 | BUG-295（SD の多 block）と WS206 p002b が main で落ち着いた後 | [ws206 p001](ws206/phase001/phase.md) |
+| F-099 | Notes: 古い Notes が保存した編集 data 3.0 の file（base の中に 3.0 の編集 data が bytes で残る）を新しい Notes が読み直す | 古い image を使い続けた利用者の道具の情報を取り戻せる | WS216 p001 第 2 版 M9（2026-10-13） | 候補 | 古い image を使い続ける報告が来た時 | [WS216 p001](ws216/phase001/phase.md) |
 
 | fw-docs-ids | docs/ の本文に残る Plan の ID（WS・BUG・q の番号、2026-10-05 で 58 箇所、docs/agent は対象外）を消し、必要なら中身を言葉で書く | docs は目標の設計で plan に依らない規則 | 2026-10-05 ユーザー「消します。ただし後回しでいいです。」 | 決定済み・後回し | 空いた枠、または ws129-p005（RC）の文書の見直し | — |
 | fw-audiod-client | video player（ws122-p002）に内蔵した audiod の client（48 kHz S16 stereo）を共有の library に移し、音楽の app（WS120）や通知の音でも使う | 同じ client の重複を避ける | 2026-10-05 ws122-p002（P2） | 後回し | WS120 の着手、または 2 つ目の audiod の client が要る時 | ws122-p002 の phase.md（git の履歴、2026-10-08 の WS の完了で削除） |

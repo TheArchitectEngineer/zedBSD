@@ -80,6 +80,7 @@ Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver �
 | [p016](phase016/phase.md) | GPU の実行中に ioctl と cursor を止めない（worker の mutex、cursor の GPU 無しの更新） | planning（設計の第 1 版、review 前） | p014 | 未見積 |
 | [p018](phase018/phase.md) | 部分の CopyBufferToImage の費用（CPU の 64B の写しか GPU の部分の tile pass） | planning（候補の記録、計測で方式を決める） | p016 の (b)、WS211 p003、Pi の計測 | 未投入 |
 | [p017](phase017/phase.md) | bcm2711 の Vulkan の stencil（Notes） | planning（調べと見積もり、(b) の後の候補） | p016 の (b) | 未投入 |
+| p019（案） | bcm2711 の Vulkan の blend の係数（color の ZERO・SRC_COLOR、alpha の ZERO・ONE、Multiply）（2026-10-13 Q1、WS216 p001 第 2 版の依頼、p017 と同じ担当・時期の推奨。kernel の driver で HAL ではない） | planning | p017 | 未見積 |
 | [p012](phase012/phase.md) | KeilandのEL0 counter例外 | cleared（実機でcounter trap消失・描画送信到達） | p011実機成功、p005/p006起動経路 | 今回有限scope |
 | [p011](phase011/phase.md) | R0拒否とブラックアウトの修正 | cleared（実機R0/list43採用成功） | N0/preflight実機成功 | 今回部分scope |
 | [p010](phase010/phase.md) | core clock/実時間job期限 | cleared（software/実機表示未確認） | main211be00dcと実機ログ | 今回有限scope |
