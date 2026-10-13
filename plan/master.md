@@ -15,7 +15,7 @@
   - P1（新しい世代）: q978 ws229-p003 EU の符号化（Gen9）。
   - P2（新しい世代）: q977 ws229-p002 GT の起動（Gen9）。
   - P3（新しい世代）: q979 ws229-p004 3D と compute の state（Gen9）。
-  - T1（新しい世代）: T1-605（ws143-p007 の Cancel の再試験）。
+  - T1: 空き（T1-605 PASS）。次は Gen9 の実機の USB の image の準備（p005）。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
 <!-- master:agents:end -->
 
