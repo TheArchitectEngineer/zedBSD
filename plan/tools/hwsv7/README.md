@@ -46,7 +46,7 @@ iGPU が `8086:5917` で vfio-pci に付き group に単独、`/dev/kvm`、OVMF�
 | --- | --- | --- | --- |
 | `I915_HOST` の既定 | `solaris10-man`（`test-hw.sh` だけは前のまま `awe@10.0.30.3`） | `awe@10.0.10.27` | |
 | `I915_TEST_VBT` | `y`（5330 の取り込んだ VBT） | `n` | driver は Gen9 の display を持たない（絵は firmware の framebuffer のまま、ws229 の段階 1）。5330 の VBT は別の機械の物 |
-| `I915_BOOT_EXTRA`（→ `ZEDBSD_BOOT_EXTRA_LINES`） | 無し（make の行は前と同じ） | `i915.gen9=on` | Gen9 の device は boot の行のこの語が無いと取らない（ws229-p002、既定 off） |
+| `I915_BOOT_EXTRA`（→ `ZEDBSD_BOOT_EXTRA_LINES`） | 無し（make の行は前と同じ） | `i915.gen9=on` | 2026-10-14 から Gen9 の device は既定で取る（ws229-p005 の実機 PASS の後、`I915_GEN9_DEFAULT_ON` が 1）。この語は不要だが害は無く、試した image と同じ flag を保つために残す。無効にするのは `i915.gen9=off` |
 | `I915_IGPU` | 無し（確かめない） | `8086:5917` | 走らせる前に host の `00:02.0` の vendor:device を ssh で読み、違えば `the iGPU of HOST is ...` で止まる |
 | `run-hw.sh` の `OUT` の既定 | `build/ws101-hw` | `build/ws101-hw-sv7` | 5330 の image と混ぜない |
 

@@ -82,3 +82,21 @@ Q1 の割り当て（材料は plan/beta2.md・master.md・各 ws.md と bug の
 - 18 時のコードフリーズの判定で〔判定待ち〕の印を消すか、行（release notes の 2 行、既知の問題の 2 行、手引きの節）を消す。
 - beta2.md の WS129 の行は「HFP・DSDT の行を反映済み」とあるが、既知の問題に DSDT の行は無い（HFP の行は在る）。DSDT の決定の中身が分からないので今回は足していない。Notes の描く道具の節も未（今回の範囲外）。
 - WS074（browser）の最終の結果は Q1 が書く。
+
+## 2026-10-14 P1: Gen9（WS229）と AHCI（WS231）の〔判定待ち〕を確定の文に
+
+Q1 の割り当て（18 時のコードフリーズの判定で両方入る、Gen9 は既定で有効＝ws229-p005 の切り替え b0a5dfea9）。英語、review の comment の形を保った。
+docs/ から plan/ への link は足していない。commit a09097bc1。
+
+- release notes（`docs/release/zedbsd-1.0.0-beta2.md`）: 2 行の〔判定待ち〕を消した。Gen9: 既定で有効、GT と Vulkan だけ、firmware の framebuffer の
+  まま、Vulkan Video 無し、driver が GPU を動かす間は suspend を断る、Gen9.5（7〜10 世代）は 8 世代の GPU で確かめ、6 世代（Skylake）と USB の
+  単独起動は未確認、手引きの `#older-intel-graphics` で `i915.gen9=off`。AHCI: 既定で有効、Intel の RAID mode も、最小の suspend・resume、
+  NCQ・TRIM・hotplug・ATAPI 無し。review の comment: freeze が両方を取った、SV7 の試験は GPU を QEMU の guest に渡した形で、機械の firmware からの
+  USB 起動と 6 世代は未確認。
+- 既知の問題（`docs/release/zedbsd-1.0.0-beta2-known-issues.md`）: 2 行の印を消した。Gen9 の行（display の driver 無し、Vulkan Video 無し、suspend を断る、
+  RC6 off）は残し、「on by default」と回避「`i915.gen9=off`（手引きの節へ link）」に。review の comment を確定の文に。
+- 利用の手引き（`docs/release/zedbsd-1.0.0-beta2-guide.md`）: 節「Older Intel graphics」を、有効にする手順から、制限の説明と「困ったら
+  `zedbsd.cfg` の末尾に `i915.gen9=off` を足す」手順（戻すには行を消す）に書き換えた。review の comment に「off で sleep が働くかは Gen9 の機械で未確認」。
+
+確かめ: 3 つの file に〔判定待ち〕が残っていない（`grep -n 判定待ち docs/release/*.md` が 0 行）、節の anchor `older-intel-graphics` は見出しのまま。
+未実施: 手順の実機の確かめ（Gen9 の機械で zedbsd.cfg を編集して off）。

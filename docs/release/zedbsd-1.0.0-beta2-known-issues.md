@@ -19,8 +19,8 @@ guide.
 | On battery, drawing slows down to a few frames a second, and the computer stops without a warning when the battery runs out. | Keep the computer on AC power. | BUG-159 |
 | **Shut Down** may leave the computer powered on. | When the screen stays on after Shut Down, hold the power button until the computer turns off. | BUG-119 |
 | With an HDMI display connected, the HDMI display stays dark while the lid is closed. | Keep the lid open. To use only the external display, turn the built-in one off in Settings → Display. | BUG-255 |
-| 〔判定待ち〕 The Gen9 graphics preview (`i915.gen9=on`, 6th to 10th generation Core) has no display driver: the screen stays at the resolution the firmware chose, its brightness and external displays cannot be changed, and Vulkan Video is not offered. While it is on, sleep is refused, and the GPU does not enter its power-saving state (RC6), so the battery runs down sooner. | Keep the computer on AC power, or leave `i915.gen9=on` out. | — (the display driver is planned for Beta 3) |
-| 〔判定待ち〕 SATA drives work without NCQ (many requests at once are slower), TRIM (an SSD is not told which blocks are free) and hot plugging, and optical drives (ATAPI) are not seen. Link power saving (ALPM, DevSleep) is left off on purpose, because many drives and controllers misbehave with it, so a SATA drive uses a little more power. An NVMe SSD that Intel RST hides behind a controller in RAID mode is not seen. | Connect a SATA drive before you start the computer. For an NVMe SSD behind RST, set the firmware's storage mode to AHCI. | — |
+| The Gen9 graphics driver (6th to 10th generation Core, on by default) does not drive the display yet: the screen stays at the resolution the firmware chose, its brightness and external displays cannot be changed, and Vulkan Video is not offered. While it drives the GPU, sleep is refused, and the GPU does not enter its power-saving state (RC6), so the battery runs down sooner. | Keep the computer on AC power, or turn the driver off with `i915.gen9=off` (see [Older Intel graphics](zedbsd-1.0.0-beta2-guide.md#older-intel-graphics)). | — (the display driver is planned for Beta 3) |
+| SATA drives work without NCQ (many requests at once are slower), TRIM (an SSD is not told which blocks are free) and hot plugging, and optical drives (ATAPI) are not seen. Link power saving (ALPM, DevSleep) is left off on purpose, because many drives and controllers misbehave with it, so a SATA drive uses a little more power. An NVMe SSD that Intel RST hides behind a controller in RAID mode is not seen. | Connect a SATA drive before you start the computer. For an NVMe SSD behind RST, set the firmware's storage mode to AHCI. | — |
 
 ## Touch screen, keyboard and mouse
 
@@ -52,8 +52,7 @@ guide.
 | Japanese input does not work in Phone. | — | BUG-203 |
 | Phone calls through a paired phone (Bluetooth HFP) are not supported in Beta 2. The call controls behind **Also use calls** in Settings are untested, and there is no call audio. | Answer and make calls on the phone. Messages and contacts work. | — (planned for Beta 3) |
 
-<!-- review (2026-10-14): "〔判定待ち〕" marks the rows of the features the code freeze of 2026-10-14 18:00 may leave
-     out (Gen9: WS229, AHCI: WS231). Delete the mark when the feature is in, or the row when it is not. The SSH row is a
+<!-- review (2026-10-14): the code freeze of 2026-10-14 18:00 took Gen9 (WS229) and AHCI (WS231). The SSH row is a
      suspected problem seen only in the project's own QEMU tests, intermittently. -->
 
 <!-- review: the rows below are the bugs the beta 2 triage plans to fix before the RC, and the ones whose fixes wait for

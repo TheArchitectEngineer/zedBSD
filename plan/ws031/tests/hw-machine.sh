@@ -6,8 +6,8 @@
 #   5330  Dell Latitude 5330, i5-1245U, Gen12 (8086:46a8); the ssh alias solaris10-man; the kernel carries the
 #         machine's captured VBT (I915_TEST_VBT=y); no boot word.  plan/tools/hw5330/README.md
 #   sv7   Panasonic Let's Note SV7, Core i5 8th generation, Gen9.5 UHD 620 (8086:5917); awe@10.0.10.27.  The driver
-#         has no Gen9 display (the picture stays on the firmware's framebuffer), so no VBT; the Gen9 device is
-#         taken only with i915.gen9=on on the boot line (ws229-p002).  plan/tools/hwsv7/README.md
+#         has no Gen9 display (the picture stays on the firmware's framebuffer), so no VBT; the boot word
+#         i915.gen9=on is kept though Gen9 is taken by default since 2026-10-14 (ws229-p005).  plan/tools/hwsv7/README.md
 #
 # Sets I915_MACHINE_HOST (the machine's ssh name; each script decides whether I915_HOST overrides it) and exports
 # I915_MACHINE, I915_IGPU (vendor:device the run checks on the host before it starts, empty: no check),

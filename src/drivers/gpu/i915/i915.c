@@ -49,11 +49,11 @@
 
 /*
  * Whether a Gen9 device (Skylake to Comet Lake) is driven when the boot line
- * does not say (2026-10-14 user decision U1: off until the hardware tests
- * pass, then this one line becomes 1).  i915.gen9=on or i915.gen9=off on the
- * boot line overrides it.
+ * does not say: on since the hardware tests passed (2026-10-14 user decision
+ * U1, ws229-p005).  i915.gen9=off on the boot line leaves the device to the
+ * firmware; i915.gen9=on is accepted and changes nothing.
  */
-#define I915_GEN9_DEFAULT_ON	0
+#define I915_GEN9_DEFAULT_ON	1
 
 static int i915_attach(struct drv_pci_device *pci, const struct drv_pci_id *id);
 static int i915_detach(struct drv_pci_device *pci, unsigned flags);
@@ -68,7 +68,7 @@ static int i915_boot_line_has(const char *line, const char *token);
  *
  * Tiger Lake, Alder Lake-P/N and Raptor Lake-P/U are matched, and the Gen9
  * parts (Skylake, Kaby Lake, Coffee Lake, Comet Lake), which the attach
- * takes only when i915.gen9 is on.  A matched device whose display this
+ * takes unless i915.gen9 is off.  A matched device whose display this
  * driver has no platform data for says so in its start log instead of
  * programming the wrong registers.
  */
@@ -266,7 +266,7 @@ i915_attach(
 	UNUSED_PARAMETER(id);
 
 	/*
-	 * Leaves a Gen9 device unbound unless i915.gen9 is on, so the machine
+	 * Leaves a Gen9 device unbound when i915.gen9 is off, so the machine
 	 * behaves as before the driver knew the part: the firmware's picture
 	 * stays and the PCI core never suspends the function.
 	 */
@@ -275,7 +275,7 @@ i915_attach(
 	if (error == 0 && kind.graphics_ver == 9U) {
 		enabled = i915_gen9_enabled();
 		if (enabled == 0) {
-			kern_logf("i915: device 8086:%04x is %s; not taken (boot with i915.gen9=on to drive it)\n",
+			kern_logf("i915: device 8086:%04x is %s; not taken (i915.gen9=off on the boot line)\n",
 			    (unsigned)product,
 			    kind.name);
 			return ENODEV;
