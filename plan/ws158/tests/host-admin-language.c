@@ -56,7 +56,7 @@ parse(
 	/* The copy, and the request read from it. */
 	length = strlen(text);
 	memcpy(copy, text, length + 1U);
-	reason = admin_parse(copy, length, request);
+	reason = admin_parse(copy, length, 0, request);
 
 	/* Succeeded: the parser's answer. */
 	return reason;

@@ -16,9 +16,9 @@
  * ACCOUNT_HASH_ROUNDS rounds and sixteen random characters of salt from
  * getentropy.
  *
- * /etc/shadow is replaced, never written in place: under the lock file
- * (created exclusively; one older than a minute is taken as left by a
- * crash), the whole file is read, the user's line gets the new hash and
+ * /etc/shadow is replaced, never written in place: under the lock (an
+ * exclusive flock on the lock file, which the kernel gives back when its
+ * holder exits or dies; ws196-p002), the whole file is read, the user's line gets the new hash and
  * today's day in its third field (every other byte is kept), the result is
  * written to a new file in /etc with the shadow's mode (0400) and synced,
  * and renamed over /etc/shadow; then /etc itself is synced.  The signals
@@ -45,17 +45,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
-/* The salt's characters and length, and how long a lock may stay before it is taken as stale (seconds). */
+/* The salt's characters and length. */
 #define ACCOUNT_SALT_CHARACTERS	"./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 #define ACCOUNT_SALT_LENGTH	16U
-#define ACCOUNT_LOCK_STALE	60
 
-/* How many times the lock is tried, and the wait between (microseconds). */
-#define ACCOUNT_LOCK_TRIES	20U
+/* How many times the lock is tried, and the wait between (microseconds): five seconds in all. */
+#define ACCOUNT_LOCK_TRIES	50U
 #define ACCOUNT_LOCK_WAIT_US	100000U
 
 /* The largest shadow file handled. */
@@ -65,6 +65,18 @@
 
 /* The caller's variables that come along. */
 static const char *const account_kept[] = { "TERM=", "COLORTERM=", "LANG=", "LC_", "TZ=" };
+
+/*
+ * The open lock file while this process holds the lock of the account
+ * files, -1 otherwise.
+ *
+ * The lock is an exclusive flock on it, so closing the descriptor -- by
+ * account_files_unlock, or by the kernel when the process exits or dies --
+ * gives the lock back; a lock is never taken over from a holder that is
+ * still there.  The file itself is never removed: a waiter that opened it
+ * would otherwise lock a file nobody else sees.
+ */
+static int account_lock_descriptor = -1;
 
 static int account_append(char *storage, size_t storage_size, size_t *used, char **variables, size_t capacity, size_t *count, const char *name, const char *value);
 static int account_kept_variable(const char *variable);
@@ -458,38 +470,40 @@ account_environment(
 }
 
 /*
- * Takes the lock of the account files (passwd, group and shadow change
- * only under it), waiting a little for another holder and taking over a
- * stale one.  Returns 0, EBUSY when it stays taken, or an errno value.
+ * Takes the lock of the account files (passwd, group and shadow, and
+ * passkey's file, change only under it), waiting a little for another
+ * holder.  Returns 0, EBUSY when it stays taken, or an errno value.
  */
 int
 account_files_lock(void)
 {
-	struct stat status;
 	unsigned tries;
-	time_t now;
 	int descriptor;
 	int error;
 
+	/* Held already by this process. */
+	if (account_lock_descriptor >= 0)
+		return EDEADLK;
+
+	/* The lock file, made when it is not there, never a link. */
+	descriptor = open(ACCOUNT_SHADOW_LOCK, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
+	if (descriptor < 0)
+		return errno;
+
 	/* A few tries. */
 	for (tries = 0; tries < ACCOUNT_LOCK_TRIES; tries++) {
-		/* Created exclusively: then it is ours. */
-		descriptor = open(ACCOUNT_SHADOW_LOCK, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
-		if (descriptor >= 0) {
-			(void)close(descriptor);
+		/* Taken: the descriptor holds it until it is closed. */
+		error = flock(descriptor, LOCK_EX | LOCK_NB);
+		if (error == 0) {
+			account_lock_descriptor = descriptor;
 			return 0;
 		}
 
-		/* An error other than a lock that exists. */
-		if (errno != EEXIST)
-			return errno;
-
-		/* A lock left by a crash (older than a minute) is removed. */
-		error = stat(ACCOUNT_SHADOW_LOCK, &status);
-		now = time(NULL);
-		if (error == 0 && now - status.st_mtime > ACCOUNT_LOCK_STALE) {
-			(void)unlink(ACCOUNT_SHADOW_LOCK);
-			continue;
+		/* An error other than another holder. */
+		if (errno != EWOULDBLOCK && errno != EINTR) {
+			error = errno;
+			(void)close(descriptor);
+			return error;
 		}
 
 		/* Another holder: wait a little. */
@@ -497,6 +511,7 @@ account_files_lock(void)
 	}
 
 	/* It stayed taken. */
+	(void)close(descriptor);
 	return EBUSY;
 }
 
@@ -504,8 +519,13 @@ account_files_lock(void)
 void
 account_files_unlock(void)
 {
-	/* The lock file goes. */
-	(void)unlink(ACCOUNT_SHADOW_LOCK);
+	/* Not held: nothing to give back. */
+	if (account_lock_descriptor < 0)
+		return;
+
+	/* The descriptor closed, which gives the flock back; the file stays. */
+	(void)close(account_lock_descriptor);
+	account_lock_descriptor = -1;
 }
 
 /*

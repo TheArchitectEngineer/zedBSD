@@ -33,6 +33,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <shadow.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -72,6 +73,9 @@
 /* The file naming the account logged in by itself at boot (2026-09-29 user decision); without it, the greeter. */
 #define MAIN_AUTOLOGIN_PATH	"/etc/keiland/autologin"
 
+/* The room of the automatic login's shadow entry. */
+#define MAIN_SHADOW_BUFFER	1024U
+
 /* Set by SIGTERM and SIGINT: sessiond ends its greeter or session and stops. */
 volatile sig_atomic_t sessiond_stopping;
 
@@ -84,6 +88,7 @@ static unsigned main_gpu_attaching(void);
 static void main_stop(int signal_number);
 static void main_open_log(void);
 static int main_autologin(struct sessiond_account *account);
+static int main_autologin_allowed(const char *name);
 
 /*
  * Runs the session manager until it is stopped or gives the console back.
@@ -540,7 +545,8 @@ main_open_log(
 /*
  * Looks up the account /etc/keiland/autologin names (its first line) for
  * the login at boot.  Returns 0, or ENOENT when there is no such file or
- * no such account (root is never logged in by itself).
+ * no such account, or the account may not be logged in by itself (root,
+ * or a locked or expired account: ws196-p002).
  */
 static int
 main_autologin(
@@ -551,6 +557,7 @@ main_autologin(
 	size_t length;
 	FILE *file;
 	char *line;
+	int allowed;
 	int error;
 
 	/* The file's first line, without its newline. */
@@ -580,8 +587,65 @@ main_autologin(
 		return ENOENT;
 	}
 
+	/* A locked or expired account gets the greeter. */
+	allowed = main_autologin_allowed(name);
+	if (!allowed)
+		return ENOENT;
+
 	/* Succeeded: the account to log in. */
 	return 0;
+}
+
+/*
+ * Says whether the account the automatic login names may log in without
+ * the greeter: its shadow entry is there, not locked ('!' or '*' before
+ * the hash; usermod -L, or an account made without a password), and not
+ * expired.  An empty hash is not a lock.  A refusal is said in the log.
+ */
+static int
+main_autologin_allowed(
+	const char *name)
+{
+	char buffer[MAIN_SHADOW_BUFFER];
+	struct spwd shadow;
+	struct spwd *found;
+	volatile char *byte;
+	size_t index;
+	long today;
+	int allowed;
+	int error;
+
+	/* The account's shadow entry. */
+	found = NULL;
+	error = getspnam_r(name, &shadow, buffer, sizeof(buffer), &found);
+	if (error != 0 || found == NULL) {
+		sessiond_log("SESSIOND AUTOLOGIN refused account=%s no-shadow", name);
+		return 0;
+	}
+
+	/* A lock before the hash. */
+	allowed = 1;
+	if (shadow.sp_pwdp[0] == '!' || shadow.sp_pwdp[0] == '*') {
+		sessiond_log("SESSIOND AUTOLOGIN refused account=%s locked", name);
+		allowed = 0;
+	}
+
+	/* An expiry reached. */
+	today = (long)(time(NULL) / 86400);
+	if (allowed &&
+	    shadow.sp_expire > 0 &&
+	    today >= shadow.sp_expire) {
+		sessiond_log("SESSIOND AUTOLOGIN refused account=%s expired", name);
+		allowed = 0;
+	}
+
+	/* The entry's copy holds the hash: it is wiped, byte by byte so that the compiler keeps the writes. */
+	byte = buffer;
+	for (index = 0; index < sizeof(buffer); index++)
+		byte[index] = '\0';
+
+	/* Allowed or not. */
+	return allowed;
 }
 
 /* Reports the wait before the next greeter after some failures in a row: 1, 2, 4, 8, then 16 seconds. */

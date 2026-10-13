@@ -6,38 +6,45 @@
  */
 
 /*
- * account-admin: the administrator's changes to the people's accounts
- * (ws089-p026; docs/architecture/security.md, "Account administration").
+ * account-admin: the changes to the people's accounts (ws089-p026,
+ * ws196-p002; docs/architecture/security.md, "Account administration").
  *
  *   /usr/libexec/account-admin < request
  *
- * Set-user-ID root, run by the compositor's backend for Settings (never by
- * hand: it is outside PATH).  The request is text on standard input, one
- * field a line: the caller's password, the operation (add, remove,
+ * Set-user-ID root, run by the compositor's backend for Settings and by
+ * root's useradd, usermod and userdel (it is outside PATH).  The request
+ * is text on standard input, one field a line (edit.h).  A caller who is
+ * not root gives its password, the operation (add, remove,
  * reset-password, group-add, group-remove, system-language) and its
- * arguments (edit.h).  system-language (ws158-p004) sets the login
- * screen's language, /etc/keiland/language, after the same checks of the
- * caller and the password; it has no target account.
- * Nothing comes from the command line or the environment.  The answer is
- * one line on standard output, "ok" or "error REASON", and the exit status
- * is 0 or 1.
+ * arguments; system-language (ws158-p004) sets the login screen's
+ * language, /etc/keiland/language, and has no target account.  A caller
+ * whose real user ID is 0 gives no password: one of root's operations
+ * (user-add, user-modify, user-remove) and its keys.  Nothing comes from
+ * the command line, and from the environment only root's SUDO_USER, for
+ * the log.  The answer is one line on standard output, "ok" or "error
+ * REASON", and the exit status is 0 or 1.
  *
- * The checks, in order: the caller (the real user ID, not root); the
- * caller in wheel (otherwise the password is not checked, so that the tool
- * cannot test a non-administrator's password); the caller's password (a
- * wrong one costs two seconds); the target (no root or system account,
- * not oneself for a removal or a wheel removal, not the last administrator
- * among the people's accounts, not a user with a running process for a
- * removal); the values (a new name, display name and password by the
- * rules).  Only then are the files changed: all three under the lock of
- * the account files, each replaced atomically (group, passwd, shadow for
- * an addition, the reverse for a removal), the signals that would stop
- * the tool held meanwhile.  /etc/passkey's lines of the name (its PIN and
- * security keys, ws172-p002) go first: before a removal's other files, so
- * that a new account of the same name never finds them; at an addition,
- * so that none left over is taken; and at a password's reset, since a
- * reset often follows a lost or misused account.  Every request's result goes to the system log
- * (auth), never a password or a hash.
+ * The checks, in order: the caller (root, or a user in wheel -- otherwise
+ * the password is not checked, so that the tool cannot test a
+ * non-administrator's password -- whose password is right; a wrong one
+ * costs two seconds); the target (no root or system account; for Settings,
+ * not oneself for a removal or a wheel removal; not a user with a running
+ * process for a removal, unless root forces it); the values (a new name,
+ * display name, password, shell, user ID and groups by the rules).  Then
+ * the three files' new texts are made in memory, and a change that would
+ * leave no administrator who can log in, where there was one, is refused.
+ * Only then are the files changed, under the lock of the account files:
+ * the record of the last user ID given, /etc/passkey's lines of the name
+ * (its PIN and security keys, ws172-p002: at an addition, so that none
+ * left over is taken; at a removal, so that a new account of the same
+ * name never finds them; at a password's reset), then each account file
+ * that changed, replaced atomically (group, passwd, shadow for an
+ * addition, the reverse otherwise), every one written already put back
+ * when a later one fails.  The signals that would stop the tool are held
+ * meanwhile.  What may take long -- a new home with the skeleton, the
+ * removal of an old home, a removed user's jobs and automatic login --
+ * comes after the lock is given back.  Every request's result goes to the
+ * system log (auth), never a password or a hash.
  */
 
 #include "edit.h"
@@ -83,6 +90,27 @@
 #define ADMIN_LANGUAGE_DIRECTORY	"/etc/keiland"
 #endif
 
+/*
+ * The record of the highest user ID ever given to a person (one decimal
+ * line), so that a removed user's ID is never given again.
+ */
+#ifndef ADMIN_LAST_ID_FILE
+#define ADMIN_LAST_ID_FILE	"/etc/account-admin.last-id"
+#endif
+
+/* cron's spool (one file a user, named by its user ID) and at's (each job a file the user owns). */
+#ifndef ADMIN_CRON_SPOOL
+#define ADMIN_CRON_SPOOL	"/var/spool/cron"
+#endif
+#ifndef ADMIN_AT_SPOOL
+#define ADMIN_AT_SPOOL		"/var/spool/at"
+#endif
+
+/* The file naming the account sessiond logs in by itself at boot (its first line). */
+#ifndef ADMIN_AUTOLOGIN_FILE
+#define ADMIN_AUTOLOGIN_FILE	"/etc/keiland/autologin"
+#endif
+
 /* The largest account file read, and the room of an edited one. */
 #define ADMIN_FILE_MAX		(256U * 1024U)
 #define ADMIN_OUTPUT_MAX	(ADMIN_FILE_MAX + 1024U)
@@ -94,21 +122,46 @@
 
 /* The longest path built, and a line of an account file. */
 #define ADMIN_PATH_MAX		512U
-#define ADMIN_LINE_MAX		(ACCOUNT_HASH_MAX + 256U)
+#define ADMIN_LINE_MAX		(ACCOUNT_HASH_MAX + 512U)
+
+/* The largest small file read whole: the record of the last user ID, and the automatic login's. */
+#define ADMIN_SMALL_MAX		128U
 
 /*
- * The account files read under the lock and their edited copies: each
- * file's text and length, and two output buffers to edit through.
+ * The three account files, in the order of the texts of struct
+ * admin_files.
+ */
+enum admin_file {
+	ADMIN_FILE_PASSWD,
+	ADMIN_FILE_GROUP,
+	ADMIN_FILE_SHADOW,
+	ADMIN_FILE_COUNT
+};
+
+/*
+ * One account file of a request: its path and mode, the text read under
+ * the lock (kept as it was, so that a failure midway can write it back),
+ * and its new text, which the operation edits.
+ */
+struct admin_text {
+	const char *path;
+	mode_t mode;
+	char *original;
+	size_t original_length;
+	char *text;
+	size_t length;
+};
+
+/*
+ * The account files of one request, read under the lock: each file's
+ * texts, the scratch buffer every edit goes through (it then becomes the
+ * new text, and the old new text the scratch), and today (days since
+ * 1970), the day the count of administrators judges expiry by.
  */
 struct admin_files {
-	char *passwd;
-	size_t passwd_length;
-	char *group;
-	size_t group_length;
-	char *shadow;
-	size_t shadow_length;
-	char *first;
-	char *second;
+	struct admin_text texts[ADMIN_FILE_COUNT];
+	char *scratch;
+	long day;
 };
 
 /*
@@ -120,32 +173,65 @@ struct admin_user {
 	char home[ADMIN_PATH_MAX];
 };
 
+/*
+ * What a request leaves to do after the account files are written and the
+ * lock is given back, since it may take long: a new home made for the user
+ * and its group, an old home removed, and a removed user's jobs (by its
+ * user ID; -1 when it is not known) and automatic login forgotten.
+ */
+struct admin_after {
+	int make_home;
+	int remove_home;
+	int forget;
+	char name[ADMIN_NAME_MAX + 1U];
+	long uid;
+	long gid;
+};
+
 int main(int argc, char **argv);
+static void admin_sudo_user(uid_t real, char *name, size_t size);
+static int admin_check_caller(struct admin_request *request, uid_t real, char *caller, size_t size);
 static int admin_read_request(char *text, size_t capacity, size_t *length);
 static int admin_apply(const struct admin_request *request, const char *caller);
 static int admin_files_open(struct admin_files *files);
 static void admin_files_close(struct admin_files *files);
+static void admin_take(struct admin_files *files, enum admin_file which, size_t written);
 static int admin_find_user(const struct admin_files *files, const char *name, struct admin_user *user);
-static int admin_add(struct admin_files *files, const struct admin_request *request);
-static int admin_remove(struct admin_files *files, const struct admin_request *request, const char *caller);
+static int admin_add(struct admin_files *files, const struct admin_request *request, struct admin_after *after);
+static int admin_add_lines(struct admin_files *files, const struct admin_request *request, long id, long gid);
+static int admin_remove(struct admin_files *files, const struct admin_request *request, const char *caller, struct admin_after *after);
+static int admin_remove_rest(struct admin_files *files, const char *name, struct admin_after *after);
 static int admin_reset(struct admin_files *files, const struct admin_request *request);
 static int admin_group(struct admin_files *files, const struct admin_request *request, const char *caller);
+static int admin_modify(struct admin_files *files, const struct admin_request *request);
+static int admin_modify_lock(struct admin_files *files, const char *name, enum admin_lock lock);
+static int admin_primary_group(const struct admin_files *files, const char *name, const char *group, long *gid);
+static int admin_groups_join(struct admin_files *files, const char *name, const char *groups);
+static int admin_keeps_administrator(const struct admin_files *files);
+static int admin_commit(struct admin_files *files, int adding);
 static int admin_write(const char *path, mode_t mode, const char *text, size_t length);
-static int admin_passkey_forget(const char *name);
-static int admin_system_language(const struct admin_request *request);
-static int admin_passkey_edit(const char *name, char *text, char *output);
+static long admin_id_floor(void);
+static void admin_highest_in_directory(const char *path, int by_name, long *highest);
+static int admin_last_id_raise(long id);
+static int admin_passkey_forget(const char *name, int *changed);
+static int admin_passkey_edit(const char *name, char *text, char *output, int *changed);
 static int admin_busy(const char *name, long uid);
-static int admin_make_home(const char *name, long id);
-static void admin_copy_skeleton(int home, long id);
-static int admin_remove_tree(int parent, const char *name, int depth);
+static int admin_shell_there(const char *shell);
+static int admin_after_work(const struct admin_after *after);
+static int admin_make_home(const char *name, long uid, long gid);
+static void admin_copy_skeleton(int home, long uid, long gid);
+static void admin_remove_home(const char *name, long uid);
+static int admin_remove_tree(int parent, const char *name, int depth, dev_t device);
+static void admin_spool_forget(long uid);
+static void admin_autologin_forget(const char *name);
 static int admin_dot(const char *name);
 static void admin_answer(int reason);
 static void admin_standard_descriptors(void);
 static void admin_wipe(char *buffer, size_t size);
+static int admin_system_language(const struct admin_request *request);
 
 /*
- * Reads the request, checks the caller and its password, and carries the
- * request out.
+ * Reads the request, checks the caller, and carries the request out.
  */
 int
 main(
@@ -153,27 +239,28 @@ main(
 	char **argv)
 {
 	char text[ADMIN_REQUEST_MAX + 2U];
-	char check[ACCOUNT_PASSWORD_MAX + 2U];
-	char buffer[LOGIN_VERIFY_BUFFER];
 	char caller[ADMIN_NAME_MAX + 1U];
+	char sudo_user[ADMIN_NAME_MAX + 1U];
 	struct admin_request request;
-	struct passwd account;
-	struct passwd *found;
 	sigset_t held;
 	sigset_t previous;
 	size_t length;
-	size_t name_length;
 	uid_t real;
 	uid_t effective;
-	gid_t primary;
+	int by_root;
 	int reason;
-	int wheel;
 	int error;
 
-	/* Nothing from the command line or the environment; descriptors 0 to 2 open; the log. */
+	/* Nothing from the command line; descriptors 0 to 2 open. */
 	(void)argc;
 	(void)argv;
 	admin_standard_descriptors();
+
+	/* The caller, and for root the user who asked through sudo, read before the environment goes. */
+	real = getuid();
+	admin_sudo_user(real, sudo_user, sizeof(sudo_user));
+
+	/* Nothing else from the environment; the files' modes; the log. */
 	(void)clearenv();
 	(void)umask(022);
 	openlog("account-admin", LOG_PID, LOG_AUTH);
@@ -193,8 +280,11 @@ main(
 		return 1;
 	}
 
-	/* Its lines. */
-	reason = admin_parse(text, length, &request);
+	/* Its lines: root's form for root, Settings' for anyone else. */
+	by_root = 0;
+	if (real == 0)
+		by_root = 1;
+	reason = admin_parse(text, length, by_root, &request);
 	if (reason != ADMIN_OK) {
 		admin_wipe(text, sizeof(text));
 		syslog(LOG_NOTICE, "refused: a request not understood");
@@ -202,51 +292,15 @@ main(
 		return 1;
 	}
 
-	/* The caller: the real user ID, never root (root has the base tools). */
-	real = getuid();
-	if (real == 0) {
-		admin_wipe(text, sizeof(text));
-		syslog(LOG_NOTICE, "refused: run by root");
-		admin_answer(ADMIN_ROOT);
-		return 1;
-	}
-
-	/* The caller's account, its name not longer than a name may be. */
-	found = getpwuid(real);
-	name_length = ADMIN_NAME_MAX + 1U;
-	if (found != NULL)
-		name_length = strlen(found->pw_name);
-	if (found == NULL || name_length > ADMIN_NAME_MAX) {
-		admin_wipe(text, sizeof(text));
-		admin_answer(ADMIN_FAILED);
-		return 1;
-	}
-
-	/* Its name and primary group, kept. */
-	(void)snprintf(caller, sizeof(caller), "%s", found->pw_name);
-	primary = found->pw_gid;
-
-	/* An administrator, or the password is not even checked. */
-	wheel = account_in_wheel(caller, primary);
-	if (!wheel) {
-		admin_wipe(text, sizeof(text));
-		syslog(LOG_NOTICE, "refused: %s is not an administrator", caller);
-		admin_answer(ADMIN_NOT_ADMINISTRATOR);
-		return 1;
-	}
-
-	/* The caller's password (login_verify erases its copy); a wrong one costs two seconds. */
-	(void)snprintf(check, sizeof(check), "%s", request.password);
-	admin_wipe(request.password, strlen(request.password));
-	error = login_verify(caller, check, &account, buffer, sizeof(buffer));
-	admin_wipe(check, sizeof(check));
-	admin_wipe(buffer, sizeof(buffer));
-	if (error != 0) {
-		admin_wipe(text, sizeof(text));
-		syslog(LOG_NOTICE, "refused: a wrong password for %s", caller);
-		(void)sleep(ADMIN_WRONG_PAUSE);
-		admin_answer(ADMIN_BAD_PASSWORD);
-		return 1;
+	/* The caller: root, or an administrator whose password is right. */
+	(void)snprintf(caller, sizeof(caller), "root");
+	if (real != 0) {
+		reason = admin_check_caller(&request, real, caller, sizeof(caller));
+		if (reason != ADMIN_OK) {
+			admin_wipe(text, sizeof(text));
+			admin_answer(reason);
+			return 1;
+		}
 	}
 
 	/* The work, with the signals that would stop it midway held. */
@@ -261,8 +315,14 @@ main(
 	reason = admin_apply(&request, caller);
 	(void)sigprocmask(SIG_SETMASK, &previous, NULL);
 
-	/* The request (with its new password) goes; the result is logged and answered. */
-	syslog(LOG_NOTICE, "%s by %s for %s: %s", admin_operation_word(request.operation), caller, request.name, admin_reason_word(reason));
+	/* The result logged, with the user who asked root through sudo. */
+	if (sudo_user[0] != '\0') {
+		syslog(LOG_NOTICE, "%s by root (sudo %s) for %s: %s", admin_operation_word(request.operation), sudo_user, request.name, admin_reason_word(reason));
+	} else {
+		syslog(LOG_NOTICE, "%s by %s for %s: %s", admin_operation_word(request.operation), caller, request.name, admin_reason_word(reason));
+	}
+
+	/* The request (with any new password) goes; the result is answered. */
 	admin_wipe(text, sizeof(text));
 	admin_answer(reason);
 
@@ -272,6 +332,109 @@ main(
 
 	/* Succeeded: the change is made. */
 	return 0;
+}
+
+/*
+ * Copies the name of the user who ran root's front end through sudo
+ * (SUDO_USER), for the log only: anyone may set the variable, so nothing
+ * is decided by it.  Empty when the caller is not root or the variable is
+ * not set, "?" when it is not a name.
+ */
+static void
+admin_sudo_user(
+	uid_t real,
+	char *name,
+	size_t size)
+{
+	const char *value;
+	size_t length;
+	size_t i;
+
+	/* None, unless root asks. */
+	name[0] = '\0';
+	if (real != 0)
+		return;
+
+	/* The variable. */
+	value = getenv("SUDO_USER");
+	if (value == NULL)
+		return;
+
+	/* A name that fits, of printable characters without ':'. */
+	length = strlen(value);
+	if (length == 0U || length >= size) {
+		(void)snprintf(name, size, "?");
+		return;
+	}
+	for (i = 0; i < length; i++) {
+		/* One character. */
+		if (value[i] <= ' ' ||
+		    value[i] == ':' ||
+		    value[i] == 0x7f) {
+			(void)snprintf(name, size, "?");
+			return;
+		}
+	}
+
+	/* Succeeded: the name, kept. */
+	memcpy(name, value, length + 1U);
+}
+
+/*
+ * Checks a caller who is not root: an account whose name fits, in wheel
+ * (otherwise its password is not even checked), whose password is the one
+ * in the request (which is erased).  Copies its name into caller.  Returns
+ * ADMIN_OK or the refusal, logged.
+ */
+static int
+admin_check_caller(
+	struct admin_request *request,
+	uid_t real,
+	char *caller,
+	size_t size)
+{
+	char check[ACCOUNT_PASSWORD_MAX + 2U];
+	char buffer[LOGIN_VERIFY_BUFFER];
+	struct passwd account;
+	struct passwd *found;
+	size_t name_length;
+	gid_t primary;
+	int wheel;
+	int error;
+
+	/* The caller's account, its name not longer than a name may be. */
+	found = getpwuid(real);
+	name_length = ADMIN_NAME_MAX + 1U;
+	if (found != NULL)
+		name_length = strlen(found->pw_name);
+	if (found == NULL || name_length > ADMIN_NAME_MAX)
+		return ADMIN_FAILED;
+
+	/* Its name and primary group, kept. */
+	(void)snprintf(caller, size, "%s", found->pw_name);
+	primary = found->pw_gid;
+
+	/* An administrator, or the password is not even checked. */
+	wheel = account_in_wheel(caller, primary);
+	if (!wheel) {
+		syslog(LOG_NOTICE, "refused: %s is not an administrator", caller);
+		return ADMIN_NOT_ADMINISTRATOR;
+	}
+
+	/* The caller's password (login_verify erases its copy); a wrong one costs two seconds. */
+	(void)snprintf(check, sizeof(check), "%s", request->password);
+	admin_wipe(request->password, strlen(request->password));
+	error = login_verify(caller, check, &account, buffer, sizeof(buffer));
+	admin_wipe(check, sizeof(check));
+	admin_wipe(buffer, sizeof(buffer));
+	if (error != 0) {
+		syslog(LOG_NOTICE, "refused: a wrong password for %s", caller);
+		(void)sleep(ADMIN_WRONG_PAUSE);
+		return ADMIN_BAD_PASSWORD;
+	}
+
+	/* Succeeded: an administrator who knows its password. */
+	return ADMIN_OK;
 }
 
 /*
@@ -316,8 +479,9 @@ admin_read_request(
 }
 
 /*
- * Carries out a checked caller's request under the lock of the account
- * files.  Returns ADMIN_OK or a reason.
+ * Carries out a checked caller's request: the account files changed under
+ * their lock, then what may take long after it.  Returns ADMIN_OK or a
+ * reason.
  */
 static int
 admin_apply(
@@ -325,6 +489,7 @@ admin_apply(
 	const char *caller)
 {
 	struct admin_files files;
+	struct admin_after after;
 	int reason;
 	int error;
 
@@ -334,10 +499,17 @@ admin_apply(
 		return reason;
 	}
 
+	/* Nothing to do after the lock yet. */
+	memset(&after, 0, sizeof(after));
+	after.uid = -1;
+	after.gid = -1;
+
 	/* The lock. */
 	error = account_files_lock();
-	if (error != 0)
+	if (error != 0) {
+		syslog(LOG_ERR, "the account files could not be locked: %s", strerror(error));
 		return ADMIN_FAILED;
+	}
 
 	/* The three files. */
 	error = admin_files_open(&files);
@@ -350,10 +522,12 @@ admin_apply(
 	/* The operation. */
 	switch (request->operation) {
 	case ADMIN_ADD:
-		reason = admin_add(&files, request);
+	case ADMIN_USER_ADD:
+		reason = admin_add(&files, request, &after);
 		break;
 	case ADMIN_REMOVE:
-		reason = admin_remove(&files, request, caller);
+	case ADMIN_USER_REMOVE:
+		reason = admin_remove(&files, request, caller, &after);
 		break;
 	case ADMIN_RESET_PASSWORD:
 		reason = admin_reset(&files, request);
@@ -361,6 +535,9 @@ admin_apply(
 	case ADMIN_GROUP_ADD:
 	case ADMIN_GROUP_REMOVE:
 		reason = admin_group(&files, request, caller);
+		break;
+	case ADMIN_USER_MODIFY:
+		reason = admin_modify(&files, request);
 		break;
 	default:
 		reason = ADMIN_BAD_REQUEST;
@@ -371,87 +548,137 @@ admin_apply(
 	admin_files_close(&files);
 	account_files_unlock();
 
-	/* What happened. */
-	return reason;
+	/* A refusal or a failure leaves nothing to do after. */
+	if (reason != ADMIN_OK)
+		return reason;
+
+	/* The home and the forgetting, outside the lock. */
+	reason = admin_after_work(&after);
+	if (reason != ADMIN_OK)
+		return reason;
+
+	/* Succeeded: the request is carried out. */
+	return ADMIN_OK;
 }
 
 /*
- * Reads the three account files and makes the edit buffers.  Returns 0 or
- * an errno value (the caller closes in either case).
+ * Reads the three account files and makes the buffers of their new texts,
+ * each a copy of the file.  Returns 0 or an errno value (the caller closes
+ * in either case).
  */
 static int
 admin_files_open(
 	struct admin_files *files)
 {
+	struct admin_text *text;
+	int which;
 	int error;
 
-	/* The buffers. */
+	/* The files' paths and modes, and today. */
 	memset(files, 0, sizeof(files[0]));
-	files->passwd = malloc(ADMIN_FILE_MAX);
-	files->group = malloc(ADMIN_FILE_MAX);
-	files->shadow = malloc(ADMIN_FILE_MAX);
-	files->first = malloc(ADMIN_OUTPUT_MAX);
-	files->second = malloc(ADMIN_OUTPUT_MAX);
-	if (files->passwd == NULL || files->group == NULL || files->shadow == NULL)
+	files->texts[ADMIN_FILE_PASSWD].path = ACCOUNT_PASSWD_FILE;
+	files->texts[ADMIN_FILE_PASSWD].mode = 0644;
+	files->texts[ADMIN_FILE_GROUP].path = ACCOUNT_GROUP_FILE;
+	files->texts[ADMIN_FILE_GROUP].mode = 0644;
+	files->texts[ADMIN_FILE_SHADOW].path = ACCOUNT_SHADOW_PATH;
+	files->texts[ADMIN_FILE_SHADOW].mode = 0400;
+	files->day = (long)(time(NULL) / 86400);
+
+	/* The scratch buffer the edits go through. */
+	files->scratch = malloc(ADMIN_OUTPUT_MAX);
+	if (files->scratch == NULL)
 		return ENOMEM;
-	if (files->first == NULL || files->second == NULL)
-		return ENOMEM;
 
-	/* passwd. */
-	error = account_file_read(ACCOUNT_PASSWD_FILE, files->passwd, ADMIN_FILE_MAX, &files->passwd_length);
-	if (error != 0)
-		return error;
+	/* Each file: read, and copied as its new text. */
+	for (which = 0; which < ADMIN_FILE_COUNT; which++) {
+		/* The buffer of the file as it was read. */
+		text = &files->texts[which];
+		text->original = malloc(ADMIN_FILE_MAX);
+		if (text->original == NULL)
+			return ENOMEM;
 
-	/* group. */
-	error = account_file_read(ACCOUNT_GROUP_FILE, files->group, ADMIN_FILE_MAX, &files->group_length);
-	if (error != 0)
-		return error;
+		/* The buffer of its new text. */
+		text->text = malloc(ADMIN_OUTPUT_MAX);
+		if (text->text == NULL)
+			return ENOMEM;
 
-	/* shadow. */
-	error = account_file_read(ACCOUNT_SHADOW_PATH, files->shadow, ADMIN_FILE_MAX, &files->shadow_length);
-	if (error != 0)
-		return error;
+		/* The file. */
+		error = account_file_read(text->path, text->original, ADMIN_FILE_MAX, &text->original_length);
+		if (error != 0) {
+			syslog(LOG_ERR, "%s could not be read: %s", text->path, strerror(error));
+			return error;
+		}
+
+		/* Unchanged so far. */
+		memcpy(text->text, text->original, text->original_length);
+		text->length = text->original_length;
+	}
 
 	/* Succeeded: the files are read. */
 	return 0;
 }
 
 /*
- * Frees the copies of the account files, wiped (the shadow's and the
- * edits hold hashes).
+ * Frees the account files' texts, wiped (the shadow's and the edits hold
+ * hashes).
  */
 static void
 admin_files_close(
 	struct admin_files *files)
 {
-	char **buffers[5];
-	size_t sizes[5];
-	size_t i;
+	struct admin_text *text;
+	int which;
 
-	/* Each buffer, wiped and freed. */
-	buffers[0] = &files->passwd;
-	buffers[1] = &files->group;
-	buffers[2] = &files->shadow;
-	buffers[3] = &files->first;
-	buffers[4] = &files->second;
-	sizes[0] = ADMIN_FILE_MAX;
-	sizes[1] = ADMIN_FILE_MAX;
-	sizes[2] = ADMIN_FILE_MAX;
-	sizes[3] = ADMIN_OUTPUT_MAX;
-	sizes[4] = ADMIN_OUTPUT_MAX;
-	for (i = 0; i < 5U; i++) {
-		/* One buffer. */
-		if (*buffers[i] == NULL)
-			continue;
-		admin_wipe(*buffers[i], sizes[i]);
-		free(*buffers[i]);
-		*buffers[i] = NULL;
+	/* Each file's two texts. */
+	for (which = 0; which < ADMIN_FILE_COUNT; which++) {
+		/* The text as it was read. */
+		text = &files->texts[which];
+		if (text->original != NULL) {
+			admin_wipe(text->original, ADMIN_FILE_MAX);
+			free(text->original);
+			text->original = NULL;
+		}
+
+		/* The new text. */
+		if (text->text != NULL) {
+			admin_wipe(text->text, ADMIN_OUTPUT_MAX);
+			free(text->text);
+			text->text = NULL;
+		}
+	}
+
+	/* The scratch buffer. */
+	if (files->scratch != NULL) {
+		admin_wipe(files->scratch, ADMIN_OUTPUT_MAX);
+		free(files->scratch);
+		files->scratch = NULL;
 	}
 }
 
 /*
- * Finds a user in the passwd read: its IDs and home.  Returns 1 with it,
- * 0 when there is no such user.
+ * Makes the scratch buffer, which an edit has just written, a file's new
+ * text; its former new text becomes the scratch buffer.
+ */
+static void
+admin_take(
+	struct admin_files *files,
+	enum admin_file which,
+	size_t written)
+{
+	struct admin_text *text;
+	char *former;
+
+	/* The two buffers change places. */
+	text = &files->texts[which];
+	former = text->text;
+	text->text = files->scratch;
+	text->length = written;
+	files->scratch = former;
+}
+
+/*
+ * Finds a user in the new passwd: its IDs and home.  Returns 1 with it, 0
+ * when there is no such user.
  */
 static int
 admin_find_user(
@@ -459,19 +686,21 @@ admin_find_user(
 	const char *name,
 	struct admin_user *user)
 {
+	const struct admin_text *passwd;
 	const char *home;
 	size_t home_length;
 	int error;
 
 	/* The IDs. */
-	user->uid = admin_number_field(files->passwd, files->passwd_length, name, 2U);
-	user->gid = admin_number_field(files->passwd, files->passwd_length, name, 3U);
+	passwd = &files->texts[ADMIN_FILE_PASSWD];
+	user->uid = admin_number_field(passwd->text, passwd->length, name, 2U);
+	user->gid = admin_number_field(passwd->text, passwd->length, name, 3U);
 	if (user->uid < 0 || user->gid < 0)
 		return 0;
 
-	/* The home. */
+	/* The home, empty when it does not fit. */
 	user->home[0] = '\0';
-	error = admin_field(files->passwd, files->passwd_length, name, 5U, &home, &home_length);
+	error = admin_field(passwd->text, passwd->length, name, 5U, &home, &home_length);
 	if (error == 0 && home_length < sizeof(user->home)) {
 		memcpy(user->home, home, home_length);
 		user->home[home_length] = '\0';
@@ -482,232 +711,465 @@ admin_find_user(
 }
 
 /*
- * Adds a user: the values checked, the lowest number free as a user ID and
- * a group ID, the group, passwd and shadow lines written in that order
- * (and wheel when asked), then the home made with the skeleton.
+ * Adds a user (Settings' add, root's user-add): the values checked, the
+ * next user ID never given (or root's), the private group of the same
+ * number, the passwd and shadow lines and the groups asked for; the home
+ * is made after the lock.
  */
 static int
 admin_add(
 	struct admin_files *files,
-	const struct admin_request *request)
+	const struct admin_request *request,
+	struct admin_after *after)
 {
-	char line[ADMIN_LINE_MAX];
-	char hash[ACCOUNT_HASH_MAX];
+	const struct admin_text *passwd;
+	const struct admin_text *group;
 	char home[ADMIN_PATH_MAX];
 	struct stat status;
-	size_t written;
-	size_t middle;
+	long floor;
 	long id;
-	long day;
+	long gid;
 	int valid;
 	int rule;
+	int used;
+	int changed;
+	int reason;
 	int error;
 
-	/* The name, the display name and the password by the rules. */
+	/* The name by the rules. */
 	valid = admin_name_valid(request->name);
 	if (!valid)
 		return ADMIN_BAD_NAME;
-	valid = admin_display_valid(request->display);
-	if (!valid)
-		return ADMIN_BAD_NAME;
-	rule = account_password_check(request->fresh, NULL, 0);
-	if (rule != ACCOUNT_PASSWORD_OK)
-		return ADMIN_WEAK_PASSWORD;
+
+	/* Settings' display name and password by the rules. */
+	if (!request->by_root) {
+		/* The display name. */
+		valid = admin_display_valid(request->display);
+		if (!valid)
+			return ADMIN_BAD_NAME;
+
+		/* The password. */
+		rule = account_password_check(request->fresh, NULL, 0);
+		if (rule != ACCOUNT_PASSWORD_OK)
+			return ADMIN_WEAK_PASSWORD;
+	}
+
+	/* Root's shell, a program that is there. */
+	if (request->shell != NULL) {
+		valid = admin_shell_there(request->shell);
+		if (!valid)
+			return ADMIN_BAD_VALUE;
+	}
 
 	/* Not a user's or a group's name already. */
-	id = admin_number_field(files->passwd, files->passwd_length, request->name, 2U);
+	passwd = &files->texts[ADMIN_FILE_PASSWD];
+	group = &files->texts[ADMIN_FILE_GROUP];
+	id = admin_number_field(passwd->text, passwd->length, request->name, 2U);
 	if (id >= 0)
 		return ADMIN_NAME_TAKEN;
-	id = admin_number_field(files->group, files->group_length, request->name, 2U);
+	id = admin_number_field(group->text, group->length, request->name, 2U);
 	if (id >= 0)
 		return ADMIN_NAME_TAKEN;
 
 	/* A home already there (one kept by a removal) is not given to the new user. */
 	(void)snprintf(home, sizeof(home), "%s/%s", ADMIN_HOME_BASE, request->name);
-	error = lstat(home, &status);
-	if (error == 0 || errno != ENOENT)
-		return ADMIN_HOME_EXISTS;
+	if (request->make_home) {
+		error = lstat(home, &status);
+		if (error == 0 || errno != ENOENT)
+			return ADMIN_HOME_EXISTS;
+	}
 
-	/* The number. */
-	id = admin_free_id(files->passwd, files->passwd_length, files->group, files->group_length);
-	if (id < 0)
+	/* Root's user ID, when it is free as a user ID and as a group ID. */
+	if (request->uid >= 0) {
+		/* A user's. */
+		used = admin_number_used(passwd->text, passwd->length, 2U, request->uid);
+		if (used)
+			return ADMIN_ID_TAKEN;
+
+		/* A group's. */
+		used = admin_number_used(group->text, group->length, 2U, request->uid);
+		if (used)
+			return ADMIN_ID_TAKEN;
+	}
+
+	/* The user ID: root's, or the next one never given. */
+	id = request->uid;
+	if (id < 0) {
+		floor = admin_id_floor();
+		id = admin_next_id(passwd->text, passwd->length, group->text, group->length, floor);
+		if (id < 0) {
+			syslog(LOG_ERR, "no user ID is left for %s", request->name);
+			return ADMIN_FAILED;
+		}
+	}
+
+	/* The primary group: the private one, or root's choice. */
+	gid = id;
+	if (request->primary != NULL) {
+		reason = admin_primary_group(files, request->name, request->primary, &gid);
+		if (reason != ADMIN_OK)
+			return reason;
+
+		/* The private group is made below, with the user's own number. */
+		if (gid < 0)
+			gid = id;
+	}
+
+	/* The lines of the three files. */
+	reason = admin_add_lines(files, request, id, gid);
+	if (reason != ADMIN_OK)
+		return reason;
+
+	/* An addition changes no other user's lines, but every change is held to the same rule. */
+	reason = admin_keeps_administrator(files);
+	if (reason != ADMIN_OK)
+		return reason;
+
+	/* The ID is recorded before anything is written, so that it is never given twice. */
+	error = admin_last_id_raise(id);
+	if (error != 0)
 		return ADMIN_FAILED;
 
 	/* No PIN or security key left for the name is taken (ws172-p002). */
-	error = admin_passkey_forget(request->name);
+	error = admin_passkey_forget(request->name, &changed);
 	if (error != 0)
 		return ADMIN_FAILED;
 
-	/* The group: the private one, and wheel when asked. */
-	(void)snprintf(line, sizeof(line), "%s:x:%ld:", request->name, id);
-	error = admin_line_append(files->group, files->group_length, line, files->first, ADMIN_OUTPUT_MAX, &written);
-	middle = written;
-	if (error == 0 && request->administrator) {
-		error = admin_member_set(files->first, middle, "wheel", request->name, 1, files->second, ADMIN_OUTPUT_MAX, &written);
-		if (error == 0)
-			memcpy(files->first, files->second, written);
-	}
+	/* The files, group first. */
+	reason = admin_commit(files, 1);
+	if (reason != ADMIN_OK)
+		return reason;
 
-	/* The group file written. */
-	if (error == 0)
-		error = admin_write(ACCOUNT_GROUP_FILE, 0644, files->first, written);
-	if (error != 0)
-		return ADMIN_FAILED;
-
-	/* passwd. */
-	(void)snprintf(line, sizeof(line), "%s:x:%ld:%ld:%s:%s:%s", request->name, id, id, request->display, home, ADMIN_SHELL);
-	error = admin_line_append(files->passwd, files->passwd_length, line, files->first, ADMIN_OUTPUT_MAX, &written);
-	if (error == 0)
-		error = admin_write(ACCOUNT_PASSWD_FILE, 0644, files->first, written);
-	if (error != 0)
-		return ADMIN_FAILED;
-
-	/* shadow: the hash, today, and the usual ageing. */
-	error = account_password_hash(request->fresh, hash, sizeof(hash));
-	day = (long)(time(NULL) / 86400);
-	(void)snprintf(line, sizeof(line), "%s:%s:%ld:0:99999:7:::", request->name, hash, day);
-	admin_wipe(hash, sizeof(hash));
-	if (error == 0)
-		error = admin_line_append(files->shadow, files->shadow_length, line, files->first, ADMIN_OUTPUT_MAX, &written);
-	admin_wipe(line, sizeof(line));
-	if (error == 0)
-		error = admin_write(ACCOUNT_SHADOW_PATH, 0400, files->first, written);
-	if (error != 0)
-		return ADMIN_FAILED;
-
-	/* The home, with the skeleton. */
-	error = admin_make_home(request->name, id);
-	if (error != 0) {
-		syslog(LOG_ERR, "the home of %s could not be made: %s", request->name, strerror(error));
-		return ADMIN_FAILED;
-	}
+	/* The home, with the skeleton, after the lock. */
+	(void)snprintf(after->name, sizeof(after->name), "%s", request->name);
+	after->make_home = request->make_home;
+	after->uid = id;
+	after->gid = gid;
 
 	/* Succeeded: the user is added. */
 	return ADMIN_OK;
 }
 
 /*
- * Removes a user: the target checked, its lines taken out of shadow,
- * passwd and group in that order, then its home removed when asked.
+ * Edits a new user's lines into the new texts: its private group, the
+ * groups asked for (Settings' wheel, root's list), its passwd line, and its
+ * shadow line (Settings' password's hash, or root's lock: the password is
+ * set with passwd).  Returns ADMIN_OK or a reason.
+ */
+static int
+admin_add_lines(
+	struct admin_files *files,
+	const struct admin_request *request,
+	long id,
+	long gid)
+{
+	const struct admin_text *text;
+	char line[ADMIN_LINE_MAX];
+	char hash[ACCOUNT_HASH_MAX];
+	const char *display;
+	const char *shell;
+	size_t written;
+	int length;
+	int error;
+
+	/* The private group, of the user's name and number. */
+	text = &files->texts[ADMIN_FILE_GROUP];
+	(void)snprintf(line, sizeof(line), "%s:x:%ld:", request->name, id);
+	error = admin_line_append(text->text, text->length, line, files->scratch, ADMIN_OUTPUT_MAX, &written);
+	if (error != 0)
+		return ADMIN_FAILED;
+	admin_take(files, ADMIN_FILE_GROUP, written);
+
+	/* Settings' administrator, in wheel. */
+	if (request->administrator) {
+		error = admin_member_set(text->text, text->length, "wheel", request->name, 1, files->scratch, ADMIN_OUTPUT_MAX, &written);
+		if (error != 0)
+			return ADMIN_FAILED;
+		admin_take(files, ADMIN_FILE_GROUP, written);
+	}
+
+	/* Root's groups. */
+	if (request->groups != NULL) {
+		error = admin_groups_join(files, request->name, request->groups);
+		if (error != 0)
+			return ADMIN_FAILED;
+	}
+
+	/* The display name and the shell: Settings', or root's with their defaults. */
+	display = request->display;
+	if (display == NULL)
+		display = "";
+	shell = request->shell;
+	if (shell == NULL)
+		shell = ADMIN_SHELL;
+
+	/* The passwd line, whole. */
+	length = snprintf(line, sizeof(line), "%s:x:%ld:%ld:%s:%s/%s:%s", request->name, id, gid, display, ADMIN_HOME_BASE, request->name, shell);
+	if (length < 0 || (size_t)length >= sizeof(line))
+		return ADMIN_BAD_VALUE;
+
+	/* Added to passwd. */
+	text = &files->texts[ADMIN_FILE_PASSWD];
+	error = admin_line_append(text->text, text->length, line, files->scratch, ADMIN_OUTPUT_MAX, &written);
+	if (error != 0)
+		return ADMIN_FAILED;
+	admin_take(files, ADMIN_FILE_PASSWD, written);
+
+	/* The shadow's password: Settings' hash, or root's lock. */
+	(void)snprintf(hash, sizeof(hash), "!");
+	if (!request->by_root) {
+		error = account_password_hash(request->fresh, hash, sizeof(hash));
+		if (error != 0)
+			return ADMIN_FAILED;
+	}
+
+	/* The shadow line: the password, today, and the usual ageing. */
+	(void)snprintf(line, sizeof(line), "%s:%s:%ld:0:99999:7:::", request->name, hash, files->day);
+	admin_wipe(hash, sizeof(hash));
+	text = &files->texts[ADMIN_FILE_SHADOW];
+	error = admin_line_append(text->text, text->length, line, files->scratch, ADMIN_OUTPUT_MAX, &written);
+	admin_wipe(line, sizeof(line));
+	if (error != 0)
+		return ADMIN_FAILED;
+	admin_take(files, ADMIN_FILE_SHADOW, written);
+
+	/* Succeeded: the new texts hold the user. */
+	return ADMIN_OK;
+}
+
+/*
+ * Removes a user (Settings' remove, root's user-remove): the target
+ * checked, its lines taken out of shadow and passwd, its own group and its
+ * name out of every group; its home, jobs and automatic login are dealt
+ * with after the lock.  A name without a passwd line has what is left of
+ * it cleaned.
  */
 static int
 admin_remove(
 	struct admin_files *files,
 	const struct admin_request *request,
-	const char *caller)
+	const char *caller,
+	struct admin_after *after)
 {
+	const struct admin_text *text;
 	struct admin_user user;
 	char home[ADMIN_PATH_MAX];
 	size_t written;
-	size_t remaining;
 	long group_id;
+	int removable;
+	int changed;
 	int found;
 	int same;
 	int busy;
-	int administrator;
-	int base;
+	int reason;
 	int error;
 
-	/* A person's account, not oneself. */
+	/* No passwd line: what is left of the name. */
 	found = admin_find_user(files, request->name, &user);
-	if (!found)
-		return ADMIN_NO_SUCH_USER;
-	if (user.uid < ADMIN_ID_FIRST)
+	if (!found) {
+		reason = admin_remove_rest(files, request->name, after);
+		return reason;
+	}
+
+	/* A person's account. */
+	if (user.uid < ADMIN_ID_FIRST || user.uid > ADMIN_ID_LAST)
 		return ADMIN_ROOT;
-	same = strcmp(request->name, caller);
-	if (same == 0)
-		return ADMIN_SELF;
 
-	/* Not the last administrator among the people's accounts. */
-	administrator = admin_in_group(files->group, files->group_length, "wheel", request->name, user.gid);
-	remaining = admin_administrators(files->passwd, files->passwd_length, files->group, files->group_length, request->name);
-	if (administrator && remaining == 0U)
-		return ADMIN_LAST_ADMINISTRATOR;
-
-	/* Nobody logged in or running as it. */
-	busy = admin_busy(request->name, user.uid);
-	if (busy)
-		return ADMIN_BUSY;
-
-	/* Its PIN and security keys first (ws172-p002). */
-	error = admin_passkey_forget(request->name);
-	if (error != 0)
-		return ADMIN_FAILED;
+	/* Settings' administrator does not remove itself (root's front end has no self). */
+	if (!request->by_root) {
+		same = strcmp(request->name, caller);
+		if (same == 0)
+			return ADMIN_SELF;
+	}
 
 	/* shadow (an account without a line there is removed all the same). */
-	error = admin_line_remove(files->shadow, files->shadow_length, request->name, files->first, ADMIN_OUTPUT_MAX, &written);
-	if (error == 0)
-		error = admin_write(ACCOUNT_SHADOW_PATH, 0400, files->first, written);
+	text = &files->texts[ADMIN_FILE_SHADOW];
+	error = admin_line_remove(text->text, text->length, request->name, files->scratch, ADMIN_OUTPUT_MAX, &written);
 	if (error != 0 && error != ENOENT)
 		return ADMIN_FAILED;
+	if (error == 0)
+		admin_take(files, ADMIN_FILE_SHADOW, written);
 
 	/* passwd. */
-	error = admin_line_remove(files->passwd, files->passwd_length, request->name, files->first, ADMIN_OUTPUT_MAX, &written);
-	if (error == 0)
-		error = admin_write(ACCOUNT_PASSWD_FILE, 0644, files->first, written);
+	text = &files->texts[ADMIN_FILE_PASSWD];
+	error = admin_line_remove(text->text, text->length, request->name, files->scratch, ADMIN_OUTPUT_MAX, &written);
 	if (error != 0)
 		return ADMIN_FAILED;
+	admin_take(files, ADMIN_FILE_PASSWD, written);
 
-	/* group: its private group (of its name and its primary group's ID), and its name out of every list. */
-	group_id = admin_number_field(files->group, files->group_length, request->name, 2U);
-	written = files->group_length;
-	memcpy(files->second, files->group, files->group_length);
-	if (group_id >= 0 && group_id == user.gid) {
-		error = admin_line_remove(files->group, files->group_length, request->name, files->second, ADMIN_OUTPUT_MAX, &written);
+	/* Its own group, unless somebody else's primary group or a group with other members. */
+	text = &files->texts[ADMIN_FILE_GROUP];
+	removable = admin_group_removable(text->text, text->length, files->texts[ADMIN_FILE_PASSWD].text, files->texts[ADMIN_FILE_PASSWD].length, request->name, user.uid, user.gid);
+	if (removable) {
+		error = admin_line_remove(text->text, text->length, request->name, files->scratch, ADMIN_OUTPUT_MAX, &written);
 		if (error != 0)
 			return ADMIN_FAILED;
+		admin_take(files, ADMIN_FILE_GROUP, written);
 	}
 
-	/* Its name out of every group's list, and the group file written. */
-	error = admin_member_forget(files->second, written, request->name, files->first, ADMIN_OUTPUT_MAX, &written);
-	if (error == 0)
-		error = admin_write(ACCOUNT_GROUP_FILE, 0644, files->first, written);
+	/* A group of the name that stays is said in the log. */
+	group_id = admin_number_field(text->text, text->length, request->name, 2U);
+	if (!removable && group_id >= 0)
+		syslog(LOG_NOTICE, "the group %s is kept: another user's primary group, or not the user's own", request->name);
+
+	/* Its name out of every group's list. */
+	error = admin_member_forget(text->text, text->length, request->name, files->scratch, ADMIN_OUTPUT_MAX, &written);
+	if (error != 0)
+		return ADMIN_FAILED;
+	admin_take(files, ADMIN_FILE_GROUP, written);
+
+	/* Not the last administrator who can log in. */
+	reason = admin_keeps_administrator(files);
+	if (reason != ADMIN_OK)
+		return reason;
+
+	/* Nobody logged in or running as it, unless root forces the removal. */
+	if (!request->force) {
+		busy = admin_busy(request->name, user.uid);
+		if (busy)
+			return ADMIN_BUSY;
+	}
+
+	/* Its PIN and security keys first (ws172-p002). */
+	error = admin_passkey_forget(request->name, &changed);
 	if (error != 0)
 		return ADMIN_FAILED;
 
-	/* The home, only when asked, and only the one under the homes' directory by its name; no link is followed. */
+	/* The files, shadow first. */
+	reason = admin_commit(files, 0);
+	if (reason != ADMIN_OK)
+		return reason;
+
+	/* After the lock: its jobs and automatic login, and its home when asked. */
+	(void)snprintf(after->name, sizeof(after->name), "%s", request->name);
+	after->forget = 1;
+	after->uid = user.uid;
+	after->gid = user.gid;
+
+	/* The home only when it is the one under the homes' directory by its name. */
 	(void)snprintf(home, sizeof(home), "%s/%s", ADMIN_HOME_BASE, request->name);
 	same = strcmp(home, user.home);
-	if (request->remove_home && same == 0) {
-		base = open(ADMIN_HOME_BASE, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-		error = errno;
-		if (base >= 0) {
-			error = admin_remove_tree(base, request->name, 0);
-			(void)close(base);
-		}
-
-		/* A home that could not be removed is said in the log; the account is removed all the same. */
-		if (error != 0 && error != ENOENT)
-			syslog(LOG_ERR, "the home of %s could not be removed: %s", request->name, strerror(error));
-	}
+	if (request->remove_home && same == 0)
+		after->remove_home = 1;
+	if (request->remove_home && same != 0)
+		syslog(LOG_NOTICE, "the home of %s is kept: it is not %s", request->name, home);
 
 	/* Succeeded: the user is removed. */
 	return ADMIN_OK;
 }
 
 /*
- * Sets another person's password: the target checked, the password by the
- * rules, its hash into shadow (a line added when it has none).
+ * Cleans what a failed change left of a name without a passwd line: its
+ * shadow line, its own group, its name in the groups' lists, and its lines
+ * in /etc/passkey.  Returns ADMIN_OK, or ADMIN_NO_SUCH_USER when nothing
+ * of it is there.
+ */
+static int
+admin_remove_rest(
+	struct admin_files *files,
+	const char *name,
+	struct admin_after *after)
+{
+	const struct admin_text *text;
+	size_t written;
+	int removable;
+	int changed;
+	int differs;
+	int valid;
+	int rest;
+	int reason;
+	int error;
+
+	/* Only a name a person may have. */
+	valid = admin_name_valid(name);
+	if (!valid)
+		return ADMIN_NO_SUCH_USER;
+
+	/* Its shadow line. */
+	rest = 0;
+	text = &files->texts[ADMIN_FILE_SHADOW];
+	error = admin_line_remove(text->text, text->length, name, files->scratch, ADMIN_OUTPUT_MAX, &written);
+	if (error != 0 && error != ENOENT)
+		return ADMIN_FAILED;
+	if (error == 0) {
+		admin_take(files, ADMIN_FILE_SHADOW, written);
+		rest = 1;
+	}
+
+	/* Its own group. */
+	text = &files->texts[ADMIN_FILE_GROUP];
+	removable = admin_group_removable(text->text, text->length, files->texts[ADMIN_FILE_PASSWD].text, files->texts[ADMIN_FILE_PASSWD].length, name, -1, -1);
+	if (removable) {
+		error = admin_line_remove(text->text, text->length, name, files->scratch, ADMIN_OUTPUT_MAX, &written);
+		if (error != 0)
+			return ADMIN_FAILED;
+		admin_take(files, ADMIN_FILE_GROUP, written);
+		rest = 1;
+	}
+
+	/* Its name in the groups' lists. */
+	error = admin_member_forget(text->text, text->length, name, files->scratch, ADMIN_OUTPUT_MAX, &written);
+	if (error != 0)
+		return ADMIN_FAILED;
+	differs = 1;
+	if (written == text->length)
+		differs = memcmp(text->text, files->scratch, written);
+	if (differs != 0) {
+		admin_take(files, ADMIN_FILE_GROUP, written);
+		rest = 1;
+	}
+
+	/* Its PIN and security keys. */
+	error = admin_passkey_forget(name, &changed);
+	if (error != 0)
+		return ADMIN_FAILED;
+	if (changed)
+		rest = 1;
+
+	/* Nothing of the name. */
+	if (!rest)
+		return ADMIN_NO_SUCH_USER;
+
+	/* The files, shadow first. */
+	reason = admin_commit(files, 0);
+	if (reason != ADMIN_OK)
+		return reason;
+
+	/* Its automatic login after the lock (its user ID, and so its jobs, are not known). */
+	(void)snprintf(after->name, sizeof(after->name), "%s", name);
+	after->forget = 1;
+	syslog(LOG_NOTICE, "what was left of %s without a passwd line is cleaned", name);
+
+	/* Succeeded: nothing of the name is left. */
+	return ADMIN_OK;
+}
+
+/*
+ * Sets another person's password (Settings): the target checked, the
+ * password by the rules, its hash into shadow (a line added when it has
+ * none), and the user's PIN and security keys forgotten.
  */
 static int
 admin_reset(
 	struct admin_files *files,
 	const struct admin_request *request)
 {
+	const struct admin_text *text;
 	struct admin_user user;
 	char hash[ACCOUNT_HASH_MAX];
 	char line[ADMIN_LINE_MAX];
 	size_t written;
-	long day;
+	int changed;
 	int found;
 	int rule;
+	int reason;
 	int error;
 
 	/* A person's account. */
 	found = admin_find_user(files, request->name, &user);
 	if (!found)
 		return ADMIN_NO_SUCH_USER;
-	if (user.uid < ADMIN_ID_FIRST)
+	if (user.uid < ADMIN_ID_FIRST || user.uid > ADMIN_ID_LAST)
 		return ADMIN_ROOT;
 
 	/* The password by the rules. */
@@ -715,38 +1177,44 @@ admin_reset(
 	if (rule != ACCOUNT_PASSWORD_OK)
 		return ADMIN_WEAK_PASSWORD;
 
-	/* The user's PIN and security keys go with the old password (ws172-p002). */
-	error = admin_passkey_forget(request->name);
+	/* Its hash. */
+	error = account_password_hash(request->fresh, hash, sizeof(hash));
 	if (error != 0)
 		return ADMIN_FAILED;
 
 	/* The hash in the user's line, or a new line. */
-	error = account_password_hash(request->fresh, hash, sizeof(hash));
-	if (error != 0)
-		return ADMIN_FAILED;
-	day = (long)(time(NULL) / 86400);
-	error = account_shadow_replace(files->shadow, files->shadow_length, request->name, hash, day, files->first, ADMIN_OUTPUT_MAX, &written);
+	text = &files->texts[ADMIN_FILE_SHADOW];
+	error = account_shadow_replace(text->text, text->length, request->name, hash, files->day, files->scratch, ADMIN_OUTPUT_MAX, &written);
 	if (error == ENOENT) {
-		(void)snprintf(line, sizeof(line), "%s:%s:%ld:0:99999:7:::", request->name, hash, day);
-		error = admin_line_append(files->shadow, files->shadow_length, line, files->first, ADMIN_OUTPUT_MAX, &written);
+		(void)snprintf(line, sizeof(line), "%s:%s:%ld:0:99999:7:::", request->name, hash, files->day);
+		error = admin_line_append(text->text, text->length, line, files->scratch, ADMIN_OUTPUT_MAX, &written);
 		admin_wipe(line, sizeof(line));
 	}
 
-	/* Written. */
+	/* The new shadow. */
 	admin_wipe(hash, sizeof(hash));
-	if (error == 0)
-		error = admin_write(ACCOUNT_SHADOW_PATH, 0400, files->first, written);
 	if (error != 0)
 		return ADMIN_FAILED;
+	admin_take(files, ADMIN_FILE_SHADOW, written);
+
+	/* The user's PIN and security keys go with the old password (ws172-p002). */
+	error = admin_passkey_forget(request->name, &changed);
+	if (error != 0)
+		return ADMIN_FAILED;
+
+	/* The file. */
+	reason = admin_commit(files, 0);
+	if (reason != ADMIN_OK)
+		return reason;
 
 	/* Succeeded: the password is set. */
 	return ADMIN_OK;
 }
 
 /*
- * Adds a person to wheel or network, or takes it out: the target checked
- * (not oneself or the last administrator out of wheel), the group's list
- * of members changed; no primary group is ever changed.
+ * Adds a person to wheel or network, or takes it out (Settings): the
+ * target checked (not oneself out of wheel), the group's list of members
+ * changed; no primary group is ever changed here.
  */
 static int
 admin_group(
@@ -754,47 +1222,382 @@ admin_group(
 	const struct admin_request *request,
 	const char *caller)
 {
+	const struct admin_text *text;
 	struct admin_user user;
 	size_t written;
-	size_t remaining;
 	int member;
 	int found;
 	int wheel;
 	int same;
+	int reason;
 	int error;
 
 	/* A person's account. */
 	found = admin_find_user(files, request->name, &user);
 	if (!found)
 		return ADMIN_NO_SUCH_USER;
-	if (user.uid < ADMIN_ID_FIRST)
+	if (user.uid < ADMIN_ID_FIRST || user.uid > ADMIN_ID_LAST)
 		return ADMIN_ROOT;
 
-	/* Out of wheel: not oneself, and not the last administrator. */
+	/* Out of wheel: not oneself. */
 	member = 0;
 	if (request->operation == ADMIN_GROUP_ADD)
 		member = 1;
 	wheel = strcmp(request->group, "wheel");
-	if (!member && wheel == 0) {
-		/* Oneself. */
-		same = strcmp(request->name, caller);
-		if (same == 0)
-			return ADMIN_SELF;
-
-		/* The last one. */
-		remaining = admin_administrators(files->passwd, files->passwd_length, files->group, files->group_length, request->name);
-		if (remaining == 0U)
-			return ADMIN_LAST_ADMINISTRATOR;
-	}
+	same = strcmp(request->name, caller);
+	if (!member &&
+	    wheel == 0 &&
+	    same == 0)
+		return ADMIN_SELF;
 
 	/* The group's list of members. */
-	error = admin_member_set(files->group, files->group_length, request->group, request->name, member, files->first, ADMIN_OUTPUT_MAX, &written);
-	if (error == 0)
-		error = admin_write(ACCOUNT_GROUP_FILE, 0644, files->first, written);
+	text = &files->texts[ADMIN_FILE_GROUP];
+	error = admin_member_set(text->text, text->length, request->group, request->name, member, files->scratch, ADMIN_OUTPUT_MAX, &written);
+	if (error != 0)
+		return ADMIN_FAILED;
+	admin_take(files, ADMIN_FILE_GROUP, written);
+
+	/* Not the last administrator who can log in. */
+	reason = admin_keeps_administrator(files);
+	if (reason != ADMIN_OK)
+		return reason;
+
+	/* The file. */
+	reason = admin_commit(files, 0);
+	if (reason != ADMIN_OK)
+		return reason;
+
+	/* Succeeded: the membership is changed. */
+	return ADMIN_OK;
+}
+
+/*
+ * Changes a user for root's user-modify: its display name, shell, primary
+ * group, groups, and the lock of its password, each only when asked.
+ */
+static int
+admin_modify(
+	struct admin_files *files,
+	const struct admin_request *request)
+{
+	const struct admin_text *text;
+	struct admin_user user;
+	char number[24];
+	size_t written;
+	long gid;
+	int found;
+	int there;
+	int reason;
+	int error;
+
+	/* A person's account. */
+	found = admin_find_user(files, request->name, &user);
+	if (!found)
+		return ADMIN_NO_SUCH_USER;
+	if (user.uid < ADMIN_ID_FIRST || user.uid > ADMIN_ID_LAST)
+		return ADMIN_ROOT;
+
+	/* The display name, passwd's fifth field. */
+	text = &files->texts[ADMIN_FILE_PASSWD];
+	if (request->display != NULL) {
+		error = admin_field_set(text->text, text->length, request->name, 4U, request->display, files->scratch, ADMIN_OUTPUT_MAX, &written);
+		if (error != 0)
+			return ADMIN_FAILED;
+		admin_take(files, ADMIN_FILE_PASSWD, written);
+	}
+
+	/* The shell, a program that is there, passwd's seventh field. */
+	if (request->shell != NULL) {
+		/* There. */
+		there = admin_shell_there(request->shell);
+		if (!there)
+			return ADMIN_BAD_VALUE;
+
+		/* Set. */
+		error = admin_field_set(text->text, text->length, request->name, 6U, request->shell, files->scratch, ADMIN_OUTPUT_MAX, &written);
+		if (error != 0)
+			return ADMIN_FAILED;
+		admin_take(files, ADMIN_FILE_PASSWD, written);
+	}
+
+	/* The primary group, passwd's fourth field. */
+	if (request->primary != NULL) {
+		/* Its ID. */
+		reason = admin_primary_group(files, request->name, request->primary, &gid);
+		if (reason != ADMIN_OK)
+			return reason;
+		if (gid < 0)
+			return ADMIN_BAD_VALUE;
+
+		/* Set. */
+		(void)snprintf(number, sizeof(number), "%ld", gid);
+		error = admin_field_set(text->text, text->length, request->name, 3U, number, files->scratch, ADMIN_OUTPUT_MAX, &written);
+		if (error != 0)
+			return ADMIN_FAILED;
+		admin_take(files, ADMIN_FILE_PASSWD, written);
+	}
+
+	/* The groups that replace the user's: out of every list first. */
+	text = &files->texts[ADMIN_FILE_GROUP];
+	if (request->groups != NULL && !request->groups_append) {
+		error = admin_member_forget(text->text, text->length, request->name, files->scratch, ADMIN_OUTPUT_MAX, &written);
+		if (error != 0)
+			return ADMIN_FAILED;
+		admin_take(files, ADMIN_FILE_GROUP, written);
+	}
+
+	/* Then into the groups listed. */
+	if (request->groups != NULL) {
+		error = admin_groups_join(files, request->name, request->groups);
+		if (error != 0)
+			return ADMIN_FAILED;
+	}
+
+	/* The lock of the password. */
+	if (request->lock != ADMIN_LOCK_KEEP) {
+		reason = admin_modify_lock(files, request->name, request->lock);
+		if (reason != ADMIN_OK)
+			return reason;
+	}
+
+	/* Not the last administrator who can log in. */
+	reason = admin_keeps_administrator(files);
+	if (reason != ADMIN_OK)
+		return reason;
+
+	/* The files, shadow first. */
+	reason = admin_commit(files, 0);
+	if (reason != ADMIN_OK)
+		return reason;
+
+	/* Succeeded: the user is changed. */
+	return ADMIN_OK;
+}
+
+/*
+ * Locks a user's password in the new shadow, or takes the lock off when a
+ * password that can be typed is behind it.  Returns ADMIN_OK,
+ * ADMIN_NO_PASSWORD, or ADMIN_FAILED.
+ */
+static int
+admin_modify_lock(
+	struct admin_files *files,
+	const char *name,
+	enum admin_lock lock)
+{
+	const struct admin_text *text;
+	size_t written;
+	int error;
+
+	/* The shadow with the hash locked or not. */
+	text = &files->texts[ADMIN_FILE_SHADOW];
+	error = admin_lock_hash(text->text, text->length, name, lock, files->scratch, ADMIN_OUTPUT_MAX, &written);
+
+	/* No shadow line: the user cannot log in already, so a lock changes nothing and an unlock has no password. */
+	if (error == ENOENT) {
+		if (lock == ADMIN_LOCK_SET)
+			return ADMIN_OK;
+		return ADMIN_NO_PASSWORD;
+	}
+
+	/* Nothing that can be typed behind the lock (an empty hash would take an empty password). */
+	if (error == EACCES)
+		return ADMIN_NO_PASSWORD;
 	if (error != 0)
 		return ADMIN_FAILED;
 
-	/* Succeeded: the membership is changed. */
+	/* The new shadow. */
+	admin_take(files, ADMIN_FILE_SHADOW, written);
+
+	/* Succeeded: the password is locked or not. */
+	return ADMIN_OK;
+}
+
+/*
+ * Finds the ID of a primary group root asks for: wheel's or network's, or
+ * the user's own group's (a person's number).  The user's own group of a
+ * user being added is not there yet: its ID is then -1, for the caller to
+ * use the user's.  Returns ADMIN_OK, or ADMIN_BAD_VALUE for a group that is
+ * not there or not a person's.
+ */
+static int
+admin_primary_group(
+	const struct admin_files *files,
+	const char *name,
+	const char *group,
+	long *gid)
+{
+	const struct admin_text *text;
+	int own;
+
+	/* The group's ID. */
+	text = &files->texts[ADMIN_FILE_GROUP];
+	*gid = admin_number_field(text->text, text->length, group, 2U);
+
+	/* wheel or network: any ID they have. */
+	own = strcmp(group, name);
+	if (own != 0) {
+		if (*gid < 0)
+			return ADMIN_BAD_VALUE;
+		return ADMIN_OK;
+	}
+
+	/* The user's own group: not there yet, or a person's number. */
+	if (*gid < 0)
+		return ADMIN_OK;
+	if (*gid < ADMIN_ID_FIRST || *gid > ADMIN_ID_LAST)
+		return ADMIN_BAD_VALUE;
+
+	/* Succeeded: the user's own group. */
+	return ADMIN_OK;
+}
+
+/*
+ * Makes a user a member of each group of a list (split by ',', already
+ * checked to be wheel or network) in the new group text.  Returns 0 or an
+ * errno value.
+ */
+static int
+admin_groups_join(
+	struct admin_files *files,
+	const char *name,
+	const char *groups)
+{
+	const struct admin_text *text;
+	const char *comma;
+	char group[16];
+	size_t length;
+	size_t at;
+	size_t item;
+	size_t written;
+	int error;
+
+	/* Each group of the list. */
+	text = &files->texts[ADMIN_FILE_GROUP];
+	length = strlen(groups);
+	at = 0;
+	while (at < length) {
+		/* One group, to the next ',' or the list's end. */
+		comma = memchr(groups + at, ',', length - at);
+		item = length - at;
+		if (comma != NULL)
+			item = (size_t)(comma - (groups + at));
+		if (item >= sizeof(group))
+			return EINVAL;
+		memcpy(group, groups + at, item);
+		group[item] = '\0';
+
+		/* The user in its list. */
+		error = admin_member_set(text->text, text->length, group, name, 1, files->scratch, ADMIN_OUTPUT_MAX, &written);
+		if (error != 0)
+			return error;
+		admin_take(files, ADMIN_FILE_GROUP, written);
+
+		/* The next. */
+		at += item + 1U;
+	}
+
+	/* Succeeded: the user is in every group listed. */
+	return 0;
+}
+
+/*
+ * Refuses a change that leaves no administrator who can log in where the
+ * files had one: a removal, a lock, a shell that does not log in, a
+ * primary group or a list of groups without wheel, Settings' wheel
+ * removal.  A machine that had none already is not refused (the change
+ * cannot make it worse).
+ */
+static int
+admin_keeps_administrator(
+	const struct admin_files *files)
+{
+	const struct admin_text *passwd;
+	const struct admin_text *group;
+	const struct admin_text *shadow;
+	size_t before;
+	size_t after;
+
+	/* The administrators who can log in, as the files are. */
+	passwd = &files->texts[ADMIN_FILE_PASSWD];
+	group = &files->texts[ADMIN_FILE_GROUP];
+	shadow = &files->texts[ADMIN_FILE_SHADOW];
+	before = admin_administrators(passwd->original, passwd->original_length, group->original, group->original_length, shadow->original, shadow->original_length, files->day);
+
+	/* And as they would be. */
+	after = admin_administrators(passwd->text, passwd->length, group->text, group->length, shadow->text, shadow->length, files->day);
+
+	/* The last one would go. */
+	if (before > 0U && after == 0U)
+		return ADMIN_LAST_ADMINISTRATOR;
+
+	/* Succeeded: an administrator is kept, or there was none. */
+	return ADMIN_OK;
+}
+
+/*
+ * Writes each account file whose text changed, in the order of an
+ * addition (group, passwd, shadow) or of any other change (shadow, passwd,
+ * group), so that a crash between two never leaves an account that logs
+ * in half made.  When one cannot be written, the ones written already get
+ * their old texts back.  Returns ADMIN_OK or ADMIN_FAILED.
+ */
+static int
+admin_commit(
+	struct admin_files *files,
+	int adding)
+{
+	enum admin_file order[ADMIN_FILE_COUNT];
+	int written[ADMIN_FILE_COUNT];
+	struct admin_text *text;
+	int differs;
+	int error;
+	int i;
+	int back;
+
+	/* The order. */
+	order[0] = ADMIN_FILE_SHADOW;
+	order[1] = ADMIN_FILE_PASSWD;
+	order[2] = ADMIN_FILE_GROUP;
+	if (adding) {
+		order[0] = ADMIN_FILE_GROUP;
+		order[2] = ADMIN_FILE_SHADOW;
+	}
+
+	/* Each file in turn. */
+	for (i = 0; i < ADMIN_FILE_COUNT; i++) {
+		/* An unchanged file is not written. */
+		written[i] = 0;
+		text = &files->texts[order[i]];
+		differs = 1;
+		if (text->length == text->original_length)
+			differs = memcmp(text->text, text->original, text->length);
+		if (differs == 0)
+			continue;
+
+		/* The new text. */
+		error = admin_write(text->path, text->mode, text->text, text->length);
+		if (error == 0) {
+			written[i] = 1;
+			continue;
+		}
+
+		/* A failure: the files written already, back to their old texts, the last first. */
+		for (back = i - 1; back >= 0; back--) {
+			/* One written. */
+			if (!written[back])
+				continue;
+			text = &files->texts[order[back]];
+			error = admin_write(text->path, text->mode, text->original, text->original_length);
+			if (error == 0)
+				syslog(LOG_NOTICE, "%s is put back as it was", text->path);
+		}
+
+		/* The change is not made. */
+		return ADMIN_FAILED;
+	}
+
+	/* Succeeded: every changed file is written. */
 	return ADMIN_OK;
 }
 
@@ -823,25 +1626,167 @@ admin_write(
 }
 
 /*
- * Takes every line of a name out of /etc/passkey (its PIN and security
- * keys, whatever their user ID; ws172-p002), under the lock of the account
- * files the caller holds.  Returns 0 (a missing file has none), or an
+ * Reports the highest person's user ID that something outside the account
+ * files still shows was given: the record of the last ID given, the
+ * owners of the homes, cron's spool by its names and at's by its owners.
+ * A new user's ID is above it.
+ */
+static long
+admin_id_floor(void)
+{
+	char text[ADMIN_SMALL_MAX];
+	size_t length;
+	char *end;
+	long highest;
+	long recorded;
+	int error;
+
+	/* The record, when there is one that is a number. */
+	highest = 0;
+	error = account_file_read(ADMIN_LAST_ID_FILE, text, sizeof(text) - 1U, &length);
+	if (error == 0) {
+		text[length] = '\0';
+		recorded = strtol(text, &end, 10);
+		if (end != text && recorded > highest)
+			highest = recorded;
+	}
+
+	/* The homes' owners. */
+	admin_highest_in_directory(ADMIN_HOME_BASE, 0, &highest);
+
+	/* cron's tables, named by their users' IDs. */
+	admin_highest_in_directory(ADMIN_CRON_SPOOL, 1, &highest);
+
+	/* at's jobs, owned by their users. */
+	admin_highest_in_directory(ADMIN_AT_SPOOL, 0, &highest);
+
+	/* The highest found. */
+	return highest;
+}
+
+/*
+ * Raises a highest ID to the largest person's user ID among a directory's
+ * entries: their names when by_name is nonzero, their owners otherwise (no
+ * link is followed).  A directory that is not there has none.
+ */
+static void
+admin_highest_in_directory(
+	const char *path,
+	int by_name,
+	long *highest)
+{
+	struct dirent *entry;
+	struct stat status;
+	DIR *directory;
+	char *end;
+	long number;
+	int error;
+	int dot;
+
+	/* The directory, when there is one. */
+	directory = opendir(path);
+	if (directory == NULL)
+		return;
+
+	/* Each entry. */
+	for (;;) {
+		/* The next entry, or the end. */
+		entry = readdir(directory);
+		if (entry == NULL)
+			break;
+
+		/* Not "." or "..". */
+		dot = admin_dot(entry->d_name);
+		if (dot)
+			continue;
+
+		/* The number: the name's, or the owner's. */
+		if (by_name) {
+			number = strtol(entry->d_name, &end, 10);
+			if (end == entry->d_name || *end != '\0')
+				continue;
+		} else {
+			error = fstatat(dirfd(directory), entry->d_name, &status, AT_SYMLINK_NOFOLLOW);
+			if (error != 0)
+				continue;
+			number = (long)status.st_uid;
+		}
+
+		/* A person's ID above the highest so far. */
+		if (number < ADMIN_ID_FIRST || number > ADMIN_ID_LAST)
+			continue;
+		if (number > *highest)
+			*highest = number;
+	}
+
+	/* The directory is no longer needed. */
+	(void)closedir(directory);
+}
+
+/*
+ * Raises the record of the highest user ID given to a person to an ID,
+ * under the lock of the account files the caller holds.  Returns 0 or an
  * errno value, said in the log.
  */
 static int
+admin_last_id_raise(
+	long id)
+{
+	char text[ADMIN_SMALL_MAX];
+	size_t length;
+	char *end;
+	long recorded;
+	int written;
+	int error;
+
+	/* The record; none, or one that is not a number, holds nothing. */
+	recorded = 0;
+	error = account_file_read(ADMIN_LAST_ID_FILE, text, sizeof(text) - 1U, &length);
+	if (error == 0) {
+		text[length] = '\0';
+		recorded = strtol(text, &end, 10);
+		if (end == text)
+			recorded = 0;
+	}
+
+	/* A higher ID is recorded already. */
+	if (recorded >= id)
+		return 0;
+
+	/* The new record. */
+	written = snprintf(text, sizeof(text), "%ld\n", id);
+	if (written < 0 || (size_t)written >= sizeof(text))
+		return ERANGE;
+	error = admin_write(ADMIN_LAST_ID_FILE, 0644, text, (size_t)written);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the ID is never given again. */
+	return 0;
+}
+
+/*
+ * Takes every line of a name out of /etc/passkey (its PIN and security
+ * keys, whatever their user ID; ws172-p002), under the lock of the account
+ * files the caller holds; changed says whether there was one.  Returns 0
+ * (a missing file has none), or an errno value, said in the log.
+ */
+static int
 admin_passkey_forget(
-	const char *name)
+	const char *name,
+	int *changed)
 {
 	char *text;
 	char *output;
 	int error;
 
 	/* The file's text and its edited copy. */
+	*changed = 0;
 	text = malloc(ADMIN_FILE_MAX);
 	output = malloc(ADMIN_OUTPUT_MAX);
 	error = ENOMEM;
 	if (text != NULL && output != NULL)
-		error = admin_passkey_edit(name, text, output);
+		error = admin_passkey_edit(name, text, output, changed);
 
 	/* Both wiped (they hold the PINs' hashes) and freed. */
 	if (text != NULL) {
@@ -874,7 +1819,8 @@ static int
 admin_passkey_edit(
 	const char *name,
 	char *text,
-	char *output)
+	char *output,
+	int *changed)
 {
 	size_t length;
 	size_t written;
@@ -910,6 +1856,7 @@ admin_passkey_edit(
 		return error;
 
 	/* Succeeded: the name's lines are gone. */
+	*changed = 1;
 	return 0;
 }
 
@@ -983,13 +1930,79 @@ admin_busy(
 }
 
 /*
+ * Reports whether a shell root gives a user is a program that is there: a
+ * regular file (a link to one is followed) that someone may run.
+ */
+static int
+admin_shell_there(
+	const char *shell)
+{
+	struct stat status;
+	int error;
+
+	/* The file. */
+	error = stat(shell, &status);
+	if (error != 0)
+		return 0;
+
+	/* A regular file. */
+	if ((status.st_mode & S_IFMT) != S_IFREG)
+		return 0;
+
+	/* That can be run. */
+	if ((status.st_mode & 0111) == 0)
+		return 0;
+
+	/* Succeeded: the shell is there. */
+	return 1;
+}
+
+/*
+ * Does what a request left for after the lock: makes a new home, removes
+ * an old one, and forgets a removed user's jobs and automatic login.
+ * Returns ADMIN_OK, or ADMIN_HOME_FAILED when the account was made but its
+ * home could not be (said in the log).
+ */
+static int
+admin_after_work(
+	const struct admin_after *after)
+{
+	int error;
+
+	/* A removed user's home, when asked. */
+	if (after->remove_home)
+		admin_remove_home(after->name, after->uid);
+
+	/* A removed user's jobs (by its user ID, when known) and automatic login. */
+	if (after->forget) {
+		if (after->uid >= 0)
+			admin_spool_forget(after->uid);
+		admin_autologin_forget(after->name);
+	}
+
+	/* A new user's home, with the skeleton. */
+	if (after->make_home) {
+		error = admin_make_home(after->name, after->uid, after->gid);
+		if (error != 0) {
+			syslog(LOG_ERR, "the home of %s could not be made: %s", after->name, strerror(error));
+			return ADMIN_HOME_FAILED;
+		}
+	}
+
+	/* Succeeded: nothing is left to do. */
+	return ADMIN_OK;
+}
+
+/*
  * Makes a new user's home under the homes' directory: mode 0700, owned by
- * the user, with the skeleton's files.  Returns 0 or an errno value.
+ * the user and its primary group, with the skeleton's files.  Returns 0 or
+ * an errno value.
  */
 static int
 admin_make_home(
 	const char *name,
-	long id)
+	long uid,
+	long gid)
 {
 	int base;
 	int home;
@@ -1013,7 +2026,7 @@ admin_make_home(
 	(void)close(base);
 	if (home < 0)
 		return errno;
-	error = fchown(home, (uid_t)id, (gid_t)id);
+	error = fchown(home, (uid_t)uid, (gid_t)gid);
 	if (error != 0) {
 		error = errno;
 		(void)close(home);
@@ -1021,7 +2034,7 @@ admin_make_home(
 	}
 
 	/* The skeleton's files. */
-	admin_copy_skeleton(home, id);
+	admin_copy_skeleton(home, uid, gid);
 	(void)close(home);
 
 	/* Succeeded: the home is made. */
@@ -1030,13 +2043,15 @@ admin_make_home(
 
 /*
  * Copies the regular files directly in the skeleton into a new home,
- * owned by the user, without the group's and the others' permissions (no
- * link is followed; the skeleton may be missing).
+ * owned by the user and its primary group, without the group's and the
+ * others' permissions (no link is followed; the skeleton may be missing;
+ * a directory in it is not copied).
  */
 static void
 admin_copy_skeleton(
 	int home,
-	long id)
+	long uid,
+	long gid)
 {
 	struct dirent *entry;
 	struct stat status;
@@ -1099,7 +2114,7 @@ admin_copy_skeleton(
 		}
 
 		/* Given to the user. */
-		(void)fchown(target, (uid_t)id, (gid_t)id);
+		(void)fchown(target, (uid_t)uid, (gid_t)gid);
 		(void)close(target);
 		(void)close(source);
 	}
@@ -1109,14 +2124,62 @@ admin_copy_skeleton(
 }
 
 /*
+ * Removes a removed user's home under the homes' directory by its name,
+ * never following a link, only when it is a directory the user owns (a
+ * directory that was there before the user stays), and never below a
+ * mount point inside it.  What could not be removed is said in the log.
+ */
+static void
+admin_remove_home(
+	const char *name,
+	long uid)
+{
+	struct stat status;
+	int base;
+	int error;
+
+	/* The homes' directory, not followed if it is a link. */
+	base = open(ADMIN_HOME_BASE, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+	if (base < 0) {
+		syslog(LOG_ERR, "the home of %s could not be removed: %s", name, strerror(errno));
+		return;
+	}
+
+	/* The home itself; none is removed already. */
+	error = fstatat(base, name, &status, AT_SYMLINK_NOFOLLOW);
+	if (error != 0) {
+		(void)close(base);
+		return;
+	}
+
+	/* A directory of the user's. */
+	if ((status.st_mode & S_IFMT) != S_IFDIR || (long)status.st_uid != uid) {
+		syslog(LOG_NOTICE, "the home of %s is kept: not a directory the user owns", name);
+		(void)close(base);
+		return;
+	}
+
+	/* The tree, on the home's own file system. */
+	error = admin_remove_tree(base, name, 0, status.st_dev);
+	if (error != 0)
+		syslog(LOG_ERR, "the home of %s could not be removed whole: %s", name, strerror(error));
+
+	/* The homes' directory is no longer needed. */
+	(void)close(base);
+}
+
+/*
  * Removes an entry of a directory and, when it is a directory, everything
- * under it, never following a link.  Returns 0 or an errno value.
+ * under it, never following a link and never entering another file system
+ * than the device's (a mount point is left, said in the log).  Returns 0
+ * or the first errno value.
  */
 static int
 admin_remove_tree(
 	int parent,
 	const char *name,
-	int depth)
+	int depth,
+	dev_t device)
 {
 	struct dirent *entry;
 	struct stat status;
@@ -1130,10 +2193,18 @@ admin_remove_tree(
 	if (depth > ADMIN_TREE_DEPTH)
 		return ELOOP;
 
-	/* Not a directory (or a link to one): unlinked. */
+	/* The entry, not followed. */
 	error = fstatat(parent, name, &status, AT_SYMLINK_NOFOLLOW);
 	if (error != 0)
 		return errno;
+
+	/* Another file system mounted here stays. */
+	if (status.st_dev != device) {
+		syslog(LOG_NOTICE, "%s is on another file system and is left", name);
+		return EXDEV;
+	}
+
+	/* Not a directory (or a link to one): unlinked. */
 	if ((status.st_mode & S_IFMT) != S_IFDIR) {
 		error = unlinkat(parent, name, 0);
 		if (error != 0)
@@ -1166,7 +2237,7 @@ admin_remove_tree(
 			continue;
 
 		/* Removed, and under it. */
-		error = admin_remove_tree(dirfd(directory), entry->d_name, depth + 1);
+		error = admin_remove_tree(dirfd(directory), entry->d_name, depth + 1, device);
 		if (error != 0 && first == 0)
 			first = error;
 	}
@@ -1181,6 +2252,107 @@ admin_remove_tree(
 
 	/* Succeeded: removed. */
 	return 0;
+}
+
+/*
+ * Forgets a removed user's jobs: its cron table, named by its user ID, and
+ * the at jobs it owns (regular files; no link is followed).
+ */
+static void
+admin_spool_forget(
+	long uid)
+{
+	struct dirent *entry;
+	struct stat status;
+	char path[ADMIN_PATH_MAX];
+	DIR *directory;
+	int descriptor;
+	int error;
+	int dot;
+
+	/* The cron table. */
+	(void)snprintf(path, sizeof(path), "%s/%ld", ADMIN_CRON_SPOOL, uid);
+	error = unlink(path);
+	if (error != 0 && errno != ENOENT)
+		syslog(LOG_ERR, "%s could not be removed: %s", path, strerror(errno));
+
+	/* at's spool, not followed if it is a link; none has no job. */
+	descriptor = open(ADMIN_AT_SPOOL, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+	if (descriptor < 0)
+		return;
+	directory = fdopendir(descriptor);
+	if (directory == NULL) {
+		(void)close(descriptor);
+		return;
+	}
+
+	/* Each job the user owns. */
+	for (;;) {
+		/* The next entry, or the end. */
+		entry = readdir(directory);
+		if (entry == NULL)
+			break;
+
+		/* Not "." or "..". */
+		dot = admin_dot(entry->d_name);
+		if (dot)
+			continue;
+
+		/* A regular file of the user's. */
+		error = fstatat(dirfd(directory), entry->d_name, &status, AT_SYMLINK_NOFOLLOW);
+		if (error != 0)
+			continue;
+		if ((status.st_mode & S_IFMT) != S_IFREG || (long)status.st_uid != uid)
+			continue;
+
+		/* Removed. */
+		error = unlinkat(dirfd(directory), entry->d_name, 0);
+		if (error != 0)
+			syslog(LOG_ERR, "the at job %s could not be removed: %s", entry->d_name, strerror(errno));
+	}
+
+	/* The spool is no longer needed. */
+	(void)closedir(directory);
+}
+
+/*
+ * Forgets a removed user's automatic login: the file that names the
+ * account sessiond logs in at boot goes when its first line names the
+ * user, so that a later account of the same name is not logged in by
+ * itself.
+ */
+static void
+admin_autologin_forget(
+	const char *name)
+{
+	char text[ADMIN_SMALL_MAX];
+	size_t length;
+	size_t first;
+	int error;
+	int same;
+
+	/* The file; none names nobody. */
+	error = account_file_read(ADMIN_AUTOLOGIN_FILE, text, sizeof(text) - 1U, &length);
+	if (error != 0)
+		return;
+
+	/* Its first line, without its end or blanks, as sessiond reads it. */
+	text[length] = '\0';
+	first = strcspn(text, "\r\n \t");
+	text[first] = '\0';
+	same = strcmp(text, name);
+	if (same != 0)
+		return;
+
+	/* It names the user: it goes. */
+	error = unlink(ADMIN_AUTOLOGIN_FILE);
+	if (error != 0) {
+		syslog(LOG_ERR, "%s could not be removed: %s", ADMIN_AUTOLOGIN_FILE, strerror(errno));
+		return;
+	}
+
+	/* Succeeded: no automatic login names the user. */
+	syslog(LOG_NOTICE, "the automatic login of %s is removed", name);
 }
 
 /*
