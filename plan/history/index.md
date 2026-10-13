@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1045 / WS074 flexbox XHTML timeout diagnosis（2026-10-14）
+
+[q1045履歴](queue-q1045.md): 代表XHTML2件の直接描画timeoutとgdb/DOMから最上位XHTMLをHTML解析する根因を確定。MIME/XML接続をp196へ分離、q1045-i01/p195 uncleared。p173全件100%は未達。[証拠](../ws074/phase195/evidence/20261014-q1045/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1044 / WS074 bounded static reftest census（2026-10-14）
 
 [q1044履歴](queue-q1044.md): 固定静的reftest全1,561 IDを5秒上限・逐次checkpointで測定、500 local PASS/1,051 FAIL/10 timeout。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1044/README.md)。共有投影/GitHub publication pending。

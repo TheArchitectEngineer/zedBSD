@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: in-progress（2026-10-14 q1034 partial）
+Status: uncleared（2026-10-14 q1044 partial、全件coverage未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -117,3 +117,5 @@ Event ws074-p190-q1043-uncleared-20261014: q1043-i01 uncleared。遅いXHTMLと�
 **partial scope cleared、p190 whole uncleared。** runnerにcase別描画上限と逐次fsync JSONLを追加し、固定静的1,561 IDを全実測。[結果・checkpoint](evidence/20261014-q1044/README.md): 500 local PASS/1,051 FAIL/10 timeout/0他error。未対応413 IDはscript402/scripted reference5/variant6。timeout10件はflexbox justify-content XHTMLに集中、q1043の遅延2 IDも明示的timeout。q1042広域100件はstatusと参照画素差が全件一致。JSONL1,561結果のindex/選定hashとfinal report一致、selection3/3+chain4/4+checkpoint2/2、Python compile/diff check PASS。browser/WPT/Master無変更、host build/Acid再計測省略。公式環境同等性、scripted/variant対応と描画FAILは残り、p190 whole/p173全件100%未達、GitHub publication保留。
 
 Event ws074-p190-q1044-outcome-20261014: q1044-i01 partial cleared、p190 whole uncleared。固定静的1,561 reftestのlocal baselineを完了。10 timeoutと1,051 FAIL、413 runner未対応を次の調査へ分ける。
+
+Event ws074-p190-q1045-p195-link-20261014: q1044のtimeout10 IDを新設[p195](../phase195/phase.md)の一般欠陥調査へ渡す。p190のrunner coverage/公式条件の受け入れは変えず、p195の修正結果を次の再測定で使用する。GitHub publication保留。

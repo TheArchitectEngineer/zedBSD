@@ -9,8 +9,8 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1044](queue.md) finished / p190 partial cleared、whole uncleared。2026-10-14 01:55 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
-Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。textdecoration全16 testharnessは16 PASS/0 FAIL、subtest179 PASS/0 FAILでp191 cleared。p189の単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、q1035/q1036で2件追加PASS。q1040固定crashtest全48件local PASS。q1044固定静的reftest1,561件は500 local PASS/1,051 FAIL/10 timeout、残るscript関連407/variant6はrunner未対応。p189/p190のrunner coverage、描画FAILとp173全件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
+Queue: [q1046](queue.md) active / p196 script-free XHTML partial。2026-10-14 02:04 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。textdecoration全16 testharnessは16 PASS/0 FAIL、subtest179 PASS/0 FAILでp191 cleared。p189の単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、q1035/q1036で2件追加PASS。q1040固定crashtest全48件local PASS。q1044固定静的reftest1,561件は500 local PASS/1,051 FAIL/10 timeout、残るscript関連407/variant6はrunner未対応。q1045で最上位XHTMLをHTML解析する根因を確定、p195 uncleared。p196でMIME/最上位XML解析を開始。p189/p190のrunner coverage、描画FAILとp173全件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p173-interop-resume-20261013: ユーザーが「WPTに進みます。2025を100%」と指示。既存の p173 Interop 2025 公式 focus area 全件 PASS 100% を次の優先対象にした。p173 と p100 の依存関係を、p188 の main 統合済み Acid3 検証出力に限定して整理。p100 whole の Acid2 exact/target gate は未達のまま。p173 の [候補選定と q1012 範囲](phase173/selection-snapshot.md)を記録、ユーザーが 23:49 JST 承認して開始。p101・p174〜p176 の受け入れは維持。Master の focused goal / WS priority 投影は、このセッションの編集禁止により Q1 へ pending。GitHub publication保留。
@@ -82,6 +82,10 @@ Event ws074-p190-q1042-outcome-20261014: [p190](phase190/phase.md) q1042-i01で�
 Event ws074-p190-q1043-uncleared-20261014: [p190](phase190/phase.md) q1043-i01は静的全1,561 ID中380件のstatusを記録し、中断。[部分証拠](phase190/evidence/20261014-q1043/README.md)。遅いXHTMLと途中保存不足が次のrunner改善点。残り1,181 ID未測定、p190 whole/p173全件100%未達。browser/Master無変更、GitHub publication保留。
 
 Event ws074-p190-q1044-outcome-20261014: [p190](phase190/phase.md) q1044-i01でcase別5秒上限/逐次checkpointを付け、固定静的reftest全1,561 IDを測定、500 local PASS/1,051 FAIL/10 timeout。[証拠](phase190/evidence/20261014-q1044/README.md)。script関連407/variant6未対応。p190 whole/p173全件100%未達、browser/Master無変更、GitHub publication保留。
+
+Event ws074-p195-addition-q1045-20261014: [p190](phase190/phase.md) q1044固定baselineのflexbox XHTML10 timeoutを一般欠陥として切り分ける[p195](phase195/phase.md)を追加。q1045-i01は代表2件の有界診断/単一最小修正と10件再測定に限定。p190 runner基準とp173全件目標は変えない。共有Master/Queue/GitHub publication保留。
+
+Event ws074-p195-q1045-uncleared-and-p196-added-20261014: [p195](phase195/phase.md) q1045-i01は最上位XHTMLをHTML parserへ渡す根因を確定したが、単一flex修正範囲を超えるためuncleared。[p196](phase196/phase.md)を追加して最上位MIME/XML接続を担当させ、q1046でscript-free XHTMLを有限に試す。p190/p173の受け入れと依存は不変。[証拠](phase195/evidence/20261014-q1045/README.md)。共有Master/Queue/GitHub publication保留。
 
 ## Q1 向けの整理（2026-10-05、Q1）
 
@@ -393,6 +397,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
 | [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1032計測6 PASS/10 FAIL/2 no output、q1035/q1036で2件追加PASS、reftest25/crashtest3未実行 | p189 q1024 shard、p192 q1025一意id output |
 | [ws074-p194](phase194/phase.md) | Interop 2025 Element.attributes / Attr | uncleared / q1029 partial cleared、beforematch WPT1 PASS | p193 q1028 fragment output |
+| [ws074-p195](phase195/phase.md) | Interop 2025 flexbox XHTML render timeout10件の一般欠陥調査/修正 | uncleared / q1045で最上位XHTML誤解析を確定、p196へ分離 | p190 q1044 timeout10 ID証拠 |
+| [ws074-p196](phase196/phase.md) | Interop 2025 最上位XML/XHTML document loading | in-progress / q1046 script-free XHTML解析 | p195 q1045根因証拠 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
