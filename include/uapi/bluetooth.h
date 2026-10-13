@@ -73,12 +73,23 @@
 /* The longest ACL packet, with the type's byte and the header. */
 #define BT_ACL_PACKET_MAX	(1U + 4U + BT_ACL_DATA_MAX)
 
-/* The bus a controller is on. */
+/* The bus a controller is on: USB, or a UART with the H4 framing (the Raspberry Pi 4's onboard controller). */
 #define BT_BUS_USB		1U
+#define BT_BUS_UART		2U
 
-/* bt_info flags: the Intel bootloader's path is on; the controller carries SCO (BT_IOC_SET_SCO). */
+/*
+ * bt_info flags: the Intel bootloader's path is on; the controller carries
+ * SCO (BT_IOC_SET_SCO); the line's speed can be changed (BT_IOC_SET_SPEED,
+ * up to speed_max); the board gives the controller an address
+ * (board_address).
+ */
 #define BT_INFO_BOOTLOADER	0x0001U
 #define BT_INFO_SCO		0x0002U
+#define BT_INFO_SPEED		0x0004U
+#define BT_INFO_ADDRESS		0x0008U
+
+/* The bytes of a Bluetooth device address. */
+#define BT_ADDRESS_SIZE		6U
 
 /* The longest SCO data of a packet, and its header (handle and flags 2, length 1). */
 #define BT_SCO_DATA_MAX		255U
@@ -91,9 +102,12 @@
 #define BT_TEXT_MAX		64U
 
 /*
- * What a controller is: the USB identity (vendor, product, bcdDevice),
- * the bus, the BT_INFO_* flags, the ACL data length limit now, the
- * product's name, and where it is ("usb1/port7/device3/interface0").
+ * What a controller is: the USB identity (vendor, product, bcdDevice; 0
+ * on a UART), the bus, the BT_INFO_* flags, the ACL data length limit now,
+ * the fastest line speed in baud (BT_INFO_SPEED, else 0), the address the
+ * board gives the controller in the HCI's order, least significant byte
+ * first (BT_INFO_ADDRESS, else zero), the product's name, and where it is
+ * ("usb1/port7/device3/interface0", "uart0").
  */
 struct bt_info {
 	uint16_t vendor;
@@ -102,10 +116,15 @@ struct bt_info {
 	uint16_t bus;
 	uint32_t flags;
 	uint32_t acl_data_max;
-	uint32_t reserved[4];
+	uint32_t speed_max;
+	uint8_t board_address[BT_ADDRESS_SIZE];
+	uint8_t pad[2];
+	uint32_t reserved;
 	char name[BT_TEXT_MAX];
 	char physical_path[BT_TEXT_MAX];
 };
+
+_Static_assert(sizeof(struct bt_info) == 160, "struct bt_info is 160 bytes");
 
 /*
  * The counts of a controller since it came: the events and the ACL
@@ -150,8 +169,16 @@ _Static_assert(sizeof(struct bt_sco) == 32, "struct bt_sco is 32 bytes");
 /*
  * BT_IOC_SET_BOOTLOADER: 1 sends the Intel Secure Send commands (opcode
  * 0xFC09) on the bulk OUT pipe and reads the bulk IN pipe as events, 0
- * goes back.  BT_IOC_RESET resets the controller's USB device in place
- * (ENOTSUP when it is not on a root port) and queues the RESET notice.
+ * goes back.  BT_IOC_RESET resets the controller and queues the RESET
+ * notice: on USB the controller's device is reset in place (ENOTSUP when
+ * it is not on a root port); on a UART its power is turned off and on
+ * again, so the controller runs its ROM again and the line is back at
+ * 115200 baud on both ends.  A UART transport that loses step with the
+ * controller resets it the same way by itself and queues the same notice.
+ * BT_IOC_SET_SPEED (BT_INFO_SPEED) sets the host's end of the UART to a
+ * speed in baud after the controller was told to change (its vendor
+ * command answered): what the line carried meanwhile is dropped.  0 or a
+ * speed above speed_max answers EINVAL, a controller without it ENOTSUP.
  * BT_IOC_SET_ACL_MAX sets the ACL data length limit (the controller's,
  * from HCI_Read_Buffer_Size); a value out of range answers EINVAL.
  * BT_IOC_SET_SCO sets the synchronous links (struct bt_sco); a controller
@@ -163,5 +190,6 @@ _Static_assert(sizeof(struct bt_sco) == 32, "struct bt_sco is 32 bytes");
 #define BT_IOC_SET_ACL_MAX	_IOW(KERN_BT_IOC_GROUP, 3, uint32_t)
 #define BT_IOC_GET_STATS	_IOR(KERN_BT_IOC_GROUP, 4, struct bt_stats)
 #define BT_IOC_SET_SCO		_IOWR(KERN_BT_IOC_GROUP, 5, struct bt_sco)
+#define BT_IOC_SET_SPEED	_IOW(KERN_BT_IOC_GROUP, 6, uint32_t)
 
 #endif

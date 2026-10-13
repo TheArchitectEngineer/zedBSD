@@ -11,7 +11,9 @@
  * of a received byte stream into packets, and the checks of a packet a
  * program writes; and for SCO (ws197-p007a2) the queue that drops its
  * oldest, the links' checks and alternate, the reassembly of the
- * isochronous IN bytes, and the queue of bytes for the OUT pipe.  Nothing here locks, sleeps or allocates; the class
+ * isochronous IN bytes, and the queue of bytes for the OUT pipe.  The
+ * reassembly also reads a UART's H4 stream, where every packet starts with
+ * its type's byte (ws215-p003).  Nothing here locks, sleeps or allocates; the class
  * holds its lock around the rings, and the host test builds this file as
  * it is.
  *
@@ -28,7 +30,11 @@
 static void ring_put(struct bt_hci_ring *ring, size_t offset, const uint8_t *source, size_t length);
 static void ring_get(const struct bt_hci_ring *ring, size_t offset, uint8_t *target, size_t length);
 static size_t assembler_header(unsigned mode);
+static int assembler_measure(const struct bt_hci_assembler *assembler, size_t *header, size_t *total, uint8_t *type);
 static int assembler_total(const struct bt_hci_assembler *assembler, size_t *total);
+static int assembler_h4_header(const struct bt_hci_assembler *assembler, size_t *header);
+static int assembler_h4_total(const struct bt_hci_assembler *assembler, size_t *total);
+static int event_code_known(unsigned code);
 static size_t assembler_take(struct bt_hci_assembler *assembler, const uint8_t *data, size_t size, size_t wanted);
 static int sco_header_fits(const struct bt_hci_sco_assembler *assembler);
 
@@ -270,9 +276,10 @@ bt_hci_assembler_restart(
  * (ENOSPC: no room), the packet stays gathered and whole, the feed stops
  * there, and the caller feeds the rest of the bytes later (with no bytes,
  * to deliver the gathered packet alone).  EBADMSG means an ACL header
- * said a packet is longer than the limit: the gathered packet is dropped
- * and *consumed covers the whole transfer, so the next transfer starts a
- * new packet.
+ * said a packet is longer than the limit (or, in the H4 mode, a header
+ * that no controller sends came): the gathered packet is dropped and
+ * *consumed covers the whole transfer, so the next transfer starts a new
+ * packet.
  */
 int
 bt_hci_assembler_feed(
@@ -283,35 +290,36 @@ bt_hci_assembler_feed(
 	void *context,
 	size_t *consumed)
 {
+	const uint8_t *packet;
+	size_t length;
 	size_t header;
 	size_t offset;
 	size_t total;
 	uint8_t type;
 	int error;
 
-	/* The header the mode's packets begin with, and the type they are delivered as. */
-	header = assembler_header(assembler->mode);
-	type = BT_PACKET_EVENT;
-	if (assembler->mode == BT_HCI_ASSEMBLE_ACL)
-		type = BT_PACKET_ACL;
-
 	/* Gathers and delivers packets until the bytes run out or a packet is refused. */
 	offset = 0U;
 	for (;;) {
-		/* A whole header says the packet's length; a too-long ACL header makes the transfer malformed. */
-		total = 0U;
-		if (assembler->have >= header) {
-			error = assembler_total(assembler, &total);
-			if (error != 0) {
-				assembler->have = 0U;
-				*consumed = size;
-				return error;
-			}
+		/* The header gathered so far says the packet's length; a header no controller sends makes the transfer malformed. */
+		error = assembler_measure(assembler, &header, &total, &type);
+		if (error != 0) {
+			assembler->have = 0U;
+			*consumed = size;
+			return error;
 		}
 
-		/* A whole packet goes to the class; a refused one stays for the next feed. */
+		/* A whole packet goes to the class, without the H4 type's byte; a refused one stays for the next feed. */
 		if (total != 0U && assembler->have == total) {
-			error = deliver(context, type, assembler->buffer, total);
+			packet = assembler->buffer;
+			length = total;
+			if (assembler->mode == BT_HCI_ASSEMBLE_H4) {
+				packet = assembler->buffer + 1;
+				length = total - 1U;
+			}
+
+			/* The class takes it, or refuses it for room. */
+			error = deliver(context, type, packet, length);
 			if (error != 0) {
 				*consumed = offset;
 				return error;
@@ -335,6 +343,48 @@ bt_hci_assembler_feed(
 
 	/* Succeeded: every byte was taken. */
 	*consumed = offset;
+	return 0;
+}
+
+/*
+ * Puts a whole packet the transport found by itself (in the H4 form, the
+ * type's byte first) into an empty assembler, as though it had been
+ * gathered: the next feed, with no bytes, delivers it, and keeps it when
+ * the class refuses it.  Returns 0, EBUSY when a packet is being gathered,
+ * or EINVAL for a packet the assembler cannot hold or whose header does
+ * not say its length.
+ */
+int
+bt_hci_assembler_load(
+	struct bt_hci_assembler *assembler,
+	const uint8_t *packet,
+	size_t length)
+{
+	size_t header;
+	size_t total;
+	size_t index;
+	uint8_t type;
+	int error;
+
+	/* Only an assembler with nothing gathered takes a packet whole. */
+	if (assembler->have != 0U)
+		return EBUSY;
+	if (length == 0U || length > assembler->capacity)
+		return EINVAL;
+
+	/* The packet's bytes, as the feed would have gathered them. */
+	for (index = 0U; index < length; index++)
+		assembler->buffer[index] = packet[index];
+	assembler->have = length;
+
+	/* A packet whose header says another length is not taken. */
+	error = assembler_measure(assembler, &header, &total, &type);
+	if (error != 0 || total != length) {
+		assembler->have = 0U;
+		return EINVAL;
+	}
+
+	/* Succeeded: the next feed delivers the packet. */
 	return 0;
 }
 
@@ -418,6 +468,10 @@ bt_hci_assembly_capacity(
 	if (mode == BT_HCI_ASSEMBLE_ACL)
 		return BT_HCI_ACL_HEADER + BT_ACL_DATA_MAX;
 
+	/* The type's byte and the longest packet, an ACL packet's. */
+	if (mode == BT_HCI_ASSEMBLE_H4)
+		return 1U + BT_HCI_ACL_HEADER + BT_ACL_DATA_MAX;
+
 	/* An event's header and the longest parameters. */
 	return BT_HCI_EVENT_HEADER + 255U;
 }
@@ -466,6 +520,64 @@ assembler_header(
 }
 
 /*
+ * Works out how long the gathered packet's header is, its whole length
+ * once the header is complete (0 before), and the type it is delivered as.
+ * Returns 0, or EBADMSG for a header the mode does not take.
+ */
+static int
+assembler_measure(
+	const struct bt_hci_assembler *assembler,
+	size_t *header,
+	size_t *total,
+	uint8_t *type)
+{
+	int error;
+
+	/* Nothing is known of the length until the header is complete. */
+	*total = 0U;
+
+	/* An H4 stream: the type's byte says which header follows. */
+	if (assembler->mode == BT_HCI_ASSEMBLE_H4) {
+		*type = 0U;
+		*header = 1U;
+		if (assembler->have == 0U)
+			return 0;
+
+		/* The type's header, refusing a type no controller sends. */
+		*type = assembler->buffer[0];
+		error = assembler_h4_header(assembler, header);
+		if (error != 0)
+			return error;
+
+		/* A whole header: the packet's length, refusing fields out of range. */
+		if (assembler->have >= *header) {
+			error = assembler_h4_total(assembler, total);
+			if (error != 0)
+				return error;
+		}
+
+		/* Succeeded: the header's length, and the packet's once known. */
+		return 0;
+	}
+
+	/* An event's or an ACL packet's stream: one header, one type. */
+	*header = assembler_header(assembler->mode);
+	*type = BT_PACKET_EVENT;
+	if (assembler->mode == BT_HCI_ASSEMBLE_ACL)
+		*type = BT_PACKET_ACL;
+
+	/* A whole header: the packet's length. */
+	if (assembler->have >= *header) {
+		error = assembler_total(assembler, total);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the header's length, and the packet's once known. */
+	return 0;
+}
+
+/*
  * Works out a gathered header's whole packet length.  Returns 0, or
  * EBADMSG for an ACL packet past the limit or a packet past the buffer.
  */
@@ -492,6 +604,109 @@ assembler_total(
 
 	/* Succeeded: the packet's length. */
 	return 0;
+}
+
+/*
+ * Works out the header's length of an H4 packet from its type's byte:
+ * the type's byte and an event's, an ACL packet's or an SCO packet's
+ * header.  Returns 0, or EBADMSG for a type a controller does not send.
+ */
+static int
+assembler_h4_header(
+	const struct bt_hci_assembler *assembler,
+	size_t *header)
+{
+	uint8_t type;
+
+	/* Each type a controller sends, with its header. */
+	type = assembler->buffer[0];
+	if (type == BT_PACKET_EVENT) {
+		*header = 1U + BT_HCI_EVENT_HEADER;
+	} else if (type == BT_PACKET_ACL) {
+		*header = 1U + BT_HCI_ACL_HEADER;
+	} else if (type == BT_PACKET_SCO) {
+		*header = 1U + BT_HCI_SCO_PACKET_HEADER;
+	} else {
+		/* A command, an ISO packet or a byte of no type: the line is out of step. */
+		return EBADMSG;
+	}
+
+	/* Succeeded: the header's length with the type's byte. */
+	return 0;
+}
+
+/*
+ * Works out a whole H4 header's packet length, checking what the header
+ * says against what a controller sends.  Returns 0, or EBADMSG for an
+ * unknown event code, a handle out of range, an ACL packet past the limit
+ * or a packet past the buffer.
+ */
+static int
+assembler_h4_total(
+	const struct bt_hci_assembler *assembler,
+	size_t *total)
+{
+	const uint8_t *bytes;
+	unsigned handle;
+	size_t body;
+	int known;
+
+	/* The gathered header, the type's byte first. */
+	bytes = assembler->buffer;
+
+	/* Each type's header. */
+	if (bytes[0] == BT_PACKET_EVENT) {
+		/* An event: a code the specification defines or the vendor's, and its parameters' length. */
+		known = event_code_known(bytes[1]);
+		if (!known)
+			return EBADMSG;
+		body = (size_t)bytes[2];
+		*total = 1U + BT_HCI_EVENT_HEADER + body;
+	} else if (bytes[0] == BT_PACKET_ACL) {
+		/* An ACL packet: a connection handle and a data length within the limit. */
+		handle = ((unsigned)bytes[1] | ((unsigned)bytes[2] << 8)) & BT_HCI_ACL_HANDLE_MASK;
+		if (handle > BT_HCI_ACL_HANDLE_MAX)
+			return EBADMSG;
+		body = (size_t)bytes[3] | ((size_t)bytes[4] << 8);
+		if (body > assembler->acl_data_max)
+			return EBADMSG;
+		*total = 1U + BT_HCI_ACL_HEADER + body;
+	} else {
+		/* An SCO packet: a connection handle and its data length. */
+		handle = ((unsigned)bytes[1] | ((unsigned)bytes[2] << 8)) & BT_HCI_SCO_HANDLE_MASK;
+		if (handle > BT_HCI_SCO_HANDLE_MAX)
+			return EBADMSG;
+		body = (size_t)bytes[3];
+		*total = 1U + BT_HCI_SCO_PACKET_HEADER + body;
+	}
+
+	/* A packet the buffer cannot hold is refused rather than overrun. */
+	if (*total > assembler->capacity)
+		return EBADMSG;
+
+	/* Succeeded: the packet's length with the type's byte. */
+	return 0;
+}
+
+/* Tells whether an event code is one the specification defines, or the vendor's. */
+static int
+event_code_known(
+	unsigned code)
+{
+	/* The vendor's events. */
+	if (code == BT_HCI_EVENT_CODE_VENDOR)
+		return 1;
+
+	/* Below the first defined code (0x00 is none). */
+	if (code < BT_HCI_EVENT_CODE_FIRST)
+		return 0;
+
+	/* Above the last one the specification defines. */
+	if (code > BT_HCI_EVENT_CODE_LAST)
+		return 0;
+
+	/* Succeeded: a defined event. */
+	return 1;
 }
 
 /*

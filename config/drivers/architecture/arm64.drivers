@@ -6,3 +6,4 @@ CONFIG_DRIVER_BCM2711_GPU|bool|BCM2711 GPU: HVS display and V3D (experimental)|r
 CONFIG_DRIVER_BCM2711_GENET|bool|BCM2711 GENET: Raspberry Pi 4 onboard Ethernet|rpi4|y|
 CONFIG_DRIVER_BCM2711_AUDIO|bool|BCM2711 PWM audio: Raspberry Pi 4 headphone jack|rpi4|y|
 CONFIG_DRIVER_BCM2711_WIFI|bool|BCM43455 SDIO: Raspberry Pi 4 onboard WiFi|rpi4|y|
+CONFIG_DRIVER_BCM2711_BT|bool|BCM2711 Bluetooth: Raspberry Pi 4 onboard (PL011 UART)|rpi4|y|

@@ -39,6 +39,9 @@
 #if CONFIG_DRIVER_BCM2711_WIFI
 #include "drivers/platform/rpi4/rpi4-wifi.h"
 #endif
+#if CONFIG_DRIVER_BCM2711_BT
+#include "drivers/platform/rpi4/rpi4-bt.h"
+#endif
 #if CONFIG_DRIVER_BCM2711_GPU
 #include "drivers/gpu/bcm2711/bcm2711-gpu.h"
 #endif
@@ -53,16 +56,26 @@
 
 #if CONFIG_DRIVER_BCM2711_WIFI
 /*
- * The SD controller the SD card driver bound to, and the device tree's
- * physical address, for the onboard Wi-Fi's probe.
+ * The SD controller the SD card driver bound to, for the onboard Wi-Fi's
+ * probe.
  *
- * Both are recorded by kern_platform_init() before any other driver
- * starts and never change afterwards.  The controller is the handoff's
- * eMMC2, or the legacy controller when QEMU puts the SD card there; the
- * onboard Wi-Fi, which uses the legacy controller on a board, leaves it
- * alone when the SD card has it.  Zero means not yet known.
+ * Recorded by kern_platform_init() before any other driver starts and
+ * never changed afterwards.  The controller is the handoff's eMMC2, or the
+ * legacy controller when QEMU puts the SD card there; the onboard Wi-Fi,
+ * which uses the legacy controller on a board, leaves it alone when the SD
+ * card has it.  Zero means not yet known.
  */
 static uintptr_t rpi4_sd_base;
+#endif
+
+#if CONFIG_DRIVER_BCM2711_WIFI || CONFIG_DRIVER_BCM2711_BT
+/*
+ * The device tree's physical address, for the onboard Wi-Fi's and
+ * Bluetooth's probes once interrupts are on.
+ *
+ * Recorded by kern_platform_init() and never changed afterwards; zero
+ * means none.
+ */
 static uint64_t rpi4_fdt_phys;
 #endif
 
@@ -129,8 +142,8 @@ kern_platform_init(
 		hal_puts("sdhci: using QEMU legacy-controller fallback\n");
 	}
 
-#if CONFIG_DRIVER_BCM2711_WIFI
-	/* Keeps the tree's address for the Wi-Fi probe discovery starts later. */
+#if CONFIG_DRIVER_BCM2711_WIFI || CONFIG_DRIVER_BCM2711_BT
+	/* Keeps the tree's address for the Wi-Fi and Bluetooth probes discovery starts later. */
 	rpi4_fdt_phys = rpi4->fdt_phys;
 #endif
 
@@ -222,6 +235,14 @@ kern_platform_refresh_devices(
 	 * chip, or with the SD card on its controller, goes on without it.
 	 */
 	(void)drv_rpi4_wifi_probe(rpi4_fdt_phys, rpi4_sd_base);
+#endif
+
+#if CONFIG_DRIVER_BCM2711_BT
+	/*
+	 * Starts the onboard Bluetooth's thread; QEMU, a tree with disable-bt,
+	 * or a build whose PL011 is the serial console goes on without it.
+	 */
+	(void)drv_rpi4_bt_probe(rpi4_fdt_phys);
 #endif
 }
 

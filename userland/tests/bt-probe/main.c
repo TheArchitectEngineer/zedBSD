@@ -19,7 +19,8 @@
  *
  * Without -f it takes the first /dev/bluetoothN that opens.  It prints the node's
  * information, then sends Intel's Read Version (an Intel controller only,
- * in its TLV form), HCI_Reset, Read Local Version Information and Read
+ * in its TLV form), HCI_Reset, Read Local Version Information, Read Local
+ * Name (ws215-p003: the Broadcom firmware's file is chosen by it) and Read
  * BD_ADDR, each waiting for its Command Complete, and prints what came
  * back; with -r it also resets the controller through the kernel
  * (BT_IOC_RESET) and waits for the reset's notice.  Last come the node's
@@ -63,6 +64,10 @@
 #define PROBE_OP_RESET		0x0c03U
 #define PROBE_OP_LOCAL_VERSION	0x1001U
 #define PROBE_OP_BD_ADDR	0x1009U
+#define PROBE_OP_LOCAL_NAME	0x0c14U
+
+/* The name's field in Read Local Name's answer (Core Vol 4 Part E 7.3.12). */
+#define PROBE_NAME_MAX		248U
 #define PROBE_OP_INTEL_VERSION	0xfc05U
 
 /* Intel's USB vendor, whose controllers answer Read Version. */
@@ -90,6 +95,7 @@ static int probe_open(const char *named, char *path, size_t size);
 static int probe_command(int descriptor, uint16_t opcode, const uint8_t *parameters, size_t count, uint8_t *answer, size_t capacity, size_t *length);
 static int probe_read(int descriptor, uint8_t *packet, size_t capacity, size_t *length);
 static void probe_hex(const char *what, const uint8_t *bytes, size_t length);
+static void probe_name(const uint8_t *answer, size_t length);
 static void probe_fail(const char *step, int error, unsigned *failures);
 static int probe_loopback(const char *path);
 static int probe_withdraw_later(const char *path, unsigned milliseconds);
@@ -196,6 +202,18 @@ main(
 		       (unsigned)info.acl_data_max,
 		       info.name,
 		       info.physical_path);
+
+		/* A UART controller's line speed and the board's address (ws215-p003), most significant byte first. */
+		if (info.bus == BT_BUS_UART) {
+			printf("BT uart speed-max=%u board-address=%02x:%02x:%02x:%02x:%02x:%02x\n",
+			       (unsigned)info.speed_max,
+			       (unsigned)info.board_address[5],
+			       (unsigned)info.board_address[4],
+			       (unsigned)info.board_address[3],
+			       (unsigned)info.board_address[2],
+			       (unsigned)info.board_address[1],
+			       (unsigned)info.board_address[0]);
+		}
 	}
 
 	/* Intel's Read Version, in its TLV form (an Intel controller answers it in the bootloader too). */
@@ -231,6 +249,16 @@ main(
 		       (unsigned)answer[4],
 		       (unsigned)(answer[5] | (answer[6] << 8)),
 		       (unsigned)(answer[7] | (answer[8] << 8)));
+	}
+
+	/* Read Local Name: the chip's name, which a Broadcom ROM gives as its firmware's (BCM4345C0). */
+	error = probe_command(descriptor, PROBE_OP_LOCAL_NAME, NULL, 0U, answer, sizeof(answer), &length);
+	if (error != 0) {
+		probe_fail("local-name", error, &failures);
+	} else if (length < 1U) {
+		probe_fail("local-name", EPROTO, &failures);
+	} else {
+		probe_name(answer, length);
 	}
 
 	/* Read BD_ADDR: the controller's address, most significant byte first. */
@@ -456,6 +484,42 @@ probe_hex(
 	for (index = 0U; index < shown; index++)
 		printf("%02x", (unsigned)bytes[index]);
 	printf("\n");
+}
+
+/*
+ * Prints Read Local Name's answer: the status and the name up to its NUL,
+ * a byte that is not printable ASCII shown as '?'.
+ */
+static void
+probe_name(
+	const uint8_t *answer,
+	size_t length)
+{
+	char name[PROBE_NAME_MAX + 1U];
+	size_t index;
+	size_t count;
+	uint8_t byte;
+
+	/* The name's bytes after the status, at most the field's. */
+	count = length - 1U;
+	if (count > PROBE_NAME_MAX)
+		count = PROBE_NAME_MAX;
+
+	/* Each byte up to the NUL, printable or '?'. */
+	for (index = 0U; index < count; index++) {
+		byte = answer[1U + index];
+		if (byte == 0U)
+			break;
+		if (byte < 0x20U || byte > 0x7eU)
+			byte = (uint8_t)'?';
+		name[index] = (char)byte;
+	}
+
+	/* The name ends where its bytes did. */
+	name[index] = '\0';
+
+	/* One line. */
+	printf("BT local-name status=0x%02x name=\"%s\"\n", (unsigned)answer[0], name);
 }
 
 /* Says a step failed and counts it. */
