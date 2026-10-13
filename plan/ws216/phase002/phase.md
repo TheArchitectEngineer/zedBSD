@@ -3,7 +3,7 @@
 # ws216-p002: libpdf の拡張（係数の輪郭・範囲の輪郭、writer の状態・Flate・粒の pattern、reader の Flate の hash・tiling pattern）
 
 Parent: [WS216](../ws.md)
-Status: in-progress（2026-10-13 P1。実装と host の受け入れ A1〜A11 は済み、Q1 の review・merge の待ち。QEMU・実機の確かめは p007）
+Status: cleared（2026-10-13 Q1: 受け入れ A1〜A11 は host で済み、QEMU・実機は p007 で Notes と一緒に。既存の run-pdf-text.sh は fuzz の段の途中で 900 s の上限に当たり打ち切り（それまで FAIL・sanitizer の報告なし）、FreeBSD の native の build は未実施（制限として記録）。旧: 2026-10-13 P1。実装と host の受け入れ A1〜A11 は済み、Q1 の review・merge の待ち。QEMU・実機の確かめは p007）
 Phase disposition: normal
 Queue: Q1 の依頼（2026-10-13、P1）。承認は ws.md の「ユーザーの決定」（D1〜D12 は推奨で決定）と review-2 の判定「p002 は条件つきで始めてよい」
 

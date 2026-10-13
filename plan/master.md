@@ -919,6 +919,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [plan/ws206/tests/bcm43455-firmware-package-test.sh](ws206/tests/bcm43455-firmware-package-test.sh)（ws206-p003、2026-10-13） | Pi 4 の WiFi の firmware の package（版・sha256・license の本文の一致・CLM の world `XX`・NVRAM に ccode が無い）。`bash plan/ws206/tests/bcm43455-firmware-package-test.sh`、PASS |
 | [plan/ws206/tests/fullmac-host-test.sh](ws206/tests/fullmac-host-test.sh)（ws206-p008、2026-10-13） | WLAN の core の FullMAC の engine と station の分岐（scan・connect・event・EAPOL の扱い・carrier・30 s の期限、TSan で data の thread との競合）。`sh plan/ws206/tests/fullmac-host-test.sh`、ASan/UBSan と TSan の PASS |
 | [plan/ws206/tests/bcm43455-host-test.sh](ws206/tests/bcm43455-host-test.sh)（ws206-p004、2026-10-13） | Pi 4 の WiFi の BCM43455 の driver（SDPCM・BCDC・event の codec、bring-up の順、publish・open・close、data、壊れた frame、credit、firmware の停止、秘密の消去、実の firmware の 3 file）の模型の chip の上の試験。`sh plan/ws206/tests/bcm43455-host-test.sh`、ASan/UBSan と TSan の PASS |
+| [plan/ws216/tests/run-pdf-tools.sh](ws216/tests/run-pdf-tools.sh)（ws216-p002、2026-10-13） | libpdf の描く道具の拡張（係数の輪郭と範囲の輪郭、ExtGState (ca, BM)、q/Q、粒の tiling pattern、content の Flate、reader の Flate の hash と pattern、clean copy）。ペンの輪郭 600 本の bit 同一の golden、pdftoppm・gs との画素の差。`sh plan/ws216/tests/run-pdf-tools.sh`、plain・ASan・UBSan の ok |
 
 回帰と観察の道具は `plan/tools/` に置く。完了した WS の試験は、ここへ移したもの以外を削除した。Phase に固有の試験は各 WS の `tests/` にある。
 
