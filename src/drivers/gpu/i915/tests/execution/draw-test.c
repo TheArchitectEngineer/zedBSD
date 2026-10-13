@@ -19,10 +19,12 @@
  * then are the objects freed.  After a hang the engines are reset and the
  * objects are kept, because the GPU may still reach them.
  *
- * On a Gen9 GT (ws229-p005) the single-colour draw runs in its Gen9 form.
- * The other four are refused with a log line and I915_TEST_SKIPPED, which
- * the runner reports as a skip: the textured draws' shaders and states,
- * and the mixed test's compute kernel and batch, were made for Gen12 only.
+ * On a Gen9 GT (ws229-p005) the single-colour draw and the mixed test run
+ * in their Gen9 form: the draw fixture's Gen9 state and batch, and the
+ * compute test's Gen9 kernel, descriptor and batch.  The three textured
+ * scenarios are refused with a log line and I915_TEST_SKIPPED, which the
+ * runner reports as a skip: their shaders and states were made for Gen12
+ * only.
  */
 
 #include "scenarios.h"
@@ -63,6 +65,9 @@
 
 /* How many pipeline statistics a hang record reads. */
 #define I915_TEST_DRAW_STATS		6U
+
+/* How many GPGPU threads one Gen9 subslice runs, as the compute test takes it. */
+#define I915_TEST_GEN9_THREADS_PER_SUBSLICE	56U
 
 /* How many contexts the mixed test can create, and how many steps it can run. */
 #define I915_TEST_R1_CTX_MAX		5U
@@ -501,7 +506,8 @@ static int i915_test_draw_run(struct i915_test_draw *d, struct i915_test_draw_en
 static int i915_test_tex_run(struct i915_test_tex *x, struct i915_test_draw_env *env);
 static void i915_test_tex_compare(struct i915_test_tex *x);
 
-static void i915_r1_write_c1_state(void *page_cpu);
+static void i915_r1_write_c1_state(void *page_cpu, unsigned graphics_ver);
+static const uint32_t *i915_r1_c1_kernel(unsigned graphics_ver);
 static int i915_test_r1_setup(struct i915_test_r1 *r, struct i915_test_draw_env *env);
 static int i915_test_r1_run(struct i915_test_r1 *r, struct i915_test_draw_env *env);
 static int i915_test_r1_step_prepare(struct i915_test_r1 *r, struct i915_test_draw_env *env, unsigned s);
@@ -596,7 +602,8 @@ drv_i915_test_execution_draw(
  * Runs the mixed draw and compute test on the render engine and logs it.
  *
  * Twelve requests alternate between draws and the compute request over
- * three contexts; the scenario passes when every step passed.
+ * three contexts; the scenario passes when every step passed.  Both halves
+ * are built for the GT's version, Gen9 or Gen12.
  */
 int
 drv_i915_test_execution_r1(
@@ -616,13 +623,6 @@ drv_i915_test_execution_r1(
 	int parked;
 
 	r = &i915_r1_test;
-
-	/* Refuses Gen9: the compute half is the compute test's Gen12 kernel and batch. */
-	if (device->gt.graphics_ver == GEN9_GRAPHICS_VER) {
-		kern_logf("i915: R1 not run: its compute requests are Gen12 only (graphics version %u)\n",
-			  device->gt.graphics_ver);
-		return I915_TEST_SKIPPED;
-	}
 
 	/* Takes the five forcewake domains the GT tests run under. */
 	held = 0U;
@@ -1582,30 +1582,36 @@ i915_test_tex_compare(
 	x->tex_changed_bytes = i915_draw_tex_diff(x->tex, i915_tex_test_pattern, &x->guard_bad_bytes);
 }
 
-/* Writes the compute test's fixture into the shared page, exactly as the compute test does. */
+/*
+ * Writes the compute test's fixture of a GT version into the shared page,
+ * exactly as the compute test does.
+ *
+ * A graphics_ver of 9 writes Gen9's store kernel and descriptor; any other
+ * value writes Gen12's.
+ */
 static void
 i915_r1_write_c1_state(
-	void *page_cpu)
+	void *page_cpu,
+	unsigned graphics_ver)
 {
 	volatile uint32_t *page;
 	volatile uint32_t *idd;
+	uint32_t words[8];
+	unsigned i;
 
 	page = (volatile uint32_t *)page_cpu;
 	idd = page + I915_TEST_EU_IDD_OFFSET / 4U;
 
-	/* Clears the page and copies the store kernel to its start pointer. */
+	/* Clears the page and copies the version's store kernel to its start pointer. */
 	kern_memset(page_cpu, 0, 4096U);
-	kern_memcpy((char *)page_cpu + I915_TEST_EU_KSP_OFFSET, drv_i915_test_eu_kernel, sizeof(drv_i915_test_eu_kernel));
+	kern_memcpy((char *)page_cpu + I915_TEST_EU_KSP_OFFSET, i915_r1_c1_kernel(graphics_ver), sizeof(drv_i915_test_eu_kernel));
 
-	/* Writes the interface descriptor: the kernel start pointer and one thread per group. */
-	idd[0] = I915_TEST_EU_KSP_OFFSET;
-	idd[1] = 0U;
-	idd[2] = 1U << 20;
-	idd[3] = 0U;
-	idd[4] = 0U;
-	idd[5] = 0U;
-	idd[6] = 1U;
-	idd[7] = 0U;
+	/* Builds the version's interface descriptor: the kernel start pointer and one thread per group. */
+	drv_i915_test_eu_fill_idd(words, graphics_ver);
+
+	/* Writes it where the descriptor load reads it. */
+	for (i = 0U; i < 8U; i++)
+		idd[i] = words[i];
 
 	/* Sets the markers to the value that says the GPU has not written them. */
 	page[I915_TEST_EU_READY_OFF / 4U] = I915_TEST_MARKER_UNWRITTEN;
@@ -1640,7 +1646,10 @@ i915_test_r1_setup(
 		return EINVAL;
 	}
 
+	/* Takes 56 threads per subslice on Gen9, as the compute test does. */
 	t->max_threads = 112U * t->dss_count - 1U;
+	if (env->graphics_ver == GEN9_GRAPHICS_VER)
+		t->max_threads = I915_TEST_GEN9_THREADS_PER_SUBSLICE * t->dss_count - 1U;
 
 	/* Creates the shared page, the compute batch, the render target and the draw batch. */
 	error = i915_draw_object_create(t, env->gm, &t->shared);
@@ -1668,19 +1677,21 @@ i915_test_r1_setup(
 	if (error != 0)
 		return error;
 
-	/* Builds both batches once; their bytes do not depend on their own address. */
-	r->mocs = drv_i915_draw_fixture_mocs();
-	c1_dwords = drv_i915_test_eu_build_batch(
+	/* Builds both batches of the GT's version once; their bytes do not depend on their own address. */
+	r->mocs = drv_i915_draw_fixture_mocs_gen(env->graphics_ver);
+	c1_dwords = drv_i915_test_eu_build_batch_gen(
 		(uint32_t *)t->batch->cpu,
 		I915_TEST_BATCH_CAPACITY,
 		I915_TEST_EU_SHARED_VA,
 		I915_TEST_EU_SHARED_VA,
-		t->max_threads);
-	r->dbatch_dwords = drv_i915_draw_fixture_build_batch(
+		t->max_threads,
+		env->graphics_ver);
+	r->dbatch_dwords = drv_i915_draw_fixture_build_batch_gen(
 		(uint32_t *)r->dbatch->cpu,
 		I915_TEST_BATCH_CAPACITY,
 		I915_TEST_EU_SHARED_VA,
-		r->mocs);
+		r->mocs,
+		env->graphics_ver);
 	if (c1_dwords == 0U ||
 	    r->dbatch_dwords == 0U ||
 	    r->dbatch_dwords >= I915_TEST_BATCH_CAPACITY) {
@@ -1691,14 +1702,14 @@ i915_test_r1_setup(
 	t->batch_dwords = c1_dwords;
 
 	/* Reads the compute batch's select words back; a bad select is never submitted. */
-	error = drv_i915_test_eu_check_pipeline_select((const uint32_t *)t->batch->cpu, c1_dwords, &check);
+	error = drv_i915_test_eu_check_pipeline_select_gen((const uint32_t *)t->batch->cpu, c1_dwords, &check, env->graphics_ver);
 	if (error != 0) {
 		(void)drv_i915_test_eu_fail(t, EINVAL, "pipeline_select_verify");
 		return EINVAL;
 	}
 
 	/* Reads the draw batch's select words back the same way. */
-	error = drv_i915_test_draw_check_pipeline_select((const uint32_t *)r->dbatch->cpu, r->dbatch_dwords, &check);
+	error = i915_draw_check_pipeline_select((const uint32_t *)r->dbatch->cpu, r->dbatch_dwords, &check, env->graphics_ver);
 	if (error != 0) {
 		(void)drv_i915_test_eu_fail(t, EINVAL, "pipeline_select_verify");
 		return EINVAL;
@@ -1817,12 +1828,12 @@ i915_test_r1_step_prepare(
 	 * the render target with a pattern that is not the expected one.
 	 */
 	if (st->kind == 'D') {
-		drv_i915_draw_fixture_write_state(t->shared->cpu, I915_TEST_DRAW_RT_VA, r->mocs);
+		drv_i915_draw_fixture_write_state_gen(t->shared->cpu, I915_TEST_DRAW_RT_VA, r->mocs, env->graphics_ver);
 		px = (volatile uint32_t *)r->rt->cpu;
 		for (i = 0U; i < I915_TEST_RT_PIXELS; i++)
 			px[i] = I915_TEST_RT_PREFILL;
 	} else {
-		i915_r1_write_c1_state(t->shared->cpu);
+		i915_r1_write_c1_state(t->shared->cpu, env->graphics_ver);
 	}
 
 	/* Hashes the state page and the step's batch as submitted. */
@@ -1921,6 +1932,7 @@ i915_test_r1_step_read(
 	volatile uint32_t *page;
 	volatile uint32_t *mk;
 	volatile uint32_t *px;
+	const uint32_t *kernel;
 	unsigned i;
 
 	st = &r->step[s];
@@ -1960,12 +1972,26 @@ i915_test_r1_step_read(
 			st->idd_rb_ok = 0;
 	}
 
-	/* Checks that the GPU read back the kernel the CPU wrote. */
+	/* Checks that the GPU read back the kernel of the version the CPU wrote. */
+	kernel = i915_r1_c1_kernel(r->t.graphics_ver);
 	st->kernel_rb_ok = 1;
 	for (i = 0U; i < I915_TEST_EU_KERNEL_DWORDS; i++) {
-		if (page[I915_TEST_EU_KERNEL_RB_OFF / 4U + i] != drv_i915_test_eu_kernel[i])
+		if (page[I915_TEST_EU_KERNEL_RB_OFF / 4U + i] != kernel[i])
 			st->kernel_rb_ok = 0;
 	}
+}
+
+/* Names the compute test's store kernel of a GT version: Gen9's for 9, Gen12's for any other value. */
+static const uint32_t *
+i915_r1_c1_kernel(
+	unsigned graphics_ver)
+{
+	/* Gen9 has its own encoding of the same store. */
+	if (graphics_ver == GEN9_GRAPHICS_VER)
+		return drv_i915_test_eu_kernel_gen9;
+
+	/* Every other version runs the Gen12 kernel. */
+	return drv_i915_test_eu_kernel;
 }
 
 /*
