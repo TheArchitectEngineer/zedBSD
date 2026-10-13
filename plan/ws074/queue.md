@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1047 / WS074 Flexbox overflow positioning
+# q1048 / WS074 block formatting context margin collapse
 
-Status: finished（2026-10-14 02:09–02:10 JST）
+Status: finished（2026-10-14 02:12–02:14 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p197のq1047有限部分scope](phase197/phase.md) に適用。
-Timebox: 2026-10-14 02:09 JST 開始、最大90分（03:39 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p198のq1048有限部分scope](phase198/phase.md) に適用。
+Timebox: 2026-10-14 02:12 JST 開始、最大90分（03:42 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1047-i01 | [ws074-p197](phase197/phase.md) partial | 固定horiz003/004の負余白配置をCSS仕様と照合し、end/centerとdistributed fallbackの単一最小修正。2/10 ID再測定、host/Acid回帰。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial） | p196 q1046 XHTML描画証拠 |
+| q1048-i01 | [ws074-p198](phase198/phase.md) partial | 固定vert001aと参照のfloat BFC先頭子margin相殺を最小fixtureで確認し、BFC親/子の相殺抑制を修正。10 IDとhost/Acid回帰。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial） | p197 q1047縦方向7 FAIL証拠 |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -24,6 +24,8 @@ Outcome: q1045-i01 uncleared、p195 whole uncleared。固定XHTML代表2件は�
 Outcome: q1046-i01 partial cleared、p196 whole uncleared。最上位XHTMLをXML解析へ接続し、固定10件timeoutを0へ改善、1 local PASS/9 FAIL。host MIME/DOM4/4・build warning0・Acid3差0/Acid2差1865。[証拠](phase196/evidence/20261014-q1046/README.md)。p195は後続証拠でwhole cleared。p173全件100%未達。
 
 Outcome: q1047-i01 partial cleared、p197 whole uncleared。main-axis負余白でend/centerのoverflowを保持、固定横方向2 IDは双方local PASSへ、10件は3 PASS/7 FAIL。[証拠](phase197/evidence/20261014-q1047/README.md)。geometry5/5・host build warning0・Acid3差0/Acid2差1865。p173全件100%未達。
+
+Outcome: q1048-i01 partial cleared、p198 whole uncleared。float BFC親/子margin非相殺を実装、geometry4/4、固定10件3 PASS/7 FAIL。vert001aとvert006差画素減、vert001bは別test側差で増。[証拠](phase198/evidence/20261014-q1048/README.md)。host build warning0・Acid3差0/Acid2差1865。p173全件100%未達。
 
 Outcome: q1014-i01 partial cleared、p189 whole uncleared。19領域から条件を満たす15 IDを選定・実行、12 test FAIL・1 harness ERROR・1 completion無し・1 stdout無し、PASS0。4領域は未実行理由を保存。選定 unit2/2、py_compile、diff check PASS。[証拠](phase189/evidence/20261014-q1014/README.md)。q1013 と合わせユニーク16/1,783 testharnessを試行。ブラウザ/WPT/Master無変更、Acid3再計測省略。p173全件baseline・100%未達、共有Master/Queue/GitHub publication pending。
 

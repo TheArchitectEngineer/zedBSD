@@ -23,3 +23,7 @@ Event ws074-p197-created-20261014: q1046でtimeoutを解消した固定10件は1
 ## q1047-i01 結果（2026-10-14 02:10 JST）
 
 **partial scope cleared、whole uncleared。** 負のmain-axis余白をend/centerで保持し、space-between/around/evenlyは分配不能時にstartへfallback。固定横方向2 IDは双方local PASSへ改善し、固定10件は1→3 PASS/7 FAIL/0 timeout。[証拠](evidence/20261014-q1047/README.md)。geometry fixture5/5、host build warning0、Acid3差0/Acid2差1865、Python compile/diff check PASS。残り縦方向7 IDは次の調査へ。p190/p173全件100%未達。Event ws074-p197-q1047-outcome-20261014: q1047-i01 partial cleared、wholeは7 FAILでuncleared。GitHub publication保留。
+
+Event ws074-p197-q1048-p198-split-20261014: 固定vert001aの直接layout比較でtest側flex配置は参照に沿い、reference側float BFCが最初の子のmargin-top190pxを親と相殺していると判明。この別一般欠陥を[p198](../phase198/phase.md)へ分離。p197 wholeの残り7 local FAILはp198出力後に再判定する。GitHub publication保留。
+
+Event ws074-p197-q1048-p198-output-20261014: [p198](../phase198/phase.md)でfloat BFCのmargin相殺を修正。固定10件3 PASS/7 FAILと数不変、vert001a/006の差画素減、vert001bはmin-heightの別差が顕在化。[証拠](../phase198/evidence/20261014-q1048/README.md)。p197 wholeはunclearedのまま。GitHub publication保留。

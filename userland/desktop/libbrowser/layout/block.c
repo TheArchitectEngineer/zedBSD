@@ -563,10 +563,12 @@ block_children(
 	 * height is auto.
 	 */
 	collapse_top = 0;
-	if (box->parent != NULL && box->border[CSS_TOP] == 0 && box->padding[CSS_TOP] == 0)
+	if (box->parent != NULL && !block_owns_context(box) &&
+	    box->border[CSS_TOP] == 0 && box->padding[CSS_TOP] == 0)
 		collapse_top = 1;
 	collapse_bottom = 0;
-	if (box->parent != NULL && box->border[CSS_BOTTOM] == 0 && box->padding[CSS_BOTTOM] == 0 &&
+	if (box->parent != NULL && !block_owns_context(box) &&
+	    box->border[CSS_BOTTOM] == 0 && box->padding[CSS_BOTTOM] == 0 &&
 	    box->style.height.unit == CSS_UNIT_AUTO)
 		collapse_bottom = 1;
 

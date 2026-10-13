@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1048 / WS074 BFC parent-child margin collapse（2026-10-14）
+
+[q1048履歴](queue-q1048.md): float BFCの親/子margin相殺を止め、固定10件は3 local PASS/7 FAILで数不変、代表2件の差画素減。[証拠](../ws074/phase198/evidence/20261014-q1048/README.md)。p198 partial cleared、p173全件100%未達。共有投影/GitHub publication pending。
+
 ## 最新: q1047 / WS074 Flexbox overflow positioning（2026-10-14）
 
 [q1047履歴](queue-q1047.md): 負余白のend/center配置を修正、固定横方向2 IDは双方local PASS、10件は1→3 PASS/7 FAIL。p197 partial cleared、p173全件100%未達。[証拠](../ws074/phase197/evidence/20261014-q1047/README.md)。共有投影/GitHub publication pending。

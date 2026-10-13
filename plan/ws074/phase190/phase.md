@@ -123,3 +123,5 @@ Event ws074-p190-q1045-p195-link-20261014: q1044のtimeout10 IDを新設[p195](.
 Event ws074-p190-q1046-p196-output-20261014: [p196](../phase196/phase.md)の最上位XHTML対応後、固定timeout10 IDを同じ5秒で再測定し0 timeout・1 local PASS/9 FAIL。[証拠](../phase196/evidence/20261014-q1046/README.md)。p190全静的1,561件のq1044 baselineは履歴として保持し、次の全件再測定が最新baselineを作る。script/variantと公式環境同等性は未達、p190 wholeはuncleared。
 
 Event ws074-p190-q1047-p197-output-20261014: [p197](../phase197/phase.md)の横方向負余白修正後、固定10件を同じ条件で測定し3 local PASS/7 FAIL/0 timeout。横方向2 IDのみFAIL→PASS、先行PASSは維持。[証拠](../phase197/evidence/20261014-q1047/README.md)。全静的1,561件再測定と残りrunner coverageは未実施、p190 wholeはuncleared。
+
+Event ws074-p190-q1048-p198-output-20261014: [p198](../phase198/phase.md)のfloat BFC margin相殺修正後、固定10件3 local PASS/7 FAIL/0 timeoutで数は不変。vert001a/006差画素減、vert001b差画素増を[証拠](../phase198/evidence/20261014-q1048/README.md)に保持。全静的1,561件再測定/残りrunner coverage未実施、p190 wholeはuncleared。
