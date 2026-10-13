@@ -57,12 +57,16 @@ drivers.  NVIDIA and AMD drivers will follow soon.
 
 ## AI Usage
 
-Both zedBSD and Keiland Desktop are [designed and directed](plan/master.md)
-by one developer and implemented with AI coding agents.  Current targets
-are 64-bit x86 PCs and the Raspberry Pi series.
+Both zedBSD and Keiland Desktop are [architected and directed](plan/master.md)
+by a solo developer and implemented via AI coding agents, currently targeting
+64-bit x86 PCs and the Raspberry Pi series.
 
-Debugging is done by the latest "Vision Language Model Loop", which
-uses a camera to capture the screen of the PC under debugging.
+Debugging is driven by a cutting-edge "Vision Language Model Loop" that
+captures the target machine's screen via camera.
+
+This project is not a clone of any existing OS; every layer, including the
+desktop environment, is engineered from the ground up by a professional
+systems architect.
 
 ---
 
