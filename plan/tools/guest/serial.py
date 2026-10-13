@@ -19,6 +19,7 @@ exited with, so that a caller can treat it as the command itself.
 from __future__ import annotations
 
 import argparse
+import codecs
 import os
 import re
 import socket
@@ -39,6 +40,8 @@ class Console:
 		self.socket.settimeout(0.5)
 		self.timeout = timeout
 		self.pending = ""
+		# A character the guest writes one byte at a time can arrive in separate reads.
+		self.decoder = codecs.getincrementaldecoder("utf-8")("replace")
 
 	def read_until(self, pattern: re.Pattern, timeout: float | None = None) -> str:
 		"""Reads until the output matches, returning everything read."""
@@ -52,7 +55,7 @@ class Console:
 				continue
 			if not chunk:
 				break
-			self.pending += chunk.decode("utf-8", "replace")
+			self.pending += self.decoder.decode(chunk)
 		raise SystemExit(
 			f"serial: never saw {pattern.pattern!r}\n"
 			f"--- last output ---\n{self.pending[-2000:]}")
