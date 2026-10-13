@@ -2,7 +2,7 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
-Status: planned（2026-10-13 追加、Queueなし）
+Status: uncleared（2026-10-14 q1013-i01 partial cleared、whole 1,783件は未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -19,3 +19,13 @@ Interop 2025 固定 manifest の testharness 1,783件について、WPT のテ�
 適用: [Guardrail](../../guardrail.md)、runner の近傍規則、browser sourceに進む場合は [C全文](../../coding-style.md) と [browser component全文](../../standards/browser-component.md)。影響候補は `plan/ws074/tests/` と `plan/ws074/phase189/`、ignored build。新しい code と実行は exact-scope Queue 承認後のみ。`master.md` は変更しない。
 
 Event ws074-p173-q1012-split-20261013: [p173](../phase173/phase.md) の3,805 ID のうち1,783件が testharness で、現行 static reftest runner は結果取得できないため設計。p173 の目標・分母は縮小せず、本Phaseの出力を p173 全件 baseline の前提にする。GitHub publication保留。
+
+Queue: [q1013-i01](../queue.md) partial。2026-10-13 23:59 JST にユーザーが上記の最初の有限 attempt 範囲を承認。最大90分。browser本体変更なし。
+
+## q1013-i01 結果（2026-10-14 00:03 JST）
+
+**partial scope cleared、p189 whole は uncleared。** 公式manifestにある `/css/css-anchor-position/at-position-try-parse.html` のWPT `testharnessreport.js` HTTP応答に、WPTが公開する `add_result_callback` / `add_completion_callback` の記録処理を追加して実行した。WPT test本体・check-outに変更なし。結果は[証拠](evidence/20261014-q1013/README.md)に保存。process exit0、harness completion OK、12 subtestを全件取得し、4 PASS/8 FAIL。runner全体は正しく FAIL/exit1 とする。最初の CSS rule は「The input is not one supported CSS rule.」であり、browser実装の差として別の互換性改善が必要。browser source/APIは変更していない。
+
+runner の結果分類は PASS、FAIL、WPT timeout、process timeout、無出力、completion欠落、harness error、process errorを区別し、未実行をPASSにしない。Python unit5/5、py_compile、`git diff --check` PASS。browser source無変更のため Acid3の再計測はしない。実行環境は host、単一localhost HTTP origin、固定WPT commit、5秒virtual settle、20秒process timeout。HTTPS/worker/multi-origin/variantや残り1,782 testharness は未測定。p189 wholeと p173 whole/全件100%は未達。
+
+Event ws074-p189-q1013-outcome-20261014: q1013-i01 partial cleared、p189 whole uncleared。実際の test FAIL とrunner result取得を区別した。残る1,782件と環境対応の有限 Queue 再開が必要。GitHub publication保留。

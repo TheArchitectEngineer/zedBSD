@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1013 / WS074 testharness結果取得（2026-10-14）
+
+[q1013履歴](queue-q1013.md): 固定Interop 2025 manifestから公式 testharness 1件を単一HTTPで実行。WPT callbackを機械可読化し、12 subtest 4 PASS/8 FAIL、completion OKを正しく記録。runnerはFAILとして返す。status分類 unit5/5。p189 partial scope cleared、whole 1,783件は uncleared。p173全件baselineと全件100%は未達。[証拠](../ws074/phase189/evidence/20261014-q1013/README.md)。browser本体・Master無変更、共有投影/GitHub publicationは pending。
+
 ## 最新: q1012 / WS074 Interop 2025 対象固定（2026-10-13）
 
 [q1012履歴](queue-q1012.md): ユーザー承認の最大90分 partial scope で公式19 focus area の固定3,805 unique test ID・未解決0を確定。現runnerの静的reftest候補1,561、未対応2,244、選定sample35件は5 PASS/30 FAIL/0 error。p173 whole は全件baseline未取得で uncleared、p189/p190 を後続runner Phaseに分割。全件PASS 100%の主張はしない。[証拠](../ws074/phase173/evidence/20261013-q1012/README.md)。共有 Master/Queue/GitHub publication は pending、`master.md` は未変更。
