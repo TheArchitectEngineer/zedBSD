@@ -32,6 +32,5 @@ int drv_i915_test_execution_r1(struct i915_device *device);
 int drv_i915_test_execution_tex(struct i915_device *device);
 int drv_i915_test_execution_t3(struct i915_device *device);
 int drv_i915_test_execution_bl(struct i915_device *device);
-void drv_i915_test_sequence_gen9(struct i915_device *device);
 
 #endif

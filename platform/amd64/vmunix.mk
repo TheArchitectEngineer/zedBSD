@@ -165,8 +165,6 @@ endif
 #   display_ktest         display_ktest's eDP, eDP-sync, modeset and scanout parts
 #   display_ktest2        display_ktest's show, lcdg, OpRegion and hotplug parts (the scenario says which it lacks)
 #   compute               vkcs (ws101-p006)
-#   gen9                  gen9: eu, then vkcs vkx vke1 vke2 vkc one after another in one boot (ws229-p005; vke2 with
-#                         the boundary steps)
 I915_TEST_SET ?= vke2
 AMD64_I915_TEST_SET_STAMP :=
 ifeq ($(I915_TESTS),y)
@@ -176,9 +174,6 @@ endif
 AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/execution/runner.c src/drivers/gpu/i915/tests/execution/firmware-override.c
 ifeq ($(I915_TEST_SET),compute)
 AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/render/compute.c
-else ifeq ($(I915_TEST_SET),gen9)
-AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/execution/sequence.c src/drivers/gpu/i915/tests/execution/eu-test.c src/drivers/gpu/i915/tests/execution/ppgtt-walk.c src/drivers/gpu/i915/tests/render/compute.c src/drivers/gpu/i915/tests/render/executor.c src/drivers/gpu/i915/tests/render/features.c src/drivers/gpu/i915/tests/render/generality.c src/drivers/gpu/i915/tests/render/compiler.c
-AMD64_CPPFLAGS += -DI915_VKE2_BOUNDARY=1
 else ifeq ($(I915_TEST_SET),execution)
 AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/execution/ktest.c src/drivers/gpu/i915/tests/execution/ktest-sync.c src/drivers/gpu/i915/tests/execution/ktest-display.c src/drivers/gpu/i915/tests/execution/ktest-display-probe.c src/drivers/gpu/i915/tests/execution/ktest-gt.c src/drivers/gpu/i915/tests/execution/eu-test.c src/drivers/gpu/i915/tests/execution/ppgtt-walk.c src/drivers/gpu/i915/tests/execution/draw-test.c src/drivers/gpu/i915/tests/execution/fhd-render.c src/drivers/gpu/i915/tests/fixtures/draw-fixture.c
 else ifeq ($(I915_TEST_SET),display)
@@ -197,7 +192,7 @@ else ifneq ($(filter vke2 boundary,$(I915_TEST_SET)),)
 AMD64_I915_SOURCES += src/drivers/gpu/i915/tests/render/generality.c
 AMD64_CPPFLAGS += -DI915_VKE2_BOUNDARY=1
 else
-$(error I915_TEST_SET=$(I915_TEST_SET) is not a test set: vkx, vkc, vke1, vke2, execution, display, display_ktest, display_ktest2, compute or gen9)
+$(error I915_TEST_SET=$(I915_TEST_SET) is not a test set: vkx, vkc, vke1, vke2, execution, display, display_ktest, display_ktest2 or compute)
 endif
 # The scenarios linked change with I915_TEST_SET: a content-stable stamp relinks an existing BUILD when it changes.
 AMD64_I915_TEST_SET_STAMP := $(BUILD)/.i915-test-set

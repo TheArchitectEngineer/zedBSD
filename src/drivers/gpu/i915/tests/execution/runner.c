@@ -81,7 +81,6 @@ extern void drv_i915_test_render_compiler(struct i915_device *device) __attribut
 extern void drv_i915_test_render_features(struct i915_device *device) __attribute__((weak));
 extern void drv_i915_test_render_generality(struct i915_device *device) __attribute__((weak));
 extern void drv_i915_test_render_compute(struct i915_device *device) __attribute__((weak));
-extern void drv_i915_test_sequence_gen9(struct i915_device *device) __attribute__((weak));
 extern int drv_i915_ktest_run(struct i915_device *device, struct i915_ktest *ktest) __attribute__((weak));
 
 /*
@@ -114,10 +113,9 @@ extern void drv_i915_test_display_ktest(struct i915_device *device) __attribute_
  * compiler on the GPU, likewise), "vke1" (blending, uniform buffers and
  * several sampled images, likewise), "vke2" (matrices, integers, loops,
  * sixteen varyings and attributes, likewise) and "vkcs" (compute pipelines
- * and dispatches, ws101-p005, likewise), then "gen9" (eu and the five
- * render scenarios in one boot, ws229-p005), then the display scenarios;
- * the display test suite is "display_ktest", apart from the unit test suite
- * "ktest".  The table never changes.
+ * and dispatches, ws101-p005, likewise), then the display
+ * scenarios; the display test suite is "display_ktest", apart from the unit
+ * test suite "ktest".  The table never changes.
  */
 static const struct i915_test_scenario i915_test_scenarios[] = {
 	{ "ktest", drv_i915_test_execution_ktest, NULL },
@@ -132,7 +130,6 @@ static const struct i915_test_scenario i915_test_scenarios[] = {
 	{ "vke1", NULL, drv_i915_test_render_features },
 	{ "vke2", NULL, drv_i915_test_render_generality },
 	{ "vkcs", NULL, drv_i915_test_render_compute },
-	{ "gen9", NULL, drv_i915_test_sequence_gen9 },
 	{ "lcdb", NULL, drv_i915_test_display_lcdb },
 	{ "lcdc", NULL, drv_i915_test_display_lcdc },
 	{ "lcdd", NULL, drv_i915_test_display_lcdd },
