@@ -19,9 +19,11 @@
 #include <kern/partition.h>
 #include <kern/platform.h>
 #include <kern/boot.h>
+#include <drivers/generic/fdt.h>
+#include <kern/klog.h>
+#include <kern/pmem.h>
 #if CONFIG_DRIVER_BCM2711_GENET
 #include "drivers/platform/rpi4/rpi4-ethernet.h"
-#include <kern/klog.h>
 #endif
 #if CONFIG_DRIVER_USB_HID
 #include <drivers/usb/usb-hid.h>
@@ -30,11 +32,23 @@
 #include "drivers/platform/rpi4/rpi4-audio.h"
 #endif
 #include "drivers/platform/rpi4/rpi4-console.h"
+#include "drivers/platform/rpi4/rpi4-firmware.h"
+#include "drivers/platform/rpi4/rpi4-gpio.h"
 #include "drivers/platform/rpi4/rpi4-pcie.h"
 #include "drivers/platform/rpi4/rpi4-sdhci.h"
 #if CONFIG_DRIVER_BCM2711_GPU
 #include "drivers/gpu/bcm2711/bcm2711-gpu.h"
 #endif
+
+/*
+ * How much of memory at the device tree's address may be read.
+ *
+ * The HAL checks the tree against the same bound before the kernel starts,
+ * and the tree's header states its real size inside it.
+ */
+#define RPI4_FDT_READ_LIMIT	(2U * 1024U * 1024U)
+
+static void prepare_shared_blocks(uint64_t fdt_phys);
 
 /*
  * Publishes the boot devices described by the Raspberry Pi 4 boot handoff.
@@ -90,6 +104,9 @@ kern_platform_init(
 			return 0;
 		hal_puts("sdhci: using QEMU legacy-controller fallback\n");
 	}
+
+	/* Prepares the firmware mailbox and the GPIO block the drivers below share. */
+	prepare_shared_blocks(rpi4->fdt_phys);
 
 #if CONFIG_DRIVER_BCM2711_GENET
 	/* Starts onboard Ethernet independently of USB and PCIe discovery. */
@@ -265,4 +282,48 @@ kern_platform_reboot(
 	hal_reset();
 	for (;;)
 		hal_halt();
+}
+
+/*
+ * Prepares the firmware mailbox and the GPIO block once, before any driver
+ * that shares them starts.
+ *
+ * Neither preparation touches a register: the mailbox gets its request
+ * buffer and mapping, the GPIO block its mapping.  So it is as harmless on
+ * QEMU's raspi4b as on a board, and a failure only leaves the drivers that
+ * need them without; the boot goes on.
+ */
+static void
+prepare_shared_blocks(
+	uint64_t fdt_phys)
+{
+	struct drv_fdt fdt;
+	const void *blob;
+	int error;
+
+	/* Skips a handoff without a tree: nothing names the blocks. */
+	if (fdt_phys == 0)
+		return;
+
+	/* Finds the device tree in the direct map. */
+	blob = kern_pmem_to_kernel((hal_physaddr_t)fdt_phys);
+	if (blob == NULL)
+		return;
+
+	/* Refuses a tree whose header does not check out. */
+	error = drv_fdt_open(&fdt, blob, RPI4_FDT_READ_LIMIT);
+	if (error != 0) {
+		kern_logf("rpi4: unreadable device tree (%d)\n", error);
+		return;
+	}
+
+	/* Prepares the mailbox the wireless, PCIe and graphics drivers ask the firmware through. */
+	error = drv_rpi4_firmware_init(&fdt);
+	if (error != 0)
+		kern_logf("rpi4-firmware: mailbox unavailable (%d)\n", error);
+
+	/* Maps the GPIO block the wireless and Bluetooth drivers set their pins through. */
+	error = drv_rpi4_gpio_init(&fdt);
+	if (error != 0)
+		kern_logf("rpi4-gpio: GPIO block unavailable (%d)\n", error);
 }

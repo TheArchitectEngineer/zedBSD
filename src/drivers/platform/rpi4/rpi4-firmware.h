@@ -11,7 +11,8 @@
  * The VideoCore firmware answers requests the ARM side posts through the
  * property channel of the BCM2835 mailbox.  The kernel uses it after boot for
  * what only the firmware can do, such as loading the USB controller's
- * firmware after its PCIe reset.
+ * firmware after its PCIe reset and driving the Wi-Fi and Bluetooth power
+ * lines of its GPIO expander.
  */
 
 #ifndef KERN_DRIVERS_RPI4_FIRMWARE_H
@@ -27,6 +28,27 @@
 
 /* The most value words one request carries. */
 #define DRV_RPI4_FIRMWARE_MAX_VALUES		8U
+
+/*
+ * The firmware GPIO expander's lines a driver may drive, numbered as the
+ * device tree's gpio-line-names of the expander list them.
+ *
+ * Only these two are accepted: the same expander drives the SD card's
+ * power, which must not be touched by mistake.
+ */
+enum drv_rpi4_firmware_gpio {
+	DRV_RPI4_FIRMWARE_GPIO_BT_ON = 0,
+	DRV_RPI4_FIRMWARE_GPIO_WL_ON = 1
+};
+
+/*
+ * The direction of an expander line.  The numbers are not the firmware's
+ * codes.
+ */
+enum drv_rpi4_firmware_gpio_direction {
+	DRV_RPI4_FIRMWARE_GPIO_INPUT = 1,
+	DRV_RPI4_FIRMWARE_GPIO_OUTPUT = 2
+};
 
 /*
  * Finds the mailbox in the device tree and prepares the request buffer.
@@ -58,5 +80,31 @@ int drv_rpi4_firmware_property(
  * Asks the firmware to load the USB controller's firmware at a PCI address.
  */
 int drv_rpi4_firmware_notify_xhci_reset(const struct drv_pci_address *address);
+
+/*
+ * Reads whether an expander line is high.
+ *
+ * state receives 0 or 1.  Returns EINVAL for a line outside the
+ * enumeration, without asking the firmware, and EIO when the firmware
+ * reports a failure in its answer.  Thread context only.
+ */
+int drv_rpi4_firmware_get_gpio(enum drv_rpi4_firmware_gpio line, int *state);
+
+/*
+ * Drives an expander line low (0) or high (1).
+ *
+ * Returns EINVAL for a line outside the enumeration or another state,
+ * without asking the firmware, and EIO when the firmware reports a failure
+ * in its answer.  Thread context only.
+ */
+int drv_rpi4_firmware_set_gpio(enum drv_rpi4_firmware_gpio line, int state);
+
+/*
+ * Reads whether an expander line is an input or an output.
+ *
+ * Changes nothing.  Returns EIO when the firmware reports a failure or a
+ * direction it does not define.  Thread context only.
+ */
+int drv_rpi4_firmware_get_gpio_direction(enum drv_rpi4_firmware_gpio line, enum drv_rpi4_firmware_gpio_direction *direction);
 
 #endif
