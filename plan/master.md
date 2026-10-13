@@ -14,7 +14,7 @@
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
   - P1（新しい世代、agent/p1）: q970 ws227-p001 menuconfig の表示名・library の Desktop への移動・Linux/FreeBSD の独自の命令。
   - P2（新しい世代、agent/p2-ws215）: q969 ws196-p002 account-admin の欠陥の直しと root の前段の口（7d632a555 の common/ への切り出しは採らない）。
-  - P3: 空き。
+  - P3（新しい世代、agent/p3）: q971 ws228-p001 簡単な vi の設計と実装。
   - T1: 空き。未実行 T1-592（ws217-p002b B と p003）・T1-593（ws143-p007）・T1-586・T1-591（低い優先度）。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
 <!-- master:agents:end -->
@@ -35,7 +35,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-302、WS228、q971、T1-594。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-303、WS229、q972、T1-594。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -533,6 +533,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS225](ws225/ws.md) | MG006 | Vulkan の header を仕様から導ける内容だけで書き直し、Khronos の著作権表示を外す（2026-10-13 ユーザー） | planning（blocked、ベータ2 で実装） | 着手しない |
 | [WS226](ws226/ws.md) | MG006 | Khronos の Vulkan 1.3 の header をそのまま使い、libvulkan で Vulkan 1.3 の API を実装しきる（不整合の整理）（2026-10-13 ユーザー） | planning | 次に空いた P |
 | [WS227](ws227/ws.md) | MG002 | menuconfig の Base・Desktop の表示名の整理、画像と PDF の library を Desktop へ、Linux・FreeBSD に zedBSD 独自の base の命令（2026-10-14 ユーザー） | planned | P1（q970） |
+| [WS228](ws228/ws.md) | MG002 | 独自実装の簡単な vi を base に足す（2026-10-14 ユーザー、ベータ2 の最後の機能） | planned | P3（q971） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
