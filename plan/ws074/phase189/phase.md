@@ -125,3 +125,5 @@ Event ws074-p189-q1077-outcome-20261014: 固定Grid testharness適格502 IDを�
 ## q1078-i01 有限部分範囲と結果（2026-10-14 06:30 JST）
 
 このchatのユーザーによる全3,805件100%までの有限Queue事前承認を最大90分（08:00 JSTまで）に適用。固定Grid no_output32件のmodule source/import形、HTML loader・JS parser/compilerの未対応点、一般的な次の実装境界を読み取り、必要なら既存host/browserでprobeする。製品code/runner/WPT/公開ABI/`plan/master.md`変更なし。[Guardrail](../../guardrail.md)と既存runner規則を適用。結果: [証拠](evidence/20261014-q1078/README.md)に32件全ての同形named import、module AST解析成功、HTMLのmodule skipとcompilerのmodule未対応を記録。[p216](../phase216/phase.md)を追加。q1078-i01 partial cleared、p189 whole/p173全件100%未達。共有投影/GitHub publication保留。
+
+Follow-up ws074-p189-p216-q1086-grid32-20261014: [p216 q1086](../phase216/evidence/20261014-q1086/README.md)で旧q1077 no_output32 IDを同一固定WPT/manifest、localhost、固定font3種、5秒settle/20秒processで再測定し、全32 PASS・各100 subtest（計3,200）を確認。旧no_output ID集合との一致を検証。他のGrid470 IDはこのfollow-upで再測定していないため、p189/全Gridの新集計は次Queueまで保留。p189 whole/p173全3,805件100%は未達。

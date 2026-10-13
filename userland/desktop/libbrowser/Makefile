@@ -149,6 +149,7 @@ LIBBROWSER_SOURCES := $(LIBBROWSER_DIR)/base/arena.c \
 	$(LIBBROWSER_DIR)/page/resource.c \
 	$(LIBBROWSER_DIR)/page/frame-load.c \
 	$(LIBBROWSER_DIR)/page/script.c \
+	$(LIBBROWSER_DIR)/page/module.c \
 	$(LIBBROWSER_DIR)/page/geometry.c \
 	$(LIBBROWSER_DIR)/page/storage.c \
 	$(LIBBROWSER_DIR)/page/images.c \

@@ -2,7 +2,7 @@
 
 # ws074-p216: Interop 2025 JavaScript module loading
 
-Status: uncleared（q1079–q1085 partial cleared、HTML module loader未実装）
+Status: uncleared（q1079–q1086 partial cleared、external/async/dynamic module等は未実装）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -75,3 +75,11 @@ Event ws074-p216-q1084-partial-clear-20261014: static named importのspecifier/i
 ## q1085-i01 結果（2026-10-14 07:00 JST）
 
 Event ws074-p216-q1085-partial-clear-20261014: canonical URLをキーとする内部graphでinstantiateを一度だけ行い、import元基準の相対URL解決、dependency DFS link/evaluate、cycle再帰停止を実装。[証拠](evidence/20261014-q1085/README.md)。局所hostは共有依存一度限り/評価順/missing export/cycleをPASS。classic JS14/14、warning0 build、Acid3差0・Acid2差1865。q1085-i01 partial cleared、p216 wholeはHTML loaderと固定Grid32再測定が未了。共有投影/GitHub publication保留。
+
+## q1086-i01 有限部分範囲（2026-10-14 07:02 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（08:32 JSTまで）に適用。parser-inserted inline `<script type=module>`を順に保留し、HTML parse後・DOMContentLoaded前にpage-owned graphで実行。static named importはimport元URL基準で同一origin HTTP JavaScript MIMEに限りfetchし、errorを通常script診断へ通知。classic parser実行とload順を維持する。host fixtureでdefer/DCL順、同ページ複数module、解放を検証し、固定Grid32を同条件runnerで計測する。external module root/async/dynamic/redirect/cross-origin/import map/namespace/default/re-exportは含めない。classic JS14、warning0 build、Acid3差0・Acid2非増加。WPT本体/runner/公開ABI/`plan/master.md`不変更。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。全32 PASSや全件100%は本部分範囲外。
+
+## q1086-i01 結果（2026-10-14 07:08 JST）
+
+Event ws074-p216-q1086-partial-clear-20261014: inline moduleをHTML parse完了後・DOMContentLoaded前にpage-owned graphで実行し、static named importを同一origin HTTP/JS MIMEで取得。[証拠](evidence/20261014-q1086/README.md)。hostはclassic→module→DCL順、複数module、syntax error通知と後続実行をPASS。固定Gridの旧no_output32 IDは全て各100 subtest付きPASSへ移行し、旧ID集合と完全一致。classic JS14/14、warning0 build、Acid3差0・Acid2差1865。q1086-i01 partial cleared、p216 wholeはexternal/async/dynamic moduleと一般cycle/HTML error semantics未完でuncleared。p189全件/p173全3,805件100%未達、共有投影/GitHub publication保留。

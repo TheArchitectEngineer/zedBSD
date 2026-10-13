@@ -110,6 +110,7 @@ static int script_fragment(void *context, const char *hash, size_t length);
 static int script_cookie_get(void *context, struct wb_buffer *out);
 static int script_cookie_set(void *context, const char *text, size_t length);
 static int script_type_runs(const struct dom_element *script);
+static int script_type_module(const struct dom_element *script);
 static int script_attribute(struct page *page, const struct dom_element *element, const char *name, struct dom_attribute **attribute);
 static int script_run_file(struct page *page, const struct vm_string *src);
 static int script_ascii_equal_folded(const struct vm_string *string, const char *ascii);
@@ -642,10 +643,12 @@ page_run_script_element(
 	int runs;
 	int error;
 
-	/* A script of another type (a module, data) does not run. */
+	/* Modules wait until parsing ends; classic scripts keep parser order. */
 	page = context;
 	script->node.flags |= DOM_NODE_SCRIPT_STARTED;
 	runs = script_type_runs(script);
+	if (!runs && script_type_module(script))
+		return page_module_enqueue(page, script);
 	if (!runs)
 		return 0;
 
@@ -1415,6 +1418,27 @@ script_cookie_set(
 		return error;
 
 	/* Succeeded: the cookie is kept (or refused). */
+	return 0;
+}
+
+/* Tells whether a parser-inserted script asks for the module path. */
+static int
+script_type_module(
+	const struct dom_element *script)
+{
+	const struct dom_attribute *attribute;
+	size_t index;
+	int same;
+
+	for (index = 0; index < script->attribute_count; index++) {
+		attribute = &script->attributes[index];
+		if (attribute->ns != DOM_NS_NONE)
+			continue;
+		same = vm_string_equal_ascii(attribute->name, "type");
+		if (!same)
+			continue;
+		return script_ascii_equal_folded(attribute->value, "module");
+	}
 	return 0;
 }
 

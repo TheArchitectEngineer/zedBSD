@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1085 / WS074 module URL graph（2026-10-14）
+## 最新: q1086 / WS074 inline HTML modules（2026-10-14）
+
+[q1086履歴](queue-q1086.md): inline moduleをparse後/DCL前に実行。旧Grid no_output32 IDが各100 subtest付き全32 PASS。[証拠](../ws074/phase216/evidence/20261014-q1086/README.md)。classic JS14/14、Acid3差0。p216部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1085 / WS074 module URL graph（2026-10-14）
 
 [q1085履歴](queue-q1085.md): canonical URL cacheとdependency link/evaluateを追加。相対URL/共有依存/評価順/missing export/cycle、classic JS14/14、Acid3差0。[証拠](../ws074/phase216/evidence/20261014-q1085/README.md)。p216部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

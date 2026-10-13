@@ -128,6 +128,9 @@ struct page {
 	uint32_t sheets_generation;
 	uint32_t styled_sheets;
 	struct wb_vector scripts;
+	/* Parser-inserted inline module scripts and their retained URL graph. */
+	struct wb_vector module_scripts;
+	struct js_module_graph *module_graph;
 	struct wb_vector fetches;
 	/* The parser-blocking scripts the view fetched before the document was parsed (struct page_prefetched *, BUG-207). */
 	struct wb_vector prefetched;
@@ -203,6 +206,12 @@ int page_frames_checkpoint(struct page *page);
 /* Dynamic scripts (script.c). */
 void page_scripts_init(struct page *page);
 void page_scripts_release(struct page *page);
+
+/* Parser-inserted inline modules (module.c). */
+void page_modules_init(struct page *page);
+void page_modules_release(struct page *page);
+int page_module_enqueue(struct page *page, struct dom_element *script);
+int page_modules_run(struct page *page);
 
 /* The parser-blocking scripts fetched before a document is parsed (script.c, BUG-207). */
 int page_scan_scripts(const char *base, const unsigned char *bytes, size_t length, struct wb_vector *locations);

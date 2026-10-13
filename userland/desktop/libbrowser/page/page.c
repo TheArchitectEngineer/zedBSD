@@ -73,6 +73,7 @@ page_create(
 	page_sheets_init(created);
 	page_fonts_init(created);
 	page_scripts_init(created);
+	page_modules_init(created);
 	page_frames_init(created);
 	wb_vector_init(&created->visited_urls, sizeof(char *));
 
@@ -154,6 +155,7 @@ page_destroy(
 	}
 	wb_vector_release(&page->visited_urls);
 	page_scripts_release(page);
+	page_modules_release(page);
 	bind_window_destroy(page->window);
 	vm_realm_destroy(page->realm);
 	vm_heap_destroy(page->heap);
@@ -211,6 +213,9 @@ page_load_html(
 		return error;
 
 	/* The document is parsed: DOMContentLoaded, then the window's load. */
+	error = page_modules_run(page);
+	if (error != 0)
+		return error;
 	error = page_fire_load(page);
 	if (error != 0)
 		return error;
