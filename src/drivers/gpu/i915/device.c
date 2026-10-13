@@ -1014,8 +1014,13 @@ i915_start_prepare(
 	gt->pci_context.msi_irq = -1;
 	drv_i915_pci_init(&gt->pci, drv_i915_pci_device_ops(), &gt->pci_context, &gt->trace);
 
-	/* Tells the display version from the device id, as the PCI driver matches it. */
+	/*
+	 * Tells the graphics and display versions from the device id, as the
+	 * PCI driver matches it.  Every device the driver matches today has a
+	 * Gen12 GT.
+	 */
 	product = drv_i915_pci_read16(&gt->pci, 0x02U);
+	gt->graphics_ver = 12U;
 	gt->display_ver = 13U;
 	gt->is_alderlake_p = 1;
 	if (i915_product_is_tigerlake(product) != 0) {
@@ -1226,7 +1231,7 @@ i915_start_gt_info(
 	}
 
 	/* Decodes the fuses for the Alder Lake-P engine set RCS0|BCS0|VCS0|VCS2|VECS0. */
-	(void)drv_i915_gt_init_mmio(&gt->info, 12, I915_START_ENGINE_MASK, &gt->mmio);
+	(void)drv_i915_gt_init_mmio(&gt->info, (int)gt->graphics_ver, I915_START_ENGINE_MASK, &gt->mmio);
 	(void)drv_i915_forcewake_put(&gt->mmio, I915_FORCEWAKE_RENDER);
 	(void)drv_i915_forcewake_put(&gt->mmio, I915_FORCEWAKE_GT);
 
@@ -1638,7 +1643,7 @@ i915_start_gt_awake(
 
 	/* Builds the workaround, whitelist, MOCS, RC6 and RPS tables. */
 	kern_memset(&gt->init, 0, sizeof(gt->init));
-	drv_i915_gt_init_tables(&gt->init, &gt->info, 12, &gt->sb_lock, &gt->mmio);
+	drv_i915_gt_init_tables(&gt->init, &gt->info, (int)gt->graphics_ver, &gt->sb_lock, &gt->mmio);
 	kern_logf("i915: gt tables: gt_wa=%u mocs(uc_index=%u entries=%u) rps(rp0=%u rp1=%u min=%u eff=%u pcode=%d) rc6_supported=%d\n",
 	    gt->init.gt_wa.count,
 	    gt->init.mocs.uc_index,
