@@ -96,7 +96,7 @@ default_config=$temporary/default.mk
 make -C "$repo" --no-print-directory ZEDBSD_CONFIG="$absent_config" \
 	INTELBT_FIRMWARE_CACHE_ROOT="$default_cache" \
 	list-user-programs >"$temporary/programs"
-grep -Fq 'intelbt-firmware|Intel Bluetooth firmware|amd64|n|firmware|firmware/intelbt|' "$temporary/programs"
+grep -Fq 'intelbt-firmware|Intel Bluetooth firmware|*|n|firmware|firmware/intelbt|' "$temporary/programs"
 ZEDBSD_CONFIG="$absent_config" \
 	python3 "$repo/tools/menuconfig.py" --defaults --output "$default_config"
 if grep '^ZEDBSD_USER_PROGRAMS' "$default_config" | grep -Fq 'intelbt-firmware'; then
