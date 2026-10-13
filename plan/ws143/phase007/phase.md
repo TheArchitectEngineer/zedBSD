@@ -3,7 +3,7 @@
 # ws143-p007: Linux の Bluetooth の backend（BlueZ の D-Bus）と FreeBSD の未対応の表示
 
 Parent: [WS143](../ws.md)
-Status: 実装済み・T1 の試験待ち（2026-10-14 P3 q967: 第 2 版（§9）で実装、host 試験 PASS、記録は §10。QEMU の Debian と FreeBSD の PNG は T1。第 1 版は 2026-10-13 P2 q962）
+Status: in-progress — test-wait（2026-10-14 Q1: T1-593 の Linux の部分は Connect を除き PASS（ON・adapter の名・Other Devices・番号の照合・pair・Forget・電源）。仮想の相手（profile 無し）への Connect は NotAvailable で、頁が「The pairing was refused.」と誤った文を出す。Forget の後の 2 回目の pair は相手の側の古い bond を消すまで AuthenticationCanceled（仮想の相手の性質と推測）。FreeBSD の頁は未実施（GPU の無い guest で compositor が起きない、T1-587））
 Phase disposition: normal
 Queue: q962（P2、2026-10-13）。承認: ユーザー「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。」、WS143 の design.md §9（D7・D13 ほか、2026-10-05 夕 ユーザー「全部推奨」）と §10 の p007、2026-10-08 ユーザー「Linux・FreeBSD は 10/13 以降」。
 Queue（実装）: q967（P3、2026-10-14）。review: [review-1](review-1.md)（design-reviewer、判定「直せば実装してよい」、重大 4 と中 M1・M3・M5・M7・M8 を入れれば再 review なし、Q1）。

@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws228-p003 -->
 # ws228-p003: 規約の全文の見直し
 
-Status: in-progress（2026-10-14 P3、書き方の直しと build・host 試験は済み、Q1 の判定待ち。QEMU は未依頼・未実施）
+Status: cleared（2026-10-14 Q1: 規約の全文の見直し、build warning 0・host 試験 PASS、見直しの後の vi で T1-601 PASS）
 Disposition: normal
 Parent: [WS228](../ws.md)
 依頼: Q1（ws228-p003、P3）

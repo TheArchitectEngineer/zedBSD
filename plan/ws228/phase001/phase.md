@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws228-p001 -->
 # ws228-p001: 簡単な vi の範囲の設計と実装
 
-Status: in-progress（2026-10-14 P3、q971、実装・host 試験済み、review-1 反映済み。QEMU は p002 で T1）
+Status: cleared（2026-10-14 Q1: host 試験 50 件 PASS、T1-601（serial の vi-guest 5 段）PASS、T1-596（VT console の vi の画面）PASS）
 Disposition: normal
 Parent: [WS228](../ws.md)
 Queue: q971
