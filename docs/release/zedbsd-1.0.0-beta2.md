@@ -61,6 +61,13 @@ log in as `kei`. Use Beta 2 only on networks you trust. `root` cannot log in.
 - Icons of the files in `~/Desktop`, and drag and drop between apps.
 - External displays over HDMI and USB-C (DisplayPort alternate mode),
   extended or mirrored, arranged in Settings → Display.
+- Screen rotation: the desktop can turn a display by 90°, 180° or 270°,
+  for example to hold the computer upright for Notes. Touch, the pen and the
+  pointer follow the turn. In Beta 2 the angle is set by a `rotate=` line in
+  `~/.config/keiland/displays.conf`; Settings has no control for it yet.
+
+<!-- review (2026-10-14): screen rotation has no Settings page in Beta 2; the line names the file because that is the
+     only way to turn it. Drop the line if a feature that needs a hand-edited file should not be announced. -->
 
 <!-- review: the control panel (WS192) passed in QEMU (T1-496) apart from the look, which a person judges; it and the
      lock screen (WS187) wait for the 5330 UAT (items 1 and 6). FIDO2 sign-in (WS172 p003, WS161 p006) waits for the UAT
@@ -94,6 +101,20 @@ X11 programs run on the desktop through a rootless X server, with GLX.
 - USB keyboards, mice, touch screens, pen tablets, USB drives (mounted and
   ejected from Files) and FIDO2 security keys.
 - Printing to network printers over IPP and LPD.
+- Computers whose firmware stops the old PIT timer, such as a desktop PC
+  with a Core i5-13400F, no longer stop at the start with "Local APIC timer initialization failed": when the CPU reports
+  the frequency of its time-stamp counter (TSC), the kernel measures its
+  timer with the TSC instead.
+- 〔判定待ち〕 A preview of the older Intel graphics, Gen9 and Gen9.5 (the
+  integrated GPUs of the 6th to 10th generation Core processors). It is off
+  by default; the [user guide](https://github.com/awemorris/zedBSD/blob/zedbsd-1.0.0-beta2/docs/release/zedbsd-1.0.0-beta2-guide.md#older-intel-graphics)
+  shows how to turn it on with `i915.gen9=on`. It drives the GPU's engines
+  and Vulkan only: the picture stays on the framebuffer the firmware set up,
+  there is no Vulkan Video, and sleep is refused while it is on.
+- 〔判定待ち〕 SATA drives on AHCI controllers, including Intel controllers
+  set to RAID mode in the firmware, with sleep and wake. Kei still starts
+  from USB; a SATA drive inside the computer can be read and written. NCQ,
+  TRIM, hot plugging and optical drives are not supported yet.
 
 <!-- review (2026-10-09 user): Bluetooth (WS143) and Vulkan Video (WS083) are in, and are turned off at the last
      moment (10/16) if they are not ready. If one is turned off, replace its line:
@@ -102,6 +123,12 @@ X11 programs run on the desktop through a rootless X server, with GLX.
      - Vulkan Video (2026-10-11 user): on by default. It decoded every test stream on the Latitude 5330.
        If it is turned off at the last moment, say so here and in the known issues.
      IPv6 waits for the networkd retest (T1-500); drop "and IPv6" if it fails. -->
+
+<!-- review (2026-10-14): the TSC timer line passed in QEMU (KVM and TCG, the PIT path); the TSC path itself waits for
+     the user's check on the Core i5-13400F desktop and the 5330. Drop the line if that check fails.
+     "〔判定待ち〕" marks the lines that go in only if the code freeze of 2026-10-14 18:00 takes them (Gen9: WS229,
+     AHCI: WS231). Delete the mark when a line is in, or delete the line (and its rows in the known issues and the
+     guide's section "Older Intel graphics") when it is not. -->
 
 ### For developers
 
@@ -112,6 +139,46 @@ X11 programs run on the desktop through a rootless X server, with GLX.
   the computer itself.
 - Emacs (`/bin/emacs`), the OpenSSH client and server, curl, OpenSSL, and the
   Noct scripting language.
+- Japanese input in Emacs with SKK (`C-x C-j`), with two dictionaries in the
+  image: a compact one and SKK-JISYO.X. A single `n` before a space or the
+  end of a reading becomes ん, so words such as にほん convert.
+- `vi` (`/bin/vi`), a small vi of zedBSD's own: UTF-8 text with Japanese
+  characters, the usual moves, edits and searches, undo and redo of many
+  steps (`u` and `Ctrl-R`), `.` to repeat the last change, and `:w`, `:q`,
+  `:wq` and `:e`. If it is cut off with unsaved changes, for example when
+  its terminal closes, it saves them in `~/.vi-recover.<name>.<pid>`. It has
+  no ex mode, `:s`, marks or visual mode.
+- The kernel's text console understands cursor positioning and colors
+  (the `cup` and SGR sequences), so full-screen programs such as `vi` draw
+  correctly on it.
+- `useradd`, `usermod` and `userdel` for root, in the usual Linux form
+  (`usermod` does not change a user's name, ID or home, so it has no `-d`
+  or `-m`). The account checks behind them and Settings → Users were fixed:
+  the last administrator is counted correctly, a removed user's ID is never
+  given again, and a user whose password is locked is not signed in
+  automatically.
+- `make menuconfig` shows the Base programs and libraries by their names
+  (the image and PDF libraries moved to Desktop), offers the i386 CPU with
+  the PC-9800 and PC/AT boards, and has a Retro menu for Xzed, zwm, zshell
+  and zterm.
+
+### Keiland on Linux and FreeBSD
+
+The Keiland desktop also builds natively on Linux and FreeBSD (see the user
+guide). Beta 2 adds:
+
+- On Linux, Settings → Bluetooth works through BlueZ: turning Bluetooth on
+  and off, finding, pairing (with the number check), connecting and
+  forgetting devices, with clear messages when a connection fails. Cancel in
+  the pairing window ends the pairing at once. On FreeBSD the page says that
+  Bluetooth is not supported.
+- zedBSD's own `passkey` command, which checks the password or PIN when you
+  sign in, is built and installed in `/opt/keiland/sbin`. Programs the
+  host already has, such as `ls`, are not.
+
+<!-- review (2026-10-14): the Linux Bluetooth page passed in a Debian 13 QEMU+KVM guest with a virtual controller
+     (btvirt), not on real hardware; the FreeBSD page and the FreeBSD build of passkey were not run (passkey only
+     to the link). -->
 
 ## Licenses and source
 
