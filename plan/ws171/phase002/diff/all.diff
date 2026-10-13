@@ -75,7 +75,7 @@
  int
  hal_putchar(
  	int c);
-@@ -83,26 +120,63 @@
+@@ -83,26 +120,62 @@
   * Before the kernel console exists this writes to the HAL's own early
   * console. Once the kernel publishes kernel_putc, every character is
   * delegated there instead and the HAL stops touching the display.
@@ -105,10 +105,9 @@
 + * Only these conversions are understood: %c, %s (NULL prints "(null)"),
 + * %u and %x of an unsigned, with an optional field width and leading 0,
 + * and the l and ll length modifiers (long and long long, as in C), and
-+ * %%.  Any
-+ * other conversion is not portable between architectures.  It may be
-+ * called in any context, as hal_putc() may; whether the lines of two
-+ * CPUs can interleave depends on the architecture.
++ * %%.  Any other conversion is not portable between architectures.  It
++ * may be called in any context, as hal_putc() may; whether the lines of
++ * two CPUs can interleave depends on the architecture.
 + */
  int
  hal_printf(
@@ -139,7 +138,7 @@
  void
  hal_fatal(
  	const char *file,
-@@ -113,39 +187,72 @@
+@@ -113,39 +186,72 @@
  /*
   * SMP
   *
@@ -218,7 +217,7 @@
   */
  void
  hal_cpu_ready_mask(
-@@ -173,25 +280,47 @@
+@@ -173,25 +279,47 @@
  /*
   * Notify every CPU of a mask, as hal_cpu_notify() does one.  Every CPU
   * is checked before any is notified: on an error none was.
@@ -268,7 +267,7 @@
   */
  void
  hal_cpu_idle(void);
-@@ -236,12 +365,18 @@
+@@ -236,12 +364,18 @@
   * XXX: Is this same to hal_cpu_idle()??
   *
   * Halt until a next interrupt.
@@ -288,7 +287,7 @@
   */
  static inline void
  hal_cpu_mask_zero(
-@@ -254,7 +389,9 @@
+@@ -254,7 +388,9 @@
  }
  
  /*
@@ -299,7 +298,7 @@
   */
  static inline void
  hal_cpu_mask_fill(
-@@ -267,7 +404,8 @@
+@@ -267,7 +403,8 @@
  }
  
  /*
@@ -309,7 +308,7 @@
   */
  static inline void
  hal_cpu_mask_set(
-@@ -279,7 +417,8 @@
+@@ -279,7 +416,8 @@
  }
  
  /*
@@ -319,7 +318,7 @@
   */
  static inline void
  hal_cpu_mask_clear(
-@@ -291,7 +430,8 @@
+@@ -291,7 +429,8 @@
  }
  
  /*
@@ -329,7 +328,7 @@
   */
  static inline int
  hal_cpu_mask_test(
-@@ -307,40 +447,98 @@
+@@ -307,40 +446,98 @@
   * IRQ
   */
  
@@ -435,7 +434,7 @@
   */
  int
  hal_irq_set_affinity(
-@@ -348,7 +546,16 @@
+@@ -348,7 +545,16 @@
  	const struct hal_cpu_mask *requested);
  
  /*
@@ -453,7 +452,7 @@
   */
  int
  hal_irq_get_affinity(
-@@ -359,14 +566,19 @@
+@@ -359,14 +565,19 @@
  /*
   * Set the trigger mode and polarity of a numbered IRQ.
   *
@@ -476,7 +475,7 @@
   */
  int
  hal_irq_set_mode(
-@@ -433,21 +645,46 @@
+@@ -433,21 +644,46 @@
  hal_irq_resume(void);
  
  /*
@@ -526,7 +525,7 @@
   */
  int
  hal_irq_register(
-@@ -456,7 +693,22 @@
+@@ -456,7 +692,22 @@
  	void *arg);
  
  /*
@@ -550,7 +549,7 @@
   */
  int
  hal_irq_unregister(
-@@ -465,9 +717,28 @@
+@@ -465,9 +716,28 @@
  	void *arg);
  
  /*
@@ -581,7 +580,7 @@
   */
  int
  hal_irq_register_msi(
-@@ -479,20 +750,44 @@
+@@ -479,20 +749,44 @@
  	uint32_t *mapped_event);
  
  /*
@@ -634,7 +633,7 @@
   */
  int
  hal_irq_alloc_msi(
-@@ -502,8 +797,16 @@
+@@ -502,8 +796,16 @@
  	uint32_t *mapped_event);
  
  /*
@@ -653,7 +652,7 @@
   */
  int
  hal_irq_attach_msi(
-@@ -512,11 +815,19 @@
+@@ -512,11 +814,19 @@
  	void *handler_arg);
  
  /*
@@ -678,7 +677,7 @@
   */
  int
  hal_irq_detach_msi_sync(
-@@ -525,17 +836,34 @@
+@@ -525,17 +835,34 @@
  	void *handler_arg);
  
  /*
@@ -718,7 +717,7 @@
   */
  void
  hal_irq_send_eoi(
-@@ -561,6 +889,12 @@
+@@ -561,6 +888,12 @@
  
  /*
   * Read wall-clock time as whole seconds since the Unix epoch.
@@ -731,7 +730,7 @@
   */
  bool
  hal_rtc_read_epoch_time(
-@@ -598,13 +932,25 @@
+@@ -598,13 +931,25 @@
   */
  
  /*
@@ -759,7 +758,7 @@
   */
  int
  hal_pmem_alloc(
-@@ -643,6 +989,11 @@
+@@ -643,6 +988,11 @@
  /*
   * Free a physical memory block. size must be the requested size of the
   * matching allocation; a smaller size splits the block.
@@ -771,7 +770,7 @@
   */
  int
  hal_pmem_free(
-@@ -672,6 +1023,9 @@
+@@ -672,6 +1022,9 @@
   *
   * The range is afterwards reachable through the direct map only, and the
   * HAL discards its cached lines so the direct map reads what is in RAM.
@@ -781,7 +780,7 @@
   */
  int
  hal_pmem_unmap_uncached(
-@@ -697,12 +1051,19 @@
+@@ -697,12 +1050,19 @@
  #define HAL_SPACE_SYS	(NULL)
  
  /*
@@ -803,7 +802,7 @@
   */
  #define HAL_SPACE_NONE			(0)
  #define HAL_SPACE_READ			(1)
-@@ -718,12 +1079,22 @@
+@@ -718,12 +1078,22 @@
   */
  #define HAL_SPACE_WC			(64)
  
@@ -826,7 +825,7 @@
   */
  hal_space_t
  hal_space_create(void);
-@@ -732,6 +1103,11 @@
+@@ -732,6 +1102,11 @@
   * Destroy a user space.  The generic kernel must first retire every owning
   * task and ensure that no CPU selects the space.  HAL implementations close
   * hardware translation windows, but never change task ownership implicitly.
@@ -838,7 +837,7 @@
   */
  void
  hal_space_destroy(
-@@ -739,6 +1115,11 @@
+@@ -739,6 +1114,11 @@
  
  /*
   * Select a user space on the current CPU; HAL_SPACE_SYS selects only system.
@@ -850,7 +849,7 @@
   */
  void
  hal_space_switch(
-@@ -752,6 +1133,17 @@
+@@ -752,6 +1132,17 @@
   * through unmap, and the port must reject execution and cached RAM aliases.
   * Protection changes preserve this device classification and cache policy.
   * A port may report HAL_ERR_UNSUPPORTED when device user mappings are absent.
@@ -868,7 +867,7 @@
   */
  int
  hal_space_map(
-@@ -763,6 +1155,14 @@
+@@ -763,6 +1154,14 @@
  
  /*
   * Unmap an address and complete any required TLB synchronization.
@@ -883,7 +882,7 @@
   */
  int
  hal_space_unmap(
-@@ -776,6 +1176,17 @@
+@@ -776,6 +1175,17 @@
   * RAM is direct-mapped and needs no call; device memory is not. The
   * HAL owns the kernel window used for device mappings, so the caller
   * receives the address the HAL chose. attr is the OR of HAL_SPACE_*.
@@ -901,7 +900,7 @@
   */
  int
  hal_space_map_device(
-@@ -786,6 +1197,11 @@
+@@ -786,6 +1196,11 @@
  
  /*
   * Remove a mapping made by hal_space_map_device().
@@ -913,7 +912,7 @@
   */
  int
  hal_space_unmap_device(
-@@ -794,6 +1210,8 @@
+@@ -794,6 +1209,8 @@
  
  /*
   * Change protection and complete any required TLB synchronization.
@@ -922,7 +921,7 @@
   */
  int
  hal_space_prot(
-@@ -803,15 +1221,23 @@
+@@ -803,15 +1220,23 @@
  	uint32_t attr);
  
  /*
@@ -947,7 +946,7 @@
   */
  int
  hal_space_prot_query(
-@@ -822,8 +1248,15 @@
+@@ -822,8 +1247,15 @@
  	uint32_t *flags);
  
  /*
@@ -964,7 +963,7 @@
   */
  int
  hal_space_query(
-@@ -832,7 +1265,17 @@
+@@ -832,7 +1264,17 @@
  	uint32_t *flags);
  
  /*
@@ -983,7 +982,7 @@
   */
  int
  hal_space_clear_flags(
-@@ -848,6 +1291,11 @@
+@@ -848,6 +1290,11 @@
   * - If a user space is specified, do TLB shootdown and user space
   *   TLBs will be flushed on all processors where currently selecting
   *   the specified user space.
@@ -995,7 +994,7 @@
   */
  void
  hal_space_flush_tlb(
-@@ -855,6 +1303,9 @@
+@@ -855,6 +1302,9 @@
  
  /*
   * Flush TLBs only for the spcified range.
@@ -1005,7 +1004,7 @@
   */
  void
  hal_space_flush_tlb_range(
-@@ -866,6 +1317,10 @@
+@@ -866,6 +1316,10 @@
   * Get the page size.
   *
   *  - level > 1 means a large page size.
@@ -1016,7 +1015,7 @@
   */
  size_t
  hal_space_get_page_size(
-@@ -873,6 +1328,10 @@
+@@ -873,6 +1327,10 @@
  
  /*
   * Get the rage of user space virtual address.
@@ -1027,7 +1026,7 @@
   */
  void
  hal_space_get_user_range(
-@@ -890,21 +1349,55 @@
+@@ -890,21 +1348,55 @@
   */
  
  /*
@@ -1087,7 +1086,7 @@
   */
  hal_task_t
  hal_task_create(
-@@ -914,25 +1407,54 @@
+@@ -914,25 +1406,54 @@
  	void *user_stack_pointer);
  
  /*
@@ -1148,7 +1147,7 @@
   */
  hal_task_t
  hal_task_fork_current(
-@@ -940,7 +1462,19 @@
+@@ -940,7 +1461,19 @@
  	intptr_t child_syscall_result);
  
  /*
@@ -1169,7 +1168,7 @@
   */
  int
  hal_task_exec_current(
-@@ -949,7 +1483,15 @@
+@@ -949,7 +1482,15 @@
  	uintptr_t user_stack_pointer);
  
  /*
@@ -1186,7 +1185,7 @@
   */
  int
  hal_task_exec_validate(
-@@ -958,14 +1500,23 @@
+@@ -958,14 +1499,23 @@
  	uintptr_t user_stack_pointer);
  
  /*
@@ -1213,7 +1212,7 @@
   */
  int
  hal_task_get_user_context(
-@@ -974,7 +1525,25 @@
+@@ -974,7 +1524,25 @@
  	intptr_t *return_value);
  
  /*
@@ -1240,7 +1239,7 @@
   */
  int
  hal_task_signal_enter(
-@@ -987,7 +1556,18 @@
+@@ -987,7 +1555,18 @@
  	uint32_t token);
  
  /*
@@ -1260,7 +1259,7 @@
   */
  int
  hal_task_signal_return(
-@@ -995,13 +1575,21 @@
+@@ -995,13 +1574,21 @@
  	intptr_t *return_value);
  
  /*
@@ -1284,7 +1283,7 @@
   */
  void
  hal_task_set_tls(
-@@ -1009,28 +1597,55 @@
+@@ -1009,28 +1596,55 @@
  	uintptr_t value);
  
  /*
@@ -1342,7 +1341,7 @@
  int
  hal_task_transfer(
  	hal_task_t task,
-@@ -1054,32 +1669,66 @@
+@@ -1054,32 +1668,66 @@
   * the structures are declared in its own header; a caller that has to name
   * a register copies the set into a form of its own rather than passing this
   * one outward.
@@ -1409,7 +1408,7 @@
  int
  hal_task_set_user_vregs(
  	hal_task_t task,
-@@ -1092,12 +1741,20 @@
+@@ -1092,12 +1740,20 @@
   * the others run.  An architecture with no step facility of its own
   * arranges the same observable behaviour by other means: where the next
   * instruction ends is something only the architecture knows.
@@ -1430,7 +1429,7 @@
  int
  hal_task_get_single_step(
  	hal_task_t task,
-@@ -1145,6 +1802,17 @@
+@@ -1145,6 +1801,17 @@
  	const struct hal_debug_point *points,
  	unsigned count);
  
@@ -1448,7 +1447,7 @@
  int
  hal_task_get_debug_points(
  	hal_task_t task,
-@@ -1160,7 +1828,13 @@
+@@ -1160,7 +1827,13 @@
  #define hal_compiler_barrier()	__asm__ volatile("" ::: "memory")
  
  /*
@@ -1463,7 +1462,7 @@
   */
  void
  hal_mb(void);
-@@ -1171,6 +1845,15 @@
+@@ -1171,6 +1844,15 @@
  void
  hal_wmb(void);
  
@@ -1479,7 +1478,7 @@
  void
  hal_io_mb(void);
  
-@@ -1181,28 +1864,58 @@
+@@ -1181,28 +1863,58 @@
  hal_io_wmb(void);
  
  /*
@@ -1539,7 +1538,7 @@
  void
  hal_sync_instruction_stream(
  	void *addr,
-@@ -1213,6 +1926,14 @@
+@@ -1213,6 +1925,14 @@
   * I/O
   */
  
@@ -1554,7 +1553,7 @@
  uint8_t
  hal_io_inp8(
  	uint16_t port);
-@@ -1240,6 +1961,17 @@
+@@ -1240,6 +1960,17 @@
  	uint16_t port,
  	uint32_t value);
  
@@ -1572,7 +1571,7 @@
  uint8_t
  hal_mmio_read8(
  	const volatile void *addr);
-@@ -1285,25 +2017,40 @@
+@@ -1285,25 +2016,40 @@
   * Return an architecture-specific boot handoff object by name.  The
   * returned object remains owned by HAL.  Unknown or unavailable
   * handoffs return NULL.
@@ -1616,7 +1615,7 @@
   */
  void
  hal_panic(void);
-@@ -1313,6 +2060,9 @@
+@@ -1313,6 +2059,9 @@
   * Fill a buffer from a platform cryptographic entropy source. Ports which
   * have no such source return false. Buffer contents are unspecified when the
   * function returns false.
@@ -1626,7 +1625,7 @@
   */
  bool
  hal_entropy_fill(
-@@ -1324,6 +2074,13 @@
+@@ -1324,6 +2073,13 @@
   * Memory Usage 
   */
  
@@ -1640,7 +1639,7 @@
  struct hal_memstat {
  	size_t physical_total;
  	size_t physical_reserved;
-@@ -1356,6 +2113,9 @@
+@@ -1356,6 +2112,9 @@
  
  /*
   * Get the memory usage statistics.

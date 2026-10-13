@@ -1,6 +1,6 @@
 --- a/include/hal/hal.h
 +++ b/include/hal/hal.h
-@@ -926,13 +926,25 @@
+@@ -925,13 +925,25 @@
   */
  
  /*
@@ -28,7 +28,7 @@
   */
  int
  hal_pmem_alloc(
-@@ -971,6 +983,11 @@
+@@ -970,6 +982,11 @@
  /*
   * Free a physical memory block. size must be the requested size of the
   * matching allocation; a smaller size splits the block.
@@ -40,7 +40,7 @@
   */
  int
  hal_pmem_free(
-@@ -1000,6 +1017,9 @@
+@@ -999,6 +1016,9 @@
   *
   * The range is afterwards reachable through the direct map only, and the
   * HAL discards its cached lines so the direct map reads what is in RAM.
@@ -50,7 +50,7 @@
   */
  int
  hal_pmem_unmap_uncached(
-@@ -1025,12 +1045,19 @@
+@@ -1024,12 +1044,19 @@
  #define HAL_SPACE_SYS	(NULL)
  
  /*
@@ -72,7 +72,7 @@
   */
  #define HAL_SPACE_NONE			(0)
  #define HAL_SPACE_READ			(1)
-@@ -1046,12 +1073,22 @@
+@@ -1045,12 +1072,22 @@
   */
  #define HAL_SPACE_WC			(64)
  
@@ -95,7 +95,7 @@
   */
  hal_space_t
  hal_space_create(void);
-@@ -1060,6 +1097,11 @@
+@@ -1059,6 +1096,11 @@
   * Destroy a user space.  The generic kernel must first retire every owning
   * task and ensure that no CPU selects the space.  HAL implementations close
   * hardware translation windows, but never change task ownership implicitly.
@@ -107,7 +107,7 @@
   */
  void
  hal_space_destroy(
-@@ -1067,6 +1109,11 @@
+@@ -1066,6 +1108,11 @@
  
  /*
   * Select a user space on the current CPU; HAL_SPACE_SYS selects only system.
@@ -119,7 +119,7 @@
   */
  void
  hal_space_switch(
-@@ -1080,6 +1127,17 @@
+@@ -1079,6 +1126,17 @@
   * through unmap, and the port must reject execution and cached RAM aliases.
   * Protection changes preserve this device classification and cache policy.
   * A port may report HAL_ERR_UNSUPPORTED when device user mappings are absent.
@@ -137,7 +137,7 @@
   */
  int
  hal_space_map(
-@@ -1091,6 +1149,14 @@
+@@ -1090,6 +1148,14 @@
  
  /*
   * Unmap an address and complete any required TLB synchronization.
@@ -152,7 +152,7 @@
   */
  int
  hal_space_unmap(
-@@ -1104,6 +1170,17 @@
+@@ -1103,6 +1169,17 @@
   * RAM is direct-mapped and needs no call; device memory is not. The
   * HAL owns the kernel window used for device mappings, so the caller
   * receives the address the HAL chose. attr is the OR of HAL_SPACE_*.
@@ -170,7 +170,7 @@
   */
  int
  hal_space_map_device(
-@@ -1114,6 +1191,11 @@
+@@ -1113,6 +1190,11 @@
  
  /*
   * Remove a mapping made by hal_space_map_device().
@@ -182,7 +182,7 @@
   */
  int
  hal_space_unmap_device(
-@@ -1122,6 +1204,8 @@
+@@ -1121,6 +1203,8 @@
  
  /*
   * Change protection and complete any required TLB synchronization.
@@ -191,7 +191,7 @@
   */
  int
  hal_space_prot(
-@@ -1131,15 +1215,23 @@
+@@ -1130,15 +1214,23 @@
  	uint32_t attr);
  
  /*
@@ -216,7 +216,7 @@
   */
  int
  hal_space_prot_query(
-@@ -1150,8 +1242,15 @@
+@@ -1149,8 +1241,15 @@
  	uint32_t *flags);
  
  /*
@@ -233,7 +233,7 @@
   */
  int
  hal_space_query(
-@@ -1160,7 +1259,17 @@
+@@ -1159,7 +1258,17 @@
  	uint32_t *flags);
  
  /*
@@ -252,7 +252,7 @@
   */
  int
  hal_space_clear_flags(
-@@ -1176,6 +1285,11 @@
+@@ -1175,6 +1284,11 @@
   * - If a user space is specified, do TLB shootdown and user space
   *   TLBs will be flushed on all processors where currently selecting
   *   the specified user space.
@@ -264,7 +264,7 @@
   */
  void
  hal_space_flush_tlb(
-@@ -1183,6 +1297,9 @@
+@@ -1182,6 +1296,9 @@
  
  /*
   * Flush TLBs only for the spcified range.
@@ -274,7 +274,7 @@
   */
  void
  hal_space_flush_tlb_range(
-@@ -1194,6 +1311,10 @@
+@@ -1193,6 +1310,10 @@
   * Get the page size.
   *
   *  - level > 1 means a large page size.
@@ -285,7 +285,7 @@
   */
  size_t
  hal_space_get_page_size(
-@@ -1201,6 +1322,10 @@
+@@ -1200,6 +1321,10 @@
  
  /*
   * Get the rage of user space virtual address.
@@ -296,7 +296,7 @@
   */
  void
  hal_space_get_user_range(
-@@ -1697,7 +1822,13 @@
+@@ -1696,7 +1821,13 @@
  #define hal_compiler_barrier()	__asm__ volatile("" ::: "memory")
  
  /*
@@ -311,7 +311,7 @@
   */
  void
  hal_mb(void);
-@@ -1708,6 +1839,15 @@
+@@ -1707,6 +1838,15 @@
  void
  hal_wmb(void);
  
@@ -327,7 +327,7 @@
  void
  hal_io_mb(void);
  
-@@ -1718,28 +1858,58 @@
+@@ -1717,28 +1857,58 @@
  hal_io_wmb(void);
  
  /*
@@ -387,7 +387,7 @@
  void
  hal_sync_instruction_stream(
  	void *addr,
-@@ -1750,6 +1920,14 @@
+@@ -1749,6 +1919,14 @@
   * I/O
   */
  
@@ -402,7 +402,7 @@
  uint8_t
  hal_io_inp8(
  	uint16_t port);
-@@ -1777,6 +1955,17 @@
+@@ -1776,6 +1954,17 @@
  	uint16_t port,
  	uint32_t value);
  

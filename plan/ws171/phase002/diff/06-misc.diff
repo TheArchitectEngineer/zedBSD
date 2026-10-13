@@ -1,6 +1,6 @@
 --- a/include/hal/hal.h
 +++ b/include/hal/hal.h
-@@ -889,6 +889,12 @@
+@@ -888,6 +888,12 @@
  
  /*
   * Read wall-clock time as whole seconds since the Unix epoch.
@@ -13,7 +13,7 @@
   */
  bool
  hal_rtc_read_epoch_time(
-@@ -2011,6 +2017,12 @@
+@@ -2010,6 +2016,12 @@
   * Return an architecture-specific boot handoff object by name.  The
   * returned object remains owned by HAL.  Unknown or unavailable
   * handoffs return NULL.
@@ -26,7 +26,7 @@
   */
  void *
  hal_get_arch_handoff(
-@@ -2048,6 +2060,9 @@
+@@ -2047,6 +2059,9 @@
   * Fill a buffer from a platform cryptographic entropy source. Ports which
   * have no such source return false. Buffer contents are unspecified when the
   * function returns false.
@@ -36,7 +36,7 @@
   */
  bool
  hal_entropy_fill(
-@@ -2059,6 +2074,13 @@
+@@ -2058,6 +2073,13 @@
   * Memory Usage 
   */
  
@@ -50,7 +50,7 @@
  struct hal_memstat {
  	size_t physical_total;
  	size_t physical_reserved;
-@@ -2091,6 +2113,9 @@
+@@ -2090,6 +2112,9 @@
  
  /*
   * Get the memory usage statistics.
