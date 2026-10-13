@@ -37,3 +37,7 @@ Related Milestones: なし
 | p009（案） | 規約の全文の見直し（WS の全ての C、試験を含む） | planning |
 
 試験と道具（[tests/](tests/)）: `tcp-model/run.sh`（本物の tcp.c の host の模型と WS220 の目標の scenario、数秒）、`tcp-stream-series.sh`（QEMU と実機の長い転送の時系列、T1）、`stream.py`・`analyze.py`、`config-amd64-tcp.mk`（SSH の guest + sysctl）。WS の完了の時に回帰に残す物は master.md の Tools に移す。
+
+## ユーザーの決定（2026-10-13、p001 の後）
+
+ユーザー（原文）:「はい、推奨でいいです。」→ QEMU の受け入れは usb-net（CDC ECM）のまま（virtio-net は足さない、完了の条件 3 の「virtio-net」は usb-net に読み替え）。RTO の最小は 200 ms（Linux・FreeBSD と同じ、RFC 6298 の SHOULD の 1 s から外れることを phase.md に記録）。
