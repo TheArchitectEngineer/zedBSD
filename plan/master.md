@@ -13,7 +13,7 @@
 <!-- master:agents:start -->
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
   - P1: 空き（SV7 の passthrough の道具は merge 済み、T1-608 待ち）。
-  - P2（新しい世代）: q981 ws231-p001 基本の AHCI の driver（ws229-p002 は merge 済み）。
+  - P2: 空き（ws231-p001 AHCI は merge 済み、T1-609 待ち）。
   - P3: 空き（q979 ws229-p004 は merge 済み）。
   - T1: 空き。T1-606（5330 の Gen12 の回帰）はユーザーが 5330 を Linux（chaos）で起動し直すのを待つ。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
@@ -35,7 +35,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-304、WS233、q983、T1-609。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-304、WS233、q983、T1-610。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -950,6 +950,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [plan/ws196/tests/account-admin-root-host-test.sh](ws196/tests/account-admin-root-host-test.sh)（ws196-p002、2026-10-14） | account-admin の全体（root の形・使える管理者の数え方・uid の記録・flock・途中の失敗の戻し・mount の境・home の guard・M7・残りの掃除）を ASan・UBSan で 74 項目 | sudo が要る（`sudo unshare -m`、path は全部新しい folder へ。host の file は変えない） |
 | [plan/ws196/tests/user-commands-host-test.sh](ws196/tests/user-commands-host-test.sh)（ws196-p003、2026-10-14、helper `user-commands-run.sh`） | useradd・usermod・userdel の前段（option から request の文、使い方の誤り、答えの語から終わりの状態）と、本物の account-admin との通しの 148 項目 | sudo が要る（path は新しい folder へ、host の file は変えない） |
 | [tests/tty-csi-host-test.c](../tests/tty-csi-host-test.c)（ws228-p004、2026-10-14） | kernel の VT console の CSI の解析（`src/kern/tty-csi.c`: 引数の配列、`H`・`f`、SGR の最小限、38・48 の飛ばし、知らない列の捨て方） | `cc -std=c99 -Wall -Wextra -Werror -Isrc src/kern/tty-csi.c tests/tty-csi-host-test.c` で作って走らせる。PASS の行 |
+| [plan/ws231/tests/run-ahci-protocol-test.sh](ws231/tests/run-ahci-protocol-test.sh)（ws231-p001、2026-10-14） | AHCI の driver の protocol の部分（FIS・command・PRDT の組み立て、IDENTIFY の解釈（512・512e・4Kn）、command の状態遷移と timeout の競合）を c89 -pedantic と ASan・UBSan で | host の cc |
 | [plan/ws229/tests/eu-gen9-host.sh](ws229/tests/eu-gen9-host.sh)（ws229-p003、2026-10-14） | i915 の EU の Gen9 の符号化: 96 の kernel を Mesa の brw_disasm/brw_asm `--gen=skl` で往復し byte が一致、拒否すべき module は拒否、期待の listing（`eu-gen9-expect.asm`）と encoder の byte の一致 | Mesa の道具（`build/mesa-tools/`）が要る |
 | [plan/ws229/tests/host/run.sh](ws229/tests/host/run.sh)（ws229-p004、2026-10-14） | i915 の 3D と compute の state: Gen12 の batch と state の byte が基準の commit と同一、Gen12 は gen120.xml・Gen9 は gen90.xml で厳密に decode、両者の field の比べ（許す差は gen9-check.py） | GENXML と BRW_TOOLS（`build/mesa-tools/`）、BASE の commit が要る |
 | [plan/ws229/tests/eu-test-gen9-host.sh](ws229/tests/eu-test-gen9-host.sh)（ws229-p005、2026-10-14） | eu-test の Gen9 の kernel の表が Mesa の組み立てと同一、Gen9 の batch と descriptor が gen90.xml で、Gen12 の batch が gen120.xml で decode でき期待どおり、Gen12 の batch が前と同一 | GENXML_CHECK（gen90 対応の genxml-check.py）と Mesa の道具 |
