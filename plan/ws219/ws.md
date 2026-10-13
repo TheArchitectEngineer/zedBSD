@@ -3,7 +3,7 @@
 # WS219: Venus の protocol の op の流用の整理（定数名の付け直し、Venus の著作権表示を外し、引用の明記に留める）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-13 Q1 作成。担当は WS218 p001 の後の P1（同じ種類の監査）、空きができ次第）
+Status: incomplete（2026-10-13 P2 が p001 を実施、判断待ち。旧: planning（2026-10-13 Q1 作成））
 Primary Milestone: MG006
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
