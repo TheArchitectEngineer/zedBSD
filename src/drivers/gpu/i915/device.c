@@ -87,6 +87,16 @@
 #define I915_GEN9_PW_2_STATE	(1U << 30)
 #define I915_GEN9_PIPES		3U
 
+/*
+ * The Gen9 eDP PSR and south display (PCH) interrupt registers that
+ * gen8_irq_reset() also silences (Linux 6.8.12 intel_psr_regs.h, i915_reg.h).
+ */
+#define I915_GEN9_EDP_PSR_IMR	0x64834U
+#define I915_GEN9_EDP_PSR_IIR	0x64838U
+#define I915_GEN9_SDEIMR	0xc4004U
+#define I915_GEN9_SDEIIR	0xc4008U
+#define I915_GEN9_SDEIER	0xc400cU
+
 /* Turns an id-list entry into the bare product id. */
 #define I915_ID_VALUE(product)	(product)
 
@@ -231,8 +241,7 @@ static void i915_stop_hardware(struct i915_device *device);
 static int i915_forcewake_get_all(struct i915_gt *gt, unsigned *held);
 static void i915_forcewake_put_all(struct i915_gt *gt, unsigned held);
 static void i915_start_dump_trace(struct i915_gt *gt);
-static int i915_product_is_tigerlake(uint16_t product);
-static int i915_product_gen9_platform(uint16_t product);
+static int i915_product_listed(uint16_t product, const uint16_t *list, unsigned count);
 static const int *i915_start_domain_list(const struct i915_gt *gt, unsigned *count);
 static unsigned i915_popcount32(uint32_t value);
 static unsigned i915_cpu_physical_bits(void);
@@ -722,6 +731,94 @@ drv_i915_device_attach_settled(
 	spin_unlock_irqrestore(&i915_start_registry.lock, enabled);
 }
 
+/*
+ * Tells the graphics version, display version and platform of a PCI device id.
+ *
+ * The table is explicit: Tiger Lake (12, 12), Alder Lake-P and -N and Raptor
+ * Lake-P and -U (12, 13), Skylake, Kaby Lake, Coffee Lake and Comet Lake
+ * (9, 9).  Returns 0, or ENODEV for an id in no list, which the device start
+ * refuses rather than guessing its registers.
+ */
+int
+drv_i915_product_kind(
+	uint16_t product,
+	struct i915_product_kind *kind)
+{
+	static const uint16_t tigerlake[] = { INTEL_TGL_IDS(I915_ID_VALUE) };
+	static const uint16_t alderlake[] = {
+		INTEL_ADLP_IDS(I915_ID_VALUE),
+		INTEL_ADLN_IDS(I915_ID_VALUE),
+		INTEL_RPLU_IDS(I915_ID_VALUE),
+		INTEL_RPLP_IDS(I915_ID_VALUE)
+	};
+	static const uint16_t skylake[] = { INTEL_SKL_IDS(I915_ID_VALUE) };
+	static const uint16_t kabylake[] = { INTEL_KBL_IDS(I915_ID_VALUE) };
+	static const uint16_t coffeelake[] = { INTEL_CFL_IDS(I915_ID_VALUE) };
+	static const uint16_t cometlake[] = { INTEL_CML_IDS(I915_ID_VALUE) };
+	int listed;
+
+	/* Starts from a Gen9 part, the shape every Gen9 list shares. */
+	kind->graphics_ver = 9U;
+	kind->display_ver = 9U;
+	kind->is_alderlake_p = 0;
+
+	/* Tiger Lake: Gen12 with display version 12. */
+	listed = i915_product_listed(product, tigerlake, sizeof(tigerlake) / sizeof(tigerlake[0]));
+	if (listed != 0) {
+		kind->graphics_ver = 12U;
+		kind->display_ver = 12U;
+		kind->platform = I915_PLATFORM_GEN12;
+		kind->name = "Tiger Lake";
+		return 0;
+	}
+
+	/* Alder Lake-P and -N, Raptor Lake-P and -U: Gen12 with XE_LPD (display version 13). */
+	listed = i915_product_listed(product, alderlake, sizeof(alderlake) / sizeof(alderlake[0]));
+	if (listed != 0) {
+		kind->graphics_ver = 12U;
+		kind->display_ver = 13U;
+		kind->is_alderlake_p = 1;
+		kind->platform = I915_PLATFORM_GEN12;
+		kind->name = "Alder Lake-P class (XE_LPD)";
+		return 0;
+	}
+
+	/* Skylake. */
+	listed = i915_product_listed(product, skylake, sizeof(skylake) / sizeof(skylake[0]));
+	if (listed != 0) {
+		kind->platform = I915_PLATFORM_SKYLAKE;
+		kind->name = "Skylake (Gen9, display kept as the firmware left it)";
+		return 0;
+	}
+
+	/* Kaby Lake. */
+	listed = i915_product_listed(product, kabylake, sizeof(kabylake) / sizeof(kabylake[0]));
+	if (listed != 0) {
+		kind->platform = I915_PLATFORM_KABYLAKE;
+		kind->name = "Kaby Lake (Gen9, display kept as the firmware left it)";
+		return 0;
+	}
+
+	/* Coffee Lake. */
+	listed = i915_product_listed(product, coffeelake, sizeof(coffeelake) / sizeof(coffeelake[0]));
+	if (listed != 0) {
+		kind->platform = I915_PLATFORM_COFFEELAKE;
+		kind->name = "Coffee Lake (Gen9.5, display kept as the firmware left it)";
+		return 0;
+	}
+
+	/* Comet Lake. */
+	listed = i915_product_listed(product, cometlake, sizeof(cometlake) / sizeof(cometlake[0]));
+	if (listed != 0) {
+		kind->platform = I915_PLATFORM_COMETLAKE;
+		kind->name = "Comet Lake (Gen9.5, display kept as the firmware left it)";
+		return 0;
+	}
+
+	/* An id in no list has no known registers. */
+	return ENODEV;
+}
+
 /* Initializes the registry lock the first time the registry is used. */
 static void
 i915_start_registry_init(void)
@@ -1026,6 +1123,7 @@ static int
 i915_start_prepare(
 	struct i915_device *device)
 {
+	struct i915_product_kind kind;
 	struct i915_gt *gt;
 	uint16_t product;
 	int available;
@@ -1057,25 +1155,24 @@ i915_start_prepare(
 	 */
 	product = drv_i915_pci_read16(&gt->pci, 0x02U);
 	gt->info.revision = (unsigned)drv_i915_pci_read8(&gt->pci, 0x08U);
-	gt->info.platform = i915_product_gen9_platform(product);
-	gt->graphics_ver = 12U;
-	gt->display_ver = 13U;
-	gt->is_alderlake_p = 1;
-	if (gt->info.platform != I915_PLATFORM_GEN12) {
-		gt->graphics_ver = 9U;
-		gt->display_ver = 9U;
-		gt->is_alderlake_p = 0;
-	} else if (i915_product_is_tigerlake(product) != 0) {
-		gt->display_ver = 12U;
-		gt->is_alderlake_p = 0;
+	device->stage = "unknown_product";
+	error = drv_i915_product_kind(product, &kind);
+	if (error != 0) {
+		kern_logf("i915: display device: 8086:%04x is in no version table; not started\n", (unsigned)product);
+		return error;
 	}
+
+	gt->graphics_ver = kind.graphics_ver;
+	gt->display_ver = kind.display_ver;
+	gt->is_alderlake_p = kind.is_alderlake_p;
+	gt->info.platform = kind.platform;
 
 	kern_logf("i915: display device: 8086:%04x rev 0x%02x -> graphics version %u, display version %u, %s\n",
 	    (unsigned)product,
 	    gt->info.revision,
 	    gt->graphics_ver,
 	    gt->display_ver,
-	    gt->graphics_ver == 9U ? "Gen9 (display kept as the firmware left it)" : (gt->is_alderlake_p != 0 ? "Alder Lake-P class (XE_LPD)" : "Tiger Lake"));
+	    kind.name);
 
 	/*
 	 * Takes the PCI core's runtime PM hold and resumes the device to D0
@@ -2252,64 +2349,23 @@ i915_start_dump_trace(
 	}
 }
 
-/* Reports nonzero when a PCI device id is a Tiger Lake part. */
+/* Reports nonzero when a PCI device id is in a list. */
 static int
-i915_product_is_tigerlake(
-	uint16_t product)
+i915_product_listed(
+	uint16_t product,
+	const uint16_t *list,
+	unsigned count)
 {
-	static const uint16_t tigerlake[] = { INTEL_TGL_IDS(I915_ID_VALUE) };
 	unsigned index;
 
-	/* Looks the id up in the same list the PCI driver matches on. */
-	for (index = 0U; index < sizeof(tigerlake) / sizeof(tigerlake[0]); index++) {
-		if (tigerlake[index] == product)
+	/* Looks the id up in the list. */
+	for (index = 0U; index < count; index++) {
+		if (list[index] == product)
 			return 1;
 	}
 
-	/* Not a Tiger Lake part. */
+	/* Not in the list. */
 	return 0;
-}
-
-/*
- * Reports the Gen9 platform of a PCI device id, or I915_PLATFORM_GEN12 for
- * a device that is not a Gen9 part.
- */
-static int
-i915_product_gen9_platform(
-	uint16_t product)
-{
-	static const uint16_t skylake[] = { INTEL_SKL_IDS(I915_ID_VALUE) };
-	static const uint16_t kabylake[] = { INTEL_KBL_IDS(I915_ID_VALUE) };
-	static const uint16_t coffeelake[] = { INTEL_CFL_IDS(I915_ID_VALUE) };
-	static const uint16_t cometlake[] = { INTEL_CML_IDS(I915_ID_VALUE) };
-	unsigned index;
-
-	/* Looks the id up in the Skylake list the PCI driver matches on. */
-	for (index = 0U; index < sizeof(skylake) / sizeof(skylake[0]); index++) {
-		if (skylake[index] == product)
-			return I915_PLATFORM_SKYLAKE;
-	}
-
-	/* Looks the id up in the Kaby Lake list. */
-	for (index = 0U; index < sizeof(kabylake) / sizeof(kabylake[0]); index++) {
-		if (kabylake[index] == product)
-			return I915_PLATFORM_KABYLAKE;
-	}
-
-	/* Looks the id up in the Coffee Lake list. */
-	for (index = 0U; index < sizeof(coffeelake) / sizeof(coffeelake[0]); index++) {
-		if (coffeelake[index] == product)
-			return I915_PLATFORM_COFFEELAKE;
-	}
-
-	/* Looks the id up in the Comet Lake list. */
-	for (index = 0U; index < sizeof(cometlake) / sizeof(cometlake[0]); index++) {
-		if (cometlake[index] == product)
-			return I915_PLATFORM_COMETLAKE;
-	}
-
-	/* Not a Gen9 part. */
-	return I915_PLATFORM_GEN12;
 }
 
 /* Counts the set bits of a word. */
@@ -2361,7 +2417,9 @@ i915_cpu_physical_bits(void)
  * Gen12 has a display summary control to turn off.  Gen9 has none: its
  * display sources report straight into GEN8_MASTER_IRQ, so each one is
  * masked, disabled and cleared instead (the display half of
- * gen8_irq_reset()).  A pipe whose power well is down is not touched.
+ * gen8_irq_reset() and ibx_irq_reset()): the eDP PSR, the pipes, the
+ * ports, the miscellaneous sources and the south display.  A pipe whose
+ * power well is down is not touched, and GEN8_MASTER_IRQ is not written.
  */
 static void
 i915_interim_display_irq_reset(
@@ -2379,8 +2437,14 @@ i915_interim_display_irq_reset(
 		return;
 	}
 
-	/* Silences the pipe sources of every pipe whose power well is up. */
+	/* Silences the eDP PSR source, which power well 1 holds. */
 	power = drv_i915_raw_read32(&gt->mmio, I915_GEN9_PWR_WELL_CTL2);
+	if ((power & I915_GEN9_PW_1_STATE) != 0U) {
+		drv_i915_raw_write32(&gt->mmio, I915_GEN9_EDP_PSR_IMR, 0xffffffffU);
+		drv_i915_raw_write32(&gt->mmio, I915_GEN9_EDP_PSR_IIR, 0xffffffffU);
+	}
+
+	/* Silences the pipe sources of every pipe whose power well is up. */
 	for (pipe = 0U; pipe < I915_GEN9_PIPES; pipe++) {
 		/* Pipe A needs power well 1, pipes B and C power well 2 as well. */
 		if ((power & I915_GEN9_PW_1_STATE) == 0U)
@@ -2394,6 +2458,9 @@ i915_interim_display_irq_reset(
 	/* Silences the port and miscellaneous display sources, which are always powered. */
 	i915_interim_irq_silence(&gt->mmio, GEN8_DE_PORT_IMR, GEN8_DE_PORT_IIR, GEN8_DE_PORT_IER);
 	i915_interim_irq_silence(&gt->mmio, GEN8_DE_MISC_IMR, GEN8_DE_MISC_IIR, GEN8_DE_MISC_IER);
+
+	/* Silences the south display, whose hotplug would otherwise interrupt. */
+	i915_interim_irq_silence(&gt->mmio, I915_GEN9_SDEIMR, I915_GEN9_SDEIIR, I915_GEN9_SDEIER);
 }
 
 /* Masks, disables and clears one display interrupt register set (gen3_irq_reset()). */

@@ -113,6 +113,7 @@
 #define I915_GEN9_PIPE_STRIDE			0x1000U
 #define I915_GEN9_PLANE_ENABLE			(1U << 31)
 #define I915_GEN9_PIPES				3U
+#define I915_GEN9_TRANSCONF_EDP			0x7f008U
 
 /* The PCODE mailbox commands of the watermark latencies and the SAGV block time. */
 #define I915_GEN9_PCODE_READ_MEM_LATENCY	0x6U
@@ -2691,8 +2692,11 @@ drv_i915_vga_disable(
  * power well is up, the first plane's enable, surface, stride and size, and
  * logs them.  It refuses a scanout that reaches into the GGTT pages the
  * driver writes (from driver_ggtt_first up), because the GT memory would
- * overwrite the picture.  Nothing is written.  The display is marked absent
- * either way.  Returns 0, or EBUSY for an overlap.
+ * overwrite the picture.  It also reads the GPU's VT-d unit as N0 does and
+ * refuses a GT start while that unit translates or protects memory: zedBSD
+ * has no IOMMU driver, so the GT's DMA would fault.  Nothing is written.
+ * The display is marked absent either way.  Returns 0, EBUSY for an
+ * overlap, or EIO for an active VT-d unit.
  */
 int
 drv_i915_n0_lite_gen9(
@@ -2709,8 +2713,12 @@ drv_i915_n0_lite_gen9(
 	uint32_t size;
 	uint32_t surface;
 	uint32_t powered_bit;
+	uint32_t edp_transconf;
+	struct i915_native_deps deps;
+	struct i915_native_report *report;
 	unsigned pipe;
 	int overlap;
+	int vtd_active;
 
 	/* Reads which display power wells the firmware left up. */
 	power = drv_i915_raw_read32(m, I915_GEN9_PWR_WELL_CTL2);
@@ -2718,6 +2726,39 @@ drv_i915_n0_lite_gen9(
 	kern_logf("i915: N0-lite (gen9): PWR_WELL_CTL2=0x%08x driver GGTT from 0x%llx\n",
 		  power,
 		  (unsigned long long)driver_start);
+
+	/* Reads the eDP transcoder, in power well 1, which a laptop's firmware drives its panel with. */
+	if ((power & I915_GEN9_PW_1_STATE) != 0U) {
+		edp_transconf = drv_i915_raw_read32(m, I915_GEN9_TRANSCONF_EDP);
+		kern_logf("i915: N0-lite (gen9): TRANSCONF_EDP=0x%08x\n", edp_transconf);
+	}
+
+	/* Reads the GPU's VT-d unit through the MCHBAR mirror, as N0 does, into the display's report. */
+	report = &display->n0;
+	kern_memset(report, 0, sizeof(*report));
+	kern_memset(&deps, 0, sizeof(deps));
+	deps.mmio = m;
+	report->hypervisor = i915_cpu_hypervisor();
+	i915_read_vtd(&deps, report);
+	kern_logf("i915: N0-lite (gen9): GFXVTBAR=0x%llx enabled=%d %s readable=%d GSTS=0x%08x PMEN=0x%08x\n",
+		  (unsigned long long)report->gfxvtbar,
+		  report->vtd_enabled,
+		  report->hypervisor ? "guest" : "native",
+		  report->vtd_readable,
+		  report->vtd_gsts,
+		  report->vtd_pmen);
+
+	/* A native unit that translates, protects memory or cannot be read stops the GT start. */
+	vtd_active = 0;
+	if (report->hypervisor == 0 && report->vtd_enabled != 0) {
+		if (report->vtd_readable == 0) {
+			vtd_active = 1;
+		} else if ((report->vtd_gsts & 0x80000000U) != 0U) {
+			vtd_active = 1;
+		} else if ((report->vtd_pmen & 0x80000001U) != 0U) {
+			vtd_active = 1;
+		}
+	}
 
 	/* Reads the first plane of every powered pipe. */
 	overlap = 0;
@@ -2772,11 +2813,17 @@ drv_i915_n0_lite_gen9(
 	display->absent = 1;
 	kern_logf("i915: N0-lite (gen9): the firmware's picture is kept; the GPU node has no display\n");
 
+	/* Refuses a GT start whose DMA the VT-d unit would translate or block. */
+	if (vtd_active != 0) {
+		kern_logf("i915: N0-lite (gen9): the GPU's VT-d unit translates or protects memory and zedBSD has no IOMMU driver: the GT is not started\n");
+		return EIO;
+	}
+
 	/* Refuses a GT start that would overwrite the firmware's scanout. */
 	if (overlap != 0)
 		return EBUSY;
 
-	/* Succeeded: the scanout is clear of the driver's GGTT pages. */
+	/* Succeeded: the scanout is clear of the driver's GGTT pages and nothing translates the GT's DMA. */
 	return 0;
 }
 
