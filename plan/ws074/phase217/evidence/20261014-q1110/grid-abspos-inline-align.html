@@ -1,0 +1,15 @@
+<!doctype html>
+<style>
+.grid { position: relative; display: grid; width: 100px; height: 100px;
+  grid-template-columns: 100px; grid-template-rows: 100px; }
+.grid > div { position: absolute; width: 20px; height: 10px;
+  grid-column: 1 / 2; grid-row: 1 / 2; }
+.end { justify-self: end; }
+.center { justify-self: center; }
+.inset { justify-self: end; left: 7px; }
+.grid > .invalid { justify-self: end; grid-column: 99 / 100; }
+.rtl { direction: rtl; }
+.self-end { justify-self: self-end; direction: ltr; }
+</style>
+<div class="grid"><div class="end"></div><div class="center"></div><div class="inset"></div><div class="invalid"></div></div>
+<div class="grid rtl"><div class="end"></div><div class="center"></div><div class="self-end"></div></div>

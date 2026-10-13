@@ -577,6 +577,27 @@ position_place(
 		x = containing->x + left + box->margin[CSS_LEFT];
 	} else if (has_right) {
 		x = containing->x + containing->width - right - box->margin[CSS_RIGHT] - (box->width + frame);
+	} else if (box->static_x_align == CSS_ALIGN_END ||
+	    box->static_x_align == CSS_ALIGN_SELF_END) {
+		if (box->static_x_align_from_right) {
+			x = box->static_x +
+			    (box->static_x_from_right ? 0 : box->static_x_area_width) -
+			    box->margin[CSS_RIGHT] - (box->width + frame);
+		} else {
+			x = box->static_x -
+			    (box->static_x_from_right ? box->static_x_area_width : 0) +
+			    box->margin[CSS_LEFT];
+		}
+	} else if (box->static_x_align == CSS_ALIGN_CENTER) {
+		layout_unit free_width;
+
+		free_width = box->static_x_area_width - box->margin[CSS_LEFT] -
+		    (box->width + frame) - box->margin[CSS_RIGHT];
+		if (free_width < 0)
+			free_width = 0;
+		x = box->static_x -
+		    (box->static_x_from_right ? box->static_x_area_width : 0) +
+		    box->margin[CSS_LEFT] + free_width / 2;
 	} else if (box->static_x_from_right) {
 		/* A Grid inline-start edge needs the width that was just measured. */
 		x = box->static_x - box->margin[CSS_RIGHT] - (box->width + frame);
