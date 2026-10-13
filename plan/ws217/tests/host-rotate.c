@@ -46,6 +46,7 @@ static void test_fixed(void);
 static void test_rects(void);
 static void test_vectors(void);
 static void test_mask(void);
+static void test_report(void);
 static void test_plan(void);
 static void test_steps(void);
 static void test_coefficients(void);
@@ -65,6 +66,7 @@ main(void)
 	test_rects();
 	test_vectors();
 	test_mask();
+	test_report();
 	test_plan();
 	test_steps();
 	test_coefficients();
@@ -365,14 +367,21 @@ test_vectors(void)
 static void
 test_mask(void)
 {
+	unsigned scanout;
+	unsigned turn;
 	unsigned mask;
 	unsigned why;
+	int error;
 
-	/* A display whose hardware cannot turn (Venus, the KMS of Linux): nothing, whatever the build. */
+	/* A display whose hardware cannot turn and no turn pass offered (the Pi 4 before WS141 p015): nothing. */
 	mask = kwl_rotate_mask(0U, 0U, 0U, KWL_ROTATE_POLICY_DEFAULT, &why);
 	check(mask == KWL_ROTATION_0 && why == KWL_ROTATE_WHY_SCANOUT, "no hardware, no turn: 0 only, scanout");
+	mask = kwl_rotate_mask(0U, 0U, 1U, KWL_ROTATE_POLICY_DEFAULT, &why);
+	check(mask == KWL_ROTATION_0 && why == KWL_ROTATE_WHY_SCANOUT, "no hardware, the turn built but not offered (rpi4): 0 only, scanout");
+
+	/* The turn pass offered and built turns every angle, 180 too where the hardware cannot (ws217-p004, before ws217-p010). */
 	mask = kwl_rotate_mask(0U, 1U, 1U, KWL_ROTATE_POLICY_DEFAULT, &why);
-	check(mask == KWL_ROTATION_0 && why == KWL_ROTATE_WHY_SCANOUT, "no hardware, the turn offered: 0 only, scanout");
+	check(mask == 15U && why == 0U, "no hardware, the turn offered: all four");
 
 	/* The hardware turns by 180: the quarter turns where the pass is offered and built. */
 	mask = kwl_rotate_mask(1U, 0U, 0U, KWL_ROTATE_POLICY_DEFAULT, &why);
@@ -396,12 +405,44 @@ test_mask(void)
 	mask = kwl_rotate_mask(1U, 1U, 0U, KWL_ROTATE_POLICY_ANY, &why);
 	check(mask == (KWL_ROTATION_0 | KWL_ROTATION_180) && why == KWL_ROTATE_WHY_TURN, "any without the turn: 0 and 180");
 
-	/* This build has the turn pass (ws217-p002b); without the hardware's 180 a display still offers 0 alone by default. */
+	/* This build has the turn pass (ws217-p002b); an Intel GPU without the hardware's 180 offers all four by the turn (ws217-p004). */
 	check(KWL_TURN_BUILD == 1U, "this build has the turn pass");
 	mask = kwl_rotate_mask(0U, 1U, KWL_TURN_BUILD, KWL_ROTATE_POLICY_DEFAULT, &why);
-	check(mask == KWL_ROTATION_0, "this build, no hardware: 0 alone");
+	check(mask == 15U, "this build, no hardware, the turn offered: all four");
 	mask = kwl_rotate_mask(0U, 0U, KWL_TURN_BUILD, KWL_ROTATE_POLICY_ANY, &why);
 	check(mask == 15U, "this build, the test policy, a GPU not offered the turn: all four");
+
+	/* Without the hardware's 180, 180 is the turn's. */
+	error = kwl_rotate_plan(KWL_ROTATE_180, 15U, 0U, &scanout, &turn);
+	check(error == 0 && scanout == 0U && turn == KWL_ROTATE_180, "180 without the hardware: the turn");
+}
+
+/*
+ * What Settings is told of a display's angles (ws217-p004): its own alone,
+ * the angle chosen only beside another display, with the reason.
+ */
+static void
+test_report(void)
+{
+	unsigned mask;
+	unsigned why;
+
+	/* Alone: the display's angles and reasons as they are. */
+	kwl_rotate_report(KWL_ROTATE_90, 15U, 0U, 1U, &mask, &why);
+	check(mask == 15U && why == 0U, "alone: all four, no reason");
+	kwl_rotate_report(KWL_ROTATE_0, KWL_ROTATION_0, KWL_ROTATE_WHY_SCANOUT, 1U, &mask, &why);
+	check(mask == KWL_ROTATION_0 && why == KWL_ROTATE_WHY_SCANOUT, "alone, fixed: 0, scanout");
+
+	/* Beside another display: the angle chosen only, and why. */
+	kwl_rotate_report(KWL_ROTATE_90, 15U, 0U, 0U, &mask, &why);
+	check(mask == KWL_ROTATION_90 && why == KWL_ROTATE_WHY_ALONE, "beside a head: 90 alone, alone");
+	kwl_rotate_report(KWL_ROTATE_0, 15U, KWL_ROTATE_WHY_RESOURCE, 0U, &mask, &why);
+	check(mask == KWL_ROTATION_0 && why == (KWL_ROTATE_WHY_RESOURCE | KWL_ROTATE_WHY_ALONE), "beside a head: the reasons kept");
+	kwl_rotate_report(45U, 15U, 0U, 0U, &mask, &why);
+	check(mask == KWL_ROTATION_0 && why == KWL_ROTATE_WHY_ALONE, "beside a head, not an angle: 0");
+
+	/* The bits are the wire's (libkeiland's KL_DISPLAY_ROTATE_WHY_ALONE). */
+	check(KWL_ROTATE_WHY_ALONE == 16U, "the reason beside another display is 16");
 }
 
 /*

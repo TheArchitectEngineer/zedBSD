@@ -15,6 +15,11 @@
  *                display: its size, or that it is held back by the limit
  *                of the displays shown at once.  The choice is a draft
  *                until Apply; Revert takes the desktop's again.
+ *   Rotation     each display shown, with four pictures of how it stands
+ *                (upright, on its left side, upside down, on its right
+ *                side; ws217-p004): pressing one turns the display's picture
+ *                at once and the desktop keeps it.  An angle the display may
+ *                not take is faint, and the reason is said below.
  *   Brightness   the built-in panel's light, when the desktop can set it:
  *                a slider sent while dragged (every DISPLAY_LIGHT_MS) and
  *                at its release; the light keys move it too, which the
@@ -32,7 +37,12 @@
 #include <string.h>
 #include <time.h>
 
-/* The page's controls (hit indices): the two modes, Apply, Revert, the light, the displays' cards from DISPLAY_CARD, and their on/off switches from DISPLAY_SHOWN (ws113-p014). */
+/*
+ * The page's controls (hit indices): the two modes, Apply, Revert, the
+ * light, the displays' cards from DISPLAY_CARD, their on/off switches from
+ * DISPLAY_SHOWN (ws113-p014), and their angles' pictures from
+ * DISPLAY_ROTATE, SE_ROTATE_ANGLES a display (ws217-p004).
+ */
 #define DISPLAY_EXTEND		1
 #define DISPLAY_MIRROR		2
 #define DISPLAY_APPLY		3
@@ -40,6 +50,15 @@
 #define DISPLAY_LIGHT		5
 #define DISPLAY_CARD		10
 #define DISPLAY_SHOWN		30
+#define DISPLAY_ROTATE		40
+
+/* A display's row of the angles, a picture's square, the space between the pictures, and the panel drawn in it (its long and short sides, its edge's mark). */
+#define DISPLAY_ROTATE_ROW	72
+#define DISPLAY_TILE		56
+#define DISPLAY_TILE_GAP	8
+#define DISPLAY_PANEL_LONG	30
+#define DISPLAY_PANEL_SHORT	20
+#define DISPLAY_PANEL_MARK	10
 
 /* The cards' margin, the space between cards, the arrangement's height, a row's height and the text sizes. */
 #define DISPLAY_PAD		18
@@ -72,6 +91,14 @@ static int display_same_set(const struct se_display *display, const struct kl_di
 static void display_apply(struct se_app *app);
 static void display_send_light(struct se_app *app, int final);
 static void display_send_shown(struct se_app *app, unsigned index);
+static int display_rotation(struct se_app *app, struct kl_canvas *canvas, int x, int top, int width);
+static unsigned display_rotation_rows(const struct se_display *display);
+static void display_rotation_row(struct se_app *app, struct kl_canvas *canvas, unsigned index, int x, int y, int width);
+static void display_rotation_tile(struct se_app *app, struct kl_canvas *canvas, unsigned index, unsigned slot, int x, int y);
+static void display_rotation_panel(struct kl_canvas *canvas, int center_x, int center_y, unsigned angle, kl_color ink);
+static const char *display_rotation_reason(unsigned reason);
+static int display_take_rotations(struct se_app *app);
+static void display_send_rotation(struct se_app *app, unsigned index, unsigned angle);
 static unsigned display_on_count(const struct se_display *display);
 static void display_message(struct se_display *display, const char *text, int bad);
 static uint64_t display_now_ms(void);
@@ -143,8 +170,9 @@ se_display_draw(
 		y += 30;
 	}
 
-	/* The light of a built-in panel, when the desktop can set it. */
-	y = display_light(app, canvas, x, y + DISPLAY_GAP, width);
+	/* The displays' angles (ws217-p004), then the light of a built-in panel, when the desktop can set it. */
+	y = display_rotation(app, canvas, x, y + DISPLAY_GAP, width);
+	y = display_light(app, canvas, x, y, width);
 
 	/* The edge below the cards. */
 	return y;
@@ -160,6 +188,7 @@ se_display_press(
 	int index)
 {
 	struct se_display *display;
+	unsigned slot;
 
 	/* Nothing while a request is awaited, or without the desktop's system. */
 	display = &app->display;
@@ -192,6 +221,13 @@ se_display_press(
 	/* A display turned off or on, at once (ws113-p014). */
 	if (index >= DISPLAY_SHOWN && (size_t)(index - DISPLAY_SHOWN) < display->count) {
 		display_send_shown(app, (unsigned)(index - DISPLAY_SHOWN));
+		return;
+	}
+
+	/* A display's angle chosen, at once (ws217-p004): the display, and the picture's angle. */
+	if (index >= DISPLAY_ROTATE && (size_t)(index - DISPLAY_ROTATE) < display->count * SE_ROTATE_ANGLES) {
+		slot = (unsigned)(index - DISPLAY_ROTATE);
+		display_send_rotation(app, slot / SE_ROTATE_ANGLES, se_rotate_angle(slot % SE_ROTATE_ANGLES));
 		return;
 	}
 
@@ -354,6 +390,33 @@ se_display_result(
 			break;
 		default:
 			display_message(display, kl_tr("The display could not be turned off or on."), 1);
+			break;
+		}
+
+		/* The answer was the page's. */
+		return 1;
+	}
+
+	/* A display's angle (ws217-p004): only its failure is told; the snapshot that follows shows the new angle. */
+	if (display->rotation_request != 0U && request == display->rotation_request) {
+		display->rotation_request = 0U;
+		se_log("DISPLAY rotation result errno=%d", error);
+		app->dirty = 1;
+		switch (error) {
+		case 0:
+			display_message(display, "", 0);
+			break;
+		case ENOTSUP:
+			display_message(display, kl_tr("This display cannot be rotated that way."), 1);
+			break;
+		case ENODEV:
+			display_message(display, kl_tr("The display is not connected."), 1);
+			break;
+		case EPERM:
+			display_message(display, kl_tr("The displays can be changed only in an unlocked session."), 1);
+			break;
+		default:
+			display_message(display, kl_tr("The display could not be rotated."), 1);
 			break;
 		}
 
@@ -736,6 +799,7 @@ display_take(
 	int32_t y;
 	int same;
 	int changed;
+	int turned;
 	int differs;
 	int index;
 
@@ -765,13 +829,16 @@ display_take(
 	}
 	if (keep_draft == 0)
 		changed = 1;
-	if (changed != 0 && app->page == SE_PAGE_DISPLAY)
-		app->dirty = 1;
 
-	/* The snapshot becomes the page's. */
+	/* The snapshot becomes the page's, with the displays' angles (ws217-p004), which may change alone. */
 	memcpy(display->displays, displays, count * sizeof(displays[0]));
 	display->count = count;
 	display->mode = mode;
+	turned = display_take_rotations(app);
+	if (turned)
+		changed = 1;
+	if (changed != 0 && app->page == SE_PAGE_DISPLAY)
+		app->dirty = 1;
 
 	/* The light shown, unless the user holds the slider. */
 	index = display_light_index(display);
@@ -964,4 +1031,318 @@ display_on_count(
 
 	/* Succeeded: how many. */
 	return count;
+}
+
+/*
+ * Draws the card of the displays' angles (ws217-p004): a row for each
+ * display shown whose angle the desktop told; returns the edge below it
+ * and the space after it (the top without such a display).
+ */
+static int
+display_rotation(
+	struct se_app *app,
+	struct kl_canvas *canvas,
+	int x,
+	int top,
+	int width)
+{
+	struct se_display *display;
+	unsigned rows;
+	unsigned index;
+	int height;
+	int y;
+
+	/* Only displays shown whose angle the desktop told. */
+	display = &app->display;
+	rows = display_rotation_rows(display);
+	if (rows == 0U)
+		return top;
+
+	/* The card, then a row for each such display. */
+	height = DISPLAY_TITLED + (int)rows * DISPLAY_ROTATE_ROW + DISPLAY_PAD;
+	y = se_card_begin(app, canvas, x, top, width, height, kl_tr("Rotation"), kl_tr("Turn the picture to match how the display stands."));
+	for (index = 0U; index < display->count; index++) {
+		if (!display->rotation_told[index])
+			continue;
+		if ((display->displays[index].flags & KL_DISPLAY_SHOWN) == 0U)
+			continue;
+		display_rotation_row(app, canvas, index, x, y, width);
+		y += DISPLAY_ROTATE_ROW;
+	}
+
+	/* The edge below the card, and the space after it. */
+	return top + height + DISPLAY_GAP;
+}
+
+/* Counts the displays the card of the angles has a row for: shown, their angle told. */
+static unsigned
+display_rotation_rows(
+	const struct se_display *display)
+{
+	unsigned count;
+	size_t index;
+
+	/* Each display shown whose angle the desktop told. */
+	count = 0U;
+	for (index = 0U; index < display->count; index++) {
+		if (!display->rotation_told[index])
+			continue;
+		if ((display->displays[index].flags & KL_DISPLAY_SHOWN) == 0U)
+			continue;
+		count++;
+	}
+
+	/* Succeeded: how many rows. */
+	return count;
+}
+
+/* Draws one display's row of the angles: its label, the reason some cannot be chosen, and the four pictures at the right. */
+static void
+display_rotation_row(
+	struct se_app *app,
+	struct kl_canvas *canvas,
+	unsigned index,
+	int x,
+	int y,
+	int width)
+{
+	struct se_display *display;
+	const char *reason;
+	unsigned said;
+	unsigned slot;
+	int pictures;
+	int text_width;
+	int left;
+
+	/* The pictures' room at the right, and the text's at the left. */
+	display = &app->display;
+	pictures = (int)SE_ROTATE_ANGLES * DISPLAY_TILE + ((int)SE_ROTATE_ANGLES - 1) * DISPLAY_TILE_GAP;
+	left = x + width - DISPLAY_PAD - pictures;
+	text_width = left - (x + DISPLAY_PAD) - DISPLAY_TILE_GAP;
+
+	/* The display's label, and the reason below it. */
+	(void)kl_text_draw_fit(app->text, canvas, x + DISPLAY_PAD, y + 26, display->displays[index].label, DISPLAY_TEXT_TITLE, 0, text_width, SE_COLOR_TEXT);
+	said = se_rotate_reason(display->rotation_why[index]);
+	reason = display_rotation_reason(said);
+	if (reason != NULL)
+		(void)kl_text_draw_fit(app->text, canvas, x + DISPLAY_PAD, y + 48, reason, DISPLAY_TEXT_SMALL, 0, text_width, SE_COLOR_TEXT_SECONDARY);
+
+	/* The four pictures. */
+	for (slot = 0U; slot < SE_ROTATE_ANGLES; slot++)
+		display_rotation_tile(app, canvas, index, slot, left + (int)slot * (DISPLAY_TILE + DISPLAY_TILE_GAP), y + 4);
+}
+
+/*
+ * Draws one picture of a display's angle: the accent for the angle chosen,
+ * faint for one the display may not take now, a control for the others
+ * (while no angle's request is awaited).
+ */
+static void
+display_rotation_tile(
+	struct se_app *app,
+	struct kl_canvas *canvas,
+	unsigned index,
+	unsigned slot,
+	int x,
+	int y)
+{
+	struct se_display *display;
+	struct kl_rect hit;
+	char degrees[16];
+	kl_color ground;
+	kl_color ink;
+	unsigned angle;
+	int pressable;
+
+	/* The picture's angle, and whether pressing it turns the display. */
+	display = &app->display;
+	angle = se_rotate_angle(slot);
+	pressable = se_rotate_pressable(angle, display->rotation[index], display->rotation_mask[index]);
+
+	/* Its colors: the angle chosen, one that can be chosen, one that cannot. */
+	ground = SE_COLOR_TILE;
+	ink = SE_COLOR_TEXT;
+	if (angle == display->rotation[index]) {
+		ground = SE_COLOR_ACCENT;
+		ink = SE_COLOR_ACCENT_TEXT;
+	} else if (!pressable) {
+		ground = SE_COLOR_FIELD;
+		ink = SE_COLOR_TEXT_FAINT;
+	}
+
+	/* The square and its edge. */
+	kl_canvas_round(canvas, (float)x, (float)y, (float)DISPLAY_TILE, (float)DISPLAY_TILE, 8.0f, ground);
+	kl_canvas_round_border(canvas, (float)x, (float)y, (float)DISPLAY_TILE, (float)DISPLAY_TILE, 8.0f, 1.0f, SE_COLOR_CARD_EDGE);
+
+	/* The panel as it stands, and its angle in degrees below it. */
+	display_rotation_panel(canvas, x + DISPLAY_TILE / 2, y + 22, angle, ink);
+	(void)snprintf(degrees, sizeof(degrees), "%u\xc2\xb0", angle);
+	(void)kl_text_draw_fit(app->text, canvas, x, y + DISPLAY_TILE - 6, degrees, DISPLAY_TEXT_SMALL - 2U, 1, DISPLAY_TILE, ink);
+
+	/* A control, while nothing is awaited. */
+	if (!pressable ||
+	    display->rotation_request != 0U ||
+	    display->request != 0U)
+		return;
+	hit.x = x;
+	hit.y = y;
+	hit.width = DISPLAY_TILE;
+	hit.height = DISPLAY_TILE;
+	se_ui_hit(app, &hit, SE_HIT_CONTROL, DISPLAY_ROTATE + (int)(index * SE_ROTATE_ANGLES + slot));
+}
+
+/*
+ * Draws a display's panel as it stands at an angle, around a point: its
+ * outline, lying (0, 180) or standing (90, 270), and a mark on the edge
+ * that is the panel's top when it is upright: at the top, on the left
+ * (the panel on its left side, the picture turned clockwise by 90), at
+ * the bottom, or on the right (270).
+ */
+static void
+display_rotation_panel(
+	struct kl_canvas *canvas,
+	int center_x,
+	int center_y,
+	unsigned angle,
+	kl_color ink)
+{
+	float width;
+	float height;
+	float left;
+	float top;
+
+	/* The outline, lying or standing. */
+	width = (float)DISPLAY_PANEL_LONG;
+	height = (float)DISPLAY_PANEL_SHORT;
+	if (angle == KL_DISPLAY_ROTATE_90 || angle == KL_DISPLAY_ROTATE_270) {
+		width = (float)DISPLAY_PANEL_SHORT;
+		height = (float)DISPLAY_PANEL_LONG;
+	}
+	left = (float)center_x - width / 2.0f;
+	top = (float)center_y - height / 2.0f;
+	kl_canvas_round_border(canvas, left, top, width, height, 3.0f, 2.0f, ink);
+
+	/* The mark of the panel's own top edge, inside the outline. */
+	switch (angle) {
+	case KL_DISPLAY_ROTATE_90:
+		kl_canvas_round(canvas, left + 3.0f, (float)center_y - (float)DISPLAY_PANEL_MARK / 2.0f, 3.0f, (float)DISPLAY_PANEL_MARK, 1.5f, ink);
+		break;
+	case KL_DISPLAY_ROTATE_180:
+		kl_canvas_round(canvas, (float)center_x - (float)DISPLAY_PANEL_MARK / 2.0f, top + height - 6.0f, (float)DISPLAY_PANEL_MARK, 3.0f, 1.5f, ink);
+		break;
+	case KL_DISPLAY_ROTATE_270:
+		kl_canvas_round(canvas, left + width - 6.0f, (float)center_y - (float)DISPLAY_PANEL_MARK / 2.0f, 3.0f, (float)DISPLAY_PANEL_MARK, 1.5f, ink);
+		break;
+	default:
+		kl_canvas_round(canvas, (float)center_x - (float)DISPLAY_PANEL_MARK / 2.0f, top + 3.0f, (float)DISPLAY_PANEL_MARK, 3.0f, 1.5f, ink);
+		break;
+	}
+}
+
+/* Gives the words of a reason said below a display's pictures (SE_ROTATE_REASON_*), or NULL for none. */
+static const char *
+display_rotation_reason(
+	unsigned reason)
+{
+	/* Each reason's sentence. */
+	switch (reason) {
+	case SE_ROTATE_REASON_FIXED:
+		return kl_tr("This display cannot be rotated.");
+	case SE_ROTATE_REASON_ALONE:
+		return kl_tr("The rotation can be changed while this display is the only one shown.");
+	case SE_ROTATE_REASON_RESOURCE:
+		return kl_tr("The display could not be rotated (not enough memory).");
+	case SE_ROTATE_REASON_GAME:
+		return kl_tr("Rotation is paused while a game is shown.");
+	case SE_ROTATE_REASON_QUARTER:
+		return kl_tr("90 and 270 degrees are not available on this device yet.");
+	default:
+		break;
+	}
+
+	/* Nothing to say. */
+	return NULL;
+}
+
+/*
+ * Takes each display's angle from the desktop (ws217-p004): told or not,
+ * the angle chosen, the angles it may take and why not.  Returns 1 when
+ * any of them differs from what the page had.
+ */
+static int
+display_take_rotations(
+	struct se_app *app)
+{
+	struct se_display *display;
+	unsigned rotation;
+	unsigned mask;
+	unsigned why;
+	unsigned told;
+	size_t index;
+	int changed;
+	int error;
+
+	/* Each display of the snapshot. */
+	display = &app->display;
+	changed = 0;
+	for (index = 0U; index < display->count; index++) {
+		/* What the desktop told of it (nothing from a desktop before the angles). */
+		rotation = KL_DISPLAY_ROTATE_0;
+		mask = KL_DISPLAY_ROTATION_0;
+		why = 0U;
+		told = 0U;
+		error = kl_system_displays_rotation(app->system, display->displays[index].key, &rotation);
+		if (error == 0)
+			error = kl_system_displays_rotations(app->system, display->displays[index].key, &mask, &why);
+		if (error == 0)
+			told = 1U;
+
+		/* Whether it differs from the page's. */
+		if (told != display->rotation_told[index] ||
+		    rotation != display->rotation[index] ||
+		    mask != display->rotation_mask[index] ||
+		    why != display->rotation_why[index])
+			changed = 1;
+
+		/* The page's. */
+		display->rotation_told[index] = told;
+		display->rotation[index] = rotation;
+		display->rotation_mask[index] = mask;
+		display->rotation_why[index] = why;
+	}
+
+	/* Succeeded: whether anything changed. */
+	return changed;
+}
+
+/* Turns a display's picture to an angle (ws217-p004): asked of the desktop at once. */
+static void
+display_send_rotation(
+	struct se_app *app,
+	unsigned index,
+	unsigned angle)
+{
+	struct se_display *display;
+	int pressable;
+	int error;
+
+	/* Not while another angle is awaited, nor for an angle that cannot be chosen now. */
+	display = &app->display;
+	if (display->rotation_request != 0U || app->system == NULL)
+		return;
+	pressable = se_rotate_pressable(angle, display->rotation[index], display->rotation_mask[index]);
+	if (!pressable)
+		return;
+
+	/* Asked of the desktop. */
+	display->message[0] = '\0';
+	error = kl_system_displays_set_rotation(app->system, display->displays[index].key, angle, &display->rotation_request);
+	se_log("DISPLAY rotation %s angle=%u error=%d", display->displays[index].key, angle, error);
+	if (error != 0) {
+		display->rotation_request = 0U;
+		display_message(display, kl_tr("This desktop cannot rotate the displays."), 1);
+	}
+
+	/* The page shows it. */
+	app->dirty = 1;
 }

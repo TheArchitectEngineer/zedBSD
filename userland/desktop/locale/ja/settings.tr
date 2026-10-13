@@ -1,5 +1,5 @@
 # Settings' texts in Japanese (domain settings, WS158 p004). tools/i18n/tr.py update keeps the translations.
-# userland/desktop/locale/settings.keys:3, userland/desktop/settings/ui.c:521
+# userland/desktop/locale/settings.keys:3, userland/desktop/settings/ui.c:580
 msg	Settings	設定
 # userland/desktop/locale/settings.keys:4
 msg	Change how Kei looks and works.	Kei の見た目と動きを変えます。
@@ -161,54 +161,74 @@ msg	Phone	電話
 msg	Browser	ブラウザー
 # userland/desktop/settings/page-about.c:113
 msg	Show Welcome again	ようこそをもう一度見る
-# userland/desktop/settings/page-display.c:108
+# userland/desktop/settings/page-display.c:135
 msg	Extend spreads the desktop over the displays. Mirror shows it on each.	拡張はデスクトップを複数のディスプレイに広げます。ミラーはどのディスプレイにも同じものを映します。
-# userland/desktop/settings/page-display.c:110
+# userland/desktop/settings/page-display.c:137
 msg	Displays	ディスプレイ
-# userland/desktop/settings/page-display.c:114
+# userland/desktop/settings/page-display.c:141
 msg	Extend	拡張
-# userland/desktop/settings/page-display.c:115
+# userland/desktop/settings/page-display.c:142
 msg	Mirror	ミラー
-# userland/desktop/settings/page-display.c:119
+# userland/desktop/settings/page-display.c:146
 msg	With one display both show the same.	ディスプレイが1つの時はどちらも同じです。
-# userland/desktop/settings/page-display.c:131, userland/desktop/settings/page-display.c:132, userland/desktop/settings/page-languages.c:199
+# userland/desktop/settings/page-display.c:158, userland/desktop/settings/page-display.c:159, userland/desktop/settings/page-languages.c:199
 msg	Apply	適用
-# userland/desktop/settings/page-display.c:133, userland/desktop/settings/page-display.c:134
+# userland/desktop/settings/page-display.c:160, userland/desktop/settings/page-display.c:161
 msg	Revert	元に戻す
-# userland/desktop/settings/page-display.c:332, userland/desktop/settings/page-display.c:862
+# userland/desktop/settings/page-display.c:368, userland/desktop/settings/page-display.c:957
 msg	The brightness could not be changed.	明るさを変えられませんでした。
-# userland/desktop/settings/page-display.c:347
+# userland/desktop/settings/page-display.c:383
 msg	At least one display stays on.	少なくとも 1 つのディスプレイはオンのままです。
-# userland/desktop/settings/page-display.c:350
+# userland/desktop/settings/page-display.c:386, userland/desktop/settings/page-display.c:413
 msg	The display is not connected.	ディスプレイが接続されていません。
-# userland/desktop/settings/page-display.c:353, userland/desktop/settings/page-display.c:385
+# userland/desktop/settings/page-display.c:389, userland/desktop/settings/page-display.c:416, userland/desktop/settings/page-display.c:448
 msg	The displays can be changed only in an unlocked session.	ディスプレイはロックされていないセッションでだけ変えられます。
-# userland/desktop/settings/page-display.c:356
+# userland/desktop/settings/page-display.c:392
 msg	The display could not be turned off or on.	ディスプレイをオフ・オンにできませんでした。
-# userland/desktop/settings/page-display.c:379, userland/desktop/settings/page-display.c:769
+# userland/desktop/settings/page-display.c:410
+msg	This display cannot be rotated that way.	このディスプレイはその向きに回転できません。
+# userland/desktop/settings/page-display.c:419
+msg	The display could not be rotated.	ディスプレイを回転できませんでした。
+# userland/desktop/settings/page-display.c:442, userland/desktop/settings/page-display.c:864
 msg	The displays changed. Arrange them again.	ディスプレイが変わりました。もう一度並べてください。
-# userland/desktop/settings/page-display.c:382
+# userland/desktop/settings/page-display.c:445
 msg	The displays must touch along an edge and not overlap.	ディスプレイは辺で接し、重ならないように並べてください。
-# userland/desktop/settings/page-display.c:388, userland/desktop/settings/page-display.c:830
+# userland/desktop/settings/page-display.c:451, userland/desktop/settings/page-display.c:925
 msg	This desktop cannot change the displays.	このデスクトップではディスプレイを変えられません。
-# userland/desktop/settings/page-display.c:391
+# userland/desktop/settings/page-display.c:454
 msg	The displays could not be changed.	ディスプレイを変えられませんでした。
-# userland/desktop/settings/page-display.c:421
+# userland/desktop/settings/page-display.c:484
 msg	Screen	画面
-# userland/desktop/settings/page-display.c:422
+# userland/desktop/settings/page-display.c:485
 msg	Mode	モード
-# userland/desktop/settings/page-display.c:423
+# userland/desktop/settings/page-display.c:486
 msg	Graphics	グラフィックス
-# userland/desktop/settings/page-display.c:552
+# userland/desktop/settings/page-display.c:615
 msg	built in	内蔵
-# userland/desktop/settings/page-display.c:557
+# userland/desktop/settings/page-display.c:620
 msg	Not shown: the computer shows no more displays at once	表示されていません: このコンピューターが同時に映せるディスプレイの数を超えています
-# userland/desktop/settings/page-display.c:559
+# userland/desktop/settings/page-display.c:622
 msg	Off	オフ
-# userland/desktop/settings/page-display.c:598
+# userland/desktop/settings/page-display.c:661
 msg	Brightness	明るさ
-# userland/desktop/settings/page-display.c:915
+# userland/desktop/settings/page-display.c:1010
 msg	This desktop cannot turn displays off.	このデスクトップではディスプレイをオフにできません。
+# userland/desktop/settings/page-display.c:1063
+msg	Rotation	回転
+# userland/desktop/settings/page-display.c:1063
+msg	Turn the picture to match how the display stands.	ディスプレイの置き方に合わせて画面を回転します。
+# userland/desktop/settings/page-display.c:1250
+msg	This display cannot be rotated.	このディスプレイは回転できません。
+# userland/desktop/settings/page-display.c:1252
+msg	The rotation can be changed while this display is the only one shown.	このディスプレイだけを表示しているときに回転を変えられます。
+# userland/desktop/settings/page-display.c:1254
+msg	The display could not be rotated (not enough memory).	ディスプレイを回転できませんでした（メモリが足りません）。
+# userland/desktop/settings/page-display.c:1256
+msg	Rotation is paused while a game is shown.	ゲームを表示している間は回転を止めています。
+# userland/desktop/settings/page-display.c:1258
+msg	90 and 270 degrees are not available on this device yet.	この機器ではまだ 90 度と 270 度を使えません。
+# userland/desktop/settings/page-display.c:1343
+msg	This desktop cannot rotate the displays.	このデスクトップはディスプレイを回転できません。
 # userland/desktop/settings/page-home.c:60
 msg	Connectivity	接続
 # userland/desktop/settings/page-home.c:61
@@ -285,7 +305,7 @@ plural	{1} minute	{1} minutes	{1} 分
 msg	Coming in a later version	今後のバージョンで対応予定
 # userland/desktop/settings/titlebar.c:227
 msg	Search settings	設定を検索
-# userland/desktop/settings/ui.c:524
+# userland/desktop/settings/ui.c:583
 msg	Search	検索
 # userland/desktop/settings/welcome.c:139, userland/desktop/settings/welcome.c:140
 msg	Skip	スキップ

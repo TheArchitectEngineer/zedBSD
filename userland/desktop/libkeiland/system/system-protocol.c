@@ -118,7 +118,7 @@ static const struct wl_message system_manager_events[] = {
 	{ "capabilities", "u", system_plain_types },
 };
 
-/* kl_system_manager_v1, at KL_SYSTEM_MANAGER_VERSION: seventeen requests (get_monitor since 2, get_account since 4, get_sharing since 7, get_notify since 13, get_mail since 15, get_phone since 16, get_printers since 17, get_displays since 18; the displays' set_shown since 19; the mail's allowed since 20; get_machine since 21; the machine's mounts since 22; get_bluetooth since 23; the printers' edit since 24; the account's key operations since 25; its methods since 26; the phone's messages since 27; the phone's contacts and calls since 28; media metadata since 29) and one event.  It lives for the program. */
+/* kl_system_manager_v1, at KL_SYSTEM_MANAGER_VERSION: seventeen requests (get_monitor since 2, get_account since 4, get_sharing since 7, get_notify since 13, get_mail since 15, get_phone since 16, get_printers since 17, get_displays since 18; the displays' set_shown since 19; the mail's allowed since 20; get_machine since 21; the machine's mounts since 22; get_bluetooth since 23; the printers' edit since 24; the account's key operations since 25; its methods since 26; the phone's messages since 27; the phone's contacts and calls since 28; media metadata since 29; the phone's calls since 33; the displays' angles since 34) and one event.  It lives for the program. */
 const struct wl_interface kl_system_manager_v1_interface = {
     KL_SYSTEM_MANAGER_NAME,
     KL_SYSTEM_MANAGER_VERSION,
@@ -508,6 +508,9 @@ static const struct wl_message system_displays_requests[] = {
 	{ "apply", "uuus", system_plain_types },
 	{ "set_brightness", "usu", system_plain_types },
 	{ "set_shown", "usu", system_plain_types },
+	{ "set_rotation", "usu", system_plain_types },
+	{ "bind_touch", "uss", system_plain_types },
+	{ "listen_touch", "us", system_plain_types },
 };
 
 /* The events of kl_system_displays_v1. */
@@ -515,15 +518,23 @@ static const struct wl_message system_displays_events[] = {
 	{ "output", "ssiiuuuuu", system_plain_types },
 	{ "done", "uu", system_plain_types },
 	{ "result", "uuu", system_plain_types },
+	{ "rotation", "su", system_plain_types },
+	{ "rotations", "suu", system_plain_types },
+	{ "touch", "ssus", system_plain_types },
 };
 
-/* kl_system_displays_v1, made at the manager's version (18; set_shown since 19, ws113-p014): four requests and three events.  It lives for the program. */
+/*
+ * kl_system_displays_v1, made at the manager's version (18; set_shown since
+ * 19, ws113-p014; set_rotation, bind_touch, listen_touch and the events
+ * rotation, rotations and touch since 34, ws217-p004): seven requests and
+ * six events.  It lives for the program.
+ */
 const struct wl_interface kl_system_displays_v1_interface = {
 	KL_SYSTEM_DISPLAYS_NAME,
-	KL_SYSTEM_SINCE_SHOWN,
-	4,
+	KL_SYSTEM_SINCE_ROTATION,
+	7,
 	system_displays_requests,
-	3,
+	6,
 	system_displays_events
 };
 

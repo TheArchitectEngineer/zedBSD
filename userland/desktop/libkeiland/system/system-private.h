@@ -62,6 +62,20 @@ struct system_view_queued {
 	uint32_t job;
 };
 
+/*
+ * What the compositor told of one display's angle (ws217-p004), kept at
+ * the display's index in the snapshot: the angle the user chose, the
+ * angles it may take now (KL_DISPLAY_ROTATION_*) and why not
+ * (KL_DISPLAY_ROTATE_WHY_*).  told is 0 until its rotation event came,
+ * then 1 (its rotations event follows in the same snapshot).
+ */
+struct system_view_rotation {
+	unsigned told;
+	unsigned rotation;
+	unsigned mask;
+	unsigned why;
+};
+
 /* One phone item waiting to be taken, with the text it owns (ws197-p004a). */
 struct system_view_phone_item {
 	struct kl_phone_item item;
@@ -237,6 +251,12 @@ struct system_view {
 	uint32_t displays_serial;
 	unsigned displays_mode;
 	/*
+	 * The displays' angles (ws217-p004), at the same indices as the
+	 * displays of the snapshot in effect and of the one being sent.
+	 */
+	struct system_view_rotation display_rotations[KL_DISPLAYS_MAX];
+	struct system_view_rotation display_rotations_pending[KL_DISPLAYS_MAX];
+	/*
 	 * What Settings reads of the computer (ws188-p002): the parts in
 	 * effect, which of them were ever answered (machine_known, the
 	 * KL_MACHINE_* bits) and how often each was put into effect
@@ -402,6 +422,9 @@ void system_view_printers_done(struct system_view *view);
 void system_view_print_queued(struct system_view *view, uint32_t request, uint32_t job);
 void system_view_display(struct system_view *view, const struct kl_display *display);
 void system_view_displays_done(struct system_view *view, uint32_t serial, uint32_t mode);
+void system_view_display_rotation(struct system_view *view, const char *key, uint32_t rotation);
+void system_view_display_rotations(struct system_view *view, const char *key, uint32_t mask, uint32_t why);
+int system_view_rotation_of(const struct system_view *view, const char *key, struct system_view_rotation *rotation);
 void system_view_machine_parts(struct system_view *view, uint32_t request, uint32_t what);
 void system_view_machine_about(struct system_view *view, const struct kl_machine_about *about);
 void system_view_machine_filesystem(struct system_view *view, const struct kl_machine_filesystem *filesystem);

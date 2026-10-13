@@ -286,11 +286,12 @@ kwl_rotate_vector(
 /*
  * Gives the angles a display may take (KWL_ROTATION_*), and why it cannot
  * take the others (KWL_ROTATE_WHY_*): 0 always, 180 when its hardware turns
- * the picture, 90 and 270 when the turn pass is offered on this device
- * (turn_default) and the hardware turns by 180 (a display that cannot be
- * turned at all, a virtual one, offers nothing).  The test policy allows
- * all four where the build has the turn pass (turn_build), even where it is
- * not offered by default, 180 then by the turn when the hardware cannot.
+ * the picture, and every angle when the turn pass is offered on this
+ * device (turn_default) and built (turn_build), 180 then by the turn where
+ * the hardware cannot (ws217-p004: Settings turns the displays with the
+ * turn pass before the hardware's 180 is read, ws217-p010).  The test
+ * policy allows all four where the build has the turn pass, even where it
+ * is not offered by default.
  */
 unsigned
 kwl_rotate_mask(
@@ -303,9 +304,9 @@ kwl_rotate_mask(
 	unsigned turn_allowed;
 	unsigned mask;
 
-	/* The turn pass, where it is offered, for a display whose hardware can be turned. */
+	/* The turn pass, where it is offered and built. */
 	turn_allowed = 0U;
-	if (turn_default && turn_build && hw180)
+	if (turn_default && turn_build)
 		turn_allowed = 1U;
 
 	/* A test's policy allows the turn on any display, where the build has it. */
@@ -370,6 +371,38 @@ kwl_rotate_plan(
 	/* Succeeded: the compositor's turn pass turns it. */
 	*turn = rotation;
 	return 0;
+}
+
+/*
+ * Gives what Settings is told of a display's angles (ws217-p004): the
+ * angles it may take and why not, as they are while it is shown alone;
+ * beside another display shown (alone 0), only the angle chosen, with the
+ * reason that the others wait for it to be shown alone (a head's angle and
+ * the anchor's beside one come with ws217-p005).
+ */
+void
+kwl_rotate_report(
+	unsigned selected,
+	unsigned mask,
+	unsigned why,
+	unsigned alone,
+	unsigned *told_mask,
+	unsigned *told_why)
+{
+	unsigned bit;
+
+	/* Shown alone: the display's own angles and reasons. */
+	*told_mask = mask;
+	*told_why = why;
+	if (alone)
+		return;
+
+	/* Beside another display: the angle chosen alone (0 for a number that is not an angle), and why. */
+	bit = kwl_rotate_bit(selected);
+	if (bit == 0U)
+		bit = KWL_ROTATION_0;
+	*told_mask = bit;
+	*told_why = why | KWL_ROTATE_WHY_ALONE;
 }
 
 /*

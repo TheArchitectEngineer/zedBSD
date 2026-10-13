@@ -1171,11 +1171,108 @@ system_view_display(
 		view->displays_pending_count = 0U;
 	}
 
-	/* The display, while there is room. */
+	/* The display, while there is room, its angle not told yet. */
 	if (view->displays_pending_count >= KL_DISPLAYS_MAX)
 		return;
 	view->displays_pending[view->displays_pending_count] = *display;
+	memset(&view->display_rotations_pending[view->displays_pending_count], 0, sizeof(view->display_rotations_pending[0]));
 	view->displays_pending_count++;
+}
+
+/*
+ * Keeps the angle the user chose for a display of the pending snapshot
+ * (ws217-p004), told after its output event; a key the snapshot does not
+ * hold (one past the room) is dropped.
+ */
+void
+system_view_display_rotation(
+	struct system_view *view,
+	const char *key,
+	uint32_t rotation)
+{
+	struct system_view_rotation *kept;
+	size_t index;
+	int differs;
+
+	/* The display of the snapshot being sent with that key. */
+	if (!view->displays_open)
+		return;
+	for (index = 0U; index < view->displays_pending_count; index++) {
+		differs = strcmp(view->displays_pending[index].key, key);
+		if (differs != 0)
+			continue;
+
+		/* Its angle, told. */
+		kept = &view->display_rotations_pending[index];
+		kept->told = 1U;
+		kept->rotation = rotation;
+		return;
+	}
+}
+
+/*
+ * Keeps the angles a display of the pending snapshot may take and why not
+ * (ws217-p004), told after its rotation event.
+ */
+void
+system_view_display_rotations(
+	struct system_view *view,
+	const char *key,
+	uint32_t mask,
+	uint32_t why)
+{
+	struct system_view_rotation *kept;
+	size_t index;
+	int differs;
+
+	/* The display of the snapshot being sent with that key. */
+	if (!view->displays_open)
+		return;
+	for (index = 0U; index < view->displays_pending_count; index++) {
+		differs = strcmp(view->displays_pending[index].key, key);
+		if (differs != 0)
+			continue;
+
+		/* Its angles and reasons. */
+		kept = &view->display_rotations_pending[index];
+		kept->mask = mask;
+		kept->why = why;
+		return;
+	}
+}
+
+/*
+ * Finds what the compositor told of the angle of a display of the snapshot
+ * in effect (ws217-p004).  Returns 0, or ENODEV for a key the snapshot does
+ * not hold or a display whose angle was not told.
+ */
+int
+system_view_rotation_of(
+	const struct system_view *view,
+	const char *key,
+	struct system_view_rotation *rotation)
+{
+	size_t index;
+	size_t found;
+	int differs;
+
+	/* The display with that key (the keys of a snapshot differ). */
+	found = view->display_count;
+	for (index = 0U; index < view->display_count; index++) {
+		differs = strcmp(view->displays[index].key, key);
+		if (differs == 0)
+			found = index;
+	}
+
+	/* Not a display of the snapshot, or one whose angle was not told. */
+	if (found == view->display_count)
+		return ENODEV;
+	if (!view->display_rotations[found].told)
+		return ENODEV;
+
+	/* Succeeded: its angle, the angles it may take and why not. */
+	*rotation = view->display_rotations[found];
+	return 0;
 }
 
 /*
@@ -1195,6 +1292,7 @@ system_view_displays_done(
 	/* The snapshot, as one state. */
 	view->displays_open = 0U;
 	memcpy(view->displays, view->displays_pending, view->displays_pending_count * sizeof(view->displays[0]));
+	memcpy(view->display_rotations, view->display_rotations_pending, view->displays_pending_count * sizeof(view->display_rotations[0]));
 	view->display_count = view->displays_pending_count;
 	view->displays_serial = serial;
 	view->displays_mode = mode;

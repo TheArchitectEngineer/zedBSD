@@ -115,11 +115,29 @@
  *                                                     a display turned off (0) or on (1) in the
  *                                                     extended mode; the anchor turned off moves to
  *                                                     a display on
+ *   request 4 set_rotation(uint request, string key, uint rotation)   (since 34, ws217-p004)
+ *                                                     the angle the display's picture is turned by,
+ *                                                     clockwise in degrees (0, 90, 180 or 270; another
+ *                                                     number is invalid), applied at once and kept
+ *   request 5 bind_touch(uint request, string identity, string key)   (since 34; answered
+ *                                                     unsupported until ws217-p006)
+ *   request 6 listen_touch(uint request, string key)  (since 34; answered unsupported until ws217-p006)
  *   event   0 output(string key, string label, int x, int y, uint width, uint height, uint refresh_mhz,
  *                    uint flags, uint brightness)     one display connected: KL_SYSTEM_DISPLAY_* flags, the
  *                                                     light in percent (0 without one)
  *   event   1 done(uint serial, uint mode)            the outputs before it are the whole snapshot
  *   event   2 result(uint request, uint applied, uint saved)
+ *   event   3 rotation(string key, uint rotation)     (since 34) after a display's output: the angle
+ *                                                     the user chose for it, checked against what it may
+ *                                                     take (0 when it may not take the angle kept), not
+ *                                                     the angle shown when a game pauses the turn or the
+ *                                                     turn's images could not be made (rotations' why)
+ *   event   4 rotations(string key, uint mask, uint why)   (since 34) after rotation: the angles the
+ *                                                     display may be turned to now (KL_SYSTEM_ROTATION_*)
+ *                                                     and why the others may not, or why the angle chosen
+ *                                                     is not shown (KL_SYSTEM_ROTATE_WHY_*)
+ *   event   5 touch(string identity, string label, uint kind, string key)   (since 34; not sent until
+ *                                                     ws217-p006)
  *   A new object hears the snapshot (every display connected, then a
  *   done); each change (a display plugged or unplugged, a choice applied,
  *   the light changed by anyone or by the light keys) comes to every
@@ -132,6 +150,10 @@
  *   carries the flag OFF (also in the mirror, which shows it still); turning
  *   off the last display on, or any in the mirror, is invalid; a key not
  *   connected is not found.
+ *   Since 34 (ws217-p004): a set_rotation of a display not connected is
+ *   unavailable, of an angle the display may not take now unsupported
+ *   (nothing changes), outside an active session denied; one whose turn
+ *   could not be shown is failed, the choice as it was.
  *
  * kl_system_machine_v1 (ws188-p002, plan/ws188/phase001/phase.md section D1: what Settings reads of the computer)
  *   request 0 destroy
@@ -321,7 +343,7 @@
 
 /* The interfaces' names and versions. */
 #define KL_SYSTEM_MANAGER_NAME			"kl_system_manager_v1"
-#define KL_SYSTEM_MANAGER_VERSION 33U
+#define KL_SYSTEM_MANAGER_VERSION 34U
 #define KL_SYSTEM_SETTINGS_NAME			"kl_system_settings_v1"
 
 /* kl_system_manager_v1's requests and event. */
@@ -393,6 +415,9 @@
 
 /* Since when the displays have set_shown (ws113-p014). */
 #define KL_SYSTEM_SINCE_SHOWN			19U
+
+/* Since when the displays have set_rotation, bind_touch and listen_touch and the events rotation, rotations and touch (ws217-p004). */
+#define KL_SYSTEM_SINCE_ROTATION		34U
 
 /* Since when the mail object tells a reader whether it is allowed (ws177-p005). */
 #define KL_SYSTEM_SINCE_MAIL_ALLOWED		20U
@@ -535,9 +560,15 @@
 #define KL_SYSTEM_DISPLAYS_APPLY		1U
 #define KL_SYSTEM_DISPLAYS_SET_BRIGHTNESS	2U
 #define KL_SYSTEM_DISPLAYS_SET_SHOWN		3U
+#define KL_SYSTEM_DISPLAYS_SET_ROTATION		4U
+#define KL_SYSTEM_DISPLAYS_BIND_TOUCH		5U
+#define KL_SYSTEM_DISPLAYS_LISTEN_TOUCH		6U
 #define KL_SYSTEM_DISPLAYS_EVENT_OUTPUT		0U
 #define KL_SYSTEM_DISPLAYS_EVENT_DONE		1U
 #define KL_SYSTEM_DISPLAYS_EVENT_RESULT		2U
+#define KL_SYSTEM_DISPLAYS_EVENT_ROTATION	3U
+#define KL_SYSTEM_DISPLAYS_EVENT_ROTATIONS	4U
+#define KL_SYSTEM_DISPLAYS_EVENT_TOUCH		5U
 #define KL_SYSTEM_DISPLAYS_EXTENDED		0U
 #define KL_SYSTEM_DISPLAYS_MIRROR		1U
 #define KL_SYSTEM_DISPLAY_INTERNAL		0x1U
@@ -549,6 +580,28 @@
 #define KL_SYSTEM_DISPLAY_KEY_MAX		64U
 #define KL_SYSTEM_DISPLAY_LABEL_MAX		64U
 #define KL_SYSTEM_DISPLAY_PLACES_MAX		1024U
+
+/*
+ * The displays' angles (ws217-p004, since 34): the angles a display may be
+ * turned to, as a mask (bit for 0, 90, 180 and 270), and why it may not
+ * take the others or does not show the one chosen: its hardware cannot
+ * turn the picture (nothing can be turned), the quarter turns are not
+ * offered on this device, a game pauses the turn, the turn's images could
+ * not be made, or another display is shown beside it (an angle is chosen
+ * while it is shown alone).  libkeiland's KL_DISPLAY_ROTATION_* and
+ * KL_DISPLAY_ROTATE_WHY_* and the compositor's rotate.h carry the same
+ * bits.  The longest identity of a touch or pen device bind_touch names.
+ */
+#define KL_SYSTEM_ROTATION_0			0x1U
+#define KL_SYSTEM_ROTATION_90			0x2U
+#define KL_SYSTEM_ROTATION_180			0x4U
+#define KL_SYSTEM_ROTATION_270			0x8U
+#define KL_SYSTEM_ROTATE_WHY_SCANOUT		0x1U
+#define KL_SYSTEM_ROTATE_WHY_TURN		0x2U
+#define KL_SYSTEM_ROTATE_WHY_GAME		0x4U
+#define KL_SYSTEM_ROTATE_WHY_RESOURCE		0x8U
+#define KL_SYSTEM_ROTATE_WHY_ALONE		0x10U
+#define KL_SYSTEM_TOUCH_IDENTITY_MAX		96U
 
 /*
  * kl_system_notify_v1's requests and events (ws156-p002,
