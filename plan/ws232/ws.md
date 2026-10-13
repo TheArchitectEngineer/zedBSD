@@ -3,14 +3,14 @@
 # WS232: menuconfig に i386（PC-9800・PC/AT）と Retro の menu を足す
 
 <!-- awesome-plan-current:start -->
-Status: planned（2026-10-14 Q1 作成）
+Status: completed（2026-10-14 Q1: menuconfig の i386（PC-9800・PC/AT、Desktop を自動で外す）と Retro の menu、config-pc98.mk の build（rtld の tlsdesc_slot）、T1-607 で pc98 の image が ~/qemu-pc98 の QEMU で login まで起動（PASS）。i386 PC/AT の image の build と実機は未実施）
 Primary Milestone: MG002
 Related Milestones: なし
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: q982（p001、P1）
 Target: ベータ2（18 時のコードフリーズ）
-Resume point: p001。
+Resume point: なし（completed）。
 <!-- awesome-plan-current:end -->
 
 ## 原文（2026-10-14 ユーザー）
