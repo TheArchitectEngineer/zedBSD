@@ -84,7 +84,7 @@ base: main bb57b2397（worktree `agent/p1` に merge）。Gen9 の boot の key 
 | script の構文 | `sh -n` を 4 本に | OK |
 | SV7 の準備 | `plan/tools/hwsv7/setup.sh` | rc 0、13 の `ok`（写した 2 本が一致、`8086:5917` が vfio-pci で group に単独、`/dev/kvm`、OVMF、QEMU 10.0.13、`sudo -n`、39 bit、14 GiB、204 GiB、QEMU 無し）、`setup: awe@10.0.10.27 ready` |
 | iGPU の ID の読み方 | `ssh awe@10.0.10.27 'cat …/vendor …/device' \| sed 's/^0x//' \| paste -sd:` | `8086:5917` |
-| SV7 の image の build | `I915_MACHINE=sv7 BUILD=build/ws229-p005/sv7-ktest ZEDBSD_CONFIG=plan/ws075/tests/config-test-hw.mk VKLOOP_BUILD_ONLY=1 plan/ws031/tests/vkloop-hw.sh test ktest` | （下に追記） |
+| SV7 の image の build | `I915_MACHINE=sv7 BUILD=build/ws229-p005/sv7-ktest ZEDBSD_CONFIG=plan/ws075/tests/config-test-hw.mk VKLOOP_BUILD_ONLY=1 plan/ws031/tests/vkloop-hw.sh test ktest` | rc 0、`vkloop-hw: built build/ws229-p005/sv7-ktest/hdd-image.img`（2.2 GB）。boot の config は `zedbsd-native-uefi-graphical-n-login-n-kmsg-y-i915.gen9=on.cfg` で最後の行が `i915.gen9=on`、compile の行に `-DI915_TEST_VBT` が無い、`.vkloop-flags` は `…\|vbt=n\|capture=n\|boot=i915.gen9=on`。compiler の warning 0（log の `warning:` は gmake の jobserver の 1 行だけ） |
 
 未実施: SV7 の上の QEMU の run（T1）。5330 の run（5330 の振る舞いは変えていない: make の行・host・VBT が前と同じ）。
 
