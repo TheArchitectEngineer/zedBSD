@@ -2,9 +2,13 @@
 
 # Past Log
 
+## 最新: q1003 / WS074 iframe 子の描画（2026-10-13）
+
+[q1003履歴](queue-q1003.md): iframe 内の `FAIL` 2個を親のlayout/paintから除去。固定 Acid3 は得点100/100・pixel差42921/480000（q1002の43486から565減）、Acid2差1865/120000で不変。host fixture pass、frame load52/52、build warning0。p180 cleared。本文 y373.50 / reference y350 の差、p100全画面差0、WS074 acceptanceは未達。次候補は form/inline line の高さ。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
+
 ## 最新: q1002 / WS074 Acid3 得点位置（2026-10-13）
 
-[q1002履歴](queue-q1002.md): 絶対配置の `right:0`/auto幅で min-content 下限が欠ける問題を修正。固定 Acid3 は得点100/100・pixel差43486/480000（q1001の56647から13161減）、Acid2差1865/120000で不変。host-position25/25、build warning0。p178 の得点位置の部分 scope は cleared、Phase の pixel 完全一致は未達で uncleared。B1評価はユーザーの単独指示で現行scope対象外。p100/WS074 も未達。次候補は [p180](../ws074/phase180/phase.md)、Queue 未選定。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
+[q1002履歴](queue-q1002.md): 絶対配置の `right:0`/auto幅で min-content 下限が欠ける問題を修正。固定 Acid3 は得点100/100・pixel差43486/480000（q1001の56647から13161減）、Acid2差1865/120000で不変。host-position25/25、build warning0。p178 の得点位置の部分 scope は cleared、Phase の pixel 完全一致は未達で uncleared。B1評価はユーザーの単独指示で現行scope対象外。p100/WS074 も未達。次候補だった [p180](../ws074/phase180/phase.md) は q1003 で実施。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
 
 ## 前回: q1001 / WS074 Acid3 参照背景画像（2026-10-13）
 
