@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws228-p004 -->
 # ws228-p004: kernel の VT console の CSI に引数 2 つの `H` と最小限の `m` を足す
 
-Status: in-progress — 実装済み・T1 の試験待ち（2026-10-14 P1、q973。依頼の番号は Q1 が付ける）
+Status: in-progress — 実装済み・Q1 が merge（2026-10-14）、T1-596 の試験待ち（2026-10-14 P1、q973。依頼の番号は Q1 が付ける）
 Disposition: normal
 Parent: [WS228](../ws.md)
 Queue: q973
