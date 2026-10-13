@@ -29,8 +29,8 @@ ln -sf "$(pwd)/userland/desktop/fonts/JetBrainsMono-Regular.ttf" "$out/fonts/kei
 ln -sf "$(pwd)/userland/desktop/fonts/DroidSansFallbackFull.ttf" "$out/fonts/keiland-fallback.ttf"
 fonts=$(cd "$out/fonts" && pwd)
 sources="userland/desktop/notes/document.c userland/desktop/notes/edit.c userland/desktop/notes/encode.c
-	userland/desktop/notes/journal.c userland/desktop/notes/save.c
-	userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/clean.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
+	userland/desktop/notes/journal.c userland/desktop/notes/save.c userland/desktop/notes/shape.c
+	userland/base/libpdf/writer.c userland/base/libpdf/paint.c userland/base/libpdf/update.c userland/base/libpdf/clean.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
 	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c
 	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c
 	userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c userland/base/libpdf/replace.c userland/base/libpdf/embed.c userland/base/libpdf/subset.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c
