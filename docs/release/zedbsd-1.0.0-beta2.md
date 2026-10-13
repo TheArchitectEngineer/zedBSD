@@ -165,7 +165,7 @@ X11 programs run on the desktop through a rootless X server, with GLX.
 ### Keiland on Linux and FreeBSD
 
 The Keiland desktop also builds natively on Linux and FreeBSD (see the user
-guide). Beta 2 adds:
+guide). With these builds:
 
 - On Linux, Settings → Bluetooth works through BlueZ: turning Bluetooth on
   and off, finding, pairing (with the number check), connecting and

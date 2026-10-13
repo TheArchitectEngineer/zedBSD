@@ -111,6 +111,30 @@ The `root` user cannot log in on this release.
 To stop the computer, use **Shut Down** in the system menu. Then remove the
 USB drive to start the computer's own system again.
 
+### Older Intel graphics
+
+〔判定待ち〕 On computers with a 6th to 10th generation Core processor
+(Intel Gen9 and Gen9.5 graphics), Kei draws on the framebuffer the firmware
+set up and does not use the GPU, unless you turn on the preview of the GPU
+driver:
+
+1. Plug the USB drive into a computer and open its small FAT partition, the
+   one that holds `vmunix` and `zedbsd.cfg`.
+2. Open `zedbsd.cfg` in a text editor, add the line `i915.gen9=on` at the
+   end, and save it.
+3. Eject the USB drive and start Kei from it.
+
+The preview drives the GPU's engines and Vulkan only. The screen stays at
+the resolution the firmware chose, its brightness and external displays
+cannot be changed, and sleep is refused while it is on (see the
+[known issues](zedbsd-1.0.0-beta2-known-issues.md)). To turn it off, delete
+the line again.
+
+<!-- review (2026-10-14): "〔判定待ち〕" marks a section that is in only if the code freeze of 2026-10-14 18:00 takes
+     the Gen9 driver (WS229). Delete the mark, or the whole section. The steps follow how the image's zedbsd.cfg takes
+     extra lines (one per line, CR LF is accepted); they were not tried by hand on Windows or macOS, which may not show
+     an EFI system partition by themselves (on macOS, `diskutil mount` it first). -->
+
 ## 5. Connect to a network
 
 ### Wi-Fi
@@ -175,11 +199,19 @@ security notes apply.
 
 The image is built from the source with `make menuconfig` (choose the CPU,
 the boot options and the programs, then **Build boot image**). The steps are
-in the [build-from-source guide](../howto/build-from-source.md). The
-Keiland desktop also builds natively on Linux and FreeBSD with
+in the [build-from-source guide](../howto/build-from-source.md). The menu
+names the Base programs and libraries by their command and library names,
+and has a **Retro** menu at the top for the X11 programs Xzed, zwm, zshell
+and zterm. Choosing the i386 CPU (with the PC-9800 or PC/AT board) leaves
+the Desktop out, as the desktop is not built for i386.
+
+The Keiland desktop also builds natively on Linux and FreeBSD with
 `make keiland-linux` and `make keiland-freebsd`, which check the host's
 packages first and offer to install the missing ones (see the
-[README](../../README.md)).
+[README](../../README.md)). Besides the desktop, they install zedBSD's own
+commands that the host does not have, such as `passkey` in
+`/opt/keiland/sbin`; commands the host already has, such as `ls`, are left
+to the host.
 
 ## Licenses
 
