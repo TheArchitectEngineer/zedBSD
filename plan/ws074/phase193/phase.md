@@ -85,3 +85,13 @@ Event ws074-p193-q1032-outcome-20261014: q1032-i01 partial cleared、p193 whole�
 **partial scope cleared、p193 whole uncleared。** HTML UA CSSへfirst-of-type summaryのlist-item既定値を追加し、固定 `details-display.html` は7/8から8/8 subtest PASS。[証拠](evidence/20261014-q1035/README.md)。host build warning/error0、CSS rule model44/44・CSSOM12/12、Acid3 score100/100・差0/480000、Acid2差1865/120000不変。C/browser標準の該当1行を手動確認、clang-formatは利用不可。details-content pseudo、marker、grid blockificationは残り、p193 whole/p173全件100%未達。WPT/Master/公開ABI無変更、GitHub publication保留。
 
 Event ws074-p193-q1035-outcome-20261014: q1035-i01 partial cleared、p193 whole uncleared。固定details-displayの既定display全8 subtestがPASS。
+
+## q1036-i01 の有限部分範囲
+
+2026-10-14 01:28 JST、ユーザーの事前承認を適用、最大90分。固定 `beforematch-infinite-loop.html` は1 subtest FAIL。`beforematch` handlerが対象hidden要素を別のhidden要素へ移すと、現行 `environment_reveal_target` はevent後に新しいparentを辿って誤って後者にもeventを送る。HTML Standardのancestor revealing algorithmどおり、reveal候補をevent前に順序固定・GC root化し、各候補のconnected/属性状態を実行時に再確認する。固定infinite-loop WPT1/1、先行beforematch/hidden/details固定WPT、host build/関連試験、Acid3/Acid2差画素非増加を確認。documentを超えるflat-tree/shadow全仕様、WPT/Master/公開ABI変更は含めない。[HTML Standard該当節](https://html.spec.whatwg.org/multipage/interaction.html#ancestor-revealing-algorithm)。適用は[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)。
+
+## q1036-i01 結果（2026-10-14 01:30 JST）
+
+**partial scope cleared、p193 whole uncleared。** fragment reveal候補をevent前に順序固定・GC root化し、各候補の接続・属性を処理時に再確認。固定 `beforematch-infinite-loop.html` は1/1 PASSへ改善、先行attribute-removal2件、element-removal001、hidden/detailsはPASS維持。element-removal002はno_output維持。[証拠](evidence/20261014-q1036/README.md)。host build warning/error0、native property65/65・realm30/30・pre-insertion29/29、Acid3 score100/100・差0/480000、Acid2差1865/120000不変。C/browser全文標準を手動照合、clang-format利用不可。flat-tree/shadowと残るWPTは未達、p193 whole/p173全件100%未達。WPT/Master/公開ABI無変更、GitHub publication保留。
+
+Event ws074-p193-q1036-outcome-20261014: q1036-i01 partial cleared、p193 whole uncleared。DOM再親化時の新祖先への誤ったbeforematchを解消。

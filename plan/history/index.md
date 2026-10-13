@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1036 / WS074 ancestor reveal snapshot（2026-10-14）
+
+[q1036履歴](queue-q1036.md): DOM再親化時の新祖先beforematchを解消し、固定infinite-loop WPT1/1 PASS。p193 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1036/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1035 / WS074 first summary UA display（2026-10-14）
 
 [q1035履歴](queue-q1035.md): 固定details-display WPTはUA CSS修正で8/8 subtest PASS。p193 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1035/README.md)。共有投影/GitHub publication pending。

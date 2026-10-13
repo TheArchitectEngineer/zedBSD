@@ -9,8 +9,8 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1035](queue.md) finished / p193 partial cleared、whole uncleared。2026-10-14 01:27 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
-Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。textdecoration領域全16 testharnessは16 PASS/0 FAIL、subtest179 PASS/0 FAILで p191 cleared。p189の単一HTTP shard100件はq1024時点で9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details焦点testharness全18件はq1032時点6 PASS/10 FAIL/2 no_outputだが、q1035でdetails-displayが追加PASS。q1034静的details reftest10件は参照連鎖修正後3 PASS/7 FAIL。p189の残りtestharnessと p190 のreftest/crashtest coverage、p173全件baselineと100%は未達。Acid3 score100/100・pixel差0/480000、p100 whole は別に未達。
+Queue: [q1036](queue.md) finished / p193 partial cleared、whole uncleared。2026-10-14 01:30 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。textdecoration領域全16 testharnessは16 PASS/0 FAIL、subtest179 PASS/0 FAILで p191 cleared。p189の単一HTTP shard100件はq1024時点で9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details焦点testharness全18件はq1032時点6 PASS/10 FAIL/2 no_outputだが、q1035 details-displayとq1036 beforematch-infinite-loopが追加PASS。q1034静的details reftest10件は参照連鎖修正後3 PASS/7 FAIL。p189の残りtestharnessと p190 のreftest/crashtest coverage、p173全件baselineと100%は未達。Acid3 score100/100・pixel差0/480000、p100 whole は別に未達。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p173-interop-resume-20261013: ユーザーが「WPTに進みます。2025を100%」と指示。既存の p173 Interop 2025 公式 focus area 全件 PASS 100% を次の優先対象にした。p173 と p100 の依存関係を、p188 の main 統合済み Acid3 検証出力に限定して整理。p100 whole の Acid2 exact/target gate は未達のまま。p173 の [候補選定と q1012 範囲](phase173/selection-snapshot.md)を記録、ユーザーが 23:49 JST 承認して開始。p101・p174〜p176 の受け入れは維持。Master の focused goal / WS priority 投影は、このセッションの編集禁止により Q1 へ pending。GitHub publication保留。
@@ -64,6 +64,8 @@ Event ws074-p190-q1033-outcome-20261014: [p190](phase190/phase.md) q1033-i01で�
 Event ws074-p190-q1034-outcome-20261014: [p190](phase190/phase.md) q1034-i01で静的match-only参照連鎖をrunnerが辿るようにし、固定10件は3 PASS/7 FAILへ訂正。[証拠](phase190/evidence/20261014-q1034/README.md)。局所graph4/4・Python compile・diff check PASS。p190 wholeとp173全件100%は未達、runner coverage拡大が次。browser/Master無変更、GitHub publication保留。
 
 Event ws074-p193-q1035-outcome-20261014: [p193](phase193/phase.md) q1035-i01でfirst summaryのUA display既定値をlist-itemへ変更し、固定details-displayは8/8 subtest PASS。[証拠](phase193/evidence/20261014-q1035/README.md)。host build/CSS回帰、Acid3/Acid2差画素非増加。p193 whole/p173全件100%未達、WPT/Master/公開ABI無変更、GitHub publication保留。
+
+Event ws074-p193-q1036-outcome-20261014: [p193](phase193/phase.md) q1036-i01でfragment reveal候補をevent前に固定。固定beforematch-infinite-loopは1/1 PASS、先行4件PASS維持。[証拠](phase193/evidence/20261014-q1036/README.md)。element-removal002 no_output維持。host build/関連回帰、Acid3/Acid2差画素非増加。p193 whole/p173全件100%未達、WPT/Master/公開ABI無変更、GitHub publication保留。
 
 ## Q1 向けの整理（2026-10-05、Q1）
 
@@ -373,7 +375,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q1034で静的match-only chain修正、固定10件3 PASS/7 FAIL | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
-| [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1032計測6 PASS/10 FAIL/2 no output、q1035でdetails-display追加PASS、reftest25/crashtest3未実行 | p189 q1024 shard、p192 q1025一意id output |
+| [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1032計測6 PASS/10 FAIL/2 no output、q1035/q1036で2件追加PASS、reftest25/crashtest3未実行 | p189 q1024 shard、p192 q1025一意id output |
 | [ws074-p194](phase194/phase.md) | Interop 2025 Element.attributes / Attr | uncleared / q1029 partial cleared、beforematch WPT1 PASS | p193 q1028 fragment output |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。

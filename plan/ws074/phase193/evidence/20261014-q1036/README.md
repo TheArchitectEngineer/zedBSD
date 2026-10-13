@@ -1,0 +1,7 @@
+# q1036 ancestor reveal snapshot
+
+The pinned [`beforematch-infinite-loop.html` result](beforematch-infinite-loop.json) changed from FAIL to **1/1 PASS**. Its handler moves the first `hidden=until-found` node under another hidden node. The reveal path is now captured and GC rooted before handlers run, so the newly adopted ancestor receives no `beforematch`. Each captured node is still checked for connection and relevant attribute state before reveal, as the [HTML ancestor revealing algorithm](https://html.spec.whatwg.org/multipage/interaction.html#ancestor-revealing-algorithm) requires.
+
+Five additional fixed WPTs were rerun: attribute-removal 001/002, element-removal 001, and hidden-until-found/details all PASS; element-removal 002 remains `no_output` as before. The six individual JSON files retain exact results. `sh plan/ws074/tests/host-build.sh plain` passed with zero compiler warnings/errors; native property65/65, realms30/30 and pre-insertion29/29 passed. Acid3 retained score100/inventory100 and 0/480000 different pixels; Acid2 remained 1865/120000 different pixels (`build/ws074-acid-q1036/report.json`). `git diff --check` passed. The changed C source was manually checked against full C and browser component standards; clang-format is unavailable.
+
+Flat-tree/shadow traversal and the remaining WPT failures are outside this partial correction. p193 whole and the 3,805-ID goal remain uncleared. WPT/Master/public ABI were not changed. Shared Queue/Master/GitHub publication is Q1 owned; no push.

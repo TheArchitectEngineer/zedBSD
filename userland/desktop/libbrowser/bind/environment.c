@@ -98,6 +98,13 @@ struct environment_mutation_observer {
 	struct environment_mutation_observer *next;
 };
 
+/* One ancestor selected before a beforematch handler can change the DOM. */
+struct environment_reveal_entry {
+	struct vm_cell *node;
+	int details;
+	int hidden;
+};
+
 static int environment_install_navigator(struct bind_window *window);
 static int environment_install_screen(struct bind_window *window);
 static int environment_install_performance(struct bind_window *window);
@@ -1826,44 +1833,72 @@ environment_fragment_target(
 	return error;
 }
 
-/* Reveals a target and its ancestors from the target outward. */
+/* Reveals the target's original ancestors from the target outward. */
 static int
 environment_reveal_target(
 	struct bind_window *window,
 	struct dom_node *target)
 {
-	struct vm_cell *roots[2];
+	struct environment_reveal_entry *entries;
 	struct dom_node *walk;
 	struct dom_element *element;
 	struct vm_string *hidden;
 	struct vm_string *name;
+	size_t count;
+	size_t index;
+	size_t rooted;
 	int error;
 	int canceled;
 
-	roots[0] = &target->cell;
-	roots[1] = NULL;
-	error = vm_heap_add_root(window->realm->heap, &roots[0]);
-	if (error != 0)
-		return error;
-	error = vm_heap_add_root(window->realm->heap, &roots[1]);
-	if (error != 0) {
-		vm_heap_remove_root(window->realm->heap, &roots[0]);
-		return error;
+	/* Freeze the ancestor path before any event handler can reparent a node. */
+	count = 0U;
+	for (walk = target; walk != NULL && walk != &window->document->node; walk = walk->parent) {
+		if (walk->type == DOM_ELEMENT)
+			count++;
 	}
+	if (count == 0U)
+		return 0;
+	entries = calloc(count, sizeof(*entries));
+	if (entries == NULL)
+		return ENOMEM;
+	index = 0U;
 	for (walk = target; walk != NULL && walk != &window->document->node; walk = walk->parent) {
 		if (walk->type != DOM_ELEMENT)
 			continue;
-		roots[1] = &walk->cell;
 		element = (struct dom_element *)walk;
-		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_DETAILS &&
-		    dom_attribute_ascii(element, "open") == NULL) {
+		entries[index].node = &walk->cell;
+		entries[index].details = element->ns == DOM_NS_HTML && element->tag == DOM_TAG_DETAILS &&
+		    dom_attribute_ascii(element, "open") == NULL;
+		hidden = dom_attribute_ascii(element, "hidden");
+		entries[index].hidden = environment_hidden_until_found(hidden);
+		index++;
+	}
+
+	/* The snapshot itself holds each node alive during script callbacks. */
+	error = 0;
+	rooted = 0U;
+	for (index = 0U; index < count; index++) {
+		error = vm_heap_add_root(window->realm->heap, &entries[index].node);
+		if (error != 0)
+			break;
+		rooted++;
+	}
+	for (index = 0U; error == 0 && index < count; index++) {
+		if (!entries[index].details && !entries[index].hidden)
+			continue;
+		walk = (struct dom_node *)entries[index].node;
+		if (!dom_is_inclusive_ancestor(&window->document->node, walk))
+			break;
+		element = (struct dom_element *)walk;
+		if (entries[index].details && dom_attribute_ascii(element, "open") == NULL) {
 			error = environment_open_details(window->realm, element);
 			if (error != 0)
 				break;
 		}
-		hidden = dom_attribute_ascii(element, "hidden");
-		if (!environment_hidden_until_found(hidden))
+		if (!entries[index].hidden)
 			continue;
+		if (!environment_hidden_until_found(dom_attribute_ascii(element, "hidden")))
+			break;
 		canceled = 0;
 		error = bind_fire_event(window, walk, "beforematch", BIND_EVENT_BUBBLES, &canceled);
 		if (error != 0)
@@ -1880,8 +1915,9 @@ environment_reveal_target(
 		if (error != 0)
 			break;
 	}
-	vm_heap_remove_root(window->realm->heap, &roots[1]);
-	vm_heap_remove_root(window->realm->heap, &roots[0]);
+	for (index = rooted; index != 0U; index--)
+		vm_heap_remove_root(window->realm->heap, &entries[index - 1U].node);
+	free(entries);
 	return error;
 }
 
