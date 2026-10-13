@@ -170,3 +170,16 @@ hash は消えた。kernel の sample の多くは **USB の disk の I/O**（`x
 2. **USB の storage の完了待ちが busy wait**: `drv_usb_urb_wait_reusable()` が `sched_yield()` を回して待つ（profile の kernel の sample の多く）。
 3. `amd64_percpu_current()`（HAL、`rdmsr GS_BASE`）が多くの経路の葉に出る。gdbstub の標本の偏りかもしれない。変えるなら HAL の差分ごとの承認が要る。
 4. harness の既定の memory（512 MiB）を 2 GiB にすれば、今の kernel でも受け入れの数値に届く（上の表）。1 の直しの代わりにはならない。
+
+## 2026-10-13 P2（q951）: 後の Phase の証拠での受け入れの照合
+
+source は変えていない。q411-i01 で未達だった 2 項目は、後の Phase（p009・p012・p014）と BUG-033 の再計測（ws073-p049、T1-050）で満たされた。
+
+| 受け入れ | 証拠 | 判定 |
+| --- | --- | --- |
+| guest の `clang --version` が warm で 1 秒以内 | T1-050（2026-10-04、QEMU KVM、CI の image、**512 MiB**）: 0.54（cold）/0.03/0.04 秒。2048 MiB も 0.51/0.03/0.02。p014（8 GiB）も 60〜67 ms | 達 |
+| `xmlparse.c` の compile が host の 5 倍以内 | T1-050 の 512 MiB: 2.54/1.79/1.57 秒、2048 MiB: 2.17/1.51/1.60 秒。host は 1.05〜1.36 秒（BUG-033 の記録）→ 最大でも約 2.4 倍 | 達 |
+| expat の `make` が guest で 10 分以内 | q411 で 512 MiB 97 秒・2 GiB 91 秒（status 0）。p014 で 512 MiB の configure・make 34 秒・status 0、8 GiB の make -j4 23 秒 | 達 |
+| kernel を変えた場合の build・boot・回帰 | q411 の回帰の表（上）。後の kernel の変更は各 Phase（p009・p012・p014）が自分の回帰を記録 | 達 |
+
+BUG-033 は 2026-10-04 に resolved（T1-050）。**提案: p007 を cleared に**（新しい QEMU の試験は要らない見込み。最新の main での再計測を求めるなら T1-050 と同じ `bug033-clang.sh` の kit を 512 MiB で 1 回、Q1 の判断）。
