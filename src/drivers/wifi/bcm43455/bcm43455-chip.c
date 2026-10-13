@@ -95,7 +95,9 @@ bcm43455_chip_attach(
 	kern_logf("bcm43455: chip %04x revision %u bus type %u\n", (unsigned)chip->id, chip->revision, bus);
 
 	/* Refuses any chip but a 43455 on an AXI backplane. */
-	if (chip->id != BCM43455_CHIP_ID || chip->revision < BCM43455_CHIP_REVISION_MIN || bus != BCM43455_CHIP_BUS_AXI)
+	if (chip->id != BCM43455_CHIP_ID ||
+	    chip->revision < BCM43455_CHIP_REVISION_MIN ||
+	    bus != BCM43455_CHIP_BUS_AXI)
 		return ENODEV;
 
 	/* Reads the capabilities, logged for the save-restore question (R8). */
@@ -654,14 +656,18 @@ scan_erom(
 		/* Keeps the core's first slave port 0 address as its registers. */
 		kind = (word >> BCM43455_EROM_KIND_SHIFT) & BCM43455_EROM_KIND_MASK;
 		port = (word >> BCM43455_EROM_PORT_SHIFT) & BCM43455_EROM_PORT_MASK;
-		if (kind == BCM43455_EROM_KIND_SLAVE && port == 0 && core.base == 0)
+		if (kind == BCM43455_EROM_KIND_SLAVE &&
+		    port == 0 &&
+		    core.base == 0)
 			core.base = word & BCM43455_EROM_BASE_MASK;
 
 		/* Keeps the core's first wrapper of the kind its ports call for. */
 		if (core.wrapper == 0) {
 			if (kind == BCM43455_EROM_KIND_MASTER_WRAP && master_wraps != 0)
 				core.wrapper = word & BCM43455_EROM_BASE_MASK;
-			else if (kind == BCM43455_EROM_KIND_SLAVE_WRAP && master_wraps == 0 && slave_wraps != 0)
+			else if (kind == BCM43455_EROM_KIND_SLAVE_WRAP &&
+			         master_wraps == 0 &&
+			         slave_wraps != 0)
 				core.wrapper = word & BCM43455_EROM_BASE_MASK;
 		}
 	}
@@ -842,7 +848,9 @@ reset_core(
 		return error;
 
 	/* Lets go of reset until the core reports it released. */
-	for (tries = 0;; tries++) {
+	for (tries = 0;
+	     ;
+	     tries++) {
 		/* Reads whether the reset still holds. */
 		error = bcm43455_chip_read32(chip, core->wrapper + BCM43455_WRAP_RESET_CONTROL, &control);
 		if (error != 0)
@@ -971,7 +979,9 @@ wait_clock(
 	int error;
 
 	/* Reads the register until the bit is set or the time is spent. */
-	for (waited = 0;; waited++) {
+	for (waited = 0;
+	     ;
+	     waited++) {
 		/* Reads the clock state. */
 		error = chip->ops->read_byte(chip->context, BCM43455_FUNCTION_BACKPLANE, BCM43455_F1_CHIP_CLOCK, &clock);
 		if (error != 0)

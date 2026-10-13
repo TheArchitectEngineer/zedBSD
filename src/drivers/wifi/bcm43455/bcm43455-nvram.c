@@ -49,6 +49,7 @@
 static int line_bounds(const uint8_t *text, size_t length, size_t start, size_t *first, size_t *last, size_t *next);
 static int is_setting(const uint8_t *text, size_t first, size_t last);
 static int hex_digit(uint8_t character, unsigned *value);
+static int is_blank(uint8_t character);
 
 /*
  * Checks the firmware image and copies its version text.
@@ -65,7 +66,9 @@ bcm43455_firmware_check(
 	int same;
 
 	/* Refuses a missing image, a missing destination, or another size. */
-	if (firmware == NULL || version == NULL || version_capacity == 0)
+	if (firmware == NULL ||
+	    version == NULL ||
+	    version_capacity == 0)
 		return EINVAL;
 	if (length != BCM43455_FIRMWARE_SIZE)
 		return EINVAL;
@@ -139,7 +142,9 @@ bcm43455_nvram_check(
 
 	/* Every byte is printable, a tab, or a line end. */
 	for (i = 0; i < length; i++) {
-		if (text[i] == '\t' || text[i] == '\n' || text[i] == '\r')
+		if (text[i] == '\t' ||
+		    text[i] == '\n' ||
+		    text[i] == '\r')
 			continue;
 		if (text[i] < 0x20U || text[i] > 0x7eU)
 			return EINVAL;
@@ -173,7 +178,9 @@ bcm43455_nvram_convert(
 	int setting;
 
 	/* Refuses missing buffers. */
-	if (text == NULL || blob == NULL || blob_length == NULL)
+	if (text == NULL ||
+	    blob == NULL ||
+	    blob_length == NULL)
 		return EINVAL;
 
 	/* Copies every setting line, each with its NUL. */
@@ -316,7 +323,9 @@ bcm43455_nvram_place(
 	uint64_t start;
 
 	/* Refuses a blob that is not whole words, or nowhere to put the answer. */
-	if (address == NULL || blob_length == 0 || (blob_length % 4U) != 0)
+	if (address == NULL ||
+	    blob_length == 0 ||
+	    (blob_length % 4U) != 0)
 		return EINVAL;
 
 	/* Refuses a blob and a firmware that do not fit RAM together. */
@@ -349,7 +358,10 @@ bcm43455_clm_message(
 	uint16_t flags;
 
 	/* Refuses missing buffers and an offset with nothing left. */
-	if (message == NULL || clm == NULL || message_length == NULL || taken == NULL)
+	if (message == NULL ||
+	    clm == NULL ||
+	    message_length == NULL ||
+	    taken == NULL)
 		return EINVAL;
 	if (offset >= clm_length)
 		return EINVAL;
@@ -397,6 +409,7 @@ line_bounds(
 	size_t *next)
 {
 	size_t end;
+	int blank;
 
 	/* Nothing is left. */
 	if (start >= length)
@@ -408,13 +421,23 @@ line_bounds(
 		end++;
 	*next = end + 1U;
 
-	/* Drops the spaces, tabs and carriage returns around the line's text. */
+	/* Drops the spaces, tabs and carriage returns before the line's text. */
 	*first = start;
-	while (*first < end && (text[*first] == ' ' || text[*first] == '\t' || text[*first] == '\r'))
+	while (*first < end) {
+		blank = is_blank(text[*first]);
+		if (!blank)
+			break;
 		(*first)++;
+	}
+
+	/* And those after it. */
 	*last = end;
-	while (*last > *first && (text[*last - 1U] == ' ' || text[*last - 1U] == '\t' || text[*last - 1U] == '\r'))
+	while (*last > *first) {
+		blank = is_blank(text[*last - 1U]);
+		if (!blank)
+			break;
 		(*last)--;
+	}
 
 	/* Succeeded: a line was found, perhaps an empty one. */
 	return 1;
@@ -471,4 +494,21 @@ hex_digit(
 
 	/* Anything else is not a digit. */
 	return EINVAL;
+}
+
+/* Reports whether a byte is a space, a tab or a carriage return around a line's text. */
+static int
+is_blank(
+	uint8_t character)
+{
+	/* The three kinds of blank a line may carry. */
+	if (character == ' ')
+		return 1;
+	if (character == '\t')
+		return 1;
+	if (character == '\r')
+		return 1;
+
+	/* Anything else is text. */
+	return 0;
 }

@@ -157,4 +157,10 @@ int bcm43455_device_scan_profile(const uint32_t *channels, unsigned count, struc
  */
 int bcm43455_device_has_capability(const char *list, const char *name);
 
+/*
+ * Reports whether a firmware build's version text ("43455c0-roml/a-b-c
+ * Version: ...") names a feature among its hyphenated words.
+ */
+int bcm43455_device_has_feature(const char *version, const char *name);
+
 #endif

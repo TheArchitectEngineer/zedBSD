@@ -325,18 +325,21 @@ bcm43455_bus_stop(
 {
 	unsigned long enabled;
 	uint64_t observed;
+	unsigned running;
 	int error;
 
-	/* Asks the thread to stop; a thread that already stopped only reports why. */
+	/* Asks the thread to stop; a thread that already stopped, or never ran, only reports why. */
 	enabled = spin_lock_irqsave(&bus->lock);
 
-	if (bus->thread_running)
+	running = bus->thread_running;
+	if (running)
 		bus->stop_requested = 1;
 
 	spin_unlock_irqrestore(&bus->lock, enabled);
 
-	/* Wakes it from its wait for the card. */
-	bus->chip.ops->interrupt_kick(bus->chip.context);
+	/* Wakes a running thread from its wait for the card. */
+	if (running)
+		bus->chip.ops->interrupt_kick(bus->chip.context);
 
 	/* Waits until it has given the bus back. */
 	enabled = spin_lock_irqsave(&bus->lock);
@@ -803,7 +806,10 @@ deliver_answer(
 	}
 
 	/* The direct-mode request in flight takes its own answer. */
-	if (bus->direct.active && !bus->direct.done && answer.id == bus->direct.id && answer.command == bus->direct.command) {
+	if (bus->direct.active &&
+	    !bus->direct.done &&
+	    answer.id == bus->direct.id &&
+	    answer.command == bus->direct.command) {
 		copied = answer.payload_length;
 		if (copied > bus->direct.answer_capacity)
 			copied = bus->direct.answer_capacity;
@@ -818,7 +824,9 @@ deliver_answer(
 	/* Otherwise the answer belongs to the slot's request, if that is the one sent. */
 	enabled = spin_lock_irqsave(&bus->lock);
 
-	if (bus->slot.state == BCM43455_SLOT_SENT && bus->slot.id == answer.id && bus->slot.command == answer.command) {
+	if (bus->slot.state == BCM43455_SLOT_SENT &&
+	    bus->slot.id == answer.id &&
+	    bus->slot.command == answer.command) {
 		copied = answer.payload_length;
 		if (copied > bus->slot.answer_capacity)
 			copied = bus->slot.answer_capacity;

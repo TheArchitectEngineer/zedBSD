@@ -152,9 +152,13 @@ bcm43455_device_create(
 	int error;
 
 	/* Refuses a missing bus, missing files or nowhere to put the device. */
-	if (ops == NULL || files == NULL || result == NULL)
+	if (ops == NULL ||
+	    files == NULL ||
+	    result == NULL)
 		return EINVAL;
-	if (files->firmware == NULL || files->clm == NULL || files->nvram == NULL)
+	if (files->firmware == NULL ||
+	    files->clm == NULL ||
+	    files->nvram == NULL)
 		return EINVAL;
 
 	/* Allocates the device, cleared. */
@@ -624,14 +628,19 @@ bcm43455_device_has_capability(
 	start = 0;
 	for (;;) {
 		/* Skips the spaces before the word. */
-		while (list[start] == ' ' || list[start] == '\n' || list[start] == '\t')
+		while (list[start] == ' ' ||
+		       list[start] == '\n' ||
+		       list[start] == '\t')
 			start++;
 		if (list[start] == '\0')
 			return 0;
 
 		/* Finds the word's end. */
 		end = start;
-		while (list[end] != '\0' && list[end] != ' ' && list[end] != '\n' && list[end] != '\t')
+		while (list[end] != '\0' &&
+		       list[end] != ' ' &&
+		       list[end] != '\n' &&
+		       list[end] != '\t')
 			end++;
 
 		/* A word of the same length and letters is the capability. */
@@ -641,6 +650,60 @@ bcm43455_device_has_capability(
 				return 1;
 		}
 		start = end;
+	}
+}
+
+/*
+ * Reports whether a firmware build's version text names a feature.
+ *
+ * The text is "43455c0-roml/feature-feature-... Version: ..."; a feature
+ * is a word between the slash, the hyphens and the first space.
+ */
+int
+bcm43455_device_has_feature(
+	const char *version,
+	const char *name)
+{
+	size_t start;
+	size_t end;
+	size_t length;
+	int same;
+
+	/* Measures the name. */
+	length = 0;
+	while (name[length] != '\0')
+		length++;
+	if (length == 0)
+		return 0;
+
+	/* The features start after the slash. */
+	start = 0;
+	while (version[start] != '\0' && version[start] != '/')
+		start++;
+	if (version[start] == '\0')
+		return 0;
+	start++;
+
+	/* Compares the name with every feature up to the first space. */
+	for (;;) {
+		/* Finds the feature's end. */
+		end = start;
+		while (version[end] != '\0' &&
+		       version[end] != '-' &&
+		       version[end] != ' ')
+			end++;
+
+		/* A feature of the same length and letters is the one asked for. */
+		if (end - start == length) {
+			same = kern_memcmp(version + start, name, length);
+			if (same == 0)
+				return 1;
+		}
+
+		/* The list ends at the first space or the end of the text. */
+		if (version[end] != '-')
+			return 0;
+		start = end + 1U;
 	}
 }
 
@@ -872,19 +935,18 @@ read_identity(
 	identity->capabilities[answered] = '\0';
 	kern_logf("bcm43455: capabilities %s\n", identity->capabilities);
 
-	/* The supplicant must be named by both the file's version text and the running list. */
-	in_file = 0;
-	if (device->file_version[0] != '\0') {
-		in_list = bcm43455_device_has_capability(device->identity.capabilities, "idsup");
-		in_file = in_list;
-	}
+	/* The supplicant must be named by both the file's build features and the running list. */
+	in_file = bcm43455_device_has_feature(device->file_version, "idsup");
 	in_list = bcm43455_device_has_capability(identity->capabilities, "idsup");
 	identity->supplicant = 0;
-	if (in_list)
+	if (in_file && in_list)
 		identity->supplicant = 1;
-	if (!identity->supplicant)
-		kern_logf("bcm43455: firmware has no supplicant (idsup); connecting will be refused\n");
-	(void)in_file;
+	if (!identity->supplicant) {
+		kern_logf(
+			"bcm43455: firmware has no supplicant (idsup: build %d, capabilities %d); connecting will be refused\n",
+			in_file,
+			in_list);
+	}
 
 	/* Succeeded: the identity is known. */
 	return 0;
@@ -1088,7 +1150,10 @@ discard_unpublished(
 
 /*
  * Closes the station, stops the chip under the station's quiesce barrier
- * and lets the station reconcile.  The caller holds lifecycle_lock.
+ * and lets the station reconcile.  The caller holds lifecycle_lock, which
+ * is let go around the station's close: the WLAN layer takes the station's
+ * control gate there, and the gate comes before lifecycle_lock (the
+ * station's quiesce, called under the gate, takes lifecycle_lock).
  */
 static int
 close_locked(
@@ -1097,7 +1162,12 @@ close_locked(
 	int error;
 
 	/* Retires the station's scan and connection first. */
+	mutex_unlock(&device->lifecycle_lock);
+
 	error = station_close_wait(device);
+
+	mutex_lock(&device->lifecycle_lock);
+
 	if (error != 0)
 		return error;
 
@@ -1109,7 +1179,12 @@ close_locked(
 	wlan_station_quiesce_end(device->station);
 
 	/* Lets the station see the stopped radio and leave its closing state. */
+	mutex_unlock(&device->lifecycle_lock);
+
 	error = station_close_wait(device);
+
+	mutex_lock(&device->lifecycle_lock);
+
 	if (error != 0)
 		return error;
 
@@ -1128,7 +1203,9 @@ station_close_wait(
 	int error;
 
 	/* Retries a busy close a millisecond apart, up to about a second. */
-	for (tries = 0;; tries++) {
+	for (tries = 0;
+	     ;
+	     tries++) {
 		error = wlan_station_close(device->station);
 		if (error != EBUSY)
 			break;
@@ -1635,9 +1712,13 @@ channel_frequency(
 		return CHANNEL_14_MHZ;
 
 	/* The 5 GHz channels 36 to 144 and 149 to 181, twenty megahertz apart. */
-	if (channel >= 36U && channel <= 144U && ((channel - 36U) % 4U) == 0)
+	if (channel >= 36U &&
+	    channel <= 144U &&
+	    ((channel - 36U) % 4U) == 0)
 		return BAND_5G_BASE_MHZ + 5U * channel;
-	if (channel >= 149U && channel <= 181U && ((channel - 149U) % 4U) == 0)
+	if (channel >= 149U &&
+	    channel <= 181U &&
+	    ((channel - 149U) % 4U) == 0)
 		return BAND_5G_BASE_MHZ + 5U * channel;
 
 	/* Any other number is not a channel the station scans. */

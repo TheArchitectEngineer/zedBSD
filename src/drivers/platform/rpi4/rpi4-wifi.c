@@ -450,7 +450,9 @@ wait_for_root(
 	int error;
 
 	/* Looks for the root until it is there or the bound is spent. */
-	for (waited = 0;; waited += ROOT_POLL_MS) {
+	for (waited = 0;
+	     ;
+	     waited += ROOT_POLL_MS) {
 		/* Stops as soon as the root is mounted. */
 		ready = bcm43455_files_root_ready();
 		if (ready)

@@ -135,7 +135,9 @@ bcm43455_bcdc_iovar(
 	size_t name_length;
 
 	/* Refuses a missing buffer or name. */
-	if (buffer == NULL || name == NULL || length == NULL)
+	if (buffer == NULL ||
+	    name == NULL ||
+	    length == NULL)
 		return EINVAL;
 	if (value == NULL && value_length != 0)
 		return EINVAL;
