@@ -13,7 +13,7 @@
 <!-- master:agents:start -->
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
   - P1: 空き（ws229-p007 cleared）。
-  - P2: 空き（BUG-304・305 の直しは merge 済み、T1-610 待ち）。
+  - P2: 空き（BUG-304・305 resolved）。
   - P3（新しい世代）: q983 ws217-p004 Settings の回転（ベータ2）。
   - T1: T1-609（AHCI）→ T1-607（pc98）→ T1-606 の判定（5330）→ T1-608（SV7、Gen9.5）。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
