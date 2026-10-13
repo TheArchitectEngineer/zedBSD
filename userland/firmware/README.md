@@ -14,7 +14,8 @@ registry supplies the same catalog to the menu, configuration saving and image
 packaging; selection follows the attached device rather than the CPU. Selecting
 a firmware package installs its data without enabling a hardware driver.
 
-The entries are `rtl8822b/`, `intelax211/`, `intelbt/`, `i915/`, and `brcmbt/`; future
+The entries are `rtl8822b/`, `intelax211/`, `intelbt/`, `i915/`, `brcmbt/`, and
+`bcm43455/`; future
 RTL8822C support owns a separate `rtl8822c/` entry. RTL8822B uses its frozen GitHub
 acquisition mirror. AX211 uses the official `linux-firmware` tag `20260410`
 dereferenced commit and installs the exact `-89.ucode`, PNVM, complete Intel
@@ -48,5 +49,19 @@ redistribution of the object code only, solely for use with Cypress
 integrated circuits, and forbids modification and reverse engineering;
 the Raspberry Pi 4 image configuration is the only one that selects it.
 Its focused check is `plan/ws215/tests/brcmbt-firmware-package-test.sh`.
+`bcm43455/` (package `bcm43455-firmware`) installs the three files the
+Raspberry Pi 4's on-board WiFi driver writes into the BCM43455:
+`cypress/cyfmac43455-sdio-minimal.bin` (firmware 7.45.241, the variant
+with the firmware supplicant), `cypress/cyfmac43455-sdio.clm_blob`
+(Raspberry Pi's regulatory data, used with the world locale), and
+`brcm/brcmfmac43455-sdio.txt` (the Pi 4 NVRAM), all from Raspberry Pi's
+`RPi-Distro/firmware-nonfree` commit
+`3bab0f823f5b53150b76aab77093adef6655b920` (1:20260519-1~bpo13+1+rpt1),
+whose `debian/copyright` places them under the Cypress licence. The
+same NVRAM values are published in linux-firmware under GPL-2.0+, so the
+package installs the plain `LICENCE.cypress` and `GPL-2` of the official
+linux-firmware commit above together with the full `debian/copyright` and
+the manifest. Only the Raspberry Pi 4 image configuration selects it.
+Its focused check is `plan/ws206/tests/bcm43455-firmware-package-test.sh`.
 Every entry is default-off, and ordinary builds perform no firmware fetch.
 This hierarchy is package organization, not a common hardware-driver layer.
