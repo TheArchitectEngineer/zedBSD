@@ -35,6 +35,8 @@ static void test_prdt(void);
 static void test_identify(void);
 static void test_result(void);
 static void test_chunks(void);
+static void test_states(void);
+static void test_signatures(void);
 
 /*
  * Runs every group and reports the outcome.
@@ -51,6 +53,8 @@ main(
 	test_identify();
 	test_result();
 	test_chunks();
+	test_states();
+	test_signatures();
 
 	/* Reports a failure count other than zero as a failed run. */
 	if (failures != 0U) {
@@ -157,6 +161,9 @@ test_fis(void)
 	CHECK(bytes[7] == 0U && bytes[12] == 0U && bytes[4] == 0U);
 	CHECK(drv_ahci_fis_h2d_build(&fis, DRV_AHCI_ATA_IDENTIFY, 0U, 0U));
 	CHECK(bytes[2] == 0xecU && bytes[1] == 0x80U);
+	CHECK(drv_ahci_fis_h2d_build(&fis, DRV_AHCI_ATA_FLUSH_CACHE, 0U, 0U));
+	CHECK(bytes[2] == 0xe7U && bytes[7] == 0U);
+	CHECK(!drv_ahci_fis_h2d_build(&fis, DRV_AHCI_ATA_FLUSH_CACHE, 0U, 1U));
 
 	/* Refuses counts, ranges and commands outside what the driver issues. */
 	CHECK(!drv_ahci_fis_h2d_build(&fis, DRV_AHCI_ATA_READ_DMA_EXT, 0U, 0U));
@@ -272,6 +279,7 @@ test_identify(void)
 	CHECK(identity.sector_count == UINT64_C(0x200000));
 	CHECK(identity.sector_size == 512U);
 	CHECK(identity.flush_ext == 1U);
+	CHECK(identity.flush == 1U);
 	CHECK(identity.write_cache == 1U);
 	CHECK(identity.cylinders == 16383U && identity.heads == 16U);
 	CHECK(identity.sectors_per_track == 63U);
@@ -294,6 +302,13 @@ test_identify(void)
 	words[118] = 0U;
 	CHECK(drv_ahci_identify_parse(words, &identity) == 0U);
 	CHECK(identity.sector_size == 4096U);
+
+	/* 512e: word 106 names larger physical sectors only (bits 13 and 0-3). */
+	words[106] = 0x6003U;
+	words[117] = 0U;
+	words[118] = 0U;
+	CHECK(drv_ahci_identify_parse(words, &identity) == 0U);
+	CHECK(identity.sector_size == 512U);
 
 	/* Word 106 without its validity pattern keeps 512 bytes. */
 	words[106] = 0x9000U;
@@ -365,4 +380,71 @@ test_chunks(void)
 
 	/* No command moves more than 65536 sectors. */
 	CHECK(drv_ahci_chunk_blocks(UINT32_MAX, 512U, (size_t)64U * 1024U * 1024U) == 65536U);
+}
+
+/*
+ * Checks the command state machine, including the race between a timeout
+ * and a late completion, and the engine stop that clears PxCI.
+ */
+static void
+test_states(void)
+{
+	unsigned state;
+
+	/* An active command stays active until the slot comes back. */
+	state = drv_ahci_command_advance(DRV_AHCI_COMMAND_ACTIVE, 0U, 0x50U, 1U, 1U);
+	CHECK(state == DRV_AHCI_COMMAND_ACTIVE);
+
+	/* The slot coming back finishes it. */
+	state = drv_ahci_command_advance(state, DRV_AHCI_PX_IS_DHRS, 0x50U, 0U, 1U);
+	CHECK(state == DRV_AHCI_COMMAND_DONE);
+
+	/* Later status, even an error, does not change a finished command. */
+	CHECK(drv_ahci_command_advance(state, DRV_AHCI_PX_IS_TFES, 0x51U, 0U, 1U) ==
+	      DRV_AHCI_COMMAND_DONE);
+	CHECK(drv_ahci_command_expire(state) == DRV_AHCI_COMMAND_DONE);
+
+	/* A completion seen in the last look before the deadline keeps its outcome. */
+	state = drv_ahci_command_advance(DRV_AHCI_COMMAND_ACTIVE, 0U, 0x50U, 0U, 1U);
+	state = drv_ahci_command_expire(state);
+	CHECK(state == DRV_AHCI_COMMAND_DONE);
+
+	/* A command still running at the deadline is aborted. */
+	state = drv_ahci_command_advance(DRV_AHCI_COMMAND_ACTIVE, 0U, 0xd0U, 1U, 1U);
+	state = drv_ahci_command_expire(state);
+	CHECK(state == DRV_AHCI_COMMAND_ABORTED);
+
+	/* Stopping the engine then clears PxCI; that is not a completion. */
+	CHECK(drv_ahci_command_advance(state, 0U, 0x50U, 0U, 1U) == DRV_AHCI_COMMAND_ABORTED);
+	CHECK(drv_ahci_command_expire(state) == DRV_AHCI_COMMAND_ABORTED);
+
+	/* Device and link errors are outcomes that stick. */
+	state = drv_ahci_command_advance(DRV_AHCI_COMMAND_ACTIVE, DRV_AHCI_PX_IS_TFES, 0x51U, 1U, 1U);
+	CHECK(state == DRV_AHCI_COMMAND_DEVICE_ERROR);
+	CHECK(drv_ahci_command_advance(state, 0U, 0x50U, 0U, 1U) == DRV_AHCI_COMMAND_DEVICE_ERROR);
+	state = drv_ahci_command_advance(DRV_AHCI_COMMAND_ACTIVE, DRV_AHCI_PX_IS_HBFS, 0x50U, 1U, 1U);
+	CHECK(state == DRV_AHCI_COMMAND_LINK_ERROR);
+	CHECK(drv_ahci_command_expire(state) == DRV_AHCI_COMMAND_LINK_ERROR);
+
+	/* An idle port is not completed by anything. */
+	CHECK(drv_ahci_command_advance(DRV_AHCI_COMMAND_IDLE, DRV_AHCI_PX_IS_DHRS, 0x50U, 0U, 1U) ==
+	      DRV_AHCI_COMMAND_IDLE);
+}
+
+/* Checks the device class taken from PxSIG. */
+static void
+test_signatures(void)
+{
+	/* The usual ATA signature, and one with another sector count and LBA low. */
+	CHECK(drv_ahci_signature_class(0x00000101U) == DRV_AHCI_SIG_CLASS_ATA);
+	CHECK(drv_ahci_signature_class(0x00000001U) == DRV_AHCI_SIG_CLASS_ATA);
+	CHECK(drv_ahci_signature_class(0x0000ffffU) == DRV_AHCI_SIG_CLASS_ATA);
+
+	/* ATAPI, port multiplier and enclosure bridge are other classes. */
+	CHECK(drv_ahci_signature_class(0xeb140101U) == DRV_AHCI_SIG_CLASS_ATAPI);
+	CHECK(drv_ahci_signature_class(0x96690101U) == DRV_AHCI_SIG_CLASS_PM);
+	CHECK(drv_ahci_signature_class(0xc33c0101U) == DRV_AHCI_SIG_CLASS_SEMB);
+
+	/* An absent device (all ones) is not ATA. */
+	CHECK(drv_ahci_signature_class(0xffffffffU) != DRV_AHCI_SIG_CLASS_ATA);
 }

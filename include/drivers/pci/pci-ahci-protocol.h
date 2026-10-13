@@ -30,12 +30,25 @@
 #define DRV_AHCI_REG_IS			0x08U
 #define DRV_AHCI_REG_PI			0x0cU
 #define DRV_AHCI_REG_VS			0x10U
+#define DRV_AHCI_REG_CCC_CTL		0x14U
 #define DRV_AHCI_REG_CAP2		0x24U
 #define DRV_AHCI_REG_BOHC		0x28U
+
+/*
+ * Intel RST: a vendor-specific capability register and the remapped-device
+ * table that tells whether NVMe drives were hidden behind the ABAR.
+ */
+#define DRV_AHCI_REG_INTEL_VSCAP	0xa4U
+#define DRV_AHCI_REG_INTEL_REMAP_CAP	0x800U
+#define DRV_AHCI_REG_INTEL_REMAP_DCC	0x880U
+#define DRV_AHCI_INTEL_REMAP_MAX	3U
+#define DRV_AHCI_INTEL_REMAP_END	0xa00U
 
 #define DRV_AHCI_CAP_NP_MASK		0x0000001fU
 #define DRV_AHCI_CAP_NCS_SHIFT		8U
 #define DRV_AHCI_CAP_NCS_MASK		0x00001f00U
+#define DRV_AHCI_CAP_CCCS		0x00000080U
+#define DRV_AHCI_CAP_FBSS		0x00010000U
 #define DRV_AHCI_CAP_SSS		0x08000000U
 #define DRV_AHCI_CAP_S64A		0x80000000U
 #define DRV_AHCI_CAP_CPD		0x00080000U
@@ -45,6 +58,9 @@
 #define DRV_AHCI_GHC_AE			0x80000000U
 
 #define DRV_AHCI_CAP2_BOH		0x00000001U
+#define DRV_AHCI_CAP2_SDS		0x00000008U
+
+#define DRV_AHCI_CCC_CTL_EN		0x00000001U
 
 #define DRV_AHCI_BOHC_BOS		0x00000001U
 #define DRV_AHCI_BOHC_OOS		0x00000002U
@@ -69,6 +85,11 @@
 #define DRV_AHCI_PX_SERR		0x30U
 #define DRV_AHCI_PX_SACT		0x34U
 #define DRV_AHCI_PX_CI			0x38U
+#define DRV_AHCI_PX_FBS			0x40U
+#define DRV_AHCI_PX_DEVSLP		0x44U
+
+#define DRV_AHCI_PX_FBS_EN		0x00000001U
+#define DRV_AHCI_PX_DEVSLP_ADSE		0x00000001U
 
 #define DRV_AHCI_PX_CMD_ST		0x00000001U
 #define DRV_AHCI_PX_CMD_SUD		0x00000002U
@@ -76,12 +97,18 @@
 #define DRV_AHCI_PX_CMD_FRE		0x00000010U
 #define DRV_AHCI_PX_CMD_FR		0x00004000U
 #define DRV_AHCI_PX_CMD_CR		0x00008000U
+#define DRV_AHCI_PX_CMD_ALPE		0x04000000U
+#define DRV_AHCI_PX_CMD_ASP		0x08000000U
+#define DRV_AHCI_PX_CMD_ICC_MASK	0xf0000000U
+#define DRV_AHCI_PX_CMD_ICC_ACTIVE	0x10000000U
 
 /* Interrupt status bits: completions and the conditions that stop a port. */
 #define DRV_AHCI_PX_IS_DHRS		0x00000001U
 #define DRV_AHCI_PX_IS_PSS		0x00000002U
 #define DRV_AHCI_PX_IS_DSS		0x00000004U
 #define DRV_AHCI_PX_IS_SDBS		0x00000008U
+#define DRV_AHCI_PX_IS_UFS		0x00000010U
+#define DRV_AHCI_PX_IS_DPS		0x00000020U
 #define DRV_AHCI_PX_IS_PCS		0x00000040U
 #define DRV_AHCI_PX_IS_PRCS		0x00400000U
 #define DRV_AHCI_PX_IS_IPMS		0x00800000U
@@ -97,15 +124,24 @@
 	(DRV_AHCI_PX_IS_DHRS | DRV_AHCI_PX_IS_PSS | DRV_AHCI_PX_IS_DSS | \
 	 DRV_AHCI_PX_IS_SDBS)
 
-/* Conditions after which the link or the HBA must be brought back. */
+/*
+ * Conditions after which the link or the HBA must be brought back.  A PhyRdy
+ * change seen while a command runs means the link dropped under it.
+ */
 #define DRV_AHCI_PX_IS_LINK_FAULT \
 	(DRV_AHCI_PX_IS_HBFS | DRV_AHCI_PX_IS_HBDS | DRV_AHCI_PX_IS_IFS | \
 	 DRV_AHCI_PX_IS_OFS | DRV_AHCI_PX_IS_PRCS)
 
-/* Every interrupt source the driver enables on a running port. */
+/*
+ * Every interrupt source the driver enables on a running port.  PCS and
+ * PRCS are left out: they are held by PxSERR rather than PxIS, and without
+ * hotplug handling they would only repeat.
+ */
 #define DRV_AHCI_PX_IE_DEFAULT \
-	(DRV_AHCI_PX_IS_COMPLETION | DRV_AHCI_PX_IS_LINK_FAULT | \
-	 DRV_AHCI_PX_IS_TFES | DRV_AHCI_PX_IS_INFS)
+	(DRV_AHCI_PX_IS_DHRS | DRV_AHCI_PX_IS_PSS | DRV_AHCI_PX_IS_DSS | \
+	 DRV_AHCI_PX_IS_SDBS | DRV_AHCI_PX_IS_UFS | DRV_AHCI_PX_IS_DPS | \
+	 DRV_AHCI_PX_IS_OFS | DRV_AHCI_PX_IS_INFS | DRV_AHCI_PX_IS_IFS | \
+	 DRV_AHCI_PX_IS_HBDS | DRV_AHCI_PX_IS_HBFS | DRV_AHCI_PX_IS_TFES)
 
 #define DRV_AHCI_PX_TFD_ERR		0x00000001U
 #define DRV_AHCI_PX_TFD_DRQ		0x00000008U
@@ -115,19 +151,28 @@
 #define DRV_AHCI_PX_SSTS_DET_NONE	0x0U
 #define DRV_AHCI_PX_SSTS_DET_PHY	0x3U
 
+#define DRV_AHCI_PX_SSTS_DET_PRESENT	0x1U
+
 #define DRV_AHCI_PX_SCTL_DET_MASK	0x0000000fU
 #define DRV_AHCI_PX_SCTL_DET_INIT	0x00000001U
+#define DRV_AHCI_PX_SCTL_SPD_MASK	0x000000f0U
 #define DRV_AHCI_PX_SCTL_IPM_MASK	0x00000f00U
 #define DRV_AHCI_PX_SCTL_IPM_NONE	0x00000300U
 
-/* Device signatures left in PxSIG by the first D2H Register FIS. */
-#define DRV_AHCI_SIG_ATA		0x00000101U
-#define DRV_AHCI_SIG_ATAPI		0xeb140101U
-#define DRV_AHCI_SIG_PM			0x96690101U
+/*
+ * Device classes by the upper half of PxSIG (LBA mid and high of the first
+ * D2H Register FIS); the lower half is the sector count and LBA low, which
+ * not every device sets to one.
+ */
+#define DRV_AHCI_SIG_CLASS_ATA		0x0000U
+#define DRV_AHCI_SIG_CLASS_ATAPI	0xeb14U
+#define DRV_AHCI_SIG_CLASS_PM		0x9669U
+#define DRV_AHCI_SIG_CLASS_SEMB		0xc33cU
 
 /* ATA commands used by the basic driver. */
 #define DRV_AHCI_ATA_READ_DMA_EXT	0x25U
 #define DRV_AHCI_ATA_WRITE_DMA_EXT	0x35U
+#define DRV_AHCI_ATA_FLUSH_CACHE	0xe7U
 #define DRV_AHCI_ATA_FLUSH_CACHE_EXT	0xeaU
 #define DRV_AHCI_ATA_IDENTIFY		0xecU
 
@@ -172,6 +217,19 @@
 #define DRV_AHCI_RESULT_DONE		1U
 #define DRV_AHCI_RESULT_DEVICE_ERROR	2U
 #define DRV_AHCI_RESULT_LINK_ERROR	3U
+
+/*
+ * The life of the one command a port runs.  Only an ACTIVE command can be
+ * completed by the hardware status; once the waiter gives up it marks the
+ * command ABORTED before it stops the engine, because stopping the engine
+ * clears PxCI and must not read as a completion.
+ */
+#define DRV_AHCI_COMMAND_IDLE		0U
+#define DRV_AHCI_COMMAND_ACTIVE		1U
+#define DRV_AHCI_COMMAND_DONE		2U
+#define DRV_AHCI_COMMAND_DEVICE_ERROR	3U
+#define DRV_AHCI_COMMAND_LINK_ERROR	4U
+#define DRV_AHCI_COMMAND_ABORTED	5U
 
 /*
  * The Register Host-to-Device FIS that carries one ATA command.
@@ -235,6 +293,7 @@ struct drv_ahci_prd {
 struct drv_ahci_identity {
 	uint64_t sector_count;
 	uint32_t sector_size;
+	unsigned flush;
 	unsigned flush_ext;
 	unsigned write_cache;
 	uint16_t cylinders;
@@ -296,6 +355,8 @@ drv_ahci_fis_h2d_build(
 	} else if (command == DRV_AHCI_ATA_WRITE_DMA_EXT) {
 		data_command = 1;
 	} else if (command == DRV_AHCI_ATA_FLUSH_CACHE_EXT) {
+		data_command = 0;
+	} else if (command == DRV_AHCI_ATA_FLUSH_CACHE) {
 		data_command = 0;
 	} else if (command == DRV_AHCI_ATA_IDENTIFY) {
 		data_command = 0;
@@ -542,6 +603,11 @@ drv_ahci_identify_parse(
 	}
 	identity->sector_size = size;
 
+	/* Word 83 bit 12: FLUSH CACHE is supported. */
+	identity->flush = 0;
+	if ((words[83] & 0x1000U) != 0U)
+		identity->flush = 1;
+
 	/* Word 83 bit 13: FLUSH CACHE EXT is supported. */
 	identity->flush_ext = 0;
 	if ((words[83] & 0x2000U) != 0U)
@@ -664,6 +730,79 @@ drv_ahci_chunk_blocks(
 	if ((size_t)remaining < fit)
 		return remaining;
 	return (uint32_t)fit;
+}
+
+/*
+ * Reports the device class in a port's signature register.
+ */
+static __inline unsigned
+drv_ahci_signature_class(
+	uint32_t signature)
+{
+	unsigned device_class;
+
+	/* The class is in LBA mid and LBA high, the upper 16 bits. */
+	device_class = (unsigned)(signature >> 16);
+
+	/* Reports the class for comparison with DRV_AHCI_SIG_CLASS_*. */
+	return device_class;
+}
+
+/*
+ * Advances a port's command state by what the hardware shows.
+ *
+ * Only an ACTIVE command moves: a command already finished, failed or
+ * aborted keeps its state whatever PxCI says afterwards.
+ */
+static __inline unsigned
+drv_ahci_command_advance(
+	unsigned state,
+	uint32_t interrupt_status,
+	uint32_t task_file,
+	uint32_t command_issue,
+	uint32_t slot_mask)
+{
+	unsigned result;
+
+	/* A command that is not running is not touched by later status. */
+	if (state != DRV_AHCI_COMMAND_ACTIVE)
+		return state;
+
+	/* Classifies the status the port shows for the running slot. */
+	result = drv_ahci_command_result(
+		interrupt_status,
+		task_file,
+		command_issue,
+		slot_mask);
+
+	/* Maps the classification to the next state. */
+	if (result == DRV_AHCI_RESULT_DONE)
+		return DRV_AHCI_COMMAND_DONE;
+	if (result == DRV_AHCI_RESULT_DEVICE_ERROR)
+		return DRV_AHCI_COMMAND_DEVICE_ERROR;
+	if (result == DRV_AHCI_RESULT_LINK_ERROR)
+		return DRV_AHCI_COMMAND_LINK_ERROR;
+
+	/* Still running. */
+	return DRV_AHCI_COMMAND_ACTIVE;
+}
+
+/*
+ * Gives up on a command whose time ran out.
+ *
+ * The caller has looked at the hardware one last time under the lock, so a
+ * command that finished in that look keeps its outcome.
+ */
+static __inline unsigned
+drv_ahci_command_expire(
+	unsigned state)
+{
+	/* Only a command still running is aborted. */
+	if (state == DRV_AHCI_COMMAND_ACTIVE)
+		return DRV_AHCI_COMMAND_ABORTED;
+
+	/* A command that reached an outcome keeps it. */
+	return state;
 }
 
 #endif
