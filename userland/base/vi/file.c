@@ -44,6 +44,7 @@ static int split_lines(struct vi_buffer *buffer, const char *contents, size_t le
 static int write_lines(int descriptor, const struct vi_buffer *buffer, struct file_totals *totals);
 static int write_all(int descriptor, const char *bytes, size_t length);
 static int write_replacing(const char *target, const struct stat *existing, int exists, const struct vi_buffer *buffer, struct file_totals *totals);
+static int write_temporary(int descriptor, const struct stat *existing, int exists, const struct vi_buffer *buffer, struct file_totals *totals);
 static int write_in_place(const char *target, const struct vi_buffer *buffer, struct file_totals *totals);
 static int resolve_target(const char *path, char **target);
 static int keeps_identity(const struct stat *existing);
@@ -641,8 +642,6 @@ write_replacing(
 	size_t directory_length;
 	size_t name_length;
 	size_t size;
-	mode_t mode;
-	mode_t mask;
 	int descriptor;
 	int result;
 	int error;
@@ -674,10 +673,58 @@ write_replacing(
 		return error;
 	}
 
+	/* Fills the new file and puts it on the disk; it is closed whatever the outcome. */
+	error = write_temporary(descriptor, existing, exists, buffer, totals);
+	if (error != 0) {
+		/* Throws the new file away, leaving the target as it was. */
+		(void)unlink(temporary);
+		free(temporary);
+		return error;
+	}
+
+	/* Replaces the target with the new file in one step. */
+	result = rename(temporary, target);
+	if (result != 0) {
+		/* Throws the new file away, leaving the target as it was. */
+		error = errno;
+		(void)unlink(temporary);
+		free(temporary);
+		return error;
+	}
+
+	/* Puts the new name on the disk too. */
+	sync_directory(temporary, directory_length);
+	free(temporary);
+
+	/* Succeeded: the target holds the buffer. */
+	return 0;
+}
+
+/*
+ * Fills a new file with the buffer, gives it the target's owner and
+ * permissions, puts it on the disk and closes it.
+ *
+ * The descriptor is closed whether this succeeds or not.
+ */
+static int
+write_temporary(
+	int descriptor,
+	const struct stat *existing,
+	int exists,
+	const struct vi_buffer *buffer,
+	struct file_totals *totals)
+{
+	mode_t mode;
+	mode_t mask;
+	int result;
+	int error;
+
 	/* Writes the lines. */
 	error = write_lines(descriptor, buffer, totals);
-	if (error != 0)
-		goto fail;
+	if (error != 0) {
+		(void)close(descriptor);
+		return error;
+	}
 
 	/*
 	 * An existing file keeps its owner and permissions.  The owner comes
@@ -687,7 +734,8 @@ write_replacing(
 		result = fchown(descriptor, existing->st_uid, existing->st_gid);
 		if (result != 0) {
 			error = errno;
-			goto fail;
+			(void)close(descriptor);
+			return error;
 		}
 
 		/* Then the permissions, set-ID bits included. */
@@ -695,7 +743,8 @@ write_replacing(
 		result = fchmod(descriptor, mode);
 		if (result != 0) {
 			error = errno;
-			goto fail;
+			(void)close(descriptor);
+			return error;
 		}
 	} else {
 		/* A new file gets the permissions any new file would, after the umask. */
@@ -704,7 +753,8 @@ write_replacing(
 		result = fchmod(descriptor, 0666 & ~mask);
 		if (result != 0) {
 			error = errno;
-			goto fail;
+			(void)close(descriptor);
+			return error;
 		}
 	}
 
@@ -712,38 +762,17 @@ write_replacing(
 	result = fsync(descriptor);
 	if (result != 0) {
 		error = errno;
-		goto fail;
+		(void)close(descriptor);
+		return error;
 	}
 
 	/* Closes the new file; a failed close can mean a failed write. */
 	result = close(descriptor);
-	descriptor = -1;
-	if (result != 0) {
-		error = errno;
-		goto fail;
-	}
+	if (result != 0)
+		return errno;
 
-	/* Replaces the target with the new file in one step. */
-	result = rename(temporary, target);
-	if (result != 0) {
-		error = errno;
-		goto fail;
-	}
-
-	/* Puts the new name on the disk too. */
-	sync_directory(temporary, directory_length);
-	free(temporary);
-
-	/* Succeeded: the target holds the buffer. */
+	/* Succeeded: the new file holds the buffer on the disk. */
 	return 0;
-
-fail:
-	/* Throws the new file away, leaving the target as it was. */
-	if (descriptor >= 0)
-		(void)close(descriptor);
-	(void)unlink(temporary);
-	free(temporary);
-	return error;
 }
 
 /*

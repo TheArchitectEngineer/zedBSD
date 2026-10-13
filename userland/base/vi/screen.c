@@ -309,12 +309,14 @@ vi_screen_update(
 	used = 0;
 	editor->bottom = editor->top;
 	while (used < text_rows) {
+		/* The end of the buffer ends the drawing. */
 		if (line >= editor->buffer.count)
 			break;
 
 		/* A line that does not fit below the others is shown as @ rows. */
 		needed = line_rows(editor, line) - skip;
 		if (needed > text_rows - used) {
+			/* The top line may be drawn in part; any other line that does not fit is shown as @ rows. */
 			if (line != editor->top) {
 				for (index = used; index < text_rows; index++)
 					row_add(&rows[index], "@", 1, 1);

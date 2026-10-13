@@ -1287,6 +1287,7 @@ motion(
 		offset = editor->cursor.offset;
 		last = last_offset(line);
 		if (!for_operator) {
+			/* A movement without an operator cannot go past the last character. */
 			if (offset >= last)
 				return -1;
 		}
@@ -1324,6 +1325,7 @@ motion(
 	case 'j':
 	case VI_KEY_DOWN:
 	case VI_KEY_NEWLINE:
+		/* The last line has no line below to move to. */
 		if (editor->cursor.line == last_line)
 			return -1;
 		index = editor->cursor.line + (size_t)count;
@@ -1333,6 +1335,7 @@ motion(
 		return status;
 	case 'k':
 	case VI_KEY_UP:
+		/* The first line has no line above to move to. */
 		if (editor->cursor.line == 0)
 			return -1;
 		index = 0;
@@ -1660,6 +1663,7 @@ operator(
 
 	/* The doubled key (dd, cc, yy) acts on count whole lines. */
 	if (key == operator_key) {
+		/* Refuses a count of more lines than the buffer has from the cursor on. */
 		if (editor->cursor.line + (size_t)(count - 1) >= editor->buffer.count) {
 			vi_bell(editor);
 			return;
@@ -1690,6 +1694,7 @@ operator(
 		/* Works out where the movement goes; a failed one changes nothing. */
 		status = motion(editor, key, count, has_inner_count, 1, &moved);
 		if (status != 0) {
+			/* A key that is no movement rings the bell; a movement that failed with a message says why itself. */
 			if (status == -1)
 				vi_bell(editor);
 			return;
@@ -2225,6 +2230,7 @@ command_replace(
 	replaced = count;
 	end = editor->cursor;
 	while (count > 0) {
+		/* Refuses a count of more characters than the line has. */
 		if (end.offset >= line->length) {
 			vi_bell(editor);
 			return;
