@@ -28,6 +28,7 @@
 
 #include "kwl.h"
 #include "compose.h"
+#include "desktop.h"
 #include "scanout-rules.h"
 
 #include <errno.h>
@@ -70,6 +71,7 @@ static void output_rotate_caches(struct kwl_server *server, unsigned scene_kept,
 static const char *output_rotate_mode_name(unsigned mode);
 static void output_rotate_times(const struct output_rotate_clock *clock);
 static void output_rotate_clock_fill(struct output_rotate_clock *clock, uint64_t now);
+static int output_rotate_waits(struct kwl_server *server, const struct kwl_object *surface);
 
 /*
  * Takes the user's choice of an output's angle: refused outside the
@@ -282,8 +284,10 @@ kwl_output_apply_rotation(
 	pointer[3] = -1;
 	if ((steps & KWL_ROTATE_STEP_ROTATED) != 0U)
 		kwl_output_pointer_turn(server, before_rotation, rotation, pointer);
-	if ((steps & KWL_ROTATE_STEP_RESIZED) != 0U)
+	if ((steps & KWL_ROTATE_STEP_RESIZED) != 0U) {
+		kwl_output_rotate_hold(server);
 		kwl_output_fit(server, 0U);
+	}
 	clock.fitted = kwl_milliseconds();
 
 	/* The clients told the new size; the input thread computes the motions over the new angle (the pointer's warp gave it already when it ran). */
@@ -408,6 +412,150 @@ kwl_output_rotation_report(
 	/* Succeeded: the choice, and the angles it may take now. */
 	*rotation = compose->rotation_selected;
 	kwl_rotate_report(compose->rotation_selected, compose->rotations, compose->rotate_why, alone, mask, why);
+}
+
+/*
+ * Begins showing the old frame after an output turned to another size
+ * (BUG-306): the first frame at the new size would show each window's
+ * image of the old size, cut and out of place, until its client draws the
+ * new one.  Every window on the anchor's desktop shown that is told a new
+ * size is waited for (a fullscreen or docked one, told by the fitting that
+ * follows; a floating one of xdg-shell 4, by its new bounds), from the last
+ * configure it was sent before the turn, at most KWL_ROTATE_HOLD_MS.
+ * Called before the windows are fitted.
+ */
+void
+kwl_output_rotate_hold(
+	struct kwl_server *server)
+{
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	unsigned windows;
+	int waits;
+
+	/* Each window told a new size, from the last configure it heard before the turn. */
+	windows = 0U;
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only a surface. */
+			if (surface->kind != KWL_SURFACE)
+				continue;
+
+			/* A window not waited for now is not waited for since an earlier turn either. */
+			surface->rotate_waits = 0U;
+			waits = output_rotate_waits(server, surface);
+			if (!waits)
+				continue;
+
+			/* An image drawn after a newer configure was acknowledged ends its wait (kwl_output_rotate_committed). */
+			surface->rotate_waits = 1U;
+			surface->rotate_serial = surface->configure_serial;
+			windows++;
+		}
+	}
+
+	/* The wait begins now, when there is a window to wait for. */
+	server->rotate_hold_windows = windows;
+	server->rotate_hold_ms = 0U;
+	if (windows != 0U)
+		server->rotate_hold_ms = kwl_milliseconds();
+	printf("KWL OUTPUT rotate hold windows=%u\n", windows);
+}
+
+/*
+ * Ends a window's wait after an output's turn (BUG-306) when the image it
+ * just committed was drawn after it acknowledged a configure sent after
+ * the turn (display.c's adoption of a commit).
+ */
+void
+kwl_output_rotate_committed(
+	struct kwl_server *server,
+	struct kwl_object *surface)
+{
+	int newer;
+
+	/* Only a window waited for, with an image. */
+	if (!surface->rotate_waits || surface->current == NULL)
+		return;
+
+	/* An image drawn before the client read the new size: the wait goes on. */
+	newer = kwl_rotate_serial_newer(surface->acked_serial, surface->rotate_serial);
+	if (!newer)
+		return;
+
+	/* Succeeded: the window has drawn the new size, and the log says when. */
+	surface->rotate_waits = 0U;
+	printf("KWL OUTPUT rotate drawn surface=%u client=%llu after_ms=%llu\n", surface->id, (unsigned long long)surface->client->number,
+	    (unsigned long long)(kwl_milliseconds() - server->rotate_hold_ms));
+}
+
+/*
+ * Tells whether the event loop keeps the old frame shown after an output's
+ * turn to another size (BUG-306): while a window waited for has not drawn
+ * the new size and the wait is not over, no frame is drawn, and every
+ * frame callback is told at once so that the clients draw on (their
+ * presentation waits for it).  At the wait's end everything is drawn, and
+ * the log says how long the old frame stayed and how many windows were
+ * late.  Returns 1 while it stays.
+ */
+int
+kwl_output_rotate_held(
+	struct kwl_server *server)
+{
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	uint64_t now;
+	unsigned waiting;
+	int holding;
+
+	/* No wait. */
+	if (server->rotate_hold_ms == 0U)
+		return 0;
+
+	/* The windows still waited for, in every live client. */
+	waiting = 0U;
+	for (client = server->clients; client != NULL; client = client->next) {
+		/* A failed client hears nothing. */
+		if (client->fatal)
+			continue;
+
+		/* Each of its surfaces. */
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only a live surface. */
+			if (surface->kind != KWL_SURFACE || surface->dead)
+				continue;
+
+			/* Its frame callbacks told now: no frame shows its image. */
+			if (surface->committed_callbacks != NULL)
+				kwl_callbacks_done(&surface->committed_callbacks);
+
+			/* A window gone from the screen is not waited for. */
+			if (surface->rotate_waits && surface->mapped)
+				waiting++;
+		}
+	}
+
+	/* The old frame stays while a window is waited for and the wait is not over. */
+	now = kwl_milliseconds();
+	holding = kwl_rotate_holding(waiting, server->rotate_hold_ms, now);
+	if (holding)
+		return 1;
+
+	/* The wait ends: no window is waited for any more. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* A late window is shown as it draws. */
+			if (surface->kind == KWL_SURFACE)
+				surface->rotate_waits = 0U;
+		}
+	}
+
+	/* Succeeded: the new size is drawn from now on. */
+	printf("KWL OUTPUT rotate shown held_ms=%llu windows=%u late=%u\n", (unsigned long long)(now - server->rotate_hold_ms), server->rotate_hold_windows,
+	    waiting);
+	server->rotate_hold_ms = 0U;
+	server->dirty = 1;
+	return 0;
 }
 
 /*
@@ -662,4 +810,46 @@ output_rotate_mode_name(
 
 	/* An opening's change. */
 	return "open";
+}
+
+/*
+ * Tells whether a window is waited for after its output turned to another
+ * size: mapped on the anchor, on the desktop shown and not minimized, and
+ * told its new size (fullscreen or docked, or floating with xdg-shell 4's
+ * bounds).
+ */
+static int
+output_rotate_waits(
+	struct kwl_server *server,
+	const struct kwl_object *surface)
+{
+	const struct kwl_object *top;
+	int desktop;
+
+	/* A live, mapped window's surface, not the desktop's icons. */
+	if (surface->dead || !surface->mapped || surface->client->fatal)
+		return 0;
+	if (surface->role == NULL || surface->role->top == NULL)
+		return 0;
+	desktop = kwl_desktop_is(surface);
+	if (desktop)
+		return 0;
+
+	/* Shown on the anchor now. */
+	if (surface->output != KWL_PLANE_ANCHOR || surface->minimized)
+		return 0;
+	if (surface->desktop != server->desktop)
+		return 0;
+
+	/* A fullscreen or docked window is sent the new size. */
+	if (surface->fullscreen || surface->maximized)
+		return 1;
+
+	/* A floating window hears new bounds only from xdg-shell 4 on (kwl_window_bounds_refresh). */
+	top = surface->role->top;
+	if (top->kind != KWL_TOPLEVEL || top->version < 4U || !surface->configured)
+		return 0;
+
+	/* Succeeded: the window is told the new bounds and draws them. */
+	return 1;
 }

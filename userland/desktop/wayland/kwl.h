@@ -545,6 +545,14 @@ struct kwl_object {
 	unsigned place_pending;
 	/* The place a floating window had before an output's new size moved it (rotate.h, BUG-306). */
 	struct kwl_fit_home fit;
+	/*
+	 * A window an output's turn to another size waits for (output-rotate.c,
+	 * BUG-306): the old frame stays shown until it commits an image after
+	 * acknowledging a configure newer than rotate_serial (the last one sent
+	 * before the turn), or the wait ends.
+	 */
+	unsigned rotate_waits;
+	uint32_t rotate_serial;
 	/* A surface whose current image has not been shown yet. */
 	unsigned fresh;
 	/*
@@ -1357,6 +1365,14 @@ struct kwl_server {
 	 */
 	struct kwl_sleep sleep;
 	unsigned sleep_hold;
+	/*
+	 * An output turned to another size shows its old frame until the
+	 * windows it waits for (rotate_waits) have drawn the new size, at most
+	 * KWL_ROTATE_HOLD_MS (output-rotate.c, BUG-306): when the wait began
+	 * (kwl_milliseconds; 0 without one) and how many windows it waited for.
+	 */
+	uint64_t rotate_hold_ms;
+	unsigned rotate_hold_windows;
 	int32_t sleep_ac_minutes;
 	int32_t sleep_battery_minutes;
 	unsigned screen_idle_off;
@@ -2025,6 +2041,9 @@ void kwl_output_size_set(struct kwl_server *server, uint32_t mode_width, uint32_
 int kwl_output_select_rotation(struct kwl_server *server, unsigned slot, unsigned rotation, unsigned *applied, int *saved);
 int kwl_output_apply_rotation(struct kwl_server *server, unsigned slot, unsigned rotation, unsigned mode);
 void kwl_output_policy_set(struct kwl_server *server, unsigned policy);
+void kwl_output_rotate_hold(struct kwl_server *server);
+void kwl_output_rotate_committed(struct kwl_server *server, struct kwl_object *surface);
+int kwl_output_rotate_held(struct kwl_server *server);
 void kwl_output_rotation_report(struct kwl_server *server, unsigned anchor, unsigned *rotation, unsigned *mask, unsigned *why);
 void kwl_output_fit(struct kwl_server *server, unsigned glass_rebuild);
 void kwl_output_steps_name(unsigned steps, char *text, size_t size);
