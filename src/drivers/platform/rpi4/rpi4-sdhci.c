@@ -7,6 +7,12 @@
 
 /*
  * Raspberry Pi 4 BCM2711 eMMC2 SDHCI PIO driver
+ *
+ * A request is moved with one multiple-block command (CMD18 or CMD25) per
+ * run of up to SD_RUN_BLOCKS blocks, the controller ending each run with
+ * an automatic CMD12, as the SD Host Controller Simplified Specification
+ * describes for a transfer without DMA.  A run that fails is moved again
+ * one block at a time (BUG-295).
  */
 
 #include "drivers/platform/rpi4/rpi4-sdhci.h"
@@ -36,6 +42,7 @@
 #define REG_INT_STATUS 0x30
 #define REG_INT_ENABLE 0x34
 #define REG_SIGNAL_ENABLE 0x38
+#define REG_AUTO_CMD_ERROR 0x3c
 #define REG_CAPABILITIES 0x40
 
 #define PRESENT_CMD_INHIBIT 0x00000001U
@@ -52,7 +59,17 @@
 #define CMD_CRC 0x0008U
 #define CMD_INDEX 0x0010U
 #define CMD_DATA 0x0020U
+
+/*
+ * The bits of the transfer mode register: the block count register counts
+ * the blocks of the run, the controller sends CMD12 itself after the last
+ * one, the data comes from the card, and the command moves more than one
+ * block.
+ */
+#define XFER_BLOCK_COUNT_ENABLE 0x0002U
+#define XFER_AUTO_CMD12 0x0004U
 #define XFER_READ 0x0010U
+#define XFER_MULTI_BLOCK 0x0020U
 
 /* The bits of the software reset register: the whole controller, or one line. */
 #define SOFTWARE_RESET_ALL 0x01U
@@ -90,6 +107,19 @@
 
 /* The pause between two status questions while the card is busy. */
 #define SD_STATUS_POLL_MICROSECONDS 1000U
+
+/* The bytes of one block, the only block length the driver uses. */
+#define SD_BLOCK_BYTES 512U
+
+/* The 32-bit words of one block, as the buffer port moves them. */
+#define SD_BLOCK_WORDS (SD_BLOCK_BYTES / 4U)
+
+/*
+ * The most blocks one multiple-block command moves: 64 KiB, the largest
+ * request the disk layer hands down (KERN_IO_BATCH_MAX), and well inside
+ * the 16-bit block count register.
+ */
+#define SD_RUN_BLOCKS 128U
 
 struct rpi4_sd_unit {
 	volatile uint8_t *base;
@@ -139,8 +169,10 @@ static int command(uint32_t index, uint32_t argument, uint16_t flags, uint32_t *
 static int wait_bits(unsigned reg, uint32_t mask, uint32_t expected);
 static int wait_interrupt(uint32_t wanted, unsigned seconds);
 static int app_command(uint32_t command_index, uint32_t argument, uint16_t flags, uint32_t *response);
-static int transfer_block(int write, uint64_t block, void *buffer);
+static int transfer_blocks(int write, uint64_t block, uint32_t count, void *buffer);
 static int transfer_block_recovering(int write, uint64_t block, void *buffer);
+static int transfer_run_recovering(int write, uint64_t block, uint32_t count, uint8_t *data);
+static int restore_card(void);
 static int recover_card(void);
 static int reset_lines(uint8_t lines);
 static int stop_transmission(void);
@@ -194,7 +226,7 @@ drv_rpi4_sdhci_init(
 	unit.disk->d_flags = DISK_REMOVABLE;
 	unit.disk->d_block_size = 512;
 	unit.disk->d_block_count = 0xffffffffULL;
-	unit.disk->d_max_transfer_blocks = 1;
+	unit.disk->d_max_transfer_blocks = SD_RUN_BLOCKS;
 	unit.disk->d_ops = &sd_ops;
 	unit.disk->d_data = &unit;
 
@@ -673,84 +705,133 @@ app_command(
 }
 
 /*
- * Moves one 512-byte block between the card and the buffer by PIO.
+ * Moves a run of 512-byte blocks between the card and the buffer by PIO.
  *
- * A write waits for the transfer-complete interrupt, which the controller
- * raises only when the card has released the data line after programming
- * the block, so a block reported written is no longer held by the card.
+ * One block is moved with CMD17 or CMD24.  More are moved with CMD18 or
+ * CMD25: the block count register holds the length of the run, and the
+ * controller sends CMD12 by itself once the last block has crossed the
+ * bus.  Each block goes through the buffer port once the controller raises
+ * buffer read ready or buffer write ready for it.  The run ends with one
+ * wait for the transfer-complete interrupt, which the controller raises
+ * only when the card has released the data line after programming the
+ * last block (and, for a run, after the automatic CMD12).  Between the
+ * blocks of a run the controller holds the next block back while the card
+ * is busy, so the driver sends one command and waits for completion once
+ * per run rather than once per block.
  */
 static int
-transfer_block(
+transfer_blocks(
 	int write,
 	uint64_t block,
+	uint32_t count,
 	void *buffer)
 {
 	uint32_t *words;
 	uint32_t argument;
 	uint32_t ready;
 	uint32_t command_index;
+	uint32_t moved;
+	uint16_t mode;
+	unsigned ready_seconds;
 	unsigned completion_seconds;
 	unsigned index;
 	int error;
 
-	/* A block past what a 32-bit argument can name is refused. */
-	if (block > 0xffffffffULL)
+	/* A run of no blocks, or one longer than a command is given, is refused. */
+	if (count == 0 || count > SD_RUN_BLOCKS)
+		return EINVAL;
+
+	/* A run past what a 32-bit argument can name is refused. */
+	if (block > 0xffffffffULL - (count - 1U))
 		return EINVAL;
 
 	/* A high-capacity card is addressed in blocks, an older one in bytes. */
 	if (unit.high_capacity) {
 		argument = (uint32_t)block;
 	} else {
-		argument = (uint32_t)(block * 512U);
+		argument = (uint32_t)(block * SD_BLOCK_BYTES);
 	}
 
-	/* Picks the command, the buffer event and the completion wait of the direction. */
-	words = buffer;
+	/* Picks the buffer event and the completion wait of the direction. */
 	if (write) {
-		command_index = 24U;
 		ready = INT_BUFFER_WRITE_READY;
+		mode = 0;
 		completion_seconds = SD_WRITE_BUSY_SECONDS;
 	} else {
-		command_index = 17U;
 		ready = INT_BUFFER_READ_READY;
+		mode = XFER_READ;
 		completion_seconds = SD_COMMAND_SECONDS;
 	}
 
-	/* Describes one block of 512 bytes in the direction of the transfer. */
-	w16(REG_BLOCK_SIZE, 512);
-	w16(REG_BLOCK_COUNT, 1);
-	if (write) {
-		w16(REG_TRANSFER_MODE, 0);
+	/* Picks the single-block or the multiple-block command of the direction. */
+	if (count == 1U && write) {
+		command_index = 24U;
+	} else if (count == 1U) {
+		command_index = 17U;
+	} else if (write) {
+		command_index = 25U;
 	} else {
-		w16(REG_TRANSFER_MODE, XFER_READ);
+		command_index = 18U;
 	}
 
-	/* Sends the single-block read or write command. */
+	/*
+	 * A run's length is held by the block count register, which counts
+	 * down as the blocks cross the bus, and the controller stops the
+	 * card with CMD12 when it reaches zero.
+	 */
+	if (count != 1U) {
+		mode |= XFER_MULTI_BLOCK;
+		mode |= XFER_BLOCK_COUNT_ENABLE;
+		mode |= XFER_AUTO_CMD12;
+	}
+
+	/* Describes the run of 512-byte blocks in the direction of the transfer. */
+	w16(REG_BLOCK_SIZE, SD_BLOCK_BYTES);
+	w16(REG_BLOCK_COUNT, (uint16_t)count);
+	w16(REG_TRANSFER_MODE, mode);
+
+	/* Sends the read or write command, which starts the data phase. */
 	error = command(command_index, argument,
 			CMD_RESP_SHORT | CMD_CRC | CMD_INDEX | CMD_DATA, 0);
 	if (error != 0)
 		return error;
 
-	/* Waits until the controller's buffer can take or give the block. */
-	error = wait_interrupt(ready, SD_COMMAND_SECONDS);
-	if (error != 0)
-		return error;
+	/* Moves each block through the buffer port once the controller is ready for it. */
+	words = buffer;
+	for (moved = 0; moved < count; moved++) {
+		/*
+		 * The first block is ready at once.  Before a later block of
+		 * a write the card may still be programming the one before,
+		 * and holds the data line busy while it does.
+		 */
+		ready_seconds = SD_COMMAND_SECONDS;
+		if (write && moved != 0)
+			ready_seconds = SD_WRITE_BUSY_SECONDS;
 
-	/* Moves the block through the buffer port, one word at a time. */
-	for (index = 0; index < 128U; index++) {
-		if (write) {
-			w32(REG_BUFFER, words[index]);
-		} else {
-			words[index] = r32(REG_BUFFER);
+		/* Waits until the controller's buffer can take or give the block. */
+		error = wait_interrupt(ready, ready_seconds);
+		if (error != 0)
+			return error;
+
+		/* Moves the block through the buffer port, one word at a time. */
+		for (index = 0; index < SD_BLOCK_WORDS; index++) {
+			if (write) {
+				w32(REG_BUFFER, words[index]);
+			} else {
+				words[index] = r32(REG_BUFFER);
+			}
 		}
+
+		/* The next block follows in the caller's buffer. */
+		words += SD_BLOCK_WORDS;
 	}
 
-	/* Waits until the block has crossed the bus and a write left the card idle. */
+	/* Waits until the run has crossed the bus and a write left the card idle. */
 	error = wait_interrupt(INT_TRANSFER_COMPLETE, completion_seconds);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the block is on the card or in the buffer. */
+	/* Succeeded: the run is on the card or in the buffer. */
 	return 0;
 }
 
@@ -787,7 +868,7 @@ transfer_block_recovering(
 	for (attempt = 1; attempt <= SD_TRANSFER_ATTEMPTS; attempt++) {
 		/* Moves the block; a success after a failure is reported as such. */
 		last_error_status = 0;
-		error = transfer_block(write, block, buffer);
+		error = transfer_blocks(write, block, 1U, buffer);
 		if (error == 0) {
 			if (attempt > 1) {
 				kern_logf("sdhci: %s of block %llu succeeded on attempt %u\n",
@@ -810,24 +891,125 @@ transfer_block_recovering(
 			  r32(REG_PRESENT));
 
 		/* Brings the controller and the card back to the transfer state. */
-		recovery = recover_card();
-		if (recovery != 0) {
-			kern_logf("sdhci: the card did not return to the transfer state (error %d); initializing it again\n",
-				  recovery);
-			recovery = controller_init();
-		}
-
-		/* A card that cannot be initialized either fails its I/O from now on. */
-		if (recovery != 0) {
-			kern_logf("sdhci: the card could not be initialized again (error %d); failing every later transfer\n",
-				  recovery);
-			unit.failed = 1;
-			return EIO;
-		}
+		recovery = restore_card();
+		if (recovery != 0)
+			return recovery;
 	}
 
 	/* Failed: every attempt failed, though the card took commands again. */
 	return error;
+}
+
+/*
+ * Moves a run of blocks with one command, recovering after a failure.
+ *
+ * A run that fails may have moved any prefix of its blocks, and which
+ * prefix is not known: a write's blocks may be on the card or not, a
+ * read's may be in the buffer or not.  After the controller and the card
+ * are recovered, the whole run is moved again one block at a time, each
+ * block with its own retries; writing or reading a block again is
+ * harmless.  A run of one block is the single-block path straight away.
+ */
+static int
+transfer_run_recovering(
+	int write,
+	uint64_t block,
+	uint32_t count,
+	uint8_t *data)
+{
+	const char *direction;
+	uint32_t index;
+	int error;
+	int recovery;
+
+	/* A run of one block has nothing to gain from the multiple-block command. */
+	if (count == 1U) {
+		error = transfer_block_recovering(write, block, data);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the block moved. */
+		return 0;
+	}
+
+	/* Names the direction in the reports. */
+	if (write) {
+		direction = "write";
+	} else {
+		direction = "read";
+	}
+
+	/* Moves the run with one command. */
+	last_error_status = 0;
+	error = transfer_blocks(write, block, count, data);
+	if (error == 0) {
+		/* Succeeded: the run moved. */
+		return 0;
+	}
+
+	/* A run the driver refused never reached the controller; there is nothing to recover. */
+	if (error == EINVAL)
+		return EINVAL;
+
+	/* Reports the failure with what the controller showed, the automatic CMD12 included. */
+	kern_logf("sdhci: %s of %u blocks at block %llu failed: error %d, interrupt status %x, auto command error %x, present state %x; moving them one block at a time\n",
+		  direction,
+		  (unsigned)count,
+		  (unsigned long long)block,
+		  error,
+		  last_error_status,
+		  (unsigned)r16(REG_AUTO_CMD_ERROR),
+		  r32(REG_PRESENT));
+
+	/* Brings the controller and the card back to the transfer state. */
+	recovery = restore_card();
+	if (recovery != 0)
+		return recovery;
+
+	/* Moves the run again one block at a time, stopping at the first block that fails. */
+	for (index = 0; index < count; index++) {
+		error = transfer_block_recovering(write,
+						  block + index,
+						  data + (size_t)index * SD_BLOCK_BYTES);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: every block of the run moved on its own. */
+	return 0;
+}
+
+/*
+ * Brings the card back to the transfer state after a failed transfer.
+ *
+ * The recovery is tried first; a card it cannot bring back is initialized
+ * again.  A card that cannot be initialized either is marked failed, and
+ * every later transfer fails at once.
+ */
+static int
+restore_card(
+	void)
+{
+	int recovery;
+
+	/* Brings the controller and the card back to the transfer state. */
+	recovery = recover_card();
+	if (recovery != 0) {
+		kern_logf("sdhci: the card did not return to the transfer state (error %d); initializing it again\n",
+			  recovery);
+		recovery = controller_init();
+	}
+
+	/* A card that cannot be initialized either fails its I/O from now on. */
+	if (recovery != 0) {
+		kern_logf("sdhci: the card could not be initialized again (error %d); failing every later transfer\n",
+			  recovery);
+		unit.failed = 1;
+		return EIO;
+	}
+
+	/* Succeeded: the card takes the next transfer. */
+	return 0;
 }
 
 /*
@@ -998,9 +1180,10 @@ pause_microseconds(
 /*
  * Serves one block request from the disk layer.
  *
- * The card is driven by PIO one block at a time under the unit lock.  A
- * flush has nothing to do: the card has no write cache enabled, and a
- * written block is reported only once the card has programmed it.
+ * The card is driven by PIO under the unit lock, a run of up to
+ * SD_RUN_BLOCKS blocks per command.  A flush has nothing to do: the card
+ * has no write cache enabled, and a written block is reported only once
+ * the card has programmed it.
  */
 static int
 sd_submit(
@@ -1008,7 +1191,8 @@ sd_submit(
 	struct bio *bio)
 {
 	uint8_t *data;
-	uint32_t index;
+	uint32_t done;
+	uint32_t run;
 	size_t transferred;
 	int error;
 
@@ -1031,14 +1215,26 @@ sd_submit(
 		if (unit.failed)
 			error = EIO;
 
-		/* Moves the blocks in order. */
-		for (index = 0;
-		     index < bio->b_block_count && error == 0;
-		     index++) {
-			error = transfer_block_recovering(
+		/*
+		 * Moves the blocks in order, a run per command.  The disk
+		 * layer splits at d_max_transfer_blocks, so a request is
+		 * normally one run; a longer one is still served in runs.
+		 */
+		run = 0;
+		for (done = 0;
+		     done < bio->b_block_count && error == 0;
+		     done += run) {
+			/* The run, or what is left of the request when that is less. */
+			run = bio->b_block_count - done;
+			if (run > SD_RUN_BLOCKS)
+				run = SD_RUN_BLOCKS;
+
+			/* Moves the run, falling back to single blocks if it fails. */
+			error = transfer_run_recovering(
 				bio->b_op == BIO_WRITE,
-				bio->b_mapped_block + index,
-				data + (size_t)index * 512U);
+				bio->b_mapped_block + done,
+				run,
+				data + (size_t)done * SD_BLOCK_BYTES);
 		}
 
 		mutex_unlock(&unit.lock);
@@ -1056,7 +1252,7 @@ sd_submit(
 	/* Completes the request with the bytes it moved. */
 	transferred = 0;
 	if (error == 0)
-		transferred = (size_t)bio->b_block_count * 512U;
+		transferred = (size_t)bio->b_block_count * SD_BLOCK_BYTES;
 	bio_complete(bio, error, transferred);
 
 	/* Succeeded: the request was completed, with its own error if any. */
