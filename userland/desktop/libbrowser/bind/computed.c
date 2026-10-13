@@ -111,6 +111,7 @@ enum computed_property {
 	COMPUTED_TRANSFORM,
 	COMPUTED_GRID_TEMPLATE_COLUMNS,
 	COMPUTED_TEXT_TRANSFORM,
+	COMPUTED_TEXT_DECORATION,
 	COMPUTED_TEXT_DECORATION_LINE,
 	COMPUTED_TEXT_DECORATION_STYLE,
 	COMPUTED_TEXT_DECORATION_SKIP_INK,
@@ -152,6 +153,8 @@ static int computed_pixels(double value, struct wb_units *out);
 static int computed_number(double value, struct wb_units *out);
 static int computed_color(uint32_t color, struct wb_units *out);
 static int computed_ascii(const char *ascii, struct wb_units *out);
+static int computed_decoration_append(struct wb_units *out, const struct wb_units *part);
+static int computed_decoration(const struct css_style *style, struct wb_units *out);
 
 /* The state of a computed declaration, which marks its element's object. */
 static const struct vm_cell_type computed_ref_type = { "computed-style", computed_trace, NULL };
@@ -533,6 +536,12 @@ computed_find(
 	size_t index;
 	int same;
 
+	/* Shorthands can be read but do not appear in the longhand item() list. */
+	if (vm_string_equal_ascii(name, "text-decoration")) {
+		*property = COMPUTED_TEXT_DECORATION;
+		return 1;
+	}
+
 	/* Each entry's name. */
 	for (index = 0; computed_entries[index].name != NULL; index++) {
 		same = vm_string_equal_ascii(name, computed_entries[index].name);
@@ -865,6 +874,9 @@ computed_write_keyword(
 	case COMPUTED_TEXT_TRANSFORM:
 		/* Serialize the actual cascaded keyword in CSS and camel-case accessors alike. */
 		error = computed_name(computed_text_transforms, 4, style->text_transform, out);
+		break;
+	case COMPUTED_TEXT_DECORATION:
+		error = computed_decoration(style, out);
 		break;
 	case COMPUTED_TEXT_DECORATION_LINE:
 		error = css_decoration_line_serialize(style->text_decoration_line, out);
@@ -1279,6 +1291,78 @@ computed_length(
 
 	/* The last keyword. */
 	error = computed_ascii("fit-content", out);
+	return error;
+}
+
+/* Appends one noninitial computed shorthand component. */
+static int
+computed_decoration_append(struct wb_units *out, const struct wb_units *part)
+{
+	int error;
+
+	if (part->length == 0U)
+		return 0;
+	if (out->length != 0U) {
+		error = computed_ascii(" ", out);
+		if (error != 0)
+			return error;
+	}
+	return wb_units_append(out, part->data, part->length);
+}
+
+/* Serializes the four cascaded decoration longhands as a computed shorthand. */
+static int
+computed_decoration(const struct css_style *style, struct wb_units *out)
+{
+	struct wb_units parts[4];
+	size_t index;
+	int error;
+
+	for (index = 0U; index < 4U; index++)
+		wb_units_init(&parts[index]);
+	error = css_decoration_line_serialize(style->text_decoration_line, &parts[0]);
+	if (error != 0)
+		goto cleanup;
+	if (style->text_decoration_thickness_kind == 1)
+		error = computed_ascii("from-font", &parts[1]);
+	else if (style->text_decoration_thickness_kind == 2)
+		error = computed_length(&style->text_decoration_thickness, &parts[1]);
+	if (error != 0)
+		goto cleanup;
+	error = computed_name(computed_decoration_styles, 5, style->text_decoration_style, &parts[2]);
+	if (error != 0)
+		goto cleanup;
+	if (!style->text_decoration_current_color) {
+		error = computed_color(style->text_decoration_color, &parts[3]);
+		if (error != 0)
+			goto cleanup;
+	}
+
+	/* None stands alone when every other component has its initial value. */
+	if (style->text_decoration_line != 0 ||
+	    (style->text_decoration_thickness_kind == 0 &&
+	    style->text_decoration_style == CSS_DECORATION_SOLID &&
+	    style->text_decoration_current_color)) {
+		error = computed_decoration_append(out, &parts[0]);
+		if (error != 0)
+			goto cleanup;
+	}
+	if (style->text_decoration_thickness_kind != 0) {
+		error = computed_decoration_append(out, &parts[1]);
+		if (error != 0)
+			goto cleanup;
+	}
+	if (style->text_decoration_style != CSS_DECORATION_SOLID) {
+		error = computed_decoration_append(out, &parts[2]);
+		if (error != 0)
+			goto cleanup;
+	}
+	if (!style->text_decoration_current_color)
+		error = computed_decoration_append(out, &parts[3]);
+
+cleanup:
+	for (index = 0U; index < 4U; index++)
+		wb_units_release(&parts[index]);
 	return error;
 }
 

@@ -554,6 +554,8 @@ struct css_style {
 	int cursor;
 	int underline;
 	int text_decoration_line;
+	int text_decoration_thickness_kind;
+	struct css_length text_decoration_thickness;
 	int text_decoration_style;
 	int text_decoration_skip_ink;
 	uint32_t text_decoration_color;

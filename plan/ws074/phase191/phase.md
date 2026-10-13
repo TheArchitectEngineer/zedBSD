@@ -2,7 +2,7 @@
 
 # ws074-p191: Interop 2025 textdecoration CSSOM 互換
 
-Status: uncleared（2026-10-14 q1016 partial cleared、whole 16件PASS未達）
+Status: cleared（2026-10-14 q1023、固定全16件PASS）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -85,3 +85,13 @@ Event ws074-p191-q1021-outcome-20261014: q1021-i01 partial cleared。p191 whole�
 **partial scope cleared、p191 whole uncleared。** 指定 shorthand の canonical CSSOM と4 longhand getter・変更時の展開を実装。[証拠](evidence/20261014-q1022/README.md)。対象 valid17/17、shorthand5/5 subtest PASS。固定全16件は15 PASS/1 FAIL、165 PASS/14 FAIL subtest。host build warning0、CSSOM12/12、rule model44/44、Acid3 score100/100・画素差0、Acid2差1865不変。残りはcomputed shorthand。GitHub publication保留。
 
 Event ws074-p191-q1022-outcome-20261014: q1022-i01 partial cleared。p191 wholeは1 test FAILのためuncleared。p173分母・p189/p190 runner依存は維持。次はcomputed shorthandを有限Queueで扱う。
+
+## q1023-i01 の有限範囲
+
+2026-10-14 00:43 JST、ユーザーの事前承認を適用、最大90分。`text-decoration-computed.html` 14 subtestの失敗を対象に、q1021で解析済みの thickness をcascadeに保持し、line/thickness/style/colorからcomputed shorthandを規定順と初期値省略で直列化する。固定領域全16件PASS、host build・関連試験、Acid3/Acid2差画素非増加、C/browser全文規約を確認し、p191 whole clearanceを判定する。新たな線の描画は含めない。WPT本体/期待・公開ABI・`master.md`は変更しない。
+
+## q1023-i01 結果（2026-10-14 00:45 JST）
+
+**p191 whole cleared。** thicknessをcascadeに保持し、computed shorthandの規定順・初期値省略・色解決を実装。[証拠](evidence/20261014-q1023/README.md)。固定textdecoration全16/16 test PASS、179/179 subtest PASS、fail/error/timeout/不明skip 0。host build warning0、CSSOM12/12、rule model44/44、`git diff --check` PASS。C全文とbrowser component全文の最終変更を手動確認、clang-formatは利用不可。Acid3 score100/100・画素差0、Acid2差1865不変。p191はCSSOMの全16件受け入れを満たし cleared。新描画の妥当性はこのPhaseの受け入れ外。p173全3,805件は未達、GitHub publication保留。
+
+Event ws074-p191-q1023-clear-20261014: p191を上の固定全16件と回帰証拠でcleared。p189/p190/p173の未完了は別の出力として維持。GitHub Issue/comment/close はQ1と競合回避のため保留。

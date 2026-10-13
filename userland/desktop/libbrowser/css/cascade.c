@@ -3650,6 +3650,14 @@ cascade_apply(
 		style->text_decoration_line = value->keyword;
 		style->underline = (value->keyword & CSS_DECORATION_UNDERLINE) != 0;
 		break;
+	case CSS_PROP_TEXT_DECORATION_THICKNESS:
+		if (value->kind == CSS_VALUE_LENGTH) {
+			style->text_decoration_thickness_kind = 2;
+			style->text_decoration_thickness = cascade_length(engine, value, style->font_size);
+		} else {
+			style->text_decoration_thickness_kind = value->keyword;
+		}
+		break;
 	case CSS_PROP_TEXT_DECORATION_STYLE:
 		style->text_decoration_style = value->keyword;
 		break;
@@ -4042,6 +4050,10 @@ cascade_inherit(
 	case CSS_PROP_TEXT_DECORATION_LINE:
 		style->text_decoration_line = parent->text_decoration_line;
 		style->underline = parent->underline;
+		break;
+	case CSS_PROP_TEXT_DECORATION_THICKNESS:
+		style->text_decoration_thickness_kind = parent->text_decoration_thickness_kind;
+		style->text_decoration_thickness = parent->text_decoration_thickness;
 		break;
 	case CSS_PROP_TEXT_DECORATION_STYLE:
 		style->text_decoration_style = parent->text_decoration_style;

@@ -1,17 +1,17 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1022 / WS074 text-decoration inline CSSOM
+# q1023 / WS074 text-decoration computed shorthand
 
-Status: finished（2026-10-14 00:38〜00:42 JST）
+Status: finished（2026-10-14 00:43〜00:45 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p191のq1021有限部分scope](phase191/phase.md) に適用。
-Timebox: 2026-10-14 00:38 JST 開始、最大90分（02:08 JSTまで）。
+Timebox: 2026-10-14 00:43 JST 開始、最大90分（02:13 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1022-i01 | [ws074-p191](phase191/phase.md) partial | text-decoration shorthandのinline CSSOM canonical値と4 longhand getterを一般的なparser結果から実装。computed shorthandと新描画は後続。局所fixture、build、関連valid/shorthand WPT、全16件、Acid3/Acid2非増加。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p191 whole は uncleared） | q1021 shorthand grammar |
+| q1023-i01 | [ws074-p191](phase191/phase.md) whole | text-decoration thicknessのcascade保持とcomputed shorthandを実装。公式computed14 subtest・固定全16件PASS、host build・既存試験・Acid非増加、C/browser規約を確認。新描画は対象外。WPT/Master/公開ABI変更なし。最大90分 | cleared（p191 whole） | q1022 inline CSSOM |
 
-Dependency graph: p173固定manifest → p189 q1015 baseline → q1016〜q1021 grammar/longhand出力 → q1022-i01 → p191 whole判断 → p173最終100%判断。p189 whole/p190は別の必要出力。
+Dependency graph: p173固定manifest → p189 q1015 baseline → q1016〜q1022 grammar/CSSOM出力 → q1023-i01 → p191 whole判断 → p173最終100%判断。p189 whole/p190は別の必要出力。
 
 Upcoming Work Outlook: p191の残るtextdecoration CSSOM、p189 runnerの環境対応、[p190](phase190/phase.md) reftest/crashtest coverage、p173全件baselineを候補とする。次の Queue も有限scopeを記録する。
 
@@ -36,3 +36,5 @@ Outcome: q1020-i01 partial cleared、p191 whole uncleared。対象2 WPT6/6 subte
 Outcome: q1021-i01 partial cleared、p191 whole uncleared。invalid WPT3/3 subtest PASS、固定textdecoration全16件13 PASS/3 FAIL、subtest153 PASS/26 FAIL。host build warning0・局所fixture・Acid3差0/Acid2差1865の回帰確認。[証拠](phase191/evidence/20261014-q1021/README.md)。全件100%未達。
 
 Outcome: q1022-i01 partial cleared、p191 whole uncleared。valid17/17・shorthand5/5 subtest、固定textdecoration全16件15 PASS/1 FAIL、subtest165 PASS/14 FAIL。host build warning0・CSSOM12/12・rule model44/44、Acid3差0/Acid2差1865の回帰確認。[証拠](phase191/evidence/20261014-q1022/README.md)。全件100%未達。
+
+Outcome: q1023-i01 / p191 whole cleared。固定textdecoration全16/16 test、179/179 subtest PASS。host build warning0・CSSOM12/12・rule model44/44、Acid3差0/Acid2差1865の回帰確認。[証拠](phase191/evidence/20261014-q1023/README.md)。p173全3,805件100%は未達。
