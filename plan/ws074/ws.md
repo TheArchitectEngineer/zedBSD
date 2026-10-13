@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1092](queue.md) finished / p217 vertical Grid alignment調査、部分cleared。2026-10-14 07:53 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1093](queue.md) finished / p189固定Grid502再測定、部分cleared。2026-10-14 07:57 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -835,3 +835,5 @@ Event ws074-p217-q1090-partial-clear-20261014: [p217](phase217/phase.md) q1090-i
 Event ws074-p217-q1091-partial-clear-20261014: [p217](phase217/phase.md) q1091-i01はRTL normal余白と幅後の右端static配置を修正。[証拠](phase217/evidence/20261014-q1091/README.md)。固定WPT代表2件の水平RTL subtest各FAIL→PASS、wholeは縦書き2件FAIL。最小RTL5件、旧PASS代表、Grid48/48、classic JS14/14、warning0 build、Acid3差0維持。q1091部分cleared、p217 whole/p189/p190/p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p217-q1092-partial-clear-20261014: [p217](phase217/phase.md) q1092-i01は縦書き固定代表のwidth期待10/実60と最小Gridのin-flow100×13・absolute24×13を記録。[証拠](phase217/evidence/20261014-q1092/README.md)。inline文字組みは横のまま、Gridの列/行は物理軸、absolute static areaも水平限定。段階的vertical実装を要する。q1092部分cleared、p217 whole/p189/p190/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p189-q1093-partial-clear-20261014: [p189](phase189/phase.md) q1093-i01で固定Grid502を同条件全再測定し103 PASS/399 FAIL/no_output0。[証拠](phase189/evidence/20261014-q1093/README.md)。q1087からwhole変化0、旧PASS後退0、13件22 subtest FAIL→PASS・逆0。全502 raw/checkpoint/ID/hash一致。q1093部分cleared、p189 whole/p173全3,805件100%未達。共有投影/GitHub publication保留。

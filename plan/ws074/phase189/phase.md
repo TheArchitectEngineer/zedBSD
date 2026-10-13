@@ -135,3 +135,11 @@ Follow-up ws074-p189-p216-q1086-grid32-20261014: [p216 q1086](../phase216/eviden
 ## q1087-i01 結果（2026-10-14 07:30 JST）
 
 Event ws074-p189-q1087-partial-clear-20261014: 固定Grid適格502 IDをq1086後のhost browserで全件同条件再測定。[証拠](evidence/20261014-q1087/README.md)。旧71 PASS/399 FAIL/32 no_output→新103 PASS/399 FAIL/no_output0。32 no_output→PASSのみ、旧PASS後退0。subtest PASS1877→5077（+3200）・FAIL5928維持。4 shard正常終了、ID集合/hash/checkpoint/gzip raw502照合。残るFAIL399はalignment206、grid-definition42、parsing35等。q1087-i01 partial cleared、p189 wholeとp173全3,805件100%は未達。browser/WPT/runner/ABI/Master無変更、共有投影/GitHub publication保留。
+
+## q1093-i01 有限部分範囲（2026-10-14 07:51 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（09:21 JSTまで）に適用。q1087と同一固定Grid testharness502 ID、WPT commit `2d66b9b7998bb58c336138c178323ddee857b586`、localhost、3固定font、5秒settle/20秒processで4 shard再測定。raw/checkpoint/ID hashを検証し、q1087 whole outcome・subtest遷移・旧PASS後退と残FAIL群を分類。製品browser/runner/WPT/公開ABI/`plan/master.md`変更なし、Acid/静的reftest再測定なし。p189 whole1,783/p173全件3,805の100%は本部分基準外。
+
+## q1093-i01 結果（2026-10-14 07:57 JST）
+
+Event ws074-p189-q1093-partial-clear-20261014: [証拠](evidence/20261014-q1093/README.md)。固定Grid502件をq1087と同条件で全再測定し103 PASS/399 FAIL/no_output0。旧PASS後退0、whole outcome変化0。13ファイルの22 subtestがFAIL→PASS、PASS→FAIL0。全502 ID/hash/checkpoint/gzip raw一致。次は独立のGrid shorthand等の共通失敗を調査。q1093-i01部分cleared、p189 whole1,783/p173全3,805件100%未達。製品browser/runner/WPT/ABI/Master無変更、共有投影/GitHub publication保留。

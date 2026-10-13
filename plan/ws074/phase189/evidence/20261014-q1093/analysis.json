@@ -1,0 +1,145 @@
+{
+  "eligible": 502,
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "fixed_id_set_verified": true,
+  "checkpoint_verified": 502,
+  "gzip_raw_verified": 502,
+  "old": {
+    "outcomes": {
+      "fail": 399,
+      "pass": 103
+    },
+    "subtest_status": {
+      "1": 5928,
+      "0": 5077
+    },
+    "fail_by_directory": {
+      "abspos": 24,
+      "alignment": 206,
+      "animation": 11,
+      "grid-definition": 42,
+      "grid-items": 28,
+      "grid-layout-properties.html": 1,
+      "grid-model": 10,
+      "grid-tracks-stretched-with-different-flex-factors-sum.html": 1,
+      "inheritance.html": 1,
+      "layout-algorithm": 28,
+      "parsing": 35,
+      "placement": 4,
+      "subgrid": 7,
+      "table-grid-item-005.html": 1
+    }
+  },
+  "new": {
+    "outcomes": {
+      "fail": 399,
+      "pass": 103
+    },
+    "subtest_status": {
+      "1": 5906,
+      "0": 5099
+    },
+    "fail_by_directory": {
+      "abspos": 24,
+      "alignment": 206,
+      "animation": 11,
+      "grid-definition": 42,
+      "grid-items": 28,
+      "grid-layout-properties.html": 1,
+      "grid-model": 10,
+      "grid-tracks-stretched-with-different-flex-factors-sum.html": 1,
+      "inheritance.html": 1,
+      "layout-algorithm": 28,
+      "parsing": 35,
+      "placement": 4,
+      "subgrid": 7,
+      "table-grid-item-005.html": 1
+    }
+  },
+  "transitions": {},
+  "changed_ids": [],
+  "old_pass_regressions": [],
+  "subtest_transitions": {
+    "1->0": 22
+  },
+  "subtest_changed_ids": [
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-001.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-003.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-004.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-006.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-008.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-010.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-017.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-001.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-003.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-006.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-008.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-011.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-017.html",
+      "transitions": {
+        "1->0": 1
+      }
+    }
+  ]
+}

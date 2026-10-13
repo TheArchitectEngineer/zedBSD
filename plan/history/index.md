@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1092 / WS074 vertical Grid alignment diagnosis（2026-10-14）
+## 最新: q1093 / WS074 fixed Grid testharness recensus（2026-10-14）
+
+[q1093履歴](queue-q1093.md): 固定Grid502は103 PASS/399 FAIL維持、旧PASS後退0。13件で22 subtestがFAIL→PASS、逆0。全raw/checkpoint/ID照合。[証拠](../ws074/phase189/evidence/20261014-q1093/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1092 / WS074 vertical Grid alignment diagnosis（2026-10-14）
 
 [q1092履歴](queue-q1092.md): 縦書きの固定代表はwidth期待10/実60。最小HTMLでin-flow100×13・absolute24×13、inline文字組み/論理軸/absolute areaの複数欠陥を確認。[証拠](../ws074/phase217/evidence/20261014-q1092/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

@@ -2,7 +2,7 @@
 
 # q1092 / WS074 vertical Grid alignment diagnosis
 
-Status: finished（2026-10-14 07:50–07:53 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p217有限部分scope](../ws074/phase217/phase.md)に適用。最大90分。
+Status: finished（2026-10-14 07:50 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p217有限部分scope](../ws074/phase217/phase.md)に適用。最大90分。
 
 | Attempt | Phase | Scope | Outcome |
 | --- | --- | --- | --- |
