@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws196-p002 -->
 # ws196-p002: account-admin の欠陥の直しと、root の前段の request の口
 
-Status: in-progress（2026-10-14 P2 q969: 詳細設計、実装中）
+Status: in-progress — 実装と確かめ済み（2026-10-14 P2 q969: 範囲 1〜11 を実装、amd64 build warning 0、host 試験 PASS、Linux の passkey の build と試験、FreeBSD は構文まで。Q1 の merge と判定待ち。QEMU は p004 で T1）
 Disposition: normal
 Parent: [WS196](../ws.md)
 Queue: q969
@@ -100,3 +100,47 @@ useradd・usermod・userdel（p003）が呼ぶ account-admin を、端末の roo
 ### 人の判断が要る点
 
 - 無し（全て p001 の決定と review の修正案の範囲の技術判断）。次の 3 つは技術判断として選んだので Q1 に報告する: private group を `-g` にかかわらず常に作る（D1）、uid の記録 file `/etc/account-admin.last-id`（D3）、home の削除に持ち主の確かめを足した（D6）。
+
+## 実装（2026-10-14 P2、branch agent/p2-ws215、main d7e38eeae から）
+
+| file | 変更 |
+| --- | --- |
+| `userland/base/account-admin/edit.h`・`edit.c` | root の形の解析（`edit_parse_root`・key の表・値の規則・key をまたぐ規則）、Settings の形は `edit_parse_settings` に分けて振る舞いは同じ。新しい純粋な関数: `admin_shell_valid`・`admin_groups_valid`・`admin_number_used`・`admin_next_id`（`admin_free_id` を置き換え、D3）・`admin_field_set`・`admin_lock_hash`（F1）・`admin_group_removable`（M7）・`admin_administrators`（使える管理者だけ、D2。`except` の引数は無くし前後の文で比べる）。新しい答えの語 4 つは末尾に |
+| `userland/base/account-admin/main.c` | 呼び手の分け方（root は password 無し、`SUDO_USER` は log だけ）、3 つの file の元の文と新しい文（`struct admin_files`・`admin_take`）、最後の使える管理者の守り（`admin_keeps_administrator`、副作用の前）、戻しのある commit（`admin_commit`）、uid の床（`admin_id_floor`・`admin_last_id_raise`）、root の操作（`admin_modify`・`admin_modify_lock`・`admin_primary_group`・`admin_groups_join`）、残りの掃除（`admin_remove_rest`）、unlock の後の仕事（`admin_after_work`: home の作成・削除、spool と autologin の掃除）、home の削除の持ち主と st_dev の確かめ |
+| `userland/base/common/account.c` | `account_files_lock`・`account_files_unlock` を flock に（D4）。file-scope の `account_lock_descriptor`、50×100 ms、lock の file は消さない |
+| `userland/desktop/sessiond/main.c` | `main_autologin_allowed`（D8） |
+| `docs/architecture/security.md` | 「Account administration」を書き直し（root の形、語、数え方、uid、掃除、home、戻し、autologin、root の `passwd NAME` が lock を解き passkey を消さないこと）、「Shared account core」に lock の節 |
+| `plan/ws089/tests/host-account-admin.c` | root の形・数え方・次の uid・field・lock・group の場合を足した（95 checks） |
+| `plan/ws158/tests/host-admin-language.c` | `admin_parse` の引数の追加だけ |
+| `plan/ws089/tests/admin-p026-guest.sh` | 変更に追従: root が Settings の形を送ると `error bad-request`（前は `error root`）、終わりに `/etc/account-admin.last-id` も消す（guest の中） |
+| `plan/ws196/tests/account-admin-root-host-test.sh`（新） | account-admin 全体を Linux の host 用に ASan・UBSan で build し、全ての path を新しい folder に向け、sudo の `unshare -m` で root として流す（host の file は触れない）。下の表 |
+
+## 確かめ（2026-10-14 P2、host = Debian 13）
+
+| コマンド | 結果 |
+| --- | --- |
+| `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws196-p002/zed "ZEDBSD_USER_PROGRAMS=account-admin passwd su sudo passkey passkey-fido2 sessiond"` と 7 つの `bin/…` | rc 0、`-Werror`、warning 0（log `build/ws196-p002/build-zed2.log`）。account.c を link する全部 |
+| `sh plan/ws089/tests/run-host-account-admin.sh` | `host-account-admin: 95 checks, 0 failed`（前は 60 前後。新: root の形 30、数え方 6、次の uid 4、field・lock・M7・shell・groups） |
+| `sh plan/ws158/tests/run-host-admin-language.sh build/ws196-p002/lang` | `ok (13 checks)` |
+| `sh plan/ws196/tests/account-admin-root-host-test.sh` | PASS（74 checks）: useradd の行と home と skel と記録、F1、S1・S2（`-G`・`-s`・`-L`・削除で `last-administrator`、locked の bob は数えない）、`-g dave`（own group 無し）の `bad-value`、lock と unlock で hash が元に戻る、`id-taken`、削除で home・cron・at・autologin が消え他の人の cron は残る、S3（消した 1501 の後が 1502）、M7（hal の group が残る）、残りの掃除と 2 回目の `no-such-user`、`home remove`+`force yes` の `bad-request`、root の Settings の形の `bad-request`、F2（持ち主の違う home は残る）、S6（home の中の tmpfs の mount の中身は残り、他は消える）、S4（`flock -x` で 8 秒持たれている間は 5 秒で `failed`、放されると `ok`、lock の file は残る）、S5（tmpfs が満ちて shadow が書けないと `failed`、passwd・group は元と同じ）。ASan・UBSan の報告 0。host の syslog に `user-add by root (sudo awe) for …`・`… is put back as it was`・`mnt is on another file system and is left` |
+| `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws196-p002/linux -j16 build/ws196-p002/linux/sbin/passkey` | rc 0、warning 0、lock は `/opt/keiland/etc/passkey.lock` |
+| `sh plan/ws172/tests/passkey-linux-host-test.sh` | PASS（flock になった lock の下の enroll-pin を含む） |
+| FreeBSD: `clang --target=x86_64-unknown-freebsd15 -std=gnu17 -Wall -Wextra -Werror -fsyntax-only -nostdinc`、FreeBSD 15.0 の source の header（`/home/awe/freebsd/port-analysis/src-15.0` の include・sys と、`sys/sys` の errno.h などの link、`build/ws196-p002/fbsd-inc`）と橋の header（crypt.h・shadow.h）、Linux の Makefile と同じ -D | passkey の 5 つの source（account.c を含む）と shadow-freebsd.c の全てで error・warning 0（link は未確かめ、ws172-p011 と同じ限界） |
+| `python3 plan/tools/style-check.py`（main.c・edit.c・account.c・sessiond/main.c） | 0 件 |
+| `git diff --check` | 0 件 |
+
+## 未実施・残り
+
+- QEMU（guest）は p004 で T1（下の依頼の文）。Settings の Users の頁、sessiond の autologin の拒否、zedBSD の kernel での flock の lock の振る舞いは guest で未確かめ。
+- 実機は未実施。
+- Q1 への依頼: `plan/ws196/tests/account-admin-root-host-test.sh` を master.md の Tools・試験の一覧に登録する（p003 の前段の試験の土台にもなる）。host 試験が root で作った `build/tmp/ws196-account-admin.*`・`build/tmp/ws172-passkey-linux.*` は root の物なので片付けに sudo が要る。
+- AAT の `plan/tools/aat/scenarios/helpers_os.py` の「account-admin run by root」は `!= "ok"` を確かめるだけなので PASS のまま（今は `error bad-request`）。文言の「root was taken as a caller」は少し古いが、直していない（担当の範囲の外）。
+- 範囲の外のまま: L6（busy は process を 4096 個まで）、passkey-fido2 の中の lock の使い方は変えていない。
+
+## T1 への依頼の文（p004 で Q1 が出す）
+
+image: `plan/ws089/tests/config-amd64-account-admin.mk`（account-admin と sessiond を含む物。graphical の確かめには Settings の config）。
+1. `plan/ws089/tests/admin-p026-guest.sh` を流す（PASS は最後の行 `admin-p026: status=0`。p002 で root の場合の期待を `error bad-request` に直した）。
+2. root で（`plan/tools/guest/guest.py run`）: `printf 'user-add\nname tom\ngroups network\n' | /usr/libexec/account-admin` が `ok`、`/etc/passwd` の tom の uid が 1001 以上で `/etc/account-admin.last-id` と同じ、`/home/tom` が 0700 で tom の物、shadow の tom の hash が `!`。`printf 'user-modify\nname tom\npassword unlock\n' | …` が `error no-password`。`printf 'user-modify\nname kei\npassword lock\n' | …` が `error last-administrator`（kei が唯一の管理者の時）。`printf 'user-remove\nname tom\nhome remove\n' | …` が `ok` で `/home/tom` が消える。もう一度 `user-add` した人の uid が前の tom より大きい。最後に `/etc/account-admin.last-id` と足した人を消して元に戻す。
+3. lock: 2 つの `printf 'user-add\nname lockN\nhome none\n' | /usr/libexec/account-admin &` を同時に流して両方 `ok`、`/etc/shadow.lock` が残り、続けて `passwd -s` が通る（flock が zedBSD の kernel で働く）。
+4. autologin（graphical の image）: root で `printf 'user-add\nname tom\n' | /usr/libexec/account-admin`、`echo tom > /etc/keiland/autologin`、再起動 → greeter が出て（tom の session ではない）、`/var/log/sessiond.log` に `SESSIOND AUTOLOGIN refused account=tom locked`。片付けに `/etc/keiland/autologin` を `kei` に戻し tom を消す。画面は `boot-test.sh` の PNG で。
