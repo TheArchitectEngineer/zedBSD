@@ -3,7 +3,7 @@
 # ws217-p002b: compositor の turn pass（90°・270° と試験の 180°）と実行中の回転の経路
 
 Parent: [WS217](../ws.md)
-Status: in-progress（2026-10-13 P1 q948: 第 1 版の設計で実装し、[review-1](review-1.md)（条件つきで進めてよい、致命的 0・重大 1・中 7・軽微 13）の指摘と Q1 の決めを §12 で反映。build 4 つと host 試験 PASS。test-wait: T1 の QEMU（§11.4 の依頼）。p002a は cleared（T1-576））
+Status: cleared（2026-10-14 Q1: T1-592 で P2B-S（saved の直し）と P2B-B（部分の描き直しと全体の比較、差はポインタの矩形だけ）が PASS、0° の smoke 8/8。T1-583 の結果と合わせて受け入れ）
 Disposition: normal
 Primary Milestone: MG006（WS から継承）
 Queue / attempts: q948（2026-10-13 Q1 の依頼、P1）。承認: ユーザーの選択（2026-10-13 AskUserQuestion「WS217 p002b 画面の 90° 回転」、目的は縦長で Notes を使う）と WS217 の D1〜D18 の決定（ws.md）、p001 の review-1〜4

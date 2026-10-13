@@ -3,7 +3,7 @@
 # ws217-p003: 入力の座標を回転に合わせる（touch panel・pen・絶対の pointer、anchor）
 
 Parent: [WS217](../ws.md)
-Status: in-progress（2026-10-14 P1: T1-592 の P3-3 の FAIL を解析した（§16.6）。code の誤りは見つからず、原因は試験の手順（pen の宣言の直後の接近が compositor の node の open より前に出て失われる）。§12 の 3・5 の script に宣言の後の `wait 3000` を足し、T1 への再試験（P3-3・P3-5）を §16.6 に書いた。T1 の結果を Q1 が判定するまで test-wait）
+Status: in-progress — test-wait（2026-10-14 Q1: T1-592 で P3-1・P3-2・P3-4・P3-6 PASS、T1-598 で P3-3（0°・90°、direct と --pointer）と P3-5 の cancel PASS。残り: P3-8（Linux の uinput・FreeBSD）は T1-599、P3-5 の cancel の後の proximity_in は未確かめ（270° で probe の窓の外）。F-104（開く前に範囲にあるペン）は Future Work）
 Disposition: normal
 Primary Milestone: MG006（WS から継承）
 Queue / attempts: q959（2026-10-13 Q1 の依頼、P1）。承認: ユーザーの選択（2026-10-13 AskUserQuestion「WS217 p003（入力の座標）を続ける」、WS217 はベータ2）と WS217 の D1〜D6・D11・D12（ws.md）
