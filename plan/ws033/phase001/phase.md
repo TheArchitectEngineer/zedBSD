@@ -1,11 +1,11 @@
 <!-- awesome-plan project=zedbsd record=ws033-p001 -->
 # ws033-p001: USB の LAN の後挿し・抜去・carrier の変化を QEMU で通す
 
-Status: in-progress（q912、P1、2026-10-08 夜: 残りの L1 の fetch と L3 の試験を作り、T1 の依頼文を Q1 へ。旧: uncleared（q598-i01、中断））
+Status: in-progress / Q1 の判定待ち（2026-10-14 P3 q958: 受け入れの 1〜4 の結果と host 試験・boot-test の証拠がそろった。cleared は Q1 の判定。旧: in-progress（q912、P1、2026-10-08 夜）、uncleared（q598-i01、中断））
 Disposition: normal
 Parent: [WS033](../ws.md)
 Focused goal: fg019（ベータ1）
-Queue: q598 / q598-i01（P1、中断）、q912（P1、2026-10-08）
+Queue: q598 / q598-i01（P1、中断）、q912（P1、2026-10-08）、q958（P3、2026-10-13 Q1。ユーザー「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう」）
 目安: 2〜3h
 
 ## 範囲
@@ -112,3 +112,20 @@ T1 の依頼（Q1 経由）: image `plan/tools/guest/test-image.sh plan/tools/gu
 （rc.conf の他は SSH の guest の標準の image）。(1) `plan/ws033/tests/networking-wait.sh IMAGE OUT1`（自分で guest を 2 回起動・停止する）、
 (2) 同じ image で `guest.py start IMAGE; guest.py wait` の後 `plan/ws033/tests/lan-hotplug.sh OUT2`（wait が true でも ue0 が address を得て起動するので使える）。
 合格: (1) 最後の行 `networking-wait: PASS`、(2) `lan-hotplug: status 0`（plugged-fetch を含む全部の行が ok）。
+
+## q958 の照合（2026-10-14 P3、読みと host の試験だけ、QEMU は起動していない）
+
+q912 の T1 の依頼は T1-480 として流れ、PASS だった。その後の BUG-277・BUG-222 の直し（USB の LAN の driver・networkd・TCP）の後も、同じ試験が T1 で PASS している。
+
+| # | 受け入れ | 結果 | 証拠 |
+| --- | --- | --- | --- |
+| 1（L1 後挿し） | 後挿し・DHCP・RX・fetch | **PASS** | T1-480（2026-10-09、tree 9ff1ddf0b）`lan-hotplug: status 0`（plugged-fetch を含む全行 ok）。T1-513・T1-517 でも status 0。T1-515 は 1 回 FAIL・再試験で PASS（揺れ、原因は記録されていない） |
+| 2（抜去と挿し直し） | 抜去の後に networkd が生き、挿し直しで address | **PASS** | T1-480 の networkd-alive・replugged-dhcp-address ok、T1-513・T1-517 |
+| 3（set_link） | 調べの結果 | **QEMU では carrier を動かせない**（usb-net が link の切替えを ECM の通知にしない）。L2 は実機の p002 へ | T1-221 の `link-down: skipped: no carrier event`、T1-513 の lan-link-down status 0 |
+| 4（L3 networking.wait） | adapter あり・無しの比べ | **PASS** | T1-480 `networking-wait: PASS`（A: completed と ue0 の address、B: 時間切れで抜けて sshd が走り、後挿しで SSH が答える） |
+
+- `make managed-lan-host-test` → `MLAN-T001 managed-lan: PASS`（2026-10-14、P3 の worktree、tree b3e6e7440）。
+- `plan/tools/boot-test.sh` → T1-517（2026-10-09、tree 7ca3c5e40）で `boot-test: PASS`。
+- p001 での source の直しは BUG-168 の up の再試行（2026-10-05、resolved）だけ。q958 では source を変えていない。
+- 残り: lan-hotplug の揺れ（T1-515 の 1 回）と tcp-receive-speed の 120 s の止まり（T1-513 の 1 回）は、それぞれの bug・WS220 の範囲で、p001 の受け入れの外。L2 の carrier は p002（実機）。
+- 判定（Q1）: 受け入れの 1〜4 と host 試験と boot-test がそろったので、cleared を提案する。
