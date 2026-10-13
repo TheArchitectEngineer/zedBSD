@@ -1,0 +1,241 @@
+{
+  "fixed_wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "eligible": 502,
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "old_outcomes": {
+    "fail": 413,
+    "pass": 57,
+    "no_output": 32
+  },
+  "new_outcomes": {
+    "fail": 399,
+    "pass": 71,
+    "no_output": 32
+  },
+  "transitions": {
+    "fail->fail": 399,
+    "fail->pass": 14,
+    "no_output->no_output": 32,
+    "pass->pass": 57
+  },
+  "changed": [
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-015.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-016.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-025.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-026.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-027.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-028.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-029.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-030.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-031.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-032.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-033.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-034.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-035.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-036.html",
+      "old": "fail",
+      "new": "pass"
+    }
+  ],
+  "changed_subtests": [
+    {
+      "id": "/css/css-grid/alignment/grid-align-stretching-replaced-items.html",
+      "old_pass_subtests": 2,
+      "new_pass_subtests": 5
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-013.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 1
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-014.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 1
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-015.html",
+      "old_pass_subtests": 1,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-016.html",
+      "old_pass_subtests": 1,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-025.html",
+      "old_pass_subtests": 1,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-026.html",
+      "old_pass_subtests": 1,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-027.html",
+      "old_pass_subtests": 1,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-028.html",
+      "old_pass_subtests": 1,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-029.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-030.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-031.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-032.html",
+      "old_pass_subtests": 1,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-033.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-034.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-035.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-036.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 2
+    }
+  ],
+  "subtest_status_totals": {
+    "old": {
+      "1": 5954,
+      "0": 1851
+    },
+    "new": {
+      "1": 5928,
+      "0": 1877
+    }
+  },
+  "remaining_fail_by_grid_directory": {
+    "abspos": 24,
+    "alignment": 206,
+    "animation": 11,
+    "grid-definition": 42,
+    "grid-items": 28,
+    "grid-layout-properties.html": 1,
+    "grid-model": 10,
+    "grid-tracks-stretched-with-different-flex-factors-sum.html": 1,
+    "inheritance.html": 1,
+    "layout-algorithm": 28,
+    "parsing": 35,
+    "placement": 4,
+    "subgrid": 7,
+    "table-grid-item-005.html": 1
+  },
+  "shards": [
+    {
+      "offset": 0,
+      "count": 128,
+      "outcomes": {
+        "fail": 67,
+        "no_output": 32,
+        "pass": 29
+      }
+    },
+    {
+      "offset": 128,
+      "count": 128,
+      "outcomes": {
+        "fail": 115,
+        "pass": 13
+      }
+    },
+    {
+      "offset": 256,
+      "count": 128,
+      "outcomes": {
+        "fail": 117,
+        "pass": 11
+      }
+    },
+    {
+      "offset": 384,
+      "count": 118,
+      "outcomes": {
+        "fail": 100,
+        "pass": 18
+      }
+    }
+  ]
+}

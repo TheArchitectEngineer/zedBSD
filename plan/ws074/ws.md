@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1076](queue.md) finished / p215 Grid replaced normal/stretch sizing。2026-10-14 06:22 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1077](queue.md) finished / p189 Grid testharness recensus。2026-10-14 06:28 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -799,3 +799,5 @@ Event ws074-p189-q1074-outcome-20261014: [p189](phase189/phase.md) q1074-i01 par
 Event ws074-p214-addition-and-q1075-clear-20261014: [p214](phase214/phase.md)を追加し、Grid fit-contentのmin-content下限を内部既存測定と共有。q1075-i01/p214 whole cleared、固定幅変化14 WPT中4 whole FAIL→PASS・旧PASS後退0、静的Grid529旧124 PASS全維持、Acid3差0。[証拠](phase214/evidence/20261014-q1075/README.md)。残4件はreplaced image固有、p189/p190/p173全件100%未達、共有Master/Queue/GitHub publication保留。
 
 Event ws074-p215-addition-and-q1076-clear-20261014: [p215](phase215/phase.md)を追加し、Grid replaced画像のnormal自然寸法と明示stretch/比率寸法を担当。q1076-i01/p215 whole cleared、固定幅変化14 WPTは10→14 PASS、静的Grid529旧124 PASS・Flex10 PASS維持、Acid3差0。[証拠](phase215/evidence/20261014-q1076/README.md)。p189/p190/p173全件100%未達、共有Master/Queue/GitHub publication保留。
+
+Event ws074-p189-q1077-outcome-20261014: [p189](phase189/phase.md) q1077-i01 partial cleared。固定Grid testharness502 IDは57 PASS/413 FAIL/32 no_output→71 PASS/399 FAIL/32 no_output、14 whole FAIL→PASS/0 PASS→FAIL、subtest PASS+26。[証拠](phase189/evidence/20261014-q1077/README.md)。p189/p190/p173全件100%未達、共有Master/Queue/GitHub publication保留。

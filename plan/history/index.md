@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1076 / WS074 CSS Grid replaced item normal/stretch（2026-10-14）
+## 最新: q1077 / WS074 CSS Grid testharness recensus（2026-10-14）
+
+[q1077履歴](queue-q1077.md): 固定Grid502 IDは57→71 PASS、413→399 FAIL、32 no_output維持。旧PASS後退0、subtest PASS+26、p189 partial cleared。[証拠](../ws074/phase189/evidence/20261014-q1077/README.md)。p189/p190/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1076 / WS074 CSS Grid replaced item normal/stretch（2026-10-14）
 
 [q1076履歴](queue-q1076.md): 固定幅変化14 WPTは10→14 PASS、旧PASS後退0。静的Grid529旧124 PASS・Flex10 PASS維持、p215 whole cleared、Acid3差0。[証拠](../ws074/phase215/evidence/20261014-q1076/README.md)。p189/p190/p173全件100%未達、共有投影/GitHub publication pending。
 

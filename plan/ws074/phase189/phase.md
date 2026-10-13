@@ -113,3 +113,11 @@ Event ws074-p189-q1072-outcome-20261014: 固定Grid testharness適格502 IDを�
 ## q1074-i01 結果（2026-10-14 05:44 JST）
 
 Event ws074-p189-q1074-outcome-20261014: 固定Grid testharness適格502 IDを同条件で再測定。[証拠](evidence/20261014-q1074/README.md)。旧43 PASS/427 FAIL/32 no_output→新57 PASS/413 FAIL/32 no_output、14 whole FAIL→PASS・旧PASS後退0、subtest PASS1809→1851（+42）。4 shard exit0、全502 ID/hash/checkpoint/gzip raw照合済み。残る32 no_outputはmodule script2系列、413 FAIL中alignment配下220。q1074-i01 partial cleared、p189 wholeとp173全3,805件100%は未達。runner/browser/WPT/ABI/Master変更なし、共有投影/GitHub publication保留。
+
+## q1077-i01 有限部分範囲（2026-10-14 06:23 JST）
+
+このchatのユーザーによる全3,805件100%までの有限Queue事前承認を最大90分（07:53 JSTまで）に適用。[p214 q1075](../phase214/evidence/20261014-q1075/README.md) と [p215 q1076](../phase215/evidence/20261014-q1076/README.md) のGrid幅/normal/replaced修正後、固定 `css/css-grid/` 適格testharness502 IDをq1074と同じWPT/host/localhost/固定font/5秒settle/20秒processで最大128件ずつ決定的shard測定する。q1074とのID/outcome/subtest/raw・旧PASS回帰を照合し、残る共通失敗群を分類する。runner/browser/WPT/ABI/`plan/master.md`変更なし。90分内に完走しない場合、完了済みと未実行を分けてunclearedで止める。[Guardrail](../../guardrail.md)と既存runner規則を適用。p189 whole全1,783件とp173全3,805件100%はこの部分の受け入れに含めない。
+
+## q1077-i01 結果（2026-10-14 06:28 JST）
+
+Event ws074-p189-q1077-outcome-20261014: 固定Grid testharness適格502 IDを同条件で再測定。[証拠](evidence/20261014-q1077/README.md)。旧57 PASS/413 FAIL/32 no_output→新71 PASS/399 FAIL/32 no_output、14 whole FAIL→PASS・旧PASS後退0、subtest PASS1851→1877（+26）。4 shard exit0、全502 ID/hash/checkpoint/gzip raw照合済み。残る32 no_outputはmodule script2系列、399 FAIL中alignment配下206。q1077-i01 partial cleared、p189 wholeとp173全3,805件100%は未達。runner/browser/WPT/ABI/Master変更なし、共有投影/GitHub publication保留。
