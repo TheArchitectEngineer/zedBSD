@@ -53,7 +53,7 @@
 
 | 項目 | 理由 |
 | --- | --- |
-| BUG-255（蓋を閉じた間の HDMI）、BUG-159（電池で 5 fps）、BUG-145（AX211 の DHCP）、BUG-165（5330 の DSDT） | 調査が長い・実機の時間が要る |
+| BUG-255（蓋を閉じた間の HDMI）、BUG-159（電池で 5 fps）、BUG-145（AX211 の DHCP）、BUG-165（5330 の DSDT、2026-10-13 resolved） | 調査が長い・実機の時間が要る |
 | WS201（/home の暗号化）、WS195（/opt/keiland）、WS196（useradd 等）、WS198（self-build）、[WS001 p045](ws001/phase045/phase.md) POSIX の header、[WS126](ws126/ws.md) Python | ベータ3 の列 |
 | 規約の全文の見直しの Phase（各 WS） | ユーザーの決定でベータ3 |
 
