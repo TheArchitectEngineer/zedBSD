@@ -19,5 +19,5 @@ cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -I$D -I. -I"$(dirname "$out")/inc
 	$D/app.c $D/draw.c $D/canvas.c $D/text.c userland/desktop/libtruetype/*.c \
 	userland/desktop/libkeiland/ui/input.c userland/desktop/libkeiland/ui/scroll.c userland/desktop/libkeiland/ui/scroll-bar.c userland/desktop/libkeiland/ui/text-touch.c \
 	userland/desktop/libkeiland/ui/canvas.c userland/desktop/libkeiland/ui/theme.c userland/desktop/libkeiland/scroll.c userland/desktop/picture/color-glyph.c \
-	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c -lm -o "$out"
+	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/desktop/libpng-compat/read.c -lm -o "$out"
 "$out"

@@ -24,7 +24,7 @@ cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -I"$(dirname "$out")/inc"
 	$K/text-touch.c $K/text-bar.c $K/text-select.c $K/ui.c $K/widgets.c $K/field.c $K/list.c $K/cards.c \
 	$U/libkeiland/gesture.c $U/libkeiland/motion.c $U/libkeiland/scroll.c \
 	$U/libtruetype/*.c $U/picture/color-glyph.c \
-	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c -lm -o "$out"
+	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/desktop/libpng-compat/read.c -lm -o "$out"
 F=$U/fonts
 "$out" $F/Mahora-Regular.ttf $F/DroidSansFallbackFull.ttf "$shots/host-widgets"
 for p in "$shots"/host-widgets-*.ppm; do

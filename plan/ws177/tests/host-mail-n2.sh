@@ -53,7 +53,7 @@ ${CC:-cc} -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -fsanitize=address
 	$K/text-touch.c $K/text-bar.c $K/text-select.c $K/ui.c $K/widgets.c $K/field.c $K/text-area.c $K/list.c $K/cards.c $K/drop-look.c \
 	$L/gesture.c $L/motion.c $L/scroll.c \
 	$U/libtruetype/*.c $U/picture/color-glyph.c \
-	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c \
+	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/desktop/libpng-compat/read.c \
 	-ldl -lm -o "$out/host-mail-view"
 timeout 120 "$out/host-mail-view" $U/fonts/Mahora-Regular.ttf $U/fonts/DroidSansFallbackFull.ttf || status=1
 exit $status

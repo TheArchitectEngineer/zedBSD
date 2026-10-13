@@ -3,14 +3,14 @@
 # WS227: menuconfig の Base・Desktop の表示名の整理、画像と PDF の library を Desktop へ、Linux・FreeBSD の build に zedBSD 独自の base の命令
 
 <!-- awesome-plan-current:start -->
-Status: planned（2026-10-14 Q1 作成）
+Status: incomplete（2026-10-14 P1: p001 実装済み・Q1 の判定待ち）
 Primary Milestone: MG002
 Related Milestones: なし
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: q970（p001、P1）
 Target: ベータ2
-Resume point: p001。
+Resume point: p001 の Q1 の判定と ※要確認の 3 件（phase001/phase.md の「Linux・FreeBSD」）。
 <!-- awesome-plan-current:end -->
 
 ## 原文（2026-10-14 ユーザー）
@@ -32,4 +32,4 @@ Resume point: p001。
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 表示名・移動・Linux/FreeBSD の build の全部（小さいので 1 つ） | planned（q970、P1） | — |
+| [p001](phase001/phase.md) | 表示名・移動・Linux/FreeBSD の build の全部（小さいので 1 つ） | in-progress（q970、P1、実装済み・判定待ち） | — |

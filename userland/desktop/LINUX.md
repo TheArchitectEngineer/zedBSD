@@ -34,7 +34,7 @@ make keiland-linux-install DESTDIR="$PWD/build/keiland-linux/stage"
 make keiland-linux-clean
 ```
 
-`bin/` は app と compositor、`lib/` は共有 library、`libexec/` は IME、`share/` は font・辞書・wallpaper、`etc/keiland/apps.conf` は App Home の一覧。
+`bin/` は app と compositor と zedBSD 独自の base の命令（`fidoctl`）、`sbin/` は `passkey`、`lib/` は共有 library、`libexec/` は IME、`share/` は font・辞書・wallpaper、`etc/keiland/apps.conf` は App Home の一覧。
 wallpaper は `KEILAND_LINUX_WALLPAPER=/absolute/path/picture.png`（PNG か JPEG。`share/keiland/wallpaper.png` に入る）で build 時に指定できる。既定は tree の `userland/desktop/wallpapers/Birch-Lake.png`。ユーザー画像は git に入れない。
 
 ## Text console からの起動

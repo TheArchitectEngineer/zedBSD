@@ -93,16 +93,16 @@ endef
 comma := ,
 
 KEILAND_FREEBSD_PACKAGES ?= userland/base/libz-compat/Makefile.freebsd \
-	userland/base/libpng-compat/Makefile.freebsd \
-	userland/base/libjpeg-compat/Makefile.freebsd \
-	userland/base/libgif-compat/Makefile.freebsd \
+	userland/desktop/libpng-compat/Makefile.freebsd \
+	userland/desktop/libjpeg-compat/Makefile.freebsd \
+	userland/desktop/libgif-compat/Makefile.freebsd \
 	userland/desktop/freebsd-compat/Makefile.freebsd \
 	userland/desktop/libwayland/Makefile.freebsd \
 	userland/desktop/libtruetype/Makefile.freebsd \
 	userland/desktop/libvulkan-compat/Makefile.freebsd \
 	userland/desktop/libkeiland-backend-freebsd/Makefile.freebsd \
 	userland/desktop/libkeiland/Makefile.freebsd \
-	userland/base/libpdf/Makefile.freebsd \
+	userland/desktop/libpdf/Makefile.freebsd \
 	userland/packages/libseat/Makefile.freebsd \
 	userland/desktop/wayland/Makefile.freebsd \
 	userland/desktop/terminal/Makefile.freebsd \

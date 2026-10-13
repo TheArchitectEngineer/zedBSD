@@ -37,7 +37,7 @@ def build(out):
     program = os.path.join(out, "host-jpeg-scale")
     flags = ["-std=gnu11", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-fsanitize=address,undefined",
              "-fno-sanitize-recover=all", "-I" + include]
-    sources = [os.path.join(ROOT, "userland/base/libjpeg-compat", name) for name in LIBRARY]
+    sources = [os.path.join(ROOT, "userland/desktop/libjpeg-compat", name) for name in LIBRARY]
     subprocess.run(["cc"] + flags + ["-o", program, os.path.join(ROOT, "plan/ws157/tests/host-jpeg-scale.c")] + sources,
                    check=True)
     return program

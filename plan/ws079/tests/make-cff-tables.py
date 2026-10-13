@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# ws079-p008: writes userland/base/libpdf/cffdata.c, the fixed data of the Compact Font Format (Adobe Technical
+# ws079-p008: writes userland/desktop/libpdf/cffdata.c, the fixed data of the Compact Font Format (Adobe Technical
 # Note #5176, appendices A to C) that libpdf's charstring fonts use: the 391 standard strings (the glyph names a
 # CFF font's charset reaches by SID 0 to 390), StandardEncoding as the SID of each code (the encoding a CFF font
 # may name as its own, and the one seac's accented characters are named in, for Type 1 and CFF alike), and the
 # predefined Expert and ExpertSubset charsets as SIDs.  The data comes from fontTools (MIT) and its
 # StandardEncoding table.
-#   python3 plan/ws079/tests/make-cff-tables.py > userland/base/libpdf/cffdata.c
+#   python3 plan/ws079/tests/make-cff-tables.py > userland/desktop/libpdf/cffdata.c
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 from fontTools.cffLib import cffStandardStrings, cffIExpertStrings, cffExpertSubsetStrings
 from fontTools.encodings.StandardEncoding import StandardEncoding

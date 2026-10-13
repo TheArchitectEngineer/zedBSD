@@ -26,12 +26,12 @@ ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truet
 # ws175-p007: the edits of the PDF's objects (edit.c) use libpdf's editor, so the whole of libpdf (with libjpeg-compat
 # and libtruetype) is built.
 sources="userland/desktop/notes/document.c userland/desktop/notes/edit.c userland/desktop/notes/encode.c userland/desktop/notes/journal.c
-	userland/desktop/notes/save.c userland/desktop/notes/shape.c userland/base/libpdf/writer.c userland/base/libpdf/paint.c userland/base/libpdf/update.c userland/base/libpdf/clean.c userland/base/libpdf/outline.c
-	userland/base/libpdf/object.c userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c
-	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c
-	userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c userland/base/libpdf/replace.c userland/base/libpdf/embed.c userland/base/libpdf/subset.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c
-	userland/base/libpdf/font.c userland/base/libpdf/encoding.c userland/base/libpdf/shading.c userland/base/libpdf/charstrings.c
-	userland/base/libpdf/type1.c userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c plan/ws079/tests/host-notes.c"
+	userland/desktop/notes/save.c userland/desktop/notes/shape.c userland/desktop/libpdf/writer.c userland/desktop/libpdf/paint.c userland/desktop/libpdf/update.c userland/desktop/libpdf/clean.c userland/desktop/libpdf/outline.c
+	userland/desktop/libpdf/object.c userland/desktop/libpdf/reader.c userland/desktop/libpdf/filter.c userland/desktop/libpdf/ccitt.c userland/desktop/libpdf/crypt.c
+	userland/desktop/libpdf/image.c userland/desktop/libpdf/display.c userland/desktop/libpdf/content.c userland/desktop/libpdf/editor.c
+	userland/desktop/libpdf/tounicode.c userland/desktop/libpdf/intake.c userland/desktop/libpdf/replace.c userland/desktop/libpdf/embed.c userland/desktop/libpdf/subset.c userland/desktop/libpdf/stroke.c userland/desktop/libpdf/raster.c
+	userland/desktop/libpdf/font.c userland/desktop/libpdf/encoding.c userland/desktop/libpdf/shading.c userland/desktop/libpdf/charstrings.c
+	userland/desktop/libpdf/type1.c userland/desktop/libpdf/cff.c userland/desktop/libpdf/cffdata.c plan/ws079/tests/host-notes.c"
 for variant in plain asan ubsan; do
 	flags="-std=c99 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include -Iuserland/desktop/notes"
 	if [ "$variant" = asan ]; then
@@ -44,7 +44,7 @@ for variant in plain asan ubsan; do
 	"$cc" $(echo "$flags" | sed 's/-std=c99 -pedantic/-std=gnu99/') -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
 	"$cc" $(echo "$flags" | sed 's/-std=c99 -pedantic/-std=gnu99/; s/-Werror//') -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
 	zlib=
-	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c userland/desktop/libtruetype/*.c; do
+	for file in userland/base/libz-compat/*.c userland/desktop/libjpeg-compat/*.c userland/desktop/libtruetype/*.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
 		"$cc" $(echo "$flags" | sed 's/-std=c99 -pedantic/-std=gnu11/; s/-Werror//') -w -I"$(dirname "$file")" -c "$file" -o "$object"
 		zlib="$zlib $object"

@@ -23,10 +23,10 @@ cc=${CC:-cc}
 "$cc" -O1 -g -std=gnu11 -Wall -Wextra -Werror -Wno-unused-parameter -I"$out/include" -o "$out/host-imageview" \
     plan/tools/imageview/host-imageview.c userland/desktop/imageview/image.c userland/desktop/picture/picture.c userland/desktop/imageview/folder.c \
     userland/desktop/imageview/view.c \
-    userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c \
-    userland/base/libjpeg-compat/decompress.c userland/base/libjpeg-compat/error.c userland/base/libjpeg-compat/huffman.c \
-    userland/base/libjpeg-compat/idct.c userland/base/libjpeg-compat/marker.c userland/base/libjpeg-compat/memory.c \
-    userland/base/libjpeg-compat/source.c userland/base/libgif-compat/decode.c userland/base/libgif-compat/lzw.c -lm
+    userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/desktop/libpng-compat/read.c \
+    userland/desktop/libjpeg-compat/decompress.c userland/desktop/libjpeg-compat/error.c userland/desktop/libjpeg-compat/huffman.c \
+    userland/desktop/libjpeg-compat/idct.c userland/desktop/libjpeg-compat/marker.c userland/desktop/libjpeg-compat/memory.c \
+    userland/desktop/libjpeg-compat/source.c userland/desktop/libgif-compat/decode.c userland/desktop/libgif-compat/lzw.c -lm
 exec python3 - "$out/host-imageview" "$out" <<'EOF'
 import os, random, subprocess, sys
 from PIL import Image, ImageOps

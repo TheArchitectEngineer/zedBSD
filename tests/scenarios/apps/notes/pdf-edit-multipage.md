@@ -3,7 +3,7 @@ id: apps.notes.pdf-edit-multipage
 title: Notes で複数頁の PDF を頁ごとに編集し、pen の線と一緒に保存して開き直す
 status: active
 areas: [notes, libpdf]
-paths: [userland/desktop/notes/, userland/base/libpdf/]
+paths: [userland/desktop/notes/, userland/desktop/libpdf/]
 machine: either
 human: none
 since: ws175-p001

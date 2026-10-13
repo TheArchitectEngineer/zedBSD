@@ -113,7 +113,7 @@ NOCT_PACKAGE_HOLORIS := $(NOCT_SOURCE_DIR)/resources/apps/holoris/holoris.noct
 # not under Packages (2026-10-09 user: "Noctはuserland/base/noct/にあるけど、
 # Baseメニューにないようなので、追加してください。", "PackagesメニューからNoctを
 # 削除してください。Baseに移動するためです。").  Only the menu group changed.
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,noct,Noct language,amd64 i386 pc98 rpi4,n,package,,y,\
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,noct,noct,amd64 i386 pc98 rpi4,n,package,,y,\
 	base,base/noct,))
 
 ZEDBSD_PACKAGE_INPUTS += $(if $(filter noct,$(ZEDBSD_USER_PROGRAMS)),\

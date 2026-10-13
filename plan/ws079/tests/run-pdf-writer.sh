@@ -26,10 +26,10 @@ for variant in plain asan ubsan; do
 	fi
 	# The C library's SHA-256 uses long long constants, which C89 does not have.
 	"$cc" $(echo "$flags" | sed 's/-std=c89 -pedantic/-std=gnu99/') -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
-	"$cc" $flags userland/base/libpdf/writer.c userland/base/libpdf/outline.c plan/ws079/tests/host-pdf-writer.c \
+	"$cc" $flags userland/desktop/libpdf/writer.c userland/desktop/libpdf/outline.c plan/ws079/tests/host-pdf-writer.c \
 	    "$out/sha2-$variant.o" -lm -o "$out/host-pdf-writer-$variant"
 	"$out/host-pdf-writer-$variant" "$out/writer-$variant.pdf" "$out/test.jpg"
-	"$cc" $flags userland/base/libpdf/writer.c userland/base/libpdf/outline.c plan/ws079/tests/host-pdf-outline.c \
+	"$cc" $flags userland/desktop/libpdf/writer.c userland/desktop/libpdf/outline.c plan/ws079/tests/host-pdf-outline.c \
 	    "$out/sha2-$variant.o" -lm -o "$out/host-pdf-outline-$variant"
 	"$out/host-pdf-outline-$variant" "$out/outline-$variant.pdf"
 done

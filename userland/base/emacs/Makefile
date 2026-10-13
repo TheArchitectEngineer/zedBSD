@@ -19,7 +19,7 @@ include $(ZEDBSD_REMACS_DIR)../noct/version.mk
 REQUIRE = base/noct
 # Emacs (REmacs) is written in Noct, so choosing it chooses the interpreter
 # that runs it.  The menu files it with the base programs.
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,emacs,Emacs editor,*,n,package,,y,\
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,emacs,emacs,*,n,package,,y,\
 	base,base/emacs,$(REQUIRE)))
 REQUIRE =
 

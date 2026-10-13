@@ -53,12 +53,12 @@ python3 plan/ws079/tests/make-ccitt-data.py "$out"
 qpdf --check "$out/ccitt.pdf" > "$out/qpdf-ccitt.txt" 2>&1 || { echo "qpdf: ccitt.pdf"; cat "$out/qpdf-ccitt.txt"; status=1; }
 
 # The builds.
-libpdf="userland/base/libpdf/writer.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
-	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c
-	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/stroke.c
-	userland/base/libpdf/raster.c userland/base/libpdf/font.c userland/base/libpdf/tounicode.c userland/base/libpdf/encoding.c
-	userland/base/libpdf/shading.c
-	userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c"
+libpdf="userland/desktop/libpdf/writer.c userland/desktop/libpdf/outline.c userland/desktop/libpdf/object.c
+	userland/desktop/libpdf/reader.c userland/desktop/libpdf/filter.c userland/desktop/libpdf/ccitt.c userland/desktop/libpdf/crypt.c
+	userland/desktop/libpdf/image.c userland/desktop/libpdf/display.c userland/desktop/libpdf/content.c userland/desktop/libpdf/stroke.c
+	userland/desktop/libpdf/raster.c userland/desktop/libpdf/font.c userland/desktop/libpdf/tounicode.c userland/desktop/libpdf/encoding.c
+	userland/desktop/libpdf/shading.c
+	userland/desktop/libpdf/charstrings.c userland/desktop/libpdf/type1.c userland/desktop/libpdf/cff.c userland/desktop/libpdf/cffdata.c"
 for variant in plain asan ubsan; do
 	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
 	if [ "$variant" = asan ]; then
@@ -68,12 +68,12 @@ for variant in plain asan ubsan; do
 		flags="$flags -fsanitize=undefined,float-cast-overflow -fno-sanitize-recover=all"
 	fi
 	loose=$(echo "$flags" | sed 's/-std=c89 -pedantic/-std=gnu11/; s/-Werror//')
-	"$cc" $flags -Iuserland/base/libpdf userland/base/libpdf/ccitt.c plan/ws079/tests/host-pdf-ccitt.c -o "$out/host-pdf-ccitt-$variant"
+	"$cc" $flags -Iuserland/desktop/libpdf userland/desktop/libpdf/ccitt.c plan/ws079/tests/host-pdf-ccitt.c -o "$out/host-pdf-ccitt-$variant"
 	objects="$out/sha2-$variant.o"
 	"$cc" $loose -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
 	"$cc" $loose -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
 	objects="$objects $out/digest-$variant.o"
-	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c; do
+	for file in userland/base/libz-compat/*.c userland/desktop/libjpeg-compat/*.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
 		"$cc" $loose -w -I"$(dirname "$file")" -c "$file" -o "$object"
 		objects="$objects $object"

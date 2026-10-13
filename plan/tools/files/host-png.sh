@@ -19,7 +19,7 @@ mkdir -p "$out" "$host/include"
 ln -sfn "$(pwd)/include/libc/compat" "$host/include/compat"
 cc=${CC:-cc}
 "$cc" -O2 -g -Wall -Wextra -Werror -I"$host/include" -o "$host/files-png" plan/tools/files/host-png.c \
-    userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c
+    userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/desktop/libpng-compat/read.c
 exec python3 - "$host/files-png" "$out" <<'EOF'
 import os, random, subprocess, sys, zlib
 from PIL import Image

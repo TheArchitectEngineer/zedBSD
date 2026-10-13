@@ -3,7 +3,7 @@ id: apps.notes.fill-region
 title: Notes の塗りつぶしで閉じた円の中と PDF の囲みの中を塗り、消しゴムと undo で戻す
 status: active
 areas: [notes, libpdf]
-paths: [userland/desktop/notes/, userland/base/libpdf/]
+paths: [userland/desktop/notes/, userland/desktop/libpdf/]
 machine: either
 human: look
 since: ws216-p007

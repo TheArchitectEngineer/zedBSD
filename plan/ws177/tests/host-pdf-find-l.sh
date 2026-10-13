@@ -21,7 +21,7 @@ for header in pdf.h sha2.h md5.h sha1.h; do
 done
 ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
 python3 plan/ws177/tests/make-find-l.py "$out/samples"
-libpdf=$(ls userland/base/libpdf/*.c)
+libpdf=$(ls userland/desktop/libpdf/*.c)
 viewer="userland/desktop/pdfviewer/view.c userland/desktop/pdfviewer/draw.c userland/desktop/pdfviewer/document.c
 	userland/desktop/pdfviewer/canvas.c userland/desktop/pdfviewer/text.c userland/desktop/pdfviewer/find.c"
 status=0
@@ -34,7 +34,7 @@ for variant in plain asan; do
 	objects="$out/sha2-$variant.o $out/digest-$variant.o"
 	"$cc" $loose -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
 	"$cc" $loose -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
-	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c userland/desktop/libtruetype/*.c; do
+	for file in userland/base/libz-compat/*.c userland/desktop/libjpeg-compat/*.c userland/desktop/libtruetype/*.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
 		"$cc" $loose -w -I"$(dirname "$file")" -c "$file" -o "$object"
 		objects="$objects $object"

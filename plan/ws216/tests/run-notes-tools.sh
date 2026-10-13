@@ -33,7 +33,7 @@ done
 notes="userland/desktop/notes/document.c userland/desktop/notes/edit.c userland/desktop/notes/encode.c
 	userland/desktop/notes/journal.c userland/desktop/notes/save.c userland/desktop/notes/shape.c"
 old_notes="$out/old/document.c $out/old/edit.c $out/old/encode.c $out/old/journal.c $out/old/save.c"
-libpdf=$(ls userland/base/libpdf/*.c)
+libpdf=$(ls userland/desktop/libpdf/*.c)
 for variant in plain asan ubsan; do
 	flags="-std=c99 -pedantic -O1 -g -Wall -Wextra -Werror -Wno-overlength-strings -D_DEFAULT_SOURCE -I$out/include"
 	if [ "$variant" = asan ]; then
@@ -47,7 +47,7 @@ for variant in plain asan ubsan; do
 	"$cc" $loose -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
 	"$cc" $loose -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
 	objects="$objects $out/sha2-$variant.o $out/digest-$variant.o"
-	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c userland/desktop/libtruetype/*.c; do
+	for file in userland/base/libz-compat/*.c userland/desktop/libjpeg-compat/*.c userland/desktop/libtruetype/*.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
 		"$cc" $loose -w -I"$(dirname "$file")" -c "$file" -o "$object"
 		objects="$objects $object"

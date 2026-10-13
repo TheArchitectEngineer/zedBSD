@@ -3,7 +3,7 @@ id: apps.notes.pdf-insert-image
 title: Notes で PDF に PNG と JPEG の画像を挿入する
 status: active
 areas: [notes, libpdf]
-paths: [userland/desktop/notes/, userland/base/libpdf/, userland/base/libz-compat/]
+paths: [userland/desktop/notes/, userland/desktop/libpdf/, userland/base/libz-compat/]
 machine: either
 human: none
 since: ws175-p001

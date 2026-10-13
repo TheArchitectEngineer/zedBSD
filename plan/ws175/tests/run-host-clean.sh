@@ -18,7 +18,7 @@ ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 ln -sfn "$(pwd)/userland/desktop/include/truetype" "$out/include/truetype"
 python3 plan/ws175/tests/make-clean-sample.py "$out/sample-plain.pdf"
 qpdf --object-streams=generate --compress-streams=n "$out/sample-plain.pdf" "$out/clean-sample.pdf"
-libpdf=$(ls userland/base/libpdf/*.c)
+libpdf=$(ls userland/desktop/libpdf/*.c)
 status=0
 for variant in plain asan ubsan; do
 	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
@@ -34,7 +34,7 @@ for variant in plain asan ubsan; do
 	"$cc" $loose -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
 	"$cc" $loose -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
 	objects="$objects $out/sha2-$variant.o $out/digest-$variant.o"
-	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c; do
+	for file in userland/base/libz-compat/*.c userland/desktop/libjpeg-compat/*.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
 		"$cc" $loose -w -I"$(dirname "$file")" -c "$file" -o "$object"
 		objects="$objects $object"
@@ -45,7 +45,7 @@ for variant in plain asan ubsan; do
 		objects="$objects $object"
 	done
 	# shellcheck disable=SC2086
-	"$cc" $flags -Wno-overlength-strings -Iuserland/base/libpdf $libpdf plan/ws175/tests/host-clean.c $objects -lm \
+	"$cc" $flags -Wno-overlength-strings -Iuserland/desktop/libpdf $libpdf plan/ws175/tests/host-clean.c $objects -lm \
 		-o "$out/host-clean-$variant"
 	if "$out/host-clean-$variant" "$out/clean-sample.pdf" "$out/updated-$variant.pdf" "$out/clean-$variant.pdf" > "$out/clean-$variant.txt" 2>&1; then
 		echo "host-clean $variant: $(tail -1 "$out/clean-$variant.txt")"

@@ -24,12 +24,12 @@ ln -sf "$(pwd)/userland/desktop/fonts/Mahora-Mono.ttf" "$out/fonts/keiland-mono.
 ln -sf "$(pwd)/userland/desktop/fonts/JetBrainsMono-Regular.ttf" "$out/fonts/keiland-fallback-mono.ttf"
 ln -sf "$(pwd)/userland/desktop/fonts/DroidSansFallbackFull.ttf" "$out/fonts/keiland-fallback.ttf"
 convert -size 8x4 gradient:blue-green -quality 90 "$out/insert.jpg"
-libpdf="userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
-	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c
-	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c userland/base/libpdf/replace.c userland/base/libpdf/embed.c userland/base/libpdf/subset.c
-	userland/base/libpdf/stroke.c userland/base/libpdf/raster.c userland/base/libpdf/font.c userland/base/libpdf/encoding.c
-	userland/base/libpdf/shading.c userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c userland/base/libpdf/cff.c
-	userland/base/libpdf/cffdata.c"
+libpdf="userland/desktop/libpdf/writer.c userland/desktop/libpdf/update.c userland/desktop/libpdf/outline.c userland/desktop/libpdf/object.c
+	userland/desktop/libpdf/reader.c userland/desktop/libpdf/filter.c userland/desktop/libpdf/ccitt.c userland/desktop/libpdf/crypt.c
+	userland/desktop/libpdf/image.c userland/desktop/libpdf/display.c userland/desktop/libpdf/content.c userland/desktop/libpdf/editor.c userland/desktop/libpdf/tounicode.c userland/desktop/libpdf/intake.c userland/desktop/libpdf/replace.c userland/desktop/libpdf/embed.c userland/desktop/libpdf/subset.c
+	userland/desktop/libpdf/stroke.c userland/desktop/libpdf/raster.c userland/desktop/libpdf/font.c userland/desktop/libpdf/encoding.c
+	userland/desktop/libpdf/shading.c userland/desktop/libpdf/charstrings.c userland/desktop/libpdf/type1.c userland/desktop/libpdf/cff.c
+	userland/desktop/libpdf/cffdata.c"
 status=0
 for variant in plain asan ubsan; do
 	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include -DPDF_EDIT_FONT_DIRECTORY=\"$out/fonts\""
@@ -45,7 +45,7 @@ for variant in plain asan ubsan; do
 	"$cc" $loose -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
 	"$cc" $loose -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
 	objects="$objects $out/sha2-$variant.o $out/digest-$variant.o"
-	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c; do
+	for file in userland/base/libz-compat/*.c userland/desktop/libjpeg-compat/*.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
 		"$cc" $loose -w -I"$(dirname "$file")" -c "$file" -o "$object"
 		objects="$objects $object"
@@ -57,7 +57,7 @@ for variant in plain asan ubsan; do
 	done
 	for test in host-edit-scan host-edit-change host-edit-image host-edit-intake host-edit-blank host-edit-text-change host-edit-insert-text host-tounicode host-font-unicode host-edit-text; do
 		# shellcheck disable=SC2086
-		"$cc" $flags -Wno-overlength-strings -Iuserland/base/libpdf $libpdf "plan/ws175/tests/$test.c" $objects -lm \
+		"$cc" $flags -Wno-overlength-strings -Iuserland/desktop/libpdf $libpdf "plan/ws175/tests/$test.c" $objects -lm \
 			-o "$out/$test-$variant"
 	done
 	if "$out/host-edit-scan-$variant" "$out/edit-images.pdf" > "$out/scan-$variant.txt" 2>&1; then
@@ -148,8 +148,8 @@ for variant in plain asan ubsan; do
 	done
 done
 # ws175-p005: the TrueType subset of DejaVu (composites), JetBrains Mono, Droid Sans Fallback and Mahora, read by fontTools.
-"$cc" -std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -I"$out/include" -Iuserland/base/libpdf \
-	userland/base/libpdf/subset.c plan/ws175/tests/host-truetype-subset.c -o "$out/host-truetype-subset"
+"$cc" -std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -I"$out/include" -Iuserland/desktop/libpdf \
+	userland/desktop/libpdf/subset.c plan/ws175/tests/host-truetype-subset.c -o "$out/host-truetype-subset"
 for pair in "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf|Héllo Ǻ" "userland/desktop/fonts/DroidSansFallbackFull.ttf|日本語テスト" \
 	"userland/desktop/fonts/JetBrainsMono-Regular.ttf|Hello é" "userland/desktop/fonts/Mahora-Regular.ttf|Hello"; do
 	font=${pair%%|*}

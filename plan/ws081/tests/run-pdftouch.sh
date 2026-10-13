@@ -23,7 +23,7 @@ done
 # The test document: eight Letter pages, each with bands of colour and as many squares as its number.
 python3 "$root/plan/ws081/tests/make-touch-pdf.py" "$out/touch.pdf"
 
-# libpdf's sources, as its Makefile lists them (userland/base/libpdf/Makefile's LIBPDF_SOURCES).
+# libpdf's sources, as its Makefile lists them (userland/desktop/libpdf/Makefile's LIBPDF_SOURCES).
 libpdf="writer.c update.c outline.c object.c reader.c filter.c ccitt.c image.c display.c content.c editor.c tounicode.c
 	intake.c replace.c embed.c subset.c stroke.c raster.c font.c encoding.c shading.c charstrings.c type1.c cff.c
 	cffdata.c crypt.c"
@@ -44,13 +44,13 @@ for variant in plain asan; do
 	"$cc" $loose -c "$root/src/libc/openbsd-sha2.c" -o "$build/sha2.o"
 	"$cc" $loose -c "$root/src/libc/openbsd-digest.c" -o "$build/digest.o"
 	objects="$build/sha2.o $build/digest.o"
-	for file in "$root"/userland/base/libz-compat/*.c "$root"/userland/base/libjpeg-compat/*.c "$root"/userland/desktop/libtruetype/*.c; do
+	for file in "$root"/userland/base/libz-compat/*.c "$root"/userland/desktop/libjpeg-compat/*.c "$root"/userland/desktop/libtruetype/*.c; do
 		object="$build/$(basename "$(dirname "$file")")-$(basename "$file" .c).o"
 		"$cc" $loose -I"$(dirname "$file")" -c "$file" -o "$object"
 		objects="$objects $object"
 	done
 	for name in $libpdf; do
-		"$cc" $strict -c "$root/userland/base/libpdf/$name" -o "$build/pdf-${name%.c}.o"
+		"$cc" $strict -c "$root/userland/desktop/libpdf/$name" -o "$build/pdf-${name%.c}.o"
 		objects="$objects $build/pdf-${name%.c}.o"
 	done
 	for name in $viewer; do

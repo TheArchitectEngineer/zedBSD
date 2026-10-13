@@ -90,9 +90,9 @@ endef
 comma := ,
 
 KEILAND_LINUX_PACKAGES ?= userland/base/libz-compat/Makefile.linux \
-	userland/base/libpng-compat/Makefile.linux \
-	userland/base/libjpeg-compat/Makefile.linux \
-	userland/base/libgif-compat/Makefile.linux \
+	userland/desktop/libpng-compat/Makefile.linux \
+	userland/desktop/libjpeg-compat/Makefile.linux \
+	userland/desktop/libgif-compat/Makefile.linux \
 	userland/desktop/linux-compat/Makefile.linux \
 	userland/desktop/libwayland/Makefile.linux \
 	userland/desktop/libtruetype/Makefile.linux \
@@ -108,7 +108,7 @@ include userland/desktop/mediastorage/Makefile.linux
 include userland/tests/wltest/Makefile.linux
 include userland/tests/mview/Makefile.linux
 
-include userland/base/libpdf/Makefile.linux
+include userland/desktop/libpdf/Makefile.linux
 include userland/desktop/preview/Makefile.linux
 include userland/desktop/terminal/Makefile.linux
 include userland/desktop/files/Makefile.linux
@@ -121,6 +121,7 @@ include userland/desktop/pdfviewer/Makefile.linux
 include userland/tests/kuidemo/Makefile.linux
 include userland/desktop/ime/Makefile.linux
 include userland/base/passkey/Makefile.linux
+include userland/base/fidoctl/Makefile.linux
 include userland/desktop/printd/Makefile.linux
 include userland/tests/printtest/Makefile.linux
 
