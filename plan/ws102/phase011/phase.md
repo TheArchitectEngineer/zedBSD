@@ -3,7 +3,7 @@
 # ws102-p011: L3 の数値目標への直し（遅れ・動き）
 
 Parent: [WS102](../ws.md)
-Status: in-progress — test-wait（2026-10-13 P2 q952: 基準値（T1-510）の読みで遅れの原因の見立てを立て、それを確かめる計測（waited_us）を足した。T1 の再計測の後に直す所を決める。直す所は WS102 の外（compositor の frame の完了の時期か libkeiui の present）になる見込みで、その時は Q1・ユーザーの判断）
+Status: in-progress — test-wait（T1-586、低い優先度。2026-10-13 Q1 の決定: 直し方は (3)、QEMU の値は参考、合否は 5330 の実機。ベータ2 に機能を足さない。計測 waited_us は main に統合（030e77da1））
 Disposition: normal
 Primary Milestone: MG006（WS から継承）
 Queue / attempts: q913（P1）
@@ -58,3 +58,7 @@ p010 の `latency` の段の基準値で目標（design.md §3 の L3 (a)(b)）�
 - (1) compositor が frame callback を返す時期を、合成の frame の完了（GPU の終わり）から、その buffer を合成に取り込んだ時（sample の時）へ早める。client は compositor の GPU の作業と並んで次の frame を描ける。全 client の frame の速さに効く。compositor の frame の枠組み（WS210 p013 の側）と重なる。
 - (2) libkeiui の swapchain を MAILBOX（libvulkan の WSI は持つ、`wsi-wayland.c:401`）にする: present が前の frame を待たず、未表示の frame を置き換える。待ちは消えるが、frame の速さの上限が無くなり、連続で描く app は `KL_PACING_FRAME`（WS210 p014）に頼る。全 app に効く。
 - (3) 何もしない: QEMU の値は参考（p010 と WS094 の扱い）として、5330 の実機で `latency` を測って (a)(b) を判定する。
+
+## 2026-10-13 Q1 の決定
+
+Q1:「直し方はあなたの推し (3) を採る（QEMU の値は参考、判定は 5330 の実機、ベータ2 に機能を足さない）」。→ compositor・libkeiui は変えない。T1-586（低い優先度）で waited_us の内訳を取り、見立てを確かめる。L3 の (a)(b) の合否は 5330 の実機の `latency` の値で判定する（実機の計測は未実施）。
