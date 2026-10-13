@@ -54,7 +54,9 @@ Q1「画面の回転は、ベータ2 では Settings に操作が無く、displa
 - `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws217-p004/amd64 build/ws217-p004/amd64/bin/wayland build/ws217-p004/amd64/bin/settings`・`… bin/keiland-system` → exit 0、warning 0（libkeiland を含む）。
 - `make -j16 KEILAND_ASK=n KEILAND_LINUX_BUILD=build/ws217-p004/linux keiland-linux` → exit 0、warning 0（Settings を含む、install はしていない）。
 - `python3 tools/i18n/tr.py check userland/desktop/locale/ja/settings.tr` → 0 problems。`git diff --check` → 無し。
-- 未実施: rpi4 の build、FreeBSD の build、QEMU・実機（T1 へ）、aggregate の `make check`（禁止）。
+- `make -j16 ZEDBSD_CONFIG=config/ci/config-rpi4.mk BUILD=build/ws217-p004/arm64 …/bin/wayland …/bin/settings` → exit 0、warning 0。
+- `sh plan/tools/keiland-os-boundary/check.sh` → PASS。
+- 未実施: FreeBSD の build、QEMU・実機（T1 へ）、aggregate の `make check`（禁止）。
 
 ### T1 への依頼の文（Q1 が台帳へ）
 
@@ -72,4 +74,4 @@ Q1「画面の回転は、ベータ2 では Settings に操作が無く、displa
 - T1 の R1〜R6（QEMU）。実機（5330 の i915 で turn pass の 90°・270°・180°）は p007（ユーザー／T1）。p002b・p003 も QEMU だけで、i915 での turn pass は未確かめ。
 - 上の「設計からの差」1・2 の Q1 の判断（1 は D14 の逸脱、ユーザーへの報告が要るかもしれない）。
 - head の回転（p005）、`bind_touch`・`listen_touch`・`touch` の中身と libkeiland の `kl_system_touches_*`（p006）、game の session（p012）。
-- rpi4・FreeBSD の build は未実施（Settings の rotate.c は Makefile.freebsd にも足した）。
+- FreeBSD の build は未実施（Settings の rotate.c は Makefile.freebsd にも足した）。
