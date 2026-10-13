@@ -338,7 +338,7 @@ AMD64_KERNEL_SOURCES := \
 	src/drivers/generic/backlight.c \
 	$(KERN_GPU_SOURCES) \
 	$(KERN_AUDIO_SOURCES) \
-	src/kern/tty.c \
+	src/kern/tty.c src/kern/tty-csi.c \
 	src/drivers/generic/system-device.c src/kern/system-event.c src/drivers/generic/memory-device.c src/kern/shutdown.c \
 	src/drivers/platform/pcat/graphics/vgafont.c src/drivers/platform/pcat/graphics/splash.c src/kern/init.c
 ifeq ($(CONFIG_INPUT_TEST_INJECT),y)

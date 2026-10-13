@@ -39,6 +39,7 @@
 #include <uapi/fcntl.h>
 #include <hal/hal.h>
 #include "kern/text-display.h"
+#include "tty-csi.h"
 #include <uapi/poll.h>
 #include <uapi/termios.h>
 
@@ -153,11 +154,37 @@ static struct tty console_ttys[TTY_VT_COUNT];
 static unsigned console_input_holds;
 static struct spinlock console_output_lock;
 static unsigned active_vt;
-static unsigned console_escape_state[TTY_VT_COUNT];
-static unsigned console_escape_parameter[TTY_VT_COUNT];
-static unsigned console_escape_has_parameter[TTY_VT_COUNT];
-/* Unsupported CSI parameters/intermediates consume through the final byte. */
-static unsigned console_escape_ignored[TTY_VT_COUNT];
+
+/*
+ * The escape-sequence reader of each virtual console.
+ *
+ * A sequence may arrive split across writes, so its parameters wait here.
+ * console_output_lock serializes every use; a console that redraws from
+ * its history resets its reader first.
+ */
+static struct tty_csi_parser console_escape[TTY_VT_COUNT];
+
+/*
+ * The graphic rendition each virtual console writes text with.
+ *
+ * It starts as plain text (the zero value is not plain, so a console
+ * starts it in tty_console_init) and changes only through a
+ * select-graphic-rendition command.  console_output_lock protects it.
+ */
+static struct tty_csi_attribute console_attribute[TTY_VT_COUNT];
+
+/*
+ * Whether a cell on the screen of each virtual console may carry an
+ * attribute other than plain text.
+ *
+ * A board's character output may keep a cell's old attribute when it
+ * writes a new character there, so after any rendition was used, text is
+ * written with its attribute set explicitly, plain text included.  The
+ * mark is set when non-plain text is written and cleared when the whole
+ * screen is blanked.  console_output_lock protects it.
+ */
+static unsigned console_attribute_marked[TTY_VT_COUNT];
+
 static char vt_history[TTY_VT_COUNT][TTY_VT_HISTORY];
 static size_t vt_history_used[TTY_VT_COUNT];
 static struct spinlock pty_registry_lock;
@@ -167,7 +194,9 @@ static void tty_flush_input_locked(struct tty *tty);
 static void tty_default_termios(struct termios *termios);
 static unsigned tty_console_rows(void);
 static unsigned tty_console_columns(void);
-static void tty_console_csi(unsigned vt, unsigned command);
+static void tty_console_csi(unsigned vt);
+static void tty_console_text(unsigned vt, const char *bytes, unsigned length);
+static void tty_console_attributed_byte(char byte, uint8_t attribute);
 static void tty_render(unsigned vt, const char *bytes, size_t length);
 static void tty_echo(struct tty *tty, const char *bytes, size_t length);
 static void tty_commit_locked(struct tty *tty, unsigned eof);
@@ -258,6 +287,13 @@ tty_console_init(
 		console_ttys[i].association_generation = 1;
 	}
 
+	/* Starts every console reading text and writing plain text. */
+	for (i = 0; i < TTY_VT_COUNT; i++) {
+		tty_csi_reset(&console_escape[i]);
+		tty_csi_attribute_reset(&console_attribute[i]);
+		console_attribute_marked[i] = 0;
+	}
+
 	/* Reports the initialized consoles. */
 	return 0;
 }
@@ -299,8 +335,18 @@ tty_vt_activate(
 	irq = spin_lock_irqsave(&console_output_lock);
 
 	active_vt = vt;
-	console_escape_state[vt] = 0;
 	kern_text_clear();
+
+	/*
+	 * The history may begin inside a sequence or after a rendition was
+	 * chosen, so the replay starts from text in plain rendition on the
+	 * blank screen.
+	 */
+	tty_csi_reset(&console_escape[vt]);
+	tty_csi_attribute_reset(&console_attribute[vt]);
+	console_attribute_marked[vt] = 0;
+
+	/* Draws the console's history and shows its cursor. */
 	tty_render(vt, vt_history[vt], vt_history_used[vt]);
 	kern_text_update_cursor();
 
@@ -1410,40 +1456,58 @@ tty_clear_span(
 	kern_text_write(row, column, KERN_TEXT_ATTRIB_NORMAL, blanks);
 }
 
-/* Executes a parsed CSI command on the HAL console. */
+/* Carries out a finished control sequence on the HAL console. */
 static void
 tty_console_csi(
-	unsigned vt,
-	unsigned command)
+	unsigned vt)
 {
+	struct tty_csi_parser *parser;
 	unsigned state_row;
 	unsigned state_column;
 	int state_shown;
 	unsigned columns;
 	unsigned rows;
 	unsigned amount;
+	int amount_present;
 	unsigned row;
+	unsigned column;
 
-	/* Minimal ANSI cursor/erase baseline shared by every HAL console. */
-	if (console_escape_has_parameter[vt])
-		amount = console_escape_parameter[vt];
-	else
-		amount = 1U;
+	/*
+	 * Reads the first parameter, which the one-parameter commands use as
+	 * a count or a selector and which defaults to one.
+	 */
+	parser = &console_escape[vt];
+	amount = tty_csi_parameter(parser, 0U, 1U);
+	amount_present = tty_csi_parameter_present(parser, 0U);
+
+	/* Reads the grid size and the cursor the command starts from. */
 	kern_text_get_size(&columns, &rows);
 	kern_text_get_cursor(&state_row, &state_column, &state_shown);
-	switch (command) {
+
+	/* Carries out the minimal ANSI cursor, erase and rendition set every HAL console shares. */
+	switch (parser->command) {
 	case 'H':
-		(void)kern_text_set_cursor(0U, 0U);
+	case 'f':
+		/* Moves to the row and column the sequence names, counted from one. */
+		tty_csi_position(parser, rows, columns, &row, &column);
+		(void)kern_text_set_cursor(row, column);
 		break;
 	case 'J':
+		/* Blanks the whole screen, which leaves only plain cells. */
 		if (amount == 2U) {
 			for (row = 0; row < rows; row++)
 				tty_clear_span(row, 0U, columns);
 			(void)kern_text_set_cursor(0U, 0U);
+			console_attribute_marked[vt] = 0;
 		}
 
 		break;
+	case 'm':
+		/* Changes the rendition later text is written with. */
+		tty_csi_attribute_apply(&console_attribute[vt], parser);
+		break;
 	case 'A':
+		/* Moves up, stopping at the first row. */
 		if (amount < state_row)
 			state_row = state_row - amount;
 		else
@@ -1451,18 +1515,21 @@ tty_console_csi(
 		(void)kern_text_set_cursor(state_row, state_column);
 		break;
 	case 'B':
+		/* Moves down, stopping at the last row. */
 		state_row += amount;
 		if (state_row >= rows)
 			state_row = rows - 1U;
 		(void)kern_text_set_cursor(state_row, state_column);
 		break;
 	case 'C':
+		/* Moves right, stopping at the last column. */
 		state_column += amount;
 		if (state_column >= columns)
 			state_column = columns - 1U;
 		(void)kern_text_set_cursor(state_row, state_column);
 		break;
 	case 'D':
+		/* Moves left, stopping at the first column. */
 		if (amount < state_column)
 			state_column = state_column - amount;
 		else
@@ -1470,6 +1537,7 @@ tty_console_csi(
 		(void)kern_text_set_cursor(state_row, state_column);
 		break;
 	case 'G':
+		/* Moves to a column of the same row, counted from one. */
 		if (amount == 0U)
 			state_column = 0U;
 		else
@@ -1479,21 +1547,116 @@ tty_console_csi(
 		(void)kern_text_set_cursor(state_row, state_column);
 		break;
 	case 'K':
+		/* Erases the whole row for 2, and from the cursor to the row's end for none or 0. */
 		if (amount == 2U) {
 			tty_clear_span(state_row, 0U, columns);
 			(void)kern_text_set_cursor(state_row, state_column);
-		} else if (!console_escape_has_parameter[vt] || amount == 0U) {
+		} else if (!amount_present || amount == 0U) {
 			tty_clear_span(state_row, state_column,
 				       columns - state_column);
 		}
 
 		break;
 	default:
+		/* A command the console does not know changes nothing. */
 		break;
 	}
 }
 
-/* Renders bytes on the HAL console, parsing CSI escapes across calls. */
+/* Writes a run of text in the console's rendition. */
+static void
+tty_console_text(
+	unsigned vt,
+	const char *bytes,
+	unsigned length)
+{
+	uint8_t attribute;
+	unsigned index;
+
+	/* Computes the attribute byte the text is written with. */
+	attribute = tty_csi_attribute_byte(&console_attribute[vt]);
+
+	/* Plain text on a screen of plain cells needs no attribute of its own. */
+	if (attribute == KERN_TEXT_ATTRIB_NORMAL && !console_attribute_marked[vt]) {
+		tty_console_puts(bytes, length);
+		return;
+	}
+
+	/*
+	 * Any other text marks the screen as holding attributes, so that plain
+	 * text written over these cells later sets its attribute back.
+	 */
+	if (attribute != KERN_TEXT_ATTRIB_NORMAL)
+		console_attribute_marked[vt] = 1;
+
+	/* Writes each byte with the attribute. */
+	for (index = 0; index < length; index++)
+		tty_console_attributed_byte(bytes[index], attribute);
+}
+
+/* Writes one byte at the cursor and gives the cell it fills an attribute. */
+static void
+tty_console_attributed_byte(
+	char byte,
+	uint8_t attribute)
+{
+	char cell[2];
+	unsigned columns;
+	unsigned rows;
+	unsigned before_row;
+	unsigned before_column;
+	unsigned after_row;
+	unsigned after_column;
+	int shown;
+
+	/*
+	 * A control byte, or one byte of a multi-byte character, cannot be
+	 * rewritten alone in its cell, so it goes through without an attribute.
+	 */
+	if ((unsigned char)byte < 0x20U || (unsigned char)byte > 0x7eU) {
+		kern_text_putc((unsigned char)byte);
+		return;
+	}
+
+	/* Notes the cell the byte is about to fill; a board with no display reports nothing. */
+	columns = 0;
+	rows = 0;
+	before_row = 0;
+	before_column = 0;
+	kern_text_get_size(&columns, &rows);
+	kern_text_get_cursor(&before_row, &before_column, &shown);
+
+	/*
+	 * Writes the byte through the character path, which wraps and
+	 * scrolls, and which mirrors the byte to a serial line on a board
+	 * that has one.
+	 */
+	kern_text_putc((unsigned char)byte);
+
+	/*
+	 * A byte in the last column wraps the cursor to the next row.  On the
+	 * last row the wrap scrolls instead and the cursor stays on its row,
+	 * and the filled cell has moved up one row with the scroll.
+	 */
+	after_row = before_row;
+	after_column = before_column;
+	kern_text_get_cursor(&after_row, &after_column, &shown);
+	if (before_column + 1U >= columns && after_row == before_row) {
+		/* The filled cell scrolled off a one-row grid. */
+		if (before_row == 0U)
+			return;
+
+		/* Follows the filled cell up one row. */
+		before_row--;
+	}
+
+	/* Rewrites the filled cell with the same byte and the attribute. */
+	cell[0] = byte;
+	cell[1] = '\0';
+	kern_text_write(before_row, before_column, attribute, cell);
+}
+
+/* Renders bytes on the HAL console, reading escape sequences across calls. */
 static void
 tty_render(
 	unsigned vt,
@@ -1501,71 +1664,59 @@ tty_render(
 	size_t length)
 {
 	static const char escape = '\033';
+	struct tty_csi_parser *parser;
+	enum tty_csi_result meaning;
 	size_t index;
 	size_t start;
 	char byte;
-
-	index = 0;
 
 	/* Ignores an empty write. */
 	if (length == 0)
 		return;
 
-	/* Consumes plain runs, then escape introducers, then parameters. */
+	/* Reads text runs and escape sequences in order. */
+	parser = &console_escape[vt];
+	index = 0;
 	while (index < length) {
-		if (console_escape_state[vt] == 0U) {
+		/* Finds the run of text before the next escape while no sequence is open. */
+		if (parser->state == TTY_CSI_GROUND) {
 			start = index;
 			while (index < length && (unsigned char)bytes[index] != 0x1bU)
 				index++;
+
+			/* Writes the run in one go. */
 			if (index != start)
-				tty_console_puts(bytes + start,
-						 (unsigned)(index - start));
-			if (index < length) {
-				console_escape_state[vt] = 1U;
-				index++;
-			}
+				tty_console_text(vt, bytes + start, (unsigned)(index - start));
 
-			continue;
+			/* Stops at the end of the write. */
+			if (index == length)
+				break;
 		}
 
-		if (console_escape_state[vt] == 1U) {
-			byte = bytes[index];
-			index++;
-			if (byte == '[') {
-				console_escape_state[vt] = 2U;
-				console_escape_parameter[vt] = 0U;
-				console_escape_has_parameter[vt] = 0U;
-				console_escape_ignored[vt] = 0U;
-			} else {
-				tty_console_puts(&escape, 1U);
-				tty_console_puts(bytes + index - 1U, 1U);
-				console_escape_state[vt] = 0U;
-			}
-
-			continue;
-		}
-
-		/* CSI private markers, separators and intermediates are not final bytes. */
+		/* Feeds one byte of an escape sequence to the console's reader. */
 		byte = bytes[index];
-		if (byte >= 0x20 && byte <= 0x3f && !(byte >= '0' && byte <= '9')) {
-			console_escape_ignored[vt] = 1U;
-			index++;
-			continue;
-		}
-
-		if (bytes[index] >= '0' && bytes[index] <= '9') {
-			console_escape_has_parameter[vt] = 1U;
-			if (console_escape_parameter[vt] < 1000U)
-				console_escape_parameter[vt] = console_escape_parameter[vt] * 10U +
-				    (unsigned)(bytes[index] - '0');
-			index++;
-			continue;
-		}
-
-		if (!console_escape_ignored[vt])
-			tty_console_csi(vt, (unsigned char)bytes[index]);
 		index++;
-		console_escape_state[vt] = 0U;
+		meaning = tty_csi_feed(parser, (unsigned char)byte);
+
+		/* Carries out what the byte meant to the reader. */
+		switch (meaning) {
+		case TTY_CSI_PLAIN:
+			/* Shows a text byte. */
+			tty_console_text(vt, &byte, 1U);
+			break;
+		case TTY_CSI_LITERAL:
+			/* Shows an escape that starts no control sequence, and the byte after it. */
+			tty_console_text(vt, &escape, 1U);
+			tty_console_text(vt, &byte, 1U);
+			break;
+		case TTY_CSI_COMMAND:
+			/* Carries out the finished sequence. */
+			tty_console_csi(vt);
+			break;
+		default:
+			/* An unfinished or dropped sequence shows nothing. */
+			break;
+		}
 	}
 }
 

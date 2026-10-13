@@ -73,7 +73,7 @@ KERN_OBJS := $(BUILD)/src/kern/entry.o $(BUILD)/src/kern/clock.o \
 	$(BUILD)/src/drivers/generic/input.o \
 	$(KERN_GPU_OBJS) \
 	$(KERN_AUDIO_OBJS) \
-	$(BUILD)/src/kern/tty.o \
+	$(BUILD)/src/kern/tty.o $(BUILD)/src/kern/tty-csi.o \
 	$(BUILD)/src/drivers/generic/system-device.o $(BUILD)/src/kern/system-event.o $(BUILD)/src/drivers/generic/memory-device.o $(BUILD)/src/kern/shutdown.o \
 	$(PCAT_GRAPHICS_OBJS) \
 	$(KERN_BOOT_OBJS) \
