@@ -3,7 +3,7 @@
 # ws217-p003: 入力の座標を回転に合わせる（touch panel・pen・絶対の pointer、anchor）
 
 Parent: [WS217](../ws.md)
-Status: in-progress（2026-10-13 P1 q959: 第 1 版の設計。design-reviewer の review を待たずに実装へ進む、指摘は同じ attempt で直す）
+Status: in-progress（2026-10-13 P1 q959: 第 1 版の設計で実装し、build 6 つ（amd64 ci・試験の config の wayland・vmunix・peninject、rpi4 の wayland・vmunix）と keiland-linux が warning 0、host 試験 PASS（§16）。design-reviewer の review 待ち（指摘は同じ attempt で直す）。T1 の試験は §12 の依頼の後 test-wait）
 Disposition: normal
 Primary Milestone: MG006（WS から継承）
 Queue / attempts: q959（2026-10-13 Q1 の依頼、P1）。承認: ユーザーの選択（2026-10-13 AskUserQuestion「WS217 p003（入力の座標）を続ける」、WS217 はベータ2）と WS217 の D1〜D6・D11・D12（ws.md）
@@ -140,6 +140,53 @@ p001 §12.2 の 3 と 7 の C5 の行。image は p002b と同じ（`AAT_CONFIG=
 - 机の上の板（非 direct）は論理の画面全体に写り、縦の画面では縦横比が崩れる（p001 §14）。
 - 回転の最中に押していた pen は、上げて置き直すまで hover として届く（down は送り直さない）。
 
+## 16. 実行の記録（2026-10-13 P1、agent/p1、base main `86ee7cf3e`）
+
+### 16.1 変えた所
+
+| file | 内容 |
+| --- | --- |
+| `userland/desktop/wayland/cursor-box.h`・`.c` | `struct kwl_cursor_physical`・`kwl_cursor_geometry`・`kwl_cursor_axis`、受け箱に `physical[]`・`absolute_slot`、`kwl_cursor_box_warp(box, geometry, …)`・`kwl_cursor_box_outputs(box, geometry)` が丸ごと書く、純粋な `kwl_cursor_geometry_place()`、`kwl_cursor_box_place()` が `absolute_slot` の panel で direct に写す。使う所の無くなった `kwl_cursor_scale_absolute()` を消した |
+| `rotate.h` | inline の `kwl_rotate_pixel_back()`（cursor-box.c は rotate.c 無しで link される） |
+| `heads.c`・`kwl.h` | `kwl_output_geometry()`・`kwl_output_rotation()`・`kwl_output_absolute()`、`kwl_input_device.direct` |
+| `input.c` | pen の `INPUT_PROP_DIRECT` を読み `attach_tablet(…, direct)`、touch screen と絶対の pointer は direct、`kwl_pointer_warp` が outputs を geometry に包む、`kwl_input_geometry()`（`kwl_input_sync` もこれ）、`kwl_input_rotated()`、log `KWL INPUT … kind=tablet abs=1 direct=D` |
+| `touch.c`・`touch.h` | `read_report` の写像を `kwl_output_absolute(…, direct 1)` に、`kwl_touch_cancel()`（`screen_gestures_end`・`screen_release` を `kwl_touch_remove` と共有、log `KWL TOUCH cancel all reason=… fingers=N` と既存の `KWL TOUCH cancel client=…`）、`scale_fixed` を消した |
+| `tablet.c`・`tablet.h` | `place_pointer` を `kwl_output_absolute(…, input->direct)` に、傾きを `device_tilt()`（direct なら `kwl_rotate_vector`）、`kwl_tablet_cancel()`（log `KWL TABLET cancel pens=N`）、log `KWL TABLET down …`、`KWL TABLET added … direct=D`、`scale_fixed` を消した |
+| `output-rotate.c` | TURN の資源を作れた後・park の前に `kwl_input_rotated`、最後に `kwl_input_geometry` |
+| `output-switch.c` | open の経路の ROTATED で `kwl_input_rotated`、最後に `kwl_input_geometry` |
+| `shot.c` | request `POINTER` → `OK x=X y=Y output=O`（受け箱の場所） |
+| `src/drivers/generic/hid-input.c` | `hid_input_pen_properties()`（Pen → DIRECT、Digitizer → POINTER か同じ descriptor の touch screen が DIRECT なら DIRECT、pen 無し → 0） |
+| `include/uapi/input-inject.h`・`src/drivers/generic/input-inject.c` | `INPUT_INJECT_KIND_PEN_POINTER 6U`、PEN は DIRECT、PEN_POINTER は POINTER と名前 `Test pen tablet (input-inject)` |
+| `userland/tests/peninject/main.c` | `peninject --pointer [SCRIPT]` |
+| `userland/desktop/libkeiland-backend/evdev/input-evdev.c`・`keiland-backend-evdev.h` | Linux・FreeBSD も `EVIOCGPROP` を読む（D11） |
+| `plan/ws217/tests/` | `host-rotate.c`（`kwl_rotate_pixel_back` の総当たり）、新 `host-absolute.{c,sh}`、新 `host-hid-pen-props.{c,sh}` |
+| 他の WS の試験（Q1 の許可、変更への追従） | `plan/ws213/tests/input-thread-host-test.c`（warp を geometry で、helper `warp_outputs`）、`plan/ws143/tests/hid-input-host-test.c`（`compare_devices` で新しい側の pen の property を除く `pen_properties`）、`plan/ws113/tests/host-output-switch.c`（stub の `kwl_input_rotated`・`kwl_input_geometry` の 2 つ。許可の 2 つの外だが、p002a で Q1 が直したのと同じ種類の link の追従） |
+
+### 16.2 command と結果（host、clang は tree の LLVM、host の cc は gcc 14.2.0）
+
+- `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws217-p003/amd64 build/ws217-p003/amd64/bin/wayland`・`… vmunix` → exit 0、warning 0。
+- `make -j16 ZEDBSD_CONFIG=plan/ws217/tests/config-amd64.mk BUILD=build/ws217-p003/amd64t …/bin/wayland`・`…/bin/peninject`・`…/vmunix`（input-inject.c を含む）→ exit 0、warning 0。
+- `make -j16 ZEDBSD_CONFIG=config/ci/config-rpi4.mk BUILD=build/ws217-p003/arm64 …/bin/wayland`・`…/vmunix` → exit 0、warning 0。
+- `make -j16 KEILAND_ASK=n KEILAND_LINUX_BUILD=build/ws217-p003/linux keiland-linux` → exit 0、warning 0（input-evdev.c・cursor-box.c・tablet.c を含む、install はしていない）。FreeBSD の build は未実施（Makefile は不変、input-evdev.c は Linux と共有）。
+- `sh plan/ws217/tests/host-rotate.sh` → PASS（plain・ASan/UBSan）。`host-absolute.sh` → PASS（5 つの panel × 4 角度 × anchor/head × direct/非 direct × 画素/24.8 で値 −5..25 を参照の式と比べる、0° は前の式と一致、90° の (1000,400) → (400,279)、小さい panel の全単射、受け箱の 4 角度・相対の clamp・geometry の丸ごとの書き）。`host-hid-pen-props.sh` → PASS（6 件。前の hid-input.c で流すと 4 件 FAIL になることも確かめた）。`host-scanout-rules.sh`・`host-displays-conf.sh` PASS。
+- 回帰: `plan/ws213/tests/input-thread-host-test.sh`（直した後）PASS（plain・ThreadSanitizer）、`cursor-due-host-test.sh` PASS、`plan/ws143/tests/hid-input-host-test.sh`（直した後）PASS（直す前は「tablet pen: main device」と BUG-267 if1 の 2 件の FAIL = 新しい property）、`plan/ws113/tests/host-output-switch.sh`（stub の後）PASS、`plan/ws159/tests/run-host-touchpad.sh` PASS（32 checks）。
+- `plan/bugs/BUG-267/tests/run-host-touch-group.sh` は main で既に link が壊れている（`kwl_pointer_warp_to` など ws213-p004 の後の関数の stub が無い）。master の一覧に無いので直していない（削除の候補、Q1 へ）。
+- `sh plan/tools/keiland-os-boundary/check.sh` → PASS。`python3 -I plan/tools/style-check.py`（変えた file と新しい試験）→ 新しい指摘 0（base の時から残る WS213 の試験の既存の指摘は除く）。`git diff --check` 空。
+
+### 16.3 Linux・FreeBSD の EVIOCGPROP の影響（Q1 の依頼）
+
+- 分類の入力が増えるだけで、`kwl_input_probe` の順は不変: pen（BTN_TOOL_PEN と pressure）→ touch pad（MT と `INPUT_PROP_POINTER`）→ touch screen（MT）→ keyboard → 絶対の pointer → 相対の pointer。
+- 5330 の Linux の記録 `plan/ws159/tests/latitude5330-linux/input-devices.txt`: Touchpad は `PROP=5`（POINTER と BUTTONPAD）→ これまで Linux では MT なので **touch screen** として扱われていた（指が絶対の点として写る）のが、zedBSD と同じ touch pad の層（相対の動き・tap・scroll）になる。PS/2 の mouse は `PROP=1` だが MT でないので不変、他の device は `PROP=0` で不変。touch pad の層は Linux の build に既に入っており（`Makefile.linux:16`）、host 試験 `run-host-touchpad.sh` が PASS。
+- touch screen（Linux は `INPUT_PROP_DIRECT`）は不変。pen は display の pen（DIRECT）だけ direct、Intuos などの板（POINTER）は非 direct: 0° では写像は同じ（Linux・FreeBSD は hw180 が無く回転を出さない、D14）。
+- QEMU+KVM の Linux guest での確かめは T1 の範囲（WS131 の Debian guest、touch pad の device が無いので分類の行 `KWL INPUT` だけ）。実機の Linux は未実施。
+
+### 16.4 未実施と残り
+
+- QEMU（T1、§12）と実機（5330 の内蔵 panel・pen LCD、p007）は未実施。
+- design-reviewer の review（Q1 が回した）の指摘は同じ attempt で直す。
+- 消す物（Q1 へ）: `build/tmp/ws217-mut/`（前の hid-input.c で試験が FAIL することを確かめた一時物）、`build/tmp/ws217-absolute.*`・`ws217-hid-pen-props.*`・`ws217-rotate.*` の古い run。
+
 ## Event
 
 - 2026-10-13 / ws217-p003-design-1: P1 が q959 で第 1 版を書いた（source は main `86ee7cf3e`）。review を待たずに実装へ。
+- 2026-10-13 / ws217-p003-impl-1: P1 が実装（§16）。build と host 試験 PASS、他の WS の試験 3 つを変更に追従（Q1 の許可）。

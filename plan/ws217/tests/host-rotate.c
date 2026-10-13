@@ -14,7 +14,8 @@
  * change of an output's state, the sixteen pairs of angles of the design's
  * table (plan/ws217/phase001/phase.md, section 4.6); the turn pass's
  * texture coordinates against the points (ws217-p002b) and what a user's
- * choice of an angle does.
+ * choice of an angle does; the inline way back of the absolute devices
+ * against the points and the fixed-point places (ws217-p003).
  */
 
 #include "rotate.h"
@@ -50,6 +51,7 @@ static void test_steps(void);
 static void test_coefficients(void);
 static void test_select(void);
 static void test_pointer(void);
+static void test_pixel_back(void);
 static void test_state(struct kwl_rotate_state *state, uint32_t width, uint32_t height, unsigned rotation, unsigned hw180, unsigned policy_any);
 
 /* Runs every check. */
@@ -68,6 +70,7 @@ main(void)
 	test_coefficients();
 	test_select();
 	test_pointer();
+	test_pixel_back();
 
 	/* The verdict. */
 	if (failures != 0U) {
@@ -730,4 +733,70 @@ test_pointer(void)
 	y = -3;
 	kwl_rotate_pointer_place(KWL_ROTATE_0, KWL_ROTATE_0, 1280U, 800U, &x, &y);
 	check(x == 1279 && y == 0, "a place outside is kept to the edge");
+}
+
+/*
+ * The inline way back (ws217-p003, the cursor's box): every physical pixel
+ * of each panel at each angle gives what kwl_rotate_point_back gives, and
+ * every 5th sub-pixel of a 5x3 panel, with the sizes in sub-pixels, what
+ * kwl_rotate_fixed_back gives.
+ */
+static void
+test_pixel_back(void)
+{
+	uint32_t physical_width;
+	uint32_t physical_height;
+	int32_t physical_x;
+	int32_t physical_y;
+	int32_t x;
+	int32_t y;
+	int32_t expected_x;
+	int32_t expected_y;
+	unsigned panel;
+	unsigned angle;
+	int same;
+
+	/* Each panel at each angle, every pixel. */
+	for (panel = 0U; panel < TEST_PANELS; panel++) {
+		physical_width = test_panels[panel][0];
+		physical_height = test_panels[panel][1];
+		for (angle = 0U; angle < 4U; angle++) {
+			same = 1;
+			for (physical_y = 0; physical_y < (int32_t)physical_height; physical_y++) {
+				for (physical_x = 0; physical_x < (int32_t)physical_width; physical_x++) {
+					/* The inline way back against the function's. */
+					x = physical_x;
+					y = physical_y;
+					kwl_rotate_pixel_back(test_angles[angle], physical_width, physical_height, &x, &y);
+					kwl_rotate_point_back(test_angles[angle], physical_width, physical_height, physical_x, physical_y, &expected_x, &expected_y);
+					if (x != expected_x || y != expected_y)
+						same = 0;
+				}
+			}
+
+			/* Every pixel the same. */
+			check(same, "the inline way back is kwl_rotate_point_back's");
+		}
+	}
+
+	/* The 5x3 panel's sub-pixels at each angle. */
+	physical_width = 5U;
+	physical_height = 3U;
+	for (angle = 0U; angle < 4U; angle++) {
+		same = 1;
+		for (physical_y = 0; physical_y < (int32_t)(physical_height * 256U); physical_y += 5) {
+			for (physical_x = 0; physical_x < (int32_t)(physical_width * 256U); physical_x += 5) {
+				/* In sub-pixels, against the fixed-point way back. */
+				x = physical_x;
+				y = physical_y;
+				kwl_rotate_pixel_back(test_angles[angle], physical_width * 256U, physical_height * 256U, &x, &y);
+				kwl_rotate_fixed_back(test_angles[angle], physical_width, physical_height, physical_x, physical_y, &expected_x, &expected_y);
+				if (x != expected_x || y != expected_y)
+					same = 0;
+			}
+		}
+
+		/* Every sub-pixel the same. */
+		check(same, "the inline way back in sub-pixels is kwl_rotate_fixed_back's");
+	}
 }

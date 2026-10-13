@@ -473,6 +473,8 @@ inject_declare_pen(
 		info.name = "Test pen tablet (input-inject)";
 		info.properties = 1U << INPUT_PROP_POINTER;
 	}
+
+	/* The rest of what it declares. */
 	info.physical_path = "input-inject";
 	info.id.bustype = BUS_VIRTUAL;
 	info.capabilities = inject_capabilities;

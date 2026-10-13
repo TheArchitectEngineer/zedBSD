@@ -699,6 +699,8 @@ kwl_pointer_warp(
 	} else {
 		kwl_cursor_box_warp(&server->cursor_box, NULL, move, context, &motion);
 	}
+
+	/* The main thread's view of the place. */
 	server->pointer_x = motion.x;
 	server->pointer_y = motion.y;
 	server->pointer_output = motion.output;
