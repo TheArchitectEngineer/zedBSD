@@ -251,6 +251,29 @@ struct tcp_socket {
 	 */
 	unsigned retransmit_serial;
 	/*
+	 * The persist state of a window too small for the oldest segment
+	 * (ws220-p005, as FreeBSD has it): while persist is set the timer
+	 * probes the window every clamp(RTO x 2^persist_shift, 5 s, 60 s)
+	 * (the doubling stops at 512), apart from the retransmission backoff;
+	 * persist_shift goes back to 0 when the state is entered and left.
+	 * last_receive is the tick of the last segment from the peer: a peer
+	 * that stops answering is dropped after 12 probes and an idle of
+	 * min(2 h, RTO x 2559), and after 60 s once this end has closed
+	 * (FIN_WAIT_1, LAST_ACK).  A peer that keeps answering is kept
+	 * (RFC 1122 section 4.2.2.17) unless TCP_MAXUNACKTIME is set:
+	 * maxunack (ticks, 0: off; maxunack_seconds as set) drops a
+	 * connection with a reset when its data has not moved since
+	 * unack_since (the tick data was queued with nothing outstanding, or
+	 * an acknowledgement took more than a byte; 0 with nothing
+	 * outstanding).
+	 */
+	unsigned persist;
+	unsigned persist_shift;
+	uint64_t last_receive;
+	uint64_t maxunack;
+	unsigned maxunack_seconds;
+	uint64_t unack_since;
+	/*
 	 * TCP_NODELAY as the caller set it, and the idle-probe state for
 	 * SO_KEEPALIVE: when the next probe is due and how many have gone
 	 * unanswered.

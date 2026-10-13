@@ -205,8 +205,10 @@ scenario rtt-step 0 --bytes 1048576 --delay-step-at-ms 20 --delay-step-us 300000
 scenario rtt-step-zedbsd 0 --bytes 1048576 --delay-step-at-ms 20 --delay-step-us 300000 --limit-s 120 \
     --expect-retransmits-max 8 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:0
 # ws220-p004 review-1 G2: B's reader stops for 5 s, B's window closes: A's probes double apart (at most 10, p003: 17739).
+# ws220-p005: the duplicates of the closed window start no fast retransmit; one after the window opens (the hole of a
+# segment B refused) may.
 scenario zero-window 2.5 --bytes 16777216 --reader-pause-at-ms 100 --reader-pause-ms 5000 --expect-retransmits-max 10 \
-    --expect-fast-retransmits 0:0
+    --expect-fast-retransmits 0:1
 # ws220-p004 review-1 M1: A's route fails for 50 ms; a write taken back and written again is not timed from its first
 # try (SRTT stays within 5 ms).
 scenario no-route 10 --bytes 16777216 --no-route-at-ms 100 --no-route-ms 50 --expect-srtt-max-us 5000
@@ -223,6 +225,45 @@ scenario window-lost 2 --bytes 1048576 --drop-ab 100,101,102,103,104,105,106,107
 # inside a recovery).
 scenario lan-wrap-loss 10 --bytes 16777216 --wrap-before 4194304 --loss-ab 0.1 --peer-window 65535 --limit-s 120 \
     --expect-fast-retransmits 1:100 --expect-timeouts-max 0
+# ws220-p005 (M7, the user's decision 2026-10-13: as FreeBSD): B's reader stops for 300 s and B keeps answering the probes
+# of its closed window: A is never given up, probes every 5 to 60 s (the persist timer), and the stream completes.
+scenario persist-answering 0 --bytes 4194304 --reader-pause-at-ms 100 --reader-pause-ms 300000 --limit-s 400 \
+    --expect-probe-gap-s 5:60 --expect-retransmits-max 16
+# The same peer goes silent (the link loses everything from 2 s), or A has shut its side at 1 s (FIN_WAIT_1), or A sets
+# TCP_MAXUNACKTIME 10: A drops the connection after the persist timer's 12 steps and min(2 h, RTO x 2559) of silence
+# (about 9 minutes here), after 60 s of silence, or 10 s after its data last moved with a reset B takes (B closed, 0).
+closes() {
+	name=$1
+	low=$2
+	high=$3
+	b_state=$4
+	shift 4
+	if [ "$only" != "  " ] && ! echo "$only" | grep -q " $name "; then
+		return 0
+	fi
+	output=$(timeout 900 "$out/tcp-model" --quiet "$@")
+	line=$(echo "$output" | grep '^close:')
+	echo "$name: $line $(echo "$output" | grep '^persist:')"
+	closed=$(echo "$line" | sed -n 's/.*a_closed_at_s=\([-0-9.]*\).*/\1/p')
+	state=$(echo "$line" | sed -n 's/.* b_state=\([-0-9]*\).*/\1/p')
+	if ! awk -v a="$closed" -v l="$low" -v h="$high" 'BEGIN { exit !(a >= l && a <= h) }'; then
+		echo "  FAIL: $name: A closed at $closed s, not between $low and $high s"
+		status=1
+	fi
+	if [ "$b_state" != "-" ] && [ "$state" != "$b_state" ]; then
+		echo "  FAIL: $name: B is in state $state, not $b_state"
+		status=1
+	fi
+	if echo "$output" | grep -q '^check: FAIL'; then
+		echo "$output" | grep '^check: FAIL' | sed 's/^/  /'
+		status=1
+	fi
+}
+closes persist-silent 500 800 - --bytes 4194304 --reader-pause-at-ms 100 --reader-pause-ms 100000000 --blackhole-at-ms 2000 \
+    --limit-s 1200 --expect-probe-gap-s 5:60
+closes persist-closed 60 80 - --bytes 4194304 --reader-pause-at-ms 100 --reader-pause-ms 100000000 --blackhole-at-ms 2000 \
+    --close-at-ms 1000 --limit-s 120
+closes maxunacktime 10 11 0 --bytes 4194304 --reader-pause-at-ms 100 --reader-pause-ms 300000 --maxunacktime 10 --limit-s 400
 # ws220-p002: the link loses everything 500 ms in: A gives up after R2 (at least 100 s; 1+2+4+8+16+32+60 s of resends).
 giveup() {
 	name=$1

@@ -38,8 +38,12 @@ extern "C" {
 
 /*
  * Options at IPPROTO_TCP.  TCP_NODELAY is the one POSIX names.
+ * TCP_MAXUNACKTIME (an int, seconds; 0, the default, turns it off) drops a
+ * connection whose sent data has made no progress for that long, with a
+ * reset (ws220-p005; FreeBSD's option of the same name and number).
  */
 #define TCP_NODELAY		1
+#define TCP_MAXUNACKTIME	68
 
 #define INADDR_ANY		0x00000000U
 #define INADDR_BROADCAST	0xffffffffU

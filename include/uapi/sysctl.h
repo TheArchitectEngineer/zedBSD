@@ -360,9 +360,11 @@ struct tcp_stats_header {
  * wait, 8 last ACK, 9 time wait).  An IPv4 address is in the first 4 bytes
  * of its field, in network order.  backoff is how many times the
  * retransmission timeout is doubled: the timeouts since the last valid
- * round-trip sample (ws220-p004); rto_ms is the timeout it waits now (the
- * connection's, so doubled) and retransmit_in_ms how long is left of it
- * (0: no segment outstanding).  With TCP_STATS_HAVE_RTT, srtt_us and
+ * round-trip sample (ws220-p004; a probe of a closed window answered or
+ * sent again as it opens sets it back too, and the probes themselves are
+ * the persist timer's, apart from it, ws220-p005); rto_ms is the timeout
+ * it waits now (the connection's, so doubled) and retransmit_in_ms how
+ * long is left of it (0: no segment outstanding).  With TCP_STATS_HAVE_RTT, srtt_us and
  * rttvar_us are RFC 6298's smoothed round-trip time and its variation and
  * rtt_samples how many samples they come from; while rtt_samples is 0 the
  * two mean nothing (no sample yet, not a round trip of 0).  rtt_samples

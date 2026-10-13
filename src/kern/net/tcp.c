@@ -132,6 +132,28 @@ struct tcp_segment_addresses {
  */
 #define TCP_SYN_RETRIED_RTO KERN_MS_TO_TICKS(3000U)
 
+/*
+ * The persist timer (ws220-p005, FreeBSD's): the probe interval is the RTO
+ * doubled by the persist backoff and held between 5 and 60 seconds; the
+ * backoff stops at its twelfth step; a peer silent through all of them is
+ * given up after min(2 hours, RTO x the backoff's total, 2559); one this end
+ * has closed to after 60 seconds of silence.
+ */
+#define TCP_PERSIST_MIN KERN_MS_TO_TICKS(5000U)
+#define TCP_PERSIST_MAX KERN_MS_TO_TICKS(60000U)
+#define TCP_PERSIST_SHIFT_MAX 12U
+#define TCP_PERSIST_TOTAL_BACKOFF 2559U
+#define TCP_PERSIST_IDLE_MAX KERN_MS_TO_TICKS(7200000U)
+#define TCP_PERSIST_CLOSED_IDLE KERN_MS_TO_TICKS(60000U)
+
+/*
+ * The system's TCP_MAXUNACKTIME for a new socket, in milliseconds: 0 turns
+ * the check off, as on FreeBSD (the user's decision, 2026-10-13).
+ */
+#ifndef CONFIG_TCP_MAXUNACKTIME_MS
+#define CONFIG_TCP_MAXUNACKTIME_MS 0U
+#endif
+
 /* The duplicate acknowledgements in a row that start a fast retransmit (RFC 5681 section 3.2). */
 #define TCP_DUPLICATE_ACKS_FAST 3U
 
@@ -274,6 +296,14 @@ struct tcp_endpoint {
 	struct tcp_endpoint *next;
 };
 
+/*
+ * The persist backoff, FreeBSD's tcp_backoff: the multiple of the RTO at
+ * each step of persist_shift.  Constant for the kernel's life.
+ */
+static const unsigned tcp_persist_backoff[TCP_PERSIST_SHIFT_MAX + 1U] = {
+	1U, 2U, 4U, 8U, 16U, 32U, 64U, 128U, 256U, 512U, 512U, 512U, 512U
+};
+
 static struct tcp_endpoint *tcp_sockets;
 static uint16_t next_ephemeral;
 static struct spinlock tcp_registry_lock;
@@ -315,6 +345,11 @@ static int tcp_retransmit_given_up_locked(struct tcp_endpoint *endpoint, uint64_
 static enum tcp_reset_check tcp_reset_check_locked(const struct tcp_endpoint *endpoint, uint32_t sequence);
 static int tcp_send_window_update_allowed_locked(const struct tcp_endpoint *endpoint, uint32_t sequence, uint32_t acknowledgement);
 static int tcp_probe_fits_locked(const struct tcp_endpoint *endpoint);
+static int tcp_persist_applies_locked(const struct tcp_endpoint *endpoint);
+static uint64_t tcp_persist_interval_locked(const struct tcp_endpoint *endpoint);
+static int tcp_persist_given_up_locked(const struct tcp_endpoint *endpoint, uint64_t now);
+static int tcp_maxunack_expired_locked(const struct tcp_endpoint *endpoint, uint64_t now);
+static void tcp_persist_leave_locked(struct tcp_endpoint *endpoint);
 static int tcp_oldest_fits_window_locked(const struct tcp_endpoint *endpoint);
 struct tcp_discard {
 	struct packet_buf *packets[CONFIG_TCP_SEND_QUEUE_MAX];
@@ -406,6 +441,10 @@ tcp_socket_create(
 
 	/* Its receive queue takes the packets the window it offers counts (BUG-222). */
 	endpoint->tcp.inet.socket.receive_packet_limit = TCP_RECEIVE_PACKETS;
+
+	/* The system's TCP_MAXUNACKTIME (ws220-p005). */
+	endpoint->tcp.maxunack_seconds = CONFIG_TCP_MAXUNACKTIME_MS / 1000U;
+	endpoint->tcp.maxunack = KERN_MS_TO_TICKS(CONFIG_TCP_MAXUNACKTIME_MS);
 	irq = spin_lock_irqsave(&tcp_registry_lock);
 
 	endpoint->next = tcp_sockets;
@@ -583,6 +622,9 @@ tcp_timer_run(
 	int error;
 	int failed;
 	int probe;
+	int persist;
+	int reset_peer;
+	uint32_t reset_sequence;
 
 	count = 0;
 	registered = 0;
@@ -648,13 +690,20 @@ tcp_timer_run(
 		tcp_output_retry(endpoint, payload, now);
 
 		/*
+		 * A connection whose data has not moved for its TCP_MAXUNACKTIME
+		 * is dropped with a reset (ws220-p005), whatever its timers.
+		 */
+		irq = spin_lock_irqsave(&socket->lock);
+		reset_peer = tcp_maxunack_expired_locked(endpoint, now);
+
+		/*
 		 * Only a segment handed to the device has a retransmission
 		 * deadline; the unsent ones wait for the output retry.
 		 */
-		irq = spin_lock_irqsave(&socket->lock);
 		sent = tcp_sent_count_locked(endpoint);
-		if (sent == 0 ||
-		    endpoint->tcp.retransmit_deadline > now) {
+		if (!reset_peer &&
+		    (sent == 0 ||
+		     endpoint->tcp.retransmit_deadline > now)) {
 			/*
 			 * With nothing to retransmit, an armed idle probe is
 			 * the other reason this socket may need attention.
@@ -690,10 +739,47 @@ tcp_timer_run(
 		}
 
 		/*
-		 * A segment resent for R2 without an answer from the peer
-		 * abandons the attempt (RFC 1122 section 4.2.3.5).
+		 * A window too small for the oldest segment is probed by the
+		 * persist timer, apart from the retransmission backoff, and
+		 * given up only by its own rules (ws220-p005); otherwise a
+		 * segment resent for R2 without an answer from the peer abandons
+		 * the attempt (RFC 1122 section 4.2.3.5).  Entering or leaving
+		 * the persist state starts its backoff over.
 		 */
-		given_up = tcp_retransmit_given_up_locked(endpoint, now);
+		persist = 0;
+		given_up = 0;
+		if (!reset_peer)
+			persist = tcp_persist_applies_locked(endpoint);
+		if (reset_peer) {
+			given_up = 1;
+		} else if (persist) {
+			if (endpoint->tcp.persist == 0) {
+				endpoint->tcp.persist = 1;
+				endpoint->tcp.persist_shift = 0;
+			}
+
+			/* The persist timer's own rules (FreeBSD's). */
+			given_up = tcp_persist_given_up_locked(endpoint, now);
+		} else {
+			tcp_persist_leave_locked(endpoint);
+			given_up = tcp_retransmit_given_up_locked(endpoint, now);
+		}
+
+		/*
+		 * A connection dropped for TCP_MAXUNACKTIME tells its peer with a
+		 * reset, before it forgets the peer.  Its sequence number is
+		 * SND.UNA, which a peer that has acknowledged all it took expects
+		 * (RFC 5961 section 3.2 takes a reset only there); a peer that
+		 * challenges it is answered by the reset of a connection gone.
+		 */
+		if (reset_peer) {
+			reset_sequence = endpoint->tcp.send_unacknowledged;
+			spin_unlock_irqrestore(&socket->lock, irq);
+			(void)tcp_send_segment_at(endpoint, reset_sequence, TCP_RST | TCP_ACK, NULL, 0);
+			irq = spin_lock_irqsave(&socket->lock);
+		}
+
+		/* A connection given up or dropped is closed, and those waiting on it hear why. */
 		if (given_up) {
 			tcp_retransmit_reset(endpoint, &discard);
 			endpoint->tcp.state = TCP_CLOSED;
@@ -755,7 +841,7 @@ tcp_timer_run(
 		serial = endpoint->tcp.retransmit_serial;
 		immediate = endpoint->tcp.retransmit_immediate;
 		endpoint->tcp.retransmit_immediate = 0;
-		if (!immediate)
+		if (!immediate && !persist)
 			endpoint->tcp.rto_backoff++;
 		exponent = endpoint->tcp.rto_backoff;
 
@@ -767,7 +853,7 @@ tcp_timer_run(
 		 * ws220-p004 review-1 G1), and the duplicates the resends bring
 		 * start no fast retransmit.
 		 */
-		if (!immediate) {
+		if (!immediate && !persist) {
 			endpoint->tcp.recover = tcp_sent_end_locked(endpoint);
 			endpoint->tcp.recovery = 1;
 			endpoint->tcp.recovery_by_timeout = 1;
@@ -775,9 +861,20 @@ tcp_timer_run(
 			endpoint->tcp.dupack_guard = 0;
 		}
 
-		/* The next deadline, the timeout doubled as many times as it is backed off. */
+		/*
+		 * The next deadline: the timeout doubled as many times as it is
+		 * backed off, or in the persist state the next probe's interval,
+		 * whose step then moves on (up to the last).
+		 */
 		rto = tcp_rto_locked(endpoint);
 		delay = tcp_backoff_timeout(rto, exponent);
+		if (persist) {
+			delay = tcp_persist_interval_locked(endpoint);
+			if (endpoint->tcp.persist_shift < TCP_PERSIST_SHIFT_MAX)
+				endpoint->tcp.persist_shift++;
+		}
+
+		/* The deadline itself. */
 		endpoint->tcp.retransmit_deadline = now + delay;
 
 		/*
@@ -856,8 +953,10 @@ tcp_timer_run(
 			endpoint->tcp.retransmit_deadline = now + delay;
 
 			/* The doubling taken back too, unless a sample has set it again meanwhile; an immediate one stays so. */
-			if (!immediate && endpoint->tcp.rto_backoff == exponent)
+			if (!immediate && !persist && endpoint->tcp.rto_backoff == exponent)
 				endpoint->tcp.rto_backoff--;
+			if (persist && endpoint->tcp.persist_shift != 0)
+				endpoint->tcp.persist_shift--;
 			endpoint->tcp.retransmit_immediate = immediate;
 
 			/* The next refused resend knows this one was refused too. */
@@ -933,6 +1032,7 @@ tcp_timer_next_deadline(
 	unsigned long irq;
 	uint64_t candidate;
 	uint64_t retry;
+	uint64_t unacked;
 	unsigned long socket_irq;
 	unsigned sent;
 
@@ -961,6 +1061,13 @@ tcp_timer_next_deadline(
 		retry = 0;
 		if (endpoint->tcp.send_flushing == 0)
 			retry = endpoint->tcp.output_retry_deadline;
+
+		/* The TCP_MAXUNACKTIME limit, when it comes first (ws220-p005). */
+		unacked = 0;
+		if (endpoint->tcp.maxunack != 0 && endpoint->tcp.unack_since != 0)
+			unacked = endpoint->tcp.unack_since + endpoint->tcp.maxunack;
+		if (unacked != 0 && (candidate == 0 || unacked < candidate))
+			candidate = unacked;
 
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
 
@@ -1131,7 +1238,7 @@ tcp_setsockopt(
 	/* Only this protocol's own level is handled here. */
 	if (socket == NULL || level != IPPROTO_TCP)
 		return ENOPROTOOPT;
-	if (option != TCP_NODELAY)
+	if (option != TCP_NODELAY && option != TCP_MAXUNACKTIME)
 		return ENOPROTOOPT;
 	if (value == NULL || length != sizeof(enabled))
 		return EINVAL;
@@ -1142,6 +1249,25 @@ tcp_setsockopt(
 	/* Handles a socket that is not a TCP endpoint. */
 	if (endpoint == NULL)
 		return ENOPROTOOPT;
+
+	/*
+	 * TCP_MAXUNACKTIME: the seconds a connection's data may go without
+	 * progress before it is dropped with a reset, 0 for never (ws220-p005).
+	 */
+	if (option == TCP_MAXUNACKTIME) {
+		if (enabled < 0)
+			return EINVAL;
+		irq = spin_lock_irqsave(&socket->lock);
+
+		endpoint->tcp.maxunack_seconds = (unsigned)enabled;
+		endpoint->tcp.maxunack = KERN_MS_TO_TICKS((uint64_t)(unsigned)enabled * 1000U);
+
+		spin_unlock_irqrestore(&socket->lock, irq);
+
+		/* The worker learns of the new deadline. */
+		net_worker_wakeup();
+		return 0;
+	}
 
 	/*
 	 * The stored value is what getsockopt reports.  This implementation
@@ -1185,7 +1311,7 @@ tcp_getsockopt(
 	/* Only this protocol's own level is handled here. */
 	if (socket == NULL || level != IPPROTO_TCP)
 		return ENOPROTOOPT;
-	if (option != TCP_NODELAY)
+	if (option != TCP_NODELAY && option != TCP_MAXUNACKTIME)
 		return ENOPROTOOPT;
 	if (value == NULL || length == NULL || *length < sizeof(enabled))
 		return EINVAL;
@@ -1195,8 +1321,16 @@ tcp_getsockopt(
 	/* Handles a socket that is not a TCP endpoint. */
 	if (endpoint == NULL)
 		return ENOPROTOOPT;
+
+	/* The option's value: TCP_NODELAY as set, or TCP_MAXUNACKTIME in seconds. */
 	irq = spin_lock_irqsave(&socket->lock);
-	enabled = endpoint->tcp.nodelay != 0;
+
+	if (option == TCP_MAXUNACKTIME) {
+		enabled = (int)endpoint->tcp.maxunack_seconds;
+	} else {
+		enabled = endpoint->tcp.nodelay != 0;
+	}
+
 	spin_unlock_irqrestore(&socket->lock, irq);
 	kern_memcpy(value, &enabled, sizeof(enabled));
 	*length = sizeof(enabled);
@@ -1820,6 +1954,9 @@ tcp_retransmit_reset(
 	endpoint->tcp.recovery_by_timeout = 0;
 	endpoint->tcp.dupack_guard = 0;
 	endpoint->tcp.duplicate_acks = 0;
+	endpoint->tcp.persist = 0;
+	endpoint->tcp.persist_shift = 0;
+	endpoint->tcp.unack_since = 0;
 
 	/* No segment is left to time; the estimate and its backoff stay for the connection. */
 	endpoint->tcp.rtt_timing = 0;
@@ -2061,6 +2198,9 @@ tcp_rtt_forget_locked(
 	endpoint->tcp.recovery_by_timeout = 0;
 	endpoint->tcp.dupack_guard = 0;
 	endpoint->tcp.duplicate_acks = 0;
+	endpoint->tcp.persist = 0;
+	endpoint->tcp.persist_shift = 0;
+	endpoint->tcp.unack_since = 0;
 }
 
 /*
@@ -2229,6 +2369,147 @@ tcp_probe_fits_locked(
 }
 
 /*
+ * Tells whether a connection is in the persist state, under the socket
+ * lock: a data segment is the oldest sent and the window the peer
+ * advertises cannot take it, in a state that sends data (ws220-p005).
+ */
+static int
+tcp_persist_applies_locked(
+	const struct tcp_endpoint *endpoint)
+{
+	const struct tcp_pending *oldest;
+	unsigned sent;
+	int fits;
+
+	/* A state with data to send: before the handshake there is no window, after both FINs no data. */
+	if (endpoint->tcp.state != TCP_ESTABLISHED &&
+	    endpoint->tcp.state != TCP_CLOSE_WAIT &&
+	    endpoint->tcp.state != TCP_FIN_WAIT_1 &&
+	    endpoint->tcp.state != TCP_LAST_ACK)
+		return 0;
+
+	/* A data segment sent and not acknowledged. */
+	sent = tcp_sent_count_locked(endpoint);
+	if (sent == 0)
+		return 0;
+	oldest = &endpoint->tcp.send_queue[endpoint->tcp.send_first];
+	if (oldest->length == 0)
+		return 0;
+
+	/* The window takes it: the retransmission timer's, not the persist timer's. */
+	fits = tcp_oldest_fits_window_locked(endpoint);
+	if (fits)
+		return 0;
+
+	/* Succeeded: the window is too small for it. */
+	return 1;
+}
+
+/*
+ * Gives the persist timer's next interval, under the socket lock: the RTO
+ * times the persist backoff's step, held between 5 and 60 seconds
+ * (FreeBSD's tcp_setpersist).
+ */
+static uint64_t
+tcp_persist_interval_locked(
+	const struct tcp_endpoint *endpoint)
+{
+	uint64_t interval;
+	unsigned shift;
+
+	/* The RTO times the step's multiple. */
+	shift = endpoint->tcp.persist_shift;
+	if (shift > TCP_PERSIST_SHIFT_MAX)
+		shift = TCP_PERSIST_SHIFT_MAX;
+	interval = tcp_rto_locked(endpoint) * tcp_persist_backoff[shift];
+
+	/* Held between the least and the most. */
+	if (interval < TCP_PERSIST_MIN)
+		interval = TCP_PERSIST_MIN;
+	if (interval > TCP_PERSIST_MAX)
+		interval = TCP_PERSIST_MAX;
+
+	/* Succeeded: the interval in ticks. */
+	return interval;
+}
+
+/*
+ * Tells whether the persist timer gives a connection up, under the socket
+ * lock (FreeBSD's tcp_timer_persist).
+ *
+ * A peer that answers (last_receive keeps moving) is never given up here
+ * (RFC 1122 section 4.2.2.17); TCP_MAXUNACKTIME is the way to drop one.  A
+ * silent one is given up after the last backoff step and an idle of
+ * min(2 hours, RTO x 2559), or after 60 seconds once this end has closed.
+ */
+static int
+tcp_persist_given_up_locked(
+	const struct tcp_endpoint *endpoint,
+	uint64_t now)
+{
+	uint64_t idle;
+	uint64_t limit;
+
+	/* The time since the peer last sent anything. */
+	idle = now - endpoint->tcp.last_receive;
+
+	/* After every backoff step, silent for the longest idle. */
+	limit = tcp_rto_locked(endpoint) * TCP_PERSIST_TOTAL_BACKOFF;
+	if (limit > TCP_PERSIST_IDLE_MAX)
+		limit = TCP_PERSIST_IDLE_MAX;
+	if (endpoint->tcp.persist_shift >= TCP_PERSIST_SHIFT_MAX && idle >= limit)
+		return 1;
+
+	/* Closed by this end (FIN_WAIT_1, LAST_ACK), silent for a minute. */
+	if (endpoint->tcp.state == TCP_FIN_WAIT_1 || endpoint->tcp.state == TCP_LAST_ACK) {
+		if (idle >= TCP_PERSIST_CLOSED_IDLE)
+			return 1;
+	}
+
+	/* Succeeded: the window is probed again. */
+	return 0;
+}
+
+/*
+ * Tells whether a connection's data has made no progress for its
+ * TCP_MAXUNACKTIME, under the socket lock (ws220-p005).
+ */
+static int
+tcp_maxunack_expired_locked(
+	const struct tcp_endpoint *endpoint,
+	uint64_t now)
+{
+	/* The option is off. */
+	if (endpoint->tcp.maxunack == 0)
+		return 0;
+
+	/* Nothing waits for an acknowledgement. */
+	if (endpoint->tcp.unack_since == 0)
+		return 0;
+
+	/* Not that long yet. */
+	if (now - endpoint->tcp.unack_since < endpoint->tcp.maxunack)
+		return 0;
+
+	/* Succeeded: no progress for that long. */
+	return 1;
+}
+
+/*
+ * Leaves the persist state, under the socket lock: the window has opened,
+ * the probe was answered, or the timer resends a segment the window takes.
+ * The backoff of a step starts over the next time (FreeBSD's t_rxtshift).
+ */
+static void
+tcp_persist_leave_locked(
+	struct tcp_endpoint *endpoint)
+{
+	/* Out of the state, its backoff back at the first step. */
+	endpoint->tcp.persist = 0;
+	endpoint->tcp.persist_shift = 0;
+}
+
+/*
  * Tells whether the oldest segment sent fits the window the peer
  * advertises, under the socket lock (ws220-p005 review-1 G1): while it does
  * not, the peer's acknowledgements answer a closed window.
@@ -2281,6 +2562,7 @@ tcp_retire_acknowledged(
 	uint64_t timeout;
 	int progressed = 0;
 	int recovering;
+	uint32_t acked = 0;
 	int probe_answered = 0;
 	int beyond;
 	int covered;
@@ -2312,6 +2594,9 @@ tcp_retire_acknowledged(
 		/* A probe answered ends the backoff of the closed window (review-1 M3). */
 		if (entry->probe != 0)
 			probe_answered = 1;
+
+		/* The sequence space taken, which TCP_MAXUNACKTIME counts as progress. */
+		acked += entry->advance;
 
 		/* Hands its copy to the caller to free, and takes it off the ring. */
 		discard->packets[discard->count++] = entry->packet;
@@ -2373,9 +2658,24 @@ tcp_retire_acknowledged(
 		endpoint->tcp.recovery_by_timeout = 0;
 	}
 
-	/* The backoff of a closed window ends when its probe is answered. */
-	if (probe_answered)
+	/* The backoff of a closed window ends when its probe is answered, and the persist state with it. */
+	if (probe_answered) {
 		endpoint->tcp.rto_backoff = 0;
+		tcp_persist_leave_locked(endpoint);
+	}
+
+	/*
+	 * An acknowledgement that took more than a byte is progress for
+	 * TCP_MAXUNACKTIME (as FreeBSD counts it); with nothing left
+	 * waiting, the time stops.
+	 */
+	if (endpoint->tcp.send_count == 0) {
+		endpoint->tcp.unack_since = 0;
+	} else if (acked > 1U) {
+		endpoint->tcp.unack_since = sched_ticks();
+	}
+
+	/* The duplicates and the resends of the oldest start over, and the peer has answered. */
 	endpoint->tcp.duplicate_acks = 0;
 	endpoint->tcp.retransmit_count = 0;
 	endpoint->tcp.retransmit_since = 0;
@@ -2568,6 +2868,10 @@ tcp_send_reliable(
 		endpoint->tcp.counters.data_segments_out++;
 		endpoint->tcp.counters.data_bytes_out += length;
 	}
+
+	/* Data queued with nothing waiting starts the time TCP_MAXUNACKTIME measures (ws220-p005). */
+	if (length != 0 && endpoint->tcp.unack_since == 0)
+		endpoint->tcp.unack_since = sched_ticks();
 
 	/*
 	 * This thread sends the entry itself when it is the only unsent one
@@ -2810,6 +3114,8 @@ tcp_mark_sent_locked(
 	unsigned sent;
 	unsigned slot;
 	uint64_t rto;
+	uint64_t interval;
+	int persist;
 	uint64_t timeout;
 
 	/* What was in flight before it, and the entry itself, the first unsent one. */
@@ -2841,6 +3147,22 @@ tcp_mark_sent_locked(
 	if (entry->length != 0 &&
 	    entry->sequence + entry->advance - endpoint->tcp.send_unacknowledged > (uint32_t)endpoint->tcp.peer_window)
 		entry->probe = 1;
+
+	/*
+	 * A probe sent with nothing else in flight starts the persist state:
+	 * its next probe is the persist timer's, not a retransmission
+	 * (ws220-p005).
+	 */
+	persist = 0;
+	if (entry->probe != 0 && sent == 0)
+		persist = tcp_persist_applies_locked(endpoint);
+	if (persist) {
+		endpoint->tcp.persist = 1;
+		endpoint->tcp.persist_shift = 0;
+		interval = tcp_persist_interval_locked(endpoint);
+		endpoint->tcp.retransmit_deadline = now + interval;
+		endpoint->tcp.persist_shift = 1;
+	}
 
 	/* With no segment being timed, this one is: one sample a round trip (ws220-p004). */
 	if (endpoint->tcp.rtt_timing == 0) {
@@ -4636,6 +4958,8 @@ tcp_passive_syn(
 	    listener->tcp.inet.socket.receive_timeout_ticks;
 	child->tcp.inet.socket.send_timeout_ticks =
 	    listener->tcp.inet.socket.send_timeout_ticks;
+	child->tcp.maxunack = listener->tcp.maxunack;
+	child->tcp.maxunack_seconds = listener->tcp.maxunack_seconds;
 	child->tcp.inet.socket.reuse_address =
 	    listener->tcp.inet.socket.reuse_address;
 	child->tcp.inet.bind_reuse_address =
@@ -5008,6 +5332,7 @@ tcp_segment_input(
 			endpoint->tcp.send_window_sequence = sequence;
 			endpoint->tcp.send_window_acknowledgement = acknowledgement;
 			endpoint->tcp.state = TCP_ESTABLISHED;
+			endpoint->tcp.last_receive = sched_ticks();
 			tcp_keepalive_arm_locked(endpoint);
 			established = 1;
 		}
@@ -5043,6 +5368,7 @@ tcp_segment_input(
 			endpoint->tcp.send_window_sequence = sequence;
 			endpoint->tcp.send_window_acknowledgement = acknowledgement;
 			endpoint->tcp.state = TCP_ESTABLISHED;
+			endpoint->tcp.last_receive = sched_ticks();
 			endpoint->tcp.active_connect_generation = 0;
 			endpoint->tcp.connect_wait_deadline = 0;
 			tcp_keepalive_arm_locked(endpoint);
@@ -5091,6 +5417,9 @@ tcp_segment_input(
 
 	/* The segment of a connection past its handshake is counted for net.tcpstats. */
 	endpoint->tcp.counters.segments_in++;
+
+	/* The peer answers: the persist timer does not give it up (ws220-p005). */
+	endpoint->tcp.last_receive = sched_ticks();
 	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
 
 	/*
@@ -5249,6 +5578,7 @@ tcp_segment_input(
 		if (reprobe) {
 			endpoint->tcp.send_queue[endpoint->tcp.send_first].probe = 0;
 			endpoint->tcp.rto_backoff = 0;
+			tcp_persist_leave_locked(endpoint);
 			endpoint->tcp.retransmit_deadline = sched_ticks();
 			endpoint->tcp.retransmit_immediate = TCP_IMMEDIATE_PROBE;
 			endpoint->tcp.counters.immediate_resends++;
