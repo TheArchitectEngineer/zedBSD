@@ -3,7 +3,7 @@
 # ws143-p007: Linux の Bluetooth の backend（BlueZ の D-Bus）と FreeBSD の未対応の表示
 
 Parent: [WS143](../ws.md)
-Status: in-progress（2026-10-14 P3 q967: review-1 の後の第 2 版（§9）で実装。第 1 版は 2026-10-13 P2 q962）
+Status: 実装済み・T1 の試験待ち（2026-10-14 P3 q967: 第 2 版（§9）で実装、host 試験 PASS、記録は §10。QEMU の Debian と FreeBSD の PNG は T1。第 1 版は 2026-10-13 P2 q962）
 Phase disposition: normal
 Queue: q962（P2、2026-10-13）。承認: ユーザー「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。」、WS143 の design.md §9（D7・D13 ほか、2026-10-05 夕 ユーザー「全部推奨」）と §10 の p007、2026-10-08 ユーザー「Linux・FreeBSD は 10/13 以降」。
 Queue（実装）: q967（P3、2026-10-14）。review: [review-1](review-1.md)（design-reviewer、判定「直せば実装してよい」、重大 4 と中 M1・M3・M5・M7・M8 を入れれば再 review なし、Q1）。
@@ -245,3 +245,37 @@ review-1 の重大 R1〜R4、中 M1〜M13、軽微 m1〜m9 を入れた。Q1 の
 
 - Linux の Keiland の Agent は `DisplayYesNo` で、文字・数を打って答える口が無い。pairing できないのは BlueZ が `RequestPinCode`（PIN を打つ必要のある、SSP の無い古い device のうち、キーボードでない物）か `RequestPasskey`（相手が表示だけの device で、こちらが数を打つ場合）を送ってくる device だけ。SSP の無い古いキーボードは BlueZ が `DisplayPinCode` で 6 桁の PIN を示すので `ASK_PASSKEY`（device で打つ数）で pairing できる。BlueZ が一般的な PIN を自分で試すかは未確認（QEMU で見る）。断った時の result の reason は `input-unsupported`。
 - `RequestDefaultAgent` は後勝ち（L2）。同じ機械で別の desktop の session（別の VT・利用者の切り替え）が後に Agent を登録すると、相手からの pairing の question はそちらへ行く。自分の Pair の question は自分の connection の Agent に来る。
+
+## 10. 実装の記録（2026-10-14 P3 q967）
+
+### 変えた物
+
+| file | 内容 |
+| --- | --- |
+| `userland/desktop/libkeiland-backend-linux/bluetooth-linux.c`（新） | §9 の backend。専用の connection（開く時だけ同期）、送った call の表（16、期限つき）、adapter と device の表（128、出すのは 32）、Agent（DisplayYesNo）、request（Pair → Trusted → Connect）、RSSI だけの変化の 2 秒のまとめ、接続を失った時の backoff（1 秒 → 30 秒、60 秒続けば戻す） |
+| `userland/desktop/libkeiland-backend-linux/dbus-linux.c`・`.h` | `dbus_open_address`、`dbus_send_call`（flags、`LINUX_DBUS_NO_AUTO_START`）、`dbus_send_return_to`・`dbus_send_error_to`（`dbus_send_return`・`dbus_send_error` はその包み）、`dbus_arg.variant` と `writer_variant`、`dbus_read_variant`・`dbus_read_int16`、`dbus_dispatch_messages` が返事と error も callback に渡す |
+| `userland/desktop/libkeiland-backend-linux/Makefile.linux` | Linux の build は `bluetooth-unsupported.c` の代わりに `bluetooth-linux.c` |
+| `userland/desktop/libkeiland-backend/unsupported/bluetooth-unsupported.c`・`keiland-backend.h` | comment だけ（unsupported は FreeBSD の物、Linux は BlueZ） |
+| `plan/ws143/tests/bt-linux-host-test.sh`・`.c`・`bt-linux-fake-bluez.py`（新） | §9.7 の host 試験 |
+
+FreeBSD の source（`libkeiland-backend-freebsd/Makefile.freebsd` は `bluetooth-unsupported.c` のまま）は変えていない。
+
+### 確かめ（host、2026-10-14）
+
+- `sh plan/ws143/tests/bt-linux-host-test.sh`: **PASS**（plain 54 checks ok、ASan+UBSan 54 checks ok。出力 `build/ws143-bt-linux.run.w8rNrK`）。確かめた物: 起動で ON・adapter の名・Agent の default・device 3 つ（paired が先、Battery1 の 80、LE random、BR/EDR）、RegisterAgent の capability `DisplayYesNo`、InterfacesAdded、RSSI の変化と invalidated、表に無い device の PropertiesChanged から GetAll、Pair の数の一致（question CONFIRM 123456・own 1・pairing 1）→ yes → Paired・Trusted・Connected、no → EACCES、`Failed` の本文が reason（ECONNREFUSED `br-connection-page-timeout`）、RequestPinCode の拒否（Rejected、result EACCES `input-unsupported`）、DisplayPasskey（PASSKEY 654321、Pair の後に ASK_END）、cancel（ECANCELED、CancelPairing が送られた）、BlueZ の Cancel（ASK_END、EACCES）、AuthorizeService の 4 つ（未 paired → Rejected、paired untrusted の HID → CONSENT → yes → ok、HID でない → Rejected、trusted → ok）、RequestPasskey の拒否、owner でない caller の Agent の call → AccessDenied、POWER off・on、Connect の AlreadyConnected → 0、Disconnect、NotConnected → 0、表に無い address → EINVAL、PAIR_PHONE → ENOTSUP、FORGET（device が消える）、scan の StartDiscovery・StopDiscovery、device 45 で 32 を出し paired を残し RSSI の弱い物を落とす、Pair の途中で org.bluez が消える（ENOTCONN・ABSENT・device 0・request は ENOTCONN）→ 戻る（Agent と device を読み直す）、64 KiB を越える signal で接続が閉じ、backoff の後に開き直して読み直す、Release で agent 0、close で UnregisterAgent。
+- `sh plan/ws156/tests/run-host-notify-dbus.sh build/tmp/p3-notify-dbus`（dbus-linux.c の dispatch の変更の回帰）: PASS（plain・sanitized 41 checks ok）。
+- `make -f userland/desktop/keiland-linux.mk -j8 KEILAND_LINUX_BUILD=build/p3-keiland-linux build/p3-keiland-linux/bin/wayland`: 成功、warning 0（compositor が新しい backend と link）。
+- `sh plan/tools/keiland-os-boundary/check.sh`: PASS。
+- `git diff --check`: 問題なし。
+- zedBSD の amd64 の build: 実施していない。zedBSD が build する file で変わったのは `keiland-backend.h` の comment だけ（`bluetooth-unsupported.c` は host の cc の `-fsyntax-only` で確かめた）。
+
+### 未実施（T1 に依頼）
+
+- QEMU（Debian 13 の QEMU+KVM、WS131 の環境、SSH・QMP PNG の例外）: §9.7 の (1)〜(3)。
+- FreeBSD（WS109 の guest）: Settings の Bluetooth の頁の未対応の表示の PNG。
+
+### 残り・制限
+
+- 試験の C（`bt-linux-host-test.c`）は確かめの式を `check()` の引数に書いており、coding-style の「Boolean を式で作らない」に合わない所がある（p009 の規約の全文の見直しで扱う）。
+- GetNameOwner が期限切れ（bus daemon が応答しない）の時は、NameOwnerChanged が来るまで owner を知らないまま（再試行しない）。
+- §9.8 の既知の制限（L1・L2）。

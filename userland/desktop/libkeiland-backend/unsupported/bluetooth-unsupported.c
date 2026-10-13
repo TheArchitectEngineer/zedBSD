@@ -6,9 +6,10 @@
  */
 
 /*
- * Bluetooth where no backend is written yet (ws143-p006: Linux until its
- * BlueZ backend, ws143-p007, and FreeBSD): the state is unreachable, there
- * is no device, and every request is refused with ENOTSUP.
+ * Bluetooth where Keiland does not support it (FreeBSD, WS143 design D7;
+ * Linux has BlueZ's backend since ws143-p007): the state is unreachable,
+ * which Settings shows as not supported, there is no device, and every
+ * request is refused with ENOTSUP.
  */
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
