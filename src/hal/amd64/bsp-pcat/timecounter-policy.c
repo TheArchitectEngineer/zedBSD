@@ -123,6 +123,48 @@ amd64_tsc_pit_window_frequency(
 }
 
 /*
+ * Converts a known TSC rate into the TSC count of one calibration window.
+ *
+ * The window is one windows_per_second-th of a second.  A remainder rounds
+ * the count up, so a window waited out by this count is never shorter than
+ * the one its caller scales by.
+ */
+bool
+amd64_tsc_window_ticks(
+	uint64_t frequency_hz,
+	uint64_t windows_per_second,
+	uint64_t *ticks)
+{
+	uint64_t count;
+
+	/* Requires a destination before evaluating the rate. */
+	if (ticks == NULL)
+		return false;
+	*ticks = 0U;
+
+	/* Refuses a rate the CPUID and PIT policies would not have accepted. */
+	if (frequency_hz < TSC_FREQUENCY_MIN_HZ)
+		return false;
+	if (frequency_hz > TSC_FREQUENCY_MAX_HZ)
+		return false;
+
+	/* Refuses a window that is not a whole number of TSC counts long. */
+	if (windows_per_second == 0U)
+		return false;
+	if (windows_per_second > frequency_hz)
+		return false;
+
+	/* Divides one second of TSC counts, rounding a remainder up. */
+	count = frequency_hz / windows_per_second;
+	if (frequency_hz % windows_per_second != 0U)
+		count++;
+
+	/* Succeeded: the TSC count one window lasts. */
+	*ticks = count;
+	return true;
+}
+
+/*
  * Checks whether one AP may share the BSP's timecounter source and rate.
  */
 bool

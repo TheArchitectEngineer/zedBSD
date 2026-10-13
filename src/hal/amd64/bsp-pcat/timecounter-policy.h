@@ -72,6 +72,8 @@ amd64_tsc_cpuid_frequency_evaluate(
 bool amd64_tsc_pit_window_frequency(uint64_t start, uint64_t end,
 	uint64_t reference_hz, uint64_t reference_ticks,
 	uint64_t *frequency_hz);
+bool amd64_tsc_window_ticks(uint64_t frequency_hz,
+	uint64_t windows_per_second, uint64_t *ticks);
 bool amd64_timecounter_metadata_compatible(
 	enum amd64_timecounter_source source, uint64_t frequency_hz,
 	const struct amd64_timecounter_cpu_metadata *bsp,

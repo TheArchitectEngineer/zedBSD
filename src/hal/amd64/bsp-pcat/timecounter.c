@@ -279,6 +279,34 @@ amd64_timecounter_bsp_candidate_valid(
 }
 
 /*
+ * Reports the TSC rate of the BSP's complete timecounter candidate.
+ *
+ * Right after amd64_timecounter_bsp_prepare() this is the rate CPUID gave;
+ * a candidate that still waits for its PIT measurement has none yet, and the
+ * caller learns that from a false return.
+ */
+bool
+amd64_timecounter_bsp_candidate_frequency(
+	uint64_t *frequency_hz)
+{
+	bool complete;
+
+	/* Requires a destination for the rate. */
+	if (frequency_hz == NULL)
+		return false;
+	*frequency_hz = 0U;
+
+	/* Refuses a candidate that has no published rate yet. */
+	complete = amd64_timecounter_bsp_candidate_valid();
+	if (!complete)
+		return false;
+
+	/* Succeeded: the caller may time intervals with the TSC at this rate. */
+	*frequency_hz = candidate_frequency_hz;
+	return true;
+}
+
+/*
  * Serves the BSP's boot-time TSC bracket probes on one AP.
  */
 void
