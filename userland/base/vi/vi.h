@@ -309,6 +309,7 @@ struct vi_editor {
 	struct vi_terminal terminal;
 	char *file_name;
 	struct vi_position cursor;
+	struct vi_position insert_start;
 	size_t want_column;
 	size_t top;
 	size_t top_skip;

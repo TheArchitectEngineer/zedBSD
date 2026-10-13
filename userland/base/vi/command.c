@@ -71,7 +71,8 @@ static void register_replace(struct vi_editor *editor, struct vi_register *copy)
 static int delete_lines(struct vi_editor *editor, size_t first, size_t last);
 static int delete_between(struct vi_editor *editor, struct vi_position start, struct vi_position end);
 static void operator(struct vi_editor *editor, int operator_key, unsigned long count);
-static void insert_mode(struct vi_editor *editor);
+static void insert_mode(struct vi_editor *editor, unsigned long count);
+static void insert_repeat(struct vi_editor *editor, unsigned long count);
 static void insert_key(struct vi_editor *editor, int key);
 static int insert_text(struct vi_editor *editor, const char *text, size_t length);
 static void command_put(struct vi_editor *editor, int before, unsigned long count);
@@ -123,21 +124,21 @@ vi_command(
 	/* Chooses what the key does. */
 	switch (key) {
 	case 'i':
-		insert_mode(editor);
+		insert_mode(editor, count);
 		break;
 	case 'a':
 		/* Appends after the character under the cursor. */
 		line = line_at(editor, editor->cursor.line);
 		editor->cursor.offset = vi_text_next(line->text, line->length, editor->cursor.offset);
-		insert_mode(editor);
+		insert_mode(editor, count);
 		break;
 	case 'I':
 		editor->cursor.offset = first_nonblank(line_at(editor, editor->cursor.line));
-		insert_mode(editor);
+		insert_mode(editor, count);
 		break;
 	case 'A':
 		editor->cursor.offset = line_at(editor, editor->cursor.line)->length;
-		insert_mode(editor);
+		insert_mode(editor, count);
 		break;
 	case 'o':
 		command_open(editor, 0);
@@ -1730,22 +1731,25 @@ operator(
 
 	/* c goes on to insert in place of the text. */
 	if (operator_key == 'c')
-		insert_mode(editor);
+		insert_mode(editor, 1);
 }
 
 /*
- * Takes typed text into the buffer until ESC.
+ * Takes typed text into the buffer until ESC.  With a count, text typed
+ * on one line is put in count times in all (5i- makes -----).
  */
 static void
 insert_mode(
-	struct vi_editor *editor)
+	struct vi_editor *editor,
+	unsigned long count)
 {
 	struct vi_line *line;
 	int key;
 	int done;
 
-	/* The cursor may now rest at the end of the line. */
+	/* The cursor may now rest at the end of the line; the typed text starts here. */
 	editor->mode = VI_MODE_INSERT;
+	editor->insert_start = editor->cursor;
 
 	/* Takes keys until ESC or CONTROL-C, or until the editor stops. */
 	for (;;) {
@@ -1755,6 +1759,10 @@ insert_mode(
 			break;
 		insert_key(editor, key);
 	}
+
+	/* A count puts the typed text in again. */
+	if (count > 1 && key != VI_KEY_STOP)
+		insert_repeat(editor, count);
 
 	/* Back in command mode the cursor steps back onto the last character typed. */
 	editor->mode = VI_MODE_COMMAND;
@@ -1891,6 +1899,9 @@ insert_key(
 			line = line_at(editor, editor->cursor.line);
 			editor->want_column = vi_text_column(line->text, line->length, editor->cursor.offset);
 		}
+
+		/* Text typed after a movement is what a count repeats. */
+		editor->insert_start = editor->cursor;
 		break;
 	default:
 		/* A typed character goes in at the cursor; other control keys are refused. */
@@ -2506,7 +2517,7 @@ command_open(
 	/* Types into the new line. */
 	editor->cursor.line = index;
 	editor->cursor.offset = 0;
-	insert_mode(editor);
+	insert_mode(editor, 1);
 }
 
 /* Reads a : command line and runs it. */
@@ -2623,4 +2634,56 @@ report_error(
 		vi_message(editor, "File too large");
 	else
 		vi_message(editor, "Out of memory");
+}
+
+/*
+ * Puts the text typed since insert mode began in count - 1 more times
+ * after it.  Only text typed on one line, after the last movement, is
+ * repeated; anything else is left as typed.
+ */
+static void
+insert_repeat(
+	struct vi_editor *editor,
+	unsigned long count)
+{
+	struct vi_line *line;
+	struct vi_position start;
+	size_t length;
+	size_t index;
+	char *block;
+	int error;
+
+	start = editor->insert_start;
+
+	/* The typed text must be on the cursor's line, before the cursor. */
+	if (start.line != editor->cursor.line)
+		return;
+	if (start.offset >= editor->cursor.offset)
+		return;
+
+	/* Copies the typed text count - 1 times, within the file size limit. */
+	line = line_at(editor, editor->cursor.line);
+	length = editor->cursor.offset - start.offset;
+	count--;
+	if (length > VI_FILE_SIZE_LIMIT / count) {
+		report_error(editor, EFBIG);
+		return;
+	}
+	block = malloc(length * (size_t)count + 1);
+	if (block == NULL) {
+		report_error(editor, ENOMEM);
+		return;
+	}
+	for (index = 0; index < (size_t)count; index++)
+		memcpy(block + index * length, line->text + start.offset, length);
+
+	/* Puts the copies in after the typed text. */
+	error = vi_edit(editor, VI_CHANGE_INSERT_TEXT, editor->cursor.line, editor->cursor.offset, block, length * (size_t)count);
+	free(block);
+	if (error != 0) {
+		report_error(editor, error);
+		return;
+	}
+
+	editor->cursor.offset += length * (size_t)count;
 }

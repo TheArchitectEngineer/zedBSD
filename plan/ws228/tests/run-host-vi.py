@@ -227,6 +227,7 @@ CASES = [
     ("dot-count", "a b c d e\n", "dw3.:wq\r", "e\n"),
     ("dot-insert", "", "ix" + ESC + "..:wq\r", "xxx\n"),
     ("cw", "foo bar\n", "cwbaz" + ESC + ":wq\r", "baz bar\n"),
+    ("count-insert", "ab\n", "5i-" + ESC + "3ax" + ESC + ":wq\r", "-----xxxab\n"),
     ("cw-one-letter", "a b\n", "cwx" + ESC + ":wq\r", "x b\n"),
     ("dollar-p", "ab\ncd\n", "lyljp:wq\r", "ab\ncdb\n"),
     ("f-t-semicolon", "a,b,c,d\n", "f,;x0t,D:wq\r", "\n"),
@@ -297,6 +298,18 @@ def main():
     report("screen-status", status == 0 and screen.line(23) == '"f.txt" 1 lines, 101 bytes written'
            and (screen.row, screen.column) == (1, 19),
            "status line=%r cursor=%r" % (screen.line(23), (screen.row, screen.column)))
+
+    # A line taller than the screen shows the part with the cursor.
+    work = tempfile.mkdtemp(prefix="screen-tall.", dir=out)
+    with open(os.path.join(work, "f.txt"), "w", encoding="utf-8") as handle:
+        handle.write("x" * 3000 + "END\n")
+    output = []
+    status = run("%s f.txt" % vi, keys_of("$") + [None] + keys_of(":q\r"), work, output=output)
+    screen = screen_of(output)
+    rows = [screen.line(row) for row in range(23)]
+    under = screen.cells[screen.row][screen.column]
+    report("screen-tall-line", status == 0 and any(row.endswith("END") for row in rows) and under == "D",
+           "cursor=%r under=%r" % ((screen.row, screen.column), under))
 
     # The permissions of an existing file are kept.
     work = tempfile.mkdtemp(prefix="mode.", dir=out)
