@@ -69,3 +69,4 @@ Next（予約）: ws115-p006（libpng・freetype・harfbuzz・fontconfig）〜
 - q947 結果（2026-10-13 夜）: WS220 の T1-577 の遅さは環境（T1-581、同じ session で k1 < k2 < k3）、code の変更なし。記録 f3ef3fc22・ed94f056f → main 0d4ac1421。p003・p004 は Q1 が cleared、p005 は T1-585。
 - 予約（2026-10-13 夜 Q1、ベータ2 の残りの実装）: q955 [WS156](../../ws156/ws.md) p006（Linux の D-Bus の Notifications）→ q956 [WS051](../../ws051/ws.md) p005b（抜けの停止）→ q957 [WS081](../../ws081/ws.md) の残り（L3 の計測の script と係数）→ q958 [WS033](../../ws033/ws.md) p001（USB LAN の後挿し）。
 - q955 結果（2026-10-13 夜）: WS156 p006 Linux の D-Bus の org.freedesktop.Notifications e5167e0c4 → main bb1ca9a1f（main で wayland の build warning 0）、test-wait（T1-588）。q956 WS051 p005b に入った。
+- q956 結果: WS051 p005b（firmware の外の出力の抜け）ac87a8440 → main b719680b6、確かめは 5330 の実機でユーザー（USB-C の DP の monitor だけで起動して抜く）。q957 結果: WS081 p017 の L3 の setup e11cfe4c2 → main、T1-591、係数の調整はユーザーの Windows の session.log 待ち。q958 WS033 p001 に入った。

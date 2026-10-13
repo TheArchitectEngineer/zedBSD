@@ -72,3 +72,4 @@ Next（予約）: debug を続ける（BUG-147 の後: 優先度の高い bug。
 - 予約（2026-10-13 夜 Q1、ベータ2 の残り）: q962 [WS143](../../ws143/ws.md) の残り（5330 の firmware の load と scan の後の直しは実機待ちなので、Linux の BlueZ の backend p007 を先に）→ q963 [WS004](../../ws004/ws.md) p039（WLAN の driver の共通化、「抽出しない」の結論でもよい）→ q964 小さな照合（[WS089](../../ws089/ws.md)・[WS193](../../ws193/ws.md)・[WS191](../../ws191/ws.md)）。
 - q962〜q964 結果（2026-10-13 夜〜10-14）: WS143 p007 の設計（bd4f767a6・db09ac249、design-reviewer 中）、WS004 p039 は抽出しない（7ccc03c62、Q1 が cleared）、WS089・WS191・WS193 の照合（26488543d、Q1 が判定）。
 - 予約: q965 [BUG-301](../../bugs/BUG-301.md)（RTL8822BU の CCMP の header の長さ、確かめて要れば直す）→ q966 [WS171](../../ws171/ws.md)（hal.h の契約の comment、優先度低め、やることが無い時）。p007 の review が返ったら p007 の実装を先に。
+- P2 の第 2 世代はここで終わり（2026-10-14、context 約 63 万 token）。q965（BUG-301）・q966（WS171）・WS143 p007 の実装（review の後）は次の世代へ。
