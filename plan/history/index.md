@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1049 / WS074 physical justify-content left/right（2026-10-14）
+
+[q1049履歴](queue-q1049.md): 物理left/rightを区別し、固定10件は5 local PASS/5 FAILへ改善。host12/12、Acid3画素差0、Acid2差1865。[証拠](../ws074/phase199/evidence/20261014-q1049/README.md)。p199部分cleared、wholeとp173全件100%未達。共有投影/GitHub publication pending。
+
 ## 最新: q1048 / WS074 BFC parent-child margin collapse（2026-10-14）
 
 [q1048履歴](queue-q1048.md): float BFCの親/子margin相殺を止め、固定10件は3 local PASS/7 FAILで数不変、代表2件の差画素減。[証拠](../ws074/phase198/evidence/20261014-q1048/README.md)。p198 partial cleared、p173全件100%未達。共有投影/GitHub publication pending。

@@ -27,3 +27,5 @@ Event ws074-p197-created-20261014: q1046でtimeoutを解消した固定10件は1
 Event ws074-p197-q1048-p198-split-20261014: 固定vert001aの直接layout比較でtest側flex配置は参照に沿い、reference側float BFCが最初の子のmargin-top190pxを親と相殺していると判明。この別一般欠陥を[p198](../phase198/phase.md)へ分離。p197 wholeの残り7 local FAILはp198出力後に再判定する。GitHub publication保留。
 
 Event ws074-p197-q1048-p198-output-20261014: [p198](../phase198/phase.md)でfloat BFCのmargin相殺を修正。固定10件3 PASS/7 FAILと数不変、vert001a/006の差画素減、vert001bはmin-heightの別差が顕在化。[証拠](../phase198/evidence/20261014-q1048/README.md)。p197 wholeはunclearedのまま。GitHub publication保留。
+
+Event ws074-p197-q1049-p199-split-20261014: q1048後のvert001aで、CSS解析段階の`right`→end同一化によりcolumn flexの物理左右fallback startが失われている。別のCSS keyword意味保存を[p199](../phase199/phase.md)へ分離。p197 wholeの固定7 FAILはp199結果後に再判定する。GitHub publication保留。

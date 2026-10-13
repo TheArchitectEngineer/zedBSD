@@ -435,7 +435,7 @@ static const struct values_keyword values_flex_wrap[] = {
 	{ NULL, 0 }
 };
 
-/* The keywords of the alignment properties (the left and right of justify-content are its start and end here). */
+/* The keywords of the alignment properties; justify-content keeps physical left and right distinct. */
 static const struct values_keyword values_align[] = {
 	{ "auto", CSS_ALIGN_AUTO },
 	{ "normal", CSS_ALIGN_STRETCH },
@@ -443,11 +443,11 @@ static const struct values_keyword values_align[] = {
 	{ "flex-start", CSS_ALIGN_START },
 	{ "start", CSS_ALIGN_START },
 	{ "self-start", CSS_ALIGN_START },
-	{ "left", CSS_ALIGN_START },
+	{ "left", CSS_ALIGN_LEFT },
 	{ "flex-end", CSS_ALIGN_END },
 	{ "end", CSS_ALIGN_END },
 	{ "self-end", CSS_ALIGN_END },
-	{ "right", CSS_ALIGN_END },
+	{ "right", CSS_ALIGN_RIGHT },
 	{ "center", CSS_ALIGN_CENTER },
 	{ "baseline", CSS_ALIGN_BASELINE },
 	{ "first", CSS_ALIGN_BASELINE },
@@ -1834,6 +1834,12 @@ values_single(
 	if (table != NULL) {
 		found = values_keyword(table, &tokens[0], &keyword);
 		if (!found)
+			return EINVAL;
+		/* Physical left and right belong to justify-content, never align-* properties. */
+		if ((property == CSS_PROP_ALIGN_ITEMS ||
+		    property == CSS_PROP_ALIGN_CONTENT ||
+		    property == CSS_PROP_ALIGN_SELF) &&
+		    (keyword == CSS_ALIGN_LEFT || keyword == CSS_ALIGN_RIGHT))
 			return EINVAL;
 		value->kind = CSS_VALUE_KEYWORD;
 		value->keyword = keyword;

@@ -160,7 +160,9 @@ layout_grid(
 	room = box->width - used;
 	if (room > 0 && box->style.justify_content == CSS_ALIGN_CENTER)
 		shift = room / 2;
-	if (room > 0 && box->style.justify_content == CSS_ALIGN_END)
+	if (room > 0 &&
+	    (box->style.justify_content == CSS_ALIGN_END ||
+	    box->style.justify_content == CSS_ALIGN_RIGHT))
 		shift = room;
 
 	/* Each item laid out in its area's width. */

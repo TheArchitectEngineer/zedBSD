@@ -1021,6 +1021,22 @@ flex_place_line(
 	if (row && box->style.direction == CSS_DIRECTION_RTL)
 		reverse = !reverse;
 
+	/* Physical left/right keep their edge under reversed rows; a vertical main axis falls back to start. */
+	if (!row && (box->style.justify_content == CSS_ALIGN_LEFT ||
+	    box->style.justify_content == CSS_ALIGN_RIGHT)) {
+		cursor = 0;
+		if (reverse)
+			cursor = free_space;
+	} else if (box->style.justify_content == CSS_ALIGN_LEFT) {
+		cursor = 0;
+		if (reverse)
+			cursor = free_space;
+	} else if (box->style.justify_content == CSS_ALIGN_RIGHT) {
+		cursor = free_space;
+		if (reverse)
+			cursor = 0;
+	}
+
 	/* Each item along the main axis, then across the line. */
 	for (index = 0; index < count; index++) {
 		child = items[index].box;
