@@ -183,6 +183,8 @@ class Guest:
 
 def snapshot(destination):
     paths = ['LICENSE', 'userland/desktop', 'userland/base/common', 'userland/base/libz-compat',
+             'userland/base/passkey', 'userland/base/login/verify.c', 'userland/base/login/verify.h',
+             'userland/base/fidoctl', 'userland/base/libpasskey',
              'userland/tests/wlshm', 'userland/tests/wltest', 'userland/tests/vkdemo',
              'userland/tests/mview', 'userland/tests/kuidemo', 'include/libc/compat',
              'include/libc/pdf.h', 'include/libc/sha2.h', 'include/libc/sha1.h',
