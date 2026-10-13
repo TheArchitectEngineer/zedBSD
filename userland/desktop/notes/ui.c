@@ -18,6 +18,11 @@
  * alpha: transparent around the card, so the desk shows there, and
  * translucent in the card, so the desk's colours show through the glass.
  *
+ * ws216-p006: the pen and the marker are one button, the drawing tool
+ * used last (Pen, Brush, Pencil, Water, Marker or Fill); pressed while a
+ * drawing tool is chosen, it opens a strip of the six under the card, in
+ * the rows of the notice (which waits while the strip is open).
+ *
  * From the left the card holds the tools (Pen, Marker, Eraser), the
  * switch that lets one finger write (Finger, in blue while it is on), five
  * colours, three widths, Undo and Redo, the page's number between the
@@ -75,6 +80,17 @@
 #define UI_BUTTON_TOP		(UI_CARD_TOP + (UI_CARD_HEIGHT - UI_BUTTON_HEIGHT) / 2)
 #define UI_GAP			14
 
+/* The strip of drawing tools (ws216-p006): its top (2 pixels under the toolbar's band), height and the room inside its ends, in pixels. */
+#define UI_STRIP_TOP		((int32_t)NOTES_TOOLBAR_HEIGHT + 2)
+#define UI_STRIP_HEIGHT		40
+#define UI_STRIP_PADDING	4
+
+/* The drawing tools, in the strip's order, with their labels. */
+#define UI_DRAW_TOOLS		6U
+
+/* The room the drawing tool button keeps at its end for the mark that it opens the strip. */
+#define UI_MARK_ROOM		14
+
 /* The status pill's height, the room around its text, and the gap above it when it shows under the card, in pixels. */
 #define UI_STATUS_HEIGHT	32
 #define UI_STATUS_PADDING	14
@@ -117,6 +133,12 @@ static void ui_separator(struct notes_ui *ui, int32_t x);
 static int32_t ui_text_width(struct notes_ui *ui, const char *text);
 static void ui_text(struct notes_ui *ui, int32_t x, int32_t y, const char *text, uint32_t rgb);
 static int32_t ui_label_button(struct notes_ui *ui, int32_t x, const char *label, uint32_t action, uint32_t chosen, int enabled);
+static int32_t ui_label_button_at(struct notes_ui *ui, int32_t x, int32_t y, const char *label, uint32_t action, uint32_t chosen, int enabled);
+static int32_t ui_draw_button(struct notes_ui *ui, int32_t x, const struct notes_ui_state *state);
+static void ui_strip(struct notes_ui *ui, const struct notes_ui_state *state);
+static const char *ui_draw_label(unsigned action);
+static float ui_width_radius(unsigned kind, unsigned index);
+static void ui_down_mark(struct notes_ui *ui, float cx, float cy, uint32_t rgb);
 static int32_t ui_eraser_button(struct notes_ui *ui, int32_t x, const struct notes_ui_state *state);
 static int32_t ui_text_controls(struct notes_ui *ui, int32_t x, const struct notes_ui_state *state);
 static int32_t ui_eraser_slack(struct notes_ui *ui, const struct notes_ui_state *state);
@@ -138,6 +160,16 @@ static const float ui_pen_widths[NOTES_WIDTHS] = { 1.5f, 3.0f, 6.0f };
 
 /* The highlighter's widths in points: fine, medium, bold. */
 static const float ui_marker_widths[NOTES_WIDTHS] = { 10.0f, 16.0f, 24.0f };
+
+/* The brush's, the pencil's and the watercolour's widths in points (ws216-p006, plan/ws216/phase001/phase.md section 7). */
+static const float ui_brush_widths[NOTES_WIDTHS] = { 3.0f, 6.0f, 12.0f };
+static const float ui_pencil_widths[NOTES_WIDTHS] = { 0.8f, 1.4f, 2.4f };
+static const float ui_water_widths[NOTES_WIDTHS] = { 8.0f, 16.0f, 28.0f };
+
+/* The drawing tools' actions in the strip's order (ws216-p006). */
+static const unsigned ui_draw_actions[UI_DRAW_TOOLS] = {
+	NOTES_ACTION_PEN, NOTES_ACTION_BRUSH, NOTES_ACTION_PENCIL, NOTES_ACTION_WATERCOLOR, NOTES_ACTION_HIGHLIGHTER, NOTES_ACTION_FILL
+};
 
 /*
  * Opens the font the labels are drawn with.
@@ -256,12 +288,13 @@ notes_ui_draw(
 	int32_t status_x;
 	int32_t status_y;
 
-	/* The picture being drawn, and no buttons yet. */
+	/* The picture being drawn, and no buttons yet, nor the strip. */
 	ui->pixels = pixels;
 	ui->pitch = pitch;
 	ui->width = width;
 	ui->height = height;
 	ui->button_count = 0;
+	ui->strip_shown = 0;
 	if (pixels == NULL)
 		return;
 
@@ -287,6 +320,10 @@ notes_ui_draw(
 	ui->button_count = 0;
 	(void)ui_layout(ui, card_x + UI_CARD_PADDING, state);
 
+	/* The strip of drawing tools under it, when open (ws216-p006). */
+	if (state->draws_open)
+		ui_strip(ui, state);
+
 	/* A status shows in its own pill: right of the card when it fits, or left of it. */
 	if (state->status == NULL || state->status[0] == '\0')
 		return;
@@ -296,8 +333,10 @@ notes_ui_draw(
 	if (status_x + status_width + 8 > (int32_t)width)
 		status_x = card_x - UI_GAP - status_width;
 
-	/* A status that fits on neither side shows as a notice, centred under the card, when the picture reaches there. */
+	/* A status that fits on neither side shows as a notice, centred under the card, when the picture reaches there and the strip does not hold its rows (review-1 L7). */
 	if (status_x < 8) {
+		if (ui->strip_shown)
+			return;
 		status_x = ((int32_t)width - status_width) / 2;
 		status_y = UI_CARD_TOP + UI_CARD_HEIGHT + UI_NOTICE_GAP;
 	}
@@ -372,12 +411,146 @@ notes_ui_width(
 	if (index >= NOTES_WIDTHS)
 		index = 1;
 
-	/* The highlighter's wide ones. */
-	if (tool == NOTES_TOOL_HIGHLIGHTER)
+	/* Each tool's own (ws216-p006); the fill has none and takes the pen's. */
+	switch (tool) {
+	case NOTES_TOOL_HIGHLIGHTER:
 		return ui_marker_widths[index];
+	case NOTES_TOOL_BRUSH:
+		return ui_brush_widths[index];
+	case NOTES_TOOL_PENCIL:
+		return ui_pencil_widths[index];
+	case NOTES_TOOL_WATERCOLOR:
+		return ui_water_widths[index];
+	default:
+		break;
+	}
 
 	/* The pen's. */
 	return ui_pen_widths[index];
+}
+
+/*
+ * Tells whether a point of the window is on the strip of drawing tools as
+ * last drawn (ws216-p006).
+ */
+int
+notes_ui_in_strip(
+	const struct notes_ui *ui,
+	float x,
+	float y)
+{
+	/* No strip, no point on it. */
+	if (!ui->strip_shown)
+		return 0;
+
+	/* Outside its rectangle. */
+	if (x < (float)ui->strip_x || x >= (float)(ui->strip_x + ui->strip_width))
+		return 0;
+	if (y < (float)ui->strip_y || y >= (float)(ui->strip_y + ui->strip_height))
+		return 0;
+
+	/* On it. */
+	return 1;
+}
+
+/*
+ * Gives the kind of stroke (NOTES_TOOL_*) a drawing tool's action draws
+ * (ws216-p006), or NOTES_UI_NOT_DRAWING for another action.
+ */
+unsigned
+notes_ui_tool(
+	unsigned action)
+{
+	/* Each drawing tool. */
+	switch (action) {
+	case NOTES_ACTION_PEN:
+		return NOTES_TOOL_PEN;
+	case NOTES_ACTION_HIGHLIGHTER:
+		return NOTES_TOOL_HIGHLIGHTER;
+	case NOTES_ACTION_BRUSH:
+		return NOTES_TOOL_BRUSH;
+	case NOTES_ACTION_PENCIL:
+		return NOTES_TOOL_PENCIL;
+	case NOTES_ACTION_WATERCOLOR:
+		return NOTES_TOOL_WATERCOLOR;
+	case NOTES_ACTION_FILL:
+		return NOTES_TOOL_FILL;
+	default:
+		break;
+	}
+
+	/* Not a drawing tool. */
+	return NOTES_UI_NOT_DRAWING;
+}
+
+/*
+ * Carries out what an action does to the tools (ws216-p006), and tells
+ * what changed (NOTES_TOOLS_*).
+ *
+ * The drawing tool button goes back to the drawing tool used last while
+ * another tool is chosen, and opens or closes the strip while a drawing
+ * tool is.  A drawing tool, the eraser, Select and Text are chosen (a
+ * drawing tool is the one used last from then on); a colour chosen while
+ * the eraser is goes back to the drawing tool used last.  Any other action
+ * closes the strip.
+ */
+unsigned
+notes_ui_tools_press(
+	struct notes_tools *tools,
+	unsigned action)
+{
+	unsigned changes;
+	unsigned kind;
+
+	/* The drawing tool button. */
+	changes = 0;
+	if (action == NOTES_ACTION_DRAW) {
+		/* Another tool: back to the drawing tool used last, the strip closed. */
+		kind = notes_ui_tool(tools->tool);
+		if (kind == NOTES_UI_NOT_DRAWING) {
+			tools->tool = tools->draw_tool;
+			if (tools->draws_open)
+				changes |= NOTES_TOOLS_CLOSED;
+			tools->draws_open = 0;
+			changes |= NOTES_TOOLS_CHOSEN;
+			return changes;
+		}
+
+		/* A drawing tool: the strip opens or closes. */
+		tools->draws_open = !tools->draws_open;
+		if (tools->draws_open)
+			return NOTES_TOOLS_OPENED;
+		return NOTES_TOOLS_CLOSED;
+	}
+
+	/* Any other action closes the strip. */
+	if (tools->draws_open) {
+		tools->draws_open = 0;
+		changes |= NOTES_TOOLS_CLOSED;
+	}
+
+	/* A drawing tool is chosen, and is the one used last from now on. */
+	kind = notes_ui_tool(action);
+	if (kind != NOTES_UI_NOT_DRAWING) {
+		tools->tool = action;
+		tools->draw_tool = action;
+		changes |= NOTES_TOOLS_CHOSEN;
+		return changes;
+	}
+
+	/* The other tools are chosen. */
+	if (action == NOTES_ACTION_ERASER || action == NOTES_ACTION_SELECT || action == NOTES_ACTION_TEXT) {
+		tools->tool = action;
+		changes |= NOTES_TOOLS_CHOSEN;
+		return changes;
+	}
+
+	/* A colour chosen with the eraser goes back to the drawing tool used last (review-1 L-1). */
+	if (action >= NOTES_ACTION_COLOR && action < NOTES_ACTION_COLOR + NOTES_COLORS && tools->tool == NOTES_ACTION_ERASER)
+		tools->tool = tools->draw_tool;
+
+	/* Reports the changes. */
+	return changes;
 }
 
 /*
@@ -391,19 +564,18 @@ ui_layout(
 	const struct notes_ui_state *state)
 {
 	const uint32_t *colors;
-	const float *widths;
 	int32_t x;
 	int32_t slack;
 	uint32_t chosen;
+	unsigned kind;
 	unsigned index;
 	float radius;
 	float cx;
 	float cy;
 
-	/* The tools, the chosen one in Kei's blue. */
+	/* The tools, the chosen one in Kei's blue: the drawing tool (ws216-p006), the eraser, Select and Text. */
 	x = left;
-	x = ui_label_button(ui, x, "Pen", NOTES_ACTION_PEN, state->tool, 1);
-	x = ui_label_button(ui, x, "Marker", NOTES_ACTION_HIGHLIGHTER, state->tool, 1);
+	x = ui_draw_button(ui, x, state);
 	x = ui_eraser_button(ui, x, state);
 	x = ui_label_button(ui, x, "Select", NOTES_ACTION_SELECT, state->tool, 1);
 	x = ui_label_button(ui, x, "Text", NOTES_ACTION_TEXT, state->tool, 1);
@@ -462,13 +634,18 @@ ui_layout(
 		x += UI_GAP;
 	}
 
-	/* The colours of the pen (the Text tool's too), or of the highlighter while it is chosen. */
+	/*
+	 * The colours and widths of the drawing tool chosen, or of the one used
+	 * last while another tool is (the Text tool's colours are the pen's).
+	 */
+	kind = notes_ui_tool(state->tool);
+	if (kind == NOTES_UI_NOT_DRAWING)
+		kind = notes_ui_tool(state->draw_tool);
+	if (state->tool == NOTES_ACTION_TEXT || kind == NOTES_UI_NOT_DRAWING)
+		kind = NOTES_TOOL_PEN;
 	colors = ui_pen_colors;
-	widths = ui_pen_widths;
-	if (state->tool == NOTES_ACTION_HIGHLIGHTER) {
+	if (kind == NOTES_TOOL_HIGHLIGHTER)
 		colors = ui_marker_colors;
-		widths = ui_marker_widths;
-	}
 
 	/* Each colour, a dot; the chosen one has a blue ring. */
 	for (index = 0; index < NOTES_COLORS; index++) {
@@ -489,13 +666,20 @@ ui_layout(
 	if (state->tool == NOTES_ACTION_TEXT)
 		return ui_layout_rest(ui, x, left, state);
 
+	/*
+	 * The fill has none either, but keeps their room, so that the card and
+	 * its buttons stay put from one drawing tool to another (review-1 C-4).
+	 */
+	if (kind == NOTES_TOOL_FILL) {
+		x += (int32_t)NOTES_WIDTHS * (UI_BUTTON_HEIGHT + 2) + UI_GAP;
+		return ui_layout_rest(ui, x, left, state);
+	}
+
 	/* The widths, each a dot of its size; the chosen one on a pale blue pill, in blue. */
 	for (index = 0; index < NOTES_WIDTHS; index++) {
 		cx = (float)x + (float)UI_BUTTON_HEIGHT / 2.0f;
 		cy = (float)UI_BUTTON_TOP + (float)UI_BUTTON_HEIGHT / 2.0f;
-		radius = 2.0f + (float)index * 2.5f;
-		if (widths[index] > 8.0f)
-			radius = 3.0f + (float)index * 3.0f;
+		radius = ui_width_radius(kind, index);
 
 		/* The chosen width stands out in Kei's blue. */
 		if (index == state->width) {
@@ -965,6 +1149,26 @@ ui_label_button(
 	uint32_t chosen,
 	int enabled)
 {
+	int32_t next;
+
+	/* On the card's row of buttons. */
+	next = ui_label_button_at(ui, x, UI_BUTTON_TOP, label, action, chosen, enabled);
+
+	/* Reports where the next button goes. */
+	return next;
+}
+
+/* Draws a button with a label at a top (see ui_label_button()), adds it, and returns where the next one goes. */
+static int32_t
+ui_label_button_at(
+	struct notes_ui *ui,
+	int32_t x,
+	int32_t y,
+	const char *label,
+	uint32_t action,
+	uint32_t chosen,
+	int enabled)
+{
 	int32_t width;
 	uint32_t rgb;
 
@@ -976,7 +1180,7 @@ ui_label_button(
 	/* The chosen tool's pale blue pill, and the label's colour. */
 	rgb = UI_TEXT;
 	if (action == chosen) {
-		ui_rounded(ui, (float)x, (float)UI_BUTTON_TOP, (float)width, (float)UI_BUTTON_HEIGHT,
+		ui_rounded(ui, (float)x, (float)y, (float)width, (float)UI_BUTTON_HEIGHT,
 			   (float)UI_BUTTON_HEIGHT / 2.0f, UI_ACCENT, UI_ACCENT_TINT_ALPHA);
 		rgb = UI_ACCENT_TEXT;
 	}
@@ -984,11 +1188,11 @@ ui_label_button(
 	/* A button that cannot be used is pale. */
 	if (!enabled)
 		rgb = UI_TEXT_DISABLED;
-	ui_text(ui, x + 12, UI_BUTTON_TOP, label, rgb);
+	ui_text(ui, x + 12, y, label, rgb);
 
 	/* A pale button does nothing, so it is not added. */
 	if (enabled)
-		ui_add_button(ui, x, UI_BUTTON_TOP, width, UI_BUTTON_HEIGHT, action);
+		ui_add_button(ui, x, y, width, UI_BUTTON_HEIGHT, action);
 
 	/* Reports where the next button goes. */
 	return x + width + 2;
@@ -1071,6 +1275,193 @@ ui_eraser_button(
 	return x + width + 2;
 }
 
+/*
+ * Draws the drawing tool button (ws216-p006): the drawing tool used last
+ * by its name, on a pale blue pill while a drawing tool is chosen.  It is
+ * as wide as its longest name, so the buttons after it stay put when the
+ * tool changes.  Its left edge is kept for the strip.
+ */
+static int32_t
+ui_draw_button(
+	struct notes_ui *ui,
+	int32_t x,
+	const struct notes_ui_state *state)
+{
+	const char *label;
+	int32_t width;
+	int32_t widest;
+	unsigned index;
+	uint32_t rgb;
+
+	/* The widest of the names, with room on both sides (a fixed width without the font). */
+	widest = 0;
+	for (index = 0; index < UI_DRAW_TOOLS; index++) {
+		width = ui_text_width(ui, ui_draw_label(ui_draw_actions[index]));
+		if (width > widest)
+			widest = width;
+	}
+	width = widest + 24 + UI_MARK_ROOM;
+	if (ui->face == NULL)
+		width = 44 + UI_MARK_ROOM;
+
+	/* The chosen tool's pale blue pill, and the label's colour. */
+	label = ui_draw_label(state->draw_tool);
+	rgb = UI_TEXT;
+	if (notes_ui_tool(state->tool) != NOTES_UI_NOT_DRAWING) {
+		ui_rounded(ui, (float)x, (float)UI_BUTTON_TOP, (float)width, (float)UI_BUTTON_HEIGHT,
+			   (float)UI_BUTTON_HEIGHT / 2.0f, UI_ACCENT, UI_ACCENT_TINT_ALPHA);
+		rgb = UI_ACCENT_TEXT;
+	}
+
+	/* The label, where the other tools have theirs, the mark that the button opens the strip at its end, and the button. */
+	ui_text(ui, x + 12, UI_BUTTON_TOP, label, rgb);
+	ui_down_mark(ui, (float)(x + width - 14), (float)UI_BUTTON_TOP + (float)UI_BUTTON_HEIGHT / 2.0f, rgb);
+	ui_add_button(ui, x, UI_BUTTON_TOP, width, UI_BUTTON_HEIGHT, NOTES_ACTION_DRAW);
+	ui->draw_x = x;
+
+	/* Reports where the next button goes. */
+	return x + width + 2;
+}
+
+/*
+ * Draws the strip of drawing tools (ws216-p006): a small glass card in the
+ * notice's rows under the toolbar's band, from the drawing tool button's
+ * left (kept in the window), its six buttons, the chosen tool's in blue.
+ * Its rectangle is kept for the presses.
+ */
+static void
+ui_strip(
+	struct notes_ui *ui,
+	const struct notes_ui_state *state)
+{
+	int32_t width;
+	int32_t x;
+	int32_t button_top;
+	unsigned index;
+
+	/* Measures the strip from its buttons' labels. */
+	width = 2 * UI_STRIP_PADDING - 2;
+	for (index = 0; index < UI_DRAW_TOOLS; index++) {
+		if (ui->face == NULL)
+			width += 44 + 2;
+		else
+			width += ui_text_width(ui, ui_draw_label(ui_draw_actions[index])) + 24 + 2;
+	}
+
+	/* Its place: under the drawing tool button, in the window. */
+	x = ui->draw_x - UI_STRIP_PADDING;
+	if (x + width + 8 > (int32_t)ui->width)
+		x = (int32_t)ui->width - width - 8;
+	if (x < 8)
+		x = 8;
+
+	/* A picture too short for the strip shows none. */
+	if (UI_STRIP_TOP + UI_STRIP_HEIGHT > (int32_t)ui->height)
+		return;
+
+	/*
+	 * Its card, without the card's shadow: the shadow's reach (16 pixels
+	 * under it) would be cut by the picture's last row, over the page
+	 * (review-1 L-3); its faint edge sets it off instead.
+	 */
+	ui_glass(ui, (float)x, (float)UI_STRIP_TOP, (float)width, (float)UI_STRIP_HEIGHT, (float)UI_STRIP_HEIGHT / 2.0f);
+
+	/* Its buttons, the chosen drawing tool's in blue. */
+	button_top = UI_STRIP_TOP + (UI_STRIP_HEIGHT - UI_BUTTON_HEIGHT) / 2;
+	ui->strip_x = x;
+	x += UI_STRIP_PADDING;
+	for (index = 0; index < UI_DRAW_TOOLS; index++)
+		x = ui_label_button_at(ui, x, button_top, ui_draw_label(ui_draw_actions[index]), ui_draw_actions[index], state->tool, 1);
+
+	/* The strip's rectangle, for the presses. */
+	ui->strip_y = UI_STRIP_TOP;
+	ui->strip_width = width;
+	ui->strip_height = UI_STRIP_HEIGHT;
+	ui->strip_shown = 1;
+}
+
+/*
+ * Gives the radius of the dot a width's button shows (ws216-p006, review-1
+ * L-2): each tool's three dots grow in even steps from its finest.
+ */
+static float
+ui_width_radius(
+	unsigned kind,
+	unsigned index)
+{
+	/* The wide tools' larger dots, and the fine pencil's smaller ones. */
+	switch (kind) {
+	case NOTES_TOOL_HIGHLIGHTER:
+	case NOTES_TOOL_WATERCOLOR:
+		return 3.0f + (float)index * 3.0f;
+	case NOTES_TOOL_BRUSH:
+		return 2.5f + (float)index * 3.0f;
+	case NOTES_TOOL_PENCIL:
+		return 1.5f + (float)index * 1.5f;
+	default:
+		break;
+	}
+
+	/* The pen's. */
+	return 2.0f + (float)index * 2.5f;
+}
+
+/* Draws the small mark pointing down that says a button opens a strip under it (the user's choice, 2026-10-13). */
+static void
+ui_down_mark(
+	struct notes_ui *ui,
+	float cx,
+	float cy,
+	uint32_t rgb)
+{
+	int32_t x;
+	int32_t y;
+	float half;
+	float coverage;
+	float row;
+
+	/* A triangle 8 pixels wide and 4 high, its point down, each row narrower. */
+	for (y = (int32_t)(cy - 2.0f); y <= (int32_t)(cy + 2.0f); y++) {
+		row = (float)y + 0.5f - (cy - 2.0f);
+		half = 4.0f - row;
+		if (half <= 0.0f)
+			continue;
+		for (x = (int32_t)(cx - 5.0f); x <= (int32_t)(cx + 5.0f); x++) {
+			coverage = half + 0.5f - (float)fabs((double)((float)x + 0.5f - cx));
+			if (coverage <= 0.0f)
+				continue;
+			if (coverage > 1.0f)
+				coverage = 1.0f;
+			ui_over(ui, x, y, rgb, (unsigned)(coverage * 255.0f + 0.5f));
+		}
+	}
+}
+
+/* Gives a drawing tool's name on its button (the pen's for any other action). */
+static const char *
+ui_draw_label(
+	unsigned action)
+{
+	/* Each drawing tool by its short name. */
+	switch (action) {
+	case NOTES_ACTION_BRUSH:
+		return "Brush";
+	case NOTES_ACTION_PENCIL:
+		return "Pencil";
+	case NOTES_ACTION_WATERCOLOR:
+		return "Water";
+	case NOTES_ACTION_HIGHLIGHTER:
+		return "Marker";
+	case NOTES_ACTION_FILL:
+		return "Fill";
+	default:
+		break;
+	}
+
+	/* The pen. */
+	return "Pen";
+}
+
 /* Measures the room the eraser's button leaves unused: how much wider "Part Eraser" is than the label shown. */
 static int32_t
 ui_eraser_slack(
@@ -1108,9 +1499,15 @@ ui_add_button(
 {
 	struct notes_button *button;
 
-	/* A full table takes no more. */
-	if (ui->button_count >= NOTES_BUTTONS)
+	/* A full table takes no more; the first button left out is logged (review-1 M6). */
+	if (ui->button_count >= NOTES_BUTTONS) {
+		if (!ui->overflow_logged) {
+			printf("NOTES BUTTONS overflow action=%u\n", action);
+			fflush(stdout);
+			ui->overflow_logged = 1;
+		}
 		return;
+	}
 
 	/* Succeeded: the button is the last. */
 	button = &ui->buttons[ui->button_count];

@@ -67,6 +67,12 @@
 #define MENU_SELECT		43U
 #define MENU_TEXT		44U
 
+/* ws216-p006: the brush, the pencil, the watercolour and the fill. */
+#define MENU_BRUSH		45U
+#define MENU_PENCIL		46U
+#define MENU_WATERCOLOR		47U
+#define MENU_FILL		48U
+
 /* View. */
 #define MENU_FULLSCREEN		50U
 
@@ -101,6 +107,10 @@ static const struct kl_menu_entry menu_items[] = {
 	{ MENU_TOOL, KL_MENU_ROOT, KL_MENU_ITEM_SUBMENU, "Tool", 0U, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_PEN, MENU_TOOL, KL_MENU_ITEM_RADIO, "Pen", NOTES_ACTION_PEN, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_HIGHLIGHTER, MENU_TOOL, KL_MENU_ITEM_RADIO, "Marker", NOTES_ACTION_HIGHLIGHTER, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_BRUSH, MENU_TOOL, KL_MENU_ITEM_RADIO, "Brush", NOTES_ACTION_BRUSH, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_PENCIL, MENU_TOOL, KL_MENU_ITEM_RADIO, "Pencil", NOTES_ACTION_PENCIL, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_WATERCOLOR, MENU_TOOL, KL_MENU_ITEM_RADIO, "Watercolor", NOTES_ACTION_WATERCOLOR, KL_MENU_ROLE_NONE, 0U, 0U },
+	{ MENU_FILL, MENU_TOOL, KL_MENU_ITEM_RADIO, "Fill", NOTES_ACTION_FILL, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_ERASER, MENU_TOOL, KL_MENU_ITEM_RADIO, "Eraser", NOTES_ACTION_ERASER, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_SELECT, MENU_TOOL, KL_MENU_ITEM_RADIO, "Select", NOTES_ACTION_SELECT, KL_MENU_ROLE_NONE, 0U, 0U },
 	{ MENU_TEXT, MENU_TOOL, KL_MENU_ITEM_RADIO, "Text", NOTES_ACTION_TEXT, KL_MENU_ROLE_NONE, 0U, 0U },
@@ -172,6 +182,10 @@ notes_menu_refresh(
 	/* The tool's radio item, and Fullscreen. */
 	menu_action_state(window, NOTES_ACTION_PEN, 1, menu_is(state->tool, NOTES_ACTION_PEN));
 	menu_action_state(window, NOTES_ACTION_HIGHLIGHTER, 1, menu_is(state->tool, NOTES_ACTION_HIGHLIGHTER));
+	menu_action_state(window, NOTES_ACTION_BRUSH, 1, menu_is(state->tool, NOTES_ACTION_BRUSH));
+	menu_action_state(window, NOTES_ACTION_PENCIL, 1, menu_is(state->tool, NOTES_ACTION_PENCIL));
+	menu_action_state(window, NOTES_ACTION_WATERCOLOR, 1, menu_is(state->tool, NOTES_ACTION_WATERCOLOR));
+	menu_action_state(window, NOTES_ACTION_FILL, 1, menu_is(state->tool, NOTES_ACTION_FILL));
 	menu_action_state(window, NOTES_ACTION_ERASER, 1, menu_is(state->tool, NOTES_ACTION_ERASER));
 	menu_action_state(window, NOTES_ACTION_SELECT, 1, menu_is(state->tool, NOTES_ACTION_SELECT));
 	menu_action_state(window, NOTES_ACTION_TEXT, 1, menu_is(state->tool, NOTES_ACTION_TEXT));

@@ -50,7 +50,8 @@ static unsigned erase_decide(struct notes_document *document, size_t page, float
 static struct notes_stroke *erase_fill(struct notes_document *document, size_t page, float x, float y, unsigned mode);
 static int erase_hits(const struct notes_page *target, size_t index, float x, float y, float radius, unsigned mode, const struct notes_stroke *fill);
 static int stroke_near(struct notes_stroke *stroke, float x, float y);
-static int stroke_covered(const struct notes_page *target, size_t index, float x, float y);
+static int stroke_covered(const struct notes_page *target, size_t index, float x, float y, float radius);
+static int point_covered(const struct notes_page *target, size_t index, float x, float y);
 static int shape_winding(const struct notes_shape *shape, float x, float y);
 static int stroke_split(const struct notes_stroke *stroke, float x, float y, float reach, struct notes_stroke ***pieces, size_t *piece_count, int *crossed);
 static int segment_inside(const struct notes_point *a, const struct notes_point *b, float x, float y, float reach, float *enter, float *leave);
@@ -1695,7 +1696,7 @@ erase_decide(
 		near = stroke_near(stroke, x, y);
 		if (!near)
 			continue;
-		covered = stroke_covered(target, index, x, y);
+		covered = stroke_covered(target, index, x, y, radius);
 		if (!covered) {
 			mode = NOTES_ERASE_LINES;
 			break;
@@ -1836,7 +1837,7 @@ erase_hits(
 		return 0;
 
 	/* A line covered there by a fill above it is not seen, and stays. */
-	covered = stroke_covered(target, index, x, y);
+	covered = stroke_covered(target, index, x, y, radius);
 	if (covered)
 		return 0;
 
@@ -1854,6 +1855,16 @@ stroke_near(
 	float reach;
 	float distance;
 	size_t index;
+	int error;
+
+	/* The line's box widened by the margin, which a point outside is not near (p005 code review M1). */
+	error = notes_stroke_outline(stroke);
+	if (error != 0)
+		return 0;
+	if (x < stroke->bounds[0] - DOCUMENT_ERASE_NEAR || x > stroke->bounds[2] + DOCUMENT_ERASE_NEAR)
+		return 0;
+	if (y < stroke->bounds[1] - DOCUMENT_ERASE_NEAR || y > stroke->bounds[3] + DOCUMENT_ERASE_NEAR)
+		return 0;
 
 	/* The visible half width and the margin. */
 	reach = notes_stroke_reach(stroke) + DOCUMENT_ERASE_NEAR;
@@ -1878,28 +1889,33 @@ stroke_near(
 }
 
 /*
- * Tells whether the line at an index of a page is covered, where it comes
- * nearest a point, by a fill above it (fills are opaque).
+ * Tells whether the line at an index of a page is covered by fills above
+ * it (fills are opaque) wherever the eraser meets it: at the place of its
+ * path nearest the centre, and at each of its samples within the radius
+ * and its visible half width of the centre (p005 code review 4: a line
+ * seen anywhere in the circle is not covered).
  */
 static int
 stroke_covered(
 	const struct notes_page *target,
 	size_t index,
 	float x,
-	float y)
+	float y,
+	float radius)
 {
 	const struct notes_stroke *stroke;
 	size_t segment;
-	size_t above;
+	size_t sample;
 	float best;
 	float distance;
 	float near_x;
 	float near_y;
+	float reach;
 	float dx;
 	float dy;
 	float length;
 	float share;
-	int inside;
+	int covered;
 
 	/* The place of the path nearest the point. */
 	stroke = target->strokes[index];
@@ -1927,16 +1943,47 @@ stroke_covered(
 		near_y = stroke->points[segment].y + dy * share;
 	}
 
-	/* A fill above the line holding that place covers it. */
+	/* That place seen leaves the line seen. */
+	covered = point_covered(target, index, near_x, near_y);
+	if (!covered)
+		return 0;
+
+	/* So does any of its samples in the circle that a fill above does not hold. */
+	reach = radius + notes_stroke_reach(stroke);
+	for (sample = 0; sample < stroke->point_count; sample++) {
+		distance = segment_distance(x, y, stroke->points[sample].x, stroke->points[sample].y, stroke->points[sample].x, stroke->points[sample].y);
+		if (distance > reach)
+			continue;
+		covered = point_covered(target, index, stroke->points[sample].x, stroke->points[sample].y);
+		if (!covered)
+			return 0;
+	}
+
+	/* Covered wherever the eraser meets it. */
+	return 1;
+}
+
+/* Tells whether a fill above the stroke at an index of a page holds a point. */
+static int
+point_covered(
+	const struct notes_page *target,
+	size_t index,
+	float x,
+	float y)
+{
+	size_t above;
+	int inside;
+
+	/* Each fill above. */
 	for (above = index + 1U; above < target->stroke_count; above++) {
 		if (target->strokes[above]->tool != NOTES_TOOL_FILL)
 			continue;
-		inside = notes_stroke_contains(target->strokes[above], near_x, near_y, 0);
+		inside = notes_stroke_contains(target->strokes[above], x, y, 0);
 		if (inside)
 			return 1;
 	}
 
-	/* Nothing above covers it. */
+	/* None holds it. */
 	return 0;
 }
 

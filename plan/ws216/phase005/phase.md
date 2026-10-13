@@ -152,9 +152,24 @@ host の memory: 頁の画素ごとに 2 byte（A4 で 16 MB、上限 16 Mi px �
 - 塗りは UI の thread を止める（L-8、p006 で表示か上限）。開いている text box の overlay と drag の preview は帯に入らない（L-12）。
 - 塗り替えは古い塗りの上に重ねる（L-11、Future Work の候補）。
 
-### 6.4 未実施・残り
+### 6.4 code review-1 の直し（2026-10-13 P1、q944 の中で、[code-review-1](code-review-1.md)）
+
+| # | 直し |
+| --- | --- |
+| M2 | 最後の閉じる半径でも narrow か領域の画素が 0 なら、膨らませ戻しの前に `ENOENT`（小さな点の tap で box が逆になり uint32 で桁あふれした大きさを確保しに行っていた）。試験: 100 pt 角の頁の 3×3 px の黒い点の中心の tap が `ENOENT`（plain・ASan・UBSan） |
+| M1 | `stroke_near()` に線の box ± 2 pt の早い打ち切り（結果は変わらない） |
+| 軽微 1 | 帯の幅を `notes_fill_width()` 1 か所で決め、`fill.c` と `fill-page.c` の両方が使う（4096 で切る） |
+| 軽微 3 | `notes_renderer_band_free()` は帯の物がある時 `vkDeviceWaitIdle` の後に捨てる（fence の timeout・失敗の時も） |
+| 軽微 4 | `stroke_covered()` は、中心に一番近い所に加えて、円（半径 + 線の見える半幅）の中の線の点のどれかが上の塗りに覆われていなければ「見えている」（ユーザーの決定の「当たった所」に合わせた） |
+| 軽微 5 | `fill_page_stroke()` は `next_id` を進めない（`notes_document_insert_stroke()` が入れた時に進める） |
+| 軽微 2 | 記録だけ: `render_band_record()` は host の絵の ready を submit の前に 1 にする（submit が失敗した時は画面の frame と同じく device lost の扱い） |
+| 軽微 6 | p009 の残件: bcm2711 は depth・stencil の format を報告しないので、Pi では帯の stencil が作れず塗りは `EIO` の見込み（読み戻し先の uncached とあわせて） |
+
+p006 で `notes_fill_page()` の背景の引数を `int background` から帯ごとの painter（`notes_fill_background`、context つき）に替えた（p006 review-1 L-10）。同じ色の塗りの上の tap は `EEXIST`（"Already filled"、p006 review-1 C-5）、log に `NOTES FILL bands=B background_us=U` を足した（p006 review-1 C-2）。
+
+### 6.5 未実施・残り
 
 - QEMU・実機の画と時間は無い（p007 で T1、Pi 4 は p009）。p007 の T1 の依頼は p006 の UI の後にまとめる。
-- M-5 の続き: 帯ごとに PDF の display list を帯の大きさに CPU で raster にして背景に使う（p006 との境界: display list を渡す口が要る）。
+- M-5 の続き: 帯ごとに PDF の display list を帯の大きさに CPU で raster にして背景に使う → p006 で入れた（[p006 §6](../phase006/phase.md)）。
 - FreeBSD の native の build。
 - 規約の全文の見直しは p008。

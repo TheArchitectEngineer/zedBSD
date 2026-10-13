@@ -612,6 +612,7 @@ void notes_grain_level(const unsigned char *finer, size_t finer_side, unsigned c
 
 /* The area the fill tool paints (fill.c, ws216-p005). */
 double notes_fill_scale(float page_width, float page_height);
+uint32_t notes_fill_width(float page_width, float page_height);
 int notes_fill_find(float page_width, float page_height, float x, float y, int under, notes_fill_band *band, void *context, struct notes_fill_region *region);
 void notes_fill_region_free(struct notes_fill_region *region);
 

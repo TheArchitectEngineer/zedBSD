@@ -46,8 +46,19 @@
 /* How many touch inputs wait for the main loop at most (ws081-p013). */
 #define NOTES_TOUCH_EVENTS	256U
 
-/* The most buttons the toolbar has. */
-#define NOTES_BUTTONS		32U
+/*
+ * What a press changed of the tools (notes_ui_tools_press(), ws216-p006):
+ * a tool was chosen (logged), the strip of drawing tools opened, closed.
+ */
+#define NOTES_TOOLS_CHOSEN	0x01U
+#define NOTES_TOOLS_OPENED	0x02U
+#define NOTES_TOOLS_CLOSED	0x04U
+
+/* What notes_ui_tool() gives for an action that is not a drawing tool's (ws216-p006). */
+#define NOTES_UI_NOT_DRAWING	0xffffffffU
+
+/* The most buttons the toolbar has (ws216-p006: its strip of drawing tools too). */
+#define NOTES_BUTTONS		48U
 
 /*
  * The largest page picture, in pixels on either side (ws081-p013: a page
@@ -120,6 +131,17 @@
 
 /* ws177-p011: the clean copy saved last opened in place of the notebook (File > Open Clean Copy). */
 #define NOTES_ACTION_OPEN_CLEAN	47U
+
+/*
+ * ws216-p006: the toolbar's drawing tool button (the drawing tool used
+ * last, or its strip of drawing tools), and the brush, the pencil, the
+ * watercolour and the fill (the pen and the marker keep their numbers).
+ */
+#define NOTES_ACTION_DRAW		48U
+#define NOTES_ACTION_BRUSH		49U
+#define NOTES_ACTION_PENCIL		50U
+#define NOTES_ACTION_WATERCOLOR		51U
+#define NOTES_ACTION_FILL		52U
 
 /*
  * The pipelines a draw uses (render.c).  The first five are made with the
@@ -333,6 +355,21 @@ struct notes_ui_state {
 
 	/* ws177-p011: whether a clean copy was saved this session, which File > Open Clean Copy opens. */
 	int can_open_clean;
+
+	/* ws216-p006: the drawing tool used last (its NOTES_ACTION_*), and whether the strip of drawing tools is open. */
+	unsigned draw_tool;
+	int draws_open;
+};
+
+/*
+ * The tools' state a press changes (ws216-p006): the tool chosen (its
+ * NOTES_ACTION_*), the drawing tool used last, and whether the strip of
+ * drawing tools is open.
+ */
+struct notes_tools {
+	unsigned tool;
+	unsigned draw_tool;
+	int draws_open;
 };
 
 /*
@@ -362,6 +399,19 @@ struct notes_ui {
 	/* The buttons, as last laid out. */
 	struct notes_button buttons[NOTES_BUTTONS];
 	unsigned button_count;
+
+	/*
+	 * ws216-p006: the drawing tool button's left edge as last laid out, the
+	 * strip of drawing tools' rectangle when it was drawn (strip_shown), and
+	 * whether a button too many was logged (once).
+	 */
+	int32_t draw_x;
+	int strip_shown;
+	int32_t strip_x;
+	int32_t strip_y;
+	int32_t strip_width;
+	int32_t strip_height;
+	int overflow_logged;
 };
 
 /*
@@ -679,8 +729,17 @@ void notes_frame_stroke(struct notes_frame *frame, const struct notes_stroke *st
 unsigned notes_frame_grain_level(float scale);
 void notes_frame_texture(struct notes_frame *frame, unsigned texture, float x, float y, float width, float height);
 
+/*
+ * Draws the rows of a page's background (the page of the PDF the notebook
+ * writes on, with its edits) for the fill (ws216-p006, review-1 M-5):
+ * from top, width by height pixels at a scale, into the renderer's
+ * background picture, which the fill's band then shows one to one.
+ * Returns 0 or an errno value.
+ */
+typedef int notes_fill_background(void *context, uint32_t top, uint32_t width, uint32_t height, double scale);
+
 /* The fill tool on a page (fill-page.c, ws216-p005). */
-int notes_fill_page(struct notes_renderer *renderer, struct notes_document *document, size_t page, float x, float y, uint32_t color, int background, size_t *place);
+int notes_fill_page(struct notes_renderer *renderer, struct notes_document *document, size_t page, float x, float y, uint32_t color, notes_fill_background *background, void *context, size_t *place);
 const char *notes_fill_notice(int error);
 void notes_view_layout(struct notes_view *view, uint32_t width, uint32_t height, float page_width, float page_height);
 
@@ -705,6 +764,9 @@ int notes_ui_open(struct notes_ui *ui, const char *font_path);
 void notes_ui_close(struct notes_ui *ui);
 void notes_ui_draw(struct notes_ui *ui, unsigned char *pixels, size_t pitch, uint32_t width, uint32_t height, const struct notes_ui_state *state);
 uint32_t notes_ui_hit(const struct notes_ui *ui, float x, float y);
+int notes_ui_in_strip(const struct notes_ui *ui, float x, float y);
+unsigned notes_ui_tool(unsigned action);
+unsigned notes_ui_tools_press(struct notes_tools *tools, unsigned action);
 uint32_t notes_ui_color(unsigned tool, unsigned index);
 float notes_ui_width(unsigned tool, unsigned index);
 
