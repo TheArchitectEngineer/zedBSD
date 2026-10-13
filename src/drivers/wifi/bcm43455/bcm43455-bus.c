@@ -25,7 +25,8 @@
  * (bwfm_sdio_rx_frames(), bwfm_sdio_tx_ok(), bwfm_sdio_tx_ctrlframe(),
  * bwfm_sdio_task()); the abort of a bad frame follows Infineon's WHD
  * (Apache-2.0), whd_bus_sdio_protocol.c (whd_bus_sdio_abort_read()).  The
- * thread, the slot, direct mode and the hooks are this driver's own.
+ * thread, the slot, direct mode, the hooks and the work the thread does
+ * for the device are this driver's own.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-bus.h"
@@ -73,8 +74,9 @@ static int send_slot(struct bcm43455_bus *bus);
 static int send_data(struct bcm43455_bus *bus);
 static size_t build_control(struct bcm43455_bus *bus, uint32_t command, int set, uint16_t id, const uint8_t *payload, size_t payload_length);
 static int direct_control(struct bcm43455_bus *bus, uint32_t command, int set, const uint8_t *input, size_t input_length, size_t request_length, uint8_t *answer, size_t answer_capacity, size_t *answer_length);
+static int own_request(struct bcm43455_bus *bus, uint32_t command, int set, const uint8_t *input, size_t input_length, size_t request_length, uint8_t *answer, size_t answer_capacity, size_t *answer_length, int *outcome);
 static int slot_control(struct bcm43455_bus *bus, uint32_t command, int set, const uint8_t *input, size_t input_length, size_t request_length, uint8_t *answer, size_t answer_capacity, size_t *answer_length);
-static int direct_wait(struct bcm43455_bus *bus, uint64_t deadline);
+static int direct_wait(struct bcm43455_bus *bus, uint64_t deadline, int *outcome);
 static uint16_t take_id_locked(struct bcm43455_bus *bus);
 static uint64_t deadline_after(unsigned milliseconds);
 
@@ -315,6 +317,7 @@ bcm43455_bus_thread_start(
 	bus->thread_running = 1;
 	bus->stop_requested = 0;
 	bus->work_requested = 0;
+	bus->radio_work_pending = 0;
 	bus->thread_error = 0;
 	kern_memset(&bus->slot, 0, sizeof(bus->slot));
 
@@ -398,6 +401,76 @@ bcm43455_bus_wake(
 }
 
 /*
+ * Asks the bus thread to run the work hook.
+ */
+void
+bcm43455_bus_request_work(
+	struct bcm43455_bus *bus)
+{
+	unsigned long enabled;
+	unsigned running;
+
+	/*
+	 * radio_work_pending makes the thread run the hook before it waits
+	 * again; the thread clears it before the run, so a request made
+	 * during the run makes another.
+	 */
+	enabled = spin_lock_irqsave(&bus->lock);
+
+	bus->radio_work_pending = 1;
+	running = bus->thread_running;
+
+	spin_unlock_irqrestore(&bus->lock, enabled);
+
+	/* Wakes the thread from its wait for the card. */
+	if (running)
+		bus->chip.ops->interrupt_kick(bus->chip.context);
+}
+
+/*
+ * Sends one control command from the work hook and waits for its answer.
+ */
+int
+bcm43455_bus_thread_control(
+	struct bcm43455_bus *bus,
+	uint32_t command,
+	int set,
+	const uint8_t *input,
+	size_t input_length,
+	uint8_t *answer,
+	size_t answer_capacity,
+	size_t *answer_length,
+	int *outcome)
+{
+	size_t request_length;
+	int error;
+
+	/* Refuses a request that does not fit a message. */
+	if (outcome == NULL)
+		return EINVAL;
+	*outcome = EINVAL;
+	if (input == NULL && input_length != 0)
+		return 0;
+	if (answer == NULL && answer_capacity != 0)
+		return 0;
+	if (input_length > BCM43455_BCDC_CONTROL_MAX || answer_capacity > BCM43455_BCDC_CONTROL_MAX)
+		return 0;
+
+	/* A get sends as many bytes as it wants back, its input at their start. */
+	request_length = input_length;
+	if (!set && answer_capacity > request_length)
+		request_length = answer_capacity;
+
+	/* The thread owns the bus: it sends the command and reads until the answer comes. */
+	error = own_request(bus, command, set, input, input_length, request_length, answer, answer_capacity, answer_length, outcome);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the bus still works; outcome says how the command went. */
+	return 0;
+}
+
+/*
  * The bus thread: serves the chip until asked to stop or until the bus
  * fails.
  */
@@ -409,6 +482,7 @@ bus_thread(
 	unsigned long enabled;
 	unsigned stop;
 	unsigned work;
+	unsigned radio_work;
 	unsigned window;
 	int waited;
 	int error;
@@ -418,7 +492,10 @@ bus_thread(
 
 	/* Serves the chip one wakeup at a time. */
 	for (;;) {
-		/* Samples the stop request and whether anything waits to be sent within the credit. */
+		/*
+		 * Samples the stop request, whether anything waits to be sent
+		 * within the credit, and takes the request for radio work.
+		 */
 		window = bcm43455_sdpcm_window(bus->tx_credit_limit, bus->tx_sequence);
 		enabled = spin_lock_irqsave(&bus->lock);
 
@@ -430,6 +507,10 @@ bus_thread(
 			if (bus->work_requested)
 				work = 1;
 		}
+		radio_work = bus->radio_work_pending;
+		bus->radio_work_pending = 0;
+		if (radio_work)
+			work = 1;
 
 		spin_unlock_irqrestore(&bus->lock, enabled);
 
@@ -453,6 +534,16 @@ bus_thread(
 			bus->chip.ops->interrupt_rearm(bus->chip.context);
 		if (error != 0)
 			break;
+
+		/*
+		 * Does the device's radio work, which sends its own commands;
+		 * a request queued in the slot meanwhile goes out after it.
+		 */
+		if (radio_work && bus->hooks->work != NULL) {
+			error = bus->hooks->work(bus->hook_context);
+			if (error != 0)
+				break;
+		}
 
 		/* Sends the request and the frames that wait, within the credit. */
 		error = send_pending(bus);
@@ -1151,12 +1242,50 @@ direct_control(
 	size_t answer_capacity,
 	size_t *answer_length)
 {
+	int outcome;
+	int error;
+
+	/* Sends it and reads until the answer comes. */
+	error = own_request(bus, command, set, input, input_length, request_length, answer, answer_capacity, answer_length, &outcome);
+	if (error != 0)
+		return error;
+
+	/* Reports a command without an answer, or one the firmware refused. */
+	if (outcome != 0)
+		return outcome;
+
+	/* Succeeded: answer holds what came back. */
+	return 0;
+}
+
+/*
+ * Sends a control request from whoever owns the bus (the lifecycle owner
+ * in direct mode, or the bus thread for its work) and reads what the chip
+ * sends until the answer comes.  The return value is the bus's error;
+ * outcome receives the request's own: 0, ETIMEDOUT, ECANCELED, or the
+ * firmware's refusal.
+ */
+static int
+own_request(
+	struct bcm43455_bus *bus,
+	uint32_t command,
+	int set,
+	const uint8_t *input,
+	size_t input_length,
+	size_t request_length,
+	uint8_t *answer,
+	size_t answer_capacity,
+	size_t *answer_length,
+	int *outcome)
+{
 	unsigned long enabled;
 	uint64_t deadline;
 	uint16_t id;
 	size_t length;
 	unsigned window;
 	int error;
+
+	*outcome = 0;
 
 	/* Takes the request's id. */
 	enabled = spin_lock_irqsave(&bus->lock);
@@ -1171,9 +1300,11 @@ direct_control(
 		window = bcm43455_sdpcm_window(bus->tx_credit_limit, bus->tx_sequence);
 		if (window != 0)
 			break;
-		error = direct_wait(bus, deadline);
+		error = direct_wait(bus, deadline, outcome);
 		if (error != 0)
 			return error;
+		if (*outcome != 0)
+			return 0;
 	}
 
 	/* Marks the request as the one the receive path completes. */
@@ -1203,24 +1334,31 @@ direct_control(
 	error = send_frame(bus, BCM43455_SDPCM_CHANNEL_CONTROL, length);
 	if (error != 0) {
 		bus->direct.active = 0;
+		bus->direct.answer = NULL;
 		return error;
 	}
 
-	/* Reads what the chip sends until the answer comes or the time is spent. */
+	/* Reads what the chip sends until the answer comes, the time is spent, or a stop comes. */
 	error = 0;
 	while (!bus->direct.done) {
-		error = direct_wait(bus, deadline);
+		error = direct_wait(bus, deadline, outcome);
 		if (error != 0)
+			break;
+		if (*outcome != 0)
 			break;
 	}
 	bus->direct.active = 0;
 	bus->direct.answer = NULL;
 	if (error != 0)
 		return error;
+	if (*outcome != 0)
+		return 0;
 
-	/* Reports the firmware's refusal. */
-	if (bus->direct.error != 0)
-		return bus->direct.error;
+	/* The firmware's refusal is the request's outcome. */
+	if (bus->direct.error != 0) {
+		*outcome = bus->direct.error;
+		return 0;
+	}
 
 	/* Succeeded: answer holds what came back. */
 	if (answer_length != NULL)
@@ -1326,15 +1464,19 @@ slot_control(
 }
 
 /*
- * One step of a direct-mode wait: reads what the chip has, then sleeps
- * until its interrupt or a short step.  Returns ETIMEDOUT at the
- * deadline.
+ * One step of a wait for a request's answer: reads what the chip has,
+ * then sleeps until its interrupt or a short step.  outcome receives
+ * ETIMEDOUT at the deadline, and ECANCELED when the bus thread waits and
+ * is asked to stop; the return value is the bus's error.
  */
 static int
 direct_wait(
 	struct bcm43455_bus *bus,
-	uint64_t deadline)
+	uint64_t deadline,
+	int *outcome)
 {
+	unsigned long enabled;
+	unsigned stopping;
 	uint64_t step;
 	uint64_t now;
 	int waited;
@@ -1347,10 +1489,27 @@ direct_wait(
 	if (bus->direct.active && bus->direct.done)
 		return 0;
 
+	/* The bus thread gives up when it is asked to stop; direct mode has no thread to stop. */
+	enabled = spin_lock_irqsave(&bus->lock);
+
+	stopping = 0;
+	if (bus->thread_running && bus->stop_requested)
+		stopping = 1;
+
+	spin_unlock_irqrestore(&bus->lock, enabled);
+
+	/* A stop request ends the wait. */
+	if (stopping) {
+		*outcome = ECANCELED;
+		return 0;
+	}
+
 	/* Gives up at the deadline. */
 	now = sched_ticks();
-	if (now >= deadline)
-		return ETIMEDOUT;
+	if (now >= deadline) {
+		*outcome = ETIMEDOUT;
+		return 0;
+	}
 
 	/* Sleeps until the interrupt or the next step, whichever is first. */
 	step = deadline_after(DIRECT_STEP_MS);

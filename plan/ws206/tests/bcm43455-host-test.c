@@ -27,8 +27,20 @@
  *        every buffer a secret passed through is cleared afterwards.
  *        With FILES-DIRECTORY (the package's verified cache), the real
  *        firmware, CLM and NVRAM are checked and converted too.
+ *        The radio messages (channel specifications, escan requests and
+ *        results, the network description as a probe response, the join
+ *        and key messages) and the table of connection errors.
  * smp:   requesters on four threads, a transmitter and the firmware's
  *        events race the bus thread, then the bus is stopped under them.
+ * radio: the FullMAC radio operations against the model's firmware (ws206-
+ *        p005): the scan's order of reports (ready, networks, end) also
+ *        when results come before the escan's answer, stale results, the
+ *        abort; the connection's commands, its events and errors, data
+ *        both ways, link loss, disconnect, cancel, a connect that does not
+ *        wait for a slow bus, the PMK erased on every path; a bus failure,
+ *        its restart and the restarts' bound.
+ * radio-smp: a connector, a scanner, a poller, a transmitter and the
+ *        firmware race the bus thread (ThreadSanitizer).
  */
 
 #include "drivers/wifi/bcm43455/bcm43455.h"
@@ -40,6 +52,7 @@
 #include "drivers/wifi/bcm43455/bcm43455-event.h"
 #include "drivers/wifi/bcm43455/bcm43455-firmware.h"
 #include "drivers/wifi/bcm43455/bcm43455-hw.h"
+#include "drivers/wifi/bcm43455/bcm43455-radio.h"
 #include "drivers/wifi/bcm43455/bcm43455-sdpcm.h"
 #include <kern/klog.h>
 #include <kern/kmem.h>
@@ -174,6 +187,22 @@ static struct {
 	size_t data_sent_length;
 	unsigned data_sent_count;
 	uint8_t secret_seen[32];
+	unsigned scan_mode;
+	unsigned escan_starts;
+	unsigned escan_aborts;
+	uint16_t escan_sync;
+	uint16_t escan_chanspec;
+	uint8_t escan_scan_type;
+	unsigned join_script;
+	unsigned joins;
+	unsigned leaves;
+	uint8_t key_seen[BCM43455_KEY_MESSAGE_LENGTH];
+	unsigned keys;
+	uint8_t join_seen[BCM43455_JOIN_REQUEST_LENGTH];
+	uint32_t refuse_command;
+	uint32_t ignore_command;
+	uint8_t held_answer[16 + 2048];
+	size_t held_length;
 	unsigned armed;
 	unsigned pending;
 	unsigned kicked;
@@ -228,8 +257,61 @@ static struct wlan_scan_profile attached_profile;
 /* The smp scenario's threads' stop flag. */
 static int smp_done;
 
+/* How the model's firmware answers an escan start. */
+#define SCAN_NORMAL		0U
+#define SCAN_RESULTS_FIRST	1U
+#define SCAN_HOLD		2U
+#define SCAN_REFUSE		3U
+#define SCAN_BUSY		4U
+#define SCAN_STALE		5U
+
+/* What the model's firmware does after a join command. */
+#define JOIN_NOTHING		0U
+#define JOIN_SUCCESS		1U
+#define JOIN_WRONG_KEY		2U
+#define JOIN_NO_NETWORK		3U
+#define JOIN_M1_TIMEOUT		4U
+#define JOIN_M3_TIMEOUT		5U
+
+/* Milliseconds the model's bus takes for each frame the host writes, to slow the bus thread. */
+static unsigned model_delay_ms;
+
+/* What the WLAN stand-ins were told, in order. */
+#define REPORT_READY		1U
+#define REPORT_FRAME		2U
+#define REPORT_COMPLETE		3U
+#define REPORT_SCAN_ERROR	4U
+#define REPORT_EVENT		5U
+#define REPORT_LOSS		6U
+#define REPORT_ETHERNET		7U
+#define REPORT_RESTART		8U
+
+/* One report the driver made to the WLAN core. */
+struct report {
+	unsigned kind;
+	uint64_t generation;
+	uint32_t value;
+	int error;
+	char ssid[33];
+	uint32_t channel;
+	uint32_t security;
+	int32_t rssi;
+	size_t length;
+};
+
+/* The reports, the lock the poll and the checks share, and the port the station keeps open. */
+#define REPORT_MAX		512U
+static struct report reports[REPORT_MAX];
+static unsigned report_count;
+static pthread_mutex_t report_lock = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t open_port_generation;
+
 static void run_unit(const char *files);
 static void run_smp(void);
+static void run_radio(void);
+static void run_radio_smp(void);
+static void check_radio_codecs(void);
+static void check_connect_table(void);
 static void check_sdpcm(void);
 static void check_bcdc(void);
 static void check_events(void);
@@ -249,6 +331,12 @@ static void model_build_erom(void);
 static void model_push_locked(unsigned channel, const uint8_t *payload, size_t length);
 static void model_push_event(uint32_t type, uint32_t status, uint32_t reason);
 static void model_push_data(const uint8_t *frame, size_t length);
+static void model_push_event_locked(uint32_t type, uint32_t status, uint32_t reason, uint16_t flags, const uint8_t *data, size_t data_length);
+static void model_push_event_with(uint32_t type, uint32_t status, uint32_t reason, uint16_t flags);
+static size_t model_bss(uint8_t *bss, const char *ssid, uint8_t last, uint16_t chanspec);
+static void model_scan_events_locked(uint16_t sync_id, uint16_t chanspec);
+static void model_join_events_locked(void);
+static void record_report(unsigned kind, uint64_t generation, uint32_t value, int error, const struct wlan_bss_record *bss, size_t length);
 static void model_raise_locked(uint32_t bits);
 static void model_frame_from_host(const uint8_t *bytes, size_t length);
 static void model_control(const uint8_t *message, size_t length);
@@ -306,7 +394,7 @@ main(
 {
 	/* Requires the scenario. */
 	if (argc < 2 || argc > 3) {
-		fprintf(stderr, "usage: bcm43455-host-test unit|smp [FILES-DIRECTORY]\n");
+		fprintf(stderr, "usage: bcm43455-host-test unit|smp|radio|radio-smp [FILES-DIRECTORY]\n");
 		return 2;
 	}
 	setvbuf(stdout, NULL, _IONBF, 0);
@@ -321,6 +409,10 @@ main(
 		run_unit(argc == 3 ? argv[2] : NULL);
 	} else if (strcmp(argv[1], "smp") == 0) {
 		run_smp();
+	} else if (strcmp(argv[1], "radio") == 0) {
+		run_radio();
+	} else if (strcmp(argv[1], "radio-smp") == 0) {
+		run_radio_smp();
 	} else {
 		fprintf(stderr, "bcm43455-host-test: unknown scenario %s\n", argv[1]);
 		return 2;
@@ -343,6 +435,8 @@ run_unit(
 	if (files != NULL)
 		check_real_files(files);
 	check_profile();
+	check_radio_codecs();
+	check_connect_table();
 	check_chip();
 	check_probe();
 	check_refusals();
@@ -805,7 +899,7 @@ check_probe(void)
 	CHECK(device->identity.profile.channel_count == 13);
 
 	/* The order: glomming off, the CLM, the country, the identity, events, roaming, power saving, channels, then down. */
-	CHECK(chip.request_count == 14);
+	CHECK(chip.request_count == 16);
 	CHECK(strcmp(chip.requests[0].name, "bus:rxglom") == 0 && chip.requests[0].set == 1);
 	CHECK(strcmp(chip.requests[1].name, "clmload") == 0 && strcmp(chip.requests[2].name, "clmload") == 0);
 	CHECK(strcmp(chip.requests[3].name, "clmload_status") == 0 && chip.requests[3].set == 0);
@@ -820,7 +914,10 @@ check_probe(void)
 	CHECK(chip.requests[12].command == BCM43455_COMMAND_CHANNEL_LIST);
 	count = bcm43455_get_le32(chip.requests[12].payload);
 	CHECK(count == BCM43455_CHANNELS_MAX);
-	CHECK(chip.requests[13].command == BCM43455_COMMAND_RADIO_DOWN);
+	CHECK(chip.requests[13].command == BCM43455_COMMAND_IO_VERSION && chip.requests[13].set == 0);
+	CHECK(strcmp(chip.requests[14].name, "scan_ver") == 0 && chip.requests[14].set == 0);
+	CHECK(chip.requests[15].command == BCM43455_COMMAND_RADIO_DOWN);
+	CHECK(device->identity.io_type == BCM43455_CHANSPEC_LAYOUT_AC && device->identity.scan_layout == BCM43455_SCAN_LAYOUT_V0);
 
 	/* The CLM arrived whole, in two messages marked begin and end. */
 	CHECK(chip.clm_received == BCM43455_CLM_SIZE && chip.clm_messages == 2 && chip.clm_flags_ok == 1);
@@ -881,7 +978,7 @@ check_refusals(void)
 	chip.refuse_country = 2;
 	device = make_device(placeholder_text);
 	CHECK(bcm43455_device_probe(device) == 0);
-	CHECK(chip.request_count == 15);
+	CHECK(chip.request_count == 17);
 	CHECK(memcmp(chip.country, "XX\0\0\0\0\0\0XX\0\0", 12) == 0);
 	bcm43455_device_destroy(device);
 
@@ -910,7 +1007,7 @@ check_runtime(void)
 	unsigned taken;
 	unsigned i;
 
-	/* The probed chip is published as wlan0 with a station of the lifecycle's two methods. */
+	/* The probed chip is published as wlan0 with a station of the FullMAC method set. */
 	model_reset();
 	device = make_device(placeholder_text);
 	CHECK(bcm43455_device_probe(device) == 0);
@@ -918,8 +1015,13 @@ check_runtime(void)
 	CHECK(net_creates == 1 && strcmp(fake_net.name, "wlan0") == 0);
 	CHECK(memcmp(fake_net.hwaddr, chip_mac, 6) == 0 && fake_net.mtu == 1500);
 	CHECK(attaches == 1 && attached_ops != NULL);
-	CHECK(attached_ops->quiesce != NULL && attached_ops->stop_retry != NULL);
-	CHECK(attached_ops->scan_channel_start == NULL && attached_ops->fullmac_connect == NULL);
+	CHECK(attached_ops->quiesce != NULL && attached_ops->stop_retry != NULL && attached_ops->restart != NULL);
+	CHECK(attached_ops->scan_channel_start != NULL && attached_ops->scan_stop != NULL && attached_ops->disconnect != NULL);
+	CHECK(attached_ops->fullmac_connect != NULL && attached_ops->ethernet_transmit != NULL);
+	CHECK(attached_ops->connect_start == NULL && attached_ops->management_transmit == NULL);
+	CHECK(attached_ops->association_set == NULL && attached_ops->association_clear == NULL);
+	CHECK(attached_ops->frame_transmit == NULL && attached_ops->key_install == NULL);
+	CHECK(attached_ops->key_delete == NULL && attached_ops->keys_activate == NULL);
 	CHECK(attached_profile.channel_count == 13);
 	CHECK(bcm43455_device_publish(device) == EALREADY);
 
@@ -952,35 +1054,19 @@ check_runtime(void)
 	CHECK(answered == 32 && memcmp(answer, secret, 32) == 0);
 	CHECK(all_zero(device->bus.slot.answer, sizeof(device->bus.slot.answer)));
 
-	/* A frame queued for sending reaches the firmware behind a BCDC data header. */
+	/* Without a connection a frame is refused, and a received one is dropped before the ring. */
 	for (i = 0; i < sizeof(frame); i++)
 		frame[i] = (uint8_t)i;
-	CHECK(bcm43455_device_ethernet_transmit(device, frame, sizeof(frame)) == 0);
-	for (i = 0; i < 200; i++) {
-		pthread_mutex_lock(&model_lock);
-		taken = chip.data_sent_count;
-		pthread_mutex_unlock(&model_lock);
-		if (taken != 0)
-			break;
-		sleep_ms(5);
-	}
-	pthread_mutex_lock(&model_lock);
-	CHECK(chip.data_sent_count == 1 && chip.data_sent_length == sizeof(frame));
-	CHECK(memcmp(chip.data_sent, frame, sizeof(frame)) == 0);
-	pthread_mutex_unlock(&model_lock);
-	CHECK(bcm43455_device_ethernet_transmit(device, frame, 1601) == EMSGSIZE);
-
-	/* A frame the firmware sends lands in the ring and is taken by the poll. */
+	CHECK(bcm43455_device_ethernet_transmit(device, 1, frame, sizeof(frame)) == ESTALE);
+	CHECK(bcm43455_device_ethernet_transmit(device, 1, frame, 1601) == EMSGSIZE);
 	model_push_data(frame, 100);
 	for (i = 0; i < 200; i++) {
-		if (polls_scheduled != 0)
+		if (device->bus.counters.data_in != 0)
 			break;
 		sleep_ms(5);
 	}
-	CHECK(polls_scheduled == 1);
-	CHECK(fake_net.ops->poll_receive(&fake_net, 8) == 1);
-	CHECK(fake_net.rx_dropped == 1);
-	CHECK(all_zero(device->rx_ring.entries[0].bytes, sizeof(device->rx_ring.entries[0].bytes)));
+	CHECK(device->bus.counters.data_in == 1 && device->rx_ring.count == 0 && device->rx_ring.dropped == 1);
+	(void)taken;
 
 	/* An event is counted. */
 	model_push_event(BCM43455_EVENT_LINK, 0, 0);
@@ -1003,7 +1089,7 @@ check_runtime(void)
 
 	/* A request while closed is refused at once. */
 	CHECK(bcm43455_bus_iovar_get(&device->bus, "ver", answer, 8, &answered) == ENETDOWN);
-	CHECK(bcm43455_device_ethernet_transmit(device, frame, 60) == ENETDOWN);
+	CHECK(bcm43455_device_ethernet_transmit(device, 1, frame, 60) == ENETDOWN);
 
 	/* The station's quiesce after the close has nothing left to stop. */
 	CHECK(attached_ops->quiesce(device) == 0);
@@ -1145,7 +1231,7 @@ smp_transmitter(
 	requester = argument;
 	memset(frame, 0x42, sizeof(frame));
 	while (!__atomic_load_n(&smp_done, __ATOMIC_SEQ_CST)) {
-		error = bcm43455_device_ethernet_transmit(requester->device, frame, sizeof(frame));
+		error = bcm43455_device_ethernet_transmit(requester->device, 1, frame, sizeof(frame));
 		if (error == 0)
 			requester->done++;
 		else
@@ -1180,14 +1266,19 @@ run_smp(void)
 	struct requester requesters[5];
 	pthread_t threads[6];
 	unsigned total;
+	unsigned long enabled;
 	unsigned i;
 
-	/* A running chip. */
+	/* A running chip, joined to a network as connection 1 so data flows both ways. */
 	model_reset();
 	device = make_device(placeholder_text);
 	mutex_lock(&device->lifecycle_lock);
 	CHECK(bcm43455_device_start(device, 1) == 0);
 	mutex_unlock(&device->lifecycle_lock);
+	enabled = spin_lock_irqsave(&device->ring_lock);
+	device->connection.state = BCM43455_CONNECT_JOINING;
+	device->connection.generation = 1;
+	spin_unlock_irqrestore(&device->ring_lock, enabled);
 
 	/* Starts four requesters, a transmitter and the firmware's sender. */
 	__atomic_store_n(&smp_done, 0, __ATOMIC_SEQ_CST);
@@ -1228,6 +1319,910 @@ run_smp(void)
 	CHECK(device->bus.slot.state == BCM43455_SLOT_EMPTY || device->bus.slot.state == BCM43455_SLOT_ANSWERED);
 	CHECK(all_zero(device->bus.slot.request, sizeof(device->bus.slot.request)));
 	bcm43455_device_destroy(device);
+}
+
+/* Channel specifications, escan requests and results, the network description, the join and key messages. */
+static void
+check_radio_codecs(void)
+{
+	static const uint8_t pmk[32] = {
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+		0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87, 0x78, 0x69, 0x5a, 0x4b, 0x3c, 0x2d, 0x1e, 0xff
+	};
+	static const char hex[] = "000102030405060708090a0b0c0d0e0ff0e1d2c3b4a5968778695a4b3c2d1eff";
+	struct wlan_bss_record parsed;
+	uint8_t buffer[256];
+	uint8_t bss[512];
+	uint8_t frame[BCM43455_SCAN_FRAME_MAX];
+	uint8_t data[600];
+	uint8_t key[BCM43455_KEY_MESSAGE_LENGTH];
+	size_t length;
+	size_t bss_length;
+	size_t first;
+	uint32_t channel;
+	uint16_t sync_id;
+	unsigned count;
+	int32_t rssi;
+
+	/* 20 MHz specifications in both layouts; numbers outside the bands are none. */
+	CHECK(bcm43455_chanspec_from_channel(BCM43455_CHANSPEC_LAYOUT_AC, 6) == 0x1006);
+	CHECK(bcm43455_chanspec_from_channel(BCM43455_CHANSPEC_LAYOUT_AC, 36) == 0xd024);
+	CHECK(bcm43455_chanspec_from_channel(BCM43455_CHANSPEC_LAYOUT_AC, 165) == 0xd0a5);
+	CHECK(bcm43455_chanspec_from_channel(BCM43455_CHANSPEC_LAYOUT_N, 6) == 0x2b06);
+	CHECK(bcm43455_chanspec_from_channel(BCM43455_CHANSPEC_LAYOUT_N, 36) == 0x1b24);
+	CHECK(bcm43455_chanspec_from_channel(BCM43455_CHANSPEC_LAYOUT_AC, 0) == 0);
+	CHECK(bcm43455_chanspec_from_channel(BCM43455_CHANSPEC_LAYOUT_AC, 15) == 0);
+	CHECK(bcm43455_chanspec_from_channel(BCM43455_CHANSPEC_LAYOUT_AC, 200) == 0);
+
+	/* The primary channel of 20, 40 and 80 MHz specifications (802.11ac). */
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_AC, 0x1006, &channel) == 0 && channel == 6);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_AC, 0xd826, &channel) == 0 && channel == 36);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_AC, 0xd926, &channel) == 0 && channel == 40);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_AC, 0x1803, &channel) == 0 && channel == 1);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_AC, 0xe02a, &channel) == 0 && channel == 36);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_AC, 0xe12a, &channel) == 0 && channel == 40);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_AC, 0xe22a, &channel) == 0 && channel == 44);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_AC, 0xe32a, &channel) == 0 && channel == 48);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_AC, 0xe432, &channel) == EINVAL);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_AC, 0xda26, &channel) == EINVAL);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_AC, 0xe832, &channel) == EINVAL);
+
+	/* The same in the 802.11n layout. */
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_N, 0x2b06, &channel) == 0 && channel == 6);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_N, 0x1d26, &channel) == 0 && channel == 36);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_N, 0x1e26, &channel) == 0 && channel == 40);
+	CHECK(bcm43455_chanspec_control_channel(BCM43455_CHANSPEC_LAYOUT_N, 0x1f26, &channel) == EINVAL);
+
+	/* An escan start of layout 0: one channel, active, any network, the firmware's timing. */
+	CHECK(bcm43455_escan_encode(buffer, sizeof(buffer), BCM43455_SCAN_LAYOUT_V0, BCM43455_ESCAN_START, 0x0102, 0x1006, 0, &length) == 0);
+	CHECK(length == 76);
+	CHECK(bcm43455_get_le32(buffer) == 1 && bcm43455_get_le16(buffer + 4) == 1 && bcm43455_get_le16(buffer + 6) == 0x0102);
+	CHECK(bcm43455_get_le32(buffer + 8) == 0 && buffer[8 + 36] == 0xff && buffer[8 + 41] == 0xff);
+	CHECK(buffer[8 + 42] == 2 && buffer[8 + 43] == 0);
+	CHECK(bcm43455_get_le32(buffer + 8 + 44) == 0xffffffffU && bcm43455_get_le32(buffer + 8 + 56) == 0xffffffffU);
+	CHECK(bcm43455_get_le32(buffer + 8 + 60) == 1 && bcm43455_get_le16(buffer + 8 + 64) == 0x1006);
+	CHECK(bcm43455_escan_encode(buffer, sizeof(buffer), BCM43455_SCAN_LAYOUT_V0, BCM43455_ESCAN_START, 1, 0x1006, 1, &length) == 0);
+	CHECK(buffer[8 + 43] == 1);
+
+	/* Its abort lists no channel; layout 2 carries its own version and length. */
+	CHECK(bcm43455_escan_encode(buffer, sizeof(buffer), BCM43455_SCAN_LAYOUT_V0, BCM43455_ESCAN_ABORT, 0, 0, 0, &length) == 0);
+	CHECK(length == 72 && bcm43455_get_le16(buffer + 4) == 3 && bcm43455_get_le32(buffer + 8 + 60) == 0);
+	CHECK(bcm43455_escan_encode(buffer, sizeof(buffer), BCM43455_SCAN_LAYOUT_V2, BCM43455_ESCAN_START, 7, 0xd024, 1, &length) == 0);
+	CHECK(length == 84 && length <= BCM43455_ESCAN_REQUEST_MAX);
+	CHECK(bcm43455_get_le32(buffer) == 2 && bcm43455_get_le16(buffer + 8) == 2 && bcm43455_get_le16(buffer + 10) == 84);
+	CHECK(bcm43455_get_le32(buffer + 8 + 48) == 1 && bcm43455_get_le32(buffer + 8 + 68) == 1);
+	CHECK(bcm43455_get_le16(buffer + 8 + 72) == 0xd024);
+	CHECK(bcm43455_escan_encode(buffer, 75, BCM43455_SCAN_LAYOUT_V0, BCM43455_ESCAN_START, 1, 0x1006, 0, &length) == ENOSPC);
+	CHECK(bcm43455_escan_encode(buffer, sizeof(buffer), 1, BCM43455_ESCAN_START, 1, 0x1006, 0, &length) == EINVAL);
+	CHECK(bcm43455_escan_encode(buffer, sizeof(buffer), 0, 2, 1, 0x1006, 0, &length) == EINVAL);
+
+	/* A network description becomes a probe response the core's parser reads as WPA2-PSK CCMP. */
+	bss_length = model_bss(bss, "zed-test", 0x0c, 0x1006);
+	CHECK(bcm43455_bss_to_frame(bss, bss_length, BCM43455_CHANSPEC_LAYOUT_AC, frame, sizeof(frame), &length, &channel, &rssi) == 0);
+	CHECK(channel == 6 && rssi == -42 && frame[0] == 0x50);
+	CHECK(wlan_frame_parse_bss(frame, length, rssi, (uint8_t)channel, &parsed) == 0);
+	CHECK(parsed.ssid_length == 8 && memcmp(parsed.ssid, "zed-test", 8) == 0);
+	CHECK(parsed.bssid[0] == 0x02 && parsed.bssid[5] == 0x0c && parsed.channel == 6);
+	CHECK(parsed.beacon_interval_tu == 100 && parsed.capability == 0x0411 && parsed.rssi_dbm == -42);
+	CHECK((parsed.security & WLAN_SECURITY_WPA2) != 0 && (parsed.security & WLAN_SECURITY_PSK) != 0);
+	CHECK((parsed.security & WLAN_SECURITY_CCMP) != 0 && (parsed.security & WLAN_SECURITY_PRIVACY) != 0);
+
+	/* The description's own primary channel wins over the specification's; a 40 MHz one is decoded. */
+	bss_length = model_bss(bss, "zed-wide", 0x0d, 0xd926);
+	CHECK(bcm43455_bss_to_frame(bss, bss_length, BCM43455_CHANSPEC_LAYOUT_AC, frame, sizeof(frame), &length, &channel, &rssi) == 0 && channel == 40);
+	bss[88] = 36;
+	CHECK(bcm43455_bss_to_frame(bss, bss_length, BCM43455_CHANSPEC_LAYOUT_AC, frame, sizeof(frame), &length, &channel, &rssi) == 0 && channel == 36);
+	CHECK(wlan_frame_parse_bss(frame, length, rssi, (uint8_t)channel, &parsed) == 0 && parsed.channel == 36);
+
+	/* Malformed descriptions are refused: elements past the end, a long SSID, a short length, no room. */
+	bss_length = model_bss(bss, "zed-test", 0x0c, 0x1006);
+	bcm43455_put_le32(bss + 120, (uint32_t)bss_length);
+	CHECK(bcm43455_bss_to_frame(bss, bss_length, BCM43455_CHANSPEC_LAYOUT_AC, frame, sizeof(frame), &length, &channel, &rssi) == EPROTO);
+	bss_length = model_bss(bss, "zed-test", 0x0c, 0x1006);
+	bss[18] = 33;
+	CHECK(bcm43455_bss_to_frame(bss, bss_length, BCM43455_CHANSPEC_LAYOUT_AC, frame, sizeof(frame), &length, &channel, &rssi) == EPROTO);
+	bss_length = model_bss(bss, "zed-test", 0x0c, 0x1006);
+	bss[128 + 1] = 200;
+	CHECK(bcm43455_bss_to_frame(bss, bss_length, BCM43455_CHANSPEC_LAYOUT_AC, frame, sizeof(frame), &length, &channel, &rssi) == EPROTO);
+	bss_length = model_bss(bss, "zed-test", 0x0c, 0x1006);
+	CHECK(bcm43455_bss_to_frame(bss, 127, BCM43455_CHANSPEC_LAYOUT_AC, frame, sizeof(frame), &length, &channel, &rssi) == EPROTO);
+	CHECK(bcm43455_bss_to_frame(bss, bss_length, BCM43455_CHANSPEC_LAYOUT_AC, frame, 60, &length, &channel, &rssi) == EMSGSIZE);
+	bcm43455_put_le16(bss + 72, 0xe432);
+	CHECK(bcm43455_bss_to_frame(bss, bss_length, BCM43455_CHANSPEC_LAYOUT_AC, frame, sizeof(frame), &length, &channel, &rssi) == EPROTO);
+
+	/* An escan result's header and the walk over its descriptions. */
+	memset(data, 0, sizeof(data));
+	bss_length = model_bss(data + 12, "zed-a", 1, 0x1001);
+	bcm43455_put_le16(data + 8, 0x4242);
+	bcm43455_put_le16(data + 10, 1);
+	CHECK(bcm43455_escan_result_decode(data, 12 + bss_length, &sync_id, &count, &first) == 0);
+	CHECK(sync_id == 0x4242 && count == 1 && first == 12);
+	CHECK(bcm43455_escan_result_decode(data, 11, &sync_id, &count, &first) == EPROTO);
+	CHECK(bcm43455_bss_length(data, 12 + bss_length, 12, &length) == 0 && length == bss_length);
+	CHECK(bcm43455_bss_length(data, 12 + bss_length - 1, 12, &length) == EPROTO);
+	CHECK(bcm43455_bss_length(data, 12 + 100, 12, &length) == EPROTO);
+
+	/* The join request: the SSID, the BSSID, one channel. */
+	CHECK(bcm43455_join_encode(buffer, sizeof(buffer), (const uint8_t *)"zed-net", 7, chip_mac, 0x1006, &length) == 0);
+	CHECK(length == 52 && bcm43455_get_le32(buffer) == 7 && memcmp(buffer + 4, "zed-net", 7) == 0);
+	CHECK(memcmp(buffer + 36, chip_mac, 6) == 0 && bcm43455_get_le16(buffer + 42) == 0);
+	CHECK(bcm43455_get_le32(buffer + 44) == 1 && bcm43455_get_le16(buffer + 48) == 0x1006);
+	CHECK(bcm43455_join_encode(buffer, sizeof(buffer), (const uint8_t *)"x", 33, chip_mac, 0x1006, &length) == EINVAL);
+	CHECK(bcm43455_join_encode(buffer, 51, (const uint8_t *)"x", 1, chip_mac, 0x1006, &length) == ENOSPC);
+
+	/* The key message: 64 lower-case hex digits marked as text, then zeros. */
+	bcm43455_key_encode(key, pmk);
+	CHECK(bcm43455_get_le16(key) == 64 && bcm43455_get_le16(key + 2) == 1);
+	CHECK(memcmp(key + 4, hex, 64) == 0 && key[68] == 0 && key[69] == 0);
+
+	/* The escan statuses. */
+	CHECK(bcm43455_scan_classify(8) == BCM43455_SCAN_STATUS_RESULTS);
+	CHECK(bcm43455_scan_classify(0) == BCM43455_SCAN_STATUS_COMPLETE);
+	CHECK(bcm43455_scan_classify(4) == BCM43455_SCAN_STATUS_ABORTED);
+	CHECK(bcm43455_scan_classify(9) == BCM43455_SCAN_STATUS_BUSY);
+	CHECK(bcm43455_scan_classify(10) == BCM43455_SCAN_STATUS_BUSY);
+	CHECK(bcm43455_scan_classify(1) == BCM43455_SCAN_STATUS_FAILED);
+	CHECK(bcm43455_scan_classify(13) == BCM43455_SCAN_STATUS_FAILED);
+}
+
+/* Classifies one event at a connection's progress. */
+static void
+classify(
+	uint32_t type,
+	uint32_t status,
+	uint32_t reason,
+	uint16_t flags,
+	unsigned associated,
+	unsigned authorized,
+	enum bcm43455_connect_step step,
+	int error)
+{
+	struct bcm43455_event event;
+	struct bcm43455_connect_outcome outcome;
+
+	memset(&event, 0, sizeof(event));
+	event.type = type;
+	event.status = status;
+	event.reason = reason;
+	event.flags = flags;
+	bcm43455_connect_classify(&event, associated, authorized, &outcome);
+	if (outcome.step != step || outcome.error != error) {
+		fprintf(stderr, "bcm43455-host-test: event %u status %u reason %u flags %u at %u/%u: step %d error %d, expected %d %d\n",
+		    type, status, reason, flags, associated, authorized, outcome.step, outcome.error, step, error);
+		CHECK(0);
+	}
+}
+
+/* The table of what each event means to a connection, and the errors networkd relies on. */
+static void
+check_connect_table(void)
+{
+	/* Joining: the join result's success or the link coming up. */
+	classify(BCM43455_EVENT_JOIN_RESULT, 0, 0, 0, 0, 0, BCM43455_CONNECT_ASSOCIATED, 0);
+	classify(BCM43455_EVENT_LINK, 0, 0, 1, 0, 0, BCM43455_CONNECT_ASSOCIATED, 0);
+	classify(BCM43455_EVENT_JOIN_RESULT, 0, 0, 0, 1, 0, BCM43455_CONNECT_NONE, 0);
+	classify(BCM43455_EVENT_LINK, 0, 0, 1, 1, 0, BCM43455_CONNECT_NONE, 0);
+
+	/* The join's failures: no network, a timeout or no answer, a refusal. */
+	classify(BCM43455_EVENT_JOIN_RESULT, 3, 0, 0, 0, 0, BCM43455_CONNECT_LOST, ETIMEDOUT);
+	classify(BCM43455_EVENT_JOIN_RESULT, 2, 0, 0, 0, 0, BCM43455_CONNECT_LOST, ETIMEDOUT);
+	classify(BCM43455_EVENT_JOIN_RESULT, 5, 0, 0, 0, 0, BCM43455_CONNECT_LOST, ETIMEDOUT);
+	classify(BCM43455_EVENT_JOIN_RESULT, 1, 0, 0, 0, 0, BCM43455_CONNECT_LOST, ECONNREFUSED);
+	classify(BCM43455_EVENT_JOIN_RESULT, 6, 0, 0, 0, 0, BCM43455_CONNECT_NONE, 0);
+	classify(BCM43455_EVENT_AUTHENTICATION, 1, 0, 0, 0, 0, BCM43455_CONNECT_LOST, ECONNREFUSED);
+	classify(BCM43455_EVENT_AUTHENTICATION, 2, 0, 0, 0, 0, BCM43455_CONNECT_LOST, ETIMEDOUT);
+	classify(BCM43455_EVENT_ASSOCIATION, 5, 0, 0, 0, 0, BCM43455_CONNECT_LOST, ETIMEDOUT);
+	classify(BCM43455_EVENT_ASSOCIATION, 1, 0, 0, 0, 0, BCM43455_CONNECT_LOST, ECONNREFUSED);
+	classify(BCM43455_EVENT_AUTHENTICATION, 0, 0, 0, 0, 0, BCM43455_CONNECT_NONE, 0);
+	classify(BCM43455_EVENT_AUTHENTICATION, 6, 0, 0, 0, 0, BCM43455_CONNECT_NONE, 0);
+	classify(BCM43455_EVENT_ASSOCIATION, 1, 0, 0, 1, 0, BCM43455_CONNECT_NONE, 0);
+
+	/* The supplicant: keyed, and its failures; only after the join, only before the key. */
+	classify(BCM43455_EVENT_SUPPLICANT, 6, 0, 0, 1, 0, BCM43455_CONNECT_AUTHORIZED, 0);
+	classify(BCM43455_EVENT_SUPPLICANT, 6, 0, 0, 0, 0, BCM43455_CONNECT_NONE, 0);
+	classify(BCM43455_EVENT_SUPPLICANT, 6, 0, 0, 1, 1, BCM43455_CONNECT_NONE, 0);
+	classify(BCM43455_EVENT_SUPPLICANT, 4, 15, 0, 1, 0, BCM43455_CONNECT_LOST, ETIMEDOUT);
+	classify(BCM43455_EVENT_SUPPLICANT, 10, 15, 0, 1, 0, BCM43455_CONNECT_LOST, ETIMEDOUT);
+	classify(BCM43455_EVENT_SUPPLICANT, 8, 15, 0, 1, 0, BCM43455_CONNECT_LOST, EACCES);
+	classify(BCM43455_EVENT_SUPPLICANT, 8, 14, 0, 1, 0, BCM43455_CONNECT_LOST, EACCES);
+	classify(BCM43455_EVENT_SUPPLICANT, 4, 14, 0, 1, 0, BCM43455_CONNECT_LOST, EPROTO);
+	classify(BCM43455_EVENT_SUPPLICANT, 9, 7, 0, 1, 0, BCM43455_CONNECT_LOST, EPROTO);
+	classify(BCM43455_EVENT_SUPPLICANT, 5, 1, 0, 1, 0, BCM43455_CONNECT_LOST, EPROTO);
+	classify(BCM43455_EVENT_SUPPLICANT, 11, 10, 0, 1, 0, BCM43455_CONNECT_LOST, EPROTO);
+
+	/* Leaving: after the key a plain reset; before it, the access point's four-way timeout is the key's refusal. */
+	classify(BCM43455_EVENT_PEER_DEAUTHENTICATED, 0, 3, 0, 1, 1, BCM43455_CONNECT_LOST, ECONNRESET);
+	classify(BCM43455_EVENT_PEER_DISASSOCIATED, 0, 8, 0, 1, 1, BCM43455_CONNECT_LOST, ECONNRESET);
+	classify(BCM43455_EVENT_PEER_DEAUTHENTICATED, 0, 15, 0, 1, 1, BCM43455_CONNECT_LOST, ECONNRESET);
+	classify(BCM43455_EVENT_PEER_DEAUTHENTICATED, 0, 15, 0, 1, 0, BCM43455_CONNECT_LOST, EACCES);
+	classify(BCM43455_EVENT_PEER_DISASSOCIATED, 0, 15, 0, 1, 0, BCM43455_CONNECT_LOST, EACCES);
+	classify(BCM43455_EVENT_DEAUTHENTICATED, 0, 15, 0, 1, 0, BCM43455_CONNECT_LOST, ECONNRESET);
+	classify(BCM43455_EVENT_PEER_DEAUTHENTICATED, 0, 2, 0, 1, 0, BCM43455_CONNECT_LOST, ECONNRESET);
+	classify(BCM43455_EVENT_PEER_DEAUTHENTICATED, 0, 15, 0, 0, 0, BCM43455_CONNECT_NONE, 0);
+	classify(BCM43455_EVENT_LINK, 0, 0, 0, 1, 1, BCM43455_CONNECT_LOST, ECONNRESET);
+	classify(BCM43455_EVENT_LINK, 0, 0, 0, 1, 0, BCM43455_CONNECT_LOST, ECONNRESET);
+	classify(BCM43455_EVENT_LINK, 0, 0, 0, 0, 0, BCM43455_CONNECT_NONE, 0);
+
+	/* An escan result says nothing about the connection. */
+	classify(BCM43455_EVENT_SCAN_RESULT, 0, 0, 0, 1, 1, BCM43455_CONNECT_NONE, 0);
+}
+
+/* Forgets the reports the stand-ins recorded. */
+static void
+reports_clear(void)
+{
+	pthread_mutex_lock(&report_lock);
+	report_count = 0;
+	memset(reports, 0, sizeof(reports));
+	pthread_mutex_unlock(&report_lock);
+}
+
+/* Takes a copy of report index. */
+static struct report
+report_at(
+	unsigned index)
+{
+	struct report copy;
+
+	pthread_mutex_lock(&report_lock);
+	CHECK(index < report_count && report_count <= REPORT_MAX);
+	copy = reports[index];
+	pthread_mutex_unlock(&report_lock);
+	return copy;
+}
+
+/* How many reports there are. */
+static unsigned
+reports_made(void)
+{
+	unsigned count;
+
+	pthread_mutex_lock(&report_lock);
+	count = report_count;
+	pthread_mutex_unlock(&report_lock);
+	return count;
+}
+
+/* Runs the poll until count reports were made, failing after two seconds. */
+static void
+poll_until(
+	unsigned count)
+{
+	unsigned i;
+
+	for (i = 0; i < 1000; i++) {
+		(void)fake_net.ops->poll_receive(&fake_net, 64);
+		if (reports_made() >= count)
+			return;
+		sleep_ms(2);
+	}
+	fprintf(stderr, "bcm43455-host-test: %u reports, expected %u\n", reports_made(), count);
+	CHECK(0);
+}
+
+/* Runs the poll for a while and checks that no report came beyond count. */
+static void
+poll_quiet(
+	unsigned count,
+	unsigned milliseconds)
+{
+	unsigned i;
+
+	for (i = 0; i < milliseconds / 5U; i++) {
+		(void)fake_net.ops->poll_receive(&fake_net, 64);
+		sleep_ms(5);
+	}
+	CHECK(reports_made() == count);
+}
+
+/* Waits until the bus thread has taken events events in total. */
+static void
+wait_events(
+	struct bcm43455_device *device,
+	uint64_t events)
+{
+	unsigned i;
+
+	for (i = 0; i < 400; i++) {
+		if (__atomic_load_n(&device->bus.counters.events_in, __ATOMIC_SEQ_CST) >= events)
+			return;
+		sleep_ms(5);
+	}
+	CHECK(0);
+}
+
+/* Checks that no buffer a PMK passes through still holds a byte of it. */
+static void
+check_no_secret(
+	struct bcm43455_device *device)
+{
+	unsigned long enabled;
+
+	enabled = spin_lock_irqsave(&device->ring_lock);
+	CHECK(all_zero(device->connection.pmk, sizeof(device->connection.pmk)));
+	spin_unlock_irqrestore(&device->ring_lock, enabled);
+	CHECK(all_zero(device->work_key, sizeof(device->work_key)));
+	CHECK(all_zero(device->work_buffer, sizeof(device->work_buffer)));
+	CHECK(all_zero(device->bus.tx_frame, sizeof(device->bus.tx_frame)));
+	CHECK(all_zero(device->bus.slot.request, sizeof(device->bus.slot.request)));
+	CHECK(all_zero(device->bus.slot.answer, sizeof(device->bus.slot.answer)));
+	CHECK(device->bus.direct.answer == NULL);
+}
+
+/* Makes a connection request for generation on channel 6 with the test PMK. */
+static void
+make_request(
+	struct wlan_fullmac_connect_request *request,
+	uint64_t generation,
+	const uint8_t pmk[32])
+{
+	memset(request, 0, sizeof(*request));
+	request->generation = generation;
+	request->deadline_ticks = 30000;
+	memcpy(request->bss.ssid, "zed-alpha", 9);
+	request->bss.ssid_length = 9;
+	request->bss.bssid[0] = 0x02;
+	request->bss.bssid[5] = 0x0a;
+	request->bss.channel = 6;
+	request->bss.center_frequency_mhz = 2437;
+	memcpy(request->pmk, pmk, 32);
+}
+
+/* A published and opened device on a fresh model, as a user's "wifi up" leaves it. */
+static struct bcm43455_device *
+radio_device(void)
+{
+	struct bcm43455_device *device;
+
+	model_reset();
+	device = make_device(placeholder_text);
+	CHECK(bcm43455_device_probe(device) == 0);
+	CHECK(bcm43455_device_publish(device) == 0);
+	CHECK(fake_net.ops->open(&fake_net) == 0);
+	CHECK(device->runtime_active == 1 && device->bus.thread_running == 1 && device->opened == 1);
+	return device;
+}
+
+/* The scan: the order of reports, results before the answer, stale results, refusal, busy, abort. */
+static void
+check_scan(
+	struct bcm43455_device *device)
+{
+	const struct wlan_radio_ops *ops;
+	struct report report;
+	uint64_t events;
+	unsigned base;
+
+	ops = attached_ops;
+
+	/* A channel: ready, both networks as WPA2-PSK CCMP probe responses, then its end. */
+	reports_clear();
+	CHECK(ops->scan_channel_start(device, 5, 0, 1, 0) == 0);
+	poll_until(4);
+	report = report_at(0);
+	CHECK(report.kind == REPORT_READY && report.generation == 5 && report.value == 0);
+	report = report_at(1);
+	CHECK(report.kind == REPORT_FRAME && report.generation == 5 && strcmp(report.ssid, "zed-alpha") == 0);
+	CHECK(report.channel == 1 && report.rssi == -42);
+	CHECK((report.security & (WLAN_SECURITY_WPA2 | WLAN_SECURITY_PSK | WLAN_SECURITY_CCMP)) == (WLAN_SECURITY_WPA2 | WLAN_SECURITY_PSK | WLAN_SECURITY_CCMP));
+	report = report_at(2);
+	CHECK(report.kind == REPORT_FRAME && strcmp(report.ssid, "zed-beta") == 0);
+	report = report_at(3);
+	CHECK(report.kind == REPORT_COMPLETE && report.generation == 5 && report.value == 0);
+	CHECK(chip.escan_starts == 1 && chip.escan_chanspec == 0x1001 && chip.escan_scan_type == 0);
+
+	/*
+	 * The next channel, whose networks and end the firmware sends before
+	 * it answers the request: nothing is reported until the answer, then
+	 * the order holds.
+	 */
+	chip.scan_mode = SCAN_RESULTS_FIRST;
+	events = device->bus.counters.events_in;
+	CHECK(ops->scan_channel_start(device, 5, 1, 13, 0) == 0);
+	wait_events(device, events + 2U);
+	poll_quiet(4, 60);
+	CHECK(device->scan_ring.count == 2 && device->scan.complete_pending == 1);
+	pthread_mutex_lock(&model_lock);
+	CHECK(chip.held_length != 0);
+	model_push_locked(BCM43455_SDPCM_CHANNEL_CONTROL, chip.held_answer, chip.held_length);
+	model_raise_locked(BCM43455_INT_FRAME);
+	chip.held_length = 0;
+	pthread_mutex_unlock(&model_lock);
+	poll_until(8);
+	CHECK(report_at(4).kind == REPORT_READY && report_at(4).value == 1);
+	CHECK(report_at(5).kind == REPORT_FRAME && report_at(5).channel == 13);
+	CHECK(report_at(6).kind == REPORT_FRAME);
+	CHECK(report_at(7).kind == REPORT_COMPLETE && report_at(7).value == 1);
+	CHECK(chip.escan_scan_type == 1 && chip.escan_chanspec == 0x100d);
+
+	/* A finished channel needs no abort; the scan is forgotten. */
+	CHECK(ops->scan_stop(device, 5) == 0);
+	CHECK(chip.escan_aborts == 0 && device->scan.state == BCM43455_SCAN_IDLE);
+
+	/* Results of another escan are dropped; the channel hears its ready, then is aborted. */
+	reports_clear();
+	chip.scan_mode = SCAN_STALE;
+	CHECK(ops->scan_channel_start(device, 6, 0, 2, 0) == 0);
+	poll_until(1);
+	CHECK(report_at(0).kind == REPORT_READY && report_at(0).generation == 6);
+	poll_quiet(1, 100);
+	CHECK(device->scan_ring.count == 0);
+
+	/* A scan of another generation, or the next channel before the end, is refused. */
+	CHECK(ops->scan_channel_start(device, 7, 0, 2, 0) == EBUSY);
+	CHECK(ops->scan_channel_start(device, 6, 1, 3, 0) == EBUSY);
+	CHECK(ops->scan_channel_start(device, 6, 1, 15, 0) == EINVAL);
+	CHECK(ops->scan_stop(device, 6) == 0);
+	CHECK(chip.escan_aborts == 1 && device->scan.state == BCM43455_SCAN_IDLE);
+
+	/* A firmware that refuses the escan: an error, and no ready. */
+	reports_clear();
+	chip.scan_mode = SCAN_REFUSE;
+	CHECK(ops->scan_channel_start(device, 8, 0, 1, 0) == 0);
+	poll_until(1);
+	CHECK(report_at(0).kind == REPORT_SCAN_ERROR && report_at(0).generation == 8 && report_at(0).error == EIO);
+	CHECK(ops->scan_stop(device, 8) == 0);
+	CHECK(chip.escan_aborts == 1);
+
+	/* A firmware busy with another scan: ready, then EBUSY. */
+	reports_clear();
+	chip.scan_mode = SCAN_BUSY;
+	CHECK(ops->scan_channel_start(device, 9, 0, 1, 0) == 0);
+	poll_until(2);
+	CHECK(report_at(0).kind == REPORT_READY && report_at(1).kind == REPORT_SCAN_ERROR && report_at(1).error == EBUSY);
+	CHECK(ops->scan_stop(device, 9) == 0);
+
+	/* A held scan is aborted, and its late results are not reported. */
+	reports_clear();
+	chip.scan_mode = SCAN_HOLD;
+	CHECK(ops->scan_channel_start(device, 10, 0, 1, 0) == 0);
+	poll_until(1);
+	base = chip.escan_aborts;
+	CHECK(ops->scan_stop(device, 10) == 0);
+	CHECK(chip.escan_aborts == base + 1U);
+	pthread_mutex_lock(&model_lock);
+	model_scan_events_locked(chip.escan_sync, chip.escan_chanspec);
+	pthread_mutex_unlock(&model_lock);
+	poll_quiet(1, 100);
+
+	/* A stop of a scan never started, or of another generation, does nothing. */
+	CHECK(ops->scan_stop(device, 10) == 0);
+	CHECK(ops->scan_stop(device, 99) == 0);
+	CHECK(chip.escan_aborts == base + 1U);
+	chip.scan_mode = SCAN_NORMAL;
+}
+
+/* A connection: its commands, its events, data, loss, disconnect, cancel and failures. */
+static void
+check_connect(
+	struct bcm43455_device *device)
+{
+	static const uint8_t pmk[32] = {
+		0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf,
+		0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f
+	};
+	static const char hex[] = "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf505152535455565758595a5b5c5d5e5f";
+	const struct wlan_radio_ops *ops;
+	struct wlan_fullmac_connect_request request;
+	const struct model_request *recorded;
+	struct report report;
+	uint8_t frame[200];
+	uint64_t started_ms;
+	uint64_t events;
+	unsigned joins_before;
+	unsigned i;
+
+	ops = attached_ops;
+
+	/* A join the firmware completes: the commands in WHD's order, then joined and authorized. */
+	reports_clear();
+	pthread_mutex_lock(&model_lock);
+	chip.request_count = 0;
+	chip.join_script = JOIN_SUCCESS;
+	pthread_mutex_unlock(&model_lock);
+	make_request(&request, 9, pmk);
+	CHECK(ops->fullmac_connect(device, &request) == 0);
+	CHECK(ops->fullmac_connect(device, &request) == EBUSY);
+	poll_until(2);
+	report = report_at(0);
+	CHECK(report.kind == REPORT_EVENT && report.generation == 9 && report.value == WLAN_FULLMAC_EVENT_ASSOCIATED);
+	report = report_at(1);
+	CHECK(report.kind == REPORT_EVENT && report.generation == 9 && report.value == WLAN_FULLMAC_EVENT_AUTHORIZED);
+	pthread_mutex_lock(&model_lock);
+	CHECK(chip.request_count == 9);
+	CHECK(chip.requests[0].command == BCM43455_COMMAND_INFRASTRUCTURE && bcm43455_get_le32(chip.requests[0].payload) == 1);
+	CHECK(chip.requests[1].command == BCM43455_COMMAND_AUTHENTICATION && bcm43455_get_le32(chip.requests[1].payload) == 0);
+	CHECK(chip.requests[2].command == BCM43455_COMMAND_CIPHERS && bcm43455_get_le32(chip.requests[2].payload) == 4);
+	CHECK(chip.requests[3].command == BCM43455_COMMAND_KEY_MANAGEMENT && bcm43455_get_le32(chip.requests[3].payload) == 0x80);
+	CHECK(strcmp(chip.requests[4].name, "bsscfg:sup_wpa") == 0 && chip.requests[4].length == 8);
+	CHECK(bcm43455_get_le32(chip.requests[4].payload) == 0 && bcm43455_get_le32(chip.requests[4].payload + 4) == 1);
+	CHECK(strcmp(chip.requests[5].name, "bsscfg:sup_wpa2_eapver") == 0 && bcm43455_get_le32(chip.requests[5].payload + 4) == 0xffffffffU);
+	CHECK(strcmp(chip.requests[6].name, "bsscfg:sup_wpa_tmo") == 0 && bcm43455_get_le32(chip.requests[6].payload + 4) == 3000);
+	CHECK(chip.requests[7].command == BCM43455_COMMAND_SUPPLICANT_KEY);
+	CHECK(chip.requests[8].command == BCM43455_COMMAND_JOIN);
+	CHECK(bcm43455_get_le16(chip.key_seen) == 64 && bcm43455_get_le16(chip.key_seen + 2) == 1);
+	CHECK(memcmp(chip.key_seen + 4, hex, 64) == 0);
+	CHECK(bcm43455_get_le32(chip.join_seen) == 9 && memcmp(chip.join_seen + 4, "zed-alpha", 9) == 0);
+	CHECK(chip.join_seen[36] == 0x02 && chip.join_seen[41] == 0x0a);
+	CHECK(bcm43455_get_le32(chip.join_seen + 44) == 1 && bcm43455_get_le16(chip.join_seen + 48) == 0x1006);
+	memset(chip.key_seen, 0, sizeof(chip.key_seen));
+	pthread_mutex_unlock(&model_lock);
+	check_no_secret(device);
+
+	/* Data both ways once the port is open; an older generation's frame is refused. */
+	__atomic_store_n(&open_port_generation, 9, __ATOMIC_SEQ_CST);
+	for (i = 0; i < sizeof(frame); i++)
+		frame[i] = (uint8_t)(i + 3U);
+	CHECK(ops->ethernet_transmit(device, 9, frame, sizeof(frame)) == 0);
+	CHECK(ops->ethernet_transmit(device, 8, frame, sizeof(frame)) == ESTALE);
+	for (i = 0; i < 200; i++) {
+		if (__atomic_load_n(&chip.data_sent_count, __ATOMIC_SEQ_CST) != 0)
+			break;
+		sleep_ms(5);
+	}
+	pthread_mutex_lock(&model_lock);
+	CHECK(chip.data_sent_count == 1 && chip.data_sent_length == sizeof(frame) && memcmp(chip.data_sent, frame, sizeof(frame)) == 0);
+	pthread_mutex_unlock(&model_lock);
+	model_push_data(frame, 120);
+	poll_until(3);
+	report = report_at(2);
+	CHECK(report.kind == REPORT_ETHERNET && report.generation == 9 && report.length == 120);
+
+	/* The access point leaves: a plain reset, after which data is no longer taken. */
+	events = device->bus.counters.events_in;
+	model_push_event_with(BCM43455_EVENT_PEER_DEAUTHENTICATED, 0, 3, 0);
+	poll_until(4);
+	report = report_at(3);
+	CHECK(report.kind == REPORT_LOSS && report.generation == 9 && report.error == ECONNRESET);
+	model_push_data(frame, 120);
+	poll_quiet(4, 60);
+	CHECK(ops->ethernet_transmit(device, 9, frame, sizeof(frame)) == 0);
+	sleep_ms(50);
+	CHECK(__atomic_load_n(&chip.data_sent_count, __ATOMIC_SEQ_CST) == 1);
+	(void)events;
+
+	/* Disconnect leaves the access point once, and forgets the connection. */
+	CHECK(ops->disconnect(device, 9) == 0);
+	CHECK(chip.leaves == 1 && device->connection.state == BCM43455_CONNECT_IDLE);
+	CHECK(ops->disconnect(device, 9) == 0);
+	CHECK(chip.leaves == 1);
+	CHECK(ops->ethernet_transmit(device, 9, frame, sizeof(frame)) == ESTALE);
+	__atomic_store_n(&open_port_generation, 0, __ATOMIC_SEQ_CST);
+	check_no_secret(device);
+
+	/* A wrong key: the access point leaves, then the supplicant says it waited for message 3: EACCES. */
+	reports_clear();
+	chip.join_script = JOIN_WRONG_KEY;
+	make_request(&request, 10, pmk);
+	events = device->bus.counters.events_in;
+	CHECK(ops->fullmac_connect(device, &request) == 0);
+	wait_events(device, events + 4U);
+	poll_until(2);
+	CHECK(report_at(0).kind == REPORT_EVENT && report_at(0).value == WLAN_FULLMAC_EVENT_ASSOCIATED);
+	report = report_at(1);
+	CHECK(report.kind == REPORT_LOSS && report.generation == 10 && report.error == EACCES);
+	poll_quiet(2, 50);
+	CHECK(ops->disconnect(device, 10) == 0);
+
+	/* No network: ETIMEDOUT.  Message 1 never came: ETIMEDOUT.  Message 3 never came: EACCES. */
+	reports_clear();
+	chip.join_script = JOIN_NO_NETWORK;
+	make_request(&request, 11, pmk);
+	CHECK(ops->fullmac_connect(device, &request) == 0);
+	poll_until(1);
+	CHECK(report_at(0).kind == REPORT_LOSS && report_at(0).error == ETIMEDOUT);
+	CHECK(ops->disconnect(device, 11) == 0);
+	reports_clear();
+	chip.join_script = JOIN_M1_TIMEOUT;
+	make_request(&request, 12, pmk);
+	CHECK(ops->fullmac_connect(device, &request) == 0);
+	poll_until(2);
+	CHECK(report_at(1).kind == REPORT_LOSS && report_at(1).error == ETIMEDOUT);
+	CHECK(ops->disconnect(device, 12) == 0);
+	reports_clear();
+	chip.join_script = JOIN_M3_TIMEOUT;
+	make_request(&request, 13, pmk);
+	CHECK(ops->fullmac_connect(device, &request) == 0);
+	poll_until(2);
+	CHECK(report_at(1).kind == REPORT_LOSS && report_at(1).error == EACCES);
+	CHECK(ops->disconnect(device, 13) == 0);
+	check_no_secret(device);
+
+	/* The firmware refuses the key: EIO, the half-made settings undone, the PMK gone. */
+	reports_clear();
+	chip.join_script = JOIN_SUCCESS;
+	chip.refuse_command = BCM43455_COMMAND_SUPPLICANT_KEY;
+	make_request(&request, 14, pmk);
+	i = chip.leaves;
+	joins_before = chip.joins;
+	CHECK(ops->fullmac_connect(device, &request) == 0);
+	poll_until(1);
+	CHECK(report_at(0).kind == REPORT_LOSS && report_at(0).generation == 14 && report_at(0).error == EIO);
+	CHECK(chip.leaves == i + 1U && chip.joins == joins_before);
+	check_no_secret(device);
+	CHECK(ops->disconnect(device, 14) == 0);
+	chip.refuse_command = 0;
+
+	/*
+	 * The firmware never answers the join: the key message is already gone
+	 * while the join waits, and ETIMEDOUT follows the command's timeout.
+	 */
+	reports_clear();
+	chip.ignore_command = BCM43455_COMMAND_JOIN;
+	make_request(&request, 15, pmk);
+	joins_before = chip.joins;
+	CHECK(ops->fullmac_connect(device, &request) == 0);
+	for (i = 0; i < 200; i++) {
+		if (__atomic_load_n(&chip.joins, __ATOMIC_SEQ_CST) != joins_before)
+			break;
+		sleep_ms(2);
+	}
+	CHECK(__atomic_load_n(&chip.joins, __ATOMIC_SEQ_CST) == joins_before + 1U);
+	CHECK(all_zero(device->work_key, sizeof(device->work_key)));
+	CHECK(reports_made() == 0);
+	poll_until(1);
+	CHECK(report_at(0).kind == REPORT_LOSS && report_at(0).error == ETIMEDOUT);
+	check_no_secret(device);
+	chip.ignore_command = 0;
+	CHECK(ops->disconnect(device, 15) == 0);
+
+	/*
+	 * A slow bus: connect still returns at once, and a disconnect while the
+	 * commands go out stops them before the key and the join; nothing of
+	 * the connection is reported.
+	 */
+	reports_clear();
+	pthread_mutex_lock(&model_lock);
+	chip.request_count = 0;
+	chip.keys = 0;
+	i = chip.joins;
+	pthread_mutex_unlock(&model_lock);
+	__atomic_store_n(&model_delay_ms, 40U, __ATOMIC_SEQ_CST);
+	make_request(&request, 16, pmk);
+	started_ms = sched_ticks();
+	CHECK(ops->fullmac_connect(device, &request) == 0);
+	CHECK(sched_ticks() - started_ms < 20U);
+	sleep_ms(60);
+	CHECK(ops->disconnect(device, 16) == 0);
+	__atomic_store_n(&model_delay_ms, 0U, __ATOMIC_SEQ_CST);
+	pthread_mutex_lock(&model_lock);
+	CHECK(chip.keys == 0 && chip.joins == i);
+	CHECK(chip.request_count >= 2 && chip.requests[chip.request_count - 1U].command == BCM43455_COMMAND_LEAVE);
+	pthread_mutex_unlock(&model_lock);
+	poll_quiet(0, 50);
+	check_no_secret(device);
+
+	/* A disconnect before the bus thread took the request only forgets it. */
+	reports_clear();
+	__atomic_store_n(&model_delay_ms, 40U, __ATOMIC_SEQ_CST);
+	CHECK(ops->scan_channel_start(device, 20, 0, 1, 0) == 0);
+	make_request(&request, 17, pmk);
+	CHECK(ops->fullmac_connect(device, &request) == 0);
+	i = chip.leaves;
+	CHECK(ops->disconnect(device, 17) == 0);
+	CHECK(device->connection.state == BCM43455_CONNECT_IDLE);
+	__atomic_store_n(&model_delay_ms, 0U, __ATOMIC_SEQ_CST);
+	poll_until(4);
+	CHECK(chip.leaves == i);
+	CHECK(ops->scan_stop(device, 20) == 0);
+	check_no_secret(device);
+
+	/* Without the firmware's supplicant a connect is refused; a closed device refuses too. */
+	device->identity.supplicant = 0;
+	make_request(&request, 18, pmk);
+	CHECK(ops->fullmac_connect(device, &request) == EOPNOTSUPP);
+	device->identity.supplicant = 1;
+	request.bss.channel = 15;
+	CHECK(ops->fullmac_connect(device, &request) == EINVAL);
+}
+
+/* A bus failure: the lost link, a restart, and the restarts' bound. */
+static void
+check_restart(
+	struct bcm43455_device *device)
+{
+	static const uint8_t pmk[32] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32};
+	const struct wlan_radio_ops *ops;
+	struct wlan_fullmac_connect_request request;
+	unsigned boots;
+	unsigned round;
+	unsigned i;
+
+	ops = attached_ops;
+
+	/* A joined connection, then the firmware halts. */
+	reports_clear();
+	chip.join_script = JOIN_SUCCESS;
+	make_request(&request, 30, pmk);
+	CHECK(ops->fullmac_connect(device, &request) == 0);
+	poll_until(2);
+	CHECK(report_at(1).value == WLAN_FULLMAC_EVENT_AUTHORIZED);
+
+	/* Each halt is reported as a lost link and a restart, which brings the chip back; the fourth in a row is not restarted. */
+	for (round = 0; round < 4; round++) {
+		reports_clear();
+		pthread_mutex_lock(&model_lock);
+		chip.to_host_data = BCM43455_TO_HOST_FIRMWARE_HALT;
+		model_raise_locked(BCM43455_INT_HOST_MAILBOX);
+		pthread_mutex_unlock(&model_lock);
+		if (round == 0) {
+			poll_until(2);
+			CHECK(report_at(0).kind == REPORT_LOSS && report_at(0).generation == 30 && report_at(0).error == EIO);
+			CHECK(report_at(1).kind == REPORT_RESTART);
+			check_no_secret(device);
+		} else if (round < 3) {
+			poll_until(1);
+			CHECK(report_at(0).kind == REPORT_RESTART);
+		} else {
+			for (i = 0; i < 200; i++) {
+				if (__atomic_load_n(&device->failure_pending, __ATOMIC_SEQ_CST))
+					break;
+				sleep_ms(5);
+			}
+			poll_quiet(0, 100);
+			CHECK(device->restarts == BCM43455_RESTARTS_MAX);
+			break;
+		}
+
+		/* The retirement thread's call: the chip is loaded again and the station reopened. */
+		CHECK(bcm43455_device_ethernet_transmit(device, 30, request.pmk, 20) == ENETDOWN);
+		boots = chip.boot_count;
+		i = opens;
+		CHECK(ops->restart(device) == 0);
+		CHECK(chip.boot_count == boots + 1U && opens == i + 1U);
+		CHECK(device->runtime_active == 1 && device->bus.thread_running == 1 && device->failure_pending == 0);
+		CHECK(ops->restart(device) == 0 && chip.boot_count == boots + 1U);
+	}
+
+	/* A user's close and open start the count afresh. */
+	fake_net.ops->close(&fake_net);
+	CHECK(ops->restart(device) == 0);
+	CHECK(fake_net.ops->open(&fake_net) == 0);
+	CHECK(device->restarts == 0 && device->failure_pending == 0);
+}
+
+/* The radio operations against the model's firmware. */
+static void
+run_radio(void)
+{
+	struct bcm43455_device *device;
+
+	device = radio_device();
+	check_scan(device);
+	check_connect(device);
+	check_restart(device);
+
+	/* Closing erases what is left and powers the chip down. */
+	fake_net.ops->close(&fake_net);
+	CHECK(device->runtime_active == 0 && chip.powered == 0);
+	check_no_secret(device);
+	CHECK(device->scan.state == BCM43455_SCAN_IDLE && device->connection.state == BCM43455_CONNECT_IDLE);
+}
+
+/* Connects and disconnects again and again. */
+static void *
+radio_connector(
+	void *argument)
+{
+	static const uint8_t pmk[32] = {0x77};
+	struct bcm43455_device *device;
+	struct wlan_fullmac_connect_request request;
+	uint64_t generation;
+	unsigned tries;
+	int error;
+
+	device = argument;
+	generation = 100;
+	while (!__atomic_load_n(&smp_done, __ATOMIC_SEQ_CST)) {
+		generation++;
+		make_request(&request, generation, pmk);
+		error = attached_ops->fullmac_connect(device, &request);
+		CHECK(error == 0 || error == EBUSY || error == ENETDOWN);
+		__atomic_store_n(&open_port_generation, generation, __ATOMIC_SEQ_CST);
+		sleep_ms(3);
+		for (tries = 0; tries < 20; tries++) {
+			error = attached_ops->disconnect(device, generation);
+			if (error == 0)
+				break;
+		}
+		CHECK(error == 0);
+	}
+	return NULL;
+}
+
+/* Scans a channel and stops again and again. */
+static void *
+radio_scanner(
+	void *argument)
+{
+	struct bcm43455_device *device;
+	uint64_t generation;
+	unsigned tries;
+	int error;
+
+	device = argument;
+	generation = 1000;
+	while (!__atomic_load_n(&smp_done, __ATOMIC_SEQ_CST)) {
+		generation++;
+
+		/* Every other scan is held by the firmware, so its stop aborts it. */
+		pthread_mutex_lock(&model_lock);
+		chip.scan_mode = SCAN_NORMAL;
+		if ((generation % 2U) == 0)
+			chip.scan_mode = SCAN_HOLD;
+		pthread_mutex_unlock(&model_lock);
+		error = attached_ops->scan_channel_start(device, generation, 0, 1 + (unsigned)(generation % 13U), 0);
+		CHECK(error == 0 || error == EBUSY || error == ENETDOWN);
+		sleep_ms(2);
+		for (tries = 0; tries < 20; tries++) {
+			error = attached_ops->scan_stop(device, generation);
+			if (error == 0)
+				break;
+		}
+		CHECK(error == 0);
+	}
+	return NULL;
+}
+
+/* Polls again and again, as the network worker. */
+static void *
+radio_poller(
+	void *argument)
+{
+	(void)argument;
+	while (!__atomic_load_n(&smp_done, __ATOMIC_SEQ_CST)) {
+		(void)fake_net.ops->poll_receive(&fake_net, 16);
+		sleep_ms(1);
+	}
+	return NULL;
+}
+
+/* Sends frames of the latest connection again and again. */
+static void *
+radio_transmitter(
+	void *argument)
+{
+	struct bcm43455_device *device;
+	uint8_t frame[100];
+
+	device = argument;
+	memset(frame, 0x5a, sizeof(frame));
+	while (!__atomic_load_n(&smp_done, __ATOMIC_SEQ_CST)) {
+		(void)attached_ops->ethernet_transmit(device, __atomic_load_n(&open_port_generation, __ATOMIC_SEQ_CST), frame, sizeof(frame));
+		sleep_ms(1);
+	}
+	return NULL;
+}
+
+/* The radio operations raced by a connector, a scanner, a poller, a transmitter and the firmware. */
+static void
+run_radio_smp(void)
+{
+	struct bcm43455_device *device;
+	pthread_t threads[5];
+	unsigned i;
+
+	device = radio_device();
+	chip.join_script = JOIN_SUCCESS;
+	__atomic_store_n(&smp_done, 0, __ATOMIC_SEQ_CST);
+	CHECK(pthread_create(&threads[0], NULL, radio_connector, device) == 0);
+	CHECK(pthread_create(&threads[1], NULL, radio_scanner, device) == 0);
+	CHECK(pthread_create(&threads[2], NULL, radio_poller, NULL) == 0);
+	CHECK(pthread_create(&threads[3], NULL, radio_transmitter, device) == 0);
+	CHECK(pthread_create(&threads[4], NULL, smp_firmware, NULL) == 0);
+	sleep_ms(1500);
+	__atomic_store_n(&smp_done, 1, __ATOMIC_SEQ_CST);
+	for (i = 0; i < 5; i++)
+		CHECK(pthread_join(threads[i], NULL) == 0);
+
+	/* The connections and scans came through, and closing leaves no secret. */
+	printf("  radio-smp: %u joins, %u escans, %u aborts, %u leaves, %u reports, %u frames sent\n",
+	    chip.joins, chip.escan_starts, chip.escan_aborts, chip.leaves, report_count, chip.data_sent_count);
+	CHECK(chip.joins > 0 && chip.escan_starts > 0 && chip.leaves > 0);
+	CHECK(chip.sequence_errors == 0);
+	fake_net.ops->close(&fake_net);
+	CHECK(device->runtime_active == 0 && chip.powered == 0);
+	check_no_secret(device);
 }
 
 /* Builds the three files: a firmware with its version text, a CLM, and NVRAM text with a placeholder. */
@@ -1451,6 +2446,161 @@ model_push_data(
 	pthread_mutex_unlock(&model_lock);
 }
 
+/* Sends the host an event with flags and data; the caller holds model_lock.  A nearly full queue drops it. */
+static void
+model_push_event_locked(
+	uint32_t type,
+	uint32_t status,
+	uint32_t reason,
+	uint16_t flags,
+	const uint8_t *data,
+	size_t data_length)
+{
+	uint8_t payload[4 + 72 + 1024];
+
+	CHECK(data_length <= 1024);
+	if (chip.queue_count >= QUEUE_MAX - 8U)
+		return;
+	bcm43455_bcdc_encode_data(payload, 0, 0);
+	(void)build_event(payload + 4, type, status, reason, data_length);
+	bcm43455_put_be16(payload + 4 + 26, flags);
+	if (data_length != 0)
+		memcpy(payload + 4 + 72, data, data_length);
+	model_push_locked(BCM43455_SDPCM_CHANNEL_EVENT, payload, 4U + 72U + data_length);
+	model_raise_locked(BCM43455_INT_FRAME);
+}
+
+/* Sends the host an event with flags. */
+static void
+model_push_event_with(
+	uint32_t type,
+	uint32_t status,
+	uint32_t reason,
+	uint16_t flags)
+{
+	pthread_mutex_lock(&model_lock);
+	model_push_event_locked(type, status, reason, flags, NULL, 0);
+	pthread_mutex_unlock(&model_lock);
+}
+
+/*
+ * Writes the firmware's description of a network: a WPA2-PSK CCMP access
+ * point named ssid with the BSSID 02:00:00:00:00:last on chanspec, whose
+ * elements repeat the SSID and the channel the driver makes itself.
+ */
+static size_t
+model_bss(
+	uint8_t *bss,
+	const char *ssid,
+	uint8_t last,
+	uint16_t chanspec)
+{
+	static const uint8_t rsn[22] = {
+		0x30, 0x14, 0x01, 0x00, 0x00, 0x0f, 0xac, 0x04, 0x01, 0x00, 0x00, 0x0f,
+		0xac, 0x04, 0x01, 0x00, 0x00, 0x0f, 0xac, 0x02, 0x00, 0x00
+	};
+	size_t ssid_length;
+	size_t elements;
+	size_t length;
+
+	ssid_length = strlen(ssid);
+	memset(bss, 0, 256);
+	bcm43455_put_le32(bss, 109);
+	bss[8] = 0x02;
+	bss[13] = last;
+	bcm43455_put_le16(bss + 14, 100);
+	bcm43455_put_le16(bss + 16, 0x0411);
+	bss[18] = (uint8_t)ssid_length;
+	memcpy(bss + 19, ssid, ssid_length);
+	bcm43455_put_le16(bss + 72, chanspec);
+	bcm43455_put_le16(bss + 78, (uint16_t)(int16_t)-42);
+	bss[88] = 0;
+
+	/* The elements: the SSID and the channel again, then the RSN element. */
+	elements = 128;
+	bss[elements++] = 0;
+	bss[elements++] = (uint8_t)ssid_length;
+	memcpy(bss + elements, ssid, ssid_length);
+	elements += ssid_length;
+	bss[elements++] = 3;
+	bss[elements++] = 1;
+	bss[elements++] = (uint8_t)(chanspec & 0xffU);
+	memcpy(bss + elements, rsn, sizeof(rsn));
+	elements += sizeof(rsn);
+	bcm43455_put_le16(bss + 116, 128);
+	bcm43455_put_le32(bss + 120, (uint32_t)(elements - 128U));
+	length = (elements + 3U) & ~(size_t)3U;
+	bcm43455_put_le32(bss + 4, (uint32_t)length);
+	return length;
+}
+
+/* Reports an escan's two networks, then its end; the caller holds model_lock. */
+static void
+model_scan_events_locked(
+	uint16_t sync_id,
+	uint16_t chanspec)
+{
+	uint8_t data[1024];
+	size_t length;
+
+	memset(data, 0, sizeof(data));
+	length = 12;
+	length += model_bss(data + length, "zed-alpha", 0x0a, chanspec);
+	length += model_bss(data + length, "zed-beta", 0x0b, chanspec);
+	bcm43455_put_le32(data, (uint32_t)length);
+	bcm43455_put_le32(data + 4, 109);
+	bcm43455_put_le16(data + 8, sync_id);
+	bcm43455_put_le16(data + 10, 2);
+	model_push_event_locked(BCM43455_EVENT_SCAN_RESULT, 8, 0, 0, data, length);
+
+	memset(data, 0, 12);
+	bcm43455_put_le32(data, 12);
+	bcm43455_put_le16(data + 8, sync_id);
+	model_push_event_locked(BCM43455_EVENT_SCAN_RESULT, 0, 0, 0, data, 12);
+}
+
+/* Reports what the firmware does after a join command; the caller holds model_lock. */
+static void
+model_join_events_locked(void)
+{
+	/* Tells the scripts apart. */
+	switch (chip.join_script) {
+	case JOIN_SUCCESS:
+		model_push_event_locked(BCM43455_EVENT_AUTHENTICATION, 0, 0, 0, NULL, 0);
+		model_push_event_locked(BCM43455_EVENT_ASSOCIATION, 0, 0, 0, NULL, 0);
+		model_push_event_locked(BCM43455_EVENT_LINK, 0, 0, 1, NULL, 0);
+		model_push_event_locked(BCM43455_EVENT_JOIN_RESULT, 0, 0, 0, NULL, 0);
+		model_push_event_locked(BCM43455_EVENT_SUPPLICANT, 6, 0, 0, NULL, 0);
+		break;
+
+	case JOIN_WRONG_KEY:
+		model_push_event_locked(BCM43455_EVENT_LINK, 0, 0, 1, NULL, 0);
+		model_push_event_locked(BCM43455_EVENT_JOIN_RESULT, 0, 0, 0, NULL, 0);
+		model_push_event_locked(BCM43455_EVENT_PEER_DEAUTHENTICATED, 0, 2, 0, NULL, 0);
+		model_push_event_locked(BCM43455_EVENT_SUPPLICANT, 8, 14, 0, NULL, 0);
+		break;
+
+	case JOIN_NO_NETWORK:
+		model_push_event_locked(BCM43455_EVENT_JOIN_RESULT, 3, 0, 0, NULL, 0);
+		break;
+
+	case JOIN_M1_TIMEOUT:
+		model_push_event_locked(BCM43455_EVENT_LINK, 0, 0, 1, NULL, 0);
+		model_push_event_locked(BCM43455_EVENT_JOIN_RESULT, 0, 0, 0, NULL, 0);
+		model_push_event_locked(BCM43455_EVENT_SUPPLICANT, 4, 15, 0, NULL, 0);
+		break;
+
+	case JOIN_M3_TIMEOUT:
+		model_push_event_locked(BCM43455_EVENT_LINK, 0, 0, 1, NULL, 0);
+		model_push_event_locked(BCM43455_EVENT_JOIN_RESULT, 0, 0, 0, NULL, 0);
+		model_push_event_locked(BCM43455_EVENT_SUPPLICANT, 8, 15, 0, NULL, 0);
+		break;
+
+	default:
+		break;
+	}
+}
+
 /* Raises SDIO core interrupt bits and, when the host has it armed, the card's interrupt. */
 static void
 model_raise_locked(
@@ -1657,12 +2807,22 @@ model_control(
 		strcpy(request->name, "up");
 	} else if (command == BCM43455_COMMAND_RADIO_DOWN) {
 		strcpy(request->name, "down");
+	} else if (command == BCM43455_COMMAND_LEAVE) {
+		strcpy(request->name, "leave");
+		chip.leaves++;
 	}
 	request->length = request_length - value_offset;
 	memcpy(request->payload, payload + value_offset, request->length);
+	if (command == BCM43455_COMMAND_JOIN) {
+		CHECK(request->length == BCM43455_JOIN_REQUEST_LENGTH);
+		memcpy(chip.join_seen, request->payload, BCM43455_JOIN_REQUEST_LENGTH);
+		chip.joins++;
+	}
 
-	/* A silent firmware answers nothing. */
+	/* A silent firmware, or one that ignores this command, answers nothing. */
 	if (chip.silent)
+		return;
+	if (chip.ignore_command != 0 && command == chip.ignore_command)
 		return;
 
 	/* Builds the answer: the same header with the result, and the payload. */
@@ -1686,7 +2846,22 @@ model_control(
 			status = -23;
 		}
 	} else if (command == BCM43455_COMMAND_WRITE_VARIABLE) {
-		if (strcmp(request->name, "clmload") == 0) {
+		if (strcmp(request->name, "escan") == 0) {
+			uint16_t action;
+
+			action = bcm43455_get_le16(request->payload + 4);
+			if (action == BCM43455_ESCAN_START) {
+				chip.escan_starts++;
+				chip.escan_sync = bcm43455_get_le16(request->payload + 6);
+				chip.escan_scan_type = request->payload[8 + 43];
+				chip.escan_chanspec = bcm43455_get_le16(request->payload + 8 + 64);
+				if (chip.scan_mode == SCAN_REFUSE)
+					status = -1;
+			} else {
+				CHECK(action == BCM43455_ESCAN_ABORT);
+				chip.escan_aborts++;
+			}
+		} else if (strcmp(request->name, "clmload") == 0) {
 			uint16_t clm_flags;
 			uint32_t clm_length;
 
@@ -1721,15 +2896,58 @@ model_control(
 			bcm43455_put_le32(answer + 20 + 4 * i, list[i]);
 	} else if (command == BCM43455_COMMAND_RADIO_DOWN && chip.halt_on_down) {
 		status = -1;
+	} else if (command == BCM43455_COMMAND_IO_VERSION) {
+		bcm43455_put_le32(answer + 16, BCM43455_CHANSPEC_LAYOUT_AC);
+	} else if (command == BCM43455_COMMAND_SUPPLICANT_KEY) {
+		CHECK(request->length == BCM43455_KEY_MESSAGE_LENGTH);
+		memcpy(chip.key_seen, request->payload, BCM43455_KEY_MESSAGE_LENGTH);
+		chip.keys++;
 	}
+
+	/* A command the test makes the firmware refuse. */
+	if (chip.refuse_command != 0 && command == chip.refuse_command)
+		status = -1;
+
+	/* A firmware that reports an escan's results before it answers the request. */
+	if (command == BCM43455_COMMAND_WRITE_VARIABLE &&
+	    strcmp(request->name, "escan") == 0 &&
+	    status == 0 &&
+	    chip.scan_mode == SCAN_RESULTS_FIRST &&
+	    bcm43455_get_le16(request->payload + 4) == BCM43455_ESCAN_START)
+		model_scan_events_locked(chip.escan_sync, chip.escan_chanspec);
 
 	/* The answer's flags keep the id and the set bit, plus the error flag. */
 	if (status != 0) {
 		bcm43455_put_le32(answer + 8, flags | 1U);
 		bcm43455_put_le32(answer + 12, (uint32_t)status);
 	}
+	/* A firmware that reports an escan's results first holds its answer until the test lets it go. */
+	if (command == BCM43455_COMMAND_WRITE_VARIABLE &&
+	    strcmp(request->name, "escan") == 0 &&
+	    status == 0 &&
+	    chip.scan_mode == SCAN_RESULTS_FIRST &&
+	    bcm43455_get_le16(request->payload + 4) == BCM43455_ESCAN_START) {
+		memcpy(chip.held_answer, answer, 16U + request_length);
+		chip.held_length = 16U + request_length;
+		return;
+	}
 	model_push_locked(BCM43455_SDPCM_CHANNEL_CONTROL, answer, 16U + request_length);
 	model_raise_locked(BCM43455_INT_FRAME);
+
+	/* What the firmware does after it answered: scan the channel, or join. */
+	if (status == 0 &&
+	    command == BCM43455_COMMAND_WRITE_VARIABLE &&
+	    strcmp(request->name, "escan") == 0 &&
+	    bcm43455_get_le16(request->payload + 4) == BCM43455_ESCAN_START) {
+		if (chip.scan_mode == SCAN_NORMAL)
+			model_scan_events_locked(chip.escan_sync, chip.escan_chanspec);
+		else if (chip.scan_mode == SCAN_STALE)
+			model_scan_events_locked((uint16_t)(chip.escan_sync + 100U), chip.escan_chanspec);
+		else if (chip.scan_mode == SCAN_BUSY)
+			model_push_event_locked(BCM43455_EVENT_SCAN_RESULT, 9, 0, 0, NULL, 0);
+	}
+	if (status == 0 && command == BCM43455_COMMAND_JOIN)
+		model_join_events_locked();
 }
 
 /* Takes one frame the host wrote to function 2. */
@@ -1937,6 +3155,8 @@ op_write(
 	size_t i;
 
 	(void)context;
+	if (function == 2 && __atomic_load_n(&model_delay_ms, __ATOMIC_SEQ_CST) != 0)
+		sleep_ms(__atomic_load_n(&model_delay_ms, __ATOMIC_SEQ_CST));
 	pthread_mutex_lock(&model_lock);
 	CHECK(chip.powered);
 	CHECK(length != 0);
@@ -2654,4 +3874,131 @@ wlan_station_ioctl(
 	(void)request;
 	(void)argument;
 	return 0;
+}
+
+/* Records one report the driver made. */
+static void
+record_report(
+	unsigned kind,
+	uint64_t generation,
+	uint32_t value,
+	int error,
+	const struct wlan_bss_record *bss,
+	size_t length)
+{
+	struct report *report;
+
+	pthread_mutex_lock(&report_lock);
+	report = &reports[report_count % REPORT_MAX];
+	memset(report, 0, sizeof(*report));
+	report->kind = kind;
+	report->generation = generation;
+	report->value = value;
+	report->error = error;
+	report->length = length;
+	if (bss != NULL) {
+		memcpy(report->ssid, bss->ssid, bss->ssid_length);
+		report->channel = bss->channel;
+		report->security = bss->security;
+		report->rssi = bss->rssi_dbm;
+	}
+	report_count++;
+	pthread_mutex_unlock(&report_lock);
+}
+
+int
+wlan_station_report_scan_channel_ready(
+	struct wlan_station *station,
+	uint64_t generation,
+	uint32_t step_index)
+{
+	CHECK(station == (struct wlan_station *)&fake_station_token);
+	record_report(REPORT_READY, generation, step_index, 0, NULL, 0);
+	return 0;
+}
+
+int
+wlan_station_report_scan_channel_complete(
+	struct wlan_station *station,
+	uint64_t generation,
+	uint32_t step_index)
+{
+	CHECK(station == (struct wlan_station *)&fake_station_token);
+	record_report(REPORT_COMPLETE, generation, step_index, 0, NULL, 0);
+	return 0;
+}
+
+int
+wlan_station_report_scan_error(
+	struct wlan_station *station,
+	uint64_t generation,
+	int error)
+{
+	CHECK(station == (struct wlan_station *)&fake_station_token && error > 0);
+	record_report(REPORT_SCAN_ERROR, generation, 0, error, NULL, 0);
+	return 0;
+}
+
+/* Parses the probe response as the core does, and records the network. */
+int
+wlan_station_report_scan_frame(
+	struct wlan_station *station,
+	uint64_t generation,
+	const uint8_t *frame,
+	size_t length,
+	int32_t rssi_dbm,
+	uint8_t channel_hint)
+{
+	struct wlan_bss_record bss;
+
+	CHECK(station == (struct wlan_station *)&fake_station_token);
+	CHECK(wlan_frame_parse_bss(frame, length, rssi_dbm, channel_hint, &bss) == 0);
+	CHECK(bss.channel == channel_hint);
+	record_report(REPORT_FRAME, generation, 0, 0, &bss, length);
+	return 0;
+}
+
+int
+wlan_station_report_fullmac_event(
+	struct wlan_station *station,
+	uint64_t generation,
+	enum wlan_fullmac_event event)
+{
+	CHECK(station == (struct wlan_station *)&fake_station_token);
+	record_report(REPORT_EVENT, generation, (uint32_t)event, 0, NULL, 0);
+	return 0;
+}
+
+int
+wlan_station_report_link_loss(
+	struct wlan_station *station,
+	uint64_t generation,
+	int error)
+{
+	CHECK(station == (struct wlan_station *)&fake_station_token && error > 0);
+	record_report(REPORT_LOSS, generation, 0, error, NULL, 0);
+	return 0;
+}
+
+/* Takes a frame only for the generation whose port the test keeps open. */
+int
+wlan_station_report_ethernet(
+	struct wlan_station *station,
+	uint64_t generation,
+	const uint8_t *frame,
+	size_t length)
+{
+	CHECK(station == (struct wlan_station *)&fake_station_token && frame != NULL);
+	if (generation != __atomic_load_n(&open_port_generation, __ATOMIC_SEQ_CST))
+		return EACCES;
+	record_report(REPORT_ETHERNET, generation, 0, 0, NULL, length);
+	return 0;
+}
+
+void
+wlan_station_restart_request(
+	struct wlan_station *station)
+{
+	CHECK(station == (struct wlan_station *)&fake_station_token);
+	record_report(REPORT_RESTART, 0, 0, 0, NULL, 0);
 }

@@ -20,6 +20,11 @@
  * and power-down send their commands themselves.  Nothing else may use
  * the bus then.
  *
+ * The device's radio work (a scan's start, a connection's commands) runs on
+ * the bus thread itself, through the work hook: the thread sends those
+ * commands and reads what the chip answers in the meantime, so nobody
+ * else waits for them.
+ *
  * Locks: control_lock (a mutex) admits one control request at a time; it
  * is held while the requester waits.  lock (an IRQ-saving spinlock, a
  * leaf) guards the request slot and the thread's state.  The bus thread
@@ -60,19 +65,25 @@
 /*
  * What the device does with what the bus receives.
  *
- * All four run on whoever runs the bus (the bus thread, or the lifecycle
- * owner in direct mode) and must not wait: they copy what they keep into
- * the device's own rings under a spinlock.  event gets the decoded event
- * and its Ethernet frame; data gets a received Ethernet frame.  transmit
- * copies the next frame to send into frame and returns 1, or returns 0
- * when there is none.  failed reports that the bus thread stopped on an
- * error of the bus or the firmware.
+ * The first four run on whoever runs the bus (the bus thread, or the
+ * lifecycle owner in direct mode) and must not wait: they copy what they
+ * keep into the device's own rings under a spinlock.  event gets the
+ * decoded event and its Ethernet frame; data gets a received Ethernet
+ * frame.  transmit copies the next frame to send into frame and returns
+ * 1, or returns 0 when there is none.  failed reports that the bus thread
+ * stopped on an error of the bus or the firmware.
+ *
+ * work runs on the bus thread only, after bcm43455_bus_request_work():
+ * it does the device's queued radio work with
+ * bcm43455_bus_thread_control() and returns 0, or the bus's error, which
+ * stops the thread.  It may take only spinlocks, never a mutex.
  */
 struct bcm43455_bus_hooks {
 	void (*event)(void *context, const struct bcm43455_event *event, const uint8_t *frame, size_t length);
 	void (*data)(void *context, const uint8_t *frame, size_t length);
 	int (*transmit)(void *context, uint8_t *frame, size_t capacity, size_t *length);
 	void (*failed)(void *context, int error);
+	int (*work)(void *context);
 };
 
 /*
@@ -171,6 +182,7 @@ struct bcm43455_bus {
 	unsigned thread_running;
 	unsigned stop_requested;
 	unsigned work_requested;
+	unsigned radio_work_pending;
 	int thread_error;
 	struct bcm43455_control_slot slot;
 };
@@ -233,5 +245,25 @@ int bcm43455_bus_thread_stop(struct bcm43455_bus *bus);
  * but an interrupt handler.
  */
 void bcm43455_bus_wake(struct bcm43455_bus *bus);
+
+/*
+ * Asks the bus thread to run the work hook.  Requests made before the
+ * hook starts are one run; a request made while it runs makes another.
+ * Any context but an interrupt handler.
+ */
+void bcm43455_bus_request_work(struct bcm43455_bus *bus);
+
+/*
+ * Sends one control command from the work hook and waits for its answer,
+ * reading what the chip sends meanwhile.
+ *
+ * Only the bus thread calls this, from its work hook.  The return value
+ * is the bus's own error (the thread must stop); outcome receives the
+ * command's: 0 when answered, ETIMEDOUT without an answer in
+ * BCM43455_BUS_CONTROL_TIMEOUT_MS, ECANCELED when the thread is asked to
+ * stop meanwhile, EIO or EOPNOTSUPP when the firmware refused it.  answer
+ * and answer_length are as for bcm43455_bus_control().
+ */
+int bcm43455_bus_thread_control(struct bcm43455_bus *bus, uint32_t command, int set, const uint8_t *input, size_t input_length, uint8_t *answer, size_t answer_capacity, size_t *answer_length, int *outcome);
 
 #endif
