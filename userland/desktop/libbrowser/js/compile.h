@@ -301,6 +301,8 @@ struct js_compiler {
 	jmp_buf failure;
 	int status;
 	struct js_function_compiler *current;
+	int module_instance;
+	uint32_t module_env_count;
 };
 
 /* Failing (compile.c). */

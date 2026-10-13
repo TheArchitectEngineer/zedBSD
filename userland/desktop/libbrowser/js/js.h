@@ -204,8 +204,13 @@ int js_parse(const uint16_t *source, size_t length, unsigned how, struct js_prog
 void js_program_release(struct js_program *program);
 
 /* Compiling and running (compile.c). */
+struct js_module;
 int js_compile(struct vm_realm *realm, struct js_program *program, struct vm_function **function, struct js_syntax_error *error);
 int js_run_script(struct vm_realm *realm, const uint16_t *source, size_t length, unsigned how, vm_value *result, struct js_syntax_error *error);
+int js_module_create(struct vm_realm *realm, const uint16_t *source, size_t length, struct js_module **module, struct js_syntax_error *error);
+int js_module_evaluate(struct js_module *module);
+int js_module_export(struct js_module *module, const uint16_t *name, size_t length, vm_value *value);
+void js_module_release(struct js_module *module);
 
 /* The built-in objects (builtin.c). */
 int js_install_builtins(struct vm_realm *realm);

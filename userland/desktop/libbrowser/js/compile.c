@@ -22,18 +22,45 @@
  * arguments, this, the operators, object and array literals with
  * accessors, every ES5 statement, and labels.  What later phases
  * bring (let and const, arrow functions, classes, destructuring, spread,
- * templates, generators, async functions, regular expressions, modules,
- * direct eval) is refused with a "not supported yet" error.
+ * templates, generators, async functions, regular expressions and direct
+ * eval) arrived in later phases.  Modules now have local bindings, direct
+ * export declarations and retained export environments; graph linking is
+ * still pending.
  */
 
 #include "js/compile.h"
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+/* One exported local binding, whose slot is fixed when the compiler places bindings. */
+struct js_module_export {
+	uint16_t *name;
+	size_t length;
+	struct js_binding *binding;
+	uint32_t slot;
+};
+
+/* One compiled module instance, kept rooted by its owner until release. */
+struct js_module {
+	struct vm_realm *realm;
+	struct vm_env *env;
+	struct vm_function *function;
+	struct js_module_export *exports;
+	size_t export_count;
+	int env_rooted;
+	int function_rooted;
+	int evaluated;
+	int eval_status;
+};
 
 static void compile_trace(struct vm_heap *heap, void *context);
 static void compile_release_all(struct js_compiler *compiler);
+static int compile_program(struct vm_realm *realm, struct js_program *program, struct vm_function **function, struct js_module *module, struct js_syntax_error *error);
+static void compile_module_exports(struct js_compiler *compiler, struct js_function_info *info, struct js_module *module);
+static void compile_module_export_name(struct js_compiler *compiler, struct js_function_info *info, struct js_module *module, struct js_node *name);
 static void compile_prepare(struct js_function_compiler *fc);
 static void compile_place_binding(struct js_function_compiler *fc, struct js_scope *scope, struct js_binding *binding, uint32_t *env_count);
 static void compile_prologue(struct js_function_compiler *fc, uint32_t env_count);
@@ -70,7 +97,7 @@ static void compile_with(struct js_function_compiler *fc, struct js_node *node);
 
 /*
  * Compiles a parsed program into a function of a realm (the program's code
- * with no parameters, to be called with the global object as this).
+ * with no parameters; the caller supplies its top-level this).
  * Returns 0, EINVAL with *error saying what is not supported, or ENOMEM.
  */
 int
@@ -80,10 +107,25 @@ js_compile(
 	struct vm_function **function,
 	struct js_syntax_error *error)
 {
+	return compile_program(realm, program, function, NULL, error);
+}
+
+/* Compiles either a classic program or a module with a retained environment. */
+static int
+compile_program(
+	struct vm_realm *realm,
+	struct js_program *program,
+	struct vm_function **function,
+	struct js_module *module,
+	struct js_syntax_error *error)
+{
 	struct js_compiler *compiler;
 	struct js_function_info *info;
+	struct vm_cell *code_root;
 	struct vm_function *made;
 	struct vm_code *code;
+	struct vm_env *env;
+	size_t index;
 	int jumped;
 	int status;
 
@@ -96,6 +138,7 @@ js_compile(
 	compiler->realm = realm;
 	compiler->arena = &program->arena;
 	compiler->error = error;
+	compiler->module_instance = module != NULL;
 
 	/* The constants of the code being written are the collector's to see. */
 	status = vm_heap_add_tracer(realm->heap, compile_trace, compiler);
@@ -112,17 +155,136 @@ js_compile(
 
 	/* The scopes, then the program's code. */
 	info = js_scope_analyze(compiler, program->root);
+	if (module != NULL)
+		compile_module_exports(compiler, info, module);
 	code = js_compile_function(compiler, NULL, info->node, NULL, 0);
+	if (module != NULL) {
+		for (index = 0; index < module->export_count; index++) {
+			module->exports[index].slot = module->exports[index].binding->location;
+			module->exports[index].binding = NULL;
+		}
+	}
 	vm_heap_remove_tracer(realm->heap, compile_trace, compiler);
 
-	/* The program as a function (no environment around it). */
-	made = vm_closure_create(realm, code, NULL);
+	/* A linked module owns an environment that its program and exports share. */
+	env = NULL;
+	if (module != NULL) {
+		code_root = &code->cell;
+		status = vm_heap_add_root(realm->heap, &code_root);
+		if (status != 0)
+			return status;
+		env = vm_env_create(realm->heap, NULL, compiler->module_env_count);
+		vm_heap_remove_root(realm->heap, &code_root);
+		if (env == NULL)
+			return ENOMEM;
+		module->env = env;
+	}
+
+	/* The program as a function, retaining the module environment when present. */
+	made = vm_closure_create(realm, code, env);
 	if (made == NULL)
 		return ENOMEM;
+	if (module != NULL)
+		module->function = made;
 
 	/* Succeeded: the program's function. */
 	*function = made;
 	return 0;
+}
+
+/* Marks direct named exports as retained bindings and records their names. */
+static void
+compile_module_exports(
+	struct js_compiler *compiler,
+	struct js_function_info *info,
+	struct js_module *module)
+{
+	struct js_node *item;
+	struct js_node *declaration;
+	struct js_node *part;
+
+	/* Each supported export declaration contributes one or more direct names. */
+	for (item = info->node->first; item != NULL; item = item->next) {
+		if (item->kind != JS_NODE_EXPORT)
+			continue;
+		if ((item->flags & (JS_FLAG_DEFAULT | JS_FLAG_ALL)) != 0U || item->second != NULL ||
+		    item->first == NULL || item->first->kind == JS_NODE_EXPORT_SPECIFIER)
+			js_compile_unsupported(compiler, item, "this kind of module export");
+
+		/* A declaration's name, or each var/let/const declarator's name. */
+		declaration = item->first;
+		if (declaration->kind == JS_NODE_VARIABLES) {
+			for (part = declaration->first; part != NULL; part = part->next) {
+				if (part->first == NULL || part->first->kind != JS_NODE_IDENTIFIER)
+					js_compile_unsupported(compiler, part, "exported binding patterns");
+				compile_module_export_name(compiler, info, module, part->first);
+			}
+		} else if (declaration->kind == JS_NODE_FUNCTION_DECLARATION ||
+		    declaration->kind == JS_NODE_CLASS_DECLARATION) {
+			compile_module_export_name(compiler, info, module, declaration);
+		} else {
+			js_compile_unsupported(compiler, declaration, "this kind of module export");
+		}
+	}
+}
+
+/* Retains one exported name and its local binding for later slot lookup. */
+static void
+compile_module_export_name(
+	struct js_compiler *compiler,
+	struct js_function_info *info,
+	struct js_module *module,
+	struct js_node *name)
+{
+	struct js_module_export *exports;
+	struct js_module_export *entry;
+	struct js_binding *binding;
+	size_t index;
+	int same;
+
+	/* The parser and scope pass must have given the export a binding. */
+	if (name->text == NULL)
+		js_compile_fail(compiler, name, "An exported declaration needs a name");
+	binding = NULL;
+	for (binding = info->scope->bindings; binding != NULL; binding = binding->next) {
+		same = binding->length == name->text_length;
+		if (same)
+			same = memcmp(binding->name, name->text, name->text_length * sizeof(uint16_t)) == 0;
+		if (same)
+			break;
+	}
+	if (binding == NULL)
+		js_compile_fail(compiler, name, "Exported declaration has no local binding");
+
+	/* One exported name may not appear twice. */
+	for (index = 0; index < module->export_count; index++) {
+		entry = &module->exports[index];
+		same = entry->length == name->text_length;
+		if (same)
+			same = memcmp(entry->name, name->text, name->text_length * sizeof(uint16_t)) == 0;
+		if (same)
+			js_compile_fail(compiler, name, "Duplicate module export");
+	}
+
+	/* The instance keeps a copy beyond the parser arena's lifetime. */
+	exports = realloc(module->exports, (module->export_count + 1U) * sizeof(*exports));
+	if (exports == NULL)
+		js_compile_out_of_memory(compiler);
+	module->exports = exports;
+	entry = &exports[module->export_count];
+	memset(entry, 0, sizeof(*entry));
+	entry->name = malloc((name->text_length + 1U) * sizeof(uint16_t));
+	if (entry->name == NULL)
+		js_compile_out_of_memory(compiler);
+	memcpy(entry->name, name->text, name->text_length * sizeof(uint16_t));
+	entry->name[name->text_length] = 0;
+	entry->length = name->text_length;
+	entry->binding = binding;
+	module->export_count++;
+
+	/* An export lives in the module's retained environment, even without a closure. */
+	binding->captured = 1;
+	info->has_env = 1;
 }
 
 /*
@@ -167,6 +329,121 @@ js_run_script(
 
 	/* Succeeded: the script ran to its end. */
 	return 0;
+}
+
+/* Parses and compiles one module with an environment its owner can retain. */
+int
+js_module_create(
+	struct vm_realm *realm,
+	const uint16_t *source,
+	size_t length,
+	struct js_module **module,
+	struct js_syntax_error *error)
+{
+	struct js_module *created;
+	struct js_program program;
+	int status;
+
+	/* The owner and its two stable GC root slots. */
+	*module = NULL;
+	created = calloc(1, sizeof(*created));
+	if (created == NULL)
+		return ENOMEM;
+	created->realm = realm;
+	status = vm_heap_add_root(realm->heap, (struct vm_cell **)&created->env);
+	if (status != 0) {
+		free(created);
+		return status;
+	}
+	created->env_rooted = 1;
+	status = vm_heap_add_root(realm->heap, (struct vm_cell **)&created->function);
+	if (status != 0) {
+		js_module_release(created);
+		return status;
+	}
+	created->function_rooted = 1;
+
+	/* The module program, then its retained closure and export slots. */
+	status = js_parse(source, length, JS_PARSE_MODULE, &program, error);
+	if (status == 0) {
+		status = compile_program(realm, &program, &created->function, created, error);
+		js_program_release(&program);
+	}
+	if (status != 0) {
+		js_module_release(created);
+		return status;
+	}
+
+	/* The instance is ready for one evaluation. */
+	*module = created;
+	return 0;
+}
+
+/* Evaluates a module once, preserving its live bindings for subsequent reads. */
+int
+js_module_evaluate(
+	struct js_module *module)
+{
+	vm_value completion;
+	int status;
+
+	/* A second call cannot repeat a module's side effects. */
+	if (module->evaluated)
+		return module->eval_status;
+	module->evaluated = 1;
+	status = vm_call(module->realm, vm_value_cell(module->function), VM_VALUE_UNDEFINED, NULL, 0, &completion);
+	module->eval_status = status;
+	return status;
+}
+
+/* Reads one direct named export from the instance's stable environment. */
+int
+js_module_export(
+	struct js_module *module,
+	const uint16_t *name,
+	size_t length,
+	vm_value *value)
+{
+	struct js_module_export *entry;
+	size_t index;
+	int same;
+
+	/* An unevaluated module has no initialized values for its caller yet. */
+	*value = VM_VALUE_UNDEFINED;
+	if (!module->evaluated || module->eval_status != 0)
+		return EAGAIN;
+	for (index = 0; index < module->export_count; index++) {
+		entry = &module->exports[index];
+		same = entry->length == length;
+		if (same)
+			same = memcmp(entry->name, name, length * sizeof(uint16_t)) == 0;
+		if (!same)
+			continue;
+		*value = vm_env_slots(module->env)[entry->slot];
+		if (*value == VM_VALUE_EMPTY)
+			return EAGAIN;
+		return 0;
+	}
+	return ENOENT;
+}
+
+/* Releases the module's GC roots and owned export names before its realm goes away. */
+void
+js_module_release(
+	struct js_module *module)
+{
+	size_t index;
+
+	if (module == NULL)
+		return;
+	if (module->function_rooted)
+		vm_heap_remove_root(module->realm->heap, (struct vm_cell **)&module->function);
+	if (module->env_rooted)
+		vm_heap_remove_root(module->realm->heap, (struct vm_cell **)&module->env);
+	for (index = 0; index < module->export_count; index++)
+		free(module->exports[index].name);
+	free(module->exports);
+	free(module);
 }
 
 /*
@@ -478,6 +755,8 @@ compile_prepare(
 			fc->local_count++;
 		}
 	}
+	if (fc->compiler->module_instance && info->program)
+		fc->compiler->module_env_count = env_count;
 
 	/* A rest parameter reads the arguments object, which needs a register when the code does not name arguments. */
 	if (info->rest != NULL && info->arguments == NULL) {
@@ -566,7 +845,7 @@ compile_prologue(
 	/* The environment of the code around it, then its own on top when it has captured bindings. */
 	info = fc->info;
 	js_emit1(fc, VM_OP_LOAD_CLOSURE_ENV, fc->env_register);
-	if (info->has_env)
+	if (info->has_env && !(fc->compiler->module_instance && info->program))
 		js_emit3(fc, VM_OP_NEW_ENV, fc->env_register, fc->env_register, env_count);
 
 	/* The hidden bindings of this and of the home object, which the arrow functions inside read. */

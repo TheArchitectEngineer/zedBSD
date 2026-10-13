@@ -1,18 +1,18 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1081 / WS074 module graph design boundary
+# q1082 / WS074 stable module export environment
 
-Status: finished（2026-10-14 06:38–06:41 JST）
+Status: finished（2026-10-14 06:42–06:48 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を下記有限範囲に適用。
-Timebox: 2026-10-14 06:38 JST開始、最大90分（08:08 JSTまで）。
+Timebox: 2026-10-14 06:42 JST開始、最大90分（08:12 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1081-i01 | [ws074-p216](phase216/phase.md) partial | 現行JS compiler/VMのclosure/environment/GC root、page script loaderとURL/fetch経路を読み、named import/exportのlive bindingとmodule graphを既存境界で実装する具体的内部API・依存順・有限次Queueへ分割した設計を証拠化する。read-only調査と必要な既存browser probeのみ。browser/runner/WPT/ABI/Master変更なし | cleared | p216 q1079/q1080出力 |
+| q1082-i01 | [ws074-p216](phase216/phase.md) partial | JS moduleのtop-level named export declaration bindingを評価後もGC追跡されるstable `vm_env` slotに置き、内部module instance/APIでexport名→live slot読取と重複・不存在判定を可能にする。import/HTML loader/namespace公開は含めない。局所hostでmutating closure後のlive値、GC stress、classic JS14、warning0 build、Acid3差0・Acid2非増加を検証。WPT/runner/公開ABI/Master不変更 | cleared | p216 q1081 design・q1080 export宣言 |
 
-Dependency graph: p173 manifest → p216 q1079 scope → p216 q1080 export宣言 → p216 q1081 graph設計 → 後続module graph/HTML Queue → p189/q173再測定。
+Dependency graph: p216 q1079 scope → p216 q1080 export宣言 → p216 q1081 graph設計 → q1082 stable export env → 後続import/HTML Queue → p189/q173再測定。
 
-Outcome: exported stable env slotとimport間接参照、graph/link/HTML parse後queueの内部境界を[設計証拠](phase216/evidence/20261014-q1081/README.md)へ記録。q1081-i01 partial cleared、p216 whole uncleared。
+Outcome: exported closureのlive counter更新1→2をGC後も読取、固定WPT共通support moduleの`runTests`抽出PASS。[証拠](phase216/evidence/20261014-q1082/README.md)。classic JS14/14、warning0 build、Acid3差0・Acid2差1865。q1082-i01 partial cleared、p216 whole uncleared。
 
-Upcoming Work Outlook: stable export environmentを次有限Queueで実装し、その後import linkとHTML loadに進める。p216 whole、p189/p190/p173全件100%は未達。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
+Upcoming Work Outlook: import linkとHTML loadを別有限Queueで進める。p216 whole、p189/p190/p173全件100%は未達。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
