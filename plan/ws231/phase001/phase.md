@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws231-p001 -->
 # ws231-p001: 基本の AHCI の driver
 
-Status: planned（2026-10-14 Q1、q981、P2）
+Status: cleared（2026-10-14 Q1: T1-610（QEMU q35、main f41c0c12b）で poll の数え 0、dd の close の後の flush、poweroff の flush（sata0 +2）、throttle、BUG-304 の wr_bytes 32 MiB ちょうど・部分 sector の 3 byte が PASS。T1-609 の残りの項目（partition・EIO の回復・2 つの HBA・S0 idle・AHCI からの root・既存の boot-test）も PASS。実機は未実施。Intel の RAID mode の device ID の表は実機で未確認）
 Disposition: normal
 Parent: [WS231](../ws.md)
 Queue: q981
