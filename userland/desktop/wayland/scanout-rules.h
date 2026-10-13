@@ -36,20 +36,25 @@
 #define KWL_SCANOUT_SHOT		7U
 #define KWL_SCANOUT_POINTER		8U
 #define KWL_SCANOUT_REFUSED		9U
+#define KWL_SCANOUT_ROTATED		10U
 
 /*
  * The facts of one pass: whether there is a window on top, it is
  * fullscreen, its content type, its image is a GPU buffer (not shared
- * memory, a client's own) of the output's size, something is drawn over it
- * (an overlay, a popup, a menu, the system bar, an animation, the lock), a
- * screenshot waits for a composed frame, how long the pointer has been
- * still, and whether the display already refused this window.
+ * memory, a client's own), the output's rotation (WS217: the display
+ * hardware's 180, the compositor's turn of 90 or 270), the image is of the
+ * output's size, something is drawn over it (an overlay, a popup, a menu,
+ * the system bar, an animation, the lock), a screenshot waits for a
+ * composed frame, how long the pointer has been still, and whether the
+ * display already refused this window.
  */
 struct kwl_scanout_facts {
 	unsigned window;
 	unsigned fullscreen;
 	uint32_t content_type;
 	unsigned gpu_buffer;
+	unsigned scanout_rotation;
+	unsigned turn_rotation;
 	unsigned size_matches;
 	unsigned overlay;
 	unsigned shot;

@@ -98,8 +98,8 @@ kwl_layers_open(
 	compose = server->compose;
 	layers = &compose->layers;
 	memset(layers, 0, sizeof(*layers));
-	layers->width = compose->output.width;
-	layers->height = compose->output.height;
+	layers->width = compose->target_width;
+	layers->height = compose->target_height;
 	layers_generations++;
 	layers->generation = layers_generations;
 	server->home_picture_stale = 1U;

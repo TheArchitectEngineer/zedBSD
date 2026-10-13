@@ -11,6 +11,7 @@
  */
 
 #include "displays.h"
+#include "rotate.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -27,6 +28,8 @@ static int displays_in_range(const struct kwl_display_rect *rect);
 static int displays_line(char *line, struct kwl_display_config *config, unsigned *version);
 static int displays_place_line(const char *value, struct kwl_display_config *config);
 static int displays_number(const char *text, char **end, int32_t *number);
+static void displays_rotation_line(const char *value, struct kwl_display_config *config);
+static int displays_angle(unsigned rotation);
 
 /*
  * Fits an image of a size whole into a rectangle of another, keeping its
@@ -353,6 +356,14 @@ kwl_displays_format(
 		used += (size_t)written;
 	}
 
+	/* Each display's rotation (WS217). */
+	for (index = 0U; index < config->rotation_count && index < KWL_DISPLAYS_PLACES; index++) {
+		written = snprintf(text + used, size - used, "rotate=%s %u\n", config->rotations[index].key, config->rotations[index].rotation);
+		if (written < 0 || (size_t)written >= size - used)
+			return 0U;
+		used += (size_t)written;
+	}
+
 	/* Succeeded: the text and its length. */
 	return used;
 }
@@ -466,6 +477,129 @@ kwl_displays_set(
 	config->count++;
 
 	/* Succeeded: the place is kept. */
+	return 0;
+}
+
+/*
+ * Reads a rotation's value "KEY N": a key (which may hold spaces) and the
+ * last word, an angle of 90, 180 or 270 (WS217; 0 is not written).
+ * Returns 0, or EINVAL for text that is not one.
+ */
+int
+kwl_displays_parse_rotation(
+	const char *text,
+	char *key,
+	size_t size,
+	unsigned *rotation)
+{
+	const char *last;
+	char *end;
+	unsigned long number;
+	size_t length;
+	int valid;
+
+	/* The last space: the key before it, the angle after it. */
+	last = strrchr(text, ' ');
+	if (last == NULL || last == text)
+		return EINVAL;
+
+	/* The key: everything before the angle. */
+	length = (size_t)(last - text);
+	if (length >= size)
+		return EINVAL;
+	memcpy(key, text, length);
+	key[length] = '\0';
+
+	/* The angle, digits alone and nothing after them. */
+	if (last[1] < '0' || last[1] > '9')
+		return EINVAL;
+	number = strtoul(last + 1, &end, 10);
+	if (*end != '\0')
+		return EINVAL;
+
+	/* An angle other than 0 (no line keeps an unrotated display). */
+	if (number == 0UL || number > KWL_ROTATE_270)
+		return EINVAL;
+	valid = displays_angle((unsigned)number);
+	if (!valid)
+		return EINVAL;
+
+	/* Succeeded: the key and its angle. */
+	*rotation = (unsigned)number;
+	return 0;
+}
+
+/* Gives a display's rotation in a choice by its key: the angle kept, or 0. */
+unsigned
+kwl_displays_rotation(
+	const struct kwl_display_config *config,
+	const char *key)
+{
+	unsigned index;
+	int differs;
+
+	/* Each rotation kept. */
+	for (index = 0U; index < config->rotation_count && index < KWL_DISPLAYS_PLACES; index++) {
+		differs = strcmp(config->rotations[index].key, key);
+		if (differs == 0)
+			return config->rotations[index].rotation;
+	}
+
+	/* None kept: unrotated. */
+	return KWL_ROTATE_0;
+}
+
+/*
+ * Keeps a display's rotation in a choice (WS217): the angle of its key
+ * changed, a new line, or its line taken out for 0.  Returns 0, EINVAL for
+ * a key empty or too long or a number that is not an angle, or ENOSPC when
+ * the choice keeps as many rotations as it can.
+ */
+int
+kwl_displays_set_rotation(
+	struct kwl_display_config *config,
+	const char *key,
+	unsigned rotation)
+{
+	size_t length;
+	unsigned index;
+	int differs;
+	int valid;
+
+	/* A key the file can keep, and an angle. */
+	length = strlen(key);
+	if (length == 0U || length >= KWL_DISPLAYS_KEY)
+		return EINVAL;
+	valid = displays_angle(rotation);
+	if (!valid)
+		return EINVAL;
+
+	/* The key's line, when it has one: its angle changed, or the line taken out for 0. */
+	for (index = 0U; index < config->rotation_count; index++) {
+		differs = strcmp(config->rotations[index].key, key);
+		if (differs != 0)
+			continue;
+		if (rotation == KWL_ROTATE_0) {
+			config->rotation_count--;
+			memmove(&config->rotations[index], &config->rotations[index + 1U], (config->rotation_count - index) * sizeof(config->rotations[0]));
+		} else {
+			config->rotations[index].rotation = rotation;
+		}
+
+		/* As asked. */
+		return 0;
+	}
+
+	/* Unrotated already, or a new line while there is room. */
+	if (rotation == KWL_ROTATE_0)
+		return 0;
+	if (config->rotation_count >= KWL_DISPLAYS_PLACES)
+		return ENOSPC;
+	memcpy(config->rotations[config->rotation_count].key, key, length + 1U);
+	config->rotations[config->rotation_count].rotation = rotation;
+	config->rotation_count++;
+
+	/* Succeeded: the rotation is kept. */
 	return 0;
 }
 
@@ -654,6 +788,13 @@ displays_line(
 		return 0;
 	}
 
+	/* A display's rotation (WS217); a line that is not one is dropped and counted. */
+	differs = strcmp(line, "rotate");
+	if (differs == 0) {
+		displays_rotation_line(value, config);
+		return 0;
+	}
+
 	/* Succeeded: a key of a later version, skipped. */
 	return 0;
 }
@@ -708,6 +849,52 @@ displays_number(
 
 	/* Succeeded: the coordinate. */
 	*number = (int32_t)value;
+	return 0;
+}
+
+/* Reads a rotation's line into the choice; one that is not one, or one too many, is dropped and counted. */
+static void
+displays_rotation_line(
+	const char *value,
+	struct kwl_display_config *config)
+{
+	char key[KWL_DISPLAYS_KEY];
+	unsigned rotation;
+	int error;
+
+	/* The key and its angle. */
+	error = kwl_displays_parse_rotation(value, key, sizeof(key), &rotation);
+	if (error != 0) {
+		config->rotation_dropped++;
+		return;
+	}
+
+	/* Kept, while there is room. */
+	error = kwl_displays_set_rotation(config, key, rotation);
+	if (error != 0)
+		config->rotation_dropped++;
+}
+
+/*
+ * Tells whether a number is one of the four angles (the file's own check,
+ * so that displays.c stands alone in the host tests without rotate.c).
+ */
+static int
+displays_angle(
+	unsigned rotation)
+{
+	/* The four angles, clockwise in degrees. */
+	switch (rotation) {
+	case KWL_ROTATE_0:
+	case KWL_ROTATE_90:
+	case KWL_ROTATE_180:
+	case KWL_ROTATE_270:
+		return 1;
+	default:
+		break;
+	}
+
+	/* Not an angle. */
 	return 0;
 }
 

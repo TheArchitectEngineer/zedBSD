@@ -314,12 +314,12 @@ static const unsigned glass_icon_pixels[GLASS_ICON_SIZES] = { 16U, 20U };
 /* The applications' tiles' sizes in pixels, smallest first. */
 static const unsigned glass_tile_pixels[GLASS_TILE_SIZES] = { 20U, 26U, 48U, 72U };
 
-static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass);
-static int wallpaper_fill(struct kwl_server *server, struct kwl_glass *glass, const char *path);
-static int wallpaper_draw(struct kwl_server *server, struct kwl_glass *glass, struct wallpaper_picture *given);
+static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
+static int wallpaper_fill(struct kwl_glass *glass, const char *path, uint32_t width, uint32_t height);
+static int wallpaper_draw(struct kwl_glass *glass, struct wallpaper_picture *given, uint32_t width, uint32_t height);
 static void wallpaper_pixel(uint32_t x, uint32_t y, uint32_t width, uint32_t height, float *rgb);
 static float ridge(float x, float base, float amplitude, float phase);
-static int blur_create(struct kwl_server *server, struct kwl_glass *glass);
+static int blur_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
 static void wallpaper_row(const struct wallpaper_picture *picture, const uint32_t *columns, uint32_t source_y, uint32_t *line, uint32_t width);
 static void landscape_row(uint32_t y, uint32_t width, uint32_t height, uint32_t *line);
 static void blur_add(const uint32_t *line, uint32_t *sums, uint32_t small_width);
@@ -421,7 +421,7 @@ kwl_glass_open(
 
 	/* The wallpaper and the frosted glass made from it. */
 	started = kwl_milliseconds();
-	error = wallpaper_create(server, glass);
+	error = wallpaper_create(server, glass, server->width, server->height);
 	if (error != 0)
 		return error;
 	printf("KWL STARTUP step=wallpaper ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
@@ -539,8 +539,8 @@ kwl_glass_landscape(
 	/* The landscape is a picture without pixels. */
 	memset(&picture, 0, sizeof(picture));
 
-	/* Draws it into the wallpaper's image and its blurred copy. */
-	error = wallpaper_draw(server, server->compose->glass, &picture);
+	/* Draws it into the wallpaper's image and its blurred copy, at the output's size. */
+	error = wallpaper_draw(server->compose->glass, &picture, server->width, server->height);
 	if (error != 0)
 		return error;
 
@@ -584,7 +584,7 @@ kwl_glass_resize(
 	kwl_host_image_release(server->compose, &glass->blurred);
 
 	/* The images of the new size, with the picture in them. */
-	error = wallpaper_create(server, glass);
+	error = wallpaper_create(server, glass, server->width, server->height);
 	if (error != 0) {
 		printf("KWL GLASS resize errno=%d\n", error);
 		return error;
@@ -732,7 +732,7 @@ kwl_glass_wallpaper_poll(
 		loader_copy(server->compose->glass);
 		free(picture.data);
 	} else {
-		*error = wallpaper_draw(server, server->compose->glass, &picture);
+		*error = wallpaper_draw(server->compose->glass, &picture, server->width, server->height);
 	}
 
 	/* The thread's rows are let go either way. */
@@ -753,27 +753,32 @@ kwl_glass_wallpaper_poll(
 	return 1;
 }
 
-/* Makes the wallpaper's image and its blurred copy, and draws them. */
+/*
+ * Makes the wallpaper's image and its blurred copy at a size (the output's
+ * logical one: the caller says which, WS217), and draws them.
+ */
 static int
 wallpaper_create(
 	struct kwl_server *server,
-	struct kwl_glass *glass)
+	struct kwl_glass *glass,
+	uint32_t width,
+	uint32_t height)
 {
 	VkResult result;
 	int error;
 
 	/* The output-sized image. */
-	result = kwl_host_image_create(server->compose, server->width, server->height, server->compose->sampler, &glass->wallpaper);
+	result = kwl_host_image_create(server->compose, width, height, server->compose->sampler, &glass->wallpaper);
 	if (result != VK_SUCCESS)
 		return EIO;
 
 	/* The small image of the frosted glass. */
-	error = blur_create(server, glass);
+	error = blur_create(server, glass, width, height);
 	if (error != 0)
 		return error;
 
 	/* The picture in both. */
-	error = wallpaper_fill(server, glass, server->wallpaper_path);
+	error = wallpaper_fill(glass, server->wallpaper_path, width, height);
 	if (error != 0)
 		return error;
 
@@ -795,9 +800,10 @@ wallpaper_create(
  */
 static int
 wallpaper_fill(
-	struct kwl_server *server,
 	struct kwl_glass *glass,
-	const char *path)
+	const char *path,
+	uint32_t width,
+	uint32_t height)
 {
 	struct wallpaper_picture picture;
 	int error;
@@ -811,7 +817,7 @@ wallpaper_fill(
 	}
 
 	/* The picture into both images. */
-	error = wallpaper_draw(server, glass, &picture);
+	error = wallpaper_draw(glass, &picture, width, height);
 	if (error != 0)
 		return error;
 
@@ -826,9 +832,10 @@ wallpaper_fill(
  */
 static int
 wallpaper_draw(
-	struct kwl_server *server,
 	struct kwl_glass *glass,
-	struct wallpaper_picture *given)
+	struct wallpaper_picture *given,
+	uint32_t width,
+	uint32_t height)
 {
 	struct wallpaper_picture picture;
 	uint64_t started;
@@ -838,9 +845,9 @@ wallpaper_draw(
 	picture = *given;
 	given->data = NULL;
 
-	/* The picture into both images at the output's size; then its bytes go. */
+	/* The picture into both images at their size; then its bytes go. */
 	started = kwl_milliseconds();
-	error = wallpaper_render(&picture, server->width, server->height, glass->wallpaper.map, glass->wallpaper.row_pitch, glass->blurred.map, glass->blurred.row_pitch);
+	error = wallpaper_render(&picture, width, height, glass->wallpaper.map, glass->wallpaper.row_pitch, glass->blurred.map, glass->blurred.row_pitch);
 	free(picture.data);
 	if (error != 0)
 		return error;
@@ -1151,12 +1158,14 @@ ridge(
 static int
 blur_create(
 	struct kwl_server *server,
-	struct kwl_glass *glass)
+	struct kwl_glass *glass,
+	uint32_t width,
+	uint32_t height)
 {
 	VkResult result;
 
-	/* The output's size divided by GLASS_BLUR_SCALE. */
-	result = kwl_host_image_create(server->compose, server->width / GLASS_BLUR_SCALE, server->height / GLASS_BLUR_SCALE, server->compose->linear_sampler, &glass->blurred);
+	/* The wallpaper's size divided by GLASS_BLUR_SCALE. */
+	result = kwl_host_image_create(server->compose, width / GLASS_BLUR_SCALE, height / GLASS_BLUR_SCALE, server->compose->linear_sampler, &glass->blurred);
 	if (result != VK_SUCCESS)
 		return EIO;
 

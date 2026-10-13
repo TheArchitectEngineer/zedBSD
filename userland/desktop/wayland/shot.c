@@ -21,11 +21,14 @@
  *          "INACTIVE" otherwise
  *   SHOT   the next frame is drawn whole and copied from its swapchain
  *          image (Vulkan readback, on i915 and on Venus alike); answered
- *          "OK width height format" (a VkFormat number) and then
+ *          "OK width height format rotation=R scanout=S turn=T" (a VkFormat
+ *          number, and the output's angles, WS217: the image is the
+ *          swapchain's, physical) and then
  *          width x height x 4 bytes of pixels, rows top to bottom, or
  *          "ERROR why"
  *   DISPLAYS   the displays shown (ws113-p004b): "OK" and lines "mode=M",
- *          "output name=N width=W height=H x=X y=Y", "head ..." for each
+ *          "output name=N width=W height=H x=X y=Y rotation=R scanout=S
+ *          turn=T", "head ..." for each
  *          display shown besides the output
  *   MODE extended|mirror   the mode applied, answered "OK saved=E" or
  *          "ERROR errno=E"
@@ -363,7 +366,8 @@ kwl_shot_complete(
 	}
 
 	/* The header, then every byte. */
-	snprintf(header, sizeof(header), "OK %u %u %d\n", shot.width, shot.height, (int)server->compose->format);
+	snprintf(header, sizeof(header), "OK %u %u %d rotation=%u scanout=%u turn=%u\n", shot.width, shot.height, (int)server->compose->format,
+	    server->compose->rotation, server->compose->scanout_rotation, server->compose->turn_rotation);
 	shot_answer(shot.client, header);
 	bytes = map;
 	sent = 0U;

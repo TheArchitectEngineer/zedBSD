@@ -1,0 +1,215 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The arithmetic of a rotated display (rotate.c, WS217; the design is
+ * plan/ws217/phase001/phase.md, sections 2, 4.6 and 4.10).
+ *
+ * A display has a physical size, its panel's rows and columns (the mode,
+ * the swapchain, the scanout), and a logical one, the desktop the user sees
+ * on it.  The rotation is the angle, clockwise in degrees (0, 90, 180 or
+ * 270), by which the picture is turned on the panel; at 90 and 270 the
+ * logical width is the physical height.  The display's hardware turns the
+ * picture by 180 (the scanout rotation), the compositor's turn pass by 90
+ * or 270 (the turn rotation); one of the two at most is not 0.
+ *
+ * Points are pixels (whole numbers, a pixel's index) or 24.8 fixed-point
+ * coordinates; rectangles are half-open (left, top, right, bottom).  The
+ * physical width and height are Wp and Hp.  A logical point (x, y) is shown
+ * at the physical point:
+ *
+ *   0:   (x, y)
+ *   90:  (Wp - 1 - y, x)
+ *   180: (Wp - 1 - x, Hp - 1 - y)
+ *   270: (y, Hp - 1 - x)
+ *
+ * Nothing here knows the server or Vulkan, so the host tests run it alone.
+ */
+
+#ifndef KWL_ROTATE_H
+#define KWL_ROTATE_H
+
+#include <stdint.h>
+
+/* The angles, clockwise in degrees. */
+#define KWL_ROTATE_0		0U
+#define KWL_ROTATE_90		90U
+#define KWL_ROTATE_180		180U
+#define KWL_ROTATE_270		270U
+
+/* The angles a display may take, as a mask (the same bits as libkeiland's KL_DISPLAY_ROTATION_*). */
+#define KWL_ROTATION_0		1U
+#define KWL_ROTATION_90		2U
+#define KWL_ROTATION_180	4U
+#define KWL_ROTATION_270	8U
+
+/*
+ * Why a display cannot take an angle, or does not show the one chosen (the
+ * same bits as libkeiland's KL_DISPLAY_ROTATE_WHY_*): its hardware cannot
+ * turn the picture by 180 (nothing can be rotated), this build has no turn
+ * pass (90 and 270), a game is shown (the turn is paused), or the turn's
+ * images could not be made.
+ */
+#define KWL_ROTATE_WHY_SCANOUT	1U
+#define KWL_ROTATE_WHY_TURN	2U
+#define KWL_ROTATE_WHY_GAME	4U
+#define KWL_ROTATE_WHY_RESOURCE	8U
+
+/* The policies: the angles the display's hardware allows, or all of them (a test's --rotate-policy=any). */
+#define KWL_ROTATE_POLICY_DEFAULT	0U
+#define KWL_ROTATE_POLICY_ANY		1U
+
+/*
+ * Whether this build has the compositor's turn pass (90 and 270).  It has
+ * none yet (ws217-p002a: the logical and physical sizes are kept apart, and
+ * every angle but 0 is unsupported); ws217-p002b brings the pass.
+ */
+#define KWL_TURN_BUILD		0U
+
+/*
+ * What an output (or a head) shows, before and after a change: its logical
+ * size, the angle the user chose, the angle shown (0 while a game pauses
+ * the turn), and how it is shown (the scanout's angle and the turn's).
+ */
+struct kwl_rotate_state {
+	uint32_t width;
+	uint32_t height;
+	unsigned selected;
+	unsigned rotation;
+	unsigned scanout;
+	unsigned turn;
+};
+
+/*
+ * The steps a change of an output's state takes (kwl_rotate_steps): the
+ * output opened again (the scanout's angle is a property of its surface),
+ * the turn's images exchanged, the input's mapping and the clients told
+ * of a new angle, the desktop fitted to a new size, and the choice saved.
+ */
+#define KWL_ROTATE_STEP_REOPEN	1U
+#define KWL_ROTATE_STEP_TURN	2U
+#define KWL_ROTATE_STEP_ROTATED	4U
+#define KWL_ROTATE_STEP_RESIZED	8U
+#define KWL_ROTATE_STEP_SAVE	16U
+
+/*
+ * Who changes the state (kwl_rotate_steps, review-4 S16 and L49): the user
+ * (Settings' set_rotation, whose change of choice is saved), an output's
+ * opening (which made the surface and the turn's images itself, so it
+ * takes neither of those steps), and a game's pause of the turn and its
+ * end (which save nothing, and whose new size fits no window).
+ */
+#define KWL_ROTATE_MODE_USER		0U
+#define KWL_ROTATE_MODE_OPEN		1U
+#define KWL_ROTATE_MODE_SESSION_PAUSE	2U
+#define KWL_ROTATE_MODE_SESSION_RESUME	3U
+
+int kwl_rotate_valid(unsigned rotation);
+unsigned kwl_rotate_bit(unsigned rotation);
+void kwl_rotate_point(unsigned rotation, uint32_t physical_width, uint32_t physical_height, int32_t x, int32_t y, int32_t *physical_x, int32_t *physical_y);
+void kwl_rotate_point_back(unsigned rotation, uint32_t physical_width, uint32_t physical_height, int32_t physical_x, int32_t physical_y, int32_t *x, int32_t *y);
+void kwl_rotate_fixed(unsigned rotation, uint32_t physical_width, uint32_t physical_height, int32_t x, int32_t y, int32_t *physical_x, int32_t *physical_y);
+void kwl_rotate_fixed_back(unsigned rotation, uint32_t physical_width, uint32_t physical_height, int32_t physical_x, int32_t physical_y, int32_t *x, int32_t *y);
+void kwl_rotate_rect(unsigned rotation, uint32_t physical_width, uint32_t physical_height, const int32_t *box, int32_t *physical_box);
+void kwl_rotate_rect_back(unsigned rotation, uint32_t physical_width, uint32_t physical_height, const int32_t *physical_box, int32_t *box);
+void kwl_rotate_vector(unsigned rotation, int32_t physical_x, int32_t physical_y, int32_t *x, int32_t *y);
+unsigned kwl_rotate_mask(unsigned hw180, unsigned turn_build, unsigned policy, unsigned *why);
+int kwl_rotate_plan(unsigned rotation, unsigned mask, unsigned hw180, unsigned *scanout, unsigned *turn);
+
+/*
+ * The sizes and the steps are here as inline functions, not in rotate.c:
+ * the output's own files (output-switch.c) take them without rotate.c,
+ * so that the host tests that build such a file alone keep building.
+ */
+
+/* Tells whether an angle swaps the width and the height (90 and 270). */
+static __inline int
+kwl_rotate_swaps(
+	unsigned rotation)
+{
+	/* A quarter turn either way stands the picture on its side. */
+	if (rotation == KWL_ROTATE_90)
+		return 1;
+	if (rotation == KWL_ROTATE_270)
+		return 1;
+
+	/* 0 and 180 keep the sides. */
+	return 0;
+}
+
+/*
+ * Gives the size of a picture turned by an angle: the logical size of a
+ * physical one, or the physical of a logical one (the same either way).
+ */
+static __inline void
+kwl_rotate_size(
+	unsigned rotation,
+	uint32_t width,
+	uint32_t height,
+	uint32_t *rotated_width,
+	uint32_t *rotated_height)
+{
+	int swaps;
+
+	/* A quarter turn exchanges the sides. */
+	swaps = kwl_rotate_swaps(rotation);
+	if (swaps) {
+		*rotated_width = height;
+		*rotated_height = width;
+	} else {
+		*rotated_width = width;
+		*rotated_height = height;
+	}
+}
+
+/*
+ * Gives the steps a change of an output's state takes (KWL_ROTATE_STEP_*):
+ * the output opened again when the scanout's angle changes (and the rest
+ * follows the opening), else the turn's images exchanged when the turn's
+ * angle changes (an opening, KWL_ROTATE_MODE_OPEN, made both already); the
+ * input and the clients told whenever the angle shown changes, even with
+ * the same size (0 and 180, 90 and 270); the desktop fitted when the
+ * logical size changes; and the user's change of choice saved.
+ */
+static __inline unsigned
+kwl_rotate_steps(
+	const struct kwl_rotate_state *before,
+	const struct kwl_rotate_state *after,
+	unsigned mode)
+{
+	unsigned steps;
+
+	/* How the angle is shown: a surface of another transform, or other turn images; an opening made them. */
+	steps = 0U;
+	if (mode != KWL_ROTATE_MODE_OPEN) {
+		if (before->scanout != after->scanout) {
+			steps |= KWL_ROTATE_STEP_REOPEN;
+		} else if (before->turn != after->turn) {
+			steps |= KWL_ROTATE_STEP_TURN;
+		}
+	}
+
+	/* Another angle shown moves every point, whatever the size. */
+	if (before->rotation != after->rotation)
+		steps |= KWL_ROTATE_STEP_ROTATED;
+
+	/* Another logical size fits the desktop again. */
+	if (before->width != after->width) {
+		steps |= KWL_ROTATE_STEP_RESIZED;
+	} else if (before->height != after->height) {
+		steps |= KWL_ROTATE_STEP_RESIZED;
+	}
+
+	/* The user's change of choice is saved; an opening and a game's pause save nothing. */
+	if (mode == KWL_ROTATE_MODE_USER && before->selected != after->selected)
+		steps |= KWL_ROTATE_STEP_SAVE;
+
+	/* Succeeded: the steps to take. */
+	return steps;
+}
+
+#endif

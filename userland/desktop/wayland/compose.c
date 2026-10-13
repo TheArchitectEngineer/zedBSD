@@ -36,6 +36,7 @@
 
 static VkResult compose_device(struct kwl_compose *compose);
 static VkResult compose_display(struct kwl_server *server);
+static void compose_rotation_choose(struct kwl_server *server);
 static void compose_limits(struct kwl_server *server);
 static VkResult compose_refresh(struct kwl_server *server, VkDisplayKHR display, uint32_t width, uint32_t height, uint32_t *refresh);
 static VkResult compose_objects(struct kwl_compose *compose);
@@ -302,9 +303,16 @@ kwl_compose_output_prepare(
 	if (compose == NULL || compose->output_prepared)
 		return 0;
 
-	/* The display plane's surface at the compositor's size. */
+	/*
+	 * The angle displays.conf keeps for the display (or --rotate), which
+	 * decides the desktop's logical size and how the surface is made
+	 * (WS217): every opening chooses it again, for the display it opens on.
+	 */
+	compose_rotation_choose(server);
+
+	/* The display plane's surface at the display's mode. */
 	started = kwl_milliseconds();
-	result = vkdemo_display_open_on(compose->instance, compose->physical, compose->display, server->width, server->height, &compose->output);
+	result = vkdemo_display_open_on(compose->instance, compose->physical, compose->display, compose->mode_width, compose->mode_height, &compose->output);
 	if (result != VK_SUCCESS) {
 		printf("KWL VULKAN_ERROR operation=display result=%d\n", (int)result);
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
@@ -364,8 +372,39 @@ kwl_compose_output_open(
 	if (error != 0)
 		return error;
 
+	/*
+	 * The desktop follows what the output shows now against what it
+	 * showed when it last opened (WS217, review-4 C7): another logical
+	 * size (a move to a display of another size), another angle.
+	 */
+	(void)kwl_output_rotated(server);
+
 	/* Succeeded: window mode owns the display through the swapchain. */
 	return 0;
+}
+
+/*
+ * Gives the render pass a frame's target is drawn with (WS217): the one
+ * that clears it, or, with load, the one that keeps its pixels (made by
+ * kwl_compose_load_pass the first time it is needed).  The anchor and the
+ * heads draw into their swapchain images with the output's passes while
+ * nothing turns the picture.
+ */
+VkRenderPass
+kwl_compose_target_pass(
+	const struct kwl_compose *compose,
+	unsigned slot,
+	unsigned load)
+{
+	/* Every output's target is a swapchain image of the output's format. */
+	(void)slot;
+
+	/* The pass that keeps the pixels: a frame drawn in its damage, or taken up again. */
+	if (load)
+		return compose->pass_load;
+
+	/* The pass that clears the image. */
+	return compose->pass;
 }
 
 /* Opens the output, the render thread parked (kwl_compose_output_open). */
@@ -455,8 +494,8 @@ compose_output_open_parked(
 				&compose->scene,
 				compose->physical,
 				compose->device,
-				compose->output.width,
-				compose->output.height);
+				compose->target_width,
+				compose->target_height);
 		}
 
 		/* An optional cache failure does not prevent ordinary window composition. */
@@ -887,8 +926,15 @@ kwl_compose_close(
 		vkDestroyBuffer(compose->device, compose->corners, NULL);
 		vkFreeMemory(compose->device, compose->corners_memory, NULL);
 
-		/* The pass, layouts, sampler, pools and synchronization. */
+		/*
+		 * The passes (the one that keeps the image's pixels is made once
+		 * and kept from one output to the next, as the format is: WS217),
+		 * layouts, sampler, pools and synchronization.
+		 */
 		vkDestroyRenderPass(compose->device, compose->pass, NULL);
+		if (compose->pass_load != VK_NULL_HANDLE)
+			vkDestroyRenderPass(compose->device, compose->pass_load, NULL);
+		compose->pass_load = VK_NULL_HANDLE;
 		vkDestroyPipelineLayout(compose->device, compose->layout, NULL);
 		vkDestroyDescriptorSetLayout(compose->device, compose->set_layout, NULL);
 		vkDestroySampler(compose->device, compose->sampler, NULL);
@@ -1318,6 +1364,8 @@ compose_display(
 	uint32_t count;
 	uint32_t index;
 	uint32_t refresh;
+	uint32_t mode_width;
+	uint32_t mode_height;
 
 	/* Counts the displays before their properties are read. */
 	compose = server->compose;
@@ -1376,17 +1424,34 @@ compose_display(
 	/*
 	 * Without --width and --height the output takes the display's native
 	 * resolution (a login's session and screen); a display that does not know
-	 * its resolution keeps the default size.
+	 * its resolution keeps the size asked for (320x240 by default).
 	 */
+	mode_width = server->size_width;
+	mode_height = server->size_height;
 	if (!server->size_given &&
 	    resolution.width != 0U &&
 	    resolution.height != 0U) {
-		server->width = resolution.width;
-		server->height = resolution.height;
+		mode_width = resolution.width;
+		mode_height = resolution.height;
 	}
 
+	/* The output's mode until it opens. */
+	compose->mode_width = mode_width;
+	compose->mode_height = mode_height;
+
+	/*
+	 * The displays' choice (read once, nothing else done), whose angle for
+	 * this display makes the desktop's logical size before the look, the
+	 * scene and the layers are made at it (WS217).
+	 */
+	kwl_heads_config_load(server);
+	compose_rotation_choose(server);
+
+	/* What the output shows, which its first opening is compared with: the look and the scene are made at it. */
+	kwl_output_state(server, &compose->opened);
+
 	/* The refresh of the mode at the output's size, which wl_output tells the clients. */
-	result = compose_refresh(server, display, server->width, server->height, &refresh);
+	result = compose_refresh(server, display, compose->mode_width, compose->mode_height, &refresh);
 	if (result != VK_SUCCESS)
 		return result;
 
@@ -1399,6 +1464,55 @@ compose_display(
 
 	/* Succeeded: the output's size and refresh are known. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Chooses the angle the output shows on the display it opens on (WS217):
+ * --rotate when a test gave it, else the angle displays.conf keeps for the
+ * display's key (the login screen is never rotated, D9).  An angle the
+ * display cannot take opens it unrotated, the file's line kept and the
+ * reason logged.  Sets the angles the display may take, how the angle is
+ * shown, and the desktop's logical size (the mode turned by the angle).
+ */
+static void
+compose_rotation_choose(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+	unsigned wanted;
+	unsigned scanout;
+	unsigned turn;
+	unsigned why;
+	int error;
+
+	/* The angle asked for: a test's option over the file's line for the display. */
+	compose = server->compose;
+	wanted = kwl_displays_rotation(&compose->config, compose->display_name);
+	if (server->rotate_given)
+		wanted = server->rotate_option;
+
+	/* The login screen is shown unrotated, whatever its user's file says. */
+	if (server->greeter)
+		wanted = KWL_ROTATE_0;
+
+	/* The angles the display may take: none but 0 until its hardware's 180 is read (ws217-p010) and the turn is built (p002b). */
+	compose->rotations = kwl_rotate_mask(compose->hw180, KWL_TURN_BUILD, KWL_ROTATE_POLICY_DEFAULT, &why);
+	compose->rotate_why = why;
+
+	/* How the angle is shown; one the display cannot take opens it unrotated, the choice still in the file. */
+	error = kwl_rotate_plan(wanted, compose->rotations, compose->hw180, &scanout, &turn);
+	if (error != 0) {
+		printf("KWL OUTPUT rotate unsupported key=%s rotation=%u reason=mask why=%u\n", compose->display_name, wanted, why);
+		wanted = KWL_ROTATE_0;
+		scanout = KWL_ROTATE_0;
+		turn = KWL_ROTATE_0;
+	}
+
+	/* The choice, how it is shown, and the desktop's size at it. */
+	compose->rotation_selected = wanted;
+	compose->scanout_rotation = scanout;
+	compose->turn_rotation = turn;
+	kwl_output_size_set(server, compose->mode_width, compose->mode_height, wanted);
 }
 
 /* Records the device's largest 2D image and its number of memory types, which bound a client buffer's description. */
@@ -1992,6 +2106,14 @@ compose_targets(
 	VkSemaphoreCreateInfo semaphore;
 	uint32_t index;
 	VkResult result;
+
+	/*
+	 * The frames are drawn into the swapchain's images at their size while
+	 * nothing turns the picture (WS217: the turn pass draws into an image of
+	 * the logical size instead, ws217-p002b).
+	 */
+	compose->target_width = compose->output.width;
+	compose->target_height = compose->output.height;
 
 	/* Each image in turn. */
 	for (index = 0; index < compose->output.image_count; index++) {
@@ -2601,10 +2723,10 @@ compose_region(
 			list[rect][0] = 0;
 		if (list[rect][1] < 0)
 			list[rect][1] = 0;
-		if (list[rect][2] > (int32_t)compose->output.width)
-			list[rect][2] = (int32_t)compose->output.width;
-		if (list[rect][3] > (int32_t)compose->output.height)
-			list[rect][3] = (int32_t)compose->output.height;
+		if (list[rect][2] > (int32_t)compose->target_width)
+			list[rect][2] = (int32_t)compose->target_width;
+		if (list[rect][3] > (int32_t)compose->target_height)
+			list[rect][3] = (int32_t)compose->target_height;
 		if (list[rect][2] <= list[rect][0] || list[rect][3] <= list[rect][1])
 			continue;
 
@@ -2634,7 +2756,7 @@ compose_region(
 	 * than it saves): the rectangles' own area, not their box's, so that
 	 * two small changes far apart stay a partial frame.
 	 */
-	if (area * 10 > (int64_t)compose->output.width * compose->output.height * 7)
+	if (area * 10 > (int64_t)compose->target_width * compose->target_height * 7)
 		return 0;
 
 	/* The pass that keeps the image's pixels, made the first time. */
@@ -2786,15 +2908,15 @@ compose_record(
 	clear.color.float32[3] = 1.0f;
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	pass.renderPass = compose->pass;
+	pass.renderPass = kwl_compose_target_pass(compose, KWL_PLANE_ANCHOR, 0U);
 	if (region != NULL || reuse)
-		pass.renderPass = compose->pass_load;
+		pass.renderPass = kwl_compose_target_pass(compose, KWL_PLANE_ANCHOR, 1U);
 	pass.framebuffer = compose->framebuffers[image];
 	compose->framebuffer_now = compose->framebuffers[image];
 	compose->backdrop_set = VK_NULL_HANDLE;
 	compose->backdrop_recording = 0U;
-	pass.renderArea.extent.width = compose->output.width;
-	pass.renderArea.extent.height = compose->output.height;
+	pass.renderArea.extent.width = compose->target_width;
+	pass.renderArea.extent.height = compose->target_height;
 
 	/* Restrict tile loading and storing to the same preserved damage as rasterization; the backdrop takes the pass up again so. */
 	if (region != NULL)
@@ -2809,13 +2931,13 @@ compose_record(
 
 	/* The whole output is placed; the drawing is kept to the damage when there is one (design D4). */
 	memset(&viewport, 0, sizeof(viewport));
-	viewport.width = (float)compose->output.width;
-	viewport.height = (float)compose->output.height;
+	viewport.width = (float)compose->target_width;
+	viewport.height = (float)compose->target_height;
 	viewport.maxDepth = 1.0f;
 	kwl_list_set_viewport(command, 0U, 1U, &viewport);
 	memset(&scissor, 0, sizeof(scissor));
-	scissor.extent.width = compose->output.width;
-	scissor.extent.height = compose->output.height;
+	scissor.extent.width = compose->target_width;
+	scissor.extent.height = compose->target_height;
 	if (region != NULL)
 		scissor = *region;
 	compose->scissor_now = scissor;
@@ -2873,7 +2995,7 @@ compose_record(
 		compose->scene.written = 1U;
 
 		/* The compatible LOAD pass retains scene pixels and adds only the cursor. */
-		pass.renderPass = compose->pass_load;
+		pass.renderPass = kwl_compose_target_pass(compose, KWL_PLANE_ANCHOR, 1U);
 		kwl_list_begin_render_pass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 		kwl_compose_bind_forget(compose);
 	}

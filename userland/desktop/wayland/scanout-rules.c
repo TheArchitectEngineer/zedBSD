@@ -16,7 +16,7 @@
 
 /* The answers' words, by their number. */
 static const char *const scanout_reason_names[] = {
-	"direct", "no-window", "not-fullscreen", "content", "buffer", "size", "overlay", "shot", "pointer", "refused"
+	"direct", "no-window", "not-fullscreen", "content", "buffer", "size", "overlay", "shot", "pointer", "refused", "rotated"
 };
 
 /*
@@ -37,9 +37,20 @@ kwl_scanout_decide(
 	if (facts->content_type != KWL_SCANOUT_CONTENT_VIDEO && facts->content_type != KWL_SCANOUT_CONTENT_GAME)
 		return KWL_SCANOUT_CONTENT;
 
-	/* Its image a GPU buffer of the output's size. */
+	/* Its image a GPU buffer. */
 	if (!facts->gpu_buffer)
 		return KWL_SCANOUT_BUFFER;
+
+	/*
+	 * A rotated output is composed (WS217): the backend's claim shows the
+	 * image unturned, and the turn's game pause comes later (ws217-p012).
+	 */
+	if (facts->scanout_rotation != 0U)
+		return KWL_SCANOUT_ROTATED;
+	if (facts->turn_rotation != 0U)
+		return KWL_SCANOUT_ROTATED;
+
+	/* Of the output's size. */
 	if (!facts->size_matches)
 		return KWL_SCANOUT_SIZE;
 

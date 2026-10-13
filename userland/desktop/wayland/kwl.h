@@ -55,6 +55,7 @@
 #include "sleep-rules.h"
 #include "super-tap.h"
 #include "plane.h"
+#include "rotate.h"
 #include "title-tap.h"
 #include "cursor-box.h"
 #include "input-thread.h"
@@ -1144,8 +1145,22 @@ struct kwl_server {
 	uint64_t commit_order;
 	uint64_t client_serial;
 	uint32_t serial;
+	/*
+	 * The output's logical size: the desktop's, which the windows, the
+	 * plane and wl_output take.  It is the display's mode turned by the
+	 * output's rotation (WS217), and only kwl_output_size_set
+	 * (output-switch.c) writes it.  size_width and size_height are the size
+	 * asked for (--width and --height; 320x240 without them), the mode of
+	 * an output whose display's own resolution is not taken (size_given).
+	 * rotate_option is the angle --rotate asks for (a test's, which wins
+	 * over displays.conf), when rotate_given.
+	 */
 	uint32_t width;
 	uint32_t height;
+	uint32_t size_width;
+	uint32_t size_height;
+	unsigned rotate_given;
+	unsigned rotate_option;
 	/* The display mode's refresh in millihertz (from Vulkan, compose.c), told to clients by wl_output. */
 	uint32_t refresh;
 	/*
@@ -1992,6 +2007,9 @@ void kwl_outputs_changed(struct kwl_server *server);
 int kwl_glass_resize(struct kwl_server *server);
 void kwl_glass_output_resized(struct kwl_server *server);
 void kwl_output_tick(struct kwl_server *server);
+void kwl_output_size_set(struct kwl_server *server, uint32_t mode_width, uint32_t mode_height, unsigned rotation);
+void kwl_output_state(struct kwl_server *server, struct kwl_rotate_state *state);
+unsigned kwl_output_rotated(struct kwl_server *server);
 int kwl_output_external_available(struct kwl_server *server);
 int kwl_output_use_external(struct kwl_server *server);
 int kwl_output_use_internal(struct kwl_server *server);
@@ -2008,6 +2026,10 @@ struct kwl_output_view {
 	uint32_t width;
 	uint32_t height;
 	uint32_t refresh;
+	/* The display's rotation and its physical mode (WS217): wl_output's mode is the logical size above, its transform normal. */
+	unsigned rotation;
+	uint32_t mode_width;
+	uint32_t mode_height;
 };
 
 int kwl_output_view(struct kwl_server *server, uint32_t head, struct kwl_output_view *view);
