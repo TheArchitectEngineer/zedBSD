@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1086](queue.md) finished / p216 inline HTML module execution。2026-10-14 07:08 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1087](queue.md) finished / p189 Grid testharness recensus。2026-10-14 07:30 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -820,3 +820,5 @@ Event ws074-p216-q1084-partial-clear-20261014: [p216](phase216/phase.md) q1084-i
 Event ws074-p216-q1085-partial-clear-20261014: [p216](phase216/phase.md) q1085-i01はcanonical URL cacheの内部module graphと依存link/evaluateを追加。[証拠](phase216/evidence/20261014-q1085/README.md)。相対URL/共有依存一度限り/順序/missing export/cycle、classic JS14/14、warning0 build、Acid3差0をPASS。q1085部分cleared、p216 whole/p189/p190/p173全件100%未達、共有投影/GitHub publication保留。
 
 Event ws074-p216-q1086-partial-clear-and-p189-followup-20261014: [p216](phase216/phase.md) q1086-i01でparser-inserted inline moduleをparse後/DCL前にgraph実行。[証拠](phase216/evidence/20261014-q1086/README.md)。旧Grid no_output32 IDと同一集合を固定WPT/3font条件で全32 PASS・各100 subtestへ移行。[p189](phase189/phase.md)にもfollow-up記録。classic JS14/14、warning0 build、Acid3差0。q1086部分cleared、p216 whole/p189/p190/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p189-q1087-partial-clear-20261014: [p189](phase189/phase.md) q1087-i01は固定Grid502 IDを全再測定。[証拠](phase189/evidence/20261014-q1087/README.md)。103 PASS/399 FAIL/no_output0、旧no_output32のみPASSへ移行、旧PASS後退0。raw/checkpoint全502照合。q1087部分cleared、p189 whole/p190/p173全件100%未達。共有投影/GitHub publication保留。

@@ -1,0 +1,75 @@
+{
+  "checkpoint_verified": 502,
+  "eligible": 502,
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "fixed_selection_id_set_verified": true,
+  "fixed_wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "new_outcomes": {
+    "fail": 399,
+    "pass": 103
+  },
+  "old_outcomes": {
+    "fail": 399,
+    "no_output": 32,
+    "pass": 71
+  },
+  "old_pass_regressions": 0,
+  "raw_verified": 502,
+  "remaining_fail_by_grid_directory": {
+    "abspos": 24,
+    "alignment": 206,
+    "animation": 11,
+    "grid-definition": 42,
+    "grid-items": 28,
+    "grid-layout-properties.html": 1,
+    "grid-model": 10,
+    "grid-tracks-stretched-with-different-flex-factors-sum.html": 1,
+    "inheritance.html": 1,
+    "layout-algorithm": 28,
+    "parsing": 35,
+    "placement": 4,
+    "subgrid": 7,
+    "table-grid-item-005.html": 1
+  },
+  "shards": [
+    {
+      "name": "shard-0000",
+      "outcomes": {
+        "fail": 67,
+        "pass": 61
+      },
+      "rows": 128
+    },
+    {
+      "name": "shard-0128",
+      "outcomes": {
+        "fail": 115,
+        "pass": 13
+      },
+      "rows": 128
+    },
+    {
+      "name": "shard-0256",
+      "outcomes": {
+        "fail": 117,
+        "pass": 11
+      },
+      "rows": 128
+    },
+    {
+      "name": "shard-0384",
+      "outcomes": {
+        "fail": 100,
+        "pass": 18
+      },
+      "rows": 118
+    }
+  ],
+  "subtest_status_totals": {
+    "0": 5077,
+    "1": 5928
+  },
+  "transitions": {
+    "no_output->pass": 32
+  }
+}

@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1086 / WS074 inline HTML modules（2026-10-14）
+## 最新: q1087 / WS074 Grid testharness recensus（2026-10-14）
+
+[q1087履歴](queue-q1087.md): 固定Grid502 IDを全再測定し103 PASS/399 FAIL/no_output0。旧no_output32がPASS、旧PASS後退0。[証拠](../ws074/phase189/evidence/20261014-q1087/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1086 / WS074 inline HTML modules（2026-10-14）
 
 [q1086履歴](queue-q1086.md): inline moduleをparse後/DCL前に実行。旧Grid no_output32 IDが各100 subtest付き全32 PASS。[証拠](../ws074/phase216/evidence/20261014-q1086/README.md)。classic JS14/14、Acid3差0。p216部分cleared・全件100%未達、共有投影/GitHub publication pending。
 
