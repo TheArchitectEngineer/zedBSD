@@ -11,13 +11,22 @@
  * A frame is the list of draws geometry.c builds: plain rectangles (the
  * desk and the page's shadow), strokes filled through the stencil buffer in
  * three passes (fan, fringe, cover; see geometry.c), and pictures.  Five
- * pipelines share one vertex layout and one set of shaders:
+ * pipelines share one vertex layout and are made with the renderer:
  *
  *   stencil  counts the winding of the fan into the stencil, no colour;
  *   fringe   draws where the stencil is zero, alpha falling with distance;
  *   cover    draws where the stencil is not zero, and sets it back to zero;
  *   plain    draws without the stencil;
  *   texture  draws a picture without the stencil.
+ *
+ * ws216-p004: two groups more are made before the first frame that uses
+ * them, so that a device without them still starts and draws the pen: the
+ * grain's fringe and cover, which draw a pencil through the paper's grain
+ * (its tile in three sizes, each a picture of its own), and the Multiply's,
+ * which multiply a watercolour into the page.  A group the device refuses
+ * is logged once and its draws are drawn by the fringe and the cover, the
+ * vertices carrying what those draw (a flat pencil, a watercolour laid
+ * over).
  *
  * There are four pictures.  The toolbar's is drawn on the CPU into a linear
  * image, and so is the background: the page of the PDF the notebook writes
@@ -34,19 +43,34 @@
  * Each frame's vertices are copied to host-visible memory, drawn, and
  * waited for before the next frame, so the host may write the vertices and
  * the toolbar's image between frames without further synchronization.
+ * The vertices go in chunks of at most NOTES_CHUNK_BYTES (ws216-p004: i915
+ * refuses an allocation of more than 16 MiB, and a dense page has more),
+ * each a whole number of triangles; a draw is cut where a chunk ends and
+ * goes on in the next, in the same pass, so the stencil it counts holds.
  */
 
 #include "app.h"
 #include "shaders.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* How long a frame may take on the GPU, in nanoseconds. */
 #define RENDER_TIMEOUT		10000000000ULL
 
-/* The vertex buffer's first size, in vertices. */
-#define RENDER_VERTICES_MIN	65536U
+/* The bytes of one vertex. */
+#define RENDER_VERTEX_BYTES	(NOTES_VERTEX_FLOATS * sizeof(float))
+
+/* The bytes of the push constants: the target's size, and the page's place for the grain (ws216-p004). */
+#define RENDER_PUSH_BYTES	(8U * sizeof(float))
+
+/* A frame's vertices are logged again when they are this many quarters of the count logged last. */
+#define RENDER_PEAK_QUARTERS	5U
+
+/* The FNV-1a hash's start and its prime, for the grain's log line. */
+#define RENDER_FNV_START	0x811c9dc5U
+#define RENDER_FNV_PRIME	0x01000193U
 
 /* The colour the window is cleared to before the desk is drawn over it (its pale sky), as floats. */
 #define RENDER_DESK_RED		0.894f
@@ -69,22 +93,39 @@ static VkResult render_commands(struct notes_renderer *renderer);
 static VkResult render_memory(struct notes_renderer *renderer, const VkMemoryRequirements *requirements, VkMemoryPropertyFlags wanted, VkDeviceMemory *memory);
 static VkResult render_descriptors(struct notes_renderer *renderer);
 static VkResult render_toolbar(struct notes_renderer *renderer);
-static VkResult render_linear(struct notes_renderer *renderer, uint32_t width, uint32_t height, VkDescriptorSet set, VkImage *made, VkDeviceMemory *memory, VkImageView *made_view, unsigned char **pixels, size_t *pitch);
+static VkResult render_linear(struct notes_renderer *renderer, uint32_t width, uint32_t height, VkDescriptorSet set, VkSampler sampler, VkImage *made, VkDeviceMemory *memory, VkImageView *made_view, unsigned char **pixels, size_t *pitch);
 static void render_background_free(struct notes_renderer *renderer);
 static void render_overlay_free(struct notes_renderer *renderer);
 static void render_toolbar_free(struct notes_renderer *renderer);
-static VkResult render_vertices(struct notes_renderer *renderer, size_t count);
-static void render_vertices_free(struct notes_renderer *renderer);
+static void render_chunk_size(struct notes_renderer *renderer, size_t bytes);
+static VkResult render_chunks(struct notes_renderer *renderer, size_t vertices);
+static VkResult render_chunks_add(struct notes_renderer *renderer, size_t vertices);
+static VkResult render_chunk(struct notes_renderer *renderer, struct notes_chunk *chunk);
+static void render_chunk_free(struct notes_renderer *renderer, struct notes_chunk *chunk);
+static void render_chunks_free(struct notes_renderer *renderer);
+static void render_copy(struct notes_renderer *renderer, const float *vertices, size_t first, size_t count);
+static void render_peak(struct notes_renderer *renderer, size_t vertices);
+static void render_groups(struct notes_renderer *renderer, const struct notes_frame *frame);
+static void render_group(struct notes_renderer *renderer, unsigned group);
+static VkResult render_group_make(struct notes_renderer *renderer, unsigned group);
+static void render_group_free(struct notes_renderer *renderer, unsigned group);
+static VkResult render_grain(struct notes_renderer *renderer);
+static VkResult render_grain_picture(struct notes_renderer *renderer, unsigned level, const unsigned char *tile);
+static unsigned render_pipe_group(unsigned pipe);
+static unsigned render_pipe(const struct notes_renderer *renderer, unsigned pipe);
 static VkResult render_pipelines(struct notes_renderer *renderer);
 static VkResult render_pipeline(struct notes_renderer *renderer, unsigned pipe, VkShaderModule vertex, VkShaderModule fragment);
 static VkResult render_module(struct notes_renderer *renderer, const uint32_t *code, size_t size, VkShaderModule *module);
 static void render_record(struct notes_renderer *renderer, uint32_t image, const struct notes_frame *frame, const struct notes_frame *page_frame, int page_clear);
 static void render_draws(struct notes_renderer *renderer, const struct notes_frame *frame, uint32_t base, VkExtent2D extent);
+static void render_pieces(struct notes_renderer *renderer, uint32_t first, uint32_t count, size_t *bound_chunk);
+static void render_grain_place(const struct notes_draw *draw, float *grain);
 
 /*
  * Makes the Vulkan objects of the window: the device, the swapchain and
- * its stencil buffer, the pipelines, the toolbar's image and the vertex
- * buffer.
+ * its stencil buffer, the pipelines, the toolbar's image and the first
+ * chunk of the vertices.  The groups of pipelines a page may need later
+ * (the grain's, the Multiply's) are not made here.
  */
 VkResult
 notes_renderer_open(
@@ -178,8 +219,9 @@ notes_renderer_open(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The vertex buffer, at its first size. */
-	error = render_vertices(renderer, RENDER_VERTICES_MIN);
+	/* The first chunk of the vertices, at the largest size. */
+	render_chunk_size(renderer, NOTES_CHUNK_BYTES);
+	error = render_chunks(renderer, 1U);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -305,6 +347,8 @@ notes_renderer_page(
  *
  * A page frame, when given, is drawn into the page's picture first: into a
  * cleared picture when page_clear is set, on top of the last one otherwise.
+ * A group of pipelines the frames use for the first time is made first;
+ * one the device refuses is drawn instead and does not fail the frame.
  * Returns VK_ERROR_OUT_OF_DATE_KHR when the swapchain no longer matches
  * the window; the caller resizes and draws again.
  */
@@ -329,28 +373,23 @@ notes_renderer_draw(
 		page_vertices = page_frame->vertex_count;
 	vertices = page_vertices + frame->vertex_count;
 
-	/* Vertices beyond the buffer's capacity get a larger buffer. */
-	if (vertices > renderer->vertex_capacity) {
-		renderer->operation = "vkDeviceWaitIdle";
-		error = vkDeviceWaitIdle(renderer->device);
-		if (error != VK_SUCCESS)
-			return error;
-		render_vertices_free(renderer);
-		error = render_vertices(renderer, vertices);
-		if (error != VK_SUCCESS)
-			return error;
-	}
+	/* The groups of pipelines the frames are the first to use. */
+	render_groups(renderer, page_frame);
+	render_groups(renderer, frame);
+
+	/* The chunks that hold every vertex, more of them when the frames have more than ever. */
+	error = render_chunks(renderer, vertices);
+	if (error != VK_SUCCESS)
+		return error;
+	render_peak(renderer, vertices);
 
 	/* The page frame's vertices. */
 	if (page_vertices != 0U)
-		memcpy(renderer->vertex_map, page_frame->vertices, page_vertices * NOTES_VERTEX_FLOATS * sizeof(float));
+		render_copy(renderer, page_frame->vertices, 0U, page_vertices);
 
 	/* The frame's vertices, after them. */
-	if (frame->vertex_count != 0U) {
-		memcpy((float *)renderer->vertex_map + page_vertices * NOTES_VERTEX_FLOATS,
-		       frame->vertices,
-		       frame->vertex_count * NOTES_VERTEX_FLOATS * sizeof(float));
-	}
+	if (frame->vertex_count != 0U)
+		render_copy(renderer, frame->vertices, page_vertices, frame->vertex_count);
 
 	/* The image to draw into, once the compositor has given one back. */
 	renderer->operation = "vkAcquireNextImageKHR";
@@ -456,6 +495,7 @@ notes_renderer_background(
 			      width,
 			      height,
 			      renderer->sets[NOTES_TEXTURE_BACKGROUND],
+			      renderer->sampler,
 			      &renderer->background,
 			      &renderer->background_memory,
 			      &renderer->background_view,
@@ -516,6 +556,7 @@ notes_renderer_overlay(
 			      width,
 			      height,
 			      renderer->sets[NOTES_TEXTURE_OVERLAY],
+			      renderer->sampler,
 			      &renderer->overlay,
 			      &renderer->overlay_memory,
 			      &renderer->overlay_view,
@@ -564,6 +605,7 @@ notes_renderer_close(
 	struct notes_renderer *renderer)
 {
 	unsigned pipe;
+	unsigned group;
 
 	/* The device's objects, once nothing runs. */
 	if (renderer->device != VK_NULL_HANDLE) {
@@ -574,7 +616,11 @@ notes_renderer_close(
 		render_toolbar_free(renderer);
 		render_background_free(renderer);
 		render_overlay_free(renderer);
-		render_vertices_free(renderer);
+		render_chunks_free(renderer);
+
+		/* The groups made when first used: their pipelines, and the grain's pictures and sampler. */
+		for (group = 0; group < NOTES_GROUPS; group++)
+			render_group_free(renderer, group);
 
 		/* The pipelines and what they bind. */
 		for (pipe = 0; pipe < NOTES_PIPES; pipe++) {
@@ -1418,7 +1464,7 @@ render_memory(
 	return VK_SUCCESS;
 }
 
-/* Makes the sampler, the descriptor set layout, the pool and the sets of the two pictures. */
+/* Makes the sampler, the descriptor set layout, the pool and a set for each picture. */
 static VkResult
 render_descriptors(
 	struct notes_renderer *renderer)
@@ -1430,6 +1476,7 @@ render_descriptors(
 	VkDescriptorPoolCreateInfo pool;
 	VkDescriptorSetAllocateInfo allocate;
 	VkDescriptorSetLayout layouts[NOTES_TEXTURES];
+	unsigned texture;
 	VkResult error;
 
 	/* Nearest sampling: the pictures' pixels land on the window's pixels one to one. */
@@ -1475,11 +1522,9 @@ render_descriptors(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The sets, all of the one layout. */
-	layouts[NOTES_TEXTURE_TOOLBAR] = renderer->set_layout;
-	layouts[NOTES_TEXTURE_PAGE] = renderer->set_layout;
-	layouts[NOTES_TEXTURE_BACKGROUND] = renderer->set_layout;
-	layouts[NOTES_TEXTURE_OVERLAY] = renderer->set_layout;
+	/* The sets, all of the one layout (the grain's sizes too, filled when its group is made). */
+	for (texture = 0; texture < NOTES_TEXTURES; texture++)
+		layouts[texture] = renderer->set_layout;
 	memset(&allocate, 0, sizeof(allocate));
 	allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocate.descriptorPool = renderer->descriptor_pool;
@@ -1506,6 +1551,7 @@ render_toolbar(
 			      renderer->extent.width,
 			      NOTES_TOOLBAR_IMAGE_HEIGHT,
 			      renderer->sets[NOTES_TEXTURE_TOOLBAR],
+			      renderer->sampler,
 			      &renderer->toolbar,
 			      &renderer->toolbar_memory,
 			      &renderer->toolbar_view,
@@ -1522,8 +1568,8 @@ render_toolbar(
 /*
  * Makes a picture the host draws: a linear B8G8R8A8 image of a size in
  * host-visible memory, mapped for as long as it lives, with the view the
- * shader samples, and names it in a set in the general layout it is kept
- * in.  Gives the mapped rows and their pitch.
+ * shader samples, and names it in a set with a sampler, in the general
+ * layout it is kept in.  Gives the mapped rows and their pitch.
  */
 static VkResult
 render_linear(
@@ -1531,6 +1577,7 @@ render_linear(
 	uint32_t width,
 	uint32_t height,
 	VkDescriptorSet set,
+	VkSampler sampler,
 	VkImage *made,
 	VkDeviceMemory *memory,
 	VkImageView *made_view,
@@ -1606,9 +1653,9 @@ render_linear(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The set names the image in the general layout it is kept in. */
+	/* The set names the image, with its sampler, in the general layout it is kept in. */
 	memset(&image_info, 0, sizeof(image_info));
-	image_info.sampler = renderer->sampler;
+	image_info.sampler = sampler;
 	image_info.imageView = *made_view;
 	image_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 	memset(&write, 0, sizeof(write));
@@ -1685,73 +1732,579 @@ render_toolbar_free(
 	renderer->toolbar_pitch = 0;
 }
 
-/* Makes the vertex buffer for at least a number of vertices, mapped for good. */
-static VkResult
-render_vertices(
+/* Sets the chunks' size: the most whole triangles of vertices that fit a number of bytes. */
+static void
+render_chunk_size(
 	struct notes_renderer *renderer,
-	size_t count)
+	size_t bytes)
 {
-	VkBufferCreateInfo buffer;
-	VkMemoryRequirements requirements;
-	size_t capacity;
+	size_t vertices;
+
+	/* Whole triangles only, so that a chunk's edge is always a triangle's. */
+	vertices = bytes / RENDER_VERTEX_BYTES;
+	vertices -= vertices % 3U;
+
+	/* The size every chunk is made at from now on. */
+	renderer->chunk_bytes = bytes;
+	renderer->chunk_vertices = vertices;
+}
+
+/*
+ * Makes the chunks a number of vertices needs, keeping the chunks made
+ * already.  A device that refuses a chunk for memory (a smaller allocation
+ * may still be given) gets chunks of half the size, every chunk made
+ * again, down to NOTES_CHUNK_BYTES_MIN; a refusal of that size, or of
+ * another kind, is reported.
+ */
+static VkResult
+render_chunks(
+	struct notes_renderer *renderer,
+	size_t vertices)
+{
 	VkResult error;
 
-	/* The capacity: the first size, doubled until the vertices fit. */
-	capacity = RENDER_VERTICES_MIN;
-	while (capacity < count)
-		capacity *= 2U;
+	/* Chunks enough, smaller each time the device refuses one. */
+	for (;;) {
+		error = render_chunks_add(renderer, vertices);
+		if (error == VK_SUCCESS)
+			break;
 
-	/* The buffer. */
-	memset(&buffer, 0, sizeof(buffer));
-	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer.size = capacity * NOTES_VERTEX_FLOATS * sizeof(float);
-	buffer.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-	buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	renderer->operation = "vkCreateBuffer";
-	error = vkCreateBuffer(renderer->device, &buffer, NULL, &renderer->vertices);
-	if (error != VK_SUCCESS)
-		return error;
+		/* Only a refusal for memory is met with smaller chunks, and only down to the smallest. */
+		if (error != VK_ERROR_OUT_OF_DEVICE_MEMORY && error != VK_ERROR_OUT_OF_HOST_MEMORY)
+			return error;
+		if (renderer->chunk_bytes / 2U < NOTES_CHUNK_BYTES_MIN)
+			return error;
 
-	/* Its memory, which the host sees. */
-	vkGetBufferMemoryRequirements(renderer->device, renderer->vertices, &requirements);
-	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &renderer->vertex_memory);
-	if (error != VK_SUCCESS)
-		return error;
+		/* The refusal is logged for the tests and the measurements. */
+		printf("NOTES FRAME chunk refused bytes=%lu error=%d\n", (unsigned long)renderer->chunk_bytes, (int)error);
+		fflush(stdout);
 
-	/* Binds the memory to the buffer. */
-	renderer->operation = "vkBindBufferMemory";
-	error = vkBindBufferMemory(renderer->device, renderer->vertices, renderer->vertex_memory, 0U);
-	if (error != VK_SUCCESS)
-		return error;
+		/* Every chunk goes once nothing uses them, and they are made again at half the size. */
+		renderer->operation = "vkDeviceWaitIdle";
+		error = vkDeviceWaitIdle(renderer->device);
+		if (error != VK_SUCCESS)
+			return error;
+		render_chunks_free(renderer);
+		render_chunk_size(renderer, renderer->chunk_bytes / 2U);
+	}
 
-	/* Maps it for the host's writes, for good. */
-	renderer->operation = "vkMapMemory";
-	error = vkMapMemory(renderer->device, renderer->vertex_memory, 0U, VK_WHOLE_SIZE, 0U, &renderer->vertex_map);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* Succeeded: the host writes each frame's vertices here. */
-	renderer->vertex_capacity = capacity;
+	/* Succeeded: the chunks hold every vertex. */
 	return VK_SUCCESS;
 }
 
-/* Releases the vertex buffer. */
-static void
-render_vertices_free(
-	struct notes_renderer *renderer)
+/* Adds the chunks a number of vertices needs beyond those made (at least one in all). */
+static VkResult
+render_chunks_add(
+	struct notes_renderer *renderer,
+	size_t vertices)
 {
-	/* The buffer and its memory (which unmaps it), where made. */
-	if (renderer->vertices != VK_NULL_HANDLE)
-		vkDestroyBuffer(renderer->device, renderer->vertices, NULL);
-	if (renderer->vertex_memory != VK_NULL_HANDLE)
-		vkFreeMemory(renderer->device, renderer->vertex_memory, NULL);
-	renderer->vertices = VK_NULL_HANDLE;
-	renderer->vertex_memory = VK_NULL_HANDLE;
-	renderer->vertex_map = NULL;
-	renderer->vertex_capacity = 0;
+	struct notes_chunk *larger;
+	size_t needed;
+	VkResult error;
+
+	/* The chunks the vertices fill, and one for none at all. */
+	needed = (vertices + renderer->chunk_vertices - 1U) / renderer->chunk_vertices;
+	if (needed == 0U)
+		needed = 1U;
+
+	/* The chunks made already may be enough. */
+	if (needed <= renderer->chunk_count)
+		return VK_SUCCESS;
+
+	/* A table of the chunks, larger. */
+	larger = realloc(renderer->chunks, needed * sizeof(*larger));
+	renderer->operation = "chunk table";
+	if (larger == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	renderer->chunks = larger;
+
+	/* Each chunk more; one that fails leaves the ones before it made. */
+	while (renderer->chunk_count < needed) {
+		error = render_chunk(renderer, &renderer->chunks[renderer->chunk_count]);
+		if (error != VK_SUCCESS)
+			return error;
+		renderer->chunk_count++;
+	}
+
+	/* Succeeded: chunks enough. */
+	return VK_SUCCESS;
 }
 
-/* Makes the pipeline layout and the five pipelines. */
+/* Makes one chunk at the chunks' size: a host-visible vertex buffer, mapped for good. */
+static VkResult
+render_chunk(
+	struct notes_renderer *renderer,
+	struct notes_chunk *chunk)
+{
+	VkBufferCreateInfo buffer;
+	VkMemoryRequirements requirements;
+	VkResult error;
+
+	/* Nothing is made yet. */
+	memset(chunk, 0, sizeof(*chunk));
+
+	/* The buffer, of whole triangles. */
+	memset(&buffer, 0, sizeof(buffer));
+	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer.size = (VkDeviceSize)(renderer->chunk_vertices * RENDER_VERTEX_BYTES);
+	buffer.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	renderer->operation = "vkCreateBuffer";
+	error = vkCreateBuffer(renderer->device, &buffer, NULL, &chunk->buffer);
+	if (error != VK_SUCCESS) {
+		render_chunk_free(renderer, chunk);
+		return error;
+	}
+
+	/* Its memory, which the host sees. */
+	vkGetBufferMemoryRequirements(renderer->device, chunk->buffer, &requirements);
+	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &chunk->memory);
+	if (error != VK_SUCCESS) {
+		render_chunk_free(renderer, chunk);
+		return error;
+	}
+
+	/* Binds the memory to the buffer. */
+	renderer->operation = "vkBindBufferMemory";
+	error = vkBindBufferMemory(renderer->device, chunk->buffer, chunk->memory, 0U);
+	if (error != VK_SUCCESS) {
+		render_chunk_free(renderer, chunk);
+		return error;
+	}
+
+	/* Maps it for the host's writes, for good. */
+	renderer->operation = "vkMapMemory";
+	error = vkMapMemory(renderer->device, chunk->memory, 0U, VK_WHOLE_SIZE, 0U, &chunk->map);
+	if (error != VK_SUCCESS) {
+		render_chunk_free(renderer, chunk);
+		return error;
+	}
+
+	/* Succeeded: the host writes a frame's vertices here. */
+	return VK_SUCCESS;
+}
+
+/* Releases one chunk's buffer and memory (which unmaps it), where made. */
+static void
+render_chunk_free(
+	struct notes_renderer *renderer,
+	struct notes_chunk *chunk)
+{
+	/* The buffer and the memory. */
+	if (chunk->buffer != VK_NULL_HANDLE)
+		vkDestroyBuffer(renderer->device, chunk->buffer, NULL);
+	if (chunk->memory != VK_NULL_HANDLE)
+		vkFreeMemory(renderer->device, chunk->memory, NULL);
+
+	/* Nothing is left. */
+	memset(chunk, 0, sizeof(*chunk));
+}
+
+/* Releases every chunk and their table. */
+static void
+render_chunks_free(
+	struct notes_renderer *renderer)
+{
+	size_t index;
+
+	/* Each chunk. */
+	for (index = 0; index < renderer->chunk_count; index++)
+		render_chunk_free(renderer, &renderer->chunks[index]);
+
+	/* The table. */
+	free(renderer->chunks);
+	renderer->chunks = NULL;
+	renderer->chunk_count = 0;
+}
+
+/*
+ * Copies vertices into the chunks at a place in the run of the frame's
+ * vertices (the chunks must hold it), the part of a chunk's end going on
+ * at the start of the next.
+ */
+static void
+render_copy(
+	struct notes_renderer *renderer,
+	const float *vertices,
+	size_t first,
+	size_t count)
+{
+	size_t chunk;
+	size_t offset;
+	size_t piece;
+
+	/* Each piece that falls in one chunk. */
+	while (count > 0U) {
+		/* The chunk the place falls in, the place in it and how much of the rest it holds. */
+		chunk = first / renderer->chunk_vertices;
+		offset = first % renderer->chunk_vertices;
+		piece = renderer->chunk_vertices - offset;
+		if (piece > count)
+			piece = count;
+
+		/* The piece. */
+		memcpy((unsigned char *)renderer->chunks[chunk].map + offset * RENDER_VERTEX_BYTES, vertices, piece * RENDER_VERTEX_BYTES);
+
+		/* The rest goes on after it. */
+		vertices += piece * NOTES_VERTEX_FLOATS;
+		first += piece;
+		count -= piece;
+	}
+}
+
+/*
+ * Keeps the most vertices a frame has had, and logs it (for the
+ * measurement of a dense page) when it grew by a quarter of the count
+ * logged last.
+ */
+static void
+render_peak(
+	struct notes_renderer *renderer,
+	size_t vertices)
+{
+	size_t chunks;
+
+	/* Only a new peak is kept. */
+	if (vertices <= renderer->vertex_peak)
+		return;
+	renderer->vertex_peak = vertices;
+
+	/* Logged when it is a quarter more than the last logged (the first always). */
+	if (renderer->vertex_logged != 0U && vertices * 4U < renderer->vertex_logged * RENDER_PEAK_QUARTERS)
+		return;
+	renderer->vertex_logged = vertices;
+	chunks = (vertices + renderer->chunk_vertices - 1U) / renderer->chunk_vertices;
+	printf("NOTES FRAME vertices=%lu chunks=%lu bytes=%lu\n", (unsigned long)vertices, (unsigned long)chunks, (unsigned long)renderer->chunk_bytes);
+	fflush(stdout);
+}
+
+/* Makes each group of pipelines a frame's draws use that was never tried. */
+static void
+render_groups(
+	struct notes_renderer *renderer,
+	const struct notes_frame *frame)
+{
+	unsigned group;
+	size_t index;
+
+	/* A missing frame uses nothing. */
+	if (frame == NULL)
+		return;
+
+	/* Each draw's group, when it has one not tried yet. */
+	for (index = 0; index < frame->draw_count; index++) {
+		group = render_pipe_group(frame->draws[index].pipe);
+		if (group >= NOTES_GROUPS)
+			continue;
+		if (renderer->groups[group] != NOTES_GROUP_UNTRIED)
+			continue;
+		render_group(renderer, group);
+	}
+}
+
+/*
+ * Makes a group of pipelines (with the grain's pictures for the grain), or
+ * when the device refuses any part of it, keeps none of it and draws the
+ * group's draws by the fringe and the cover from then on.  Either outcome
+ * is logged once.
+ */
+static void
+render_group(
+	struct notes_renderer *renderer,
+	unsigned group)
+{
+	const char *name;
+	VkResult error;
+
+	/* The group's name in the log. */
+	name = "multiply";
+	if (group == NOTES_GROUP_GRAIN)
+		name = "grain";
+
+	/* The group, whole or not at all. */
+	error = render_group_make(renderer, group);
+	if (error != VK_SUCCESS) {
+		render_group_free(renderer, group);
+		renderer->groups[group] = NOTES_GROUP_REFUSED;
+		printf("NOTES PIPE fallback name=%s error=%d\n", name, (int)error);
+		fflush(stdout);
+		return;
+	}
+
+	/* Succeeded: the group draws its draws from now on. */
+	renderer->groups[group] = NOTES_GROUP_MADE;
+	printf("NOTES PIPE made name=%s\n", name);
+	fflush(stdout);
+}
+
+/* Makes the parts of a group: for the grain its pictures, then the fringe's and the cover's pipelines. */
+static VkResult
+render_group_make(
+	struct notes_renderer *renderer,
+	unsigned group)
+{
+	VkShaderModule vertex;
+	VkShaderModule fragment;
+	unsigned fringe;
+	unsigned cover;
+	VkResult error;
+
+	/* The grain's pictures and sampler, and its shaders and pipelines. */
+	if (group == NOTES_GROUP_GRAIN) {
+		error = render_grain(renderer);
+		if (error != VK_SUCCESS)
+			return error;
+		error = render_module(renderer, notes_grain_vert, sizeof(notes_grain_vert), &vertex);
+		if (error != VK_SUCCESS)
+			return error;
+		error = render_module(renderer, notes_grain_frag, sizeof(notes_grain_frag), &fragment);
+		fringe = NOTES_PIPE_FRINGE_GRAIN;
+		cover = NOTES_PIPE_COVER_GRAIN;
+	} else {
+		/* The Multiply's shaders and pipelines. */
+		error = render_module(renderer, notes_draw_vert, sizeof(notes_draw_vert), &vertex);
+		if (error != VK_SUCCESS)
+			return error;
+		error = render_module(renderer, notes_multiply_frag, sizeof(notes_multiply_frag), &fragment);
+		fringe = NOTES_PIPE_FRINGE_MULTIPLY;
+		cover = NOTES_PIPE_COVER_MULTIPLY;
+	}
+
+	/* A fragment shader the device refused leaves the vertex shader to release. */
+	if (error != VK_SUCCESS) {
+		vkDestroyShaderModule(renderer->device, vertex, NULL);
+		return error;
+	}
+
+	/* The two pipelines, the cover's only after the fringe's. */
+	error = render_pipeline(renderer, fringe, vertex, fragment);
+	if (error == VK_SUCCESS)
+		error = render_pipeline(renderer, cover, vertex, fragment);
+
+	/* The modules are not needed once the pipelines are made (or refused). */
+	vkDestroyShaderModule(renderer->device, vertex, NULL);
+	vkDestroyShaderModule(renderer->device, fragment, NULL);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the group's pipelines. */
+	return VK_SUCCESS;
+}
+
+/* Releases what a group made: its pipelines, and the grain's pictures and sampler. */
+static void
+render_group_free(
+	struct notes_renderer *renderer,
+	unsigned group)
+{
+	struct notes_grain_picture *picture;
+	unsigned pipe;
+	unsigned level;
+
+	/* The group's pipelines, where made. */
+	for (pipe = NOTES_PIPES_FIRST; pipe < NOTES_PIPES; pipe++) {
+		if (render_pipe_group(pipe) != group)
+			continue;
+		if (renderer->pipes[pipe] != VK_NULL_HANDLE)
+			vkDestroyPipeline(renderer->device, renderer->pipes[pipe], NULL);
+		renderer->pipes[pipe] = VK_NULL_HANDLE;
+	}
+
+	/* Only the grain has more. */
+	if (group != NOTES_GROUP_GRAIN)
+		return;
+
+	/* Each of its pictures: the view, the image and the memory (which unmaps it), where made. */
+	for (level = 0; level < NOTES_GRAIN_LEVELS; level++) {
+		picture = &renderer->grain[level];
+		if (picture->view != VK_NULL_HANDLE)
+			vkDestroyImageView(renderer->device, picture->view, NULL);
+		if (picture->image != VK_NULL_HANDLE)
+			vkDestroyImage(renderer->device, picture->image, NULL);
+		if (picture->memory != VK_NULL_HANDLE)
+			vkFreeMemory(renderer->device, picture->memory, NULL);
+		memset(picture, 0, sizeof(*picture));
+	}
+
+	/* Its sampler. */
+	if (renderer->grain_sampler != VK_NULL_HANDLE)
+		vkDestroySampler(renderer->device, renderer->grain_sampler, NULL);
+	renderer->grain_sampler = VK_NULL_HANDLE;
+}
+
+/*
+ * Makes the grain's sampler, which repeats the tile and blends its texels,
+ * and its pictures: the tile (shape.c, the bytes the PDF's grain has) and
+ * its two coarser sizes, made once on the CPU.  The tile's hash is logged
+ * (the same on every machine: the tile is made with integers only).
+ */
+static VkResult
+render_grain(
+	struct notes_renderer *renderer)
+{
+	VkSamplerCreateInfo sampler;
+	unsigned char *tiles[NOTES_GRAIN_LEVELS];
+	size_t side;
+	size_t index;
+	uint32_t hash;
+	unsigned level;
+	VkResult error;
+
+	/* The sampler: repeated every cell of the page, its texels blended. */
+	memset(&sampler, 0, sizeof(sampler));
+	sampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler.magFilter = VK_FILTER_LINEAR;
+	sampler.minFilter = VK_FILTER_LINEAR;
+	sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	renderer->operation = "vkCreateSampler";
+	error = vkCreateSampler(renderer->device, &sampler, NULL, &renderer->grain_sampler);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Room for the tile at each size; one that is refused ends the making. */
+	memset(tiles, 0, sizeof(tiles));
+	for (level = 0; level < NOTES_GRAIN_LEVELS; level++) {
+		side = NOTES_GRAIN_SIDE >> level;
+		tiles[level] = malloc(side * side);
+		if (tiles[level] == NULL) {
+			renderer->operation = "grain tile";
+			error = VK_ERROR_OUT_OF_HOST_MEMORY;
+			goto done;
+		}
+	}
+
+	/* The tile, and each coarser size from the one before. */
+	notes_grain_tile(tiles[0]);
+	for (level = 1; level < NOTES_GRAIN_LEVELS; level++)
+		notes_grain_level(tiles[level - 1U], NOTES_GRAIN_SIDE >> (level - 1U), tiles[level]);
+
+	/* Each size's picture. */
+	for (level = 0; level < NOTES_GRAIN_LEVELS; level++) {
+		error = render_grain_picture(renderer, level, tiles[level]);
+		if (error != VK_SUCCESS)
+			goto done;
+	}
+
+	/* The tile's FNV-1a hash, logged for the comparison between machines. */
+	hash = RENDER_FNV_START;
+	for (index = 0; index < (size_t)NOTES_GRAIN_SIDE * NOTES_GRAIN_SIDE; index++) {
+		hash ^= tiles[0][index];
+		hash *= RENDER_FNV_PRIME;
+	}
+	printf("NOTES GRAIN hash=%08x\n", (unsigned)hash);
+	fflush(stdout);
+
+done:
+	/* The CPU's tiles are not needed once the pictures hold them (or could not be made). */
+	for (level = 0; level < NOTES_GRAIN_LEVELS; level++)
+		free(tiles[level]);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the grain at every size. */
+	return VK_SUCCESS;
+}
+
+/* Makes the picture of one size of the grain from its texels: each the same in all four channels. */
+static VkResult
+render_grain_picture(
+	struct notes_renderer *renderer,
+	unsigned level,
+	const unsigned char *tile)
+{
+	struct notes_grain_picture *picture;
+	unsigned char *pixels;
+	unsigned char *row;
+	size_t pitch;
+	uint32_t side;
+	uint32_t x;
+	uint32_t y;
+	VkResult error;
+
+	/* The linear image, named in the size's set with the grain's sampler. */
+	picture = &renderer->grain[level];
+	side = NOTES_GRAIN_SIDE >> level;
+	error = render_linear(renderer,
+			      side,
+			      side,
+			      renderer->sets[NOTES_TEXTURE_GRAIN + level],
+			      renderer->grain_sampler,
+			      &picture->image,
+			      &picture->memory,
+			      &picture->view,
+			      &pixels,
+			      &pitch);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Each texel's value in blue, green, red and alpha. */
+	for (y = 0; y < side; y++) {
+		row = pixels + (size_t)y * pitch;
+		for (x = 0; x < side; x++) {
+			row[x * 4U] = tile[(size_t)y * side + x];
+			row[x * 4U + 1U] = tile[(size_t)y * side + x];
+			row[x * 4U + 2U] = tile[(size_t)y * side + x];
+			row[x * 4U + 3U] = tile[(size_t)y * side + x];
+		}
+	}
+
+	/* Succeeded: the next frame moves the picture to the general layout. */
+	picture->side = side;
+	picture->ready = 0;
+	return VK_SUCCESS;
+}
+
+/* Reports the group a pipeline belongs to, or NOTES_GROUPS for one made with the renderer. */
+static unsigned
+render_pipe_group(
+	unsigned pipe)
+{
+	/* The grain's and the Multiply's pipelines. */
+	switch (pipe) {
+	case NOTES_PIPE_FRINGE_GRAIN:
+	case NOTES_PIPE_COVER_GRAIN:
+		return NOTES_GROUP_GRAIN;
+	case NOTES_PIPE_FRINGE_MULTIPLY:
+	case NOTES_PIPE_COVER_MULTIPLY:
+		return NOTES_GROUP_MULTIPLY;
+	default:
+		break;
+	}
+
+	/* Every other is made with the renderer. */
+	return NOTES_GROUPS;
+}
+
+/*
+ * Reports the pipeline a draw is drawn by: its own, or for a group the
+ * device refused (or not tried), the fringe or the cover it stands in for.
+ */
+static unsigned
+render_pipe(
+	const struct notes_renderer *renderer,
+	unsigned pipe)
+{
+	unsigned group;
+
+	/* A pipeline made with the renderer, or of a group that was made, draws. */
+	group = render_pipe_group(pipe);
+	if (group >= NOTES_GROUPS)
+		return pipe;
+	if (renderer->groups[group] == NOTES_GROUP_MADE)
+		return pipe;
+
+	/* Otherwise the fringe stands for a fringe, the cover for a cover. */
+	if (pipe == NOTES_PIPE_FRINGE_GRAIN || pipe == NOTES_PIPE_FRINGE_MULTIPLY)
+		return NOTES_PIPE_FRINGE;
+
+	/* Reports the cover. */
+	return NOTES_PIPE_COVER;
+}
+
+/* Makes the pipeline layout and the pipelines made with the renderer. */
 static VkResult
 render_pipelines(
 	struct notes_renderer *renderer)
@@ -1764,11 +2317,11 @@ render_pipelines(
 	unsigned pipe;
 	VkResult error;
 
-	/* The layout: the toolbar's set and the window's size. */
+	/* The layout: a picture's set, the target's size and the page's place for the grain. */
 	memset(&push, 0, sizeof(push));
 	push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 	push.offset = 0U;
-	push.size = 4U * sizeof(float);
+	push.size = RENDER_PUSH_BYTES;
 	memset(&layout, 0, sizeof(layout));
 	layout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	layout.setLayoutCount = 1U;
@@ -1800,8 +2353,8 @@ render_pipelines(
 		return error;
 	}
 
-	/* Each pipeline; the texture pipeline samples, the others fill. */
-	for (pipe = 0; pipe < NOTES_PIPES; pipe++) {
+	/* Each pipeline but the groups'; the texture pipeline samples, the others fill. */
+	for (pipe = 0; pipe < NOTES_PIPES_FIRST; pipe++) {
 		if (pipe == NOTES_PIPE_TEXTURE)
 			error = render_pipeline(renderer, pipe, vertex, texture);
 		else
@@ -1817,11 +2370,11 @@ render_pipelines(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Succeeded: every pipeline. */
+	/* Succeeded: every pipeline made with the renderer. */
 	return VK_SUCCESS;
 }
 
-/* Makes one pipeline: two vec4 attributes, triangles, premultiplied-alpha blending, and its stencil use. */
+/* Makes one pipeline: two vec4 attributes, triangles, its blending and its stencil use. */
 static VkResult
 render_pipeline(
 	struct notes_renderer *renderer,
@@ -1914,14 +2467,18 @@ render_pipeline(
 		stencil.stencilTestEnable = VK_TRUE;
 		stencil.front.passOp = VK_STENCIL_OP_INCREMENT_AND_WRAP;
 		stencil.back.passOp = VK_STENCIL_OP_DECREMENT_AND_WRAP;
-	} else if (pipe == NOTES_PIPE_FRINGE) {
-		/* The fringe draws only outside the polygon. */
+	} else if (pipe == NOTES_PIPE_FRINGE ||
+		   pipe == NOTES_PIPE_FRINGE_GRAIN ||
+		   pipe == NOTES_PIPE_FRINGE_MULTIPLY) {
+		/* A fringe draws only outside the polygon. */
 		stencil.stencilTestEnable = VK_TRUE;
 		stencil.front.compareOp = VK_COMPARE_OP_EQUAL;
 		stencil.front.writeMask = 0U;
 		stencil.back = stencil.front;
-	} else if (pipe == NOTES_PIPE_COVER) {
-		/* The cover draws only inside, and sets the stencil back to zero there. */
+	} else if (pipe == NOTES_PIPE_COVER ||
+		   pipe == NOTES_PIPE_COVER_GRAIN ||
+		   pipe == NOTES_PIPE_COVER_MULTIPLY) {
+		/* A cover draws only inside, and sets the stencil back to zero there. */
 		stencil.stencilTestEnable = VK_TRUE;
 		stencil.front.compareOp = VK_COMPARE_OP_NOT_EQUAL;
 		stencil.front.passOp = VK_STENCIL_OP_ZERO;
@@ -1946,6 +2503,18 @@ render_pipeline(
 	    VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 	if (pipe == NOTES_PIPE_STENCIL)
 		blend_attachment.colorWriteMask = 0U;
+
+	/*
+	 * The Multiply's (ws216-p004): the target's colour times the shader's
+	 * (1 - A + A cs), its alpha kept.  A device that refuses these factors
+	 * refuses the pipeline when it is made, and the group is drawn instead.
+	 */
+	if (pipe == NOTES_PIPE_FRINGE_MULTIPLY || pipe == NOTES_PIPE_COVER_MULTIPLY) {
+		blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+		blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_SRC_COLOR;
+		blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	}
 	memset(&blend, 0, sizeof(blend));
 	blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 	blend.attachmentCount = 1U;
@@ -2022,7 +2591,7 @@ render_record(
 	VkRenderPassBeginInfo pass;
 	VkClearValue clear[2];
 	VkExtent2D page_extent;
-	VkDeviceSize offset;
+	unsigned level;
 	uint32_t base;
 
 	/* One submission of this recording. */
@@ -2085,9 +2654,25 @@ render_record(
 		renderer->overlay_ready = 1;
 	}
 
-	/* The vertices of both lists, the page frame's first. */
-	offset = 0U;
-	vkCmdBindVertexBuffers(renderer->command, 0U, 1U, &renderer->vertices, &offset);
+	/* And each new picture of the grain (ws216-p004). */
+	for (level = 0; level < NOTES_GRAIN_LEVELS; level++) {
+		if (renderer->grain[level].image == VK_NULL_HANDLE || renderer->grain[level].ready)
+			continue;
+		memset(&barrier, 0, sizeof(barrier));
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = renderer->grain[level].image;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.levelCount = 1U;
+		barrier.subresourceRange.layerCount = 1U;
+		vkCmdPipelineBarrier(renderer->command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+		renderer->grain[level].ready = 1;
+	}
 
 	/* The page frame, drawn into the page's picture: cleared to nothing, or kept, and the stencil to zero. */
 	base = 0;
@@ -2144,7 +2729,10 @@ render_record(
 /*
  * Records a list of draws into the pass begun: the viewport and the size
  * the vertex shader maps from, then each draw in order, its vertices
- * counted from base.
+ * counted from base in the run of the chunks.  A draw of a group the
+ * device does not have is drawn by the pipeline that stands in for it; a
+ * draw through the grain binds the grain's size for its scale and pushes
+ * its page's place.
  */
 static void
 render_draws(
@@ -2158,8 +2746,13 @@ render_draws(
 	VkRect2D whole;
 	const struct notes_draw *draw;
 	float size[4];
+	float grain[4];
+	float pushed[3];
+	size_t bound_chunk;
 	unsigned bound;
 	unsigned bound_texture;
+	unsigned pipe;
+	unsigned texture;
 	size_t index;
 
 	/* The whole target is the viewport. */
@@ -2181,19 +2774,24 @@ render_draws(
 	/* Each draw in order, binding its pipeline and its picture when they change and its scissor every time. */
 	bound = NOTES_PIPES;
 	bound_texture = NOTES_TEXTURES;
+	bound_chunk = (size_t)-1;
+	pushed[0] = 0.0f;
+	pushed[1] = 0.0f;
+	pushed[2] = -1.0f;
 	for (index = 0; index < frame->draw_count; index++) {
 		draw = &frame->draws[index];
 		if (draw->count == 0U)
 			continue;
 
-		/* The pipeline. */
-		if (draw->pipe != bound) {
-			vkCmdBindPipeline(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->pipes[draw->pipe]);
-			bound = draw->pipe;
+		/* The pipeline: the draw's own, or the one that stands in for it. */
+		pipe = render_pipe(renderer, draw->pipe);
+		if (pipe != bound) {
+			vkCmdBindPipeline(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->pipes[pipe]);
+			bound = pipe;
 		}
 
 		/* A picture's set, for a texture draw (the page's and the background's only once they are made). */
-		if (draw->pipe == NOTES_PIPE_TEXTURE && draw->texture != bound_texture) {
+		if (pipe == NOTES_PIPE_TEXTURE && draw->texture != bound_texture) {
 			if (draw->texture == NOTES_TEXTURE_PAGE && renderer->page == VK_NULL_HANDLE)
 				continue;
 			if (draw->texture == NOTES_TEXTURE_BACKGROUND && renderer->background == VK_NULL_HANDLE)
@@ -2203,6 +2801,22 @@ render_draws(
 			vkCmdBindDescriptorSets(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->layout, 0U, 1U,
 						&renderer->sets[draw->texture], 0U, NULL);
 			bound_texture = draw->texture;
+		}
+
+		/* The grain's size for the draw's scale, and its page's place when it is not the one pushed last. */
+		if (pipe == NOTES_PIPE_FRINGE_GRAIN || pipe == NOTES_PIPE_COVER_GRAIN) {
+			texture = NOTES_TEXTURE_GRAIN + notes_frame_grain_level(draw->place[2]);
+			if (texture != bound_texture) {
+				vkCmdBindDescriptorSets(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->layout, 0U, 1U,
+							&renderer->sets[texture], 0U, NULL);
+				bound_texture = texture;
+			}
+			if (memcmp(pushed, draw->place, sizeof(pushed)) != 0) {
+				render_grain_place(draw, grain);
+				vkCmdPushConstants(renderer->command, renderer->layout, VK_SHADER_STAGE_VERTEX_BIT, (uint32_t)sizeof(size),
+						   sizeof(grain), grain);
+				memcpy(pushed, draw->place, sizeof(pushed));
+			}
 		}
 
 		/* The clipping rectangle for a clipped draw (kept inside the target), or the whole target. */
@@ -2224,8 +2838,69 @@ render_draws(
 			}
 		}
 
-		/* The draw inside its scissor. */
+		/* The draw inside its scissor, in pieces at the chunks' edges. */
 		vkCmdSetScissor(renderer->command, 0U, 1U, &scissor);
-		vkCmdDraw(renderer->command, draw->count, 1U, base + draw->first, 0U);
+		render_pieces(renderer, base + draw->first, draw->count, &bound_chunk);
 	}
+}
+
+/*
+ * Records a draw of a run of vertices as one draw for each chunk the run
+ * falls in, binding each chunk when it is not the one bound.  A chunk holds
+ * whole triangles and a run starts at a triangle, so each piece is whole
+ * triangles too.
+ */
+static void
+render_pieces(
+	struct notes_renderer *renderer,
+	uint32_t first,
+	uint32_t count,
+	size_t *bound_chunk)
+{
+	VkDeviceSize offset;
+	size_t chunk;
+	uint32_t start;
+	uint32_t piece;
+
+	/* Each piece that falls in one chunk. */
+	while (count > 0U) {
+		/* The chunk the run is in now, where in it, and how much of the run it holds. */
+		chunk = first / renderer->chunk_vertices;
+		start = (uint32_t)(first % renderer->chunk_vertices);
+		piece = (uint32_t)(renderer->chunk_vertices - start);
+		if (piece > count)
+			piece = count;
+
+		/* The chunk, bound when another is. */
+		if (chunk != *bound_chunk) {
+			offset = 0U;
+			vkCmdBindVertexBuffers(renderer->command, 0U, 1U, &renderer->chunks[chunk].buffer, &offset);
+			*bound_chunk = chunk;
+		}
+
+		/* The piece, and the run goes on after it. */
+		vkCmdDraw(renderer->command, piece, 1U, start, 0U);
+		first += piece;
+		count -= piece;
+	}
+}
+
+/*
+ * Gives the push constants of the grain for a draw: its page's top left
+ * in the target's pixels, and the tile's cells a pixel at its scale.
+ */
+static void
+render_grain_place(
+	const struct notes_draw *draw,
+	float *grain)
+{
+	/* The page's place. */
+	grain[0] = draw->place[0];
+	grain[1] = draw->place[1];
+	grain[2] = 0.0f;
+	grain[3] = 0.0f;
+
+	/* A cell is NOTES_GRAIN_CELL points; a draw without a scale keeps one place of the tile. */
+	if (draw->place[2] > 0.0f)
+		grain[2] = (float)(1.0 / (NOTES_GRAIN_CELL * (double)draw->place[2]));
 }

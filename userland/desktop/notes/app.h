@@ -121,13 +121,44 @@
 /* ws177-p011: the clean copy saved last opened in place of the notebook (File > Open Clean Copy). */
 #define NOTES_ACTION_OPEN_CLEAN	47U
 
-/* The pipelines a draw uses (render.c). */
-#define NOTES_PIPE_STENCIL	0U
-#define NOTES_PIPE_FRINGE	1U
-#define NOTES_PIPE_COVER	2U
-#define NOTES_PIPE_PLAIN	3U
-#define NOTES_PIPE_TEXTURE	4U
-#define NOTES_PIPES		5U
+/*
+ * The pipelines a draw uses (render.c).  The first five are made with the
+ * renderer; the pencil's grain and the watercolour's Multiply (ws216-p004)
+ * are made in two groups before the first frame that uses them, and a
+ * device that cannot make a group draws its draws with the fringe and the
+ * cover instead (its vertices carry what those draw: see geometry.c).
+ */
+#define NOTES_PIPE_STENCIL		0U
+#define NOTES_PIPE_FRINGE		1U
+#define NOTES_PIPE_COVER		2U
+#define NOTES_PIPE_PLAIN		3U
+#define NOTES_PIPE_TEXTURE		4U
+#define NOTES_PIPE_FRINGE_GRAIN		5U
+#define NOTES_PIPE_COVER_GRAIN		6U
+#define NOTES_PIPE_FRINGE_MULTIPLY	7U
+#define NOTES_PIPE_COVER_MULTIPLY	8U
+#define NOTES_PIPES			9U
+
+/* How many pipelines are made with the renderer (the ones before the groups). */
+#define NOTES_PIPES_FIRST		5U
+
+/* The groups of pipelines made when first used: the grain's and the Multiply's. */
+#define NOTES_GROUP_GRAIN		0U
+#define NOTES_GROUP_MULTIPLY		1U
+#define NOTES_GROUPS			2U
+
+/* What became of a group: not tried yet, made, or refused by the device (drawn instead). */
+#define NOTES_GROUP_UNTRIED		0
+#define NOTES_GROUP_MADE		1
+#define NOTES_GROUP_REFUSED		2
+
+/*
+ * The vertex chunks (ws216-p004): the most bytes one chunk of the frame's
+ * vertices has, and the fewest it is halved to when the device refuses
+ * one.  A chunk holds a whole number of triangles.
+ */
+#define NOTES_CHUNK_BYTES		(4U * 1024U * 1024U)
+#define NOTES_CHUNK_BYTES_MIN		(256U * 1024U)
 
 /* The floats of one vertex: x, y, then u, v (a fringe's distance or a texture place), then red, green, blue, alpha. */
 #define NOTES_VERTEX_FLOATS	8U
@@ -142,7 +173,15 @@
 #define NOTES_TEXTURE_PAGE	1U
 #define NOTES_TEXTURE_BACKGROUND	2U
 #define NOTES_TEXTURE_OVERLAY	3U
-#define NOTES_TEXTURES		4U
+
+/*
+ * The pencil's grain (ws216-p004): its tile at three sizes, each its own
+ * picture (the Raspberry Pi 4's driver takes one mip level only), from
+ * NOTES_TEXTURE_GRAIN on, the finest first.
+ */
+#define NOTES_TEXTURE_GRAIN	4U
+#define NOTES_GRAIN_LEVELS	3U
+#define NOTES_TEXTURES		7U
 
 /* How many of the window's inputs wait for the text box at most (ws175-p008). */
 #define NOTES_BOX_EVENTS	64U
@@ -359,7 +398,13 @@ struct notes_box {
 /*
  * One draw call of a frame: a pipeline, a run of vertices, and whether it
  * is clipped, with the rectangle it is clipped to (x, y, width, height).
- * A texture draw also names its picture (NOTES_TEXTURE_*).
+ * A texture draw also names its picture (NOTES_TEXTURE_*).  A draw through
+ * the grain also has the place of the page it lies on: the page's top left
+ * in the target's pixels and its pixels a point (place[0..2]), which put
+ * the grain on the page's points (zero for every other draw).
+ *
+ * A draw is a run of whole triangles that starts at a multiple of three,
+ * which lets the renderer cut it at the vertex chunks' edges.
  */
 struct notes_draw {
 	unsigned pipe;
@@ -368,6 +413,7 @@ struct notes_draw {
 	uint32_t count;
 	int clipped;
 	int32_t clip[4];
+	float place[3];
 };
 
 /*
@@ -404,6 +450,30 @@ struct notes_target {
 	VkImageView view;
 	VkFramebuffer framebuffer;
 	VkSemaphore rendered;
+};
+
+/*
+ * One chunk of a frame's vertices: a host-visible buffer mapped for good,
+ * of the renderer's chunk size (ws216-p004).  The chunks are kept from
+ * frame to frame and only added to, until a refusal makes them smaller.
+ */
+struct notes_chunk {
+	VkBuffer buffer;
+	VkDeviceMemory memory;
+	void *map;
+};
+
+/*
+ * One size of the pencil's grain on the GPU (ws216-p004): a linear image
+ * the host filled once, its side in texels, and whether it has left its
+ * first layout.
+ */
+struct notes_grain_picture {
+	VkImage image;
+	VkDeviceMemory memory;
+	VkImageView view;
+	uint32_t side;
+	int ready;
 };
 
 /*
@@ -508,11 +578,27 @@ struct notes_renderer {
 	uint32_t overlay_height;
 	int overlay_ready;
 
-	/* The vertices of one frame, in host-visible memory mapped for good. */
-	VkBuffer vertices;
-	VkDeviceMemory vertex_memory;
-	void *vertex_map;
-	size_t vertex_capacity;
+	/*
+	 * The groups of pipelines made when first used (NOTES_GROUP_*), what
+	 * became of each, and the grain's pictures and the sampler that repeats
+	 * them (made with the grain's group).
+	 */
+	int groups[NOTES_GROUPS];
+	struct notes_grain_picture grain[NOTES_GRAIN_LEVELS];
+	VkSampler grain_sampler;
+
+	/*
+	 * The vertices of one frame, in chunks (the page frame's first, then
+	 * the frame's, as one run): the chunks made, the vertices one holds (a
+	 * multiple of three) and its bytes; the most vertices a frame has had
+	 * and the count logged last.
+	 */
+	struct notes_chunk *chunks;
+	size_t chunk_count;
+	size_t chunk_vertices;
+	size_t chunk_bytes;
+	size_t vertex_peak;
+	size_t vertex_logged;
 
 	/* One command buffer, the fence that says it finished and the acquire semaphore. */
 	VkCommandPool pool;
@@ -561,6 +647,9 @@ void notes_frame_rect(struct notes_frame *frame, float x, float y, float width, 
 void notes_frame_gradient(struct notes_frame *frame, float x, float y, float width, float height, uint32_t top, uint32_t bottom);
 void notes_frame_clip(struct notes_frame *frame, int enabled, float x, float y, float width, float height);
 void notes_frame_polygon(struct notes_frame *frame, const struct pdf_point *points, size_t count, const struct notes_view *view, uint32_t color);
+void notes_frame_shape(struct notes_frame *frame, const struct notes_shape *shape, const struct notes_view *view, uint32_t color);
+void notes_frame_stroke(struct notes_frame *frame, const struct notes_stroke *stroke, const struct notes_view *view);
+unsigned notes_frame_grain_level(float scale);
 void notes_frame_texture(struct notes_frame *frame, unsigned texture, float x, float y, float width, float height);
 void notes_view_layout(struct notes_view *view, uint32_t width, uint32_t height, float page_width, float page_height);
 
