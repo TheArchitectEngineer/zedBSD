@@ -686,7 +686,7 @@ test_lazy(
 	check(error == VK_SUCCESS, "lazy: a frame of pens is drawn");
 	check(mock.pipelines_made == NOTES_PIPES_FIRST && renderer.groups[0] == NOTES_GROUP_UNTRIED && renderer.groups[1] == NOTES_GROUP_UNTRIED,
 	      "lazy: pens make no group");
-	check(mock_live(MOCK_SAMPLER) == 1U && renderer.grain[0].image == VK_NULL_HANDLE, "lazy: pens allocate no grain");
+	check(mock_live(MOCK_SAMPLER) == 2U && renderer.grain[0].image == VK_NULL_HANDLE, "lazy: pens allocate no grain");
 	(void)verify_draws(&renderer, &page_frame, &frame, "lazy: pens");
 
 	/* A pencil makes the grain's group, its pictures and its sampler. */
@@ -754,7 +754,7 @@ test_lazy(
 
 	/* Again: nothing more is made. */
 	error = notes_renderer_draw(&renderer, &frame, &page_frame, 1);
-	check(error == VK_SUCCESS && mock.pipelines_made == NOTES_PIPES_FIRST + 4U && mock_live(MOCK_SAMPLER) == 2U,
+	check(error == VK_SUCCESS && mock.pipelines_made == NOTES_PIPES_FIRST + 4U && mock_live(MOCK_SAMPLER) == 3U,
 	      "lazy: a second frame makes nothing more");
 	check(log_count("NOTES PIPE made name=grain") == 1U && log_count("NOTES PIPE made name=multiply") == 1U, "lazy: each group is logged once");
 	check(log_count("NOTES GRAIN hash=2a644409") == 1U, "lazy: the grain's hash is logged");

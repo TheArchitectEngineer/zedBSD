@@ -534,9 +534,18 @@ vkDestroySampler(VkDevice device, VkSampler sampler, const VkAllocationCallbacks
 VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass)
 {
+	uint32_t index;
+	VkImageLayout layout;
+
 	(void)device;
-	(void)pCreateInfo;
 	(void)pAllocator;
+	for (index = 0; index < pCreateInfo->attachmentCount; index++) {
+		layout = pCreateInfo->pAttachments[index].finalLayout;
+		if (layout != VK_IMAGE_LAYOUT_GENERAL && layout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
+		    layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL && layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
+		    layout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+			mock.bad_final_layouts++;
+	}
 	*pRenderPass = mock_new(MOCK_OTHER, NULL);
 	return VK_SUCCESS;
 }
@@ -837,8 +846,14 @@ vkCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStag
 	(void)pMemoryBarriers;
 	(void)bufferMemoryBarrierCount;
 	(void)pBufferMemoryBarriers;
-	(void)imageMemoryBarrierCount;
-	(void)pImageMemoryBarriers;
+	uint32_t index;
+	struct mock_object *image;
+
+	for (index = 0; index < imageMemoryBarrierCount; index++) {
+		image = mock_get(pImageMemoryBarriers[index].image);
+		if (image != NULL && image->kind == MOCK_IMAGE)
+			image->layout = pImageMemoryBarriers[index].newLayout;
+	}
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -899,6 +914,33 @@ vkCmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout layout, VkSha
 		exit(2);
 	}
 	memcpy((unsigned char *)pushed + offset, pValues, size);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+vkCmdCopyImageToBuffer(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout, VkBuffer dstBuffer, uint32_t regionCount, const VkBufferImageCopy *pRegions)
+{
+	struct mock_object *image;
+	struct mock_object *buffer;
+	struct mock_object *memory;
+
+	(void)commandBuffer;
+	image = mock_get(srcImage);
+	buffer = mock_get(dstBuffer);
+	if (image == NULL || image->kind != MOCK_IMAGE || buffer == NULL || buffer->kind != MOCK_BUFFER || regionCount != 1U ||
+	    srcImageLayout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL || image->layout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL ||
+	    (image->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) == 0U ||
+	    pRegions[0].imageExtent.width != image->width || pRegions[0].imageExtent.height != image->height) {
+		fprintf(stderr, "mock: a copy of an image to a buffer that does not fit\n");
+		exit(2);
+	}
+	memory = &objects[buffer->memory];
+	if (memory->bytes == NULL || memory->size < (size_t)image->width * image->height * 4U) {
+		fprintf(stderr, "mock: a copy to a buffer the host does not see or too small\n");
+		exit(2);
+	}
+	mock.copies++;
+	if (mock.copy_hook != NULL)
+		mock.copy_hook(memory->bytes, image->width, image->height);
 }
 
 VKAPI_ATTR void VKAPI_CALL

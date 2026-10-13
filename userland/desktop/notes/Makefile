@@ -9,6 +9,7 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 KEILAND_NOTES_SOURCES := userland/desktop/notes/main.c \
 	userland/desktop/notes/document.c userland/desktop/notes/edit.c userland/desktop/notes/encode.c \
 	userland/desktop/notes/journal.c userland/desktop/notes/save.c userland/desktop/notes/shape.c \
+	userland/desktop/notes/fill.c userland/desktop/notes/fill-page.c \
 	userland/desktop/notes/geometry.c userland/desktop/notes/render.c \
 	userland/desktop/notes/window.c userland/desktop/notes/menu.c \
 	userland/desktop/notes/tablet.c userland/desktop/notes/ui.c \
