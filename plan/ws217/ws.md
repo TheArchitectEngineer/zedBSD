@@ -64,7 +64,8 @@ T1 の束（p001 §13）: A = p002b+p003（QEMU）、B = p009+p010（実機）�
 - 第 3 版で review-2 の C3・C4・M1〜M4 と合わせてこの形にする。担当は次に空いた P。
 
 2026-10-13 Q1（第 3 版の残る問い D13〜D17）: ユーザーの「推奨でいい」の流れに沿って推奨を採り、ユーザーに報告（変更可）: D13 test image だけ `--rotate-policy=any`、D14 hw180 の無い display は回転を出さない（Linux・FreeBSD の build も無効表示、KMS の rotation は Future Work）、D15 Pi の HVS の反転はまず tree と実機、GPL の参照は分からなかった時だけ（その時はユーザーに）、D16 UAPI の 3 つの定数（90/270 の bit は作らない）、D17 180 の scanout の出力で game mode の直の scanout はしない（Future Work）。
-2026-10-13 ユーザー（原文）:「D14～D17  推奨でいいです。」→ 上の Q1 の採った推奨を確定（D13 は Q1 の推奨のまま）。
+2026-10-13 ユーザー（原文）:「D14～D17  推奨でいいです。」
+2026-10-14 ユーザー（D14 の変更、Settings の回転のため）: Q1「D14 のままだと 5330 も含め Settings の回転は全部選べない表示になります」→ クリック「D14 を緩める」: Pi 以外では 0・90・180・270 を turn pass で出す（hw180 が入れば 180 は scanout）。QEMU・Linux・FreeBSD でも回る。→ 上の Q1 の採った推奨を確定（D13 は Q1 の推奨のまま）。
 2026-10-13 ユーザー（原文）:「Game Modeでは回転不要です。むしろ、ハードウェアでできない回転を禁止します。」→ Q1 の読み（ユーザーに確認中）: game mode の窓を回して合成に落とす D6 はやめる。90°・270°（compositor の回転）の出力では game mode に入らない（直の scanout も合成もしない、窓は通常の窓のまま）。180°（hardware）の出力の game mode は D17 のとおり今は直の scanout をしない。
 2026-10-13 ユーザー（原文）:「ハードウェアでできない回転を使っているときにゲームモードにすると、回転が無効になる、でOKです」→ 決定: 90°・270°（compositor の回転）の出力で game mode に入ると、その間は回転を無効にして 0° の物理の向きで game mode の直の scanout をする（turn pass を外す、park の中で切り替え、入力の写像も 0° に）。game mode を出たら元の回転に戻す。D6（回した出力の game mode を合成に落とす）は置き換え。180°（hardware）の出力の game mode は D17 のまま（今は直の scanout をしない、Future Work）。次の設計の版で反映。
 
