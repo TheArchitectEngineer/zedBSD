@@ -31,6 +31,7 @@ static void test_result(const char *doing, int error, const char *words);
 #define PAGE_ETIMEDOUT		ENETUNREACH	/* KL_SYSTEM_RESULT_UNREACHABLE */
 #define PAGE_ENOTSUP		ENOTSUP		/* KL_SYSTEM_RESULT_UNSUPPORTED */
 #define PAGE_EIO		EIO		/* KL_SYSTEM_RESULT_FAILED */
+#define PAGE_ECANCELED		EIO		/* KL_SYSTEM_RESULT_FAILED (bt_applied() has no row of its own) */
 
 int
 main(
@@ -50,6 +51,16 @@ main(
 	test_result("pair", PAGE_ENOTSUP, "Bluetooth cannot do that here yet.");
 	test_result("pair", PAGE_ETIMEDOUT, "The device did not answer.");
 	test_result("pair", 0, "The device is paired.");
+
+	/*
+	 * The pairing's window's Cancel (T1-604): a number to compare answered
+	 * no is refused on both backends (zedBSD's bluetoothd "rejected", Linux's
+	 * own pairing ended at once as ECONNREFUSED); a number shown on the
+	 * device given up is ECANCELED on both, which the page cannot tell from
+	 * another failure.
+	 */
+	test_result("pair", PAGE_ECONNREFUSED, "The pairing was refused.");
+	test_result("pair", PAGE_ECANCELED, "It did not work.");
 	test_result("connect", 0, "The device is connected.");
 
 	/* The verdict. */
