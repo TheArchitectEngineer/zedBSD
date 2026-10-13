@@ -293,8 +293,8 @@ notes_stroke_reach(
 }
 
 /*
- * Makes a stroke's shapes and its outline (the one polygon the screen draws
- * until it draws the shapes, and the eraser's first test).
+ * Makes a stroke's shapes and its outline (one of the polygons, which
+ * marks the shapes made and starts their box).
  *
  * The stroke must have samples and no shapes.  Returns 0, EINVAL for a
  * stroke whose values do not fit its tool, or the errno value of libpdf.
@@ -546,7 +546,7 @@ make_brush(
  * Makes the pencil's shapes: the stroke cut into ranges where its darkness
  * steps change (libpdf moves each cut to a place the ranges can meet
  * without overlap, or drops it), each range a shape of its step's
- * opacity through the grain; and its whole outline.
+ * opacity through the grain, the first range also the outline.
  */
 static int
 make_pencil(
@@ -557,21 +557,12 @@ make_pencil(
 	struct pdf_outline_style style;
 	struct pdf_factor_point *points;
 	struct pdf_outline_range *ranges;
-	struct pdf_point *outline;
-	size_t outline_count;
 	size_t range_count;
 	size_t *cuts;
 	size_t cut_count;
 	size_t index;
 	float alpha;
 	int error;
-
-	/* The whole outline, for the screen until it draws the shapes. */
-	error = make_outline(stroke, factors, 0U, 1U, &outline, &outline_count);
-	if (error != 0)
-		return error;
-	stroke->outline = outline;
-	stroke->outline_count = outline_count;
 
 	/* Allocates the cuts, one at most a sample. */
 	cuts = malloc(stroke->point_count * sizeof(*cuts));
@@ -612,6 +603,12 @@ make_pencil(
 	if (error != 0)
 		return error;
 
+	/* A stroke has one range at least. */
+	if (range_count == 0U) {
+		pdf_outline_ranges_free(ranges, range_count);
+		return EINVAL;
+	}
+
 	/* One shape a range. */
 	error = shapes_alloc(stroke, range_count);
 	if (error != 0) {
@@ -628,8 +625,12 @@ make_pencil(
 		ranges[index].corners = NULL;
 	}
 
-	/* Succeeded: the ranges' list goes, their polygons are the shapes'. */
+	/* The ranges' list goes, their polygons are the shapes'. */
 	pdf_outline_ranges_free(ranges, range_count);
+
+	/* Succeeded: the first range is the outline (ws216-p004: the screen draws the shapes). */
+	stroke->outline = stroke->shapes[0].polygon;
+	stroke->outline_count = stroke->shapes[0].corner_count;
 	return 0;
 }
 

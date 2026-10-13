@@ -2408,7 +2408,7 @@ app_draw(
 	if (app->live != NULL && app->live->point_count != 0U) {
 		error = notes_stroke_outline(app->live);
 		if (error == 0)
-			notes_frame_polygon(&app->frame, app->live->outline, app->live->outline_count, &view, app->live->color);
+			notes_frame_stroke(&app->frame, app->live, &view);
 	}
 
 	/* The chosen object's frame and handles (ws175-p008), where a picture dragged over the page would go (ws189-p003), then the pen's mark on the page. */
@@ -2621,7 +2621,7 @@ app_page_frame(
 		error = notes_stroke_outline(stroke);
 		if (error != 0)
 			continue;
-		notes_frame_polygon(&app->page_frame, stroke->outline, stroke->outline_count, &origin, stroke->color);
+		notes_frame_stroke(&app->page_frame, stroke, &origin);
 	}
 
 	/* Reports the page frame. */

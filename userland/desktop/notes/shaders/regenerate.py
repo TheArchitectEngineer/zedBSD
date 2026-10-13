@@ -13,7 +13,8 @@ import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 SHADERS = [("draw.vert", "notes_draw_vert"), ("fill.frag", "notes_fill_frag"),
-           ("texture.frag", "notes_texture_frag")]
+           ("texture.frag", "notes_texture_frag"), ("grain.vert", "notes_grain_vert"),
+           ("grain.frag", "notes_grain_frag"), ("multiply.frag", "notes_multiply_frag")]
 
 
 def compile_shader(source):

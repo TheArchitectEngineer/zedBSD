@@ -85,6 +85,13 @@
 #define NOTES_GRAIN_FLOOR	0.35f
 
 /*
+ * The mean of the grain's tile (its texels' sum 8263680 over 65536 texels,
+ * 126.09375 of 255; ws216-p004): a device that cannot draw through the
+ * grain draws the pencil flat at the opacity this mean gives.
+ */
+#define NOTES_GRAIN_MEAN	0.494485294f
+
+/*
  * The page backgrounds (the edit data's background kind): plain, and the
  * page of the PDF Notes writes on, drawn under the strokes.
  */
