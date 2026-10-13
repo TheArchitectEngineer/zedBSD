@@ -20,3 +20,5 @@ Coordination: q1000〜q1010 の正確な scope/結果は各 [履歴](index.md) �
 Previous outcome: q1010-i01/p187 cleared。Acid3 score100/100・inventory100/100・例外0・差801/480000、Acid2差1865/120000。[証拠](../ws074/phase187/evidence/20261013-q1010/report.json)。p100全画面差0・WS074受入は未達。
 
 Outcome: q1011-i01/p188 cleared。実 HTTP visited-link fixture6/6、frame load52/52、CSS rule44/44、host build warning0。固定 Acid3 score100/100・inventory100/100・例外0・差 **0/480000**（q1010から801減）、Acid2差1865/120000不変。[証拠](../ws074/phase188/evidence/20261013-q1011/report.json)。ユーザーの Acid3 目標達成。p100 whole/WS074 は別の受入条件が残る。
+
+2026-10-13 merge follow-up: ユーザー指示で145 file を `main` commit `1f9cc35ca` に取り込み。main host build warning/error0、visited-link fixture6/6、固定 Acid3 score100/100・inventory100/100・差0/480000を再確認。Acid2差1865/120000不変。[証拠](../ws074/phase188/evidence/20261013-merge-main/report.json)。元の q1011-i01 outcome と p100 whole 未達の判断は変更しない。

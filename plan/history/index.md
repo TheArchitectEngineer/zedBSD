@@ -4,7 +4,7 @@
 
 ## 最新: q1011 / WS074 visited link color（2026-10-13）
 
-[q1011履歴](queue-q1011.md): 同一ページが観測した子 frame の成功 URL だけを `:visited` 描画色に反映。実 HTTP fixture6/6、frame load52/52、CSS rule44/44、build warning0。固定 Acid3 得点100/100・inventory100/100・例外0・pixel差**0/480000（100%一致）**、Acid2差1865/120000不変。p188 cleared、ユーザーの Acid3 目標達成。p100 whole は Acid2 exact・target gate 等が残り planned、WS074 は incomplete。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
+[q1011履歴](queue-q1011.md): 同一ページが観測した子 frame の成功 URL だけを `:visited` 描画色に反映。実 HTTP fixture6/6、frame load52/52、CSS rule44/44、build warning0。固定 Acid3 得点100/100・inventory100/100・例外0・pixel差**0/480000（100%一致）**、Acid2差1865/120000不変。p188 cleared、ユーザーの Acid3 目標達成。p100 whole は Acid2 exact・target gate 等が残り planned、WS074 は incomplete。2026-10-13 main commit `1f9cc35ca` に145 fileを統合し、mainでbuild warning0・固定 Acid3差0を再確認（[report](../ws074/phase188/evidence/20261013-merge-main/report.json)）。GitHub publicationとpushは保留。`master.md` は未変更。
 
 ## 最新: q1010 / WS074 negative padding（2026-10-13）
 

@@ -606,3 +606,5 @@ Event ws074-browser-next-goals-20261002: ユーザーが専任P10の次の目標
 2026-10-13 / p188-addition-q1011: q1010差801は左上の訪問リンク文字と右上20×20疑似要素（後者は paint_color 初期化）に分解。[p188](phase188/phase.md) に同一ページで観測した訪問先の :visited と描画色、privacy の局所試験を限定し、最大90分 q1011-i01 をユーザーの自動反復指示で選定。p187 clearance は不変。
 
 2026-10-13 / q1011-p188-clearance: [p188](phase188/phase.md) で同一 origin 子 frame の成功 URL に限定した訪問色を実装。局所 fixture6/6、frame load52/52、CSS rule44/44、build warning0。固定 Acid3 score100/100・inventory100/100・例外0・差 **0/480000**（100%一致、q1010から801減）、Acid2差1865/120000不変。[証拠](phase188/evidence/20261013-q1011/report.json)。ユーザーの Acid3 目標達成。p100 whole は Acid2 exact と target gate 未確認のため planned、WS074 は他の受入が残り incomplete。main 統合・GitHub publication・push は保留。
+
+2026-10-13 / q1011-main-merge: ユーザーのマージ指示で WS074 の145 file を `main` commit `1f9cc35ca` に取り込んだ。main host build warning/error0、visited-link fixture6/6、固定 Acid3 score100/100・inventory100/100・例外0・差 **0/480000** を再確認。[main再計測](phase188/evidence/20261013-merge-main/report.json)。Acid2差1865/120000不変。p188 cleared、p100 whole planned、WS074 incomplete を維持。`master.md` 未変更、push/GitHub publication保留。

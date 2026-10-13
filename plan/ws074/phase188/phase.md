@@ -36,3 +36,7 @@ Acid3 score100/100、inventory100/100、例外0、差 **801/480000** 非増加�
 - ユーザーの Acid3 画素一致目標は達成。p100 全体は Acid2 の過去 exact 回帰と target 確認を含むため、Phase whole の clearance は別に照合する。WS074 は他の機能目標・最終全文規約 gate が残り incomplete。永続・外部履歴は今回の scope 外。
 
 Source と証拠は独立 branch `codex/ws074-acid3` の commit `60f2c3134` に保存し、main 作業 tree へ投影。GitHub Issue/Project publication と push は保留。`master.md` は変更しない。
+
+## 2026-10-13 main 統合後の再確認
+
+ユーザーの「マージしてください。」を受け、WS074の145 file を `main` commit `1f9cc35ca`（hook指定の message `WIP`）に取り込んだ。`plan/master.md` は未変更。main の `sh plan/ws074/tests/host-build.sh plain` は warning/error0、`run-visited-link-tests.py` は6/6。固定 WPT commit `2d66b9b7998bb58c336138c178323ddee857b586` を使う main の `run-acid-tests.py --out build/ws074-acid-merged-main` で、Acid3 score100/100・inventory100/100・例外0・RGB差 **0/480000**、Acid2差1865/120000（前回から不変）。[main report](evidence/20261013-merge-main/report.json)、[並列画像](evidence/20261013-merge-main/acid3-side.png)。push/GitHub Issue/Project publication と QEMU/別OS検証は未実施。p188 clearance は維持、p100 whole/WS074 whole の状態も不変。
