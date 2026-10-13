@@ -60,3 +60,6 @@ Next（予約）: debug を続ける（BUG-147 の後: 優先度の高い bug。
 - 予約 q950: [WS172](../../ws172/ws.md) p004（security chip の調べ）・p004b（/dev/security0 と TPM の設計）。
 - 予約 q951: [WS046](../../ws046/ws.md) の残り（p014 の make check の判断、p007）。
 - 予約の続き（Q1 が順を決める）: WS004 p039、WS102 p011、WS145 p005、WS161 の build、WS156 p006、WS051、WS081、WS090 p026、WS033 p001。
+- q949 結果（2026-10-13 夜）: WS157 p015（実装は 10-11 の P1）・p017（libjpeg-compat の 1/2・1/4・1/8 の縮小 decode と preview）7278694ff → main 523370caf（main で photos・keiland-preview の build warning 0）。test-wait（T1-584）。
+- q950: WS172 p004・p004b はユーザーの判断 S1〜S13 と 5330 の ACPI TPM2 の読み（Linux で起動）待ちで止めた（e06b7d41d、phase004/phase.md の記録）。
+- q951: WS046 の残りに進む。
