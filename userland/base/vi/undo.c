@@ -71,6 +71,7 @@ vi_undo_begin(
 {
 	struct vi_undo *undo;
 
+	/* Finds the history of the session. */
 	undo = &editor->undo;
 
 	/* A group already open keeps collecting. */
@@ -100,12 +101,14 @@ vi_undo_end(
 	size_t index;
 	int error;
 
+	/* Finds the history of the session. */
 	undo = &editor->undo;
 
 	/* Nothing to close between commands. */
 	if (!undo->open_active)
 		return;
 
+	/* The group is closed whether it is kept or dropped. */
 	undo->open_active = 0;
 
 	/* A command that changed nothing leaves no trace. */
@@ -123,6 +126,8 @@ vi_undo_end(
 		undo->bytes -= group_bytes(&undo->groups[index]);
 		group_free(&undo->groups[index]);
 	}
+
+	/* Shortens the history to the groups that are still applied. */
 	undo->count = undo->current;
 
 	/* Keeps the history within its limit by forgetting the oldest change. */
@@ -182,6 +187,7 @@ vi_undo_modified(
 	const struct vi_undo *undo;
 	unsigned long state;
 
+	/* Finds the history of the session. */
 	undo = &editor->undo;
 
 	/* The running command has already changed the buffer. */
@@ -212,6 +218,7 @@ vi_undo_back(
 	size_t index;
 	int error;
 
+	/* Finds the history of the session. */
 	undo = &editor->undo;
 
 	/* Nothing applied is left to take back. */
@@ -249,6 +256,7 @@ vi_undo_forward(
 	size_t index;
 	int error;
 
+	/* Finds the history of the session. */
 	undo = &editor->undo;
 
 	/* Nothing was taken back. */
@@ -308,6 +316,7 @@ vi_edit(
 	if (error != 0)
 		return error;
 
+	/* Finds the group the change goes into; no earlier record is lengthened yet. */
 	group = &editor->undo.open;
 	last = NULL;
 
@@ -332,6 +341,7 @@ vi_edit(
 		if (grown == NULL)
 			return ENOMEM;
 
+		/* Keeps the larger storage as the record's text. */
 		last->text = grown;
 	} else {
 		/* A new record keeps its own copy of the text. */
@@ -339,6 +349,7 @@ vi_edit(
 		if (error != 0)
 			return error;
 
+		/* Makes room for the record in the group, and gives back the copy if there is none. */
 		error = group_reserve(group);
 		if (error != 0) {
 			free(change.text);
@@ -410,6 +421,7 @@ group_reserve(
 	if (changes == NULL)
 		return ENOMEM;
 
+	/* Keeps the larger table as the group's own. */
 	group->changes = changes;
 	group->capacity = capacity;
 
@@ -441,6 +453,7 @@ groups_reserve(
 	if (groups == NULL)
 		return ENOMEM;
 
+	/* Keeps the larger table as the history's own. */
 	undo->groups = groups;
 	undo->capacity = capacity;
 
@@ -494,7 +507,7 @@ group_bytes(
 	for (index = 0; index < group->count; index++)
 		total += group->changes[index].length;
 
-	/* The total. */
+	/* Reports the bytes the group keeps. */
 	return total;
 }
 
@@ -534,8 +547,10 @@ capture_text(
 			if (source[index] == '\n')
 				change->count++;
 		}
+
 		break;
 	case VI_CHANGE_DELETE_TEXT:
+		/* The deleted bytes are copied from the line, which must hold them. */
 		line = &editor->buffer.lines[change->line];
 		if (change->offset > line->length)
 			return EINVAL;
@@ -546,10 +561,14 @@ capture_text(
 	case VI_CHANGE_DELETE_LINE:
 		/* The caller gives the number of lines; the copy is the lines, each with its newline. */
 		change->count = change->length;
+
+		/* Refuses a count of no lines, or of more lines than the buffer holds from there. */
 		if (change->count == 0)
 			return EINVAL;
 		if (change->count > editor->buffer.count - change->line)
 			return EINVAL;
+
+		/* Copies the lines that go. */
 		copy = lines_text(&editor->buffer, change->line, change->count, &change->length);
 		if (copy == NULL)
 			return ENOMEM;
@@ -569,6 +588,7 @@ capture_text(
 	if (copy == NULL)
 		return ENOMEM;
 
+	/* Fills the copy and ends it with a NUL. */
 	if (change->length != 0)
 		memcpy(copy, source, change->length);
 	copy[change->length] = '\0';
@@ -639,6 +659,8 @@ lines_text(
 		text[size] = '\n';
 		size++;
 	}
+
+	/* Ends the copy with a NUL and tells the caller its length. */
 	text[size] = '\0';
 	*length = size;
 
@@ -673,6 +695,6 @@ over_limit(
 	if (editor->buffer.bytes > VI_FILE_SIZE_LIMIT - added)
 		return 1;
 
-	/* The change fits. */
+	/* Succeeded: the change fits. */
 	return 0;
 }

@@ -309,12 +309,14 @@ vi_screen_update(
 	used = 0;
 	editor->bottom = editor->top;
 	while (used < text_rows) {
+		/* The end of the buffer ends the drawing. */
 		if (line >= editor->buffer.count)
 			break;
 
 		/* A line that does not fit below the others is shown as @ rows. */
 		needed = line_rows(editor, line) - skip;
 		if (needed > text_rows - used) {
+			/* The top line may be drawn in part; any other line that does not fit is shown as @ rows. */
 			if (line != editor->top) {
 				for (index = used; index < text_rows; index++)
 					row_add(&rows[index], "@", 1, 1);
@@ -355,6 +357,8 @@ vi_screen_update(
 	} else {
 		cursor_place(editor, &row, &column);
 	}
+
+	/* Shows the cursor at the place found, and sends all that was collected. */
 	vi_terminal_move(&editor->terminal, row, column);
 	vi_terminal_command(&editor->terminal, editor->terminal.show_cursor_string);
 	vi_terminal_flush(&editor->terminal);
@@ -379,6 +383,7 @@ vi_screen_center(
 	int cursor_row;
 	int cursor_column;
 
+	/* The last row is the status line; the rest show text. */
 	text_rows = editor->terminal.rows - 1;
 
 	/* Starts with the cursor's line at the top. */
@@ -420,6 +425,7 @@ decode(
 	size_t needed;
 	size_t index;
 
+	/* Reads the bytes from the offset on. */
 	bytes = (const unsigned char *)text + offset;
 
 	/* One byte below 0x80 is a character of its own. */
@@ -466,6 +472,7 @@ decode(
 	if (value > 0x10ffff)
 		return 0;
 
+	/* Tells the caller the code point. */
 	*code = value;
 
 	/* Succeeded: the length of the sequence. */
@@ -549,6 +556,7 @@ read_unit(
 		next += used;
 	}
 
+	/* The character with its combining marks is one unit as wide as its base. */
 	unit->kind = UNIT_TEXT;
 	unit->length = next - offset;
 	unit->width = width;
@@ -590,6 +598,7 @@ place(
 		layout->column = 0;
 	}
 
+	/* Tells the caller the cell's place, then moves past the cell. */
 	*row = layout->row;
 	*column = layout->column;
 	layout->column += width;
@@ -641,9 +650,12 @@ line_rows(
 			pieces = (int)unit.length;
 			width = 4;
 		}
+
+		/* Places each cell of the character. */
 		for (piece = 0; piece < pieces; piece++)
 			(void)place(&layout, width, &row, &column);
 
+		/* Moves on to the next character. */
 		layout.offset += unit.length;
 		layout.logical += (size_t)unit.width;
 	}
@@ -680,6 +692,7 @@ cursor_place(
 		if (layout.offset >= layout.length)
 			break;
 
+		/* Reads the character and places each of its cells. */
 		read_unit(layout.text, layout.length, layout.offset, layout.logical, &unit);
 		pieces = 1;
 		width = unit.width;
@@ -690,9 +703,12 @@ cursor_place(
 			pieces = (int)unit.length;
 			width = 4;
 		}
+
+		/* Places each cell of the character. */
 		for (piece = 0; piece < pieces; piece++)
 			(void)place(&layout, width, &cell_row, &cell_column);
 
+		/* Moves on to the next character. */
 		layout.offset += unit.length;
 		layout.logical += (size_t)unit.width;
 	}
@@ -716,6 +732,7 @@ cursor_place(
 		cell_column = layout.column;
 	}
 
+	/* Tells the caller the cursor's place on the screen. */
 	*row = above + cell_row;
 	*column = cell_column;
 }
@@ -730,6 +747,7 @@ scroll_to_cursor(
 	int column;
 	int rows;
 
+	/* The last row is the status line; the rest show text. */
 	text_rows = editor->terminal.rows - 1;
 
 	/* A cursor above the screen: a near one scrolls back, a far one is centered. */
@@ -738,6 +756,8 @@ scroll_to_cursor(
 			vi_screen_center(editor);
 			return;
 		}
+
+		/* Scrolls back so that the cursor's line is the top one. */
 		editor->top = editor->cursor.line;
 		editor->top_skip = 0;
 	}
@@ -791,6 +811,7 @@ prepare_rows(
 	if (rows == NULL)
 		return -1;
 
+	/* Drops the old table and keeps the new one. */
 	vi_screen_free(editor);
 	editor->screen = rows;
 	editor->screen_rows = editor->terminal.rows;
@@ -918,10 +939,13 @@ draw_line(
 					}
 				}
 			}
+
+			/* Draws the cell when its row is one of those on the screen. */
 			if (target >= first && target < limit)
 				row_add_unit(&rows[target], layout.text + layout.offset, &unit, piece);
 		}
 
+		/* Moves on to the next character. */
 		layout.offset += unit.length;
 		layout.logical += (size_t)unit.width;
 	}
@@ -993,6 +1017,7 @@ show_row(
 	int same;
 	int difference;
 
+	/* Finds what the terminal was last told this row shows. */
 	shown = &editor->screen[index];
 
 	/* A row that already shows the same text is left alone. */
@@ -1004,6 +1029,8 @@ show_row(
 		if (difference == 0)
 			same = 1;
 	}
+
+	/* Skips the writing of a row that is already right. */
 	if (same)
 		return;
 
@@ -1023,6 +1050,8 @@ show_row(
 		shown->valid = 0;
 		return;
 	}
+
+	/* Keeps the copy as what the row shows. */
 	if (row->length != 0)
 		memcpy(copy, row->text, row->length);
 	free(shown->text);

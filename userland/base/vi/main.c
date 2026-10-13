@@ -68,6 +68,7 @@ main(
 	int status;
 	int key;
 
+	/* Uses the one session this program has. */
 	editor = &vi_session;
 
 	/* Text is UTF-8 whatever the environment says; this gives wcwidth its tables. */
@@ -161,6 +162,8 @@ vi_signal_pending(
 			editor->exit_status = 1;
 			return 1;
 		}
+
+		/* The terminal may have changed size while the editor was stopped. */
 		vi_resize_requested = 1;
 	}
 
@@ -211,6 +214,8 @@ vi_suspend(
 		editor->exit_status = 1;
 		return;
 	}
+
+	/* Draws everything again, on a terminal that may have changed size. */
 	vi_terminal_measure(&editor->terminal);
 	vi_terminal_command(&editor->terminal, editor->terminal.clear_string);
 	vi_screen_invalidate(editor);
@@ -228,6 +233,7 @@ parse_arguments(
 	int options_done;
 	int compare;
 
+	/* Starts with no file, no start place, and options still allowed. */
 	*path = NULL;
 	*start = NULL;
 	options_done = 0;
@@ -240,11 +246,15 @@ parse_arguments(
 				*start = argv[index] + 1;
 				continue;
 			}
+
+			/* The two hyphens end the options, so a file name may begin with a hyphen. */
 			compare = strcmp(argv[index], "--");
 			if (compare == 0) {
 				options_done = 1;
 				continue;
 			}
+
+			/* Refuses an option vi does not have. */
 			if (argv[index][0] == '-' && argv[index][1] != '\0') {
 				usage();
 				return 2;
@@ -256,6 +266,8 @@ parse_arguments(
 			(void)fprintf(stderr, "vi: only one file can be edited at a time\n");
 			return 2;
 		}
+
+		/* Takes the argument as the file to edit. */
 		*path = argv[index];
 	}
 
@@ -293,10 +305,14 @@ start_editor(
 		(void)fprintf(stderr, "vi: standard input and output must be a terminal\n");
 		return 1;
 	}
+
+	/* A terminal that cannot move the cursor cannot show a screen editor. */
 	if (error == ENOTSUP) {
 		(void)fprintf(stderr, "vi: terminal '%s' cannot move the cursor\n", getenv("TERM"));
 		return 1;
 	}
+
+	/* Any other failure to open the terminal is reported as the system words it. */
 	if (error != 0) {
 		(void)fprintf(stderr, "vi: %s\n", strerror(error));
 		return 1;
@@ -309,6 +325,8 @@ start_editor(
 			(void)fprintf(stderr, "vi: %s\n", strerror(ENOMEM));
 			return 1;
 		}
+
+		/* Reads the file into the buffer; the message says what went wrong. */
 		error = vi_file_load(editor, path);
 		if (error != 0) {
 			(void)fprintf(stderr, "vi: %s\n", editor->message);
@@ -362,6 +380,7 @@ place_start(
 	if (number > (unsigned long)editor->buffer.count)
 		number = (unsigned long)editor->buffer.count;
 
+	/* Puts the cursor on that line, at its first non-blank character. */
 	editor->cursor.line = (size_t)number - 1;
 	vi_cursor_first_nonblank(editor);
 }
@@ -434,6 +453,7 @@ resize_handler(
 {
 	UNUSED_PARAMETER(number);
 
+	/* Tells the main loop to measure the window and draw again. */
 	vi_resize_requested = 1;
 }
 
@@ -444,6 +464,7 @@ continue_handler(
 {
 	UNUSED_PARAMETER(number);
 
+	/* Tells the main loop to set the terminal modes again. */
 	vi_continue_requested = 1;
 }
 
@@ -454,6 +475,7 @@ suspend_handler(
 {
 	UNUSED_PARAMETER(number);
 
+	/* Tells the main loop to give the terminal back and stop. */
 	vi_suspend_requested = 1;
 }
 
@@ -464,5 +486,6 @@ stop_handler(
 {
 	UNUSED_PARAMETER(number);
 
+	/* Tells the main loop to end the session and keep unwritten changes. */
 	vi_stop_requested = 1;
 }

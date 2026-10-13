@@ -44,6 +44,7 @@ static int split_lines(struct vi_buffer *buffer, const char *contents, size_t le
 static int write_lines(int descriptor, const struct vi_buffer *buffer, struct file_totals *totals);
 static int write_all(int descriptor, const char *bytes, size_t length);
 static int write_replacing(const char *target, const struct stat *existing, int exists, const struct vi_buffer *buffer, struct file_totals *totals);
+static int write_temporary(int descriptor, const struct stat *existing, int exists, const struct vi_buffer *buffer, struct file_totals *totals);
 static int write_in_place(const char *target, const struct vi_buffer *buffer, struct file_totals *totals);
 static int resolve_target(const char *path, char **target);
 static int keeps_identity(const struct stat *existing);
@@ -68,6 +69,7 @@ vi_file_load(
 	size_t length;
 	int descriptor;
 	int incomplete;
+	int is_regular;
 	int error;
 	int result;
 
@@ -80,6 +82,7 @@ vi_file_load(
 	/* Opens the file; a missing one starts a new file. */
 	descriptor = open(path, O_RDONLY);
 	if (descriptor < 0) {
+		/* Any failure but a missing file is reported. */
 		error = errno;
 		if (error != ENOENT) {
 			(void)snprintf(editor->message, sizeof(editor->message), "\"%s\": %s", path, strerror(error));
@@ -99,7 +102,8 @@ vi_file_load(
 		}
 
 		/* Only a regular file is edited; a directory or a device is refused. */
-		if (!S_ISREG(status.st_mode)) {
+		is_regular = S_ISREG(status.st_mode);
+		if (!is_regular) {
 			(void)close(descriptor);
 			(void)snprintf(editor->message, sizeof(editor->message), "\"%s\": not a regular file", path);
 			return EINVAL;
@@ -116,11 +120,14 @@ vi_file_load(
 		error = read_whole(descriptor, (size_t)status.st_size, &contents, &length);
 		(void)close(descriptor);
 		if (error != 0) {
+			/* Says that the file was too large, or why the read failed. */
 			if (error == EFBIG) {
 				(void)snprintf(editor->message, sizeof(editor->message), "\"%s\": file too large", path);
 			} else {
 				(void)snprintf(editor->message, sizeof(editor->message), "\"%s\": %s", path, strerror(error));
 			}
+
+			/* Reports why the file could not be read. */
 			return error;
 		}
 
@@ -135,12 +142,15 @@ vi_file_load(
 	error = split_lines(&buffer, contents, length);
 	free(contents);
 	if (error != 0) {
+		/* Gives back the lines made so far and says why the file could not be held. */
 		vi_buffer_free(&buffer);
 		if (error == EFBIG) {
 			(void)snprintf(editor->message, sizeof(editor->message), "\"%s\": file too large", path);
 		} else {
 			(void)snprintf(editor->message, sizeof(editor->message), "\"%s\": %s", path, strerror(error));
 		}
+
+		/* Reports why the lines could not be held. */
 		return error;
 	}
 
@@ -159,15 +169,21 @@ vi_file_load(
 	if (descriptor < 0) {
 		(void)snprintf(editor->message, sizeof(editor->message), "\"%s\" [New file]", path);
 	} else if (incomplete) {
-		(void)snprintf(editor->message, sizeof(editor->message), "\"%s\" %lu lines, %lu bytes [Incomplete last line]",
-			       path,
-			       (unsigned long)editor->buffer.count,
-			       (unsigned long)length);
+		(void)snprintf(
+			editor->message,
+			sizeof(editor->message),
+			"\"%s\" %lu lines, %lu bytes [Incomplete last line]",
+			path,
+			(unsigned long)editor->buffer.count,
+			(unsigned long)length);
 	} else {
-		(void)snprintf(editor->message, sizeof(editor->message), "\"%s\" %lu lines, %lu bytes",
-			       path,
-			       (unsigned long)editor->buffer.count,
-			       (unsigned long)length);
+		(void)snprintf(
+			editor->message,
+			sizeof(editor->message),
+			"\"%s\" %lu lines, %lu bytes",
+			path,
+			(unsigned long)editor->buffer.count,
+			(unsigned long)length);
 	}
 
 	/* Succeeded: the buffer holds the file. */
@@ -198,12 +214,15 @@ vi_file_write(
 	int refused;
 	int blocked;
 	int in_place;
+	int is_regular;
 	int result;
 	int error;
 
 	/* Uses the buffer's own name when no other is given. */
 	if (path == NULL)
 		path = editor->file_name;
+
+	/* A buffer with no name of its own needs one to be written. */
 	if (path == NULL) {
 		vi_message(editor, "No file name");
 		return EINVAL;
@@ -239,7 +258,8 @@ vi_file_write(
 
 	/* An existing file must be a regular file. */
 	if (exists) {
-		if (!S_ISREG(existing.st_mode)) {
+		is_regular = S_ISREG(existing.st_mode);
+		if (!is_regular) {
 			(void)snprintf(editor->message, sizeof(editor->message), "\"%s\": not a regular file", path);
 			free(target);
 			return EINVAL;
@@ -252,6 +272,8 @@ vi_file_write(
 		if (!force)
 			refused = 1;
 	}
+
+	/* Reports the refusal to overwrite another file. */
 	if (refused) {
 		(void)snprintf(editor->message, sizeof(editor->message), "\"%s\": file exists (add ! to override)", path);
 		free(target);
@@ -278,6 +300,8 @@ vi_file_write(
 	if (exists) {
 		in_place = keeps_identity(&existing);
 	}
+
+	/* Writes the file where it is, or through a new file that replaces it. */
 	if (in_place) {
 		error = write_in_place(target, &editor->buffer, &totals);
 	} else {
@@ -298,6 +322,8 @@ vi_file_write(
 			error = write_in_place(target, &editor->buffer, &totals);
 		}
 	}
+
+	/* The target name is no longer needed. */
 	free(target);
 
 	/* Reports a failed write; the message names the file as it was typed. */
@@ -320,10 +346,13 @@ vi_file_write(
 		vi_undo_mark_saved(editor);
 
 	/* Tells what was written. */
-	(void)snprintf(editor->message, sizeof(editor->message), "\"%s\" %lu lines, %lu bytes written",
-		       path,
-		       (unsigned long)totals.lines,
-		       totals.bytes);
+	(void)snprintf(
+		editor->message,
+		sizeof(editor->message),
+		"\"%s\" %lu lines, %lu bytes written",
+		path,
+		(unsigned long)totals.lines,
+		totals.bytes);
 
 	/* Succeeded. */
 	return 0;
@@ -361,6 +390,8 @@ vi_file_recover(
 		if (slash != NULL)
 			name = slash + 1;
 	}
+
+	/* Builds the path of the recovery file; a path that does not fit keeps nothing. */
 	length = snprintf(path, sizeof(path), "%s/.vi-recover.%s.%ld", home, name, (long)getpid());
 	if (length < 0 || (size_t)length >= sizeof(path))
 		return;
@@ -378,6 +409,8 @@ vi_file_recover(
 		if (result != 0)
 			error = errno;
 	}
+
+	/* The file is complete, or as complete as it will get. */
 	(void)close(descriptor);
 
 	/* Tells where the changes are, if the standard error still goes anywhere. */
@@ -415,12 +448,15 @@ read_whole(
 				return EFBIG;
 			}
 
+			/* Doubles the storage and moves the bytes read so far into it. */
 			capacity = capacity * 2;
 			grown = realloc(data, capacity);
 			if (grown == NULL) {
 				free(data);
 				return ENOMEM;
 			}
+
+			/* Keeps the larger storage. */
 			data = grown;
 		}
 
@@ -433,9 +469,12 @@ read_whole(
 			free(data);
 			return errno;
 		}
+
+		/* The end of the file ends the reading. */
 		if (count == 0)
 			break;
 
+		/* Counts the bytes taken in. */
 		used += (size_t)count;
 	}
 
@@ -445,6 +484,7 @@ read_whole(
 		return EFBIG;
 	}
 
+	/* Hands the bytes to the caller. */
 	*contents = data;
 	*length = used;
 
@@ -522,9 +562,12 @@ write_lines(
 				free(block);
 				return error;
 			}
+
+			/* The block is empty again. */
 			used = 0;
 		}
 
+		/* A line too long for a block goes straight out; any other joins the block. */
 		if (line->length + 1 > FILE_WRITE_BLOCK) {
 			error = write_all(descriptor, line->text, line->length);
 			if (error != 0) {
@@ -572,6 +615,7 @@ write_all(
 			return errno;
 		}
 
+		/* Moves past the bytes the write took. */
 		bytes += count;
 		length -= (size_t)count;
 	}
@@ -598,8 +642,6 @@ write_replacing(
 	size_t directory_length;
 	size_t name_length;
 	size_t size;
-	mode_t mode;
-	mode_t mask;
 	int descriptor;
 	int result;
 	int error;
@@ -614,6 +656,7 @@ write_replacing(
 	if (temporary == NULL)
 		return ENOMEM;
 
+	/* Names the new file: the target's directory, then a hidden name made from the target's. */
 	memcpy(temporary, target, directory_length);
 	name_length = strlen(target + directory_length);
 	if (name_length > FILE_TEMPORARY_NAME_LIMIT) {
@@ -630,10 +673,58 @@ write_replacing(
 		return error;
 	}
 
+	/* Fills the new file and puts it on the disk; it is closed whatever the outcome. */
+	error = write_temporary(descriptor, existing, exists, buffer, totals);
+	if (error != 0) {
+		/* Throws the new file away, leaving the target as it was. */
+		(void)unlink(temporary);
+		free(temporary);
+		return error;
+	}
+
+	/* Replaces the target with the new file in one step. */
+	result = rename(temporary, target);
+	if (result != 0) {
+		/* Throws the new file away, leaving the target as it was. */
+		error = errno;
+		(void)unlink(temporary);
+		free(temporary);
+		return error;
+	}
+
+	/* Puts the new name on the disk too. */
+	sync_directory(temporary, directory_length);
+	free(temporary);
+
+	/* Succeeded: the target holds the buffer. */
+	return 0;
+}
+
+/*
+ * Fills a new file with the buffer, gives it the target's owner and
+ * permissions, puts it on the disk and closes it.
+ *
+ * The descriptor is closed whether this succeeds or not.
+ */
+static int
+write_temporary(
+	int descriptor,
+	const struct stat *existing,
+	int exists,
+	const struct vi_buffer *buffer,
+	struct file_totals *totals)
+{
+	mode_t mode;
+	mode_t mask;
+	int result;
+	int error;
+
 	/* Writes the lines. */
 	error = write_lines(descriptor, buffer, totals);
-	if (error != 0)
-		goto fail;
+	if (error != 0) {
+		(void)close(descriptor);
+		return error;
+	}
 
 	/*
 	 * An existing file keeps its owner and permissions.  The owner comes
@@ -643,14 +734,17 @@ write_replacing(
 		result = fchown(descriptor, existing->st_uid, existing->st_gid);
 		if (result != 0) {
 			error = errno;
-			goto fail;
+			(void)close(descriptor);
+			return error;
 		}
 
+		/* Then the permissions, set-ID bits included. */
 		mode = existing->st_mode & 07777;
 		result = fchmod(descriptor, mode);
 		if (result != 0) {
 			error = errno;
-			goto fail;
+			(void)close(descriptor);
+			return error;
 		}
 	} else {
 		/* A new file gets the permissions any new file would, after the umask. */
@@ -659,7 +753,8 @@ write_replacing(
 		result = fchmod(descriptor, 0666 & ~mask);
 		if (result != 0) {
 			error = errno;
-			goto fail;
+			(void)close(descriptor);
+			return error;
 		}
 	}
 
@@ -667,37 +762,17 @@ write_replacing(
 	result = fsync(descriptor);
 	if (result != 0) {
 		error = errno;
-		goto fail;
+		(void)close(descriptor);
+		return error;
 	}
 
 	/* Closes the new file; a failed close can mean a failed write. */
 	result = close(descriptor);
-	descriptor = -1;
-	if (result != 0) {
-		error = errno;
-		goto fail;
-	}
+	if (result != 0)
+		return errno;
 
-	/* Replaces the target with the new file in one step. */
-	result = rename(temporary, target);
-	if (result != 0) {
-		error = errno;
-		goto fail;
-	}
-
-	/* Puts the new name on the disk too. */
-	sync_directory(temporary, directory_length);
-	free(temporary);
-
-	/* Succeeded: the target holds the buffer. */
+	/* Succeeded: the new file holds the buffer on the disk. */
 	return 0;
-
-fail:
-	if (descriptor >= 0)
-		(void)close(descriptor);
-	(void)unlink(temporary);
-	free(temporary);
-	return error;
 }
 
 /*
@@ -732,6 +807,8 @@ write_in_place(
 		(void)close(descriptor);
 		return error;
 	}
+
+	/* Compares the size the file has with the size the buffer needs. */
 	old_size = status.st_size;
 	new_size = (off_t)buffer->bytes;
 
@@ -850,15 +927,21 @@ resolve_target(
 {
 	struct stat link_status;
 	char *resolved;
+	int is_link;
 	int result;
 	int error;
 
 	/* A name that is not a symbolic link is its own target. */
+	is_link = 0;
 	result = lstat(path, &link_status);
-	if (result != 0 || !S_ISLNK(link_status.st_mode)) {
+	if (result == 0)
+		is_link = S_ISLNK(link_status.st_mode);
+	if (!is_link) {
 		*target = strdup(path);
 		if (*target == NULL)
 			return ENOMEM;
+
+		/* Succeeded: the name itself is the target. */
 		return 0;
 	}
 
@@ -872,9 +955,12 @@ resolve_target(
 		error = dangling_target(path, target);
 		if (error != 0)
 			return error;
+
+		/* Succeeded: the target is the file the link will create. */
 		return 0;
 	}
 
+	/* Hands the real file's name to the caller. */
 	*target = resolved;
 
 	/* Succeeded: the caller owns the target name. */

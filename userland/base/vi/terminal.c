@@ -95,6 +95,7 @@ vi_terminal_open(
 	if (!is_terminal)
 		return ENOTTY;
 
+	/* The drawing goes to the standard output, which must be a terminal as well. */
 	is_terminal = isatty(terminal->output);
 	if (!is_terminal)
 		return ENOTTY;
@@ -130,6 +131,7 @@ vi_terminal_enter(
 		if (status != 0)
 			return errno;
 
+		/* Remembers that the modes to give back are now known. */
 		terminal->modes_saved = 1;
 	}
 
@@ -145,6 +147,7 @@ vi_terminal_enter(
 	if (status != 0)
 		return errno;
 
+	/* Remembers that the terminal has to be given back. */
 	terminal->raw = 1;
 
 	/* Switches to the terminal's editing screen, where it has one. */
@@ -274,6 +277,7 @@ vi_terminal_move(
 	if (status < 0)
 		return;
 
+	/* Adds the expanded string to the output. */
 	vi_terminal_command(terminal, sequence);
 }
 
@@ -316,6 +320,7 @@ vi_terminal_flush(
 			break;
 		}
 
+		/* Counts the bytes the write took. */
 		written += (size_t)count;
 	}
 
@@ -360,6 +365,8 @@ vi_terminal_read_key(
 		key = read_sequence(terminal, next);
 		return key;
 	}
+
+	/* ESC O starts the sequences some terminals send for the same keys. */
 	if (next == 'O') {
 		key = read_sequence(terminal, next);
 		return key;
@@ -371,6 +378,8 @@ vi_terminal_read_key(
 	 */
 	terminal->pushed_byte = next;
 	terminal->has_pushed_byte = 1;
+
+	/* Reports the ESC that ended what was being typed. */
 	return VI_KEY_ESCAPE;
 }
 
@@ -439,6 +448,7 @@ load_description(
 			return ENOTSUP;
 		}
 
+		/* The line clearing string is needed as well. */
 		capability = terminfo_find(description, "el");
 		if (capability == NULL) {
 			free(description);
@@ -472,6 +482,7 @@ load_description(
 				terminal_described_rows = (int)capability->number;
 		}
 
+		/* The number of columns the description gives. */
 		capability = terminfo_find(description, "cols");
 		if (capability != NULL) {
 			if (capability->kind == TERMINFO_NUMBER)
@@ -479,6 +490,7 @@ load_description(
 		}
 	}
 
+	/* Releases the description, whose strings are now copied. */
 	free(description);
 
 	/* Succeeded: every control string vi uses is set. */
@@ -524,6 +536,8 @@ read_byte(
 		timeout.tv_nsec = (long)(wait % 1000) * 1000000L;
 		limit = &timeout;
 	}
+
+	/* Waits with the signal mask that lets the editor's signals through, when one is set. */
 	mask = NULL;
 	if (terminal->wait_mask_set)
 		mask = &terminal->wait_mask;
@@ -534,6 +548,8 @@ read_byte(
 			return -1;
 		return 0;
 	}
+
+	/* The wait ran out without a byte. */
 	if (ready == 0)
 		return 0;
 
@@ -605,6 +621,7 @@ sequence_key(
 {
 	unsigned char final;
 
+	/* The last byte of the sequence says which key it is. */
 	final = sequence[length - 1];
 
 	/* The keys that send one letter after the introducer. */

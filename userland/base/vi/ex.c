@@ -39,6 +39,7 @@ vi_ex_command(
 	char argument[VI_INPUT_LENGTH];
 	size_t length;
 	size_t end;
+	int is_command;
 	int force;
 
 	/* Skips the blanks before the command. */
@@ -54,6 +55,8 @@ vi_ex_command(
 		go_to_line(editor, line);
 		return;
 	}
+
+	/* The last line and the current line have names of their own. */
 	if (*line == '$' || *line == '.') {
 		go_to_line(editor, line);
 		return;
@@ -62,14 +65,19 @@ vi_ex_command(
 	/* Reads the command's name: the letters at the start. */
 	length = 0;
 	while (*line >= 'a' && *line <= 'z') {
+		/* A name longer than any command is not a command. */
 		if (length + 1 >= sizeof(name)) {
 			vi_message(editor, "Unknown command");
 			return;
 		}
+
+		/* Takes the letter into the name. */
 		name[length] = *line;
 		length++;
 		line++;
 	}
+
+	/* Ends the name. */
 	name[length] = '\0';
 
 	/* A ! right after the name forces the command. */
@@ -87,31 +95,69 @@ vi_ex_command(
 	while (end > 0) {
 		if (argument[end - 1] != ' ' && argument[end - 1] != '\t')
 			break;
+
+		/* Drops one blank from the end. */
 		end--;
 	}
+
+	/* Cuts the blanks off the end of the argument. */
 	argument[end] = '\0';
 
-	/* Chooses the command by its name. */
+	/* A line with no letters at its start has no command to run. */
 	if (length == 0) {
 		vi_message(editor, "Unknown command");
-	} else if (name_is(name, "w", "write")) {
+		return;
+	}
+
+	/* :w writes the buffer, to the named file if there is one. */
+	is_command = name_is(name, "w", "write");
+	if (is_command) {
 		if (argument[0] == '\0')
 			(void)vi_file_write(editor, NULL, force);
 		else
 			(void)vi_file_write(editor, argument, force);
-	} else if (name_is(name, "q", "quit")) {
-		quit(editor, force);
-	} else if (name_is(name, "wq", "wq")) {
-		write_and_quit(editor, argument, force, 0);
-	} else if (name_is(name, "x", "xit")) {
-		write_and_quit(editor, argument, force, 1);
-	} else if (name_is(name, "e", "edit")) {
-		edit(editor, argument, force);
-	} else if (name_is(name, "f", "file")) {
-		vi_ex_file_status(editor);
-	} else {
-		(void)snprintf(editor->message, sizeof(editor->message), "Unknown command: %s", name);
+
+		/* The command is done. */
+		return;
 	}
+
+	/* :q leaves the editor. */
+	is_command = name_is(name, "q", "quit");
+	if (is_command) {
+		quit(editor, force);
+		return;
+	}
+
+	/* :wq writes the buffer and leaves. */
+	is_command = name_is(name, "wq", "wq");
+	if (is_command) {
+		write_and_quit(editor, argument, force, 0);
+		return;
+	}
+
+	/* :x writes the buffer if it changed and leaves. */
+	is_command = name_is(name, "x", "xit");
+	if (is_command) {
+		write_and_quit(editor, argument, force, 1);
+		return;
+	}
+
+	/* :e reads another file in place of the buffer. */
+	is_command = name_is(name, "e", "edit");
+	if (is_command) {
+		edit(editor, argument, force);
+		return;
+	}
+
+	/* :f shows the file's status. */
+	is_command = name_is(name, "f", "file");
+	if (is_command) {
+		vi_ex_file_status(editor);
+		return;
+	}
+
+	/* Names the command vi does not have. */
+	(void)snprintf(editor->message, sizeof(editor->message), "Unknown command: %s", name);
 }
 
 /*
@@ -132,6 +178,7 @@ vi_ex_file_status(
 	if (name == NULL)
 		name = "[No Name]";
 
+	/* A changed buffer says so. */
 	modified = "";
 	modified_flag = vi_undo_modified(editor);
 	if (modified_flag)
@@ -140,12 +187,15 @@ vi_ex_file_status(
 	/* Shows the line as one of the total and as a percentage. */
 	line = (unsigned long)editor->cursor.line + 1;
 	count = (unsigned long)editor->buffer.count;
-	(void)snprintf(editor->message, sizeof(editor->message), "\"%s\"%s line %lu of %lu --%lu%%--",
-		       name,
-		       modified,
-		       line,
-		       count,
-		       line * 100 / count);
+	(void)snprintf(
+		editor->message,
+		sizeof(editor->message),
+		"\"%s\"%s line %lu of %lu --%lu%%--",
+		name,
+		modified,
+		line,
+		count,
+		line * 100 / count);
 }
 
 /* Tells whether a typed name is a command, in its short form, its long form, or between. */
@@ -206,6 +256,8 @@ go_to_line(
 	/* Only blanks may follow the line. */
 	while (*end == ' ' || *end == '\t')
 		end++;
+
+	/* Refuses anything else after the line. */
 	if (*end != '\0') {
 		vi_message(editor, "Unknown command");
 		return;
@@ -217,6 +269,7 @@ go_to_line(
 	if (number > (unsigned long)editor->buffer.count)
 		number = (unsigned long)editor->buffer.count;
 
+	/* Puts the cursor on the line, at its first non-blank character. */
 	editor->cursor.line = (size_t)number - 1;
 	vi_cursor_first_nonblank(editor);
 }
@@ -236,6 +289,7 @@ quit(
 		return;
 	}
 
+	/* Leaves: nothing is lost, or the loss was asked for. */
 	editor->quit = 1;
 }
 
@@ -251,6 +305,7 @@ write_and_quit(
 	int modified;
 	int error;
 
+	/* Writes to the named file, or to the buffer's own when none is named. */
 	path = NULL;
 	if (argument[0] != '\0')
 		path = argument;
@@ -269,6 +324,7 @@ write_and_quit(
 	if (error != 0)
 		return;
 
+	/* Leaves: the buffer is written. */
 	editor->quit = 1;
 }
 
@@ -295,6 +351,8 @@ edit(
 	path = argument;
 	if (argument[0] == '\0')
 		path = editor->file_name;
+
+	/* A buffer that has no file has nothing to read again. */
 	if (path == NULL) {
 		vi_message(editor, "No file name");
 		return;
@@ -314,6 +372,7 @@ edit(
 		return;
 	}
 
+	/* Takes the new name as the buffer's file. */
 	free(editor->file_name);
 	editor->file_name = name;
 }
