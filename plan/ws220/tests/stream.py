@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""The host's end of a long TCP transfer with a zedBSD machine (ws220-p001).
+"""The host's end of a long TCP transfer with a zedBSD machine (ws220-p001, p002).
 
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
     stream.py serve ADDRESS PORT LOG     an HTTP server: any GET is answered with
                                          /BYTES bytes of a fixed pattern (GET /1073741824)
     stream.py sink LOG                   reads standard input to its end
+    stream.py listen ADDRESS PORT LOG    takes one connection, reads it to its end and
+                                         closes it (the machine's tcp-stream sender, p002)
 
 Either end writes LOG, a line every half second: the host's monotonic time in
 seconds and the bytes moved so far ("t=12.500 bytes=123456789"), and a last
@@ -100,9 +102,30 @@ def sink(log: str) -> int:
 	return 0
 
 
+def listen(address: str, port: int, log: str) -> int:
+	"""Takes one connection, reads it to its end, then closes it, logging the bytes read."""
+	listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+	listener.bind((address, port))
+	listener.listen(1)
+	progress = Progress(log)
+	connection, _ = listener.accept()
+	listener.close()
+	with connection:
+		while True:
+			data = connection.recv(CHUNK)
+			if not data:
+				break
+			progress.bytes += len(data)
+	progress.finish()
+	return 0
+
+
 def main() -> int:
 	if len(sys.argv) == 5 and sys.argv[1] == "serve":
 		return serve(sys.argv[2], int(sys.argv[3]), sys.argv[4])
+	if len(sys.argv) == 5 and sys.argv[1] == "listen":
+		return listen(sys.argv[2], int(sys.argv[3]), sys.argv[4])
 	if len(sys.argv) == 3 and sys.argv[1] == "sink":
 		return sink(sys.argv[2])
 	print(__doc__, file=sys.stderr)

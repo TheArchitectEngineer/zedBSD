@@ -149,7 +149,7 @@ static int sysctl_thermal(void *oldp, size_t *oldlenp, const void *newp, size_t 
 static int sysctl_gpu_start(void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int sysctl_cputimes(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_diskstats(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
-static int sysctl_tcpstats(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
+static int sysctl_tcpstats(void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int sysctl_gputelemetry(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_writeback(const int *name, void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int oid_compare(const int *a, unsigned alen, const int *b, unsigned blen);
@@ -409,7 +409,7 @@ kern_sysctl(
 
 	/* Reports each TCP socket's state and counts (ws220-p001). */
 	if (namelen == 2 && name[0] == CTL_NET && name[1] == NET_TCPSTATS) {
-		error = sysctl_tcpstats(oldp, oldlenp, newp, newlen);
+		error = sysctl_tcpstats(oldp, oldlenp, newp, newlen, superuser);
 		return error;
 	}
 
@@ -874,14 +874,16 @@ sysctl_diskstats(
 /*
  * Reads net.tcpstats: the header and each TCP socket's state and counts
  * (ws220-p001), written by the TCP registry under its lock.  A buffer too
- * small fails with ENOMEM and the length needed.
+ * small fails with ENOMEM and the length needed.  The sequence numbers are
+ * given to the superuser only (ws220-p002).
  */
 static int
 sysctl_tcpstats(
 	void *oldp,
 	size_t *oldlenp,
 	const void *newp,
-	size_t newlen)
+	size_t newlen,
+	int superuser)
 {
 	size_t needed;
 	size_t capacity;
@@ -900,7 +902,7 @@ sysctl_tcpstats(
 
 	/* The value, or only its length without a buffer. */
 	capacity = *oldlenp;
-	error = tcp_stats_copy(oldp, capacity, &needed);
+	error = tcp_stats_copy(oldp, capacity, &needed, superuser);
 	*oldlenp = needed;
 
 	/* Reports a buffer too small. */

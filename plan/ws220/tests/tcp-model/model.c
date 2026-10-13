@@ -21,7 +21,9 @@
  *
  *   tcp-model [--bytes N] [--mbps R] [--delay-us D] [--loss-ab P] [--loss-ba P]
  *             [--queue F] [--seed S] [--wrap-before N] [--interval-ms I]
- *             [--limit-s L] [--reader-kbps K] [--peer-window W] [--quiet]
+ *             [--limit-s L] [--reader-kbps K] [--peer-window W]
+ *             [--overlap-ab P] [--overlap-bytes K] [--blind-at-ms T]
+ *             [--blackhole-at-ms T] [--connect-blackhole] [--quiet]
  *
  * --loss-ab is the share (percent) of the frames from A to B (the data) the
  * link loses, --loss-ba of the frames back (the acknowledgements).
@@ -30,6 +32,18 @@
  * as a peer would advertise whose window does not follow its queue (a
  * Linux receiver after its buffer has grown): A's sender then sees no
  * window open while segments are outstanding.
+ * --overlap-ab P moves the start of that share (percent) of A's data
+ * segments K bytes (--overlap-bytes, default 100) back, filled with the
+ * stream's bytes before it, as a peer that cuts its resends differently
+ * would send them (ws220-p002): B must take the part it has not taken yet.
+ * --blind-at-ms T gives B, at T, segments that look like A's but that A
+ * did not send: a reset within the window but not at the next sequence
+ * number, a reset outside the window, and a SYN (RFC 5961); none may end
+ * the connection.
+ * --blackhole-at-ms T makes the link lose everything from T on, so the
+ * time A takes to give up can be seen (RFC 1122's R2, at least 100 s);
+ * --connect-blackhole loses A's SYN from the start and reports when the
+ * connect gives up (R2 for a SYN, at least 3 minutes).
  */
 
 #include "kern/net/tcp-socket.h"
@@ -112,6 +126,11 @@ struct model_settings {
 	uint64_t limit_ns;
 	double reader_kbps;
 	unsigned peer_window;
+	double overlap_ab;
+	unsigned overlap_bytes;
+	uint64_t blind_at_ns;
+	uint64_t blackhole_at_ns;
+	int connect_blackhole;
 	int quiet;
 };
 
@@ -146,6 +165,13 @@ static uint64_t read_budget_ns;
 /* The writer's or the reader's error, which ends the transfer. */
 static int transfer_error;
 
+/* The sequence number of the stream's first byte on A, which places a segment in the stream. */
+static uint32_t stream_sequence;
+
+/* How many of A's segments were moved back to overlap, and whether the blind segments were given. */
+static uint64_t overlapped;
+static int blind_given;
+
 static int tcp_socket_create_inet(int type, int protocol, struct socket **result);
 static void parse_settings(int argc, char **argv);
 static uint64_t isn_tick_base(uint64_t wrap_before);
@@ -155,6 +181,9 @@ static uint64_t frame_time_ns(size_t length);
 static void link_start(struct model_link *link, uint64_t start_ns);
 static void link_advance(struct model_link *link);
 static void rewrite_window(struct model_frame *frame);
+static void overlap_frame(struct model_frame *frame);
+static void give_blind_segments(void);
+static void give_blind_segment(uint32_t sequence, uint32_t acknowledgement, uint8_t flags);
 static void run_applications(void);
 static void run_writer(void);
 static void run_reader(void);
@@ -208,14 +237,22 @@ main(
 	family.create = tcp_socket_create_inet;
 	(void)socket_family_register(AF_INET, &family);
 
-	/* The connection. */
+	/* The connection; with its SYN lost, only the time the connect gives up is wanted. */
+	if (settings.connect_blackhole)
+		links[0].loss = 1.0;
 	error = connect_hosts();
+	if (settings.connect_blackhole) {
+		printf("tcp-model: summary connect gave up after %.3f s (state %d, error %d) complete=%d mean_mbs=0\n",
+		    (double)now_ns / 1e9, (int)tcp_of(sender)->state, error, error != 0 && now_ns >= 180000000000ULL);
+		return 0;
+	}
 	if (error != 0) {
 		printf("tcp-model: no connection (%d)\n", error);
 		return 2;
 	}
+	stream_sequence = tcp_of(sender)->send_unacknowledged;
 	printf("tcp-model: connected at %llu us, A's first sequence number %u\n",
-	    (unsigned long long)(now_ns / 1000U), tcp_of(sender)->send_unacknowledged);
+	    (unsigned long long)(now_ns / 1000U), stream_sequence);
 
 	/* The transfer, reported each interval until the reader has it all or the time is up. */
 	send_left = settings.bytes;
@@ -230,6 +267,18 @@ main(
 	intervals = 0;
 	while (received < settings.bytes && transfer_error == 0 && now_ns - start_ns < settings.limit_ns) {
 		step();
+
+		/* The link that loses everything from its time on. */
+		if (settings.blackhole_at_ns != 0 && now_ns - start_ns >= settings.blackhole_at_ns) {
+			links[0].loss = 1.0;
+			links[1].loss = 1.0;
+		}
+
+		/* The blind segments, once, at their time. */
+		if (settings.blind_at_ns != 0 && !blind_given && now_ns - start_ns >= settings.blind_at_ns) {
+			give_blind_segments();
+			blind_given = 1;
+		}
 
 		/* The longest time the reader got nothing. */
 		if (received != progress_mark) {
@@ -265,10 +314,10 @@ main(
 	if (now_ns > start_ns)
 		mean = (double)received / 1048576.0 / ((double)(now_ns - start_ns) / 1e9);
 	printf("tcp-model: summary bytes=%llu received=%llu corrupt=%llu seconds=%.3f mean_mbs=%.2f min_interval_mbs=%.2f "
-	    "intervals=%u below_1mbs=%u longest_stall_ms=%.1f error=%d complete=%d\n",
+	    "intervals=%u below_1mbs=%u longest_stall_ms=%.1f overlapped=%llu error=%d complete=%d\n",
 	    (unsigned long long)settings.bytes, (unsigned long long)received, (unsigned long long)corrupt,
 	    (double)(now_ns - start_ns) / 1e9, mean, min_rate < 0.0 ? 0.0 : min_rate, intervals, slow_intervals,
-	    (double)longest_stall_ns / 1e6, transfer_error, complete);
+	    (double)longest_stall_ns / 1e6, (unsigned long long)overlapped, transfer_error, complete);
 	report(now_ns - start_ns, 0);
 
 	/* net.tcpstats as the kernel copies it out must agree with the sockets (of a connection still up). */
@@ -363,12 +412,21 @@ parse_settings(
 	settings.limit_ns = 600ULL * 1000000000ULL;
 	settings.reader_kbps = 0.0;
 	settings.peer_window = 0;
+	settings.overlap_ab = 0.0;
+	settings.overlap_bytes = 100U;
+	settings.blind_at_ns = 0;
+	settings.blackhole_at_ns = 0;
+	settings.connect_blackhole = 0;
 	settings.quiet = 0;
 
 	/* Each option and its value. */
 	for (index = 1; index < argc; index++) {
 		if (strcmp(argv[index], "--quiet") == 0) {
 			settings.quiet = 1;
+			continue;
+		}
+		if (strcmp(argv[index], "--connect-blackhole") == 0) {
+			settings.connect_blackhole = 1;
 			continue;
 		}
 		if (index + 1 >= argc)
@@ -397,6 +455,14 @@ parse_settings(
 			settings.reader_kbps = strtod(argv[index + 1], NULL);
 		else if (strcmp(argv[index], "--peer-window") == 0)
 			settings.peer_window = (unsigned)strtoull(argv[index + 1], NULL, 0);
+		else if (strcmp(argv[index], "--overlap-ab") == 0)
+			settings.overlap_ab = strtod(argv[index + 1], NULL);
+		else if (strcmp(argv[index], "--overlap-bytes") == 0)
+			settings.overlap_bytes = (unsigned)strtoull(argv[index + 1], NULL, 0);
+		else if (strcmp(argv[index], "--blackhole-at-ms") == 0)
+			settings.blackhole_at_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		else if (strcmp(argv[index], "--blind-at-ms") == 0)
+			settings.blind_at_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
 		index++;
 	}
 
@@ -515,6 +581,8 @@ link_advance(
 			memcpy(frame->data, packet->data, packet->length);
 			if (link == &links[1] && settings.peer_window != 0)
 				rewrite_window(frame);
+			if (link == &links[0] && settings.overlap_ab > 0.0 && random_unit() < settings.overlap_ab / 100.0)
+				overlap_frame(frame);
 			if (link->flight_tail != NULL)
 				link->flight_tail->next = frame;
 			else
@@ -560,6 +628,123 @@ rewrite_window(
 	checksum = net_checksum_pseudo(frame->source, frame->destination, IPPROTO_TCP, frame->data, frame->length);
 	frame->data[16] = (uint8_t)(checksum >> 8);
 	frame->data[17] = (uint8_t)(checksum & 0xffU);
+}
+
+/*
+ * Moves the start of a data segment from A --overlap-bytes back, the bytes
+ * put in front being the stream's own, with its checksum made again.  A
+ * segment too near the stream's start, or one with a SYN or no data, is
+ * left as it is.
+ */
+static void
+overlap_frame(
+	struct model_frame *frame)
+{
+	uint8_t moved[2048];
+	uint32_t sequence;
+	uint32_t offset;
+	uint16_t checksum;
+	size_t header;
+	size_t payload;
+	size_t extra;
+	size_t index;
+
+	/* Only a data segment, far enough into the stream, with room to grow. */
+	header = (size_t)(frame->data[12] >> 4) * 4U;
+	if (header > frame->length || (frame->data[13] & 0x02U) != 0)
+		return;
+	payload = frame->length - header;
+	extra = settings.overlap_bytes;
+	if (payload == 0 || frame->length + extra > sizeof(frame->data))
+		return;
+	sequence = ((uint32_t)frame->data[4] << 24) | ((uint32_t)frame->data[5] << 16) |
+	    ((uint32_t)frame->data[6] << 8) | (uint32_t)frame->data[7];
+	offset = sequence - stream_sequence;
+	if (offset < extra)
+		return;
+
+	/* The header with the earlier sequence number, the stream's bytes before the payload, then the payload. */
+	memcpy(moved, frame->data, header);
+	sequence -= (uint32_t)extra;
+	moved[4] = (uint8_t)(sequence >> 24);
+	moved[5] = (uint8_t)(sequence >> 16);
+	moved[6] = (uint8_t)(sequence >> 8);
+	moved[7] = (uint8_t)sequence;
+	for (index = 0; index < extra; index++)
+		moved[header + index] = stream_byte((uint64_t)(offset - extra) + index);
+	memcpy(moved + header + extra, frame->data + header, payload);
+	frame->length += extra;
+	memcpy(frame->data, moved, frame->length);
+
+	/* The checksum over the segment as it now is. */
+	frame->data[16] = 0;
+	frame->data[17] = 0;
+	checksum = net_checksum_pseudo(frame->source, frame->destination, IPPROTO_TCP, frame->data, frame->length);
+	frame->data[16] = (uint8_t)(checksum >> 8);
+	frame->data[17] = (uint8_t)(checksum & 0xffU);
+	overlapped++;
+}
+
+/*
+ * Gives B the segments of someone who knows the connection's addresses and
+ * ports but not its sequence numbers: a reset within the window B
+ * advertised but not at its next sequence number, a reset far outside it,
+ * and a SYN.  B answers the first and the SYN with an acknowledgement
+ * (RFC 5961 sections 3.2 and 4) and ignores the second; none resets.
+ */
+static void
+give_blind_segments(
+	void)
+{
+	struct tcp_socket *b;
+
+	/* The numbers B expects now, which a blind sender does not know exactly. */
+	b = tcp_of(receiver);
+	give_blind_segment(b->receive_next + 1000U, b->send_next, 0x04U);
+	give_blind_segment(b->receive_next + 0x80000000U, b->send_next, 0x04U);
+	give_blind_segment(b->receive_next - 5000U, 0, 0x02U);
+	printf("tcp-model: blind segments given at receive_next %u, B state %d\n", b->receive_next, (int)b->state);
+}
+
+/* Gives B one segment from A's address and port with the numbers and flags given. */
+static void
+give_blind_segment(
+	uint32_t sequence,
+	uint32_t acknowledgement,
+	uint8_t flags)
+{
+	uint8_t segment[20];
+	uint16_t port;
+	uint16_t checksum;
+
+	/* The header: A's port to B's, the numbers, no options, the flags and a window. */
+	memset(segment, 0, sizeof(segment));
+	port = tcp_of(sender)->inet.local_port;
+	segment[0] = (uint8_t)(port >> 8);
+	segment[1] = (uint8_t)port;
+	segment[2] = (uint8_t)(MODEL_PORT >> 8);
+	segment[3] = (uint8_t)MODEL_PORT;
+	segment[4] = (uint8_t)(sequence >> 24);
+	segment[5] = (uint8_t)(sequence >> 16);
+	segment[6] = (uint8_t)(sequence >> 8);
+	segment[7] = (uint8_t)sequence;
+	segment[8] = (uint8_t)(acknowledgement >> 24);
+	segment[9] = (uint8_t)(acknowledgement >> 16);
+	segment[10] = (uint8_t)(acknowledgement >> 8);
+	segment[11] = (uint8_t)acknowledgement;
+	segment[12] = 5U << 4;
+	segment[13] = flags;
+	if (acknowledgement != 0)
+		segment[13] |= 0x10U;
+	segment[14] = 0xffU;
+	segment[15] = 0xffU;
+	checksum = net_checksum_pseudo(MODEL_ADDRESS_A, MODEL_ADDRESS_B, IPPROTO_TCP, segment, sizeof(segment));
+	segment[16] = (uint8_t)(checksum >> 8);
+	segment[17] = (uint8_t)(checksum & 0xffU);
+
+	/* B takes it as it takes any segment from the link. */
+	(void)model_deliver(segment, sizeof(segment), MODEL_ADDRESS_A, MODEL_ADDRESS_B);
+	run_applications();
 }
 
 /* Lets the writer and the reader act on what has changed. */
@@ -685,6 +870,7 @@ connect_hosts(
 	void)
 {
 	struct sockaddr_in address;
+	uint64_t limit_ns;
 	int error;
 
 	/* B's listener on its port, every address. */
@@ -710,9 +896,14 @@ connect_hosts(
 	if (error != EINPROGRESS)
 		return error;
 
-	/* The handshake, for at most ten seconds. */
-	while (now_ns < 10000000000ULL) {
+	/* The handshake, for at most ten seconds (400 when the SYN is lost on purpose, until the connect gives up). */
+	limit_ns = 10000000000ULL;
+	if (settings.connect_blackhole)
+		limit_ns = 400000000000ULL;
+	while (now_ns < limit_ns) {
 		step();
+		if (tcp_of(sender)->state == TCP_CLOSED)
+			return ETIMEDOUT;
 		if (receiver == NULL)
 			(void)listener->ops->accept(listener, &receiver, NULL, NULL, SOCKET_IO_NONBLOCK);
 		if (receiver != NULL && tcp_of(sender)->state == TCP_ESTABLISHED)
@@ -826,12 +1017,12 @@ check_tcpstats(
 	int error;
 
 	/* The length, then the value. */
-	error = tcp_stats_copy(NULL, 0, &needed);
+	error = tcp_stats_copy(NULL, 0, &needed, 1);
 	if (error != 0 || needed > sizeof(buffer)) {
 		printf("tcpstats: FAIL: length %llu (%d)\n", (unsigned long long)needed, error);
 		return 1;
 	}
-	error = tcp_stats_copy(buffer, sizeof(buffer), &needed);
+	error = tcp_stats_copy(buffer, sizeof(buffer), &needed, 1);
 	if (error != 0) {
 		printf("tcpstats: FAIL: copy (%d)\n", error);
 		return 1;
@@ -856,9 +1047,33 @@ check_tcpstats(
 		return 1;
 	}
 
+	/* The superuser is given the sequence numbers (ws220-p002). */
+	for (index = 0; index < header->count; index++) {
+		entry = (const struct tcp_stats_entry *)(const void *)(buffer + header->struct_size + index * header->element_size);
+		if ((entry->features & TCP_STATS_HAVE_SEQUENCE) == 0) {
+			printf("tcpstats: FAIL: the superuser's entry %u has no sequence numbers\n", index);
+			return 1;
+		}
+	}
+
+	/* Any other reader is given every socket without them. */
+	error = tcp_stats_copy(buffer, sizeof(buffer), &needed, 0);
+	if (error != 0 || header->count != 3U) {
+		printf("tcpstats: FAIL: copy for a user (%d)\n", error);
+		return 1;
+	}
+	for (index = 0; index < header->count; index++) {
+		entry = (const struct tcp_stats_entry *)(const void *)(buffer + header->struct_size + index * header->element_size);
+		if ((entry->features & TCP_STATS_HAVE_SEQUENCE) != 0 || entry->send_unacknowledged != 0 ||
+		    entry->send_next != 0 || entry->receive_next != 0 || entry->local_port == 0) {
+			printf("tcpstats: FAIL: a user's entry %u shows sequence numbers or lacks its port\n", index);
+			return 1;
+		}
+	}
+
 	/* Succeeded: the value agrees with the sockets. */
-	printf("tcpstats: ok sockets=%u length=%llu packets_used_max=%u\n", header->count, (unsigned long long)needed,
-	    header->packets_used_max);
+	printf("tcpstats: ok sockets=%u length=%llu packets_used_max=%u user_hides_sequence=1\n", header->count,
+	    (unsigned long long)needed, header->packets_used_max);
 	return 0;
 }
 

@@ -1,56 +1,90 @@
 #!/bin/sh
-# ws220-p001: a long TCP transfer each way between a zedBSD machine and a Linux host, with the rate and both ends'
-# TCP state recorded over time.  The machine samples `sysctl net.tcpstats` (its connection's windows, ring,
-# retransmission timer and counts) and its adapter's `ifconfig` about once a second; the host samples `ss -tin` (its
-# cwnd, ssthresh, rtt, retransmissions) as often.  plan/ws220/tests/analyze.py turns each direction's samples into
-# series-DIRECTION.csv and a summary line (mean, lowest and median one-second rate, seconds below 1 MB/s, the longest
-# run at 0, and the counts that tell why).  Judged over SSH, never the console.
+# ws220-p001, p002: long TCP transfers between a zedBSD machine and a Linux host, with the rate and both ends' TCP
+# state recorded over time.  The machine samples `sysctl net.tcpstats` (its connection's windows, ring, retransmission
+# timer and counts) and its adapter's `ifconfig` about once a second; the host samples `ss -tin` of the transfer's
+# port (its cwnd, ssthresh, rtt, retransmissions) as often, and captures the transfer's headers (tcpdump), which
+# shows stalls of a fraction of a second that a one-second sample cannot.  plan/ws220/tests/analyze.py turns each
+# run into series-RUN.csv, a summary line from the samples and a wire line from the capture.  Judged over SSH and the
+# host's capture, never the console.
 #
 #   plan/ws220/tests/tcp-stream-series.sh IMAGE [OPTION...]           QEMU: the SSH guest with a second usb-net (CDC
 #       ECM) adapter on a host tap, bridged to the namespace zbs where the host's end runs at 10.77.0.1; the guest's
-#       adapter is 10.77.0.2.  netem on the namespace's veth (to the guest) and on the bridge's veth (from it) adds
-#       the delay and the loss.  Needs sudo (ip, tc, the namespace).  The image: plan/tools/guest/test-image.sh
-#       plan/ws220/tests/config-amd64-tcp.mk BUILD (the SSH guest's config).
+#       adapter is 10.77.0.2.  The tap, the bridge and both veths have TSO, GSO and GRO off, so netem on the
+#       namespace's veth (to the guest) and on the bridge's veth (from it) drops single segments rather than the
+#       64 KB blocks of a GSO packet.  Needs sudo (ip, tc, ethtool, tcpdump, the namespace).  The image:
+#       plan/tools/guest/test-image.sh plan/ws220/tests/config-amd64-tcp.mk BUILD (the SSH guest, sysctl and
+#       tcp-stream); config-amd64-tcp-wrap.mk starts the guest's sequence numbers 16 MiB before the 2^32 wrap.
 #   plan/ws220/tests/tcp-stream-series.sh ssh:USER@MACHINE --server-ip ADDRESS [OPTION...]   a real machine (the
 #       5330, a Pi 4) on the LAN of this host, whose LAN address is ADDRESS; the machine is reached by SSH at MACHINE.
-#       No netem: the loss and the delay are the LAN's.
-# Options: --bytes N (each direction, default 1073741824), --direction down|up|both (default both: down is the
-# machine receiving from the host's HTTP server, up is the machine sending: the host reads `dd if=/dev/zero` over
-# SSH from it), --loss PERCENT and --delay MS (QEMU only, both ways), --timeout SECONDS (each direction, default 900),
-# --out DIRECTORY (default build/ws220-series; each run makes a new directory behind it, plan/tools/fresh-out.sh,
-# nothing on the host is removed).
-# PASS: every direction moved all its bytes (the summaries are the measurement, judged by the reader against WS220's
+#       No netem: the loss and the delay are the LAN's.  The host's adapter is captured as it is (its offloads are
+#       not changed); the up run needs /bin/tcp-stream on the machine (userland/tests/tcp-stream).
+# Runs (--runs, a comma list, default down,down-disk,up; the symptom is on the machine's receiving side, so the
+# downloads come first):
+#   down       the machine receives: fetch from the host's HTTP server to /dev/null
+#   down-disk  the same to a file on the machine's disk (/root/ws220-down.bin, overwritten each time; --disk-bytes,
+#              default 268435456), so a reader slower than the link closes and opens the window
+#   up         the machine sends: tcp-stream's blocking writes to the host's listener on 8081
+#   up-ssh     the machine sends through its sshd (`dd if=/dev/zero` read by the host over SSH; non-blocking writes,
+#              and sshd's cipher bounds the rate)
+# Options: --bytes N (each run, default 1073741824), --runs LIST (--direction down|up|both is the old form: both is
+# down,down-disk,up), --loss PERCENT and --delay MS (QEMU only, both ways), --timeout SECONDS (each run, default
+# 900), --capture-iface IFACE (real machine: the host's adapter to capture on; default the route's), --out DIRECTORY
+# (default build/ws220-series; each run makes a new directory behind it, plan/tools/fresh-out.sh, nothing on the host
+# is removed).  A capture of a 1 GiB run is about 140 MB (80 bytes of each frame).
+# PASS: every run moved all its bytes (the summaries are the measurement, judged by the reader against WS220's
 # targets).  Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
 target=${1:?usage: tcp-stream-series.sh IMAGE|ssh:USER@MACHINE [OPTION...]}
 shift
 bytes=1073741824
-direction=both
+disk_bytes=268435456
+runs=down,down-disk,up
 loss=0
 delay=0
 limit=900
 out=build/ws220-series
 server_ip=
+capture_iface=
 while [ $# -ge 2 ]; do
 	case $1 in
 	--bytes) bytes=$2 ;;
-	--direction) direction=$2 ;;
+	--disk-bytes) disk_bytes=$2 ;;
+	--runs) runs=$2 ;;
+	--direction)
+		case $2 in
+		both) runs=down,down-disk,up ;;
+		*) runs=$2 ;;
+		esac
+		;;
 	--loss) loss=$2 ;;
 	--delay) delay=$2 ;;
 	--timeout) limit=$2 ;;
 	--out) out=$2 ;;
 	--server-ip) server_ip=$2 ;;
+	--capture-iface) capture_iface=$2 ;;
 	*) echo "tcp-stream-series: unknown option $1"; exit 2 ;;
 	esac
 	shift 2
+done
+for run in $(echo "$runs" | tr ',' ' '); do
+	case $run in
+	down|down-disk|up|up-ssh) ;;
+	*) echo "tcp-stream-series: unknown run $run"; exit 2 ;;
+	esac
+done
+for tool in tcpdump ethtool; do
+	[ -x "/usr/sbin/$tool" ] || [ -x "/usr/bin/$tool" ] || { echo "tcp-stream-series: the host needs $tool (sudo apt-get install $tool)"; exit 2; }
 done
 . plan/tools/fresh-out.sh
 fresh_out "$out"
 key=plan/tmp/guest/id_ed25519
 status=0
 server_pid=
+capture_pid=
 ssh_options="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ServerAliveInterval=10"
+http_port=8080
+listen_port=8081
 
 case $target in
 ssh:*)
@@ -61,7 +95,7 @@ ssh:*)
 	# The machine's own SSH keys let this host in; the guests' key is for QEMU.
 	key_option=
 	# shellcheck disable=SC2086
-	remote() { timeout 300 ssh $ssh_options "$machine" "$1" 2>&1 | tr -d '\r'; }
+	remote() { timeout "$((limit + 120))" ssh $ssh_options "$machine" "$1" 2>&1 | tr -d '\r'; }
 	# The host side runs as this user, in the host's own network.
 	host_run() { "$@"; }
 	;;
@@ -72,13 +106,14 @@ ssh:*)
 	key_option="-i $key"
 	GUEST_RUNTIME=$(pwd)/$out/run
 	export GUEST_RUNTIME
-	remote() { timeout 300 python3 plan/tools/guest/guest.py run "$1" 2>&1 | tr -d '\r'; }
+	remote() { timeout "$((limit + 120))" python3 plan/tools/guest/guest.py run "$1" 2>&1 | tr -d '\r'; }
 	host_run() { sudo ip netns exec zbs "$@"; }
 	;;
 esac
 
-# The host's segment taken down (QEMU): the server, the guest, the links and the namespace.
+# The host's segment taken down (QEMU): the capture, the server, the guest, the links and the namespace.
 teardown() {
+	[ -n "$capture_pid" ] && sudo kill -INT "$capture_pid" 2>/dev/null
 	[ -n "$server_pid" ] && sudo kill -INT "$server_pid" 2>/dev/null
 	[ "$mode" = qemu ] || return 0
 	python3 plan/tools/guest/guest.py stop >/dev/null 2>&1
@@ -88,6 +123,17 @@ teardown() {
 	sudo ip netns del zbs 2>/dev/null
 }
 trap teardown EXIT
+
+# Turns TSO, GSO and GRO off on one interface (in the namespace when the second word is zbs); a feature the device
+# does not have is left as it is.
+offload_off() {
+	if [ "${2:-}" = zbs ]; then
+		sudo ip netns exec zbs ethtool -K "$1" tso off gso off gro off 2>/dev/null
+	else
+		sudo ethtool -K "$1" tso off gso off gro off 2>/dev/null
+	fi
+	return 0
+}
 
 # QEMU: the segment (a bridge with the tap and a veth into the namespace), the guest on it, and its address.
 if [ "$mode" = qemu ]; then
@@ -103,6 +149,11 @@ if [ "$mode" = qemu ]; then
 	sudo ip -n zbs link set lo up
 	sudo ip -n zbs link set zbsv1 up
 	sudo ip -n zbs addr add 10.77.0.1/24 dev zbsv1
+	# The host's TCP sends segments of the MSS, not GSO blocks netem would drop whole (review S3).
+	offload_off zbsv1 zbs
+	offload_off zbsv0
+	offload_off zbsbr0
+	offload_off zbstap0
 	if [ "$loss" != 0 ] || [ "$delay" != 0 ]; then
 		sudo ip netns exec zbs tc qdisc replace dev zbsv1 root netem delay "${delay}ms" loss "$loss%"
 		sudo tc qdisc replace dev zbsv0 root netem delay "${delay}ms" loss "$loss%"
@@ -110,6 +161,8 @@ if [ "$mode" = qemu ]; then
 	python3 plan/tools/guest/guest.py start "$image" --qemu-extra "-netdev tap,id=net1,ifname=zbstap0,script=no,downscript=no \
 -device usb-net,bus=xhci.0,port=5,id=ecm1,netdev=net1,mac=52:54:00:33:00:08" || exit 1
 	python3 plan/tools/guest/guest.py wait --timeout 240 || { echo "FAIL: the guest did not come up"; exit 1; }
+	# The tap exists once QEMU has opened it; its offloads are turned off again then.
+	offload_off zbstap0
 	iface=$(remote "ifconfig -a | awk '/^[a-z]+[0-9]+:/ {name = substr(\$1, 1, length(\$1) - 1)} /ether 52:54:00:33:00:08/ {print name}'" |
 	    tail -1)
 	[ -n "$iface" ] || { echo "FAIL: no second adapter"; exit 1; }
@@ -123,40 +176,89 @@ if [ "$mode" = qemu ]; then
 	machine_ip=10.77.0.2
 	# The machine is reached from the namespace with the guests' key.
 	machine=root@10.77.0.2
+	capture() { sudo ip netns exec zbs tcpdump -i zbsv1 -s 80 -w "$1" "tcp port $2" > "$1.log" 2>&1; }
 else
 	machine_ip=${machine#*@}
 	iface=$(remote "route show" | awk '$1 == "default" || $1 == "0.0.0.0" {print $NF; exit}')
+	[ -n "$capture_iface" ] || capture_iface=$(ip route get "$machine_ip" | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1)
+	capture() { sudo tcpdump -i "$capture_iface" -s 80 -w "$1" "host $machine_ip and tcp port $2" > "$1.log" 2>&1; }
 fi
-echo "mode=$mode interface=${iface:-?} machine=$machine_ip host=$host_ip bytes=$bytes loss=$loss% delay=${delay}ms" |
-    tee "$out/settings.txt"
+echo "mode=$mode interface=${iface:-?} machine=$machine_ip host=$host_ip bytes=$bytes disk_bytes=$disk_bytes runs=$runs" \
+    "loss=$loss% delay=${delay}ms capture=${capture_iface:-zbsv1}" | tee "$out/settings.txt"
 remote "uname -a; sysctl net.tcpstats | head -1" >> "$out/settings.txt"
 grep -q 'net.tcpstats: time_ms=' "$out/settings.txt" || { echo "FAIL: the machine's kernel has no net.tcpstats"; exit 1; }
+# The offloads in force, which say whether netem dropped single segments.
+if [ "$mode" = qemu ]; then
+	for device in zbstap0 zbsbr0 zbsv0; do
+		echo "== ethtool -k $device"
+		sudo ethtool -k "$device" 2>&1 | grep -E 'tcp-segmentation-offload|generic-segmentation-offload|generic-receive-offload'
+	done >> "$out/settings.txt"
+	{
+		echo "== ethtool -k zbsv1 (namespace)"
+		sudo ip netns exec zbs ethtool -k zbsv1 2>&1 | grep -E 'tcp-segmentation-offload|generic-segmentation-offload|generic-receive-offload'
+	} >> "$out/settings.txt"
+else
+	{
+		echo "== ethtool -k $capture_iface (not changed)"
+		ethtool -k "$capture_iface" 2>&1 | grep -E 'tcp-segmentation-offload|generic-segmentation-offload|generic-receive-offload'
+	} >> "$out/settings.txt"
+fi
 
-# The host's HTTP server for the download.
-host_run python3 plan/ws220/tests/stream.py serve "$host_ip" 8080 "$(pwd)/$out/server-log.txt" > "$out/server.txt" 2>&1 &
+# The host's HTTP server for the downloads.
+host_run python3 plan/ws220/tests/stream.py serve "$host_ip" "$http_port" "$(pwd)/$out/server-log.txt" > "$out/server.txt" 2>&1 &
 server_pid=$!
 sleep 1
 
-# One direction: the samplers on both ends, the transfer, then the samples and their analysis.
+# One run: the samplers on both ends and the capture, the transfer, then the samples and their analysis.
 measure() {
 	which=$1
 	echo "== $which"
+	direction=down
+	port=$http_port
+	run_bytes=$bytes
+	case $which in
+	down-disk)
+		run_bytes=$disk_bytes
+		[ "$run_bytes" -le "$bytes" ] || run_bytes=$bytes
+		;;
+	up) direction=up; port=$listen_port ;;
+	up-ssh) direction=up; port=22 ;;
+	esac
 	remote "nohup sh -c 'while :; do sysctl net.tcpstats; ifconfig ${iface:-ue0}; sleep 1; done' > /tmp/ws220-series-$which.txt 2>&1 < /dev/null & echo \$! > /tmp/ws220-sampler.pid" > /dev/null
-	host_run sh -c "while :; do echo time=\$(date +%s.%N); ss -tin dst $machine_ip; sleep 1; done" > "$out/ss-$which.txt" 2>&1 &
+	host_run sh -c "while :; do echo time=\$(date +%s.%N); ss -tin dst $machine_ip '( sport = :$port or dport = :$port )'; sleep 1; done" > "$out/ss-$which.txt" 2>&1 &
 	ss_pid=$!
+	capture "$(pwd)/$out/wire-$which.pcap" "$port" &
+	capture_pid=$!
+	sleep 1
 	start=$(date +%s.%N)
-	if [ "$which" = down ]; then
-		remote "timeout $limit fetch -q -o /dev/null http://$host_ip:8080/$bytes; echo exit=\$?" > "$out/transfer-$which.txt"
-		peer=$host_ip:8080
-	else
+	case $which in
+	down)
+		remote "timeout $limit fetch -q -o /dev/null http://$host_ip:$http_port/$run_bytes; echo exit=\$?" > "$out/transfer-$which.txt"
+		;;
+	down-disk)
+		remote "timeout $limit fetch -q -o /root/ws220-down.bin http://$host_ip:$http_port/$run_bytes; echo exit=\$?; ls -l /root/ws220-down.bin" > "$out/transfer-$which.txt"
+		;;
+	up)
+		host_run timeout "$((limit + 60))" python3 plan/ws220/tests/stream.py listen "$host_ip" "$listen_port" \
+		    "$(pwd)/$out/sink-log-$which.txt" > "$out/listen-$which.txt" 2>&1 &
+		listen_pid=$!
+		sleep 1
+		remote "timeout $limit tcp-stream $host_ip $listen_port $run_bytes; echo exit=\$?" > "$out/transfer-$which.txt"
+		wait "$listen_pid"
+		;;
+	up-ssh)
+		run_bytes=$(( (bytes / 65536) * 65536 ))
 		# shellcheck disable=SC2086
 		host_run timeout "$limit" ssh $ssh_options $key_option "$machine" "dd if=/dev/zero bs=65536 count=$((bytes / 65536))" 2> "$out/transfer-$which.txt" |
-		    python3 plan/ws220/tests/stream.py sink "$out/sink-log.txt"
+		    python3 plan/ws220/tests/stream.py sink "$out/sink-log-$which.txt"
 		echo "exit=$?" >> "$out/transfer-$which.txt"
-		peer="$host_ip:*"
-	fi
+		;;
+	esac
 	end=$(date +%s.%N)
 	sleep 2
+	sudo kill -INT "$capture_pid" 2>/dev/null
+	wait "$capture_pid" 2>/dev/null
+	capture_pid=
 	kill "$ss_pid" 2>/dev/null
 	sudo kill "$ss_pid" 2>/dev/null
 	remote "kill \$(cat /tmp/ws220-sampler.pid)" > /dev/null
@@ -166,23 +268,33 @@ measure() {
 		# shellcheck disable=SC2086
 		scp $ssh_options "$machine:/tmp/ws220-series-$which.txt" "$out/series-$which.txt" > /dev/null 2>&1
 	fi
-	awk -v a="$start" -v b="$end" -v n="$bytes" 'BEGIN { printf "host clock: %.1f s, %.2f MB/s\n", b - a, n / 1048576 / (b - a) }' |
+	echo "== $which" >> "$out/summary.txt"
+	awk -v a="$start" -v b="$end" -v n="$run_bytes" 'BEGIN { printf "host clock: %.1f s, %.2f MB/s\n", b - a, n / 1048576 / (b - a) }' |
 	    tee -a "$out/summary.txt"
-	python3 plan/ws220/tests/analyze.py "$which" "$peer" "$out/series-$which.txt" "$out/ss-$which.txt" "$out/series-$which.csv" |
-	    tee -a "$out/summary.txt"
-	# Every byte moved: the download's fetch ended well, the upload's sink read them all.
-	if [ "$which" = down ]; then
-		grep -q '^exit=0' "$out/transfer-$which.txt" || { echo "FAIL: the download did not finish"; status=1; }
-	else
-		grep -q "^done .* bytes=$(( (bytes / 65536) * 65536 ))\$" "$out/sink-log.txt" || { echo "FAIL: the upload did not finish"; status=1; }
+	# The transfer's port on the host is known except over SSH, where the machine's port 22 sends the data.
+	peer="$host_ip:$port"
+	port_option="--port $port"
+	if [ "$which" = up-ssh ]; then
+		peer="$host_ip:*"
+		port_option="--sender-port 22"
 	fi
+	# shellcheck disable=SC2086
+	python3 plan/ws220/tests/analyze.py "$direction" "$peer" "$out/series-$which.txt" "$out/ss-$which.txt" "$out/series-$which.csv" \
+	    --pcap "$out/wire-$which.pcap" $port_option | tee -a "$out/summary.txt"
+	# Every byte moved: the download's fetch ended well, the upload's listener or sink read them all.
+	case $which in
+	down|down-disk)
+		grep -q '^exit=0' "$out/transfer-$which.txt" || { echo "FAIL: $which did not finish"; status=1; }
+		;;
+	*)
+		grep -q "^done .* bytes=$run_bytes\$" "$out/sink-log-$which.txt" || { echo "FAIL: $which did not finish"; status=1; }
+		;;
+	esac
 }
 
-case $direction in
-down) measure down ;;
-up) measure up ;;
-*) measure down; measure up ;;
-esac
+for run in $(echo "$runs" | tr ',' ' '); do
+	measure "$run"
+done
 
 [ $status = 0 ] && echo "tcp-stream-series: PASS (the series are in $out)" || echo "tcp-stream-series: FAIL"
 exit $status

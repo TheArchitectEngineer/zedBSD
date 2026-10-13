@@ -27,7 +27,7 @@ Related Milestones: なし
 | Phase | 内容 | Status |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 調べと測り: 今の TCP の制御の読み、測りの道具（net.tcpstats、tcp-stream-series.sh、本物の tcp.c の host の模型）、落ちる仕組みの特定、直しの設計 → design-reviewer | in-progress（T1 の基線待ち） |
-| p002（案） | 正しさ: sequence の剰余の比較（wrap の後に ACK を全部捨てる）、SND.WL1/WL2、重なりのある segment、諦めの時間 | planning（p001 の設計の review の後） |
+| [p002](phase002/phase.md) | 正しさ: sequence の剰余の比較（wrap の後に ACK を全部捨てる）、SND.WL1/WL2、重なりのある segment、諦めの時間（R2: data 100 s・SYN 180 s）、RST の窓の検査と同期済みの SYN への ACK（RFC 5961）、S2（net.tcpstats の sequence は superuser だけ）、測りの道具の直し（review S1・S3・S8） | in-progress（2026-10-13 P4 c13a8413f、実装・模型・build 済み、T1 の QEMU 待ち） |
 | p003（案） | 送りの packet の不足: device が拒んだ data の segment で書き手が 10 ms 眠らない、ACK の出し直し | planning |
 | p004（案） | RTT の推定と RTO（RFC 6298） | planning |
 | p005（案） | fast retransmit と NewReno の回復、persist timer、窓が開いた時の再送を外す | planning |
@@ -36,7 +36,7 @@ Related Milestones: なし
 | p008（案） | 受けの SACK（RFC 2018） | planning（候補） |
 | p009（案） | 規約の全文の見直し（WS の全ての C、試験を含む） | planning |
 
-試験と道具（[tests/](tests/)）: `tcp-model/run.sh`（本物の tcp.c の host の模型と WS220 の目標の scenario、数秒）、`tcp-stream-series.sh`（QEMU と実機の長い転送の時系列、T1）、`stream.py`・`analyze.py`、`config-amd64-tcp.mk`（SSH の guest + sysctl）。WS の完了の時に回帰に残す物は master.md の Tools に移す。
+試験と道具（[tests/](tests/)）: `tcp-model/run.sh`（本物の tcp.c の host の模型と WS220 の目標の scenario、`run.sh NAME...` で選ぶ、全部で約 5 分）、`tcp-stream-series.sh`（QEMU と実機の長い転送の時系列と host の capture、run は down・down-disk・up・up-ssh、T1）、`stream.py`・`analyze.py`（`analyze: wire` の行で 100 ms の停止）、`config-amd64-tcp.mk`（SSH の guest + sysctl + tcp-stream）、`config-amd64-tcp-wrap.mk`（ISN を wrap の 16 MiB 前に）、`userland/tests/tcp-stream`（塞がる送り手）。WS の完了の時に回帰に残す物は master.md の Tools に移す。
 
 ## ユーザーの決定（2026-10-13、p001 の後）
 

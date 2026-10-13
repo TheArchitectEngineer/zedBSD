@@ -123,7 +123,42 @@ enum tcp_drain {
 /* The pause before sending again when buffers are short. */
 #define TCP_SYN_RETRY_MS 250U
 #define TCP_SEND_RETRY_MS 10U
-#define TCP_RETRANSMIT_MAX 5U
+
+/*
+ * The longest the retransmission timeout grows to as it doubles for each
+ * resend: RFC 6298 section 2.5 allows a maximum of at least 60 seconds.
+ */
+#define TCP_RETRANSMIT_TIMEOUT_MAX KERN_MS_TO_TICKS(60000U)
+
+/*
+ * How long the timer goes on resending the oldest segment before the
+ * attempt is given up (RFC 1122 section 4.2.3.5, R2), counted from the
+ * first timeout after the peer last answered.  R2 is at least 100 seconds
+ * for data and at least 3 minutes for a SYN; a time rather than a count of
+ * resends, so it holds whatever the timeouts are (ws220-p002).
+ */
+#define TCP_GIVE_UP_DATA_MS 100000U
+#define TCP_GIVE_UP_SYN_MS 180000U
+
+/*
+ * A test build may start every connection's sequence numbers this many
+ * bytes before they wrap (ws220-p002), so that a transfer of a few times
+ * that many bytes crosses the wrap every time instead of one time in
+ * four for a gigabyte.  0, the default, chooses them as usual.
+ */
+#ifndef CONFIG_TCP_ISN_WRAP_BEFORE
+#define CONFIG_TCP_ISN_WRAP_BEFORE 0U
+#endif
+
+/* How a reset that came in is taken (RFC 5961 section 3.2). */
+enum tcp_reset_check {
+	/* Its sequence number is not within the window: it is ignored. */
+	TCP_RESET_IGNORE,
+	/* It is within the window but not the next expected: a challenge acknowledgement answers it. */
+	TCP_RESET_CHALLENGE,
+	/* It is exactly the next sequence number expected: the connection is reset. */
+	TCP_RESET_ACCEPT,
+};
 
 /*
  * Idle probing for SO_KEEPALIVE, in clock ticks.  The defaults are the
@@ -173,9 +208,16 @@ static int tcp_allocate_port_locked(struct tcp_endpoint *endpoint);
 static int tcp_route(struct tcp_endpoint *endpoint, struct net_device **device, uint32_t *source);
 static int tcp_send_segment_at(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
 static int tcp_output_segment(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
-static void tcp_stats_fill_locked(const struct tcp_endpoint *endpoint, uint64_t now, struct tcp_stats_entry *entry);
+static void tcp_stats_fill_locked(const struct tcp_endpoint *endpoint, uint64_t now, int superuser, struct tcp_stats_entry *entry);
 static int tcp_allocate_port(struct tcp_endpoint *endpoint);
 static int tcp_send_segment(struct tcp_endpoint *endpoint, uint8_t flags, const void *data, size_t length);
+static int tcp_sequence_before(uint32_t left, uint32_t right);
+static int tcp_sequence_at_or_before(uint32_t left, uint32_t right);
+static uint32_t tcp_initial_sequence(uint32_t chosen);
+static uint64_t tcp_backoff_timeout(unsigned count);
+static int tcp_retransmit_given_up_locked(struct tcp_endpoint *endpoint, uint64_t now);
+static enum tcp_reset_check tcp_reset_check_locked(const struct tcp_endpoint *endpoint, uint32_t sequence);
+static int tcp_send_window_update_allowed_locked(const struct tcp_endpoint *endpoint, uint32_t sequence, uint32_t acknowledgement);
 struct tcp_discard {
 	struct packet_buf *packets[CONFIG_TCP_SEND_QUEUE_MAX];
 	unsigned count;
@@ -427,7 +469,7 @@ tcp_timer_run(
 	uint32_t sequence;
 	size_t length;
 	uint64_t delay;
-	unsigned shift;
+	int given_up;
 	int error;
 	int failed;
 	int probe;
@@ -528,8 +570,12 @@ tcp_timer_run(
 			continue;
 		}
 
-		/* Too many retransmissions abandon the attempt. */
-		if (endpoint->tcp.retransmit_count >= TCP_RETRANSMIT_MAX) {
+		/*
+		 * A segment resent for R2 without an answer from the peer
+		 * abandons the attempt (RFC 1122 section 4.2.3.5).
+		 */
+		given_up = tcp_retransmit_given_up_locked(endpoint, now);
+		if (given_up) {
 			tcp_retransmit_reset(endpoint, &discard);
 			endpoint->tcp.state = TCP_CLOSED;
 			endpoint->tcp.active_connect_generation = 0;
@@ -579,12 +625,9 @@ tcp_timer_run(
 		if (length != 0)
 			kern_memcpy(payload, oldest->packet->data, length);
 
-		/* Backs the deadline off exponentially, capped at eight times. */
+		/* Backs the deadline off exponentially, up to the longest timeout. */
 		endpoint->tcp.retransmit_count++;
-		shift = endpoint->tcp.retransmit_count;
-		if (shift > 3U)
-			shift = 3U;
-		delay = TCP_INITIAL_RTO << shift;
+		delay = tcp_backoff_timeout(endpoint->tcp.retransmit_count);
 		endpoint->tcp.retransmit_deadline = now + delay;
 
 		/* The resend is counted for net.tcpstats, whether or not the device takes it. */
@@ -680,12 +723,15 @@ tcp_timer_next_deadline(
  * written are the ones counted; each socket is read under its own lock,
  * taken after the registry's as the timer takes them.  Without an output,
  * or with one shorter than needed (ENOMEM), only the length is reported.
+ * A reader that is not the superuser is given every socket without its
+ * sequence numbers.
  */
 int
 tcp_stats_copy(
 	void *output,
 	size_t capacity,
-	size_t *needed)
+	size_t *needed,
+	int superuser)
 {
 	struct tcp_stats_header header;
 	struct tcp_stats_entry entry;
@@ -738,7 +784,7 @@ tcp_stats_copy(
 	/* Each socket after it, as one moment of its own state. */
 	for (endpoint = tcp_sockets; endpoint != NULL; endpoint = endpoint->next) {
 		socket_irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
-		tcp_stats_fill_locked(endpoint, now, &entry);
+		tcp_stats_fill_locked(endpoint, now, superuser, &entry);
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
 
 		kern_memcpy(place, &entry, sizeof(entry));
@@ -1203,18 +1249,20 @@ tcp_send_segment_at(
  * Fills one net.tcpstats entry from a socket, under its lock.
  *
  * now is the tick of the reading, which the time left of the
- * retransmission deadline is measured from.
+ * retransmission deadline is measured from.  The sequence numbers are given
+ * to the superuser only (ws220-p002): with them and the addresses, a
+ * process could put data or a reset into another user's connection.
  */
 static void
 tcp_stats_fill_locked(
 	const struct tcp_endpoint *endpoint,
 	uint64_t now,
+	int superuser,
 	struct tcp_stats_entry *entry)
 {
 	const struct tcp_socket *tcp;
 	const struct socket *socket;
 	const struct tcp_counters *counters;
-	unsigned shift;
 	int ipv6;
 
 	/* The parts of the endpoint read, and an entry with every field not kept 0. */
@@ -1241,9 +1289,18 @@ tcp_stats_fill_locked(
 	entry->local_port = tcp->inet.local_port;
 	entry->remote_port = tcp->inet.remote_port;
 
-	/* The send side: sequence space, the peer's window, and the ring that holds what is in flight. */
-	entry->send_unacknowledged = tcp->send_unacknowledged;
-	entry->send_next = tcp->send_next;
+	/*
+	 * The sequence numbers, for the superuser only; TCP_STATS_HAVE_SEQUENCE
+	 * tells a reader they are given, so their 0 otherwise means "not given".
+	 */
+	if (superuser) {
+		entry->features |= TCP_STATS_HAVE_SEQUENCE;
+		entry->send_unacknowledged = tcp->send_unacknowledged;
+		entry->send_next = tcp->send_next;
+		entry->receive_next = tcp->receive_next;
+	}
+
+	/* The send side: the peer's window, and the ring that holds what is in flight. */
 	entry->send_window = tcp->peer_window;
 	entry->in_flight_bytes = tcp->send_next - tcp->send_unacknowledged;
 	entry->send_segments = tcp->send_count;
@@ -1253,20 +1310,16 @@ tcp_stats_fill_locked(
 	/*
 	 * The retransmission timer: how often the oldest segment was resent,
 	 * the timeout it waits now (the initial one doubled for each resend,
-	 * at most eight times), and what is left of it.
+	 * up to 60 seconds), and what is left of it.
 	 */
 	entry->backoff = tcp->retransmit_count;
-	shift = tcp->retransmit_count;
-	if (shift > 3U)
-		shift = 3U;
-	entry->rto_ms = (uint32_t)kern_ticks_to_ms(TCP_INITIAL_RTO << shift);
+	entry->rto_ms = (uint32_t)kern_ticks_to_ms(tcp_backoff_timeout(tcp->retransmit_count));
 
 	/* The time left of a deadline still ahead; one due or none is 0. */
 	if (tcp->send_count != 0 && tcp->retransmit_deadline > now)
 		entry->retransmit_in_ms = (uint32_t)kern_ticks_to_ms(tcp->retransmit_deadline - now);
 
 	/* The receive side: what the peer may send, and what waits for the reader. */
-	entry->receive_next = tcp->receive_next;
 	entry->receive_window = tcp->advertised_window;
 	entry->reorder_segments = tcp->reorder_count;
 	entry->receive_packets = (uint32_t)socket->receive_packets;
@@ -1484,6 +1537,7 @@ tcp_retransmit_reset(
 	endpoint->tcp.send_count = 0;
 	endpoint->tcp.retransmit_deadline = 0;
 	endpoint->tcp.retransmit_count = 0;
+	endpoint->tcp.retransmit_since = 0;
 }
 
 /* Frees the payloads a reset handed over, outside any lock. */
@@ -1497,6 +1551,205 @@ tcp_discard_free(
 	for (index = 0; index < discard->count; index++)
 		packet_buf_free(discard->packets[index]);
 	discard->count = 0;
+}
+
+/*
+ * Tells whether one sequence number comes before another.
+ *
+ * Sequence numbers are compared modulo 2^32 (RFC 9293 section 3.4): left
+ * comes first when it lies in the half of the space before right, which
+ * stays true where the numbers wrap from 2^32 - 1 to 0.
+ */
+static int
+tcp_sequence_before(
+	uint32_t left,
+	uint32_t right)
+{
+	int32_t distance;
+
+	/* The signed distance from right to left: negative when left comes first. */
+	distance = (int32_t)(left - right);
+
+	/* left lies in the half of the space before right. */
+	if (distance < 0)
+		return 1;
+
+	/* Succeeded: left is right itself or comes after it. */
+	return 0;
+}
+
+/* Tells whether one sequence number is another or comes before it, modulo 2^32. */
+static int
+tcp_sequence_at_or_before(
+	uint32_t left,
+	uint32_t right)
+{
+	int before;
+
+	/* The same number. */
+	if (left == right)
+		return 1;
+
+	/* An earlier one. */
+	before = tcp_sequence_before(left, right);
+	if (before)
+		return 1;
+
+	/* Succeeded: left comes after right. */
+	return 0;
+}
+
+/*
+ * Gives the initial sequence number of a new connection.
+ *
+ * chosen is the number the caller picked; a build with
+ * CONFIG_TCP_ISN_WRAP_BEFORE puts the first data byte that many bytes
+ * before the wrap instead, the SYN taking the number before it.
+ */
+static uint32_t
+tcp_initial_sequence(
+	uint32_t chosen)
+{
+	uint32_t wrap_before;
+
+	/* The ordinary build keeps the number the caller picked. */
+	wrap_before = (uint32_t)CONFIG_TCP_ISN_WRAP_BEFORE;
+	if (wrap_before == 0U)
+		return chosen;
+
+	/* Succeeded: the SYN's number, one before the first data byte. */
+	return 0U - wrap_before - 1U;
+}
+
+/*
+ * Gives the retransmission timeout after a number of resends.
+ *
+ * The initial timeout doubles for each resend (RFC 6298 section 5.5) and
+ * stops at TCP_RETRANSMIT_TIMEOUT_MAX.
+ */
+static uint64_t
+tcp_backoff_timeout(
+	unsigned count)
+{
+	uint64_t timeout;
+	unsigned index;
+
+	/* Doubles the initial timeout once per resend, until it reaches the longest. */
+	timeout = TCP_INITIAL_RTO;
+	for (index = 0; index < count; index++) {
+		timeout *= 2U;
+		if (timeout >= TCP_RETRANSMIT_TIMEOUT_MAX)
+			break;
+	}
+
+	/* A doubling past the longest timeout is held at it. */
+	if (timeout > TCP_RETRANSMIT_TIMEOUT_MAX)
+		timeout = TCP_RETRANSMIT_TIMEOUT_MAX;
+
+	/* Succeeded: the timeout the next deadline waits. */
+	return timeout;
+}
+
+/*
+ * Tells whether the timer has resent the oldest segment for long enough to
+ * give the attempt up, under the socket lock.
+ *
+ * The first timeout since the peer last answered starts the count; R2 runs
+ * from it, three minutes while the connection is still being set up (a
+ * SYN is what is resent) and 100 seconds after (RFC 1122 section 4.2.3.5).
+ */
+static int
+tcp_retransmit_given_up_locked(
+	struct tcp_endpoint *endpoint,
+	uint64_t now)
+{
+	uint64_t limit;
+
+	/* The first timeout since the peer answered starts the time R2 counts. */
+	if (endpoint->tcp.retransmit_since == 0) {
+		endpoint->tcp.retransmit_since = now;
+		return 0;
+	}
+
+	/* A connection being set up resends its SYN for longer than one that carries data. */
+	if (endpoint->tcp.state == TCP_SYN_SENT ||
+	    endpoint->tcp.state == TCP_SYN_RECEIVED) {
+		limit = KERN_MS_TO_TICKS(TCP_GIVE_UP_SYN_MS);
+	} else {
+		limit = KERN_MS_TO_TICKS(TCP_GIVE_UP_DATA_MS);
+	}
+
+	/* R2 has not passed yet: the segment is resent again. */
+	if (now - endpoint->tcp.retransmit_since < limit)
+		return 0;
+
+	/* Succeeded: R2 has passed without an answer, so the attempt is given up. */
+	return 1;
+}
+
+/*
+ * Tells how a reset of a connection past its SYN is taken, under the socket
+ * lock (RFC 9293 section 3.10.7.4, RFC 5961 section 3.2).
+ *
+ * A reset whose sequence number is the next one expected resets the
+ * connection.  One elsewhere within the window this end advertised is
+ * answered by an acknowledgement, which a peer that really reset answers
+ * with a reset of the right number; a blind reset from someone who does
+ * not know the number ends nothing.  Any other is ignored.
+ */
+static enum tcp_reset_check
+tcp_reset_check_locked(
+	const struct tcp_endpoint *endpoint,
+	uint32_t sequence)
+{
+	uint32_t offset;
+
+	/* The next sequence number expected resets the connection. */
+	if (sequence == endpoint->tcp.receive_next)
+		return TCP_RESET_ACCEPT;
+
+	/* Elsewhere in the window this end last advertised: the peer is asked again. */
+	offset = sequence - endpoint->tcp.receive_next;
+	if (offset < (uint32_t)endpoint->tcp.advertised_window)
+		return TCP_RESET_CHALLENGE;
+
+	/* Succeeded: outside the window, the reset is not this connection's. */
+	return TCP_RESET_IGNORE;
+}
+
+/*
+ * Tells whether an acceptable acknowledgement may set the peer's window,
+ * under the socket lock (RFC 9293 section 3.10.7.4).
+ *
+ * It may when its segment is newer than the one the window came from:
+ * a later sequence number (SND.WL1), or the same one and an
+ * acknowledgement at least as far (SND.WL2).  The caller has checked that
+ * the acknowledgement lies within what was sent.
+ */
+static int
+tcp_send_window_update_allowed_locked(
+	const struct tcp_endpoint *endpoint,
+	uint32_t sequence,
+	uint32_t acknowledgement)
+{
+	int newer;
+
+	/* A segment from later in the peer's sequence space. */
+	newer = tcp_sequence_before(endpoint->tcp.send_window_sequence, sequence);
+	if (newer)
+		return 1;
+
+	/* An older segment never sets the window. */
+	if (sequence != endpoint->tcp.send_window_sequence)
+		return 0;
+
+	/* The same segment number with an acknowledgement as far or farther. */
+	newer = tcp_sequence_at_or_before(endpoint->tcp.send_window_acknowledgement, acknowledgement);
+	if (newer)
+		return 1;
+
+	/* Succeeded: the window came from a newer acknowledgement, which stands. */
+	return 0;
 }
 
 /* Reports the sequence space the outstanding segments occupy. */
@@ -1524,6 +1777,7 @@ tcp_retire_acknowledged(
 	uint32_t end;
 	int progressed = 0;
 	int recovering;
+	int before;
 
 	/* Process input until it is exhausted. */
 	while (endpoint->tcp.send_count != 0) {
@@ -1531,11 +1785,11 @@ tcp_retire_acknowledged(
 		end = entry->sequence + entry->advance;
 
 		/*
-		 * Stops at the first segment the peer has not taken.  The
-		 * comparison is signed so that it stays correct where the
-		 * sequence numbers wrap.
+		 * Stops at the first segment the peer has not taken, compared
+		 * modulo 2^32 so that it stays correct where the numbers wrap.
 		 */
-		if ((int32_t)(acknowledgement - end) < 0)
+		before = tcp_sequence_before(acknowledgement, end);
+		if (before)
 			break;
 
 		discard->packets[discard->count++] = entry->packet;
@@ -1556,6 +1810,7 @@ tcp_retire_acknowledged(
 	 */
 	if (!progressed) {
 		endpoint->tcp.retransmit_count = 0;
+		endpoint->tcp.retransmit_since = 0;
 		return;
 	}
 
@@ -1568,6 +1823,7 @@ tcp_retire_acknowledged(
 	 */
 	recovering = progressed && endpoint->tcp.retransmit_count != 0;
 	endpoint->tcp.retransmit_count = 0;
+	endpoint->tcp.retransmit_since = 0;
 	if (endpoint->tcp.send_count == 0) {
 		endpoint->tcp.retransmit_deadline = 0;
 	} else if (recovering) {
@@ -1710,6 +1966,7 @@ tcp_send_reliable(
 	/* The deadline belongs to the oldest segment, so only it starts one. */
 	if (endpoint->tcp.send_count == 0) {
 		endpoint->tcp.retransmit_count = 0;
+		endpoint->tcp.retransmit_since = 0;
 		endpoint->tcp.retransmit_deadline =
 		    sched_ticks() + TCP_INITIAL_RTO;
 	}
@@ -2081,6 +2338,9 @@ tcp_connect(
 	 * the scheduler tick did not advance between them.
 	 */
 	endpoint->tcp.send_next ^= generation * 2654435761U;
+
+	/* A test build may start the sequence numbers just before they wrap. */
+	endpoint->tcp.send_next = tcp_initial_sequence(endpoint->tcp.send_next);
 	endpoint->tcp.send_unacknowledged = endpoint->tcp.send_next;
 	endpoint->tcp.state = TCP_SYN_SENT;
 
@@ -3031,6 +3291,7 @@ tcp_passive_syn(
 	child->tcp.receive_next = sequence + 1U;
 	child->tcp.send_next = (uint32_t)sched_ticks() * 1103515245U +
 	    child->tcp.inet.local_port + source_port;
+	child->tcp.send_next = tcp_initial_sequence(child->tcp.send_next);
 	child->tcp.send_unacknowledged = child->tcp.send_next;
 	child->tcp.listener = &listener->tcp;
 	child->tcp.inet.socket.receive_timeout_ticks =
@@ -3235,6 +3496,7 @@ tcp_segment_input(
 	unsigned long socket_irq;
 	struct tcp_discard retransmit;
 	int reset_error;
+	enum tcp_reset_check reset_check;
 	uint32_t resend_sequence;
 	int resend;
 	int established;
@@ -3244,6 +3506,12 @@ tcp_segment_input(
 	int discard_payload;
 	int queued;
 	int window_opened;
+	int window_update;
+	int acknowledges_unsent;
+	int acknowledges_old;
+	uint32_t overlap;
+	int starts_before;
+	uint16_t segment_window;
 	uint16_t previous_window;
 	int retired;
 	int accept_fin;
@@ -3298,7 +3566,29 @@ tcp_segment_input(
 		reset_error = tcp_reset_error_locked(endpoint, flags,
 		    acknowledgement);
 
-		/* Ignores a reset that does not answer this connection's SYN. */
+		/*
+		 * Past the SYN, a reset is taken only at the next sequence
+		 * number expected; one elsewhere in the window is challenged,
+		 * and one outside it ignored (RFC 5961 section 3.2).
+		 */
+		reset_check = TCP_RESET_ACCEPT;
+		if (endpoint->tcp.state != TCP_SYN_SENT)
+			reset_check = tcp_reset_check_locked(endpoint, sequence);
+		if (reset_check == TCP_RESET_IGNORE)
+			reset_error = 0;
+		ack_sequence = endpoint->tcp.send_next;
+
+		/* Answers a reset within the window with an acknowledgement, and the connection stays. */
+		if (reset_check == TCP_RESET_CHALLENGE) {
+			spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock,
+			    socket_irq);
+			(void)tcp_send_segment_at(endpoint, ack_sequence, TCP_ACK, NULL, 0);
+			packet_buf_free(packet);
+			socket_release(&endpoint->tcp.inet.socket);
+			return 0;
+		}
+
+		/* Ignores a reset that does not answer this connection's SYN, or lies outside the window. */
 		if (reset_error == 0) {
 			spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock,
 			    socket_irq);
@@ -3352,10 +3642,18 @@ tcp_segment_input(
 			    : endpoint->tcp.send_next;
 		}
 
+		/*
+		 * The handshake's ACK establishes the connection and gives the
+		 * peer's first window, which later segments update by SND.WL1
+		 * and SND.WL2 (RFC 9293 section 3.10.7.3).
+		 */
 		if ((flags & TCP_ACK) != 0 &&
 		    acknowledgement == endpoint->tcp.send_next) {
 			endpoint->tcp.send_unacknowledged = acknowledgement;
 			tcp_retransmit_reset(endpoint, &retransmit);
+			endpoint->tcp.peer_window = wire_get16(tcp->window);
+			endpoint->tcp.send_window_sequence = sequence;
+			endpoint->tcp.send_window_acknowledgement = acknowledgement;
 			endpoint->tcp.state = TCP_ESTABLISHED;
 			tcp_keepalive_arm_locked(endpoint);
 			established = 1;
@@ -3388,6 +3686,8 @@ tcp_segment_input(
 			tcp_retransmit_reset(endpoint, &retransmit);
 			endpoint->tcp.receive_next = sequence + 1U;
 			endpoint->tcp.peer_window = wire_get16(tcp->window);
+			endpoint->tcp.send_window_sequence = sequence;
+			endpoint->tcp.send_window_acknowledgement = acknowledgement;
 			endpoint->tcp.state = TCP_ESTABLISHED;
 			endpoint->tcp.active_connect_generation = 0;
 			endpoint->tcp.connect_wait_deadline = 0;
@@ -3402,6 +3702,27 @@ tcp_segment_input(
 		tcp_discard_free(&retransmit);
 		if (established)
 			(void)tcp_send_segment(endpoint, TCP_ACK, NULL, 0);
+		packet_buf_free(packet);
+		socket_release(&endpoint->tcp.inet.socket);
+		return 0;
+	}
+
+	/*
+	 * A SYN on a connection past its handshake (most often the peer's
+	 * SYN-ACK sent again because the handshake's last ACK was lost) is
+	 * answered by an acknowledgement and dropped (RFC 5961 section 4): the
+	 * peer that lost the ACK completes its handshake on it, and a SYN from
+	 * anyone else ends nothing.
+	 */
+	if ((flags & TCP_SYN) != 0) {
+		socket_irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+		ack_sequence = endpoint->tcp.send_next;
+
+		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
+
+		/* Acknowledges what this end has, and drops the SYN. */
+		(void)tcp_send_segment_at(endpoint, ack_sequence, TCP_ACK, NULL, 0);
 		packet_buf_free(packet);
 		socket_release(&endpoint->tcp.inet.socket);
 		return 0;
@@ -3434,28 +3755,68 @@ tcp_segment_input(
 		socket_irq = spin_lock_irqsave(
 		    &endpoint->tcp.inet.socket.lock);
 		endpoint->tcp.counters.acks_in++;
-		if (acknowledgement >= endpoint->tcp.send_unacknowledged &&
-		    acknowledgement <= endpoint->tcp.send_next) {
+
+		/*
+		 * Where the acknowledgement lies, modulo 2^32 (RFC 9293
+		 * section 3.4): past what was sent, before what is
+		 * outstanding, or within it.
+		 */
+		acknowledges_unsent = tcp_sequence_before(endpoint->tcp.send_next,
+		    acknowledgement);
+		acknowledges_old = tcp_sequence_before(acknowledgement,
+		    endpoint->tcp.send_unacknowledged);
+
+		/*
+		 * An acknowledgement of something not yet sent is answered by
+		 * an acknowledgement, and the segment dropped (RFC 9293
+		 * section 3.10.7.4); net.tcpstats counts it.
+		 */
+		if (acknowledges_unsent) {
+			endpoint->tcp.counters.acks_outside++;
+			ack_sequence = endpoint->tcp.send_next;
+			spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
+			(void)tcp_send_segment_at(endpoint, ack_sequence, TCP_ACK, NULL, 0);
+			packet_buf_free(packet);
+			socket_release(&endpoint->tcp.inet.socket);
+			return 0;
+		}
+
+		/*
+		 * One within what is outstanding retires what it covers.  An
+		 * older one, overtaken on the way by a later one, is ignored,
+		 * and net.tcpstats counts it; the segment's data and FIN are
+		 * still taken below.
+		 */
+		if (!acknowledges_old) {
 			endpoint->tcp.send_unacknowledged = acknowledgement;
 			tcp_retire_acknowledged(endpoint, acknowledgement,
 			    &retransmit);
 		} else {
-			/*
-			 * An acknowledgement outside the outstanding space by
-			 * this unsigned test is ignored; net.tcpstats counts it,
-			 * since after the sequence numbers wrap every one is.
-			 */
 			endpoint->tcp.counters.acks_outside++;
 		}
 
+		/*
+		 * The window is taken from an acceptable acknowledgement whose
+		 * segment is newer than the one the window last came from
+		 * (SND.WL1 and SND.WL2), so an old one cannot set it back.
+		 */
 		previous_window = endpoint->tcp.peer_window;
-		window_opened = wire_get16(tcp->window) >
-		    endpoint->tcp.peer_window;
-		endpoint->tcp.peer_window = wire_get16(tcp->window);
+		segment_window = wire_get16(tcp->window);
+		window_opened = 0;
+		window_update = 0;
+		if (!acknowledges_old)
+			window_update = tcp_send_window_update_allowed_locked(endpoint, sequence, acknowledgement);
+		if (window_update) {
+			if (segment_window > endpoint->tcp.peer_window)
+				window_opened = 1;
+			endpoint->tcp.peer_window = segment_window;
+			endpoint->tcp.send_window_sequence = sequence;
+			endpoint->tcp.send_window_acknowledgement = acknowledgement;
 
-		/* A closed window is counted for net.tcpstats. */
-		if (endpoint->tcp.peer_window == 0)
-			endpoint->tcp.counters.zero_windows_in++;
+			/* A closed window is counted for net.tcpstats. */
+			if (endpoint->tcp.peer_window == 0)
+				endpoint->tcp.counters.zero_windows_in++;
+		}
 
 		/*
 		 * So is a duplicate acknowledgement (RFC 5681 section 2): one
@@ -3509,9 +3870,29 @@ tcp_segment_input(
 		    &endpoint->tcp.inet.socket.lock);
 		accept_payload = sequence == endpoint->tcp.receive_next;
 		discard_payload = endpoint->tcp.inet.socket.read_shutdown;
-		old_payload = (int32_t)(sequence + (uint32_t)payload_length -
-		    endpoint->tcp.receive_next) <= 0;
+		old_payload = tcp_sequence_at_or_before(sequence + (uint32_t)payload_length,
+		    endpoint->tcp.receive_next);
 		ack_sequence = endpoint->tcp.send_next;
+
+		/*
+		 * A segment that starts before receive_next and ends after it
+		 * (a resend the peer cut differently, or one that overlaps a
+		 * part already taken) has its part already taken cut off, and
+		 * the rest is taken in order (RFC 9293 section 3.10.7.4).
+		 */
+		overlap = 0;
+		if (!accept_payload && !old_payload) {
+			starts_before = tcp_sequence_before(sequence, endpoint->tcp.receive_next);
+			if (starts_before)
+				overlap = endpoint->tcp.receive_next - sequence;
+		}
+
+		/* The segment then starts at receive_next, shorter by the part cut off. */
+		if (overlap != 0) {
+			sequence = endpoint->tcp.receive_next;
+			payload_length -= overlap;
+			accept_payload = 1;
+		}
 
 		/* A segment taken already, or one ahead of a gap, is counted for net.tcpstats. */
 		if (!accept_payload && old_payload)
@@ -3549,7 +3930,9 @@ tcp_segment_input(
 			goto payload_done;
 		}
 
-		if (packet_buf_pull(packet, header_length) == NULL) {
+		/* The header comes off, and with it any part of the payload already taken. */
+		pulled = packet_buf_pull(packet, header_length + overlap);
+		if (pulled == NULL) {
 			packet_buf_free(packet);
 			socket_release(&endpoint->tcp.inet.socket);
 			return EINVAL;
@@ -3796,6 +4179,7 @@ tcp_reorder_keep(
 	uint32_t offset;
 	unsigned index;
 	unsigned place;
+	int before;
 
 	/* The payload's place: within the window this end last advertised. */
 	length = (uint32_t)(*packet)->length;
@@ -3820,8 +4204,9 @@ tcp_reorder_keep(
 			return;
 		}
 
-		/* The first one after it. */
-		if ((int32_t)(sequence - tcp->reorder_sequence[place]) < 0)
+		/* The first one after it, compared modulo 2^32. */
+		before = tcp_sequence_before(sequence, tcp->reorder_sequence[place]);
+		if (before)
 			break;
 	}
 
@@ -3880,14 +4265,21 @@ tcp_reorder_drain(
 	uint32_t taken;
 	unsigned index;
 	void *pulled;
+	int reaches;
 	int error;
 
 	/* Each kept segment at the front, while it reaches receive_next. */
 	for (;;) {
 		irq = spin_lock_irqsave(&tcp->inet.socket.lock);
 
-		if (tcp->reorder_count == 0U ||
-		    (int32_t)(tcp->reorder_sequence[0] - tcp->receive_next) > 0) {
+		if (tcp->reorder_count == 0U) {
+			spin_unlock_irqrestore(&tcp->inet.socket.lock, irq);
+			return;
+		}
+
+		/* The front one still lies after receive_next, compared modulo 2^32: the gap is open. */
+		reaches = tcp_sequence_at_or_before(tcp->reorder_sequence[0], tcp->receive_next);
+		if (!reaches) {
 			spin_unlock_irqrestore(&tcp->inet.socket.lock, irq);
 			return;
 		}
