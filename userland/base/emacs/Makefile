@@ -8,7 +8,10 @@
 # /bin/emacs でお願いします").  The application starts with the line
 # "#!/usr/bin/noct", which Noct writes and strips itself, so the kernel runs
 # it with the interpreter: /usr/bin/noct is a link to the target's /bin/noct.
-# The bundled SKK dictionary goes to /usr/share/remacs/skkjisyo.dic.  REmacs's
+# The bundled SKK dictionaries go to /usr/share/remacs: the compact
+# skkjisyo.dic and the fuller skkjisyo-x.dic (dict/SKK-JISYO.X), which the
+# editor looks in after the compact one (BUG-302).  Both are REmacs's own
+# clean-room dictionaries under the same zlib license.  REmacs's
 # own Makefile is Makefile.remacs; it runs in a copy under BUILD, so the tree
 # stays clean.
 ZEDBSD_REMACS_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
@@ -34,15 +37,19 @@ REMACS_WORK_DIR := $(BUILD)/packages/base/emacs/work
 REMACS_HOST_NOCT_STAMP := build/host-noct-state/built-$(ZEDBSD_NOCT_VERSION)-$(ZEDBSD_NOCT_PATCH_LEVEL)-process
 REMACS_NAP := $(BUILD)/packages/base/emacs/remacs.nap
 REMACS_DICTIONARY := $(REMACS_SOURCE_DIR)/dict/SKK-JISYO.remacs
+REMACS_DICTIONARY_X := $(REMACS_SOURCE_DIR)/dict/SKK-JISYO.X
 
 # These recursive additions are evaluated after config.mk dependencies have
 # been expanded.
 ZEDBSD_PACKAGE_INPUTS += $(if $(filter emacs,$(ZEDBSD_USER_PROGRAMS)),\
-	$(REMACS_NAP) $(REMACS_DICTIONARY))
+	$(REMACS_NAP) $(REMACS_DICTIONARY) $(REMACS_DICTIONARY_X))
 ZEDBSD_PACKAGE_FILES += $(if $(filter emacs,$(ZEDBSD_USER_PROGRAMS)),\
 	--file /bin/emacs=$(REMACS_NAP) \
 	--mode /bin/emacs=0755 \
-	--file /usr/share/remacs/skkjisyo.dic=$(REMACS_DICTIONARY))
+	--file /usr/share/remacs/skkjisyo.dic=$(REMACS_DICTIONARY) \
+	--mode /usr/share/remacs/skkjisyo.dic=0644 \
+	--file /usr/share/remacs/skkjisyo-x.dic=$(REMACS_DICTIONARY_X) \
+	--mode /usr/share/remacs/skkjisyo-x.dic=0644)
 ZEDBSD_PACKAGE_LINKS += $(if $(filter emacs,$(ZEDBSD_USER_PROGRAMS)),\
 	/usr/bin/noct=/bin/noct)
 

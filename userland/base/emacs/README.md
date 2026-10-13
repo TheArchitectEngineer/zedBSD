@@ -85,7 +85,9 @@ taken into zedBSD as userland/base/emacs (2026-10-04, ws129).  Its author
 licenses it under the zlib license (SPDX-License-Identifier: Zlib).  The
 zedBSD package (`emacs`) builds `remacs.nap` from it with the host's Noct and
 installs it as the command `/bin/emacs` (2026-10-04, ws129-p012), with the
-bundled dictionary at `/usr/share/remacs/skkjisyo.dic`.  The application
+bundled dictionaries at `/usr/share/remacs/skkjisyo.dic` (compact) and
+`/usr/share/remacs/skkjisyo-x.dic` (`SKK-JISYO.X`, looked in after the
+compact one; 2026-10-14, BUG-302).  The application
 starts with `#!/usr/bin/noct`, so the kernel runs it with noct; the package
 links `/usr/bin/noct` to `/bin/noct` (`Makefile`; REmacs's own build is
 `Makefile.remacs`, which `make -f Makefile.remacs` runs as before).
