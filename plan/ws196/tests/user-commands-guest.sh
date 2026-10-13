@@ -23,21 +23,51 @@ cd "$(dirname -- "$0")/../../.."
 out=${1:-build/ws196-p004-guest}
 mkdir -p "$out"
 : > "$out/ssh-retries.txt"
-# Runs a command in the guest and prints its output.  After one boot the guest closed SSH connections at once for
-# about a minute (T1-597: empty answers, ssh's status 255): a status of 255 is ssh's own failure, so the command is
-# given again every 3 s, for up to 90 s, and each time is written to $out/ssh-retries.txt (a connection lost while the
-# command ran would run it twice, so a retry is reported at the end).
+: > "$out/ssh-lost.txt"
+# Runs a command in the guest and prints its output.  The command first writes its own mark (this run's tag and its
+# number) to /tmp/guest-calls in the guest.  A failure of the connection rather than of the command is ssh's own
+# status 255 (T1-597: after one boot the guest closed SSH connections at once for about a minute) or no answer within
+# 60 s (T1-600: remove-alice's answer stayed empty for the whole 120 s the host waited, and account-admin left no sign
+# of running: no line in the log, the files unchanged, the lock free for the next request; the same steps had passed
+# in T1-597 on the same code; BUG-281).  After one, the guest is asked whether the mark is there.  Not there: the
+# command never started, and it is given again every 3 s for up to 90 s, each time written to $out/ssh-retries.txt.
+# There (or the guest cannot be asked): the command is not given again, since it may have changed something, and the
+# failure, with the guest's processes when it could be asked, is written to $out/ssh-lost.txt.  Both are counted at
+# the end.
+g_tag="$(date +%s)-$$"
+g_call=0
 guest() {
 	g_tries=0
 	while :; do
-		g_answer=$(timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null)
+		g_call=$((g_call + 1))
+		g_mark="$g_tag-$g_call"
+		g_answer=$(timeout 60 python3 plan/tools/guest/guest.py run "echo $g_mark >> /tmp/guest-calls; $1" 2>&1 </dev/null)
 		g_code=$?
-		if [ "$g_code" -ne 255 ] || [ "$g_tries" -ge 30 ]; then break; fi
+		if [ "$g_code" -ne 255 ] && [ "$g_code" -ne 124 ]; then break; fi
+		guest_started "$g_mark"
+		if [ "$g_started" != 0 ] || [ "$g_tries" -ge 30 ]; then
+			printf '== %s status %s (%s): %s\n%s\n' "$g_mark" "$g_code" "$g_started" "$1" "$g_asked" >> "$out/ssh-lost.txt"
+			break
+		fi
 		g_tries=$((g_tries + 1))
-		printf '%s %s\n' "$g_tries" "$1" >> "$out/ssh-retries.txt"
+		printf '%s status %s: %s\n' "$g_mark" "$g_code" "$1" >> "$out/ssh-retries.txt"
 		sleep 3
 	done
 	printf '%s\n' "$g_answer"
+}
+# Sets g_started to 0 when a mark is not in the guest, and g_asked to the answer: the count, then the processes.  It
+# is "unknown" when the guest cannot be asked (ssh's 255 for 90 s, or no answer in 60 s).
+guest_started() {
+	s_tries=0
+	while :; do
+		g_asked=$(timeout 60 python3 plan/tools/guest/guest.py run "cat /tmp/guest-calls 2>/dev/null | grep -cx $1; ps -A -o user,state,pid,ppid,comm" 2>&1 </dev/null)
+		s_code=$?
+		if [ "$s_code" -ne 255 ] || [ "$s_tries" -ge 30 ]; then break; fi
+		s_tries=$((s_tries + 1))
+		sleep 3
+	done
+	g_started=unknown
+	if [ "$s_code" -eq 0 ]; then g_started=$(printf '%s\n' "$g_asked" | head -n 1); fi
 }
 status=0
 pass() { echo "$1: ok"; }
@@ -139,5 +169,6 @@ expect sudo-del '^status=0$' "$(run '/sbin/userdel sam')"
 # The files put back, with the homes made and the record of the last user ID.
 guest 'cp -p /tmp/p004.passwd /etc/passwd; cp -p /tmp/p004.group /etc/group; cp -p /tmp/p004.shadow /etc/shadow; rm -rf /home/tom /home/jay; rm -f /etc/account-admin.last-id' >/dev/null
 echo "ssh-retries: $(wc -l < "$out/ssh-retries.txt" | tr -d ' ')"
+echo "ssh-lost: $(grep -c '^== ' "$out/ssh-lost.txt")"
 echo "user-commands-guest: status=$status"
 exit $status

@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws196-p004 -->
 # ws196-p004: T1 — account-admin の root の形と useradd・usermod・userdel を guest で
 
-Status: uncleared（T1-597 で 2 が FAIL。試験の直し 842c58a82、再試験の依頼は下の「T1 への再試験の依頼（T1-597 の後）」）
+Status: uncleared（T1-600 で 1 の remove-alice が FAIL（答えが空、SSH の経路）。試験の直し e317a9b1d、再試験の依頼は下の「T1 への再試験の依頼（T1-600 の後）」）
 Disposition: normal
 Parent: [WS196](../ws.md)
 Queue: —（Q1 が T1 に渡す）
@@ -71,3 +71,63 @@ zedBSD の guest で 1 回の QEMU で確かめる。p002 と p003 の依頼を 
 - **返す物**: 2 つの出力の全文（`ssh-retries: N` の行を含む）、`OUT1/ssh-retries.txt`・`OUT2/ssh-retries.txt`、
   `OUT2/messages.txt`、guest の起動から 1 の開始までの秒数。N が 0 でなければ、その間の guest の `/var/log/messages` の
   末尾と `/var/log/sessiond.log` の末尾（解析は要らない、P2 が読む）。
+
+### T1-600（2026-10-14、QEMU、image build/t1-597、tree 79562b496、起動から 29 s、ssh-retries 0）— uncleared
+
+- 2 user-commands-guest: PASS。
+- 1 admin-p026: `status=1`。`busy: ok` の直後の `remove-alice: FAILED` の答えが**空**（`status=` の行も無い）、続く
+  alice-gone・alice-gone-group で passwd・group・shadow に alice が残り、home-exists は `error name-taken`。後の add-bob・
+  remove-bob・bob-home-gone は ok。証拠: T1 の worktree の `build/review/t1-600/`（admin.txt・out1・out2）。
+
+### FAIL の原因（2026-10-14 P2、T1-600 の出力と code から。QEMU は流していない）
+
+- **account-admin の欠陥ではない。remove-alice の request は guest で走った跡が無く、SSH の経路で答えが 120 s 来なかった**
+  （[BUG-281](../../bugs/BUG-281.md) の「答えが空のまま timeout」と同じ形）。根拠:
+  - guest の log（out1/messages.txt）で busy（17:36:58、pid 149）の次の account-admin の行は 17:38:59 の home-exists の
+    add（pid 170）。remove-alice の行が無い。account-admin は request を読んだ後のどの終わり方でも 1 行を書く（拒否・
+    失敗・結果。main と admin_check_caller）。
+  - 答えには `su` の shell の `echo status=$?` の行も無い。account-admin が落ちた（signal・crash）なら `status=139` などが出る。
+    答えが全く無いのは、command 全体が host の `timeout 120` の間に何も返さなかったこと（`timeout` の 124 は 255 でないので
+    取り直されず、ssh-retries 0）。
+  - 17:38:59 の add は lock を取れて `name-taken` を返した。account-admin が lock の中（admin_remove の admin_busy・passkey・
+    commit）で止まっていたなら、その add は lock を取れずに `error failed`（`the account files could not be locked`）に
+    なる（zedBSD の flock は open file description の排他、src/kern/record-lock.c）。lock の前（request の読み・
+    admin_check_caller）に待ちは無い（stdin は printf の pipe、password の照合は crypt、間違いの時だけ 2 s）。
+  - 同じ手順（busy → kill → remove-alice keep-home → home-exists）は T1-597 の起こし直した guest で PASS した
+    （admin-fresh.txt、busy の 1 s 後に remove が ok）。T1-597 の tree 24208099f と T1-600 の 79562b496 の差は
+    libbrowser の 5 file だけで、account-admin・common・login・su・sh・kernel は同じ。
+  - 「alice の process を止める前に送った」可能性は無い。busy-end.txt は `waited=0` で alice の process は残っていない。
+    仮に残っていても account-admin はすぐ `error busy` を返し、答えは空にならない。
+- 試験の直し（e317a9b1d、admin-p026-guest.sh と user-commands-guest.sh の `guest()`）:
+  - 各 command は最初に自分の mark（run の tag と番号）を guest の `/tmp/guest-calls` に書く。host の待ちは 60 s。
+  - ssh の 255 か 60 s の無答のとき、guest に mark があるかを訊く。無ければ command は始まっていないので 3 s ごとに
+    最大 90 s 取り直す（`OUT/ssh-retries.txt`）。あれば（または訊けなければ）取り直さず（2 回走らせない）、その失敗と
+    guest の `ps -A -o user,state,pid,ppid,comm` を `OUT/ssh-lost.txt` に書く。最後の行の前に `ssh-retries: N` と
+    `ssh-lost: M` を出す。account-admin が本当に止まったなら、ssh-lost.txt の ps にその process と state が残る。
+  - 残る危険: SSH が止まった後で guest が遅れて command を受け取って走らせると、取り直しと 2 回走りうる。その時は
+    guest の log に同じ request の行が 2 つ出る（返された messages.txt で分かる）。
+- host の確認:
+  - `plan/ws196/tests/account-admin-root-host-test.sh` に Settings の形を足した（kei、uid 1000、wheel、password
+    secret123 で set-user-ID の写し、private mount namespace で host の /etc/passwd・group・shadow を試験の物に bind、
+    /run を tmpfs にして utmp の login で busy）: 間違いの password、add alice（home 0700）、name-taken、busy、login を
+    消して remove keep-home（passwd・shadow・group から消え home が残る）、home-exists、self。各答えは 20 s 以内
+    （`timeout 20`）。結果 `87 checks passed`、`account-admin-root-host-test: PASS`（Settings の 14 個を含む、ASan・UBSan）。
+    guest の失敗は host では再現しない（再現するのは SSH の経路で、host の試験の外）。host の試験が示すのは、同じ request
+    の並びで account-admin が毎回答えを返すこと。
+  - `guest()` を python3・timeout の代役（timeout を 2 s に縮め、呼び出しごとに ok・255・無答で走らない・走ってから無答を
+    選ぶ）で両方の script について流した: 255 → 取り直して hello、無答で走らない → 取り直して hello、走ってから無答 →
+    取り直さず ssh-lost 1（count 1 と ps）、両方無答 → 取り直さず ssh-lost 1（unknown）、組み合わせも期待どおり。
+- BUG-281 への追記（T1-600 の 1 件: SSH の command の答えが 120 s 空、guest で走った跡なし）は Q1 に頼む。
+
+## T1 への再試験の依頼（T1-600 の後）
+
+- **tree**: e317a9b1d を merge した main。
+- **image**: 作り直す（build/t1-597 は消した）: `plan/tools/guest/test-image.sh plan/ws196/tests/config-amd64-users.mk BUILD`。
+- **起動**: `plan/tools/guest/guest.py start BUILD/hdd-image.img`、`plan/tools/guest/guest.py wait` の直後に（待ちを足さずに）流す。
+- **流す試験と合否**（この順、同じ guest で）:
+  1. `plan/ws089/tests/admin-p026-guest.sh OUT1` — PASS は最後の行 `admin-p026: status=0`。
+  2. `plan/ws196/tests/user-commands-guest.sh OUT2` — PASS は最後の行 `user-commands-guest: status=0`。
+- **返す物**: 2 つの出力の全文（`ssh-retries: N` と `ssh-lost: M` の行を含む）、`OUT1`・`OUT2` の `ssh-retries.txt`・
+  `ssh-lost.txt`・`messages.txt`、guest の起動から 1 の開始までの秒数。M が 0 でなければ、その時の guest の
+  `/var/log/messages` の末尾も（解析は要らない、P2 が読む）。
+- **長さ**: 2 つで数分（SSH が止まれば 1 回につき最大 60 s の待ちと 90 s の取り直しが増える）。
