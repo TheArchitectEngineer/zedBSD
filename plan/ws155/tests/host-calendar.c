@@ -12,7 +12,8 @@
  * the host into pictures at chosen times, and drives it as the window
  * would: the start, a date clicked and the small desk calendar's page
  * turning, a kind of event dragged onto a date and the cell sinking, the
- * memo typed in and dragged onto a date, the next month, a calendar
+ * memo typed in and dragged onto a date, the event kept double clicked
+ * and double tapped on its pill to edit it (ws155-p006), the next month, a calendar
  * hidden, the motion reduced, and the cards on glass.  The "CALENDAR" lines the
  * view logs are checked.
  *
@@ -57,6 +58,7 @@ int main(int argc, char **argv);
 int test_calendar_data_load(const char *folder, const struct cal_date *today);
 static void test_frame(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style);
 static void test_click(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, int x, int y);
+static void test_double(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, int x, int y, int finger);
 static void test_check(const char *name, const char *expected);
 static int test_save(struct cal_view *view, const struct kl_canvas *canvas, const char *prefix, const char *name, int glass);
 
@@ -81,6 +83,9 @@ main(
 	struct kl_ui *ui;
 	uint32_t *pixels;
 	uint32_t *copy;
+	const char *opened;
+	size_t count;
+	size_t kept;
 	int desk_only;
 	int error;
 	int same;
@@ -200,6 +205,37 @@ main(
 	test_now += 1000000U;
 	test_click(&view, ui, &style, TEST_SAVE_X, TEST_SAVE_Y);
 	test_check("save", "list=Work date=2026-10-22 all_day=0 start=540 end=600 error=0");
+
+	/* ws155-p006: the event kept, double clicked on its pill on the 22nd, opens in the editor; Cancel changes nothing. */
+	(void)cal_items(&count);
+	test_double(&view, ui, &style, TEST_GRID_X + 4 * TEST_COLUMN + 49, TEST_GRID_Y + 52 + 3 * TEST_ROW + 39, 0);
+	test_check("pill-open", "EDIT open index=");
+	test_click(&view, ui, &style, TEST_SAVE_X - 78, TEST_SAVE_Y);
+	test_check("pill-cancel", "EDIT cancel");
+
+	/* Double tapped by a finger, it opens again, and Save keeps it in its place (no new item). */
+	test_double(&view, ui, &style, TEST_GRID_X + 4 * TEST_COLUMN + 49, TEST_GRID_Y + 52 + 3 * TEST_ROW + 39, 1);
+	test_check("pill-tap", "EDIT open index=");
+	(void)test_save(&view, &canvas, argv[3], "pill-editor", 0);
+	test_click(&view, ui, &style, TEST_SAVE_X, TEST_SAVE_Y);
+	(void)cal_items(&kept);
+	test_check("pill-save", "list=Work date=2026-10-22 all_day=0 start=540 end=600 error=0");
+	if (kept != count) {
+		printf("FAIL pill-count before=%zu after=%zu\n", count, kept);
+		test_failures++;
+	} else {
+		printf("PASS pill-count\n");
+	}
+
+	/* A double click on the cell beside its pills opens nothing. */
+	test_double(&view, ui, &style, TEST_GRID_X + 4 * TEST_COLUMN + 49, TEST_GRID_Y + 52 + 3 * TEST_ROW + 12, 0);
+	opened = strstr(test_log, "EDIT open");
+	if (opened != NULL) {
+		printf("FAIL pill-none\n%s", test_log);
+		test_failures++;
+	} else {
+		printf("PASS pill-none\n");
+	}
 
 	/* The memo: a click after its last line's end gives it the keyboard with the caret there, " ok" is typed, then it is dragged by its header onto the 26th. */
 	test_now += 1000000U;
@@ -375,6 +411,45 @@ test_click(
 	(void)kl_ui_pointer_button(ui, 1, test_now);
 	(void)kl_ui_pointer_button(ui, 0, test_now + 50000U);
 	test_frame(view, ui, style);
+}
+
+/*
+ * Clicks twice at a point within a double click's time (with a finger:
+ * taps twice), a frame after each, and the frames a tap waits for.
+ */
+static void
+test_double(
+	struct cal_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	int x,
+	int y,
+	int finger)
+{
+	int i;
+
+	/* Two presses and releases 150 ms apart. */
+	test_now += 1000000U;
+	for (i = 0; i < 2; i++) {
+		if (finger) {
+			(void)kl_ui_touch_down(ui, 7, test_now, test_now, (double)x, (double)y);
+			(void)kl_ui_touch_up(ui, 7, test_now + 50000U, test_now + 50000U);
+		} else {
+			(void)kl_ui_pointer_motion(ui, (double)x, (double)y);
+			(void)kl_ui_pointer_button(ui, 1, test_now);
+			(void)kl_ui_pointer_button(ui, 0, test_now + 50000U);
+		}
+
+		/* The frame after it. */
+		test_now += 150000U;
+		test_frame(view, ui, style);
+	}
+
+	/* The frames after, as the window would draw while a tap is pending. */
+	for (i = 0; i < 3; i++) {
+		test_now += 200000U;
+		test_frame(view, ui, style);
+	}
 }
 
 /*

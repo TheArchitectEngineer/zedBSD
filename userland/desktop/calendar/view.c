@@ -22,7 +22,9 @@
  * 3D, to drag onto a date -- over the application's one memo (dragged by
  * its header onto a date, a copy is kept there as a memo) and the day
  * chosen: a small desk calendar in 3D, the date, and its events and memos
- * in full.
+ * in full.  An item opens in the editor (to change, keep or delete it)
+ * with a double click or tap on its pill in the months, or a click on its
+ * row in the card of the day, the week or the day (ws155-p006).
  *
  * The motion is little and calm: the small desk calendar's page turns
  * over when the day chosen changes, and the cell something is dropped on
@@ -220,6 +222,7 @@ static int view_month_top(const struct cal_view *view, int index, int cell_heigh
 static int view_month_rows(const struct cal_view *view, int index, struct cal_date *first);
 static int view_cell_height(const struct kl_rect *grid);
 static int view_in_clip(const struct kl_canvas *canvas, const struct kl_rect *rect);
+static void view_pill_open(struct cal_view *view, struct kl_ui *ui, const struct kl_rect *cell, const struct cal_date *date, uint64_t now_us);
 static void view_centred(const struct kl_style *style, int cx, int baseline, const char *text, unsigned pixels, int bold, kl_color color);
 static float view_ease(float t);
 
@@ -1340,7 +1343,8 @@ view_grid(
 /*
  * Draws one cell: its ground (Sunday's and Saturday's, today's, sinking
  * after a drop), its number, its events as pills, the ring of the day
- * chosen or of a drop's target; a day of the month takes clicks.
+ * chosen or of a drop's target; a day of the month takes clicks (a
+ * double click or tap on a pill opens its item in the editor).
  */
 static void
 view_cell(
@@ -1410,6 +1414,10 @@ view_cell(
 		kl_ui_clear_focus(ui);
 		view_select(view, date, now_us);
 	}
+
+	/* A double click or tap on one of its pills opens that item in the editor. */
+	if ((hit & KL_HIT_DOUBLE) != 0U)
+		view_pill_open(view, ui, cell, date, now_us);
 
 	/* Where a drop finds it. */
 	if (view->cell_count < CAL_CELLS_MAX && seen.height > 0) {
@@ -1527,6 +1535,52 @@ view_cell(
 			kl_canvas_round(style->canvas, (float)cell->x + 2.0f, (float)cell->y + 2.0f, (float)cell->width - 4.0f, (float)cell->height - 4.0f, 8.0f, KL_RGBA(style->theme->accent, 24));
 			kl_canvas_round_border(style->canvas, (float)cell->x + 2.0f, (float)cell->y + 2.0f, (float)cell->width - 4.0f, (float)cell->height - 4.0f, 8.0f, 2.0f, KL_RGBA(style->theme->accent, 160));
 		}
+	}
+}
+
+/*
+ * Opens in the editor the item whose pill in a cell is under the point of
+ * the input (a double click or tap on the cell; the pills are laid out as
+ * view_cell draws them, a cell that is not sinking).  A point on no pill,
+ * or on "+N more", opens nothing.
+ */
+static void
+view_pill_open(
+	struct cal_view *view,
+	struct kl_ui *ui,
+	const struct kl_rect *cell,
+	const struct cal_date *date,
+	uint64_t now_us)
+{
+	struct view_entry entries[CAL_DAY_EVENTS];
+	size_t count;
+	size_t fits;
+	size_t i;
+	double px;
+	double py;
+	int y;
+
+	/* The items, as many pills as fit. */
+	count = view_day(view, date, entries, CAL_DAY_EVENTS);
+	fits = (size_t)((cell->height - 34) / (CAL_PILL + CAL_PILL_GAP));
+	if (count > fits && fits > 0U)
+		fits--;
+
+	/* Beside the pills: nothing. */
+	kl_ui_pointer(ui, &px, &py);
+	if (px < (double)(cell->x + 5) || px >= (double)(cell->x + cell->width - 5))
+		return;
+
+	/* The pill under the point. */
+	y = cell->y + 30;
+	for (i = 0; i < count && i < fits; i++) {
+		if (py >= (double)y && py < (double)(y + CAL_PILL)) {
+			view_edit(view, entries[i].index, now_us);
+			return;
+		}
+
+		/* The next pill under it. */
+		y += CAL_PILL + CAL_PILL_GAP;
 	}
 }
 
