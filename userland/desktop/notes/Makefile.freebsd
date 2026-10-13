@@ -7,6 +7,8 @@ KEILAND_FREEBSD_NOTES_SOURCES := userland/desktop/notes/main.c \
 	userland/desktop/notes/journal.c \
 	userland/desktop/notes/save.c \
 	userland/desktop/notes/shape.c \
+	userland/desktop/notes/fill.c \
+	userland/desktop/notes/fill-page.c \
 	userland/desktop/notes/geometry.c \
 	userland/desktop/notes/render.c \
 	userland/desktop/notes/window.c \

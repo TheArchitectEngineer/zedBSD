@@ -72,6 +72,11 @@
 #define RENDER_FNV_START	0x811c9dc5U
 #define RENDER_FNV_PRIME	0x01000193U
 
+/* The kinds of the page's passes: from a cleared picture, adding to the last, and the fill's band (ws216-p005). */
+#define RENDER_PAGE_CLEAR	0U
+#define RENDER_PAGE_LOAD	1U
+#define RENDER_PAGE_BAND	2U
+
 /* The colour the window is cleared to before the desk is drawn over it (its pale sky), as floats. */
 #define RENDER_DESK_RED		0.894f
 #define RENDER_DESK_GREEN	0.929f
@@ -84,8 +89,10 @@ static VkResult render_stencil(struct notes_renderer *renderer);
 static VkResult render_stencil_image(struct notes_renderer *renderer, uint32_t width, uint32_t height, VkImage *image, VkDeviceMemory *memory, VkImageView *view);
 static void render_stencil_free(struct notes_renderer *renderer);
 static VkResult render_pass(struct notes_renderer *renderer);
-static VkResult render_page_pass(struct notes_renderer *renderer, int load, VkRenderPass *pass);
+static VkResult render_page_pass(struct notes_renderer *renderer, unsigned kind, VkRenderPass *pass);
 static VkResult render_page_make(struct notes_renderer *renderer, uint32_t width, uint32_t height);
+static VkResult render_band_make(struct notes_renderer *renderer, uint32_t width, uint32_t height);
+static VkResult render_band_record(struct notes_renderer *renderer, const struct notes_frame *frame);
 static void render_page_free(struct notes_renderer *renderer);
 static VkResult render_targets(struct notes_renderer *renderer);
 static void render_targets_free(struct notes_renderer *renderer);
@@ -117,6 +124,8 @@ static VkResult render_pipelines(struct notes_renderer *renderer);
 static VkResult render_pipeline(struct notes_renderer *renderer, unsigned pipe, VkShaderModule vertex, VkShaderModule fragment);
 static VkResult render_module(struct notes_renderer *renderer, const uint32_t *code, size_t size, VkShaderModule *module);
 static void render_record(struct notes_renderer *renderer, uint32_t image, const struct notes_frame *frame, const struct notes_frame *page_frame, int page_clear);
+static void render_pictures_ready(struct notes_renderer *renderer);
+static void render_picture_ready(struct notes_renderer *renderer, VkImage image);
 static void render_draws(struct notes_renderer *renderer, const struct notes_frame *frame, uint32_t base, VkExtent2D extent);
 static void render_pieces(struct notes_renderer *renderer, uint32_t first, uint32_t count, size_t *bound_chunk);
 static void render_grain_place(const struct notes_draw *draw, float *grain);
@@ -190,12 +199,12 @@ notes_renderer_open(
 		return error;
 
 	/* The page's pass that starts from a cleared picture. */
-	error = render_page_pass(renderer, 0, &renderer->page_clear_pass);
+	error = render_page_pass(renderer, RENDER_PAGE_CLEAR, &renderer->page_clear_pass);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* And the one that adds to the picture the last frame left. */
-	error = render_page_pass(renderer, 1, &renderer->page_load_pass);
+	error = render_page_pass(renderer, RENDER_PAGE_LOAD, &renderer->page_load_pass);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -495,7 +504,7 @@ notes_renderer_background(
 			      width,
 			      height,
 			      renderer->sets[NOTES_TEXTURE_BACKGROUND],
-			      renderer->sampler,
+			      renderer->linear_sampler,
 			      &renderer->background,
 			      &renderer->background_memory,
 			      &renderer->background_view,
@@ -598,6 +607,147 @@ notes_renderer_toolbar(
 }
 
 /*
+ * Draws a frame into the fill's band, off the screen, and reads the band's
+ * pixels back (ws216-p005): width × height pixels of 4 bytes, the
+ * picture's format (the window's), rows one after another.
+ *
+ * The band's objects are made for a size and kept for the next band of
+ * the size; notes_renderer_band_free() frees them after the fill.  The
+ * last frame is finished (notes_renderer_draw() waits for it), so the
+ * vertices and the command buffer are free.  Returns VK_SUCCESS, or the
+ * error of the device (VK_ERROR_OUT_OF_DEVICE_MEMORY when it refused the
+ * band's memory: the caller draws a smaller band).
+ */
+VkResult
+notes_renderer_band(
+	struct notes_renderer *renderer,
+	const struct notes_frame *frame,
+	uint32_t width,
+	uint32_t height,
+	unsigned char *pixels)
+{
+	VkSubmitInfo submit;
+	VkResult error;
+
+	/*
+	 * Nothing the device runs uses the vertices, the command buffer or the
+	 * band any more (a frame that failed to present did not wait for its
+	 * fence, review-1 M-1).
+	 */
+	renderer->operation = "vkDeviceWaitIdle";
+	error = vkDeviceWaitIdle(renderer->device);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Objects of another size are made again. */
+	if (renderer->band == VK_NULL_HANDLE ||
+	    renderer->band_width != width ||
+	    renderer->band_height != height) {
+		notes_renderer_band_free(renderer);
+
+		/* The band's objects, or none at all when any part could not be made. */
+		error = render_band_make(renderer, width, height);
+		if (error != VK_SUCCESS) {
+			notes_renderer_band_free(renderer);
+			return error;
+		}
+		renderer->band_width = width;
+		renderer->band_height = height;
+	}
+
+	/* The groups of pipelines the frame is the first to use, as for the screen. */
+	render_groups(renderer, frame);
+
+	/* The chunks that hold the frame's vertices, and the vertices. */
+	error = render_chunks(renderer, frame->vertex_count);
+	if (error != VK_SUCCESS)
+		return error;
+	if (frame->vertex_count != 0U)
+		render_copy(renderer, frame->vertices, 0U, frame->vertex_count);
+
+	/* The band's commands. */
+	error = render_band_record(renderer, frame);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The submission's fence starts unsignalled. */
+	renderer->operation = "vkResetFences";
+	error = vkResetFences(renderer->device, 1U, &renderer->fence);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Submits the band's commands alone. */
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.commandBufferCount = 1U;
+	submit.pCommandBuffers = &renderer->command;
+	renderer->operation = "vkQueueSubmit";
+	error = vkQueueSubmit(renderer->queue, 1U, &submit, renderer->fence);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The band is in the host's buffer once the commands finished. */
+	renderer->operation = "vkWaitForFences";
+	error = vkWaitForFences(renderer->device, 1U, &renderer->fence, VK_TRUE, RENDER_TIMEOUT);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the band's pixels for the caller. */
+	memcpy(pixels, renderer->band_map, (size_t)width * height * 4U);
+	return VK_SUCCESS;
+}
+
+/*
+ * Frees the fill's band: its pass, picture, stencil buffer, framebuffer
+ * and buffer, where made (the device must not use them any more).
+ */
+void
+notes_renderer_band_free(
+	struct notes_renderer *renderer)
+{
+	/* The framebuffer, the picture's view, image and memory. */
+	if (renderer->band_framebuffer != VK_NULL_HANDLE)
+		vkDestroyFramebuffer(renderer->device, renderer->band_framebuffer, NULL);
+	if (renderer->band_view != VK_NULL_HANDLE)
+		vkDestroyImageView(renderer->device, renderer->band_view, NULL);
+	if (renderer->band != VK_NULL_HANDLE)
+		vkDestroyImage(renderer->device, renderer->band, NULL);
+	if (renderer->band_memory != VK_NULL_HANDLE)
+		vkFreeMemory(renderer->device, renderer->band_memory, NULL);
+
+	/* The stencil buffer. */
+	if (renderer->band_stencil_view != VK_NULL_HANDLE)
+		vkDestroyImageView(renderer->device, renderer->band_stencil_view, NULL);
+	if (renderer->band_stencil != VK_NULL_HANDLE)
+		vkDestroyImage(renderer->device, renderer->band_stencil, NULL);
+	if (renderer->band_stencil_memory != VK_NULL_HANDLE)
+		vkFreeMemory(renderer->device, renderer->band_stencil_memory, NULL);
+
+	/* The host's buffer and its memory (which unmaps it), and the pass. */
+	if (renderer->band_buffer != VK_NULL_HANDLE)
+		vkDestroyBuffer(renderer->device, renderer->band_buffer, NULL);
+	if (renderer->band_buffer_memory != VK_NULL_HANDLE)
+		vkFreeMemory(renderer->device, renderer->band_buffer_memory, NULL);
+	if (renderer->band_pass != VK_NULL_HANDLE)
+		vkDestroyRenderPass(renderer->device, renderer->band_pass, NULL);
+
+	/* Nothing is left. */
+	renderer->band_framebuffer = VK_NULL_HANDLE;
+	renderer->band_view = VK_NULL_HANDLE;
+	renderer->band = VK_NULL_HANDLE;
+	renderer->band_memory = VK_NULL_HANDLE;
+	renderer->band_stencil_view = VK_NULL_HANDLE;
+	renderer->band_stencil = VK_NULL_HANDLE;
+	renderer->band_stencil_memory = VK_NULL_HANDLE;
+	renderer->band_buffer = VK_NULL_HANDLE;
+	renderer->band_buffer_memory = VK_NULL_HANDLE;
+	renderer->band_map = NULL;
+	renderer->band_pass = VK_NULL_HANDLE;
+	renderer->band_width = 0;
+	renderer->band_height = 0;
+}
+
+/*
  * Releases every Vulkan object, children before their parents.
  */
 void
@@ -612,6 +762,7 @@ notes_renderer_close(
 		(void)vkDeviceWaitIdle(renderer->device);
 		render_targets_free(renderer);
 		render_page_free(renderer);
+		notes_renderer_band_free(renderer);
 		render_stencil_free(renderer);
 		render_toolbar_free(renderer);
 		render_background_free(renderer);
@@ -637,6 +788,8 @@ notes_renderer_close(
 			vkDestroyDescriptorSetLayout(renderer->device, renderer->set_layout, NULL);
 		if (renderer->sampler != VK_NULL_HANDLE)
 			vkDestroySampler(renderer->device, renderer->sampler, NULL);
+		if (renderer->linear_sampler != VK_NULL_HANDLE)
+			vkDestroySampler(renderer->device, renderer->linear_sampler, NULL);
 
 		/* The commands and the synchronization. */
 		if (renderer->pool != VK_NULL_HANDLE)
@@ -1031,17 +1184,20 @@ render_pass(
 }
 
 /*
- * Makes a pass that draws into the page's picture: from a cleared picture,
- * or (load) from the picture the last frame left.
+ * Makes a pass that draws into the page's picture: from a cleared picture
+ * (RENDER_PAGE_CLEAR), or from the picture the last frame left
+ * (RENDER_PAGE_LOAD); or into the fill's band from a cleared picture
+ * (RENDER_PAGE_BAND, ws216-p005).
  *
  * Its attachments have the formats of the window's pass, so the pipelines
- * made for that pass draw in this one too.  It leaves the picture ready to
- * be sampled by the frame that follows.
+ * made for that pass draw in this one too.  It leaves the page's picture
+ * ready to be sampled by the frame that follows, and the band ready to be
+ * copied to the host's buffer.
  */
 static VkResult
 render_page_pass(
 	struct notes_renderer *renderer,
-	int load,
+	unsigned kind,
 	VkRenderPass *pass)
 {
 	VkAttachmentDescription attachments[2];
@@ -1064,7 +1220,7 @@ render_page_pass(
 	attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	/* A picture added to keeps what it holds, in the layout the last pass left it. */
-	if (load) {
+	if (kind == RENDER_PAGE_LOAD) {
 		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachments[0].initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	}
@@ -1109,6 +1265,18 @@ render_page_pass(
 	dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 	dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+	/*
+	 * The band is left as drawn, for the copy to the host's buffer that
+	 * follows its pass (review-1 S-1: the Raspberry Pi 4's driver ends a
+	 * pass in a colour, general or sampled layout only; a barrier moves it
+	 * to the copy's layout).  Its writes are done before the copy reads.
+	 */
+	if (kind == RENDER_PAGE_BAND) {
+		attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	}
 
 	/* The pass. */
 	memset(&create, 0, sizeof(create));
@@ -1264,6 +1432,242 @@ render_page_free(
 	renderer->page_memory = VK_NULL_HANDLE;
 	renderer->page_width = 0;
 	renderer->page_height = 0;
+}
+
+/*
+ * Makes the fill's band at a size: its pass, a picture of the window's
+ * format that the pass draws into and the host's buffer is copied from,
+ * its stencil buffer, the framebuffer, and the host-visible buffer,
+ * mapped.
+ */
+static VkResult
+render_band_make(
+	struct notes_renderer *renderer,
+	uint32_t width,
+	uint32_t height)
+{
+	VkImageCreateInfo image;
+	VkMemoryRequirements requirements;
+	VkImageViewCreateInfo view;
+	VkFramebufferCreateInfo framebuffer;
+	VkBufferCreateInfo buffer;
+	VkImageView attachments[2];
+	VkResult error;
+
+	/* The pass, which leaves the band to be copied. */
+	error = render_page_pass(renderer, RENDER_PAGE_BAND, &renderer->band_pass);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The picture: drawn into by the pass and copied from (the page's picture is not, L3). */
+	memset(&image, 0, sizeof(image));
+	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image.imageType = VK_IMAGE_TYPE_2D;
+	image.format = renderer->format;
+	image.extent.width = width;
+	image.extent.height = height;
+	image.extent.depth = 1U;
+	image.mipLevels = 1U;
+	image.arrayLayers = 1U;
+	image.samples = VK_SAMPLE_COUNT_1_BIT;
+	image.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	renderer->operation = "vkCreateImage";
+	error = vkCreateImage(renderer->device, &image, NULL, &renderer->band);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Its memory, on the device when it can be. */
+	vkGetImageMemoryRequirements(renderer->device, renderer->band, &requirements);
+	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &renderer->band_memory);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Binds the memory to the picture. */
+	renderer->operation = "vkBindImageMemory";
+	error = vkBindImageMemory(renderer->device, renderer->band, renderer->band_memory, 0U);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The view the framebuffer attaches. */
+	memset(&view, 0, sizeof(view));
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = renderer->band;
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view.format = renderer->format;
+	view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view.subresourceRange.levelCount = 1U;
+	view.subresourceRange.layerCount = 1U;
+	renderer->operation = "vkCreateImageView";
+	error = vkCreateImageView(renderer->device, &view, NULL, &renderer->band_view);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The band's own stencil buffer. */
+	error = render_stencil_image(renderer, width, height, &renderer->band_stencil, &renderer->band_stencil_memory,
+				     &renderer->band_stencil_view);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The framebuffer over the picture and its stencil buffer. */
+	attachments[0] = renderer->band_view;
+	attachments[1] = renderer->band_stencil_view;
+	memset(&framebuffer, 0, sizeof(framebuffer));
+	framebuffer.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	framebuffer.renderPass = renderer->band_pass;
+	framebuffer.attachmentCount = 2U;
+	framebuffer.pAttachments = attachments;
+	framebuffer.width = width;
+	framebuffer.height = height;
+	framebuffer.layers = 1U;
+	renderer->operation = "vkCreateFramebuffer";
+	error = vkCreateFramebuffer(renderer->device, &framebuffer, NULL, &renderer->band_framebuffer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The host's buffer the picture is copied to. */
+	memset(&buffer, 0, sizeof(buffer));
+	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer.size = (VkDeviceSize)width * height * 4U;
+	buffer.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	renderer->operation = "vkCreateBuffer";
+	error = vkCreateBuffer(renderer->device, &buffer, NULL, &renderer->band_buffer);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Its memory, which the host sees. */
+	vkGetBufferMemoryRequirements(renderer->device, renderer->band_buffer, &requirements);
+	error = render_memory(renderer, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			      &renderer->band_buffer_memory);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Binds the memory to the buffer. */
+	renderer->operation = "vkBindBufferMemory";
+	error = vkBindBufferMemory(renderer->device, renderer->band_buffer, renderer->band_buffer_memory, 0U);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Maps it for the host's reads. */
+	renderer->operation = "vkMapMemory";
+	error = vkMapMemory(renderer->device, renderer->band_buffer_memory, 0U, VK_WHOLE_SIZE, 0U, &renderer->band_map);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the band can be drawn and read. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Records the band: the pictures the host wrote made ready, the frame
+ * drawn into the cleared band, the band copied to the host's buffer, and
+ * the copy made visible to the host.
+ */
+static VkResult
+render_band_record(
+	struct notes_renderer *renderer,
+	const struct notes_frame *frame)
+{
+	VkCommandBufferBeginInfo begin;
+	VkRenderPassBeginInfo pass;
+	VkClearValue clear[2];
+	VkBufferImageCopy copy;
+	VkImageMemoryBarrier layout;
+	VkBufferMemoryBarrier barrier;
+	VkExtent2D extent;
+	VkResult error;
+
+	/* The command buffer starts afresh, for one submission. */
+	renderer->operation = "vkResetCommandBuffer";
+	error = vkResetCommandBuffer(renderer->command, 0U);
+	if (error != VK_SUCCESS)
+		return error;
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	renderer->operation = "vkBeginCommandBuffer";
+	error = vkBeginCommandBuffer(renderer->command, &begin);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The pictures the host wrote, ready to be sampled. */
+	render_pictures_ready(renderer);
+
+	/* The band, cleared to white (the paper) and the stencil to zero. */
+	memset(clear, 0, sizeof(clear));
+	clear[0].color.float32[0] = 1.0f;
+	clear[0].color.float32[1] = 1.0f;
+	clear[0].color.float32[2] = 1.0f;
+	clear[0].color.float32[3] = 1.0f;
+	clear[1].depthStencil.depth = 1.0f;
+	clear[1].depthStencil.stencil = 0U;
+	extent.width = renderer->band_width;
+	extent.height = renderer->band_height;
+	memset(&pass, 0, sizeof(pass));
+	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	pass.renderPass = renderer->band_pass;
+	pass.framebuffer = renderer->band_framebuffer;
+	pass.renderArea.extent = extent;
+	pass.clearValueCount = 2U;
+	pass.pClearValues = clear;
+	vkCmdBeginRenderPass(renderer->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+
+	/* The frame's draws, with the band's size. */
+	render_draws(renderer, frame, 0U, extent);
+	vkCmdEndRenderPass(renderer->command);
+
+	/* The band, drawn, moves to the layout the copy reads. */
+	memset(&layout, 0, sizeof(layout));
+	layout.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	layout.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	layout.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	layout.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	layout.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	layout.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	layout.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	layout.image = renderer->band;
+	layout.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	layout.subresourceRange.levelCount = 1U;
+	layout.subresourceRange.layerCount = 1U;
+	vkCmdPipelineBarrier(renderer->command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &layout);
+
+	/* The band's pixels into the host's buffer, row after row. */
+	memset(&copy, 0, sizeof(copy));
+	copy.bufferOffset = 0U;
+	copy.bufferRowLength = 0U;
+	copy.bufferImageHeight = 0U;
+	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.imageSubresource.mipLevel = 0U;
+	copy.imageSubresource.baseArrayLayer = 0U;
+	copy.imageSubresource.layerCount = 1U;
+	copy.imageExtent.width = extent.width;
+	copy.imageExtent.height = extent.height;
+	copy.imageExtent.depth = 1U;
+	vkCmdCopyImageToBuffer(renderer->command, renderer->band, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, renderer->band_buffer, 1U, &copy);
+
+	/* The copy's writes are seen by the host's reads. */
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.buffer = renderer->band_buffer;
+	barrier.offset = 0U;
+	barrier.size = VK_WHOLE_SIZE;
+	vkCmdPipelineBarrier(renderer->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0U, 0U, NULL, 1U, &barrier, 0U, NULL);
+
+	/* Closes the recording. */
+	renderer->operation = "vkEndCommandBuffer";
+	error = vkEndCommandBuffer(renderer->command);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Succeeded: the band's commands. */
+	return VK_SUCCESS;
 }
 
 /* Makes a view, a framebuffer and a present semaphore for each swapchain image. */
@@ -1490,6 +1894,17 @@ render_descriptors(
 	sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 	renderer->operation = "vkCreateSampler";
 	error = vkCreateSampler(renderer->device, &sampler, NULL, &renderer->sampler);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/*
+	 * Linear sampling for the background (ws216-p005, review-1 M-5): the
+	 * same one to one on the screen, and blended when the fill's band draws
+	 * the page larger than the picture it was drawn for.
+	 */
+	sampler.magFilter = VK_FILTER_LINEAR;
+	sampler.minFilter = VK_FILTER_LINEAR;
+	error = vkCreateSampler(renderer->device, &sampler, NULL, &renderer->linear_sampler);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -2597,11 +3012,9 @@ render_record(
 	int page_clear)
 {
 	VkCommandBufferBeginInfo begin;
-	VkImageMemoryBarrier barrier;
 	VkRenderPassBeginInfo pass;
 	VkClearValue clear[2];
 	VkExtent2D page_extent;
-	unsigned level;
 	uint32_t base;
 
 	/* One submission of this recording. */
@@ -2610,79 +3023,8 @@ render_record(
 	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	(void)vkBeginCommandBuffer(renderer->command, &begin);
 
-	/* A new toolbar image moves from preinitialized (the host's writes kept) to general. */
-	if (renderer->toolbar_ready == 0) {
-		memset(&barrier, 0, sizeof(barrier));
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
-		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = renderer->toolbar;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.levelCount = 1U;
-		barrier.subresourceRange.layerCount = 1U;
-		vkCmdPipelineBarrier(renderer->command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
-		renderer->toolbar_ready = 1;
-	}
-
-	/* So does a new background image. */
-	if (renderer->background != VK_NULL_HANDLE && renderer->background_ready == 0) {
-		memset(&barrier, 0, sizeof(barrier));
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
-		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = renderer->background;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.levelCount = 1U;
-		barrier.subresourceRange.layerCount = 1U;
-		vkCmdPipelineBarrier(renderer->command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
-		renderer->background_ready = 1;
-	}
-
-	/* And a new overlay image (ws175-p008). */
-	if (renderer->overlay != VK_NULL_HANDLE && renderer->overlay_ready == 0) {
-		memset(&barrier, 0, sizeof(barrier));
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
-		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = renderer->overlay;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.levelCount = 1U;
-		barrier.subresourceRange.layerCount = 1U;
-		vkCmdPipelineBarrier(renderer->command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
-		renderer->overlay_ready = 1;
-	}
-
-	/* And each new picture of the grain (ws216-p004). */
-	for (level = 0; level < NOTES_GRAIN_LEVELS; level++) {
-		if (renderer->grain[level].image == VK_NULL_HANDLE || renderer->grain[level].ready)
-			continue;
-		memset(&barrier, 0, sizeof(barrier));
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
-		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = renderer->grain[level].image;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.levelCount = 1U;
-		barrier.subresourceRange.layerCount = 1U;
-		vkCmdPipelineBarrier(renderer->command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
-		renderer->grain[level].ready = 1;
-	}
+	/* The pictures the host wrote since the last frame, moved to the layout they are sampled in. */
+	render_pictures_ready(renderer);
 
 	/* The page frame, drawn into the page's picture: cleared to nothing, or kept, and the stencil to zero. */
 	base = 0;
@@ -2734,6 +3076,68 @@ render_record(
 
 	/* The pass ends with the image ready to present. */
 	vkCmdEndRenderPass(renderer->command);
+}
+
+/*
+ * Moves each picture the host wrote and no frame used yet (the toolbar's,
+ * the background's, the overlay's and the grain's) from its first layout,
+ * which kept the host's writes, to the general layout it is sampled in.
+ */
+static void
+render_pictures_ready(
+	struct notes_renderer *renderer)
+{
+	unsigned level;
+
+	/* The toolbar's image. */
+	if (renderer->toolbar != VK_NULL_HANDLE && renderer->toolbar_ready == 0) {
+		render_picture_ready(renderer, renderer->toolbar);
+		renderer->toolbar_ready = 1;
+	}
+
+	/* The background's. */
+	if (renderer->background != VK_NULL_HANDLE && renderer->background_ready == 0) {
+		render_picture_ready(renderer, renderer->background);
+		renderer->background_ready = 1;
+	}
+
+	/* The overlay's (ws175-p008). */
+	if (renderer->overlay != VK_NULL_HANDLE && renderer->overlay_ready == 0) {
+		render_picture_ready(renderer, renderer->overlay);
+		renderer->overlay_ready = 1;
+	}
+
+	/* Each of the grain's (ws216-p004). */
+	for (level = 0; level < NOTES_GRAIN_LEVELS; level++) {
+		if (renderer->grain[level].image == VK_NULL_HANDLE || renderer->grain[level].ready)
+			continue;
+		render_picture_ready(renderer, renderer->grain[level].image);
+		renderer->grain[level].ready = 1;
+	}
+}
+
+/* Records the move of one host-written picture from preinitialized (the host's writes kept) to general. */
+static void
+render_picture_ready(
+	struct notes_renderer *renderer,
+	VkImage image)
+{
+	VkImageMemoryBarrier barrier;
+
+	/* The host's writes are seen by the fragment shader's reads. */
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.levelCount = 1U;
+	barrier.subresourceRange.layerCount = 1U;
+	vkCmdPipelineBarrier(renderer->command, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 }
 
 /*

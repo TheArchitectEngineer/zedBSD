@@ -516,6 +516,9 @@ struct notes_renderer {
 	VkDescriptorSet sets[NOTES_TEXTURES];
 	VkSampler sampler;
 
+	/* A sampler that blends, for the background (ws216-p005: the fill's band draws it larger). */
+	VkSampler linear_sampler;
+
 	/*
 	 * The page's picture: the page and its finished strokes, drawn by the
 	 * same pipelines through two passes that differ only in what they start
@@ -538,6 +541,28 @@ struct notes_renderer {
 	uint32_t page_width;
 	uint32_t page_height;
 	unsigned long page_serial;
+
+	/*
+	 * The fill's band (ws216-p005): rows of the page drawn off the screen
+	 * at the fill's scale and read back by the host.  A pass like the
+	 * page's that leaves its picture to be copied, the picture and its
+	 * stencil buffer, the framebuffer, and a host-visible buffer the
+	 * picture is copied to (mapped while it lives), of a size (0: not
+	 * made).  They are made for a fill and freed after it.
+	 */
+	VkRenderPass band_pass;
+	VkImage band;
+	VkDeviceMemory band_memory;
+	VkImageView band_view;
+	VkImage band_stencil;
+	VkDeviceMemory band_stencil_memory;
+	VkImageView band_stencil_view;
+	VkFramebuffer band_framebuffer;
+	VkBuffer band_buffer;
+	VkDeviceMemory band_buffer_memory;
+	void *band_map;
+	uint32_t band_width;
+	uint32_t band_height;
 
 	/*
 	 * The toolbar's image: host-written and linear, its rows (mapped for as
@@ -638,6 +663,8 @@ VkResult notes_renderer_draw(struct notes_renderer *renderer, const struct notes
 void notes_renderer_toolbar(struct notes_renderer *renderer, unsigned char **pixels, size_t *pitch);
 VkResult notes_renderer_background(struct notes_renderer *renderer, uint32_t width, uint32_t height, unsigned char **pixels, size_t *pitch);
 VkResult notes_renderer_overlay(struct notes_renderer *renderer, uint32_t width, uint32_t height, unsigned char **pixels, size_t *pitch, int *made);
+VkResult notes_renderer_band(struct notes_renderer *renderer, const struct notes_frame *frame, uint32_t width, uint32_t height, unsigned char *pixels);
+void notes_renderer_band_free(struct notes_renderer *renderer);
 void notes_renderer_close(struct notes_renderer *renderer);
 
 /* The frame's geometry (geometry.c). */
@@ -651,6 +678,10 @@ void notes_frame_shape(struct notes_frame *frame, const struct notes_shape *shap
 void notes_frame_stroke(struct notes_frame *frame, const struct notes_stroke *stroke, const struct notes_view *view);
 unsigned notes_frame_grain_level(float scale);
 void notes_frame_texture(struct notes_frame *frame, unsigned texture, float x, float y, float width, float height);
+
+/* The fill tool on a page (fill-page.c, ws216-p005). */
+int notes_fill_page(struct notes_renderer *renderer, struct notes_document *document, size_t page, float x, float y, uint32_t color, int background, size_t *place);
+const char *notes_fill_notice(int error);
 void notes_view_layout(struct notes_view *view, uint32_t width, uint32_t height, float page_width, float page_height);
 
 /* The image files put on a page (picture-file.c, ws175-p008). */

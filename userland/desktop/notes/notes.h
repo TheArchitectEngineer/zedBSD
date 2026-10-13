@@ -126,6 +126,21 @@
  */
 #define NOTES_OPENED_REBASED	4U
 
+/* What an eraser operation removes (struct notes_document's erase_mode, ws216-p005). */
+#define NOTES_ERASE_UNDECIDED	0U
+#define NOTES_ERASE_LINES	1U
+#define NOTES_ERASE_FILLS	2U
+
+/* The width a fill's stroke is given (the edit data keeps a width for every stroke; a fill draws none). */
+#define NOTES_FILL_WIDTH	1.0f
+
+/*
+ * How far a channel (of 255) may stray from the fill's seed colour before
+ * the pixel is a border (ws216-p005); a stroke's shape on white paper is
+ * seen (the fill goes above it) by the same measure.
+ */
+#define NOTES_FILL_THRESHOLD	26
+
 /* The pressure of one sample runs from 0 to this value. */
 #define NOTES_PRESSURE_MAX	65535U
 
@@ -471,6 +486,14 @@ struct notes_document {
 	 */
 	int erasing;
 
+	/*
+	 * What the eraser's operation removes (ws216-p005, the user's choice for
+	 * D7 (c)): undecided (NOTES_ERASE_UNDECIDED) until it first meets
+	 * something, then lines or fills (document.c erase_decide()).  An
+	 * eraser drag keeps it until it ends.
+	 */
+	unsigned erase_mode;
+
 	/* A change since the last save; cleared by a save. */
 	int dirty;
 
@@ -510,6 +533,37 @@ struct notes_input {
 	uint32_t time_ms;
 };
 
+/*
+ * Draws rows of a page for the fill (ws216-p005): the rows from top, of a
+ * number, at notes_fill_scale() (the page's width at that scale, at most
+ * 4096 pixels, a row), 4 bytes a pixel, as the page is seen.
+ * Returns 0, ENOMEM when the device refused memory for so many rows, or
+ * another errno value.
+ */
+typedef int notes_fill_band(void *context, uint32_t top, uint32_t height, unsigned char *pixels);
+
+/*
+ * The area the fill tool paints (fill.c, ws216-p005): its corners in page
+ * points, the first contour its outside and the others its holes (turning
+ * the other way), and what the fill measured: the scale and the page's
+ * pixels, the bands drawn and their last height, how often the tolerance
+ * was doubled, and the area's pixels.  On E2BIG, point_count tells the
+ * corners there were and points is NULL.
+ */
+struct notes_fill_region {
+	struct pdf_point *points;
+	size_t point_count;
+	size_t *contours;
+	size_t contour_count;
+	double scale;
+	uint32_t width;
+	uint32_t height;
+	unsigned bands;
+	uint32_t band_height;
+	unsigned tolerance_step;
+	size_t pixels;
+};
+
 /* A growable byte buffer: the edit data and the journal's records are built in one. */
 struct notes_buffer {
 	unsigned char *data;
@@ -533,6 +587,9 @@ struct notes_page *notes_document_remove_page(struct notes_document *document, s
 int notes_document_insert_stroke(struct notes_document *document, size_t page, size_t place, struct notes_stroke *stroke);
 struct notes_stroke *notes_document_remove_stroke(struct notes_document *document, size_t page, uint32_t id, size_t *place);
 int notes_document_add_stroke(struct notes_document *document, size_t page, struct notes_stroke *stroke);
+int notes_document_add_stroke_at(struct notes_document *document, size_t page, size_t place, struct notes_stroke *stroke);
+int notes_document_seen_at(const struct notes_document *document, size_t page, float x, float y, size_t *index);
+int notes_stroke_contains(struct notes_stroke *stroke, float x, float y, int seen_only);
 int notes_document_add_page(struct notes_document *document, size_t index);
 void notes_document_erase_begin(struct notes_document *document);
 int notes_document_erase_at(struct notes_document *document, size_t page, float x, float y, float radius, size_t *removed);
@@ -552,6 +609,11 @@ int notes_shape_make(struct notes_stroke *stroke);
 void notes_shape_drop(struct notes_stroke *stroke);
 void notes_grain_tile(unsigned char *tile);
 void notes_grain_level(const unsigned char *finer, size_t finer_side, unsigned char *coarser);
+
+/* The area the fill tool paints (fill.c, ws216-p005). */
+double notes_fill_scale(float page_width, float page_height);
+int notes_fill_find(float page_width, float page_height, float x, float y, int under, notes_fill_band *band, void *context, struct notes_fill_region *region);
+void notes_fill_region_free(struct notes_fill_region *region);
 
 /* The images and the edits of the PDF's objects (edit.c, ws175-p007). */
 struct notes_image *notes_image_create(struct notes_document *document, unsigned kind, const void *data, size_t size, size_t width, size_t height, int components, int orientation);

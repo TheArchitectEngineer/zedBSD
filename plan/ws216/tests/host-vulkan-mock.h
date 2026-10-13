@@ -44,7 +44,8 @@ struct mock_object {
 	unsigned char *bytes;
 	size_t memory;
 
-	/* An image's size, usage and tiling; a view's image. */
+	/* An image's size, usage and tiling, and its layout after the last barrier; a view's image. */
+	VkImageLayout layout;
 	uint32_t width;
 	uint32_t height;
 	VkImageUsageFlags usage;
@@ -100,6 +101,16 @@ struct mock_device {
 	unsigned refused;
 	unsigned pipelines_made;
 	unsigned pipelines_refused;
+
+	/*
+	 * ws216-p005: the copies of an image to a buffer since the start, the
+	 * passes made that end an attachment in a layout the Raspberry Pi 4's
+	 * driver refuses (review-1 S-1), and a function the test sets that fills the buffer's bytes at the copy
+	 * (the model draws nothing), given the image's size.
+	 */
+	unsigned copies;
+	unsigned bad_final_layouts;
+	void (*copy_hook)(unsigned char *bytes, uint32_t width, uint32_t height);
 
 	/* The draws of the command buffer since it was reset, and the passes begun. */
 	struct mock_draw *draws;

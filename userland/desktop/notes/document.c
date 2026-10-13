@@ -27,6 +27,13 @@
 /* The fewest samples, strokes and pages an array grows to. */
 #define DOCUMENT_GROW_MIN	16U
 
+/*
+ * How far past a line's visible half width the eraser's centre may be and
+ * still erase the line rather than a fill under it (ws216-p005, the
+ * user's choice for D7 (c)), in points.
+ */
+#define DOCUMENT_ERASE_NEAR	2.0f
+
 static int grow(void **array, size_t *capacity, size_t needed, size_t element);
 static void undo_release(struct notes_undo *entry);
 static int undo_push(struct notes_document *document, unsigned kind, size_t page);
@@ -36,6 +43,15 @@ static int undo_apply(struct notes_document *document, struct notes_undo *entry)
 static int undo_hold_more(struct notes_undo *entry, size_t more);
 static int erase_entry(struct notes_document *document, size_t page, struct notes_undo **entry);
 static int stroke_touches(struct notes_stroke *stroke, float x, float y, float radius);
+static int shape_seen(const struct notes_stroke *stroke, const struct notes_shape *shape);
+static int erase_parts_cut(struct notes_document *document, size_t page, float x, float y, float radius, const unsigned char *hits, size_t *cut);
+static int erase_reached(struct notes_document *document, size_t page, float x, float y, float radius, unsigned char **hits);
+static unsigned erase_decide(struct notes_document *document, size_t page, float x, float y, float radius);
+static struct notes_stroke *erase_fill(struct notes_document *document, size_t page, float x, float y, unsigned mode);
+static int erase_hits(const struct notes_page *target, size_t index, float x, float y, float radius, unsigned mode, const struct notes_stroke *fill);
+static int stroke_near(struct notes_stroke *stroke, float x, float y);
+static int stroke_covered(const struct notes_page *target, size_t index, float x, float y);
+static int shape_winding(const struct notes_shape *shape, float x, float y);
 static int stroke_split(const struct notes_stroke *stroke, float x, float y, float reach, struct notes_stroke ***pieces, size_t *piece_count, int *crossed);
 static int segment_inside(const struct notes_point *a, const struct notes_point *b, float x, float y, float reach, float *enter, float *leave);
 static void point_between(const struct notes_point *a, const struct notes_point *b, float share, struct notes_point *point);
@@ -527,6 +543,39 @@ notes_document_add_stroke(
 	if (page >= document->page_count)
 		return EINVAL;
 
+	/* On top of the page's strokes. */
+	place = document->pages[page]->stroke_count;
+	error = notes_document_add_stroke_at(document, page, place, stroke);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the stroke is the page's top. */
+	return 0;
+}
+
+/*
+ * Adds a finished stroke on a page before the stroke at a place (the count
+ * puts it on top), as a change the user can undo (ws216-p005: a fill goes
+ * just above what is seen where it was poured).
+ *
+ * The page owns the stroke afterwards; on failure the caller still does.
+ * Returns 0, EINVAL or ENOMEM.
+ */
+int
+notes_document_add_stroke_at(
+	struct notes_document *document,
+	size_t page,
+	size_t place,
+	struct notes_stroke *stroke)
+{
+	int error;
+
+	/* A page that is not there, or a place past its top, takes nothing. */
+	if (page >= document->page_count)
+		return EINVAL;
+	if (place > document->pages[page]->stroke_count)
+		return EINVAL;
+
 	/*
 	 * The values the formulas give the finished stroke are baked into it
 	 * (ws216-p003): its shape is kept as drawn from now on.
@@ -540,8 +589,7 @@ notes_document_add_stroke(
 	if (error != 0)
 		return error;
 
-	/* Puts the stroke on top of the page. */
-	place = document->pages[page]->stroke_count;
+	/* Puts the stroke at its place. */
 	error = notes_document_insert_stroke(document, page, place, stroke);
 	if (error != 0) {
 		document->undo_done--;
@@ -597,21 +645,111 @@ notes_document_add_page(
 }
 
 /*
+ * Finds the stroke seen at a point of a page (ws216-p005, D6 (a)): the
+ * topmost whose shapes hold the point by the nonzero rule, a shape too
+ * faint for the fill to see as a border (shape_seen()) not counted.
+ * Returns 1 with its index, or 0 when the point shows the paper (or the
+ * page's background).
+ */
+int
+notes_document_seen_at(
+	const struct notes_document *document,
+	size_t page,
+	float x,
+	float y,
+	size_t *index)
+{
+	const struct notes_page *target;
+	size_t place;
+	int inside;
+
+	/* A page that is not there shows nothing. */
+	if (page >= document->page_count)
+		return 0;
+	target = document->pages[page];
+
+	/* Each stroke from the top down. */
+	place = target->stroke_count;
+	while (place > 0) {
+		place--;
+		inside = notes_stroke_contains(target->strokes[place], x, y, 1);
+		if (inside) {
+			*index = place;
+			return 1;
+		}
+	}
+
+	/* No stroke is seen there. */
+	return 0;
+}
+
+/*
+ * Tells whether a point is inside a stroke's ink: inside one of its shapes
+ * by the nonzero rule (every contour counted).  With seen_only, a shape
+ * too faint to be a border for the fill (shape_seen()) is not counted.
+ */
+int
+notes_stroke_contains(
+	struct notes_stroke *stroke,
+	float x,
+	float y,
+	int seen_only)
+{
+	const struct notes_shape *shape;
+	size_t index;
+	int seen;
+	int winding;
+	int error;
+
+	/* The shapes and their box, which a point outside is not in. */
+	error = notes_stroke_outline(stroke);
+	if (error != 0)
+		return 0;
+	if (x < stroke->bounds[0] || x > stroke->bounds[2])
+		return 0;
+	if (y < stroke->bounds[1] || y > stroke->bounds[3])
+		return 0;
+
+	/* Each shape, but a faint one when only what is seen counts. */
+	for (index = 0; index < stroke->shape_count; index++) {
+		shape = &stroke->shapes[index];
+		if (seen_only) {
+			seen = shape_seen(stroke, shape);
+			if (!seen)
+				continue;
+		}
+
+		/* A shape that winds round the point holds it. */
+		winding = shape_winding(shape, x, y);
+		if (winding != 0)
+			return 1;
+	}
+
+	/* No shape holds the point. */
+	return 0;
+}
+
+/*
  * Starts an eraser drag: its removals gather into one change to undo.
  */
 void
 notes_document_erase_begin(
 	struct notes_document *document)
 {
-	/* The first removal of the drag makes the entry; the next ones join it. */
+	/* The first removal of the drag makes the entry; the next ones join it.  What it removes is not decided yet. */
 	document->erasing = 1;
+	document->erase_mode = NOTES_ERASE_UNDECIDED;
 }
 
 /*
  * Removes every stroke of a page that an eraser circle touches.
  *
- * The circle is at (x, y) with a radius, in points.  *removed tells how
- * many strokes went.  Returns 0, or ENOMEM (the strokes removed so far stay
+ * The circle is at (x, y) with a radius, in points.  An eraser operation
+ * removes lines, or fills (ws216-p005, the user's choice for D7 (c),
+ * decided where it first meets something: erase_decide()).  A line under
+ * an opaque fill where the circle meets it is not removed; a fill goes
+ * whole, the topmost one under the centre only.  *removed tells how many
+ * strokes went.  Returns 0, or ENOMEM (the strokes removed so far stay
  * removed and in the history).
  */
 int
@@ -626,10 +764,10 @@ notes_document_erase_at(
 	struct notes_page *target;
 	struct notes_undo *entry;
 	struct notes_stroke *stroke;
+	unsigned char *hits;
 	uint32_t id;
 	size_t index;
 	size_t place;
-	int touched;
 	int error;
 
 	/* Nothing is removed yet. */
@@ -638,14 +776,18 @@ notes_document_erase_at(
 		return EINVAL;
 	target = document->pages[page];
 
+	/* The strokes the eraser reaches here, judged before any goes. */
+	error = erase_reached(document, page, x, y, radius, &hits);
+	if (error != 0)
+		return error;
+
 	/* Each stroke from the top down; a removal leaves the index at the stroke below. */
 	index = target->stroke_count;
 	while (index > 0) {
 		index--;
 
-		/* A stroke the circle does not touch stays. */
-		touched = stroke_touches(target->strokes[index], x, y, radius);
-		if (!touched)
+		/* A stroke the eraser does not reach stays. */
+		if (!hits[index])
 			continue;
 
 		/* The drag's entry: the one it made already, or a new one. */
@@ -656,8 +798,10 @@ notes_document_erase_at(
 		    entry->kind != NOTES_UNDO_REMOVE_STROKES ||
 		    entry->page != page) {
 			error = undo_push(document, NOTES_UNDO_REMOVE_STROKES, page);
-			if (error != 0)
+			if (error != 0) {
+				free(hits);
 				return error;
+			}
 			entry = &document->undo[document->undo_done - 1U];
 			entry->owned = 1;
 			if (document->erasing != 0)
@@ -666,14 +810,18 @@ notes_document_erase_at(
 
 		/* Room in the entry for the stroke. */
 		error = undo_hold(entry);
-		if (error != 0)
+		if (error != 0) {
+			free(hits);
 			return error;
+		}
 
 		/* Takes the stroke off the page. */
 		id = target->strokes[index]->id;
 		stroke = notes_document_remove_stroke(document, page, id, &place);
-		if (stroke == NULL)
+		if (stroke == NULL) {
+			free(hits);
 			return ENOMEM;
+		}
 
 		/* The entry keeps it and its place, in the order of removal. */
 		entry->strokes[entry->count] = stroke;
@@ -683,6 +831,7 @@ notes_document_erase_at(
 	}
 
 	/* Succeeded: every touched stroke is removed. */
+	free(hits);
 	return 0;
 }
 
@@ -696,8 +845,9 @@ notes_document_erase_at(
  * ink ends) are put in its place, each a new stroke of the same tool,
  * colour and width with a new number and the baked values of the samples
  * it keeps (ws216-p003); where the path crosses the circle the pieces end
- * at the crossing.  A stroke wholly inside leaves no piece.
- * *cut tells how many strokes were cut.  The drag's cuts gather into one
+ * at the crossing.  A stroke wholly inside leaves no piece.  What an
+ * operation reaches is decided as in notes_document_erase_at(); a fill
+ * goes whole (ws216-p005).  *cut tells how many strokes were cut.  The drag's cuts gather into one
  * change to undo.  Returns 0, EINVAL or ENOMEM (the cuts made so far stay,
  * and in the history).
  */
@@ -710,100 +860,24 @@ notes_document_erase_parts_at(
 	float radius,
 	size_t *cut)
 {
-	struct notes_page *target;
-	struct notes_undo *entry;
-	struct notes_stroke *stroke;
-	struct notes_stroke **pieces;
-	size_t piece_count;
-	size_t index;
-	size_t place;
-	size_t piece;
-	float reach;
-	int touched;
-	int crossed;
+	unsigned char *hits;
 	int error;
 
 	/* Nothing is cut yet. */
 	*cut = 0;
 	if (page >= document->page_count)
 		return EINVAL;
-	target = document->pages[page];
 
-	/* Each stroke from the top down; the pieces go where the stroke was, above the index. */
-	index = target->stroke_count;
-	while (index > 0) {
-		index--;
+	/* The strokes the eraser reaches here, judged before any is cut. */
+	error = erase_reached(document, page, x, y, radius, &hits);
+	if (error != 0)
+		return error;
 
-		/* A stroke the circle does not touch stays. */
-		stroke = target->strokes[index];
-		touched = stroke_touches(stroke, x, y, radius);
-		if (!touched)
-			continue;
-
-		/*
-		 * The pieces of the path outside the circle widened by the stroke's
-		 * reach (so that a piece's round end stops at the circle's edge); a
-		 * path the circle does not cross stays.
-		 */
-		reach = radius + notes_stroke_reach(stroke);
-		error = stroke_split(stroke, x, y, reach, &pieces, &piece_count, &crossed);
-		if (error != 0)
-			return error;
-		if (!crossed)
-			continue;
-
-		/* The drag's entry. */
-		error = erase_entry(document, page, &entry);
-		if (error != 0) {
-			pieces_free(pieces, 0, piece_count);
-			return error;
-		}
-
-		/* Room in it for the removal and the pieces. */
-		error = undo_hold_more(entry, 1U + piece_count);
-		if (error != 0) {
-			pieces_free(pieces, 0, piece_count);
-			return error;
-		}
-
-		/* Takes the stroke off the page; the entry keeps it and its place. */
-		stroke = notes_document_remove_stroke(document, page, stroke->id, &place);
-		if (stroke == NULL) {
-			pieces_free(pieces, 0, piece_count);
-			return ENOMEM;
-		}
-
-		/* The removal is the entry's next change. */
-		entry->strokes[entry->count] = stroke;
-		entry->places[entry->count] = place;
-		entry->inserted[entry->count] = 0;
-		entry->count++;
-
-		/* Each piece, in the path's order, where the stroke was, with the next number. */
-		for (piece = 0; piece < piece_count; piece++) {
-			pieces[piece]->id = document->next_id;
-			document->next_id++;
-			error = notes_document_insert_stroke(document, page, place + piece, pieces[piece]);
-			if (error != 0)
-				break;
-
-			/* The insertion is the entry's next change. */
-			entry->strokes[entry->count] = pieces[piece];
-			entry->places[entry->count] = place + piece;
-			entry->inserted[entry->count] = 1;
-			entry->count++;
-		}
-
-		/* Pieces that could not be put in are freed; the cut stands as far as it went. */
-		if (error != 0) {
-			pieces_free(pieces, piece, piece_count);
-			return error;
-		}
-
-		/* The stroke is cut. */
-		free(pieces);
-		(*cut)++;
-	}
+	/* The cuts, and the judgement goes. */
+	error = erase_parts_cut(document, page, x, y, radius, hits, cut);
+	free(hits);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: every stroke the circle crossed is cut. */
 	return 0;
@@ -816,8 +890,9 @@ void
 notes_document_erase_end(
 	struct notes_document *document)
 {
-	/* No drag gathers removals any more. */
+	/* No drag gathers removals any more, and the next decides what it removes anew. */
 	document->erasing = 0;
+	document->erase_mode = NOTES_ERASE_UNDECIDED;
 }
 
 /*
@@ -1390,8 +1465,9 @@ stroke_touches(
 	int error;
 
 	/*
-	 * A fill is not touched by its path: which eraser drag removes it is
-	 * the fill's own rule (ws216-p005), and until then no eraser does.
+	 * A fill is not touched by its path (its corners are contours, not a
+	 * line): the eraser removes it by what is seen at its centre
+	 * (erase_fill(), ws216-p005).
 	 */
 	if (stroke->tool == NOTES_TOOL_FILL)
 		return 0;
@@ -1425,6 +1501,536 @@ stroke_touches(
 
 	/* No segment comes near. */
 	return 0;
+}
+
+/*
+ * Cuts the strokes of a page an eraser judged it reaches (hits, by their
+ * index), from the top down: the work of notes_document_erase_parts_at().
+ */
+static int
+erase_parts_cut(
+	struct notes_document *document,
+	size_t page,
+	float x,
+	float y,
+	float radius,
+	const unsigned char *hits,
+	size_t *cut)
+{
+	struct notes_page *target;
+	struct notes_undo *entry;
+	struct notes_stroke *stroke;
+	struct notes_stroke **pieces;
+	size_t piece_count;
+	size_t index;
+	size_t place;
+	size_t piece;
+	float reach;
+	int crossed;
+	int error;
+
+	/* The page. */
+	target = document->pages[page];
+
+	/* Each stroke from the top down; the pieces go where the stroke was, above the index. */
+	index = target->stroke_count;
+	while (index > 0) {
+		index--;
+
+		/* A stroke the eraser does not reach stays. */
+		stroke = target->strokes[index];
+		if (!hits[index])
+			continue;
+
+		/*
+		 * The pieces of the path outside the circle widened by the stroke's
+		 * reach (so that a piece's round end stops at the circle's edge); a
+		 * path the circle does not cross stays.  A fill leaves no piece.
+		 */
+		pieces = NULL;
+		piece_count = 0;
+		crossed = 1;
+		if (stroke->tool != NOTES_TOOL_FILL) {
+			reach = radius + notes_stroke_reach(stroke);
+			error = stroke_split(stroke, x, y, reach, &pieces, &piece_count, &crossed);
+			if (error != 0)
+				return error;
+		}
+		if (!crossed)
+			continue;
+
+		/* The drag's entry. */
+		error = erase_entry(document, page, &entry);
+		if (error != 0) {
+			pieces_free(pieces, 0, piece_count);
+			return error;
+		}
+
+		/* Room in it for the removal and the pieces. */
+		error = undo_hold_more(entry, 1U + piece_count);
+		if (error != 0) {
+			pieces_free(pieces, 0, piece_count);
+			return error;
+		}
+
+		/* Takes the stroke off the page; the entry keeps it and its place. */
+		stroke = notes_document_remove_stroke(document, page, stroke->id, &place);
+		if (stroke == NULL) {
+			pieces_free(pieces, 0, piece_count);
+			return ENOMEM;
+		}
+
+		/* The removal is the entry's next change. */
+		entry->strokes[entry->count] = stroke;
+		entry->places[entry->count] = place;
+		entry->inserted[entry->count] = 0;
+		entry->count++;
+
+		/* Each piece, in the path's order, where the stroke was, with the next number. */
+		for (piece = 0; piece < piece_count; piece++) {
+			pieces[piece]->id = document->next_id;
+			document->next_id++;
+			error = notes_document_insert_stroke(document, page, place + piece, pieces[piece]);
+			if (error != 0)
+				break;
+
+			/* The insertion is the entry's next change. */
+			entry->strokes[entry->count] = pieces[piece];
+			entry->places[entry->count] = place + piece;
+			entry->inserted[entry->count] = 1;
+			entry->count++;
+		}
+
+		/* Pieces that could not be put in are freed; the cut stands as far as it went. */
+		if (error != 0) {
+			pieces_free(pieces, piece, piece_count);
+			return error;
+		}
+
+		/* The stroke is cut. */
+		free(pieces);
+		(*cut)++;
+	}
+
+	/* Succeeded: every stroke the circle crossed is cut. */
+	return 0;
+}
+
+/*
+ * Judges which strokes of a page an eraser reaches at a point, before any
+ * is removed (so that a fill removed here still covers the lines under
+ * it): *hits holds a flag for each stroke's index, which the caller frees.
+ */
+static int
+erase_reached(
+	struct notes_document *document,
+	size_t page,
+	float x,
+	float y,
+	float radius,
+	unsigned char **hits)
+{
+	const struct notes_page *target;
+	struct notes_stroke *fill;
+	unsigned char *flags;
+	unsigned mode;
+	size_t index;
+
+	/* What the operation removes, and the fill it removes here. */
+	target = document->pages[page];
+	mode = erase_decide(document, page, x, y, radius);
+	fill = erase_fill(document, page, x, y, mode);
+
+	/* A flag for each stroke (one at least, for an empty page). */
+	flags = calloc(target->stroke_count + 1U, 1U);
+	if (flags == NULL)
+		return ENOMEM;
+
+	/* Each stroke the eraser reaches. */
+	for (index = 0; index < target->stroke_count; index++)
+		flags[index] = (unsigned char)erase_hits(target, index, x, y, radius, mode, fill);
+
+	/* Succeeded: the judgement. */
+	*hits = flags;
+	return 0;
+}
+
+/*
+ * Decides what an eraser operation removes, where it first meets something
+ * (ws216-p005, the user's choice for D7 (c), 2026-10-13: what is seen comes
+ * first).  Lines, when the centre is within a line's visible half width
+ * and DOCUMENT_ERASE_NEAR of it there, the line not under an opaque fill;
+ * otherwise fills, when the centre is inside a fill; otherwise lines, when
+ * the circle touches one not under a fill.  A drag keeps the decision
+ * until it ends; a single call decides for itself.
+ */
+static unsigned
+erase_decide(
+	struct notes_document *document,
+	size_t page,
+	float x,
+	float y,
+	float radius)
+{
+	const struct notes_page *target;
+	struct notes_stroke *stroke;
+	unsigned mode;
+	size_t index;
+	int near;
+	int covered;
+	int inside;
+	int touched;
+
+	/* A drag that decided keeps its decision. */
+	if (document->erasing != 0 && document->erase_mode != NOTES_ERASE_UNDECIDED)
+		return document->erase_mode;
+
+	/* A line seen right under the centre makes it an operation on lines. */
+	target = document->pages[page];
+	mode = NOTES_ERASE_UNDECIDED;
+	for (index = 0; index < target->stroke_count; index++) {
+		stroke = target->strokes[index];
+		if (stroke->tool == NOTES_TOOL_FILL)
+			continue;
+		near = stroke_near(stroke, x, y);
+		if (!near)
+			continue;
+		covered = stroke_covered(target, index, x, y);
+		if (!covered) {
+			mode = NOTES_ERASE_LINES;
+			break;
+		}
+	}
+
+	/* Otherwise a fill under the centre makes it an operation on fills. */
+	if (mode == NOTES_ERASE_UNDECIDED) {
+		for (index = 0; index < target->stroke_count; index++) {
+			stroke = target->strokes[index];
+			if (stroke->tool != NOTES_TOOL_FILL)
+				continue;
+			inside = notes_stroke_contains(stroke, x, y, 0);
+			if (inside) {
+				mode = NOTES_ERASE_FILLS;
+				break;
+			}
+		}
+	}
+
+	/* Otherwise a line the circle touches, not under a fill, makes it one on lines. */
+	if (mode == NOTES_ERASE_UNDECIDED) {
+		for (index = 0; index < target->stroke_count; index++) {
+			touched = erase_hits(target, index, x, y, radius, NOTES_ERASE_LINES, NULL);
+			if (touched) {
+				mode = NOTES_ERASE_LINES;
+				break;
+			}
+		}
+	}
+
+	/* A drag remembers what it decided. */
+	if (document->erasing != 0)
+		document->erase_mode = mode;
+
+	/* Reports the decision (undecided while nothing was met). */
+	return mode;
+}
+
+/*
+ * Gives the fill an operation on fills removes at a point: the topmost
+ * fill under the centre, unless the centre is inside a fill the drag
+ * removed already (a fill under the one removed stays).  NULL for none.
+ */
+static struct notes_stroke *
+erase_fill(
+	struct notes_document *document,
+	size_t page,
+	float x,
+	float y,
+	unsigned mode)
+{
+	const struct notes_page *target;
+	const struct notes_undo *entry;
+	struct notes_stroke *stroke;
+	size_t index;
+	int inside;
+	int removed;
+
+	/* Only an operation on fills removes one. */
+	if (mode != NOTES_ERASE_FILLS)
+		return NULL;
+
+	/* A point the drag cleared of a fill already removes nothing more. */
+	if (document->erasing == 2 && document->undo_done > 0U) {
+		entry = &document->undo[document->undo_done - 1U];
+		for (index = 0; index < entry->count; index++) {
+			stroke = entry->strokes[index];
+			if (stroke->tool != NOTES_TOOL_FILL)
+				continue;
+
+			/* A piece the cut put in is not a removal. */
+			removed = 1;
+			if (entry->kind == NOTES_UNDO_ERASE_PARTS && entry->inserted[index] != 0)
+				removed = 0;
+			if (!removed)
+				continue;
+			inside = notes_stroke_contains(stroke, x, y, 0);
+			if (inside)
+				return NULL;
+		}
+	}
+
+	/* The topmost fill under the centre. */
+	target = document->pages[page];
+	index = target->stroke_count;
+	while (index > 0) {
+		index--;
+		stroke = target->strokes[index];
+		if (stroke->tool != NOTES_TOOL_FILL)
+			continue;
+		inside = notes_stroke_contains(stroke, x, y, 0);
+		if (inside)
+			return stroke;
+	}
+
+	/* No fill is under the centre. */
+	return NULL;
+}
+
+/*
+ * Tells whether an eraser operation removes the stroke at an index of a
+ * page: a fill when it is the operation's fill here; a line, in an
+ * operation on lines when the circle touches it, in one on fills when the
+ * centre is right on it, and either only when no opaque fill above covers
+ * it there.
+ */
+static int
+erase_hits(
+	const struct notes_page *target,
+	size_t index,
+	float x,
+	float y,
+	float radius,
+	unsigned mode,
+	const struct notes_stroke *fill)
+{
+	struct notes_stroke *stroke;
+	int reached;
+	int covered;
+
+	/* A fill, when it is the one the operation removes here. */
+	stroke = target->strokes[index];
+	if (stroke->tool == NOTES_TOOL_FILL) {
+		if (stroke == fill)
+			return 1;
+		return 0;
+	}
+
+	/* A line, by the operation's reach. */
+	reached = 0;
+	if (mode == NOTES_ERASE_LINES) {
+		reached = stroke_touches(stroke, x, y, radius);
+	} else if (mode == NOTES_ERASE_FILLS) {
+		reached = stroke_near(stroke, x, y);
+	}
+	if (!reached)
+		return 0;
+
+	/* A line covered there by a fill above it is not seen, and stays. */
+	covered = stroke_covered(target, index, x, y);
+	if (covered)
+		return 0;
+
+	/* The line is removed. */
+	return 1;
+}
+
+/* Tells whether a point is within a line's visible half width and DOCUMENT_ERASE_NEAR of its path. */
+static int
+stroke_near(
+	struct notes_stroke *stroke,
+	float x,
+	float y)
+{
+	float reach;
+	float distance;
+	size_t index;
+
+	/* The visible half width and the margin. */
+	reach = notes_stroke_reach(stroke) + DOCUMENT_ERASE_NEAR;
+
+	/* A single sample is a dot. */
+	if (stroke->point_count == 1U) {
+		distance = segment_distance(x, y, stroke->points[0].x, stroke->points[0].y, stroke->points[0].x, stroke->points[0].y);
+		if (distance <= reach)
+			return 1;
+		return 0;
+	}
+
+	/* Each segment of the path. */
+	for (index = 0; index + 1U < stroke->point_count; index++) {
+		distance = segment_distance(x, y, stroke->points[index].x, stroke->points[index].y, stroke->points[index + 1U].x, stroke->points[index + 1U].y);
+		if (distance <= reach)
+			return 1;
+	}
+
+	/* The point is away from the line. */
+	return 0;
+}
+
+/*
+ * Tells whether the line at an index of a page is covered, where it comes
+ * nearest a point, by a fill above it (fills are opaque).
+ */
+static int
+stroke_covered(
+	const struct notes_page *target,
+	size_t index,
+	float x,
+	float y)
+{
+	const struct notes_stroke *stroke;
+	size_t segment;
+	size_t above;
+	float best;
+	float distance;
+	float near_x;
+	float near_y;
+	float dx;
+	float dy;
+	float length;
+	float share;
+	int inside;
+
+	/* The place of the path nearest the point. */
+	stroke = target->strokes[index];
+	near_x = stroke->points[0].x;
+	near_y = stroke->points[0].y;
+	best = segment_distance(x, y, near_x, near_y, near_x, near_y);
+	for (segment = 0; segment + 1U < stroke->point_count; segment++) {
+		distance = segment_distance(x, y, stroke->points[segment].x, stroke->points[segment].y, stroke->points[segment + 1U].x, stroke->points[segment + 1U].y);
+		if (distance >= best)
+			continue;
+
+		/* The nearer place on this segment. */
+		best = distance;
+		dx = stroke->points[segment + 1U].x - stroke->points[segment].x;
+		dy = stroke->points[segment + 1U].y - stroke->points[segment].y;
+		length = dx * dx + dy * dy;
+		share = 0.0f;
+		if (length > 0.0f)
+			share = ((x - stroke->points[segment].x) * dx + (y - stroke->points[segment].y) * dy) / length;
+		if (share < 0.0f)
+			share = 0.0f;
+		if (share > 1.0f)
+			share = 1.0f;
+		near_x = stroke->points[segment].x + dx * share;
+		near_y = stroke->points[segment].y + dy * share;
+	}
+
+	/* A fill above the line holding that place covers it. */
+	for (above = index + 1U; above < target->stroke_count; above++) {
+		if (target->strokes[above]->tool != NOTES_TOOL_FILL)
+			continue;
+		inside = notes_stroke_contains(target->strokes[above], near_x, near_y, 0);
+		if (inside)
+			return 1;
+	}
+
+	/* Nothing above covers it. */
+	return 0;
+}
+
+/*
+ * Tells whether a shape on white paper differs from the paper by more than
+ * NOTES_FILL_THRESHOLD in a channel (review-1 L-1): the same test the
+ * fill's borders take, so that what a fill goes above is what bounds it.
+ * Its opacity is the colour's times the shape's, through the grain's mean
+ * for the pencil; laid over or multiplied, white changes by the opacity
+ * times the channel's distance from white.
+ */
+static int
+shape_seen(
+	const struct notes_stroke *stroke,
+	const struct notes_shape *shape)
+{
+	unsigned channel;
+	unsigned value;
+	float alpha;
+	float change;
+
+	/* The shape's opacity. */
+	alpha = (float)(stroke->color & 0xffU) / 255.0f * shape->alpha;
+	if (shape->paint == NOTES_PAINT_GRAIN)
+		alpha = 1.0f - (1.0f - alpha * NOTES_GRAIN_FLOOR) * (1.0f - alpha * NOTES_GRAIN_MEAN);
+
+	/* Each colour channel's change of the paper. */
+	for (channel = 0; channel < 3U; channel++) {
+		value = (stroke->color >> (24U - 8U * channel)) & 0xffU;
+		change = alpha * (float)(255U - value);
+		if (change > (float)NOTES_FILL_THRESHOLD)
+			return 1;
+	}
+
+	/* Too faint to be seen. */
+	return 0;
+}
+
+/*
+ * Counts how a shape's contours wind round a point: each edge that crosses
+ * the point's row on one side of the point counts one way or the other by
+ * its direction.  Zero means outside by the nonzero rule.
+ */
+static int
+shape_winding(
+	const struct notes_shape *shape,
+	float x,
+	float y)
+{
+	const struct pdf_point *a;
+	const struct pdf_point *b;
+	size_t contour;
+	size_t contour_count;
+	size_t corners;
+	size_t start;
+	size_t index;
+	double cross;
+	int winding;
+
+	/* One contour of every corner, unless the shape lists its contours. */
+	contour_count = 1U;
+	if (shape->contours != NULL)
+		contour_count = shape->contour_count;
+
+	/* Each edge of each contour (its last corner closes it). */
+	winding = 0;
+	start = 0;
+	for (contour = 0; contour < contour_count; contour++) {
+		corners = shape->corner_count;
+		if (shape->contours != NULL)
+			corners = shape->contours[contour];
+		for (index = 0; index < corners; index++) {
+			a = &shape->polygon[start + index];
+			b = &shape->polygon[start + (index + 1U) % corners];
+
+			/* Which side of the edge the point is on. */
+			cross = (b->x - a->x) * ((double)y - a->y) - ((double)x - a->x) * (b->y - a->y);
+
+			/* An edge crossing the row with y growing, the point on its left, adds one. */
+			if (a->y <= (double)y) {
+				if (b->y > (double)y && cross > 0.0)
+					winding++;
+			} else if (b->y <= (double)y && cross < 0.0) {
+				/* One crossing it the other way, the point on its right, takes one away. */
+				winding--;
+			}
+		}
+
+		/* The next contour starts after this one's corners. */
+		start += corners;
+	}
+
+	/* Reports the winding. */
+	return winding;
 }
 
 /* Measures the distance from a point to a segment. */
