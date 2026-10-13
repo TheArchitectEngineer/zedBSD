@@ -16,6 +16,7 @@
 #define CTL_HW	1
 #define CTL_KERN	2
 #define CTL_VFS	3
+#define CTL_NET	4
 
 #define CTL_SYSCTL_NAME2OID	1
 #define CTL_SYSCTL_NEXT	2
@@ -294,6 +295,148 @@ _Static_assert(sizeof(struct thermal_header) == 24U,
     "hw.thermal header ABI must be identical on ILP32 and LP64");
 _Static_assert(sizeof(struct thermal_entry) == 64U,
     "hw.thermal entry ABI must be identical on ILP32 and LP64");
+
+/*
+ * net.tcpstats: each TCP socket's state and what it has done since it was
+ * created (ws220-p001), to follow a transfer's control over time.  The
+ * value is a struct tcp_stats_header followed by count struct
+ * tcp_stats_entry, in the order of the kernel's socket registry.
+ * Read-only.  A buffer too small fails with ENOMEM and the length needed.
+ *
+ * Sequence numbers and windows are the connection's own, in bytes.  The
+ * counts only grow.  features says which of the fields that depend on a
+ * part of TCP this kernel may not have are kept (TCP_STATS_HAVE_*); a
+ * field whose bit is clear is 0 and means "not kept", not "zero".
+ */
+#define NET_TCPSTATS	1
+
+/* The version of the net.tcpstats layout. */
+#define TCP_STATS_VERSION	1U
+
+/* The address family of an entry: its addresses are IPv4 (4 bytes) or IPv6 (16). */
+#define TCP_STATS_FAMILY_INET	4U
+#define TCP_STATS_FAMILY_INET6	6U
+
+/* The fields an entry keeps beyond the ones every version has. */
+#define TCP_STATS_HAVE_CWND	0x00000001U
+#define TCP_STATS_HAVE_RTT	0x00000002U
+#define TCP_STATS_HAVE_WSCALE	0x00000004U
+#define TCP_STATS_HAVE_SACK	0x00000008U
+#define TCP_STATS_HAVE_FAST_RETRANSMIT	0x00000010U
+
+/*
+ * The head of net.tcpstats: the layout's version, the header's size, one
+ * entry's size and how many entries follow; the packets of the network
+ * stack's one pool (how many there are, how many are taken now, the most
+ * ever taken, and how many allocations found none free); and the time of
+ * the reading in milliseconds since boot.  Every field has a fixed width,
+ * so one layout serves ILP32 and LP64 processes.
+ */
+struct tcp_stats_header {
+	uint32_t version;
+	uint32_t struct_size;
+	uint32_t element_size;
+	uint32_t count;
+	uint32_t packets_total;
+	uint32_t packets_used;
+	uint32_t packets_used_max;
+	uint32_t reserved;
+	uint64_t packet_alloc_failures;
+	uint64_t time_ms;
+};
+
+/*
+ * One TCP socket in net.tcpstats.
+ *
+ * The state is the kernel's enum tcp_state (0 closed, 1 listen, 2 SYN
+ * sent, 3 SYN received, 4 established, 5 FIN wait 1, 6 FIN wait 2, 7 close
+ * wait, 8 last ACK, 9 time wait).  An IPv4 address is in the first 4 bytes
+ * of its field, in network order.  backoff is how many times the oldest
+ * outstanding segment has been resent; rto_ms is the timeout it waits now
+ * and retransmit_in_ms how long is left of it (0: no segment outstanding).
+ * send_window is the window the peer last advertised; receive_window the
+ * one this end last put in a segment; in_flight_bytes the sequence space
+ * sent and not acknowledged, send_segments the segments that hold it, of
+ * send_ring.  receive_bytes and receive_packets are what waits for the
+ * reader, of receive_limit_bytes; reorder_segments the segments kept ahead
+ * of a gap.
+ *
+ * The counts: segments sent (every kind) and received; data segments
+ * queued for their first transmission and their bytes (send_refused of
+ * them were taken back for want of a packet or of room in the device, and
+ * the writer slept send_buffer_sleeps times before it tried again); payload
+ * bytes taken in order; segments resent by the retransmission path and
+ * their bytes, and how many times that resend was made due at once
+ * (immediate_resends: a recovered acknowledgement or a reopened window)
+ * rather than by a timeout; segments the stack failed to hand to the
+ * device (segment_send_failures, an acknowledgement or a resend lost on
+ * the way out); acknowledgements received, those that acknowledged
+ * nothing new while data was outstanding (duplicate_acks_in), and those
+ * ignored as outside the outstanding sequence space (acks_outside); zero
+ * windows received and sent; window updates sent by a read; segments
+ * wholly before receive_next (old_segments_in) and ahead of it
+ * (out_of_order_in, of them out_of_order_kept); in-order segments the
+ * receive queue had no room for (receive_refused); and fast
+ * retransmissions (with TCP_STATS_HAVE_FAST_RETRANSMIT).
+ */
+struct tcp_stats_entry {
+	uint32_t family;
+	uint32_t state;
+	uint32_t features;
+	uint32_t backoff;
+	uint8_t local_address[16];
+	uint8_t remote_address[16];
+	uint16_t local_port;
+	uint16_t remote_port;
+	uint32_t reserved;
+	uint32_t send_unacknowledged;
+	uint32_t send_next;
+	uint32_t send_window;
+	uint32_t receive_next;
+	uint32_t receive_window;
+	uint32_t in_flight_bytes;
+	uint32_t send_segments;
+	uint32_t send_ring;
+	uint32_t send_mss;
+	uint32_t receive_mss;
+	uint32_t reorder_segments;
+	uint32_t receive_packets;
+	uint32_t receive_bytes;
+	uint32_t receive_limit_bytes;
+	uint32_t cwnd;
+	uint32_t ssthresh;
+	uint32_t srtt_us;
+	uint32_t rttvar_us;
+	uint32_t rto_ms;
+	uint32_t retransmit_in_ms;
+	uint64_t segments_out;
+	uint64_t segments_in;
+	uint64_t data_segments_out;
+	uint64_t data_bytes_out;
+	uint64_t data_bytes_in;
+	uint64_t retransmit_segments;
+	uint64_t retransmit_bytes;
+	uint64_t immediate_resends;
+	uint64_t send_refused;
+	uint64_t send_buffer_sleeps;
+	uint64_t segment_send_failures;
+	uint64_t acks_in;
+	uint64_t duplicate_acks_in;
+	uint64_t acks_outside;
+	uint64_t zero_windows_in;
+	uint64_t zero_windows_out;
+	uint64_t window_updates_out;
+	uint64_t old_segments_in;
+	uint64_t out_of_order_in;
+	uint64_t out_of_order_kept;
+	uint64_t receive_refused;
+	uint64_t fast_retransmits;
+};
+
+_Static_assert(sizeof(struct tcp_stats_header) == 48U,
+    "net.tcpstats header ABI must be identical on ILP32 and LP64");
+_Static_assert(sizeof(struct tcp_stats_entry) == 312U,
+    "net.tcpstats entry ABI must be identical on ILP32 and LP64");
 
 /* Firmware RAM and actually managed RAM are distinct. */
 #define MEMORY_STATS_VERSION 2U

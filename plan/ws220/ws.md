@@ -3,7 +3,8 @@
 # WS220: TCP の転送の速さの安定（継続の転送ですぐ 1 MB/s 未満に落ちる、window の制御の直し）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-13 Q1 作成。担当は次に空いた P（WS219 より先））
+Status: incomplete（2026-10-13 Q1 作成。P1 が p001 を実行: 読み・net.tcpstats・host の模型・直しの設計は済み、T1 の基線の測りと design-reviewer 待ち）
+Resume point: [p001](phase001/phase.md) の §6（T1 の依頼 A・B）と §8（ユーザーの判断: QEMU の網、RTO の最小）→ 基線の後に目標の値をここに書き、p002 以後を Queue に
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -25,4 +26,14 @@ Related Milestones: なし
 
 | Phase | 内容 | Status |
 | --- | --- | --- |
-| p001 | 調べと測り: 今の TCP の制御の読み、測りの道具、落ちる仕組みの特定、直しの設計 → design-reviewer | planned |
+| [p001](phase001/phase.md) | 調べと測り: 今の TCP の制御の読み、測りの道具（net.tcpstats、tcp-stream-series.sh、本物の tcp.c の host の模型）、落ちる仕組みの特定、直しの設計 → design-reviewer | in-progress（T1 の基線待ち） |
+| p002（案） | 正しさ: sequence の剰余の比較（wrap の後に ACK を全部捨てる）、SND.WL1/WL2、重なりのある segment、諦めの時間 | planning（p001 の設計の review の後） |
+| p003（案） | 送りの packet の不足: device が拒んだ data の segment で書き手が 10 ms 眠らない、ACK の出し直し | planning |
+| p004（案） | RTT の推定と RTO（RFC 6298） | planning |
+| p005（案） | fast retransmit と NewReno の回復、persist timer、窓が開いた時の再送を外す | planning |
+| p006（案） | 輻輳の制御（cwnd）と byte の送りの buffer、相手の MSS、Nagle | planning |
+| p007（案） | 受けの窓の約束、受け側の SWS 回避、window scale、delayed ACK | planning |
+| p008（案） | 受けの SACK（RFC 2018） | planning（候補） |
+| p009（案） | 規約の全文の見直し（WS の全ての C、試験を含む） | planning |
+
+試験と道具（[tests/](tests/)）: `tcp-model/run.sh`（本物の tcp.c の host の模型と WS220 の目標の scenario、数秒）、`tcp-stream-series.sh`（QEMU と実機の長い転送の時系列、T1）、`stream.py`・`analyze.py`、`config-amd64-tcp.mk`（SSH の guest + sysctl）。WS の完了の時に回帰に残す物は master.md の Tools に移す。

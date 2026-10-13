@@ -63,6 +63,38 @@ struct tcp_pending {
 	uint8_t flags;
 };
 
+/*
+ * What one connection has done since its socket was created, which
+ * net.tcpstats reports (ws220-p001) to follow a transfer's control over
+ * time.  Each count only grows, and is moved and read under the socket
+ * lock, so a reader sees the counts of one moment.  The meaning of each is
+ * that of the field of the same name in struct tcp_stats_entry
+ * (<uapi/sysctl.h>).
+ */
+struct tcp_counters {
+	uint64_t segments_out;
+	uint64_t segments_in;
+	uint64_t data_segments_out;
+	uint64_t data_bytes_out;
+	uint64_t data_bytes_in;
+	uint64_t retransmit_segments;
+	uint64_t retransmit_bytes;
+	uint64_t immediate_resends;
+	uint64_t send_refused;
+	uint64_t send_buffer_sleeps;
+	uint64_t segment_send_failures;
+	uint64_t acks_in;
+	uint64_t duplicate_acks_in;
+	uint64_t acks_outside;
+	uint64_t zero_windows_in;
+	uint64_t zero_windows_out;
+	uint64_t window_updates_out;
+	uint64_t old_segments_in;
+	uint64_t out_of_order_in;
+	uint64_t out_of_order_kept;
+	uint64_t receive_refused;
+};
+
 struct tcp_socket {
 	struct inet_socket inet;
 	enum tcp_state state;
@@ -114,6 +146,7 @@ struct tcp_socket {
 	uint32_t reorder_sequence[TCP_REORDER_MAX];
 	uint32_t reorder_length[TCP_REORDER_MAX];
 	unsigned reorder_count;
+	struct tcp_counters counters;
 };
 
 int
@@ -122,5 +155,10 @@ int
 tcp_socket_create(
 	int protocol,
 	struct socket **result);
+int
+tcp_stats_copy(
+	void *output,
+	size_t capacity,
+	size_t *needed);
 
 #endif
