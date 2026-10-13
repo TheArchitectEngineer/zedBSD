@@ -144,7 +144,7 @@ log は T1 の worktree の `build/ws229-p005/hw-sv7/hw-<scenario>-ws229/run.log
 | kernel | `make ZEDBSD_CONFIG=plan/ws229/tests/config-amd64-gen9.mk BUILD=build/ws229-p005/k-vkx GEN9_SCENARIO=vkx build/ws229-p005/k-vkx/vmunix` | rc 0、warning 0（log の `warning:` 0 行）、`amd64 vmunix check: PASS`、`render/state.o` を作り直した |
 
 未実施: SV7 の再試験（T1、下の依頼）。5330 の回帰は要らない（Gen12 の batch は byte で不変、host の試験で確認）。
-draw・r1 の T1-608 の結果は解析の時点で未着（draw の run.log は空）。落ちていれば別に見る。
+T1-608 の draw は後で着いて PASS（`i915: test draw: PASS`、1024/1024）。r1 は返却の時点で実行中（落ちていれば別に見る）。
 
 ### T1 への再試験の依頼の文（SV7、落ちた場面だけ、Q1 が出す）
 
