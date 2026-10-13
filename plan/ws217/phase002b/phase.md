@@ -3,7 +3,7 @@
 # ws217-p002b: compositor の turn pass（90°・270° と試験の 180°）と実行中の回転の経路
 
 Parent: [WS217](../ws.md)
-Status: planning（2026-10-13 P1: この段の設計の第 1 版。Q1 が design-reviewer に回す。review の後に実装）
+Status: in-progress（2026-10-13 P1 q948: 第 1 版の設計で実装し、[review-1](review-1.md)（条件つきで進めてよい、致命的 0・重大 1・中 7・軽微 13）の指摘と Q1 の決めを §12 で反映。build 4 つと host 試験 PASS。test-wait: T1 の QEMU（§11.4 の依頼）。p002a は cleared（T1-576））
 Disposition: normal
 Primary Milestone: MG006（WS から継承）
 Queue / attempts: q948（2026-10-13 Q1 の依頼、P1）。承認: ユーザーの選択（2026-10-13 AskUserQuestion「WS217 p002b 画面の 90° 回転」、目的は縦長で Notes を使う）と WS217 の D1〜D18 の決定（ws.md）、p001 の review-1〜4
@@ -11,6 +11,8 @@ Purpose / goal: p001 第 4 版 §13 の p002b の行。turn pass を入れ、論
 Prerequisites: p002a の出力（main 済み: `rotate.c`・`kwl_output_size_set`・`compose->opened` と `kwl_output_rotated`・`target_*`・`kwl_compose_target_pass`・glass の幅・高さの引数・`ROTATED` の規則）。p002a は T1-576 の (A)(C) が PASS、(B) の AAT は未（Q1）。review-4 の p002b の条件 C7（p002a で直した）・S12・M21（この phase.md の §3・§6 で直す）
 
 ## 0. 要点（design-reviewer・Q1 向け）
+
+（§0〜§10 は第 1 版の設計。実装で採った形は §11.2、review-1 の反映は §12 が優先する。）
 
 - **turn の資源** `struct kwl_turn`（anchor に 1 つ）: 論理の大きさの turn.image（OPTIMAL、`COLOR_ATTACHMENT | SAMPLED | TRANSFER_SRC | TRANSFER_DST`）、view、framebuffer（turn の pass で作る）、descriptor set（`compose->sampler` = NEAREST）。2 つの render pass `turn_clear_pass`（`UNDEFINED`→`SHADER_READ_ONLY_OPTIMAL`、CLEAR）・`turn_load_pass`（`SHADER_READ_ONLY_OPTIMAL`→同、LOAD）と pipeline は compositor に 1 つずつ（format は一生変わらない）。
 - **shader**: 新しいのは頂点の `turn.vert` だけ。断片は既存の `quad.frag`（`texture()`、i915 で動いている物）を使い、pipeline layout も既存の quad の物（push constant 32 byte）。`turn.vert` は全画面の quad を描き、texcoord を回転の置き換え（90: (v, 1−u)…）で出す。`gl_FragCoord`・`gl_VertexIndex`・`texelFetch` を使わない（§2.2、第 4 版 §4.2 の 6 との違い）。
@@ -199,6 +201,8 @@ Prerequisites: p002a の出力（main 済み: `rotate.c`・`kwl_output_size_set`
 - 回転の park の中で device を idle まで待つ（§3.2 の 2）。1080p で数十 ms の見込み（未測）。
 - p003 の前は、touch screen・pen・絶対の pointer の座標が回転に合わない（写像は p003）。p004 の前は Settings に回転が無く、試験の口だけ。
 
+- （review-1 の後）extended の mode で head が開いている間は回せない（`reason=heads`、p005 まで）。open の中の turn の資源の失敗で 0° に落ちる経路は QEMU で未検証（試験の注入口を作らない）。
+
 ## 8. 段の中の順と見積
 
 1. rotate.h の mask の引数と `KWL_TURN_DEFAULT`、`kwl_turn_coefficients`、host 試験（0.3 LW）。
@@ -233,6 +237,93 @@ Prerequisites: p002a の出力（main 済み: `rotate.c`・`kwl_output_size_set`
 | Q3 | §4.2（試験の policy は shot.c の request、`keiland-desktop` の行はやめる） | 採る。第 4 版 §12.2 の手順の直しは Q1 |
 | Q4 | T1 の束 A（p002b+p003）を待つか、p002b を単独で流すか | 単独で流す（turn の画のずれを p003 の入力と切り分けやすい）。判断は Q1 |
 
+## 11. 実行の記録（2026-10-13 P1、agent/p1、base main `1eb79f9db`）
+
+### 11.1 変えた所
+
+| file | 内容 |
+| --- | --- |
+| `rotate.h`・`rotate.c` | `KWL_TURN_BUILD` = 1、`KWL_TURN_DEFAULT`（`__aarch64__` で 0）、`kwl_rotate_mask(hw180, turn_default, turn_build, policy, &why)`、`kwl_turn_coefficients()`、`kwl_rotate_select()`（inline）と `KWL_ROTATE_SELECT_*` |
+| `turn.c`（新） | `kwl_turn_open/close/destroy_shared/record`、turn の 2 つの pass・pipeline（`turn.vert`＋`quad.frag`、opaque、`compose->layout`）、image（`COLOR_ATTACHMENT|SAMPLED|TRANSFER_SRC|TRANSFER_DST`、format の能力の検査）・view・framebuffer・set（NEAREST） |
+| `shaders/turn.vert`（新）・`shaders/regenerate.py`・`shaders.h` | turn の頂点の shader。`shaders.h` は既存の配列が byte 同一で `kwl_turn_vert` だけ増えた |
+| `output-rotate.c`（新） | `kwl_output_select_rotation`・`kwl_output_apply_rotation`・`kwl_output_policy_set`、TURN の手順（先に turn と glass、park と idle、入れ替え、scene・layers・backdrop の作り直し）、pointer の同じ物理の点 |
+| `compose.c`・`compose.h` | `struct kwl_turn` と turn の欄、`kwl_compose_target_pass` が turn の pass、`kwl_compose_target_image/layout`、`kwl_compose_pipeline_opaque`、open の `compose_turn_open`（失敗は 0° で開き `WHY_RESOURCE`）、close の `kwl_turn_close`、終わりの `kwl_turn_destroy_shared`、damage を `compose_region_since` に分け `compose_turn_region`・`compose_turn_regions`（物理の矩形、`KWL DAMAGE turn …`・`KWL DAMAGE turn-scene …`）、`compose_record` が `struct kwl_frame_region` を取り、turn ありは turn.image に描いて `kwl_turn_record` → shot → heads、mask に `server->rotate_policy` |
+| `scene.c`・`scene.h` | `kwl_scene_copy` に `layout`（turn.image は SRO、stage に FRAGMENT_SHADER） |
+| `heads.c` | `kwl_heads_record(…, source, layout)`、mirror の元が turn.image なら readback 無しでも写す（`KWL OUTPUT mirror source=turn` を一度）、`kwl_heads_config_save()` |
+| `glass.c`・`shm.c` | `kwl_glass_size_prepare/swap/drop`（壁紙と blur を先に作る）、`kwl_host_image_move()`（host image の list の繋ぎを移す。import の構造体を写すだけでは list が壊れる） |
+| `output-switch.c`・`kwl.h`・`main.c` | `kwl_output_fit()`、`kwl_output_steps_name()`（public に）、`kwl_output_pointer_turn()` と `kwl_output_rotated` の pointer の順（S1）、`opened_display`、`server->rotate_policy`、main.c は試験の option を `kwl_shot_option()` に渡す |
+| `shot.c`・`shot-none.c`・`userland/tests/keiland-shot/main.c` | request `POLICY any|default`・`ROTATE N`・`SHOT partial`、`kwl_shot_option()`（`--rotate-policy`、試験の image だけ。shot-none.c は 0）、keiland-shot の `--partial` |
+| `Makefile`・`Makefile.linux`・`Makefile.freebsd` | `output-rotate.c`・`turn.c` |
+| `plan/ws217/tests/host-rotate.c`・`.sh` | mask の新しい表（turn_default 0 を含む）、`kwl_turn_coefficients` の 4 panel × 4 角度の全画素、`kwl_rotate_select` の表（M1 の行）、`kwl_rotate_pointer_place` の 4 panel × 16 の組の全画素と端の点（S1） |
+| `plan/ws217/tests/config-amd64.mk`（新） | T1 の image（AAT の config を include するだけ） |
+
+### 11.2 設計（§0〜§10）との違い（review-1 の後の形）
+
+1. backdrop は `kwl_backdrop_resize` を作らず、大きさの変わる回転の park の中で既存の `kwl_backdrop_destroy`（小さな pass ごと捨て、state は UNTRIED、次の使用で作り直す）を呼ぶ（review-1 M3 の (b)）。
+2. `host-turn-damage.c`・`host-output-select.c` は作らず、純粋な部分（turn の係数、選択の判定 `kwl_rotate_select`、mask、pointer の移し `kwl_rotate_pointer_place`）を `host-rotate.c` に入れた。damage の union と物理の写像は compose.c の中（Vulkan と server に依る）で、写像は `kwl_rotate_rect`（p002a の host 試験で総当たり済み）を使うだけ。
+3. select と apply は output-switch.c でなく新しい `output-rotate.c`。pointer の warp の move（`kwl_output_pointer_turn`）は output-switch.c に置き、計算は rotate.h の inline `kwl_rotate_pointer_place`（WS113 の `host-output-switch.sh` が output-switch.c を rotate.c 無しで link するため）。
+4. turn pass の pipeline の bind は `kwl_compose_bind`（bind の cache を通す）、pass の後に `kwl_compose_bind_forget`。
+5. RESIZED の fit と wl_output の tell は unpark の後（open の経路と同じ、review-1 L10）。park の中は turn・glass・cache の入れ替えだけ。
+6. `--rotate-policy` は製品の binary に入れない（review-1 M6、Q1 の決め）: 解釈は試験の image だけの shot.c の `kwl_shot_option()`、製品の `shot-none.c` は何も取らない（Linux・FreeBSD の build も shot-none.c）。usage の行にも出さない。
+7. 既定の turn の可否は build の `__aarch64__` でなく実行時の GPU（`VkPhysicalDeviceProperties.vendorID` が `KWL_TURN_VENDOR_OFF` = 0x14e4 なら無効、`compose->turn_default`）（review-1 L3: WS112 の Linux arm64 の package が巻き込まれない）。
+
+### 11.3 command と結果（host、gcc 14.2.0、clang は tree の LLVM）
+
+- `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws217-p002b/amd64 build/ws217-p002b/amd64/bin/wayland` → exit 0、warning 0。
+- `make -j16 ZEDBSD_CONFIG=plan/ws217/tests/config-amd64.mk BUILD=build/ws217-p002b/amd64t build/ws217-p002b/amd64t/bin/wayland`（shot.c つき）・`… bin/keiland-shot` → exit 0、warning 0。
+- `make -j16 ZEDBSD_CONFIG=config/ci/config-rpi4.mk BUILD=build/ws217-p002b/arm64 build/ws217-p002b/arm64/bin/wayland` → exit 0、warning 0。
+- `make -j16 KEILAND_ASK=n KEILAND_LINUX_BUILD=build/ws217-p002b/linux keiland-linux` → exit 0、warning 0（install はしていない）。FreeBSD の build は未実施（Makefile.freebsd に 2 file を足しただけ）。
+- `python3 userland/desktop/wayland/shaders/regenerate.py`（glslc・spirv-val）→ 差分は `kwl_turn_vert` の追加だけ。
+- `sh plan/ws217/tests/host-rotate.sh` → PASS（plain・ASan/UBSan）。`host-displays-conf.sh`・`host-scanout-rules.sh` PASS。
+- 回帰: `plan/ws113/tests/host-output-switch.sh`・`host-displays.sh`・`host-arrange.sh` PASS、`plan/ws211/tests/anim-host-test.sh` PASS、`plan/ws213/tests/cursor-due-host-test.sh` PASS、`plan/ws141/tests/vulkan-cursor-host.sh` PASS。
+- `plan/ws213/tests/list-replay-host-test.sh`（master の試験の一覧に登録）: `kwl_scene_copy` の引数が増えたので link が壊れる。2 つの呼び出しに `VK_IMAGE_LAYOUT_PRESENT_SRC_KHR` を足した写し（`build/tmp/ws217-lr.*`）で流すと出力が golden と byte 同一（scene の barrier の layout と stage は 0° で今のまま）。WS213 の path なので Q1 に直しを頼む（§11.5）。
+- `sh plan/tools/keiland-os-boundary/check.sh` → PASS。`python3 -I plan/tools/style-check.py`（変えた 13 file）: main の時から増えた指摘は 0（新しい 2 file も 0）。`git diff --check` 空。
+
+### 11.4 T1 の依頼（Q1 へ送った文面と同じ）
+
+> **T1 依頼（ws217-p002b、compositor の turn pass、QEMU の Venus、p002b 単独）**
+> - tree: main に P1 の q948 の merge が入った SHA。
+> - image: `AAT_CONFIG=plan/ws217/tests/config-amd64.mk plan/tools/aat/build-image.sh build/<T1 の dir>`（AAT の image。`--file` は無い。`--rotate-policy` と shot.c の `POLICY`・`ROTATE`・`SHOT partial` はこの試験の image にだけある）。
+> - A. 起動の turn（`--testing`、AAT の README の QEMU の手順の 2. と同じ起こし方）: `/bin/wayland --testing --width=1280 --height=800 --glass --log-frames --rotate-policy=any --rotate=90 > /tmp/zdesktop.log 2>&1 &` と wltest の窓 1 つ。合否: log に `KWL OUTPUT turn width=800 height=1280 rotation=90`、`KWL OUTPUT open width=800 height=1280`、`KWL GLASS size width=800 height=1280 by=open`。`keiland-shot` の PNG（1280x800）で system bar が物理の右端に縦、窓の字が時計回りに 90° 倒れて読める。`--rotate=270`（左端）、`--rotate=180`（policy ANY なので turn、上下が逆）、`--rotate=0`（今と同じ）でも 1 枚ずつ。
+> - B. 部分 frame と全体の byte の比較（A の 90 の続き、review-1 M7）: wltest の窓を `aat drag` で 40 px ずつ 6 回動かす（swapchain の画像が一巡より多く部分の frame を描く）。止めた後、`keiland-shot --partial p.png` を要求してから pointer を 1 px 動かし（要求の後に damage が要る、L11）、続けて `keiland-shot f.png`（全体）。p.png と f.png を画素で比べ、違う画素が無い（時計の領域と pointer の周りの矩形は除く。除いた矩形を記録）。log の `KWL DAMAGE frame=… image=…` と `KWL DAMAGE turn frame=… rotation=90 rects=N x,y,w,h …`（物理）を記録。
+> - C. 実行中の回転（session、AAT の image を普通に起こし、Files か Terminal を 1 つ開く）: `keiland-shot --request "POLICY any"` → `OK mask=15 why=0`。`--request "ROTATE 90"` → `OK applied=1 saved=0 rotation=90 width=800 height=1280`、log `KWL OUTPUT rotate key=… rotation=90 … steps=turn|rotated|resized|save by=user pointer=X,Y>X',Y' ms=…`（pointer の 2 つの点が「同じ物理の点」の式 90: (x, y) → (y, 1279−x) に合う。pointer が head でなく anchor の上にある時）、撮影。続けて `ROTATE 270`（steps=turn|rotated|save、`KWL GLASS size` の行が出ない = 作り直さない）、`ROTATE 180`、`ROTATE 0` を各 1 枚。各段で開いた窓が新しい大きさに収まる。`$HOME/.config/keiland/displays.conf` に `rotate=… 90`（0 では行が消える）。`--request "POLICY default"` → `OK mask=1 why=1`（90 で回っていれば `KWL OUTPUT rotate … rotation=0 … by=policy` で 0 に戻り、displays.conf は変わらない）。その後 `--request "ROTATE 90"` → `ERROR errno=…`（ENOTSUP）と `KWL OUTPUT rotate refused … reason=mask`。最後に `POLICY any`・`ROTATE 0`・`POLICY default` で `rotate=` の行を消して戻す（L11）。
+> - D. 回帰: `plan/tools/aat/run-aat.sh qemu OUTDIR smoke`（0° のまま、全部 PASS）。
+> - 合否は log の行と PNG（T1 が見る）と B の画素の比較。時間: `KWL OUTPUT rotate … ms=`（90・270・180・0）と `KWL GLASS size … by=turn ms=`。
+> - 未検証のまま残る物: open の中で turn の資源が作れず 0° で開く経路（M13、`KWL OUTPUT rotate unsupported … reason=resource`）は試験の注入口を作らない（製品の code に試験の切り替えを置かない規約 §12 に合わせる）。mirror（2 画面の image）、extended の head がある時の `reason=heads`、game mode の暫定は p003・p005 の束で。
+
+### 11.5 Q1 への依頼
+
+- `plan/ws213/tests/list-replay-host-test.c` の 2 行（1110 と 1122 の `kwl_scene_copy(&server->compose->scene, target, image, …)` に `VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, ` を足す）。写しで golden と一致を確かめた。WS213 の path なので P1 は変えていない（許可があれば P1 が直す）。
+- `plan/ws141/tests/scene-cache-host.c` は main で既に `kwl_scene_copy` の引数が合っていない（5 つで呼ぶ）。今の master の一覧に無いので、試験の整理の基準（2026-10-06）で削除の候補。
+
+## 12. review-1 への対応（2026-10-13、Q1 の決め）
+
+| # | 対応 |
+| --- | --- |
+| S1 | 実行中の回転と open の経路（`kwl_output_rotated`）の両方で、ROTATED の時は pointer を先に「古い論理 → 古い回転で物理 → 新しい回転で論理」の 1 回の warp で動かし（`kwl_output_pointer_turn`、計算は `kwl_rotate_pointer_place`）、その後に RESIZED の fit（clamp は動かした後なので何もしない）。open の経路は display が `opened_display` と同じ時だけ（switch で別の panel に移る時は今の clamp、L46）。host 試験: 4 つの panel × 16 の角度の組 × 全画素で `kwl_rotate_point`／`_back` と一致、review の 1280x800 の (1000,400) → (400,279)、角の点、外の点の clamp。log `pointer=x,y>x',y'` |
+| M1 | `kwl_rotate_select` は直の scanout の判定を「閉じている」の判定より先に（直の scanout の間は output_open = 0）。host 試験に「scanout 中で output_open = 0 → LEAVE」の行 |
+| M2 | park の直後に `kwl_cursor_plane_hold`。解除は次の `kwl_cursor_plane_update`（回った出力では plane は空の像で合成に、L24 の順） |
+| M3 | (b): 大きさの変わる回転では `kwl_backdrop_destroy` で全部捨てる（§11.2 の 1） |
+| M4 | extended の mode で head が開いている時、`kwl_output_select_rotation` は ENOTSUP（log `reason=heads`）。p005 で head の再配置を入れる時に外す |
+| M5 | 大きさが同じ回転（90↔270、turn の 180↔0）は turn.image（あれば）・glass・scene・layers・backdrop を作り直さず、turn の角度と swapchain の `image_frames` だけを替える。turn.image が無い所から（0 → turn の 180）は turn.image だけ作る |
+| M6 | `--rotate-policy` は試験の image の shot.c だけ（§11.2 の 6） |
+| M7 | T1 の B に部分と全体の画素の比較、C に pointer の log、A に起動時の `KWL GLASS size … by=open`。M13 の 0° への落ちは注入口を作らず「未検証」と明記（§11.4） |
+| L1 | turn の 2 つの pass の入口の dependency に `COLOR_ATTACHMENT_OUTPUT`・`COLOR_ATTACHMENT_WRITE`。mirror が turn.image を戻す barrier の dst を次の frame の pass と写しの stage に |
+| L2 | turn の format の検査に `SAMPLED_IMAGE_FILTER_LINEAR` |
+| L3 | 実行時の GPU の vendor で（§11.2 の 7） |
+| L4 | 実行中の apply が成功した時に `WHY_RESOURCE` を消す（`output_rotate_turn`） |
+| L5 | select は login 画面（greeter）で ENOTSUP（D9） |
+| L6 | `regenerate.py` の glslc の版で既存の shader の SPIR-V が変わったら、`kwl_turn_vert` の配列だけを `shaders.h` に差し込む（今回は既存の配列が byte 同一だった） |
+| L7 | `turn.c`・`output-rotate.c` を 3 つの Makefile に。FreeBSD の build は未確認 |
+| L8 | ws.md の p002b と p011 の行を直した |
+| L9 | `POLICY default` で選択が mask の外になったら `rotation_selected = 0`（open の choose と同じ、displays.conf の行は保つ）、0 に戻す apply は新しい mode `KWL_ROTATE_MODE_POLICY`（保存しない、log `by=policy`） |
+| L10 | §11.2 の 5 |
+| L11 | T1 の手順に「要求を出してから動かす」と最後の `rotate=` の片付け |
+| L12 | head の slot には swapchain の pass（`kwl_compose_target_pass`）、turn pass は clip の後、pass の後に bind を忘れる、backdrop の作り直しは `kwl_backdrop_destroy` が `backdrop_set` を NULL に |
+| L13 | turn の時も scene は swapchain の写しの能力で開く条件のまま（性能だけの違い、変えない） |
+
 ## Event
 
 - 2026-10-13 / ws217-p002b-design-1: P1 が q948 で第 1 版を書いた（source は main `1eb79f9db`）。review-4 の S12（select と apply の 2 つの関数）・M21（arrange と refit）・p002a の残し 4（turn_build と既定の分け方）を入れ、M16 の前提（zedBSD の session は `keiland-desktop` でない）を見つけて試験の policy の渡し方を変えた。コードは書いていない。design-reviewer の review 待ち。
+- 2026-10-13 / ws217-p002b-impl-1: P1 が q948 で実装（turn.c・output-rotate.c・turn.vert ほか、§11）。build 4 つと host 試験 PASS。T1 の依頼を Q1 へ。
+- 2026-10-13 / ws217-p002b-review-1: design-reviewer の review-1（条件つきで進めてよい）。P1 が S1・M1〜M7・L1〜L13 を実装と phase.md に反映（Q1 の決め: M6 は試験の image だけ、M4 は ENOTSUP、M3 は全部捨てる形）。

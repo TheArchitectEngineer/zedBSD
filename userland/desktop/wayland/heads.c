@@ -99,7 +99,7 @@ static unsigned heads_rects(struct kwl_server *server, const struct kwl_head *sk
 static int heads_needs_frame(struct kwl_server *server, const struct kwl_head *head);
 static unsigned heads_shows(struct kwl_server *server, const struct kwl_head *head);
 static unsigned heads_windows(struct kwl_server *server, unsigned slot, struct kwl_object **windows, unsigned capacity);
-static void heads_record_mirror(struct kwl_server *server, struct kwl_list *command, VkImage source, struct kwl_head *head);
+static void heads_record_mirror(struct kwl_server *server, struct kwl_list *command, VkImage source, VkImageLayout layout, struct kwl_head *head);
 static void heads_record_extended(struct kwl_server *server, struct kwl_list *command, struct kwl_head *head);
 static void heads_barrier(struct kwl_list *command, VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags source_access, VkAccessFlags destination_access, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
 static int heads_path(char *path, size_t size, int folder);
@@ -116,6 +116,26 @@ static int heads_is_window(const struct kwl_object *object);
 static void heads_redraw(struct kwl_server *server);
 static int heads_index(const struct kwl_compose *compose, VkDisplayKHR display);
 static int heads_off(const struct kwl_compose *compose, unsigned index);
+
+/*
+ * Writes the displays' choice as it is now to displays.conf (an output's
+ * angle chosen, WS217).  Returns 0 or an errno value; a failure leaves the
+ * file as it was.
+ */
+int
+kwl_heads_config_save(
+	struct kwl_server *server)
+{
+	int error;
+
+	/* The choice the compositor holds. */
+	error = heads_save(&server->compose->config);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the file holds the choice. */
+	return 0;
+}
 
 /*
  * Reads displays.conf once: the mode and the places the user chose.  A
@@ -452,7 +472,8 @@ void
 kwl_heads_record(
 	struct kwl_server *server,
 	struct kwl_list *command,
-	VkImage source)
+	VkImage source,
+	VkImageLayout layout)
 {
 	struct kwl_compose *compose;
 	struct kwl_head *head;
@@ -467,7 +488,7 @@ kwl_heads_record(
 
 		/* The mode's picture. */
 		if (compose->display_mode == KWL_DISPLAYS_MIRROR) {
-			heads_record_mirror(server, command, source, head);
+			heads_record_mirror(server, command, source, layout, head);
 		} else {
 			heads_record_extended(server, command, head);
 		}
@@ -1183,6 +1204,7 @@ heads_record_mirror(
 	struct kwl_server *server,
 	struct kwl_list *command,
 	VkImage source,
+	VkImageLayout layout,
 	struct kwl_head *head)
 {
 	struct kwl_compose *compose;
@@ -1191,6 +1213,8 @@ heads_record_mirror(
 	VkImageSubresourceRange range;
 	VkImageBlit blit;
 	VkImage target;
+	VkPipelineStageFlags written;
+	unsigned copyable;
 
 	/* The head's image, ready for the copies. */
 	compose = server->compose;
@@ -1207,11 +1231,27 @@ heads_record_mirror(
 	range.layerCount = 1U;
 	kwl_list_clear_color_image(command, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1U, &range);
 
+	/*
+	 * Whether the desktop can be copied: the swapchain's image when the
+	 * display allows it, a turned output's turn image always (it is made
+	 * to be copied from, WS217; said once).
+	 */
+	copyable = compose->readback;
+	written = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	if (layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		copyable = 1U;
+		written = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		if (!compose->mirror_turn_logged) {
+			printf("KWL OUTPUT mirror source=turn\n");
+			compose->mirror_turn_logged = 1U;
+		}
+	}
+
 	/* The desktop fitted whole, when the output's image can be copied. */
-	if (compose->readback) {
-		/* The output's image, from presentation to the copy's source. */
-		heads_barrier(command, source, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-		    VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+	if (copyable) {
+		/* The output's image, from presentation (or the turn pass's sampling) to the copy's source. */
+		heads_barrier(command, source, layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+		    VK_ACCESS_TRANSFER_READ_BIT, written, VK_PIPELINE_STAGE_TRANSFER_BIT);
 		heads_barrier(command, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
 		    VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
@@ -1232,9 +1272,15 @@ heads_record_mirror(
 		blit.dstOffsets[1].z = 1;
 		kwl_list_blit_image(command, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &blit, VK_FILTER_LINEAR);
 
-		/* The output's image back to presentation. */
-		heads_barrier(command, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_READ_BIT, 0U,
-		    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+		/* The output's image back to presentation, or the turn image to the next frame's passes and copies. */
+		if (layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+			heads_barrier(command, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, layout, VK_ACCESS_TRANSFER_READ_BIT,
+			    VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+			    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT);
+		} else {
+			heads_barrier(command, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, layout, VK_ACCESS_TRANSFER_READ_BIT, 0U,
+			    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+		}
 	} else if (!compose->mirror_unsupported_logged) {
 		/* Said once: the desktop is not copied. */
 		printf("KWL OUTPUT mirror unsupported: the output's images cannot be a copy's source\n");

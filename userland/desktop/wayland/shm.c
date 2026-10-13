@@ -316,6 +316,34 @@ kwl_host_image_release(
 }
 
 /*
+ * Moves a host image's record to another place (an image made aside before
+ * it takes the place of one released, WS217): the list the frames copy from
+ * follows it, and the old place is left empty.  The destination holds no
+ * image.
+ */
+void
+kwl_host_image_move(
+	struct kwl_compose *compose,
+	struct kwl_import *from,
+	struct kwl_import *to)
+{
+	struct kwl_import **position;
+
+	/* The list's link to the record points to its new place. */
+	for (position = &compose->host_images; *position != NULL; position = &(*position)->host_next) {
+		/* The link to this exact record. */
+		if (*position == from) {
+			*position = to;
+			break;
+		}
+	}
+
+	/* The record itself, with its own link onward; the old place holds nothing. */
+	*to = *from;
+	memset(from, 0, sizeof(*from));
+}
+
+/*
  * Marks a host image's staging as written, so the next frame copies it into the sampled image.
  */
 void

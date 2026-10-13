@@ -64,11 +64,20 @@
 #define KWL_ROTATE_POLICY_ANY		1U
 
 /*
- * Whether this build has the compositor's turn pass (90 and 270).  It has
- * none yet (ws217-p002a: the logical and physical sizes are kept apart, and
- * every angle but 0 is unsupported); ws217-p002b brings the pass.
+ * Whether this build has the compositor's turn pass (90 and 270, and 180
+ * where the hardware cannot): every build has its code (ws217-p002b).
  */
-#define KWL_TURN_BUILD		0U
+#define KWL_TURN_BUILD		1U
+
+/*
+ * The GPU whose output the turn pass is not offered on without the test
+ * policy (its PCI vendor, VkPhysicalDeviceProperties.vendorID): the
+ * Raspberry Pi 4's (Broadcom) until WS141 p015, as it samples images in
+ * its own tiled layout and a turn image drawn in the raster layout would
+ * be converted on every frame, which the Guardrail forbids.  A test's
+ * policy still allows it there, to measure.
+ */
+#define KWL_TURN_VENDOR_OFF	0x14e4U
 
 /*
  * What an output (or a head) shows, before and after a change: its logical
@@ -108,6 +117,25 @@ struct kwl_rotate_state {
 #define KWL_ROTATE_MODE_SESSION_PAUSE	2U
 #define KWL_ROTATE_MODE_SESSION_RESUME	3U
 
+/*
+ * A test's policy that no longer allows the angle shown (kwl_output_policy_set,
+ * WS217): the turn changes as at the user's choice, but nothing is saved.
+ */
+#define KWL_ROTATE_MODE_POLICY		4U
+
+/*
+ * What a user's choice of an angle does (kwl_rotate_select, review-4 S12):
+ * refused (an angle the display may not take), nothing (the same choice,
+ * already shown), saved only (the output is closed: its next opening shows
+ * it), saved with the direct scanout left (the opening after it shows it),
+ * or applied now.
+ */
+#define KWL_ROTATE_SELECT_REFUSE	0U
+#define KWL_ROTATE_SELECT_NOTHING	1U
+#define KWL_ROTATE_SELECT_SAVE		2U
+#define KWL_ROTATE_SELECT_LEAVE		3U
+#define KWL_ROTATE_SELECT_APPLY		4U
+
 int kwl_rotate_valid(unsigned rotation);
 unsigned kwl_rotate_bit(unsigned rotation);
 void kwl_rotate_point(unsigned rotation, uint32_t physical_width, uint32_t physical_height, int32_t x, int32_t y, int32_t *physical_x, int32_t *physical_y);
@@ -117,8 +145,9 @@ void kwl_rotate_fixed_back(unsigned rotation, uint32_t physical_width, uint32_t 
 void kwl_rotate_rect(unsigned rotation, uint32_t physical_width, uint32_t physical_height, const int32_t *box, int32_t *physical_box);
 void kwl_rotate_rect_back(unsigned rotation, uint32_t physical_width, uint32_t physical_height, const int32_t *physical_box, int32_t *box);
 void kwl_rotate_vector(unsigned rotation, int32_t physical_x, int32_t physical_y, int32_t *x, int32_t *y);
-unsigned kwl_rotate_mask(unsigned hw180, unsigned turn_build, unsigned policy, unsigned *why);
+unsigned kwl_rotate_mask(unsigned hw180, unsigned turn_default, unsigned turn_build, unsigned policy, unsigned *why);
 int kwl_rotate_plan(unsigned rotation, unsigned mask, unsigned hw180, unsigned *scanout, unsigned *turn);
+void kwl_turn_coefficients(unsigned rotation, float *u, float *v);
 
 /*
  * The sizes and the steps are here as inline functions, not in rotate.c:
@@ -210,6 +239,123 @@ kwl_rotate_steps(
 
 	/* Succeeded: the steps to take. */
 	return steps;
+}
+
+/*
+ * Decides what a user's choice of an angle does (KWL_ROTATE_SELECT_*): the
+ * request against the display's mask, the angle chosen before and the one
+ * shown (they differ when the turn's images could not be made, and the
+ * same choice then tries again), whether a client's buffer is scanned out
+ * directly (the output is closed then, review M1) and whether the output
+ * is open.
+ */
+static __inline unsigned
+kwl_rotate_select(
+	unsigned request,
+	unsigned mask,
+	unsigned selected,
+	unsigned shown,
+	unsigned open,
+	unsigned scanning_out)
+{
+	unsigned bit;
+
+	/* An angle the display may take. */
+	bit = 0U;
+	if (request == KWL_ROTATE_0)
+		bit = KWL_ROTATION_0;
+	else if (request == KWL_ROTATE_90)
+		bit = KWL_ROTATION_90;
+	else if (request == KWL_ROTATE_180)
+		bit = KWL_ROTATION_180;
+	else if (request == KWL_ROTATE_270)
+		bit = KWL_ROTATION_270;
+	if ((mask & bit) == 0U)
+		return KWL_ROTATE_SELECT_REFUSE;
+
+	/* The same choice already shown changes nothing. */
+	if (request == selected && request == shown)
+		return KWL_ROTATE_SELECT_NOTHING;
+
+	/*
+	 * A client's buffer on the display (the output is closed meanwhile)
+	 * gives it back to the desktop first, whose opening shows the choice.
+	 */
+	if (scanning_out)
+		return KWL_ROTATE_SELECT_LEAVE;
+
+	/* A closed output shows the choice when it opens. */
+	if (!open)
+		return KWL_ROTATE_SELECT_SAVE;
+
+	/* Succeeded: the angle is shown now. */
+	return KWL_ROTATE_SELECT_APPLY;
+}
+
+/*
+ * Moves a pointer's place on an output that turns from one angle to
+ * another on the same panel (physical_width by physical_height): kept
+ * inside the old logical picture, taken to the physical point it is
+ * shown at, and back to the logical place at the new angle, so that it
+ * stays on the same point of the panel.  The same arithmetic as
+ * kwl_rotate_point and kwl_rotate_point_back (the host test compares them).
+ */
+static __inline void
+kwl_rotate_pointer_place(
+	unsigned before,
+	unsigned after,
+	uint32_t physical_width,
+	uint32_t physical_height,
+	int32_t *x,
+	int32_t *y)
+{
+	uint32_t width;
+	uint32_t height;
+	int32_t physical_x;
+	int32_t physical_y;
+	int32_t wide;
+	int32_t high;
+
+	/* Inside the old logical picture. */
+	kwl_rotate_size(before, physical_width, physical_height, &width, &height);
+	if (*x < 0)
+		*x = 0;
+	if (*y < 0)
+		*y = 0;
+	if (*x >= (int32_t)width)
+		*x = (int32_t)width - 1;
+	if (*y >= (int32_t)height)
+		*y = (int32_t)height - 1;
+
+	/* The physical point it is shown at. */
+	wide = (int32_t)physical_width;
+	high = (int32_t)physical_height;
+	physical_x = *x;
+	physical_y = *y;
+	if (before == KWL_ROTATE_90) {
+		physical_x = wide - 1 - *y;
+		physical_y = *x;
+	} else if (before == KWL_ROTATE_180) {
+		physical_x = wide - 1 - *x;
+		physical_y = high - 1 - *y;
+	} else if (before == KWL_ROTATE_270) {
+		physical_x = *y;
+		physical_y = high - 1 - *x;
+	}
+
+	/* Its logical place at the new angle. */
+	*x = physical_x;
+	*y = physical_y;
+	if (after == KWL_ROTATE_90) {
+		*x = physical_y;
+		*y = wide - 1 - physical_x;
+	} else if (after == KWL_ROTATE_180) {
+		*x = wide - 1 - physical_x;
+		*y = high - 1 - physical_y;
+	} else if (after == KWL_ROTATE_270) {
+		*x = high - 1 - physical_y;
+		*y = physical_x;
+	}
 }
 
 #endif

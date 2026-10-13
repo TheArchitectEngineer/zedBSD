@@ -425,6 +425,7 @@ kwl_glass_open(
 	if (error != 0)
 		return error;
 	printf("KWL STARTUP step=wallpaper ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	printf("KWL GLASS size width=%u height=%u by=open\n", server->width, server->height);
 
 	/* The glyphs; the look is drawn without text when the font cannot be read. */
 	started = kwl_milliseconds();
@@ -596,6 +597,118 @@ kwl_glass_resize(
 
 	/* Succeeded: the look fits the output. */
 	return 0;
+}
+
+/*
+ * Makes the wallpaper and its frosted glass at another size, the picture
+ * in them, before an output turns (WS217): the look keeps its own images
+ * until kwl_glass_size_swap gives it these, so that a failure here leaves
+ * everything as it was.  Returns 0 (nothing made without the look) or an
+ * errno value, with nothing left made.
+ */
+int
+kwl_glass_size_prepare(
+	struct kwl_server *server,
+	uint32_t width,
+	uint32_t height,
+	struct kwl_glass_size *size)
+{
+	struct wallpaper_picture picture;
+	uint64_t started;
+	VkResult result;
+	int error;
+
+	/* Without the look there is no wallpaper. */
+	memset(size, 0, sizeof(*size));
+	if (server->compose == NULL || server->compose->glass == NULL)
+		return 0;
+
+	/* The wallpaper's image at the size. */
+	started = kwl_milliseconds();
+	result = kwl_host_image_create(server->compose, width, height, server->compose->sampler, &size->wallpaper);
+	if (result != VK_SUCCESS) {
+		kwl_glass_size_drop(server, size);
+		return ENOMEM;
+	}
+
+	/* The frosted glass's small image. */
+	result = kwl_host_image_create(server->compose, width / GLASS_BLUR_SCALE, height / GLASS_BLUR_SCALE, server->compose->linear_sampler, &size->blurred);
+	if (result != VK_SUCCESS) {
+		kwl_glass_size_drop(server, size);
+		return ENOMEM;
+	}
+
+	/* The picture shown now (or the landscape drawn here), read again. */
+	memset(&picture, 0, sizeof(picture));
+	if (server->wallpaper_path != NULL) {
+		error = wallpaper_load(server->wallpaper_path, &picture);
+		if (error != 0)
+			printf("KWL GLASS no wallpaper: path=%s errno=%d\n", server->wallpaper_path, error);
+	}
+
+	/* Into both images at the size; then its bytes go. */
+	error = wallpaper_render(&picture, width, height, size->wallpaper.map, size->wallpaper.row_pitch, size->blurred.map, size->blurred.row_pitch);
+	free(picture.data);
+	if (error != 0) {
+		kwl_glass_size_drop(server, size);
+		return error;
+	}
+
+	/* Succeeded: ready to take the look's place. */
+	size->made = 1U;
+	printf("KWL GLASS size width=%u height=%u by=turn ms=%llu\n", width, height, (unsigned long long)(kwl_milliseconds() - started));
+	return 0;
+}
+
+/*
+ * Gives the look the wallpaper and frosted glass kwl_glass_size_prepare
+ * made, and lets its old ones go (the device is idle: an output turning
+ * with the render thread parked, WS217).  A wallpaper being read for the
+ * old size is drawn again at the new one when it comes
+ * (kwl_glass_wallpaper_poll compares the sizes).
+ */
+void
+kwl_glass_size_swap(
+	struct kwl_server *server,
+	struct kwl_glass_size *size)
+{
+	struct kwl_glass *glass;
+
+	/* Nothing was made without the look. */
+	if (!size->made || server->compose == NULL || server->compose->glass == NULL)
+		return;
+	glass = server->compose->glass;
+
+	/* The old images go, the new ones take their places. */
+	kwl_host_image_release(server->compose, &glass->wallpaper);
+	kwl_host_image_release(server->compose, &glass->blurred);
+	kwl_host_image_move(server->compose, &size->wallpaper, &glass->wallpaper);
+	kwl_host_image_move(server->compose, &size->blurred, &glass->blurred);
+
+	/* The next frame copies both into their sampled images, and everything stands on them. */
+	kwl_host_image_written(&glass->wallpaper);
+	kwl_host_image_written(&glass->blurred);
+	server->dirty = 1;
+	memset(size, 0, sizeof(*size));
+}
+
+/*
+ * Lets go of what kwl_glass_size_prepare made when it is not used (an
+ * output that did not turn after all): no frame has used it.
+ */
+void
+kwl_glass_size_drop(
+	struct kwl_server *server,
+	struct kwl_glass_size *size)
+{
+	/* Whatever part of each image was made. */
+	if (server->compose != NULL) {
+		kwl_host_image_release(server->compose, &size->wallpaper);
+		kwl_host_image_release(server->compose, &size->blurred);
+	}
+
+	/* Nothing is left. */
+	memset(size, 0, sizeof(*size));
 }
 
 /*

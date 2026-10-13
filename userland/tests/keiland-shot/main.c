@@ -11,11 +11,13 @@
  * only: the compositor answers only when the image was built with
  * ZEDBSD_TEST_SCREEN_CAPTURE=y (userland/desktop/wayland/shot.c).
  *
- *   keiland-shot [--socket PATH] [--timeout MS] OUT.png
+ *   keiland-shot [--socket PATH] [--timeout MS] [--partial] OUT.png
  *   keiland-shot [--socket PATH] [--timeout MS] --request LINE
  *
  * --request sends another request of the capture channel (DISPLAYS, MODE,
- * PLACE of ws113-p004b) and prints its answer.
+ * PLACE of ws113-p004b; POLICY, ROTATE of WS217) and prints its answer.
+ * --partial takes the next frame as its damage draws it ("SHOT partial",
+ * WS217) instead of asking for a whole one.
  *
  * Without --socket it asks every compositor's socket it finds
  * (/run/user/<uid>/keiland-shot.sock, /tmp/keiland-shot.<uid>.sock) and
@@ -87,14 +89,18 @@ main(
 	int connection;
 	int error;
 	int argument;
+	int partial;
 
 	/* The options and the file. */
 	socket_path = NULL;
 	asked = NULL;
 	out = NULL;
 	timeout = SHOT_TIMEOUT_MS;
+	partial = 0;
 	for (argument = 1; argument < argc; argument++) {
-		if (strcmp(argv[argument], "--socket") == 0 && argument + 1 < argc)
+		if (strcmp(argv[argument], "--partial") == 0)
+			partial = 1;
+		else if (strcmp(argv[argument], "--socket") == 0 && argument + 1 < argc)
 			socket_path = argv[++argument];
 		else if (strcmp(argv[argument], "--request") == 0 && argument + 1 < argc)
 			asked = argv[++argument];
@@ -104,7 +110,7 @@ main(
 			out = argv[argument];
 	}
 	if (out == NULL && asked == NULL) {
-		fprintf(stderr, "usage: keiland-shot [--socket PATH] [--timeout MS] OUT.png | --request LINE\n");
+		fprintf(stderr, "usage: keiland-shot [--socket PATH] [--timeout MS] [--partial] OUT.png | --request LINE\n");
 		return 2;
 	}
 
@@ -142,7 +148,10 @@ main(
 		printf("KEILAND-SHOT error connect %s errno=%d\n", socket_path, errno);
 		return 1;
 	}
-	(void)write(connection, "SHOT\n", 5U);
+	if (partial)
+		(void)write(connection, "SHOT partial\n", 13U);
+	else
+		(void)write(connection, "SHOT\n", 5U);
 	used = 0U;
 	while (used + 1U < sizeof(line)) {
 		error = shot_read_all(connection, (uint8_t *)line + used, 1U, timeout);

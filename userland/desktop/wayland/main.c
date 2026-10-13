@@ -463,6 +463,13 @@ parse_options(
 			continue;
 		}
 
+		/* A test image's own option (shot.c: --rotate-policy, WS217); a product's compositor takes none. */
+		match = kwl_shot_option(server, argument);
+		if (match == 1)
+			continue;
+		if (match < 0)
+			return EINVAL;
+
 		/* The desktop surface's program and token (desktop.c, ws094-p002). */
 		match = kwl_desktop_option(server, argument);
 		if (match == 1)
