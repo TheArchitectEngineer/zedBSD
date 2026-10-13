@@ -24,6 +24,11 @@
  *
  *   compute-dump FILE.spv OUT.bin      compiles, checks and writes the kernel
  *   compute-dump -refuse FILE.spv      expects the module to be refused
+ *   compute-dump -gen9 FILE.spv OUT.bin
+ *                                      (ws229-p003) compiles for Gen9 and writes the kernel; the
+ *                                      scoreboard and descriptor checks read the Gen12 layout and are
+ *                                      left out (plan/ws229/tests/eu-gen9-host.sh judges the kernel with
+ *                                      Mesa's --gen=skl tools)
  */
 
 #include <stdint.h>
@@ -89,13 +94,19 @@ main(
 	unsigned kept;
 	unsigned block;
 	int refuse;
+	int gen9;
 	int fault;
 	int error;
 	FILE *file;
 
 	/* The mode, the module and the output. */
 	refuse = 0;
-	if (argc == 3 && strcmp(argv[1], "-refuse") == 0) {
+	gen9 = 0;
+	if (argc == 4 && strcmp(argv[1], "-gen9") == 0) {
+		gen9 = 1;
+		path = argv[2];
+		argv++;
+	} else if (argc == 3 && strcmp(argv[1], "-refuse") == 0) {
 		refuse = 1;
 		path = argv[2];
 	} else if (argc == 3) {
@@ -141,10 +152,25 @@ main(
 		printf("%s: FAIL not a compute shader\n", path);
 		return 1;
 	}
-	error = drv_i915_shader_compile(ir, &binary);
+	if (gen9 != 0) {
+		error = drv_i915_shader_compile_gen(ir, NULL, 9U, &binary);
+	} else {
+		error = drv_i915_shader_compile(ir, &binary);
+	}
 	if (error != 0) {
 		printf("%s: FAIL refused by the compiler: %d\n", path, error);
 		return 1;
+	}
+
+	/* A Gen9 kernel is written as it is: the checks below read the Gen12 layout. */
+	if (gen9 != 0) {
+		file = fopen(argv[2], "wb");
+		if (file == NULL)
+			return 1;
+		fwrite(binary->code, 1, binary->code_bytes, file);
+		fclose(file);
+		printf("%s: Gen9 kernel of %u instructions written\n", path, binary->code_bytes / 16U);
+		return 0;
 	}
 
 	/* The scoreboard: sound as made. */

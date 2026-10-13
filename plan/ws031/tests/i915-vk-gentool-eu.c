@@ -2,6 +2,7 @@
  * WS031 E-128: every emitter of the EU encoder, written out for Mesa's gentool to judge.
  * run-vk-gentool-test.sh disassembles the result (no validation error may appear), assembles the
  * disassembly again and requires the very same bytes: a stray or missing bit cannot survive both.
+ *   i915-vk-gentool-eu [-gen9] out.bin     (ws229-p003: -gen9 encodes in the Gen9 layout)
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -21,9 +22,14 @@ main(int argc, char **argv)
 	size_t bytes;
 	FILE *f;
 
-	if (argc != 2)
+	if (argc == 3 && strcmp(argv[1], "-gen9") == 0) {
+		drv_i915_eu_init_gen(&b, 9U);
+		argv++;
+	} else if (argc == 2) {
+		drv_i915_eu_init(&b);
+	} else {
 		return 2;
-	drv_i915_eu_init(&b);
+	}
 	drv_i915_eu_mov(&b, drv_i915_eu_grf(16U), drv_i915_eu_imm_f(0x3edc28f6U));
 	drv_i915_eu_mov(&b, drv_i915_eu_grf(17U), drv_i915_eu_grf(3U));
 	drv_i915_eu_mov(&b, drv_i915_eu_grf(18U), drv_i915_eu_grf_scalar(2U, 4U));

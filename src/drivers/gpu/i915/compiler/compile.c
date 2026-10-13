@@ -44,6 +44,7 @@
 #include <uapi/errno.h>
 
 #include "../intel/eu-encoding-gen12.h"
+#include "../intel/eu-encoding-gen9.h"
 
 /*
  * Register conventions of a SIMD8 dispatch on Gen12 (one register = one 32-bit value to a channel).
@@ -496,6 +497,9 @@ struct i915_compile_state {
 	 */
 	const struct i915_shader_binary *producer;
 
+	/* The graphics version the kernel is for (9 or 12): it picks the encoder's layout and a few message forms. */
+	unsigned graphics_ver;
+
 	/*
 	 * Geometry: the first register of the input vertices' URB handles and
 	 * the register the push data starts at (the dispatch's first payload
@@ -567,6 +571,7 @@ static void i915_compile_sample(struct i915_compile_state *state, const struct d
 static int i915_compile_sampler_index(const struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst, uint32_t *sampler);
 static void i915_compile_sample_message(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst, uint32_t sampler);
 static void i915_compile_texture(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst);
+static void i915_compile_sampler_header(struct i915_compile_state *state, uint32_t header_grf, uint32_t offsets);
 static void i915_compile_integer(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst);
 static void i915_compile_multiply(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst);
 static void i915_compile_divide(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst);
@@ -647,15 +652,42 @@ drv_i915_shader_compile(
  *
  * `producer` is the binary of the stage before a geometry shader, the
  * vertex kernel whose VUE the geometry shader reads its per-vertex inputs
- * from; NULL for any other stage.  Returns 0 and the binary in `*out`,
- * ENOTSUP for IR this compiler cannot lower (never approximated), EINVAL
- * for inconsistent IR or an encoder failure, or ENOMEM.  On a failure
- * `*out` is NULL.
+ * from; NULL for any other stage.  The results are those of
+ * drv_i915_shader_compile_gen().
  */
 int
 drv_i915_shader_compile_stage(
 	const struct drv_gpu_shader_ir *ir,
 	const struct i915_shader_binary *producer,
+	struct i915_shader_binary **out)
+{
+	int error;
+
+	/* Compiles for Gen12, the version every caller of this name targets. */
+	error = drv_i915_shader_compile_gen(ir, producer, 12U, out);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the binary. */
+	return 0;
+}
+
+/*
+ * Compiles one shader IR into an EU binary for graphics version
+ * `graphics_ver` (9 or 12).
+ *
+ * `producer` is the binary of the stage before a geometry shader, the
+ * vertex kernel whose VUE the geometry shader reads its per-vertex inputs
+ * from; NULL for any other stage.  Returns 0 and the binary in `*out`,
+ * ENOTSUP for IR this compiler cannot lower (never approximated) or a
+ * version it has no encoding for, EINVAL for inconsistent IR or an encoder
+ * failure, or ENOMEM.  On a failure `*out` is NULL.
+ */
+int
+drv_i915_shader_compile_gen(
+	const struct drv_gpu_shader_ir *ir,
+	const struct i915_shader_binary *producer,
+	unsigned graphics_ver,
 	struct i915_shader_binary **out)
 {
 	struct i915_compile_state state;
@@ -669,6 +701,10 @@ drv_i915_shader_compile_stage(
 
 	/* The caller receives nothing unless the whole shader lowers. */
 	*out = NULL;
+
+	/* Only Gen9 and Gen12 have an encoding. */
+	if (graphics_ver != 9U && graphics_ver != 12U)
+		return ENOTSUP;
 
 	/*
 	 * A stage past the known ones is inconsistent IR: every choice below by
@@ -695,7 +731,8 @@ drv_i915_shader_compile_stage(
 	kern_memset(&state, 0, sizeof(state));
 	state.ir = ir;
 	state.producer = producer;
-	drv_i915_eu_init(&state.code);
+	state.graphics_ver = graphics_ver;
+	drv_i915_eu_init_gen(&state.code, graphics_ver);
 
 	/*
 	 * The register, last-use and definition maps, the scratch slots and the
@@ -903,6 +940,7 @@ i915_compile_reset(
 {
 	const struct drv_gpu_shader_ir *ir;
 	const struct i915_shader_binary *producer;
+	unsigned graphics_ver;
 	uint32_t *value_grf;
 	uint32_t *spill_slot;
 	uint32_t *skip_ok;
@@ -913,6 +951,7 @@ i915_compile_reset(
 	/* Remembers what lasts over the attempts. */
 	ir = state->ir;
 	producer = state->producer;
+	graphics_ver = state->graphics_ver;
 	value_grf = state->value_grf;
 	spill_slot = state->spill_slot;
 	spill_count = state->spill_count;
@@ -922,11 +961,12 @@ i915_compile_reset(
 	/* Drops the previous attempt's code and clears everything else. */
 	drv_i915_eu_free(&state->code);
 	kern_memset(state, 0, sizeof(*state));
-	drv_i915_eu_init(&state->code);
+	drv_i915_eu_init_gen(&state->code, graphics_ver);
 
 	/* Puts back what lasts. */
 	state->ir = ir;
 	state->producer = producer;
+	state->graphics_ver = graphics_ver;
 	state->value_grf = value_grf;
 	state->last_use = value_grf + ir->value_count;
 	state->def_index = state->last_use + ir->value_count;
@@ -3040,8 +3080,7 @@ i915_compile_sampler_index(
  * Lowers a sample whose message carries more than the coordinate, as Mesa
  * builds it on Gen12.0 (lower_sampler_logical_send(),
  * brw_lower_logical_sends.cpp): a header when there is a texel offset
- * (cleared, the offset in dword 2, r0.3's sampler state pointer in dword
- * 3), then the bias (sample_b) or the level of detail (sample_l), then u
+ * (i915_compile_sampler_header()), then the bias (sample_b) or the level of detail (sample_l), then u
  * and v, one register each, copied into consecutive temporaries and sent
  * as one run.
  */
@@ -3051,8 +3090,6 @@ i915_compile_sample_message(
 	const struct drv_gpu_shader_ir_inst *inst,
 	uint32_t sampler)
 {
-	struct i915_eu_reg dword;
-	struct i915_eu_reg thread;
 	uint32_t u_grf;
 	uint32_t v_grf;
 	uint32_t level_grf;
@@ -3088,17 +3125,10 @@ i915_compile_sample_message(
 	if (state->out_of_registers != 0)
 		return;
 
-	/* Writes the header: zeros, the offset, the sampler state pointer without its low bits. */
+	/* Writes the header with the offsets, then the parameters follow it. */
 	next = payload;
 	if (header != 0U) {
-		drv_i915_eu_mov_all(&state->code, drv_i915_eu_grf_ud(payload), drv_i915_eu_imm_ud(0U));
-		dword = drv_i915_eu_grf_ud(payload);
-		dword.subnr = 4U * EU_SAMPLER_HEADER_OFFSET_DWORD;
-		drv_i915_eu_mov_scalar(&state->code, dword, drv_i915_eu_imm_ud(inst->component));
-		dword.subnr = 4U * EU_SAMPLER_HEADER_STATE_DWORD;
-		thread = drv_i915_eu_grf_scalar(0U, 4U * EU_SAMPLER_HEADER_STATE_DWORD);
-		thread.type = COMPILE_TYPE_UD;
-		drv_i915_eu_alu2_scalar(&state->code, I915_EU_AND, dword, thread, drv_i915_eu_imm_ud(EU_SAMPLER_STATE_POINTER_MASK));
+		i915_compile_sampler_header(state, payload, inst->component);
 		next++;
 	}
 
@@ -3161,8 +3191,6 @@ i915_compile_texture(
 	struct i915_compile_state *state,
 	const struct drv_gpu_shader_ir_inst *inst)
 {
-	struct i915_eu_reg dword;
-	struct i915_eu_reg thread;
 	uint32_t sampler;
 	uint32_t param_count;
 	uint32_t texel_offset;
@@ -3205,17 +3233,10 @@ i915_compile_texture(
 	if (state->out_of_registers != 0)
 		return;
 
-	/* Writes the header: zeros, the offset, the sampler state pointer without its low bits. */
+	/* Writes the header with the offsets, then the parameters follow it. */
 	next = payload;
 	if (header != 0U) {
-		drv_i915_eu_mov_all(&state->code, drv_i915_eu_grf_ud(payload), drv_i915_eu_imm_ud(0U));
-		dword = drv_i915_eu_grf_ud(payload);
-		dword.subnr = 4U * EU_SAMPLER_HEADER_OFFSET_DWORD;
-		drv_i915_eu_mov_scalar(&state->code, dword, drv_i915_eu_imm_ud(texel_offset));
-		dword.subnr = 4U * EU_SAMPLER_HEADER_STATE_DWORD;
-		thread = drv_i915_eu_grf_scalar(0U, 4U * EU_SAMPLER_HEADER_STATE_DWORD);
-		thread.type = COMPILE_TYPE_UD;
-		drv_i915_eu_alu2_scalar(&state->code, I915_EU_AND, dword, thread, drv_i915_eu_imm_ud(EU_SAMPLER_STATE_POINTER_MASK));
+		i915_compile_sampler_header(state, payload, texel_offset);
 		next++;
 	}
 
@@ -3250,6 +3271,45 @@ i915_compile_texture(
 	/* The message's registers are free again. */
 	for (index = 0U; index < length; index++)
 		state->grf_busy[payload + index] = 0U;
+}
+
+/*
+ * Writes the header of a sampler message with texel offsets `offsets` into
+ * register `header_grf` (lower_sampler_logical_send(),
+ * brw_lower_logical_sends.cpp).
+ *
+ * From Gfx11 on (Gen12) the header is cleared, takes the offsets in dword 2
+ * and r0.3's sampler state pointer without its low five bits in dword 3.
+ * Before Gfx11 (Gen9) it is a copy of r0, whose dword 3 is already the
+ * sampler state pointer as the header wants it, with the offsets in dword 2.
+ */
+static void
+i915_compile_sampler_header(
+	struct i915_compile_state *state,
+	uint32_t header_grf,
+	uint32_t offsets)
+{
+	struct i915_eu_reg dword;
+	struct i915_eu_reg thread;
+
+	/* Gen9: r0 for all eight channels, then the offsets in dword 2. */
+	if (state->graphics_ver == 9U) {
+		drv_i915_eu_mov_all(&state->code, drv_i915_eu_grf_ud(header_grf), drv_i915_eu_grf_ud(0U));
+		dword = drv_i915_eu_grf_ud(header_grf);
+		dword.subnr = 4U * EU_SAMPLER_HEADER_OFFSET_DWORD;
+		drv_i915_eu_mov_scalar(&state->code, dword, drv_i915_eu_imm_ud(offsets));
+		return;
+	}
+
+	/* Gen12: zeros, the offsets, the sampler state pointer without its low bits. */
+	drv_i915_eu_mov_all(&state->code, drv_i915_eu_grf_ud(header_grf), drv_i915_eu_imm_ud(0U));
+	dword = drv_i915_eu_grf_ud(header_grf);
+	dword.subnr = 4U * EU_SAMPLER_HEADER_OFFSET_DWORD;
+	drv_i915_eu_mov_scalar(&state->code, dword, drv_i915_eu_imm_ud(offsets));
+	dword.subnr = 4U * EU_SAMPLER_HEADER_STATE_DWORD;
+	thread = drv_i915_eu_grf_scalar(0U, 4U * EU_SAMPLER_HEADER_STATE_DWORD);
+	thread.type = COMPILE_TYPE_UD;
+	drv_i915_eu_alu2_scalar(&state->code, I915_EU_AND, dword, thread, drv_i915_eu_imm_ud(EU_SAMPLER_STATE_POINTER_MASK));
 }
 
 /*

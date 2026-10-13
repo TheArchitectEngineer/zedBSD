@@ -6,12 +6,15 @@
  */
 
 /*
- * Gen12 EU instruction encoder: turns one instruction into its 128-bit word.
+ * Gen9 and Gen12 EU instruction encoder: turns one instruction into its
+ * 128-bit word.
  *
  * The values (opcodes, field positions, message descriptors) are transcribed
- * with attribution into intel/eu-encoding-gen12.h; instruction selection is
- * the code generator's job.  Only the compiler and its host tests use this
- * header.
+ * with attribution into intel/eu-encoding-gen12.h and
+ * intel/eu-encoding-gen9.h; instruction selection is the code generator's
+ * job.  Operand types and register files are named in the Gen12 encoding
+ * (EU_TYPE_*, EU_FILE_*), which the encoder translates for Gen9.  Only the
+ * compiler and its host tests use this header.
  */
 
 #ifndef DRIVERS_GPU_I915_COMPILER_EU_H
@@ -19,6 +22,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+/* The field layout of one graphics version's instructions (compiler/eu.c). */
+struct i915_eu_format;
 
 /*
  * A growable buffer of encoded EU instructions.
@@ -35,6 +41,13 @@ struct i915_eu_buf {
 
 	/* In-order instructions so far: what the scoreboard byte counts back over. */
 	unsigned in_order;
+
+	/*
+	 * The layout the words are encoded in, chosen when the buffer is
+	 * prepared and kept for its life: Gen12's unless drv_i915_eu_init_gen()
+	 * named another graphics version.
+	 */
+	const struct i915_eu_format *format;
 };
 
 /*
@@ -150,6 +163,8 @@ enum i915_eu_flag {
 };
 
 void drv_i915_eu_init(struct i915_eu_buf *buffer);
+void drv_i915_eu_init_gen(struct i915_eu_buf *buffer, unsigned graphics_ver);
+unsigned drv_i915_eu_graphics_ver(const struct i915_eu_buf *buffer);
 void drv_i915_eu_free(struct i915_eu_buf *buffer);
 const uint32_t *drv_i915_eu_data(const struct i915_eu_buf *buffer, size_t *bytes);
 

@@ -6,14 +6,17 @@
  */
 
 /*
- * Gen12 EU instruction encoder (see eu.h).
+ * Gen9 and Gen12 EU instruction encoder (see eu.h).
  *
- * Each instruction is four little-endian 32-bit words.  Field bit positions,
- * hardware opcode values, register types and the descriptor layout of SEND
- * are transcribed into intel/eu-encoding-gen12.h from Mesa (MIT); the
- * placement logic here is new.  Every emitter is checked bit for bit against
- * Mesa's assembler and disassembler (gentool) by
- * plan/ws031/tests/run-vk-gentool-test.sh.
+ * Each instruction is four little-endian 32-bit words on both versions.
+ * Field bit positions, hardware opcode values, register types and the
+ * descriptor layout of SEND are transcribed into intel/eu-encoding-gen12.h
+ * and intel/eu-encoding-gen9.h from Mesa (MIT); the placement logic here is
+ * new.  A buffer is encoded in one layout (struct i915_eu_format) chosen
+ * when it is prepared; the emitters ask the layout where each field goes.
+ * Every emitter is checked bit for bit against Mesa's assembler and
+ * disassembler by plan/ws031/tests/run-vk-gentool-test.sh (--gen=adl for
+ * Gen12, --gen=skl for Gen9).
  *
  * SOFTWARE SCOREBOARD.  Gen12 hardware does not track register dependencies
  * between instructions; the program says them in the SWSB byte
@@ -36,6 +39,12 @@
  * XXX: this serialises the kernel.  It is correct for any program this
  * compiler emits and leaves the pipelining Mesa's dataflow analysis would
  * allow on the table.
+ *
+ * Gen9 has no SWSB byte: its hardware scoreboard holds an instruction that
+ * reads a register until the instruction writing it is done, so the Gen9
+ * layout encodes neither the byte nor the sync.nop.  What the hardware does
+ * not see -- a message whose reply nobody reads, such as a memory fence --
+ * the code generator waits for itself (compile-compute.inc).
  */
 
 #include "eu.h"
@@ -46,6 +55,7 @@
 #include <uapi/errno.h>
 
 #include "../intel/eu-encoding-gen12.h"
+#include "../intel/eu-encoding-gen9.h"
 
 /*
  * Marks a parameter a function deliberately leaves unread.
@@ -103,6 +113,134 @@
  */
 #define I915_EU_SCOPE_FOUR		4
 
+/* A one-bit field a layout does not have. */
+#define I915_EU_NO_BIT			0xffffU
+
+/* An opcode a layout does not have: zero is the illegal instruction on every version. */
+#define I915_EU_NO_OPCODE		0U
+
+/* A type a layout cannot encode. */
+#define I915_EU_NO_TYPE			0xffU
+
+/* How many operand types the Gen12 encoding (the names eu.h uses) can say: four bits. */
+#define I915_EU_TYPE_COUNT		16U
+
+/*
+ * The instructions the emitters ask a layout for.
+ *
+ * Each names one hardware instruction whose opcode value differs between
+ * the versions; a layout without the instruction says I915_EU_NO_OPCODE.
+ */
+enum i915_eu_opcode {
+	I915_EU_OPCODE_MOV = 0,
+	I915_EU_OPCODE_SEL,
+	I915_EU_OPCODE_NOT,
+	I915_EU_OPCODE_AND,
+	I915_EU_OPCODE_OR,
+	I915_EU_OPCODE_XOR,
+	I915_EU_OPCODE_SHR,
+	I915_EU_OPCODE_SHL,
+	I915_EU_OPCODE_ASR,
+	I915_EU_OPCODE_CMP,
+	I915_EU_OPCODE_IF,
+	I915_EU_OPCODE_ENDIF,
+	I915_EU_OPCODE_WHILE,
+	I915_EU_OPCODE_WAIT,
+	I915_EU_OPCODE_SEND,
+	I915_EU_OPCODE_SENDC,
+	I915_EU_OPCODE_SENDS,
+	I915_EU_OPCODE_SENDSC,
+	I915_EU_OPCODE_SYNC,
+	I915_EU_OPCODE_MATH,
+	I915_EU_OPCODE_ADD,
+	I915_EU_OPCODE_MUL,
+	I915_EU_OPCODE_FRC,
+	I915_EU_OPCODE_RNDD,
+	I915_EU_OPCODE_RNDE,
+	I915_EU_OPCODE_RNDZ,
+	I915_EU_OPCODE_NOP,
+	I915_EU_OPCODE_COUNT
+};
+
+/*
+ * One multi-bit field of the 128-bit instruction: its highest and lowest
+ * bit, inclusive.
+ */
+struct i915_eu_field {
+	unsigned high;
+	unsigned low;
+};
+
+/*
+ * Where one operand's parts sit in a layout.
+ *
+ * A destination has no width, vertical stride or source modifier; Gen12
+ * spells its register file in one bit and says an immediate with a bit of
+ * its own, Gen9 spells all three files in two bits.
+ */
+struct i915_eu_operand_layout {
+	struct i915_eu_field file;
+	struct i915_eu_field type;
+	struct i915_eu_field subreg;
+	struct i915_eu_field reg_nr;
+	struct i915_eu_field hstride;
+	struct i915_eu_field width;
+	struct i915_eu_field vstride;
+	unsigned abs_bit;
+	unsigned negate_bit;
+
+	/* Gen12: the bit that says the operand is an immediate; I915_EU_NO_BIT on Gen9. */
+	unsigned is_imm_bit;
+};
+
+/*
+ * The instruction layout of one graphics version.
+ *
+ * One constant instance exists per supported version; a buffer points at
+ * the one it encodes for from drv_i915_eu_init_gen() on.  The types the
+ * code generator names (the Gen12 encoding) are looked up in the two type
+ * tables, which on Gen12 hand every type back unchanged.
+ */
+struct i915_eu_format {
+	unsigned graphics_ver;
+
+	/* Control fields. */
+	struct i915_eu_field opcode;
+	struct i915_eu_field exec_size;
+	struct i915_eu_field pred_control;
+	struct i915_eu_field cond_modifier;
+	struct i915_eu_field math_function;
+	unsigned no_mask_bit;
+	unsigned flag_reg_bit;
+	unsigned flag_subreg_bit;
+
+	/* Nonzero when the layout carries Gen12's software scoreboard byte. */
+	int has_swsb;
+	struct i915_eu_field swsb;
+
+	/* The operands, the 32-bit immediate and a branch's two targets. */
+	struct i915_eu_operand_layout dst;
+	struct i915_eu_operand_layout src0;
+	struct i915_eu_operand_layout src1;
+	struct i915_eu_field imm32;
+	struct i915_eu_field jip;
+	struct i915_eu_field uip;
+
+	/* The shared function a SEND addresses and its end-of-thread bit. */
+	struct i915_eu_field sfid;
+	unsigned eot_bit;
+
+	/* The hardware opcode of each enum i915_eu_opcode. */
+	uint32_t opcodes[I915_EU_OPCODE_COUNT];
+
+	/* The hardware type of a register and of an immediate operand, by its Gen12 name. */
+	uint8_t register_types[I915_EU_TYPE_COUNT];
+	uint8_t immediate_types[I915_EU_TYPE_COUNT];
+
+	/* The value of the file field for an immediate; unused where an is_imm bit says it. */
+	uint32_t file_imm;
+};
+
 /* The hardware conditional modifier of each enum i915_eu_cond, in its order. */
 static const uint32_t i915_eu_cond_bits[I915_EU_COND_COUNT] = {
 	EU_COND_Z,
@@ -113,18 +251,249 @@ static const uint32_t i915_eu_cond_bits[I915_EU_COND_COUNT] = {
 	EU_COND_LE,
 };
 
+/*
+ * The Gen12 layout (intel/eu-encoding-gen12.h).
+ *
+ * It is what every buffer used before Gen9 support, and what
+ * drv_i915_eu_init() still chooses: the bytes it produces are those the
+ * Tiger Lake and Alder Lake tests were run with.  A type keeps its value.
+ */
+static const struct i915_eu_format i915_eu_format_gen12 = {
+	12U,
+	{ EU_OPCODE_HI, EU_OPCODE_LO },
+	{ EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO },
+	{ EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO },
+	{ EU_COND_MODIFIER_HI, EU_COND_MODIFIER_LO },
+	{ EU_MATH_FUNCTION_HI, EU_MATH_FUNCTION_LO },
+	EU_NO_MASK_BIT,
+	EU_FLAG_REG_NR_BIT,
+	EU_FLAG_SUBREG_NR_BIT,
+	1,
+	{ EU_SWSB_HI, EU_SWSB_LO },
+	{
+		{ EU_DST_REG_FILE_BIT, EU_DST_REG_FILE_BIT },
+		{ EU_DST_REG_TYPE_HI, EU_DST_REG_TYPE_LO },
+		{ EU_DST_SUBREG_HI, EU_DST_SUBREG_LO },
+		{ EU_DST_REG_NR_HI, EU_DST_REG_NR_LO },
+		{ EU_DST_HSTRIDE_HI, EU_DST_HSTRIDE_LO },
+		{ 0U, 0U },
+		{ 0U, 0U },
+		I915_EU_NO_BIT,
+		I915_EU_NO_BIT,
+		I915_EU_NO_BIT,
+	},
+	{
+		{ EU_SRC0_REG_FILE_BIT, EU_SRC0_REG_FILE_BIT },
+		{ EU_SRC0_REG_TYPE_HI, EU_SRC0_REG_TYPE_LO },
+		{ EU_SRC0_SUBREG_HI, EU_SRC0_SUBREG_LO },
+		{ EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO },
+		{ EU_SRC0_HSTRIDE_HI, EU_SRC0_HSTRIDE_LO },
+		{ EU_SRC0_WIDTH_HI, EU_SRC0_WIDTH_LO },
+		{ EU_SRC0_VSTRIDE_HI, EU_SRC0_VSTRIDE_LO },
+		EU_SRC0_ABS_BIT,
+		EU_SRC0_NEGATE_BIT,
+		EU_SRC0_IS_IMM_BIT,
+	},
+	{
+		{ EU_SRC1_REG_FILE_BIT, EU_SRC1_REG_FILE_BIT },
+		{ EU_SRC1_REG_TYPE_HI, EU_SRC1_REG_TYPE_LO },
+		{ EU_SRC1_SUBREG_HI, EU_SRC1_SUBREG_LO },
+		{ EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO },
+		{ EU_SRC1_HSTRIDE_HI, EU_SRC1_HSTRIDE_LO },
+		{ EU_SRC1_WIDTH_HI, EU_SRC1_WIDTH_LO },
+		{ EU_SRC1_VSTRIDE_HI, EU_SRC1_VSTRIDE_LO },
+		EU_SRC1_ABS_BIT,
+		EU_SRC1_NEGATE_BIT,
+		EU_SRC1_IS_IMM_BIT,
+	},
+	{ EU_IMM32_HI, EU_IMM32_LO },
+	{ EU_JIP_HI, EU_JIP_LO },
+	{ EU_UIP_HI, EU_UIP_LO },
+	{ EU_SEND_SFID_HI, EU_SEND_SFID_LO },
+	EU_SEND_EOT_BIT,
+	{
+		EU_OP_MOV,
+		EU_OP_SEL,
+		EU_OP_NOT,
+		EU_OP_AND,
+		EU_OP_OR,
+		EU_OP_XOR,
+		EU_OP_SHR,
+		EU_OP_SHL,
+		EU_OP_ASR,
+		EU_OP_CMP,
+		EU_OP_IF,
+		EU_OP_ENDIF,
+		EU_OP_WHILE,
+		I915_EU_NO_OPCODE,
+		EU_OP_SEND,
+		EU_OP_SENDC,
+		I915_EU_NO_OPCODE,
+		I915_EU_NO_OPCODE,
+		EU_OP_SYNC,
+		EU_OP_MATH,
+		EU_OP_ADD,
+		EU_OP_MUL,
+		EU_OP_FRC,
+		EU_OP_RNDD,
+		EU_OP_RNDE,
+		EU_OP_RNDZ,
+		EU_OP_NOP,
+	},
+	{ 0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U },
+	{ 0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U },
+	0U,
+};
+
+/*
+ * The Gen9 layout (intel/eu-encoding-gen9.h): Skylake, Kaby Lake and the
+ * Coffee Lake family.
+ *
+ * Every field sits elsewhere than on Gen12, there is no scoreboard byte,
+ * and the types the code generator names are translated: UB 0 -> 4,
+ * UW 1 -> 2, UD 2 -> 0, B 4 -> 5 (the immediate V -> 6), W 5 -> 3,
+ * D 6 -> 1, HF 9 -> 10 (immediate 11), F 10 -> 7.
+ */
+static const struct i915_eu_format i915_eu_format_gen9 = {
+	9U,
+	{ GEN9_EU_OPCODE_HI, GEN9_EU_OPCODE_LO },
+	{ GEN9_EU_EXEC_SIZE_HI, GEN9_EU_EXEC_SIZE_LO },
+	{ GEN9_EU_PRED_CONTROL_HI, GEN9_EU_PRED_CONTROL_LO },
+	{ GEN9_EU_COND_MODIFIER_HI, GEN9_EU_COND_MODIFIER_LO },
+	{ GEN9_EU_MATH_FUNCTION_HI, GEN9_EU_MATH_FUNCTION_LO },
+	GEN9_EU_NO_MASK_BIT,
+	GEN9_EU_FLAG_REG_NR_BIT,
+	GEN9_EU_FLAG_SUBREG_NR_BIT,
+	0,
+	{ 0U, 0U },
+	{
+		{ GEN9_EU_DST_REG_FILE_HI, GEN9_EU_DST_REG_FILE_LO },
+		{ GEN9_EU_DST_REG_TYPE_HI, GEN9_EU_DST_REG_TYPE_LO },
+		{ GEN9_EU_DST_SUBREG_HI, GEN9_EU_DST_SUBREG_LO },
+		{ GEN9_EU_DST_REG_NR_HI, GEN9_EU_DST_REG_NR_LO },
+		{ GEN9_EU_DST_HSTRIDE_HI, GEN9_EU_DST_HSTRIDE_LO },
+		{ 0U, 0U },
+		{ 0U, 0U },
+		I915_EU_NO_BIT,
+		I915_EU_NO_BIT,
+		I915_EU_NO_BIT,
+	},
+	{
+		{ GEN9_EU_SRC0_REG_FILE_HI, GEN9_EU_SRC0_REG_FILE_LO },
+		{ GEN9_EU_SRC0_REG_TYPE_HI, GEN9_EU_SRC0_REG_TYPE_LO },
+		{ GEN9_EU_SRC0_SUBREG_HI, GEN9_EU_SRC0_SUBREG_LO },
+		{ GEN9_EU_SRC0_REG_NR_HI, GEN9_EU_SRC0_REG_NR_LO },
+		{ GEN9_EU_SRC0_HSTRIDE_HI, GEN9_EU_SRC0_HSTRIDE_LO },
+		{ GEN9_EU_SRC0_WIDTH_HI, GEN9_EU_SRC0_WIDTH_LO },
+		{ GEN9_EU_SRC0_VSTRIDE_HI, GEN9_EU_SRC0_VSTRIDE_LO },
+		GEN9_EU_SRC0_ABS_BIT,
+		GEN9_EU_SRC0_NEGATE_BIT,
+		I915_EU_NO_BIT,
+	},
+	{
+		{ GEN9_EU_SRC1_REG_FILE_HI, GEN9_EU_SRC1_REG_FILE_LO },
+		{ GEN9_EU_SRC1_REG_TYPE_HI, GEN9_EU_SRC1_REG_TYPE_LO },
+		{ GEN9_EU_SRC1_SUBREG_HI, GEN9_EU_SRC1_SUBREG_LO },
+		{ GEN9_EU_SRC1_REG_NR_HI, GEN9_EU_SRC1_REG_NR_LO },
+		{ GEN9_EU_SRC1_HSTRIDE_HI, GEN9_EU_SRC1_HSTRIDE_LO },
+		{ GEN9_EU_SRC1_WIDTH_HI, GEN9_EU_SRC1_WIDTH_LO },
+		{ GEN9_EU_SRC1_VSTRIDE_HI, GEN9_EU_SRC1_VSTRIDE_LO },
+		GEN9_EU_SRC1_ABS_BIT,
+		GEN9_EU_SRC1_NEGATE_BIT,
+		I915_EU_NO_BIT,
+	},
+	{ GEN9_EU_IMM32_HI, GEN9_EU_IMM32_LO },
+	{ GEN9_EU_JIP_HI, GEN9_EU_JIP_LO },
+	{ GEN9_EU_UIP_HI, GEN9_EU_UIP_LO },
+	{ GEN9_EU_SEND_SFID_HI, GEN9_EU_SEND_SFID_LO },
+	GEN9_EU_SEND_EOT_BIT,
+	{
+		GEN9_EU_OP_MOV,
+		GEN9_EU_OP_SEL,
+		GEN9_EU_OP_NOT,
+		GEN9_EU_OP_AND,
+		GEN9_EU_OP_OR,
+		GEN9_EU_OP_XOR,
+		GEN9_EU_OP_SHR,
+		GEN9_EU_OP_SHL,
+		GEN9_EU_OP_ASR,
+		GEN9_EU_OP_CMP,
+		GEN9_EU_OP_IF,
+		GEN9_EU_OP_ENDIF,
+		GEN9_EU_OP_WHILE,
+		GEN9_EU_OP_WAIT,
+		GEN9_EU_OP_SEND,
+		GEN9_EU_OP_SENDC,
+		GEN9_EU_OP_SENDS,
+		GEN9_EU_OP_SENDSC,
+		I915_EU_NO_OPCODE,
+		GEN9_EU_OP_MATH,
+		GEN9_EU_OP_ADD,
+		GEN9_EU_OP_MUL,
+		GEN9_EU_OP_FRC,
+		GEN9_EU_OP_RNDD,
+		GEN9_EU_OP_RNDE,
+		GEN9_EU_OP_RNDZ,
+		GEN9_EU_OP_NOP,
+	},
+	{
+		4U,
+		GEN9_EU_TYPE_UW,
+		GEN9_EU_TYPE_UD,
+		I915_EU_NO_TYPE,
+		5U,
+		GEN9_EU_TYPE_W,
+		GEN9_EU_TYPE_D,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		GEN9_EU_TYPE_HF,
+		GEN9_EU_TYPE_F,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+	},
+	{
+		I915_EU_NO_TYPE,
+		GEN9_EU_TYPE_UW,
+		GEN9_EU_TYPE_UD,
+		I915_EU_NO_TYPE,
+		GEN9_EU_IMM_TYPE_V,
+		GEN9_EU_TYPE_W,
+		GEN9_EU_TYPE_D,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		GEN9_EU_IMM_TYPE_HF,
+		GEN9_EU_TYPE_F,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+	},
+	GEN9_EU_FILE_IMM,
+};
+
 static struct i915_eu_reg i915_eu_grf_typed(uint32_t nr, uint32_t type);
 static uint32_t *i915_eu_reserve(struct i915_eu_buf *buffer);
-static void i915_eu_common(struct i915_eu_buf *buffer, uint32_t *inst, uint32_t opcode, int order);
-static void i915_eu_flag(uint32_t *inst, enum i915_eu_flag flag);
+static void i915_eu_common(struct i915_eu_buf *buffer, uint32_t *inst, enum i915_eu_opcode opcode, int order);
+static void i915_eu_flag(const struct i915_eu_buf *buffer, uint32_t *inst, enum i915_eu_flag flag);
 static void i915_eu_alu2_common(struct i915_eu_buf *buffer, int predicated, enum i915_eu_flag flag, int scope, enum i915_eu_alu op, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1);
 static void i915_eu_send_common(struct i915_eu_buf *buffer, int predicated, enum i915_eu_flag flag, int scope, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t sfid, uint32_t descriptor, uint32_t ex_descriptor, int conditional, int end_of_thread);
-static void i915_eu_scope(uint32_t *inst, int scope);
+static void i915_eu_send_gen12(uint32_t *inst, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t descriptor, uint32_t ex_descriptor);
+static void i915_eu_send_gen9(struct i915_eu_buf *buffer, uint32_t *inst, int scope, struct i915_eu_reg dst, struct i915_eu_reg src0, struct i915_eu_reg src1, uint32_t descriptor, uint32_t ex_descriptor);
+static void i915_eu_scope(const struct i915_eu_buf *buffer, uint32_t *inst, int scope);
 static void i915_eu_sync(struct i915_eu_buf *buffer, uint32_t swsb);
-static void i915_eu_dst(uint32_t *inst, struct i915_eu_reg reg);
-static void i915_eu_src0(uint32_t *inst, struct i915_eu_reg reg);
-static void i915_eu_src1(uint32_t *inst, struct i915_eu_reg reg);
+static void i915_eu_wait_notification(struct i915_eu_buf *buffer);
+static void i915_eu_branch_target(struct i915_eu_buf *buffer, uint32_t *inst, int both);
+static void i915_eu_dst(struct i915_eu_buf *buffer, uint32_t *inst, struct i915_eu_reg reg);
+static void i915_eu_src0(struct i915_eu_buf *buffer, uint32_t *inst, struct i915_eu_reg reg);
+static void i915_eu_src1(struct i915_eu_buf *buffer, uint32_t *inst, struct i915_eu_reg reg);
+static void i915_eu_source(struct i915_eu_buf *buffer, uint32_t *inst, const struct i915_eu_operand_layout *layout, struct i915_eu_reg reg);
+static uint32_t i915_eu_hw_type(struct i915_eu_buf *buffer, uint32_t type, int immediate);
 static uint32_t i915_eu_file_bit(struct i915_eu_reg reg);
+static void i915_eu_field(uint32_t *inst, struct i915_eu_field field, uint32_t value);
 static void i915_eu_set(uint32_t *inst, unsigned high, unsigned low, uint32_t value);
 static void i915_eu_bit(uint32_t *inst, unsigned position, uint32_t value);
 
@@ -141,6 +510,46 @@ drv_i915_eu_init(
 	buffer->capacity = 0U;
 	buffer->error = 0;
 	buffer->in_order = 0U;
+
+	/* Encodes for Gen12 unless drv_i915_eu_init_gen() names another version. */
+	buffer->format = &i915_eu_format_gen12;
+}
+
+/*
+ * Prepares an empty instruction buffer for graphics version `graphics_ver`.
+ *
+ * 9 (Skylake, Kaby Lake, Coffee Lake) and 12 (Tiger Lake, Alder Lake) are
+ * encoded; any other version poisons the buffer, so nothing a caller emits
+ * into it can be shipped.
+ */
+void
+drv_i915_eu_init_gen(
+	struct i915_eu_buf *buffer,
+	unsigned graphics_ver)
+{
+	/* Starts as an empty Gen12 buffer. */
+	drv_i915_eu_init(buffer);
+
+	/* Gen9 has its own layout. */
+	if (graphics_ver == 9U) {
+		buffer->format = &i915_eu_format_gen9;
+		return;
+	}
+
+	/* A version without a layout is refused. */
+	if (graphics_ver != 12U)
+		buffer->error = 1;
+}
+
+/*
+ * Returns the graphics version a buffer encodes for.
+ */
+unsigned
+drv_i915_eu_graphics_ver(
+	const struct i915_eu_buf *buffer)
+{
+	/* The layout knows its version. */
+	return buffer->format->graphics_ver;
 }
 
 /*
@@ -479,9 +888,9 @@ drv_i915_eu_mov(
 		return;
 
 	/* Encodes an in-order move and its two operands. */
-	i915_eu_common(buffer, inst, EU_OP_MOV, I915_EU_IN_ORDER);
-	i915_eu_dst(inst, dst);
-	i915_eu_src0(inst, src);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_MOV, I915_EU_IN_ORDER);
+	i915_eu_dst(buffer, inst, dst);
+	i915_eu_src0(buffer, inst, src);
 }
 
 /*
@@ -613,10 +1022,10 @@ drv_i915_eu_mov_all(
 		return;
 
 	/* Encodes an in-order move and its two operands, outside the mask. */
-	i915_eu_common(buffer, inst, EU_OP_MOV, I915_EU_IN_ORDER);
-	i915_eu_scope(inst, I915_EU_SCOPE_ALL);
-	i915_eu_dst(inst, dst);
-	i915_eu_src0(inst, src);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_MOV, I915_EU_IN_ORDER);
+	i915_eu_scope(buffer, inst, I915_EU_SCOPE_ALL);
+	i915_eu_dst(buffer, inst, dst);
+	i915_eu_src0(buffer, inst, src);
 }
 
 /*
@@ -640,10 +1049,10 @@ drv_i915_eu_mov_scalar(
 		return;
 
 	/* Encodes an in-order move of the one dword, outside the mask. */
-	i915_eu_common(buffer, inst, EU_OP_MOV, I915_EU_IN_ORDER);
-	i915_eu_scope(inst, I915_EU_SCOPE_SCALAR);
-	i915_eu_dst(inst, dst);
-	i915_eu_src0(inst, src);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_MOV, I915_EU_IN_ORDER);
+	i915_eu_scope(buffer, inst, I915_EU_SCOPE_SCALAR);
+	i915_eu_dst(buffer, inst, dst);
+	i915_eu_src0(buffer, inst, src);
 }
 
 /*
@@ -666,15 +1075,15 @@ drv_i915_eu_alu1(
 
 	/* Picks the hardware opcode of the operation. */
 	if (op == I915_EU_NOT) {
-		opcode = EU_OP_NOT;
+		opcode = I915_EU_OPCODE_NOT;
 	} else if (op == I915_EU_RNDD) {
-		opcode = EU_OP_RNDD;
+		opcode = I915_EU_OPCODE_RNDD;
 	} else if (op == I915_EU_FRC) {
-		opcode = EU_OP_FRC;
+		opcode = I915_EU_OPCODE_FRC;
 	} else if (op == I915_EU_RNDZ) {
-		opcode = EU_OP_RNDZ;
+		opcode = I915_EU_OPCODE_RNDZ;
 	} else if (op == I915_EU_RNDE) {
-		opcode = EU_OP_RNDE;
+		opcode = I915_EU_OPCODE_RNDE;
 	} else {
 		buffer->error = 1;
 		return;
@@ -687,8 +1096,8 @@ drv_i915_eu_alu1(
 
 	/* Encodes an in-order instruction and its two operands. */
 	i915_eu_common(buffer, inst, opcode, I915_EU_IN_ORDER);
-	i915_eu_dst(inst, dst);
-	i915_eu_src0(inst, src);
+	i915_eu_dst(buffer, inst, dst);
+	i915_eu_src0(buffer, inst, src);
 }
 
 /*
@@ -730,18 +1139,18 @@ drv_i915_eu_cmp(
 		return;
 
 	/* Encodes an in-order comparison, the flag it writes and the test. */
-	i915_eu_common(buffer, inst, EU_OP_CMP, I915_EU_IN_ORDER);
-	i915_eu_flag(inst, flag);
-	i915_eu_set(inst, EU_COND_MODIFIER_HI, EU_COND_MODIFIER_LO, i915_eu_cond_bits[cond]);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_CMP, I915_EU_IN_ORDER);
+	i915_eu_flag(buffer, inst, flag);
+	i915_eu_field(inst, buffer->format->cond_modifier, i915_eu_cond_bits[cond]);
 
 	/* A predicated comparison reads the same flag it writes. */
 	if (predicated != 0)
-		i915_eu_set(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO, EU_PREDICATE_NORMAL);
+		i915_eu_field(inst, buffer->format->pred_control, EU_PREDICATE_NORMAL);
 
 	/* Encodes the operands. */
-	i915_eu_dst(inst, dst);
-	i915_eu_src0(inst, src0);
-	i915_eu_src1(inst, src1);
+	i915_eu_dst(buffer, inst, dst);
+	i915_eu_src0(buffer, inst, src0);
+	i915_eu_src1(buffer, inst, src1);
 }
 
 /*
@@ -778,11 +1187,11 @@ drv_i915_eu_minmax(
 		return;
 
 	/* Encodes an in-order selection with its test and its operands. */
-	i915_eu_common(buffer, inst, EU_OP_SEL, I915_EU_IN_ORDER);
-	i915_eu_set(inst, EU_COND_MODIFIER_HI, EU_COND_MODIFIER_LO, i915_eu_cond_bits[cond]);
-	i915_eu_dst(inst, dst);
-	i915_eu_src0(inst, src0);
-	i915_eu_src1(inst, src1);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_SEL, I915_EU_IN_ORDER);
+	i915_eu_field(inst, buffer->format->cond_modifier, i915_eu_cond_bits[cond]);
+	i915_eu_dst(buffer, inst, dst);
+	i915_eu_src0(buffer, inst, src0);
+	i915_eu_src1(buffer, inst, src1);
 }
 
 /*
@@ -819,12 +1228,12 @@ drv_i915_eu_select(
 		return;
 
 	/* Encodes an in-order selection predicated on the flag, and its operands. */
-	i915_eu_common(buffer, inst, EU_OP_SEL, I915_EU_IN_ORDER);
-	i915_eu_flag(inst, flag);
-	i915_eu_set(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO, EU_PREDICATE_NORMAL);
-	i915_eu_dst(inst, dst);
-	i915_eu_src0(inst, src0);
-	i915_eu_src1(inst, src1);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_SEL, I915_EU_IN_ORDER);
+	i915_eu_flag(buffer, inst, flag);
+	i915_eu_field(inst, buffer->format->pred_control, EU_PREDICATE_NORMAL);
+	i915_eu_dst(buffer, inst, dst);
+	i915_eu_src0(buffer, inst, src0);
+	i915_eu_src1(buffer, inst, src1);
 }
 
 /*
@@ -869,11 +1278,11 @@ drv_i915_eu_flag_load(
 		return;
 
 	/* Encodes an in-order move, then narrows it to one channel outside the mask. */
-	i915_eu_common(buffer, inst, EU_OP_MOV, I915_EU_IN_ORDER);
-	i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
-	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);
-	i915_eu_dst(inst, dst);
-	i915_eu_src0(inst, src);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_MOV, I915_EU_IN_ORDER);
+	i915_eu_field(inst, buffer->format->exec_size, EU_EXEC_SIZE_1);
+	i915_eu_bit(inst, buffer->format->no_mask_bit, 1U);
+	i915_eu_dst(buffer, inst, dst);
+	i915_eu_src0(buffer, inst, src);
 }
 
 /*
@@ -915,11 +1324,11 @@ drv_i915_eu_flag_clear(
 		return;
 
 	/* Encodes an in-order move, then narrows it to one channel outside the mask. */
-	i915_eu_common(buffer, inst, EU_OP_MOV, I915_EU_IN_ORDER);
-	i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
-	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);
-	i915_eu_dst(inst, dst);
-	i915_eu_src0(inst, src);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_MOV, I915_EU_IN_ORDER);
+	i915_eu_field(inst, buffer->format->exec_size, EU_EXEC_SIZE_1);
+	i915_eu_bit(inst, buffer->format->no_mask_bit, 1U);
+	i915_eu_dst(buffer, inst, dst);
+	i915_eu_src0(buffer, inst, src);
 }
 
 /*
@@ -1009,11 +1418,11 @@ drv_i915_eu_math(
 		return;
 
 	/* Encodes an out-of-order math instruction, its function and its operands. */
-	i915_eu_common(buffer, inst, EU_OP_MATH, I915_EU_OUT_OF_ORDER);
-	i915_eu_set(inst, EU_MATH_FUNCTION_HI, EU_MATH_FUNCTION_LO, selector);
-	i915_eu_dst(inst, dst);
-	i915_eu_src0(inst, src0);
-	i915_eu_src1(inst, src1);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_MATH, I915_EU_OUT_OF_ORDER);
+	i915_eu_field(inst, buffer->format->math_function, selector);
+	i915_eu_dst(buffer, inst, dst);
+	i915_eu_src0(buffer, inst, src0);
+	i915_eu_src1(buffer, inst, src1);
 
 	/* Waits until the math has written its destination. */
 	i915_eu_sync(buffer, EU_SWSB_SYNC_DST(I915_EU_TOKEN));
@@ -1200,6 +1609,10 @@ drv_i915_eu_send_scalar(
  * sync.bar waits until the thread's workgroup barrier message is answered
  * (Mesa's generate_barrier() on Gfx12, brw_generator.cpp), sync.allwr until
  * every write the thread sent is done (ws101-p006).
+ *
+ * Gen9 has no SYNC.  Its barrier wait is a WAIT on the notification
+ * register, which the gateway signals when the group's barrier is complete
+ * (generate_barrier() before Gfx12); any other function poisons the buffer.
  */
 void
 drv_i915_eu_sync_function(
@@ -1208,16 +1621,26 @@ drv_i915_eu_sync_function(
 {
 	uint32_t *inst;
 
+	/* Gen9 waits for the barrier with a WAIT and has nothing for the other functions. */
+	if (buffer->format->has_swsb == 0) {
+		if (function == EU_SYNC_BAR) {
+			i915_eu_wait_notification(buffer);
+		} else {
+			buffer->error = 1;
+		}
+		return;
+	}
+
 	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
 	inst = i915_eu_reserve(buffer);
 	if (inst == NULL)
 		return;
 
 	/* Encodes a SIMD1 sync of the function, outside the channel mask, with no scoreboard dependency. */
-	i915_eu_set(inst, EU_OPCODE_HI, EU_OPCODE_LO, EU_OP_SYNC);
-	i915_eu_set(inst, EU_COND_MODIFIER_HI, EU_COND_MODIFIER_LO, function);
-	i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
-	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);
+	i915_eu_field(inst, buffer->format->opcode, buffer->format->opcodes[I915_EU_OPCODE_SYNC]);
+	i915_eu_field(inst, buffer->format->cond_modifier, function);
+	i915_eu_field(inst, buffer->format->exec_size, EU_EXEC_SIZE_1);
+	i915_eu_bit(inst, buffer->format->no_mask_bit, 1U);
 }
 
 /*
@@ -1235,7 +1658,7 @@ drv_i915_eu_nop(
 		return;
 
 	/* Only the opcode is set; the no-op carries no scoreboard byte. */
-	i915_eu_set(inst, EU_OPCODE_HI, EU_OPCODE_LO, EU_OP_NOP);
+	i915_eu_field(inst, buffer->format->opcode, buffer->format->opcodes[I915_EU_OPCODE_NOP]);
 }
 
 /*
@@ -1257,9 +1680,9 @@ drv_i915_eu_position(
  * set jump back to instruction `target`, the others wait after the WHILE
  * until the loop ends.
  *
- * The form is Mesa's brw_WHILE on Gen12: a null signed-integer
- * destination, SIMD8, the jump in bytes from the WHILE to the target in the
- * JIP.  A target at or after the WHILE, or a poisoned buffer, encodes
+ * The form is Mesa's brw_WHILE: a null signed-integer destination, SIMD8,
+ * the jump in bytes from the WHILE to the target in the JIP (on Gen9 after
+ * an immediate source 0, see i915_eu_branch_target()).  A target at or after the WHILE, or a poisoned buffer, encodes
  * nothing.
  */
 void
@@ -1295,14 +1718,14 @@ drv_i915_eu_while(
 	jump = -(int32_t)((here - target) * GEN12_EU_DWORDS * 4U);
 
 	/* Encodes an in-order WHILE predicated on the flag, its null destination and its jump. */
-	i915_eu_common(buffer, inst, EU_OP_WHILE, I915_EU_IN_ORDER);
-	i915_eu_flag(inst, flag);
-	i915_eu_set(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO, EU_PREDICATE_NORMAL);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_WHILE, I915_EU_IN_ORDER);
+	i915_eu_flag(buffer, inst, flag);
+	i915_eu_field(inst, buffer->format->pred_control, EU_PREDICATE_NORMAL);
 	null = drv_i915_eu_null();
 	null.type = EU_TYPE_D;
-	i915_eu_dst(inst, null);
-	i915_eu_bit(inst, EU_SRC0_IS_IMM_BIT, 1U);
-	i915_eu_set(inst, EU_JIP_HI, EU_JIP_LO, (uint32_t)jump);
+	i915_eu_dst(buffer, inst, null);
+	i915_eu_branch_target(buffer, inst, 0);
+	i915_eu_field(inst, buffer->format->jip, (uint32_t)jump);
 }
 
 /*
@@ -1348,11 +1771,11 @@ drv_i915_eu_flag_store(
 		return;
 
 	/* Encodes an in-order move, then narrows it to one channel outside the mask. */
-	i915_eu_common(buffer, inst, EU_OP_MOV, I915_EU_IN_ORDER);
-	i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
-	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);
-	i915_eu_dst(inst, dst);
-	i915_eu_src0(inst, src);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_MOV, I915_EU_IN_ORDER);
+	i915_eu_field(inst, buffer->format->exec_size, EU_EXEC_SIZE_1);
+	i915_eu_bit(inst, buffer->format->no_mask_bit, 1U);
+	i915_eu_dst(buffer, inst, dst);
+	i915_eu_src0(buffer, inst, src);
 }
 
 /*
@@ -1361,8 +1784,9 @@ drv_i915_eu_flag_store(
  * jumps to the ENDIF.  Returns the IF's position; its targets are written by
  * drv_i915_eu_patch_if() once the ENDIF is placed.
  *
- * The form is Mesa's brw_IF on Gen12: a null signed-integer destination,
- * SIMD8 under the execution mask, the JIP and the UIP immediate.
+ * The form is Mesa's brw_IF: a null signed-integer destination, SIMD8
+ * under the execution mask, the JIP and the UIP immediate (on Gen9 after an
+ * immediate source 0, see i915_eu_branch_target()).
  */
 uint32_t
 drv_i915_eu_if(
@@ -1388,16 +1812,15 @@ drv_i915_eu_if(
 		return here;
 
 	/* Encodes an in-order IF predicated on the flag, with a null destination. */
-	i915_eu_common(buffer, inst, EU_OP_IF, I915_EU_IN_ORDER);
-	i915_eu_flag(inst, flag);
-	i915_eu_set(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO, EU_PREDICATE_NORMAL);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_IF, I915_EU_IN_ORDER);
+	i915_eu_flag(buffer, inst, flag);
+	i915_eu_field(inst, buffer->format->pred_control, EU_PREDICATE_NORMAL);
 	null = drv_i915_eu_null();
 	null.type = EU_TYPE_D;
-	i915_eu_dst(inst, null);
+	i915_eu_dst(buffer, inst, null);
 
 	/* Both targets are immediates, zero until the ENDIF is placed. */
-	i915_eu_bit(inst, EU_SRC0_IS_IMM_BIT, 1U);
-	i915_eu_bit(inst, EU_SRC1_IS_IMM_BIT, 1U);
+	i915_eu_branch_target(buffer, inst, 1);
 
 	/* Succeeded: the IF waits for its targets. */
 	return here;
@@ -1427,12 +1850,12 @@ drv_i915_eu_endif(
 
 	/*
 	 * Encodes an in-order ENDIF whose JIP is the next instruction, in bytes;
-	 * the JIP is a signed-integer immediate source, as brw_ENDIF's src0.
+	 * the JIP is a signed-integer immediate source, as brw_ENDIF's src0
+	 * (the immediate's value is the JIP's word, set after it).
 	 */
-	i915_eu_common(buffer, inst, EU_OP_ENDIF, I915_EU_IN_ORDER);
-	i915_eu_bit(inst, EU_SRC0_IS_IMM_BIT, 1U);
-	i915_eu_set(inst, EU_SRC0_REG_TYPE_HI, EU_SRC0_REG_TYPE_LO, EU_TYPE_D);
-	i915_eu_set(inst, EU_JIP_HI, EU_JIP_LO, GEN12_EU_DWORDS * 4U);
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_ENDIF, I915_EU_IN_ORDER);
+	i915_eu_src0(buffer, inst, drv_i915_eu_imm_d(0U));
+	i915_eu_field(inst, buffer->format->jip, GEN12_EU_DWORDS * 4U);
 
 	/* Succeeded: the ENDIF is placed. */
 	return here;
@@ -1466,8 +1889,8 @@ drv_i915_eu_patch_if(
 	/* Both targets are the ENDIF, in bytes from the IF. */
 	inst = buffer->words + (size_t)if_position * GEN12_EU_DWORDS;
 	jump = (endif_position - if_position) * GEN12_EU_DWORDS * 4U;
-	i915_eu_set(inst, EU_JIP_HI, EU_JIP_LO, jump);
-	i915_eu_set(inst, EU_UIP_HI, EU_UIP_LO, jump);
+	i915_eu_field(inst, buffer->format->jip, jump);
+	i915_eu_field(inst, buffer->format->uip, jump);
 }
 
 /*
@@ -1496,7 +1919,7 @@ drv_i915_eu_patch_endif(
 
 	/* The JIP, in bytes from the ENDIF. */
 	inst = buffer->words + (size_t)endif_position * GEN12_EU_DWORDS;
-	i915_eu_set(inst, EU_JIP_HI, EU_JIP_LO, (target - endif_position) * GEN12_EU_DWORDS * 4U);
+	i915_eu_field(inst, buffer->format->jip, (target - endif_position) * GEN12_EU_DWORDS * 4U);
 }
 
 /*
@@ -1519,21 +1942,21 @@ i915_eu_alu2_common(
 
 	/* Picks the hardware opcode; a subtraction is refused. */
 	if (op == I915_EU_ADD) {
-		opcode = EU_OP_ADD;
+		opcode = I915_EU_OPCODE_ADD;
 	} else if (op == I915_EU_MUL) {
-		opcode = EU_OP_MUL;
+		opcode = I915_EU_OPCODE_MUL;
 	} else if (op == I915_EU_AND) {
-		opcode = EU_OP_AND;
+		opcode = I915_EU_OPCODE_AND;
 	} else if (op == I915_EU_OR) {
-		opcode = EU_OP_OR;
+		opcode = I915_EU_OPCODE_OR;
 	} else if (op == I915_EU_XOR) {
-		opcode = EU_OP_XOR;
+		opcode = I915_EU_OPCODE_XOR;
 	} else if (op == I915_EU_SHL) {
-		opcode = EU_OP_SHL;
+		opcode = I915_EU_OPCODE_SHL;
 	} else if (op == I915_EU_SHR) {
-		opcode = EU_OP_SHR;
+		opcode = I915_EU_OPCODE_SHR;
 	} else if (op == I915_EU_ASR) {
-		opcode = EU_OP_ASR;
+		opcode = I915_EU_OPCODE_ASR;
 	} else {
 		buffer->error = 1;
 		return;
@@ -1552,15 +1975,15 @@ i915_eu_alu2_common(
 
 	/* Encodes an in-order instruction on its channels and its three operands. */
 	i915_eu_common(buffer, inst, opcode, I915_EU_IN_ORDER);
-	i915_eu_scope(inst, scope);
-	i915_eu_dst(inst, dst);
-	i915_eu_src0(inst, src0);
-	i915_eu_src1(inst, src1);
+	i915_eu_scope(buffer, inst, scope);
+	i915_eu_dst(buffer, inst, dst);
+	i915_eu_src0(buffer, inst, src0);
+	i915_eu_src1(buffer, inst, src1);
 
 	/* A masked instruction runs only on the channels whose bit of the flag is set. */
 	if (predicated != 0) {
-		i915_eu_flag(inst, flag);
-		i915_eu_set(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO, EU_PREDICATE_NORMAL);
+		i915_eu_flag(buffer, inst, flag);
+		i915_eu_field(inst, buffer->format->pred_control, EU_PREDICATE_NORMAL);
 	}
 }
 
@@ -1583,11 +2006,16 @@ i915_eu_send_common(
 	int conditional,
 	int end_of_thread)
 {
+	const struct i915_eu_format *format;
+	enum i915_eu_opcode opcode;
 	uint32_t *inst;
-	uint32_t opcode;
 	uint32_t eot;
 	uint32_t swsb;
+	int split;
 	int order;
+
+	/* The layout the buffer encodes in. */
+	format = buffer->format;
 
 	/* The low six bits of the extended descriptor are not encodable (they held the SFID once). */
 	if ((ex_descriptor & I915_EU_EX_DESC_LOW_MASK) != 0U) {
@@ -1601,16 +2029,39 @@ i915_eu_send_common(
 		return;
 	}
 
+	/*
+	 * Gen9 says a second payload with SENDS, whose extended descriptor has
+	 * room for its bits 31:16 and the length in 9:6 only, and keeps the
+	 * descriptor in 31 bits beside the end-of-thread bit.
+	 */
+	split = 0;
+	if (format->has_swsb == 0) {
+		if ((descriptor >> 31) != 0U) {
+			buffer->error = 1;
+			return;
+		}
+		if ((ex_descriptor & GEN9_EU_SENDS_EX_DESC_ZERO_MASK) != 0U) {
+			buffer->error = 1;
+			return;
+		}
+		if (ex_descriptor != 0U)
+			split = 1;
+	}
+
 	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
 	inst = i915_eu_reserve(buffer);
 	if (inst == NULL)
 		return;
 
-	/* A render-target write is the conditional form of the message. */
-	if (conditional != 0) {
-		opcode = EU_OP_SENDC;
+	/* A render-target write is the conditional form of the message, a second payload the split form. */
+	if (conditional != 0 && split != 0) {
+		opcode = I915_EU_OPCODE_SENDSC;
+	} else if (conditional != 0) {
+		opcode = I915_EU_OPCODE_SENDC;
+	} else if (split != 0) {
+		opcode = I915_EU_OPCODE_SENDS;
 	} else {
-		opcode = EU_OP_SEND;
+		opcode = I915_EU_OPCODE_SEND;
 	}
 
 	/* The message that ends the thread is its own scoreboard class. */
@@ -1622,18 +2073,59 @@ i915_eu_send_common(
 		eot = 0U;
 	}
 
-	/* Encodes the control fields, the channels, the end-of-thread bit and the shared function. */
+	/* Encodes the control fields, the channels and the shared function. */
 	i915_eu_common(buffer, inst, opcode, order);
-	i915_eu_scope(inst, scope);
-	i915_eu_bit(inst, EU_SEND_EOT_BIT, eot);
-	i915_eu_set(inst, EU_SEND_SFID_HI, EU_SEND_SFID_LO, sfid);
+	i915_eu_scope(buffer, inst, scope);
+	i915_eu_field(inst, format->sfid, sfid);
 
 	/* A masked message goes only to the channels whose bit of the flag is set. */
 	if (predicated != 0) {
-		i915_eu_flag(inst, flag);
-		i915_eu_set(inst, EU_PRED_CONTROL_HI, EU_PRED_CONTROL_LO, EU_PREDICATE_NORMAL);
+		i915_eu_flag(buffer, inst, flag);
+		i915_eu_field(inst, format->pred_control, EU_PREDICATE_NORMAL);
 	}
 
+	/* Encodes the operands and the descriptors in the version's form. */
+	if (format->has_swsb != 0) {
+		i915_eu_send_gen12(inst, dst, src0, src1, descriptor, ex_descriptor);
+	} else {
+		i915_eu_send_gen9(buffer, inst, scope, dst, src0, src1, descriptor, ex_descriptor);
+	}
+
+	/* The end-of-thread bit goes last: on Gen9 it is the top bit of the descriptor's word. */
+	i915_eu_bit(inst, format->eot_bit, eot);
+
+	/* The message that ends the thread needs nothing after it. */
+	if (end_of_thread != 0)
+		return;
+
+	/*
+	 * A message with a destination is waited for until it has written it;
+	 * one without, until it has read its sources.
+	 */
+	if (dst.file == EU_FILE_GRF) {
+		swsb = EU_SWSB_SYNC_DST(I915_EU_TOKEN);
+	} else {
+		swsb = EU_SWSB_SYNC_SRC(I915_EU_TOKEN);
+	}
+
+	/* Waits until the message is done with its registers (nothing on Gen9). */
+	i915_eu_sync(buffer, swsb);
+}
+
+/*
+ * Encodes a Gen12 SEND's operands -- a file bit and a register number,
+ * nothing else -- and scatters its two descriptors as
+ * intel/eu-encoding-gen12.h says.
+ */
+static void
+i915_eu_send_gen12(
+	uint32_t *inst,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1,
+	uint32_t descriptor,
+	uint32_t ex_descriptor)
+{
 	/* Encodes the operands: a file bit and a register number, nothing else. */
 	i915_eu_bit(inst, EU_DST_REG_FILE_BIT, i915_eu_file_bit(dst));
 	i915_eu_set(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO, dst.nr);
@@ -1655,23 +2147,65 @@ i915_eu_send_common(
 	i915_eu_set(inst, 65U, 64U, ex_descriptor >> 24);
 	i915_eu_set(inst, 47U, 35U, ex_descriptor >> 11);
 	i915_eu_set(inst, 103U, 99U, ex_descriptor >> 6);
+}
 
-	/* The message that ends the thread needs nothing after it. */
-	if (end_of_thread != 0)
-		return;
-
+/*
+ * Encodes a Gen9 SEND's operands and descriptors: SEND with the descriptor
+ * as source 1's immediate when the extended descriptor is zero, SENDS with
+ * the second payload in source 1 otherwise (brw_send_indirect_message() and
+ * _split_message()).  `scope` is the instruction's, as i915_eu_scope() set
+ * it.
+ */
+static void
+i915_eu_send_gen9(
+	struct i915_eu_buf *buffer,
+	uint32_t *inst,
+	int scope,
+	struct i915_eu_reg dst,
+	struct i915_eu_reg src0,
+	struct i915_eu_reg src1,
+	uint32_t descriptor,
+	uint32_t ex_descriptor)
+{
 	/*
-	 * A message with a destination is waited for until it has written it;
-	 * one without, until it has read its sources.
+	 * The single-payload form is an ordinary two-source instruction: the
+	 * reply as UW words, the payload as UD words (the region does not
+	 * matter to the message), the descriptor as a UD immediate.
 	 */
-	if (dst.file == EU_FILE_GRF) {
-		swsb = EU_SWSB_SYNC_DST(I915_EU_TOKEN);
-	} else {
-		swsb = EU_SWSB_SYNC_SRC(I915_EU_TOKEN);
+	if (ex_descriptor == 0U) {
+		dst.type = EU_TYPE_UW;
+		src0.type = EU_TYPE_UD;
+
+		/* A SIMD1 message reads its payload as one dword: no region may be wider than the execution. */
+		if (scope == I915_EU_SCOPE_SCALAR) {
+			src0.vstride = EU_VSTRIDE_0;
+			src0.width = EU_WIDTH_1;
+			src0.hstride = EU_HSTRIDE_0;
+		}
+
+		i915_eu_dst(buffer, inst, dst);
+		i915_eu_src0(buffer, inst, src0);
+		i915_eu_src1(buffer, inst, drv_i915_eu_imm_ud(descriptor));
+		return;
 	}
 
-	/* Waits until the message is done with its registers. */
-	i915_eu_sync(buffer, swsb);
+	/* The split form names three registers by number, with a one-bit file for the reply and the second payload. */
+	i915_eu_bit(inst, GEN9_EU_SENDS_DST_FILE_BIT, i915_eu_file_bit(dst));
+	i915_eu_field(inst, buffer->format->dst.reg_nr, dst.nr);
+	i915_eu_field(inst, buffer->format->src0.reg_nr, src0.nr);
+	i915_eu_bit(inst, GEN9_EU_SENDS_SRC1_FILE_BIT, i915_eu_file_bit(src1));
+	i915_eu_set(inst, GEN9_EU_SENDS_SRC1_REG_NR_HI, GEN9_EU_SENDS_SRC1_REG_NR_LO, src1.nr);
+
+	/* The descriptor, and the extended descriptor's high half and second payload length. */
+	i915_eu_set(inst, GEN9_EU_SEND_DESC_HI, GEN9_EU_SEND_DESC_LO, descriptor);
+	i915_eu_set(inst,
+		    GEN9_EU_SENDS_EX_DESC_HIGH_HI,
+		    GEN9_EU_SENDS_EX_DESC_HIGH_LO,
+		    ex_descriptor >> GEN9_EU_SENDS_EX_DESC_HIGH_SHIFT);
+	i915_eu_set(inst,
+		    GEN9_EU_SENDS_EX_MLEN_HI,
+		    GEN9_EU_SENDS_EX_MLEN_LO,
+		    (ex_descriptor >> GEN9_EU_SENDS_EX_MLEN_SHIFT) & GEN9_EU_SENDS_EX_MLEN_MASK);
 }
 
 /* Names a general register operand: eight channels of `type`. */
@@ -1748,18 +2282,25 @@ i915_eu_reserve(
 
 /*
  * Sets the control fields every instruction carries, the scoreboard byte among
- * them; `order` is I915_EU_IN_ORDER, I915_EU_OUT_OF_ORDER (a sync.nop follows)
- * or I915_EU_END_OF_THREAD.
+ * them (on a layout that has one); `order` is I915_EU_IN_ORDER,
+ * I915_EU_OUT_OF_ORDER (a sync.nop follows) or I915_EU_END_OF_THREAD.  An
+ * opcode the layout does not have poisons the buffer.
  */
 static void
 i915_eu_common(
 	struct i915_eu_buf *buffer,
 	uint32_t *inst,
-	uint32_t opcode,
+	enum i915_eu_opcode opcode,
 	int order)
 {
+	uint32_t hardware_opcode;
 	uint32_t regdist;
 	uint32_t swsb;
+
+	/* The layout's value of the opcode; an instruction it has not got is refused. */
+	hardware_opcode = buffer->format->opcodes[opcode];
+	if (hardware_opcode == I915_EU_NO_OPCODE)
+		buffer->error = 1;
 
 	/* The first in-order instruction has nothing before it to wait for. */
 	if (buffer->in_order != 0U) {
@@ -1769,8 +2310,8 @@ i915_eu_common(
 	}
 
 	/* Encodes the opcode and the SIMD8 execution size. */
-	i915_eu_set(inst, EU_OPCODE_HI, EU_OPCODE_LO, opcode);
-	i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_8);
+	i915_eu_field(inst, buffer->format->opcode, hardware_opcode);
+	i915_eu_field(inst, buffer->format->exec_size, EU_EXEC_SIZE_8);
 
 	/*
 	 * An out-of-order instruction also names itself with the token; with
@@ -1786,8 +2327,9 @@ i915_eu_common(
 		swsb = EU_SWSB_REGDIST(regdist);
 	}
 
-	/* Encodes the scoreboard byte. */
-	i915_eu_set(inst, EU_SWSB_HI, EU_SWSB_LO, swsb);
+	/* Encodes the scoreboard byte where the layout has one; Gen9's hardware keeps its own. */
+	if (buffer->format->has_swsb != 0)
+		i915_eu_field(inst, buffer->format->swsb, swsb);
 
 	/*
 	 * The in-order count is what the next instruction's register distance
@@ -1804,6 +2346,7 @@ i915_eu_common(
  */
 static void
 i915_eu_scope(
+	const struct i915_eu_buf *buffer,
 	uint32_t *inst,
 	int scope)
 {
@@ -1813,28 +2356,33 @@ i915_eu_scope(
 
 	/* A scalar instruction runs one channel, a sixteen-word one sixteen. */
 	if (scope == I915_EU_SCOPE_SCALAR)
-		i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
+		i915_eu_field(inst, buffer->format->exec_size, EU_EXEC_SIZE_1);
 	if (scope == I915_EU_SCOPE_SIXTEEN)
-		i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_16);
+		i915_eu_field(inst, buffer->format->exec_size, EU_EXEC_SIZE_16);
 	if (scope == I915_EU_SCOPE_FOUR)
-		i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_4);
+		i915_eu_field(inst, buffer->format->exec_size, EU_EXEC_SIZE_4);
 
 	/* Both other forms ignore the execution mask. */
-	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);
+	i915_eu_bit(inst, buffer->format->no_mask_bit, 1U);
 }
 
 /* Names the flag subregister an instruction's conditional modifier writes or its predicate reads. */
 static void
 i915_eu_flag(
+	const struct i915_eu_buf *buffer,
 	uint32_t *inst,
 	enum i915_eu_flag flag)
 {
 	/* f0.0, f0.1, f1.0, f1.1: the register is the high bit, the subregister the low one. */
-	i915_eu_bit(inst, EU_FLAG_REG_NR_BIT, (uint32_t)flag >> 1);
-	i915_eu_bit(inst, EU_FLAG_SUBREG_NR_BIT, (uint32_t)flag & 1U);
+	i915_eu_bit(inst, buffer->format->flag_reg_bit, (uint32_t)flag >> 1);
+	i915_eu_bit(inst, buffer->format->flag_subreg_bit, (uint32_t)flag & 1U);
 }
 
-/* Encodes a sync.nop: the front end waits here until the named dependency is resolved. */
+/*
+ * Encodes a sync.nop: the front end waits here until the named dependency is
+ * resolved.  Gen9's hardware scoreboard waits by itself, so nothing is
+ * encoded there.
+ */
 static void
 i915_eu_sync(
 	struct i915_eu_buf *buffer,
@@ -1842,25 +2390,99 @@ i915_eu_sync(
 {
 	uint32_t *inst;
 
+	/* A layout without the scoreboard byte needs no sync.nop. */
+	if (buffer->format->has_swsb == 0)
+		return;
+
 	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
 	inst = i915_eu_reserve(buffer);
 	if (inst == NULL)
 		return;
 
 	/* Encodes a SIMD1 sync with the dependency it waits on, outside the channel mask. */
-	i915_eu_set(inst, EU_OPCODE_HI, EU_OPCODE_LO, EU_OP_SYNC);
-	i915_eu_set(inst, EU_SWSB_HI, EU_SWSB_LO, swsb);
-	i915_eu_set(inst, EU_EXEC_SIZE_HI, EU_EXEC_SIZE_LO, EU_EXEC_SIZE_1);
-	i915_eu_bit(inst, EU_NO_MASK_BIT, 1U);
+	i915_eu_field(inst, buffer->format->opcode, buffer->format->opcodes[I915_EU_OPCODE_SYNC]);
+	i915_eu_field(inst, buffer->format->swsb, swsb);
+	i915_eu_field(inst, buffer->format->exec_size, EU_EXEC_SIZE_1);
+	i915_eu_bit(inst, buffer->format->no_mask_bit, 1U);
+}
+
+/*
+ * Encodes Gen9's barrier wait: a SIMD1 WAIT outside the channel mask on the
+ * notification register n0, which the gateway signals once every thread of
+ * the group has sent its barrier message (brw_WAIT(), brw_eu_emit.c).
+ */
+static void
+i915_eu_wait_notification(
+	struct i915_eu_buf *buffer)
+{
+	struct i915_eu_reg notification;
+	uint32_t *inst;
+
+	/* n0 as one unsigned dword, read and written once. */
+	kern_memset(&notification, 0, sizeof(notification));
+	notification.file = EU_FILE_ARF;
+	notification.nr = GEN9_EU_ARF_NOTIFICATION;
+	notification.type = EU_TYPE_UD;
+	notification.vstride = EU_VSTRIDE_0;
+	notification.width = EU_WIDTH_1;
+	notification.hstride = EU_HSTRIDE_0;
+
+	/* Reserves the instruction; a poisoned or full buffer takes nothing. */
+	inst = i915_eu_reserve(buffer);
+	if (inst == NULL)
+		return;
+
+	/* Encodes the WAIT on one channel, outside the mask, with n0 as its destination and first source. */
+	i915_eu_common(buffer, inst, I915_EU_OPCODE_WAIT, I915_EU_IN_ORDER);
+	i915_eu_scope(buffer, inst, I915_EU_SCOPE_SCALAR);
+	i915_eu_dst(buffer, inst, notification);
+	i915_eu_src0(buffer, inst, notification);
+	i915_eu_src1(buffer, inst, drv_i915_eu_null());
+}
+
+/*
+ * Marks a branch's targets as immediates: the JIP alone (`both` zero, a
+ * WHILE) or the JIP and the UIP (an IF).  The caller writes the targets
+ * afterwards.
+ *
+ * Gen12 has a bit per source for it.  Gen9 has an immediate signed-integer
+ * zero as source 0 (brw_IF() and brw_WHILE() before Gfx12), which also sets
+ * source 1's file and type; an IF's UIP, cleared here, then overwrites those.
+ */
+static void
+i915_eu_branch_target(
+	struct i915_eu_buf *buffer,
+	uint32_t *inst,
+	int both)
+{
+	/* Gen9: the immediate source 0, and for an IF the cleared UIP. */
+	if (buffer->format->has_swsb == 0) {
+		i915_eu_src0(buffer, inst, drv_i915_eu_imm_d(0U));
+		if (both != 0)
+			i915_eu_field(inst, buffer->format->uip, 0U);
+		return;
+	}
+
+	/* Gen12: the immediate bits of the sources that carry targets. */
+	i915_eu_bit(inst, EU_SRC0_IS_IMM_BIT, 1U);
+	if (both != 0)
+		i915_eu_bit(inst, EU_SRC1_IS_IMM_BIT, 1U);
 }
 
 /* Encodes a destination register. */
 static void
 i915_eu_dst(
+	struct i915_eu_buf *buffer,
 	uint32_t *inst,
 	struct i915_eu_reg reg)
 {
+	const struct i915_eu_operand_layout *layout;
 	uint32_t stride;
+	uint32_t type;
+
+	/* Where the destination's parts go, and the type it is written as. */
+	layout = &buffer->format->dst;
+	type = i915_eu_hw_type(buffer, reg.type, 0);
 
 	/*
 	 * A destination is written with horizontal stride one, or two when it
@@ -1872,65 +2494,131 @@ i915_eu_dst(
 		stride = EU_HSTRIDE_2;
 
 	/* Encodes the file, the type, the stride and the register. */
-	i915_eu_bit(inst, EU_DST_REG_FILE_BIT, i915_eu_file_bit(reg));
-	i915_eu_set(inst, EU_DST_REG_TYPE_HI, EU_DST_REG_TYPE_LO, reg.type);
-	i915_eu_set(inst, EU_DST_HSTRIDE_HI, EU_DST_HSTRIDE_LO, stride);
-	i915_eu_set(inst, EU_DST_SUBREG_HI, EU_DST_SUBREG_LO, reg.subnr);
-	i915_eu_set(inst, EU_DST_REG_NR_HI, EU_DST_REG_NR_LO, reg.nr);
+	i915_eu_field(inst, layout->file, i915_eu_file_bit(reg));
+	i915_eu_field(inst, layout->type, type);
+	i915_eu_field(inst, layout->hstride, stride);
+	i915_eu_field(inst, layout->subreg, reg.subnr);
+	i915_eu_field(inst, layout->reg_nr, reg.nr);
 }
 
-/* Encodes source zero, whether a register or an immediate. */
+/*
+ * Encodes source zero, whether a register or an immediate.
+ *
+ * On Gen9 an immediate source 0 also says source 1 is the architecture file
+ * read as the immediate's type (brw_set_src0() before Gfx12): the two type
+ * fields describe the one 32-bit value.
+ */
 static void
 i915_eu_src0(
+	struct i915_eu_buf *buffer,
 	uint32_t *inst,
 	struct i915_eu_reg reg)
 {
-	/* Encodes the type the source is read as. */
-	i915_eu_set(inst, EU_SRC0_REG_TYPE_HI, EU_SRC0_REG_TYPE_LO, reg.type);
+	/* Encodes the source in source 0's fields. */
+	i915_eu_source(buffer, inst, &buffer->format->src0, reg);
 
-	/* An immediate says so with its own bit and carries its value in the last word. */
-	if (reg.file == EU_FILE_IMM) {
-		i915_eu_bit(inst, EU_SRC0_IS_IMM_BIT, 1U);
-		i915_eu_set(inst, EU_IMM32_HI, EU_IMM32_LO, reg.immediate);
+	/* Gen12 says an immediate with its own bit and needs nothing more. */
+	if (buffer->format->has_swsb != 0)
 		return;
-	}
 
-	/* Encodes the register, its region and its negate modifier. */
-	i915_eu_bit(inst, EU_SRC0_REG_FILE_BIT, i915_eu_file_bit(reg));
-	i915_eu_set(inst, EU_SRC0_REG_NR_HI, EU_SRC0_REG_NR_LO, reg.nr);
-	i915_eu_set(inst, EU_SRC0_SUBREG_HI, EU_SRC0_SUBREG_LO, reg.subnr);
-	i915_eu_set(inst, EU_SRC0_HSTRIDE_HI, EU_SRC0_HSTRIDE_LO, reg.hstride);
-	i915_eu_set(inst, EU_SRC0_WIDTH_HI, EU_SRC0_WIDTH_LO, reg.width);
-	i915_eu_set(inst, EU_SRC0_VSTRIDE_HI, EU_SRC0_VSTRIDE_LO, reg.vstride);
-	i915_eu_bit(inst, EU_SRC0_NEGATE_BIT, reg.negate & 1U);
-	i915_eu_bit(inst, EU_SRC0_ABS_BIT, reg.absolute & 1U);
+	/* Gen9: an immediate's source 1 is the architecture file of the same type. */
+	if (reg.file == EU_FILE_IMM) {
+		i915_eu_field(inst, buffer->format->src1.file, GEN9_EU_FILE_ARF);
+		i915_eu_field(inst, buffer->format->src1.type, i915_eu_hw_type(buffer, reg.type, 1));
+	}
 }
 
 /* Encodes source one, whether a register or an immediate. */
 static void
 i915_eu_src1(
+	struct i915_eu_buf *buffer,
 	uint32_t *inst,
 	struct i915_eu_reg reg)
 {
-	/* Encodes the type the source is read as. */
-	i915_eu_set(inst, EU_SRC1_REG_TYPE_HI, EU_SRC1_REG_TYPE_LO, reg.type);
+	/* Encodes the source in source 1's fields. */
+	i915_eu_source(buffer, inst, &buffer->format->src1, reg);
+}
 
-	/* An immediate says so with its own bit and carries its value in the last word. */
-	if (reg.file == EU_FILE_IMM) {
-		i915_eu_bit(inst, EU_SRC1_IS_IMM_BIT, 1U);
-		i915_eu_set(inst, EU_IMM32_HI, EU_IMM32_LO, reg.immediate);
+/*
+ * Encodes one source, a register or an immediate, in the fields `layout`
+ * names.
+ */
+static void
+i915_eu_source(
+	struct i915_eu_buf *buffer,
+	uint32_t *inst,
+	const struct i915_eu_operand_layout *layout,
+	struct i915_eu_reg reg)
+{
+	int immediate;
+
+	/* An immediate's type has its own encoding on Gen9. */
+	immediate = 0;
+	if (reg.file == EU_FILE_IMM)
+		immediate = 1;
+
+	/* Encodes the type the source is read as. */
+	i915_eu_field(inst, layout->type, i915_eu_hw_type(buffer, reg.type, immediate));
+
+	/*
+	 * An immediate says so -- with its own bit on Gen12, with the file
+	 * field on Gen9 -- and carries its value in the last word.
+	 */
+	if (immediate != 0) {
+		if (layout->is_imm_bit != I915_EU_NO_BIT) {
+			i915_eu_bit(inst, layout->is_imm_bit, 1U);
+		} else {
+			i915_eu_field(inst, layout->file, buffer->format->file_imm);
+		}
+		i915_eu_field(inst, buffer->format->imm32, reg.immediate);
 		return;
 	}
 
 	/* Encodes the register, its region and its negate modifier. */
-	i915_eu_bit(inst, EU_SRC1_REG_FILE_BIT, i915_eu_file_bit(reg));
-	i915_eu_set(inst, EU_SRC1_REG_NR_HI, EU_SRC1_REG_NR_LO, reg.nr);
-	i915_eu_set(inst, EU_SRC1_SUBREG_HI, EU_SRC1_SUBREG_LO, reg.subnr);
-	i915_eu_set(inst, EU_SRC1_HSTRIDE_HI, EU_SRC1_HSTRIDE_LO, reg.hstride);
-	i915_eu_set(inst, EU_SRC1_WIDTH_HI, EU_SRC1_WIDTH_LO, reg.width);
-	i915_eu_set(inst, EU_SRC1_VSTRIDE_HI, EU_SRC1_VSTRIDE_LO, reg.vstride);
-	i915_eu_bit(inst, EU_SRC1_NEGATE_BIT, reg.negate & 1U);
-	i915_eu_bit(inst, EU_SRC1_ABS_BIT, reg.absolute & 1U);
+	i915_eu_field(inst, layout->file, i915_eu_file_bit(reg));
+	i915_eu_field(inst, layout->reg_nr, reg.nr);
+	i915_eu_field(inst, layout->subreg, reg.subnr);
+	i915_eu_field(inst, layout->hstride, reg.hstride);
+	i915_eu_field(inst, layout->width, reg.width);
+	i915_eu_field(inst, layout->vstride, reg.vstride);
+	i915_eu_bit(inst, layout->negate_bit, reg.negate & 1U);
+	i915_eu_bit(inst, layout->abs_bit, reg.absolute & 1U);
+}
+
+/*
+ * Returns the hardware encoding of an operand type named in the Gen12
+ * encoding, for a register or (`immediate` nonzero) an immediate operand.
+ * A type the layout cannot say poisons the buffer.
+ */
+static uint32_t
+i915_eu_hw_type(
+	struct i915_eu_buf *buffer,
+	uint32_t type,
+	int immediate)
+{
+	uint32_t encoded;
+
+	/* A name outside the four-bit encoding is no type at all. */
+	if (type >= I915_EU_TYPE_COUNT) {
+		buffer->error = 1;
+		return 0U;
+	}
+
+	/* Looks the type up in the table of its kind of operand. */
+	if (immediate != 0) {
+		encoded = buffer->format->immediate_types[type];
+	} else {
+		encoded = buffer->format->register_types[type];
+	}
+
+	/* A type the version cannot encode is refused. */
+	if (encoded == I915_EU_NO_TYPE) {
+		buffer->error = 1;
+		return 0U;
+	}
+
+	/* Succeeded: the type as the version's hardware spells it. */
+	return encoded;
 }
 
 /* Returns the hardware file bit of an operand: one for a general register, zero otherwise. */
@@ -1944,6 +2632,17 @@ i915_eu_file_bit(
 
 	/* Anything else (the null register) is the architecture file. */
 	return 0U;
+}
+
+/* Writes value into one field of the instruction. */
+static void
+i915_eu_field(
+	uint32_t *inst,
+	struct i915_eu_field field,
+	uint32_t value)
+{
+	/* The field's bits are its range in the instruction. */
+	i915_eu_set(inst, field.high, field.low, value);
 }
 
 /* Writes value into the inclusive bit range [high:low] of the instruction. */
