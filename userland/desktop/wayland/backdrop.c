@@ -68,7 +68,7 @@ kwl_backdrop_begin(
 	compose = server->compose;
 	backdrop = &compose->backdrop;
 	if (backdrop->state == BACKDROP_UNTRIED) {
-		result = backdrop_create(compose, compose->output.width / BACKDROP_SCALE, compose->output.height / BACKDROP_SCALE);
+		result = backdrop_create(compose, compose->target_width / BACKDROP_SCALE, compose->target_height / BACKDROP_SCALE);
 		if (result == VK_SUCCESS) {
 			backdrop->state = BACKDROP_READY;
 			printf("KWL BACKDROP ready width=%u height=%u\n", backdrop->width, backdrop->height);
@@ -124,12 +124,12 @@ kwl_backdrop_end(
 	/* The output's pass again, keeping what was drawn, over the frame's own area (its damage's box, ws211-p009). */
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	pass.renderPass = compose->pass_load;
+	pass.renderPass = kwl_compose_target_pass(compose, KWL_PLANE_ANCHOR, 1U);
 	pass.framebuffer = compose->framebuffer_now;
 	pass.renderArea = compose->pass_area;
 	kwl_list_begin_render_pass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 	kwl_compose_bind_forget(server->compose);
-	backdrop_viewport(command, compose->output.width, compose->output.height);
+	backdrop_viewport(command, compose->target_width, compose->target_height);
 	kwl_list_set_scissor(command, 0U, 1U, &compose->scissor_now);
 
 	/* Output-coordinate clipping resumes only after every small-image pass has ended. */
@@ -152,7 +152,7 @@ kwl_backdrop_reset(
 }
 
 /*
- * Releases the backdrop's images and passes (the device is idle).
+ * Releases the backdrop's images and its own pass (the device is idle).
  */
 void
 kwl_backdrop_destroy(
@@ -176,12 +176,13 @@ kwl_backdrop_destroy(
 			kwl_compose_set_put(compose, backdrop->targets[index].set);
 	}
 
-	/* The passes (the output's loading one is the damage's too, made again with the next output). */
+	/*
+	 * The small images' pass.  The output's loading one is the damage's
+	 * and the scene's too, and stays for the compositor's life (it goes
+	 * with compose->pass, WS217): the output's format does not change.
+	 */
 	if (backdrop->pass != VK_NULL_HANDLE)
 		vkDestroyRenderPass(compose->device, backdrop->pass, NULL);
-	if (compose->pass_load != VK_NULL_HANDLE)
-		vkDestroyRenderPass(compose->device, compose->pass_load, NULL);
-	compose->pass_load = VK_NULL_HANDLE;
 
 	/* Nothing is left, and the next frame may try again. */
 	memset(backdrop, 0, sizeof(*backdrop));

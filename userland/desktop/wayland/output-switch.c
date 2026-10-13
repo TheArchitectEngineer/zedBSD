@@ -50,7 +50,8 @@ static int output_index(const struct kwl_compose *compose, VkDisplayKHR display)
 static void output_hotplug_register(struct kwl_server *server);
 static void output_recover(struct kwl_server *server);
 static int output_fail_back(struct kwl_server *server);
-static void output_resized(struct kwl_server *server);
+static void output_resized(struct kwl_server *server, unsigned glass_rebuild);
+static void output_steps_name(unsigned steps, char *text, size_t size);
 static void output_pointer_clamp(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
 
 /*
@@ -169,8 +170,8 @@ kwl_output_switch(
 	char old_name[KWL_COMPOSE_NAME];
 	char name[KWL_COMPOSE_NAME];
 	VkDisplayKHR old_display;
-	uint32_t old_width;
-	uint32_t old_height;
+	uint32_t old_mode_width;
+	uint32_t old_mode_height;
 	uint32_t old_refresh;
 	uint32_t width;
 	uint32_t height;
@@ -196,10 +197,13 @@ kwl_output_switch(
 		return ENXIO;
 	}
 
-	/* What the output had, to go back to. */
+	/*
+	 * What the output had, to go back to: the display, its mode and
+	 * refresh (the angles it showed are compose->opened, WS217).
+	 */
 	old_display = compose->display;
-	old_width = server->width;
-	old_height = server->height;
+	old_mode_width = compose->mode_width;
+	old_mode_height = compose->mode_height;
 	old_refresh = server->refresh;
 	memcpy(old_name, compose->display_name, sizeof(old_name));
 
@@ -212,11 +216,14 @@ kwl_output_switch(
 	kwl_compose_output_close(server);
 	compose->output_lost = 0U;
 
-	/* The other display, at its native size. */
+	/*
+	 * The other display, at its native size: unrotated until the output's
+	 * opening chooses the angle displays.conf keeps for its key
+	 * (kwl_compose_output_prepare, WS217).
+	 */
 	compose->display = target;
 	memcpy(compose->display_name, name, sizeof(compose->display_name));
-	server->width = width;
-	server->height = height;
+	kwl_output_size_set(server, width, height, KWL_ROTATE_0);
 	server->refresh = refresh;
 	error = kwl_compose_output_open(server);
 	if (error != 0) {
@@ -227,8 +234,10 @@ kwl_output_switch(
 		printf("KWL OUTPUT switch failed name=%s errno=%d\n", name, error);
 		compose->display = old_display;
 		memcpy(compose->display_name, old_name, sizeof(compose->display_name));
-		server->width = old_width;
-		server->height = old_height;
+		kwl_output_size_set(server, old_mode_width, old_mode_height, compose->opened.rotation);
+		compose->rotation_selected = compose->opened.selected;
+		compose->scanout_rotation = compose->opened.scanout;
+		compose->turn_rotation = compose->opened.turn;
 		server->refresh = old_refresh;
 		error = kwl_compose_output_open(server);
 		if (error != 0) {
@@ -253,10 +262,14 @@ kwl_output_switch(
 		memcpy(compose->switch_from_name, old_name, sizeof(compose->switch_from_name));
 	}
 
-	/* The desktop fitted to the new size, and the clients told. */
-	if (width != old_width || height != old_height)
-		output_resized(server);
-	kwl_outputs_changed(server);
+	/*
+	 * The opening fitted the desktop to the logical size and the angle the
+	 * output has now and told the clients of a new size (WS217); the same
+	 * size on another display (its refresh, its name) is told here, so
+	 * that a move always tells them (review-4 L44).
+	 */
+	if ((compose->opened_steps & KWL_ROTATE_STEP_RESIZED) == 0U)
+		kwl_outputs_changed(server);
 
 	/* The log tells a move from the same display opened again (the tests read it). */
 	if (reopen) {
@@ -267,6 +280,112 @@ kwl_output_switch(
 
 	/* Succeeded: the output shows the target display. */
 	return 0;
+}
+
+/*
+ * Sets the output's display mode and the angle it shows, and the desktop's
+ * logical size, the mode turned by the angle: the one place that writes
+ * server->width and height (WS217).  Before the compositor's device is
+ * open (no compose yet) it sets the logical size alone, from the size
+ * asked for.
+ */
+void
+kwl_output_size_set(
+	struct kwl_server *server,
+	uint32_t mode_width,
+	uint32_t mode_height,
+	unsigned rotation)
+{
+	struct kwl_compose *compose;
+	uint32_t width;
+	uint32_t height;
+
+	/* The logical size: the mode on its side at a quarter turn. */
+	kwl_rotate_size(rotation, mode_width, mode_height, &width, &height);
+
+	/* The output's mode and angle, once its device is open. */
+	compose = server->compose;
+	if (compose != NULL) {
+		compose->mode_width = mode_width;
+		compose->mode_height = mode_height;
+		compose->rotation = rotation;
+	}
+
+	/* The desktop's size, which the windows, the plane and wl_output take. */
+	server->width = width;
+	server->height = height;
+}
+
+/*
+ * Gives what the output shows now (WS217): its logical size, the angle
+ * chosen and the angle shown, and how it is shown.  Without the device
+ * open, only the size.
+ */
+void
+kwl_output_state(
+	struct kwl_server *server,
+	struct kwl_rotate_state *state)
+{
+	struct kwl_compose *compose;
+
+	/* The logical size. */
+	memset(state, 0, sizeof(*state));
+	state->width = server->width;
+	state->height = server->height;
+
+	/* The angles, once the device is open. */
+	compose = server->compose;
+	if (compose == NULL)
+		return;
+	state->selected = compose->rotation_selected;
+	state->rotation = compose->rotation;
+	state->scanout = compose->scanout_rotation;
+	state->turn = compose->turn_rotation;
+}
+
+/*
+ * Takes the steps of an output opened (again, or on another display) from
+ * what it showed when it last opened or turned (WS217, design 4.6 B and
+ * review-4 C7): the pair of the logical size and the angle shown is
+ * compared, the desktop fitted to a new size and the clients told, and a
+ * new angle drawn again everywhere and logged (the input's mapping follows
+ * it from ws217-p003, Settings from p004).  The opening made the surface
+ * and the turn's images itself.  What the output shows is kept for the
+ * next opening.  Returns the steps (KWL_ROTATE_STEP_*).
+ */
+unsigned
+kwl_output_rotated(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+	struct kwl_rotate_state after;
+	char names[64];
+	unsigned steps;
+
+	/* What the output shows now, against what it showed when it last opened. */
+	compose = server->compose;
+	kwl_output_state(server, &after);
+	steps = kwl_rotate_steps(&compose->opened, &after, KWL_ROTATE_MODE_OPEN);
+	compose->opened = after;
+	compose->opened_steps = steps;
+
+	/* The desktop fitted to another logical size (the look's images, the windows, the pointer), and the clients told. */
+	if ((steps & KWL_ROTATE_STEP_RESIZED) != 0U) {
+		output_resized(server, 1U);
+		kwl_outputs_changed(server);
+	}
+
+	/* Another angle moves every point of the output: everything is drawn again, and the tests read it. */
+	if ((steps & KWL_ROTATE_STEP_ROTATED) != 0U) {
+		server->dirty = 1;
+		output_steps_name(steps, names, sizeof(names));
+		printf("KWL OUTPUT rotate key=%s rotation=%u selected=%u scanout=%u turn=%u width=%u height=%u mode=%ux%u steps=%s by=open\n",
+		    compose->display_name, after.rotation, after.selected, after.scanout, after.turn, after.width, after.height,
+		    compose->mode_width, compose->mode_height, names);
+	}
+
+	/* Succeeded: the steps taken. */
+	return steps;
 }
 
 /*
@@ -655,16 +774,21 @@ output_fail_back(
 	return 0;
 }
 
-/* Fits the desktop to an output of a new size: the look's images, the windows, the pointer. */
+/*
+ * Fits the desktop to an output of a new size: the look's images (unless
+ * the caller made them at the new size already, WS217's rotation), the
+ * windows, the pointer.
+ */
 static void
 output_resized(
-	struct kwl_server *server)
+	struct kwl_server *server,
+	unsigned glass_rebuild)
 {
 	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
 	int error;
 
 	/* The look's output-sized images. */
-	if (server->glass) {
+	if (server->glass && glass_rebuild) {
 		error = kwl_glass_resize(server);
 		if (error != 0)
 			printf("KWL OUTPUT resize glass errno=%d\n", error);
@@ -705,4 +829,40 @@ output_pointer_clamp(
 		*x = (int32_t)outputs[KWL_PLANE_ANCHOR].width - 1;
 	if (*y >= (int32_t)outputs[KWL_PLANE_ANCHOR].height)
 		*y = (int32_t)outputs[KWL_PLANE_ANCHOR].height - 1;
+}
+
+/* Names the steps for the log ("turn|rotated|resized"), or "none". */
+static void
+output_steps_name(
+	unsigned steps,
+	char *text,
+	size_t size)
+{
+	static const char *const names[] = { "reopen", "turn", "rotated", "resized", "save" };
+	const char *bar;
+	size_t used;
+	unsigned index;
+	int written;
+
+	/* Each step taken, joined by bars. */
+	text[0] = '\0';
+	used = 0U;
+	for (index = 0U; index < sizeof(names) / sizeof(names[0]); index++) {
+		/* A step not taken has no name in the log. */
+		if ((steps & (1U << index)) == 0U)
+			continue;
+
+		/* A bar before every name but the first. */
+		bar = "|";
+		if (used == 0U)
+			bar = "";
+		written = snprintf(text + used, size - used, "%s%s", bar, names[index]);
+		if (written < 0 || (size_t)written >= size - used)
+			return;
+		used += (size_t)written;
+	}
+
+	/* No step at all. */
+	if (used == 0U)
+		(void)snprintf(text, size, "none");
 }

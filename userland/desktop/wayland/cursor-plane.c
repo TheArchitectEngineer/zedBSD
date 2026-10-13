@@ -311,14 +311,22 @@ kwl_cursor_plane_update(
 		return;
 	}
 
+	/* The cursor as the frames would draw it. */
+	state = plane_state(server, &image, &hotspot_x, &hotspot_y);
+
+	/*
+	 * A composed cursor leaves the plane empty, published before a parked
+	 * thread looks at the box again, so that it never presents the image
+	 * of before the park once more (WS217, review-2 L24).
+	 */
+	if (state < 0)
+		plane_publish(server, plane, NULL, 0, 0, 0U);
+
 	/* A park for the game mode or a sleep's request ends with this pass. */
 	if (plane->parked) {
 		(void)kwl_cursor_thread_park(&server->cursor_box, 0U, 0U);
 		plane->parked = 0U;
 	}
-
-	/* The cursor as the frames would draw it. */
-	state = plane_state(server, &image, &hotspot_x, &hotspot_y);
 
 	/* Moving between the plane and composing redraws the frame with or without the cursor. */
 	shown = 0U;
@@ -329,11 +337,9 @@ kwl_cursor_plane_update(
 		server->dirty = 1;
 	}
 
-	/* A composed cursor leaves the plane empty. */
-	if (state < 0) {
-		plane_publish(server, plane, NULL, 0, 0, 0U);
+	/* A composed cursor leaves the plane empty (published above). */
+	if (state < 0)
 		return;
-	}
 
 	/* No cursor shows: the plane is empty where it was. */
 	if (state == 0) {
@@ -387,9 +393,9 @@ kwl_cursor_plane_hold(
 
 /*
  * Finds what the plane shows: 1 with an image and its hotspot, 0 for
- * nothing, -1 when the cursor must be composed (a drag, or an image the
- * plane cannot show).  The output the pointer is on is the cursor
- * thread's to judge, from the box.
+ * nothing, -1 when the cursor must be composed (a drag, an image the
+ * plane cannot show, or a rotated output).  The output the pointer is on
+ * is the cursor thread's to judge, from the box.
  */
 static int
 plane_state(
@@ -401,8 +407,15 @@ plane_state(
 	struct kwl_cursor_plane *plane;
 	int state;
 
-	/* The cursor as the frames would draw it. */
+	/*
+	 * A rotated output composes the cursor (WS217): the plane is not
+	 * turned with the picture, by the hardware's 180 or the turn pass.
+	 */
 	plane = &server->compose->cursor_plane;
+	if (server->compose->rotation != KWL_ROTATE_0)
+		return -1;
+
+	/* The cursor as the frames would draw it. */
 	state = kwl_compose_cursor_source(server, image, hotspot_x, hotspot_y);
 	if (state <= 0)
 		return state;

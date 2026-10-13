@@ -182,6 +182,12 @@ scanout_facts(
 	facts->fullscreen = top->fullscreen;
 	facts->content_type = top->content_type;
 
+	/* The output's rotation: the display hardware's 180, the compositor's turn (WS217). */
+	if (server->compose != NULL) {
+		facts->scanout_rotation = server->compose->scanout_rotation;
+		facts->turn_rotation = server->compose->turn_rotation;
+	}
+
 	/* Its image: a client's GPU buffer (not shared memory) of the output's size, shown whole. */
 	if (top->current != NULL && top->current->shm == NULL)
 		facts->gpu_buffer = 1U;
@@ -284,8 +290,8 @@ scanout_enter(
 	kwl_compose_output_close(server);
 	server->windowed = 0;
 
-	/* The backend claims the display for the output's size. */
-	error = kl_backend_scanout_open(server->backend, server->width, server->height, &server->scanout);
+	/* The backend claims the display for its mode (the physical size, WS217). */
+	error = kl_backend_scanout_open(server->backend, server->compose->mode_width, server->compose->mode_height, &server->scanout);
 	if (error != 0) {
 		server->scanout = NULL;
 		server->scanout_refused = top;

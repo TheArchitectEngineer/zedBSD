@@ -165,6 +165,10 @@ kwl_heads_config_load(
 	/* Succeeded: the mode chosen. */
 	compose->display_mode = compose->config.mode;
 	printf("KWL DISPLAYS config mode=%u places=%u\n", compose->config.mode, compose->config.count);
+
+	/* The rotations the file keeps, and its rotate lines that were not one (WS217). */
+	if (compose->config.rotation_count != 0U || compose->config.rotation_dropped != 0U)
+		printf("KWL DISPLAYS config rotations=%u dropped=%u\n", compose->config.rotation_count, compose->config.rotation_dropped);
 }
 
 /*
@@ -660,7 +664,8 @@ kwl_displays_apply(
 /*
  * Describes the displays shown, a line each, for the tests' capture
  * channel (shot.c): "mode=M" first, then "output name=N width=W height=H
- * x=X y=Y" and one "head ..." line for each open head.  Returns the
+ * x=X y=Y rotation=R scanout=S turn=T" (the logical size and the angles,
+ * WS217) and one "head ..." line for each open head.  Returns the
  * text's length, or 0 when it does not fit `size`.
  */
 size_t
@@ -683,8 +688,9 @@ kwl_displays_describe(
 	mode = "extended";
 	if (compose->display_mode == KWL_DISPLAYS_MIRROR)
 		mode = "mirror";
-	written = snprintf(text, size, "mode=%s\noutput name=%s width=%u height=%u x=%ld y=%ld\n", mode, compose->display_name,
-	    server->width, server->height, (long)compose->output_x, (long)compose->output_y);
+	written = snprintf(text, size, "mode=%s\noutput name=%s width=%u height=%u x=%ld y=%ld rotation=%u scanout=%u turn=%u\n", mode,
+	    compose->display_name, server->width, server->height, (long)compose->output_x, (long)compose->output_y, compose->rotation,
+	    compose->scanout_rotation, compose->turn_rotation);
 	if (written < 0 || (size_t)written >= size)
 		return 0U;
 	used = (size_t)written;
@@ -726,6 +732,17 @@ kwl_output_view(
 		view->width = server->width;
 		view->height = server->height;
 		view->refresh = server->refresh;
+		view->mode_width = server->width;
+		view->mode_height = server->height;
+
+		/* The display's angle and physical mode, once the device is open (WS217). */
+		if (compose != NULL) {
+			view->rotation = compose->rotation;
+			view->mode_width = compose->mode_width;
+			view->mode_height = compose->mode_height;
+		}
+
+		/* Its place in the extended plane. */
 		if (compose != NULL && compose->display_mode == KWL_DISPLAYS_EXTENDED) {
 			view->x = compose->output_x;
 			view->y = compose->output_y;
@@ -742,10 +759,12 @@ kwl_output_view(
 	if (!shown->open)
 		return ENOENT;
 
-	/* Its own size; in the mirror mode the desktop at the origin. */
+	/* Its own size, unrotated (a head's rotation is ws217-p005's); in the mirror mode the desktop at the origin. */
 	view->width = shown->width;
 	view->height = shown->height;
 	view->refresh = shown->refresh;
+	view->mode_width = shown->width;
+	view->mode_height = shown->height;
 	if (compose->display_mode == KWL_DISPLAYS_EXTENDED) {
 		view->x = shown->x;
 		view->y = shown->y;
@@ -1197,12 +1216,12 @@ heads_record_mirror(
 		    VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
 		/* The whole of it into the fitted rectangle. */
-		kwl_displays_fit(compose->output.width, compose->output.height, head->output.width, head->output.height, &fitted);
+		kwl_displays_fit(compose->target_width, compose->target_height, head->output.width, head->output.height, &fitted);
 		memset(&blit, 0, sizeof(blit));
 		blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		blit.srcSubresource.layerCount = 1U;
-		blit.srcOffsets[1].x = (int32_t)compose->output.width;
-		blit.srcOffsets[1].y = (int32_t)compose->output.height;
+		blit.srcOffsets[1].x = (int32_t)compose->target_width;
+		blit.srcOffsets[1].y = (int32_t)compose->target_height;
 		blit.srcOffsets[1].z = 1;
 		blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		blit.dstSubresource.layerCount = 1U;
@@ -1259,7 +1278,7 @@ heads_record_extended(
 	clear.color.float32[3] = 1.0f;
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	pass.renderPass = compose->pass;
+	pass.renderPass = kwl_compose_target_pass(compose, (unsigned)(head - compose->heads) + 1U, 0U);
 	pass.framebuffer = head->framebuffers[head->image];
 	pass.renderArea.extent.width = head->output.width;
 	pass.renderArea.extent.height = head->output.height;

@@ -101,8 +101,8 @@ main(
 	server.repeat_rate = 25;
 	server.repeat_delay_ms = 400;
 	server.ime_method = 1;
-	server.width = 320;
-	server.height = 240;
+	server.size_width = 320;
+	server.size_height = 240;
 
 	/* The session starts on the middle desktop, the others to its left and right (ws181-p006). */
 	server.desktop = KWL_DESKTOP_START;
@@ -137,9 +137,12 @@ main(
 	/* Reads the command line; a mistake ends the run with the usage. */
 	error = parse_options(&server, count, arguments);
 	if (error != 0) {
-		fprintf(stderr, "usage: wayland [--socket=/path] [--width=N] [--height=N] [--testing [--timeout=seconds] [--max-frames=N]] [--log-frames] [--no-layer-cache] [--keyboard-blur] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.png|.jpg] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
+		fprintf(stderr, "usage: wayland [--socket=/path] [--width=N] [--height=N] [--rotate=0|90|180|270] [--testing [--timeout=seconds] [--max-frames=N]] [--log-frames] [--no-layer-cache] [--keyboard-blur] [--glass] [--font=/path] [--fallback-font=/path] [--wallpaper=/path.png|.jpg] [--window-opacity=1..100] [--desktop-client=COMMAND|none] [--desktop-token=TOKEN] [--session [--control-fd=N] [--lock-idle=seconds] | --greeter --auth-fd=N]\n");
 		return 2;
 	}
+
+	/* The desktop's size until the display is known: the size asked for, unrotated (WS217). */
+	kwl_output_size_set(&server, server.size_width, server.size_height, KWL_ROTATE_0);
 
 	/* A login session locks after ten minutes without input unless told otherwise (ws035-p102). */
 	if (server.session && !server.lock_idle_given)
@@ -387,6 +390,8 @@ parse_options(
 	int index;
 	int match;
 	int error;
+	int differs;
+	int valid;
 
 	/* Each option is independent; the ones that bear on the role are only noted (role.c). */
 	memset(&request, 0, sizeof(request));
@@ -416,7 +421,7 @@ parse_options(
 				return error;
 
 			/* Publish a positive bounded width only after parsing succeeds. */
-			server->width = (uint32_t)number;
+			server->size_width = (uint32_t)number;
 			server->size_given = 1;
 			continue;
 		}
@@ -430,8 +435,31 @@ parse_options(
 				return error;
 
 			/* Publish a positive bounded height only after parsing succeeds. */
-			server->height = (uint32_t)number;
+			server->size_height = (uint32_t)number;
 			server->size_given = 1;
+			continue;
+		}
+
+		/* A test's rotation of the output, over displays.conf's (WS217): one of the four angles. */
+		match = strncmp(argument, "--rotate=", 9);
+		if (match == 0) {
+			/* 0 is an angle (unsigned_option refuses a zero); any other number is read bounded. */
+			differs = strcmp(argument + 9, "0");
+			number = 0U;
+			if (differs != 0) {
+				error = unsigned_option(argument + 9, 270, &number);
+				if (error != 0)
+					return error;
+			}
+
+			/* A number that is not an angle is a mistake. */
+			valid = kwl_rotate_valid((unsigned)number);
+			if (!valid)
+				return EINVAL;
+
+			/* Kept for the output's opening, which tells whether the display can take it. */
+			server->rotate_option = (unsigned)number;
+			server->rotate_given = 1;
 			continue;
 		}
 

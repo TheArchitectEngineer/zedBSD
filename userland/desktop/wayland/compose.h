@@ -359,6 +359,45 @@ struct kwl_compose {
 	VkFence fence;
 	VkSemaphore acquired;
 	struct vkdemo_display output;
+	/*
+	 * The output's rotation (WS217): the physical mode of its display,
+	 * which the swapchain, the mode's refresh and the game mode's claim
+	 * take (the logical size, server->width and height, is this mode
+	 * turned by the rotation; kwl_output_size_set writes both); the angle
+	 * the user chose (displays.conf, or --rotate; 0 for an angle the
+	 * display cannot take, the file's line kept); the angle shown; how it
+	 * is shown (the display hardware's angle, the scanout's, and the
+	 * compositor's turn pass's); whether the display's hardware turns the
+	 * picture by 180 (not read yet: ws217-p010); the angles the display may
+	 * take (KWL_ROTATION_*) and why not the others (KWL_ROTATE_WHY_*).
+	 * They change only while the output is closed, at its opening, or with
+	 * the render thread parked.
+	 */
+	uint32_t mode_width;
+	uint32_t mode_height;
+	unsigned rotation_selected;
+	unsigned rotation;
+	unsigned scanout_rotation;
+	unsigned turn_rotation;
+	unsigned hw180;
+	unsigned rotations;
+	unsigned rotate_why;
+	/*
+	 * The logical size of the image the anchor's frames are drawn into
+	 * (WS217): the scene's, the damage's, the layers', the backdrop's and
+	 * the mirror's source size.  It is the swapchain's while nothing turns
+	 * the picture (compose_targets sets it with the output's targets).
+	 */
+	uint32_t target_width;
+	uint32_t target_height;
+	/*
+	 * What the output showed when it last opened or turned (review-4 C7):
+	 * the logical size and the angles, which each opening compares the
+	 * new state with (kwl_output_rotated), and the steps the last opening
+	 * took.  compose_display sets the first, the size the look is made at.
+	 */
+	struct kwl_rotate_state opened;
+	unsigned opened_steps;
 	/* The swapchain images can be a copy's source (a test image's capture, ws173-p002). */
 	unsigned readback;
 	/* Cursor-free scene is optional and never replaces redraws after scene changes. */
@@ -646,6 +685,7 @@ VkDescriptorSet kwl_layers_anim_picture(struct kwl_server *server, float uv[4]);
 VkResult kwl_compose_set_get(struct kwl_compose *compose, VkDescriptorSet *result);
 void kwl_compose_set_put(struct kwl_compose *compose, VkDescriptorSet set);
 int kwl_output_switch(struct kwl_server *server, VkDisplayKHR target);
+VkRenderPass kwl_compose_target_pass(const struct kwl_compose *compose, unsigned slot, unsigned load);
 VkResult kwl_compose_display_read(struct kwl_server *server, VkDisplayKHR display, uint32_t *width, uint32_t *height, uint32_t *refresh, char *name, size_t size);
 
 /* Gives an image a second, linearly sampled descriptor set (compose.c). */

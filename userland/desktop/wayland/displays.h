@@ -34,6 +34,9 @@
  *   off=KEY                   a display the user turned off in the extended mode
  *                             (ws113-p014; the mirror shows it still, and it is
  *                             shown when no other display is connected)
+ *   rotate=KEY N              a display's rotation, clockwise in degrees: 90,
+ *                             180 or 270 (WS217; the key may hold spaces, N is
+ *                             the last word; 0 is not written)
  *
  * KEY is a display's persistent connector key (D-ID A2, the display's name,
  * "zedbsd-port-v1:pci:0000:00:02.0:hdmi:B").  Lines of other keys are left
@@ -74,6 +77,12 @@ struct kwl_display_rect {
 	uint32_t height;
 };
 
+/* A display's rotation (90, 180 or 270), by its key (WS217). */
+struct kwl_display_turn {
+	char key[KWL_DISPLAYS_KEY];
+	unsigned rotation;
+};
+
 /* A display's place in the extended mode, by its key. */
 struct kwl_display_place {
 	char key[KWL_DISPLAYS_KEY];
@@ -83,8 +92,10 @@ struct kwl_display_place {
 
 /*
  * The choice the file keeps: the mode, the mirror's anchor (empty: none),
- * the built-in panel's light when one was chosen, the places, and the
- * displays turned off (ws113-p014).
+ * the built-in panel's light when one was chosen, the places, the
+ * displays turned off (ws113-p014), and the displays' rotations with the
+ * number of rotate lines the reading dropped (WS217: not an angle, a key
+ * too long, one too many).
  */
 struct kwl_display_config {
 	unsigned mode;
@@ -95,6 +106,9 @@ struct kwl_display_config {
 	struct kwl_display_place places[KWL_DISPLAYS_PLACES];
 	unsigned off_count;
 	char off[KWL_DISPLAYS_PLACES][KWL_DISPLAYS_KEY];
+	unsigned rotation_count;
+	struct kwl_display_turn rotations[KWL_DISPLAYS_PLACES];
+	unsigned rotation_dropped;
 };
 
 void kwl_displays_fit(uint32_t source_width, uint32_t source_height, uint32_t width, uint32_t height, struct kwl_display_rect *fitted);
@@ -109,5 +123,8 @@ int kwl_displays_find(const struct kwl_display_config *config, const char *key);
 int kwl_displays_set(struct kwl_display_config *config, const char *key, int32_t x, int32_t y);
 int kwl_displays_is_off(const struct kwl_display_config *config, const char *key);
 int kwl_displays_set_off(struct kwl_display_config *config, const char *key, unsigned off);
+int kwl_displays_parse_rotation(const char *text, char *key, size_t size, unsigned *rotation);
+unsigned kwl_displays_rotation(const struct kwl_display_config *config, const char *key);
+int kwl_displays_set_rotation(struct kwl_display_config *config, const char *key, unsigned rotation);
 
 #endif
