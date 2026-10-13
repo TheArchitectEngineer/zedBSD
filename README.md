@@ -1,5 +1,7 @@
-zedBSD and Keiland Desktop
-==========================
+zedBSD and Keiland Touch Desktop
+================================
+
+It is changing the way computing is.
 
 <div align="center">
   <hr>
