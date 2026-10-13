@@ -37,7 +37,7 @@ app が libkeiland に PDF の場所を渡して印刷を依頼すると、netwo
 | [ws145-p002](phase002/phase.md) | keiland-printd（約束の行・spool・IPP・LPD・寿命）と host の符号化・通し・寿命の試験 | cleared（2026-10-07、T1-318） | p001 |
 | [ws145-p003](phase003/phase.md) | backend の print（設定の file・printd の起動と通信・状態遷移）、compositor の printers の object、protocol version 17、libkeiland の口（KL_VERSION 56 の案）、`printtest`、host の backend の試験 | cleared（2026-10-07、T1-318） | p002 |
 | [ws145-p004](phase004/phase.md) | Settings の Printers の頁（IP address・port・protocol、詳しい設定の path・queue） | cleared（2026-10-07、T1-318） | p003 |
-| [ws145-p005](phase005/phase.md) | Linux・FreeBSD の build と install と Debian の QEMU+KVM・FreeBSD 15 の guest の確認 | in-progress — test-wait（2026-10-13 P2 q953: 規則を足し Linux の build・install・host 試験済み、guest は T1） | p003 |
+| [ws145-p005](phase005/phase.md) | Linux・FreeBSD の build と install と Debian の QEMU+KVM・FreeBSD 15 の guest の確認 | in-progress — test-wait（2026-10-13 P2 q953: 規則を足し Linux の build・install・host 試験済み、guest は T1） | cleared（2026-10-14 Q1 判定: T1-587 の Debian で IPP・LPD の印刷と printd、FreeBSD は build・install まで（GPU の無い guest で compositor が起きず印刷は未実施、制限として記録）） |
 | ws145-p006 | 全文の規約の確認と回帰、T1 の QEMU の試験（最後） | planning | p002〜p005 |
 | （別の WS の案） | 変換の filter（PDF → PWG raster・PostScript・PCL）。単一目標の外。D4 の機種が PDF を受けなければ受け入れの前に | — | p002 |
 | [ws145-p007](phase007/phase.md) | PDF Viewer の File > Print（D6: 含める） | cleared（2026-10-07、T1-318） | p003 |

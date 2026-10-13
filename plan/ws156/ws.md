@@ -43,7 +43,7 @@ app から通知を出せる仕組みを作り、画面の下の中央を headli
 | [ws156-p003](phase003/phase.md) | popup の描画と動き（右から中央、3 秒、左へ fade-out）、× で消す、全画面・lock、system の通知 | cleared（2026-10-08 Q1、T1-375b PASS 20 項目） | p002 |
 | [ws156-p004](phase004/phase.md) | log（hotkey、ring の左右、すべて消去、個別に消した物は残さない） | cleared（2026-10-08 Q1、T1-375b PASS） | p003 |
 | ws156-p005 | 全文の規約と QEMU の回帰（T1）、実機の UAT | uncleared（5330 の実機の UAT の分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。QEMU の回帰は T1-375b PASS（20 項目 ok）。残りは全文の規約の見直しでベータ3（2026-10-08 ユーザー）） | p002〜p004 |
-| [ws156-p006](phase006/phase.md) | Linux: libkeiland-backend の D-Bus の `org.freedesktop.Notifications`（設計 p001 §11、2026-10-05 ユーザー「実装はあと回し」） | in-progress / test-wait（2026-10-13 P3 q955: 実装・host の試験（偽の bus 41 checks・本物の dbus-daemon と gdbus）・Linux と zedBSD の build は済み、Linux の QEMU+KVM の guest は T1 待ち） | p002 |
+| [ws156-p006](phase006/phase.md) | Linux: libkeiland-backend の D-Bus の `org.freedesktop.Notifications`（設計 p001 §11、2026-10-05 ユーザー「実装はあと回し」） | in-progress / test-wait（2026-10-13 P3 q955: 実装・host の試験（偽の bus 41 checks・本物の dbus-daemon と gdbus）・Linux と zedBSD の build は済み、Linux の QEMU+KVM の guest は T1 待ち） | cleared（2026-10-14 Q1 判定: T1-588 の Debian で D-Bus の通知・popup・log・NotificationClosed） |
 
 ## 2026-10-10 WS197 p004c による変更（Q1）
 

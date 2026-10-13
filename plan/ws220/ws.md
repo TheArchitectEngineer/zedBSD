@@ -32,7 +32,7 @@ Related Milestones: なし
 | [p002](phase002/phase.md) | 正しさ: sequence の剰余の比較（wrap の後に ACK を全部捨てる）、SND.WL1/WL2、重なりのある segment、諦めの時間（R2: data 100 s・SYN 180 s）、RST の窓の検査と同期済みの SYN への ACK（RFC 5961）、S2（net.tcpstats の sequence は superuser だけ）、測りの道具の直し（review S1・S3・S8） | in-progress（2026-10-13 P4 c13a8413f、実装・模型・build 済み、T1 の QEMU 待ち） |
 | [p003](phase003/phase.md) | 送りの packet の不足: device が拒んだ data の segment で書き手が 10 ms 眠らない、未送信を順に出す、ACK の出し直し | cleared（2026-10-13 Q1 判定: 同じ session の基線と比べる基準（T1-581）で k2＝p003＋p004 が k1＝p002 より全部の値で良い、損失のある時は T1-577 で大きく改善。T1-577 の T1-574 との差は環境） |
 | [p004](phase004/phase.md) | RTT の推定と RTO（RFC 6298）: SRTT・RTTVAR、Karn、RTO = SRTT + max(G, 4·RTTVAR, 200 ms)、SYN の 3 s | cleared（2026-10-13 Q1 判定: T1-581 と T1-577（features=0x22・rtt_samples・rto_ms 203〜204・backoff 0）、同じ session の基線の基準） |
-| [p005](phase005/phase.md) | fast retransmit と NewReno の回復、窓 0 の probe と FreeBSD と同じ persist（`TCP_MAXUNACKTIME`）、窓が開いた時の再送を外す | in-progress（T1-581 の損失 0 は k3 が最良（up stall 4 ms）、損失のある時の fast_retransmits の確かめを T1-585 で） |
+| [p005](phase005/phase.md) | fast retransmit と NewReno の回復、窓 0 の probe と FreeBSD と同じ persist（`TCP_MAXUNACKTIME`）、窓が開いた時の再送を外す | cleared（2026-10-14 Q1 判定: T1-585 で features=0x32、損失 0.1 ％ の up 3.66 MB/s と fast_retransmits 221、損失 1 ％ 完走 2.89 MB/s、60 秒を超える損失 0 の転送で速さが落ちない（後半/前半 97〜100 ％）） |
 | p006（案） | 輻輳の制御（cwnd）と byte の送りの buffer、相手の MSS、Nagle | planning |
 | p007（案） | 受けの窓の約束、受け側の SWS 回避、window scale、delayed ACK | planning |
 | p008（案） | 受けの SACK（RFC 2018） | planning（候補） |
