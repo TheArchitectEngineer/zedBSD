@@ -31,3 +31,11 @@ Related Milestones: なし
 ## ユーザーの決定（2026-10-13、p001 の後）
 
 ユーザー（原文）:「はい、推奨でいいです。」→ 1. p002 は出典の記入、README:164 と API-PROVENANCE（出典を Khronos に）の直し、gpu-op.h の名前の無い数値 3 つ（1000384002・1000384005・reply の flag 1）に名前、に縮める。2. zedBSD 自身の "venus" の名前は付け直さない。3. comment の中の Mesa の command の名前は引用として残し出典を書き足す。4. capset の配置は値だけを使い出典を書き、license の表示はしない（今のまま）。
+
+## ユーザーの指示（2026-10-13、p002 の後）
+
+ユーザー（原文）:「コメントです。gpu-op.hでは、OPごとに詳細な説明をいれてください。でないと、Venusの翻案になってしまいます。」→ 新しい段 p003: `include/uapi/gpu-op.h` の全部の op（145）に、op ごとの詳しい説明の comment を書く。WS218（Intel AX211）と同じ方針で、番号の出典（venus-protocol の XML の file と commit）に加えて、zedBSD の実装から分かった事実を書く: その op が何をするか、引数と reply の有無と形、zedBSD のどこ（libvulkan の関数、i915・bcm2711・venus の decoder や driver）で送り・受けるか、順序や制約、zedBSD で使わない op はその旨。他の OS の開発者にも役立つ資料の体裁にし、file の頭に「venus-protocol の XML を 1 次資料として番号を集め、zedBSD の実装から分かった使い方と意味を独自に書き加えた資料であって、翻案ではない」旨を書く。担当は次に空いた P。
+
+| Phase | 内容 | Status |
+| --- | --- | --- |
+| p003 | gpu-op.h の op ごとの詳しい説明（用途・引数・reply・zedBSD の送り手と受け手・順序・未使用）と file の頭の注記、build と試験 | planned |
