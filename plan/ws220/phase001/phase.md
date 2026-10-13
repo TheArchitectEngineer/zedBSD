@@ -166,6 +166,8 @@ QEMU の `tcp-stream-series.sh`（損失 0・0.1・1 %）、最後に実機。�
 
 ## 5. 受け入れの目標の決め方
 
+2026-10-13 p002: 下の 3・4 の測り方（停止の細かさ、頭と尻、路の上限の自己参照、wrap の 4 GB の run）は review S8 に従い [p002 §5](../phase002/phase.md) の改訂案に置き換える。
+
 1. **基線**: p001 の T1 の測り（下の依頼 A）で、今の kernel の QEMU（ECM・tap）の down・up の 1 GB の平均・最低・中央値と counter を得る。
    実機（5330 の RTL8156 NCM 2.5 Gb/s の link、Pi 4 の GENET 1 Gb/s）も同じ script で（依頼 B）。
 2. **路の上限**: 同じ路で TCP 以外が律速の値を分ける。QEMU は ECM の driver の上限（down は既存の 8〜11 MB/s が目安、up は今の 8 KB の ring で
