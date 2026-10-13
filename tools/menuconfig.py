@@ -87,10 +87,12 @@ BASE_GROUPS = ("base", "comp")
 DESKTOP_GROUPS = ("desktop",)
 FIRMWARE_GROUPS = ("firmware",)
 
-# The Retro menu, the first entry of the main menu on every CPU (2026-10-14
-# user, WS232: "アーキにかかわらずmenuconfigのトップにRetroというメニューを
-# 追加して、Xzed, zwm, zshell, ztermを追加してほしいです。"): these X11
-# programs by name, in this order, each shown as its command's name.
+# The Retro menu, on every CPU (2026-10-14 user, WS232: "アーキにかかわらず
+# menuconfigのトップにRetroというメニューを追加して、Xzed, zwm, zshell, zterm
+# を追加してほしいです。"), the main menu's entry right after Base (2026-10-14
+# user: "Retroが一番上に来てます。Baseの下にしてください。", "全部の CPU で
+# Base の下"): these X11 programs by name, in this order, each shown as its
+# command's name.
 RETRO_PROGRAMS = ("Xzed", "zwm", "zshell", "zterm")
 
 # The CPUs the Desktop (Keiland, Vulkan, Wayland) is not built for
@@ -199,19 +201,49 @@ def driver_defaults(platform: str) -> dict[str, str]:
     return values
 
 
-def driver_groups() -> list[tuple[str, list[list[str]]]]:
-    """The shared functional categories, each containing its driver rows."""
-    groups = {}
+def platform_driver_rows(key: str, platform: str) -> list[list[str]]:
+    """The rows a platform's entry in config/drivers/menu.list stands for:
+    "fixed" for the always-built drivers whose rows name the platform (not
+    those every platform builds), or one driver key with the label of the
+    row that names the platform."""
+    found = []
+    for path in all_option_files():
+        for row in read_rows(path, 6):
+            if row[3] == "*" or not applies(row[3], platform):
+                continue
+            if key == "fixed" and row[1] == "fixed":
+                found.append(row)
+            elif row[0] == key and row[1] == "bool":
+                return [row]
+    if not found:
+        raise SystemExit(f"config/drivers/menu.list: {platform} has no driver {key}")
+    return found
+
+
+def driver_groups(platform: str) -> list[tuple[str, list[list[str]]]]:
+    """The functional categories on a platform, each containing its driver
+    rows.  The shared rows of config/drivers/menu.list place every
+    configurable driver whatever the CPU; the platform's own rows move its
+    drivers, the fixed ones too, into a category ahead of the shared rows
+    there and out of the shared category they were in."""
+    groups: dict[str, list[list[str]]] = {}
     assigned = {}
-    for title, keys in read_rows(CONFIG_DIR / "drivers" / "menu.list", 2):
+    moved = set()
+    for title, targets, keys in read_rows(CONFIG_DIR / "drivers" / "menu.list", 3):
         groups.setdefault(title, [])
+        if targets != "*" and not applies(targets, platform):
+            continue
         for key in keys.split():
-            if key in assigned:
+            if key in (assigned if targets == "*" else moved):
                 raise SystemExit(f"driver {key} is assigned to more than one category")
-            assigned[key] = title
+            if targets == "*":
+                assigned[key] = title
+                continue
+            moved.add(key)
+            groups[title].extend(platform_driver_rows(key, platform))
     for row in driver_rows():
-        title = assigned.get(row[0], "Platform")
-        groups.setdefault(title, []).append(row)
+        if row[0] not in moved:
+            groups.setdefault(assigned.get(row[0], "Platform"), []).append(row)
     return [(title, rows) for title, rows in groups.items() if rows]
 
 
@@ -583,23 +615,29 @@ def program_section(screen, values: dict[str, object], title: str,
 
 def driver_options(screen, values: dict[str, object], rows: list[list[str]],
                    title: str) -> None:
-    """Toggles existing driver build options from the shared catalog."""
+    """Toggles existing driver build options from the shared catalog; an
+    always-built (fixed) driver is shown checked and stays built."""
     selected = 0
     while True:
-        labels = [("[*]" if values.get(row[0]) == "y" else "[ ]") + " " + row[2]
-                  for row in rows]
+        labels = [("[*]" if row[1] == "fixed" or values.get(row[0]) == "y"
+                   else "[ ]") + " " + row[2] for row in rows]
         choice = choose(screen, title, labels + ["Back"],
                         target_label(values), selected)
         if choice is None or choice == len(rows):
             return
         selected = choice
+        if rows[choice][1] == "fixed":
+            message(screen, title, [rows[choice][2], "",
+                                    "is always built into the kernel."],
+                    target_label(values))
+            continue
         key = rows[choice][0]
         values[key] = "n" if values.get(key) == "y" else "y"
 
 
 def drivers_menu(screen, values: dict[str, object]) -> None:
     """Drivers: Disk, Input, GPU, Audio, Ethernet, WiFi, USB and Platform."""
-    groups = driver_groups()
+    groups = driver_groups(str(values["ZEDBSD_PLATFORM"]))
     selected = 0
     while True:
         choice = choose(screen, "Drivers", [title for title, _rows in groups] + ["Back"],
@@ -801,12 +839,12 @@ def tui(screen, values: dict[str, object], output: Path) -> None:
     curses.curs_set(0)
     screen.keypad(True)
     every_entry = [
-        ("Retro", "retro"),
         ("CPU / Board", "cpu-board"),
         ("Boot Option", "boot"),
         ("Drivers", "drivers"),
         ("Development", "development"),
         ("Base", "base"),
+        ("Retro", "retro"),
         ("Desktop", "desktop"),
         ("Packages", "packages"),
         ("Firmware", "firmware"),

@@ -8,15 +8,18 @@ Primary Milestone: MG002
 Related Milestones: なし
 Objectives: O1
 Parent: [Master](../master.md)
-Queue: q982（p001、P1）
+Queue: q982（p001、P1）、p003（2026-10-14 P1）
 Target: ベータ2（18 時のコードフリーズ）
-Resume point: なし（completed）。
+Resume point: なし（completed）。p003（Retro を Base の下へ、PC-98 の driver を Drivers > Platform へ）は host 試験 PASS、Q1 の確認待ち。
 <!-- awesome-plan-current:end -->
 
 ## 原文（2026-10-14 ユーザー）
 
 「make menuconfigで、CPU i386, Board PC-9800, Board PC/ATを追加してほしいです。さらに、アーキにかかわらずmenuconfigのトップにRetroというメニューを追加して、Xzed, zwm, zshell, ztermを追加してほしいです。」
 （2026-10-09 の決定「X11とTestsはメニューから削除し、直接記述のみにする」のうち、X11 の 4 つの program はこの指示で Retro の menu に戻る。Tests は直接記述のまま）
+
+（p003、2026-10-14 ユーザー）「make menuconfigで、PC-98の場合、Retroが一番上に来てます。Baseの下にしてください。あと、PC98のマウスとかSCSIとかすべてのドライバは、DriversのPlatformに入れてください」、続けてクリック「全部の CPU で Base の下」。
+（目標 2 の「一番上」はこの指示で「Base の直後」に変わる）
 
 ## 目標
 
@@ -25,6 +28,8 @@ Resume point: なし（completed）。
 3. menuconfig の host 試験（`make menuconfig-host-test`）を足して PASS。i386 pcat・pc98 で config.mk を書き出し、`make -n` で解決すること（build はできれば）。
 4. （2026-10-14 ユーザー、Q1 経由「WS232はconfig/ci/config-pc98.mkがビルドを通るように修正をお願いします。」）`config/ci/config-pc98.mk` で普通の target（world、できれば image）が build を通る。WS227 で 4 つの library を Desktop へ移した影響と Retro の program を含めて失敗を直す。toolchain は変えない。
 5. （2026-10-14 ユーザー、Q1 経由「WS232は ~/qemu-pc98にあるqemuを使って起動できるところまでお願いします。」）pc98 の image が `~/qemu-pc98/build/qemu-system-i386`（PC-98 の machine）で login prompt まで起動する。QEMU は担当が自分で起動せず、T1 への依頼の文（command line・machine・disk の付け方・PNG の判定）を phase.md に書き、Q1 が T1 に流させる。
+6. （p003）主の menu で、全部の CPU で Retro を Base の直後に置く。
+7. （p003）PC-9800 の時、Drivers > Platform に PC-98 の driver を全部入れる（PC-98 以外の CPU の表示は変えない）。PC-98 の SCSI の driver は tree に無く、作らない。
 
 ## 決定
 
@@ -39,3 +44,4 @@ Resume point: なし（completed）。
 | --- | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | i386 の CPU と board、Retro の menu、pc98 の build・起動 | 1〜5 | in-progress | 無し |
 | [p002](phase002/phase.md) | 規約の全文の見直し（menuconfig・rtld の #if） | 規約 | cleared | p001 |
+| [p003](phase003/phase.md) | Retro を全 CPU で Base の直後へ、PC-98 の driver を全部 Drivers > Platform へ | 6・7 | cleared（Q1 の確認待ち） | p001 |

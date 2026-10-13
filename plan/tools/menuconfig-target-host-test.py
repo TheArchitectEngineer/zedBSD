@@ -180,7 +180,7 @@ def check_menu_layout() -> None:
         menu.tui(_FakeScreen(), menu.defaults(), Path("/nonexistent"))
     finally:
         menu.choose, menu.save, menu.curses.curs_set = real_choose, real_save, real_cursor
-    expected = ["Retro", "CPU / Board", "Boot Option", "Drivers", "Development", "Base", "Desktop",
+    expected = ["CPU / Board", "Boot Option", "Drivers", "Development", "Base", "Retro", "Desktop",
                 "Packages", "Firmware", "", "Build boot image", "", "Exit"]
     if not shown or shown[0][1] != expected:
         fail(f"the main menu is {shown[0][1] if shown else 'not shown'}, not {expected}")
@@ -262,8 +262,9 @@ def walk(function, answers: list, values: dict[str, object]) -> list[tuple[str, 
 
 def check_i386_and_retro() -> None:
     """WS232 (2026-10-14 user): the CPU i386 with the boards PC-9800 and
-    PC/AT, and Retro at the top of the main menu with Xzed, zwm, zshell and
-    zterm on every CPU.  On i386 the Desktop is left out by itself (2026-10-14
+    PC/AT, and Retro right after Base in the main menu ("Retroが一番上に来て
+    ます。Baseの下にしてください。", "全部の CPU で Base の下") with Xzed,
+    zwm, zshell and zterm on every CPU.  On i386 the Desktop is left out by itself (2026-10-14
     user: "i386 では Desktop を自動で外す"): its entry is not shown and its
     programs are not written, and switching back to x86_64 writes them
     again.  The configurations the menu writes for i386 PC/AT and PC-9800,
@@ -298,8 +299,9 @@ def check_i386_and_retro() -> None:
         shown = walk(lambda screen, v: menu.tui(screen, v, Path("/nonexistent")),
                      ["Retro", "[ ] Xzed", "[ ] zwm", "[ ] zshell", "[ ] zterm",
                       "Back", "Exit"], values)
-        if shown[0][1][0] != "Retro":
-            fail(f"Retro is not the top of the main menu on {platform}")
+        main_menu = shown[0][1]
+        if main_menu.index("Retro") != main_menu.index("Base") + 1:
+            fail(f"Retro is not right after Base in the main menu on {platform}: {main_menu}")
         if shown[-2] != ("Retro", ["[*] Xzed", "[*] zwm", "[*] zshell", "[*] zterm", "Back"]):
             fail(f"the Retro menu on {platform} is {shown[1]}, then {shown[-2]}")
         if not set(menu.RETRO_PROGRAMS) <= values["ZEDBSD_USER_PROGRAMS"]:
@@ -381,6 +383,53 @@ def check_i386_and_retro() -> None:
         resolves(path, platform)
 
 
+def check_pc98_platform_drivers() -> None:
+    """WS232 (2026-10-14 user: "PC98のマウスとかSCSIとかすべてのドライバは、
+    DriversのPlatformに入れてください"): on the PC-9800, Drivers > Platform
+    holds every PC-98 driver, the always-built ones shown checked and kept
+    as they are, ahead of the shared rows, and GPU and Ethernet no longer
+    hold the PC-98's graphics and LGY-98; on the other CPUs the categories
+    are as they were."""
+    fixed = [row[2] for row in menu.read_rows(
+        menu.CONFIG_DIR / "drivers" / "architecture" / "pc98.drivers", 6)
+        if row[1] == "fixed"]
+    pc98 = [f"[*] {label}" for label in fixed] + [
+        "[*] Cirrus Core Graph graphics", "[ ] LGY-98 Ethernet adapter"]
+    shared = ["[*] ACPI AML interpreter, events and Embedded Controller",
+              "[*] BCM2711 Bluetooth: Raspberry Pi 4 onboard (PL011 UART)"]
+    if "PC-98 bus mouse" not in fixed:
+        fail(f"pc98.drivers does not name the bus mouse: {fixed}")
+    values = menu.defaults()
+    values["ZEDBSD_PLATFORM"] = "pc98"
+    menu.normalize(values)
+    values.update({"CONFIG_DRIVER_GRAPHICS": "y", "CONFIG_DRIVER_LGY98": "n",
+                   "CONFIG_DRIVER_ACPI": "y", "CONFIG_DRIVER_BCM2711_BT": "y"})
+    shown = walk(menu.drivers_menu,
+                 ["Platform", "[ ] LGY-98 Ethernet adapter", "[*] PC-98 bus mouse",
+                  "Back", "GPU", "Back", "Ethernet", "Back", "Back"], values)
+    if shown[1] != ("Platform", pc98 + shared + ["Back"]):
+        fail(f"the PC-9800's Platform is {shown[1]}")
+    if values["CONFIG_DRIVER_LGY98"] != "y":
+        fail("Platform did not turn the LGY-98 on")
+    if shown[3] != ("Platform", ["PC-98 bus mouse", "", "is always built into the kernel."]):
+        fail(f"choosing a fixed driver showed {shown[3]}")
+    if "-" in values:
+        fail("choosing a fixed driver set a value")
+    for title, index in (("GPU", 6), ("Ethernet", 8)):
+        if shown[index][0] != title or any(
+                "Cirrus" in label or "Framebuffer" in label or "LGY-98" in label
+                for label in shown[index][1]):
+            fail(f"the PC-9800's {title} still holds a Platform driver: {shown[index]}")
+
+    for platform in ("amd64", "i386", "rpi4", "sun4u", "x68k"):
+        groups = dict(menu.driver_groups(platform))
+        if [row[2] for row in groups["Platform"]] != [label[4:] for label in shared]:
+            fail(f"the Platform of {platform} changed: {groups['Platform']}")
+        if "CONFIG_DRIVER_GRAPHICS" not in {row[0] for row in groups["GPU"]} or \
+                "CONFIG_DRIVER_LGY98" not in {row[0] for row in groups["Ethernet"]}:
+            fail(f"GPU or Ethernet of {platform} changed")
+
+
 def check_build_progress() -> None:
     """Build boot image on a stand-in tree whose disk-image has three steps:
     the progress counts the targets make's trace names, and the result says
@@ -435,6 +484,7 @@ def main() -> None:
     check_fonts_menu()
     check_menu_layout()
     check_i386_and_retro()
+    check_pc98_platform_drivers()
     check_build_progress()
 
     template = menu.defaults()
@@ -566,7 +616,8 @@ def main() -> None:
     print("MAC-T001 menuconfig round-trip: PASS "
           "(6 targets, 3 amd64 Variants, obsolete capacity removed, "
           "package requirements resolved, the WS193 menu, "
-          "i386 PC/AT and PC-9800 with Retro and without the Desktop)")
+          "i386 PC/AT and PC-9800 with Retro after Base and without the Desktop, "
+          "the PC-98 drivers under Platform)")
 
 
 if __name__ == "__main__":
