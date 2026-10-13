@@ -358,12 +358,16 @@ struct tcp_stats_header {
  * The state is the kernel's enum tcp_state (0 closed, 1 listen, 2 SYN
  * sent, 3 SYN received, 4 established, 5 FIN wait 1, 6 FIN wait 2, 7 close
  * wait, 8 last ACK, 9 time wait).  An IPv4 address is in the first 4 bytes
- * of its field, in network order.  backoff is how many times the oldest
- * outstanding segment has been resent; rto_ms is the timeout it waits now
- * (the connection's, doubled for each resend) and retransmit_in_ms how long
- * is left of it (0: no segment outstanding).  With TCP_STATS_HAVE_RTT,
- * srtt_us and rttvar_us are RFC 6298's smoothed round-trip time and its
- * variation (both 0 before the first sample; ws220-p004).
+ * of its field, in network order.  backoff is how many times the
+ * retransmission timeout is doubled: the timeouts since the last valid
+ * round-trip sample (ws220-p004); rto_ms is the timeout it waits now (the
+ * connection's, so doubled) and retransmit_in_ms how long is left of it
+ * (0: no segment outstanding).  With TCP_STATS_HAVE_RTT, srtt_us and
+ * rttvar_us are RFC 6298's smoothed round-trip time and its variation and
+ * rtt_samples how many samples they come from; while rtt_samples is 0 the
+ * two mean nothing (no sample yet, not a round trip of 0).  rtt_samples
+ * took the place of a reserved field of the same size (the layout and
+ * version are unchanged; an older kernel leaves it 0).
  * send_window is the window the peer last advertised; receive_window the
  * one this end last put in a segment.  send_next is the end of what was
  * handed to the device (RFC 9293's SND.NXT; segments queued behind a
@@ -402,7 +406,7 @@ struct tcp_stats_entry {
 	uint8_t remote_address[16];
 	uint16_t local_port;
 	uint16_t remote_port;
-	uint32_t reserved;
+	uint32_t rtt_samples;
 	uint32_t send_unacknowledged;
 	uint32_t send_next;
 	uint32_t send_window;

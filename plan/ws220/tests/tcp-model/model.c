@@ -26,6 +26,11 @@
  *             [--blackhole-at-ms T] [--connect-blackhole] [--second-writer]
  *             [--unresolved-at-ms T --unresolved-ms D] [--connect-unresolved]
  *             [--expect-in-order] [--expect-srtt-us LOW:HIGH] [--lose-first-syn]
+ *             [--ack-delay-ms D] [--writer-gap-ms G] [--delay-step-at-ms T --delay-step-us D]
+ *             [--reader-pause-at-ms T --reader-pause-ms D]
+ *             [--no-route-at-ms T --no-route-ms D]
+ *             [--expect-first-srtt-us LOW:HIGH] [--expect-first-rttvar-us LOW:HIGH]
+ *             [--expect-srtt-max-us N] [--expect-retransmits-max N] [--expect-stall-rto]
  *             [--quiet]
  *
  * --loss-ab is the share (percent) of the frames from A to B (the data) the
@@ -69,6 +74,25 @@
  * (ws220-p004) and that net.tcpstats gives it.  --lose-first-syn loses A's
  * first SYN, so the connection starts its data with RFC 6298's 3 seconds;
  * the line "connected" shows A's timeout then.
+ * ws220-p004 review-1: --ack-delay-ms D makes B acknowledge as a peer with
+ * delayed acknowledgements does: a pure acknowledgement is held up to D,
+ * and one that comes while another is held is sent at once in its place
+ * (an acknowledgement for every second segment); --writer-gap-ms G makes
+ * A's writer write one piece and wait G, so each segment goes alone and its
+ * acknowledgement is the delayed one.  --delay-step-at-ms T
+ * --delay-step-us D changes the one-way delay to D at T (a round trip that
+ * grows past the timeout).  --reader-pause-at-ms T --reader-pause-ms D
+ * stops B's reader for D, so B's window closes and A probes it.
+ * --no-route-at-ms T --no-route-ms D makes A's IPv4 fail for good
+ * (ENETUNREACH) for D; the writer then waits 100 ms and writes the same
+ * bytes again, as an application would.  The --expect-* options check A's
+ * first round-trip sample (RFC 6298 section 2.2), its largest smoothed
+ * round trip and its resends at the end; --expect-stall-rto checks that
+ * the longest stall is within what the timeouts explain: the doublings of
+ * one RTO up to the most the backoff reached (e), (2^(e+1) - 1) RTO + 20 ms
+ * (one loss with no backoff: one RTO; a resend lost too, or a loss before
+ * the backoff ended (Karn): more).  A check that fails prints
+ * "check: FAIL".
  */
 
 #include "kern/net/tcp-socket.h"
@@ -165,6 +189,22 @@ struct model_settings {
 	uint64_t expect_srtt_low;
 	uint64_t expect_srtt_high;
 	int lose_first_syn;
+	uint64_t ack_delay_ns;
+	uint64_t writer_gap_ns;
+	uint64_t delay_step_at_ns;
+	uint64_t delay_step_ns;
+	uint64_t reader_pause_at_ns;
+	uint64_t reader_pause_ns;
+	uint64_t no_route_at_ns;
+	uint64_t no_route_ns;
+	uint64_t expect_first_srtt_low;
+	uint64_t expect_first_srtt_high;
+	uint64_t expect_first_rttvar_low;
+	uint64_t expect_first_rttvar_high;
+	uint64_t expect_srtt_max;
+	uint64_t expect_retransmits_max;
+	int expect_retransmits;
+	int expect_stall_rto;
 	int quiet;
 };
 
@@ -207,6 +247,31 @@ static uint64_t unresolved_refusals;
 /* Whether A's first SYN has been lost (--lose-first-syn). */
 static int first_syn_lost;
 
+/* B's pure acknowledgement held by --ack-delay-ms (NULL: none), and when it goes. */
+static struct packet_buf *held_ack;
+static uint32_t held_ack_source;
+static uint32_t held_ack_destination;
+static uint64_t held_ack_until_ns;
+
+/* A's first round-trip sample as it stood when taken, whether it was taken, and A's largest SRTT. */
+static uint32_t first_srtt_us;
+static uint32_t first_rttvar_us;
+static int first_sample_seen;
+static uint32_t srtt_max_us;
+
+/* Whether the one-way delay has been changed (--delay-step-at-ms), and A's writes refused for want of a route. */
+static int delay_stepped;
+static uint64_t no_route_refusals;
+
+/*
+ * The most times A resent one segment in a row, how often a resend was lost
+ * again (the count reached 2), and the most A's timeout was doubled.
+ */
+static unsigned backoff_max;
+static unsigned resends_in_row_max;
+static uint64_t double_losses;
+static unsigned resends_in_row_last;
+
 /* The reader on B: bytes read, bytes that differed from what was written, and the bytes it may read now. */
 static uint64_t received;
 static uint64_t corrupt;
@@ -241,6 +306,8 @@ static void run_writer(void);
 static void run_reader(void);
 static int connect_hosts(void);
 static void step(void);
+static int link_enqueue(unsigned host, struct packet_buf *packet, uint32_t source, uint32_t destination);
+static int pure_ack(const struct packet_buf *packet);
 static void report(uint64_t elapsed_ns, uint64_t interval_bytes);
 static struct tcp_socket *tcp_of(struct socket *socket);
 static int check_tcpstats(void);
@@ -263,6 +330,7 @@ main(
 	uint64_t interval_bytes;
 	uint64_t out_of_order;
 	struct tcp_socket *a;
+	double allowed_ms;
 	double rate;
 	double min_rate;
 	double mean;
@@ -392,8 +460,56 @@ main(
 		return 1;
 	}
 
-	/* A's round-trip estimate, when the scenario says where it should lie (ws220-p004). */
+	/* A's round-trip estimate and resends (ws220-p004). */
 	a = tcp_of(sender);
+	printf("rtt: samples=%u srtt_us=%u rttvar_us=%u rto_ms=%llu backoff=%u first_srtt_us=%u first_rttvar_us=%u "
+	    "srtt_max_us=%u retransmits=%llu immediate=%llu no_route_refusals=%llu\n", a->rtt_samples, a->srtt_us,
+	    a->rttvar_us, (unsigned long long)kern_ticks_to_ms(a->rto), a->rto_backoff, first_srtt_us, first_rttvar_us,
+	    srtt_max_us, (unsigned long long)a->counters.retransmit_segments,
+	    (unsigned long long)a->counters.immediate_resends, (unsigned long long)no_route_refusals);
+
+	/* The first sample's estimate, when the scenario says where it should lie. */
+	if (settings.expect_first_srtt_high != 0 &&
+	    (first_srtt_us < settings.expect_first_srtt_low || first_srtt_us > settings.expect_first_srtt_high)) {
+		printf("check: FAIL: A's first sample gave srtt %u us, not %llu..%llu\n", first_srtt_us,
+		    (unsigned long long)settings.expect_first_srtt_low, (unsigned long long)settings.expect_first_srtt_high);
+		return 1;
+	}
+
+	/* Its variation likewise (RFC 6298 section 2.2: half the sample). */
+	if (settings.expect_first_rttvar_high != 0 &&
+	    (first_rttvar_us < settings.expect_first_rttvar_low || first_rttvar_us > settings.expect_first_rttvar_high)) {
+		printf("check: FAIL: A's first sample gave rttvar %u us, not %llu..%llu\n", first_rttvar_us,
+		    (unsigned long long)settings.expect_first_rttvar_low,
+		    (unsigned long long)settings.expect_first_rttvar_high);
+		return 1;
+	}
+
+	/* A's largest SRTT, when the scenario bounds it. */
+	if (settings.expect_srtt_max != 0 && srtt_max_us > settings.expect_srtt_max) {
+		printf("check: FAIL: A's srtt reached %u us, more than %llu\n", srtt_max_us,
+		    (unsigned long long)settings.expect_srtt_max);
+		return 1;
+	}
+
+	/* The longest stall against the timeouts that explain it. */
+	printf("stall: longest_ms=%.1f resends_in_row_max=%u double_losses=%llu backoff_max=%u\n",
+	    (double)longest_stall_ns / 1e6, resends_in_row_max, (unsigned long long)double_losses, backoff_max);
+	allowed_ms = (double)((2ULL << backoff_max) - 1U) * (double)kern_ticks_to_ms(a->rto) + 20.0;
+	if (settings.expect_stall_rto && (double)longest_stall_ns / 1e6 > allowed_ms) {
+		printf("check: FAIL: the longest stall %.1f ms is more than the %.1f ms the timeouts explain\n",
+		    (double)longest_stall_ns / 1e6, allowed_ms);
+		return 1;
+	}
+
+	/* A's resends, when the scenario bounds them. */
+	if (settings.expect_retransmits && a->counters.retransmit_segments > settings.expect_retransmits_max) {
+		printf("check: FAIL: A resent %llu segments, more than %llu\n",
+		    (unsigned long long)a->counters.retransmit_segments, (unsigned long long)settings.expect_retransmits_max);
+		return 1;
+	}
+
+	/* A's SRTT at the end, when the scenario says where it should lie. */
 	if (settings.expect_srtt_high != 0) {
 		printf("rtt: srtt_us=%u rttvar_us=%u rto_ms=%llu\n", a->srtt_us, a->rttvar_us,
 		    (unsigned long long)kern_ticks_to_ms(a->rto));
@@ -450,11 +566,8 @@ model_link_output(
 	uint32_t source,
 	uint32_t destination)
 {
-	struct model_link *link;
-	unsigned slot;
 	size_t header;
-
-	link = &links[host];
+	int acknowledgement_only;
 
 	/* A second writer writes while this segment's sender waits for the device. */
 	header = (size_t)(packet->data[12] >> 4) * 4U;
@@ -488,6 +601,50 @@ model_link_output(
 		return EAGAIN;
 	}
 
+	/* A's IPv4 has no route for a while (--no-route-at-ms): the segment fails for good. */
+	if (host == 0U && settings.no_route_ns != 0 && transfer_start_ns != 0 &&
+	    now_ns >= transfer_start_ns + settings.no_route_at_ns &&
+	    now_ns < transfer_start_ns + settings.no_route_at_ns + settings.no_route_ns) {
+		no_route_refusals++;
+		packet_buf_free(packet);
+		return ENETUNREACH;
+	}
+
+	/*
+	 * B delays its pure acknowledgements (--ack-delay-ms): the first is
+	 * held, and the next sent at once in its place (it says as much).
+	 */
+	acknowledgement_only = pure_ack(packet);
+	if (host == 1U && settings.ack_delay_ns != 0 && acknowledgement_only) {
+		if (held_ack != NULL) {
+			packet_buf_free(held_ack);
+			held_ack = NULL;
+		} else {
+			held_ack = packet;
+			held_ack_source = source;
+			held_ack_destination = destination;
+			held_ack_until_ns = now_ns + settings.ack_delay_ns;
+			return 0;
+		}
+	}
+
+	/* The device's queue, or its refusal. */
+	return link_enqueue(host, packet, source, destination);
+}
+
+/* Queues a frame on a host's device: refused (and freed) when the device is full. */
+static int
+link_enqueue(
+	unsigned host,
+	struct packet_buf *packet,
+	uint32_t source,
+	uint32_t destination)
+{
+	struct model_link *link;
+	unsigned slot;
+
+	link = &links[host];
+
 	/* A full device refuses the frame, as a USB adapter's driver does. */
 	if (link->queue_count >= settings.queue) {
 		link->queue_full++;
@@ -505,6 +662,24 @@ model_link_output(
 		link_start(link, now_ns);
 
 	/* Succeeded: the device has the frame. */
+	return 0;
+}
+
+/* Tells whether a segment is a pure acknowledgement: no payload, no flag but ACK. */
+static int
+pure_ack(
+	const struct packet_buf *packet)
+{
+	size_t header;
+
+	/* Payload. */
+	header = (size_t)(packet->data[12] >> 4) * 4U;
+	if (packet->length > header)
+		return 0;
+
+	/* Succeeded: only the ACK flag says it is one. */
+	if (packet->data[13] == 0x10U)
+		return 1;
 	return 0;
 }
 
@@ -542,6 +717,22 @@ parse_settings(
 	settings.expect_srtt_low = 0;
 	settings.expect_srtt_high = 0;
 	settings.lose_first_syn = 0;
+	settings.ack_delay_ns = 0;
+	settings.writer_gap_ns = 0;
+	settings.delay_step_at_ns = 0;
+	settings.delay_step_ns = 0;
+	settings.reader_pause_at_ns = 0;
+	settings.reader_pause_ns = 0;
+	settings.no_route_at_ns = 0;
+	settings.no_route_ns = 0;
+	settings.expect_first_srtt_low = 0;
+	settings.expect_first_srtt_high = 0;
+	settings.expect_first_rttvar_low = 0;
+	settings.expect_first_rttvar_high = 0;
+	settings.expect_srtt_max = 0;
+	settings.expect_retransmits_max = 0;
+	settings.expect_retransmits = 0;
+	settings.expect_stall_rto = 0;
 	settings.quiet = 0;
 
 	/* Each option and its value. */
@@ -564,6 +755,10 @@ parse_settings(
 		}
 		if (strcmp(argv[index], "--expect-in-order") == 0) {
 			settings.expect_in_order = 1;
+			continue;
+		}
+		if (strcmp(argv[index], "--expect-stall-rto") == 0) {
+			settings.expect_stall_rto = 1;
 			continue;
 		}
 		if (strcmp(argv[index], "--lose-first-syn") == 0) {
@@ -610,6 +805,32 @@ parse_settings(
 			settings.unresolved_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
 		else if (strcmp(argv[index], "--expect-srtt-us") == 0)
 			parse_range(argv[index + 1], &settings.expect_srtt_low, &settings.expect_srtt_high);
+		else if (strcmp(argv[index], "--ack-delay-ms") == 0)
+			settings.ack_delay_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		else if (strcmp(argv[index], "--writer-gap-ms") == 0)
+			settings.writer_gap_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		else if (strcmp(argv[index], "--delay-step-at-ms") == 0)
+			settings.delay_step_at_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		else if (strcmp(argv[index], "--delay-step-us") == 0)
+			settings.delay_step_ns = strtoull(argv[index + 1], NULL, 0) * 1000ULL;
+		else if (strcmp(argv[index], "--reader-pause-at-ms") == 0)
+			settings.reader_pause_at_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		else if (strcmp(argv[index], "--reader-pause-ms") == 0)
+			settings.reader_pause_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		else if (strcmp(argv[index], "--no-route-at-ms") == 0)
+			settings.no_route_at_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		else if (strcmp(argv[index], "--no-route-ms") == 0)
+			settings.no_route_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		else if (strcmp(argv[index], "--expect-first-srtt-us") == 0)
+			parse_range(argv[index + 1], &settings.expect_first_srtt_low, &settings.expect_first_srtt_high);
+		else if (strcmp(argv[index], "--expect-first-rttvar-us") == 0)
+			parse_range(argv[index + 1], &settings.expect_first_rttvar_low, &settings.expect_first_rttvar_high);
+		else if (strcmp(argv[index], "--expect-srtt-max-us") == 0)
+			settings.expect_srtt_max = strtoull(argv[index + 1], NULL, 0);
+		else if (strcmp(argv[index], "--expect-retransmits-max") == 0) {
+			settings.expect_retransmits_max = strtoull(argv[index + 1], NULL, 0);
+			settings.expect_retransmits = 1;
+		}
 		index++;
 	}
 
@@ -966,7 +1187,21 @@ run_writer(
 			send_left -= (uint64_t)written;
 			if (second_writer_active)
 				return;
+
+			/* A writer of one piece at a time (--writer-gap-ms) waits before the next. */
+			if (settings.writer_gap_ns != 0) {
+				send_sleep_until_ns = now_ns + settings.writer_gap_ns;
+				return;
+			}
+
+			/* Otherwise the next piece at once. */
 			continue;
+		}
+
+		/* No route (--no-route-at-ms): the application waits 100 ms and writes the same bytes again. */
+		if (written == -ENETUNREACH && settings.no_route_ns != 0) {
+			send_sleep_until_ns = now_ns + 100000000ULL;
+			return;
 		}
 
 		/* An error other than a full ring or window ends the transfer. */
@@ -999,6 +1234,12 @@ run_reader(
 
 	/* No reader before the connection is accepted. */
 	if (receiver == NULL)
+		return;
+
+	/* The reader stops for a while (--reader-pause-at-ms). */
+	if (settings.reader_pause_ns != 0 && transfer_start_ns != 0 &&
+	    now_ns >= transfer_start_ns + settings.reader_pause_at_ns &&
+	    now_ns < transfer_start_ns + settings.reader_pause_at_ns + settings.reader_pause_ns)
 		return;
 
 	/* The reader's allowance grows with the time since it was last given. */
@@ -1100,13 +1341,17 @@ static void
 step(
 	void)
 {
+	struct packet_buf *packet;
+	struct tcp_socket *a;
 	uint64_t next_ns;
 	uint64_t tick_ns;
 	unsigned direction;
 
-	/* The next tick of the kernel's clock, and the earliest event before it. */
-	tick_ns = (now_ns / 1000000ULL + 1U) * 1000000ULL;
+	/* The next tick of the kernel's clock (KERN_CLOCK_HZ a second), and the earliest event before it. */
+	tick_ns = (now_ns / (1000000000ULL / KERN_CLOCK_HZ) + 1U) * (1000000000ULL / KERN_CLOCK_HZ);
 	next_ns = tick_ns;
+	if (held_ack != NULL && held_ack_until_ns > now_ns && held_ack_until_ns < next_ns)
+		next_ns = held_ack_until_ns;
 	for (direction = 0; direction < 2U; direction++) {
 		if (links[direction].queue_count != 0 && links[direction].transmit_end_ns < next_ns)
 			next_ns = links[direction].transmit_end_ns;
@@ -1120,6 +1365,20 @@ step(
 	if (next_ns > now_ns)
 		now_ns = next_ns;
 	model_clock_set(now_ns / 1000U);
+
+	/* The one-way delay changes at its time (--delay-step-at-ms). */
+	if (settings.delay_step_ns != 0 && !delay_stepped && transfer_start_ns != 0 &&
+	    now_ns >= transfer_start_ns + settings.delay_step_at_ns) {
+		settings.delay_ns = settings.delay_step_ns;
+		delay_stepped = 1;
+	}
+
+	/* B's held acknowledgement goes when its delay is up. */
+	if (held_ack != NULL && now_ns >= held_ack_until_ns) {
+		packet = held_ack;
+		held_ack = NULL;
+		(void)link_enqueue(1U, packet, held_ack_source, held_ack_destination);
+	}
 
 	/* What the links did by now. */
 	for (direction = 0; direction < 2U; direction++)
@@ -1137,6 +1396,29 @@ step(
 		send_sleep_until_ns = 0;
 		run_applications();
 	}
+
+	/* A's first round-trip sample as the estimate stood right after it, and its largest SRTT (ws220-p004). */
+	if (sender == NULL)
+		return;
+	a = tcp_of(sender);
+	if (!first_sample_seen && a->rtt_samples != 0) {
+		first_sample_seen = 1;
+		first_srtt_us = a->srtt_us;
+		first_rttvar_us = a->rttvar_us;
+	}
+
+	/* The largest SRTT so far. */
+	if (a->rtt_samples != 0 && a->srtt_us > srtt_max_us)
+		srtt_max_us = a->srtt_us;
+
+	/* The resends of one segment in a row, the times a resend was lost again, and the backoff. */
+	if (a->rto_backoff > backoff_max)
+		backoff_max = a->rto_backoff;
+	if (a->retransmit_count > resends_in_row_max)
+		resends_in_row_max = a->retransmit_count;
+	if (a->retransmit_count >= 2U && resends_in_row_last < 2U)
+		double_losses++;
+	resends_in_row_last = a->retransmit_count;
 }
 
 /* Prints one interval: the rate, and what both ends and the links show. */

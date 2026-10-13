@@ -29,7 +29,7 @@ Related Milestones: なし
 | [p001](phase001/phase.md) | 調べと測り: 今の TCP の制御の読み、測りの道具（net.tcpstats、tcp-stream-series.sh、本物の tcp.c の host の模型）、落ちる仕組みの特定、直しの設計 → design-reviewer | in-progress（T1 の基線待ち） |
 | [p002](phase002/phase.md) | 正しさ: sequence の剰余の比較（wrap の後に ACK を全部捨てる）、SND.WL1/WL2、重なりのある segment、諦めの時間（R2: data 100 s・SYN 180 s）、RST の窓の検査と同期済みの SYN への ACK（RFC 5961）、S2（net.tcpstats の sequence は superuser だけ）、測りの道具の直し（review S1・S3・S8） | in-progress（2026-10-13 P4 c13a8413f、実装・模型・build 済み、T1 の QEMU 待ち） |
 | [p003](phase003/phase.md) | 送りの packet の不足: device が拒んだ data の segment で書き手が 10 ms 眠らない、未送信を順に出す、ACK の出し直し | in-progress（2026-10-13 P3、実装・模型・build 済み、review-1 の重大 1・中 2 を直した、tcp-stream-series.sh の止まりも直した。T1 の QEMU 待ち。模型の queue 7・5・2・1 が 0.68〜0.10 → 37 MB/s、2 つの書き手の二重送信が消えた） |
-| [p004](phase004/phase.md) | RTT の推定と RTO（RFC 6298）: SRTT・RTTVAR、Karn、RTO = SRTT + max(G, 4·RTTVAR, 200 ms)、SYN の 3 s | in-progress（2026-10-13 P3、実装・模型・build 済み、design-reviewer と T1 の QEMU 待ち。模型の lan-loss-0.1 の停止 1000 → 201 ms） |
+| [p004](phase004/phase.md) | RTT の推定と RTO（RFC 6298）: SRTT・RTTVAR、Karn、RTO = SRTT + max(G, 4·RTTVAR, 200 ms)、SYN の 3 s | in-progress（2026-10-13 P3、実装・模型・build 済み、design review-1 の重大 2・中 5 を直した（backoff の指数を分け sample でだけ戻す）、T1 の QEMU 待ち。模型の lan-loss-0.1 の停止 1000 → 202 ms） |
 | p005（案） | fast retransmit と NewReno の回復、persist timer、窓が開いた時の再送を外す | planning |
 | p006（案） | 輻輳の制御（cwnd）と byte の送りの buffer、相手の MSS、Nagle | planning |
 | p007（案） | 受けの窓の約束、受け側の SWS 回避、window scale、delayed ACK | planning |

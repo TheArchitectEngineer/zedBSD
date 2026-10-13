@@ -804,13 +804,13 @@ show_tcpstats(
 		format_tcp_address(remote, sizeof(remote), entry->family, entry->remote_address, entry->remote_port);
 		printf("net.tcpstats: time_ms=%llu local=%s remote=%s state=%u features=0x%x "
 		       "send_unacknowledged=%u send_next=%u send_window=%u in_flight_bytes=%u send_segments=%u send_ring=%u "
-		       "send_mss=%u cwnd=%u ssthresh=%u srtt_us=%u rttvar_us=%u backoff=%u rto_ms=%u retransmit_in_ms=%u "
+		       "send_mss=%u cwnd=%u ssthresh=%u srtt_us=%u rttvar_us=%u rtt_samples=%u backoff=%u rto_ms=%u retransmit_in_ms=%u "
 		       "receive_next=%u receive_window=%u receive_mss=%u receive_bytes=%u receive_packets=%u "
 		       "receive_limit_bytes=%u reorder_segments=%u",
 		       (unsigned long long)header->time_ms, local, remote, entry->state, entry->features,
 		       entry->send_unacknowledged, entry->send_next, entry->send_window, entry->in_flight_bytes,
 		       entry->send_segments, entry->send_ring, entry->send_mss, entry->cwnd, entry->ssthresh,
-		       entry->srtt_us, entry->rttvar_us, entry->backoff, entry->rto_ms, entry->retransmit_in_ms,
+		       entry->srtt_us, entry->rttvar_us, entry->rtt_samples, entry->backoff, entry->rto_ms, entry->retransmit_in_ms,
 		       entry->receive_next, entry->receive_window, entry->receive_mss, entry->receive_bytes,
 		       entry->receive_packets, entry->receive_limit_bytes, entry->reorder_segments);
 		printf(" segments_out=%llu segments_in=%llu data_segments_out=%llu data_bytes_out=%llu data_bytes_in=%llu "

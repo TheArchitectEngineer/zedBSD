@@ -40,8 +40,8 @@ FIELD = re.compile(r"(\w+)=(\S+)")
 COUNTS = ("retransmit_segments", "immediate_resends", "duplicate_acks_in", "acks_outside", "segment_send_failures",
 	"send_refused", "send_buffer_sleeps", "out_of_order_in", "out_of_order_kept", "old_segments_in",
 	"receive_refused", "zero_windows_in", "zero_windows_out", "window_updates_out")
-STATE = ("send_window", "in_flight_bytes", "send_segments", "backoff", "rto_ms", "receive_window", "receive_bytes",
-	"reorder_segments")
+STATE = ("send_window", "in_flight_bytes", "send_segments", "backoff", "rto_ms", "srtt_us", "rttvar_us", "rtt_samples",
+	"receive_window", "receive_bytes", "reorder_segments")
 STEP = 0.1
 HAVE_SEQUENCE = 0x20
 HALF = 1 << 31
@@ -176,6 +176,14 @@ def series(direction: str, peer: str, series_path: str, ss: str, csv_path: str) 
 		f"below_1mbs_after_5s={sum(1 for rate in after_head if rate < 1.0)} "
 		f"zero={sum(1 for rate in rates if rate == 0.0)} longest_zero_s={longest:.1f} "
 		+ " ".join(f"{name}={value}" for name, value in totals.items()))
+	# The round-trip estimate over the transfer (ws220-p004), from the samples that have one.
+	estimates = [row for row in transfer if str(row.get("rtt_samples", "")).isdigit() and int(row["rtt_samples"]) > 0]
+	if estimates:
+		srtts = [int(row["srtt_us"]) for row in estimates]
+		rtos = [int(row["rto_ms"]) for row in estimates if str(row.get("rto_ms", "")).isdigit()]
+		print(f"analyze: rtt samples={len(estimates)} srtt_us_median={int(statistics.median(srtts))} "
+			f"srtt_us_max={max(srtts)} rto_ms_median={int(statistics.median(rtos)) if rtos else 0} "
+			f"rto_ms_max={max(rtos) if rtos else 0} backoff_max={max(int(row['backoff'] or 0) for row in estimates)}")
 	return 0
 
 
