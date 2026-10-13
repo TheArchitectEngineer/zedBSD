@@ -3,7 +3,7 @@
 # Builds vi with the host cc, types keys into it, and judges each case by the
 # file it writes (the screen is not judged).  Output goes to a new directory
 # under build/tmp (removing old runs is Q1's step).
-#   python3 plan/ws228/tests/run-host-vi.py [--keep-going]
+#   python3 plan/tools/vi/run-host-vi.py [--keep-going]
 # PASS ends with "host-vi: ok (N cases)".
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import codecs

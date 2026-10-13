@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # ws228-p002: edits files with vi on a zedBSD guest over its serial console
-# (an image built from plan/ws228/tests/config-amd64-vi.mk, CONFIG_PCAT_SERIAL_MIRROR=y).
+# (an image built from plan/tools/vi/config-amd64-vi.mk, CONFIG_PCAT_SERIAL_MIRROR=y).
 # Each step types keys into vi and judges the file vi wrote, read back with cat;
 # the screen is not judged.
 # The guest writes the serial line a byte at a time, so a character of several
 # bytes can come in pieces; the reader here decodes across reads (T1-595: a
 # decode per read turned each piece of 本語 into U+FFFD).
-#   python3 plan/ws228/tests/vi-guest.py --socket SERIAL_SOCKET
+#   python3 plan/tools/vi/vi-guest.py --socket SERIAL_SOCKET
 # PASS ends with "vi-guest: ok (N steps)".
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import argparse

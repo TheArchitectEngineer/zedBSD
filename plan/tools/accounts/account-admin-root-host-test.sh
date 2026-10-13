@@ -10,7 +10,7 @@
 # primary group kept (M7), and Settings' form from kei through a set-user-ID copy (ws089-p026's add, busy, removal
 # keeping the home and home-exists, each answered within 20 s; T1-600).  The last line is
 # "account-admin-root-host-test: PASS".
-#   sh plan/ws196/tests/account-admin-root-host-test.sh   (from the repository's top; needs sudo, unshare, flock, openssl,
+#   sh plan/tools/accounts/account-admin-root-host-test.sh   (from the repository's top; needs sudo, unshare, flock, openssl,
 #   setpriv)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu

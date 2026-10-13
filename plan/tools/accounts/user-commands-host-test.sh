@@ -7,7 +7,7 @@
 # name-taken 9, home-exists 12, last-administrator and no-password 1, and the files after each change).  Also: a caller
 # who is not root is refused (1).  The host's account files are not touched.  The last line is
 # "user-commands-host-test: PASS".
-#   sh plan/ws196/tests/user-commands-host-test.sh   (from the repository's top; needs sudo, openssl)
+#   sh plan/tools/accounts/user-commands-host-test.sh   (from the repository's top; needs sudo, openssl)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 mkdir -p build/tmp
@@ -76,7 +76,7 @@ set +e
 not_root=$?
 set -e
 
-sudo sh plan/ws196/tests/user-commands-run.sh "$OUT" > "$OUT/out.txt" 2>&1 || true
+sudo sh plan/tools/accounts/user-commands-run.sh "$OUT" > "$OUT/out.txt" 2>&1 || true
 if [ "$not_root" = 1 ] && grep -q '^useradd: Permission denied\.$' "$OUT/not-root.err"; then
 	echo "ok not-root" >> "$OUT/out.txt"
 else

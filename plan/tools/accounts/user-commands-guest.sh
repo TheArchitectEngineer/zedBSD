@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws196-p004 (T1): account-admin's root form (ws196-p002) and root's useradd, usermod and userdel (ws196-p003) on the
-# guest of plan/ws196/tests/config-amd64-users.mk (plan/tools/guest/guest.py start IMAGE; the harness logs in as root
+# guest of plan/tools/accounts/config-amd64-users.mk (plan/tools/guest/guest.py start IMAGE; the harness logs in as root
 # over SSH).  kei (password "kei", in wheel) is the only administrator who can log in.  /etc/passwd, /etc/group and
 # /etc/shadow are saved first and put back at the end (in the guest), with the homes made and the record of the last
 # user ID given.
@@ -16,7 +16,7 @@
 #  6. Through sudo: kei runs sudo -S useradd; the system log says "user-add by root (sudo kei) for sam: ok".
 # PASS: the last line "user-commands-guest: status=0".
 #   plan/tools/guest/guest.py start IMAGE; plan/tools/guest/guest.py wait
-#   plan/ws196/tests/user-commands-guest.sh [OUTDIR]          (default build/ws196-p004-guest)
+#   plan/tools/accounts/user-commands-guest.sh [OUTDIR]          (default build/ws196-p004-guest)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
