@@ -295,3 +295,9 @@ Gen9 の **PCI ID の合計 86**（SKL 25 ＋ KBL 22 ＋ CFL 39）。Gen9 の GT
 - 他の WS の plan/tests（ws101・ws075・ws031・ws083）は、Gen9 の選択肢を足すだけ（Gen12 の振る舞いと期待を変えない）の編集を Q1 が許可する。
 - 受け入れの直し（M6）: p003 は Gen9 の期待の text を brw_asm で byte にして zedBSD の byte と比べる試験と、Gen12 の byte の前後の同一。p004 は Gen12 の batch の byte の前後の同一。p002 は Gen12 の起動の mmio の書き込み列の golden（mock）か、5330 の T1 の回帰。ktest-gt は host で走らないので p005 へ。
 - U1〜U3 はユーザーに聞く。
+
+## ユーザーの決定（2026-10-14 クリック、review-1 の U1〜U3）
+
+- U1:「実機で PASS したら既定で有効」→ 実装は boot の指定（例 `i915.gen9=on`）でも有効にできる口を持ち、p005 の実機の試験が PASS したら既定で Gen9 に attach する（PASS までは既定 off）。
+- U2:「Gen9 の間は suspend を拒む」（推しどおり）→ display が absent の Gen9 では suspend を断るか D0 を保つ。display controller の段階（p006）で外す。
+- U3:「5330 の回帰を必須」（推しどおり）→ ベータ2 に入れる条件は、5330（Gen12）の実機で T1 の Vulkan の回帰が PASS。通らなければ Gen9 はドロップ。
