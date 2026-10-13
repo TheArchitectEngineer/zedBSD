@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1089 / WS074 definite abspos Grid static origin（2026-10-14）
+## 最新: q1090 / WS074 RTL Grid absolute position design（2026-10-14）
+
+[q1090履歴](queue-q1090.md): RTL fixed/auto幅の最小HTMLで実x8、期待x388/384。private right-edge static metadataを次の実装境界に定めた。[証拠](../ws074/phase217/evidence/20261014-q1090/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1089 / WS074 definite abspos Grid static origin（2026-10-14）
 
 [q1089履歴](queue-q1089.md): 水平LTRの有効明示area絶対子のstatic原点を修正。固定WPT代表2件の水平subtestが各FAIL→PASS、wholeはRTL/縦書き未達。[証拠](../ws074/phase217/evidence/20261014-q1089/README.md)。Acid3差0、p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

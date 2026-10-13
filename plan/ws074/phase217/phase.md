@@ -33,3 +33,11 @@ Event ws074-p217-q1088-partial-clear-20261014: [証拠](evidence/20261014-q1088/
 ## q1089-i01 結果（2026-10-14 07:39 JST）
 
 Event ws074-p217-q1089-partial-clear-20261014: 水平LTR/有効明示areaの絶対配置子だけ、track size/gap/justify-contentを使いstatic原点を設定。[証拠](evidence/20261014-q1089/README.md)。最小hostはarea子(108,88)、明示inset(15,17)、無効line(8,8)を確認。固定WPT代表2件の水平subtest各1件がFAIL→PASS、wholeはRTL/縦書きの3件FAILで未達。旧PASS module代表はPASS維持。classic JS14/14、warning0 build、Acid3差0・Acid2差1865。q1089-i01 partial cleared、p217 whole/p189/p173全件100%未達、共有投影/GitHub publication保留。
+
+## q1090-i01 有限部分範囲（2026-10-14 07:40 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（09:10 JSTまで）に適用。q1089固定代表WPTのRTL subtest期待340/230対実0、Grid明示track・direction/justify-selfと既存static_x/position_placeの評価順を追跡。固定幅とauto幅の小HTMLをhostで再現し、RTL grid areaと幅確定後start alignmentを一般的に表す内部設計、次の有限実装scope・リスクを証拠化する。読み取り調査と証拠fixtureのみ。製品browser/runner/WPT/公開ABI/`plan/master.md`変更なし、Acid/全Grid再測定なし。p217 whole/p189/p173全件100%は本部分基準外。
+
+## q1090-i01 結果（2026-10-14 07:41 JST）
+
+Event ws074-p217-q1090-partial-clear-20261014: [証拠](evidence/20261014-q1090/README.md)。最小RTL 400px Gridの固定20px/auto24px absolute子は両方物理x=8、inline-start期待x=388/384。Gridが子の幅確定前に左端static_xを置き、position_placeが幅確定後も左端として読むことが原因。次はprivate right-edge static metadataを介し、幅確定後に右端から配置する限定実装。q1090-i01部分cleared。p217 whole/p189/p173全件100%未達。製品browser/runner/WPT/ABI/Master無変更、共有投影/GitHub publication保留。

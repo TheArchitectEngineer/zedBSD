@@ -1,0 +1,9 @@
+<!doctype html>
+<style>
+.grid { position: relative; display: grid; direction: rtl; width: 400px; grid-template-columns: 100px 150px; grid-template-rows: 80px 80px; margin-bottom: 10px; }
+.grid > div { position: absolute; grid-column: 1 / 2; grid-row: 1 / 2; height: 10px; }
+.fixed { width: 20px; }
+.auto { font: 10px monospace; }
+</style>
+<div class="grid"><div class="fixed">X</div></div>
+<div class="grid"><div class="auto">XXXX</div></div>
