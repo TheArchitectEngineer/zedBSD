@@ -153,6 +153,23 @@ layout_flex(
 			return error;
 		}
 	}
+	/* An auto-height, unwrapped column uses its minimum height for free-space placement. */
+	if (!row && !wrap && box->style.height.unit == CSS_UNIT_AUTO &&
+	    box->style.min_height.unit == CSS_UNIT_PX && box->style.max_height.unit == CSS_UNIT_NONE) {
+		sizing = 0;
+		if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			sizing = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+		available = layout_from_px(box->style.min_height.value) - sizing;
+		if (available < 0)
+			available = 0;
+		used = 0;
+		for (index = 0; index < count; index++)
+			used += items[index].base + items[index].frame + items[index].margin_start + items[index].margin_end;
+		if (count > 1)
+			used += gap_main * (layout_unit)(count - 1U);
+		if (available < used)
+			available = used;
+	}
 
 	/* Line by line: the items that fit, flexed, laid out and placed. */
 	cross_cursor = 0;

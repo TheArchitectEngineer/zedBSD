@@ -2,7 +2,7 @@
 
 # q1050 / WS074 Flexbox distributed spacing rounding
 
-Status: finished（2026-10-14 02:22–02:27 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p200の有限scope](../ws074/phase200/phase.md)に適用。最大90分。
+Status: finished（2026-10-14 02:22–02:25 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p200の有限scope](../ws074/phase200/phase.md)に適用。最大90分。
 
 | Attempt | Phase | Exact scope | Outcome |
 | --- | --- | --- | --- |

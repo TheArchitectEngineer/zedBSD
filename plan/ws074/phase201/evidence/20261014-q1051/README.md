@@ -1,0 +1,9 @@
+# q1051-i01 evidence — column flex auto height and min-height
+
+Fixed WPT checkout `2d66b9b7998bb58c336138c178323ddee857b586`; local render 800×600 with 5 s per case. [report.json](report.json): **9 PASS / 1 FAIL / 0 timeout of fixed 10** (q1050: 8/2). `flexbox-justify-content-vert-001b.xhtml` changed to exact pixel PASS. Only `wmvert-001.xhtml` remains, with 393,560 differing pixels. The runner is local and does not certify official WPT status.
+
+Diagnosis: `height:auto; min-height:200px` column flex containers reached 200px after `layout_flex()` had placed their items using indefinite available height. The fix makes the main-axis available size the greater of intrinsic item outer sizes and pixel min-height for unwrapped auto-height columns without max-height. This keeps content over min-height from being shrunk. The existing `layout_block()` clamp still sets the final box height.
+
+Verification: `sh plan/ws074/tests/host-build.sh plain` exit0 warning0; local layout fixture with a 40px item/min-height30px yields a 40px container/item, and a 10px item/min-height100px/justify-end yields item y90px relative to its parent. `python3 plan/ws074/tests/run-physical-justify-tests.py` 12/12; native CSS rule model44/44, CSSOM12/12; `git diff --check` PASS. WPT command: `python3 plan/ws074/tests/run-wpt-reftests.py --root css/css-flexbox --selection-manifest /tmp/ws074-q1046-selection.json --render-timeout 5 --limit 0 --out plan/ws074/phase201/evidence/20261014-q1051`. Acid report `build/ws074-acid-q1051/report.json`: Acid3 score100/100, pixel diff0/480000; Acid2 diff1865/120000 unchanged.
+
+q1051-i01 and p201 whole cleared within the nowrap, pixel min-height scope. Wrap, percentage min/max, and vertical writing mode remain outside this Phase. p190/p173 full coverage and 100% remain unmet. Shared Master/Queue/GitHub publication pending with Q1; `plan/master.md` unchanged, no push.

@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1050 / WS074 Flexbox distributed spacing rounding
+# q1051 / WS074 column flex auto height and min-height
 
-Status: finished（2026-10-14 02:22–02:27 JST）
+Status: finished（2026-10-14 02:26–02:28 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p200のq1050有限部分scope](phase200/phase.md) に適用。
-Timebox: 2026-10-14 02:22 JST 開始、最大90分（03:52 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p201のq1051有限部分scope](phase201/phase.md) に適用。
+Timebox: 2026-10-14 02:26 JST 開始、最大90分（03:56 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1050-i01 | [ws074-p200](phase200/phase.md) | Flex分配余白の正の端数を最近接layout unitへ丸め、vert001a/002/006・固定10件、host/CSS/Acid回帰。負余白/min-height/writing-mode、WPT/Master/公開ABI変更なし。最大90分 | cleared、p200 whole cleared | p199 q1049固定5 FAILと端数差証拠 |
+| q1051-i01 | [ws074-p201](phase201/phase.md) | height:auto・pixel min-height・nowrap column Flexの主軸availableを内容必要高さとmin-heightの最大値へ。vert001b・固定10件、host/CSS/Acid回帰。wrap/percent/writing-mode、WPT/Master/公開ABI変更なし。最大90分 | cleared、p201 whole cleared | p200 q1050固定8 PASS/2 FAIL証拠 |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -18,6 +18,8 @@ Upcoming Work Outlook: p191の残るtextdecoration CSSOM、p189 runnerの環境�
 Outcome: q1049-i01 partial cleared、p199 whole uncleared。物理left/rightとcolumn fallbackを実装し、固定10件は5 local PASS/5 FAIL/0 timeoutへ改善。fixture12/12・CSS rule44/44・CSSOM12/12・mutation12/12・warning0 build・Acid3差0/Acid2差1865。[証拠](phase199/evidence/20261014-q1049/README.md)。fractional/min-height/writing-mode残差、p173全3,805件100%は未達。
 
 Outcome: q1050-i01 / p200 whole cleared。正の分配余白の最近接丸めとreverse残差配分で固定vert001a/002/006が全てpixel exact PASS、固定10件は8 local PASS/2 FAIL。host12/12・CSS rule44/44・CSSOM12/12・mutation12/12・warning0 build・Acid3差0/Acid2差1865。[証拠](phase200/evidence/20261014-q1050/README.md)。p173全3,805件100%は未達。
+
+Outcome: q1051-i01 / p201 whole cleared。nowrap縦Flexのauto高さ・pixel min-heightで固定vert001bがpixel exact PASS、固定10件は9 local PASS/1 FAIL。局所2ケース・host12/12・CSS rule44/44・CSSOM12/12・warning0 build・Acid3差0/Acid2差1865。[証拠](phase201/evidence/20261014-q1051/README.md)。p173全3,805件100%は未達。
 
 Coordination: [q1014](../history/queue-q1014.md) までの履歴を保持。共有 `plan/queue.md` / Master / GitHub publication は別の Q1 セッションとの競合を避け pending projection。WS074 lane の状態はこの file が所有。
 

@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1051 / WS074 column flex auto height and min-height（2026-10-14）
+
+[q1051履歴](queue-q1051.md): 固定vert001bがpixel exact PASS、固定10件は9 local PASS/1 FAIL。p201 whole cleared。Acid3画素差0/Acid2差1865。[証拠](../ws074/phase201/evidence/20261014-q1051/README.md)。p173全件100%未達、共有投影/GitHub publication pending。
+
 ## 最新: q1050 / WS074 Flexbox distributed spacing rounding（2026-10-14）
 
 [q1050履歴](queue-q1050.md): 端数丸めとreverse残差配分で対象3 reftestが全てpixel exact PASS、固定10件は8 local PASS/2 FAIL。p200 whole cleared。Acid3画素差0/Acid2差1865。[証拠](../ws074/phase200/evidence/20261014-q1050/README.md)。p173全件100%未達、共有投影/GitHub publication pending。
