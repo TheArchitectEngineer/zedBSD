@@ -100,7 +100,7 @@
 2026-10-13 ユーザー「終わっていないWSとその概要、何がブロッキングしているかを、表にして、plan/beta2.mdに入れてください。」→ 各 ws.md の Status・Resume point・Phase の表から作った（記録に無い事は「不明」）。WS は completed でない物（incomplete・planning・planned）。区分は ws.md・この文書・master.md に根拠がある時だけ断定し、master の「ベータ1」の段は fg019 の決定（最初のベータはベータ2）でベータ2 に読み替えた。
 注: 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済み…」で WS049・WS100・WS127・WS128・WS142・WS182・WS183・WS200 を completed にして表から外し、WS050・WS083・WS130・WS154・WS155・WS159・WS164・WS165・WS170 はベータ2 の範囲は完了（残りは規約＝ベータ3）。2026-10-13 ユーザーの指示で WS014・WS044・WS048・WS118・WS139 は close、WS195 は cancel して表から外した。WS004・WS009・WS046・WS095・WS155・WS157・WS171・WS172・WS196 はベータ2 へ移した（WS095・WS171 は優先度低め、WS171 はやることが無い時）。WS120・WS168・WS178・WS187 は 2026-10-13 ユーザーの指示で completed にして表から外した。WS172 は ws.md と phase.md の状態が食い違う。WS123 は canceled。
 
-### ベータ2 の物（53 件）
+### ベータ2 の物（54 件）
 
 | WS | 概要 | 状態 | 止めている物 | 区分 |
 | --- | --- | --- | --- | --- |
@@ -157,8 +157,9 @@
 | [WS172](ws172/ws.md) | passkey の認証の枠組み（/sbin/passkey） | incomplete（p002・p003 cleared、p007 test-wait、p004〜p006 planning） | T1 の試験（p007 の再依頼）、p001 は phase.md で判断 P1〜P10 待ちのまま（ws.md は cleared と記録） | ベータ2（2026-10-13 ユーザー） |
 | [WS196](ws196/ws.md) | useradd・usermod・userdel | planning（p001 範囲の設計） | ユーザーの判断 E1〜E6、design-reviewer、WS195 p001 | ベータ2（2026-10-13 ユーザー） |
 | [WS074](ws074/ws.md) | Web ブラウザ（libbrowser と shell） | incomplete。p100 ほか多数が planned、待機 | Codex のセッションが main の checkout で作業中（ユーザーの依頼） | ベータ2（2026-10-13 ユーザー「Codex のセッションは、私が WS074 の作業を頼んだ物です。これもベータ2までに完了予定です。」） |
+| [WS217](ws217/ws.md) | 画面の回転（Settings の Display） | planning（p001 設計中、p002a 実装済み、p002b 以降は案） | T1-576 の (B)（p002a）、p002b 以降は設計の review の後 | ベータ2（2026-10-13 ユーザー「WS217 p003（入力の座標）を続ける」） |
 
-### 区分が記録に無い物（今日の Pi 4・網・描画・license などの新しい WS が中心）（25 件）
+### 区分が記録に無い物（今日の Pi 4・網・描画・license などの新しい WS が中心）（24 件）
 
 | WS | 概要 | 状態 | 止めている物 | 区分 |
 | --- | --- | --- | --- | --- |
@@ -180,7 +181,6 @@
 | [WS214](ws214/ws.md) | 窓を HVS の plane に載せる（Pi 4） | planning（p001 第 3 版、p003a・p003b 実装済み、p005・p006 は案、p002 planned） | Pi 4 と T1 の確かめ（p003a・p003b）、p005 は WS213 p004 とユーザーの判断（glass の blur） | 不明 |
 | [WS215](ws215/ws.md) | Pi 4 の Bluetooth（BCM43455） | incomplete（p001〜p005 in-progress、p006〜p008 planned） | Pi 4 の実機（p002・p003・p005）、ユーザーの判断 D5 | 不明 |
 | [WS216](ws216/ws.md) | Notes の描く道具（筆・鉛筆・塗りつぶし・水彩） | planning（p003 cleared、p004 test-wait、p005 実装中（P1）、p001 review-2 待ち、他は planned） | T1 の試験（画は p007）、p009 は WS141 p017 | 不明 |
-| [WS217](ws217/ws.md) | 画面の回転（Settings の Display） | planning（p001 設計中、p002a 実装済み、p002b 以降は案） | T1-576 の (B)（p002a）、p002b 以降は設計の review の後 | 不明 |
 | [WS218](ws218/ws.md) | Intel WiFi driver の license の表示を実態に合わせる | planning（p001 planned と記録、p002 in-progress） | T1-573 PASS の Q1 の判定、実機の AX211 の回帰、削除 3 path は Q1 | 不明 |
 | [WS219](ws219/ws.md) | Venus の op の流用の整理（出典の明記） | incomplete（p003 cleared、p001・p002 in-progress） | T1-572 PASS の Q1 の判定（p002） | 不明 |
 | [WS220](ws220/ws.md) | TCP の転送の速さの安定（受けの window） | incomplete（p001・p002 in-progress、p003 実装済み、p004〜p009 案） | T1-574（基線）実行中、p003 は review と T1 の測り | 不明 |
