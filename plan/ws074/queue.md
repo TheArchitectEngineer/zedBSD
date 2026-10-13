@@ -13,6 +13,6 @@ Timebox: 2026-10-13 22:58〜23:02 JST（4分、最大90分以内）。
 
 Dependency graph: p172/p179/p180 → p181、q1003 の実測出力 → p181、p181 → p100 の最終受け入れ判断。q1000-i01 は uncleared 履歴として保持。
 
-Upcoming Work Outlook: q1004 後は同条件の差画像から次の局所原因を選ぶ。Acid3 の h1色、得点の slash 色・基線、見えてはいけない上部の文字、Acid2 の残差が候補。全画面差0・score100/100・fail/Uncaught/crash/timeout0、回帰・全文規約を満たすまで p100 を cleared にしない。次 Queue は自動開始しない。
+Upcoming Work Outlook: q1004 後の候補は [p182](phase182/phase.md) の非 CSS MIME の HTTP stylesheet が h1 を赤くする問題。得点の slash 色・基線、見えてはいけない上部の文字、Acid2 の残差も候補。全画面差0・score100/100・fail/Uncaught/crash/timeout0、回帰・全文規約を満たすまで p100 を cleared にしない。次 Queue は自動開始しない。
 
 Coordination: q1000、q1001、q1002、q1003、q1004 は [履歴](../history/queue-q1000.md)・[履歴](../history/queue-q1001.md)・[履歴](../history/queue-q1002.md)・[履歴](../history/queue-q1003.md)・[履歴](../history/queue-q1004.md)に保存。共有 `plan/queue.md` へ投影。GitHub Issue/Project publication と push は設定に従い保留。

@@ -10,7 +10,7 @@ Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。Acid3 の [q1004](queue.md) はユーザーの指示によりこの Codex セッションが単独で管理し、別 worktree で実行した。
 Queue: [q1004](queue.md) finished / p181 cleared。以前の [q1003](../history/queue-q1003.md) は p180 cleared。
-Resume point: q1004 後、Acid3 score100/100・pixel差18596/480000、Acid2差1865/120000。本文 y349.50 / reference y350 などの差が残る。p100 全体は未達。
+Resume point: q1004 後、Acid3 score100/100・pixel差18596/480000、Acid2差1865/120000。赤い h1 は [p182](phase182/phase.md) の次候補。本文 y349.50 / reference y350 などの差も残る。p100 全体は未達。
 <!-- awesome-plan-current:end -->
 
 ## Q1 向けの整理（2026-10-05、Q1）
@@ -310,6 +310,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p179](phase179/phase.md) | Acid3 参照ページの `reference.png` が背景画像として描かれない原因を特定し、一般的な欠陥を修正・検証 | cleared（q1001-i01。canvas 背景画像の高さ0判定を修正、差56647） | p172、p178 q1000 の baseline |
 | [ws074-p180](phase180/phase.md) | iframe の子が親ページに描かれる一般的な原因を調べ、通常の fallback 描画を除く | cleared（q1003-i01、Acid3差565減、frame load52/52） | p172、p179、p178 q1002 の実測出力 |
 | [ws074-p181](phase181/phase.md) | HTML `type` 属性 selector の大文字小文字と hidden input の余分な行高を調べる | cleared（q1004-i01、Acid3差24325減、CSS rule44/44） | p172、p179、p180 cleared、q1003 実測出力 |
+| [ws074-p182](phase182/phase.md) | HTTP stylesheet 応答の MIME 判定と Acid3 の赤い h1 を調べる | planned（q1005 exact scope案、Queue未選定） | p172、p179、p180、p181 cleared、q1004 実測出力 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -324,6 +325,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 2026-10-13 / p181-addition-after-q1003: test の `<input type=HIDDEN>` に対し UA `input[type=hidden]` が現行 selector 比較では一致せず、form の高さ24の line が本文を押し下げる原因候補。[p181](phase181/phase.md) で HTML `type` 属性値の大文字小文字と明示的 `s`/`i` flag に限定した有限の調査・修正・再計測を提案。q1003/p180 の結果と p100 の全画面条件は変えない。Queue は未選定・未承認。
 
 2026-10-13 / q1004-p181-clearance: ユーザーが [p181](phase181/phase.md) の最大90分 exact scope を承認。HTML `type` 属性 selector の flag 無し・`s`・`i` を区別し、`type=HIDDEN` を UA `input[type=hidden]` に一致させた。fixture pass、CSS rule44/44、build warning0。Acid3 score100/100・差18596/480000（q1003から24325減）、Acid2差1865不変。[証拠](phase181/evidence/20261013-q1004/report.json)。p181 cleared。本文 y349.50 / reference y350 ほかの差、p100全画面差0と WS074 acceptance は未達。次 Queue の承認が必要。
+
+2026-10-13 / p182-addition-after-q1004: Acid3 `empty.css.headers` は text/html と指定し、適用時に h1 が赤くなる。q1004 test は赤、reference は黒。[p182](phase182/phase.md) に非 quirks HTML 文書の HTTP stylesheet 応答 MIME 判定を調査・修正・再計測する有限 Phase を追加。q1004/p181 の outcome と p100 全画面条件は変えない。Queue は未選定・未承認。
 
 ## 後の WS・Future Work の候補
 
