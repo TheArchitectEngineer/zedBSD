@@ -3811,5 +3811,13 @@ i915_hpd_tc_link_reset_work(
 	}
 
 	/* Logs the link that must be reset. */
-	kern_logf("i915: hpd TC%u: the link has had no DP-alt partner for %u ms: it must be reset (the output is not stopped here)\n", reset->tc_port + 1u, (unsigned)I915_HPD_TC_LINK_RESET_DELAY);
+	kern_logf("i915: hpd TC%u: the link has had no DP-alt partner for %u ms: it must be reset\n", reset->tc_port + 1u, (unsigned)I915_HPD_TC_LINK_RESET_DELAY);
+
+	/*
+	 * A lit output on the port stops as an unplugged display's does
+	 * (ws051-p005b), in case the connector's disconnection was not seen;
+	 * one stopped already is not asked again.
+	 */
+	if (world->dp_display != NULL)
+		drv_i915_present_tc_partner_gone(world->dp_display, (unsigned)reset->tc_port);
 }

@@ -63,6 +63,7 @@ int drv_i915_display_which(struct i915_display *display, uint32_t display_id, ui
 
 void drv_i915_display_output_back(struct i915_device *device);
 void drv_i915_display_output_fail_back(struct i915_device *device);
+void drv_i915_display_output_lost(struct i915_device *device);
 int drv_i915_display_output_moved(const struct i915_display *display);
 
 /* Reads the OpRegion and its VBT, then the DRAM and the memory bandwidth (the end of the hardware probe). */

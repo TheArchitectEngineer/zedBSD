@@ -62,7 +62,7 @@ Keiland が決める）。i915 は GOP の出力先以外に自分の判断で s
 | [ws051-p004b](phase004b/phase.md) | display の UAPI での出力（claim・mode・present での link training（fallback、M3）・modeset・scanout、TC PLL・TBT PLL を pool へ、TC の encoder を N1 の registry へ） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）、phase.md に合わせた。旧: in-progress → Q1 の判定待ち（5330 の UAT で TC2 の拡張・mirror、eDP の off の付け替えは BUG-266）） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）。BUG-266 は別） | | 同上 |
 | [ws051-p004c](phase004c/phase.md) | GOP が USB-C の時の引き継ぎ（M5: 判定を引き継ぐに、host-gop.c の期待値） | cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: in-progress、実装・host・build 済み、BUG-256 は resolved、5330 で GOP が USB-C の起動の確認が残り） | p004b | 同上 |
 | [ws051-p005a](phase005a/phase.md) | 抜き差しの検出と事象: HPD の長い pulse → detect（外部 DP の probe）→ `GPU_DISPLAY_EVENT_CHANGE`、2 秒の猶予と 5 回の retry（M4 の前半） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）、phase.md に合わせた。旧: in-progress → Q1 の判定待ち（5330 の UAT で TC2 の monitor が点いた、抜き差しの繰り返しと TC1 は未）） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）。抜き差しの繰り返しと TC1 は未） | | hotplug.c・dp-ext |
-| [ws051-p005b](phase005b/phase.md) | scanout 中の抜けの停止、IRQ_HPD の retrain（M4 の後半）、S0ix の口（M10） | in-progress（2026-10-08 P1 q877: retrain を実装・host・build。抜けの停止は Q1 が案 (b) に決定（2026-10-08）、5330 で抜き差しを試せる時に実装。S0ix はベータ3） | p004b、p005a | 同上 |
+| [ws051-p005b](phase005b/phase.md) | scanout 中の抜けの停止、IRQ_HPD の retrain（M4 の後半）、S0ix の口（M10） | in-progress / 実機待ち（2026-10-08 P1 q877: retrain を実装・host・build。2026-10-13 P3 q956: 抜けの停止（案 (b)、firmware 自身の外部の出力）を実装・host 11/0・build warning 0。両方とも 5330 の確かめ待ち。S0ix はベータ3） | p004b、p005a | 同上 |
 | ws051-p006 | 規約の全文の確認と最終の確認 | planned（全文規約の分はベータ3、2026-10-08 ユーザー） | p002、p002b、p003、p004a、p004b、p004c、p005a、p005b | WS の全 source |
 
 ## 2026-10-04 予定（Q1）
