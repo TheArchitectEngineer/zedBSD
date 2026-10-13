@@ -79,3 +79,6 @@ Next（予約、2026-10-03 user）: q635 BUG-149（kernel の poll の SHUT_WR �
 | P1-merge ws113-p015 | — | 43d35865a（kl_scroll）・9d04591db・583caebf8 | wayland/{apps-bar,arrange-shell,heads,plane,shell,...}・libkeiland scroll・plan/ws113 | integrated 79b9b1b83（2026-10-08、T1-380 待ち） |
 
 2026-10-13 夜 / q940（新しい世代）: user「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」→ [ws216-p004](../../ws216/phase004/phase.md) Notes の画面の再開。前の世代の書きかけは Q1 が agent/p1 6b09ad269（WIP）に救った（写し build/salvage-20261013/p1-569d8e952.patch）。main を取り込み → build・host 試験 → §7 の記録 → Q1 に merge 依頼 → QEMU の確かめは T1 への依頼を Q1 に送る。State: active。
+- q940 結果（2026-10-13 夜）: 981e20f1b → main cae6db34f（Q1 が render.c の塊・組の pipeline の確保と解放を review）。host 244 checks ×3（plain・ASan・UBSan）0 failed、amd64・rpi4・Linux の notes の build warning 0。ws216-p004 は test-wait（画の確かめは p007 の T1 にまとめる、P1 の推奨を Q1 が採用）。
+
+2026-10-13 夜 / q942: [ws216-p005](../../ws216/ws.md) 領域の塗りつぶし（同じ P1 の続き、WS216 の表の「p004〜p006 は同じ担当が順に」）。承認: ユーザーの再開の指示と WS216 の D1〜D12。p004 の成果は main cae6db34f に統合済み（p004 の clearance は p007 の T1 の後）。State: active。
