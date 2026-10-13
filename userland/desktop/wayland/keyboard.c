@@ -572,8 +572,12 @@ struct keyboard_state {
 	 * press was taken (microseconds, 0 when no key's sending waits for
 	 * it), and after a key was sent, the client it went to (NULL when no
 	 * frame is awaited) and when its release was taken, until that client
-	 * commits its next buffer.  slide_seen is the slide being followed
-	 * (its slide_ms), with its frames, the time of its last frame, its
+	 * commits its next buffer, and when that client was last told a frame
+	 * was done or given a buffer back after the release (0: not since;
+	 * ws102-p011: a client presenting in FIFO waits for the one, a client
+	 * of shared memory with both buffers held for the other, before it
+	 * commits).  slide_seen is the slide being followed (its slide_ms),
+	 * with its frames, the time of its last frame, its
 	 * largest gap between frames, the time to its first frame, whether it
 	 * was logged, and whether it is a panel leaving (when one panel takes
 	 * another's place, the first drawn of the two is followed).
@@ -581,6 +585,7 @@ struct keyboard_state {
 	uint64_t latency_release_us;
 	struct kwl_client *latency_client;
 	uint64_t latency_start_us;
+	uint64_t latency_told_us;
 	uint64_t slide_seen;
 	unsigned slide_frames;
 	uint64_t slide_last_ms;
@@ -1248,14 +1253,18 @@ kwl_keyboard_draw(
 /*
  * Measures a key's way to its application (ws102-p010): the first buffer
  * the client a key was sent to commits after it ends the measurement, and
- * its time since the key's release is logged.  wl_surface.commit calls it
- * (protocol.c) for every surface.
+ * its time since the key's release is logged, with how long after the
+ * release the client was last told a frame of it was done or given a
+ * buffer back (waited_us, 0 when it was not told since: ws102-p011 tells
+ * a commit that waited for the compositor from one that did not).
+ * wl_surface.commit calls it (protocol.c) for every surface.
  */
 void
 kwl_keyboard_surface_commit(
 	struct kwl_object *surface)
 {
 	uint64_t now;
+	uint64_t waited;
 
 	/* Only a buffer of the client awaited. */
 	if (keyboard.latency_client == NULL || surface->client != keyboard.latency_client)
@@ -1263,10 +1272,34 @@ kwl_keyboard_surface_commit(
 	if (surface->pending == NULL)
 		return;
 
+	/* The wait for the compositor, when the client was told after the release. */
+	waited = 0;
+	if (keyboard.latency_told_us != 0U)
+		waited = keyboard.latency_told_us - keyboard.latency_start_us;
+
 	/* Succeeded: logged, and no longer awaited. */
 	now = keyboard_microseconds();
-	printf("KWL OSK latency frame_us=%llu\n", (unsigned long long)(now - keyboard.latency_start_us));
+	printf("KWL OSK latency frame_us=%llu waited_us=%llu\n", (unsigned long long)(now - keyboard.latency_start_us), (unsigned long long)waited);
 	keyboard.latency_client = NULL;
+	keyboard.latency_told_us = 0;
+}
+
+/*
+ * Notes that a client was told a frame was done or given a buffer back
+ * (objects.c, for each frame callback and wl_buffer.release): when it is
+ * the client a key's frame is awaited from, the time is kept for the
+ * measurement (ws102-p011).
+ */
+void
+kwl_keyboard_client_told(
+	struct kwl_client *client)
+{
+	/* Only the client awaited. */
+	if (keyboard.latency_client == NULL || client != keyboard.latency_client)
+		return;
+
+	/* Succeeded: the latest telling since the release. */
+	keyboard.latency_told_us = keyboard_microseconds();
 }
 
 /*
@@ -5683,6 +5716,7 @@ keyboard_latency_sent(
 	if (server->focus != NULL)
 		keyboard.latency_client = server->focus->client;
 	keyboard.latency_start_us = keyboard.latency_release_us;
+	keyboard.latency_told_us = 0;
 	keyboard.latency_release_us = 0;
 }
 

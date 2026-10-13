@@ -994,6 +994,7 @@ list_fragment(
 	layout_unit baseline)
 {
 	struct paint_item item;
+	struct paint_item shadow;
 	struct paint_glyph *glyphs;
 	struct text_glyph glyph;
 	uint32_t code_point;
@@ -1074,6 +1075,20 @@ list_fragment(
 	item.font = fragment->font;
 	item.glyphs = glyphs;
 	item.glyph_count = count;
+	if (fragment->box->style.text_shadow_set) {
+		shadow = item;
+		shadow.x += layout_from_px(fragment->box->style.text_shadow.x);
+		shadow.y += layout_from_px(fragment->box->style.text_shadow.y);
+		shadow.color = fragment->box->style.text_shadow.color;
+		if (opacity < 1.0f)
+			shadow.color = (shadow.color & 0x00ffffffU) |
+			    ((uint32_t)((float)(shadow.color >> 24) * opacity + 0.5f) << 24);
+		error = wb_vector_push(&walk->list->items, &shadow);
+		if (error != 0) {
+			walk->error = error;
+			return;
+		}
+	}
 	error = wb_vector_push(&walk->list->items, &item);
 	if (error != 0) {
 		walk->error = error;
@@ -2047,11 +2062,13 @@ list_background_image(
 	int repeat_x;
 	int repeat_y;
 
-	/* Nothing without an image, or in an area without room. */
+	/* A zero-sized positioning area still places a canvas image. */
 	image = box->background;
 	if (walk->error != 0 || image == NULL)
 		return;
-	if (area->width <= 0 || area->height <= 0 || painting->width <= 0 || painting->height <= 0)
+	if (painting->width <= 0)
+		return;
+	if (painting->height <= 0)
 		return;
 
 	/* A fixed image is sized and positioned against the viewport at the document origin. */

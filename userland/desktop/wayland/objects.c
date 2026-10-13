@@ -260,6 +260,9 @@ kwl_buffer_put(
 				buffer->client->fatal = 1;
 				buffer->client->fatal_time = kwl_milliseconds();
 			}
+
+			/* The on-screen keyboard's measurement hears when a client it awaits got a buffer back (ws102-p011). */
+			kwl_keyboard_client_told(buffer->client);
 		}
 	}
 
@@ -297,6 +300,9 @@ kwl_callbacks_done(
 				callback->client->fatal = 1;
 				callback->client->fatal_time = kwl_milliseconds();
 			}
+
+			/* The on-screen keyboard's measurement hears when a client it awaits was told a frame was done (ws102-p011). */
+			kwl_keyboard_client_told(callback->client);
 		}
 
 		/* One-shot callbacks retire only after their ordered done event was queued. */

@@ -1,0 +1,144 @@
+viewport 800.00 x 600.00, document height 496.50
+block <html> 20.00 20.00 644.00 456.50
+  block <body> 16.00 16.00 644.00 456.50
+    block <h1> 57.00 57.00 562.00 120.00
+      line 57.00 57.00 height 120.00 baseline 147.00
+        text 57.00 w 248.55 100px "Acid3"
+    block <div> 57.00 137.00 562.00 311.50
+      line 60.00 137.00 height 161.50 baseline 299.00
+        inline-block 60.00 w 58.00 h 42.00 shift -40.00
+        inline-block 118.00 w 75.00 h 50.00 shift -48.00
+        inline-block 193.00 w 95.00 h 58.00 shift -56.00
+        inline-block 288.00 w 86.00 h 66.00 shift -64.00
+        inline-block 374.00 w 134.00 h 74.00 shift -72.00
+        inline-block 508.00 w 86.00 h 82.00 shift -80.00
+      block <p> 64.00 217.00 54.00 42.00
+      block <p> 127.00 201.00 64.00 50.00
+      block <p> 202.00 185.00 74.00 58.00
+      block <p> 288.00 169.00 86.00 66.00
+      block <p> 387.00 153.00 96.00 74.00
+      block <p> 498.00 137.00 96.00 82.00
+    block <p> 57.00 229.50 568.00 120.00
+      line 231.80 229.50 height 120.00 baseline 319.50
+        text 231.80 w 168.66 100px "100"
+        text 400.45 w 55.89 100px "/"
+        text 456.34 w 168.66 100px "100"
+    block <map> 57.00 349.50 562.00 24.00
+      block <iframe> 57.00 349.50 0.00 0.00
+      block <iframe> 57.00 349.50 0.00 0.00
+      block <iframe> 57.00 349.50 0.00 0.00
+      block <form> 57.00 349.50 562.00 24.00
+        line 57.00 349.50 height 24.00 baseline 367.50
+          replaced 57.00 w 0.00 h 0.00
+      block <table> 57.00 373.50 0.00 0.00
+        block <tbody> 57.00 373.50 0.00 0.00
+          block <tr> 57.00 373.50 0.00 0.00
+            block <td> 57.00 373.50 0.00 0.00
+              block <p> 57.00 373.50 0.00 0.00
+      block <object> 130.50 84.30 0.00 0.00
+        block <object> 130.50 84.30 0.00 0.00
+          block <object> 130.50 84.30 39.20 24.00
+            line 130.50 84.30 height 24.00 baseline 102.30
+              text 130.50 w 39.20 20px "FAIL"
+      block <a> 17.00 18.00 80.00 36.00
+        line 17.00 18.00 height 12.00 baseline 27.00
+          text 17.00 w 18.97 10px "YOU"
+          text 35.97 w 4.00 10px " "
+          text 39.97 w 36.05 10px "SHOULD"
+        line 17.00 30.00 height 12.00 baseline 39.00
+          text 17.00 w 18.88 10px "NOT"
+          text 35.88 w 4.00 10px " "
+          text 39.88 w 16.86 10px "SEE"
+          text 56.73 w 4.00 10px " "
+          text 60.73 w 23.92 10px "THIS"
+        line 17.00 42.00 height 12.00 baseline 51.00
+          text 17.00 w 13.34 10px "AT"
+          text 30.34 w 4.00 10px " "
+          text 34.34 w 18.23 10px "ALL"
+      block 638.00 18.00 20.00 20.00
+        line 638.00 18.00 height 20.00 baseline 34.00
+          text 638.00 w 20.00 20px "X"
+    block <p> 57.00 373.50 582.00 98.00
+      line 57.00 373.50 height 19.20 baseline 388.09
+        text 57.00 w 17.12 16px "To"
+        text 74.12 w 4.80 16px " "
+        text 78.92 w 31.64 16px "pass"
+        text 110.56 w 4.80 16px " "
+        text 115.36 w 23.83 16px "the"
+        text 139.19 w 4.80 16px " "
+        text 143.98 w 35.45 16px "test,"
+        text 179.44 w 4.80 16px " "
+        text 184.23 w 8.25 16px "a"
+        text 192.48 w 4.80 16px " "
+        text 197.28 w 56.16 16px "browser"
+        text 253.44 w 4.80 16px " "
+        text 258.23 w 32.25 16px "must"
+        text 290.48 w 4.80 16px " "
+        text 295.28 w 23.75 16px "use"
+        text 319.03 w 4.80 16px " "
+        text 323.83 w 20.19 16px "its"
+        text 344.02 w 4.80 16px " "
+        text 348.81 w 53.42 16px "default"
+        text 402.23 w 4.80 16px " "
+        text 407.03 w 63.36 16px "settings,"
+        text 470.39 w 4.80 16px " "
+        text 475.19 w 23.83 16px "the"
+        text 499.02 w 4.80 16px " "
+        text 503.81 w 66.30 16px "animation"
+        text 570.11 w 4.80 16px " "
+        text 574.91 w 23.39 16px "has"
+      line 57.00 392.70 height 19.20 baseline 407.30
+        text 57.00 w 16.27 16px "to"
+        text 73.27 w 4.80 16px " "
+        text 78.06 w 16.42 16px "be"
+        text 94.48 w 4.80 16px " "
+        text 99.28 w 52.44 16px "smooth,"
+        text 151.72 w 4.80 16px " "
+        text 156.52 w 23.83 16px "the"
+        text 180.34 w 4.80 16px " "
+        text 185.14 w 39.44 16px "score"
+        text 224.58 w 4.80 16px " "
+        text 229.38 w 23.39 16px "has"
+        text 252.77 w 4.80 16px " "
+        text 257.56 w 16.27 16px "to"
+        text 273.83 w 4.80 16px " "
+        text 278.62 w 24.02 16px "end"
+        text 302.64 w 4.80 16px " "
+        text 307.44 w 15.94 16px "on"
+        text 323.38 w 4.80 16px " "
+        text 328.17 w 65.58 16px "100/100,"
+        text 393.75 w 4.80 16px " "
+        text 398.55 w 23.92 16px "and"
+        text 422.47 w 4.80 16px " "
+        text 427.27 w 23.83 16px "the"
+        text 451.09 w 4.80 16px " "
+        text 455.89 w 33.53 16px "final"
+        text 489.42 w 4.80 16px " "
+        text 494.22 w 32.91 16px "page"
+        text 527.12 w 4.80 16px " "
+        text 531.92 w 23.39 16px "has"
+        text 555.31 w 4.80 16px " "
+        text 560.11 w 16.27 16px "to"
+        text 576.38 w 4.80 16px " "
+        text 581.17 w 29.81 16px "look"
+      line 57.00 411.91 height 19.20 baseline 426.50
+        text 57.00 w 58.89 16px "exactly,"
+        text 115.89 w 4.80 16px " "
+        text 120.69 w 34.94 16px "pixel"
+        text 155.62 w 4.80 16px " "
+        text 160.42 w 23.47 16px "for"
+        text 183.89 w 4.80 16px " "
+        text 188.69 w 38.67 16px "pixel,"
+        text 227.36 w 4.80 16px " "
+        text 232.16 w 26.16 16px "like"
+        text 258.31 w 4.80 16px " "
+        text 263.11 w 27.77 16px "this"
+        text 290.88 w 4.80 16px " "
+        text 295.67 w 71.23 16px "reference"
+        text 366.91 w 4.80 16px " "
+        text 371.70 w 67.14 16px "rendering"
+        text 438.84 w 3.30 16px "."
+      block <span> 619.00 373.50 20.00 20.00
+    block <div> 10.00 10.00 78.39 48.00
+      line 10.00 10.00 height 48.00 baseline 46.00
+        text 10.00 w 78.39 40px "FAIL"

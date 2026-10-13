@@ -11,11 +11,12 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-13 夜（Q1）: N=2（P1・P3）＋T1**（ユーザー「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」）。前のセッションは 20:06 で止まり、書きかけを救った（写し `build/salvage-20261013/`）。
-  - P1（agent/p1）: q940 [ws216-p004](ws216/phase004/phase.md) Notes の画面は main cae6db34f に統合（test-wait、画は p007 の T1）。p005 塗りつぶしも main 6c703b2fc（test-wait）。p006 UI も main 3f22c82ec（test-wait）。今は新しい世代で q946 ws216-p007 の AAT の scenario。
-  - P3（agent/p3）: q941 [ws220-p003](ws220/phase003/phase.md) TCP の送りの未送信・retry は review-1 の直しの後 main 282f46038 に統合（test-wait T1-577）。p004 RTT と RTO も main 51f753f27（test-wait T1-579）。今は q945 ws220-p005 fast retransmit。
-  - T1（agent/t1）: 未実行の T1-571〜T1-576（BUG-298・ws219-p002・ws218-p002・WS220 の基線 T1-574・ws206-p005・ws217-p002a）。
-  - P2・P4 は停止（未 commit なし）。WS221 p001 はユーザーの §9 Q1〜Q13、WS217 p002a は T1-576 待ち。
+- **2026-10-13 夜（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「N=3で、P2を追加し、実装を担当してもらいます。」「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
+  - P1（第 3 世代、agent/p1）: q959 ws217-p003 入力の座標。
+  - P2（agent/p2-ws215）: q953 ws145-p005 → q954 ws161 の build → q960 ws172-p004b の設計だけ。
+  - P3（第 2 世代、agent/p3）: q955 ws156-p006 → q956 ws051-p005b → q957 ws081 → q958 ws033-p001。
+  - T1（agent/t1）: T1-583（ws217-p002b）→ T1-584（ws157）→ T1-585（ws220-p005、60 秒を超える転送を含む）→ T1-586（低い優先度）。5330 が届けば T1-582（BUG-300）を先に。
+  - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
@@ -34,7 +35,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-301、WS227、q959、T1-586。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-301、WS227、q962、T1-588。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -576,6 +577,12 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-13 夜 ユーザー:「あ、Linux/FreeBSDでは、FIDO2バックエンドがないだけで、passkeyコマンドは入れてください。」→ Linux・FreeBSD の Keiland に passkey の command を入れる（FIDO2 の backend 無し、P2 q961）。補足「/opt/keiland/etc/passkey に書き込める /opt/keiland/sbin/passkey コマンドがLinuxとFreeBSDに移植されればいいと思います。」
+- 2026-10-13 夜 ユーザー:「Linux/FreeBSDではFIDO2はまだ入れなくていいです。あとでLinux標準のFIDO2について調べて入れますが、ベータ3にします。」→ WS161 の Linux・FreeBSD の FIDO2 はベータ3。os-freebsd.c も main から外した。WS161 のベータ2 の範囲は完了（残りは規約 p007＝ベータ3 と Linux・FreeBSD）。
+- 2026-10-13 夜 ユーザー（AskUserQuestion、WS161 p006）: fidoctl は「Linux・FreeBSD には入れない」→ os-freebsd.c（FreeBSD の hidraw）だけ main に入れ、fidoctl の Makefile.linux・Makefile.freebsd は Q1 が外した（Linux の build に libssl-dev を必須にしない）。
+- 2026-10-13 夜 Q1 の判定（WS102 p011）: 画面 keyboard の遅れの尾は QEMU の 1 コマ（FIFO の frame callback の待ち）と見られる。直す所は WS102 の外（compositor・libkeiui の swapchain）で、ベータ2 には機能を足さないので P2 の推し (3) を採る: QEMU の値は参考、判定は 5330 の実機の値（WS094・p010 と同じ扱い）。計測の log（KWL OSK latency waited_us）は main に入れた、T1-586 で確かめ（低い優先度）。
+- 2026-10-13 夜 ユーザー（WS172 passkey の S1〜S13）:「済みません、ベータ2では設計までです。設計までと言うことなら、推奨でOKです。」→ WS172 のベータ2 は p004b の設計まで（実装はベータ3）、S1〜S13 は全部推奨（plan/ws172/phase004/survey.md の末尾）。
+- 2026-10-13 夜 ユーザー: WS046 p014 は「満たしたとみなす」（bash は足さない）→ cleared。P1 の次は「WS217 p003（入力の座標）を続ける」→ WS217 をベータ2 に。WS172 の S1〜S13 は「個別に聞いてほしい」。5330 は「電源を入れる（zedBSD）」。「TCPですが、60秒以上の転送も計測してください。そうでないとTCP Windowの実装の問題が見えないです。」→ WS220 の T1 の測りは 60 秒を超える転送を必ず含める（T1-585 に 1 GiB を足した）。
 - 2026-10-13 夜 Q1 の判定: WS220 の T1 の基準を「同じ session の中の基線の kernel と比べる」に改めた（共有の host の負荷で別の session の基線とは比べられない、T1-581）。p003・p004 は cleared、p005 は損失の時の確かめを T1-585 で。WS046 p007 は T1-050 の証拠で cleared。
 - 2026-10-13 夜 ユーザー:「Codex のセッションは、私が WS074 の作業を頼んだ物です。これもベータ2までに完了予定です。」→ WS074 はベータ2、Codex のセッションの担当（main の checkout で直に作業）。
 - 2026-10-13 夜 ユーザー:「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。N=3で、P2を追加し、実装を担当してもらいます。」→ N=3（P1・P2・P3）＋T1。P2 はベータ2 の残りの実装（q949 WS157 から）。UAT 待ちの Phase の一括の cleared は担当が準備、Q1 が commit。

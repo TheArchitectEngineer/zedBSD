@@ -2,6 +2,54 @@
 
 # Past Log
 
+## 最新: q1011 / WS074 visited link color（2026-10-13）
+
+[q1011履歴](queue-q1011.md): 同一ページが観測した子 frame の成功 URL だけを `:visited` 描画色に反映。実 HTTP fixture6/6、frame load52/52、CSS rule44/44、build warning0。固定 Acid3 得点100/100・inventory100/100・例外0・pixel差**0/480000（100%一致）**、Acid2差1865/120000不変。p188 cleared、ユーザーの Acid3 目標達成。p100 whole は Acid2 exact・target gate 等が残り planned、WS074 は incomplete。2026-10-13 main commit `1f9cc35ca` に145 fileを統合し、mainでbuild warning0・固定 Acid3差0を再確認（[report](../ws074/phase188/evidence/20261013-merge-main/report.json)）。GitHub publicationとpushは保留。`master.md` は未変更。
+
+## 最新: q1010 / WS074 negative padding（2026-10-13）
+
+[q1010履歴](queue-q1010.md): 直接負の padding を無効宣言にし、紫箱右端の900差画素を解消。fixture 修正前 FAIL→修正後 PASS、CSS rule44/44、build warning0。固定 Acid3 得点100/100・pixel差801/480000（q1009から900減、99.833125%一致）、Acid2差1865/120000不変。p187 cleared。残差は左上リンク文字801画素。p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
+
+## 最新: q1009 / WS074 sharp text-shadow（2026-10-13）
+
+[q1009履歴](queue-q1009.md): 単一 sharp text-shadow で h1 の +3px 灰色影を描画。局所 fixture・CSS rule44/44、build warning0。固定 Acid3 得点100/100・pixel差1701/480000（q1008から2451減、99.645625%一致）、Acid2差1865/120000不変。p186の有限部分 scope cleared。残差は左上リンク文字801画素と紫の箱右端900画素。p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
+
+## 最新: q1008 / WS074 zero-font inline line（2026-10-13）
+
+[q1008履歴](queue-q1008.md): font-size0 strut の偽0.5px を修正、bucket line162・結果top230・本文top350に。最小 fixture 修正前 FAIL→修正後 PASS、position25/25、build warning0。固定 Acid3 得点100/100・pixel差4152/480000（q1007から8265減、99.135%一致）、Acid2差1865/120000不変。p185 cleared。見出し影・上部リンク文字等、p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
+
+## 最新: q1007 / WS074 loaded object fallback（2026-10-13）
+
+[q1007履歴](queue-q1007.md): loaded HTML object の fallback を親 layout/paint から除外し、404 object の fallback は保持。実 HTTP fixture 修正前 FAIL→修正後 PASS、frame load pass、build warning0。固定 Acid3 得点100/100・pixel差12417/480000（q1006から183減、97.413125%一致）、Acid2差1865/120000不変。p184 cleared。上部リンク文字等、p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
+
+## 最新: q1006 / WS074 CSS HSL/HSLA（2026-10-13）
+
+[q1006履歴](queue-q1006.md): CSS hsl()/hsla() 解析・RGB変換。host HSL14/14、build warning0。固定 Acid3 得点100/100・pixel差12600/480000（q1005から702減、97.375%一致）、Acid2差1865/120000不変。p183 cleared。上部の余分な文字等、p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
+
+## 最新: q1005 / WS074 HTTP stylesheet MIME（2026-10-13）
+
+[q1005履歴](queue-q1005.md): 非 quirks HTML の HTTP stylesheet MIME を判定し、`text/html` の `empty.css` を不適用にした。実 HTTP fixture は修正前 FAIL→修正後 PASS、host build warning0。固定 Acid3 得点100/100・pixel差13302/480000（q1004 から5294減、97.22875%一致）、Acid2差1865/120000不変。p182 cleared。p100全画面差0とWS074受入は未達。ユーザー指示により次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
+
+## 最新: q1004 / WS074 HTML type 属性 selector（2026-10-13）
+
+[q1004履歴](queue-q1004.md): `type=HIDDEN` を UA `input[type=hidden]` に一致させ、form line24→0、本文 y373.50→349.50。固定 Acid3 は得点100/100・pixel差18596/480000（q1003の42921から24325減）、Acid2差1865/120000で不変。host fixture pass、CSS rule44/44、build warning0。p181 cleared。p100全画面差0、WS074 acceptanceは未達。次原因は差画像から選ぶ。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
+
+## 最新: q1003 / WS074 iframe 子の描画（2026-10-13）
+
+[q1003履歴](queue-q1003.md): iframe 内の `FAIL` 2個を親のlayout/paintから除去。固定 Acid3 は得点100/100・pixel差42921/480000（q1002の43486から565減）、Acid2差1865/120000で不変。host fixture pass、frame load52/52、build warning0。p180 cleared。本文 y373.50 / reference y350 の差、p100全画面差0、WS074 acceptanceは未達。次候補は form/inline line の高さ。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
+
+## 最新: q1002 / WS074 Acid3 得点位置（2026-10-13）
+
+[q1002履歴](queue-q1002.md): 絶対配置の `right:0`/auto幅で min-content 下限が欠ける問題を修正。固定 Acid3 は得点100/100・pixel差43486/480000（q1001の56647から13161減）、Acid2差1865/120000で不変。host-position25/25、build warning0。p178 の得点位置の部分 scope は cleared、Phase の pixel 完全一致は未達で uncleared。B1評価はユーザーの単独指示で現行scope対象外。p100/WS074 も未達。次候補だった [p180](../ws074/phase180/phase.md) は q1003 で実施。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
+
+## 前回: q1001 / WS074 Acid3 参照背景画像（2026-10-13）
+
+[q1001履歴](queue-q1001.md): p179 で高さ0の root から canvas に伝播する背景画像の省略を修正。固定 Acid3 は得点100/100・pixel差56647/480000（q1000 の302056から245409減）、Acid2差1865/120000で不変。host build warning0、回帰試験pass。p179 cleared、p178 の旧 attempt は uncleared、p100/WS074 は未達。新 Queue は未選定。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
+
+## 前回: q1000 / WS074 Acid3 baseline（2026-10-13）
+
+[q1000履歴](queue-q1000.md): 現行 source の Acid3 は得点100/100、pixel差302056/480000。参照の背景画像が欠け、p178 の1領域試行は停止・uncleared。Acid2 も現行条件で差1865/120000。WS074/p100 は未達。次は参照画像の読込み経路と Acid2 差の原因を有限 scope に分ける。独立 tree の成果は main 未統合、GitHub publication 保留、push なし。
+
 ## 最新: q779 / BUG-202 の起動停止（2026-10-06）
 
 [q779履歴](queue-q779.md): 写真と既存ELFで、LPSSのD0復帰10ms待ちをidle threadが実行していたと確定。device初期化を通常boot_workerへ移す修正（e093bebe）と記録（c313e3ef）を、user「マージしてください。」でmainへ統合。main上のamd64 kernel buildはwarning/error 0、include/vmunix check PASS。q779-i01・ws073-p055はuser指定の機能修正・buildまでcleared。

@@ -7,12 +7,17 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 keyboard.c logs, for each key a release of the panel sends:
     KWL OSK latency send_us=N    the release taken to the key sent
-    KWL OSK latency frame_us=N   the release taken to the next buffer the
-                                 application it went to commits
+    KWL OSK latency frame_us=N [waited_us=W]
+                                 the release taken to the next buffer the
+                                 application it went to commits, and
+                                 (ws102-p011) when after the release the
+                                 application was last told a frame of it
+                                 was done (0: not since the release)
 and, for each slide of a panel (opening, leaving=0; closing, leaving=1):
     KWL OSK slide end leaving=L frames=F first_ms=A max_gap_ms=G
 This prints each measurement's count, median, 95th percentile (nearest
-rank) and largest, and the targets of design.md section 3 (L3):
+rank) and largest (the frames also split into those that waited for an
+earlier frame's callback and those that did not), and the targets of design.md section 3 (L3):
     (a) send p95 <= 5 ms, frame p95 <= 50 ms
     (b) every opening slide's frames no more than 20 ms apart
 With --check the exit status is 1 when a target is missed (or nothing was
@@ -51,6 +56,7 @@ def main():
 	check = "--check" in sys.argv[2:]
 	send = []
 	frame = []
+	waited = []
 	slides = []
 	with open(sys.argv[1], encoding="utf-8", errors="replace") as log:
 		for line in log:
@@ -58,9 +64,11 @@ def main():
 			if match:
 				send.append(int(match.group(1)))
 				continue
-			match = re.search(r"KWL OSK latency frame_us=(\d+)", line)
+			match = re.search(r"KWL OSK latency frame_us=(\d+)(?: waited_us=(\d+))?", line)
 			if match:
 				frame.append(int(match.group(1)))
+				if match.group(2) is not None:
+					waited.append((int(match.group(1)), int(match.group(2))))
 				continue
 			match = re.search(r"KWL OSK slide end leaving=(\d+) frames=(\d+) first_ms=(\d+) max_gap_ms=(\d+)", line)
 			if match:
@@ -69,6 +77,11 @@ def main():
 	# The measurements.
 	summary("send_us", send, "")
 	summary("frame_us", frame, "")
+	if waited:
+		summary("frame_us after a wait", [pair[0] for pair in waited if pair[1] > 0], "")
+		summary("frame_us without a wait", [pair[0] for pair in waited if pair[1] == 0], "")
+		summary("waited_us", [pair[1] for pair in waited if pair[1] > 0], "")
+		summary("frame_us after the wait's end", [pair[0] - pair[1] for pair in waited if pair[1] > 0], "")
 	opening = [slide for slide in slides if slide[0] == 0]
 	closing = [slide for slide in slides if slide[0] == 1]
 	for kind, group in (("open", opening), ("close", closing)):

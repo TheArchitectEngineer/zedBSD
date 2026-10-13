@@ -61,7 +61,7 @@ Resume point: L1 を満たした。L2 の p006・p007・p008・p009・p015・p01
 | [ws102-p008](phase008/phase.md) | L2 | 手書きの面（線・stub の認識・候補） | cleared（2026-09-30: 手書きの面・線・stub の認識・候補の送出、guest PASS。(c): 点は入力の後の最初の frame で描かれる（9/9、lag 20〜53 ms）。QEMU の frame の間隔は 130〜143 ms で、60 Hz の 17 ms は実機か Windows の QEMU で測る） | p006 |
 | [ws102-p009](phase009/phase.md) | L2 | `touch.c` の `ROUTE_OSK`（多指の連打） | cleared（2026-09-30、QEMU: 2 本指 50 ms の重なり 100 打鍵で取りこぼし 0（変更の前は 50）、L1・L2 の全ての手順・C9・WS079-p010・boot PASS） | p006 |
 | [ws102-p010](phase010/phase.md) | L3 | 計測の道具と基準値（遅れ・開く動き） | in-progress（2026-10-08 P1 q913: 道具を実装・build、基準値を T1 へ） | p009 |
-| [ws102-p011](phase011/phase.md) | L3 | 数値目標への直し | planned（p010 の基準値を待つ） | p010 |
+| [ws102-p011](phase011/phase.md) | L3 | 数値目標への直し | in-progress — test-wait（2026-10-13 P2 q952: 尾は FIFO の present が compositor の前の frame の callback を待つ見立て、確かめの計測 waited_us を足して T1 へ。直しは WS102 の外の見込みで判断待ち） | p010 |
 | ws102-p012 | L3 | IME と組んだ日本語の変換、右の列の変換候補（独自の拡張、design.md §2.10） | planned | p005、D2、WS095 |
 | ws102-p013 | L4 | Windows の上の QEMU（WS085）での物理の touch の確認 | planned | p009、WS085 |
 | [ws102-p016](phase016/phase.md) | L2 | 右の列の道具の面（design.md §2.10、列の配置は p021 で済み）、編集の面（矢印・行頭行末・頁・BS を key で、選択の toggle は Shift）、直前の app の button。Text Editor で「選択 → → ×5 → コピー → 直前の app → 貼り付け」で同じ文字が別の app に入る（3/3） | cleared（2026-09-30: 道具の面（前の app・Del・tab・編集の面）、「選択 → → ×5 → コピー → 前の app → 貼り付け」を 3 回で b.txt が hellohellohello。p007 の直に替えた時の元の位置も直した。全手順・p010・boot PASS、C9 は p076 の画面の判定が不安定（単独 4/5）） | p007 |

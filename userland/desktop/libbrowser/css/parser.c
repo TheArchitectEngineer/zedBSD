@@ -64,7 +64,8 @@ static const struct parser_pseudo_name parser_pseudo_names[] = {
 	{ "only-child", CSS_PSEUDO_ONLY_CHILD },
 	{ "empty", CSS_PSEUDO_EMPTY },
 	{ "link", CSS_PSEUDO_LINK },
-	{ "any-link", CSS_PSEUDO_LINK },
+	{ "visited", CSS_PSEUDO_VISITED },
+	{ "any-link", CSS_PSEUDO_ANY_LINK },
 	{ "first-of-type", CSS_PSEUDO_FIRST_OF_TYPE },
 	{ "last-of-type", CSS_PSEUDO_LAST_OF_TYPE },
 	{ "only-of-type", CSS_PSEUDO_ONLY_OF_TYPE },
@@ -1468,6 +1469,7 @@ parser_attribute(
 		if (!insensitive && !sensitive)
 			return EINVAL;
 		simple->case_insensitive = insensitive;
+		simple->case_sensitive = sensitive;
 		index++;
 	}
 

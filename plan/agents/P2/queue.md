@@ -65,3 +65,6 @@ Next（予約）: debug を続ける（BUG-147 の後: 優先度の高い bug。
 - q951: WS046 の残りに進む。
 - q951 結果（2026-10-13 夜）: WS046 p007 は T1-050 の証拠で Q1 が cleared、p014 は「make check の status 0」をユーザーの判断に（(a) expat の runtests 4932/4932 で満たしたとみなす が推し）。記録 20a4dab66 → main 0d4ac1421。
 - 予約（2026-10-13 夜 Q1）: q952 [WS102](../../ws102/ws.md) p011（画面 keyboard の frame の p95 を目標まで）→ q953 [WS145](../../ws145/ws.md) p005（Linux・FreeBSD の build・install と guest）→ q954 [WS161](../../ws161/ws.md) p006 の残り（Linux・FreeBSD の build）。
+- q952〜q954・q960 結果（2026-10-13 夜）: WS102 p011 の計測 030e77da1・WS145 p005 a07a5b174・WS161 p006 c2fcd7d3d（ユーザーの指示で os-freebsd.c と fidoctl の Makefile は main から外した、Linux・FreeBSD の FIDO2 はベータ3）・WS172 p004b の設計 71d457c16 → main（1d9880aa0）。p004b は design-reviewer。
+
+2026-10-13 夜 / q961: Linux・FreeBSD の Keiland に passkey の command を入れる（FIDO2 の backend 無し）。ユーザー「あ、Linux/FreeBSDでは、FIDO2バックエンドがないだけで、passkeyコマンドは入れてください。」。State: active。

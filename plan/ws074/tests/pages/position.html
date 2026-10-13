@@ -22,6 +22,8 @@ body { margin: 0; font-family: sans-serif; background: #f4f1ea; color: #222222; 
 .context-high { position: absolute; top: 30px; left: 500px; width: 60px; height: 60px; background: #6c4da3; z-index: 5; }
 .context-child { position: absolute; top: 0; left: 40px; width: 60px; height: 60px; background: #f2d13d; }
 .context-lower { position: absolute; top: 30px; left: 540px; width: 60px; height: 60px; background: #2675b8; z-index: 4; }
+.zero-anchor { position: absolute; top: 200px; left: 500px; width: 0; }
+.zero-child { position: absolute; right: 0; white-space: pre; }
 p { margin: 12px 20px; }
 </style>
 </head>
@@ -39,6 +41,7 @@ p { margin: 12px 20px; }
 <div class="percent-shrink"><a class="percent-button">sign in</a><div>new customer registration</div></div>
 <div class="context-high"><div class="context-child"></div></div>
 <div class="context-lower"></div>
+<div class="zero-anchor"><div class="zero-child">RIGHT</div></div>
 </div>
 <p class="shifted">This paragraph is shifted by position: relative (30 pixels right, 8 down).</p>
 <p>The page after the stage; the stage's absolute boxes take no room in the flow.</p>

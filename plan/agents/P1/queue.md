@@ -91,3 +91,6 @@ Next（予約、2026-10-03 user）: q635 BUG-149（kernel の poll の SHUT_WR �
 - q946 結果（2026-10-13 夜、P1 の新しい世代）: ws216-p007 の phase.md・AAT の scenario 2 つ・helper・config を d83ef6a03 → main 79a932b8c。Q1 が標準の AAT の image（plan/tools/aat/config-amd64-aat.mk）に peninject を足した。test-wait（T1-580）。
 
 2026-10-13 夜 / q948（P1 の第 2 世代の続き）: ws217-p002b 画面の回転の turn（compositor の 90/270°）。ユーザー（AskUserQuestion「WS217 p002b 画面の 90° 回転」）。p002a の出力は main（T1-576 の (B) 待ち）。State: active。
+- q948 結果（2026-10-13 夜）: ws217-p002b（turn pass と実行中の回転、review-1 を反映）c6e4a94b6 → main 2d804c237、test-wait（T1-583）。P1 の第 2 世代はここで終わり（context 約 60 万 token）。
+
+2026-10-13 夜 / q959（P1 の第 3 世代）: ws217-p003 入力の座標（touch・ペン・mouse・touchpad を回転に合わせる）。ユーザー（AskUserQuestion「WS217 p003（入力の座標）を続ける」、WS217 をベータ2 に）。State: active。
