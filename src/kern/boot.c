@@ -54,6 +54,7 @@ static const struct parameter_name parameter_names[KERN_BOOT_PARAMETER_COUNT] = 
 	PARAMETER_NAME("display.mode"),
 	PARAMETER_NAME("i915.start"),
 	PARAMETER_NAME("i915.debug"),
+	PARAMETER_NAME("i915.gen9"),
 };
 
 static char firmware_source[KERN_BOOT_SOURCE_SELECTOR_SIZE];
@@ -290,14 +291,16 @@ kern_boot_parameters_parse(
 		}
 
 		/*
-		 * kmsg=, login=, display=, i915.start= and i915.debug= take one
-		 * of their words (ws035-p097, ws075-p012, ws118-p005).
+		 * kmsg=, login=, display=, i915.start=, i915.debug= and
+		 * i915.gen9= take one of their words (ws035-p097, ws075-p012,
+		 * ws118-p005, ws229-p002).
 		 */
 		if (key == KERN_BOOT_PARAMETER_KMSG ||
 		    key == KERN_BOOT_PARAMETER_LOGIN ||
 		    key == KERN_BOOT_PARAMETER_DISPLAY ||
 		    key == KERN_BOOT_PARAMETER_I915_START ||
-		    key == KERN_BOOT_PARAMETER_I915_DEBUG) {
+		    key == KERN_BOOT_PARAMETER_I915_DEBUG ||
+		    key == KERN_BOOT_PARAMETER_I915_GEN9) {
 			error = parameter_word(key, parameters->storage + value_start, value_length);
 			if (error != 0) {
 				error = parse_error(parameters, error);
@@ -331,8 +334,8 @@ kern_boot_parameters_parse(
 
 /*
  * Checks the word of kmsg= (quiet or console), login= (graphical or console),
- * display= (auto, hdmi, edp or panel), i915.start= (auto or manual) or
- * i915.debug= (off or display).
+ * display= (auto, hdmi, edp or panel), i915.start= (auto or manual),
+ * i915.debug= (off or display) or i915.gen9= (on or off).
  */
 static int
 parameter_word(
@@ -392,6 +395,22 @@ parameter_word(
 			return EINVAL;
 
 		/* Succeeded: one of i915.debug='s words. */
+		return 0;
+	}
+
+	/*
+	 * i915.gen9= lets the i915 drive a Gen9 GPU (Skylake to Comet Lake),
+	 * on, or leaves it to the firmware, off.  The i915 reads it from the
+	 * loader's line at PCI attach, before this parse.
+	 */
+	if (key == KERN_BOOT_PARAMETER_I915_GEN9) {
+		other = parameter_text_is(value, length, "on");
+		if (!other)
+			other = parameter_text_is(value, length, "off");
+		if (!other)
+			return EINVAL;
+
+		/* Succeeded: one of i915.gen9='s words. */
 		return 0;
 	}
 
