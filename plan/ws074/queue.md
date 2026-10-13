@@ -13,6 +13,6 @@ Timebox: 2026-10-13 22:39〜22:45 JST（6分、最大90分以内）。
 
 Dependency graph: p172 → p178、p179 の参照画像修復 → p178 q1002-i01、p178 局所出力 → p100 の最終受け入れ判断。q1000-i01 は uncleared 履歴として保持。
 
-Upcoming Work Outlook: 得点位置の局所差を検証した後、残る差を領域ごとに選定する。全画面差0・score100/100・fail/Uncaught/crash/timeout0、回帰・全文規約を満たすまで p100 を cleared にしない。次 Queue は自動開始しない。
+Upcoming Work Outlook: q1002 後の候補は [p180](phase180/phase.md) の iframe 子の親ページへの誤描画。別に得点の slash 色・基線、Acid2 の残差がある。全画面差0・score100/100・fail/Uncaught/crash/timeout0、回帰・全文規約を満たすまで p100 を cleared にしない。次 Queue は自動開始しない。
 
 Coordination: q1000、q1001、q1002 は [履歴](../history/queue-q1000.md)・[履歴](../history/queue-q1001.md)・[履歴](../history/queue-q1002.md)に保存。共有 `plan/queue.md` へ投影。次 Queue は未選定。GitHub Issue/Project publication と push は設定に従い保留。
