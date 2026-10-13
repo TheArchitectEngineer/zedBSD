@@ -96,3 +96,13 @@ Follow-up ws074-p217-q1102-eight-20261014: [p189 q1102](../phase189/evidence/202
 ## q1103-i01 結果（2026-10-14 08:23 JST）
 
 Event ws074-p217-q1103-partial-clear-and-p220-add-20261014: [証拠](evidence/20261014-q1103/README.md)。固定007/008はvertical-lr文字子width期待20/40/30対実100。Gridが非水平子をstretchし、inlineは横x方向で行組み、paint/bounds/hitも横書き座標、CSS `text-orientation`無し。Grid単独の修正では不十分なため縦inline geometryを[p220](../phase220/phase.md)へ分離し、p217の007/008文字alignmentだけその出力へ依存させる。q1103部分cleared、p217/p220/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
+Follow-up ws074-p217-q1105-full-grid-20261014: [p189 q1105](../phase189/evidence/20261014-q1105/README.md)の固定Grid502全再測定ではalignmentは206→200 whole FAIL。旧whole PASS後退0、別のfr/gutter1 subtest後退。p217全206受け入れは未達。
+
+## q1106-i01 有限部分範囲（2026-10-14 08:37 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（10:07 JSTまで）に適用。q1105固定alignment200 whole FAILをファイル系列/初回subtest症状とWPT sourceで分類。縦書き・baseline・positioned/size等を分け、上位1〜2代表を現行layout経路へ結び、次の有限実装候補を決める。読取/証拠のみ。browser/runner/WPT/公開ABI/`plan/master.md`/Acid変更なし。p217 whole/p189/p173全件100%は本部分基準外。
+
+## q1106-i01 結果（2026-10-14 08:38 JST）
+
+Event ws074-p217-q1106-partial-clear-20261014: [証拠](evidence/20261014-q1106/README.md)。固定alignment200 whole FAILの初回失敗はwidth79、offsetLeft65、offsetTop37、height18、scrollWidth1。positioned/縦stretchは別系統。auto margin系列7件は各2 subtest offsetTop差で、40%/60%行とauto上下marginの再計算が共通。Gridが行開始へ置いており、CSS Grid §11.2の正の余白吸収が欠落。次はこの独立した有限修正を選ぶ。q1106部分cleared、p217/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。

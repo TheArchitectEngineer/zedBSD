@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1105 / WS074 fixed Grid502 full recensus（2026-10-14）
+## 最新: q1106 / WS074 Grid alignment residual triage（2026-10-14）
+
+[q1106履歴](queue-q1106.md): 固定alignment残200 whole FAILを分類。auto margin系列7件の行内余白吸収欠落を次候補へ。[証拠](../ws074/phase217/evidence/20261014-q1106/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1105 / WS074 fixed Grid502 full recensus（2026-10-14）
 
 [q1105履歴](queue-q1105.md): 固定Grid502は103→110 PASS、399→392 FAIL。旧whole PASS後退0、subtest127改善/1後退。全502 raw等を照合。[証拠](../ws074/phase189/evidence/20261014-q1105/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
 
