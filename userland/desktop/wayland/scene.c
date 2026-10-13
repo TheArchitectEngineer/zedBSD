@@ -109,12 +109,16 @@ kwl_scene_close(
  * Regions use output coordinates and a full-output buffer stride. The caller
  * ends its scene pass before capture and starts its cursor LOAD pass afterwards.
  * Restoration happens outside any pass, after acquiring the swapchain image.
+ * The image is in layout outside its passes, and is left in it: the
+ * swapchain's for presentation, a turned output's turn image to be sampled
+ * (WS217).
  */
 void
 kwl_scene_copy(
 	struct kwl_scene *scene,
 	struct kwl_list *command,
 	VkImage image,
+	VkImageLayout layout,
 	const VkRect2D *regions,
 	unsigned count,
 	unsigned restore)
@@ -157,7 +161,7 @@ kwl_scene_copy(
 	image_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 	image_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	image_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-	image_barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	image_barrier.oldLayout = layout;
 	image_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	image_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	image_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -174,6 +178,10 @@ kwl_scene_copy(
 	buffer_barrier.buffer = scene->buffer;
 	buffer_barrier.size = VK_WHOLE_SIZE;
 	source_stages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+	/* A turn image kept to be sampled was last read by the turn pass's shader (WS217). */
+	if (layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+		source_stages |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 	transfer_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 
 	/* Restoring consumes the cache and writes the acquired colour image. */
@@ -210,7 +218,7 @@ kwl_scene_copy(
 		image_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 	image_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	image_barrier.oldLayout = transfer_layout;
-	image_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	image_barrier.newLayout = layout;
 	kwl_list_pipeline_barrier(
 		command,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,

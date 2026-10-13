@@ -44,6 +44,20 @@
 /* How often the hotplug fence is looked at (ms): each look is a request to the display node. */
 #define OUTPUT_HOTPLUG_MS	250U
 
+/*
+ * A turn of the anchor on the same panel, for the pointer's move to the
+ * same physical point (kwl_output_pointer_turn): the angles before and
+ * after, the panel's size, and where the pointer was and went (for the
+ * log; -1 while it is not on the anchor).
+ */
+struct output_turn {
+	unsigned before;
+	unsigned after;
+	uint32_t physical_width;
+	uint32_t physical_height;
+	int32_t *seen;
+};
+
 static VkResult output_enumerate(struct kwl_server *server);
 static int output_internal(const struct kwl_compose *compose, unsigned index);
 static int output_index(const struct kwl_compose *compose, VkDisplayKHR display);
@@ -51,8 +65,8 @@ static void output_hotplug_register(struct kwl_server *server);
 static void output_recover(struct kwl_server *server);
 static int output_fail_back(struct kwl_server *server);
 static void output_resized(struct kwl_server *server, unsigned glass_rebuild);
-static void output_steps_name(unsigned steps, char *text, size_t size);
 static void output_pointer_clamp(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
+static void output_pointer_turn(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
 
 /*
  * Follows the displays once each pass of the event loop (at most every
@@ -317,6 +331,93 @@ kwl_output_size_set(
 }
 
 /*
+ * Fits the desktop to the output's logical size after it changed with an
+ * angle (output-rotate.c, WS217): the windows, the pointer and, with
+ * glass_rebuild, the look's images.
+ */
+void
+kwl_output_fit(
+	struct kwl_server *server,
+	unsigned glass_rebuild)
+{
+	/* The same fitting as an output opened at another size. */
+	output_resized(server, glass_rebuild);
+}
+
+/*
+ * Names the steps of an output's change for the log ("turn|rotated|resized"),
+ * or "none" (WS217).
+ */
+void
+kwl_output_steps_name(
+	unsigned steps,
+	char *text,
+	size_t size)
+{
+	static const char *const names[] = { "reopen", "turn", "rotated", "resized", "save" };
+	const char *bar;
+	size_t used;
+	unsigned index;
+	int written;
+
+	/* Each step taken, joined by bars. */
+	text[0] = '\0';
+	used = 0U;
+	for (index = 0U; index < sizeof(names) / sizeof(names[0]); index++) {
+		/* A step not taken has no name in the log. */
+		if ((steps & (1U << index)) == 0U)
+			continue;
+
+		/* A bar before every name but the first. */
+		bar = "|";
+		if (used == 0U)
+			bar = "";
+		written = snprintf(text + used, size - used, "%s%s", bar, names[index]);
+		if (written < 0 || (size_t)written >= size - used)
+			return;
+		used += (size_t)written;
+	}
+
+	/* No step at all. */
+	if (used == 0U)
+		(void)snprintf(text, size, "none");
+}
+
+/*
+ * Moves the pointer on the anchor to the same physical point of its panel
+ * after the angle shown changed from before to after (WS217, review S1):
+ * its logical place at the old angle is turned to the panel and back at
+ * the new one, inside the new size.  seen gets where it was and went
+ * (x, y, x', y'; -1 when it is not on the anchor).
+ */
+void
+kwl_output_pointer_turn(
+	struct kwl_server *server,
+	unsigned before,
+	unsigned after,
+	int32_t *seen)
+{
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	struct output_turn turn;
+
+	/* The angles and the panel; the pointer's places not known yet. */
+	memset(&turn, 0, sizeof(turn));
+	turn.before = before;
+	turn.after = after;
+	turn.physical_width = server->compose->mode_width;
+	turn.physical_height = server->compose->mode_height;
+	turn.seen = seen;
+	seen[0] = -1;
+	seen[1] = -1;
+	seen[2] = -1;
+	seen[3] = -1;
+
+	/* The outputs at the new size, and the pointer moved with them. */
+	(void)kwl_outputs(server, outputs);
+	kwl_pointer_warp(server, outputs, output_pointer_turn, &turn);
+}
+
+/*
  * Gives what the output shows now (WS217): its logical size, the angle
  * chosen and the angle shown, and how it is shown.  Without the device
  * open, only the size.
@@ -360,14 +461,34 @@ kwl_output_rotated(
 	struct kwl_compose *compose;
 	struct kwl_rotate_state after;
 	char names[64];
+	int32_t pointer[4];
 	unsigned steps;
+	unsigned before_rotation;
+	int same_panel;
 
-	/* What the output shows now, against what it showed when it last opened. */
+	/* What the output shows now, against what it showed when it last opened, and whether on the same panel. */
 	compose = server->compose;
 	kwl_output_state(server, &after);
 	steps = kwl_rotate_steps(&compose->opened, &after, KWL_ROTATE_MODE_OPEN);
+	before_rotation = compose->opened.rotation;
+	same_panel = 0;
+	if (compose->opened_display == compose->display)
+		same_panel = 1;
 	compose->opened = after;
+	compose->opened_display = compose->display;
 	compose->opened_steps = steps;
+
+	/*
+	 * Another angle on the same panel keeps the pointer on its physical
+	 * point, before the fitting below would keep it inside the new size
+	 * (review S1); on another panel the fitting's clamp alone.
+	 */
+	pointer[0] = -1;
+	pointer[1] = -1;
+	pointer[2] = -1;
+	pointer[3] = -1;
+	if ((steps & KWL_ROTATE_STEP_ROTATED) != 0U && same_panel)
+		kwl_output_pointer_turn(server, before_rotation, after.rotation, pointer);
 
 	/* The desktop fitted to another logical size (the look's images, the windows, the pointer), and the clients told. */
 	if ((steps & KWL_ROTATE_STEP_RESIZED) != 0U) {
@@ -378,10 +499,11 @@ kwl_output_rotated(
 	/* Another angle moves every point of the output: everything is drawn again, and the tests read it. */
 	if ((steps & KWL_ROTATE_STEP_ROTATED) != 0U) {
 		server->dirty = 1;
-		output_steps_name(steps, names, sizeof(names));
-		printf("KWL OUTPUT rotate key=%s rotation=%u selected=%u scanout=%u turn=%u width=%u height=%u mode=%ux%u steps=%s by=open\n",
+		kwl_output_steps_name(steps, names, sizeof(names));
+		printf("KWL OUTPUT rotate key=%s rotation=%u selected=%u scanout=%u turn=%u width=%u height=%u mode=%ux%u steps=%s by=open "
+		    "pointer=%d,%d>%d,%d\n",
 		    compose->display_name, after.rotation, after.selected, after.scanout, after.turn, after.width, after.height,
-		    compose->mode_width, compose->mode_height, names);
+		    compose->mode_width, compose->mode_height, names, pointer[0], pointer[1], pointer[2], pointer[3]);
 	}
 
 	/* Succeeded: the steps taken. */
@@ -831,38 +953,30 @@ output_pointer_clamp(
 		*y = (int32_t)outputs[KWL_PLANE_ANCHOR].height - 1;
 }
 
-/* Names the steps for the log ("turn|rotated|resized"), or "none". */
+/* Turns a pointer on the anchor to the same physical point at the new angle (a warp's move). */
 static void
-output_steps_name(
-	unsigned steps,
-	char *text,
-	size_t size)
+output_pointer_turn(
+	const void *context,
+	const struct kwl_plane_rect *outputs,
+	int32_t *x,
+	int32_t *y,
+	unsigned *output)
 {
-	static const char *const names[] = { "reopen", "turn", "rotated", "resized", "save" };
-	const char *bar;
-	size_t used;
-	unsigned index;
-	int written;
+	const struct output_turn *turn;
 
-	/* Each step taken, joined by bars. */
-	text[0] = '\0';
-	used = 0U;
-	for (index = 0U; index < sizeof(names) / sizeof(names[0]); index++) {
-		/* A step not taken has no name in the log. */
-		if ((steps & (1U << index)) == 0U)
-			continue;
+	/* A pointer on a head keeps its place. */
+	turn = context;
+	if (*output != KWL_PLANE_ANCHOR)
+		return;
 
-		/* A bar before every name but the first. */
-		bar = "|";
-		if (used == 0U)
-			bar = "";
-		written = snprintf(text + used, size - used, "%s%s", bar, names[index]);
-		if (written < 0 || (size_t)written >= size - used)
-			return;
-		used += (size_t)written;
-	}
-
-	/* No step at all. */
-	if (used == 0U)
-		(void)snprintf(text, size, "none");
+	/* Where it was, the same point of the panel at the new angle, and where it went. */
+	turn->seen[0] = *x;
+	turn->seen[1] = *y;
+	kwl_rotate_pointer_place(turn->before, turn->after, turn->physical_width, turn->physical_height, x, y);
+	if (*x >= (int32_t)outputs[KWL_PLANE_ANCHOR].width)
+		*x = (int32_t)outputs[KWL_PLANE_ANCHOR].width - 1;
+	if (*y >= (int32_t)outputs[KWL_PLANE_ANCHOR].height)
+		*y = (int32_t)outputs[KWL_PLANE_ANCHOR].height - 1;
+	turn->seen[2] = *x;
+	turn->seen[3] = *y;
 }

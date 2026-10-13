@@ -34,6 +34,24 @@
 /* Room for the common Vulkan extensions and those requested by the OS. */
 #define COMPOSE_EXTENSIONS_MAX	16U
 
+/*
+ * The parts of a frame's images it draws (WS217): the scene's (the
+ * logical damage of the image drawn into, NULL region for all of it) and,
+ * for a turned output, the turn pass's on the swapchain's image (the
+ * physical rectangles, none for all of it).  The scene's point into the
+ * caller's rectangles, or into scene_area and scene_rects for a turn image.
+ */
+struct kwl_frame_region {
+	const VkRect2D *region;
+	const VkRect2D *rects;
+	unsigned count;
+	VkRect2D scene_area;
+	VkRect2D scene_rects[KWL_DAMAGE_RECTS];
+	VkRect2D present_area;
+	VkRect2D present_rects[KWL_DAMAGE_RECTS];
+	unsigned present_count;
+};
+
 static VkResult compose_device(struct kwl_compose *compose);
 static VkResult compose_display(struct kwl_server *server);
 static void compose_rotation_choose(struct kwl_server *server);
@@ -46,6 +64,7 @@ static VkResult compose_panel_pipeline(struct kwl_compose *compose);
 static VkResult compose_corners(struct kwl_compose *compose);
 static VkResult compose_targets(struct kwl_compose *compose);
 static void compose_targets_destroy(struct kwl_compose *compose);
+static void compose_turn_open(struct kwl_server *server);
 static unsigned compose_windows(struct kwl_server *server, struct kwl_object **windows, unsigned capacity);
 static unsigned compose_split(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 static void compose_lists_log(struct kwl_server *server, struct kwl_object **windows, unsigned count);
@@ -53,8 +72,11 @@ static void compose_quad(struct kwl_server *server, struct kwl_list *command, co
 static void compose_quad_part(struct kwl_server *server, struct kwl_list *command, const struct kwl_import *import, int32_t x, int32_t y, uint32_t quad_width, uint32_t quad_height, const float *uv);
 static const struct kwl_import *surface_image(const struct kwl_object *surface);
 static void compose_cursor(struct kwl_server *server, struct kwl_list *command);
-static VkResult compose_record(struct kwl_server *server, uint32_t image, struct kwl_object **windows, unsigned count, const VkRect2D *region, const VkRect2D *rects, unsigned rect_count);
+static VkResult compose_record(struct kwl_server *server, uint32_t image, struct kwl_object **windows, unsigned count, const struct kwl_frame_region *drawn);
+static void compose_turn_regions(struct kwl_server *server, struct kwl_frame_region *drawn, const VkRect2D *region, const VkRect2D *rects, unsigned count);
 static int compose_region(struct kwl_server *server, uint32_t image, VkRect2D *region, VkRect2D *rects, unsigned *rect_count);
+static int compose_turn_region(struct kwl_server *server, VkRect2D *region, VkRect2D *rects, unsigned *rect_count);
+static int compose_region_since(struct kwl_server *server, uint64_t frame, uint64_t last, uint32_t image, VkRect2D *region, VkRect2D *rects, unsigned *rect_count);
 static void compose_walk_timed(struct kwl_server *server, uint64_t walk, uint64_t replay, unsigned quiet);
 static int compose_output_open_parked(struct kwl_server *server);
 static void compose_want(struct kwl_server *server, enum kwl_render_kind kind);
@@ -396,8 +418,12 @@ kwl_compose_target_pass(
 	unsigned slot,
 	unsigned load)
 {
-	/* Every output's target is a swapchain image of the output's format. */
-	(void)slot;
+	/* The anchor turned by the compositor draws into its turn image, left to be sampled. */
+	if (slot == KWL_PLANE_ANCHOR && compose->turn.image != VK_NULL_HANDLE) {
+		if (load)
+			return compose->turn_load_pass;
+		return compose->turn_clear_pass;
+	}
 
 	/* The pass that keeps the pixels: a frame drawn in its damage, or taken up again. */
 	if (load)
@@ -405,6 +431,41 @@ kwl_compose_target_pass(
 
 	/* The pass that clears the image. */
 	return compose->pass;
+}
+
+/*
+ * Gives the image the anchor's frames are drawn into (WS217): the turn
+ * image when the compositor turns the output, else the swapchain's image
+ * of the frame.
+ */
+VkImage
+kwl_compose_target_image(
+	const struct kwl_compose *compose,
+	uint32_t image)
+{
+	/* The turn image, one for every frame. */
+	if (compose->turn.image != VK_NULL_HANDLE)
+		return compose->turn.image;
+
+	/* Succeeded: the swapchain's image. */
+	return compose->output.images[image];
+}
+
+/*
+ * Gives the layout the image the anchor's frames are drawn into is in
+ * outside its passes (WS217): the turn image is kept to be sampled, the
+ * swapchain's image to be presented.
+ */
+VkImageLayout
+kwl_compose_target_layout(
+	const struct kwl_compose *compose)
+{
+	/* The turn image, sampled by the turn pass. */
+	if (compose->turn.image != VK_NULL_HANDLE)
+		return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	/* Succeeded: the swapchain's image, presented. */
+	return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 }
 
 /* Opens the output, the render thread parked (kwl_compose_output_open). */
@@ -486,6 +547,13 @@ compose_output_open_parked(
 		return EIO;
 	}
 
+	/*
+	 * The turn image, when the angle chosen is turned by the compositor
+	 * (WS217); one that cannot be made opens the output unrotated, the
+	 * choice kept, and the scene and the layers follow the size drawn at.
+	 */
+	compose_turn_open(server);
+
 	/* Unsupported or exhausted optional cache storage leaves ordinary rendering available. */
 	if (scene_supported) {
 		result = kwl_compose_load_pass(compose);
@@ -566,6 +634,7 @@ kwl_compose_output_close(
 	kwl_layers_close(compose);
 	kwl_scene_close(&compose->scene, compose->device);
 	kwl_backdrop_destroy(compose);
+	kwl_turn_close(compose, &compose->turn);
 	compose_targets_destroy(compose);
 	vkdemo_display_close(compose->instance, compose->device, &compose->output);
 
@@ -603,6 +672,7 @@ kwl_compose_draw(
 	VkRect2D region;
 	VkRect2D rects[KWL_DAMAGE_RECTS];
 	unsigned rect_count;
+	struct kwl_frame_region scene;
 	uint64_t now;
 	uint32_t image;
 	unsigned count;
@@ -695,21 +765,34 @@ kwl_compose_draw(
 
 	/* The part of the image to draw: all of it, or the damage it has missed (its buffer age), as rectangles apart (ws211-p009). */
 	partial = compose_region(server, image, &region, rects, &rect_count);
-
-	/* The frame's display list. */
 	region_drawn = NULL;
 	if (partial)
 		region_drawn = &region;
+
+	/*
+	 * A turned output draws the scene into its turn image, over the damage
+	 * that image missed (WS217), and the swapchain's image's own damage is
+	 * the turn pass's, turned to the physical output.
+	 */
+	memset(&scene, 0, sizeof(scene));
+	scene.region = region_drawn;
+	scene.rects = rects;
+	scene.count = rect_count;
+	if (compose->turn.image != VK_NULL_HANDLE)
+		compose_turn_regions(server, &scene, region_drawn, rects, rect_count);
+
+	/* The frame's display list. */
 	server->home_progress_frozen = 0U;
 	server->home_progress_value = kwl_home_progress(server);
 	server->home_progress_frozen = 1U;
-	result = compose_record(server, image, windows, count, region_drawn, rects, rect_count);
+	result = compose_record(server, image, windows, count, &scene);
 	server->home_progress_frozen = 0U;
 
-	/* A list that could not grow is not given (the compositor's failure). */
+	/* A list that could not grow is not given (the compositor's failure); the turn image is drawn whole next. */
 	if (result == VK_SUCCESS && compose->list.failed)
 		result = VK_ERROR_OUT_OF_HOST_MEMORY;
 	if (result != VK_SUCCESS) {
+		compose->turn.frame = 0U;
 		compose->scene.valid = 0U;
 		printf("KWL VULKAN_ERROR operation=record result=%d\n", (int)result);
 		kwl_heads_frame_skipped(server);
@@ -920,6 +1003,9 @@ kwl_compose_close(
 		/* The family shares its constants, descriptors and sampler. */
 		vkDestroyPipelineLayout(compose->device, compose->panel_layout, NULL);
 		vkDestroySampler(compose->device, compose->linear_sampler, NULL);
+
+		/* The turn pass's pipeline and passes, when an output ever turned (turn.c). */
+		kwl_turn_destroy_shared(compose);
 
 		/* The joined quads' pipeline and buffer, then the corners. */
 		kwl_batch_close(compose);
@@ -1449,6 +1535,7 @@ compose_display(
 
 	/* What the output shows, which its first opening is compared with: the look and the scene are made at it. */
 	kwl_output_state(server, &compose->opened);
+	compose->opened_display = display;
 
 	/* The refresh of the mode at the output's size, which wl_output tells the clients. */
 	result = compose_refresh(server, display, compose->mode_width, compose->mode_height, &refresh);
@@ -1478,6 +1565,7 @@ static void
 compose_rotation_choose(
 	struct kwl_server *server)
 {
+	VkPhysicalDeviceProperties properties;
 	struct kwl_compose *compose;
 	unsigned wanted;
 	unsigned scanout;
@@ -1495,8 +1583,14 @@ compose_rotation_choose(
 	if (server->greeter)
 		wanted = KWL_ROTATE_0;
 
-	/* The angles the display may take: none but 0 until its hardware's 180 is read (ws217-p010) and the turn is built (p002b). */
-	compose->rotations = kwl_rotate_mask(compose->hw180, KWL_TURN_BUILD, KWL_ROTATE_POLICY_DEFAULT, &why);
+	/* Whether the turn pass is offered on this GPU without a test's policy (not the Pi 4's yet, WS141 p015). */
+	vkGetPhysicalDeviceProperties(compose->physical, &properties);
+	compose->turn_default = 1U;
+	if (properties.vendorID == KWL_TURN_VENDOR_OFF)
+		compose->turn_default = 0U;
+
+	/* The angles the display may take: none but 0 by default until its hardware's 180 is read (ws217-p010); every one under a test's policy. */
+	compose->rotations = kwl_rotate_mask(compose->hw180, compose->turn_default, KWL_TURN_BUILD, server->rotate_policy, &why);
 	compose->rotate_why = why;
 
 	/* How the angle is shown; one the display cannot take opens it unrotated, the choice still in the file. */
@@ -1974,6 +2068,28 @@ kwl_compose_pipeline_input(
 }
 
 /*
+ * Creates a pipeline that copies a quad without blending (the turn pass,
+ * turn.c), in the output's pass and the quads' layout.
+ */
+VkResult
+kwl_compose_pipeline_opaque(
+	struct kwl_compose *compose,
+	VkShaderModule vertex,
+	VkShaderModule fragment,
+	VkPipeline *pipeline)
+{
+	VkResult result;
+
+	/* The quads' corners, replacing what is under them. */
+	result = compose_pipeline(compose, KWL_DRAW_OPAQUE, vertex, fragment, compose->layout, NULL, pipeline);
+	if (result != VK_SUCCESS)
+		return result;
+
+	/* Succeeded: the pipeline. */
+	return VK_SUCCESS;
+}
+
+/*
  * Creates a pipeline that draws a quad the given way, with the given
  * layout; with custom, the vertices it describes instead of the corners.
  */
@@ -2152,6 +2268,41 @@ compose_targets(
 
 	/* Succeeded. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Makes the turn image of an output opened at an angle the compositor
+ * turns, at the logical size; when it cannot be made, the output opens
+ * unrotated instead (the choice and displays.conf's line kept, the reason
+ * told), and the opening's comparison fits the desktop to that size.
+ */
+static void
+compose_turn_open(
+	struct kwl_server *server)
+{
+	struct kwl_compose *compose;
+	VkResult result;
+
+	/* Nothing to make for an angle shown as it is, or by the hardware. */
+	compose = server->compose;
+	if (compose->turn_rotation == KWL_ROTATE_0)
+		return;
+
+	/* The image of the logical size, drawn into from now on. */
+	result = kwl_turn_open(compose, server->width, server->height, compose->turn_rotation, &compose->turn);
+	if (result == VK_SUCCESS) {
+		compose->target_width = compose->turn.width;
+		compose->target_height = compose->turn.height;
+		printf("KWL OUTPUT turn width=%u height=%u rotation=%u\n", compose->turn.width, compose->turn.height, compose->turn.rotation);
+		return;
+	}
+
+	/* None: the output shows its picture unrotated, and says why. */
+	printf("KWL OUTPUT rotate unsupported key=%s rotation=%u reason=resource result=%d\n", compose->display_name, compose->rotation_selected, (int)result);
+	compose->rotate_why |= KWL_ROTATE_WHY_RESOURCE;
+	compose->turn_rotation = KWL_ROTATE_0;
+	compose->scanout_rotation = KWL_ROTATE_0;
+	kwl_output_size_set(server, compose->mode_width, compose->mode_height, KWL_ROTATE_0);
 }
 
 /* Destroys the per-image views, framebuffers and semaphores. */
@@ -2664,17 +2815,10 @@ compose_region(
 	unsigned *rect_count)
 {
 	struct kwl_compose *compose;
-	int32_t list[KWL_DAMAGE_RECTS][4];
-	int32_t box[4];
-	int64_t area;
 	uint64_t frame;
 	uint64_t last;
-	uint64_t index;
-	unsigned count;
 	unsigned slot;
-	unsigned rect;
-	unsigned kept;
-	VkResult result;
+	int partial;
 
 	/* This frame's number and its damage, kept for the images that miss it. */
 	compose = server->compose;
@@ -2696,7 +2840,156 @@ compose_region(
 		compose->image_frames[image] = frame;
 	}
 
+	/* The damage since it was last drawn. */
+	partial = compose_region_since(server, frame, last, image, region, rects, rect_count);
+	if (!partial)
+		return 0;
+
+	/* Succeeded: a partial frame of the image. */
+	return 1;
+}
+
+/*
+ * Works out a turned output's parts of a frame (WS217): the swapchain's
+ * image's damage (region, rects, count: its buffer age, logical) turned to
+ * the physical rectangles of the turn pass, and the turn image's own.
+ */
+static void
+compose_turn_regions(
+	struct kwl_server *server,
+	struct kwl_frame_region *drawn,
+	const VkRect2D *region,
+	const VkRect2D *rects,
+	unsigned count)
+{
+	struct kwl_compose *compose;
+	int32_t box[4];
+	int32_t turned[4];
+	unsigned index;
+	int partial;
+
+	/* The swapchain's image, whole when its damage is unknown. */
+	compose = server->compose;
+	drawn->present_count = 0U;
+	if (region != NULL) {
+		/* The box around the damage, turned. */
+		box[0] = region->offset.x;
+		box[1] = region->offset.y;
+		box[2] = region->offset.x + (int32_t)region->extent.width;
+		box[3] = region->offset.y + (int32_t)region->extent.height;
+		kwl_rotate_rect(compose->turn.rotation, compose->output.width, compose->output.height, box, turned);
+		drawn->present_area.offset.x = turned[0];
+		drawn->present_area.offset.y = turned[1];
+		drawn->present_area.extent.width = (uint32_t)(turned[2] - turned[0]);
+		drawn->present_area.extent.height = (uint32_t)(turned[3] - turned[1]);
+
+		/* One rectangle is the box itself. */
+		if (count == 0U) {
+			drawn->present_rects[0] = drawn->present_area;
+			drawn->present_count = 1U;
+		}
+
+		/* Each rectangle turned. */
+		for (index = 0U; index < count; index++) {
+			box[0] = rects[index].offset.x;
+			box[1] = rects[index].offset.y;
+			box[2] = rects[index].offset.x + (int32_t)rects[index].extent.width;
+			box[3] = rects[index].offset.y + (int32_t)rects[index].extent.height;
+			kwl_rotate_rect(compose->turn.rotation, compose->output.width, compose->output.height, box, turned);
+			drawn->present_rects[index].offset.x = turned[0];
+			drawn->present_rects[index].offset.y = turned[1];
+			drawn->present_rects[index].extent.width = (uint32_t)(turned[2] - turned[0]);
+			drawn->present_rects[index].extent.height = (uint32_t)(turned[3] - turned[1]);
+			drawn->present_count = index + 1U;
+		}
+	}
+
+	/* The turn pass's part, for the tests (physical). */
+	if (server->log_frames) {
+		printf("KWL DAMAGE turn frame=%llu rotation=%u rects=%u", (unsigned long long)server->frame + 1U, compose->turn.rotation, drawn->present_count);
+		for (index = 0U; index < drawn->present_count; index++) {
+			printf(" %d,%d,%u,%u", drawn->present_rects[index].offset.x, drawn->present_rects[index].offset.y, drawn->present_rects[index].extent.width,
+			    drawn->present_rects[index].extent.height);
+		}
+
+		/* The line ends. */
+		printf("\n");
+	}
+
+	/* The turn image's own damage, since it was last drawn. */
+	partial = compose_turn_region(server, &drawn->scene_area, drawn->scene_rects, &drawn->count);
+	drawn->region = NULL;
+	drawn->rects = drawn->scene_rects;
+	if (partial)
+		drawn->region = &drawn->scene_area;
+}
+
+/*
+ * Works out the part of the turn image a frame draws (WS217): the damage
+ * since it was last drawn, as compose_region does for a swapchain image
+ * (the turn image is drawn in every frame, so usually this frame's alone).
+ * Called after compose_region, which keeps this frame's damage.
+ */
+static int
+compose_turn_region(
+	struct kwl_server *server,
+	VkRect2D *region,
+	VkRect2D *rects,
+	unsigned *rect_count)
+{
+	struct kwl_compose *compose;
+	uint64_t frame;
+	uint64_t last;
+	int partial;
+
+	/* The turn image is drawn in this frame. */
+	compose = server->compose;
+	*rect_count = 0U;
+	frame = server->frame + 1U;
+	last = compose->turn.frame;
+	compose->turn.frame = frame;
+
+	/* The damage since it was last drawn. */
+	partial = compose_region_since(server, frame, last, KWL_SWAPCHAIN_MAX, region, rects, rect_count);
+	if (!partial)
+		return 0;
+
+	/* Succeeded: a partial frame of the turn image. */
+	return 1;
+}
+
+/*
+ * Works out the damage of the frames after last up to frame, as
+ * rectangles that do not overlap, cut to the image drawn into (the
+ * logical size).  Returns 1 with their box and the rectangles, or 0 for
+ * the whole image: a change of unknown extent, an image not drawn lately,
+ * or damage over most of it.  image names a swapchain image in the log
+ * (KWL_SWAPCHAIN_MAX: the turn image).
+ */
+static int
+compose_region_since(
+	struct kwl_server *server,
+	uint64_t frame,
+	uint64_t last,
+	uint32_t image,
+	VkRect2D *region,
+	VkRect2D *rects,
+	unsigned *rect_count)
+{
+	struct kwl_compose *compose;
+	int32_t list[KWL_DAMAGE_RECTS][4];
+	int32_t box[4];
+	int64_t area;
+	uint64_t index;
+	unsigned count;
+	unsigned slot;
+	unsigned rect;
+	unsigned kept;
+	VkResult result;
+
 	/* An image never drawn, or not for longer than the history, is drawn whole. */
+	compose = server->compose;
+	*rect_count = 0U;
 	if (last == 0U || frame - last >= KWL_DAMAGE_HISTORY)
 		return 0;
 
@@ -2771,7 +3064,10 @@ compose_region(
 	region->extent.height = (uint32_t)(box[3] - box[1]);
 	*rect_count = kept;
 	if (server->log_frames) {
-		printf("KWL DAMAGE frame=%llu image=%u x=%d y=%d width=%u height=%u rects=%u", (unsigned long long)frame, image, box[0], box[1], region->extent.width, region->extent.height, kept);
+		if (image >= KWL_SWAPCHAIN_MAX)
+			printf("KWL DAMAGE turn-scene frame=%llu x=%d y=%d width=%u height=%u rects=%u", (unsigned long long)frame, box[0], box[1], region->extent.width, region->extent.height, kept);
+		else
+			printf("KWL DAMAGE frame=%llu image=%u x=%d y=%d width=%u height=%u rects=%u", (unsigned long long)frame, image, box[0], box[1], region->extent.width, region->extent.height, kept);
 		for (rect = 0U; rect < kept; rect++)
 			printf(" %d,%d,%u,%u", rects[rect].offset.x, rects[rect].offset.y, rects[rect].extent.width, rects[rect].extent.height);
 		printf("\n");
@@ -2791,9 +3087,7 @@ compose_record(
 	uint32_t image,
 	struct kwl_object **windows,
 	unsigned count,
-	const VkRect2D *region,
-	const VkRect2D *rects,
-	unsigned rect_count)
+	const struct kwl_frame_region *drawn)
 {
 	struct kwl_compose *compose;
 	struct kwl_list *command;
@@ -2802,12 +3096,26 @@ compose_record(
 	VkViewport viewport;
 	VkRect2D scissor;
 	VkDeviceSize offset;
+	const VkRect2D *region;
+	const VkRect2D *rects;
+	VkImage target;
+	VkFramebuffer framebuffer;
+	unsigned rect_count;
 	unsigned index;
 	unsigned reuse;
 	unsigned capture;
 
-	/* A fresh list for the frame's drawing, which compose_replay records (ws213-p003); no rectangle is drawn apart yet. */
+	/* The part of the image the scene is drawn in, and the image and framebuffer it is drawn into (WS217: the turn image's). */
+	region = drawn->region;
+	rects = drawn->rects;
+	rect_count = drawn->count;
 	compose = server->compose;
+	target = kwl_compose_target_image(compose, image);
+	framebuffer = compose->framebuffers[image];
+	if (compose->turn.image != VK_NULL_HANDLE)
+		framebuffer = compose->turn.framebuffer;
+
+	/* A fresh list for the frame's drawing, which compose_replay records (ws213-p003); no rectangle is drawn apart yet. */
 	command = &compose->list;
 	kwl_compose_list_begin(compose);
 	compose->clip_count = 0U;
@@ -2898,7 +3206,7 @@ compose_record(
 
 	/* Removes every older cursor covered by buffer-age damage before drawing its new place: each rectangle, not their box (ws211-p009 D4). */
 	if (reuse)
-		kwl_scene_copy(&compose->scene, command, compose->output.images[image], rects, rect_count, 1U);
+		kwl_scene_copy(&compose->scene, command, target, kwl_compose_target_layout(compose), rects, rect_count, 1U);
 
 	/* The pass clears the image to the background. */
 	memset(&clear, 0, sizeof(clear));
@@ -2911,8 +3219,8 @@ compose_record(
 	pass.renderPass = kwl_compose_target_pass(compose, KWL_PLANE_ANCHOR, 0U);
 	if (region != NULL || reuse)
 		pass.renderPass = kwl_compose_target_pass(compose, KWL_PLANE_ANCHOR, 1U);
-	pass.framebuffer = compose->framebuffers[image];
-	compose->framebuffer_now = compose->framebuffers[image];
+	pass.framebuffer = framebuffer;
+	compose->framebuffer_now = framebuffer;
 	compose->backdrop_set = VK_NULL_HANDLE;
 	compose->backdrop_recording = 0U;
 	pass.renderArea.extent.width = compose->target_width;
@@ -2952,7 +3260,7 @@ compose_record(
 	if (rect_count >= 2U) {
 		memcpy(compose->clips, rects, (size_t)rect_count * sizeof(compose->clips[0]));
 		compose->clip_count = rect_count;
-		compose->clip_framebuffer = compose->framebuffers[image];
+		compose->clip_framebuffer = framebuffer;
 	}
 
 	/* Every quad's corners. */
@@ -2991,7 +3299,7 @@ compose_record(
 	if (!reuse && capture) {
 		kwl_batch_flush(server, command);
 		kwl_list_end_render_pass(command);
-		kwl_scene_copy(&compose->scene, command, compose->output.images[image], rects, rect_count, 0U);
+		kwl_scene_copy(&compose->scene, command, target, kwl_compose_target_layout(compose), rects, rect_count, 0U);
 		compose->scene.written = 1U;
 
 		/* The compatible LOAD pass retains scene pixels and adds only the cursor. */
@@ -3009,11 +3317,15 @@ compose_record(
 	compose->clip_count = 0U;
 	compose->clip_scissor_valid = 0U;
 
+	/* A turned output's picture copied turned onto the swapchain's image, in that image's own damage (WS217). */
+	if (compose->turn.image != VK_NULL_HANDLE)
+		kwl_turn_record(server, command, image, &drawn->present_area, drawn->present_rects, drawn->present_count);
+
 	/* A test image's capture copies the finished image (shot.c; nothing elsewhere, ws173-p002). */
 	kwl_shot_record(server, command, compose->output.images[image]);
 
-	/* The heads' pictures: the finished image copied (mirror), or the wallpaper (extended, ws113-p004b). */
-	kwl_heads_record(server, command, compose->output.images[image]);
+	/* The heads' pictures: the desktop copied (mirror, from the turn image when it turns), or the wallpaper (extended, ws113-p004b). */
+	kwl_heads_record(server, command, target, kwl_compose_target_layout(compose));
 
 	/* The scene's hover tests, including the heads' bars, are all recorded. */
 	if (!reuse)

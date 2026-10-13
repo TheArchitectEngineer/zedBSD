@@ -30,6 +30,17 @@ kwl_shot_waiting(
 	return 0;
 }
 
+/* Takes no test option: --rotate-policy is a test image's alone (WS217). */
+int
+kwl_shot_option(
+	struct kwl_server *server,
+	const char *argument)
+{
+	(void)server;
+	(void)argument;
+	return 0;
+}
+
 /* No socket. */
 void
 kwl_shot_open(

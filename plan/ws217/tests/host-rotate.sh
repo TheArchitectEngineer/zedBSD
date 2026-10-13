@@ -20,4 +20,4 @@ for mode in plain sanitize; do
 		-o "$work/$mode"
 	ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 timeout 20 "$work/$mode"
 done
-echo "WS217 p002a rotate host test PASS (plain, ASan/UBSan)"
+echo "WS217 p002a-p002b rotate host test PASS (plain, ASan/UBSan)"

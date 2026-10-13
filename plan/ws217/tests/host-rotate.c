@@ -12,7 +12,9 @@
  * panels that are not square, every pixel and the way back; the angles a
  * display may take and why not; how an angle is shown; and the steps of a
  * change of an output's state, the sixteen pairs of angles of the design's
- * table (plan/ws217/phase001/phase.md, section 4.6).
+ * table (plan/ws217/phase001/phase.md, section 4.6); the turn pass's
+ * texture coordinates against the points (ws217-p002b) and what a user's
+ * choice of an angle does.
  */
 
 #include "rotate.h"
@@ -45,6 +47,9 @@ static void test_vectors(void);
 static void test_mask(void);
 static void test_plan(void);
 static void test_steps(void);
+static void test_coefficients(void);
+static void test_select(void);
+static void test_pointer(void);
 static void test_state(struct kwl_rotate_state *state, uint32_t width, uint32_t height, unsigned rotation, unsigned hw180, unsigned policy_any);
 
 /* Runs every check. */
@@ -60,6 +65,9 @@ main(void)
 	test_mask();
 	test_plan();
 	test_steps();
+	test_coefficients();
+	test_select();
+	test_pointer();
 
 	/* The verdict. */
 	if (failures != 0U) {
@@ -348,8 +356,8 @@ test_vectors(void)
 }
 
 /*
- * The angles a display may take and why not: the hardware's 180, the
- * build's turn pass and the test policy, each of the eight.
+ * The angles a display may take and why not: the hardware's 180, whether
+ * the turn pass is offered and built, and the test policy.
  */
 static void
 test_mask(void)
@@ -358,30 +366,134 @@ test_mask(void)
 	unsigned why;
 
 	/* A display whose hardware cannot turn (Venus, the KMS of Linux): nothing, whatever the build. */
-	mask = kwl_rotate_mask(0U, 0U, KWL_ROTATE_POLICY_DEFAULT, &why);
+	mask = kwl_rotate_mask(0U, 0U, 0U, KWL_ROTATE_POLICY_DEFAULT, &why);
 	check(mask == KWL_ROTATION_0 && why == KWL_ROTATE_WHY_SCANOUT, "no hardware, no turn: 0 only, scanout");
-	mask = kwl_rotate_mask(0U, 1U, KWL_ROTATE_POLICY_DEFAULT, &why);
-	check(mask == KWL_ROTATION_0 && why == KWL_ROTATE_WHY_SCANOUT, "no hardware, the turn built: 0 only, scanout");
+	mask = kwl_rotate_mask(0U, 1U, 1U, KWL_ROTATE_POLICY_DEFAULT, &why);
+	check(mask == KWL_ROTATION_0 && why == KWL_ROTATE_WHY_SCANOUT, "no hardware, the turn offered: 0 only, scanout");
 
-	/* The hardware turns by 180: the quarter turns where the build has the pass. */
-	mask = kwl_rotate_mask(1U, 0U, KWL_ROTATE_POLICY_DEFAULT, &why);
+	/* The hardware turns by 180: the quarter turns where the pass is offered and built. */
+	mask = kwl_rotate_mask(1U, 0U, 0U, KWL_ROTATE_POLICY_DEFAULT, &why);
 	check(mask == (KWL_ROTATION_0 | KWL_ROTATION_180) && why == KWL_ROTATE_WHY_TURN, "the hardware, no turn: 0 and 180, turn");
-	mask = kwl_rotate_mask(1U, 1U, KWL_ROTATE_POLICY_DEFAULT, &why);
+	mask = kwl_rotate_mask(1U, 1U, 1U, KWL_ROTATE_POLICY_DEFAULT, &why);
 	check(mask == 15U && why == 0U, "the hardware and the turn: all four");
+	mask = kwl_rotate_mask(1U, 0U, 1U, KWL_ROTATE_POLICY_DEFAULT, &why);
+	check(mask == (KWL_ROTATION_0 | KWL_ROTATION_180) && why == KWL_ROTATE_WHY_TURN, "the hardware, the turn built but not offered (rpi4): 0 and 180, turn");
+	mask = kwl_rotate_mask(1U, 1U, 0U, KWL_ROTATE_POLICY_DEFAULT, &why);
+	check(mask == (KWL_ROTATION_0 | KWL_ROTATION_180) && why == KWL_ROTATE_WHY_TURN, "the hardware, the turn offered but not built: 0 and 180");
 
-	/* The test policy: all four where the build has the pass. */
-	mask = kwl_rotate_mask(0U, 1U, KWL_ROTATE_POLICY_ANY, &why);
+	/* The test policy: all four where the build has the pass, offered by default or not. */
+	mask = kwl_rotate_mask(0U, 1U, 1U, KWL_ROTATE_POLICY_ANY, &why);
 	check(mask == 15U && why == 0U, "any, no hardware, the turn built: all four");
-	mask = kwl_rotate_mask(1U, 1U, KWL_ROTATE_POLICY_ANY, &why);
+	mask = kwl_rotate_mask(1U, 1U, 1U, KWL_ROTATE_POLICY_ANY, &why);
 	check(mask == 15U && why == 0U, "any, the hardware and the turn: all four");
-	mask = kwl_rotate_mask(0U, 0U, KWL_ROTATE_POLICY_ANY, &why);
+	mask = kwl_rotate_mask(0U, 0U, 1U, KWL_ROTATE_POLICY_ANY, &why);
+	check(mask == 15U && why == 0U, "any, the turn built but not offered (rpi4): all four, to measure");
+	mask = kwl_rotate_mask(0U, 1U, 0U, KWL_ROTATE_POLICY_ANY, &why);
 	check(mask == KWL_ROTATION_0 && why == KWL_ROTATE_WHY_SCANOUT, "any without the turn and the hardware: 0 only");
-	mask = kwl_rotate_mask(1U, 0U, KWL_ROTATE_POLICY_ANY, &why);
+	mask = kwl_rotate_mask(1U, 1U, 0U, KWL_ROTATE_POLICY_ANY, &why);
 	check(mask == (KWL_ROTATION_0 | KWL_ROTATION_180) && why == KWL_ROTATE_WHY_TURN, "any without the turn: 0 and 180");
 
-	/* This build has no turn pass yet (ws217-p002a): a display offers 0 alone without the hardware's 180. */
-	mask = kwl_rotate_mask(0U, KWL_TURN_BUILD, KWL_ROTATE_POLICY_DEFAULT, &why);
-	check(mask == KWL_ROTATION_0, "this build: 0 alone");
+	/* This build has the turn pass (ws217-p002b); without the hardware's 180 a display still offers 0 alone by default. */
+	check(KWL_TURN_BUILD == 1U, "this build has the turn pass");
+	mask = kwl_rotate_mask(0U, 1U, KWL_TURN_BUILD, KWL_ROTATE_POLICY_DEFAULT, &why);
+	check(mask == KWL_ROTATION_0, "this build, no hardware: 0 alone");
+	mask = kwl_rotate_mask(0U, 0U, KWL_TURN_BUILD, KWL_ROTATE_POLICY_ANY, &why);
+	check(mask == 15U, "this build, the test policy, a GPU not offered the turn: all four");
+}
+
+/*
+ * The turn pass's texture coordinates: at the middle of every physical
+ * pixel of every panel and angle, the coordinates times the logical size
+ * fall inside the logical pixel kwl_rotate_point_back gives, a quarter of
+ * a pixel away from its sides at least.
+ */
+static void
+test_coefficients(void)
+{
+	uint32_t physical_width;
+	uint32_t physical_height;
+	uint32_t logical_width;
+	uint32_t logical_height;
+	unsigned panel;
+	unsigned angle;
+	int32_t physical_x;
+	int32_t physical_y;
+	int32_t x;
+	int32_t y;
+	float u[3];
+	float v[3];
+	float corner_x;
+	float corner_y;
+	float texel_x;
+	float texel_y;
+	int inside;
+
+	/* Each panel and angle. */
+	for (panel = 0U; panel < TEST_PANELS; panel++) {
+		for (angle = 0U; angle < 4U; angle++) {
+			/* The sizes and the coefficients. */
+			physical_width = test_panels[panel][0];
+			physical_height = test_panels[panel][1];
+			kwl_rotate_size(test_angles[angle], physical_width, physical_height, &logical_width, &logical_height);
+			kwl_turn_coefficients(test_angles[angle], u, v);
+
+			/* Each physical pixel's middle. */
+			for (physical_y = 0; physical_y < (int32_t)physical_height; physical_y++) {
+				for (physical_x = 0; physical_x < (int32_t)physical_width; physical_x++) {
+					/* The point of the whole output, 0 to 1, and the logical texel there. */
+					corner_x = ((float)physical_x + 0.5f) / (float)physical_width;
+					corner_y = ((float)physical_y + 0.5f) / (float)physical_height;
+					texel_x = (u[0] * corner_x + u[1] * corner_y + u[2]) * (float)logical_width;
+					texel_y = (v[0] * corner_x + v[1] * corner_y + v[2]) * (float)logical_height;
+
+					/* The logical pixel the point maps back to holds it, well inside. */
+					kwl_rotate_point_back(test_angles[angle], physical_width, physical_height, physical_x, physical_y, &x, &y);
+					inside = 0;
+					if (texel_x > (float)x + 0.25f &&
+					    texel_x < (float)x + 0.75f &&
+					    texel_y > (float)y + 0.25f &&
+					    texel_y < (float)y + 0.75f)
+						inside = 1;
+					check(inside, "the turn's texture coordinates fall on the logical pixel");
+				}
+			}
+		}
+	}
+}
+
+/*
+ * What a user's choice of an angle does: refused outside the mask, nothing
+ * for the same choice shown, tried again for the same choice not shown,
+ * saved for a closed output, the direct scanout left, else applied.
+ */
+static void
+test_select(void)
+{
+	unsigned outcome;
+
+	/* An angle the display may not take, and a number that is no angle. */
+	outcome = kwl_rotate_select(KWL_ROTATE_90, KWL_ROTATION_0, 0U, 0U, 1U, 0U);
+	check(outcome == KWL_ROTATE_SELECT_REFUSE, "an angle outside the mask is refused");
+	outcome = kwl_rotate_select(45U, 15U, 0U, 0U, 1U, 0U);
+	check(outcome == KWL_ROTATE_SELECT_REFUSE, "a number that is no angle is refused");
+
+	/* The same choice, shown: nothing; not shown (the turn's images could not be made): again. */
+	outcome = kwl_rotate_select(KWL_ROTATE_90, 15U, KWL_ROTATE_90, KWL_ROTATE_90, 1U, 0U);
+	check(outcome == KWL_ROTATE_SELECT_NOTHING, "the same choice shown changes nothing");
+	outcome = kwl_rotate_select(KWL_ROTATE_90, 15U, KWL_ROTATE_90, KWL_ROTATE_0, 1U, 0U);
+	check(outcome == KWL_ROTATE_SELECT_APPLY, "the same choice not shown is tried again");
+
+	/* A closed output, a direct scanout (the output closed meanwhile, review M1), an open output. */
+	outcome = kwl_rotate_select(KWL_ROTATE_270, 15U, KWL_ROTATE_0, KWL_ROTATE_0, 0U, 0U);
+	check(outcome == KWL_ROTATE_SELECT_SAVE, "a closed output saves the choice");
+	outcome = kwl_rotate_select(KWL_ROTATE_270, 15U, KWL_ROTATE_0, KWL_ROTATE_0, 0U, 1U);
+	check(outcome == KWL_ROTATE_SELECT_LEAVE, "a direct scanout (output closed) is left first");
+	outcome = kwl_rotate_select(KWL_ROTATE_270, 15U, KWL_ROTATE_0, KWL_ROTATE_0, 1U, 1U);
+	check(outcome == KWL_ROTATE_SELECT_LEAVE, "a direct scanout is left first");
+	outcome = kwl_rotate_select(KWL_ROTATE_270, 15U, KWL_ROTATE_0, KWL_ROTATE_0, 1U, 0U);
+	check(outcome == KWL_ROTATE_SELECT_APPLY, "an open output shows the choice now");
+	outcome = kwl_rotate_select(KWL_ROTATE_0, KWL_ROTATION_0, KWL_ROTATE_90, KWL_ROTATE_0, 1U, 0U);
+	check(outcome == KWL_ROTATE_SELECT_APPLY, "back to 0 from a choice not shown");
 }
 
 /* How each angle is shown, for the masks the policy gives. */
@@ -442,7 +554,7 @@ test_state(
 	policy = KWL_ROTATE_POLICY_DEFAULT;
 	if (policy_any)
 		policy = KWL_ROTATE_POLICY_ANY;
-	mask = kwl_rotate_mask(hw180, 1U, policy, &why);
+	mask = kwl_rotate_mask(hw180, 1U, 1U, policy, &why);
 	error = kwl_rotate_plan(rotation, mask, hw180, &state->scanout, &state->turn);
 	check(error == 0, "the steps' angle is shown");
 }
@@ -550,4 +662,72 @@ test_steps(void)
 	test_state(&after, 1280U, 800U, KWL_ROTATE_0, 1U, 0U);
 	steps = kwl_rotate_steps(&before, &after, KWL_ROTATE_MODE_USER);
 	check(steps == KWL_ROTATE_STEP_SAVE, "a choice alone is saved alone");
+}
+
+/*
+ * A pointer's move when an output turns on the same panel (review S1):
+ * every logical pixel of every panel, for every pair of angles, ends where
+ * kwl_rotate_point and kwl_rotate_point_back take it; a place outside the
+ * old picture is kept to its edge first; the 1280x800 case of the review.
+ */
+static void
+test_pointer(void)
+{
+	uint32_t physical_width;
+	uint32_t physical_height;
+	uint32_t logical_width;
+	uint32_t logical_height;
+	unsigned panel;
+	unsigned before;
+	unsigned after;
+	int32_t x;
+	int32_t y;
+	int32_t moved_x;
+	int32_t moved_y;
+	int32_t physical_x;
+	int32_t physical_y;
+	int32_t expected_x;
+	int32_t expected_y;
+
+	/* Each panel, each pair of angles, each logical pixel. */
+	for (panel = 0U; panel < TEST_PANELS; panel++) {
+		physical_width = test_panels[panel][0];
+		physical_height = test_panels[panel][1];
+		for (before = 0U; before < 4U; before++) {
+			for (after = 0U; after < 4U; after++) {
+				kwl_rotate_size(test_angles[before], physical_width, physical_height, &logical_width, &logical_height);
+				for (y = 0; y < (int32_t)logical_height; y++) {
+					for (x = 0; x < (int32_t)logical_width; x++) {
+						/* The same physical point at the new angle. */
+						moved_x = x;
+						moved_y = y;
+						kwl_rotate_pointer_place(test_angles[before], test_angles[after], physical_width, physical_height, &moved_x, &moved_y);
+						kwl_rotate_point(test_angles[before], physical_width, physical_height, x, y, &physical_x, &physical_y);
+						kwl_rotate_point_back(test_angles[after], physical_width, physical_height, physical_x, physical_y, &expected_x, &expected_y);
+						check(moved_x == expected_x && moved_y == expected_y, "the pointer keeps its physical point");
+					}
+				}
+			}
+		}
+	}
+
+	/* The review's case: 1280x800, (1000, 400) at 0 is (400, 279) at 90; the last column's edge point. */
+	x = 1000;
+	y = 400;
+	kwl_rotate_pointer_place(KWL_ROTATE_0, KWL_ROTATE_90, 1280U, 800U, &x, &y);
+	check(x == 400 && y == 279, "1280x800: (1000, 400) at 0 is (400, 279) at 90");
+	x = 1279;
+	y = 0;
+	kwl_rotate_pointer_place(KWL_ROTATE_0, KWL_ROTATE_90, 1280U, 800U, &x, &y);
+	check(x == 0 && y == 0, "1280x800: the top right corner at 0 is the top left at 90");
+	x = 799;
+	y = 1279;
+	kwl_rotate_pointer_place(KWL_ROTATE_90, KWL_ROTATE_270, 1280U, 800U, &x, &y);
+	check(x == 0 && y == 0, "the bottom right at 90 is the top left at 270");
+
+	/* A place outside the old picture is kept to its edge first. */
+	x = 5000;
+	y = -3;
+	kwl_rotate_pointer_place(KWL_ROTATE_0, KWL_ROTATE_0, 1280U, 800U, &x, &y);
+	check(x == 1279 && y == 0, "a place outside is kept to the edge");
 }

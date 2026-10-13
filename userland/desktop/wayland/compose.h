@@ -296,6 +296,26 @@ struct kwl_cursor_plane {
 	struct kwl_cursor_thread *thread;
 };
 
+/*
+ * An output's turn image (turn.c, WS217): the desktop drawn at the logical
+ * size, which the turn pass copies turned onto the swapchain's image each
+ * frame.  It lives while the output is open at an angle the compositor
+ * turns (90 and 270, or 180 where the hardware cannot); image is null
+ * otherwise.  frame is the number of the last frame drawn into it (0: its
+ * contents are unknown, the next frame draws it whole).
+ */
+struct kwl_turn {
+	VkImage image;
+	VkDeviceMemory memory;
+	VkImageView view;
+	VkFramebuffer framebuffer;
+	VkDescriptorSet set;
+	uint32_t width;
+	uint32_t height;
+	unsigned rotation;
+	uint64_t frame;
+};
+
 /* How many frames' damage is kept, for images that missed that many frames. */
 #define KWL_DAMAGE_HISTORY	8U
 
@@ -368,7 +388,8 @@ struct kwl_compose {
 	 * display cannot take, the file's line kept); the angle shown; how it
 	 * is shown (the display hardware's angle, the scanout's, and the
 	 * compositor's turn pass's); whether the display's hardware turns the
-	 * picture by 180 (not read yet: ws217-p010); the angles the display may
+	 * picture by 180 (not read yet: ws217-p010); whether the GPU is offered
+ * the turn pass without a test's policy (turn_default); the angles the display may
 	 * take (KWL_ROTATION_*) and why not the others (KWL_ROTATE_WHY_*).
 	 * They change only while the output is closed, at its opening, or with
 	 * the render thread parked.
@@ -380,6 +401,7 @@ struct kwl_compose {
 	unsigned scanout_rotation;
 	unsigned turn_rotation;
 	unsigned hw180;
+	unsigned turn_default;
 	unsigned rotations;
 	unsigned rotate_why;
 	/*
@@ -398,6 +420,20 @@ struct kwl_compose {
 	 */
 	struct kwl_rotate_state opened;
 	unsigned opened_steps;
+	/*
+	 * The output's turn image (WS217, turn.c), and the turn's passes and
+	 * pipeline, made the first time an output turns and kept for the
+	 * compositor's life as the output's format is; whether the mirror's
+	 * copy from the turn image was said once.
+	 */
+	struct kwl_turn turn;
+	VkRenderPass turn_clear_pass;
+	VkRenderPass turn_load_pass;
+	VkPipeline turn_pipeline;
+	VkDisplayKHR opened_display;
+	unsigned mirror_turn_logged;
+	/* The last user's angle written to displays.conf: 0, its errno, or -1 when nothing was to be written. */
+	int rotate_saved;
 	/* The swapchain images can be a copy's source (a test image's capture, ws173-p002). */
 	unsigned readback;
 	/* Cursor-free scene is optional and never replaces redraws after scene changes. */
@@ -633,13 +669,27 @@ struct kwl_compose {
 /* Host-written images (shm.c), sampled with the given sampler. */
 VkResult kwl_host_image_create(struct kwl_compose *compose, uint32_t width, uint32_t height, VkSampler sampler, struct kwl_import *import);
 void kwl_host_image_release(struct kwl_compose *compose, struct kwl_import *import);
+void kwl_host_image_move(struct kwl_compose *compose, struct kwl_import *from, struct kwl_import *to);
 void kwl_host_image_written(struct kwl_import *import);
 void kwl_host_images_take(struct kwl_compose *compose, struct kwl_list *list);
 unsigned kwl_host_images_record(const struct kwl_list *list, VkCommandBuffer command);
 void kwl_host_image_batch_begin(struct kwl_compose *compose);
 VkResult kwl_host_image_batch_end(struct kwl_compose *compose);
 
+/*
+ * A wallpaper and its frosted glass made at another size before an output
+ * turns (glass.c, WS217), the look's own kept until they are swapped in.
+ */
+struct kwl_glass_size {
+	struct kwl_import wallpaper;
+	struct kwl_import blurred;
+	unsigned made;
+};
+
 /* The glass look (glass.c). */
+int kwl_glass_size_prepare(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
+void kwl_glass_size_swap(struct kwl_server *server, struct kwl_glass_size *size);
+void kwl_glass_size_drop(struct kwl_server *server, struct kwl_glass_size *size);
 int kwl_glass_open(struct kwl_server *server);
 void kwl_glass_close(struct kwl_server *server);
 void kwl_glass_draw(struct kwl_server *server, struct kwl_list *command, struct kwl_object **windows, unsigned count);
@@ -691,6 +741,17 @@ VkResult kwl_compose_display_read(struct kwl_server *server, VkDisplayKHR displa
 /* Gives an image a second, linearly sampled descriptor set (compose.c). */
 VkResult kwl_compose_linear_set(struct kwl_compose *compose, struct kwl_import *import);
 
+/* The turn pass of a turned output (turn.c, WS217). */
+VkResult kwl_turn_open(struct kwl_compose *compose, uint32_t width, uint32_t height, unsigned rotation, struct kwl_turn *turn);
+void kwl_turn_close(struct kwl_compose *compose, struct kwl_turn *turn);
+void kwl_turn_destroy_shared(struct kwl_compose *compose);
+void kwl_turn_record(struct kwl_server *server, struct kwl_list *command, uint32_t image, const VkRect2D *area, const VkRect2D *rects, unsigned count);
+
+/* What the anchor's frames are drawn into: the turn image or the swapchain's (compose.c, WS217). */
+VkImage kwl_compose_target_image(const struct kwl_compose *compose, uint32_t image);
+VkImageLayout kwl_compose_target_layout(const struct kwl_compose *compose);
+VkResult kwl_compose_pipeline_opaque(struct kwl_compose *compose, VkShaderModule vertex, VkShaderModule fragment, VkPipeline *pipeline);
+
 /* The output's pass that keeps its pixels (backdrop.c). */
 VkResult kwl_compose_load_pass(struct kwl_compose *compose);
 
@@ -729,13 +790,14 @@ const struct kwl_import *kwl_glass_wallpaper(struct kwl_server *server);
 
 /* The displays shown besides the output (heads.c, ws113-p004b). */
 void kwl_heads_config_load(struct kwl_server *server);
+int kwl_heads_config_save(struct kwl_server *server);
 void kwl_heads_sync(struct kwl_server *server);
 void kwl_heads_close_display(struct kwl_server *server, VkDisplayKHR display);
 void kwl_heads_close_all(struct kwl_server *server);
 int kwl_heads_lost(struct kwl_server *server);
 unsigned kwl_heads_wanted(struct kwl_server *server, unsigned *slots, unsigned room);
 unsigned kwl_heads_take(struct kwl_server *server, const struct kwl_render_held *held);
-void kwl_heads_record(struct kwl_server *server, struct kwl_list *command, VkImage source);
+void kwl_heads_record(struct kwl_server *server, struct kwl_list *command, VkImage source, VkImageLayout layout);
 void kwl_heads_presented(struct kwl_server *server, const struct kwl_render_outcome *outcome);
 void kwl_heads_frame_skipped(struct kwl_server *server);
 int kwl_displays_apply(struct kwl_server *server, const struct kwl_display_config *wanted, int *saved);

@@ -34,6 +34,13 @@
  *          "ERROR errno=E"
  *   PLACE KEY X Y   a display's place in the extended mode applied, the
  *          same answers
+ *   SHOT partial   as SHOT, but the frame is not asked to be drawn whole
+ *          (the next frame as its damage makes it, WS217)
+ *   POLICY any|default   the angles the displays may take (WS217: every
+ *          one the build can turn, a test's), answered "OK mask=M why=W"
+ *   ROTATE N   the anchor's angle chosen as Settings chooses it (WS217),
+ *          answered "OK applied=A saved=S rotation=R width=W height=H" or
+ *          "ERROR errno=E"
  *
  * keiland-shot (userland/tests/keiland-shot) turns the pixels into a PNG.
  * One request is served at a time; the wait for the frame is at most
@@ -88,9 +95,48 @@ static struct shot_state shot = { -1, { 0 }, -1, SHOT_IDLE, 0, VK_NULL_HANDLE, V
 static void shot_answer(int connection, const char *line);
 static int shot_displays_request(const char *line);
 static void shot_displays(struct kwl_server *server, int connection, const char *line);
+static void shot_policy(struct kwl_server *server, int connection, const char *word);
+static void shot_rotate(struct kwl_server *server, int connection, const char *number);
 static void shot_finish(struct kwl_server *server, const char *error);
 static int shot_buffer(struct kwl_compose *compose);
 static void shot_buffer_free(struct kwl_compose *compose);
+
+/*
+ * Takes a test image's own option of the command line (WS217):
+ * --rotate-policy=any|default, the angles the displays may take (every one
+ * the build can turn, a test's, or those the hardware allows).  Returns 1
+ * for an option taken, 0 for another argument, or -1 for a word it does
+ * not know.  A product's compositor (shot-none.c) takes none.
+ */
+int
+kwl_shot_option(
+	struct kwl_server *server,
+	const char *argument)
+{
+	int match;
+
+	/* Only the policy's option. */
+	match = strncmp(argument, "--rotate-policy=", 16U);
+	if (match != 0)
+		return 0;
+
+	/* Every angle the build can turn. */
+	match = strcmp(argument + 16, "any");
+	if (match == 0) {
+		server->rotate_policy = KWL_ROTATE_POLICY_ANY;
+		return 1;
+	}
+
+	/* The hardware's angles alone, as without the option. */
+	match = strcmp(argument + 16, "default");
+	if (match == 0) {
+		server->rotate_policy = KWL_ROTATE_POLICY_DEFAULT;
+		return 1;
+	}
+
+	/* Another word is a mistake. */
+	return -1;
+}
 
 /* Tells whether this compositor was built with the capture (it was). */
 int
@@ -235,6 +281,22 @@ kwl_shot_tick(
 		return;
 	}
 
+	/* The angles' requests of WS217 (POLICY, ROTATE). */
+	match = strncmp(line, "POLICY ", 7U);
+	if (match == 0) {
+		shot_policy(server, connection, line + 7);
+		(void)close(connection);
+		return;
+	}
+
+	/* ROTATE: the anchor's angle chosen. */
+	match = strncmp(line, "ROTATE ", 7U);
+	if (match == 0) {
+		shot_rotate(server, connection, line + 7);
+		(void)close(connection);
+		return;
+	}
+
 	/* Anything but SHOT. */
 	match = strncmp(line, "SHOT", 4U);
 	if (match != 0) {
@@ -265,11 +327,17 @@ kwl_shot_tick(
 		return;
 	}
 
-	/* The next frame copies its image; a frame is asked for. */
+	/*
+	 * The next frame copies its image; a frame is asked for, drawn whole,
+	 * unless "SHOT partial" asks for the next frame as it comes (its damage
+	 * alone drawn: a turned output's partial turn pass, WS217).
+	 */
 	shot.client = connection;
 	shot.stage = SHOT_REQUESTED;
 	shot.asked_ms = kwl_milliseconds();
-	server->dirty = 1;
+	match = strncmp(line, "SHOT partial", 12U);
+	if (match != 0)
+		server->dirty = 1;
 	printf("KWL SHOT requested width=%u height=%u\n", shot.width, shot.height);
 }
 
@@ -604,5 +672,91 @@ shot_displays(
 
 	/* Succeeded: applied, and whether it was written. */
 	(void)snprintf(answer, sizeof(answer), "OK saved=%d\n", saved);
+	shot_answer(connection, answer);
+}
+
+/*
+ * Answers POLICY any|default (WS217): which angles the displays may take,
+ * every one the build can turn (a test's) or those the hardware allows;
+ * answered "OK mask=M why=W" (the anchor's).
+ */
+static void
+shot_policy(
+	struct kwl_server *server,
+	int connection,
+	const char *word)
+{
+	char answer[64];
+	unsigned policy;
+	int match;
+	int differs;
+
+	/* Only window mode has displays. */
+	if (server->compose == NULL) {
+		shot_answer(connection, "ERROR inactive\n");
+		return;
+	}
+
+	/* The policy named: any, or default. */
+	policy = KWL_ROTATE_POLICY_DEFAULT;
+	match = strncmp(word, "any", 3U);
+	if (match == 0)
+		policy = KWL_ROTATE_POLICY_ANY;
+
+	/* Another word is a mistake. */
+	differs = strncmp(word, "default", 7U);
+	if (match != 0 && differs != 0) {
+		shot_answer(connection, "ERROR policy\n");
+		return;
+	}
+
+	/* Applied, and the anchor's angles under it. */
+	kwl_output_policy_set(server, policy);
+	(void)snprintf(answer, sizeof(answer), "OK mask=%u why=%u\n", server->compose->rotations, server->compose->rotate_why);
+	shot_answer(connection, answer);
+}
+
+/*
+ * Answers ROTATE N (WS217): the user's choice of the anchor's angle, as
+ * Settings will make it; answered "OK applied=A saved=S rotation=R
+ * width=W height=H" or "ERROR errno=E".
+ */
+static void
+shot_rotate(
+	struct kwl_server *server,
+	int connection,
+	const char *number)
+{
+	char answer[128];
+	char *end;
+	unsigned long angle;
+	unsigned applied;
+	int saved;
+	int error;
+
+	/* Only window mode has displays. */
+	if (server->compose == NULL) {
+		shot_answer(connection, "ERROR inactive\n");
+		return;
+	}
+
+	/* The angle, a number. */
+	angle = strtoul(number, &end, 10);
+	if (end == number || angle > 360UL) {
+		shot_answer(connection, "ERROR angle\n");
+		return;
+	}
+
+	/* Chosen, and shown when the output is open. */
+	error = kwl_output_select_rotation(server, KWL_PLANE_ANCHOR, (unsigned)angle, &applied, &saved);
+	if (error != 0) {
+		(void)snprintf(answer, sizeof(answer), "ERROR errno=%d\n", error);
+		shot_answer(connection, answer);
+		return;
+	}
+
+	/* Succeeded: what was done, and the desktop's size now. */
+	(void)snprintf(answer, sizeof(answer), "OK applied=%u saved=%d rotation=%u width=%u height=%u\n", applied, saved,
+	    server->compose->rotation, server->width, server->height);
 	shot_answer(connection, answer);
 }

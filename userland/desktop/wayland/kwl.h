@@ -1153,7 +1153,10 @@ struct kwl_server {
 	 * asked for (--width and --height; 320x240 without them), the mode of
 	 * an output whose display's own resolution is not taken (size_given).
 	 * rotate_option is the angle --rotate asks for (a test's, which wins
-	 * over displays.conf), when rotate_given.
+	 * over displays.conf), when rotate_given.  rotate_policy is which
+	 * angles a display may take: those its hardware allows
+	 * (KWL_ROTATE_POLICY_DEFAULT), or every one the build can turn (a
+	 * test's --rotate-policy=any, or the test image's capture request).
 	 */
 	uint32_t width;
 	uint32_t height;
@@ -1161,6 +1164,7 @@ struct kwl_server {
 	uint32_t size_height;
 	unsigned rotate_given;
 	unsigned rotate_option;
+	unsigned rotate_policy;
 	/* The display mode's refresh in millihertz (from Vulkan, compose.c), told to clients by wl_output. */
 	uint32_t refresh;
 	/*
@@ -2008,6 +2012,12 @@ int kwl_glass_resize(struct kwl_server *server);
 void kwl_glass_output_resized(struct kwl_server *server);
 void kwl_output_tick(struct kwl_server *server);
 void kwl_output_size_set(struct kwl_server *server, uint32_t mode_width, uint32_t mode_height, unsigned rotation);
+int kwl_output_select_rotation(struct kwl_server *server, unsigned slot, unsigned rotation, unsigned *applied, int *saved);
+int kwl_output_apply_rotation(struct kwl_server *server, unsigned slot, unsigned rotation, unsigned mode);
+void kwl_output_policy_set(struct kwl_server *server, unsigned policy);
+void kwl_output_fit(struct kwl_server *server, unsigned glass_rebuild);
+void kwl_output_steps_name(unsigned steps, char *text, size_t size);
+void kwl_output_pointer_turn(struct kwl_server *server, unsigned before, unsigned after, int32_t *seen);
 void kwl_output_state(struct kwl_server *server, struct kwl_rotate_state *state);
 unsigned kwl_output_rotated(struct kwl_server *server);
 int kwl_output_external_available(struct kwl_server *server);
@@ -2082,6 +2092,7 @@ int kwl_compose_complete(struct kwl_server *server);
 /* The test images' screen capture (shot.c, or shot-none.c elsewhere; ws173-p002). */
 int kwl_shot_enabled(void);
 int kwl_shot_waiting(void);
+int kwl_shot_option(struct kwl_server *server, const char *argument);
 
 /* The game mode: a fullscreen video or game shown without composing (scanout.c, ws122-p005b). */
 struct kl_backend_scanout;

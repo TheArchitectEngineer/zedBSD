@@ -286,14 +286,16 @@ kwl_rotate_vector(
 /*
  * Gives the angles a display may take (KWL_ROTATION_*), and why it cannot
  * take the others (KWL_ROTATE_WHY_*): 0 always, 180 when its hardware turns
- * the picture, 90 and 270 when this build has the turn pass and the
- * hardware turns by 180 (a display that cannot be turned at all, a virtual
- * one, offers nothing).  The test policy allows all four where the build
- * has the turn pass, 180 then by the turn when the hardware cannot.
+ * the picture, 90 and 270 when the turn pass is offered on this device
+ * (turn_default) and the hardware turns by 180 (a display that cannot be
+ * turned at all, a virtual one, offers nothing).  The test policy allows
+ * all four where the build has the turn pass (turn_build), even where it is
+ * not offered by default, 180 then by the turn when the hardware cannot.
  */
 unsigned
 kwl_rotate_mask(
 	unsigned hw180,
+	unsigned turn_default,
 	unsigned turn_build,
 	unsigned policy,
 	unsigned *why)
@@ -301,9 +303,9 @@ kwl_rotate_mask(
 	unsigned turn_allowed;
 	unsigned mask;
 
-	/* The turn pass, where the build has it, for a display whose hardware can be turned. */
+	/* The turn pass, where it is offered, for a display whose hardware can be turned. */
 	turn_allowed = 0U;
-	if (turn_build && hw180)
+	if (turn_default && turn_build && hw180)
 		turn_allowed = 1U;
 
 	/* A test's policy allows the turn on any display, where the build has it. */
@@ -368,4 +370,61 @@ kwl_rotate_plan(
 	/* Succeeded: the compositor's turn pass turns it. */
 	*turn = rotation;
 	return 0;
+}
+
+/*
+ * Gives the turn pass's texture coordinates for an angle (ws217-p002b):
+ * the turn image is sampled at (u[0] * cx + u[1] * cy + u[2],
+ * v[0] * cx + v[1] * cy + v[2]) at the physical corner (cx, cy) of the
+ * whole output, each 0 or 1 (y downward).  The corners are a permutation
+ * of the logical image's, so the middle of each physical pixel falls on
+ * the middle of the logical pixel kwl_rotate_point_back gives, whatever
+ * the sizes.
+ */
+void
+kwl_turn_coefficients(
+	unsigned rotation,
+	float *u,
+	float *v)
+{
+	/* Nothing turned: the corners as they are. */
+	u[0] = 1.0f;
+	u[1] = 0.0f;
+	u[2] = 0.0f;
+	v[0] = 0.0f;
+	v[1] = 1.0f;
+	v[2] = 0.0f;
+
+	/* The logical picture for each quarter of a turn. */
+	switch (rotation) {
+	case KWL_ROTATE_90:
+		/* The physical y runs along the logical x, the physical x back along the logical y. */
+		u[0] = 0.0f;
+		u[1] = 1.0f;
+		u[2] = 0.0f;
+		v[0] = -1.0f;
+		v[1] = 0.0f;
+		v[2] = 1.0f;
+		break;
+	case KWL_ROTATE_180:
+		/* Both sides run backward. */
+		u[0] = -1.0f;
+		u[1] = 0.0f;
+		u[2] = 1.0f;
+		v[0] = 0.0f;
+		v[1] = -1.0f;
+		v[2] = 1.0f;
+		break;
+	case KWL_ROTATE_270:
+		/* The physical y runs back along the logical x, the physical x along the logical y. */
+		u[0] = 0.0f;
+		u[1] = -1.0f;
+		u[2] = 1.0f;
+		v[0] = 1.0f;
+		v[1] = 0.0f;
+		v[2] = 0.0f;
+		break;
+	default:
+		break;
+	}
 }
