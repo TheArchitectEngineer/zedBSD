@@ -40,6 +40,11 @@ On the hardware (the machine is shared; always take the lock):
 | `vke2` | `drv_i915_test_render_generality` (`../render/generality.c`) | the compiler's generality (p014 E2) through the wire once the node is served; every fragment shader writes one 32-bit word per pixel of a 64x64 RGBA8 target, checked against `../render/generality-shaders/regenerate.py`: MATRIX (a vertex chain transpose(row-major) * column-major of a uniform block; fragment products of a std140 block (column-/row-major, mat3) and of push constants (row-/column-major), a local matrix written by column, transpose, outer product, matrix * scalar, vector * matrix), INT (16 operations over hashed 32-bit values with negatives: add/sub/mul wrap, SDiv/SMod/UDiv/UMod by powers of two and not, shifts, bitwise, abs/sign/min/max/clamp signed and unsigned, 10 comparisons, conversions), FLOAT (mod by +/- divisors, roundEven/round, trunc, ceil, sign, step, floor, smoothstep, fract, abs; 4 ulps), LOOP (per-pixel trip counts: for to x % 17 with continue/break, for around while with if/else and break, do-while, while (true)), VARY16 (16 varyings), SUBSET (5 of 16 read), VIN16 (16 vertex attributes), SPILL (a fragment shader keeping 96 values live, over the GRF, with a per-pixel loop among them: spilled to scratch memory, 2 KiB a thread, the draw's scratch buffer as the general state base), VIO16 (a vertex shader with 16 attributes and 16 varyings: the VUE gathered at the end, spilling, read back by vary16.frag); each step `VKE2-<name> PASS/FAIL`, then `vke2: verdict`; the shader suite's index is `../render/README.md` |
 | `lcdb` ... `display_ktest` | `drv_i915_test_display_<name>` | the display scenarios of `tests/display/` (weak in the runner's table until linked) |
 
+On a Gen9 GT (ws229-p005) `draw` builds the Gen9 form of its fixture (Gen9 packets, a Gen9 pixel shader assembled from
+`plan/ws229/tests/fixtures/draw-fixture-ps-gen9.asm`).  `r1`, `tex`, `t3` and `bl` refuse the GT with a log line and
+return `I915_TEST_SKIPPED` (`scenarios.h`), which the runner logs as `SKIP`: their shaders, states and compute batch
+were made for Gen12 only.
+
 ## Files
 
 - `runner.c` — the checkpoint and the scenario table.

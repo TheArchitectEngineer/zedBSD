@@ -188,8 +188,11 @@ drv_i915_test_after_start(
 			return;
 		}
 
+		/* A scenario that refused this GT has logged why and is a skip. */
 		error = scenario->execution(device);
-		if (error != 0) {
+		if (error == I915_TEST_SKIPPED) {
+			kern_logf("i915: test %s: SKIP (not supported on this GT)\n", scenario->name);
+		} else if (error != 0) {
 			kern_logf("i915: test %s: FAIL rc=%d\n", scenario->name, error);
 		} else {
 			kern_logf("i915: test %s: PASS\n", scenario->name);

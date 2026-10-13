@@ -18,6 +18,11 @@
  * clamp, explicit LOD 0) at uv = (pixel + 0.5) / 32.  Origin is upper left, y
  * grows downwards in both the target and the texture, and row 0 is first in
  * memory.
+ *
+ * The single-colour draw is built for Gen12 or for Gen9 (the _gen
+ * functions; graphics version 9 selects Gen9, any other Gen12).  The
+ * textured draws carry pixel shaders and surface states Mesa generated for
+ * Gen12 only, so a Gen9 GT cannot run them (drv_i915_tex_fixture_supported).
  */
 
 #ifndef DRIVERS_GPU_I915_TESTS_FIXTURES_DRAW_FIXTURE_H
@@ -45,9 +50,10 @@
 /* The colour every pixel of the single-colour draw ends up with. */
 #define I915_DRAW_FIXTURE_EXPECTED_PIXEL	0xffff0000U
 
-/* Where the pixel shader sits in the state page and how long it is. */
+/* Where the pixel shader sits in the state page and how long the Gen12 and the Gen9 ones are. */
 #define I915_DRAW_FIXTURE_PS_OFFSET		1024U
 #define I915_DRAW_FIXTURE_PS_BYTES		496U
+#define I915_DRAW_FIXTURE_PS_GEN9_BYTES		192U
 
 /* Where the texture sits: the address its generated surface state names. */
 #define I915_TEX_FIXTURE_TEX_VA			0x100404000ULL
@@ -104,6 +110,10 @@
 void drv_i915_draw_fixture_write_state(void *state_page, uint64_t rt_va, uint32_t mocs);
 unsigned drv_i915_draw_fixture_build_batch(uint32_t *cmds, unsigned capacity, uint64_t state_va, uint32_t mocs);
 uint32_t drv_i915_draw_fixture_mocs(void);
+void drv_i915_draw_fixture_write_state_gen(void *state_page, uint64_t rt_va, uint32_t mocs, unsigned graphics_ver);
+unsigned drv_i915_draw_fixture_build_batch_gen(uint32_t *cmds, unsigned capacity, uint64_t state_va, uint32_t mocs, unsigned graphics_ver);
+uint32_t drv_i915_draw_fixture_mocs_gen(unsigned graphics_ver);
+int drv_i915_tex_fixture_supported(unsigned graphics_ver);
 
 void drv_i915_tex_fixture_write_state(void *state_page, uint64_t rt_va, uint64_t tex_va, uint32_t mocs);
 unsigned drv_i915_tex_fixture_build_batch(uint32_t *cmds, unsigned capacity, uint64_t state_va, uint32_t mocs);

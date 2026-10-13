@@ -10,6 +10,9 @@
 #    (every dword in an instruction, no bit outside a field, no instruction the version lacks), and compares the two
 #    versions field by field: a field both versions name must hold the same value unless it is a listed difference.
 # 4. The start of a cleared instruction window is disassembled by Mesa's brw_disasm for Tiger Lake and for Skylake.
+# 5. The draw fixture of the hardware tests (tests/fixtures/draw-fixture.c) goes through 1-3 too (ws229-p005); its
+#    Gen9 pixel shader must be brw_asm --gen=skl's bytes for plan/ws229/tests/fixtures/draw-fixture-ps-gen9.asm, and
+#    the room after it must disassemble as end-of-thread sends only.
 #
 #   plan/ws229/tests/host/run.sh      (GENXML: a Mesa 25.0.7 tree's src/intel/genxml; BRW_TOOLS: its build's
 #                                      src/intel/compiler; BASE: the commit to compare Gen12 with, default below)
@@ -40,6 +43,7 @@ link_list() {
 		list="$list $tree/src/drivers/gpu/i915/render/$part.c"
 	done
 	list="$list $tree/src/drivers/gpu/compiler/spirv.c"
+	list="$list $tree/src/drivers/gpu/i915/tests/fixtures/draw-fixture.c"
 	for part in compile eu; do
 		list="$list $tree/src/drivers/gpu/i915/compiler/$part.c"
 	done
@@ -88,6 +92,29 @@ if [ -x "$tools/brw_disasm" ]; then
 	echo "cleared window: $(grep -c 'EOT' "$work/eot9.asm") Gen9 and $(grep -c 'EOT' "$work/eot12.asm") Gen12 end-of-thread sends"
 else
 	echo "NOTE: no brw_disasm under $tools; the cleared window's disassembly is NOT RUN"
+fi
+
+# The draw fixture's Gen9 pixel shader, against its assembly, and the room after it.
+if [ -x "$tools/brw_asm" ] && [ -x "$tools/brw_disasm" ]; then
+	"$tools/brw_asm" --gen=skl -o "$work/fixture-ps9.re" "$repo/plan/ws229/tests/fixtures/draw-fixture-ps-gen9.asm" \
+		> "$work/fixture-ps9.asm-log" 2>&1 || status=1
+	size=$(wc -c < "$work/fixture-ps9.re")
+	head -c "$size" "$work/new/9-fixture-ps.bin" > "$work/fixture-ps9.bin"
+	if [ "$size" -ne 192 ] || ! cmp -s "$work/fixture-ps9.re" "$work/fixture-ps9.bin"; then
+		echo "FAIL fixture-ps: the Gen9 shader is not brw_asm's bytes ($size bytes assembled)"
+		status=1
+	fi
+	tail -c +"$((size + 1))" "$work/new/9-fixture-ps.bin" > "$work/fixture-carpet9.bin"
+	"$tools/brw_disasm" --gen=skl --input-path="$work/fixture-carpet9.bin" > "$work/fixture-carpet9.asm" 2>&1
+	carpet=$(grep -c '^sendc' "$work/fixture-carpet9.asm")
+	if grep -q 'ERROR\|illegal' "$work/fixture-carpet9.asm" || [ "$carpet" -ne 52 ] || \
+	    [ "$(grep -c 'EOT' "$work/fixture-carpet9.asm")" -ne 52 ]; then
+		echo "FAIL fixture-carpet: the room after the Gen9 shader is not 52 end-of-thread sends"
+		status=1
+	fi
+	echo "draw fixture: the Gen9 shader is brw_asm's $size bytes, followed by $carpet Gen9 end-of-thread sends"
+else
+	echo "NOTE: no brw_asm/brw_disasm under $tools; the draw fixture's Gen9 shader check is NOT RUN"
 fi
 
 if [ $status -ne 0 ]; then

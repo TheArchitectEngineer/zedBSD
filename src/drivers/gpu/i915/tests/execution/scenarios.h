@@ -10,13 +10,18 @@
  *
  * Each runs on the device's start worker after the device has started and
  * before its node is served, logs what it observed, and returns 0 when the
- * scenario passed or a positive errno when it did not.  The GPU scenarios
+ * scenario passed, a positive errno when it did not, or I915_TEST_SKIPPED
+ * when it refused this GT and logged why (a Gen12 fixture on a Gen9 GT).
+ * The GPU scenarios
  * submit on the render engine while nothing else uses it and leave the engine
  * parked on its kernel context, so the node is served normally afterwards.
  */
 
 #ifndef DRIVERS_GPU_I915_TESTS_EXECUTION_SCENARIOS_H
 #define DRIVERS_GPU_I915_TESTS_EXECUTION_SCENARIOS_H
+
+/* What a scenario returns when it refused this GT: a skip, neither a pass nor a failure. */
+#define I915_TEST_SKIPPED	(-1)
 
 struct i915_device;
 
