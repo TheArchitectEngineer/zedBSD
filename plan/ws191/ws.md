@@ -3,7 +3,7 @@
 # WS191: 再生の音を libkeiland の audio stream の口へ（compositor・backend、3 OS）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: incomplete（2026-10-13 P2 q964 の照合: p001〜p004 は各 phase.md で cleared（2026-10-08 Q1、T1-444・T1-448・T1-454）、残りは p005（規約、ベータ3）。ベータ2 の範囲は完了の見込み、判定は Q1）
 Primary Milestone: MG006
 Related Milestones: MG007
 Objectives: O2
@@ -25,8 +25,15 @@ WS188 p003 の検査で、動画（videoplayer/audio.c）・音楽（music）・
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| p001 | 設計（stream の口、compositor の中継か fd の受け渡しか、遅れ、3 OS の backend）、design-reviewer | planned | — |
-| [p002](phase002/phase.md) | libkeiland・compositor・zedBSD の backend | in-progress（実装と host 試験 PASS、2026-10-08 夜） | p001 |
-| [p003](phase003/phase.md) | app の移行（videoplayer・music）、libmedia から音を外す | in-progress（実装と host の確認、T1 の試験を依頼） | p002 |
-| [p004](phase004/phase.md) | Linux・FreeBSD の backend | in-progress（実装と host 試験、T1 の guest の試験を依頼） | p002 |
+| [p001](phase001/phase.md) | 設計（stream の口、compositor の中継か fd の受け渡しか、遅れ、3 OS の backend）、design-reviewer | cleared（2026-10-08 Q1: 第 4・5 版の design-reviewer が blocking 0） | — |
+| [p002](phase002/phase.md) | libkeiland・compositor・zedBSD の backend | cleared（2026-10-08 Q1、T1-444 PASS） | p001 |
+| [p003](phase003/phase.md) | app の移行（videoplayer・music）、libmedia から音を外す | cleared（2026-10-08 Q1、T1-444 PASS） | p002 |
+| [p004](phase004/phase.md) | Linux・FreeBSD の backend | cleared（2026-10-08 夜 Q1、T1-448 FreeBSD・T1-454 Linux PASS） | p002 |
 | p005 | 規約の全文の見直し | planned（ユーザーの決定でベータ 3 に回す、2026-10-08 夜） | p003・p004 |
+
+## 2026-10-13 P2 q964 の照合
+
+- 表の p001〜p004 を各 phase.md の Status（全て cleared、2026-10-08 Q1）に合わせた（表は in-progress・planned のまま古かった）。
+- 到達目標（libkeiland の音の stream の口、compositor・backend が zedBSD の audiod・Linux の alsa-lib（dlopen）・FreeBSD の OSS に流す、videoplayer・music の移行と libmedia から音を外す）は p001〜p004 の証拠で満たされている。残りは p005（規約の全文、ユーザーの決定でベータ3）。
+- 未確かめの観察（ticket なし）: p002・p003 の clear の注「Video Player の時計が wall の約 2 倍に見えた（未確認、P2 が確かめる）」は、その後の確かめの記録が無い。QEMU で確かめる要がある（T1 で Video Player の 20 秒の sample の再生の秒を測る）。直すか ticket にするかは Q1 の判断。
+- master.md の WS191 の行（「planning」「p001 設計」）は古い（Q1 の投影）。

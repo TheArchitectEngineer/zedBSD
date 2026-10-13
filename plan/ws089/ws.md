@@ -3,7 +3,7 @@
 # WS089: 設定のアプリ（Settings）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p012・p013・p019 は cleared、p014 は 5330 の Wi-Fi の driver 次第で保留のまま。2026-10-08 q910 P2 の照合: p012（T1-238 PASS）・p013（T1-278 PASS）は Q1 の判定待ち、p019 は p012 の q805 の compositor の直しで済み（Q1 の判定）、p015 は表に合わせて canceled（WS158、ベータ3）。残りは p011・p014 の実機（p014 は 5330 の Wi-Fi の driver が要る）、p018 は規約（ベータ3））
+Status: incomplete（2026-10-13 P2 q964 の照合: p001〜p010・p012・p013・p016・p017・p019〜p027 cleared、p015 canceled（WS158）。残りは p011（5330 の passthrough の S7）・p014（5330 の Wi-Fi で Network の頁、UAT の記録で判定できる見込み）・p018（規約、ベータ3）。旧: 2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p012・p013・p019 は cleared、p014 は 5330 の Wi-Fi の driver 次第で保留）
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O2
@@ -64,6 +64,7 @@ Resume point（2026-10-02 ベータ1の計画）: 2026-10-02 user「Settingsも�
 | [ws089-p016](phase016/phase.md) | 単一の instance（二つ目の起動で既存の窓を前に） | cleared（2026-10-05 Q1、T1-185 PASS） | p010、compositor の Phase（WS099 と直列） |
 | [ws089-p017](phase017/phase.md) | accent の色・dark の外観（D2） | cleared（2026-10-05 Q1、p017a T1-195・p017b T1-198b PASS） | p010 |
 | [ws089-p018](phase018/phase.md) | 全文規約と回帰（WS の最後）、完了の処理の準備 | planning（最後） | 選んだ実装の Phase |
+| [ws089-p019](phase019/phase.md) | titlebar の検索欄から Down・Up で app の検索結果へ（compositor の側、p012 の未達を分けた） | cleared（2026-10-08 Q1、p012 の q805 の compositor の直し、T1-238 PASS） | p012 |
 | [ws089-p020](phase020/phase.md) | BUG-152: Wallpaper の頁の縮小表示を別の thread で読み、頁を先に出す | cleared（2026-10-03 Q1、T1-011） | — |
 | [ws089-p021](phase021/phase.md) | Wi-Fi の画面の自動の scan（Scan のボタンを無くす、compositor が要求を数えて libkeiland-backend 経由で networkd に on・off）と Disconnect の icon（2026-10-04 ユーザーの要望）、BUG-184 | cleared（2026-10-05、T1-109・T1-098 PASS） | WS131・WS005、q700 の Wi-Fi の Bug と同じ担当 |
 | [ws089-p022](phase022/phase.md) | Ethernet の頁で設定の取得・変更（IPv4 DHCP/Static・Address・Mask・Router、IPv6 Auto/Static・Address・Router、MTU、DNS 1/2、MAC などは読むだけ）。compositor 経由、libkeiland-backend が net の command で設定（2026-10-04 ユーザーの要望） | cleared（2026-10-05 Q1） | WS131・WS005・WS033、IPv6 は WS130 |
@@ -143,3 +144,12 @@ Event ws113-multidisplay-plan-20261002-ws089-followup: userは読み取り専用
 
 - BUG-214 透明度の slider の初期値（100% と表示、実際は frosted。BUG-171 の決定 B との食い違い、ユーザーに確かめ中）、BUG-213 Network の表示
 - WS158 p004 の Settings の Languages の頁は途中（account-admin の system-language は merge 済み）
+
+## 2026-10-13 P2 q964 の照合
+
+- Status の行を表と各 phase.md に合わせた（2026-10-08 の「Q1 の判定待ち」の p012・p013 は表と phase.md で cleared）。表に無かった p019 の行を足した（phase019/phase.md は cleared）。
+- 残り:
+  - p011（5330 の passthrough で S7: 壁紙・透明度・検索、透明度 85% の frame の率）: 実機の Phase、未実施。
+  - p014（5330 の Wi-Fi で一覧・接続・鍵・切断）: 依存の「5330 の Wi-Fi の driver」は UAT で使われている（[BUG-157](../bugs/BUG-157.md) の鍵の誤りの文（2026-10-08 close）、[BUG-212](../bugs/BUG-212.md) の有線と Wi-Fi の切り替え（2026-10-10 UAT OK）、BUG-145 の UAT 2026-10-04 実機 OK）。Settings の Network の頁で一覧・接続・鍵・切断が実機で動いた記録はこれらの UAT にあるので、p014 を UAT の証拠で判定するかは Q1 の判断（P2 は新しい試験をしていない）。
+  - p018（規約の全文）: ベータ3（beta2.md）。
+- ベータ2 の範囲は p011・p014 の実機の判定が済めば完了の見込み。
