@@ -55,3 +55,7 @@ base: main bb57b2397（worktree `agent/p1` に merge）。Gen9 の boot の key 
 > **流し方**: `OUT=build/ws229-p005/hw-5330 plan/ws101/tests/hw/run-hw.sh ws229 ktest eu vkcs vkx vke1 vke2 vkc`（中で `plan/ws075/tests/test-hw.sh` が `/tmp/i915-hw.lock` を取って 1 つずつ流す。7 本、1 本 5〜10 分）。
 > **合否**: 各 `build/ws229-p005/hw-5330/hw-<scenario>-ws229/run.log` の verdict の行で判定。`ktest`: `i915: test ktest: PASS`（ktest-gt の register model に Gen9 の表が足されている、review-1 M6）。`eu`: `i915: test eu: PASS` と `i915: EU-TEST PASS:`、加えて `EU-TEST fixture: batch_hash=` が p005 の前の 5330 の run と同じ値（Gen12 の batch は byte で不変）。`vkcs`・`vkx`・`vke1`・`vke2`・`vkc`: `i915: <name>: verdict PASS (n of n steps passed)` で、n が前回の T1 の PASS と同じ。どれか 1 つでも FAIL・HANG・行が無い、なら FAIL。
 > **返し先**: Q1 と P1（または Q1 が p005 を割り当てた担当）。log の場所と verdict の行。FAIL の解析はしない。
+
+## 2026-10-14 ユーザーの指示: 全部入りの試験
+
+「ごめんなさい、テストが多すぎます。ws229は全部入りのテストを作ってください。」→ 実機の試験は 1 つの image・1 回の起動で eu → vkcs → vkx → vke1 → vke2 → vkc を順に流し、試験ごとの要約と全体の判定を出す形に変える（P3）。試験ごとの 6 つの image（Q1 が途中まで作った物）は消した。
