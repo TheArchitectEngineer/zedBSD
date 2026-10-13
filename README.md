@@ -186,40 +186,58 @@ open-hardware system stay freely usable.
 
 ---
 
-## Why a new stack
+## Why a New Stack?
 
-Two objections come up: why not use the existing open-source
+Two objections often come up: why not use the existing open-source
 operating-system ecosystem, and whether a Wayland compositor written
-here is freeloading on that work.
+here is merely freeloading on that work.
 
 The first reason is the license of the operating system itself. A
 distribution assembled from the usual kernel, libc, desktop, and
 applications carries a large set of licenses. Tracking that set is a
-core job of a project such as Debian. zedBSD, the base userland, the
-libraries, Keiland, and the applications written for this system are
-all under the zlib License, so the operating system has one
-license. Optional third-party packages under `/usr` can still carry
-their own licenses; they are not part of that single-license base.
+core job of a project such as Debian. By contrast, zedBSD, the base
+userland, the libraries, Keiland, and the applications written for
+this system are all under the zlib License, giving the operating
+system a single license. Optional third-party packages under `/usr`
+can still carry their own licenses; they are not part of that
+single-license base.
 
 The second reason is who can change the stack. On Linux, the kernel,
 libc, desktop, and applications are developed by separate
-organizations. A change that needs all of those layers is slow, and
-sometimes impossible, to land as one piece of work. Here those layers
-are under one direction. A workload can be tuned by changing the
+organizations. A change that spans all of those layers is slow, and
+sometimes impossible, to land as one piece of work. Here, those layers
+are under unified direction. A workload can be tuned by changing the
 kernel, the library, the compositor, and the application together.
 
 Keiland implements the Wayland specification and adds extensions that
-existing compositors do not have. The specification is the
+existing compositors do not have. The specification is merely the
 interface. The compositor, its extensions, and the clients are written
-for this system so the display stack can move with the rest of the
-OS. That is a reimplementation, not a repackage of an existing
-compositor.
+specifically for this system so the display stack can evolve with the
+rest of the OS. That is a reimplementation, not a repackaging of an
+existing compositor.
 
 The new kernel is not a wall. Keiland has been ported so the desktop
-also runs on Linux and FreeBSD. The work is published under zlib for
-that use: take it, ship it, and build on it. The point of the
-open-hardware system is open innovation, not a requirement that every
-user boot zedBSD.
+also runs on Linux and FreeBSD. The work is published under the zlib
+License for that very purpose: take it, ship it, and build on it. The
+point of this open-hardware system is open innovation, not a
+requirement that every user boot zedBSD.
+
+Furthermore, Keiland effectively acts as a secondary OS, much like
+OPENSTEP did. The Keiland desktop server features original Wayland
+extensions that integrate audio access, Wi-Fi/LAN and Bluetooth
+settings, a picture/video media library, calls and SMS via
+Bluetooth-connected smartphones or modems, on-screen keyboard,
+predictive conversion extension for IMEs, user account management, and
+FIDO2 security. Because all of these are implemented within the
+Keiland backend, Keiland can be ported to any OS simply by
+implementing an OS backend. Moreover, since Keiland applications
+depend only on `libkeiland`, they can even be ported to Windows using
+`libkeiland.dll`.
+
+Although the Keiland desktop server uses the Wayland protocol as its
+front-end API and Vulkan WSI for its backend, it is actually a
+"desktop OS server" and a "desktop app toolkit" rather than just a
+Wayland compositor.
 
 ---
 
