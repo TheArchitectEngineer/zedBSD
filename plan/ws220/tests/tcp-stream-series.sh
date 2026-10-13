@@ -80,8 +80,13 @@ done
 fresh_out "$out"
 key=plan/tmp/guest/id_ed25519
 status=0
-server_pid=
-capture_pid=
+# The host's background processes are stopped by the pid each writes to a file in the output itself (the capture's
+# tcpdump, the HTTP server, the ss sampler): $! is only the shell that started them under sudo, and a background
+# shell ignores SIGINT, so a signal to it reached neither tcpdump nor the server (T1-574: the runs hung at the end
+# and servers piled up on 10.77.0.1:8080).
+capture_pidfile=
+server_pidfile=
+ss_pidfile=
 ssh_options="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ServerAliveInterval=10"
 http_port=8080
 listen_port=8081
@@ -111,10 +116,27 @@ ssh:*)
 	;;
 esac
 
-# The host's segment taken down (QEMU): the capture, the server, the guest, the links and the namespace.
+# Stops the process whose pid is in FILE with SIGTERM (tcpdump then writes out its capture), waits up to 10 s for it to
+# end and then kills it.  No file, or an empty one, stops nothing.
+stop_pidfile() {
+	[ -n "$1" ] && [ -s "$1" ] || return 0
+	pid=$(cat "$1")
+	sudo kill -TERM "$pid" 2>/dev/null || return 0
+	tries=0
+	while sudo kill -0 "$pid" 2>/dev/null && [ $tries -lt 100 ]; do
+		sleep 0.1
+		tries=$((tries + 1))
+	done
+	sudo kill -KILL "$pid" 2>/dev/null
+	return 0
+}
+
+# The host's segment taken down: the capture, the sampler and the server, then (QEMU) the guest, the links and the
+# namespace.
 teardown() {
-	[ -n "$capture_pid" ] && sudo kill -INT "$capture_pid" 2>/dev/null
-	[ -n "$server_pid" ] && sudo kill -INT "$server_pid" 2>/dev/null
+	stop_pidfile "$capture_pidfile"
+	stop_pidfile "$ss_pidfile"
+	stop_pidfile "$server_pidfile"
 	[ "$mode" = qemu ] || return 0
 	python3 plan/tools/guest/guest.py stop >/dev/null 2>&1
 	sudo ip link del zbstap0 2>/dev/null
@@ -176,12 +198,20 @@ if [ "$mode" = qemu ]; then
 	machine_ip=10.77.0.2
 	# The machine is reached from the namespace with the guests' key.
 	machine=root@10.77.0.2
-	capture() { sudo ip netns exec zbs tcpdump -i zbsv1 -s 80 -w "$1" "tcp port $2" > "$1.log" 2>&1; }
+	# capture FILE PORT PIDFILE: tcpdump itself writes PIDFILE (the shell execs it), so stop_pidfile reaches it.
+	capture() {
+		sudo ip netns exec zbs sh -c 'echo $$ > "$3"; exec tcpdump -i zbsv1 -s 80 -w "$1" "tcp port $2"' capture \
+		    "$1" "$2" "$3" > "$1.log" 2>&1
+	}
 else
 	machine_ip=${machine#*@}
 	iface=$(remote "route show" | awk '$1 == "default" || $1 == "0.0.0.0" {print $NF; exit}')
 	[ -n "$capture_iface" ] || capture_iface=$(ip route get "$machine_ip" | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1)
-	capture() { sudo tcpdump -i "$capture_iface" -s 80 -w "$1" "host $machine_ip and tcp port $2" > "$1.log" 2>&1; }
+	# capture FILE PORT PIDFILE: tcpdump itself writes PIDFILE (the shell execs it), so stop_pidfile reaches it.
+	capture() {
+		sudo sh -c 'echo $$ > "$3"; exec tcpdump -i "$4" -s 80 -w "$1" "host $5 and tcp port $2"' capture \
+		    "$1" "$2" "$3" "$capture_iface" "$machine_ip" > "$1.log" 2>&1
+	}
 fi
 echo "mode=$mode interface=${iface:-?} machine=$machine_ip host=$host_ip bytes=$bytes disk_bytes=$disk_bytes runs=$runs" \
     "loss=$loss% delay=${delay}ms capture=${capture_iface:-zbsv1}" | tee "$out/settings.txt"
@@ -205,8 +235,10 @@ else
 fi
 
 # The host's HTTP server for the downloads.
-host_run python3 plan/ws220/tests/stream.py serve "$host_ip" "$http_port" "$(pwd)/$out/server-log.txt" > "$out/server.txt" 2>&1 &
-server_pid=$!
+# The host's HTTP server for the downloads, which writes its own pid (the shell execs python) for teardown.
+server_pidfile=$(pwd)/$out/server.pid
+host_run sh -c 'echo $$ > "$1"; shift; exec "$@"' server "$server_pidfile" \
+    python3 plan/ws220/tests/stream.py serve "$host_ip" "$http_port" "$(pwd)/$out/server-log.txt" > "$out/server.txt" 2>&1 &
 sleep 1
 
 # One run: the samplers on both ends and the capture, the transfer, then the samples and their analysis.
@@ -225,10 +257,11 @@ measure() {
 	up-ssh) direction=up; port=22 ;;
 	esac
 	remote "nohup sh -c 'while :; do sysctl net.tcpstats; ifconfig ${iface:-ue0}; sleep 1; done' > /tmp/ws220-series-$which.txt 2>&1 < /dev/null & echo \$! > /tmp/ws220-sampler.pid" > /dev/null
-	host_run sh -c "while :; do echo time=\$(date +%s.%N); ss -tin dst $machine_ip '( sport = :$port or dport = :$port )'; sleep 1; done" > "$out/ss-$which.txt" 2>&1 &
-	ss_pid=$!
-	capture "$(pwd)/$out/wire-$which.pcap" "$port" &
-	capture_pid=$!
+	ss_pidfile=$(pwd)/$out/ss-$which.pid
+	host_run sh -c "echo \$\$ > '$ss_pidfile'; while :; do echo time=\$(date +%s.%N); ss -tin dst $machine_ip '( sport = :$port or dport = :$port )'; sleep 1; done" > "$out/ss-$which.txt" 2>&1 &
+	capture_pidfile=$(pwd)/$out/wire-$which.pid
+	capture "$(pwd)/$out/wire-$which.pcap" "$port" "$capture_pidfile" &
+	capture_started=$!
 	sleep 1
 	start=$(date +%s.%N)
 	case $which in
@@ -256,11 +289,12 @@ measure() {
 	esac
 	end=$(date +%s.%N)
 	sleep 2
-	sudo kill -INT "$capture_pid" 2>/dev/null
-	wait "$capture_pid" 2>/dev/null
-	capture_pid=
-	kill "$ss_pid" 2>/dev/null
-	sudo kill "$ss_pid" 2>/dev/null
+	# tcpdump writes out the capture and ends, and with it the shell that started it; then the sampler.
+	stop_pidfile "$capture_pidfile"
+	wait "$capture_started" 2>/dev/null
+	capture_pidfile=
+	stop_pidfile "$ss_pidfile"
+	ss_pidfile=
 	remote "kill \$(cat /tmp/ws220-sampler.pid)" > /dev/null
 	if [ "$mode" = qemu ]; then
 		python3 plan/tools/guest/guest.py get "/tmp/ws220-series-$which.txt" "$out/series-$which.txt" > /dev/null 2>&1

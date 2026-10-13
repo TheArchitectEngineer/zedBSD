@@ -17,6 +17,7 @@ most the host's socket buffer.
 """
 from __future__ import annotations
 
+import signal
 import socket
 import sys
 import threading
@@ -48,6 +49,11 @@ class Progress:
 		self.log.close()
 
 
+def stop_on_signal(number: int, frame: object) -> None:
+	"""Ends a serve loop on SIGTERM the way SIGINT ends it."""
+	raise KeyboardInterrupt
+
+
 def serve(address: str, port: int, log: str) -> int:
 	"""Answers GET /N with N bytes, one request after another, logging the bytes sent."""
 	listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -55,6 +61,8 @@ def serve(address: str, port: int, log: str) -> int:
 	listener.bind((address, port))
 	listener.listen(4)
 	progress = Progress(log)
+	# tcp-stream-series.sh stops the server with SIGTERM (ws220-p003): it ends as on SIGINT, its log finished.
+	signal.signal(signal.SIGTERM, stop_on_signal)
 	try:
 		while True:
 			connection, _ = listener.accept()
