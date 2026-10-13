@@ -37,6 +37,7 @@ Queue: [q1012-i01](../queue.md) partial / 2026-10-13 23:49 JST ユーザー承�
 種別は testharness1,783、reftest1,974、crashtest48。現 runner で静的reftest候補1,561。testharness1,783、crashtest48、scripted test/reference407、variant6はrunner未対応であり PASS として数えない。選定済み静的reftestの35件 sample は **5 PASS / 30 FAIL / error0**。anchor positioning0/10、Flexbox0/10、Grid2/5、backdrop-filter3/5、writing modes0/5。これを全体通過率へ外挿しない。testharness選定ページ1件を `browser --run` に渡しただけでは exit0・console0で判定不能だった。
 
 Runnerの `WPT` symlink解決と公式selection manifestフィルタを修正し、固定 manifest generatorとcoverage分類器を追加。browser engine/公開ABI/テスト本体は変更しない。Python構文check、選定sample35件のID照合、`git diff --check` を確認。既存 CSS2 全件、全1,561静的候補、testharness/crashtestの正式実行、別OS、Acid3再計測は今回未実施（browser source無変更）。選定全件のPASS数・各領域の正式率、runner coverage0未達のため whole clearance はしない。
+Source・証拠・計画は `main` commit `4c8aaf484`（hook指定 `WIP`）に保存。push/GitHub publication は未実施。
 
 失敗clusterと次の設計: testharness結果取得1,783件を [p189](../phase189/phase.md)、scripted reftest/variant/crashtest及びstatic shardを [p190](../phase190/phase.md) に分離。sample の描画差は anchor/Flexbox/Grid/backdrop/writing modes 別に調べる。p189/p190 の出力と全件の再現可能な baseline がそろったら本Phaseの whole 判定を再開する。p173の3,805 ID分母やユーザーの全件PASS 100%目標は変更しない。次のQueueは未選定・未承認。
 

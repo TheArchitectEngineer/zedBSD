@@ -2,6 +2,8 @@
 
 2026-10-13 23:49–23:58 JST. Approved partial scope, max90min. [Phase](../../phase.md), [Queue](../../../queue.md), [pre-execution scope](../../selection-snapshot.md).
 
+Source, reports and planning records were committed on `main` as `4c8aaf484` (`WIP`, required by the repository hook). No push or GitHub Issue/Project publication was performed.
+
 ## Inputs and reproduction
 
 - Interop project revision `2d28de9c1e86182c38a7311854ca59cefde7ac04`, [2025 README](https://github.com/web-platform-tests/interop/blob/main/2025/README.md). 19 focus areas; Layout uses five carryover labels, pointer/mouse uses `interop-2023-events` per the official test links.
