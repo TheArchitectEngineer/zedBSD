@@ -24,6 +24,7 @@
 #include <uapi/errno.h>
 #include <stddef.h>
 
+#include "intel/commands.h"
 #include "intel/gt-regs.h"
 
 /* The ring size of a record context and the size of its timeline page (SZ_4K). */
@@ -37,6 +38,33 @@
 #define I915_DEFAULTS_POLL_US		50U
 #define I915_DEFAULTS_POLLS_PER_MS	20U
 
+/* The page that holds the Gen9 null render state batch. */
+#define I915_DEFAULTS_NULL_STATE_BYTES	4096U
+
+/* How many dwords of the Gen9 null state carry a relocated address. */
+#define I915_GEN9_NULL_STATE_RELOCS	4U
+
+/*
+ * The Gen9 null render state batch (gen9_renderstate.c), which the render
+ * engine's record request runs on Gen9 as intel_renderstate_emit() does.
+ * The table never changes.
+ */
+static const uint32_t i915_gen9_null_state[] = {
+#include "intel/null-state-gen9.inc"
+};
+
+/*
+ * The byte offsets of the four relocated addresses in the Gen9 null state
+ * (gen9_null_state_relocs[] of the same file, values unchanged).  Each is
+ * a 64-bit address whose upper dword follows it.  The table never changes.
+ */
+static const uint32_t i915_gen9_null_state_relocs[I915_GEN9_NULL_STATE_RELOCS] = {
+	0x000007a8U,
+	0x000007b4U,
+	0x000007bcU,
+	0x000007ccU
+};
+
 static void i915_defaults_fail(struct i915_gt_defaults *d, int error, const char *where);
 static int i915_defaults_submit(struct i915_gt_defaults *d, struct i915_gt_engines *es, struct i915_gt_init *gi, struct i915_gt_mem *gm, struct i915_gt_ppgtt *pp, struct i915_mmio *mmio);
 static int i915_defaults_submit_engine(struct i915_gt_defaults *d, struct i915_gt_engines *es, struct i915_gt_init *gi, struct i915_gt_mem *gm, struct i915_gt_ppgtt *pp, struct i915_mmio *mmio, unsigned index);
@@ -47,6 +75,7 @@ static void i915_defaults_advance_switch(struct i915_gt_defaults *d, struct i915
 static int i915_defaults_switch_to_kernel(struct i915_gt_engines *es, struct i915_gt_defaults *d, struct i915_mmio *mmio, unsigned index);
 static int i915_defaults_finish(struct i915_gt_defaults *d, struct i915_gt_engines *es, struct i915_gt_mem *gm);
 static void i915_defaults_release_contexts(struct i915_gt_defaults *d, struct i915_gt_mem *gm);
+static int i915_defaults_emit_null_state(struct i915_gt_defaults *d, struct i915_gt_mem *gm, struct i915_gt_request *rq, unsigned index);
 
 /*
  * Records every engine's default context image (__engines_record_defaults()).
@@ -290,7 +319,19 @@ i915_defaults_submit_engine(
 		return error;
 	}
 
-	/* intel_renderstate_emit() writes nothing on Gen12.  Closes the request. */
+	/*
+	 * intel_renderstate_emit(): the Gen9 render engine runs the null render
+	 * state; Gen12 writes nothing.
+	 */
+	if (ge->info->graphics_ver == 9 && ge->info->class == I915_RENDER_CLASS) {
+		error = i915_defaults_emit_null_state(d, gm, rq, index);
+		if (error != 0) {
+			i915_defaults_fail(d, error, "intel_renderstate_emit");
+			return error;
+		}
+	}
+
+	/* Closes the request. */
 	error = drv_i915_request_add(rq);
 	if (error != 0) {
 		i915_defaults_fail(d, error, "i915_request_add");
@@ -557,7 +598,95 @@ i915_defaults_release_contexts(
 			d->tl_page[index] = NULL;
 		}
 
+		/* Releases the Gen9 null render state batch. */
+		if (d->null_state[index] != NULL) {
+			drv_i915_gt_object_destroy(gm, d->null_state[index]);
+			d->null_state[index] = NULL;
+		}
+
 		/* Releases the context image and its ring. */
 		drv_i915_lrc_release(&d->ce[index], gm);
 	}
+}
+
+/*
+ * Writes the Gen9 null render state into a page and starts it from the
+ * record request (render_state_setup() and intel_renderstate_emit()).
+ *
+ * The four relocated dwords get the page's GGTT address added; their upper
+ * dwords stay zero because the GGTT is below 4 GiB.  The batch is started
+ * secure, in the GGTT, with arbitration on around it (gen8_emit_bb_start()).
+ * Without the pooled EUs of the LP parts there is no auxiliary batch.
+ * Returns 0, ENOMEM, EINVAL for a table that does not fit, or the ring's
+ * refusal.
+ */
+static int
+i915_defaults_emit_null_state(
+	struct i915_gt_defaults *d,
+	struct i915_gt_mem *gm,
+	struct i915_gt_request *rq,
+	unsigned index)
+{
+	struct i915_gt_object *object;
+	uint32_t *batch;
+	uint32_t *cs;
+	uint32_t ggtt;
+	unsigned count;
+	unsigned reloc;
+	unsigned dword;
+	int error;
+
+	/* Refuses a table that would not fit its page with its end. */
+	count = (unsigned)(sizeof(i915_gen9_null_state) / sizeof(i915_gen9_null_state[0]));
+	if ((count + 1U) * 4U > I915_DEFAULTS_NULL_STATE_BYTES)
+		return EINVAL;
+
+	/* Allocates the page the batch runs from. */
+	object = drv_i915_gt_object_create(gm, I915_DEFAULTS_NULL_STATE_BYTES);
+	if (object == NULL)
+		return ENOMEM;
+
+	d->null_state[index] = object;
+
+	/* Binds it into the GGTT, where the secure batch is fetched from. */
+	error = drv_i915_gt_ggtt_bind(gm, object);
+	if (error != 0)
+		return error;
+
+	/* Copies the batch and ends it. */
+	batch = (uint32_t *)object->cpu;
+	ggtt = (uint32_t)object->ggtt_offset;
+	for (dword = 0U; dword < count; dword++)
+		batch[dword] = i915_gen9_null_state[dword];
+	batch[count] = MI_BATCH_BUFFER_END;
+
+	/* Adds the page's address to each relocated dword. */
+	for (reloc = 0U; reloc < I915_GEN9_NULL_STATE_RELOCS; reloc++) {
+		dword = i915_gen9_null_state_relocs[reloc] / 4U;
+		if (dword + 1U >= count)
+			return EINVAL;
+
+		batch[dword] += ggtt;
+		batch[dword + 1U] = 0U;
+	}
+
+	/* Makes the page reach memory before the GPU fetches it. */
+	drv_i915_gt_clflush(batch, I915_DEFAULTS_NULL_STATE_BYTES);
+
+	/* Reserves the batch start. */
+	cs = drv_i915_ring_begin(rq, 6U);
+	if (cs == NULL)
+		return rq->error;
+
+	/* Starts the batch secure, in the GGTT, with arbitration on around it. */
+	*cs++ = MI_ARB_ON_OFF | MI_ARB_ENABLE;
+	*cs++ = MI_BATCH_BUFFER_START_GEN8;
+	*cs++ = ggtt;
+	*cs++ = 0U;
+	*cs++ = MI_ARB_ON_OFF;
+	*cs++ = MI_NOOP;
+	drv_i915_ring_advance(rq, cs);
+
+	/* Succeeded: the null state runs before the record request's breadcrumb. */
+	return 0;
 }
