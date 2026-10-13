@@ -1813,11 +1813,17 @@ ahci_devices_wait(
 	uint64_t deadline;
 	uint64_t now;
 	uint32_t task_file;
+	uint32_t command;
 	unsigned number;
 	unsigned pending;
 	unsigned expired;
 
-	/* Clears the errors the link bring-up recorded. */
+	/*
+	 * Clears the errors the link bring-up recorded, and makes sure FIS
+	 * reception is on: the device's first D2H FIS is what clears BSY in
+	 * PxTFD, and an HBA that dropped FRE across the reset would leave the
+	 * task file at its reset value.
+	 */
 	for (number = 0; number < DRV_AHCI_PORT_MAX; number++) {
 		port = controller->ports[number];
 		if (port == NULL)
@@ -1826,6 +1832,9 @@ ahci_devices_wait(
 			continue;
 
 		ahci_port_write(port, DRV_AHCI_PX_SERR, UINT32_MAX);
+		command = ahci_port_read(port, DRV_AHCI_PX_CMD);
+		if ((command & DRV_AHCI_PX_CMD_FRE) == 0U)
+			ahci_port_write(port, DRV_AHCI_PX_CMD, command | DRV_AHCI_PX_CMD_FRE);
 	}
 
 	/* Waits until no linked device is busy, or the time runs out. */
