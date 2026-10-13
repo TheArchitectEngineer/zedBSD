@@ -26,6 +26,10 @@
 #     it at once and open Wiseview ("KWL HOME close via=pad-top", "KWL WISEVIEW opening"); on Wiseview two fingers up
 #     from the bottom edge close it at once and open Home ("KWL WISEVIEW close via=pad-bottom", "KWL HOME open
 #     via=pad"); Esc closes Home.
+#  7e. App Home again from the bottom edge; on it two fingers swiped across in the middle are no gesture (a scroll,
+#     Home's pages) and leave it open; two fingers swiped down 30 mm in the middle close it following them (ws181-p012,
+#     the 2026-10-13 user's instruction, as the touch screen's drag down on Home: "kind=down2 phase=begin", "KWL HOME
+#     pad swipe closing=1", "KWL HOME close via=pad"); back on the desktop the same swipe down is no gesture (a scroll).
 #  8. A fullscreen window (the bar hidden): the bottom edge's gesture is logged but opens nothing (D6).
 #  9. The compositor stays up, with no ERROR in its log.
 #   plan/ws079/tests/pen-guest.sh start IMAGE
@@ -162,12 +166,29 @@ tap esc
 expect_count home-again-esc 'KWL HOME close via=escape' 2
 sleep 1
 
+# 7e. App Home again; across on it: no gesture, still open; down in the middle: it closes following the fingers.
+pad home-third "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -360 12 16" "up 0; up 1"
+expect_count home-third-opens 'KWL HOME open via=pad' 4
+sleep 1
+pad home-across "down 0 400 300; down 1 600 300" "wait 30" "swipe 360 0 12 16" "up 0; up 1"
+expect_count home-across-no-down2 'KWL GESTURE kind=down2 phase=begin' 0
+expect_count home-across-open 'KWL HOME close via=pad ' 0
+sleep 1
+pad home-down "down 0 500 300; down 1 700 300" "wait 30" "swipe 0 360 12 16" "up 0; up 1"
+expect_count home-down-begin 'KWL GESTURE kind=down2 phase=begin' 1
+expect_count home-down-follows 'KWL HOME pad swipe closing=1' 1
+expect_count home-down-closes 'KWL HOME close via=pad ' 1
+sleep 1
+pad desktop-down "down 0 500 300; down 1 700 300" "wait 30" "swipe 0 360 12 16" "up 0; up 1"
+expect_count desktop-down-no-gesture 'KWL GESTURE kind=down2 phase=begin' 1
+sleep 1
+
 # 8. A fullscreen window: the gesture opens nothing (D6).
 guest "$env /bin/wltest --color=203040 --frames=3600 --delay-ms=250 > /tmp/f.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 expect_count fullscreen-bar-hidden 'KWL GLASS bar hidden fullscreen=' 1
 pad fullscreen "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -360 12 16" "up 0; up 1"
-expect_count fullscreen-gesture-logged 'KWL GESTURE kind=bottom2 phase=begin' 5
-expect_count fullscreen-no-home 'KWL HOME pad swipe' 4
+expect_count fullscreen-gesture-logged 'KWL GESTURE kind=bottom2 phase=begin' 6
+expect_count fullscreen-no-home 'KWL HOME pad swipe' 6
 
 # 9. Up, without errors.
 running=$(guest 'ps -A -o args | grep -cE "[w]ayland( |$)"' | tail -1)

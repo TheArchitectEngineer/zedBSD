@@ -591,6 +591,7 @@ input_commands(
 			if (!input->readers[index].active || !input->readers[index].device.touchpad)
 				continue;
 			kwl_touchpad_set_feel(&input->readers[index].pad, settings.touchpad_acceleration, settings.touchpad_natural);
+			kwl_touchpad_set_down(&input->readers[index].pad, settings.touchpad_down);
 		}
 	}
 
@@ -636,6 +637,7 @@ input_attach_reader(
 		kwl_touchpad_init(&reader->pad, device->resolution_x, device->resolution_y);
 		kwl_touchpad_set_range(&reader->pad, device->pad_x_minimum, device->pad_x_maximum, device->pad_y_minimum, device->pad_y_maximum);
 		kwl_touchpad_set_feel(&reader->pad, input->own_settings.touchpad_acceleration, input->own_settings.touchpad_natural);
+		kwl_touchpad_set_down(&reader->pad, input->own_settings.touchpad_down);
 	}
 
 	/* Read from the next poll on. */

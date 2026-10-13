@@ -28,6 +28,11 @@
  * up to 150 ms apart are judged where they landed in every edge, even when
  * the first has left the band meanwhile, but not ones 400 ms apart; a pad
  * whose axes start above zero measures its left and top edges from there.
+ * ws181-p012: while the shell asks for it (kwl_touchpad_set_down, App Home
+ * shows) two fingers moving down from the middle or the bottom edge are
+ * DOWN2, which follows them down and ends with their speed, while from the
+ * top edge they are still TOP2 and moving up or across still scrolls (by
+ * the travel held back too); not asked, moving down scrolls as before.
  *
  *   plan/ws142/tests/run-host-gesture.sh
  */
@@ -1035,6 +1040,116 @@ main(void)
 	finger_up(1);
 	frame();
 	check(gestures() == 0U, "offset axes: 7.5 mm from the least place is outside the band");
+
+	/* 32. App Home shows (ws181-p012): two fingers down 20 mm in the middle, quickly, are DOWN2. */
+	start_case(1);
+	kwl_touchpad_set_down(&pad, 1);
+	x[0] = 500;
+	y[0] = 300;
+	x[1] = 700;
+	y[1] = 300;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, 240, 10, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_DOWN2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "down2: begins once");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_DOWN2, KWL_TOUCHPAD_PHASE_UPDATE) >= 5U, "down2: follows the fingers");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_DOWN2, KWL_TOUCHPAD_PHASE_END) == 1U, "down2: ends at the lift");
+	travel = last_travel(KWL_TOUCHPAD_PHASE_END);
+	check(travel >= 19000 && travel <= 21000, "down2: travels 20 mm down");
+	check(travel_rises(), "down2: the travel rises");
+	check(last_speed(KWL_TOUCHPAD_PHASE_END) >= FLICK, "down2: 250 mm/s is a flick");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) == 0U, "down2: does not scroll");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_SWIPE2, KWL_TOUCHPAD_PHASE_END) == 0U, "down2: no swipe's end");
+
+	/* 33. The same slowly: the end is no flick. */
+	start_case(1);
+	kwl_touchpad_set_down(&pad, 1);
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, 240, 10, 80U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_DOWN2, KWL_TOUCHPAD_PHASE_END) == 1U, "slow down2: ends");
+	check(last_speed(KWL_TOUCHPAD_PHASE_END) < FLICK, "slow down2: 25 mm/s is no flick");
+
+	/* 34. Asked, two fingers up or across in the middle still scroll (Home's pages), by the travel held back too. */
+	start_case(1);
+	kwl_touchpad_set_down(&pad, 1);
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, -240, 10, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gestures() == 0U, "asked, up in the middle: no gesture");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) > 0U, "asked, up in the middle: scrolls");
+	start_case(1);
+	kwl_touchpad_set_down(&pad, 1);
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 240, 0, 10, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gestures() == 0U, "asked, across in the middle: no gesture");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) > 0U, "asked, across in the middle: scrolls");
+
+	/* 35. Asked, two fingers down from the top edge are TOP2 still, and down from the bottom edge DOWN2. */
+	start_case(1);
+	kwl_touchpad_set_down(&pad, 1);
+	x[0] = 500;
+	y[0] = 10;
+	x[1] = 700;
+	y[1] = 20;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, 240, 10, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_TOP2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "asked, from the top edge: top2");
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_DOWN2, KWL_TOUCHPAD_PHASE_BEGIN) == 0U, "asked, from the top edge: no down2");
+	start_case(1);
+	kwl_touchpad_set_down(&pad, 1);
+	x[0] = 500;
+	y[0] = 500;
+	x[1] = 700;
+	y[1] = 700;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, 60, 6, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gesture_count(KWL_TOUCHPAD_GESTURE_DOWN2, KWL_TOUCHPAD_PHASE_BEGIN) == 1U, "asked, down at the bottom edge: down2");
+
+	/* 36. Not asked (or asked no more), two fingers down in the middle scroll. */
+	start_case(1);
+	kwl_touchpad_set_down(&pad, 1);
+	kwl_touchpad_set_down(&pad, 0);
+	x[0] = 500;
+	y[0] = 300;
+	x[1] = 700;
+	y[1] = 300;
+	finger_down(0, x[0], y[0]);
+	finger_down(1, x[1], y[1]);
+	frame();
+	move_fingers(2U, x, y, 0, 240, 10, 8U);
+	finger_up(0);
+	finger_up(1);
+	frame();
+	check(gestures() == 0U, "not asked, down in the middle: no gesture");
+	check(kind_count(KWL_TOUCHPAD_SCROLL) > 0U, "not asked, down in the middle: scrolls");
 
 	/* The result. */
 	if (failures != 0) {

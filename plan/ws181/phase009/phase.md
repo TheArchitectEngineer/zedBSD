@@ -22,6 +22,7 @@ Parent: [WS181](../ws.md)
 1. 整列の popup: pointer の項目が変わる時に 1 番目の項目が一瞬青くなる（ちらつき）を直す。
 2. 描画が重くなった疑い: 5320 の session.log の PERF・frame の時間を ws181-p008・BUG-246（cfdb21813、animation の間は毎 tick で dirty）の前後で比べ、animation が終わっても frame を頼み続けていないか、App Home の層の描画（layer_opacity・blur）が増えていないかを確かめ、原因があれば直す（「completion wait」の有無も確かめて答える）。
 3. App Home の上で touchpad の下端からの 2 本指 swipe up で desktop に戻る（端の判定は他と同じく 1 本が下端にあれば）。
+   - **置き換え（2026-10-13 ユーザー「トラックパッドも下へ払って閉じる形に変えます。」）**: App Home は touchpad の 2 本指で下へ払って閉じる（touch panel の Home の上の下への drag と同じ）。App Home の上の下端からの 2 本指 swipe up は何もしない。[p012](../phase012/phase.md) の追記。
 4. App Home の頁: 1 枚目から左へ、最後の頁から右へは滑らせない（無い頁へは動かない）。
 5. App Home の上では右上の日付の click で calendar を出さない。
 6. desktop の上の右上の日付の click で出る calendar（窓）を、整列モードの時は整列に入れる（他の窓と同じく枠へ）。

@@ -20,9 +20,12 @@
 #  4. On App Home's first page a drag to the right, held: no page slides in from the left (p009-home-first-drag.png
 #     shows the first page where it was); let go, the first page stays ("KWL HOME page page=1 ... via=drag").  When
 #     Home has more than one page, the same to the left on the last page (p009-home-last-drag.png).
-#  3. On App Home, two fingers up 30 mm from the pad's bottom edge close it following them ("KWL HOME pad swipe
-#     closing=1", "KWL HOME close via=pad"); the same with one finger only in the band too; a short slow one leaves Home
-#     open ("KWL HOME pad stays").
+#  3. On App Home, two fingers swiped down 30 mm in the middle of the pad close it following them (ws181-p012, the
+#     2026-10-13 user's instruction, which replaces ws181-p009's two fingers up from the bottom edge: "KWL GESTURE
+#     kind=down2 phase=begin", "KWL HOME pad swipe closing=1", "KWL HOME close via=pad"); the same from the bottom edge's
+#     band down too; a short slow one leaves Home open ("KWL HOME pad stays"); two fingers up from the bottom edge
+#     do nothing on Home (a "kind=bottom2 phase=begin", no more "pad swipe closing", Home still open: Esc closes it,
+#     "KWL HOME close via=escape").
 #  The compositor stays up, without KWL FAILED.
 #
 #   plan/ws181/tests/p009-guest.sh BUILD [OUTDIR]
@@ -167,22 +170,29 @@ else
 	echo "note: one page only, the last page's drag is not tried"
 fi
 
-# 3. Two fingers up from the pad's bottom edge close Home; one finger in the band is enough; a short slow one stays.
-pad bottom2-home "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -360 12 16" "up 0; up 1"
+# 3. Two fingers swiped down close Home (ws181-p012), from the middle or the bottom edge's band; a short slow one stays;
+#    two fingers up from the bottom edge do nothing on Home.
+pad down2-home "down 0 500 300; down 1 700 300" "wait 30" "swipe 0 360 12 16" "up 0; up 1"
+expect_count pad-down2 'KWL GESTURE kind=down2 phase=begin' 1
 expect_count pad-closing 'KWL HOME pad swipe closing=1' 1
-expect_count pad-closes 'KWL HOME close via=pad' 1
+expect_count pad-closes 'KWL HOME close via=pad ' 1
 sleep 1
 home_open
-pad bottom2-one "down 0 500 750; down 1 700 500" "wait 30" "swipe 0 -360 12 16" "up 0; up 1"
-expect_count pad-one-closing 'KWL HOME pad swipe closing=1' 2
-expect_count pad-one-closes 'KWL HOME close via=pad' 2
+pad down2-bottom "down 0 500 700; down 1 700 380" "wait 30" "swipe 0 60 6 16" "up 0; up 1"
+expect_count pad-bottom-closing 'KWL HOME pad swipe closing=1' 2
 sleep 1
+tap esc
 home_open
-pad bottom2-short "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -96 12 60" "up 0; up 1"
+pad down2-short "down 0 500 300; down 1 700 300" "wait 30" "swipe 0 96 12 60" "up 0; up 1"
 expect_count pad-short-closing 'KWL HOME pad swipe closing=1' 3
 expect_some pad-short-stays 'KWL HOME pad stays from='
-expect_count pad-short-not-closed 'KWL HOME close via=pad' 2
+expect_count pad-short-not-closed 'KWL HOME close via=pad ' 1
+escapes=$(count 'KWL HOME close via=escape')
+pad bottom2-on-home "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -360 12 16" "up 0; up 1"
+expect_some bottom2-on-home-gesture 'KWL GESTURE kind=bottom2 phase=begin'
+expect_count bottom2-on-home-nothing 'KWL HOME pad swipe closing=1' 3
 tap esc
+expect_count bottom2-on-home-still-open 'KWL HOME close via=escape' $(( ${escapes:-0} + 1 ))
 
 # The compositor stays up.
 failed=$(count 'KWL FAILED')
