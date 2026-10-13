@@ -53,7 +53,7 @@ Resume point: p013のdouble-tap drag修正はmain e654733f1でcleared。実機tr
 | [ws127-p004](phase004/phase.md) | thumbnail の拡張（F-035）。PDF の thumbnail と disk の cache は ws127-p002 で実装済み。この Phase は cache の上限（2000→1800）と壊れた PDF の試験。動画は WS122 の後 | cleared（q667、T1-081） | p001 | 1h |
 | [ws127-p005](phase005/phase.md) | 日本語の UI の文言と、名前の変更での IME（F-041 の残り）。Settings と共通の翻訳の仕組み | canceled（2026-10-05 夜、WS158 に吸収） | p001、WS095、WS089 p016 と仕組みを共有 | 4h |
 | [ws127-p006](phase006/phase.md) | DnD の自動の scroll と spring-loaded（F-039）。端の自動 scroll と item・sidebar の folder の spring は実装済み（ws127-p002）。この Phase は tab の上で待つと tab が切り替わる spring | cleared（q666、T1-077） | p001 | 1h |
-| [ws127-p007](phase007/phase.md) | 5330 の実機での操作と速さ。遅ければ描き直しを damage の矩形に絞る（F-037） | planning（p002〜p006 の後、実機とユーザーの時間） | p002〜p006 の選んだ物 | 2h + ユーザー 20 分 |
+| [ws127-p007](phase007/phase.md) | 5330 の実機での操作と速さ。遅ければ描き直しを damage の矩形に絞る（F-037） | cleared（2026-10-13 ユーザーの実機の確かめ「OKでした」、5330 の Files） | p002〜p006 の選んだ物 | 2h + ユーザー 20 分 |
 | [ws127-p008](phase008/phase.md) | 全文規約と回帰（WS の最後） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: T2-025 PASS 8/8（QEMU）。FreeBSD の build の分は 10/13 以降。旧: in-progress（q667、P2。規約・build・host 済み、QEMU 回帰・FreeBSD は T1 待ち、実機 p007 待…） | 実装の Phase | 2h |
 | [ws127-p009](phase009/phase.md) | Files の host 試験 p009・p010・p013 の FAIL（host-render の既定の font が作り直した build/ に無い path を指していた。試験を tree の font に） | cleared（q656、host 3 本 PASS） | — | 0.5h |
 | [ws127-p010](phase010/phase.md) | directory の名前（breadcrumb）のタップ・クリックで path を入力、約 1 秒後に path の候補の dropdown（2026-10-04 ユーザーの要望） | cleared（2026-10-05 Q1） | BUG-177・BUG-190 と揃える |

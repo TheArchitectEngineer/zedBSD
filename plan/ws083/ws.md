@@ -50,7 +50,7 @@ Resume point: 2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p001 cleared。p0
 | ws083-p005 | 実機: VCS の bring-up と I frame の hash（`i915.debug=video`）、HuC 不要の確認 | **cleared**（2026-10-10 Q1、ユーザーの依頼で 5330 の実機（image 588c5cd、boot に i915.debug=video）で SSH: dmesg に `Vulkan video decode is offered on a GT with VCS0`・`engine[2] vcs0 … reset_domain=0x20`・`capset declares H.264 video decode`、`vkvideo-probe --list` は `video families 1, video extensions 3`、I frame の i-baseline-64・i-main-352-slices・i-high-352-cqm は各 3 frames 3 match。HuC の行は無く、無しで通る） | p004、5330 |
 | [ws083-p006a](phase006a/phase.md) | P・B と DPB、scaling list の fall-back、複数 slice の host の試験（vkvideo-probe の DPB と表示順） | cleared（2026-10-10 Q1、5330 の実機で照合） | p004 |
 | ws083-p006b | P・B と DPB の実機の hash | **cleared**（2026-10-10 Q1、5330 の実機: p-baseline-64 10/10・pb-main-352 15/15・pb-high-352-pyramid 15/15 match、hang・reset の行なし、compositor は生きている） | p005、p006a |
-| [ws083-p007](phase007/phase.md) | `GRDOM_MEDIA` の engine 単位の reset と VCS の hang の回復 | in-progress（q876、P2。host の範囲と review の R-S2・S3・S5 は済み（q897）。人工の hang の道具 `-DI915_TEST_VIDEO_HANG_AT` は 2026-10-09 夜 P1 が作成、実機の F1・F2 と R-S4 は 5330 で） | p005 |
+| [ws083-p007](phase007/phase.md) | `GRDOM_MEDIA` の engine 単位の reset と VCS の hang の回復 | cleared（2026-10-13 ユーザーの実機の確かめ「OKでした」、GPU が固まった時の回復） | p005 |
 | ws083-p008 | 性能、`i915.debug=video` の門の既定化（p007 の後）、利用者への案内、SAMPLED・TRANSFER_SRC（HD5: 要らない）、result status query | cleared（2026-10-10 Q1） | p006b、p007（host の分は無し） |
 | ws083-p009 | 全文規約確認と回帰（必須の最終確認） | planning（ベータ3、2026-10-08 ユーザー） | 全 Phase |
 

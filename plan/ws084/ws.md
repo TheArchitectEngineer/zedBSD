@@ -29,7 +29,7 @@ Resume point: 2026-10-07 P2: p003 の reboot-loop.sh（host の dry run まで�
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | ws084-p002 | bare metal の log（ユーザーが ssh で dmesg、下）で見つかった組み込みの不足を直す | cleared（2026-09-29。素の 5330 で takeover → LCD の desktop、操作中 24.5 present/s。下の記録） | p001 |
-| [ws084-p003](phase003/phase.md) | L2: 素の 5330 で demo の既定の image（logo あり）の起動が 10 回中 10 回 desktop まで届く（`plan/ws084/tests/reboot-loop.sh`） | in-progress（2026-10-07 P2: reboot-loop.sh まで、実機は未） | p002 |
+| [ws084-p003](phase003/phase.md) | L2: 素の 5330 で demo の既定の image（logo あり）の起動が 10 回中 10 回 desktop まで届く（`plan/ws084/tests/reboot-loop.sh`） | cleared（2026-10-13 ユーザーの実機の確かめ「OKでした」、素の 5330 の起動 10 回） | p002 |
 | [ws084-p004](phase004/phase.md) | parity の N1 との乖離 1〜3 を調べて記録し、直しの案を patch に（適用は main の判断）、host-native-decide-test を戻す | in-progress（2026-10-07 P2: 表・案・host 試験、判断待ち） | p003 |
 | ws084-p001 | N0 が active な pipe で止まらず `takeover` の印を付け、resident の display の開始が最初の書き込みの前に N1（readout + sanitize、`intel_crtc_disable_noatomic`、release）を走らせる。以前の parity の N1 の実機の手順（`4ab09939` の `parity_lcd_kernel.c`: 画面の object を仮の framebuffer で prepare → PLL の pool を空に → readout → takeover → release）に合わせる | cleared（2026-09-29。p002 の修正と合わせて素の 5330 で動作） | — |
 

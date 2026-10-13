@@ -31,7 +31,7 @@
 
 | 項目 | 状態 | LW | 担当 |
 | --- | --- | --- | --- |
-| [WS083](ws083/ws.md) Vulkan Video（H.264） | p001〜p006・p008 cleared（実機で全 stream 一致、1080p 相当 1 frame 約 5 ms）。2026-10-11 から既定で ON（ユーザー）。残り: p007 の hang の回復の実機の確かめ（hang の kernel を 1 回置く、手順は phase007、ユーザーの判断） | 0.5 | ユーザー・Q1 |
+| [WS083](ws083/ws.md) Vulkan Video（H.264） | p001〜p006・p008 cleared（実機で全 stream 一致、1080p 相当 1 frame 約 5 ms）。2026-10-11 から既定で ON（ユーザー）。p007 の hang の回復は 2026-10-13 ユーザーの実機の確かめ OK（hang の kernel を 1 回置く、手順は phase007、ユーザーの判断） | 0.5 | ユーザー・Q1 |
 | [WS202](ws202/ws.md) 動画再生（libmedia の H.264・AAC を Video Player・Music で使う） | p013 の 5330 の UAT OK（2026-10-13 ユーザー）。残り: p012 の T1 の全項目、p014 の規約。スライダーが再生の終わりで約 50% に止まる件は [BUG-300](bugs/BUG-300.md) | 4.0 | T1 |
 | [WS197](ws197/ws.md) Bluetooth のスマホ連携（SMS の MAP・通話の HFP・連絡先の PBAP）（2026-10-10 ユーザー「WS197はbeta2.mdで必須に入れておいてください。」） | 2026-10-11: p001〜p005・p011〜p013 cleared。SMS・MMS（文と写真）の受信・表示、PBAP の電話帳・通話の履歴・Settings、Bluetooth の自動復旧は main。残り: p010 の写真・動画の送信（約 3）、HFP の制御 p006（12）と音 p007（25）、実機の UAT p008（Android）。**HFP をベータ2 に入れるかは判断待ち**。規約の p009 はベータ3 | 約 40（HFP を含む。除けば約 6） | 未割当 |
 | [WS129](ws129/ws.md) p005・p013 release notes・既知の問題・利用の手引き | 下書き済み（[notes](../docs/release/zedbsd-1.0.0-beta2.md)・[known issues](../docs/release/zedbsd-1.0.0-beta2-known-issues.md)・[guide](../docs/release/zedbsd-1.0.0-beta2-guide.md)）。**ユーザーの review 待ち**。WS199・WS200 の機能を足し、RC で review の comment を消す | 1.5 | ユーザー・P1 |
@@ -68,23 +68,23 @@
 | --- | --- | --- | --- | --- |
 | [WS031](ws031/ws.md) | i915 の native Vulkan の実行器と compiler | incomplete。p011 big-bang 待ち、p024・p025 blocked、p021〜p048 の多くが planning | UAT 待ち（p024・p025）、空き時間だけの WS（Focus） | ベータ2（空き時間だけ） |
 | [WS033](ws033/ws.md) | 有線 LAN（USB LAN）の常駐管理 | incomplete。p001 in-progress（L2 は p002 へ）、p002 planning、p003 planned | 実機の確かめ（5330、ユーザーの時期）、規約の全文の見直し p003 が未着手 | ベータ2（旧ベータ1 の段） |
-| [WS049](ws049/ws.md) | ACPI（SCI・GPE・EC・DSDT）の実機対応 | incomplete。p007・p008・p016 in-progress | 実機の確かめ（5330 の電源ボタン・蓋・AC・EC、BUG-165） | ベータ2（旧ベータ1 の段、BUG-165 は既知の問題） |
+| [WS049](ws049/ws.md) | ACPI（SCI・GPE・EC・DSDT）の実機対応 | incomplete。p007・p008・p016 cleared（2026-10-13 ユーザーの実機の確かめ OK、電源ボタン・蓋） | なし（残りの Phase の照合と WS の完了の記録） | ベータ2（旧ベータ1 の段、BUG-165 は既知の問題） |
 | [WS050](ws050/ws.md) | USB-C の UCSI（role・Alt Mode） | incomplete。p001〜p005 cleared（p005 は Q1 の判定待ち）、p006 planned | 実機の確かめ（5330、p006）、規約の全文はベータ3 | ベータ2 |
 | [WS051](ws051/ws.md) | USB-C の DP Alt Mode（i915 の Type-C） | incomplete。p004c・p005b in-progress、p004a・p004b・p005a は Q1 の判定待ち、p006 planned | 実機の確かめ（5330 の GOP が USB-C の起動・TC1）、BUG-266、規約はベータ3 | ベータ2 |
 | [WS075](ws075/ws.md) | i915 の高度化（実行器・compiler・描画の速さ） | incomplete。p006・p007・p032 in-progress、p017〜p031 の一部 uncleared、p010 planning | 描画の高速化はユーザーの再開の指示待ち、空き時間だけの WS（Focus）、p032 は実機 | ベータ2（空き時間だけ） |
 | [WS079](ws079/ws.md) | Notes・PDF Viewer | incomplete。実装の残りなし、p017 は Q1 の判定待ち | 実機の確かめ（5330 の mouse・Windows の QEMU の touch で S8・S9、ユーザー） | ベータ2 |
 | [WS081](ws081/ws.md) | touch の質（遅れ・報告の率） | incomplete。p007・p017 planned、p009 planning | Windows の機械での touch の計測（ユーザー） | ベータ2（旧ベータ1 の段） |
-| [WS083](ws083/ws.md) | Vulkan Video（H.264、Intel Xe-LP） | incomplete。p001〜p006・p008 cleared、p007 in-progress、p009 planning | 実機の確かめ（5330 で p007 の hang の回復、ユーザーの準備）、規約 p009 はベータ3 | ベータ2 |
-| [WS084](ws084/ws.md) | i915 の firmware の画面の引き継ぎ | incomplete。p003・p004 in-progress | 実機の確かめ（5330 の素の起動 10 回、ユーザー）、p004 は Q1 の判断待ち（今は何もしない） | ベータ2 |
+| [WS083](ws083/ws.md) | Vulkan Video（H.264、Intel Xe-LP） | incomplete。p001〜p008 cleared（p007 は 2026-10-13 ユーザーの実機の確かめ OK）、p009 planning | 規約 p009 はベータ3 | ベータ2 |
+| [WS084](ws084/ws.md) | i915 の firmware の画面の引き継ぎ | incomplete。p003 cleared（2026-10-13 ユーザーの実機の確かめ OK、素の起動 10 回）、p004 in-progress | p004 は Q1 の判断待ち（今は何もしない） | ベータ2 |
 | [WS089](ws089/ws.md) | Settings の app | incomplete。p011・p014 planned・planning（実機）、p018（規約）planning | 実機の確かめ（5330 の passthrough、p014 は Wi-Fi の driver が要る）、規約はベータ3 | ベータ2 |
 | [WS090](ws090/ws.md) | widget の library（libkeiland）と Mahora の font | incomplete。p009・p018 は Q1 の判定待ち、p020・p021 test-wait、p026 in-progress、p012 planning | ユーザーの判断（p020・p021 の PNG の外観）、5330 の UAT と測定（p026）、規約はベータ3 | ベータ2（旧ベータ1 の段） |
 | [WS094](ws094/ws.md) | desktop の file の icon | incomplete。実装の残りなし、p007・p009・p012 が残り | 実機の確かめ（5330、p012）、規約はベータ3、p009 はベータ3 の性能の Phase へ | ベータ2（旧ベータ1 の段） |
 | [WS099](ws099/ws.md) | compositor（窓の管理・遷移） | incomplete。p012 planned（実機）、p022 planning（規約と回帰）、p006 は記録だけ | 実機の確かめ（5330 の C1 の目視、ユーザー）、規約の全文の見直し p022 が未着手 | ベータ2（旧ベータ1 の段） |
-| [WS100](ws100/ws.md) | 音量（audiod と Settings の Sound） | incomplete。p006（5330 の HDA）planning、p009（音量の曲線）は QEMU を T1 | 実機の確かめ（5330 の HDA、ユーザーが聞く）、T1 の試験（p009） | ベータ2（旧ベータ1 の段） |
+| [WS100](ws100/ws.md) | 音量（audiod と Settings の Sound） | incomplete。p006 cleared（2026-10-13 ユーザーの実機の確かめ OK、HDA の音）、p009（音量の曲線）は QEMU を T1 | T1 の試験（p009） | ベータ2（旧ベータ1 の段） |
 | [WS102](ws102/ws.md) | スクリーンキーボード | incomplete。p010・p026 in-progress、p011〜p014 planned | T1 の再試験待ち（p026）と p010 の基準値、p012 は WS095 の続き、p013 は WS085 | ベータ2 |
 | [WS113](ws113/ws.md) | 外部・複数 display と Settings の Display | incomplete。p012・p013 in-progress、p014 test-wait、p008・p009・p010・p011a が残り | BUG-266、実機の確かめ（5330 の全経路 p008）、蓋 p011a と規約 p009 はベータ3、p010 は後回し | ベータ2 |
 | [WS120](ws120/ws.md) | 音楽の app（m4a と local の collection） | incomplete。p001・p008・p009 cleared、他は canceled、残りの Phase なし | なし（WS の完了の処理が未） | ベータ2 |
-| [WS127](ws127/ws.md) | Files の app | incomplete。p013 cleared、p007（実機）planning | 実機の確かめ（5330 の操作と速さ、trackpad の UAT、ユーザー） | ベータ2（旧ベータ1 の段） |
+| [WS127](ws127/ws.md) | Files の app | incomplete。p007 cleared（2026-10-13 ユーザーの実機の確かめ OK、Files） | FreeBSD の build（p008 の残り、10/13 以降） | ベータ2（旧ベータ1 の段） |
 | [WS128](ws128/ws.md) | 標準 app の仕上げ | incomplete。p007（実機）・p012（icon）planning | 実機の確かめ（5330 の通し、ユーザー）、p012 はデザインの方向のユーザーの確認 | ベータ2（旧ベータ1 の段） |
 | [WS129](ws129/ws.md) | ベータ2 の release 作業 | incomplete。p002 planned、p005・p013 は下書き済み、p006・p007・p008 planning | ユーザーの review（release notes・既知の問題・手引き）、最終回帰 p006 は 10/14、公開はユーザーの指示 | ベータ2 |
 | [WS130](ws130/ws.md) | IPv6 | incomplete。p001〜p007 cleared、p008 は QEMU PASS、p009 planning | 実機の確かめ（5330 の DHCPv6 の UAT は保留）、規約 p009 はベータ3 | ベータ2 |
@@ -97,7 +97,7 @@
 | [WS154](ws154/ws.md) | Languages の頁の IME の選択と SKK の IME | incomplete（p001〜p004 cleared、残りは UAT・範囲の判断・規約） | 実機の確かめ（5330 の SKK の操作感）、ユーザーの判断（`>`・`/`・`#`・Tab・注釈の範囲）、規約の全文はベータ3 | ベータ2 |
 | [WS156](ws156/ws.md) | app の通知（下の中央の popup と ring の log） | incomplete（p001〜p004 cleared、p005 uncleared、p006 planning） | 実機の確かめ（5330 の UAT p005）、規約はベータ3、p006（Linux の D-Bus）は後回し | ベータ2 |
 | [WS159](ws159/ws.md) | native の touchpad（I2C-HID）と touchpad の層 | incomplete（p001・p003・p004 cleared、p002・p006 in-progress、p005 planned） | 実機の確かめ（5330 の I2C・GPIO の割り込み、p005 の UAT） | ベータ2（表はベータ1、ベータ1 はベータ2 に一本化） |
-| [WS161](ws161/ws.md) | YubiKey（USB の FIDO2・NFC の CTAP2） | incomplete（p001〜p005 cleared、p006 は NFC と build、p007 規約） | 実機の確かめ（ACR1252U と YubiKey 5 NFC）、Linux・FreeBSD の build は 10/13 以降、規約 p007 はベータ3 | ベータ2 |
+| [WS161](ws161/ws.md) | YubiKey（USB の FIDO2・NFC の CTAP2） | incomplete。p001〜p005 cleared、p006 は実機の UAT OK（2026-10-13 ユーザーの実機の確かめ OK、YubiKey）、p007 規約 | Linux・FreeBSD の build（p006 の残り）、規約 p007 はベータ3 | ベータ2 |
 | [WS164](ws164/ws.md) | 起動時の Welcome の画面 | incomplete（p001・p002 cleared、p003 規約 planned） | 規約の全文の見直し p003（ベータ3）、実機は UAT | ベータ2 |
 | [WS165](ws165/ws.md) | 手書きの入力（段 1） | incomplete（p001〜p003・p005 cleared、p004 UAT と規約） | 実機の確かめ（UAT）、規約はベータ3 | ベータ2 |
 | [WS168](ws168/ws.md) | プレビューを作る隔離された command | incomplete（p001〜p004 cleared） | 記録に残りの Phase なし（WS の完了の記録が無い） | ベータ2 |
