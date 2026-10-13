@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1093 / WS074 fixed Grid testharness recensus（2026-10-14）
+## 最新: q1094 / WS074 CSS Grid shorthand diagnosis（2026-10-14）
+
+[q1094履歴](queue-q1094.md): `grid:`字面は固定Grid中FAIL83/PASS7の上限。最小静的HTMLでshorthand未認識、longhand配置50px×2列を確認。p218追加、p217一部出力依存。[証拠](../ws074/phase218/evidence/20261014-q1094/README.md)。p218部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1093 / WS074 fixed Grid testharness recensus（2026-10-14）
 
 [q1093履歴](queue-q1093.md): 固定Grid502は103 PASS/399 FAIL維持、旧PASS後退0。13件で22 subtestがFAIL→PASS、逆0。全raw/checkpoint/ID照合。[証拠](../ws074/phase189/evidence/20261014-q1093/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
 
