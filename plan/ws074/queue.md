@@ -1,17 +1,17 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1024 / WS074 testharness bounded shard
+# q1025 / WS074 Window unique-id named lookup
 
-Status: finished（2026-10-14 00:46〜00:48 JST）
+Status: finished（2026-10-14 00:50〜00:53 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p191のq1021有限部分scope](phase191/phase.md) に適用。
-Timebox: 2026-10-14 00:46 JST 開始、最大90分（02:16 JSTまで）。
+Timebox: 2026-10-14 00:50 JST 開始、最大90分（02:20 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1024-i01 | [ws074-p189](phase189/phase.md) partial | 固定manifestの各focus最大8・合計最大128件の単一HTTP HTML testharnessを決定的に選び実測。重複/除外理由/結果分類を保存し、代表失敗を分類。browser/WPT/Master変更なし。最大90分 | cleared（partial、p189 whole uncleared） | p173 manifest、q1013 runner、q1014候補判定 |
+| q1025-i01 | [ws074-p192](phase192/phase.md) partial | HTML Window の接続済み一意 id named propertyをlive lookupで実装。own property優先・変更/削除をfixtureで確認し、関連WPTとhost build/Acid回帰を測定。重複/name/iframeは後続。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p192 whole uncleared） | p189 q1024 shard |
 
-Dependency graph: p173固定manifest → p189 q1013 runner・q1014候補判定 → q1024-i01 → p189 whole判断 → p173最終100%判断。p190は独立の必要出力、p191 whole cleared。
+Dependency graph: p173固定manifest → p189 q1024 shard → q1025-i01 → p192 whole判断 → p173最終100%判断。p189 whole/p190は別の必要出力、p191 whole cleared。
 
 Upcoming Work Outlook: p191の残るtextdecoration CSSOM、p189 runnerの環境対応、[p190](phase190/phase.md) reftest/crashtest coverage、p173全件baselineを候補とする。次の Queue も有限scopeを記録する。
 
@@ -40,3 +40,5 @@ Outcome: q1022-i01 partial cleared、p191 whole uncleared。valid17/17・shortha
 Outcome: q1023-i01 / p191 whole cleared。固定textdecoration全16/16 test、179/179 subtest PASS。host build warning0・CSSOM12/12・rule model44/44、Acid3差0/Acid2差1865の回帰確認。[証拠](phase191/evidence/20261014-q1023/README.md)。p173全3,805件100%は未達。
 
 Outcome: q1024-i01 partial cleared、p189 whole uncleared。選定100件の実測は9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。4領域の単一HTTP候補0を記録。[証拠](phase189/evidence/20261014-q1024/README.md)。p173全3,805件100%は未達。
+
+Outcome: q1025-i01 partial cleared、p192 whole uncleared。一意id global lookupを実装し、局所fixture・native property65/65・realm30/30・Acid3差0/Acid2差1865の回帰確認。2 WPTの先頭ReferenceErrorを解消したが双方別の未実装でPASS未達。[証拠](phase192/evidence/20261014-q1025/README.md)。p173全件100%未達。

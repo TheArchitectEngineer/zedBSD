@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1025 / WS074 Window unique-id named lookup（2026-10-14）
+
+[q1025履歴](queue-q1025.md): 一意HTML idのlive Window named lookupで先頭ReferenceErrorを解消。2対象WPTは別の未実装でPASS未達。p192 partial scope cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase192/evidence/20261014-q1025/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1024 / WS074 testharness bounded shard（2026-10-14）
 
 [q1024履歴](queue-q1024.md): 単一HTTP条件の100 unique IDを実測、9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。4領域は候補0。p189 partial scope cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase189/evidence/20261014-q1024/README.md)。共有投影/GitHub publication pending。

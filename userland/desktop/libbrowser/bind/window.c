@@ -27,6 +27,12 @@ static int window_queue_microtask(struct vm_realm *realm, vm_value this_value, c
 static int window_post_message(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int window_inner_width(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int window_inner_height(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int window_named_get_own(struct vm_object *object, vm_value key, struct vm_property *property);
+
+/* Window's live document id names are virtual, unenumerable own properties. */
+static const struct vm_native_operations window_named_native = {
+	window_named_get_own, NULL, NULL, NULL, NULL
+};
 
 /*
  * The attributes of Window's prototype.  The table is constant for the
@@ -549,8 +555,72 @@ bind_window_install(
 	if (error != 0)
 		return error;
 
+	/* The global object can find its owning realm during live named lookup. */
+	window->realm->global->internal = vm_value_cell(window->realm);
+	window->realm->global->native_operations = &window_named_native;
+
 	/* Succeeded: the window is installed. */
 	return 0;
+}
+
+/* Exposes a unique connected HTML id without hiding an ordinary Window property. */
+static int
+window_named_get_own(
+	struct vm_object *object,
+	vm_value key,
+	struct vm_property *property)
+{
+	struct vm_realm *realm;
+	struct bind_window *window;
+	struct dom_node *walk;
+	struct dom_node *match;
+	struct vm_string *name;
+	struct vm_string *id;
+	int found;
+	int status;
+
+	if (!vm_value_is_string(key) || !vm_value_is_cell(object->internal))
+		return 0;
+	name = (struct vm_string *)vm_value_as_cell(key);
+	if (name->length == 0U)
+		return 0;
+	found = vm_object_get_own_ordinary(object, key, property);
+	if (found != 0)
+		return found < 0 ? found : 0;
+
+	realm = (struct vm_realm *)vm_value_as_cell(object->internal);
+	window = bind_window_of(realm);
+	if (window == NULL || window->detached || window->document == NULL)
+		return 0;
+	match = NULL;
+	for (walk = bind_following(&window->document->node, &window->document->node);
+	     walk != NULL;
+	     walk = bind_following(walk, &window->document->node)) {
+		struct dom_element *element;
+
+		if (walk->type != DOM_ELEMENT)
+			continue;
+		element = (struct dom_element *)walk;
+		if (element->ns != DOM_NS_HTML)
+			continue;
+		id = dom_attribute_ascii(element, "id");
+		if (id == NULL || id->length == 0U || !vm_string_equal(id, name))
+			continue;
+		if (match != NULL)
+			return 0;
+		match = walk;
+	}
+	if (match == NULL)
+		return 0;
+
+	/* The existing DOM wrapper keeps identity across global and document access. */
+	status = bind_wrap(window, match, &property->temporary);
+	if (status != 0)
+		return -status;
+	property->holder = object;
+	property->value = &property->temporary;
+	property->attributes = VM_PROPERTY_CONFIGURABLE;
+	return 1;
 }
 
 /*

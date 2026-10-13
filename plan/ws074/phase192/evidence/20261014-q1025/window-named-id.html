@@ -1,0 +1,16 @@
+<!doctype html>
+<div id="a1"></div>
+<div id="document"></div>
+<script>
+const target = document.getElementById('a1');
+console.log('target=' + (target !== null));
+console.log('window-type=' + typeof window.a1);
+console.log('bare=' + (a1 === target));
+console.log('window=' + (window.a1 === target));
+console.log('own=' + (window.document === document));
+target.id = 'b1';
+console.log('old=' + typeof a1);
+console.log('new=' + (b1 === target));
+target.remove();
+console.log('removed=' + typeof b1);
+</script>

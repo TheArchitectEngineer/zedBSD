@@ -1,0 +1,8 @@
+target=true
+window-type=object
+bare=true
+window=true
+own=true
+old=undefined
+new=true
+removed=undefined
