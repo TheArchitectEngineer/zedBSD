@@ -62,7 +62,7 @@
 <!-- master:blocked:start -->
 - 5330 は zedBSD の単独起動中（Linux の作業 T1-378・TPM2 の表は Linux に戻した時）。5320 は電源オフ（WS183 p001・BUG-249・BUG-247 の実機の確認待ち）。
 - BUG-256（USB-C の AUX）: 診断の kernel の入れ替えと monitor の挿し込み待ち。
-- WS074 のレンダリングの改善: ユーザーの指示まで止める。WS153: U2〜U15 のユーザーの判断まで止める。
+- WS074（ブラウザ）: 2026-10-13 からユーザーの依頼で Codex のセッションが main の checkout で作業中、ベータ2 までに完了の予定。Q1 は WS074 の file（plan/ws074・libbrowser・plan/queue.md の WS074 の節・plan/history の q1000〜）を commit しない。WS153: U2〜U15 のユーザーの判断まで止める。
 - GitHub への記録の公開は保留（.sync が無い）。push はユーザーの指示の時だけ。
 <!-- master:blocked:end -->
 
@@ -576,6 +576,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-13 夜 ユーザー:「Codex のセッションは、私が WS074 の作業を頼んだ物です。これもベータ2までに完了予定です。」→ WS074 はベータ2、Codex のセッションの担当（main の checkout で直に作業）。
 - 2026-10-13 夜 ユーザー:「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。N=3で、P2を追加し、実装を担当してもらいます。」→ N=3（P1・P2・P3）＋T1。P2 はベータ2 の残りの実装（q949 WS157 から）。UAT 待ちの Phase の一括の cleared は担当が準備、Q1 が commit。
 - 2026-10-13 夜 ユーザー（AskUserQuestion）: BUG-300 の切り分けで、ユーザーの動画を 5330 の kei の home に scp して使ってよい（repo・image・tests には入れず、試した後は 5330 から消す）。
 - 2026-10-13 夜 ユーザー（区分の指示）: WS004 は 5330 の NVMe に書き込んでよいのでベータ2。WS014・WS044・WS048・WS118・WS139 は close、WS195 は cancel。WS171 はベータ2 で優先度を下げ、やることが無い時に。WS095 はベータ2（優先度低め）。WS155・WS157 はベータ2 で UAT は済み OK。WS046・WS196・WS172・WS009 はベータ2。

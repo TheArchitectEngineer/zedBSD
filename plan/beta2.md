@@ -100,7 +100,7 @@
 2026-10-13 ユーザー「終わっていないWSとその概要、何がブロッキングしているかを、表にして、plan/beta2.mdに入れてください。」→ 各 ws.md の Status・Resume point・Phase の表から作った（記録に無い事は「不明」）。WS は completed でない物（incomplete・planning・planned）。区分は ws.md・この文書・master.md に根拠がある時だけ断定し、master の「ベータ1」の段は fg019 の決定（最初のベータはベータ2）でベータ2 に読み替えた。
 注: 2026-10-13 ユーザーの指示で WS014・WS044・WS048・WS118・WS139 は close、WS195 は cancel して表から外した。WS004・WS009・WS046・WS095・WS155・WS157・WS171・WS172・WS196 はベータ2 へ移した（WS095・WS171 は優先度低め、WS171 はやることが無い時）。WS120・WS168・WS178・WS187 は 2026-10-13 ユーザーの指示で completed にして表から外した。WS172 は ws.md と phase.md の状態が食い違う。WS123 は canceled。
 
-### ベータ2 の物（60 件）
+### ベータ2 の物（61 件）
 
 | WS | 概要 | 状態 | 止めている物 | 区分 |
 | --- | --- | --- | --- | --- |
@@ -164,6 +164,7 @@
 | [WS171](ws171/ws.md) | hal.h の全関数に契約の comment | planning（p001 cleared、p002 差分の案・p003 適用） | 担当が未割当、p002 はユーザーの review が要る | ベータ2（優先度低め、やることが無い時に入れる（2026-10-13 ユーザー）） |
 | [WS172](ws172/ws.md) | passkey の認証の枠組み（/sbin/passkey） | incomplete（p002・p003 cleared、p007 test-wait、p004〜p006 planning） | T1 の試験（p007 の再依頼）、p001 は phase.md で判断 P1〜P10 待ちのまま（ws.md は cleared と記録） | ベータ2（2026-10-13 ユーザー） |
 | [WS196](ws196/ws.md) | useradd・usermod・userdel | planning（p001 範囲の設計） | ユーザーの判断 E1〜E6、design-reviewer、WS195 p001 | ベータ2（2026-10-13 ユーザー） |
+| [WS074](ws074/ws.md) | Web ブラウザ（libbrowser と shell） | incomplete。p100 ほか多数が planned、待機 | Codex のセッションが main の checkout で作業中（ユーザーの依頼） | ベータ2（2026-10-13 ユーザー「Codex のセッションは、私が WS074 の作業を頼んだ物です。これもベータ2までに完了予定です。」） |
 
 ### 区分が記録に無い物（今日の Pi 4・網・描画・license などの新しい WS が中心）（25 件）
 
@@ -195,7 +196,7 @@
 | [WS223](ws223/ws.md) | 全画面は合成、game mode は拡張の時だけ | planning（p001 第 1 版、p002〜p005 planned） | design-reviewer の後の第 2 版、ユーザーの判断 D1〜D6 | 不明 |
 | [WS226](ws226/ws.md) | Vulkan 1.3 の header と libvulkan の 1.3 の実装 | planning（p001 第 1 版） | design-reviewer の review-1、担当は次に空いた P | 不明 |
 
-### ベータ3 以降の物（32 件）
+### ベータ3 以降の物（31 件）
 
 | WS | 概要 | 状態 | 止めている物 | 区分 |
 | --- | --- | --- | --- | --- |
@@ -206,7 +207,6 @@
 | [WS039](ws039/ws.md) | AMD RDNA GPU の driver | planning。番号の予約だけ、Phase なし | ユーザーの指示で要検討・ブロック | ベータ3 以降（Target はベータ4 以降） |
 | [WS052](ws052/ws.md) | 電源管理（S0i3 の sleep） | incomplete。p001・p002・p005・p006・p009 in-progress、p010〜p012 test-wait、p007 planning、p008 planned | T1 の QEMU の試験と実機の確かめ（5330 の UAT）、設計の review（p001・p007） | ベータ3 以降 |
 | [WS068](ws068/ws.md) | EGL・OpenGL ES・desktop GL | incomplete。p004・p009 in-progress、p007・p039 ほか planning・planned、GL 3.3 以降（p034〜p037）は保留 | GL 3.3 以降はユーザーの指示で保留、p009 は T1-180 の計測待ち | ベータ3 以降 |
-| [WS074](ws074/ws.md) | Web ブラウザ（libbrowser と shell） | incomplete。p100 ほか多数が planned、待機 | ユーザーの指示で保留（レンダリングの改善は指示まで行わない） | ベータ3 以降 |
 | [WS080](ws080/ws.md) | PE/COFF の動的ローダ ld.coff | planning。p001 の設計まで、p002〜p012 planning | ユーザーの指示で要検討・ブロック、ユーザーの判断 D1〜D17 と HAL の差分の承認（A1・A2） | ベータ3 以降（Target はベータ4 以降） |
 | [WS101](ws101/ws.md) | GPU の compute（Noct の自動並列化） | incomplete。L1 で区切り、p012・p013・p018 planned、p016・p017 は優先を下げた | ユーザーの指示で最適化の優先を下げた（再開の指示待ち） | ベータ3 以降 |
 | [WS106](ws106/ws.md) | test app を userland/tests へ集約 | incomplete。p002 は cleared 候補、p003 planning | なし（着手待ち） | ベータ3 以降 |
