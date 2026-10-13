@@ -1,0 +1,13 @@
+<!doctype html>
+<style>.from-rule { text-decoration-line: overline underline; }</style>
+<div id="parent" style="text-decoration-line: line-through"><span id="child">child</span></div>
+<div id="target" class="from-rule">target</div>
+<script>
+const target = document.getElementById('target');
+console.log('rule=' + getComputedStyle(target).textDecorationLine);
+console.log('invalid=' + CSS.supports('text-decoration-line', 'underline underline'));
+console.log('parent=' + getComputedStyle(document.getElementById('parent')).textDecorationLine);
+console.log('child=' + getComputedStyle(document.getElementById('child')).textDecorationLine);
+target.style.textDecorationLine = 'blink underline overline';
+console.log('inline=' + getComputedStyle(target).textDecorationLine);
+</script>

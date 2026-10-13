@@ -225,6 +225,16 @@ enum css_text_transform {
 	CSS_TEXT_TRANSFORM_LOWERCASE
 };
 
+/* Lines recorded by text-decoration-line; the four ordinary lines may combine. */
+enum css_decoration_line {
+	CSS_DECORATION_UNDERLINE = 1,
+	CSS_DECORATION_OVERLINE = 2,
+	CSS_DECORATION_LINE_THROUGH = 4,
+	CSS_DECORATION_BLINK = 8,
+	CSS_DECORATION_SPELLING_ERROR = 16,
+	CSS_DECORATION_GRAMMAR_ERROR = 32
+};
+
 /* The values of white-space. */
 enum css_white_space {
 	CSS_WHITE_SPACE_NORMAL,
@@ -528,6 +538,7 @@ struct css_style {
 	int text_transform;
 	int cursor;
 	int underline;
+	int text_decoration_line;
 	int list_style;
 
 	/*

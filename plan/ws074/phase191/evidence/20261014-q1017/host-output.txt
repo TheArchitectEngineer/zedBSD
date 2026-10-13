@@ -1,0 +1,5 @@
+rule=underline overline
+invalid=false
+parent=line-through
+child=none
+inline=underline overline blink

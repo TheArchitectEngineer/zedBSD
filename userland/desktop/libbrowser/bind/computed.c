@@ -110,7 +110,8 @@ enum computed_property {
 	COMPUTED_OUTLINE_COLOR,
 	COMPUTED_TRANSFORM,
 	COMPUTED_GRID_TEMPLATE_COLUMNS,
-	COMPUTED_TEXT_TRANSFORM
+	COMPUTED_TEXT_TRANSFORM,
+	COMPUTED_TEXT_DECORATION_LINE
 };
 
 /*
@@ -148,6 +149,7 @@ static int computed_pixels(double value, struct wb_units *out);
 static int computed_number(double value, struct wb_units *out);
 static int computed_color(uint32_t color, struct wb_units *out);
 static int computed_ascii(const char *ascii, struct wb_units *out);
+static int computed_write_decoration_line(int lines, struct wb_units *out);
 
 /* The state of a computed declaration, which marks its element's object. */
 static const struct vm_cell_type computed_ref_type = { "computed-style", computed_trace, NULL };
@@ -232,6 +234,7 @@ static const struct computed_entry computed_entries[] = {
 	{ "outline-color", COMPUTED_OUTLINE_COLOR },
 	{ "transform", COMPUTED_TRANSFORM },
 	{ "grid-template-columns", COMPUTED_GRID_TEMPLATE_COLUMNS },
+	{ "text-decoration-line", COMPUTED_TEXT_DECORATION_LINE },
 	{ NULL, 0 }
 };
 
@@ -854,6 +857,9 @@ computed_write_keyword(
 		/* Serialize the actual cascaded keyword in CSS and camel-case accessors alike. */
 		error = computed_name(computed_text_transforms, 4, style->text_transform, out);
 		break;
+	case COMPUTED_TEXT_DECORATION_LINE:
+		error = computed_write_decoration_line(style->text_decoration_line, out);
+		break;
 	case COMPUTED_WHITE_SPACE:
 		error = computed_name(computed_white_spaces, 5, style->white_space, out);
 		break;
@@ -1370,5 +1376,47 @@ computed_ascii(
 	}
 
 	/* Succeeded: the characters are appended. */
+	return 0;
+}
+
+/* Serializes text-decoration-line in its canonical grammar order. */
+static int
+computed_write_decoration_line(
+	int lines,
+	struct wb_units *out)
+{
+	static const struct {
+		int bit;
+		const char *name;
+	} names[] = {
+		{ CSS_DECORATION_UNDERLINE, "underline" },
+		{ CSS_DECORATION_OVERLINE, "overline" },
+		{ CSS_DECORATION_LINE_THROUGH, "line-through" },
+		{ CSS_DECORATION_BLINK, "blink" }
+	};
+	size_t index;
+	int error;
+
+	if (lines == 0)
+		return computed_ascii("none", out);
+	if (lines == CSS_DECORATION_SPELLING_ERROR)
+		return computed_ascii("spelling-error", out);
+	if (lines == CSS_DECORATION_GRAMMAR_ERROR)
+		return computed_ascii("grammar-error", out);
+
+	for (index = 0; index < sizeof(names) / sizeof(names[0]); index++) {
+		if ((lines & names[index].bit) == 0)
+			continue;
+		if (out->length > 0) {
+			error = computed_ascii(" ", out);
+			if (error != 0)
+				return error;
+		}
+		error = computed_ascii(names[index].name, out);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: one or more ordinary line keywords. */
 	return 0;
 }

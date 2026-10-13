@@ -151,6 +151,7 @@ static size_t values_split_at(const struct css_token *tokens, size_t count, int 
 static int values_grid_line(const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_grid_pair(int start, int end, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_grid_area(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_decoration_line(const struct css_token *tokens, size_t count, struct css_value *value);
 
 /* The property names this pass knows. */
 static const struct values_name values_names[] = {
@@ -630,15 +631,6 @@ static const struct values_keyword values_white_space[] = {
 	{ "nowrap", CSS_WHITE_SPACE_NOWRAP },
 	{ "pre-wrap", CSS_WHITE_SPACE_PRE_WRAP },
 	{ "pre-line", CSS_WHITE_SPACE_PRE_LINE },
-	{ NULL, 0 }
-};
-
-/* The keywords of text-decoration-line (only underline is drawn in this pass). */
-static const struct values_keyword values_decoration[] = {
-	{ "none", 0 },
-	{ "underline", 1 },
-	{ "overline", 0 },
-	{ "line-through", 0 },
 	{ NULL, 0 }
 };
 
@@ -1513,6 +1505,10 @@ values_single(
 		return EINVAL;
 	memset(value, 0, sizeof(*value));
 
+	/* Decoration lines form an unordered list of distinct keywords. */
+	if (property == CSS_PROP_TEXT_DECORATION_LINE)
+		return values_decoration_line(tokens, count, value);
+
 	/* Families take a list; colors may be a function of several tokens. */
 	if (property == CSS_PROP_FONT_FAMILY)
 		return values_families(parse, tokens, count, value);
@@ -1673,9 +1669,6 @@ values_single(
 		break;
 	case CSS_PROP_WHITE_SPACE:
 		table = values_white_space;
-		break;
-	case CSS_PROP_TEXT_DECORATION_LINE:
-		table = values_decoration;
 		break;
 	case CSS_PROP_LIST_STYLE_TYPE:
 		table = values_list_style;
@@ -4705,5 +4698,54 @@ values_grid_area(
 	}
 
 	/* Succeeded: the four are declared. */
+	return 0;
+}
+
+/* Parses the distinct text-decoration-line keywords into their computed bit set. */
+static int
+values_decoration_line(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	size_t index;
+	int bit;
+	int lines;
+
+	lines = 0;
+	for (index = 0; index < count; index++) {
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE)
+			continue;
+		if (css_ident_equal(&tokens[index], "none")) {
+			if (count != 1U)
+				return EINVAL;
+			bit = 0;
+		} else if (css_ident_equal(&tokens[index], "underline")) {
+			bit = CSS_DECORATION_UNDERLINE;
+		} else if (css_ident_equal(&tokens[index], "overline")) {
+			bit = CSS_DECORATION_OVERLINE;
+		} else if (css_ident_equal(&tokens[index], "line-through")) {
+			bit = CSS_DECORATION_LINE_THROUGH;
+		} else if (css_ident_equal(&tokens[index], "blink")) {
+			bit = CSS_DECORATION_BLINK;
+		} else if (css_ident_equal(&tokens[index], "spelling-error")) {
+			if (count != 1U)
+				return EINVAL;
+			bit = CSS_DECORATION_SPELLING_ERROR;
+		} else if (css_ident_equal(&tokens[index], "grammar-error")) {
+			if (count != 1U)
+				return EINVAL;
+			bit = CSS_DECORATION_GRAMMAR_ERROR;
+		} else {
+			return EINVAL;
+		}
+		if (bit != 0 && (lines & bit) != 0)
+			return EINVAL;
+		lines |= bit;
+	}
+
+	/* Succeeded: no repeated lines, and error decorations occur alone. */
+	value->kind = CSS_VALUE_KEYWORD;
+	value->keyword = lines;
 	return 0;
 }

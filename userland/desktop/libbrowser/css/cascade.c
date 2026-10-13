@@ -3644,7 +3644,8 @@ cascade_apply(
 		style->white_space = value->keyword;
 		break;
 	case CSS_PROP_TEXT_DECORATION_LINE:
-		style->underline = value->keyword;
+		style->text_decoration_line = value->keyword;
+		style->underline = (value->keyword & CSS_DECORATION_UNDERLINE) != 0;
 		break;
 	case CSS_PROP_LIST_STYLE_TYPE:
 		style->list_style = value->keyword;
@@ -4026,6 +4027,7 @@ cascade_inherit(
 		style->white_space = parent->white_space;
 		break;
 	case CSS_PROP_TEXT_DECORATION_LINE:
+		style->text_decoration_line = parent->text_decoration_line;
 		style->underline = parent->underline;
 		break;
 	case CSS_PROP_LIST_STYLE_TYPE:

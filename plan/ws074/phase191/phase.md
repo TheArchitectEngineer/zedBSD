@@ -25,3 +25,13 @@ Event ws074-p191-design-20261014: q1015で全16件のbaselineを得て追加。p
 **partial scope cleared、p191 whole uncleared。** `CSS` globalと `supports(property,value)` を既存CSS宣言parserに接続し、基本的な単一引数宣言も判定する。小さなhost fixture、build warning0、既存CSSOM12/12・rule model44/44、固定textdecoration16件、Acid3回帰を確認。[証拠](evidence/20261014-q1016/README.md)。全16件では4 PASS/12 FAIL、subtest47 PASS/132 FAILで q1015 と件数不変。ただしcomputed系の `CSS is not defined` は解消し、computed値が空という不足が明確化。Acid3 score100/100・pixel差0、Acid2差1865不変。複合supports条件と他のCSSOM機能は未対応、次の有限Queueで扱う。GitHub publication保留。
 
 Event ws074-p191-q1016-outcome-20261014: browserの一般的なCSS API入口を追加し、WPTのcomputed系が値判定まで進む。q1016-i01 partial cleared、p191全16 PASSは未達。p189/p190/p173への依存は維持。`master.md` 無変更。
+
+## q1017-i01 の有限部分範囲
+
+2026-10-14 00:16 JST、ユーザーの事前承認を適用、最大90分。公式 `text-decoration-line-computed.html` の18 subtestを対象に、`text-decoration-line` の `none`、各line keywordと重複なしの組合せ、spelling/grammar error のCSS値解析とcomputed style直列化を一般的に修正する。描画の既存underlineは維持し、他のline描画はこのQueueの基準に含めない。WPT本体/期待や公開ABI/`master.md` は変更しない。局所fixture、build、当該WPTとtextdecoration全16件、Acid3/Acid2回帰を測定し、差画素非増加を条件にする。全16件PASSは後続範囲。
+
+## q1017-i01 結果（2026-10-14 00:19 JST）
+
+**partial scope cleared、p191 whole uncleared。** CSS値解析にline bit集合を追加し、computed styleで非継承とcanonical順を反映。既存underline描画を保持。[証拠](evidence/20261014-q1017/README.md)。対象WPT18/18 subtest PASS、固定textdecoration全16件は5 PASS/11 FAIL（q1016の4/12から1件改善）、subtest79 PASS/100 FAIL（47/132から32改善）。局所fixture、host build warning0、CSSOM12/12、rule model44/44。Acid3 score100/100・画素差0、Acid2差1865不変。inline CSSOM serializationなどの失敗は残る。GitHub publication保留。
+
+Event ws074-p191-q1017-outcome-20261014: q1017-i01 partial cleared、p191 wholeは11 test FAILのためuncleared。次は既存CSSStyleDeclarationのtext-decoration-line複合値のcanonical化などを有限Queueで調べる。p173分母・他Phase依存は維持。

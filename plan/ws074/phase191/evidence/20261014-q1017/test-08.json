@@ -1,0 +1,700 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "e.style['text-decoration-line'] = \"none\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline overline\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline\" but got \"overline underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline line-through\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline line-through\" but got \"line-through underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline blink\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline blink\" but got \"blink underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline line-through\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"overline line-through\" but got \"line-through overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline blink\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"overline blink\" but got \"blink overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through blink\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink line-through\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"line-through blink\" but got \"blink line-through\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline overline line-through\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline line-through overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through\" but got \"underline line-through overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline underline line-through\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through\" but got \"overline underline line-through\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline line-through underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through\" but got \"overline line-through underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through underline overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through\" but got \"line-through underline overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through overline underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through\" but got \"line-through overline underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline overline blink\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline blink overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline blink\" but got \"underline blink overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline underline blink\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline blink\" but got \"overline underline blink\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline blink underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline blink\" but got \"overline blink underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink underline overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline blink\" but got \"blink underline overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink overline underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline blink\" but got \"blink overline underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline line-through blink\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline blink line-through\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline line-through blink\" but got \"underline blink line-through\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through underline blink\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline line-through blink\" but got \"line-through underline blink\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through blink underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline line-through blink\" but got \"line-through blink underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink underline line-through\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline line-through blink\" but got \"blink underline line-through\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink line-through underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline line-through blink\" but got \"blink line-through underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline line-through blink\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline blink line-through\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"overline line-through blink\" but got \"overline blink line-through\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through overline blink\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"overline line-through blink\" but got \"line-through overline blink\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through blink overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"overline line-through blink\" but got \"line-through blink overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink overline line-through\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"overline line-through blink\" but got \"blink overline line-through\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink line-through overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"overline line-through blink\" but got \"blink line-through overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline overline line-through blink\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline overline blink line-through\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"underline overline blink line-through\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline line-through overline blink\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"underline line-through overline blink\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline line-through blink overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"underline line-through blink overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline blink overline line-through\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"underline blink overline line-through\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"underline blink line-through overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"underline blink line-through overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline underline line-through blink\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"overline underline line-through blink\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline underline blink line-through\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"overline underline blink line-through\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline line-through underline blink\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"overline line-through underline blink\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline line-through blink underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"overline line-through blink underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline blink underline line-through\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"overline blink underline line-through\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"overline blink line-through underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"overline blink line-through underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through underline overline blink\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"line-through underline overline blink\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through underline blink overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"line-through underline blink overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through overline underline blink\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"line-through overline underline blink\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through overline blink underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"line-through overline blink underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through blink underline overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"line-through blink underline overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"line-through blink overline underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"line-through blink overline underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink underline overline line-through\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"blink underline overline line-through\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink underline line-through overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"blink underline line-through overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink overline underline line-through\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"blink overline underline line-through\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink overline line-through underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"blink overline line-through underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink line-through underline overline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"blink line-through underline overline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"blink line-through overline underline\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"blink line-through overline underline\""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"spelling-error\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['text-decoration-line'] = \"grammar-error\" should set the property value",
+      "status": 0,
+      "message": ""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "e.style['text-decoration-line'] = \"none\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline overline\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline\" but got \"overline underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline line-through\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline line-through\" but got \"line-through underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline blink\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline blink\" but got \"blink underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline line-through\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"overline line-through\" but got \"line-through overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline blink\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"overline blink\" but got \"blink overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through blink\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink line-through\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"line-through blink\" but got \"blink line-through\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline overline line-through\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline line-through overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through\" but got \"underline line-through overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline underline line-through\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through\" but got \"overline underline line-through\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline line-through underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through\" but got \"overline line-through underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through underline overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through\" but got \"line-through underline overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through overline underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through\" but got \"line-through overline underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline overline blink\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline blink overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline blink\" but got \"underline blink overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline underline blink\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline blink\" but got \"overline underline blink\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline blink underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline blink\" but got \"overline blink underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink underline overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline blink\" but got \"blink underline overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink overline underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline blink\" but got \"blink overline underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline line-through blink\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline blink line-through\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline line-through blink\" but got \"underline blink line-through\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through underline blink\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline line-through blink\" but got \"line-through underline blink\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through blink underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline line-through blink\" but got \"line-through blink underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink underline line-through\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline line-through blink\" but got \"blink underline line-through\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink line-through underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline line-through blink\" but got \"blink line-through underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline line-through blink\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline blink line-through\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"overline line-through blink\" but got \"overline blink line-through\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through overline blink\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"overline line-through blink\" but got \"line-through overline blink\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through blink overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"overline line-through blink\" but got \"line-through blink overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink overline line-through\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"overline line-through blink\" but got \"blink overline line-through\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink line-through overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"overline line-through blink\" but got \"blink line-through overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline overline line-through blink\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline overline blink line-through\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"underline overline blink line-through\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline line-through overline blink\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"underline line-through overline blink\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline line-through blink overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"underline line-through blink overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline blink overline line-through\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"underline blink overline line-through\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"underline blink line-through overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"underline blink line-through overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline underline line-through blink\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"overline underline line-through blink\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline underline blink line-through\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"overline underline blink line-through\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline line-through underline blink\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"overline line-through underline blink\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline line-through blink underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"overline line-through blink underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline blink underline line-through\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"overline blink underline line-through\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"overline blink line-through underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"overline blink line-through underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through underline overline blink\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"line-through underline overline blink\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through underline blink overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"line-through underline blink overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through overline underline blink\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"line-through overline underline blink\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through overline blink underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"line-through overline blink underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through blink underline overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"line-through blink underline overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"line-through blink overline underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"line-through blink overline underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink underline overline line-through\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"blink underline overline line-through\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink underline line-through overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"blink underline line-through overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink overline underline line-through\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"blink overline underline line-through\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink overline line-through underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"blink overline line-through underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink line-through underline overline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"blink line-through underline overline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"blink line-through overline underline\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"underline overline line-through blink\" but got \"blink line-through overline underline\""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"spelling-error\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['text-decoration-line'] = \"grammar-error\" should set the property value",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-text-decor/parsing/text-decoration-line-valid.html",
+  "focus": [
+    "textdecoration"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:44421/css/css-text-decor/parsing/text-decoration-line-valid.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"none\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline overline\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline\\\" but got \\\"overline underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline line-through\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline line-through\\\" but got \\\"line-through underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline blink\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline blink\\\" but got \\\"blink underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline line-through\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline line-through\\\" but got \\\"line-through overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline blink\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline blink\\\" but got \\\"blink overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through blink\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"line-through blink\\\" but got \\\"blink line-through\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline overline line-through\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline line-through overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through\\\" but got \\\"underline line-through overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline underline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through\\\" but got \\\"overline underline line-through\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline line-through underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through\\\" but got \\\"overline line-through underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through underline overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through\\\" but got \\\"line-through underline overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through overline underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through\\\" but got \\\"line-through overline underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline overline blink\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline blink overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline blink\\\" but got \\\"underline blink overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline underline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline blink\\\" but got \\\"overline underline blink\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline blink underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline blink\\\" but got \\\"overline blink underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink underline overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline blink\\\" but got \\\"blink underline overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink overline underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline blink\\\" but got \\\"blink overline underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline line-through blink\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline blink line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline line-through blink\\\" but got \\\"underline blink line-through\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through underline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline line-through blink\\\" but got \\\"line-through underline blink\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through blink underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline line-through blink\\\" but got \\\"line-through blink underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink underline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline line-through blink\\\" but got \\\"blink underline line-through\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink line-through underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline line-through blink\\\" but got \\\"blink line-through underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline line-through blink\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline blink line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline line-through blink\\\" but got \\\"overline blink line-through\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through overline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline line-through blink\\\" but got \\\"line-through overline blink\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through blink overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline line-through blink\\\" but got \\\"line-through blink overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink overline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline line-through blink\\\" but got \\\"blink overline line-through\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink line-through overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline line-through blink\\\" but got \\\"blink line-through overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline overline line-through blink\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline overline blink line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"underline overline blink line-through\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline line-through overline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"underline line-through overline blink\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline line-through blink overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"underline line-through blink overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline blink overline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"underline blink overline line-through\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"underline blink line-through overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"underline blink line-through overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline underline line-through blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"overline underline line-through blink\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline underline blink line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"overline underline blink line-through\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline line-through underline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"overline line-through underline blink\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline line-through blink underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"overline line-through blink underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline blink underline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"overline blink underline line-through\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"overline blink line-through underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"overline blink line-through underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through underline overline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"line-through underline overline blink\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through underline blink overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"line-through underline blink overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through overline underline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"line-through overline underline blink\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through overline blink underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"line-through overline blink underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through blink underline overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"line-through blink underline overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"line-through blink overline underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"line-through blink overline underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink underline overline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"blink underline overline line-through\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink underline line-through overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"blink underline line-through overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink overline underline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"blink overline underline line-through\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink overline line-through underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"blink overline line-through underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink line-through underline overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"blink line-through underline overline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"blink line-through overline underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"blink line-through overline underline\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"spelling-error\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['text-decoration-line'] = \\\"grammar-error\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"e.style['text-decoration-line'] = \\\"none\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline overline\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline\\\" but got \\\"overline underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline line-through\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline line-through\\\" but got \\\"line-through underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline blink\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline blink\\\" but got \\\"blink underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline line-through\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline line-through\\\" but got \\\"line-through overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline blink\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline blink\\\" but got \\\"blink overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through blink\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"line-through blink\\\" but got \\\"blink line-through\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline overline line-through\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline line-through overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through\\\" but got \\\"underline line-through overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline underline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through\\\" but got \\\"overline underline line-through\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline line-through underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through\\\" but got \\\"overline line-through underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through underline overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through\\\" but got \\\"line-through underline overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through overline underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through\\\" but got \\\"line-through overline underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline overline blink\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline blink overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline blink\\\" but got \\\"underline blink overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline underline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline blink\\\" but got \\\"overline underline blink\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline blink underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline blink\\\" but got \\\"overline blink underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink underline overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline blink\\\" but got \\\"blink underline overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink overline underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline blink\\\" but got \\\"blink overline underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline line-through blink\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline blink line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline line-through blink\\\" but got \\\"underline blink line-through\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through underline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline line-through blink\\\" but got \\\"line-through underline blink\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through blink underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline line-through blink\\\" but got \\\"line-through blink underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink underline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline line-through blink\\\" but got \\\"blink underline line-through\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink line-through underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline line-through blink\\\" but got \\\"blink line-through underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline line-through blink\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline blink line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline line-through blink\\\" but got \\\"overline blink line-through\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through overline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline line-through blink\\\" but got \\\"line-through overline blink\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through blink overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline line-through blink\\\" but got \\\"line-through blink overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink overline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline line-through blink\\\" but got \\\"blink overline line-through\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink line-through overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"overline line-through blink\\\" but got \\\"blink line-through overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline overline line-through blink\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline overline blink line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"underline overline blink line-through\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline line-through overline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"underline line-through overline blink\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline line-through blink overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"underline line-through blink overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline blink overline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"underline blink overline line-through\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"underline blink line-through overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"underline blink line-through overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline underline line-through blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"overline underline line-through blink\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline underline blink line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"overline underline blink line-through\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline line-through underline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"overline line-through underline blink\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline line-through blink underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"overline line-through blink underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline blink underline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"overline blink underline line-through\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"overline blink line-through underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"overline blink line-through underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through underline overline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"line-through underline overline blink\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through underline blink overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"line-through underline blink overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through overline underline blink\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"line-through overline underline blink\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through overline blink underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"line-through overline blink underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through blink underline overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"line-through blink underline overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"line-through blink overline underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"line-through blink overline underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink underline overline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"blink underline overline line-through\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink underline line-through overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"blink underline line-through overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink overline underline line-through\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"blink overline underline line-through\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink overline line-through underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"blink overline line-through underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink line-through underline overline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"blink line-through underline overline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"blink line-through overline underline\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"underline overline line-through blink\\\" but got \\\"blink line-through overline underline\\\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"spelling-error\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['text-decoration-line'] = \\\"grammar-error\\\" should set the property value\",\"status\":0,\"message\":\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}
