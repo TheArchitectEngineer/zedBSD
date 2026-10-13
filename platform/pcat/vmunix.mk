@@ -92,7 +92,7 @@ ifeq ($(CONFIG_DRIVER_PCI_EHCI),y)
 PCAT_USB_HCD_OBJS += $(BUILD)/drivers/pci/pci-ehci.o
 endif
 ifeq ($(CONFIG_DRIVER_PCI_XHCI),y)
-PCAT_USB_HCD_OBJS += $(BUILD)/drivers/pci/pci-xhci.o
+PCAT_USB_HCD_OBJS += $(BUILD)/drivers/pci/pci-xhci.o $(BUILD)/drivers/pci/pci-xhci-isoch.o
 endif
 PCAT_USB_CLASS_OBJS :=
 ifeq ($(CONFIG_DRIVER_USB_STORAGE),y)
