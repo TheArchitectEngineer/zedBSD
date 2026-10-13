@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1000 / WS074 Acid3 baseline（2026-10-13）
+
+[q1000履歴](queue-q1000.md): 現行 source の Acid3 は得点100/100、pixel差302056/480000。参照の背景画像が欠け、p178 の1領域試行は停止・uncleared。Acid2 も現行条件で差1865/120000。WS074/p100 は未達。次は参照画像の読込み経路と Acid2 差の原因を有限 scope に分ける。独立 tree の成果は main 未統合、GitHub publication 保留、push なし。
+
 ## 最新: q779 / BUG-202 の起動停止（2026-10-06）
 
 [q779履歴](queue-q779.md): 写真と既存ELFで、LPSSのD0復帰10ms待ちをidle threadが実行していたと確定。device初期化を通常boot_workerへ移す修正（e093bebe）と記録（c313e3ef）を、user「マージしてください。」でmainへ統合。main上のamd64 kernel buildはwarning/error 0、include/vmunix check PASS。q779-i01・ws073-p055はuser指定の機能修正・buildまでcleared。

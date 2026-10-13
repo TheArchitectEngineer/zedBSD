@@ -1,11 +1,11 @@
 <!-- awesome-plan project=zedbsd record=ws074-p178 -->
 # ws074-p178: B1 の試行 — Acid3 の 1 領域を pixel で一致させる
 
-Status: planned（2026-10-05 Q1。B1 の起動はユーザーの指示の後）
+Status: uncleared（2026-10-13 q1000-i01。差が画面全体に及び、1領域を選ぶ停止条件に該当）
 Disposition: normal
 Parent: [WS074](../ws.md)
-Owner: B1（`.claude/agents/browser-runner-b1.md`、Sonnet 5.5、effort medium）
-Queue: なし（起動の時に Q1 が振る）
+Owner: この Codex セッション（今回の試行）。B1 の Sonnet 5.5 Mid のモデル評価は別途未実施。
+Queue: [q1000-i01](../queue.md)
 Related: [p100](../phase100/phase.md)（Acid3 の 100/100 と pixel の完全一致。この Phase はその一部の試行）
 
 ## 由来
@@ -24,7 +24,27 @@ Related: [p100](../phase100/phase.md)（Acid3 の 100/100 と pixel の完全一
 - 得点は 100/100、全体の pixel の一致は 37.04%（302208/480000 の画素が違う、800×600）。q579 の Codex の計測（[q596 の README](../phase172/browser3/q596/README.md)）。今の main で測り直してはいない。
 - runner: `plan/ws074/tests/run-acid-tests.py`。WPT の固定の commit `2d66b9b7998bb58c336138c178323ddee857b586` の `acid/acid3/test.html` を host の browser（headless）で 800×600 に描き、**同じ browser で** `acid/acid3/reference.sub.html`（`{{host}}` を `invalid.test` に置き換えた写し）を描いた画像と比べる。比べ方は RGB の画素ごとの完全一致（`image_result`）。
 - 参照の画像も自分の browser の描画なので、違いは「test.html の描画」と「reference の描画」の差（layout・CSS・文字・色の違い）。
-- 字形: `userland/desktop/fonts/` の Inter・JetBrains Mono・Droid Sans Fallback。待ち時間は 15 秒（`SETTLE_MS`）。
+- 字形: 現行 runner の `FONT_NAMES` は `userland/desktop/fonts/` の Mahora Regular・JetBrains Mono・Droid Sans Fallback。待ち時間は 15 秒（`SETTLE_MS`）。2026-10-06 に Inter は削除された。
+
+## 2026-10-13 オンボーディングと実行前の整合
+
+ユーザーは「WS074に取り組みます」および本 Phase の選択を指示した。これは 2026-10-05 の描画改善の停止を **p178 に限って**解除する指示として扱う。他の描画 Phase の再開には広げない。Q1 が管理する共有 Queue には本 Phase の項目がまだ無く、この記録だけで実装 attempt を開始しない。Q1 は担当・時間枠・この Phase の正確な範囲を Queue に記録し、開始前にその承認と依存を確認する。`master.md` はこのセッションで変更しない。
+
+現在の checkout（2026-10-13、`main`）では `build/ws074-suites/wpt` が無く、`build/ws074-host/plain/browser` は存在し、B1 worktree は無い。存在する binary は現行 source との一致を未確認なので、baseline の根拠に使わない。
+
+担当の削除禁止規則と、下記の既存コマンドには不整合がある。`fetch-suites.sh` は取得先を作り直す分岐で `rm -rf`、`run-acid-tests.py` は PPM と WPT 内の一時 HTML に `unlink()` を使う。B1 を含む担当はこれらをそのまま実行しない。Q1 が削除を含む処理を自分の pipeline で行うか、担当が使える削除なしの手順・runner を承認された Phase 範囲で用意してから、手順 1・2・5 を進める。失敗時に別経路で安全判定を回避しない。
+
+手順 2b の `chrome-fonts.sh` はファイル存在確認を Mahora に変えているが、fontconfig の alias とコメントはなお Inter を指定している。Chrome 側の比較前に Q1 と担当が Mahora の実際の選択を確認し、揃わない画像は診断用として扱い、領域選択の一致根拠にしない。`chrome-shot.sh` は `file://` で撮るため、HTTP で動く WPT の参照と資産の取得条件も照合する。
+
+本 Phase の既定担当 B1 は Sonnet 5.5 Mid の評価も目的に含む。このセッションの担当が B1 でない場合、描画試行の結果を B1 のモデル評価と記録しない。Q1 が担当を確定するときに、この評価条件をどう扱うか記録する。
+
+### Q1 への最初の Queue 選定案
+
+- 根拠: 2026-10-13 ユーザーが p178 を最初の対象に選び、続いて Acid3 の全100項目・pixel 完全一致を最終目標に指定。
+- 有限の範囲: 最大3時間の1 attempt。固定 WPT・現行 source・font・host binary の照合と baseline、test/reference/Chrome の比較条件の検証、差の候補を最大3領域まで分類し、1領域を選んで原因が局所的なら修正する。影響の広い設計変更は対象外で、証拠と次の有限単位を残す。
+- 先行条件: p099/p172 の verified 出力、担当用 worktree、削除禁止に合う suite 取得・Acid runner、Chrome の font/HTTP 条件。これらが満たせない場合は実装せず、原因と再開条件を記録する。
+- 成果判定: 実際の score・RGB 差画素数・Acid2・例外/timeout、選択領域の前後の画像、変更 file・build/短い host 回帰と全文規約の結果を保存する。1領域成功なら局所成果を cleared、未達なら attempt を uncleared とし、p100 全体は差0になるまで未達のまま。
+- 共有 Queue の ID と開始時刻・担当・正確な承認文言は Q1 が記入する。この案と本 Phase の更新は Queue を active にしない。
 
 ## 手順とコマンド
 
@@ -134,4 +154,16 @@ python3 plan/ws074/tests/acid3-regions.py build/ws074-acid-fix/acid3-test.png bu
 
 ## 記録
 
-（B1 が書く）
+### 2026-10-13 q1000-i01 / 試行終了、uncleared
+
+Codex の独立 tree `/tmp/zedbsd-ws074`（開始時 source `7433ca18d`）で実行。固定 WPT `2d66b9b7998bb58c336138c178323ddee857b586` をライセンス確認付きで取得。削除を実行しないよう `fetch-suites.sh` と `run-acid-tests.py` の一時物の扱いを変更した。現行 libmedia の source 構成へ `host-build.sh` を追従させ、`sh plan/ws074/tests/host-build.sh plain` は warning 0、終了値 0。host browser SHA256 `271aa0b1443677687187ee30347748b57a72985e685eb6edba5b820b0740f963`。
+
+`python3 plan/ws074/tests/run-acid-tests.py --out build/ws074-acid-base` と、Acid3 の style/layout/paint の dump を追加した同 runner の `--out build/ws074-acid-diagnostic` を各1回実行。両回とも Acid3 得点 100/100、inventory 100/100、例外 0、RGB 一致 37.0717%、差 **302056/480000画素**、pixel fail。Acid2 は 98.4458%、差 1865/120000画素で fail（歴史的な exact pass からの差。今回 engine の変更は無く、原因未確定）。[report](evidence/20261013-q1000/report.json)、[Acid3 並列画像](evidence/20261013-q1000/acid3-side.png)、[Acid2 並列画像](evidence/20261013-q1000/acid2-side.png)、同 directory の layout/paint dump が証拠。
+
+固定 WPT の `acid/acid3/reference.png` には6色の箱が描かれている。しかし当 browser の reference 最終画面と paint dump にはその背景画像が現れず、test 側には大きな白い body と色の箱がある。この参照側の欠落だけで広い面積が不一致となる。背景画像の CSS 解析・URL 解決・取得・decode・canvas painting のどこが原因かは未確定。`chrome-shot.sh` は終了値 133 で画像を作れず、Chrome 対照は未実施。`chrome-fonts.sh` は Mahora に更新したが、fontconfig の generic sans-serif の選択は未解決。
+
+手順3の停止条件「差が画面全体に広がり、1要素に収まる差がない」に該当するため、局所領域の選択・engine 修正・修正後の ASan/回帰は実施していない。p178 の1領域 pixel 一致は未達。B1/Sonnet のモデル評価はこの Codex 実行からは判定しない。
+
+再開条件: 参照側の `reference.png` の読み込み/paint を独立した有限 scope で調査・修正し、固定条件で再計測してから、p178 の1領域選択へ戻る。Acid2 の差も別途原因を判定する。p100 全体の clearance は未達。
+
+2026-10-13 / design-revision-after-q1000: 参照側の背景画像欠落を [p179](../phase179/phase.md) に分け、p178 の再試行をその verified 出力の後に置く。q1000 の全画面差により1領域選択が成立しなかったため。p179 は CSS/URL/取得/decode/paint を切り分け、一般的な欠陥の最小修正と同条件での再計測を受け入れる。p178 の局所 pixel 一致、Acid2 回帰、p100 の全画面差0を免除しない。p179 の新 Queue は未選定。

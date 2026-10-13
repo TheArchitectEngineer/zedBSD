@@ -2,7 +2,7 @@
 
 # ws074-p100: Acid3 100/100・pixel完全一致
 
-Status: planned（2026-10-02 目標強化、Queueなし。2026-10-05 ユーザーの指示まで停止。しかかり: Acid3 の得点 100/100 は branch 側の p100 の成果を p172 で取り込んだ物、固定の参照との pixel の一致は 37.04%）
+Status: planned（2026-10-13 再開指示。q1000 現行 baseline: 得点100/100、pixel一致37.0717%、差302056/480000。全体の条件は未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -36,3 +36,13 @@ Event ws074-dedicated-interop2025-20261002: ユーザーがAcid3のpixel単位10
 - 2026-10-03 の [90 分の baseline の承認](browser3/approval-20261003.md)は Queue ID が付かず（Agent A への ID の依頼は main に記録が無い）、実行されなかった。2026-10-05 の停止の指示の下ではこの承認を使わない。再開はユーザーの指示の後、新しい main の Queue ID と承認で行う。
 - [案](browser3/next-queue-proposal.md)の `build/browser3-p172/plain/browser` は 2026-10-03 のリポジトリの作り直しで消えた build を指す。再開の時は今の main の source から host の build を作り直し、2026-10-04 の試験の image の方針（AGENTS.md の「試験の image の作り方」）に合わせる。
 - Acid3 の得点 100/100・pixel 37.04%（302208/480000 の画素が違う）は取込みの途中の [checkpoint02](../phase172/import/checkpoint02/README.md)（q579、host の plain）の計測で、p172 の最終の source では再計測していない。branch 側の p100 は「得点だけ」の旧い条件で cleared と報告され、[semantic-index](../phase172/import/semantic-index.json) で historical evidence として保存した。今の p100 の条件（pixel の完全一致・fail 0）は未達。
+
+## 2026-10-13 再開指示と有限の進め方
+
+ユーザー「Acid3のすべてのテストでピクセル単位の100%一致になることをゴールに、作業してください。」。2026-10-05 の描画改善停止を Acid3 について解除し、本 Phase の目標を再確認した。Acid3 の個別100項目は DOM の得点で、pixel 判定は 800×600 の test 最終画面と固定 reference 最終画面の RGB 480000画素について差 0 を意味する。100項目それぞれに独立の reference 画像があるとは扱わない。比較入力や判定を出力に合わせて変更しない。
+
+最初の有限単位は [p178](../phase178/phase.md) の試行。現行 source と固定 WPT の取得・build・基準計測、差の領域分け、原因を絞った1領域の修正と回帰を対象にする。その後は実測した原因ごとに対象 file・期待する画素差・回帰・時間枠を定めた Phase/Queue を Q1 が選定する。各修正後に得点100/100、Acid2 exact、全体の差の非増加を確認し、最後に現行 source の全画面差0・例外/fail 0・必要な build/全文規約を検証する。p178 の1領域が一致しても p100 は cleared にしない。
+
+2026-10-13 の checkout には固定 WPT の `build/ws074-suites/wpt` と B1 worktree が無く、共有 Queue に p100/p178 の項目が無い。Q1 が Queue と担当を記録する前に implementation attempt は始めない。担当の削除禁止と現行 runner の `unlink()`・suite fetch の `rm -rf` の不整合、および Mahora への font 変更は [p178 の実行前の整合](../phase178/phase.md)で扱う。`master.md` はこのセッションで変更しない。
+
+2026-10-13 follow-up: ユーザーがこのセッションによる Queue 管理を指示し、[q1000](../queue.md) を p178 の有限の試行として実施・終了した。固定 WPT と host build の準備後の現行計測は得点100/100、pixel一致37.0717%、差302056/480000、Acid2一致98.4458%。参照側の `reference.png` の箱が描かれず差が画面全体に広がったので、p178はuncleared。p100の条件は未達。詳細と画像は[p178](../phase178/phase.md)。上段の「WPT が無い」「Queue が無い」は開始前の状態を記す。

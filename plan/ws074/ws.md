@@ -3,14 +3,14 @@
 # WS074: zedBSD の Web ブラウザ（`userland/desktop/browser`）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-05 ユーザーの指示で Codex の担当を外し、**Q1 の担当に戻した**。レンダリングの改善（Acid3 の pixel・WPT・Interop・Test262 など）は**ユーザーの指示があるまで行わない**）
+Status: incomplete（2026-10-05 に Q1 の担当へ戻した。2026-10-13 ユーザーが Acid3 の全100項目・pixel 完全一致を目標に再開指示。その他の WPT・Interop・Test262 などは停止を維持）
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（P1・P2 に割り当てる。Codex は難しい driver の bug に温存、2026-10-05 ユーザー）
-Queue: なし（Codex の browser3 の局所の Queue b-q590・b-q594〜b-q598 の記録は phase172/browser3/ に履歴として残る。main の q590〜q598 とは別物、下の「記録の照合」）
-Resume point: 待機。次に動かすのはユーザーの指示が出た時。その時は下の「Q1 向けの整理」の「次の候補」から。
+Queue: [q1000](queue.md) finished / p178 uncleared（以前の browser3 の局所の b-q590・b-q594〜b-q598 は phase172/browser3/ に履歴として残る）
+Resume point: p178 の現行 baseline は Acid3 score 100/100・pixel差302056/480000。[p179](phase179/phase.md) の参照背景画像の原因・修正を次 Queue に選定した後、p178 の領域試行を再開する。Acid2 の差も原因確認が必要。p100 全体は未達。
 <!-- awesome-plan-current:end -->
 
 ## Q1 向けの整理（2026-10-05、Q1）
@@ -24,14 +24,14 @@ Resume point: 待機。次に動かすのはユーザーの指示が出た時。
 | 構成 | engine は `userland/desktop/libbrowser/`（WS107 で移した、165 file。2026-10-05 Q1 照合: p172 の取込みの後は `.c` が 167）、shell は `userland/desktop/browser/`（main・shell・app の data）。browser と独立の client は公開の `browser.h` で `libbrowser.so` を動的に link | [WS107](../ws107/ws.md) completed |
 | JS | 自前の engine（ES2024 の構文、ES2015 の class・async・generator・Symbol・Map 等、RegExp、Date）。test262 は p025〜p087 の時点の数（全体の最新の計測は未） | 下の Phase の表 |
 | デモの目標 | amazon.co.jp のトップと検索（2026-09-28 ユーザー、Google から変更） | [amazon-goal.md](amazon-goal.md) |
-| Acid3 | **得点 100/100 を達成。固定の参照との pixel の一致は 37.04%（302208/480000 の画素が違う）**（q579 の計測、Codex。2026-10-05 Q1 照合: 計測は取込みの途中の [checkpoint02](phase172/import/checkpoint02/README.md) の host の plain の build。p172 の最終の source では再計測していない） | [phase172/browser3/q596/README.md](phase172/browser3/q596/README.md) |
+| Acid3 | **現行 baseline: 得点 100/100、pixel 一致 37.0717%（302056/480000 画素が違う）**。参照側の背景画像が描かれず、p178 の局所領域の選択を停止。歴史的な q579 の 37.04% は取込み途中の別 source | [p178](phase178/phase.md) |
 | Acid2 | ~~exact pixel は不合格（p097 の時点で 90.56%）~~ → 2026-10-05 Q1 照合で訂正: **exact pixel 合格**。p099（q507）で 90.56% → 100.00%、p172 の取込み後も plain・ASan で 120000 画素一致（[checkpoint96](phase172/import/checkpoint96/README.md)）。90.56% は p099 の前の値 | [p099](phase099/phase.md)、[p097](phase097/phase.md) |
 | p172（Codex の branch の取り込み） | whole cleared（2026-10-03、209/209 の review・hash、host・ASan・ABI・Acid2、target の boot と Venus） | [phase172/import/checkpoint98](phase172/import/checkpoint98/README.md) |
-| p100（Acid3 の pixel 完全一致・fail 0） | **planned、しかかり**（得点は 100/100、pixel 一致が残る）。ユーザーの指示まで止める。2026-10-05 Q1 照合: Phase の Status は planned（実行した Queue は無い。main の p100 は未着手で、得点 100/100 は branch 側の p100 の成果を p172 で取り込んだ物）。2026-10-03 に承認された 90 分の baseline の案は Queue ID が付かず未実行で、今回の停止の指示の下では使わない | [p100](phase100/phase.md) |
+| p100（Acid3 の pixel 完全一致・fail 0） | **planned、しかかり**。2026-10-13 ユーザーが再開を指示。q1000/p178 の現行 baseline は得点 100/100・pixel 一致 37.0717%。局所試行は uncleared、p100 全体も未達 | [p100](phase100/phase.md) |
 
-### 止めている目標（2026-10-02 ユーザーの追加、指示があるまで行わない）
+### Acid3 の後に止めている目標（2026-10-13 現在）
 
-p100 Acid3 の pixel 完全一致 → p101 WPT CSS2 reftest 5904 件の 100% → p174 File System Access API → p175 OPFS → p173 Interop 2025 の 100% → p176 Test262。p098（ES module）と p036 も同じく待機。
+p100 Acid3 の pixel 完全一致は再開対象。後続の p101 WPT CSS2 reftest 5904 件の 100% → p174 File System Access API → p175 OPFS → p173 Interop 2025 の 100% → p176 Test262 は指示待ち。p098（ES module）と p036 も待機。
 
 ### 既知の bug（Bug Board）
 
@@ -298,7 +298,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p097](phase097/phase.md) | 指定10公開siteの画像・box・DOM tree比較、阿部寛のホームページのguest full-screenデモ、WPT reftestとAcid、一般化できる差を最大4件修正 | **cleared**（2026-09-30。WPT 44/100、Acid2 90.56%、Acid3 9/100。`postMessage`、table rowspan、presentational hint、intrinsic auto margin） | p094、p096 |
 | ws074-p098 | ES module scriptのgraph取得・link・評価、`import`・`export`、GitHubのhydration比較 | planned（2026-09-30ユーザー指定によりp101後へ延期） | p087、p088、p097、p172 |
 | [ws074-p099](phase099/phase.md) | Acid2 100%: 固定harnessでexact pixel一致、crash・timeout 0 | **cleared**（2026-09-30、q507。90.56% → 100.00%、plain/ASan） | p097 |
-| [ws074-p100](phase100/phase.md) | Acid3の100/100、固定参照とのpixel完全一致、fail・Uncaught・crash・timeout 0 | planned（しかかり: 得点 100/100 は branch の取込みで達成、pixel 一致 37.04%。Queue なし、2026-10-05 ユーザーの指示まで停止） | p099、p172（両方 cleared） |
+| [ws074-p100](phase100/phase.md) | Acid3の100/100、固定参照とのpixel完全一致、fail・Uncaught・crash・timeout 0 | planned（2026-10-13 ユーザーが再開指示。q1000 現行 baseline: 得点100/100、pixel一致37.0717%。全体未達） | p099、p172（両方 cleared） |
 | ws074-p101 | WPT CSS2 reftest 100%: 固定commitのscriptなし全5904件でpass 100%、error 0 | planned（p100後、p172も必須） | p100、p172 |
 | [ws074-p172](phase172/phase.md) | origin/browser2のbrowser変更をWS107後のlibbrowser/browser配置へ取込み、関連計画/試験/bugを意味的に照合するblocking gate | cleared / b-q598（browser3 の q598、main の q598 とは別。209/209 review、whole final gates） | WS107の実成果、p099、branch snapshot |
 | [ws074-p173](phase173/phase.md) | Interop 2025の公式focus area対象WPTを固定・baseline化し、全件PASSへ向けた失敗群と後続Phaseを設計 | planned / Queueなし | p172、p100 |
@@ -306,6 +306,10 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p175](phase175/phase.md) | OPFSのorigin分離・永続保存・handle契約を確定し、機能群ごとの実装Phaseへ分割 | planning / Queueなし | p172、p174の共有契約の実出力 |
 | [ws074-p176](phase176/phase.md) | Test262固定全suiteのbaselineと失敗群/runner coverage、段階的改善Phaseの設計 | planning / Queueなし | p172、JS runnerの実出力 |
 | [ws074-p177](phase177/phase.md) | BUG-133: `wb_units_reserve` の幾何の増長後の byte 数の overflow を need に落として防ぐ（Q1 が割り当て、2026-10-03、P2） | cleared（2026-10-03 Q1、host 試験） | — |
+| [ws074-p178](phase178/phase.md) | Acid3 の 1 領域の pixel 一致を試み、担当モデルの適性と実行上の障害を記録 | uncleared（q1000-i01。現行 baseline は差が全画面に広がるため局所領域を選べず。B1 のモデル評価は未実施） | p099、p172（両方 cleared）、p179 の verified 出力を再試行時に確認 |
+| [ws074-p179](phase179/phase.md) | Acid3 参照ページの `reference.png` が背景画像として描かれない原因を特定し、一般的な欠陥を修正・検証 | planned（q1000 の結果で追加。Queue なし） | p172、p178 q1000 の baseline |
+
+2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
 ## 後の WS・Future Work の候補
 
