@@ -35,3 +35,13 @@ Event ws074-p191-q1016-outcome-20261014: browserの一般的なCSS API入口を�
 **partial scope cleared、p191 whole uncleared。** CSS値解析にline bit集合を追加し、computed styleで非継承とcanonical順を反映。既存underline描画を保持。[証拠](evidence/20261014-q1017/README.md)。対象WPT18/18 subtest PASS、固定textdecoration全16件は5 PASS/11 FAIL（q1016の4/12から1件改善）、subtest79 PASS/100 FAIL（47/132から32改善）。局所fixture、host build warning0、CSSOM12/12、rule model44/44。Acid3 score100/100・画素差0、Acid2差1865不変。inline CSSOM serializationなどの失敗は残る。GitHub publication保留。
 
 Event ws074-p191-q1017-outcome-20261014: q1017-i01 partial cleared、p191 wholeは11 test FAILのためuncleared。次は既存CSSStyleDeclarationのtext-decoration-line複合値のcanonical化などを有限Queueで調べる。p173分母・他Phase依存は維持。
+
+## q1018-i01 の有限部分範囲
+
+2026-10-14 00:20 JST、ユーザーの事前承認を適用、最大90分。公式 `text-decoration-line-valid.html` の67 subtest中、逆順の複合line値49件がCSSStyleDeclarationから元の指定順で返り失敗する。既存CSS parserの解析結果を使って、`text-decoration-line` のinline CSSOM格納値を規定順へ直列化する。CSS-wide keyword・他のpropertyと不正値の動作を保ち、WPT本体/期待・公開ABI・`master.md`は変えない。局所fixture、build、対象WPT、固定領域全16件、Acid3/Acid2差画素非増加を確認する。p191全16件PASSはこのQueueの基準に含めない。
+
+## q1018-i01 結果（2026-10-14 00:25 JST）
+
+**partial scope cleared、p191 whole uncleared。** 共通CSS parserから `text-decoration-line` のbit集合を取り、inline CSSOMとcomputed styleのcanonical直列化を共有。[証拠](evidence/20261014-q1018/README.md)。対象WPT67/67 subtest PASS、固定textdecoration全16件6 PASS/10 FAIL、subtest128 PASS/51 FAIL。局所fixtureの直接property/setProperty/cssText、CSS-wide・他property・不正値、host build warning0、CSSOM12/12、rule model44/44を確認。Acid3 score100/100・画素差0、Acid2差1865不変。色/style/skip-ink/shorthandなどが残る。GitHub publication保留。
+
+Event ws074-p191-q1018-outcome-20261014: q1018-i01 partial cleared、p191 wholeは10 test FAILのためuncleared。固定3,805分母と他Phase依存は維持。次の値parser/CSSOM不足は別の有限Queueにする。

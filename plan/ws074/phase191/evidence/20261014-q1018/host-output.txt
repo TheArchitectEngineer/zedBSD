@@ -1,0 +1,5 @@
+property=underline overline blink
+method=overline line-through
+cssText=text-decoration-line: underline blink; display: block;
+wide=inherit
+invalid=inherit

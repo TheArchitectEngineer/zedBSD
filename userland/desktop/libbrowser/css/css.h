@@ -647,6 +647,8 @@ void css_query_destroy(struct css_query *query);
 /* The inline style of scripts (parser.c, values.c; ws074-p031). */
 int css_declaration_valid(struct vm_heap *heap, const uint16_t *units, size_t length, int *valid);
 const char *css_property_name(size_t index);
+int css_decoration_line_parse(const uint16_t *units, size_t length, int *lines);
+int css_decoration_line_serialize(int lines, struct wb_units *out);
 
 /* The engine (cascade.c). */
 int css_engine_create(struct css_engine **engine, struct vm_heap *heap);

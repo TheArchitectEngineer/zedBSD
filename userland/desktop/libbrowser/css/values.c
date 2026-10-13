@@ -1378,6 +1378,96 @@ css_parse_color(
 	return EINVAL;
 }
 
+/* Parses one text-decoration-line value with the production CSS tokenizer. */
+int
+css_decoration_line_parse(
+	const uint16_t *units,
+	size_t length,
+	int *lines)
+{
+	struct css_value value;
+	struct css_token *tokens;
+	struct wb_arena arena;
+	size_t count;
+	size_t start;
+	size_t end;
+	int error;
+
+	wb_arena_init(&arena, 0);
+	error = css_tokenize(&arena, units, length, &tokens, &count);
+	if (error != 0) {
+		wb_arena_release(&arena);
+		return error;
+	}
+	if (count == 0U) {
+		wb_arena_release(&arena);
+		return EINVAL;
+	}
+	start = 0;
+	end = count - 1U;
+	while (start < end && tokens[start].type == CSS_TOKEN_WHITESPACE)
+		start++;
+	while (end > start && tokens[end - 1U].type == CSS_TOKEN_WHITESPACE)
+		end--;
+	if (start == end)
+		error = EINVAL;
+	else
+		error = values_decoration_line(tokens + start, end - start, &value);
+	if (error == 0)
+		*lines = value.keyword;
+	wb_arena_release(&arena);
+	return error;
+}
+
+/* Writes the specified decoration lines in CSS's canonical grammar order. */
+int
+css_decoration_line_serialize(
+	int lines,
+	struct wb_units *out)
+{
+	static const struct {
+		int bit;
+		const char *name;
+	} names[] = {
+		{ CSS_DECORATION_UNDERLINE, "underline" },
+		{ CSS_DECORATION_OVERLINE, "overline" },
+		{ CSS_DECORATION_LINE_THROUGH, "line-through" },
+		{ CSS_DECORATION_BLINK, "blink" }
+	};
+	const char *single;
+	size_t index;
+	int written;
+	int error;
+
+	single = NULL;
+	if (lines == 0)
+		single = "none";
+	if (lines == CSS_DECORATION_SPELLING_ERROR)
+		single = "spelling-error";
+	if (lines == CSS_DECORATION_GRAMMAR_ERROR)
+		single = "grammar-error";
+	if (single != NULL)
+		return wb_utf8_to_units((const unsigned char *)single, strlen(single), out);
+
+	written = 0;
+	for (index = 0; index < sizeof(names) / sizeof(names[0]); index++) {
+		if ((lines & names[index].bit) == 0)
+			continue;
+		if (written) {
+			error = wb_utf8_to_units((const unsigned char *)" ", 1, out);
+			if (error != 0)
+				return error;
+		}
+		error = wb_utf8_to_units((const unsigned char *)names[index].name, strlen(names[index].name), out);
+		if (error != 0)
+			return error;
+		written = 1;
+	}
+
+	/* Succeeded: ordinary line names have one canonical order. */
+	return 0;
+}
+
 /* Looks a keyword up in a table; returns 1 and its value when it is there. */
 static int
 values_keyword(

@@ -64,6 +64,7 @@ static int style_list_append(struct vm_realm *realm, struct style_list *list, st
 static int style_list_remove_at(struct vm_realm *realm, struct style_list *list, uint32_t index);
 static int style_remove_from_list(struct vm_realm *realm, struct style_list *list, const struct vm_string *name);
 static int style_valid(struct vm_realm *realm, const struct vm_string *name, const struct vm_string *value, int *valid);
+static int style_canonical_decoration_line(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
 static int style_property_name(struct vm_realm *realm, vm_value value, struct vm_string **name);
 static int style_accessor(struct bind_window *window, const char *name, struct vm_string *property);
 static void style_camel_case(const char *name, int capital, char out[STYLE_NAME_MAX]);
@@ -801,6 +802,10 @@ style_set(
 		goto roots_cleanup;
 	if (!valid)
 		goto roots_cleanup;
+	status = style_canonical_decoration_line(realm, name, value, &value);
+	if (status != 0)
+		goto roots_cleanup;
+	roots[1] = &value->cell;
 
 	/* The declarations as they are. */
 	status = style_read(realm, element, &list);
@@ -1013,6 +1018,10 @@ style_list_append(
 			goto cleanup;
 		registered++;
 	}
+	status = style_canonical_decoration_line(realm, name, value, &value);
+	if (status != 0)
+		goto cleanup;
+	roots[1] = &value->cell;
 
 	/* The place after the last. */
 	at = vm_value_int32((int32_t)list->names->length);
@@ -1135,6 +1144,48 @@ style_valid(
 		return status;
 
 	/* Succeeded: the answer is in *valid. */
+	return 0;
+}
+
+/* Canonicalizes only parsed text-decoration-line keywords, preserving CSS-wide values. */
+static int
+style_canonical_decoration_line(
+	struct vm_realm *realm,
+	const struct vm_string *name,
+	struct vm_string *value,
+	struct vm_string **out)
+{
+	struct wb_units source;
+	struct wb_units canonical;
+	int lines;
+	int status;
+
+	*out = value;
+	if (!vm_string_equal_ascii(name, "text-decoration-line"))
+		return 0;
+	wb_units_init(&source);
+	status = vm_string_append_units(value, &source);
+	if (status != 0) {
+		wb_units_release(&source);
+		return status;
+	}
+	status = css_decoration_line_parse(source.data, source.length, &lines);
+	wb_units_release(&source);
+	if (status == EINVAL)
+		return 0;
+	if (status != 0)
+		return status;
+
+	wb_units_init(&canonical);
+	status = css_decoration_line_serialize(lines, &canonical);
+	if (status != 0) {
+		wb_units_release(&canonical);
+		return status;
+	}
+	*out = vm_string_from_units(realm->heap, canonical.data, canonical.length);
+	wb_units_release(&canonical);
+	if (*out == NULL)
+		return ENOMEM;
 	return 0;
 }
 

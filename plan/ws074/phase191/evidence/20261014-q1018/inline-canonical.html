@@ -1,0 +1,15 @@
+<!doctype html>
+<div id="target"></div>
+<script>
+const style = document.getElementById('target').style;
+style.textDecorationLine = 'blink overline underline';
+console.log('property=' + style.textDecorationLine);
+style.setProperty('text-decoration-line', 'line-through overline');
+console.log('method=' + style.getPropertyValue('text-decoration-line'));
+style.cssText = 'text-decoration-line: blink underline; display: block;';
+console.log('cssText=' + style.cssText);
+style.setProperty('text-decoration-line', 'inherit');
+console.log('wide=' + style.textDecorationLine);
+style.setProperty('text-decoration-line', 'underline underline');
+console.log('invalid=' + style.textDecorationLine);
+</script>
