@@ -173,7 +173,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-303](bugs/BUG-303.md) | Core i5-13400F の desktop で Local APIC timer の較正が PIT の待ちで timeout し起動が止まる | reproduced（実機） / scheduled | — | 修正 fc31f6ebe（TSC が分かる時は TSC で較正）、T1 の QEMU と実機（13400F・5330）の確かめ待ち |
 | [BUG-304](bugs/BUG-304.md) | raw の block device の write が 512 B ごとで 4 KiB の line を毎回書く（約 8 倍） | reproduced / resolved（2026-10-14 T1-610） | resolved | bs=512 の dd は残る（buffer cache） |
 | [BUG-305](bugs/BUG-305.md) | network が止まらない時に shutdown が PCI の shutdown（disk の flush）を飛ばす疑い | unreproduced / resolved（2026-10-14、shutdown の前に disk を flush する直し、T1-610） | resolved | — |
-| [BUG-306](bugs/BUG-306.md) | Settings で回転を 2 回目に 90° にすると Settings の窓が消える（kl_window_present_parts -4） | unreproduced / tracking（窓の位置と絵の色は直った、T1-613） | — | 回転が 7〜10 s かかる件を P3 が調べる。-4 が再び出たら session.log を取る |
+| [BUG-306](bugs/BUG-306.md) | Settings で回転を 2 回目に 90° にすると Settings の窓が消える（kl_window_present_parts -4） | unreproduced / tracking（窓の位置と絵の色は直った、T1-613） | — | 回転の ms= は約 1.9 s に（T1-614）。回転の後の窓の描き直しの遅れを P3 が直した（02c02dbf4、新しい大きさを回転の途中で送る）、T1 の再試験待ち。-4 が再び出たら session.log を取る |
 | [BUG-307](bugs/BUG-307.md) | UFS の fsync が volume 全体を書き出す（数秒かかることがある） | unknown / scheduled | — | P2（ベータ2 で直す、2026-10-14 ユーザー） |
 | [BUG-176](bugs/BUG-176.md) | 起動の直後の約 10 秒「Network service is not …」と出る | reproduced（実機） / resolved（2026-10-08 夜 ユーザー「下記は実装の変更が多かったので、いったんすべてcloseします。」、Q1 の中継）。前: scheduled、低（q726: bar の起動の直後の表示を「Starting the network service...」に、UAT 待ち） | UAT 2026-10-04 | WS131・networkd（[ticket](bugs/BUG-176.md)） |
 | [BUG-159](bugs/BUG-159.md) | バッテリー駆動で描画が 5 fps ほどに落ち、電池切れで警告なく落ちる | reproduced（実機 S1） / tracking | S1（WS133） | WS075（i915）、電源の管理（WS050〜052・WS132）。UAT 2026-10-04: 再現せず（電源の状態は BUG-165 の後） |
