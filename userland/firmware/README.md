@@ -14,7 +14,7 @@ registry supplies the same catalog to the menu, configuration saving and image
 packaging; selection follows the attached device rather than the CPU. Selecting
 a firmware package installs its data without enabling a hardware driver.
 
-The entries are `rtl8822b/`, `intelax211/`, `intelbt/`, and `i915/`; future
+The entries are `rtl8822b/`, `intelax211/`, `intelbt/`, `i915/`, and `brcmbt/`; future
 RTL8822C support owns a separate `rtl8822c/` entry. RTL8822B uses its frozen GitHub
 acquisition mirror. AX211 uses the official `linux-firmware` tag `20260410`
 dereferenced commit and installs the exact `-89.ucode`, PNVM, complete Intel
@@ -35,6 +35,18 @@ names WHENCE links to them, because the image builder installs files only.
 `LICENCE.ibt_firmware` permits redistribution of the unmodified binaries
 with its notice and forbids reverse engineering; bluetoothd reads only the
 HCI command frames a `.sfi` file is made of. Its focused check is
-`plan/ws143/tests/intelbt-firmware-package-test.sh`. Every entry is
-default-off, and ordinary builds perform no firmware fetch. This hierarchy
-is package organization, not a common hardware-driver layer.
+`plan/ws143/tests/intelbt-firmware-package-test.sh`. `brcmbt/` (package
+`brcmbt-firmware`) installs `brcm/BCM4345C0.hcd`, the patch file bluetoothd
+loads into the Bluetooth part of the Raspberry Pi 4's BCM43455 over its
+UART, from Raspberry Pi's `RPi-Distro/bluez-firmware` commit
+`adb4d55c8f193ff16ece74dd72fd6e8801632103` (1.2-9+rpt4). That tree carries
+the file under the Cypress Wireless Connectivity Devices EULA but keeps the
+licence only as a saved HTML page, so the package installs the plain
+`LICENCE.cypress` of the official linux-firmware commit above (the blob the
+saved page shows), the tree's `debian/copyright`, and the manifest. The EULA permits
+redistribution of the object code only, solely for use with Cypress
+integrated circuits, and forbids modification and reverse engineering;
+the Raspberry Pi 4 image configuration is the only one that selects it.
+Its focused check is `plan/ws215/tests/brcmbt-firmware-package-test.sh`.
+Every entry is default-off, and ordinary builds perform no firmware fetch.
+This hierarchy is package organization, not a common hardware-driver layer.
