@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1113 / WS074 positioned Grid directional residual diagnosis（2026-10-14）
+## 最新: q1114 / WS074 positioned Grid auto-start inline boundary（2026-10-14）
+
+[q1114履歴](queue-q1114.md): `auto / 1`始端をpadding辺へ設定、固定5件の最初の100px差が消え次の不一致へ。旧PASSとAcid3差0維持。[証拠](../ws074/phase217/evidence/20261014-q1114/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1113 / WS074 positioned Grid directional residual diagnosis（2026-10-14）
 
 [q1113履歴](queue-q1113.md): 固定列軸/行軸012–016計10件の横書き20/20・縦書き20/20 FAIL。行軸auto境界と列軸block shiftを分離。[証拠](../ws074/phase217/evidence/20261014-q1113/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

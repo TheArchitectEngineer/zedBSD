@@ -162,3 +162,11 @@ Event ws074-p217-q1112-partial-clear-20261014: [証拠](evidence/20261014-q1112/
 ## q1113-i01 結果（2026-10-14 08:56 JST）
 
 Event ws074-p217-q1113-partial-clear-20261014: [証拠](evidence/20261014-q1113/README.md)。固定列軸/行軸012–016計10件の横書き20/20・縦書き20/20 subtestがFAIL。行軸はauto線をpadding edgeでなく最初のtrackへ潰し100pxのcontent shift差、列軸はblock軸content center shift未伝搬とRTL offsetLeft大差が重なる。次は行軸auto境界の有限修正、列軸は別調査。q1113部分cleared、p217/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
+## q1114-i01 有限部分範囲（2026-10-14 08:57 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（10:27 JSTまで）に適用。水平LTR/RTL Gridの直接absolute子、四inset auto、`grid-column:auto / 1`のauto inline-start境界をコンテナpadding辺へ配置。justify-content:center等によるtrack shiftはauto辺へ適用せず、明示終端線/area幅とq1110–q1112整列を維持。最小LTR/RTL/各整列fixture、固定row-axis012–016の最初の横書きassertと次失敗、旧PASS代表、Grid/CSS/JS、warning0 build、Acid3差0・Acid2非増加で検証。`2 / auto`・`auto / auto`・縦書き、runner/WPT/公開ABI/`plan/master.md`変更なし。p217 whole/p189/p173全件100%は本部分基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1114-i01 結果（2026-10-14 08:59 JST）
+
+Event ws074-p217-q1114-partial-clear-20261014: [証拠](evidence/20261014-q1114/README.md)。`grid-column:auto / 1`のauto始端をpadding辺へ設定し、track中央寄せの100px shiftを除外。最小LTR/RTL start/end/centerと明示線control PASS。固定行軸012–016の水平最初の100px差が消え、次の子/軸不一致へ進んだがwhole5件FAIL。旧PASS2件、Grid48/CSS51/JS14、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1114部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。

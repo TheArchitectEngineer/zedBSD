@@ -566,6 +566,10 @@ grid_static_position(
 			for (index = 0; index < column; index++)
 				x += grid->columns[index] + column_gap;
 		}
+		/* An auto start line reaches the padding edge, before content distribution. */
+		if (child->style.grid_column.start == 0 &&
+		    child->style.grid_column.end == 1)
+			x = box->style.direction == CSS_DIRECTION_RTL ? box->width : 0;
 		y = 0;
 		for (index = 0; index < row; index++)
 			y += grid->rows[index] + row_gap;
