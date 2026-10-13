@@ -18,6 +18,11 @@
  * the fixture pages go back to scratch, the GT TLB is invalidated, and only
  * then are the objects freed.  After a hang the engines are reset and the
  * objects are kept, because the GPU may still reach them.
+ *
+ * On a Gen9 GT (ws229-p005) the single-colour draw runs in its Gen9 form.
+ * The other four are refused with a log line and I915_TEST_SKIPPED, which
+ * the runner reports as a skip: the textured draws' shaders and states,
+ * and the mixed test's compute kernel and batch, were made for Gen12 only.
  */
 
 #include "scenarios.h"
@@ -38,6 +43,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "../../intel/genxml-gen9.h"
 #include "../../intel/gt-regs.h"
 
 /* How many pages the fixture addresses span, from the state page to the second texture. */
@@ -86,6 +92,9 @@ struct i915_test_draw_env {
 
 	/* How long one request may take to retire. */
 	unsigned timeout_ms;
+
+	/* The GT's graphics version, which the single-colour fixture is built for. */
+	unsigned graphics_ver;
 
 	/* The render engine and its execlists. */
 	struct i915_gt_engine *ge;
@@ -521,6 +530,7 @@ static void i915_test_tex_log(struct i915_device *device, const struct i915_test
 static void i915_test_r1_log(struct i915_device *device, const struct i915_test_r1 *r, int run, const struct i915_test_irq_snapshot *irq);
 static void i915_test_t3_log(struct i915_device *device, const struct i915_test_t3 *x, const char *tag, const char *last_tag, int run, const struct i915_test_irq_snapshot *irq);
 static int i915_draw_scenario_result(int passed, int run, int released);
+static int i915_draw_check_pipeline_select(const uint32_t *cmds, unsigned count, struct i915_test_pipeline_select *check, unsigned graphics_ver);
 
 /*
  * Runs the single-colour draw on the render engine and logs the result.
@@ -607,6 +617,13 @@ drv_i915_test_execution_r1(
 
 	r = &i915_r1_test;
 
+	/* Refuses Gen9: the compute half is the compute test's Gen12 kernel and batch. */
+	if (device->gt.graphics_ver == GEN9_GRAPHICS_VER) {
+		kern_logf("i915: R1 not run: its compute requests are Gen12 only (graphics version %u)\n",
+			  device->gt.graphics_ver);
+		return I915_TEST_SKIPPED;
+	}
+
 	/* Takes the five forcewake domains the GT tests run under. */
 	held = 0U;
 	error = drv_i915_test_forcewake_get_all(device, &held);
@@ -674,8 +691,17 @@ drv_i915_test_execution_tex(
 	int released;
 	int passed;
 	int idle;
+	int supported;
 
 	x = &i915_tex_test;
+
+	/* Refuses a GT the textured fixture was not generated for. */
+	supported = drv_i915_tex_fixture_supported(device->gt.graphics_ver);
+	if (supported == 0) {
+		kern_logf("i915: TEX-TEST not run: the textured fixture is Gen12 only (graphics version %u)\n",
+			  device->gt.graphics_ver);
+		return I915_TEST_SKIPPED;
+	}
 
 	/* Takes the five forcewake domains the GT tests run under. */
 	held = 0U;
@@ -782,6 +808,7 @@ i915_draw_env_init(
 	env->uncore_lock = &device->gt.uncore_lock;
 	env->sseu = &device->gt.info.sseu;
 	env->timeout_ms = I915_TEST_TIMEOUT_MS;
+	env->graphics_ver = device->gt.graphics_ver;
 }
 
 /* Records the GT interrupt counters at the start of a scenario. */
@@ -1259,22 +1286,27 @@ i915_test_draw_run(
 	if (error != 0)
 		return error;
 
-	/* Writes the fixture: a cleared target, the state page and the batch. */
-	d->mocs = drv_i915_draw_fixture_mocs();
+	/* Writes the GT's version of the fixture: a cleared target, the state page and the batch. */
+	d->mocs = drv_i915_draw_fixture_mocs_gen(env->graphics_ver);
 	kern_memset(d->rt->cpu, 0, 4096U);
-	drv_i915_draw_fixture_write_state(t->shared->cpu, I915_TEST_DRAW_RT_VA, d->mocs);
-	t->batch_dwords = drv_i915_draw_fixture_build_batch(
+	drv_i915_draw_fixture_write_state_gen(t->shared->cpu, I915_TEST_DRAW_RT_VA, d->mocs, env->graphics_ver);
+	t->batch_dwords = drv_i915_draw_fixture_build_batch_gen(
 		(uint32_t *)t->batch->cpu,
 		I915_TEST_BATCH_CAPACITY,
 		I915_TEST_EU_SHARED_VA,
-		d->mocs);
+		d->mocs,
+		env->graphics_ver);
 	if (t->batch_dwords == 0U || t->batch_dwords >= I915_TEST_BATCH_CAPACITY) {
 		(void)drv_i915_test_eu_fail(t, ENOSPC, "build_batch");
 		return ENOSPC;
 	}
 
 	/* Reads the select words back from the submitted object; a bad select is never submitted. */
-	t->pipesel_rc = drv_i915_test_draw_check_pipeline_select((const uint32_t *)t->batch->cpu, t->batch_dwords, &t->pipesel);
+	t->pipesel_rc = i915_draw_check_pipeline_select(
+		(const uint32_t *)t->batch->cpu,
+		t->batch_dwords,
+		&t->pipesel,
+		env->graphics_ver);
 	if (t->pipesel_rc != 0) {
 		(void)drv_i915_test_eu_fail(t, t->pipesel_rc, "pipeline_select_verify");
 		return t->pipesel_rc;
@@ -2471,8 +2503,18 @@ i915_test_t3_scenario(
 	int idle;
 	int completed;
 	int parked;
+	int supported;
 
 	x = &i915_t3_test;
+
+	/* Refuses a GT the textured fixture was not generated for. */
+	supported = drv_i915_tex_fixture_supported(device->gt.graphics_ver);
+	if (supported == 0) {
+		kern_logf("i915: %s not run: the textured fixture is Gen12 only (graphics version %u)\n",
+			  tag,
+			  device->gt.graphics_ver);
+		return I915_TEST_SKIPPED;
+	}
 
 	/* Takes the five forcewake domains the GT tests run under. */
 	held = 0U;
@@ -3122,5 +3164,76 @@ i915_draw_scenario_result(
 		return released;
 
 	/* Succeeded: the test passed and its release completed. */
+	return 0;
+}
+
+/*
+ * Checks the PIPELINE_SELECT words of a draw batch of a graphics version.
+ *
+ * Gen12 batches go through the compute test's draw check.  A Gen9 batch
+ * must hold exactly one 3D select of the fixed Gen9 form, 0x69040300 (the
+ * selection bits only masked in), and no other select-like word; the counts
+ * are reported through check as the Gen12 check reports them.  Returns 0 or
+ * EINVAL.
+ */
+static int
+i915_draw_check_pipeline_select(
+	const uint32_t *cmds,
+	unsigned count,
+	struct i915_test_pipeline_select *check,
+	unsigned graphics_ver)
+{
+	struct i915_test_pipeline_select found;
+	uint32_t dword;
+	unsigned k;
+	int error;
+
+	/* A Gen12 batch takes the compute test's check of the fixed Gen12 words. */
+	if (graphics_ver != GEN9_GRAPHICS_VER) {
+		error = drv_i915_test_draw_check_pipeline_select(cmds, count, check);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the Gen12 batch selects 3D once and nothing else. */
+		return 0;
+	}
+
+	/* Counts every select-like word, remembering where the first of each kind is. */
+	kern_memset(&found, 0, sizeof(found));
+	for (k = 0U; k < count; k++) {
+		dword = cmds[k];
+		if (dword == 0x69040300U) {
+			/* The fixed Gen9 3D select. */
+			if (found.n_3d == 0U)
+				found.idx_3d = k;
+			found.n_3d++;
+		} else if (dword == 0x69040302U) {
+			/* The fixed Gen9 GPGPU select. */
+			if (found.n_gpgpu == 0U)
+				found.idx_gpgpu = k;
+			found.n_gpgpu++;
+		} else if ((dword >> 16) == 0x6104U || (dword >> 16) == 0x6904U) {
+			/* A select-like word that is neither. */
+			if (found.n_bad == 0U) {
+				found.idx_bad = k;
+				found.bad_word = dword;
+			}
+			found.n_bad++;
+		}
+	}
+
+	/* Reports the counts to a caller that wants them. */
+	if (check != NULL)
+		*check = found;
+
+	/* Refuses anything but a single 3D select. */
+	if (found.n_3d != 1U)
+		return EINVAL;
+	if (found.n_gpgpu != 0U)
+		return EINVAL;
+	if (found.n_bad != 0U)
+		return EINVAL;
+
+	/* Succeeded: the Gen9 batch selects 3D once and nothing else. */
 	return 0;
 }

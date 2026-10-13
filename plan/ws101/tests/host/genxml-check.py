@@ -134,10 +134,10 @@ def pairs_of(tokens):
 
 def main():
     directory, out = sys.argv[1], sys.argv[2]
-    name = 'gen120.xml'
+    root_xml = 'gen120.xml'
     if len(sys.argv) > 3:
-        name = sys.argv[3]
-    instructions, structs = load(directory, name)
+        root_xml = sys.argv[3]
+    instructions, structs = load(directory, root_xml)
     with open(out + '.bin', 'rb') as file:
         data = file.read()
     words = list(struct.unpack('<%dI' % (len(data) // 4), data))
@@ -187,7 +187,7 @@ def main():
                 raise SystemExit('FAIL unknown expect line: %s' % line.strip())
             checks += 1
     print('%s: %d instructions of %d dwords decoded by Mesa genxml (%s), %d expectations hold' %
-          (out.rsplit('/', 1)[-1], len(decoded), len(words), name[:-4], checks))
+          (out.rsplit('/', 1)[-1], len(decoded), len(words), root_xml[:-4], checks))
 
 
 main()

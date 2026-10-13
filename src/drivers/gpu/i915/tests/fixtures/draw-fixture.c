@@ -21,6 +21,12 @@
  * primitive.  The batch and the state bytes are compared by hash with the
  * ones earlier hardware runs used, so every dword here is kept exactly as it
  * was first programmed.
+ *
+ * The single-colour draw also has a Gen9 form (ws229-p005): the same command
+ * list in Gen9's packets (the forms render/state.c programs for Gen9), a
+ * Gen9 pixel shader that does what the Gen12 one does, and Gen9's uncached
+ * MOCS entry.  The Gen12 bytes are unchanged.  The textured draws stay
+ * Gen12 only: their shaders and surface states were generated for Gen12.
  */
 
 #include "draw-fixture.h"
@@ -32,6 +38,7 @@
 
 #include "../../intel/commands.h"
 #include "../../intel/genxml.h"
+#include "../../intel/genxml-gen9.h"
 
 /* The size of the state page. */
 #define I915_DRAW_STATE_PAGE_BYTES	4096U
@@ -82,6 +89,9 @@
 /* The bindless surface state size: one page of 64-byte surface states. */
 #define I915_DRAW_SBA_BINDLESS_SIZE	((4096U / 64U - 1U) << 12)
 
+/* The graphics version the functions without a version build for. */
+#define I915_DRAW_GEN12_GRAPHICS_VER	12U
+
 /* The IEEE-754 bit patterns of the target sizes the rectangles cover. */
 #define I915_DRAW_F32_32		0x42000000U
 #define I915_DRAW_F32_1920		0x44f00000U
@@ -131,6 +141,9 @@ struct i915_draw_batch {
 
 	/* How many dwords the array holds. */
 	unsigned capacity;
+
+	/* The graphics version the packets are for: 9 for Gen9, any other value for Gen12. */
+	unsigned graphics_ver;
 };
 
 /*
@@ -199,6 +212,42 @@ static const uint32_t i915_draw_eot_only[4] = {
 };
 
 /*
+ * The constant opaque-red fragment shader of the single-colour draw on Gen9.
+ *
+ * The Gen12 shader's SIMD8 variant, step for step, in Gen9's encoding: the
+ * pixel mask from g1 into f1.0, the entry marker 0xc0ffee01 stored to
+ * 0x100400c10 with an A64 untyped write that carries the address (g4-g5)
+ * and the data (g6) in one message, and opaque red written to render target
+ * 0 from g112-g115 without a header, ending the thread.  Mesa 25.0.7's
+ * brw_asm --gen=skl assembled it from
+ * plan/ws229/tests/fixtures/draw-fixture-ps-gen9.asm; the dispatch GRF start
+ * is 2 as on Gen12 (r0 and r1 are the whole SIMD8 payload).
+ */
+static const uint32_t i915_draw_const_color_ps_gen9[] = {
+	0x00000001U, 0x26201244U, 0x0000003cU, 0x00000000U,
+	0x00600001U, 0x20c00608U, 0x00000000U, 0xc0ffee01U,
+	0x00600001U, 0x4044060cU, 0x00000000U, 0x00000001U,
+	0x00600001U, 0x4040060cU, 0x00000000U, 0x00400c10U,
+	0x00600001U, 0x40840208U, 0x00000044U, 0x00000000U,
+	0x00600001U, 0x40800208U, 0x00000040U, 0x00000000U,
+	0x0c610031U, 0x20000242U, 0x06000080U, 0x06066efdU,
+	0x00600001U, 0x2e000608U, 0x00000000U, 0x3f800000U,
+	0x00600001U, 0x2e200608U, 0x00000000U, 0x00000000U,
+	0x00600001U, 0x2e400608U, 0x00000000U, 0x00000000U,
+	0x00600001U, 0x2e600608U, 0x00000000U, 0x3f800000U,
+	0x05600032U, 0x20000240U, 0x06000e00U, 0x88031400U,
+};
+
+/*
+ * The Gen9 thread-ending instruction the room after the Gen9 shader is
+ * carpeted with: the end-of-thread render target write render/state.c
+ * clears an instruction window with.
+ */
+static const uint32_t i915_draw_eot_only_gen9[4] = {
+	GEN9_EOT_ONLY_DWORD0, GEN9_EOT_ONLY_DWORD1, GEN9_EOT_ONLY_DWORD2, GEN9_EOT_ONLY_DWORD3,
+};
+
+/*
  * The push constant packets of every stage, in pipeline order.
  *
  * Each is emitted empty, so no stage reads constants left over in the
@@ -263,6 +312,10 @@ static const struct i915_draw_options i915_draw_fhd_options = {
 /* The header must describe the single-colour draw's shader and page. */
 _Static_assert(I915_DRAW_FIXTURE_PS_BYTES == sizeof(i915_draw_const_color_ps),
 	"draw-fixture.h must give the single-colour shader's size");
+_Static_assert(I915_DRAW_FIXTURE_PS_GEN9_BYTES == sizeof(i915_draw_const_color_ps_gen9),
+	"draw-fixture.h must give the Gen9 single-colour shader's size");
+_Static_assert((I915_DRAW_KERNEL_ROOM - sizeof(i915_draw_const_color_ps_gen9)) % sizeof(i915_draw_eot_only_gen9) == 0U,
+	"the Gen9 carpet must fill the room after the Gen9 shader exactly");
 _Static_assert(I915_DRAW_FIXTURE_MARKER_OFFSET + 16U + 4U <= I915_DRAW_STATE_PAGE_BYTES,
 	"the markers must sit in the state page");
 
@@ -337,9 +390,9 @@ _Static_assert(sizeof(texfhd_tex_rss) == GEN12_RENDER_SURFACE_STATE_DWORDS * 4U,
 _Static_assert(sizeof(texfhd_rt_rss) == GEN12_RENDER_SURFACE_STATE_DWORDS * 4U,
 	"the full-HD target's surface state must be one RENDER_SURFACE_STATE");
 
-static void i915_draw_fill_eot(void *page, unsigned offset, unsigned length);
-static void i915_draw_write_kernel(void *page, const uint32_t *kernel, unsigned kernel_bytes);
-static void i915_draw_write_surface_state(uint32_t *heap, uint64_t rt_va, uint32_t mocs);
+static void i915_draw_fill_eot(void *page, unsigned offset, unsigned length, const uint32_t *eot);
+static void i915_draw_write_kernel(void *page, const uint32_t *kernel, unsigned kernel_bytes, const uint32_t *eot);
+static void i915_draw_write_surface_state(uint32_t *heap, uint64_t rt_va, uint32_t mocs, unsigned graphics_ver);
 static void i915_draw_write_dynamic_state(uint32_t *heap);
 static void i915_draw_write_vertices(uint32_t *page, uint32_t width_bits, uint32_t height_bits);
 static void i915_tex_write_surface_state(uint32_t *heap, unsigned offset, const uint32_t *template_state, uint64_t tex_va);
@@ -352,6 +405,7 @@ static void i915_draw_emit_state_base_address(struct i915_draw_batch *batch, uin
 static void i915_draw_emit_context_defaults(struct i915_draw_batch *batch);
 static void i915_draw_emit_vertex_state(struct i915_draw_batch *batch, uint64_t vb_va, uint32_t mocs);
 static void i915_draw_emit_urb(struct i915_draw_batch *batch);
+static void i915_draw_emit_urb_gen9(struct i915_draw_batch *batch);
 static void i915_draw_emit_constants(struct i915_draw_batch *batch, uint32_t mocs);
 static void i915_draw_emit_state_pointers(struct i915_draw_batch *batch, uint32_t mocs);
 static void i915_draw_emit_geometry_stages(struct i915_draw_batch *batch);
@@ -359,7 +413,7 @@ static void i915_draw_emit_raster_state(struct i915_draw_batch *batch, const str
 static void i915_draw_emit_pixel_shader(struct i915_draw_batch *batch, const struct i915_draw_options *options);
 static void i915_draw_emit_depth_state(struct i915_draw_batch *batch);
 static void i915_draw_emit_primitive(struct i915_draw_batch *batch);
-static unsigned i915_draw_build_batch(uint32_t *cmds, unsigned capacity, uint64_t state_va, uint32_t mocs, const struct i915_draw_options *options);
+static unsigned i915_draw_build_batch(uint32_t *cmds, unsigned capacity, uint64_t state_va, uint32_t mocs, const struct i915_draw_options *options, unsigned graphics_ver);
 
 /*
  * Writes the single-colour draw's state page.
@@ -376,20 +430,8 @@ drv_i915_draw_fixture_write_state(
 	uint64_t rt_va,
 	uint32_t mocs)
 {
-	/* Starts from a page of zeroes, which every state not written below relies on. */
-	kern_memset(state_page, 0, I915_DRAW_STATE_PAGE_BYTES);
-
-	/* Names the render target. */
-	i915_draw_write_surface_state(state_page, rt_va, mocs);
-
-	/* Writes the states the pipeline points at in the dynamic heap. */
-	i915_draw_write_dynamic_state(state_page);
-
-	/* Places the constant-colour shader and carpets the room after it. */
-	i915_draw_write_kernel(state_page, i915_draw_const_color_ps, sizeof(i915_draw_const_color_ps));
-
-	/* Covers the 32x32 target with the rectangle. */
-	i915_draw_write_vertices(state_page, I915_DRAW_F32_32, I915_DRAW_F32_32);
+	/* Writes the Gen12 page. */
+	drv_i915_draw_fixture_write_state_gen(state_page, rt_va, mocs, I915_DRAW_GEN12_GRAPHICS_VER);
 }
 
 /*
@@ -409,8 +451,8 @@ drv_i915_draw_fixture_build_batch(
 {
 	unsigned count;
 
-	/* Builds the command list with the single-colour pixel shader. */
-	count = i915_draw_build_batch(cmds, capacity, state_va, mocs, &i915_draw_color_options);
+	/* Builds the Gen12 command list with the single-colour pixel shader. */
+	count = drv_i915_draw_fixture_build_batch_gen(cmds, capacity, state_va, mocs, I915_DRAW_GEN12_GRAPHICS_VER);
 
 	/* Succeeded: reports how many dwords were written. */
 	return count;
@@ -424,8 +466,117 @@ drv_i915_draw_fixture_build_batch(
 uint32_t
 drv_i915_draw_fixture_mocs(void)
 {
-	/* The uncached entry, shifted into the MOCS field's form. */
+	uint32_t mocs;
+
+	/* Picks the Gen12 uncached entry. */
+	mocs = drv_i915_draw_fixture_mocs_gen(I915_DRAW_GEN12_GRAPHICS_VER);
+
+	/* Succeeded: the uncached entry in the MOCS field's form. */
+	return mocs;
+}
+
+/*
+ * Writes the single-colour draw's state page for a graphics version.
+ *
+ * The page is cleared, then gets the binding table and the render target's
+ * surface state (naming rt_va with mocs), the colour calculator, blend,
+ * viewport and coarse pixel states, the version's constant-colour pixel
+ * shader with its carpet of thread-ending instructions, and a rectangle over
+ * the whole 32x32 target.  graphics_ver 9 writes the Gen9 page, any other
+ * value the Gen12 one.
+ */
+void
+drv_i915_draw_fixture_write_state_gen(
+	void *state_page,
+	uint64_t rt_va,
+	uint32_t mocs,
+	unsigned graphics_ver)
+{
+	/* Starts from a page of zeroes, which every state not written below relies on. */
+	kern_memset(state_page, 0, I915_DRAW_STATE_PAGE_BYTES);
+
+	/* Names the render target. */
+	i915_draw_write_surface_state(state_page, rt_va, mocs, graphics_ver);
+
+	/* Writes the states the pipeline points at in the dynamic heap. */
+	i915_draw_write_dynamic_state(state_page);
+
+	/* Places the version's constant-colour shader and carpets the room after it with its end of thread. */
+	if (graphics_ver == GEN9_GRAPHICS_VER) {
+		i915_draw_write_kernel(state_page,
+				       i915_draw_const_color_ps_gen9,
+				       sizeof(i915_draw_const_color_ps_gen9),
+				       i915_draw_eot_only_gen9);
+	} else {
+		i915_draw_write_kernel(state_page,
+				       i915_draw_const_color_ps,
+				       sizeof(i915_draw_const_color_ps),
+				       i915_draw_eot_only);
+	}
+
+	/* Covers the 32x32 target with the rectangle. */
+	i915_draw_write_vertices(state_page, I915_DRAW_F32_32, I915_DRAW_F32_32);
+}
+
+/*
+ * Builds the single-colour draw's batch for a graphics version and returns
+ * its dword count.
+ *
+ * It is drv_i915_draw_fixture_build_batch() in the packets of graphics_ver:
+ * 9 builds the Gen9 command list, any other value the Gen12 one.
+ */
+unsigned
+drv_i915_draw_fixture_build_batch_gen(
+	uint32_t *cmds,
+	unsigned capacity,
+	uint64_t state_va,
+	uint32_t mocs,
+	unsigned graphics_ver)
+{
+	unsigned count;
+
+	/* Builds the command list with the single-colour pixel shader. */
+	count = i915_draw_build_batch(cmds, capacity, state_va, mocs, &i915_draw_color_options, graphics_ver);
+
+	/* Succeeded: reports how many dwords were written. */
+	return count;
+}
+
+/*
+ * Reports the uncached cache setting of a graphics version.
+ *
+ * The uncached entry is index 3 of the Gen12 MOCS table and index 0 of the
+ * Gen9 one (skl_mocs_table); graphics_ver 9 picks Gen9's.
+ */
+uint32_t
+drv_i915_draw_fixture_mocs_gen(
+	unsigned graphics_ver)
+{
+	/* Gen9's uncached entry, shifted into the MOCS field's form. */
+	if (graphics_ver == GEN9_GRAPHICS_VER)
+		return GEN12_MOCS(GEN9_MOCS_UNCACHED_INDEX);
+
+	/* Gen12's uncached entry, as the first hardware draw used. */
 	return GEN12_MOCS(I915_MOCS_UNCACHED_INDEX);
+}
+
+/*
+ * Tells whether the textured fixtures can run on a graphics version.
+ *
+ * Their pixel shaders, surface states and samplers are Mesa's output for
+ * Gen12 (tex-fixture-gen.inc, tex-fixture-fhd-gen.inc), which a Gen9 GT
+ * would misread; returns 0 for graphics_ver 9 and 1 otherwise.
+ */
+int
+drv_i915_tex_fixture_supported(
+	unsigned graphics_ver)
+{
+	/* Refuses Gen9: the generated words are Gen12 instructions and states. */
+	if (graphics_ver == GEN9_GRAPHICS_VER)
+		return 0;
+
+	/* Succeeded: the generated words are this version's. */
+	return 1;
 }
 
 /*
@@ -452,7 +603,7 @@ drv_i915_tex_fixture_write_state(
 
 	/* Replaces the constant-colour shader with the sampling one. */
 	kern_memset((uint8_t *)state_page + I915_DRAW_FIXTURE_PS_OFFSET, 0, I915_DRAW_KERNEL_ROOM);
-	i915_draw_write_kernel(state_page, texfix_ps, TEXFIX_PS_BYTES);
+	i915_draw_write_kernel(state_page, texfix_ps, TEXFIX_PS_BYTES, i915_draw_eot_only);
 
 	/* Points binding table entry 1 at the texture's surface state. */
 	heap[I915_DRAW_BINDING_TABLE_OFFSET / 4U + 1U] = I915_TEX_FIXTURE_TEX_RSS_OFFSET;
@@ -478,7 +629,7 @@ drv_i915_tex_fixture_build_batch(
 	unsigned count;
 
 	/* Builds the command list with the sampling pixel shader. */
-	count = i915_draw_build_batch(cmds, capacity, state_va, mocs, &i915_draw_texture_options);
+	count = i915_draw_build_batch(cmds, capacity, state_va, mocs, &i915_draw_texture_options, I915_DRAW_GEN12_GRAPHICS_VER);
 
 	/* Succeeded: reports how many dwords were written. */
 	return count;
@@ -764,7 +915,7 @@ drv_i915_tex_fixture_fhd_write_state(
 
 	/* Replaces the constant-colour shader with the full-HD sampling one. */
 	kern_memset((uint8_t *)state_page + I915_DRAW_FIXTURE_PS_OFFSET, 0, I915_DRAW_KERNEL_ROOM);
-	i915_draw_write_kernel(state_page, texfhd_ps, TEXFHD_PS_BYTES);
+	i915_draw_write_kernel(state_page, texfhd_ps, TEXFHD_PS_BYTES, i915_draw_eot_only);
 
 	/* Points binding table entry 1 at the texture's surface state. */
 	heap[I915_DRAW_BINDING_TABLE_OFFSET / 4U + 1U] = I915_TEX_FIXTURE_TEX_RSS_OFFSET;
@@ -793,7 +944,7 @@ drv_i915_tex_fixture_fhd_build_batch(
 	unsigned count;
 
 	/* Builds the command list with the full-HD sampling shader and target. */
-	count = i915_draw_build_batch(cmds, capacity, state_va, mocs, &i915_draw_fhd_options);
+	count = i915_draw_build_batch(cmds, capacity, state_va, mocs, &i915_draw_fhd_options, I915_DRAW_GEN12_GRAPHICS_VER);
 
 	/* Succeeded: reports how many dwords were written. */
 	return count;
@@ -864,12 +1015,13 @@ drv_i915_tex_fixture_fhd_same_texture_state(void)
 	return 1;
 }
 
-/* Carpets length bytes of the page from offset on with thread-ending instructions. */
+/* Carpets length bytes of the page from offset on with eot, a 16-byte thread-ending instruction. */
 static void
 i915_draw_fill_eot(
 	void *page,
 	unsigned offset,
-	unsigned length)
+	unsigned length,
+	const uint32_t *eot)
 {
 	unsigned at;
 
@@ -877,21 +1029,22 @@ i915_draw_fill_eot(
 	for (at = offset;
 	     at + sizeof(i915_draw_eot_only) <= offset + length;
 	     at += sizeof(i915_draw_eot_only))
-		kern_memcpy((uint8_t *)page + at, i915_draw_eot_only, sizeof(i915_draw_eot_only));
+		kern_memcpy((uint8_t *)page + at, eot, sizeof(i915_draw_eot_only));
 }
 
-/* Copies a pixel shader to the kernel offset and carpets the room after it. */
+/* Copies a pixel shader to the kernel offset and carpets the room after it with eot. */
 static void
 i915_draw_write_kernel(
 	void *page,
 	const uint32_t *kernel,
-	unsigned kernel_bytes)
+	unsigned kernel_bytes,
+	const uint32_t *eot)
 {
 	/* Places the kernel where 3DSTATE_PS names it. */
 	kern_memcpy((uint8_t *)page + I915_DRAW_FIXTURE_PS_OFFSET, kernel, kernel_bytes);
 
 	/* Makes a stray thread in the rest of the room retire at once. */
-	i915_draw_fill_eot(page, I915_DRAW_FIXTURE_PS_OFFSET + kernel_bytes, I915_DRAW_KERNEL_ROOM - kernel_bytes);
+	i915_draw_fill_eot(page, I915_DRAW_FIXTURE_PS_OFFSET + kernel_bytes, I915_DRAW_KERNEL_ROOM - kernel_bytes, eot);
 }
 
 /* Writes the binding table and the 32x32 render target's RENDER_SURFACE_STATE. */
@@ -899,7 +1052,8 @@ static void
 i915_draw_write_surface_state(
 	uint32_t *heap,
 	uint64_t rt_va,
-	uint32_t mocs)
+	uint32_t mocs,
+	unsigned graphics_ver)
 {
 	uint32_t *surface;
 
@@ -924,6 +1078,10 @@ i915_draw_write_surface_state(
 	 * completes.
 	 */
 	surface[1] = (1U << 31) | (mocs << 24) | 8U;
+
+	/* Gen9 has no such bit (isl sets it from Gen12 on): only the MOCS and the QPitch. */
+	if (graphics_ver == GEN9_GRAPHICS_VER)
+		surface[1] = (mocs << 24) | 8U;
 
 	/* The size and the pitch, each stored less one. */
 	surface[2] = (I915_DRAW_FIXTURE_WIDTH - 1U) | ((I915_DRAW_FIXTURE_HEIGHT - 1U) << 16);
@@ -1075,10 +1233,19 @@ i915_draw_emit_pipe_control(
 {
 	uint32_t header;
 
-	/* A render target flush also needs the HDC pipeline flush on this generation. */
+	/*
+	 * A render target flush also needs the HDC pipeline flush on Gen12;
+	 * Gen9 has no such bit and flushes the data cache in its place, as
+	 * render/batch.c does.
+	 */
 	header = GFX_OP_PIPE_CONTROL(6);
-	if ((flags & PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U)
-		header |= PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
+	if ((flags & PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U) {
+		if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+			flags |= PIPE_CONTROL_DC_FLUSH_ENABLE;
+		} else {
+			header |= PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
+		}
+	}
 
 	/* The header, the flags, and no address or data. */
 	i915_draw_emit(batch, header);
@@ -1095,13 +1262,19 @@ i915_draw_emit_state_base_address(
 {
 	uint32_t page_low;
 	uint32_t page_high;
+	uint32_t base_dwords;
 
 	/* The state page's address, page aligned, in two halves. */
 	page_low = (uint32_t)state_va & 0xfffff000U;
 	page_high = (uint32_t)(state_va >> 32);
 
+	/* Gen9's packet ends before the bindless sampler base. */
+	base_dwords = GEN12_STATE_BASE_ADDRESS_DWORDS;
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+		base_dwords = GEN9_STATE_BASE_ADDRESS_DWORDS;
+
 	/* The header. */
-	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_STATE_BASE_ADDRESS, GEN12_STATE_BASE_ADDRESS_DWORDS));
+	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_STATE_BASE_ADDRESS, base_dwords));
 
 	/* The general state base: address 0, modified, and the stateless MOCS. */
 	i915_draw_emit(batch, 1U | (mocs << 4));
@@ -1134,6 +1307,10 @@ i915_draw_emit_state_base_address(
 	i915_draw_emit(batch, 1U | (mocs << 4) | page_low);
 	i915_draw_emit(batch, page_high);
 	i915_draw_emit(batch, I915_DRAW_SBA_BINDLESS_SIZE);
+
+	/* Gen9 has no bindless sampler base. */
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+		return;
 
 	/* Bindless samplers are null. */
 	i915_draw_emit(batch, 1U | (mocs << 4));
@@ -1170,8 +1347,9 @@ i915_draw_emit_context_defaults(
 		}
 	}
 
-	/* Depth bounds are off. */
-	i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_DEPTH_BOUNDS, GEN12_3DSTATE_DEPTH_BOUNDS_DWORDS);
+	/* Depth bounds are off; Gen9 has no depth bounds test. */
+	if (batch->graphics_ver != GEN9_GRAPHICS_VER)
+		i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_DEPTH_BOUNDS, GEN12_3DSTATE_DEPTH_BOUNDS_DWORDS);
 
 	/* The other stages' binding tables are cleared. */
 	i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_VS, GEN12_3DSTATE_POINTERS_DWORDS);
@@ -1189,6 +1367,7 @@ i915_draw_emit_vertex_state(
 {
 	uint64_t position_va;
 	uint64_t header_va;
+	uint32_t l3_bypass;
 
 	/*
 	 * With the vertex shader disabled the clipper reads each VUE straight
@@ -1198,18 +1377,23 @@ i915_draw_emit_vertex_state(
 	position_va = vb_va + I915_DRAW_POSITION_OFFSET;
 	header_va = vb_va + I915_DRAW_VUE_HEADER_OFFSET;
 
+	/* The buffers' L3 bypass disable is a Gen12 bit. */
+	l3_bypass = GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE;
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+		l3_bypass = 0U;
+
 	/* Two VERTEX_BUFFER_STATE structures follow the header dword. */
 	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VERTEX_BUFFERS,
 					       1U + 2U * GEN12_VERTEX_BUFFER_STATE_DWORDS));
 
 	/* Buffer 0 holds three positions of three floats each: pitch 12, 36 bytes. */
-	i915_draw_emit(batch, (0U << 26) | GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE | (mocs << 16) | (1U << 14) | 12U);
+	i915_draw_emit(batch, (0U << 26) | l3_bypass | (mocs << 16) | (1U << 14) | 12U);
 	i915_draw_emit(batch, (uint32_t)position_va);
 	i915_draw_emit(batch, (uint32_t)(position_va >> 32));
 	i915_draw_emit(batch, 36U);
 
 	/* Buffer 1 holds the zeroed VUE header, read with a zero pitch by every vertex. */
-	i915_draw_emit(batch, (1U << 26) | GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE | (mocs << 16) | (1U << 14) | 0U);
+	i915_draw_emit(batch, (1U << 26) | l3_bypass | (mocs << 16) | (1U << 14) | 0U);
 	i915_draw_emit(batch, (uint32_t)header_va);
 	i915_draw_emit(batch, (uint32_t)(header_va >> 32));
 	i915_draw_emit(batch, 16U);
@@ -1236,7 +1420,8 @@ i915_draw_emit_vertex_state(
 	i915_draw_emit(batch, (GEN12_CMD_3DSTATE_VF_STATISTICS << 16) | 1U);
 	i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_VF, GEN12_3DSTATE_VF_DWORDS);
 	i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_VF_SGVS, GEN12_3DSTATE_VF_SGVS_DWORDS);
-	i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_VF_SGVS_2, GEN12_3DSTATE_VF_SGVS_2_DWORDS);
+	if (batch->graphics_ver != GEN9_GRAPHICS_VER)
+		i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_VF_SGVS_2, GEN12_3DSTATE_VF_SGVS_2_DWORDS);
 
 	/* Instancing is per element and survives in the context, so elements 0 and 1 are cleared. */
 	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VF_INSTANCING, GEN12_3DSTATE_VF_INSTANCING_DWORDS));
@@ -1257,6 +1442,12 @@ i915_draw_emit_urb(
 	struct i915_draw_batch *batch)
 {
 	uint32_t opcode;
+
+	/* Gen9 allocates the URB with its own packets. */
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+		i915_draw_emit_urb_gen9(batch);
+		return;
+	}
 
 	/*
 	 * No stage uses push constants, and the vertex through geometry stages
@@ -1290,6 +1481,50 @@ i915_draw_emit_urb(
 	}
 }
 
+/*
+ * Appends the push constant and URB allocation in Gen9's packets.
+ *
+ * The push constants are the Gen12 ones (the pixel stage keeps the first
+ * 32 KiB); the vertex stage gets the chunks render/state.c gives it on Gen9
+ * (from chunk 4) with one 64-byte entry per vertex, which holds the two
+ * 16-byte elements the fetcher writes, and GT1's 928 entries, the fewest of
+ * the family.  The other stages start past them with no entries.
+ */
+static void
+i915_draw_emit_urb_gen9(
+	struct i915_draw_batch *batch)
+{
+	uint32_t opcode;
+	uint32_t unused;
+
+	/* No stage but the pixel stage gets push constant space. */
+	for (opcode = GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_VS;
+	     opcode < GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_PS;
+	     opcode++)
+		i915_draw_emit_disabled(batch, opcode, GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS);
+
+	/* The pixel stage keeps the push constant space. */
+	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PUSH_CONSTANT_ALLOC_PS,
+					       GEN12_3DSTATE_PUSH_CONSTANT_ALLOC_DWORDS));
+	i915_draw_emit(batch, GEN12_PUSH_CONSTANT_KB);
+
+	/* The vertex stage: its starting chunk, entries of one 64-byte unit (stored less one), and the entries. */
+	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN9_CMD_3DSTATE_URB_VS, GEN9_3DSTATE_URB_DWORDS));
+	i915_draw_emit(batch,
+		       (GEN9_URB_VS_START_CHUNK << GEN9_URB_START_SHIFT) |
+		       (0U << GEN9_URB_ENTRY_SIZE_SHIFT) |
+		       GEN9_URB_VS_ENTRIES);
+
+	/* The hull, domain and geometry stages start past the vertex chunks and receive no entries. */
+	unused = GEN9_URB_UNUSED_START_CHUNK << GEN9_URB_START_SHIFT;
+	for (opcode = GEN9_CMD_3DSTATE_URB_HS;
+	     opcode <= GEN9_CMD_3DSTATE_URB_GS;
+	     opcode++) {
+		i915_draw_emit(batch, GEN12_CMD_HEADER(opcode, GEN9_3DSTATE_URB_DWORDS));
+		i915_draw_emit(batch, unused);
+	}
+}
+
 /* Appends an empty push constant packet for every stage. */
 static void
 i915_draw_emit_constants(
@@ -1318,12 +1553,16 @@ i915_draw_emit_state_pointers(
 	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_BLEND_STATE_POINTERS, GEN12_3DSTATE_POINTERS_DWORDS));
 	i915_draw_emit(batch, I915_DRAW_BLEND_OFFSET | 1U);
 
-	/* The colour calculator viewport and the coarse pixel state. */
+	/* The colour calculator viewport, and the coarse pixel state on Gen12. */
 	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VIEWPORT_STATE_POINTERS_CC,
 					       GEN12_3DSTATE_POINTERS_DWORDS));
 	i915_draw_emit(batch, I915_DRAW_CC_VIEWPORT_OFFSET);
-	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_CPS_POINTERS, GEN12_3DSTATE_POINTERS_DWORDS));
-	i915_draw_emit(batch, I915_DRAW_CPS_STATE_OFFSET);
+
+	/* Gen9 has no coarse pixel shading. */
+	if (batch->graphics_ver != GEN9_GRAPHICS_VER) {
+		i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_CPS_POINTERS, GEN12_3DSTATE_POINTERS_DWORDS));
+		i915_draw_emit(batch, I915_DRAW_CPS_STATE_OFFSET);
+	}
 
 	/* The binding table pool is disabled, but its MOCS must still be valid. */
 	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_BINDING_TABLE_POOL_ALLOC, 4U));
@@ -1360,8 +1599,12 @@ i915_draw_emit_geometry_stages(
 	i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_DS, GEN12_3DSTATE_DS_DWORDS);
 	i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_STREAMOUT, GEN12_3DSTATE_STREAMOUT_DWORDS);
 	i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_GS, GEN12_3DSTATE_GS_DWORDS);
-	i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION,
-				GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
+
+	/* Primitive replication is a Gen12 packet. */
+	if (batch->graphics_ver != GEN9_GRAPHICS_VER) {
+		i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION,
+					GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
+	}
 }
 
 /* Appends the clipper, setup, rasterizer, windower and pixel shader state. */
@@ -1371,6 +1614,7 @@ i915_draw_emit_raster_state(
 	const struct i915_draw_options *options)
 {
 	unsigned index;
+	uint32_t deref;
 
 	/*
 	 * A screen-space rectangle needs no viewport transform and no
@@ -1382,10 +1626,15 @@ i915_draw_emit_raster_state(
 	i915_draw_emit(batch, 1U << 9);
 	i915_draw_emit(batch, 0U);
 
-	/* Viewport mapping is disabled, as a rectangle list requires; the deref block size matches the URB. */
+	/* The deref block size matches the URB on Gen12; Gen9 has no such field. */
+	deref = GEN12_URB_DEREF_BLOCK_SIZE_32 << 29;
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+		deref = 0U;
+
+	/* Viewport mapping is disabled, as a rectangle list requires. */
 	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SF, GEN12_3DSTATE_SF_DWORDS));
 	i915_draw_emit(batch, 1U << 10);
-	i915_draw_emit(batch, GEN12_URB_DEREF_BLOCK_SIZE_32 << 29);
+	i915_draw_emit(batch, deref);
 	i915_draw_emit(batch, 0U);
 
 	/*
@@ -1469,15 +1718,29 @@ static void
 i915_draw_emit_depth_state(
 	struct i915_draw_batch *batch)
 {
-	/* A null depth buffer still carries a depth format. */
+	uint32_t depth_format;
+
+	/* A null depth buffer still carries a depth format, at bits 20:18 on Gen9 and 26:24 on Gen12. */
+	depth_format = GEN12_DEPTH_FORMAT_D32_FLOAT << 24;
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+		depth_format = GEN12_DEPTH_FORMAT_D32_FLOAT << GEN9_DEPTH_FORMAT_SHIFT;
+
+	/* The null depth buffer. */
 	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_DEPTH_BUFFER, GEN12_3DSTATE_DEPTH_BUFFER_DWORDS));
-	i915_draw_emit(batch, (GEN12_SURFTYPE_NULL << 29) | (GEN12_DEPTH_FORMAT_D32_FLOAT << 24));
+	i915_draw_emit(batch, (GEN12_SURFTYPE_NULL << 29) | depth_format);
 	i915_draw_emit_zeroes(batch, GEN12_3DSTATE_DEPTH_BUFFER_DWORDS - 2U);
 
-	/* The stencil buffer carries its own surface type from this generation on. */
-	i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_STENCIL_BUFFER, GEN12_3DSTATE_STENCIL_BUFFER_DWORDS));
-	i915_draw_emit(batch, GEN12_SURFTYPE_NULL << 29);
-	i915_draw_emit_zeroes(batch, GEN12_3DSTATE_STENCIL_BUFFER_DWORDS - 2U);
+	/*
+	 * Gen9's stencil buffer is five dwords and is off while Stencil Buffer
+	 * Enable is clear; the Gen12 one carries its own null surface type.
+	 */
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+		i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_STENCIL_BUFFER, GEN9_3DSTATE_STENCIL_BUFFER_DWORDS);
+	} else {
+		i915_draw_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_STENCIL_BUFFER, GEN12_3DSTATE_STENCIL_BUFFER_DWORDS));
+		i915_draw_emit(batch, GEN12_SURFTYPE_NULL << 29);
+		i915_draw_emit_zeroes(batch, GEN12_3DSTATE_STENCIL_BUFFER_DWORDS - 2U);
+	}
 
 	/* No hierarchical depth and no clear value. */
 	i915_draw_emit_disabled(batch, GEN12_CMD_3DSTATE_HIER_DEPTH_BUFFER, GEN12_3DSTATE_HIER_DEPTH_BUFFER_DWORDS);
@@ -1508,16 +1771,36 @@ i915_draw_build_batch(
 	unsigned capacity,
 	uint64_t state_va,
 	uint32_t mocs,
-	const struct i915_draw_options *options)
+	const struct i915_draw_options *options,
+	unsigned graphics_ver)
 {
 	struct i915_draw_batch batch;
 	uint64_t marker_va;
+	uint32_t select;
+	uint32_t invalidate;
 
-	/* Starts an empty batch over the caller's array. */
+	/* Starts an empty batch of the version over the caller's array. */
 	batch.cmds = cmds;
 	batch.count = 0U;
 	batch.capacity = capacity;
+	batch.graphics_ver = graphics_ver;
 	marker_va = state_va + I915_DRAW_FIXTURE_MARKER_OFFSET;
+
+	/*
+	 * Gen9 masks in only the selection bits of PIPELINE_SELECT (anv), and a
+	 * Gen9 PIPE_CONTROL that stalls the command streamer must also flush,
+	 * stall or write something (SKL PRM; iris adds the scoreboard stall).
+	 */
+	select = GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D);
+	invalidate = PIPE_CONTROL_CS_STALL |
+		PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+		PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+		PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+		PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE;
+	if (graphics_ver == GEN9_GRAPHICS_VER) {
+		select = (GEN12_CMD_PIPELINE_SELECT << 16) | GEN9_PIPELINE_SELECT_MASK | GEN12_PIPELINE_SELECT_3D;
+		invalidate |= PIPE_CONTROL_STALL_AT_SCOREBOARD;
+	}
 
 	/* A stalling flush precedes the pipeline select and the base addresses. */
 	i915_draw_emit_pipe_control(&batch,
@@ -1526,18 +1809,13 @@ i915_draw_build_batch(
 				    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
 				    PIPE_CONTROL_DC_FLUSH_ENABLE |
 				    PIPE_CONTROL_FLUSH_ENABLE);
-	i915_draw_emit(&batch, GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D));
+	i915_draw_emit(&batch, select);
 
 	/* Anchors the three heaps this draw reads from at the state page. */
 	i915_draw_emit_state_base_address(&batch, state_va, mocs);
 
 	/* The state caches must be invalidated before anything reads the new bases. */
-	i915_draw_emit_pipe_control(&batch,
-				    PIPE_CONTROL_CS_STALL |
-				    PIPE_CONTROL_STATE_CACHE_INVALIDATE |
-				    PIPE_CONTROL_CONST_CACHE_INVALIDATE |
-				    PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
-				    PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
+	i915_draw_emit_pipe_control(&batch, invalidate);
 
 	/* Tells a hang before the draw state from one after it. */
 	i915_draw_emit_marker(&batch, marker_va + I915_DRAW_MARKER_BEFORE_SLOT, I915_DRAW_FIXTURE_MARKER_BEFORE);
