@@ -120,7 +120,7 @@ useradd・usermod・userdel（p003）が呼ぶ account-admin を、端末の roo
 | コマンド | 結果 |
 | --- | --- |
 | `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws196-p002/zed "ZEDBSD_USER_PROGRAMS=account-admin passwd su sudo passkey passkey-fido2 sessiond"` と 7 つの `bin/…` | rc 0、`-Werror`、warning 0（log `build/ws196-p002/build-zed2.log`）。account.c を link する全部 |
-| `sh plan/ws089/tests/run-host-account-admin.sh` | `host-account-admin: 95 checks, 0 failed`（前は 60 前後。新: root の形 30、数え方 6、次の uid 4、field・lock・M7・shell・groups） |
+| `sh plan/ws089/tests/run-host-account-admin.sh` | `host-account-admin: 95 checks, 0 failed`（main の d7e38eeae では 37。足した 58: root の形、数え方、次の uid、field・lock・M7・shell・groups） |
 | `sh plan/ws158/tests/run-host-admin-language.sh build/ws196-p002/lang` | `ok (13 checks)` |
 | `sh plan/ws196/tests/account-admin-root-host-test.sh` | PASS（74 checks）: useradd の行と home と skel と記録、F1、S1・S2（`-G`・`-s`・`-L`・削除で `last-administrator`、locked の bob は数えない）、`-g dave`（own group 無し）の `bad-value`、lock と unlock で hash が元に戻る、`id-taken`、削除で home・cron・at・autologin が消え他の人の cron は残る、S3（消した 1501 の後が 1502）、M7（hal の group が残る）、残りの掃除と 2 回目の `no-such-user`、`home remove`+`force yes` の `bad-request`、root の Settings の形の `bad-request`、F2（持ち主の違う home は残る）、S6（home の中の tmpfs の mount の中身は残り、他は消える）、S4（`flock -x` で 8 秒持たれている間は 5 秒で `failed`、放されると `ok`、lock の file は残る）、S5（tmpfs が満ちて shadow が書けないと `failed`、passwd・group は元と同じ）。ASan・UBSan の報告 0。host の syslog に `user-add by root (sudo awe) for …`・`… is put back as it was`・`mnt is on another file system and is left` |
 | `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws196-p002/linux -j16 build/ws196-p002/linux/sbin/passkey` | rc 0、warning 0、lock は `/opt/keiland/etc/passkey.lock` |
