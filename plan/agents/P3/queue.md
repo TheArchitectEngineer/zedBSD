@@ -62,3 +62,4 @@ Next（予約）: ws115-p006（libpng・freetype・harfbuzz・fontconfig）〜
 
 2026-10-13 夜 / q945: ws220-p005 fast retransmit と NewReno の回復、persist timer、窓が開いた時の再送を外す（p001 §4 の p005 の行）。同じ P3 の続き。承認: ユーザーの再開の指示と WS220 のユーザーの決定。p004 の出力は main 51f753f27。State: active。
 （2026-10-13 Q1: P3 が報告した pcat の link の失敗（drv_xhci_isoch_* の未定義）は platform/pcat/vmunix.mk に pci-xhci-isoch.o を足して直した、config/ci/config-pcat.mk の vmunix は warning 0。）
+- q945 途中（2026-10-13 夜）: ws220-p005 設計 6923b94e6・実装 8086543a1（模型 lan-loss-0.1 4.63→36.54 MB/s、lan-loss-1 0.46→12.16）。design-reviewer の結果待ちで merge 保留。削除の依頼は済み。
