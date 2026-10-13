@@ -2,7 +2,7 @@
 
 # ws128-p007: 5330 の実機で標準アプリの通し
 
-Status: planning（p002〜p006 の選んだ物の後、実機とユーザーの時間）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: planning、5330 の実機で標準アプリの通し（ユーザーの目視）。SSH の log の ERROR の確かめは未実施）
 Disposition: normal
 Parent: [WS128](../ws.md)
 Queue: なし

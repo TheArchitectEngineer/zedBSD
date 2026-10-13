@@ -3,177 +3,50 @@
 # WS048: Raspberry Pi 4 の USB（PCIe・VL805 の xHCI・USB キーボード）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p014実機起動成功をuser確認、p015正常cancel log抑制source/build cleared、USB入力未確認）
+Status: closed（2026-10-13 ユーザー「WS044、WS048、WS118はクローズします。」。旧: incomplete（p014 の後の実機の起動の成功はユーザー確認、USB の入力は未確認））
 Primary Milestone: MG008
 Related Milestones: MG003, MG006
 Objectives: O2, O4
 Parent: [Master](../master.md)
-Queue: [cancel logging限定Queue](codex-cancel-logging-20261011.md) finished。旧実行記録は保持。
-Resume point: p015修正はafe01157fでmain統合済み。user実機で通常cancel logが止まることとUSB入力を確認。p014後の起動成功は確認済み。
-Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
+Queue: なし
 <!-- awesome-plan-current:end -->
 
-## 目標
-
-実機の Raspberry Pi 4 で USB の Type-A の port が使え、USB キーボードで console に入力できる。
-
-## きっかけ
-
-2026-09-24、実機の RPi4 が login prompt まで起動した（ws044-p009）。ユーザー:「USBが使えないみたいです。コンフィグのせいでしょうか？」
-
-調べた結果、config だけの問題ではない:
-
-| 要るもの | 今 |
-| --- | --- |
-| BCM2711 の PCIe root complex（brcmstb）の初期化: reset、link の確立、outbound・inbound の window、config 空間の access | 無い。`src/drivers/pci` の PCI の層は PC の ECAM（`pci-pcat.c`）だけ |
-| VL805 の firmware の読み込み: PCIe の reset の後に mailbox の `0x00030058`（xHCI の reset の通知）で VideoCore に読ませる | mailbox は HAL の中（`src/hal/arm64/bsp-rpi4/mailbox.c`）にしかない。driver から使うには HAL の口が要る（承認が要る） |
-| xHCI（`src/drivers/pci/pci-xhci.c`） | ある。x86 の cache coherent な DMA を前提にしている。Pi 4 の PCIe の DMA は CPU の cache と coherent でないので、ring と buffer の cache の操作か非 cache の memory が要る |
-| 割り込み: PCIe の INTx か MSI を GIC の SPI へ | 無い（polling で始める手もある） |
-| USB の driver（HID・hub・storage） | ある。rpi4 の config で `n`（PCIe と xHCI が動くまで意味が無い） |
-
-有線 LAN（GENET）も driver が無い。今の実機の入力はシリアルだけ。
-
-## 設計
-
-[design.md](design.md)（ws048-p001）。
-
-## Phase 一覧
-
-2026-09-27 の p001 で分け直した（旧 p002〜p005 は実行前だったので番号を振り直した）。
-
-| Phase | 内容 | Status | 依存 | HAL の承認 |
-| --- | --- | --- | --- | --- |
-| [ws048-p001](phase001/phase.md) | 調査と設計 | cleared | — | 不要 |
-| [ws048-p002](phase002/phase.md) | FDT の reader、arm64 の device mapping の実装の修正、brcmstb の host bridge と PCI の backend（VL805 が列挙される） | cleared（実機は未実施） | p001 | 不要 |
-| [ws048-p003](phase003/phase.md) | firmware の mailbox と VL805 の firmware の通知 | cleared（実機は未実施） | p002 | 不要 |
-| [ws048-p004](phase004/phase.md) | 非 coherent な DMA（`hal_pmem_map_uncached` と `dma.c`） | cleared（2026-09-27。承認済みの hal.h の差分を適用、host 試験・rpi4 と amd64 の boot test PASS。実機は未実施） | p001 | 済み（Guardrail の表） |
-| [ws048-p005](phase005/phase.md) | xHCI を rpi4 で | uncleared（build と glue の準備は済み。有効にするのは p004 の後） | p002・p003・p004 | 不要 |
-| [ws048-p006](phase006/phase.md) | USB の hub と HID キーボードで console に入力 | planned | p005 | 不要 |
-| [ws048-p007](phase007/phase.md) | 規約の全文の確認と回帰、実機の結果の取りまとめ | planned | p002〜p006 | 不要 |
-| [ws048-p008](phase008/phase.md) | ユーザー報告のPCIe最初のMMIO読み出し例外を修正 | cleared（ユーザー実機でlogin到達、2026-10-11） | 現在main/config | API変更なし |
-| [ws048-p009](phase009/phase.md) | USB入力のactivationと選択済みclass driverの接続 | uncleared（source/build済み、実機入力待ち） | 現在main/config | API変更なし |
-| [ws048-p010](phase010/phase.md) | VL805起動時の非coherent DMA size契約と最終規約/build | cleared（source/buildのみ、実機未実施） | 現在main/configと実機写真 | API変更なし |
-| [ws048-p011](phase011/phase.md) | VL805 command completion / PCI DMA aliasとdoorbell flush | cleared（source/buildのみ、実機USB未確認） | main402598d27 / 実機log | HAL API不変 |
-| [ws048-p012](phase012/phase.md) | Command待機の実時間上限とIRQ/CPU進行 | cleared（限定source/host/build、実機復旧未確認） | main9a0ddc6cb / 起動停止写真 | HAL API不変 |
-| [ws048-p013](phase013/phase.md) | IRQ acknowledgement / EHB・fault containment | cleared（限定source/host/build、実機未確認） | main4b70292ef / doorbell complete後の実機停止 | HAL API不変 |
-| [ws048-p014](phase014/phase.md) | ARM64 kernel worker IRQ entry | cleared（限定source/build、実機未確認） | main2008584ae / irq=0 physical log | HAL API不変 |
-| [ws048-p015](phase015/phase.md) | Expected cancellation logging | cleared（限定source/build、実機log未確認） | p014 user boot success | HAL API不変 |
-
-## 2026-10-11 port reset後の起動停止
-
-Userのフリーズ写真で[p012](phase012/phase.md)/[限定Queue](codex-command-freeze-20261011.md)を開始。SSHはtimeout、実機の正確な停止位置は未確認。既存command_exの長いIRQ-off pollを実時間で制限し、IRQ許可callerでは保護区間外のCPU進行を確保する。p011の限定source/build clearanceと未達のUSB実機受入は保持。boot0/CI承認待ちcommitは別branchに保存したまま混ぜない。WS incomplete、共有投影/GitHub Q1 pending。
-
-p012 terminal: 5秒のcounter deadline、IRQ許可callerの保護区間外IRQ/CPU進行、Enable Slot doorbell前後logを実装。production関数をそのまま抽出する9 host scenariosと現在config warning0 kernel/vmunix check PASS、最終changed-source全文規約review/diff-check済み。[証拠](tests/command-freeze-20261011.md)。User「そもそもフリーズしてSSHは起動してないです」を受領、SSH確認は保留。実機boot/USB受入は未確認、main統合は別途具体的commitの承認待ち。
-
-注: QEMU の raspi4b は PCIe を持たない（DTB の PCIe の node を disabled にする）。p002〜p006 の動作の確認は実機だけで、
-このリポジトリに実機の試験の仕組みは無い。実機の確認はユーザーに頼み、行うまで「未実施」と書く。
-
-## 2026-09-27 の実行のまとめ（サブエージェント、worktree の branch）
-
-- p001〜p004 cleared（実機の確認は未実施）。p005 は承認を要らない部分まで進め、uncleared（config を有効にするのが残り）。p006・p007 は planned。
-- host 試験: `make -f plan/ws048/tests/host-test.mk run DTB=<firmware の bcm2711-rpi-4-b.dtb>`（FDT・brcmstb の register model・mailbox の model・DMA の 2 通り。ASan・UBSan）。
-- QEMU raspi4b は PCIe を disabled にするので、QEMU で確かめたのは「起動を壊さない」ことだけ。PCIe・VL805・USB の動作は実機だけ。
-- rpi4 の image の `make -j16` はこの branch の起点で userland（`src/rtld/rtld.c` と `include/libc/elf.h` の macro の再定義）で止まる（WS048 の外）。
-  boot test は main の `build/ws053-rpi4-full/hdd-image.img`（2026-09-25）を SD にし、kernel だけをこの branch の build にした。
-
-## Future Work の候補（2026-09-27 に plan/future-work.md の F-025〜F-029 へ移した）
-
-| 候補 | 理由・きっかけ |
-| --- | --- |
-| brcmstb の spread spectrum（`brcm,enable-ssc`、design.md §2.4） | DT が求めるが、link と USB には要らない。実機で link を確かめた後 |
-| brcmstb の MSI（SPI 148 の受け口） | INTx で足りる。PCI の core の MSI の経路は HAL の LAPIC 向けの口を使うので、host bridge が address と data を出す形が要る |
-| arm64 の `hal_space_unmap_device()` | 今も `hal_space_unmap(HAL_SPACE_SYS, ...)` で失敗を返す。PCIe は対応を外さないので影響は無い |
-| HAL の mailbox の FULL の確認の register | `src/hal/arm64/bsp-rpi4/mailbox.c` が mailbox 0 の status（`+0x18`）を読む。正しくは mailbox 1（`+0x38`）。実害は出ていない（design.md §7） |
-| 有線 LAN（GENET） | きっかけの報告（2026-09-24）で、有線 LAN の driver も無いと分かった。別の WS |
-
-## 要検討・ブロック（2026-10-05）
-
-ユーザーの指示で要検討の状態にしてブロックする。ユーザーと方針を決めるまで Queue に入れない。
-
-## 2026-10-11 起動例外の限定再開
-
-ユーザーの最新の写真と修正指示でp008/独立Queueを追加。全USB計画を自動で再開せず、このboot例外と関連MMIO mappingのみを修正/build確認する。旧p002〜p004の実機未確認は保持。実機の受入はユーザー確認、共有投影/GitHubはQ1 pending。
-
-p008のsource/host/buildは完了、実機再起動結果がないためuncleared。RAM判定のunsigned減算のunderflowを除きMMIOをDeviceでmapし、PCIe revision読出しをreset/SerDes起床後へ移した。警告0 kernel buildとbefore/afterのhost確認PASS。[証拠](tests/rpi4-pcie-boot-20261011.md)。旧WSのUSB実機acceptanceは未達のまま、具体的commitのmain統合承認とユーザー実機確認を待つ。共有投影/GitHubはQ1 pending。
-
-## 2026-10-11 USB / Graphical login限定修正
-
-ユーザーの指示で[p009](phase009/phase.md)と[独立Queue](../ws048/codex-usb-session-queue.md)を追加。USB入力と選択済みclassのglue、Graphical loginのfirmware command lineを補う。ロゴ/kernel animationは明示延期。過去の実機未確認・WS全体の受入は保持。共有投影/GitHubはQ1 pending。
-
-p008 follow-up: user confirms login and VC4 initialization after main fbcb2b543, so only that boot-exception Phase clears. Original attempt/outcome remains historical, new USB/desktop work is p009; WS048 full physical acceptance stays incomplete.
-
-p009 terminal: HID pending activationと選択classの不足を補完、現在configのkernel/full image buildとimage check、最終差分全文review PASS。USBの現在の実機動作は未確認なのでuncleared。[証拠](tests/rpi4-usb-session-20261011.md)。共有投影/GitHubはQ1 pending。
-
-## Main integration follow-up / 2026-10-11
-
-User explicitly instructed「mainにマージしてください。」for source commit `8c93ba8e026c3d3e8e2bfe3f22c5ffe430e9dd62`. Main was clean at `fbcb2b543` and fast-forwarded to that exact commit without conflict. Read-back confirmed all 15 integrated files byte-identical to the verified worktree. Owned-worktree `make -j16 build/arm64/vmunix` succeeds with no further source changes; prior full image/option checks remain applicable. Integration is complete; earlier integration-pending text is historical. USB input and greeter physical checks remain pending, with no acceptance-state promotion from merge alone. Shared Master/Queue/history/cache/GitHub reconciliation remains Q1 pending; no push.
-
-## 2026-10-11 実機初期化失敗の修正開始
-
-[ws048-p010](phase010/phase.md)を追加、VL805 DMA size契約を修正する。先行のsource/build clearanceと未達の実機受入を区別し保持。[限定Queue](../ws203/codex-repair-20261011.md)。既存HAL APIの補完のみ、共有投影はQ1 pending。
-
-### 修正source/build結果
-
-[ws048-p010](phase010/phase.md)の限定source/build criteria cleared。GIC trigger/MMIO共有alias、非coherent DMAのpage backingを修正し、現在config warning0 kernel buildと限定host checks PASS。[証拠](../ws203/tests/initialization-repair-20261011.md)。実機DHCP/SSH・USB入力は未確認なのでWSはincomplete、次は新imageでuser受入。main統合と共有投影はpending。
-
-## Main integration / 2026-10-11
-
-Current user「main仁藤剛してください。」を直前の7b16e364c統合承認への回答（mainに統合してください）として受領。clean main6b722f47eから修正7b16e364c53761f96a982797f88793f7f520dbb6へfast-forward統合、競合なし。先行read-only調査記録08e919a08も含む。main上で全8 source/test SHA256一致、source diffなし、現在config.mkが検証済みworktreeとbyte-identicalであることをread-back確認。前turnのwarning0 kernel buildと限定host checksが統合sourceに適用されるため追加のbuild/試験は行わない。sourceのmain統合は完了、先行の承認待ち表記は当時の履歴。新imageでの実機DHCP/SSH・USB入力受入は未達のまま、WS203/WS048はincomplete。pushなし。共有Master/Queue/history/FutureWork/GitHubはQ1投影保留。
-
-## 2026-10-11 Enable Slot timeoutの限定修正
-
-実機でcontroller start成功を確認し、p010のsource/build clearanceは保持。Enable Slot timeoutが新しい停止位置。[p011](phase011/phase.md)と[限定Queue](codex-command-repair-20261011.md)を追加。USB入力/WS受入は未達。共有投影/GitHubはQ1 pending。
-
-### p011 source/build result
-
-[p011](phase011/phase.md)の限定source/build criteria cleared。4/8GiB PCI aliasをCPU backingと分け、全doorbell readbackとtimeout状態logを追加。既存constraints layout/identity API/HAL/UAPIは維持。限定ASan/UBSan/LSan modelsと現在config warning0 kernel build、最終全文規約review PASS。[証拠](tests/command-repair-20261011.md)。新kernelのUSB復旧は未確認、WS incomplete。GPU実機logの2停止点は同証拠に保存し、GPU sourceは未変更。main承認・共有投影/GitHubはQ1 pending。
-
-### p011 main integration / 2026-10-11
-
-Current user「mainへ統合する」で具体的commit `16c139e9f` を承認。clean main `402598d27` から同commitへfast-forward、競合なし。全6 source/test SHA256一致、source差分なし、config.mkは検証worktreeとbyte-identical。警告0 kernel buildと限定host checksは統合sourceにも適用される。main統合は完了し、先行の承認待ちは当時の履歴。新kernelでのUSB入力受入は未確認でWS incompleteを維持。GPU source変更なし。push・実機更新/rebootなし。共有Master/Queue/history/cache/GitHub投影はQ1 pending。
-
-## Main integration / 2026-10-11
-
-Current user「mainにマージしてください。」approves the exact USB repair commit `17898a7465b9125bb5f4afef9539cdeb66e9b162`. Clean main `9a0ddc6cb` fast-forwarded to this commit without conflict. Read-back confirms all seven integrated files byte-identical to the verified private worktree; config.mk matches the warning0 arm64 build configuration and xHCI SHA256 matches the recorded final source hash. Previous nine host scenarios and kernel/raw-image validation apply to this identical source; no redundant rebuild/test. Source integration is complete; earlier integration-pending statements are historical. Physical boot/USB recovery remains unverified and WS048 stays incomplete. Pending boot0/CI commits remain separate. No push or remote update/reboot. Shared Master/Queue/history/cache/GitHub projections remain Q1 pending.
-
-## 2026-10-11 doorbell complete後の停止
-
-User新報告で[p013](phase013/phase.md)/[限定Queue](codex-irq-repair-20261011.md)を開始。p012の限定source/build clearanceは保持し、実機boot/USB復旧は未達と記録。doorbell readbackは戻った。IRQ acknowledgement/fault pathsの確認を進める。共有投影/GitHub Q1 pending。
-
-### p013 terminal / 2026-10-11
-
-IRQ ack/readback、空ringを含むEHB完了、1 ringのIRQ処理上限、fault時の新規操作停止とcommand EIO、RPi4 wait/resume stage logを実装。[証拠](tests/irq-repair-20261011.md)。最終changed-source規約review、production抽出host 11+8 scenarios、現在config arm64 warning/error 0 kernel/raw-image build/check、diff-check PASS。実機の原因確定・USB復旧は未確認、WS incompleteを維持。Main統合承認と共有投影はpending、push/実機更新なし。
-
-
-## Main integration follow-up
-
-User explicitly approved「mainへ統合する」for `a1acbc44aac7384b4d0dce8e646ac19ca5e72980`. Clean main `4b70292ef` fast-forwarded to that exact commit without conflict. All eight integrated files were read back byte-identical to the verified private worktree; current config.mk is identical, and xHCI source SHA256 matches the final build evidence. The 19 focused host scenarios and warning0 arm64 kernel/raw-image checks therefore apply to the integrated source; no redundant rebuild. Earlier integration-pending statements record the prior state. Physical boot/USB recovery remains unverified and WS048 remains incomplete. No push or remote deployment/reboot. Shared Master/Queue/history/cache/GitHub projections remain Q1 pending.
-
-## 2026-10-11 p013後の実機フリーズ
-
-新写真はirq=0のままcompletion poll resumedまで進行。p013の限定source/build clearanceは履歴として保持するが、USB復旧は未達。[p014](phase014/phase.md)で初回ARM64 kernel workerのIRQ有効化欠落を修正し、event消費の残りの停止点を区別する。新規Queueはこの範囲だけ。共有投影/Q1 pending。
-
-### p014 terminal
-
-初回ARM64 kernel workerのIRQ有効化欠落を修正、poll logの意味を訂正してevent lock/readback前後を追加。[証拠](tests/thread-irq-20261011.md)。生成命令の順序確認、既存host 11 cases、current config warning0 kernel/raw-image build/check、final changed-source規約review/diff-check PASS。実機boot/USB復旧は未確認、WS incomplete。main承認と共有投影はpending。
-
-
-## Main integration follow-up / 2026-10-11
-
-User explicitly approved「mainに統合してください」for `7723c323fe90866a424c49a852ad38df9ad08412`. Clean main2008584ae fast-forwarded to that exact commit without conflict. All six integrated files were read back byte-identical to the verified worktree, and both changed source hashes plus current config.mk match the recorded warning0 build evidence. Prior instruction-order check, 11 host scenarios and arm64 kernel/raw-image validation apply to this identical source; no redundant rebuild. Main integration is complete; earlier approval-pending text is historical. Physical freeze recovery and USB input remain unverified, WS048 incomplete. No push or remote deployment/reboot; shared Master/Queue/history/cache/GitHub projections remain Q1 pending.
-
-## 2026-10-11 実機起動成功 / cancellation log
-
-User confirms boot success after p014. Boot freeze recovery is accepted at that level; USB入力全体の受入は未確認。completion26の正常stopを毎回表示する診断を[p015](phase015/phase.md)で抑制する。共有投影/Q1 pending。
-
-### p015 terminal
-
-通常cancel中のStopped(26/27)ログを抑制、ring snapshotはcancel失敗時だけに変更しIRQ保護を追加。[証拠](tests/cancel-logging-20261011.md)。最終changed-source規約/所有権review、current-config warning0 arm64 kernel/raw-image check、diff-check PASS。通常の転送と監視周期は変更なし。main承認/実機log確認はpending、WS incomplete。
-
-## 自動統合の承認と統合結果（2026-10-11）
-
-ユーザー「mainへのコミットは自動でお願いします。」、確認回答「今後は自動で統合してください。」により、このセッションの承認済み作業のmainコミット/統合は以後自動実施する。従来のQ1担当による個別main統合確認をこの指示で置換する。pushや実機更新の指示ではない。共有記録への投影は引き続きQ1へ保留。
-
-USB `3e9ace7b9` とGPU `461906448` を専用worktreeでmerge `afe01157f` にまとめ、現在のconfig.mkで `make -j16 build/arm64/vmunix` を実行。warning0/error0、arm64 ELF/raw-image check PASS。USB/GPU sourceが各個別検証版と一致することも確認。clean main `211be00dc` を `afe01157f` へfast-forwardし、変更17path全てが検証済みworktreeとbyte一致した。main統合完了。実機の新core判定/待ち時間/USBログ抑制は未確認で、WSの残る実機条件は保持。push・実機更新/再起動は未実施。
-
-最新USBログでdevice1/port1 `2109:3431` class09、usb-hub、4portsの登録を確認し、slot1の反復Stopped通知がhub監視と整合することを確認。USBキーボードの入力成功を意味しない。GPUは旧版のV7〜V10成功とrender node登録までユーザー確認済み。
+## 目的
+
+実機の Raspberry Pi 4 で USB の Type-A の port が使え、USB キーボードで console に入力できる。きっかけは 2026-09-24 ユーザー「USBが使えないみたいです。」（ws044-p009 で実機が login prompt まで起動した後）。要る物: BCM2711 の PCIe の root complex（brcmstb）、VL805 の firmware の mailbox の通知、非 coherent な DMA、xHCI の rpi4 での動作、hub・HID。
+
+## 結果（2026-10-13 close）
+
+- 設計（p001）: [design.md](design.md)（brcmstb の初期化、VL805、DMA、割り込み）。`src/drivers/pci/pci-brcmstb.c` の注から参照されるので残す。
+- FDT の reader、arm64 の device mapping の修正、brcmstb の host bridge と PCI の backend（p002）、firmware の mailbox と VL805 の通知（p003）、非 coherent な DMA（p004、承認済みの hal.h の差分 `hal_pmem_map_uncached` を適用）。
+- 2026-10-11 の実機の不具合の修正（p008・p010〜p015、ユーザーの写真と log で）: PCIe の最初の MMIO の読み出しの例外、VL805 の DMA の size の契約と page の backing、PCI の DMA の alias と doorbell の flush、command の待ちの実時間の上限、IRQ の acknowledgement と fault の封じ込め、ARM64 の kernel worker の IRQ の有効化、正常な cancel の log の抑制。p014 の後に実機の起動の成功をユーザーが確認。最新の log で USB の hub（`2109:3431`、4 port）の登録まで。
+- host 試験: `make -f plan/ws048/tests/host-test.mk run DTB=…`（FDT・brcmstb・mailbox・DMA、ASan・UBSan）。WS141・WS203・WS206 も使っている。
+
+## 制限・残り
+
+- USB キーボードの実機の入力は未確認のまま（WS の目的は未達で close）。xHCI の rpi4 での有効化（p005）、hub と HID で console 入力（p006）、規約の全文と回帰（p007）、USB の入力の活性化（p009 の実機）は canceled。
+- QEMU の raspi4b は PCIe を持たないので、PCIe・VL805・USB の確認は実機だけ。
+- Future Work の F-025〜F-029（spread spectrum、MSI、`hal_space_unmap_device()`、mailbox の FULL の register、GENET）はこの WS から移したもの（2026-09-27）。続けるなら rpi4 の USB の新しい WS の候補（勝手に移していない）。
+- HAL の承認済みの差分 `proposed/hal-pmem-uncached.diff` は Guardrail の承認の表（`plan/guardrail.md` 85 行）から参照される。消すか残すかは Q1。
+
+## Phase
+
+| Phase | 内容 | 最終の状態 |
+| --- | --- | --- |
+| ws048-p001 | 調査と設計 | cleared |
+| ws048-p002 | FDT の reader、arm64 の device mapping、brcmstb の host bridge と PCI の backend | cleared（実機は未実施だった） |
+| ws048-p003 | firmware の mailbox と VL805 の firmware の通知 | cleared（実機は未実施だった） |
+| ws048-p004 | 非 coherent な DMA（`hal_pmem_map_uncached` と `dma.c`、承認済み） | cleared（2026-09-27） |
+| ws048-p005 | xHCI を rpi4 で | canceled（2026-10-13、ユーザーの指示で WS を close。旧: uncleared） |
+| ws048-p006 | USB の hub と HID キーボードで console に入力 | canceled（2026-10-13、同上。旧: planned） |
+| ws048-p007 | 規約の全文の確認と回帰、実機の結果の取りまとめ | canceled（2026-10-13、同上。旧: planned） |
+| ws048-p008 | PCIe の最初の MMIO の読み出しの例外の修正 | cleared（2026-10-11、ユーザーの実機で login） |
+| ws048-p009 | USB 入力の activation と選んだ class の driver の接続 | canceled（2026-10-13、同上。旧: uncleared、source・build 済みで実機の入力待ち） |
+| ws048-p010 | VL805 の起動の時の非 coherent な DMA の size の契約 | cleared（source・build、実機は未実施だった） |
+| ws048-p011 | VL805 の command の完了・PCI の DMA の alias と doorbell の flush | cleared（source・build） |
+| ws048-p012 | command の待ちの実時間の上限と IRQ・CPU の進行 | cleared（source・host・build） |
+| ws048-p013 | IRQ の acknowledgement・EHB・fault の封じ込め | cleared（source・host・build） |
+| ws048-p014 | ARM64 の kernel worker の IRQ の entry | cleared（source・build、後に実機の起動の成功をユーザー確認） |
+| ws048-p015 | 正常な cancel の log の抑制 | cleared（source・build、実機の log は未確認だった） |
+
+Phase の directory とこの WS だけの試験は、完了の規則（AGENTS.md）で削除する（git の履歴に残る、削除は Q1）。他の WS が使う host 試験（`tests/host-test.mk` と `*-host-test.c`）と `design.md` は残すか `plan/tools/rpi4/` へ移す（Q1）。

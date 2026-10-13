@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws181-p011 -->
 # ws181-p011: bar の仮想 desktop の island を bar の中央に（dock の時は今の位置）
 
-Status: in-progress（2026-10-08 夜 P2、実装・build。QEMU は T1、撮影の PNG を Q1 からユーザーへ）
+Status: cleared（2026-10-13 ユーザー（AskUserQuestion）「今の動きで OK」、ws.md の表に合わせた。旧: in-progress、実装・build、QEMU は T1、撮影の PNG をユーザーへ）
 Disposition: normal
 Parent: [WS181](../ws.md)
 Queue: Q1 の投入（2026-10-08 夜、通常の優先度、承認済み）

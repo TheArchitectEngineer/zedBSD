@@ -2,7 +2,7 @@
 
 # ws083-p007: VCS0 の engine 単位の reset（GRDOM_MEDIA）と video の hang の回復
 
-Status: in-progress（2026-10-10 P2: host の範囲は全部済み。受け入れの残りは実機の人工の hang からの回復だけで、ユーザーが hang の image（下の「2026-10-10 実機の手順」）で起動し、Q1 が SSH で流す）（旧: in-progress（q876、P2。2026-10-08 夜 host で進められる範囲を実装と host 試験。実機の人工の hang からの回復は 5330 が戻ってから T1））
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: in-progress、host の範囲は全部済み、受け入れの残りは実機の人工の hang からの回復だけ。ws.md の表は 2026-10-13 ユーザーの実機の確かめ「OKでした」で cleared）
 Disposition: normal
 Parent: [WS083](../ws.md)
 Queue: q876（Q1 の dispatch、承認済み）

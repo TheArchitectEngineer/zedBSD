@@ -4,7 +4,7 @@
 
 Phase ID: `ws049-p008`
 Parent: [WS049](../ws.md)
-Status: in-progress（2026-10-04。実装と host の試験は済み。実機の確認（ユーザーの次の UAT）待ち。実機の確認が済むまで cleared にしない）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: in-progress、実装と host 試験は済み、5330 の実機の確認（BUG-165）の UAT 待ち。ws.md の表は 2026-10-13 ユーザーの実機の確かめ「OKでした」で cleared）
 Phase disposition: normal
 Queue: q677 / q677-i01（P1 generation15）。承認: 2026-10-04 user「次の新規実装項目は、USB-C の DisplayPort Alternate Modeの実現を目標にします。…共通のpredecessorがAMLですね。…実行は17時以降に行います。」と 17 時の体制の指示
 Bug: [BUG-165](../../bugs/BUG-165.md)（共通の根の候補: [BUG-119](../../bugs/BUG-119.md)・[BUG-156](../../bugs/BUG-156.md)・[BUG-167](../../bugs/BUG-167.md)・[BUG-159](../../bugs/BUG-159.md)）

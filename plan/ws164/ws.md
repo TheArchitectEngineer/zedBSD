@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws164 -->
 # WS164: OS の起動時の Welcome の画面
 
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p001 を cleared。2026-10-08 q910 P2 の照合: p002 cleared（T1-269、表を直した）、p001（設計、H1〜H4 決定済み）は Q1 の判定、p003（規約）はベータ3。実機は UAT。旧: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 1 LW。p001 の設計の第 1 版あり））
+Status: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p003）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p001 を cleared。2026-10-08 q910 P2 の照合: p002 cleared（T1-269、表を直した）、p001（設計、H1〜H4 決定済み）は Q1 の判定、p003（規約）はベータ3。実機は UAT。旧: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 1 LW。p001 の設計の第 1 版あり）））
 Master: [master](../master.md)
 Primary Milestone: MG006
 

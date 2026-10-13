@@ -3,40 +3,33 @@
 # WS200: Settings の Users の頁のパスワード変更のウィザードと認証方式の選択
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。全 Phase が cleared。旧: incomplete、p002 は 5330 の UAT 待ち）
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q922（P1、2026-10-10、WS199 の後）
-Target: **ベータ2**（2026-10-10 ユーザー、クリック「ベータ2 に入れる」）
-Resume point: p001 の T1（T1-（Q1）、WS199 p004 と同じ行）の判定 → p002（5330 の UAT）。
+Queue: なし
 <!-- awesome-plan-current:end -->
 
-## 由来（2026-10-10 ユーザーの UAT）
+## 目的
 
-「SettingsのUsersのページには、パスワード変更ボタンをつけて、ウィザード式にする。」
-「SettingsのUsersのページには、認証方式のボタンをつけて、Password, PIN, Security Keyにチェックをつけて変更できる。それ以外のログイン方法は、greeter/lock画面では使えなくなる。コンソールのログインではパスワードだけ使える。」
+ユーザー（2026-10-10 の UAT）「SettingsのUsersのページには、パスワード変更ボタンをつけて、ウィザード式にする。」「SettingsのUsersのページには、認証方式のボタンをつけて、Password, PIN, Security Keyにチェックをつけて変更できる。それ以外のログイン方法は、greeter/lock画面では使えなくなる。コンソールのログインではパスワードだけ使える。」
 
-## 依存（2026-10-10 Q1、WS199 review-2 N15）
+## 結果（2026-10-13 完了）
 
-WS199 i01 の popup の部品（userland/desktop/settings/dialog.c）を使う。account の設定は /etc/passkey の 1 行 `<name>:<uid>:options:methods=..:key-pin=0|1:key-touch=0|1` を WS199 と共有し、各々自分の field だけを変えて書き戻す。
+- Users の頁の「Change Password」のウィザード（今の password → 新しい password を 2 回 → 完了）と「Sign-in Methods」（Password・PIN・Security Key の checkbox、1 つは残す、登録の無い方式は選べない）。WS199 の popup の部品（`userland/desktop/settings/dialog.c`）と /etc/passkey の options の行の `methods` を使い、保存は特権の側（sessiond・/sbin/passkey）。
+- 確認: host 試験、QEMU の T1-525（Change Password・Sign-in Methods の全手順）・T1-528（手順 8）。5330 の UAT（p002）は 2026-10-13 ユーザーの指示（上の原文）で確認済みの扱い。
 
-## 目標
+## 制限・移管
 
-- Users の頁に「Change Password」の button、ウィザード（今の password → 新しい password を 2 回 → 完了、処理中は操作できない表示）。
-- Users の頁に「Sign-in Methods」の button: Password・PIN・Security Key の checkbox。外した方式は greeter と lock の画面で出さず受けない。console の login・su・sudo・SSH は今どおり password だけ（docs/architecture/security.md の規則）。
-- 少なくとも 1 つは残す（全部外せない）。PIN・Security Key は登録が無ければ選べない。
-- 選択の保存は sessiond・/sbin/passkey の側（root の持つ設定、/etc/passkey 等）で、Settings は特権を持たない。
-
-## 完了の条件
-
-- QEMU の AAT（password の変更、方式の選択で greeter・lock の選択肢が変わる）、PNG をユーザーに。
-- 5330 の UAT。
+- console の login・su・sudo・SSH は今どおり password だけ（docs/architecture/security.md の規則）。
+- 規約の全文の見直しの Phase は無い（規約の整形はベータ3、2026-10-08 ユーザー）。
 
 ## Phase
 
-| Phase | 目的 | Status |
+| Phase | 内容 | 最終の状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | Change Password のウィザードと Sign-in Methods（WS199 の dialog.c と options の行の methods）、host 試験 | cleared 候補・test-wait（9b2ac1b99） |
-| [p002](phase002/phase.md) | 5330 の UAT | planning |
+| ws200-p001 | Change Password のウィザードと Sign-in Methods、host 試験 | cleared（2026-10-10 Q1、T1-525・T1-528） |
+| ws200-p002 | 5330 の UAT | cleared（2026-10-13 ユーザー、上の原文） |
+
+Phase の directory とこの WS だけの試験は、完了の規則（AGENTS.md）で削除する（git の履歴に残る、削除は Q1）。

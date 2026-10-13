@@ -9,7 +9,8 @@ Related Milestones: —
 Objectives: O1
 Parent: [Master](../master.md)
 Queue: 未割当
-Target: ベータ3 以降（2026-10-09 Q1 の提案、時期はユーザーの判断で確定）
+Target: **ベータ2**（2026-10-13 ユーザー「WS196、WS172、WS009はベータ2に入れます。」。旧: ベータ3 以降（2026-10-09 Q1 の提案））
+注（2026-10-13 Q1 の依頼の作業）: p001 の依存の WS195 は 2026-10-13 にユーザーの指示で cancel（account-admin は base に残る）。p001 の依存（WS195 p001 の D7）と E4 の前提を確かめ直す
 Resume point: p001 の E1〜E6（ユーザーの判断、[phase.md](phase001/phase.md) §4）。
 <!-- awesome-plan-current:end -->
 

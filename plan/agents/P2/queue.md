@@ -54,3 +54,9 @@ Next（予約）: debug を続ける（BUG-147 の後: 優先度の高い bug。
 | P2-merge q864 p002 | q864-i01 | dfeea795f（base 0f16839ac） | wayland/{lock-swipe.{c,h},greeter.c,seat.c,input.c,kwl.h,Makefile*}・locale/ja/wayland.tr・plan/ws187 | integrated dd562b688（2026-10-08、猶予 300 秒は案） |
 | P2-merge q864 p003 | q864-i01 | da62a2f0d・337b7d4e2・6a1cf2b6c（base dfeea795f） | wayland/greeter.c・locale/ja/wayland.tr・plan/tools/aat/scenarios/helpers_desktop.py・tests/scenarios/desktop/lock/・plan/ws187 | integrated ef0ff8a66（2026-10-08、T1 の試験待ち） |
 | P2-merge q864 sleep | q864-i01 | 880ce4cbf | wayland/{sleep.c,lock-swipe.c}・plan/ws187 | integrated（2026-10-08 7bbfb70c8 の前の merge） |
+
+2026-10-13 夜 / P2 の新しい世代（N=3）: ユーザー「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。N=3で、P2を追加し、実装を担当してもらいます。」→ ベータ2 の残りの実装（plan/beta2.md の「ベータ2 の残りの工数」）を順に。worktree /home/awe/zedBSD-worktrees/p2、branch agent/p2-ws215（main 58036a90b に合わせた）。
+- q949: [WS157](../../ws157/ws.md) p015（thumbnail の jail）・p017（libjpeg の縮小 decode）。State: active。
+- 予約 q950: [WS172](../../ws172/ws.md) p004（security chip の調べ）・p004b（/dev/security0 と TPM の設計）。
+- 予約 q951: [WS046](../../ws046/ws.md) の残り（p014 の make check の判断、p007）。
+- 予約の続き（Q1 が順を決める）: WS004 p039、WS102 p011、WS145 p005、WS161 の build、WS156 p006、WS051、WS081、WS090 p026、WS033 p001。

@@ -2,7 +2,7 @@
 
 # ws099-p012: C1 の 5330 の目視と、5330 での BUG-119・BUG-122 の確かめ（L2）
 
-Status: planned（2026-10-01 手順を追記。Queue なし）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: planned、5330 の C1 の目視と BUG-119・BUG-122 の確かめ（ユーザー 15 分）。SSH の sessiond の log の確かめは未実施）
 Disposition: normal
 Parent: [WS099](../ws.md)
 Queue: なし

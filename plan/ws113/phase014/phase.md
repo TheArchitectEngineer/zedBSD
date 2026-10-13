@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws113-p014 -->
 # ws113-p014: 拡張の時に個々の display を off にする（Settings の Display の頁）
 
-Status: test-wait（5330）。2026-10-08 q902 P1 の照合: QEMU の機能は T1-370 で ok（試験の期待は Q1 が直した）。5330 の UAT で eDP の off が BUG-266（DP-alt の TC への付け替えが WARN_ON で失敗、session が落ちる、P2 最優先）。直した後に UAT（旧: test-wait（2026-10-08 T1-370: 機能は全 ok、試験の期待の 2 行を Q1 が直した。5330 の実機の UAT 待ち））
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: test-wait（5330）、QEMU の機能は T1-370 で ok。5330 の eDP の off の BUG-266 は resolved（2026-10-08 夕）、直した後の UAT が残り）
 Disposition: normal
 Parent: [WS113](../ws.md)
 

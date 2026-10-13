@@ -2,7 +2,7 @@
 
 # ws159-p002: LPSS の DesignWare I2C と ACPI の I2cSerialBus・GpioInt
 
-Status: in-progress（2026-10-05 P1 generation17 / q713-i01。実装・host の試験・build まで。実機は p003 と一緒、QEMU は T1 の試験待ち）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: in-progress、実装・host・build と T1-113 の boot まで（QEMU には LPSS が無い）、5330 の実機の確認が残り。BUG-210 の後に実機で touchpad が動いた（2026-10-06 ユーザー））
 Disposition: normal
 Parent: [WS159](../ws.md)
 Queue: q713 / q713-i01（設計 [p001](../phase001/phase.md) の D2・D3）

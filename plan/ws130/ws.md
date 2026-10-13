@@ -3,7 +3,7 @@
 # WS130: IPv6 の network stack
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p001 を cleared。2026-10-08 q910 P2 の照合: p002〜p007 cleared、p008 は T1-316 PASS で 5330 の DHCPv6 の UAT 待ち、p001（設計）は Q1 の判定（後続が実装済み））（2026-10-06: p001・p002 cleared（p002 は T1-206b PASS）、p003 cleared（T1-243）、次は p004 libc）
+Status: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p009。p008 の 5330 の UAT は上の指示で cleared）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p001 を cleared。2026-10-08 q910 P2 の照合: p002〜p007 cleared、p008 は T1-316 PASS で 5330 の DHCPv6 の UAT 待ち、p001（設計）は Q1 の判定（後続が実装済み））（2026-10-06: p001・p002 cleared（p002 は T1-206b PASS）、p003 cleared（T1-243）、次は p004 libc））
 Primary Milestone: MG005
 Related Milestones: MG002（POSIX の socket API）
 Objectives: O1, O3
@@ -48,5 +48,5 @@ Resume point: p001（2026-10-05 P1 が設計の第 1 版を書いた。UAPI（H1
 | [p005](phase005/phase.md) | 道具と `net.conf` の `ipv6:`（`net`・`ifconfig`・`route`・`ping`・`host`・`nslookup`） | cleared（2026-10-07、T1-290） | p003、p004、H3 |
 | [p006](phase006/phase.md) | networkd の SLAAC（link-local・RFC 7217・RFC 8981・RA・既定の route・RDNSS・DNSSL） | cleared（2026-10-07、T1-296） | p002、p005、H4・H5 |
 | [p007](phase007/phase.md) | `dhcpc -6`（stateless・stateful、DUID、Renew） | cleared（2026-10-07、T1-300） | p006、H7 |
-| [p008](phase008/phase.md) | T1（slirp と tap+netns の dnsmasq を 1 つの QEMU で）と 5330 の UAT | QEMU は T1-316 PASS、5330 の UAT は保留 | p007 |
+| [p008](phase008/phase.md) | T1（slirp と tap+netns の dnsmasq を 1 つの QEMU で）と 5330 の UAT | cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: test-wait、QEMU の dnsmasq の試験は T1-316 PASS、5330 の DHCPv6 の UAT が残り（保留）） | p007 |
 | p009 | 全文規約の見直し | planning | p008 |

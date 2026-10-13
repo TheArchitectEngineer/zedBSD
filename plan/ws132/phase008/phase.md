@@ -2,7 +2,7 @@
 
 # ws132-p008: compositor の電源ボタン・蓋の動作
 
-Status: in-progress（2026-10-05 P1 generation17 / q724。蓋の分（ベータ1）を実装し、build と host の試験まで。電源ボタンの S0i3 は WS052 の後。実機の確認まで cleared にしない）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: in-progress、蓋の分を実装・build・host 試験（29 checks）、QEMU は蓋が無く未実施、実機の確認の UAT 待ち。電源ボタンは WS182（D1 の置き換え））
 Disposition: normal
 Parent: [WS132](../ws.md)
 Queue: q724（Q1 の投入、蓋の分を先に）

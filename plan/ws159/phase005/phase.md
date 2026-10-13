@@ -2,7 +2,7 @@
 
 # ws159-p005: 実機（Latitude 5330）の UAT
 
-Status: planned（2026-10-05 P1 generation17: 手順書と image の config を用意した。image の build と UAT は Q1 が朝にユーザーと行う）
+Status: planned（実機の UAT の分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。残りは全文の規約の確認（p005 の後半）でベータ3）
 Disposition: normal
 Parent: [WS159](../ws.md)
 Queue: Q1 の指示（2026-10-05、UAT の準備）

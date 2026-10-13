@@ -16,7 +16,6 @@ guide.
 | Problem | What to do | Bug |
 | --- | --- | --- |
 | Beta 2 is tested on the Dell Latitude 5330 only. Other computers, the Latitude 5320 among them, may start but are not tested. | Use a Latitude 5330. | — |
-| The firmware's ACPI table (DSDT) of the Latitude 5330 is not read completely. Battery, lid and power button events can be missing or wrong. | Keep the computer on AC power. | BUG-165 |
 | On battery, drawing slows down to a few frames a second, and the computer stops without a warning when the battery runs out. | Keep the computer on AC power. | BUG-159 |
 | **Shut Down** may leave the computer powered on. | When the screen stays on after Shut Down, hold the power button until the computer turns off. | BUG-119 |
 | With an HDMI display connected, the HDMI display stays dark while the lid is closed. | Keep the lid open. To use only the external display, turn the built-in one off in Settings → Display. | BUG-255 |

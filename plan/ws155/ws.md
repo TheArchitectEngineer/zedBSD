@@ -3,13 +3,13 @@
 # WS155: Keiland の app: カレンダー・スケジューラ・オーガナイザ（まず簡単な物）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p000 cleared。 2026-10-08 q902 P1 の照合: p001〜p004 cleared（2026-10-07 Q1、T1-297）。ベータ2 の範囲の残りは p000 の扱いだけ、続きはベータ3）
+Status: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p005）。旧: incomplete（2026-10-13: ユーザー「UATは終わっています。OKでした。」で p006 を cleared。残りは p005（全文規約）だけ。以下は旧記載: 2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p000 cleared。 2026-10-08 q902 P1 の照合: p001〜p004 cleared（2026-10-07 Q1、T1-297）。ベータ2 の範囲の残りは p000 の扱いだけ、続きはベータ3））
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 2026-10-08 q902 P1 の照合: p002〜p004 cleared（T1-297、.ics の中身は未確認）。p000（mock）は p001 の設計と p003 の app に置き換わったので Q1 が cleared か canceled かを判定。p005（全文規約）はベータ3。旧: T1 の結果（p002〜p004）、その後 p005（規約の見直し、後回し）。
-Target: **ベータ3**（続き）（2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」）
+Resume point: 2026-10-13: p000〜p004・p006 cleared、UAT はユーザーが OK。次は p005（全文規約、2026-10-08 ユーザー「コーディング規約による整形はベータ3」の扱いのまま）。旧: 2026-10-08 q902 P1 の照合: p002〜p004 cleared（T1-297、.ics の中身は未確認）。p000（mock）は p001 の設計と p003 の app に置き換わったので Q1 が cleared か canceled かを判定。p005（全文規約）はベータ3。旧: T1 の結果（p002〜p004）、その後 p005（規約の見直し、後回し）。
+Target: **ベータ2**（2026-10-13 ユーザー「WS155はベータ2に入れます。UATは終わっています。OKでした。」。旧: ベータ3（続き）（2026-10-07 ユーザー「…カレンダーの続き…」））
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -61,7 +61,7 @@ Keiland の標準 app として、カレンダー・予定の管理（スケジ�
 | ws155-p003 | app: 保存・編集・Week と Day・開始の通知 | cleared（2026-10-07、T1-297） | p002 |
 | ws155-p004 | system bar の時計から Calendar を開く | cleared（2026-10-07、T1-297） | p001 |
 | ws155-p005 | 全文規約の見直し | planning（ベータ3、2026-10-08 ユーザー「コーディング規約による整形はベータ3」） | p002〜p004 |
-| ws155-p006 | 月の表示の予定の double click（double tap）で既存の編集の画面を開く、月・週・日の空き地の click で新規作成（狭い窓は months の上に編集の card）（2026-10-13 UAT） | test-wait（T1 の AAT `apps.calendar.event`、[phase](phase006/phase.md)） | p003 |
+| ws155-p006 | 月の表示の予定の double click（double tap）で既存の編集の画面を開く、月・週・日の空き地の click で新規作成（狭い窓は months の上に編集の card）（2026-10-13 UAT） | cleared（2026-10-13 ユーザー「UATは終わっています。OKでした。」。QEMU の AAT は T1-561 PASS（2026-10-13 Q1 判定）、[phase](phase006/phase.md)） | p003 |
 
 ## mock への再指示（2026-10-05 ユーザー、T1-179 の画面を見て）
 

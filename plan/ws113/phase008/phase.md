@@ -3,7 +3,7 @@
 # ws113-p008: 実i915の全経路受け入れ
 
 Parent: [WS113](../ws.md)
-Status: planned
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: planned、5330 の全経路の受け入れ。2026-10-08 の UAT で HDMI・USB-C（TC2）の拡張・mirror と窓の移動は見えた、M1〜M3 の抜き差しの回数・明るさ・Fn が残り）
 Disposition: normal
 Primary Milestone: MG006（WSから継承）
 Queue / attempts: none / 実装未承認

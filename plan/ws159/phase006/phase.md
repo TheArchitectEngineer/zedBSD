@@ -2,7 +2,7 @@
 
 # ws159-p006: GpioInt（Intel の GPIO）で sampling をやめる
 
-Status: in-progress（2026-10-05 P1 generation17 / q720-i01。ユーザーが hal.h に `hal_irq_set_mode` を入れた（main 6cc1bea）ので割り込みの部分を実装した。build・host の試験まで。実機（5330）の確認は未実施）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: in-progress、GPIO の割り込み（hal_irq_set_mode）を実装・build・host 試験、5330 の確認が残り）
 Disposition: normal
 Parent: [WS159](../ws.md)
 Queue: q713 / q713-i01（Q1 が 2026-10-05 に追加、電池のため、ベータ1 の範囲）→ q720 / q720-i01（割り込みの部分）

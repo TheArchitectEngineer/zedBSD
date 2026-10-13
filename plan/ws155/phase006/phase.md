@@ -2,7 +2,7 @@
 
 # ws155-p006: 月の表示の予定の double click（double tap）で編集を開く・日の空き地の click で新規作成
 
-Status: in-progress（2026-10-13 Q1: T1-561（QEMU の AAT）PASS、残りは実機の UAT。旧: T1 の AAT `apps.calendar.event` の 3・4 段目。Q1 が結果を判定するまで cleared にしない）
+Status: cleared（2026-10-13 ユーザー「UATは終わっています。OKでした。」。旧: in-progress（2026-10-13 Q1: T1-561（QEMU の AAT）PASS、残りは実機の UAT。旧: T1 の AAT `apps.calendar.event` の 3・4 段目。Q1 が結果を判定するまで cleared にしない）
 Disposition: normal
 Parent: [WS155](../ws.md)
 Queue: Q1 の依頼（2026-10-13、P1）

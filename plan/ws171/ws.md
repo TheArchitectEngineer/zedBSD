@@ -1,7 +1,8 @@
 <!-- awesome-plan project=zedbsd record=ws171 -->
 # WS171: hal.h の全ての関数に契約の comment を書く
 
-Status: planning（2026-10-05 追加、急がない（ユーザー「今でなくていい」）、段は未定。見積もり 2 LW（Q1 の概算: hal.h の関数は約 150、architecture の実装の調べを含む））
+Target: **ベータ2**、優先度低め・やることが無い時に（2026-10-13 ユーザー「WS171は優先度を下げつつ、ベータ2でやっていいです。やることがないときにスケジューリングしてください。」）
+Status: planning（2026-10-05 追加、急がない（ユーザー「今でなくていい」）、段はベータ2（2026-10-13、上の Target）。旧: 段は未定。見積もり 2 LW（Q1 の概算: hal.h の関数は約 150、architecture の実装の調べを含む））
 Master: [master](../master.md)
 Primary Milestone: MG008
 

@@ -34,8 +34,8 @@ CPU（全体と各 core）、GPU（Util・VRAM・温度・電力、複数）、R
 | [p011](phase011/phase.md) | M3b Linux・FreeBSD の backend の monitor の領域 | cleared（q662、T1-068 PASS） | p008 |
 | [p012](phase012/phase.md) | M3c compositor の `kl_system_monitor_v1`（manager v2、専用の thread、ack と間引き）と libkeiland の `kl_system_monitor_*` | cleared（q662、T1-069 PASS） | p008 |
 | [p013](phase013/phase.md) | M3d app の system の source | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: T1-070 で monitor-p013 PASS。旧: in-progress（q662: 実装・host 試験済み、QEMU の試験待ち）） | p012 |
-| [p009](phase009/phase.md) | K4 kernel: ACPI の温度（sysctl `hw.thermal`、zone と DPTF の `_TMP`）。電池・AC は既存の KERN_SYSTEM_GET_POWER（ws132-p002・WS131 p005） | in-progress（2026-10-08 P1 q912: 実装・host PASS・build、T1（q35 で sensors=0）待ち、実機は 5330 の UAT） | 実機 |
-| [p010](phase010/phase.md) | M4 全文規約・回帰・デモの通し | in-progress（q663: 全文規約の見直しと直し済み、QEMU の回帰を依頼。実機の p003・p007・p009 とデモは実機待ち） | p002〜p009 |
+| [p009](phase009/phase.md) | K4 kernel: ACPI の温度（sysctl `hw.thermal`、zone と DPTF の `_TMP`）。電池・AC は既存の KERN_SYSTEM_GET_POWER（ws132-p002・WS131 p005） | test-wait（実機の温度の UAT の分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。T1-482（QEMU）の結果の Q1 の判定が残り） | 実機 |
+| [p010](phase010/phase.md) | M4 全文規約・回帰・デモの通し | in-progress（実機の p003・p007・p009 とデモの分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。q663 で全文規約の見直しと直し済み、QEMU の回帰（T1）の結果の判定が残り） | p002〜p009 |
 
 2026-10-03 user「P2はコードを書いてOKだと思います。衝突しないです。」 → P2 は設計（p001）を書いたら、user のレビューを待たずに実装の Phase へ進んでよい（Phase の ID は Q1 が割り当て）。
 
