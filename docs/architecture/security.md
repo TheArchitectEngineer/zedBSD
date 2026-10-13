@@ -71,7 +71,8 @@ useradd / usermod / userdel (root, in a terminal or through sudo)  ------+ reque
   user's own password change through `passwd -s`.
 - `useradd`, `usermod` and `userdel` are front ends that only root runs.
   They turn their options into one request and run `account-admin` the same
-  way. They read and write no account file themselves.
+  way. They read and write no account file themselves. Their options and
+  exit statuses are in [the reference](../reference/user-administration.md).
 - `account-admin` is the only part that changes the account files. It is a
   set-user-ID root program in the base system (source
   `userland/base/account-admin/`), installed as

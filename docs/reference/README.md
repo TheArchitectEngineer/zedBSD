@@ -33,6 +33,9 @@ structures, constants, errors and permissions that programs and people use
 - [Init and service management](init-services.md): boot sequencing,
   `rc.conf`, `service.d`, FD 3 readiness, supervision, control, and shutdown.
 
+- [useradd, usermod and userdel](user-administration.md): root's commands
+  that add, change and remove the people's accounts through account-admin.
+
 - [x86 executable TLS](tls.md) — static PT_TLS, thread-pointer layout, pthread/fork lifetime, and dynamic-runtime boundary.
 
 - [Atomic file publication](atomic-publication.md): no-replace rename, mv and directory durability.
