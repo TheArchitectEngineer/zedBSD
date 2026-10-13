@@ -472,11 +472,58 @@ ahci_shutdown(
 	uint32_t control;
 	uint32_t command;
 	unsigned number;
+	int acquired;
+	int retryable;
+	int error;
 
 	/* Finds the controller attach recorded on the function. */
 	controller = drv_pci_device_driver_data(device);
 	if (controller == NULL)
 		return;
+
+	/*
+	 * Flushes each disk's write cache once more, so power-off cannot lose
+	 * what the final sync left in it.  A port another thread still holds
+	 * is skipped rather than waited for.
+	 */
+	for (number = 0; number < DRV_AHCI_PORT_MAX; number++) {
+		port = controller->ports[number];
+		if (port == NULL)
+			continue;
+		if (port->disk == NULL)
+			continue;
+		if (!port->identity.write_cache)
+			continue;
+
+		/* Takes the port only when no command owns it. */
+		acquired = mutex_trylock(&port->command_mutex);
+		if (!acquired) {
+			kern_logf("ahci%u: port %u: busy at shutdown; cache not flushed\n",
+				  controller->index,
+				  number);
+			continue;
+		}
+
+		error = ahci_port_execute(
+			port,
+			DRV_AHCI_ATA_FLUSH_CACHE_EXT,
+			0U,
+			0U,
+			0,
+			0U,
+			AHCI_IDENTIFY_TIMEOUT_MS,
+			&retryable);
+
+		mutex_unlock(&port->command_mutex);
+
+		/* Logs a cache the disk could not flush; shutdown goes on. */
+		if (error != 0) {
+			kern_logf("ahci%u: port %u: shutdown flush failed (%d)\n",
+				  controller->index,
+				  number,
+				  error);
+		}
+	}
 
 	/* Turns the HBA's interrupt off. */
 	control = ahci_read(controller, DRV_AHCI_REG_GHC);
