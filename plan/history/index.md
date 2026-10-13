@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1052 / WS074 vertical-lr Flexbox axis（2026-10-14）
+
+[q1052履歴](queue-q1052.md): vertical-lr Flex軸・float幅・line-left/right修正で固定10 reftestが10/10 local pixel exact PASS。p202と後続証拠によるp197〜p199 whole cleared。host21/21、Acid3画素差0/Acid2差1865。[証拠](../ws074/phase202/evidence/20261014-q1052/README.md)。p173全3,805件100%未達、共有投影/GitHub publication pending。
+
 ## 最新: q1051 / WS074 column flex auto height and min-height（2026-10-14）
 
 [q1051履歴](queue-q1051.md): 固定vert001bがpixel exact PASS、固定10件は9 local PASS/1 FAIL。p201 whole cleared。Acid3画素差0/Acid2差1865。[証拠](../ws074/phase201/evidence/20261014-q1051/README.md)。p173全件100%未達、共有投影/GitHub publication pending。

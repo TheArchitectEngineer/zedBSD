@@ -158,6 +158,12 @@ enum css_direction {
 	CSS_DIRECTION_RTL
 };
 
+/* Physical direction of the inline axis. Other vertical modes are not yet laid out. */
+enum css_writing_mode {
+	CSS_WRITING_HORIZONTAL_TB,
+	CSS_WRITING_VERTICAL_LR
+};
+
 /* The values of overflow-x and overflow-y. */
 enum css_overflow {
 	CSS_OVERFLOW_VISIBLE,
@@ -546,6 +552,7 @@ struct css_style {
 	int text_align;
 	struct css_length text_indent;
 	int direction;
+	int writing_mode;
 	int container_type;
 
 	/* Tables (ws074-p037): the spacing between the cells (across, then down, in pixels), and whether the borders collapse. */

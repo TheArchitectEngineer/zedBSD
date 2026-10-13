@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1051 / WS074 column flex auto height and min-height
+# q1052 / WS074 vertical-lr writing mode Flexbox axis
 
-Status: finished（2026-10-14 02:26–02:28 JST）
+Status: finished（2026-10-14 02:29–02:35 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p201のq1051有限部分scope](phase201/phase.md) に適用。
-Timebox: 2026-10-14 02:26 JST 開始、最大90分（03:56 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p202のq1052有限部分scope](phase202/phase.md) に適用。
+Timebox: 2026-10-14 02:29 JST 開始、最大90分（03:59 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1051-i01 | [ws074-p201](phase201/phase.md) | height:auto・pixel min-height・nowrap column Flexの主軸availableを内容必要高さとmin-heightの最大値へ。vert001b・固定10件、host/CSS/Acid回帰。wrap/percent/writing-mode、WPT/Master/公開ABI変更なし。最大90分 | cleared、p201 whole cleared | p200 q1050固定8 PASS/2 FAIL証拠 |
+| q1052-i01 | [ws074-p202](phase202/phase.md) partial | vertical-lr CSS登録/継承、row縦main axis、float intrinsic幅とreverse/RTL/left/rightを局所診断・可能な最小修正。固定10件/host/Acid回帰。text/table/inline一般・WPT/Master/公開ABI変更なし。最大90分 | cleared、p202 scoped whole cleared | p201 q1051固定9 PASS/1 FAIL証拠 |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -20,6 +20,8 @@ Outcome: q1049-i01 partial cleared、p199 whole uncleared。物理left/rightとc
 Outcome: q1050-i01 / p200 whole cleared。正の分配余白の最近接丸めとreverse残差配分で固定vert001a/002/006が全てpixel exact PASS、固定10件は8 local PASS/2 FAIL。host12/12・CSS rule44/44・CSSOM12/12・mutation12/12・warning0 build・Acid3差0/Acid2差1865。[証拠](phase200/evidence/20261014-q1050/README.md)。p173全3,805件100%は未達。
 
 Outcome: q1051-i01 / p201 whole cleared。nowrap縦Flexのauto高さ・pixel min-heightで固定vert001bがpixel exact PASS、固定10件は9 local PASS/1 FAIL。局所2ケース・host12/12・CSS rule44/44・CSSOM12/12・warning0 build・Acid3差0/Acid2差1865。[証拠](phase201/evidence/20261014-q1051/README.md)。p173全3,805件100%は未達。
+
+Outcome: q1052-i01 / p202 scoped whole cleared。vertical-lr Flexの物理軸・float幅・line-left/rightを実装、固定10件は10/10 local pixel exact PASS。host21/21・CSS rule44/44・CSSOM12/12・mutation12/12・warning0 build・Acid3差0/Acid2差1865。[証拠](phase202/evidence/20261014-q1052/README.md)。後続証拠でp197/p198/p199もwhole cleared。p173全3,805件100%は未達。
 
 Coordination: [q1014](../history/queue-q1014.md) までの履歴を保持。共有 `plan/queue.md` / Master / GitHub publication は別の Q1 セッションとの競合を避け pending projection。WS074 lane の状態はこの file が所有。
 

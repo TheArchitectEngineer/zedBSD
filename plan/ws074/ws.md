@@ -9,8 +9,8 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1051](queue.md) finished / p201縦Flexのauto高さとmin-height。2026-10-14 02:28 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
-Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。textdecoration全16 testharnessは16 PASS/0 FAIL、subtest179 PASS/0 FAILでp191 cleared。p189の単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、q1035/q1036で2件追加PASS。q1040固定crashtest全48件local PASS。q1044固定静的reftest1,561件は500 local PASS/1,051 FAIL/10 timeoutの当時baseline、残るscript関連407/variant6はrunner未対応。q1046で最上位XHTMLの固定timeout10を0へ改善、q1047横方向2件をlocal PASSにして固定10件は3 PASS/7 FAIL。p195は後続証拠でcleared、p196はscript付きXHTML未達、p197は縦方向7 FAIL。p189/p190のrunner coverage、描画FAILとp173全件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
+Queue: [q1052](queue.md) finished / p202 vertical-lr Flex軸の部分scope。2026-10-14 02:35 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1044固定静的reftest1,561件は当時500 local PASS/1,051 FAIL/10 timeout、script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p202 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p173-interop-resume-20261013: ユーザーが「WPTに進みます。2025を100%」と指示。既存の p173 Interop 2025 公式 focus area 全件 PASS 100% を次の優先対象にした。p173 と p100 の依存関係を、p188 の main 統合済み Acid3 検証出力に限定して整理。p100 whole の Acid2 exact/target gate は未達のまま。p173 の [候補選定と q1012 範囲](phase173/selection-snapshot.md)を記録、ユーザーが 23:49 JST 承認して開始。p101・p174〜p176 の受け入れは維持。Master の focused goal / WS priority 投影は、このセッションの編集禁止により Q1 へ pending。GitHub publication保留。
@@ -106,6 +106,10 @@ Event ws074-p200-addition-and-q1050-clear-20261014: [p199](phase199/phase.md)後
 Event ws074-p201-addition-q1051-20261014: q1050後のvert001bでは親のmin-height:200pxが子配置計算のavailableに入らない。折り返し無し縦Flexのpixel min-heightを扱う[p201](phase201/phase.md)を追加。p197/p198/p199/p200/p190/p173の受け入れは不変。共有Master/Queue/GitHub publication保留。
 
 Event ws074-p201-q1051-clear-20261014: [p201](phase201/phase.md) q1051-i01で固定vert001bをpixel exact PASSへ、固定10件は9 PASS/1 FAIL。内容がmin-heightを超える場合も縮めない局所2ケース、host/CSS/build/Acid回帰を確認。[証拠](phase201/evidence/20261014-q1051/README.md)。p201 whole cleared。残るwriting-modeとp190/p173全件100%は未達。共有Master/Queue/GitHub publication保留。
+
+Event ws074-p202-addition-q1052-20261014: 固定10件最後のwmvertはwriting-mode:vertical-lr未登録でflex rowを物理横軸としている。[p202](phase202/phase.md)でCSS登録/継承、Flex縦main axis、float幅を有限診断し、一般的な小修正のみ試す。p197/p198/p199/p200/p201/p190/p173受け入れは不変。共有Master/Queue/GitHub publication保留。
+
+Event ws074-p202-q1052-clear-and-p197-p199-later-clearance-20261014: [p202](phase202/phase.md) q1052-i01でvertical-lr Flex軸・float幅・line-left/rightを修正し固定10件10/10 local pixel exact PASS。[証拠](phase202/evidence/20261014-q1052/README.md)。host21/21・CSS rule44/44・CSSOM12/12・mutation12/12・warning0 build・Acid3差0/Acid2差1865。先行[p197](phase197/phase.md)・[p198](phase198/phase.md)・[p199](phase199/phase.md)の残るlocal pixel条件と関係回帰も満たしwhole cleared、過去attemptのpartial outcomeは維持。p196/p189/p190/p173全件100%は未達。共有Master/Queue/GitHub publicationとIssue close保留。
 
 ## Q1 向けの整理（2026-10-05、Q1）
 
@@ -419,11 +423,12 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p194](phase194/phase.md) | Interop 2025 Element.attributes / Attr | uncleared / q1029 partial cleared、beforematch WPT1 PASS | p193 q1028 fragment output |
 | [ws074-p195](phase195/phase.md) | Interop 2025 flexbox XHTML render timeout10件の一般欠陥調査/修正 | cleared / q1046後続証拠でtimeout0・host/Acid受け入れ充足 | p190 q1044 timeout10 ID証拠 |
 | [ws074-p196](phase196/phase.md) | Interop 2025 最上位XML/XHTML document loading | uncleared / q1046 script-free XHTML partial cleared、script付き残 | p195 q1045根因証拠 |
-| [ws074-p197](phase197/phase.md) | Interop 2025 Flexbox justify-content overflow配置 | uncleared / q1047横方向2件partial cleared、縦方向7 FAIL | p196 q1046 XHTML描画証拠 |
-| [ws074-p198](phase198/phase.md) | Interop 2025 BFCの親/子縦margin相殺禁止 | uncleared / q1048一般規則partial cleared、固定7 FAIL残 | p197 q1047縦方向7 FAIL証拠 |
-| [ws074-p199](phase199/phase.md) | Interop 2025 justify-content物理left/right | uncleared / q1049部分scope cleared、固定5 FAIL残 | p198 q1048参照差証拠 |
+| [ws074-p197](phase197/phase.md) | Interop 2025 Flexbox justify-content overflow配置 | cleared / q1052後続証拠で固定残り9件pixel exact PASS | p196 q1046 XHTML描画証拠 |
+| [ws074-p198](phase198/phase.md) | Interop 2025 BFCの親/子縦margin相殺禁止 | cleared / q1052後続証拠で固定残り7件pixel exact PASS | p197 q1047縦方向7 FAIL証拠 |
+| [ws074-p199](phase199/phase.md) | Interop 2025 justify-content物理left/right | cleared / q1052後続証拠で固定10件pixel exact PASS・grid2/2 | p198 q1048参照差証拠 |
 | [ws074-p200](phase200/phase.md) | Interop 2025 Flex分配余白の端数丸め | cleared / q1050対象3 ID pixel exact PASS | p199 q1049端数差証拠 |
 | [ws074-p201](phase201/phase.md) | Interop 2025 縦Flex auto高さとmin-height | cleared / q1051固定vert001b pixel exact PASS | p200 q1050固定8 PASS証拠 |
+| [ws074-p202](phase202/phase.md) | Interop 2025 vertical-lr Flex軸 | cleared / q1052固定wmvert pixel exact PASS | p201 q1051固定9 PASS証拠 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

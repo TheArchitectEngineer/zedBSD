@@ -2,7 +2,7 @@
 
 # ws074-p198: formatting context and child margin collapse
 
-Status: uncleared（2026-10-14 q1048-i01 partial cleared、全体未達）
+Status: cleared（2026-10-14 q1052後続証拠でwhole clearance。q1048-i01 partial outcome保持）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -25,3 +25,5 @@ Event ws074-p198-created-20261014: q1047後のvert001a差はtest側flex子でな
 **partial scope cleared、whole uncleared。** `block_owns_context`に従い独立formatting contextの最初/最後の子との親margin相殺を抑止。normal flow相殺は保持。[証拠](evidence/20261014-q1048/README.md)。float/normal top/bottom geometry4/4、WPT test/reference再layout14/14、host build warning0、Acid3差0・Acid2差1865。固定10 IDは3 PASS/7 FAIL/0 timeoutで数は不変だが、vert001a差22,000→5,600、vert006差27,820→5,560。vert001b差10,240→22,520は共通参照が修正された一方、test側min-height別欠陥が残るため。先行PASSの喪失はない。p198 wholeの7 PASS未達、p190/p173全件100%未達。
 
 Event ws074-p198-q1048-outcome-20261014: q1048-i01はCSS2.2の一般規則と局所回帰を満たすpartial cleared。残りpixel差を別要因へ分離。GitHub publication保留。
+
+Event ws074-p198-later-clearance-q1052-20261014: q1048-i01のpartial cleared履歴は維持。固定縦方向7 FAILは[p199](../phase199/phase.md)、[p200](../phase200/phase.md)、[p201](../phase201/phase.md)、[p202](../phase202/evidence/20261014-q1052/README.md)の後続修正で全てlocal pixel exact PASS。q1048のBFC局所geometry4/4と後続host21/21・warning0 build・Acid3差0/Acid2差1865を合わせp198 whole cleared。p190 runner/p173全件100%は別、GitHub publicationとIssue closeは保留。

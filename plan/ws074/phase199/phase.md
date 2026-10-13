@@ -2,7 +2,7 @@
 
 # ws074-p199: physical justify-content left/right
 
-Status: in-progress（2026-10-14 q1049-i01）
+Status: cleared（2026-10-14 q1052後続証拠でwhole clearance。q1049-i01 partial outcome保持）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -23,3 +23,5 @@ Event ws074-p199-created-20261014: q1048後のvert001a layout差はleft/right段
 ## q1049-i01 結果（2026-10-14）
 
 **部分scope cleared、whole uncleared。** CSS keywordのleft/rightを保持し、flex columnではstartへfallback、rowではwriting directionやreverseに依存しない物理左右へ配置した。align-items/content/selfではleft/rightを無効化し、gridの既存shift分岐も新enumを処理する。[固定10件](evidence/20261014-q1049/README.md)は3→5 local PASS、7→5 FAIL、timeout0。vert001aは5,600→200差画素、vert002は4,072→88、vert006は5,560→160。vert001bとwmvertには別原因が残る。局所fixture12/12、CSS rule44/44、CSSOM12/12、mutation12/12、warning0 build、Acid3 score100/100・差0/480000、Acid2差1865/120000。最初の検証ではkeyword数値の衝突により`cursor:crosshair`を誤拒否してAcid3回帰したため、検証対象をalign-*の3プロパティへ限定して再ビルド・再検証した。grid独立実行fixtureは未作成で、該当分岐のコード点検に留まる。全固定test pixel PASSに届かずwhole uncleared。Event ws074-p199-q1049-outcome-20261014: q1049-i01部分scope cleared、p199 whole uncleared。GitHub publication保留。
+
+Event ws074-p199-later-clearance-q1052-20261014: q1049-i01のpartial cleared履歴は維持。[p200](../phase200/phase.md)分配丸め、[p201](../phase201/phase.md) min-height、[p202](../phase202/evidence/20261014-q1052/README.md) vertical-lrの後続修正で固定10件全てlocal pixel exact PASS。left/rightとgridを含む局所host21/21・CSS rule44/44・CSSOM12/12・warning0 build・Acid3差0/Acid2差1865を確認しp199 whole cleared。p190 runner/p173全件100%は別、GitHub publicationとIssue closeは保留。

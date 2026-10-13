@@ -125,6 +125,8 @@ layout_flex(
 	row = 0;
 	if (box->style.flex_direction == CSS_FLEX_ROW || box->style.flex_direction == CSS_FLEX_ROW_REVERSE)
 		row = 1;
+	if (box->style.writing_mode == CSS_WRITING_VERTICAL_LR)
+		row = !row;
 	wrap = 0;
 	if (box->style.flex_wrap != CSS_FLEX_NOWRAP)
 		wrap = 1;
@@ -1046,7 +1048,9 @@ flex_place_line(
 	reverse = 0;
 	if (box->style.flex_direction == CSS_FLEX_ROW_REVERSE || box->style.flex_direction == CSS_FLEX_COLUMN_REVERSE)
 		reverse = 1;
-	if (row && box->style.direction == CSS_DIRECTION_RTL)
+	if ((box->style.flex_direction == CSS_FLEX_ROW ||
+	    box->style.flex_direction == CSS_FLEX_ROW_REVERSE) &&
+	    box->style.direction == CSS_DIRECTION_RTL)
 		reverse = !reverse;
 	/* Give reverse lines the residual end gap after rounded distributed gaps. */
 	if (reverse && free_space > 0 && count > 1 &&
@@ -1055,8 +1059,10 @@ flex_place_line(
 	    box->style.justify_content == CSS_ALIGN_SPACE_EVENLY))
 		cursor = free_space - cursor - (layout_unit)(count - 1U) * (between - gap);
 
-	/* Physical left/right keep their edge under reversed rows; a vertical main axis falls back to start. */
-	if (!row && (box->style.justify_content == CSS_ALIGN_LEFT ||
+	/* Column axes fall back to start; row axes use physical or line left/right. */
+	if ((box->style.flex_direction == CSS_FLEX_COLUMN ||
+	    box->style.flex_direction == CSS_FLEX_COLUMN_REVERSE) &&
+	    (box->style.justify_content == CSS_ALIGN_LEFT ||
 	    box->style.justify_content == CSS_ALIGN_RIGHT)) {
 		cursor = 0;
 		if (reverse)

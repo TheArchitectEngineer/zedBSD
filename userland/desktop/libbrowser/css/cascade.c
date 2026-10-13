@@ -729,6 +729,7 @@ cascade_compute(
 		style->text_align = parent->text_align;
 		style->text_indent = parent->text_indent;
 		style->direction = parent->direction;
+		style->writing_mode = parent->writing_mode;
 		style->border_spacing[0] = parent->border_spacing[0];
 		style->border_spacing[1] = parent->border_spacing[1];
 		style->border_collapse = parent->border_collapse;
@@ -3396,6 +3397,7 @@ cascade_apply(
 		    property == CSS_PROP_CURSOR ||
 		    property == CSS_PROP_VISIBILITY ||
 		    property == CSS_PROP_DIRECTION ||
+		    property == CSS_PROP_WRITING_MODE ||
 		    property == CSS_PROP_BORDER_SPACING_X ||
 		    property == CSS_PROP_BORDER_SPACING_Y ||
 		    property == CSS_PROP_BORDER_COLLAPSE ||
@@ -3593,6 +3595,9 @@ cascade_apply(
 		break;
 	case CSS_PROP_DIRECTION:
 		style->direction = value->keyword;
+		break;
+	case CSS_PROP_WRITING_MODE:
+		style->writing_mode = value->keyword;
 		break;
 	case CSS_PROP_CONTAINER_TYPE:
 		style->container_type = value->keyword;
@@ -4010,6 +4015,9 @@ cascade_inherit(
 		break;
 	case CSS_PROP_DIRECTION:
 		style->direction = parent->direction;
+		break;
+	case CSS_PROP_WRITING_MODE:
+		style->writing_mode = parent->writing_mode;
 		break;
 	case CSS_PROP_CONTAINER_TYPE:
 		style->container_type = parent->container_type;

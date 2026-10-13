@@ -361,9 +361,10 @@ layout_content_width(
 	if (box->style.display == CSS_DISPLAY_TABLE || box->style.display == CSS_DISPLAY_INLINE_TABLE)
 		return box->grid_content;
 
-	/* A row of flex items is as wide as the items were before they flexed. */
+	/* A physical horizontal flex main axis is as wide as its items before they flexed. */
 	if (box->style.display == CSS_DISPLAY_FLEX &&
-	    (box->style.flex_direction == CSS_FLEX_ROW || box->style.flex_direction == CSS_FLEX_ROW_REVERSE)) {
+	    ((box->style.flex_direction == CSS_FLEX_ROW || box->style.flex_direction == CSS_FLEX_ROW_REVERSE) !=
+	    (box->style.writing_mode == CSS_WRITING_VERTICAL_LR))) {
 		width = layout_flex_content_width(box);
 		return width;
 	}

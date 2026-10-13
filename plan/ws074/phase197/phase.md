@@ -2,7 +2,7 @@
 
 # ws074-p197: Flexbox justify-content overflow positioning
 
-Status: uncleared（2026-10-14 q1047-i01 partial cleared、全体未達）
+Status: cleared（2026-10-14 q1052後続証拠でwhole clearance。q1047-i01 partial outcome保持）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -29,3 +29,5 @@ Event ws074-p197-q1048-p198-split-20261014: 固定vert001aの直接layout比較�
 Event ws074-p197-q1048-p198-output-20261014: [p198](../phase198/phase.md)でfloat BFCのmargin相殺を修正。固定10件3 PASS/7 FAILと数不変、vert001a/006の差画素減、vert001bはmin-heightの別差が顕在化。[証拠](../phase198/evidence/20261014-q1048/README.md)。p197 wholeはunclearedのまま。GitHub publication保留。
 
 Event ws074-p197-q1049-p199-split-20261014: q1048後のvert001aで、CSS解析段階の`right`→end同一化によりcolumn flexの物理左右fallback startが失われている。別のCSS keyword意味保存を[p199](../phase199/phase.md)へ分離。p197 wholeの固定7 FAILはp199結果後に再判定する。GitHub publication保留。
+
+Event ws074-p197-later-clearance-q1052-20261014: q1047-i01のpartial cleared履歴は維持。[p198](../phase198/phase.md) BFC、[p199](../phase199/phase.md) left/right、[p200](../phase200/phase.md)分配丸め、[p201](../phase201/phase.md) min-height、[p202](../phase202/evidence/20261014-q1052/README.md) vertical-lr の後続修正により、q1046時点の固定10件中9 FAILは全てlocal pixel exact PASSとなった。関連host21/21・warning0 build・Acid3差0/Acid2差1865を確認しp197 whole cleared。p190 runner/p173全件100%は別、GitHub publicationとIssue closeは保留。
