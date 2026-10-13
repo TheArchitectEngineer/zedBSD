@@ -29,3 +29,5 @@ Related Milestones: なし
 | Phase | 内容 | Status |
 | --- | --- | --- |
 | p001 | 調べと設計: 今の libvulkan の実装の範囲と 1.3 との差の一覧、不整合の一覧、device ごとの 1.3 の必須の feature、header の取り込みの形、conformance の試験の入手、段の分け → design-reviewer | planned |
+
+2026-10-13 Q1（WS219 p003 の発見、この WS の p001 の入力）: libvulkan が送るのに i915・bcm2711 のどちらも解かない op が 29（27, 32–34, 42–46, 61–64, 99, 108, 109, 117, 118, 120, 123–125, 130, 131, 134, 136, 148, 150, 161、Venus の host だけが答える）、i915 だけが断る op が 78・84。zedBSD が送らない op が 15（1, 9, 10, 13–17, 19, 20, 23–26, 39）。詳細は include/uapi/gpu-op.h の op ごとの comment と plan/ws219/phase003/phase.md。

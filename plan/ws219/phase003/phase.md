@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws219-p003 -->
 # ws219-p003: gpu-op.h の op ごとの詳しい説明
 
-Status: in-progress（2026-10-13 P2 実施。comment の記入・build warning 0・host 試験 PASS。Q1 の判定待ち。QEMU は comment だけの変更なので依頼していない）
+Status: cleared（2026-10-13 Q1: comment だけの変更、名前と値の不変を確かめた、build warning 0・host 試験 PASS。旧: 2026-10-13 P2 実施。comment の記入・build warning 0・host 試験 PASS。Q1 の判定待ち。QEMU は comment だけの変更なので依頼していない）
 Parent: [WS219](../ws.md)
 
 ## 範囲（ws.md の「ユーザーの指示（2026-10-13、p002 の後）」）
