@@ -190,6 +190,7 @@ line_reserve(
 	if (text == NULL)
 		return ENOMEM;
 
+	/* Keeps the larger storage as the line's own. */
 	line->text = text;
 	line->capacity = capacity;
 
@@ -224,6 +225,7 @@ lines_reserve(
 	if (lines == NULL)
 		return ENOMEM;
 
+	/* Keeps the larger table as the buffer's own. */
 	buffer->lines = lines;
 	buffer->capacity = capacity;
 
@@ -247,6 +249,7 @@ insert_text(
 	if (index >= buffer->count)
 		return EINVAL;
 
+	/* Finds the line the bytes go into. */
 	line = &buffer->lines[index];
 
 	/* Refuses a place past the end of the line. */
@@ -282,6 +285,7 @@ delete_text(
 	if (index >= buffer->count)
 		return EINVAL;
 
+	/* Finds the line the bytes leave. */
 	line = &buffer->lines[index];
 
 	/* Refuses a range that runs past the end of the line. */
@@ -327,14 +331,17 @@ insert_lines(
 		if (text[position] == '\n')
 			count++;
 	}
+
+	/* Refuses a text that holds no complete line. */
 	if (count == 0)
 		return EINVAL;
 
-	/* Makes room for the lines in the table, and a list for the new ones. */
+	/* Makes room for the lines in the table. */
 	error = lines_reserve(buffer, buffer->count + count);
 	if (error != 0)
 		return error;
 
+	/* Allocates the list the new lines are made into before the table changes. */
 	made = malloc(count * sizeof(*made));
 	if (made == NULL)
 		return ENOMEM;
@@ -347,13 +354,18 @@ insert_lines(
 			continue;
 		error = make_line(&made[made_count], text + start, position - start);
 		if (error != 0) {
+			/* Gives back the lines already made, so the buffer stays whole. */
 			while (made_count > 0) {
 				made_count--;
 				free(made[made_count].text);
 			}
+
+			/* Releases the list and reports why a line could not be made. */
 			free(made);
 			return error;
 		}
+
+		/* Counts the line made and moves on to the text after its newline. */
 		made_count++;
 		start = position + 1;
 	}
@@ -438,6 +450,7 @@ split_line(
 	if (index >= buffer->count)
 		return EINVAL;
 
+	/* Finds the line that is split. */
 	line = &buffer->lines[index];
 
 	/* Refuses a place past the end of the line. */
@@ -449,6 +462,7 @@ split_line(
 	if (error != 0)
 		return error;
 
+	/* Finds the line again, since making room can move the table. */
 	line = &buffer->lines[index];
 	error = make_line(&second, line->text + offset, line->length - offset);
 	if (error != 0)
