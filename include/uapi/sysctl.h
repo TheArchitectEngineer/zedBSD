@@ -362,18 +362,22 @@ struct tcp_stats_header {
  * outstanding segment has been resent; rto_ms is the timeout it waits now
  * and retransmit_in_ms how long is left of it (0: no segment outstanding).
  * send_window is the window the peer last advertised; receive_window the
- * one this end last put in a segment; in_flight_bytes the sequence space
- * sent and not acknowledged, send_segments the segments that hold it, of
- * send_ring.  receive_bytes and receive_packets are what waits for the
- * reader, of receive_limit_bytes; reorder_segments the segments kept ahead
- * of a gap.
+ * one this end last put in a segment.  send_next is the end of what was
+ * handed to the device (RFC 9293's SND.NXT; segments queued behind a
+ * refused one are not part of it, ws220-p003), and in_flight_bytes the
+ * sequence space sent and not acknowledged; send_segments the segments in
+ * the ring, unsent ones included, of send_ring.  receive_bytes and
+ * receive_packets are what waits for the reader, of receive_limit_bytes;
+ * reorder_segments the segments kept ahead of a gap.
  *
  * The counts: segments sent (every kind) and received; data segments
- * queued for their first transmission and their bytes (send_refused of
- * them were taken back for want of a packet or of room in the device, and
- * the writer slept send_buffer_sleeps times before it tried again); payload
- * bytes taken in order; segments resent by the retransmission path and
- * their bytes, and how many times that resend was made due at once
+ * queued for their first transmission and their bytes (send_refused counts
+ * the times the device or the packet pool refused one, which then waited
+ * in the ring unsent to be sent again, and send_buffer_sleeps the times a
+ * writer found no packet for a segment's copy and slept before it tried
+ * again); payload bytes taken in order; segments resent by the
+ * retransmission path that the device took and their bytes, and how many
+ * times that resend was made due at once
  * (immediate_resends: a recovered acknowledgement or a reopened window)
  * rather than by a timeout; segments the stack failed to hand to the
  * device (segment_send_failures, an acknowledgement or a resend lost on

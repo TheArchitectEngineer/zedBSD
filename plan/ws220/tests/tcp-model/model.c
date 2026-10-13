@@ -23,7 +23,9 @@
  *             [--queue F] [--seed S] [--wrap-before N] [--interval-ms I]
  *             [--limit-s L] [--reader-kbps K] [--peer-window W]
  *             [--overlap-ab P] [--overlap-bytes K] [--blind-at-ms T]
- *             [--blackhole-at-ms T] [--connect-blackhole] [--quiet]
+ *             [--blackhole-at-ms T] [--connect-blackhole] [--second-writer]
+ *             [--unresolved-at-ms T --unresolved-ms D] [--expect-in-order]
+ *             [--quiet]
  *
  * --loss-ab is the share (percent) of the frames from A to B (the data) the
  * link loses, --loss-ba of the frames back (the acknowledgements).
@@ -44,6 +46,20 @@
  * time A takes to give up can be seen (RFC 1122's R2, at least 100 s);
  * --connect-blackhole loses A's SYN from the start and reports when the
  * connect gives up (R2 for a SYN, at least 3 minutes).
+ *
+ * Each frame that leaves a device's queue runs a pass of the network
+ * worker, as a USB adapter's transmit completion does
+ * (net_device_schedule_poll): what the device refused is sent again then
+ * (ws220-p003).
+ * --second-writer makes a second writer write on A's connection whenever
+ * A's device is given a data segment, while the writer (or the worker) that
+ * gave it waits for the device's answer: two threads writing one socket.
+ * The stream must still arrive whole and, with --expect-in-order on a link
+ * that loses nothing, without a segment arriving ahead of a gap at B.
+ * --unresolved-at-ms T --unresolved-ms D refuses every frame A gives its
+ * device from T for D as IPv4 refuses one for a neighbour still being
+ * resolved (EAGAIN); the summary counts the refusals, which a retry every
+ * TCP_SEND_RETRY_MS keeps to about D / 10 ms.
  */
 
 #include "kern/net/tcp-socket.h"
@@ -131,6 +147,10 @@ struct model_settings {
 	uint64_t blind_at_ns;
 	uint64_t blackhole_at_ns;
 	int connect_blackhole;
+	int second_writer;
+	uint64_t unresolved_at_ns;
+	uint64_t unresolved_ns;
+	int expect_in_order;
 	int quiet;
 };
 
@@ -155,6 +175,20 @@ static struct socket *receiver;
 static uint64_t send_left;
 static uint64_t send_offset;
 static uint64_t send_sleep_until_ns;
+
+/*
+ * The bytes of the writes still inside the stack (a second writer's place in
+ * the stream is after them), and whether a second writer is writing now.
+ */
+static uint64_t writer_reserved;
+static int second_writer_active;
+
+/* A frame left a device's queue since the last pass of the network worker, which its completion runs. */
+static int worker_pass;
+
+/* When the transfer began, and the frames A's device refused as for an unresolved neighbour. */
+static uint64_t transfer_start_ns;
+static uint64_t unresolved_refusals;
 
 /* The reader on B: bytes read, bytes that differed from what was written, and the bytes it may read now. */
 static uint64_t received;
@@ -209,6 +243,7 @@ main(
 	uint64_t longest_stall_ns;
 	uint64_t start_ns;
 	uint64_t interval_bytes;
+	uint64_t out_of_order;
 	double rate;
 	double min_rate;
 	double mean;
@@ -251,6 +286,7 @@ main(
 		return 2;
 	}
 	stream_sequence = tcp_of(sender)->send_unacknowledged;
+	transfer_start_ns = now_ns;
 	printf("tcp-model: connected at %llu us, A's first sequence number %u\n",
 	    (unsigned long long)(now_ns / 1000U), stream_sequence);
 
@@ -313,12 +349,27 @@ main(
 	mean = 0.0;
 	if (now_ns > start_ns)
 		mean = (double)received / 1048576.0 / ((double)(now_ns - start_ns) / 1e9);
+	/* B's segments that came ahead of a gap. */
+	out_of_order = 0;
+	if (receiver != NULL)
+		out_of_order = tcp_of(receiver)->counters.out_of_order_in;
+
+	/* The summary line, which run.sh reads. */
 	printf("tcp-model: summary bytes=%llu received=%llu corrupt=%llu seconds=%.3f mean_mbs=%.2f min_interval_mbs=%.2f "
-	    "intervals=%u below_1mbs=%u longest_stall_ms=%.1f overlapped=%llu error=%d complete=%d\n",
+	    "intervals=%u below_1mbs=%u longest_stall_ms=%.1f overlapped=%llu b_out_of_order=%llu unresolved_refusals=%llu "
+	    "error=%d complete=%d\n",
 	    (unsigned long long)settings.bytes, (unsigned long long)received, (unsigned long long)corrupt,
 	    (double)(now_ns - start_ns) / 1e9, mean, min_rate < 0.0 ? 0.0 : min_rate, intervals, slow_intervals,
-	    (double)longest_stall_ns / 1e6, (unsigned long long)overlapped, transfer_error, complete);
+	    (double)longest_stall_ns / 1e6, (unsigned long long)overlapped,
+	    (unsigned long long)out_of_order, (unsigned long long)unresolved_refusals, transfer_error, complete);
 	report(now_ns - start_ns, 0);
+
+	/* A link that loses nothing delivers A's segments in the order A queued them. */
+	if (settings.expect_in_order && out_of_order != 0) {
+		printf("check: FAIL: %llu segments reached B ahead of a gap on a link that loses nothing\n",
+		    (unsigned long long)out_of_order);
+		return 1;
+	}
 
 	/* net.tcpstats as the kernel copies it out must agree with the sockets (of a connection still up). */
 	if (transfer_error == 0) {
@@ -368,8 +419,27 @@ model_link_output(
 {
 	struct model_link *link;
 	unsigned slot;
+	size_t header;
 
 	link = &links[host];
+
+	/* A second writer writes while this segment's sender waits for the device. */
+	header = (size_t)(packet->data[12] >> 4) * 4U;
+	if (settings.second_writer && host == 0U && !second_writer_active && receiver != NULL &&
+	    packet->length > header) {
+		second_writer_active = 1;
+		run_writer();
+		second_writer_active = 0;
+	}
+
+	/* IPv4 refuses a frame for a neighbour still being resolved, and the frame is lost. */
+	if (host == 0U && settings.unresolved_ns != 0 && transfer_start_ns != 0 &&
+	    now_ns >= transfer_start_ns + settings.unresolved_at_ns &&
+	    now_ns < transfer_start_ns + settings.unresolved_at_ns + settings.unresolved_ns) {
+		unresolved_refusals++;
+		packet_buf_free(packet);
+		return EAGAIN;
+	}
 
 	/* A full device refuses the frame, as a USB adapter's driver does. */
 	if (link->queue_count >= settings.queue) {
@@ -417,6 +487,10 @@ parse_settings(
 	settings.blind_at_ns = 0;
 	settings.blackhole_at_ns = 0;
 	settings.connect_blackhole = 0;
+	settings.second_writer = 0;
+	settings.unresolved_at_ns = 0;
+	settings.unresolved_ns = 0;
+	settings.expect_in_order = 0;
 	settings.quiet = 0;
 
 	/* Each option and its value. */
@@ -427,6 +501,14 @@ parse_settings(
 		}
 		if (strcmp(argv[index], "--connect-blackhole") == 0) {
 			settings.connect_blackhole = 1;
+			continue;
+		}
+		if (strcmp(argv[index], "--second-writer") == 0) {
+			settings.second_writer = 1;
+			continue;
+		}
+		if (strcmp(argv[index], "--expect-in-order") == 0) {
+			settings.expect_in_order = 1;
 			continue;
 		}
 		if (index + 1 >= argc)
@@ -463,6 +545,10 @@ parse_settings(
 			settings.blackhole_at_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
 		else if (strcmp(argv[index], "--blind-at-ms") == 0)
 			settings.blind_at_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		else if (strcmp(argv[index], "--unresolved-at-ms") == 0)
+			settings.unresolved_at_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		else if (strcmp(argv[index], "--unresolved-ms") == 0)
+			settings.unresolved_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
 		index++;
 	}
 
@@ -590,8 +676,12 @@ link_advance(
 			link->flight_tail = frame;
 		}
 
-		/* The device has copied it and gives the packet back; the next one follows on the wire. */
+		/*
+		 * The device has copied it and gives the packet back; the next one
+		 * follows on the wire, and the completion runs a worker pass.
+		 */
 		packet_buf_free(packet);
+		worker_pass = 1;
 		link->queue_first = (link->queue_first + 1U) % MODEL_QUEUE_MAX;
 		link->queue_count--;
 		link->transmit_end_ns = MODEL_NEVER;
@@ -762,7 +852,9 @@ run_applications(
  * A write the stack refuses although its ring and the peer's window have
  * room was refused for want of packets: the kernel's writer then sleeps
  * TCP_SEND_RETRY_MS, and so does this one.  Otherwise it waits for an
- * acknowledgement, which the next event brings.
+ * acknowledgement, which the next event brings.  A second writer
+ * (--second-writer), called while a write is still inside the stack, writes
+ * one piece after the bytes of that write.
  */
 static void
 run_writer(
@@ -772,6 +864,7 @@ run_writer(
 	uint8_t chunk[1024];
 	uint64_t length;
 	uint64_t index;
+	uint64_t base;
 	uint32_t window;
 	uint32_t in_flight;
 	ssize_t written;
@@ -780,17 +873,22 @@ run_writer(
 	if (sender == NULL || now_ns < send_sleep_until_ns)
 		return;
 
-	/* Each piece the stack takes. */
-	while (send_left != 0) {
-		length = send_left;
+	/* Each piece the stack takes, after the bytes of any write still inside it. */
+	while (send_left > writer_reserved) {
+		length = send_left - writer_reserved;
 		if (length > sizeof(chunk))
 			length = sizeof(chunk);
+		base = send_offset + writer_reserved;
 		for (index = 0; index < length; index++)
-			chunk[index] = stream_byte(send_offset + index);
+			chunk[index] = stream_byte(base + index);
+		writer_reserved += length;
 		written = sender->ops->sendto(sender, chunk, (size_t)length, MSG_DONTWAIT, NULL, 0);
+		writer_reserved -= length;
 		if (written > 0) {
 			send_offset += (uint64_t)written;
 			send_left -= (uint64_t)written;
+			if (second_writer_active)
+				return;
 			continue;
 		}
 
@@ -948,8 +1046,9 @@ step(
 	for (direction = 0; direction < 2U; direction++)
 		link_advance(&links[direction]);
 
-	/* A tick: the network worker's timers, then the applications. */
-	if (now_ns == tick_ns) {
+	/* A tick, or a device's transmit completion: the network worker's pass, then the applications. */
+	if (now_ns == tick_ns || worker_pass) {
+		worker_pass = 0;
 		tcp_timer_run();
 		run_applications();
 	}
