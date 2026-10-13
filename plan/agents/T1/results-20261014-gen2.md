@@ -20,3 +20,9 @@ OUT build/ws229-p005/hw-r2 (/home/awe/zedBSD-worktrees/t1/build/ws229-p005/hw-r2
 ktest: "i915: test ktest: PASS" (391 checks, 0 failures, 12 skipped). eu: "i915: test eu: PASS", "EU-TEST PASS", EU-REPEAT 5/5.
 vkcs 21/21, vkx 9/9, vke1 6/6, vke2 21/21, vkc 9/9 PASS. No baseline batch_hash/EU-TEST fixture line in any log or earlier run: recorded as "no baseline".
 Observation (not analysed): ktest run.log has one "i915: Unexpected fault addr=0x0 space=PPGTT engine_id=3" line and "init: oneshot vkprobe1 failed" at the end (all scenarios).
+
+## T1-608 (SV7 Gen9.5, main bfebc43b7, out build/ws229-p005/hw-sv7): ktest PASS (390 checks, 6 skipped), eu PASS, vkcs 21/21, draw PASS, r1 PASS; vkx 2/9, vke1 5/6, vke2 20/21, vkc 8/9 FAIL.
+## T1-612 (SV7 retest, main c28a9ff09, out build/ws229-p005/hw-sv7-r2): vkx 9/9, vke1 6/6, vke2 21/21, vkc 9/9 PASS.
+## T1-610 (AHCI retest, main f41c0c12b): polling 0, wr_bytes 33554432 (sata0 and nvme), partial sector OK, sata0 flush +1 at close, +2 at poweroff PASS; NVMe flush_operations 0 at poweroff (FAIL). Artifacts build/review/t1-610/.
+## T1-611 (Settings rotation R1-R6, main d9e8506): PASS; Settings died once on the second 90 (ZSETTINGS FAILED kl_window_present_parts result=-4). build/review/t1-611/.
+## T1-613 (BUG-306 retest, main 93b88c49f): PASS. build/review/t1-613/.
