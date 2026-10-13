@@ -31,3 +31,4 @@ Resume point: p001。
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 基本の AHCI の driver と host 試験、T1 への依頼 | planned（q981、P2） | — |
+| [p002](phase002/phase.md) | 規約の全文の見直し（AHCI の driver・header・pcat.c の AHCI の部分・host 試験） | cleared（P2、書き方のみ） | p001 |

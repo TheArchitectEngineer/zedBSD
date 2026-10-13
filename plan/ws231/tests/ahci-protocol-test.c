@@ -22,7 +22,7 @@
  * so it stays a macro and does not hide which field each line inspects.
  */
 #define CHECK(expression) \
-	check_record((expression) ? 1 : 0, __LINE__, #expression)
+	check_record((expression) != 0, __LINE__, #expression)
 
 /* How many expectations failed so far. */
 static unsigned failures;
@@ -78,6 +78,7 @@ check_record(
 	if (passed)
 		return;
 
+	/* Names the failed expectation and counts it. */
 	printf("FAIL line %d: %s\n", line, text);
 	failures++;
 }
@@ -117,6 +118,7 @@ test_fis(void)
 	struct drv_ahci_fis_h2d fis;
 	const uint8_t *bytes;
 
+	/* Views the FIS as the bytes the HBA sends. */
 	bytes = (const uint8_t *)&fis;
 
 	/* READ DMA EXT spreads a 48-bit LBA and a 16-bit count over the FIS. */
@@ -271,10 +273,14 @@ test_identify(void)
 	words[102] = 0U;
 	words[103] = 0U;
 	model = "QEMU HARDDISK                           ";
+
+	/* Packs the model string two characters per word, first character high. */
 	for (index = 0; index < 20U; index++) {
 		words[27U + index] = (uint16_t)(((unsigned)(unsigned char)model[index * 2U] << 8) |
 						(unsigned)(unsigned char)model[index * 2U + 1U]);
 	}
+
+	/* A 1 GiB disk with 512-byte sectors and both flush commands decodes cleanly. */
 	CHECK(drv_ahci_identify_parse(words, &identity) == 0U);
 	CHECK(identity.sector_count == UINT64_C(0x200000));
 	CHECK(identity.sector_size == 512U);
