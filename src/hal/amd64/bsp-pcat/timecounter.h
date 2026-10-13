@@ -24,6 +24,7 @@ uint64_t amd64_timecounter_sample_serialized(void);
 void amd64_timecounter_pit_complete(uint64_t start, uint64_t end, uint64_t reference_hz, uint64_t reference_ticks);
 void amd64_timecounter_bsp_abort(void);
 bool amd64_timecounter_bsp_candidate_valid(void);
+bool amd64_timecounter_bsp_candidate_frequency(uint64_t *frequency_hz);
 void amd64_timecounter_ap_probe(struct amd64_percpu *cpu);
 bool amd64_timecounter_bsp_validate_ap(struct amd64_percpu *cpu);
 void amd64_timecounter_ap_runtime_validate(struct amd64_percpu *cpu);

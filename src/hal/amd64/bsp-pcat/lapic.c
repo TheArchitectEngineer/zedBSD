@@ -66,6 +66,16 @@
  */
 #define TIMER_CAL_WINDOWS   3U
 
+/* How many calibration windows make one second: each window is 10 ms. */
+#define TIMER_CAL_WINDOWS_PER_SECOND 100U
+
+/*
+ * The most TSC samples one TSC-timed window takes before the TSC is taken to
+ * have stopped.  Each poll is a serialized TSC read and a pause, so this
+ * bound lasts far longer than 10 ms at any rate the TSC policy accepts.
+ */
+#define TSC_POLL_LIMIT      100000000U
+
 #define CPUID_ARCH_CAPABILITIES       (1U << 29)
 #define ARCH_CAP_XAPIC_DISABLE_STATUS (1ULL << 21)
 #define MSR_IA32_APIC_BASE            0x01bU
@@ -83,6 +93,8 @@ static enum amd64_apic_policy_result preflight_cpu(uint32_t expected_apic_id, ui
 static int acpi_has_apic_id(const struct amd64_acpi_info *acpi, uint32_t apic_id);
 static int wait_icr(void);
 static void init_registers(void);
+static int calibrate_timer(void);
+static int tsc_wait_window(uint64_t window_ticks, unsigned *polls, const char **stage, uint32_t *lapic_start, uint32_t *lapic_end);
 static int pit_wait_level(struct amd64_pit_poll *poll, int expected_high, uint8_t *last_port61);
 static int pit_wait_10ms(uint8_t *last_port61, unsigned *polls, const char **stage, int measure_tsc, uint64_t *tsc_start, uint64_t *tsc_end, uint32_t *lapic_start, uint32_t *lapic_end);
 static int send_icr(uint32_t apic_id, uint32_t low);
@@ -238,122 +250,21 @@ amd64_lapic_eoi(
 
 /*
  * Starts the calibrated periodic local APIC timer.
+ *
+ * The BSP calibrates the period once; every later call, on a secondary CPU
+ * or after a system sleep, programs the same period.
  */
 int
 amd64_lapic_timer_start(
 	void)
 {
-	const char *stage;
-	uint64_t tsc_start;
-	uint64_t tsc_end;
-	uint64_t window_tsc_start;
-	uint64_t window_tsc_end;
-	uint32_t lapic_start;
-	uint32_t lapic_end;
-	uint32_t window_elapsed[TIMER_CAL_WINDOWS];
-	uint32_t elapsed;
-	uint32_t current;
-	uint8_t port61;
-	unsigned polls;
-	unsigned window;
-	enum amd64_tsc_frequency_policy_result tsc_policy;
-	int measure_tsc;
 	int error;
 
 	/* Calibrates the shared timer period once on the BSP. */
 	if (timer_initial == 0) {
-		tsc_start = 0U;
-		tsc_end = 0U;
-		elapsed = 0xffffffffU;
-		stage = "complete";
-		hal_puts("A64 TIMER CAL BEGIN\n");
-
-		/* Determines whether the PIT window must also calibrate TSC. */
-		tsc_policy = amd64_timecounter_bsp_prepare();
-		measure_tsc = tsc_policy == AMD64_TSC_FREQUENCY_NEEDS_PIT;
-
-		/*
-		 * Measures several PIT windows with a masked free-running APIC
-		 * timer, each bracketed at its gate edges like the TSC, and keeps
-		 * the shortest together with its TSC pair.
-		 */
-		for (window = 0U; window < TIMER_CAL_WINDOWS; window++) {
-			/* Restarts the free-running APIC count for this window. */
-			write_reg(LAPIC_TIMER_DIVIDE, 0x3U);
-			write_reg(LAPIC_LVT_TIMER, LAPIC_MASKED | INT_IRQ_BASE);
-			write_reg(LAPIC_TIMER_INITIAL, 0xffffffffU);
-
-			/* Waits out one gated PIT window. */
-			window_tsc_start = 0U;
-			window_tsc_end = 0U;
-			lapic_start = 0U;
-			lapic_end = 0U;
-			error = pit_wait_10ms(
-				&port61,
-				&polls,
-				&stage,
-				measure_tsc,
-				&window_tsc_start,
-				&window_tsc_end,
-				&lapic_start,
-				&lapic_end);
-
-			/* Stops both calibrations after a bounded PIT timeout. */
-			if (error != HAL_OK) {
-				current = read_reg(LAPIC_TIMER_CURRENT);
-				write_reg(LAPIC_LVT_TIMER, LAPIC_MASKED | INT_IRQ_BASE);
-				write_reg(LAPIC_TIMER_INITIAL, 0);
-				amd64_timecounter_bsp_abort();
-				hal_printf(
-					"A64 TIMER CAL TIMEOUT stage=%s port61=%02X "
-					"lapic-current=%08X polls=%u\n",
-					stage,
-					port61,
-					current,
-					polls);
-				return HAL_ERR_TIMEOUT;
-			}
-
-			/* The APIC counts down: the window is the difference of its two samples. */
-			window_elapsed[window] = lapic_start - lapic_end;
-			hal_printf("A64 TIMER CAL WINDOW %u elapsed=%u\n", window, window_elapsed[window]);
-
-			/* Keeps the shortest window, which no delay has lengthened most. */
-			if (window_elapsed[window] < elapsed) {
-				elapsed = window_elapsed[window];
-				tsc_start = window_tsc_start;
-				tsc_end = window_tsc_end;
-			}
-		}
-
-		/* Stops the free-running count before the periodic timer is programmed. */
-		write_reg(LAPIC_TIMER_INITIAL, 0);
-
-		/* Rejects an implausibly short calibration interval. */
-		if (elapsed < 100U) {
-			write_reg(LAPIC_LVT_TIMER, LAPIC_MASKED | INT_IRQ_BASE);
-			amd64_timecounter_bsp_abort();
-			hal_printf(
-				"A64 TIMER CAL INVALID elapsed=%u\n",
-				elapsed);
-			return HAL_ERR_STATE;
-		}
-
-		/*
-		 * Publishes APIC calibration before optional PIT TSC completion.
-		 * The window is 10 ms (100 Hz); the period is scaled to the
-		 * HAL tick rate.
-		 */
-		timer_initial = (uint32_t)(((uint64_t)elapsed * 100U) /
-		    HAL_TIMER_FREQUENCY);
-		if (measure_tsc) {
-			amd64_timecounter_pit_complete(
-				tsc_start,
-				tsc_end,
-				PIT_INPUT_HZ,
-				PIT_CAL_TICKS);
-		}
-		hal_printf("A64 TIMER CAL READY ticks=%u\n", timer_initial);
+		error = calibrate_timer();
+		if (error != HAL_OK)
+			return error;
 	}
 
 	/* Programs the calibrated periodic timer on the current CPU. */
@@ -361,7 +272,7 @@ amd64_lapic_timer_start(
 	write_reg(LAPIC_LVT_TIMER, LAPIC_PERIODIC | INT_IRQ_BASE);
 	write_reg(LAPIC_TIMER_INITIAL, timer_initial);
 
-	/* Reports an active periodic local timer. */
+	/* Succeeded: the periodic local timer is running. */
 	return HAL_OK;
 }
 
@@ -732,6 +643,224 @@ init_registers(
 	write_reg(LAPIC_LVT_ERROR, AMD64_VECTOR_ERROR);
 	write_reg(LAPIC_ESR, 0);
 	write_reg(LAPIC_ESR, 0);
+}
+
+/*
+ * Measures the local APIC timer's count over 10 ms and publishes the period.
+ *
+ * The reference that times the 10 ms is the TSC when CPUID has already given
+ * its rate, and the PIT otherwise.  The PIT is not used when it is not needed:
+ * a Core i5-13400F desktop's PIT output never rose, and the boot stopped
+ * (BUG-303).  A PIT window also measures the TSC's rate when CPUID did not.
+ */
+static int
+calibrate_timer(
+	void)
+{
+	const char *stage;
+	uint64_t tsc_frequency;
+	uint64_t tsc_window;
+	uint64_t tsc_start;
+	uint64_t tsc_end;
+	uint64_t window_tsc_start;
+	uint64_t window_tsc_end;
+	uint32_t lapic_start;
+	uint32_t lapic_end;
+	uint32_t window_elapsed[TIMER_CAL_WINDOWS];
+	uint32_t elapsed;
+	uint32_t current;
+	uint8_t port61;
+	unsigned polls;
+	unsigned window;
+	enum amd64_tsc_frequency_policy_result tsc_policy;
+	bool tsc_reference;
+	int measure_tsc;
+	int error;
+
+	/* Starts with no window measured and no reference chosen. */
+	tsc_frequency = 0U;
+	tsc_window = 0U;
+	tsc_start = 0U;
+	tsc_end = 0U;
+	elapsed = 0xffffffffU;
+	stage = "complete";
+	port61 = 0U;
+	polls = 0U;
+	hal_puts("A64 TIMER CAL BEGIN\n");
+
+	/* Learns whether CPUID gave the TSC's rate or a PIT window must measure it. */
+	tsc_policy = amd64_timecounter_bsp_prepare();
+	measure_tsc = 0;
+	if (tsc_policy == AMD64_TSC_FREQUENCY_NEEDS_PIT)
+		measure_tsc = 1;
+
+	/* Takes the TSC's rate as the reference when CPUID already gave it. */
+	tsc_reference = false;
+	if (tsc_policy == AMD64_TSC_FREQUENCY_READY)
+		tsc_reference = amd64_timecounter_bsp_candidate_frequency(&tsc_frequency);
+
+	/* Converts that rate into the TSC count one window lasts. */
+	if (tsc_reference) {
+		tsc_reference = amd64_tsc_window_ticks(
+			tsc_frequency,
+			TIMER_CAL_WINDOWS_PER_SECOND,
+			&tsc_window);
+	}
+
+	/* Reports which reference times the windows. */
+	if (tsc_reference) {
+		hal_printf(
+			"A64 TIMER CAL source=tsc hz=%llu window=%llu\n",
+			(unsigned long long)tsc_frequency,
+			(unsigned long long)tsc_window);
+	} else {
+		hal_puts("A64 TIMER CAL source=pit\n");
+	}
+
+	/*
+	 * Measures several windows with a masked free-running APIC timer, each
+	 * bracketed at the reference's edges, and keeps the shortest together
+	 * with its TSC pair.
+	 */
+	for (window = 0U; window < TIMER_CAL_WINDOWS; window++) {
+		/* Restarts the free-running APIC count for this window. */
+		write_reg(LAPIC_TIMER_DIVIDE, 0x3U);
+		write_reg(LAPIC_LVT_TIMER, LAPIC_MASKED | INT_IRQ_BASE);
+		write_reg(LAPIC_TIMER_INITIAL, 0xffffffffU);
+
+		/* Waits out one window of the chosen reference. */
+		window_tsc_start = 0U;
+		window_tsc_end = 0U;
+		lapic_start = 0U;
+		lapic_end = 0U;
+		if (tsc_reference) {
+			error = tsc_wait_window(
+				tsc_window,
+				&polls,
+				&stage,
+				&lapic_start,
+				&lapic_end);
+		} else {
+			error = pit_wait_10ms(
+				&port61,
+				&polls,
+				&stage,
+				measure_tsc,
+				&window_tsc_start,
+				&window_tsc_end,
+				&lapic_start,
+				&lapic_end);
+		}
+
+		/* Stops both calibrations after a bounded reference timeout. */
+		if (error != HAL_OK) {
+			current = read_reg(LAPIC_TIMER_CURRENT);
+			write_reg(LAPIC_LVT_TIMER, LAPIC_MASKED | INT_IRQ_BASE);
+			write_reg(LAPIC_TIMER_INITIAL, 0);
+			amd64_timecounter_bsp_abort();
+			hal_printf(
+				"A64 TIMER CAL TIMEOUT stage=%s port61=%02X "
+				"lapic-current=%08X polls=%u\n",
+				stage,
+				port61,
+				current,
+				polls);
+			return HAL_ERR_TIMEOUT;
+		}
+
+		/* The APIC counts down: the window is the difference of its two samples. */
+		window_elapsed[window] = lapic_start - lapic_end;
+		hal_printf("A64 TIMER CAL WINDOW %u elapsed=%u\n", window, window_elapsed[window]);
+
+		/* Keeps the shortest window, which no delay has lengthened most. */
+		if (window_elapsed[window] < elapsed) {
+			elapsed = window_elapsed[window];
+			tsc_start = window_tsc_start;
+			tsc_end = window_tsc_end;
+		}
+	}
+
+	/* Stops the free-running count before the periodic timer is programmed. */
+	write_reg(LAPIC_TIMER_INITIAL, 0);
+
+	/* Rejects an implausibly short calibration interval. */
+	if (elapsed < 100U) {
+		write_reg(LAPIC_LVT_TIMER, LAPIC_MASKED | INT_IRQ_BASE);
+		amd64_timecounter_bsp_abort();
+		hal_printf(
+			"A64 TIMER CAL INVALID elapsed=%u\n",
+			elapsed);
+		return HAL_ERR_STATE;
+	}
+
+	/*
+	 * Publishes APIC calibration before optional PIT TSC completion.
+	 * A window is a TIMER_CAL_WINDOWS_PER_SECOND-th of a second; the
+	 * period is scaled to the HAL tick rate.
+	 */
+	timer_initial = (uint32_t)(((uint64_t)elapsed * TIMER_CAL_WINDOWS_PER_SECOND) /
+	    HAL_TIMER_FREQUENCY);
+	if (measure_tsc) {
+		amd64_timecounter_pit_complete(
+			tsc_start,
+			tsc_end,
+			PIT_INPUT_HZ,
+			PIT_CAL_TICKS);
+	}
+	hal_printf("A64 TIMER CAL READY ticks=%u\n", timer_initial);
+
+	/* Succeeded: timer_initial holds the period every CPU programs. */
+	return HAL_OK;
+}
+
+/* Measures the APIC timer's count over one window timed by the TSC. */
+static int
+tsc_wait_window(
+	uint64_t window_ticks,
+	unsigned *polls,
+	const char **stage,
+	uint32_t *lapic_start,
+	uint32_t *lapic_end)
+{
+	uint64_t start;
+	uint64_t now;
+	uint64_t passed;
+	unsigned count;
+
+	/* Brackets the window's start with the TSC and the APIC timer's count. */
+	start = amd64_timecounter_sample_serialized();
+	*lapic_start = read_reg(LAPIC_TIMER_CURRENT);
+
+	/*
+	 * Spins until the TSC has advanced one window.  The poll bound only
+	 * catches a TSC that does not move: a window is far fewer polls.
+	 */
+	for (count = 0U; count < TSC_POLL_LIMIT; count++) {
+		now = amd64_timecounter_sample_serialized();
+
+		/* A sample behind the start, never seen on one CPU, has not passed any time. */
+		passed = 0U;
+		if (now > start)
+			passed = now - start;
+
+		/* Ends the window once it has lasted its TSC count. */
+		if (passed >= window_ticks)
+			break;
+		__asm__ volatile("pause");
+	}
+
+	/* Brackets the window's end with the APIC timer's count. */
+	*lapic_end = read_reg(LAPIC_TIMER_CURRENT);
+	*polls = count;
+
+	/* Reports a TSC that never reached the window's end. */
+	if (count == TSC_POLL_LIMIT) {
+		*stage = "tsc";
+		return HAL_ERR_TIMEOUT;
+	}
+
+	/* Succeeded: the two APIC samples bracket one window. */
+	return HAL_OK;
 }
 
 /* Waits for the PIT output pin to reach one level. */
