@@ -97,3 +97,11 @@ Event ws074-p189-q1068-outcome-20261014: 単一HTTP適格testharness1,455 IDを�
 ## q1069-i01 結果（2026-10-14 04:42 JST）
 
 Event ws074-p189-q1069-outcome-20261014: q1068旧PASS→FAIL19 IDを現行同一browserのfont未指定条件で再実行し全19 completion付きPASS。[証拠](evidence/20261014-q1069/README.md)。局所100×20 boxはfont未指定時0×0、固定font時100×20で、旧PASSはgeometry欠落の見かけの結果と判定。anchor14・sideways scroll4・Flex radio1の固定font FAILは実際の未達。ID/checkpoint/raw全19一致、diff check PASS。q1069-i01 partial cleared、p189 whole uncleared。q1068固定font223 PASS/1232非PASSを最新baselineとして維持、環境未対応328、p173全3805件100%未達。browser/WPT/runner/Master無変更、共有投影/GitHub publication保留。
+
+## q1072-i01 有限部分範囲（2026-10-14 05:11 JST）
+
+このchatのユーザーによる全3,805件100%までの有限Queue事前承認を最大90分（06:41 JSTまで）に適用。固定manifestの `css/css-grid/` testharnessを抽出し、既存単一HTTP物理HTML適格判定と同じ WPT/host/localhost/5秒settle/20秒process/固定font条件で全適格IDを最大128件ずつ決定的shard測定する。q1068の同一IDとのoutcome/subtest遷移、旧PASS回帰、ID集合/checkpoint/gzip rawを照合し、Grid固有の次の一般欠陥群を分類する。環境未対応・未実行・no_outputをPASSに数えない。runner/browser/WPT本体/公開ABI/`plan/master.md`変更なし。90分以内に完走しない場合、完了済みと未実行を別記してunclearedで止める。適用: [Guardrail](../../guardrail.md)とrunner近傍規則。p189 whole全1,783件とp173全3,805件100%はこの部分受け入れに含めない。
+
+## q1072-i01 結果（2026-10-14 05:22 JST）
+
+Event ws074-p189-q1072-outcome-20261014: 固定Grid testharness適格502 IDを最大128件×4 shardで同条件全件再測定。[証拠](evidence/20261014-q1072/README.md)。旧41 PASS/429 FAIL/32 no_output→新43 PASS/427 FAIL/32 no_output。2 ID whole FAIL→PASS、旧PASS後退0。subtest PASS1777→1809（+32）。no_output32件は全てmodule scriptを含む2系列。ID集合/hash/checkpoint/gzip raw全502一致、4 shard exit0、diff check PASS。q1072-i01 partial cleared、p189 whole uncleared。残るGrid427 FAIL/32 no_outputとGrid以外の適格対象、環境未対応328、p173全3,805件100%未達。browser/runner/WPT/Master無変更、共有投影/GitHub publication保留。

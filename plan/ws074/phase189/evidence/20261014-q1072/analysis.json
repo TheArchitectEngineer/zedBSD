@@ -1,0 +1,90 @@
+{
+  "fixed_wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "eligible": 502,
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "old_outcomes": {
+    "fail": 429,
+    "pass": 41,
+    "no_output": 32
+  },
+  "new_outcomes": {
+    "fail": 427,
+    "pass": 43,
+    "no_output": 32
+  },
+  "transitions": {
+    "('fail', 'fail')": 427,
+    "('fail', 'pass')": 2,
+    "('no_output', 'no_output')": 32,
+    "('pass', 'pass')": 41
+  },
+  "changed": [
+    {
+      "id": "/css/css-grid/alignment/grid-align-justify-margin-border-padding.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-sticky-positioned-items-001.html",
+      "old": "fail",
+      "new": "pass"
+    }
+  ],
+  "changed_subtests": [
+    {
+      "id": "/css/css-grid/alignment/grid-align-justify-margin-border-padding.html",
+      "old_pass_subtests": 4,
+      "new_pass_subtests": 18
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-sticky-positioned-items-001.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 2
+    }
+  ],
+  "subtest_status_totals": {
+    "old": {
+      "1": 6028,
+      "0": 1777
+    },
+    "new": {
+      "1": 5996,
+      "0": 1809
+    }
+  },
+  "shards": [
+    {
+      "offset": 0,
+      "count": 128,
+      "outcomes": {
+        "fail": 82,
+        "pass": 14,
+        "no_output": 32
+      }
+    },
+    {
+      "offset": 128,
+      "count": 128,
+      "outcomes": {
+        "fail": 121,
+        "pass": 7
+      }
+    },
+    {
+      "offset": 256,
+      "count": 128,
+      "outcomes": {
+        "fail": 124,
+        "pass": 4
+      }
+    },
+    {
+      "offset": 384,
+      "count": 118,
+      "outcomes": {
+        "fail": 100,
+        "pass": 18
+      }
+    }
+  ]
+}
