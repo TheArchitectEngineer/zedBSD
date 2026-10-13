@@ -15,9 +15,9 @@
  * ancestor, or the viewport's rectangle at the top of the document) is
  * already placed.  An auto width with left or right auto shrinks to fit:
  * the box is laid out once very wide to measure its content, then at the
- * narrower of that and the room it has.  A fixed box is placed like an
- * absolute one against the viewport's rectangle and scrolls with the page
- * in this pass.
+ * room it has, bounded below by content that cannot break.  A fixed box
+ * is placed like an absolute one against the viewport's rectangle and
+ * scrolls with the page in this pass.
  *
  * The painting order lists every positioned box as a layer.  A box under
  * an ancestor with an explicit z-index stays in that ancestor's outer
@@ -56,6 +56,7 @@ struct position_entry {
 
 static int position_walk(struct layout_tree *tree, struct layout_box *box, const struct position_block *containing, const struct position_block *viewport, int depth);
 static int position_place(struct layout_tree *tree, struct layout_box *box, const struct position_block *containing);
+static int position_min_content(struct layout_tree *tree, struct layout_box *box, layout_unit *width);
 static void position_padding_box(const struct layout_box *box, struct position_block *block);
 static int position_offset(const struct css_length *length, layout_unit size, layout_unit *value);
 static layout_unit position_frame(const struct layout_box *box);
@@ -155,10 +156,10 @@ layout_stacking_order(
 
 /*
  * Lays out a box whose width is auto so it shrinks to its content: at the
- * narrower of its content's width without a limit (layout_max_content) and
- * the room (minus its margins, borders and paddings).  A box with a width
- * is laid out in the room as it is.  The style keeps its auto width, so a
- * later layout in another room shrinks the box again.
+ * room (minus margins, borders and padding), bounded below by its narrowest
+ * broken content and above by its width without a limit
+ * (layout_max_content).  A box with a width is laid out in the room as it
+ * is.  The style keeps its auto width, so another room shrinks it again.
  */
 int
 layout_shrink_to_fit(
@@ -168,7 +169,9 @@ layout_shrink_to_fit(
 {
 	struct css_length width;
 	layout_unit content;
+	layout_unit minimum;
 	layout_unit outside;
+	layout_unit available;
 	int indefinite_percentage;
 	int error;
 
@@ -191,13 +194,26 @@ layout_shrink_to_fit(
 		return error;
 	}
 
-	/* No wider than the room leaves, and not negative. */
+	/* The room available to the content after its margins and frame. */
 	layout_box_model(box, room);
 	outside = position_frame(box) + box->margin[CSS_LEFT] + box->margin[CSS_RIGHT];
-	if (content > room - outside)
-		content = room - outside;
-	if (content < 0)
-		content = 0;
+	available = room - outside;
+	if (available < 0)
+		available = 0;
+
+	/* CSS shrink-to-fit keeps the widest unbreakable content even when the room is empty. */
+	if (content > available) {
+		error = position_min_content(tree, box, &minimum);
+		if (error != 0) {
+			box->style.width = width;
+			return error;
+		}
+		content = available;
+		if (content < minimum)
+			content = minimum;
+		if (content > box->max_content)
+			content = box->max_content;
+	}
 
 	/* Under box-sizing: border-box the width given is the border box's. */
 	if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
@@ -261,6 +277,41 @@ layout_max_content(
 
 	/* Succeeded: the width is measured. */
 	*width = box->max_content;
+	return 0;
+}
+
+/* Measures the narrowest content width with every permitted line break taken. */
+static int
+position_min_content(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	layout_unit *width)
+{
+	struct layout_context context;
+	struct wb_vector floats;
+	struct css_length given;
+	int error;
+
+	/* A replaced item cannot break inside its own width. */
+	if (box->replaced) {
+		*width = box->width;
+		return 0;
+	}
+
+	/* Lay it out in zero room to take every allowed line break. */
+	given = box->style.width;
+	box->style.width.unit = CSS_UNIT_AUTO;
+	tree->measuring++;
+	layout_context_begin(tree, &context, &floats);
+	error = layout_block(tree, box, 0);
+	layout_context_end(tree, &context);
+	tree->measuring--;
+	box->style.width = given;
+	if (error != 0)
+		return error;
+
+	/* The widest remaining line or child is the min-content width. */
+	*width = layout_content_width(box, 0);
 	return 0;
 }
 

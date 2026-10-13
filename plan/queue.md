@@ -4,7 +4,7 @@
 
 ## 2026-10-13 WS074 の独立 lane
 
-[q1000](history/queue-q1000.md) は p178 の初回試行が uncleared。[q1001](ws074/queue.md) はこの Codex セッションがユーザーの承認で管理した p179 の有限試行で **cleared / Queue finished**。参照背景画像を修復し、Acid3 差は302056から56647へ減った。[履歴](history/queue-q1001.md)。メインセッションの q924〜q939 と別の source tree で実行し、同じ番号を使わない。次 Queue は未選定。`master.md` は変更しない。
+[q1000](history/queue-q1000.md) は p178 初回試行 uncleared、[q1001](history/queue-q1001.md) は p179 cleared。[q1002](ws074/queue.md) はユーザーが得点位置の `right:0`/auto幅を最大90分で承認し、このセッションが単独・別 source tree で実行して **部分 scope cleared / Queue finished**。Acid3 差は56647→43486、Acid2差1865不変。[履歴](history/queue-q1002.md)。p178 whole/p100は未達。メインセッションの q924〜q939 と同じ番号を使わない。次 Queue は未選定。`master.md` は変更しない。
 
 Active Queues: q780（P1）・q784（T1・P2）。予約 q781〜q783（2026-10-06 の節）。以前の記載: q700（P1）・q703（P2）。2026-10-05 未明のベータ1 の実装の束（下の節）。委譲の session の P4 は q697・q698・q699 を cleared で終了（main efe846a に統合）。uat-3 の image を作成（plan/uat.md）。
 Status: active

@@ -1,11 +1,11 @@
 <!-- awesome-plan project=zedbsd record=ws074-p178 -->
-# ws074-p178: B1 の試行 — Acid3 の 1 領域を pixel で一致させる
+# ws074-p178: Acid3 の 1 領域を pixel で一致させる
 
-Status: uncleared（2026-10-13 q1000-i01。差が画面全体に及び、1領域を選ぶ停止条件に該当）
+Status: uncleared（2026-10-13 q1002-i01 は得点位置の部分 scope を cleared。Phase 全体の1領域 pixel 完全一致は未達。q1000-i01 も uncleared の履歴）
 Disposition: normal
 Parent: [WS074](../ws.md)
-Owner: この Codex セッション（今回の試行）。B1 の Sonnet 5.5 Mid のモデル評価は別途未実施。
-Queue: [q1000-i01](../queue.md)
+Owner: この Codex セッション単独。B1 の Sonnet 5.5 Mid のモデル評価は現行 scope から外した（2026-10-13 ユーザーの単独エージェント指示）。
+Queue: [q1002-i01](../queue.md)（[q1000-i01 履歴](../../history/queue-q1000.md)）
 Related: [p100](../phase100/phase.md)（Acid3 の 100/100 と pixel の完全一致。この Phase はその一部の試行）
 
 ## 由来
@@ -15,7 +15,7 @@ Related: [p100](../phase100/phase.md)（Acid3 の 100/100 と pixel の完全一
 ## 目的
 
 1. Acid3 の画面のうち **1 つの領域**（下の手順 3 で選ぶ、1 つの色の箱か得点の文字など）を、参照と pixel で一致させる。
-2. 同時に、**Sonnet 5.5（effort medium）の B1 がこの種の作業をこなせるか**を確かめる。かかった時間・つまずいた所・Q1 の助けが要った所を記録する（下の「試行の記録」）。
+2. 当初の B1 モデル適性評価は、2026-10-13 の「あなたは単独のエージェントとして動作します。サブエージェントは使いません。」で現行 scope から外した。履歴・既存手順は下に保存し、このセッションの成果を B1 評価と扱わない。
 
 全体の pixel の完全一致（p100）は目的にしない。1 領域で止める。
 
@@ -171,3 +171,11 @@ Codex の独立 tree `/tmp/zedbsd-ws074`（開始時 source `7433ca18d`）で実
 2026-10-13 / q1001-p179-output: [p179](../phase179/phase.md) は cleared。参照画像が canvas に描かれ、同条件の Acid3 差は302056から56647へ減った。q1000-i01 の uncleared は書き換えない。次の局所領域を差画像から選び、この Phase の新 attempt を exact scope/時間枠を定めた Queue に入れる必要がある。Acid2 の差1865/120000と p100 の全画面差0も残る。
 
 2026-10-13 / next-attempt-proposal: 残る差のうち参照ページの得点「100/100」の位置を [次の有限試行案](next-queue-proposal.md) に選んだ。参照では `right:0` の絶対配置子が x=625 から右へ出ており、test の得点は x=231.80。一般的な絶対配置の auto 幅/right 計算を原因候補として最大90分の調査・最小修正・同条件再計測を提案する。これは計画のみで Queue 未選定・未承認。
+
+2026-10-13 22:39 JST / q1002-i01 start: ユーザーが提示した[exact scope](next-queue-proposal.md)へ「自動で承認します」と回答した。これは今回の q1002-i01 の承認として記録。`right:0`/auto幅の得点領域のみ、最大90分、原因確定後の一般的な最小修正と host・Acid3/Acid2 の同条件確認を行う。B1 サブエージェントは今回のユーザー指示により使わず、モデル適性の評価は未実施のまま。
+
+2026-10-13 22:42 JST / q1002 原因確定（修正前）: `position.c` の `position_place()` は `right:0` の x を「親の右端 − 子の幅」で算出しており、右端の式はある。一方 `layout_shrink_to_fit()` は幅を `min(max-content, available)` とし、CSS 2.1 §10.3.7 の `min(max(min-content, available), max-content)` に必要な min-content 下限を欠く。幅0の containing block で子の幅が0になり、x=625から文字が右にはみ出す。通常の位置決め経路を最小 fixture の `zero-anchor` / `zero-child` で再現し、既存 source の `host-position` は `right-aligned child keeps min-content width` で FAIL。`position.c` の shrink-to-fit に min-content 測定と下限を加える最小修正を行う。実際の pixel 非増加は修正後に判定する。
+
+2026-10-13 22:43 JST / q1002-i01 結果: `layout/position.c` の auto 幅 shrink-to-fit に min-content 下限を追加した。`position.html` のゼロ幅親と `host-position.c` の右端・内容幅チェックで、修正前 25検査中2失敗（そのうち1件は期待順の記述を訂正）、修正後 **25/25 pass**。`sh plan/ws074/tests/host-build.sh plain` 終了値0、warning/error0、`git diff --check` pass。固定 WPT と q1001 と同一 font/viewport/settle の `python3 plan/ws074/tests/run-acid-tests.py --out build/ws074-acid-q1002` 終了値0。Acid3 score100/100、inventory100/100、例外0、RGB差 **43486/480000**（90.9404%一致、q1001より13161減）。Acid2 差1865/120000は不変。参照の得点文字は paint の x=625 から **x=231.80** に移り、右端x=625に揃った。score ROI x200..625/y210..350 の差は9572→800。全体/ROI とも差0ではない。[report](evidence/20261013-q1002/report.json)、[Acid3並列画像](evidence/20261013-q1002/acid3-side.png)、Acid2並列画像、test/reference layout/paint を保存。変更した C と試験の全文規約・component規約を確認し、新規違反は見つからなかった。別 OS/QEMUと main 現行HEAD全体との再buildは未実施。
+
+q1002-i01 は承認された得点**位置**の部分 scope を cleared、q1002 Queue は finished。p178 の「1領域の全 pixel 一致」は得点の slash 色・基線などが残り未達のため Phase は uncleared のまま。B1 のモデル適性は現行 scope の対象外で未評価。p100/WS074 も incomplete。次の差領域・原因を別の exact scope で選定するまで実装を進めない。旧 q1000-i01 の uncleared はそのまま保持する。

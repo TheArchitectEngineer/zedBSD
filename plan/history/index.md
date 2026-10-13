@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1001 / WS074 Acid3 参照背景画像（2026-10-13）
+## 最新: q1002 / WS074 Acid3 得点位置（2026-10-13）
+
+[q1002履歴](queue-q1002.md): 絶対配置の `right:0`/auto幅で min-content 下限が欠ける問題を修正。固定 Acid3 は得点100/100・pixel差43486/480000（q1001の56647から13161減）、Acid2差1865/120000で不変。host-position25/25、build warning0。p178 の得点位置の部分 scope は cleared、Phase の pixel 完全一致は未達で uncleared。B1評価はユーザーの単独指示で現行scope対象外。p100/WS074 も未達。次 Queue は未選定。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
+
+## 前回: q1001 / WS074 Acid3 参照背景画像（2026-10-13）
 
 [q1001履歴](queue-q1001.md): p179 で高さ0の root から canvas に伝播する背景画像の省略を修正。固定 Acid3 は得点100/100・pixel差56647/480000（q1000 の302056から245409減）、Acid2差1865/120000で不変。host build warning0、回帰試験pass。p179 cleared、p178 の旧 attempt は uncleared、p100/WS074 は未達。新 Queue は未選定。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
 
