@@ -277,7 +277,7 @@ int page_resolve_location(const char *base, const char *href, struct wb_buffer *
 int page_record_visited(struct page *page, const struct wb_buffer *url);
 void page_images_init(struct page *page);
 void page_set_loader(struct page *page, struct net_loader *loader);
-int page_load_bytes(struct page *page, const unsigned char *bytes, size_t length, const char *location);
+int page_load_bytes(struct page *page, const unsigned char *bytes, size_t length, const char *location, const char *mime, size_t mime_length);
 int page_net_create(struct net_loader **loader);
 void page_net_destroy(struct net_loader *loader);
 size_t page_net_poll_fds(const struct net_loader *loader, struct pollfd *fds, size_t capacity);

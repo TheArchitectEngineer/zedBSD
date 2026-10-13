@@ -119,3 +119,5 @@ Event ws074-p190-q1043-uncleared-20261014: q1043-i01 uncleared。遅いXHTMLと�
 Event ws074-p190-q1044-outcome-20261014: q1044-i01 partial cleared、p190 whole uncleared。固定静的1,561 reftestのlocal baselineを完了。10 timeoutと1,051 FAIL、413 runner未対応を次の調査へ分ける。
 
 Event ws074-p190-q1045-p195-link-20261014: q1044のtimeout10 IDを新設[p195](../phase195/phase.md)の一般欠陥調査へ渡す。p190のrunner coverage/公式条件の受け入れは変えず、p195の修正結果を次の再測定で使用する。GitHub publication保留。
+
+Event ws074-p190-q1046-p196-output-20261014: [p196](../phase196/phase.md)の最上位XHTML対応後、固定timeout10 IDを同じ5秒で再測定し0 timeout・1 local PASS/9 FAIL。[証拠](../phase196/evidence/20261014-q1046/README.md)。p190全静的1,561件のq1044 baselineは履歴として保持し、次の全件再測定が最新baselineを作る。script/variantと公式環境同等性は未達、p190 wholeはuncleared。

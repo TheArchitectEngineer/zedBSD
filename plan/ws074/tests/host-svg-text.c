@@ -160,7 +160,7 @@ main(
 
 	/* The parent contains a genuine parser-created canonical SVG text subtree. */
 	html = "<!doctype html><body><svg id='root'><text id='subject'>abc</text></svg><script>var ns='http://www.w3.org/2000/svg';var t=document.getElementById('subject');</script></body>";
-	error = page_load_bytes(page, (const unsigned char *)html, strlen(html), wb_buffer_string(&path));
+	error = page_load_bytes(page, (const unsigned char *)html, strlen(html), wb_buffer_string(&path), "text/html", 9);
 	if (error != 0)
 		goto cleanup;
 

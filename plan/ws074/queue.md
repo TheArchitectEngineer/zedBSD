@@ -2,14 +2,14 @@
 
 # q1046 / WS074 top-level XHTML parsing
 
-Status: active（2026-10-14 02:04 JST 開始）
+Status: finished（2026-10-14 02:04–02:07 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p196のq1046有限部分scope](phase196/phase.md) に適用。
 Timebox: 2026-10-14 02:04 JST 開始、最大90分（03:34 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1046-i01 | [ws074-p196](phase196/phase.md) partial | 最上位file/HTTP XHTMLのMIME経路を調べ、script-free XHTMLを既存XML parserで実DOM/render化。HTML/XML host試験、固定timeout10 ID再測定、host/Acid回帰。WPT/Master/公開ABI変更なし。最大90分 | in-progress | p195 q1045根因証拠 |
+| q1046-i01 | [ws074-p196](phase196/phase.md) partial | 最上位file/HTTP XHTMLのMIME経路を調べ、script-free XHTMLを既存XML parserで実DOM/render化。HTML/XML host試験、固定timeout10 ID再測定、host/Acid回帰。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial） | p195 q1045根因証拠 |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -20,6 +20,8 @@ Coordination: [q1014](../history/queue-q1014.md) までの履歴を保持。共�
 Previous outcome: q1013-i01 partial cleared、p189 whole uncleared。選定testharness1件のWPT callbackから12 subtestとcompletionを取得し、4 PASS/8 FAIL、harness OK、runnerの結果はFAIL。status分類の unit5/5、py_compile、diff check PASS。[証拠](phase189/evidence/20261014-q1013/README.md)。残り1,782 testharnessと p173全件baseline、100%は未達。
 
 Outcome: q1045-i01 uncleared、p195 whole uncleared。固定XHTML代表2件は直接file描画でも6秒timeout、referenceは即時描画。`--dump=dom`で最上位XHTMLがHTMLとして解釈されていることを確認。MIME/トップレベルXML接続は単一flex修正を超えるためコード変更なし。[証拠](phase195/evidence/20261014-q1045/README.md)。p173全件100%未達。
+
+Outcome: q1046-i01 partial cleared、p196 whole uncleared。最上位XHTMLをXML解析へ接続し、固定10件timeoutを0へ改善、1 local PASS/9 FAIL。host MIME/DOM4/4・build warning0・Acid3差0/Acid2差1865。[証拠](phase196/evidence/20261014-q1046/README.md)。p195は後続証拠でwhole cleared。p173全件100%未達。
 
 Outcome: q1014-i01 partial cleared、p189 whole uncleared。19領域から条件を満たす15 IDを選定・実行、12 test FAIL・1 harness ERROR・1 completion無し・1 stdout無し、PASS0。4領域は未実行理由を保存。選定 unit2/2、py_compile、diff check PASS。[証拠](phase189/evidence/20261014-q1014/README.md)。q1013 と合わせユニーク16/1,783 testharnessを試行。ブラウザ/WPT/Master無変更、Acid3再計測省略。p173全件baseline・100%未達、共有Master/Queue/GitHub publication pending。
 

@@ -2,7 +2,7 @@
 
 # ws074-p195: Interop 2025 flexbox XHTML render timeout
 
-Status: uncleared（2026-10-14 q1045-i01）
+Status: cleared（2026-10-14 q1045-i01はuncleared、q1046の後続実装と検証で受け入れ充足）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -25,3 +25,7 @@ Event ws074-p195-created-20261014: p190 q1044で固定静的全1,561件のlocal 
 **uncleared。** `flexbox-justify-content-horiz-003.xhtml` と `004.xhtml` は直接file描画でも6秒timeout、`003-ref.xhtml` は即時描画。gdbで003を中断したスタックは `inline_cut_text` → `layout_inline` → `layout_block` → `layout_flex`。ただしこのlayout負荷は根因でなく、`--dump=dom` ではXHTML宣言がHTMLコメントとなり、53個の自己終了`<div/>`がHTML parserで閉じられず深い入れ子になった。最上位 `page_load_file` / `page_load_location` は常に `page_load_html` に進み、HTTP MIMEもparser選択へ渡さない。一方iframeには既存の厳密XML parserとDOM projectionがある。[再現・stack証拠](evidence/20261014-q1045/README.md)。
 
 単一flexbox欠陥の最小修正ではないため、このQueueではコードを変更しない。10 ID再測定・host/Acid回帰は修正なしのため省略。最上位文書のContent-Type処理、XML parser接続と脚本/DOM lifecycleの設計を[p196](../phase196/phase.md)で扱う。p190/p173全件の受け入れは未達。Event ws074-p195-q1045-uncleared-20261014: root causeとscope境界を記録。GitHub publication保留。
+
+## 後続 clearance（2026-10-14 q1046）
+
+[p196 q1046](../phase196/evidence/20261014-q1046/README.md)の最上位XHTML修正で固定10 IDは同じ5秒条件のtimeout10→0。host build warning0、HTTP/file XHTMLとHTML試験4/4、Acid3差0・Acid2差1865を確認した。p195の受け入れ条件はこの後続証拠で充足し、Phaseを**cleared**へ更新する。q1045-i01の当時のuncleared結果は履歴のまま。9件の描画FAILはp197候補、p190/p173全件100%は未達。Event ws074-p195-later-clearance-q1046-20261014: 後続の一般欠陥修正/検証を参照。GitHub publication/Issue close保留。

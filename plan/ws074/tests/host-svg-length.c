@@ -182,7 +182,7 @@ main(
 
 	/* The parent contains a genuine parser-created canonical SVG rect subtree. */
 	html = "<!doctype html><body><svg id='root'><rect id='subject' width='100'/></svg><script>var ns='http://www.w3.org/2000/svg';var r=document.getElementById('subject');</script></body>";
-	error = page_load_bytes(page, (const unsigned char *)html, strlen(html), wb_buffer_string(&path));
+	error = page_load_bytes(page, (const unsigned char *)html, strlen(html), wb_buffer_string(&path), "text/html", 9);
 	if (error != 0)
 		goto cleanup;
 

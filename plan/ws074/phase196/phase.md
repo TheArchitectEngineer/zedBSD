@@ -2,7 +2,7 @@
 
 # ws074-p196: top-level XML/XHTML document loading
 
-Status: in-progress（2026-10-14 q1046-i01）
+Status: uncleared（2026-10-14 q1046-i01 partial cleared、全体未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -19,3 +19,9 @@ HTTP `Content-Type: application/xhtml+xml` とローカル `.xhtml` / `.xht` の
 2026-10-14 02:04 JST、ユーザーの「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を適用、最大90分（03:34 JSTまで）。最上位のfile/HTTP読み込みと非同期view responseのMIME経路を調べ、既存XML parser/projectionの再利用でscript-free XHTMLを最小限に正しく描く。HTML/XML分岐の小さなhost試験を作り、固定XHTML timeout10 IDを5秒・800×600・固定fontで再測定する。warning0 host build、関連host試験、Acid3/Acid2差画素非増加を確認する。script付きXHTML一般、SVG/XML一般、XMLエラー表示、全reftest pixel一致、WPT/公開ABI/Master変更は範囲外。安全な内部接続で完結しなければstack/設計障害を記録してunclearedで止める。
 
 Event ws074-p196-created-20261014: [p195](../phase195/phase.md)で最上位XHTML誤解析が固定10件timeoutの根因と判明。p190 runner/p173全件目標は不変。p195からMIMEとトップレベルXML接続という独立の一般欠陥を分離。GitHub publication保留。
+
+## q1046-i01 結果（2026-10-14 02:07 JST）
+
+**partial scope cleared、whole uncleared。** 最上位file/HTTPでMIMEを保持し、script-free XHTMLを既存XML parser/projectionに接続。XML DOMの子を既存DocumentにadoptしてWindowを維持。[証拠](evidence/20261014-q1046/README.md)。固定timeout10 IDは同じ5秒条件で0 timeoutへ改善、1 local PASS/9 FAIL。HTTP XML/HTMLとfile XHTMLのDOM試験4/4、host build warning0、XML DOM54/54・resource105/105・frame load52/52、Acid3差0・Acid2差1865を確認。残り9描画FAILはFlexbox等の描画Phaseへ。p196 wholeにはscript付きXHTMLとload lifecycleの検証が残る。その他XML MIMEとXMLエラー表示はこのPhaseの受け入れ対象外。p190/p173全件100%未達。
+
+Event ws074-p196-q1046-outcome-20261014: q1046-i01 partial cleared。10件timeoutを全解消、描画不一致9件と残余XML lifecycleを分離。GitHub publication保留。

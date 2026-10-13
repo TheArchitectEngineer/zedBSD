@@ -289,7 +289,7 @@ load_create(
 	page_set_loader(*page, loader);
 	page_set_console(*page, load_console, NULL);
 	html = "<!doctype html><body><script>var notes=[];var xmlOwner=false;</script></body>";
-	error = page_load_bytes(*page, (const unsigned char *)html, strlen(html), base);
+	error = page_load_bytes(*page, (const unsigned char *)html, strlen(html), base, "text/html", 9);
 	if (error != 0)
 		return error;
 

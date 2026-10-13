@@ -272,7 +272,7 @@ static void view_prefetch_arrived(void *context, struct net_request *request);
 static void view_prefetch_commit(struct browser_view *view);
 static void view_prefetch_clear(struct browser_view *view);
 static void view_prefetch_free(struct wb_vector *scripts);
-static void view_commit_document(struct browser_view *view, const unsigned char *bytes, size_t length, const char *url, struct wb_vector *scripts);
+static void view_commit_document(struct browser_view *view, const unsigned char *bytes, size_t length, const char *url, const char *mime, size_t mime_length, struct wb_vector *scripts);
 static int view_update(struct browser_view *view);
 static void view_settle_network(struct browser_view *view);
 static void view_clamp_scroll(struct browser_view *view);
@@ -2258,10 +2258,14 @@ view_document_arrived(
 	struct net_request *request)
 {
 	struct browser_view *view;
+	const struct net_response *response;
 	const unsigned char *bytes;
 	const char *url;
+	const char *mime;
 	char *path;
 	size_t length;
+	size_t mime_length;
+	enum dom_document_content content;
 	int error;
 
 	/* The document's request is over. */
@@ -2277,6 +2281,17 @@ view_document_arrived(
 		free(path);
 		return;
 	}
+	response = net_request_response(request);
+	mime = wb_buffer_string(&response->content_type);
+	mime_length = response->content_type.length;
+
+	/* A strict XHTML document has no HTML parser-blocking script prefetch in this scope. */
+	error = page_document_content(mime, mime_length, &content);
+	if (error == 0 && content == DOM_CONTENT_XHTML) {
+		view_prefetch_clear(view);
+		view_commit_document(view, bytes, length, url, mime, mime_length, NULL);
+		return;
+	}
 
 	/* The scripts it names are fetched first; the document waits for them without blocking. */
 	error = view_prefetch_start(view, bytes, length, url);
@@ -2285,7 +2300,7 @@ view_document_arrived(
 
 	/* No script to wait for (or no memory to wait with: the parser reads them at once): the page now. */
 	view_prefetch_clear(view);
-	view_commit_document(view, bytes, length, url, NULL);
+	view_commit_document(view, bytes, length, url, mime, mime_length, NULL);
 }
 
 /*
@@ -2300,6 +2315,8 @@ view_commit_document(
 	const unsigned char *bytes,
 	size_t length,
 	const char *url,
+	const char *mime,
+	size_t mime_length,
 	struct wb_vector *scripts)
 {
 	const struct view_prefetch_script *script;
@@ -2335,7 +2352,7 @@ view_commit_document(
 
 	/* The document, at its final URL. */
 	if (error == 0) {
-		error = page_load_bytes(page, bytes, length, url);
+		error = page_load_bytes(page, bytes, length, url, mime, mime_length);
 		if (error != 0)
 			page_destroy(page);
 	}
@@ -2505,7 +2522,7 @@ view_prefetch_commit(
 	wb_vector_init(&view->prefetches, sizeof(struct view_prefetch_script *));
 
 	/* The page. */
-	view_commit_document(view, document.data, document.length, url, &scripts);
+	view_commit_document(view, document.data, document.length, url, "text/html", 9, &scripts);
 
 	/* What it was made from goes (not the view's, which may hold a new load's). */
 	view_prefetch_free(&scripts);

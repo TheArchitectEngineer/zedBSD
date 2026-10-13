@@ -13,6 +13,7 @@
 
 #include "page/page.h"
 #include "net/net.h"
+#include "xml/dom.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -28,6 +29,9 @@
 #define PAGE_DUMP_DEPTH		512
 
 static int page_gather_styles(struct page *page);
+static int page_load_xhtml(struct page *page, const unsigned char *bytes, size_t length);
+static int page_load_document(struct page *page, const unsigned char *bytes, size_t length, const char *mime, size_t mime_length);
+static int page_file_xhtml(const char *path);
 static int page_link_visited(void *context, struct dom_element *element);
 static int page_container_size(void *context, const struct dom_element *container, float *width, float *height);
 static int page_containers_moved(const struct page *page);
@@ -229,7 +233,9 @@ page_load_bytes(
 	struct page *page,
 	const unsigned char *bytes,
 	size_t length,
-	const char *location)
+	const char *location,
+	const char *mime,
+	size_t mime_length)
 {
 	int error;
 
@@ -240,7 +246,7 @@ page_load_bytes(
 		return ENOMEM;
 
 	/* The document. */
-	error = page_load_html(page, bytes, length);
+	error = page_load_document(page, bytes, length, mime, mime_length);
 	if (error != 0)
 		return error;
 
@@ -276,7 +282,10 @@ page_load_file(
 	}
 
 	/* Loads its bytes. */
-	error = page_load_html(page, buffer.data, buffer.length);
+	if (page_file_xhtml(path))
+		error = page_load_xhtml(page, buffer.data, buffer.length);
+	else
+		error = page_load_html(page, buffer.data, buffer.length);
 	wb_buffer_release(&buffer);
 	if (error != 0)
 		return error;
@@ -297,8 +306,7 @@ page_load_location(
 	const char *location)
 {
 	struct net_url url;
-	struct wb_buffer bytes;
-	struct wb_buffer final_url;
+	struct net_response response;
 	struct wb_buffer where;
 	int error;
 
@@ -315,14 +323,12 @@ page_load_location(
 	net_url_release(&url);
 
 	/* The document's bytes and its final URL. */
-	wb_buffer_init(&bytes);
-	wb_buffer_init(&final_url);
 	wb_buffer_init(&where);
-	error = page_fetch(location, location, &bytes, &final_url);
+	error = page_fetch_response(location, location, &response);
 
 	/* The page's location: a file's path, or the final URL. */
 	if (error == 0)
-		error = page_resolve_location(wb_buffer_string(&final_url), wb_buffer_string(&final_url), &where);
+		error = page_resolve_location(wb_buffer_string(&response.url), wb_buffer_string(&response.url), &where);
 	free(page->base);
 	page->base = NULL;
 	if (error == 0) {
@@ -333,9 +339,9 @@ page_load_location(
 
 	/* The document. */
 	if (error == 0)
-		error = page_load_html(page, bytes.data, bytes.length);
-	wb_buffer_release(&bytes);
-	wb_buffer_release(&final_url);
+		error = page_load_document(page, response.body.data, response.body.length,
+		wb_buffer_string(&response.content_type), response.content_type.length);
+	net_response_release(&response);
 	wb_buffer_release(&where);
 	if (error != 0)
 		return error;
@@ -871,6 +877,99 @@ page_record_visited(
 }
 
 /* Makes the style engine anew with the document's style sheets in order. */
+/* Parses a complete XHTML resource before adding any of its nodes to the active Document. */
+static int
+page_load_xhtml(
+	struct page *page,
+	const unsigned char *bytes,
+	size_t length)
+{
+	struct xml_document *model;
+	struct dom_document *parsed;
+	struct dom_node *child;
+	struct vm_cell *root;
+	struct xml_error failure;
+	int error;
+
+	/* Strict parsing cannot publish a partial source tree. */
+	model = NULL;
+	memset(&failure, 0, sizeof(failure));
+	error = xml_document_parse(&model, bytes, length, &failure);
+	if (error != 0)
+		return error;
+
+	/* The existing XML projection retains all namespaces and self-closing tags. */
+	parsed = NULL;
+	error = xml_document_project(page->heap, model, DOM_CONTENT_XHTML, &parsed);
+	xml_document_destroy(model);
+	if (error != 0)
+		return error;
+
+	/* The projected owner must survive adoption allocations until its last child moves. */
+	root = &parsed->node.cell;
+	error = vm_heap_add_root(page->heap, &root);
+	if (error != 0)
+		return error;
+
+	/* Preserve the original Window and Document identity already installed on this Page. */
+	page->document->content = DOM_CONTENT_XHTML;
+	while (parsed->node.first_child != NULL) {
+		child = parsed->node.first_child;
+		error = dom_adopt(page->document, child);
+		if (error != 0)
+			break;
+		dom_append_child(&page->document->node, child);
+	}
+	vm_heap_remove_root(page->heap, &root);
+	if (error != 0)
+		return error;
+
+	/* Script-free XHTML has the same document completion and stylesheet steps. */
+	error = page_fire_load(page);
+	if (error != 0)
+		return error;
+	return page_gather_styles(page);
+}
+
+/* Selects the actual declared top-level XHTML resource without body sniffing. */
+static int
+page_load_document(
+	struct page *page,
+	const unsigned char *bytes,
+	size_t length,
+	const char *mime,
+	size_t mime_length)
+{
+	enum dom_document_content content;
+	int error;
+
+	if (mime != NULL) {
+		error = page_document_content(mime, mime_length, &content);
+		if (error == 0 && content == DOM_CONTENT_XHTML)
+			return page_load_xhtml(page, bytes, length);
+	}
+	return page_load_html(page, bytes, length);
+}
+
+/* Local top-level XHTML has extension-derived MIME just as file URL fetches do. */
+static int
+page_file_xhtml(
+	const char *path)
+{
+	const char *dot;
+	const char *slash;
+
+	dot = strrchr(path, '.');
+	if (dot == NULL)
+		return 0;
+	slash = strrchr(path, '/');
+	if (slash != NULL && dot < slash)
+		return 0;
+	if (strcmp(dot, ".xhtml") == 0 || strcmp(dot, ".xht") == 0)
+		return 1;
+	return 0;
+}
+
 static int
 page_gather_styles(
 	struct page *page)
