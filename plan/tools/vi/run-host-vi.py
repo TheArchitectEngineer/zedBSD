@@ -5,12 +5,19 @@
 # under build/tmp (removing old runs is Q1's step).
 #   python3 plan/tools/vi/run-host-vi.py [--keep-going]
 # PASS ends with "host-vi: ok (N cases)".
+# The result must not depend on how busy the host is (2026-10-14: a fixed
+# 0.3 s wait failed under a parallel make).  So no step waits a fixed time for
+# vi: keys are typed once vi has left the line mode, each chunk once vi has read
+# the one before (the unread count of the terminal side), a screen is read once
+# it shows what the check expects (or WAIT passes), and the time limit of
+# many-lines is vi's CPU time.  The only fixed waits are the gaps between typed
+# chunks (after a lone ESC, longer than vi's 50 ms ESC wait), which shape what
+# is typed.  Checked with 10 runs in a row beside 192 busy loops on 64 CPUs.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import codecs
 import fcntl
 import importlib.util
 import os
-import pty
 import select
 import shutil
 import socket
@@ -25,6 +32,8 @@ import unicodedata
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 ESC = "\x1b"
+# The longest wait for vi to take the terminal, read the keys, or draw a screen.
+WAIT = 20.0
 
 
 def build(out):
@@ -43,71 +52,145 @@ def build(out):
     return binary
 
 
-def run(command, keys, cwd, timeout=8.0, output=None):
+class Session:
+    """A command run by sh on a new pty of 24x80.  The parent keeps its own
+    descriptor of the terminal side, through which it sees the terminal's
+    modes and how much typed input is still unread."""
+
+    def __init__(self, command, cwd):
+        master, slave = os.openpty()
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+        pid = os.fork()
+        if pid == 0:
+            try:
+                os.close(master)
+                os.setsid()
+                fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+                for target in (0, 1, 2):
+                    os.dup2(slave, target)
+                os.close(slave)
+                os.chdir(cwd)
+                env = dict(os.environ)
+                env["TERM"] = "xterm"
+                env["TERMINFO"] = os.path.join(ROOT, "userland/base/terminfo")
+                os.execve("/bin/sh", ["sh", "-c", command], env)
+            finally:
+                os._exit(127)
+        self.pid = pid
+        self.master = master
+        self.slave = slave
+        self.status = None
+        self.usage = None
+
+    def exited(self):
+        if self.status is None:
+            done, status, usage = os.wait4(self.pid, os.WNOHANG)
+            if done:
+                self.status = os.waitstatus_to_exitcode(status)
+                self.usage = usage
+        return self.status is not None
+
+    def wait_raw(self, output, limit=WAIT):
+        """Waits until the program has left the line mode (vi has set its
+        signal handlers and taken the terminal), or has ended."""
+        deadline = time.time() + limit
+        while time.time() < deadline and not self.exited():
+            if not termios.tcgetattr(self.slave)[3] & termios.ICANON:
+                return
+            drain(self.master, 0.01, output)
+
+    def unread(self):
+        data = fcntl.ioctl(self.slave, termios.FIONREAD, b"\0\0\0\0")
+        return struct.unpack("i", data)[0]
+
+    def wait_taken(self, output, limit=WAIT):
+        """Waits until the program has read every key typed so far."""
+        deadline = time.time() + limit
+        while time.time() < deadline and not self.exited() and self.unread():
+            drain(self.master, 0.01, output)
+
+    def kill(self):
+        if not self.exited():
+            os.kill(self.pid, 9)
+            os.waitpid(self.pid, 0)
+            self.status = "timeout"
+
+    def close(self):
+        for fd in (self.master, self.slave):
+            if fd is not None:
+                os.close(fd)
+        self.master = self.slave = None
+
+
+def run(command, keys, cwd, timeout=30.0, output=None, usage=None):
     """Runs command on a new pty of 24x80, types the keys, and returns the exit status.
-    The terminal output is added to the output list when one is given."""
-    pid, fd = pty.fork()
-    if pid == 0:
-        os.chdir(cwd)
-        env = dict(os.environ)
-        env["TERM"] = "xterm"
-        env["TERMINFO"] = os.path.join(ROOT, "userland/base/terminfo")
-        os.execve("/bin/sh", ["sh", "-c", command], env)
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
-    time.sleep(0.3)
+    The terminal output is added to the output list when one is given.  A
+    callable among the keys is a snapshot mark: once the screen up to there
+    satisfies it (or WAIT passes), None is put in the output, and the screen up
+    to the mark is what a check reads.  The CPU time of the run is added to the
+    usage list when one is given.
+    Keys are typed only after vi has taken the terminal, each chunk only after
+    vi has read the one before, and the screen is read only once it shows what
+    the check waits for, so a slow machine changes the timing but not the result."""
+    if output is None:
+        output = []
+    session = Session(command, cwd)
+    screen = Screen()
+    fed = 0
+    session.wait_raw(output)
     for chunk in keys:
-        drain(fd, 0.0, output)
-        if chunk is None:
-            # A snapshot mark: the screen up to here is what a check reads.
-            drain(fd, 0.3, output)
+        if session.exited():
+            break
+        if callable(chunk):
+            # A snapshot mark: waits until vi has drawn what the check reads.
+            session.wait_taken(output)
+            deadline = time.time() + WAIT
+            while True:
+                for data in output[fed:]:
+                    if data is not None:
+                        screen.feed(data)
+                fed = len(output)
+                if chunk(screen) or time.time() >= deadline or session.exited():
+                    break
+                drain(session.master, 0.05, output)
             output.append(None)
+            fed = len(output)
             continue
-        os.write(fd, chunk if isinstance(chunk, bytes) else chunk.encode("utf-8"))
+        os.write(session.master, chunk if isinstance(chunk, bytes) else chunk.encode("utf-8"))
+        session.wait_taken(output)
         # A lone ESC must stand apart from the next key.
         time.sleep(0.15 if chunk == ESC or (isinstance(chunk, str) and chunk.endswith(ESC)) else 0.05)
     deadline = time.time() + timeout
-    while time.time() < deadline:
-        drain(fd, 0.05, output)
-        done, status = os.waitpid(pid, os.WNOHANG)
-        if done:
-            drain(fd, 0.0, output)
-            os.close(fd)
-            return os.waitstatus_to_exitcode(status)
-    os.kill(pid, 9)
-    os.waitpid(pid, 0)
-    os.close(fd)
-    return "timeout"
+    while time.time() < deadline and not session.exited():
+        drain(session.master, 0.05, output)
+    drain(session.master, 0.0, output)
+    session.kill()
+    session.close()
+    if usage is not None and session.usage is not None:
+        usage.append(session.usage.ru_utime + session.usage.ru_stime)
+    return session.status
 
 
-def run_then_close(command, keys, cwd, timeout=5.0):
+def run_then_close(command, keys, cwd, timeout=30.0):
     """Runs command on a pty, types the keys, then closes the pty as a hangup
     does, and returns the exit status (or "timeout" if the program keeps running)."""
-    pid, fd = pty.fork()
-    if pid == 0:
-        os.chdir(cwd)
-        env = dict(os.environ)
-        env["TERM"] = "xterm"
-        env["TERMINFO"] = os.path.join(ROOT, "userland/base/terminfo")
-        os.execve("/bin/sh", ["sh", "-c", command], env)
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
-    time.sleep(0.3)
-    drain(fd, 0.0)
-    os.write(fd, keys.encode("utf-8"))
-    time.sleep(0.3)
-    drain(fd, 0.0)
-    os.close(fd)
+    output = []
+    session = Session(command, cwd)
+    session.wait_raw(output)
+    os.write(session.master, keys.encode("utf-8"))
+    # Waits until vi has read the keys and has drawn after them.
+    session.wait_taken(output)
+    drain(session.master, 0.3, output)
+    session.close()
     deadline = time.time() + timeout
-    while time.time() < deadline:
-        done, status = os.waitpid(pid, os.WNOHANG)
-        if done:
-            return os.waitstatus_to_exitcode(status)
+    while time.time() < deadline and not session.exited():
         time.sleep(0.05)
-    os.kill(pid, 9)
-    os.waitpid(pid, 0)
-    return "timeout"
+    session.kill()
+    return session.status
 
 
 def drain(fd, wait, output=None):
+    """Reads what the program wrote, waiting up to wait seconds for the first data."""
     while True:
         ready, _, _ = select.select([fd], [], [], wait)
         if not ready:
@@ -366,35 +449,41 @@ def main():
     work = tempfile.mkdtemp(prefix="screen.", dir=out)
     with open(os.path.join(work, "f.txt"), "w", encoding="utf-8") as handle:
         handle.write("abc\n日本語\n" + "x" * 100 + "\n" + "a" * 79 + "日\n\tT\n")
-    output = []
-    status = run("%s f.txt" % vi, keys_of("jll") + [None] + keys_of(":q\r"), work, output=output)
-    screen = screen_of(output)
     expected = ["abc", "日本語", "x" * 80, "x" * 20, "a" * 79, "日", "        T", "~"]
+
+    def drawn(screen):
+        return [screen.line(row) for row in range(8)] == expected and (screen.row, screen.column) == (1, 4)
+    output = []
+    status = run("%s f.txt" % vi, keys_of("jll") + [drawn] + keys_of(":q\r"), work, output=output)
+    screen = screen_of(output)
     got = [screen.line(row) for row in range(8)]
-    report("screen", status == 0 and got == expected and (screen.row, screen.column) == (1, 4),
-           "got=%r cursor=%r" % (got, (screen.row, screen.column)))
+    report("screen", status == 0 and drawn(screen), "got=%r cursor=%r" % (got, (screen.row, screen.column)))
 
     # The bottom line: the message after a write, and the cursor on a long line's second row.
     work = tempfile.mkdtemp(prefix="screen-status.", dir=out)
     with open(os.path.join(work, "f.txt"), "w", encoding="utf-8") as handle:
         handle.write("x" * 100 + "\n")
+    def written(screen):
+        return (screen.line(23) == '"f.txt" 1 lines, 101 bytes written'
+                and (screen.row, screen.column) == (1, 19))
     output = []
-    status = run("%s f.txt" % vi, keys_of("$:w\r") + [None] + keys_of(":q\r"), work, output=output)
+    status = run("%s f.txt" % vi, keys_of("$:w\r") + [written] + keys_of(":q\r"), work, output=output)
     screen = screen_of(output)
-    report("screen-status", status == 0 and screen.line(23) == '"f.txt" 1 lines, 101 bytes written'
-           and (screen.row, screen.column) == (1, 19),
+    report("screen-status", status == 0 and written(screen),
            "status line=%r cursor=%r" % (screen.line(23), (screen.row, screen.column)))
 
     # A line taller than the screen shows the part with the cursor.
     work = tempfile.mkdtemp(prefix="screen-tall.", dir=out)
     with open(os.path.join(work, "f.txt"), "w", encoding="utf-8") as handle:
         handle.write("x" * 3000 + "END\n")
+    def at_end(screen):
+        rows = [screen.line(row) for row in range(23)]
+        return any(row.endswith("END") for row in rows) and screen.cells[screen.row][screen.column] == "D"
     output = []
-    status = run("%s f.txt" % vi, keys_of("$") + [None] + keys_of(":q\r"), work, output=output)
+    status = run("%s f.txt" % vi, keys_of("$") + [at_end] + keys_of(":q\r"), work, output=output)
     screen = screen_of(output)
-    rows = [screen.line(row) for row in range(23)]
     under = screen.cells[screen.row][screen.column]
-    report("screen-tall-line", status == 0 and any(row.endswith("END") for row in rows) and under == "D",
+    report("screen-tall-line", status == 0 and at_end(screen),
            "cursor=%r under=%r" % ((screen.row, screen.column), under))
 
     # The permissions of an existing file are kept.
@@ -478,11 +567,12 @@ def main():
     lines = "".join("line %d\n" % number for number in range(20000))
     with open(os.path.join(work, "f.txt"), "w") as handle:
         handle.write(lines)
-    began = time.time()
-    status = run("%s f.txt" % vi, keys_of("dGuyGGp:wq\r"), work, timeout=20.0)
-    took = time.time() - began
-    report("many-lines", status == 0 and open(os.path.join(work, "f.txt")).read() == lines + lines and took < 15,
-           "status=%r took=%.1f" % (status, took))
+    # The time is the CPU time vi used, which a busy machine does not stretch.
+    usage = []
+    status = run("%s f.txt" % vi, keys_of("dGuyGGp:wq\r"), work, timeout=60.0, usage=usage)
+    took = usage[0] if usage else None
+    report("many-lines", status == 0 and open(os.path.join(work, "f.txt")).read() == lines + lines
+           and took is not None and took < 15, "status=%r cpu=%r" % (status, took))
 
     # The terminal modes after vi are the modes before it.
     work = tempfile.mkdtemp(prefix="stty.", dir=out)
@@ -497,7 +587,10 @@ def main():
     work = tempfile.mkdtemp(prefix="hup.", dir=out)
     with open(os.path.join(work, "f.txt"), "w") as handle:
         handle.write("abc\n")
-    status = run("stty -g > before; %s f.txt </dev/tty & child=$!; sleep 0.5; kill -HUP $child; wait $child; echo $? > code; stty -g > after" % vi, [], work)
+    # The hangup is sent once vi has taken the terminal (its handlers are set by then), at most 20 s on.
+    status = run("stty -g > before; %s f.txt </dev/tty & child=$!; n=0; "
+                 "while stty -a | grep -q -- ' icanon' && [ $n -lt 400 ]; do sleep 0.05; n=$((n+1)); done; "
+                 "kill -HUP $child; wait $child; echo $? > code; stty -g > after" % vi, [], work)
     code = open(os.path.join(work, "code")).read().strip() if os.path.exists(os.path.join(work, "code")) else None
     before = open(os.path.join(work, "before")).read() if os.path.exists(os.path.join(work, "before")) else None
     after = open(os.path.join(work, "after")).read() if os.path.exists(os.path.join(work, "after")) else None
