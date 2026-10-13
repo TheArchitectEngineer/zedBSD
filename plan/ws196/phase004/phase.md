@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws196-p004 -->
 # ws196-p004: T1 — account-admin の root の形と useradd・usermod・userdel を guest で
 
-Status: planned（2026-10-14 P2 が依頼の文を書いた。Q1 が T1 の台帳に積む）
+Status: uncleared（T1-597 で 2 が FAIL。試験の直し 842c58a82、再試験の依頼は下の「T1 への再試験の依頼（T1-597 の後）」）
 Disposition: normal
 Parent: [WS196](../ws.md)
 Queue: —（Q1 が T1 に渡す）
@@ -28,4 +28,46 @@ zedBSD の guest で 1 回の QEMU で確かめる。p002 と p003 の依頼を 
 
 ## 結果
 
-- 未実施（T1 の結果待ち）。
+### T1-597（2026-10-14、QEMU、config-amd64-users.mk、tree 24208099f）— uncleared
+
+- 1 admin-p026: 起動の直後の guest で status=1（2 回）、起こし直した guest で `admin-p026: status=0`。
+- 2 user-commands-guest: `status=1`。FAILED は lock-passwd・tom-password・sudo-add の 3 つで、残りの 50 は ok。
+- 3 autologin の拒否: PASS（再起動の後 greeter、kei・tom の一覧。sessiond.log に `SESSIOND AUTOLOGIN refused account=tom locked`）。
+- 4 Settings の Users: PASS（`uma  Uma U · Standard`）。
+- 証拠: main の checkout の `build/review/t1-597/`（autologin2.png・users3.png・uc-fresh.txt）、T1 の worktree の
+  `build/review/t1-597/`（admin-run2.txt・uc-run2.txt・admin-fresh.txt・out1〜out2c）。
+
+### FAIL の原因（2026-10-14 P2、T1-597 の出力から。QEMU は流していない）
+
+- **2 の 3 つは試験の期待の誤り**（製品は正しい）。`passwd -s` と `sudo -S` の prompt（`New password: `・
+  `[sudo] password for kei: `）は行の終わりが無いので、続く `echo status=$?` が同じ行に付き、`^status=0$` に合わなかった。
+  status は 0 で、続く mod-lock・mod-locked（`tom:!$6$`）・su-tom・log-sudo が ok なので、password の設定と sudo の
+  useradd は通っている。直し: `run()` が status を自分の行に出す（`s=$?; echo; echo status=$s`）。3 つを `run()` に変えた。
+  他の段で同じ形の物は無い（not-root-status は useradd の message が行で終わる、admin-p026 の passwd-short は行頭に
+  合わせない `status=4`）。
+- **1 の起動の直後の FAIL は SSH の接続の問題で、account-admin の欠陥ではない**。起動の直後の guest の出力
+  （admin-run2.txt・uc-run2.txt、out1・out1b の file が全て空）では、ほぼ全ての `guest.py run` が空の答えを数 ms で返し、
+  admin-p026 の 1 回が約 6 s で終わった（bad-password の 2 s の待ちを含むはず）。guest の `/var/log/messages`
+  （out2b/messages.txt）には最初の run の bad-password と bad-request の 2 行と、uc-run2 の後ろの段（add-jay から）の行だけ
+  があり、間の request は account-admin に届いていない。つまり `guest.py wait` が通った後、約 1 分の間 SSH の接続が
+  命令を走らせずに閉じられ（ssh の LogLevel=ERROR では何も出ない）、その後に戻った。sessiond・syslogd・/etc の初期化を
+  待つ不足ではない（syslogd は file を自分で作り、届いた行はすぐ書く。`/etc` は image のまま）。起動の直後の何が SSH を
+  止めたかは未解明（[BUG-281](../../bugs/BUG-281.md) の「SSH の session が約 1〜2 分止まる」と近いが、こちらは止まらずに
+  すぐ閉じる）。Q1 に報告した（ticket にするかは Q1）。
+- 試験の側の対策（842c58a82）: 2 つの script の `guest()` が ssh の status 255（ssh 自身の失敗）を 3 s ごとに最大 90 s
+  取り直し、取り直しを `OUT/ssh-retries.txt` に書き、最後の行の前に `ssh-retries: N` を出す。接続が命令の途中で切れた
+  なら命令が 2 回走りうるので、N が 0 でなければ結果と一緒に報告する。
+- host の確認: `guest()` と `run()` を python3 の代役（2 回 255、その後 sh で実行）で流し、2 回の取り直しの記録、
+  prompt の後の `status=0` が自分の行に出ること、status 4 が出ることを確かめた。
+
+## T1 への再試験の依頼（T1-597 の後）
+
+- **tree**: 842c58a82 を merge した main（image の中身は T1-597 と同じでよい。直したのは試験の script だけなので、
+  T1-597 の image `config-amd64-users.mk` を作り直さずに使ってよい）。
+- **起動**: `plan/tools/guest/guest.py start BUILD/hdd-image.img`、`plan/tools/guest/guest.py wait` の**直後に**（待ちを足さずに）流す。
+- **流す試験と合否**（この順、同じ guest で）:
+  1. `plan/ws089/tests/admin-p026-guest.sh OUT1` — PASS は最後の行 `admin-p026: status=0`。
+  2. `plan/ws196/tests/user-commands-guest.sh OUT2` — PASS は最後の行 `user-commands-guest: status=0`。
+- **返す物**: 2 つの出力の全文（`ssh-retries: N` の行を含む）、`OUT1/ssh-retries.txt`・`OUT2/ssh-retries.txt`、
+  `OUT2/messages.txt`、guest の起動から 1 の開始までの秒数。N が 0 でなければ、その間の guest の `/var/log/messages` の
+  末尾と `/var/log/sessiond.log` の末尾（解析は要らない、P2 が読む）。
