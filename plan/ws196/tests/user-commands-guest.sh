@@ -22,7 +22,23 @@ set -u
 cd "$(dirname -- "$0")/../../.."
 out=${1:-build/ws196-p004-guest}
 mkdir -p "$out"
-guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null; }
+: > "$out/ssh-retries.txt"
+# Runs a command in the guest and prints its output.  After one boot the guest closed SSH connections at once for
+# about a minute (T1-597: empty answers, ssh's status 255): a status of 255 is ssh's own failure, so the command is
+# given again every 3 s, for up to 90 s, and each time is written to $out/ssh-retries.txt (a connection lost while the
+# command ran would run it twice, so a retry is reported at the end).
+guest() {
+	g_tries=0
+	while :; do
+		g_answer=$(timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null)
+		g_code=$?
+		if [ "$g_code" -ne 255 ] || [ "$g_tries" -ge 30 ]; then break; fi
+		g_tries=$((g_tries + 1))
+		printf '%s %s\n' "$g_tries" "$1" >> "$out/ssh-retries.txt"
+		sleep 3
+	done
+	printf '%s\n' "$g_answer"
+}
 status=0
 pass() { echo "$1: ok"; }
 fail() { echo "$1: FAILED"; status=1; }
@@ -30,8 +46,9 @@ expect() { if printf '%s\n' "$3" | grep -Eq "$2"; then pass "$1"; else fail "$1"
 tool=/usr/libexec/account-admin
 # Runs root's request (the lines given as printf's format) and prints the answer.
 admin() { guest "printf '$1' | $tool"; }
-# Runs a command as root and prints its messages and its status.
-run() { guest "$1 2>&1; echo status=\$?"; }
+# Runs a command as root and prints its messages and, on a line of its own, its status (a prompt such as passwd's
+# "New password: " or sudo's has no line end of its own).
+run() { guest "$1 2>&1; s=\$?; echo; echo status=\$s"; }
 # The uid of a user in /etc/passwd.
 uid_of() { guest "grep '^$1:' /etc/passwd | cut -d: -f3" | tr -d '\r'; }
 
@@ -70,7 +87,7 @@ printf '%s\n' "$both" > "$out/lock.txt"
 expect lock-both-ok '^ok$' "$(printf '%s\n' "$both" | sed -n 1p)"
 expect lock-both-ok-2 '^ok$' "$(printf '%s\n' "$both" | sed -n 2p)"
 expect lock-file '^/etc/shadow.lock$' "$both"
-expect lock-passwd '^status=0$' "$(guest "printf 'lockpass123\n' | /bin/passwd -s lockone; echo status=\$?")"
+expect lock-passwd '^status=0$' "$(run "printf 'lockpass123\n' | /bin/passwd -s lockone")"
 expect lock-clean-1 '^status=0$' "$(run '/sbin/userdel lockone')"
 expect lock-clean-2 '^status=0$' "$(run '/sbin/userdel locktwo')"
 
@@ -89,7 +106,7 @@ expect add-tom-again '^status=9$' "$again"
 expect add-tom-again-said 'useradd: tom: the name is used by a user or a group' "$again"
 expect mod-unlock-none '^status=1$' "$(run '/sbin/usermod -U tom')"
 expect mod-last-lock '^status=1$' "$(run '/sbin/usermod -L kei')"
-expect tom-password '^status=0$' "$(guest "printf 'tompass123\n' | /bin/passwd -s tom; echo status=\$?")"
+expect tom-password '^status=0$' "$(run "printf 'tompass123\n' | /bin/passwd -s tom")"
 expect mod-lock '^status=0$' "$(run '/sbin/usermod -L tom')"
 expect mod-locked '^tom:!\$6\$' "$(guest 'grep "^tom:" /etc/shadow')"
 expect mod-unlock '^status=0$' "$(run '/sbin/usermod -U tom')"
@@ -113,7 +130,7 @@ expect del-r-f '^status=2$' "$(run '/sbin/userdel -r -f jay')"
 expect del-missing '^status=6$' "$(run '/sbin/userdel nobodyhere')"
 
 # 6. Through sudo, logged with the user who ran it.
-expect sudo-add '^status=0$' "$(guest "/bin/su kei -c 'printf \"kei\n\" | /bin/sudo -S /sbin/useradd -M sam; echo status=\$?' 2>&1")"
+expect sudo-add '^status=0$' "$(run "/bin/su kei -c 'printf \"kei\n\" | /bin/sudo -S /sbin/useradd -M sam'")"
 log=$(guest 'grep account-admin /var/log/messages')
 printf '%s\n' "$log" > "$out/messages.txt"
 expect log-sudo 'user-add by root \(sudo kei\) for sam: ok' "$log"
@@ -121,5 +138,6 @@ expect sudo-del '^status=0$' "$(run '/sbin/userdel sam')"
 
 # The files put back, with the homes made and the record of the last user ID.
 guest 'cp -p /tmp/p004.passwd /etc/passwd; cp -p /tmp/p004.group /etc/group; cp -p /tmp/p004.shadow /etc/shadow; rm -rf /home/tom /home/jay; rm -f /etc/account-admin.last-id' >/dev/null
+echo "ssh-retries: $(wc -l < "$out/ssh-retries.txt" | tr -d ' ')"
 echo "user-commands-guest: status=$status"
 exit $status

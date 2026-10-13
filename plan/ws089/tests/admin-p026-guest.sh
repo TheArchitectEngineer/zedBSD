@@ -27,7 +27,23 @@ set -u
 cd "$(dirname -- "$0")/../../.."
 out=${1:-build/ws089-p026-guest}
 mkdir -p "$out"
-guest() { timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null; }
+: > "$out/ssh-retries.txt"
+# Runs a command in the guest and prints its output.  After one boot the guest closed SSH connections at once for
+# about a minute (T1-597: empty answers, ssh's status 255): a status of 255 is ssh's own failure, so the command is
+# given again every 3 s, for up to 90 s, and each time is written to $out/ssh-retries.txt (a connection lost while the
+# command ran would run it twice, so a retry is reported at the end).
+guest() {
+	g_tries=0
+	while :; do
+		g_answer=$(timeout 120 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null)
+		g_code=$?
+		if [ "$g_code" -ne 255 ] || [ "$g_tries" -ge 30 ]; then break; fi
+		g_tries=$((g_tries + 1))
+		printf '%s %s\n' "$g_tries" "$1" >> "$out/ssh-retries.txt"
+		sleep 3
+	done
+	printf '%s\n' "$g_answer"
+}
 status=0
 pass() { echo "$1: ok"; }
 fail() { echo "$1: FAILED"; status=1; }
@@ -116,5 +132,6 @@ if printf '%s\n' "$log" | grep -Eq 'alicepass1|alicenew99|bobpass123'; then fail
 
 # The files put back (alice's kept home removed).
 guest 'cp -p /tmp/p026.passwd /etc/passwd; cp -p /tmp/p026.group /etc/group; cp -p /tmp/p026.shadow /etc/shadow; rm -rf /home/alice /home/bob; rm -f /etc/account-admin.last-id' >/dev/null
+echo "ssh-retries: $(wc -l < "$out/ssh-retries.txt" | tr -d ' ')"
 echo "admin-p026: status=$status"
 exit $status
