@@ -44,3 +44,5 @@ Related Milestones: なし
 2026-10-13 ユーザーの確認（原文）:「画面ごとに向きを持つ、ペン・タッチと画面の結び付ける」→ 回転は display ごと（mirror でも各 display が自分の向きを持つ、GNOME の共有の形は採らない）、pen・touch と display の結び付けをこの WS に含める（上の D3 の決定の確認）。
 
 2026-10-13 Q1（第 2 版の残る問い D7〜D12）: ユーザーの「ではあとは推奨でお願いします」に沿って推奨を採る: D7 Pi 4 の回転の受け入れは WS141 p015 の後、D8 度数に統一、D9 login 画面は回らない（制限として記録、Future Work）、D10 案 E（wl_output は transform normal・mode は論理）、D11 Linux・FreeBSD の backend に EVIOCGPROP の読みを足す、D12 UAPI に `INPUT_INJECT_KIND_PEN_POINTER` を足し注入の pen を DIRECT に（HAL ではない、Q1 の判断で可、ユーザーに報告）。番号の割当: `KL_SYSTEM_SINCE_ROTATION` = 34・`KL_SYSTEM_MANAGER_VERSION` = 34（実装の時に main の最大を確かめ直す）、KL_VERSION は実装の merge の時に Q1 が次の空きを割り当てる（93 は WS210 と取り合い）。
+
+2026-10-13 Q1: review-2 の判定「p002 はまだ始められない」（致命的 2 C3・C4、重大 3、中 10、軽微 15）。第 3 版で C3（turn pass の部分 frame は pass_load）・C4（回転は compose_display の中で当て、open の経路で論理の大きさが変われば resize の手順）と p002 に関わる M1〜M4 を直せば開始可。新しい問い S8（mirror の中の結び付けは各 display の回転で写す）と M8（WS141 p015 の前の Pi では回転を UNSUPPORTED）は推奨を採る（ユーザーに報告、変更可）。第 3 版の担当は次に空いた P。
