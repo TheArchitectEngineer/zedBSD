@@ -169,3 +169,5 @@ Codex の独立 tree `/tmp/zedbsd-ws074`（開始時 source `7433ca18d`）で実
 2026-10-13 / design-revision-after-q1000: 参照側の背景画像欠落を [p179](../phase179/phase.md) に分け、p178 の再試行をその verified 出力の後に置く。q1000 の全画面差により1領域選択が成立しなかったため。p179 は CSS/URL/取得/decode/paint を切り分け、一般的な欠陥の最小修正と同条件での再計測を受け入れる。p178 の局所 pixel 一致、Acid2 回帰、p100 の全画面差0を免除しない。p179 の新 Queue は未選定。
 
 2026-10-13 / q1001-p179-output: [p179](../phase179/phase.md) は cleared。参照画像が canvas に描かれ、同条件の Acid3 差は302056から56647へ減った。q1000-i01 の uncleared は書き換えない。次の局所領域を差画像から選び、この Phase の新 attempt を exact scope/時間枠を定めた Queue に入れる必要がある。Acid2 の差1865/120000と p100 の全画面差0も残る。
+
+2026-10-13 / next-attempt-proposal: 残る差のうち参照ページの得点「100/100」の位置を [次の有限試行案](next-queue-proposal.md) に選んだ。参照では `right:0` の絶対配置子が x=625 から右へ出ており、test の得点は x=231.80。一般的な絶対配置の auto 幅/right 計算を原因候補として最大90分の調査・最小修正・同条件再計測を提案する。これは計画のみで Queue 未選定・未承認。
