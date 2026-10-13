@@ -267,9 +267,9 @@ vi_terminal_move(
 	parameters[0] = row;
 	parameters[1] = column;
 
-	/* Expands the terminal's cursor address string for this place. */
+	/* Expands the terminal's cursor address string for this place; a negative length is a malformed string. */
 	status = terminfo_expand(terminal->move_string, parameters, sequence, sizeof(sequence));
-	if (status != 0)
+	if (status < 0)
 		return;
 
 	vi_terminal_command(terminal, sequence);
