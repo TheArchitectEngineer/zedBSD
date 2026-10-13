@@ -896,6 +896,7 @@ static void write_cached_start(struct mount *mountp, struct ufs_mount_state *ms,
 static int write_cached_intended(const struct mount *mountp, const struct ufs_mount_state *ms);
 static uint64_t j3_sector(const struct ufs_j3 *j3, uint64_t file_sector, uint32_t *run);
 static int j3_io(struct mount *mountp, const struct ufs_j3 *j3, uint64_t file_sector, uint32_t count, void *buffer, int write);
+static int j3_writeback(struct mount *mountp, const struct ufs_j3 *j3, uint64_t file_sector, uint32_t count);
 static int j3_durable(struct mount *mountp);
 static unsigned j3_hash(uint64_t key, unsigned size);
 static void j3_range_add(struct ufs_j3 *j3, uint64_t lba, uint32_t count, uint32_t hold);
@@ -16244,7 +16245,7 @@ file_writeback_locked(
 	struct ufs_mount_state *ms;
 	struct ufs_inode_info *ui;
 	struct ufs_sync_run run;
-	uint8_t *sectors;
+	uint8_t sectors[UFS_NIADDR * UFS_SECTOR_SIZE];
 	uint64_t blocks;
 	uint64_t direct_blocks;
 	uint64_t span;
@@ -16293,12 +16294,11 @@ file_writeback_locked(
 	/* A file of direct blocks only has nothing more to walk. */
 	blocks -= direct_blocks;
 	if (blocks != 0) {
-		/* Takes a sector of each indirect level for the walk to read entries into. */
-		sectors = kern_malloc((size_t)UFS_NIADDR * UFS_SECTOR_SIZE);
-		if (sectors == NULL)
-			return ENOMEM;
-
-		/* Walks each indirect level the size reaches, each nindir times wider. */
+		/*
+		 * Walks each indirect level the size reaches, each nindir times
+		 * wider, reading entries into a sector of each level on the
+		 * stack, so that a sync has no allocation to fail.
+		 */
 		span = ms->super.nindir;
 		for (level = 0; level < UFS_NIADDR && blocks != 0 && error == 0; level++) {
 			/* Walks the blocks of this level's tree. */
@@ -16316,9 +16316,6 @@ file_writeback_locked(
 					span *= ms->super.nindir;
 			}
 		}
-
-		/* Gives the entry sectors back. */
-		kern_free(sectors);
 
 		/* Reports why the tree could not be walked. */
 		if (error != 0)
@@ -19314,6 +19311,53 @@ j3_io(
 	return 0;
 }
 
+/*
+ * Writes the journal file's sectors that wait in the cache, an extent at a
+ * time, the ones in a line a journal pins included: such a line, which a
+ * journal's slot shares with a block the transaction logs on a volume
+ * whose lines do not fall on its blocks, is left by a whole write-back
+ * until the commit, while what the slot holds has to be on the device
+ * before the commit record that seals it (BUG-307).  The device is not
+ * flushed.
+ */
+static int
+j3_writeback(
+	struct mount *mountp,
+	const struct ufs_j3 *j3,
+	uint64_t file_sector,
+	uint32_t count)
+{
+	uint64_t lba;
+	uint32_t amount;
+	int error;
+
+	/* Refuses sectors past the end of the journal. */
+	if (file_sector + count > j3->total_sectors)
+		return EINVAL;
+
+	/* Writes the run inside each extent in turn. */
+	while (count != 0) {
+		/* Finds where the next sectors lie, and how many follow there. */
+		lba = j3_sector(j3, file_sector, &amount);
+
+		/* Takes no more of the run than the write still needs. */
+		if (amount > count)
+			amount = count;
+
+		/* Writes the run's cached dirty sectors. */
+		error = buf_writeback_cached(mountp->m_disk, lba, amount);
+		if (error != 0)
+			return error;
+
+		/* Steps past the run. */
+		file_sector += amount;
+		count -= amount;
+	}
+
+	/* Succeeded: the sectors are on their way to the device. */
+	return 0;
+}
+
 /* Makes the writes so far durable on the device. */
 static int
 j3_durable(
@@ -19887,15 +19931,30 @@ j3_commit_seal(
 {
 	uint8_t commit[SECTOR_SIZE];
 	uint64_t base;
-	uint64_t record;
+	uint64_t used;
 	uint32_t desc_sum;
 	uint32_t sum;
-	uint32_t run;
 	int error;
 
 	/* Writes the descriptor at the head of the slot the sequence picks. */
 	base = j3->header_sectors + (sequence & 1U) * j3->slot_sectors;
 	error = j3_io(mountp, j3, base, desc_sectors, descriptor, 1);
+	if (error != 0)
+		return error;
+
+	/* Counts the sectors the descriptor and the payloads after it take in the slot. */
+	used = (uint64_t)desc_sectors + get32(descriptor + 32);
+
+	/* A slot holds no more than what its commit record leaves. */
+	if (used > (uint64_t)j3->slot_sectors - 1U)
+		return EINVAL;
+
+	/*
+	 * Writes those sectors, the ones in a line a journal pins included,
+	 * which the whole write-back below leaves for the commit, so that the
+	 * record never reaches the device before what it seals (BUG-307).
+	 */
+	error = j3_writeback(mountp, j3, base, (uint32_t)used);
 	if (error != 0)
 		return error;
 
@@ -19932,8 +19991,7 @@ j3_commit_seal(
 	 * keep dirtying meanwhile, waits for the flusher or the next commit
 	 * (BUG-307).
 	 */
-	record = j3_sector(j3, base + j3->slot_sectors - 1U, &run);
-	error = buf_writeback_cached(mountp->m_disk, record, 1);
+	error = j3_writeback(mountp, j3, base + j3->slot_sectors - 1U, 1);
 	if (error != 0)
 		return error;
 	error = bio_flush(mountp->m_disk);
